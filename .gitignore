@@ -1,0 +1,33 @@
+# 敏感配置文件 - 绝对不提交
+.env
+*.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# 审计日志（含业务数据，不入库）
+audit_log.jsonl
+audit_logs/
+
+# 实际生成的报告（含供应商数据，不入库）
+reports/*.md
+reports/*.pdf
+!reports/.gitkeep
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+*.swp
