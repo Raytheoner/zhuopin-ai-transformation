@@ -1,8 +1,8 @@
 """
-AI 文本生成 — 调用 Claude API 基于评分数据生成风险描述和建议动作。
+AI 文本生成 — 调用 DeepSeek API 基于评分数据生成风险描述和建议动作。
 
 设计决策 D2：LLM 仅用于文本生成，不参与评分计算。
-使用 claude-sonnet-4-6（Q2 决定：报告是正式决策文件，质量优先）。
+使用 deepseek-chat（兼容 OpenAI 格式，base_url=https://api.deepseek.com）。
 AI 调用失败时降级返回占位文本，不阻断报告生成。
 """
 from __future__ import annotations
@@ -59,16 +59,19 @@ def _build_scoring_context(result: ScoringResult, supplier_name: str) -> str:
     }, ensure_ascii=False, indent=2)
 
 
-def _call_claude(system_prompt: str, user_content: str, api_key: str, model: str) -> list[str]:
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
+def _call_deepseek(system_prompt: str, user_content: str, api_key: str, model: str,
+                   base_url: str = "https://api.deepseek.com") -> list[str]:
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    response = client.chat.completions.create(
         model=model,
         max_tokens=512,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_content}],
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
     )
-    raw = message.content[0].text.strip()
+    raw = response.choices[0].message.content.strip()
     parsed = json.loads(raw)
     if isinstance(parsed, list):
         return [str(item) for item in parsed[:3]]
@@ -79,7 +82,8 @@ def generate_ai_text(
     result: ScoringResult,
     supplier_name: str,
     api_key: str,
-    model: str = "claude-sonnet-4-6",
+    model: str = "deepseek-chat",
+    base_url: str = "https://api.deepseek.com",
 ) -> tuple[list[str], list[str], str]:
     """
     生成核心风险描述和建议动作。
@@ -91,12 +95,12 @@ def generate_ai_text(
     context = _build_scoring_context(result, supplier_name)
 
     try:
-        risks = _call_claude(_RISK_SYSTEM_PROMPT, context, api_key, model)
+        risks = _call_deepseek(_RISK_SYSTEM_PROMPT, context, api_key, model, base_url)
     except Exception:
         risks = FALLBACK_RISKS
 
     try:
-        actions = _call_claude(_ACTION_SYSTEM_PROMPT, context, api_key, model)
+        actions = _call_deepseek(_ACTION_SYSTEM_PROMPT, context, api_key, model, base_url)
     except Exception:
         actions = FALLBACK_ACTIONS
 

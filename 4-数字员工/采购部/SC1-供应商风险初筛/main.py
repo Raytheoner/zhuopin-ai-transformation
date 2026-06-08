@@ -73,12 +73,13 @@ def cmd_evaluate():
     actions = ["[AI 建议不可用 - 请采购经理手动填写]"]
     ai_hash = ""
 
-    if config.ANTHROPIC_API_KEY:
+    if config.DEEPSEEK_API_KEY:
         print("正在调用 AI 生成风险描述和建议...")
         try:
             from src.ai_generator import generate_ai_text
             risks, actions, ai_hash = generate_ai_text(
-                result, wizard.supplier_name, config.ANTHROPIC_API_KEY, config.LLM_MODEL
+                result, wizard.supplier_name, config.DEEPSEEK_API_KEY,
+                config.LLM_MODEL, config.DEEPSEEK_BASE_URL,
             )
             print("AI 文本生成完成。")
         except Exception as e:

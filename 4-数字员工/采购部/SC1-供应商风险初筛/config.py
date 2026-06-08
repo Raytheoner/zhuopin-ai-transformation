@@ -8,8 +8,9 @@ BASE_DIR = Path(__file__).parent
 REPORTS_DIR = BASE_DIR / "reports"
 AUDIT_LOG_PATH = BASE_DIR / "audit_log.jsonl"
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-LLM_MODEL = "claude-sonnet-4-6"
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+LLM_MODEL = "deepseek-chat"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 XKY_API_BASE = os.environ.get("XKY_API_BASE", "https://openapi.xiekeyun.com")
 XKY_APP_KEY = os.environ.get("XKY_APP_KEY", "")

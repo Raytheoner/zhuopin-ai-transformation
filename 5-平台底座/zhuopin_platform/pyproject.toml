@@ -1,0 +1,29 @@
+[project]
+name = "zhuopin_platform"
+version = "0.1.0"
+description = "卓品智能 AI 转型 — 跨部门数字员工共享平台底座（审计 / OEM 隔离 / 共享工具 / 智能体）"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+dependencies = [
+    "openai>=1.0",          # DeepSeek 兼容 OpenAI 接口
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+    "chromadb>=0.5",        # data_isolation_layer：per-OEM 向量库
+]
+
+[project.optional-dependencies]
+clickhouse = ["clickhouse-connect>=0.7"]  # 审计 sink，9月迁移时启用
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["zhuopin_platform*"]
+
+# 用法：各数字员工场景在自己目录执行
+#   pip install -e ../../5-平台底座/zhuopin_platform
+# 之后即可  from zhuopin_platform.shared_tools.srm_connector import ...
+# 一份代码、处处复用，解决 SC1 跨工程引用 supplychain 的老问题。
