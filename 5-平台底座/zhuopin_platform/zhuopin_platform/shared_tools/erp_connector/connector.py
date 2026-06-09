@@ -101,8 +101,10 @@ class ZpConnector(DataConnector):
         self._pos_cache_ts: dict[int, float] = {}
 
         # CSV 回退（生产计划等暂无 API 的数据）
+        # High5：把审计实例一并传入 fallback，保证回退路径（get_production_plan / get_bom
+        # 无产品数据时）也留轻量痕迹，不脱离 IATF 留痕范围。
         from ..csv_connector import CSVConnector
-        self._fallback = CSVConnector(fallback_dir)
+        self._fallback = CSVConnector(fallback_dir, audit=audit)
 
     @classmethod
     def from_env(cls, audit: ConnectorAudit | None = None,

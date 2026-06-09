@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,6 +72,8 @@ class DebugLog:
     def __init__(self, path: Path | str, enabled: bool = False):
         self.path = Path(path)
         self.enabled = enabled
+        # 线程安全（High4）：BOM 并行查询等多线程写同一 debug 文件时串行化，避免行穿插
+        self._lock = threading.Lock()
 
     def record(self, req: Any, resp: Any = None, error: str = "") -> None:
         if not self.enabled:
@@ -82,5 +85,7 @@ class DebugLog:
             "error": error,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+        line = json.dumps(entry, ensure_ascii=False, default=str) + "\n"
+        with self._lock:
+            with open(self.path, "a", encoding="utf-8") as f:
+                f.write(line)
