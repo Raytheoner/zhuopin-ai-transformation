@@ -1,10 +1,20 @@
-"""通用 MCP 工具层 —— 所有场景共用，避免重复开发（审查报告遗漏C）。
+"""通用共享工具层 —— 所有数字员工场景共用，一份代码处处复用。
 
-子模块（Phase 1 起逐步充实）：
-  - doc_parser    : 统一文档解析（SC4 合同 / Q4 PPAP / R1 需求 / R5 文档）
-  - srm_connector : 携客云 SRM（从 SC1 抽取复用；SC1 已生产验证）
-  - u9c_connector : U9C ERP MCP 客户端（待 7/1 接口申请就绪）
-  - external_apis : 芯片 EOL/供货、物流、市场情报（待 8 月选型）
+已收割（supplychain 真连接器，已真实数据验证）：
+  - models / csv_loaders : 连接器返回 shape 数据模型 + CSV 加载与回退
+  - connector            : DataConnector 抽象（5 类业务数据统一接口）
+  - csv_connector        : CSVConnector（脱敏/离线/回退数据源）
+  - connector_audit      : ConnectorAudit 轻量访问痕迹 + DebugLog（D2：合规分离、默认关全文）
+  - srm_connector        : 携客云 SRM 只读（承诺交期 / 供应计划看板）
+  - erp_connector        : 卓品 zp REST（真实 ERP：PO/物料/BOM）
+  - u9c_connector        : U9C 骨架（CSV 回退态，待 7/1 MCP）
+  - crm_notifier         : CRM 延期通报草稿（D3：Protocol 解耦，不依赖 DelayCase）
+  - notifiers            : 企微推送 + L2 门禁派发器（推客户须人工确认 + 审计留痕）
 
-当前为占位骨架，按 Phase 1 解依赖进度逐个实现。
+待建（按 Phase 1 解依赖进度）：
+  - doc_parser           : 统一文档解析（SC4 合同 / Q4 PPAP / R1 需求 / R5 文档）
+  - external_apis        : 芯片 EOL/供货、物流、市场情报（待 8 月选型）
+
+注：审计统一接 zhuopin_platform.audit；OEM 隔离接口预留在 data_isolation_layer，
+采购连接器（SRM/ERP/CRM）不强加 OEM 路由（仅研发/知识库场景使用）。
 """

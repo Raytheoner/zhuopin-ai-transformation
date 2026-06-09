@@ -18,7 +18,7 @@ pip install -e ../../5-平台底座/zhuopin_platform   # 路径按相对位置�
 |--------|------|-------------|
 | `audit` | IATF 可追溯审计，JSONL 先行 / ClickHouse 9月汇聚（同接口可切换） | ✅ 可用 |
 | `data_isolation_layer` | OEM 数据隔离，per-OEM 向量库路由，拒绝跨库 | ✅ 路由可用，RAG 待接 Chroma |
-| `shared_tools` | doc_parser / srm / u9c / external_apis | 🔧 骨架，按解依赖进度实现 |
+| `shared_tools` | 连接器（SRM/zp ERP/U9C 骨架/CSV）+ 通知器（CRM 草稿/企微+L2 门禁）+ 审计接入 | ✅ 已收割 supplychain 真连接器；doc_parser/external_apis 待建 |
 | `agents` | 跨部门智能体逻辑 | 🔧 骨架 |
 
 ## 快速校验

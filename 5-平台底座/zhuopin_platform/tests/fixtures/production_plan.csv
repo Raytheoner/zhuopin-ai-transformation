@@ -1,0 +1,4 @@
+plan_id,product_id,product_name,planned_qty,planned_date
+PP-001,P001,主控板,500,2026-05-10
+PP-002,P002,电源板,300,2026-05-15
+PP-003,P003,显示板,200,2026-05-20
