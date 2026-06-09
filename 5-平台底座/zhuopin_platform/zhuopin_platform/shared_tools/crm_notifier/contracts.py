@@ -14,12 +14,17 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class NotificationMessage(Protocol):
-    """通用通知消息契约。通知通道（wecom 等）+ L2 门禁 + 审计只读这些字段。"""
+    """通用通知消息契约。通知通道（wecom 等）+ L2 门禁 + 审计只读这些字段。
 
-    recipient: str   # 收件人/通报对象（客户名 / 内部群名）
-    title: str       # 标题/主题
-    body: str        # 正文
-    severity: str    # 严重度：info / warning / critical
+    `requires_confirmation` 为**强约束字段**（合规红线，Blocker1）：必须由上层显式声明。
+    L2 门禁采用 FAIL-CLOSED 语义——该字段缺失/未知时一律按"高风险·需人工确认·不外发"处理。
+    """
+
+    recipient: str               # 收件人/通报对象（客户名 / 内部群名）
+    title: str                   # 标题/主题
+    body: str                    # 正文
+    severity: str                # 严重度：info / warning / critical
+    requires_confirmation: bool  # 是否需 L2 人工确认（推客户等高风险必须为 True）
 
 
 @runtime_checkable
