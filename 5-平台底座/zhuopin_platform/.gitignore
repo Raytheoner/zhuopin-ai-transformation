@@ -1,0 +1,25 @@
+# 凭据（连接器从 .env 注入，绝不入库）
+.env
+.env.*
+!.env.example
+
+# 连接器可选 debug 日志（D2：req/resp 全文，默认关闭、与合规 audit 物理分开）
+debug_logs/
+*.debug.log
+**/srm_audit.db
+
+# 本地缓存（zp PO 缓存等，测试用临时目录）
+**/cache/
+po_cache.json
+
+# 合规审计本地产物（运行期生成，不入库）
+reports/audit_log.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+pytest-cache-files-*/
+.coverage
+htmlcov/
