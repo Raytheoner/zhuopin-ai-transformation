@@ -1,0 +1,7 @@
+po_id,material_id,qty_ordered,qty_received,expected_date,supplier_confirmed_date,supplier_id,status
+PO-001,M001,30000,0,2026-05-07,2026-05-07,S001,in_transit
+PO-002,M004,3000,0,2026-05-10,2026-05-13,S004,in_transit
+PO-003,M006,200,0,2026-05-30,2026-05-30,S006,placed
+PO-004,M015,100,50,2026-05-08,2026-05-12,S015,partial
+PO-005,M012,50,0,2026-05-16,2026-05-16,S012,in_transit
+PO-006,M010,100,100,2026-05-01,2026-05-01,S010,received
