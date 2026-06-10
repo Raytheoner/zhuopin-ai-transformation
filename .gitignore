@@ -14,14 +14,17 @@ build/
 .venv/
 venv/
 
-# 审计日志（含业务数据，不入库）
-audit_log.jsonl
-audit_logs/
+# 所有运行时审计 JSONL — 含业务数据，绝不入库
+**/*.jsonl
 
-# 实际生成的报告（含供应商数据，不入库）
-reports/*.md
-reports/*.pdf
-!reports/.gitkeep
+# 场景 reports/ 目录（运行时生成，不入库）
+**/reports/
+
+# 外部参考文档（二进制/Office 文件，不入库）
+外部文档/
+
+# 繁体字重复目录（Windows 大小写不敏感副产品，不入库）
+4-数字員工/
 
 # 系统文件
 .DS_Store
