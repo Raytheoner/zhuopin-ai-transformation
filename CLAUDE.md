@@ -4,6 +4,8 @@
 > 全局身份/偏好见 `~/.claude/CLAUDE.md`（不重复）；本文件只写**本项目**的背景、架构、工作流与红线。
 > 代码与注释用中文，技术术语保留英文；用供应链业务语言描述功能（如"齐套分析""承诺交期""在途跟踪"）。
 
+> **当前进度（2026-06-10）**：已合 master —— **SC8 收割式 MVP**（交付日预测 + L2 对客门禁 + 全链审计，mock 端到端；`sc8-real-data-cutover` 另起变更，BLOCKED until 6/12）、§1 平台加固 P2（audit hash-chain / Pydantic 校验 / SRM 限流 / SecretsProvider）、**O2 齐套**、**SC1 收尾**、**SC3 在途跟踪**（PR #6 已 rebase-merge；D2=A，compute_dos 场景本地——O2 实际用 calc_shortage 非 DOS，compute_dos 仅 SC3 一个消费方，未到 rule-of-three 提升时机）。收割队列剩 **SC5 采购建议（kit_engine 第 2 消费方 → 触发把 O2 的 kit_engine 提升 platform/agents/）→ supplychain 打 tag `harvested-archive-v1` 存档**。续工作先读 Cowork 记忆 `project_harvest_progress` + `1-转型规划/supplychain收割与全景推进策略.md`。引擎默认场景本地，第 2 消费方出现才提升（rule of three）。
+
 ---
 
 ## 1. 公司与项目背景
@@ -75,4 +77,4 @@
 5. **ISO 26262 安全相关代码**：AI 生成不得直接合入，须人工审核（R3 代码审查等）。
 
 ---
-**Last Updated**: 2026-06-08 ｜ 维护：本文件随架构/红线变更更新，时间线细节以实施计划第七节为准。
+**Last Updated**: 2026-06-10 ｜ 维护：本文件随架构/红线变更更新，时间线细节以实施计划第七节为准。
