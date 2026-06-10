@@ -105,7 +105,7 @@ supplychain 是为学习快速搭的**单体试验田**。整体并入全景会�
 | **SC8 交期承诺 MVP** | 2027-02 | **2026-07/08 MVP** | delivery_forecast 已实现 ⭐ |
 | O2 物料齐套预警 | 2026-10 | 2026-09 | kit_analysis 算法完整 |
 | O1 生产排程 | 2026-11 | 2026-09/10 | smt_scheduling 已 MVP |
-| SC5 采购建议/遴选 | 2026-10 | ✅ 已完成（2026-06-11，PR #7 待合并）| purchase_recommendation 收割完成；41 tests 全绿，黄金值对齐（35850/640000）|
+| SC5 采购建议/遴选 | 2026-10 | ✅ 已完成（2026-06-11，PR #7 已合 master）| purchase_recommendation 收割完成；41 tests 全绿，黄金值对齐（35850/640000）；kit_engine 提升底座 |
 | SC3 绩效看板/在途 | 2026-09 | ✅ 已完成（2026-06-10，PR #6 合 master）| supplier_tracking 收割完成；29 tests 全绿、8 项 golden 等价 |
 | SC9 OEM 订单波动预测 | 2026-12 | 维持（需历史数据积累）| 预测类，数据未足 |
 
@@ -124,11 +124,19 @@ supplychain 是为学习快速搭的**单体试验田**。整体并入全景会�
 
 ## 7. 下一步行动（建议顺序）
 
-1. **平台底座收割（7 月，Claude Code Desktop）**：把 `xky_srm_connector` / `zp_connector` / `u9c_connector` / `crm_notifier` / `wecom` / 抽象层 迁入 `zhuopin_platform/shared_tools`，作废我先前的 stub；SC1 改 import 真连接器。
-2. **SC8 交期承诺 MVP（7-8 月）**：收割 `delivery_forecast` + `sales_order_intake` + `smt_scheduling` + `crm_notifier` → 落成全景 SC8 数字员工。先按你的启发式（无反馈+30天、委外齐套+10天、关键路径定齐套日、带置信度），6/12 真实需求与供应商反馈到位后切真实，变化超阈值推 CRM。
-3. **运营 O1/O2、采购 SC3/SC5 落位（9 月）**：把对应引擎从 supplychain 落成各自数字员工。
-4. **supplychain 存档**：收割完成后打 tag，转只读参考。
-5. **同步修订全景文档**：把上表②③并入《全景规划》与《实施计划》，重排采购+运营时间线。
+> **收割阶段已收尾（2026-06-11）**：O2/SC3/SC5 三引擎 + SC8 MVP 全部落位合 master，连接器/通知器/business_rules 已进底座，supplychain 已打 tag `harvested-archive-v1` 转只读存档。下方 1-4 项均已完成；重点转入 Phase 1 真实库切换（见末尾）。
+
+1. ✅ **平台底座收割**：连接器/通知器/抽象层迁入 `zhuopin_platform/shared_tools`，stub 作废，SC1 改 import 真连接器。
+2. ✅ **SC8 交期承诺 MVP**：收割式 MVP 已合 master（mock 端到端）；真实库切换为另起变更 `sc8-real-data-cutover`，BLOCKED until 6/12。
+3. ✅ **运营 O2、采购 SC3/SC5 落位**：对应引擎已落成各自数字员工（O2 kit_engine 已提升底座 `agents/`）。〔O1 生产排程未在本轮收割，待后续〕
+4. ✅ **supplychain 存档**：已打 tag `harvested-archive-v1`，转只读参考。
+5. 🔧 **同步修订全景文档（本次进行中）**：本表②③状态已更新；时间线重排进《实施计划（最新版）》第七节（《全景规划》为权威总纲，不改）。
+
+### Phase 1 关键路径（收割红利兑现，收割后真正决定上线的卡点）
+
+- **`sc8-real-data-cutover`**：BLOCKED until 6/12（明日解锁）→ 真实需求 + 供应商承诺交期到位后切真实 SRM/ERP，变化超阈值推 CRM。
+- **SC1 真实数据验证**：任务 9.1，6/12 由 mock 切真实库。
+- **U9C ERP MCP 接口**：7/1 申请，多个被阻塞场景（销售订单接入等）依赖它解锁。
 
 ---
 

@@ -4,7 +4,7 @@
 > 全局身份/偏好见 `~/.claude/CLAUDE.md`（不重复）；本文件只写**本项目**的背景、架构、工作流与红线。
 > 代码与注释用中文，技术术语保留英文；用供应链业务语言描述功能（如"齐套分析""承诺交期""在途跟踪"）。
 
-> **当前进度（2026-06-11）**：已合 master —— **SC8 收割式 MVP**、§1 平台加固 P2、**O2 齐套**、**SC1 收尾**、**SC3 在途跟踪**（PR #6 rebase-merge）、**kit_engine 底座化**（PR #7 feat/sc5-purchase-recommendation，SC5 是第 2 消费方触发提升，底座 114 + O2 20 + SC5 41 = 175 tests）。**SC5 采购建议与供应商遴选已完成**（PR #7 待 review 合 master；41 tests 全绿，黄金值对齐 auto_total=35850/review_total=640000，IATF L1/L2 分桶审计）。**下一步：supplychain 打 tag `harvested-archive-v1` 存档（SC3+SC5 均已收割）**。续工作先读 `1-转型规划/supplychain收割与全景推进策略.md`。
+> **当前进度（2026-06-11）**：**supplychain 收割全部完成，收割队列清空。** 已合 master —— **SC8 收割式 MVP**、§1 平台加固 P2、**O2 齐套**、**SC1 收尾**、**SC3 在途跟踪**（PR #6 rebase-merge）、**SC5 采购建议与供应商遴选 + kit_engine 底座化**（PR #7 已合 master；kit_engine 提升到 `zhuopin_platform/agents/`——SC5 是第 2 消费方、rule-of-three 真触发，O2 改 import 回归零变更；底座 114 + O2 20 + SC5 41 = 175 tests 全绿；黄金值对齐 auto_total=35850/review_total=640000；IATF L1/L2 分桶审计，M015 触发 R1≥50万 待人工审核）。**supplychain 已打 tag `harvested-archive-v1` 转只读存档**（O2/SC3/SC5 三引擎 + 连接器/通知器/business_rules 已迁入全景平台）。**下一阶段重点（收割红利兑现）**：① `sc8-real-data-cutover`（BLOCKED until 6/12，临近解锁）切真实 SRM/ERP；② SC1 真实数据验证（任务 9.1，6/12）；③ U9C MCP 接口 7/1 申请。续工作先读 `1-转型规划/supplychain收割与全景推进策略.md` 与 `0-学习与工具/卓品智能AI转型实施计划（最新版）.md` 第七节。引擎默认场景本地，第 2 消费方出现才提升（rule of three）。
 
 ---
 

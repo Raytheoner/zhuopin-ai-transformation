@@ -1,6 +1,6 @@
 # 卓品智能 AI 转型实施计划（最新版）
 
-> 版本：2026-06-08（含 Phase 1 修正 + supplychain 收割重排，见第七节）
+> 版本：2026-06-11（含 Phase 1 修正 + supplychain 收割重排 + 收割收尾进度，见第七节及七.1）
 > 权威来源：《卓品智能AI转型全景规划.md》+《从采购部启动.md》+《supplychain收割与全景推进策略.md》
 > 原则：U9C 已有的标准功能直接使用，不建 AI；AI 只做 U9C 不覆盖或需要智能增强的场景。
 > Phase 1 工程落地与冲突消除详见《Phase1-基础设施与智能体架构设计.md》；本文已并入其确认结论（见第六节）。
@@ -293,4 +293,27 @@
 
 ---
 
-*版本：2026-06-08（含 Phase 1 修正 + supplychain 收割重排）| 财务部采用 FI1-FI8 连续编号，已删除 U9C 原生功能场景*
+### 七.1 执行进度更新（2026-06-11：收割阶段已收尾）
+
+收割按计划全部完成，supplychain 已存档。实际落位与状态：
+
+| 场景/件 | 原排期 | 实际状态 | 备注 |
+|---------|--------|----------|------|
+| 平台底座加固 P2 | 7 月 | ✅ 已合 master | audit hash-chain / Pydantic 校验 / SRM 限流 / SecretsProvider |
+| SC8 交期承诺 MVP | 2026-07/08 | ✅ MVP 已合（mock 端到端）| 真实库切换 `sc8-real-data-cutover`，BLOCKED until 6/12 |
+| O2 物料齐套预警 | 2026-09 | ✅ 已合 master | kit_engine 已提升底座 `agents/`（rule-of-three） |
+| SC1 供应商风险初筛 | 7 月 | ✅ 代码收尾合 master | 真实数据验证（任务 9.1）6/12 |
+| SC3 在途跟踪 | 2026-09 | ✅ 已合（PR #6）| 29 tests，compute_dos 场景本地（D2=A） |
+| SC5 采购建议/遴选 | 2026-09 | ✅ 已合（PR #7）| 41 tests，黄金值 35850/640000，L2 门禁 M015 触发 R1 |
+| supplychain 存档 | 收割后 | ✅ tag `harvested-archive-v1`，转只读 | O2/SC3/SC5+连接器/通知器/business_rules 已迁入 |
+
+**总计 175 tests 全绿**（底座 114 + O2 20 + SC5 41）。引擎落位遵循 rule-of-three：默认场景本地，第 2 真实消费方出现才提升底座（kit_engine 因 O2+SC5 双消费方已提升；compute_dos 仅 SC3 单消费方未提升）。
+
+**下一阶段 Phase 1 关键路径**（收割红利兑现，真正决定上线的卡点）：
+1. **`sc8-real-data-cutover`** — 6/12 解锁后切真实 SRM/ERP，交付日变化超阈值推 CRM（L2 对客门禁已就绪）。
+2. **SC1 真实数据验证** — 任务 9.1，6/12 mock→真实库。
+3. **U9C ERP MCP 接口** — 7/1 申请；销售订单接入等被阻塞场景依赖其解锁。
+
+---
+
+*版本：2026-06-11（含 Phase 1 修正 + supplychain 收割重排 + 七.1 收割收尾进度）| 财务部采用 FI1-FI8 连续编号，已删除 U9C 原生功能场景*
