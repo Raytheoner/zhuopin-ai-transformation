@@ -26,8 +26,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+from pydantic import BaseModel, field_validator, ValidationError
+from typing import Optional as _Opt
+
 from ..connector import DataConnector
 from ..connector_audit import ConnectorAudit, DebugLog
+from ..connector_errors import ConnectorValidationError
+from ..secrets import EnvSecretsProvider, SecretsProvider
 from ..models import (
     BomRow,
     InventoryRow,
@@ -35,6 +40,31 @@ from ..models import (
     PurchaseOrder,
     Supplier,
 )
+
+class _ZpPurOrderRow(BaseModel):
+    """zp API ZpViewPurOrder 行（Pydantic 边界校验）。"""
+    erpNo:    _Opt[str] = None
+    itemCode: str                 # 必填；None → 抛 ValidationError
+    qty:      _Opt[float] = 0
+    rcvQtyTU: _Opt[float] = 0
+    makeDate: _Opt[str] = ""
+    supplyCode: _Opt[str] = ""
+
+    @field_validator("itemCode", mode="before")
+    @classmethod
+    def _require_item_code(cls, v):
+        if v is None or str(v).strip() == "":
+            raise ValueError("itemCode 不能为 None 或空")
+        return str(v)
+
+    @field_validator("qty", "rcvQtyTU", mode="before")
+    @classmethod
+    def _coerce_float(cls, v):
+        try:
+            return float(v or 0)
+        except (ValueError, TypeError):
+            return 0.0
+
 
 # HTTPS 自签名证书忽略
 _CTX = ssl.create_default_context()
@@ -108,20 +138,27 @@ class ZpConnector(DataConnector):
 
     @classmethod
     def from_env(cls, audit: ConnectorAudit | None = None,
-                 debug: DebugLog | None = None) -> "ZpConnector":
-        """从环境变量读取配置（需 .env）。"""
+                 debug: DebugLog | None = None,
+                 secrets: SecretsProvider | None = None) -> "ZpConnector":
+        """从 SecretsProvider 构造（默认降级 EnvSecretsProvider，向后兼容）。"""
+        sp = secrets if secrets is not None else EnvSecretsProvider()
         keys = ["U9C_API_BASE", "U9C_USER_CODE", "U9C_ENT_CODE",
                 "U9C_ORG_CODE", "U9C_CLIENT_ID", "U9C_CLIENT_SECRET"]
-        missing = [k for k in keys if not os.environ.get(k)]
+        missing = []
+        for k in keys:
+            try:
+                sp.get(k)
+            except KeyError:
+                missing.append(k)
         if missing:
-            raise ValueError(f"ZpConnector.from_env(): 缺少环境变量 {missing}")
+            raise ValueError(f"ZpConnector.from_env(): 缺少凭证 {missing}")
         return cls(
-            base_url=      os.environ["U9C_API_BASE"],
-            user_code=     os.environ["U9C_USER_CODE"],
-            ent_code=      os.environ["U9C_ENT_CODE"],
-            org_code=      os.environ["U9C_ORG_CODE"],
-            client_id=     os.environ["U9C_CLIENT_ID"],
-            client_secret= os.environ["U9C_CLIENT_SECRET"],
+            base_url=      sp.get("U9C_API_BASE"),
+            user_code=     sp.get("U9C_USER_CODE"),
+            ent_code=      sp.get("U9C_ENT_CODE"),
+            org_code=      sp.get("U9C_ORG_CODE"),
+            client_id=     sp.get("U9C_CLIENT_ID"),
+            client_secret= sp.get("U9C_CLIENT_SECRET"),
             audit=audit, debug=debug,
         )
 
@@ -259,15 +296,24 @@ class ZpConnector(DataConnector):
 
         result = []
         for r in rows:
-            qty_ordered  = float(r.get("qty") or 0)
-            qty_received = float(r.get("rcvQtyTU") or 0)
+            try:
+                validated = _ZpPurOrderRow.model_validate(r)
+            except ValidationError as e:
+                first_err = e.errors()[0]
+                raise ConnectorValidationError(
+                    source="zp_ERP",
+                    field=str(first_err.get("loc", ("itemCode",))[0]),
+                    raw=r,
+                ) from e
+            qty_ordered  = validated.qty or 0.0
+            qty_received = validated.rcvQtyTU or 0.0
             if qty_received >= qty_ordered and qty_ordered > 0:
                 status = "received"
             elif qty_received > 0:
                 status = "partial"
             else:
                 status = "in_transit"
-            make_date = (r.get("makeDate") or "")[:10]
+            make_date = (validated.makeDate or "")[:10]
             delivery_raw = (
                 r.get("deliveryDate")
                 or r.get("DeliveryDate")
@@ -277,13 +323,13 @@ class ZpConnector(DataConnector):
             )
             expected_date = (delivery_raw or make_date)[:10]
             result.append(PurchaseOrder(
-                po_id=                  str(r.get("erpNo") or r.get("id", "")),
-                material_id=            str(r.get("itemCode") or ""),
+                po_id=                  str(validated.erpNo or r.get("id", "")),
+                material_id=            validated.itemCode,
                 qty_ordered=            int(qty_ordered),
                 qty_received=           int(qty_received),
                 expected_date=          expected_date,
                 supplier_confirmed_date=expected_date,
-                supplier_id=            str(r.get("supplyCode") or ""),
+                supplier_id=            validated.supplyCode or "",
                 status=                 status,
             ))
 

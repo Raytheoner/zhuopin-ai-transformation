@@ -27,8 +27,8 @@ def test_trace_writes_lightweight_record(tmp_path):
     records = sink.read_all()
     assert len(records) == 1
     rec = records[0]
-    # 只含轻量字段
-    assert set(rec.keys()) == {"timestamp", "source", "action", "target"}
+    # 轻量业务字段 + 平台 hash-chain 基础设施字段（P2 加固后所有 JsonlSink 记录均带 prev_hash）
+    assert set(rec.keys()) == {"timestamp", "source", "action", "target", "prev_hash"}
     assert rec["source"] == "SRM"
     assert rec["action"] == "get_delivery"
     assert rec["target"] == "PO20260519"

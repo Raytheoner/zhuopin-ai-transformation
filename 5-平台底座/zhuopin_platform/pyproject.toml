@@ -9,6 +9,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "requests>=2.31",
     "chromadb>=0.5",        # data_isolation_layer：per-OEM 向量库
+    "pydantic>=2.0",        # 连接器边界 Schema 校验（P2 加固）
 ]
 
 [project.optional-dependencies]

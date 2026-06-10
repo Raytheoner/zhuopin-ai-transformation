@@ -26,8 +26,66 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
+from pydantic import BaseModel, field_validator, ValidationError
+from typing import Optional as _Opt
+
 from ..models import SrmDemandOrder, SrmDeliveryOrder
 from ..connector_audit import ConnectorAudit, DebugLog
+from ..connector_errors import ConnectorValidationError
+from ..secrets import EnvSecretsProvider, SecretsProvider
+
+
+class _SrmAnswerLine(BaseModel):
+    """SRM 承诺交期接口 lineList 行（Pydantic 边界校验）。"""
+    vExpectedDate: _Opt[int] = None   # 时间戳（秒或毫秒），None 表示无交期
+
+    @field_validator("vExpectedDate", mode="before")
+    @classmethod
+    def _coerce_timestamp(cls, v):
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            raise ValueError(f"vExpectedDate 不是有效时间戳: {v!r}")
+
+
+import threading as _threading
+
+
+class _TokenBucket:
+    """进程级令牌桶（线程安全，1 token/rate_interval 秒）。
+
+    consume() 若无令牌则阻塞等待至下一令牌可用。
+    """
+
+    def __init__(self, rate: float, capacity: float = 1.0) -> None:
+        """
+        Args:
+            rate:     每秒补充令牌数（如 1/30 表示 30 秒一个令牌）
+            capacity: 桶容量（最大令牌数）
+        """
+        self._rate = rate
+        self._capacity = capacity
+        self._tokens = capacity
+        self._last_refill = time.monotonic()
+        self._lock = _threading.Lock()
+
+    def consume(self, tokens: float = 1.0) -> None:
+        """消耗令牌；不足时阻塞等待。"""
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                elapsed = now - self._last_refill
+                self._tokens = min(self._capacity,
+                                   self._tokens + elapsed * self._rate)
+                self._last_refill = now
+                if self._tokens >= tokens:
+                    self._tokens -= tokens
+                    return
+                wait = (tokens - self._tokens) / self._rate
+            time.sleep(wait)
+
 
 # 携客云时间戳以 CST(UTC+8) 解析
 _CST = datetime.timezone(datetime.timedelta(hours=8))
@@ -46,6 +104,22 @@ def _ts_to_date(ts) -> str:
 
 class XkySrmConnector:
     """携客云 SRM 只读数据工具。提供承诺交期查询与供应计划看板解析。"""
+
+    # 进程级令牌桶（D3）：key=endpoint path，所有实例共享，尊重携客云 30s 限制
+    _buckets: dict[str, _TokenBucket] = {}
+    _buckets_lock = _threading.Lock()
+
+    # 900301 退避参数
+    _RATE_LIMIT_CODE = "900301"
+    _BACKOFF_BASE    = 30    # 秒，指数退避 base
+    _BACKOFF_RETRIES = 3
+
+    def _get_bucket(self, path: str) -> _TokenBucket:
+        """取（或惰性创建）path 对应的令牌桶。"""
+        with XkySrmConnector._buckets_lock:
+            if path not in XkySrmConnector._buckets:
+                XkySrmConnector._buckets[path] = _TokenBucket(rate=1/30, capacity=1)
+            return XkySrmConnector._buckets[path]
 
     def __init__(
         self,
@@ -69,16 +143,30 @@ class XkySrmConnector:
 
     @classmethod
     def from_env(cls, audit: ConnectorAudit | None = None,
-                 debug: DebugLog | None = None) -> "XkySrmConnector":
-        """从环境变量构造（生产用，需 .env 已加载）。
+                 debug: DebugLog | None = None,
+                 secrets: SecretsProvider | None = None) -> "XkySrmConnector":
+        """从 SecretsProvider 构造（默认降级 EnvSecretsProvider，向后兼容）。
 
-        必需：XKY_APP_KEY / XKY_APP_SECRET / XKY_OWNER_COMPANY_CODE / XKY_ERP_CODE
+        必需凭证：XKY_APP_KEY / XKY_APP_SECRET / XKY_OWNER_COMPANY_CODE / XKY_ERP_CODE
         """
+        sp = secrets if secrets is not None else EnvSecretsProvider()
         required = ["XKY_APP_KEY", "XKY_APP_SECRET", "XKY_OWNER_COMPANY_CODE", "XKY_ERP_CODE"]
-        missing = [k for k in required if not os.environ.get(k)]
+        missing = []
+        for k in required:
+            try:
+                sp.get(k)
+            except KeyError:
+                missing.append(k)
         if missing:
-            raise ValueError(f"XkySrmConnector.from_env(): 缺少环境变量 {missing}")
-        return cls(audit=audit, debug=debug)
+            raise ValueError(f"XkySrmConnector.from_env(): 缺少凭证 {missing}")
+        return cls(
+            app_key=sp.get("XKY_APP_KEY"),
+            app_secret=sp.get("XKY_APP_SECRET"),
+            owner_company_code=sp.get("XKY_OWNER_COMPANY_CODE"),
+            erp_code=sp.get("XKY_ERP_CODE"),
+            audit=audit,
+            debug=debug,
+        )
 
     # ── 签名与请求 ──────────────────────────────────────────────────────
 
@@ -97,15 +185,23 @@ class XkySrmConnector:
     def _post(self, path: str, body_params: dict) -> dict:
         """发 POST（commonParam + body 嵌套结构），超时 15 秒，SSL 错误自动重试。
 
-        每次调用写轻量访问痕迹（ConnectorAudit）+ 可选 req/resp 全文（DebugLog）。
+        P2 加固：
+          - 发请求前消耗进程级令牌桶（1 req/30s per endpoint），尊重携客云限流。
+          - 收到 900301 限流错误码时指数退避重试（base 30s，最多 3 次），
+            耗尽后抛 RateLimitError。
         """
+        from ..connector_errors import RateLimitError
+
+        # 令牌桶限速（D3）：进程级，每 endpoint 共享
+        self._get_bucket(path).consume()
+
         t = time.time()
         common = {
             "appKey":             self.app_key,
             "ownerCompanyCode":   self.owner_company_code,
             "operateCompanyCode": self.owner_company_code,
-            "timestamp":          str(int(t * 1000)),   # 毫秒，不参与签名
-            "timestamps":         str(int(t)),          # 秒，参与签名
+            "timestamp":          str(int(t * 1000)),
+            "timestamps":         str(int(t)),
         }
         common["sign"] = self._sign(common)
 
@@ -118,7 +214,7 @@ class XkySrmConnector:
         target = str(body_params.get("poErpNo", ""))
 
         last_exc: Exception | None = None
-        for attempt in range(1, self._MAX_RETRIES + 1):
+        for attempt in range(1, self._BACKOFF_RETRIES + 1):
             req = urllib.request.Request(
                 url, data=data,
                 headers={"Content-Type": "application/json"}, method="POST",
@@ -129,14 +225,24 @@ class XkySrmConnector:
                 with urllib.request.urlopen(req, timeout=15) as r:
                     resp = json.loads(r.read().decode("utf-8"))
                 error_code = str(resp.get("errorCode", resp.get("code", "0")))
+
+                if error_code == self._RATE_LIMIT_CODE:
+                    # 900301：指数退避
+                    if attempt < self._BACKOFF_RETRIES:
+                        wait = self._BACKOFF_BASE * (2 ** (attempt - 1))
+                        time.sleep(wait)
+                        continue
+                    else:
+                        raise RateLimitError(source="SRM", attempts=self._BACKOFF_RETRIES)
+
                 return resp
+
             except urllib.error.URLError as exc:
                 last_exc = exc
                 error_code = f"SSL_RETRY_{attempt}"
                 if attempt < self._MAX_RETRIES:
                     time.sleep(self._RETRY_WAIT)
             finally:
-                # D2：轻量痕迹（不含红色数据）+ 可选全文 debug（默认关）
                 if self._audit is not None:
                     self._audit.trace(source="SRM", action=path, target=target)
                 if self._debug is not None:
@@ -164,10 +270,18 @@ class XkySrmConnector:
             )
 
         data = resp.get("data") or {}
-        for line in data.get("lineList") or []:
-            ts = line.get("vExpectedDate")
-            if ts:
-                return _ts_to_date(ts)
+        for raw_line in data.get("lineList") or []:
+            try:
+                line = _SrmAnswerLine.model_validate(raw_line)
+            except ValidationError as e:
+                first_err = e.errors()[0]
+                raise ConnectorValidationError(
+                    source="SRM",
+                    field=str(first_err.get("loc", ("vExpectedDate",))[0]),
+                    raw=raw_line,
+                ) from e
+            if line.vExpectedDate:
+                return _ts_to_date(line.vExpectedDate)
         return None
 
     def get_confirmed_dates(self, po_vendor_pairs: list[tuple[str, str]]) -> dict[str, str]:
@@ -203,6 +317,20 @@ class XkySrmConnector:
         today = datetime.date.today()
         start = start_date or today.isoformat()
         end   = end_date   or (today + datetime.timedelta(days=60)).isoformat()
+
+        # P2：查询跨度超过 60 天时提前校验，不发必定失败的请求
+        try:
+            _start_d = datetime.date.fromisoformat(start[:10])
+            _end_d   = datetime.date.fromisoformat(end[:10])
+            if (_end_d - _start_d).days > 60:
+                raise ValueError(
+                    f"SRM 查询跨度超过 60 天限制：{start} → {end}"
+                    f"（跨度 {(_end_d - _start_d).days} 天）"
+                )
+        except (ValueError, TypeError) as e:
+            if "60" in str(e):
+                raise
+            pass  # 日期格式错误留给下游报
 
         cache_file = _CACHE_DIR / "srm_board_cache.json"
         cache_ttl  = 90

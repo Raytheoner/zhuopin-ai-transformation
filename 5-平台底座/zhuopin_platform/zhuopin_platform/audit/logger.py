@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .events import AuditEvent
-from .sinks import AuditSink, JsonlSink
+from .sinks import AuditSink, ChainVerifyResult, JsonlSink
 
 
 class AuditLogger:
@@ -40,6 +40,16 @@ class AuditLogger:
             if all(r.get(k) == v for k, v in filters.items()):
                 out.append(r)
         return out
+
+    def verify_chain(self) -> "ChainVerifyResult":
+        """hash-chain 防篡改校验，委托给底层 sink。
+
+        非 JsonlSink 后端返回 ok=True, total=0（降级，不报错）。
+        """
+        if isinstance(self.sink, JsonlSink):
+            return self.sink.verify_chain()
+        return ChainVerifyResult(ok=True, total=0,
+                                 error="sink does not support chain verification")
 
     def verify_integrity(self) -> dict:
         """完整性自检：记录数 / 时间跨度 / 场景分布。供上线前与定期审计使用。"""
