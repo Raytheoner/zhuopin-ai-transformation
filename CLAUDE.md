@@ -4,7 +4,7 @@
 > 全局身份/偏好见 `~/.claude/CLAUDE.md`（不重复）；本文件只写**本项目**的背景、架构、工作流与红线。
 > 代码与注释用中文，技术术语保留英文；用供应链业务语言描述功能（如"齐套分析""承诺交期""在途跟踪"）。
 
-> **当前进度（2026-06-10）**：已合 master —— **SC8 收割式 MVP**（交付日预测 + L2 对客门禁 + 全链审计，mock 端到端；`sc8-real-data-cutover` 另起变更，BLOCKED until 6/12）、§1 平台加固 P2（audit hash-chain / Pydantic 校验 / SRM 限流 / SecretsProvider）、**O2 齐套**、**SC1 收尾**、**SC3 在途跟踪**（PR #6 已 rebase-merge；D2=A，compute_dos 场景本地——O2 实际用 calc_shortage 非 DOS，compute_dos 仅 SC3 一个消费方，未到 rule-of-three 提升时机）。收割队列剩 **SC5 采购建议（kit_engine 第 2 消费方 → 触发把 O2 的 kit_engine 提升 platform/agents/）→ supplychain 打 tag `harvested-archive-v1` 存档**。续工作先读 Cowork 记忆 `project_harvest_progress` + `1-转型规划/supplychain收割与全景推进策略.md`。引擎默认场景本地，第 2 消费方出现才提升（rule of three）。
+> **当前进度（2026-06-11）**：已合 master —— **SC8 收割式 MVP**、§1 平台加固 P2、**O2 齐套**、**SC1 收尾**、**SC3 在途跟踪**（PR #6 rebase-merge）、**kit_engine 底座化**（PR #7 feat/sc5-purchase-recommendation，SC5 是第 2 消费方触发提升，底座 114 + O2 20 + SC5 41 = 175 tests）。**SC5 采购建议与供应商遴选已完成**（PR #7 待 review 合 master；41 tests 全绿，黄金值对齐 auto_total=35850/review_total=640000，IATF L1/L2 分桶审计）。**下一步：supplychain 打 tag `harvested-archive-v1` 存档（SC3+SC5 均已收割）**。续工作先读 `1-转型规划/supplychain收割与全景推进策略.md`。
 
 ---
 
