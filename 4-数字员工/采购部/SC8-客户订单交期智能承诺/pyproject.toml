@@ -1,0 +1,24 @@
+[project]
+name = "sc8-delivery-commitment"
+version = "0.1.0"
+description = "SC8 客户订单交期智能承诺（收割式 MVP）— 交付日预测 + L2 对客门禁 + 全链审计"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+#   pip install -e .
+# 之后 from zhuopin_platform... import，一份代码处处复用。
+dependencies = [
+    "zhuopin_platform",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sc8*"]
