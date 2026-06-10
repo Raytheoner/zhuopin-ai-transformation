@@ -90,7 +90,7 @@ supplychain 是为学习快速搭的**单体试验田**。整体并入全景会�
 收割来的引擎**默认落在各自场景本地**（同 SC8 forecast、O2 kit_engine 的做法），保持**纯算法自包含**（不掺审计/通知/场景胶水），便于将来"搬移而非重写"。
 
 > **提升触发（rule of three）**：当某引擎出现**第 2 个真实消费方**时，才提取到 `zhuopin_platform/agents/` 作共享引擎，照两份具体实现定接口，不靠猜。
-> - `kit_engine.py`（齐套，O2 已落场景本地，commit `dd13424`）→ **SC5 采购建议进入实现时**触发提升（SC5 的 MRP 需复用 explode_bom/calc_shortage）。届时搬移 + import 重指，并补"与 O2 一致"的回归对照。
+> - `kit_engine.py`（齐套）→ **✅ 已提升（2026-06-11，PR #7）**：SC5 是第 2 消费方，触发 rule-of-three；`explode_bom + calc_shortage` 落 `zhuopin_platform/agents/kit_engine.py`，O2 改薄转发层，底座 18 tests + O2 20 回归测试全绿。
 > - `compute_dos`（DOS 可用天数）→ **SC3 已落场景本地（PR #6，2026-06-10）**。D2 拍板 A：核查发现 O2 实际用 `calc_shortage` 非 DOS，`compute_dos` 当前**仅 SC3 一个消费方**，未到第 2 消费方，不提升底座；代码注释已标提升触发条件。
 > - 其余引擎同理：第 2 消费方出现前不抽象。
 
@@ -105,7 +105,7 @@ supplychain 是为学习快速搭的**单体试验田**。整体并入全景会�
 | **SC8 交期承诺 MVP** | 2027-02 | **2026-07/08 MVP** | delivery_forecast 已实现 ⭐ |
 | O2 物料齐套预警 | 2026-10 | 2026-09 | kit_analysis 算法完整 |
 | O1 生产排程 | 2026-11 | 2026-09/10 | smt_scheduling 已 MVP |
-| SC5 采购建议/遴选 | 2026-10 | 2026-09 | purchase_recommendation 完整 |
+| SC5 采购建议/遴选 | 2026-10 | ✅ 已完成（2026-06-11，PR #7 待合并）| purchase_recommendation 收割完成；41 tests 全绿，黄金值对齐（35850/640000）|
 | SC3 绩效看板/在途 | 2026-09 | ✅ 已完成（2026-06-10，PR #6 合 master）| supplier_tracking 收割完成；29 tests 全绿、8 项 golden 等价 |
 | SC9 OEM 订单波动预测 | 2026-12 | 维持（需历史数据积累）| 预测类，数据未足 |
 
