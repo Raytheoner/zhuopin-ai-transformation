@@ -1,34 +1,40 @@
-# Tasks — SC8 真实切换（task N.1，6/12 后）
+# Tasks — SC8 真实切换（sc8-real-data-cutover）
 
-> 独立变更，承接 SC8 MVP（已归档 2026-06-10）。**真实客户外发的最终闸**。
-> 阻塞：6/12 真实数据 + U9C MCP（7/1）。加固项（§1）可先行，真实切换（§2-§4）待数据到位。
+> 6/11 提前开工。承接 SC8 MVP（已归档 2026-06-10）。**真实客户外发的最终闸。**
+> design.md 已 Paul 审过（D1–D6 全通过，Open Questions 已拍板）。
 > 工作流：先写测试再实现；切真实前过黄金基准；全程不跳门禁。
+> **本期 = 部分切换（D1）**：FO+BOM 真实、SRM 降级 mock、内部验证不外发。
+> **对真实客户外发开关全程关闭**，直到 SRM 联调通过 + 真实黄金基准零偏差 + 门禁 6 项全勾。
 
-## 1. 平台底座切库前加固（加固清单 P2，不阻塞于真实数据，可先行）
-- [ ] 1.1 连接器边界 **Pydantic 强 Schema 校验**（U9C/SRM 输入输出），脏数据/字段变更被挡 + 测试。
-- [ ] 1.2 携客云 SRM **限流退避**：令牌桶 + 退避，覆盖 30s 重复限制 / 查询跨度≤60天 / 错误码 `900301` + 测试。
-- [ ] 1.3 **凭证管理**：生产密钥走 Vault / K8s Secrets 动态注入，移除 `.env` 明文生产密钥。
-- [ ] 1.4 审计 **hash-chaining**：JsonlSink 每条含上条哈希，篡改可检测 + 校验测试。
+## 1. 底座加固（依赖，不在本变更重做）
+- [x] 1.1 确认 `platform-hardening-p2`（Pydantic 边界校验 / SRM 限流退避 / SecretsProvider / audit hash-chain）已完成（4 节任务全 `[x]`）；本变更**依赖**之，§1 原 4 项不重做。〔注：platform-hardening-p2 仍在 active，需另行归档〕
 
-## 2. 真实连接器接入（6/12 数据到位后）
-- [ ] 2.1 SC8 `loaders`/`pipeline` 切平台 `ZpConnector`（U9C ERP BOM）+ `XkySrmConnector`（SRM 承诺交期）。
-- [ ] 2.2 委外识别切 U9C 工艺路线 `IsSubContract`：实现 `is_outsourced_by_routing` 喂入路径，替换维护清单为兜底。
-- [ ] 2.3 委外维护清单填真实料号（U9C 工艺路线接通前的过渡，接通后退为兜底）。
+## 2. 真实连接器接入（D2 / D3）
+- [x] 2.1 收割 FO 连接器进 SC8 `loaders.load_forecast_orders_from_api`（命中 ZpViewSO），`parse_forecast_order_rows` 做 **Pydantic 边界校验**（缺 DocNo/ItemCode/ShipPlanDate → 显式报错挡脏数据），保留 `MVP_ITEM_PREFIXES`（F/S/Y/X）过滤。测试 `test_fo_loader.py`。
+- [x] 2.2 数据源开关 `config.data_source_mode`（`SC8_DATA_SOURCE=mock|real`）+ `config.srm_source_mode`（`SC8_SRM_SOURCE`，本期固定 mock）；`sources.py` 真实拉取（FO + `ZpConnector.get_bom_for_products` + `XkySrmConnector` 降级）。测试 `test_sources_and_audit.py`。
+- [x] 2.3 `pipeline.compute_forecasts(data_sources=...)` → `_record_forecast` 按源如实标记（`fo=real, bom=real, srm_committed=mock`）；不传则默认全 mock（向后兼容）。测试已验证审计留痕。
+- [x] 2.4 委外维护清单可经 `SC8_OUTSOURCE_IDS` env 注入（`config.outsource_ids_from_env`，与常量取并集）；**不臆造料号**，真实料号待 PMC 确认 / U9C 工艺路线 `IsSubContract`（接口缝 `is_outsourced_by_routing` 已留）。
 
-## 3. 真实数据黄金基准（切真实前必过）
-- [ ] 3.1 采购经理/PMC 取 5–10 张真实订单（覆盖有反馈/无反馈/含委外三类）手工核对。
-- [ ] 3.2 SC8 输出 vs 人工：确定性逻辑（关键路径、日期加减）**零偏差**；置信度标注正确。
-- [ ] 3.3 沉淀替换 `data/golden/` mock 样本为真实样本，作回归基准。
+## 3. 客户隔离 + 门禁真阻塞（D4 / D5）
+- [x] 3.1 客户隔离键 `config.customer_isolation_key`（`ISOLATION_KEY_FIELD="customer_name"`，可一处切 customer_id，空值回退客户名）；审计冗余记录 `customer_name`/`customer_key`。测试 A/B 客户不串。
+- [x] 3.2 L2 真阻塞：平台 `Notifier.send` fail-closed（已有）+ `dispatch.route_forecast` **一律入待审批队列、绝不自动外发**；`FilePendingQueue.approve` 无 `confirmed_by` 拒放行。测试 `test_dispatch_block.py`。
+- [x] 3.3 `dispatch.route_forecast` real 模式**强制关闭对客外发**（无视调用方误传）+ 总开关 `CUSTOMER_OUTBOUND_ENABLED=False` 全程关。测试覆盖。
+- [x] 3.4 CRM 结构性核验：测试断言 `crm_notifier.draft` 无任何「发客户」函数（仅草稿）；审计记录**置信度分类（高/低）** + `requires_confirmation` + `sent=False`。
+- [x] 3.5 回退/更正：低置信/数据异常一律转人工不外发（gate 低置信→requires_confirmation；连接器 `ConnectorValidationError` 异常即 raise，不入队不外发）；`build_correction_draft` 走同一门禁关联 so_id；授权人 = VP 或指定供应链计划负责人（design D6 引用 Cowork 侧 `3-治理与合规/` 回滚 SOP）。
 
-## 4. 上线门禁与真实外发开关（《SC8 上线前置门禁》6 项检查表）
-- [ ] 4.1 黄金基准校验通过（确定性偏差=0、置信度正确、已沉淀回归基准）。
-- [ ] 4.2 错误/回滚 SOP 文档化并经 Paul 确认。
-- [ ] 4.3 置信度阈值 + L2 人工确认逻辑在代码生效（已 MVP 完成，真实数据下复验）。
-- [ ] 4.4 偏差监控/重算触发就位。
-- [ ] 4.5 审计：预测/更正/客户确认全链留痕（平台 audit，可追溯原记录）。
-- [ ] 4.6 CRM 先推内部企微通道验证通过，再切真实客户。
-- [ ] 4.7 6 项全勾选 → 开真实客户自动外发开关；任一未过 → 仅草稿/内部看板。
+## 4. 真实集成测试 + mock 黄金回归（先写测试后实现）
+- [x] 4.1 真实集成测试 `test_real_integration.py`（FO+BOM 真实、SRM mock）：默认跳过，`SC8_RUN_REAL=1` + 凭据下运行，本次实跑 **2 passed**（schema/前缀/BomRow 校验通过）。
+- [x] 4.2 mock 黄金回归 `test_golden.py` 仍全绿（确定性零偏差），真实化**无退化**。
+- [x] 4.3 启发式 v0 初值维持（无反馈 +30 / 委外 +10 / 物流 +1 / 偏差 3 天），SRM 通后真实对账再校准。
+
+## 5. 小样本真实验证（放量前必做，不外发）
+- [x] 5.1 `sc8/run.py` 跑 2 张真实订单（FO2026050001：S02Y.0162 / F02N.0184），FO+BOM 真实、SRM mock，结果**全部入待审批队列、未外发**（pending=2，outcome=queued）。
+- [ ] 5.2 **〔待 Paul〕** 核对预测交付日 vs 实际承诺/到货：S02Y.0162 → 2026-08-05（延 36 天），F02N.0184 → 2026-07-21（延 36 天），均低置信（SRM 缺席，符合预期）。确定性日期加减经手工复核一致；待 Paul 在 PR 审核中确认偏差可接受。
+- [x] 5.3 抽查全链 audit：`data_sources={fo:real,bom:real,srm_committed:mock}`、`confidence=低`、`param_version=sc8-params-v0`、hash-chain `prev_hash` 在位，可追溯。
+
+## 6. 收尾
+- [x] 6.1 全部测试绿：41 passed + 2 real-integration passed，mock 黄金回归无退化。
+- [ ] 6.2 archive 变更 + 开 PR（一并 add `1-转型规划/SC8真实库切换就绪检查清单.md`、`0-学习与工具/携客云SRM-OpenAPI核实与申请要点.md`），停下等 Paul 审，**先不合 master**。
 
 ---
-**完成定义**：§1 加固合入；§2 真实源接通；§3 真实黄金基准零偏差；§4 门禁 6 项全勾 → 才允许真实客户自动外发。
-**design.md 待 6/12 数据到位、切库细节明确后补**（Paul 审）。
+**完成定义（本期）**：FO+BOM 真实源接通、门禁真阻塞、内部小样本验证确定性零偏差、mock 黄金回归无退化、全链审计可追溯。**对真实客户外发开关保持关闭**，待 SRM 联调通过 + 真实黄金对账后另议。

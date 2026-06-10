@@ -33,8 +33,13 @@ def compute_forecasts(
     audit: AuditLogger | None = None,
     outsource_ids: set[str] | None = None,
     outsource_prefixes: tuple[str, ...] | None = None,
+    data_sources: dict | None = None,
 ) -> list[DeliveryForecast]:
-    """对一批订单计算交付日预测（纯函数 + 可选审计留痕）。"""
+    """对一批订单计算交付日预测（纯函数 + 可选审计留痕）。
+
+    data_sources: 审计按源如实标记（如 {"fo":"real","bom":"real","srm_committed":"mock"}）。
+                  None → 向后兼容默认全 mock（golden/mock 路径不受影响）。
+    """
     p = params or config.default_params()
     if not orders:
         return []
@@ -66,13 +71,18 @@ def compute_forecasts(
         fc = forecast_for_order(so, mat, lead_time_map, p, outsourced)
         forecasts.append(fc)
         if audit is not None:
-            _record_forecast(audit, fc)
+            _record_forecast(audit, fc, data_sources)
 
     return forecasts
 
 
-def _record_forecast(audit: AuditLogger, fc: DeliveryForecast) -> None:
-    """预测事件写平台 audit（全链审计起点；含置信度/参数版本/瓶颈物料/so_id）。"""
+# 默认数据源标记（向后兼容；不传 data_sources 时按 mock 留痕）
+_DEFAULT_DATA_SOURCES = {"fo": "mock", "bom": "mock", "srm_committed": "mock", "smt_lead": "mock"}
+
+
+def _record_forecast(audit: AuditLogger, fc: DeliveryForecast,
+                     data_sources: dict | None = None) -> None:
+    """预测事件写平台 audit（全链审计起点；含置信度/参数版本/瓶颈物料/so_id/数据源）。"""
     audit.record(AuditEvent(
         scenario=SCENARIO,
         action=ACTION_FORECAST,
@@ -91,5 +101,5 @@ def _record_forecast(audit: AuditLogger, fc: DeliveryForecast) -> None:
             "bottleneck_material": fc.bottleneck_material,
             "param_version": fc.param_version,
         },
-        data_sources={"bom": "mock", "srm_committed": "mock", "smt_lead": "mock"},
+        data_sources=data_sources or dict(_DEFAULT_DATA_SOURCES),
     ))

@@ -6,7 +6,39 @@
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+
+# ── 数据源开关（design D2）：mock→真实切换点，默认 mock，保留 mock 回退 ─────────
+def data_source_mode() -> str:
+    """SC8 数据源：`SC8_DATA_SOURCE=mock|real`（默认 mock）。real 走 FO+BOM 真实连接器。"""
+    return "real" if os.environ.get("SC8_DATA_SOURCE", "mock").strip().lower() == "real" else "mock"
+
+
+def srm_source_mode() -> str:
+    """SRM 子开关：`SC8_SRM_SOURCE=mock|real`（默认 mock）。
+
+    本期固定 mock —— 携客云 OpenAPI 未开通（900401），SRM 承诺交期降级，
+    所有物料走无反馈启发式（低置信）。SRM 联调通过后才切 real。
+    """
+    return "real" if os.environ.get("SC8_SRM_SOURCE", "mock").strip().lower() == "real" else "mock"
+
+
+# ── 对客外发总开关（红线 §7.4）──────────────────────────────────────────────
+# 全程关闭，直到 ① SRM 真正联调通过 ② 真实黄金基准零偏差 ③ 门禁 6 项全勾。
+# 关闭期间：所有对客通报只生成草稿、入待审批队列，绝不自动外发客户。
+CUSTOMER_OUTBOUND_ENABLED = False
+
+# ── 客户数据隔离键（design D4，可切换）──────────────────────────────────────
+# 现状 FO API 只返回客户名 → 用 customer_name 做隔离键。IT 补好 customer_id 后，
+# 把本常量改为 "customer_id" 这一处即可全局切换（值为空时回退客户名，防空键串库）。
+ISOLATION_KEY_FIELD = "customer_name"
+
+
+def customer_isolation_key(obj) -> str:
+    """取一条订单/预测的客户隔离键（按 ISOLATION_KEY_FIELD，空值回退客户名）。"""
+    val = str(getattr(obj, ISOLATION_KEY_FIELD, "") or "").strip()
+    return val or str(getattr(obj, "customer_name", "") or "").strip()
 
 # ── 参数版本（D2 补充：审计每条预测"用了哪组参数版本"，可复现可追溯）──────────────
 # 每次调整下方任一启发式/阈值常量，必须 bump 本版本号，使审计可还原当时算法行为。
@@ -49,6 +81,17 @@ def default_params() -> ForecastParams:
 #   仅在确有前缀约定时按需开启。
 OUTSOURCE_PRODUCT_IDS: set[str] = set()   # MVP 维护清单，例：{"F02N.0184"}
 OUTSOURCE_PREFIXES: tuple[str, ...] = ()  # 默认关闭；如确有约定再填，例：("X",)
+
+
+def outsource_ids_from_env() -> set[str]:
+    """委外维护清单（可运营维护，无需改代码）：`SC8_OUTSOURCE_IDS=料号1,料号2`。
+
+    真实料号由 PMC 确认 / U9C 工艺路线 IsSubContract 接通后接管；本函数是过渡口径，
+    与模块常量 OUTSOURCE_PRODUCT_IDS 取并集。不臆造料号，留空即不判委外。
+    """
+    raw = os.environ.get("SC8_OUTSOURCE_IDS", "")
+    env_ids = {x.strip() for x in raw.split(",") if x.strip()}
+    return OUTSOURCE_PRODUCT_IDS | env_ids
 
 
 def is_outsourced_by_routing(operations: list) -> bool:
