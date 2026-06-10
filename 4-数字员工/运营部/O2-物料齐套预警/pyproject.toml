@@ -1,0 +1,26 @@
+[project]
+name = "o2-kit-shortage-alert"
+version = "0.1.0"
+description = "O2 物料齐套预警数字员工 — 收割 supplychain kit_analysis，import 底座 models/audit，mock 数据验证"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+#   pip install -e .
+dependencies = [
+    "zhuopin_platform",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["o2_kit_shortage*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
