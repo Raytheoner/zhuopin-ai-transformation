@@ -30,5 +30,5 @@
 
 ## 6. 收尾
 
-- [ ] 6.1 git commit（feat/o2-kit-shortage-alert 分支）
-- [ ] 6.2 停下报告 Paul 测试结果（测试数/覆盖场景/齐套精度对照结论），等待审查
+- [x] 6.1 git commit（feat/o2-kit-shortage-alert 分支）
+- [x] 6.2 停下报告 Paul 测试结果（测试数/覆盖场景/齐套精度对照结论），等待审查
