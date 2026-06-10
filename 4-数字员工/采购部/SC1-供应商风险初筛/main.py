@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 import config
-from src.audit_log import AuditLogger
+from src.audit_log import SC1AuditAdapter as AuditLogger
 from src.data_providers import get_delivery_data
 from src.input_wizard import run_wizard
 from src.scoring import RiskScoringEngine

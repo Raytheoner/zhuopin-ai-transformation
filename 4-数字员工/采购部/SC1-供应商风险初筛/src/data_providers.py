@@ -8,8 +8,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
-import sys
-from pathlib import Path
 
 
 @dataclass
@@ -40,13 +38,8 @@ class SRMProvider(DataProvider):
 
     def _get_connector(self):
         if self._connector is None:
-            # 动态导入，避免未配置 SRM 时启动失败
-            srm_path = Path(__file__).parent.parent.parent.parent.parent / \
-                       "supplychain" / "src" / "data"
-            if str(srm_path) not in sys.path:
-                sys.path.insert(0, str(srm_path.parent.parent))
             try:
-                from src.data.xky_srm_connector import XkySrmConnector
+                from zhuopin_platform.shared_tools.srm_connector.connector import XkySrmConnector
                 self._connector = XkySrmConnector.from_env()
             except Exception as e:
                 raise RuntimeError(f"SRM 连接器初始化失败: {e}")
