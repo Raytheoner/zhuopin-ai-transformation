@@ -1,0 +1,32 @@
+# U9C 接入与连接器收敛 —— 待办与决策追踪
+
+> 用途：跟踪 U9C 真实接入过程中悬而未决的安全 / 架构 / 接入项，避免散落丢失。
+> 背景：2026-06-11 探活确认 U9C 外网 webApi 鉴权=OAuth2（client_id/secret→JWT，无需 admin 密码）；外网代理仅暴露 `/webapi/OAuth2/AuthLogin` + `/webapi/BOM/Query`，`CommonEntity/Query` 外网 404。凭据应填入本仓库 `.env`（不入库），不再依赖已归档的 supplychain/.env。
+> 更新：状态变化时手动更新本表；项目级进展见 CLAUDE.md。
+
+---
+
+## 待办项
+
+| # | 项 | 类型 | 责任 | 优先级 | 状态 | 下一步 |
+|---|----|------|------|--------|------|--------|
+| 1 | **轮换 U9C client_secret** —— 明文写死在 `supplychain/scripts/spike_u9c_api.py`，已推 GitHub（归档仓 history 仍含），属暴露中的**活凭据**，能读真实 ERP | 安全 | IT（Paul 催办） | 🔴 最急 | ⬜ 待办 | Paul 找 IT 轮换旧值（删脚本行不够，history 还在）；轮换后更新本仓库 `.env` |
+| 2 | **ZpConnector / U9CConnector 收敛**（方案 A：ZpConnector 唯一规范、退役 U9CConnector）—— 设计+提案 `u9c-connector-convergence` 已完成、Paul 已拍板（含 3 OQ：审计按端点分标、.env.example 补名、real 模式 fail-loud 不静默回退） | 架构 | CC apply → Paul 审 PR | 🟠 近期 | 🟢 待 apply | CC /opsx:apply（删 U9CConnector+实体映射已迁附录A、U9C_DATA_SOURCE 开关、CommonEntity 留 TODO），开 PR 停下等 Paul 审 |
+| 3 | **外网代理开放 CommonEntity/Query + 专用端点** —— 决定 U9C 全量 cutford 能否离网做（库存 WhQoh / PO+Receivement / MO / 价格表 IQueryPurPriceListSRV 均走 CommonEntity，外网现 404） | 接入 | IT 评估 | 🟡 中 | ⬜ 待评估 | Paul 评估是否请 IT 在外网反代开放；否则这些 get_* 走 LAN/VPN |
+| 4 | **DB 直连（192.168.6.2 / airead 弱口令）** —— 本轮外网不碰，到 LAN/VPN 阶段再启用并轮换弱口令 | 安全/接入 | IT/DBA | ⚪ 后置 | ⬜ 后置 | LAN/VPN 阶段提醒轮换 airead 口令 |
+| 5 | **ZpConnector → ErpConnector 改名** —— 收敛后 ZpConnector 实为 U9C/ERP 规范连接器，名字有潜在混淆；触及 SC8 + 3 测试 import，本轮跳过避免 churn/撞 PR | 架构/可维护 | CC | ⚪ 后置 | ⬜ 后置 | 低峰期单独小 PR；同时清理仍提 u9c_connector 的文档引用（U9C-ERP-MCP接口申请.md、收割策略表①） |
+
+---
+
+## 已确认（不再是待决策）
+
+- 鉴权方式 = **OAuth2（client_id/secret → JWT → header token）**，无需 U9C_API_PASSWORD。
+- 外网 `BOM/Query` 可拉真实 BOM（样例母件 S02Y.0162，117 行直接子件已验证）。
+- U9C 凭据归位本仓库 `.env`（**base 为 host-only `https://erp.equalitytec.com:4443`，不带 `/U9C`** —— 收敛到 ZpConnector 后由它自拼 `/U9C` 与 `/zp`，带 `/U9C` 会双拼 404），`.env` 已 gitignore、无 `.env` 被 git 跟踪。
+- 收敛方案 = A（ZpConnector 唯一规范 ERP 连接器，退役并删除 U9CConnector 骨架；实体映射迁入 ZpConnector CommonEntity TODO / 收敛设计附录 A）。
+- 审计来源按实际端点分标：BOM=`U9C_webapi`、PO/物料=`zp_ERP`、回退=`CSV_mock`，不混一个。
+- **real 模式策略：缺真实端点的方法默认 fail-loud（不静默回退 mock）**；CSV 回退仅用于整体 `U9C_DATA_SOURCE=mock`；混合需显式 opt-in 且对客/L2 路径禁吃 mock。
+
+---
+
+*关联：`openspec/changes/sc8-real-data-cutover/`、CC 记忆 project-u9c-external-webapi、CLAUDE.md §7 红线、`0-学习与工具/U9C-ERP-MCP接口申请.md`。*

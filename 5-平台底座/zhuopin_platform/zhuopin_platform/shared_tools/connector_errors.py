@@ -35,3 +35,24 @@ class RateLimitError(RuntimeError):
         self.source = source
         self.attempts = attempts
         super().__init__(f"{source} rate limit exceeded after {attempts} retries")
+
+
+class RealEndpointNotReadyError(RuntimeError):
+    """`U9C_DATA_SOURCE=real` 下调用了无真实端点的方法（fail-loud，绝不静默回退 mock）。
+
+    合规红线（Paul 拍板 Q3）：静默 mock 混进 real 决策是合规+正确性双重风险（SC8 对客尤忌）。
+    过渡期如需回退，调用方必须**显式 opt-in**（`allow_mock_fallback`），且结果标非权威、
+    禁入对客/L2 决策路径。
+
+    Attributes:
+        method: 触发的方法名（如 "get_production_plan"）
+        reason: 为何无真实端点（如 "zp 无生产计划端点，待 U9C MO CommonEntity 外网开放"）
+    """
+
+    def __init__(self, method: str, reason: str = "") -> None:
+        self.method = method
+        self.reason = reason
+        msg = f"真实端点未就绪：{method}（U9C_DATA_SOURCE=real）"
+        if reason:
+            msg += f" —— {reason}"
+        super().__init__(msg)
