@@ -6,8 +6,9 @@
   - csv_connector        : CSVConnector（脱敏/离线/回退数据源）
   - connector_audit      : ConnectorAudit 轻量访问痕迹 + DebugLog（D2：合规分离、默认关全文）
   - srm_connector        : 携客云 SRM 只读（承诺交期 / 供应计划看板）
-  - erp_connector        : 卓品 zp REST（真实 ERP：PO/物料/BOM）
-  - u9c_connector        : U9C 骨架（CSV 回退态，待 7/1 MCP）
+  - erp_connector        : U9C/ERP **唯一规范连接器**（ZpConnector：OAuth2 + U9C webapi BOM
+                           + zp REST PO/物料/供应商；U9C_DATA_SOURCE 开关，real 模式 fail-loud）
+                           〔已退役重复的 u9c_connector 骨架，见连接器收敛设计 md〕
   - crm_notifier         : CRM 延期通报草稿（D3：Protocol 解耦，不依赖 DelayCase）
   - notifiers            : 企微推送 + L2 门禁派发器（推客户须人工确认 + 审计留痕）
 

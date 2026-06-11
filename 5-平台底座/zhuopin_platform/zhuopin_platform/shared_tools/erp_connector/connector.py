@@ -18,6 +18,7 @@ import os
 import ssl
 import threading
 import time
+import warnings
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -31,7 +32,7 @@ from typing import Optional as _Opt
 
 from ..connector import DataConnector
 from ..connector_audit import ConnectorAudit, DebugLog
-from ..connector_errors import ConnectorValidationError
+from ..connector_errors import ConnectorValidationError, RealEndpointNotReadyError
 from ..secrets import EnvSecretsProvider, SecretsProvider
 from ..models import (
     BomRow,
@@ -80,20 +81,33 @@ _PO_DISK_CACHE_TTL = 4 * 3600  # 4 小时
 
 
 class ZpConnector(DataConnector):
-    """卓品 zp API 的 DataConnector 实现（真实 ERP：PO/物料/BOM）。
+    """U9C / ERP **唯一规范连接器**（u9c-connector-convergence）。
+
+    一套 ERP（U9C）的两个 API 面，本类统一前置：
+      · U9C 标准 webapi `/U9C/webapi/*`：OAuth2 鉴权（`AuthLogin`→JWT→header `token`）、
+        BOM（`/U9C/webapi/BOM/Query`，审计来源 `U9C_webapi`）。
+      · 卓品自建 REST `/zp/api/ZpViewXxx/Query`：PO/物料/供应商（审计来源 `zp_ERP`）。
+    （已退役重复的 `U9CConnector` 骨架；BOM 单一来源 = `get_bom_for_products`。）
+
+    **base 约定（关键）**：`base_url` 为 **host-only**（如 `https://erp.equalitytec.com:4443`），
+    本类内部自拼 `/U9C` 与 `/zp`。带 `/U9C` 后缀会变 `/U9C/U9C/...` 而 404。鉴权 = OAuth2
+    (client_id/secret)，**不需要 admin 密码**。
+
+    **数据源开关（U9C_DATA_SOURCE，design D2 / Q3）**：
+      · `mock`（默认）：无真实端点的方法（生产计划）走 CSV 回退、审计 `CSV`。
+      · `real`：无真实端点的方法 **fail-loud**（抛 `RealEndpointNotReadyError`，绝不静默回退 mock）；
+        仅当显式 `allow_mock_fallback` 才回退 CSV，且审计标 `CSV_mock`、结果非权威、禁入对客/L2。
 
     Args:
-        base_url:       完整应用根 URL，如 https://testerp.equalitytec.com:4445
-        user_code:      U9C 用户名
-        ent_code:       企业编码，如 "001"
-        org_code:       组织编码，如 "Z"
-        client_id:      API 客户端 ID
-        client_secret:  API 客户端密钥
-        fallback_dir:   CSV 回退目录（生产计划等暂无接口的数据）
+        base_url:       host-only 应用根 URL（不含 /U9C），如 https://erp.equalitytec.com:4443
+        user_code/ent_code/org_code/client_id/client_secret: OAuth2 凭据（只从 .env/SecretsProvider 注入）
+        fallback_dir:   CSV 回退目录（mock 模式 / 无真实端点的数据）
         po_cache_file:  PO 磁盘缓存路径（默认包内 cache/po_cache.json）
         po_cache_ttl:   PO 磁盘缓存有效期（秒，默认 4 小时）
         audit:          ConnectorAudit 轻量痕迹记录器（None 则不留痕）
         debug:          DebugLog 可选 req/resp 全文（默认 None，不落盘）
+        data_source:    "mock" | "real"（None → 读 env U9C_DATA_SOURCE，默认 mock）
+        allow_mock_fallback: real 模式下显式 opt-in 回退（None → 读 env U9C_ALLOW_MOCK_FALLBACK）
     """
 
     def __init__(
@@ -109,6 +123,8 @@ class ZpConnector(DataConnector):
         po_cache_ttl:  int = _PO_DISK_CACHE_TTL,
         audit:         ConnectorAudit | None = None,
         debug:         DebugLog | None = None,
+        data_source:   str | None = None,
+        allow_mock_fallback: bool | None = None,
     ):
         self._base = base_url.rstrip("/")
         self._user_code     = user_code
@@ -120,6 +136,13 @@ class ZpConnector(DataConnector):
         self._po_cache_ttl  = po_cache_ttl
         self._audit = audit
         self._debug = debug
+
+        # D2 数据源开关（默认 mock，保留现有 CSV 回退行为；real 触发 fail-loud）
+        ds = data_source if data_source is not None else os.environ.get("U9C_DATA_SOURCE", "mock")
+        self._data_source = ds.strip().lower()
+        if allow_mock_fallback is None:
+            allow_mock_fallback = os.environ.get("U9C_ALLOW_MOCK_FALLBACK", "").strip().lower() in ("1", "true", "yes")
+        self._allow_mock_fallback = bool(allow_mock_fallback)
 
         # Token 缓存（带锁，多线程安全）
         self._token: Optional[str] = None
@@ -252,8 +275,9 @@ class ZpConnector(DataConnector):
             result = resp.get("Data", [])
             return result if isinstance(result, list) else [result]
         finally:
+            # Q1：BOM 走 U9C 标准 webapi → 审计来源标 U9C_webapi（区别于 zp 视图 zp_ERP）
             if self._audit is not None:
-                self._audit.trace(source="zp_ERP", action="/U9C/webapi/BOM/Query")
+                self._audit.trace(source="U9C_webapi", action="/U9C/webapi/BOM/Query")
             if self._debug is not None:
                 self._debug.record(req={"path": "/U9C/webapi/BOM/Query", "body": body}, resp=resp)
 
@@ -349,7 +373,9 @@ class ZpConnector(DataConnector):
     def get_inventory(self) -> list[InventoryRow]:
         """从 ZpViewItemMaster 获取物料列表作为库存快照基础。
 
-        注意：zp API 暂无库存余量端点，current/safety 暂为 0，待接 U9C WhQoh。
+        注意：zp API 暂无库存余量端点，current/safety 暂为 0。
+        TODO（解锁）：U9C 专用服务 `UFIDA.U9.ISV.InvTrans.WhQoh.IQueryBinAvailableQty`
+        （异于通用查询；外网 404，待 IT 外网开放或 LAN/VPN；字段见连接器收敛设计 md 附录 A）。
         """
         rows = self._zp_post("/api/ZpViewItemMaster/Query")
         result = []
@@ -428,12 +454,42 @@ class ZpConnector(DataConnector):
                 return real_rows
         return self._fallback.get_bom()
 
+    def _fallback_or_failloud(self, name: str, csv_fn, *, reason: str = ""):
+        """无真实端点的方法统一走此闸（design D2 / Q3）。
+
+        · real 模式 + 未 opt-in → fail-loud（抛 RealEndpointNotReadyError，绝不静默回退 mock）。
+        · real 模式 + 显式 opt-in → CSV 但审计标 `CSV_mock` + UserWarning（非权威、禁入对客/L2）。
+        · mock 模式 → CSV 回退（CSVConnector 自带 source=CSV 痕迹，不重复 trace）。
+        """
+        if self._data_source == "real" and not self._allow_mock_fallback:
+            raise RealEndpointNotReadyError(name, reason)
+        if self._data_source == "real":
+            if self._audit is not None:
+                self._audit.trace(source="CSV_mock", action=name)
+            warnings.warn(
+                f"{name}: U9C_DATA_SOURCE=real 显式回退 mock（非权威），禁止用于对客/L2 决策",
+                UserWarning, stacklevel=3,
+            )
+        return csv_fn()
+
     def get_production_plan(self) -> list[ProductionPlan]:
-        """生产计划：zp API 暂无对应端点，回退 CSV mock。"""
-        return self._fallback.get_production_plan()
+        """生产计划：zp 无对应端点。mock→CSV 回退；real→fail-loud（除非显式 opt-in）。
+
+        TODO（解锁）：U9C MO 实体 `UFIDA.U9.MO.MO.MO`（CommonEntity/Query；外网 404，
+        待 IT 外网开放或 LAN/VPN；字段见 `5-平台底座/连接器收敛设计…md` 附录 A）。
+        """
+        return self._fallback_or_failloud(
+            "get_production_plan", self._fallback.get_production_plan,
+            reason="zp 无生产计划端点，待 U9C MO（UFIDA.U9.MO.MO.MO）CommonEntity 外网开放或 LAN/VPN",
+        )
 
     def get_suppliers(self) -> list[Supplier]:
-        """供应商价格：从 ZpViewPurOrder 聚合（MOQ/MPQ/lead_time 暂用默认值）。"""
+        """供应商价格：从 ZpViewPurOrder 聚合（MOQ/MPQ/lead_time 暂用默认值）。
+
+        TODO（解锁）：U9C 专用服务 `UFIDA.U9.ISV.PM.IQueryPurPriceListSRV`（取真实 MOQ/MPQ/
+        LeadTime/IsApproved；外网 404，待 IT 外网开放或 LAN/VPN；字段见连接器收敛设计 md 附录 A）。
+        在途采购订单的权威口径同理走 `UFIDA.U9.PM.PO.PurchaseOrder` + `Receivement`（见附录 A）。
+        """
         rows = self._zp_post("/api/ZpViewPurOrder/Query")
         seen: dict[tuple, Supplier] = {}
         for r in rows:
