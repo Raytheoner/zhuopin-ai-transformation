@@ -126,45 +126,54 @@ class TestCalcShortage:
     def test_no_shortage_when_stock_sufficient(self):
         gross = {"M1": 100.0}
         inv = [_inv("M1", stock=200, safety=0)]
-        result = calc_shortage(gross, inv, [])
+        result, _missing = calc_shortage(gross, inv, [])
         assert "M1" not in result
 
     def test_shortage_equals_gap(self):
         gross = {"M1": 500.0}
         inv = [_inv("M1", stock=300, safety=50)]  # available=250
-        result = calc_shortage(gross, inv, [])
+        result, _missing = calc_shortage(gross, inv, [])
         assert result["M1"] == pytest.approx(250.0)  # 500-250
 
     def test_in_transit_po_reduces_shortage(self):
         gross = {"M1": 500.0}
         inv = [_inv("M1", stock=100, safety=0)]   # without PO: gap=400
         po = _po("M1", ordered=300, received=0)   # in_transit=300 → available=400
-        result = calc_shortage(gross, [inv[0]], [po])
+        result, _missing = calc_shortage(gross, [inv[0]], [po])
         assert result["M1"] == pytest.approx(100.0)  # 500-400
 
     def test_partially_received_po(self):
         gross = {"M1": 500.0}
         inv = [_inv("M1", stock=100, safety=0)]
         po = _po("M1", ordered=300, received=200)  # in_transit=100 → available=200
-        result = calc_shortage(gross, [inv[0]], [po])
+        result, _missing = calc_shortage(gross, [inv[0]], [po])
         assert result["M1"] == pytest.approx(300.0)  # 500-200
 
-    def test_missing_inventory_row_counts_as_zero_available(self):
-        """无库存记录的物料：可用量=0，缺口=全部毛需求。"""
+    def test_missing_inventory_row_no_po_is_full_gap(self):
+        """无库存记录且无在途：可用量=0，缺口=全部毛需求；该物料进 missing 告警清单。"""
         gross = {"UNKNOWN": 250.0}
-        result = calc_shortage(gross, [], [])
+        result, missing = calc_shortage(gross, [], [])
         assert result["UNKNOWN"] == pytest.approx(250.0)
+        assert "UNKNOWN" in missing
+
+    def test_missing_inventory_row_still_counts_in_transit(self):
+        """B6 核心：物料不在库存快照但有在途 → 在途仍计入，不再高估缺口。"""
+        gross = {"UNKNOWN": 250.0}
+        po = _po("UNKNOWN", ordered=200, received=0)   # in_transit=200
+        result, missing = calc_shortage(gross, [], [po])
+        assert result["UNKNOWN"] == pytest.approx(50.0)   # 250-200（旧逻辑会算 250）
+        assert "UNKNOWN" in missing                        # 仍提示缺快照
 
     def test_safety_stock_reduces_available(self):
         gross = {"M1": 100.0}
         inv = [_inv("M1", stock=200, safety=150)]  # available=50
-        result = calc_shortage(gross, inv, [])
+        result, _missing = calc_shortage(gross, inv, [])
         assert result["M1"] == pytest.approx(50.0)
 
     def test_only_positive_gaps_returned(self):
         gross = {"M1": 50.0, "M2": 300.0}
         inv = [_inv("M1", stock=100, safety=0), _inv("M2", stock=100, safety=0)]
-        result = calc_shortage(gross, inv, [])
+        result, _missing = calc_shortage(gross, inv, [])
         assert "M1" not in result         # 50-100 < 0
         assert result["M2"] == pytest.approx(200.0)
 
@@ -176,7 +185,7 @@ class TestCalcShortage:
         pos = csv_loaders.load_purchase_orders(FIXTURES)
 
         gross = explode_bom(bom, plans)
-        shortages = calc_shortage(gross, inv, pos)
+        shortages, _missing = calc_shortage(gross, inv, pos)
 
         # M001 有 30000 在途，不缺货
         assert "M001" not in shortages

@@ -51,6 +51,9 @@ def route_forecast(
         fc, requires_confirmation=requires_confirmation,
         severity=severity, extra_reasons=reasons, api_key=api_key,
     )
+    # B3：标注所需审批级别（重点客户/首次承诺 → VP），approve 时校验确认人级别。
+    draft.required_level = config.required_approval_level(
+        fc.customer_name, first_commitment=first_commitment)
 
     # 永不自动外发客户：一律入待审批队列（人工经 queue.approve 二次放行后手发）。
     # customer_send_open 当前恒 False；保留判定为将来 SRM 联调通过 + 门禁全勾后的低风险直发留位。

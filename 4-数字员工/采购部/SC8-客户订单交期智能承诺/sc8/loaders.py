@@ -109,11 +109,13 @@ def parse_forecast_order_rows(rows: list[dict], *, validate: bool = True) -> lis
 
 def load_forecast_orders_from_api(
     api_base: str | None = None, *, validate: bool = True, page_size: int = 2000,
+    audit=None,
 ) -> list[ForecastOrder]:
     """从 FO 预测订单 API（ZpViewSO）加载真实预测订单（任务 2.1，收割自 supplychain）。
 
     api_base 优先级：参数 > 环境变量 FO_API_BASE > 内网默认 http://localhost:8800。
     只读 GET；响应行经 Pydantic 边界校验 + MVP 前缀过滤。
+    B4（审计报告 §3.2）：FO 访问层补轻量审计痕迹（source=FO）；audit=None 则不留痕。
     """
     base = (api_base or os.environ.get("FO_API_BASE", "http://localhost:8800")).rstrip("/")
     url = f"{base}/api/forecast-orders?page_size={page_size}"
@@ -122,6 +124,9 @@ def load_forecast_orders_from_api(
             data = json.loads(resp.read())
     except Exception as e:
         raise RuntimeError(f"无法连接预测订单 API ({url})：{e}") from e
+    finally:
+        if audit is not None:
+            audit.trace(source="FO", action="forecast-orders")
     return parse_forecast_order_rows(data.get("rows", []), validate=validate)
 
 

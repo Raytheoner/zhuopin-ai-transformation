@@ -79,6 +79,9 @@ def submit_commitment(
         fc, requires_confirmation=True, severity=severity,
         extra_reasons=reasons, api_key=api_key,
     )
+    # B3：标注所需审批级别（重点客户/首次承诺 → VP），入队后由 approve 校验确认人级别。
+    draft.required_level = config.required_approval_level(
+        fc.customer_name, first_commitment=first)
     # Notifier 双闸门：requires_confirmation=True 必被 L2 fail-closed 拦截入队（pending_sink）；
     # 第二道总开关（CUSTOMER_OUTBOUND_ENABLED）关闭时亦拦截，互为冗余。
     sent = notifier.send(draft)

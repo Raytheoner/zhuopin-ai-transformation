@@ -44,7 +44,7 @@ def run_sc5(
     suppliers = csv_loaders.load_suppliers(mock_dir)
 
     gross = explode_bom(bom, plans)
-    shortages = calc_shortage(gross, inv, pos)
+    shortages, _missing_snapshot = calc_shortage(gross, inv, pos)
     material_dates = calc_material_earliest_dates(bom, plans, shortages)
     recs = build_recommendations(shortages, suppliers, material_dates)
     summary = calc_cost_summary(recs)

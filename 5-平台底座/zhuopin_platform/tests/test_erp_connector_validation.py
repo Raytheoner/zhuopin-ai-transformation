@@ -65,7 +65,7 @@ class TestU9cBomComponentValidation:
             }]
         }]
         with patch.object(zp, "_u9c_bom_post", return_value=bom_data):
-            rows = zp.get_bom_for_products(["PROD001"])
+            rows, _failed = zp.get_bom_for_products(["PROD001"])
             assert len(rows) == 1
             assert rows[0].component_id == "COMP001"
 
@@ -81,5 +81,50 @@ class TestU9cBomComponentValidation:
             }]
         }]
         with patch.object(zp, "_u9c_bom_post", return_value=bom_data):
-            rows = zp.get_bom_for_products(["PROD001"])
+            rows, _failed = zp.get_bom_for_products(["PROD001"])
             assert rows == []
+
+
+class TestU9cBomFailureHandling:
+    """B1（审计报告 §2.4 P1）：BOM 拉取失败不静默吞错。"""
+
+    def _bom_data(self, code):
+        return [{
+            "m_bOMComponents": [{
+                "m_itemMaster": {"m_code": f"{code}_C", "m_name": "子件"},
+                "m_issueUOM": {"m_code": "PCS"}, "m_usageQty": 1, "m_scrap": 0,
+            }]
+        }]
+
+    def test_partial_failure_returns_failed_ids_and_audits(self, tmp_path):
+        """部分产品查询失败 → 返回 (rows, failed_ids) + bom_partial_failure 审计。"""
+        from zhuopin_platform.shared_tools.connector_audit import ConnectorAudit
+        from zhuopin_platform.audit.sinks import JsonlSink
+
+        sink = JsonlSink(tmp_path / "trace.jsonl")
+        zp = ZpConnector(
+            base_url="https://mock.zp.test:4445", user_code="u", ent_code="001",
+            org_code="Z", client_id="cid", client_secret="csec",
+            fallback_dir=tmp_path, po_cache_file=tmp_path / "po.json",
+            audit=ConnectorAudit(sink=sink),
+        )
+
+        def _side(body):
+            code = body[0]["ItemMaster"]["Code"]
+            if code == "PROD_FAIL":
+                raise RuntimeError("BOM 查询失败")
+            return self._bom_data(code)
+
+        with patch.object(zp, "_u9c_bom_post", side_effect=_side):
+            rows, failed = zp.get_bom_for_products(["PROD_OK", "PROD_FAIL"])
+        assert failed == ["PROD_FAIL"]
+        assert any(r.product_id == "PROD_OK" for r in rows)
+        traces = [r for r in sink.read_all() if r.get("action") == "bom_partial_failure"]
+        assert len(traces) == 1 and "PROD_FAIL" in traces[0]["target"]
+
+    def test_total_failure_raises(self, tmp_path):
+        """全部产品查询失败 → 抛 RuntimeError，绝不返回空当成功。"""
+        zp = _make_zp(tmp_path)
+        with patch.object(zp, "_u9c_bom_post", side_effect=RuntimeError("全挂")):
+            with pytest.raises(RuntimeError, match="BOM 拉取全部失败"):
+                zp.get_bom_for_products(["P1", "P2"])

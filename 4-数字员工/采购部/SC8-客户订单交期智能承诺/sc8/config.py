@@ -29,6 +29,34 @@ def srm_source_mode() -> str:
 # 关闭期间：所有对客通报只生成草稿、入待审批队列，绝不自动外发客户。
 CUSTOMER_OUTBOUND_ENABLED = False
 
+# ── 审批授权分级（B3 / 审计报告 §3.3 P1-C，配置即策略）────────────────────────
+# 重点客户 / 首次承诺（/ 关联金额>50万，SC8 暂不可得，见 design B3-a）的对客承诺，
+# 放行须 VP 级确认人；其余 L2 即可。改 config 不改逻辑。
+VP_APPROVERS: set[str] = {"Paul"}                       # VP 级确认人白名单（运营维护）
+KEY_CUSTOMERS: set[str] = {"比亚迪", "上汽", "理想"}      # 重点客户（默认三家 OEM）
+
+LEVEL_VP = "vp"
+LEVEL_L2 = "l2"
+
+
+def required_approval_level(customer_name: str, *, first_commitment: bool) -> str:
+    """计算一条对客承诺所需审批级别（B3）。
+
+    命中 重点客户 OR 首次承诺 → VP 级；否则 L2。
+    （"关联金额>50万"在 SC8 数据面暂不可得，记 amount_unknown，留待 IT 补金额/SC5 承接。）
+    """
+    if (customer_name or "").strip() in KEY_CUSTOMERS or first_commitment:
+        return LEVEL_VP
+    return LEVEL_L2
+
+
+def approver_meets_level(confirmed_by: str, required_level: str) -> bool:
+    """确认人级别是否达标：VP 级须在白名单；L2 级任意非空确认人即可。"""
+    if required_level == LEVEL_VP:
+        return confirmed_by in VP_APPROVERS
+    return bool(confirmed_by)
+
+
 # ── 客户数据隔离键（design D4，可切换）──────────────────────────────────────
 # 现状 FO API 只返回客户名 → 用 customer_name 做隔离键。IT 补好 customer_id 后，
 # 把本常量改为 "customer_id" 这一处即可全局切换（值为空时回退客户名，防空键串库）。

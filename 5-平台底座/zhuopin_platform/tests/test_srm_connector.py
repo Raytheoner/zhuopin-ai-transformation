@@ -70,6 +70,29 @@ def test_get_delivery_orders_only_answered(monkeypatch):
     assert dv.status == "confirmed"
 
 
+def test_get_confirmed_dates_distinguishes_failure_from_no_answer(tmp_path, monkeypatch):
+    """B2：批量承诺交期区分"查询失败"与"未答交"，失败 PO 计入清单 + audit error。"""
+    trace_sink = JsonlSink(tmp_path / "access_trace.jsonl")
+    conn = _make_conn(audit=ConnectorAudit(sink=trace_sink))
+
+    def _fake_single(po, vendor):
+        if po == "PO_FAIL":
+            raise RuntimeError("查询失败")
+        if po == "PO_NOANSWER":
+            return None            # 供应商未答交（正常业务态）
+        return "2026-07-01"        # 有交期
+
+    monkeypatch.setattr(conn, "get_confirmed_date", _fake_single)
+    confirmed, failed = conn.get_confirmed_dates(
+        [("PO_OK", "V1"), ("PO_NOANSWER", "V2"), ("PO_FAIL", "V3")]
+    )
+    assert confirmed == {"PO_OK": "2026-07-01"}     # 仅有交期者
+    assert failed == ["PO_FAIL"]                    # 仅异常者，未答交不计失败
+    traces = [r for r in trace_sink.read_all()
+              if r.get("action") == "confirmed_date_query_failed"]
+    assert len(traces) == 1 and traces[0]["target"] == "PO_FAIL"
+
+
 def test_signature_is_deterministic():
     conn = _make_conn()
     common = {"appKey": "k", "ownerCompanyCode": "ZP",

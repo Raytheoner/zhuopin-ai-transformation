@@ -165,7 +165,7 @@ class TestGoldenBaseline:
         suppliers = csv_loaders.load_suppliers(MOCK_DATA)
 
         gross = explode_bom(bom, plans)
-        self.shortages = calc_shortage(gross, inv, pos)
+        self.shortages, _missing = calc_shortage(gross, inv, pos)
         self.material_dates = calc_material_earliest_dates(bom, plans, self.shortages)
         self.recs = build_recommendations(self.shortages, suppliers, self.material_dates)
         self.summary = calc_cost_summary(self.recs)
@@ -175,14 +175,15 @@ class TestGoldenBaseline:
 
     def test_auto_total(self):
         # M002(500) + M003(9600) + M006(17500) + M010(8250) = 35850
-        assert self.summary["auto_total"] == pytest.approx(35850, rel=0.01)
+        # B6：黄金值为整数和，精确相等（去掉 rel=0.01 容差，对齐"零偏差"口径）
+        assert self.summary["auto_total"] == 35850
 
     def test_review_total(self):
         # M015: 800 × 800 = 640000
-        assert self.summary["review_total"] == pytest.approx(640000, rel=0.01)
+        assert self.summary["review_total"] == 640000
 
     def test_grand_total(self):
-        assert self.summary["grand_total"] == pytest.approx(675850, rel=0.01)
+        assert self.summary["grand_total"] == 675850
 
     def test_m015_in_review_bucket(self):
         m015 = next(r for r in self.recs if r["material_id"] == "M015")

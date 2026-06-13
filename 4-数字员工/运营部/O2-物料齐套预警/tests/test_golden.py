@@ -94,7 +94,7 @@ class TestGoldenKitAnalysis:
     def test_shortage_matches_manual_calculation(self):
         """缺口与手工预算偏差 < 1%，充足物料不出现在结果中。"""
         gross = explode_bom(GOLDEN_BOM, GOLDEN_PLANS)
-        shortages = calc_shortage(gross, GOLDEN_INVENTORY, GOLDEN_POS)
+        shortages, _missing = calc_shortage(gross, GOLDEN_INVENTORY, GOLDEN_POS)
 
         # 验证有缺口的物料
         for mat_id, expected in EXPECTED_SHORTAGES.items():

@@ -149,6 +149,13 @@ class XkySrmConnector:
 
         必需凭证：XKY_APP_KEY / XKY_APP_SECRET / XKY_OWNER_COMPANY_CODE / XKY_ERP_CODE
         """
+        if audit is None:
+            import warnings
+            warnings.warn(
+                "XkySrmConnector.from_env() 未注入 audit：生产环境连接器访问将不留痕"
+                "（IATF 可追溯红线，应注入 ConnectorAudit）",
+                UserWarning, stacklevel=2,
+            )
         sp = secrets if secrets is not None else EnvSecretsProvider()
         required = ["XKY_APP_KEY", "XKY_APP_SECRET", "XKY_OWNER_COMPANY_CODE", "XKY_ERP_CODE"]
         missing = []
@@ -284,17 +291,32 @@ class XkySrmConnector:
                 return _ts_to_date(line.vExpectedDate)
         return None
 
-    def get_confirmed_dates(self, po_vendor_pairs: list[tuple[str, str]]) -> dict[str, str]:
-        """批量查询承诺交期。单张失败不影响其他。"""
+    def get_confirmed_dates(
+        self, po_vendor_pairs: list[tuple[str, str]]
+    ) -> tuple[dict[str, str], list[str]]:
+        """批量查询承诺交期。区分"查询失败"与"供应商未答交"（B2 / 审计报告 §2.4 P1）。
+
+        Returns:
+            (confirmed, failed_pos)
+            confirmed:   {po → 承诺交期}（仅含有交期者）
+            failed_pos:  查询**异常**的 PO 清单（与"未答交"区分——后者 get_confirmed_date
+                         返回 None，是正常业务态，既不在 confirmed 也不在 failed）。
+        单 PO 异常不影响其他，但**不再静默吞**：计入 failed_pos + audit error 留痕，
+        使在途三色清单不把查询失败误当无延期。
+        """
         result: dict[str, str] = {}
+        failed_pos: list[str] = []
         for po_erp_no, inner_vendor_code in po_vendor_pairs:
             try:
                 date_str = self.get_confirmed_date(po_erp_no, inner_vendor_code)
                 if date_str:
                     result[po_erp_no] = date_str
             except Exception:
-                pass
-        return result
+                failed_pos.append(po_erp_no)
+                if self._audit is not None:
+                    self._audit.trace(source="SRM", action="confirmed_date_query_failed",
+                                      target=po_erp_no)
+        return result, failed_pos
 
     # ── SRM 供应计划看板 ─────────────────────────────────────────────────
 

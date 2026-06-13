@@ -17,8 +17,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools.crm_notifier.contracts import NotificationMessage
 from zhuopin_platform.shared_tools.notifiers.dispatch import Notifier
+
+from . import config
 
 STATUS_PENDING = "pending"
 STATUS_SENT = "sent"
@@ -60,6 +63,8 @@ class FilePendingQueue:
             "body": getattr(message, "body", ""),
             "severity": getattr(message, "severity", None),
             "requires_confirmation": getattr(message, "requires_confirmation", None),
+            # B3：所需审批级别（vp/l2，由 SC8 入队前标在草稿上；缺省 l2）
+            "required_level": getattr(message, "required_level", config.LEVEL_L2),
             "confirmed_by": "",
             "created_at": datetime.now(tz=timezone.utc).isoformat(),
             "sent_at": "",
@@ -72,15 +77,19 @@ class FilePendingQueue:
         return item_id
 
     # ── 审批放行（幂等）────────────────────────────────────────────────────────
-    def approve(self, item_id: str, confirmed_by: str, notifier: Notifier) -> bool:
+    def approve(self, item_id: str, confirmed_by: str, notifier: Notifier,
+                audit: AuditLogger | None = None) -> bool:
         """L2 责任人放行：触发外发并原子标记 'sent'。
 
         幂等保证：整段 read→send→mark 在锁内串行；项已是 'sent' → 直接返回 True，
         **不再调用 notifier.send**（绝不重复外发客户）。
 
+        B3 审批授权分级：项 `required_level=="vp"` 且 confirmed_by 不在 VP 白名单 →
+        拒绝放行（返回 False、保持 pending、写 approval_denied_insufficient_level 审计）。
+
         Returns:
             True  外发成功（或此前已外发，幂等返回 True）；
-            False 项不存在 / 被门禁拦截（如 confirmed_by 为空 → fail-closed 不放行）。
+            False 项不存在 / 被门禁拦截（confirmed_by 为空 / 级别不足 / 总开关关闭）。
         """
         if not confirmed_by:
             return False  # 无确认人 → 不放行（与平台 Notifier fail-closed 一致）
@@ -95,6 +104,24 @@ class FilePendingQueue:
             # 幂等：已外发 → 不重复发，直接返回成功
             if item.get("status") == STATUS_SENT:
                 return True
+
+            # B3：审批授权分级校验（VP 级项须 VP 白名单确认人）
+            required_level = item.get("required_level", config.LEVEL_L2)
+            if not config.approver_meets_level(confirmed_by, required_level):
+                if audit is not None:
+                    audit.record(AuditEvent(
+                        scenario="SC8",
+                        action="approval_denied_insufficient_level",
+                        evaluator=confirmed_by,
+                        automation_level="L2",
+                        decision={
+                            "queue_item_id": item_id,
+                            "recipient": item.get("recipient", ""),
+                            "required_level": required_level,
+                            "confirmed_by": confirmed_by,
+                        },
+                    ))
+                return False  # 级别不足 → 不放行，保持 pending
 
             # 复发原草稿（Notifier 仍执行 L2 判定；带 confirmed_by 放行）
             msg = _QueuedMessage(

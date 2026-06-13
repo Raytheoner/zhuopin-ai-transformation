@@ -14,6 +14,7 @@ class _Msg:
     body: str = "正文"
     severity: str = "warning"
     requires_confirmation: bool = True
+    required_level: str = "l2"
 
 
 def test_enqueue_persists_pending(queue):
@@ -57,3 +58,28 @@ def test_approve_without_confirmer_is_blocked(queue):
 def test_approve_unknown_id_returns_false(queue):
     notifier = build_notifier(queue, audit=None, send_fn=lambda url, body: None)
     assert queue.approve("nonexistent", confirmed_by="Paul", notifier=notifier) is False
+
+
+# ── B3 审批授权分级 ────────────────────────────────────────────────────────────
+def test_vp_item_rejects_non_vp_approver(queue, audit):
+    """VP 级项被非 VP 白名单确认人放行 → 拒绝、保持 pending、写审计。"""
+    sends: list[str] = []
+    notifier = build_notifier(queue, audit=audit, send_fn=lambda url, body: sends.append(body),
+                              outbound_enabled=True)
+    item_id = queue.enqueue(_Msg(required_level="vp"), reason="awaiting_L2_confirmation")
+    assert queue.approve(item_id, confirmed_by="李四", notifier=notifier, audit=audit) is False
+    assert sends == []
+    assert queue.get(item_id)["status"] == STATUS_PENDING
+    denials = audit.query_by(scenario="SC8", action="approval_denied_insufficient_level")
+    assert len(denials) == 1 and denials[0]["decision"]["required_level"] == "vp"
+
+
+def test_vp_item_accepts_vp_approver(queue, audit):
+    """VP 级项被 VP 白名单确认人（Paul）放行 → 外发（总开关开启）。"""
+    sends: list[str] = []
+    notifier = build_notifier(queue, audit=audit, send_fn=lambda url, body: sends.append(body),
+                              outbound_enabled=True)
+    item_id = queue.enqueue(_Msg(required_level="vp"), reason="awaiting_L2_confirmation")
+    assert queue.approve(item_id, confirmed_by="Paul", notifier=notifier) is True
+    assert len(sends) == 1
+    assert queue.get(item_id)["status"] == STATUS_SENT

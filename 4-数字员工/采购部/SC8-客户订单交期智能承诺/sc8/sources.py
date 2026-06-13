@@ -36,24 +36,40 @@ def load_real_orders(*, api_base: str | None = None,
     return orders[:limit] if limit else orders
 
 
-def load_real_bom(product_ids: list[str], *, max_depth: int = 1) -> list:
-    """从 U9C BOM/Query 拉真实直接子件（凭据从环境/SecretsProvider 注入）。"""
+def load_real_bom(product_ids: list[str], *, max_depth: int = 1,
+                  audit=None) -> list:
+    """从 U9C BOM/Query 拉真实直接子件（凭据从环境/SecretsProvider 注入）。
+
+    B1：`get_bom_for_products` 现返回 (rows, failed_ids)——部分失败的料号清单经
+    UserWarning 暴露（残缺 BOM 不静默通过，下游可据此判断是否阻断对客承诺）。
+    B4：注入 ConnectorAudit（缺省 None；生产应传入 access-trace sink）。
+    """
+    import warnings
+
     from zhuopin_platform.shared_tools.erp_connector.connector import ZpConnector
-    zp = ZpConnector.from_env()
-    return zp.get_bom_for_products(list(dict.fromkeys(product_ids)), max_depth=max_depth)
+    zp = ZpConnector.from_env(audit=audit)
+    rows, failed_ids = zp.get_bom_for_products(
+        list(dict.fromkeys(product_ids)), max_depth=max_depth)
+    if failed_ids:
+        warnings.warn(
+            f"BOM 部分拉取失败 {failed_ids}：齐套可能残缺，对客承诺前须人工核对",
+            UserWarning, stacklevel=2,
+        )
+    return rows
 
 
 def load_srm_deliveries(mode: str, *, start: str | None = None,
-                        end: str | None = None) -> list:
+                        end: str | None = None, audit=None) -> list:
     """SRM 承诺交付记录。
 
     mode != "real" → 返回空（降级：所有物料走无反馈启发式、低置信，本期预期形态）。
     mode == "real" → 从携客云 SRM 看板拉（≤60 天窗口；当前被 900401 阻塞）。
+    B4：注入 ConnectorAudit（缺省 None；生产应传入 access-trace sink）。
     """
     if mode != "real":
         return []
     from zhuopin_platform.shared_tools.srm_connector.connector import XkySrmConnector
-    srm = XkySrmConnector.from_env()
+    srm = XkySrmConnector.from_env(audit=audit)
     s = start or date.today().isoformat()
     e = end or (date.today() + timedelta(days=60)).isoformat()
     return srm.get_delivery_orders(s, e)

@@ -189,6 +189,12 @@ class ZpConnector(DataConnector):
                  debug: DebugLog | None = None,
                  secrets: SecretsProvider | None = None) -> "ZpConnector":
         """从 SecretsProvider 构造（默认降级 EnvSecretsProvider，向后兼容）。"""
+        if audit is None:
+            warnings.warn(
+                "ZpConnector.from_env() 未注入 audit：生产环境连接器访问将不留痕"
+                "（IATF 可追溯红线，应注入 ConnectorAudit）",
+                UserWarning, stacklevel=2,
+            )
         sp = secrets if secrets is not None else EnvSecretsProvider()
         keys = ["U9C_API_BASE", "U9C_USER_CODE", "U9C_ENT_CODE",
                 "U9C_ORG_CODE", "U9C_CLIENT_ID", "U9C_CLIENT_SECRET"]
@@ -417,12 +423,24 @@ class ZpConnector(DataConnector):
 
     _BOM_MAX_WORKERS = 5
 
-    def get_bom_for_products(self, product_ids: list[str], max_depth: int = 1) -> list[BomRow]:
-        """从 U9C BOM/Query 并行获取指定产品的子件 BOM（默认只查直接子件）。"""
+    def get_bom_for_products(
+        self, product_ids: list[str], max_depth: int = 1
+    ) -> tuple[list[BomRow], list[str]]:
+        """从 U9C BOM/Query 并行获取指定产品的子件 BOM（默认只查直接子件）。
+
+        B1（审计报告 §2.4 P1）：单品查询失败**不再静默吞**——收集失败料号清单。
+        Returns:
+            (rows, failed_ids)
+            部分失败 → 返回已得 rows + failed_ids，并写 bom_partial_failure 审计痕迹；
+            **全失败**（有失败且无任何 rows）→ 抛 RuntimeError（带失败明细），
+            绝不返回残缺/空 BOM 当成功（否则下游齐套虚低、漏报缺料、威胁对客承诺）。
+        """
         rows: list[BomRow] = []
         rows_lock    = threading.Lock()
         queried: set[str] = set()
         queried_lock = threading.Lock()
+        failed: list[str] = []
+        failed_lock  = threading.Lock()
 
         def _fetch(code: str, depth: int) -> None:
             with queried_lock:
@@ -434,6 +452,8 @@ class ZpConnector(DataConnector):
                     [{"Org": {"Code": self._org_code}, "ItemMaster": {"Code": code}}]
                 )
             except Exception:
+                with failed_lock:
+                    failed.append(code)   # 不静默吞：记入失败清单
                 return
             if not bom_data:
                 return
@@ -467,17 +487,35 @@ class ZpConnector(DataConnector):
             futures = [executor.submit(_fetch, pid, 1) for pid in product_ids]
             for f in as_completed(futures):
                 f.result()
-        return rows
+
+        if failed:
+            if not rows:
+                # 全失败：无任何可用 BOM → fail-loud，绝不返回空当成功
+                raise RuntimeError(
+                    f"BOM 拉取全部失败（{len(failed)} 项）：{failed}"
+                )
+            # 部分失败：返回已得 + 失败清单，并留痕（下游据失败清单决定是否阻断）
+            if self._audit is not None:
+                self._audit.trace(source="U9C_webapi", action="bom_partial_failure",
+                                  target=",".join(failed))
+        return rows, failed
 
     def get_bom(self) -> list[BomRow]:
-        """从 U9C BOM/Query 获取 BOM；产品码不在 ERP 时回退 CSV mock。"""
+        """从 U9C BOM/Query 获取 BOM；真实 BOM 为空时走 fail-loud 闸门（B1）。
+
+        消除原"真实空 → 直接 CSV 回退、审计错标 CSV"旁路：经 `_fallback_or_failloud`，
+        real 未 opt-in → fail-loud；opt-in → CSV_mock + warn（非权威、禁入对客/L2）。
+        """
         plans = self.get_production_plan()
         product_ids = list({p.product_id for p in plans})
         if product_ids:
-            real_rows = self.get_bom_for_products(product_ids)
+            real_rows, _failed = self.get_bom_for_products(product_ids)
             if real_rows:
                 return real_rows
-        return self._fallback.get_bom()
+        return self._fallback_or_failloud(
+            "get_bom", self._fallback.get_bom,
+            reason="真实 BOM 为空（产品码不在 U9C 或全部无子件），待核对料号/接通 U9C",
+        )
 
     def _fallback_or_failloud(self, name: str, csv_fn, *, reason: str = ""):
         """无真实端点的方法统一走此闸（design D2 / Q3）。

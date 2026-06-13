@@ -24,7 +24,7 @@ def test_real_oauth_and_bom():
     assert token and len(token) > 100            # JWT
 
     # 真实母件（外网已验证）；取直接子件
-    bom = zp.get_bom_for_products(["S02Y.0162"], max_depth=1)
+    bom, _failed = zp.get_bom_for_products(["S02Y.0162"], max_depth=1)
     assert bom, "应拉到真实 BOM 直接子件"
     for r in bom:
         assert r.product_id and r.component_id

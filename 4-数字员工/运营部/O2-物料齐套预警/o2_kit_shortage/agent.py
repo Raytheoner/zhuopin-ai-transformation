@@ -30,7 +30,7 @@ def run_kit_alert(
 ) -> KitAlertResult:
     """齐套预警入口：展开BOM → 计算缺口 → 写审计 → 返回结果。"""
     gross = explode_bom(bom, plans)
-    shortages = calc_shortage(gross, inventory, purchase_orders)
+    shortages, _missing_snapshot = calc_shortage(gross, inventory, purchase_orders)
 
     products = sorted({plan.product_id for plan in plans})
     analyzed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()

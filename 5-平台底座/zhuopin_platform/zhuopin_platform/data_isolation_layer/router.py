@@ -4,9 +4,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from ..audit import AuditEvent, AuditLogger
+
 
 class CrossOEMAccessError(PermissionError):
     """检测到跨 OEM 数据访问企图时抛出（合规红线，必须审计）。"""
+
+
+ISOLATION_SCENARIO = "DATA_ISOLATION"
+ACTION_CROSS_OEM_DENIED = "cross_oem_access_denied"
 
 
 # 注册在案的 OEM 客户 → 独立 Collection 名（小写、规范化）
@@ -37,13 +43,29 @@ class OEMRouter:
         router.guard(oem="比亚迪", collection="oem_saic")  # 抛 CrossOEMAccessError
     """
 
-    def __init__(self, registered: dict[str, str] | None = None):
+    def __init__(self, registered: dict[str, str] | None = None,
+                 audit: AuditLogger | None = None):
         self.registered = registered or dict(REGISTERED_OEMS)
+        self._audit = audit
+
+    def _record_denied(self, oem: str, collection: str, reason: str) -> None:
+        """跨 OEM 访问被拒前写审计（违规企图留痕，B5 / OEM隔离规范 §3.2）。"""
+        if self._audit is None:
+            return
+        self._audit.record(AuditEvent(
+            scenario=ISOLATION_SCENARIO,
+            action=ACTION_CROSS_OEM_DENIED,
+            evaluator="",
+            automation_level="L3",
+            decision={"oem": oem, "collection": collection, "reason": reason},
+            oem_context=oem,
+        ))
 
     def resolve(self, oem: str) -> str:
         """返回该 OEM 的专属 Collection；未注册客户拒绝。"""
         key = self._normalize(oem)
         if key not in self.registered:
+            self._record_denied(oem, "", "未注册的 OEM 上下文")
             raise CrossOEMAccessError(f"未注册的 OEM 上下文：{oem!r}，禁止访问任何客户数据。")
         return self.registered[key]
 
@@ -56,10 +78,11 @@ class OEMRouter:
         if collection in GENERAL_COLLECTIONS:
             return IsolationDecision(oem=oem, collection=collection, allowed=True,
                                      reason="通用知识库")
-        own = self.resolve(oem)  # 未注册 OEM 在此即被拒
+        own = self.resolve(oem)  # 未注册 OEM 在此即被拒（resolve 内已留痕）
         if collection == own:
             return IsolationDecision(oem=oem, collection=collection, allowed=True,
                                      reason="本客户专属库")
+        self._record_denied(oem, collection, "跨客户专属库访问")
         raise CrossOEMAccessError(
             f"OEM 上下文 {oem!r}（={own}）试图访问 {collection!r} —— 跨客户访问被拒绝。"
         )
