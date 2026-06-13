@@ -32,7 +32,11 @@ from typing import Optional as _Opt
 
 from ..connector import DataConnector
 from ..connector_audit import ConnectorAudit, DebugLog
-from ..connector_errors import ConnectorValidationError, RealEndpointNotReadyError
+from ..connector_errors import (
+    ConnectorValidationError,
+    InsecureTLSError,
+    RealEndpointNotReadyError,
+)
 from ..secrets import EnvSecretsProvider, SecretsProvider
 from ..models import (
     BomRow,
@@ -67,10 +71,28 @@ class _ZpPurOrderRow(BaseModel):
             return 0.0
 
 
-# HTTPS 自签名证书忽略
-_CTX = ssl.create_default_context()
-_CTX.check_hostname = False
-_CTX.verify_mode = ssl.CERT_NONE
+# TLS（A1 / 审计报告 §2.4 P0）：默认开启证书+主机名校验（与 srm_connector 一致）。
+# 逃生开关 U9C_TLS_INSECURE=1 仅在 mock/LAN 应急时关闭校验（warn + audit 留痕）；
+# real（对客权威）模式禁用逃生开关，强制证书校验。可选 U9C_TLS_CAFILE 做证书 pin。
+def _build_ssl_context(data_source: str, audit: "ConnectorAudit | None") -> ssl.SSLContext:
+    ctx = ssl.create_default_context()
+    cafile = os.environ.get("U9C_TLS_CAFILE", "").strip()
+    if cafile:
+        ctx.load_verify_locations(cafile)   # 证书 pin（可选，IT 提供受信证书后启用）
+    insecure = os.environ.get("U9C_TLS_INSECURE", "").strip().lower() in ("1", "true", "yes")
+    if insecure:
+        if data_source == "real":
+            raise InsecureTLSError()         # 对客权威路径绝不允许裸信道
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        warnings.warn(
+            "U9C_TLS_INSECURE=1：TLS 证书校验已关闭（仅限 mock/LAN 应急），生产/对客禁用",
+            UserWarning, stacklevel=2,
+        )
+        if audit is not None:
+            audit.trace(source="TLS_INSECURE", action="ssl_context_insecure")
+    return ctx
+
 
 # Token 有效期：接近失效前 10 分钟刷新
 _TOKEN_TTL_MINUTES = 230
@@ -143,6 +165,9 @@ class ZpConnector(DataConnector):
         if allow_mock_fallback is None:
             allow_mock_fallback = os.environ.get("U9C_ALLOW_MOCK_FALLBACK", "").strip().lower() in ("1", "true", "yes")
         self._allow_mock_fallback = bool(allow_mock_fallback)
+
+        # TLS context（A1）：按 data_source + env 计算，默认安全；real 模式禁逃生开关
+        self._ctx = _build_ssl_context(self._data_source, audit)
 
         # Token 缓存（带锁，多线程安全）
         self._token: Optional[str] = None
@@ -217,7 +242,7 @@ class ZpConnector(DataConnector):
 
     def _http_get(self, url: str) -> dict:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=15, context=_CTX) as r:
+        with urllib.request.urlopen(req, timeout=15, context=self._ctx) as r:
             return json.loads(r.read().decode("utf-8"))
 
     _MAX_RETRIES = 3   # SSL/网络抖动重试
@@ -239,7 +264,7 @@ class ZpConnector(DataConnector):
             }, method="POST")
             resp: dict = {}
             try:
-                with urllib.request.urlopen(req, timeout=300, context=_CTX) as r:
+                with urllib.request.urlopen(req, timeout=300, context=self._ctx) as r:
                     resp = json.loads(r.read().decode("utf-8"))
                 if resp.get("code") not in (200, None) and not resp.get("data"):
                     raise RuntimeError(f"zp API 错误: code={resp.get('code')} msg={resp.get('msg')}")
@@ -268,7 +293,7 @@ class ZpConnector(DataConnector):
         }, method="POST")
         resp: dict = {}
         try:
-            with urllib.request.urlopen(req, timeout=15, context=_CTX) as r:
+            with urllib.request.urlopen(req, timeout=15, context=self._ctx) as r:
                 resp = json.loads(r.read().decode("utf-8"))
             if not resp.get("Success"):
                 raise RuntimeError(f"BOM Query 失败: {resp.get('ResMsg', '')}")

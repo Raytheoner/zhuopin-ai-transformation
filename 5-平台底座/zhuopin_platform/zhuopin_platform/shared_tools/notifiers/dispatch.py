@@ -46,6 +46,10 @@ class Notifier:
         channel:      渠道名（审计用），默认 "wecom"。
         pending_sink: 待审批队列持久化钩子（Blocker2 预留接口）。拦截时把草稿入队；
                       None 时仅审计 blocked（草稿不持久化——上线前 SC8 必须接实际队列）。
+        outbound_enabled: 第二道结构性闸门（A2 / 审计报告 P0-A）。`bool` 或返回 `bool`
+                      的可调用（求值放行/禁止外发）。**默认放行**（不影响内部企微/通用
+                      通知）；SC8 对客通知器把它接到 `config.CUSTOMER_OUTBOUND_ENABLED`，
+                      使总开关关闭时**即便已人工确认也不外发**——独立于 L2 人工门禁。
     """
 
     def __init__(
@@ -56,6 +60,7 @@ class Notifier:
         scenario: str = "NOTIFY",
         channel: str = "wecom",
         pending_sink: PendingApprovalSink | None = None,
+        outbound_enabled: bool | Callable[[], bool] = True,
     ):
         self._send_fn = send_fn or wecom.send_markdown
         self._webhook_url = webhook_url
@@ -63,6 +68,12 @@ class Notifier:
         self._scenario = scenario
         self._channel = channel
         self._pending_sink = pending_sink
+        self._outbound_enabled = outbound_enabled
+
+    def _outbound_ok(self) -> bool:
+        """求值第二道总开关（callable 每次现求值，bool 直接返回）。"""
+        gate = self._outbound_enabled
+        return bool(gate() if callable(gate) else gate)
 
     @staticmethod
     def _is_high_risk(message: NotificationMessage) -> bool:
@@ -86,18 +97,27 @@ class Notifier:
         return severity == "critical"
 
     def send(self, message: NotificationMessage, confirmed_by: str = "") -> bool:
-        """外发一条通知。高风险且未确认 → 拦截（不外发，入待审批队列），返回 False。
+        """外发一条通知。两道闸门任一未过 → 拦截（不外发，入待审批队列），返回 False。
+
+        闸门①（L2 人工门禁）：高风险且未确认 → 拦截。
+        闸门②（第二道结构性总开关，A2）：`outbound_enabled` 求值为 False → 拦截，
+        **即便带 confirmed_by 也不外发**（堵住 approve 路径不查总开关的旁路）。
 
         Returns:
-            True  外发成功；False 被 L2 门禁拦截（仅留草稿 / 入队待审批）。
+            True  外发成功；False 被门禁拦截（仅留草稿 / 入队待审批）。
         """
         high_risk = self._is_high_risk(message)
-        blocked = high_risk and not confirmed_by
+        awaiting_l2 = high_risk and not confirmed_by
+        outbound_ok = self._outbound_ok()
 
-        if blocked:
-            # Blocker2：拦截的草稿交持久化钩子入队（接口预留，SC8 接实际队列）
-            if self._pending_sink is not None:
-                self._pending_sink.enqueue(message, reason="awaiting_L2_confirmation")
+        if awaiting_l2 or not outbound_ok:
+            # reason 区分两类拦截：缺人工确认 vs 对客外发总开关关闭
+            reason = "awaiting_L2_confirmation" if awaiting_l2 else "customer_outbound_disabled"
+            # Blocker2：仅**首道拦截**（无 confirmed_by）才入队——拦截的草稿否则无处留存。
+            # 带 confirmed_by 的复发（如队列 approve 二次放行）被总开关拦下时**不重复入队**：
+            # 该草稿已在队列中，且 FilePendingQueue.approve 持锁期间经 enqueue 重入自身锁会死锁。
+            if self._pending_sink is not None and not confirmed_by:
+                self._pending_sink.enqueue(message, reason=reason)
             self._record("notification_send_blocked", message, confirmed_by, sent=False)
             return False
 

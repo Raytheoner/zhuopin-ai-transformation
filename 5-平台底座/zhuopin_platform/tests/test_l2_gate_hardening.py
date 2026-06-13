@@ -100,6 +100,64 @@ def test_confirmed_send_not_queued(tmp_path):
     assert q.items == []  # 已确认外发，不入队
 
 
+# ══ A2：第二道结构性闸门（对客外发总开关 outbound_enabled）═══════════════════════
+
+def test_outbound_disabled_blocks_even_confirmed(tmp_path):
+    """总开关关闭 → 即便带 confirmed_by（人工已确认）也不外发；审计 sent=False。
+
+    复发（confirmed_by 非空）被总开关拦下时**不重复入队**（草稿已在队列中，且避免
+    FilePendingQueue.approve 持锁期间经 enqueue 重入自身锁死锁）。
+    """
+    q = _FakeQueue()
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    notifier = Notifier(send_fn=lambda u, c: None, webhook_url="http://x",
+                        audit=audit, scenario="SC8", pending_sink=q,
+                        outbound_enabled=False)
+    msg = NotificationDraft(recipient="比亚迪", title="承诺", body="...",
+                            severity="warning", requires_confirmation=False)
+    assert notifier.send(msg, confirmed_by="张采购") is False   # 已确认仍被总开关拦
+    assert q.items == []                                        # 复发不重复入队
+    rec = audit.query_by(scenario="SC8")[0]
+    assert rec["decision"]["sent"] is False
+
+
+def test_outbound_disabled_first_pass_enqueues(tmp_path):
+    """首道拦截（无 confirmed_by）+ 总开关关闭 → 草稿入队留痕（低风险也不丢草稿）。"""
+    q = _FakeQueue()
+    notifier = Notifier(send_fn=lambda u, c: None, webhook_url="http://x",
+                        scenario="SC8", pending_sink=q, outbound_enabled=False)
+    msg = NotificationDraft(recipient="比亚迪", title="承诺", body="...",
+                            severity="info", requires_confirmation=False)
+    assert notifier.send(msg) is False
+    assert len(q.items) == 1
+    assert q.items[0][1] == "customer_outbound_disabled"
+
+
+def test_outbound_enabled_callable_evaluated_each_send():
+    """outbound_enabled 接受可调用，每次 send 现求值（支持运行期翻转总开关）。"""
+    calls = []
+    switch = {"open": False}
+    notifier = Notifier(send_fn=_noop_send_factory(calls), webhook_url="http://x",
+                        outbound_enabled=lambda: switch["open"])
+    msg = NotificationDraft(recipient="内部群", title="日报", body="b",
+                            severity="info", requires_confirmation=False)
+    assert notifier.send(msg, confirmed_by="x") is False   # 关闭
+    assert calls == []
+    switch["open"] = True
+    assert notifier.send(msg, confirmed_by="x") is True    # 翻开后放行
+    assert len(calls) == 1
+
+
+def test_outbound_enabled_default_true_unaffected():
+    """默认 outbound_enabled=True → 内部/通用通知不受影响（低风险已确认正常外发）。"""
+    calls = []
+    notifier = Notifier(send_fn=_noop_send_factory(calls), webhook_url="http://x")
+    msg = NotificationDraft(recipient="内部群", title="日报", body="b",
+                            severity="info", requires_confirmation=False)
+    assert notifier.send(msg) is True
+    assert len(calls) == 1
+
+
 # ══ High4：并发写文件不损坏 ══════════════════════════════════════════════════
 
 def test_jsonl_sink_concurrent_writes_intact(tmp_path):

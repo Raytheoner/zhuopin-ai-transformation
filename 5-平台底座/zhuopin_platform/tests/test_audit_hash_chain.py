@@ -193,7 +193,11 @@ class TestVerifyChain:
         assert result.total == 0
 
     def test_verify_genesis_boundary_no_prev_hash_field(self, tmp_path):
-        """旧文件首条无 prev_hash 字段，视为合法 genesis，不报断链。"""
+        """旧文件首条无 prev_hash 字段，视为合法 genesis，不报断链。
+
+        注意（A3）：genesis 豁免**仅对第 1 行**生效；第 2 行起缺 prev_hash 即判篡改
+        （见 test_verify_stripped_prev_hash_attack_detected）。
+        """
         path = tmp_path / "legacy.jsonl"
         # 模拟旧格式：无 prev_hash 字段
         old_record = {"scenario": "SC1", "action": "test", "evaluator": "x",
@@ -203,6 +207,30 @@ class TestVerifyChain:
         result = sink.verify_chain()
         assert result.ok is True
         assert result.total == 1
+
+    def test_verify_stripped_prev_hash_attack_detected(self, tmp_path):
+        """A3 修复：删光全文件 prev_hash 字段重写 → 不再被整链当 genesis 放行。
+
+        攻击者删掉所有行的 prev_hash 字段（旧 genesis 兼容逻辑会把每行都当合法
+        genesis → ok=True）。修复后豁免仅限第 1 行，第 2 行起缺字段即判断链。
+        """
+        path = tmp_path / "audit.jsonl"
+        sink = JsonlSink(path)
+        for i in range(3):
+            sink.write(_make_event(seq=i))
+
+        # 删除每一行的 prev_hash 字段后重写（模拟无痕篡改企图）
+        lines = path.read_text(encoding="utf-8").splitlines()
+        rewritten = []
+        for line in lines:
+            record = json.loads(line)
+            record.pop("prev_hash", None)
+            rewritten.append(json.dumps(record, ensure_ascii=False))
+        path.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+
+        result = sink.verify_chain()
+        assert result.ok is False
+        assert result.broken_at == 2   # 第 1 行豁免，第 2 行起缺字段即判篡改
 
 
 # ── AuditLogger 代理 ──────────────────────────────────────────────────────────

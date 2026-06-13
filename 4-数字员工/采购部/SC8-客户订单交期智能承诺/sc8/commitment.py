@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from typing import Callable
+
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools.notifiers.dispatch import Notifier
 
-from . import gate, notify
+from . import config, gate, notify
 from .models import DeliveryForecast
 from .pending_queue import FilePendingQueue
 
@@ -26,8 +28,16 @@ def build_notifier(
     audit: AuditLogger | None = None,
     send_fn=None,
     webhook_url: str = "",
+    outbound_enabled: bool | Callable[[], bool] | None = None,
 ) -> Notifier:
-    """构造接好待审批队列与审计的 SC8 Notifier（pending_sink = 文件队列）。"""
+    """构造接好待审批队列与审计的 SC8 Notifier（pending_sink = 文件队列）。
+
+    第二道结构性闸门（A2 / 审计报告 P0-A）：`outbound_enabled` 默认接到
+    `config.CUSTOMER_OUTBOUND_ENABLED`——总开关关闭时即便人工 approve 也不外发。
+    测试可显式传 `outbound_enabled=True` 验证 approve→放行机制本身。
+    """
+    if outbound_enabled is None:
+        outbound_enabled = lambda: config.CUSTOMER_OUTBOUND_ENABLED  # noqa: E731
     return Notifier(
         send_fn=send_fn,
         webhook_url=webhook_url,
@@ -35,6 +45,7 @@ def build_notifier(
         scenario=SCENARIO,
         channel="wecom",
         pending_sink=queue,
+        outbound_enabled=outbound_enabled,
     )
 
 
@@ -52,18 +63,27 @@ def submit_commitment(
     audit: AuditLogger | None = None,
     api_key: str | None = None,
 ) -> CommitmentResult:
-    """提交一条对客交付承诺（首道：未确认必拦入队，不外发）。"""
+    """提交一条对客交付承诺（首道：一律入待审批队列，绝不自动外发）。
+
+    A2 / 审计报告 P0-A 修复：删除"高置信+非首次+不晚于目标日 → 低风险自动放行外发"旁路。
+    首道提交**一律**入队（draft.requires_confirmation 恒置 True），真正外发只能由 L2
+    责任人经 `queue.approve(item_id, confirmed_by)` 二次放行触发。门禁 `evaluate` 给出的
+    真实风险（requires/severity/reasons）仍如实写入草稿与 CommitmentResult，供审计/展示。
+    """
     first = gate.is_first_commitment(audit, fc.customer_name)
     requires, reasons, severity = gate.evaluate(fc, first_commitment=first)
 
+    # 首道恒入队：草稿 requires_confirmation 置 True，杜绝低风险经 Notifier 直发。
+    # severity/reasons 仍取门禁真实值（审计如实留痕，不因 policy 恒入队而掩盖真实风险）。
     draft = notify.build_customer_draft(
-        fc, requires_confirmation=requires, severity=severity,
+        fc, requires_confirmation=True, severity=severity,
         extra_reasons=reasons, api_key=api_key,
     )
-    # Notifier 执行 fail-closed 门禁：requires 且无 confirmed_by → 拦截 + 入队（pending_sink）
+    # Notifier 双闸门：requires_confirmation=True 必被 L2 fail-closed 拦截入队（pending_sink）；
+    # 第二道总开关（CUSTOMER_OUTBOUND_ENABLED）关闭时亦拦截，互为冗余。
     sent = notifier.send(draft)
     return CommitmentResult(
-        sent=sent, requires_confirmation=requires,
+        sent=sent, requires_confirmation=requires,   # 保留门禁真实风险判定
         reasons=reasons, draft_title=draft.title,
     )
 

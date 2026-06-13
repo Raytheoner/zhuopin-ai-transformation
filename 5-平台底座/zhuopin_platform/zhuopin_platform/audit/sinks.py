@@ -128,7 +128,9 @@ class JsonlSink:
     def verify_chain(self) -> ChainVerifyResult:
         """逐行对磁盘原始字节重算哈希，检测任意行被删改。
 
-        首条无 `prev_hash` 字段的记录视为合法 genesis（向前兼容旧文件）。
+        无 `prev_hash` 字段的 genesis 豁免**仅对第 1 行生效**（向前兼容旧文件）。
+        第 2 行起任何缺 `prev_hash` 字段的行判为断链——堵住"删光全文件 prev_hash
+        字段重写即整链通过"的防篡改绕过（A3 / 审计报告 §2.2 P0）。
         """
         if not self.log_path.exists():
             return ChainVerifyResult(ok=True, total=0)
@@ -154,9 +156,14 @@ class JsonlSink:
             stored_prev = record.get("prev_hash")
 
             if stored_prev is None:
-                # 无 prev_hash 字段 → 视为合法 genesis（旧文件兼容）
-                prev_hash = self._sha256_bytes(raw_line)
-                continue
+                # 无 prev_hash 字段：仅第 1 行可豁免（旧文件兼容）；其后缺字段 = 篡改
+                if idx == 1:
+                    prev_hash = self._sha256_bytes(raw_line)
+                    continue
+                return ChainVerifyResult(
+                    ok=False, total=len(raw_lines), broken_at=idx,
+                    error=f"第 {idx} 行缺 prev_hash 字段（疑似篡改）",
+                )
 
             if stored_prev != prev_hash:
                 return ChainVerifyResult(ok=False, total=len(raw_lines),

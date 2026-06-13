@@ -26,7 +26,9 @@ def test_enqueue_persists_pending(queue):
 
 def test_approve_sends_once_then_idempotent(queue):
     sends: list[str] = []
-    notifier = build_notifier(queue, audit=None, send_fn=lambda url, body: sends.append(body))
+    # A2：放行机制本身需总开关开启才真发（生产恒关，机制正确性单独验证）
+    notifier = build_notifier(queue, audit=None, send_fn=lambda url, body: sends.append(body),
+                              outbound_enabled=True)
     item_id = queue.enqueue(_Msg(body="承诺正文"), reason="awaiting_L2_confirmation")
 
     # 首次 approve → 外发一次，状态翻 'sent'

@@ -37,6 +37,20 @@ class RateLimitError(RuntimeError):
         super().__init__(f"{source} rate limit exceeded after {attempts} retries")
 
 
+class InsecureTLSError(RuntimeError):
+    """`U9C_DATA_SOURCE=real` 下试图用 `U9C_TLS_INSECURE` 关闭证书校验（A1 / Paul 拍板）。
+
+    合规红线：对客权威路径（real）绝不允许裸信道。逃生开关只在 mock/LAN 应急生效；
+    real 模式强制证书校验，命中即 fail-loud。
+    """
+
+    def __init__(self, message: str = "") -> None:
+        super().__init__(
+            message
+            or "U9C_DATA_SOURCE=real 禁止 U9C_TLS_INSECURE：对客权威路径必须开启 TLS 证书校验"
+        )
+
+
 class RealEndpointNotReadyError(RuntimeError):
     """`U9C_DATA_SOURCE=real` 下调用了无真实端点的方法（fail-loud，绝不静默回退 mock）。
 

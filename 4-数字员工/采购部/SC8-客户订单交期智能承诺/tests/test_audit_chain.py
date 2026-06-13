@@ -37,7 +37,9 @@ def test_forecast_audit_carries_full_decision(sales_orders, bom, srm_deliveries,
 
 
 def test_correction_links_original_and_keeps_append_only(audit, queue):
-    notifier = build_notifier(queue, audit=audit, send_fn=lambda url, body: None)
+    # A2：本用例验证含一次成功外发的全链审计，需显式开启总开关（生产恒关）
+    notifier = build_notifier(queue, audit=audit, send_fn=lambda url, body: None,
+                              outbound_enabled=True)
     fc = _fc()
 
     # 1) 原预测外发（首次拦截 → 放行）
