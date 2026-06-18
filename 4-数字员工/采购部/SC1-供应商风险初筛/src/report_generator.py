@@ -80,6 +80,34 @@ def generate_report(
     risks_md = "\n".join(f"{i+1}. {r}" for i, r in enumerate(risk_descriptions))
     actions_md = "\n".join(f"{i+1}. {a}" for i, a in enumerate(action_items))
 
+    # 有效权重（评分引擎在某维度数据不足时会剔除该维度并重新归一化其余权重）。
+    # 报告须按**有效权重**展示，否则会继续显示误导的固定 35%/30%/20%/15%。
+    w = result.weights
+    _pct = lambda x: f"{x * 100:.0f}%"
+    delivery_excluded = w.get("delivery", 0.0) == 0.0
+    _dims = [
+        ("交付准时率", result.delivery.value, w.get("delivery", 0.0)),
+        ("IQC 合格率", result.iqc.value, w.get("iqc", 0.0)),
+        ("财务稳定性", result.financial.value, w.get("financial", 0.0)),
+        ("单源依赖", result.single_source.value, w.get("single_source", 0.0)),
+    ]
+    _active = [(n, v, wt) for n, v, wt in _dims if wt > 0]
+    _terms = "  +  ".join(f"{v:.2f} × {_pct(wt)}" for n, v, wt in _active)
+    _calc = "  +  ".join(f"{v * wt:.3f}" for n, v, wt in _active)
+    summary_formula = (
+        f"综合评分 = {_terms}\n"
+        f"        = {_calc}\n"
+        f"        = {result.composite_score:.2f}"
+    )
+    if delivery_excluded:
+        summary_formula = (
+            "⚠ 交付维度数据不足（SRM 看板为前瞻视图，无法计算历史准时率），\n"
+            "  已剔除该维度并对其余维度权重重新归一化（真实历史准时率待 U9C 收货历史接入）。\n\n"
+            + summary_formula
+        )
+    # 维度明细表的权重列（剔除维度显示「—」）
+    _wt_cell = lambda k: ("— (剔除)" if w.get(k, 0.0) == 0.0 else _pct(w.get(k, 0.0)))
+
     source_notes = []
     for dim, src in [
         ("交付准时率", delivery_source),
@@ -112,9 +140,7 @@ def generate_report(
 ## 综合评分摘要
 
 ```
-综合评分 = {result.delivery.value:.1f} × 35% + {result.iqc.value:.1f} × 30% + {result.financial.value:.2f} × 20% + {result.single_source.value:.1f} × 15%
-        = {result.delivery.value * 0.35:.3f} + {result.iqc.value * 0.30:.3f} + {result.financial.value * 0.20:.3f} + {result.single_source.value * 0.15:.3f}
-        = {result.composite_score:.2f}
+{summary_formula}
 ```
 
 **风险等级：{result.risk_level} 级（{result.risk_label}）** {level_icon}
@@ -123,12 +149,12 @@ def generate_report(
 
 ## 各维度评分明细
 
-| 维度 | 权重 | 评分 | 数据来源 | 备注 |
+| 维度 | 有效权重 | 评分 | 数据来源 | 备注 |
 |------|------|------|----------|------|
-| 交付准时率 | 35% | {result.delivery.value:.1f} / 5.0 | {d_badge} | {delivery_source or "—"} |
-| IQC 合格率 | 30% | {result.iqc.value:.1f} / 5.0 | {i_badge} | {iqc_src_display} |
-| 财务稳定性 | 20% | {result.financial.value:.2f} / 5.0 | {f_badge} | {fin_src_display} |
-| 单源依赖风险 | 15% | {result.single_source.value:.1f} / 5.0 | {s_badge} | {ss_src_display} |
+| 交付准时率 | {_wt_cell("delivery")} | {result.delivery.value:.1f} / 5.0 | {d_badge} | {delivery_source or "—"} |
+| IQC 合格率 | {_wt_cell("iqc")} | {result.iqc.value:.1f} / 5.0 | {i_badge} | {iqc_src_display} |
+| 财务稳定性 | {_wt_cell("financial")} | {result.financial.value:.2f} / 5.0 | {f_badge} | {fin_src_display} |
+| 单源依赖风险 | {_wt_cell("single_source")} | {result.single_source.value:.1f} / 5.0 | {s_badge} | {ss_src_display} |
 
 ---
 

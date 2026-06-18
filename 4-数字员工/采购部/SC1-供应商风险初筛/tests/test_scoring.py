@@ -174,16 +174,43 @@ class TestRiskScoringEngine:
         assert result.composite_score == 1.0
         assert result.risk_level == 5
 
-    def test_all_none_gives_middle_score(self):
+    def test_all_none_excludes_delivery_and_renormalizes(self):
+        # 交付 rate=None → 剔除交付维度，对 iqc/financial/single 归一化（/0.65）：
+        # (2.5*0.30 + 1.0*0.20 + 1.0*0.15)/0.65 = 1.10/0.65 = 1.6923 → 1.69
         result = self.engine.evaluate()
-        # delivery=2.5*0.35 + iqc=2.5*0.30 + financial=1.0*0.20 + single=1.0*0.15
-        # = 0.875 + 0.75 + 0.20 + 0.15 = 1.975
-        assert result.composite_score == 1.97
+        assert result.composite_score == 1.69
         assert result.risk_level == 4
+        assert result.weights["delivery"] == 0.0   # 交付维度被剔除，有效权重 0
 
     def test_weights_sum_to_1(self):
         result = self.engine.evaluate()
         assert abs(sum(result.weights.values()) - 1.0) < 1e-9
+
+    def test_delivery_present_keeps_original_weights(self):
+        # 交付有真实数据时，权重不变（35/30/20/15），与历史行为一致
+        result = self.engine.evaluate(delivery_rate=98.0, iqc_rate=99.0,
+                                       registered_capital_wan=5000.0,
+                                       years_established=10.0, single_source_option=1)
+        assert result.weights == {"delivery": 0.35, "iqc": 0.30,
+                                   "financial": 0.20, "single_source": 0.15}
+        assert result.composite_score == 5.0
+
+    def test_delivery_insufficient_does_not_force_high_risk(self):
+        """回归 ZB0022 失真：交付数据不足不应把还不错的供应商压成极高风险。
+
+        旧逻辑：delivery=0%(1分)*0.35 拉低综合分 → 误判 5 级。
+        新逻辑：剔除交付维度后，按 iqc/financial/single 归一化评估。
+        """
+        # iqc=99(5)、财务=5000万/10年(5)、单源=有替代(option1→5)，交付数据不足
+        result = self.engine.evaluate(
+            delivery_rate=None, iqc_rate=99.0,
+            registered_capital_wan=5000.0, years_established=10.0,
+            single_source_option=1,
+        )
+        # (5*0.30 + 5*0.20 + 5*0.15)/0.65 = 3.25/0.65 = 5.0 → 1 级（极低风险）
+        assert result.composite_score == 5.0
+        assert result.risk_level == 1
+        assert result.risk_level != 5   # 关键：不再因 0% 假象误判极高
 
     def test_result_has_risk_label(self):
         result = self.engine.evaluate(delivery_rate=98.0, iqc_rate=99.0,

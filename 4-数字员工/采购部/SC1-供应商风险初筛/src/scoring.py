@@ -188,12 +188,25 @@ class RiskScoringEngine:
         f_val, f_src = self._financial.score(registered_capital_wan, years_established)
         s_val, s_src = self._single_source.score(single_source_option)
 
+        # 交付维度过渡修正（2026-06-18）：交付准时率唯一可自动取数源是携客云 SRM
+        # 供应计划看板，但看板是「前瞻视图」、无法表征历史准时率（未交付→0% 假象）。
+        # 当交付数据不足（rate is None）时，**剔除交付维度并对其余维度权重重新归一化**，
+        # 绝不用 0% 或默认分占满 35% 权重，避免把供应商误判为高风险。
+        # 真实历史准时率待 U9C ERP 收货历史（Receivement）接入（待办 #7）。
+        contributions = {
+            "delivery": d_val, "iqc": i_val,
+            "financial": f_val, "single_source": s_val,
+        }
+        excluded = {"delivery"} if delivery_rate is None else set()
+        active_weights = {k: w for k, w in self.WEIGHTS.items() if k not in excluded}
+        total_w = sum(active_weights.values()) or 1.0
+        # 重新归一化（被剔除维度有效权重记 0，其余按比例放大至合计 1.0）
+        eff_weights = {
+            k: (active_weights[k] / total_w if k in active_weights else 0.0)
+            for k in self.WEIGHTS
+        }
         composite = round(
-            d_val * self.WEIGHTS["delivery"]
-            + i_val * self.WEIGHTS["iqc"]
-            + f_val * self.WEIGHTS["financial"]
-            + s_val * self.WEIGHTS["single_source"],
-            2,
+            sum(contributions[k] * eff_weights[k] for k in self.WEIGHTS), 2
         )
 
         result = ScoringResult(
@@ -203,7 +216,7 @@ class RiskScoringEngine:
             single_source=DimensionScore(s_val, s_src),
             composite_score=composite,
             risk_level=self._map_level(composite),
-            weights=dict(self.WEIGHTS),
+            weights=eff_weights,
         )
         return result
 

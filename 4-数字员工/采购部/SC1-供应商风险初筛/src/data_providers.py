@@ -65,7 +65,18 @@ class SRMProvider(DataProvider):
 
         total = len(vendor_orders)
         delivered = sum(1 for o in vendor_orders if o.status == "delivered")
-        rate = round(delivered / total * 100, 1) if total > 0 else None
+
+        # 过渡修正（2026-06-18）：携客云 SRM 供应计划看板是「前瞻视图」，window 内的
+        # 订单多为未交付（confirmed/pending）。delivered==0 时算出的 0% 是**前瞻视图假象**、
+        # 非真实历史准时率——不返回 0% 误导评分，而是按「数据不足」上报，由评分引擎剔除
+        # 交付维度并归一化其余权重。真实历史准时率待 U9C ERP 收货历史（Receivement）接入（#7）。
+        if delivered == 0:
+            return DeliveryData(
+                rate=None,
+                source="数据不足（SRM 看板为前瞻视图，window 内无已交付记录，无法计算历史准时率）",
+            )
+
+        rate = round(delivered / total * 100, 1)
         return DeliveryData(rate=rate, source="SRM自动")
 
 

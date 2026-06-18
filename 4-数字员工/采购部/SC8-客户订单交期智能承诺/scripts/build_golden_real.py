@@ -145,8 +145,13 @@ def build(limit, srm_mode, out_dir, dry_products):
 
     products_all = list(dict.fromkeys(o.item_code for o in orders))
     bom = load_real_bom(products_all, audit=conn_audit)
-    srm = load_srm_deliveries(srm_mode, audit=conn_audit)
-    print(f"[BOM] 行数={len(bom)}  [SRM mode={srm_mode}] 记录={len(srm)}")
+    # 分层取数（SOP §4.6）：只对 BOM 直接子件查 /purchase/answer，限流 1 req/30s 下显著减少调用。
+    bom_components = {r.component_id for r in bom if getattr(r, "level", 1) == 1}
+    srm = load_srm_deliveries(srm_mode, audit=conn_audit, materials=bom_components or None)
+    n_auth = sum(1 for d in srm if d.status == "confirmed")
+    n_board = sum(1 for d in srm if d.status == "planned")
+    print(f"[BOM] 行数={len(bom)} 直接子件={len(bom_components)}  "
+          f"[SRM mode={srm_mode}] 承诺记录={len(srm)}（权威/answer={n_auth} 看板/board={n_board}）")
 
     sample, cat_counts = select_sample(orders, bom, srm, params, out_ids, limit)
     print(f"[取样] {len(sample)} 张；全量类别分布={cat_counts}")

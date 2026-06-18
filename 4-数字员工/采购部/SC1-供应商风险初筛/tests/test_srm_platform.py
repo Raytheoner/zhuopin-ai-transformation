@@ -89,6 +89,15 @@ class TestSRMProviderWithMockConnector:
         with pytest.raises(RuntimeError, match="未找到供应商"):
             provider.get_delivery_rate("未知供应商", supplier_code="S999")
 
+    def test_prospective_board_all_undelivered_is_insufficient(self):
+        """前瞻看板假象：有订单但 0 已交付 → 数据不足（None），不返回 0% 误导评分。"""
+        mock_connector = MagicMock()
+        mock_connector.get_delivery_orders.return_value = self._make_mock_orders("S003", 5, 0)
+        provider = SRMProvider(connector=mock_connector)
+        data = provider.get_delivery_rate("X", supplier_code="S003")
+        assert data.rate is None
+        assert "数据不足" in data.source
+
 
 class TestNoSysPathResidue:
     """data_providers.py 不含 sys.path 操作或跨工程引用（grep 验证）。"""
