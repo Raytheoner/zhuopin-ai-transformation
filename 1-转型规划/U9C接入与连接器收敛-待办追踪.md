@@ -18,6 +18,7 @@
 | 6 | **FO 服务 LAN-only + 健康监控** —— FO（客户订单）是内网服务 `192.168.100.51:8800`，仅 LAN/VPN 可达（独立于 U9C/SRM 外网）；SC8 黄金基准真实跑取数需回 LAN/VPN。且 FO 502 会让对客上线后悄悄断供 | 接入/运维 | Paul→IT | 🟡 中 | ✅ 黄金基准已跑（2026-06-18，FO 恢复后全真实跑通、偏差0）；FO 健康告警仍待办 | FO 告警：作为带 mock 的单独小 PR（内部运维告警推采购/值班群，非对客，低风险），下轮 CC 做 |
 | 7 | **SC1 历史准时率数据源**（2026-06-18 定向，Paul 采纳）—— SC1 交付准时率（35% 权重、唯一 SRM 维度）应取"历史按时收货率"，但 SRM 供应计划看板是前瞻视图（窗口=今天→未来，未交付订单→0% 假象）、且查 >7 天前报 300234，**结构上做不到历史**。当前 0% 假象把供应商推成高风险（ZB0022→5 级极高失真） | 接入/正确性 | CC + IT | 🔴 高 | 🟡 过渡修正已实施（待真实源） | **过渡修正已实施（2026-06-18，commit cabc2e0）**：SC1 交付维度数据不足→不评分+其余权重重新归一化，ZB0022 5级→4级、0% 假象消除。**真实历史准时率仍待 U9C ERP 收货历史（Receivement）MCP（7/1 申请）接入** |
 | 8 | XkySrmConnector.get_demand_orders 字段 bug —— 读 pdrNo，看板真实字段是 poErpNo → customer_order 恒空，影响 SC1"需求单→客户订单"映射 | 正确性/架构 | CC | 🟡 中 | ✅ 已修（PR #14，commit 7785c00，2026-06-18） | get_demand_orders 优先读 poErpNo（pdrNo 兜底兼容）；旧测试夹具也用 pdrNo 与 bug 同错而"通过"，已改真实字段 + 加 #8 回归；调用方排查无退化（get_pending_demands 仅用 status、get_customer_order_mapping 修后正确无外部调用方）；平台 138 全绿 |
+| 9 | openspec sc5-purchase-recommendation 校验失败 —— spec 缺 SHALL/MUST 规范关键词，openspec validate 不通过 | 规范/技术债 | CC | ⚪ 低（非阻塞，预先存在，非本轮引入） | ⬜ 待办 | 下次触及 sc5 时结合需求意图补规范关键词（勿机械插入），使 validate 通过 |
 
 ---
 
