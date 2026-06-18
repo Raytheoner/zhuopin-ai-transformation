@@ -12,9 +12,10 @@
 |---|----|------|------|--------|------|--------|
 | 1 | **轮换 U9C client_secret** —— 明文写死在 `supplychain/scripts/spike_u9c_api.py`，已推 GitHub（归档仓 history 仍含），属暴露中的**活凭据**，能读真实 ERP | 安全 | IT（Paul 催办） | 🔴 最急 | ⬜ 待办 | Paul 找 IT 轮换旧值（删脚本行不够，history 还在）；轮换后更新本仓库 `.env` |
 | 2 | **ZpConnector / U9CConnector 收敛**（方案 A：ZpConnector 唯一规范、退役 U9CConnector） | 架构 | — | — | ✅ 已完成（PR #9 合 master，2026-06-11） | 删 U9CConnector+4骨架测试、实体映射迁附录A、U9C_DATA_SOURCE 开关、real 模式 fail-loud（RealEndpointNotReadyError）、审计按端点分标；116 passed+1 skipped、SC8 回归零退化 |
-| 3 | **外网代理开放 CommonEntity/Query + 专用端点** —— 决定 U9C 全量 cutford 能否离网做（库存 WhQoh / PO+Receivement / MO / 价格表 IQueryPurPriceListSRV 均走 CommonEntity，外网现 404） | 接入 | IT 评估 | 🟡 中 | ⬜ 待评估 | Paul 评估是否请 IT 在外网反代开放；否则这些 get_* 走 LAN/VPN |
+| 3 | **外网代理开放 CommonEntity/Query + 专用端点** —— 决定 U9C 全量 cutover 能否离网做（库存 WhQoh / PO+Receivement / MO / 价格表 IQueryPurPriceListSRV 均走 CommonEntity，外网现 404） | 接入 | IT 评估 | 🟡 中 | ⬜ 待评估 | Paul 评估是否请 IT 在外网反代开放；否则这些 get_* 走 LAN/VPN |
 | 4 | **DB 直连（192.168.6.2 / airead 弱口令）** —— 本轮外网不碰，到 LAN/VPN 阶段再启用并轮换弱口令 | 安全/接入 | IT/DBA | ⚪ 后置 | ⬜ 后置 | LAN/VPN 阶段提醒轮换 airead 口令 |
 | 5 | **ZpConnector → ErpConnector 改名** —— 收敛后 ZpConnector 实为 U9C/ERP 规范连接器，名字有潜在混淆；触及 SC8 + 3 测试 import，本轮跳过避免 churn/撞 PR | 架构/可维护 | CC | ⚪ 后置 | ⬜ 后置 | 低峰期单独小 PR；同时清理仍提 u9c_connector 的文档引用（U9C-ERP-MCP接口申请.md、收割策略表①） |
+| 6 | **FO 服务 LAN-only + 健康监控** —— FO（客户订单）是内网服务 `192.168.100.51:8800`，仅 LAN/VPN 可达（独立于 U9C/SRM 外网）；SC8 黄金基准真实跑取数需回 LAN/VPN。且 FO 502 会让对客上线后悄悄断供 | 接入/运维 | Paul→IT | 🟡 中 | ⬜ 待办 | ① 黄金基准跑：回 LAN/VPN 执行 `build_golden_real.py`；② 请 IT 给 FO 加健康监控/告警，避免对客后静默断供 |
 
 ---
 
