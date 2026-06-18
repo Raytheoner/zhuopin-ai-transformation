@@ -30,7 +30,7 @@ _CANNED_BOARD = [
                 "deliveriedQty": 0,
                 "boardDate": "2026-07-01",
                 "scheduleBatch": "SRM-2026-001",
-                "poLineList": [{"pdrNo": "PO20260519"}],
+                "poLineList": [{"poErpNo": "PO20260519"}],   # 真实字段 poErpNo（曾误用 pdrNo，待办#8）
             }
         ],
     }
@@ -55,6 +55,39 @@ def test_get_demand_orders_parsing(monkeypatch):
     assert d.qty_required == 1000
     assert d.customer_order == "PO20260519"
     assert d.status == "ordered"  # answerQty>0, deliver<plan
+
+
+def test_customer_order_from_poErpNo_regression():
+    """待办 #8 回归：看板真实 PO 字段是 poErpNo，customer_order 必须被填充（不再恒空）。"""
+    conn = _make_conn()
+    board = [{
+        "productCode": "R01B.0365", "innerVendorCode": "ZB0022",
+        "itemList": [{
+            "planQty": 100, "answerQty": 100, "deliveriedQty": 0,
+            "boardDate": "2026-07-01", "scheduleBatch": "B1",
+            "poLineList": [{"poErpNo": "ZPCG20260323005"}],
+        }],
+    }]
+    conn.get_receive_board = lambda *a, **k: board
+    demands = conn.get_demand_orders()
+    assert demands[0].customer_order == "ZPCG20260323005"   # 非空 = bug 已修
+    mapping = conn.get_customer_order_mapping()
+    assert set(mapping.values()) == {"ZPCG20260323005"}     # 映射不再恒空
+
+
+def test_customer_order_pdrNo_legacy_fallback():
+    """兼容兜底：仅有历史字段 pdrNo（无 poErpNo）时仍能取到（不退化）。"""
+    conn = _make_conn()
+    board = [{
+        "productCode": "R01.A", "innerVendorCode": "ZA.0001",
+        "itemList": [{
+            "planQty": 10, "answerQty": 10, "deliveriedQty": 0,
+            "boardDate": "2026-07-01", "scheduleBatch": "B2",
+            "poLineList": [{"pdrNo": "LEGACY-PO"}],
+        }],
+    }]
+    conn.get_receive_board = lambda *a, **k: board
+    assert conn.get_demand_orders()[0].customer_order == "LEGACY-PO"
 
 
 def test_get_delivery_orders_only_answered(monkeypatch):

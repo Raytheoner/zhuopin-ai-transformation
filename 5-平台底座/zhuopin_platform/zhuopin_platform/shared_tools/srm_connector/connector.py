@@ -435,7 +435,9 @@ class XkySrmConnector:
 
                 po_no = ""
                 for po in (item.get("poLineList") or []):
-                    po_no = str(po.get("pdrNo") or "")
+                    # 看板真实字段是 poErpNo（2026-06-18 实测；历史误用 pdrNo→customer_order 恒空，
+                    # 待办 #8）。兼容保留 pdrNo 兜底，优先 poErpNo。
+                    po_no = str(po.get("poErpNo") or po.get("pdrNo") or "")
                     if po_no:
                         break
 
