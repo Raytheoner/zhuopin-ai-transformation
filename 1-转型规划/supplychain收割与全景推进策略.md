@@ -58,7 +58,7 @@ supplychain 是为学习快速搭的**单体试验田**。整体并入全景会�
 |------------------|------|------------------|------|
 | `data/xky_srm_connector.py` | 携客云 SRM 只读（承诺交期） | `shared_tools/srm_connector/` | 收割（生产级，替换 stub）|
 | `data/zp_connector.py` | 卓品 zp REST API（真实 ERP：PO/物料）| `shared_tools/erp_connector/`（zp）| 收割（真实数据源）|
-| `data/u9c_connector.py` | U9C 骨架（回退 CSV，待真实接口）| `shared_tools/u9c_connector/` | 收割骨架，等 7/1 MCP 接口补真实 |
+| `data/u9c_connector.py` | U9C 骨架（回退 CSV，待真实接口）| ~~`shared_tools/u9c_connector/`~~ **已退役**（2026-06-11 PR #9：ZpConnector 收敛为 U9C/ERP 唯一规范连接器，U9CConnector 删除，见《U9C接入与连接器收敛-待办追踪》#2）| 历史记录保留，不再收割 |
 | `data/connector.py` + `csv_connector.py` | DataConnector 抽象 + CSV 回退 | `shared_tools/`（数据抽象层）| 收割（Provider 模式与 SC1 一致）|
 | `crm_notifier.py` | CRM 延期通知草稿生成 | `shared_tools/crm_notifier/` | 收割（SC8 通报用）|
 | `notifiers/wecom.py` | 企业微信推送 | `shared_tools/notifiers/` | 收割（通用通知通道）|
@@ -69,7 +69,7 @@ supplychain 是为学习快速搭的**单体试验田**。整体并入全景会�
 
 ---
 
-## 4. 表② supplychain 功能 → 全景 38 场景映射
+## 4. 表② supplychain 功能 → 全景 40 场景映射
 
 | supplychain 智能体/功能 | supplychain 状态 | 对应全景场景 | 全景原排期 | 收割后可提前到 |
 |------------------------|------------------|--------------|-----------|---------------|
@@ -107,7 +107,7 @@ supplychain 是为学习快速搭的**单体试验田**。整体并入全景会�
 | O1 生产排程 | 2026-11 | 2026-09/10 | smt_scheduling 已 MVP |
 | SC5 采购建议/遴选 | 2026-10 | ✅ 已完成（2026-06-11，PR #7 已合 master）| purchase_recommendation 收割完成；41 tests 全绿，黄金值对齐（35850/640000）；kit_engine 提升底座 |
 | SC3 绩效看板/在途 | 2026-09 | ✅ 已完成（2026-06-10，PR #6 合 master）| supplier_tracking 收割完成；29 tests 全绿、8 项 golden 等价 |
-| SC9 OEM 订单波动预测 | 2026-12 | 维持（需历史数据积累）| 预测类，数据未足 |
+| SC9 OEM 订单波动预测 | 2027-03（前误记 2026-12，2026-06-13 勘误） | 维持 2027-03，**降范围 MVP**（2026-06-13 已决策 D-3=A：首版仅用 OEM 历史订单 + 公开车市数据；SC7/SC8 衍生特征后续迭代）| 预测类，规避 SC7 数据积累不足 |
 
 > SC2（采购周报）、SC4（合同提取）、SC6（芯片预警）、SC7（库存优化）等仍按原计划——supplychain 未覆盖。
 > SC8 提前后，原"SC8 依赖 SC6/SC7"的顾虑改变：supplychain 用的是**真实供应商承诺交期 + BOM 齐套**直接算交付日，不依赖 SC6/SC7 的预测，因此可独立提前。
