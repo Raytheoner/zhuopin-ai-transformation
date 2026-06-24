@@ -345,19 +345,31 @@ $('csv').addEventListener('click',exportCSV);
 """
 
 
-def render_html(rows: list[BaoguanRow], *, today: date,
-                params: ForecastParams | None = None) -> str:
-    """渲染保供预警看板为独立交互 HTML 页面（浏览器可直接打开；筛选/搜索/排序/导出）。"""
-    p = params or config.default_params()
-    risk_code = {RISK_RED: "red", RISK_GAP: "gap", RISK_YELLOW: "yel", RISK_GREEN: "grn"}
-    data = [{
-        "id": r.product_id, "name": r.product_name, "cust": r.customer_name,
+# 风险 emoji → 前端/JSON 用的短码（render_html / Web 服务 /api/baoguan / 案例去重共用）
+RISK_CODE = {RISK_RED: "red", RISK_GAP: "gap", RISK_YELLOW: "yel", RISK_GREEN: "grn"}
+
+
+def row_to_dict(r: BaoguanRow) -> dict:
+    """把一条 BaoguanRow 序列化为前端/JSON 载荷（render_html 内嵌 + Web /api/baoguan 共用）。
+
+    含 ``so``（预测订单号）—— 真延期去重/建案稳定键 (id, so, ship) 的一部分，
+    静态 HTML 看板用不到但保留不影响（前端 JS 忽略多余字段）。
+    """
+    return {
+        "id": r.product_id, "so": r.so_id, "name": r.product_name, "cust": r.customer_name,
         "qty": r.qty, "ship": r.ship_date.isoformat(),
         "kit": r.kit_date.isoformat() if r.kit_date else None,
         "gap": r.gap_days, "cg": r.confirmed_gap_days, "comp": r.component_count,
         "nf": len(r.no_feedback_materials), "bn": r.bottleneck_material or "",
-        "risk": risk_code.get(r.risk, "red"), "hasBom": r.has_bom, "action": r.action,
-    } for r in rows]
+        "risk": RISK_CODE.get(r.risk, "red"), "hasBom": r.has_bom, "action": r.action,
+    }
+
+
+def render_html(rows: list[BaoguanRow], *, today: date,
+                params: ForecastParams | None = None) -> str:
+    """渲染保供预警看板为独立交互 HTML 页面（浏览器可直接打开；筛选/搜索/排序/导出）。"""
+    p = params or config.default_params()
+    data = [row_to_dict(r) for r in rows]
     # 安全嵌入 <script>：转义 < > & 防 </script> 破出 / HTML 解析（JS 侧 \uXXXX 仍解回原字符）
     payload = (_json.dumps(data, ensure_ascii=False)
                .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))

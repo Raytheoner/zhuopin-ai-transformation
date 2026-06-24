@@ -13,6 +13,8 @@
 > **质量域规划启动（2026-06-11，Cowork off-LAN，纯规划未碰真实库）**：Paul 第二管辖域转入质量。已出 4 份文档（均在 `1-转型规划/`，AIOps 件在 `6-人才与组织/`）：①《质量域AI数字员工路线图》(8 候选 QD-A..H 打分排序、分层、§5 Q 序列修订)；②《质量旗舰PRD-Q2-8D不良分析与根因》；③《质量旗舰PRD-项目立项审核门禁》；④《AIOps第2名-Onboarding（30-60-90）与团队结构》。**旗舰选定**：QD-A 8D（全景 Q2）+ QD-B 立项门禁（全景 Q6），均 off-LAN 友好、风险可控。**已落地决策**：全景 2.1.3 Q 序列已回填修订（旗舰前置、新增 Q7 IQC/Q8 SPC、FMEA/PPAP 后置，md+docx 同步）；两 PRD 的 D1–D6 全采纳推荐（选 A），8D D3=ISO26262 安全相关走功能安全工程师额外门禁、立项 D2=财务"可机器核规则"边界待财务共识；OEM 隔离边界已扩展（见 §4，质量域含 OEM 信息的 8D/客诉按客户隔离）。质量场景开发排期与 AIOps 第 2 人到位强绑定。
 >
 > **SC8/SC1 真实数据口径收口（2026-06-18 回 LAN，已合 master 073117f；PR#13 recalib + PR#14 connector）**：FO 恢复后黄金基准全真实跑通（确定性偏差=0）。① SC8 承诺取数改**分层口径**（/purchase/answer 按 PO 主源 + 看板辅 + 无反馈+30 兜底，见 SOP §4.6）——子件覆盖 9/90→58/90，并暴露 S02Y.0188 瓶颈子件真实承诺 → 延期 +61→+184（看板低估被纠正，**待 PMC 核实 + 对客沟通**）；真实数据仍只命中"无反馈"类、全低置信🔴（成品全子件都有承诺不现实，低置信是对的，未为凑高置信伪造）。② SC1 交付维度过渡修正：数据不足→不评分+权重归一化（ZB0022 5→4级、0% 假象消除）；真实历史准时率待 U9C 收货历史(Receivement)（待办 #7）。③ connector 修复（PR#14）：get_demand_orders `pdrNo`→`poErpNo`（旧测试夹具同错掩盖 bug，已改真实字段+加回归）。④ FO 健康告警随 PR#13 合入（内部运维告警→audit+企微采购/值班群，非对客）。回归全绿（平台 138/SC1 53/SC8 64，含 test_golden_real 真实夹具零漂移）；**对客闸 CUSTOMER_OUTBOUND_ENABLED 全程 False**，real_frozen/+reports/+.env 经 git check-ignore 不入库。置信度仍 2 级（签字版未动）。新增待办 #9（sc5 openspec 缺 SHALL/MUST，预先存在、非阻塞）。
+>
+> **FO 正式库接通 + 保供看板四色 + 保供 Web 服务（2026-06-24）**：① **FO 取数口径纠错并接通正式库**——旧 `.env` 误把 `FO_API_BASE` 指向 supplychain 验证库(192.168.100.51:8800,5月陈旧数据)；正式库 webapi 原无 FO 查询接口，IT 同日交付 `GET /zp/api/ForecastOrder/Query`(apiKey 走 URL query、非 OAuth2)；loaders 已改造(新端点/分页/`Data.Rows`/PascalCase 字段/apiKey 不入异常日志/fail-loud)，真实跑通 FO2026060001/2 共 126 行/36 成品(status=2)、携客云承诺覆盖 341/1042。② **保供四色口径**(Paul 2026-06-24 定，剔除无答复估算、只看确定承诺缺口)：🔴 真延期(有承诺仍晚>3天) / 🟠 待催(子件未答复无确定承诺) / 🟡 偏紧(确定1-3天) / 🟢 按期；真实 49🔴/77🟠。③ **保供预警 Web 服务**(openspec `sc8-baoguan-web-console` 已 apply)：Flask+waitress(`sc8/webapp.py`+`scripts/run_baoguan_web.py`,默认 `0.0.0.0:8090` **LAN 无鉴权**)、进程内 `compute_snapshot`+`SnapshotStore` 缓存(reports/JSON)、手动刷新(非阻塞锁串行,防携客云限流击穿)+6h 定时后台刷新、🔴 真延期去重(稳定键 料号+单号+出货日=案例账本)推保供运维群、**保供案例处置中心**(催货→协调→改期/确认→关闭 状态机+SLA 24/48/72h,SQLite)、AI 催货/协调/对客草稿(`case_draft.py`,对客落 `CUSTOMER_OUTBOUND_ENABLED=False` 仅草稿不外发)。回归 **102 passed/2 skipped**(SC8 +27 新测试)，reports/*.db/*.json/.env 经 git check-ignore 不入库。**未结**：7.2 LAN 真实联调=Paul 现场验收(手动刷新打真实三源、🔴 推企微)；验收后加登录/Token 鉴权再开外网(待办 #10,真实客户名红线)。
 > *注：本项目跨会话记忆以本 CLAUDE.md 当前进度为准（可写、每会话载入）；`.auto-memory/MEMORY.md` 自动索引在本环境只读锁定、写不进，勿依赖。*
 
 ---
@@ -53,7 +55,7 @@
 |--------|------|------|
 | `audit/` | IATF 可追溯审计：`AuditLogger`+`AuditEvent`，JSONL 先行 / 9月 ClickHouse 汇聚（同接口切换） | ✅ 真骨架，对接它、勿重建 |
 | `data_isolation_layer/` | OEM 隔离：`OEMRouter` 按客户路由、跨库抛 `CrossOEMAccessError` | ✅ 路由可用；RAG 待接 Chroma |
-| `shared_tools/` | 连接器 / 通知器 / doc_parser 等共享件 | 🔧 空占位，**待收割填入**（见 §6） |
+| `shared_tools/` | 连接器 / 通知器 / doc_parser 等共享件 | ✅ 已收割：连接器（zp/SRM/CSV）、`notifiers/`（企微 `wecom.send_markdown` + L2 `Notifier`）、`crm_notifier`；doc_parser 待质量旗舰落地 |
 | `agents/` | 跨部门智能体逻辑 | 🔧 骨架 |
 
 > **OEM 隔离边界**：只针对**研发/OEM 技术数据**（R 系列、知识库），**不针对采购的 SRM/ERP/CRM 供应商数据**。采购连接器不强加 OEM 路由；平台层把 `data_isolation_layer` 接口预留给后续研发/知识库场景即可。
@@ -64,6 +66,8 @@
 - **Cowork（规划治理桌）**：规划/路线图/治理合规/招聘/汇报；**默认只改/出 `.md`，Word 仅在 Paul 明确要求时才用 md-to-word 转**（平时不转）；**不碰真实库、不写生产代码**。
 - **Claude Code Desktop（建造车间）**：写并运行场景代码、连真实 SRM/ERP、跑真实数据、收割 supplychain；**不改规划文档**。
 - **同步纪律**：开工 `git pull`，收工 `git push`；同一文件别两边同时改。
+- **排期同步纪律（Paul 定，2026-06-19，强制）**：任何业务场景的**实现时间一旦变更**，必须**同步更新所有规划与四阶段路线图**——`全景规划`（§2.1.3 场景块 + §加速启动总览权威排期表 + 四阶段/第四阶段 + 各甘特指针）、`实施计划（最新版）`（§一总清单 + §二时间线 + Phase 2）、相关路线图/前置数据总表，并**重生成对应 docx**。**零残差、不留旧档**；改完 grep 自检一致。单一可信源 = 全景规划 §加速启动总览排期表。
+- **企微同步推送（自包含，不依赖 supplychain）**：Cowork 把通报写成 `.md` 正文 → 本机跑 `python 0-学习与工具/发企微.py [正文.md]` 一条命令发群。脚本零外部依赖（纯标准库），读**本项目 `.env` 的 `WECOM_WEBHOOK_URL`**，走公网 HTTPS（qyapi.weixin.qq.com）——**off-LAN 亦可，有互联网即可**（区别于 FO/U9C 内网服务）。底座亦有 `shared_tools/notifiers/wecom.send_markdown`。凭据只在 `.env`（gitignore，不入库）。**发送由 CC（Claude Code，跑在本机/LAN、网络通）执行——对 CC 说一句"把 X.md 发企微"即发；Cowork 云端沙箱出网受限（实测 qyapi.weixin.qq.com 403），发不出去，只负责写正文。** 分工：Cowork 写 `.md` 正文 → CC 一句话发。
 - **每个场景固定流程**：
   1. 进入 `4-数字员工/部门/场景名/` → `pip install -e .../5-平台底座/zhuopin_platform`
   2. `openspec init`（首次）→ `/opsx:propose "场景描述"` → 生成 proposal + design + tasks
