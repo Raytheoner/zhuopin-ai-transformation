@@ -11,11 +11,12 @@ from sc8.loaders import MVP_ITEM_PREFIXES, parse_forecast_order_rows
 from sc8.models import ForecastOrder
 
 
-def _row(doc="FO2026050001", code="F02N.0184", name="EQ40S", num=1000,
+def _row(doc="FO2026060001", code="F02N.0184", name="EQ40S", num=1000,
          ship="2026-06-15", cust="安徽某客户"):
+    # 字段名对齐 IT 正式库接口 ForecastOrderLineDTO（PascalCase）
     return {
-        "DocNo": doc, "ItemInfo_ItemCode": code, "ItemInfo_ItemName": name,
-        "Num": num, "ShipPlanDate": ship, "Customer_Name": cust,
+        "DocNo": doc, "ItemCode": code, "ItemName": name,
+        "Num": num, "ShipPlanDate": ship, "CustomerName": cust,
     }
 
 
@@ -24,7 +25,7 @@ def test_parse_valid_row_maps_to_forecast_order():
     assert len(fos) == 1
     fo = fos[0]
     assert isinstance(fo, ForecastOrder)
-    assert fo.fo_id == "FO2026050001"
+    assert fo.fo_id == "FO2026060001"
     assert fo.item_code == "F02N.0184"
     assert fo.qty == 1000
     assert fo.ship_date == "2026-06-15"
@@ -57,7 +58,7 @@ def test_missing_doc_no_rejected_when_validate():
 
 def test_missing_item_code_rejected_when_validate():
     bad = _row()
-    bad["ItemInfo_ItemCode"] = None
+    bad["ItemCode"] = None
     with pytest.raises(Exception):
         parse_forecast_order_rows([bad], validate=True)
 

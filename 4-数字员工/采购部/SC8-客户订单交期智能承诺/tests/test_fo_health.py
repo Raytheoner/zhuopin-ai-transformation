@@ -81,7 +81,7 @@ def test_load_real_orders_failloud_alerts_then_raises(audit, monkeypatch):
     """FO 不可达 → load_real_orders 先告警再 re-raise（fail-loud，不回退 mock）。"""
     from sc8 import sources
 
-    def _unreachable(api_base=None, *, validate=True, page_size=2000, audit=None):
+    def _unreachable(api_base=None, **kwargs):
         raise RuntimeError("无法连接预测订单 API: HTTP 502")
     monkeypatch.setattr(sources, "load_forecast_orders_from_api", _unreachable)
 

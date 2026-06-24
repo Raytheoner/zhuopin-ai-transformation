@@ -27,15 +27,21 @@ def build_data_sources(*, order_src: str, bom_src: str,
 
 def load_real_orders(*, api_base: str | None = None,
                      limit: int | None = None, audit=None,
-                     ops_webhook_url: str | None = None) -> list[SalesOrder]:
+                     ops_webhook_url: str | None = None,
+                     status: str | None = None, date_from: str | None = None,
+                     date_to: str | None = None) -> list[SalesOrder]:
     """从 FO API 拉真实预测订单 → SalesOrder（计划出货日作 required_date）。
 
+    status：接口状态过滤（"2"=已审核，剔除草稿/关闭；None=不过滤）。
+    date_from/date_to：按 ShipPlanDate 区间过滤（None=不限）。
     limit：小样本验证时只取前 N 条（按订单行，不放量）。
     FO 不可达时：先发内部运维告警（audit + 企微内部群，见 fo_health），**再 re-raise**——
     fail-loud，绝不静默回退 mock（红线）。audit/ops_webhook_url 缺省则分别不留痕/不推送。
     """
     try:
-        fos = load_forecast_orders_from_api(api_base, audit=audit)
+        fos = load_forecast_orders_from_api(
+            api_base, audit=audit, status=status,
+            date_from=date_from, date_to=date_to)
     except Exception as e:
         from .fo_health import alert_fo_unreachable
         alert_fo_unreachable(e, api_base=api_base or "",

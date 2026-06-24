@@ -44,18 +44,19 @@ def load_sales_orders_csv(path: Path | str) -> list[SalesOrder]:
 
 
 class _FoApiRow(BaseModel):
-    """FO 预测订单 API（ZpViewSO）行的 Pydantic 边界校验。
+    """FO 预测订单 API（`/zp/api/ForecastOrder/Query`）行的 Pydantic 边界校验。
 
     缺 DocNo / ItemCode / ShipPlanDate 或类型不符 → ValidationError，脏数据不进下游。
+    字段名对齐 IT 正式库接口 ForecastOrderLineDTO（PascalCase，无 `ItemInfo_` 前缀）。
     """
-    DocNo:               str
-    ItemInfo_ItemCode:   str
-    ItemInfo_ItemName:   _Opt[str] = ""
-    Num:                 _Opt[float] = 0
-    ShipPlanDate:        str
-    Customer_Name:       _Opt[str] = ""
+    DocNo:         str
+    ItemCode:      str
+    ItemName:      _Opt[str] = ""
+    Num:           _Opt[float] = 0
+    ShipPlanDate:  str
+    CustomerName:  _Opt[str] = ""
 
-    @field_validator("DocNo", "ItemInfo_ItemCode", "ShipPlanDate", mode="before")
+    @field_validator("DocNo", "ItemCode", "ShipPlanDate", mode="before")
     @classmethod
     def _require_nonempty(cls, v, info):
         if v is None or str(v).strip() == "":
@@ -84,16 +85,16 @@ def parse_forecast_order_rows(rows: list[dict], *, validate: bool = True) -> lis
             # 先校验（缺 DocNo/ItemCode/ShipPlanDate 或类型不符 → 显式报错挡脏数据），
             # 再按校验后的料号前缀过滤（原材料等非 MVP 料号静默跳过）。
             row = _FoApiRow.model_validate(raw)
-            code = row.ItemInfo_ItemCode
+            code = row.ItemCode
             if code[:1].upper() not in MVP_ITEM_PREFIXES:
                 continue
-            doc_no, name, num, ship = row.DocNo, row.ItemInfo_ItemName or "", row.Num or 0, row.ShipPlanDate
+            doc_no, name, num, ship = row.DocNo, row.ItemName or "", row.Num or 0, row.ShipPlanDate
         else:
-            code = str(raw.get("ItemInfo_ItemCode") or "").strip()
+            code = str(raw.get("ItemCode") or "").strip()
             if not code or code[:1].upper() not in MVP_ITEM_PREFIXES:
                 continue
             doc_no = str(raw.get("DocNo") or "").strip()
-            name, num = str(raw.get("ItemInfo_ItemName") or "").strip(), raw.get("Num") or 0
+            name, num = str(raw.get("ItemName") or "").strip(), raw.get("Num") or 0
             ship = str(raw.get("ShipPlanDate") or "")
         result.append(ForecastOrder(
             fo_id=         doc_no,
@@ -102,32 +103,73 @@ def parse_forecast_order_rows(rows: list[dict], *, validate: bool = True) -> lis
             qty=           int(float(num)),
             ship_date=     str(ship)[:10],          # 取 YYYY-MM-DD 部分
             customer_id=   "",                      # FO API 不返回客户编码
-            customer_name= str(raw.get("Customer_Name") or "").strip(),
+            customer_name= str(raw.get("CustomerName") or "").strip(),
         ))
     return result
 
 
 def load_forecast_orders_from_api(
-    api_base: str | None = None, *, validate: bool = True, page_size: int = 2000,
-    audit=None,
+    api_base: str | None = None, *, validate: bool = True, page_size: int = 500,
+    api_key: str | None = None, date_from: str | None = None,
+    date_to: str | None = None, status: str | None = None,
+    org_code: str | None = None, audit=None,
 ) -> list[ForecastOrder]:
-    """从 FO 预测订单 API（ZpViewSO）加载真实预测订单（任务 2.1，收割自 supplychain）。
+    """从正式库 FO 预测订单 API 加载真实预测订单（IT 2026-06-24 交付的正式库接口）。
 
-    api_base 优先级：参数 > 环境变量 FO_API_BASE > 内网默认 http://localhost:8800。
-    只读 GET；响应行经 Pydantic 边界校验 + MVP 前缀过滤。
-    B4（审计报告 §3.2）：FO 访问层补轻量审计痕迹（source=FO）；audit=None 则不留痕。
+    接口：``GET {base}/zp/api/ForecastOrder/Query?apiKey=…&dateFrom=&dateTo=&page=&pageSize=``
+    鉴权：``apiKey`` 走 URL query（**非 OAuth2**，独立于 ZpConnector）。
+    响应外壳：``{Success, ResCode, ResMsg, Data:{Rows:[ForecastOrderLineDTO], Total}}``。
+
+    优先级：参数 > 环境变量（``FO_API_BASE`` / ``FORECAST_API_KEY``）。
+    只读 GET；按 Total 分页拉满；行经 Pydantic 边界校验 + MVP 前缀过滤。
+    **fail-loud**：缺配置/接口失败/网络异常一律抛错，绝不回退 mock（红线）。
+    安全：异常信息不带含 apiKey 的 URL（避免密钥进日志/审计）。
+    B4：FO 访问层补轻量审计痕迹（source=FO）；audit=None 则不留痕。
     """
-    base = (api_base or os.environ.get("FO_API_BASE", "http://localhost:8800")).rstrip("/")
-    url = f"{base}/api/forecast-orders?page_size={page_size}"
+    import urllib.parse
+
+    base = (api_base or os.environ.get("FO_API_BASE", "")).rstrip("/")
+    key = api_key or os.environ.get("FORECAST_API_KEY", "")
+    if not base:
+        raise RuntimeError("FO_API_BASE 未配置（正式库 https://erp.equalitytec.com:4443）")
+    if not key:
+        raise RuntimeError("FORECAST_API_KEY 未配置（IT 提供的 FO 接口密钥，写入 .env，勿入库）")
+
+    safe_url = f"{base}/zp/api/ForecastOrder/Query"     # 脱敏 URL（不含 apiKey），仅用于报错
+
+    def _qs(page: int) -> str:
+        p = {"apiKey": key, "page": page, "pageSize": page_size}
+        if date_from: p["dateFrom"] = date_from
+        if date_to:   p["dateTo"] = date_to
+        if status:    p["status"] = status
+        if org_code:  p["orgCode"] = org_code
+        return urllib.parse.urlencode(p)
+
+    rows: list[dict] = []
+    page = 1
     try:
-        with urllib.request.urlopen(url, timeout=30) as resp:
-            data = json.loads(resp.read())
+        while True:
+            with urllib.request.urlopen(f"{safe_url}?{_qs(page)}", timeout=30) as resp:
+                payload = json.loads(resp.read().decode("utf-8", "replace"))
+            ok = payload.get("Success", payload.get("success", True))
+            if not ok:
+                raise RuntimeError(
+                    f"FO 接口返回失败：{payload.get('ResMsg') or payload.get('resMsg') or 'unknown'}")
+            data = payload.get("Data") or payload.get("data") or {}
+            batch = data.get("Rows") or data.get("rows") or []
+            total = int(data.get("Total") or data.get("total") or 0)
+            rows.extend(batch)
+            if not batch or len(rows) >= total or page > 50:    # page>50 = 25000 行兜底闸
+                break
+            page += 1
+    except RuntimeError:
+        raise                                                   # 已是脱敏业务错误，直接抛
     except Exception as e:
-        raise RuntimeError(f"无法连接预测订单 API ({url})：{e}") from e
+        raise RuntimeError(f"无法连接预测订单 API ({safe_url})：{type(e).__name__}: {e}") from None
     finally:
         if audit is not None:
-            audit.trace(source="FO", action="forecast-orders")
-    return parse_forecast_order_rows(data.get("rows", []), validate=validate)
+            audit.trace(source="FO", action="ForecastOrder/Query")
+    return parse_forecast_order_rows(rows, validate=validate)
 
 
 def fo_to_sales_orders(fos: list[ForecastOrder]) -> list[SalesOrder]:
