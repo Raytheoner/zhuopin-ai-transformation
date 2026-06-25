@@ -86,6 +86,15 @@ WECOM_WEBHOOK_URL=
 } else {
     Write-Host "      .env 已存在" -ForegroundColor Green
 }
+# 护栏：FORECAST_API_KEY 为空（常见于拷成了空模板）→ 刷新必失败，提前红字告警
+if (Test-Path $envFile) {
+    $keyLine = Get-Content $envFile | Where-Object { $_ -match '^\s*FORECAST_API_KEY=' }
+    $keyVal = if ($keyLine) { ($keyLine -split '=', 2)[1].Trim().Trim('"').Trim("'") } else { "" }
+    if (-not $keyVal) {
+        Write-Host "      ⚠️ .env 里 FORECAST_API_KEY 为空/缺失 —— 刷新会报「FORECAST_API_KEY 未配置」。" -ForegroundColor Red
+        Write-Host "         请把笔记本仓库根的完整 .env 覆盖到 $envFile（含真实 FO 密钥）后重启任务。" -ForegroundColor Red
+    }
+}
 
 # ── 5. 防火墙放行 8091（内网 LAN 全网段，与 supplychain/SalesMarketing 一致）──
 # 注意：不要限 LocalSubnet —— 组员笔记本常在不同网段(如 WLAN)，LocalSubnet 会挡掉。
