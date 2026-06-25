@@ -20,14 +20,26 @@ import os
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[4]
 SC8 = Path(__file__).resolve().parent.parent
 
 
+def _find_env() -> Path | None:
+    """从本脚本向上逐级查找最近的 `.env`（布局无关）。
+
+    笔记本(monorepo)命中仓库根 .env；长开服务器扁平布局(C:\\baoguan\\app\\scripts\\…)
+    命中 C:\\baoguan\\.env。凭据只在 .env，不入库。"""
+    here = Path(__file__).resolve()
+    for d in (here.parent, *here.parents):
+        cand = d / ".env"
+        if cand.exists():
+            return cand
+    return None
+
+
 def load_env() -> None:
-    """把仓库根 .env 读入 os.environ（已存在的不覆盖）。凭据只在 .env，不入库。"""
-    env = REPO / ".env"
-    if not env.exists():
+    """把最近的 .env 读入 os.environ（已存在的不覆盖）。凭据只在 .env，不入库。"""
+    env = _find_env()
+    if not env:
         return
     for line in env.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
