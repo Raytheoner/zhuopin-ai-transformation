@@ -186,11 +186,15 @@ function doRefresh(){
    .finally(function(){if(b){b.disabled=false;b.textContent='🔄 刷新';}});
 }
 """
-    # 把静态 JS 末尾「读内嵌 DATA 后立即渲染 + 绑事件」替换为壳页引导：先绑控件，再 loadSnap
-    js_core = _HTML_JS
-    # 静态版最后几行是 renderKpis();renderFbtns();render(); + 三个事件绑定；
-    # 壳页改为：去掉立即渲染（由 applySnap 触发），保留事件绑定，追加刷新按钮 + 启动 loadSnap。
-    js_core = js_core.replace("renderKpis();renderFbtns();render();", "/* 渲染改由 applySnap 触发 */")
+    # 复用静态 JS，但要做两处剥离：
+    # ① 去掉静态版的内嵌占位符 `const DATA=__DATA__;`/`const META=__META__;`——壳页不内嵌数据，
+    #    DATA/META 由 boot 用 var 声明、applySnap 经 fetch 填充；保留这两行会是非法 JS（__DATA__ 未定义）
+    #    且与 boot 的声明冲突，导致整段脚本报错、页面停在"加载中…"（务必保留本剥离，有回归测试守护）。
+    # ② 去掉静态版结尾的"立即渲染"调用——壳页改由 applySnap 在 fetch 完成后触发渲染。
+    js_core = (_HTML_JS
+               .replace("const DATA=__DATA__;", "")
+               .replace("const META=__META__;", "")
+               .replace("renderKpis();renderFbtns();render();", "/* 渲染改由 applySnap 触发 */"))
     js = boot + js_core + r"""
 var rb=document.getElementById('refresh');if(rb)rb.addEventListener('click',doRefresh);
 loadSnap();

@@ -94,6 +94,11 @@ def test_shell_page_has_fetch_and_no_real_data(monkeypatch):
     # 壳页本身不嵌入真实成品数据（DATA 启动为空数组）
     assert "var DATA=[]" in html
     assert "比亚迪" not in html
+    # 回归守护：静态版占位符必须被剥离干净，否则是非法 JS（__DATA__ 未定义）→ 页面停在"加载中…"
+    assert "__DATA__" not in html
+    assert "__META__" not in html
+    # 不得残留静态版的 const DATA/META 声明（会与 boot 的 var 冲突）
+    assert "const DATA=" not in html and "const META=" not in html
 
 
 def test_cases_flow_and_customer_gate(monkeypatch):
