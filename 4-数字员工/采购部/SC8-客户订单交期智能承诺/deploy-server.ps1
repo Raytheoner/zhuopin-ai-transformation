@@ -132,6 +132,9 @@ Write-Host "      已注册" -ForegroundColor Green
 
 # ── 8. 启动 + 健康检查 ──
 Write-Host "[8/8] 启动服务..." -ForegroundColor Yellow
+# 先清掉占用该端口的旧实例（重部署时可能有 powershell 包装遗留的孤儿 python），保证单实例
+Get-NetTCPConnection -LocalPort $PORT -State Listen -ErrorAction SilentlyContinue |
+    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 Start-ScheduledTask -TaskName $TASK
 Start-Sleep -Seconds 6
 try {

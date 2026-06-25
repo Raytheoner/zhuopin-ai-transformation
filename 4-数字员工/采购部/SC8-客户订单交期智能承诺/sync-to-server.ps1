@@ -9,6 +9,7 @@
 $SSH_ALIAS = "supplychain-server"          # 复用已配好的 SSH 别名（→192.168.100.51）
 $SERVER_BASE = "C:/baoguan"                # 服务器基目录（正斜杠）
 $TASK = "BaoguanWebServer"
+$PORT = 8091
 
 $SC8  = $PSScriptRoot                                   # 本 SC8 工程目录
 $REPO = (Get-Item $SC8).Parent.Parent.Parent.FullName   # 仓库根
@@ -48,9 +49,13 @@ scp    "$SC8\deploy-server.ps1"  "${SSH_ALIAS}:${SERVER_BASE}/app/"
 if ($LASTEXITCODE -ne 0) { Write-Warning "部分文件同步失败，请检查" }
 Write-Host "      OK" -ForegroundColor Green
 
-# ── 5. 重启服务（首次部署任务不存在 → 提示去服务器跑 deploy-server.ps1）──
-Write-Host "[5/5] 重启服务..." -ForegroundColor Yellow
-ssh $SSH_ALIAS "schtasks /End /TN $TASK 2>nul & timeout /t 2 /nobreak >nul & schtasks /Run /TN $TASK"
+# ── 5. 重启服务 ──
+# 计划任务用 powershell→python 包装，schtasks /End 只杀 powershell、会留孤儿 python
+# 占着端口跑旧代码。故先 /End，再**按端口 taskkill** 清掉残留 python，最后 /Run 起单实例。
+# 首次部署任务不存在 → 杀进程/重启均无害失败 → 提示去服务器跑 deploy-server.ps1。
+Write-Host "[5/5] 重启服务（按端口清旧实例，防孤儿残留）..." -ForegroundColor Yellow
+ssh $SSH_ALIAS "schtasks /End /TN $TASK 2>nul & for /f `"tokens=5`" %p in ('netstat -ano ^| findstr :$PORT ^| findstr LISTENING') do @taskkill /F /PID %p"
+ssh $SSH_ALIAS "timeout /t 2 /nobreak >nul & schtasks /Run /TN $TASK"
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "自动重启失败（多半是首次部署、任务还没建）。"
     Write-Warning "首次部署：RDP 登录 192.168.100.51 → 先把 .env 放到 C:\baoguan\.env →"
