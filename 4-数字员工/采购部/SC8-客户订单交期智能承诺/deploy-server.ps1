@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  成品保供预警看板 — 长开服务器部署（照搬 supplychain/SalesMarketing 套路）
 #  在【服务器 192.168.100.51】上以管理员运行（首次部署 / 依赖变更时）：
 #    cd C:\baoguan\app
@@ -101,7 +101,7 @@ if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContin
 Write-Host "[6/8] 生成 start-baoguan.ps1..." -ForegroundColor Yellow
 $startPs1 = Join-Path $APP "start-baoguan.ps1"
 $startContent = @"
-# 保供看板启动包装（计划任务与手动启动共用）
+# Baoguan web service launcher (shared by scheduled task and manual start)
 `$env:SC8_DATA_SOURCE = "real"
 `$env:SC8_BAOGUAN_PORT = "$PORT"
 & "$pyExe" "$WEBSCRIPT"
