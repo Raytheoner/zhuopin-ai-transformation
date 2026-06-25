@@ -10,7 +10,7 @@
 #    C:\baoguan\.env                凭据（手工放，不入库）
 #
 #  端口 8091（避开 supplychain 8080 / SalesMarketing 8090，可同机共存）。
-#  红线：含真实客户名 → 防火墙只放行 LocalSubnet；对客闸全程关；外网开放须先加鉴权(待办#10)。
+#  红线：含真实客户名 → 仅内网 LAN 开放(不对公网)；对客闸全程关；外网开放须先加鉴权(待办#10)。
 # ============================================================
 
 $ErrorActionPreference = "Stop"
@@ -87,14 +87,20 @@ WECOM_WEBHOOK_URL=
     Write-Host "      .env 已存在" -ForegroundColor Green
 }
 
-# ── 5. 防火墙放行 8091（仅 LocalSubnet）──
-Write-Host "[5/8] 防火墙（入站 TCP $PORT，限 LocalSubnet）..." -ForegroundColor Yellow
+# ── 5. 防火墙放行 8091（内网 LAN 全网段，与 supplychain/SalesMarketing 一致）──
+# 注意：不要限 LocalSubnet —— 组员笔记本常在不同网段(如 WLAN)，LocalSubnet 会挡掉。
+# 红线针对的是「公网开放」(须先加鉴权,待办#10)，内网 LAN 全网段是这些看板的统一档。
+Write-Host "[5/8] 防火墙（入站 TCP $PORT，LAN 全网段）..." -ForegroundColor Yellow
 $ruleName = "Baoguan-WebServer-$PORT"
 if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP `
-        -LocalPort $PORT -Action Allow -Profile Private,Domain -RemoteAddress LocalSubnet | Out-Null
-    Write-Host "      已放行 $PORT" -ForegroundColor Green
-} else { Write-Host "      规则已存在" -ForegroundColor Green }
+        -LocalPort $PORT -Action Allow | Out-Null
+    Write-Host "      已放行 $PORT（LAN 全网段）" -ForegroundColor Green
+} else {
+    # 已存在则确保为全网段/全配置文件、启用（修早前 LocalSubnet 收窄导致跨网段打不开）
+    Set-NetFirewallRule -DisplayName $ruleName -RemoteAddress Any -Profile Any -Enabled True | Out-Null
+    Write-Host "      规则已存在，已确保放行 LAN 全网段" -ForegroundColor Green
+}
 
 # ── 6. 启动包装脚本（设 real + 端口，PowerShell 对中文/UTF-8 路径友好）──
 Write-Host "[6/8] 生成 start-baoguan.ps1..." -ForegroundColor Yellow
