@@ -43,7 +43,7 @@
 ## 7. 启动入口 + 联调 + 收尾
 
 - [x] 7.1 `scripts/run_baoguan_web.py`：载 `.env`、要求 `SC8_DATA_SOURCE=real`、注入 ConnectorAudit/AuditLogger、waitress 绑 `0.0.0.0:PORT`(默认 8090)、Windows GBK→UTF-8 输出
-- [ ] 7.2 LAN 真实联调（**Paul 现场验收**：手动刷新会打真实三源、🔴 真延期会推保供运维群）：启动→打开看板→手动刷新出真实四色→验证建案+企微推送(去重)→案例推进+草稿
+- [x] 7.2 LAN 真实联调（**Paul 现场验收通过 2026-06-25**：手动刷新打真实三源、🔴 真延期推保供运维群、建案+案例推进+草稿均验证）：启动→打开看板→手动刷新出真实四色→验证建案+企微推送(去重)→案例推进+草稿
 - [x] 7.3 全套回归：既有 75 → **102 passed / 2 skipped**（+27 新测试全绿，零退化）；`.env`/`reports`/`*.db` 经 git check-ignore 确认不入库
 - [x] 7.4 `openspec validate`、更新 CLAUDE.md 进度块 + 待办（#10 外网鉴权随此项；提醒 Paul LAN 跑通后做外网）；commit
 - [x] 7.5 **提醒 Paul**：LAN 版跑通后，决策外网访问 + 登录/Token 鉴权（待办 #10，含真实客户名红线）
