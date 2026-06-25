@@ -45,7 +45,6 @@ $pyExe  = Join-Path $VENV "Scripts\python.exe"
 
 # ── 3. editable 安装平台 + SC8（flask/waitress 随 SC8 依赖装上）──
 Write-Host "[3/8] 安装依赖（zhuopin_platform + SC8）..." -ForegroundColor Yellow
-& $pipExe install --quiet --upgrade pip
 & $pipExe install --quiet -e $PLATFORM
 & $pipExe install --quiet -e $APP
 Write-Host "      完成" -ForegroundColor Green
