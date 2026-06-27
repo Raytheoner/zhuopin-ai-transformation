@@ -231,6 +231,10 @@ class ProposalParser:
             doc.warnings.append(f"未定位到章节：{missing_secs}")
 
         self._parse_project_info(doc, secs.get("一、项目信息"))
+        # 项目类型驱动适用规则集
+        pt = doc.fields.get("一、项目信息/项目类型")
+        if pt and pt.is_present:
+            doc.project_type = str(pt.value).strip()
         return doc
 
     # ---------- 模块一：项目信息 ----------

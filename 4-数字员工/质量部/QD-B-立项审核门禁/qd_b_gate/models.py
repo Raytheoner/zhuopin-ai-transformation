@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -72,3 +73,41 @@ class ProposalDocument:
 
     def checked_options(self, name: str) -> list[str]:
         return [opt for opt, ck in self.checkboxes.get(name, []) if ck]
+
+
+class Verdict(str, Enum):
+    """单条规则判定结论。"""
+    PASS = "通过"
+    FAIL = "不合格"        # 含阻断/错误
+    WARN = "待改进"        # 警告/提示级偏差
+    NA = "不适用"
+    PENDING = "未实现"     # 该规则判定逻辑尚未实现（解析/规则未覆盖）
+    MANUAL = "转人工"      # C 类，只验在否不下结论
+
+    @classmethod
+    def from_trial_tag(cls, trial_result: str) -> "Verdict | None":
+        """从 K 列试评文本前缀 [xxx] 解析期望结论（对账黄金）。"""
+        m = re.match(r"\s*\[(.+?)\]", trial_result or "")
+        if not m:
+            return None
+        tag = m.group(1).strip()
+        return {
+            "通过": cls.PASS, "不合格": cls.FAIL, "待改进": cls.WARN,
+            "不适用": cls.NA,
+        }.get(tag)
+
+
+@dataclass
+class RuleResult:
+    """一条规则的判定结果。"""
+    rule_id: str
+    check_item: str
+    verdict: Verdict
+    severity_level: str = ""       # 错误/警告/提示（命中不合格时有意义）
+    evidence: str = ""             # 判定依据（引用原文/重算值）
+    suggestion: str = ""           # 修改建议
+    impl_class: str = "A"
+
+    @property
+    def is_blocking(self) -> bool:
+        return self.verdict == Verdict.FAIL and self.severity_level == "错误"

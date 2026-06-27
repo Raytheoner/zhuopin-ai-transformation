@@ -3,9 +3,10 @@
 技术服务类样本，对照工作汇总.xlsx「立项门禁」K 列试评结果锁定解析正确性。
 样本本地脱敏、不入库（缺失自动跳过）。全 13 模块 + 82 规则黄金回归随实现扩展。
 """
-from qd_b_gate.models import ExtractStatus
+from qd_b_gate.models import ExtractStatus, Verdict
 from qd_b_gate.parser import ProposalParser
 from qd_b_gate.probe import run_probe
+from qd_b_gate.rules.engine import reconcile_with_trial, run_rules
 
 
 def test_huafeng_sections_and_anchors(huafeng_path):
@@ -41,3 +42,29 @@ def test_huafeng_version_mismatch_flagged(huafeng_path):
     doc = ProposalParser(huafeng_path).parse()
     assert doc.template_version == "A2"
     assert any("版本不一致" in w for w in doc.warnings)
+
+
+def test_huafeng_trial_reconciliation_100pct(huafeng_path):
+    """试评对账：已实现的 A 类规则判定须与 K 列试评 100% 一致（确定性零偏差，D10）。"""
+    doc = ProposalParser(huafeng_path).parse()
+    rep = reconcile_with_trial(doc)
+    assert len(rep.compared) >= 14, "可比条目过少，检查实现规则/K列标签"
+    assert rep.agreement_rate == 1.0, "分歧：\n" + rep.summary()
+
+
+def test_huafeng_rule11_end_date_fail(huafeng_path):
+    """规则 11 结束日期未填 → 不合格（一票否决项），与 K 列试评一致。"""
+    doc = ProposalParser(huafeng_path).parse()
+    by_id = {r.rule_id: r for r in run_rules(doc)}
+    r11 = by_id["11"]
+    assert r11.verdict == Verdict.FAIL
+    assert r11.is_blocking          # 阻断级 → 错误
+
+
+def test_engine_does_not_overclaim(huafeng_path):
+    """未实现判定的 A 类规则必须标 PENDING，不冒判（54/68 尚未实现）。"""
+    doc = ProposalParser(huafeng_path).parse()
+    results = run_rules(doc)
+    assert len(results) == 68
+    pending = [r for r in results if r.verdict == Verdict.PENDING]
+    assert len(pending) == 54       # 68 - 14 已实现
