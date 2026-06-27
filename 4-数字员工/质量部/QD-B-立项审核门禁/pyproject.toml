@@ -1,0 +1,28 @@
+[project]
+name = "qd-b-project-gate-review"
+version = "0.1.0"
+description = "QD-B 项目立项审核门禁（开发类 EQQR8082 A2.1）— 立项书解析 + 82 规则预审 + 三档审核报告 + L2 委员会确认 + 全链审计"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+#   pip install -e .
+# 之后 from zhuopin_platform... import，一份代码处处复用（CLAUDE.md §4/§6）。
+dependencies = [
+    "zhuopin_platform",
+    "openpyxl>=3.1",   # 立项书是合并单元格 Excel 表单，解析必需
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["qd_b_gate*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

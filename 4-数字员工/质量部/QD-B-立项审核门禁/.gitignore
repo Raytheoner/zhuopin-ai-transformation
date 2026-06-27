@@ -1,0 +1,12 @@
+# 构建/缓存产物
+__pycache__/
+*.egg-info/
+.pytest_cache/
+*.pyc
+
+# 运行期产物（审计日志/报告本地化，不入库）
+reports/
+
+# 黄金样本：真实立项数据脱敏自包含，绝不入库（含 OEM 报价附件）
+data/golden/*
+!data/golden/.gitkeep
