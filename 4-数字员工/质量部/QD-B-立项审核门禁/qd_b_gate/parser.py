@@ -17,11 +17,16 @@ from pathlib import Path
 
 import openpyxl
 from openpyxl.utils import coordinate_to_tuple, get_column_letter
+from openpyxl.utils.datetime import from_excel
 
 from .models import ExtractStatus, FieldValue, ProposalDocument
 
-# 13 模块章节标题（按 A2.1 真实模板正文，非规则表的简称）。
-# 取数锚这些文本；用「以…开头」匹配，吸收尾随空格/全半角差异。
+# 13 模块「序号 + 规范名」。**取数锚序号前缀（一、…十三、），不锚描述文本**——
+# 描述文本随模板版本变（如模块八："项目成本及收益分析" / "项目全生命周期的成本效益
+# 分析"；模块九："项目里程碑计划与阶段预算规划" / "项目开发期限、时间节点及各阶段
+# 预算"），但序号前缀稳定（design.md D3 抗改版）。规范名仅用于字段键/展示。
+SECTION_ORDINALS = ["一", "二", "三", "四", "五", "六", "七", "八", "九",
+                    "十", "十一", "十二", "十三"]
 SECTION_TITLES = [
     "一、项目信息",
     "二、立项依据",
@@ -37,6 +42,8 @@ SECTION_TITLES = [
     "十二、总结",
     "十三、立项决议",
 ]
+# 序号 -> 规范标题键（按位置对应）
+_ORD_TO_TITLE = dict(zip(SECTION_ORDINALS, SECTION_TITLES))
 
 
 def _norm(s) -> str:
@@ -113,13 +120,23 @@ class ProposalParser:
 
     # ---------- 章节定位 ----------
     def section_rows(self) -> dict[str, tuple[int, int]]:
-        """返回各章节标题 -> (起始行, 结束行)。结束行 = 下一章节起始行-1。"""
-        starts: list[tuple[str, int]] = []
-        for title in SECTION_TITLES:
-            coord = self.find_label(title)
-            if coord:
-                starts.append((title, coordinate_to_tuple(coord)[0]))
-        starts.sort(key=lambda x: x[1])
+        """返回各章节（规范标题）-> (起始行, 结束行)。
+
+        **按 A 列序号前缀（一、…十三、）定位**，吸收描述文本的版本差异（D3）。
+        结束行 = 下一章节起始行-1。
+        """
+        # 序号 -> 行号（取该序号在 A 列首次出现）
+        ord_row: dict[str, int] = {}
+        for row in self.ws.iter_rows():
+            cell = row[0]            # A 列
+            t = _norm(cell.value)
+            if not t:
+                continue
+            m = re.match(r"^(十[一二三]?|[一二三四五六七八九])[、，]", t)
+            if m and m.group(1) in _ORD_TO_TITLE and m.group(1) not in ord_row:
+                ord_row[m.group(1)] = cell.row
+        starts = sorted(((_ORD_TO_TITLE[o], r) for o, r in ord_row.items()),
+                        key=lambda x: x[1])
         out: dict[str, tuple[int, int]] = {}
         for i, (title, row) in enumerate(starts):
             end = starts[i + 1][1] - 1 if i + 1 < len(starts) else self.ws.max_row
@@ -127,26 +144,86 @@ class ProposalParser:
         return out
 
     def detect_template_version(self) -> str:
-        """从封面/履历或标题识别模板版本（A0/A1/A2/A2.1）。"""
+        """识别模板版本（A2.1 / A2 / A1 / A0）。
+
+        来源优先级：封面/履历单元格 → 文件名。吸收"A2.1""2.1版本""测试专用2.1"
+        等写法（华丰填件文件名即"…2.1版本"，无"A"前缀）。
+        """
+        def classify(text: str) -> str | None:
+            t = _norm(text)
+            if not t:
+                return None
+            if re.search(r"A?2\.1|2\.1\s*版本", t):
+                return "A2.1"
+            if re.search(r"\bA2\b|A2版", t):
+                return "A2"
+            if re.search(r"\bA1\b", t):
+                return "A1"
+            if re.search(r"\bA0\b", t):
+                return "A0"
+            return None
+
+        # 1) 优先「当前版本」显式标记（封面），最权威
+        for name in self.wb.sheetnames:
+            ws = self.wb[name]
+            coord = self.find_label("当前版本") if ws is self.ws else None
+            for row in ws.iter_rows(min_row=1, max_row=min(40, ws.max_row or 1)):
+                for cell in row:
+                    if _norm(cell.value) == "当前版本":
+                        # 取右侧/下方相邻值
+                        for nb in (cell.row, cell.row + 1):
+                            for nc in range(cell.column, cell.column + 4):
+                                vv = classify(ws.cell(row=nb, column=nc).value)
+                                if vv:
+                                    return vv
+        # 2) 退路：扫封面/履历任意单元格
         for name in self.wb.sheetnames:
             ws = self.wb[name]
             for row in ws.iter_rows(min_row=1, max_row=min(40, ws.max_row or 1)):
                 for cell in row:
-                    m = re.search(r"A2\.1|A2(?!\.)|A1\b|A0\b|EQQR8082", _norm(cell.value))
-                    if m and "A2.1" in _norm(cell.value):
-                        return "A2.1"
-        # 文件名兜底
-        if "A2.1" in self.path:
+                    v = classify(cell.value)
+                    if v:
+                        return v
+        # 3) 末路：文件名
+        return classify(Path(self.path).name) or "unknown"
+
+    def filename_version(self) -> str:
+        """文件名暗示的版本（与封面嵌入版本比对，揭示命名/版本不一致）。"""
+        t = _norm(Path(self.path).name)
+        if re.search(r"2\.1", t):
             return "A2.1"
+        if re.search(r"\bA2\b|A2版", t):
+            return "A2"
         return "unknown"
+
+    @staticmethod
+    def _maybe_date(value):
+        """Excel 日期序列号 → YYYY-MM-DD。非日期序列原样返回。
+
+        填件里日期常以序列号缓存（如 46188）。合理区间 [25569(1970), 80000(~2119)]
+        视为日期序列，转 ISO 日期串；否则原样。
+        """
+        if isinstance(value, (int, float)) and 25569 <= value <= 80000:
+            try:
+                return from_excel(value).date().isoformat()
+            except Exception:
+                return value
+        return value
 
     # ---------- 主入口 ----------
     def parse(self) -> ProposalDocument:
         doc = ProposalDocument(source_path=self.path)
         doc.template_version = self.detect_template_version()
+        fname_ver = self.filename_version()
         if doc.template_version != "A2.1":
             doc.warnings.append(
-                f"模板版本={doc.template_version}，MVP 仅适配 A2.1，按 A2.1 锚点解析可能偏差，需人工核"
+                f"封面嵌入版本={doc.template_version}（MVP 目标 A2.1）；序号锚点解析与版本无关、"
+                f"已正常定位，但版本差异涉及的模块（如采购计划）字段需抽样核对"
+            )
+        if fname_ver != "unknown" and fname_ver != doc.template_version:
+            doc.warnings.append(
+                f"⚠ 版本不一致：文件名暗示 {fname_ver}，封面「当前版本」为 {doc.template_version}"
+                f"——交陈忱确认该填件实际版本（命名/封面/履历对齐）"
             )
         secs = self.section_rows()
         missing_secs = [t for t in SECTION_TITLES if t not in secs]
@@ -178,6 +255,9 @@ class ProposalParser:
     # 复选框字段（True/False 成对）。项目类型不在此列 —— 它是文本单选，走普通取值。
     CHECKBOX_FIELDS = ["项目等级", "适用法规/体系"]
 
+    # 日期型字段：抽到 Excel 序列号时转 ISO 日期
+    DATE_FIELDS = {"开始日期", "结束日期"}
+
     def _parse_project_info(self, doc: ProposalDocument, rng: tuple[int, int] | None):
         if rng is None:
             doc.warnings.append("模块一未定位，项目信息字段全部 NOT_FOUND")
@@ -195,6 +275,8 @@ class ProposalParser:
                                               anchor=label_text, source_cell=src,
                                               reason="锚点命中但值为空")
             else:
+                if key in self.DATE_FIELDS:
+                    value = self._maybe_date(value)
                 doc.fields[fkey] = FieldValue(key=fkey, value=_norm(value),
                                               status=ExtractStatus.EXTRACTED,
                                               anchor=label_text, source_cell=src)
