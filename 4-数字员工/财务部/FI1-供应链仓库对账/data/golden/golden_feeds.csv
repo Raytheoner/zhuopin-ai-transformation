@@ -1,0 +1,5 @@
+component_id,component_name,actual_qty,unit,period
+G1,件1-标准内,215,PCS,2026-08
+G2,件2-超损,120,PCS,2026-08
+G3,件3-短缺,480,PCS,2026-08
+G4,件4-无基准,30,PCS,2026-08

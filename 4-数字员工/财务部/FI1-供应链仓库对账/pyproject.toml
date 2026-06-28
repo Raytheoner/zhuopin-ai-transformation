@@ -1,0 +1,25 @@
+[project]
+name = "fi1-warehouse-reconcile"
+version = "0.1.0"
+description = "FI1 供应链自动仓库对账（内部对账 MVP）— SMT 实际投料 vs BOM 理论用量差异对账 + 差异分类 + L2 异常门禁 + 全链审计"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+#   pip install -e .
+# 之后 from zhuopin_platform... import，一份代码处处复用（CLAUDE.md §4/§6）。
+dependencies = [
+    "zhuopin_platform",
+    "pydantic>=2.0",   # 数据接入层边界校验（与 SC8 loaders 一致）
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fi1*"]

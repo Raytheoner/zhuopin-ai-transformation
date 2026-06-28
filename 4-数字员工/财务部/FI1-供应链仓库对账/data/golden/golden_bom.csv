@@ -1,0 +1,4 @@
+product_id,component_id,component_name,level,qty_per_unit,loss_rate,unit
+P1,G1,件1-标准内,1,2,0.10,PCS
+P1,G2,件2-超损,1,1,0.05,PCS
+P1,G3,件3-短缺,1,5,0.05,PCS
