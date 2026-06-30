@@ -8,7 +8,8 @@
   FO_API_BASE / FORECAST_API_KEY        FO 预测订单接口（apiKey）
   U9C_* / XKY_*                          BOM（U9C OAuth2）/ 携客云承诺（分层取数）
   WECOM_WEBHOOK_URL 或 SC8_BAOGUAN_OPS_WEBHOOK_URL   真延期推送的保供运维群
-  SC8_BAOGUAN_REFRESH_MIN（默认 360=6h）  定时后台刷新间隔
+  SC8_BAOGUAN_REFRESH_MIN（默认 60=1h）   定时后台刷新间隔（缓存新鲜度；看板读缓存秒开）
+  SC8_SRM_ANSWER_TTL_MIN（默认 360=6h）   firm 承诺交期缓存有效期（提速立即重算；未答交始终重查）
   SC8_FO_STATUS（默认 2=已审核，all=不过滤）
 
 红线：含真实客户名 → 仅 LAN（0.0.0.0 内网，无登录鉴权；外网访问+鉴权=待办#10）；
@@ -81,16 +82,19 @@ def main() -> int:
                 or os.environ.get("WECOM_WEBHOOK_URL"))
     fo_status = os.environ.get("SC8_FO_STATUS", "2")
     fo_status = None if fo_status.lower() == "all" else fo_status
-    refresh_min = int(os.environ.get("SC8_BAOGUAN_REFRESH_MIN", "360"))
+    refresh_min = int(os.environ.get("SC8_BAOGUAN_REFRESH_MIN", "60"))
     port = int(os.environ.get("SC8_BAOGUAN_PORT", "8090"))
+    # firm 承诺缓存有效期（分钟，默认 360=6h）→ 提速立即重算；未答交始终重查
+    srm_ttl_sec = int(os.environ.get("SC8_SRM_ANSWER_TTL_MIN", "360")) * 60
 
     app = create_app(snapshot_store=snap_store, case_store=case_store,
                      audit=audit, trace=trace, ops_webhook_url=ops_hook,
-                     fo_status=fo_status)
+                     fo_status=fo_status, cache_dir=reports, srm_ttl_sec=srm_ttl_sec)
     start_background_refresh(app, interval_min=refresh_min)
 
     print("成品保供预警看板 — Web 服务启动中…")
     print(f"  数据源 real · FO 状态过滤={fo_status or 'all'} · 定时刷新 {refresh_min} 分钟")
+    print(f"  firm 承诺缓存 {srm_ttl_sec // 60} 分钟（提速立即重算；未答交始终重查）")
     print(f"  缓存/案例：{reports}（git-ignored，含真实客户名）")
     print(f"  真延期推送：{'已配置保供运维群' if ops_hook else '未配置（仅建案不推送）'}")
     print(f"  对客闸 CUSTOMER_OUTBOUND_ENABLED={config.CUSTOMER_OUTBOUND_ENABLED}（全程关闭）")
