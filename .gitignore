@@ -2,6 +2,10 @@
 .env
 *.env.local
 .env.*.local
+# 含真实凭据的所有 .env 变体（如 .env.test 探测档、.env.prod）——一律不提交；
+# 仅放行不含真实值的样例 .env.example（见下方 negation）
+.env.*
+!.env.example
 
 # Python
 __pycache__/
