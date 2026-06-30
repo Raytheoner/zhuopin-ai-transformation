@@ -111,7 +111,9 @@ def _extract_board_po_map(board: list, materials: set[str] | None):
 def load_srm_deliveries(mode: str, *, start: str | None = None,
                         end: str | None = None, audit=None,
                         materials: set[str] | None = None,
-                        connector=None) -> list:
+                        connector=None,
+                        cache_path: str | None = None,
+                        ttl_sec: int = 0) -> list:
     """SRM 承诺交付记录（分层取数，SOP §4.6）。
 
     mode != "real" → 返回空（降级：所有物料走无反馈启发式、低置信）。
@@ -125,6 +127,9 @@ def load_srm_deliveries(mode: str, *, start: str | None = None,
                （携客云限流 1 req/30s）；None=不过滤（全看板，慎用）。
     connector：注入 XkySrmConnector（测试用）；None 时 from_env。
     B4：注入 ConnectorAudit（缺省 None；生产应传 access-trace sink）。
+    cache_path/ttl_sec：firm 承诺交期缓存（提速「立即重算」）。cache_path 给定且 ttl_sec>0 时，
+               firm 命中 TTL 内复用、跳过 /purchase/answer；未答交始终重查。
+               缺省（cache_path=None / ttl_sec=0）= 原全量行为（测试/golden 不受影响）。
     """
     if mode != "real":
         return []
@@ -142,7 +147,13 @@ def load_srm_deliveries(mode: str, *, start: str | None = None,
     distinct_pairs = sorted({pv for pairs in mat_pairs.values() for pv in pairs})
     confirmed: dict[str, str] = {}
     if distinct_pairs:
-        confirmed, _failed = connector.get_confirmed_dates(distinct_pairs)
+        if cache_path and ttl_sec > 0:
+            # 增量：firm 承诺 TTL 内复用，只重查新增/未答复/过期（提速立即重算）
+            from .srm_answer_cache import fetch_confirmed_cached
+            confirmed, _stats = fetch_confirmed_cached(
+                connector, distinct_pairs, cache_path=cache_path, ttl_sec=ttl_sec)
+        else:
+            confirmed, _failed = connector.get_confirmed_dates(distinct_pairs)
 
     # ③ 合并 material → 承诺交期（answer 优先，取最早）
     out: list = []

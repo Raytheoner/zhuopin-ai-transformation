@@ -53,11 +53,16 @@ def _now_iso() -> str:
 
 
 def compute_snapshot(*, today: date | None = None, status: str | None = "2",
-                     audit=None, trace=None) -> Snapshot:
+                     audit=None, trace=None,
+                     cache_dir: str | Path | None = None,
+                     srm_ttl_sec: int = 0) -> Snapshot:
     """进程内重算保供看板：FO + U9C BOM + 携客云承诺（分层）→ build_dashboard → Snapshot。
 
     status：FO 状态过滤（"2"=已审核，剔除草稿/关闭；None=不过滤）。
     audit / trace：平台 AuditLogger / ConnectorAudit，缺省 None（生产应注入）。
+    cache_dir/srm_ttl_sec：firm 承诺交期缓存（提速立即重算）。给定时把
+        cache_dir/srm_answer_cache.json + ttl 传入 load_srm_deliveries；
+        缺省（None/0）= 原全量行为（测试/golden 不变）。
     real 任一源不可达 → 由 sources 层 fail-loud 抛出（本函数不吞异常，交调用方保留旧缓存）。
     """
     today = today or date.today()
@@ -72,7 +77,10 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
     bom = load_real_bom(product_ids, max_depth=1, audit=trace)
     components = {r.component_id for r in bom if r.level == 1}
     # ③ 真实承诺交期（分层取数：/purchase/answer 权威 > 看板辅助 > 无答复兜底）
-    srm = load_srm_deliveries("real", materials=components, audit=trace)
+    #    cache_dir 给定 → firm 承诺 TTL 内复用，提速立即重算（未答交仍每次重查）
+    srm_cache = str(Path(cache_dir) / "srm_answer_cache.json") if cache_dir else None
+    srm = load_srm_deliveries("real", materials=components, audit=trace,
+                              cache_path=srm_cache, ttl_sec=srm_ttl_sec)
     # ④ 保供齐套 → 四色看板（不改判级语义）
     rows = build_dashboard(orders, bom, srm, today=today)
 

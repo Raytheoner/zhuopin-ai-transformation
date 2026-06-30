@@ -34,8 +34,12 @@ from .case_store import NEXT_STATUS, CaseStatus, CaseStore
 
 def create_app(*, snapshot_store: SnapshotStore, case_store: CaseStore,
                audit=None, trace=None, ops_webhook_url: str | None = None,
-               fo_status: str | None = "2") -> Flask:
-    """组装 Flask app（依赖注入，便于测试）。"""
+               fo_status: str | None = "2",
+               cache_dir=None, srm_ttl_sec: int = 0) -> Flask:
+    """组装 Flask app（依赖注入，便于测试）。
+
+    cache_dir/srm_ttl_sec：firm 承诺缓存目录与有效期（提速立即重算）；缺省关闭。
+    """
     app = Flask(__name__)
     app.config["SNAP"] = snapshot_store
     app.config["CASES"] = case_store
@@ -44,7 +48,8 @@ def create_app(*, snapshot_store: SnapshotStore, case_store: CaseStore,
     def _do_refresh() -> dict:
         """执行一次重算（持锁串行）。fail-loud：异常时保留旧缓存、上抛摘要。"""
         snap = compute_snapshot(today=date.today(), status=fo_status,
-                                audit=audit, trace=trace)
+                                audit=audit, trace=trace,
+                                cache_dir=cache_dir, srm_ttl_sec=srm_ttl_sec)
         prev = snapshot_store.get()
         prev = prev if prev.ok else None        # 空态不作为去重基线（首刷全推）
         snapshot_store.set(snap)
@@ -176,14 +181,14 @@ function loadSnap(){
    .catch(function(){var c=document.getElementById('cards');if(c)c.innerHTML='<div class="empty">加载失败</div>';});
 }
 function doRefresh(){
-  var b=document.getElementById('refresh');if(b){b.disabled=true;b.textContent='刷新中…';}
+  var b=document.getElementById('recompute');if(b){b.disabled=true;b.textContent='重算中…';}
   fetch('/api/refresh',{method:'POST'}).then(function(r){return r.json().then(function(j){return {s:r.status,j:j};});})
    .then(function(o){
-     if(o.s===409){alert(o.j.msg||'刷新进行中');}
-     else if(!o.j.ok){alert('刷新失败：'+(o.j.error||'未知'));}
+     if(o.s===409){alert(o.j.msg||'重算进行中');}
+     else if(!o.j.ok){alert('重算失败：'+(o.j.error||'未知'));}
      loadSnap();
-   }).catch(function(){alert('刷新请求失败');})
-   .finally(function(){if(b){b.disabled=false;b.textContent='🔄 刷新';}});
+   }).catch(function(){alert('重算请求失败');})
+   .finally(function(){if(b){b.disabled=false;b.textContent='⟳ 立即重算';}});
 }
 """
     # 复用静态 JS，但要做两处剥离：
@@ -196,7 +201,8 @@ function doRefresh(){
                .replace("const META=__META__;", "")
                .replace("renderKpis();renderFbtns();render();", "/* 渲染改由 applySnap 触发 */"))
     js = boot + js_core + r"""
-var rb=document.getElementById('refresh');if(rb)rb.addEventListener('click',doRefresh);
+var rb=document.getElementById('refresh');if(rb)rb.addEventListener('click',loadSnap);      // 🔄刷新=只读缓存(秒开)
+var rc=document.getElementById('recompute');if(rc)rc.addEventListener('click',doRefresh);  // ⟳立即重算=全量重算(慢)
 loadSnap();
 setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全量，仅读快照）
 """
@@ -208,7 +214,9 @@ setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全�
         + nav + "<div class=\"wrap\">\n"
         + '<div class="head"><div><div class="title">成品保供预警看板</div>\n'
         + '<div class="sub" id="ts">加载中…</div></div>\n'
-        + '<div class="badges"><button class="btn" id="refresh" type="button">🔄 刷新</button>'
+        + '<div class="badges">'
+        + '<button class="btn" id="refresh" type="button" title="读取最新缓存，秒开">🔄 刷新</button>'
+        + '<button class="btn" id="recompute" type="button" title="重新向 FO/U9C/携客云全量取数计算，较慢（约1-2分钟），需要最新数据时用">⟳ 立即重算</button>'
         + '<span class="badge">内部保供运维 · 不对客 · LAN</span></div></div>\n'
         + '<div class="kpis" id="kpis"></div>\n'
         + '<div class="toolbar"><div class="fbtns" id="fbtns"></div>\n'

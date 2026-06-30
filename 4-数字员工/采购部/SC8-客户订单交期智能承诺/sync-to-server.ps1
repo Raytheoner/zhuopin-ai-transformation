@@ -54,8 +54,10 @@ Write-Host "      OK" -ForegroundColor Green
 # 占着端口跑旧代码。故先 /End，再**按端口 taskkill** 清掉残留 python，最后 /Run 起单实例。
 # 首次部署任务不存在 → 杀进程/重启均无害失败 → 提示去服务器跑 deploy-server.ps1。
 Write-Host "[5/5] 重启服务（按端口清旧实例，防孤儿残留）..." -ForegroundColor Yellow
-ssh $SSH_ALIAS "schtasks /End /TN $TASK 2>nul & for /f `"tokens=5`" %p in ('netstat -ano ^| findstr :$PORT ^| findstr LISTENING') do @taskkill /F /PID %p"
-ssh $SSH_ALIAS "timeout /t 2 /nobreak >nul & schtasks /Run /TN $TASK"
+# 用 | Out-Null 在 PowerShell 侧丢弃 ssh 的标准输出（服务器中文成功提示→不进终端、不乱码）；
+# ssh 自身的连接错误走 stderr 仍可见。$LASTEXITCODE 不受管道影响，重启成功/失败判断照常。
+ssh $SSH_ALIAS "schtasks /End /TN $TASK 2>nul & for /f `"tokens=5`" %p in ('netstat -ano ^| findstr :$PORT ^| findstr LISTENING') do @taskkill /F /PID %p" | Out-Null
+ssh $SSH_ALIAS "timeout /t 2 /nobreak >nul & schtasks /Run /TN $TASK" | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "自动重启失败（多半是首次部署、任务还没建）。"
     Write-Warning "首次部署：RDP 登录 192.168.100.51 → 先把 .env 放到 C:\baoguan\.env →"
