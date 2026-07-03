@@ -128,13 +128,27 @@ Q6 提前到 10 月后，PMO+财务"立项可机器核规则边界共识"及质�
 - 新增"完工即归档"强制规则（tasks 全 [x] 当场 /opsx:archive，不允许跨 session 拖延）
 - 场景固定流程加第 6 步：当场写/更新场景 CLAUDE.md（六段式）→ git commit
 
+**阶段6 ✅ SuperPowers 项目域依赖声明（2026-07-02 CC 续做）**：
+- 查文档核实：SuperPowers 在 `anthropics/claude-plugins-official`（非 `obra/superpowers-marketplace`），插件 ID = `superpowers@claude-plugins-official`，5.1.0
+- 新增 `0-学习与工具/环境依赖清单.md`：安装命令 + 6 个技能清单 + `settings.json` 手动创建命令
+- `.claude/settings.json` 内容已写进清单（pretooluse-guard.ps1 保护此文件，**需 Paul 手动创建**）
+- 同步补齐：phases 1-3 遗漏 git rm（三个归档变更包） + 2026-07-01 规划文档更新 → 全部推 master
+
+**⚠️ Paul 手动待办（settings.json）**：  
+在项目根目录 PowerShell 执行（见清单 §三）：
+```powershell
+$content = '{"extraKnownMarketplaces":{"claude-plugins-official":{"source":{"source":"github","repo":"anthropics/claude-plugins-official"}}},"enabledPlugins":{"superpowers@claude-plugins-official":true}}'
+$content | Set-Content -Path ".claude\settings.json" -Encoding UTF8
+```
+创建后 `git add .claude\settings.json && git commit -m "config: 添加项目域 SuperPowers 插件声明"` 提交。
+
 ---
 
-## 【下一会话主攻（hygiene PR 合并后）】
+## 【下一会话主攻】
 
-1. **Paul 审 PR #16 确认合 master**（5 个场景 CLAUDE.md + §5 纪律补丁）。
-2. **继续接力接力文件的并行盯的 5 项**（QD-B/SC3 真实接入/SC2/待办 #10/8D 校验脚本）。
-3. **接 Paul "规整后"的部门场景调整清单**（2026-07-01 裁定延后，Paul 整理后再提）。
+1. **Paul 手动创建 `.claude/settings.json`** 并 git commit（见上方手动待办，settings.json 是 CC 不得写的受保护文件）。
+2. **接 Paul "规整后"的部门场景调整清单**（2026-07-01 裁定延后，Paul 整理后再提），据此零残差同步全景§加速启动总览 + 实施计划§一/§二 + 前置总表 + 甘特 HTML。
+3. **并行盯的 5 项**（QD-B/SC3 真实接入/SC2/待办 #10/8D 校验脚本）见下方。
 
 ---
 
