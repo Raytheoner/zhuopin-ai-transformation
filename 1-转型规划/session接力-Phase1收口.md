@@ -134,21 +134,14 @@ Q6 提前到 10 月后，PMO+财务"立项可机器核规则边界共识"及质�
 - `.claude/settings.json` 内容已写进清单（pretooluse-guard.ps1 保护此文件，**需 Paul 手动创建**）
 - 同步补齐：phases 1-3 遗漏 git rm（三个归档变更包） + 2026-07-01 规划文档更新 → 全部推 master
 
-**⚠️ Paul 手动待办（settings.json）**：  
-在项目根目录 PowerShell 执行（见清单 §三）：
-```powershell
-$content = '{"extraKnownMarketplaces":{"claude-plugins-official":{"source":{"source":"github","repo":"anthropics/claude-plugins-official"}}},"enabledPlugins":{"superpowers@claude-plugins-official":true}}'
-$content | Set-Content -Path ".claude\settings.json" -Encoding UTF8
-```
-创建后 `git add .claude\settings.json && git commit -m "config: 添加项目域 SuperPowers 插件声明"` 提交。
+**✅ Paul 手动完成（2026-07-03）**：已在 PowerShell 执行 Set-Content，`git commit 6996e92 + git push`，`.claude/settings.json` 已入库。**SDD 流程收口 6 个阶段全部完成，无任何遗留待办。**
 
 ---
 
 ## 【下一会话主攻】
 
-1. **Paul 手动创建 `.claude/settings.json`** 并 git commit（见上方手动待办，settings.json 是 CC 不得写的受保护文件）。
-2. **接 Paul "规整后"的部门场景调整清单**（2026-07-01 裁定延后，Paul 整理后再提），据此零残差同步全景§加速启动总览 + 实施计划§一/§二 + 前置总表 + 甘特 HTML。
-3. **并行盯的 5 项**（QD-B/SC3 真实接入/SC2/待办 #10/8D 校验脚本）见下方。
+1. **接 Paul "规整后"的部门场景调整清单**（2026-07-01 裁定延后，Paul 整理后再提），据此零残差同步全景§加速启动总览 + 实施计划§一/§二 + 前置总表 + 甘特 HTML。
+2. **并行盯的 5 项**（QD-B/SC3 真实接入/SC2/待办 #10/8D 校验脚本）见下方。
 
 ---
 
