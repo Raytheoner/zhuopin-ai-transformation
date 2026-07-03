@@ -1,20 +1,72 @@
 {
-  "rule_version": "2026-06-27",
+  "rule_version": "2026-07-03",
   "source": "AI质量智能建设就绪工作汇总.xlsx",
   "source_sheet": "立项门禁",
   "applies_to": "开发类 EQQR8082 A2.1",
   "severity_map": {
     "阻断": "错误",
-    "重要": "错误",
+    "重要": "警告",
     "一般": "警告",
     "提示": "提示"
   },
+  "severity_coeff": {
+    "阻断": 1.0,
+    "重要": 0.5,
+    "一般": 0.3,
+    "提示": 0.1
+  },
+  "scoring": {
+    "source": "开发项目立项门禁扣分权重标准_82条规则.xlsx（收口-1，2026-07-03）",
+    "total": 100,
+    "veto_severity": "阻断",
+    "tier_thresholds": {
+      "合格": 80,
+      "有条件合格": 60
+    },
+    "module_base_scores": {
+      "一": 15,
+      "二": 5,
+      "三": 5,
+      "四": 8,
+      "五": 5,
+      "六": 8,
+      "七": 4,
+      "八（一）": 10,
+      "八（二）": 15,
+      "九": 8,
+      "十": 6,
+      "十一": 3,
+      "十二": 5,
+      "十三": 3
+    },
+    "module_weight_sums": {
+      "一": 12.5,
+      "二": 1.5,
+      "三": 1.5,
+      "四": 3.5,
+      "五": 1.3,
+      "六": 4.5,
+      "七": 1.4,
+      "八（一）": 2.3,
+      "八（二）": 6.1,
+      "九": 2.3,
+      "十": 2.1,
+      "十一": 0.9,
+      "十二": 2.6,
+      "十三": 1.0
+    }
+  },
+  "severity_overrides_from_weight_table": [
+    "规则34: 重要→提示",
+    "规则66: 重要→一般"
+  ],
   "count": 82,
   "count_by_class": {
     "A": 68,
     "B": 10,
     "C": 4
   },
+  "count_blocking": 17,
   "rules": [
     {
       "rule_id": "1",
@@ -28,9 +80,12 @@
       "source_anchor": "立项申请书>一、项目信息>项目名称>第1行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: \"华丰天然气发动机EPA认证服务咨询项目\"",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "一"
     },
     {
       "rule_id": "2",
@@ -44,9 +99,12 @@
       "source_anchor": "系统自动生成>不做判断",
       "automation": "可机器核",
       "trial_result": "[不适用] 不做判断",
+      "severity_source_6_27": "提示",
       "severity_level": "提示",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.1,
+      "blocking": false,
+      "module_key": "一"
     },
     {
       "rule_id": "3",
@@ -60,9 +118,12 @@
       "source_anchor": "立项申请书>一、项目信息>客户CTS/SOR版本号>第1行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写，不适用(/)",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "一"
     },
     {
       "rule_id": "4",
@@ -76,9 +137,12 @@
       "source_anchor": "立项申请书>一、项目信息>项目代号>第1行",
       "automation": "可机器核",
       "trial_result": "[不适用] 技术服务类无需项目代号",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "一"
     },
     {
       "rule_id": "5",
@@ -92,9 +156,12 @@
       "source_anchor": "立项申请书>一、项目信息>项目经理>第1行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: \"谢培雯\"",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "一"
     },
     {
       "rule_id": "6",
@@ -108,9 +175,12 @@
       "source_anchor": "立项申请书>一、项目信息>目标车型/车辆平台>第1行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: \"发电机组\"",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "一"
     },
     {
       "rule_id": "7",
@@ -124,9 +194,12 @@
       "source_anchor": "立项申请书>一、项目信息>客户名称>第1行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: \"华丰动力股份有限公司\"",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "一"
     },
     {
       "rule_id": "8",
@@ -140,9 +213,12 @@
       "source_anchor": "立项申请书>一、项目信息>项目所属事业部>勾选项",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: \"发动机电控事业部\"",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "一"
     },
     {
       "rule_id": "9",
@@ -156,9 +232,12 @@
       "source_anchor": "立项申请书>一、项目信息>SOP目标年份/项目结项时间>第1行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: 2026年",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "一"
     },
     {
       "rule_id": "10",
@@ -172,9 +251,12 @@
       "source_anchor": "立项申请书>一、项目信息>项目开始日期>第1行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: 2026-06-15",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "一"
     },
     {
       "rule_id": "11",
@@ -188,9 +270,12 @@
       "source_anchor": "立项申请书>一、项目信息>项目结束日期>第1行 vs 项目开始日期>第1行",
       "automation": "可机器核",
       "trial_result": "[不合格] 未填写",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "一"
     },
     {
       "rule_id": "12",
@@ -204,9 +289,12 @@
       "source_anchor": "立项申请书>一、项目信息>功能安全目标ASIL>勾选项",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写，不适用(/)",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "一"
     },
     {
       "rule_id": "13",
@@ -220,9 +308,12 @@
       "source_anchor": "立项申请书>一、项目信息>预算总工时>第1行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: 4.0人月/0.33人年",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "一"
     },
     {
       "rule_id": "14",
@@ -236,9 +327,12 @@
       "source_anchor": "立项申请书>一、项目信息>人员安排表>合计行 vs 预算总工时>第1行",
       "automation": "可机器核",
       "trial_result": "[通过] 一致: 预算4.0人月 = 人员合计4.0人月",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "一"
     },
     {
       "rule_id": "15",
@@ -252,9 +346,12 @@
       "source_anchor": "立项申请书>一、项目信息>项目等级>勾选项",
       "automation": "可机器核",
       "trial_result": "[通过] 已勾选, 等级1",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "一"
     },
     {
       "rule_id": "16",
@@ -268,9 +365,12 @@
       "source_anchor": "立项申请书>一、项目信息>项目类型>勾选项",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: \"技术服务类\"",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "一"
     },
     {
       "rule_id": "17",
@@ -284,9 +384,12 @@
       "source_anchor": "立项申请书>一、项目信息>适用法规/体系>勾选项",
       "automation": "可机器核",
       "trial_result": "[通过] 已勾选: EPA NSPS",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "一"
     },
     {
       "rule_id": "18",
@@ -300,9 +403,12 @@
       "source_anchor": "立项申请书>一、项目信息>人员安排表>各角色各行 vs 合计行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写: 11人, 合计4.0人月",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "一"
     },
     {
       "rule_id": "19",
@@ -316,9 +422,12 @@
       "source_anchor": "立项申请书>二、立项依据>文本区域>全文",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写(293字)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "二"
     },
     {
       "rule_id": "20",
@@ -332,9 +441,12 @@
       "source_anchor": "立项申请书>二、立项依据>文本区域>全文",
       "automation": "半自动",
       "trial_result": "[通过] 已说明: 提供美国EPA排放认证全流程合规咨询与技术解决方案服务，核心涵盖EPA法规合规咨询、后处理系统选型方案设计、认证计划编制、OBD软件开发需求输出、…",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "B",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "二"
     },
     {
       "rule_id": "21",
@@ -348,9 +460,12 @@
       "source_anchor": "立项申请书>二、立项依据>文本区域>全文",
       "automation": "半自动",
       "trial_result": "[通过] 已说明: 本项目服务成果用于支撑华丰动力该款天然气发动机顺利通过美国EPA排放认证，获取北美市场准入资质，解决该款固定式发电机组发动机出口美国、加拿大等北美地区数据中心、固定式发电场景的合规准入壁垒，助力产品实现海外市场规模化销售，…",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "B",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "二"
     },
     {
       "rule_id": "22",
@@ -364,9 +479,12 @@
       "source_anchor": "立项申请书>三、项目的目的和意义>文本区域>全文",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写(694字)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "三"
     },
     {
       "rule_id": "23",
@@ -380,9 +498,12 @@
       "source_anchor": "立项申请书>三、项目的目的和意义>文本区域>全文",
       "automation": "半自动",
       "trial_result": "[通过] 已说明: 项目目的:\n本项目旨在为华丰动力PHF20V200ZLD型2000kW压缩天然气固定式发电机组发动机，提供美国EPA排放认证全流程合规咨询与技术解决方案，通过专业法规解读、方案设计、资源对接与需求输出，…",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "B",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "三"
     },
     {
       "rule_id": "24",
@@ -396,9 +517,12 @@
       "source_anchor": "立项申请书>三、项目的目的和意义>文本区域>全文",
       "automation": "半自动",
       "trial_result": "[通过] 已说明: 获取北美市场准入资质提供前期的技术咨询服务，此项目的成功为下一阶段正式认证流程合同签署的前提条件…",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "B",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "三"
     },
     {
       "rule_id": "25",
@@ -412,9 +536,12 @@
       "source_anchor": "立项申请书>四、项目目标>目标表>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写(4项目标)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "四"
     },
     {
       "rule_id": "26",
@@ -428,9 +555,12 @@
       "source_anchor": "立项申请书>四、项目目标>目标表>目标类型列>各行",
       "automation": "半自动",
       "trial_result": "[不合格] 目标表格缺少\"目标类型\"列，未对目标进行分类",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "B",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "四"
     },
     {
       "rule_id": "27",
@@ -444,9 +574,12 @@
       "source_anchor": "立项申请书>四、项目目标>目标表>考核指标列>各行",
       "automation": "半自动",
       "trial_result": "[待改进] 部分指标已量化(2/4项), 未量化指标: 第1项: \"EPA 认证计划申报\"; 第2项: \"OBD 软件开发需求确认\"",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "B",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "四"
     },
     {
       "rule_id": "28",
@@ -460,9 +593,12 @@
       "source_anchor": "立项申请书>四、项目目标>目标表>交付物列 vs 考核指标列>各行",
       "automation": "半自动",
       "trial_result": "[待改进] 部分对应(3/4项), 不对应原因: 第2项: 指标\"依据发动机原排确认后处理选型方案及后处理供应商\"与交付物\"根据发动机原排信息进行供应商筛选并确认后处理方案选型及专家评审，确认样件及量产价…\"无逻辑关联",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "B",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "四"
     },
     {
       "rule_id": "29",
@@ -476,9 +612,12 @@
       "source_anchor": "立项申请书>四、项目目标>验收标准>文本区域",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写(19字)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "四"
     },
     {
       "rule_id": "30",
@@ -492,9 +631,12 @@
       "source_anchor": "立项申请书>五、关键技术与开发能力评估>软件核心技术行>成熟度/知识产权/风险等级列",
       "automation": "可机器核",
       "trial_result": "[通过] 软件核心技术 (说明: \"EPA认证流程\"): 当前成熟度=\"委外开发\", 知识产权=\"不涉及\", 技术风险等级=\"中\"",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "五"
     },
     {
       "rule_id": "31",
@@ -508,9 +650,12 @@
       "source_anchor": "立项申请书>五、关键技术与开发能力评估>不适用项行>说明列",
       "automation": "可机器核",
       "trial_result": "[不适用] 说明为\"/\"跳过: 硬件平台/关键器件",
+      "severity_source_6_27": "提示",
       "severity_level": "提示",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.1,
+      "blocking": false,
+      "module_key": "五"
     },
     {
       "rule_id": "32",
@@ -524,9 +669,12 @@
       "source_anchor": "立项申请书>五、关键技术与开发能力评估>测试与标定行>成熟度/知识产权/风险等级列",
       "automation": "可机器核",
       "trial_result": "[通过] 测试与标定能力 (说明: \"标定及OBD需求由后处理供应商提供技术支持\"): 当前成熟度=\"委外开发\", 知识产权=\"不涉及\", 技术风险等级=\"低\"",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "五"
     },
     {
       "rule_id": "33",
@@ -540,25 +688,31 @@
       "source_anchor": "立项申请书>五、关键技术与开发能力评估>不适用项行>说明列",
       "automation": "可机器核",
       "trial_result": "[不适用] 说明为\"/\"跳过: 开发工具链与仿真环境",
+      "severity_source_6_27": "提示",
       "severity_level": "提示",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.1,
+      "blocking": false,
+      "module_key": "五"
     },
     {
       "rule_id": "34",
       "section": "五、关键技术与开发能力评估",
       "check_item": "生产保证 - 评估",
       "applies_to": "开发",
-      "severity": "重要",
+      "severity": "提示",
       "check_type": "完整性",
       "pass_condition": "评估该模块关键技术可行性及开发能力匹配度，填写当前成熟度、知识产权、技术风险等级",
       "threshold": "",
       "source_anchor": "立项申请书>五、关键技术与开发能力评估>生产保证行>说明列",
       "automation": "可机器核",
       "trial_result": "[不适用] 说明均为\"/\"或不适用，跳过判断 (跳过: 生产工艺与质量控制)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "提示",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.1,
+      "blocking": false,
+      "module_key": "五"
     },
     {
       "rule_id": "35",
@@ -572,9 +726,12 @@
       "source_anchor": "立项申请书>六、项目风险分析>风险表>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 识别3项风险",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "六"
     },
     {
       "rule_id": "36",
@@ -588,9 +745,12 @@
       "source_anchor": "立项申请书>六、项目风险分析>风险表>第1行>描述/严重度/频率/系数/等级/应对措施列",
       "automation": "可机器核",
       "trial_result": "[通过] 进度 | 较严重×有时发生=12 (一般风险) | 措施有效(匹配: 甲方, 延迟, 交付)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "六"
     },
     {
       "rule_id": "37",
@@ -604,9 +764,12 @@
       "source_anchor": "立项申请书>六、项目风险分析>风险表>第2行>描述/严重度/频率/系数/等级/应对措施列",
       "automation": "可机器核",
       "trial_result": "[通过] 技术 | 轻微×很少发生=1 (低风险) | 措施有效(匹配: 合规, 法规, 方案, 审核)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "六"
     },
     {
       "rule_id": "38",
@@ -620,9 +783,12 @@
       "source_anchor": "立项申请书>六、项目风险分析>风险表>第3行>描述/严重度/频率/系数/等级/应对措施列",
       "automation": "可机器核",
       "trial_result": "[通过] 进度 | 严重×经常发生=20 (高风险) | 措施有效(匹配: 签订, 进度, 合同, 咨询)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "六"
     },
     {
       "rule_id": "39",
@@ -636,9 +802,12 @@
       "source_anchor": "立项申请书>六、项目风险分析>风险表>系数列 vs 严重度列×频率列>各行",
       "automation": "可机器核",
       "trial_result": "[待改进] 2/3项正确(准确率66.7%); 错误: 第2项\"技术方案合规风险\": 系数=1.0(应为2), 轻微(1)×很少发生(2)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "六"
     },
     {
       "rule_id": "40",
@@ -652,9 +821,12 @@
       "source_anchor": "立项申请书>六、项目风险分析>风险表>等级列 vs 系数列>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 全部3项风险等级与系数一致",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "六"
     },
     {
       "rule_id": "41",
@@ -668,9 +840,12 @@
       "source_anchor": "立项申请书>六、项目风险分析>风险表>系数列 & 应对措施列>高风险行",
       "automation": "可机器核",
       "trial_result": "[通过] 共1项高风险均已制定应对措施(#3海外机构合同签订风险)",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "六"
     },
     {
       "rule_id": "42",
@@ -684,9 +859,12 @@
       "source_anchor": "立项申请书>六、项目风险分析>风险表>应对措施列 vs 风险描述列>各行",
       "automation": "转人工",
       "trial_result": "[通过] 全部3项应对措施均能有效应对已识别风险",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "C",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "六"
     },
     {
       "rule_id": "43",
@@ -700,9 +878,12 @@
       "source_anchor": "立项申请书>七、项目所需资源采购计划>资源表>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 共2项资源",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "七"
     },
     {
       "rule_id": "44",
@@ -716,9 +897,12 @@
       "source_anchor": "立项申请书>七、项目所需资源采购计划>资源表>第1行>类型/原因/配置/数量/获取方式/供应商/预算列",
       "automation": "可机器核",
       "trial_result": "[通过] EPA认证海外咨询公司咨询委外 | 对接EPA实验室及出具技术方案 | 数量=1 | 购买 | Trinity | 预算=30万",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "七"
     },
     {
       "rule_id": "45",
@@ -732,9 +916,12 @@
       "source_anchor": "立项申请书>七、项目所需资源采购计划>资源表>第2行>类型/原因/配置/数量/获取方式/供应商/预算列",
       "automation": "可机器核",
       "trial_result": "[通过] EPA海外专家技术服务咨询委外 | 对接海外咨询公司及项目关键技术评审 | 数量=1 | 购买 | 湛日景 | 预算=20万",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "七"
     },
     {
       "rule_id": "46",
@@ -748,9 +935,12 @@
       "source_anchor": "立项申请书>七、项目所需资源采购计划>资源表>预算合计行 vs 一、项目信息>预算总工时>资源预算部分",
       "automation": "可机器核",
       "trial_result": "[通过] 约50.0万元(2项)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "七"
     },
     {
       "rule_id": "47",
@@ -764,9 +954,12 @@
       "source_anchor": "立项申请书>八、(一)成本效益分析>成本效益表>收入D/成本E/利润F/利润小计P列>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 核心字段(收入D/成本E/利润F/利润小计P)已填写",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "八（一）"
     },
     {
       "rule_id": "48",
@@ -780,9 +973,12 @@
       "source_anchor": "立项申请书>八、(一)成本效益分析>成本效益表>量产产品行>G/H/I/J/K列",
       "automation": "可机器核",
       "trial_result": "[不适用] 非产品类项目, 量产数据为可选",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "八（一）"
     },
     {
       "rule_id": "49",
@@ -796,9 +992,12 @@
       "source_anchor": "立项申请书>八、(一)成本效益分析>成本效益表>立项当年行>D/E/F/P列",
       "automation": "可机器核",
       "trial_result": "[通过] D=80.0, E=61.2, F=18.8, P=18.8",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "八（一）"
     },
     {
       "rule_id": "50",
@@ -812,9 +1011,12 @@
       "source_anchor": "立项申请书>八、(一)成本效益分析>成本效益表>各行各列>公式验证",
       "automation": "可机器核",
       "trial_result": "[通过] 所有计算公式验证通过",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "八（一）"
     },
     {
       "rule_id": "51",
@@ -828,9 +1030,12 @@
       "source_anchor": "立项申请书>八、(一)成本效益分析>成本效益表>合计行 vs 各行累加",
       "automation": "可机器核",
       "trial_result": "[通过] 合计与各行累加一致",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "八（一）"
     },
     {
       "rule_id": "52",
@@ -844,9 +1049,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>收入依据表>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 已找到(7个阶段节点)",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "53",
@@ -860,9 +1068,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>收入依据表>商务阶段标志列>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 已填2个有效商务标志, 裁剪5个(NA)",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "54",
@@ -876,9 +1087,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>收入依据表>收款金额列>各行（商务标志非NA时）",
       "automation": "可机器核",
       "trial_result": "[通过] 2个节点已填写收款金额, 裁剪5个(NA)",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "55",
@@ -892,9 +1106,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>收入依据表>合计行 vs 八、(一)>成本效益表>收入D合计",
       "automation": "可机器核",
       "trial_result": "[通过] 收入依据合计=80.0万, 与成本效益表收入D=80.0万一致 ✓",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "56",
@@ -908,9 +1125,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>量纲预估依据>文本区域",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写，不适用(NA)",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "57",
@@ -924,9 +1144,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>售价预估依据>文本区域",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写，不适用(NA)",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "58",
@@ -940,9 +1163,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>量产成本预估依据>文本区域",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写，不适用(NA)",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "59",
@@ -956,9 +1182,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>毛利率行 vs 八、(一)>成本效益表>F列/D列",
       "automation": "可机器核",
       "trial_result": "[通过] 0.23 (验证: F/D=0.23)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "60",
@@ -972,9 +1201,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>全生命周期毛利率行 vs 八、(一)>成本效益表>P列/(D+J)列",
       "automation": "可机器核",
       "trial_result": "[不适用] 无量产数据, 无法计算全生命周期毛利率(填NA)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "61",
@@ -988,9 +1220,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>收益指标行 vs 八、(一)>成本效益表>D/E/(D+M)列",
       "automation": "可机器核",
       "trial_result": "[通过] 1.31 (验证: D/E=1.31)",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "62",
@@ -1004,9 +1239,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>收益指标值 vs 阈值",
       "automation": "可机器核",
       "trial_result": "[待改进] 1.31 < 1.5(技术服务类标准未达标)",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "63",
@@ -1020,9 +1258,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>委外占比行 vs 八、(一)>成本效益表>委外成本/总成本",
       "automation": "可机器核",
       "trial_result": "[通过] 24.5%",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "64",
@@ -1036,9 +1277,12 @@
       "source_anchor": "立项申请书>八、(二)收益分析说明>付款/收款方式>文本区域",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "八（二）"
     },
     {
       "rule_id": "65",
@@ -1052,25 +1296,31 @@
       "source_anchor": "立项申请书>九、开发期限及预算>时间节点表>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 有时间节点表(2个节点)",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "九"
     },
     {
       "rule_id": "66",
       "section": "九、开发期限及预算",
       "check_item": "最后节点结束时间",
       "applies_to": "开发",
-      "severity": "重要",
+      "severity": "一般",
       "check_type": "一致性",
       "pass_condition": "时间节点表中最后一个节点的结束时间需与项目结束日期一致",
       "threshold": "最后节点结束时间=项目结束日期",
       "source_anchor": "立项申请书>九、开发期限及预算>时间节点表>最后行结束时间 vs 一、项目信息>项目结束日期",
       "automation": "可机器核",
       "trial_result": "[不适用] 项目结束日期未填写，无法比对",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "九"
     },
     {
       "rule_id": "67",
@@ -1084,9 +1334,12 @@
       "source_anchor": "立项申请书>九、开发期限及预算>预算表>⑦折旧摊销列 vs ②人员成本列",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写=1.200万，符合②×15%=1.200万",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "九"
     },
     {
       "rule_id": "68",
@@ -1100,9 +1353,12 @@
       "source_anchor": "立项申请书>一、项目信息>预算总工时 vs 九、开发期限及预算>时间节点表>合计行",
       "automation": "可机器核",
       "trial_result": "[通过] 一致: 预算总工时4.0人月 = 节点表合计4.0人月",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "九"
     },
     {
       "rule_id": "69",
@@ -1116,9 +1372,12 @@
       "source_anchor": "立项申请书>十、项目现金流分析>现金流表>合计行(⑪-⑩) vs 八、(一)>成本效益表>利润F",
       "automation": "可机器核",
       "trial_result": "[通过] 现金流合计=18.8万，与成本效益利润F=18.8万一致",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "九"
     },
     {
       "rule_id": "70",
@@ -1132,9 +1391,12 @@
       "source_anchor": "立项申请书>十、项目现金流分析>现金流表>各行列",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写3个月份的现金流数据",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "十"
     },
     {
       "rule_id": "71",
@@ -1148,9 +1410,12 @@
       "source_anchor": "立项申请书>十、项目现金流分析>现金流表>月份列 vs 一、项目信息>开始/结束日期",
       "automation": "可机器核",
       "trial_result": "[通过] 已填写3期（项目日期未填无法计算应填月数）",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "十"
     },
     {
       "rule_id": "72",
@@ -1164,9 +1429,12 @@
       "source_anchor": "立项申请书>十、项目现金流分析>现金流表>月净现金流列 vs 各支出列>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 全部3行月净现金流计算正确",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "十"
     },
     {
       "rule_id": "73",
@@ -1180,9 +1448,12 @@
       "source_anchor": "立项申请书>十、项目现金流分析>现金流表>各列汇总 vs 九、开发期限及预算>预算表>各列",
       "automation": "可机器核",
       "trial_result": "[通过] 收入/各支出项汇总均与模块九预算基准一致",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "十"
     },
     {
       "rule_id": "74",
@@ -1196,9 +1467,12 @@
       "source_anchor": "立项申请书>十、项目现金流分析>现金流表>累计现金流末行 vs 八、(一)>成本效益表>利润F/M",
       "automation": "可机器核",
       "trial_result": "[通过] 累计现金流末期=18.8万，与成本效益利润F=18.8万一致",
-      "severity_level": "错误",
+      "severity_source_6_27": "重要",
+      "severity_level": "警告",
       "impl_class": "A",
-      "blocking": true
+      "coefficient": 0.5,
+      "blocking": false,
+      "module_key": "十"
     },
     {
       "rule_id": "75",
@@ -1212,9 +1486,12 @@
       "source_anchor": "立项申请书>十一、项目团队成员>团队成员表>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 已配置8名团队成员",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "十一"
     },
     {
       "rule_id": "76",
@@ -1228,9 +1505,12 @@
       "source_anchor": "立项申请书>十一、项目团队成员>团队成员表>姓名/岗位/职责列>各行",
       "automation": "可机器核",
       "trial_result": "[通过] 所有8位成员姓名/岗位/职责均已填写",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "A",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "十一"
     },
     {
       "rule_id": "77",
@@ -1244,9 +1524,12 @@
       "source_anchor": "立项申请书>十一、项目团队成员>职责列 vs 一、项目信息>人员安排表>分类列",
       "automation": "半自动",
       "trial_result": "[通过] 人员安排6个分类(项目管理, 系统需求, 应用层软件, 标定, 质量, 采购)均在职责中有对应",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "B",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "十一"
     },
     {
       "rule_id": "78",
@@ -1260,9 +1543,12 @@
       "source_anchor": "立项申请书>十二、总结>技术总结>文本区域",
       "automation": "半自动",
       "trial_result": "[通过] 已填写技术总结(79字)",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "B",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "十二"
     },
     {
       "rule_id": "79",
@@ -1276,9 +1562,12 @@
       "source_anchor": "立项申请书>十二、总结>商务总结>文本区域",
       "automation": "半自动",
       "trial_result": "[通过] 已填写商务总结(79字)",
+      "severity_source_6_27": "一般",
       "severity_level": "警告",
       "impl_class": "B",
-      "blocking": false
+      "coefficient": 0.3,
+      "blocking": false,
+      "module_key": "十二"
     },
     {
       "rule_id": "80",
@@ -1292,9 +1581,12 @@
       "source_anchor": "立项申请书>十二、总结>项目经理签字及日期>签名行",
       "automation": "转人工",
       "trial_result": "[不合格] 项目经理未签字（日期已填: 2026年6月15日）",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "C",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "十二"
     },
     {
       "rule_id": "81",
@@ -1308,9 +1600,12 @@
       "source_anchor": "立项申请书>十二、总结>总经理签字及日期>签名行",
       "automation": "转人工",
       "trial_result": "[通过] 已签字并填写日期: 2026年6月15日",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "C",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "十二"
     },
     {
       "rule_id": "82",
@@ -1324,9 +1619,12 @@
       "source_anchor": "立项申请书>十三、立项决议>决议区域",
       "automation": "转人工",
       "trial_result": "[不适用] 开完立项会后给出的决策，申请阶段不做评价",
+      "severity_source_6_27": "阻断",
       "severity_level": "错误",
       "impl_class": "C",
-      "blocking": true
+      "coefficient": 1.0,
+      "blocking": true,
+      "module_key": "十三"
     }
   ]
 }

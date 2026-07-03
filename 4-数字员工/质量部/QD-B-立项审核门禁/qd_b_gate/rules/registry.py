@@ -28,7 +28,9 @@ class Rule:
     threshold: str
     source_anchor: str       # 取数来源（章节锚点）
     impl_class: str          # A 可机器核 / B 半自动 / C 转人工
-    blocking: bool           # 是否一票否决（severity_level == 错误）
+    blocking: bool           # 是否一票否决（收口-1：仅「阻断」）
+    coefficient: float = 0.3 # 严重度权重系数（阻断1.0/重要0.5/一般0.3/提示0.1）
+    module_key: str = ""     # 评分模块键（一…十三，八分（一）/（二））
     trial_result: str = ""   # 华丰试评结果（黄金基准雏形）
 
     @classmethod
@@ -46,6 +48,8 @@ class Rule:
             source_anchor=d.get("source_anchor", ""),
             impl_class=d.get("impl_class", "A"),
             blocking=bool(d.get("blocking", False)),
+            coefficient=float(d.get("coefficient", 0.3)),
+            module_key=d.get("module_key", ""),
             trial_result=d.get("trial_result", ""),
         )
 
@@ -55,6 +59,7 @@ class RuleRegistry:
         self.rule_version: str = data.get("rule_version", "")
         self.source: str = data.get("source", "")
         self.severity_map: dict[str, str] = data.get("severity_map", {})
+        self.scoring: dict[str, Any] = data.get("scoring", {})
         self.rules: list[Rule] = [Rule.from_dict(r) for r in data.get("rules", [])]
         self._by_id = {r.rule_id: r for r in self.rules}
 
