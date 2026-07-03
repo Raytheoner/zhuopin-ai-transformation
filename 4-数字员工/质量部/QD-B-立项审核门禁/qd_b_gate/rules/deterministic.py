@@ -142,6 +142,72 @@ def r13_budget_hours(doc, r):
     return _required(doc, r, "预算总工时", suggest="请填写项目预算总工时（人月/人年）")
 
 
+def _sum_personnel(doc) -> float | None:
+    rows = doc.table("人员安排")
+    vals = [x["人月"] for x in rows if x.get("人月") is not None]
+    return round(sum(vals), 4) if vals else None
+
+
+def _personnel_total(doc):
+    t = doc.table("人员安排合计")
+    return t[0]["合计人月"] if t and t[0].get("合计人月") is not None else None
+
+
+@rule(14)
+def r14_budget_hours_consistency(doc, r):
+    """人员安排合计人月 需与预算总工时一致。"""
+    total = _personnel_total(doc)
+    budget = _num_of(_info(doc, "预算总工时").value)
+    if total is None or budget is None:
+        return _result(r, Verdict.PENDING, evidence="预算总工时或人员合计缺数，待人工核")
+    if abs(total - budget) < 0.05:
+        return _result(r, Verdict.PASS, evidence=f"一致：预算 {budget} 人月 = 人员合计 {total} 人月")
+    return _result(r, Verdict.FAIL, evidence=f"不一致：预算 {budget} vs 人员合计 {total}",
+                   suggestion="人员安排合计人月须与预算总工时一致")
+
+
+@rule(18)
+def r18_personnel_rows_sum(doc, r):
+    """各角色人力投入合计 需与合计行一致。"""
+    s = _sum_personnel(doc)
+    total = _personnel_total(doc)
+    if s is None or total is None:
+        return _result(r, Verdict.PENDING, evidence="人员安排表缺数，待人工核")
+    if abs(s - total) < 0.05:
+        return _result(r, Verdict.PASS, evidence=f"各行合计 {s} = 合计行 {total} 人月")
+    return _result(r, Verdict.FAIL, evidence=f"各行合计 {s} ≠ 合计行 {total}",
+                   suggestion="人员安排各行人力投入之和须等于合计")
+
+
+def _textlen(doc, module) -> int:
+    fv = doc.text_areas.get(module)
+    return len(str(fv.value)) if fv and fv.is_present else 0
+
+
+@rule(19)
+def r19_basis_wordcount(doc, r):
+    """立项依据 ≥50 字。"""
+    n = _textlen(doc, "二、立项依据")
+    if n == 0:
+        return _result(r, Verdict.FAIL, evidence="立项依据未填写")
+    if n >= 50:
+        return _result(r, Verdict.PASS, evidence=f"已填写（{n}字）")
+    return _result(r, Verdict.WARN, evidence=f"字数偏少（{n}字 < 50）",
+                   suggestion="立项依据需说明产品是什么/什么用途，不少于50字")
+
+
+@rule(22)
+def r22_purpose_wordcount(doc, r):
+    """项目目的与意义 ≥50 字。"""
+    n = _textlen(doc, "三、项目的目的和意义")
+    if n == 0:
+        return _result(r, Verdict.FAIL, evidence="项目目的与意义未填写")
+    if n >= 50:
+        return _result(r, Verdict.PASS, evidence=f"已填写（{n}字）")
+    return _result(r, Verdict.WARN, evidence=f"字数偏少（{n}字 < 50）",
+                   suggestion="项目目的与意义不少于50字")
+
+
 @rule(16)
 def r16_project_type(doc, r):
     fv = _info(doc, "项目类型")
@@ -159,3 +225,12 @@ def _parse_iso(s):
         return date(int(y), int(m), int(d))
     except Exception:
         return None
+
+
+def _num_of(v):
+    """从字段值取首个数值（如预算总工时「4人月/0.33人年」→ 4.0）。"""
+    import re
+    if isinstance(v, (int, float)):
+        return float(v)
+    m = re.search(r"-?\d+(?:\.\d+)?", str(v or ""))
+    return float(m.group()) if m else None

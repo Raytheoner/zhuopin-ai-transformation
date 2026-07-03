@@ -53,6 +53,14 @@ def _norm(s) -> str:
     return str(s).replace("　", " ").strip()
 
 
+def _num(v):
+    """从单元格值提取数值（人月/金额等）。取首个数字，失败返回 None。"""
+    if isinstance(v, (int, float)):
+        return float(v)
+    m = re.search(r"-?\d+(?:\.\d+)?", _norm(v))
+    return float(m.group()) if m else None
+
+
 class ProposalParser:
     """按章节标题锚点解析立项书。"""
 
@@ -235,6 +243,8 @@ class ProposalParser:
         pt = doc.fields.get("一、项目信息/项目类型")
         if pt and pt.is_present:
             doc.project_type = str(pt.value).strip()
+        self._parse_personnel_table(doc, secs.get("一、项目信息"))
+        self._parse_text_areas(doc, secs)
         return doc
 
     # ---------- 模块一：项目信息 ----------
@@ -288,6 +298,68 @@ class ProposalParser:
         # 勾选项：项目等级 / 适用法规体系 — True/False 成对，扫描止于下一 label
         for cb in self.CHECKBOX_FIELDS:
             self._parse_checkbox_row(doc, cb, rng)
+
+    # ---------- 文本区域模块（立项依据 / 目的意义 / 总结） ----------
+    # 模块 -> 该模块「说明/提示」行文本前缀（用于跳过，避免把空白模板的填写指引当内容）
+    _TEXT_MODULES = {
+        "二、立项依据": ["简洁", "简明", "说明本项目"],
+        "三、项目的目的和意义": ["简明阐述", "简述"],
+        "十二、总结": ["项目经理从技术", "从技术", "总结该项目"],
+    }
+
+    def _parse_text_areas(self, doc: ProposalDocument, secs: dict[str, tuple[int, int]]):
+        """抽取文本区域模块的内容：取模块内（排除标题/指引行）最长文本单元格。"""
+        for module, hints in self._TEXT_MODULES.items():
+            rng = secs.get(module)
+            if not rng:
+                continue
+            lo, hi = rng
+            best_text, best_coord = "", ""
+            for row in self.ws.iter_rows(min_row=lo, max_row=hi):
+                for cell in row:
+                    t = _norm(cell.value)
+                    if not t or t == module or t.startswith(module[:3]):
+                        continue
+                    if any(t.startswith(h) for h in hints):   # 填写指引，跳过
+                        continue
+                    if len(t) > len(best_text):
+                        best_text, best_coord = t, cell.coordinate
+            if best_text:
+                doc.text_areas[module] = FieldValue(
+                    key=module, value=best_text, status=ExtractStatus.EXTRACTED,
+                    anchor=module, source_cell=best_coord)
+            else:
+                doc.text_areas[module] = FieldValue(
+                    key=module, status=ExtractStatus.MISSING, anchor=module,
+                    reason="模块内无有效文本内容（仅标题/指引）")
+
+    # ---------- 模块一：人员安排表 ----------
+    def _parse_personnel_table(self, doc: ProposalDocument, rng: tuple[int, int] | None):
+        """解析人员安排表：分类/人力投入（人月）各行 + 合计行。"""
+        if rng is None:
+            return
+        lo, hi = rng
+        header = self.find_label("人力投入", (lo, hi))
+        if not header:
+            return
+        hr = coordinate_to_tuple(header)[0]
+        cat_col = coordinate_to_tuple(self.find_label("分类", (lo, hi)) or "E9")[1]
+        inv_col = coordinate_to_tuple(header)[1]
+        rows: list[dict] = []
+        total = None
+        for r in range(hr + 1, hi + 1):
+            cat = _norm(self.ws.cell(row=r, column=cat_col).value)
+            inv = self.ws.cell(row=r, column=inv_col).value
+            # 合计行：「合计」可能落在 A~F 任一列（本模板在 B 列）
+            row_txt = [_norm(self.ws.cell(row=r, column=c).value) for c in range(1, 7)]
+            if "合计" in row_txt:
+                total = _num(inv)
+                break
+            if cat:
+                rows.append({"分类": cat, "人月": _num(inv)})
+        doc.tables["人员安排"] = rows
+        if total is not None:
+            doc.tables["人员安排合计"] = [{"合计人月": total}]
 
     def _is_stop_label(self, value) -> bool:
         """该单元格是否是「另一个字段/章节标题」—— 复选框扫描遇到它即停。"""

@@ -62,9 +62,23 @@ def test_huafeng_rule11_end_date_fail(huafeng_path):
 
 
 def test_engine_does_not_overclaim(huafeng_path):
-    """未实现判定的 A 类规则必须标 PENDING，不冒判（54/68 尚未实现）。"""
+    """未实现判定的 A 类规则必须标 PENDING，不冒判（动态：随实现推进）。"""
+    from qd_b_gate.rules import deterministic
+    from qd_b_gate.rules.registry import load_registry
     doc = ProposalParser(huafeng_path).parse()
     results = run_rules(doc)
     assert len(results) == 68
+    a_impl = deterministic.implemented_ids() & {r.rule_id for r in load_registry().by_class("A")}
     pending = [r for r in results if r.verdict == Verdict.PENDING]
-    assert len(pending) == 54       # 68 - 14 已实现
+    assert len(pending) == 68 - len(a_impl)
+
+
+def test_huafeng_new_rules_14_18_19_22(huafeng_path):
+    """模块一补齐规则：人月一致性(14/18)、字数(19/22)——对照 K 列试评均通过。"""
+    doc = ProposalParser(huafeng_path).parse()
+    by = {r.rule_id: r for r in run_rules(doc)}
+    for rid in ("14", "18", "19", "22"):
+        assert by[rid].verdict == Verdict.PASS, f"规则{rid} 应通过：{by[rid].evidence}"
+    # 人员安排表解析正确
+    assert doc.table("人员安排合计")[0]["合计人月"] == 4.0
+    assert len(str(doc.text_areas["二、立项依据"].value)) == 293
