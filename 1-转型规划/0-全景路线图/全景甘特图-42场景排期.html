@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>卓品智能 AI 转型 · 40 场景排期甘特图</title>
+<title>卓品智能 AI 转型 · 42 场景排期甘特图</title>
 <style>
 :root{--bg:#ffffff;--surface:#faf9f5;--text:#2c2c2a;--muted:#5f5e5a;--hint:#888780;--border:rgba(0,0,0,.14);--borderd:rgba(0,0,0,.28);}
 @media (prefers-color-scheme: dark){:root{--bg:#262624;--surface:#2f2f2c;--text:#ece9e2;--muted:#b4b2a9;--hint:#888780;--border:rgba(255,255,255,.14);--borderd:rgba(255,255,255,.26);}}
@@ -27,11 +27,11 @@ h1{font-size:20px;font-weight:500;margin:0 0 4px;}
 </head>
 <body>
 <div class="wrap">
-<h1>卓品智能 AI 转型 · 40 个数字员工场景排期</h1>
-<p class="sub">2026年7月 → 2027年6月 ｜ 六部门并行 ｜ 与《实施计划（最新版）》§二权威排期一致（含 supplychain 收割重排 + 2026-06-11 质量域序列修订 + 2026-07-01 Q6 提前）</p>
+<h1>卓品智能 AI 转型 · 42 个数字员工场景排期</h1>
+<p class="sub">2026年7月 → 2027年6月 ｜ 六部门并行 ｜ 与《实施计划（最新版）》§二权威排期一致（含 supplychain 收割重排 + 2026-06-11 质量域序列修订 + 2026-07-01 Q6 提前 + 2026-07-03 财务域场景重编号【财务 8→10、全景 40→42】）</p>
 <div class="gantt"><div id="g"></div></div>
 <div class="legend" id="legend"></div>
-<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，更新于 2026-07-01（Q6 立项门禁②从 m5→m4，即 11月→10月）。</p>
+<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，更新于 2026-07-01（Q6 立项门禁②从 m5→m4）、2026-07-03（财务数组 FI1-FI8→FI1-FI10 重排，财务 8→10、全景 40→42）。</p>
 </div>
 <script>
 const months=['7','8','9','10','11','12','1','2','3','4','5','6'];
@@ -47,9 +47,10 @@ const data=[
 {code:'O2',name:'物料齐套预警',m:3,tag:'收割'},{code:'O1',name:'生产排程优化',m:3,tag:'收割'},
 {code:'O3',name:'物流异常追踪',m:6},{code:'O4',name:'设备预测维护',m:7,tag:'IoT'}]},
 {name:'财务',color:'amber',items:[
-{code:'FI1',name:'仓库对账',m:2},{code:'FI2',name:'月结加速',m:5},{code:'FI3',name:'费用报销审核',m:7},
-{code:'FI4',name:'异常交易检测',m:8},{code:'FI5',name:'预算执行监控',m:9},{code:'FI6',name:'现金流预测',m:10},
-{code:'FI7',name:'研发费用归集',m:11},{code:'FI8',name:'存货跌价分析',m:11}]},
+{code:'FI1',name:'仓库对账',m:2},{code:'FI2',name:'三单匹配自动对账',m:3,tag:'提前'},{code:'FI3',name:'付款申请自动校验',m:5,tag:'提前'},
+{code:'FI4',name:'月结加速（其余）',m:7},{code:'FI5',name:'费用报销审核',m:8},{code:'FI6',name:'异常交易检测（其余）',m:10},
+{code:'FI7',name:'预算执行监控',m:11},{code:'FI8',name:'现金流预测',m:11},
+{code:'FI9',name:'研发费用归集',m:12},{code:'FI10',name:'存货跌价分析',m:12}]},
 {name:'销售 / BD',color:'pink',items:[
 {code:'S1',name:'销售日报',m:3},{code:'S2',name:'拜访助手',m:4},{code:'S3',name:'RFQ响应',m:5},
 {code:'S4',name:'技术支持文档',m:6},{code:'S5',name:'竞品监控',m:7},{code:'S6',name:'销售预测',m:8}]},
@@ -61,7 +62,7 @@ const data=[
 {code:'Q1',name:'客诉智能分流',m:7},{code:'Q5',name:'IATF·体系文档',m:8},{code:'Q4',name:'PPAP审核',m:10},
 {code:'Q3',name:'FMEA维护',m:11},{code:'Q7',name:'IQC来料检验',m:11,tag:'新'},{code:'Q8',name:'SPC异常预警',m:12,tag:'新'}]}
 ];
-const TAGC={'收割':'#185FA5','旗舰①':'#993C1D','旗舰②':'#993C1D','新':'#3B6D11','IoT':'#5F5E5A'};
+const TAGC={'收割':'#185FA5','旗舰①':'#993C1D','旗舰②':'#993C1D','新':'#3B6D11','IoT':'#5F5E5A','提前':'#8A5A00'};
 const g=document.getElementById('g');
 let h='<div class="grid" style="border-bottom:0.5px solid var(--borderd);padding-bottom:4px;margin-bottom:4px;"><div></div><div style="grid-column:2/8;font-size:11px;color:var(--hint);">2026 下半年</div><div style="grid-column:8/14;font-size:11px;color:var(--hint);">2027 上半年</div></div>';
 h+='<div class="grid" style="margin-bottom:6px;"><div style="font-size:11px;color:var(--hint);">场景 / 月份</div>';
@@ -79,7 +80,7 @@ h+='<div class="bar" style="grid-column:'+(it.m+1)+'/'+(it.m+1+span)+';backgroun
 g.innerHTML=h;
 let lh='';data.forEach(d=>{lh+='<span class="lg"><span class="sw" style="background:'+COL[d.color][0]+';"></span>'+d.name+'</span>';});
 lh+='<span style="width:100%;height:0;"></span>';
-[['旗舰①②','质量域首发，价值×可行性双高'],['收割','supplychain 已验证，提前上线'],['新','本次新增 Q7 IQC / Q8 SPC'],['IoT','依赖硬件，未就绪则顺延']].forEach(t=>{lh+='<span class="lg"><span class="tag" style="background:'+(TAGC[t[0]]||TAGC['旗舰①'])+';">'+t[0]+'</span><span style="color:var(--hint);">'+t[1]+'</span></span>';});
+[['旗舰①②','质量域首发，价值×可行性双高'],['收割','supplychain 已验证，提前上线'],['提前','2026-07-03 财务重编号：采购/付款切片提前'],['新','本次新增 Q7 IQC / Q8 SPC'],['IoT','依赖硬件，未就绪则顺延']].forEach(t=>{lh+='<span class="lg"><span class="tag" style="background:'+(TAGC[t[0]]||TAGC['旗舰①'])+';">'+t[0]+'</span><span style="color:var(--hint);">'+t[1]+'</span></span>';});
 document.getElementById('legend').innerHTML=lh;
 </script>
 </body>

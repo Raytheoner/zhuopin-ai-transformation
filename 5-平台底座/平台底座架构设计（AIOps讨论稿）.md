@@ -5,7 +5,7 @@ updated: 2026-06-07
 audience: AIOps 项目成员（工程实现层）
 status: 讨论稿 v0.1
 related:
-  - 1-转型规划/Phase1-基础设施与智能体架构设计.md   # VP 视角的决策与冲突消除
+  - 1-转型规划/0-全景路线图/Phase1-基础设施与智能体架构设计.md   # VP 视角的决策与冲突消除
   - 5-平台底座/zhuopin_platform/                    # 已建代码骨架
 ---
 

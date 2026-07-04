@@ -2,7 +2,7 @@
 
 > 本文件是 SC8 场景的本地记忆/进度笔记，隔离于其他场景。
 > 项目级上下文见仓库根 `CLAUDE.md`；SC8 规划权威见全景规划 §2.1.3 采购部 SC8 行、
-> 实施计划 §一采购表、`1-转型规划/session接力-Phase1收口.md`。
+> 实施计划 §一采购表、`1-转型规划/0-全景路线图/session接力-Phase1收口.md`。
 > 本场景 = CC 建造车间产物；**不改规划文档**（那是 Cowork 的活）。
 >
 > ⛔ **不要碰 `sc8-real-data-cutover` 变更包**（openspec/changes/sc8-real-data-cutover/）——

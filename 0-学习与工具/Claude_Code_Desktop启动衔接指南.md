@@ -30,9 +30,9 @@ git push
 1. 确认已配（之前都装好了）：全局 `~/.claude/CLAUDE.md`、3 个全局 agents、SuperPowers v5.1、OpenSpec v1.4。
 2. 打开 `企业AI转型/`，让 Claude Code 先读这几份恢复上下文：
    - 项目 `CLAUDE.md`（如无则参考 supplychain 的 CLAUDE.md 风格补一份）
-   - `1-转型规划/supplychain收割与全景推进策略.md`（最重要——三张映射表）
-   - `1-转型规划/Phase1-基础设施与智能体架构设计.md`
-   - `0-学习与工具/卓品智能AI转型实施计划（最新版）.md` 第七节
+   - `1-转型规划/0-全景路线图/supplychain收割与全景推进策略.md`（最重要——三张映射表）
+   - `1-转型规划/0-全景路线图/Phase1-基础设施与智能体架构设计.md`
+   - `1-转型规划/0-全景路线图/卓品智能AI转型实施计划（最新版）.md` 第七节
 
 ## 4. 开发顺序：地基 → 核心 → 铺开
 
@@ -71,9 +71,9 @@ git push
 
 ```
 你是卓品智能 AI 转型的首席 AI 架构师。先读项目 CLAUDE.md、
-1-转型规划/supplychain收割与全景推进策略.md、
-1-转型规划/Phase1-基础设施与智能体架构设计.md、
-0-学习与工具/卓品智能AI转型实施计划（最新版）.md 第七节，恢复上下文。
+1-转型规划/0-全景路线图/supplychain收割与全景推进策略.md、
+1-转型规划/0-全景路线图/Phase1-基础设施与智能体架构设计.md、
+1-转型规划/0-全景路线图/卓品智能AI转型实施计划（最新版）.md 第七节，恢复上下文。
 
 本次目标：平台底座收割。把 supplychain 的 xky_srm_connector / zp_connector /
 u9c_connector / crm_notifier / wecom / DataConnector 抽象，迁入
