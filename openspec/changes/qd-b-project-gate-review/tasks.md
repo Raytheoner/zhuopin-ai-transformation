@@ -53,7 +53,7 @@
 - [ ] 6.2 C 类 4 条转人工（规则 42/80/81/82，只验在否，不下结论）
 - [ ] 6.3 审核报告输出契约（六段：总判定/阻断项/警告提示/跨模块/转人工待办/审计元数据），标注"AI 预审建议，决策在评审委员会"
 - [ ] 6.4 L2 复核确认门禁：AI 结论非终局，复核结论与预审一并留痕
-- [ ] 6.5 全链审计写 `zhuopin_platform.audit`（scenario=QD-B，关联立项文档版本ID/模板版本/规则版本）
+- [x] 6.5 全链审计写 `zhuopin_platform.audit`（scenario=QD-B，关联立项文档版本ID/模板版本/规则版本）——`evaluate.py` 新建，AuditEvent 含 rule_version/sample_id/tier/per_rule/content_hash，verify_chain 通过，30 tests 全绿（2026-07-04）
 - [ ] 6.6 OEM 技术方案附件隔离例外（走 data_isolation_layer，跨库抛 CrossOEMAccessError）
 - [ ] 6.7 mock 端到端：解析→规则→语义→报告全链跑通
 
