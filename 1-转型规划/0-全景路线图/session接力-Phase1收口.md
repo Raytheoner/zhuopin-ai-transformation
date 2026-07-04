@@ -195,10 +195,40 @@ Paul 并行推进、非本次职责：① 数据闸清单发 IT/SRM；② 指定
 
 ---
 
+## 【2026-07-04 本次会话（CC）】默会知识纠正 B段 · 全部完成
+
+### 做了什么（3 个任务 + 杂项，2 次 commit，push 至 master `3a2ccd3`）
+
+1. ✅ **B段-任务2：L2 override_reason 判例采集器**（已在前一上下文完成，`4f5f0c9`）：
+   - `AuditEvent.override_reason: str = ""` 字段加入平台审计模型（向后兼容）
+   - SC8 `approve()` 接 `override_reason`，写入 `decision["override_reason"]` + top-level 双路径
+   - 2 个新 test，l2-override-reason-capture 变更包归档（2026-07-04）
+
+2. ✅ **B段-任务4：QD-A 8D预填脚本 MVP**（`8b7c491`）：
+   - 4 个模块：`doc_reader.py`（docx/pdf 读取+D1-D8 节解析）/ `field_extractor.py`（12 字段 HIGH/MED/LOW 置信度）/ `scrubber.py`（6 类实体识别+TokenState 令牌建议，不自动替换）/ `calibrate.py`（逐字段命中率+批报告）
+   - CLI `scripts/run_prefill.py`（--input/--output/--golden/--report/--preview/--oem-level）
+   - **26 tests 全绿，CLI smoke test 通过**；真实 8D 文件全 gitignore（OEM 合规红线）
+   - doc_parser rule-of-three 评估：2 消费方（QD-B xlsx + QD-A docx），未触发，接口与未来平台等价，触发点≈2026-10 合同/RFQ 第3消费方
+   - 场景 CLAUDE.md（六段式）✅；qda-8d-prefill 变更包归档（2026-07-04-qda-8d-prefill）
+
+3. ✅ **B段-任务5 P2 杂项**（`3a2ccd3`）：
+   - 删除 5 个已并入 master 的旧分支（feat/* ×4 本地/chore/sdd-hygiene 本地+远程）
+   - CLAUDE.md §5 加 ff-only 合并策略说明（PR zero-diff → 直接 CLOSE 不是废弃）
+   - fix-a/b/c specs delta 合并进 `openspec/specs/`：4 改（audit-hash-chain/delivery-commitment-gate/platform-data-connectors/platform-notification-channels）+ 3 新建（delivery-deviation-monitor/platform-kit-engine/platform-oem-isolation）
+   - SC1 CLAUDE.md v0.0→v1.0（53 tests，平台对齐完成记录）
+
+### 未完成（下移 / 下周）
+
+- **B段-任务3 批改会备料**（FI1 对账规则草案 + 缺料误判案例对照表）：Paul 下周回公司约，CC 届时备料，本 session 未开始。
+- fix-a/b/c openspec 变更包的最终归档（specs delta 已合入，但变更包本身 `fix-a/b/c` 仍在 `openspec/changes/` 中，待确认是否归档——依 hygiene 规则判断）。
+
+---
+
 ## 【下一会话主攻】
 
 1. **接 Paul "规整后"的部门场景调整清单**（2026-07-01 裁定延后，Paul 整理后再提），据此零残差同步全景§加速启动总览 + 实施计划§一/§二 + 前置总表 + 甘特 HTML。
-2. **并行盯的 5 项**（QD-B/SC3 真实接入/SC2/待办 #10/8D 校验脚本）见下方。
+2. **B段-任务3 批改会备料**（Paul 下周回公司）：FI1 批改会拉近 3 个月对账历史→AI 反推规则草案 20-30 条；缺料口径批改会出误判案例对照表（kit_engine `missing_snapshot` overlap rate）。
+3. **并行盯的 5 项**（QD-B/SC3 真实接入/SC2/待办 #10/8D 校验脚本）见下方。
 
 ---
 
