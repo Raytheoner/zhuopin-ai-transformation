@@ -125,3 +125,25 @@ SRM/ERP/U9C 采购供应商数据不属于 OEM 技术数据隔离范围，因此
 - **WHEN** 调用 `XkySrmConnector.from_env()` 且环境变量已设置
 - **THEN** 连接器正常构造，凭证从环境变量读取，与修改前行为一致
 
+### Requirement: U9C/ERP 连接器默认开启 TLS 证书校验
+平台 `ZpConnector`（U9C/ERP 唯一规范连接器）SHALL 对所有公网请求（含携带 `client_secret` 的 OAuth2 `AuthLogin`、`zp` 视图查询、`U9C/webapi/BOM/Query`）默认启用 TLS 证书与主机名校验（`ssl.create_default_context()`，`verify_mode=CERT_REQUIRED`、`check_hostname=True`）。MUST NOT 全局关闭证书校验。逃生阀 `U9C_TLS_INSECURE=true` 仅允许在 `mock` 模式下生效，`real` 模式下强制开启校验，配置显式逃生阀不影响 real 模式。
+
+#### Scenario: 默认 TLS 校验开启
+- **WHEN** `ZpConnector` 以默认配置发起 HTTPS 请求
+- **THEN** TLS 证书与主机名均经校验，伪造证书请求被拒绝
+
+#### Scenario: real 模式忽略逃生阀
+- **WHEN** `U9C_TLS_INSECURE=true` 且 `mode=real`
+- **THEN** 连接器仍开启 TLS 校验，记录警告日志，不使用不安全上下文
+
+### Requirement: BOM 拉取失败显式信号，不静默吞错
+`ZpConnector.get_bom_for_products` SHALL 在单品 BOM 查询失败时收集失败料号清单，不得静默丢弃返回残缺 BOM。部分失败 MUST 返回 `(rows, failed_ids)` 并写审计痕迹；全部产品查询失败 MUST 抛出带失败明细的错误，绝不返回空结果当成功。下游齐套据此不再因残缺 BOM 算出虚低毛需求。
+
+#### Scenario: 部分 BOM 失败返回失败清单
+- **WHEN** N 个产品查询中 M 个失败
+- **THEN** 返回 `(成功行列表, 失败料号列表)`，失败列表非空，写审计
+
+#### Scenario: 全部失败抛出错误
+- **WHEN** 所有产品 BOM 查询均失败
+- **THEN** 抛出含失败明细的错误，不返回空成功结果
+

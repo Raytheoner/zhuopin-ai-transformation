@@ -54,3 +54,25 @@ SC8 SHALL 沉淀黄金基准（人工核对的真实订单样本）作回归测�
 #### Scenario: 确定性逻辑零偏差
 - **WHEN** 对黄金基准样本运行 SC8 的确定性逻辑（关键路径、日期加减）
 - **THEN** 与人工计算偏差为 0
+
+### Requirement: 首道对客承诺一律入待审批队列
+SC8 `submit_commitment`（对客交付承诺首道提交）SHALL **一律**把承诺草稿入待审批队列、绝不自动外发，与门禁风险等级及全局对客外发总开关是否开启**无关**。删除"高置信+非首次+不晚于目标日 → 低风险自动放行外发"旁路。真正外发只能由 L2 责任人经 `FilePendingQueue.approve(item_id, confirmed_by)` 二次放行触发。门禁 `evaluate` 给出的真实风险（`requires_confirmation`/`severity`/`reasons`）MUST 如实写入草稿与审计，不得因 policy 恒入队而掩盖真实低风险判定。
+
+#### Scenario: 任何风险等级均入队，不外发
+- **WHEN** `submit_commitment` 被调用，无论门禁评分为高/低置信
+- **THEN** 草稿 MUST 入待审批队列，不直接外发客户
+
+#### Scenario: L2 二次放行才外发
+- **WHEN** L2 责任人调用 `FilePendingQueue.approve(item_id, confirmed_by)`
+- **THEN** 通报经渠道外发，审计记录确认人与时间
+
+### Requirement: 待审批队列审批授权分级
+SC8 待审批队列 SHALL 对队列项标注所需审批级别（`required_level` ∈ {`vp`, `l2`}）：命中 重点客户 / 首次承诺 / 关联金额>50万（可得时）任一 → `vp`，否则 `l2`。`approve` MUST 校验确认人级别——`required_level=="vp"` 且 `confirmed_by` 不在 VP 白名单（`VP_APPROVERS`）→ 拒绝放行（返回 False、保持 pending、写 `approval_denied_insufficient_level` 审计）。白名单与重点客户清单走配置（改 config 不改逻辑）。本要求叠加于"对客外发总开关"结构性闸门之上，二者独立。
+
+#### Scenario: VP 级审批非 VP 人员拒绝
+- **WHEN** 队列项标注 `required_level="vp"`，且 `confirmed_by` 不在 VP_APPROVERS
+- **THEN** `approve` 返回 False，草稿保持 pending，审计记录 `approval_denied_insufficient_level`
+
+#### Scenario: L2 级审批 L2 人员通过
+- **WHEN** 队列项标注 `required_level="l2"`，且 `confirmed_by` 为合法 L2 人员
+- **THEN** `approve` 返回 True，外发触发，审计记录确认人

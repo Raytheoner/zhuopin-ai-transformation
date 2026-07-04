@@ -46,3 +46,18 @@ TBD - created by archiving change platform-harvest-connectors. Update Purpose af
 - **WHEN** 通知器生成草稿或执行一次推送
 - **THEN** 平台审计日志新增一条只追加记录，包含场景、动作类型、目标渠道与人工确认状态
 
+### Requirement: Notifier 对客外发总开关第二道结构性闸门
+平台 `Notifier` SHALL 支持注入式对客外发总开关 `outbound_enabled`（`bool` 或 `Callable[[], bool]`，默认放行以不影响内部/通用通知）。当 `outbound_enabled` 求值为 `False` 时，`send()` MUST 拒绝实际外发——**即便带非空 `confirmed_by`（人工已确认）也不外发**——并记审计 `sent=False`。拦截入队仅对**首道拦截**（无 `confirmed_by`）生效（草稿否则无处留存），reason 区分 `customer_outbound_disabled` 与 `awaiting_L2_confirmation`；带 `confirmed_by` 的复发（队列 `approve` 二次放行）被拦时 MUST NOT 重复入队（草稿已在队列中，且避免持锁复发经 `enqueue` 重入队列锁死锁）。此为独立于 L2 人工门禁的第二道结构性闸门。
+
+#### Scenario: 外发开关关闭时不外发
+- **WHEN** `outbound_enabled=False` 且通知器收到任何消息（含带 confirmed_by）
+- **THEN** 不实际外发，审计记 `sent=False, reason="customer_outbound_disabled"`
+
+#### Scenario: 首道拦截入队，二次放行不重复入队
+- **WHEN** 首道提交（无 confirmed_by）被拦截，reason=awaiting_L2_confirmation
+- **THEN** 草稿入待审批队列；若二次放行时开关仍关，拒绝外发但 MUST NOT 再次入队
+
+#### Scenario: 外发开关开启时正常通过
+- **WHEN** `outbound_enabled=True` 且 L2 人工确认
+- **THEN** 通报正常外发，审计记 `sent=True`
+
