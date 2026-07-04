@@ -83,3 +83,36 @@ def test_vp_item_accepts_vp_approver(queue, audit):
     assert queue.approve(item_id, confirmed_by="Paul", notifier=notifier) is True
     assert len(sends) == 1
     assert queue.get(item_id)["status"] == STATUS_SENT
+
+
+# ── override_reason 判例采集 ─────────────────────────────────────────────────
+def test_approve_with_override_reason_in_audit(queue, audit):
+    """带 override_reason 的 approve → audit decision 可查到该字段；verify_chain 通过。"""
+    sends: list[str] = []
+    notifier = build_notifier(queue, audit=audit, send_fn=lambda url, body: sends.append(body),
+                              outbound_enabled=True)
+    item_id = queue.enqueue(_Msg(), reason="awaiting_L2_confirmation")
+    reason = "客户紧急插单，SRM 承诺已电话确认，口头授权先行"
+    assert queue.approve(item_id, confirmed_by="Paul", notifier=notifier,
+                         audit=audit, override_reason=reason) is True
+    assert len(sends) == 1
+
+    events = audit.query_by(scenario="SC8", action="approve_sent")
+    assert len(events) == 1
+    ev = events[0]
+    assert ev["decision"]["override_reason"] == reason
+    assert ev.get("override_reason") == reason      # 顶级字段也有
+    assert audit.verify_chain().ok is True
+
+
+def test_approve_without_override_reason_no_key(queue, audit):
+    """不传 override_reason → audit decision 中不含该 key（不写空字符串）。"""
+    sends: list[str] = []
+    notifier = build_notifier(queue, audit=audit, send_fn=lambda url, body: sends.append(body),
+                              outbound_enabled=True)
+    item_id = queue.enqueue(_Msg(), reason="awaiting_L2_confirmation")
+    assert queue.approve(item_id, confirmed_by="Paul", notifier=notifier, audit=audit) is True
+
+    events = audit.query_by(scenario="SC8", action="approve_sent")
+    assert len(events) == 1
+    assert "override_reason" not in events[0]["decision"]

@@ -78,7 +78,8 @@ class FilePendingQueue:
 
     # ── 审批放行（幂等）────────────────────────────────────────────────────────
     def approve(self, item_id: str, confirmed_by: str, notifier: Notifier,
-                audit: AuditLogger | None = None) -> bool:
+                audit: AuditLogger | None = None,
+                override_reason: str = "") -> bool:
         """L2 责任人放行：触发外发并原子标记 'sent'。
 
         幂等保证：整段 read→send→mark 在锁内串行；项已是 'sent' → 直接返回 True，
@@ -86,6 +87,9 @@ class FilePendingQueue:
 
         B3 审批授权分级：项 `required_level=="vp"` 且 confirmed_by 不在 VP 白名单 →
         拒绝放行（返回 False、保持 pending、写 approval_denied_insufficient_level 审计）。
+
+        Args:
+            override_reason: L2 改判原因自由文本（判例采集器，写入 audit decision；空字符串时不填）。
 
         Returns:
             True  外发成功（或此前已外发，幂等返回 True）；
@@ -141,6 +145,23 @@ class FilePendingQueue:
             item["sent_at"] = datetime.now(tz=timezone.utc).isoformat()
             records[idx] = item
             self._rewrite_all_unlocked(records)
+
+            if audit is not None:
+                decision = {
+                    "queue_item_id": item_id,
+                    "recipient": item.get("recipient", ""),
+                    "confirmed_by": confirmed_by,
+                }
+                if override_reason:
+                    decision["override_reason"] = override_reason
+                audit.record(AuditEvent(
+                    scenario="SC8",
+                    action="approve_sent",
+                    evaluator=confirmed_by,
+                    automation_level="L2",
+                    decision=decision,
+                    override_reason=override_reason,
+                ))
             return True
 
     # ── 读 / 查询 ─────────────────────────────────────────────────────────────

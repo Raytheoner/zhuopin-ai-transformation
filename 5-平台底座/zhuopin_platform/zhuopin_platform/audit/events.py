@@ -22,6 +22,7 @@ class AuditEvent:
     data_sources: dict[str, str] = field(default_factory=dict)  # 各输入的来源
     content_hash: str = ""   # AI 生成文本的 SHA-256
     oem_context: str = ""    # 涉及 OEM 数据时的客户上下文（隔离审计）
+    override_reason: str = ""  # L2 人工改判原因（判例采集器，知识资产台账用）
     report_path: str = ""
     error: str = ""
     timestamp: str = ""

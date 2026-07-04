@@ -1,0 +1,8 @@
+schema: spec-driven
+name: l2-override-reason-capture
+status: in_progress
+created: 2026-07-04
+type: platform-patch
+scope:
+  - 5-平台底座/zhuopin_platform/zhuopin_platform/audit/events.py
+  - 4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/pending_queue.py
