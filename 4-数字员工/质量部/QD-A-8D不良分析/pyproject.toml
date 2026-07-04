@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "qda-8d-prefill"
+version = "0.1.0"
+description = "QD-A 8D预填工具 — 历史8D库归集提速"
+requires-python = ">=3.10"
+dependencies = [
+    "python-docx>=1.0",
+    "pdfplumber>=0.10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

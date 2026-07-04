@@ -1,0 +1,7 @@
+schema: spec-driven
+name: qda-8d-prefill
+status: in_progress
+created: 2026-07-04
+type: quality-data-tool
+scope:
+  - 4-数字员工/质量部/QD-A-8D不良分析/

@@ -1,0 +1,21 @@
+# 真实8D文档与脱敏前原件 — 绝不入库
+data/golden/*.docx
+data/golden/*.pdf
+data/golden/*.xlsx
+data/golden/*.csv
+data/golden/*.json
+data/golden/real_*
+data/golden/raw_*
+
+# 校准时的真实样本（脱敏前）
+tests/fixtures/real_*
+tests/fixtures/*.pdf
+
+# 工具输出
+results/
+reports/*.json
+reports/*.md
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
