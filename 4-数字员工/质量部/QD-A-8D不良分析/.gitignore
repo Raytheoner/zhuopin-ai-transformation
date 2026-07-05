@@ -11,9 +11,9 @@ data/golden/raw_*
 tests/fixtures/real_*
 tests/fixtures/*.pdf
 
-# 工具输出
+# 工具输出（含任意路径的 JSON 输出，防 --output result.json 裸奔）
+*.json
 results/
-reports/*.json
 reports/*.md
 __pycache__/
 *.pyc

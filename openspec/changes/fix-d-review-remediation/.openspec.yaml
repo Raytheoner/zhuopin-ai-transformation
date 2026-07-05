@@ -1,0 +1,5 @@
+schema: fix
+name: fix-d-review-remediation
+title: "fix-d: Antigravity 评审整改（JSON泄漏/OEM别名/FI1改判/模板接线）"
+created: 2026-07-04
+status: active

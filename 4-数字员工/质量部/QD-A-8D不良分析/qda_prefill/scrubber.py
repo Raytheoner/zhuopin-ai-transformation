@@ -64,7 +64,21 @@ class ScrubbingResult:
 
 # ── 识别模式 ─────────────────────────────────────────────────────────────────
 
-# 常见客户/机构名（可按实际客户扩充）
+# 主机厂客户简称白名单——裸名不带后缀词，_ORG_RE 无法匹配（如"比亚迪"/"上汽"/"理想"）
+# 注意：不使用 re.IGNORECASE，避免与 [一-鿿] 范围共用时的 Python 已知行为问题。
+# 左边界：不接 CJK 字符或字母，防止"来自比亚迪"中"自"构成复合词头部。
+# 右边界：只拦截后接 ASCII 字母/数字（防截断英文缩写），不拦截 CJK——
+#         汉字中 OEM 名后必然紧跟动词/助词（如"比亚迪要求"），放行 CJK 右侧是有意设计。
+_OEM_ALIAS_RE = re.compile(
+    r"(?<![一-鿿A-Za-z])"
+    r"(比亚迪|BYD|上汽|SAIC|理想汽车|理想|Li\s*Auto|蔚来|NIO|"
+    r"吉利|GEELY|长城|GWM|奇瑞|CHERY|特斯拉|Tesla|广汽|GAC|"
+    r"东风|DFAC|一汽|FAW|长安|Changan)"
+    r"(?![A-Za-z\d])",
+    re.UNICODE,
+)
+
+# 常见客户/机构名（带行业后缀词的通用规则）
 _ORG_RE = re.compile(
     r"([一-龥]{2,8}(?:汽车|集团|机械|动力|商用车|工程机械|重工|农机|发动机|客车|"
     r"卡车|电动|科技|工业)(?:股份)?(?:有限)?(?:公司)?|"
@@ -115,7 +129,9 @@ def scrub_text(text: str, state: TokenState) -> ScrubbingResult:
     suggested = text
 
     # 处理顺序：先长后短，防止零件编号被公司名消费
-    _apply(suggested, entities, state, _ORG_RE,      "oem",      0)
+    _apply(suggested, entities, state, _ORG_RE,        "oem",      0)
+    suggested = _replace_from(text, entities)
+    _apply(suggested, entities, state, _OEM_ALIAS_RE,  "oem",      1)  # 裸名补漏
     suggested = _replace_from(text, entities)
     _apply(suggested, entities, state, _PLATFORM_RE, "platform", 0)
     suggested = _replace_from(text, entities)

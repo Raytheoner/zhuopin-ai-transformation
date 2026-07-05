@@ -13,6 +13,3 @@ __pycache__/
 .pytest_cache/
 build/
 dist/
-# 真实对账样本（财务红色数据）——黄金基准目录下仅合成样本可入库，真实件不入库
-data/golden/real_*
-data/real_*
