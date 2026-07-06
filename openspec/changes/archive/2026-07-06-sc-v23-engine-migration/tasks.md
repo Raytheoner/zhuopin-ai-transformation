@@ -39,6 +39,6 @@
 - [x] 6.1 全仓 grep `sc3_intransit|sc5_purchase` 确认零残留（历史 openspec archive 文档除外，按项目惯例不回溯改写）
 - [x] 6.2 SC7 目录 `pytest -q`：41 passed；SC8 目录 `pytest -q`：全绿（原有 + 新增 answer_confidence 测试）
 - [x] 6.3 `openspec archive` 落盘 `openspec/specs/`：新增 4 个 capability（sc7-purchase-engine/agent、sc8-answer-confidence-engine/agent）；4 个退役 capability（sc3-intransit-\*/sc5-purchase-\*）因 CLI 不支持"REMOVE 全部 requirement"改为归档后手工删除对应 `openspec/specs/` 目录（见 proposal.md 实现说明）
-- [ ] 6.4 `git add` 变更（含新增 SC7 目录、SC8 新文件、SC3/SC5 清空后的 README、openspec 变更包），一次或分两次 commit
-- [ ] 6.5 `/opsx:archive sc-v23-engine-migration -y`（完工即归档纪律，不拖延）
-- [ ] 6.6 更新 `session接力-Phase1收口.md`：C 段完成状态回填
+- [x] 6.4 `git add` 变更（含新增 SC7 目录、SC8 新文件、SC3/SC5 清空后的 README、openspec 变更包），commit `8d8bde7`（未纳入本会话另一处非本变更包产生的未提交改动 `1-转型规划/session接力-财务域场景落地.md`）
+- [x] 6.5 `/opsx:archive sc-v23-engine-migration -y`（完工即归档纪律，不拖延）——归档至 `openspec/changes/archive/2026-07-06-sc-v23-engine-migration/`
+- [x] 6.6 更新 `session接力-Phase1收口.md`：C 段完成状态回填

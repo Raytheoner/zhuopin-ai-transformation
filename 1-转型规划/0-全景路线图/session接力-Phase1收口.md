@@ -1,7 +1,7 @@
 # Session 接力（滚动·最新）—— 全景规划实现
 
 > 用途：跨会话接力点。新 Cowork / Claude Code 会话**读这份 + CLAUDE.md 当前进度即可恢复**，按【下一会话主攻】继续。
-> 更新：**2026-07-06（采购域 v2.3 全景重排执行完成·重组循环第 2 例，Cowork 总线·覆盖前版）**。总线四裁决（SC6 注销并入 O2/SC9 并入 S6/SC7 两期制/SC10-11 排期）→ **全景 42→40（采购 9→7）**零残差落档八处文档；甘特改名去数字化；CC 新移交=SC3/SC5 引擎迁移+黄金基准保全。详见【2026-07-06 会话】节。前序（07-05 四链拍板+Unknowns、同日治理生效/专员实名/U9C 打通）保留在下。① Paul 命题（人均产出初衷+三大业务特性）→ 出《业务特性驱动的四链联动蓝图-42场景重梳-2026-07-05》，**D-A~D-D 四项 Paul 全采纳、已按 §0.2 落档**（链 D 需供平衡链升格主干/S6/SC9 知识线提前 Q4+销售接口人 7/31/分位备料策略入台账/L4+L5 先手联动点交 CC），零场景日期变更；② 三轮结构化访谈 grill Paul 挖 unknown unknowns → 《Unknowns登记册-三轮访谈-2026-07-05》：击落假设 5 项（CEO mandate/法务意见/代理人/IT 专人/止损腹案——均"Paul 知道但文档零记载"），坐实 8 项（🔴U1 本地 LLM 迁移零文档化+LLM 判据无黄金集、🔴U2 U9C 实时库存 OpenAPI bug 原厂未回复且不在依赖表【采购一线因数据错零使用，与缺料误判 P0 同源】、🟠U3 风险型价值无反事实基线、🟠U4 使用率无测量、U5-U8），11 个行动**待 Paul 批**后落档。前版（07-04 全域体检+默会知识纠正+评审 fix-d 闭环）内容保留在下。
+> 更新：**2026-07-06（CC 完成 C 段：SC3/SC5 引擎归属迁移，覆盖前版）**。SC3→SC8（答交可信度子模块，29 tests）/ SC5→SC7（新场景，41 tests + 黄金基准 35850/640000/675850 精确保留），openspec 变更包 `sc-v23-engine-migration` 已归档，commit `8d8bde7`。详见【2026-07-06 会话（CC）】节。同日更早的 Cowork 总线（采购域 v2.3 全景重排执行完成·重组循环第 2 例）内容保留在下：总线四裁决（SC6 注销并入 O2/SC9 并入 S6/SC7 两期制/SC10-11 排期）→ **全景 42→40（采购 9→7）**零残差落档八处文档；甘特改名去数字化；CC 新移交=SC3/SC5 引擎迁移+黄金基准保全（本节已执行完成）。前序（07-05 四链拍板+Unknowns、同日治理生效/专员实名/U9C 打通）保留在下。① Paul 命题（人均产出初衷+三大业务特性）→ 出《业务特性驱动的四链联动蓝图-42场景重梳-2026-07-05》，**D-A~D-D 四项 Paul 全采纳、已按 §0.2 落档**（链 D 需供平衡链升格主干/S6/SC9 知识线提前 Q4+销售接口人 7/31/分位备料策略入台账/L4+L5 先手联动点交 CC），零场景日期变更；② 三轮结构化访谈 grill Paul 挖 unknown unknowns → 《Unknowns登记册-三轮访谈-2026-07-05》：击落假设 5 项（CEO mandate/法务意见/代理人/IT 专人/止损腹案——均"Paul 知道但文档零记载"），坐实 8 项（🔴U1 本地 LLM 迁移零文档化+LLM 判据无黄金集、🔴U2 U9C 实时库存 OpenAPI bug 原厂未回复且不在依赖表【采购一线因数据错零使用，与缺料误判 P0 同源】、🟠U3 风险型价值无反事实基线、🟠U4 使用率无测量、U5-U8），11 个行动**待 Paul 批**后落档。前版（07-04 全域体检+默会知识纠正+评审 fix-d 闭环）内容保留在下。
 
 ---
 
@@ -110,6 +110,26 @@ Paul 并行推进、非本次职责：① 数据闸清单发 IT/SRM；② 指定
 - **Paul 本人（P0，本周）**：① 逐份确认三份 IT 跟催材料是否已发（U9C 跟催邮件/OEM 隔离 brief，占位符未替换疑似未发，7/15 门只剩 11 天）；② AIOps 第 2 人口径拍板澄清（Onboarding 文档"第2人=陈忱"vs 实施计划红线矛盾；陈忱不写代码）+ 招聘督办；③ 采购/财务专员实名化 + 首周交付当面对齐（占位符 [姓名] 未替换、财务首周草案零交付证据）。
 - **CC（LAN，建议单起 session）**：① QD-B 接入 zhuopin_platform.audit（冲刺第一任务，实测 0 处 import，IATF 红线）；② L2 门禁加"改判原因"字段（判例采集器，方案性价比最高项）；③ 8D 预填脚本（给陈忱团队，首批 7 份作校准基准）；④ FI1 批改会备料（拉 IT 导近 3 个月对账记录→AI 反推规则草案）+ 缺料批改会备料（误判案例对照表+§9 选项）；⑤ P2 杂项打包：删 4 旧分支/PR#16 清理/PR#2#5 核实/fix-a/b/c specs delta 文档性合并/SC8·SC1 场景 CLAUDE.md 补齐。
 - **域专线**：知识资产 backup 点名（质量部工程师/PMC/财务主管/采购合同岗）；批改会排期（FI1 7 月上旬/缺料 7 月）。
+
+## 【2026-07-06 会话（CC）】C 段：SC3/SC5 引擎归属迁移 · 执行完成
+
+按 `1-转型规划/0-全景路线图/开场prompt-总线对齐落地-CC交接-2026-07-06.md` C 段执行（A/B 两段本会话开工时确认已在 master 完成：commit `79eb471`/`6e99b61`/`0672690`）。
+
+1. ✅ **openspec 变更包 `sc-v23-engine-migration`**（proposal/design/specs/tasks 全量，含知识资产三问+验收晋档条件强制节）走完 propose→apply→archive 全流程，已归档至 `openspec/changes/archive/2026-07-06-sc-v23-engine-migration/`。
+2. ✅ **SC3→SC8**：`sc3_intransit`（29 tests）原样迁入 SC8 内部子模块 `sc8/answer_confidence_engine.py` + `sc8/answer_confidence.py`——答交可信度评分，作为 SC8 置信度 2→3 级化的判据源；**本次只搬代码，未接线到现有承诺/置信度主流程**（`commitment.py`/`forecast.py` 不动，未碰 `sc8-real-data-cutover` 变更包）；audit `scenario` 由 "SC3" 改标 "SC8"。SC8 全量回归 143 passed + 2 skipped，零回归。
+3. ✅ **SC5→SC7**：新建场景目录 `4-数字员工/采购部/SC7-库存优化建议/`（此前不存在），`sc5_purchase`（41 tests）迁入 `sc7_inventory` 包；**黄金基准 35850/640000/675850 精确保留，逐位对齐**；`kit_engine` 底座件不动，O2/SC7/SC8 继续共同复用。SC7 独立回归 41 passed。
+4. ✅ **旧目录退役**：SC3/SC5 场景目录清空为 `README.md` 指针 + CLAUDE.md 改写退役说明（保留历史六段式记录）；`pip uninstall sc3-intransit-tracking sc5-purchase-recommendation`，新装 `sc7-inventory-optimization`。
+5. ✅ **openspec specs 落盘**：新增 4 capability（`sc7-purchase-engine/agent`、`sc8-answer-confidence-engine/agent`）；4 个退役 capability（`sc3-intransit-*`/`sc5-purchase-*`）因 CLI 不支持"REMOVE 全部 requirement 后 spec 归零"，改为归档后手工删除对应 `openspec/specs/` 目录（内容已 100% 由新 capability 承接，非静默丢弃，见变更包 proposal.md"实现说明"）。
+6. ✅ **git commit `8d8bde7`**（45 files）；**未纳入**同批工作区内一处非本次改动的未提交修改 `1-转型规划/session接力-财务域场景落地.md`（内容判断为 Cowork 侧在途工作，未触碰）。
+7. ⏳ **未做（本会话未进入）**：开场 prompt D 段（FI1/缺料两场批改会备料——用户确认两场日期均已约，下次会话应尽快跟进备料）、E 段（VP_APPROVERS 加孙涛等小件）。
+
+### 下一会话建议
+
+- **D 段批改会备料**（FI1 对账规则草案 + 缺料误判案例对照表）——两场日期已约，优先级高于 E 段小件。
+- **E 段小件**：VP_APPROVERS 加孙涛、保供看板周活跃日志、L5 联动点回流报表、QD-B 黄金集机制样板。
+- 需向 Paul 确认：`1-转型规划/session接力-财务域场景落地.md` 的未提交修改是否需要处理（本会话判断为其他会话的在途工作，未动，但需 Paul 确认是否遗漏提交）。
+
+---
 
 ## 【2026-07-06 会话（Cowork 总线）】采购域 v2.3 全景重排 · 执行完成（重组循环第 2 例）
 
