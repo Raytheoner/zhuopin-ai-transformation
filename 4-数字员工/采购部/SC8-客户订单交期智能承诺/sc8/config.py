@@ -24,6 +24,17 @@ def srm_source_mode() -> str:
     return "real" if os.environ.get("SC8_SRM_SOURCE", "mock").strip().lower() == "real" else "mock"
 
 
+def net_inventory_enabled() -> bool:
+    """保供现货净额开关：`SC8_NET_INVENTORY=on|off`（**默认 OFF**）。
+
+    OFF = 现行为、零保供四色漂移（保供看板不看库存，与接入前完全一致）。
+    ON  = 直接子件"白名单仓可用现货 ≥ 其毛需求"→ 视为已齐、退出待催/催货（消除缺料误判 P0）。
+    翻 ON 会改变保供四色，MUST 先由采购专员重核保供黄金基准 + 登记原因 + 签字后方可开启
+    （stock-api-inventory-source 变更包 §验收晋档条件）。
+    """
+    return os.environ.get("SC8_NET_INVENTORY", "off").strip().lower() in ("on", "1", "true", "yes")
+
+
 # ── 对客外发总开关（红线 §7.4）──────────────────────────────────────────────
 # 全程关闭，直到 ① SRM 真正联调通过 ② 真实黄金基准零偏差 ③ 门禁 6 项全勾。
 # 关闭期间：所有对客通报只生成草稿、入待审批队列，绝不自动外发客户。

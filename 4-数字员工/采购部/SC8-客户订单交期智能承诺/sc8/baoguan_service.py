@@ -81,8 +81,15 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
     srm_cache = str(Path(cache_dir) / "srm_answer_cache.json") if cache_dir else None
     srm = load_srm_deliveries("real", materials=components, audit=trace,
                               cache_path=srm_cache, ttl_sec=srm_ttl_sec)
-    # ④ 保供齐套 → 四色看板（不改判级语义）
-    rows = build_dashboard(orders, bom, srm, today=today)
+    # ⑤ 现货净额（开关默认关；开时经 Stock API 取白名单仓可用量，消除"有货却被追料"误判 P0）
+    inventory = None
+    if config.net_inventory_enabled():
+        from zhuopin_platform.shared_tools.erp_connector import ZpConnector
+        conn = ZpConnector.from_env(audit=trace)
+        inventory = {r.material_id: r.current_stock
+                     for r in conn.get_inventory(sorted(components))}
+    # ④ 保供齐套 → 四色看板（判级语义不变；inventory=None（默认）时零漂移）
+    rows = build_dashboard(orders, bom, srm, today=today, inventory=inventory)
 
     counts = {
         "red": sum(1 for r in rows if r.risk == RISK_RED),

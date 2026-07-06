@@ -23,7 +23,7 @@ from datetime import date
 
 from . import config
 from .config import ForecastParams
-from .forecast import estimate_material_arrivals
+from .forecast import MaterialArrivals, estimate_material_arrivals
 from .models import SalesOrder
 
 # 四色风险（2026-06-24 口径细化，Paul 定）：把"承诺缺口"从"真延期"中拆出——
@@ -94,12 +94,42 @@ def _classify(confirmed_gap: int | None, has_bom: bool, params: ForecastParams,
     return RISK_GREEN, f"齐料按期（{gap_txt}）{cbn}"
 
 
+def _gross_need(so: SalesOrder, bom: list) -> dict[str, float]:
+    """成品**直接子件**毛需求 = 订货量 × 用量 ×(1+损耗)。"""
+    need: dict[str, float] = {}
+    for r in bom:
+        if r.product_id == so.item_code and getattr(r, "level", 1) == 1:
+            need[r.component_id] = need.get(r.component_id, 0.0) + \
+                so.qty * r.qty_per_unit * (1 + r.loss_rate)
+    return need
+
+
+def _covered_by_stock(so: SalesOrder, bom: list, inventory: dict) -> set[str]:
+    """白名单仓可用现货 ≥ 毛需求 的直接子件（视为已齐、无需采购到货）。"""
+    return {m for m, q in _gross_need(so, bom).items()
+            if q > 0 and float(inventory.get(m, 0) or 0) >= q}
+
+
+def _drop_covered(mat: MaterialArrivals, covered: set[str]) -> MaterialArrivals:
+    """从到货估算剔除现货已覆盖的直接子件并重算瓶颈（现货齐备的子件不再驱动待催/瓶颈）。"""
+    arrivals = {m: d for m, d in mat.arrivals.items() if m not in covered}
+    no_fb = [m for m in mat.no_feedback_materials if m not in covered]
+    bottleneck = max(arrivals, key=lambda m: arrivals[m]) if arrivals else None
+    return MaterialArrivals(arrivals=arrivals, no_feedback_materials=no_fb,
+                            bottleneck_material=bottleneck, has_bom=mat.has_bom)
+
+
 def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
-                       today: date, params: ForecastParams | None = None) -> BaoguanRow:
+                       today: date, params: ForecastParams | None = None,
+                       inventory: dict | None = None) -> BaoguanRow:
     """对单张成品行（预测订单行）做保供齐套评估。
 
     无答复基准：demand_date = max(出货日, 今天) → 无答复子件到货 = 该日 + no_feedback_lead_days。
     分级基于"确定承诺"子件的缺口（剔除无答复估算），区分真延期 vs 待催（见 _classify）。
+
+    现货净额（`inventory`={material_id→白名单仓可用量}）：仅当 `SC8_NET_INVENTORY=on` 时生效，
+    现货可用量≥毛需求的直接子件视为已齐、退出待催/催货（消除"有货却被追料"误判 P0）；
+    默认 OFF → inventory 被忽略、四色与接入前完全一致（零漂移）。
     """
     p = params or config.default_params()
     ship = date.fromisoformat(so.required_date)
@@ -107,16 +137,34 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
 
     mat = estimate_material_arrivals(so.item_code, bom, srm_deliveries,
                                      demand_date=effective_demand, params=p)
+    had_bom = mat.has_bom
 
-    if not mat.has_bom or not mat.arrivals:
-        risk, action = _classify(None, mat.has_bom, p, 0, None, None)
+    # 现货净额（开关默认关；关时不改任何行为）
+    if inventory and had_bom and config.net_inventory_enabled():
+        covered = _covered_by_stock(so, bom, inventory)
+        if covered:
+            mat = _drop_covered(mat, covered)
+
+    if not had_bom:
+        risk, action = _classify(None, False, p, 0, None, None)
         return BaoguanRow(
             so_id=so.so_id, product_id=so.item_code, product_name=so.item_name,
             customer_name=so.customer_name, qty=so.qty, ship_date=ship,
             kit_date=None, gap_days=None, risk=risk,
             bottleneck_material=mat.bottleneck_material,
             no_feedback_materials=mat.no_feedback_materials,
-            component_count=len(mat.arrivals), has_bom=mat.has_bom, action=action,
+            component_count=len(mat.arrivals), has_bom=False, action=action,
+        )
+
+    if not mat.arrivals:
+        # 有 BOM，但全部直接子件被现货覆盖 → 现货齐备、按期（🟢）
+        return BaoguanRow(
+            so_id=so.so_id, product_id=so.item_code, product_name=so.item_name,
+            customer_name=so.customer_name, qty=so.qty, ship_date=ship,
+            kit_date=None, gap_days=None, risk=RISK_GREEN,
+            bottleneck_material=None, no_feedback_materials=[],
+            component_count=0, has_bom=True,
+            action="全部直接子件现货可用量满足毛需求，现货齐备（无需采购到货）",
         )
 
     kit_date = max(mat.arrivals.values())      # 齐料日 = 关键路径最晚到货（含无答复估算）
@@ -143,9 +191,14 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
 
 
 def build_dashboard(orders: list[SalesOrder], bom: list, srm_deliveries: list, *,
-                    today: date, params: ForecastParams | None = None) -> list[BaoguanRow]:
-    """对全部成品行生成保供预警，按风险降序（🔴→🟡→🟢）、缺口天数降序排列。"""
-    rows = [assess_supply_risk(so, bom, srm_deliveries, today=today, params=params)
+                    today: date, params: ForecastParams | None = None,
+                    inventory: dict | None = None) -> list[BaoguanRow]:
+    """对全部成品行生成保供预警，按风险降序（🔴→🟡→🟢）、缺口天数降序排列。
+
+    `inventory`（{material_id→白名单仓可用量}）仅当 `SC8_NET_INVENTORY=on` 生效（默认关，零漂移）。
+    """
+    rows = [assess_supply_risk(so, bom, srm_deliveries, today=today, params=params,
+                               inventory=inventory)
             for so in orders]
     order = {RISK_RED: 0, RISK_GAP: 1, RISK_YELLOW: 2, RISK_GREEN: 3}
     rows.sort(key=lambda r: (order.get(r.risk, 4), -(r.gap_days if r.gap_days is not None else 9999)))

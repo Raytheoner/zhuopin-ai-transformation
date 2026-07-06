@@ -101,6 +101,37 @@ _TOKEN_TTL_MINUTES = 230
 _DEFAULT_PO_CACHE_FILE = Path(__file__).resolve().parent / "cache" / "po_cache.json"
 _PO_DISK_CACHE_TTL = 4 * 3600  # 4 小时
 
+# 齐套"可用现货"只计入这 6 个仓（Paul 2026-07-05 定，见 7-外部文档/U9C库存取数-侦察结果与推荐-2026-07-05.md）：
+#   WW01 委外仓 / ZP01 物料仓 / ZP21 半成品库 / ZP22 委外半成品库 / ZP02 成品库 / ZP23 委外成品库。
+# 其余仓（不良品仓、委外线边仓等）一律排除，不计入可投产现货。
+ALLOWED_STOCK_WAREHOUSES = ("WW01", "ZP01", "ZP21", "ZP22", "ZP02", "ZP23")
+
+
+class _StockRow(BaseModel):
+    """`/zp/api/Stock/Query` 返回行（StockRowDTO）边界校验。"""
+    ItemCode:     str
+    ItemName:     _Opt[str] = ""
+    WhName:       _Opt[str] = ""
+    SupplierName: _Opt[str] = ""
+    ProjectCode:  _Opt[str] = ""
+    StoreQty:     _Opt[float] = 0    # 现存量
+    AvailQty:     _Opt[float] = 0    # 可用量（ERP 服务端已净预留）
+
+    @field_validator("ItemCode", mode="before")
+    @classmethod
+    def _require_item_code(cls, v):
+        if v is None or str(v).strip() == "":
+            raise ValueError("ItemCode 不能为空")
+        return str(v)
+
+    @field_validator("StoreQty", "AvailQty", mode="before")
+    @classmethod
+    def _coerce_qty(cls, v):
+        try:
+            return float(v or 0)
+        except (ValueError, TypeError):
+            return 0.0
+
 
 class ZpConnector(DataConnector):
     """U9C / ERP **唯一规范连接器**（u9c-connector-convergence）。
@@ -401,25 +432,89 @@ class ZpConnector(DataConnector):
         self._pos_cache_ts[days] = time.time()
         return result
 
-    def get_inventory(self) -> list[InventoryRow]:
-        """从 ZpViewItemMaster 获取物料列表作为库存快照基础。
+    _STOCK_MAX_WORKERS = 8
 
-        注意：zp API 暂无库存余量端点，current/safety 暂为 0。
-        TODO（解锁）：U9C 专用服务 `UFIDA.U9.ISV.InvTrans.WhQoh.IQueryBinAvailableQty`
-        （异于通用查询；外网 404，待 IT 外网开放或 LAN/VPN；字段见连接器收敛设计 md 附录 A）。
+    def get_inventory(self, material_ids: list[str] | None = None) -> list[InventoryRow]:
+        """库存快照。
+
+        · `material_ids` 给定（缺料/齐套用）：经卓品自建 `GET /zp/api/Stock/Query` 取**真实现货**，
+          只计白名单仓 `ALLOWED_STOCK_WAREHOUSES`，逐料号并发查询 + 按 ItemCode 精确匹配 + 跨仓聚合。
+          `current_stock` = Σ AvailQty(白名单仓可用量，ERP 已净预留)，`safety_stock=0`。
+          real 模式缺 STOCK 配置/端点不可用 → fail-loud（不静默回退、不以 0 冒充）。
+        · `material_ids=None`（旧接口 / SC3 等）：返回 ZpViewItemMaster 物料清单（**不含真实现货**，
+          current/safety=0）。缺料/齐套请传 material_ids 走 Stock API。
+
+        base/apiKey 从 env 注入（`STOCK_API_BASE` / `STOCK_API_KEY`），apiKey 脱敏不入日志/审计。
         """
-        rows = self._zp_post("/api/ZpViewItemMaster/Query")
-        result = []
-        for r in rows:
-            result.append(InventoryRow(
+        if material_ids is None:
+            rows = self._zp_post("/api/ZpViewItemMaster/Query")
+            return [InventoryRow(
                 material_id=   str(r.get("itemCode") or ""),
                 material_name= str(r.get("itemName") or ""),
-                current_stock= 0,
-                safety_stock=  0,
+                current_stock= 0, safety_stock= 0,
                 unit=          str(r.get("unitName") or ""),
                 last_updated=  (r.get("editDate") or r.get("makeDate") or "")[:10],
-            ))
+            ) for r in rows]
+
+        base = os.environ.get("STOCK_API_BASE", "").rstrip("/")
+        key  = os.environ.get("STOCK_API_KEY", "")
+        if not base or not key:
+            if self._data_source == "real":
+                raise RealEndpointNotReadyError(
+                    "Stock API 未配置（STOCK_API_BASE/STOCK_API_KEY）；real 模式不回退 mock、不以 0 冒充现货"
+                )
+            return self._fallback.get_inventory()   # mock：CSV 夹具回退
+
+        wh = ",".join(ALLOWED_STOCK_WAREHOUSES)
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        def _one(code: str) -> Optional[InventoryRow]:
+            rows = self._stock_query(base, key, code, wh)
+            exact = [r for r in rows if r.ItemCode == code]   # itemCode 模糊 → 剔他料
+            if not exact:
+                return None
+            avail = sum(r.AvailQty for r in exact)            # 跨白名单仓聚合可用量
+            return InventoryRow(
+                material_id=code, material_name=exact[0].ItemName or "",
+                current_stock=int(round(avail)), safety_stock=0,
+                unit="", last_updated=today,
+            )
+
+        result: list[InventoryRow] = []
+        seen = list(dict.fromkeys(m for m in material_ids if m))   # 去重保序
+        with ThreadPoolExecutor(max_workers=self._STOCK_MAX_WORKERS) as ex:
+            for fut in as_completed({ex.submit(_one, c) for c in seen}):
+                row = fut.result()
+                if row is not None:
+                    result.append(row)
+        if self._audit is not None:                            # 每次取数一条轻量痕迹（不含 apiKey）
+            self._audit.trace(source="Stock", action=f"Stock/Query x{len(seen)}")
         return result
+
+    def _stock_query(self, base: str, key: str, item_code: str,
+                     wh_codes: str, limit: int = 1000) -> list["_StockRow"]:
+        """单料号库存查询；apiKey 走 URL query，报错用不含 apiKey 的 safe_url。"""
+        qs = urllib.parse.urlencode(
+            {"apiKey": key, "itemCode": item_code, "whCode": wh_codes, "limit": limit})
+        url = f"{base}/zp/api/Stock/Query?{qs}"
+        safe = f"{base}/zp/api/Stock/Query?itemCode={item_code}"   # 脱敏（无 apiKey），仅报错用
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=30, context=self._ctx) as r:
+                body = json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Stock API HTTP {e.code}: {safe}") from None
+        except (urllib.error.URLError, http.client.IncompleteRead) as e:
+            raise RuntimeError(f"Stock API 不可达: {safe}") from None
+        if not body.get("Success"):
+            raise RuntimeError(f"Stock API 错误: {safe} :: {body.get('ResMsg')}")
+        out: list[_StockRow] = []
+        for d in (body.get("Data") or {}).get("Rows") or []:
+            try:
+                out.append(_StockRow(**d))
+            except ValidationError:
+                continue   # 坏行（缺 ItemCode 等）跳过，不污染聚合
+        return out
 
     _BOM_MAX_WORKERS = 5
 

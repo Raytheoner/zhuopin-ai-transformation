@@ -8,6 +8,11 @@ created: 2026-07-03
 
 # 开场 Prompt —— U9C 物料库存实时读取攻关（CC 交接）
 
+> **⚡ 侦察已完成（2026-07-05，本轮只读联调）——攻关有解，见 `7-外部文档/U9C库存取数-侦察结果与推荐-2026-07-05.md`。**
+> 结论：**DB 只读直连当场取到真实现货**（`dbo.InvTrans_WhQoh`，实测 R01A.0012 现存量 2,827,195 等真数），vendor-independent、不等原厂、**当前唯一可用路**、推荐首选。SOAP `IBatchQueryItemQtySVR` 鉴权虽破（免 OAuth、ThreadContext 数字 OrgID）但**喂确有货料号仍回 0（已证伪，短期不作备选）**。
+> **待 Paul 拍板**：定 DB 直连为路 + 可用量口径；**待 IT**：建只读账号（勿再用 sa）。🔴 两条安全隐患（sa+明文口令 / SOAP 免鉴权越权）见结果文档 §五，须升级整改。
+> 下一会话若接手：读结果文档 → 若 Paul 已定路 + IT 建好只读账号，则走 openspec 把 DB 只读取数封装进 `ZpConnector.get_inventory` + 接 kit_engine/SC8。下方原任务书保留作背景。
+
 > 用法：新开 CC 会话（建议 **Fable 5**），**让 CC 读本文件**（不必整段粘贴）。短开场词：
 > 「读 `1-转型规划/开场prompt-U9C库存实时读取攻关-CC交接.md` + CLAUDE.md 当前进度，按文件里的攻关任务执行；先摸清 API 现状/复现，给 vendor-independent 取数方案，动代码前停下报我。」
 > CC = LAN 建造车间（连真实库、改代码、跑回归）。下方代码块是给 CC 读的任务全文。
