@@ -57,7 +57,7 @@ def main():
             continue
         if not zipfile.is_zipfile(fpath):
             sz = fpath.stat().st_size
-            truncated.append((fname, cid, f"非有效 pptx（{sz:,} 字节，疑 OneDrive 截断）"))
+            truncated.append((fname, cid, f"非有效 pptx（{sz:,} 字节，源文件截断/缺 zip 尾目录，需重取）"))
             continue
         doc = read(fpath)
         record = extract_fields(doc)
