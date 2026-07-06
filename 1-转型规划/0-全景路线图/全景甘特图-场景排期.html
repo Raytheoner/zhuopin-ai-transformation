@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>卓品智能 AI 转型 · 42 场景排期甘特图</title>
+<title>卓品智能 AI 转型 · 40 场景排期甘特图（2026-07-06 采购 v2.3 重排后）</title>
 <style>
 :root{--bg:#ffffff;--surface:#faf9f5;--text:#2c2c2a;--muted:#5f5e5a;--hint:#888780;--border:rgba(0,0,0,.14);--borderd:rgba(0,0,0,.28);}
 @media (prefers-color-scheme: dark){:root{--bg:#262624;--surface:#2f2f2c;--text:#ece9e2;--muted:#b4b2a9;--hint:#888780;--border:rgba(255,255,255,.14);--borderd:rgba(255,255,255,.26);}}
@@ -38,13 +38,14 @@ const months=['7','8','9','10','11','12','1','2','3','4','5','6'];
 const COL={gray:['#D3D1C7','#2C2C2A'],blue:['#85B7EB','#042C53'],teal:['#5DCAA5','#04342C'],amber:['#EF9F27','#412402'],pink:['#ED93B1','#4B1528'],purple:['#AFA9EC','#26215C'],coral:['#F0997B','#4A1B0C']};
 const data=[
 {name:'基建',color:'gray',items:[{code:'基建',name:'底座收割·U9C申请·ISO26262·OEM隔离·SOP·AIOps2',m:1,span:2}]},
-{name:'采购 / 供应链',color:'blue',items:[
-{code:'SC1',name:'供应商风险初筛',m:1},{code:'SC8',name:'交期智能承诺（收割式MVP）',m:1,span:2,tag:'收割'},
-{code:'SC2',name:'采购周报',m:2},{code:'SC3',name:'绩效看板·在途跟踪',m:3,tag:'收割'},
-{code:'SC5',name:'供应商评分·遴选',m:3,tag:'收割'},{code:'SC4',name:'合同条款提取',m:4},
-{code:'SC6',name:'芯片短缺预警',m:6},{code:'SC7',name:'库存优化建议',m:7},{code:'SC9',name:'OEM订单波动预测',m:9}]},
+{name:'采购 / 供应链（v2.3重排 9→7）',color:'blue',items:[
+{code:'SC1',name:'供应商风险初筛（含原SC3绩效反哺）',m:1},{code:'SC8',name:'交期智能承诺（含原SC3答交可信度）',m:1,span:2,tag:'收割'},
+{code:'SC2',name:'采购周报',m:2},{code:'SC7①',name:'采购建议·遴选（原SC5引擎承接）',m:3,tag:'收割'},
+{code:'SC4',name:'合同条款提取',m:4},{code:'SC7②',name:'库存优化深化',m:7,tag:'两期'},
+{code:'SC10',name:'BOM评审·物料库管控',m:9,tag:'新'},{code:'SC11',name:'库存智能调拨（PMC门禁）',m:10,tag:'新'}]},
 {name:'运营 / 制造',color:'teal',items:[
 {code:'O2',name:'物料齐套预警',m:3,tag:'收割'},{code:'O1',name:'生产排程优化',m:3,tag:'收割'},
+{code:'O2+',name:'O2深化·芯片预警子功能（原SC6并入）',m:6,tag:'子功能'},
 {code:'O3',name:'物流异常追踪',m:6},{code:'O4',name:'设备预测维护',m:7,tag:'IoT'}]},
 {name:'财务',color:'amber',items:[
 {code:'FI1',name:'仓库对账',m:2},{code:'FI2',name:'三单匹配自动对账',m:3,tag:'提前'},{code:'FI3',name:'付款申请自动校验',m:5,tag:'提前'},
@@ -53,7 +54,7 @@ const data=[
 {code:'FI9',name:'研发费用归集',m:12},{code:'FI10',name:'存货跌价分析',m:12}]},
 {name:'销售 / BD',color:'pink',items:[
 {code:'S1',name:'销售日报',m:3},{code:'S2',name:'拜访助手',m:4},{code:'S3',name:'RFQ响应',m:5},
-{code:'S4',name:'技术支持文档',m:6},{code:'S5',name:'竞品监控',m:7},{code:'S6',name:'销售预测',m:8}]},
+{code:'S4',name:'技术支持文档',m:6},{code:'S5',name:'竞品监控',m:7},{code:'S6',name:'销售预测（含波动预测·原SC9并入）',m:8}]},
 {name:'工程研发',color:'purple',items:[
 {code:'R1',name:'需求分析助手',m:4},{code:'R2',name:'AUTOSAR配置',m:5},{code:'R3',name:'代码审查',m:6},
 {code:'R4',name:'测试用例生成',m:7},{code:'R5',name:'技术文档生成',m:8}]},
@@ -62,7 +63,7 @@ const data=[
 {code:'Q1',name:'客诉智能分流',m:7},{code:'Q5',name:'IATF·体系文档',m:8},{code:'Q4',name:'PPAP审核',m:10},
 {code:'Q3',name:'FMEA维护',m:11},{code:'Q7',name:'IQC来料检验',m:11,tag:'新'},{code:'Q8',name:'SPC异常预警',m:12,tag:'新'}]}
 ];
-const TAGC={'收割':'#185FA5','旗舰①':'#993C1D','旗舰②':'#993C1D','新':'#3B6D11','IoT':'#5F5E5A','提前':'#8A5A00'};
+const TAGC={'收割':'#185FA5','旗舰①':'#993C1D','旗舰②':'#993C1D','新':'#3B6D11','IoT':'#5F5E5A','提前':'#8A5A00','两期':'#185FA5','子功能':'#5F5E5A'};
 const g=document.getElementById('g');
 let h='<div class="grid" style="border-bottom:0.5px solid var(--borderd);padding-bottom:4px;margin-bottom:4px;"><div></div><div style="grid-column:2/8;font-size:11px;color:var(--hint);">2026 下半年</div><div style="grid-column:8/14;font-size:11px;color:var(--hint);">2027 上半年</div></div>';
 h+='<div class="grid" style="margin-bottom:6px;"><div style="font-size:11px;color:var(--hint);">场景 / 月份</div>';
