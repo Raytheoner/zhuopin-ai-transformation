@@ -1,8 +1,12 @@
-# CLAUDE.md — SC3 供应商在途跟踪与绩效（场景级记忆）
+# CLAUDE.md — SC3 供应商在途跟踪与绩效（场景级记忆・已退役）
 
+> ⛔ **本场景编号已于 2026-07-06（采购域 v2.3 重排）退役**——功能未退役，答交可信度评分能力
+> 原样迁移为 SC8 内部子模块，见本目录 `README.md`。本文件以下内容为**历史记录**，保留供追溯，
+> 不再是可运行场景（源码/测试/pyproject 已移除）。
+>
 > 本文件是 SC3 场景的本地记忆/进度笔记，隔离于其他场景。
-> 项目级上下文见仓库根 `CLAUDE.md`；SC3 规划权威见全景规划 §2.1.3 采购部 SC3 行、
-> 实施计划 §一采购表、`1-转型规划/0-全景路线图/session接力-Phase1收口.md`。
+> 项目级上下文见仓库根 `CLAUDE.md`；SC3 规划权威见全景规划 §2.1.3 采购部 SC3 行（历史）、
+> `1-转型规划/0-全景路线图/采购域重排-移交全景路线图Task.md`（退役决策）。
 > 本场景 = CC 建造车间产物；**不改规划文档**（那是 Cowork 的活）。
 
 ## 1. 场景定位
@@ -46,7 +50,8 @@
 | 2026-06-10 | `/opsx:apply` 完成 MVP 核心（TDD 先写测试）：`intransit_engine.py`（SupplierRisk + _classify_risk + analyze + compute_dos）+ `agent.py`（写 audit）；mock CSV fixture 独立；pytest 全绿（等价对照 + 审计留痕验证）。 |
 | 2026-06-10 | `/opsx:archive` 完成 → 变更归档至 `openspec/changes/archive/2026-06-10-sc3-intransit-tracking/`。 |
 | 2026-07-02 | 进度完整性核实（阶段2 hygiene）：20/20 tasks 验证通过，含引擎算法、audit 写入、零依赖 supplychain。 |
-| **当前** | **✅ SC3 MVP 完成**，等待真实 SRM/ERP 接入（独立后续任务）。 |
+| 2026-07-06 | **场景编号退役**（采购域 v2.3 重排）。引擎（29 tests）原样迁移为 SC8 内部子模块 `sc8/answer_confidence_engine.py` + `sc8/answer_confidence.py`，audit `scenario` 由 "SC3" 改标 "SC8"，逻辑/阈值零变更，迁移变更包 `sc-v23-engine-migration`。 |
+| **当前** | **⛔ 已退役**，见本目录 `README.md` 指向新家；真实 SRM/ERP 接入前置条件随功能迁移一并转移给 SC8。 |
 
 **Tasks 完成度**：`openspec/changes/archive/2026-06-10-sc3-intransit-tracking/tasks.md` 全部 [x]（7.5 git push 除外，已合 master）。
 

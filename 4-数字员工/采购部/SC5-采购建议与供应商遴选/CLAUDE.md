@@ -1,8 +1,12 @@
-# CLAUDE.md — SC5 采购建议与供应商遴选（场景级记忆）
+# CLAUDE.md — SC5 采购建议与供应商遴选（场景级记忆・已退役）
 
+> ⛔ **本场景编号已于 2026-07-06（采购域 v2.3 重排）退役**——功能未退役，采购建议生成与供应商
+> 遴选能力原样迁移为新场景 SC7（库存优化建议），见本目录 `README.md`。本文件以下内容为
+> **历史记录**，保留供追溯，不再是可运行场景（源码/测试/pyproject 已移除）。
+>
 > 本文件是 SC5 场景的本地记忆/进度笔记，隔离于其他场景。
-> 项目级上下文见仓库根 `CLAUDE.md`；SC5 规划权威见全景规划 §2.1.3 采购部 SC5 行、
-> 实施计划 §一采购表、`1-转型规划/0-全景路线图/session接力-Phase1收口.md`。
+> 项目级上下文见仓库根 `CLAUDE.md`；SC5 规划权威见全景规划 §2.1.3 采购部 SC5 行（历史）、
+> `1-转型规划/0-全景路线图/采购域重排-移交全景路线图Task.md`（退役决策）。
 > 本场景 = CC 建造车间产物；**不改规划文档**（那是 Cowork 的活）。
 
 ## 1. 场景定位
@@ -46,7 +50,8 @@
 | 2026-06 | O2 kit_engine 落场景本地（第 1 消费方）。 |
 | 2026-07-02 | SC5 变更包完成：kit_engine 提升底座（`zhuopin_platform/agents/kit_engine.py`）；O2 改为薄转发层；SC5 场景工程收割完成（TDD，pytest 全绿，底座 114 + O2 20 + SC5 41 = 175 tests 全绿）；L1/L2 分桶 audit 留痕；黄金值对齐 35850/640000。 |
 | 2026-07-02 | `/opsx:archive` 完成 → 变更归档至 `openspec/changes/archive/2026-07-02-sc5-purchase-recommendation/`（含 SHALL/MUST 关键词修复，见待办 #9）。 |
-| **当前** | **✅ SC5 MVP 完成**，等待真实 SRM/ERP 接入（独立后续任务）。 |
+| 2026-07-06 | **场景编号退役**（采购域 v2.3 重排）。引擎（41 tests，含黄金基准）原样迁移为 SC7 场景 `sc7_inventory/` 包，audit `scenario` 由 "SC5" 改标 "SC7"，逻辑/阈值/黄金值零变更，迁移变更包 `sc-v23-engine-migration`；`kit_engine` 底座件不受影响，继续被 O2/SC7/SC8 共同复用。 |
+| **当前** | **⛔ 已退役**，见本目录 `README.md` 指向新家；真实 SRM/ERP 接入前置条件随功能迁移一并转移给 SC7。 |
 
 **待办 #9**（预先存在，非阻塞）：sc5 openspec specs 中 SHALL/MUST 关键词已在 archive 时补全（archival 前的遗留）。
 

@@ -1,0 +1,26 @@
+[project]
+name = "sc7-inventory-optimization"
+version = "0.1.0"
+description = "SC7 库存优化建议数字员工 — 承接原 SC5 采购建议/供应商遴选引擎（2026-07-06 v2.3 重排迁移），import 底座 kit_engine/models/audit"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+#   pip install -e .
+dependencies = [
+    "zhuopin_platform",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sc7_inventory*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
