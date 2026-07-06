@@ -44,6 +44,8 @@ class TokenState:
             token = f"工程师-{seq_label}"
         elif entity_type == "location":
             token = f"工厂-{seq_label}"
+        elif entity_type == "email":
+            token = f"邮箱-{seq_label}"
         else:
             token = f"实体-{entity_type}-{seq_label}"
         self._assigned[original] = token
@@ -86,11 +88,15 @@ _ORG_RE = re.compile(
     re.UNICODE,
 )
 
-# 车型/平台代号（\b 右锚，防止部分匹配更长的料号/编号）
+# 邮箱（含姓名+公司域名，身份指纹）——必须最先跑，否则 ORG/OEM 会吃掉 local-part
+_EMAIL_RE = re.compile(r"[A-Za-z0-9][\w.\-]*@[\w.\-]+\.[A-Za-z]{2,}", re.UNICODE)
+
+# 车型/平台代号。汉字分支须带明确平台标记（EV/DM/车型/平台/型号），
+# 否则会把「联系/确认/邮箱」等常用词误判为平台（原 [一-龥]{1,4}…型? 后缀全可选之弊）。
 _PLATFORM_RE = re.compile(
     r"(?<![A-Z\d])"           # 左侧：不是更长编号的一部分
     r"([A-Z]{1,3}\d{2,3}[A-Z]?(?:EV|HEV|PHEV)?|"
-    r"[一-龥]{1,4}(?:EV|Pro|Plus|X|S|i)?(?:\d)?型?|"
+    r"[一-龥]{1,4}(?:EV|HEV|PHEV|DM|DMi|车型|平台|型号)|"
     r"[A-Z]{2,6}(?:平台|车型))"
     r"(?!\d)",                 # 右侧：后不接数字（否则是料号的一部分）
     re.UNICODE,
@@ -99,10 +105,10 @@ _PLATFORM_RE = re.compile(
 # 零件编号：大写字母开头 + 数字/字母混合（至少4位）
 _PART_NO_RE = re.compile(r"\b([A-Z][A-Z0-9]{3,}(?:[-_][A-Z0-9]+)*)\b")
 
-# 供应商
+# 供应商（前缀 {1,6}：单字前缀如「某电子有限公司」也需捕获，原 {2,6} 会漏）
 _SUPPLIER_RE = re.compile(
     r"供应商\s*[：:]\s*([一-龥A-Za-z]{2,20})|"
-    r"([一-龥]{2,6}(?:电子|芯片|材料|科技|制造)(?:有限|公司)?)",
+    r"([一-龥]{1,6}(?:电子|芯片|材料|科技|制造)(?:有限)?(?:公司)?)",
     re.UNICODE,
 )
 
@@ -128,7 +134,10 @@ def scrub_text(text: str, state: TokenState) -> ScrubbingResult:
     entities: list[EntityToken] = []
     suggested = text
 
-    # 处理顺序：先长后短，防止零件编号被公司名消费
+    # 处理顺序：邮箱最先（含姓名+域名，否则会被 ORG/OEM 吃掉 local-part 后残留域名）
+    _apply(suggested, entities, state, _EMAIL_RE,      "email",    0)
+    suggested = _replace_from(text, entities)
+    # 先长后短，防止零件编号被公司名消费
     _apply(suggested, entities, state, _ORG_RE,        "oem",      0)
     suggested = _replace_from(text, entities)
     _apply(suggested, entities, state, _OEM_ALIAS_RE,  "oem",      1)  # 裸名补漏
@@ -151,7 +160,11 @@ def _apply(text: str, entities: list[EntityToken], state: TokenState,
            pattern: re.Pattern, entity_type: str, group_idx: int) -> None:
     """在 text 中查找 pattern，为每个匹配项分配令牌（若未见过）。"""
     for m in pattern.finditer(text):
-        raw = m.group(group_idx).strip() if m.group(group_idx) else ""
+        # 优先取指定组；为空则回退到首个非空捕获组（多分支正则如供应商有多组）
+        val = m.group(group_idx) if group_idx <= (m.re.groups or 0) else None
+        if not val:
+            val = next((g for g in m.groups() if g), m.group(0))
+        raw = (val or "").strip()
         if not raw or len(raw) < 2:
             continue
         # 排除已在 entities 中被更高优先级捕获的

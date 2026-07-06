@@ -69,6 +69,14 @@ def _compare_field(field: str, ai: str, golden: str) -> tuple[bool, float, str]:
         return True, 1.0, "empty_both"
     if not ai or not golden:
         return False, 0.0, "one_empty"
+    if field == "不良分类":
+        # 归一：AI 输出枚举「设计/制程/物料/使用不当」，人工答案常带后缀「设计问题」等
+        hit = _norm_category(ai) == _norm_category(golden)
+        return hit, 1.0 if hit else 0.0, "exact"
+    if field == "结案日期":
+        # 归一：人工答案可能带「00:00:00」时间戳，只比日期
+        hit = ai[:10] == golden[:10]
+        return hit, 1.0 if hit else 0.0, "exact"
     if field in _EXACT_FIELDS:
         hit = ai.lower() == golden.lower()
         return hit, 1.0 if hit else 0.0, "exact"
@@ -79,6 +87,15 @@ def _compare_field(field: str, ai: str, golden: str) -> tuple[bool, float, str]:
         return True, 1.0, "empty_golden_tokens"
     coverage = len(golden_tokens & ai_tokens) / len(golden_tokens)
     return coverage >= 0.8, round(coverage, 3), "coverage"
+
+
+def _norm_category(v: str) -> str:
+    """不良分类归一：去「问题/类」后缀，取枚举核心词。"""
+    v = (v or "").strip()
+    for suf in ("问题", "类别", "类"):
+        if v.endswith(suf):
+            v = v[: -len(suf)]
+    return v.strip()
 
 
 def _tokenize(text: str) -> list[str]:
@@ -151,3 +168,73 @@ def batch_report(comparisons: list[RecordComparison]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+# ── 黄金样本（xlsx「8D历史库录入表」）────────────────────────────────────────
+
+_CASE_ID_CLEAN_RE = re.compile(r"(8D[-_]\d{4}[-_]\d{2}[-_]\d{3})", re.IGNORECASE)
+
+
+def clean_case_id(raw: str) -> str:
+    """从「8D-2025-05-001 某车型平台-A密封不良」这类单元格取纯案例ID。"""
+    m = _CASE_ID_CLEAN_RE.search(raw or "")
+    return m.group(1).upper().replace("_", "-") if m else (raw or "").strip()
+
+
+def load_golden_xlsx(path: Path | str, sheet: str = "8D历史库录入表") -> dict[str, dict[str, str]]:
+    """读 xlsx 人工标准答案页 → {案例ID: {canonical字段名: 值}}。
+
+    该页 12 列与 _FIELD_NAMES 同序（列名略异，如「失效现象描述(D2)」），按位置映射。
+    案例ID 单元格含 ID+标题，用 clean_case_id 归一。
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(str(path), data_only=True)
+    ws = wb[sheet]
+    rows = list(ws.iter_rows(values_only=True))
+    out: dict[str, dict[str, str]] = {}
+    for row in rows[1:]:                         # 跳过表头
+        if not row or row[0] is None or not str(row[0]).strip():
+            continue
+        rec = {}
+        for i, fname in enumerate(_FIELD_NAMES):
+            val = row[i] if i < len(row) else None
+            rec[fname] = "" if val is None else str(val).strip()
+        cid = clean_case_id(rec["案例ID"])
+        rec["案例ID"] = cid                      # 归一后覆盖，便于精确比对
+        out[cid] = rec
+    return out
+
+
+# ── 12 字段可信度地图（候选）────────────────────────────────────────────────
+
+# 档位阈值（候选建议，终版由陈忱校准会拍板）
+_TIER_HIGH = 0.8       # ≥80% 命中 → 候选「高可信：人工抽验」
+_TIER_MANUAL = 0.5     # <50%       → 候选「需人工：AI 只建议、人工必改」
+
+
+def confidence_map(comparisons: list[RecordComparison]) -> list[dict]:
+    """逐字段命中率 → 可信度档位候选。这是候选，非终版（陈忱校准会审定）。"""
+    field_scores: dict[str, list[float]] = {f: [] for f in _FIELD_NAMES}
+    field_hits: dict[str, int] = {f: 0 for f in _FIELD_NAMES}
+    for comp in comparisons:
+        for h in comp.hits:
+            field_scores[h.field].append(h.score)
+            field_hits[h.field] += int(h.hit)
+    n = len(comparisons)
+    out = []
+    for f in _FIELD_NAMES:
+        scores = field_scores[f]
+        avg = sum(scores) / len(scores) if scores else 0.0
+        hit_rate = field_hits[f] / n if n else 0.0
+        if avg >= _TIER_HIGH:
+            tier = "高可信（候选）：人工抽验"
+        elif avg >= _TIER_MANUAL:
+            tier = "半自动（候选）：AI 建议 + 人工确认"
+        else:
+            tier = "需人工（候选）：AI 只建议、人工必改"
+        out.append({
+            "字段": f, "平均得分": round(avg, 3), "命中数": f"{field_hits[f]}/{n}",
+            "档位候选": tier,
+            "精确/覆盖": "精确" if f in _EXACT_FIELDS else "覆盖",
+        })
+    return out
