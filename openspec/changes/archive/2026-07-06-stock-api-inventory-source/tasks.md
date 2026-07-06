@@ -30,4 +30,4 @@
 - [x] 5.1 全回归：平台 146 / O2 20 / SC5 41（黄金 35850/640000/675850 不漂移）/ SC8 114 全绿；保供黄金 flag OFF 零漂移
 - [x] 5.2 `openspec validate stock-api-inventory-source` 通过
 - [x] 5.3 更新 `.env.example`（STOCK_API_BASE/STOCK_API_KEY）、`7-外部文档/U9C库存取数-侦察结果与推荐-2026-07-05.md`（标"已落地"）、连接器 docstring
-- [ ] 5.4 `git commit`（apiKey/reports 不入库）；`/opsx:archive stock-api-inventory-source -y`
+- [x] 5.4 `git commit`（branch feat/stock-api-inventory-source, 6e99b61；apiKey/reports 不入库）；archive
