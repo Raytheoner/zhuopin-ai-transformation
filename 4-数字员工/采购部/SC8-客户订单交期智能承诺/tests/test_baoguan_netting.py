@@ -75,3 +75,16 @@ def test_netting_on_insufficient_stock_not_covered(monkeypatch):
     r = assess_supply_risk(so, bom, srm, today=TODAY, inventory={"B": 500})
     assert r.risk == RISK_GAP
     assert "B" in r.no_feedback_materials
+
+
+def test_ship_before_window_filter(monkeypatch):
+    """一.1：只显示出货 ≤ 窗口（默认 2026-10-31）的成品行，超窗口过滤。"""
+    monkeypatch.delenv("SC8_NET_INVENTORY", raising=False)
+    monkeypatch.delenv("SC8_BAOGUAN_SHIP_BEFORE", raising=False)
+    from sc8.baoguan import build_dashboard
+    inwin = SalesOrder(so_id="IN", customer_id="", customer_name="c", item_code="P1",
+                       qty=100, required_date="2026-10-01", doc_type="", item_name="x")
+    outwin = SalesOrder(so_id="OUT", customer_id="", customer_name="c", item_code="P1",
+                        qty=100, required_date="2026-11-15", doc_type="", item_name="x")
+    sos = {r.so_id for r in build_dashboard([inwin, outwin], _bom("A"), [], today=TODAY)}
+    assert "IN" in sos and "OUT" not in sos

@@ -192,11 +192,17 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
 
 def build_dashboard(orders: list[SalesOrder], bom: list, srm_deliveries: list, *,
                     today: date, params: ForecastParams | None = None,
-                    inventory: dict | None = None) -> list[BaoguanRow]:
+                    inventory: dict | None = None,
+                    ship_before: date | None = None) -> list[BaoguanRow]:
     """对全部成品行生成保供预警，按风险降序（🔴→🟡→🟢）、缺口天数降序排列。
 
     `inventory`（{material_id→白名单仓可用量}）仅当 `SC8_NET_INVENTORY=on` 生效（默认关，零漂移）。
+    `ship_before`（一.1）：只保留计划出货日 ≤ 此日的成品行；None → 取 `config.baoguan_ship_before()`
+    （默认 2026-10-31，可经 `SC8_BAOGUAN_SHIP_BEFORE` 配）。超窗口行不进看板。
     """
+    if ship_before is None:
+        ship_before = config.baoguan_ship_before()
+    orders = [so for so in orders if date.fromisoformat(so.required_date) <= ship_before]
     rows = [assess_supply_risk(so, bom, srm_deliveries, today=today, params=params,
                                inventory=inventory)
             for so in orders]

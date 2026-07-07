@@ -35,6 +35,18 @@ def net_inventory_enabled() -> bool:
     return os.environ.get("SC8_NET_INVENTORY", "off").strip().lower() in ("on", "1", "true", "yes")
 
 
+def baoguan_ship_before():
+    """保供看板显示窗口上界：计划出货日 ≤ 此日的成品/半成品才进看板（一.1，专员 2026-07-06 提）。
+    默认 2026-10-31（滚动未来约 3 个月）；可经 `SC8_BAOGUAN_SHIP_BEFORE=YYYY-MM-DD` 配置。
+    返回 datetime.date。"""
+    from datetime import date as _date
+    raw = os.environ.get("SC8_BAOGUAN_SHIP_BEFORE", "2026-10-31").strip()
+    try:
+        return _date.fromisoformat(raw)
+    except ValueError:
+        return _date(2026, 10, 31)
+
+
 # ── 对客外发总开关（红线 §7.4）──────────────────────────────────────────────
 # 全程关闭，直到 ① SRM 真正联调通过 ② 真实黄金基准零偏差 ③ 门禁 6 项全勾。
 # 关闭期间：所有对客通报只生成草稿、入待审批队列，绝不自动外发客户。
