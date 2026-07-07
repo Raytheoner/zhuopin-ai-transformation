@@ -68,6 +68,6 @@
 ## 8. 收口归档
 
 - [x] 8.1 编写场景 `CLAUDE.md`（六段式：定位/决策/底座/红线/时间线/依赖）
-- [ ] 8.2 mock MVP 全绿后先 commit（不 archive，待真实验证/唐燕萍口径定稿后再 archive）
+- [x] 8.2 mock MVP 全绿后先 commit（不 archive，待真实验证/唐燕萍口径定稿后再 archive）—— commit `8dd8759`
 - [ ] 8.3 真实验证通过 + 唐燕萍口径定稿后 `/opsx:archive` → git push
 - [ ] 8.4 若实现时间较规划有变，记入场景进度并提示 Paul 通知 Cowork 回填路线图（CC 不自行改规划）
