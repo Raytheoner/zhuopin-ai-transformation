@@ -1,0 +1,25 @@
+[project]
+name = "fi2-recon"
+version = "0.1.0"
+description = "FI2 三单匹配自动对账（MVP：数据准备与完整性校验 + PO/GR/INV 明细行四维匹配）— mock 先行，L3 建议/预警"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+#   pip install -e .
+# 之后 from zhuopin_platform... import，一份代码处处复用（CLAUDE.md §4/§6）。
+dependencies = [
+    "zhuopin_platform",
+    "pydantic>=2.0",   # 数据接入层边界校验（与 FI1/SC8 loaders 一致）
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fi2*"]
