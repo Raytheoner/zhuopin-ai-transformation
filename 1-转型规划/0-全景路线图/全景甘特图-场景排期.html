@@ -31,7 +31,7 @@ h1{font-size:20px;font-weight:500;margin:0 0 4px;}
 <p class="sub">2026年7月 → 2027年6月 ｜ 六部门并行 ｜ 与《实施计划（最新版）》§二权威排期一致（含 supplychain 收割重排 + 2026-06-11 质量域序列修订 + 2026-07-01 Q6 提前 + 2026-07-03 财务域场景重编号【财务 8→10、全景 40→42】）</p>
 <div class="gantt"><div id="g"></div></div>
 <div class="legend" id="legend"></div>
-<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，更新于 2026-07-01（Q6 立项门禁②从 m5→m4）、2026-07-03（财务数组 FI1-FI8→FI1-FI10 重排，财务 8→10、全景 40→42）。</p>
+<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，更新于 2026-07-01（Q6 m5→m4）、2026-07-03（财务 FI1-FI10，8→10）、2026-07-06（采购 v2.3：9→7、全景 42→40、文件名去数字化；财务 v2：FI1 条件复启暂缓）。</p>
 </div>
 <script>
 const months=['7','8','9','10','11','12','1','2','3','4','5','6'];
@@ -48,7 +48,7 @@ const data=[
 {code:'O2+',name:'O2深化·芯片预警子功能（原SC6并入）',m:6,tag:'子功能'},
 {code:'O3',name:'物流异常追踪',m:6},{code:'O4',name:'设备预测维护',m:7,tag:'IoT'}]},
 {name:'财务',color:'amber',items:[
-{code:'FI1',name:'仓库对账',m:2},{code:'FI2',name:'三单匹配自动对账',m:3,tag:'提前'},{code:'FI3',name:'付款申请自动校验',m:5,tag:'提前'},
+{code:'FI1',name:'仓库对账（条件复启暂缓·封存不废弃）',m:2,tag:'暂缓'},{code:'FI2',name:'三单匹配自动对账（财务2026主打）',m:3,tag:'提前'},{code:'FI3',name:'付款申请自动校验',m:5,tag:'提前'},
 {code:'FI4',name:'月结加速（其余）',m:7},{code:'FI5',name:'费用报销审核',m:8},{code:'FI6',name:'异常交易检测（其余）',m:10},
 {code:'FI7',name:'预算执行监控',m:11},{code:'FI8',name:'现金流预测',m:11},
 {code:'FI9',name:'研发费用归集',m:12},{code:'FI10',name:'存货跌价分析',m:12}]},
@@ -63,7 +63,7 @@ const data=[
 {code:'Q1',name:'客诉智能分流',m:7},{code:'Q5',name:'IATF·体系文档',m:8},{code:'Q4',name:'PPAP审核',m:10},
 {code:'Q3',name:'FMEA维护',m:11},{code:'Q7',name:'IQC来料检验',m:11,tag:'新'},{code:'Q8',name:'SPC异常预警',m:12,tag:'新'}]}
 ];
-const TAGC={'收割':'#185FA5','旗舰①':'#993C1D','旗舰②':'#993C1D','新':'#3B6D11','IoT':'#5F5E5A','提前':'#8A5A00','两期':'#185FA5','子功能':'#5F5E5A'};
+const TAGC={'收割':'#185FA5','旗舰①':'#993C1D','旗舰②':'#993C1D','新':'#3B6D11','IoT':'#5F5E5A','提前':'#8A5A00','两期':'#185FA5','子功能':'#5F5E5A','暂缓':'#8E8E8E'};
 const g=document.getElementById('g');
 let h='<div class="grid" style="border-bottom:0.5px solid var(--borderd);padding-bottom:4px;margin-bottom:4px;"><div></div><div style="grid-column:2/8;font-size:11px;color:var(--hint);">2026 下半年</div><div style="grid-column:8/14;font-size:11px;color:var(--hint);">2027 上半年</div></div>';
 h+='<div class="grid" style="margin-bottom:6px;"><div style="font-size:11px;color:var(--hint);">场景 / 月份</div>';
