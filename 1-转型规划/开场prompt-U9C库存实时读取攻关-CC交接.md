@@ -1,6 +1,7 @@
 ---
 title: "开场 Prompt · U9C 物料库存实时读取攻关（Fable 5 CC 建造会话用）"
 created: 2026-07-03
+status: 已执行归档（原地保留——被 CLAUDE.md「库存实时源落地」段"细节见"引用；攻关已完成，Stock/Query 已接入并归档于 stock-api-inventory-source 变更包）
 用途: 新开 Claude Code（CC，LAN，建议 Fable 5）会话，攻关"缺料预警 MVP 读不到 U9C 实时库存"这一根阻塞；不全指望原厂 bugfix，找并落地 vendor-independent 取数路。
 说明: 已上线引擎（SC8 保供看板 LAN 在跑）的数据源攻关——纪律优先：先摸清 API 现状/复现、给可落地方案、停下报 Paul 定路，再动代码；全回归不漂移。
 关联: 5-平台底座/.../erp_connector/connector.py（get_inventory 桩）｜ 缺料预警校准需求 P0 ｜ U9C接入与连接器收敛-待办追踪（#3/#4/#6/#7）｜ 7-外部文档/U9C库存查询API测试报告 ｜ session接力-采购域场景落地

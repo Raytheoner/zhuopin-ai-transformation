@@ -1,6 +1,7 @@
 ---
 title: "开场 Prompt · 缺料预警误判修复（CC 建造会话用）"
 created: 2026-06-29
+status: 已执行归档
 用途: 新开 Claude Code（CC，LAN）会话修 kit_engine 缺料预警误判时，复制下方代码块粘入。
 说明: 已上线引擎（SC8 保供看板在跑）的正确性修复——排障纪律优先：先复现定位、停下报根因、再改、全回归不漂移。
 关联: 5-平台底座/zhuopin_platform/zhuopin_platform/agents/kit_engine.py（calc_shortage）｜ 采购域场景就绪工作清单 P0 ｜ 全盘审计报告 §2.5（B6）｜ 采购域场景落地专线（业务口径来源）

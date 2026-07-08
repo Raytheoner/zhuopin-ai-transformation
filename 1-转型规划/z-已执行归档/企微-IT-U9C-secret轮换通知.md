@@ -1,3 +1,9 @@
+---
+title: "企微通知 · U9C client_secret 轮换请求"
+created: 2026-06-20
+status: 已执行归档（client_secret 已于 2026-06-22 轮换完成）
+---
+
 # 【安全·高优先·今日办】U9C client_secret 轮换请求
 
 **背景**：U9C webApi 的 OAuth2 `client_secret`（明文）此前被写进脚本并推到 GitHub，归档仓 history 里仍残留。该 secret 能换取 JWT、读取真实 ERP 数据，属**暴露中的活凭据**。删代码无法清除 history 残留，唯一有效处置是**在 U9C 侧重置 secret，使旧值立即失效**。
