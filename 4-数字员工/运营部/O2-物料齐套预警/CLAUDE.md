@@ -49,6 +49,7 @@
 | 2026-07-02 | SC5 执行时：kit_engine 提升底座（`zhuopin_platform/agents/kit_engine.py`），O2 `kit_engine.py` 改为薄转发层，O2 tests 回归零变更（20 tests 保持全绿）；B6 修复（calc_shortage 返回二元组，missing_snapshot）同批落入底座。 |
 | 2026-07-02 | 变更包归档至 `openspec/changes/archive/2026-07-02-o2-kit-shortage-alert/`（Stage1 hygiene 清理）。 |
 | 2026-07-02 | hygiene 核实：O2 tests 全绿（B6 修复后兼容），底座 kit_engine 接口稳定。 |
+| 2026-07-10 | 底座 `kit_engine.py` 新增 `filter_transit_by_arrival`/`bucket_shortage_by_lead_time` 两个纯函数（缺料口径 A1/A2，`shortage-baoguan-criteria-v3`）——**O2 本次不接入**，`calc_shortage`/`explode_bom` 签名/行为零变化，O2 tests 20 全绿零回归。是否/何时启用新过滤是场景侧独立评估。 |
 | **当前** | **✅ O2 MVP 完成**（底座提升同步完成），等待真实 BOM/库存接入（独立后续任务）。 |
 
 ## 6. 关键依赖/前置（解锁条件）

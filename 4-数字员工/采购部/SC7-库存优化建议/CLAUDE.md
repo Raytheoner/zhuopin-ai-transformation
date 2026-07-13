@@ -47,6 +47,7 @@
 |------|------|
 | 2026-06 ~ 2026-07-02 | 前身 SC5「采购建议与供应商遴选」MVP 完成（`kit_engine` 底座化 + L1/L2 分桶 audit + 黄金值对齐），详见 SC5 旧场景目录 `CLAUDE.md`（历史记录）。 |
 | 2026-07-06 | **SC5 场景编号退役，能力原样迁移为 SC7**（采购域 v2.3 重排，`sc-v23-engine-migration` 变更包）：包名 `sc5_purchase`→`sc7_inventory`，audit `scenario` "SC5"→"SC7"，函数 `run_sc5`→`run_sc7`，41 tests（含黄金基准三项）逐位保留，pytest 全绿，逻辑/阈值零变更。 |
+| 2026-07-10 | 底座 `kit_engine.py` 新增 A1/A2 纯函数 + `ZpConnector.get_purchase_orders` 新增真实 SRM 确认日期查询（`shortage-baoguan-criteria-v3`，缺料口径改造）——**均为纯增量，SC7 本次不接入**，`calc_shortage`/`explode_bom` 签名/行为零变化；黄金基准（`auto_total=35850`/`review_total=640000`/`grand_total=675850`）8 项测试逐一核验精确不漂移，41 tests 全绿零回归。 |
 | **当前** | **✅ SC7①期（承接位）完成**，等待真实 SRM/ERP 接入（独立后续任务，与原 SC5 前提一致）；②期深化（2027-01）待单独 openspec。 |
 
 ## 6. 关键依赖/前置（解锁条件）

@@ -25,6 +25,7 @@ from . import config
 from .config import ForecastParams
 from .forecast import MaterialArrivals, estimate_material_arrivals
 from .models import SalesOrder
+from .period_match import PeriodMatchResult, match_period_cumulative_supply
 
 # 四色风险（2026-06-24 口径细化，Paul 定）：把"承诺缺口"从"真延期"中拆出——
 #   🔴 真延期 = 有真实承诺但齐料晚于出货 >3 天（硬信号，确定的瓶颈）
@@ -58,6 +59,10 @@ class BaoguanRow:
     # 仅基于"有真实承诺"子件的齐料/缺口（剔除无答复估算）——用于区分真延期 vs 待催
     confirmed_kit_date: date | None = None     # 确定承诺子件的最晚到货；无确定承诺→None
     confirmed_gap_days: int | None = None      # 确定齐料 − 出货；无确定承诺→None
+    # B2 周期累计供需匹配（shortage-baoguan-criteria-v3，2026-07-10 会议定稿）：
+    # {子件料号: PeriodMatchResult}；纯附加信息，不影响上方 kit_date/gap_days/risk/action
+    # 的既有语义。material_commitments 未传（默认）时恒为空字典，零漂移。
+    period_match: dict[str, PeriodMatchResult] = field(default_factory=dict)
 
 
 def _classify(confirmed_gap: int | None, has_bom: bool, params: ForecastParams,
@@ -119,9 +124,34 @@ def _drop_covered(mat: MaterialArrivals, covered: set[str]) -> MaterialArrivals:
                             bottleneck_material=bottleneck, has_bom=mat.has_bom)
 
 
+def _period_match_for_so(
+    so: SalesOrder, bom: list, ship: date,
+    material_commitments: dict[str, list[tuple[date, float]]] | None,
+) -> dict[str, PeriodMatchResult]:
+    """逐直接子件跑周期累计供需匹配（B2）。`material_commitments` 为空/None → 空字典。
+
+    范围提醒（design D2）：本次只做单一需求维度，`previous_demand_date`/
+    `carry_in_balance` 均用 MVP 缺省（None/0.0）——跨运行的"上一周期期望交付日/
+    结转余额"持久化账本是独立后续任务，不在本次范围内。
+    """
+    if not material_commitments:
+        return {}
+    result: dict[str, PeriodMatchResult] = {}
+    for material_id, need in _gross_need(so, bom).items():
+        if need <= 0:
+            continue
+        result[material_id] = match_period_cumulative_supply(
+            material_id=material_id, demand_qty=need, demand_date=ship,
+            commitments=material_commitments.get(material_id, []),
+        )
+    return result
+
+
 def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
                        today: date, params: ForecastParams | None = None,
-                       inventory: dict | None = None) -> BaoguanRow:
+                       inventory: dict | None = None,
+                       material_commitments: dict[str, list[tuple[date, float]]] | None = None,
+                       ) -> BaoguanRow:
     """对单张成品行（预测订单行）做保供齐套评估。
 
     无答复基准：demand_date = max(出货日, 今天) → 无答复子件到货 = 该日 + no_feedback_lead_days。
@@ -130,6 +160,10 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     现货净额（`inventory`={material_id→白名单仓可用量}）：仅当 `SC8_NET_INVENTORY=on` 时生效，
     现货可用量≥毛需求的直接子件视为已齐、退出待催/催货（消除"有货却被追料"误判 P0）；
     默认 OFF → inventory 被忽略、四色与接入前完全一致（零漂移）。
+
+    周期累计供需匹配（`material_commitments`，B2，shortage-baoguan-criteria-v3）：仅当传入时
+    附加计算，写入 `BaoguanRow.period_match`（纯信息，不影响 kit_date/gap_days/risk/action）；
+    缺省 None → `period_match` 恒为空字典，零漂移。
     """
     p = params or config.default_params()
     ship = date.fromisoformat(so.required_date)
@@ -138,6 +172,7 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     mat = estimate_material_arrivals(so.item_code, bom, srm_deliveries,
                                      demand_date=effective_demand, params=p)
     had_bom = mat.has_bom
+    period_match = _period_match_for_so(so, bom, ship, material_commitments) if had_bom else {}
 
     # 现货净额（开关默认关；关时不改任何行为）
     if inventory and had_bom and config.net_inventory_enabled():
@@ -165,6 +200,7 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
             bottleneck_material=None, no_feedback_materials=[],
             component_count=0, has_bom=True,
             action="全部直接子件现货可用量满足毛需求，现货齐备（无需采购到货）",
+            period_match=period_match,
         )
 
     kit_date = max(mat.arrivals.values())      # 齐料日 = 关键路径最晚到货（含无答复估算）
@@ -187,18 +223,30 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
         no_feedback_materials=mat.no_feedback_materials,
         component_count=len(mat.arrivals), has_bom=True, action=action,
         confirmed_kit_date=confirmed_kit, confirmed_gap_days=confirmed_gap,
+        period_match=period_match,
     )
 
 
 def build_dashboard(orders: list[SalesOrder], bom: list, srm_deliveries: list, *,
                     today: date, params: ForecastParams | None = None,
-                    inventory: dict | None = None) -> list[BaoguanRow]:
+                    inventory: dict | None = None,
+                    material_commitments: dict[str, list[tuple[date, float]]] | None = None,
+                    priority_resolver=None,
+                    ) -> list[BaoguanRow]:
     """对全部成品行生成保供预警，按风险降序（🔴→🟡→🟢）、缺口天数降序排列。
 
     `inventory`（{material_id→白名单仓可用量}）仅当 `SC8_NET_INVENTORY=on` 生效（默认关，零漂移）。
+    `material_commitments`（B2 周期累计供需匹配，见 assess_supply_risk）缺省 None 时
+    各行 `period_match` 恒为空字典，不影响四色/缺口既有逻辑。
+
+    `priority_resolver`（B4 框架桩，shortage-baoguan-criteria-v3，2026-07-10 会议定稿）：
+    签名 `(material_id: str, competing_so_ids: list[str]) -> list[str]`（按 PMC 月度优先级
+    排序后的 so_id 列表），用于未来"共用子件现货按 PMC 优先级占用"（同一物料被多个成品行
+    同时竞争时谁先扣现货）。**本次只接受该参数、不调用/不实现真实排序逻辑**（PMC 数据源
+    未就绪）——传入任何值都不改变当前结果，等真实数据到位后再接线。
     """
     rows = [assess_supply_risk(so, bom, srm_deliveries, today=today, params=params,
-                               inventory=inventory)
+                               inventory=inventory, material_commitments=material_commitments)
             for so in orders]
     order = {RISK_RED: 0, RISK_GAP: 1, RISK_YELLOW: 2, RISK_GREEN: 3}
     rows.sort(key=lambda r: (order.get(r.risk, 4), -(r.gap_days if r.gap_days is not None else 9999)))

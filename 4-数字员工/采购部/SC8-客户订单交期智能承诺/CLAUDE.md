@@ -40,6 +40,7 @@
 - **审计**：`zhuopin_platform.audit.AuditLogger`（scenario="SC8"，全链：预测/更正/确认三链可由 so_id 串起）。
 - **企微通知**：FO 健康告警 → audit + 企微采购/值班群（内部运维）；对客草稿走 Notifier 门禁。
 - **答交可信度子模块**（`sc8/answer_confidence_engine.py` + `sc8/answer_confidence.py`，迁自 SC3，2026-07-06 v2.3 重排）：供应商在途订单风险评估（剩余天数 + DOS 双触发三色分级），29 tests 原样迁移；作为 SC8 交期承诺置信度未来 2→3 级化的判据来源——**当前只是代码归位，尚未接入 SC8 现有承诺/置信度主流程**（`commitment.py`/`forecast.py` 不受影响）。
+- **周期累计供需匹配**（`sc8/period_match.py`，2026-07-10，`shortage-baoguan-criteria-v3`）：B2 定稿算法，纯函数 `match_period_cumulative_supply`，接 `sc8/sources.py::load_material_commitments`（真实提取逐笔 SRM 承诺数量）；已接入 `BaoguanRow.period_match`（`assess_supply_risk`/`build_dashboard` 新增可选 `material_commitments` 参数，缺省 None 时零影响）。跨周期"上一期望交付日/结转余额"持久化账本本次未做，调用方需显式传 `previous_demand_date`/`carry_in_balance`，持久化落点是独立后续任务。
 
 ## 4. 红线（建造时守住）
 
@@ -64,6 +65,7 @@
 | 2026-06-18 | SC8/SC1 真实口径收口（PR#13）：分层口径（/purchase/answer 主源）子件覆盖 9/90→58/90；S02Y.0188 瓶颈子件延期+61→+184（待 PMC 核实）。 |
 | 2026-07-02 | fix-a/b/c 任务核实（hygiene），全部 [x] 确认代码真实落地。 |
 | 2026-07-06 | **答交可信度子模块并入**（采购域 v2.3 重排，`sc-v23-engine-migration`）：SC3 场景编号退役，其在途风险评估引擎（29 tests）原样迁入 `sc8/answer_confidence*.py`，audit `scenario` 由 "SC3" 改标 "SC8"；本次只搬代码，未接线到现有置信度流水线；全量回归 143 passed + 2 skipped，零回归。 |
+| 2026-07-10 | **缺料/保供引擎口径改造**（跨桌任务队列 #17，`openspec/changes/shortage-baoguan-criteria-v3`，姚祖怡 07-10 缺料批改会圈选+现场会审 design 定稿）：新增 `sc8/period_match.py`（B2 周期累计供需匹配，会议现场重新定义——按"上次期望交付日次日→本次期望交付日"周期窗口累加 SRM 承诺，不满足时输出逐日可满足曲线，跨周期结转 carry_forward）；`sc8/sources.py` 新增 `load_material_commitments`（真实提取逐笔 SRM 承诺数量，替代原硬编码 `qty_committed=0`）；`BaoguanRow` 新增 `period_match` 字段（纯附加，`material_commitments` 缺省 None 时恒空、零漂移）；`build_dashboard` 新增 `priority_resolver` 框架桩参数（B4，PMC 优先级占用，仅接口未实现真排序）。**同批平台侧改动**（`zhuopin_platform`）：`get_purchase_orders` 新增真实 SRM 确认日期查询（A1，替换 `supplier_confirmed_date=expected_date` 占位）；`kit_engine.py` 新增 `filter_transit_by_arrival`/`bucket_shortage_by_lead_time` 纯函数（A1/A2，不改 `calc_shortage`/`explode_bom` 签名，O2/SC7 零影响）；`get_bom_for_products` **顺带修复生产活 bug**——按 BOM 主记录生效日期区间过滤当前版本，此前无条件取第一条，真实抽样 15 母件中 4 个/27%（S02Y.0035/S02Y.0162/S04Y.0112/S07Y.0137）因此取到过期 BOM 版本算齐套。全量回归：SC8 161+2skip / 平台167+1skip / SC1 53 / O2 20 / SC7 41（黄金基准 35850/640000/675850 精确不漂移），新增 39 tests 零回归。B1（多层递归）排期未定不做，C-1（主料替代料）随 openspec 批2 另案。L/T 数据源缺口登记跨桌任务队列 `#19`。真实数据 LAN 回归为独立后续任务。 |
 | **当前** | **SC8 保供看板 LAN 可用（内部）**；对客外发全程关闭；`sc8-real-data-cutover` 变更包待 Paul 审核偏差数据后继续。待办 #10：加登录/Token 鉴权再开外网（真实客户名红线）。 |
 
 ## 6. 关键依赖/前置（解锁条件）

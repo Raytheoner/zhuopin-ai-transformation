@@ -23,7 +23,7 @@ import urllib.parse
 import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -178,6 +178,7 @@ class ZpConnector(DataConnector):
         debug:         DebugLog | None = None,
         data_source:   str | None = None,
         allow_mock_fallback: bool | None = None,
+        srm_connector: object | None = None,
     ):
         self._base = base_url.rstrip("/")
         self._user_code     = user_code
@@ -189,6 +190,10 @@ class ZpConnector(DataConnector):
         self._po_cache_ttl  = po_cache_ttl
         self._audit = audit
         self._debug = debug
+        # A1 扩展（shortage-baoguan-criteria-v3）：可选注入 SRM 连接器（如 XkySrmConnector），
+        # 用于 get_purchase_orders 按 PO+供应商查真实答交确认日期。None（默认）＝现状行为
+        # 不变（supplier_confirmed_date 仍等于 expected_date 占位），零风险。
+        self._srm_connector = srm_connector
 
         # D2 数据源开关（默认 mock，保留现有 CSV 回退行为；real 触发 fail-loud）
         ds = data_source if data_source is not None else os.environ.get("U9C_DATA_SOURCE", "mock")
@@ -347,6 +352,29 @@ class ZpConnector(DataConnector):
 
     _POS_MEM_CACHE_TTL = 300  # 内存缓存 5 分钟
 
+    def _overlay_srm_confirmed_dates(self, orders: list[PurchaseOrder]) -> None:
+        """按 (po_id, supplier_id) 查真实 SRM 确认日期，覆盖 `supplier_confirmed_date`
+        占位值（A1 扩展，shortage-baoguan-criteria-v3，2026-07-10 会议定稿方案B）。
+
+        未注入 `srm_connector`（默认）→ 不做任何事，行为与现状完全一致。
+        查询异常/查不到某 PO → 该 PO 保留 `expected_date` 占位，不阻断其它 PO。
+        原地修改 `orders` 里各 `PurchaseOrder.supplier_confirmed_date`。
+        """
+        if self._srm_connector is None or not orders:
+            return
+        pairs = [(po.po_id, po.supplier_id) for po in orders if po.po_id and po.supplier_id]
+        if not pairs:
+            return
+        try:
+            confirmed, _failed = self._srm_connector.get_confirmed_dates(pairs)
+        except Exception:
+            if self._audit is not None:
+                self._audit.trace(source="SRM", action="po_confirmed_date_query_failed")
+            return
+        for po in orders:
+            if po.po_id in confirmed:
+                po.supplier_confirmed_date = confirmed[po.po_id]
+
     def get_purchase_orders(self, days: int = 60) -> list[PurchaseOrder]:
         """从 ZpViewPurOrder 获取近期有效采购订单（两级缓存：内存 5 分钟 + 磁盘 4 小时）。
 
@@ -418,6 +446,8 @@ class ZpConnector(DataConnector):
                 supplier_id=            validated.supplyCode or "",
                 status=                 status,
             ))
+
+        self._overlay_srm_confirmed_dates(result)
 
         # 写磁盘缓存
         try:
@@ -518,18 +548,40 @@ class ZpConnector(DataConnector):
 
     _BOM_MAX_WORKERS = 5
 
+    @staticmethod
+    def _select_current_bom_version(bom_records: list[dict], today: date) -> dict:
+        """从同一母件的多条 BOM 主记录中选出当前生效版本（B3，shortage-baoguan-criteria-v3）。
+
+        版本区间判定：`m_effectiveDate ≤ today < m_disableDate`。区间理论上互不重叠，
+        命中第一条即可。全部不满足（数据异常/版本空档期）→ fail-safe 回退取
+        `m_disableDate` 最大的一条（近似"最新"），不静默返回空。
+
+        修复现状 bug：原逻辑无条件取 `bom_records[0]`——生产环境实测确认部分母件
+        （多版本）的索引 0 恰是已失效的旧版本，会用过期 BOM 算齐套/缺料。
+        """
+        def _d(v: str | None, fallback: str) -> date:
+            return date.fromisoformat((v or fallback)[:10])
+
+        for rec in bom_records:
+            if _d(rec.get("m_effectiveDate"), "0001-01-01") <= today < _d(rec.get("m_disableDate"), "9999-12-31"):
+                return rec
+        return max(bom_records, key=lambda r: _d(r.get("m_disableDate"), "0001-01-01"))
+
     def get_bom_for_products(
-        self, product_ids: list[str], max_depth: int = 1
+        self, product_ids: list[str], max_depth: int = 1, *, today: date | None = None
     ) -> tuple[list[BomRow], list[str]]:
         """从 U9C BOM/Query 并行获取指定产品的子件 BOM（默认只查直接子件）。
 
         B1（审计报告 §2.4 P1）：单品查询失败**不再静默吞**——收集失败料号清单。
+        B3（shortage-baoguan-criteria-v3）：同一母件返回多条 BOM 版本时，按生效日期
+        区间选取当前生效版本，不再无条件取第一条；`today` 供测试注入，缺省=今天。
         Returns:
             (rows, failed_ids)
             部分失败 → 返回已得 rows + failed_ids，并写 bom_partial_failure 审计痕迹；
             **全失败**（有失败且无任何 rows）→ 抛 RuntimeError（带失败明细），
             绝不返回残缺/空 BOM 当成功（否则下游齐套虚低、漏报缺料、威胁对客承诺）。
         """
+        today = today or date.today()
         rows: list[BomRow] = []
         rows_lock    = threading.Lock()
         queried: set[str] = set()
@@ -552,7 +604,16 @@ class ZpConnector(DataConnector):
                 return
             if not bom_data:
                 return
-            bom_item = bom_data[0]
+            if len(bom_data) == 1:
+                bom_item = bom_data[0]
+            else:
+                bom_item = self._select_current_bom_version(bom_data, today)
+                if not any(
+                    date.fromisoformat((r.get("m_effectiveDate") or "0001-01-01")[:10]) <= today
+                    < date.fromisoformat((r.get("m_disableDate") or "9999-12-31")[:10])
+                    for r in bom_data
+                ) and self._audit is not None:
+                    self._audit.trace(source="U9C_webapi", action="bom_version_fallback", target=code)
             new_rows: list[BomRow] = []
             child_codes: list[str] = []
             for comp in bom_item.get("m_bOMComponents", []):

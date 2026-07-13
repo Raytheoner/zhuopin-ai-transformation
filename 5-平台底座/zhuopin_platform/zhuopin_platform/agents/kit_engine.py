@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from datetime import date
+
 from zhuopin_platform.shared_tools.models import BomRow, InventoryRow, ProductionPlan, PurchaseOrder
 
 
@@ -84,3 +86,56 @@ def calc_shortage(
             shortages[material_id] = gap
 
     return shortages, missing_snapshot
+
+
+def filter_transit_by_arrival(
+    purchase_orders: list[PurchaseOrder],
+    cutoff_date: date,
+    *,
+    date_field: str = "supplier_confirmed_date",
+) -> list[PurchaseOrder]:
+    """在途 PO 到货日过滤（A1，shortage-baoguan-criteria-v3，2026-07-10 会议定稿）。
+
+    只保留到货日 ≤ cutoff_date 的采购单；调用方在传入 calc_shortage 之前自行
+    调用本函数——纯增量，不改 calc_shortage 签名/行为，O2/SC7 现有调用零影响。
+
+    date_field 有值优先用其日期；为空退回 expected_date（兼容尚未接真实 SRM
+    数据的 PurchaseOrder，如 O2/SC7 目前的 CSV mock）。两个日期都缺失的 PO
+    无法确认到货，保守剔除（不计入可用）。
+    """
+    kept: list[PurchaseOrder] = []
+    for po in purchase_orders:
+        raw = getattr(po, date_field, "") or po.expected_date
+        if not raw:
+            continue
+        if date.fromisoformat(raw[:10]) <= cutoff_date:
+            kept.append(po)
+    return kept
+
+
+def bucket_shortage_by_lead_time(
+    shortages: dict[str, float],
+    demand_dates: dict[str, date],
+    lead_times: dict[str, int],
+    today: date,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """追料 L/T 分桶（A2，shortage-baoguan-criteria-v3，2026-07-10 会议定稿）。
+
+    把 calc_shortage 输出的缺口按"是否临近需要追料"分为 (urgent, observe)：
+    需求日-今天 < 该物料采购提前期(L/T) → urgent；否则 → observe（不触发追料）。
+    demand_dates/lead_times 缺该物料数据时，均兜底进 urgent（无法判断临近与否，
+    净需求>0 即追，交接单口径；A2 的 L/T 数据源现状缺失，此兜底即当前实际行为）。
+    """
+    urgent: dict[str, float] = {}
+    observe: dict[str, float] = {}
+    for material_id, gap in shortages.items():
+        demand_date = demand_dates.get(material_id)
+        lt = lead_times.get(material_id)
+        if demand_date is None or lt is None:
+            urgent[material_id] = gap
+            continue
+        if (demand_date - today).days < lt:
+            urgent[material_id] = gap
+        else:
+            observe[material_id] = gap
+    return urgent, observe

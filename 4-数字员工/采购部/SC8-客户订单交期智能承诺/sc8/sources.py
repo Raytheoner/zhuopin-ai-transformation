@@ -108,6 +108,55 @@ def _extract_board_po_map(board: list, materials: set[str] | None):
     return mat_pairs, mat_board
 
 
+def _extract_board_commitments(
+    board: list, materials: set[str] | None
+) -> dict[str, list[tuple[date, float]]]:
+    """从供应计划看板提取逐笔 (承诺日期, 承诺数量) 记录（B2 周期累计供需匹配用）。
+
+    与 `_extract_board_po_map` 不同：本函数**不收窄成"最早一条"**，保留每条
+    `answerQty > 0` 的记录，供 `sc8.period_match.match_period_cumulative_supply`
+    逐笔累加（现状 `load_srm_deliveries` 硬编码 `qty_committed=0`，本函数是
+    B2 需要的真实数量数据管线）。`answerQty <= 0`（未答交）不产生记录。
+    """
+    out: dict[str, list[tuple[date, float]]] = {}
+    for rec in board:
+        material = str(rec.get("productCode") or "")
+        if not material or (materials is not None and material not in materials):
+            continue
+        for item in (rec.get("itemList") or []):
+            answer_qty = int(item.get("answerQty") or 0)
+            if answer_qty <= 0:
+                continue
+            s = str(item.get("boardDate") or "")
+            if not s:
+                continue
+            bdate_str = (date.fromtimestamp(int(s) // (1000 if len(s) > 10 else 1)).isoformat()
+                         if s.isdigit() else s[:10])
+            out.setdefault(material, []).append((date.fromisoformat(bdate_str), float(answer_qty)))
+    return out
+
+
+def load_material_commitments(
+    mode: str, *, start: str | None = None, end: str | None = None,
+    materials: set[str] | None = None, connector=None,
+) -> dict[str, list[tuple[date, float]]]:
+    """物料逐笔承诺提取（B2，shortage-baoguan-criteria-v3，2026-07-10 会议定稿）。
+
+    mode != "real" → 返回空（与 `load_srm_deliveries` 一致的降级语义）。
+    返回 {material_id: [(承诺日期, 承诺数量), ...]}，供 `sc8.period_match`
+    的周期累计供需匹配使用；不做"取最早/去重"，原样保留全部承诺记录。
+    """
+    if mode != "real":
+        return {}
+    if connector is None:
+        from zhuopin_platform.shared_tools.srm_connector.connector import XkySrmConnector
+        connector = XkySrmConnector.from_env()
+    s = start or date.today().isoformat()
+    e = end or (date.today() + timedelta(days=60)).isoformat()
+    board = connector.get_receive_board(s, e)
+    return _extract_board_commitments(board, materials)
+
+
 def load_srm_deliveries(mode: str, *, start: str | None = None,
                         end: str | None = None, audit=None,
                         materials: set[str] | None = None,
