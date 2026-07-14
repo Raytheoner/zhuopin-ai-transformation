@@ -84,8 +84,8 @@ def test_email_before_org_no_domain_leak():
 
 # ── 黄金样本加载 ──
 def test_load_golden_xlsx():
-    xlsx = Path("C:/Users/Paul Shao/OneDrive/Projects/企业AI转型/"
-                "7-外部文档/质量部/AI质量智能建设就绪工作汇总.xlsx")
+    xlsx = Path("C:/Users/Paul Shao/OneDrive/Projects/企业AI转型/7-外部文档/质量部/"
+                "产品类立项申请书及评审报告/AI质量智能建设就绪工作汇总.xlsx")
     if not xlsx.exists():
         pytest.skip("答案页 xlsx 不在预期路径")
     golden = load_golden_xlsx(xlsx)

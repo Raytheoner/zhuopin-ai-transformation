@@ -26,7 +26,8 @@ from qda_prefill.scrubber import TokenState, scrub_text
 
 ROOT = Path("C:/Users/Paul Shao/OneDrive/Projects/企业AI转型")
 LIB = ROOT / "7-外部文档/质量部/8D库"
-GOLDEN_XLSX = ROOT / "7-外部文档/质量部/AI质量智能建设就绪工作汇总.xlsx"
+# 注：7-外部文档/质量部 2026-07 由质量专线重组，工作汇总.xlsx 移入「产品类立项申请书及评审报告」子夹
+GOLDEN_XLSX = ROOT / "7-外部文档/质量部/产品类立项申请书及评审报告/AI质量智能建设就绪工作汇总.xlsx"
 OUT = Path(__file__).resolve().parent.parent / "results"
 
 # 原始文件 ↔ 案例ID（CC质量专线-prompt-2026-07-04 已核对 1:1）
