@@ -245,7 +245,267 @@ class ProposalParser:
             doc.project_type = str(pt.value).strip()
         self._parse_personnel_table(doc, secs.get("一、项目信息"))
         self._parse_text_areas(doc, secs)
+        self._parse_risk_table(doc, secs.get("六、项目风险分析"))
+        self._parse_resource_table(doc, secs.get("七、项目所需资源采购计划"))
+        self._parse_cost_benefit_section(doc, secs.get("八、项目成本及收益分析"))
+        self._parse_budget_table(doc, secs.get("九、项目里程碑计划与阶段预算规划"))
+        self._parse_cashflow_table(doc, secs.get("十、项目现金流分析"))
         return doc
+
+    # ---------- 表头行按文本定位列（财务表通用） ----------
+    def _row_label_cols(self, row: int, labels: list[str]) -> dict[str, int]:
+        """在指定行内按文本前缀匹配定位各列列号（同一行内表头文本互不重叠）。"""
+        out: dict[str, int] = {}
+        if row < 1:
+            return out
+        for col in range(1, self.ws.max_column + 1):
+            t = _norm(self.ws.cell(row=row, column=col).value)
+            if not t:
+                continue
+            for lab in labels:
+                if lab not in out and t.startswith(lab):
+                    out[lab] = col
+        return out
+
+    def _cell_num(self, row: int, col: int | None):
+        if not col:
+            return None
+        return _num(self.ws.cell(row=row, column=col).value)
+
+    def _cell_text(self, row: int, col: int | None) -> str:
+        if not col:
+            return ""
+        return _norm(self.ws.cell(row=row, column=col).value)
+
+    # ---------- 模块六：项目风险分析 ----------
+    def _parse_risk_table(self, doc: ProposalDocument, rng: tuple[int, int] | None):
+        if rng is None:
+            return
+        lo, hi = rng
+        coord = self.find_label("风险系数", (lo, hi))
+        if not coord:
+            doc.warnings.append("模块六风险表头（风险系数列）未命中")
+            return
+        hr = coordinate_to_tuple(coord)[0]
+        cols = self._row_label_cols(hr, ["类别", "描述", "严重度", "发生频率",
+                                         "风险系数", "风险等级", "应对措施"])
+        rows: list[dict] = []
+        for r in range(hr + 1, hi + 1):
+            if self.ws.cell(row=r, column=1).value in (None, ""):
+                continue
+            rows.append({
+                "序号": self.ws.cell(row=r, column=1).value,
+                "类别": self._cell_text(r, cols.get("类别")),
+                "描述": self._cell_text(r, cols.get("描述")),
+                "严重度": self._cell_text(r, cols.get("严重度")),
+                "频率": self._cell_text(r, cols.get("发生频率")),
+                "系数": self._cell_num(r, cols.get("风险系数")),
+                "等级": self._cell_text(r, cols.get("风险等级")),
+                "应对措施": self._cell_text(r, cols.get("应对措施")),
+            })
+        doc.tables["风险"] = rows
+
+    # ---------- 模块七：项目所需资源采购计划 ----------
+    def _parse_resource_table(self, doc: ProposalDocument, rng: tuple[int, int] | None):
+        if rng is None:
+            return
+        lo, hi = rng
+        coord = self.find_label("获取方式", (lo, hi))
+        if not coord:
+            doc.warnings.append("模块七资源表头（获取方式列）未命中")
+            return
+        hr = coordinate_to_tuple(coord)[0]
+        cols = self._row_label_cols(hr, ["类型", "原因", "主要配置", "所需数量",
+                                         "获取方式", "推荐供应商", "预算"])
+        rows: list[dict] = []
+        for r in range(hr + 1, hi + 1):
+            t = self._cell_text(r, cols.get("类型", 1))
+            if not t:
+                continue
+            rows.append({
+                "类型": t,
+                "原因": self._cell_text(r, cols.get("原因")),
+                "配置": self._cell_text(r, cols.get("主要配置")),
+                "数量": self._cell_num(r, cols.get("所需数量")),
+                "获取方式": self._cell_text(r, cols.get("获取方式")),
+                "供应商": self._cell_text(r, cols.get("推荐供应商")),
+                "预算": self._cell_num(r, cols.get("预算")),
+                "预算文本": self._cell_text(r, cols.get("预算")),
+            })
+        doc.tables["资源"] = rows
+
+    # ---------- 模块八：成本及收益分析（(一)成本效益表 + (二)收益分析说明） ----------
+    _CB_COLS = ["收入D", "成本E", "利润 F=D-E", "数量G", "销售单价H", "成本单价I",
+                "收入J=G*H", "成本K=G*I", "三包质量费L", "利润 M=J-K-L"]
+    _CB_KEYMAP = {  # 表头前缀 -> 规范字段键
+        "收入D": "收入D", "成本E": "成本E", "利润 F=D-E": "利润F",
+        "数量G": "数量G", "销售单价H": "单价H", "成本单价I": "成本单价I",
+        "收入J=G*H": "收入J", "成本K=G*I": "成本K",
+        "三包质量费L": "三包L", "利润 M=J-K-L": "利润M",
+    }
+    _INCOME_SCALARS = {
+        "产品量纲预估依据": "量纲预估依据",
+        "产品售价预估依据": "售价预估依据",
+        "产品量产成本预估依据": "量产成本预估依据",
+        "项目本身毛利率": "项目本身毛利率",
+        "项目全生命周期毛利率": "全生命周期毛利率",
+        "技术服务类（项目收入": "收益指标_技术服务类",
+        "产品类（（项目收入": "收益指标_产品类",
+    }
+
+    def _parse_cost_benefit_section(self, doc: ProposalDocument, rng: tuple[int, int] | None):
+        if rng is None:
+            return
+        lo, hi = rng
+        coord2 = self.find_label("（二）", (lo, hi))
+        end_cb = (coordinate_to_tuple(coord2)[0] - 1) if coord2 else hi
+
+        self._parse_cost_benefit_table(doc, lo, end_cb)
+        if coord2:
+            start_two = coordinate_to_tuple(coord2)[0]
+            self._parse_revenue_basis_table(doc, start_two, hi)
+            self._parse_income_analysis_scalars(doc, start_two, hi)
+
+    def _parse_cost_benefit_table(self, doc: ProposalDocument, lo: int, hi: int):
+        coord = self.find_label("数量G", (lo, hi))
+        if not coord:
+            doc.warnings.append("模块八（一）成本效益表头（数量G列）未命中")
+            return
+        hr = coordinate_to_tuple(coord)[0]
+        cols = self._row_label_cols(hr, self._CB_COLS)
+        p_cols = self._row_label_cols(hr - 1, ["利润小计P=F+M"])
+        p_col = p_cols.get("利润小计P=F+M")
+
+        rows: list[dict] = []
+        for r in range(hr + 1, hi + 1):
+            label = self._cell_text(r, 1)
+            if not label:
+                continue
+            row: dict = {"年份": label, "is_total": label == "合计"}
+            for hdr, key in self._CB_KEYMAP.items():
+                row[key] = self._cell_num(r, cols.get(hdr))
+            row["利润小计P"] = self._cell_num(r, p_col)
+            rows.append(row)
+        doc.tables["成本效益"] = rows
+
+    def _parse_revenue_basis_table(self, doc: ProposalDocument, lo: int, hi: int):
+        coord = self.find_label("对应商务阶段标志", (lo, hi))
+        if not coord:
+            doc.warnings.append("模块八（二）收入依据表头（商务阶段标志列）未命中")
+            return
+        hr = coordinate_to_tuple(coord)[0]
+        cols = self._row_label_cols(hr, ["对应商务阶段标志", "合同约定/预计收款金额",
+                                         "合同约定/预计收款时间"])
+        rows: list[dict] = []
+        total = None
+        for r in range(hr + 1, hi + 1):
+            label = self._cell_text(r, 1)
+            if not label:
+                continue
+            if label == "合计":
+                total = self._cell_num(r, cols.get("合同约定/预计收款金额"))
+                break
+            rows.append({
+                "阶段": label,
+                "商务标志": self._cell_text(r, cols.get("对应商务阶段标志")),
+                "收款金额": self._cell_num(r, cols.get("合同约定/预计收款金额")),
+                "收款时间": self._cell_text(r, cols.get("合同约定/预计收款时间")),
+            })
+        doc.tables["收入依据"] = rows
+        if total is not None:
+            doc.tables["收入依据合计"] = [{"合计": total}]
+
+    def _parse_income_analysis_scalars(self, doc: ProposalDocument, lo: int, hi: int):
+        for prefix, key in self._INCOME_SCALARS.items():
+            coord = self.find_label(prefix, (lo, hi))
+            fkey = f"八、（二）收益分析说明/{key}"
+            if coord is None:
+                doc.fields[fkey] = FieldValue(key=fkey, status=ExtractStatus.NOT_FOUND, anchor=prefix)
+                continue
+            value, src = self._value_adjacent(coord)
+            if value is None:
+                doc.fields[fkey] = FieldValue(key=fkey, status=ExtractStatus.MISSING,
+                                              anchor=prefix, source_cell=src)
+            else:
+                doc.fields[fkey] = FieldValue(key=fkey, value=_norm(value),
+                                              status=ExtractStatus.EXTRACTED,
+                                              anchor=prefix, source_cell=src)
+
+    # ---------- 模块九：开发期限及预算 ----------
+    def _parse_budget_table(self, doc: ProposalDocument, rng: tuple[int, int] | None):
+        if rng is None:
+            return
+        lo, hi = rng
+        coord = self.find_label("小计⑩", (lo, hi))
+        if not coord:
+            doc.warnings.append("模块九预算表头（小计⑩列）未命中")
+            return
+        hr = coordinate_to_tuple(coord)[0]
+        cols = self._row_label_cols(hr, ["人员预估成本②", "设备&模具③",
+                                         "委外开发费&实验费&咨询费④", "材料费&打样费⑤",
+                                         "差旅费&招待费⑥", "折旧摊销&福利费⑦", "其他⑧",
+                                         "项目售后费用计提⑨", "小计⑩"])
+        sub = self._row_label_cols(hr - 1, ["开始时间", "结束时间", "人月数"])
+        top = self._row_label_cols(hr - 2, ["项目收入预算估计", "现金流情况"])
+
+        rows: list[dict] = []
+        for r in range(hr + 1, hi + 1):
+            stage = self._cell_text(r, 1)
+            if not stage:
+                continue
+            rows.append({
+                "阶段": stage, "is_total": stage == "合计",
+                "开始": self.ws.cell(row=r, column=sub["开始时间"]).value if sub.get("开始时间") else None,
+                "结束": self.ws.cell(row=r, column=sub["结束时间"]).value if sub.get("结束时间") else None,
+                "人月": self._cell_num(r, sub.get("人月数")),
+                "人员成本②": self._cell_num(r, cols.get("人员预估成本②")),
+                "设备③": self._cell_num(r, cols.get("设备&模具③")),
+                "委外④": self._cell_num(r, cols.get("委外开发费&实验费&咨询费④")),
+                "材料⑤": self._cell_num(r, cols.get("材料费&打样费⑤")),
+                "差旅⑥": self._cell_num(r, cols.get("差旅费&招待费⑥")),
+                "折旧⑦": self._cell_num(r, cols.get("折旧摊销&福利费⑦")),
+                "其他⑧": self._cell_num(r, cols.get("其他⑧")),
+                "售后⑨": self._cell_num(r, cols.get("项目售后费用计提⑨")),
+                "小计⑩": self._cell_num(r, cols.get("小计⑩")),
+                "收入⑪": self._cell_num(r, top.get("项目收入预算估计")),
+                "现金流": self._cell_num(r, top.get("现金流情况")),
+            })
+        doc.tables["预算表"] = rows
+
+    # ---------- 模块十：项目现金流分析 ----------
+    def _parse_cashflow_table(self, doc: ProposalDocument, rng: tuple[int, int] | None):
+        if rng is None:
+            return
+        lo, hi = rng
+        coord = self.find_label("累计现金流", (lo, hi))
+        if not coord:
+            doc.warnings.append("模块十现金流表头（累计现金流列）未命中")
+            return
+        hr = coordinate_to_tuple(coord)[0]
+        cols = self._row_label_cols(hr, ["收入", "支出-人力", "支出-设备", "支出-委外",
+                                         "支出-材料", "支出-差旅", "支出-折旧摊销",
+                                         "支出-其他", "支出-项目售后费用计提",
+                                         "月净现金流", "累计现金流"])
+        rows: list[dict] = []
+        for r in range(hr + 1, hi + 1):
+            month = self.ws.cell(row=r, column=1).value
+            if month in (None, ""):
+                continue
+            rows.append({
+                "月份": month,
+                "收入": self._cell_num(r, cols.get("收入")),
+                "人力": self._cell_num(r, cols.get("支出-人力")),
+                "设备": self._cell_num(r, cols.get("支出-设备")),
+                "委外": self._cell_num(r, cols.get("支出-委外")),
+                "材料": self._cell_num(r, cols.get("支出-材料")),
+                "差旅": self._cell_num(r, cols.get("支出-差旅")),
+                "折旧摊销": self._cell_num(r, cols.get("支出-折旧摊销")),
+                "其他": self._cell_num(r, cols.get("支出-其他")),
+                "售后": self._cell_num(r, cols.get("支出-项目售后费用计提")),
+                "月净现金流": self._cell_num(r, cols.get("月净现金流")),
+                "累计现金流": self._cell_num(r, cols.get("累计现金流")),
+            })
+        doc.tables["现金流表"] = rows
 
     # ---------- 模块一：项目信息 ----------
     # label 文本 -> 规范字段键（吸收尾随空格）

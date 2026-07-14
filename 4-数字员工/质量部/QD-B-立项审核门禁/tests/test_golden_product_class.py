@@ -1,10 +1,10 @@
 """产品类黄金基准（收口-3）—— EQ17（合格）+ 邦奇（不合格）。
 
 样本＝质量专线 2026-07 交付的产品类立项书 + 评审报告（陈忱 AI判断引擎 v5.0 出的答案）。
-本文件先锁定「解析可用 + 判档缺口」基线：现引擎仅实现模块一 A 类（18/68），
-产品类判档所需的财务表勾稽规则（69 现金流合计/74 累计现金流/60 全生命周期毛利率
-/61-62 收益指标）尚未实现——故邦奇「不合格」暂无法复现（driving rule 74 PENDING）。
-财务规则落地后，本基线转为「引擎档位 == 评审报告档位」的严格回归。
+财务表勾稽 A 类规则（模块六~十：风险系数/成本效益F=D-E/折旧/现金流合计/收益指标）已实现——
+本文件是「引擎档位 == 评审报告档位」的严格回归：EQ17 全链无阻断项 → 合格；
+邦奇因 driving rule 74（累计现金流末期≠成本效益利润F，相差46.66万）触发一票否决 → 不合格，
+与两份评审报告的判定结果一致。
 
 样本在 7-外部文档（LAN/gitignore），缺失自动跳过。
 """
@@ -14,7 +14,6 @@ import pytest
 
 from qd_b_gate.parser import ProposalParser
 from qd_b_gate.rules.engine import run_rules
-from qd_b_gate.rules.registry import load_registry
 from qd_b_gate.models import Verdict
 from qd_b_gate.scoring import score
 
@@ -38,24 +37,33 @@ def test_product_class_parses():
         assert len(ProposalParser(_need(p)).section_rows()) == 13
 
 
-def test_eq17_currently_qualified():
-    """EQ17（评审报告=合格 99.2）：现引擎已实现规则无一失败 → 暂定合格，与档位一致。"""
+def test_eq17_matches_report_qualified():
+    """EQ17（评审报告=合格 99.2）：引擎判档=合格，无一票否决，财务勾稽规则全部通过。"""
     doc = ProposalParser(_need(EQ17)).parse()
-    sc = score(run_rules(doc))
+    results = run_rules(doc)
+    sc = score(results)
     assert sc.tier == "合格"
+    assert sc.veto is False
+    by = {r.rule_id: r for r in results}
+    # 财务表勾稽核心规则（风险系数/F=D-E/折旧/现金流合计/累计现金流/收益指标）须全部判定通过
+    for rid in ("39", "40", "50", "51", "55", "59", "60", "61", "67", "68", "69", "74"):
+        assert by[rid].verdict == Verdict.PASS, f"规则{rid} 应通过：{by[rid].evidence}"
 
 
-def test_bangqi_gap_documented():
-    """邦奇（评审报告=不合格）：driving rule 74 累计现金流一致=阻断，但尚未实现（PENDING）。
-
-    锁定缺口：现引擎因 rule 74 未实现而误判「暂定合格」；财务规则落地后应转为不合格。
-    """
-    reg = load_registry()
-    assert reg.get(74).blocking is True            # 74 已是阻断（20260710 权威）
+def test_bangqi_matches_report_unqualified():
+    """邦奇（评审报告=不合格，driving rule=74 累计现金流阻断+69现金流合计）：引擎判档须一致。"""
     doc = ProposalParser(_need(BANGQI)).parse()
-    by = {r.rule_id: r for r in run_rules(doc)}
-    assert by["74"].verdict == Verdict.PENDING     # 尚未实现 → 记为缺口
-    assert by["69"].verdict == Verdict.PENDING     # 现金流合计一致 亦未实现
-    # 现引擎暂定合格（因阻断项未实现），provisional 必为真——不冒判为终局
-    sc = score(run_rules(doc))
-    assert sc.provisional is True
+    results = run_rules(doc)
+    by = {r.rule_id: r for r in results}
+    # driving rule：累计现金流末期/现金流合计 均与成本效益利润F不一致（相差约46.66万）
+    assert by["74"].verdict == Verdict.FAIL
+    assert by["74"].is_blocking
+    assert by["69"].verdict == Verdict.FAIL
+    # 收益指标未达标（产品类需≥5，邦奇仅1.18）
+    assert by["62"].verdict == Verdict.WARN
+
+    sc = score(results)
+    assert sc.veto is True
+    assert "74" in sc.veto_rules
+    assert sc.tier == "不合格"
+    assert sc.provisional is True  # 仍有 B/待收口规则未实现，分数暂定不影响本例的一票否决判定
