@@ -16,6 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from zhuopin_platform.agents.kit_engine import explode_bom
+from zhuopin_platform.shared_tools.models import ProductionPlan
+
 from . import config
 from .config import ForecastParams
 from .models import (
@@ -42,15 +45,20 @@ def estimate_material_arrivals(
     demand_date: date,         # 该成品需求日（无反馈启发式的基准日）
     params: ForecastParams | None = None,
 ) -> MaterialArrivals:
-    """按 BOM 直接子件 + SRM 承诺交期估算各物料到货日（关键路径齐套）。
+    """按 BOM 全部叶子件（多层递归展开半成品）+ SRM 承诺交期估算各物料到货日（关键路径齐套）。
 
     无 SRM 承诺交期的物料 → 需求日 + no_feedback_lead_days（启发式，标无反馈）。
+
+    B1（shortage-multilevel-bom-b1，2026-07-13，姚祖怡批改发现）：原先只取直接子件
+    （level==1），半成品子件不继续分解，会被误当作"待供应商答交的物料"去查 SRM
+    （半成品是自制件，从不会有供应商承诺记录）。改为复用 `kit_engine.explode_bom`
+    无条件递归展开到叶子件；单层 BOM（无半成品）场景结果与改造前完全一致。
     """
     p = params or config.default_params()
 
-    # BOM 取该成品的直接子件（level=1）
-    components = [r.component_id for r in bom
-                 if r.product_id == product_id and r.level == 1]
+    plan = ProductionPlan(plan_id="_probe", product_id=product_id, product_name="",
+                          planned_qty=1, planned_date="")
+    components = list(explode_bom(bom, [plan]).keys())
     if not components:
         return MaterialArrivals(arrivals={}, has_bom=False)
 

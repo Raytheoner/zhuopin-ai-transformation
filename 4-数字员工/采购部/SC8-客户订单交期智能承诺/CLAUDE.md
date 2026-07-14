@@ -41,6 +41,7 @@
 - **企微通知**：FO 健康告警 → audit + 企微采购/值班群（内部运维）；对客草稿走 Notifier 门禁。
 - **答交可信度子模块**（`sc8/answer_confidence_engine.py` + `sc8/answer_confidence.py`，迁自 SC3，2026-07-06 v2.3 重排）：供应商在途订单风险评估（剩余天数 + DOS 双触发三色分级），29 tests 原样迁移；作为 SC8 交期承诺置信度未来 2→3 级化的判据来源——**当前只是代码归位，尚未接入 SC8 现有承诺/置信度主流程**（`commitment.py`/`forecast.py` 不受影响）。
 - **周期累计供需匹配**（`sc8/period_match.py`，2026-07-10，`shortage-baoguan-criteria-v3`）：B2 定稿算法，纯函数 `match_period_cumulative_supply`，接 `sc8/sources.py::load_material_commitments`（真实提取逐笔 SRM 承诺数量）；已接入 `BaoguanRow.period_match`（`assess_supply_risk`/`build_dashboard` 新增可选 `material_commitments` 参数，缺省 None 时零影响）。跨周期"上一期望交付日/结转余额"持久化账本本次未做，调用方需显式传 `previous_demand_date`/`carry_in_balance`，持久化落点是独立后续任务。
+- **多层 BOM 递归展开**（B1，2026-07-13/14）：`_gross_need`/`estimate_material_arrivals` 复用平台 `kit_engine.explode_bom`，无条件展开半成品至叶子件（无开关、非 opt-in）。平台底座另有 `kit_engine.explode_bom_with_netting`（逐层现货抵扣，8 tests 已过）**未接入 SC8**，留作未来若要做"半成品有货就不深挖"的可选增强。
 
 ## 4. 红线（建造时守住）
 
@@ -66,6 +67,7 @@
 | 2026-07-02 | fix-a/b/c 任务核实（hygiene），全部 [x] 确认代码真实落地。 |
 | 2026-07-06 | **答交可信度子模块并入**（采购域 v2.3 重排，`sc-v23-engine-migration`）：SC3 场景编号退役，其在途风险评估引擎（29 tests）原样迁入 `sc8/answer_confidence*.py`，audit `scenario` 由 "SC3" 改标 "SC8"；本次只搬代码，未接线到现有置信度流水线；全量回归 143 passed + 2 skipped，零回归。 |
 | 2026-07-10 | **缺料/保供引擎口径改造**（跨桌任务队列 #17，`openspec/changes/shortage-baoguan-criteria-v3`，姚祖怡 07-10 缺料批改会圈选+现场会审 design 定稿）：新增 `sc8/period_match.py`（B2 周期累计供需匹配，会议现场重新定义——按"上次期望交付日次日→本次期望交付日"周期窗口累加 SRM 承诺，不满足时输出逐日可满足曲线，跨周期结转 carry_forward）；`sc8/sources.py` 新增 `load_material_commitments`（真实提取逐笔 SRM 承诺数量，替代原硬编码 `qty_committed=0`）；`BaoguanRow` 新增 `period_match` 字段（纯附加，`material_commitments` 缺省 None 时恒空、零漂移）；`build_dashboard` 新增 `priority_resolver` 框架桩参数（B4，PMC 优先级占用，仅接口未实现真排序）。**同批平台侧改动**（`zhuopin_platform`）：`get_purchase_orders` 新增真实 SRM 确认日期查询（A1，替换 `supplier_confirmed_date=expected_date` 占位）；`kit_engine.py` 新增 `filter_transit_by_arrival`/`bucket_shortage_by_lead_time` 纯函数（A1/A2，不改 `calc_shortage`/`explode_bom` 签名，O2/SC7 零影响）；`get_bom_for_products` **顺带修复生产活 bug**——按 BOM 主记录生效日期区间过滤当前版本，此前无条件取第一条，真实抽样 15 母件中 4 个/27%（S02Y.0035/S02Y.0162/S04Y.0112/S07Y.0137）因此取到过期 BOM 版本算齐套。全量回归：SC8 161+2skip / 平台167+1skip / SC1 53 / O2 20 / SC7 41（黄金基准 35850/640000/675850 精确不漂移），新增 39 tests 零回归。B1（多层递归）排期未定不做，C-1（主料替代料）随 openspec 批2 另案。L/T 数据源缺口登记跨桌任务队列 `#19`。真实数据 LAN 回归为独立后续任务。 |
+| 2026-07-13/14 | **B1 多层 BOM 递归展开**（`openspec/changes/archive/2026-07-14-shortage-multilevel-bom-b1`）：姚祖怡批改 SC8净额开关底稿发现"半成品子件未二次分解"（S02Y.0035 瓶颈子件 R02A.0019 藏在未展开的半成品下，按期误判），Paul 现场确认"所有F开头需求的共性问题"、指示排期提前。`sc8/baoguan.py::_gross_need`/`sc8/forecast.py::estimate_material_arrivals` 改为复用 `kit_engine.explode_bom` 无条件递归展开半成品至叶子件（**方案迭代**：最初实现了"新开关`SC8_MULTILEVEL_BOM`+逐层现货抵扣"，开发中发现工作区已有预写测试规格描述更简单方案，经 Paul 确认改用无条件展开、不做净额、无新开关——`explode_bom_with_netting` 保留在平台底座作未来可选增强，本次未接入）。单层 BOM 场景结果与改造前完全一致（向后兼容）；半成品不再被误当作待答交物料查 SRM。全量回归：SC8 170+2skip / 平台175+1skip / SC1 53 / O2 20 / SC7 41（黄金基准精确不漂移），零回归。真实 LAN 环境多层取数性能/限流验证为独立后续任务。同批也排查确认第19-21行"按期误判"与本问题同根因，无需单独修复。 |
 | **当前** | **SC8 保供看板 LAN 可用（内部）**；对客外发全程关闭；`sc8-real-data-cutover` 变更包待 Paul 审核偏差数据后继续。待办 #10：加登录/Token 鉴权再开外网（真实客户名红线）。 |
 
 ## 6. 关键依赖/前置（解锁条件）

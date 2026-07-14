@@ -21,6 +21,9 @@ import json as _json
 from dataclasses import dataclass, field
 from datetime import date
 
+from zhuopin_platform.agents.kit_engine import explode_bom
+from zhuopin_platform.shared_tools.models import ProductionPlan
+
 from . import config
 from .config import ForecastParams
 from .forecast import MaterialArrivals, estimate_material_arrivals
@@ -100,13 +103,18 @@ def _classify(confirmed_gap: int | None, has_bom: bool, params: ForecastParams,
 
 
 def _gross_need(so: SalesOrder, bom: list) -> dict[str, float]:
-    """成品**直接子件**毛需求 = 订货量 × 用量 ×(1+损耗)。"""
-    need: dict[str, float] = {}
-    for r in bom:
-        if r.product_id == so.item_code and getattr(r, "level", 1) == 1:
-            need[r.component_id] = need.get(r.component_id, 0.0) + \
-                so.qty * r.qty_per_unit * (1 + r.loss_rate)
-    return need
+    """成品**全部叶子件**（多层递归展开半成品子件）毛需求 = 订货量 × 逐层用量 ×(1+损耗)。
+
+    B1（shortage-multilevel-bom-b1，2026-07-13，姚祖怡批改发现）：原先只取直接
+    子件（level==1），半成品子件（如 F02N.0226 的 S02Y.0198）不继续分解，其下
+    真实原材料需求完全不进入计算——"所有F开头需求的共性问题"。改为复用
+    `kit_engine.explode_bom`（O2/SC7 已用、已测试的多层递归算法），无条件展开
+    到叶子件；单层 BOM（无半成品）场景结果与改造前完全一致（向后兼容）。
+    """
+    plan = ProductionPlan(plan_id=so.so_id, product_id=so.item_code,
+                          product_name=so.item_name, planned_qty=so.qty,
+                          planned_date=so.required_date)
+    return explode_bom(bom, [plan])
 
 
 def _covered_by_stock(so: SalesOrder, bom: list, inventory: dict) -> set[str]:
@@ -158,12 +166,17 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     分级基于"确定承诺"子件的缺口（剔除无答复估算），区分真延期 vs 待催（见 _classify）。
 
     现货净额（`inventory`={material_id→白名单仓可用量}）：仅当 `SC8_NET_INVENTORY=on` 时生效，
-    现货可用量≥毛需求的直接子件视为已齐、退出待催/催货（消除"有货却被追料"误判 P0）；
+    现货可用量≥毛需求的物料视为已齐、退出待催/催货（消除"有货却被追料"误判 P0）；
     默认 OFF → inventory 被忽略、四色与接入前完全一致（零漂移）。
 
     周期累计供需匹配（`material_commitments`，B2，shortage-baoguan-criteria-v3）：仅当传入时
     附加计算，写入 `BaoguanRow.period_match`（纯信息，不影响 kit_date/gap_days/risk/action）；
     缺省 None → `period_match` 恒为空字典，零漂移。
+
+    多层 BOM 展开（B1，shortage-multilevel-bom-b1，2026-07-13）：`estimate_material_arrivals`
+    内部已改为多层递归展开半成品子件至叶子件（无条件生效，非开关控制——姚祖怡批改发现的
+    "半成品未分解"是结构性正确性问题，不是需要专员签字的业务口径）；单层 BOM（无半成品）
+    场景结果与改造前完全一致。
     """
     p = params or config.default_params()
     ship = date.fromisoformat(so.required_date)

@@ -46,6 +46,60 @@ def explode_bom(
     return gross
 
 
+def explode_bom_with_netting(
+    bom: list[BomRow],
+    plans: list[ProductionPlan],
+    inventory: dict[str, float],
+    *,
+    net_at_each_level: bool = True,
+) -> dict[str, float]:
+    """多层 BOM 递归展开 + 逐层现货抵扣（B1，shortage-multilevel-bom-b1，2026-07-13）。
+
+    与 `explode_bom` 的区别：`explode_bom` 无条件展开全部中间节点（子装配/半成品）
+    到叶子件，不看中间节点自身库存。本函数在展开每个中间节点前，先用
+    `inventory`（{material_id: 可用量}）查其现货：
+      · 现货 ≥ 毛需求 → 不展开其子件（现货已覆盖，无需知道其原材料缺不缺）；
+      · 现货 < 毛需求 → 按净缺口（毛需求-现货）继续展开子件需求；
+      · 无现货记录 → 视为现货=0，按原始毛需求全额展开（保守兜底，不因数据
+        缺失漏报缺料）。
+    叶子件（不是任何 BOM 行 product_id 的物料，即最终采购件）**不做现货抵扣**，
+    直接按计算出的毛需求累加进返回字典——是否够用交给下游（calc_shortage /
+    SC8 的 SRM 承诺匹配）判断。
+
+    `net_at_each_level=False` 时退化为无条件展开（等同 `explode_bom` 行为）。
+    本函数不修改 `explode_bom`/`calc_shortage` 现有签名与默认行为，纯增量。
+    """
+    bom_index: dict[str, list[BomRow]] = {}
+    for row in bom:
+        bom_index.setdefault(row.product_id, []).append(row)
+
+    sub_assemblies = set(bom_index.keys())
+    gross: dict[str, float] = {}
+
+    def _expand(product_id: str, qty: float, visited: set[str]) -> None:
+        if product_id in visited or qty <= 0:
+            return
+        visited = visited | {product_id}
+
+        for row in bom_index.get(product_id, []):
+            child_qty = qty * row.qty_per_unit * (1 + row.loss_rate)
+            if row.component_id in sub_assemblies:
+                if net_at_each_level:
+                    on_hand = float(inventory.get(row.component_id, 0.0) or 0.0)
+                    net_qty = max(child_qty - on_hand, 0.0)
+                else:
+                    net_qty = child_qty
+                if net_qty > 0:
+                    _expand(row.component_id, net_qty, visited)
+            else:
+                gross[row.component_id] = gross.get(row.component_id, 0.0) + child_qty
+
+    for plan in plans:
+        _expand(plan.product_id, plan.planned_qty, set())
+
+    return gross
+
+
 def calc_shortage(
     gross: dict[str, float],
     inventory: list[InventoryRow],
