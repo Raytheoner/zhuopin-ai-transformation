@@ -18,10 +18,14 @@ import openpyxl
 
 HERE = Path(__file__).resolve().parent
 SCENE = HERE.parent
-DEFAULT_XLSX = SCENE / "../../../7-外部文档/质量部/AI质量智能建设就绪工作汇总.xlsx"
-# 收口-1 权威权重/严重度表（2026-07-03，陈忱交付）
-DEFAULT_WEIGHT_XLSX = (SCENE / "../../../7-外部文档/质量部/质量部AI建立相关文件（6.29-7-3）/"
-                       "开发项目立项门禁扣分权重标准_82条规则.xlsx")
+# 注：7-外部文档/质量部 2026-07 由质量专线重组，工作汇总.xlsx 移入「产品类立项申请书及评审报告」子夹
+DEFAULT_XLSX = (SCENE / "../../../7-外部文档/质量部/产品类立项申请书及评审报告/"
+                "AI质量智能建设就绪工作汇总.xlsx")
+# 收口-1 权威权重/严重度表 —— 陈忱 20260710 定稿版（errata 3 处已修：收益指标61/62→重要
+# 非否决、累计现金流74→阻断、最后节点66→阻断且否决；15 阻断，全表阻断⟺一票否决一致；
+# 含产品类样本，同时闭合收口-3）。取代 07-03 旧版（17 阻断，收益指标误列阻断）。
+DEFAULT_WEIGHT_XLSX = (SCENE / "../../../7-外部文档/质量部/"
+                       "开发项目立项门禁扣分权重标准_82条规则-20260710-陈忱跟进-产品类样本-2026-07-03回复.xlsx")
 OUT = SCENE / "data/rules/registry.json"
 
 # 「立项门禁」页表头（A1:K1）→ 规范字段名
@@ -166,7 +170,7 @@ def _norm(v) -> str:
 
 def main():
     xlsx = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_XLSX
-    version = sys.argv[2] if len(sys.argv) > 2 else "2026-07-03"
+    version = sys.argv[2] if len(sys.argv) > 2 else "2026-07-10"
     weight = Path(sys.argv[3]) if len(sys.argv) > 3 else DEFAULT_WEIGHT_XLSX
     reg = build(xlsx, version, weight)
     OUT.parent.mkdir(parents=True, exist_ok=True)

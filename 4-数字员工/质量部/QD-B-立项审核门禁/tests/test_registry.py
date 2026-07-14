@@ -28,13 +28,22 @@ def test_severity_map_blocking():
 
 def test_known_rules_present():
     reg = load_registry()
-    # 收益指标（规则 61/62，阻断，合规阈值）
+    # 收益指标（规则 61/62）：20260710 权威裁定 阻断→重要，不再一票否决
     assert reg.get(61).check_item == "收益指标"
-    assert reg.get(61).blocking is True
+    assert reg.get(61).blocking is False
+    assert reg.get(62).blocking is False
+    # 累计现金流（规则 74）：20260710 权威裁定 → 阻断（一票否决）
+    assert reg.get(74).blocking is True
     # 半自动语义规则（规则 20 立项依据"是什么"）属 B 类
     assert reg.get(20).impl_class == "B"
     # 转人工（规则 80 项目经理签字）属 C 类
     assert reg.get(80).impl_class == "C"
+
+
+def test_blocking_count_15():
+    """20260710 权威表：15 条阻断（07-03 旧版 17，收益指标61/62/目标26/27 部分降级）。"""
+    reg = load_registry()
+    assert len(reg.blocking_rules()) == 15
 
 
 def test_rule_version_recorded():

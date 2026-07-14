@@ -1,5 +1,5 @@
 {
-  "rule_version": "2026-07-03",
+  "rule_version": "2026-07-10",
   "source": "AI质量智能建设就绪工作汇总.xlsx",
   "source_sheet": "立项门禁",
   "applies_to": "开发类 EQQR8082 A2.1",
@@ -43,22 +43,27 @@
       "一": 12.5,
       "二": 1.5,
       "三": 1.5,
-      "四": 3.5,
+      "四": 2.5,
       "五": 1.3,
       "六": 4.5,
       "七": 1.4,
       "八（一）": 2.3,
-      "八（二）": 6.1,
-      "九": 2.3,
-      "十": 2.1,
+      "八（二）": 5.1,
+      "九": 3.0,
+      "十": 2.6,
       "十一": 0.9,
       "十二": 2.6,
       "十三": 1.0
     }
   },
   "severity_overrides_from_weight_table": [
+    "规则26: 阻断→重要",
+    "规则27: 阻断→重要",
     "规则34: 重要→提示",
-    "规则66: 重要→一般"
+    "规则61: 阻断→重要",
+    "规则62: 阻断→重要",
+    "规则66: 重要→阻断",
+    "规则74: 重要→阻断"
   ],
   "count": 82,
   "count_by_class": {
@@ -66,7 +71,7 @@
     "B": 10,
     "C": 4
   },
-  "count_blocking": 17,
+  "count_blocking": 15,
   "rules": [
     {
       "rule_id": "1",
@@ -548,7 +553,7 @@
       "section": "四、项目目标",
       "check_item": "目标是否分类",
       "applies_to": "开发",
-      "severity": "阻断",
+      "severity": "重要",
       "check_type": "逻辑合理性",
       "pass_condition": "项目目标需按类别分类（如技术目标、成本目标、进度目标等）",
       "threshold": "",
@@ -556,10 +561,10 @@
       "automation": "半自动",
       "trial_result": "[不合格] 目标表格缺少\"目标类型\"列，未对目标进行分类",
       "severity_source_6_27": "阻断",
-      "severity_level": "错误",
+      "severity_level": "警告",
       "impl_class": "B",
-      "coefficient": 1.0,
-      "blocking": true,
+      "coefficient": 0.5,
+      "blocking": false,
       "module_key": "四"
     },
     {
@@ -567,7 +572,7 @@
       "section": "四、项目目标",
       "check_item": "指标是否量化",
       "applies_to": "开发",
-      "severity": "阻断",
+      "severity": "重要",
       "check_type": "逻辑合理性",
       "pass_condition": "考核指标需可量化，含具体数值和单位",
       "threshold": "",
@@ -575,10 +580,10 @@
       "automation": "半自动",
       "trial_result": "[待改进] 部分指标已量化(2/4项), 未量化指标: 第1项: \"EPA 认证计划申报\"; 第2项: \"OBD 软件开发需求确认\"",
       "severity_source_6_27": "阻断",
-      "severity_level": "错误",
+      "severity_level": "警告",
       "impl_class": "B",
-      "coefficient": 1.0,
-      "blocking": true,
+      "coefficient": 0.5,
+      "blocking": false,
       "module_key": "四"
     },
     {
@@ -1213,7 +1218,7 @@
       "section": "八、（二）收益分析说明",
       "check_item": "收益指标",
       "applies_to": "开发",
-      "severity": "阻断",
+      "severity": "重要",
       "check_type": "计算准确性",
       "pass_condition": "技术服务类：项目收入/项目投入≥1.5；产品类：（项目收入+全生命周期产品利润）/项目投入≥5",
       "threshold": "技术服务类: D/E≥1.5; 产品类: (D+M)/E≥5",
@@ -1221,10 +1226,10 @@
       "automation": "可机器核",
       "trial_result": "[通过] 1.31 (验证: D/E=1.31)",
       "severity_source_6_27": "阻断",
-      "severity_level": "错误",
+      "severity_level": "警告",
       "impl_class": "A",
-      "coefficient": 1.0,
-      "blocking": true,
+      "coefficient": 0.5,
+      "blocking": false,
       "module_key": "八（二）"
     },
     {
@@ -1232,7 +1237,7 @@
       "section": "八、（二）收益分析说明",
       "check_item": "收益指标达标",
       "applies_to": "开发",
-      "severity": "阻断",
+      "severity": "重要",
       "check_type": "合规性",
       "pass_condition": "技术服务类需≥1.5，产品类需≥5",
       "threshold": "技术服务类≥1.5; 产品类≥5",
@@ -1240,10 +1245,10 @@
       "automation": "可机器核",
       "trial_result": "[待改进] 1.31 < 1.5(技术服务类标准未达标)",
       "severity_source_6_27": "阻断",
-      "severity_level": "错误",
+      "severity_level": "警告",
       "impl_class": "A",
-      "coefficient": 1.0,
-      "blocking": true,
+      "coefficient": 0.5,
+      "blocking": false,
       "module_key": "八（二）"
     },
     {
@@ -1308,7 +1313,7 @@
       "section": "九、开发期限及预算",
       "check_item": "最后节点结束时间",
       "applies_to": "开发",
-      "severity": "一般",
+      "severity": "阻断",
       "check_type": "一致性",
       "pass_condition": "时间节点表中最后一个节点的结束时间需与项目结束日期一致",
       "threshold": "最后节点结束时间=项目结束日期",
@@ -1316,10 +1321,10 @@
       "automation": "可机器核",
       "trial_result": "[不适用] 项目结束日期未填写，无法比对",
       "severity_source_6_27": "重要",
-      "severity_level": "警告",
+      "severity_level": "错误",
       "impl_class": "A",
-      "coefficient": 0.3,
-      "blocking": false,
+      "coefficient": 1.0,
+      "blocking": true,
       "module_key": "九"
     },
     {
@@ -1460,7 +1465,7 @@
       "section": "十、项目现金流分析",
       "check_item": "累计现金流末期与利润一致",
       "applies_to": "开发",
-      "severity": "重要",
+      "severity": "阻断",
       "check_type": "一致性",
       "pass_condition": "现金流最终累计值需与成本效益分析利润一致（技术服务类=F，产品类=F+M）",
       "threshold": "累计现金流末期=利润F(技术服务类); =F+M(产品类)",
@@ -1468,10 +1473,10 @@
       "automation": "可机器核",
       "trial_result": "[通过] 累计现金流末期=18.8万，与成本效益利润F=18.8万一致",
       "severity_source_6_27": "重要",
-      "severity_level": "警告",
+      "severity_level": "错误",
       "impl_class": "A",
-      "coefficient": 0.5,
-      "blocking": false,
+      "coefficient": 1.0,
+      "blocking": true,
       "module_key": "十"
     },
     {

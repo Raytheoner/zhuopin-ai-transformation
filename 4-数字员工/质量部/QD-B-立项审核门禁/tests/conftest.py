@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 
 SCENE = Path(__file__).resolve().parent.parent
-REAL_A21 = SCENE / "../../../7-外部文档/质量部/EQQR8082立项申请书（开发类）-A2.1.xlsx"
+# 7-外部文档/质量部 2026-07 由质量专线重组：空白模板移入「产品类立项申请书及评审报告」子夹
+REAL_A21 = (SCENE / "../../../7-外部文档/质量部/产品类立项申请书及评审报告/"
+            "EQQR8082立项申请书（开发类）-A2.1.xlsx")
 HUAFENG = SCENE / "data/golden/华丰天然气发动机EPA认证服务咨询项目立项申请书0616-测试专用2.1版本.xlsx"
 
 

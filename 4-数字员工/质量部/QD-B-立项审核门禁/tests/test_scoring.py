@@ -40,9 +40,10 @@ def test_important_only_deducts_not_veto(reg):
     """重要规则不合格只扣分，不触发一票否决（区别于旧 MVP 默认）。"""
     res = score(_results(reg, {"25": Verdict.FAIL}), reg)  # 规则25 项目目标 重要(模块四)
     assert not res.veto
-    # 模块四：8 - 8×0.5/3.5 = 8 - 1.1428 = 6.857（示例页 6.86）
-    assert abs(res.module_scores["四"].score - 6.8571) < 0.01
-    assert res.tier == "合格"        # 仅扣 1.14，总分仍 ≥80
+    # 20260710 权威：模块四 26/27 由阻断→重要，模块四全为重要，权重和 5×0.5=2.5；
+    # 8 - 8×0.5/2.5 = 8 - 1.6 = 6.4
+    assert abs(res.module_scores["四"].score - 6.4) < 0.01
+    assert res.tier == "合格"        # 仅扣 1.6，总分仍 ≥80
 
 
 def test_module_deduction_matches_authoritative(reg):
