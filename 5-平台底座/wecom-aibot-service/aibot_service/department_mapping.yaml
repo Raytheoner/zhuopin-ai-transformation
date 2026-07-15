@@ -1,0 +1,11 @@
+# 企微消息发送人 → 部门映射（design.md D7）
+# 持有人：Paul；backup：孙涛（Paul 2026-07-11 确认，随根 CLAUDE.md §5 决策代理纪律）。
+#
+# 键 = 企微 userid（非中文名——2026-07-13 真实测试群联调实测确认字段路径是
+# body.from.userid，取值为 userid 而非中文显示名，如实测抓到 "ShaoPeiShen"）。
+# 下方四位专员真实 userid 由 Paul 2026-07-13 提供，已替换原中文名占位。
+# 未命中本表的发送人一律 fail-closed 归入 `7-外部文档/待分拣/`（不猜测部门）。
+YaoZuYi: 采购部        # 姚祖怡
+tangyanping: 财务部     # 唐燕萍
+ChenChen: 质量部        # 陈忱
+Hongqin.Wang: 销售部    # 王泓钦

@@ -14,6 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 clickhouse = ["clickhouse-connect>=0.7"]  # 审计 sink，9月迁移时启用
+aibot = ["wecom-aibot-python-sdk>=1.0.2"]  # 企微智能机器人双向通道，仅 wecom-aibot-service 需要
 dev = ["pytest>=8.0"]
 
 [build-system]

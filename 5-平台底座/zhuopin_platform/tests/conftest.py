@@ -2,6 +2,12 @@
 
 收割阶段全程使用 mock/夹具，绝不触真实 SRM/ERP/U9C/企微端点。本守卫拦截一切
 出站 socket 连接——若某测试漏 mock 而尝试真实连接，立即失败而非静默打真实库。
+
+例外：回环地址（127.0.0.1 / ::1）放行。Windows 上 `asyncio.run()`
+（`ProactorEventLoop`/`SelectorEventLoop` 均如此）会经 `socket.socketpair()`
+的 fallback 实现内部 connect 一个回环 socket 搭"self-pipe"用于事件循环唤醒
+——这是 Python 自身的事件循环管线，不是业务代码在打真实网络，放行不削弱本
+守卫拦截真实 SRM/ERP/U9C/企微出站请求的原意（wecom_aibot 连接器测试需要）。
 """
 import socket
 
@@ -12,13 +18,35 @@ class _NoNetworkError(RuntimeError):
     pass
 
 
+def _is_loopback_addr(args) -> bool:
+    if not args:
+        return False
+    target = args[0]
+    host = target[0] if isinstance(target, tuple) else target
+    return isinstance(host, str) and host in ("127.0.0.1", "::1", "localhost")
+
+
 @pytest.fixture(autouse=True)
 def _block_real_network(monkeypatch):
-    def _blocked(*args, **kwargs):
+    original_connect = socket.socket.connect
+    original_connect_ex = socket.socket.connect_ex
+
+    def _blocked(self, *args, **kwargs):
+        if _is_loopback_addr(args):
+            return original_connect(self, *args, **kwargs)
         raise _NoNetworkError(
             "测试期间禁止真实网络连接：请 mock urlopen/_post/_zp_post 等。"
             "（收割阶段不连真实 SRM/ERP/U9C/企微）"
         )
-    # 拦截底层 socket 连接；mock 过的 urlopen 不会走到这里
+
+    def _blocked_ex(self, *args, **kwargs):
+        if _is_loopback_addr(args):
+            return original_connect_ex(self, *args, **kwargs)
+        raise _NoNetworkError(
+            "测试期间禁止真实网络连接：请 mock urlopen/_post/_zp_post 等。"
+            "（收割阶段不连真实 SRM/ERP/U9C/企微）"
+        )
+
+    # 拦截底层 socket 连接（回环例外）；mock 过的 urlopen 不会走到这里
     monkeypatch.setattr(socket.socket, "connect", _blocked)
-    monkeypatch.setattr(socket.socket, "connect_ex", _blocked)
+    monkeypatch.setattr(socket.socket, "connect_ex", _blocked_ex)
