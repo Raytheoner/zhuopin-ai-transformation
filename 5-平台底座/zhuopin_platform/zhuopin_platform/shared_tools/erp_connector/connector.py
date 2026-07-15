@@ -623,16 +623,44 @@ class ZpConnector(DataConnector):
                 issue_uom    = comp.get("m_issueUOM") or {}
                 if not child_code:
                     continue
+                sequence     = str(comp.get("m_sequence") or "")
+                qty_per_unit = float(comp.get("m_usageQty") or 0)
+                loss_rate    = float(comp.get("m_scrap") or 0)
+                unit         = str(issue_uom.get("m_code") or issue_uom.get("m_name") or "")
                 new_rows.append(BomRow(
                     product_id=    code,
                     component_id=  child_code,
                     component_name=child_name,
                     level=         depth,
-                    qty_per_unit=  float(comp.get("m_usageQty") or 0),
-                    loss_rate=     float(comp.get("m_scrap") or 0),
-                    unit=          str(issue_uom.get("m_code") or issue_uom.get("m_name") or ""),
+                    qty_per_unit=  qty_per_unit,
+                    loss_rate=     loss_rate,
+                    unit=          unit,
+                    sequence=      sequence,
+                    is_substitute= False,
                 ))
                 child_codes.append(child_code)
+                # C-1（sc8-baoguan-substitute-partial-kit）：替代料嵌套在主件行自己的
+                # m_bOMCompSubstituteDTO4CreateSv 子列表里，与主件行共享同一项次（sequence）。
+                # 替代料自身用量/损耗未经真实数据验证是否独立存在，design.md D2：有则优先用
+                # 自己的，没有则回退继承主件行的值；替代料不参与递归展开（不加入 child_codes）。
+                for sub in comp.get("m_bOMCompSubstituteDTO4CreateSv") or []:
+                    sub_master = sub.get("m_itemMaster") or {}
+                    sub_code   = str(sub_master.get("m_code") or "")
+                    if not sub_code:
+                        continue
+                    sub_qty   = sub.get("m_usageQty")
+                    sub_scrap = sub.get("m_scrap")
+                    new_rows.append(BomRow(
+                        product_id=    code,
+                        component_id=  sub_code,
+                        component_name=str(sub_master.get("m_name") or ""),
+                        level=         depth,
+                        qty_per_unit=  float(sub_qty) if sub_qty is not None else qty_per_unit,
+                        loss_rate=     float(sub_scrap) if sub_scrap is not None else loss_rate,
+                        unit=          unit,
+                        sequence=      sequence,
+                        is_substitute= True,
+                    ))
             with rows_lock:
                 rows.extend(new_rows)
             if depth < max_depth:

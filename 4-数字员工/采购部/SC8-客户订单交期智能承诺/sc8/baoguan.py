@@ -66,6 +66,15 @@ class BaoguanRow:
     # {子件料号: PeriodMatchResult}；纯附加信息，不影响上方 kit_date/gap_days/risk/action
     # 的既有语义。material_commitments 未传（默认）时恒为空字典，零漂移。
     period_match: dict[str, PeriodMatchResult] = field(default_factory=dict)
+    # C-1 替代料合并（sc8-baoguan-substitute-partial-kit，2026-07-15）：
+    # {主料component_id: [替代料component_id,...]}，供看板标注"含替代料 Rxx"；
+    # BOM 无替代料关系时恒为空字典。纯展示信息，不影响 kit_date/gap_days/risk 既有语义。
+    substitute_groups: dict[str, list[str]] = field(default_factory=dict)
+    # C-2 部分齐套（sc8-baoguan-substitute-partial-kit，2026-07-15）：与净额开关（现货数据）
+    # 耦合——SC8_NET_INVENTORY=off 或无现货数据时三者恒为 None，零漂移；不改 risk 既有判定。
+    kittable_qty:        int | None = None   # 可齐套套数 = min(全部直接子件 floor(现货/单机用量))
+    kittable_bottleneck: str | None = None   # 卡住可齐套数的瓶颈子件料号
+    kittable_shortfall:  int | None = None   # 该瓶颈子件凑够下一整套还差多少件
 
 
 def _classify(confirmed_gap: int | None, has_bom: bool, params: ForecastParams,
@@ -102,6 +111,31 @@ def _classify(confirmed_gap: int | None, has_bom: bool, params: ForecastParams,
     return RISK_GREEN, f"齐料按期（{gap_txt}）{cbn}"
 
 
+def _substitute_groups(bom: list, product_id: str) -> dict[str, list[str]]:
+    """按 sequence 把 product_id 直属行的主料/替代料分组（C-1，2026-07-15）。
+
+    返回 {主料 component_id: [替代料 component_id, ...]}；无替代料关系的料位不出现在结果中。
+
+    仅扫描 `product_id` 直属行——与生产环境现状 `max_depth=1` 一致（BOM 仅取直接子件，
+    未递归取半成品自身的替代料关系）。若未来接入更深层 BOM 取数，半成品自身的替代料
+    分组需要对其自身 product_id 再调一次本函数，是独立后续任务。
+    """
+    by_sequence: dict[str, list] = {}
+    for row in bom:
+        if row.product_id != product_id or not row.sequence:
+            continue
+        by_sequence.setdefault(row.sequence, []).append(row)
+    result: dict[str, list[str]] = {}
+    for rows in by_sequence.values():
+        primaries = [r for r in rows if not r.is_substitute]
+        substitutes = [r for r in rows if r.is_substitute]
+        if not primaries or not substitutes:
+            continue
+        for p in primaries:
+            result.setdefault(p.component_id, []).extend(s.component_id for s in substitutes)
+    return result
+
+
 def _gross_need(so: SalesOrder, bom: list) -> dict[str, float]:
     """成品**全部叶子件**（多层递归展开半成品子件）毛需求 = 订货量 × 逐层用量 ×(1+损耗)。
 
@@ -110,17 +144,33 @@ def _gross_need(so: SalesOrder, bom: list) -> dict[str, float]:
     真实原材料需求完全不进入计算——"所有F开头需求的共性问题"。改为复用
     `kit_engine.explode_bom`（O2/SC7 已用、已测试的多层递归算法），无条件展开
     到叶子件；单层 BOM（无半成品）场景结果与改造前完全一致（向后兼容）。
+
+    C-1（sc8-baoguan-substitute-partial-kit，2026-07-15）：替代料行（`is_substitute=True`）
+    在展开前剔除，毛需求只按主料链路计一份，不因替代料存在而重复计算该料位需求。
     """
+    main_bom = [row for row in bom if not row.is_substitute]
     plan = ProductionPlan(plan_id=so.so_id, product_id=so.item_code,
                           product_name=so.item_name, planned_qty=so.qty,
                           planned_date=so.required_date)
-    return explode_bom(bom, [plan])
+    return explode_bom(main_bom, [plan])
 
 
 def _covered_by_stock(so: SalesOrder, bom: list, inventory: dict) -> set[str]:
-    """白名单仓可用现货 ≥ 毛需求 的直接子件（视为已齐、无需采购到货）。"""
-    return {m for m, q in _gross_need(so, bom).items()
-            if q > 0 and float(inventory.get(m, 0) or 0) >= q}
+    """白名单仓可用现货 ≥ 毛需求 的直接子件（视为已齐、无需采购到货）。
+
+    C-1（sc8-baoguan-substitute-partial-kit，2026-07-15）：有替代料关系的料位，
+    可用现货 = 主料现货 + 组内全部替代料现货合计（等价合并，无优先主料顺序）。
+    """
+    groups = _substitute_groups(bom, so.item_code)
+    covered = set()
+    for m, q in _gross_need(so, bom).items():
+        if q <= 0:
+            continue
+        avail = float(inventory.get(m, 0) or 0)
+        avail += sum(float(inventory.get(s, 0) or 0) for s in groups.get(m, []))
+        if avail >= q:
+            covered.add(m)
+    return covered
 
 
 def _drop_covered(mat: MaterialArrivals, covered: set[str]) -> MaterialArrivals:
@@ -155,6 +205,41 @@ def _period_match_for_so(
     return result
 
 
+def _kittable_qty(
+    so: SalesOrder, bom: list, inventory: dict,
+) -> tuple[int | None, str | None, int | None]:
+    """可齐套套数（C-2，2026-07-15）：min(全部直接子件( floor(可用现货÷单机用量) ))。
+
+    全部直接子件参与、无例外（即便某子件现货为 0 也拉低整体可齐套数）。含替代料的
+    料位按 C-1 等价合并口径，可用现货 = 主料 + 组内全部替代料现货合计。
+
+    Returns:
+        (可齐套套数, 瓶颈子件料号, 该子件凑够下一整套还差多少件)；
+        无直接子件或某子件单机用量非正（数据异常）时返回 (None, None, None)。
+    """
+    groups = _substitute_groups(bom, so.item_code)
+    direct = [row for row in bom
+             if row.product_id == so.item_code and not row.is_substitute]
+    if not direct:
+        return None, None, None
+
+    best_qty: int | None = None
+    best_material: str | None = None
+    best_shortfall: int | None = None
+    for row in direct:
+        if row.qty_per_unit <= 0:
+            return None, None, None   # 数据异常，无法计算，不以 0 冒充
+        avail = float(inventory.get(row.component_id, 0) or 0)
+        avail += sum(float(inventory.get(s, 0) or 0) for s in groups.get(row.component_id, []))
+        possible = int(avail // row.qty_per_unit)
+        if best_qty is None or possible < best_qty:
+            best_qty = possible
+            best_material = row.component_id
+            needed_for_next = (possible + 1) * row.qty_per_unit
+            best_shortfall = max(int(round(needed_for_next - avail)), 0)
+    return best_qty, best_material, best_shortfall
+
+
 def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
                        today: date, params: ForecastParams | None = None,
                        inventory: dict | None = None,
@@ -182,16 +267,27 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     ship = date.fromisoformat(so.required_date)
     effective_demand = max(ship, today)        # ← Paul 定的 max(需求日,今天) 基准
 
-    mat = estimate_material_arrivals(so.item_code, bom, srm_deliveries,
+    # C-1（sc8-baoguan-substitute-partial-kit）：estimate_material_arrivals/explode_bom
+    # 不识别 is_substitute，若替代料行混入会被当成独立"待答交组件"查 SRM（幻影组件）。
+    # 传入前剔除替代料行，齐料估算只看主料链路；替代料现货合计判齐在下方 _covered_by_stock
+    # 单独处理。不改 forecast.py（其余调用方如 pipeline.py 暂不受影响，是本变更包范围外的
+    # 已知后续风险——一旦真实替代料数据流入，需要同样处理，见 design.md）。
+    main_bom = [row for row in bom if not row.is_substitute]
+    mat = estimate_material_arrivals(so.item_code, main_bom, srm_deliveries,
                                      demand_date=effective_demand, params=p)
     had_bom = mat.has_bom
     period_match = _period_match_for_so(so, bom, ship, material_commitments) if had_bom else {}
+    # C-1（sc8-baoguan-substitute-partial-kit）：替代料分组信息，纯展示用，不受净额开关影响。
+    substitute_groups = _substitute_groups(bom, so.item_code) if had_bom else {}
 
-    # 现货净额（开关默认关；关时不改任何行为）
+    # 现货净额（开关默认关；关时不改任何行为）；C-2 可齐套套数与净额同一入口（design.md D4）：
+    # 开关 OFF 或无 inventory 时三者恒为 None，零漂移。
+    kittable_qty = kittable_bottleneck = kittable_shortfall = None
     if inventory and had_bom and config.net_inventory_enabled():
         covered = _covered_by_stock(so, bom, inventory)
         if covered:
             mat = _drop_covered(mat, covered)
+        kittable_qty, kittable_bottleneck, kittable_shortfall = _kittable_qty(so, bom, inventory)
 
     if not had_bom:
         risk, action = _classify(None, False, p, 0, None, None)
@@ -213,7 +309,9 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
             bottleneck_material=None, no_feedback_materials=[],
             component_count=0, has_bom=True,
             action="全部直接子件现货可用量满足毛需求，现货齐备（无需采购到货）",
-            period_match=period_match,
+            period_match=period_match, substitute_groups=substitute_groups,
+            kittable_qty=kittable_qty, kittable_bottleneck=kittable_bottleneck,
+            kittable_shortfall=kittable_shortfall,
         )
 
     kit_date = max(mat.arrivals.values())      # 齐料日 = 关键路径最晚到货（含无答复估算）
@@ -228,6 +326,9 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
 
     risk, action = _classify(confirmed_gap, True, p, len(mat.no_feedback_materials),
                              mat.bottleneck_material, confirmed_bottleneck)
+    # C-2：部分齐套不改变四色判定（risk 已由 _classify 定），只在建议动作里附加提示。
+    if kittable_qty is not None and kittable_qty > 0:
+        action = f"{action}；可先齐 {kittable_qty} 套"
     return BaoguanRow(
         so_id=so.so_id, product_id=so.item_code, product_name=so.item_name,
         customer_name=so.customer_name, qty=so.qty, ship_date=ship,
@@ -236,7 +337,9 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
         no_feedback_materials=mat.no_feedback_materials,
         component_count=len(mat.arrivals), has_bom=True, action=action,
         confirmed_kit_date=confirmed_kit, confirmed_gap_days=confirmed_gap,
-        period_match=period_match,
+        period_match=period_match, substitute_groups=substitute_groups,
+        kittable_qty=kittable_qty, kittable_bottleneck=kittable_bottleneck,
+        kittable_shortfall=kittable_shortfall,
     )
 
 
@@ -382,12 +485,19 @@ function gapText(r){
  return'确定齐料晚 +'+r.cg+' 天';
 }
 
+function subsText(r,materialId){
+ var subs=(r.subs||{})[materialId];
+ return (subs&&subs.length)?'（含替代料 '+subs.map(esc).join('、')+'）':'';
+}
+
 function card(r){
  var c=cls(r),covered=r.comp-r.nf,pct=r.comp?Math.round(covered/r.comp*100):0;
  var cov=r.comp?'<div class="cov"><div class="cov-h"><span>子件承诺覆盖</span><span>'+covered+' / '+r.comp+' 命中 · '+r.nf+' 未答复</span></div><div class="track"><div class="fill" style="width:'+pct+'%"></div></div></div>':'';
- var bn=r.bn?'<span>瓶颈 <span class="mono">'+esc(r.bn)+'</span></span>':'';
+ var bn=r.bn?'<span>瓶颈 <span class="mono">'+esc(r.bn)+'</span>'+subsText(r,r.bn)+'</span>':'';
+ // C-2：可齐套套数（kq==null → 现货数据不可用，不显示徽标，不以 0 冒充）
+ var kit=(r.kq==null)?'':'<span class="badge" title="'+(r.kbn?('卡在子件 '+esc(r.kbn)+subsText(r,r.kbn)+'、还差 '+fmt(r.ksf)+' 件'):'')+'">可齐套 '+fmt(r.kq)+' / '+fmt(r.qty)+'</span>';
  return '<div class="card"><div class="card-h"><div><span class="id">'+esc(r.id)+'</span><span class="nm">'+esc(r.name)+'</span></div><span class="gap '+c+'">'+gapText(r)+'</span></div>'
-  +'<div class="meta">客户 '+(esc(r.cust)||'—')+' · 数量 '+fmt(r.qty)+'</div>'
+  +'<div class="meta">客户 '+(esc(r.cust)||'—')+' · 数量 '+fmt(r.qty)+(kit?' · '+kit:'')+'</div>'
   +'<div class="strip"><span>出货 <b>'+esc(r.ship)+'</b></span><span>→</span><span>齐料 <b class="kd '+c+'">'+(r.kit?esc(r.kit):'—')+'</b></span>'+bn+'</div>'
   +cov+'<div class="act">建议：'+esc(r.action)+'</div></div>';
 }
@@ -476,6 +586,10 @@ def row_to_dict(r: BaoguanRow) -> dict:
         "gap": r.gap_days, "cg": r.confirmed_gap_days, "comp": r.component_count,
         "nf": len(r.no_feedback_materials), "bn": r.bottleneck_material or "",
         "risk": RISK_CODE.get(r.risk, "red"), "hasBom": r.has_bom, "action": r.action,
+        # C-1（含替代料的主料 → 替代料料号列表；无替代料时为空对象，前端不显示标注）
+        "subs": r.substitute_groups,
+        # C-2（None → 前端不显示"可齐套"徽标，不以 0 冒充）
+        "kq": r.kittable_qty, "kbn": r.kittable_bottleneck, "ksf": r.kittable_shortfall,
     }
 
 

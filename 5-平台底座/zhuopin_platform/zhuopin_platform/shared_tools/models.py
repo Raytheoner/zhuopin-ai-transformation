@@ -22,6 +22,8 @@ class BomRow:
     qty_per_unit: float
     loss_rate: float
     unit: str
+    sequence: str = ""          # BOM 项次（m_sequence）；同 product_id 下同项次的行互为替代关系候选
+    is_substitute: bool = False  # True=替代料（m_componentType==2）；False=主料/常规子件
 
 
 @dataclass

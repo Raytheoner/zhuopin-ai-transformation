@@ -17,7 +17,7 @@ from zhuopin_platform.shared_tools.models import BomRow, SrmDeliveryOrder
 
 from sc8.baoguan import (RISK_GAP, RISK_GREEN, RISK_RED, RISK_YELLOW,
                          assess_supply_risk, build_dashboard, render_html,
-                         render_markdown)
+                         render_markdown, row_to_dict)
 from sc8.models import SalesOrder
 
 TODAY = date(2026, 6, 22)
@@ -165,3 +165,50 @@ def test_render_html_is_interactive_standalone_page():
     # 客户名中的 < > 被转义为 \\u003c（防 </script> 破出 + 防注入），原始尖括号不出现
     assert "深圳立达<测试>" not in html
     assert "\\u003c" in html
+
+
+def test_row_to_dict_passthrough_c1_c2_fields(monkeypatch):
+    """C-1/C-2（sc8-baoguan-substitute-partial-kit）：row_to_dict 新增字段透传。"""
+    from zhuopin_platform.shared_tools.models import BomRow as _BomRow
+    monkeypatch.setenv("SC8_NET_INVENTORY", "on")
+    so = _so(item="P1")
+    bom = [
+        _BomRow(product_id="P1", component_id="A", component_name="A", level=1,
+               qty_per_unit=1.0, loss_rate=0.0, unit="PCS", sequence="10", is_substitute=False),
+        _BomRow(product_id="P1", component_id="B", component_name="B", level=1,
+               qty_per_unit=1.0, loss_rate=0.0, unit="PCS", sequence="10", is_substitute=True),
+    ]
+    row = assess_supply_risk(so, bom, [], today=TODAY, inventory={"A": 400, "B": 400})
+    d = row_to_dict(row)
+    assert d["subs"] == {"A": ["B"]}
+    assert d["kq"] == 800 and d["kbn"] == "A" and d["ksf"] == 1
+
+
+def test_row_to_dict_c1_c2_defaults_when_absent():
+    """无替代料/无现货数据：subs 为空对象，kq/kbn/ksf 为 None（不以 0 冒充）。"""
+    so = _so(item="P2")
+    bom = _bom("P2", "R01")
+    row = assess_supply_risk(so, bom, [], today=TODAY)
+    d = row_to_dict(row)
+    assert d["subs"] == {}
+    assert d["kq"] is None and d["kbn"] is None and d["ksf"] is None
+
+
+def test_render_html_shows_partial_kit_and_substitute_badges(monkeypatch):
+    """看板 HTML 内嵌数据含 subs/kq 字段，供前端渲染"可齐套"徽标与"含替代料"标注。"""
+    from zhuopin_platform.shared_tools.models import BomRow as _BomRow
+    monkeypatch.setenv("SC8_NET_INVENTORY", "on")
+    so = _so(item="S02Y.0188", ship="2026-06-10")
+    bom = [
+        _BomRow(product_id="S02Y.0188", component_id="R01B.0365", component_name="R01B.0365",
+               level=1, qty_per_unit=1.0, loss_rate=0.0, unit="PCS",
+               sequence="10", is_substitute=False),
+        _BomRow(product_id="S02Y.0188", component_id="R01B.0999", component_name="R01B.0999",
+               level=1, qty_per_unit=1.0, loss_rate=0.0, unit="PCS",
+               sequence="10", is_substitute=True),
+    ]
+    rows = build_dashboard([so], bom, [], today=TODAY, inventory={"R01B.0365": 300, "R01B.0999": 300})
+    html = render_html(rows, today=TODAY)
+    assert '"subs": {"R01B.0365": ["R01B.0999"]}' in html
+    assert '"kq": 600' in html
+    assert "function subsText" in html and "可齐套" in html
