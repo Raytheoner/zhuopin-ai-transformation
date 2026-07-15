@@ -49,21 +49,58 @@ scp    "$SC8\deploy-server.ps1"  "${SSH_ALIAS}:${SERVER_BASE}/app/"
 if ($LASTEXITCODE -ne 0) { Write-Warning "部分文件同步失败，请检查" }
 Write-Host "      OK" -ForegroundColor Green
 
-# ── 5. 重启服务 ──
-# 计划任务用 powershell→python 包装，schtasks /End 只杀 powershell、会留孤儿 python
-# 占着端口跑旧代码。故先 /End，再**按端口 taskkill** 清掉残留 python，最后 /Run 起单实例。
-# 首次部署任务不存在 → 杀进程/重启均无害失败 → 提示去服务器跑 deploy-server.ps1。
-Write-Host "[5/5] 重启服务（按端口清旧实例，防孤儿残留）..." -ForegroundColor Yellow
-# 用 | Out-Null 在 PowerShell 侧丢弃 ssh 的标准输出（服务器中文成功提示→不进终端、不乱码）；
-# ssh 自身的连接错误走 stderr 仍可见。$LASTEXITCODE 不受管道影响，重启成功/失败判断照常。
-ssh $SSH_ALIAS "schtasks /End /TN $TASK 2>nul & for /f `"tokens=5`" %p in ('netstat -ano ^| findstr :$PORT ^| findstr LISTENING') do @taskkill /F /PID %p" | Out-Null
-ssh $SSH_ALIAS "timeout /t 2 /nobreak >nul & schtasks /Run /TN $TASK" | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Warning "自动重启失败（多半是首次部署、任务还没建）。"
+# ── 5. 重启服务（轮询确认端口真正释放 + 新进程真正起来，不再赌固定 2 秒）──
+# 07-15 修复背景：原版 schtasks /End + 按端口 taskkill 两次观察到不一致——2026-07-14 首次
+# 部署时 taskkill 未真正杀掉旧进程（需手动介入），同日晚些又正常生效，时序原因未深挖。
+# 固定 `timeout /t 2` 赌"2 秒内一定死透"不可靠；改走远程 PowerShell 主动轮询：
+# Stop-Process 循环确认端口释放 → schtasks /Run → 循环确认新监听进程出现并回传其 PID/
+# 启动时间，而不是打印"服务已重启"就当真（这正是 2026-07-14 那次事故的教训）。
+# 首次部署任务不存在 → /End 无害失败、/Run 后等不到监听 → 按原逻辑提示跑 deploy-server.ps1。
+Write-Host "[5/5] 重启服务（轮询确认端口释放+新进程存活）..." -ForegroundColor Yellow
+
+$restartScript = @"
+`$port = $PORT
+`$task = '$TASK'
+function Get-PortPids(`$p) {
+    Get-NetTCPConnection -LocalPort `$p -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+}
+schtasks /End /TN `$task 2>`$null | Out-Null
+`$deadline = (Get-Date).AddSeconds(15)
+while ((Get-Date) -lt `$deadline) {
+    `$pids = Get-PortPids `$port
+    if (-not `$pids) { break }
+    foreach (`$p in `$pids) { Stop-Process -Id `$p -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 500
+}
+`$remaining = Get-PortPids `$port
+if (`$remaining) { Write-Output "PORT_STILL_BUSY:`$(`$remaining -join ',')"; exit 1 }
+Write-Output "PORT_CLEAR"
+schtasks /Run /TN `$task | Out-Null
+`$deadline2 = (Get-Date).AddSeconds(15)
+`$newPid = `$null
+while ((Get-Date) -lt `$deadline2) {
+    `$pids = Get-PortPids `$port
+    if (`$pids) { `$newPid = `$pids | Select-Object -First 1; break }
+    Start-Sleep -Milliseconds 500
+}
+if (-not `$newPid) { Write-Output "RESTART_FAILED_NO_LISTENER"; exit 1 }
+`$proc = Get-Process -Id `$newPid -ErrorAction SilentlyContinue
+Write-Output "NEW_PID=`$newPid CREATED=`$(`$proc.StartTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+"@
+
+$encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($restartScript))
+$remoteOutput = ssh $SSH_ALIAS "powershell -NoProfile -NonInteractive -EncodedCommand $encoded"
+$restartOk = ($LASTEXITCODE -eq 0)
+
+if ($remoteOutput) { $remoteOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray } }
+
+if (-not $restartOk) {
+    Write-Warning "自动重启失败或未确认成功（详情见上方远程输出：PORT_STILL_BUSY=旧进程杀不掉／RESTART_FAILED_NO_LISTENER=新进程没起来，多半是首次部署、任务还没建）。"
     Write-Warning "首次部署：RDP 登录 192.168.100.51 → 先把 .env 放到 C:\baoguan\.env →"
     Write-Warning "          cd C:\baoguan\app → powershell -ExecutionPolicy Bypass -File deploy-server.ps1"
 } else {
-    Write-Host "      服务已重启" -ForegroundColor Green
+    Write-Host "      服务已重启并确认新进程存活（见上方 NEW_PID/CREATED）" -ForegroundColor Green
 }
 
 Write-Host "`n同步完成。" -ForegroundColor Green
