@@ -19,8 +19,8 @@ QUEUE_TEXT = """\
 """
 
 
-def _secrets(bot_id="BOT1", secret="SECRET1"):
-    return EnvSecretsProvider(override={BOTID_KEY: bot_id, SECRET_KEY: secret})
+def _secrets(bot_id="BOT1", secret="SECRET1", **extra):
+    return EnvSecretsProvider(override={BOTID_KEY: bot_id, SECRET_KEY: secret, **extra})
 
 
 def test_missing_credentials_raise_keyerror(tmp_path):
@@ -183,16 +183,21 @@ def test_on_message_forward_failure_is_audited_not_raised(tmp_path, monkeypatch)
     assert "archived" in actions
 
 
-def test_on_message_notifies_department_group_when_configured(tmp_path):
-    """Paul 2026-07-12 拍板/2026-07-14 落地：归档成功后回部门群发一条通报。"""
+def test_on_message_notifies_department_group_when_configured(tmp_path, monkeypatch):
+    """Paul 2026-07-12 拍板/2026-07-15 落地：归档成功后回部门群 webhook 发一条通报。"""
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     group_mapping_path = tmp_path / "group_mapping.yaml"
-    group_mapping_path.write_text("采购部: REAL_PROCUREMENT_CHATID\n", encoding="utf-8")
+    group_mapping_path.write_text("采购部: WECOM_WEBHOOK_URL_PROCUREMENT\n", encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
     store: dict = {}
+    calls = []
+    monkeypatch.setattr(
+        "aibot_service.group_notify.wecom.send_markdown",
+        lambda url, content: calls.append((url, content)),
+    )
 
     build_connector(
-        secrets=_secrets(),
+        secrets=_secrets(WECOM_WEBHOOK_URL_PROCUREMENT="https://example/webhook?key=P"),
         audit=audit,
         external_docs_root=tmp_path / "7-外部文档",
         queue_path=tmp_path / "queue.md",
@@ -210,18 +215,23 @@ def test_on_message_notifies_department_group_when_configured(tmp_path):
     }
     asyncio.run(client.handlers["message"][0](frame))
 
-    group_notified = [m for m in client.sent_messages if m[0] == "REAL_PROCUREMENT_CHATID"]
-    assert len(group_notified) == 1
-    assert "已归档" in group_notified[0][1]["markdown"]["content"]
+    assert len(calls) == 1
+    assert calls[0][0] == "https://example/webhook?key=P"
+    assert "已归档" in calls[0][1]
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "group_notified" in actions
 
 
-def test_on_message_skips_group_notify_when_unconfigured_by_default(tmp_path):
-    """默认 yaml 仍是占位符——不应误发到占位符字符串。"""
+def test_on_message_skips_group_notify_when_unconfigured_by_default(tmp_path, monkeypatch):
+    """默认 yaml 不含销售部——不应误发。"""
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
     store: dict = {}
+    calls = []
+    monkeypatch.setattr(
+        "aibot_service.group_notify.wecom.send_markdown",
+        lambda url, content: calls.append((url, content)),
+    )
 
     build_connector(
         secrets=_secrets(),
@@ -235,12 +245,13 @@ def test_on_message_skips_group_notify_when_unconfigured_by_default(tmp_path):
     frame = {
         "body": {
             "msgtype": "text",
-            "from": {"userid": "YaoZuYi"},
+            "from": {"userid": "Hongqin.Wang"},
             "text": {"content": "已收到，稍后回复"},
         }
     }
     asyncio.run(client.handlers["message"][0](frame))
 
+    assert calls == []
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "group_notify_skipped" in actions
     assert "group_notified" not in actions
@@ -249,12 +260,12 @@ def test_on_message_skips_group_notify_when_unconfigured_by_default(tmp_path):
 def test_on_message_group_notify_failure_is_audited_not_raised(tmp_path, monkeypatch):
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     group_mapping_path = tmp_path / "group_mapping.yaml"
-    group_mapping_path.write_text("采购部: REAL_PROCUREMENT_CHATID\n", encoding="utf-8")
+    group_mapping_path.write_text("采购部: WECOM_WEBHOOK_URL_PROCUREMENT\n", encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
     store: dict = {}
 
     build_connector(
-        secrets=_secrets(),
+        secrets=_secrets(WECOM_WEBHOOK_URL_PROCUREMENT="https://example/webhook?key=P"),
         audit=audit,
         external_docs_root=tmp_path / "7-外部文档",
         queue_path=tmp_path / "queue.md",

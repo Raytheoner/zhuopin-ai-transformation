@@ -1,13 +1,13 @@
-# 部门 → 企微群 chatid 映射（Paul 2026-07-12 认可：归档成功后机器人回部门群
-# 发一条通报留痕）。
+# 部门 → 群 webhook 环境变量名映射（Paul 2026-07-12 拍板：归档成功后机器人
+# 回部门群发一条通报留痕）。
 #
-# ⚠️ 以下均为占位符，尚未填入真实群 chatid——填之前，通报环节会被安全跳过
-# （不会往错误的群/无效 chatid 发消息），见 group_notify.py 的 fail-closed
-# 设计。获取真实 chatid 的方法：对应部门群里随便发一条消息（任何人发都行，
-# 不必 @机器人——群消息只要机器人在群里就能收到，见 frame_parsing.py 里
-# 已确认的 body.chatid 字段路径），从审计日志/服务日志里的
-# `"chattype": "group", "chatid": "..."` 抓真实值填进来即可。
-财务部: PLACEHOLDER_FINANCE_GROUP_CHATID
-质量部: PLACEHOLDER_QUALITY_GROUP_CHATID
-采购部: PLACEHOLDER_PROCUREMENT_GROUP_CHATID
-销售部: PLACEHOLDER_SALES_GROUP_CHATID
+# 2026-07-15 Paul 澄清：三部门群各自独立小群，走既有企微群机器人 webhook 机制
+# （非智能机器人 chatid 通道），复用 shared_tools/notifiers/wecom.py。本表只存
+# **环境变量名**、不存真实 webhook URL——真实 URL 只落 `5-平台底座/.env`
+# （gitignore，不入库）。本表本身不含任何秘密，可安全提交。
+#
+# 销售部：Paul 2026-07-15 拍板暂不启用，故意不建映射——sender 命中销售部时
+# group_notify 会因"部门不在本表"走 fail-closed 跳过（不报错、留痕）。
+财务部: WECOM_WEBHOOK_URL_FINANCE
+质量部: WECOM_WEBHOOK_URL_QUALITY
+采购部: WECOM_WEBHOOK_URL_PROCUREMENT

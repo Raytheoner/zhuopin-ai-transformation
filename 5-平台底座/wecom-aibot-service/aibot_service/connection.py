@@ -133,7 +133,7 @@ def build_connector(
                     sender=message.sender,
                     msgtype=message.msgtype,
                     filename=archive_result.archived_path.name,
-                    connector=connector_holder["connector"],
+                    secrets=secrets,
                     group_mapping=group_mapping,
                     audit=audit,
                     evaluator=evaluator,
