@@ -37,12 +37,12 @@ def test_gate1_pyproject_excludes_business_connectors():
         assert forbidden not in deps, f"依赖清单不得出现 {forbidden}：{deps}"
 
 
-@pytest.mark.parametrize("module_name", ["intake", "forwarding"])
+@pytest.mark.parametrize("module_name", ["intake", "forwarding", "group_notify"])
 def test_gate1_inbound_modules_have_no_business_connector_imports(module_name):
-    """静态核查 inbound 处理模块（intake.py 归档 / forwarding.py 转发）源码
-    不 import erp_connector/srm_connector（AST 扫描）。forwarding.py 是
-    2026-07-13 新增的进件全量转发功能，同样受门禁①约束——inbound 触发的
-    代码路径一律不得触达业务系统连接器。"""
+    """静态核查 inbound 处理模块（intake.py 归档 / forwarding.py 转发 /
+    group_notify.py 部门群通报）源码不 import erp_connector/srm_connector
+    （AST 扫描）。group_notify.py 是 2026-07-14 新增的归档后部门群通报功能，
+    同样受门禁①约束——inbound 触发的代码路径一律不得触达业务系统连接器。"""
     import ast
     import importlib
 

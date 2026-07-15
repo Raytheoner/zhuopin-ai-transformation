@@ -183,6 +183,104 @@ def test_on_message_forward_failure_is_audited_not_raised(tmp_path, monkeypatch)
     assert "archived" in actions
 
 
+def test_on_message_notifies_department_group_when_configured(tmp_path):
+    """Paul 2026-07-12 拍板/2026-07-14 落地：归档成功后回部门群发一条通报。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    group_mapping_path = tmp_path / "group_mapping.yaml"
+    group_mapping_path.write_text("采购部: REAL_PROCUREMENT_CHATID\n", encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        group_mapping_path=group_mapping_path,
+        client_factory=fake_client_factory(store),
+    )
+    client = store["client"]
+
+    frame = {
+        "body": {
+            "msgtype": "text",
+            "from": {"userid": "YaoZuYi"},
+            "text": {"content": "已收到，稍后回复"},
+        }
+    }
+    asyncio.run(client.handlers["message"][0](frame))
+
+    group_notified = [m for m in client.sent_messages if m[0] == "REAL_PROCUREMENT_CHATID"]
+    assert len(group_notified) == 1
+    assert "已归档" in group_notified[0][1]["markdown"]["content"]
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "group_notified" in actions
+
+
+def test_on_message_skips_group_notify_when_unconfigured_by_default(tmp_path):
+    """默认 yaml 仍是占位符——不应误发到占位符字符串。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+    )
+    client = store["client"]
+
+    frame = {
+        "body": {
+            "msgtype": "text",
+            "from": {"userid": "YaoZuYi"},
+            "text": {"content": "已收到，稍后回复"},
+        }
+    }
+    asyncio.run(client.handlers["message"][0](frame))
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "group_notify_skipped" in actions
+    assert "group_notified" not in actions
+
+
+def test_on_message_group_notify_failure_is_audited_not_raised(tmp_path, monkeypatch):
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    group_mapping_path = tmp_path / "group_mapping.yaml"
+    group_mapping_path.write_text("采购部: REAL_PROCUREMENT_CHATID\n", encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        group_mapping_path=group_mapping_path,
+        client_factory=fake_client_factory(store),
+    )
+    client = store["client"]
+
+    import aibot_service.connection as connection_mod
+
+    async def _boom(**kwargs):
+        raise RuntimeError("通报模拟失败")
+
+    monkeypatch.setattr(connection_mod, "notify_department_group", _boom)
+
+    frame = {"body": {"msgtype": "text", "from": {"userid": "YaoZuYi"}, "text": {"content": "x"}}}
+    # 不应向上抛出，也不影响归档已成功
+    asyncio.run(client.handlers["message"][0](frame))
+
+    archived = list((tmp_path / "7-外部文档" / "采购部").glob("*.md"))
+    assert len(archived) == 1
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "group_notify_dispatch_failed" in actions
+    assert "archived" in actions
+
+
 def test_on_message_dispatch_failure_is_audited_not_raised(tmp_path, monkeypatch):
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")

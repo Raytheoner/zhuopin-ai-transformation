@@ -14,9 +14,11 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import (
 )
 from zhuopin_platform.shared_tools.secrets import SecretsProvider
 
+from .department_group_mapping import load_department_group_mapping
 from .department_mapping import load_department_mapping
 from .forwarding import forward_inbound_to_paul
 from .frame_parsing import parse_inbound_frame
+from .group_notify import notify_department_group
 from .intake import archive_inbound_message
 
 BOTID_KEY = "WECOM_AIBOT_BOTID"
@@ -49,6 +51,7 @@ def build_connector(
     queue_path: Path,
     evaluator: str = "system",
     mapping_path: Optional[Path] = None,
+    group_mapping_path: Optional[Path] = None,
     max_reconnect_attempts: int = DEFAULT_MAX_RECONNECT_ATTEMPTS,
     reconnect_base_delay_ms: int = DEFAULT_RECONNECT_BASE_DELAY_MS,
     heartbeat_interval_ms: int = DEFAULT_HEARTBEAT_INTERVAL_MS,
@@ -61,6 +64,7 @@ def build_connector(
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
     mapping = load_department_mapping(mapping_path)
+    group_mapping = load_department_group_mapping(group_mapping_path)
 
     connector_holder: dict[str, AibotConnector] = {}
 
@@ -91,12 +95,15 @@ def build_connector(
 
     async def on_message(frame: dict) -> None:
         """门禁①结构性保证的唯一 inbound 入口：只转给 archive_inbound_message
-        （归档/登记/队列）+ forward_inbound_to_paul（全量转发通知，Paul
-        2026-07-13 拍板新增），不做任何语义解析/业务分支（design.md D8）。
-        两条路径各自 try/except，互不影响——归档失败不影响转发，反之亦然。"""
+        （归档/登记/队列）+ notify_department_group（归档成功后回部门群通报，
+        Paul 2026-07-12 拍板/2026-07-14 落地）+ forward_inbound_to_paul（全量
+        转发通知，Paul 2026-07-13 拍板新增），不做任何语义解析/业务分支
+        （design.md D8）。三条路径各自 try/except，互不影响——任一失败不影响
+        其余两条是否成功。"""
         message = parse_inbound_frame(frame)
+        archive_result = None
         try:
-            await archive_inbound_message(
+            archive_result = await archive_inbound_message(
                 message=message,
                 connector=connector_holder.get("connector"),
                 external_docs_root=external_docs_root,
@@ -117,6 +124,32 @@ def build_connector(
                     error=str(exc),
                 )
             )
+
+        if archive_result is not None:
+            try:
+                await notify_department_group(
+                    department=archive_result.department,
+                    matched=archive_result.matched,
+                    sender=message.sender,
+                    msgtype=message.msgtype,
+                    filename=archive_result.archived_path.name,
+                    connector=connector_holder["connector"],
+                    group_mapping=group_mapping,
+                    audit=audit,
+                    evaluator=evaluator,
+                )
+            except Exception as exc:  # noqa: BLE001 —— 通报失败必须留痕，不得吞掉
+                audit.record(
+                    AuditEvent(
+                        scenario="wecom-aibot",
+                        action="group_notify_dispatch_failed",
+                        evaluator=evaluator,
+                        automation_level="L1",
+                        decision={"department": archive_result.department},
+                        data_sources={"sender": message.sender},
+                        error=str(exc),
+                    )
+                )
 
         try:
             await forward_inbound_to_paul(
