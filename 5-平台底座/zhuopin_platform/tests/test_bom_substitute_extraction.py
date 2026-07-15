@@ -6,12 +6,12 @@
 `m_bOMCompSubstituteDTO4CreateSv` 子列表里（不是同级平铺重复序号的兄弟行），
 与主件行共享同一 `m_sequence`。
 
-⚠️ 本文件用的替代料 DTO 内部字段结构（是否自带独立 `m_usageQty`/`m_scrap`/
-`m_itemMaster`，还是完全继承主件行）**未经真实验证**（design.md Open Question #1，
-tasks.md 1.1）——本沙箱环境无 LAN 访问 U9C，无法做生产只读实测。本测试按 design.md
-D2 的假设建模：替代料 DTO 自带 `m_itemMaster`（自己的料号/名称），若其自带
-`m_usageQty`/`m_scrap` 则优先使用，否则回退继承主件行的值。真实数据验证为独立
-后续任务，验证结果如与本假设不符需回来调整实现，不阻塞 mock/脱敏先行。
+✅ 真实数据验证已完成（2026-07-15，生产 BOM/Query 只读实测，7 母件/20 组替代料，
+100% 一致）：替代料 DTO 自带独立 `m_itemMaster`（自己的料号/名称）与 `m_usageQty`/
+`m_scrap` 字段，但 `m_usageQty` 恒为 1.0（与主件行真实用量——样本中出现 1/2/3/4/9/
+10/16 等值——无关，是 ERP 侧占位值，不是真实替代用量语义）。因此实现**恒继承主件行
+的 qty_per_unit/loss_rate，忽略替代料自身 m_usageQty/m_scrap**（design.md D2 原假设
+"有则优先用自己的"已被证伪，按此真实结论修正）。
 """
 from __future__ import annotations
 
@@ -114,20 +114,24 @@ def test_substitute_list_generates_paired_rows(tmp_path, monkeypatch):
     assert sub.loss_rate == main.loss_rate == 0.05
 
 
-def test_substitute_with_own_usage_prefers_its_own_value(tmp_path, monkeypatch):
-    """替代料 DTO 自带独立 m_usageQty/m_scrap 时，优先使用其自身值（不继承主件行）。"""
+def test_substitute_own_usage_ignored_inherits_main_row(tmp_path, monkeypatch):
+    """替代料 DTO 自带的 m_usageQty/m_scrap 被忽略，恒继承主件行的值。
+
+    真实数据验证（2026-07-15，7 母件/20 组替代料）：替代料自带 m_usageQty 恒为 1.0，
+    与主件行真实用量无关，是 ERP 占位值——不能采信，必须继承主件行的真实用量。
+    """
     zp = _make_zp(tmp_path)
     bom_data = [_bom_master([
         _comp("R001", sequence="10", qty=2.0, scrap=0.05,
-              substitutes=[_substitute("R002", usage_qty=3.0, scrap=0.1)]),
+              substitutes=[_substitute("R002", usage_qty=1.0, scrap=0.0)]),
     ])]
     monkeypatch.setattr(zp, "_u9c_bom_post", lambda body: bom_data)
 
     rows, failed = zp.get_bom_for_products(["PROD001"], today=date(2026, 7, 15))
     assert not failed
     sub = next(r for r in rows if r.is_substitute)
-    assert sub.qty_per_unit == 3.0
-    assert sub.loss_rate == 0.1
+    assert sub.qty_per_unit == 2.0, "必须继承主件行用量，不能采信替代料自身的占位 usageQty"
+    assert sub.loss_rate == 0.05
 
 
 def test_multiple_substitutes_same_sequence(tmp_path, monkeypatch):

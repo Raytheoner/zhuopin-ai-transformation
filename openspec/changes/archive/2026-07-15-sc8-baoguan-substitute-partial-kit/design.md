@@ -97,6 +97,19 @@ class BaoguanRow:
 
 ## Open Questions
 
-1. 替代料 DTO（`m_bOMCompSubstituteDTO4CreateSv` 内的每个元素）是否自带独立的 `m_usageQty`/`m_scrap`/`m_itemMaster` 字段，还是完全继承主件行？—— apply 阶段第一步做真实只读探测验证，参考口径定稿 §2 C-1·① 的验证方法。
-2. `m_sequence` 是否保证在同一父件下"同序号=同料位"这一映射稳定（有没有理论上序号重复但语义不同的边界情况）？—— 探测样本（1324 子件行）未发现异常，本次按"稳定"假设推进，若验证阶段发现反例需回 Paul/姚祖怡确认口径。
-3. C-2 "还差 N 件"（`kittable_shortfall`）的计算口径——是"凑够 `kittable_qty+1` 套还需要的量"，还是"凑够客户下单总量 `qty` 还需要的量"？两者数值不同（后者通常大得多）。**推荐前者**（更贴近"下一步能不能多齐一套"的现场决策），但这是产品/显示层判断，建议 apply 前与姚祖怡确认一句话（可并入姚祖怡后续的显示层抽验，不必单独开会）。
+1. ~~替代料 DTO（`m_bOMCompSubstituteDTO4CreateSv` 内的每个元素）是否自带独立的 `m_usageQty`/`m_scrap`/`m_itemMaster` 字段，还是完全继承主件行？~~ **✅ 已验证（见下方 2026-07-15 补充）**。
+2. `m_sequence` 是否保证在同一父件下"同序号=同料位"这一映射稳定（有没有理论上序号重复但语义不同的边界情况）？—— 探测样本（1324 子件行）未发现异常，本次按"稳定"假设推进，若验证阶段发现反例需回 Paul/姚祖怡确认口径。**2026-07-15 补充验证**（7 母件/20 组替代料）：未发现反例，`m_sequence` 映射稳定；同时确认 `m_subSeq` 恒为 0（20 组均为单替代料，未见一组多替代场景，与口径定稿 §2 C-1·① 07-08 那次探测结论一致）。
+3. C-2 "还差 N 件"（`kittable_shortfall`）的计算口径——是"凑够 `kittable_qty+1` 套还需要的量"，还是"凑够客户下单总量 `qty` 还需要的量"？两者数值不同（后者通常大得多）。**推荐前者**（更贴近"下一步能不能多齐一套"的现场决策），但这是产品/显示层判断，建议 apply 前与姚祖怡确认一句话（可并入姚祖怡后续的显示层抽验，不必单独开会）。**未验证**——仍需姚祖怡确认，见 2026-07-15 补充。
+
+## 2026-07-15 补充：真实数据验证结论（Open Question #1 已解，附代码修正）
+
+**验证方法**：CC 在有 LAN+U9C 凭证访问的环境下，对 7 个真实母件（S02Y.0035/S02Y.0162/S04Y.0112/S07Y.0137/S02Y.0188/F02N.0040/F02N.0226）跑只读 `BOM/Query`，共取得 20 组含替代料的真实料位，逐组核对替代料 DTO 的完整字段内容（`m_itemMaster`/`m_usageQty`/`m_scrap`/`m_sequence`/`m_subSeq`/`m_componentType`/`m_issueUOM`）。只读探测，未写任何 ERP 数据，诊断脚本为一次性使用未入库（同 07-08 那次的做法）。
+
+**结论（关键，纠正了本设计原假设）**：
+- 替代料 DTO **确实自带独立的** `m_itemMaster`/`m_usageQty`/`m_scrap`/`m_sequence`/`m_subSeq`/`m_componentType`/`m_issueUOM` 字段（不是"完全继承主件行、没有自己的字段"）。
+- 但 **`m_usageQty` 在全部 20 组样本中恒为 `1.0`**，与其所属主件行的真实用量（样本中出现 1/2/3/4/9/10/16 等多种值）**完全无关**——这是 ERP 侧的占位值，不携带真实的替代用量语义（`m_scrap` 同样恒为 0.0，与主件行样本一致，未观察到有区分意义）。
+- **因此本设计 D2 的原假设"替代料自带用量则优先用自己的，没有则继承主件行"是错的**——正确做法是**恒继承主件行的 `qty_per_unit`/`loss_rate`，完全忽略替代料自身的 `m_usageQty`/`m_scrap`**，否则会把替代料的展开用量算成"占位 1"，在主件行真实用量 >1 的绝大多数场景下严重低估该料位的真实需求（进而在 C-1 判齐逻辑里得出"现货够"的错误结论）。
+
+**已按此结论修正代码**（`5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py::get_bom_for_products`）：替代料行的 `qty_per_unit`/`loss_rate` 改为无条件取自其所属主件行，不再读取/采信替代料自身的 `m_usageQty`/`m_scrap`。同步更新了 `tests/test_bom_substitute_extraction.py`（原 `test_substitute_with_own_usage_prefers_its_own_value` 改为 `test_substitute_own_usage_ignored_inherits_main_row`，断言方向反转）与 `openspec/specs/platform-data-connectors/spec.md` 的对应 Requirement 描述。全量回归零漂移（平台193+1skip/SC8 188+3skip/O2 20/SC7 41黄金基准精确不漂移/SC1 53）。
+
+**未验证（仍待 Paul/姚祖怡，见跨桌任务队列 `#33`）**：② 姚祖怡真实数据抽验（本次探测拿到的 20 组真实替代料样本可直接作为她抽验素材，不必重新找样本）；③ `kittable_shortfall` 口径一句话确认。

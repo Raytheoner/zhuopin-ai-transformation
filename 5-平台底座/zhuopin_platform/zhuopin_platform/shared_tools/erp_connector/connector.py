@@ -641,22 +641,24 @@ class ZpConnector(DataConnector):
                 child_codes.append(child_code)
                 # C-1（sc8-baoguan-substitute-partial-kit）：替代料嵌套在主件行自己的
                 # m_bOMCompSubstituteDTO4CreateSv 子列表里，与主件行共享同一项次（sequence）。
-                # 替代料自身用量/损耗未经真实数据验证是否独立存在，design.md D2：有则优先用
-                # 自己的，没有则回退继承主件行的值；替代料不参与递归展开（不加入 child_codes）。
+                # 真实数据验证（2026-07-15，生产 BOM/Query 只读实测，7 母件/20 组替代料，
+                # 100% 一致）：替代料 DTO 自带 m_usageQty，但恒为 1.0，与主件行真实用量
+                # （样本中出现 1/2/3/4/9/10/16 等值）无关——是 ERP 侧的占位值，不是真实替代
+                # 用量语义。因此**恒继承主件行的 qty_per_unit/loss_rate，忽略替代料自身
+                # m_usageQty/m_scrap**（不采用"有则优先用自己的"）。替代料不参与递归展开
+                # （不加入 child_codes）。
                 for sub in comp.get("m_bOMCompSubstituteDTO4CreateSv") or []:
                     sub_master = sub.get("m_itemMaster") or {}
                     sub_code   = str(sub_master.get("m_code") or "")
                     if not sub_code:
                         continue
-                    sub_qty   = sub.get("m_usageQty")
-                    sub_scrap = sub.get("m_scrap")
                     new_rows.append(BomRow(
                         product_id=    code,
                         component_id=  sub_code,
                         component_name=str(sub_master.get("m_name") or ""),
                         level=         depth,
-                        qty_per_unit=  float(sub_qty) if sub_qty is not None else qty_per_unit,
-                        loss_rate=     float(sub_scrap) if sub_scrap is not None else loss_rate,
+                        qty_per_unit=  qty_per_unit,
+                        loss_rate=     loss_rate,
                         unit=          unit,
                         sequence=      sequence,
                         is_substitute= True,
