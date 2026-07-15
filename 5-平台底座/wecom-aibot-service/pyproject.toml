@@ -1,0 +1,30 @@
+[project]
+name = "wecom-aibot-service"
+version = "0.1.0"
+description = "企微智能机器人双向通道服务（v1）— 跟进信推送 + 专员反馈自动归档（R6）"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装（含 [aibot] extra，装官方长连接 SDK）：
+#   pip install -e ../zhuopin_platform[aibot]
+#   pip install -e .
+# 之后 from zhuopin_platform... / from aibot_service... import
+#
+# 门禁①结构性保证（design.md D8）：本清单刻意不包含
+# zhuopin_platform 的 erp_connector / srm_connector 可选依赖——
+# intake.py 不得触达任何 ERP/SRM/CRM 系统，缺依赖即 pip install 失败，
+# 形成结构性拦截而非仅靠 code review 自觉。
+dependencies = [
+    "zhuopin_platform[aibot]",
+    "pyyaml>=6.0",   # department_mapping.yaml 加载
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["aibot_service*"]

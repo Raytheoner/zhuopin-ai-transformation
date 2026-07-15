@@ -1,0 +1,157 @@
+"""服务级连接管理：凭据加载 + AibotConnector 构造 + 生命周期事件审计 +
+inbound 消息分发给 intake.py（design.md D2/D3/D5/D6）。
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Callable, Optional
+
+from zhuopin_platform.audit import AuditEvent, AuditLogger
+from zhuopin_platform.shared_tools.notifiers.wecom_aibot import (
+    AibotClientLike,
+    AibotConnector,
+    default_client_factory,
+)
+from zhuopin_platform.shared_tools.secrets import SecretsProvider
+
+from .department_mapping import load_department_mapping
+from .forwarding import forward_inbound_to_paul
+from .frame_parsing import parse_inbound_frame
+from .intake import archive_inbound_message
+
+BOTID_KEY = "WECOM_AIBOT_BOTID"
+SECRET_KEY = "WECOM_AIBOT_SECRET"
+
+# design.md D2/D3：应用层重连预算保守封顶，快速交给部署层（计划任务）兜底。
+DEFAULT_MAX_RECONNECT_ATTEMPTS = 6
+DEFAULT_RECONNECT_BASE_DELAY_MS = 2000
+DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000
+
+
+def _audit_lifecycle(audit: AuditLogger, evaluator: str, action: str, **decision) -> None:
+    audit.record(
+        AuditEvent(
+            scenario="wecom-aibot",
+            action=action,
+            evaluator=evaluator,
+            automation_level="L1",
+            decision=decision,
+            data_sources={},
+        )
+    )
+
+
+def build_connector(
+    *,
+    secrets: SecretsProvider,
+    audit: AuditLogger,
+    external_docs_root: Path,
+    queue_path: Path,
+    evaluator: str = "system",
+    mapping_path: Optional[Path] = None,
+    max_reconnect_attempts: int = DEFAULT_MAX_RECONNECT_ATTEMPTS,
+    reconnect_base_delay_ms: int = DEFAULT_RECONNECT_BASE_DELAY_MS,
+    heartbeat_interval_ms: int = DEFAULT_HEARTBEAT_INTERVAL_MS,
+    client_factory: Callable[..., AibotClientLike] = default_client_factory,
+) -> AibotConnector:
+    """构造已接好审计 + 归档分发的 `AibotConnector`；不建立实际连接（调用方
+    另行 `await connector.connect()`）。凭据缺失时 `SecretsProvider` 抛
+    `KeyError`，不静默用空值启动（spec `wecom-aibot-connector` 要求）。
+    """
+    bot_id = secrets.get(BOTID_KEY)
+    secret = secrets.get(SECRET_KEY)
+    mapping = load_department_mapping(mapping_path)
+
+    connector_holder: dict[str, AibotConnector] = {}
+
+    def on_connected() -> None:
+        _audit_lifecycle(audit, evaluator, "connection_established")
+
+    def on_authenticated() -> None:
+        _audit_lifecycle(audit, evaluator, "authenticated")
+
+    def on_disconnected(reason: str) -> None:
+        _audit_lifecycle(audit, evaluator, "disconnected", reason=reason)
+
+    def on_reconnecting(attempt: int) -> None:
+        _audit_lifecycle(audit, evaluator, "reconnecting", attempt=attempt)
+
+    def on_error(err: Exception) -> None:
+        audit.record(
+            AuditEvent(
+                scenario="wecom-aibot",
+                action="connection_error",
+                evaluator=evaluator,
+                automation_level="L1",
+                decision={},
+                data_sources={},
+                error=str(err),
+            )
+        )
+
+    async def on_message(frame: dict) -> None:
+        """门禁①结构性保证的唯一 inbound 入口：只转给 archive_inbound_message
+        （归档/登记/队列）+ forward_inbound_to_paul（全量转发通知，Paul
+        2026-07-13 拍板新增），不做任何语义解析/业务分支（design.md D8）。
+        两条路径各自 try/except，互不影响——归档失败不影响转发，反之亦然。"""
+        message = parse_inbound_frame(frame)
+        try:
+            await archive_inbound_message(
+                message=message,
+                connector=connector_holder.get("connector"),
+                external_docs_root=external_docs_root,
+                queue_path=queue_path,
+                department_mapping=mapping,
+                audit=audit,
+                evaluator=evaluator,
+            )
+        except Exception as exc:  # noqa: BLE001 —— 归档失败必须留痕，不得吞掉
+            audit.record(
+                AuditEvent(
+                    scenario="wecom-aibot",
+                    action="message_dispatch_failed",
+                    evaluator=evaluator,
+                    automation_level="L1",
+                    decision={"msgtype": message.msgtype, "sender": message.sender},
+                    data_sources={},
+                    error=str(exc),
+                )
+            )
+
+        try:
+            await forward_inbound_to_paul(
+                frame=frame,
+                message=message,
+                connector=connector_holder["connector"],
+                audit=audit,
+                evaluator=evaluator,
+            )
+        except Exception as exc:  # noqa: BLE001 —— 转发失败必须留痕，不得吞掉
+            audit.record(
+                AuditEvent(
+                    scenario="wecom-aibot",
+                    action="forward_dispatch_failed",
+                    evaluator=evaluator,
+                    automation_level="L1",
+                    decision={"msgtype": message.msgtype, "sender": message.sender},
+                    data_sources={},
+                    error=str(exc),
+                )
+            )
+
+    connector = AibotConnector(
+        bot_id,
+        secret,
+        client_factory=client_factory,
+        max_reconnect_attempts=max_reconnect_attempts,
+        heartbeat_interval_ms=heartbeat_interval_ms,
+        reconnect_base_delay_ms=reconnect_base_delay_ms,
+        on_connected=on_connected,
+        on_authenticated=on_authenticated,
+        on_disconnected=on_disconnected,
+        on_reconnecting=on_reconnecting,
+        on_error=on_error,
+        on_message=on_message,
+    )
+    connector_holder["connector"] = connector
+    return connector
