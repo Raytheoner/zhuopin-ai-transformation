@@ -292,6 +292,85 @@ def test_on_message_group_notify_failure_is_audited_not_raised(tmp_path, monkeyp
     assert "archived" in actions
 
 
+def test_on_message_rejects_non_whitelisted_sender_with_polite_reply(tmp_path):
+    """Paul 2026-07-16 口头需求（队列 #35）：白名单外发送人只收礼貌回复，
+    不落档/不转发/不占用队列行/不发群通报。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+    )
+    client = store["client"]
+
+    frame = {
+        "body": {
+            "msgtype": "text",
+            "from": {"userid": "random_colleague"},
+            "text": {"content": "问一下别的项目的事"},
+        }
+    }
+    asyncio.run(client.handlers["message"][0](frame))
+
+    # 没有任何归档产物
+    assert not (tmp_path / "7-外部文档").exists() or not any(
+        (tmp_path / "7-外部文档").rglob("*.md")
+    )
+    # 队列没被追加
+    assert (tmp_path / "queue.md").read_text(encoding="utf-8") == QUEUE_TEXT
+    # 没有转发给 Paul、没有正常发送
+    assert not any(m[0] == PAUL_USERID for m in client.sent_messages)
+    # 唯一一条发出的消息是回给发送人本人的礼貌回复
+    assert len(client.sent_messages) == 1
+    assert client.sent_messages[0][0] == "random_colleague"
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert actions == ["whitelist_rejected"]
+    assert "archived" not in actions
+    assert "inbound_forwarded_to_paul" not in actions
+    assert "group_notified" not in actions
+
+
+def test_on_message_allows_new_whitelist_member_not_in_department_mapping(tmp_path):
+    """陈承（userid=2023458，IT）在白名单里但不在 department_mapping.yaml
+    （现有四部门口径不含 IT）——沿用现有 fail-closed 逻辑落"待分拣"，
+    不做特殊化（Paul 确认三路径按现有逻辑不变）。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+    )
+    client = store["client"]
+
+    frame = {
+        "body": {
+            "msgtype": "text",
+            "from": {"userid": "2023458"},
+            "text": {"content": "IT 侧的回复"},
+        }
+    }
+    asyncio.run(client.handlers["message"][0](frame))
+
+    archived = list((tmp_path / "7-外部文档" / "待分拣").glob("*.md"))
+    assert len(archived) == 1
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "whitelist_rejected" not in actions
+    assert "archived" in actions
+    assert "inbound_forwarded_to_paul" in actions
+
+
 def test_on_message_dispatch_failure_is_audited_not_raised(tmp_path, monkeypatch):
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")

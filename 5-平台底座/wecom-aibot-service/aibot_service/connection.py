@@ -20,6 +20,7 @@ from .forwarding import forward_inbound_to_paul
 from .frame_parsing import parse_inbound_frame
 from .group_notify import notify_department_group
 from .intake import archive_inbound_message
+from .whitelist import is_whitelisted, NOT_ONBOARDED_REPLY
 
 BOTID_KEY = "WECOM_AIBOT_BOTID"
 SECRET_KEY = "WECOM_AIBOT_SECRET"
@@ -99,8 +100,44 @@ def build_connector(
         Paul 2026-07-12 拍板/2026-07-14 落地）+ forward_inbound_to_paul（全量
         转发通知，Paul 2026-07-13 拍板新增），不做任何语义解析/业务分支
         （design.md D8）。三条路径各自 try/except，互不影响——任一失败不影响
-        其余两条是否成功。"""
+        其余两条是否成功。
+
+        前置白名单分流（Paul 2026-07-16 口头需求，队列 #35）：发送人不在
+        `whitelist.WHITELISTED_SENDER_USERIDS` 里时，只回一条礼貌回复，
+        不进入以上三条路径——机器人尚未正式对外开放，避免同事发来的无关
+        消息被误当业务内容处理、污染队列与 Paul 私信。
+        """
         message = parse_inbound_frame(frame)
+
+        if not is_whitelisted(message.sender):
+            try:
+                await connector_holder["connector"].send_markdown(
+                    message.sender, NOT_ONBOARDED_REPLY
+                )
+            except Exception as exc:  # noqa: BLE001 —— 回复失败也要留痕，不影响拒绝已发生的事实
+                audit.record(
+                    AuditEvent(
+                        scenario="wecom-aibot",
+                        action="whitelist_reply_failed",
+                        evaluator=evaluator,
+                        automation_level="L1",
+                        decision={"sender": message.sender},
+                        data_sources={},
+                        error=str(exc),
+                    )
+                )
+            audit.record(
+                AuditEvent(
+                    scenario="wecom-aibot",
+                    action="whitelist_rejected",
+                    evaluator=evaluator,
+                    automation_level="L1",
+                    decision={"sender": message.sender, "msgtype": message.msgtype},
+                    data_sources={},
+                )
+            )
+            return
+
         archive_result = None
         try:
             archive_result = await archive_inbound_message(
