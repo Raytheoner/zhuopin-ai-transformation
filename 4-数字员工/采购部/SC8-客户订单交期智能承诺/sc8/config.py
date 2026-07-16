@@ -18,8 +18,11 @@ def data_source_mode() -> str:
 def srm_source_mode() -> str:
     """SRM 子开关：`SC8_SRM_SOURCE=mock|real`（默认 mock）。
 
-    本期固定 mock —— 携客云 OpenAPI 未开通（900401），SRM 承诺交期降级，
-    所有物料走无反馈启发式（低置信）。SRM 联调通过后才切 real。
+    2026-07-15 更新：携客云 OpenAPI 900401 阻塞已解除（真实只读实测确认
+    `get_receive_board`/`get_confirmed_dates` 均可用），SRM 联调已通过——
+    不再是"本期固定 mock"，real 模式在生产环境可用。默认值仍保持 mock，
+    与 `U9C_DATA_SOURCE`/`SC8_NET_INVENTORY` 同一惯例：默认关闭保证测试/
+    意外调用不触真实网络，生产使用需在部署环境显式设 `SC8_SRM_SOURCE=real`。
     """
     return "real" if os.environ.get("SC8_SRM_SOURCE", "mock").strip().lower() == "real" else "mock"
 

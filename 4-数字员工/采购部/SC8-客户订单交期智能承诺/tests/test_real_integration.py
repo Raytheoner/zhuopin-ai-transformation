@@ -1,8 +1,10 @@
-"""真实数据集成测试（任务 4.1，FO+BOM 真实）。
+"""真实数据集成测试（任务 4.1，FO+BOM 真实；2026-07-15 补充 SRM 真实）。
 
-默认跳过：仅当显式置 SC8_RUN_REAL=1 且凭据就位时运行（凭据从 supplychain/.env 注入）。
+默认跳过：仅当显式置 SC8_RUN_REAL=1 且凭据就位时运行（凭据从根 `.env` 注入）。
 CI / 普通 pytest 不触网；本地小样本真实验证时手动开启。
-SRM 本期降级 mock，不在此测真实 SRM（阻塞于携客云 OpenAPI 开通）。
+SRM：2026-07-15 起携客云 OpenAPI 900401 阻塞已解除，`get_receive_board`/
+`get_confirmed_dates` 均真实实测可用，本文件新增 `test_real_srm_schema` 覆盖；
+`SC8_SRM_SOURCE` 默认仍 mock（测试/意外调用安全网），生产用需显式置 real。
 """
 from __future__ import annotations
 
@@ -37,3 +39,21 @@ def test_real_bom_schema():
     for r in bom:
         assert r.product_id and r.component_id
         assert r.level == 1
+
+
+def test_real_srm_schema():
+    """真实 FO+BOM 料号查携客云 SRM 承诺交期（2026-07-15：900401 阻塞已解除）。
+
+    SRM 承诺记录随真实业务情况变化（不保证每次都非空），本测试只断言调用
+    本身成功（不抛错、不再被 900401 挡）且返回结构正确；非空时逐条校验字段。
+    """
+    from sc8.sources import load_real_bom, load_real_orders, load_srm_deliveries
+    orders = load_real_orders(limit=1)
+    assert orders
+    bom = load_real_bom([orders[0].item_code])
+    materials = {r.component_id for r in bom}
+    deliveries = load_srm_deliveries("real", materials=materials)
+    for d in deliveries:
+        assert d.material_id in materials
+        assert d.committed_date
+        assert d.status in ("confirmed", "planned")

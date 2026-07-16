@@ -5,8 +5,11 @@
 > 实施计划 §一采购表、`1-转型规划/0-全景路线图/session接力-Phase1收口.md`。
 > 本场景 = CC 建造车间产物；**不改规划文档**（那是 Cowork 的活）。
 >
-> ⛔ **不要碰 `sc8-real-data-cutover` 变更包**（openspec/changes/sc8-real-data-cutover/）——
-> 该变更包仍在进行中（等待 Paul 审核偏差数据），与本记忆文件独立。
+> ~~⛔ 不要碰 `sc8-real-data-cutover` 变更包~~ **已解除（2026-07-15）**：该变更包长期搁置未推进，
+> 有效成果（FO/BOM 真实、门禁真阻塞、审计留痕）已被后续变更包承接合入 master；Paul
+> 2026-07-15 拍板"已并入主线的保留、未实现且过时的关闭"，已归档
+> `archive/2026-07-15-sc8-real-data-cutover/`（委外真实路线识别、Vault 凭证管理降级为独立
+> backlog；SRM 真实切换未过时，接续工作见下方状态时间线）。
 
 ## 1. 场景定位
 
@@ -48,7 +51,7 @@
 
 > ⚠️ **最高级别红线**：
 
-- 🔴 **`CUSTOMER_OUTBOUND_ENABLED=False`（全程关闭）** — 对客外发闸门。此开关在 `.env`，**未经以下全部条件满足禁止设为 True**：① SRM 接通（携客云 SRM 凭据注入 + 900401 解决）；② L2 人工签字（采购经理 + VP 双签）；③ 通过《SC8 上线前置门禁》6 项检查表；④ `A2 submit_commitment` 首道入队 + `Notifier outbound_enabled` 总开关确认有效；⑤ **主要客户 SQE/采购已沟通知悉交付流程含 AI 环节**（Paul 主谈，Unknowns 登记册 U5，2026-07-05 批准新增）。
+- 🔴 **`CUSTOMER_OUTBOUND_ENABLED=False`（全程关闭）** — 对客外发闸门。此开关在 `.env`，**未经以下全部条件满足禁止设为 True**：① ~~SRM 接通（携客云 SRM 凭据注入 + 900401 解决）~~**已满足（2026-07-15）**——凭据已在 `.env`、900401 阻塞已解除，真实只读实测 `get_receive_board`/`get_confirmed_dates` 均可用（详见状态时间线）；② L2 人工签字（采购经理 + VP 双签）；③ 通过《SC8 上线前置门禁》6 项检查表；④ `A2 submit_commitment` 首道入队 + `Notifier outbound_enabled` 总开关确认有效；⑤ **主要客户 SQE/采购已沟通知悉交付流程含 AI 环节**（Paul 主谈，Unknowns 登记册 U5，2026-07-05 批准新增）。**②③④⑤ 仍未满足，对客外发闸门维持关闭不变**——①满足只是 SC8 内部预测可以用真实 SRM 数据，与"能否对客户外发"是两件事。
 - 🔴 **`submit_commitment` 首道一律入队**（requires_confirmation=True 写死，A2 修复），无低风险旁路。
 - 🔴 **`approve→send` 幂等**：同一 ID 只发一次（6.1/6.2 任务保障），禁止重复外发客户。
 - **L2 门禁 fail-closed**：缺 `requires_confirmation` 字段的请求被拦，不得自动透传。
@@ -75,11 +78,12 @@
 | 2026-07-15 | **A2 L/T 数据源 IT 评估已回复（Paul 转达，CC 登记）**：U9C `PurProcessLT`（标准提前期）IT 明确不可用于按实际交期运算场景，不建议采用；等价字段=SRM 核价单"承诺交期"，但**现状大量空缺、无可用 API**，IT 计划 07-15 起设供应商必填，覆盖率目标 **2027-03 ≥95%**。**结论：自动取数路线方向不变但近期不可行，A2 现状兜底（净需求>0即追）需长期维持约 8 个月**，不接 `PurProcessLT` 顶替（数据不可信风险 > 显式兜底）。不阻塞现有交付；建议 2027-Q1 前后再核实覆盖率决定是否正式接入。详见 `1-转型规划/IT评估请求-SC8采购提前期LT数据源-2026-07-14.md` IT 回复段。 |
 | 2026-07-15 | **C-1/C-2 apply 完成（`sc8-baoguan-substitute-partial-kit`，Paul 审 design 通过后）**：见"3. 复用底座资产"新增行。TDD 全程：`tests/test_bom_substitute_extraction.py`(7)+`tests/test_baoguan_substitute_merge.py`(8)+`tests/test_baoguan_partial_kit.py`(8)+`test_baoguan.py`新增3个，SC8 全量 188 passed+3 skip；平台193+1skip/SC1 53/SC7 41(黄金基准精确不漂移)/O2 20，零回归。**实现中顺带发现并修复一个交互 bug**：`estimate_material_arrivals`/`explode_bom` 不识别 `is_substitute`，替代料行若原样传入会被当"待答交组件"误查 SRM（幻影组件）——已在 `assess_supply_risk` 调用前过滤修复。**已知范围外风险（未处理，供后续任务参考）**：`sc8/pipeline.py`（SC8 交付承诺主流程，与 baoguan.py 保供看板是两条不同流水线）同样调用 `estimate_material_arrivals`，一旦真实 BOM 数据含替代料行会面临同样的幻影组件问题，design.md 明确本次不改 forecast.py/commitment.py，留给后续。**未做**：① tasks.md §1 真实数据字段验证（替代料 DTO 是否自带独立用量/损耗未经验证，本沙箱无 LAN 访问 U9C）；② 姚祖怡真实数据抽验（15母件/56组替代料样本+部分齐套场景）；③ `kittable_shortfall` 口径（凑够下一整套所需缺口）未经专员确认。均登记为独立后续任务，不阻塞代码合入（mock/脱敏先行，符合项目红线）。openspec 已归档 `archive/2026-07-15-sc8-baoguan-substitute-partial-kit/`。 |
 | 2026-07-15 | **①真实数据字段验证已补做，发现并修正一处真实错误**（Paul 回公司确认在 LAN 后，CC 用有凭证的环境对 7 母件/20 组替代料做只读实测）：替代料 DTO 确实自带独立 `m_usageQty`，但**恒为 1.0，与主件行真实用量（1/2/3/4/9/10/16 等值）无关，是 ERP 占位值**——design.md D2 原假设"替代料自带用量则优先用自己的"被证伪；已修正 `get_bom_for_products`（`5-平台底座/zhuopin_platform/.../erp_connector/connector.py`）：替代料恒继承主件行 `qty_per_unit`/`loss_rate`，不再采信替代料自身 `m_usageQty`/`m_scrap`。修复前的实现在主件行真实用量>1 的场景会严重低估替代料应有的展开需求量，进而可能得出"现货够、判齐"的错误结论——**是一个会导致真实误判的 bug，未上线前发现修复**。同步更新 `tests/test_bom_substitute_extraction.py`（1 个测试断言方向反转）+ `openspec/specs/platform-data-connectors/spec.md`（新增 Scenario）+ 归档 design.md（补充段记录验证过程与结论）。全量回归零漂移（平台193+1skip/SC8 188+3skip/O2 20/SC7 41黄金基准精确不漂移/SC1 53）。②③ 仍需姚祖怡本人参与判断，未做——20 组真实替代料样本已可直接作她的抽验素材，登记跨桌任务队列 `#33`。 |
-| **当前** | **SC8 保供看板 LAN 可用（内部），`SC8_NET_INVENTORY=on` 已生效**（净额现货抵扣，见 2026-07-14 行，姚祖怡已抽验确认线上数据正确）；对客外发全程关闭；`sc8-real-data-cutover` 变更包待 Paul 审核偏差数据后继续。待办 #10：加登录/Token 鉴权再开外网（真实客户名红线）；🟡 待办：`sync-to-server.ps1` 重启可靠性修复代码已完成（2026-07-15），真实部署验证待下次 LAN 环境 session 确认；🟢 `#24` 完整系统性 LAN 真实回归报告已按等效验收销行（2026-07-15，不再单独出具）；**✅ C-1/C-2（替代料等价合并+部分齐套）已 apply+归档+真实字段验证+bug修正（2026-07-15）**，替代料展开用量取值错误已发现修复（详见状态时间线），全量测试零回归；🟡 待办：姚祖怡真实数据抽验+`kittable_shortfall`口径确认（`sc8-baoguan-substitute-partial-kit` 归档说明，跨桌任务队列 `#33`）；🟡 待办：A2 L/T 数据源（跨桌任务队列 #19）IT 已回复现状大量空缺、预计 2027-03 才达 95% 覆盖率，兜底口径长期维持，非阻塞、建议 2027-Q1 前后再核实。 |
+| 2026-07-15 | **SRM 900401 阻塞解除 + `sc8-real-data-cutover` 归档**：真实只读实测确认携客云 `get_receive_board`（488 条真实记录）+ `get_confirmed_dates`（`/purchase/answer` 权威源，真实拿到确认交期）均可用，此前长期记录的"SRM 降级 mock（900401未开通）"已过时，已清理 `config.py::srm_source_mode`/`sc8/run.py`/`tests/test_real_integration.py` 里的过时说法，新增 `test_real_srm_schema` 真实集成测试（`SC8_RUN_REAL=1` 门禁）并跑通；`SC8_SRM_SOURCE` 默认仍保持 mock（测试/意外调用安全网，与 `U9C_DATA_SOURCE`/`SC8_NET_INVENTORY` 同惯例），生产使用需部署环境显式设 `real`。Paul 拍板"已并入主线的功能保留、未实现且过时的关闭"——`openspec/changes/sc8-real-data-cutover/`（6月建立、长期搁置、FO/BOM真实等有效成果已被后续变更包承接合入master）已归档 `archive/2026-07-15-sc8-real-data-cutover/`，委外真实路线识别（`is_outsourced_by_routing`）与凭证 Vault 化降级为独立 backlog（未做，非阻塞，现状维护清单兜底运行良好）。全量端到端 `run_small_sample`（FO+BOM+库存+SRM 全真实）烟测因 SRM `/purchase/answer` 30s/请求限流在单张真实订单的完整 BOM 上耗时过长（>15分钟未完成，非代码 bug，是真实限流叠加），已终止——**判定不必等它跑完**：真实数据管线的正确性已由更细粒度的 `test_real_fo_orders_schema`/`test_real_bom_schema`/`test_real_srm_schema` 三个独立真实测试分别验证通过，足以确认端到端真实数据链路可用。SC8 全量 188 passed+4 skip（新增 1 个真实测试 skip），平台/SC1/SC7/O2 零回归。 |
+| **当前** | **SC8 保供看板 LAN 可用（内部），`SC8_NET_INVENTORY=on` 已生效**（净额现货抵扣，见 2026-07-14 行，姚祖怡已抽验确认线上数据正确）；对客外发全程关闭；`sc8-real-data-cutover` 变更包已归档（2026-07-15，见上）。**采购域最小端到端真实数据 MVP 现状**：FO✅真实/BOM✅真实/库存✅真实/**SRM✅真实可用**（默认仍 mock，生产显式 opt-in）/C-1·C-2✅真实验证过（bug已修）/SMT工时仍mock（无连接器，独立缺口）/对客外发🔴仍关闭（非MVP范畴，5项前置条件仅SRM一项满足）。待办 #10：加登录/Token 鉴权再开外网（真实客户名红线）；🟡 待办：`sync-to-server.ps1` 重启可靠性修复代码已完成（2026-07-15），真实部署验证待 Paul 明确"发布"指令再启动（`192.168.100.51` 确认在线，非阻塞）；🟢 `#24` 完整系统性 LAN 真实回归报告已按等效验收销行；🟡 待办：姚祖怡真实数据抽验+`kittable_shortfall`口径确认（`sc8-baoguan-substitute-partial-kit` 归档说明，跨桌任务队列 `#33`，跟进信已发待回复）；🟡 待办：A2 L/T 数据源（跨桌任务队列 #19）IT 已回复现状大量空缺、预计 2027-03 才达 95% 覆盖率，兜底口径长期维持，非阻塞。 |
 
 ## 6. 关键依赖/前置（解锁条件）
 
-- 🔴 SRM 凭据注入本仓库 `.env`（解 900401）— 真实携客云承诺取数前置，阻断 SC8 对客上线。
+- ~~🔴 SRM 凭据注入本仓库 `.env`（解 900401）~~ **✅ 已解锁（2026-07-15）**— 凭据已在 `.env`（`XKY_*`），900401 阻塞已解除，真实数据可用；`SC8_SRM_SOURCE` 默认仍 mock（测试安全网），生产用需显式置 `real`。SRM 接通只是对客上线 5 项前置条件之一，其余 4 项（L2 双签/6 项门禁/首道入队确认/客户 SQE 沟通）仍未满足，对客外发仍关闭。
 - 🔴 L2 双签（采购经理 + VP Paul）— 对客外发前置。
 - 🔴 SC8 上线前置门禁 6 项检查表全过 — CUSTOMER_OUTBOUND_ENABLED 设 True 的前置。
 - 🟡 Web 服务加 Token 鉴权（待办 #10）— 开外网前必须；LAN 内部使用暂不阻断。
