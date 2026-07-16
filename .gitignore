@@ -39,3 +39,6 @@ desktop.ini
 # IDE
 .idea/
 *.swp
+
+# 本机专属脚本（写死个人路径，仅供本机 Windows 任务计划调用，不同环境不通用）
+start-aibot-service-dev.ps1
