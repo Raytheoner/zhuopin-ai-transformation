@@ -39,7 +39,7 @@ def run_small_sample(
     Returns: 汇总 dict（订单数/预测数/入队数/各预测要点），供人工核对。
     """
     mode = config.data_source_mode()          # 期望 real（由环境 SC8_DATA_SOURCE 控制）
-    srm_mode = config.srm_source_mode()        # 默认 mock，生产显式 SC8_SRM_SOURCE=real 切换（2026-07-15 起 900401 已解除，real 可用）
+    srm_mode = config.srm_source_mode()        # 默认 real（2026-07-15 起，900401 已解除，与同函数里 FO/BOM 的无条件真实保持一致）；可显式 SC8_SRM_SOURCE=mock 临时脱敏
     data_dir = Path(data_dir)
 
     # 1. 真实订单（FO API）小样本

@@ -19,8 +19,14 @@ def test_data_source_mode_real(monkeypatch):
     assert config.data_source_mode() == "real"
 
 
-def test_srm_source_mode_defaults_mock(monkeypatch):
+def test_srm_source_mode_defaults_real(monkeypatch):
+    """2026-07-15：900401 阻塞解除后默认改 real（唯一消费方 run.py 里 FO/BOM 已无条件真实）。"""
     monkeypatch.delenv("SC8_SRM_SOURCE", raising=False)
+    assert config.srm_source_mode() == "real"
+
+
+def test_srm_source_mode_explicit_mock_override(monkeypatch):
+    monkeypatch.setenv("SC8_SRM_SOURCE", "mock")
     assert config.srm_source_mode() == "mock"
 
 
