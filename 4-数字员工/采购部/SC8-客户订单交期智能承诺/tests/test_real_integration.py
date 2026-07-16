@@ -4,7 +4,8 @@
 CI / 普通 pytest 不触网；本地小样本真实验证时手动开启。
 SRM：2026-07-15 起携客云 OpenAPI 900401 阻塞已解除，`get_receive_board`/
 `get_confirmed_dates` 均真实实测可用，本文件新增 `test_real_srm_schema` 覆盖；
-`SC8_SRM_SOURCE` 默认仍 mock（测试/意外调用安全网），生产用需显式置 real。
+`SC8_SRM_SOURCE` 默认已改 real（唯一消费方 `sc8/run.py` 里 FO/BOM 本就无条件
+真实，SRM 继续默认 mock 只会制造不一致）；仍可显式置 `mock` 临时脱敏验证。
 """
 from __future__ import annotations
 

@@ -16,15 +16,22 @@ def data_source_mode() -> str:
 
 
 def srm_source_mode() -> str:
-    """SRM 子开关：`SC8_SRM_SOURCE=mock|real`（默认 mock）。
+    """SRM 子开关：`SC8_SRM_SOURCE=mock|real`（默认 real）。
 
     2026-07-15 更新：携客云 OpenAPI 900401 阻塞已解除（真实只读实测确认
-    `get_receive_board`/`get_confirmed_dates` 均可用），SRM 联调已通过——
-    不再是"本期固定 mock"，real 模式在生产环境可用。默认值仍保持 mock，
-    与 `U9C_DATA_SOURCE`/`SC8_NET_INVENTORY` 同一惯例：默认关闭保证测试/
-    意外调用不触真实网络，生产使用需在部署环境显式设 `SC8_SRM_SOURCE=real`。
+    `get_receive_board`/`get_confirmed_dates` 均可用），SRM 联调已通过。
+
+    默认改为 real（而非沿用 `U9C_DATA_SOURCE`/`SC8_NET_INVENTORY` 的"默认关"
+    惯例）——原因：本开关**唯一消费方**是 `sc8/run.py` 这个小样本真实验证
+    runner，该 runner 里 FO/BOM 早就无条件真实（不受任何开关控制），SRM 此前
+    单独挂 mock 默认纯粹是给 900401 阻塞期打的技术补丁，不是业务判断类开关
+    （不同于 `SC8_NET_INVENTORY` 那种需要专员签字复核的口径变更）；阻塞已
+    解除，继续默认 mock 反而制造"同一工具里 FO/BOM 真实、SRM 却假"的不一致。
+    无任何测试依赖本函数默认值触发真实网络调用（唯一消费方 `run.py` 不被
+    任何测试导入调用），改默认值零回归风险。仍保留显式 `mock` 覆盖，供
+    临时脱敏验证或凭据不可用场景使用。
     """
-    return "real" if os.environ.get("SC8_SRM_SOURCE", "mock").strip().lower() == "real" else "mock"
+    return "mock" if os.environ.get("SC8_SRM_SOURCE", "real").strip().lower() == "mock" else "real"
 
 
 def net_inventory_enabled() -> bool:
