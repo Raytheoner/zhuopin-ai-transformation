@@ -105,6 +105,7 @@
 - [x] 10.8 单测更新：`conftest.py`/`test_result_classify.py` cfg 夹具更新；`test_match_engine.py` 新增 8 个用例（R1 数量精确匹配/税额随税率×2/未税比例备用×2/料品编码归一化×2）；新增 `test_item_normalize.py`（7 个纯函数用例）；`test_recon_report.py` 新增 4 个 R5 门禁用例；`test_golden.py` 按真值更新 AP-1010 预期（金额微差→L2 自行消化）；`test_price_check.py` 注释更新为真值 ±2%；全量 61 tests 绿，`python -m fi2.run` 手工验证通过
 - [x] 10.9 openspec design.md 补充 D14（R1/R5/R7 真值 + R5 门禁范围收紧解读 + 料品归一化 + R7 外币过渡规则/方案一未实现说明 + Open Questions）；本 tasks.md 补第 10 节；specs delta 补 R5 门禁/税额动态容差/归一化 Requirement（见 `specs/fi2-recon-report`、`specs/fi2-match-engine`、`specs/fi2-price-check`）
 - [x] 10.10 场景 `CLAUDE.md` 更新状态段
-- [ ] 10.11 唐燕萍团队批改：R5 门禁范围（是否扩大到"明细错位"）、R5 分母颗粒度（AP 引用的 PO 行集合 vs 整张 PO 单）——见 design D14 Open Questions
-- [ ] 10.12 future-work（前置数据未就绪，暂不实现）：R7 外币供应商清单 + "容差内连续 2 次同向偏移推人工抽查"跨运行历史状态机制；R7 方案一（原始外币单价 + 下单日汇率字段）——IT 评估完成后另行提交变更包
+- [x] 10.11a R5 门禁范围是否扩大到"明细错位"——**Paul 2026-07-16 已拍板：不扩大**，D14-b 收紧解读为最终口径，代码无需改动
+- [ ] 10.11b 唐燕萍团队批改：R5 分母颗粒度（AP 引用的 PO 行集合 vs 整张 PO 单）——见 design D14 Open Questions，仍待确认
+- [x] 10.12 future-work（前置数据未就绪，暂不实现）：R7 外币供应商清单 + "容差内连续 2 次同向偏移推人工抽查"跨运行历史状态机制；R7 方案一（原始外币单价 + 下单日汇率字段）——**Paul 2026-07-16 已确认明确推迟，先上最小 MVP**（当前实现：外币供应商行按人民币同一 ±2% 处理，不触发增量抽查），IT 评估完成 + 唐燕萍团队提供外币供应商清单后另行提交变更包
 - [ ] 10.13 真实数据验证仍按 8 月底排期不变（规则提前定稿不等于提前上线，见规则定稿交接文件 §三纪律）

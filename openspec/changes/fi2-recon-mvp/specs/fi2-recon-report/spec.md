@@ -2,7 +2,7 @@
 
 > **v3 口径修正（2026-07-09，design D11/D12）**：聚合单元从"PO 行"改"料品"（ap_no+item_code）；"无 GR 支撑"改名"无发票支撑"；新增 AP-PO 单价校验（价格超差）与五类判定的合并路由规则。
 >
-> **R5 门禁新增（2026-07-10，design D14）**：新增"整单差异总额分级 L2/L3"门禁，仅对"金额微差"类生效（范围收紧解读，见 design D14-b Open Questions，待唐燕萍团队批改）；报告状态由二态（`needs_review`/`l3_suggested_pass`）扩为三态，新增 `l2_self_resolved`。
+> **R5 门禁新增（2026-07-10，design D14；范围 2026-07-16 Paul 拍板确认）**：新增"整单差异总额分级 L2/L3"门禁，仅对"金额微差"类生效（Paul 已确认不扩大到"明细错位"，为最终口径，见 design D14-b）；报告状态由二态（`needs_review`/`l3_suggested_pass`）扩为三态，新增 `l2_self_resolved`。
 
 ### Requirement: 报告聚合与 L3 门禁
 
