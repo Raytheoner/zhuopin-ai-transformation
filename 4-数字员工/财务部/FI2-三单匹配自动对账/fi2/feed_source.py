@@ -1,6 +1,8 @@
-"""数据接入层（design D1/D6，spec: fi2-feed-source）—— 三单四表统一接口：mock / csv 应急桥接 / u9c 直读。
+"""数据接入层（design D1/D6/D10/D11，spec: fi2-feed-source）—— 三单四表统一接口：mock / csv 应急桥接 / u9c 直读。
 
-四表按 (po_no, line_no) 关联 PO↔GRN↔Invoice、按 inv_no 关联 Invoice↔Payment。
+v3 口径修正（2026-07-09）：核对对象改 AP 单 vs INV，PO/GR 保留加载（PO 作 AP-PO 单价前置
+参照，GR 本次匹配数学暂不消费，供未来 FI2-1 完整性校验用）。发票挂载 `ap_no`（U9C 应付单
+附件语义），按 `ap_no` 关联 AP↔Invoice；`(po_no, line_no)` 仍用于 AP↔PO 单价前置参照关联。
 切源不改匹配引擎/分类逻辑：
   · mock：贴口径备稿字段的夹具（单测/回归）。
   · csv ：应急桥接（同字段约定，接口先搭，真实路径待 9 月数据闸接通）。
@@ -17,7 +19,7 @@ from pydantic import BaseModel, field_validator
 from zhuopin_platform.shared_tools.connector_errors import RealEndpointNotReadyError
 
 from . import config as _config
-from .models import GRNLine, InvoiceLine, POLine, PaymentRecord
+from .models import APLine, GRNLine, InvoiceLine, POLine, PaymentRecord
 
 
 def _read_csv(path: Path | str) -> list[dict]:
@@ -76,25 +78,54 @@ class _GRNRow(BaseModel):
         return float(v)
 
 
-class _InvoiceRow(BaseModel):
-    inv_no: str
+class _APLineRow(BaseModel):
+    """应付单明细行边界校验（v3 新增）。"""
+    ap_no: str
     po_no: str
     line_no: str
     item_code: str
-    inv_qty: float
-    inv_unit_price: float
-    inv_amount: float
-    tax_rate: float
-    inv_date: _Opt[str] = ""
+    qty: float
+    unit_price: float
+    untaxed_amount: float
+    tax_amount: float
+    ap_date: _Opt[str] = ""
 
-    @field_validator("inv_no", "po_no", "line_no", "item_code", mode="before")
+    @field_validator("ap_no", "po_no", "line_no", "item_code", mode="before")
     @classmethod
     def _require(cls, v):
         if v is None or str(v).strip() == "":
             raise ValueError("必填字段不能为空")
         return str(v).strip()
 
-    @field_validator("inv_qty", "inv_unit_price", "inv_amount", "tax_rate", mode="before")
+    @field_validator("qty", "unit_price", "untaxed_amount", "tax_amount", mode="before")
+    @classmethod
+    def _coerce(cls, v):
+        if v is None or str(v).strip() == "":
+            raise ValueError("数值字段不能为空")
+        return float(v)
+
+
+class _InvoiceRow(BaseModel):
+    """发票明细行边界校验（v3 修正4 字段：挂载 ap_no，字段贴 INV 票面）。"""
+    inv_no: str
+    ap_no: str
+    item_code: str
+    unit: _Opt[str] = ""
+    unit_price: float
+    inv_qty: float
+    untaxed_amount: float
+    tax_rate: float
+    tax_amount: float
+    inv_date: _Opt[str] = ""
+
+    @field_validator("inv_no", "ap_no", "item_code", mode="before")
+    @classmethod
+    def _require(cls, v):
+        if v is None or str(v).strip() == "":
+            raise ValueError("必填字段不能为空")
+        return str(v).strip()
+
+    @field_validator("unit_price", "inv_qty", "untaxed_amount", "tax_rate", "tax_amount", mode="before")
     @classmethod
     def _coerce(cls, v):
         if v is None or str(v).strip() == "":
@@ -146,6 +177,19 @@ def parse_grn(rows: list[dict]) -> list[GRNLine]:
     return out
 
 
+def parse_ap_lines(rows: list[dict]) -> list[APLine]:
+    """解析应付单明细行（v3 新增，design D10）。"""
+    out: list[APLine] = []
+    for raw in rows:
+        try:
+            r = _APLineRow.model_validate(raw)
+        except Exception as e:
+            raise ValueError(f"FI2 应付单明细行校验失败: {e}") from None
+        out.append(APLine(r.ap_no, r.po_no, r.line_no, r.item_code, r.qty, r.unit_price,
+                           r.untaxed_amount, r.tax_amount, r.ap_date or ""))
+    return out
+
+
 def parse_invoice(rows: list[dict]) -> list[InvoiceLine]:
     out: list[InvoiceLine] = []
     for raw in rows:
@@ -153,8 +197,8 @@ def parse_invoice(rows: list[dict]) -> list[InvoiceLine]:
             r = _InvoiceRow.model_validate(raw)
         except Exception as e:
             raise ValueError(f"FI2 发票行校验失败: {e}") from None
-        out.append(InvoiceLine(r.inv_no, r.po_no, r.line_no, r.item_code, r.inv_qty,
-                                r.inv_unit_price, r.inv_amount, r.tax_rate, r.inv_date or ""))
+        out.append(InvoiceLine(r.inv_no, r.ap_no, r.item_code, r.unit or "", r.unit_price,
+                                r.inv_qty, r.untaxed_amount, r.tax_rate, r.tax_amount, r.inv_date or ""))
     return out
 
 
@@ -170,26 +214,28 @@ def parse_payment(rows: list[dict]) -> list[PaymentRecord]:
 
 
 def partition_invoices(
-    po_lines: list[POLine], invoice_rows: list[InvoiceLine]
+    ap_lines: list[APLine], invoice_rows: list[InvoiceLine]
 ) -> tuple[list[InvoiceLine], list[InvoiceLine]]:
-    """按 (po_no, line_no) 是否存在对应 PO 行，切分发票为 (可匹配, 孤立) 两组。
+    """按 `ap_no` 是否存在对应 AP 单，切分发票为 (可匹配, 孤立) 两组（v3：锚点从 PO 行改 AP 单号）。
 
-    孤立发票（找不到 PO 行）不得进入四维比对当正常匹配对象——由调用方另行标记待处理。
+    孤立发票（挂载的 ap_no 在 AP 明细行里完全找不到，数据完整性异常——正常流程下发票是
+    配票生成的 AP 单附件，理论不应出现）不得进入料品汇总归集当作正常匹配对象——由调用方
+    另行标记待处理。
     """
-    po_keys = {(p.po_no, p.line_no) for p in po_lines}
+    ap_nos = {a.ap_no for a in ap_lines}
     linked: list[InvoiceLine] = []
     orphaned: list[InvoiceLine] = []
     for inv in invoice_rows:
-        (linked if (inv.po_no, inv.line_no) in po_keys else orphaned).append(inv)
+        (linked if inv.ap_no in ap_nos else orphaned).append(inv)
     return linked, orphaned
 
 
 class FeedSource:
-    """三单四表统一加载器。
+    """三单四表统一加载器（v3：PO/GR/AP/Invoice/Payment）。
 
     Args:
         data_source: "mock" | "csv" | "u9c"（None → config.DATA_SOURCE_DEFAULT）。
-        mock_dir:    mock 夹具目录（含 po_lines.csv/grn.csv/invoice.csv/payment.csv）。
+        mock_dir:    mock 夹具目录（含 po_lines.csv/grn.csv/ap_lines.csv/invoice.csv/payment.csv）。
         csv_dir:     应急桥接目录（同字段约定，真实路径待接通）。
         audit:       ConnectorAudit（连接器访问留痕，占位）。
     """
@@ -218,6 +264,11 @@ class FeedSource:
         if self.data_source == "u9c":
             raise RealEndpointNotReadyError("load_grn", self.cfg.U9C_FI_NOT_READY)
         return parse_grn(_read_csv(self._dir() / "grn.csv"))
+
+    def load_ap_lines(self) -> list[APLine]:
+        if self.data_source == "u9c":
+            raise RealEndpointNotReadyError("load_ap_lines", self.cfg.U9C_FI_NOT_READY)
+        return parse_ap_lines(_read_csv(self._dir() / "ap_lines.csv"))
 
     def load_invoice(self) -> list[InvoiceLine]:
         if self.data_source == "u9c":
