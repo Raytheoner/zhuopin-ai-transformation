@@ -1,15 +1,17 @@
 ## ADDED Requirements
 
-### Requirement: 三单四表统一接入
+> **v3 口径修正（2026-07-09，design D10/D11）**：核对对象改 AP 单 vs INV，新增 `ap_lines`（应付单明细行）表；发票改挂载 `ap_no`（U9C 应付单附件语义，不再挂 `(po_no, line_no)`）；`po_lines`/`grn` 保留加载（PO 作 AP-PO 单价前置参照，GR 本次匹配数学暂不消费）。
 
-系统 SHALL 提供统一加载接口，分别加载 `po_lines`（PO 明细行）/ `grn`（入库单）/ `invoice`（发票）/ `payment`（付款凭证）四表，并按 `(po_no, line_no)` 关联 PO↔GRN↔Invoice、按 `inv_no` 关联 Invoice↔Payment。加载 MUST 不依赖具体数据源实现（mock/csv/u9c 对上层调用方透明）。
+### Requirement: 三单五表统一接入
 
-#### Scenario: 四表按锚点关联
-- **WHEN** 传入 PO 明细行 + GRN + Invoice + Payment 四张表
-- **THEN** 系统 SHALL 能沿 `(po_no, line_no)` 找出同一 PO 行对应的 GRN 行与 Invoice 行，并沿 `inv_no` 找出该 Invoice 对应的 Payment 记录
+系统 SHALL 提供统一加载接口，分别加载 `po_lines`（PO 明细行）/ `grn`（入库单）/ `ap_lines`（应付单明细行）/ `invoice`（发票）/ `payment`（付款凭证）五表，并按 `(po_no, line_no)` 关联 AP↔PO（价格前置参照）、按 `ap_no` 关联 AP↔Invoice、按 `inv_no` 关联 Invoice↔Payment。加载 MUST 不依赖具体数据源实现（mock/csv/u9c 对上层调用方透明）。
+
+#### Scenario: 表间按锚点关联
+- **WHEN** 传入 PO 明细行 + GRN + AP 明细行 + Invoice + Payment 五张表
+- **THEN** 系统 SHALL 能沿 `(po_no, line_no)` 找出 AP 行对应的前置 PO 行，沿 `ap_no` 找出该 AP 单对应的 Invoice 行，并沿 `inv_no` 找出该 Invoice 对应的 Payment 记录
 
 #### Scenario: 字段边界校验（Pydantic）
-- **WHEN** 原始行数据缺少必填字段（如 `item_code` 为空、`qty`/`amount` 非数值）
+- **WHEN** 原始行数据缺少必填字段（如 `item_code` 为空、`qty`/`untaxed_amount` 非数值）
 - **THEN** 该行加载 SHALL 显式抛出校验错误，不得静默跳过或以默认值填充
 
 ### Requirement: 数据源三态切换（mock / csv / u9c）与 fail-loud
@@ -28,6 +30,6 @@
 
 系统 SHALL 对完整性不足的数据（必填字段缺失、单据孤立无法关联锚点）显式标记退回，不得进入匹配引擎当作"正常齐套"处理。
 
-#### Scenario: 发票缺少可关联的 PO 行
-- **WHEN** Invoice 行的 `(po_no, line_no)` 在 `po_lines` 表中找不到对应记录
-- **THEN** 该发票行 SHALL 被标记为待处理的孤立单据，不进入四维比对流程当作正常匹配对象
+#### Scenario: 发票缺少可关联的 AP 单
+- **WHEN** Invoice 行挂载的 `ap_no` 在 `ap_lines` 表中找不到对应记录
+- **THEN** 该发票行 SHALL 被标记为待处理的孤立单据，不进入料品汇总归集流程当作正常匹配对象
