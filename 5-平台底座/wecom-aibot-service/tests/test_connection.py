@@ -88,6 +88,75 @@ def test_connection_lifecycle_events_are_audited(tmp_path):
     ]
 
 
+def test_unrecoverable_error_triggers_fatal_disconnect_callback(tmp_path):
+    """07-16 P0 事故根因：SDK 重连预算耗尽后只报 on_error，不主动退出进程，
+    `_run_forever` 的 `await asyncio.Event().wait()` 于是永久挂起（僵尸存活，
+    外层 start-aibot-service-dev.ps1 的三级退避重启永远等不到进程退出）。
+    修复：`on_error` 识别 SDK "Max reconnect attempts exceeded" 信号，调用
+    `on_fatal_disconnect` 回调，交由调用方主动退出进程。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+    fatal_calls: list = []
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+        on_fatal_disconnect=lambda: fatal_calls.append(True),
+    )
+    client = store["client"]
+
+    client.handlers["error"][0](RuntimeError("Max reconnect attempts exceeded"))
+
+    assert fatal_calls == [True]
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert actions == ["connection_error", "fatal_disconnect_detected"]
+
+
+def test_transient_error_does_not_trigger_fatal_disconnect_callback(tmp_path):
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+    fatal_calls: list = []
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+        on_fatal_disconnect=lambda: fatal_calls.append(True),
+    )
+    client = store["client"]
+
+    client.handlers["error"][0](RuntimeError("[WinError 64] 指定的网络名不再可用。"))
+
+    assert fatal_calls == []
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert actions == ["connection_error"]
+
+
+def test_fatal_disconnect_without_callback_is_a_noop(tmp_path):
+    """`on_fatal_disconnect` 未传（如既有调用方未升级）时不应报错。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+    )
+    client = store["client"]
+
+    client.handlers["error"][0](RuntimeError("Max reconnect attempts exceeded"))
+
+
 def test_on_message_dispatches_to_archive_and_appends_queue(tmp_path):
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")

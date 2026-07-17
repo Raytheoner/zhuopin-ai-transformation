@@ -29,7 +29,17 @@ from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.gap_alert import format_alert, last_event_timestamp  # noqa: E402
 
 
-async def _run_forever(connector, audit_path: Path, audit: AuditLogger) -> None:
+class ConnectionAbandonedError(RuntimeError):
+    """SDK 重连预算耗尽、判定不可恢复——需要让本进程退出，交部署层
+    （start-aibot-service-dev.ps1 三级退避重启）重新拉起一个干净的连接。
+    2026-07-17 P0 事故：此前没有这个退出路径，进程会在
+    `asyncio.Event().wait()` 里僵尸存活，部署层的重启逻辑永远等不到进程
+    退出、也就永远不会触发。"""
+
+
+async def _run_forever(
+    connector, audit_path: Path, audit: AuditLogger, fatal_event: asyncio.Event
+) -> None:
     # 必须在 connect() 之前读——建连会写新的审计事件，建连后再读会读到刚写
     # 入的"连接成功"事件本身，间隔恒为 0，判断不出真实中断时长。
     last_ts = last_event_timestamp(audit_path)
@@ -53,7 +63,8 @@ async def _run_forever(connector, audit_path: Path, audit: AuditLogger) -> None:
                 data_sources={},
             ))
 
-    await asyncio.Event().wait()
+    await fatal_event.wait()
+    raise ConnectionAbandonedError("企微连接不可恢复（SDK重连预算耗尽），退出进程交部署层重启")
 
 
 def main() -> None:
@@ -75,15 +86,17 @@ def main() -> None:
 
     secrets = EnvSecretsProvider()
     audit = AuditLogger.jsonl(audit_path)
+    fatal_event = asyncio.Event()
 
     connector = build_connector(
         secrets=secrets,
         audit=audit,
         external_docs_root=external_docs_root,
         queue_path=queue_path,
+        on_fatal_disconnect=fatal_event.set,
     )
 
-    asyncio.run(_run_forever(connector, audit_path, audit))
+    asyncio.run(_run_forever(connector, audit_path, audit, fatal_event))
 
 
 if __name__ == "__main__":

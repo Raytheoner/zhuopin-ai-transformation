@@ -30,6 +30,18 @@ DEFAULT_MAX_RECONNECT_ATTEMPTS = 6
 DEFAULT_RECONNECT_BASE_DELAY_MS = 2000
 DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000
 
+# 2026-07-17 P0 事故根因（服务 07-16 16:09 CST 起僵尸存活约 33 小时）：SDK 重连
+# 预算耗尽后只触发 on_error、不会让进程退出，`_run_forever` 的
+# `asyncio.Event().wait()` 因此永久挂起——"交给部署层兜底"从未真正发生，因为
+# 部署层（start-aibot-service-dev.ps1 三级退避重启）只在进程真正退出时才生效。
+# 用 SDK 报出的这个错误文案识别"重连预算已耗尽、SDK 不会再自己好"的终态信号。
+UNRECOVERABLE_ERROR_MARKERS = ("Max reconnect attempts exceeded",)
+
+
+def _is_unrecoverable_error(err: Exception) -> bool:
+    text = str(err)
+    return any(marker in text for marker in UNRECOVERABLE_ERROR_MARKERS)
+
 
 def _audit_lifecycle(audit: AuditLogger, evaluator: str, action: str, **decision) -> None:
     audit.record(
@@ -57,10 +69,15 @@ def build_connector(
     reconnect_base_delay_ms: int = DEFAULT_RECONNECT_BASE_DELAY_MS,
     heartbeat_interval_ms: int = DEFAULT_HEARTBEAT_INTERVAL_MS,
     client_factory: Callable[..., AibotClientLike] = default_client_factory,
+    on_fatal_disconnect: Optional[Callable[[], None]] = None,
 ) -> AibotConnector:
     """构造已接好审计 + 归档分发的 `AibotConnector`；不建立实际连接（调用方
     另行 `await connector.connect()`）。凭据缺失时 `SecretsProvider` 抛
     `KeyError`，不静默用空值启动（spec `wecom-aibot-connector` 要求）。
+
+    `on_fatal_disconnect`：SDK 重连预算耗尽（不可恢复）时调用，供调用方主动
+    退出进程、交部署层重启脚本兜底（见 `UNRECOVERABLE_ERROR_MARKERS` 注释）。
+    未传时该情形仅记审计、不触发额外动作（向后兼容旧调用方）。
     """
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
@@ -93,6 +110,10 @@ def build_connector(
                 error=str(err),
             )
         )
+        if _is_unrecoverable_error(err):
+            _audit_lifecycle(audit, evaluator, "fatal_disconnect_detected", error=str(err))
+            if on_fatal_disconnect is not None:
+                on_fatal_disconnect()
 
     async def on_message(frame: dict) -> None:
         """门禁①结构性保证的唯一 inbound 入口：只转给 archive_inbound_message
