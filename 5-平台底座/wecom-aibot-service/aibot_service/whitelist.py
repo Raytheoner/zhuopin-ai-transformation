@@ -15,15 +15,25 @@ IT），命中白名单后仍会按现有归档逻辑落入"待分拣"——这�
 `delivery.py::push_followup` 按调用方传入的 `chatid` 直接发送，本就不经
 本表过滤，故无需为此额外改动代码——调用 `scripts/push_followup_letter.py`
 时把 `--chatid` 传成 `2023458` 即可对陈承推送。
+
+Paul 本人（`PAUL_USERID`）此前不在白名单里，导致他自己发的 test 消息也会
+被当"未开通"礼貌拒复、不落档不进队列——这在验证服务是否真正连通归档链
+时会造成误判（收到礼貌回复≠归档链没问题，只是发件人不在白名单）。2026-07-18
+总线审计发现后补入，Paul 现可像五位专员一样触发完整归档+转发+群通报三条
+路径（转发/抄送逻辑本就对 Paul 自身发送有特殊处理，见 `forwarding.py`）。
 """
 from __future__ import annotations
 
-# 五位白名单发送人 userid（Paul 2026-07-16 口头确认）：
+from .constants import PAUL_USERID
+
+# 白名单发送人 userid（五位专员，Paul 2026-07-16 口头确认；Paul 本人，
+# 2026-07-18 总线审计补入，见上）：
 # - 2023458        陈承（IT）
 # - ChenChen       陈忱（质量部）
 # - tangyanping    唐燕萍（财务部）
 # - YaoZuYi        姚祖怡（采购部）
 # - Hongqin.Wang   王泓钦（销售部）
+# - PAUL_USERID    Paul 本人（== "ShaoPeiShen"，见 constants.py）
 WHITELISTED_SENDER_USERIDS = frozenset(
     {
         "2023458",
@@ -31,6 +41,7 @@ WHITELISTED_SENDER_USERIDS = frozenset(
         "tangyanping",
         "YaoZuYi",
         "Hongqin.Wang",
+        PAUL_USERID,
     }
 )
 
