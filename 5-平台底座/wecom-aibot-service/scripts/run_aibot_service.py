@@ -14,10 +14,12 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable, Optional
 
 from dotenv import load_dotenv
 
-from zhuopin_platform.audit import AuditEvent, AuditLogger
+from zhuopin_platform.audit import AuditLogger
+from zhuopin_platform.shared_tools.notifiers import wecom
 from zhuopin_platform.shared_tools.secrets import EnvSecretsProvider
 
 SERVICE_DIR = Path(__file__).resolve().parent.parent
@@ -26,7 +28,7 @@ REPO_ROOT = SERVICE_DIR.parents[1]  # 5-平台底座/wecom-aibot-service -> 仓�
 sys.path.insert(0, str(SERVICE_DIR))
 from aibot_service.connection import build_connector  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
-from aibot_service.gap_alert import format_alert, last_event_timestamp  # noqa: E402
+from aibot_service.gap_alert import format_alert, last_event_timestamp, send_gap_alert  # noqa: E402
 
 
 class ConnectionAbandonedError(RuntimeError):
@@ -38,7 +40,11 @@ class ConnectionAbandonedError(RuntimeError):
 
 
 async def _run_forever(
-    connector, audit_path: Path, audit: AuditLogger, fatal_event: asyncio.Event
+    connector,
+    audit_path: Path,
+    audit: AuditLogger,
+    fatal_event: asyncio.Event,
+    fallback_send: Optional[Callable[[str], None]] = None,
 ) -> None:
     # 必须在 connect() 之前读——建连会写新的审计事件，建连后再读会读到刚写
     # 入的"连接成功"事件本身，间隔恒为 0，判断不出真实中断时长。
@@ -49,19 +55,11 @@ async def _run_forever(
 
     alert_text = format_alert(last_ts, datetime.now(timezone.utc))
     if alert_text:
-        try:
-            await connector.send_markdown(PAUL_USERID, f"ℹ️ {alert_text}")
-            audit.record(AuditEvent(
-                scenario="wecom-aibot", action="gap_alert_sent", evaluator="system",
-                automation_level="L1", decision={"sent": True, "recipient": PAUL_USERID},
-                data_sources={"last_event_at": last_ts.isoformat() if last_ts else ""},
-            ))
-        except Exception:  # noqa: BLE001 — 告警失败不应阻塞服务本身运行
-            audit.record(AuditEvent(
-                scenario="wecom-aibot", action="gap_alert_send_failed", evaluator="system",
-                automation_level="L1", decision={"sent": False},
-                data_sources={},
-            ))
+        await send_gap_alert(
+            connector, audit, alert_text, PAUL_USERID,
+            fallback_send=fallback_send,
+            last_event_at=last_ts.isoformat() if last_ts else "",
+        )
 
     await fatal_event.wait()
     raise ConnectionAbandonedError("企微连接不可恢复（SDK重连预算耗尽），退出进程交部署层重启")
@@ -96,7 +94,17 @@ def main() -> None:
         on_fatal_disconnect=fatal_event.set,
     )
 
-    asyncio.run(_run_forever(connector, audit_path, audit, fatal_event))
+    # gap_alert 兜底通道——与本服务自身的智能机器人长连接是两套独立凭据/
+    # 通道（见 CLAUDE.md §3「告警兜底」），主通道恰好在自身连接故障期间
+    # 发送提醒失败时（2026-07-19 真实事故），改走这条不依赖同一条连接的
+    # webhook 通道。未配置则维持原样（只记录失败，不崩溃）。
+    webhook_url = os.environ.get("WECOM_WEBHOOK_URL")
+    fallback_send = (
+        (lambda text: wecom.send_text(webhook_url, f"⚠️ 企微智能机器人服务：{text}"))
+        if webhook_url else None
+    )
+
+    asyncio.run(_run_forever(connector, audit_path, audit, fatal_event, fallback_send))
 
 
 if __name__ == "__main__":
