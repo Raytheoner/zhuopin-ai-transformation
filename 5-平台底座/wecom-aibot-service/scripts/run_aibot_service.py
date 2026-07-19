@@ -28,7 +28,7 @@ REPO_ROOT = SERVICE_DIR.parents[1]  # 5-平台底座/wecom-aibot-service -> 仓�
 sys.path.insert(0, str(SERVICE_DIR))
 from aibot_service.connection import build_connector  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
-from aibot_service.gap_alert import format_alert, last_event_timestamp, send_gap_alert  # noqa: E402
+from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp, send_gap_alert  # noqa: E402
 
 
 class ConnectionAbandonedError(RuntimeError):
@@ -53,13 +53,14 @@ async def _run_forever(
     await connector.connect()
     await asyncio.sleep(1)  # 等 aibot_subscribe 认证完成（connect() 只等 WS 握手，不等鉴权）
 
-    alert_text = format_alert(last_ts, datetime.now(timezone.utc))
-    if alert_text:
-        await send_gap_alert(
-            connector, audit, alert_text, PAUL_USERID,
-            fallback_send=fallback_send,
-            last_event_at=last_ts.isoformat() if last_ts else "",
-        )
+    # Paul 2026-07-19 要求：不管这次中断长短，每次(重)连接都要发一条通报
+    # （此前只在超阈值时才通知，短间隔重连收不到任何确认消息）。
+    notice_text = build_reconnect_notice(last_ts, datetime.now(timezone.utc))
+    await send_gap_alert(
+        connector, audit, notice_text, PAUL_USERID,
+        fallback_send=fallback_send,
+        last_event_at=last_ts.isoformat() if last_ts else "",
+    )
 
     await fatal_event.wait()
     raise ConnectionAbandonedError("企微连接不可恢复（SDK重连预算耗尽），退出进程交部署层重启")

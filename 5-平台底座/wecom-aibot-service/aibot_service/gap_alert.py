@@ -82,6 +82,26 @@ def check_gap_and_format_alert(
     return format_alert(last_event_timestamp(audit_path), now, threshold_seconds)
 
 
+def build_reconnect_notice(
+    last_ts: Optional[datetime],
+    now: datetime,
+    threshold_seconds: int = DEFAULT_THRESHOLD_SECONDS,
+) -> str:
+    """每次(重)连接都生成一条通报文案（Paul 2026-07-19 要求：不管中断长短，
+    每次都要收到确认消息，而不是只在超阈值时收到警示）。`format_alert`
+    仍保留"None=无需警示"的原语义不变；本函数在其返回 None 时补一句轻量
+    的"已恢复/已启动"文案，两者内容不同——超阈值那句带"消息可能丢失"的
+    警示措辞，轻量那句不带（短间隔不存在消息丢失风险）。
+    """
+    warning = format_alert(last_ts, now, threshold_seconds)
+    if warning is not None:
+        return warning
+    if last_ts is None:
+        return "监听已启动（首次运行，无历史活动记录可比对）。"
+    gap_seconds = int((now - last_ts).total_seconds())
+    return f"监听已恢复，距上次活动约 {gap_seconds} 秒，无明显中断。"
+
+
 async def send_gap_alert(
     connector,
     audit: AuditLogger,

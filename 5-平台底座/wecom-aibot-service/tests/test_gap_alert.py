@@ -9,7 +9,11 @@ import pytest
 
 from zhuopin_platform.audit import AuditLogger
 
-from aibot_service.gap_alert import check_gap_and_format_alert, send_gap_alert
+from aibot_service.gap_alert import (
+    build_reconnect_notice,
+    check_gap_and_format_alert,
+    send_gap_alert,
+)
 
 
 def _write_audit_line(path: Path, timestamp: str) -> None:
@@ -60,6 +64,38 @@ def test_ignores_trailing_blank_lines(tmp_path: Path) -> None:
         f.write("\n\n")
     message = check_gap_and_format_alert(audit_path, now, threshold_seconds=180)
     assert message is not None
+
+
+def test_build_reconnect_notice_no_history_still_returns_message() -> None:
+    """Paul 2026-07-19 要求：每次(重)连接都要收到通报，不只是超阈值的中断。
+    首次运行无历史可比对时，也要返回一条"已启动"文案，而非 None。"""
+    now = datetime.now(timezone.utc)
+    notice = build_reconnect_notice(None, now)
+    assert notice is not None
+    assert "监听已" in notice
+
+
+def test_build_reconnect_notice_short_gap_returns_lightweight_message() -> None:
+    """短间隔（未超阈值）不再返回 None——改为轻量的"已恢复，无明显中断"文案，
+    与超阈值的详细警示文案区分开。"""
+    now = datetime.now(timezone.utc)
+    last = now - timedelta(seconds=90)
+    notice = build_reconnect_notice(last, now, threshold_seconds=180)
+    assert notice is not None
+    assert "监听已恢复" in notice
+    assert "无明显中断" in notice
+    assert "企微没有离线消息补推能力" not in notice  # 短间隔不该带这句警示措辞
+
+
+def test_build_reconnect_notice_long_gap_reuses_existing_warning_text() -> None:
+    """超阈值时沿用既有 format_alert 的详细警示文案（消息可能丢失的提醒），
+    不因本次改动而丢失这段信息。"""
+    now = datetime.now(timezone.utc)
+    last = now - timedelta(hours=23)
+    notice = build_reconnect_notice(last, now, threshold_seconds=180)
+    assert notice is not None
+    assert "1380 分钟" in notice
+    assert "企微没有离线消息补推能力" in notice
 
 
 class _FakeConnector:
