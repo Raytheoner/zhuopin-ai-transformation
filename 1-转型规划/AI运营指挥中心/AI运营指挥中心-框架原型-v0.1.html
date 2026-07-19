@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>卓品智能 · AI 运营指挥中心</title>
+<style>
+  :root{
+    --bg-0:#070b16; --bg-1:#0a1020; --bg-2:#111a2e; --bg-3:#16223c;
+    --line:rgba(120,150,200,.14); --line-2:rgba(120,150,200,.22);
+    --t0:#eaf0fb; --t1:#93a3c4; --t2:#5f6f92;
+    --brand:#3b82f6; --cyan:#22d3ee; --glow:rgba(34,211,238,.30);
+    --red:#f2555a; --red-b:rgba(242,85,90,.15);
+    --amber:#f5a524; --amber-b:rgba(245,165,36,.14);
+    --yellow:#e3c018; --yellow-b:rgba(227,192,24,.14);
+    --green:#2fd67f; --green-b:rgba(47,214,127,.14);
+    --font:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",Roboto,sans-serif;
+    --mono:"SFMono-Regular",ui-monospace,"Cascadia Code",Consolas,monospace;
+    --r:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--font); color:var(--t0); background:var(--bg-0);
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  body::before{ /* ambient glow */
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(900px 480px at 78% -8%, rgba(34,211,238,.10), transparent 60%),
+      radial-gradient(760px 420px at 8% 4%, rgba(59,130,246,.12), transparent 55%),
+      linear-gradient(180deg,#0a1020 0%,#070b16 100%);
+  }
+  .app{position:relative; z-index:1; display:grid; grid-template-columns:236px 1fr; height:100vh}
+
+  /* ============ SIDEBAR ============ */
+  .sidebar{background:linear-gradient(180deg,#0c1424,#080d19); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0}
+  .brand{display:flex; align-items:center; gap:11px; padding:18px 18px 16px}
+  .logo{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;
+    background:linear-gradient(135deg,#1f6feb,#22d3ee); box-shadow:0 0 18px var(--glow); position:relative}
+  .logo svg{width:22px;height:22px}
+  .brand .bt{font-size:15px;font-weight:700;letter-spacing:.5px;line-height:1.15}
+  .brand .bs{font-size:9.5px;color:var(--t2);letter-spacing:2.4px;margin-top:3px;text-transform:uppercase}
+  .navwrap{flex:1;overflow-y:auto;padding:6px 12px 12px}
+  .navsec{font-size:10px;letter-spacing:1.8px;color:var(--t2);text-transform:uppercase;margin:16px 10px 8px}
+  .nav{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;color:var(--t1);
+    font-size:13.5px;cursor:pointer;position:relative;margin-bottom:2px;transition:.16s;user-select:none;border:1px solid transparent}
+  .nav svg{width:18px;height:18px;flex:none;opacity:.85}
+  .nav:hover{background:rgba(120,150,200,.07);color:var(--t0)}
+  .nav.active{background:linear-gradient(90deg,rgba(34,211,238,.14),rgba(34,211,238,.02));color:#fff;border-color:rgba(34,211,238,.25)}
+  .nav.active::before{content:"";position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:3px;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+  .nav .tag{margin-left:auto;font-size:9.5px;padding:2px 7px;border-radius:20px;letter-spacing:.5px}
+  .nav .tag.live{background:var(--green-b);color:var(--green)}
+  .nav .tag.wip{background:var(--amber-b);color:var(--amber)}
+  .nav .tag.plan{background:rgba(120,150,200,.12);color:var(--t2)}
+  .nav.disabled{opacity:.5;cursor:not-allowed}
+  .sidefoot{padding:12px 16px;border-top:1px solid var(--line);font-size:11px;color:var(--t2)}
+  .sidefoot .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);margin-right:6px;vertical-align:middle}
+
+  /* ============ MAIN ============ */
+  .main{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .topbar{display:flex;align-items:center;gap:16px;padding:15px 26px;border-bottom:1px solid var(--line);background:rgba(10,16,32,.6);backdrop-filter:blur(8px)}
+  .crumb{font-size:12px;color:var(--t2)}
+  .ptitle{font-size:19px;font-weight:680;letter-spacing:.3px}
+  .ptitle .sub{font-size:12px;color:var(--t1);font-weight:400;margin-left:10px}
+  .tspacer{flex:1}
+  .search{display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;padding:7px 12px;width:210px;color:var(--t2);font-size:12.5px}
+  .search input{background:none;border:none;outline:none;color:var(--t0);font-size:12.5px;width:100%;font-family:var(--font)}
+  .envbadge{display:flex;align-items:center;gap:7px;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-size:12px;color:var(--t1)}
+  .envbadge .g{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+  .refresh{font-size:11.5px;color:var(--t2)}
+  .refresh b{color:var(--cyan);font-family:var(--mono);font-weight:500}
+  .who{display:flex;align-items:center;gap:9px}
+  .avatar{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#2b3d63,#1b2942);display:grid;place-items:center;font-size:12px;color:#cfe0ff;font-weight:600}
+
+  .content{flex:1;overflow-y:auto;padding:24px 26px 40px}
+  .view{display:none;animation:fade .32s ease}
+  .view.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* panels & grid */
+  .grid{display:grid;gap:16px}
+  .panel{background:linear-gradient(180deg,rgba(21,32,56,.9),rgba(15,24,44,.9));border:1px solid var(--line);border-radius:var(--r);padding:18px}
+  .panel h3{font-size:13px;font-weight:640;letter-spacing:.4px;display:flex;align-items:center;gap:9px;margin-bottom:2px}
+  .panel h3 .bar{width:3px;height:14px;border-radius:2px;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+  .phead{display:flex;align-items:center;margin-bottom:14px}
+  .phead .more{margin-left:auto;font-size:11.5px;color:var(--t2);cursor:pointer}
+  .phead .more:hover{color:var(--cyan)}
+
+  /* KPI row */
+  .kpis{grid-template-columns:repeat(5,1fr)}
+  .kpi{background:linear-gradient(180deg,rgba(21,32,56,.9),rgba(15,24,44,.85));border:1px solid var(--line);border-radius:var(--r);padding:16px 17px;position:relative;overflow:hidden}
+  .kpi::after{content:"";position:absolute;right:-20px;top:-20px;width:80px;height:80px;border-radius:50%;background:radial-gradient(circle,var(--glow),transparent 70%);opacity:.5}
+  .kpi .kl{font-size:11px;color:var(--t1);letter-spacing:.3px;display:flex;align-items:center;gap:6px}
+  .kpi .kv{font-size:30px;font-weight:720;font-family:var(--mono);margin:9px 0 4px;letter-spacing:-.5px}
+  .kpi .ks{font-size:11px;color:var(--t2)}
+  .kpi .ks b{font-weight:600}
+  .kpi.red .kv{color:#ff7b80} .kpi.cyan .kv{color:var(--cyan)} .kpi.green .kv{color:var(--green)} .kpi.amber .kv{color:var(--amber)}
+
+  /* alerts */
+  .alert{display:flex;align-items:flex-start;gap:12px;padding:11px 12px;border-radius:10px;border:1px solid var(--line);margin-bottom:9px;background:rgba(10,16,32,.4);transition:.15s}
+  .alert:hover{border-color:var(--line-2);background:rgba(20,30,54,.55)}
+  .alert .sev{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none}
+  .sev.r{background:var(--red);box-shadow:0 0 8px var(--red)} .sev.a{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .sev.y{background:var(--yellow);box-shadow:0 0 8px var(--yellow)} .sev.g{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .alert .am{flex:1;font-size:12.5px;line-height:1.5;color:var(--t0)}
+  .alert .am .dom{display:inline-block;font-size:10px;padding:1px 8px;border-radius:5px;margin-right:8px;letter-spacing:.5px;background:rgba(59,130,246,.16);color:#9cc2ff}
+  .alert .at{font-size:11px;color:var(--t2);font-family:var(--mono);white-space:nowrap;margin-top:2px}
+  .alert .ax{font-size:11.5px;color:var(--cyan);cursor:pointer;white-space:nowrap;margin-top:1px}
+
+  /* domain health cards */
+  .dh{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  .dcard{border:1px solid var(--line);border-radius:12px;padding:15px;background:rgba(10,16,32,.4);display:flex;gap:14px;align-items:center;cursor:pointer;transition:.16s}
+  .dcard:hover{border-color:rgba(34,211,238,.3);transform:translateY(-2px);box-shadow:0 8px 26px rgba(0,0,0,.3)}
+  .ring{width:52px;height:52px;flex:none;position:relative}
+  .ring svg{transform:rotate(-90deg)}
+  .ring .rt{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;font-weight:700;font-family:var(--mono)}
+  .dcard .dn{font-size:13.5px;font-weight:640}
+  .dcard .dm{font-size:11px;color:var(--t1);margin-top:4px;line-height:1.5}
+  .dcard .st{font-size:10px;padding:1px 8px;border-radius:20px;letter-spacing:.5px;display:inline-block;margin-top:6px}
+  .st.live{background:var(--green-b);color:var(--green)} .st.wip{background:var(--amber-b);color:var(--amber)} .st.plan{background:rgba(120,150,200,.12);color:var(--t1)}
+
+  /* progress bars */
+  .prow{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .prow .pn{width:96px;font-size:12.5px;color:var(--t0);flex:none}
+  .track{flex:1;height:22px;border-radius:6px;background:rgba(10,16,32,.6);overflow:hidden;display:flex;border:1px solid var(--line)}
+  .track i{height:100%;display:block}
+  .seg-live{background:linear-gradient(90deg,#2fd67f,#25b56a)} .seg-wip{background:linear-gradient(90deg,#f5a524,#d98c17)} .seg-plan{background:rgba(120,150,200,.18)}
+  .prow .pc{width:150px;font-size:10.5px;color:var(--t2);text-align:right;flex:none;font-family:var(--mono)}
+  .legend{display:flex;gap:16px;font-size:11px;color:var(--t1);margin-top:4px}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+  /* ============ 保供看板 ============ */
+  .board-tiles{grid-template-columns:repeat(6,1fr)}
+  .tile{border:1px solid var(--line);border-radius:12px;padding:14px 15px;background:rgba(10,16,32,.4);position:relative}
+  .tile .tl{font-size:11px;color:var(--t1)} .tile .tv{font-size:26px;font-weight:720;font-family:var(--mono);margin-top:7px}
+  .tile.r{border-color:rgba(242,85,90,.35)} .tile.r .tv{color:#ff7b80}
+  .tile.a .tv{color:var(--amber)} .tile.y .tv{color:var(--yellow)} .tile.g .tv{color:var(--green)} .tile.total .tv{color:var(--cyan)}
+  .tile .tsub{font-size:10px;color:var(--t2);margin-top:3px}
+
+  .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 14px}
+  .chip{padding:6px 14px;border-radius:20px;border:1px solid var(--line);font-size:12px;color:var(--t1);cursor:pointer;transition:.15s;user-select:none}
+  .chip:hover{border-color:var(--line-2);color:var(--t0)}
+  .chip.on{background:var(--cyan);color:#04121a;border-color:var(--cyan);font-weight:600}
+  .chip .n{font-family:var(--mono);margin-left:5px;opacity:.8}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{text-align:left;font-size:10.5px;letter-spacing:.6px;color:var(--t2);text-transform:uppercase;padding:10px 12px;border-bottom:1px solid var(--line-2);white-space:nowrap;font-weight:600}
+  tbody td{padding:11px 12px;border-bottom:1px solid var(--line);color:var(--t0)}
+  tbody tr{transition:.12s} tbody tr:hover{background:rgba(34,211,238,.05)}
+  td .code{font-family:var(--mono);font-size:12px}
+  .sdot{display:inline-flex;align-items:center;gap:7px;font-size:12px}
+  .sdot i{width:8px;height:8px;border-radius:50%}
+  .sdot.r i{background:var(--red);box-shadow:0 0 7px var(--red)} .sdot.r{color:#ff8a8e}
+  .sdot.a i{background:var(--amber);box-shadow:0 0 7px var(--amber)} .sdot.a{color:var(--amber)}
+  .sdot.y i{background:var(--yellow);box-shadow:0 0 7px var(--yellow)} .sdot.y{color:var(--yellow)}
+  .sdot.g i{background:var(--green);box-shadow:0 0 7px var(--green)} .sdot.g{color:var(--green)}
+  .gap{font-family:var(--mono);color:#ff8a8e} .gap.zero{color:var(--green)}
+  .miss{font-size:11px;color:var(--t2)}
+  .badge-sub{font-size:9.5px;padding:1px 7px;border-radius:5px;background:rgba(59,130,246,.16);color:#9cc2ff;margin-left:6px}
+
+  /* build / feedback callout */
+  .cols-2{grid-template-columns:2fr 1fr} .cols-3-1{grid-template-columns:1.1fr .9fr}
+  .wip-ribbon{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--amber);background:var(--amber-b);border:1px solid rgba(245,165,36,.3);padding:5px 11px;border-radius:20px}
+  .scn{border:1px solid var(--line);border-radius:11px;padding:14px;background:rgba(10,16,32,.4);margin-bottom:11px}
+  .scn .sh{display:flex;align-items:center;gap:10px}
+  .scn .sc{font-family:var(--mono);font-size:11px;color:var(--cyan);background:rgba(34,211,238,.1);padding:2px 8px;border-radius:5px}
+  .scn .snm{font-size:13px;font-weight:600} .scn .sd{font-size:11.5px;color:var(--t1);margin-top:7px;line-height:1.55}
+  .scn .meta{margin-left:auto;font-size:10.5px;color:var(--t2);font-family:var(--mono)}
+  .feedback{border:1px dashed var(--line-2);border-radius:11px;padding:15px;text-align:center;color:var(--t2);font-size:12px;background:rgba(10,16,32,.3)}
+  .feedback b{color:var(--t1)}
+  .btn{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(135deg,#1f6feb,#22a7d8);color:#fff;border:none;border-radius:9px;padding:9px 16px;font-size:12.5px;cursor:pointer;font-family:var(--font);font-weight:600;box-shadow:0 4px 16px rgba(34,120,220,.3)}
+  .btn.ghost{background:none;border:1px solid var(--line-2);color:var(--t1);box-shadow:none}
+  .note{font-size:11px;color:var(--t2);margin-top:14px;line-height:1.6}
+  .proto-flag{position:fixed;right:16px;bottom:14px;z-index:20;font-size:10.5px;color:var(--t2);background:rgba(10,16,32,.85);border:1px solid var(--line);padding:6px 12px;border-radius:20px;font-family:var(--mono)}
+  @media(max-width:1180px){.kpis{grid-template-columns:repeat(2,1fr)}.board-tiles{grid-template-columns:repeat(3,1fr)}.cols-2,.cols-3-1{grid-template-columns:1fr}.dh{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 11l2.5 2.5L16 8" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div><div class="bt">卓品智能</div><div class="bs">AI Command Center</div></div>
+    </div>
+    <div class="navwrap">
+      <div class="navsec">总控</div>
+      <div class="nav active" data-view="overview" data-title="指挥总览" data-sub="全公司信息汇总 · 业务预警 · 指挥调度">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="3" width="8" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="10" width="8" height="11" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="3" y="13" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.6"/></svg>
+        指挥总览
+      </div>
+      <div class="navsec">业务域</div>
+      <div class="nav" data-view="procurement" data-title="采购域 · 保供看板" data-sub="齐套 / 缺料 / 承诺交期 · 数据源 U9C+SRM">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3 7l9-4 9 4-9 4-9-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 7v10l9 4 9-4V7" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 11v10" stroke="currentColor" stroke-width="1.6"/></svg>
+        采购域 <span class="tag live">在线</span>
+      </div>
+      <div class="nav" data-view="quality" data-title="质量域" data-sub="立项门禁 / 8D 客诉 / IQC·SPC">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        质量域 <span class="tag wip">灰度</span>
+      </div>
+      <div class="nav" data-view="finance" data-title="财务域" data-sub="三单匹配 / 付款校验 / 智能月结">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="15.5" cy="14.5" r="2" stroke="currentColor" stroke-width="1.5"/></svg>
+        财务域 <span class="tag wip">建造中</span>
+      </div>
+      <div class="nav" data-view="sales" data-title="销售域" data-sub="订单交期 / 客户知识线 / 报价">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 16l5-5 3 3 6-7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h4v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        销售域 <span class="tag plan">规划中</span>
+      </div>
+      <div class="navsec">扩展中</div>
+      <div class="nav disabled"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v4l3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>运营管理 <span class="tag plan">规划</span></div>
+      <div class="nav disabled"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v3M12 18v3M5 12H2M22 12h-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6"/></svg>工程研发 <span class="tag plan">Phase 2</span></div>
+      <div class="navsec">系统</div>
+      <div class="nav" data-view="system" data-title="系统与发布" data-sub="部署到 .51 · 发布收口 · 灰度">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="7" r="2" fill="#0a1020" stroke="currentColor" stroke-width="1.6"/><circle cx="15" cy="17" r="2" fill="#0a1020" stroke="currentColor" stroke-width="1.6"/></svg>
+        系统与发布
+      </div>
+    </div>
+    <div class="sidefoot"><span class="dot"></span>部署服务器 .51 · 在线<br><span style="color:var(--t2);font-size:10px">Phase 1 · 40 场景 · S1 筑基期</span></div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <div class="crumb" id="crumb">卓品智能 / 指挥总览</div>
+        <div class="ptitle" id="ptitle">指挥总览<span class="sub" id="psub">全公司信息汇总 · 业务预警 · 指挥调度</span></div>
+      </div>
+      <div class="tspacer"></div>
+      <div class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input placeholder="搜索场景 / 物料 / 客户…"></div>
+      <div class="envbadge"><span class="g"></span>生产 · 192.168.100.51</div>
+      <div class="refresh">刷新于 <b id="clock">--:--:--</b></div>
+      <div class="who"><div class="avatar">值</div></div>
+    </header>
+
+    <div class="content">
+
+      <!-- ===================== 指挥总览 ===================== -->
+      <section id="view-overview" class="view active">
+        <div class="grid kpis" style="margin-bottom:16px">
+          <div class="kpi cyan"><div class="kl">数字员工场景 · Phase 1</div><div class="kv">40</div><div class="ks"><b style="color:var(--green)">3</b> 已上线/灰度 · <b style="color:var(--amber)">9</b> 建造中 · 28 规划</div></div>
+          <div class="kpi red"><div class="kl">本周业务预警</div><div class="kv">18</div><div class="ks"><b style="color:#ff7b80">3</b> 需即处理 · 6 关注 · 9 提示</div></div>
+          <div class="kpi amber"><div class="kl">待人工确认（L2/门禁）</div><div class="kv">7</div><div class="ks">采购 4 · 财务 2 · 质量 1</div></div>
+          <div class="kpi green"><div class="kl">本周发布到 .51</div><div class="kv">4</div><div class="ks">采购 3 · 质量 1 · 均通过冒烟</div></div>
+          <div class="kpi"><div class="kl">前置数据 / 数据闸就绪</div><div class="kv" style="color:var(--cyan)">82%</div><div class="ks">财务侧端点回填核对中</div></div>
+        </div>
+
+        <div class="grid cols-2" style="margin-bottom:16px">
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>业务预警中心</h3><span class="more">全部 18 条 ›</span></div>
+            <div class="alert"><span class="sev r"></span><div class="am"><span class="dom">采购</span>S07Y.0137 保供延期 — 瓶颈子件 R02A.0019 缺口 5,400，PO 在途 07-27 晚于需求日 07-19</div><div class="ax">处理 ›</div></div>
+            <div class="alert"><span class="sev r"></span><div class="am"><span class="dom">采购</span>S02Y.0162 真延期 — 子件 R01A.0061 预计到货 07-25，需求日 07-20</div><div class="ax">处理 ›</div></div>
+            <div class="alert"><span class="sev a"></span><div class="am"><span class="dom">财务</span>FI2 三单匹配 — 3 张 AP 单价与 PO 偏差 &gt;0.5%，待人工复核</div><div class="ax">复核 ›</div></div>
+            <div class="alert"><span class="sev a"></span><div class="am"><span class="dom">质量</span>QD-B 立项门禁 — 某项目触发阻断规则（累计现金流为负），已自动拦截</div><div class="ax">查看 ›</div></div>
+            <div class="alert"><span class="sev y"></span><div class="am"><span class="dom">财务</span>U9C 财务侧端点回填初稿（API 文档）已到，待核对 10 端点覆盖度</div><div class="ax">核对 ›</div></div>
+            <div class="alert"><span class="sev g"></span><div class="am"><span class="dom">采购</span>净额库存开关已生效 — 真延期 32 → 17，误判消除</div><div class="at">07-14</div></div>
+          </div>
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>各域健康度</h3></div>
+            <div class="dh">
+              <div class="dcard" data-goto="procurement">
+                <div class="ring">${ring:green:86}</div>
+                <div><div class="dn">采购域</div><div class="dm">保供看板在线 · 116 成品<br><span style="color:#ff8a8e">🔴 15</span> · <span style="color:var(--green)">🟢 17</span></div><span class="st live">已上线</span></div>
+              </div>
+              <div class="dcard" data-goto="quality">
+                <div class="ring">${ring:amber:64}</div>
+                <div><div class="dn">质量域</div><div class="dm">QD-B 立项门禁 灰度中<br>8D 可信度地图终档</div><span class="st wip">灰度</span></div>
+              </div>
+              <div class="dcard" data-goto="finance">
+                <div class="ring">${ring:amber:55}</div>
+                <div><div class="dn">财务域</div><div class="dm">FI2/FI3 规则定稿<br>数据闸回填核对中</div><span class="st wip">建造中</span></div>
+              </div>
+              <div class="dcard" data-goto="sales">
+                <div class="ring">${ring:plan:20}</div>
+                <div><div class="dn">销售域</div><div class="dm">接口人已到位<br>S1 场景 9 月启动</div><span class="st plan">规划中</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid cols-3-1">
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>场景上线进度 · Phase 1（40）</h3><span class="more">按域</span></div>
+            <div class="prow"><div class="pn">采购域</div><div class="track"><i class="seg-live" style="width:29%"></i><i class="seg-wip" style="width:43%"></i><i class="seg-plan" style="width:28%"></i></div><div class="pc">上线2 建造3 规划2</div></div>
+            <div class="prow"><div class="pn">财务域</div><div class="track"><i class="seg-live" style="width:0%"></i><i class="seg-wip" style="width:30%"></i><i class="seg-plan" style="width:70%"></i></div><div class="pc">上线0 建造3 规划7</div></div>
+            <div class="prow"><div class="pn">质量域</div><div class="track"><i class="seg-live" style="width:13%"></i><i class="seg-wip" style="width:37%"></i><i class="seg-plan" style="width:50%"></i></div><div class="pc">上线1 建造3 规划4</div></div>
+            <div class="prow"><div class="pn">销售域</div><div class="track"><i class="seg-live" style="width:0%"></i><i class="seg-wip" style="width:0%"></i><i class="seg-plan" style="width:100%"></i></div><div class="pc">上线0 建造0 规划5</div></div>
+            <div class="prow"><div class="pn">运营 / 研发</div><div class="track"><i class="seg-live" style="width:10%"></i><i class="seg-wip" style="width:10%"></i><i class="seg-plan" style="width:80%"></i></div><div class="pc">上线1 建造1 规划8</div></div>
+            <div class="legend"><span><i class="seg-live"></i>已上线/灰度</span><span><i class="seg-wip"></i>建造中</span><span><i class="seg-plan"></i>规划</span></div>
+          </div>
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>最近发布 · .51</h3></div>
+            <div class="alert"><span class="sev g"></span><div class="am">SC8 保供看板 — C-1 替代料合并 + C-2 部分齐套<div class="at" style="margin-top:3px">07-16 · 冒烟通过</div></div></div>
+            <div class="alert"><span class="sev g"></span><div class="am">SC8 净额库存开关 ON<div class="at" style="margin-top:3px">07-14 · 已验证</div></div></div>
+            <div class="alert"><span class="sev g"></span><div class="am">企微机器人服务 — 断线自愈修复<div class="at" style="margin-top:3px">07-17 · 已常驻</div></div></div>
+            <div class="note" style="margin-top:8px">发布口径：MVP 达"发布条件"即部署 → 部门试用反馈 → 迭代。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== 采购保供看板 ===================== -->
+      <section id="view-procurement" class="view">
+        <div class="grid board-tiles" style="margin-bottom:16px">
+          <div class="tile total"><div class="tl">在保成品</div><div class="tv">116</div><div class="tsub">今日全量重算</div></div>
+          <div class="tile r"><div class="tl">🔴 真延期</div><div class="tv">15</div><div class="tsub">子件缺口硬约束</div></div>
+          <div class="tile a"><div class="tl">🟠 需备料</div><div class="tv">61</div><div class="tsub">追料可保</div></div>
+          <div class="tile y"><div class="tl">🟡 临界</div><div class="tv">23</div><div class="tsub">窗口紧</div></div>
+          <div class="tile g"><div class="tl">🟢 按期</div><div class="tv">17</div><div class="tsub">齐套无忧</div></div>
+          <div class="tile"><div class="tl">净额库存</div><div class="tv" style="color:var(--green);font-size:20px;margin-top:11px">ON</div><div class="tsub">六仓可用量口径</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="phead"><h3><span class="bar"></span>成品保供明细</h3><span class="more">导出 · 按需求日排序 ›</span></div>
+          <div class="toolbar">
+            <div class="chip on" data-f="all">全部 <span class="n">116</span></div>
+            <div class="chip" data-f="r">🔴 真延期 <span class="n">15</span></div>
+            <div class="chip" data-f="a">🟠 需备料 <span class="n">61</span></div>
+            <div class="chip" data-f="y">🟡 临界 <span class="n">23</span></div>
+            <div class="chip" data-f="g">🟢 按期 <span class="n">17</span></div>
+            <div style="margin-left:auto" class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input placeholder="成品编码 / 客户"></div>
+          </div>
+          <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>成品编码</th><th>客户</th><th>需求量</th><th>需求日</th><th>预计齐套</th><th>状态</th><th>瓶颈子件</th><th>缺口</th><th>供给动作</th></tr></thead>
+            <tbody id="boardBody">
+              <tr data-s="r"><td><span class="code">S07Y.0137</span></td><td>比亚迪</td><td>2,000</td><td>07-19</td><td>07-28</td><td><span class="sdot r"><i></i>真延期</span></td><td><span class="code">R02A.0019</span></td><td class="gap">-5,400</td><td class="miss">PO 在途 07-27（晚于需求日）</td></tr>
+              <tr data-s="r"><td><span class="code">S02Y.0162</span></td><td>上汽</td><td>800</td><td>07-20</td><td>07-26</td><td><span class="sdot r"><i></i>真延期</span></td><td><span class="code">R01A.0061</span></td><td class="gap">-3,200</td><td class="miss">催料中 · 到货 07-25</td></tr>
+              <tr data-s="y"><td><span class="code">S04Y.0112</span></td><td>理想</td><td>500</td><td>07-24</td><td>07-24</td><td><span class="sdot y"><i></i>临界</span></td><td><span class="code">R01D.1339</span><span class="badge-sub">替代 R01D.0221</span></td><td class="gap">-480</td><td class="miss">替代料现货 3,646 可补</td></tr>
+              <tr data-s="a"><td><span class="code">S02Y.0087</span></td><td>比亚迪</td><td>1,500</td><td>07-26</td><td>07-25</td><td><span class="sdot a"><i></i>需备料</span></td><td><span class="code">R03C.0210</span></td><td class="gap">-1,120</td><td class="miss">请购已批 · L/T 内可达</td></tr>
+              <tr data-s="g"><td><span class="code">S02Y.0035</span></td><td>比亚迪</td><td>1,200</td><td>07-22</td><td>07-21</td><td><span class="sdot g"><i></i>按期</span></td><td>—</td><td class="gap zero">0</td><td class="miss">净额后转绿 · 齐套</td></tr>
+              <tr data-s="a"><td><span class="code">S05Y.0301</span></td><td>上汽</td><td>640</td><td>07-28</td><td>07-27</td><td><span class="sdot a"><i></i>需备料</span></td><td><span class="code">R01A.0012</span></td><td class="gap">-800</td><td class="miss">多层展开 · 半成品待投</td></tr>
+              <tr data-s="g"><td><span class="code">S07Y.0209</span></td><td>理想</td><td>300</td><td>07-30</td><td>07-25</td><td><span class="sdot g"><i></i>按期</span></td><td>—</td><td class="gap zero">0</td><td class="miss">齐套无忧</td></tr>
+              <tr data-s="y"><td><span class="code">S04Y.0155</span></td><td>比亚迪</td><td>900</td><td>07-23</td><td>07-23</td><td><span class="sdot y"><i></i>临界</span></td><td><span class="code">R02A.0044</span></td><td class="gap">-260</td><td class="miss">窗口紧 · 建议今日下单</td></tr>
+              <tr data-s="a"><td><span class="code">S02Y.0118</span></td><td>上汽</td><td>1,100</td><td>07-29</td><td>07-28</td><td><span class="sdot a"><i></i>需备料</span></td><td><span class="code">R05B.0072</span></td><td class="gap">-540</td><td class="miss">追料 L/T 内可保</td></tr>
+              <tr data-s="r"><td><span class="code">S09Y.0012</span></td><td>比亚迪</td><td>450</td><td>07-18</td><td>07-24</td><td><span class="sdot r"><i></i>真延期</span></td><td><span class="code">R07D.0031</span></td><td class="gap">-1,900</td><td class="miss">无在途 · 需紧急寻源</td></tr>
+            </tbody>
+          </table>
+          </div>
+          <div class="note">样例数据（占位）——接真实数据后由 SC8 引擎输出替换：齐套/缺料 = kit_engine 多层 BOM 递归；承诺交期 = SC8；库存 = 六仓可用量净额；替代料等价合并 = C-1。数据源 U9C + 携客云 SRM，读只留痕、写走 L2 人工确认。</div>
+        </div>
+      </section>
+
+      <!-- ===================== 质量域（建设中） ===================== -->
+      <section id="view-quality" class="view">
+        <div class="panel" style="margin-bottom:16px">
+          <div class="phead"><h3><span class="bar"></span>质量域 · 场景入口</h3><span class="wip-ribbon" style="margin-left:auto">● 建造/灰度中 · 逐步开放</span></div>
+          <div class="scn"><div class="sh"><span class="sc">QD-B</span><span class="snm">立项审核门禁</span><span class="st wip" style="margin-left:8px">灰度</span><span class="meta">权威表 80 条 · 20260717</span></div><div class="sd">开发项目立项自动扣分与阻断判定；阻断集 15 条、扣分项按权重计。已进灰度，部门可试用并反馈误判。</div></div>
+          <div class="scn"><div class="sh"><span class="sc">8D</span><span class="snm">客诉 8D 可信度地图</span><span class="st wip" style="margin-left:8px">建造中</span><span class="meta">12 字段终档</span></div><div class="sd">8D 报告字段自动填充可信度评估；失效现象/根本原因命中率标注，安全相关字段走隔离层。</div></div>
+          <div class="scn"><div class="sh"><span class="sc">Q-IQC</span><span class="snm">IQC / SPC 异常预警</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2</span></div><div class="sd">来料检验与制程 SPC 异常自动预警，公司自有制造数据、不隔离。</div></div>
+        </div>
+        <div class="feedback"><b>反馈入口（占位）</b><br>灰度场景的误判 / 建议在此提交，自动归档并回灌口径 —— 接企微机器人双向通道后开放。<div style="margin-top:12px"><button class="btn">提交反馈</button> <button class="btn ghost">查看灰度说明</button></div></div>
+      </section>
+
+      <!-- ===================== 财务域（建设中） ===================== -->
+      <section id="view-finance" class="view">
+        <div class="panel" style="margin-bottom:16px">
+          <div class="phead"><h3><span class="bar"></span>财务域 · 场景入口</h3><span class="wip-ribbon" style="margin-left:auto">● 建造中 · 数据闸回填核对中</span></div>
+          <div class="scn"><div class="sh"><span class="sc">FI2</span><span class="snm">三单匹配自动对账</span><span class="st wip" style="margin-left:8px">建造中</span><span class="meta">2026-09 上线</span></div><div class="sd">PO / GR / AP 三单自动匹配对账；AP 单价与 PO 强制比对，微差 ≤1 元 L2 自消化。规则已定稿，8 月底真实验证。</div></div>
+          <div class="scn"><div class="sh"><span class="sc">FI3</span><span class="snm">付款申请自动校验</span><span class="st wip" style="margin-left:8px">建造中</span><span class="meta">2026-11 上线</span></div><div class="sd">付款申请与合同/凭证/收款账户自动校验；异常拦截、L4 晋级 Paul+CFO 会签。</div></div>
+          <div class="scn"><div class="sh"><span class="sc">FI4-10</span><span class="snm">智能月结 / 异常交易等</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2–S3</span></div><div class="sd">月结自动化、异常交易识别等 7 个场景顺延排布。</div></div>
+        </div>
+        <div class="feedback"><b>数据闸状态</b><br>U9C 财务侧 10 端点回填初稿（API 文档）已到 07-17，覆盖度核对中 · OCR 选型 ≥99% 待定<div style="margin-top:12px"><button class="btn ghost">查看端点核对清单</button></div></div>
+      </section>
+
+      <!-- ===================== 销售域（规划中） ===================== -->
+      <section id="view-sales" class="view">
+        <div class="panel" style="margin-bottom:16px">
+          <div class="phead"><h3><span class="bar"></span>销售域 · 场景入口</h3><span class="wip-ribbon" style="margin-left:auto">● 规划中 · S1 场景 9 月启动</span></div>
+          <div class="scn"><div class="sh"><span class="sc">S6</span><span class="snm">客户知识线 / 交期响应</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">2026-Q4 归集</span></div><div class="sd">客户订单交期智能响应，复用采购 SC8 承诺交期引擎；接口人已到位、知识线归集牵头中。</div></div>
+          <div class="scn"><div class="sh"><span class="sc">S-报价</span><span class="snm">报价辅助 / 客户画像</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2</span></div><div class="sd">历史成交与客户画像辅助报价；OEM 数据按客户隔离。</div></div>
+        </div>
+        <div class="feedback"><b>敬请期待</b><br>销售域场景 2026-09 起按 8 周前置纪律启动，届时在此开放入口。</div>
+      </section>
+
+      <!-- ===================== 系统与发布 ===================== -->
+      <section id="view-system" class="view">
+        <div class="grid cols-2" style="margin-bottom:16px">
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>发布收口标准（MVP → .51）</h3></div>
+            <div class="sd" style="color:var(--t1);font-size:12.5px;line-height:1.9">
+              <div>① <b style="color:var(--t0)">功能门槛</b>：全量测试绿 + 零回归 + 黄金基准不漂移 + openspec 归档 + 场景 CLAUDE.md 更新。</div>
+              <div>② <b style="color:var(--t0)">部署段</b>：真部署 .51 + 冒烟（/api/ping · 关键页 200 · 全量重算）+ 回滚 SOP + 可常驻。</div>
+              <div>③ <b style="color:var(--t0)">合规</b>：只归档/通知不自动执行 · L2 人工确认；发布 = 供试用反馈，≠ 放开自动执行。</div>
+              <div>④ <b style="color:var(--t0)">先灰度后依赖</b>：部门试用 + 反馈入口先行。</div>
+            </div>
+            <div class="note">待落 CLAUDE.md §5 场景固定流程 + 全景规划（§0.2 登记）。</div>
+          </div>
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>服务健康 · .51</h3></div>
+            <div class="alert"><span class="sev g"></span><div class="am">保供看板服务 baoguan_service<div class="at" style="margin-top:3px">200 · 116 行 · 今日重算</div></div></div>
+            <div class="alert"><span class="sev g"></span><div class="am">企微机器人双向通道<div class="at" style="margin-top:3px">已常驻 · 断线自愈 · 07-17 恢复</div></div></div>
+            <div class="alert"><span class="sev y"></span><div class="am">FI2 三单匹配<div class="at" style="margin-top:3px">建造中 · 未上 .51</div></div></div>
+          </div>
+        </div>
+        <div class="panel"><div class="phead"><h3><span class="bar"></span>说明</h3></div><div class="note" style="font-size:12px;color:var(--t1)">本页为平台"信息汇总 / 业务预警 / 指挥调度 / 运营管理"四大能力中"运营管理·发布调度"的框架占位。指挥总览、采购保供看板已出可交互样例；质量 / 财务 / 销售随各域场景上线逐步填充真实数据与入口。</div></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+<div class="proto-flag">框架原型 v0.1 · 样例数据 · 2026-07</div>
+
+<script>
+  // ---- ring SVG injection ----
+  function ring(color,pct){
+    var map={green:'#2fd67f',amber:'#f5a524',plan:'#5f6f92',cyan:'#22d3ee'};
+    var c=map[color]||'#22d3ee'; var r=22, circ=2*Math.PI*r, off=circ*(1-pct/100);
+    return '<svg width="52" height="52" viewBox="0 0 52 52">'
+      +'<circle cx="26" cy="26" r="22" fill="none" stroke="rgba(120,150,200,.15)" stroke-width="5"/>'
+      +'<circle cx="26" cy="26" r="22" fill="none" stroke="'+c+'" stroke-width="5" stroke-linecap="round" stroke-dasharray="'+circ+'" stroke-dashoffset="'+off+'" style="filter:drop-shadow(0 0 5px '+c+'88)"/></svg>'
+      +'<div class="rt" style="color:'+c+'">'+pct+'</div>';
+  }
+  document.querySelectorAll('.ring').forEach(function(el){
+    var m=el.textContent.match(/\$\{ring:(\w+):(\d+)\}/);
+    if(m){ el.innerHTML=ring(m[1],parseInt(m[2])); }
+  });
+
+  // ---- nav switching ----
+  function go(view){
+    document.querySelectorAll('.view').forEach(function(v){v.classList.remove('active')});
+    var el=document.getElementById('view-'+view); if(el) el.classList.add('active');
+    document.querySelectorAll('.nav[data-view]').forEach(function(n){n.classList.toggle('active', n.dataset.view===view)});
+    var nav=document.querySelector('.nav[data-view="'+view+'"]');
+    if(nav){
+      document.getElementById('ptitle').innerHTML = nav.dataset.title + '<span class="sub">'+(nav.dataset.sub||'')+'</span>';
+      document.getElementById('crumb').textContent = '卓品智能 / ' + nav.dataset.title;
+    }
+    document.querySelector('.content').scrollTop=0;
+  }
+  document.querySelectorAll('.nav[data-view]').forEach(function(n){ n.addEventListener('click',function(){go(n.dataset.view)}); });
+  document.querySelectorAll('[data-goto]').forEach(function(c){ c.addEventListener('click',function(){go(c.dataset.goto)}); });
+
+  // ---- board filter ----
+  document.querySelectorAll('.chip[data-f]').forEach(function(ch){
+    ch.addEventListener('click',function(){
+      document.querySelectorAll('.chip[data-f]').forEach(function(x){x.classList.remove('on')});
+      ch.classList.add('on');
+      var f=ch.dataset.f;
+      document.querySelectorAll('#boardBody tr').forEach(function(tr){
+        tr.style.display = (f==='all'||tr.dataset.s===f)?'':'none';
+      });
+    });
+  });
+
+  // ---- clock ----
+  function tick(){ var d=new Date(); document.getElementById('clock').textContent=d.toTimeString().slice(0,8); }
+  tick(); setInterval(tick,1000);
+</script>
+</body>
+</html>
