@@ -175,10 +175,42 @@
   .note{font-size:11px;color:var(--t2);margin-top:14px;line-height:1.6}
   .proto-flag{position:fixed;right:16px;bottom:14px;z-index:20;font-size:10.5px;color:var(--t2);background:rgba(10,16,32,.85);border:1px solid var(--line);padding:6px 12px;border-radius:20px;font-family:var(--mono)}
   @media(max-width:1180px){.kpis{grid-template-columns:repeat(2,1fr)}.board-tiles{grid-template-columns:repeat(3,1fr)}.cols-2,.cols-3-1{grid-template-columns:1fr}.dh{grid-template-columns:1fr}}
+
+  /* ============ 响应式 · 移动端抽屉（PC/Mac 桌面保持；平板/Android/iOS 适配） ============ */
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  .hamburger{display:none;width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:var(--bg-2);color:var(--t0);cursor:pointer;align-items:center;justify-content:center;flex:none}
+  .hamburger svg{width:20px;height:20px}
+  .scrim{display:none;position:fixed;inset:0;background:rgba(4,8,16,.6);z-index:90;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+  .scrim.show{display:block}
+  .content,.panel div[style*="overflow-x"]{-webkit-overflow-scrolling:touch}
+  @media(max-width:900px){
+    .app{grid-template-columns:1fr}
+    .sidebar{position:fixed;top:0;left:0;bottom:0;width:252px;max-width:82vw;z-index:100;transform:translateX(-100%);transition:transform .26s ease;box-shadow:6px 0 40px rgba(0,0,0,.55);padding-top:env(safe-area-inset-top,0px)}
+    .sidebar.open{transform:none}
+    .hamburger{display:inline-flex}
+    .topbar{padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top,0px));gap:12px}
+    .topbar .search{display:none}
+    .cols-2,.cols-3-1,.dh{grid-template-columns:1fr}
+    .content{padding:18px 16px calc(40px + env(safe-area-inset-bottom,0px))}
+    .ptitle{font-size:17px}.ptitle .sub{display:none}
+  }
+  @media(max-width:620px){
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .board-tiles{grid-template-columns:repeat(2,1fr)}
+    .envbadge{display:none}.refresh{display:none}
+    .kpi .kv{font-size:25px}.tile .tv{font-size:21px}
+    .content{padding:14px 12px calc(32px + env(safe-area-inset-bottom,0px))}
+    .panel{padding:15px 14px}
+    table{font-size:12px}thead th,tbody td{padding:9px 9px}
+    .nav{padding:12px 12px}.chip{padding:8px 14px}
+    .toolbar{gap:8px}
+    .proto-flag{left:10px;right:10px;text-align:center}
+  }
 </style>
 </head>
 <body>
 <div class="app">
+  <div class="scrim" id="scrim"></div>
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar">
     <div class="brand">
@@ -223,6 +255,7 @@
   <!-- ============ MAIN ============ -->
   <div class="main">
     <header class="topbar">
+      <button class="hamburger" id="hamburger" aria-label="菜单"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       <div>
         <div class="crumb" id="crumb">卓品智能 / 指挥总览</div>
         <div class="ptitle" id="ptitle">指挥总览<span class="sub" id="psub">全公司信息汇总 · 业务预警 · 指挥调度</span></div>
@@ -341,36 +374,196 @@
         </div>
       </section>
 
-      <!-- ===================== 质量域（建设中） ===================== -->
+      <!-- ===================== 质量域 · QD-B 立项门禁 ===================== -->
       <section id="view-quality" class="view">
-        <div class="panel" style="margin-bottom:16px">
-          <div class="phead"><h3><span class="bar"></span>质量域 · 场景入口</h3><span class="wip-ribbon" style="margin-left:auto">● 建造/灰度中 · 逐步开放</span></div>
-          <div class="scn"><div class="sh"><span class="sc">QD-B</span><span class="snm">立项审核门禁</span><span class="st wip" style="margin-left:8px">灰度</span><span class="meta">权威表 80 条 · 20260717</span></div><div class="sd">开发项目立项自动扣分与阻断判定；阻断集 15 条、扣分项按权重计。已进灰度，部门可试用并反馈误判。</div></div>
-          <div class="scn"><div class="sh"><span class="sc">8D</span><span class="snm">客诉 8D 可信度地图</span><span class="st wip" style="margin-left:8px">建造中</span><span class="meta">12 字段终档</span></div><div class="sd">8D 报告字段自动填充可信度评估；失效现象/根本原因命中率标注，安全相关字段走隔离层。</div></div>
-          <div class="scn"><div class="sh"><span class="sc">Q-IQC</span><span class="snm">IQC / SPC 异常预警</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2</span></div><div class="sd">来料检验与制程 SPC 异常自动预警，公司自有制造数据、不隔离。</div></div>
+        <div class="grid board-tiles" style="margin-bottom:16px">
+          <div class="tile total"><div class="tl">本期立项申请</div><div class="tv">46</div><div class="tsub">EQQR10011 模板</div></div>
+          <div class="tile g"><div class="tl">✅ 通过</div><div class="tv">31</div><div class="tsub">无阻断项</div></div>
+          <div class="tile a"><div class="tl">⚠️ 扣分警示</div><div class="tv">9</div><div class="tsub">超阈值待改进</div></div>
+          <div class="tile r"><div class="tl">🔴 阻断拦截</div><div class="tv">4</div><div class="tsub">命中阻断集</div></div>
+          <div class="tile y"><div class="tl">待人工复核 L2</div><div class="tv">2</div><div class="tsub">边界项</div></div>
+          <div class="tile"><div class="tl">阻断集</div><div class="tv" style="color:var(--cyan)">15</div><div class="tsub">条 · 权威 80 条</div></div>
         </div>
-        <div class="feedback"><b>反馈入口（占位）</b><br>灰度场景的误判 / 建议在此提交，自动归档并回灌口径 —— 接企微机器人双向通道后开放。<div style="margin-top:12px"><button class="btn">提交反馈</button> <button class="btn ghost">查看灰度说明</button></div></div>
+        <div class="panel">
+          <div class="phead"><h3><span class="bar"></span>立项门禁明细</h3><span class="wip-ribbon" style="margin-left:auto">● 灰度中 · 权威表 20260717 · AI 不自动落 ERP/不外发</span></div>
+          <div class="toolbar">
+            <div class="chip on" data-fq="all">全部 <span class="n">46</span></div>
+            <div class="chip" data-fq="g">✅ 通过 <span class="n">31</span></div>
+            <div class="chip" data-fq="a">⚠️ 扣分警示 <span class="n">9</span></div>
+            <div class="chip" data-fq="r">🔴 阻断 <span class="n">4</span></div>
+            <div class="chip" data-fq="y">待复核 <span class="n">2</span></div>
+            <div style="margin-left:auto" class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input placeholder="项目名 / 申请书号"></div>
+          </div>
+          <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>立项项目</th><th>申请书号</th><th>客户</th><th>扣分合计</th><th>判定</th><th>触发关键项</th></tr></thead>
+            <tbody id="quaBody">
+              <tr data-fq="r"><td>邦奇 DHT 变速箱控制器</td><td><span class="code">EQ-20260701</span></td><td>邦奇动力</td><td class="gap">阻断</td><td><span class="sdot r"><i></i>阻断拦截</span></td><td class="miss">累计现金流为负（命中阻断集）</td></tr>
+              <tr data-fq="r"><td>低压 DCDC 预研项目</td><td><span class="code">EQ-20260714</span></td><td>（未定点）</td><td class="gap">阻断</td><td><span class="sdot r"><i></i>阻断拦截</span></td><td class="miss">客户未定点 + ASIL 等级缺失</td></tr>
+              <tr data-fq="a"><td>华丰天然气发动机 EPA 认证咨询</td><td><span class="code">EQ-20260616</span></td><td>华丰动力</td><td class="gap">-18</td><td><span class="sdot a"><i></i>扣分警示</span></td><td class="miss">收益指标偏低、NRE 回收期 &gt;3 年</td></tr>
+              <tr data-fq="a"><td>商用车 BMS 采样芯片国产替代</td><td><span class="code">EQ-20260712</span></td><td>上汽</td><td class="gap">-14</td><td><span class="sdot a"><i></i>扣分警示</span></td><td class="miss">产能占用高、量产爬坡风险</td></tr>
+              <tr data-fq="y"><td>域控冗余电源模块</td><td><span class="code">EQ-20260716</span></td><td>比亚迪</td><td class="gap">-9</td><td><span class="sdot y"><i></i>待复核</span></td><td class="miss">收益指标处边界，转 L2 人工</td></tr>
+              <tr data-fq="g"><td>EQ17 车身域控制器</td><td><span class="code">EQ-20260705</span></td><td>比亚迪</td><td class="gap zero">-4</td><td><span class="sdot g"><i></i>通过</span></td><td class="miss">轻微扣分、无阻断项（可作 golden）</td></tr>
+              <tr data-fq="g"><td>800V 电驱 MCU 平台</td><td><span class="code">EQ-20260709</span></td><td>理想</td><td class="gap zero">-2</td><td><span class="sdot g"><i></i>通过</span></td><td class="miss">达标</td></tr>
+              <tr data-fq="g"><td>车载以太网网关</td><td><span class="code">EQ-20260717</span></td><td>上汽</td><td class="gap zero">-3</td><td><span class="sdot g"><i></i>通过</span></td><td class="miss">达标</td></tr>
+            </tbody>
+          </table>
+          </div>
+          <div class="note">样例数据（占位）——接 QD-B 引擎真实判定替换。判据＝权威《开发项目立项门禁扣分权重标准》80 条（20260717 版）；阻断集 15 条命中即拦截，其余按权重扣分。AI 只出判定与依据，<b>不自动落 ERP、不自动外发</b>，晋级项走 L2/L4 人工确认。</div>
+        </div>
+        <div class="grid cols-2" style="margin-top:16px">
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>规则概览 · 权威 80 条 / 阻断集 15</h3></div>
+            <div class="alert"><span class="sev r"></span><div class="am"><b>阻断集（示例）</b> — 累计现金流为负 · 客户未定点 · ASIL 等级缺失 · 无量产承接 …（15 条，命中即拦截）</div></div>
+            <div class="alert"><span class="sev a"></span><div class="am"><b>扣分项（按权重）</b> — 收益指标 · NRE 回收期 · 产能占用 · 量产爬坡风险 · 技术成熟度 …</div></div>
+            <div class="alert"><span class="sev g"></span><div class="am"><b>口径定论</b> — rule 67/72 等 F+M→F；权威表 20260717 已取代 20260715</div></div>
+          </div>
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>同域场景 & 反馈</h3></div>
+            <div class="scn"><div class="sh"><span class="sc">8D</span><span class="snm">客诉 8D 可信度地图</span><span class="st wip" style="margin-left:8px">建造中</span><span class="meta">12 字段终档</span></div><div class="sd">失效现象/根本原因命中率标注；含 OEM 信息字段走隔离层分客户库。</div></div>
+            <div class="scn"><div class="sh"><span class="sc">Q-IQC</span><span class="snm">IQC / SPC 异常预警</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2</span></div></div>
+            <div class="feedback" style="margin-top:10px"><b>反馈入口（占位）</b> · 灰度误判/建议 → 企微机器人自动归档回灌口径</div>
+          </div>
+        </div>
       </section>
 
-      <!-- ===================== 财务域（建设中） ===================== -->
+      <!-- ===================== 财务域 · FI2 三单匹配对账 ===================== -->
       <section id="view-finance" class="view">
-        <div class="panel" style="margin-bottom:16px">
-          <div class="phead"><h3><span class="bar"></span>财务域 · 场景入口</h3><span class="wip-ribbon" style="margin-left:auto">● 建造中 · 数据闸回填核对中</span></div>
-          <div class="scn"><div class="sh"><span class="sc">FI2</span><span class="snm">三单匹配自动对账</span><span class="st wip" style="margin-left:8px">建造中</span><span class="meta">2026-09 上线</span></div><div class="sd">PO / GR / AP 三单自动匹配对账；AP 单价与 PO 强制比对，微差 ≤1 元 L2 自消化。规则已定稿，8 月底真实验证。</div></div>
-          <div class="scn"><div class="sh"><span class="sc">FI3</span><span class="snm">付款申请自动校验</span><span class="st wip" style="margin-left:8px">建造中</span><span class="meta">2026-11 上线</span></div><div class="sd">付款申请与合同/凭证/收款账户自动校验；异常拦截、L4 晋级 Paul+CFO 会签。</div></div>
-          <div class="scn"><div class="sh"><span class="sc">FI4-10</span><span class="snm">智能月结 / 异常交易等</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2–S3</span></div><div class="sd">月结自动化、异常交易识别等 7 个场景顺延排布。</div></div>
+        <div class="grid board-tiles" style="margin-bottom:16px">
+          <div class="tile total"><div class="tl">本期 AP 单</div><div class="tv">342</div><div class="tsub">U9C 应付配票生成</div></div>
+          <div class="tile g"><div class="tl">✅ 三单匹配</div><div class="tv">298</div><div class="tsub">四维一致</div></div>
+          <div class="tile a"><div class="tl">⚠️ 差异待复核</div><div class="tv">27</div><div class="tsub">超容差</div></div>
+          <div class="tile y"><div class="tl">微差 L2 自消化</div><div class="tv">12</div><div class="tsub">≤¥1 或 ≤0.5%</div></div>
+          <div class="tile r"><div class="tl">🔴 AP-PO 单价偏差</div><div class="tv">5</div><div class="tsub">强制比对拦截</div></div>
+          <div class="tile"><div class="tl">匹配率</div><div class="tv" style="color:var(--cyan)">87%</div><div class="tsub">目标 ≥95%</div></div>
         </div>
-        <div class="feedback"><b>数据闸状态</b><br>U9C 财务侧 10 端点回填初稿（API 文档）已到 07-17，覆盖度核对中 · OCR 选型 ≥99% 待定<div style="margin-top:12px"><button class="btn ghost">查看端点核对清单</button></div></div>
+        <div class="panel">
+          <div class="phead"><h3><span class="bar"></span>三单匹配对账明细</h3><span class="wip-ribbon" style="margin-left:auto">● 建造中 · 2026-09 上线 · 8 月底真实验证</span></div>
+          <div class="toolbar">
+            <div class="chip on" data-ff="all">全部 <span class="n">342</span></div>
+            <div class="chip" data-ff="g">✅ 匹配 <span class="n">298</span></div>
+            <div class="chip" data-ff="a">⚠️ 差异 <span class="n">27</span></div>
+            <div class="chip" data-ff="y">微差 L2 <span class="n">12</span></div>
+            <div class="chip" data-ff="r">🔴 单价偏差 <span class="n">5</span></div>
+            <div style="margin-left:auto" class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input placeholder="AP 单号 / 供应商 / 料品"></div>
+          </div>
+          <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>AP 单号</th><th>供应商</th><th>料品（INV 规格型号）</th><th>数量</th><th>未税金额</th><th>税额</th><th>匹配状态</th><th>差异明细</th></tr></thead>
+            <tbody id="finBody">
+              <tr data-ff="r"><td><span class="code">AP-1071</span></td><td>精工连接器</td><td>端子 T-0912</td><td>5,000</td><td>¥7,500</td><td>¥975</td><td><span class="sdot r"><i></i>单价偏差</span></td><td class="miss">AP 单价 1.50 vs PO 1.42（+5.6%），强制拦截</td></tr>
+              <tr data-ff="a"><td><span class="code">AP-1055</span></td><td>立煌塑胶</td><td>外壳注塑件 H-2231</td><td>800</td><td>¥16,000</td><td>¥2,080</td><td><span class="sdot a"><i></i>差异</span></td><td class="miss">未税金额差 ¥620（&gt;0.5%），待复核</td></tr>
+              <tr data-ff="a"><td><span class="code">AP-1093</span></td><td>华阳电子</td><td>电阻 R0603</td><td>200,000</td><td>¥18,000</td><td>¥2,340</td><td><span class="sdot a"><i></i>差异</span></td><td class="miss">INV 多张归集，数量差 300</td></tr>
+              <tr data-ff="y"><td><span class="code">AP-1010</span></td><td>三环</td><td>MLCC 车规 X7R</td><td>120,000</td><td>¥98,000</td><td>¥12,740</td><td><span class="sdot y"><i></i>微差 L2</span></td><td class="miss">整单差 ¥0.8 ≤¥1，自消化</td></tr>
+              <tr data-ff="y"><td><span class="code">AP-1119</span></td><td>精工连接器</td><td>连接器 C-3301</td><td>3,200</td><td>¥28,800</td><td>¥3,744</td><td><span class="sdot y"><i></i>微差 L2</span></td><td class="miss">差 0.3% ≤0.5%，自消化</td></tr>
+              <tr data-ff="g"><td><span class="code">AP-1042</span></td><td>华阳电子</td><td>陶瓷电容 CC0402</td><td>50,000</td><td>¥42,500</td><td>¥5,525</td><td><span class="sdot g"><i></i>匹配</span></td><td class="miss">四维一致</td></tr>
+              <tr data-ff="g"><td><span class="code">AP-1088</span></td><td>长盈精密</td><td>屏蔽罩 S-4410</td><td>2,400</td><td>¥21,600</td><td>¥2,808</td><td><span class="sdot g"><i></i>匹配</span></td><td class="miss">料品归一化后聚合一致</td></tr>
+              <tr data-ff="g"><td><span class="code">AP-1102</span></td><td>三环</td><td>MLCC 0805</td><td>80,000</td><td>¥64,000</td><td>¥8,320</td><td><span class="sdot g"><i></i>匹配</span></td><td class="miss">—</td></tr>
+            </tbody>
+          </table>
+          </div>
+          <div class="note">样例数据（占位）——接 FI2 引擎真实输出替换。核对对象＝<b>AP 单 vs INV</b>（PO 为前置参照）；匹配标识＝<b>料品</b>（对应 INV 规格型号/项目名称）；逻辑＝<b>同一料品汇总归集比合计</b>，四维＝料品+数量+未税金额+税额。发票源＝U9C 应付单附件 + OCR 直读。</div>
+        </div>
+        <div class="grid cols-2" style="margin-top:16px">
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>规则口径（已定稿）</h3></div>
+            <div class="alert"><span class="sev g"></span><div class="am"><b>R1 四维匹配</b> — 数量 ±0 精确；未税金额比例 ≤0.5%（备用）；税额随税率动态换算</div></div>
+            <div class="alert"><span class="sev y"></span><div class="am"><b>R5 微差门禁</b> — 整单差异总额 ≤¥1 或 ≤0.5% → 金额微差降级 L2 自消化</div></div>
+            <div class="alert"><span class="sev a"></span><div class="am"><b>R7 汇率容差</b> — 人民币 ±2%；外币连续 2 次同向偏移推人工抽查</div></div>
+            <div class="alert"><span class="sev r"></span><div class="am"><b>AP-PO 单价强制比对</b> — 堵 ERP 配票改金额缺口，超容差拦截</div></div>
+            <div class="alert"><span class="sev g"></span><div class="am"><b>料品编码归一化</b> — 空格/全半角/括号/「-」vs「/」预处理后聚合</div></div>
+          </div>
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>数据闸 & 同域场景</h3></div>
+            <div class="alert"><span class="sev y"></span><div class="am">U9C 财务侧 10 端点回填初稿（API 文档）已到 07-17，覆盖度核对中 · OCR 选型 ≥99% 待定</div></div>
+            <div class="scn" style="margin-top:6px"><div class="sh"><span class="sc">FI3</span><span class="snm">付款申请自动校验</span><span class="st wip" style="margin-left:8px">建造中</span><span class="meta">2026-11</span></div></div>
+            <div class="scn"><div class="sh"><span class="sc">FI4-10</span><span class="snm">智能月结 / 异常交易等</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2–S3</span></div></div>
+            <div class="feedback" style="margin-top:10px"><b>反馈入口（占位）</b> · 差异误判/口径建议 → 企微机器人自动归档回灌</div>
+          </div>
+        </div>
       </section>
 
-      <!-- ===================== 销售域（规划中） ===================== -->
+      <!-- ===================== 销售域 · ECU 销售业绩看板（有机接入 SalesMarketing） ===================== -->
       <section id="view-sales" class="view">
-        <div class="panel" style="margin-bottom:16px">
-          <div class="phead"><h3><span class="bar"></span>销售域 · 场景入口</h3><span class="wip-ribbon" style="margin-left:auto">● 规划中 · S1 场景 9 月启动</span></div>
-          <div class="scn"><div class="sh"><span class="sc">S6</span><span class="snm">客户知识线 / 交期响应</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">2026-Q4 归集</span></div><div class="sd">客户订单交期智能响应，复用采购 SC8 承诺交期引擎；接口人已到位、知识线归集牵头中。</div></div>
-          <div class="scn"><div class="sh"><span class="sc">S-报价</span><span class="snm">报价辅助 / 客户画像</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2</span></div><div class="sd">历史成交与客户画像辅助报价；OEM 数据按客户隔离。</div></div>
+        <div class="panel" style="margin-bottom:16px;padding:12px 16px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--t1)">
+            <span class="wip-ribbon">● 骨架接入 · 数据源：SalesMarketing《ECU 销售业绩看板》</span>
+            <span>快照 <b style="color:var(--cyan);font-family:var(--mono)">2026-06-25</b> · 接 <b style="color:var(--t0);font-family:var(--mono)">crm_data/dashboard_data.json</b> 同一数据源后转实时（金额单位：万元）</span>
+          </div>
         </div>
-        <div class="feedback"><b>敬请期待</b><br>销售域场景 2026-09 起按 8 周前置纪律启动，届时在此开放入口。</div>
+
+        <div class="grid kpis" style="margin-bottom:16px">
+          <div class="kpi cyan"><div class="kl">商机管道</div><div class="kv" style="font-size:23px">¥50784万</div><div class="ks">在库商机 561 个</div></div>
+          <div class="kpi green"><div class="kl">赢单 Design-Win</div><div class="kv">434</div><div class="ks">贡献 <b>¥26627万</b></div></div>
+          <div class="kpi"><div class="kl">线索总数</div><div class="kv">1672</div><div class="ks">客户 823 · 联系人 823</div></div>
+          <div class="kpi red"><div class="kl">🔴 高危线索</div><div class="kv">10</div><div class="ks">评分 100 · 需即干预</div></div>
+          <div class="kpi"><div class="kl">平均销售周期</div><div class="kv" style="font-size:23px">180天</div><div class="ks">渗透率 2% · 三角控单 62%</div></div>
+        </div>
+
+        <div class="grid cols-2" style="margin-bottom:16px">
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>🔄 销售漏斗健康度</h3><span class="more">转化 26.0%</span></div>
+            <div class="prow"><div class="pn">MQL 线索</div><div class="track"><i style="width:100%;background:linear-gradient(90deg,#22d3ee,#2b6fdb)"></i></div><div class="pc">1,672 · 100%</div></div>
+            <div class="prow"><div class="pn">SAL 合格</div><div class="track"><i style="width:39%;background:linear-gradient(90deg,#22d3ee,#2b6fdb)"></i></div><div class="pc">657</div></div>
+            <div class="prow"><div class="pn">Opportunity</div><div class="track"><i style="width:34%;background:linear-gradient(90deg,#38bdf8,#2b6fdb)"></i></div><div class="pc">561</div></div>
+            <div class="prow"><div class="pn">Deal 赢单</div><div class="track"><i style="width:26%;background:linear-gradient(90deg,#2fd67f,#25b56a)"></i></div><div class="pc">434 · 26.0%</div></div>
+          </div>
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>📊 ECU 就绪度评分分布</h3><span class="more">共 1,672</span></div>
+            <div class="prow"><div class="pn">0–20</div><div class="track"><i style="width:100%;background:linear-gradient(90deg,#f2555a,#c0343a)"></i></div><div class="pc">1,015</div></div>
+            <div class="prow"><div class="pn">20–40</div><div class="track"><i style="width:0%"></i></div><div class="pc">0</div></div>
+            <div class="prow"><div class="pn">40–60</div><div class="track"><i style="width:61%;background:linear-gradient(90deg,#f5a524,#d98c17)"></i></div><div class="pc">620</div></div>
+            <div class="prow"><div class="pn">60–80</div><div class="track"><i style="width:0%"></i></div><div class="pc">0</div></div>
+            <div class="prow"><div class="pn">80–100</div><div class="track"><i style="width:4%;background:linear-gradient(90deg,#2fd67f,#25b56a)"></i></div><div class="pc">37</div></div>
+            <div class="note" style="margin-top:6px">洞察：读数呈双峰——1,015 个线索就绪度偏低（&lt;20），仅 37 个高就绪（≥80），转化重心在中低分段培育。</div>
+          </div>
+        </div>
+
+        <div class="grid cols-2">
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>💰 赢单金额 Top 客户</h3><span class="more">万元</span></div>
+            <div style="overflow-x:auto">
+            <table>
+              <thead><tr><th>客户</th><th>赢单金额</th><th>单数</th></tr></thead>
+              <tbody>
+                <tr><td>苏州国方汽车电子</td><td class="gap zero">¥4,899万</td><td>10</td></tr>
+                <tr><td>湖南道依茨动力</td><td class="gap zero">¥1,462万</td><td>9</td></tr>
+                <tr><td>浙江远程商用车研发</td><td class="gap zero">¥1,400万</td><td>1</td></tr>
+                <tr><td>康明斯燃油系统（武汉）</td><td class="gap zero">¥1,362万</td><td>8</td></tr>
+                <tr><td>广西玉柴机器</td><td class="gap zero">¥1,062万</td><td>11</td></tr>
+                <tr><td>陕西法士特齿轮</td><td class="gap zero">¥689万</td><td>1</td></tr>
+                <tr><td>费尼亚德尔福汽车系统（上海）</td><td class="gap zero">¥664万</td><td>5</td></tr>
+                <tr><td>一拖（洛阳）柴油机</td><td class="gap zero">¥656万</td><td>4</td></tr>
+              </tbody>
+            </table>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="phead"><h3><span class="bar"></span>⚠️ 需干预线索追踪</h3><span class="more">评分 100 · 10 条</span></div>
+            <div style="overflow-x:auto">
+            <table>
+              <thead><tr><th>公司</th><th>联系人</th><th>电话</th><th>评分</th></tr></thead>
+              <tbody>
+                <tr><td>邦奇动力</td><td>Sandra Su</td><td class="miss">025-85809089</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>南京依维柯</td><td>Njin</td><td class="miss">025-69649961</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>芯朋微电子</td><td>Liubk</td><td class="miss">0510-85217718</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>上汽集团</td><td>WangJianJun</td><td class="miss">021-22011888</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>上汽集团</td><td>Jiyu01</td><td class="miss">021-22011888</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>Motory</td><td>Jiayongfei</td><td class="miss">021-1232222</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>Fujipcb</td><td>Fuji-Sales24</td><td class="miss">13360273487</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td class="miss">（未映射公司）</td><td>Freddongzhijun</td><td class="miss">13683227511</td><td><span class="sdot r"><i></i>100</span></td></tr>
+              </tbody>
+            </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:16px">
+          <div class="phead"><h3><span class="bar"></span>规划中场景 & 接入说明</h3></div>
+          <div class="scn"><div class="sh"><span class="sc">S6</span><span class="snm">客户知识线 / 交期响应</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">2026-Q4 归集</span></div><div class="sd">复用采购 SC8 承诺交期引擎；接口人已到位、知识线归集牵头中。</div></div>
+          <div class="scn"><div class="sh"><span class="sc">S-报价</span><span class="snm">报价辅助 / 客户画像</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2</span></div></div>
+          <div class="note">本页为 SalesMarketing《ECU 销售业绩看板》的原生镜像（同一 <b>dashboard_data.json</b> 数据模型）。当前为 2026-06-25 快照；接入方式见聊天说明——最"有机"＝命令中心 <b>fetch 同一 JSON</b> 实时刷新（部署时需把该数据源纳入 .51 可达路径，属 CC 建造侧）。</div>
+        </div>
       </section>
 
       <!-- ===================== 系统与发布 ===================== -->
@@ -399,7 +592,7 @@
     </div>
   </div>
 </div>
-<div class="proto-flag">框架原型 v0.1 · 样例数据 · 2026-07</div>
+<div class="proto-flag">框架原型 · 采购/财务/质量/销售 · 响应式 · 样例数据 · 2026-07</div>
 
 <script>
   // ---- ring SVG injection ----
@@ -431,6 +624,13 @@
   document.querySelectorAll('.nav[data-view]').forEach(function(n){ n.addEventListener('click',function(){go(n.dataset.view)}); });
   document.querySelectorAll('[data-goto]').forEach(function(c){ c.addEventListener('click',function(){go(c.dataset.goto)}); });
 
+  // ---- mobile drawer ----
+  var _sb=document.querySelector('.sidebar'), _scrim=document.getElementById('scrim'), _burger=document.getElementById('hamburger');
+  function openDrawer(o){ if(_sb){_sb.classList.toggle('open',o);} if(_scrim){_scrim.classList.toggle('show',o);} }
+  if(_burger){ _burger.addEventListener('click',function(){ openDrawer(!_sb.classList.contains('open')); }); }
+  if(_scrim){ _scrim.addEventListener('click',function(){ openDrawer(false); }); }
+  document.querySelectorAll('.nav[data-view]').forEach(function(n){ n.addEventListener('click',function(){ openDrawer(false); }); });
+
   // ---- board filter ----
   document.querySelectorAll('.chip[data-f]').forEach(function(ch){
     ch.addEventListener('click',function(){
@@ -442,6 +642,22 @@
       });
     });
   });
+
+  // ---- domain filters (finance / quality) ----
+  function bindFilter(sel, bodyId, attr){
+    document.querySelectorAll(sel).forEach(function(ch){
+      ch.addEventListener('click',function(){
+        document.querySelectorAll(sel).forEach(function(x){x.classList.remove('on')});
+        ch.classList.add('on');
+        var f=ch.getAttribute(attr);
+        document.querySelectorAll('#'+bodyId+' tr').forEach(function(tr){
+          tr.style.display=(f==='all'||tr.getAttribute(attr)===f)?'':'none';
+        });
+      });
+    });
+  }
+  bindFilter('.chip[data-ff]','finBody','data-ff');
+  bindFilter('.chip[data-fq]','quaBody','data-fq');
 
   // ---- clock ----
   function tick(){ var d=new Date(); document.getElementById('clock').textContent=d.toTimeString().slice(0,8); }
