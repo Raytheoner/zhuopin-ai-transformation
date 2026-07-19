@@ -487,12 +487,12 @@
       <section id="view-sales" class="view">
         <div class="panel" style="margin-bottom:16px;padding:12px 16px">
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--t1)">
-            <span class="wip-ribbon">● 骨架接入 · 数据源：SalesMarketing《ECU 销售业绩看板》</span>
-            <span>快照 <b style="color:var(--cyan);font-family:var(--mono)">2026-06-25</b> · 接 <b style="color:var(--t0);font-family:var(--mono)">crm_data/dashboard_data.json</b> 同一数据源后转实时（金额单位：万元）</span>
+            <span class="wip-ribbon" id="salesBadge">● 骨架接入 · 快照数据（未接实时源）· 数据源：SalesMarketing《ECU 销售业绩看板》</span>
+            <span>快照 <b style="color:var(--cyan);font-family:var(--mono)" id="salesSync">2026-06-25</b> · 接 <b style="color:var(--t0);font-family:var(--mono)">crm_data/dashboard_data.json</b> 同一数据源后自动转实时（金额单位：万元）</span>
           </div>
         </div>
 
-        <div class="grid kpis" style="margin-bottom:16px">
+        <div class="grid kpis" id="salesKpis" style="margin-bottom:16px">
           <div class="kpi cyan"><div class="kl">商机管道</div><div class="kv" style="font-size:23px">¥50784万</div><div class="ks">在库商机 561 个</div></div>
           <div class="kpi green"><div class="kl">赢单 Design-Win</div><div class="kv">434</div><div class="ks">贡献 <b>¥26627万</b></div></div>
           <div class="kpi"><div class="kl">线索总数</div><div class="kv">1672</div><div class="ks">客户 823 · 联系人 823</div></div>
@@ -503,18 +503,22 @@
         <div class="grid cols-2" style="margin-bottom:16px">
           <div class="panel">
             <div class="phead"><h3><span class="bar"></span>🔄 销售漏斗健康度</h3><span class="more">转化 26.0%</span></div>
+            <div id="salesFunnel">
             <div class="prow"><div class="pn">MQL 线索</div><div class="track"><i style="width:100%;background:linear-gradient(90deg,#22d3ee,#2b6fdb)"></i></div><div class="pc">1,672 · 100%</div></div>
             <div class="prow"><div class="pn">SAL 合格</div><div class="track"><i style="width:39%;background:linear-gradient(90deg,#22d3ee,#2b6fdb)"></i></div><div class="pc">657</div></div>
             <div class="prow"><div class="pn">Opportunity</div><div class="track"><i style="width:34%;background:linear-gradient(90deg,#38bdf8,#2b6fdb)"></i></div><div class="pc">561</div></div>
             <div class="prow"><div class="pn">Deal 赢单</div><div class="track"><i style="width:26%;background:linear-gradient(90deg,#2fd67f,#25b56a)"></i></div><div class="pc">434 · 26.0%</div></div>
+            </div>
           </div>
           <div class="panel">
             <div class="phead"><h3><span class="bar"></span>📊 ECU 就绪度评分分布</h3><span class="more">共 1,672</span></div>
+            <div id="salesScore">
             <div class="prow"><div class="pn">0–20</div><div class="track"><i style="width:100%;background:linear-gradient(90deg,#f2555a,#c0343a)"></i></div><div class="pc">1,015</div></div>
             <div class="prow"><div class="pn">20–40</div><div class="track"><i style="width:0%"></i></div><div class="pc">0</div></div>
             <div class="prow"><div class="pn">40–60</div><div class="track"><i style="width:61%;background:linear-gradient(90deg,#f5a524,#d98c17)"></i></div><div class="pc">620</div></div>
             <div class="prow"><div class="pn">60–80</div><div class="track"><i style="width:0%"></i></div><div class="pc">0</div></div>
             <div class="prow"><div class="pn">80–100</div><div class="track"><i style="width:4%;background:linear-gradient(90deg,#2fd67f,#25b56a)"></i></div><div class="pc">37</div></div>
+            </div>
             <div class="note" style="margin-top:6px">洞察：读数呈双峰——1,015 个线索就绪度偏低（&lt;20），仅 37 个高就绪（≥80），转化重心在中低分段培育。</div>
           </div>
         </div>
@@ -525,7 +529,7 @@
             <div style="overflow-x:auto">
             <table>
               <thead><tr><th>客户</th><th>赢单金额</th><th>单数</th></tr></thead>
-              <tbody>
+              <tbody id="salesTopCust">
                 <tr><td>苏州国方汽车电子</td><td class="gap zero">¥4,899万</td><td>10</td></tr>
                 <tr><td>湖南道依茨动力</td><td class="gap zero">¥1,462万</td><td>9</td></tr>
                 <tr><td>浙江远程商用车研发</td><td class="gap zero">¥1,400万</td><td>1</td></tr>
@@ -543,7 +547,7 @@
             <div style="overflow-x:auto">
             <table>
               <thead><tr><th>公司</th><th>联系人</th><th>电话</th><th>评分</th></tr></thead>
-              <tbody>
+              <tbody id="salesRisk">
                 <tr><td>邦奇动力</td><td>Sandra Su</td><td class="miss">025-85809089</td><td><span class="sdot r"><i></i>100</span></td></tr>
                 <tr><td>南京依维柯</td><td>Njin</td><td class="miss">025-69649961</td><td><span class="sdot r"><i></i>100</span></td></tr>
                 <tr><td>芯朋微电子</td><td>Liubk</td><td class="miss">0510-85217718</td><td><span class="sdot r"><i></i>100</span></td></tr>
@@ -658,6 +662,43 @@
   }
   bindFilter('.chip[data-ff]','finBody','data-ff');
   bindFilter('.chip[data-fq]','quaBody','data-fq');
+
+  // ---- 销售域：同源实时 fetch（读 SalesMarketing 同一 dashboard_data.json；成功→实时渲染，失败→保留 2026-06-25 快照） ----
+  // 【CC 建造侧】部署到 .51 时，把该数据源放到下方 SALES_DATA_URL 指向的可达路径：
+  //   方案A 每次 CRM 同步后把 dashboard_data.json 拷到本页同目录 data/ 下；
+  //   方案B 用 .51 web 服务反向代理 SalesMarketing/crm_data/；方案C 提供 /api/sales 端点。
+  //   本地 file:// 直开时跨目录 fetch 会失败 → 自动保留快照，属预期。
+  var SALES_DATA_URL = 'data/sales_dashboard_data.json';   // ← CC 按 .51 实际路径调整
+  function _esc(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+  function _wan(n){ return '¥' + Math.round((+n||0)/10000).toLocaleString('en-US') + '万'; }
+  function _kpi(cls,label,val,sub,fs){ return '<div class="kpi '+cls+'"><div class="kl">'+label+'</div><div class="kv"'+(fs?(' style="font-size:'+fs+'"'):'')+'>'+val+'</div><div class="ks">'+sub+'</div></div>'; }
+  function _bar(label,w,grad,pc){ return '<div class="prow"><div class="pn">'+label+'</div><div class="track"><i style="width:'+w+'%'+(w>0?(';background:linear-gradient(90deg,'+grad+')'):'')+'"></i></div><div class="pc">'+pc+'</div></div>'; }
+  function renderSalesData(d){
+    try{
+      var $=function(id){return document.getElementById(id);};
+      if(d.kpis){ var k=d.kpis, opp=(d.funnel&&d.funnel[2]&&d.funnel[2].count)||'—';
+        $('salesKpis').innerHTML =
+          _kpi('cyan','商机管道',k.pipeline_amount,'在库商机 '+opp+' 个','23px')
+        +_kpi('green','赢单 Design-Win',k.design_win_count,'贡献 <b>'+k.design_win_contribution+'</b>')
+        +_kpi('','线索总数',k.total_leads,'客户 '+k.total_customers+' · 联系人 '+k.total_contacts)
+        +_kpi('red','🔴 高危线索',k.high_risk_leads_count,'评分 100 · 需即干预')
+        +_kpi('','平均销售周期',k.sales_cycle_avg_days+'天','渗透率 '+k.marketing_penetration_rate+' · 三角控单 '+k.triangle_control_completeness,'23px');
+      }
+      if(d.funnel&&d.funnel.length){ var top=d.funnel[0].count||1, fc=['#22d3ee,#2b6fdb','#22d3ee,#2b6fdb','#38bdf8,#2b6fdb','#2fd67f,#25b56a'];
+        $('salesFunnel').innerHTML=d.funnel.map(function(s,i){ var rt=(s.rate&&s.rate!=='-')?(' · '+s.rate):''; return _bar(_esc(s.stage),Math.round(s.count/top*100),fc[i]||fc[0],(s.count).toLocaleString()+rt); }).join('');
+      }
+      if(d.score_distribution){ var sd=d.score_distribution, mx=Math.max.apply(null,Object.keys(sd).map(function(x){return sd[x];}))||1,
+          sc={'0-20':'#f2555a,#c0343a','20-40':'#f5a524,#d98c17','40-60':'#f5a524,#d98c17','60-80':'#f5a524,#d98c17','80-100':'#2fd67f,#25b56a'};
+        $('salesScore').innerHTML=Object.keys(sd).map(function(key){ return _bar(key.replace('-','–'),Math.round(sd[key]/mx*100),sc[key]||'#f5a524,#d98c17',(sd[key]).toLocaleString()); }).join('');
+      }
+      if(d.channels){ $('salesTopCust').innerHTML=d.channels.map(function(c){ return '<tr><td>'+_esc((c.name||'').trim())+'</td><td class="gap zero">'+_wan(c.amount)+'</td><td>'+c.count+'</td></tr>'; }).join(''); }
+      if(d.high_risk_leads){ $('salesRisk').innerHTML=d.high_risk_leads.map(function(l){ var co=(!l.company||l.company==='—')?'<span class="miss">（未映射公司）</span>':_esc(l.company); return '<tr><td>'+co+'</td><td>'+_esc(l.contact)+'</td><td class="miss">'+_esc(l.phone)+'</td><td><span class="sdot r"><i></i>'+l.score+'</span></td></tr>'; }).join(''); }
+      if(d.sync_time){ var t=String(d.sync_time), b=$('salesBadge'), s=$('salesSync');
+        if(b) b.textContent='● 实时 · 同步 '+t.slice(0,16).replace('T',' ');
+        if(s) s.textContent=t.slice(0,10); }
+    }catch(e){ /* 出错则保留快照 */ }
+  }
+  fetch(SALES_DATA_URL,{cache:'no-store'}).then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(renderSalesData).catch(function(){ /* 未接实时源：保留快照 */ });
 
   // ---- clock ----
   function tick(){ var d=new Date(); document.getElementById('clock').textContent=d.toTimeString().slice(0,8); }
