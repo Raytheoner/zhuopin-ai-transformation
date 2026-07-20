@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "Claude Code Desktop 衔接与全景开发启动指南"
 created: 2026-06-08
 audience: VP（Paul）+ AIOps

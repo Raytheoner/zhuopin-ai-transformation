@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "开场 Prompt · FI2 三单匹配自动对账（CC 建造会话用，mock 先行）"
 created: 2026-07-06
 用途: 新开 Claude Code（CC，LAN 建造车间）起 FI2 时读本文件。财务域 FI1 暂缓后，FI2/FI3 是 2026 唯一落地场景；mock 先行、不等数据闸，赶 9 月。

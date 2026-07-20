@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "开场 Prompt · fix-d 评审整改（CC 交接）"
 created: 2026-07-04
 来源: 《Antigravity评审结果-默会知识纠正与批次制机制-2026-07-04》→《Antigravity评审triage与分桶-2026-07-04》（首席 AI 架构师已逐条核证，3 P0 + 1 P1 接线转本变更包）

@@ -1,3 +1,8 @@
+---
+status: 在办
+title: "Session 接力（滚动·最新）—— 全景规划实现"
+---
+
 # Session 接力（滚动·最新）—— 全景规划实现
 
 > 用途：跨会话接力点。新 Cowork / Claude Code 会话**读这份 + CLAUDE.md 当前进度即可恢复**，按【下一会话主攻】继续。

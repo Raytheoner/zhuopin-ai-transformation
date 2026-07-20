@@ -1,4 +1,5 @@
 ---
+status: 生效
 title: "卓品智能 AI 转型全景规划"
 created: 2026-05-28
 updated: 2026-06-13

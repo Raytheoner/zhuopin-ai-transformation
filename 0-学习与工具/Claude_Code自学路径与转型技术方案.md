@@ -1,3 +1,8 @@
+---
+status: 生效
+title: "Claude Code 自学路径 × 卓品智能 AI 转型技术方案"
+---
+
 # Claude Code 自学路径 × 卓品智能 AI 转型技术方案
 
 > **适用人：** Paul（卓品智能运营 VP，资深软件工程背景，已完成 supplychain 小型项目）

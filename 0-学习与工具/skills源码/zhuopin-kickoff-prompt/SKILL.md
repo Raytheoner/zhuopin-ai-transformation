@@ -1,4 +1,5 @@
 ---
+status: 在办
 name: zhuopin-kickoff-prompt
 description: 卓品AI转型项目·交接/转场开场prompt生成器。当 Paul 说"给我去XX专线/CC的转场prompt""出一份交接prompt""新开session的开场"时使用。产出引用版 prompt 文件 + 复制即用开场词，不复制权威内容正文。
 ---

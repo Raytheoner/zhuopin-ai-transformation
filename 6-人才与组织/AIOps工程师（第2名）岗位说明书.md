@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "岗位说明书 — AIOps 工程师（数字员工开发与运维，第 2 名）"
 created: 2026-06-07
 hiring_priority: P0（项目首要风险，7 月到位）

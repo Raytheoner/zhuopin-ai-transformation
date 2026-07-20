@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "FI1 仓库对账 · ERP 投料/产出 CSV 导出需求（给 IT + 生产）"
 created: 2026-06-29
 to: "[IT负责人] / [生产/PMC 接口人]"

@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "FI4 / FI5 数据闸清单（给 IT 与 SRM）—— 钉 9 月启动的数据前提"
 created: 2026-07-03
 to: "[IT负责人] / [SRM系统负责人]"

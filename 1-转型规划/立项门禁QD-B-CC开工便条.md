@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "QD-B 立项门禁 · CC 开工便条"
 created: 2026-06-27
 用途: 在 Claude Code（LAN 建造车间）新会话开场用——读文件起活，不靠粘贴长 prompt

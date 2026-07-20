@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "OEM 数据隔离层（向量知识库）部署需求 · IT 推动 brief"
 created: 2026-06-25
 to: "[IT负责人]"

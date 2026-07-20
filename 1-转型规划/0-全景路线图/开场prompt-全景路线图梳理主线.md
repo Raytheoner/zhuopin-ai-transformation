@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "开场 Prompt · 全景路线图梳理主线（新 Cowork Session 用，承接路线图 stewardship）"
 created: 2026-06-29
 用途: 新起一个干净的 Cowork Session（建议 sonnet 5）综观全局、再梳理全景路线图。承接原路线图跟踪 Task 的 stewardship，本会话冷启动即可接上。

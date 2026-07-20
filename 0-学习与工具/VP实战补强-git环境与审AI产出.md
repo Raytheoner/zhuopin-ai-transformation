@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "VP 实战补强 — git / 开发环境 / 审 AI 产出"
 created: 2026-06-08
 audience: Paul（分管供应链与质量 VP，CS + 供应链背景）

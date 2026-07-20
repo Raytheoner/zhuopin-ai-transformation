@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "Antigravity 评审 triage 与分桶（默会知识纠正与批次制机制）"
 created: 2026-07-04
 triage: 首席 AI 架构师（Cowork）；逐条核证后分桶，1 条驳回附证据

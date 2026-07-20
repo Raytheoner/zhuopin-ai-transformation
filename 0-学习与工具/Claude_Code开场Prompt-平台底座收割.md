@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "Claude Code Desktop 开场 Prompt — 平台底座收割（全景构建第一步）"
 created: 2026-06-08
 用法: 在 Claude Code Desktop 新开 session，确认已打开 `企业AI转型` 与 `supplychain` 两个文件夹后，复制下方整段粘贴。

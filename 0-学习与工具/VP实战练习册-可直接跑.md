@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "VP 实战练习册 — 照着敲就能跑，跑完能自己对答案"
 created: 2026-06-10
 audience: Paul（分管供应链与质量 VP，CS + 供应链背景）

@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "开场 Prompt · 质量域场景落地专线（新 Cowork Session 用）"
 created: 2026-06-25
 用途: 新开一个 Cowork Session 做质量域场景落地时，复制下方代码块粘进去即可交接。独立于全景路线图跟踪 Task。

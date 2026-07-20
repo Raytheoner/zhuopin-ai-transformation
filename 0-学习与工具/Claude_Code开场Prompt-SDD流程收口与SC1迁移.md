@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "Claude Code Desktop 开场 Prompt — SDD 流程收口 + SC1 工作区迁移（治理类，非新场景）"
 created: 2026-07-02
 来源: Cowork 对 skill 配置环境 + OpenSpec/SuperPowers 流程落地情况的全盘审计（2026-07-02）

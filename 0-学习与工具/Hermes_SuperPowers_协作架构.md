@@ -1,3 +1,8 @@
+---
+status: 生效
+title: "Hermes × SuperPowers 协作架构"
+---
+
 # Hermes × SuperPowers 协作架构
 ## 卓品智能 AI 转型工程指南
 

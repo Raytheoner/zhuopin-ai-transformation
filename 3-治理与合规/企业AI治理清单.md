@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "企业 AI 治理清单 — 供应链与财务场景"
 created: 2026-05-27
 tags:

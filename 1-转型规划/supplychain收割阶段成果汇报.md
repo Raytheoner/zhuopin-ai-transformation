@@ -1,3 +1,8 @@
+---
+status: 历史快照
+title: "supplychain 收割阶段成果汇报"
+---
+
 # supplychain 收割阶段成果汇报
 
 > 受众：管理层 / 向上汇报、半年度复盘

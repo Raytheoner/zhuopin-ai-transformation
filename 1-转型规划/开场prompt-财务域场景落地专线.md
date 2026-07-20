@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "开场 Prompt · 财务域场景落地专线（新 Cowork Session 用）"
 created: 2026-06-29
 用途: 新开一个 Cowork Session 做财务域场景落地时，让它读本文件交接。独立于全景路线图跟踪 Task。

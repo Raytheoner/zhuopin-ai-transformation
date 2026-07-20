@@ -1,4 +1,5 @@
 ---
+status: 在办
 title: "Antigravity 只读评审 Prompt · 默会知识纠正与批次制机制（2026-07-04 批量变更）"
 created: 2026-07-04
 委托人: Paul（分管供应链与质量 VP，项目决策人）
