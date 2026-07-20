@@ -113,3 +113,14 @@ class BaoguanRow:
 **已按此结论修正代码**（`5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py::get_bom_for_products`）：替代料行的 `qty_per_unit`/`loss_rate` 改为无条件取自其所属主件行，不再读取/采信替代料自身的 `m_usageQty`/`m_scrap`。同步更新了 `tests/test_bom_substitute_extraction.py`（原 `test_substitute_with_own_usage_prefers_its_own_value` 改为 `test_substitute_own_usage_ignored_inherits_main_row`，断言方向反转）与 `openspec/specs/platform-data-connectors/spec.md` 的对应 Requirement 描述。全量回归零漂移（平台193+1skip/SC8 188+3skip/O2 20/SC7 41黄金基准精确不漂移/SC1 53）。
 
 **未验证（仍待 Paul/姚祖怡，见跨桌任务队列 `#33`）**：② 姚祖怡真实数据抽验（本次探测拿到的 20 组真实替代料样本可直接作为她抽验素材，不必重新找样本）；③ `kittable_shortfall` 口径一句话确认。
+
+## 2026-07-20 补充：Open Question #3（kittable_shortfall 口径）与②已由姚祖怡答复确认，跨桌任务队列 #33/#40 回灌销行
+
+姚祖怡 2026-07-16 企微文本回复（`7-外部文档/采购部/采购部-YaoZuYi-回复-2026-07-16-文本反馈-1b745aed1383667554060ee7db5e5eca.md`，对应 07-15 跟进信第二/三件）：
+
+- **第二件（②合并判断逻辑抽验）**：R01D.1339/R01D.0221 真实合并示例"判断逻辑跟我的预期一致"——**无需代码改动**。
+- **第三件（Open Question #3，`kittable_shortfall` 口径）**：姚祖怡结论＝**"凑够客户下的总单量还差多少"**——即取 **`kittable_qty+1` 套的推荐口径未被采纳，改为"补满整张订单（`so.qty`）所需数量 − 现有可用现货"**。两者数值不同（后者通常大得多，见本文档上方 Open Question #3 原文）。
+
+**当前实现（`sc8/baoguan.py::_kittable_qty`）与已确认口径不一致，需代码改造**：现状 `best_shortfall = (best_qty + 1) * qty_per_unit − avail`（凑下一整套），需改为按瓶颈子件 `so.qty * qty_per_unit − avail`（凑够总单量，下限 0）。业务口径已回灌 `1-转型规划/保供看板v2-口径定稿.md` §2 C-2·②（含裁决登记 §5 #5）；代码实现登记跨桌任务队列 **#63**（CC 采购落地待领）。归档变更包本身不重开、不改代码，仅在此追加确认记录（IATF 可追溯）。跨桌任务队列 `#33`/`#40` 据此销行。
+
+**✅ 已实现（2026-07-20，CC，跨桌任务队列 #63 收口）**：`_kittable_qty` 瓶颈子件 shortfall 改按 `needed_for_order = so.qty * row.qty_per_unit`（原 `needed_for_next = (possible + 1) * row.qty_per_unit`），`best_shortfall = max(round(needed_for_order − avail), 0)` 不变（下限 0，不出现负数）。`BaoguanRow.kittable_shortfall` 字段注释、`_kittable_qty` docstring 同步改口径描述；`row_to_dict`/`_HTML_JS` 卡片 tooltip（"还差 N 件"）文案本就未硬编码"凑下一整套"措辞，核对后无需改动。TDD：`tests/test_baoguan_partial_kit.py` 重写 `test_kittable_shortfall_is_gap_to_full_order_qty`（原 `test_kittable_shortfall_is_gap_to_next_full_set`）+ 新增边界用例 `test_kittable_shortfall_zero_when_bottleneck_covers_full_order`（瓶颈子件现货已够撑满整单→shortfall=0）；`tests/test_baoguan.py::test_row_to_dict_passthrough_c1_c2_fields` 同步更新硬编码期望值（`ksf` 1→200）。全量回归零漂移：SC8 190 passed+4 skip（+1 新增边界测试）、平台 200 passed+1 skip、SC1 53 passed、SC7 41 passed（黄金基准 35850/640000/675850 精确不漂移）、O2 20 passed。

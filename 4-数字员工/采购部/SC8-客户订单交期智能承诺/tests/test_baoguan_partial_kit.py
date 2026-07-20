@@ -61,17 +61,30 @@ def test_kittable_qty_from_single_bottleneck(monkeypatch):
     assert r.kittable_bottleneck == "A"
 
 
-def test_kittable_shortfall_is_gap_to_next_full_set(monkeypatch):
-    """还差 N 件 = 凑够 kittable_qty+1 套所需缺口（design.md Open Question #3 推荐口径）。"""
+def test_kittable_shortfall_is_gap_to_full_order_qty(monkeypatch):
+    """还差 N 件 = 凑够客户下单总量（so.qty）所需缺口（姚祖怡 2026-07-16 确认口径，
+    保供看板v2-口径定稿.md §2 C-2·②+§5 裁决 5，推翻 design.md 原推荐的"凑下一整套"）。"""
     monkeypatch.setenv("SC8_NET_INVENTORY", "on")
     so = _so(qty=1000)
     bom = [_row("A", qty_per_unit=2.0)]
-    # floor(701/2)=350；凑够 351 套需要 702，还差 702-701=1
+    # floor(701/2)=350；凑够总单量 1000 套需要 2000，还差 2000-701=1299
     r = assess_supply_risk(so, bom, srm_deliveries=[], today=TODAY,
                           inventory={"A": 701})
     assert r.kittable_qty == 350
     assert r.kittable_bottleneck == "A"
-    assert r.kittable_shortfall == 1
+    assert r.kittable_shortfall == 1299
+
+
+def test_kittable_shortfall_zero_when_bottleneck_covers_full_order(monkeypatch):
+    """边界：瓶颈子件现货已够撑满整张订单（kittable_qty >= so.qty）→ shortfall=0，不出现负数。"""
+    monkeypatch.setenv("SC8_NET_INVENTORY", "on")
+    so = _so(qty=100)
+    bom = [_row("A", qty_per_unit=1.0)]
+    # floor(150/1)=150 >= so.qty=100 → 已够撑满整单，还差 0
+    r = assess_supply_risk(so, bom, srm_deliveries=[], today=TODAY,
+                          inventory={"A": 150})
+    assert r.kittable_qty == 150
+    assert r.kittable_shortfall == 0
 
 
 def test_all_direct_components_participate_no_exception():

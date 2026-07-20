@@ -181,7 +181,8 @@ def test_row_to_dict_passthrough_c1_c2_fields(monkeypatch):
     row = assess_supply_risk(so, bom, [], today=TODAY, inventory={"A": 400, "B": 400})
     d = row_to_dict(row)
     assert d["subs"] == {"A": ["B"]}
-    assert d["kq"] == 800 and d["kbn"] == "A" and d["ksf"] == 1
+    # ksf = 凑够客户下单总量 so.qty(1000) 还差多少 = 1000 - 800 = 200（姚祖怡 07-16 确认口径）
+    assert d["kq"] == 800 and d["kbn"] == "A" and d["ksf"] == 200
 
 
 def test_row_to_dict_c1_c2_defaults_when_absent():

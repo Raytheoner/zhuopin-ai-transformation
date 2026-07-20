@@ -74,7 +74,7 @@ class BaoguanRow:
     # 耦合——SC8_NET_INVENTORY=off 或无现货数据时三者恒为 None，零漂移；不改 risk 既有判定。
     kittable_qty:        int | None = None   # 可齐套套数 = min(全部直接子件 floor(现货/单机用量))
     kittable_bottleneck: str | None = None   # 卡住可齐套数的瓶颈子件料号
-    kittable_shortfall:  int | None = None   # 该瓶颈子件凑够下一整套还差多少件
+    kittable_shortfall:  int | None = None   # 该瓶颈子件凑够客户下单总量（so.qty）还差多少件
 
 
 def _classify(confirmed_gap: int | None, has_bom: bool, params: ForecastParams,
@@ -214,7 +214,7 @@ def _kittable_qty(
     料位按 C-1 等价合并口径，可用现货 = 主料 + 组内全部替代料现货合计。
 
     Returns:
-        (可齐套套数, 瓶颈子件料号, 该子件凑够下一整套还差多少件)；
+        (可齐套套数, 瓶颈子件料号, 该子件凑够客户下单总量 so.qty 还差多少件)；
         无直接子件或某子件单机用量非正（数据异常）时返回 (None, None, None)。
     """
     groups = _substitute_groups(bom, so.item_code)
@@ -235,8 +235,8 @@ def _kittable_qty(
         if best_qty is None or possible < best_qty:
             best_qty = possible
             best_material = row.component_id
-            needed_for_next = (possible + 1) * row.qty_per_unit
-            best_shortfall = max(int(round(needed_for_next - avail)), 0)
+            needed_for_order = so.qty * row.qty_per_unit
+            best_shortfall = max(int(round(needed_for_order - avail)), 0)
     return best_qty, best_material, best_shortfall
 
 
