@@ -1,8 +1,18 @@
 """AP-PO 单价强制比对单测（spec: fi2-price-check，design D12，v3 新增 2026-07-09）。"""
 from __future__ import annotations
 
+from fi2 import config as _default_cfg
 from fi2.models import APLine, POLine
 from fi2.price_check import check_ap_po_price, failed_item_keys
+
+
+def test_foreign_currency_supplier_codes_configured():
+    """R7 外币三家真值（design D15-c，队列 #60）——纯配置值守护，防止后续误改/误清点号。
+
+    `ZA.0368`（安富利）含点号，`item_normalize.py` 的归一化只作用于 `item_code`（料品
+    编码）聚合 key，不触碰供应商编码比对，这里断言值本身不被误"归一化"掉。
+    """
+    assert _default_cfg.FOREIGN_CURRENCY_SUPPLIERS == ("ZA0066", "ZA.0368", "ZA0020")
 
 
 def _po(po_no, line_no, item_code, unit_price):

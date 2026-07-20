@@ -179,3 +179,60 @@ FI2 三单匹配自动对账是财务域 2026 年唯一按期落地场景（FI1 
 - ~~**R5 门禁范围是否应扩大到"明细错位"**~~ → **✅ Paul 已拍板（2026-07-16）：不扩大**，R5 门禁维持仅对"金额微差"生效，D14-b 收紧解读即为最终口径，代码无需改动。
 - **R5 分母的"整单"颗粒度**：本次按 `ap_no` 关联的 `(po_no, line_no)` 精确匹配求和（而非整张 PO 单不论是否被本次引用的行都计入）；若唐燕萍团队原意是"整张 PO 单"而非"该 AP 引用到的 PO 行集合"，需回头调整 `_po_untaxed_by_ap`。
 - ~~**外币供应商清单 + 跨运行历史状态设计**~~ → **✅ Paul 已拍板（2026-07-16）：明确推迟**——先以当前最小 MVP（外币供应商行按人民币同一 ±2% 处理，不触发增量抽查）为准；待 IT/唐燕萍团队提供外币供应商清单后再评估是否要实现"容差内连续 2 次同向偏移推人工抽查"的跨运行历史状态机制，非本次范围、不阻塞交付，见 D14-d + tasks.md 10.12。
+
+---
+
+## D15：真实 U9C 财务接口接入（feed_source 真实源）+ R7 外币供应商真值 + 三实测点结论（2026-07-19/20，队列 #60，🔴 待 Paul 审）
+
+> 触发：财务数据闸已实质解除（队列 #6/#47，唐燕萍团队 07-17 交付《U9C 自定义 API 接口文档》），队列 #60 要求把 `feed_source.py` 的 `u9c` 源从"全量 fail-loud 占位"推进到真实可用，并落 R7 外币供应商清单真值 + 回写 3 个实测结论。**本节仅为 propose→design 阶段产出，代码未动，等 Paul 审后再 `/opsx:apply`。**
+
+### D15-a：三实测点结论（真实只读探测，2026-07-20，服务器 `192.168.100.49:6666`）
+
+**① 批量/按期间查询——部分可行，AP 端有服务器 bug（真实 IT 缺口，非用法问题）**
+- 通过刻意触发的报错栈确认 `AP/Query` 控制器真实签名：`Query(apiKey, docNo, supplierCode, invoiceNo, itemCode, orgCode, page, pageSize)`——存在 `docNo` 之外的过滤参数，理论支持批量。
+- **实测结果**：`AP/Query` 不传 `docNo` 直接抛 `ArgumentOutOfRangeException`（`docNo` 是实质必填）；传 `supplierCode`/`itemCode`/`invoiceNo` 任一（不带 `docNo`）均抛 `SqlException: 列名 'Supplier_Code'/'ItemInfo_ItemCode'/'InvoiceNo' 无效`——三个过滤参数的 SQL 拼接列名全部写错，是**服务器端真实 bug**，不是我方调用姿势问题。`AP/Query` 目前唯一可用路径 = 单 `docNo` 精确查询。
+- `Purchase/Query`、`GR/Query` 不传 `docNo` 时**直接返回全表**（分别 25711、26760 行）且 `page`/`pageSize` 分页有效、`supplierCode` 过滤对 `Purchase/Query` 实测有效（`?supplierCode=ZA0066` 正确返回该供应商全部历史 PO）——这两个端点批量能力是好的，问题集中在 `AP/Query`。
+- **结论**：FI2 MVP 阶段 `AP/Query` 只能走"给定 AP 单号逐个查"（与其他财务场景一致，配票流程天然按 AP 单据流转，不是异常约束）；"按期间批量取一批待对账 AP 单"这个更上游的需求（如"取本月全部 AP"）**目前无解**，需 IT（陈承）修复 `supplierCode`/`itemCode`/`invoiceNo` 过滤的 SQL 列名 bug，或另开一个按日期区间查询的端点。**登记为 IT 缺口，报 §四**，不阻塞本次数据整备（MVP 用显式 AP 单号清单驱动，见 D15-b）。
+
+**② `FinalPriceTC`（PO）vs `TaxPrice`（AP）含税性——均为含税单价，可直接比对，R7 比对基准成立**
+- 实测 `ZPCG20251226004`（艾睿）：`ConfirmQty×FinalPriceTC = TotalMnyTC`（价税合计），即 `FinalPriceTC` = 含税单价。
+- 实测 `AP-2026030057`：`APQtyTU×TaxPrice = TotalAmtTC`（价税合计）= `NonTaxAmtTC+TaxAmtTC`，即 `TaxPrice` = 含税单价。
+- **交叉验证**：AP-2026030057 第 1 行 `SrcPONo=ZPCG20251221001, SrcPOLineNo=240`，回查该 PO 该行 `FinalPriceTC=0.42`，与 AP 行 `TaxPrice=0.42` **完全一致**。
+- **结论**：`price_check.py` 现有实现（AP `unit_price` 直接比 PO `unit_price`，无需换算）在真实字段下**口径成立**，`config.AP_PO_PRICE_TOLERANCE_PCT`（±2%）可直接套用真实字段，无需新增税基调整逻辑。
+
+**③ 原币直比可行性——机制成立（架构验证），三家外币供应商专属数值抽样受①的 AP 端限制未能定向核对**
+- 两侧单价字段均为 `...TC` 后缀（Trade Currency，交易原币），非强制折算为人民币的独立字段——`②` 的交叉验证已证明同一 `(po_no,line_no)` 关联下 PO/AP 的 `TC` 单价逐位精确相等，即该字段在系统设计上就是"原币对原币"存储，没有汇率折算环节需要我方处理。
+- 通过 `Purchase/Query?supplierCode=ZA0066` 验证艾睿（R7 三家之一）有大量真实历史 PO（如 `PO02108010222` 等），`FinalPriceTC` 全部是小数位数值（与人民币供应商同量级字段格式一致，无科学计数法/异常精度），字段机制统一适用。
+- **未完成项**：因 `AP/Query` 端无法按 `supplierCode` 批量取数（见①），未能定向抓取艾睿/安富利/英恒任一家的真实 AP 行做"PO↔AP 同笔原币直比"的专属数值核对（仅在 RMB 供应商 ZA0114 上做过精确核对）。
+- **结论**：**方案二等价加强（原币对原币直比、汇率不进入比较）机制上成立**，config 层面可直接把 `FOREIGN_CURRENCY_SUPPLIERS` 落真值、`price_check.py` 现有"不分币种统一按 `unit_price` 直比"的实现天然适用（无需分支逻辑）；三家专属数值的最终确认，待 IT 修复①的 bug 或财务侧提供一个已知外币 AP 单号后可即时补验，**不阻塞本次落地**，8 月底真实小样本验证阶段一并覆盖。
+
+### D15-b：真实连接器接入范围与架构落点
+
+**接入范围**：`Purchase/Query`（PO）/ `GR/Query`（GR）/ `AP/Query`（AP）三端点接入 `feed_source.py` 的 `u9c` 源；`Attachment/List`+`Download`（发票源）**继续留桩不实现**（OCR 选型未定，队列 #59 跟催中）——即 `load_invoice`/`load_payment` 对 `u9c` 源**保持无条件 fail-loud**，不因本次改动而变化（Invoice 无结构化 API，只能靠 OCR 读附件；Payment 本场景本就只加载不参与匹配，优先级最低，一并留待 OCR 就绪后统一评估）。
+
+**连接器落点**：新增方法于平台 `zhuopin_platform.shared_tools.erp_connector.connector.ZpConnector`（而非 FI2 场景内自建连接器）——理由：① 复用其已验证的 GET+`apiKey`+JSON 信封解析范式（与 `_stock_query`/`Stock/Query` 同源同构，`{"Success":true,"Data":{"Rows":[...]}}`）；② FI3（付款校验，另起场景）已确认要复用 `Supplier/Query`/`POChange/Query`/`Pay/Trace`/`RE/Query`（队列 #6 回复），提前放平台层可避免 FI3 立项时二次搬迁。新增 `get_purchase_lines(doc_no)`/`get_gr_lines(doc_no)`/`get_ap_lines(doc_no)`（各自 GET 对应端点 + `docNo` 参数，返回校验后的 `list[dict]`；FI2 场景层 `feed_source.py` 沿用既有 Pydantic 边界校验做字段映射到 `POLine`/`GRNLine`/`APLine`，连接器层不重复建模——分工同现有 `_zp_post` 与场景层解析的关系）。
+
+**凭据（Paul 2026-07-20 拍板）**：复用现有 `STOCK_API_BASE`/`STOCK_API_KEY`——Paul 确认本次新增的 7 个接口与既有预测订单（FO）、库存查询（Stock）**同一接口地址、同一 apiKey**，不新开环境变量。连接器新方法与 `_stock_query` 共用同一对 env key，真值只落 `5-平台底座/.env`（gitignore），不入库、不落审计、不落日志。
+
+**批量缺口下的 MVP 调用形态**：鉴于①的结论（AP 端只能按 `docNo` 单查），`FeedSource` 新增构造参数 `ap_doc_nos: list[str] | None`（`u9c` 源下必填，由调用方——真实小样本验证阶段由财务专员提供待核对的 AP 单号清单——显式传入，不做"自动发现全部待对账 AP"）：
+1. 对每个 `ap_no` 调 `get_ap_lines(ap_no)` 汇总 `APLine`。
+2. 从已获取 AP 行的 `SrcPONo` 去重集合，逐个调 `get_purchase_lines(po_no)` 汇总 `POLine`（作 AP-PO 单价前置参照）。
+3. 从已获取 AP 行的 `SrcRcvNo` 去重集合，逐个调 `get_gr_lines(rcv_no)` 汇总 `GRNLine`（本次匹配数学仍不消费，随 D10 既定角色）。
+
+`load_po_lines()`/`load_grn()`/`load_ap_lines()` 三个方法保持**零参数**调用签名不变（现有 `match_engine`/`run.py` 调用方零改动），`ap_doc_nos` 走构造函数注入，内部据此驱动上述三步拉取——与 `ZpConnector.__init__` 里 `srm_connector: object | None = None` 的"可选注入、None 时行为不变"范式一致。未注入连接器（`u9c_connector=None`，现状默认）时，`u9c` 源五个 loader **继续对现有测试 `test_u9c_fail_loud_all_loaders` 保持完全一致的 fail-loud 行为**——本次是纯增量能力，不改默认路径。
+
+### D15-c：R7 外币供应商清单真值落地
+
+`config.FOREIGN_CURRENCY_SUPPLIERS = ("ZA0066", "ZA.0368", "ZA0020")`（艾睿/安富利/上海英恒，唐燕萍团队 07-14 回件，已通过 `Supplier/Query` 真实核实三家均为在库真实供应商）。**注意**：`ZA.0368` 含点号，D14-c 的 `item_normalize.py` 归一化仅作用于 `item_code`（料品编码）聚合 key，不触碰 `SupplierCode`/`FOREIGN_CURRENCY_SUPPLIERS` 比对——不得误把供应商编码里的 `.` 也归一化掉。
+
+### Risks / Trade-offs 追加（D15）
+
+- **[AP 批量查询 SQL bug 阻断"按期自动取数"]** → 现状唯一解法是财务专员手工提供 AP 单号清单（D15-b MVP 形态）；若 8 月底真实小样本验证时 IT 仍未修复，"哪些 AP 单该本轮对账"这一步会长期依赖人工列表，效率提升打折——已登记 IT 缺口，非本次可解决范围。
+- **[外币供应商专属数值未定向核实]** → D15-a③ 机制验证充分但数值样本未覆盖三家外币供应商本身，存在极小概率"三家里有一家的 `TC` 字段填报习惯不同于其余供应商"的未知风险；8 月底真实小样本验证阶段第一批次建议**优先覆盖三家外币供应商的 AP 单**作定向复核，尽早排除。
+- **[连接器复用范围先行大于当前需求]** → `get_purchase_lines`/`get_gr_lines`/`get_ap_lines` 落地在平台层是为 FI3 预留，若 FI3 最终排期/范围有变，这三个方法会有一段时间只有 FI2 一个消费方——可接受（同 D1 分层理由，公共连接器方法闲置成本远低于日后跨场景搬迁成本）。
+
+### Open Questions（D15，✅ Paul 2026-07-20 已拍板，全部收口）
+
+- ~~是否批准 D15-b 的连接器落点与 MVP 调用形态~~ → **✅ 批准，按此方案 apply**。
+- ~~AP 端批量查询 SQL bug 是否单独出报告跟催~~ → **✅ 立即出报告跟催陈承**（IT 缺口书面留痕 + 机器人直推，见 tasks 11.9）。
+- ~~`FI_API_BASE`/`FI_API_KEY` 是否独立命名~~ → **✅ 复用 `STOCK_API_BASE`/`STOCK_API_KEY`**——Paul 确认本次 7 个财务接口与既有预测订单/库存查询同一接口地址、同一 apiKey，不新开环境变量（见 D15-b 凭据段已更正）。

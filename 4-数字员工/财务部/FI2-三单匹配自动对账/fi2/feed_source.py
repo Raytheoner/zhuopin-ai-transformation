@@ -6,7 +6,11 @@ v3 口径修正（2026-07-09）：核对对象改 AP 单 vs INV，PO/GR 保留�
 切源不改匹配引擎/分类逻辑：
   · mock：贴口径备稿字段的夹具（单测/回归）。
   · csv ：应急桥接（同字段约定，接口先搭，真实路径待 9 月数据闸接通）。
-  · u9c ：U9C 财务接口直读，端点未开放 → fail-loud（不静默回退 mock/csv）。
+  · u9c ：U9C 财务接口直读（design D15，队列 #60，2026-07-20 起 PO/GR/AP 三单可用）——
+    注入 `u9c_connector`+`ap_doc_nos` 时按 AP 单号驱动真实查询（AP→去重 SrcPONo/SrcRcvNo
+    →PO/GR）；未注入连接器时维持 fail-loud（不静默回退 mock/csv）。发票/付款（Invoice/
+    Payment）因 Attachment/OCR 未就绪（队列 #59），u9c 源下无条件 fail-loud，不受连接器
+    注入影响。
 """
 from __future__ import annotations
 
@@ -230,6 +234,53 @@ def partition_invoices(
     return linked, orphaned
 
 
+def _u9c_str(v) -> str:
+    """真实 API 字段可能是 int（如 DocLineNo=10）或 str（如 SrcPOLineNo="240"），统一转 str。"""
+    return "" if v is None else str(v)
+
+
+def _u9c_date(v) -> str:
+    """真实 API 日期形如 "2025-12-26T00:00:00"，取日期部分；空值原样返回空串。"""
+    return (v or "")[:10]
+
+
+def _map_u9c_po_row(row: dict) -> dict:
+    """`Purchase/Query` 原始行 → `_POLineRow` 字段（design D15-b）。
+
+    `FinalPriceTC` 已实测确认为含税单价（`ConfirmQty×FinalPriceTC=TotalMnyTC`），
+    与 AP `TaxPrice` 同基准，R7 单价比对可直接用（design D15-a②）。
+    """
+    return {
+        "po_no": row.get("DocNo"), "line_no": _u9c_str(row.get("DocLineNo")),
+        "item_code": row.get("ItemCode"), "qty": row.get("ConfirmQty"),
+        "unit_price": row.get("FinalPriceTC"), "tax_rate": row.get("TaxRate"),
+        "amount": row.get("NetMnyTC"), "supplier": row.get("SupplierName") or "",
+        "po_date": _u9c_date(row.get("BusinessDate")),
+    }
+
+
+def _map_u9c_gr_row(row: dict) -> dict:
+    """`GR/Query` 原始行 → `_GRNRow` 字段（design D15-b）。`SrcDocNo`/`SrcDocLineNo`
+    = 来源 PO 单号/行号（GR 本次匹配数学暂不消费，见 design D10）。"""
+    return {
+        "grn_no": row.get("RcvDocNo"), "po_no": row.get("SrcDocNo"),
+        "line_no": _u9c_str(row.get("SrcDocLineNo")), "item_code": row.get("ItemCode"),
+        "recv_qty": row.get("RcvQtyTU"), "recv_date": _u9c_date(row.get("BusinessDate")),
+    }
+
+
+def _map_u9c_ap_row(row: dict) -> dict:
+    """`AP/Query` 原始行 → `_APLineRow` 字段（design D15-b）。`TaxPrice` 已实测确认
+    为含税单价（`APQtyTU×TaxPrice=TotalAmtTC`），与 PO `FinalPriceTC` 同基准。"""
+    return {
+        "ap_no": row.get("DocNo"), "po_no": row.get("SrcPONo"),
+        "line_no": _u9c_str(row.get("SrcPOLineNo")), "item_code": row.get("ItemCode"),
+        "qty": row.get("APQtyTU"), "unit_price": row.get("TaxPrice"),
+        "untaxed_amount": row.get("NonTaxAmtTC"), "tax_amount": row.get("TaxAmtTC"),
+        "ap_date": "",  # AP/Query 未提供独立单据日期字段，非匹配引擎消费字段
+    }
+
+
 class FeedSource:
     """三单四表统一加载器（v3：PO/GR/AP/Invoice/Payment）。
 
@@ -238,15 +289,24 @@ class FeedSource:
         mock_dir:    mock 夹具目录（含 po_lines.csv/grn.csv/ap_lines.csv/invoice.csv/payment.csv）。
         csv_dir:     应急桥接目录（同字段约定，真实路径待接通）。
         audit:       ConnectorAudit（连接器访问留痕，占位）。
+        u9c_connector: `u9c` 源下驱动真实查询的连接器（如 `ZpConnector`，需暴露
+            `get_purchase_lines`/`get_gr_lines`/`get_ap_lines(doc_no)` 三方法，design D15）。
+            `None`（默认）→ `u9c` 源五个 loader 保持 fail-loud（现状行为不变）。
+        ap_doc_nos:  `u9c` 源下待对账的 AP 单号清单（`AP/Query` 服务器端批量过滤参数有
+            SQL bug，只能显式给单号，见 design D15-a①）——注入 `u9c_connector` 时必填。
     """
 
     def __init__(self, data_source: str | None = None, *, mock_dir: Path | str | None = None,
-                 csv_dir: Path | str | None = None, audit=None, cfg=_config):
+                 csv_dir: Path | str | None = None, audit=None, cfg=_config,
+                 u9c_connector=None, ap_doc_nos: list[str] | None = None):
         self.data_source = (data_source or cfg.DATA_SOURCE_DEFAULT).strip().lower()
         self.mock_dir = Path(mock_dir) if mock_dir else None
         self.csv_dir = Path(csv_dir) if csv_dir else None
         self.audit = audit
         self.cfg = cfg
+        self.u9c_connector = u9c_connector
+        self.ap_doc_nos = list(ap_doc_nos) if ap_doc_nos else None
+        self._u9c_ap_rows_cache: list[dict] | None = None
 
     def _dir(self) -> Path:
         if self.data_source == "mock":
@@ -255,23 +315,55 @@ class FeedSource:
             return self.csv_dir
         raise ValueError(f"未知 data_source: {self.data_source}")
 
+    def _fetch_u9c_ap_rows(self) -> list[dict]:
+        """按 `ap_doc_nos` 逐单号拉取 AP 明细行（design D15-b①），同次 FeedSource
+        实例内缓存复用（`load_ap_lines`/`load_po_lines`/`load_grn` 三方共享，避免
+        重复网络调用）。"""
+        if self._u9c_ap_rows_cache is None:
+            if not self.ap_doc_nos:
+                raise ValueError(
+                    "u9c 源 + 已注入 u9c_connector 时，FeedSource 需同时注入 ap_doc_nos"
+                    "（待对账 AP 单号清单，AP/Query 服务器端批量过滤参数有 bug，只能显式给单号）"
+                )
+            rows: list[dict] = []
+            for ap_no in self.ap_doc_nos:
+                rows.extend(self.u9c_connector.get_ap_lines(ap_no))
+            self._u9c_ap_rows_cache = rows
+        return self._u9c_ap_rows_cache
+
     def load_po_lines(self) -> list[POLine]:
         if self.data_source == "u9c":
-            raise RealEndpointNotReadyError("load_po_lines", self.cfg.U9C_FI_NOT_READY)
+            if self.u9c_connector is None:
+                raise RealEndpointNotReadyError("load_po_lines", self.cfg.U9C_FI_NOT_READY)
+            po_nos = sorted({r.get("SrcPONo") for r in self._fetch_u9c_ap_rows() if r.get("SrcPONo")})
+            rows: list[dict] = []
+            for po_no in po_nos:
+                rows.extend(self.u9c_connector.get_purchase_lines(po_no))
+            return parse_po_lines([_map_u9c_po_row(r) for r in rows])
         return parse_po_lines(_read_csv(self._dir() / "po_lines.csv"))
 
     def load_grn(self) -> list[GRNLine]:
         if self.data_source == "u9c":
-            raise RealEndpointNotReadyError("load_grn", self.cfg.U9C_FI_NOT_READY)
+            if self.u9c_connector is None:
+                raise RealEndpointNotReadyError("load_grn", self.cfg.U9C_FI_NOT_READY)
+            rcv_nos = sorted({r.get("SrcRcvNo") for r in self._fetch_u9c_ap_rows() if r.get("SrcRcvNo")})
+            rows: list[dict] = []
+            for rcv_no in rcv_nos:
+                rows.extend(self.u9c_connector.get_gr_lines(rcv_no))
+            return parse_grn([_map_u9c_gr_row(r) for r in rows])
         return parse_grn(_read_csv(self._dir() / "grn.csv"))
 
     def load_ap_lines(self) -> list[APLine]:
         if self.data_source == "u9c":
-            raise RealEndpointNotReadyError("load_ap_lines", self.cfg.U9C_FI_NOT_READY)
+            if self.u9c_connector is None:
+                raise RealEndpointNotReadyError("load_ap_lines", self.cfg.U9C_FI_NOT_READY)
+            return parse_ap_lines([_map_u9c_ap_row(r) for r in self._fetch_u9c_ap_rows()])
         return parse_ap_lines(_read_csv(self._dir() / "ap_lines.csv"))
 
     def load_invoice(self) -> list[InvoiceLine]:
         if self.data_source == "u9c":
+            # Attachment/OCR 未就绪（队列 #59），u9c 源发票加载维持无条件 fail-loud，
+            # 不因本次 u9c_connector 接入而变化（design D15-b）。
             raise RealEndpointNotReadyError("load_invoice", self.cfg.U9C_FI_NOT_READY)
         return parse_invoice(_read_csv(self._dir() / "invoice.csv"))
 

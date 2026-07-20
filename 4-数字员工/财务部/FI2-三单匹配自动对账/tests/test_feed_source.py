@@ -81,6 +81,99 @@ def test_u9c_fail_loud_all_loaders():
         fs.load_payment()
 
 
+class _FakeU9cConnector:
+    """假连接器（design D15-b）——真实字段形状的样例行，验证映射/缓存/AP 单号驱动。"""
+
+    def __init__(self):
+        self.ap_calls: list[str] = []
+        self.po_calls: list[str] = []
+        self.gr_calls: list[str] = []
+
+    def get_ap_lines(self, doc_no):
+        self.ap_calls.append(doc_no)
+        return {
+            "AP-REAL-1": [
+                {"DocNo": "AP-REAL-1", "SrcPONo": "PO-REAL-1", "SrcPOLineNo": "10",
+                 "ItemCode": "R01A.0175", "APQtyTU": 5000.0, "TaxPrice": 0.42,
+                 "NonTaxAmtTC": 1858.41, "TaxAmtTC": 241.59,
+                 "SrcRcvNo": "RCV-REAL-1", "SrcRcvLineNo": "10"},
+                {"DocNo": "AP-REAL-1", "SrcPONo": "PO-REAL-1", "SrcPOLineNo": "20",
+                 "ItemCode": "R01A.0176", "APQtyTU": 100.0, "TaxPrice": 1.0,
+                 "NonTaxAmtTC": 88.5, "TaxAmtTC": 11.5,
+                 "SrcRcvNo": "RCV-REAL-1", "SrcRcvLineNo": "20"},
+            ],
+        }[doc_no]
+
+    def get_purchase_lines(self, doc_no):
+        self.po_calls.append(doc_no)
+        assert doc_no == "PO-REAL-1"
+        return [
+            {"DocNo": "PO-REAL-1", "DocLineNo": 10, "ItemCode": "R01A.0175",
+             "ConfirmQty": 5000.0, "FinalPriceTC": 0.42, "TaxRate": 0.13,
+             "NetMnyTC": 1858.41, "SupplierName": "厦门信和达电子有限公司",
+             "BusinessDate": "2025-12-21T00:00:00"},
+            {"DocNo": "PO-REAL-1", "DocLineNo": 20, "ItemCode": "R01A.0176",
+             "ConfirmQty": 100.0, "FinalPriceTC": 1.0, "TaxRate": 0.13,
+             "NetMnyTC": 88.5, "SupplierName": "厦门信和达电子有限公司",
+             "BusinessDate": "2025-12-21T00:00:00"},
+        ]
+
+    def get_gr_lines(self, doc_no):
+        self.gr_calls.append(doc_no)
+        assert doc_no == "RCV-REAL-1"
+        return [
+            {"RcvDocNo": "RCV-REAL-1", "DocLineNo": 10, "SrcDocNo": "PO-REAL-1",
+             "SrcDocLineNo": "10", "ItemCode": "R01A.0175", "RcvQtyTU": 5000.0,
+             "BusinessDate": "2026-01-05T00:00:00"},
+        ]
+
+
+def test_u9c_real_connector_ap_driven_three_step_fetch():
+    """design D15-b：注入连接器 + ap_doc_nos 后，AP→去重 SrcPONo/SrcRcvNo→PO/GR 三步拉取，
+    字段正确映射，AP 行只拉一次（跨 load_ap_lines/load_po_lines/load_grn 缓存复用）。"""
+    conn = _FakeU9cConnector()
+    fs = FeedSource("u9c", u9c_connector=conn, ap_doc_nos=["AP-REAL-1"])
+
+    ap_lines = fs.load_ap_lines()
+    assert len(ap_lines) == 2
+    assert ap_lines[0].ap_no == "AP-REAL-1"
+    assert ap_lines[0].po_no == "PO-REAL-1" and ap_lines[0].line_no == "10"
+    assert ap_lines[0].unit_price == 0.42          # TaxPrice（含税）
+    assert ap_lines[0].untaxed_amount == 1858.41
+    assert ap_lines[0].tax_amount == 241.59
+
+    po_lines = fs.load_po_lines()
+    assert {p.po_no for p in po_lines} == {"PO-REAL-1"}
+    assert {p.line_no for p in po_lines} == {"10", "20"}
+    first = next(p for p in po_lines if p.line_no == "10")
+    assert first.unit_price == 0.42                # FinalPriceTC（含税，同 AP TaxPrice 基准）
+    assert first.po_date == "2025-12-21"            # BusinessDate 截断到日期
+
+    grn = fs.load_grn()
+    assert len(grn) == 1
+    assert grn[0].grn_no == "RCV-REAL-1" and grn[0].po_no == "PO-REAL-1"
+
+    assert conn.ap_calls == ["AP-REAL-1"]           # 三次 load 只拉一次 AP（实例内缓存）
+    assert conn.po_calls == ["PO-REAL-1"]           # 去重后只拉一个 PO 单号
+    assert conn.gr_calls == ["RCV-REAL-1"]
+
+
+def test_u9c_real_connector_requires_ap_doc_nos():
+    fs = FeedSource("u9c", u9c_connector=_FakeU9cConnector())  # 未传 ap_doc_nos
+    with pytest.raises(ValueError):
+        fs.load_ap_lines()
+
+
+def test_u9c_real_connector_invoice_payment_still_failloud():
+    """Attachment/OCR 未就绪（队列 #59），u9c 源 Invoice/Payment 无条件 fail-loud，
+    不因注入连接器而改变（design D15-b）。"""
+    fs = FeedSource("u9c", u9c_connector=_FakeU9cConnector(), ap_doc_nos=["AP-REAL-1"])
+    with pytest.raises(RealEndpointNotReadyError):
+        fs.load_invoice()
+    with pytest.raises(RealEndpointNotReadyError):
+        fs.load_payment()
+
+
 def test_dirty_po_line_rejected():
     with pytest.raises(ValueError):
         parse_po_lines([{"po_no": "", "line_no": "10", "item_code": "A", "qty": 1,

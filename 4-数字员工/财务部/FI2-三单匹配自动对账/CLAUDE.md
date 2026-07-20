@@ -59,10 +59,18 @@
   - openspec design.md 补 D14、tasks.md 补第 10 节、三份 spec delta（match-engine/recon-report/price-check）补 Requirement，均已同步。
   - **未做**：R5 门禁分母颗粒度（"整单"取 AP 引用的 PO 行集合 vs 整张 PO 单）仍待唐燕萍团队批改（design D14 Open Questions，门禁范围本身 Paul 已拍定不再是开放项）；R7 外币过渡规则/方案一升级位（Paul 07-16 已确认明确推迟，future-work，待外币供应商清单到位后再评估）；真实数据验证仍按 8 月底排期不变。
 - **2026-07-16（Paul 两拍板，收口 D14 遗留开放点，CC）**：① **R5 门禁范围不扩大到"明细错位"**——D14-b 的 CC 收紧解读即为最终口径，不等唐燕萍团队批改这一项了（分母颗粒度仍待）。② **R7 外币过渡规则/方案一明确推迟**——Paul 认可"先上最小 MVP"，当前实现（外币供应商行按人民币同一 ±2% 处理、不触发增量抽查）维持不变，待 IT/唐燕萍团队提供外币供应商清单后再评估是否要做"连续 2 次同向偏移推人工抽查"的跨运行历史状态机制。两项均为**文档口径确认，代码无需改动**（此前实现已是这两条的目标状态）；design D14 Open Questions/tasks.md/proposal.md/spec delta 已同步落字。
+- **2026-07-20（真实 U9C 财务接口接入 + R7 外币真值 + 三实测点，队列 #60，design D15，CC）**：唐燕萍团队 07-17 交付 API 接口文档（财务数据闸实质解除，队列 #6/#47），财务数据整备正式开工。
+  - **三实测点真实只读探测**（服务器 `192.168.100.49:6666`）：①批量查询——`Purchase/Query`/`GR/Query` 不传 docNo 即返回全表+分页/`supplierCode` 过滤均有效；**`AP/Query` 服务器端有真实 SQL bug**（`supplierCode`/`itemCode`/`invoiceNo` 三个过滤参数均触发"列名无效"异常），只能 docNo 单查，已书面跟催 IT（陈承，`6-人才与组织/部门AI专员跟进/IT部-陈承-跟进-2026-07-20-*.md`，机器人已推送）；②`FinalPriceTC`(PO)与`TaxPrice`(AP)均为含税单价，同 `(po_no,line_no)` 实测精确一致，R7 比对基础成立，`price_check.py` 无需改动；③原币直比机制验证成立（`...TC` 字段本就是原币存储非折算字段），三家外币供应商专属数值样本受①限制未定向核实，留 8 月真实小样本阶段优先覆盖。
+  - **真实连接器接入**（design D15-b，Paul 拍板：连接器落平台 `ZpConnector`、复用 `STOCK_API_BASE`/`STOCK_API_KEY`）：`ZpConnector` 新增 `get_purchase_lines`/`get_gr_lines`/`get_ap_lines(doc_no)`（GET+apiKey，信封同 `Stock/Query`）。`fi2/feed_source.py` 的 `FeedSource` 新增 `u9c_connector`/`ap_doc_nos` 可选构造参数，`u9c` 源下 `load_po_lines`/`load_grn`/`load_ap_lines` 按"AP 单号驱动→去重 `SrcPONo`/`SrcRcvNo`→分别拉取"三步实现（同实例内缓存 AP 行，避免重复网络调用）；未注入连接器时维持现状 fail-loud（`test_u9c_fail_loud_all_loaders` 零回归）。`load_invoice`/`load_payment` 对 `u9c` 源继续无条件 fail-loud（Attachment/OCR 未就绪，队列 #59）。
+  - **R7 外币供应商真值落地**：`config.FOREIGN_CURRENCY_SUPPLIERS = ("ZA0066", "ZA.0368", "ZA0020")`（艾睿/安富利/上海英恒，唐燕萍团队 07-14 回件，已用 `Supplier/Query` 真实核实三家均为在库真实供应商）。
+  - **新增测试**：`test_fi_connector.py`（连接器方法，7 用例，全 mock/monkeypatch 不触网）+ `test_feed_source.py` 新增 3 用例（假连接器覆盖三步拉取/字段映射/缓存复用、缺 `ap_doc_nos` 报错、Invoice/Payment 仍 fail-loud）+ `test_price_check.py` 新增 1 用例（R7 三家配置值守护）+ 新增 `tests/test_real_integration.py`（比照 SC8 范式，`FI2_RUN_REAL=1` 门禁，默认跳过不触网，含"IT bug 修复回归哨兵"用例）。平台 200 passed+1 skip（新增 7）、FI2 65 passed+4 skip（新增 4 mock 用例 + 4 gated 真实用例），零回归。
+  - **⚠️ 发现一个影响面更广的问题（2026-07-20 当场发现，已知会 Paul）**：Paul 确认财务三单接口与既有库存/预测订单**同一 apiKey**后，用该 key 做真实活连通验证时发现**该 apiKey 当前对`Purchase/GR/AP/Stock`全部端点均返回 `401 Invalid api-key`**——而同一 key 数小时前（本 session 内）在这些端点上还能正常查询真实数据。因为 `Stock/Query` 正是 SC8 保供看板 `.51` 部署依赖的实时库存源，此 key 失效**可能正在影响 SC8 生产服务**，已作为独立风险单独上报（不在本次 #60 范围内处理，超出 FI2 场景）。
+  - **未做**：真实小样本对账验证仍按 8 月底排期（本次只到"真实源代码可用"，未做批量真实跑批，因 AP 批量参数缺口 + apiKey 当前失效两个原因均未能跑通端到端真实小样本）；`test_real_integration.py` 待 apiKey 问题解决后首次真正执行验证（当前仅用有效历史 key 做过一次性 ad-hoc 手工验证，非 pytest 自动化跑通）。
 
 ## 关键依赖/前置（解锁条件）
 - ~~🔴 唐燕萍（财务 AI 专员）R1-R7 规则草案~~ ✅ 已交付（2026-07-10，较原计划提前 7 周）——真值已落 `config.py`（见上）；黄金用例专家批改仍待唐燕萍团队（strawman 用例本身未经批改）。
-- 🔴 U9C 财务接口（PO/GR/AP 配票）+ OCR 选型（7/15 双反馈门，v3：发票源已从 SRM 改 U9C 应付附件，SRM 900401 对 FI2 出局）——晋档 2（真实数据跑通）前置，非 mock 开发阻断项。
+- ~~🔴 U9C 财务接口（PO/GR/AP 配票）~~ ✅ 已接入（2026-07-20，design D15）——三端点真实连接器代码就绪；**新增阻塞**：apiKey 当前失效（`401 Invalid api-key`，见上，影响面超出 FI2），需 IT 排查恢复后才能真正跑通真实小样本。OCR 选型仍未就绪（队列 #59 跟催中）——发票源（Invoice）晋档 2 前置。
+- 🟡 **AP 端批量查询 SQL bug**（`AP/Query` 的 `supplierCode`/`itemCode`/`invoiceNo` 过滤参数服务器端列名映射错误）——已书面跟催陈承（2026-07-20），修复前"按期批量取待对账 AP 单"只能靠财务专员手工给单号清单（`FeedSource.ap_doc_nos`），不阻断现有交付。
 - 🟡 料品↔INV规格型号/项目名称映射表（v3 改名，原"物料编码映射表"）——真实场景前置，本次仅落地"归一化预处理"子项（`item_normalize.py`），模糊匹配/置信度分档/自学习长线机制仍待真实映射表来源确认。
-- 🟡 R7 外币供应商清单（三家，向唐燕萍团队取）+ 跨运行历史状态机制——"连续 2 次同向偏移推人工抽查"过渡规则前置，**Paul 2026-07-16 已确认推迟**，未就绪前按人民币同一 ±2% 处理，不算阻塞项。
+- ~~🟡 R7 外币供应商清单~~ ✅ 已落真值（2026-07-20，见上）；跨运行历史状态机制（"连续 2 次同向偏移推人工抽查"过渡规则）**Paul 2026-07-16 已确认推迟**，未就绪前按人民币同一 ±2% 处理，不算阻塞项。
 - 🟡 FI3（付款校验）依赖本场景结果——FI2 先行，FI3 另起场景。

@@ -546,6 +546,57 @@ class ZpConnector(DataConnector):
                 continue   # 坏行（缺 ItemCode 等）跳过，不污染聚合
         return out
 
+    # ── 财务三单查询（design D15，队列 #60，FI2/FI3 共用）───────────────────
+    # 与 Stock/Query 同一物理服务器、同一凭据（Paul 2026-07-20 确认，复用
+    # STOCK_API_BASE/STOCK_API_KEY，不新开环境变量）。
+
+    def _fi_credentials(self) -> tuple[str, str]:
+        base = os.environ.get("STOCK_API_BASE", "").rstrip("/")
+        key = os.environ.get("STOCK_API_KEY", "")
+        if not base or not key:
+            raise RealEndpointNotReadyError(
+                "财务三单查询 API 未配置（STOCK_API_BASE/STOCK_API_KEY，与库存/预测订单同一凭据）"
+            )
+        return base, key
+
+    def _fi_query(self, path: str, doc_no: str) -> list[dict]:
+        """财务只读查询公共实现（Purchase/GR/AP Query 共用，信封同 Stock/Query）。
+
+        仅暴露 `docNo` 单查——`AP/Query` 的 `supplierCode`/`itemCode`/`invoiceNo`
+        过滤参数服务器端有真实 SQL bug（列名映射错误，2026-07-20 实测发现并已跟催
+        IT，见 `6-人才与组织/部门AI专员跟进/IT部-陈承-跟进-2026-07-20-*.md`），
+        本方法不透传这些参数，避免调用方踩坑。
+        """
+        base, key = self._fi_credentials()
+        qs = urllib.parse.urlencode({"apiKey": key, "docNo": doc_no})
+        url = f"{base}{path}?{qs}"
+        safe = f"{base}{path}?docNo={doc_no}"   # 脱敏（无 apiKey），仅报错用
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=30, context=self._ctx) as r:
+                body = json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"财务查询 API HTTP {e.code}: {safe}") from None
+        except (urllib.error.URLError, http.client.IncompleteRead) as e:
+            raise RuntimeError(f"财务查询 API 不可达: {safe}") from None
+        if not body.get("Success"):
+            raise RuntimeError(f"财务查询 API 错误: {safe} :: {body.get('ResMsg')}")
+        if self._audit is not None:
+            self._audit.trace(source="zp_FI", action=f"{path}?docNo={doc_no}")
+        return (body.get("Data") or {}).get("Rows") or []
+
+    def get_purchase_lines(self, doc_no: str) -> list[dict]:
+        """采购订单明细行（真实源，design D15）——GET `/zp/api/Purchase/Query`。"""
+        return self._fi_query("/zp/api/Purchase/Query", doc_no)
+
+    def get_gr_lines(self, doc_no: str) -> list[dict]:
+        """收货单明细行（真实源，design D15）——GET `/zp/api/GR/Query`。"""
+        return self._fi_query("/zp/api/GR/Query", doc_no)
+
+    def get_ap_lines(self, doc_no: str) -> list[dict]:
+        """应付单明细行（真实源，design D15）——GET `/zp/api/AP/Query`。"""
+        return self._fi_query("/zp/api/AP/Query", doc_no)
+
     _BOM_MAX_WORKERS = 5
 
     @staticmethod

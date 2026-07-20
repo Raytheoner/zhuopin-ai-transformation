@@ -38,12 +38,16 @@ L2_GATE_ABS_THRESHOLD = float(os.environ.get("FI2_L2_GATE_ABS_THRESHOLD", "1.0")
 # ── R7 AP-PO 单价强制比对容差（真值）──
 # 人民币供应商统一 ±2%（方案二，拦截线；替换 CC 占位 ±3%）
 AP_PO_PRICE_TOLERANCE_PCT = float(os.environ.get("FI2_AP_PO_PRICE_TOLERANCE_PCT", "0.02"))
-# 外币供应商清单（过渡规则：R7 容差内连续 2 次同向偏移 → 推人工抽查）——供应商清单待唐燕萍
-# 团队提供，暂空；且该规则本身需要跨运行历史状态（本 MVP 单次运行无状态），本次未实现，
-# 见 design D14 future-work。清单到位前，外币供应商行按人民币同一 ±2% 容差处理，不触发
-# 增量抽查。
+# 外币供应商清单（过渡规则：R7 容差内连续 2 次同向偏移 → 推人工抽查）——真值（design D15-c，
+# 队列 #60，唐燕萍团队 07-14 回件，已用 Supplier/Query 真实核实三家均为在库真实供应商）：
+# ZA0066 艾睿（中国）电子贸易苏州分公司 / ZA.0368 安富利电子（上海）（含点号，item_normalize.py
+# 归一化不作用于供应商编码，勿误清掉）/ ZA0020 上海英恒电子。"连续 2 次同向偏移推人工抽查"
+# 过渡规则本身仍需跨运行历史状态（本 MVP 单次运行无状态），继续未实现，见 design D14
+# future-work——本次只是把清单落了真值，外币供应商行现状仍按人民币同一 ±2% 容差处理。
 FOREIGN_CURRENCY_SUPPLIERS: tuple[str, ...] = tuple(
-    s.strip() for s in os.environ.get("FI2_FOREIGN_CURRENCY_SUPPLIERS", "").split(",") if s.strip()
+    s.strip() for s in os.environ.get(
+        "FI2_FOREIGN_CURRENCY_SUPPLIERS", "ZA0066,ZA.0368,ZA0020"
+    ).split(",") if s.strip()
 )
 # 方案一升级位（原始外币单价 + 下单日汇率字段）：IT 评估中，本次不实现，仅登记
 # future-work（见 design D14 + tasks.md），勿在 price_check.py 抢先实现。

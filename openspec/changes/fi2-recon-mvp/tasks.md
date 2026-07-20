@@ -109,3 +109,21 @@
 - [ ] 10.11b 唐燕萍团队批改：R5 分母颗粒度（AP 引用的 PO 行集合 vs 整张 PO 单）——见 design D14 Open Questions，仍待确认
 - [x] 10.12 future-work（前置数据未就绪，暂不实现）：R7 外币供应商清单 + "容差内连续 2 次同向偏移推人工抽查"跨运行历史状态机制；R7 方案一（原始外币单价 + 下单日汇率字段）——**Paul 2026-07-16 已确认明确推迟，先上最小 MVP**（当前实现：外币供应商行按人民币同一 ±2% 处理，不触发增量抽查），IT 评估完成 + 唐燕萍团队提供外币供应商清单后另行提交变更包
 - [ ] 10.13 真实数据验证仍按 8 月底排期不变（规则提前定稿不等于提前上线，见规则定稿交接文件 §三纪律）
+
+## 11. 真实 U9C 财务接口接入 + R7 外币真值 + 三实测点（2026-07-19/20，队列 #60，design D15，Paul 已拍板）
+
+> 唐燕萍团队 07-17 交付 API 接口文档（财务数据闸实质解除，队列 #6/#47），CC 完成三实测点真实只读探测（结果见 design D15-a），Paul 2026-07-20 三项拍板全部通过（批准方案/立即催 IT/复用 STOCK_API_* 凭据），本节转入 apply。
+
+- [x] 11.1 Paul 审 D15 —— **✅ 全部批准**（2026-07-20）：连接器落点/MVP 调用形态按方案 apply；IT bug 立即出报告跟催；凭据复用 `STOCK_API_BASE`/`STOCK_API_KEY`（不新开 `FI_API_*`）
+- [x] 11.2 `ZpConnector` 新增 `get_purchase_lines(doc_no)`/`get_gr_lines(doc_no)`/`get_ap_lines(doc_no)`（GET+`apiKey`，信封同 `Stock/Query`）；凭据复用既有 `STOCK_API_BASE`/`STOCK_API_KEY`，脱敏不入审计/日志——**✅ 完成**，`_fi_query`/`_fi_credentials` 公共实现 + 三方法，7 个单测全绿
+- [x] 11.3 `feed_source.py`：`FeedSource` 新增 `u9c_connector`/`ap_doc_nos` 可选构造参数；`u9c` 源下 `load_po_lines`/`load_grn`/`load_ap_lines` 按 D15-b 三步（AP 单号驱动→去重 `SrcPONo`/`SrcRcvNo`→分别拉取）实现；未注入连接器时保持现状 fail-loud（`test_u9c_fail_loud_all_loaders` 零回归）——**✅ 完成**
+- [x] 11.4 `load_invoice`/`load_payment` 对 `u9c` 源维持无条件 fail-loud（Attachment/OCR 未就绪，队列 #59 未解锁前不实现）——**✅ 完成**，专门测试覆盖
+- [x] 11.5 `config.py`：`FOREIGN_CURRENCY_SUPPLIERS = ("ZA0066", "ZA.0368", "ZA0020")` 落真值——**✅ 完成**
+- [x] 11.6 单测：连接器方法用假 HTTP/注入假响应覆盖（不触网）；`FeedSource` 新增用例覆盖"注入假连接器 + `ap_doc_nos`"路径的三步拉取与字段映射；R7 三家供应商配置值守护测试——**✅ 完成**（`test_fi_connector.py` 7 例 + `test_feed_source.py` +3 例 + `test_price_check.py` +1 例）
+- [x] 11.7（比照 SC8 `test_real_integration.py` 范式）新增 `tests/test_real_integration.py`，`FI2_RUN_REAL=1` 门禁，CI/默认 pytest 不触网——**✅ 代码完成**；⚠️ 首次手工真实验证发现共享 apiKey 当前对全部端点返回 `401 Invalid api-key`（见下），该文件尚未在 pytest 下真正跑通过一次，待 key 恢复后执行
+- [x] 11.8 回写跨桌任务队列 #60：三实测点结论 + IT 缺口（AP 端批量查询 SQL bug）+ apply 完成状态 + apiKey 失效风险——**✅ 完成**
+- [x] 11.9 IT 缺口书面留痕 + 立即跟催陈承 —— **✅ 完成**（2026-07-20）：`AP/Query` 的 `supplierCode`/`itemCode`/`invoiceNo` 过滤参数均触发 SQL 列名错误（`Supplier_Code`/`ItemInfo_ItemCode`/`InvoiceNo` 无效），报告 `6-人才与组织/部门AI专员跟进/IT部-陈承-跟进-2026-07-20-AP查询接口批量参数SQL报错.md`（+docx）已产出并经机器人直推陈承（chatid 2023458，2026-07-20 06:27 UTC 送达）
+- [x] 11.10 场景 `CLAUDE.md` 更新（状态时间线 + 关键依赖解锁进度）——**✅ 完成**
+- [x] 11.11 全量回归零漂移——**✅ 完成**：FI2 65 passed+4 skip（原 61，+4 mock 用例）、平台 200 passed+1 skip（原 193，+7），零回归
+- [ ] 11.12 真实小样本验证仍按 8 月底排期（本次只到"真实源代码可用"，不做批量真实对账跑批）；建议第一批次优先覆盖三家外币供应商 AP 单，补齐 D15-a③ 未定向核实的缺口——**新增前置**：需 apiKey 恢复（见下）
+- [ ] 11.13 🔴 **新发现（2026-07-20，超出本场景范围，需 Paul/IT 处理）**：真实验证共享 `STOCK_API_BASE`/`STOCK_API_KEY` 当前对 `Purchase/GR/AP/Stock` 全部端点返回 `401 Invalid api-key`——同一 key 数小时前（本 session 内）在这些端点均可正常查询，且 `Stock/Query` 正是 SC8 保供看板 `.51` 部署依赖的实时库存源，可能正在影响 SC8 生产服务，非仅阻塞 FI2
