@@ -42,20 +42,20 @@
 
 ## 5. 半自动语义判定（B 类 10 条，依赖收口-2）
 
-- [ ] 5.1 实现 `qd-b-semantic-judge`：10 条 B 类规则 LLM 判定框架，输出 {命中/未命中, 证据片段, 二级置信度}
-- [ ] 5.2 接入收口-2 业务判据 → 每条 LLM 提示词 + 输出 schema + 置信阈值
-- [ ] 5.3 低置信转人工逻辑（默认不擅断）；判据未定前全部转人工的兜底开关
-- [ ] 5.4 B 类严重度遵从 J 列（规则 26/27 阻断、77/78/79 一般/提示），不擅自升降级
+- [~] 5.1 实现 `qd-b-semantic-judge`：**MVP 占位版已实现**（`rules/semantic.py`，2026-07-20）——覆盖注册表全部 10 条 B 类规则，统一返回 {转人工, 占位证据文本}；真正的 LLM 判定框架（命中/未命中+证据片段+二级置信度）留扩容期
+- [ ] 5.2 接入收口-2 业务判据 → 每条 LLM 提示词 + 输出 schema + 置信阈值（未做，极简版 M6 明确延后到扩容期）
+- [~] 5.3 低置信转人工逻辑（默认不擅断）——**"判据未定前全部转人工的兜底开关"已实现**（占位统一 MANUAL）；真正基于置信度的低置信判断待 5.2 接入后才有意义
+- [ ] 5.4 B 类严重度遵从 J 列（规则 26/27 阻断、77/78/79 一般/提示），不擅自升降级（占位版不做严重度区分，待 5.2 一并接入）
 
 ## 6. 聚合门禁与报告（review-gate）
 
-- [ ] 6.1 三档判定聚合（MVP "错误项一票否决"两档；评分制可插拔接口预留）
-- [ ] 6.2 C 类 4 条转人工（规则 42/80/81/82，只验在否，不下结论）
-- [ ] 6.3 审核报告输出契约（六段：总判定/阻断项/警告提示/跨模块/转人工待办/审计元数据），标注"AI 预审建议，决策在评审委员会"
-- [ ] 6.4 L2 复核确认门禁：AI 结论非终局，复核结论与预审一并留痕
-- [x] 6.5 全链审计写 `zhuopin_platform.audit`（scenario=QD-B，关联立项文档版本ID/模板版本/规则版本）——`evaluate.py` 新建，AuditEvent 含 rule_version/sample_id/tier/per_rule/content_hash，verify_chain 通过，30 tests 全绿（2026-07-04）
-- [ ] 6.6 OEM 技术方案附件隔离例外（走 data_isolation_layer，跨库抛 CrossOEMAccessError）
-- [ ] 6.7 mock 端到端：解析→规则→语义→报告全链跑通
+- [x] 6.1 三档判定聚合（`scoring.py` 已落地：阻断一票否决 + 评分制三档，收口-1 后三档生效；2026-07-20 起 C/B 类判定纳入评分输入，模块十二/十三权重不再空转）
+- [x] 6.2 C 类 4 条转人工（规则 42/80/81/82，只验在否，不下结论）——2026-07-20 实现：42 应对措施在否（`rules/deterministic.py`，复用风险表）、80/81 签字在否（解析器新增 `_parse_summary_signatures`，签字行下方日期骨架用"含数字"判空，避免误判空白模板为已签）、82 立项决议恒 NA（申请阶段不判）。9 个单测（`tests/test_manual_class_rules.py`）
+- [x] 6.3 审核报告输出契约（六段：总判定/阻断项/警告提示/跨模块/转人工待办/审计元数据），标注"AI 预审建议，决策在评审委员会"——2026-07-20 `qd_b_gate/report.py::GateReport/build_report`，`to_text()` 六段文本报告；④跨模块如实标注"C01-C10 任务4未实现"而非空着不说明。6 个单测（`tests/test_report.py`）
+- [x] 6.4 L2 复核确认门禁：AI 结论非终局——报告 `disclaimer` 字段显著标注（"AI 预审建议，立项决策在评审委员会/PMO...AI 结论非终局"）；**"复核结论与预审一并留痕"待评审委员会实际复核流程/UI 对接后再补**（当前只有 AI 预审单侧留痕）
+- [x] 6.5 全链审计写 `zhuopin_platform.audit`（scenario=QD-B，关联立项文档版本ID/模板版本/规则版本）——`evaluate.py` 新建，AuditEvent 含 rule_version/sample_id/tier/per_rule/content_hash，verify_chain 通过，30 tests 全绿（2026-07-04）；**2026-07-20 起 `evaluate()` 改跑 `run_all()`（A+B+C 82 条），per_rule 审计条目 68→82，C/B 类判定不再游离于审计之外**
+- [ ] 6.6 OEM 技术方案附件隔离例外（走 data_isolation_layer，跨库抛 CrossOEMAccessError）——未做，本批未涉及附件/OEM 场景
+- [x] 6.7 mock 端到端：解析→规则→语义→报告全链跑通——2026-07-20 `run_all()`（A+B+C）+ `build_report()` 全链跑通，且用真实 EQ17/邦奇样本回归验证（`test_golden_product_class.py::TestFullPipelineWithManualAndSemanticClasses`）：两份黄金基准档位不因新增 C 类判定而漂移
 
 ## 7. 黄金基准回归（仿 SC8，部分依赖收口-3）
 

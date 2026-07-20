@@ -389,6 +389,25 @@ def r41_high_risk_mitigation(doc, r):
     return _result(r, Verdict.PASS, evidence=f"共{len(high)}项高风险均已制定应对措施({names})")
 
 
+@rule(42)
+def r42_mitigation_presence(doc, r):
+    """C 类：应对措施有效性——只验「在否」，不判有效性（design.md 转人工4条 Requirement）。
+
+    "有效覆盖风险"需业务/评审判断，AI 只能核实每项风险是否已填应对措施；
+    全部已填 → 转人工核实有效性；有缺项 → 按 J 列严重度（重要→警告）标待改进。
+    """
+    rows = doc.table("风险")
+    if not rows:
+        return _result(r, Verdict.PENDING, evidence="风险表未解析，待人工核")
+    missing = [row for row in rows if not row.get("应对措施")]
+    if missing:
+        return _result(r, Verdict.WARN,
+                       evidence=f"{len(missing)}/{len(rows)}项风险应对措施未填：#{[m['序号'] for m in missing]}",
+                       suggestion="逐项风险须填写应对措施，有效性由评审委员会人工核实")
+    return _result(r, Verdict.MANUAL,
+                   evidence=f"全部{len(rows)}项风险均已填写应对措施，内容有效性交评审委员会人工核实")
+
+
 # ---- 模块七：项目所需资源采购计划 ----
 @rule(43)
 def r43_resource_count(doc, r):
@@ -905,3 +924,39 @@ def r74_final_cashflow_vs_profit(doc, r):
                        suggestion="现金流最终累计值需与成本效益分析利润一致")
     return _result(r, Verdict.PASS,
                    evidence=f"累计现金流末期={last:.2f}万，与成本效益利润F={profit:.2f}万一致")
+
+
+# ---- 模块十二/十三：C 类转人工 4 条中的 3 条（第 4 条见上 rule 42）----
+# design.md「转人工 4 条只验在否不下结论」Requirement：签字/决议真伪与有效性交人工，
+# AI 只核实字段「在/不在、已填/未填」。真实签名是图章/手写图片，openpyxl 读不到像素，
+# 以签字行下方日期是否已填作「在场」代理指标（parser._parse_summary_signatures）。
+def _summary(doc, name):
+    return doc.get(f"十二、总结/{name}")
+
+
+@rule(80)
+def r80_pm_signature(doc, r):
+    fv = _summary(doc, "项目经理签字及日期")
+    if fv.status == ExtractStatus.NOT_FOUND:
+        return _result(r, Verdict.PENDING, evidence="解析未命中该字段（待人工核）")
+    if fv.is_present:
+        return _result(r, Verdict.MANUAL, evidence=f"已签字并填写日期: {fv.value!r}（真伪人工核）")
+    return _result(r, Verdict.FAIL, evidence="项目经理未签字/未填日期",
+                   suggestion="请项目经理签字并填写日期")
+
+
+@rule(81)
+def r81_gm_signature(doc, r):
+    fv = _summary(doc, "总经理签字及日期")
+    if fv.status == ExtractStatus.NOT_FOUND:
+        return _result(r, Verdict.PENDING, evidence="解析未命中该字段（待人工核）")
+    if fv.is_present:
+        return _result(r, Verdict.MANUAL, evidence=f"已签字并填写日期: {fv.value!r}（真伪人工核）")
+    return _result(r, Verdict.FAIL, evidence="事业部总经理未签字/未填日期",
+                   suggestion="请事业部总经理签字并填写日期")
+
+
+@rule(82)
+def r82_decision(doc, r):
+    """立项决议在立项会评审后填写，申请阶段不做判断（design.md 场景「立项决议申请阶段不判」）。"""
+    return _result(r, Verdict.NA, evidence="立项决议在立项会评审后填写，申请阶段不做评价")

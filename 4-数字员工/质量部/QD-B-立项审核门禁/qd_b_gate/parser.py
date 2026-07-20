@@ -108,6 +108,20 @@ class ProposalParser:
             return None, src
         return v, src
 
+    def _value_below(self, coord: str) -> tuple[object, str]:
+        """读 label 单元格正下方（同列、下一行）的值。
+
+        模块十二签字栏是"标签行→值行"纵向布局（如「项目经理签字：」在 B166、
+        日期在 B167），与模块一"标签→右侧值"的横向布局不同，故单独提供。
+        """
+        r, c = coordinate_to_tuple(coord)
+        cc = f"{get_column_letter(c)}{r + 1}"
+        v = self.cell(cc)
+        src = self._merge_anchor.get(cc, cc)
+        if v is None or _norm(v) == "":
+            return None, src
+        return v, src
+
     def _range_of(self, coord: str):
         anchor = self._merge_anchor.get(coord, coord)
         for rng in self.ws.merged_cells.ranges:
@@ -245,6 +259,7 @@ class ProposalParser:
             doc.project_type = str(pt.value).strip()
         self._parse_personnel_table(doc, secs.get("一、项目信息"))
         self._parse_text_areas(doc, secs)
+        self._parse_summary_signatures(doc, secs.get("十二、总结"))
         self._parse_risk_table(doc, secs.get("六、项目风险分析"))
         self._parse_resource_table(doc, secs.get("七、项目所需资源采购计划"))
         self._parse_cost_benefit_section(doc, secs.get("八、项目成本及收益分析"))
@@ -592,6 +607,39 @@ class ProposalParser:
                 doc.text_areas[module] = FieldValue(
                     key=module, status=ExtractStatus.MISSING, anchor=module,
                     reason="模块内无有效文本内容（仅标题/指引）")
+
+    # ---------- 模块十二：签字栏（规则 80/81，C 类只验在否） ----------
+    _SUMMARY_SIGNATURES = [
+        ("项目经理签字", "十二、总结/项目经理签字及日期"),
+        ("事业部总经理签字", "十二、总结/总经理签字及日期"),
+    ]
+
+    def _parse_summary_signatures(self, doc: ProposalDocument, rng: tuple[int, int] | None):
+        """模块十二签字栏：只判「有无」（真实签名是图章/手写，openpyxl 读不到，
+        以签字行下方是否填了日期作在场代理指标），真伪判断留人工（design.md 转人工4条）。
+
+        空白模板的日期行不是真空单元格，而是预印"年   月   日"骨架（无数字）当
+        填写提示——必须按"含数字"而非"非空"判定是否真已填写，否则会把未填的
+        骨架误判为"已签字"（同 D4 的"NOT_FOUND vs 业务空"纪律，这里是骨架文本的
+        变体）。
+        """
+        if rng is None:
+            return
+        for label_text, fkey in self._SUMMARY_SIGNATURES:
+            coord = self.find_label(label_text, rng)
+            if coord is None:
+                doc.fields[fkey] = FieldValue(key=fkey, status=ExtractStatus.NOT_FOUND,
+                                              anchor=label_text, reason="标题锚点未命中")
+                continue
+            value, src = self._value_below(coord)
+            if value is None or not re.search(r"\d", _norm(value)):
+                doc.fields[fkey] = FieldValue(key=fkey, status=ExtractStatus.MISSING,
+                                              anchor=label_text, source_cell=src,
+                                              reason="锚点命中但值为空（未签字/未填日期，或仅为“年 月 日”填写骨架）")
+            else:
+                doc.fields[fkey] = FieldValue(key=fkey, value=_norm(value),
+                                              status=ExtractStatus.EXTRACTED,
+                                              anchor=label_text, source_cell=src)
 
     # ---------- 模块一：人员安排表 ----------
     def _parse_personnel_table(self, doc: ProposalDocument, rng: tuple[int, int] | None):

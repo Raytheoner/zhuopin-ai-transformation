@@ -1,7 +1,10 @@
-"""QD-B 全链评估入口 —— 解析 → 规则判定 → 评分 → audit 写入。
+"""QD-B 全链评估入口 —— 解析 → 规则判定(A+B+C) → 评分 → 报告聚合 → audit 写入。
 
-这是 task 6.5（审计接入）的实现：每次规则判定 + 评分运行后写 AuditEvent，
-含规则版本 2026-07-03、样本标识、逐条判定结果，append-only hash-chain。
+这是 task 6.5（审计接入）+ 6.1/6.3（M5 两档判定 + M7 报告聚合）的实现：每次
+运行 A 类确定性规则 + C 类转人工（只验在否）+ B 类语义判定（MVP 占位）后评分、
+聚合六段式审核报告，并写 AuditEvent（含规则版本、样本标识、逐条判定结果，
+append-only hash-chain），做到 IATF 8.3"全链可追溯"——C/B 类判定同样是 AI 预审
+结论的一部分，须与 A 类一样入审计（而非只审 A 类、遗漏转人工/语义判定环节）。
 """
 from __future__ import annotations
 
@@ -15,7 +18,8 @@ from zhuopin_platform.audit import AuditEvent, AuditLogger
 
 from .models import ProposalDocument, RuleResult
 from .parser import ProposalParser
-from .rules.engine import run_rules
+from .report import GateReport, build_report
+from .rules.engine import run_all
 from .scoring import ScoreResult, score
 
 RULE_VERSION = "2026-07-03"
@@ -27,6 +31,7 @@ class EvaluationResult:
     document: ProposalDocument
     rule_results: list[RuleResult]
     score_result: ScoreResult
+    report: GateReport
     audit_event: AuditEvent
 
 
@@ -79,8 +84,10 @@ def evaluate(
     sid = sample_id or doc_path.stem
 
     doc: ProposalDocument = ProposalParser(doc_path).parse()
-    results: list[RuleResult] = run_rules(doc)
+    results: list[RuleResult] = run_all(doc)
     sr: ScoreResult = score(results)
+    report = build_report(doc, results=results, score_result=sr,
+                          rule_version=RULE_VERSION, sample_id=sid)
 
     payload = _decision_payload(doc, results, sr, sid)
     content_hash = hashlib.sha256(
@@ -109,5 +116,6 @@ def evaluate(
         document=doc,
         rule_results=results,
         score_result=sr,
+        report=report,
         audit_event=event,
     )

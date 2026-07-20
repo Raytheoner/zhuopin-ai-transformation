@@ -43,7 +43,7 @@ class TestAuditWithMockDocument:
 
         with (
             patch("qd_b_gate.evaluate.ProposalParser") as MockParser,
-            patch("qd_b_gate.evaluate.run_rules", return_value=mock_results),
+            patch("qd_b_gate.evaluate.run_all", return_value=mock_results),
             patch("qd_b_gate.evaluate.score", return_value=mock_score),
         ):
             MockParser.return_value.parse.return_value = mock_doc
@@ -87,7 +87,7 @@ class TestAuditWithMockDocument:
 
         with (
             patch("qd_b_gate.evaluate.ProposalParser") as MockParser,
-            patch("qd_b_gate.evaluate.run_rules", return_value=mock_results),
+            patch("qd_b_gate.evaluate.run_all", return_value=mock_results),
             patch("qd_b_gate.evaluate.score", return_value=mock_score),
         ):
             MockParser.return_value.parse.return_value = mock_doc
@@ -116,7 +116,7 @@ class TestAuditWithMockDocument:
 
         with (
             patch("qd_b_gate.evaluate.ProposalParser") as MockParser,
-            patch("qd_b_gate.evaluate.run_rules", return_value=mock_results),
+            patch("qd_b_gate.evaluate.run_all", return_value=mock_results),
             patch("qd_b_gate.evaluate.score", return_value=mock_score),
         ):
             MockParser.return_value.parse.return_value = mock_doc
@@ -145,7 +145,7 @@ class TestAuditWithMockDocument:
             )
             with (
                 patch("qd_b_gate.evaluate.ProposalParser") as MockParser,
-                patch("qd_b_gate.evaluate.run_rules", return_value=mock_results),
+                patch("qd_b_gate.evaluate.run_all", return_value=mock_results),
                 patch("qd_b_gate.evaluate.score", return_value=mock_score),
             ):
                 MockParser.return_value.parse.return_value = mock_doc
@@ -172,7 +172,8 @@ class TestAuditWithHuafeng:
         assert rec["scenario"] == "QD-B"
         assert rec["decision"]["rule_version"] == RULE_VERSION
         assert rec["decision"]["sample_id"] == "huafeng_deidentified"
-        assert len(rec["decision"]["per_rule"]) == 68, "应有 68 条 A 类规则判定"
+        # evaluate() 现跑 run_all()（A68+C4+B10=82，任务6.1/6.2/6.5 全链审计，非只审 A 类）
+        assert len(rec["decision"]["per_rule"]) == 82, "应有 82 条 A+B+C 类规则判定（全链审计）"
 
         audit = AuditLogger.jsonl(audit_path)
         chain = audit.verify_chain()

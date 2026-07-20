@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..models import ProposalDocument, RuleResult, Verdict
-from . import deterministic
+from . import deterministic, semantic
 from .registry import RuleRegistry, load_registry
 
 
@@ -24,6 +24,33 @@ def run_rules(doc: ProposalDocument, registry: RuleRegistry | None = None) -> li
             out.append(RuleResult(rule_id=r.rule_id, check_item=r.check_item,
                                   verdict=Verdict.PENDING, impl_class="A"))
     return out
+
+
+def run_manual_class_rules(doc: ProposalDocument, registry: RuleRegistry | None = None) -> list[RuleResult]:
+    """C 类 4 条转人工规则：只验在否不下结论（任务 6.2；实现见 deterministic.py 42/80/81/82）。"""
+    reg = registry or load_registry()
+    impl = deterministic.implemented_ids()
+    out: list[RuleResult] = []
+    for r in reg.by_class("C"):
+        if r.rule_id in impl:
+            out.append(deterministic._RULES[r.rule_id](doc, r))
+        else:
+            out.append(RuleResult(rule_id=r.rule_id, check_item=r.check_item,
+                                  verdict=Verdict.PENDING, impl_class="C"))
+    return out
+
+
+def run_semantic_rules(doc: ProposalDocument, registry: RuleRegistry | None = None) -> list[RuleResult]:
+    """B 类 10 条语义判定：MVP 占位"待人工复核"（任务 5.1/5.3，扩容期接入 v4 判据）。"""
+    reg = registry or load_registry()
+    return semantic.run_semantic_placeholder(doc, reg.by_class("B"))
+
+
+def run_all(doc: ProposalDocument, registry: RuleRegistry | None = None) -> list[RuleResult]:
+    """A + C(转人工) + B(语义占位) 全量判定 —— 报告聚合/评分/审计全链的输入（任务 6.1）。"""
+    reg = registry or load_registry()
+    return (run_rules(doc, reg) + run_manual_class_rules(doc, reg)
+            + run_semantic_rules(doc, reg))
 
 
 @dataclass

@@ -13,8 +13,9 @@ from pathlib import Path
 import pytest
 
 from qd_b_gate.parser import ProposalParser
-from qd_b_gate.rules.engine import run_rules
+from qd_b_gate.rules.engine import run_all, run_rules
 from qd_b_gate.models import Verdict
+from qd_b_gate.report import build_report
 from qd_b_gate.scoring import score
 
 PC_DIR = Path("C:/Users/Paul Shao/OneDrive/Projects/企业AI转型/7-外部文档/质量部/"
@@ -67,3 +68,37 @@ def test_bangqi_matches_report_unqualified():
     assert "74" in sc.veto_rules
     assert sc.tier == "不合格"
     assert sc.provisional is True  # 仍有 B/待收口规则未实现，分数暂定不影响本例的一票否决判定
+
+
+class TestFullPipelineWithManualAndSemanticClasses:
+    """run_all()（A+C转人工+B语义占位）+ build_report() 全链回归（任务 6.1/6.2/6.7）。
+
+    锁定：新增的 C 类 42/80/81/82 在两份真实（已签字/已填应对措施）样本上只应产出
+    「转人工/不适用」，不得引入新的一票否决或扣分——即"黄金基准不漂移"。
+    """
+
+    def test_eq17_full_pipeline_still_qualified(self):
+        doc = ProposalParser(_need(EQ17)).parse()
+        results = run_all(doc)
+        rep = build_report(doc, results=results, sample_id="EQ17")
+        assert rep.verdict == "合格"
+        assert rep.blocking_items == []
+        by = {r.rule_id: r for r in results}
+        assert by["80"].verdict == Verdict.MANUAL
+        assert by["81"].verdict == Verdict.MANUAL
+        assert by["82"].verdict == Verdict.NA
+        assert by["42"].verdict == Verdict.MANUAL
+        assert len(results) == 82
+
+    def test_bangqi_full_pipeline_still_unqualified_same_driving_rule(self):
+        doc = ProposalParser(_need(BANGQI)).parse()
+        results = run_all(doc)
+        rep = build_report(doc, results=results, sample_id="邦奇")
+        assert rep.verdict == "不合格"
+        # 一票否决驱动规则不变（仍是财务勾稽 74，不是新增的 C 类签字/应对措施规则）
+        assert [r.rule_id for r in rep.blocking_items] == ["74"]
+        by = {r.rule_id: r for r in results}
+        assert by["80"].verdict == Verdict.MANUAL
+        assert by["81"].verdict == Verdict.MANUAL
+        # B 类 10 条 + C 类 42/80/81 均落入转人工待办（82 恒 NA，不计入待办）
+        assert len(rep.manual_todo_items) == 13
