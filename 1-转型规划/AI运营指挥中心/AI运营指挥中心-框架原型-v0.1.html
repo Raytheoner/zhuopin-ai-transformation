@@ -543,22 +543,23 @@
             </div>
           </div>
           <div class="panel">
-            <div class="phead"><h3><span class="bar"></span>⚠️ 需干预线索追踪</h3><span class="more">评分 100 · 10 条</span></div>
+            <div class="phead"><h3><span class="bar"></span>⚠️ 需干预线索追踪</h3><span class="more">评分 100 · 10 条 · 联系方式已脱敏</span></div>
             <div style="overflow-x:auto">
             <table>
               <thead><tr><th>公司</th><th>联系人</th><th>电话</th><th>评分</th></tr></thead>
               <tbody id="salesRisk">
-                <tr><td>邦奇动力</td><td>Sandra Su</td><td class="miss">025-85809089</td><td><span class="sdot r"><i></i>100</span></td></tr>
-                <tr><td>南京依维柯</td><td>Njin</td><td class="miss">025-69649961</td><td><span class="sdot r"><i></i>100</span></td></tr>
-                <tr><td>芯朋微电子</td><td>Liubk</td><td class="miss">0510-85217718</td><td><span class="sdot r"><i></i>100</span></td></tr>
-                <tr><td>上汽集团</td><td>WangJianJun</td><td class="miss">021-22011888</td><td><span class="sdot r"><i></i>100</span></td></tr>
-                <tr><td>上汽集团</td><td>Jiyu01</td><td class="miss">021-22011888</td><td><span class="sdot r"><i></i>100</span></td></tr>
-                <tr><td>Motory</td><td>Jiayongfei</td><td class="miss">021-1232222</td><td><span class="sdot r"><i></i>100</span></td></tr>
-                <tr><td>Fujipcb</td><td>Fuji-Sales24</td><td class="miss">13360273487</td><td><span class="sdot r"><i></i>100</span></td></tr>
-                <tr><td class="miss">（未映射公司）</td><td>Freddongzhijun</td><td class="miss">13683227511</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>邦奇动力</td><td>已脱敏</td><td class="miss">已脱敏</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>南京依维柯</td><td>已脱敏</td><td class="miss">已脱敏</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>芯朋微电子</td><td>已脱敏</td><td class="miss">已脱敏</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>上汽集团</td><td>已脱敏</td><td class="miss">已脱敏</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>上汽集团</td><td>已脱敏</td><td class="miss">已脱敏</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>Motory</td><td>已脱敏</td><td class="miss">已脱敏</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td>Fujipcb</td><td>已脱敏</td><td class="miss">已脱敏</td><td><span class="sdot r"><i></i>100</span></td></tr>
+                <tr><td class="miss">（未映射公司）</td><td>已脱敏</td><td class="miss">已脱敏</td><td><span class="sdot r"><i></i>100</span></td></tr>
               </tbody>
             </table>
             </div>
+            <div class="note" style="margin-top:6px">🔒 联系人姓名/电话/邮箱已脱敏——访问范围（谁能看真实联系方式）待 Paul / 销售域接口人（泓钦）拍板后再放开，见跨桌任务队列 #53（2026-07-20）。</div>
           </div>
         </div>
 
@@ -566,7 +567,7 @@
           <div class="phead"><h3><span class="bar"></span>规划中场景 & 接入说明</h3></div>
           <div class="scn"><div class="sh"><span class="sc">S6</span><span class="snm">客户知识线 / 交期响应</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">2026-Q4 归集</span></div><div class="sd">复用采购 SC8 承诺交期引擎；接口人已到位、知识线归集牵头中。</div></div>
           <div class="scn"><div class="sh"><span class="sc">S-报价</span><span class="snm">报价辅助 / 客户画像</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2</span></div></div>
-          <div class="note">本页为 SalesMarketing《ECU 销售业绩看板》的原生镜像（同一 <b>dashboard_data.json</b> 数据模型）。当前为 2026-06-25 快照；接入方式见聊天说明——最"有机"＝命令中心 <b>fetch 同一 JSON</b> 实时刷新（部署时需把该数据源纳入 .51 可达路径，属 CC 建造侧）。</div>
+          <div class="note">本页为 SalesMarketing《ECU 销售业绩看板》的原生镜像（同一 <b>dashboard_data.json</b> 数据模型）。已接同源 fetch 实时刷新（见 <b>data/sales_dashboard_data.json</b>，由 <b>sync_sales_data.py</b> 同步并脱敏高危线索联系方式）；断源时回落本页 2026-06-25 快照。命令中心本身正式部署到 .51 是另一项独立待办（本次范围只做数据管道）。</div>
         </div>
       </section>
 

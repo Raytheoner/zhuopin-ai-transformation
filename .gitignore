@@ -42,3 +42,6 @@ desktop.ini
 
 # 本机专属脚本（写死个人路径，仅供本机 Windows 任务计划调用，不同环境不通用）
 start-aibot-service-dev.ps1
+
+# 销售域实时数据缓存（同步自 SalesMarketing/crm_data/dashboard_data.json，含客户线索联系方式，不入库）
+1-转型规划/AI运营指挥中心/data/
