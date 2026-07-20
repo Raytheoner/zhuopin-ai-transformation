@@ -71,12 +71,40 @@ def classify_layer(rel_path: Path) -> str:
     return DEFAULT_LAYER
 
 
+# 前导装饰（**、✅、空白、破折号等）匹配前先剥离，避免 `**已生效**` 类漏判
+_DECO_PREFIX = re.compile(r"^[\s*✅✓☑🟢🔵🟡🔴>#—-]+")
+
+# 常见非枚举写法 → 六枚举（前缀匹配，避免"待…定稿"被误判成"定稿=生效"）
+_STATUS_SYNONYM: list[tuple[str, str]] = [
+    ("已定稿", "生效"), ("已生效", "生效"), ("规则定稿", "生效"), ("定稿", "生效"),
+    ("已确认", "生效"), ("确认通过", "生效"), ("已启用", "生效"),
+    ("跟进信", "生效"), ("常设机制", "生效"),
+    ("已重排", "已执行归档"), ("已回复", "已执行归档"), ("已执行", "已执行归档"),
+    ("已发", "已执行归档"), ("已归档", "已执行归档"), ("收口成果", "已执行归档"),
+    ("待执行", "在办"), ("滚动更新", "在办"),
+    ("待 VP", "在办"), ("待 CC", "在办"), ("待 Paul", "在办"),
+    ("校准会", "在办"), ("CC 引用", "在办"), ("收口", "在办"),
+    ("草案", "在办"), ("就绪", "在办"), ("设计稿", "在办"), ("规划稿", "在办"),
+    ("评审", "在办"), ("工作", "在办"), ("备料", "在办"), ("映射", "在办"),
+    ("答复", "在办"), ("建议", "在办"), ("需求", "在办"), ("模板", "在办"),
+    ("分析", "在办"), ("候选", "在办"), ("审核", "在办"), ("派工", "在办"),
+    ("单一入口", "在办"), ("上线收口", "在办"), ("交接", "在办"),
+    ("启用稿", "在办"), ("MVP", "在办"),
+    ("作废", "已作废"), ("废弃", "已作废"),
+    ("快照", "历史快照"), ("历史", "历史快照"),
+]
+
+
 def status_bucket(status_raw: str) -> str:
     if not status_raw:
         return "（缺状态头，待补）"
-    for s in STATUS_ORDER:
-        if status_raw.startswith(s):
-            return s
+    s = _DECO_PREFIX.sub("", status_raw)
+    for e in STATUS_ORDER:
+        if s.startswith(e):
+            return e
+    for kw, e in _STATUS_SYNONYM:
+        if s.startswith(kw):
+            return e
     return "（状态头非标准枚举，待补）"
 
 
@@ -90,6 +118,8 @@ def main() -> None:
             continue
         for path in sorted(base.rglob("*.md")):
             if "__pycache__" in path.parts:
+                continue
+            if path.name == OUTPUT_PATH.name:  # 跳过脚本自身输出（每跑必覆盖，无需状态头）
                 continue
             rel = path.relative_to(REPO_ROOT)
             text = path.read_text(encoding="utf-8", errors="ignore")
