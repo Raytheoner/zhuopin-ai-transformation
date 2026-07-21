@@ -80,9 +80,8 @@ def test_real_ap_query_batch_filter_now_fixed():
     `supplierCode`/`itemCode`/`invoiceNo` 过滤 + 不传 `docNo` 的全表分页，均已从服务器端
     SQL 列名错误恢复为正常返回——此前登记的"AP 端只能 docNo 单查"限制已解除。
 
-    本测试只确认接口本身可用，**不代表连接器/feed_source 已切回批量取数路径**——
-    `_fi_query`（connector.py）与 `FeedSource.ap_doc_nos`（feed_source.py）的 docNo-only
-    MVP 设计是否要改为批量驱动，是独立的架构决策，留给 Paul 评估排期，本次未改动。
+    这是原始接口层面的探测（裸 urllib），下面 `test_real_get_ap_lines_by_supplier`
+    走连接器封装的生产代码路径，是同一发现在 design D16 落地后的端到端复验。
     """
     by_supplier = _raw_ap_query(supplierCode="ZA0066")
     assert by_supplier.get("Success") is True
@@ -99,3 +98,15 @@ def test_real_ap_query_batch_filter_now_fixed():
     full_table = _raw_ap_query(page=1, pageSize=3)
     assert full_table.get("Success") is True
     assert full_table["Data"]["Total"] > 1000   # 全库 AP 单据量级
+
+
+def test_real_get_ap_lines_by_supplier():
+    """design D16（队列 #61 追加）：连接器批量取数方法端到端真实验证——分页拉取
+    ZA0066（艾睿，R7 三家外币供应商之一）名下全部 AP 明细行，条数应与直接探测的
+    `Total` 一致（分页逻辑无遗漏/无重复），且行行确实属于该供应商。
+    """
+    conn = _connector()
+    expected_total = _raw_ap_query(supplierCode="ZA0066")["Data"]["Total"]
+    rows = conn.get_ap_lines_by_supplier("ZA0066")
+    assert len(rows) == expected_total
+    assert all(r["SupplierCode"] == "ZA0066" for r in rows)

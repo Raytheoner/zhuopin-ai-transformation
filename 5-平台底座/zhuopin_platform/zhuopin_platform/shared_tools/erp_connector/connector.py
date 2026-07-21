@@ -559,18 +559,15 @@ class ZpConnector(DataConnector):
             )
         return base, key
 
-    def _fi_query(self, path: str, doc_no: str) -> list[dict]:
-        """财务只读查询公共实现（Purchase/GR/AP Query 共用，信封同 Stock/Query）。
-
-        仅暴露 `docNo` 单查——`AP/Query` 的 `supplierCode`/`itemCode`/`invoiceNo`
-        过滤参数服务器端有真实 SQL bug（列名映射错误，2026-07-20 实测发现并已跟催
-        IT，见 `6-人才与组织/部门AI专员跟进/IT部-陈承-跟进-2026-07-20-*.md`），
-        本方法不透传这些参数，避免调用方踩坑。
+    def _fi_request(self, path: str, params: dict) -> dict:
+        """单次财务 GET 请求，返回完整响应体（`Success`/`Data.Total`/`Data.Rows`）。
+        `params` 不得含 `apiKey`（本方法统一注入），报错信息按 `params` 原样脱敏
+        （即不含 apiKey，其余参数如 docNo/supplierCode 非敏感可直接展示）。
         """
         base, key = self._fi_credentials()
-        qs = urllib.parse.urlencode({"apiKey": key, "docNo": doc_no})
+        qs = urllib.parse.urlencode({"apiKey": key, **params})
         url = f"{base}{path}?{qs}"
-        safe = f"{base}{path}?docNo={doc_no}"   # 脱敏（无 apiKey），仅报错用
+        safe = f"{base}{path}?{urllib.parse.urlencode(params)}"   # 脱敏（无 apiKey），仅报错用
         try:
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=30, context=self._ctx) as r:
@@ -582,8 +579,35 @@ class ZpConnector(DataConnector):
         if not body.get("Success"):
             raise RuntimeError(f"财务查询 API 错误: {safe} :: {body.get('ResMsg')}")
         if self._audit is not None:
-            self._audit.trace(source="zp_FI", action=f"{path}?docNo={doc_no}")
+            self._audit.trace(source="zp_FI", action=f"{path}?{urllib.parse.urlencode(params)}")
+        return body
+
+    def _fi_query(self, path: str, doc_no: str) -> list[dict]:
+        """财务只读查询公共实现（Purchase/GR/AP Query 共用，信封同 Stock/Query）——`docNo` 单查。"""
+        body = self._fi_request(path, {"docNo": doc_no})
         return (body.get("Data") or {}).get("Rows") or []
+
+    _FI_PAGE_SIZE = 200
+
+    def _fi_query_paginated(self, path: str, filters: dict) -> list[dict]:
+        """按 `filters`（如 `supplierCode`）分页拉取全部匹配行（design D16，队列 #61
+        追加）。`AP/Query` 的 `supplierCode`/`itemCode`/`invoiceNo` 过滤参数此前有
+        服务器端 SQL bug（列名映射错误，2026-07-20 发现并跟催 IT，见
+        `6-人才与组织/部门AI专员跟进/IT部-陈承-跟进-2026-07-20-*.md`），
+        **2026-07-21 复验已由 IT 修复**（队列 #61），本方法据此打开批量取数路径。
+        """
+        all_rows: list[dict] = []
+        page = 1
+        while True:
+            body = self._fi_request(path, {**filters, "page": page, "pageSize": self._FI_PAGE_SIZE})
+            data = body.get("Data") or {}
+            rows = data.get("Rows") or []
+            all_rows.extend(rows)
+            total = data.get("Total", len(all_rows))
+            if not rows or len(all_rows) >= total:
+                break
+            page += 1
+        return all_rows
 
     def get_purchase_lines(self, doc_no: str) -> list[dict]:
         """采购订单明细行（真实源，design D15）——GET `/zp/api/Purchase/Query`。"""
@@ -594,8 +618,15 @@ class ZpConnector(DataConnector):
         return self._fi_query("/zp/api/GR/Query", doc_no)
 
     def get_ap_lines(self, doc_no: str) -> list[dict]:
-        """应付单明细行（真实源，design D15）——GET `/zp/api/AP/Query`。"""
+        """应付单明细行（真实源，design D15）——GET `/zp/api/AP/Query`，`docNo` 单查。"""
         return self._fi_query("/zp/api/AP/Query", doc_no)
+
+    def get_ap_lines_by_supplier(self, supplier_code: str) -> list[dict]:
+        """应付单明细行·按供应商批量取数（design D16，队列 #61 追加）——GET
+        `/zp/api/AP/Query` 的 `supplierCode` 过滤 + 自动分页，取代"手工给 AP 单号
+        清单"的 MVP 限制（该限制源于 D15-a① 记录的服务器端 bug，2026-07-21 已修复）。
+        """
+        return self._fi_query_paginated("/zp/api/AP/Query", {"supplierCode": supplier_code})
 
     _BOM_MAX_WORKERS = 5
 

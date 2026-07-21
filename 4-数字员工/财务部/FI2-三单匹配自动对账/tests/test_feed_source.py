@@ -88,21 +88,30 @@ class _FakeU9cConnector:
         self.ap_calls: list[str] = []
         self.po_calls: list[str] = []
         self.gr_calls: list[str] = []
+        self.supplier_calls: list[str] = []
+
+    _AP_ROWS_BY_DOC = {
+        "AP-REAL-1": [
+            {"DocNo": "AP-REAL-1", "SrcPONo": "PO-REAL-1", "SrcPOLineNo": "10",
+             "ItemCode": "R01A.0175", "APQtyTU": 5000.0, "TaxPrice": 0.42,
+             "NonTaxAmtTC": 1858.41, "TaxAmtTC": 241.59,
+             "SrcRcvNo": "RCV-REAL-1", "SrcRcvLineNo": "10"},
+            {"DocNo": "AP-REAL-1", "SrcPONo": "PO-REAL-1", "SrcPOLineNo": "20",
+             "ItemCode": "R01A.0176", "APQtyTU": 100.0, "TaxPrice": 1.0,
+             "NonTaxAmtTC": 88.5, "TaxAmtTC": 11.5,
+             "SrcRcvNo": "RCV-REAL-1", "SrcRcvLineNo": "20"},
+        ],
+    }
 
     def get_ap_lines(self, doc_no):
         self.ap_calls.append(doc_no)
-        return {
-            "AP-REAL-1": [
-                {"DocNo": "AP-REAL-1", "SrcPONo": "PO-REAL-1", "SrcPOLineNo": "10",
-                 "ItemCode": "R01A.0175", "APQtyTU": 5000.0, "TaxPrice": 0.42,
-                 "NonTaxAmtTC": 1858.41, "TaxAmtTC": 241.59,
-                 "SrcRcvNo": "RCV-REAL-1", "SrcRcvLineNo": "10"},
-                {"DocNo": "AP-REAL-1", "SrcPONo": "PO-REAL-1", "SrcPOLineNo": "20",
-                 "ItemCode": "R01A.0176", "APQtyTU": 100.0, "TaxPrice": 1.0,
-                 "NonTaxAmtTC": 88.5, "TaxAmtTC": 11.5,
-                 "SrcRcvNo": "RCV-REAL-1", "SrcRcvLineNo": "20"},
-            ],
-        }[doc_no]
+        return self._AP_ROWS_BY_DOC[doc_no]
+
+    def get_ap_lines_by_supplier(self, supplier_code):
+        """design D16：批量按供应商——测试用返回值与单号模式的 AP-REAL-1 一致，
+        验证下游 PO/GR 派生与字段映射走的是同一条路径。"""
+        self.supplier_calls.append(supplier_code)
+        return {"ZA0066": self._AP_ROWS_BY_DOC["AP-REAL-1"]}[supplier_code]
 
     def get_purchase_lines(self, doc_no):
         self.po_calls.append(doc_no)
@@ -158,8 +167,39 @@ def test_u9c_real_connector_ap_driven_three_step_fetch():
     assert conn.gr_calls == ["RCV-REAL-1"]
 
 
-def test_u9c_real_connector_requires_ap_doc_nos():
-    fs = FeedSource("u9c", u9c_connector=_FakeU9cConnector())  # 未传 ap_doc_nos
+def test_u9c_real_connector_batch_by_supplier_drives_same_pipeline():
+    """design D16（队列 #61 追加）：`ap_supplier_codes` 批量模式走连接器
+    `get_ap_lines_by_supplier`，下游 PO/GR 派生与字段映射与手工单号模式完全一致
+    （复用同一条 `_fetch_u9c_ap_rows` → 三步拉取管线，只是 AP 行的来源不同）。"""
+    conn = _FakeU9cConnector()
+    fs = FeedSource("u9c", u9c_connector=conn, ap_supplier_codes=["ZA0066"])
+
+    ap_lines = fs.load_ap_lines()
+    assert len(ap_lines) == 2
+    assert {a.ap_no for a in ap_lines} == {"AP-REAL-1"}
+
+    po_lines = fs.load_po_lines()
+    assert {p.po_no for p in po_lines} == {"PO-REAL-1"}
+
+    grn = fs.load_grn()
+    assert len(grn) == 1
+
+    assert conn.supplier_calls == ["ZA0066"]        # 三次 load 只拉一次（缓存复用）
+    assert conn.ap_calls == []                       # 批量模式不走单号逐个查询路径
+
+
+def test_u9c_real_connector_ap_supplier_codes_takes_priority_over_doc_nos():
+    """同时注入两种驱动参数时，批量模式优先（design D16）。"""
+    conn = _FakeU9cConnector()
+    fs = FeedSource("u9c", u9c_connector=conn,
+                     ap_supplier_codes=["ZA0066"], ap_doc_nos=["AP-REAL-1"])
+    fs.load_ap_lines()
+    assert conn.supplier_calls == ["ZA0066"]
+    assert conn.ap_calls == []
+
+
+def test_u9c_real_connector_requires_ap_doc_nos_or_supplier_codes():
+    fs = FeedSource("u9c", u9c_connector=_FakeU9cConnector())  # 两者均未传
     with pytest.raises(ValueError):
         fs.load_ap_lines()
 

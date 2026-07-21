@@ -290,15 +290,23 @@ class FeedSource:
         csv_dir:     应急桥接目录（同字段约定，真实路径待接通）。
         audit:       ConnectorAudit（连接器访问留痕，占位）。
         u9c_connector: `u9c` 源下驱动真实查询的连接器（如 `ZpConnector`，需暴露
-            `get_purchase_lines`/`get_gr_lines`/`get_ap_lines(doc_no)` 三方法，design D15）。
+            `get_purchase_lines`/`get_gr_lines`/`get_ap_lines(doc_no)` 三方法，design D15；
+            批量模式另需 `get_ap_lines_by_supplier(supplier_code)`，design D16）。
             `None`（默认）→ `u9c` 源五个 loader 保持 fail-loud（现状行为不变）。
-        ap_doc_nos:  `u9c` 源下待对账的 AP 单号清单（`AP/Query` 服务器端批量过滤参数有
-            SQL bug，只能显式给单号，见 design D15-a①）——注入 `u9c_connector` 时必填。
+        ap_supplier_codes: `u9c` 源下按供应商批量取数（design D16，队列 #61 追加）——
+            自动分页拉取这些供应商名下**全部** AP 明细行，取代逐单号手工清单。
+            与 `ap_doc_nos` 二选一（同时注入时优先批量模式，见 `_fetch_u9c_ap_rows`）。
+            `AP/Query` 的 `supplierCode` 过滤此前有服务器端 SQL bug（design D15-a①），
+            2026-07-21 已由 IT 修复（队列 #61），本参数才具备可用性。
+        ap_doc_nos:  `u9c` 源下待对账的 AP 单号清单（显式给单号的原始 MVP 形态，
+            design D15-a①）——`ap_supplier_codes` 未注入时的手工兜底路径，仍受支持
+            （如财务专员只想追一批具体单号，不想拉某供应商全量）。
     """
 
     def __init__(self, data_source: str | None = None, *, mock_dir: Path | str | None = None,
                  csv_dir: Path | str | None = None, audit=None, cfg=_config,
-                 u9c_connector=None, ap_doc_nos: list[str] | None = None):
+                 u9c_connector=None, ap_doc_nos: list[str] | None = None,
+                 ap_supplier_codes: list[str] | None = None):
         self.data_source = (data_source or cfg.DATA_SOURCE_DEFAULT).strip().lower()
         self.mock_dir = Path(mock_dir) if mock_dir else None
         self.csv_dir = Path(csv_dir) if csv_dir else None
@@ -306,6 +314,7 @@ class FeedSource:
         self.cfg = cfg
         self.u9c_connector = u9c_connector
         self.ap_doc_nos = list(ap_doc_nos) if ap_doc_nos else None
+        self.ap_supplier_codes = list(ap_supplier_codes) if ap_supplier_codes else None
         self._u9c_ap_rows_cache: list[dict] | None = None
 
     def _dir(self) -> Path:
@@ -316,19 +325,31 @@ class FeedSource:
         raise ValueError(f"未知 data_source: {self.data_source}")
 
     def _fetch_u9c_ap_rows(self) -> list[dict]:
-        """按 `ap_doc_nos` 逐单号拉取 AP 明细行（design D15-b①），同次 FeedSource
-        实例内缓存复用（`load_ap_lines`/`load_po_lines`/`load_grn` 三方共享，避免
-        重复网络调用）。"""
+        """拉取待对账的 AP 明细行（design D16，队列 #61 追加），同次 FeedSource 实例
+        内缓存复用（`load_ap_lines`/`load_po_lines`/`load_grn` 三方共享，避免重复
+        网络调用）。两种驱动模式二选一，`ap_supplier_codes` 优先：
+          · 批量模式（`ap_supplier_codes`）：按供应商自动分页拉取全部 AP 明细行，
+            取代原"手工给单号清单"的 MVP 限制（该限制源于 `AP/Query` 服务器端过滤
+            参数 bug，design D15-a①，2026-07-21 已由 IT 修复，见队列 #61）。
+          · 手工模式（`ap_doc_nos`）：逐单号精确拉取，D15-a① 原始 MVP 形态，仍受
+            支持（财务专员只想追一批具体单号时更直接）。
+        """
         if self._u9c_ap_rows_cache is None:
-            if not self.ap_doc_nos:
+            if self.ap_supplier_codes:
+                rows: list[dict] = []
+                for code in self.ap_supplier_codes:
+                    rows.extend(self.u9c_connector.get_ap_lines_by_supplier(code))
+                self._u9c_ap_rows_cache = rows
+            elif self.ap_doc_nos:
+                rows = []
+                for ap_no in self.ap_doc_nos:
+                    rows.extend(self.u9c_connector.get_ap_lines(ap_no))
+                self._u9c_ap_rows_cache = rows
+            else:
                 raise ValueError(
-                    "u9c 源 + 已注入 u9c_connector 时，FeedSource 需同时注入 ap_doc_nos"
-                    "（待对账 AP 单号清单，AP/Query 服务器端批量过滤参数有 bug，只能显式给单号）"
+                    "u9c 源 + 已注入 u9c_connector 时，FeedSource 需同时注入 "
+                    "ap_supplier_codes（批量，按供应商）或 ap_doc_nos（手工，按单号）之一"
                 )
-            rows: list[dict] = []
-            for ap_no in self.ap_doc_nos:
-                rows.extend(self.u9c_connector.get_ap_lines(ap_no))
-            self._u9c_ap_rows_cache = rows
         return self._u9c_ap_rows_cache
 
     def load_po_lines(self) -> list[POLine]:

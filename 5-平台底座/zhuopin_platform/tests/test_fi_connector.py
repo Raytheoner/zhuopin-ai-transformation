@@ -6,6 +6,7 @@
   · apiKey 脱敏（异常不含明文）；Success=false → 抛错
 全程 mock/monkeypatch，不触真实端点。
 """
+import json
 from pathlib import Path
 
 import pytest
@@ -104,3 +105,59 @@ def test_fi_query_empty_rows_when_data_missing(tmp_path, monkeypatch):
     body = b'{"Success":true,"Data":{"Total":0,"Rows":[]}}'
     monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
     assert conn.get_gr_lines("GHOST") == []
+
+
+# ── 批量取数（design D16，队列 #61 追加：supplierCode 过滤 2026-07-21 起可用）──
+
+def test_get_ap_lines_by_supplier_paginates_until_exhausted(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    conn._FI_PAGE_SIZE = 2   # 小页方便测试跨页
+
+    pages = {
+        1: [{"DocNo": "AP-1"}, {"DocNo": "AP-2"}],
+        2: [{"DocNo": "AP-3"}, {"DocNo": "AP-4"}],
+        3: [{"DocNo": "AP-5"}],
+    }
+    seen_pages = []
+
+    def _fake_urlopen(req, timeout=None, context=None):
+        qs = dict(x.split("=") for x in req.full_url.split("?", 1)[1].split("&"))
+        page = int(qs["page"])
+        seen_pages.append(page)
+        rows = pages.get(page, [])
+        body = json.dumps({"Success": True, "Data": {"Total": 5, "Rows": rows}}).encode()
+        return _Resp(body)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    rows = conn.get_ap_lines_by_supplier("ZA0066")
+    assert [r["DocNo"] for r in rows] == ["AP-1", "AP-2", "AP-3", "AP-4", "AP-5"]
+    assert seen_pages == [1, 2, 3]   # 拉到 Total 就停，不多拉一页
+
+
+def test_get_ap_lines_by_supplier_empty_result(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    body = json.dumps({"Success": True, "Data": {"Total": 0, "Rows": []}}).encode()
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+    assert conn.get_ap_lines_by_supplier("ZA9999") == []
+
+
+def test_get_ap_lines_by_supplier_url_contains_filter_no_docno(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    captured = {}
+
+    def _fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        body = json.dumps({"Success": True, "Data": {"Total": 0, "Rows": []}}).encode()
+        return _Resp(body)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    conn.get_ap_lines_by_supplier("ZA0066")
+    assert "supplierCode=ZA0066" in captured["url"]
+    assert "docNo" not in captured["url"]
+    assert "page=1" in captured["url"] and "pageSize=" in captured["url"]

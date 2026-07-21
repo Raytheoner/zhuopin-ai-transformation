@@ -236,3 +236,34 @@ FI2 三单匹配自动对账是财务域 2026 年唯一按期落地场景（FI1 
 - ~~是否批准 D15-b 的连接器落点与 MVP 调用形态~~ → **✅ 批准，按此方案 apply**。
 - ~~AP 端批量查询 SQL bug 是否单独出报告跟催~~ → **✅ 立即出报告跟催陈承**（IT 缺口书面留痕 + 机器人直推，见 tasks 11.9）。
 - ~~`FI_API_BASE`/`FI_API_KEY` 是否独立命名~~ → **✅ 复用 `STOCK_API_BASE`/`STOCK_API_KEY`**——Paul 确认本次 7 个财务接口与既有预测订单/库存查询同一接口地址、同一 apiKey，不新开环境变量（见 D15-b 凭据段已更正）。
+
+---
+
+## D16：AP 批量自动取数（供应商驱动），取代手工单号清单（2026-07-21，队列 #61 追加，Paul 直接拍板）
+
+> 触发：队列 #61 复验 apiKey 恢复问题时，`test_real_ap_query_batch_filter_now_fixed`（D15-a① 的回归哨兵）意外发现——陈承那批 DLL 更新顺带修复了 `AP/Query` 的 `supplierCode`/`itemCode`/`invoiceNo` 过滤 SQL bug（此前记录在 D15-a①，导致 D15-b 只能"手工给 AP 单号清单"）。Paul 直接拍板"改造成批量自动取数"，无需先出 design 停下等审（口头已定，本节是补记）。
+
+### D16-a：批量维度选型——按供应商（`supplierCode`），不做按期间/按料品
+
+- **可选维度**：`AP/Query` 控制器暴露 `supplierCode`/`itemCode`/`invoiceNo`/`page`/`pageSize`，**没有日期区间参数**（无 `dateFrom`/`dateTo` 之类），AP 明细行本身也没有独立的"单据日期"字段（只有 `InvoiceDate`/`APPDate`，均非 AP 单创建/入账日期）。
+- **选按供应商**：① 唯一有真实业务含义、且已验证可用的过滤维度（`itemCode`/`invoiceNo` 虽也修复了，但"按料号找全部相关 AP"或"按发票号找一条"都不是"批量待对账"这个场景的自然驱动方式）；② 与 R7 外币三家供应商的既有关注点吻合，财务实操里"这周处理这家供应商的应付"是真实工作流；③ 全表分页（不传任何过滤）会把 26000+ 历史 AP 全部拉回，包含早已核销结案的陈年单据，噪音远大于信号，不适合作默认批量入口。
+- **不做**：按期间自动发现"本月新增 AP"——服务器不支持日期过滤，若要实现只能"全量拉取+客户端按某个代理字段筛选"（如按 AP 单号里的年月编码模式猜测，`AP-2026030057` 形似含日期片段，但未经验证是否所有单据都遵循此命名规则，属不可靠猜测），本次不做这种脆弱实现；留待 IT 后续若肯加日期区间端点参数再重新评估。
+
+### D16-b：实现——`ZpConnector` 分页聚合 + `FeedSource` 双模式并存
+
+- `ZpConnector` 新增 `_fi_request`（单次 GET，返回完整响应体）+ `_fi_query_paginated`（循环 `page`/`pageSize` 直到 `len(rows)>=Total`）+ `get_ap_lines_by_supplier(supplier_code)`（`_fi_query_paginated` 的供应商特化）。既有 `_fi_query`（docNo 单查）改为基于 `_fi_request` 实现，行为不变、零回归（`test_fi_connector.py` 原 7 例全过）。
+- `FeedSource` 新增 `ap_supplier_codes` 构造参数，与既有 `ap_doc_nos`（design D15-b 手工模式）并存、二选一——**同时传入时批量模式优先**（`_fetch_u9c_ap_rows` 判断顺序：`ap_supplier_codes` → `ap_doc_nos` → 均缺失则 `ValueError`）。理由：批量模式代表"这次要拉这几家供应商的全部待办"，手工模式代表"这次只想追这几张具体单子"，二者语义不冲突但批量意图更明确时不应被手工清单悄悄限缩范围。
+- `load_po_lines`/`load_grn` 复用同一条派生管线不变（从 AP 行的 `SrcPONo`/`SrcRcvNo` 去重后取值），批量模式下 AP 行来源变了（供应商分页 vs 单号精确查），但下游派生逻辑完全一致，无需改动。
+- 手工模式（`ap_doc_nos`）**未删除、继续可用**——财务专员只想追一批具体单号时仍是更直接的路径，不因批量能力出现而废弃。
+
+### D16-c：真实验证
+
+- `test_get_ap_lines_by_supplier_*`（`test_fi_connector.py`，3 例，mock 多页响应）验证分页在 `Total` 处正确停止、不多拉一页、URL 不含 `docNo`。
+- `test_u9c_real_connector_batch_by_supplier_*`（`test_feed_source.py`，3 例，假连接器）验证批量模式与手工模式共享同一派生管线、缺省二者报错、同时传入批量优先。
+- `test_real_get_ap_lines_by_supplier`（`test_real_integration.py`，`FI2_RUN_REAL=1` 门禁）真实验证：分页拉取 ZA0066（艾睿）全部 AP 明细行，条数与 `Total` 精确一致（分页无遗漏/无重复），行行 `SupplierCode` 校验通过——已真实跑通（2026-07-21）。
+- 全量回归零漂移：平台 203 passed+1 skip（原 200，+3）、FI2 67 passed+5 skip（原 65，+2 net，含 1 例改名替换）。
+
+### Risks / Trade-offs 追加（D16）
+
+- **[全表拉取仍不可行]** → 若某供应商 AP 单据量极大（远超 848/1183 这类实测量级），`get_ap_lines_by_supplier` 会串行分页拉全量，无上限保护——当前未加安全上限，因为"按供应商"天然是有界的业务维度（不会无限增长到不合理量级），若未来某供应商单据量确实异常巨大，需回头补分页数上限 + 告警，非本次预判范围。
+- **[批量模式覆盖面 vs 手工模式的取舍未来可能需要再权衡]** → 若财务实操发现"这周处理的 AP 不完全按供应商切分"（如同一供应商有些单子这周处理、有些下周），批量模式会一次性拉出该供应商全部历史欠账，需要财务人员自行从批量结果中筛选真正待办——这是本次未解决的"如何精确框定待对账范围"问题，日期过滤端点若 IT 后续提供会显著改善此点。

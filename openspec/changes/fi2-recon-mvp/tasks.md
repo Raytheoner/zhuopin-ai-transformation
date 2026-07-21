@@ -127,4 +127,12 @@
 - [x] 11.11 全量回归零漂移——**✅ 完成**：FI2 65 passed+4 skip（原 61，+4 mock 用例）、平台 200 passed+1 skip（原 193，+7），零回归；2026-07-21 复验后再跑一遍仍 65+4/200+1，零回归
 - [ ] 11.12 真实小样本验证仍按 8 月底排期（本次只到"真实源代码可用"，不做批量真实对账跑批）；建议第一批次优先覆盖三家外币供应商 AP 单，补齐 D15-a③ 未定向核实的缺口——~~新增前置：需 apiKey 恢复~~ **✅ apiKey 已恢复**（2026-07-21），此前置已解除
 - [x] 11.13 🔴 **apiKey 失效问题（2026-07-20 发现，2026-07-21 已解决，队列 #61 销行）**：共享 `STOCK_API_BASE`/`STOCK_API_KEY` 一度对 `Purchase/GR/AP/Stock` 全部端点返回 `401`——陈承定位根因为新版本 DLL 改读 `Web.config` `ZP_API_KEY`、部署遗漏配置项，已补配置+`iisreset`；陈承确认 SC8 `.51` 保供看板不受影响，CC 复验 `Stock/Query` 真实数据一致确认无误
-- [ ] 11.14（新增，2026-07-21，非本次范围，供 Paul 评估排期）：`AP/Query` 批量过滤 bug 意外一并修复后，D15-b 的 `ap_doc_nos` 手工清单驱动是否值得改造为"按供应商/按期间自动批量拉取待对账 AP 单"——现状实现仍可正常工作（手工清单驱动），本项是效率优化机会而非缺陷修复，是否排期由 Paul 定
+- [x] 11.14 **✅ 完成（2026-07-21，Paul 当场拍板改造，design D16）**：`AP/Query` 批量过滤 bug 意外一并修复后，Paul 直接拍板"改造成批量自动取数"——`ZpConnector` 新增 `get_ap_lines_by_supplier`（分页聚合，10 单测覆盖）；`FeedSource` 新增 `ap_supplier_codes`，与 `ap_doc_nos` 并存二选一（批量优先），下游 PO/GR 派生管线复用不变；真实端到端验证（`test_real_get_ap_lines_by_supplier`）分页条数与服务器 `Total` 精确一致。手工单号模式（`ap_doc_nos`）未删除，继续可用。全量回归零漂移：平台 203+1skip（+3）、FI2 67+5skip（+2net）
+
+## 12. 批量取数验收补记（design D16，2026-07-21）
+
+- [x] 12.1 `ZpConnector._fi_request`/`_fi_query_paginated`/`get_ap_lines_by_supplier` 实现 + `test_fi_connector.py` 新增 3 例（分页停止条件/空结果/URL 不含 docNo）
+- [x] 12.2 `FeedSource.ap_supplier_codes` + `_fetch_u9c_ap_rows` 双模式（批量优先）+ `test_feed_source.py` 新增 3 例（批量驱动同管线/优先级/二者皆缺报错）
+- [x] 12.3 `test_real_integration.py` 新增 `test_real_get_ap_lines_by_supplier`，真实验证分页条数与 `Total` 一致 + 供应商字段校验，已真实跑通
+- [x] 12.4 design.md 补 D16（批量维度选型理由——为何选 supplierCode 不选按期间/按料品/全表）；本节任务补记
+- [x] 12.5 场景 CLAUDE.md 更新；跨桌任务队列 #61 追加批量改造完成状态；全量回归零漂移；commit+push+收工重跑台账
