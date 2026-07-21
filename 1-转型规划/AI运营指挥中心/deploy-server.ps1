@@ -22,10 +22,25 @@ $trigger  = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
                                          -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Force -RunLevel Highest | Out-Null
+
+# 防火墙放行（内网 LAN 全网段，与 Baoguan-WebServer-8091 一致）——
+# 不限 LocalSubnet：组员笔记本常在不同网段（如 WLAN），LocalSubnet 会挡掉跨网段访问。
+Write-Host "防火墙（入站 TCP $Port，LAN 全网段）..." -ForegroundColor Yellow
+$ruleName = "CommandCenter-WebServer-$Port"
+if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP `
+        -LocalPort $Port -Action Allow | Out-Null
+    Write-Host "  已放行 $Port（LAN 全网段）" -ForegroundColor Green
+} else {
+    Set-NetFirewallRule -DisplayName $ruleName -RemoteAddress Any -Profile Any -Enabled True | Out-Null
+    Write-Host "  规则已存在，已确保放行 LAN 全网段" -ForegroundColor Green
+}
+
 schtasks /Run /TN $TaskName | Out-Null
 Start-Sleep -Seconds 2
 
 Write-Host "冒烟自检..." -ForegroundColor Yellow
+$ProgressPreference = 'SilentlyContinue'   # 非交互会话（如 SSH exec）下 Invoke-WebRequest 进度条访问控制台句柄会报 0x5，静默进度条规避
 try {
   $code = (Invoke-WebRequest "http://127.0.0.1:$Port/" -UseBasicParsing -TimeoutSec 6).StatusCode
   Write-Host "  首页 HTTP $code" -ForegroundColor Green
