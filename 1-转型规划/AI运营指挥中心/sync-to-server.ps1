@@ -32,11 +32,19 @@ scp "$CC\serve.py"             "${SshAlias}:${Base}/serve.py"
 scp "$CC\deploy-server.ps1"    "${SshAlias}:${Base}/deploy-server.ps1"
 if ($LASTEXITCODE -ne 0) { Write-Warning "部分文件同步失败，请检查 SSH/scp" }
 
-# —— 销售域实时数据（队列 #53）——
-#   要让销售域跑活数据，把 SalesMarketing 的 dashboard_data.json 供到同源 data/ 下；
-#   为保持新鲜，建议把下一行挂到 SalesMarketing 生成 JSON 的同步脚本之后（每次同步后一并 scp）。
-#   路径确认无误后取消注释：
-# scp "C:\Users\Paul Shao\OneDrive\Projects\SalesMarketing\crm_data\dashboard_data.json" "${SshAlias}:${Base}/data/sales_dashboard_data.json"
+# —— 销售域实时数据（队列 #53，走脱敏管道 sync_sales_data.py，勿直接 scp 原始 JSON）——
+#   sync_sales_data.py：读 SalesMarketing/crm_data/dashboard_data.json → 脱敏高危线索联系方式
+#   （Paul 2026-07-20 拍板：泓钦对齐前一律脱敏）→ 写本地 data/sales_dashboard_data.json；
+#   再把【已脱敏】文件推到 .51 同源 data/。⚠️ 切勿直接 scp 原始 dashboard_data.json（会带出未脱敏 PII）。
+#   日常刷新节奏：挂到 SalesMarketing 的「销售易数据同步」(每天 8:00) 之后，再跑本脚本即可。
+Write-Host "刷新销售域数据（脱敏管道 sync_sales_data.py）..." -ForegroundColor Yellow
+python "$CC\sync_sales_data.py"
+if (($LASTEXITCODE -eq 0) -and (Test-Path "$CC\data\sales_dashboard_data.json")) {
+    scp "$CC\data\sales_dashboard_data.json" "${SshAlias}:${Base}/data/sales_dashboard_data.json"
+    Write-Host "   销售数据（已脱敏）已推送" -ForegroundColor Green
+} else {
+    Write-Warning "   sync_sales_data.py 未成功产出 data\sales_dashboard_data.json（源 SalesMarketing 数据可能未同步）——跳过销售数据推送，销售域将回落 2026-06-25 快照。"
+}
 
 Write-Host "重启服务（轮询确认端口释放 + 新进程存活）..." -ForegroundColor Yellow
 $r = Restart-ZhuopinTask -TaskName "CommandCenterWeb" -CheckMode Port -Port 8092
