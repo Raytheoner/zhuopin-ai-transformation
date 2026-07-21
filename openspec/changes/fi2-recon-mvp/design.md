@@ -188,11 +188,11 @@ FI2 三单匹配自动对账是财务域 2026 年唯一按期落地场景（FI1 
 
 ### D15-a：三实测点结论（真实只读探测，2026-07-20，服务器 `192.168.100.49:6666`）
 
-**① 批量/按期间查询——部分可行，AP 端有服务器 bug（真实 IT 缺口，非用法问题）**
+**① 批量/按期间查询——初测部分可行（AP 端有服务器 bug），2026-07-21 复验已修复**
 - 通过刻意触发的报错栈确认 `AP/Query` 控制器真实签名：`Query(apiKey, docNo, supplierCode, invoiceNo, itemCode, orgCode, page, pageSize)`——存在 `docNo` 之外的过滤参数，理论支持批量。
-- **实测结果**：`AP/Query` 不传 `docNo` 直接抛 `ArgumentOutOfRangeException`（`docNo` 是实质必填）；传 `supplierCode`/`itemCode`/`invoiceNo` 任一（不带 `docNo`）均抛 `SqlException: 列名 'Supplier_Code'/'ItemInfo_ItemCode'/'InvoiceNo' 无效`——三个过滤参数的 SQL 拼接列名全部写错，是**服务器端真实 bug**，不是我方调用姿势问题。`AP/Query` 目前唯一可用路径 = 单 `docNo` 精确查询。
-- `Purchase/Query`、`GR/Query` 不传 `docNo` 时**直接返回全表**（分别 25711、26760 行）且 `page`/`pageSize` 分页有效、`supplierCode` 过滤对 `Purchase/Query` 实测有效（`?supplierCode=ZA0066` 正确返回该供应商全部历史 PO）——这两个端点批量能力是好的，问题集中在 `AP/Query`。
-- **结论**：FI2 MVP 阶段 `AP/Query` 只能走"给定 AP 单号逐个查"（与其他财务场景一致，配票流程天然按 AP 单据流转，不是异常约束）；"按期间批量取一批待对账 AP 单"这个更上游的需求（如"取本月全部 AP"）**目前无解**，需 IT（陈承）修复 `supplierCode`/`itemCode`/`invoiceNo` 过滤的 SQL 列名 bug，或另开一个按日期区间查询的端点。**登记为 IT 缺口，报 §四**，不阻塞本次数据整备（MVP 用显式 AP 单号清单驱动，见 D15-b）。
+- **2026-07-20 首次实测**：`AP/Query` 不传 `docNo` 直接抛 `ArgumentOutOfRangeException`（`docNo` 是实质必填）；传 `supplierCode`/`itemCode`/`invoiceNo` 任一（不带 `docNo`）均抛 `SqlException: 列名 'Supplier_Code'/'ItemInfo_ItemCode'/'InvoiceNo' 无效`——三个过滤参数的 SQL 拼接列名全部写错，是**服务器端真实 bug**，不是我方调用姿势问题。`Purchase/Query`、`GR/Query` 不传 `docNo` 时直接返回全表（分别 25711、26760 行）且分页/`supplierCode` 过滤有效，问题当时集中在 `AP/Query`。已登记 IT 缺口书面跟催陈承（队列 #60/#61，`6-人才与组织/部门AI专员跟进/IT部-陈承-跟进-2026-07-20-*.md`）。
+- **✅ 2026-07-21 复验（队列 #61）：已修复**——陈承排查发现根因其实是另一件事（新版本 DLL 把 apiKey 从硬编码改读服务器 `Web.config` 的 `ZP_API_KEY`，部署时该配置项遗漏导致全端点一度 401），修复+`iisreset` 后复验，**`AP/Query` 的 `supplierCode`/`itemCode`/`invoiceNo` 过滤 + 不传 `docNo` 全表分页均已恢复正常**（`test_real_ap_query_batch_filter_now_fixed` 四项全过，`supplierCode=ZA0066`/`itemCode=R01A.0175`/`invoiceNo=26942...` 均返回真实非空结果，全表 `Total>26000`）——推测是同一批 DLL 更新顺带修了 SQL 列名映射，具体是否为同一次修复陈承未明确说明，不深究。
+- **结论（更新）**：`AP/Query` 批量过滤能力现已可用，D15-b 当初"MVP 只能 docNo 单号驱动"的前提已不成立。**是否要把 `FeedSource`/连接器改造为批量驱动（如按供应商/按期间自动拉取待对账 AP 单，取代现状"财务专员手工给单号清单"）是一个新的架构决策，本次未做**（Paul 2026-07-21 只要求复验+销行 #61，未要求重新设计取数路径）——留作后续独立评估项，见 tasks.md 11.14。
 
 **② `FinalPriceTC`（PO）vs `TaxPrice`（AP）含税性——均为含税单价，可直接比对，R7 比对基准成立**
 - 实测 `ZPCG20251226004`（艾睿）：`ConfirmQty×FinalPriceTC = TotalMnyTC`（价税合计），即 `FinalPriceTC` = 含税单价。
@@ -227,7 +227,7 @@ FI2 三单匹配自动对账是财务域 2026 年唯一按期落地场景（FI1 
 
 ### Risks / Trade-offs 追加（D15）
 
-- **[AP 批量查询 SQL bug 阻断"按期自动取数"]** → 现状唯一解法是财务专员手工提供 AP 单号清单（D15-b MVP 形态）；若 8 月底真实小样本验证时 IT 仍未修复，"哪些 AP 单该本轮对账"这一步会长期依赖人工列表，效率提升打折——已登记 IT 缺口，非本次可解决范围。
+- ~~**[AP 批量查询 SQL bug 阻断"按期自动取数"]**~~ → **✅ 2026-07-21 已由 IT 修复（队列 #61）**，`AP/Query` 批量过滤现已可用；D15-b 的 `ap_doc_nos` 手工清单驱动仍维持不变（未做批量取数重构，是否重构留独立评估，见 tasks.md 11.14），不再是被动受限于服务器 bug，而是主动选择"暂不扩大本次范围"。
 - **[外币供应商专属数值未定向核实]** → D15-a③ 机制验证充分但数值样本未覆盖三家外币供应商本身，存在极小概率"三家里有一家的 `TC` 字段填报习惯不同于其余供应商"的未知风险；8 月底真实小样本验证阶段第一批次建议**优先覆盖三家外币供应商的 AP 单**作定向复核，尽早排除。
 - **[连接器复用范围先行大于当前需求]** → `get_purchase_lines`/`get_gr_lines`/`get_ap_lines` 落地在平台层是为 FI3 预留，若 FI3 最终排期/范围有变，这三个方法会有一段时间只有 FI2 一个消费方——可接受（同 D1 分层理由，公共连接器方法闲置成本远低于日后跨场景搬迁成本）。
 
