@@ -696,6 +696,21 @@ class ZpConnector(DataConnector):
                     for r in bom_data
                 ) and self._audit is not None:
                     self._audit.trace(source="U9C_webapi", action="bom_version_fallback", target=code)
+
+            # 响应自证码校验（队列 #66，姚祖怡 07-21 真实试用报"瓶颈子件张冠李戴"/"ERP无此料号"）：
+            # BOM/Query 响应体母件行自带 m_itemMaster.m_code，此前从不核对它与本次请求的 code
+            # 是否一致——服务端若在任意时点返回错母件数据（并发响应错位/缓存串号等未知成因），
+            # 我方会静默信任并挂错子件到错成品上。有值且不符 → 视为该料号拉取失败，绝不静默采用；
+            # 响应缺该字段（未知边缘情况）→ 无法校验，维持现状放行，不误伤正常数据。
+            returned_code = str((bom_item.get("m_itemMaster") or {}).get("m_code") or "")
+            if returned_code and returned_code != code:
+                with failed_lock:
+                    failed.append(code)
+                if self._audit is not None:
+                    self._audit.trace(source="U9C_webapi", action="bom_product_code_mismatch",
+                                      target=f"{code}!={returned_code}")
+                return
+
             new_rows: list[BomRow] = []
             child_codes: list[str] = []
             for comp in bom_item.get("m_bOMComponents", []):
