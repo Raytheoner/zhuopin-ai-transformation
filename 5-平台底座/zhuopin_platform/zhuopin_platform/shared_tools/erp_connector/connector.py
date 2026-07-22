@@ -621,12 +621,32 @@ class ZpConnector(DataConnector):
         """应付单明细行（真实源，design D15）——GET `/zp/api/AP/Query`，`docNo` 单查。"""
         return self._fi_query("/zp/api/AP/Query", doc_no)
 
-    def get_ap_lines_by_supplier(self, supplier_code: str) -> list[dict]:
+    def get_ap_lines_by_supplier(
+        self,
+        supplier_code: str,
+        *,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        min_balance: float | None = None,
+    ) -> list[dict]:
         """应付单明细行·按供应商批量取数（design D16，队列 #61 追加）——GET
         `/zp/api/AP/Query` 的 `supplierCode` 过滤 + 自动分页，取代"手工给 AP 单号
         清单"的 MVP 限制（该限制源于 D15-a① 记录的服务器端 bug，2026-07-21 已修复）。
+
+        design D17（队列 #70 追加，2026-07-22）：可选窄化条件——`date_from`/
+        `date_to`（按立账日期 `AccrueDate` 过滤，服务器端实测确认字段）+
+        `min_balance`（按余额下限过滤）。均不传时行为与 D16 原实现完全一致；
+        `supplier_code` 仍是必填主键，不做成可选（供应商无关的整期批量取数
+        属另一使用场景，本次未实现，见 CLAUDE.md/tasks.md 登记）。
         """
-        return self._fi_query_paginated("/zp/api/AP/Query", {"supplierCode": supplier_code})
+        filters: dict = {"supplierCode": supplier_code}
+        if date_from is not None:
+            filters["dateFrom"] = date_from
+        if date_to is not None:
+            filters["dateTo"] = date_to
+        if min_balance is not None:
+            filters["minBalance"] = min_balance
+        return self._fi_query_paginated("/zp/api/AP/Query", filters)
 
     _BOM_MAX_WORKERS = 5
 

@@ -136,3 +136,12 @@
 - [x] 12.3 `test_real_integration.py` 新增 `test_real_get_ap_lines_by_supplier`，真实验证分页条数与 `Total` 一致 + 供应商字段校验，已真实跑通
 - [x] 12.4 design.md 补 D16（批量维度选型理由——为何选 supplierCode 不选按期间/按料品/全表）；本节任务补记
 - [x] 12.5 场景 CLAUDE.md 更新；跨桌任务队列 #61 追加批量改造完成状态；全量回归零漂移；commit+push+收工重跑台账
+
+## 13. AP/Query 期间/余额过滤参数解锁验证（design D17，2026-07-22，队列 #70）
+
+- [x] 13.1 三过滤参数列名修复（07-20 报给 IT 的 SQL bug）真实回归复验——`test_real_integration.py` 全量重跑绿，属既有修复再确认
+- [x] 13.2 `dateFrom`/`dateTo`/`minBalance` 三个新参数真实探测：单独可用 + 与 `supplierCode` 组合可用 + `minBalance` 下限语义（非精确匹配/上限）已用真实数据验证
+- [x] 13.3 `ZpConnector.get_ap_lines_by_supplier` 增补可选 `date_from`/`date_to`/`min_balance` 关键字参数，缺省行为与 D16 完全一致；`test_fi_connector.py` +3 单测
+- [x] 13.4 `test_real_integration.py` +2 真实集成用例（裸探测三点结论 + 连接器封装层端到端）
+- [x] 13.5 design.md 补 D17；本节任务补记；全量回归零漂移（平台 211+1skip、FI2 67+7skip）
+- [ ] 13.6 future-work（本次未做，已在 D17-b 登记原因）：`FeedSource`/`fi2/run.py` 接线新参数（期间/余额窄化批量对账入口）——待真实小样本对账阶段财务专员提出具体需求再评估，避免预先建无调用方的抽象

@@ -161,3 +161,63 @@ def test_get_ap_lines_by_supplier_url_contains_filter_no_docno(tmp_path, monkeyp
     assert "supplierCode=ZA0066" in captured["url"]
     assert "docNo" not in captured["url"]
     assert "page=1" in captured["url"] and "pageSize=" in captured["url"]
+
+
+# ── 期间/余额窄化参数（design D17，队列 #70 追加，2026-07-22）──────────────
+
+def test_get_ap_lines_by_supplier_period_params_in_url(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    captured = {}
+
+    def _fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        body = json.dumps({"Success": True, "Data": {"Total": 0, "Rows": []}}).encode()
+        return _Resp(body)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    conn.get_ap_lines_by_supplier(
+        "ZA0066", date_from="2026-01-01", date_to="2026-07-22", min_balance=1000
+    )
+    assert "supplierCode=ZA0066" in captured["url"]
+    assert "dateFrom=2026-01-01" in captured["url"]
+    assert "dateTo=2026-07-22" in captured["url"]
+    assert "minBalance=1000" in captured["url"]
+
+
+def test_get_ap_lines_by_supplier_period_params_default_omitted(tmp_path, monkeypatch):
+    """不传 date_from/date_to/min_balance 时，URL 与 D16 原行为完全一致（向后兼容）。"""
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    captured = {}
+
+    def _fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        body = json.dumps({"Success": True, "Data": {"Total": 0, "Rows": []}}).encode()
+        return _Resp(body)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    conn.get_ap_lines_by_supplier("ZA0066")
+    for absent in ("dateFrom", "dateTo", "minBalance"):
+        assert absent not in captured["url"]
+
+
+def test_get_ap_lines_by_supplier_partial_period_params(tmp_path, monkeypatch):
+    """只传 date_from（不传 date_to/min_balance）——三者互相独立，不强制同进同出。"""
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    captured = {}
+
+    def _fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        body = json.dumps({"Success": True, "Data": {"Total": 0, "Rows": []}}).encode()
+        return _Resp(body)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    conn.get_ap_lines_by_supplier("ZA0066", date_from="2026-01-01")
+    assert "dateFrom=2026-01-01" in captured["url"]
+    assert "dateTo" not in captured["url"]
+    assert "minBalance" not in captured["url"]

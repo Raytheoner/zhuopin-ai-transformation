@@ -110,3 +110,47 @@ def test_real_get_ap_lines_by_supplier():
     rows = conn.get_ap_lines_by_supplier("ZA0066")
     assert len(rows) == expected_total
     assert all(r["SupplierCode"] == "ZA0066" for r in rows)
+
+
+def test_real_ap_query_period_and_balance_params():
+    """design D17（队列 #70，2026-07-22）：陈承 07-21 群回复——`AP/Query` 新增
+    `dateFrom`/`dateTo`（按立账日期 `AccrueDate` 筛选）+ `minBalance`（按余额下限）
+    参数，此前 #60/D15-a① 记录的"按期间批量拉单无参数、供应商是唯一可用维度"
+    结论已过时。本用例真实验证三点：①两个新参数单独可用；②与既有 `supplierCode`
+    组合可用；③`minBalance` 语义确为"下限"（阈值升高时命中总数单调不增，且
+    返回行 Balance 均 ≥ 阈值），避免误当"上限"或"精确匹配"接反语义。
+    """
+    date_from, date_to = "2026-01-01", "2026-07-22"
+
+    by_date = _raw_ap_query(dateFrom=date_from, dateTo=date_to, page=1, pageSize=5)
+    assert by_date.get("Success") is True
+    assert by_date["Data"]["Total"] > 0
+    for row in by_date["Data"]["Rows"]:
+        assert date_from <= row["AccrueDate"][:10] <= date_to
+
+    combined = _raw_ap_query(
+        supplierCode="ZA0066", dateFrom=date_from, dateTo=date_to, page=1, pageSize=200
+    )
+    assert combined.get("Success") is True
+    assert all(r["SupplierCode"] == "ZA0066" for r in combined["Data"]["Rows"])
+
+    low = _raw_ap_query(minBalance="0", page=1, pageSize=3)
+    high = _raw_ap_query(minBalance="100000", page=1, pageSize=3)
+    assert high["Data"]["Total"] < low["Data"]["Total"]        # 阈值升高，命中数单调不增
+    assert all(r["Balance"] >= 100000 for r in high["Data"]["Rows"])   # 下限语义，非精确匹配/上限
+
+
+def test_real_get_ap_lines_by_supplier_with_period_params():
+    """design D17：连接器封装层端到端验证——`get_ap_lines_by_supplier` 新增的可选
+    `date_from`/`date_to`/`min_balance` 窄化条件在真实服务器上生效，返回条数与
+    裸探测一致（分页逻辑对新增 filters 同样无遗漏/无重复）。"""
+    conn = _connector()
+    date_from, date_to = "2026-01-01", "2026-07-22"
+    expected_total = _raw_ap_query(
+        supplierCode="ZA0066", dateFrom=date_from, dateTo=date_to
+    )["Data"]["Total"]
+    rows = conn.get_ap_lines_by_supplier(
+        "ZA0066", date_from=date_from, date_to=date_to
+    )
+    assert len(rows) == expected_total
+    assert all(r["SupplierCode"] == "ZA0066" for r in rows)
