@@ -9,3 +9,10 @@ YaoZuYi: 采购部        # 姚祖怡
 tangyanping: 财务部     # 唐燕萍
 ChenChen: 质量部        # 陈忱
 Hongqin.Wang: 销售部    # 王泓钦
+
+# 陈承（IT）2026-07-22 补入（队列 #70）——此前白名单内但不在本表，命中白名单
+# 后仍落"待分拣"（见 whitelist.py 说明）；此后归档进 `7-外部文档/IT/`。IT 不是
+# Cowork 的四域专线之一，`intake.py::DEPARTMENT_TO_QUEUE_OWNER` 未加对应项，
+# 归档产生的队列行按现有 fail-closed 逻辑落 owner=Paul（与未命中部门同一默认
+# 值），不臆造一个不存在的"IT专线"角色。
+"2023458": IT          # 陈承

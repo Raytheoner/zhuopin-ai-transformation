@@ -67,6 +67,35 @@ def test_archive_text_message_matched_department(tmp_path):
     assert "mapping_unmatched" not in actions
 
 
+def test_archive_matched_department_outside_four_domains_falls_back_to_paul_owner(tmp_path):
+    """2026-07-22（队列 #70）：陈承（IT）命中 `department_mapping` 表（不再是
+    未命中/待分拣），但 IT 不是 Cowork 的四域专线之一，`DEPARTMENT_TO_QUEUE_OWNER`
+    没有对应项——队列行的领取方应落回默认值 Paul（与"完全未命中发送人"用的
+    同一个默认值），而不是报错或误标某个专线。"""
+    docs_root, queue_path, audit, connector, store = _setup(tmp_path)
+    mapping = {**MAPPING, "陈承": "IT"}
+    message = InboundMessage(sender="陈承", msgtype="text", text_content="AP/Query 已修复")
+
+    result = asyncio.run(
+        archive_inbound_message(
+            message=message,
+            connector=connector,
+            external_docs_root=docs_root,
+            queue_path=queue_path,
+            department_mapping=mapping,
+            audit=audit,
+        )
+    )
+
+    assert result.department == "IT"
+    assert result.matched is True
+    assert "IT-陈承-回复-" in result.archived_path.name
+    assert result.archived_path.parent == docs_root / "IT"
+
+    new_queue = queue_path.read_text(encoding="utf-8")
+    assert "| Paul |" in new_queue
+
+
 def test_archive_multiple_same_day_messages_do_not_overwrite(tmp_path):
     """2026-07-13 真实生产链路联调发现的回归：同发送人同天多条消息此前会
     互相覆盖归档文件（原文件名只到日期粒度），现按 msgid 消歧。"""

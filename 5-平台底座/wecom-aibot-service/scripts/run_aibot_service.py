@@ -29,6 +29,7 @@ sys.path.insert(0, str(SERVICE_DIR))
 from aibot_service.connection import build_connector  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp, send_gap_alert  # noqa: E402
+from aibot_service.queue_reconcile_sentinel import run_reconciliation_sentinel  # noqa: E402
 
 
 class ConnectionAbandonedError(RuntimeError):
@@ -45,6 +46,7 @@ async def _run_forever(
     audit: AuditLogger,
     fatal_event: asyncio.Event,
     fallback_send: Optional[Callable[[str], None]] = None,
+    queue_path: Optional[Path] = None,
 ) -> None:
     # 必须在 connect() 之前读——建连会写新的审计事件，建连后再读会读到刚写
     # 入的"连接成功"事件本身，间隔恒为 0，判断不出真实中断时长。
@@ -61,6 +63,14 @@ async def _run_forever(
         fallback_send=fallback_send,
         last_event_at=last_ts.isoformat() if last_ts else "",
     )
+
+    # 归档↔队列对账哨兵（design D18，队列 #69/#70，2026-07-22，dry-run）——
+    # 同样每次连接成功后跑一次；发现疑似漏行只私信 Paul 一条汇总报告，不
+    # 自动写队列（见模块 docstring）。queue_path 未提供时（如测试场景）跳过。
+    if queue_path is not None:
+        await run_reconciliation_sentinel(
+            connector, audit, queue_path, PAUL_USERID, now=datetime.now(timezone.utc)
+        )
 
     await fatal_event.wait()
     raise ConnectionAbandonedError("企微连接不可恢复（SDK重连预算耗尽），退出进程交部署层重启")
@@ -105,7 +115,7 @@ def main() -> None:
         if webhook_url else None
     )
 
-    asyncio.run(_run_forever(connector, audit_path, audit, fatal_event, fallback_send))
+    asyncio.run(_run_forever(connector, audit_path, audit, fatal_event, fallback_send, queue_path))
 
 
 if __name__ == "__main__":

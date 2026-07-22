@@ -10,14 +10,17 @@ from aibot_service.department_mapping import (
 )
 
 
-def test_default_mapping_file_loads_and_matches_four_domains():
-    """键是企微 userid（2026-07-13 真实联调确认，非中文名）。"""
+def test_default_mapping_file_loads_and_matches_four_domains_plus_it():
+    """键是企微 userid（2026-07-13 真实联调确认，非中文名）。2026-07-22（队列
+    #70）新增陈承（IT，userid=2023458）——IT 不是 Cowork 的四域专线之一，映射
+    值就是 "IT"（非 "IT部"），与 `7-外部文档/IT/` 归档目录名一致。"""
     mapping = load_department_mapping()
     assert mapping == {
         "YaoZuYi": "采购部",
         "tangyanping": "财务部",
         "ChenChen": "质量部",
         "Hongqin.Wang": "销售部",
+        "2023458": "IT",
     }
 
 

@@ -405,10 +405,10 @@ def test_on_message_rejects_non_whitelisted_sender_with_polite_reply(tmp_path):
     assert "group_notified" not in actions
 
 
-def test_on_message_allows_new_whitelist_member_not_in_department_mapping(tmp_path):
-    """陈承（userid=2023458，IT）在白名单里但不在 department_mapping.yaml
-    （现有四部门口径不含 IT）——沿用现有 fail-closed 逻辑落"待分拣"，
-    不做特殊化（Paul 确认三路径按现有逻辑不变）。"""
+def test_on_message_routes_it_sender_to_it_department(tmp_path):
+    """陈承（userid=2023458，IT）在白名单里；2026-07-22（队列 #70）起
+    `department_mapping.yaml` 已补入陈承→IT 映射，不再落"待分拣"——
+    直接归档进 `7-外部文档/IT/`（三路径其余部分不变）。"""
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
     store: dict = {}
@@ -431,11 +431,13 @@ def test_on_message_allows_new_whitelist_member_not_in_department_mapping(tmp_pa
     }
     asyncio.run(client.handlers["message"][0](frame))
 
-    archived = list((tmp_path / "7-外部文档" / "待分拣").glob("*.md"))
+    archived = list((tmp_path / "7-外部文档" / "IT").glob("*.md"))
     assert len(archived) == 1
+    assert list((tmp_path / "7-外部文档" / "待分拣").glob("*.md")) == []
 
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "whitelist_rejected" not in actions
+    assert "mapping_unmatched" not in actions
     assert "archived" in actions
     assert "inbound_forwarded_to_paul" in actions
 

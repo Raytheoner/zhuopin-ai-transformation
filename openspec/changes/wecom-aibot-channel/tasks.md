@@ -66,3 +66,13 @@
 - [ ] 9.3 收工重跑文档台账（`0-学习与工具/工具-文档台账生成.py`）
 - [ ] 9.4 全部新产出/修改文件 commit（本 worktree 分支，是否 push 待 Paul 确认）
 - [ ] 9.5 `/opsx:archive wecom-aibot-channel -y`——**暂不执行**：tasks 未全部 [x]（6/7/8 段阻塞于 Paul 前置动作），按纪律"完工即归档"仅适用于全部 [x] 后，本次收工先不归档
+
+## 10. 归档链路健壮性补强（2026-07-22，队列 #69/#70，design D18）
+
+> 触发：唐燕萍 2026-07-21 那条归档——审计日志确认 `archived`+`queue_appended` 两个事件均记录成功，但对应行从未出现在队列文件的任何一次 git 提交里（总线只能人工补登，见队列 #69）。追查+补强分三部分。
+
+- [x] 10.1 根因排查：`queue_appender.append_pending_task` 此前是纯 read-modify-write，无冲突检测/无锁——推断被另一个并发写手（人工/CC 会话对同一文件的整段改写，读到旧内容、写回时覆盖了 aibot 刚追加的行）静默覆盖；因丢失发生在任何 git 提交之前，无法从版本历史精确定位具体是哪次改写造成，但机制本身已复现验证（见 10.2 测试）
+- [x] 10.2 `queue_appender.append_pending_task` 加乐观并发重试（写入前重新读一次核验磁盘未变，变了则放弃本轮计算、按最新磁盘内容重新定位插入点/重新编号；`max_retries` 耗尽后显式 `RuntimeError`，不静默吞、不无限重试）；`test_queue_appender.py` 新增 2 例（模拟并发写手插队后正确重算不覆盖 / 持续竞态耗尽重试后报错）
+- [x] 10.3 新增 `queue_reconcile_sentinel.py`（归档↔队列对账哨兵，dry-run）：每次连接成功后扫描近 7 天 `archived` 审计事件，逐条核对归档文件名是否出现在当前队列文件全文里（子串匹配，不解析表格结构）；疑似漏行只私信 Paul 一条汇总报告（列文件清单），**不自动写队列**——自动补行留待观察一段时间误报率后再开启，登记为下一条任务；接入 `run_aibot_service.py::_run_forever`（与 `gap_alert` 同一触发点）；`test_queue_reconcile_sentinel.py` 12 例
+- [x] 10.4 `department_mapping.yaml` 补入陈承（IT，userid=2023458）→ `IT`（此前只在白名单里、不在部门映射，落"待分拣"）；`intake.py::DEPARTMENT_TO_QUEUE_OWNER` 未加 "IT" 项，队列行领取方按现有 fail-closed 默认值落 Paul（不臆造"IT专线"角色）；`test_department_mapping.py`/`test_connection.py`（原"落待分拣"用例改写为"落 IT"）/`test_intake.py`（新增"匹配部门但不在专线映射表→默认 Paul"用例）同步更新
+- [ ] 10.5 二期（待观察，不在本次范围）：dry-run 观察一段时间（建议 1-2 周）确认误报率可接受后，评估是否开启自动补行——登记跨桌任务队列待领行，本次不做

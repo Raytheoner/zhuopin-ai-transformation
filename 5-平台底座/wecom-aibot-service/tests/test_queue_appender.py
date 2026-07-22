@@ -1,4 +1,11 @@
-from aibot_service.queue_appender import append_pending_task, _next_task_id, _section_bounds
+import pytest
+
+from aibot_service.queue_appender import (
+    append_pending_task,
+    _next_task_id,
+    _section_bounds,
+    _ROW_ID_RE,
+)
 
 SAMPLE_QUEUE = """\
 ---
@@ -143,3 +150,94 @@ def test_append_pending_task_does_not_leak_into_later_differently_shaped_table(t
     assert "| 11 | 事项十一 | Paul | 8D 校准会前 |" in new_text
     section4_rows = [l for l in lines[idx_section4:] if l.strip().startswith("|")]
     assert len(section4_rows) == 5  # 表头 + 分隔 + 3 条原行，没被插入新行
+
+
+# ── 乐观并发重试（2026-07-22，队列 #69/#70 事故后补）──────────────────────
+
+class _FlakyPath:
+    """包一层真实 Path，模拟"计算插入行期间磁盘被并发写"的竞态：在第
+    `race_before_call` 次 `read_text` 调用之前，往真实文件里插进一行，模拟
+    另一个写手（如另一条企微消息的归档追加，或人工/CC 编辑）抢先写入。"""
+
+    def __init__(self, real_path, race_before_call=2, race_forever=False):
+        self._real = real_path
+        self._call_count = 0
+        self._race_before_call = race_before_call
+        self._race_forever = race_forever
+        self._injected = False
+
+    def read_text(self, encoding="utf-8"):
+        self._call_count += 1
+        should_race = self._race_forever or (
+            self._call_count == self._race_before_call and not self._injected
+        )
+        if should_race:
+            self._injected = True
+            current = self._real.read_text(encoding=encoding)
+            lines = current.splitlines()
+            ids = [int(m.group(1)) for l in lines if (m := _ROW_ID_RE.match(l.strip()))]
+            last_row_idx = max(
+                i for i, l in enumerate(lines) if _ROW_ID_RE.match(l.strip())
+            )
+            new_id = max(ids) + 1
+            lines.insert(
+                last_row_idx + 1,
+                f"| {new_id} | 并发写手抢先插入的行 | 其他专线 | p | e | 待领 | — | 07-22 |",
+            )
+            self._real.write_text("\n".join(lines) + "\n", encoding=encoding)
+        return self._real.read_text(encoding=encoding)
+
+    def write_text(self, content, encoding="utf-8"):
+        return self._real.write_text(content, encoding=encoding)
+
+    def __str__(self):
+        return str(self._real)
+
+
+def test_append_pending_task_retries_when_disk_changes_before_write(tmp_path):
+    """写入前的核验读发现磁盘已被并发写手改过（模拟另一条归档同时抢先追加了
+    一行）——应放弃本轮计算、按最新磁盘内容重新定位插入点/重新编号，不得拿
+    过期的计算结果覆盖对方刚写入的行（这正是队列 #69/#70 事故的根因：原实现
+    没有这层核验，静默覆盖过路人的追加）。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+    flaky = _FlakyPath(queue_path, race_before_call=2)
+
+    row = append_pending_task(
+        flaky,
+        description="我方要追加的行",
+        owner="财务专线",
+        input_pointer="p2",
+        expected_output="e2",
+        date_str="2026-07-22",
+    )
+
+    final_text = queue_path.read_text(encoding="utf-8")
+    # 对方抢先插入的行必须还在，没被覆盖丢失
+    assert "| 19 | 并发写手抢先插入的行 | 其他专线 |" in final_text
+    # 我方的行按重算后的新编号（20）追加在对方之后，不是过期的 19
+    assert "| 20 | 我方要追加的行 | 财务专线 |" in final_text
+    assert row.startswith("| 20 |")
+    lines = final_text.splitlines()
+    idx_19 = next(i for i, l in enumerate(lines) if l.strip().startswith("| 19 |"))
+    idx_20 = next(i for i, l in enumerate(lines) if l.strip().startswith("| 20 |"))
+    assert idx_20 == idx_19 + 1
+
+
+def test_append_pending_task_raises_after_max_retries_under_perpetual_race(tmp_path):
+    """磁盘被持续不断地并发改写（每次核验都发现变化）——重试耗尽后应显式
+    报错，而不是无限重试卡死，也不是放弃核验直接覆盖。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+    flaky = _FlakyPath(queue_path, race_forever=True)
+
+    with pytest.raises(RuntimeError, match="持续被并发写入"):
+        append_pending_task(
+            flaky,
+            description="我方要追加的行",
+            owner="财务专线",
+            input_pointer="p2",
+            expected_output="e2",
+            date_str="2026-07-22",
+            max_retries=3,
+        )
