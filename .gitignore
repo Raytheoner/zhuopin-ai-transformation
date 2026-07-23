@@ -45,3 +45,6 @@ start-aibot-service-dev.ps1
 
 # 销售域实时数据缓存（同步自 SalesMarketing/crm_data/dashboard_data.json，含客户线索联系方式，不入库）
 1-转型规划/AI运营指挥中心/data/
+
+# 共享文档编辑锁（协议〇.7，工具-共享文档编辑锁.py 生成，本机瞬时协作状态，不入库）
+*.editlock
