@@ -221,3 +221,97 @@ def test_get_ap_lines_by_supplier_partial_period_params(tmp_path, monkeypatch):
     assert "dateFrom=2026-01-01" in captured["url"]
     assert "dateTo" not in captured["url"]
     assert "minBalance" not in captured["url"]
+
+
+# ── 附件（发票扫描件，design D18，队列 #78 追加，2026-07-23）─────────────────
+
+def test_list_attachments_returns_data_array(tmp_path, monkeypatch):
+    """List 信封与其余财务端点不同：Data 直接是数组（无 Rows 包裹），真实探测确认。"""
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    captured = {}
+    body = json.dumps({
+        "ResCode": 0, "Success": True, "ResMsg": None,
+        "Data": [{"ID": 1002607060006241, "Title": "26327000000742719331.pdf", "Size": "63KB"}],
+    }).encode()
+
+    def _fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        return _Resp(body)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    rows = conn.list_attachments("AP-2026070036", "AP")
+    assert rows == [{"ID": 1002607060006241, "Title": "26327000000742719331.pdf", "Size": "63KB"}]
+    assert "/zp/api/Attachment/List" in captured["url"]
+    assert "docNo=AP-2026070036" in captured["url"]
+    assert "docType=AP" in captured["url"]
+
+
+def test_list_attachments_empty_when_data_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    body = json.dumps({"Success": True, "Data": None}).encode()
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+    assert conn.list_attachments("AP-GHOST", "AP") == []
+
+
+def test_list_attachments_failloud_without_config(tmp_path, monkeypatch):
+    monkeypatch.delenv("STOCK_API_BASE", raising=False)
+    monkeypatch.delenv("STOCK_API_KEY", raising=False)
+    conn = _make_conn(tmp_path)
+    with pytest.raises(RealEndpointNotReadyError):
+        conn.list_attachments("AP-1", "AP")
+
+
+def test_download_attachment_returns_raw_bytes(tmp_path, monkeypatch):
+    """Download 直接返回原始二进制（非 JSON 信封），真实探测确认（application/pdf）。"""
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    pdf_bytes = b"%PDF-1.5\r\n...fake pdf bytes..."
+    captured = {}
+
+    def _fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        return _Resp(pdf_bytes)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    content = conn.download_attachment("AP-2026070036", "AP")
+    assert content == pdf_bytes
+    assert "/zp/api/Attachment/Download" in captured["url"]
+    assert "docNo=AP-2026070036" in captured["url"]
+    assert "docType=AP" in captured["url"]
+    assert "apiKey=K" in captured["url"]
+
+
+def test_download_attachment_failloud_without_config(tmp_path, monkeypatch):
+    monkeypatch.delenv("STOCK_API_BASE", raising=False)
+    monkeypatch.delenv("STOCK_API_KEY", raising=False)
+    conn = _make_conn(tmp_path)
+    with pytest.raises(RealEndpointNotReadyError):
+        conn.download_attachment("AP-1", "AP")
+
+
+def test_download_attachment_empty_content_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(b""))
+    with pytest.raises(RuntimeError, match="返回空内容"):
+        conn.download_attachment("AP-1", "AP")
+
+
+def test_download_attachment_apikey_scrubbed_on_error(tmp_path, monkeypatch):
+    import urllib.error
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "SUPERSECRETKEY123")
+    conn = _make_conn(tmp_path)
+
+    def _boom(*a, **k):
+        raise urllib.error.HTTPError("http://h/zp/api/Attachment/Download", 500, "err", {}, None)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _boom)
+    with pytest.raises(RuntimeError) as ei:
+        conn.download_attachment("AP-1", "AP")
+    assert "SUPERSECRETKEY123" not in str(ei.value)

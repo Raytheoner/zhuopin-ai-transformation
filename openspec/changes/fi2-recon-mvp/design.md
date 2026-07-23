@@ -288,3 +288,83 @@ FI2 三单匹配自动对账是财务域 2026 年唯一按期落地场景（FI1 
 - 单测：`test_fi_connector.py` +3（URL 含新参数/缺省时 URL 不含新参数即向后兼容/三参数互相独立可单独传）。
 - 真实集成：`test_real_integration.py` +2（`test_real_ap_query_period_and_balance_params` 裸探测三点结论；`test_real_get_ap_lines_by_supplier_with_period_params` 连接器封装层端到端，分页条数与裸探测 `Total` 一致）。
 - 全量回归零漂移：平台 211 passed+1 skip（原 208，+3）、FI2 67 passed+7 skip（原 67+5，+2 真实测试均门禁 skip 默认）。
+
+---
+
+## D18：Round-1 真实数据验证——CSV 快照 + 手工录入解耦 OCR，Attachment 端点首碰真实探测（2026-07-23，队列 #78，🔴 待 Paul 审）
+
+> 触发：Paul 2026-07-22 拍板"全力抢 8 月上旬"（队列 #78，`1-转型规划/FI2真实验证提前排期评估-2026-07-22.md`），六项前置全清。CC 2026-07-23 领活、回填工期评估后，本节为 propose→design 阶段产出——**代码未动**，仅完成只读真实探测（不触碰任何真实数据的写/改），等 Paul 审后再 `/opsx:apply`。8 组真实样本：`AP-2026070036/070035/060004/040083/060073/2025120181/070071/050057`（覆盖外币三家+暂估价）。
+
+### D18-a：Round-1 范围——只验匹配逻辑，OCR 自动直读解耦为独立第二轮
+
+- 目标：用 8 组真实 AP 单跑通一次真实三单匹配，验证"AP vs INV 按料品汇总归集"（D11）+"AP-PO 单价校验"（D12）两条核心算法在真实数据上是否符合预期（有无假阳性"明细错位"、有无遗漏边界情形）。
+- **不做**：腾讯云 OCR 自动直读发票集成——独立的第二轮工作（服务对接/准确率实测/陈承实测方案时序），本次完全不碰，不阻塞 round-1。
+- **INV 数据来源改为"手工录入"**：round-1 的 8 张发票，经 D18-d 的 Attachment 端点取得扫描件 PDF 后，由 CC 逐张读取 + 手工誊录成 `InvoiceLine` CSV 行（`inv_no/ap_no/item_code/unit/unit_price/inv_qty/untaxed_amount/tax_rate/tax_amount/inv_date`），需在报告/交接材料中显式标注来源"人工誊录·非 OCR·仅供 round-1 验证"——不代表生产环境 OCR 准确率，不建立"AI 读票直接生产使用"的先例。
+
+### D18-b：真实数据落地形态——PO/GR/AP 走真实 u9c 连接器落 CSV 快照，INV 走手工 CSV，合并后以 `data_source=csv` 跑一次
+
+- 复用 design D15/D16 已实现的 `FeedSource(data_source="u9c", u9c_connector=..., ap_doc_nos=[8个AP号])`——`load_po_lines`/`load_ap_lines`/`load_grn` 三个 loader 已支持真实源（**代码已就绪，无需改动**），一次性拉取后落一份 `data/real_round1/{po_lines,ap_lines,grn}.csv`（字段＝ CSV loader 期望的既有五表 schema，即 `_map_u9c_*_row` 输出结果落盘，与 mock/csv 结构完全一致）——`.gitignore` 的 `data/real_*` 规则已覆盖，不入库（真实供应商名/单价/金额，财务红色数据）。
+- INV 侧手工誊录一份 `data/real_round1/invoice.csv`（同目录，同规则不入库）。
+- `payment.csv`：`run()` 当前不消费 `load_payment()`（`run.py` 从未调用），round-1 落一个仅 header 的空表保持 `csv` loader 完整性即可，不强求真实付款数据。
+- 最终执行：`FI2_DATA_SOURCE=csv python -m fi2.run --csv-dir data/real_round1`，产出 `reports/fi2_reconcile_report.json`（同样被 `.gitignore` 覆盖不入库）+ 一份人工核对小结（对照 8 张发票原始扫描件，人工确认分类结果是否合理，尤其关注"明细错位"有无假阳性）。
+- **为什么不直接 `--data-source u9c` 一次跑到底**：`load_invoice()` 对 `u9c` 源无条件 fail-loud（design D15-b 既定行为，是"Attachment/OCR 未就绪"的架构真相，刻意为之的红线）。round-1 走"落 CSV 快照 + 手工发票"是**旁路**，不改变、不短路这条不变量。
+
+### D18-c：`run()`/CLI 接线（队列 #78 ①，通用能力，独立于 round-1 具体跑法）
+
+- `fi2/run.py::run()` 新增可选透传参数 `u9c_connector`/`ap_doc_nos`/`ap_supplier_codes`，原样转给 `FeedSource` 构造——现状 `run()` **完全没有**这三个参数（`FeedSource` 支持但从未被接线，2026-07-23 工期评估已核实此为真实缺口，非文档滞后）。
+- `main()`/CLI 新增 `--ap-doc-nos`（逗号分隔）/`--ap-supplier-codes`（逗号分隔）；`--data-source u9c` 时二选一，具体校验复用 `FeedSource` 已有逻辑（`main()` 只做透传不重复校验）。
+- 这条 wiring 使**未来**任何人可直接 `FI2_DATA_SOURCE=u9c python -m fi2.run --ap-doc-nos AP-xxx,AP-yyy` 跑真实 PO/GR/AP（Invoice 仍会 fail-loud 报错并给出清晰提示——这是预期行为，不是 bug）。round-1 本次实际操作路径仍走 D18-b 的 CSV 快照（因需合并手工发票），但 wiring 本身独立于 round-1 具体打法，是队列 #78 ①项字面要求的通用能力，也是 tasks.md 13.6 遗留缺口的补齐。
+
+### D18-d：新增连接器方法——`Attachment/List` + `Attachment/Download`（首碰新端点，已完成真实只读探测）
+
+**探测结论（2026-07-23，服务器 `STOCK_API_BASE`，8 个真实 AP 单逐一探测，仅 GET 只读，无任何写操作）**：与本项目历史上"首碰新端点必踩服务端 bug"（AP/Query 列名错、Web.config 漏配 401、Stock/Query IsProdCancel SQL bug）的经验不同，这次探测**干净、无 bug**：
+
+- `Attachment/List?docNo=<单号>&docType=AP` → 响应信封与 Purchase/GR/AP/Stock **不同**：`{"Success":true,"Data":[...]}`——`Data` 直接是**数组**（无 `Rows`/`Total` 包裹），每个元素 `{"ID":..., "Title":"<文件名>", "Size":"<如 63KB>"}`。
+- `Attachment/Download?docNo=<单号>&docType=AP` → 直接返回**原始文件二进制**（非 JSON 信封），`Content-Type: application/pdf`，`Content-Disposition` 头带文件名。
+- 8 个真实 AP 单逐一探测 `Attachment/List`，**每单均恰好 1 个附件**（无 0 附件/多附件情形需要消歧义处理）。
+- 结论：两端点均已验证可用、字段/信封结构已探明，本次**不存在**"文档写了但调不通"的风险，无需再为"首碰新端点"预留额外缓冲。
+
+**新增方法**（`ZpConnector`，仿 `_fi_query`/`_fi_request` 既有范式，同一 `STOCK_API_BASE`/`STOCK_API_KEY` 凭据）：
+
+- `list_attachments(doc_no, doc_type) -> list[dict]`：GET `/zp/api/Attachment/List`，返回 `Data` 数组原样。因信封与其余财务端点不同（无 `Rows` 包裹），不能直接复用现有 `_fi_query`（该方法假设 `Data.Rows`），需单独实现——内部仍调 `_fi_request` 取 JSON 后自行读 `Data`，不新增 HTTP 请求逻辑。
+- `download_attachment(doc_no, doc_type) -> bytes`：GET `/zp/api/Attachment/Download`，返回原始二进制。`_fi_request` 假设 JSON 响应，不适用于本方法，需单独实现一个"二进制 GET"辅助（可共享 `_fi_credentials()`）。
+
+**落盘**：下载的 PDF 存 `data/real_round1/attachments/<ap_no>.pdf`（`.gitignore` 的 `data/real_*` 已覆盖，不入库——发票扫描件是真实财务凭证原件，含供应商/金额/开票信息，敏感数据不进版本库）。
+
+**审计**：两个新方法复用 `_fi_request`/`_fi_credentials` 既有的 `self._audit.trace(...)` 留痕机制（如已注入 audit），不额外处理。
+
+### D18-e：黄金基准——本次不做真实件替换/扩充合成 golden
+
+- `tasks.md` 7.4 原文"真实小样本核对无静默丢单、无假阳性明细错位，产出真实 golden 替换合成 golden"——round-1 仅 8 个样本，大概率不会覆盖现有合成 golden 的全部五类判定 + 两个明细错位反例，若整体替换会**降低**回归覆盖面。
+- **本次改为**：真实验证报告与合成 golden **并存**——合成 golden 继续作为引擎逻辑回归防线（不删不改，`data/golden/` 不变），round-1 真实报告是"这批真实数据人工核对通过"的独立验收记录（存一份 md 小结，不进 `data/golden/`）。真实 golden 的正式替换/追加，留待后续样本量扩大（更多批次真实数据积累）后再评估，不在本次 round-1 范围。
+
+### Non-Goals 追加（D18）
+
+- OCR 自动直读集成（腾讯云）——独立后续任务，不在本次 round-1 范围。
+- `Attachment` 端点的多附件消歧义机制——8 个真实样本均恰好 1 附件，本次不做通用化抽象（若未来遇到多附件单据，届时再评估是否需要把 `List` 返回的 `ID` 传给 `Download` 定位具体文件）。
+- 真实 golden 替换/扩充合成 golden——见 D18-e，留后续样本量扩大再评估。
+- `FeedSource`/`run.py` 对 D17 期间/余额窄化参数（`date_from`/`date_to`/`min_balance`）的透传——round-1 用的是精确 AP 单号清单（`ap_doc_nos`），不需要窄化查询，维持 tasks.md 13.6 既定"待真实需求出现再接入"。
+
+### Risks / Trade-offs 追加（D18）
+
+- **[手工誊录的准确性无法达到生产级 OCR 标准]** → 本次目的仅为"验证匹配逻辑正确性"，誊录数据不进 golden、不代表生产读票能力，报告须显式标注数据来源为人工誊录。
+- **[8 样本代表性有限]** → 已知覆盖外币三家 + 暂估价，但仍是小样本，验证结论只能证明"逻辑在这批真实数据上无误"，不能外推为"全量真实数据均无误"；更大批次真实运行仍是常规后续工作（tasks.md 7.4）。
+- **[真实财务数据本地落盘期间的暴露面]** → `data/real_round1/`（CSV 快照 + PDF 原件）只在 CC 本机 worktree 存在，`.gitignore` 已覆盖不入库；round-1 收尾后若无需保留可清理（不同于 golden 需长期保留）。
+
+### Open Questions（✅ Paul 2026-07-23 已拍板"按 CC 建议来；批准/apply"，全部收口）
+
+- ~~D18-b 打法确认~~ → **✅ 按建议执行**：落 CSV 快照 + 手工誊录发票 + 合并跑 `csv` 源。
+- ~~D18-d 落点确认~~ → **✅ 按建议执行**：`list_attachments`/`download_attachment` 落 `ZpConnector`。
+- ~~D18-e 确认~~ → **✅ 按建议执行**：真实数据不替换/不扩充合成 golden，只出独立验证小结。
+
+### D18-f：round-1 实施结果（2026-07-23，apply 完成，见验证报告）
+
+> 全文见 `1-转型规划/FI2-round1真实验证报告-2026-07-23.md`（供财务专线/Paul/唐燕萍/姚祖怡复核）。本节只记对 design 有意义的偏差与新发现，tasks.md §14 记完整任务级明细。
+
+- **样本覆盖 6/8**（非计划内偏差，原因均已查明，非引擎缺陷）：
+  - AP-2025120181：`Attachment/Download` **真实服务端 302 重定向到 `localhost:5555`**，外部不可达——本项目历史上第 N 次"首碰新端点踩服务端 bug"，与 D18-d 探测时"8 单逐一探测均正常"的结论不矛盾（探测时只测了 `Attachment/List` 全部 8 单 + `Download` 抽验 1 单，未对全部 8 单做 `Download` 抽验——**方法论教训**：`List`/`Download` 是两个独立行为，`List` 正常不保证 `Download` 也正常，未来同类首碰探测应对每个待用样本都做端到端抽验，不只抽验其中 1 个）。已在验证报告标注需 IT（陈承）跟进，不阻塞 round-1 结论。
+  - AP-2026050057：探测为**跨多张 AP 单的合并结算发票**（100 行/8 页，发票金额>该 AP 单独金额）——揭示真实业务存在"一票多结"场景，超出当前 `InvoiceLine.ap_no` 一票一单的口径假设，round-1 范围内未强行处理（手工比对 100 行不可靠），登记为后续设计考量（round-2 OCR 阶段优先覆盖）。
+- **核心匹配逻辑（D11）验证结果**：6 组样本、10 个料品，**100% 判定"完全匹配"，零假阳性**（数量/未税金额/税额三维精确吻合人工誊录数据）——round-1 主要验证目标（"AP vs INV 按料品汇总归集"逻辑在真实数据上无误）达成。
+- **AP-PO 单价校验（D12/R7）意外发现**：10 个料品中 3 个超差（-6.1%~-44.7%），溯源发现一个**当前 design 未覆盖的真实缺口**——`price_check.py` 只比对 AP 单价与 `Purchase/Query` 的**原始下单价**，未消费 `POChange/Query` 的变更后价格；若 PO 有正式变更单调整过价格，比对基准未跟进更新，可能产生假阳性。三例中 1 例（PO 有 24 次变更记录）符合此假阳性风险，另 2 例（PO 零变更记录）排除此解释、判断为需业务侧核实的真实偏离。**未在本次 round-1 范围内改代码**（只读探测 `POChange/Query` 确认现象，未修 `price_check.py`），登记为独立后续设计评估项（tasks.md 14.13）。
+- **实现期间发现并修正一处真实 bug**（非 U9C 端点问题，本项目代码自身）：`ZpConnector.audit=` 参数期望 `zhuopin_platform.shared_tools.connector_audit.ConnectorAudit`（轻量连接器访问痕迹），与业务判定用的 `zhuopin_platform.audit.AuditLogger` 是两个物理分离的类（同 SC8 `run_baoguan_web.py` 范式）；`run.py::main()`/新增 `fi2/dump_u9c_snapshot.py` 最初误传了 `AuditLogger`，真实调用时抛 `AttributeError: 'AuditLogger' object has no attribute 'trace'`（mock 单测覆盖不到，因为单测不触网也不会走到 `_fi_request` 的 `self._audit.trace()` 调用），已在真实拉取时发现并修正。**方法论教训**：涉及审计接线的新代码路径，仅靠 mock 单测不足以捕获这类"类型对不上但两者都叫 audit"的接线错误，需至少跑一次真实（或高保真集成）路径验证。
+- **顺带修复一处环境问题**：本 worktree 的 `zhuopin_platform` 全局可编辑安装（无 venv、全局 site-packages）被另一 worktree（`qd-b-release-closure-b1a342`）静默劫持（已知隐患，见跨会话记忆 `project-shared-python-editable-install-collision`），导致临时脚本 `import zhuopin_platform` 解析到错误路径、找不到新增方法；`pip install --force-reinstall --no-deps -e <本worktree路径>` 重新指向本 worktree 后解决。`pytest`（在 `5-平台底座/zhuopin_platform` 目录内跑）本身不受影响（pytest 的 rootdir 插入 sys.path 优先于全局可编辑安装指针），受影响的只是脱离该目录直接跑的独立脚本。

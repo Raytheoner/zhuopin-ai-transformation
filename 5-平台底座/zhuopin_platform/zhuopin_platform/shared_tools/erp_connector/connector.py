@@ -648,6 +648,47 @@ class ZpConnector(DataConnector):
             filters["minBalance"] = min_balance
         return self._fi_query_paginated("/zp/api/AP/Query", filters)
 
+    # ── 附件（发票扫描件，design D18，队列 #78，2026-07-23 首碰真实探测已确认）──
+    # 与 Purchase/GR/AP/Stock 不同：List 的信封是 {Data:[...]}（数组，无 Rows 包裹），
+    # Download 直接返回原始文件二进制（非 JSON）。均不能复用 _fi_query/_fi_request
+    # 的 JSON-Rows 假设，单独实现；凭据仍复用 _fi_credentials（同一 STOCK_API_BASE/KEY）。
+
+    def list_attachments(self, doc_no: str, doc_type: str) -> list[dict]:
+        """单据附件列表——GET `/zp/api/Attachment/List`，返回 `Data` 数组原样
+        （`[{"ID":..., "Title":"<文件名>", "Size":"<如 63KB>"}, ...]`）。真实探测
+        （2026-07-23，8 个真实 AP 单）均恰好 1 个附件，本方法不做消歧义假设，
+        原样返回全部条目由调用方决定取哪个。
+        """
+        body = self._fi_request("/zp/api/Attachment/List", {"docNo": doc_no, "docType": doc_type})
+        data = body.get("Data")
+        return data if isinstance(data, list) else []
+
+    def download_attachment(self, doc_no: str, doc_type: str) -> bytes:
+        """下载单据附件原始二进制——GET `/zp/api/Attachment/Download`。响应非 JSON
+        （真实探测确认为 `Content-Type: application/pdf` 的原始文件流），不经
+        `_fi_request` 的 JSON 解析路径，单独实现请求 + 错误处理（HTTPError 脱敏同
+        `_fi_request`）。单据含多附件时，服务器返回其中一个（真实探测 8 单均恰好
+        1 附件，未出现需要按 `ID` 精确指定的场景，见 design D18 Non-Goals）。
+        """
+        base, key = self._fi_credentials()
+        params = {"docNo": doc_no, "docType": doc_type}
+        qs = urllib.parse.urlencode({"apiKey": key, **params})
+        url = f"{base}/zp/api/Attachment/Download?{qs}"
+        safe = f"{base}/zp/api/Attachment/Download?{urllib.parse.urlencode(params)}"
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "*/*"})
+            with urllib.request.urlopen(req, timeout=30, context=self._ctx) as r:
+                content = r.read()
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"附件下载 API HTTP {e.code}: {safe}") from None
+        except (urllib.error.URLError, http.client.IncompleteRead) as e:
+            raise RuntimeError(f"附件下载 API 不可达: {safe}") from None
+        if not content:
+            raise RuntimeError(f"附件下载 API 返回空内容: {safe}")
+        if self._audit is not None:
+            self._audit.trace(source="zp_FI", action=f"Attachment/Download?{urllib.parse.urlencode(params)}")
+        return content
+
     _BOM_MAX_WORKERS = 5
 
     @staticmethod

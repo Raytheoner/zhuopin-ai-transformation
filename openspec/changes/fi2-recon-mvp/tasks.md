@@ -60,10 +60,10 @@
 
 ## 7. 真实数据验证（待数据闸：U9C 财务接口 + SRM 发票 + OCR + 唐燕萍 R1-R6；前置 1.5/1.6）
 
-- [ ] 7.1 唐燕萍 R1-R6 规则定稿后：替换 `config.py` + 规则注册表临时口径，回归零漂移确认引擎未变
-- [ ] 7.2 U9C 财务接口/SRM 发票源就绪后：`feed_source` 切 `csv` 或 `u9c` 真实源，小样本真实数据试跑
-- [ ] 7.3 物料编码映射表就绪后：接入映射逻辑（若 mock 阶段假设不成立需回头修 design）
-- [ ] 7.4 真实小样本核对无静默丢单、无假阳性"明细错位"，产出真实 golden 替换合成 golden
+- [x] 7.1 唐燕萍 R1-R6 规则定稿后：替换 `config.py` + 规则注册表临时口径，回归零漂移确认引擎未变——**完成于 2026-07-10/16（design D14），详见第 10 节**
+- [x] 7.2 U9C 财务接口/SRM 发票源就绪后：`feed_source` 切 `csv` 或 `u9c` 真实源，小样本真实数据试跑——**完成于 round-1（2026-07-23，design D18/第 14 节）**：PO/GR/AP 走真实 `u9c` 源，Invoice 因 OCR 未就绪改人工誊录 + `csv` 源合并跑，6 组样本 10 料品验证通过
+- [ ] 7.3 物料编码映射表就绪后：接入映射逻辑（若 mock 阶段假设不成立需回头修 design）——round-1 用人工对照 AP 配票记录反推映射（非规模化方案），真实映射表基础设施仍未建，见验证报告 §五
+- [ ] 7.4 真实小样本核对无静默丢单、无假阳性"明细错位"，产出真实 golden 替换合成 golden——**round-1 已核对**（零假阳性，见验证报告 §一），但**design D18-e 已定"暂不替换/扩充合成 golden"**（8 样本量偏小、会降低回归覆盖面），留待后续批次样本量扩大后再评估
 
 ## 8. 收口归档
 
@@ -145,3 +145,21 @@
 - [x] 13.4 `test_real_integration.py` +2 真实集成用例（裸探测三点结论 + 连接器封装层端到端）
 - [x] 13.5 design.md 补 D17；本节任务补记；全量回归零漂移（平台 211+1skip、FI2 67+7skip）
 - [ ] 13.6 future-work（本次未做，已在 D17-b 登记原因）：`FeedSource`/`fi2/run.py` 接线新参数（期间/余额窄化批量对账入口）——待真实小样本对账阶段财务专员提出具体需求再评估，避免预先建无调用方的抽象
+
+## 14. Round-1 真实数据验证（design D18，2026-07-23，队列 #78，🔴 apply 前待 Paul 审 D18 Open Questions）
+
+> Paul 07-22 拍板"全力抢 8 月上旬"；CC 07-23 领活+工期评估回填（约 3.5-5 工作日，把握中等偏高）后开工。本节 14.1-14.3 为 propose→design 阶段已完成的只读真实探测（无代码改动），14.4 起为 apply 待办。
+
+- [x] 14.1 真实探测 `Attachment/List`：8 个真实 AP 单逐一探测，确认响应信封（`Data` 为数组，无 `Rows` 包裹）+ 字段（`ID`/`Title`/`Size`）+ 附件数量（均恰好 1 个，无消歧义需求）
+- [x] 14.2 真实探测 `Attachment/Download`：确认返回原始二进制（非 JSON 信封）、`Content-Type: application/pdf`、`Content-Disposition` 带文件名；抽验 1 单（AP-2026070036）完整下载成功
+- [x] 14.3 design.md 补 D18（a-e 五个子决策 + Risks + Non-Goals + Open Questions）；本节任务补记
+- [x] 14.4 Paul 审 D18 Open Questions——**✅ 批准（2026-07-23）**：D18-b/D18-d/D18-e 均按建议方案执行
+- [x] 14.5 `ZpConnector` 新增 `list_attachments(doc_no, doc_type)`/`download_attachment(doc_no, doc_type)`（先测后实现，`test_fi_connector.py` +7 单测，mock HTTP 响应覆盖，不触网）
+- [x] 14.6 `fi2/run.py::run()` 新增 `u9c_connector`/`ap_doc_nos`/`ap_supplier_codes` 透传参数；`main()`/CLI 新增 `--ap-doc-nos`/`--ap-supplier-codes`（`ZpConnector.from_env()` 走真实 U9C_* 凭据，连接器审计用 `ConnectorAudit`——过程中发现并修正一处真实 bug：`ZpConnector.audit=` 参数期望 `ConnectorAudit` 而非业务 `AuditLogger`，两者物理分离同 SC8 范式，误传会在真实调用时 `AttributeError`，已在 `run.py`/新增 `fi2/dump_u9c_snapshot.py` 中改正）；新增 `test_run_u9c_wiring.py`（6 用例）
+- [x] 14.7 真实拉取 6 组样本（8 组中 2 组不适用本轮，见 14.9 备注）PO/GR/AP，落 `data/real_round1/{po_lines,ap_lines,grn}.csv`（新增可复用工具 `fi2/dump_u9c_snapshot.py` + `test_dump_u9c_snapshot.py`，`.gitignore` 已覆盖不入库）——**期间顺带发现并修复本机 worktree 的全局可编辑安装被另一 worktree 静默劫持问题**（`pip install --force-reinstall --no-deps -e` 重新指向本 worktree，[[project-shared-python-editable-install-collision]] 已知隐患）
+- [x] 14.8 真实下载发票 PDF 落 `data/real_round1/attachments/`，逐张读取手工誊录 `data/real_round1/invoice.csv`（标注"人工誊录·非OCR"）——**实际 6/8 完成**：AP-2025120181 因 `Attachment/Download` 真实服务端 302 重定向到 `localhost:5555`（不可达）未能下载；AP-2026050057 探测为跨多 AP 单合并结算大票（100行/8页，发票金额大于单张 AP 金额），超出本轮人工誊录合理范围，两者均已登记跟进项，见验证报告 §三
+- [x] 14.9 `FI2_DATA_SOURCE=csv python -m fi2.run --csv-dir data/real_round1` 跑通，产出 `reports/fi2_reconcile_report.json`——**6 AP/10 料品，全部"完全匹配"（零假阳性明细错位/数量金额不符），3 项 AP-PO 价格超差**（design D12/R7，-6.1%~-44.7%，真实数据非误判，已溯源，其中 1 例牵出"`price_check` 未消费 `POChange/Query` 变更后价格"的方法论发现，见验证报告 §四）
+- [x] 14.10 产出真实验证小结 `1-转型规划/FI2-round1真实验证报告-2026-07-23.md`（供财务专线/Paul/唐燕萍/姚祖怡复核，含数据来源人工誊录声明 + 两组未验证样本原因 + 价格超差溯源 + 下一步分工）
+- [x] 14.11 单测：`test_fi_connector.py`（+7）/`test_run_u9c_wiring.py`（新增 8）/`test_dump_u9c_snapshot.py`（新增 2）；全量回归零漂移——见 14.12 数字
+- [x] 14.12 场景 `CLAUDE.md` 更新状态段 + 队列 #78 回填结果——见场景 CLAUDE.md 2026-07-23 段；全量回归：平台 218 passed+1 skip（原 211，+7）、FI2 77 passed+7 skip（原 67+7，+10 net）
+- [ ] 14.13 OCR（腾讯云）自动直读集成——独立第二轮，不在本节范围，另行登记后续任务；同时登记两项后续：① `POChange/Query` 纳入 R7 价格比对基准评估（14.9 方法论发现）；② AP-2025120181 的 `Attachment/Download` 302 bug 需 IT（陈承）跟进
