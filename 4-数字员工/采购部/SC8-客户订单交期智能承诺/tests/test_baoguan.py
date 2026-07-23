@@ -218,7 +218,8 @@ def test_row_to_dict_no_feedback_detail_passthrough():
     bom = _bom("P3", "R09")
     row = assess_supply_risk(so, bom, [], today=TODAY)
     d = row_to_dict(row)
-    assert d["nfd"] == [{"id": "R09", "qty": 500.0, "eta": "2026-11-30"}]
+    # ③ 功能批1：nfd 明细新增 name（品名，取自 BOM component_name，测试 helper 里与料号同值）
+    assert d["nfd"] == [{"id": "R09", "qty": 500.0, "eta": "2026-11-30", "name": "R09"}]
 
 
 def test_render_html_shows_partial_kit_and_substitute_badges(monkeypatch):
@@ -247,5 +248,5 @@ def test_render_html_shows_no_feedback_detail():
     bom = _bom("S02Y.0188", "R01B.0365")
     rows = build_dashboard([so], bom, [], today=TODAY)
     html = render_html(rows, today=TODAY)
-    assert '"nfd": [{"id": "R01B.0365", "qty": 200.0, "eta": "2026-09-20"}]' in html
+    assert '"nfd": [{"id": "R01B.0365", "qty": 200.0, "eta": "2026-09-20", "name": "R01B.0365"}]' in html
     assert "function nfdText" in html and ".nfd{" in html

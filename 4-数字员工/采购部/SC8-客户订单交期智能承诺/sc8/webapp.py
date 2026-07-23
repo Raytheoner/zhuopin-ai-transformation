@@ -26,7 +26,7 @@ from flask import Flask, jsonify, redirect, request
 
 from . import config
 from .alert_dispatch import detect_new_red, dispatch_new_reds
-from .baoguan import _HTML_JS, _HTML_STYLE
+from .baoguan import _HTML_JS, _HTML_STYLE, render_legend
 from .baoguan_service import SnapshotStore, compute_snapshot
 from .case_draft import generate as generate_draft
 from .case_store import NEXT_STATUS, CaseStatus, CaseStore
@@ -223,8 +223,15 @@ setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全�
         + '<input class="search" id="q" type="text" placeholder="搜索 料号 / 品名 / 客户 / 瓶颈子件" aria-label="搜索">\n'
         + '<select class="sel" id="sort" aria-label="排序"><option value="gap">按缺口天数</option>'
         + '<option value="ship">按计划出货日</option><option value="id">按料号</option></select>\n'
-        + '<button class="btn" id="csv" type="button">导出 CSV</button></div>\n'
-        + '<div class="cnt" id="cnt"></div>\n<div class="cards" id="cards"></div>\n'
+        + '<select class="sel" id="pageSize" aria-label="每页行数"><option value="10">10 行/页</option>'
+        + '<option value="50">50 行/页</option><option value="100">100 行/页</option>'
+        + '<option value="200">200 行/页</option></select>\n'
+        + '<button class="btn" id="csv" type="button">导出 CSV</button>\n'
+        + '<button class="btn" id="xlsx" type="button">导出 Excel</button>\n'
+        + '<button class="btn" id="legendBtn" type="button">📖 图例</button></div>\n'
+        + '<div class="legend" id="legendPanel">' + render_legend(config.default_params()) + '</div>\n'
+        + '<div class="cnt" id="cnt"></div>\n<div class="pager" id="pagerTop"></div>\n'
+        + '<div class="cards" id="cards"></div>\n<div class="pager" id="pagerBottom"></div>\n'
         + '<div class="foot">分级只看<b>有确定承诺</b>子件的齐料缺口：🔴 真延期 · 🟠 待催 · 🟡 偏紧 · 🟢 按期。'
         + '🔴 真延期自动建案并推保供运维群，见 <a href="/cases">案例处置中心</a>。本服务 LAN 内部用，不对客。</div>\n'
         + '</div>\n<script>\n' + js + '\n</script></body></html>'

@@ -157,6 +157,37 @@ def load_material_commitments(
     return _extract_board_commitments(board, materials)
 
 
+def load_purchase_orders_by_material(
+    materials: set[str] | None = None, *, days: int = 60, audit=None, connector=None,
+) -> dict[str, float]:
+    """按料号汇总在途采购订单未清量（PO 在途数据接入，#12/#14 共享基础，2026-07-23）。
+
+    在途未清量 = Σ(qty_ordered − qty_received)，只统计 status 为 in_transit/partial
+    的采购订单行（status=received 已全部收货，不计入"在途"）。materials 给定时只保留
+    这些料号（与 load_srm_deliveries 一致的收窄口径，减少下游遍历量）；None=不过滤。
+
+    connector：注入 ZpConnector（测试用）；None 时 from_env（复用与 BOM 相同的凭据）。
+    real fail-loud：连接器异常原样上抛，由调用方（compute_snapshot）决定是否降级
+    （本功能为纯展示派生列，调用方对失败采用"降级为无数据"而非阻断整体重算，
+    与 FO/BOM/SRM 等核心数据源的强 fail-loud 语义有意区分，见 baoguan_service 注释）。
+    """
+    if connector is None:
+        from zhuopin_platform.shared_tools.erp_connector.connector import ZpConnector
+        connector = ZpConnector.from_env(audit=audit)
+    orders = connector.get_purchase_orders(days=days)
+    out: dict[str, float] = {}
+    for po in orders:
+        if po.status not in ("in_transit", "partial"):
+            continue
+        if materials is not None and po.material_id not in materials:
+            continue
+        outstanding = max(float(po.qty_ordered) - float(po.qty_received), 0.0)
+        if outstanding <= 0:
+            continue
+        out[po.material_id] = out.get(po.material_id, 0.0) + outstanding
+    return out
+
+
 def load_srm_deliveries(mode: str, *, start: str | None = None,
                         end: str | None = None, audit=None,
                         materials: set[str] | None = None,

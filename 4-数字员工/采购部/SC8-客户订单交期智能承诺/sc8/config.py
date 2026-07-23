@@ -45,6 +45,18 @@ def net_inventory_enabled() -> bool:
     return os.environ.get("SC8_NET_INVENTORY", "off").strip().lower() in ("on", "1", "true", "yes")
 
 
+def po_transit_enabled() -> bool:
+    """PO 在途数据接入开关：`SC8_PO_TRANSIT=on|off`（**默认 ON**）。
+
+    姚祖怡 07-23 新功能诉求批1（#12 子件供给状态全展示 / #14 需求日可齐套数量）的共享基础。
+    与 `net_inventory_enabled` 不同：本开关只影响**纯展示/派生列**，不改四色判定/净额/
+    缺料计算口径（红线，见开场prompt-保供看板功能批1），故默认开启，无需专员重核签字。
+    若 PO 端点异常导致立即重算变慢/超时，可临时关闭作应急开关；关闭时 #12/#14 相关字段
+    退化为空/None（零漂移，不影响既有四色/净额/kittable_qty 等已上线功能）。
+    """
+    return os.environ.get("SC8_PO_TRANSIT", "on").strip().lower() not in ("off", "0", "false", "no")
+
+
 # ── 对客外发总开关（红线 §7.4）──────────────────────────────────────────────
 # 全程关闭，直到 ① SRM 真正联调通过 ② 真实黄金基准零偏差 ③ 门禁 6 项全勾。
 # 关闭期间：所有对客通报只生成草稿、入待审批队列，绝不自动外发客户。

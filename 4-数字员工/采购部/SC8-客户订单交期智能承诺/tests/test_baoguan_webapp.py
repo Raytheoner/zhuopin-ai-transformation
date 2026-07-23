@@ -99,6 +99,10 @@ def test_shell_page_has_fetch_and_no_real_data(monkeypatch):
     assert "__META__" not in html
     # 不得残留静态版的 const DATA/META 声明（会与 boot 的 var 冲突）
     assert "const DATA=" not in html and "const META=" not in html
+    # 功能批1（姚祖怡 07-23）：壳页也应带上分页/导出Excel/图例三项界面元素
+    assert 'id="pageSize"' in html and 'id="pagerTop"' in html and 'id="pagerBottom"' in html
+    assert 'id="xlsx"' in html and "导出 Excel" in html
+    assert 'id="legendBtn"' in html and 'id="legendPanel"' in html and "四色判据" in html
 
 
 def test_cases_flow_and_customer_gate(monkeypatch):

@@ -100,3 +100,48 @@ def test_snapshot_store_in_memory_no_file(tmp_path):
     store.set(Snapshot(generated_at="x", today="2026-06-24", rows=[],
                        counts={"red": 0, "gap": 0, "yel": 0, "grn": 0}))
     assert store.has_data() is True
+
+
+# ── PO 在途数据接入（功能批1，2026-07-23）：#12/#14 共享基础 ────────────────────
+
+def test_compute_snapshot_wires_purchase_orders_into_rows(monkeypatch):
+    """PO 加载成功 → component_status/dkq 等字段随行序列化出现（无需开净额也能测 cst）。"""
+    bom = _bom("RED", "C1")
+    srm = []   # 无 SRM 承诺 → C1 无答复、待催
+    _patch_sources(monkeypatch, orders=[_orders()[0]], bom=bom, srm=srm)
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material",
+                        lambda materials, **kw: {"C1": 40.0})
+
+    snap = compute_snapshot(today=TODAY, status="2")
+    red = next(r for r in snap.rows if r["id"] == "RED")
+    assert red["cst"] == [{"id": "C1", "name": "C1", "qty": 10.0,
+                          "st": "transit_unconfirmed", "tq": 40.0, "cd": None}]
+
+
+def test_compute_snapshot_degrades_gracefully_when_po_source_fails(monkeypatch):
+    """PO 端点异常（纯展示派生列）→ 降级为无数据，不阻断整体重算（与 FO/BOM/SRM 强
+    fail-loud 语义有意区分）。"""
+    bom = _bom("RED", "C1")
+    _patch_sources(monkeypatch, orders=[_orders()[0]], bom=bom, srm=[])
+
+    def _boom(materials, **kw):
+        raise RuntimeError("PO endpoint unreachable")
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material", _boom)
+
+    snap = compute_snapshot(today=TODAY, status="2")   # 不抛异常
+    assert snap.ok is True
+    red = next(r for r in snap.rows if r["id"] == "RED")
+    assert red["cst"] == []   # 降级：无 PO 数据，#12 字段恒空，不影响四色/rows 计算
+
+
+def test_compute_snapshot_skips_po_load_when_toggle_off(monkeypatch):
+    """SC8_PO_TRANSIT=off → 完全不调用 PO 加载器（应急开关）。"""
+    monkeypatch.setenv("SC8_PO_TRANSIT", "off")
+    bom = _bom("RED", "C1")
+    _patch_sources(monkeypatch, orders=[_orders()[0]], bom=bom, srm=[])
+    called = []
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material",
+                        lambda materials, **kw: called.append(1) or {})
+
+    compute_snapshot(today=TODAY, status="2")
+    assert called == []

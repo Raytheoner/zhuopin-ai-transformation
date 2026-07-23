@@ -19,8 +19,9 @@ from pathlib import Path
 
 from . import config
 from .baoguan import RISK_GAP, RISK_GREEN, RISK_RED, RISK_YELLOW, build_dashboard, row_to_dict
-# 模块级引用真实加载器：测试通过 monkeypatch 替换这三个符号（同 test_fo_health 套路）
-from .sources import load_real_bom, load_real_orders, load_srm_deliveries
+# 模块级引用真实加载器：测试通过 monkeypatch 替换这几个符号（同 test_fo_health 套路）
+from .sources import (load_purchase_orders_by_material, load_real_bom, load_real_orders,
+                      load_srm_deliveries)
 
 
 @dataclass
@@ -88,8 +89,25 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
         conn = ZpConnector.from_env(audit=trace)
         inventory = {r.material_id: r.current_stock
                      for r in conn.get_inventory(sorted(components))}
-    # ④ 保供齐套 → 四色看板（判级语义不变；inventory=None（默认）时零漂移）
-    rows = build_dashboard(orders, bom, srm, today=today, inventory=inventory)
+    # ⑥ PO 在途数据（功能批1，姚祖怡 07-23，#12/#14 共享基础）：纯展示派生列，失败不阻断
+    #    整体重算——与 FO/BOM/SRM 等核心数据源的强 fail-loud 语义有意区分（见 sources.py
+    #    load_purchase_orders_by_material docstring）；异常时降级为 None，#12/#14 相关
+    #    字段随之退化为空/None，其余核心看板（四色/kit_date/净额）不受影响。
+    purchase_orders = None
+    if config.po_transit_enabled():
+        try:
+            purchase_orders = load_purchase_orders_by_material(components, audit=trace)
+        except Exception as e:
+            purchase_orders = None
+            if audit is not None:
+                from zhuopin_platform.audit import AuditEvent
+                audit.record(AuditEvent(
+                    scenario="SC8", action="po_transit_load_failed", evaluator="system",
+                    automation_level="L1", decision={"error": f"{type(e).__name__}: {e}"[:200]},
+                ))
+    # ④ 保供齐套 → 四色看板（判级语义不变；inventory/purchase_orders=None（默认）时零漂移）
+    rows = build_dashboard(orders, bom, srm, today=today, inventory=inventory,
+                           purchase_orders=purchase_orders)
 
     counts = {
         "red": sum(1 for r in rows if r.risk == RISK_RED),
