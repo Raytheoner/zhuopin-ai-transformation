@@ -42,6 +42,18 @@ RISK_YELLOW = "🟡"
 RISK_GREEN = "🟢"
 
 
+@dataclass(frozen=True)
+class NoFeedbackDetail:
+    """一个"无答复"子件的估算明细（判据说明 V2 答复2，姚祖怡 2026-07-23，Paul 同日拍板）：
+
+    姚反馈"预计齐套依据"看不清具体是哪些子件在按估算算——本结构把每个无 SRM 承诺交期
+    子件的料号/毛需求量/估算到货日显式列出，供看板展示，纯附加信息，不影响四色/action。
+    """
+    component_id:       str
+    qty:                float
+    estimated_arrival:  date
+
+
 @dataclass
 class BaoguanRow:
     """一条成品保供预警结果（成品行粒度）。"""
@@ -56,6 +68,9 @@ class BaoguanRow:
     risk:           str                        # 🔴/🟠/🟡/🟢
     bottleneck_material: str | None            # 关键路径瓶颈子件
     no_feedback_materials: list[str] = field(default_factory=list)  # 供应商未答复子件
+    # 无答复子件明细（料号+毛需求量+估算到货日），判据说明 V2 答复2；与 no_feedback_materials
+    # 一一对应，纯附加展示信息，不影响四色/action 既有语义。无 BOM/无无答复子件时恒为空列表。
+    no_feedback_detail: list[NoFeedbackDetail] = field(default_factory=list)
     component_count: int = 0                   # 直接子件总数
     has_bom:        bool = False
     action:         str = ""                   # 建议动作
@@ -324,6 +339,13 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     confirmed_gap = (confirmed_kit - ship).days if confirmed_kit is not None else None
     confirmed_bottleneck = (max(confirmed, key=confirmed.get) if confirmed else None)
 
+    # 无答复子件明细（判据说明 V2 答复2）：料号+毛需求量+估算到货日，供看板展示"预计齐套依据"。
+    gross = _gross_need(so, bom)
+    no_feedback_detail = [
+        NoFeedbackDetail(component_id=m, qty=gross.get(m, 0.0), estimated_arrival=mat.arrivals[m])
+        for m in mat.no_feedback_materials
+    ]
+
     risk, action = _classify(confirmed_gap, True, p, len(mat.no_feedback_materials),
                              mat.bottleneck_material, confirmed_bottleneck)
     # C-2：部分齐套不改变四色判定（risk 已由 _classify 定），只在建议动作里附加提示。
@@ -335,6 +357,7 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
         kit_date=kit_date, gap_days=gap_days, risk=risk,
         bottleneck_material=mat.bottleneck_material,
         no_feedback_materials=mat.no_feedback_materials,
+        no_feedback_detail=no_feedback_detail,
         component_count=len(mat.arrivals), has_bom=True, action=action,
         confirmed_kit_date=confirmed_kit, confirmed_gap_days=confirmed_gap,
         period_match=period_match, substitute_groups=substitute_groups,
@@ -461,6 +484,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);fon
 .cov-h{display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px}
 .track{height:6px;border-radius:3px;background:var(--track);overflow:hidden}
 .fill{height:100%;background:var(--info)}
+.nfd{margin-top:8px;font-size:12px;color:var(--warn)}
 .act{margin-top:10px;font-size:13px;background:var(--surface2);border-radius:8px;padding:8px 10px}
 .foot{margin-top:14px;font-size:12px;color:var(--text3);line-height:1.6}
 </style>"""
@@ -490,6 +514,13 @@ function subsText(r,materialId){
  return (subs&&subs.length)?'（含替代料 '+subs.map(esc).join('、')+'）':'';
 }
 
+// 无答复子件明细（判据说明 V2 答复2）：料号+毛需求量+估算到货日，回答"预计齐套依据是什么"。
+function nfdText(r){
+ if(!r.nfd||!r.nfd.length)return'';
+ var items=r.nfd.map(function(d){return '<span class="mono">'+esc(d.id)+'</span>×'+fmt(d.qty)+'（估到货 '+esc(d.eta)+'）';}).join('、');
+ return '<div class="nfd">⚠ 按无答复估算（非确定承诺）：'+items+'</div>';
+}
+
 function card(r){
  var c=cls(r),covered=r.comp-r.nf,pct=r.comp?Math.round(covered/r.comp*100):0;
  var cov=r.comp?'<div class="cov"><div class="cov-h"><span>子件承诺覆盖</span><span>'+covered+' / '+r.comp+' 命中 · '+r.nf+' 未答复</span></div><div class="track"><div class="fill" style="width:'+pct+'%"></div></div></div>':'';
@@ -499,7 +530,7 @@ function card(r){
  return '<div class="card"><div class="card-h"><div><span class="id">'+esc(r.id)+'</span><span class="nm">'+esc(r.name)+'</span></div><span class="gap '+c+'">'+gapText(r)+'</span></div>'
   +'<div class="meta">客户 '+(esc(r.cust)||'—')+' · 数量 '+fmt(r.qty)+(kit?' · '+kit:'')+'</div>'
   +'<div class="strip"><span>出货 <b>'+esc(r.ship)+'</b></span><span>→</span><span>齐料 <b class="kd '+c+'">'+(r.kit?esc(r.kit):'—')+'</b></span>'+bn+'</div>'
-  +cov+'<div class="act">建议：'+esc(r.action)+'</div></div>';
+  +cov+nfdText(r)+'<div class="act">建议：'+esc(r.action)+'</div></div>';
 }
 
 function view(){
@@ -590,6 +621,10 @@ def row_to_dict(r: BaoguanRow) -> dict:
         "subs": r.substitute_groups,
         # C-2（None → 前端不显示"可齐套"徽标，不以 0 冒充）
         "kq": r.kittable_qty, "kbn": r.kittable_bottleneck, "ksf": r.kittable_shortfall,
+        # 无答复子件明细（判据说明 V2 答复2）：[{"id":料号,"qty":毛需求量,"eta":估算到货日}]；
+        # 无无答复子件时为空列表，前端不显示明细区块。
+        "nfd": [{"id": d.component_id, "qty": d.qty, "eta": d.estimated_arrival.isoformat()}
+               for d in r.no_feedback_detail],
     }
 
 

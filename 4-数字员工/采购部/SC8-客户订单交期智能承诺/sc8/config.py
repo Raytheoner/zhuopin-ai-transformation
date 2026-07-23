@@ -91,10 +91,12 @@ def customer_isolation_key(obj) -> str:
 
 # ── 参数版本（D2 补充：审计每条预测"用了哪组参数版本"，可复现可追溯）──────────────
 # 每次调整下方任一启发式/阈值常量，必须 bump 本版本号，使审计可还原当时算法行为。
-PARAM_VERSION = "sc8-params-v0"
+PARAM_VERSION = "sc8-params-v1"
 
-# ── D2 启发式参数（v0 初值，黄金基准/真实数据校准后回填）────────────────────────
-NO_FEEDBACK_LEAD_DAYS = 30   # 无 SRM 承诺交期的物料：按需求日 +N 天估算到货（并标低置信）
+# ── D2 启发式参数（v1，姚祖怡 2026-07-23 业务口径校准，Paul 同日拍板）─────────────
+NO_FEEDBACK_LEAD_DAYS = 90   # 无 SRM 承诺交期的物料：按需求日 +N 天估算到货（并标低置信）
+                             # v0=30（Paul 2026-06-22 定）；姚祖怡 07-23 反馈"30 天不符实际
+                             # 周期"，Paul 07-23 拍板改 90（队列 §四#29）
 OUTSOURCE_EXTRA_DAYS  = 10   # 委外加工成品：齐套日基础上 +N 天附加工期
 LOGISTICS_DAYS        = 1    # 物流天数（默认国内快递）
 DEVIATION_ALERT_DAYS  = 3    # 偏差监控阈值：实际进展 vs 预测交付日，超 N 天告警/重算
