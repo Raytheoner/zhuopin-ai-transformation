@@ -376,40 +376,15 @@
 
       <!-- ===================== 质量域 · QD-B 立项门禁 ===================== -->
       <section id="view-quality" class="view">
-        <div class="grid board-tiles" style="margin-bottom:16px">
-          <div class="tile total"><div class="tl">本期立项申请</div><div class="tv">46</div><div class="tsub">EQQR10011 模板</div></div>
-          <div class="tile g"><div class="tl">✅ 通过</div><div class="tv">31</div><div class="tsub">无阻断项</div></div>
-          <div class="tile a"><div class="tl">⚠️ 扣分警示</div><div class="tv">9</div><div class="tsub">超阈值待改进</div></div>
-          <div class="tile r"><div class="tl">🔴 阻断拦截</div><div class="tv">4</div><div class="tsub">命中阻断集</div></div>
-          <div class="tile y"><div class="tl">待人工复核 L2</div><div class="tv">2</div><div class="tsub">边界项</div></div>
-          <div class="tile"><div class="tl">阻断集</div><div class="tv" style="color:var(--cyan)">15</div><div class="tsub">条 · 权威 80 条</div></div>
-        </div>
-        <div class="panel">
-          <div class="phead"><h3><span class="bar"></span>立项门禁明细</h3><span class="wip-ribbon" style="margin-left:auto">● 灰度中 · 权威表 20260717 · AI 不自动落 ERP/不外发</span></div>
-          <div class="toolbar">
-            <div class="chip on" data-fq="all">全部 <span class="n">46</span></div>
-            <div class="chip" data-fq="g">✅ 通过 <span class="n">31</span></div>
-            <div class="chip" data-fq="a">⚠️ 扣分警示 <span class="n">9</span></div>
-            <div class="chip" data-fq="r">🔴 阻断 <span class="n">4</span></div>
-            <div class="chip" data-fq="y">待复核 <span class="n">2</span></div>
-            <div style="margin-left:auto" class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input placeholder="项目名 / 申请书号"></div>
+        <div class="panel" style="margin-bottom:16px;padding:20px 24px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+            <span class="wip-ribbon">● 灰度中·真实入口 · 权威表 20260717 · AI 不自动落 ERP/不外发</span>
           </div>
-          <div style="overflow-x:auto">
-          <table>
-            <thead><tr><th>立项项目</th><th>申请书号</th><th>客户</th><th>扣分合计</th><th>判定</th><th>触发关键项</th></tr></thead>
-            <tbody id="quaBody">
-              <tr data-fq="r"><td>邦奇 DHT 变速箱控制器</td><td><span class="code">EQ-20260701</span></td><td>邦奇动力</td><td class="gap">阻断</td><td><span class="sdot r"><i></i>阻断拦截</span></td><td class="miss">累计现金流为负（命中阻断集）</td></tr>
-              <tr data-fq="r"><td>低压 DCDC 预研项目</td><td><span class="code">EQ-20260714</span></td><td>（未定点）</td><td class="gap">阻断</td><td><span class="sdot r"><i></i>阻断拦截</span></td><td class="miss">客户未定点 + ASIL 等级缺失</td></tr>
-              <tr data-fq="a"><td>华丰天然气发动机 EPA 认证咨询</td><td><span class="code">EQ-20260616</span></td><td>华丰动力</td><td class="gap">-18</td><td><span class="sdot a"><i></i>扣分警示</span></td><td class="miss">收益指标偏低、NRE 回收期 &gt;3 年</td></tr>
-              <tr data-fq="a"><td>商用车 BMS 采样芯片国产替代</td><td><span class="code">EQ-20260712</span></td><td>上汽</td><td class="gap">-14</td><td><span class="sdot a"><i></i>扣分警示</span></td><td class="miss">产能占用高、量产爬坡风险</td></tr>
-              <tr data-fq="y"><td>域控冗余电源模块</td><td><span class="code">EQ-20260716</span></td><td>比亚迪</td><td class="gap">-9</td><td><span class="sdot y"><i></i>待复核</span></td><td class="miss">收益指标处边界，转 L2 人工</td></tr>
-              <tr data-fq="g"><td>EQ17 车身域控制器</td><td><span class="code">EQ-20260705</span></td><td>比亚迪</td><td class="gap zero">-4</td><td><span class="sdot g"><i></i>通过</span></td><td class="miss">轻微扣分、无阻断项（可作 golden）</td></tr>
-              <tr data-fq="g"><td>800V 电驱 MCU 平台</td><td><span class="code">EQ-20260709</span></td><td>理想</td><td class="gap zero">-2</td><td><span class="sdot g"><i></i>通过</span></td><td class="miss">达标</td></tr>
-              <tr data-fq="g"><td>车载以太网网关</td><td><span class="code">EQ-20260717</span></td><td>上汽</td><td class="gap zero">-3</td><td><span class="sdot g"><i></i>通过</span></td><td class="miss">达标</td></tr>
-            </tbody>
-          </table>
-          </div>
-          <div class="note">样例数据（占位）——接 QD-B 引擎真实判定替换。判据＝权威《开发项目立项门禁扣分权重标准》80 条（20260717 版）；阻断集 15 条命中即拦截，其余按权重扣分。AI 只出判定与依据，<b>不自动落 ERP、不自动外发</b>，晋级项走 L2/L4 人工确认。</div>
+          <h3 style="margin:0 0 8px;font-size:16px;color:var(--t0)">QD-B 立项审核门禁 <span style="font-weight:400;color:var(--t1)">· 试用版</span></h3>
+          <div class="note" style="margin-bottom:16px">上传立项申请书（EQQR8082 A2.1 模板，.xlsx）→ AI 出六段式《立项审核报告》（总判定 / 阻断项 / 待改进 / 跨模块 / 转人工待办 / 审计元数据）。判据＝权威《开发项目立项门禁扣分权重标准》80 条（20260717 版）；阻断集 15 条命中即一票否决，其余按权重扣分。AI 只出判定与依据，<b>不自动落 ERP、不自动外发</b>，正式立项决策仍在评审委员会/PMO（L2 人工确认）。</div>
+          <a href="http://192.168.100.51:8093/" target="_blank" rel="noopener"
+             style="display:inline-block;background:var(--cyan);color:#04202a;font-weight:700;padding:10px 22px;border-radius:6px;text-decoration:none">打开 QD-B 立项审核门禁 ›</a>
+          <span style="margin-left:14px;font-size:12px;color:var(--t1)">首批灰度用户：陈忱（质量部）+ 朱映桦（backup）</span>
         </div>
         <div class="grid cols-2" style="margin-top:16px">
           <div class="panel">
@@ -417,12 +392,13 @@
             <div class="alert"><span class="sev r"></span><div class="am"><b>阻断集（示例）</b> — 累计现金流为负 · 客户未定点 · ASIL 等级缺失 · 无量产承接 …（15 条，命中即拦截）</div></div>
             <div class="alert"><span class="sev a"></span><div class="am"><b>扣分项（按权重）</b> — 收益指标 · NRE 回收期 · 产能占用 · 量产爬坡风险 · 技术成熟度 …</div></div>
             <div class="alert"><span class="sev g"></span><div class="am"><b>口径定论</b> — rule 67/72 等 F+M→F；权威表 20260717 已取代 20260715</div></div>
+            <div class="alert"><span class="sev y"></span><div class="am"><b>范围说明</b> — B 类语义 10 条 / C01-C10 跨模块校验为 MVP 占位（统一转人工 / 未实现），扩容期接入真实判据</div></div>
           </div>
           <div class="panel">
             <div class="phead"><h3><span class="bar"></span>同域场景 & 反馈</h3></div>
             <div class="scn"><div class="sh"><span class="sc">8D</span><span class="snm">客诉 8D 可信度地图</span><span class="st wip" style="margin-left:8px">建造中</span><span class="meta">12 字段终档</span></div><div class="sd">失效现象/根本原因命中率标注；含 OEM 信息字段走隔离层分客户库。</div></div>
             <div class="scn"><div class="sh"><span class="sc">Q-IQC</span><span class="snm">IQC / SPC 异常预警</span><span class="st plan" style="margin-left:8px">规划</span><span class="meta">S2</span></div></div>
-            <div class="feedback" style="margin-top:10px"><b>反馈入口（占位）</b> · 灰度误判/建议 → 企微机器人自动归档回灌口径</div>
+            <div class="feedback" style="margin-top:10px"><b>反馈入口</b> · 灰度误判/建议 → 企微机器人（陈忱直达；朱映桦暂不在白名单，经陈忱转）</div>
           </div>
         </div>
       </section>
@@ -662,7 +638,6 @@
     });
   }
   bindFilter('.chip[data-ff]','finBody','data-ff');
-  bindFilter('.chip[data-fq]','quaBody','data-fq');
 
   // ---- 销售域：同源实时 fetch（读 SalesMarketing 同一 dashboard_data.json；成功→实时渲染，失败→保留 2026-06-25 快照） ----
   // 【CC 建造侧】部署到 .51 时，把该数据源放到下方 SALES_DATA_URL 指向的可达路径：

@@ -11,6 +11,8 @@ authors = [{ name = "卓品智能 AI 转型项目" }]
 dependencies = [
     "zhuopin_platform",
     "openpyxl>=3.1",   # 立项书是合并单元格 Excel 表单，解析必需
+    "flask>=3.0",      # 极简版发布收口（任务9.1）：最小 Web 服务，上传→报告
+    "waitress>=3.0",   # 生产模式 WSGI server（同 SC8 保供看板范式）
 ]
 
 [project.optional-dependencies]

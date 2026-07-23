@@ -11,3 +11,4 @@ reports/
 # 黄金样本：真实立项数据脱敏自包含，绝不入库（含 OEM 报价附件）
 data/golden/*
 !data/golden/.gitkeep
+!data/golden/manifest.md
