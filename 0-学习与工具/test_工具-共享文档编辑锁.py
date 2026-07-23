@@ -5,6 +5,11 @@
 
 覆盖交接文件《开场prompt-队列编辑锁-协议〇.7-CC建造交接.md》第5点要求的五种场景：
 acquire 空锁成功 / 新鲜锁被占返回非0 / 陈旧锁可接管 / release 只删本人 / 并发两 who 只一个拿到。
+
+另覆盖 2026-07-23 供应链看板批1 worktree 会话发现的 gap（REPO_ROOT 曾按
+`__file__` 所在 checkout 推算，不同 worktree 各算各的锁、互相看不见）：
+用真实 `git worktree add` 建一个主工作区+一个 linked worktree，验证同一份
+脚本无论从哪个 checkout 跑，锁都落在同一个物理文件上。
 """
 from __future__ import annotations
 
@@ -20,8 +25,12 @@ SCRIPT = Path(__file__).resolve().with_name("工具-共享文档编辑锁.py")
 
 
 def run(*args: str) -> subprocess.CompletedProcess:
+    return run_at(SCRIPT, *args)
+
+
+def run_at(script: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(SCRIPT), *args],
+        [sys.executable, str(script), *args],
         capture_output=True, text=True, encoding="utf-8",
     )
 
@@ -105,6 +114,67 @@ class EditLockTests(unittest.TestCase):
         self.assertTrue(self.lock_path.exists())
         winner = json.loads(self.lock_path.read_text(encoding="utf-8"))["who"]
         self.assertIn(winner, ("A", "B"))
+
+
+class EditLockCrossWorktreeTests(unittest.TestCase):
+    """回归 2026-07-23 供应链看板批1 worktree 会话发现的 gap：
+    REPO_ROOT 若按 __file__ 所在 checkout 推算，主工作区与
+    linked worktree 会各算各的锁、互相看不见。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.main_root = Path(self._tmpdir.name) / "main"
+        self.main_root.mkdir()
+        self._git("init", "-q")
+        self._git("config", "user.email", "test@example.com")
+        self._git("config", "user.name", "Test")
+        # 脚本放进仓库同名子目录，模拟生产布局（脚本在仓库根下一层子目录）。
+        script_dir = self.main_root / "0-学习与工具"
+        script_dir.mkdir()
+        (script_dir / "工具-共享文档编辑锁.py").write_text(
+            SCRIPT.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        (self.main_root / "queue.md").write_text("占位\n", encoding="utf-8")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "init")
+        self.linked_root = Path(self._tmpdir.name) / "linked"
+        self._git("worktree", "add", "-q", str(self.linked_root), "-b", "linked-branch")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _git(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", *args], cwd=self.main_root, check=True,
+            capture_output=True, text=True,
+        )
+
+    def _tool(self, root: Path) -> Path:
+        return root / "0-学习与工具" / "工具-共享文档编辑锁.py"
+
+    def test_lock_visible_across_worktrees(self):
+        r1 = run_at(self._tool(self.main_root), "--file", "queue.md",
+                    "acquire", "--who", "A")
+        self.assertEqual(r1.returncode, 0, r1.stdout + r1.stderr)
+
+        # 从 linked worktree 里跑同一份脚本：修复前会各算各的 REPO_ROOT，
+        # 看不到主工作区的锁，acquire 会“误成功”（本应因占用中被拒绝）。
+        r2 = run_at(self._tool(self.linked_root), "--file", "queue.md",
+                    "acquire", "--who", "B")
+        self.assertNotEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+        self.assertIn("占用中", r2.stdout)
+
+        # 锁物理文件应且仅应落在主工作区那一份，不应在 linked worktree 里另长一份。
+        self.assertTrue((self.main_root / "queue.md.editlock").exists())
+        self.assertFalse((self.linked_root / "queue.md.editlock").exists())
+
+    def test_release_from_linked_worktree_releases_main_lock(self):
+        run_at(self._tool(self.main_root), "--file", "queue.md",
+               "acquire", "--who", "A")
+        r = run_at(self._tool(self.linked_root), "--file", "queue.md",
+                   "release", "--who", "A")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse((self.main_root / "queue.md.editlock").exists())
 
 
 if __name__ == "__main__":

@@ -18,8 +18,12 @@
            （只告警不删，防误传 --who 删掉别人的在办锁）；不带 --who 则无条件释放
   status   查看当前锁状态，不产生副作用
 
-锁本地存在于文件系统（gitignore，不入库、不需要 git commit 才生效，
-Cowork/CC 两桌读写的是同一份 OneDrive 同步磁盘，直接可见）。
+锁本地存在于文件系统（gitignore，不入库、不需要 git commit 才生效）。
+REPO_ROOT 按 `git rev-parse --git-common-dir` 定位——所有 git worktree
+共享同一个 `.git`，故不论从主工作区还是任一 `.claude/worktrees/<name>/`
+里跑本脚本，锁都落在同一个物理文件上，彼此可见（2026-07-23 曾用
+`Path(__file__).resolve()` 推算，会按各 worktree 自己的 checkout 路径
+各算各的锁、互相看不见，已修复，见交接说明）。
 
 用法：
   python 0-学习与工具/工具-共享文档编辑锁.py acquire --who "CC-QD-B" --note "登记#87完成"
@@ -36,11 +40,32 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+
+def _resolve_repo_root() -> Path:
+    """定位主工作区根目录（所有 git worktree 共享同一把锁的关键）。
+
+    `git rev-parse --git-common-dir` 不论在主工作区还是任一 linked
+    worktree 里跑，都会解到同一个共享 `.git` 目录，其父目录即为主工作区
+    根——由此不同 worktree 里的本脚本都算出同一个锁文件路径。跑不了 git
+    （非仓库/未装 git）时退回按脚本自身路径推算，保底不崩。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True, text=True, check=True,
+        )
+        return Path(result.stdout.strip()).parent
+    except (subprocess.CalledProcessError, OSError, FileNotFoundError):
+        return Path(__file__).resolve().parents[1]
+
+
+REPO_ROOT = _resolve_repo_root()
 DEFAULT_TARGET = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 STALE_MINUTES = 30
 
