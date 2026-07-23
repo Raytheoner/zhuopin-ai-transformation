@@ -14,7 +14,8 @@
   acquire  编辑跨桌任务队列.md 前先占锁；被占用（且新鲜）则拒绝——本次改为把
            要登记的内容写进自己的域接力文件，注明"队列更新待补"，不要硬写
   release  编辑完立刻释放（持锁窗口应短——只包住"读入→改→写出"这一小段，
-           不要跨整个 session 持有）
+           不要跨整个 session 持有）。带 --who 且与当前持有者不符时拒绝删除
+           （只告警不删，防误传 --who 删掉别人的在办锁）；不带 --who 则无条件释放
   status   查看当前锁状态，不产生副作用
 
 锁本地存在于文件系统（gitignore，不入库、不需要 git commit 才生效，
@@ -105,8 +106,11 @@ def cmd_release(args: argparse.Namespace) -> int:
         print("（无锁，无需释放）")
         return 0
     if args.who and existing.get("who") != args.who:
-        print(f"⚠ 当前锁持有者是「{existing.get('who')}」，与你传入的「{args.who}」不同——"
-              f"仍会释放（本机制是协作性质，非硬互斥），但请确认不是误删别人的在办锁。")
+        print(f"✗ 当前锁持有者是「{existing.get('who')}」，与你传入的「{args.who}」不同——"
+              f"未释放（避免误传 --who 时删掉别人的在办锁）。若确认对方已异常退出，"
+              f"等其自然陈旧（{STALE_MINUTES} 分钟）由下一次 acquire 自动接管；"
+              f"或确认后不带 --who 强制释放。")
+        return 1
     lock_path.unlink()
     print("✓ 已释放")
     return 0
