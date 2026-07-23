@@ -282,8 +282,6 @@
         <div class="grid cols-2" style="margin-bottom:16px">
           <div class="panel">
             <div class="phead"><h3><span class="bar"></span>业务预警中心</h3><span class="more">全部 18 条 ›</span></div>
-            <div class="alert"><span class="sev r"></span><div class="am"><span class="dom">采购</span>S07Y.0137 保供延期 — 瓶颈子件 R02A.0019 缺口 5,400，PO 在途 07-27 晚于需求日 07-19</div><div class="ax">处理 ›</div></div>
-            <div class="alert"><span class="sev r"></span><div class="am"><span class="dom">采购</span>S02Y.0162 真延期 — 子件 R01A.0061 预计到货 07-25，需求日 07-20</div><div class="ax">处理 ›</div></div>
             <div class="alert"><span class="sev a"></span><div class="am"><span class="dom">财务</span>FI2 三单匹配 — 3 张 AP 单价与 PO 偏差 &gt;0.5%，待人工复核</div><div class="ax">复核 ›</div></div>
             <div class="alert"><span class="sev a"></span><div class="am"><span class="dom">质量</span>QD-B 立项门禁 — 某项目触发阻断规则（累计现金流为负），已自动拦截</div><div class="ax">查看 ›</div></div>
             <div class="alert"><span class="sev y"></span><div class="am"><span class="dom">财务</span>U9C 财务侧端点回填初稿（API 文档）已到，待核对 10 端点覆盖度</div><div class="ax">核对 ›</div></div>
@@ -294,7 +292,7 @@
             <div class="dh">
               <div class="dcard" data-goto="procurement">
                 <div class="ring">${ring:green:86}</div>
-                <div><div class="dn">采购域</div><div class="dm">保供看板在线 · 116 成品<br><span style="color:#ff8a8e">🔴 15</span> · <span style="color:var(--green)">🟢 17</span></div><span class="st live">已上线</span></div>
+                <div><div class="dn">采购域</div><div class="dm">保供看板已上线 · 对内部同事开放试用<br>实时数据见 <a href="http://192.168.100.51:8091/" target="_blank" rel="noopener" style="color:var(--cyan)">看板 ›</a></div><span class="st live">已上线</span></div>
               </div>
               <div class="dcard" data-goto="quality">
                 <div class="ring">${ring:amber:64}</div>
@@ -334,43 +332,20 @@
 
       <!-- ===================== 采购保供看板 ===================== -->
       <section id="view-procurement" class="view">
-        <div class="grid board-tiles" style="margin-bottom:16px">
-          <div class="tile total"><div class="tl">在保成品</div><div class="tv">116</div><div class="tsub">今日全量重算</div></div>
-          <div class="tile r"><div class="tl">🔴 真延期</div><div class="tv">15</div><div class="tsub">子件缺口硬约束</div></div>
-          <div class="tile a"><div class="tl">🟠 需备料</div><div class="tv">61</div><div class="tsub">追料可保</div></div>
-          <div class="tile y"><div class="tl">🟡 临界</div><div class="tv">23</div><div class="tsub">窗口紧</div></div>
-          <div class="tile g"><div class="tl">🟢 按期</div><div class="tv">17</div><div class="tsub">齐套无忧</div></div>
-          <div class="tile"><div class="tl">净额库存</div><div class="tv" style="color:var(--green);font-size:20px;margin-top:11px">ON</div><div class="tsub">六仓可用量口径</div></div>
+        <div class="panel" style="margin-bottom:16px;padding:20px 24px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+            <span class="wip-ribbon">● 已上线·真实入口 · 对内部同事开放试用（07-16）</span>
+          </div>
+          <h3 style="margin:0 0 8px;font-size:16px;color:var(--t0)">SC8 客户订单交期智能承诺 <span style="font-weight:400;color:var(--t1)">· 成品保供预警看板</span></h3>
+          <div class="note" style="margin-bottom:16px">FO 预测订单 + U9C BOM 多层递归展开 + 携客云 SRM 承诺交期，算出每个成品的齐料日 vs 计划出货日，四色分级（🔴 真延期 / 🟠 待催 / 🟡 偏紧 / 🟢 按期）+ 现货净额（六仓可用量）+ 替代料等价合并 + 部分齐套。功能：刷新/立即重算、按缺口天数或计划出货日排序、搜索料号/客户/瓶颈子件、导出 CSV、子件承诺覆盖率、最大确定延期、无答复子件明细（估算到货日）。数据源 U9C + 携客云 SRM，读只留痕，<b>对客外发全程关闭</b>。</div>
+          <a href="http://192.168.100.51:8091/" target="_blank" rel="noopener"
+             style="display:inline-block;background:var(--cyan);color:#04202a;font-weight:700;padding:10px 22px;border-radius:6px;text-decoration:none">打开保供预警看板 ›</a>
+          <span style="margin-left:14px;font-size:12px;color:var(--t1)">采购一线统一入口；案例处置中心 <a href="http://192.168.100.51:8091/cases" target="_blank" rel="noopener" style="color:var(--cyan)">/cases</a></span>
         </div>
-
         <div class="panel">
-          <div class="phead"><h3><span class="bar"></span>成品保供明细</h3><span class="more">导出 · 按需求日排序 ›</span></div>
-          <div class="toolbar">
-            <div class="chip on" data-f="all">全部 <span class="n">116</span></div>
-            <div class="chip" data-f="r">🔴 真延期 <span class="n">15</span></div>
-            <div class="chip" data-f="a">🟠 需备料 <span class="n">61</span></div>
-            <div class="chip" data-f="y">🟡 临界 <span class="n">23</span></div>
-            <div class="chip" data-f="g">🟢 按期 <span class="n">17</span></div>
-            <div style="margin-left:auto" class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input placeholder="成品编码 / 客户"></div>
-          </div>
-          <div style="overflow-x:auto">
-          <table>
-            <thead><tr><th>成品编码</th><th>客户</th><th>需求量</th><th>需求日</th><th>预计齐套</th><th>状态</th><th>瓶颈子件</th><th>缺口</th><th>供给动作</th></tr></thead>
-            <tbody id="boardBody">
-              <tr data-s="r"><td><span class="code">S07Y.0137</span></td><td>比亚迪</td><td>2,000</td><td>07-19</td><td>07-28</td><td><span class="sdot r"><i></i>真延期</span></td><td><span class="code">R02A.0019</span></td><td class="gap">-5,400</td><td class="miss">PO 在途 07-27（晚于需求日）</td></tr>
-              <tr data-s="r"><td><span class="code">S02Y.0162</span></td><td>上汽</td><td>800</td><td>07-20</td><td>07-26</td><td><span class="sdot r"><i></i>真延期</span></td><td><span class="code">R01A.0061</span></td><td class="gap">-3,200</td><td class="miss">催料中 · 到货 07-25</td></tr>
-              <tr data-s="y"><td><span class="code">S04Y.0112</span></td><td>理想</td><td>500</td><td>07-24</td><td>07-24</td><td><span class="sdot y"><i></i>临界</span></td><td><span class="code">R01D.1339</span><span class="badge-sub">替代 R01D.0221</span></td><td class="gap">-480</td><td class="miss">替代料现货 3,646 可补</td></tr>
-              <tr data-s="a"><td><span class="code">S02Y.0087</span></td><td>比亚迪</td><td>1,500</td><td>07-26</td><td>07-25</td><td><span class="sdot a"><i></i>需备料</span></td><td><span class="code">R03C.0210</span></td><td class="gap">-1,120</td><td class="miss">请购已批 · L/T 内可达</td></tr>
-              <tr data-s="g"><td><span class="code">S02Y.0035</span></td><td>比亚迪</td><td>1,200</td><td>07-22</td><td>07-21</td><td><span class="sdot g"><i></i>按期</span></td><td>—</td><td class="gap zero">0</td><td class="miss">净额后转绿 · 齐套</td></tr>
-              <tr data-s="a"><td><span class="code">S05Y.0301</span></td><td>上汽</td><td>640</td><td>07-28</td><td>07-27</td><td><span class="sdot a"><i></i>需备料</span></td><td><span class="code">R01A.0012</span></td><td class="gap">-800</td><td class="miss">多层展开 · 半成品待投</td></tr>
-              <tr data-s="g"><td><span class="code">S07Y.0209</span></td><td>理想</td><td>300</td><td>07-30</td><td>07-25</td><td><span class="sdot g"><i></i>按期</span></td><td>—</td><td class="gap zero">0</td><td class="miss">齐套无忧</td></tr>
-              <tr data-s="y"><td><span class="code">S04Y.0155</span></td><td>比亚迪</td><td>900</td><td>07-23</td><td>07-23</td><td><span class="sdot y"><i></i>临界</span></td><td><span class="code">R02A.0044</span></td><td class="gap">-260</td><td class="miss">窗口紧 · 建议今日下单</td></tr>
-              <tr data-s="a"><td><span class="code">S02Y.0118</span></td><td>上汽</td><td>1,100</td><td>07-29</td><td>07-28</td><td><span class="sdot a"><i></i>需备料</span></td><td><span class="code">R05B.0072</span></td><td class="gap">-540</td><td class="miss">追料 L/T 内可保</td></tr>
-              <tr data-s="r"><td><span class="code">S09Y.0012</span></td><td>比亚迪</td><td>450</td><td>07-18</td><td>07-24</td><td><span class="sdot r"><i></i>真延期</span></td><td><span class="code">R07D.0031</span></td><td class="gap">-1,900</td><td class="miss">无在途 · 需紧急寻源</td></tr>
-            </tbody>
-          </table>
-          </div>
-          <div class="note">样例数据（占位）——接真实数据后由 SC8 引擎输出替换：齐套/缺料 = kit_engine 多层 BOM 递归；承诺交期 = SC8；库存 = 六仓可用量净额；替代料等价合并 = C-1。数据源 U9C + 携客云 SRM，读只留痕、写走 L2 人工确认。</div>
+          <div class="phead"><h3><span class="bar"></span>说明</h3></div>
+          <div class="alert"><span class="sev g"></span><div class="am"><b>本页此前的静态样例表已下线</b> — 曾长期展示未接真实数据的占位样例行（如成品 S07Y.0137/S02Y.0087、瓶颈料号 R02A.0019/R03C.0210 等均为虚构值），与上方真实看板口径/标签（如"待催" vs 样例的"需备料"）不一致，造成过混淆（2026-07-23 姚祖怡反馈核实）。现改为直接链接真实服务，不再维护重复视图。</div></div>
+          <div class="alert"><span class="sev a"></span><div class="am"><b>反馈入口</b> — 灰度试用发现的错例/建议 → 企微机器人私信（姚祖怡）；每周固化一次错例报送节奏。</div></div>
         </div>
       </section>
 
@@ -611,18 +586,6 @@
   if(_burger){ _burger.addEventListener('click',function(){ openDrawer(!_sb.classList.contains('open')); }); }
   if(_scrim){ _scrim.addEventListener('click',function(){ openDrawer(false); }); }
   document.querySelectorAll('.nav[data-view]').forEach(function(n){ n.addEventListener('click',function(){ openDrawer(false); }); });
-
-  // ---- board filter ----
-  document.querySelectorAll('.chip[data-f]').forEach(function(ch){
-    ch.addEventListener('click',function(){
-      document.querySelectorAll('.chip[data-f]').forEach(function(x){x.classList.remove('on')});
-      ch.classList.add('on');
-      var f=ch.dataset.f;
-      document.querySelectorAll('#boardBody tr').forEach(function(tr){
-        tr.style.display = (f==='all'||tr.dataset.s===f)?'':'none';
-      });
-    });
-  });
 
   // ---- domain filters (finance / quality) ----
   function bindFilter(sel, bodyId, attr){
