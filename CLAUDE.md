@@ -114,6 +114,20 @@
 - **首批收割（地基）**：`src/data/{xky_srm_connector, zp_connector, u9c_connector, connector, csv_connector}.py` + `src/{crm_notifier}.py` + `src/notifiers/wecom.py` → `shared_tools/`，统一接 `audit`，预留 `data_isolation_layer`。
 - 收割时**必补两块**（supplychain 当初没做）：① 审计统一进平台 `audit`；② OEM 隔离接口预留。
 
+## 6.1 第三方库/API 文档查询工具
+
+**集成新第三方库/API 前，先用 context7（Upstash Context7 MCP server）查最新文档。**
+
+本项目依赖多个企业系统与第三方库（U9C / SRM / 企微 API / Chroma 向量库 / OCR 库等），版本更新频繁，官方文档可能比 AI 训练数据更新得更快。context7 可以拉取最新的 API 文档与代码示例，避免使用过时的调用方式或 breaking change。使用场景包括：
+- 集成新 API 端点时查最新文档 + 官方代码示例
+- 版本升级时快速定位 breaking changes（如 U9C、SRM）
+- 选型对比（如 OCR 库版本性能基准）
+- Chroma 向量库真正集成时查最新初始化方法与最佳实践
+
+**使用方式**：已全局启用（`enabledPlugins:context7@claude-plugins-official`），在 Claude Code 对话框直接调用即可，如："context7，给我最新的 U9C Stock/Query API 文档"、"context7，对比 Tesseract vs PaddleOCR 最新版本"。
+
+（于 2026-07-24 添加）
+
 ## 7. 合规红线（建造时守住，IATF 16949 / ISO 26262）
 
 1. **先 mock/脱敏跑通逻辑，再切真实库。**
