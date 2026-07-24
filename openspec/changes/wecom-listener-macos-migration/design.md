@@ -1,16 +1,16 @@
-# 企微智能机器人双向通道服务 · 常驻监听迁移 Mac mini · Design
+# 企微智能机器人双向通道服务 · 常驻监听迁移 Mac Studio · Design
 
 ## Context
 
 - 现状：常驻监听服务实际运行在长驻 worktree `.claude\worktrees\wecom-service-home`（checkout `ops/wecom-service-home` 分支），由 Windows 计划任务 `ZhuopinAibotDevListener`（`AtLogOn`、`-MultipleInstances IgnoreNew`）拉起 `start-aibot-service-dev.ps1`（gitignore，本机文件，不入库）。该脚本自己拥有一个 while 循环，实现三级重启退避（60/300/900 秒，稳定运行满 1200 秒后档位归零）+ 双重孤儿进程清理（`python.exe` 子进程 + 脚本自身的残留副本）+ `Start-Transcript` 日志。
 - 核心业务代码 `aibot_service/`（`connection.py`/`intake.py`/`delivery.py`/`gates.py`/`group_notify.py`/`whitelist.py`/`gap_alert.py`/`queue_appender.py`/`queue_reconcile_sentinel.py` 等）与 `scripts/run_aibot_service.py` 经代码核实（grep 全目录）**不含任何 Windows 专属依赖**——路径经 `pathlib.Path`/环境变量注入，无 `subprocess`/`ctypes`/`win32*` 调用；唯一与 Windows 相关的是**注释文字**里提到部署层 `.ps1` 脚本名，非实际代码耦合。`pyproject.toml` 依赖仅 `zhuopin_platform[aibot]`（引入 `wecom-aibot-python-sdk`）+ `pyyaml`，均为 PyPI 通用包，未见平台限定 marker。
 - **队列追加的真实现状（与总线草案的假设有出入，需先澄清）**：`queue_appender.append_pending_task()` 目前**只做本地文件的读-改-写**（乐观并发重试：写入前重读校验磁盘未变，变了则重新计算插入点/编号再试），**从不执行任何 git 操作**。追加后的队列文件要进入 GitHub master，现状**全靠人工/CC 事后手动 `git add/commit/push`**（真实事故：队列 #69/#70，07-21 一条 `queue_appended` 审计事件成功但对应行从未出现在任何 git 提交里，根因是人工/CC 会话的整段改写在追加之后、提交之前的窗口期静默覆盖了它）。总线草案 D1 里"bot 直接 commit+push"是一个**尚不存在、需要新建**的能力，不是"迁移一下就能用"的既有功能。
-- **协议〇.7 编辑锁的真实作用范围**：`0-学习与工具/工具-共享文档编辑锁.py` 在队列 #89 修复后，`REPO_ROOT` 改用 `git rev-parse --git-common-dir` 解析——这能覆盖"同一个 `.git` 对象库下的多个 worktree"（本仓库当前 6 个物理 checkout 共享同一个 `.git`），但 **Mac mini 上按本方案 §三 D3 是一个独立的 `git clone`（有自己独立的 `.git`），物理上没有任何文件系统路径能与 Windows 侧共享**——协议〇.7 的本地锁文件**结构性地看不见、也管不到 Mac 侧的写入**，反之亦然。这是 D1 必须正视的事实，而不是"设计一下兼容性"就能绕过的细节：跨机器的冲突防护**只能**发生在 git 层（fetch/push 语义），不能指望复用这把本地文件锁。
+- **协议〇.7 编辑锁的真实作用范围**：`0-学习与工具/工具-共享文档编辑锁.py` 在队列 #89 修复后，`REPO_ROOT` 改用 `git rev-parse --git-common-dir` 解析——这能覆盖"同一个 `.git` 对象库下的多个 worktree"（本仓库当前 6 个物理 checkout 共享同一个 `.git`），但 **Mac Studio 上按本方案 §三 D3 是一个独立的 `git clone`（有自己独立的 `.git`），物理上没有任何文件系统路径能与 Windows 侧共享**——协议〇.7 的本地锁文件**结构性地看不见、也管不到 Mac 侧的写入**，反之亦然。这是 D1 必须正视的事实，而不是"设计一下兼容性"就能绕过的细节：跨机器的冲突防护**只能**发生在 git 层（fetch/push 语义），不能指望复用这把本地文件锁。
 
 ## Goals / Non-Goals
 
 **Goals**：
-- 把常驻监听进程迁到 Mac mini，核心业务代码零改动。
+- 把常驻监听进程迁到 Mac Studio，核心业务代码零改动。
 - 新增"队列本地追加 → 自动同步到 GitHub master"的能力，替代现状的人工事后提交，且经得起"Mac 与 Windows 侧几乎同时都在改队列文件"的真实并发场景（历史上已发生过 3 次同类事故：#69/#70 队列静默丢行、07-23 两次编号撞号）。
 - launchd 常驻自愈达到与现状 Windows 三级退避同等（或更好）的可靠性，且不引入 Windows 侧已踩过的两个部署层坑（计划任务窗口隐藏不可靠、孤儿进程未级联清理）。
 - 切换过程任何时刻只有一个实例连接企微（07-19 双实例重复通报教训不可重演）。
@@ -68,12 +68,12 @@
 ### D4. 常驻与自愈：launchd LaunchDaemon（非 LaunchAgent）+ 退避逻辑保留在 shell 脚本内，不下放给 launchd
 
 **决策**：
-- **LaunchDaemon（`/Library/LaunchDaemons/`，系统级）而非 LaunchAgent（`~/Library/LaunchAgents/`，用户级）**。理由：LaunchAgent 只在对应用户**登录 GUI 会话后**才启动，Mac mini 意外重启（断电恢复/系统更新）后若无人到场手动登录，服务就不会自动起来——这与本仓库自己踩过的真实事故（`CommandCenterWeb` 用 `AtLogOn`+交互式登录注册，会话"已断开"状态下无法拉起新进程，2026-07-23 已修复改为 `SYSTEM+AtStartup`，详见根 CLAUDE.md 当前进度段）是**同一类"绑定登录会话"的坑**，Mac 版应直接吸取教训选 LaunchDaemon，不必重踩一次。
+- **LaunchDaemon（`/Library/LaunchDaemons/`，系统级）而非 LaunchAgent（`~/Library/LaunchAgents/`，用户级）**。理由：LaunchAgent 只在对应用户**登录 GUI 会话后**才启动，Mac Studio 意外重启（断电恢复/系统更新）后若无人到场手动登录，服务就不会自动起来——这与本仓库自己踩过的真实事故（`CommandCenterWeb` 用 `AtLogOn`+交互式登录注册，会话"已断开"状态下无法拉起新进程，2026-07-23 已修复改为 `SYSTEM+AtStartup`，详见根 CLAUDE.md 当前进度段）是**同一类"绑定登录会话"的坑**，Mac 版应直接吸取教训选 LaunchDaemon，不必重踩一次。
 - **三级退避（60/300/900 秒）+ 稳定运行 1200 秒归零 + 双重孤儿进程清理，逻辑完整搬进一个新的 bash 包装脚本**（如 `start-aibot-service-mac.sh`），launchd 本身只负责"开机/崩溃后拉起这个包装脚本"（`RunAtLoad=true` + `KeepAlive`），**不**依赖 launchd 自带的 `ThrottleInterval`/崩溃节流去实现分级退避——launchd 原生节流是固定极短间隔（约 10 秒量级），无法表达"1 分钟→5 分钟→15 分钟"的分级语义，必须把这段状态机逻辑留在脚本自己的 while 循环里（与 Windows 版本架构一致：Windows 计划任务本身也不管退避，退避全在 `.ps1` 内部）。
 - 孤儿进程清理的 macOS 等价：`pgrep -f run_aibot_service.py`（子进程）+ `pgrep -f start-aibot-service-mac.sh`（排除 `$$` 自身，即外层脚本残留副本），`kill`/必要时 `kill -9`——与 Windows 版 `Get-CimInstance Win32_Process` 按命令行匹配的逻辑一一对应。
 - **`run-hidden.vbs` 不需要移植**：该文件是为解决"Windows 计划任务以交互式登录方式运行 PowerShell 时会弹出可见窗口、误关窗口即杀掉整个进程树"这个 Windows 特有问题而生的（`WScript.Shell.Run(...,0,...)` 强制隐藏）。launchd daemon/agent 本身不创建任何终端窗口，这整类 bug 在 macOS 上不存在，少一个组件、少一个潜在故障点。
 - 日志：沿用 Windows 版的"包装脚本自己写日期戳文件名日志"惯例（如 `reports/service-dev-YYYYMMDD.log`），而不是改用 launchd plist 的 `StandardOutPath`/`StandardErrorPath` 静态单文件——保持与现有排障习惯/工具一致，日志目录仍是 gitignore 覆盖的 `reports/`。
-- 防休眠：Mac mini 是常插电桌面设备（不像笔记本要顾虑电池），直接在系统设置里关闭"电源适配器供电时进入睡眠"，不额外跑 `caffeinate` 包装进程（少一个可能被遗忘/崩溃的活动部件）。
+- 防休眠：Mac Studio 是常插电桌面设备（不像笔记本要顾虑电池），直接在系统设置里关闭"电源适配器供电时进入睡眠"，不额外跑 `caffeinate` 包装进程（少一个可能被遗忘/崩溃的活动部件）。
 
 ### D5. 切换与防双实例：并行测试阶段先验证"同 BotID 双连接"的真实行为，不预设"能安全并行"
 
@@ -126,11 +126,15 @@
 
 **回滚**：任意阶段异常，`schtasks /Enable` + `/Run` 重新拉起 Windows 冷备（预期 5 分钟内完成，与 proposal.md 晋档条件一致）；Mac 侧 `launchctl unload` 停止 LaunchDaemon。回滚不涉及数据丢失风险——`7-外部文档`/队列文件的权威副本切换前后始终是同一个 GitHub 仓库 + Mac 本地磁盘，不存在"数据只存在于某一侧"的单点。
 
-## Open Questions（需 Paul 拍板，非本设计可自行决定）
+## Open Questions（Paul 2026-07-24 拍板落字，六项均已决定）
 
-1. **D2 凭据方案确认**：接受"Paul 名下细粒度 PAT + 本地 commit 身份改 bot 名义"，还是坚持要新建独立 GitHub 账号？
-2. **D5 并行测试路径**：接受"先用独立测试 BotID 验证 Mac 侧代码、不用生产凭据做未经验证的双活测试"，还是要求先做一次真实的短窗口生产凭据双连接探测？
-3. **Mac mini 断电恢复自启**：是否已在 BIOS/固件层设置"来电自动开机"？launchd 只能保证"系统启动后服务自启"，管不到"断电后系统本身要不要自己开机"这一层，需 Paul/IT 现场确认。
-4. **IT 备案**：此设备（办公室 Mac mini，7×24 跑企业内部服务）是否需要走 IT 资产登记流程？
-5. **队列同步失败告警收件人**：沿用私信 Paul 本人，还是同时抄送孙涛（决策代理）？
-6. **冷备触发阈值**：Mac 侧出现何种故障（如中断多久 / 连续几次自愈失败）时，Paul 认为应该临时重新启用 Windows 冷备，而不是等 Mac 自己恢复？
+1. **D2 凭据方案确认**：✅ **采纳"Paul 名下细粒度 PAT + 本地 commit 身份改 bot 名义"**（design 推荐方案），不新建独立 GitHub 账号。
+2. **D5 并行测试路径**：✅ **采纳"先用独立测试 BotID 验证 Mac 侧代码、不用生产凭据做未经验证的双活测试"**（design 推荐方案 a）。
+3. **Mac Studio 断电恢复自启**：⏳ **尚未设置，待办**——Mac 环境搭建阶段（tasks.md §1）现场处理，在系统设置里开启"供电恢复后自动开机"，与 FileVault/git clone 等其他环境就位动作一并完成。
+4. **IT 备案**：✅ **不需要**走正式 IT 资产登记流程（内部工具性质）。
+5. **队列同步失败告警收件人**：✅ **只私信 Paul 本人**（沿用现状 `gap_alert` 兜底通道惯例，不额外抄送孙涛）。
+6. **冷备触发阈值**：✅ **连续 3 次自愈全部失败**（对应部署层三级退避 60/300/900 秒三档全部耗尽仍未恢复）时，临时重新启用 Windows 冷备；写入 tasks.md §7.3 紧急启用 SOP。
+
+### 第 7 条：硬件勘误（Paul 2026-07-24）
+
+办公室常驻主机实际是 **Mac Studio**，非 Mac mini——本文档及 proposal.md/tasks.md 中此前所有"Mac mini"字样已订正为"Mac Studio"，不影响任何技术决策（D1-D6 均与具体机型无关，仅 D4 防休眠段落提及"常插电桌面设备"这一物理特性，Mac Studio 同样满足）。

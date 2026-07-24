@@ -44,6 +44,7 @@ class IntakeResult:
     department: str
     matched: bool
     queue_row: str
+    queue_append_kwargs: dict
 
 
 def _safe_filename_component(text: str, max_len: int = 60) -> str:
@@ -198,14 +199,17 @@ async def archive_inbound_message(
     # 指针在不同机器/沙箱环境下仍然有意义）——2026-07-13 真实联调发现原实现
     # 把 target_path 的完整绝对路径写进了正式队列文件，已修复。
     relative_pointer = Path(external_docs_root.name) / department / filename
-    queue_row = append_pending_task(
-        queue_path,
+    # queue_append_kwargs 原样保留本次调用参数——D1（design.md，Mac 迁移变更包）
+    # 的 git 层同步在推送冲突时需要用这份原始参数重新调用 append_pending_task
+    # 对最新内容重算插入点/编号，而不是重放这次已经算好、可能已过期的行。
+    queue_append_kwargs = dict(
         description=task_desc,
         owner=owner,
         input_pointer=f"`{relative_pointer.as_posix()}`",
         expected_output="核实内容并按需处理；如需回灌口径按各域三步法走",
         date_str=date_str,
     )
+    queue_row = append_pending_task(queue_path, **queue_append_kwargs)
     audit.record(
         AuditEvent(
             scenario="wecom-aibot",
@@ -218,5 +222,9 @@ async def archive_inbound_message(
     )
 
     return IntakeResult(
-        archived_path=target_path, department=department, matched=matched, queue_row=queue_row
+        archived_path=target_path,
+        department=department,
+        matched=matched,
+        queue_row=queue_row,
+        queue_append_kwargs=queue_append_kwargs,
     )

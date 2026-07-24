@@ -14,12 +14,14 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import (
 )
 from zhuopin_platform.shared_tools.secrets import SecretsProvider
 
+from .constants import PAUL_USERID
 from .department_group_mapping import load_department_group_mapping
 from .department_mapping import load_department_mapping
 from .forwarding import forward_inbound_to_paul
 from .frame_parsing import parse_inbound_frame
 from .group_notify import notify_department_group
 from .intake import archive_inbound_message
+from .queue_git_sync import DEFAULT_BACKOFF_SECONDS, DEFAULT_MAX_RETRIES, sync_after_archive
 from .whitelist import is_whitelisted, NOT_ONBOARDED_REPLY
 
 BOTID_KEY = "WECOM_AIBOT_BOTID"
@@ -70,6 +72,13 @@ def build_connector(
     heartbeat_interval_ms: int = DEFAULT_HEARTBEAT_INTERVAL_MS,
     client_factory: Callable[..., AibotClientLike] = default_client_factory,
     on_fatal_disconnect: Optional[Callable[[], None]] = None,
+    repo_root: Optional[Path] = None,
+    pending_queue_appends_path: Optional[Path] = None,
+    queue_git_remote: str = "origin",
+    queue_git_branch: str = "master",
+    queue_sync_max_retries: int = DEFAULT_MAX_RETRIES,
+    queue_sync_backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
+    queue_sync_fallback_send: Optional[Callable[[str], None]] = None,
 ) -> AibotConnector:
     """构造已接好审计 + 归档分发的 `AibotConnector`；不建立实际连接（调用方
     另行 `await connector.connect()`）。凭据缺失时 `SecretsProvider` 抛
@@ -78,6 +87,10 @@ def build_connector(
     `on_fatal_disconnect`：SDK 重连预算耗尽（不可恢复）时调用，供调用方主动
     退出进程、交部署层重启脚本兜底（见 `UNRECOVERABLE_ERROR_MARKERS` 注释）。
     未传时该情形仅记审计、不触发额外动作（向后兼容旧调用方）。
+
+    `repo_root`：D1（design.md，Mac 迁移变更包）队列 git 同步所需的仓库根
+    目录——未传时（如测试、或未来某些部署场景不需要此能力）整条同步路径
+    直接跳过，不影响既有行为，向后兼容旧调用方。
     """
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
@@ -182,6 +195,36 @@ def build_connector(
                     error=str(exc),
                 )
             )
+
+        if archive_result is not None and repo_root is not None:
+            try:
+                await sync_after_archive(
+                    repo_root=repo_root,
+                    queue_path=queue_path,
+                    append_kwargs=archive_result.queue_append_kwargs,
+                    audit=audit,
+                    connector=connector_holder.get("connector"),
+                    recipient=PAUL_USERID,
+                    fallback_send=queue_sync_fallback_send,
+                    pending_path=pending_queue_appends_path,
+                    evaluator=evaluator,
+                    remote=queue_git_remote,
+                    branch=queue_git_branch,
+                    max_retries=queue_sync_max_retries,
+                    backoff_seconds=queue_sync_backoff_seconds,
+                )
+            except Exception as exc:  # noqa: BLE001 —— sync_after_archive 本身不抛，这里是防御性兜底
+                audit.record(
+                    AuditEvent(
+                        scenario="wecom-aibot",
+                        action="queue_sync_dispatch_failed",
+                        evaluator=evaluator,
+                        automation_level="L1",
+                        decision={},
+                        data_sources={"sender": message.sender},
+                        error=str(exc),
+                    )
+                )
 
         if archive_result is not None:
             try:

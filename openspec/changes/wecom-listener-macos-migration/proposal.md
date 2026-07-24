@@ -1,12 +1,12 @@
-# 企微智能机器人双向通道服务 · 常驻监听迁移 Mac mini Proposal
+# 企微智能机器人双向通道服务 · 常驻监听迁移 Mac Studio Proposal
 
 ## Why
 
-企微智能机器人的常驻监听服务目前跑在 Paul 的 Windows 笔记本上（Windows 计划任务 `ZhuopinAibotDevListener`）。企微 aibot 协议**无离线消息补推**——笔记本合盖（出差/会议/下班带走）即等于监听中断，中断期间的专员回件永久丢失、无法事后找回（07-16 已实证：24h49m 停机丢了唐燕萍一份文件）。Paul 拍板把收件口迁到**办公室长开的 Mac mini**（7×24 物理常驻，不随人走），从物理层面根治"合盖=丢件"，笔记本降级回纯开发客户端。
+企微智能机器人的常驻监听服务目前跑在 Paul 的 Windows 笔记本上（Windows 计划任务 `ZhuopinAibotDevListener`）。企微 aibot 协议**无离线消息补推**——笔记本合盖（出差/会议/下班带走）即等于监听中断，中断期间的专员回件永久丢失、无法事后找回（07-16 已实证：24h49m 停机丢了唐燕萍一份文件）。Paul 拍板把收件口迁到**办公室长开的 Mac Studio**（7×24 物理常驻，不随人走），从物理层面根治"合盖=丢件"，笔记本降级回纯开发客户端。
 
 ## What Changes
 
-- 企微智能机器人常驻监听服务（`5-平台底座/wecom-aibot-service/`）的**运行主机**从 Windows 笔记本迁到 Mac mini：核心 `aibot_service/` 业务代码（连接/归档/推送/门禁/群通报/对账哨兵）不改一行，只重建 Windows 专属的外壳（计划任务→launchd、`.ps1`/`.vbs`→shell 脚本）。
+- 企微智能机器人常驻监听服务（`5-平台底座/wecom-aibot-service/`）的**运行主机**从 Windows 笔记本迁到 Mac Studio：核心 `aibot_service/` 业务代码（连接/归档/推送/门禁/群通报/对账哨兵）不改一行，只重建 Windows 专属的外壳（计划任务→launchd、`.ps1`/`.vbs`→shell 脚本）。
 - **新增**：队列追加行（`queue_appender.py` 写入本地 `跨桌任务队列.md`）之后，自动 `git commit` + `git push` 到 GitHub master——此前这一步全靠人工/CC 事后手动提交，Mac 迁移后收件口离开了 Paul 日常操作的那台机器，若仍靠人工推送，队列追加会长期停留在 Mac 本地不为人知。新增 git 层面的乐观并发重试（fetch→重算插入点→重推），推送连续失败降级为本地 `pending_queue_appends.jsonl` + 私信告警 Paul，不阻塞归档主流程。
 - **新增**：Mac↔笔记本单向数据同步——Mac 是归档原件（`7-外部文档/`，gitignore 敏感层）的收件真身，笔记本回 LAN 时经 SSH 单向拉平一份本地备份；`跨桌任务队列.md`/代码等已入 git 的内容照常靠 GitHub 双向同步，不新增机制。
 - **新增**：Mac 端 launchd 常驻自愈（等价 Windows 三级重启退避 1/5/15 分钟 + 孤儿进程清理 + 单实例保护 + 日志留痕）。
@@ -35,7 +35,7 @@
 
 ## 验收与晋档条件（强制，四档口径）
 
-- **本变更包交付后场景所处档位**：**档3（内部服务）不变**——本变更是同一档位内的部署主机迁移（Windows 笔记本→Mac mini 常驻），不涉及对客交付，档位定义与既有 `wecom-aibot-channel` 一致；`wecom-queue-git-sync` 作为新增能力首次落地即验证到"真实数据跑通"（档2），随迁移一并进入档3常驻运行。
+- **本变更包交付后场景所处档位**：**档3（内部服务）不变**——本变更是同一档位内的部署主机迁移（Windows 笔记本→Mac Studio 常驻），不涉及对客交付，档位定义与既有 `wecom-aibot-channel` 一致；`wecom-queue-git-sync` 作为新增能力首次落地即验证到"真实数据跑通"（档2），随迁移一并进入档3常驻运行。
 - **晋下一档的条件**（本变更范围内不涉及晋档 4/对客，仅需满足本次切换验收）：
   1. Mac 端 E2E 五项验证全过（归档+队列追加+git 推送到 master+转发 Paul+群回执+哨兵沉默）。
   2. 满 48 小时观察期 `gap_alert` 零异常中断记录。
@@ -47,7 +47,7 @@
 ## Impact
 
 - **受影响代码**：仅新增/新建部署外壳与一个新模块（`aibot_service/queue_git_sync.py` 或等价命名，具体见 design.md D1），`aibot_service/` 现有业务模块零改动。
-- **受影响文档**：`5-平台底座/wecom-aibot-service/CLAUDE.md`（新增部署状态段）、根 `CLAUDE.md` §5 企微通道相关表述（Mac mini 取代笔记本作为收件口）、`跨桌任务队列.md`（登记本次批次+回填结果）。
+- **受影响文档**：`5-平台底座/wecom-aibot-service/CLAUDE.md`（新增部署状态段）、根 `CLAUDE.md` §5 企微通道相关表述（Mac Studio 取代笔记本作为收件口）、`跨桌任务队列.md`（登记本次批次+回填结果）。
 - **合规红线核对**：
   - mock 先行——git 推送冲突重试逻辑需先用真实 `git worktree`/临时仓库模拟并发场景验证（参照 `工具-共享文档编辑锁.py` 07-23 那次跨 worktree 回归测试的验证方法），再接真实凭据。
   - audit 留痕——不变，队列同步动作新增审计事件类型（如 `queue_sync_pushed`/`queue_sync_degraded`），全部走既有 `AuditLogger`。

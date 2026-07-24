@@ -92,10 +92,22 @@ def main() -> None:
         os.environ.get("WECOM_AIBOT_AUDIT_PATH", SERVICE_DIR / "reports" / "wecom_aibot_audit.jsonl")
     )
     audit_path.parent.mkdir(parents=True, exist_ok=True)
+    pending_queue_appends_path = SERVICE_DIR / "reports" / "pending_queue_appends.jsonl"
 
     secrets = EnvSecretsProvider()
     audit = AuditLogger.jsonl(audit_path)
     fatal_event = asyncio.Event()
+
+    # gap_alert 兜底通道——与本服务自身的智能机器人长连接是两套独立凭据/
+    # 通道（见 CLAUDE.md §3「告警兜底」），主通道恰好在自身连接故障期间
+    # 发送提醒失败时（2026-07-19 真实事故），改走这条不依赖同一条连接的
+    # webhook 通道。未配置则维持原样（只记录失败，不崩溃）。队列 git 同步
+    # 降级告警（D1）复用同一条通道。
+    webhook_url = os.environ.get("WECOM_WEBHOOK_URL")
+    fallback_send = (
+        (lambda text: wecom.send_text(webhook_url, f"⚠️ 企微智能机器人服务：{text}"))
+        if webhook_url else None
+    )
 
     connector = build_connector(
         secrets=secrets,
@@ -103,16 +115,9 @@ def main() -> None:
         external_docs_root=external_docs_root,
         queue_path=queue_path,
         on_fatal_disconnect=fatal_event.set,
-    )
-
-    # gap_alert 兜底通道——与本服务自身的智能机器人长连接是两套独立凭据/
-    # 通道（见 CLAUDE.md §3「告警兜底」），主通道恰好在自身连接故障期间
-    # 发送提醒失败时（2026-07-19 真实事故），改走这条不依赖同一条连接的
-    # webhook 通道。未配置则维持原样（只记录失败，不崩溃）。
-    webhook_url = os.environ.get("WECOM_WEBHOOK_URL")
-    fallback_send = (
-        (lambda text: wecom.send_text(webhook_url, f"⚠️ 企微智能机器人服务：{text}"))
-        if webhook_url else None
+        repo_root=REPO_ROOT,
+        pending_queue_appends_path=pending_queue_appends_path,
+        queue_sync_fallback_send=fallback_send,
     )
 
     asyncio.run(_run_forever(connector, audit_path, audit, fatal_event, fallback_send, queue_path))
