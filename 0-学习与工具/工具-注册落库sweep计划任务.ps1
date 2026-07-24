@@ -85,9 +85,13 @@ $psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$WRAPPER`""
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $psArgs -WorkingDirectory $REPO
 
 $triggerStartup = New-ScheduledTaskTrigger -AtStartup
+# 注意：[TimeSpan]::MaxValue 序列化成 "P99999999DT23H59M59S"，
+# Register-ScheduledTask 提交给任务计划程序服务时会被拒绝（XML duration
+# 超出服务端可接受范围，即便 New-ScheduledTaskTrigger 本身不报错——2026-07-24
+# 注册时实测踩过）。改用 10 年，对本项目 18 个月的时间尺度等效于"永久"。
 $triggerRepeat  = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Hours $INTERVAL_HOURS) `
-    -RepetitionDuration ([TimeSpan]::MaxValue)
+    -RepetitionDuration (New-TimeSpan -Days 3650)
 
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 30) `
