@@ -162,4 +162,5 @@
 - [x] 14.10 产出真实验证小结 `1-转型规划/FI2-round1真实验证报告-2026-07-23.md`（供财务专线/Paul/唐燕萍/姚祖怡复核，含数据来源人工誊录声明 + 两组未验证样本原因 + 价格超差溯源 + 下一步分工）
 - [x] 14.11 单测：`test_fi_connector.py`（+7）/`test_run_u9c_wiring.py`（新增 8）/`test_dump_u9c_snapshot.py`（新增 2）；全量回归零漂移——见 14.12 数字
 - [x] 14.12 场景 `CLAUDE.md` 更新状态段 + 队列 #78 回填结果——见场景 CLAUDE.md 2026-07-23 段；全量回归：平台 218 passed+1 skip（原 211，+7）、FI2 77 passed+7 skip（原 67+7，+10 net）
-- [ ] 14.13 OCR（腾讯云）自动直读集成——独立第二轮，不在本节范围，另行登记后续任务；同时登记两项后续：① `POChange/Query` 纳入 R7 价格比对基准评估（14.9 方法论发现）；② AP-2025120181 的 `Attachment/Download` 302 bug 需 IT（陈承）跟进
+- [ ] 14.13 OCR（腾讯云）自动直读集成——独立第二轮，不在本节范围，另行登记后续任务；同时登记一项后续：AP-2025120181 的 `Attachment/Download` 302 bug 需 IT（陈承）跟进
+- [x] 14.14 `POChange/Query` 纳入 R7 价格比对基准评估（14.9 方法论发现，队列 #80）——**✅ 已评估完成，结论=不采纳**（2026-07-28，CC，独立 worktree 只读真实探测，未改代码）：真实探测证实该端点①过滤参数名是 `PODocNo` 非 `docNo`，传错参数名不报错、静默返回全表（Total=2412），比此前 `AP/Query` 的报错型 bug 更危险；②是 PO 单据级而非行项级，无 `ItemCode`/单价字段，结构上给不出"某料品最新单价"；③决定性交叉验证——`ZPCG20220815002` 全部 25 行 `Purchase/Query.TotalMnyTC` 求和精确等于 `POChange/Query` 最后一条变更记录的"变更后"`TotalAmt`，证明 `Purchase/Query.FinalPriceTC`（`price_check.py` 现用基准）本就是当前生效价、并非"原始下单价"——**不存在需要修的基准过时 bug**，不实现方向 B 的接入方案。详见 design D18-f 补充段、`1-转型规划/session接力-财务域场景落地.md`【第十九轮】、队列 #80。
