@@ -85,3 +85,25 @@ def test_po_transit_explicit_off(monkeypatch):
 def test_po_transit_explicit_on(monkeypatch):
     monkeypatch.setenv("SC8_PO_TRANSIT", "on")
     assert config.po_transit_enabled() is True
+
+
+# ── config.bom_max_depth()（姚祖怡 07-26 V6 #9 根因修复，队列 #117）───────────
+
+def test_bom_max_depth_defaults_five(monkeypatch):
+    monkeypatch.delenv("SC8_BOM_MAX_DEPTH", raising=False)
+    assert config.bom_max_depth() == 5
+
+
+def test_bom_max_depth_explicit_override(monkeypatch):
+    monkeypatch.setenv("SC8_BOM_MAX_DEPTH", "3")
+    assert config.bom_max_depth() == 3
+
+
+def test_bom_max_depth_invalid_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("SC8_BOM_MAX_DEPTH", "not-a-number")
+    assert config.bom_max_depth() == 5
+
+
+def test_bom_max_depth_floor_is_one(monkeypatch):
+    monkeypatch.setenv("SC8_BOM_MAX_DEPTH", "0")
+    assert config.bom_max_depth() == 1

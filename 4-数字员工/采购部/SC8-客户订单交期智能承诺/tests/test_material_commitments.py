@@ -14,8 +14,8 @@ def _rec(material: str, vendor: str, items: list[dict]) -> dict:
     return {"productCode": material, "innerVendorCode": vendor, "itemList": items}
 
 
-def _item(board_date: str, answer_qty: int) -> dict:
-    return {"boardDate": board_date, "answerQty": answer_qty}
+def _item(board_date: str, answer_qty: int, *, cancel_flag=None) -> dict:
+    return {"boardDate": board_date, "answerQty": answer_qty, "cancelFlag": cancel_flag}
 
 
 class _FakeConnector:
@@ -44,6 +44,14 @@ def test_zero_answer_qty_excluded():
     board = [_rec("M1", "V1", [_item("2026-07-01", 0)])]
     result = _extract_board_commitments(board, materials=None)
     assert "M1" not in result
+
+
+def test_cancelled_plan_excluded_from_commitments():
+    """已作废的交付计划（cancelFlag 真值）不参与承诺累加（姚祖怡 07-26 V6 #7）。"""
+    board = [_rec("M1", "V1", [_item("2026-07-01", 30, cancel_flag=1),
+                              _item("2026-07-05", 40, cancel_flag=None)])]
+    result = _extract_board_commitments(board, materials=None)
+    assert result["M1"] == [(date(2026, 7, 5), 40.0)]
 
 
 def test_materials_filter_bounds_result():

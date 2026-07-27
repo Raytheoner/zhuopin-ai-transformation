@@ -248,8 +248,48 @@ def test_render_html_has_pagination_excel_and_legend():
     assert 'id="pageSize"' in html and 'value="10"' in html and 'value="200"' in html
     assert 'id="pagerTop"' in html and 'id="pagerBottom"' in html
     assert "function renderPager" in html
-    # ①导出 Excel
+    # ①导出 Excel（导出 CSV 已按姚祖怡 07-26 V6 #14 去除，只留 Excel 一个入口）
     assert 'id="xlsx"' in html and "导出 Excel" in html and "function exportExcel" in html
+    assert 'id="csv"' not in html and "导出 CSV" not in html
     # ④图例
     assert 'id="legendBtn"' in html and 'id="legendPanel"' in html
     assert "四色判据" in html
+
+
+# ── 姚祖怡 07-26 V6 回件批1修复批：措辞 + Excel 子件明细展开行 ──────────────────
+
+def test_render_html_uses_outstanding_po_wording_not_transit(monkeypatch):
+    """V6 #1：""在途""改""存在未交订单""四态描述 + #10 措辞""BOM 缺口物料清单""。"""
+    monkeypatch.setenv("SC8_NET_INVENTORY", "on")
+    so = _so(item="S1", qty=100)
+    bom = [_row("S1", "A", name="电容", qty_per_unit=1.0)]
+    rows = [assess_supply_risk(so, bom, [], today=TODAY,
+                               inventory={"A": 0}, purchase_orders={"A": 20})]
+    html = render_html(rows, today=TODAY)
+    assert "无未交订单无答交" in html and "有未交订单无答交" in html
+    assert "有未交订单已答交" in html and "无未交订单有答交" in html
+    assert "BOM 缺口物料清单" in html
+    assert "全部无法即时满足需求的子件" not in html
+
+
+def test_render_html_shows_project_demand_quantity():
+    """V6 #2：子件明细展示""本项目需求数量""（=预测订单数量×BOM子件用量，取自既有 cst.qty）。"""
+    so = _so(item="S1", qty=100)
+    bom = [_row("S1", "A", name="电容", qty_per_unit=3.0)]
+    rows = [assess_supply_risk(so, bom, [], today=TODAY, purchase_orders={"A": 20})]
+    d = row_to_dict(rows[0])
+    assert d["cst"][0]["qty"] == 300.0        # 100 × 3.0，与 _gross_need 同一份取值
+    html = render_html(rows, today=TODAY)
+    assert "本项目需求数量" in html
+
+
+def test_export_excel_expands_component_detail_rows():
+    """V6 导出-1（#13）：导出 Excel 在每个成品行下追加子件明细展开行（非仅成品行本身）。"""
+    so = _so(item="S1", qty=100)
+    bom = [_row("S1", "A", name="电容", qty_per_unit=1.0)]
+    rows = [assess_supply_risk(so, bom, [], today=TODAY, purchase_orders={"A": 20})]
+    html = render_html(rows, today=TODAY)
+    assert "function exportExcel" in html
+    assert "子件料号" in html and "子件品名" in html and "子件状态" in html
+    assert "本项目需求数量" in html and "未交订单量" in html and "答交日期" in html
+    assert "r.cst" in html   # 逐行遍历 cst 追加展开行的核心逻辑存在

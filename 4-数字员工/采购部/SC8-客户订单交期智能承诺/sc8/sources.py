@@ -73,12 +73,33 @@ def load_real_bom(product_ids: list[str], *, max_depth: int = 1,
     return rows
 
 
+def _is_cancelled_plan(item: dict) -> bool:
+    """一条供应计划排程明细（itemList 元素）是否已作废（姚祖怡 07-26 V6 回件 #7）。
+
+    姚反馈"SRM 系统供应计划排程详情中，所有'作废的订单'不取数"（她举了 4 个交付计划
+    编号为例，非通用规则——按 Paul 07-27 拍板，实现为"排除全部有效未作废计划"）。
+    真实看板 itemList 每项自带 `cancelFlag` 字段（2026-07 生产抓包实测确认存在此
+    字段，当前样本恒为 None，尚未观测到真实作废记录，但字段已在生产 schema
+    中）。请求层已传 `cancelFlag: 0`（见 XkySrmConnector.get_receive_board），
+    但不能保证服务端据此完全过滤——本函数在客户端做二次防御性过滤，双保险。
+
+    None/0/False/缺失/空串 → 有效（不过滤，向后兼容不含该字段的旧测试 fixture）；
+    其余真值（1/True/"1"/"true" 等）→ 已作废，跳过。
+    """
+    flag = item.get("cancelFlag")
+    if flag is None:
+        return False
+    if isinstance(flag, str):
+        return flag.strip().lower() not in ("", "0", "false", "no", "n")
+    return bool(flag)
+
+
 def _extract_board_po_map(board: list, materials: set[str] | None):
     """从供应计划看板原始记录中提取分层取数所需的两张映射。
 
     看板真实结构（2026-06-18 实测）：record{innerVendorCode, productCode,
     itemList[]{boardDate, poLineList[]{poErpNo}}}。**PO 字段是 `poErpNo`**
-    （非历史代码里找的 `pdrNo`）。
+    （非历史代码里找的 `pdrNo`）。已作废的排程明细（见 `_is_cancelled_plan`）不提取。
 
     Returns:
         (mat_pairs, mat_board)
@@ -93,6 +114,8 @@ def _extract_board_po_map(board: list, materials: set[str] | None):
             continue
         vendor = str(rec.get("innerVendorCode") or "")
         for item in (rec.get("itemList") or []):
+            if _is_cancelled_plan(item):
+                continue
             bdate = ""
             raw_bd = item.get("boardDate")
             if raw_bd is not None:
@@ -116,7 +139,8 @@ def _extract_board_commitments(
     与 `_extract_board_po_map` 不同：本函数**不收窄成"最早一条"**，保留每条
     `answerQty > 0` 的记录，供 `sc8.period_match.match_period_cumulative_supply`
     逐笔累加（现状 `load_srm_deliveries` 硬编码 `qty_committed=0`，本函数是
-    B2 需要的真实数量数据管线）。`answerQty <= 0`（未答交）不产生记录。
+    B2 需要的真实数量数据管线）。`answerQty <= 0`（未答交）不产生记录；
+    已作废的排程明细（见 `_is_cancelled_plan`）同样不产生记录。
     """
     out: dict[str, list[tuple[date, float]]] = {}
     for rec in board:
@@ -124,6 +148,8 @@ def _extract_board_commitments(
         if not material or (materials is not None and material not in materials):
             continue
         for item in (rec.get("itemList") or []):
+            if _is_cancelled_plan(item):
+                continue
             answer_qty = int(item.get("answerQty") or 0)
             if answer_qty <= 0:
                 continue

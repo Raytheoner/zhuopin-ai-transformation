@@ -63,6 +63,25 @@ def test_compute_snapshot_structure(monkeypatch):
     assert snap.param_version
 
 
+def test_compute_snapshot_resolves_leaf_components_not_semi_finished(monkeypatch):
+    """姚祖怡 07-26 V6 #9 根因修复：BOM 含半成品中间层时，components（驱动 SRM/
+    库存/PO 在途查询范围）应解析为真正叶子件，不应把半成品自身当作待查子件——
+    半成品是自制件，从无供应商承诺/采购在途记录，查它毫无意义。"""
+    bom = [
+        BomRow(product_id="RED", component_id="SEMI", component_name="半成品",
+              level=1, qty_per_unit=1.0, loss_rate=0.0, unit="PCS"),
+        BomRow(product_id="SEMI", component_id="C1", component_name="原材料",
+              level=2, qty_per_unit=2.0, loss_rate=0.0, unit="PCS"),
+    ]
+    srm = [SrmDeliveryOrder(delivery_id="SRM-C1", demand_id="", supplier_id="",
+                            material_id="C1", qty_committed=0,
+                            committed_date="2026-11-30", status="confirmed")]
+    _patch_sources(monkeypatch, orders=[_orders()[0]], bom=bom, srm=srm)
+
+    snap = compute_snapshot(today=TODAY, status="2")
+    assert snap.components == 1   # 只有叶子件 C1，中间节点 SEMI 不计入
+
+
 def test_compute_snapshot_fail_loud(monkeypatch):
     """real 源不可达 → 异常上抛（不吞、不回退 mock）。"""
     def _boom(**kw):

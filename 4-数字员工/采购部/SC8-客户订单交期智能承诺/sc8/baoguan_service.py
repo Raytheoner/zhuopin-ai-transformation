@@ -73,10 +73,16 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
     # ① 真实成品保供需求（FO 不可达 → fail-loud + 内部运维告警，不回退 mock）
     orders = load_real_orders(api_base=fo_base, audit=trace,
                               ops_webhook_url=ops_hook, status=status)
-    # ② 真实 BOM（成品 → 直接子件）
+    # ② 真实 BOM（成品 → 全部叶子件，多层递归——姚祖怡 07-26 V6 #9 根因修复：
+    #    max_depth 此前恒为 1，半成品自身子件从未拉取，见 config.bom_max_depth 注释）
     product_ids = list(dict.fromkeys(o.item_code for o in orders))
-    bom = load_real_bom(product_ids, max_depth=1, audit=trace)
-    components = {r.component_id for r in bom if r.level == 1}
+    bom = load_real_bom(product_ids, max_depth=config.bom_max_depth(), audit=trace)
+    # 叶子件 = 不作为任何行 product_id 出现的 component_id（与 kit_engine.explode_bom
+    # 判定"是否继续展开"用的 sub_assemblies 同一口径）——半成品/中间节点自身不应计入
+    # SRM 答交查询/库存核对范围（半成品是自制件，从无供应商承诺，也不应占位现货核对）。
+    # max_depth=1（旧行为）时天然只有一层，本口径与旧版 `r.level == 1` 结果一致，向后兼容。
+    sub_assembly_ids = {r.product_id for r in bom}
+    components = {r.component_id for r in bom if r.component_id not in sub_assembly_ids}
     # ③ 真实承诺交期（分层取数：/purchase/answer 权威 > 看板辅助 > 无答复兜底）
     #    cache_dir 给定 → firm 承诺 TTL 内复用，提速立即重算（未答交仍每次重查）
     srm_cache = str(Path(cache_dir) / "srm_answer_cache.json") if cache_dir else None

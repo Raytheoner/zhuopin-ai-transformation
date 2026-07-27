@@ -136,6 +136,29 @@ def test_yellow_band_1_to_3_days():
     assert row.risk == RISK_YELLOW
 
 
+def test_gap_days_arithmetic_matches_calendar_day_span():
+    """锁住 gap_days = (齐料日 − 出货日).days 的纯算术（姚祖怡 V6 #8"齐料晚+41天"
+    质疑，现网复核结论：现网不复现，算术本身正确——见 V6回件-分类裁决与现网复核
+    §3.1）。用她报告里的两组真实数字直接锁算法，防未来回归：
+      · S02Y.0135：出货 07-10 → 齐套 10-25，真实缺口 = 107 天（她引用的"104天"
+        实为不同齐套日 10-22 所致，非本函数计算错误）；
+      · 另一料号 S02Y.0035：出货 07-10 → 齐套 08-20，缺口 = 41 天（她看到的
+        "+41天"字样来自这一行，与 S02Y.0135 无关，高度疑为看串行）。
+    两组均为公历日期相减，与 Python date 减法结果比对，双重锁定不依赖人工心算。
+    """
+    so_a = _so(item="S02Y.0135", ship="2026-07-10")
+    row_a = assess_supply_risk(so_a, _bom("S02Y.0135", "R01B.0115"),
+                               [_srm("R01B.0115", "2026-10-25")], today=TODAY)
+    assert row_a.gap_days == 107
+    assert row_a.gap_days == (date(2026, 10, 25) - date(2026, 7, 10)).days
+
+    so_b = _so(item="S02Y.0035", ship="2026-07-10")
+    row_b = assess_supply_risk(so_b, _bom("S02Y.0035", "R02A.0019"),
+                               [_srm("R02A.0019", "2026-08-20")], today=TODAY)
+    assert row_b.gap_days == 41
+    assert row_b.gap_days == (date(2026, 8, 20) - date(2026, 7, 10)).days
+
+
 def test_build_dashboard_sorts_red_first():
     green = _so(item="GREEN", ship="2026-09-01")
     gap = _so(item="GAP", ship="2026-09-01")
@@ -176,7 +199,9 @@ def test_render_html_is_interactive_standalone_page():
     assert "子件承诺覆盖" in html                     # 卡片模板（JS）
     # 互动控件 + 移植自 supplychain 的能力都在
     assert 'id="cards"' in html and 'id="q"' in html and 'id="fbtns"' in html
-    assert "导出 CSV" in html and "按缺口天数" in html
+    # 姚祖怡 07-26 V6 #14：导出 CSV 与导出 Excel 重复，只保留导出 Excel
+    assert "导出 CSV" not in html and 'id="csv"' not in html
+    assert "导出 Excel" in html and "按缺口天数" in html
     # gap=102 进了数据载荷（max(06-10,06-22)+90 − 06-10 = 102，今天基准）
     assert '"gap": 102' in html
     # 客户名中的 < > 被转义为 \\u003c（防 </script> 破出 + 防注入），原始尖括号不出现

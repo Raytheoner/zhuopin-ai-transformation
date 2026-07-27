@@ -9,13 +9,14 @@ from __future__ import annotations
 from sc8.sources import _extract_board_po_map, load_srm_deliveries
 
 
-def _rec(material, vendor, board_date, pos):
+def _rec(material, vendor, board_date, pos, *, cancel_flag=None):
     """构造一条看板记录（pos = [poErpNo,...]）。"""
     return {
         "productCode": material,
         "innerVendorCode": vendor,
         "itemList": [{
             "boardDate": board_date,
+            "cancelFlag": cancel_flag,
             "poLineList": [{"poErpNo": p} for p in pos],
         }],
     }
@@ -86,6 +87,32 @@ def test_earliest_answer_date_when_multiple_pos():
     conn = _FakeConnector(board, confirmed={"ZPCG001": "2026-11-30", "ZPCG002": "2026-09-15"})
     out = load_srm_deliveries("real", connector=conn)
     assert out[0].committed_date == "2026-09-15"   # 取最早权威承诺
+
+
+def test_cancelled_plan_excluded():
+    """已作废的排程明细（cancelFlag 真值）不参与 PO 提取（姚祖怡 07-26 V6 #7）。"""
+    board = [_rec("R01.A", "ZB0022", "2026-07-01", ["ZPCG001"], cancel_flag=1)]
+    pairs, board_dates = _extract_board_po_map(board, materials=None)
+    assert pairs == {} and board_dates == {}
+
+
+def test_cancelled_plan_excluded_from_deliveries():
+    """作废计划整条从 load_srm_deliveries 结果中消失，不产生任何承诺记录。"""
+    board = [_rec("R01.A", "ZB0022", "2026-07-01", ["ZPCG001"], cancel_flag=True)]
+    conn = _FakeConnector(board, confirmed={"ZPCG001": "2026-11-30"})
+    out = load_srm_deliveries("real", connector=conn)
+    assert out == []
+
+
+def test_cancel_flag_falsy_values_kept():
+    """cancelFlag 为 None/0/False（现网现状）不受影响，向后兼容。"""
+    board = [
+        _rec("R01.A", "ZB0022", "2026-07-01", ["ZPCG001"], cancel_flag=None),
+        _rec("R02.B", "ZB0099", "2026-07-02", ["ZPCG002"], cancel_flag=0),
+    ]
+    pairs, _ = _extract_board_po_map(board, materials=None)
+    assert pairs["R01.A"] == {("ZPCG001", "ZB0022")}
+    assert pairs["R02.B"] == {("ZPCG002", "ZB0099")}
 
 
 def test_materials_filter_bounds_answer_calls():

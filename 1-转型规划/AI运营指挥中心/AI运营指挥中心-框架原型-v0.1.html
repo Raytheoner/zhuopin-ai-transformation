@@ -337,14 +337,26 @@
             <span class="wip-ribbon">● 已上线·真实入口 · 对内部同事开放试用（07-16）</span>
           </div>
           <h3 style="margin:0 0 8px;font-size:16px;color:var(--t0)">SC8 客户订单交期智能承诺 <span style="font-weight:400;color:var(--t1)">· 成品保供预警看板</span></h3>
-          <div class="note" style="margin-bottom:16px">FO 预测订单 + U9C BOM 多层递归展开 + 携客云 SRM 承诺交期，算出每个成品的齐料日 vs 计划出货日，四色分级（🔴 真延期 / 🟠 待催 / 🟡 偏紧 / 🟢 按期）+ 现货净额（六仓可用量）+ 替代料等价合并 + 部分齐套。功能：刷新/立即重算、按缺口天数或计划出货日排序、搜索料号/客户/瓶颈子件、导出 CSV、子件承诺覆盖率、最大确定延期、无答复子件明细（估算到货日）。数据源 U9C + 携客云 SRM，读只留痕，<b>对客外发全程关闭</b>。</div>
-          <a href="http://192.168.100.51:8091/" target="_blank" rel="noopener"
-             style="display:inline-block;background:var(--cyan);color:#04202a;font-weight:700;padding:10px 22px;border-radius:6px;text-decoration:none">打开保供预警看板 ›</a>
-          <span style="margin-left:14px;font-size:12px;color:var(--t1)">采购一线统一入口；案例处置中心 <a href="http://192.168.100.51:8091/cases" target="_blank" rel="noopener" style="color:var(--cyan)">/cases</a></span>
+          <div class="note" style="margin-bottom:16px">FO 预测订单 + U9C BOM 多层递归展开 + 携客云 SRM 承诺交期，算出每个成品的齐料日 vs 计划出货日，四色分级（🔴 真延期 / 🟠 待催 / 🟡 偏紧 / 🟢 按期）+ 现货净额（六仓可用量）+ 替代料等价合并 + 部分齐套。功能：刷新/立即重算、按缺口天数或计划出货日排序、搜索料号/客户/瓶颈子件、导出 Excel、子件承诺覆盖率、最大确定延期、无答复子件明细（估算到货日）。数据源 U9C + 携客云 SRM，读只留痕，<b>对客外发全程关闭</b>。</div>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <a href="http://192.168.100.51:8091/" target="_blank" rel="noopener"
+               style="display:inline-block;background:var(--cyan);color:#04202a;font-weight:700;padding:8px 18px;border-radius:6px;text-decoration:none;font-size:13px">↗ 新窗口打开</a>
+            <span style="font-size:12px;color:var(--t1)">案例处置中心 <a href="http://192.168.100.51:8091/cases" target="_blank" rel="noopener" style="color:var(--cyan)">/cases ›</a></span>
+          </div>
+        </div>
+        <!-- 姚祖怡 07-27 追加诉求（V6 #16）：采购域保供看板不要只放链接，要把老系统（:8091）
+             页面和内容直接内嵌显示在新系统（本命令中心 :8092）页面里，不通过跳转方式。
+             SC8 Flask 服务未设 X-Frame-Options/CSP frame-ancestors，可正常被同源/跨源 iframe
+             嵌入；页内相对路径链接（/cases 等）与导出 Excel（Blob+a.click()）均在 iframe 内
+             自身文档上下文执行，不受父页面影响，行为与独立打开一致（已用本地实例验证）。 -->
+        <div class="panel" style="padding:0;overflow:hidden">
+          <iframe src="http://192.168.100.51:8091/" title="成品保供预警看板（:8091 实时内嵌）"
+                  loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+                  style="width:100%;height:1400px;border:0;display:block;background:#fff;border-radius:var(--r)"></iframe>
         </div>
         <div class="panel">
           <div class="phead"><h3><span class="bar"></span>说明</h3></div>
-          <div class="alert"><span class="sev g"></span><div class="am"><b>本页此前的静态样例表已下线</b> — 曾长期展示未接真实数据的占位样例行（如成品 S07Y.0137/S02Y.0087、瓶颈料号 R02A.0019/R03C.0210 等均为虚构值），与上方真实看板口径/标签（如"待催" vs 样例的"需备料"）不一致，造成过混淆（2026-07-23 姚祖怡反馈核实）。现改为直接链接真实服务，不再维护重复视图。</div></div>
+          <div class="alert"><span class="sev g"></span><div class="am"><b>本页此前的静态样例表已下线</b> — 曾长期展示未接真实数据的占位样例行（如成品 S07Y.0137/S02Y.0087、瓶颈料号 R02A.0019/R03C.0210 等均为虚构值），与上方真实看板口径/标签（如"待催" vs 样例的"需备料"）不一致，造成过混淆（2026-07-23 姚祖怡反馈核实）。此前改为纯链接跳转，姚祖怡 07-27 反馈"没有实际页面、只是老系统链接"体验不对，现改为 iframe 直接内嵌 :8091 真实页面与内容，不再需要跳转。</div></div>
           <div class="alert"><span class="sev a"></span><div class="am"><b>反馈入口</b> — 灰度试用发现的错例/建议 → 企微机器人私信（姚祖怡）；每周固化一次错例报送节奏。</div></div>
         </div>
       </section>

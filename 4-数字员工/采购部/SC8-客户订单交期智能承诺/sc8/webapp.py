@@ -226,7 +226,6 @@ setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全�
         + '<select class="sel" id="pageSize" aria-label="每页行数"><option value="10">10 行/页</option>'
         + '<option value="50">50 行/页</option><option value="100">100 行/页</option>'
         + '<option value="200">200 行/页</option></select>\n'
-        + '<button class="btn" id="csv" type="button">导出 CSV</button>\n'
         + '<button class="btn" id="xlsx" type="button">导出 Excel</button>\n'
         + '<button class="btn" id="legendBtn" type="button">📖 图例</button></div>\n'
         + '<div class="legend" id="legendPanel">' + render_legend(config.default_params()) + '</div>\n'

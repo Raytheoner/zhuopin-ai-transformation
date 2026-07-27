@@ -172,9 +172,10 @@ def _substitute_groups(bom: list, product_id: str) -> dict[str, list[str]]:
 
     返回 {主料 component_id: [替代料 component_id, ...]}；无替代料关系的料位不出现在结果中。
 
-    仅扫描 `product_id` 直属行——与生产环境现状 `max_depth=1` 一致（BOM 仅取直接子件，
-    未递归取半成品自身的替代料关系）。若未来接入更深层 BOM 取数，半成品自身的替代料
-    分组需要对其自身 product_id 再调一次本函数，是独立后续任务。
+    仅扫描 `product_id` 直属行——本函数只关心"这个成品自己的直接子件里谁跟谁互为
+    替代料"，与 BOM 取数深度（`config.bom_max_depth`，姚祖怡 07-26 V6 #9 后已提高到
+    多层）无关。半成品自身的替代料关系（若半成品自己的子件里也有替代料）需要对其
+    自身 product_id 再调一次本函数，未见真实需求前是独立后续任务。
     """
     by_sequence: dict[str, list] = {}
     for row in bom:
@@ -588,7 +589,7 @@ def render_markdown(rows: list[BaoguanRow], *, today: date,
     return "\n".join(out)
 
 
-# ── HTML 看板渲染（独立可在浏览器打开、自包含交互看板：筛选/搜索/排序/导出 CSV/KPI 动画）──
+# ── HTML 看板渲染（独立可在浏览器打开、自包含交互看板：筛选/搜索/排序/导出 Excel/KPI 动画）──
 # 交互能力移植自 supplychain 预警中心的**纯前端部分**（后端类：实时预测/案例处置，不适用于静态文件，
 # 等价物 = 重跑 Python runner）。零 CDN 依赖、离线秒开。渲染层与数据/逻辑层解耦：拿到 Claude Design
 # 设计稿后，只替换 _HTML_STYLE + _HTML_JS + render_html 的结构，build_dashboard/assess 不动。
@@ -670,8 +671,11 @@ const esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
 const fmt=function(n){return Number(n).toLocaleString('en-US');};
 const RT={red:'真延期',gap:'待催',yel:'偏紧',grn:'按期'};
 const CLS={red:'danger',gap:'gapc',yel:'warn',grn:'ok'};
-const CST_LABEL={no_transit:'无在途',transit_unconfirmed:'有在途未答复',
-  transit_confirmed:'既有在途又有答交',confirmed_no_transit:'有答交无在途（异常，如实展示）'};
+// 姚祖怡 07-26 V6 回件 #1：""在途""表述有歧义，统一改为""存在未交订单""口径的四态描述
+// （无未交订单无答交/无未交订单有答交/有未交订单已答交/有未交订单无答交），均由既有
+// STATUS_* 字段派生，不改判定本身，仅重述文案。
+const CST_LABEL={no_transit:'无未交订单无答交',transit_unconfirmed:'有未交订单无答交',
+  transit_confirmed:'有未交订单已答交',confirmed_no_transit:'无未交订单有答交（异常，如实展示）'};
 const CST_CLS={no_transit:'no',transit_unconfirmed:'un',transit_confirmed:'co',confirmed_no_transit:'cn'};
 // 分页（②，功能批1）：10/50/100/200 行/页，初始 10 条/页（姚祖怡判据说明V2答复1明确要求）
 var state={f:'all',q:'',sort:'gap',page:1,pageSize:10};
@@ -703,20 +707,24 @@ function nfdText(r){
  return '<div class="nfd">⚠ 按无答复估算（非确定承诺）：'+items+'</div>';
 }
 
-// #12 子件供给状态全展示：无法从现货立即满足需求的子件，逐条列出实际状态。
+// #12 子件供给状态全展示：BOM 缺口物料清单（姚祖怡 07-26 V6 #10 措辞：原"全部无法
+// 即时满足需求的子件"表述不精准，改为此名），逐条列出实际状态。
 function componentStatusHtml(r){
  if(!r.cst||!r.cst.length)return'';
  var items=r.cst.map(function(s){
   var label=CST_LABEL[s.st]||s.st;
   var tagCls=CST_CLS[s.st]||'no';
   var extra='';
-  if(s.st==='transit_unconfirmed')extra='在途 '+fmt(s.tq)+' 件';
-  else if(s.st==='transit_confirmed')extra='在途 '+fmt(s.tq)+' 件 · 答交 '+esc(s.cd||'—');
+  if(s.st==='transit_unconfirmed')extra='未交订单 '+fmt(s.tq)+' 件';
+  else if(s.st==='transit_confirmed')extra='未交订单 '+fmt(s.tq)+' 件 · 答交 '+esc(s.cd||'—');
   else if(s.st==='confirmed_no_transit')extra='答交 '+esc(s.cd||'—');
+  // 姚祖怡 07-26 V6 #2：本项目需求数量＝ERP 预测订单数量×BOM 子件用量（s.qty，
+  // 与 assess_supply_risk 的 _gross_need 同一份取值，纯展示新增，非新计算）。
+  var need='本项目需求数量 '+fmt(s.qty);
   return '<div class="cst-item"><span class="mono">'+esc(s.id)+'</span>'+(s.name?'（'+esc(s.name)+'）':'')
-    +'<span class="cst-tag '+tagCls+'">'+label+'</span>'+(extra?'<span>'+extra+'</span>':'')+'</div>';
+    +'<span class="cst-tag '+tagCls+'">'+label+'</span><span>'+need+'</span>'+(extra?'<span>'+extra+'</span>':'')+'</div>';
  }).join('');
- return '<div class="cst"><div class="cov-h"><span>子件供给状态（全部无法即时满足需求的子件）</span></div>'+items+'</div>';
+ return '<div class="cst"><div class="cov-h"><span>BOM 缺口物料清单</span></div>'+items+'</div>';
 }
 
 function card(r){
@@ -803,26 +811,24 @@ function render(){
  renderPager(l.length,totalPages);
 }
 
-function exportCSV(){
- var l=view();
- var hdr=['成品','品名','客户','数量','计划出货日','齐料日','缺口天数','子件数','未答复','瓶颈','风险'];
- var lines=[hdr.join(',')];
- l.forEach(function(r){
-  var row=[r.id,r.name,r.cust,r.qty,r.ship,r.kit||'',r.gap==null?'':r.gap,r.comp,r.nf,r.bn,RT[r.risk]];
-  lines.push(row.map(function(x){return '"'+String(x).replace(/"/g,'""')+'"';}).join(','));
- });
- var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
- var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='保供预警_'+META.today+'.csv';
- document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);
-}
-
-// ①明细导出 Excel（功能批1）：零依赖，Excel 可直接打开的 HTML-table .xls 文件（同导出范围=当前筛选全集，非仅当前页）。
+// 明细导出 Excel（功能批1；姚祖怡 07-26 V6 #13 增强：每个成品行下追加子件明细展开行）：
+// 零依赖，Excel 可直接打开的 HTML-table .xls 文件（同导出范围=当前筛选全集，非仅当前页）。
+// 子件明细列（12-17）取自 r.cst（BOM 缺口物料清单），成品主行这几列留空、子件行前 11 列留空，
+// 用缩进"↳"标识层级——单表内直观区分"项目行"与其下的"问题物料明细行"（姚祖怡原话）。
 function exportExcel(){
  var l=view();
- var hdr=['成品','品名','客户','数量','计划出货日','齐料日','缺口天数','子件数','未答复','瓶颈','风险'];
- var rows=l.map(function(r){return [r.id,r.name,r.cust,r.qty,r.ship,r.kit||'',r.gap==null?'':r.gap,r.comp,r.nf,r.bn,RT[r.risk]];});
+ var hdr=['成品','品名','客户','数量','计划出货日','齐料日','缺口天数','子件数','未答复','瓶颈','风险',
+   '子件料号','子件品名','子件状态','本项目需求数量','未交订单量','答交日期'];
  var thead='<tr>'+hdr.map(function(h){return '<th>'+esc(h)+'</th>';}).join('')+'</tr>';
- var tbody=rows.map(function(row){return '<tr>'+row.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';}).join('');
+ var tbody='';
+ l.forEach(function(r){
+  var main=[r.id,r.name,r.cust,r.qty,r.ship,r.kit||'',r.gap==null?'':r.gap,r.comp,r.nf,r.bn,RT[r.risk],'','','','','',''];
+  tbody+='<tr>'+main.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';
+  (r.cst||[]).forEach(function(s){
+   var sub=['','','','','','','','','','','', '↳ '+s.id, s.name, CST_LABEL[s.st]||s.st, s.qty, s.tq, s.cd||''];
+   tbody+='<tr>'+sub.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';
+  });
+ });
  var html='﻿<html><head><meta charset="UTF-8"></head><body><table border="1">'+thead+tbody+'</table></body></html>';
  var blob=new Blob([html],{type:'application/vnd.ms-excel'});
  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='保供预警_'+META.today+'.xls';
@@ -832,7 +838,6 @@ function exportExcel(){
 renderKpis();renderFbtns();render();
 $('q').addEventListener('input',function(e){state.q=e.target.value;state.page=1;render();});
 $('sort').addEventListener('change',function(e){state.sort=e.target.value;state.page=1;render();});
-$('csv').addEventListener('click',exportCSV);
 var xb=$('xlsx');if(xb)xb.addEventListener('click',exportExcel);
 var ps=$('pageSize');if(ps)ps.addEventListener('change',function(e){state.pageSize=parseInt(e.target.value,10)||10;state.page=1;render();});
 // ④ 图例入界面：判据说明面板由 Python 侧 render_legend() 静态生成内容，此处只做展开/收起。
@@ -903,9 +908,12 @@ def render_legend(params: ForecastParams | None = None) -> str:
         '≥ 该子件毛需求视为已齐、退出待催/瓶颈判定；不参与四色判定基线本身。</p>'
         '<p><b>可齐套套数 / 需求日可齐套数量</b>：全部直接子件逐个 floor(可用量 ÷ 单机用量)，'
         '取最小值（木桶效应）；含替代料的料位按主料+替代料现货合计。"需求日可齐套"额外把'
-        '计划出货日前能到货的在途采购量计入可用量。两者均不改变四色判定，仅辅助参考。</p>'
-        '<p><b>子件供给状态</b>（无在途 / 有在途未答复 / 既有在途又有答交）：交叉采购订单'
-        '在途量与供应商答交记录得出，纯展示，不影响四色/齐套判定。</p>'
+        '计划出货日前能到货的未交订单量计入可用量。两者均不改变四色判定，仅辅助参考。</p>'
+        '<p><b>BOM 缺口物料清单</b>（原"子件供给状态"，姚祖怡 07-26 V6 回件统一措辞）：'
+        '"未交订单"指有审核通过但尚未关闭的采购订单，交叉未交订单与供应商答交记录得出'
+        '四态之一——无未交订单无答交 / 无未交订单有答交（异常，如实展示）/ 有未交订单已答交 / '
+        '有未交订单无答交，逐条附"本项目需求数量"（预测订单数量×BOM子件用量）；'
+        '纯展示，不影响四色/齐套判定。</p>'
     )
 
 
@@ -936,7 +944,6 @@ def render_html(rows: list[BaoguanRow], *, today: date,
         + '<select class="sel" id="pageSize" aria-label="每页行数"><option value="10">10 行/页</option>'
         + '<option value="50">50 行/页</option><option value="100">100 行/页</option>'
         + '<option value="200">200 行/页</option></select>\n'
-        + '<button class="btn" id="csv" type="button">导出 CSV</button>\n'
         + '<button class="btn" id="xlsx" type="button">导出 Excel</button>\n'
         + '<button class="btn" id="legendBtn" type="button">📖 图例</button></div>\n'
         + '<div class="legend" id="legendPanel">' + render_legend(p) + '</div>\n'

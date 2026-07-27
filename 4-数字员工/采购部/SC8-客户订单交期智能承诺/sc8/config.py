@@ -45,6 +45,28 @@ def net_inventory_enabled() -> bool:
     return os.environ.get("SC8_NET_INVENTORY", "off").strip().lower() in ("on", "1", "true", "yes")
 
 
+def bom_max_depth() -> int:
+    """真实 BOM 拉取递归深度：`SC8_BOM_MAX_DEPTH`（默认 5）。
+
+    根因修复（姚祖怡 07-26 V6 #9，"半成品未逐级展开"，队列 #117）：B1
+    （shortage-multilevel-bom-b1）只把**算法**（`kit_engine.explode_bom`）
+    改成无条件递归展开半成品至叶子件，但生产环境实际取数
+    `baoguan_service.compute_snapshot` 调用 `load_real_bom(..., max_depth=1)`
+    从未跟着提高——U9C BOM/Query 只拉了成品的直接子件一层，半成品自己的
+    子件行从未被拉取，`explode_bom` 因而拿不到数据可展开（半成品 component_id
+    从未出现为某行的 product_id，被误当叶子件）。现网 F02N.0226 瓶颈子件
+    停在半成品 S02Y.0198 即由此而来。本函数把 max_depth 提到 5（覆盖"成品→
+    半成品→原材料"及更深一层的余量），修复取数深度使 B1 算法名副其实。
+    可用 env 覆盖以应对真实 LAN 环境性能/限流问题（独立后续验证）。
+    """
+    raw = os.environ.get("SC8_BOM_MAX_DEPTH", "5").strip()
+    try:
+        depth = int(raw)
+    except ValueError:
+        depth = 5
+    return max(1, depth)
+
+
 def po_transit_enabled() -> bool:
     """PO 在途数据接入开关：`SC8_PO_TRANSIT=on|off`（**默认 ON**）。
 
