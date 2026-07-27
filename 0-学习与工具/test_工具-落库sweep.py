@@ -322,5 +322,142 @@ class IndexLockSelfHealTests(SweepTestBase):
         self.assertTrue(lock_file.exists(), "新鲜锁不应被清除——可能是真实并发 git 进程")
 
 
+class ClassifySectionTwoRowsUnitTests(unittest.TestCase):
+    """`_classify_section_two_rows` 纯函数级单测——2026-07-28 判据修复的核心回归点。
+
+    直接覆盖四种状态列写法（不经过完整 git 流程，快且精确）：
+    含✅的待处理写法（登记方误写，历史上曾致石沉大海）/ 纯待处理写法（推荐写法）/
+    已完成（不应被重跑）/ 模糊状态（既不含✅也不含待，应被识别但不处理）。
+    """
+
+    def test_classifies_four_status_forms(self):
+        rows = [
+            {"batch_id": "A-含✅误写", "status_cell": "✅ 已完成（本次登记，待 sweep 落库）"},
+            {"batch_id": "B-纯待处理", "status_cell": "待处理（登记，待 sweep 落库）"},
+            {"batch_id": "C-已完成", "status_cell": "**✅ 已完成**（sweep 自动落库 2026-07-27 00:00 UTC）"},
+            {"batch_id": "D-模糊状态", "status_cell": "内容已确认"},
+        ]
+        pending, ambiguous = sweep._classify_section_two_rows(rows)
+        self.assertEqual([r["batch_id"] for r in pending], ["A-含✅误写", "B-纯待处理"],
+                          "含✅但同时带'待'字样的误写，与纯'待'写法，均应判定为待处理")
+        self.assertEqual([r["batch_id"] for r in ambiguous], ["D-模糊状态"],
+                          "只有既不含✅也不含待的行才是模糊状态")
+        # C-已完成 既不在待处理也不在模糊状态里——正常略过，不告警。
+        all_ids = {r["batch_id"] for r in pending} | {r["batch_id"] for r in ambiguous}
+        self.assertNotIn("C-已完成", all_ids)
+
+
+class PendingCriteriaIntegrationTests(SweepTestBase):
+    """CLI 级端到端验证：四种状态形态在真实 git 流程里各自的下场。"""
+
+    def test_four_status_forms_processed_correctly_end_to_end(self):
+        self._init_and_push(rows="")
+        (self.work / "content1.md").write_text("待处理批次1内容\n", encoding="utf-8")
+        (self.work / "content2.md").write_text("待处理批次2内容\n", encoding="utf-8")
+
+        rows = (
+            "| B-CHECK-AND-DAI | `content1.md`、`0-全景路线图/跨桌任务队列.md`（新行占位） "
+            "| `docs(test): 含✅误写的待处理批次` "
+            "| ✅ 已完成（本次登记，待 sweep 落库） |\n"
+            "| B-DAI-ONLY | `content2.md` "
+            "| `docs(test): 纯待处理批次` "
+            "| 待处理（登记，待 sweep 落库） |\n"
+            "| B-DONE | `不存在的文件.md` "
+            "| `docs(test): 已完成不应被重跑` "
+            "| **✅ 已完成**（sweep 自动落库 2026-07-27 00:00 UTC） |\n"
+            "| B-AMBIGUOUS | `不存在的文件.md` "
+            "| `docs(test): 模糊状态不应被处理` "
+            "| 内容已确认 |\n"
+        )
+        self._write_queue(rows)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        # 含✅误写 + 纯待处理 均应被识别并落库销行。
+        rows_after = {r["batch_id"]: r for r in sweep._parse_section_two(self._queue_text())}
+        self.assertIn("sweep 自动落库", rows_after["B-CHECK-AND-DAI"]["status_cell"],
+                       "含✅但带'待'字样的误写，此前会被永久判定已处理而漏掉——本次应被正常处理")
+        self.assertIn("sweep 自动落库", rows_after["B-DAI-ONLY"]["status_cell"])
+
+        # 已完成行原样不动，不产生二次提交。
+        self.assertEqual(rows_after["B-DONE"]["status_cell"],
+                          "**✅ 已完成**（sweep 自动落库 2026-07-27 00:00 UTC）")
+
+        # 模糊状态行原样不动，但必须有告警（宁可吵不可哑），日志与 stdout 均须出现。
+        self.assertEqual(rows_after["B-AMBIGUOUS"]["status_cell"], "内容已确认")
+        self.assertIn("状态列模糊", result.stdout)
+        self.assertIn("B-AMBIGUOUS", result.stdout)
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertIn("B-AMBIGUOUS", log_text)
+
+        # 两个内容文件均已真实落库入 origin（不是只改了状态列的空转）。
+        self.assertEqual(_git(self.origin, "show", "master:content1.md", check=False).returncode, 0)
+        self.assertEqual(_git(self.origin, "show", "master:content2.md", check=False).returncode, 0)
+
+
+class SyncBehindOriginTests(SweepTestBase):
+    """2026-07-28 补：主工作区本地 master 落后 origin/master 的前置自愈。"""
+
+    def _push_from_other_clone(self, filename: str, message: str) -> None:
+        other_clone = self.work.parent / f"other_clone_{filename}"
+        _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
+        _git(other_clone, "config", "user.email", "other@example.com")
+        _git(other_clone, "config", "user.name", "Other")
+        (other_clone / filename).write_text("并发 worktree 的内容\n", encoding="utf-8")
+        _git(other_clone, "add", "-A")
+        _git(other_clone, "commit", "-q", "-m", message)
+        _git(other_clone, "push", "-q", "origin", "master")
+
+    def test_pure_behind_auto_ff_merges_then_processes_pending_batch(self):
+        self._init_and_push(rows="")
+        # 模拟另一 worktree 的 CC session 已把改动推去 origin/master——
+        # 本地工作区尚未 fetch/merge，此时本地 master 纯粹落后（直线历史，可快进）。
+        self._push_from_other_clone("另一worktree产出.md", "另一worktree推送")
+
+        local_head_before = _git(self.work, "rev-parse", "HEAD").stdout.strip()
+        origin_head_before = _git(self.origin, "rev-parse", "master").stdout.strip()
+        self.assertNotEqual(local_head_before, origin_head_before, "前提：本地确实落后")
+
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("落后 origin/master", result.stdout)
+
+        # 本地已通过 --ff-only 追上另一 worktree 的推送，且当轮批次照常处理。
+        local_log = _git(self.work, "log", "--oneline").stdout
+        self.assertIn("另一worktree推送", local_log)
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue)
+
+        origin_log = self._origin_log()
+        # init + 另一worktree推送 + 本批次 + 台账重跑 = 4
+        self.assertEqual(len(origin_log.strip().splitlines()), 4, origin_log)
+
+    def test_diverged_from_origin_master_skips_without_forcing(self):
+        self._init_and_push(rows="")
+        # 本地有一个尚未推送的本地提交。
+        (self.work / "本地未推送.md").write_text("本地独有内容\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "本地未推送提交")
+        # 另一 clone 基于同一起点推了一支不同的提交——制造真分叉（互不为祖先）。
+        self._push_from_other_clone("并发内容.md", "并发提交")
+
+        local_head_before = _git(self.work, "rev-parse", "HEAD").stdout.strip()
+        origin_head_before = _git(self.origin, "rev-parse", "master").stdout.strip()
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("非快进", result.stdout)
+
+        self.assertEqual(_git(self.work, "rev-parse", "HEAD").stdout.strip(), local_head_before,
+                          "分叉场景不应尝试合并，本地 HEAD 不应变化")
+        self.assertEqual(_git(self.origin, "rev-parse", "master").stdout.strip(), origin_head_before,
+                          "不应有任何强推，origin 端不应变化")
+
+
 if __name__ == "__main__":
     unittest.main()

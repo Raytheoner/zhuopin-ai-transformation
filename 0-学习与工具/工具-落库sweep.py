@@ -42,6 +42,26 @@ git 历史才救回，见协议〇.7 背景）。
 后续 `_run_git`（check=True）抛未捕获异常，表现正是"计划任务 LastTaskResult=1
 但日志无新条目"。
 
+批次判据显式化（2026-07-28 补，根治静默失效）：原判据 `"✅" not in
+status_cell` 把"待处理"定义成"不含✅"——登记方一旦图省事在状态列说明性
+文字里带了✅（如"✅ 已完成（本次登记，待 sweep 落库）"），该批次就被永久
+判定为"已处理"而跳过，且没有任何日志提示。2026-07-27 深夜已实测命中两条
+批次（队列 §二 顶部登记说明记有 `B-0728财务专线核实`/`B-0728队列#125回填`
+两例），当时全靠人工肉眼发现、手改回不含✅的写法才追上。根治：判据改为
+显式"待"字样（见 _classify_section_two_rows()）——只有状态列含"待"（待
+处理/待取活/待 sweep 落库等）才算待处理，不论是否同时误带"✅"；状态列
+既不含"✅"也不含"待"的模糊状态，不再被默默漏过，改为输出告警日志、不纳入
+本轮处理，交人工核查（宁可吵不可哑）。
+
+本地 master 落后 origin 前置自愈（2026-07-28 补）：主工作区本地 `master`
+分支指针不会随"其他 worktree 把改动推去 origin/master"自动前进——`git
+fetch` 只更新 `origin/master` 远程跟踪分支，本地分支需要显式 merge 才会
+移动。2026-07-27 一天内三次出现这一情形，若不处理，下一步"能否快进推送"
+检查会把纯粹的"落后"误判为"跳过本轮"。见 _sync_master_if_behind_origin()：
+本地是 origin/master 祖先（纯落后、可快进）即自动 `git merge --ff-only
+origin/master` 追上再继续干活；两边已分叉（互不为祖先）则不动手，仍按原
+语义告警跳过本轮，不强推、不自动 rebase。
+
 用法：
   python 0-学习与工具/工具-落库sweep.py            # 真跑
   python 0-学习与工具/工具-落库sweep.py --dry-run   # 只打印计划动作，不落地
@@ -186,6 +206,33 @@ def _verify_fast_forward(repo_root: Path, *, refetch: bool, on_fail_exit_code: i
         )
 
 
+def _sync_master_if_behind_origin(repo_root: Path, log: list[str]) -> None:
+    """本地 master 落后 origin/master 且可快进时自动追上（2026-07-28 补，见文件头部说明）。
+
+    只处理"本地是 origin/master 祖先"（纯落后、直线历史）这一种情形；两边
+    已分叉（互不为祖先）本函数不动手，交给后续 `_verify_fast_forward` 按
+    既有语义告警跳过——不强推、不自动 rebase。假设调用方已在此之前 fetch
+    过（本函数自身也会 fetch 一次，保证独立调用时行为完整）。
+    """
+    _fetch(repo_root)
+    head = _run_git(["rev-parse", "HEAD"], repo_root).stdout.strip()
+    origin_head = _run_git(["rev-parse", "origin/master"], repo_root).stdout.strip()
+    if head == origin_head:
+        return
+    is_behind = _run_git(
+        ["merge-base", "--is-ancestor", "HEAD", "origin/master"], repo_root, check=False,
+    )
+    if is_behind.returncode != 0:
+        return  # 本地未落后（领先或已分叉），交后续 _verify_fast_forward 处理
+    merge = _run_git(["merge", "--ff-only", "origin/master"], repo_root, check=False)
+    if merge.returncode != 0:
+        raise SweepAbort(
+            f"⚠ 本地 master 落后 origin/master 但 --ff-only 合并失败"
+            f"（{merge.stderr.strip()}）——跳过本轮，不强推、不 rebase。",
+        )
+    log.append(f"✓ 本地 master 落后 origin/master，已 git merge --ff-only 同步至 {origin_head[:7]}。")
+
+
 def _status_paths(repo_root: Path) -> list[str]:
     """解析 `git status --porcelain=v1 --untracked-files=all` 为脏路径清单（重命名取新路径）。"""
     result = _run_git(["status", "--porcelain=v1", "--untracked-files=all"], repo_root)
@@ -229,6 +276,21 @@ def _parse_section_two(queue_text: str) -> list[dict]:
             "status_cell": cells[3],
         })
     return rows
+
+
+def _classify_section_two_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    """按状态列文本把 §二 行分类为 (待处理, 模糊状态)（2026-07-28 补，见文件头部说明）。
+
+    显式判据：
+    - 状态列含"待"字样 → 待处理，纳入本轮（不论是否同时误带"✅"——登记方
+      按惯例应避免带✅，但即便带了也不能让批次因此石沉大海）。
+    - 状态列既不含"✅"也不含"待" → 模糊状态，不纳入本轮，但调用方必须把它
+      写进日志（宁可吵不可哑），不能像"未命中待"一样被默默略过。
+    - 状态列只含"✅"、不含"待" → 视为已完成，两个返回列表都不包含，无需告警。
+    """
+    pending = [r for r in rows if "待" in r["status_cell"]]
+    ambiguous = [r for r in rows if "✅" not in r["status_cell"] and "待" not in r["status_cell"]]
+    return pending, ambiguous
 
 
 def _extract_commit_message(message_cell: str) -> str:
@@ -375,12 +437,18 @@ def main() -> int:
     try:
         _heal_stale_index_lock(repo_root, log)
         _check_preconditions(repo_root, production=args.repo_root is None)
-        _verify_fast_forward(repo_root, refetch=True, on_fail_exit_code=0)
+        _sync_master_if_behind_origin(repo_root, log)
+        _verify_fast_forward(repo_root, refetch=False, on_fail_exit_code=0)
 
         dirty_paths = _status_paths(repo_root)
         queue_text = _read_queue(repo_root)
         rows = _parse_section_two(queue_text)
-        pending_rows = [r for r in rows if "✅" not in r["status_cell"]]
+        pending_rows, ambiguous_status_rows = _classify_section_two_rows(rows)
+        for row in ambiguous_status_rows:
+            log.append(
+                f"⚠ 状态列模糊（既不含✅也不含待字样），未纳入本轮处理，人工核查："
+                f"{row['batch_id']} | {row['status_cell']}"
+            )
 
         if not pending_rows:
             log.append("§二无待处理批次，本轮空转。")
