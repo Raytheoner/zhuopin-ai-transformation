@@ -4,12 +4,19 @@
 不触碰真实的跨桌任务队列.md 锁，用例之间互不干扰。
 
 覆盖交接文件《开场prompt-队列编辑锁-协议〇.7-CC建造交接.md》第5点要求的五种场景：
-acquire 空锁成功 / 新鲜锁被占返回非0 / 陈旧锁可接管 / release 只删本人 / 并发两 who 只一个拿到。
+acquire 空锁成功 / 新鲜锁被占返回非0 / 陈旧锁可接管 / release 只放行本人 / 并发两 who 只一个拿到。
 
 另覆盖 2026-07-23 供应链看板批1 worktree 会话发现的 gap（REPO_ROOT 曾按
 `__file__` 所在 checkout 推算，不同 worktree 各算各的锁、互相看不见）：
 用真实 `git worktree add` 建一个主工作区+一个 linked worktree，验证同一份
 脚本无论从哪个 checkout 跑，锁都落在同一个物理文件上。
+
+另覆盖 #121 两处修法（2026-07-27）：
+(a) release 改写"released"标记而非 unlink（Cowork 沙箱对本文件 unlink 会
+    PermissionError，改写规避了这个问题）——released 标记应等价于"无锁"。
+(c) acquire 成功时回显持锁瞬间从目标文件读到的"编号高水位线"行，供新行编号
+    在锁保护窗口内重算，从机制上消灭"编号在 acquire 之前算、锁前读到的高水位
+    线已被推高"这类撞号。
 """
 from __future__ import annotations
 
@@ -76,25 +83,68 @@ class EditLockTests(unittest.TestCase):
         self.assertIn("陈旧", result.stdout)
         self.assertEqual(json.loads(self.lock_path.read_text(encoding="utf-8"))["who"], "B")
 
-    def test_release_by_owner_deletes_lock(self):
+    def test_release_by_owner_writes_released_marker_not_unlink(self):
+        # #121(a)：Cowork 沙箱对本文件 unlink 会 PermissionError，release 改为
+        # 改写"released"标记——文件应仍然存在（不是被删除），但标记内容表明已释放。
         self._write_lock("A", minutes_ago=1)
         result = run("--file", self.target, "release", "--who", "A")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(self.lock_path.exists())
+        self.assertTrue(self.lock_path.exists(), "release 不应删除锁文件，应改写为释放标记")
+        marker = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertTrue(marker.get("released"))
+        self.assertEqual(marker.get("who"), "A")
+        # released 标记应等价于"无锁"：status 报告无锁，下一次 acquire 立即
+        # 成功且不出现"陈旧"接管提示（因为它压根不被当作陈旧锁，而是无锁）。
+        status = run("--file", self.target, "status")
+        self.assertIn("无锁", status.stdout)
+        result2 = run("--file", self.target, "acquire", "--who", "B")
+        self.assertEqual(result2.returncode, 0, result2.stdout + result2.stderr)
+        self.assertNotIn("陈旧", result2.stdout)
+        self.assertEqual(json.loads(self.lock_path.read_text(encoding="utf-8"))["who"], "B")
 
-    def test_release_by_non_owner_does_not_delete_lock(self):
+    def test_release_by_non_owner_does_not_touch_lock(self):
         self._write_lock("A", minutes_ago=1)
         result = run("--file", self.target, "release", "--who", "B")
         self.assertNotEqual(result.returncode, 0)
-        self.assertTrue(self.lock_path.exists(), "非本人 release 不应删掉别人的锁")
-        self.assertEqual(json.loads(self.lock_path.read_text(encoding="utf-8"))["who"], "A")
+        self.assertTrue(self.lock_path.exists(), "非本人 release 不应动别人的锁")
+        lock_data = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertEqual(lock_data["who"], "A")
+        self.assertNotIn("released", lock_data, "非本人 release 被拒绝时不应写入释放标记")
 
     def test_release_without_who_force_releases(self):
-        # 已文档化的常见用法：不带 --who 时无条件释放（不做保护）
+        # 已文档化的常见用法：不带 --who 时无条件释放（不做保护）——
+        # 释放后应仍是"改写标记"，不是删除文件。
         self._write_lock("A", minutes_ago=1)
         result = run("--file", self.target, "release")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(self.lock_path.exists())
+        self.assertTrue(self.lock_path.exists())
+        self.assertTrue(json.loads(self.lock_path.read_text(encoding="utf-8")).get("released"))
+
+    def test_acquire_echoes_high_water_mark_from_target_file(self):
+        # #121(c)：目标文件（如跨桌任务队列.md）含"编号高水位线"行时，acquire
+        # 成功应回显持锁瞬间读到的值，供新行编号在锁保护窗口内重算。
+        Path(self.target).write_text(
+            "> **编号高水位线：§一 #123 ｜ §四 #36**（说明文字，2026-07-24 起启用）\n",
+            encoding="utf-8",
+        )
+        result = run("--file", self.target, "acquire", "--who", "A")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("持锁瞬间高水位线", result.stdout)
+        self.assertIn("§一 #123", result.stdout)
+        self.assertIn("§四 #36", result.stdout)
+
+    def test_acquire_without_high_water_mark_line_does_not_crash(self):
+        Path(self.target).write_text("没有高水位线这一行的普通文件\n", encoding="utf-8")
+        result = run("--file", self.target, "acquire", "--who", "A")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("持锁瞬间高水位线", result.stdout)
+
+    def test_acquire_target_file_missing_does_not_crash(self):
+        # self.target 本身不存在（只有 .editlock 会被创建）——不应报错，只是不回显。
+        self.assertFalse(Path(self.target).exists())
+        result = run("--file", self.target, "acquire", "--who", "A")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("持锁瞬间高水位线", result.stdout)
 
     def test_concurrent_acquire_only_one_winner(self):
         # 模拟两会话同时首次 acquire：用两个子进程近似并发触发，
@@ -174,7 +224,14 @@ class EditLockCrossWorktreeTests(unittest.TestCase):
         r = run_at(self._tool(self.linked_root), "--file", "queue.md",
                    "release", "--who", "A")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertFalse((self.main_root / "queue.md.editlock").exists())
+        # release 改写标记而非 unlink（#121(a)）：锁文件仍在主工作区那一份，
+        # 但应已是 released 标记——从 linked worktree 里再 acquire 应立即成功。
+        lock_path = self.main_root / "queue.md.editlock"
+        self.assertTrue(lock_path.exists())
+        self.assertTrue(json.loads(lock_path.read_text(encoding="utf-8")).get("released"))
+        r2 = run_at(self._tool(self.linked_root), "--file", "queue.md",
+                    "acquire", "--who", "B")
+        self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
 
 
 if __name__ == "__main__":

@@ -12,10 +12,20 @@
 "发现对方在场就等一等"，不需要人工介入修复：
 
   acquire  编辑跨桌任务队列.md 前先占锁；被占用（且新鲜）则拒绝——本次改为把
-           要登记的内容写进自己的域接力文件，注明"队列更新待补"，不要硬写
+           要登记的内容写进自己的域接力文件，注明"队列更新待补"，不要硬写。
+           成功占锁时会回显**持锁瞬间**从目标文件读到的"编号高水位线"行（若
+           目标文件含该行）——新行编号务必从这个回显值 +1 续排，不要用
+           acquire 之前读到的旧值（#121(c)：编号在 acquire 之前算，锁只保护
+           "写"这一小段，用旧值续排仍会撞号；协议〇.7 同步补一句"编号一律在
+           持锁后重算"）
   release  编辑完立刻释放（持锁窗口应短——只包住"读入→改→写出"这一小段，
-           不要跨整个 session 持有）。带 --who 且与当前持有者不符时拒绝删除
-           （只告警不删，防误传 --who 删掉别人的在办锁）；不带 --who 则无条件释放
+           不要跨整个 session 持有）。带 --who 且与当前持有者不符时拒绝释放
+           （只告警不改，防误传 --who 顶掉别人的在办锁）；不带 --who 则无条件释放。
+           **释放方式是改写为"released"标记，不是删除文件**（#121(a)：Cowork
+           沙箱挂载对 `.editlock` 文件 unlink 会返回 PermissionError，acquire
+           能建文件但 release 删不掉；改写标记规避了这个问题，本地/CC 环境同样
+           适用，不需要区分环境分支）——released 标记等价于"无锁"，下一次
+           acquire 会当作空锁立即成功，不会误判为陈旧锁走接管提示
   status   查看当前锁状态，不产生副作用
 
 锁本地存在于文件系统（gitignore，不入库、不需要 git commit 才生效）。
@@ -40,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -68,11 +79,31 @@ def _resolve_repo_root() -> Path:
 REPO_ROOT = _resolve_repo_root()
 DEFAULT_TARGET = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 STALE_MINUTES = 30
+HIGH_WATER_MARK_PATTERN = re.compile(r"编号高水位线[：:]\s*(.+?)\*\*")
+
+
+def _target_path(target: str) -> Path:
+    return (REPO_ROOT / target).resolve()
 
 
 def _lock_path(target: str) -> Path:
-    target_path = (REPO_ROOT / target).resolve()
+    target_path = _target_path(target)
     return target_path.with_name(target_path.name + ".editlock")
+
+
+def _read_high_water_mark(target: str) -> str | None:
+    """持锁瞬间读一次目标文件里的"编号高水位线"行，供 acquire 回显（#121(c)）。
+
+    只读、不解析语义，找不到该行（目标非队列类文件/格式变了/文件不存在）时
+    静默返回 None——回显是"锦上添花"的提示，不是锁语义的一部分，不应因此让
+    acquire 失败。
+    """
+    try:
+        text = _target_path(target).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    match = HIGH_WATER_MARK_PATTERN.search(text)
+    return match.group(1).strip() if match else None
 
 
 def _now() -> datetime:
@@ -80,12 +111,16 @@ def _now() -> datetime:
 
 
 def _read_lock(lock_path: Path) -> dict | None:
+    """读取锁文件；`released` 标记视为无锁（release 改写标记而非 unlink，见模块说明）。"""
     if not lock_path.exists():
         return None
     try:
-        return json.loads(lock_path.read_text(encoding="utf-8"))
+        data = json.loads(lock_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+    if data.get("released"):
+        return None
+    return data
 
 
 def _age_minutes(lock: dict) -> float:
@@ -120,6 +155,10 @@ def cmd_acquire(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     print(f"✓ 已占锁：{args.who}（{args.note or '无备注'}）→ {lock_path.name}")
+    hwm = _read_high_water_mark(args.file)
+    if hwm:
+        print(f"📍 持锁瞬间高水位线：{hwm}——新行编号从此值 +1 续排，"
+              "勿用 acquire 之前读到的旧值（见协议〇.7）。")
     print("  改完请立刻 release，不要跨整个 session 持有。")
     return 0
 
@@ -132,12 +171,24 @@ def cmd_release(args: argparse.Namespace) -> int:
         return 0
     if args.who and existing.get("who") != args.who:
         print(f"✗ 当前锁持有者是「{existing.get('who')}」，与你传入的「{args.who}」不同——"
-              f"未释放（避免误传 --who 时删掉别人的在办锁）。若确认对方已异常退出，"
+              f"未释放（避免误传 --who 时顶掉别人的在办锁）。若确认对方已异常退出，"
               f"等其自然陈旧（{STALE_MINUTES} 分钟）由下一次 acquire 自动接管；"
               f"或确认后不带 --who 强制释放。")
         return 1
-    lock_path.unlink()
-    print("✓ 已释放")
+    # 改写为 released 标记而非 unlink（#121(a)）：Cowork 沙箱挂载对本文件
+    # unlink 会返回 PermissionError（acquire 建文件正常，release 删不掉），
+    # 改写规避了这个问题，且本地/CC 环境同样适用——不需要按环境分叉代码路径。
+    # released 标记等价于"无锁"（见 _read_lock），下一次 acquire 当空锁立即成功。
+    lock_path.write_text(
+        json.dumps(
+            {"who": existing.get("who"), "note": existing.get("note", ""),
+             "held_since": existing.get("held_since"),
+             "released": True, "released_at": _now().isoformat()},
+            ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
+    print("✓ 已释放（改写为释放标记，未删除文件——沙箱环境亦可用）")
     return 0
 
 

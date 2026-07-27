@@ -16,14 +16,23 @@ CLI（`--repo-root` 覆盖生产路径断言）后核对 origin 侧的提交历�
   "本地已提交、push 前才发现分叉"这一时序，CLI 级黑盒测试难以确定性构造该竞态）。
 - test_straggler_row_marked_done_without_content_commit → ②"遗留尾巴"处置：批次已
   登记但当前无对应脏改动时，只补销行、不产生内容 commit。
+
+另覆盖 #121(b) 修法（2026-07-27）：陈旧 `.git/index.lock` 前置自愈——
+- test_stale_index_lock_is_self_healed_and_run_proceeds → 陈旧锁自动清除后本轮
+  正常继续处理批次。
+- test_fresh_index_lock_aborts_gracefully_with_log → 新鲜锁（疑似真实并发 git
+  进程）不抢占，优雅跳过并**必须落盘日志**——回归修复前"未捕获异常导致
+  LastTaskResult=1 但日志无新条目"的症状。
 """
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -259,6 +268,58 @@ class LateForwardCheckTests(SweepTestBase):
         self.assertNotEqual(local_head, origin_head)
         local_log = _git(self.work, "log", "--oneline").stdout
         self.assertIn("测试批次落库", local_log)
+
+
+class IndexLockSelfHealTests(SweepTestBase):
+    """#121(b)：`.git/index.lock` 残留会让后续 `_run_git`（check=True）抛未捕获
+    的 CalledProcessError——不是 SweepAbort，main() 的 except 接不住，日志也就
+    没机会落盘。这正是实测到的"LastTaskResult=1 但日志无新条目"。"""
+
+    def test_stale_index_lock_is_self_healed_and_run_proceeds(self):
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        lock_file = self.work / ".git" / "index.lock"
+        lock_file.write_text("", encoding="utf-8")
+        stale_time = time.time() - sweep.STALE_INDEX_LOCK_MINUTES * 60 - 60
+        os.utime(lock_file, (stale_time, stale_time))
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(lock_file.exists(), "陈旧 index.lock 应已被自愈清除")
+        self.assertIn("自愈", result.stdout)
+
+        # 自愈只是前置步骤，不是自愈完就停手——本轮应正常继续处理批次。
+        origin_log = self._origin_log()
+        self.assertEqual(len(origin_log.strip().splitlines()), 3, origin_log)  # init+批次+台账
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue)
+
+    def test_fresh_index_lock_aborts_gracefully_with_log(self):
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        lock_file = self.work / ".git" / "index.lock"
+        lock_file.write_text("", encoding="utf-8")  # mtime = 刚刚，视为新鲜
+
+        before_log = self._origin_log()
+        result = _run_sweep(self.work)
+
+        # 关键回归点：修复前这种情况会在某个 check=True 的 _run_git 调用处抛
+        # 未捕获的 CalledProcessError；修复后应优雅跳过（退出码 0）且必须落盘日志。
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("index.lock", result.stdout)
+        self.assertEqual(self._origin_log(), before_log, "不应有任何提交被推送")
+        self.assertIn("待 CC 取活", self._queue_text(), "队列不应被改动")
+
+        log_file = self.work / sweep.LOG_REL
+        self.assertTrue(log_file.exists(), "即便跳过本轮，也必须落盘日志（回归 #121(b)）")
+        self.assertIn("index.lock", log_file.read_text(encoding="utf-8"))
+        self.assertTrue(lock_file.exists(), "新鲜锁不应被清除——可能是真实并发 git 进程")
 
 
 if __name__ == "__main__":

@@ -35,6 +35,13 @@ git 历史才救回，见协议〇.7 背景）。
         2=出现需要人工介入的异常（本地已提交但推送不了/非快进，不会自动强推）；
         1=脚本自身参数或环境错误（不应在正常运行中出现）。
 
+陈旧 `.git/index.lock` 前置自愈（#121(b)，2026-07-27 补）：起跑第一步先查
+`.git/index.lock`——超过 STALE_INDEX_LOCK_MINUTES（默认 10 分钟）未清的判定
+为异常退出残留，自动清除后继续；新鲜的（大概率是真实并发 git 进程）不抢占，
+优雅跳过本轮并写日志。见 _heal_stale_index_lock()——修复前该文件残留会让
+后续 `_run_git`（check=True）抛未捕获异常，表现正是"计划任务 LastTaskResult=1
+但日志无新条目"。
+
 用法：
   python 0-学习与工具/工具-落库sweep.py            # 真跑
   python 0-学习与工具/工具-落库sweep.py --dry-run   # 只打印计划动作，不落地
@@ -46,6 +53,7 @@ import argparse
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -56,6 +64,7 @@ LEDGER_OUTPUT_REL = "1-转型规划/0-全景路线图/文档台账-自动生成.
 EDIT_LOCK_SCRIPT_REL = "0-学习与工具/工具-共享文档编辑锁.py"
 LOG_REL = "reports/sweep-commit.log"
 LOCK_WHO = "sweep-commit"
+STALE_INDEX_LOCK_MINUTES = 10
 
 SECTION_TWO_HEADING = "## 二、"
 NEXT_SECTION_PREFIX = "## "
@@ -101,6 +110,37 @@ def _assert_not_a_linked_worktree(repo_root: Path) -> None:
             "sweep 只允许在主工作区运行，本轮不做任何改动。",
             exit_code=1,
         )
+
+
+def _heal_stale_index_lock(repo_root: Path, log: list[str]) -> None:
+    """起跑前自愈陈旧的 `.git/index.lock`（#121(b) 根因排查产出）。
+
+    背景：`.git/index.lock` 残留期间，本脚本后续任何 `_run_git`（默认
+    check=True）调用都会抛未捕获的 CalledProcessError——它不是 SweepAbort，
+    main() 的 `except SweepAbort` 接不住，_flush_log 也就没机会写盘。这正是
+    #121(b) 实测到的现象："LastTaskResult=1 但 sweep-commit.log 无任何新行"
+    （11:37/11:39 两次手动触发疑似与短时间内重复触发/index.lock 残留有关）。
+
+    只清"陈旧"（mtime 超过 STALE_INDEX_LOCK_MINUTES 分钟）的锁；新鲜的锁大概率
+    对应正在跑的真实 git 进程（含本脚本另一实例的并发触发），不抢占、不误杀，
+    改为优雅跳过本轮并把原因写进日志——把"未捕获异常静默失败"变成"有记录的
+    安全跳过"，即便暂时不清锁，这本身也修复了 #121(b) 的核心症状（日志无新行）。
+    """
+    lock_file = repo_root / ".git" / "index.lock"
+    if not lock_file.exists():
+        return
+    age_minutes = (time.time() - lock_file.stat().st_mtime) / 60
+    if age_minutes < STALE_INDEX_LOCK_MINUTES:
+        raise SweepAbort(
+            f"⚠ 检测到新鲜的 .git/index.lock（{age_minutes:.1f} 分钟前，"
+            f"<{STALE_INDEX_LOCK_MINUTES} 分钟视为可能仍在运行的真实 git 进程）——"
+            "跳过本轮，不抢占，等其自然结束或下一轮重试。",
+        )
+    lock_file.unlink()
+    log.append(
+        f"⚠ 已自愈陈旧 .git/index.lock（{age_minutes:.1f} 分钟前遗留，"
+        "判定为异常退出残留，已清除）。"
+    )
 
 
 def _check_preconditions(repo_root: Path, production: bool) -> None:
@@ -333,6 +373,7 @@ def main() -> int:
     log: list[str] = [f"=== sweep 运行 {_now_utc_str()} ==="]
 
     try:
+        _heal_stale_index_lock(repo_root, log)
         _check_preconditions(repo_root, production=args.repo_root is None)
         _verify_fast_forward(repo_root, refetch=True, on_fail_exit_code=0)
 
