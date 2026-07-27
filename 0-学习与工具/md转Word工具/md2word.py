@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """md2word — 通用 House 风格 Markdown→Word 转换器（CLI）。
 特性：内置 Heading 样式（标题导航窗格）/ 专业表格（深蓝表头+斑马纹+紧凑单倍行距单元格）/
-代码块阴影 / 引用 callout / 列表 / <br> 换行 / 可选把指定 fenced block 替换为图片。
+代码块阴影 / 引用 callout / 列表 / <br> 换行 / 可选把指定 fenced block 替换为图片 /
+勾选标记（☐/[ ]/[x]，含表格单元格内）直出 w14:checkbox 真复选框内容控件。
 用法：
   python md2word.py input.md [-o output.docx] [--title T] [--subtitle S] [--org 公司名]
                     [--img-dir DIR --map map.json]   # map.json: {"块内出现的签名": "图片名(不含扩展)"}
 依赖：pip install python-docx --break-system-packages
 """
-import sys, re, os, argparse, json
+import sys, re, os, argparse, json, itertools
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
@@ -52,7 +53,51 @@ def heading_bottom(p, color):
     b=OxmlElement('w:bottom'); b.set(qn('w:val'),'single'); b.set(qn('w:sz'),'6'); b.set(qn('w:space'),'4'); b.set(qn('w:color'),color)
     pbdr.append(b); pPr.append(pbdr)
 
-INLINE=re.compile(r'(\*\*.+?\*\*|`.+?`|\[\[.+?\]\])')
+CHECKBOX_FONT="MS Gothic"; CHECKBOX_UNCHECKED_CHAR="☐"; CHECKBOX_CHECKED_CHAR="☒"
+CHECKED_TOKENS={"☑","☒","[x]","[X]"}
+UNCHECKED_TOKENS={"☐","[ ]"}
+_SDT_ID=itertools.count(100000001)
+
+def add_checkbox(p, checked=False, size=10.5):
+    """在段落/单元格末尾插入一枚真 w14:checkbox 内容控件（Word 可点选，非死字符）。"""
+    p._p.get_or_add_pPr()
+    sdt=OxmlElement('w:sdt'); sdtPr=OxmlElement('w:sdtPr')
+    rpr=OxmlElement('w:rPr'); rf=OxmlElement('w:rFonts')
+    for a in ('w:ascii','w:eastAsia','w:hAnsi','w:cs'): rf.set(qn(a), CHECKBOX_FONT)
+    rpr.append(rf); sz=OxmlElement('w:sz'); sz.set(qn('w:val'), str(int(size*2))); rpr.append(sz)
+    sdtPr.append(rpr)
+    idel=OxmlElement('w:id'); idel.set(qn('w:val'), str(next(_SDT_ID))); sdtPr.append(idel)
+    cb=OxmlElement('w14:checkbox')
+    c=OxmlElement('w14:checked'); c.set(qn('w14:val'), '1' if checked else '0'); cb.append(c)
+    cs=OxmlElement('w14:checkedState'); cs.set(qn('w14:val'),'2612'); cs.set(qn('w14:font'),CHECKBOX_FONT); cb.append(cs)
+    us=OxmlElement('w14:uncheckedState'); us.set(qn('w14:val'),'2610'); us.set(qn('w14:font'),CHECKBOX_FONT); cb.append(us)
+    sdtPr.append(cb)
+    sdt.append(sdtPr); sdt.append(OxmlElement('w:sdtEndPr'))
+    content=OxmlElement('w:sdtContent')
+    r=OxmlElement('w:r'); rpr2=OxmlElement('w:rPr'); rf2=OxmlElement('w:rFonts')
+    for a in ('w:ascii','w:eastAsia','w:hAnsi','w:cs'): rf2.set(qn(a), CHECKBOX_FONT)
+    rpr2.append(rf2); sz2=OxmlElement('w:sz'); sz2.set(qn('w:val'), str(int(size*2))); rpr2.append(sz2)
+    r.append(rpr2)
+    t=OxmlElement('w:t'); t.text=CHECKBOX_CHECKED_CHAR if checked else CHECKBOX_UNCHECKED_CHAR
+    r.append(t); content.append(r); sdt.append(content)
+    p._p.append(sdt)
+
+def read_checkboxes(docx_path):
+    """读取 docx 内所有 w14:checkbox 控件的勾选状态（按文档顺序），供验证/回灌解析用。
+    返回 [{"checked": bool, "context": 所在段落/单元格文字}]。"""
+    doc=Document(docx_path); out=[]
+    for sdt in doc.element.body.iter(qn('w:sdt')):
+        cb=sdt.find('.//'+qn('w14:checkbox'))
+        if cb is None: continue
+        ce=cb.find(qn('w14:checked'))
+        checked = ce is not None and ce.get(qn('w14:val'))=='1'
+        p=sdt.getparent()
+        while p is not None and p.tag!=qn('w:p'): p=p.getparent()
+        context = ''.join(tt.text or '' for tt in p.iter(qn('w:t'))) if p is not None else ''
+        out.append({"checked":checked, "context":context})
+    return out
+
+INLINE=re.compile(r'(\*\*.+?\*\*|`.+?`|\[\[.+?\]\]|\[[ xX]\]|[☐☑☒])')
 def add_runs(p, text, size=10.5, color=None, base_bold=False):
     text=re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
     for pidx,part in enumerate(re.split(r'<br\s*/?>', text)):
@@ -60,6 +105,8 @@ def add_runs(p, text, size=10.5, color=None, base_bold=False):
             br=p.add_run(); br.add_break()
         for seg in INLINE.split(part):
             if not seg: continue
+            if seg in CHECKED_TOKENS or seg in UNCHECKED_TOKENS:
+                add_checkbox(p, checked=(seg in CHECKED_TOKENS), size=size); continue
             b=base_bold; mono=False; t=seg
             if seg.startswith('**') and seg.endswith('**'): b=True; t=seg[2:-2]
             elif seg.startswith('`') and seg.endswith('`'): mono=True; t=seg[1:-1]
