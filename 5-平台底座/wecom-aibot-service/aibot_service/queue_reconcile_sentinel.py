@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from pathlib import Path, PurePath
 from typing import Optional
@@ -23,6 +24,7 @@ from typing import Optional
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 
 DEFAULT_WITHIN_DAYS = 7
+_ARCHIVE_FILENAME_RE = re.compile(r"^跨桌任务队列-归档-\d{6}\.md$")
 
 
 def find_unreconciled_archives(
@@ -63,6 +65,29 @@ def find_unreconciled_archives(
     return unreconciled
 
 
+def _collect_reconciliation_text(queue_path: Path) -> str:
+    """拼接队列正文 + 同目录按月归档件《跨桌任务队列-归档-YYYYMM.md》全文，
+    供 `find_unreconciled_archives` 做子串匹配。
+
+    协议〇.8（2026-07-24 首次清扫起）：值周巡检每周把 §一/§二/§三/§四 已
+    完成行整行迁出正文、搬进同目录按月归档件——迁走后哨兵若只扫正文，会
+    把这些"其实已经妥善归档、只是行搬了家"的历史行误判为"疑似漏行"（队列
+    #99：07-24 16:40 CST 重连时确已产生过一次这类假阳性私信）。归档件内容
+    是已完成行的历史存档、写定后不会再变，一并纳入子串匹配不会引入新的
+    误判风险；不做时间窗口过滤（`within_days` 只管审计事件本身的新鲜度，
+    归档件是否被扫描与其无关）、不递归子目录、只认严格匹配命名律的文件。"""
+    parts = [queue_path.read_text(encoding="utf-8") if queue_path.exists() else ""]
+    directory = queue_path.parent
+    if directory.exists():
+        for path in sorted(directory.glob("跨桌任务队列-归档-*.md")):
+            if _ARCHIVE_FILENAME_RE.match(path.name):
+                try:
+                    parts.append(path.read_text(encoding="utf-8"))
+                except OSError:
+                    continue
+    return "\n".join(parts)
+
+
 def build_reconciliation_report(unreconciled: list[dict]) -> Optional[str]:
     """无疑似漏行时返回 `None`（调用方据此判断不发送，不刷屏）。"""
     if not unreconciled:
@@ -92,7 +117,7 @@ async def run_reconciliation_sentinel(
     整条链路失败（含发送失败）都只审计留痕，不向上抛出——哨兵本身不应影响
     服务主流程。"""
     events = audit.query_by(scenario="wecom-aibot", action="archived")
-    queue_text = queue_path.read_text(encoding="utf-8") if queue_path.exists() else ""
+    queue_text = _collect_reconciliation_text(queue_path)
     unreconciled = find_unreconciled_archives(events, queue_text, now=now, within_days=within_days)
     report = build_reconciliation_report(unreconciled)
     if report is None:

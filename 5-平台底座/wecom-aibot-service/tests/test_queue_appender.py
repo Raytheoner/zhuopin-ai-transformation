@@ -1,8 +1,11 @@
 import pytest
 
+from zhuopin_platform.audit import AuditLogger
+
 from aibot_service.queue_appender import (
     append_pending_task,
     _next_task_id,
+    _parse_section_one_high_water_mark,
     _section_bounds,
     _ROW_ID_RE,
 )
@@ -58,6 +61,73 @@ SAMPLE_QUEUE_WITH_LATER_TABLE = """\
 
 def test_next_task_id_computes_max_plus_one():
     lines = SAMPLE_QUEUE.splitlines()
+    header_idx = next(i for i, l in enumerate(lines) if l.strip() == "## 一、任务看板")
+    start, end = _section_bounds(lines, header_idx)
+    assert _next_task_id(lines, start, end) == 19
+
+
+# ── 编号高水位线（2026-07-24 首次清扫下游 gap，队列 #99）─────────────────
+
+SAMPLE_QUEUE_WITH_HIGH_WATER_MARK = """\
+---
+title: "跨桌任务队列（单一调度文件）"
+---
+
+> **编号高水位线：§一 #123 ｜ §四 #36**（2026-07-24 首次清扫起启用）
+
+## 一、任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+
+## 二、待 commit 批次
+
+后续内容不动。
+"""
+
+
+def test_parse_section_one_high_water_mark_reads_section_one_number():
+    lines = SAMPLE_QUEUE_WITH_HIGH_WATER_MARK.splitlines()
+    assert _parse_section_one_high_water_mark(lines) == 123
+
+
+def test_parse_section_one_high_water_mark_missing_line_returns_none():
+    lines = SAMPLE_QUEUE.splitlines()
+    assert _parse_section_one_high_water_mark(lines) is None
+
+
+def test_parse_section_one_high_water_mark_malformed_line_returns_none():
+    """标注行存在但格式变化（缺 §一 编号），不得抛异常，按"解析失败"处理。"""
+    lines = "> **编号高水位线：格式已变，无法解析**".splitlines()
+    assert _parse_section_one_high_water_mark(lines) is None
+
+
+def test_next_task_id_uses_high_water_mark_when_higher_than_visible_max():
+    """清扫后场景：§一 表格里可见行已被搬空（或只剩较小号），但顶部高水
+    位线仍是 #123——新编号必须接续 124，不能从可见的小号重新数起（队列
+    #99 描述的确切 bug 场景：清扫把最高号行迁走后与已归档编号撞号）。"""
+    lines = SAMPLE_QUEUE_WITH_HIGH_WATER_MARK.splitlines()
+    header_idx = next(i for i, l in enumerate(lines) if l.strip() == "## 一、任务看板")
+    start, end = _section_bounds(lines, header_idx)
+    assert _next_task_id(lines, start, end) == 124
+
+
+SAMPLE_QUEUE_WITH_STALE_HIGH_WATER_MARK = """\
+> **编号高水位线：§一 #10 ｜ §四 #5**（尚未跑过本轮清扫更新）
+
+## 一、任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 1 | 任务一 | CC | 指针1 | 产出1 | 待领 | — | 07-09 |
+| 18 | 任务十八 | CC | 指针18 | 产出18 | 待领 | — | 07-11 |
+"""
+
+
+def test_next_task_id_prefers_visible_max_when_higher_than_high_water_mark():
+    """高水位线滞后于表格内实际最大号（如尚未跑过清扫更新该行）时，仍应
+    取两者较大值——不能让一个过时的、偏小的高水位线把编号往回拉。"""
+    lines = SAMPLE_QUEUE_WITH_STALE_HIGH_WATER_MARK.splitlines()
     header_idx = next(i for i, l in enumerate(lines) if l.strip() == "## 一、任务看板")
     start, end = _section_bounds(lines, header_idx)
     assert _next_task_id(lines, start, end) == 19
@@ -150,6 +220,131 @@ def test_append_pending_task_does_not_leak_into_later_differently_shaped_table(t
     assert "| 11 | 事项十一 | Paul | 8D 校准会前 |" in new_text
     section4_rows = [l for l in lines[idx_section4:] if l.strip().startswith("|")]
     assert len(section4_rows) == 5  # 表头 + 分隔 + 3 条原行，没被插入新行
+
+
+# ── 编号高水位线跨清扫场景（队列 #99）─────────────────────────────────────
+
+QUEUE_BEFORE_SWEEP = """\
+> **编号高水位线：§一 #17 ｜ §四 #5**（首次清扫前，尚未更新到本轮）
+
+## 一、任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 1 | 任务一 | CC | 指针1 | 产出1 | 待领 | — | 07-09 |
+| 18 | 任务十八 | CC | 指针18 | 产出18 | 待领 | — | 07-11 |
+
+## 二、待 commit 批次
+
+后续内容不动。
+"""
+
+# 清扫后：#1/#18 已整行迁出正文（搬进归档件），§一 表格暂时空表；顶部高水
+# 位线同步更新为清扫时的真实最大号 #18——若清扫前恰好还有一条 #19 之类的
+# 行，高水位线会是 19，此处用 18 复刻"表格清空、水位线=历史最大号"的典型
+# 清扫后状态。
+QUEUE_AFTER_SWEEP = """\
+> **编号高水位线：§一 #18 ｜ §四 #5**（2026-07-24 首次清扫起启用）
+
+## 一、任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+
+## 二、待 commit 批次
+
+后续内容不动。
+"""
+
+
+def test_append_pending_task_before_sweep_uses_visible_max(tmp_path):
+    """清扫前：表格内仍看得见 #18，高水位线（#17）落后于可见最大号——新行
+    应延续可见序列到 19，不被一个偏旧的高水位线拉低。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(QUEUE_BEFORE_SWEEP, encoding="utf-8")
+
+    row = append_pending_task(
+        queue_path,
+        description="企微反馈自动归档：清扫前测试",
+        owner="CC 平台",
+        input_pointer="p",
+        expected_output="e",
+        date_str="2026-07-27",
+    )
+
+    assert row.startswith("| 19 |")
+    assert "| 19 | 企微反馈自动归档：清扫前测试 |" in queue_path.read_text(encoding="utf-8")
+
+
+def test_append_pending_task_after_sweep_continues_from_high_water_mark(tmp_path):
+    """队列 #99 描述的确切 bug 场景：清扫把 #1/#18 迁出正文后，§一 表格暂时
+    空表——旧实现会从 #1 重新编号，与已迁入归档件的 #1/#18 撞号；修复后应
+    读取顶部高水位线（#18），新行编号为 19。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(QUEUE_AFTER_SWEEP, encoding="utf-8")
+
+    row = append_pending_task(
+        queue_path,
+        description="企微反馈自动归档：清扫后测试",
+        owner="CC 平台",
+        input_pointer="p",
+        expected_output="e",
+        date_str="2026-07-27",
+    )
+
+    assert row.startswith("| 19 |")
+    new_text = queue_path.read_text(encoding="utf-8")
+    assert "| 19 | 企微反馈自动归档：清扫后测试 |" in new_text
+    assert "| 1 |" not in new_text.split("## 一、任务看板", 1)[1].split("## 二", 1)[0]
+
+
+def test_append_pending_task_with_audit_logs_nothing_when_high_water_mark_parses(tmp_path):
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(QUEUE_AFTER_SWEEP, encoding="utf-8")
+
+    append_pending_task(
+        queue_path,
+        description="d", owner="o", input_pointer="i", expected_output="e",
+        date_str="2026-07-27", audit=audit,
+    )
+
+    records = audit.query_by(scenario="wecom-aibot", action="queue_high_water_mark_parse_failed")
+    assert records == []
+
+
+def test_append_pending_task_with_audit_logs_fallback_when_marker_missing(tmp_path):
+    """高水位线标注行缺失（旧版文件/格式漂移）时，仍应按"仅取可见最大号"
+    回落计算（不崩溃、不阻塞追加），但需留痕一条审计事件供日后排查。"""
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")  # 无高水位线标注行
+
+    row = append_pending_task(
+        queue_path,
+        description="d", owner="o", input_pointer="i", expected_output="e",
+        date_str="2026-07-27", audit=audit,
+    )
+
+    assert row.startswith("| 19 |")  # 回落行为不变：仍是可见最大号(18)+1
+    records = audit.query_by(scenario="wecom-aibot", action="queue_high_water_mark_parse_failed")
+    assert len(records) == 1
+    assert records[0]["decision"]["fallback"] == "visible_max_only"
+    assert records[0]["decision"]["task_id"] == 19
+
+
+def test_append_pending_task_without_audit_param_skips_logging_silently(tmp_path):
+    """不传 `audit`（既有调用方/未接线场景）时行为与加此参数前完全一致，
+    不应因为省略该参数而报错。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+
+    row = append_pending_task(
+        queue_path,
+        description="d", owner="o", input_pointer="i", expected_output="e",
+        date_str="2026-07-27",
+    )
+    assert row.startswith("| 19 |")
 
 
 # ── 乐观并发重试（2026-07-22，队列 #69/#70 事故后补）──────────────────────

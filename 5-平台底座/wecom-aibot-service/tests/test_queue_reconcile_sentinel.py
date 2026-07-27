@@ -10,6 +10,7 @@ from aibot_service.queue_reconcile_sentinel import (
     build_reconciliation_report,
     find_unreconciled_archives,
     run_reconciliation_sentinel,
+    _collect_reconciliation_text,
 )
 
 QUEUE_TEXT = """\
@@ -111,6 +112,46 @@ def test_build_reconciliation_report_lists_all_entries_in_one_message():
     assert "不会自动写队列" in report
 
 
+# ── 归档件纳入扫描（2026-07-24 首次清扫下游假阳性，队列 #99）──────────────
+
+ARCHIVE_TEXT = """\
+| 21 | 企微反馈自动归档：tangyanping 07-05 回复 docx | 财务专线 | \
+`7-外部文档/财务部/财务部-tangyanping-回复-2026-07-05-migrated.docx` | 已归档 | 07-05 |
+"""
+
+
+def test_collect_reconciliation_text_includes_matching_archive_files(tmp_path: Path):
+    queue_path = tmp_path / "跨桌任务队列.md"
+    queue_path.write_text(QUEUE_TEXT, encoding="utf-8")
+    (tmp_path / "跨桌任务队列-归档-202607.md").write_text(ARCHIVE_TEXT, encoding="utf-8")
+
+    combined = _collect_reconciliation_text(queue_path)
+    assert "migrated.docx" in combined
+    assert "abc123.docx" in combined  # 正文内容仍在
+
+
+def test_collect_reconciliation_text_ignores_non_matching_filenames(tmp_path: Path):
+    """同目录里其他归档件（如 session 接力归档）命名律不同，不应被当成
+    跨桌任务队列的归档件纳入扫描——即便凑巧同名子串也不该误配，这里用
+    完全不相关内容验证不会被纳入。"""
+    queue_path = tmp_path / "跨桌任务队列.md"
+    queue_path.write_text(QUEUE_TEXT, encoding="utf-8")
+    (tmp_path / "session接力-归档-202607.md").write_text(
+        "无关内容，不应被扫描-should-not-appear.docx", encoding="utf-8"
+    )
+
+    combined = _collect_reconciliation_text(queue_path)
+    assert "should-not-appear.docx" not in combined
+
+
+def test_collect_reconciliation_text_missing_queue_file_still_scans_archives(tmp_path: Path):
+    queue_path = tmp_path / "跨桌任务队列.md"
+    (tmp_path / "跨桌任务队列-归档-202607.md").write_text(ARCHIVE_TEXT, encoding="utf-8")
+
+    combined = _collect_reconciliation_text(queue_path)
+    assert "migrated.docx" in combined
+
+
 class _FakeConnector:
     def __init__(self, should_fail: bool = False) -> None:
         self.should_fail = should_fail
@@ -201,3 +242,82 @@ def test_run_reconciliation_sentinel_missing_queue_file_treated_as_empty(tmp_pat
     ))
 
     assert len(connector.calls) == 1
+
+
+# ── 清扫前/后两种文件形态端到端验证（队列 #99）───────────────────────────
+
+def test_run_reconciliation_sentinel_before_sweep_row_still_in_queue_body(tmp_path: Path):
+    """清扫前：行仍在队列正文里——沿用既有子串匹配，不发消息（回归基线，
+    与本次改动前行为一致）。"""
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    audit.record(AuditEvent(
+        scenario="wecom-aibot", action="archived", evaluator="system", automation_level="L1",
+        decision={"archived_path": "C:\\repo\\7-外部文档\\财务部\\财务部-tangyanping-回复-2026-07-21-abc123.docx"},
+        data_sources={"sender": "tangyanping"},
+    ))
+    queue_path = tmp_path / "跨桌任务队列.md"
+    queue_path.write_text(QUEUE_TEXT, encoding="utf-8")
+    connector = _FakeConnector()
+
+    asyncio.run(run_reconciliation_sentinel(
+        connector, audit, queue_path, "ShaoPeiShen", now=datetime.now(timezone.utc)
+    ))
+
+    assert connector.calls == []
+
+
+def test_run_reconciliation_sentinel_after_sweep_row_migrated_to_archive_no_false_positive(tmp_path: Path):
+    """队列 #99 的确切场景：值周巡检把已完成行整行迁出队列正文、搬进同目录
+    《跨桌任务队列-归档-YYYYMM.md》后，哨兵此前只扫正文会把这些行误判为
+    "疑似漏行"（07-24 16:40 CST 那次假阳性私信即因此产生）——修复后应同时
+    在归档件里找到该文件名，判定已覆盖，不发送私信。"""
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    audit.record(AuditEvent(
+        scenario="wecom-aibot", action="archived", evaluator="system", automation_level="L1",
+        decision={"archived_path": "C:\\repo\\7-外部文档\\财务部\\财务部-tangyanping-回复-2026-07-21-abc123.docx"},
+        data_sources={"sender": "tangyanping"},
+    ))
+    queue_path = tmp_path / "跨桌任务队列.md"
+    # 正文里已不含该行（已被清扫搬走），只剩一条无关行。
+    queue_path.write_text(
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+        "| 99 | 无关任务 | CC | p | e | 待领 | — | 07-24 |\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "跨桌任务队列-归档-202607.md").write_text(
+        "| 69 | 企微反馈归档拆件：tangyanping 07-21 回复 docx | 财务专线 | "
+        "`7-外部文档/财务部/财务部-tangyanping-回复-2026-07-21-abc123.docx` | 拆件回灌 | 已完成 | — | 07-22 |\n",
+        encoding="utf-8",
+    )
+    connector = _FakeConnector()
+
+    asyncio.run(run_reconciliation_sentinel(
+        connector, audit, queue_path, "ShaoPeiShen", now=datetime.now(timezone.utc)
+    ))
+
+    assert connector.calls == []
+    assert _actions(audit) == []
+
+
+def test_run_reconciliation_sentinel_after_sweep_genuine_gap_still_flagged(tmp_path: Path):
+    """清扫场景下的对照组：文件名既不在正文也不在归档件里出现——仍应正确
+    识别为真实漏行，证明纳入归档扫描没有把哨兵变成"什么都不报"的哑摆设。"""
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    audit.record(AuditEvent(
+        scenario="wecom-aibot", action="archived", evaluator="system", automation_level="L1",
+        decision={"archived_path": "C:\\repo\\7-外部文档\\财务部\\财务部-tangyanping-回复-2026-07-25-trulylost.docx"},
+        data_sources={"sender": "tangyanping"},
+    ))
+    queue_path = tmp_path / "跨桌任务队列.md"
+    queue_path.write_text(QUEUE_TEXT, encoding="utf-8")
+    (tmp_path / "跨桌任务队列-归档-202607.md").write_text(ARCHIVE_TEXT, encoding="utf-8")
+    connector = _FakeConnector()
+
+    asyncio.run(run_reconciliation_sentinel(
+        connector, audit, queue_path, "ShaoPeiShen", now=datetime.now(timezone.utc)
+    ))
+
+    assert len(connector.calls) == 1
+    assert "trulylost.docx" in connector.calls[0][1]

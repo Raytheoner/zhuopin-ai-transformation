@@ -3,10 +3,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Optional
+
+from zhuopin_platform.audit import AuditEvent, AuditLogger
 
 TABLE_HEADER_MARKER = "## 一、任务看板"
 _ROW_ID_RE = re.compile(r"^\|\s*(\d+)\s*\|")
 _SECTION_HEADING_RE = re.compile(r"^##\s")
+_HIGH_WATER_MARK_LINE_RE = re.compile(r"编号高水位线")
+_HIGH_WATER_MARK_SECTION_ONE_RE = re.compile(r"§一\s*#\s*(\d+)")
 
 
 def _section_bounds(lines: list[str], header_idx: int) -> tuple[int, int]:
@@ -22,13 +27,35 @@ def _section_bounds(lines: list[str], header_idx: int) -> tuple[int, int]:
     return header_idx + 1, end
 
 
+def _parse_section_one_high_water_mark(lines: list[str]) -> Optional[int]:
+    """解析文件顶部"编号高水位线：§一 #NNN ｜ §四 #NNN"标注行（协议〇.8），
+    返回 §一 对应的高水位线数字；找不到该标注行、或行内不含 §一 编号（格式
+    有变/旧版文件无此行）时返回 `None`——调用方据此回落"仅取可见最大号+1"
+    的既有行为，并按需审计留痕（见 `append_pending_task` docstring）。"""
+    for line in lines:
+        if _HIGH_WATER_MARK_LINE_RE.search(line):
+            m = _HIGH_WATER_MARK_SECTION_ONE_RE.search(line)
+            return int(m.group(1)) if m else None
+    return None
+
+
 def _next_task_id(lines: list[str], start: int, end: int) -> int:
+    """新编号 = max(§一 表格内可见最大号, 顶部编号高水位线) + 1。
+
+    2026-07-24 首次清扫（协议〇.8）起，已完成行会被整行迁出 §一 表格搬进
+    《跨桌任务队列-归档-YYYYMM.md》——若只看"表格内可见最大号"，清扫把
+    历史最高编号的行迁走后，下一条新行会从一个更小的基数重新编号，与已
+    归档编号撞车（队列 #99）。顶部"编号高水位线"标注行在每次清扫时同步
+    更新，取两者较大值可保证跨清扫后编号仍单调递增、不撞历史号。"""
     ids = [
         int(m.group(1))
         for line in lines[start:end]
         if (m := _ROW_ID_RE.match(line.strip()))
     ]
-    return (max(ids) + 1) if ids else 1
+    visible_max = max(ids) if ids else 0
+    high_water_mark = _parse_section_one_high_water_mark(lines)
+    baseline = max(visible_max, high_water_mark) if high_water_mark is not None else visible_max
+    return baseline + 1
 
 
 def append_pending_task(
@@ -41,8 +68,16 @@ def append_pending_task(
     date_str: str,
     touch_zone: str = "",
     max_retries: int = 5,
+    audit: Optional[AuditLogger] = None,
 ) -> str:
     """在 §一 任务看板表格最后一行数据行之后插入一条新"待领"行，返回该行文本。
+
+    `audit` 可选——提供时，若顶部"编号高水位线"标注行解析失败（缺失/格式
+    有变，见 `_parse_section_one_high_water_mark`），在实际写入前记一条
+    `queue_high_water_mark_parse_failed` 审计事件（回落行为不变，仍按"仅取
+    §一 可见最大号+1"计算，只是把这一异常状态留痕，便于日后排查而不是静默
+    发生，见队列 #99）。不提供 `audit` 时（如既有测试/未接线调用方）该步骤
+    整体跳过，行为与未加此参数前完全一致。
 
     编号与插入位置均严格限定在 §一 自己的表格范围内（不越界到后续其他
     `## ` 小节，即便那些小节也用 `| 数字 | ... |` 格式且有自己独立的编号）。
@@ -92,6 +127,13 @@ def append_pending_task(
         # 我们计算的这一瞬间又写了一次，放弃本轮写入、重新读取重算，不覆盖。
         if queue_path.read_text(encoding="utf-8") != text:
             continue
+        if audit is not None and _parse_section_one_high_water_mark(lines) is None:
+            audit.record(AuditEvent(
+                scenario="wecom-aibot", action="queue_high_water_mark_parse_failed",
+                evaluator="system", automation_level="L1",
+                decision={"fallback": "visible_max_only", "task_id": task_id},
+                data_sources={"queue_path": str(queue_path)},
+            ))
         queue_path.write_text(new_text, encoding="utf-8")
         return row
 

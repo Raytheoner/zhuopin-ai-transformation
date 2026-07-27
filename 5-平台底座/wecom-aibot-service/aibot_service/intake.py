@@ -209,7 +209,7 @@ async def archive_inbound_message(
         expected_output="核实内容并按需处理；如需回灌口径按各域三步法走",
         date_str=date_str,
     )
-    queue_row = append_pending_task(queue_path, **queue_append_kwargs)
+    queue_row = append_pending_task(queue_path, audit=audit, **queue_append_kwargs)
     audit.record(
         AuditEvent(
             scenario="wecom-aibot",
