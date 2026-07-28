@@ -11,6 +11,8 @@ authors = [{ name = "卓品智能 AI 转型项目" }]
 dependencies = [
     "zhuopin_platform",
     "pydantic>=2.0",   # 数据接入层边界校验（与 FI1/SC8 loaders 一致）
+    "flask>=3.0",      # 最小 Web 服务发布收口（队列 #140）：表单跑账→六段式报告
+    "waitress>=3.0",   # 生产模式 WSGI server（同 SC8/QD-B 范式）
 ]
 
 [project.optional-dependencies]

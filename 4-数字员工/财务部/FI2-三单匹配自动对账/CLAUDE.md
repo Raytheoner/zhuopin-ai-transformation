@@ -5,6 +5,13 @@
 > 跨场景前置数据总表 FI2 行、`1-转型规划/FI2-三单匹配口径-mock备料.md`、
 > `1-转型规划/FI4-三单匹配-就绪清单与MVP细化.md`（编号 FI4 即 FI2 内容，同一份口径）。
 > 本场景 = CC 建造车间产物；**不改规划文档**（那是 Cowork 的活）；排期若变只在此记并提示 Paul 通知 Cowork。
+>
+> ✅ **最小 Web 服务已发布上线（2026-07-28，队列 #140）**：财务域零入口收口——
+> http://192.168.100.51:8094/ ，数据源三选一（mock 演示/csv 应急桥接·round-1 已验证路径/
+> u9c 真实直读），六段式对账报告直接复用 `recon_report.build_report()` 既有输出，未改任何
+> 判定结构/R1-R5-R7 config 真值；已接入 AI 运营指挥中心门户财务域卡，唐燕萍+李姣龙灰度试用中。
+> 详见 §「部署状态」。真实数据完整三单对账（含发票）仍需走 csv 模式配合人工誊录/OCR round-2，
+> 8 月底真实验证排期不变。
 
 ## 定位（Paul 2026-07-07 拍板；口径 2026-07-09 v3 修正）
 - FI2 = 财务/采购交叉场景，**2026-09 启动**。财务域 2026 年唯一按期落地场景（FI1 因需求变更暂缓封存）。
@@ -87,6 +94,7 @@
   - **顺带修复两处真实 bug/隐患**：① `ZpConnector.audit=` 期望 `ConnectorAudit`（轻量连接器痕迹）而非业务 `AuditLogger`，两者物理分离（同 SC8 范式），最初误传导致真实调用 `AttributeError`（mock 单测覆盖不到，因为不触网不会走到 `_fi_request` 的 audit 调用）——已在 `run.py`/`dump_u9c_snapshot.py` 中改正；② 本 worktree `zhuopin_platform` 全局可编辑安装被另一 worktree 静默劫持（已知隐患，见跨会话记忆 [[project-shared-python-editable-install-collision]]），`pip install --force-reinstall --no-deps -e <本worktree>` 修复。
   - **测试**：`test_fi_connector.py` +7、新增 `test_run_u9c_wiring.py`（8 用例）、新增 `test_dump_u9c_snapshot.py`（2 用例）；全量回归零漂移：平台 218 passed+1 skip（原 211，+7）、FI2 77 passed+7 skip（原 67+7，+10 net）。
   - **未做**：OCR（腾讯云）自动直读集成——独立 round-2；`data/golden/` 合成基准未替换/扩充（design D18-e 已定，样本量偏小会降低回归覆盖面）；openspec 变更包本次**未 archive**（tasks.md 7.3/8.3/8.4 仍待 OCR round-2 + 更大样本量后收口）。
+- **2026-07-28（FI2 最小 Web 服务发布收口，队列 #140，CC，独立 worktree `fi2-web-service-16da2a`，与 round-1 真实验证并行不占其带宽）**：财务域此前是四域唯一零 Web 入口场景（SC8 `:8091`／命令中心 `:8092`／QD-B `:8093` 皆已发布），业务总线 07-28 当日两次裁决（先判"排 round-1 之后"，后因"`recon_report` 六段式输出已定型、返工风险小"改判"今日可开工"）后动工。新增 `fi2/webapp.py`（Flask，六段式报告页：①总判定②完全匹配/L3建议通过③需人工确认④L2自行消化⑤AP-PO单价强制比对+R7口径说明⑥孤立发票+审计元数据，**逐字复用**`recon_report.build_report()`既有输出字段，未新增/未改写任何判定结构）+ `scripts/run_fi2_web.py`（启动入口，同 QD-B 范式）+ `deploy-server.ps1`/`sync-to-server.ps1`（端口 8094，复用 `ZhuopinDeploy.psm1`）。**数据源三选一**（Web 表单）：`mock`（内置合成演示数据，无需填参）／`csv`（应急桥接目录，即 round-1 已验证的"`dump_u9c_snapshot.py` 真实快照+人工誊录 invoice.csv"路径，不依赖 OCR）／`u9c`（真实直读 PO/GR/AP；Invoice 因 Attachment/OCR 未就绪对 u9c 源无条件 fail-loud，design D15-b 既定行为不变，Web 层如实报错而非静默假装完整）——三种模式均**逐字透传** `fi2.run.run()` 既有参数，Web 层零新增引擎逻辑。红线全部守住：只读取数不写回 ERP；R1/R5/R7 `config.py` 真值一字未动（⑤段仅展示当前配置值+口径说明，含 07-28 #80 真实探测"AP&lt;PO 常态"发现的提示性说明，不改判据）；结果分类原样透传，不伪装已判定。13 个新测试（`test_webapp.py`，覆盖 ping/disclaimer/三数据源正反例/凭据缺失如实报错/mock 全链路六段渲染），全量回归零漂移：FI2 90 passed+7 skip（原 77+7，+13）、平台 218 passed+1 skip（不变）。**真实部署 `.51:8094`**（计划任务 `Fi2WebServer`，SYSTEM+AtStartup，防火墙 `Fi2-WebServer-8094` LAN 全网段）：首次部署撞上已知坑——`deploy-server.ps1` 未存 UTF-8 BOM 导致 .51 内建 PowerShell 5.1 解析中文报语法错（同 SC8/QD-B 惯例补 BOM 后复跑即通）；`sync-to-server.ps1` 起初刻意不同步 `data/`（比照"不上生产服务器真实/黄金数据"红线），导致部署后 mock 演示选项 `FileNotFoundError`——补充只单独同步 `data/mock/`（纯合成、无真实供应商/金额数据，`data/golden`/`data/real_*` 仍不同步）后复测通过。**外部（非本机）冒烟全绿**：`/api/ping`/首页 200；真实 POST `/run` 跑通 mock（六段式渲染完整、料品总数 11、disclaimer 完整）与 csv（复用同一份 mock 目录当"快照目录"验证 csv_dir 表单参数路径）两种模式；u9c 模式**如实报错**"缺少凭证"（.51 上未配置 `U9C_*`/`STOCK_API_*`，本次部署未申请这些凭据——即便配置齐全，`u9c` 模式仍会在 `load_invoice` 步骤按 design D15-b 如实 fail-loud，是预期行为非缺陷，故本次未申请凭据不影响可用性判断）。AI 运营指挥中心门户财务域卡换真实入口（同 QD-B 07-23 惯例，nav 标签"建造中"→"灰度"）。**未做**：门户下方样例数据表（占位）保留未删，仅补充"请打开上方真实入口"提示（未做 procurement 域那样的 iframe 内嵌改造，范围外）；.env 内 U9C 真实凭据未配置（如需财务专员真实 u9c 单号/供应商在线取数，需另行申请凭据配置，属独立后续任务）。详见队列 #140。
 
 ## 关键依赖/前置（解锁条件）
 - ~~🔴 唐燕萍（财务 AI 专员）R1-R7 规则草案~~ ✅ 已交付（2026-07-10，较原计划提前 7 周）——真值已落 `config.py`（见上）；黄金用例专家批改仍待唐燕萍团队（strawman 用例本身未经批改）。
@@ -97,3 +105,27 @@
 - 🆕 🔴 **`Attachment/Download` 对 AP-2025120181 返回 302 重定向到 `localhost:5555`**（round-1 发现，design D18-f）——需 IT（陈承）跟进，不阻塞其余样本；影响面未知（是否只此一单，还是某类附件存储路径的系统性问题），待 round-2 更多样本时再观察。
 - ~~🟡 R7 外币供应商清单~~ ✅ 已落真值（2026-07-20，见上）；跨运行历史状态机制（"连续 2 次同向偏移推人工抽查"过渡规则）**Paul 2026-07-16 已确认推迟**，未就绪前按人民币同一 ±2% 处理，不算阻塞项。
 - 🟡 FI3（付款校验）依赖本场景结果——FI2 先行，FI3 另起场景。
+
+## 部署状态（2026-07-28 最小 Web 服务发布收口，队列 #140）
+
+- **地址**：http://192.168.100.51:8094/ （仅 LAN，无登录鉴权，同 SC8/QD-B/命令中心惯例）
+- **服务**：Flask+waitress，`fi2/webapp.py`（数据源三选一 mock/csv/u9c → 六段式对账报告页）+
+  `scripts/run_fi2_web.py` 启动入口；计划任务 `Fi2WebServer`（SYSTEM + AtStartup，失败重启3次）；
+  防火墙 `Fi2-WebServer-8094`（LAN 全网段）。
+- **冒烟结果**：`/api/ping`/首页 200（外部非本机访问核实过，非仅本机回环）；真实 POST `/run`
+  验证 mock 与 csv 两种模式均 200、六段式报告完整渲染、料品总数与固定夹具（11）一致；
+  u9c 模式按预期报"缺少凭证"（.51 未配置 `U9C_*`/`STOCK_API_*`，未申请——即便配置齐全，
+  `load_invoice` 步骤仍会按 design D15-b 如实 fail-loud，此为预期行为非缺陷）。
+- **门户接入**：AI 运营指挥中心门户（`1-转型规划/AI运营指挥中心/AI运营指挥中心-框架原型-v0.1.html`）
+  财务域卡已加真实入口链接 + wip-ribbon，nav 标签"建造中"→"灰度"；下方样例数据表保留
+  （占位，未做 procurement 域 iframe 内嵌改造，范围外），补充"请打开上方真实入口"提示。
+- **灰度范围**：唐燕萍（财务部）+ 李姣龙（一线核对人）；反馈渠道待与财务专线对齐（同企微机器人
+  归档惯例，暂未新增专属反馈入口）。
+- **红线保持**：只读取数，不写回 ERP；L2/L3 人工确认门禁照旧，disclaimer 显著标注"未过账"；
+  R1/R5/R7 `config.py` 真值一字未动；结果分类原样透传不伪装已判定；u9c 源发票 fail-loud 如实报错。
+- **回滚**：`schtasks /End /TN Fi2WebServer`（停）；`schtasks /Delete /TN Fi2WebServer /F`（注销）。
+- **已知限制（非缺陷，如实登记）**：u9c 模式需另行配置 `.env`（`U9C_API_BASE`/`U9C_USER_CODE`/
+  `U9C_ENT_CODE`/`U9C_ORG_CODE`/`U9C_CLIENT_ID`/`U9C_CLIENT_SECRET` + `STOCK_API_BASE`/
+  `STOCK_API_KEY`）才能跑通 PO/AP 真实取数，且仍会在发票步骤 fail-loud（design D15-b 既定，
+  非本次任务范围）；真实三单完整对账目前仍需走 csv 模式配合 `dump_u9c_snapshot.py`+人工誊录
+  （round-1 已验证路径）。

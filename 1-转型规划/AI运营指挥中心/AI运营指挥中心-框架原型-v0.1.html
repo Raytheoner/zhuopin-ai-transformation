@@ -234,7 +234,7 @@
       </div>
       <div class="nav" data-view="finance" data-title="财务域" data-sub="三单匹配 / 付款校验 / 智能月结">
         <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="15.5" cy="14.5" r="2" stroke="currentColor" stroke-width="1.5"/></svg>
-        财务域 <span class="tag wip">建造中</span>
+        财务域 <span class="tag wip">灰度</span>
       </div>
       <div class="nav" data-view="sales" data-title="销售域" data-sub="订单交期 / 客户知识线 / 报价">
         <svg viewBox="0 0 24 24" fill="none"><path d="M4 16l5-5 3 3 6-7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h4v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -392,6 +392,16 @@
 
       <!-- ===================== 财务域 · FI2 三单匹配对账 ===================== -->
       <section id="view-finance" class="view">
+        <div class="panel" style="margin-bottom:16px;padding:20px 24px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+            <span class="wip-ribbon">● 灰度中·真实入口 · 只读取数不写回ERP · AI建议未过账</span>
+          </div>
+          <h3 style="margin:0 0 8px;font-size:16px;color:var(--t0)">FI2 三单匹配自动对账 <span style="font-weight:400;color:var(--t1)">· 试用版</span></h3>
+          <div class="note" style="margin-bottom:16px">选数据源（mock 演示 / csv 应急桥接·round-1 人工誊录路径 / u9c 真实直读）→ 填 AP 单号或供应商代码 → 出六段式对账报告：总判定 / 完全匹配-L3建议通过 / 需人工确认 / L2自行消化 / AP-PO单价强制比对(R7) / 孤立发票+审计元数据。结果分类如实标注，不伪装已判定；u9c 真实源下发票直读（Attachment/OCR）尚未就绪会如实报错，不静默假装完整。AI 结论恒为建议/预警，<b>结案与过账在财务人员</b>。</div>
+          <a href="http://192.168.100.51:8094/" target="_blank" rel="noopener"
+             style="display:inline-block;background:var(--cyan);color:#04202a;font-weight:700;padding:10px 22px;border-radius:6px;text-decoration:none">打开 FI2 三单匹配自动对账 ›</a>
+          <span style="margin-left:14px;font-size:12px;color:var(--t1)">首批灰度用户：唐燕萍（财务部）+ 李姣龙（一线核对）</span>
+        </div>
         <div class="grid board-tiles" style="margin-bottom:16px">
           <div class="tile total"><div class="tl">本期 AP 单</div><div class="tv">342</div><div class="tsub">U9C 应付配票生成</div></div>
           <div class="tile g"><div class="tl">✅ 三单匹配</div><div class="tv">298</div><div class="tsub">四维一致</div></div>
@@ -425,7 +435,7 @@
             </tbody>
           </table>
           </div>
-          <div class="note">样例数据（占位）——接 FI2 引擎真实输出替换。核对对象＝<b>AP 单 vs INV</b>（PO 为前置参照）；匹配标识＝<b>料品</b>（对应 INV 规格型号/项目名称）；逻辑＝<b>同一料品汇总归集比合计</b>，四维＝料品+数量+未税金额+税额。发票源＝U9C 应付单附件 + OCR 直读。</div>
+          <div class="note">样例数据（占位，非真实取数）——下方明细表为格式演示；<b>真实对账请打开上方"FI2 三单匹配自动对账"真实入口自助跑账</b>。核对对象＝<b>AP 单 vs INV</b>（PO 为前置参照）；匹配标识＝<b>料品</b>（对应 INV 规格型号/项目名称）；逻辑＝<b>同一料品汇总归集比合计</b>，四维＝料品+数量+未税金额+税额。发票源＝U9C 应付单附件 + OCR 直读（尚未就绪，真实入口 u9c 模式下会如实报错，不假装完整）。</div>
         </div>
         <div class="grid cols-2" style="margin-top:16px">
           <div class="panel">
