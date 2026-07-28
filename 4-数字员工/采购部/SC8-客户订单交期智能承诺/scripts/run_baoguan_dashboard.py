@@ -67,7 +67,8 @@ def main() -> int:
     today = date.today()
     fo_base = os.environ.get("FO_API_BASE")
     ops_hook = os.environ.get("SC8_FO_OPS_WEBHOOK_URL") or os.environ.get("WECOM_WEBHOOK_URL")
-    # 默认只取已审核 FO（status=2，剔除草稿/关闭）；置 SC8_FO_STATUS=all 可不过滤
+    # 默认只取已审核 FO（status=2）；置 SC8_FO_STATUS=all 可不过滤。
+    # ⚠️ 不剔除行级"关闭"（接口无该字段），见 sc8.sources.load_real_orders docstring。
     fo_status = os.environ.get("SC8_FO_STATUS", "2")
     fo_status = None if fo_status.lower() == "all" else fo_status
 

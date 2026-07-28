@@ -32,13 +32,17 @@ def _bom(product, *comps):
                    level=1, qty_per_unit=1.0, loss_rate=0.0, unit="PCS") for c in comps]
 
 
-def _patch_sources(monkeypatch, *, orders, bom, srm):
+def _patch_sources(monkeypatch, *, orders, bom, srm, material_commitments=None):
     monkeypatch.setattr(bs, "load_real_orders",
                         lambda **kw: orders)
     monkeypatch.setattr(bs, "load_real_bom",
                         lambda product_ids, **kw: bom)
     monkeypatch.setattr(bs, "load_srm_deliveries",
                         lambda mode, **kw: srm)
+    # 默认空字典（零漂移）；测试专用真实网络隔离，不代表生产默认关闭（生产端无条件尝试，
+    # 见 compute_snapshot ⑦ 段与 sources.load_material_commitments docstring）。
+    monkeypatch.setattr(bs, "load_material_commitments",
+                        lambda mode, **kw: material_commitments or {})
 
 
 def test_compute_snapshot_structure(monkeypatch):
@@ -134,7 +138,7 @@ def test_compute_snapshot_wires_purchase_orders_into_rows(monkeypatch):
     snap = compute_snapshot(today=TODAY, status="2")
     red = next(r for r in snap.rows if r["id"] == "RED")
     assert red["cst"] == [{"id": "C1", "name": "C1", "qty": 10.0,
-                          "st": "transit_unconfirmed", "tq": 40.0, "cd": None}]
+                          "st": "transit_unconfirmed", "tq": 40.0, "cd": None, "cb": []}]
 
 
 def test_compute_snapshot_degrades_gracefully_when_po_source_fails(monkeypatch):
@@ -164,3 +168,42 @@ def test_compute_snapshot_skips_po_load_when_toggle_off(monkeypatch):
 
     compute_snapshot(today=TODAY, status="2")
     assert called == []
+
+
+# ── 物料逐笔承诺明细接入（#18-a/b，姚祖怡 07-28 判例回件，队列 #139）─────────────
+
+def test_compute_snapshot_wires_material_commitments_into_confirmed_batches(monkeypatch):
+    """material_commitments 加载成功 → 答交数量累计明细随行序列化出现（cst[].cb）。"""
+    bom = _bom("RED", "C1")
+    srm = [SrmDeliveryOrder(delivery_id="SRM-C1", demand_id="", supplier_id="",
+                            material_id="C1", qty_committed=0,
+                            committed_date="2026-07-20", status="confirmed")]
+    _patch_sources(monkeypatch, orders=[_orders()[0]], bom=bom, srm=srm)
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material",
+                        lambda materials, **kw: {"C1": 10.0})
+    monkeypatch.setattr(bs, "load_material_commitments",
+                        lambda mode, **kw: {"C1": [(date(2026, 7, 20), 10.0)]})
+
+    snap = compute_snapshot(today=TODAY, status="2")
+    red = next(r for r in snap.rows if r["id"] == "RED")
+    assert red["cst"][0]["cb"] == [{"d": "2026-07-20", "q": 10.0}]
+
+
+def test_compute_snapshot_degrades_gracefully_when_material_commitments_fails(monkeypatch):
+    """material_commitments 端点异常（纯展示派生列）→ 降级为无数据，不阻断整体重算。"""
+    bom = _bom("RED", "C1")
+    srm = [SrmDeliveryOrder(delivery_id="SRM-C1", demand_id="", supplier_id="",
+                            material_id="C1", qty_committed=0,
+                            committed_date="2026-07-20", status="confirmed")]
+    _patch_sources(monkeypatch, orders=[_orders()[0]], bom=bom, srm=srm)
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material",
+                        lambda materials, **kw: {"C1": 10.0})
+
+    def _boom(mode, **kw):
+        raise RuntimeError("SRM board endpoint unreachable")
+    monkeypatch.setattr(bs, "load_material_commitments", _boom)
+
+    snap = compute_snapshot(today=TODAY, status="2")   # 不抛异常
+    assert snap.ok is True
+    red = next(r for r in snap.rows if r["id"] == "RED")
+    assert red["cst"][0]["cb"] == []   # 降级：无 material_commitments 数据，cb 恒空

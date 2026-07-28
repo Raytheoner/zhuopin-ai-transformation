@@ -32,7 +32,17 @@ def load_real_orders(*, api_base: str | None = None,
                      date_to: str | None = None) -> list[SalesOrder]:
     """从 FO API 拉真实预测订单 → SalesOrder（计划出货日作 required_date）。
 
-    status：接口状态过滤（"2"=已审核，剔除草稿/关闭；None=不过滤）。
+    status：接口状态过滤（"2"=已审核；None=不过滤）。
+    ⚠️ **已知缺口，未解决（队列 #139 ①，2026-07-28 真实探测证实，未实现）**：
+    姚祖怡诉求"只取 ERP 里状态=核准的预测订单，剔除已关闭的"——探测发现 `status`
+    过滤的判据是**单据头**审核状态，恒为 2（全量样本 100%），与 U9C 预测订单
+    UI 上**行级**"状态"列（可独立为"核准"或"关闭"，如实测 `FO2026070001`
+    行60 `S02Y.0120`/行230 `S02Y.0166` UI 均显示"关闭"）是两回事——`status=2`
+    过滤对行级关闭**完全没有过滤效果**，本函数当前**无法**实现姚祖怡的诉求。
+    根因：`/zp/api/ForecastOrder/Query` 响应体没有行级状态字段（只有单据头
+    `Status`，逐行同值广播）。需 IT 在该接口补一个行级"关闭/核准"状态字段，
+    或提供等价查询能力，才能真正实现——不是本函数的过滤逻辑写错，是接口
+    没有可用字段。**不要凭旧假设"传 status=2 即可剔除关闭"，已被证伪。**
     date_from/date_to：按 ShipPlanDate 区间过滤（None=不限）。
     limit：小样本验证时只取前 N 条（按订单行，不放量）。
     FO 不可达时：先发内部运维告警（audit + 企微内部群，见 fo_health），**再 re-raise**——
@@ -170,7 +180,16 @@ def load_material_commitments(
 
     mode != "real" → 返回空（与 `load_srm_deliveries` 一致的降级语义）。
     返回 {material_id: [(承诺日期, 承诺数量), ...]}，供 `sc8.period_match`
-    的周期累计供需匹配使用；不做"取最早/去重"，原样保留全部承诺记录。
+    的周期累计供需匹配、以及 `baoguan._component_supply_status` 的"答交数量/答交
+    日期累计展示"（#18-a/b，队列 #139）共用。不做"取最早/去重"，原样保留全部承诺记录。
+
+    ⚠️ 与 `load_srm_deliveries` 各自独立请求 `get_receive_board`（未共享同一份响应）——
+    两者在 `compute_snapshot` 里先后调用时会对携客云同一端点（1 req/30s 限流）连打
+    两次请求，第二次会被连接器自身的令牌桶/退避逻辑自动等待或重试（非本函数处理，
+    见 XkySrmConnector.get_receive_board），不会报错，只是多等最多约 30 秒。刻意不做
+    "预取 board 后共享"式耦合——保持与既有 `load_srm_deliveries`/`load_purchase_orders_by_material`
+    一致的"各数据源独立可 monkeypatch/独立失败域"测试与降级架构，避免为省一次请求
+    引入跨函数的隐式依赖。
     """
     if mode != "real":
         return {}
@@ -184,7 +203,7 @@ def load_material_commitments(
 
 
 def load_purchase_orders_by_material(
-    materials: set[str] | None = None, *, days: int = 60, audit=None, connector=None,
+    materials: set[str] | None = None, *, days: int | None = None, audit=None, connector=None,
 ) -> dict[str, float]:
     """按料号汇总在途采购订单未清量（PO 在途数据接入，#12/#14 共享基础，2026-07-23）。
 
@@ -192,11 +211,18 @@ def load_purchase_orders_by_material(
     的采购订单行（status=received 已全部收货，不计入"在途"）。materials 给定时只保留
     这些料号（与 load_srm_deliveries 一致的收窄口径，减少下游遍历量）；None=不过滤。
 
+    days：回溯窗口天数；缺省 None → 取 `config.po_transit_lookback_days()`（默认 365，
+    见该函数 docstring 的根因说明——#18-c，队列 #139：60 天窗口曾漏掉一张创建于
+    ~266 天前、至今仍有未清量的真实在途 PO，导致对应子件误判"无未交订单"）。
+
     connector：注入 ZpConnector（测试用）；None 时 from_env（复用与 BOM 相同的凭据）。
     real fail-loud：连接器异常原样上抛，由调用方（compute_snapshot）决定是否降级
     （本功能为纯展示派生列，调用方对失败采用"降级为无数据"而非阻断整体重算，
     与 FO/BOM/SRM 等核心数据源的强 fail-loud 语义有意区分，见 baoguan_service 注释）。
     """
+    if days is None:
+        from . import config
+        days = config.po_transit_lookback_days()
     if connector is None:
         from zhuopin_platform.shared_tools.erp_connector.connector import ZpConnector
         connector = ZpConnector.from_env(audit=audit)

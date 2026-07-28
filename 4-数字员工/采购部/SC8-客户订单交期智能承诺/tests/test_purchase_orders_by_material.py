@@ -107,3 +107,61 @@ def test_bom_max_depth_invalid_falls_back_to_default(monkeypatch):
 def test_bom_max_depth_floor_is_one(monkeypatch):
     monkeypatch.setenv("SC8_BOM_MAX_DEPTH", "0")
     assert config.bom_max_depth() == 1
+
+
+# ── config.po_transit_lookback_days()（#18-c 根因修复，姚祖怡 07-28 判例回件，队列 #139）──
+
+def test_po_transit_lookback_days_defaults_365(monkeypatch):
+    monkeypatch.delenv("SC8_PO_TRANSIT_DAYS", raising=False)
+    assert config.po_transit_lookback_days() == 365
+
+
+def test_po_transit_lookback_days_explicit_override(monkeypatch):
+    monkeypatch.setenv("SC8_PO_TRANSIT_DAYS", "180")
+    assert config.po_transit_lookback_days() == 180
+
+
+def test_po_transit_lookback_days_invalid_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("SC8_PO_TRANSIT_DAYS", "not-a-number")
+    assert config.po_transit_lookback_days() == 365
+
+
+def test_po_transit_lookback_days_floor_is_one(monkeypatch):
+    monkeypatch.setenv("SC8_PO_TRANSIT_DAYS", "0")
+    assert config.po_transit_lookback_days() == 1
+
+
+# ── load_purchase_orders_by_material 默认回溯窗口（#18-c）───────────────────────
+
+class _DaysCapturingConnector:
+    """记录调用方实际传入的 days 值（不关心返回内容本身）。"""
+    def __init__(self):
+        self.seen_days = None
+
+    def get_purchase_orders(self, days=60):
+        self.seen_days = days
+        return []
+
+
+def test_default_days_uses_config_lookback(monkeypatch):
+    """未显式传 days → 走 config.po_transit_lookback_days()（默认 365），不再硬编码 60。"""
+    monkeypatch.delenv("SC8_PO_TRANSIT_DAYS", raising=False)
+    conn = _DaysCapturingConnector()
+    load_purchase_orders_by_material(connector=conn)
+    assert conn.seen_days == 365
+
+
+def test_explicit_days_overrides_config_default():
+    """显式传 days 时仍尊重调用方指定值（不被 config 默认值覆盖）。"""
+    conn = _DaysCapturingConnector()
+    load_purchase_orders_by_material(connector=conn, days=90)
+    assert conn.seen_days == 90
+
+
+def test_real_open_po_beyond_60_days_now_counted():
+    """真实案例复现（姚祖怡 07-28 判例回件 #18-c）：266 天前下单、仍未清的 PO 在新默认
+    窗口下应被计入在途未清量（旧 60 天窗口会漏掉）。"""
+    old_po = _po("R01D.0006", 3000, 0, "in_transit", po_id="ZPCG20251105008")
+    conn = _FakeZpConnector([old_po])   # 忽略 days 值，直接返回全部（模拟真实无服务端日期过滤）
+    result = load_purchase_orders_by_material(connector=conn)
+    assert result == {"R01D.0006": 3000.0}

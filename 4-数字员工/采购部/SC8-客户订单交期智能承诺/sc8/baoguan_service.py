@@ -20,8 +20,8 @@ from pathlib import Path
 from . import config
 from .baoguan import RISK_GAP, RISK_GREEN, RISK_RED, RISK_YELLOW, build_dashboard, row_to_dict
 # 模块级引用真实加载器：测试通过 monkeypatch 替换这几个符号（同 test_fo_health 套路）
-from .sources import (load_purchase_orders_by_material, load_real_bom, load_real_orders,
-                      load_srm_deliveries)
+from .sources import (load_material_commitments, load_purchase_orders_by_material,
+                      load_real_bom, load_real_orders, load_srm_deliveries)
 
 
 @dataclass
@@ -31,7 +31,9 @@ class Snapshot:
     today:        str                       # 重算所用业务日期
     rows:         list[dict] = field(default_factory=list)   # row_to_dict 序列化的成品行
     counts:       dict = field(default_factory=dict)         # {"red","gap","yel","grn"}
-    status:       str | None = None         # FO 状态过滤口径（"2"=已审核 / None=全部）
+    status:       str | None = None         # FO 状态过滤口径（"2"=已审核 / None=全部；
+                                            # ⚠️ 该字段是单据头状态，不反映行级"关闭"，
+                                            # 见 sources.load_real_orders docstring）
     param_version: str = ""
     components:   int = 0                   # 直接子件总数
     srm_hit:      int = 0                   # 携客云承诺命中子件数
@@ -59,7 +61,8 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
                      srm_ttl_sec: int = 0) -> Snapshot:
     """进程内重算保供看板：FO + U9C BOM + 携客云承诺（分层）→ build_dashboard → Snapshot。
 
-    status：FO 状态过滤（"2"=已审核，剔除草稿/关闭；None=不过滤）。
+    status：FO 状态过滤（"2"=已审核；None=不过滤）。⚠️ 不剔除行级"关闭"（接口无该
+    字段，见 sources.load_real_orders docstring 与队列 #139 ①）。
     audit / trace：平台 AuditLogger / ConnectorAudit，缺省 None（生产应注入）。
     cache_dir/srm_ttl_sec：firm 承诺交期缓存（提速立即重算）。给定时把
         cache_dir/srm_answer_cache.json + ttl 传入 load_srm_deliveries；
@@ -111,9 +114,24 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
                     scenario="SC8", action="po_transit_load_failed", evaluator="system",
                     automation_level="L1", decision={"error": f"{type(e).__name__}: {e}"[:200]},
                 ))
-    # ④ 保供齐套 → 四色看板（判级语义不变；inventory/purchase_orders=None（默认）时零漂移）
+    # ⑦ 物料逐笔承诺明细（#18-a/b，姚祖怡 07-28 判例回件，队列 #139）：驱动 BOM 缺口
+    #    物料清单里的"答交数量"累计展示，同 ⑥ 一样是纯展示派生列，失败不阻断整体重算。
+    material_commitments = None
+    try:
+        material_commitments = load_material_commitments("real", materials=components)
+    except Exception as e:
+        material_commitments = None
+        if audit is not None:
+            from zhuopin_platform.audit import AuditEvent
+            audit.record(AuditEvent(
+                scenario="SC8", action="material_commitments_load_failed", evaluator="system",
+                automation_level="L1", decision={"error": f"{type(e).__name__}: {e}"[:200]},
+            ))
+    # ④ 保供齐套 → 四色看板（判级语义不变；inventory/purchase_orders/material_commitments
+    #    =None（默认）时零漂移）
     rows = build_dashboard(orders, bom, srm, today=today, inventory=inventory,
-                           purchase_orders=purchase_orders)
+                           purchase_orders=purchase_orders,
+                           material_commitments=material_commitments)
 
     counts = {
         "red": sum(1 for r in rows if r.risk == RISK_RED),

@@ -223,7 +223,7 @@ def test_row_to_dict_serializes_new_fields(monkeypatch):
     d = row_to_dict(row)
     assert d["cn"] == {"A": "电容"}
     assert d["cst"] == [{"id": "A", "name": "电容", "qty": 100.0, "st": "transit_unconfirmed",
-                         "tq": 20.0, "cd": None}]
+                         "tq": 20.0, "cd": None, "cb": []}]
     assert d["dkq"] == 50 and d["dkbn"] == "A"   # 到货远超出货日，只算现货50
 
 
@@ -293,3 +293,97 @@ def test_export_excel_expands_component_detail_rows():
     assert "子件料号" in html and "子件品名" in html and "子件状态" in html
     assert "本项目需求数量" in html and "未交订单量" in html and "答交日期" in html
     assert "r.cst" in html   # 逐行遍历 cst 追加展开行的核心逻辑存在
+
+
+# ── 姚祖怡 07-28 判例回件（队列 #139）：#17/#128 导出去箭头 + #18-a/b 答交数量/日期 ──
+
+def test_export_excel_no_longer_prefixes_arrow(monkeypatch):
+    """#17/#128：子件明细行前的""↳""箭头符号已去除，改用列留空分组区分层级。"""
+    so = _so(item="S1", qty=100)
+    bom = [_row("S1", "A", name="电容", qty_per_unit=1.0)]
+    rows = [assess_supply_risk(so, bom, [], today=TODAY, purchase_orders={"A": 20})]
+    html = render_html(rows, today=TODAY)
+    assert "↳" not in html                       # 箭头符号已彻底移除
+    assert "s.id" in html                        # 子件行料号列直接用 s.id（不再拼接前缀）
+    assert "答交数量" in html                     # #18-a 新增列
+
+
+def test_component_status_confirmed_batches_empty_without_commitments():
+    """未传 material_commitments（缺省）→ confirmed_batches 恒为空元组，零漂移。"""
+    so = _so(ship="2026-09-01")
+    bom = [_row("P1", "A")]
+    row = assess_supply_risk(so, bom, [_srm("A", "2026-08-15")], today=TODAY,
+                             purchase_orders={"A": 500.0})
+    s = row.component_status[0]
+    assert s.confirmed_batches == ()
+
+
+def test_component_status_confirmed_batches_single_match():
+    """真实案例复现（姚祖怡 07-28 判例回件 R01D.0006）：单条确认记录恰好满足缺口。"""
+    so = _so(item="P1", qty=3000, ship="2026-08-01")   # 毛需求 3000（qty_per_unit=1.0）
+    bom = [_row("P1", "A")]
+    commitments = {"A": [(date(2026, 7, 20), 3000.0)]}
+    row = assess_supply_risk(so, bom, [_srm("A", "2026-08-20")], today=TODAY,
+                             purchase_orders={"A": 3000.0},
+                             material_commitments=commitments)
+    s = row.component_status[0]
+    assert s.status == STATUS_TRANSIT_CONFIRMED
+    assert s.confirmed_batches == ((date(2026, 7, 20), 3000.0),)
+    # 旧口径 confirmed_date（来自 /purchase/answer，本例故意设为错误的 08-20）仍保留在
+    # 字段里供内部参考，但前端渲染改为优先展示 confirmed_batches（见 componentStatusHtml）。
+    assert s.confirmed_date == date(2026, 8, 20)
+
+
+def test_component_status_confirmed_batches_cumulative_multiple():
+    """答交数量小于缺口 → 继续累加下一条，直至覆盖缺口为止（#18-a 原话）。"""
+    so = _so(item="P1", qty=1000, ship="2026-09-01")   # 毛需求 1000
+    bom = [_row("P1", "A")]
+    commitments = {"A": [(date(2026, 8, 5), 300.0),      # 累计 300 < 1000，继续
+                         (date(2026, 7, 20), 400.0),      # 按日期排序后先于08-05：累计 700 < 1000，继续
+                         (date(2026, 9, 1), 500.0),       # 累计 1200 >= 1000，止步，本条仍完整展示
+                         (date(2026, 10, 1), 200.0)]}     # 已够，不再纳入
+    row = assess_supply_risk(so, bom, [_srm("A", "2026-07-20")], today=TODAY,
+                             purchase_orders={"A": 1000.0},
+                             material_commitments=commitments)
+    s = row.component_status[0]
+    assert s.confirmed_batches == (
+        (date(2026, 7, 20), 400.0), (date(2026, 8, 5), 300.0), (date(2026, 9, 1), 500.0),
+    )
+
+
+def test_component_status_confirmed_batches_only_for_confirmed_states():
+    """无答复子件（STATUS_TRANSIT_UNCONFIRMED/STATUS_NO_TRANSIT）不计算 confirmed_batches。"""
+    so = _so(item="P1", qty=100, ship="2026-09-01")
+    bom = [_row("P1", "A")]
+    commitments = {"A": [(date(2026, 8, 1), 999.0)]}   # 即便有承诺记录，无答复子件也不展示
+    row = assess_supply_risk(so, bom, [], today=TODAY,
+                             purchase_orders={"A": 50.0},
+                             material_commitments=commitments)
+    s = row.component_status[0]
+    assert s.status == STATUS_TRANSIT_UNCONFIRMED
+    assert s.confirmed_batches == ()
+
+
+def test_row_to_dict_serializes_confirmed_batches():
+    """row_to_dict 的 cst[].cb 正确序列化 confirmed_batches（#18-a/b）。"""
+    so = _so(item="P1", qty=100, ship="2026-09-01")
+    bom = [_row("P1", "A")]
+    commitments = {"A": [(date(2026, 8, 1), 100.0)]}
+    row = assess_supply_risk(so, bom, [_srm("A", "2026-08-01")], today=TODAY,
+                             purchase_orders={"A": 100.0},
+                             material_commitments=commitments)
+    d = row_to_dict(row)
+    assert d["cst"][0]["cb"] == [{"d": "2026-08-01", "q": 100.0}]
+
+
+def test_render_html_shows_answer_quantity_and_multiple_dates():
+    """#18-b：卡片视图按""数量×日期""展示答交明细，多条时以顿号分隔逐条列出。"""
+    so = _so(item="S1", qty=700, ship="2026-09-01")
+    bom = [_row("S1", "A", name="电容")]
+    commitments = {"A": [(date(2026, 7, 20), 300.0), (date(2026, 8, 5), 400.0)]}
+    rows = [assess_supply_risk(so, bom, [_srm("A", "2026-07-20")], today=TODAY,
+                               purchase_orders={"A": 700.0},
+                               material_commitments=commitments)]
+    html = render_html(rows, today=TODAY)
+    assert "answerBatchesText" in html
+    assert "s.cb" in html

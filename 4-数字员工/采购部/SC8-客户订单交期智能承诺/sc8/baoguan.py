@@ -79,7 +79,16 @@ class ComponentSupplyStatus:
     qty_needed:       float          # 毛需求（本成品对该子件的需求量）
     status:           str            # STATUS_* 四态之一
     transit_qty:      float          # 在途未清量（无在途=0）
-    confirmed_date:   date | None    # 供应商已答交日期；未答交=None
+    confirmed_date:   date | None    # 供应商已答交日期（沿用旧口径：取自 mat.arrivals，
+                                     # 即 srm_deliveries 分层取数里"最早一条"承诺日）；未答交=None
+    # 答交数量累计明细（#18-a/b，姚祖怡 07-28 判例回件，队列 #139）：按 SRM 供应计划-
+    # 交付计划的确认日期升序，累计确认数量直至覆盖本行毛需求为止，[(确认日期,确认数量),...]。
+    # 取值来源与 confirmed_date 不同——confirmed_date 来自 /purchase/answer（PO 整单口径，
+    # 会漏掉"多期分批答交、只有部分期数已确认"的情况）；confirmed_batches 来自供应计划
+    # 看板逐期明细（sources.load_material_commitments），是姚祖怡截图指向的真实数据源。
+    # 仅当调用方传入 material_commitments 且该子件命中"已答交"两态之一时才计算，
+    # 否则恒为空列表（未传参数时零漂移，向后兼容旧行为）。
+    confirmed_batches: tuple[tuple[date, float], ...] = field(default_factory=tuple)
 
 
 @dataclass
@@ -308,12 +317,44 @@ def _component_names(bom: list) -> dict[str, str]:
     return {row.component_id: row.component_name for row in bom if row.component_id}
 
 
+def _cumulative_confirmed_batches(
+    commitments: list[tuple[date, float]], target_qty: float,
+) -> tuple[tuple[date, float], ...]:
+    """按确认日期升序累计 SRM 供应计划确认数量，直至覆盖 target_qty 为止（#18-a，
+    姚祖怡 07-28 判例回件："答交数量小于缺口数量，则继续显示下一个确认数量，直至
+    累计数量满足缺口数量为止"）。
+
+    返回按顺序纳入的 (确认日期, 确认数量) 元组；每条记录的数量原样展示，不因
+    "凑够即止"而截断最后一条的数值（Yao 原话未要求截断，只要求"够了就不再往下加"）。
+    target_qty<=0 或无承诺记录 → 空元组。
+    """
+    if target_qty <= 0 or not commitments:
+        return ()
+    ordered = sorted(commitments, key=lambda t: t[0])
+    out: list[tuple[date, float]] = []
+    total = 0.0
+    for d, q in ordered:
+        if q <= 0:
+            continue
+        out.append((d, q))
+        total += q
+        if total >= target_qty:
+            break
+    return tuple(out)
+
+
 def _component_supply_status(
     mat: MaterialArrivals, gross: dict[str, float], names: dict[str, str],
     purchase_orders: dict[str, float],
+    material_commitments: dict[str, list[tuple[date, float]]] | None = None,
 ) -> list[ComponentSupplyStatus]:
     """对 mat.arrivals 里每个"无法从现货立即满足需求"的子件，交叉 PO 在途 + SRM 答交
     分类出四态之一（#12，功能批1）。按料号排序，输出稳定、便于测试/前端渲染。
+
+    material_commitments（#18-a/b，队列 #139，可选）：给出时为"已答交"两态
+    （STATUS_TRANSIT_CONFIRMED / STATUS_CONFIRMED_NO_TRANSIT）额外计算
+    confirmed_batches（供应计划逐期累计明细）；缺省 None 时该字段恒为空元组，
+    不影响既有 status/transit_qty/confirmed_date 判定（零漂移）。
     """
     nf_set = set(mat.no_feedback_materials)
     out: list[ComponentSupplyStatus] = []
@@ -328,11 +369,16 @@ def _component_supply_status(
             status = STATUS_CONFIRMED_NO_TRANSIT
         else:
             status = STATUS_NO_TRANSIT
+        batches: tuple[tuple[date, float], ...] = ()
+        if confirmed and material_commitments:
+            batches = _cumulative_confirmed_batches(
+                material_commitments.get(m, []), gross.get(m, 0.0))
         out.append(ComponentSupplyStatus(
             component_id=m, component_name=names.get(m, ""),
             qty_needed=gross.get(m, 0.0), status=status,
             transit_qty=transit_qty,
             confirmed_date=mat.arrivals[m] if confirmed else None,
+            confirmed_batches=batches,
         ))
     return out
 
@@ -446,7 +492,9 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
                 so, bom, inventory, purchase_orders, full_arrivals, ship)
 
     # #12 子件供给状态全展示：独立于净额开关，只要传了 purchase_orders 即计算（功能批1）。
-    component_status = (_component_supply_status(mat, gross, component_names, purchase_orders)
+    # material_commitments 一并传入以计算 confirmed_batches（#18-a/b，队列 #139）。
+    component_status = (_component_supply_status(mat, gross, component_names, purchase_orders,
+                                                  material_commitments)
                         if had_bom and purchase_orders is not None else [])
 
     if not had_bom:
@@ -707,6 +755,14 @@ function nfdText(r){
  return '<div class="nfd">⚠ 按无答复估算（非确定承诺）：'+items+'</div>';
 }
 
+// 答交数量/答交日期累计展示（#18-a/b，姚祖怡 07-28 判例回件，队列 #139）：优先用
+// s.cb（供应计划逐期累计明细，多条时按"数量×日期"逐条列出），无 cb 数据时回退
+// 展示旧单一日期口径 s.cd（不臆造数量）。
+function answerBatchesText(s){
+ if(s.cb&&s.cb.length)return s.cb.map(function(b){return fmt(b.q)+'×'+esc(b.d);}).join('、');
+ return s.cd?esc(s.cd):'—';
+}
+
 // #12 子件供给状态全展示：BOM 缺口物料清单（姚祖怡 07-26 V6 #10 措辞：原"全部无法
 // 即时满足需求的子件"表述不精准，改为此名），逐条列出实际状态。
 function componentStatusHtml(r){
@@ -716,8 +772,8 @@ function componentStatusHtml(r){
   var tagCls=CST_CLS[s.st]||'no';
   var extra='';
   if(s.st==='transit_unconfirmed')extra='未交订单 '+fmt(s.tq)+' 件';
-  else if(s.st==='transit_confirmed')extra='未交订单 '+fmt(s.tq)+' 件 · 答交 '+esc(s.cd||'—');
-  else if(s.st==='confirmed_no_transit')extra='答交 '+esc(s.cd||'—');
+  else if(s.st==='transit_confirmed')extra='未交订单 '+fmt(s.tq)+' 件 · 答交 '+answerBatchesText(s);
+  else if(s.st==='confirmed_no_transit')extra='答交 '+answerBatchesText(s);
   // 姚祖怡 07-26 V6 #2：本项目需求数量＝ERP 预测订单数量×BOM 子件用量（s.qty，
   // 与 assess_supply_risk 的 _gross_need 同一份取值，纯展示新增，非新计算）。
   var need='本项目需求数量 '+fmt(s.qty);
@@ -813,19 +869,24 @@ function render(){
 
 // 明细导出 Excel（功能批1；姚祖怡 07-26 V6 #13 增强：每个成品行下追加子件明细展开行）：
 // 零依赖，Excel 可直接打开的 HTML-table .xls 文件（同导出范围=当前筛选全集，非仅当前页）。
-// 子件明细列（12-17）取自 r.cst（BOM 缺口物料清单），成品主行这几列留空、子件行前 11 列留空，
-// 用缩进"↳"标识层级——单表内直观区分"项目行"与其下的"问题物料明细行"（姚祖怡原话）。
+// 子件明细列取自 r.cst（BOM 缺口物料清单），成品主行这几列留空、子件行前 11 列同样留空——
+// 单靠"前 11 列是否留空"这一独立列分组即可区分"项目行"与其下的"问题物料明细行"（姚祖怡
+// 原话"需要能区分"），姚祖怡 07-28 判例回件 #17 要求去掉子件料号前的层级箭头符号，
+// 去掉后层级信息不丢失——前 11 列留空本身就是分组标识，箭头只是冗余视觉提示。
 function exportExcel(){
  var l=view();
  var hdr=['成品','品名','客户','数量','计划出货日','齐料日','缺口天数','子件数','未答复','瓶颈','风险',
-   '子件料号','子件品名','子件状态','本项目需求数量','未交订单量','答交日期'];
+   '子件料号','子件品名','子件状态','本项目需求数量','未交订单量','答交数量','答交日期'];
  var thead='<tr>'+hdr.map(function(h){return '<th>'+esc(h)+'</th>';}).join('')+'</tr>';
  var tbody='';
  l.forEach(function(r){
-  var main=[r.id,r.name,r.cust,r.qty,r.ship,r.kit||'',r.gap==null?'':r.gap,r.comp,r.nf,r.bn,RT[r.risk],'','','','','',''];
+  var main=[r.id,r.name,r.cust,r.qty,r.ship,r.kit||'',r.gap==null?'':r.gap,r.comp,r.nf,r.bn,RT[r.risk],'','','','','','',''];
   tbody+='<tr>'+main.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';
   (r.cst||[]).forEach(function(s){
-   var sub=['','','','','','','','','','','', '↳ '+s.id, s.name, CST_LABEL[s.st]||s.st, s.qty, s.tq, s.cd||''];
+   // 答交数量/答交日期（#18-a/b）：s.cb 有多期确认记录时逐条列出，与卡片视图 answerBatchesText 同源。
+   var qtyText=(s.cb&&s.cb.length)?s.cb.map(function(b){return b.q;}).join('、'):'';
+   var dateText=(s.cb&&s.cb.length)?s.cb.map(function(b){return b.d;}).join('、'):(s.cd||'');
+   var sub=['','','','','','','','','','','', s.id, s.name, CST_LABEL[s.st]||s.st, s.qty, s.tq, qtyText, dateText];
    tbody+='<tr>'+sub.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';
   });
  });
@@ -874,9 +935,13 @@ def row_to_dict(r: BaoguanRow) -> dict:
         # ③ 料品名称（功能批1）：{子件料号: 品名}，供前端在任意料号旁查表显示品名。
         "cn": r.component_names,
         # #12 子件供给状态全展示（功能批1）：无 purchase_orders 数据时为空列表。
+        # cb（#18-a/b，队列 #139）：答交数量累计明细 [{"d":确认日期,"q":确认数量},...]，
+        # 按日期升序、累计满足本行毛需求为止；无 material_commitments 数据时恒为空列表，
+        # 前端回退展示 cd（旧单一日期口径）。
         "cst": [{"id": s.component_id, "name": s.component_name, "qty": s.qty_needed,
                 "st": s.status, "tq": s.transit_qty,
-                "cd": s.confirmed_date.isoformat() if s.confirmed_date else None}
+                "cd": s.confirmed_date.isoformat() if s.confirmed_date else None,
+                "cb": [{"d": d.isoformat(), "q": q} for d, q in s.confirmed_batches]}
                for s in r.component_status],
         # #14 需求日可齐套数量（功能批1，None → 前端不显示徽标，不以 0 冒充）
         "dkq": r.demand_kittable_qty, "dkbn": r.demand_kittable_bottleneck,
