@@ -16,10 +16,12 @@ from zhuopin_platform.audit import AuditLogger
 
 from aibot_service.queue_appender import append_pending_task
 from aibot_service.queue_git_sync import (
+    UNSYNCED_MARKER,
     _is_non_fast_forward,
     append_task_and_sync_to_git,
     sync_after_archive,
 )
+from aibot_service.repo_paths import REPO_ROOT_OVERRIDE_ENV
 
 SAMPLE_QUEUE = """\
 ## 一、任务看板
@@ -298,3 +300,170 @@ def test_sync_after_archive_does_not_raise_when_repo_root_invalid(tmp_path: Path
 
     assert outcome.pushed is False
     assert "queue_sync_degraded" in _actions(audit)
+
+
+# ── 队列 #126：跨 checkout 失效修复 ──────────────────────────────────────
+
+
+def test_append_task_and_sync_to_git_recovers_from_cross_worktree_repo_root(tmp_path: Path):
+    """核心回归场景：调用方传入的 `repo_root` 是队列文件所在 worktree 的
+    "邻居" worktree（服务常驻 `ops/wecom-service-home`、队列文件固定指向
+    主工作区的真实故障模式简化版）。修复前 `_relative_to_repo` 会直接抛
+    ValueError（queue.md 不在 wrong_repo_root 的 subpath 下）；修复后应
+    动态解析出 queue_path 真正所属的仓库根，正常推送成功。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    wrong_repo_root = tmp_path / "clone_a_sibling_worktree"
+    _git(clone_a, "worktree", "add", "-q", "-b", "sibling", str(wrong_repo_root))
+
+    outcome = append_task_and_sync_to_git(
+        wrong_repo_root, clone_a / "queue.md", **_sample_kwargs("跨worktree场景")
+    )
+
+    assert outcome.pushed is True, f"应动态解析出 clone_a 自身的根，实际 last_error={outcome.last_error!r}"
+    pushed_content = _show_origin_file(origin, "master", "queue.md")
+    assert "跨worktree场景" in pushed_content
+
+
+def test_append_task_and_sync_to_git_recovers_from_unrelated_repo_root(tmp_path: Path):
+    """跨 repo 形态：传入的 `repo_root` 是与队列文件毫不相干的另一个仓库
+    （如未来 Mac 独立 clone 场景）——同样应以队列文件自身所属仓库为准。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    unrelated_repo = tmp_path / "unrelated_repo"
+    _git(tmp_path, "init", "-q", "-b", "master", str(unrelated_repo))
+    _git(unrelated_repo, "config", "user.email", "x@example.com")
+    _git(unrelated_repo, "config", "user.name", "X")
+
+    outcome = append_task_and_sync_to_git(
+        unrelated_repo, clone_a / "queue.md", **_sample_kwargs("跨repo场景")
+    )
+
+    assert outcome.pushed is True
+    pushed_content = _show_origin_file(origin, "master", "queue.md")
+    assert "跨repo场景" in pushed_content
+
+
+def test_append_task_and_sync_to_git_env_override_takes_precedence(tmp_path: Path):
+    """`WECOM_AIBOT_REPO_ROOT` 显式覆盖——绕开动态 git 解析，直接在 override
+    指定的目录上执行 git 操作。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+
+    outcome = append_task_and_sync_to_git(
+        tmp_path / "never_used", clone_a / "queue.md",
+        env={REPO_ROOT_OVERRIDE_ENV: str(clone_a)},
+        **_sample_kwargs("override场景"),
+    )
+
+    assert outcome.pushed is True
+    pushed_content = _show_origin_file(origin, "master", "queue.md")
+    assert "override场景" in pushed_content
+
+
+def test_already_appended_row_is_committed_without_duplicate_append(tmp_path: Path):
+    """`intake.py` 已经用 `append_pending_task` 独立落盘一行——本函数首次
+    尝试须直接提交这一行，不得再内部调用 `append_pending_task` 二次追加
+    同一内容（修复前的隐藏 bug：`sync_after_archive` 接入生产前从未被
+    端到端测试覆盖，一旦 checkout 校验通过，intake.py 的落盘行会和本函数
+    内部重新算出的一行同时存在，造成同一条消息在队列里出现两行）。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    pre_appended_row = append_pending_task(clone_a / "queue.md", **_sample_kwargs("已由intake落盘"))
+
+    outcome = append_task_and_sync_to_git(
+        clone_a, clone_a / "queue.md",
+        already_appended_row=pre_appended_row,
+        **_sample_kwargs("已由intake落盘"),
+    )
+
+    assert outcome.pushed is True
+    assert outcome.attempts == 1
+    assert outcome.row == pre_appended_row
+    pushed_content = _show_origin_file(origin, "master", "queue.md")
+    assert pushed_content.count("已由intake落盘") == 1, (
+        f"应只出现一行，实际出现 {pushed_content.count('已由intake落盘')} 次：\n{pushed_content}"
+    )
+
+
+def test_already_appended_row_recomputed_on_conflict_not_duplicated(tmp_path: Path):
+    """已落盘的行如果在推送时撞上非快进冲突，仍应走"对齐后重算"路径（而非
+    盲目重放已经算错的编号），且最终也只留一行。"""
+    origin, clone_a, clone_b = _init_bare_origin_with_clones(tmp_path)
+    other_row = _push_other_writer_row(clone_b, "另一写手先手推送")
+    other_id = _row_id(other_row)
+
+    pre_appended_row = append_pending_task(clone_a / "queue.md", **_sample_kwargs("已落盘遇冲突"))
+
+    outcome = append_task_and_sync_to_git(
+        clone_a, clone_a / "queue.md",
+        already_appended_row=pre_appended_row,
+        **_sample_kwargs("已落盘遇冲突"),
+    )
+
+    assert outcome.pushed is True
+    assert outcome.attempts == 2
+    assert _row_id(outcome.row) > other_id
+    pushed_content = _show_origin_file(origin, "master", "queue.md")
+    assert pushed_content.count("已落盘遇冲突") == 1
+
+
+# ── 队列 #126：未同步显式标记 ────────────────────────────────────────────
+
+
+def test_sync_after_archive_marks_row_unsynced_when_degraded(tmp_path: Path):
+    """已落盘但 git 同步最终失败——队列文件里该行应被追加"⏳未同步"标记，
+    使只看文件的读取方也能察觉（此前只有 audit 事件+私信告警）。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    pre_appended_row = append_pending_task(clone_a / "queue.md", **_sample_kwargs("网络故障场景"))
+    task_id = _row_id(pre_appended_row)
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+
+    outcome = asyncio.run(sync_after_archive(
+        repo_root=clone_a, queue_path=clone_a / "queue.md",
+        append_kwargs=_sample_kwargs("网络故障场景"),
+        already_appended_row=pre_appended_row,
+        audit=audit, connector=None, recipient="",
+        remote="nonexistent-remote",
+    ))
+
+    assert outcome.pushed is False
+    on_disk = (clone_a / "queue.md").read_text(encoding="utf-8")
+    marked_line = next(l for l in on_disk.splitlines() if l.strip().startswith(f"| {task_id} |"))
+    assert UNSYNCED_MARKER in marked_line
+
+
+def test_sync_after_archive_marks_row_unsynced_when_repo_root_unresolvable(tmp_path: Path):
+    """队列 #126 原始故障模式复现：`repo_root` 与队列文件所在 checkout
+    完全不相干（甚至不在任何 git 仓库里），已落盘的行仍应被标记。"""
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    plain_dir = tmp_path / "not_a_repo"
+    plain_dir.mkdir()
+    (plain_dir / "queue.md").write_text(SAMPLE_QUEUE, encoding="utf-8")
+    pre_appended_row = append_pending_task(plain_dir / "queue.md", **_sample_kwargs("非仓库场景"))
+    task_id = _row_id(pre_appended_row)
+
+    outcome = asyncio.run(sync_after_archive(
+        repo_root=plain_dir, queue_path=plain_dir / "queue.md",
+        append_kwargs=_sample_kwargs("非仓库场景"),
+        already_appended_row=pre_appended_row,
+        audit=audit, connector=None, recipient="",
+    ))
+
+    assert outcome.pushed is False
+    on_disk = (plain_dir / "queue.md").read_text(encoding="utf-8")
+    marked_line = next(l for l in on_disk.splitlines() if l.strip().startswith(f"| {task_id} |"))
+    assert UNSYNCED_MARKER in marked_line
+
+
+def test_sync_after_archive_does_not_mark_row_when_pushed_successfully(tmp_path: Path):
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    pre_appended_row = append_pending_task(clone_a / "queue.md", **_sample_kwargs("正常成功场景"))
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+
+    outcome = asyncio.run(sync_after_archive(
+        repo_root=clone_a, queue_path=clone_a / "queue.md",
+        append_kwargs=_sample_kwargs("正常成功场景"),
+        already_appended_row=pre_appended_row,
+        audit=audit, connector=None, recipient="",
+    ))
+
+    assert outcome.pushed is True
+    on_disk = (clone_a / "queue.md").read_text(encoding="utf-8")
+    assert UNSYNCED_MARKER not in on_disk

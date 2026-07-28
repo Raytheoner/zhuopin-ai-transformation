@@ -1,4 +1,6 @@
 import asyncio
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -469,3 +471,128 @@ def test_on_message_dispatch_failure_is_audited_not_raised(tmp_path, monkeypatch
 
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "message_dispatch_failed" in actions
+
+
+# ── 队列 #126：`repo_root` 接入的队列 git 同步全链集成测试 ──────────────
+#
+# 此前 `build_connector(repo_root=...)` 这条路径从未在集成层面被测试过
+# （只有 queue_git_sync.py 自己的单测覆盖了 git 层逻辑）——本节补齐，同时
+# 验证：① 归档→追加→git 同步全链只产生一行（不因 queue_git_sync 内部重复
+# 调用 append_pending_task 而重复追加，此前的隐藏 bug）；② 即便传入的
+# repo_root 与队列文件实际所在 checkout 不一致，也能动态解析恢复（#126
+# 核心场景）。
+
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, encoding="utf-8"
+    )
+
+
+def _init_git_repo_with_queue(tmp_path: Path, queue_text: str) -> tuple[Path, Path]:
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    _git(origin, "init", "--bare", "-q", "-b", "master")
+
+    seed = tmp_path / "_seed"
+    seed.mkdir()
+    _git(seed, "init", "-q", "-b", "master")
+    _git(seed, "config", "user.email", "seed@example.com")
+    _git(seed, "config", "user.name", "Seed")
+    (seed / "queue.md").write_text(queue_text, encoding="utf-8")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "init")
+    _git(seed, "remote", "add", "origin", str(origin))
+    _git(seed, "push", "-q", "origin", "master")
+
+    repo = tmp_path / "repo"
+    _git(tmp_path, "clone", "-q", str(origin), str(repo))
+    _git(repo, "config", "user.email", "bot@example.com")
+    _git(repo, "config", "user.name", "Test Bot")
+    return origin, repo
+
+
+def _message_frame(sender: str = "YaoZuYi", content: str = "已收到，稍后回复") -> dict:
+    return {
+        "body": {
+            "msgtype": "text",
+            "from": {"userid": sender},
+            "text": {"content": content},
+        }
+    }
+
+
+def test_on_message_with_repo_root_appends_exactly_one_row_and_pushes(tmp_path):
+    """归档+队列追加+git 同步全链只应产生一行，不得因 queue_git_sync 内部
+    再次调用 append_pending_task 而重复追加同一条消息。"""
+    origin, repo = _init_git_repo_with_queue(tmp_path, QUEUE_TEXT)
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=repo / "7-外部文档",
+        queue_path=repo / "queue.md",
+        client_factory=fake_client_factory(store),
+        repo_root=repo,
+    )
+    client = store["client"]
+
+    asyncio.run(client.handlers["message"][0](_message_frame()))
+
+    new_queue = (repo / "queue.md").read_text(encoding="utf-8")
+    occurrences = new_queue.count("采购专线")
+    assert occurrences == 1, f"应只追加一行，实际出现 {occurrences} 次：\n{new_queue}"
+
+    pushed_content = subprocess.run(
+        ["git", "--git-dir", str(origin), "show", "master:queue.md"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    ).stdout
+    assert "采购专线" in pushed_content, "本地追加+提交后必须真正推送到远端"
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "queue_appended" in actions
+    assert "queue_sync_pushed" in actions
+    assert "queue_sync_degraded" not in actions
+
+
+def test_on_message_with_mismatched_repo_root_still_syncs_via_dynamic_resolution(tmp_path):
+    """队列 #126 核心场景复现：`build_connector` 传入的 `repo_root` 不是
+    `queue_path` 实际所属的 checkout（服务常驻 ops worktree、队列文件在
+    主工作区的真实故障模式简化版）。修复前会在 `_relative_to_repo` 处直接
+    抛异常、整条同步降级；修复后应动态解析出 queue_path 真正所属的仓库
+    根，正常推送成功。"""
+    origin, repo = _init_git_repo_with_queue(tmp_path, QUEUE_TEXT)
+    wrong_repo_root = tmp_path / "unrelated_checkout"
+    _git(tmp_path, "init", "-q", "-b", "master", str(wrong_repo_root))
+    _git(wrong_repo_root, "config", "user.email", "x@example.com")
+    _git(wrong_repo_root, "config", "user.name", "X")
+
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=repo / "7-外部文档",
+        queue_path=repo / "queue.md",
+        client_factory=fake_client_factory(store),
+        repo_root=wrong_repo_root,  # 故意传错——模拟 #126 的 checkout 不一致
+    )
+    client = store["client"]
+
+    asyncio.run(client.handlers["message"][0](_message_frame()))
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "queue_sync_pushed" in actions, f"应动态解析出正确 repo 根并成功推送，实际 actions={actions}"
+    assert "queue_sync_degraded" not in actions
+
+    pushed_content = subprocess.run(
+        ["git", "--git-dir", str(origin), "show", "master:queue.md"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    ).stdout
+    assert "采购专线" in pushed_content
+
+    new_queue = (repo / "queue.md").read_text(encoding="utf-8")
+    assert new_queue.count("采购专线") == 1

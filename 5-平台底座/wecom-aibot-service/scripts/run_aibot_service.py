@@ -5,7 +5,17 @@
   WECOM_AIBOT_BOTID / WECOM_AIBOT_SECRET   必填，凭据（见 SecretsProvider）
   WECOM_AIBOT_EXTERNAL_DOCS_ROOT           可选，默认 <repo_root>/7-外部文档
   WECOM_AIBOT_QUEUE_PATH                   可选，默认 <repo_root>/1-转型规划/0-全景路线图/跨桌任务队列.md
-  WECOM_AIBOT_AUDIT_PATH                   可选，默认 <service_dir>/reports/wecom_aibot_audit.jsonl
+  WECOM_AIBOT_AUDIT_PATH                   可选，默认 <repo_root>/5-平台底座/wecom-aibot-service/reports/wecom_aibot_audit.jsonl
+  WECOM_AIBOT_REPO_ROOT                    可选，显式指定 git 同步/审计路径锚定的仓库根，
+                                            绕开下方"以队列文件动态解析"的默认逻辑（队列 #126）
+
+队列 #126：本服务常驻的 checkout（如 `ops/wecom-service-home` worktree）与
+`WECOM_AIBOT_QUEUE_PATH` 实际指向的 checkout（通常是主工作区）可能不是同一
+个——`REPO_ROOT` 不再直接拿本脚本自身位置反推的值使用，而是以已解析出的
+`queue_path` 为锚点动态问 git 它真正所属的仓库根在哪（见
+`aibot_service.repo_paths.resolve_repo_root`），据此定位的仓库根同时也是
+审计文件（`WECOM_AIBOT_AUDIT_PATH` 默认值）的统一落盘位置——与一次性脚本
+`push_followup_letter.py` 共用同一份物理文件，消除收发留痕分裂。
 """
 from __future__ import annotations
 
@@ -23,13 +33,14 @@ from zhuopin_platform.shared_tools.notifiers import wecom
 from zhuopin_platform.shared_tools.secrets import EnvSecretsProvider
 
 SERVICE_DIR = Path(__file__).resolve().parent.parent
-REPO_ROOT = SERVICE_DIR.parents[1]  # 5-平台底座/wecom-aibot-service -> 仓库根
+NAIVE_REPO_ROOT = SERVICE_DIR.parents[1]  # 5-平台底座/wecom-aibot-service -> 本 checkout 自身的根
 
 sys.path.insert(0, str(SERVICE_DIR))
 from aibot_service.connection import build_connector  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp, send_gap_alert  # noqa: E402
 from aibot_service.queue_reconcile_sentinel import run_reconciliation_sentinel  # noqa: E402
+from aibot_service.repo_paths import resolve_audit_path, resolve_repo_root  # noqa: E402
 
 
 class ConnectionAbandonedError(RuntimeError):
@@ -79,17 +90,23 @@ async def _run_forever(
 def main() -> None:
     load_dotenv(SERVICE_DIR.parent / ".env")  # 5-平台底座/.env（照 SC8 .env 放置层级）
 
-    external_docs_root = Path(
-        os.environ.get("WECOM_AIBOT_EXTERNAL_DOCS_ROOT", REPO_ROOT / "7-外部文档")
-    )
     queue_path = Path(
         os.environ.get(
             "WECOM_AIBOT_QUEUE_PATH",
-            REPO_ROOT / "1-转型规划" / "0-全景路线图" / "跨桌任务队列.md",
+            NAIVE_REPO_ROOT / "1-转型规划" / "0-全景路线图" / "跨桌任务队列.md",
         )
     )
+    # 队列 #126：本 checkout（`NAIVE_REPO_ROOT`）与 `queue_path` 实际所在的
+    # checkout 可能不是同一个（服务常驻某 worktree、队列文件固定指向主工
+    # 作区）——以 `queue_path` 动态反查其真正所属的仓库根，`NAIVE_REPO_ROOT`
+    # 只作解析失败时的回落值。
+    resolved_repo_root = resolve_repo_root(queue_path, fallback=NAIVE_REPO_ROOT)
+
+    external_docs_root = Path(
+        os.environ.get("WECOM_AIBOT_EXTERNAL_DOCS_ROOT", resolved_repo_root / "7-外部文档")
+    )
     audit_path = Path(
-        os.environ.get("WECOM_AIBOT_AUDIT_PATH", SERVICE_DIR / "reports" / "wecom_aibot_audit.jsonl")
+        os.environ.get("WECOM_AIBOT_AUDIT_PATH", resolve_audit_path(resolved_repo_root))
     )
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     pending_queue_appends_path = SERVICE_DIR / "reports" / "pending_queue_appends.jsonl"
@@ -115,7 +132,7 @@ def main() -> None:
         external_docs_root=external_docs_root,
         queue_path=queue_path,
         on_fatal_disconnect=fatal_event.set,
-        repo_root=REPO_ROOT,
+        repo_root=resolved_repo_root,
         pending_queue_appends_path=pending_queue_appends_path,
         queue_sync_fallback_send=fallback_send,
     )

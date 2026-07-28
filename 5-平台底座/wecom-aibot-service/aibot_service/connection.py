@@ -90,7 +90,10 @@ def build_connector(
 
     `repo_root`：D1（design.md，Mac 迁移变更包）队列 git 同步所需的仓库根
     目录——未传时（如测试、或未来某些部署场景不需要此能力）整条同步路径
-    直接跳过，不影响既有行为，向后兼容旧调用方。
+    直接跳过，不影响既有行为，向后兼容旧调用方。**队列 #126 起本参数不再
+    被无条件信任**：`queue_git_sync` 每次调用都会用 `queue_path` 动态解析
+    其真正所属的 repo 根（服务常驻的 worktree 与队列文件所在 checkout 可
+    能不是同一个），此处传入的值只作解析失败时的回落值。
     """
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
@@ -202,6 +205,7 @@ def build_connector(
                     repo_root=repo_root,
                     queue_path=queue_path,
                     append_kwargs=archive_result.queue_append_kwargs,
+                    already_appended_row=archive_result.queue_row,
                     audit=audit,
                     connector=connector_holder.get("connector"),
                     recipient=PAUL_USERID,
