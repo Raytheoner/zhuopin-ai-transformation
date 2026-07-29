@@ -1,4 +1,5 @@
-"""归档↔队列对账哨兵（design D18，队列 #69/#70，2026-07-22，dry-run 模式）。
+"""归档↔队列对账哨兵（design D18，队列 #69/#70，2026-07-22；判据 2026-07-25
+起改审计日志内部配对，队列 #107）。
 
 企微机器人的归档（`intake.py`）与追加队列行（`queue_appender.py`）是两个
 独立动作，中间没有事务性保证。2026-07-21 唐燕萍那条归档真实出现过"归档
@@ -6,6 +7,27 @@
 的静默丢失（根因见 `queue_appender.py` 模块 docstring：并发写手覆盖，已
 补乐观并发重试）。本模块提供一道独立的事后核对，作为该修复之外的第二层
 防线——万一还有别的写手/路径导致同类丢失，能被发现而不是永远沉默。
+
+**判据变迁（队列 #107）**：初版判据是"归档文件名 vs 队列全文子串匹配"——
+2026-07-25 dry-run 首跑报 10 条疑似漏行，总线只读复核确认**10 条全为
+误报**：均已处理完、行已被 07-24 首次清扫迁入《跨桌任务队列-归档-
+YYYYMM.md》，而哨兵当时只扫**现役队列**正文，匹配不到即误报，且逐周
+恶化（归档越多误报越多，此前 #99 意图的"扫归档件"当时未生效）。**改为
+审计日志内部配对**：`intake.py::archive_inbound_message` 对每条消息总是
+先记一条 `archived`、随后立刻记一条 `queue_appended`（顺序固定，全库唯一
+emitter，见 `intake.py`/`queue_appender.py`）；`connection.py::on_message`
+逐条 `await` 顺序处理消息，同一条连接上至多同时有一条消息"在途"——据此
+按**单件在途**（非普通 FIFO 队列，见 `find_unreconciled_archives` 函数
+docstring 为何两者不等价）配对：某条 `archived` 若直到下一条 `archived`
+出现前都没等到配对的 `queue_appended`（如 `append_pending_task` 重试耗尽
+抛错，异常发生在 `queue_appended` 记录之前）才是真实漏行。此判据只看审计
+日志本身，与队列文件里那一行现在躺在哪个文件、编号是多少、措辞是否被
+改写全部无关，天然 robust 于清扫/改号/改措辞。`queue_text`（现役队列正文
++ 归档件，见 `_collect_reconciliation_text`）降级为**可选二级交叉校验**
+——配对判定为"未配对"时，若文件名仍能在 `queue_text` 里找到，则不视为真
+漏行（配对判据备注"兜底可保留扫现役+归档件作二次校验"）：这层交叉校验只
+用于兜底覆盖配对本身理论上可能漏配的边界情形，不会掩盖真实漏行（真漏行
+的文件名不会出现在队列文本任何地方）。
 
 **本次只做 dry-run**：发现疑似漏行只私信 Paul 一条汇总报告，不自动写回
 队列。理由：自动补行依赖对队列表格结构又一次解析/编号计算，本身也可能出
@@ -29,23 +51,50 @@ _ARCHIVE_FILENAME_RE = re.compile(r"^跨桌任务队列-归档-\d{6}\.md$")
 
 def find_unreconciled_archives(
     audit_events: list[dict],
-    queue_text: str,
     *,
     now: datetime,
     within_days: int = DEFAULT_WITHIN_DAYS,
+    queue_text: Optional[str] = None,
 ) -> list[dict]:
-    """`audit_events` 应为已按 `scenario="wecom-aibot", action="archived"`
-    过滤好的审计记录列表。匹配规则：归档文件名（含消歧哈希后缀，`intake.py`
-    命名里唯一的部分）整串出现在 `queue_text` 全文里即视为"已覆盖"——不要求
-    出现在某一行、不解析表格结构，只做最朴素的子串匹配，避免哨兵自己的解析
-    逻辑成为新的误判来源。`within_days` 之外（含时间戳缺失/无法解析）的记录
-    不纳入扫描范围，只关心近期新鲜信号，早期历史件不重复提醒。
+    """`audit_events` 应为按 `scenario="wecom-aibot"` 过滤、按审计日志写入
+    顺序（`AuditLogger.query_by` 保留 JSONL 文件的追加顺序，等价于时间顺序）
+    排列的记录列表，不要求预先过滤 action（本函数内部只挑出 `archived`/
+    `queue_appended` 两类，忽略其余）。
 
-    返回值按时间戳升序排列，仅含"未在队列文件中找到文件名"的记录。
+    判据（队列 #107，见模块 docstring 判据变迁）：按出现顺序做**单件在途**
+    配对——`connection.py::on_message` 逐条 `await` 处理消息，同一条连接上
+    至多同时有一条消息"在途"（其 `archived` 已记但 `queue_appended` 尚未
+    确定），故不能用普通 FIFO 队列配对（那等价于假设可以有多条同时挂起、
+    按到达顺序依次消费，而真实约束是"新 `archived` 出现即说明上一条消息
+    已经处理完毕"）。逐条扫描：遇到 `archived` 时，若上一条还留着一个未
+    配对的 `pending`，说明它直到下一条消息开始都没等到 `queue_appended`
+    ——判定该 `pending` 未配对，并把当前这条记作新的 `pending`；遇到
+    `queue_appended` 时清空 `pending`（配对成功）。循环结束后若仍有
+    `pending` 留存，也计入未配对候选。
+
+    `within_days` 之外（含时间戳缺失/无法解析）的候选不纳入扫描范围，只
+    关心近期新鲜信号，早期历史件不重复提醒。`queue_text` 提供时对候选做
+    一次二级交叉校验（子串匹配现役队列+归档件），命中即不视为真漏行；不
+    提供时（默认）跳过这层校验，纯以配对结果为准。
+
+    返回值按时间戳升序排列。
     """
     cutoff = now - timedelta(days=within_days)
-    unreconciled: list[dict] = []
+    unpaired_candidates: list[dict] = []
+    pending: Optional[dict] = None
     for event in audit_events:
+        action = event.get("action")
+        if action == "archived":
+            if pending is not None:
+                unpaired_candidates.append(pending)
+            pending = event
+        elif action == "queue_appended":
+            pending = None
+    if pending is not None:
+        unpaired_candidates.append(pending)
+
+    unreconciled: list[dict] = []
+    for event in unpaired_candidates:
         ts_raw = event.get("timestamp")
         if not ts_raw:
             continue
@@ -58,9 +107,9 @@ def find_unreconciled_archives(
         archived_path = (event.get("decision") or {}).get("archived_path")
         if not archived_path:
             continue
-        filename = PurePath(archived_path).name
-        if filename not in queue_text:
-            unreconciled.append(event)
+        if queue_text is not None and PurePath(archived_path).name in queue_text:
+            continue
+        unreconciled.append(event)
     unreconciled.sort(key=lambda e: e.get("timestamp", ""))
     return unreconciled
 
@@ -116,9 +165,14 @@ async def run_reconciliation_sentinel(
     """每次连接成功后调用一次（比照 `gap_alert.send_gap_alert` 的调用时机）。
     整条链路失败（含发送失败）都只审计留痕，不向上抛出——哨兵本身不应影响
     服务主流程。"""
-    events = audit.query_by(scenario="wecom-aibot", action="archived")
+    # 不预先按 action 过滤——find_unreconciled_archives 需要 archived 与
+    # queue_appended 两类事件按原始顺序配对（队列 #107），过滤掉其一会破坏
+    # 配对所需的完整序列。
+    events = audit.query_by(scenario="wecom-aibot")
     queue_text = _collect_reconciliation_text(queue_path)
-    unreconciled = find_unreconciled_archives(events, queue_text, now=now, within_days=within_days)
+    unreconciled = find_unreconciled_archives(
+        events, now=now, within_days=within_days, queue_text=queue_text,
+    )
     report = build_reconciliation_report(unreconciled)
     if report is None:
         return

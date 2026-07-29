@@ -58,6 +58,29 @@ def _next_task_id(lines: list[str], start: int, end: int) -> int:
     return baseline + 1
 
 
+def _bump_section_one_high_water_mark(lines: list[str], new_value: int) -> bool:
+    """原地把顶部"编号高水位线"标注行的 §一 号更新为 `new_value`（本次追加
+    确定的新 task_id），与追加同一次读改写、同一把乐观并发锁内完成——不分
+    两步是为了避免"取号"和"回写"之间再开一个竞态窗口。
+
+    队列 #146：`_next_task_id` 此前只读高水位线用于取号，取完从不回写，导致
+    高水位线长期停滞在陈旧值——任何"按高水位线划定扫描范围"的下游消费方
+    （拆件巡逻等）都会集体漏看高水位线之后、表格里已真实存在的新行。
+
+    标注行不存在，或存在但 §一 号解析失败（格式漂移）时，原样返回 `lines`
+    不做任何改动，返回 `False`——与 `_next_task_id`/`_parse_section_one_
+    high_water_mark` 一致的"解析失败即回落，不新增风险"处理方式。返回
+    `True` 表示已原地修改了某一行。"""
+    for i, line in enumerate(lines):
+        if _HIGH_WATER_MARK_LINE_RE.search(line):
+            m = _HIGH_WATER_MARK_SECTION_ONE_RE.search(line)
+            if m is None:
+                return False
+            lines[i] = f"{line[:m.start(1)]}{new_value}{line[m.end(1):]}"
+            return True
+    return False
+
+
 def append_pending_task(
     queue_path: Path,
     *,
@@ -118,6 +141,9 @@ def append_pending_task(
             f"| {task_id} | {description} | {owner} | {input_pointer} | "
             f"{expected_output} | 待领 | {touch_zone} | {date_str} |"
         )
+        # 与追加同一次读改写内回写高水位线（队列 #146）——标注行不存在/解析
+        # 失败时 _bump_section_one_high_water_mark 原样跳过，不影响追加本身。
+        _bump_section_one_high_water_mark(lines, task_id)
         lines.insert(insert_at + 1, row)
 
         newline = "\n" if text.endswith("\n") else ""

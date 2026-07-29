@@ -6,6 +6,7 @@ from aibot_service.queue_appender import (
     append_pending_task,
     _next_task_id,
     _parse_section_one_high_water_mark,
+    _bump_section_one_high_water_mark,
     _section_bounds,
     _ROW_ID_RE,
 )
@@ -436,3 +437,99 @@ def test_append_pending_task_raises_after_max_retries_under_perpetual_race(tmp_p
             date_str="2026-07-22",
             max_retries=3,
         )
+
+
+# ── 高水位线追加即回写（队列 #146）────────────────────────────────────────
+#
+# `_next_task_id` 会读高水位线用于取号，但此前取完从不回写——高水位线因此
+# 长期停滞在陈旧值，任何"按高水位线划定扫描范围"的下游消费方（拆件巡逻等）
+# 都会集体漏看高水位线之后、表格里已真实存在的新行（2026-07-29 拆件巡逻
+# 报"空巡"，但 #144/#145 真实存在且状态"待领"）。本节验证追加成功后同一次
+# 写入内高水位线被同步更新为新 task_id。
+
+def test_bump_section_one_high_water_mark_updates_matched_line():
+    lines = "> **编号高水位线：§一 #146 ｜ §四 #37**（说明文字）".splitlines()
+    changed = _bump_section_one_high_water_mark(lines, 147)
+    assert changed is True
+    assert lines[0] == "> **编号高水位线：§一 #147 ｜ §四 #37**（说明文字）"
+
+
+def test_bump_section_one_high_water_mark_missing_marker_is_noop():
+    lines = SAMPLE_QUEUE.splitlines()  # 无高水位线标注行
+    original = list(lines)
+    changed = _bump_section_one_high_water_mark(lines, 999)
+    assert changed is False
+    assert lines == original
+
+
+def test_bump_section_one_high_water_mark_malformed_marker_is_noop():
+    lines = "> **编号高水位线：格式已变，无法解析**".splitlines()
+    original = list(lines)
+    changed = _bump_section_one_high_water_mark(lines, 999)
+    assert changed is False
+    assert lines == original
+
+
+def test_append_pending_task_bumps_high_water_mark_to_new_task_id(tmp_path):
+    """标注行存在且能解析——追加成功后，同一次写入应把 §一 号更新为本次
+    分配的新 task_id（19），§四 号保持不变。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(QUEUE_AFTER_SWEEP, encoding="utf-8")
+
+    append_pending_task(
+        queue_path,
+        description="企微反馈自动归档：高水位线回写测试",
+        owner="CC 平台",
+        input_pointer="p",
+        expected_output="e",
+        date_str="2026-07-29",
+    )
+
+    new_text = queue_path.read_text(encoding="utf-8")
+    assert "编号高水位线：§一 #19 ｜ §四 #5" in new_text
+    assert "| 19 | 企微反馈自动归档：高水位线回写测试 |" in new_text
+
+
+def test_append_pending_task_leaves_high_water_mark_untouched_when_marker_missing(tmp_path):
+    """标注行本就不存在（旧版文件）——追加仍应正常完成，不因为多了这一步
+    回写逻辑而报错或凭空插入一行新的标注行。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+
+    row = append_pending_task(
+        queue_path,
+        description="d", owner="o", input_pointer="i", expected_output="e",
+        date_str="2026-07-29",
+    )
+
+    new_text = queue_path.read_text(encoding="utf-8")
+    assert row.startswith("| 19 |")
+    assert "编号高水位线" not in new_text
+
+
+def test_append_pending_task_bumps_high_water_mark_after_concurrent_retry(tmp_path):
+    """乐观并发重试路径下（队列 #69/#70 场景），高水位线回写必须基于**重算
+    后**的最终 task_id（20），不是第一次计算、后来被作废的那个（19）——否则
+    回写值本身就是错的，等于制造一个新的"高水位线又落后于真实最大号"缺陷。"""
+    # 复用 SAMPLE_QUEUE 结构但加一条高水位线标注行（滞后于可见最大号 18，
+    # 复刻真实场景），确保 _FlakyPath 抢先插入的竞态行（编号 19）之后，我方
+    # 重算出的编号是 20，而非第一次计算、已作废的 19。
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(
+        "> **编号高水位线：§一 #17 ｜ §四 #5**（尚未更新）\n\n" + SAMPLE_QUEUE,
+        encoding="utf-8",
+    )
+    flaky = _FlakyPath(queue_path, race_before_call=2)
+
+    append_pending_task(
+        flaky,
+        description="我方要追加的行",
+        owner="财务专线",
+        input_pointer="p2",
+        expected_output="e2",
+        date_str="2026-07-22",
+    )
+
+    final_text = queue_path.read_text(encoding="utf-8")
+    assert "| 20 | 我方要追加的行 | 财务专线 |" in final_text
+    assert "编号高水位线：§一 #20 ｜ §四 #5" in final_text
