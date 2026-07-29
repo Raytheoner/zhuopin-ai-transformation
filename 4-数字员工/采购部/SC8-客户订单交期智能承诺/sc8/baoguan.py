@@ -89,6 +89,14 @@ class ComponentSupplyStatus:
     # 仅当调用方传入 material_commitments 且该子件命中"已答交"两态之一时才计算，
     # 否则恒为空列表（未传参数时零漂移，向后兼容旧行为）。
     confirmed_batches: tuple[tuple[date, float], ...] = field(default_factory=tuple)
+    # 可用现货数量（④）/ 缺口数量（⑥）（姚祖怡 07-26 V6 回件原文签认，07-29 第三次重申
+    # 队列 #152）：available_qty＝调用方传入的该料号净额（已按优先级分配扣减，见
+    # build_dashboard._allocate_sequential_inventory）；gap_qty＝qty_needed−available_qty。
+    # 仅当净额开关开启且传入 inventory 时计算，否则恒为 None（不以 0 冒充，同
+    # kittable_qty 等既有字段约定）；gap_qty≤0 的子件由 _component_supply_status
+    # 在构造前过滤掉，不会出现在返回列表里（#151，展示层过滤，不改计算输入）。
+    available_qty:     float | None = None
+    gap_qty:           float | None = None
 
 
 @dataclass
@@ -371,6 +379,7 @@ def _component_supply_status(
     mat: MaterialArrivals, gross: dict[str, float], names: dict[str, str],
     purchase_orders: dict[str, float],
     material_commitments: dict[str, list[tuple[date, float]]] | None = None,
+    inventory: dict[str, float] | None = None,
 ) -> list[ComponentSupplyStatus]:
     """对 mat.arrivals 里每个"无法从现货立即满足需求"的子件，交叉 PO 在途 + SRM 答交
     分类出四态之一（#12，功能批1）。按料号排序，输出稳定、便于测试/前端渲染。
@@ -379,6 +388,16 @@ def _component_supply_status(
     （STATUS_TRANSIT_CONFIRMED / STATUS_CONFIRMED_NO_TRANSIT）额外计算
     confirmed_batches（供应计划逐期累计明细）；缺省 None 时该字段恒为空元组，
     不影响既有 status/transit_qty/confirmed_date 判定（零漂移）。
+
+    inventory（④可用现货数量/⑥缺口数量，姚祖怡 07-29 三次重申，队列 #152，可选）：
+    调用方仅在净额开关开启时传入（见 assess_supply_risk），值为该行订单在优先级分配
+    后看到的每料号净额（build_dashboard._allocate_sequential_inventory 的输出，即
+    "现货净额−优先级排在本项目前已占用量"，与姚祖怡定义逐字一致）。缺省 None 时
+    available_qty/gap_qty 恒为 None，不做任何过滤（零漂移，与既有 kittable_qty 等
+    字段"不以 0 冒充"同一约定）。gap_qty=qty_needed−available_qty；**≤0 的子件不
+    纳入返回列表**（#151，姚祖怡 07-26 V6 回件原文签认"缺口数量如≤0，则该行视为
+    满足齐套需求，不应该体现在缺料子件中"）——纯展示层过滤，不改变 mat/gross 等
+    计算输入，不影响 component_count/kittable_qty 等既有统计口径。
     """
     nf_set = set(mat.no_feedback_materials)
     out: list[ComponentSupplyStatus] = []
@@ -397,12 +416,22 @@ def _component_supply_status(
         if confirmed and material_commitments:
             batches = _cumulative_confirmed_batches(
                 material_commitments.get(m, []), gross.get(m, 0.0))
+        need = gross.get(m, 0.0)
+        available_qty: float | None = None
+        gap_qty: float | None = None
+        if inventory is not None:
+            available_qty = float(inventory.get(m, 0.0) or 0.0)
+            gap_qty = need - available_qty
+            if gap_qty <= 0:
+                continue   # #151：缺口≤0 不进 BOM 缺口物料清单（展示层过滤）
         out.append(ComponentSupplyStatus(
             component_id=m, component_name=names.get(m, ""),
-            qty_needed=gross.get(m, 0.0), status=status,
+            qty_needed=need, status=status,
             transit_qty=transit_qty,
             confirmed_date=mat.arrivals[m] if confirmed else None,
             confirmed_batches=batches,
+            available_qty=available_qty,
+            gap_qty=gap_qty,
         ))
     return out
 
@@ -505,7 +534,8 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     # 开关 OFF 或无 inventory 时三者恒为 None，零漂移。
     kittable_qty = kittable_bottleneck = kittable_shortfall = None
     demand_kittable_qty = demand_kittable_bottleneck = None
-    if inventory and had_bom and config.net_inventory_enabled():
+    net_inventory_active = bool(inventory and had_bom and config.net_inventory_enabled())
+    if net_inventory_active:
         covered = _covered_by_stock(so, bom, inventory)
         if covered:
             mat = _drop_covered(mat, covered)
@@ -517,9 +547,12 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
 
     # #12 子件供给状态全展示：独立于净额开关，只要传了 purchase_orders 即计算（功能批1）。
     # material_commitments 一并传入以计算 confirmed_batches（#18-a/b，队列 #139）。
-    component_status = (_component_supply_status(mat, gross, component_names, purchase_orders,
-                                                  material_commitments)
-                        if had_bom and purchase_orders is not None else [])
+    # inventory 仅当净额开关生效时传入（④可用现货数量/⑥缺口数量，队列 #152），与
+    # kittable_qty 等既有字段同一开关同一语义，开关关闭时两个新字段恒为 None。
+    component_status = (_component_supply_status(
+            mat, gross, component_names, purchase_orders, material_commitments,
+            inventory=inventory if net_inventory_active else None)
+        if had_bom and purchase_orders is not None else [])
 
     if not had_bom:
         risk, action = _classify(None, None, False, p, 0, None, None, False)
@@ -820,8 +853,12 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);fon
 .legend table{width:100%;border-collapse:collapse;margin:6px 0}
 .legend th,.legend td{padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);font-size:12px}
 .cst{margin-top:8px;font-size:12px}
-.cst-item{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:4px 0;border-top:1px dashed var(--border)}
-.cst-tag{font-size:11px;padding:1px 7px;border-radius:6px;white-space:nowrap}
+/* BOM 缺口物料清单八字段整体呈现（队列 #152，姚祖怡三次重申后改为真表格）：表格对齐 +
+   子件上下行对齐 + 内容过长自动换行（word-break，不截断/不省略）。 */
+.cst-table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed}
+.cst-table th,.cst-table td{padding:5px 6px;text-align:left;vertical-align:top;font-size:12px;border-bottom:1px solid var(--border);word-break:break-word;white-space:normal}
+.cst-table th{color:var(--text2);font-weight:500;white-space:nowrap}
+.cst-tag{font-size:11px;padding:1px 7px;border-radius:6px;white-space:nowrap;display:inline-block}
 .cst-tag.no{background:var(--danger-bg);color:var(--danger)}
 .cst-tag.un{background:var(--gap-bg);color:var(--gap)}
 .cst-tag.co{background:var(--ok-bg);color:var(--ok)}
@@ -882,32 +919,38 @@ function nfdText(r){
  return '<div class="nfd">⚠ 按无答复估算（非确定承诺）：'+items+'</div>';
 }
 
-// 答交数量/答交日期累计展示（#18-a/b，姚祖怡 07-28 判例回件，队列 #139）：优先用
-// s.cb（供应计划逐期累计明细，多条时按"数量×日期"逐条列出），无 cb 数据时回退
-// 展示旧单一日期口径 s.cd（不臆造数量）。
-function answerBatchesText(s){
- if(s.cb&&s.cb.length)return s.cb.map(function(b){return fmt(b.q)+'×'+esc(b.d);}).join('、');
- return s.cd?esc(s.cd):'—';
-}
+// 答交数量/答交日期（⑦⑧，队列 #152，姚祖怡三次重申后根治）：唯一取值来源＝s.cb
+// （SRM 供应计划-供应计划排产逐期确认明细，见 sources.load_material_commitments）。
+// s.cb 为空时**如实显示"无"**——不再回退 s.cd（旧 /purchase/answer 整单口径，姚祖怡
+// 07-29 指认取错源头的正是这个字段：SRM 供应计划板对"7 天前数据"有查询限制，一旦
+// s.cb 因此取不到，旧写法会静默顶替上场，看起来像是"修好了却还在犯同一个错"，这才是
+// 三次重申的根因）。去掉"件·答交"之间的分隔符（姚祖怡要求）：8 个字段各自独立成列，
+// 不再拼接在一行文本里，天然无需分隔符。
+function answerQtyText(s){return (s.cb&&s.cb.length)?s.cb.map(function(b){return fmt(b.q);}).join('、'):'无';}
+function answerDateText(s){return (s.cb&&s.cb.length)?s.cb.map(function(b){return esc(b.d);}).join('、'):'无';}
 
-// #12 子件供给状态全展示：BOM 缺口物料清单（姚祖怡 07-26 V6 #10 措辞：原"全部无法
-// 即时满足需求的子件"表述不精准，改为此名），逐条列出实际状态。
+// #12/#152 BOM 缺口物料清单八字段整体呈现（姚祖怡三次重申：07-26 V6 #18-a → 07-28
+// 判例回件 → 07-29 第三次），真表格渲染——表格对齐、子件上下行对齐、内容过长自动
+// 换行（CSS word-break，见 .cst-table）。八字段：①料号 ②品名 ③状态 ④可用现货数量
+// ⑤本项目需求数量 ⑥缺口数量 ⑦答交数量 ⑧答交日期；④⑥无库存数据时显示"—"（不以 0
+// 冒充，同 kq/dkq 等既有字段约定），⑦⑧未答交时显示"无"（姚祖怡原话）。
 function componentStatusHtml(r){
  if(!r.cst||!r.cst.length)return'';
- var items=r.cst.map(function(s){
+ var rows=r.cst.map(function(s){
   var label=CST_LABEL[s.st]||s.st;
   var tagCls=CST_CLS[s.st]||'no';
-  var extra='';
-  if(s.st==='transit_unconfirmed')extra='未交订单 '+fmt(s.tq)+' 件';
-  else if(s.st==='transit_confirmed')extra='未交订单 '+fmt(s.tq)+' 件 · 答交 '+answerBatchesText(s);
-  else if(s.st==='confirmed_no_transit')extra='答交 '+answerBatchesText(s);
-  // 姚祖怡 07-26 V6 #2：本项目需求数量＝ERP 预测订单数量×BOM 子件用量（s.qty，
-  // 与 assess_supply_risk 的 _gross_need 同一份取值，纯展示新增，非新计算）。
-  var need='本项目需求数量 '+fmt(s.qty);
-  return '<div class="cst-item"><span class="mono">'+esc(s.id)+'</span>'+(s.name?'（'+esc(s.name)+'）':'')
-    +'<span class="cst-tag '+tagCls+'">'+label+'</span><span>'+need+'</span>'+(extra?'<span>'+extra+'</span>':'')+'</div>';
+  var avail=s.aq==null?'—':fmt(s.aq);
+  var gapq=s.gq==null?'—':fmt(s.gq);
+  return '<tr><td class="mono">'+esc(s.id)+'</td><td>'+(s.name?esc(s.name):'—')+'</td>'
+    +'<td><span class="cst-tag '+tagCls+'">'+label+'</span></td>'
+    +'<td>'+avail+'</td><td>'+fmt(s.qty)+'</td><td>'+gapq+'</td>'
+    +'<td>'+answerQtyText(s)+'</td><td>'+answerDateText(s)+'</td></tr>';
  }).join('');
- return '<div class="cst"><div class="cov-h"><span>BOM 缺口物料清单</span></div>'+items+'</div>';
+ return '<div class="cst"><div class="cov-h"><span>BOM 缺口物料清单</span></div>'
+   +'<table class="cst-table"><thead><tr>'
+   +'<th>料号</th><th>品名</th><th>状态</th><th>可用现货数量</th>'
+   +'<th>本项目需求数量</th><th>缺口数量</th><th>答交数量</th><th>答交日期</th>'
+   +'</tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 
 function card(r){
@@ -1008,17 +1051,20 @@ function render(){
 function exportExcel(){
  var l=view();
  var hdr=['成品','品名','客户','数量','计划出货日','齐料日','缺口天数','子件数','未答复','瓶颈','风险',
-   '子件料号','子件品名','子件状态','本项目需求数量','未交订单量','答交数量','答交日期'];
+   '子件料号','子件品名','子件状态','可用现货数量','本项目需求数量','缺口数量','未交订单量','答交数量','答交日期'];
  var thead='<tr>'+hdr.map(function(h){return '<th>'+esc(h)+'</th>';}).join('')+'</tr>';
  var tbody='';
  l.forEach(function(r){
-  var main=[r.id,r.name,r.cust,r.qty,r.ship,r.kit||'',r.gap==null?'':r.gap,r.comp,r.nf,r.bn,RT[r.risk],'','','','','','',''];
+  var main=[r.id,r.name,r.cust,r.qty,r.ship,r.kit||'',r.gap==null?'':r.gap,r.comp,r.nf,r.bn,RT[r.risk],
+    '','','','','','','','',''];
   tbody+='<tr>'+main.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';
   (r.cst||[]).forEach(function(s){
-   // 答交数量/答交日期（#18-a/b）：s.cb 有多期确认记录时逐条列出，与卡片视图 answerBatchesText 同源。
-   var qtyText=(s.cb&&s.cb.length)?s.cb.map(function(b){return b.q;}).join('、'):'';
-   var dateText=(s.cb&&s.cb.length)?s.cb.map(function(b){return b.d;}).join('、'):(s.cd||'');
-   var sub=['','','','','','','','','','','', s.id, s.name, CST_LABEL[s.st]||s.st, s.qty, s.tq, qtyText, dateText];
+   // 可用现货数量/缺口数量（④⑥，队列 #152）与答交数量/答交日期（⑦⑧，#18-a/b，与
+   // 卡片视图 answerQtyText/answerDateText 同源、同一"无数据显示无/—"约定）。
+   var avail=s.aq==null?'':s.aq;
+   var gapq=s.gq==null?'':s.gq;
+   var sub=['','','','','','','','','','','',
+     s.id, s.name, CST_LABEL[s.st]||s.st, avail, s.qty, gapq, s.tq, answerQtyText(s), answerDateText(s)];
    tbody+='<tr>'+sub.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';
   });
  });
@@ -1072,11 +1118,17 @@ def row_to_dict(r: BaoguanRow) -> dict:
         # ③ 料品名称（功能批1）：{子件料号: 品名}，供前端在任意料号旁查表显示品名。
         "cn": r.component_names,
         # #12 子件供给状态全展示（功能批1）：无 purchase_orders 数据时为空列表。
-        # cb（#18-a/b，队列 #139）：答交数量累计明细 [{"d":确认日期,"q":确认数量},...]，
-        # 按日期升序、累计满足本行毛需求为止；无 material_commitments 数据时恒为空列表，
-        # 前端回退展示 cd（旧单一日期口径）。
+        # aq/gq（④可用现货数量/⑥缺口数量，队列 #152）：仅净额开关生效时非 None，
+        # 见 _component_supply_status；gap_qty≤0 的子件已在该函数内被过滤，不会
+        # 出现在这里。cb（#18-a/b，队列 #139）：答交数量累计明细
+        # [{"d":确认日期,"q":确认数量},...]，按日期升序、累计满足本行毛需求为止；
+        # cd（旧口径，来自 /purchase/answer 整单答交，姚祖怡 07-29 指认其为取错源头
+        # 的字段，队列 #152）**只保留供内部排障参考，前端不再用它回填 cb 为空时的
+        # 展示**——cb 为空时前端如实显示"无"（见 answerQtyText/answerDateText），
+        # 不再静默顶替成这个已知不准的旧数值。
         "cst": [{"id": s.component_id, "name": s.component_name, "qty": s.qty_needed,
                 "st": s.status, "tq": s.transit_qty,
+                "aq": s.available_qty, "gq": s.gap_qty,
                 "cd": s.confirmed_date.isoformat() if s.confirmed_date else None,
                 "cb": [{"d": d.isoformat(), "q": q} for d, q in s.confirmed_batches]}
                for s in r.component_status],

@@ -224,7 +224,7 @@ def test_row_to_dict_serializes_new_fields(monkeypatch):
     d = row_to_dict(row)
     assert d["cn"] == {"A": "电容"}
     assert d["cst"] == [{"id": "A", "name": "电容", "qty": 100.0, "st": "transit_unconfirmed",
-                         "tq": 20.0, "cd": None, "cb": []}]
+                         "tq": 20.0, "aq": 50.0, "gq": 50.0, "cd": None, "cb": []}]
     assert d["dkq"] == 50 and d["dkbn"] == "A"   # 到货远超出货日，只算现货50
 
 
@@ -386,5 +386,5 @@ def test_render_html_shows_answer_quantity_and_multiple_dates():
                                purchase_orders={"A": 700.0},
                                material_commitments=commitments)]
     html = render_html(rows, today=TODAY)
-    assert "answerBatchesText" in html
+    assert "answerQtyText" in html and "answerDateText" in html
     assert "s.cb" in html
