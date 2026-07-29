@@ -592,6 +592,86 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     )
 
 
+def _resolve_priority_order(
+    material_id: str, order_indices: list[int], orders: list[SalesOrder], priority_resolver,
+) -> list[int]:
+    """排出竞争同一料号现货的订单处理顺序（#118 批2·优先级分配引擎首版，队列
+    #147④/#141 衍生，2026-07-29 Paul 拍板）。返回值是 `orders` 列表下标，不是 so_id——
+
+    **真实数据踩坑（2026-07-29 部署后发现，本函数第二版）**：真实数据里同一张预测
+    订单（FO）文档下的多个行项**共享同一个 `so_id`**（`fo_to_sales_orders` 按
+    `fo.fo_id`——文档级单号——赋值，S02Y.0210 的 8 条真实需求行 so_id 全部是
+    "FO2026070001"）。首版用 `so.so_id` 当字典键/去重键，导致 8 个订单对象被
+    静默折叠成 1 个，跨订单竞争检测形同虚设（真实验证 kq 恒为 1153、risk 恒为
+    🟢，逐级扣料完全没生效）。改用**下标**定位具体行，任何场景下保证唯一。
+
+    真实案例（S02Y.0210）：同一料号被 3 张需求单（600/400/500 套，出货
+    07-20/08-20/09-20）共同争用现货 1,153 件，此前 `_kittable_qty`/`_covered_by_stock`
+    各自独立读取现货**全量**，3 行都判"齐套"，但 600+400+500=1,500 > 1,153，
+    实际第三行不该判齐——姚祖怡 07-29 指出"必须逐级扣料"。
+
+    优先级来源：`priority_resolver`（B4 框架桩，shortage-baoguan-criteria-v3，2026-07-10
+    定义，签名 `(material_id, competing_so_ids) -> 按优先级排序的 so_id 列表`——接口
+    粒度仍是 so_id，无法区分同一 so_id 下的多个行项；若多个下标共享同一 so_id，
+    按其在 `orders` 中的原始相对顺序作二级排序）——真实 PMC 优先级表（#15）尚未
+    上线，**临时用出货日期升序代替**（谁出货早谁先占，Paul 07-29 原话："先用出货
+    日期早晚当临时优先级，等#15真正的PMC优先级表上线后再替换掉这条临时规则"）。
+    #15 上线后传入真实 `priority_resolver` 即自动切换，本兜底届时不再生效。
+    """
+    if priority_resolver is not None:
+        so_ids = [orders[i].so_id for i in order_indices]
+        ordered_so_ids = priority_resolver(material_id, so_ids)
+        rank = {so_id: i for i, so_id in enumerate(ordered_so_ids)}
+        return sorted(order_indices, key=lambda i: (rank.get(orders[i].so_id, len(rank)), i))
+    return sorted(order_indices, key=lambda i: (orders[i].required_date, i))
+
+
+def _allocate_sequential_inventory(
+    orders: list[SalesOrder], bom: list, inventory: dict[str, float],
+    priority_resolver=None,
+) -> list[dict[str, float]]:
+    """按优先级顺序（见 `_resolve_priority_order`）从共享现货池依次扣减各料号毛需求，
+    返回与 `orders` 位置一一对应的列表——`effective[i]` 是第 i 张订单在其处理
+    顺位时点看到的有效库存快照（#118，2026-07-29）。
+
+    **返回类型改为按下标对齐的 list（原第一版是 {so_id: ...} 的 dict）**：真实数据
+    里 so_id 在同一 FO 文档的多个行项间会重复，dict 会把它们静默去重合并成一条，
+    详见 `_resolve_priority_order` 文档串的踩坑记录。
+
+    只对"同一料号被 2 个及以上订单同时需要"的场景生效——占用仅按需求数量、不含
+    富余（Paul 07-28 拍板口径），排在后面的订单只能拿到前面订单消耗后的剩余部分。
+    未被竞争触碰的物料键（含替代料、单一订单独占的物料）**原样保留调用方传入的
+    `inventory` 全量值**，不受影响——不改变既有 `_covered_by_stock`/`_kittable_qty`/
+    `_demand_kittable_qty` 对这些物料的既有行为，只在真正存在跨订单争用时才生效。
+
+    已知边界（本版范围，未做）：替代料等价合并（C-1）不参与本次跨订单分配——
+    `_gross_need` 本就不含替代料行，故替代料的现货池不会被本函数扣减；多个订单
+    若都靠"主料+替代料"合并勉强齐套，本版可能对主料分配保守（因为看不到替代料
+    也在被同一批订单消耗），但不会高估——留独立后续任务，需先有真实替代料+多单
+    竞争的场景再评估是否需要处理。
+    """
+    gross_list = [_gross_need(so, bom) for so in orders]
+    competitors: dict[str, list[int]] = {}
+    for idx, gross in enumerate(gross_list):
+        for material, need in gross.items():
+            if need <= 0:
+                continue
+            competitors.setdefault(material, []).append(idx)
+
+    effective: list[dict[str, float]] = [dict(inventory) for _ in orders]
+
+    for material, idxs in competitors.items():
+        if material not in inventory or len(idxs) < 2:
+            continue   # 无库存数据或无跨订单争用 → 各行沿用原始 inventory 全量，不分配
+        ordered = _resolve_priority_order(material, idxs, orders, priority_resolver)
+        pool = float(inventory.get(material, 0.0))
+        for idx in ordered:
+            effective[idx][material] = max(pool, 0.0)
+            need = gross_list[idx].get(material, 0.0)
+            pool -= min(max(pool, 0.0), need)
+    return effective
+
+
 def build_dashboard(orders: list[SalesOrder], bom: list, srm_deliveries: list, *,
                     today: date, params: ForecastParams | None = None,
                     inventory: dict | None = None,
@@ -605,19 +685,30 @@ def build_dashboard(orders: list[SalesOrder], bom: list, srm_deliveries: list, *
     `material_commitments`（B2 周期累计供需匹配，见 assess_supply_risk）缺省 None 时
     各行 `period_match` 恒为空字典，不影响四色/缺口既有逻辑。
 
-    `priority_resolver`（B4 框架桩，shortage-baoguan-criteria-v3，2026-07-10 会议定稿）：
-    签名 `(material_id: str, competing_so_ids: list[str]) -> list[str]`（按 PMC 月度优先级
-    排序后的 so_id 列表），用于未来"共用子件现货按 PMC 优先级占用"（同一物料被多个成品行
-    同时竞争时谁先扣现货）。**本次只接受该参数、不调用/不实现真实排序逻辑**（PMC 数据源
-    未就绪）——传入任何值都不改变当前结果，等真实数据到位后再接线。
+    `priority_resolver`（B4 框架桩，shortage-baoguan-criteria-v3，2026-07-10 会议定稿；
+    **2026-07-29 起接线生效，见 #118**）：签名 `(material_id: str, competing_so_ids: list[str])
+    -> list[str]`（按 PMC 月度优先级排序后的 so_id 列表），用于"共用子件现货按优先级占用"
+    （同一物料被多个成品行同时竞争时谁先扣现货）。真实 PMC 优先级数据源（#15）尚未上线，
+    缺省 None 时**临时按出货日期升序**代替（谁出货早谁先占，Paul 07-29 拍板，见
+    `_resolve_priority_order`）；传入真实 resolver 后自动切换，本兜底不再生效。
 
     `purchase_orders`（{material_id→在途未清量}，功能批1，姚祖怡 07-23）：驱动 #12 子件
     供给状态全展示 + #14 需求日可齐套数量，缺省 None 时两者恒为空/None，零漂移。
     """
-    rows = [assess_supply_risk(so, bom, srm_deliveries, today=today, params=params,
-                               inventory=inventory, material_commitments=material_commitments,
-                               purchase_orders=purchase_orders)
-            for so in orders]
+    # #118（2026-07-29，Paul 拍板）：现货是跨订单共享的池子，同一物料被多张需求单
+    # 同时争用时必须按优先级顺序依次扣减，不能让每一行各自独立看到"全量库存"
+    # （真实案例 S02Y.0210：3 张单合计需求 1,500 > 现货 1,153，此前 3 行都误判齐套）。
+    # 仅当净额开关打开且传了 inventory 时才分配；否则行为与改造前完全一致（零漂移）。
+    effective_inventory = None
+    if inventory and config.net_inventory_enabled():
+        effective_inventory = _allocate_sequential_inventory(orders, bom, inventory,
+                                                              priority_resolver)
+    rows = [assess_supply_risk(
+                so, bom, srm_deliveries, today=today, params=params,
+                inventory=(effective_inventory[i] if effective_inventory is not None
+                          else inventory),
+                material_commitments=material_commitments, purchase_orders=purchase_orders)
+            for i, so in enumerate(orders)]
     order = {RISK_RED: 0, RISK_GAP: 1, RISK_YELLOW: 2, RISK_GREEN: 3}
     rows.sort(key=lambda r: (order.get(r.risk, 4), -(r.gap_days if r.gap_days is not None else 9999)))
     return rows
