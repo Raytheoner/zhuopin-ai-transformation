@@ -30,6 +30,22 @@ $ErrorActionPreference = "Stop"
 if (-not (Test-Path "$Base\serve.py"))   { throw "缺 $Base\serve.py —— 先在笔记本跑 sync-to-server.ps1 推送" }
 if (-not (Test-Path "$Base\index.html")) { throw "缺 $Base\index.html（命令中心页面）" }
 
+# 访问口令 .env（ZP_GATE_PASSWORD，四服务共享，临时止血，跨桌任务队列 #10）
+Write-Host "检查访问口令 .env..." -ForegroundColor Yellow
+$envFile = Join-Path $Base ".env"
+if (-not (Test-Path $envFile)) {
+    Set-Content -Path $envFile -Value "# 四服务共享访问口令门禁（临时止血,跨桌任务队列#10）——8091/8092/8093/8094 四份.env须填同一个值`nZP_GATE_PASSWORD=`n" -Encoding UTF8
+    Write-Host "  已生成 $envFile（ZP_GATE_PASSWORD 待填，四服务须用同一个值）" -ForegroundColor DarkYellow
+} else {
+    $hasGate = (Get-Content $envFile) -match '^\s*ZP_GATE_PASSWORD='
+    if (-not $hasGate) {
+        Add-Content -Path $envFile -Value "`n# 四服务共享访问口令门禁（临时止血,跨桌任务队列#10）——四份.env须填同一个值`nZP_GATE_PASSWORD=`n"
+        Write-Host "  已在既有 .env 追加 ZP_GATE_PASSWORD（待填，四服务须同一个值）" -ForegroundColor DarkYellow
+    } else {
+        Write-Host "  .env 已含 ZP_GATE_PASSWORD" -ForegroundColor Green
+    }
+}
+
 # 解析绝对路径（本脚本以管理员交互式跑，"python" 在此处能正确解析；SYSTEM 触发时不会再重新解析）
 $resolvedPython = (Get-Command $PythonExe -ErrorAction SilentlyContinue).Source
 if (-not $resolvedPython) { throw "找不到 Python 可执行文件：$PythonExe（装 3.11+ 并 Add to PATH，或直接传绝对路径）" }

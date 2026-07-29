@@ -76,6 +76,8 @@ XKY_APP_SECRET=
 XKY_ERP_CODE=
 # 真延期推送的保供运维群
 WECOM_WEBHOOK_URL=
+# 四服务共享访问口令门禁（临时止血,跨桌任务队列#10）——8091/8092/8093/8094 四份 .env 须填同一个值
+ZP_GATE_PASSWORD=
 # 可选：AI 草稿 key（无则模板降级） / 定时刷新分钟(默认360=6h) / FO状态(默认2,all=不过滤)
 # ANTHROPIC_API_KEY=
 # SC8_BAOGUAN_REFRESH_MIN=360
@@ -93,6 +95,15 @@ if (Test-Path $envFile) {
     if (-not $keyVal) {
         Write-Host "      ⚠️ .env 里 FORECAST_API_KEY 为空/缺失 —— 刷新会报「FORECAST_API_KEY 未配置」。" -ForegroundColor Red
         Write-Host "         请把笔记本仓库根的完整 .env 覆盖到 $envFile（含真实 FO 密钥）后重启任务。" -ForegroundColor Red
+    }
+}
+# 幂等确保 ZP_GATE_PASSWORD 这一行存在（既有 .env 早于本次门禁上线时不会有此行）；
+# 首次生成的模板已含此行，这里只补"已存在的老 .env 缺这一行"的场景，不覆盖已填的值。
+if (Test-Path $envFile) {
+    $hasGate = (Get-Content $envFile) -match '^\s*ZP_GATE_PASSWORD='
+    if (-not $hasGate) {
+        Add-Content -Path $envFile -Value "`n# 四服务共享访问口令门禁（临时止血,跨桌任务队列#10）——四份.env须填同一个值`nZP_GATE_PASSWORD=`n"
+        Write-Host "      已在既有 .env 追加 ZP_GATE_PASSWORD（待填，四服务须同一个值）" -ForegroundColor DarkYellow
     }
 }
 

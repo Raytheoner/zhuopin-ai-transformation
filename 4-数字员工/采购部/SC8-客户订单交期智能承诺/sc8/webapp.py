@@ -24,6 +24,8 @@ from datetime import date, datetime
 
 from flask import Flask, jsonify, redirect, request
 
+from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
+
 from . import config
 from .alert_dispatch import detect_new_red, dispatch_new_reds
 from .baoguan import _HTML_JS, _HTML_STYLE, render_legend
@@ -41,6 +43,7 @@ def create_app(*, snapshot_store: SnapshotStore, case_store: CaseStore,
     cache_dir/srm_ttl_sec：firm 承诺缓存目录与有效期（提速立即重算）；缺省关闭。
     """
     app = Flask(__name__)
+    install_flask_gate(app, service_name="成品保供预警看板")
     app.config["SNAP"] = snapshot_store
     app.config["CASES"] = case_store
     refresh_lock = threading.Lock()

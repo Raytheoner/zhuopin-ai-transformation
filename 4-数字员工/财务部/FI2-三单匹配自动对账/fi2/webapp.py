@@ -25,6 +25,7 @@ from pathlib import Path
 from flask import Flask, Response, request
 
 from zhuopin_platform.audit import AuditLogger
+from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
 
 from . import config as _config
 from .run import run as _run_fi2
@@ -258,6 +259,7 @@ def _report_page(rep: dict) -> str:
 def create_app(*, reports_dir: Path) -> Flask:
     """构建 Flask app。`reports_dir` 由调用方传入（通常是场景内 reports/，已 gitignore）。"""
     app = Flask(__name__)
+    install_flask_gate(app, service_name="FI2 三单匹配自动对账")
     reports_dir.mkdir(parents=True, exist_ok=True)
     audit_path = reports_dir / "fi2_web_audit.jsonl"
     access_trace_path = reports_dir / "fi2_web_access_trace.jsonl"

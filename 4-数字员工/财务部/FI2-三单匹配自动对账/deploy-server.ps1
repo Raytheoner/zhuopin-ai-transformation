@@ -49,9 +49,25 @@ Write-Host "[3/6] 安装依赖（zhuopin_platform + FI2）..." -ForegroundColor 
 & $pipExe install --quiet -e $APP
 Write-Host "      完成" -ForegroundColor Green
 
-# ── 4. 防火墙放行 8094（内网 LAN 全网段，同保供看板/命令中心/QD-B 惯例）──
+# ── 4. 访问口令 .env（ZP_GATE_PASSWORD，四服务共享，临时止血，跨桌任务队列 #10）──
+Write-Host "[4/7] 检查访问口令 .env..." -ForegroundColor Yellow
+$envFile = Join-Path $BASE ".env"
+if (-not (Test-Path $envFile)) {
+    Set-Content -Path $envFile -Value "# 四服务共享访问口令门禁（临时止血,跨桌任务队列#10）——8091/8092/8093/8094 四份.env须填同一个值`nZP_GATE_PASSWORD=`n" -Encoding UTF8
+    Write-Host "      已生成 $envFile（ZP_GATE_PASSWORD 待填，四服务须用同一个值）" -ForegroundColor DarkYellow
+} else {
+    $hasGate = (Get-Content $envFile) -match '^\s*ZP_GATE_PASSWORD='
+    if (-not $hasGate) {
+        Add-Content -Path $envFile -Value "`n# 四服务共享访问口令门禁（临时止血,跨桌任务队列#10）——四份.env须填同一个值`nZP_GATE_PASSWORD=`n"
+        Write-Host "      已在既有 .env 追加 ZP_GATE_PASSWORD（待填，四服务须同一个值）" -ForegroundColor DarkYellow
+    } else {
+        Write-Host "      .env 已含 ZP_GATE_PASSWORD" -ForegroundColor Green
+    }
+}
+
+# ── 5. 防火墙放行 8094（内网 LAN 全网段，同保供看板/命令中心/QD-B 惯例）──
 # 注意：不要限 LocalSubnet —— 组员笔记本常在不同网段(如 WLAN)，LocalSubnet 会挡掉。
-Write-Host "[4/6] 防火墙（入站 TCP $PORT，LAN 全网段）..." -ForegroundColor Yellow
+Write-Host "[5/7] 防火墙（入站 TCP $PORT，LAN 全网段）..." -ForegroundColor Yellow
 $ruleName = "Fi2-WebServer-$PORT"
 if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP `
@@ -63,7 +79,7 @@ if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContin
 }
 
 # ── 5. 启动包装脚本（PowerShell 对中文/UTF-8 路径友好）──
-Write-Host "[5/6] 生成 start-fi2.ps1..." -ForegroundColor Yellow
+Write-Host "[6/7] 生成 start-fi2.ps1..." -ForegroundColor Yellow
 $startPs1 = Join-Path $APP "start-fi2.ps1"
 $startContent = @"
 # FI2 web service launcher (shared by scheduled task and manual start)
@@ -74,7 +90,7 @@ Set-Content -Path $startPs1 -Value $startContent -Encoding UTF8
 Write-Host "      已生成" -ForegroundColor Green
 
 # ── 6. 计划任务（开机自启、SYSTEM、失败重启3次）+ 启动 + 健康检查 ──
-Write-Host "[6/6] 注册计划任务 $TASK..." -ForegroundColor Yellow
+Write-Host "[7/7] 注册计划任务 $TASK..." -ForegroundColor Yellow
 if (Get-ScheduledTask -TaskName $TASK -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $TASK -Confirm:$false   # 重建以更新路径
 }

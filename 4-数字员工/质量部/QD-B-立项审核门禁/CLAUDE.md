@@ -109,3 +109,12 @@
   的②13模块得分率/③扣分明细/④全量82项双筛选/下载按钮均正确渲染，下载链接返回的 xlsx
   经 openpyxl 校验 3 sheet 齐全、评审明细 82 行、扣分明细仅含"待改进/不合格"两态。
   接口/端口/计划任务/防火墙/回滚 SOP 均沿用不变，无需重新注册。
+- **2026-07-30 共享口令门禁上线（临时止血，队列 #160，Paul 直接派单，独立 worktree
+  `four-services-temp-auth`）**：`.51` 四服务（本场景8093/保供看板8091/命令中心8092/FI2 8094）
+  此前均零鉴权、绑 0.0.0.0，LAN 内任何人可见真实立项书财务数据——真实暴露。`webapp.py::create_app`
+  接入 `zhuopin_platform.shared_tools.simple_gate.install_flask_gate`（HMAC签名Cookie 30天+
+  X-Auth-Token程序化访问+登录页，密码环境变量 `ZP_GATE_PASSWORD` 未配置时自动 no-op）；`/api/ping`
+  健康检查豁免。全量回归零漂移：QD-B 96 passed+25 skip（原91+5）。真实部署+curl验证：`/api/ping`
+  放行、未登录302、Token/Cookie 均放行，且用保供看板(8091)登录的 Cookie 直接请求本服务成功（跨
+  端口共享验证）。**非正式鉴权**——仅挡"随便谁都能打开"，正式身份走企微OAuth另待架构决策件；
+  回滚：清空 `.env` 里 `ZP_GATE_PASSWORD=` 值+重启计划任务即恢复原状。详见队列 #160。

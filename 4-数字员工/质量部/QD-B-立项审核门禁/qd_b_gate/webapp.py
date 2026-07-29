@@ -26,6 +26,8 @@ from urllib.parse import quote
 
 from flask import Flask, Response, request, send_from_directory
 
+from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
+
 from .evaluate import EvaluationResult, evaluate
 from .models import RuleResult, Verdict
 from .report_items import (
@@ -347,6 +349,7 @@ def _report_page(result: EvaluationResult, download_url: str) -> str:
 def create_app(*, upload_dir: Path, audit_path: Path, output_dir: Path | None = None) -> Flask:
     """构建 Flask app。upload_dir/audit_path/output_dir 由调用方传入（通常是 reports/，gitignore）。"""
     app = Flask(__name__)
+    install_flask_gate(app, service_name="QD-B 立项审核门禁")
     app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
     upload_dir.mkdir(parents=True, exist_ok=True)
     audit_path.parent.mkdir(parents=True, exist_ok=True)

@@ -129,3 +129,13 @@
   `STOCK_API_KEY`）才能跑通 PO/AP 真实取数，且仍会在发票步骤 fail-loud（design D15-b 既定，
   非本次任务范围）；真实三单完整对账目前仍需走 csv 模式配合 `dump_u9c_snapshot.py`+人工誊录
   （round-1 已验证路径）。
+- **2026-07-30 共享口令门禁上线（临时止血，队列 #160，Paul 直接派单，独立 worktree
+  `four-services-temp-auth`）**：`.51` 四服务（本场景8094/保供看板8091/命令中心8092/QD-B8093）
+  此前均零鉴权、绑 0.0.0.0，LAN 内任何人可见真实供应商单价/AP单数据——真实暴露。`webapp.py::
+  create_app` 接入 `zhuopin_platform.shared_tools.simple_gate.install_flask_gate`（HMAC签名
+  Cookie 30天+X-Auth-Token程序化访问+登录页，密码环境变量 `ZP_GATE_PASSWORD` 未配置时自动
+  no-op）；`/api/ping` 健康检查豁免。全量回归零漂移：FI2 95 passed+7 skip（原90+5）。真实部署+
+  curl验证：`/api/ping`放行、未登录302、Token/Cookie 均放行，且用保供看板(8091)登录的 Cookie
+  直接请求本服务成功（跨端口共享验证）。**非正式鉴权**——仅挡"随便谁都能打开"，正式身份走
+  企微OAuth另待架构决策件；回滚：清空 `.env` 里 `ZP_GATE_PASSWORD=` 值+重启计划任务即恢复原状。
+  详见队列 #160。
