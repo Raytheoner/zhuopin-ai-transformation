@@ -114,6 +114,13 @@ class BaoguanRow:
     # 仅基于"有真实承诺"子件的齐料/缺口（剔除无答复估算）——用于区分真延期 vs 待催
     confirmed_kit_date: date | None = None     # 确定承诺子件的最晚到货；无确定承诺→None
     confirmed_gap_days: int | None = None      # 确定齐料 − 出货；无确定承诺→None
+    # 姚祖怡 07-29 二次举证真实缺陷（队列 #147）：卡片头部"确定齐料晚 N 天"徽标取自
+    # confirmed_gap_days/该瓶颈子件，但卡片头部"出货→齐料"日期与"瓶颈"标签此前取自
+    # bottleneck_material/gap_days（全量口径，含无答复估算），两套指标各自计算正确
+    # 但混排展示会造成"数字对不上"的错觉——本字段补上确定口径的瓶颈子件，供渲染层
+    # 把头部日期/瓶颈换成与徽标同源的确定口径（纯展示，不改 bottleneck_material/
+    # gap_days/四色判定既有语义，无确定承诺子件时恒为 None）。
+    confirmed_bottleneck: str | None = None    # 确定承诺子件里的最晚到货瓶颈；无确定承诺→None
     # B2 周期累计供需匹配（shortage-baoguan-criteria-v3，2026-07-10 会议定稿）：
     # {子件料号: PeriodMatchResult}；纯附加信息，不影响上方 kit_date/gap_days/risk/action
     # 的既有语义。material_commitments 未传（默认）时恒为空字典，零漂移。
@@ -556,6 +563,7 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
         no_feedback_detail=no_feedback_detail,
         component_count=len(mat.arrivals), has_bom=True, action=action,
         confirmed_kit_date=confirmed_kit, confirmed_gap_days=confirmed_gap,
+        confirmed_bottleneck=confirmed_bottleneck,
         period_match=period_match, substitute_groups=substitute_groups,
         kittable_qty=kittable_qty, kittable_bottleneck=kittable_bottleneck,
         kittable_shortfall=kittable_shortfall,
@@ -786,14 +794,21 @@ function componentStatusHtml(r){
 function card(r){
  var c=cls(r),covered=r.comp-r.nf,pct=r.comp?Math.round(covered/r.comp*100):0;
  var cov=r.comp?'<div class="cov"><div class="cov-h"><span>子件承诺覆盖</span><span>'+covered+' / '+r.comp+' 命中 · '+r.nf+' 未答复</span></div><div class="track"><div class="fill" style="width:'+pct+'%"></div></div></div>':'';
- var bn=r.bn?'<span>瓶颈 <span class="mono">'+esc(r.bn)+'</span>'+nm(r,r.bn)+subsText(r,r.bn)+'</span>':'';
+ // 队列#147（姚祖怡07-29二次举证真实缺陷）：头部"出货→齐料"日期与"瓶颈"标签
+ // 优先取确定口径（r.ckit/r.cbn，与头部徽标 gapText()/r.cg 同源），避免与全量口径
+ // （r.kit/r.bn，含无答复估算）混排出现"徽标41天、日期却对应109天"的数字矛盾；
+ // 无确定承诺子件（r.ckit 为空）时回退全量口径，不丢原有展示。全量口径的瓶颈子件
+ // 及估到货日仍完整保留在下方"⚠ 按无答复估算"区块（nfdText），信息不丢失。
+ var headKitDate=r.ckit||r.kit;
+ var headBnId=r.ckit?r.cbn:r.bn;
+ var bn=headBnId?'<span>瓶颈 <span class="mono">'+esc(headBnId)+'</span>'+nm(r,headBnId)+subsText(r,headBnId)+'</span>':'';
  // C-2：可齐套套数（kq==null → 现货数据不可用，不显示徽标，不以 0 冒充）
  var kit=(r.kq==null)?'':'<span class="badge" title="'+(r.kbn?('卡在子件 '+esc(r.kbn)+nm(r,r.kbn)+subsText(r,r.kbn)+'、还差 '+fmt(r.ksf)+' 件'):'')+'">可齐套 '+fmt(r.kq)+' / '+fmt(r.qty)+'</span>';
  // #14 需求日可齐套数量（dkq==null → 无 PO 在途数据，不显示徽标，不以 0 冒充）
  var dk=(r.dkq==null)?'':'<span class="badge" title="'+(r.dkbn?('需求日瓶颈 '+esc(r.dkbn)+nm(r,r.dkbn)):'')+'">需求日可齐套 '+fmt(r.dkq)+' / '+fmt(r.qty)+'</span>';
  return '<div class="card"><div class="card-h"><div><span class="id">'+esc(r.id)+'</span><span class="nm">'+esc(r.name)+'</span></div><span class="gap '+c+'">'+gapText(r)+'</span></div>'
   +'<div class="meta">客户 '+(esc(r.cust)||'—')+' · 数量 '+fmt(r.qty)+(kit?' · '+kit:'')+(dk?' · '+dk:'')+'</div>'
-  +'<div class="strip"><span>出货 <b>'+esc(r.ship)+'</b></span><span>→</span><span>齐料 <b class="kd '+c+'">'+(r.kit?esc(r.kit):'—')+'</b></span>'+bn+'</div>'
+  +'<div class="strip"><span>出货 <b>'+esc(r.ship)+'</b></span><span>→</span><span>齐料 <b class="kd '+c+'">'+(headKitDate?esc(headKitDate):'—')+'</b></span>'+bn+'</div>'
   +cov+nfdText(r)+componentStatusHtml(r)+'<div class="act">建议：'+esc(r.action)+'</div></div>';
 }
 
@@ -922,6 +937,11 @@ def row_to_dict(r: BaoguanRow) -> dict:
         "kit": r.kit_date.isoformat() if r.kit_date else None,
         "gap": r.gap_days, "cg": r.confirmed_gap_days, "comp": r.component_count,
         "nf": len(r.no_feedback_materials), "bn": r.bottleneck_material or "",
+        # 确定口径齐料日/瓶颈（队列 #147）：与 cg 同源，供前端卡片头部优先展示，
+        # 避免头部日期/瓶颈（全量口径 kit/bn）与徽标（确定口径 cg）对不上；
+        # 无确定承诺子件时恒为 None/""，前端回退展示 kit/bn（不丢已有行为）。
+        "ckit": r.confirmed_kit_date.isoformat() if r.confirmed_kit_date else None,
+        "cbn": r.confirmed_bottleneck or "",
         "risk": RISK_CODE.get(r.risk, "red"), "hasBom": r.has_bom, "action": r.action,
         # C-1（含替代料的主料 → 替代料料号列表；无替代料时为空对象，前端不显示标注）
         "subs": r.substitute_groups,

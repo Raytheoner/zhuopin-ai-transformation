@@ -108,6 +108,73 @@ def test_partial_confirmed_bottleneck_is_no_feedback_component():
     assert [d.component_id for d in row.no_feedback_detail] == ["R02D.0041"]
 
 
+def test_confirmed_bottleneck_differs_from_overall_bottleneck_when_no_feedback_material_later():
+    """真实缺陷复现（姚祖怡 07-29 二次举证，队列 #147，S02Y.0135 真实案例同构）：
+
+    子件 A 有确定承诺、晚出货 14 天（>3 天 →🔴真延期，driving confirmed_gap_days）；
+    子件 B 无答复，估算到货远晚于 A（driving 全量 kit_date/bottleneck_material）。
+    两套指标（确定 vs 全量）各自计算正确，但指向**不同**的瓶颈子件与日期——
+    这正是卡片头部"确定齐料晚 N 天"徽标与"出货→齐料"日期/瓶颈对不上的根因。
+    """
+    so = _so(ship="2026-09-01")
+    bom = _bom("S02Y.0035", "A", "B")
+    row = assess_supply_risk(so, bom, [_srm("A", "2026-09-15")], today=TODAY)
+    assert row.risk == RISK_RED
+    assert row.confirmed_gap_days == 14
+    assert row.confirmed_bottleneck == "A"                  # 徽标依据的瓶颈
+    assert row.confirmed_kit_date == date(2026, 9, 15)       # 徽标依据的日期
+    assert row.bottleneck_material == "B"                    # 全量口径瓶颈（与上面不同）
+    assert row.kit_date == date(2026, 11, 30)                # 全量口径日期（与上面不同）
+    # 两者确实不同——这就是本缺陷的核心：不能在同一处展示位混用两套指标
+    assert row.confirmed_bottleneck != row.bottleneck_material
+    assert row.confirmed_kit_date != row.kit_date
+
+
+def test_confirmed_bottleneck_none_when_no_confirmed_materials():
+    """全部子件无答复 → confirmed_bottleneck/confirmed_kit_date 均为 None（无确定口径可展示，前端应回退全量口径）。"""
+    so = _so(ship="2026-09-01")
+    bom = _bom("S02Y.0035", "A", "B")
+    row = assess_supply_risk(so, bom, [], today=TODAY)
+    assert row.confirmed_bottleneck is None
+    assert row.confirmed_kit_date is None
+
+
+def test_row_to_dict_serializes_confirmed_kit_and_bottleneck():
+    """row_to_dict 的 ckit/cbn 与 confirmed_kit_date/confirmed_bottleneck 一致，供前端卡片头部改用（队列 #147）。"""
+    so = _so(ship="2026-09-01")
+    bom = _bom("S02Y.0035", "A", "B")
+    row = assess_supply_risk(so, bom, [_srm("A", "2026-09-15")], today=TODAY)
+    d = row_to_dict(row)
+    assert d["ckit"] == "2026-09-15"
+    assert d["cbn"] == "A"
+    # 全量口径字段保持不变，未被本次修复覆盖或删除
+    assert d["kit"] == "2026-11-30"
+    assert d["bn"] == "B"
+
+
+def test_row_to_dict_ckit_cbn_empty_when_no_confirmed_materials():
+    so = _so(ship="2026-09-01")
+    bom = _bom("S02Y.0035", "A", "B")
+    row = assess_supply_risk(so, bom, [], today=TODAY)
+    d = row_to_dict(row)
+    assert d["ckit"] is None
+    assert d["cbn"] == ""
+
+
+def test_render_html_card_header_prefers_confirmed_kit_and_bottleneck():
+    """卡片头部渲染逻辑改用确定口径（队列 #147）：JS 里必须存在 ckit/cbn 优先取用的逻辑，
+    且嵌入的数据载荷里 ckit/cbn 与 kit/bn 确实不同——静态可验证"确定口径已接入渲染"。
+    """
+    so = _so(ship="2026-09-01")
+    bom = _bom("S02Y.0035", "A", "B")
+    rows = [assess_supply_risk(so, bom, [_srm("A", "2026-09-15")], today=TODAY)]
+    html = render_html(rows, today=TODAY)
+    assert "r.ckit" in html and "r.cbn" in html
+    assert "headKitDate" in html and "headBnId" in html
+    # 数据载荷内确实带着两套不同的口径，证明修复前会展示矛盾数字
+    assert '"ckit":"2026-09-15"' in html or '"ckit": "2026-09-15"' in html
+
+
 def test_no_feedback_detail_empty_when_all_confirmed():
     """全部子件均有承诺 → no_feedback_detail 为空（无估算子件可展示）。"""
     so = _so(ship="2026-09-01")
