@@ -41,15 +41,17 @@ def _srm(material, committed):
                             committed_date=committed, status="confirmed")
 
 
-def test_all_no_feedback_is_gap():
-    """全部子件无答复 → 无确定承诺可判定 → 🟠 待催（非真延期红）。"""
+def test_all_no_feedback_is_red_conservative():
+    """全部子件无答复 → 无确定承诺，但按保守估算（90天）晚出货远超3天门槛 → 🔴（队列#147续，
+    2026-07-29 Paul 拍板：看板是保守预测，未答复子件按90天估算折入严重度，不降级成"待催"）。"""
     so = _so(ship="2026-09-01")
     bom = _bom("S02Y.0035", "R02A.0498", "R02D.0041")
     row = assess_supply_risk(so, bom, [], today=TODAY)
-    # 无答复 → 齐料估算 = max(09-01,06-22)+90 = 11-30（v1，姚祖怡 07-23 校准 90 天）；gap = 90（仅参考）
+    # 无答复 → 齐料估算 = max(09-01,06-22)+90 = 11-30（v1，姚祖怡 07-23 校准 90 天）；gap = 90
     assert row.kit_date == date(2026, 11, 30)
     assert row.gap_days == 90
-    assert row.risk == RISK_GAP                  # 待催，不是真延期
+    assert row.risk == RISK_RED                  # 保守预警，红（不再是待催）
+    assert "保守预警" in row.action              # 措辞区分：非真实确认的延期
     assert row.confirmed_gap_days is None        # 无确定承诺 → 无确定缺口
     assert set(row.no_feedback_materials) == {"R02A.0498", "R02D.0041"}
     assert row.component_count == 2
@@ -79,7 +81,7 @@ def test_past_ship_date_uses_today_base():
     # max(06-10,06-22)+90 = 09-20；gap = (09-20 − 06-10) = 102（若误用需求日+90 则为 90）
     assert row.kit_date == date(2026, 9, 20)
     assert row.gap_days == 102
-    assert row.risk == RISK_GAP                  # 无答复 → 待催（估算 gap 仅参考）
+    assert row.risk == RISK_RED                  # 无答复但按保守估算晚出货远超3天 → 红（队列#147续）
 
 
 def test_all_confirmed_before_ship_is_green():
@@ -98,12 +100,14 @@ def test_partial_confirmed_bottleneck_is_no_feedback_component():
     bom = _bom("S02Y.0035", "R02A.0498", "R02D.0041")
     srm = [_srm("R02A.0498", "2026-08-01")]          # 仅 A 有承诺(按期)，B 无答复
     row = assess_supply_risk(so, bom, srm, today=TODAY)
-    # A 确定承诺 08-01 早于出货 → 无确定延期；B 无答复 → 🟠 待催（瓶颈=无答复子件）
+    # A 确定承诺 08-01 早于出货 → 无确定延期；B 无答复按90天估算晚出货 → 🔴保守预警
+    # （队列#147续：瓶颈=无答复子件 B，全量口径 gap_days 驱动判定，不再降级为待催）
     assert row.kit_date == date(2026, 11, 30)
     assert row.bottleneck_material == "R02D.0041"
     assert row.no_feedback_materials == ["R02D.0041"]
     assert row.confirmed_gap_days == (date(2026, 8, 1) - date(2026, 9, 1)).days  # 负，A 按期
-    assert row.risk == RISK_GAP
+    assert row.risk == RISK_RED
+    assert "保守预警" in row.action
     # 明细只含无答复的 B，不含已确认承诺的 A（避免误导——A 已有真实交期，非估算）
     assert [d.component_id for d in row.no_feedback_detail] == ["R02D.0041"]
 
@@ -161,18 +165,22 @@ def test_row_to_dict_ckit_cbn_empty_when_no_confirmed_materials():
     assert d["cbn"] == ""
 
 
-def test_render_html_card_header_prefers_confirmed_kit_and_bottleneck():
-    """卡片头部渲染逻辑改用确定口径（队列 #147）：JS 里必须存在 ckit/cbn 优先取用的逻辑，
-    且嵌入的数据载荷里 ckit/cbn 与 kit/bn 确实不同——静态可验证"确定口径已接入渲染"。
+def test_render_html_card_header_and_badge_share_overall_gap_source():
+    """卡片头部渲染逻辑（队列 #147 续，2026-07-29 Paul 拍板改口径）：徽标与头部
+    "出货→齐料"日期/瓶颈统一改回都用全量口径（r.gap/r.kit/r.bn，天然取确定与
+    估算中较严重者），二者同源即不会再对不上；r.ckit/r.cbn（确定口径）仍保留
+    在数据载荷里供 action 文案区分措辞，但不再是头部展示的默认来源。
     """
     so = _so(ship="2026-09-01")
     bom = _bom("S02Y.0035", "A", "B")
     rows = [assess_supply_risk(so, bom, [_srm("A", "2026-09-15")], today=TODAY)]
     html = render_html(rows, today=TODAY)
+    # ckit/cbn 字段仍在数据载荷里（未删除），但头部渲染不再优先它们
     assert "r.ckit" in html and "r.cbn" in html
-    assert "headKitDate" in html and "headBnId" in html
-    # 数据载荷内确实带着两套不同的口径，证明修复前会展示矛盾数字
-    assert '"ckit":"2026-09-15"' in html or '"ckit": "2026-09-15"' in html
+    assert "headKitDate" not in html and "headBnId" not in html
+    # 徽标/头部改用 r.gap（全量口径），措辞按瓶颈是否已答复区分"确定"/"保守预警"
+    assert "bottleneckUnanswered" in html
+    assert "保守预警" in html and "确定齐料晚" in html
 
 
 def test_no_feedback_detail_empty_when_all_confirmed():
@@ -226,17 +234,30 @@ def test_gap_days_arithmetic_matches_calendar_day_span():
     assert row_b.gap_days == (date(2026, 8, 20) - date(2026, 7, 10)).days
 
 
-def test_build_dashboard_sorts_red_first():
+def test_build_dashboard_sorts_by_risk_tier_then_gap_days_desc():
+    """排序：先按风险等级、同等级内缺口天数降序（队列#147续，2026-07-29 Paul 拍板改口径后：
+    无答复子件按90天保守估算同样归入🔴，与真实确认延期同一色阶，按缺口大小排序区分）。"""
     green = _so(item="GREEN", ship="2026-09-01")
-    gap = _so(item="GAP", ship="2026-09-01")
-    red = _so(item="RED", ship="2026-06-10")
-    bom = _bom("GREEN", "C1") + _bom("GAP", "C3") + _bom("RED", "C2")
-    # GREEN 齐套(按期)；RED 有承诺但确定晚(真延期)；GAP 无答复(待催)
+    unanswered = _so(item="UNANSWERED", ship="2026-09-01")        # 无答复→保守估算，gap=90
+    confirmed_late = _so(item="CONFIRMEDLATE", ship="2026-06-10")  # 确定承诺延期，gap=52（更小）
+    bom = _bom("GREEN", "C1") + _bom("UNANSWERED", "C3") + _bom("CONFIRMEDLATE", "C2")
     srm = [_srm("C1", "2026-08-01"), _srm("C2", "2026-08-01")]
-    rows = build_dashboard([green, gap, red], bom, srm, today=TODAY)
-    assert rows[0].product_id == "RED" and rows[0].risk == RISK_RED       # 真延期最前
-    assert rows[1].product_id == "GAP" and rows[1].risk == RISK_GAP       # 待催次之
-    assert rows[-1].product_id == "GREEN" and rows[-1].risk == RISK_GREEN  # 按期最后
+    rows = build_dashboard([green, unanswered, confirmed_late], bom, srm, today=TODAY)
+    assert rows[0].product_id == "UNANSWERED" and rows[0].risk == RISK_RED     # gap=90，最大，最前
+    assert rows[1].product_id == "CONFIRMEDLATE" and rows[1].risk == RISK_RED  # gap=52
+    assert rows[-1].product_id == "GREEN" and rows[-1].risk == RISK_GREEN     # 按期最后
+
+
+def test_classify_gap_branch_still_reachable_structurally():
+    """🟠"待催"分支结构性保留（Paul 2026-07-29 拍板："保留这个概念/UI，后续再优化"）：
+    在当前生产参数（NO_FEEDBACK_LEAD_DAYS=90）下该分支不会被触发（见上面两个红色化
+    测试），但直接单测 `_classify()` 验证分支代码本身仍正确——用 gap_days<=0 但
+    no_feedback_n>0 的组合直接触发（真实生产中需 lead_days 配到很小才可能出现）。
+    """
+    from sc8.baoguan import RISK_GAP, _classify
+    risk, action = _classify(0, None, True, None, 2, "C9", None, True)
+    assert risk == RISK_GAP
+    assert "待催" in action
 
 
 def test_render_markdown_has_groups_and_counts():
@@ -250,10 +271,13 @@ def test_render_markdown_has_groups_and_counts():
     assert "RED" in md
 
 
-def test_render_markdown_gap_group_for_no_feedback():
+def test_render_markdown_red_group_for_unanswered_conservative():
+    """无答复子件按90天保守估算 → 归入🔴真延期分组（队列#147续，2026-07-29 Paul 拍板
+    改口径后不再降级为"🟠 承诺缺口"待催分组）。"""
     so = _so(item="WAIT", ship="2026-09-01")
     md = render_markdown(build_dashboard([so], _bom("WAIT", "C9"), [], today=TODAY), today=TODAY)
-    assert "🟠 承诺缺口" in md           # 无答复 → 待催分组
+    assert "🔴 保供高风险" in md
+    assert "保守预警" in md
 
 
 def test_render_html_is_interactive_standalone_page():

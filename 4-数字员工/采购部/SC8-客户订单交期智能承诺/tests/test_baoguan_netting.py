@@ -11,7 +11,7 @@ from datetime import date
 
 from zhuopin_platform.shared_tools.models import BomRow, SrmDeliveryOrder
 
-from sc8.baoguan import RISK_GAP, RISK_GREEN, assess_supply_risk
+from sc8.baoguan import RISK_GREEN, RISK_RED, assess_supply_risk
 from sc8.models import SalesOrder
 
 TODAY = date(2026, 8, 1)
@@ -35,7 +35,7 @@ def _srm(material, committed):
                             committed_date=committed, status="confirmed")
 
 
-# A 有按期承诺、B 无答复 → 基线 🟠 待催（B 驱动）
+# A 有按期承诺、B 无答复 → 基线 🔴 保守预警（B 驱动，队列#147续：无答复按90天估算不再降级）
 def _scenario():
     return _so(), _bom("A", "B"), [_srm("A", "2026-08-15")]
 
@@ -46,7 +46,7 @@ def test_netting_off_is_zero_drift(monkeypatch):
     base = assess_supply_risk(so, bom, srm, today=TODAY)
     # 即便传了能覆盖 B 的现货，OFF 时必须被忽略、结果与不传完全一致
     withinv = assess_supply_risk(so, bom, srm, today=TODAY, inventory={"B": 100000})
-    assert base.risk == RISK_GAP == withinv.risk
+    assert base.risk == RISK_RED == withinv.risk
     assert base.no_feedback_materials == withinv.no_feedback_materials == ["B"]
 
 
@@ -71,7 +71,7 @@ def test_netting_on_all_covered_is_green_ready(monkeypatch):
 def test_netting_on_insufficient_stock_not_covered(monkeypatch):
     monkeypatch.setenv("SC8_NET_INVENTORY", "on")
     so, bom, srm = _scenario()
-    # B 现货 500 < 毛需求 1000 → 不覆盖，仍 🟠 待催
+    # B 现货 500 < 毛需求 1000 → 不覆盖，仍按无答复保守估算 🔴（队列#147续）
     r = assess_supply_risk(so, bom, srm, today=TODAY, inventory={"B": 500})
-    assert r.risk == RISK_GAP
+    assert r.risk == RISK_RED
     assert "B" in r.no_feedback_materials

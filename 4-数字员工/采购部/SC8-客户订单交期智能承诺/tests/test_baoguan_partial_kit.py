@@ -10,7 +10,7 @@ from datetime import date
 
 from zhuopin_platform.shared_tools.models import BomRow
 
-from sc8.baoguan import RISK_GAP, assess_supply_risk
+from sc8.baoguan import RISK_RED, assess_supply_risk
 from sc8.models import SalesOrder
 
 TODAY = date(2026, 8, 1)
@@ -107,11 +107,11 @@ def test_kittable_does_not_change_four_color_risk(monkeypatch):
     monkeypatch.setenv("SC8_NET_INVENTORY", "on")
     so = _so(qty=1000)
     bom = [_row("A", qty_per_unit=1.0)]
-    # A 无现货净额覆盖（现货远小于毛需求，不足以让 A 退出待催），但可齐套 100 套
+    # A 无现货净额覆盖（现货远小于毛需求，A 无答复→按90天保守估算🔴），但可齐套 100 套
     r = assess_supply_risk(so, bom, srm_deliveries=[], today=TODAY,
                           inventory={"A": 100})
     assert r.kittable_qty == 100
-    assert r.risk == RISK_GAP, "存在缺口时不应因部分可齐改判为按期"
+    assert r.risk == RISK_RED, "存在缺口时不应因部分可齐改判为按期"
     assert "可先齐" in r.action
 
 

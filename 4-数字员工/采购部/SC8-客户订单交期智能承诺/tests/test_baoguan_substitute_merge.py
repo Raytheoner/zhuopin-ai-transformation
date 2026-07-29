@@ -14,7 +14,7 @@ from datetime import date
 
 from zhuopin_platform.shared_tools.models import BomRow
 
-from sc8.baoguan import RISK_GAP, RISK_GREEN, _gross_need, assess_supply_risk
+from sc8.baoguan import RISK_GREEN, RISK_RED, _gross_need, assess_supply_risk
 from sc8.models import SalesOrder
 
 TODAY = date(2026, 8, 1)
@@ -66,7 +66,8 @@ def test_substitute_stock_covers_shortage_when_netting_on(monkeypatch):
 
 
 def test_combined_stock_still_insufficient_stays_shortage(monkeypatch):
-    """净额开关 ON：主料+替代料合计现货仍 < 毛需求 → 不判齐，仍计入缺口/待催。"""
+    """净额开关 ON：主料+替代料合计现货仍 < 毛需求 → 不判齐，仍计入缺口（队列#147续：
+    无答复按90天保守估算🔴，不再降级为"待催"）。"""
     monkeypatch.setenv("SC8_NET_INVENTORY", "on")
     so = _so(qty=1000)
     bom = [_row("A", sequence="10", is_substitute=False),
@@ -75,7 +76,7 @@ def test_combined_stock_still_insufficient_stays_shortage(monkeypatch):
     r = assess_supply_risk(so, bom, srm_deliveries=[], today=TODAY,
                           inventory={"A": 300, "B": 200})
     assert "A" in r.no_feedback_materials
-    assert r.risk == RISK_GAP
+    assert r.risk == RISK_RED
 
 
 def test_netting_off_substitute_stock_ignored(monkeypatch):

@@ -149,15 +149,26 @@ class BaoguanRow:
     demand_kittable_bottleneck: str | None = None
 
 
-def _classify(confirmed_gap: int | None, has_bom: bool, params: ForecastParams,
-              no_feedback_n: int, bottleneck: str | None,
-              confirmed_bottleneck: str | None) -> tuple[str, str]:
+def _classify(gap_days: int | None, confirmed_gap: int | None, has_bom: bool,
+              params: ForecastParams, no_feedback_n: int, bottleneck: str | None,
+              confirmed_bottleneck: str | None, bottleneck_is_unanswered: bool) -> tuple[str, str]:
     """定四色 + 建议动作（保供口径）。返回 (risk, action)。
 
-    分级只看**确定承诺**的缺口 confirmed_gap（剔除无答复估算）：
-      · 有确定承诺且晚 >3 天 → 🔴 真延期（确定瓶颈，最高优先级）；1-3 天 → 🟡 偏紧；
-      · 无确定延期、但有未答复子件 → 🟠 待催（信息缺口，催答交）；
-      · 全部有承诺且按期 → 🟢。
+    **2026-07-29 姚祖怡二次举证真实缺陷后 Paul 拍板改口径（队列 #147 续）**：分级
+    改用 `gap_days`（全量口径，含无答复子件按 `NO_FEEDBACK_LEAD_DAYS` 天保守估算）
+    做主driver，**不再只看 confirmed_gap（仅确定承诺子件）**——理由：看板定位是
+    "用现有信息做保守预测"，任何未答复子件都应假设最坏按 90 天估算并醒目预警，
+    不能因为"还没答复"就把风险降级成不显眼的"待催"。`gap_days` 是全部子件
+    （确定+估算）到货的最晚值，天然已经是两者中较大的一个，无需再取 max()。
+
+    · gap_days>3 或无 BOM → 🔴；1-3 → 🟡；其余 → 🟢。
+    · 措辞区分"真实确认延期"（瓶颈子件已有供应商答复）vs"保守预警"（瓶颈子件
+      未答复、数字是估算而非事实）——颜色一致（都要醒目），但动作建议不同：
+      前者"协调到货/评估改期"，后者"催供应商确认答交日期"（不能把估算当事实
+      去跟客户/供应商谈判）。
+    · `no_feedback_n>0` 时 `gap_days` 恒 ≥ `NO_FEEDBACK_LEAD_DAYS`（90，远超 3 天
+      门槛），故"🟠 待催"分支在当前参数下已不会被触发——**Paul 07-29 拍板保留
+      该分支/UI（筛选按钮、KPI 统计），后续再优化**，不删除、不改变其触发条件。
     """
     if not has_bom:
         return RISK_RED, "无 BOM 直接子件数据，无法判定齐套，需人工核对子件清单"
@@ -165,21 +176,27 @@ def _classify(confirmed_gap: int | None, has_bom: bool, params: ForecastParams,
     cbn = f"，确定瓶颈子件 {confirmed_bottleneck}" if confirmed_bottleneck else ""
     bn = f"，瓶颈子件 {bottleneck}" if bottleneck else ""
 
-    # ① 有确定承诺且已晚 → 真延期（硬信号，优先于"待催"）
-    if confirmed_gap is not None and confirmed_gap > 3:
+    # ① gap_days（全量，取确定与估算中较晚者）晚出货 → 红/黄，措辞按瓶颈是否已答复区分
+    if gap_days is not None and gap_days > 3:
+        if bottleneck_is_unanswered:
+            return RISK_RED, (f"保供高风险（保守预警）：瓶颈子件 {bottleneck} 尚未答复，"
+                              f"按无答复估算晚出货 {gap_days} 天，需紧急催供应商确认答交日期")
         return RISK_RED, (f"保供高风险（真延期）：已有供应商承诺、但确定齐料晚出货 "
-                          f"{confirmed_gap} 天{cbn}，需紧急协调到货/评估改期")
-    if confirmed_gap is not None and confirmed_gap >= 1:
-        return RISK_YELLOW, (f"保供偏紧：确定齐料晚出货 {confirmed_gap} 天{cbn}，"
+                          f"{gap_days} 天{cbn}，需紧急协调到货/评估改期")
+    if gap_days is not None and gap_days >= 1:
+        if bottleneck_is_unanswered:
+            return RISK_YELLOW, (f"保供偏紧（保守预警）：瓶颈子件 {bottleneck} 尚未答复，"
+                                 f"按无答复估算晚出货 {gap_days} 天，需催供应商确认答交日期")
+        return RISK_YELLOW, (f"保供偏紧：确定齐料晚出货 {gap_days} 天{cbn}，"
                              f"确认能否提前备料/加快到货")
 
-    # ② 无确定延期，但存在未答复子件 → 待催（不确定，非确定延期）
+    # ② 无延期，但存在未答复子件 → 待催（结构性保留，当前参数下不可达，见 docstring）
     if no_feedback_n:
         return RISK_GAP, (f"承诺缺口待催：{no_feedback_n} 个子件供应商未答复、无确定承诺，"
                           f"齐料无法判定{bn}，需催供应商答交后再评估（已确定部分按期）")
 
     # ③ 全部有承诺且按期
-    gap_txt = f"出货前 {-confirmed_gap} 天齐套" if confirmed_gap is not None else "全部子件已承诺按期"
+    gap_txt = f"出货前 {-gap_days} 天齐套" if gap_days is not None else "全部子件已承诺按期"
     return RISK_GREEN, f"齐料按期（{gap_txt}）{cbn}"
 
 
@@ -505,7 +522,7 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
                         if had_bom and purchase_orders is not None else [])
 
     if not had_bom:
-        risk, action = _classify(None, False, p, 0, None, None)
+        risk, action = _classify(None, None, False, p, 0, None, None, False)
         return BaoguanRow(
             so_id=so.so_id, product_id=so.item_code, product_name=so.item_name,
             customer_name=so.customer_name, qty=so.qty, ship_date=ship,
@@ -549,8 +566,10 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
         for m in mat.no_feedback_materials
     ]
 
-    risk, action = _classify(confirmed_gap, True, p, len(mat.no_feedback_materials),
-                             mat.bottleneck_material, confirmed_bottleneck)
+    bottleneck_is_unanswered = mat.bottleneck_material in nf_set
+    risk, action = _classify(gap_days, confirmed_gap, True, p, len(mat.no_feedback_materials),
+                             mat.bottleneck_material, confirmed_bottleneck,
+                             bottleneck_is_unanswered)
     # C-2：部分齐套不改变四色判定（risk 已由 _classify 定），只在建议动作里附加提示。
     if kittable_qty is not None and kittable_qty > 0:
         action = f"{action}；可先齐 {kittable_qty} 套"
@@ -737,12 +756,21 @@ const CST_CLS={no_transit:'no',transit_unconfirmed:'un',transit_confirmed:'co',c
 var state={f:'all',q:'',sort:'gap',page:1,pageSize:10};
 
 function cls(r){return CLS[r.risk]||'danger';}
+// 队列#147续（姚祖怡07-29举证后Paul拍板）：分级/徽标改用 r.gap（全量口径，含无答复
+// 子件按90天保守估算），不再只看 r.cg（仅确定承诺子件）——不能因为子件"还没答复"
+// 就把风险显示得比全量估算更轻。r.bn（全量瓶颈）若命中 r.nfd 无答复清单，说明这个
+// 数字是"保守估算"而非"真实确认"，措辞相应改为"保守预警"而非"确定"，不把猜测
+// 包装成事实。
+function bottleneckUnanswered(r){
+ return (r.nfd||[]).some(function(d){return d.id===r.bn;});
+}
 function gapText(r){
  if(!r.hasBom)return'无 BOM';
  if(r.risk==='gap')return'待催 · '+r.nf+' 子件未答复';
- if(r.cg==null)return r.risk==='grn'?'按期':'—';
- if(r.cg<=0)return'确定提前 '+(-r.cg)+' 天';
- return'确定齐料晚 +'+r.cg+' 天';
+ if(r.gap==null)return r.risk==='grn'?'按期':'—';
+ if(r.gap<=0)return'确定提前 '+(-r.gap)+' 天';
+ if(bottleneckUnanswered(r))return'保守预警 +'+r.gap+' 天（未答复估算）';
+ return'确定齐料晚 +'+r.gap+' 天';
 }
 
 function subsText(r,materialId){
@@ -794,21 +822,19 @@ function componentStatusHtml(r){
 function card(r){
  var c=cls(r),covered=r.comp-r.nf,pct=r.comp?Math.round(covered/r.comp*100):0;
  var cov=r.comp?'<div class="cov"><div class="cov-h"><span>子件承诺覆盖</span><span>'+covered+' / '+r.comp+' 命中 · '+r.nf+' 未答复</span></div><div class="track"><div class="fill" style="width:'+pct+'%"></div></div></div>':'';
- // 队列#147（姚祖怡07-29二次举证真实缺陷）：头部"出货→齐料"日期与"瓶颈"标签
- // 优先取确定口径（r.ckit/r.cbn，与头部徽标 gapText()/r.cg 同源），避免与全量口径
- // （r.kit/r.bn，含无答复估算）混排出现"徽标41天、日期却对应109天"的数字矛盾；
- // 无确定承诺子件（r.ckit 为空）时回退全量口径，不丢原有展示。全量口径的瓶颈子件
- // 及估到货日仍完整保留在下方"⚠ 按无答复估算"区块（nfdText），信息不丢失。
- var headKitDate=r.ckit||r.kit;
- var headBnId=r.ckit?r.cbn:r.bn;
- var bn=headBnId?'<span>瓶颈 <span class="mono">'+esc(headBnId)+'</span>'+nm(r,headBnId)+subsText(r,headBnId)+'</span>':'';
+ // 队列#147续（2026-07-29，姚祖怡二次举证后 Paul 拍板改口径）：头部"出货→齐料"
+ // 日期/瓶颈与徽标（gapText()，现改用 r.gap 全量口径）统一改回都用 r.kit/r.bn
+ // （全量口径，含无答复估算，天然取两套口径中较晚/较严重的一个）——badge 与
+ // headline 同源即不会再对不上。r.ckit/r.cbn（仅确定承诺口径）仍保留在数据里
+ // 供 action 文案区分"确定"/"保守预警"措辞，但不再是头部展示的默认来源。
+ var bn=r.bn?'<span>瓶颈 <span class="mono">'+esc(r.bn)+'</span>'+nm(r,r.bn)+subsText(r,r.bn)+'</span>':'';
  // C-2：可齐套套数（kq==null → 现货数据不可用，不显示徽标，不以 0 冒充）
  var kit=(r.kq==null)?'':'<span class="badge" title="'+(r.kbn?('卡在子件 '+esc(r.kbn)+nm(r,r.kbn)+subsText(r,r.kbn)+'、还差 '+fmt(r.ksf)+' 件'):'')+'">可齐套 '+fmt(r.kq)+' / '+fmt(r.qty)+'</span>';
  // #14 需求日可齐套数量（dkq==null → 无 PO 在途数据，不显示徽标，不以 0 冒充）
  var dk=(r.dkq==null)?'':'<span class="badge" title="'+(r.dkbn?('需求日瓶颈 '+esc(r.dkbn)+nm(r,r.dkbn)):'')+'">需求日可齐套 '+fmt(r.dkq)+' / '+fmt(r.qty)+'</span>';
  return '<div class="card"><div class="card-h"><div><span class="id">'+esc(r.id)+'</span><span class="nm">'+esc(r.name)+'</span></div><span class="gap '+c+'">'+gapText(r)+'</span></div>'
   +'<div class="meta">客户 '+(esc(r.cust)||'—')+' · 数量 '+fmt(r.qty)+(kit?' · '+kit:'')+(dk?' · '+dk:'')+'</div>'
-  +'<div class="strip"><span>出货 <b>'+esc(r.ship)+'</b></span><span>→</span><span>齐料 <b class="kd '+c+'">'+(headKitDate?esc(headKitDate):'—')+'</b></span>'+bn+'</div>'
+  +'<div class="strip"><span>出货 <b>'+esc(r.ship)+'</b></span><span>→</span><span>齐料 <b class="kd '+c+'">'+(r.kit?esc(r.kit):'—')+'</b></span>'+bn+'</div>'
   +cov+nfdText(r)+componentStatusHtml(r)+'<div class="act">建议：'+esc(r.action)+'</div></div>';
 }
 

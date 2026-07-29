@@ -12,7 +12,7 @@ from datetime import date
 
 from zhuopin_platform.shared_tools.models import BomRow, SrmDeliveryOrder
 
-from sc8.baoguan import (RISK_GAP, STATUS_CONFIRMED_NO_TRANSIT, STATUS_NO_TRANSIT,
+from sc8.baoguan import (RISK_RED, STATUS_CONFIRMED_NO_TRANSIT, STATUS_NO_TRANSIT,
                          STATUS_TRANSIT_CONFIRMED, STATUS_TRANSIT_UNCONFIRMED,
                          assess_supply_risk, render_html, row_to_dict)
 from sc8.models import SalesOrder
@@ -137,7 +137,8 @@ def test_component_status_does_not_change_four_color_risk():
     so = _so(qty=100)
     bom = [_row("P1", "A")]
     row = assess_supply_risk(so, bom, [], today=TODAY, purchase_orders={"A": 999})
-    assert row.risk == RISK_GAP   # 仍是待催（无 SRM 承诺），不因有在途改判
+    # 队列#147续：无 SRM 承诺按90天保守估算🔴，不因有在途 PO 改判；有无在途本身不影响四色
+    assert row.risk == RISK_RED
 
 
 # ── #14 需求日可齐套数量（demand_kittable_qty） ─────────────────────────────

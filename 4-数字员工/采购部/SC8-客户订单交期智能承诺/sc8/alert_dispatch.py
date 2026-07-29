@@ -29,13 +29,26 @@ def detect_new_red(curr, prev) -> list[dict]:
 
 
 def _alert_markdown(row: dict) -> str:
-    """单条真延期的企微保供运维消息（内部口径，不含客户名）。"""
-    cg = row.get("cg")
-    gap_txt = f"确定延期 +{cg} 天" if cg is not None else "确定延期"
+    """单条真延期的企微保供运维消息（内部口径，不含客户名）。
+
+    队列#147续（2026-07-29，Paul 拍板改口径后）：延期天数/瓶颈改用 `gap`（全量口径，
+    与卡片头部徽标同源），不再用 `cg`（仅确定承诺子件）——避免运维群收到的告警数字
+    跟看板头部对不上，重蹈本次姚祖怡二次举证的同类矛盾。措辞区分瓶颈子件是否已答复：
+    未答复时明确写"保守预警/估算"，不把猜测包装成"确定"发给运维群误导决策。
+    """
+    gap = row.get("gap")
     bn = row.get("bn") or "—"
+    nfd_ids = {d.get("id") for d in (row.get("nfd") or [])}
+    unanswered = bn in nfd_ids
+    if unanswered:
+        gap_txt = f"保守预警 +{gap} 天（未答复估算）" if gap is not None else "保守预警（未答复估算）"
+        bn_txt = f"瓶颈子件（未答复）`{bn}`"
+    else:
+        gap_txt = f"确定延期 +{gap} 天" if gap is not None else "确定延期"
+        bn_txt = f"确定瓶颈子件 `{bn}`"
     return (f"🔴 **保供真延期** 成品 `{row.get('id','')}`（单 {row.get('so','')}）\n"
             f"> 计划出货 {row.get('ship','')}　|　{gap_txt}\n"
-            f"> 确定瓶颈子件 `{bn}`　|　子件 {row.get('comp',0)}（未答复 {row.get('nf',0)}）\n"
+            f"> {bn_txt}　|　子件 {row.get('comp',0)}（未答复 {row.get('nf',0)}）\n"
             f"> 已自动建案，请保供运维跟进催货/协调。")
 
 
@@ -53,19 +66,44 @@ def dispatch_new_reds(new_reds: list[dict], case_store, *, webhook_url: str | No
         # D6 去重：已有未关闭案例 → 不建、不推
         if case_store.find_open_by_key(item_code, fo_id, ship_date):
             continue
+        # 队列#147续：建案天数改用 gap（全量口径，与建案原因——该行判红——同源），
+        # 不再用 cg（仅确定承诺，可能远小于实际驱动红色的全量估算天数）。
+        # ⚠️ 已知后续项（未在本次一并做）：case_store 的 confirmed_gap_days 字段名/
+        # case_draft.py 客户草稿模板"确定延期约X天"措辞仍隐含"这是真实确认"语义，
+        # 当驱动瓶颈是无答复子件时会不准确——案例处置中心/对客草稿层面的"确定 vs
+        # 保守预警"区分待后续任务补齐（对客闸 CUSTOMER_OUTBOUND_ENABLED 全程关闭，
+        # 当前无实际外发风险，仅内部案例记录措辞有此已知局限）。
         case, created = case_store.create_case(
             item_code=item_code, fo_id=fo_id, customer_name=row.get("cust", ""),
-            ship_date=ship_date, confirmed_gap_days=int(row.get("cg") or 0),
+            ship_date=ship_date, confirmed_gap_days=int(row.get("gap") or 0),
             bottleneck_material=row.get("bn", ""))
         if not created:        # 并发兜底：刚被别处建案
             continue
         content = _alert_markdown(row)
+        # 真实事故复现（2026-07-29，队列#147续口径切换首轮重算，大量行同时首次判红）：
+        # 短时间内连续推送触发企微 API 限流（errcode=45009），旧代码让 send() 的异常
+        # 直接冒泡，导致本行之后剩余全部新增真延期都不再建案/推送、且整个 /api/refresh
+        # 请求报错——案例已建但通知漏发、且中断了本该继续的后续行处理。改为单行推送
+        # 失败只记 audit + 跳过通知，不影响本行"已建案"的事实，也不阻断循环处理其余行。
+        push_ok = True
         if webhook_url:
             send = sender
             if send is None:
                 from zhuopin_platform.shared_tools.notifiers import wecom
                 send = wecom.send_markdown
-            send(webhook_url, content)
+            try:
+                send(webhook_url, content)
+            except Exception as e:
+                push_ok = False
+                if audit is not None:
+                    from zhuopin_platform.audit import AuditEvent
+                    audit.record(AuditEvent(
+                        scenario="SC8", action="baoguan_red_alert_push_failed",
+                        evaluator="system", automation_level="L1",
+                        decision={"case_no": case.case_no, "item_code": item_code,
+                                  "fo_id": fo_id, "ship_date": ship_date,
+                                  "error": f"{type(e).__name__}: {e}"[:200]},
+                        data_sources={"baoguan": "real"}))
         if audit is not None:
             from zhuopin_platform.audit import AuditEvent
             audit.record(AuditEvent(
@@ -73,8 +111,9 @@ def dispatch_new_reds(new_reds: list[dict], case_store, *, webhook_url: str | No
                 automation_level="L1",
                 decision={"case_no": case.case_no, "item_code": item_code,
                           "fo_id": fo_id, "ship_date": ship_date,
-                          "confirmed_gap_days": int(row.get("cg") or 0),
-                          "pushed": bool(webhook_url)},
+                          "gap_days": int(row.get("gap") or 0),
+                          "pushed": bool(webhook_url) and push_ok},
                 data_sources={"baoguan": "real"}))
-        pushed.append(row)
+        if push_ok:
+            pushed.append(row)
     return pushed
