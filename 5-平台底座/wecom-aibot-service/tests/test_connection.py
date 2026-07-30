@@ -1,5 +1,6 @@
 import asyncio
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,8 +10,15 @@ from zhuopin_platform.shared_tools.secrets import EnvSecretsProvider
 
 from aibot_service.connection import build_connector, BOTID_KEY, SECRET_KEY
 from aibot_service.constants import PAUL_USERID
+from aibot_service.queue_lock_pending import read_deferred_appends
 
 from fakes import fake_client_factory
+
+# 真实编辑锁工具源文件——用于队列 #168 的真实子进程集成测试（不用 fake，
+# 因为要验证的正是"真实持锁期间机器人确实不会写盘"这件事本身）。
+_EDIT_LOCK_TOOL_SOURCE = (
+    Path(__file__).resolve().parents[3] / "0-学习与工具" / "工具-共享文档编辑锁.py"
+)
 
 QUEUE_TEXT = """\
 ## 一、任务看板
@@ -596,3 +604,117 @@ def test_on_message_with_mismatched_repo_root_still_syncs_via_dynamic_resolution
 
     new_queue = (repo / "queue.md").read_text(encoding="utf-8")
     assert new_queue.count("采购专线") == 1
+
+
+# ── 队列 #168：编辑锁真实集成（真实子进程，不用 fake）─────────────────────
+#
+# 复现分析件 §一 的核心场景："持锁方读入 → 机器人追加 → 持锁方写回"——
+# 用真实的共享编辑锁 CLI 工具模拟一个人类会话持锁编辑，验证机器人在这段
+# 窗口期内确实不会写盘（而不是被动指望"写前核验"侥幸不覆盖），消息改为
+# 推迟补录；锁释放后下一条消息到达时自动补录成功，两条消息最终都完整出现
+# 在队列文件与远端，没有任何一条消息丢失或被覆盖。
+
+
+def _human_acquire_lock(repo: Path, queue_path: Path, who: str = "TestHuman") -> None:
+    result = subprocess.run(
+        [sys.executable, str(repo / "0-学习与工具" / "工具-共享文档编辑锁.py"),
+         "--file", str(queue_path), "acquire", "--who", who],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _human_release_lock(repo: Path, queue_path: Path, who: str = "TestHuman") -> None:
+    result = subprocess.run(
+        [sys.executable, str(repo / "0-学习与工具" / "工具-共享文档编辑锁.py"),
+         "--file", str(queue_path), "release", "--who", who],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_on_message_defers_when_human_holds_edit_lock_then_flushes_after_release(tmp_path):
+    origin, repo = _init_git_repo_with_queue(tmp_path, QUEUE_TEXT)
+    (repo / "0-学习与工具").mkdir()
+    (repo / "0-学习与工具" / "工具-共享文档编辑锁.py").write_text(
+        _EDIT_LOCK_TOOL_SOURCE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    pending_lock_path = tmp_path / "pending_lock.jsonl"
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=repo / "7-外部文档",
+        queue_path=repo / "queue.md",
+        client_factory=fake_client_factory(store),
+        repo_root=repo,
+        enable_queue_edit_lock=True,
+        pending_lock_path=pending_lock_path,
+    )
+    client = store["client"]
+
+    # 模拟人类会话正在编辑队列文件——此时机器人若绕锁直接写盘，稍后人类
+    # 把内存里那份（不含机器人新增行）整文件写回时会静默覆盖掉它。
+    _human_acquire_lock(repo, repo / "queue.md")
+
+    asyncio.run(client.handlers["message"][0](_message_frame(content="锁占用期间的第一条消息")))
+
+    # 归档本体不受影响；队列文件本身一个字节都不该变（机器人从未写盘）。
+    assert (repo / "7-外部文档" / "采购部").exists()
+    assert (repo / "queue.md").read_text(encoding="utf-8") == QUEUE_TEXT
+    pending = read_deferred_appends(pending_lock_path)
+    assert len(pending) == 1
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "queue_append_deferred_lock_busy" in actions
+    assert "queue_appended" not in actions
+    assert "queue_sync_pushed" not in actions
+
+    # 人类"写回"（模拟真实场景：持锁期间只是占位，真正的覆盖风险发生在
+    # release 之后——这里直接 release，验证释放后下一条消息能自动补录）。
+    _human_release_lock(repo, repo / "queue.md")
+
+    asyncio.run(client.handlers["message"][0](_message_frame(content="锁释放后的第二条消息")))
+
+    final_queue = (repo / "queue.md").read_text(encoding="utf-8")
+    # 两条消息都必须完整出现，一条不多一条不少——第一条是补录的，第二条
+    # 是正常路径追加的。
+    assert final_queue.count("采购专线") == 2
+    assert read_deferred_appends(pending_lock_path) == []
+
+    pushed_content = subprocess.run(
+        ["git", "--git-dir", str(origin), "show", "master:queue.md"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    ).stdout
+    assert pushed_content.count("采购专线") == 2, "补录的一行也必须真正推送到远端，不能只留在本地"
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "queue_append_pending_flushed" in actions
+    assert actions.count("queue_sync_pushed") == 2  # 补录一次 + 第二条消息正常追加一次
+
+
+def test_on_message_with_lock_disabled_by_default_behaves_exactly_as_before(tmp_path):
+    """`enable_queue_edit_lock` 默认 False——不传时行为与加这个功能前完全
+    一致（不产生任何锁相关的子进程调用/审计事件）。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+    )
+    client = store["client"]
+
+    asyncio.run(client.handlers["message"][0](_message_frame()))
+
+    new_queue = (tmp_path / "queue.md").read_text(encoding="utf-8")
+    assert "采购专线" in new_queue
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "queue_append_deferred_lock_busy" not in actions
+    assert "pending_lock_flush_dispatch_failed" not in actions

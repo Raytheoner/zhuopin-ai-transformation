@@ -17,7 +17,9 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
 from .department_mapping import UNMATCHED_DEPARTMENT, resolve_department
 from .frame_parsing import InboundMessage
-from .queue_appender import append_pending_task
+from .queue_appender import append_pending_task, QueueEditLock
+from .queue_edit_lock import QueueLockBusy
+from .queue_lock_pending import record_deferred_append
 
 CORRUPTION_MARKER = "�"  # U+FFFD replacement character
 
@@ -43,8 +45,13 @@ class IntakeResult:
     archived_path: Path
     department: str
     matched: bool
-    queue_row: str
+    queue_row: Optional[str]
     queue_append_kwargs: dict
+    # 队列 #168：队列文件当前被人类会话持锁编辑时，本次追加会被推迟（消息
+    # 本体已归档，只差队列这一行）——`queue_row` 此时为 None，调用方
+    # （`connection.py::on_message`）据此跳过 `sync_after_archive`（没有行
+    # 可同步），等下一条消息到达时由 `flush_pending_queue_appends` 补录。
+    queue_append_deferred: bool = False
 
 
 def _safe_filename_component(text: str, max_len: int = 60) -> str:
@@ -109,6 +116,8 @@ async def archive_inbound_message(
     department_mapping: dict[str, str],
     audit: AuditLogger,
     evaluator: str = "system",
+    queue_lock: Optional[QueueEditLock] = None,
+    pending_lock_path: Optional[Path] = None,
 ) -> IntakeResult:
     department = resolve_department(message.sender, department_mapping)
     matched = department != UNMATCHED_DEPARTMENT
@@ -209,7 +218,43 @@ async def archive_inbound_message(
         expected_output="核实内容并按需处理；如需回灌口径按各域三步法走",
         date_str=date_str,
     )
-    queue_row = append_pending_task(queue_path, audit=audit, **queue_append_kwargs)
+    try:
+        queue_row = append_pending_task(
+            queue_path, audit=audit, lock=queue_lock, **queue_append_kwargs
+        )
+    except QueueLockBusy:
+        # 队列 #168：队列文件当前被人类会话持锁编辑——消息本体已在上面归档
+        # 成功，只是这一行推迟。存进暂存 JSONL，下次消息到达时由
+        # `flush_pending_queue_appends` 补录，不在此处阻塞/重试等待（人类
+        # 持锁窗口可长达数分钟，同步等待会拖住整个消息处理）。
+        if pending_lock_path is not None:
+            record_deferred_append(
+                pending_lock_path,
+                {
+                    "recorded_at": datetime.now(timezone.utc).isoformat(),
+                    "sender": sender_label,
+                    "append_kwargs": queue_append_kwargs,
+                },
+            )
+        audit.record(
+            AuditEvent(
+                scenario="wecom-aibot",
+                action="queue_append_deferred_lock_busy",
+                evaluator=evaluator,
+                automation_level="L1",
+                decision={"owner": owner},
+                data_sources={"sender": sender_label, "queue_path": str(queue_path)},
+            )
+        )
+        return IntakeResult(
+            archived_path=target_path,
+            department=department,
+            matched=matched,
+            queue_row=None,
+            queue_append_kwargs=queue_append_kwargs,
+            queue_append_deferred=True,
+        )
+
     audit.record(
         AuditEvent(
             scenario="wecom-aibot",

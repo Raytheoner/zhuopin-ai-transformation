@@ -110,6 +110,10 @@ def main() -> None:
     )
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     pending_queue_appends_path = SERVICE_DIR / "reports" / "pending_queue_appends.jsonl"
+    # 队列 #168：机器人本地追加队列行前占用协议〇.7 共享编辑锁，占用中推迟
+    # 补录而不是直接写盘覆盖人类正在编辑的内容——见 connection.py::
+    # build_connector 的 `enable_queue_edit_lock` 文档。
+    pending_lock_path = SERVICE_DIR / "reports" / "pending_queue_lock_appends.jsonl"
 
     secrets = EnvSecretsProvider()
     audit = AuditLogger.jsonl(audit_path)
@@ -135,6 +139,8 @@ def main() -> None:
         repo_root=resolved_repo_root,
         pending_queue_appends_path=pending_queue_appends_path,
         queue_sync_fallback_send=fallback_send,
+        enable_queue_edit_lock=True,
+        pending_lock_path=pending_lock_path,
     )
 
     asyncio.run(_run_forever(connector, audit_path, audit, fatal_event, fallback_send, queue_path))

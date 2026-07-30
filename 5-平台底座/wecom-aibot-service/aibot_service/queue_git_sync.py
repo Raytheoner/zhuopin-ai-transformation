@@ -123,6 +123,7 @@ def append_task_and_sync_to_git(
     _sleep: Callable[[float], None] = time.sleep,
     already_appended_row: Optional[str] = None,
     env: Optional[Mapping[str, str]] = None,
+    lock_factory: Optional[Callable[[], object]] = None,
 ) -> GitSyncOutcome:
     """本地追加（含重算）+ git 层乐观并发重试推送。同步阻塞函数——调用方
     （异步场景）请自行 `asyncio.to_thread` 包裹，参照 `group_notify.py` 惯例。
@@ -138,6 +139,15 @@ def append_task_and_sync_to_git(
     时一并发现并修复，此前从未被端到端集成测试覆盖过）。仅在非快进冲突需
     要重新计算编号时（attempt > 1），才改回调用 `append_pending_task` 对
     齐后的最新内容重算插入点。未传时（如既有直接单测）行为与此前完全一致。
+
+    `lock_factory`（队列 #168）：非快进冲突触发的重算（attempt > 1）同样是
+    对队列文件的本地读改写，同样可能与人类会话的编辑窗口重叠——提供时，
+    每次重算调用 `append_pending_task` 前都用它构造一把新锁（不复用同一把
+    跨多次尝试）。占用中会抛 `QueueLockBusy`，本函数不捕获、原样上抛给
+    调用方 `sync_after_archive`（它已有通用 `except Exception` 兜底：记
+    `queue_sync_degraded`+暂存+告警，这条双重竞态——git 冲突与人类锁占用
+    同时发生——本就该走人工核对，不必在这里再造一套专门处理）。未传时
+    （默认，既有调用方/测试）完全不涉及锁，行为与加这个参数前完全一致。
     """
     resolved_repo_root = resolve_repo_root(queue_path, fallback=repo_root, env=env)
     relative_path = _relative_to_repo(resolved_repo_root, queue_path)
@@ -158,6 +168,7 @@ def append_task_and_sync_to_git(
                 expected_output=expected_output,
                 date_str=date_str,
                 touch_zone=touch_zone,
+                lock=lock_factory() if lock_factory is not None else None,
             )
 
         err = _commit(resolved_repo_root, relative_path, row)
@@ -294,13 +305,17 @@ async def sync_after_archive(
     max_retries: int = DEFAULT_MAX_RETRIES,
     backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
     already_appended_row: Optional[str] = None,
+    lock_factory: Optional[Callable[[], object]] = None,
 ) -> GitSyncOutcome:
     """`archive_inbound_message` 本地追加成功后的独立后续步骤（不阻塞归档
     主流程——本函数本身不向上抛出任何异常，失败只降级+告警）。
 
     `already_appended_row`：调用方（`intake.py`）已经落盘的那一行原文，
     见 `append_task_and_sync_to_git` 同名参数文档——避免同一条消息被重复
-    追加两次。"""
+    追加两次。
+
+    `lock_factory`：见 `append_task_and_sync_to_git` 同名参数文档（队列
+    #168）——非快进冲突重算时用于保护本地写入不被人类编辑窗口覆盖。"""
     try:
         outcome = await asyncio.to_thread(
             append_task_and_sync_to_git,
@@ -311,6 +326,7 @@ async def sync_after_archive(
             max_retries=max_retries,
             backoff_seconds=backoff_seconds,
             already_appended_row=already_appended_row,
+            lock_factory=lock_factory,
             **append_kwargs,
         )
     except Exception as exc:  # noqa: BLE001 —— git 子进程意外异常也不得向上抛

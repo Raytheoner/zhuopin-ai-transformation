@@ -10,6 +10,9 @@ from aibot_service.queue_appender import (
     _section_bounds,
     _ROW_ID_RE,
 )
+from aibot_service.queue_edit_lock import QueueLockBusy
+
+from fakes import FakeQueueEditLock
 
 SAMPLE_QUEUE = """\
 ---
@@ -533,3 +536,78 @@ def test_append_pending_task_bumps_high_water_mark_after_concurrent_retry(tmp_pa
     final_text = queue_path.read_text(encoding="utf-8")
     assert "| 20 | 我方要追加的行 | 财务专线 |" in final_text
     assert "编号高水位线：§一 #20 ｜ §四 #5" in final_text
+
+
+# ── 编辑锁集成（队列 #168）───────────────────────────────────────────────
+#
+# 机器人此前直接读改写队列文件，完全绕过协议〇.7 的共享编辑锁——人类会话
+# 持锁编辑期间（读入内存的窗口可长达数分钟），机器人若直接写盘追加一行，
+# 会在人类稍后把内存里那份（不含机器人新增行）整文件写回时被静默覆盖。
+# 本节验证：不传 lock 时行为完全不变（向后兼容）；传入 lock 时正确
+# acquire→追加→release；锁忙时不落盘、异常上抛；追加过程中途异常时锁仍会
+# 被释放（不死锁）。
+
+
+def test_append_pending_task_without_lock_param_is_unaffected(tmp_path):
+    """不传 `lock`（既有调用方/测试）行为与加此参数前完全一致。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+
+    row = append_pending_task(
+        queue_path, description="d", owner="o", input_pointer="i",
+        expected_output="e", date_str="2026-07-30",
+    )
+    assert row.startswith("| 19 |")
+
+
+def test_append_pending_task_with_free_lock_acquires_appends_and_releases(tmp_path):
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+    lock = FakeQueueEditLock(busy=False)
+
+    row = append_pending_task(
+        queue_path, description="d", owner="o", input_pointer="i",
+        expected_output="e", date_str="2026-07-30", lock=lock,
+    )
+
+    assert row.startswith("| 19 |")
+    assert "| 19 | d | o |" in queue_path.read_text(encoding="utf-8")
+    assert lock.acquire_calls == 1
+    assert lock.release_calls == 1
+
+
+def test_append_pending_task_with_busy_lock_does_not_write_and_raises(tmp_path):
+    """锁被他人（人类会话）持有时——不得写盘，异常原样上抛给调用方决定
+    是否转入推迟补录路径（队列 #168 的核心行为：宁可推迟，不可绕锁写入）。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+    lock = FakeQueueEditLock(busy=True)
+
+    with pytest.raises(QueueLockBusy):
+        append_pending_task(
+            queue_path, description="d", owner="o", input_pointer="i",
+            expected_output="e", date_str="2026-07-30", lock=lock,
+        )
+
+    assert queue_path.read_text(encoding="utf-8") == SAMPLE_QUEUE
+    assert lock.acquire_calls == 1
+    # 锁忙时从未进入读改写循环，release 不应被调用（试都没试，谈不上要释放）。
+    assert lock.release_calls == 0
+
+
+def test_append_pending_task_releases_lock_even_when_body_raises(tmp_path):
+    """追加过程本身异常退出（如队列表格标题行缺失）时，锁仍必须被释放，
+    不得因中途报错而死锁——释放失败/异常退出走陈旧锁 30 分钟自动接管兜底，
+    但本函数自己能保证的部分（try/finally）必须做到。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text("没有表格标题行的文件\n", encoding="utf-8")
+    lock = FakeQueueEditLock(busy=False)
+
+    with pytest.raises(LookupError):
+        append_pending_task(
+            queue_path, description="d", owner="o", input_pointer="i",
+            expected_output="e", date_str="2026-07-30", lock=lock,
+        )
+
+    assert lock.acquire_calls == 1
+    assert lock.release_calls == 1

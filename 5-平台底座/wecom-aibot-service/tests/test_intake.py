@@ -12,8 +12,9 @@ from aibot_service.intake import (
     UnsupportedMessageTypeError,
 )
 from aibot_service.department_mapping import UNMATCHED_DEPARTMENT
+from aibot_service.queue_lock_pending import read_deferred_appends
 
-from fakes import fake_client_factory
+from fakes import fake_client_factory, FakeQueueEditLock
 
 QUEUE_TEXT = """\
 ## 一、任务看板
@@ -270,3 +271,73 @@ def test_archive_detects_corrupted_filename(tmp_path, monkeypatch):
     assert "archive_corruption_detected" in actions
     # 损坏文件不得被后续当成功处理（不追加队列行）
     assert "queue_appended" not in actions
+
+
+# ── 编辑锁占用时的推迟补录（队列 #168）───────────────────────────────────
+
+
+def test_archive_defers_queue_append_when_lock_busy(tmp_path):
+    """队列文件当前被人类会话持锁编辑时——消息本体仍须正常归档成功，只是
+    队列这一行推迟，暂存进 pending_lock_path，不得静默丢失。"""
+    docs_root, queue_path, audit, connector, store = _setup(tmp_path)
+    pending_lock_path = tmp_path / "pending_lock.jsonl"
+    message = InboundMessage(sender="姚祖怡", msgtype="text", text_content="锁占用期间发来的消息")
+
+    result = asyncio.run(
+        archive_inbound_message(
+            message=message,
+            connector=connector,
+            external_docs_root=docs_root,
+            queue_path=queue_path,
+            department_mapping=MAPPING,
+            audit=audit,
+            queue_lock=FakeQueueEditLock(busy=True),
+            pending_lock_path=pending_lock_path,
+        )
+    )
+
+    # 消息本体已正常归档——不因队列行推迟而受影响。
+    assert result.archived_path.exists()
+    assert result.archived_path.read_text(encoding="utf-8") == "锁占用期间发来的消息"
+    assert result.queue_row is None
+    assert result.queue_append_deferred is True
+
+    # 队列文件本身未被改动（没有绕锁写入）。
+    assert queue_path.read_text(encoding="utf-8") == QUEUE_TEXT
+
+    # 推迟的追加参数已原样暂存，供下次补录。
+    pending = read_deferred_appends(pending_lock_path)
+    assert len(pending) == 1
+    assert pending[0]["append_kwargs"]["owner"] == "采购专线"
+    assert pending[0]["sender"] == "姚祖怡"
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "archived" in actions
+    assert "queue_append_deferred_lock_busy" in actions
+    assert "queue_appended" not in actions
+
+
+def test_archive_with_free_lock_appends_normally_and_releases(tmp_path):
+    """锁空闲时——归档+队列追加正常完成，且锁被正确 acquire/release。"""
+    docs_root, queue_path, audit, connector, store = _setup(tmp_path)
+    lock = FakeQueueEditLock(busy=False)
+    message = InboundMessage(sender="姚祖怡", msgtype="text", text_content="锁空闲时发来的消息")
+
+    result = asyncio.run(
+        archive_inbound_message(
+            message=message,
+            connector=connector,
+            external_docs_root=docs_root,
+            queue_path=queue_path,
+            department_mapping=MAPPING,
+            audit=audit,
+            queue_lock=lock,
+        )
+    )
+
+    assert result.queue_append_deferred is False
+    assert result.queue_row is not None
+    assert lock.acquire_calls == 1
+    assert lock.release_calls == 1
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "queue_appended" in actions

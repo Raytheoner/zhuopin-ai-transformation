@@ -1,6 +1,27 @@
 """测试替身：`AibotClientLike` 的假实现，供 delivery/intake/connection 测试复用。"""
 from __future__ import annotations
 
+from aibot_service.queue_edit_lock import QueueLockBusy
+
+
+class FakeQueueEditLock:
+    """`queue_appender.QueueEditLock` 契约的可控测试替身（队列 #168）——
+    不起子进程/不依赖真实仓库，`busy` 控制 `try_acquire` 是否抛
+    `QueueLockBusy`，并记录调用次数供断言。"""
+
+    def __init__(self, busy: bool = False):
+        self.busy = busy
+        self.acquire_calls = 0
+        self.release_calls = 0
+
+    def try_acquire(self) -> None:
+        self.acquire_calls += 1
+        if self.busy:
+            raise QueueLockBusy("测试替身：模拟锁占用中")
+
+    def release(self) -> None:
+        self.release_calls += 1
+
 
 class FakeAibotClient:
     def __init__(self, bot_id="bot", secret="secret", **options):

@@ -21,7 +21,10 @@ from .forwarding import forward_inbound_to_paul
 from .frame_parsing import parse_inbound_frame
 from .group_notify import notify_department_group
 from .intake import archive_inbound_message
+from .queue_edit_lock import AIBOT_LOCK_WHO, SubprocessQueueEditLock
 from .queue_git_sync import DEFAULT_BACKOFF_SECONDS, DEFAULT_MAX_RETRIES, sync_after_archive
+from .queue_lock_pending import flush_pending_queue_appends
+from .repo_paths import resolve_repo_root
 from .whitelist import is_whitelisted, NOT_ONBOARDED_REPLY
 
 BOTID_KEY = "WECOM_AIBOT_BOTID"
@@ -79,6 +82,8 @@ def build_connector(
     queue_sync_max_retries: int = DEFAULT_MAX_RETRIES,
     queue_sync_backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
     queue_sync_fallback_send: Optional[Callable[[str], None]] = None,
+    enable_queue_edit_lock: bool = False,
+    pending_lock_path: Optional[Path] = None,
 ) -> AibotConnector:
     """构造已接好审计 + 归档分发的 `AibotConnector`；不建立实际连接（调用方
     另行 `await connector.connect()`）。凭据缺失时 `SecretsProvider` 抛
@@ -94,11 +99,38 @@ def build_connector(
     被无条件信任**：`queue_git_sync` 每次调用都会用 `queue_path` 动态解析
     其真正所属的 repo 根（服务常驻的 worktree 与队列文件所在 checkout 可
     能不是同一个），此处传入的值只作解析失败时的回落值。
+
+    `enable_queue_edit_lock`（队列 #168，默认 False——不影响任何既有测试/
+    调用方）：True 时，机器人本地追加队列行前会先占用协议〇.7 共享编辑锁
+    （见 `queue_edit_lock.SubprocessQueueEditLock`），占用中不写盘、改为
+    推迟补录（见 `queue_lock_pending.py`），并在每条新消息到达时先尝试
+    补录此前推迟的记录。`pending_lock_path` 给出推迟记录的暂存文件路径，
+    留空时按 `<解析出的仓库根>/5-平台底座/wecom-aibot-service/reports/
+    pending_queue_lock_appends.jsonl` 取默认值。
     """
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
     mapping = load_department_mapping(mapping_path)
     group_mapping = load_department_group_mapping(group_mapping_path)
+
+    # 队列 #168：锁工具（0-学习与工具/工具-共享文档编辑锁.py）所在仓库根，
+    # 只在启用锁时才解析——未启用时不产生任何额外 git 子进程调用，向后
+    # 兼容零改动。用 `queue_path` 动态解析（与 #126 同思路），不信任
+    # `repo_root`（那是调用方为 git 同步传入的值，两者用途独立，测试里
+    # 常常只为其中一个搭建了真实环境）。
+    lock_repo_root: Optional[Path] = None
+    resolved_pending_lock_path: Optional[Path] = None
+    if enable_queue_edit_lock:
+        lock_repo_root = resolve_repo_root(queue_path, fallback=repo_root or queue_path.parent)
+        resolved_pending_lock_path = pending_lock_path or (
+            lock_repo_root / "5-平台底座" / "wecom-aibot-service" / "reports"
+            / "pending_queue_lock_appends.jsonl"
+        )
+
+    def _make_queue_lock(note: str) -> Optional[SubprocessQueueEditLock]:
+        if lock_repo_root is None:
+            return None
+        return SubprocessQueueEditLock(lock_repo_root, queue_path, who=AIBOT_LOCK_WHO, note=note)
 
     connector_holder: dict[str, AibotConnector] = {}
 
@@ -143,8 +175,42 @@ def build_connector(
         `whitelist.WHITELISTED_SENDER_USERIDS` 里时，只回一条礼貌回复，
         不进入以上三条路径——机器人尚未正式对外开放，避免同事发来的无关
         消息被误当业务内容处理、污染队列与 Paul 私信。
+
+        队列 #168：每条新消息到达时，先尝试补录此前因编辑锁占用被推迟的
+        队列行（与当前这条消息、当前发送人是否在白名单无关——纯粹是"逮到
+        机会就把欠的账补上"），与后续处理当前消息互不影响（各自独立
+        try/except）。
         """
         message = parse_inbound_frame(frame)
+
+        if enable_queue_edit_lock and resolved_pending_lock_path is not None:
+            try:
+                await flush_pending_queue_appends(
+                    pending_path=resolved_pending_lock_path,
+                    queue_path=queue_path,
+                    repo_root=lock_repo_root,
+                    audit=audit,
+                    lock_factory=lambda: _make_queue_lock("补录待锁定追加"),
+                    connector=connector_holder.get("connector"),
+                    recipient=PAUL_USERID,
+                    fallback_send=queue_sync_fallback_send,
+                    evaluator=evaluator,
+                    remote=queue_git_remote,
+                    branch=queue_git_branch,
+                    git_sync_pending_path=pending_queue_appends_path,
+                )
+            except Exception as exc:  # noqa: BLE001 —— 补录失败不应阻塞当前消息处理
+                audit.record(
+                    AuditEvent(
+                        scenario="wecom-aibot",
+                        action="pending_lock_flush_dispatch_failed",
+                        evaluator=evaluator,
+                        automation_level="L1",
+                        decision={},
+                        data_sources={},
+                        error=str(exc),
+                    )
+                )
 
         if not is_whitelisted(message.sender):
             try:
@@ -185,6 +251,8 @@ def build_connector(
                 department_mapping=mapping,
                 audit=audit,
                 evaluator=evaluator,
+                queue_lock=_make_queue_lock("归档追加"),
+                pending_lock_path=resolved_pending_lock_path,
             )
         except Exception as exc:  # noqa: BLE001 —— 归档失败必须留痕，不得吞掉
             audit.record(
@@ -199,7 +267,15 @@ def build_connector(
                 )
             )
 
-        if archive_result is not None and repo_root is not None:
+        # 队列 #168：队列文件被人类持锁编辑时，archive_inbound_message 会
+        # 把本次追加推迟（queue_append_deferred=True，queue_row=None）——
+        # 此时本地还没有行可同步，跳过 git 同步（等下一条消息到达时由
+        # 上方 flush_pending_queue_appends 补录+同步）。
+        if (
+            archive_result is not None
+            and repo_root is not None
+            and not archive_result.queue_append_deferred
+        ):
             try:
                 await sync_after_archive(
                     repo_root=repo_root,
@@ -216,6 +292,7 @@ def build_connector(
                     branch=queue_git_branch,
                     max_retries=queue_sync_max_retries,
                     backoff_seconds=queue_sync_backoff_seconds,
+                    lock_factory=lambda: _make_queue_lock("git冲突重算追加"),
                 )
             except Exception as exc:  # noqa: BLE001 —— sync_after_archive 本身不抛，这里是防御性兜底
                 audit.record(
