@@ -17,7 +17,14 @@
            目标文件含该行）——新行编号务必从这个回显值 +1 续排，不要用
            acquire 之前读到的旧值（#121(c)：编号在 acquire 之前算，锁只保护
            "写"这一小段，用旧值续排仍会撞号；协议〇.7 同步补一句"编号一律在
-           持锁后重算"）
+           持锁后重算"）。
+
+           **`--reserve N --section 一|四`（队列 #163）**：与其显示高水位线
+           让人自己 +1 续排（人读对了值也可能算错/抄错——2026-07-29 #162 就是
+           回显明明白白打在眼前、业务总线仍看漏），不如工具直接**分配并返回
+           字面编号**，调用方拿返回值填空，不再自己"读了再算"。同一次持锁
+           窗口内原子完成"读高水位线→分配→回写高水位线"，比先 acquire 再
+           单独读值续排更彻底地关闭撞号——见模块内 `_reserve_ids` 文档。
   release  编辑完立刻释放（持锁窗口应短——只包住"读入→改→写出"这一小段，
            不要跨整个 session 持有）。带 --who 且与当前持有者不符时拒绝释放
            （只告警不改，防误传 --who 顶掉别人的在办锁）；不带 --who 则无条件释放。
@@ -42,6 +49,9 @@ REPO_ROOT 按 `git rev-parse --git-common-dir` 定位——所有 git worktree
 
   # 默认锁跨桌任务队列.md；--file 可指向其他高频撞车的共享文件复用本机制
   python 0-学习与工具/工具-共享文档编辑锁.py acquire --file 1-转型规划/其他共享文件.md --who "..."
+
+  # 队列 #163：预留取号，直接拿字面编号，不再自己读高水位线 +1
+  python 0-学习与工具/工具-共享文档编辑锁.py acquire --who "Cowork-采购专线" --note "v2.4 回灌" --reserve 2 --section 一
 
 陈旧锁判定：超过 STALE_MINUTES（默认 30 分钟）未释放的锁视为会话异常退出的
 遗留物，下一个 acquire 会打印警告后接管，不会死锁。
@@ -80,6 +90,13 @@ REPO_ROOT = _resolve_repo_root()
 DEFAULT_TARGET = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 STALE_MINUTES = 30
 HIGH_WATER_MARK_PATTERN = re.compile(r"编号高水位线[：:]\s*(.+?)\*\*")
+HIGH_WATER_MARK_LINE_PATTERN = re.compile(r"编号高水位线")
+# 队列 #163：分区号——每个分区在高水位线行里各自的 "§X #NNN" 片段，独立计数
+# （§一/§四 互不干扰，见分析件 §一 设计要点②）。新增分区时在此登记正则即可。
+SECTION_NUMBER_PATTERNS = {
+    "一": re.compile(r"(§一\s*#\s*)(\d+)"),
+    "四": re.compile(r"(§四\s*#\s*)(\d+)"),
+}
 
 
 def _target_path(target: str) -> Path:
@@ -104,6 +121,64 @@ def _read_high_water_mark(target: str) -> str | None:
         return None
     match = HIGH_WATER_MARK_PATTERN.search(text)
     return match.group(1).strip() if match else None
+
+
+class ReserveFailedError(RuntimeError):
+    """预留取号失败——高水位线行缺失/格式漂移，或目标文件读取失败。
+
+    调用方（`cmd_acquire`）据此**回滚整个 acquire**（改写为释放标记）并非
+    零退出，绝不静默回落"文内可见最大号+1"之类的替代计算——分析件 §一
+    设计要点⑤："解析失败必须 fail-loud"：清扫后表格内早已看不到历史最大
+    号，任何回落值都必然撞已归档编号（#99(a) 已实证过同款故障）。宁可让
+    调用方明确知道"这次没预留到、重试或人工处理"，也不可返回一个看似
+    正常、实则可能撞号的编号。
+    """
+
+
+def _reserve_ids(target: str, section: str, count: int) -> list[int]:
+    """在持锁窗口内原子完成"读高水位线→分配 count 个连续编号→回写高水位
+    线"，返回分配到的字面编号列表（升序，供调用方直接使用，不需要再 +1）。
+
+    只信高水位线行本身，**不**回落扫描表格内可见最大行号（那正是 fail-loud
+    要拒绝的替代路径——见 `ReserveFailedError`）。未使用完的预留号允许留
+    空洞（协议〇.8：编号永不复用），本函数不做任何"释放未用编号"的操作，
+    调用方也不需要。
+    """
+    if section not in SECTION_NUMBER_PATTERNS:
+        raise ReserveFailedError(
+            f"未知分区 {section!r}，仅支持 {sorted(SECTION_NUMBER_PATTERNS)}"
+        )
+    path = _target_path(target)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ReserveFailedError(f"读取目标文件失败，拒绝预留：{path}（{exc}）") from exc
+
+    line_match = HIGH_WATER_MARK_LINE_PATTERN.search(text)
+    if line_match is None:
+        raise ReserveFailedError(f"目标文件不含「编号高水位线」标注行，拒绝预留：{path}")
+
+    line_start = text.rfind("\n", 0, line_match.start()) + 1
+    line_end = text.find("\n", line_match.end())
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+
+    section_match = SECTION_NUMBER_PATTERNS[section].search(line)
+    if section_match is None:
+        raise ReserveFailedError(
+            f"高水位线行不含 §{section} 编号（格式漂移），拒绝预留：{line!r}"
+        )
+
+    current = int(section_match.group(2))
+    reserved = list(range(current + 1, current + 1 + count))
+    new_value = reserved[-1]
+    new_line = (
+        line[:section_match.start(2)] + str(new_value) + line[section_match.end(2):]
+    )
+    new_text = text[:line_start] + new_line + text[line_end:]
+    path.write_text(new_text, encoding="utf-8")
+    return reserved
 
 
 def _now() -> datetime:
@@ -131,7 +206,29 @@ def _age_minutes(lock: dict) -> float:
     return (_now() - held_since).total_seconds() / 60
 
 
+def _write_released_marker(lock_path: Path, who: str, note: str, held_since: str) -> None:
+    """写released标记（release 与"预留失败回滚 acquire"共用同一写法）。"""
+    lock_path.write_text(
+        json.dumps(
+            {"who": who, "note": note, "held_since": held_since,
+             "released": True, "released_at": _now().isoformat()},
+            ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
 def cmd_acquire(args: argparse.Namespace) -> int:
+    # 队列 #163：--reserve 必须配 --section，且计数须为正——先做参数校验，
+    # 校验失败时连锁文件都不碰（不制造"锁占了、但没预留成功"的半成品状态）。
+    if args.reserve is not None:
+        if args.section is None:
+            print("✗ --reserve 必须同时指定 --section 一|四（工具不猜你要预留哪个分区的号）。")
+            return 1
+        if args.reserve <= 0:
+            print(f"✗ --reserve 必须为正整数，收到 {args.reserve}。")
+            return 1
+
     lock_path = _lock_path(args.file)
     existing = _read_lock(lock_path)
     if existing is not None:
@@ -146,15 +243,32 @@ def cmd_acquire(args: argparse.Namespace) -> int:
         print(f"⚠ 发现陈旧锁（{existing.get('who', '未知')}，{age:.0f} 分钟前，"
               f"超过 {STALE_MINUTES} 分钟未释放，判定为异常退出遗留）——已接管。")
 
+    held_since = _now().isoformat()
     lock_path.write_text(
         json.dumps(
-            {"who": args.who, "note": args.note or "",
-             "held_since": _now().isoformat()},
+            {"who": args.who, "note": args.note or "", "held_since": held_since},
             ensure_ascii=False, indent=2,
         ),
         encoding="utf-8",
     )
     print(f"✓ 已占锁：{args.who}（{args.note or '无备注'}）→ {lock_path.name}")
+
+    if args.reserve is not None:
+        # 队列 #163：直接分配并返回字面编号，同一次持锁窗口内原子回写高水
+        # 位线——不再回显一个需要调用方自己 +1 的数（那正是 2026-07-29 #162
+        # 撞号的成因：回显本身没错，人读的时候算错/抄错）。
+        try:
+            reserved = _reserve_ids(args.file, args.section, args.reserve)
+        except ReserveFailedError as exc:
+            print(f"✗ 预留取号失败，本次 acquire 一并回滚（不留半成品锁）：{exc}")
+            _write_released_marker(lock_path, args.who, args.note or "", held_since)
+            return 1
+        nums = "、".join(f"§{args.section} #{n}" for n in reserved)
+        print(f"📍 已为你预留：{nums}")
+        print("   （顶部高水位线已同步回写；即使本次未写满，编号不复用、留空即可）")
+        print("   改完请立刻 release。")
+        return 0
+
     hwm = _read_high_water_mark(args.file)
     if hwm:
         print(f"📍 持锁瞬间高水位线：{hwm}——新行编号从此值 +1 续排，"
@@ -179,14 +293,9 @@ def cmd_release(args: argparse.Namespace) -> int:
     # unlink 会返回 PermissionError（acquire 建文件正常，release 删不掉），
     # 改写规避了这个问题，且本地/CC 环境同样适用——不需要按环境分叉代码路径。
     # released 标记等价于"无锁"（见 _read_lock），下一次 acquire 当空锁立即成功。
-    lock_path.write_text(
-        json.dumps(
-            {"who": existing.get("who"), "note": existing.get("note", ""),
-             "held_since": existing.get("held_since"),
-             "released": True, "released_at": _now().isoformat()},
-            ensure_ascii=False, indent=2,
-        ),
-        encoding="utf-8",
+    _write_released_marker(
+        lock_path, existing.get("who", ""), existing.get("note", ""),
+        existing.get("held_since", ""),
     )
     print("✓ 已释放（改写为释放标记，未删除文件——沙箱环境亦可用）")
     return 0
@@ -215,6 +324,15 @@ def main() -> int:
     p_acquire = sub.add_parser("acquire", help="编辑前占锁")
     p_acquire.add_argument("--who", required=True, help="会话标识，如 'CC-QD-B'/'Cowork-财务专线'")
     p_acquire.add_argument("--note", default="", help="简短备注，便于其他会话看到占用原因")
+    p_acquire.add_argument(
+        "--reserve", type=int, default=None,
+        help="队列 #163：直接预留 N 个字面编号并返回（须同时指定 --section），"
+             "不再自己读高水位线 +1 续排",
+    )
+    p_acquire.add_argument(
+        "--section", choices=sorted(SECTION_NUMBER_PATTERNS), default=None,
+        help="--reserve 配套：要预留哪个分区的号（§一/§四 各自独立计数）",
+    )
     p_acquire.set_defaults(func=cmd_acquire)
 
     p_release = sub.add_parser("release", help="编辑完立刻释放")

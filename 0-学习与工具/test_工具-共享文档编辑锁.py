@@ -166,6 +166,166 @@ class EditLockTests(unittest.TestCase):
         self.assertIn(winner, ("A", "B"))
 
 
+class ReserveIdsTests(unittest.TestCase):
+    """队列 #163：`acquire --reserve N --section 一|四` 预留取号。
+
+    覆盖分析件 §一 §1.4 列出的 8 条验收要求：单号/多号预留、§一/§四 互不
+    干扰、写后核验高水位线已回写、高水位线缺失/格式漂移 fail-loud、锁忙
+    时不分配、两次并发 acquire+reserve 编号不重叠、预留未用留空洞、release
+    不影响已推进的高水位线。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = str(Path(self._tmpdir.name) / "假想队列.md")
+        self.lock_path = Path(self.target + ".editlock")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_queue(self, section_one: int = 168, section_four: int = 37) -> None:
+        Path(self.target).write_text(
+            f"> **编号高水位线：§一 #{section_one} ｜ §四 #{section_four}**"
+            "（2026-07-24 首次清扫起启用）\n\n"
+            "## 一、任务看板\n\n"
+            "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+            "|---|------|--------|-------------|----------|------|--------|------|\n",
+            encoding="utf-8",
+        )
+
+    def test_reserve_single_id_returns_next_literal_number(self):
+        self._write_queue(section_one=168)
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve", "1", "--section", "一")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("§一 #169", result.stdout)
+        self.assertNotIn("§一 #170", result.stdout)
+
+    def test_reserve_multiple_ids_returns_consecutive_literal_numbers(self):
+        self._write_queue(section_one=168)
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve", "3", "--section", "一")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for expected in ("§一 #169", "§一 #170", "§一 #171"):
+            self.assertIn(expected, result.stdout)
+
+    def test_reserve_section_one_and_four_count_independently(self):
+        self._write_queue(section_one=168, section_four=37)
+        result_one = run("--file", self.target, "acquire", "--who", "A",
+                          "--reserve", "2", "--section", "一")
+        self.assertEqual(result_one.returncode, 0, result_one.stdout + result_one.stderr)
+        self.assertIn("§一 #169", result_one.stdout)
+        self.assertIn("§一 #170", result_one.stdout)
+        run("--file", self.target, "release", "--who", "A")
+
+        result_four = run("--file", self.target, "acquire", "--who", "A",
+                           "--reserve", "1", "--section", "四")
+        self.assertEqual(result_four.returncode, 0, result_four.stdout + result_four.stderr)
+        self.assertIn("§四 #38", result_four.stdout)  # 未被 §一 的预留影响
+
+        final_text = Path(self.target).read_text(encoding="utf-8")
+        self.assertIn("编号高水位线：§一 #170 ｜ §四 #38", final_text)
+
+    def test_reserve_writes_back_high_water_mark_verified_by_reread(self):
+        """写后核验：不只看返回值/终端输出，重新读一次目标文件确认高水位
+        线行确已回写到位。"""
+        self._write_queue(section_one=168, section_four=37)
+        run("--file", self.target, "acquire", "--who", "A", "--reserve", "2", "--section", "一")
+
+        reread = Path(self.target).read_text(encoding="utf-8")
+        self.assertIn("编号高水位线：§一 #170 ｜ §四 #37", reread)
+
+    def test_reserve_fails_loud_when_high_water_mark_line_missing(self):
+        Path(self.target).write_text("没有高水位线这一行的普通文件\n", encoding="utf-8")
+        original = Path(self.target).read_text(encoding="utf-8")
+
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve", "1", "--section", "一")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("拒绝预留", result.stdout)
+        # 不写任何内容——目标文件原封不动。
+        self.assertEqual(Path(self.target).read_text(encoding="utf-8"), original)
+        # 且不留下一个"锁被占但没预留成功"的半成品状态——回滚为已释放。
+        marker = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertTrue(marker.get("released"))
+
+    def test_reserve_fails_loud_when_section_number_malformed(self):
+        """高水位线行存在，但目标分区号解析失败（格式漂移）——同样 fail-loud，
+        不回落"仅取可见最大号"之类的替代计算。"""
+        Path(self.target).write_text(
+            "> **编号高水位线：§一 格式已变 ｜ §四 #37**（说明文字）\n", encoding="utf-8"
+        )
+        original = Path(self.target).read_text(encoding="utf-8")
+
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve", "1", "--section", "一")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(Path(self.target).read_text(encoding="utf-8"), original)
+
+    def test_reserve_requires_section_argument(self):
+        self._write_queue()
+        result = run("--file", self.target, "acquire", "--who", "A", "--reserve", "1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.lock_path.exists(), "校验失败时不应连锁文件都创建")
+
+    def test_reserve_not_granted_when_lock_held_by_other(self):
+        """锁已被他人持有时——占锁失败，不得分配任何编号（高水位线不应被
+        改动）。"""
+        self._write_queue(section_one=168)
+        self._write_lock("B", minutes_ago=1)
+        original = Path(self.target).read_text(encoding="utf-8")
+
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve", "1", "--section", "一")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(Path(self.target).read_text(encoding="utf-8"), original)
+
+    def _write_lock(self, who: str, minutes_ago: float, note: str = "") -> None:
+        held_since = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        self.lock_path.write_text(
+            json.dumps({"who": who, "note": note, "held_since": held_since.isoformat()},
+                       ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def test_two_sequential_reserves_do_not_overlap(self):
+        """模拟两桌先后各预留——第二桌看到的必须是第一桌推进后的高水位
+        线，两次拿到的编号区间不重叠（顺序执行即真实还原两桌各自
+        acquire→reserve→release 的协议约束，无需真并发也能验证不重叠这一
+        核心性质）。"""
+        self._write_queue(section_one=168)
+        first = run("--file", self.target, "acquire", "--who", "A",
+                    "--reserve", "2", "--section", "一")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        run("--file", self.target, "release", "--who", "A")
+
+        second = run("--file", self.target, "acquire", "--who", "B",
+                     "--reserve", "2", "--section", "一")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+
+        self.assertIn("§一 #169", first.stdout)
+        self.assertIn("§一 #170", first.stdout)
+        self.assertIn("§一 #171", second.stdout)
+        self.assertIn("§一 #172", second.stdout)
+
+    def test_reserve_then_release_without_using_leaves_gap_and_keeps_high_water_mark(self):
+        """预留后不写任何行、直接 release——高水位线应保持已推进（空洞可
+        接受，协议〇.8：编号永不复用），不做任何"释放未用编号"的回收。"""
+        self._write_queue(section_one=168)
+        run("--file", self.target, "acquire", "--who", "A", "--reserve", "3", "--section", "一")
+        release_result = run("--file", self.target, "release", "--who", "A")
+        self.assertEqual(release_result.returncode, 0)
+
+        final_text = Path(self.target).read_text(encoding="utf-8")
+        self.assertIn("编号高水位线：§一 #171 ｜", final_text)  # 168+3，未回退
+        # 表格本身没有新增任何行——预留不等于写行。
+        self.assertNotIn("| 169 |", final_text)
+        self.assertNotIn("| 170 |", final_text)
+        self.assertNotIn("| 171 |", final_text)
+
+
 class EditLockCrossWorktreeTests(unittest.TestCase):
     """回归 2026-07-23 供应链看板批1 worktree 会话发现的 gap：
     REPO_ROOT 若按 __file__ 所在 checkout 推算，主工作区与
