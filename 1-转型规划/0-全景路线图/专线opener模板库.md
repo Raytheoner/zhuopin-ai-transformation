@@ -30,7 +30,7 @@ status: 生效
 - **不触碰常驻服务/已部署场景** → 填 `无`（多数 Cowork 任务与纯库内 CC 任务）。
 - **触碰 `.51` 已部署服务**（保供看板 8091／命令中心 8092／QD-B 8093／FI2 8094）→ 写明「须 `sync-to-server.ps1` 推送 + 重启对应计划任务 + 冒烟三件套（`/api/ping`·关键页 200·一次全量重算）+ 回滚 SOP 在位」。
 - **触碰企微机器人** → 🔴 写明「须同步 `ops/wecom-service-home` worktree 后重启 `ZhuopinAibotDevListener`，并确认单实例存活」。
-- **触碰定时任务 prompt**（值周巡检／拆件巡逻／sweep）→ 写明「改的是 `C:\Users\Paul Shao\Claude\Scheduled\<task>\SKILL.md`，**仓库外、不入 git**，须经 `update_scheduled_task` 改并回归自检原有纪律未丢失」。
+- **触碰定时任务 prompt**（值周巡检／拆件巡逻等）→ 写明「改的是 `C:\Users\Paul Shao\Claude\Scheduled\<task>\SKILL.md`，**仓库外、不入 git**，四步走：① 用 `update_scheduled_task` 改真身（该目录对文件工具只读）→ ② **回归自检原有纪律未丢失**（该工具是整段替换 prompt、非局部编辑，重写时极易丢旧条款）→ ③ **回镜 `0-学习与工具/定时任务源码/<taskId>.SKILL.md` 并核对哈希一致**（2026-07-30 建立的版本保护，见该目录 README；回镜前扫一遍凭据）→ ④ 登 §二 批次 + 触发 sweep」。**⚠️ 方向单向：真身 → 镜像；改镜像不生效**——这与"机器人跑 `ops/wecom-service-home` 而非 master"是同一类陷阱的镜像形态，勿踩反方向。
 
 **成因（2026-07-30 真实取证）**：`#168` 的 CC opener 初稿【设置】行只写了 `执行环境／分支／worktree`，正文也只说"服务需真实重启验证"——**漏了"机器人跑的是 `ops/wecom-service-home` 那个 checkout、不是 master"这一步**。若照初稿执行：建造 worktree 内测试全绿 → push master → 直接重启服务 → 看到 `connection_established` 正常 → **如实报告"重启验证通过"，而验证的是未改动的旧代码**。实测当时 `ops/wecom-service-home` 落后 master **50 个提交**（ahead=0），只是这 50 个恰好全是文档提交、没碰机器人代码，`queue_appender.py` 与 master 哈希才相同——**这是运气不是机制，一旦改到该文件运气立刻失效**。同类步骤在服务 CLAUDE.md 已有两次正确记载（2026-07-22 #69/#70、2026-07-27 #99 均写明"`ops/wecom-service-home` 同步后重启"），**说明这一步一直靠 CC 记得，从未进过 opener 模板**——本条即为堵住它。
 
