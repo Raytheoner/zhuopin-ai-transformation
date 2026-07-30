@@ -76,14 +76,14 @@ def test_build_reconnect_notice_no_history_still_returns_message() -> None:
 
 
 def test_build_reconnect_notice_short_gap_returns_lightweight_message() -> None:
-    """短间隔（未超阈值）不再返回 None——改为轻量的"已恢复，无明显中断"文案，
-    与超阈值的详细警示文案区分开。"""
+    """短间隔（未超阈值）不再返回 None——改为轻量的"已恢复，无消息丢失风险"
+    文案，与超阈值的详细警示文案区分开。"""
     now = datetime.now(timezone.utc)
     last = now - timedelta(seconds=90)
     notice = build_reconnect_notice(last, now, threshold_seconds=180)
     assert notice is not None
     assert "监听已恢复" in notice
-    assert "无明显中断" in notice
+    assert "无消息丢失风险" in notice
     assert "企微没有离线消息补推能力" not in notice  # 短间隔不该带这句警示措辞
 
 
@@ -96,6 +96,64 @@ def test_build_reconnect_notice_long_gap_reuses_existing_warning_text() -> None:
     assert notice is not None
     assert "1380 分钟" in notice
     assert "企微没有离线消息补推能力" in notice
+
+
+# ── 队列 #147：判据改用存活戳，两个时长各司其职、互不混淆 ──────────────────
+
+
+def test_build_reconnect_notice_long_idle_but_alive_does_not_warn() -> None:
+    """核心用例（2026-07-29 "中断约 79 分钟"误报的直接回归）：长时间无业务
+    消息（审计末条 3 天前）但连接持续存活（存活戳 2 分钟前）——重连后必须
+    **不报**"中断/消息可能丢失"，因为真实连接从未断过，只是没人说话。"""
+    now = datetime.now(timezone.utc)
+    last_alive_at = now - timedelta(minutes=2)
+    last_event_at = now - timedelta(days=3)
+
+    notice = build_reconnect_notice(
+        last_alive_at, now, threshold_seconds=180, last_event_at=last_event_at
+    )
+
+    assert "企微没有离线消息补推能力" not in notice
+    assert "真实断线" not in notice
+    assert "无消息丢失风险" in notice
+    assert "距上次有人发消息约 72 小时" in notice
+    assert "属正常空闲" in notice
+
+
+def test_build_reconnect_notice_real_disconnect_warns_with_correct_duration() -> None:
+    """真实断线（存活戳停在 T，T+30min 才重连）——应正确报 30 分钟，且带
+    消息丢失警示。"""
+    now = datetime.now(timezone.utc)
+    last_alive_at = now - timedelta(minutes=30)
+
+    notice = build_reconnect_notice(last_alive_at, now, threshold_seconds=180)
+
+    assert "真实断线约 30 分钟" in notice
+    assert "企微没有离线消息补推能力" in notice
+
+
+def test_build_reconnect_notice_missing_liveness_falls_back_to_first_run_text() -> None:
+    """存活戳不存在（首次运行/刚迁移部署，`last_alive_at=None`）——回落
+    "首次运行，无存活戳可比对"文案，不得误报中断。"""
+    now = datetime.now(timezone.utc)
+    notice = build_reconnect_notice(None, now)
+    assert "首次运行" in notice
+    assert "企微没有离线消息补推能力" not in notice
+
+
+def test_build_reconnect_notice_shows_both_durations_without_confusion() -> None:
+    """两个时长（断线时长 vs 无消息时长）必须同时出现在文案里，且数值
+    不能互相串位。"""
+    now = datetime.now(timezone.utc)
+    last_alive_at = now - timedelta(seconds=8)
+    last_event_at = now - timedelta(hours=62)
+
+    notice = build_reconnect_notice(
+        last_alive_at, now, threshold_seconds=180, last_event_at=last_event_at
+    )
+
+    assert "断线约 8 秒" in notice
+    assert "距上次有人发消息约 62 小时" in notice
 
 
 class _FakeConnector:

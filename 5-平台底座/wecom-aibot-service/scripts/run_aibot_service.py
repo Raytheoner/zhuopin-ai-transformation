@@ -39,6 +39,7 @@ sys.path.insert(0, str(SERVICE_DIR))
 from aibot_service.connection import build_connector  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp, send_gap_alert  # noqa: E402
+from aibot_service.liveness import read_liveness, run_liveness_heartbeat  # noqa: E402
 from aibot_service.queue_reconcile_sentinel import run_reconciliation_sentinel  # noqa: E402
 from aibot_service.repo_paths import resolve_audit_path, resolve_repo_root  # noqa: E402
 
@@ -58,21 +59,28 @@ async def _run_forever(
     fatal_event: asyncio.Event,
     fallback_send: Optional[Callable[[str], None]] = None,
     queue_path: Optional[Path] = None,
+    liveness_path: Optional[Path] = None,
 ) -> None:
     # 必须在 connect() 之前读——建连会写新的审计事件，建连后再读会读到刚写
     # 入的"连接成功"事件本身，间隔恒为 0，判断不出真实中断时长。
-    last_ts = last_event_timestamp(audit_path)
+    # 队列 #147：`last_alive_at`（存活戳）决定是否触发"真实断线"警示；
+    # `last_event_at`（审计末条事件）此后只作纯信息展示（"距上次有人发
+    # 消息约 X"），不再影响是否告警——两者语义不同，不可混用。
+    last_alive_at = read_liveness(liveness_path) if liveness_path is not None else None
+    last_event_at = last_event_timestamp(audit_path)
 
     await connector.connect()
     await asyncio.sleep(1)  # 等 aibot_subscribe 认证完成（connect() 只等 WS 握手，不等鉴权）
 
     # Paul 2026-07-19 要求：不管这次中断长短，每次(重)连接都要发一条通报
     # （此前只在超阈值时才通知，短间隔重连收不到任何确认消息）。
-    notice_text = build_reconnect_notice(last_ts, datetime.now(timezone.utc))
+    notice_text = build_reconnect_notice(
+        last_alive_at, datetime.now(timezone.utc), last_event_at=last_event_at
+    )
     await send_gap_alert(
         connector, audit, notice_text, PAUL_USERID,
         fallback_send=fallback_send,
-        last_event_at=last_ts.isoformat() if last_ts else "",
+        last_event_at=last_alive_at.isoformat() if last_alive_at else "",
     )
 
     # 归档↔队列对账哨兵（design D18，队列 #69/#70，2026-07-22，dry-run）——
@@ -83,8 +91,18 @@ async def _run_forever(
             connector, audit, queue_path, PAUL_USERID, now=datetime.now(timezone.utc)
         )
 
-    await fatal_event.wait()
-    raise ConnectionAbandonedError("企微连接不可恢复（SDK重连预算耗尽），退出进程交部署层重启")
+    # 队列 #147：连接建立后启动存活心跳后台任务（每 5 分钟覆写一次存活戳，
+    # 与业务消息量无关），进程退出前统一取消——不留悬空任务。
+    heartbeat_task = (
+        asyncio.create_task(run_liveness_heartbeat(liveness_path, audit=audit))
+        if liveness_path is not None else None
+    )
+    try:
+        await fatal_event.wait()
+        raise ConnectionAbandonedError("企微连接不可恢复（SDK重连预算耗尽），退出进程交部署层重启")
+    finally:
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
 
 
 def main() -> None:
@@ -114,6 +132,9 @@ def main() -> None:
     # 补录而不是直接写盘覆盖人类正在编辑的内容——见 connection.py::
     # build_connector 的 `enable_queue_edit_lock` 文档。
     pending_lock_path = SERVICE_DIR / "reports" / "pending_queue_lock_appends.jsonl"
+    # 队列 #147：存活戳文件——与审计 JSONL 物理隔离（见 liveness.py 模块
+    # docstring），不随 WECOM_AIBOT_AUDIT_PATH 迁移。
+    liveness_path = SERVICE_DIR / "reports" / "aibot_liveness.json"
 
     secrets = EnvSecretsProvider()
     audit = AuditLogger.jsonl(audit_path)
@@ -143,7 +164,11 @@ def main() -> None:
         pending_lock_path=pending_lock_path,
     )
 
-    asyncio.run(_run_forever(connector, audit_path, audit, fatal_event, fallback_send, queue_path))
+    asyncio.run(
+        _run_forever(
+            connector, audit_path, audit, fatal_event, fallback_send, queue_path, liveness_path
+        )
+    )
 
 
 if __name__ == "__main__":
