@@ -86,7 +86,10 @@ async def _run(args: argparse.Namespace) -> int:
             docx_path=Path(args.docx) if args.docx else None,
             connector=connector,
             chatid=args.chatid,
-            match=lambda cells: match_topic in cells[2],
+            # 2026-07-31 起 README 表格新增"编号"列（协议见 README-跟进机制与命名约定.md），
+            # 列序随之整体后移一位；改为跨全部单元格搜索而非硬编码列序号，
+            # 对未来表格加/减列天然免疫（match_topic 本就要求"唯一定位关键字"）。
+            match=lambda cells: any(match_topic in cell for cell in cells),
             audit=audit,
         )
         print(f"[OK] 推送成功，README 已回填：{result.new_status}")
