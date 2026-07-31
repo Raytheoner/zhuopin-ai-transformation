@@ -5,18 +5,22 @@
 #  1/3/7 天递减升级私信 Shao Peishen；判定纯函数见
 #  aibot_service/decision_reminder.py，不做任何主观新增，只登记本机计划任务。
 #
-#  Action 指向主工作区稳定路径（同 工具-注册落库sweep计划任务.ps1 惯例，
-#  #49 教训：勿指向任何 .claude\worktrees\<name> 建造 worktree，防止该
-#  worktree 完工后 `git worktree remove` 掉导致任务失效）；本脚本内部通过
-#  `resolve_repo_root` 动态解析真实仓库根，理论上从哪个 checkout 跑都行，
-#  但注册时仍固定选主工作区，图的是"路径不会消失"这个稳定性保证，而非
-#  解析能力本身的必要性。
+#  Action 指向 `ops/wecom-service-home`（本服务的长驻 worktree，与
+#  ZhuopinAibotDevListener 同一个 checkout）——与落库 sweep 那份注册脚本
+#  惯例不同：sweep 直接改写主工作区队列文件，必须固定指主工作区；本脚本
+#  只读队列文件+独立发一条消息，不修改任何 git 仓库内容，且它 import 的
+#  `aibot_service` 包与所需 `.env` 凭据本就长驻在这个 worktree（同该服务
+#  其余组件一致），选这里比选主工作区更贴合实际依赖，也不违反"勿指临时
+#  建造 worktree"的精神——`ops/` 前缀的服务常驻 worktree 本就是稳定路径，
+#  不会被 `git worktree remove` 掉（同 #49/§5"长驻服务类 worktree"惯例）。
+#  本脚本内部通过 `resolve_repo_root` 动态解析队列文件真实所属仓库根，
+#  与从哪个 checkout 触发无关。
 #
 #  运行身份沿用落库 sweep 那次的 #96 教训：SYSTEM 账户对 OneDrive 个人版
 #  路径无 ACL 访问权限会静默零执行——用当前账户 + LogonType S4U。
 #
-#  用法（本机管理员或当前用户 PowerShell，在主工作区目录下执行一次；
-#        重复执行幂等——会先注销旧任务再重建）：
+#  用法（本机管理员或当前用户 PowerShell，在 ops/wecom-service-home 目录下
+#        执行一次；重复执行幂等——会先注销旧任务再重建）：
 #    powershell -ExecutionPolicy Bypass -File "5-平台底座\wecom-aibot-service\register-decision-reminder-task.ps1"
 #
 #  验证：
@@ -29,7 +33,7 @@
 # ================================================================
 $ErrorActionPreference = "Stop"
 
-$REPO         = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型"
+$REPO         = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\.claude\worktrees\wecom-service-home"
 $SERVICE_DIR  = Join-Path $REPO "5-平台底座\wecom-aibot-service"
 $CHECK_SCRIPT = Join-Path $SERVICE_DIR "scripts\decision_reminder_check.py"
 $WRAPPER      = Join-Path $SERVICE_DIR "run-decision-reminder-check.ps1"
@@ -37,17 +41,17 @@ $TASK         = "ZhuopinDecisionReminderDaily"
 $DAILY_TIME   = "08:30"
 
 Write-Host "`n== 注册需 Shao Peishen 决策项每日超期汇总计划任务 ==" -ForegroundColor Cyan
-Write-Host "   主工作区: $REPO"
+Write-Host "   服务常驻 worktree: $REPO"
 Write-Host "   检查脚本: $CHECK_SCRIPT"
 Write-Host "   周期    : 每天 $DAILY_TIME`n"
 
 if (-not (Test-Path $CHECK_SCRIPT)) {
-    Write-Error "未找到 $CHECK_SCRIPT —— 请确认在主工作区（非 worktree）执行本脚本。"
+    Write-Error "未找到 $CHECK_SCRIPT —— 请确认 ops/wecom-service-home 已同步到含本脚本的 commit。"
     exit 1
 }
 $gitMarker = Join-Path $REPO ".git"
-if (-not (Test-Path $gitMarker -PathType Container)) {
-    Write-Error "$gitMarker 不是目录（当前路径可能是某个 linked worktree，而非主工作区）——已中止。"
+if (-not (Test-Path $gitMarker)) {
+    Write-Error "$gitMarker 不存在（$REPO 可能已不是有效的 git worktree）——已中止。"
     exit 1
 }
 
