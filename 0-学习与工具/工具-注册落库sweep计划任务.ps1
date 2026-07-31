@@ -46,7 +46,7 @@ $REPO           = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型"
 $SWEEP_SCRIPT   = Join-Path $REPO "0-学习与工具\工具-落库sweep.py"
 $WRAPPER        = Join-Path $REPO "0-学习与工具\run-commit-sweep.ps1"
 $TASK           = "ZhuopinCommitSweep"
-$INTERVAL_HOURS = 4
+$INTERVAL_HOURS = 1
 
 Write-Host "`n== 注册落库 sweep 计划任务 ==" -ForegroundColor Cyan
 Write-Host "   主工作区: $REPO"
@@ -116,7 +116,7 @@ $triggerRepeat  = New-ScheduledTaskTrigger -Once -At (Get-Date) `
 $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType S4U
 # 笔记本电池下默认拒启（Paul 拍板：电池供电也必须能跑，不能只在插电时触发）。
 $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 30) `
-    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 
 Register-ScheduledTask -TaskName $TASK `
     -Action $action -Trigger @($triggerStartup, $triggerRepeat) `
