@@ -16,8 +16,15 @@
 #  本脚本内部通过 `resolve_repo_root` 动态解析队列文件真实所属仓库根，
 #  与从哪个 checkout 触发无关。
 #
-#  运行身份沿用落库 sweep 那次的 #96 教训：SYSTEM 账户对 OneDrive 个人版
-#  路径无 ACL 访问权限会静默零执行——用当前账户 + LogonType S4U。
+#  运行身份：当前账户 + LogonType Interactive（2026-07-31 实测教训——落库
+#  sweep 那份脚本用的 `LogonType S4U` 在本机注册**新**任务时报
+#  `Register-ScheduledTask : Access is denied`（S4U 需要"以批处理作业登录"
+#  权限，赋予该权限的动作本身要求管理员权限，即便任务运行期不需要；已
+#  分别单独验证 S4U 失败/Interactive 成功，隔离出是登录类型而非其他配置
+#  项导致）；`ZhuopinAibotDevListener` 本身也是 `LogonType=InteractiveToken`
+#  非 S4U，属本项目已有先例。代价：Interactive 要求触发时用户已登录本机
+#  （笔记本工作日常态，可接受）；若未来需要"未登录也能跑"，须由 Paul 或
+#  管理员账户手动重跑本脚本改用 S4U/Password 登录类型。
 #
 #  用法（本机管理员或当前用户 PowerShell，在 ops/wecom-service-home 目录下
 #        执行一次；重复执行幂等——会先注销旧任务再重建）：
@@ -82,7 +89,7 @@ $psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$WRAPPER`""
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $psArgs -WorkingDirectory $REPO
 $trigger = New-ScheduledTaskTrigger -Daily -At $DAILY_TIME
 
-$principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType S4U
+$principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive
 $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
