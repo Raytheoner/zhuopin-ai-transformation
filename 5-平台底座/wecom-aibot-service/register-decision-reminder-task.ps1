@@ -41,6 +41,7 @@
 $ErrorActionPreference = "Stop"
 
 $REPO         = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\.claude\worktrees\wecom-service-home"
+$MAIN_WORKSPACE_QUEUE = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\1-转型规划\0-全景路线图\跨桌任务队列.md"
 $SERVICE_DIR  = Join-Path $REPO "5-平台底座\wecom-aibot-service"
 $CHECK_SCRIPT = Join-Path $SERVICE_DIR "scripts\decision_reminder_check.py"
 $WRAPPER      = Join-Path $SERVICE_DIR "run-decision-reminder-check.ps1"
@@ -75,6 +76,16 @@ $wrapperContent = @"
 # 需 Shao Peishen 决策项每日超期汇总启动包装（由 register-decision-reminder-task.ps1
 # 生成，勿手改——重跑注册脚本会覆盖此文件）。绝对路径烘焙进来，不依赖计划
 # 任务触发时的运行时 PATH（同落库 sweep 惯例，见 #79 教训）。
+#
+# WECOM_AIBOT_QUEUE_PATH 显式指向主工作区队列文件（2026-07-31 实测教训）：
+# decision_reminder_check.py 默认按自身 __file__ 反推仓库根，若不显式指定，
+# 在本 ops/wecom-service-home worktree 里跑会读到**这个 worktree 自己的
+# 队列文件副本**（需手动同步、可能滞后）而非主工作区实时内容，审计也会
+# 写进这个 worktree 自己的 reports/，与 push_followup_letter.py 等脚本写
+# 主工作区那份分裂成两份（正是队列 #126 修复过的同类问题，本脚本若不显式
+# 指定队列锚点就会重犯）。显式设置后，`resolve_repo_root` 会以这个路径为
+# 锚点动态解析出主工作区根，队列内容与审计落点都对齐到唯一权威位置。
+`$env:WECOM_AIBOT_QUEUE_PATH = "$MAIN_WORKSPACE_QUEUE"
 & "$pyExe" "$CHECK_SCRIPT"
 exit `$LASTEXITCODE
 "@
