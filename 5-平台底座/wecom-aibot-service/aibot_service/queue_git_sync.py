@@ -29,8 +29,19 @@ fetch 最新内容、把队列文件对齐到 origin 的最新版本，再**重�
 ② **已落盘但同步失败时的可见性**——此前失败只留 audit 事件+私信告警，
    队列文件本身看不出这一行尚未确认同步；现改为在文件里给该行追加显式
    "⏳未同步"标记（`_mark_row_unsynced`），使只看文件的读取方也能察觉。
-   标记不自动清除（沿用协议〇.7「⏳」类标记的既有约定——机器只负责标记，
-   核实已同步后由处理方手动删除）。
+
+**队列 #180 修复（2026-07-31）**：上述②的标记此前"只加不清"——`_mark_row_
+unsynced` 打标记后，任何后续一次成功的 git 同步都会把**当时文件的完整
+内容**（含这个陈旧标记）一并推送上去，但从未有代码去清除它；标记文案自己
+写着"核实已同步后请手动删除本标记"，却没有人/机制真的去做，实测 #149/
+#175 两行早已同步成功、标记仍挂着，堆积成过时假警报。**修法**：①
+`append_task_and_sync_to_git` 每次即将提交（意味着文件当前完整内容即将
+被推送）前，先调用 `_clear_unsynced_markers` 清掉文件里此刻残留的**全部**
+标记——不局限于本次追加的这一行，因为"即将发生的这次推送"会让文件里
+当下所有内容（含任何更早失败遗留的标记）一并确认同步；②标记插入位置从
+"紧跟编号列之后"（挤占任务描述开头，扫读第一眼看到的是"未同步"而非
+"这是什么任务"）改为行**末尾**（登记列之后、闭合竖线之前），不再顶偏
+正文。
 """
 from __future__ import annotations
 
@@ -54,7 +65,8 @@ DEFAULT_BACKOFF_SECONDS = 3.0
 
 UNSYNCED_MARKER = (
     "⏳未同步（队列 git 同步失败，本行目前只落本地磁盘/服务自身 checkout，"
-    "尚未确认已推送 GitHub，见 audit `queue_sync_degraded`；核实已同步后请手动删除本标记）"
+    "尚未确认已推送 GitHub，见 audit `queue_sync_degraded`；下次任意一次队列同步"
+    "成功推送后会自动清除本标记，无需手动删除，见队列 #180）"
 )
 
 _ROW_ID_RE = re.compile(r"^\|\s*(\d+)\s*\|")
@@ -171,6 +183,10 @@ def append_task_and_sync_to_git(
                 lock=lock_factory() if lock_factory is not None else None,
             )
 
+        # 队列 #180：即将提交=即将把文件当前完整内容推送出去，顺带清掉此刻
+        # 残留的任何陈旧"⏳未同步"标记（不局限于本次追加的这一行）。
+        _clear_unsynced_markers(queue_path)
+
         err = _commit(resolved_repo_root, relative_path, row)
         if err:
             last_error = err
@@ -211,7 +227,13 @@ def _mark_row_unsynced(queue_path: Path, task_id: str) -> bool:
     有 audit 事件+私信告警，文件本身看不出异常，当日两轮撞号正是因为看
     不见这些行才发生）。行已不在文件里时（如重试耗尽后 `reset --hard` 丢
     弃）返回 False——那种情形改靠 `pending_path` 暂存文件兜底，不是本函数
-    职责。"""
+    职责。
+
+    插入位置＝行**末尾**、闭合竖线之前（队列 #180，2026-07-31 改）——此前
+    插在编号列之后会把任务描述整体挤后，扫读第一眼看到的是"未同步"而不是
+    "这是什么任务"；非标准表格行（不以 `|` 收尾）不强行处理，宁可不标记
+    也不写坏格式，返回 False。
+    """
     if not task_id or task_id == "?":
         return False
     text = queue_path.read_text(encoding="utf-8")
@@ -219,12 +241,43 @@ def _mark_row_unsynced(queue_path: Path, task_id: str) -> bool:
     for i, line in enumerate(lines):
         m = _ROW_ID_RE.match(line)
         if m and m.group(1) == task_id and UNSYNCED_MARKER not in line:
-            insert_at = m.end()
-            lines[i] = f"{line[:insert_at]} {UNSYNCED_MARKER}{line[insert_at:]}"
+            stripped = line.rstrip()
+            if not stripped.endswith("|"):
+                return False
+            last_pipe = len(stripped) - 1
+            lines[i] = f"{stripped[:last_pipe]}{UNSYNCED_MARKER} |{line[len(stripped):]}"
             newline = "\n" if text.endswith("\n") else ""
             queue_path.write_text("\n".join(lines) + newline, encoding="utf-8")
             return True
     return False
+
+
+def _clear_unsynced_markers(queue_path: Path) -> int:
+    """清除队列文件里所有 `_mark_row_unsynced` 曾打上的"⏳未同步"标记
+    （队列 #180，2026-07-31）。
+
+    标记语义是"本行尚未确认已推送"——凡走到这里（即将进行一次真实的
+    git commit+push）都意味着文件当前的完整内容即将被推送，任何仍残留
+    在文件里的旧标记（可能来自更早、与本次追加无关的某次失败）此刻也
+    会随之推送成功，理应一并清除，否则标记只增不减、永久堆积成过时的
+    假警报（实证：#149/#175 两行早已同步成功，标记却仍挂着）。
+
+    只做全文字符串替换（标记文本本身足够独特，不需要逐行按 #id 匹配）；
+    兼容当前"行末尾、前置一个空格"与历史遗留的"编号列后、后置一个空格"
+    两种插入形态，统一按"标记+相邻一个空格"整体清除，不残留多余空白。
+    文件不存在或无标记时返回 0，安全空转。
+    """
+    if not queue_path.exists():
+        return 0
+    text = queue_path.read_text(encoding="utf-8")
+    count = text.count(UNSYNCED_MARKER)
+    if count == 0:
+        return 0
+    text = text.replace(UNSYNCED_MARKER + " ", "")
+    text = text.replace(" " + UNSYNCED_MARKER, "")
+    text = text.replace(UNSYNCED_MARKER, "")
+    queue_path.write_text(text, encoding="utf-8")
+    return count
 
 
 def _mark_row_unsynced_safely(queue_path: Path, row: Optional[str]) -> None:

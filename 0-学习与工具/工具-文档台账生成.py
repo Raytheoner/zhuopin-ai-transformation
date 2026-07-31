@@ -15,6 +15,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_PATH = REPO_ROOT / "1-转型规划" / "0-全景路线图" / "文档台账-自动生成.md"
+QUEUE_PATH = REPO_ROOT / "1-转型规划" / "0-全景路线图" / "跨桌任务队列.md"
+QUEUE_SECTION_ONE_HEADING = "## 一、任务看板"
+QUEUE_EXPECTED_COLUMNS = 8
 
 # 治理范围目录（见文档治理规范 §二 目录职能确认）。
 # 4-数字员工/5-平台底座/openspec 有各自 Hermes L2 场景级约定，不入本台账；
@@ -108,6 +111,41 @@ def status_bucket(status_raw: str) -> str:
     return "（状态头非标准枚举，待补）"
 
 
+def check_queue_row_column_counts(queue_text: str) -> list[tuple[str, int]]:
+    """队列 §一「任务看板」逐行列数自检（队列 #164，2026-07-30 状态页取数时实测发现）。
+
+    正文里出现裸竖线（PowerShell 管道符、命令行或选分隔符等）会被朴素按列下标
+    解析的工具误判为额外列分隔符，致使该行实际列数偏离标准
+    `QUEUE_EXPECTED_COLUMNS`（8）——本函数只做最朴素的"按 `|` 切分数一遍"，
+    不理解 Markdown 语义（不识别反引号代码span 内的 `|` 是否"应该"被豁免），
+    这正是它要发现的问题本身：任何这样朴素解析的下游工具都会中招。
+    只扫 §一 到下一个 `## ` 标题之间的表格行；跳过表头行与分隔行（`|---|...`）。
+
+    返回 (行首 `#` 编号, 实际列数) 列表，仅含列数 ≠ 8 的行；无异常返回空列表。
+    """
+    start = queue_text.find(QUEUE_SECTION_ONE_HEADING)
+    if start == -1:
+        return []
+    rest = queue_text[start + len(QUEUE_SECTION_ONE_HEADING):]
+    next_heading = rest.find("\n## ")
+    section = rest if next_heading == -1 else rest[:next_heading]
+
+    anomalies: list[tuple[str, int]] = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|") or not stripped.endswith("|"):
+            continue
+        cells = stripped.strip("|").split("|")
+        if len(cells) == 0:
+            continue
+        row_id = cells[0].strip()
+        if row_id == "#" or set(row_id) <= {"-", " ", ""}:
+            continue  # 表头行 / 分隔行
+        if len(cells) != QUEUE_EXPECTED_COLUMNS:
+            anomalies.append((row_id, len(cells)))
+    return anomalies
+
+
 def main() -> None:
     entries: dict[str, list[tuple[str, str, str]]] = {}
     missing_status: list[str] = []
@@ -176,9 +214,28 @@ def main() -> None:
             lines.append(f"- `{rel}`")
         lines.append("")
 
+    queue_anomalies: list[tuple[str, int]] = []
+    if QUEUE_PATH.exists():
+        queue_anomalies = check_queue_row_column_counts(
+            QUEUE_PATH.read_text(encoding="utf-8", errors="ignore")
+        )
+    if queue_anomalies:
+        lines.append(f"## 队列 §一 行列数自检（{len(queue_anomalies)} 处异常，队列 #164）")
+        lines.append("")
+        lines.append(
+            f"> 标准列数 {QUEUE_EXPECTED_COLUMNS}；以下行实际列数不符，多为正文误写裸竖线"
+            "（改用全角 `／`）——按列下标解析的工具会读错该行，见协议〇.8。"
+        )
+        lines.append("")
+        for row_id, count in queue_anomalies:
+            lines.append(f"- `#{row_id}`：实际 {count} 列")
+        lines.append("")
+
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text("\n".join(lines), encoding="utf-8")
     print(f"台账已生成：{OUTPUT_PATH.relative_to(REPO_ROOT)}（{total} 份，{len(missing_status)} 份待补状态头）")
+    if queue_anomalies:
+        print(f"⚠ 队列 §一 发现 {len(queue_anomalies)} 处行列数异常：{queue_anomalies}")
 
 
 if __name__ == "__main__":

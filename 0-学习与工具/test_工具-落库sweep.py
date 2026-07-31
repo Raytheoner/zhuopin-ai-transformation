@@ -27,13 +27,16 @@ CLI（`--repo-root` 覆盖生产路径断言）后核对 origin 侧的提交历�
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().with_name("工具-落库sweep.py")
@@ -450,13 +453,134 @@ class SyncBehindOriginTests(SweepTestBase):
         origin_head_before = _git(self.origin, "rev-parse", "master").stdout.strip()
 
         result = _run_sweep(self.work)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # 队列 #171：分叉此前静默退出码 0（计划任务看到"成功"），修复后
+        # 前置分叉检测改用 is_fork=True，退出码变为 FORK_EXIT_CODE（人工介入语义）。
+        self.assertEqual(result.returncode, sweep.FORK_EXIT_CODE, result.stdout + result.stderr)
         self.assertIn("非快进", result.stdout)
 
         self.assertEqual(_git(self.work, "rev-parse", "HEAD").stdout.strip(), local_head_before,
                           "分叉场景不应尝试合并，本地 HEAD 不应变化")
         self.assertEqual(_git(self.origin, "rev-parse", "master").stdout.strip(), origin_head_before,
                           "不应有任何强推，origin 端不应变化")
+
+
+class _CapturingWebhookHandler(BaseHTTPRequestHandler):
+    """极简本地 webhook 桩：记录收到的请求体，恒回 `{"errcode": 0}`。"""
+
+    received: list[dict] = []
+
+    def do_POST(self):  # noqa: N802 — BaseHTTPRequestHandler 既定命名
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        type(self).received.append(json.loads(body.decode("utf-8")))
+        response = json.dumps({"errcode": 0}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(response)
+
+    def log_message(self, *args):  # 静默——不打印到测试输出
+        pass
+
+
+class ForkAlertTests(SweepTestBase):
+    """队列 #171：分叉静默停摆告警——检测/告警发送/连续升级/解除后重置。"""
+
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+    def _write_env_webhook(self) -> None:
+        (self.work / ".env").write_text(
+            f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8",
+        )
+
+    def _diverge(self) -> None:
+        self._init_and_push(rows="")
+        (self.work / "本地未推送.md").write_text("本地独有内容\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "本地未推送提交")
+        other_clone = self.work.parent / "other_clone_fork"
+        _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
+        _git(other_clone, "config", "user.email", "other@example.com")
+        _git(other_clone, "config", "user.name", "Other")
+        (other_clone / "并发内容.md").write_text("并发 session 的内容\n", encoding="utf-8")
+        _git(other_clone, "add", "-A")
+        _git(other_clone, "commit", "-q", "-m", "并发提交")
+        _git(other_clone, "push", "-q", "origin", "master")
+
+    def test_fork_without_env_skips_send_but_still_elevates_exit_code_and_writes_state(self):
+        self._diverge()
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, sweep.FORK_EXIT_CODE, result.stdout + result.stderr)
+        self.assertIn("未在 .env 找到", result.stdout)
+        state = json.loads((self.work / sweep.FORK_STATE_REL).read_text(encoding="utf-8"))
+        self.assertEqual(state["consecutive"], 1)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0, "无 .env 时不应尝试网络请求")
+
+    def test_fork_with_webhook_sends_alert_once(self):
+        self._diverge()
+        self._write_env_webhook()
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, sweep.FORK_EXIT_CODE, result.stdout + result.stderr)
+        self.assertIn("分叉告警已推送", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        payload = _CapturingWebhookHandler.received[0]
+        self.assertEqual(payload["msgtype"], "markdown")
+        self.assertIn("分叉", payload["markdown"]["content"])
+        self.assertIn("首次检测到", payload["markdown"]["content"])
+
+    def test_consecutive_fork_runs_escalate_count_in_alert(self):
+        self._diverge()
+        self._write_env_webhook()
+        _run_sweep(self.work)
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, sweep.FORK_EXIT_CODE, result.stdout + result.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 2)
+        second_payload = _CapturingWebhookHandler.received[1]
+        self.assertIn("连续第 2 轮", second_payload["markdown"]["content"])
+        state = json.loads((self.work / sweep.FORK_STATE_REL).read_text(encoding="utf-8"))
+        self.assertEqual(state["consecutive"], 2)
+
+    def test_fork_resolved_resets_state_and_exit_code_returns_to_zero(self):
+        self._diverge()
+        self._write_env_webhook()
+        first = _run_sweep(self.work)
+        self.assertEqual(first.returncode, sweep.FORK_EXIT_CODE, first.stdout + first.stderr)
+        self.assertTrue((self.work / sweep.FORK_STATE_REL).exists())
+
+        # 人工介入解除分叉：把本地分支重置到与 origin/master 一致（模拟 Paul/CC
+        # 手动 reset --hard 或 rebase 后的结果——具体解决手段不是本测试关心的，
+        # 只关心"解除后下一轮 sweep 应恢复健康且清空陈旧计数"）。
+        _git(self.work, "fetch", "origin")
+        _git(self.work, "reset", "--hard", "origin/master")
+
+        second = _run_sweep(self.work)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertFalse(
+            (self.work / sweep.FORK_STATE_REL).exists(),
+            "分叉解除后应清空连续计数状态文件，不留陈旧数据",
+        )
+
+    def test_non_fork_skip_does_not_write_fork_state_or_alert(self):
+        # 对照组：非 master 分支属"健康跳过"，不应被误判为分叉告警对象。
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        _git(self.work, "checkout", "-q", "-b", "other-branch")
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.work / sweep.FORK_STATE_REL).exists())
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0)
 
 
 if __name__ == "__main__":

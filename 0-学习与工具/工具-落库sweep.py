@@ -32,8 +32,26 @@ git 历史才救回，见协议〇.7 背景）。
     整轮跳过，是本设计决策的第一次真实验证（见收工报告）。
 
 退出码：0=本轮正常结束（无论是"处理了批次"还是"安全跳过"）；
-        2=出现需要人工介入的异常（本地已提交但推送不了/非快进，不会自动强推）；
+        2=出现需要人工介入的异常（本地已提交但推送不了/非快进，不会自动强推；
+          含起跑前置分叉检测，见下）；
         1=脚本自身参数或环境错误（不应在正常运行中出现）。
+
+分叉静默停摆告警（队列 #171，2026-07-30 Antigravity 评审 triage 核证发现）：
+起跑前置检查 `_verify_fast_forward(refetch=False, ...)` 此前失败时退出码固定
+为 0——计划任务看到的是"成功"，而本脚本全文此前无任何 webhook/notify，唯一
+留痕是 `reports/sweep-commit.log`，只有人工翻日志才会发现。真实触发条件：PR
+在本脚本运行窗口内（早期 fetch 与提交后 push 之间）被并发合并，本地提交已落、
+origin 已前移，此后每轮都在这个前置检查处跳过，永久静默直到人工介入（PR 在
+本脚本空闲时合并不会触发——下一轮 `_sync_master_if_behind_origin` 会自动
+`--ff-only` 追上，不构成分叉）。修法：① 前置检查改用 `is_fork=True` 标记
+（见 `SweepAbort.is_fork`），退出码由 0 改为 2（人工介入语义），并复用
+`发企微.py` 同款零依赖 webhook 推送主动告警一次（见 `_handle_fork_detected`）；
+② 连续多轮仍分叉时，告警文案带上连续轮次（见 `_read_fork_state`/
+`_write_fork_state` 持久化到 `reports/sweep-fork-state.json`），分叉一旦解除
+（前置检查转为通过）立即清空该状态，不与"偶发跳过"（非 master/非 clean/
+无待处理批次等健康跳过路径，退出码仍为 0，不触发告警）混淆。**勿采信"拦
+协调文件 PR 可解此问题"**——非快进由 commit 祖先关系决定，与改哪个文件无关，
+只有主动告警才能让"静默"变"有人知道"。
 
 陈旧 `.git/index.lock` 前置自愈（#121(b)，2026-07-27 补）：起跑第一步先查
 `.git/index.lock`——超过 STALE_INDEX_LOCK_MINUTES（默认 10 分钟）未清的判定
@@ -70,10 +88,13 @@ origin/master` 追上再继续干活；两边已分叉（互不为祖先）则�
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -86,16 +107,28 @@ LOG_REL = "reports/sweep-commit.log"
 LOCK_WHO = "sweep-commit"
 STALE_INDEX_LOCK_MINUTES = 10
 
+# 队列 #171：分叉静默停摆告警。
+ENV_REL = ".env"
+WECOM_WEBHOOK_ENV_KEY = "WECOM_WEBHOOK_URL"
+FORK_STATE_REL = "reports/sweep-fork-state.json"
+FORK_EXIT_CODE = 2  # 复用既有"需要人工介入"语义，不新造一套退出码
+
 SECTION_TWO_HEADING = "## 二、"
 NEXT_SECTION_PREFIX = "## "
 
 
 class SweepAbort(Exception):
-    """安全门未过或运行中出现需要人工介入的异常，携带退出码与提示。"""
+    """安全门未过或运行中出现需要人工介入的异常，携带退出码与提示。
 
-    def __init__(self, message: str, exit_code: int = 0):
+    `is_fork`（队列 #171）：仅起跑前置分叉检测这一处会置 True——main() 据此
+    触发主动告警（`_handle_fork_detected`），与其余"健康跳过"（非 master/
+    非 clean/无待处理批次等，退出码仍为 0、不告警）区分开。
+    """
+
+    def __init__(self, message: str, exit_code: int = 0, is_fork: bool = False):
         super().__init__(message)
         self.exit_code = exit_code
+        self.is_fork = is_fork
 
 
 def _run_git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
@@ -191,7 +224,9 @@ def _fetch(repo_root: Path) -> None:
         raise SweepAbort(f"⚠ git fetch origin master 失败（{result.stderr.strip()}）——跳过本轮。")
 
 
-def _verify_fast_forward(repo_root: Path, *, refetch: bool, on_fail_exit_code: int) -> None:
+def _verify_fast_forward(
+    repo_root: Path, *, refetch: bool, on_fail_exit_code: int, is_fork: bool = False,
+) -> None:
     """确保把当前 HEAD 推去 master 会是快进。不是快进时绝不强推，交人工处理。"""
     if refetch:
         _fetch(repo_root)
@@ -203,6 +238,7 @@ def _verify_fast_forward(repo_root: Path, *, refetch: bool, on_fail_exit_code: i
             "⚠ 推送非快进（origin/master 不是当前 HEAD 的祖先，本地落后或已分叉）——"
             "跳过本轮，不强推、不自动 rebase。",
             exit_code=on_fail_exit_code,
+            is_fork=is_fork,
         )
 
 
@@ -231,6 +267,110 @@ def _sync_master_if_behind_origin(repo_root: Path, log: list[str]) -> None:
             f"（{merge.stderr.strip()}）——跳过本轮，不强推、不 rebase。",
         )
     log.append(f"✓ 本地 master 落后 origin/master，已 git merge --ff-only 同步至 {origin_head[:7]}。")
+
+
+def _load_webhook_url(repo_root: Path) -> str | None:
+    """读 `<repo_root>/.env` 的 `WECOM_WEBHOOK_URL`（同 `发企微.py::load_webhook`
+    同款零依赖读法，唯一区别：找不到时返回 None 而非 sys.exit——告警发不出去
+    不应让 sweep 本身失败退出，只应降级为"跳过告警、留痕"（见 `_handle_fork_detected`）。
+    """
+    env_path = repo_root / ENV_REL
+    if not env_path.exists():
+        return None
+    prefix = WECOM_WEBHOOK_ENV_KEY + "="
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith(prefix):
+            url = line[len(prefix):].strip().strip('"').strip("'")
+            if url:
+                return url
+    return None
+
+
+def _send_wecom_markdown(webhook_url: str, content: str) -> None:
+    """向企业微信群机器人推送 Markdown 消息（同 `发企微.py::send_markdown`
+    同款纯标准库实现，本脚本刻意不 import `zhuopin_platform`——保持零依赖，
+    不受多 worktree 共享全局 editable install 指向哪个 checkout 的影响）。
+    """
+    payload = json.dumps(
+        {"msgtype": "markdown", "markdown": {"content": content}}, ensure_ascii=False,
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        webhook_url, data=payload, headers={"Content-Type": "application/json; charset=utf-8"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        result = json.loads(resp.read().decode("utf-8"))
+    if result.get("errcode", 0) != 0:
+        raise RuntimeError(f"企业微信推送失败 errcode={result.get('errcode')} errmsg={result.get('errmsg')}")
+
+
+def _read_fork_state(repo_root: Path) -> dict:
+    path = repo_root / FORK_STATE_REL
+    if not path.exists():
+        return {"consecutive": 0, "first_detected_at": None}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"consecutive": 0, "first_detected_at": None}
+    if not isinstance(data, dict) or "consecutive" not in data:
+        return {"consecutive": 0, "first_detected_at": None}
+    return data
+
+
+def _write_fork_state(repo_root: Path, state: dict) -> None:
+    path = repo_root / FORK_STATE_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _reset_fork_state(repo_root: Path) -> None:
+    """分叉解除（前置检查转为通过）后清空连续计数——防止陈旧计数误导下一次
+    真实分叉的"连续轮次"文案，也避免状态文件无限堆积历史分叉的旧数据。"""
+    path = repo_root / FORK_STATE_REL
+    if path.exists():
+        path.unlink()
+
+
+def _handle_fork_detected(repo_root: Path, log: list[str]) -> None:
+    """分叉告警主流程（队列 #171）：更新连续轮次计数 + 尝试主动推送企微告警。
+    告警发送失败（.env 缺失/网络异常/webhook 拒绝）只降级记日志，不向上抛出
+    ——告警本身不应阻塞 sweep 正常返回其应有的（非 0）退出码。
+    """
+    state = _read_fork_state(repo_root)
+    consecutive = int(state.get("consecutive") or 0) + 1
+    first_detected_at = state.get("first_detected_at") or _now_utc_str()
+    _write_fork_state(
+        repo_root, {"consecutive": consecutive, "first_detected_at": first_detected_at},
+    )
+
+    local_head = _run_git(["rev-parse", "--short", "HEAD"], repo_root, check=False).stdout.strip() or "?"
+    origin_head = _run_git(
+        ["rev-parse", "--short", "origin/master"], repo_root, check=False,
+    ).stdout.strip() or "?"
+
+    if consecutive == 1:
+        streak_note = f"首次检测到（{_now_utc_str()}）"
+    else:
+        streak_note = f"已连续第 {consecutive} 轮检测到（自 {first_detected_at} 起，仍未解除）"
+
+    alert_text = (
+        f"🔱 落库sweep 检测到主工作区与 origin/master 已分叉，{streak_note}。\n"
+        f"本地 HEAD={local_head}，origin/master={origin_head}，均不是对方的祖先。\n"
+        "需人工核实是否有并发提交冲突（如某次推送恰好落在本次 sweep 运行窗口内），"
+        "不会自动强推/rebase，详见 reports/sweep-commit.log。"
+    )
+    log.append(f"🔱 分叉告警：{streak_note}（本地 {local_head} / origin {origin_head}）")
+
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过分叉告警推送（仅留痕日志与状态文件）。")
+        return
+    try:
+        _send_wecom_markdown(webhook_url, alert_text)
+    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响 sweep 自身退出码
+        log.append(f"⚠ 分叉告警推送失败（不影响本轮退出码）：{exc}")
+        return
+    log.append(f"✓ 分叉告警已推送（连续第 {consecutive} 轮）。")
 
 
 def _status_paths(repo_root: Path) -> list[str]:
@@ -438,7 +578,9 @@ def main() -> int:
         _heal_stale_index_lock(repo_root, log)
         _check_preconditions(repo_root, production=args.repo_root is None)
         _sync_master_if_behind_origin(repo_root, log)
-        _verify_fast_forward(repo_root, refetch=False, on_fail_exit_code=0)
+        _verify_fast_forward(repo_root, refetch=False, on_fail_exit_code=FORK_EXIT_CODE, is_fork=True)
+        if not args.dry_run:
+            _reset_fork_state(repo_root)  # 前置检查通过=未分叉，清空任何陈旧的连续计数
 
         dirty_paths = _status_paths(repo_root)
         queue_text = _read_queue(repo_root)
@@ -514,6 +656,8 @@ def main() -> int:
 
     except SweepAbort as exc:
         log.append(str(exc))
+        if exc.is_fork and not args.dry_run:
+            _handle_fork_detected(repo_root, log)
         _flush_log(repo_root, log, args.dry_run)
         print("\n".join(log))
         return exc.exit_code

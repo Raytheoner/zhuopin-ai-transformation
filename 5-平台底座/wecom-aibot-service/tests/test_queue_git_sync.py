@@ -17,7 +17,9 @@ from zhuopin_platform.audit import AuditLogger
 from aibot_service.queue_appender import append_pending_task
 from aibot_service.queue_git_sync import (
     UNSYNCED_MARKER,
+    _clear_unsynced_markers,
     _is_non_fast_forward,
+    _mark_row_unsynced,
     append_task_and_sync_to_git,
     sync_after_archive,
 )
@@ -467,3 +469,90 @@ def test_sync_after_archive_does_not_mark_row_when_pushed_successfully(tmp_path:
     assert outcome.pushed is True
     on_disk = (clone_a / "queue.md").read_text(encoding="utf-8")
     assert UNSYNCED_MARKER not in on_disk
+
+
+# ── 队列 #180：未同步标记自动清除 ────────────────────────────────────────
+
+
+def test_mark_row_unsynced_appends_at_row_end_not_after_id_column(tmp_path: Path):
+    """标记位置改为行末尾（闭合竖线之前），不再顶偏任务描述开头。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+
+    assert _mark_row_unsynced(queue_path, "1") is True
+
+    line = next(
+        l for l in queue_path.read_text(encoding="utf-8").splitlines()
+        if l.strip().startswith("| 1 |")
+    )
+    assert line.strip().startswith("| 1 | 任务一 |"), "任务描述不应被标记顶偏到后面"
+    assert line.rstrip().endswith(UNSYNCED_MARKER + " |"), "标记应在行末尾、闭合竖线之前"
+
+
+def test_clear_unsynced_markers_restores_original_content(tmp_path: Path):
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+    original = queue_path.read_text(encoding="utf-8")
+
+    assert _mark_row_unsynced(queue_path, "1") is True
+    assert queue_path.read_text(encoding="utf-8") != original
+
+    cleared = _clear_unsynced_markers(queue_path)
+    assert cleared == 1
+    assert queue_path.read_text(encoding="utf-8") == original, "清除后应与标记前内容逐字节一致"
+
+
+def test_clear_unsynced_markers_no_markers_is_noop(tmp_path: Path):
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+
+    assert _clear_unsynced_markers(queue_path) == 0
+    assert queue_path.read_text(encoding="utf-8") == SAMPLE_QUEUE
+
+
+def test_clear_unsynced_markers_handles_legacy_leading_space_format(tmp_path: Path):
+    """兼容历史（#126 时期）插入格式——标记当时紧跟在编号列之后而非行末尾；
+    即便插入位置的写法不同，同样应被完整清除、不残留多余空白（队列 #180
+    实证：#149/#175 两行正是这一历史格式）。"""
+    header = (
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+    )
+    original_line = "| 1 | 任务一 | CC | 指针1 | 产出1 | 待领 | — | 07-09 |\n"
+    legacy_marked_line = f"| 1 | {UNSYNCED_MARKER} 任务一 | CC | 指针1 | 产出1 | 待领 | — | 07-09 |\n"
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(header + legacy_marked_line, encoding="utf-8")
+
+    cleared = _clear_unsynced_markers(queue_path)
+    assert cleared == 1
+    assert queue_path.read_text(encoding="utf-8") == header + original_line
+
+
+def test_append_task_and_sync_to_git_clears_stale_marker_from_earlier_row_on_success(
+    tmp_path: Path,
+):
+    """队列 #180 核心场景复现：#149/#175 式的陈旧标记——某次更早的失败
+    已在别的行留下标记，且带标记的版本早已被提交推送到 origin。本次一次
+    全新的成功同步（追加另一行）应把这个陈旧标记一并清掉，而不只是本次
+    追加的新行本身不带标记。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+
+    assert _mark_row_unsynced(clone_a / "queue.md", "1") is True
+    _git(clone_a, "add", "queue.md")
+    _git(clone_a, "commit", "-q", "-m", "模拟历史遗留标记（如 #149/#175）")
+    _git(clone_a, "push", "-q", "origin", "master")
+    assert UNSYNCED_MARKER in _show_origin_file(origin, "master", "queue.md")
+
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    outcome = asyncio.run(sync_after_archive(
+        repo_root=clone_a, queue_path=clone_a / "queue.md",
+        append_kwargs=_sample_kwargs("全新任务"),
+        audit=audit, connector=None, recipient="",
+    ))
+
+    assert outcome.pushed is True
+    on_disk = (clone_a / "queue.md").read_text(encoding="utf-8")
+    assert UNSYNCED_MARKER not in on_disk, "本次成功同步应顺带清掉陈旧标记"
+    pushed = _show_origin_file(origin, "master", "queue.md")
+    assert UNSYNCED_MARKER not in pushed, "陈旧标记也应随本次推送从 origin 上被清除"
