@@ -16,6 +16,7 @@ from zhuopin_platform.shared_tools.secrets import SecretsProvider
 
 from .constants import PAUL_USERID
 from .department_group_mapping import load_department_group_mapping
+from .disconnect_inprogress_alert import DisconnectInProgressMonitor
 from .department_mapping import load_department_mapping
 from .forwarding import forward_inbound_to_paul
 from .frame_parsing import parse_inbound_frame
@@ -84,6 +85,7 @@ def build_connector(
     queue_sync_fallback_send: Optional[Callable[[str], None]] = None,
     enable_queue_edit_lock: bool = False,
     pending_lock_path: Optional[Path] = None,
+    disconnect_alert_fallback_send: Optional[Callable[[str], None]] = None,
 ) -> AibotConnector:
     """构造已接好审计 + 归档分发的 `AibotConnector`；不建立实际连接（调用方
     另行 `await connector.connect()`）。凭据缺失时 `SecretsProvider` 抛
@@ -107,6 +109,12 @@ def build_connector(
     补录此前推迟的记录。`pending_lock_path` 给出推迟记录的暂存文件路径，
     留空时按 `<解析出的仓库根>/5-平台底座/wecom-aibot-service/reports/
     pending_queue_lock_appends.jsonl` 取默认值。
+
+    `disconnect_alert_fallback_send`（队列 #193，默认 None——不影响任何既有
+    测试/调用方）：断连持续超过阈值（见 `disconnect_inprogress_alert.py`）
+    时用它发一条"进行中"提示。**必须是独立 webhook 通道，不能依赖同一条
+    故障连接**——断连期间用 `connector.send_markdown` 发送必然失败（与
+    `gap_alert.py` 2026-07-19 事故同一教训）。未传时功能整体关闭。
     """
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
@@ -134,17 +142,37 @@ def build_connector(
 
     connector_holder: dict[str, AibotConnector] = {}
 
+    # 队列 #193：断连期间"进行中"提示——仅在传入 fallback 通道时才构造/接线
+    # monitor（同 `enable_queue_edit_lock` 的特性开关模式）。**不能无条件
+    # 构造**：`on_disconnected()` 内部 `asyncio.create_task` 要求当前有运行
+    # 中的事件循环，而生产环境的 SDK 回调确实跑在事件循环里，但既有测试
+    # 大量直接同步调用 `client.handlers[...][0](...)`（无运行中的循环）——
+    # 未启用本特性时必须零副作用，不能让这些既有测试因为多了一个不需要
+    # 的功能而报 `RuntimeError: no running event loop`。
+    disconnect_monitor: Optional[DisconnectInProgressMonitor] = None
+    if disconnect_alert_fallback_send is not None:
+        disconnect_monitor = DisconnectInProgressMonitor(
+            fallback_send=disconnect_alert_fallback_send,
+            reconnect_base_delay_ms=reconnect_base_delay_ms,
+        )
+
     def on_connected() -> None:
         _audit_lifecycle(audit, evaluator, "connection_established")
 
     def on_authenticated() -> None:
         _audit_lifecycle(audit, evaluator, "authenticated")
+        if disconnect_monitor is not None:
+            disconnect_monitor.on_recovered()
 
     def on_disconnected(reason: str) -> None:
         _audit_lifecycle(audit, evaluator, "disconnected", reason=reason)
+        if disconnect_monitor is not None:
+            disconnect_monitor.on_disconnected()
 
     def on_reconnecting(attempt: int) -> None:
         _audit_lifecycle(audit, evaluator, "reconnecting", attempt=attempt)
+        if disconnect_monitor is not None:
+            disconnect_monitor.on_reconnecting(attempt)
 
     def on_error(err: Exception) -> None:
         audit.record(

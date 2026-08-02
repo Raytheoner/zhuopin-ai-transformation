@@ -93,6 +93,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -115,6 +116,24 @@ FORK_EXIT_CODE = 2  # 复用既有"需要人工介入"语义，不新造一套�
 
 SECTION_TWO_HEADING = "## 二、"
 NEXT_SECTION_PREFIX = "## "
+
+# 队列 #198(a)：main() 通用异常兜底的独立退出码——与"健康跳过（0）"、
+# "分叉/需人工介入（FORK_EXIT_CODE=2）"均不同，使 sweep-commit.log 零新增行
+# 此后只剩一个含义（任务根本没启动），"跑了但崩了"改为走这个退出码 + 有
+# 日志留痕，判据不再二义（见队列 #198(a) 验收物）。
+UNEXPECTED_EXIT_CODE = 3
+
+# 队列 #192-A：flush `pending_queue_lock_appends.jsonl` 的子进程触发脚本
+# （sweep 刻意不 import aibot_service/zhuopin_platform，见文件头部"零依赖"
+# 设计说明——多 worktree 共享全局 editable install，进程内 import 有被
+# 静默劫持到别的 checkout 的风险，走子进程规避）。
+FLUSH_PENDING_LOCK_SCRIPT_REL = (
+    "5-平台底座/wecom-aibot-service/scripts/flush_pending_lock_appends.py"
+)
+
+# 队列 #198(c)：本轮 commit 若命中这些前缀下的路径，视为"涉常驻服务"，
+# 需部署脚本同步+重启对应计划任务才在生产生效（现状全靠人记得）。
+RESIDENT_SERVICE_PATH_PREFIXES = ("5-平台底座/wecom-aibot-service/",)
 
 
 class SweepAbort(Exception):
@@ -242,6 +261,46 @@ def _verify_fast_forward(
         )
 
 
+def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
+    """队列 #194：起跑段无条件检查是否存在未推送的本地提交，不绑定"§二
+    有无待处理批次"（正是这个绑定让 07-31/08-01 多次真实复现"本地已提交、
+    下一轮判定'无待处理批次'直接空转，提交就此滞留"）。
+
+    覆盖"任何一处 push 失败后的未推送提交"——已实证至少两个独立出口
+    （批次主流程与 `_rerun_ledger` 台账重跑），本函数在起跑段统一兜底，
+    不依赖具体是哪个出口造成的滞留。
+
+    存在且可快进即先补推（推成功再继续本轮其余流程）；不可快进（已分叉）
+    复用 #171 已建的分叉告警通道（`is_fork=True`，main() 据此触发
+    `_handle_fork_detected`）+ `FORK_EXIT_CODE`，不强推、不自动 rebase；
+    补推本身失败（网络/鉴权等）以 exit_code=2（人工介入语义）收尾——本地
+    提交不会被撤销。"""
+    _fetch(repo_root)
+    ahead_raw = _run_git(["rev-list", "--count", "origin/master..HEAD"], repo_root).stdout.strip()
+    ahead = int(ahead_raw) if ahead_raw.isdigit() else 0
+    if ahead == 0:
+        return
+    check = _run_git(["merge-base", "--is-ancestor", "origin/master", "HEAD"], repo_root, check=False)
+    if check.returncode != 0:
+        raise SweepAbort(
+            f"⚠ 起跑发现 {ahead} 个未推送的本地提交，且推送非快进"
+            "（origin/master 不是当前 HEAD 的祖先，已分叉）——跳过本轮，不强推、不自动 rebase。",
+            exit_code=FORK_EXIT_CODE,
+            is_fork=True,
+        )
+    if dry_run:
+        log.append(f"[dry-run] 起跑将补推 {ahead} 个此前未推送的本地提交（本次不实际 push）。")
+        return
+    push = _run_git(["push", "origin", "HEAD:refs/heads/master"], repo_root, check=False)
+    if push.returncode != 0:
+        raise SweepAbort(
+            f"✗ 起跑发现 {ahead} 个未推送的本地提交，补推失败：{push.stderr.strip()}——"
+            "本地提交不会被撤销，需人工核查后手动 push，本轮就此停止。",
+            exit_code=2,
+        )
+    log.append(f"✓ 起跑补推 {ahead} 个此前未推送的本地提交。")
+
+
 def _sync_master_if_behind_origin(repo_root: Path, log: list[str]) -> None:
     """本地 master 落后 origin/master 且可快进时自动追上（2026-07-28 补，见文件头部说明）。
 
@@ -267,6 +326,37 @@ def _sync_master_if_behind_origin(repo_root: Path, log: list[str]) -> None:
             f"（{merge.stderr.strip()}）——跳过本轮，不强推、不 rebase。",
         )
     log.append(f"✓ 本地 master 落后 origin/master，已 git merge --ff-only 同步至 {origin_head[:7]}。")
+
+
+def _flush_pending_lock_appends(repo_root: Path, log: list[str]) -> None:
+    """队列 #192-A（主载体，每小时）：flush `pending_queue_lock_appends.jsonl`
+    ——机器人因编辑锁占用被推迟的补录，此前只能"等下一条消息到达"才会
+    重试，07-31 真实一例滞留 4 小时 2 分。
+
+    走子进程调用独立脚本（见 `FLUSH_PENDING_LOCK_SCRIPT_REL`），不在 sweep
+    自身进程内 `import aibot_service`/`zhuopin_platform`——本脚本刻意零
+    依赖（见文件头部注释），多 worktree 共享全局 editable install 存在被
+    静默劫持到别的 checkout 的风险，子进程隔离规避这一风险，也天然满足
+    "flush 异常不得影响 sweep 主流程"（子进程崩溃不会传染到 sweep 自身）。
+
+    必须在 sweep 自己取编辑锁的窗口之外调用——flush 内部会走一遍完整的
+    `queue_git_sync.sync_after_archive`，同样要 acquire 编辑锁，若与
+    `_strike_off_rows` 的持锁窗口重叠会构成重入；本函数固定排在批次处理
+    之前调用（main() 接线顺序），不与之重叠。"""
+    script = repo_root / FLUSH_PENDING_LOCK_SCRIPT_REL
+    if not script.exists():
+        return  # 本 checkout 未部署机器人服务（如独立测试环境），静默跳过
+    result = subprocess.run(
+        [sys.executable, str(script)], cwd=repo_root, capture_output=True, text=True, encoding="utf-8",
+    )
+    if result.returncode != 0:
+        log.append(
+            "⚠ pending_queue_lock_appends.jsonl flush 失败（不影响本轮批次处理）："
+            f"{(result.stderr or result.stdout).strip()[:500]}"
+        )
+        return
+    if result.stdout.strip():
+        log.append(f"✓ pending 锁忙暂存 flush：{result.stdout.strip()}")
 
 
 def _load_webhook_url(repo_root: Path) -> str | None:
@@ -373,6 +463,32 @@ def _handle_fork_detected(repo_root: Path, log: list[str]) -> None:
     log.append(f"✓ 分叉告警已推送（连续第 {consecutive} 轮）。")
 
 
+def _touches_resident_service(paths: set[str]) -> bool:
+    return any(p.startswith(RESIDENT_SERVICE_PATH_PREFIXES) for p in paths)
+
+
+def _announce_resident_service_deployment_hint(repo_root: Path, log: list[str]) -> None:
+    """队列 #198(c)：本轮 commit 命中常驻服务路径时，在日志与 webhook 附一句
+    部署提示——纯提示、不阻断、不改变本轮退出码（sweep 无权也不该去重启
+    服务）。成因＝"代码已提交但生产未生效"的失配长期全靠人记得（#126／
+    #193 同族），本提示只负责把这件事说出来。"""
+    hint = (
+        "⚠ 本批改动涉及常驻服务，需 sync-to-server.ps1 同步 ops/wecom-service-home "
+        "并重启 ZhuopinAibotDevListener 后才在生产生效"
+    )
+    log.append(hint)
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过部署提示推送（仅留痕日志）。")
+        return
+    try:
+        _send_wecom_markdown(webhook_url, f"🔧 落库sweep：{hint}")
+    except Exception as exc:  # noqa: BLE001 —— 提示推送失败不应影响本轮退出码
+        log.append(f"⚠ 部署提示推送失败（不影响本轮退出码）：{exc}")
+        return
+    log.append("✓ 常驻服务部署提示已推送。")
+
+
 def _status_paths(repo_root: Path) -> list[str]:
     """解析 `git status --porcelain=v1 --untracked-files=all` 为脏路径清单（重命名取新路径）。"""
     result = _run_git(["status", "--porcelain=v1", "--untracked-files=all"], repo_root)
@@ -467,10 +583,39 @@ def _resolve_batch_files(files_cell: str, dirty_paths: list[str]) -> tuple[list[
 
 
 def _edit_lock(repo_root: Path, action: str, extra: list[str] | None = None) -> subprocess.CompletedProcess:
-    args = [sys.executable, str(repo_root / EDIT_LOCK_SCRIPT_REL), action, "--who", LOCK_WHO]
+    # 队列 #198(b)：`status` 子命令不接受 `--who`（无副作用查询，不需要
+    # 身份）——传了会被 argparse 当"unrecognized arguments"直接拒绝（exit
+    # code 2），故只在 acquire/release 这两个需要身份的动作上带 --who。
+    args = [sys.executable, str(repo_root / EDIT_LOCK_SCRIPT_REL), action]
+    if action != "status":
+        args.extend(["--who", LOCK_WHO])
     if extra:
         args.extend(extra)
     return subprocess.run(args, cwd=repo_root, capture_output=True, text=True, encoding="utf-8")
+
+
+def _edit_lock_is_actively_held(status_stdout: str) -> bool:
+    """解析 `工具-共享文档编辑锁.py status` 的 stdout，判断锁当前是否被
+    有效持有（队列 #198(b)）。该工具三种输出态中，只有"占用中且未陈旧"
+    才含"（有效）"三字（见 `cmd_status`）——无锁态是"（无锁，可直接编辑）"，
+    陈旧态是"已陈旧（可接管）"，均不含"（有效）"。陈旧锁本轮不必因此跳过
+    ——后续 `_strike_off_rows` 自身的 acquire 调用会自动接管陈旧锁，探锁
+    这一步只需要拦住"确实有人/有机器人正在编辑"这一种情形。"""
+    return "（有效）" in status_stdout
+
+
+def _abort_if_edit_lock_held(repo_root: Path, log: list[str]) -> None:
+    """队列 #198(b)：起跑段编辑锁前置探测，须排在 `_check_preconditions`
+    之后、任何 git 写动作之前——占用中直接跳过本轮、一个 git 动作都不做。
+
+    现状（修复前）：`_process_normal_batch` 先 `git add` 再由
+    `_strike_off_rows` 去 acquire 锁，锁占用时暂存区里已经是半成品；本函数
+    把探测提到最前面，锁占用时连第一个 `git add` 都不会发生。"""
+    result = _edit_lock(repo_root, "status")
+    if _edit_lock_is_actively_held(result.stdout):
+        raise SweepAbort(
+            f"⚠ 起跑探测到共享编辑锁被有效占用中，跳过本轮，零 git 动作：{result.stdout.strip()}",
+        )
 
 
 def _replace_status_cell(raw_line: str, old_status_cell: str, new_status_cell: str) -> str:
@@ -577,6 +722,16 @@ def main() -> int:
     try:
         _heal_stale_index_lock(repo_root, log)
         _check_preconditions(repo_root, production=args.repo_root is None)
+        # 队列 #192/#194/#198 起跑段写死顺序（勿自行调整，详见各函数 docstring）：
+        # ① #198(b) 编辑锁前置探测（任何 git 写动作之前）
+        _abort_if_edit_lock_held(repo_root, log)
+        # ② #194 无条件补推未推送提交
+        _push_any_unpushed_commits(repo_root, log, dry_run=args.dry_run)
+        # ③ #192-A flush 锁忙推迟暂存（须在 sweep 自己取锁窗口之外，此处
+        #   批次处理尚未开始，安全）；dry-run 不做真实动作，避免副作用。
+        if not args.dry_run:
+            _flush_pending_lock_appends(repo_root, log)
+        # ④ 原有前置检查与批次处理
         _sync_master_if_behind_origin(repo_root, log)
         _verify_fast_forward(repo_root, refetch=False, on_fail_exit_code=FORK_EXIT_CODE, is_fork=True)
         if not args.dry_run:
@@ -625,8 +780,10 @@ def main() -> int:
             elif not_dirty:
                 straggler_rows.append(row)
 
+        touched_paths: set[str] = set()
         for row, resolved in normal_rows:
             _process_normal_batch(repo_root, row, resolved, args.dry_run, log)
+            touched_paths.update(resolved)
 
         if straggler_rows:
             ids = "/".join(r["batch_id"] for r in straggler_rows)
@@ -650,6 +807,11 @@ def main() -> int:
         if processed_any and not args.dry_run:
             _rerun_ledger(repo_root, log)
 
+        # #198(c)：批次落库之后，检查本轮实际 add 过的路径是否命中常驻服务——
+        # 纯提示，不影响下方的正常返回。
+        if touched_paths and not args.dry_run and _touches_resident_service(touched_paths):
+            _announce_resident_service_deployment_hint(repo_root, log)
+
         _flush_log(repo_root, log, args.dry_run)
         print("\n".join(log))
         return 0
@@ -661,6 +823,37 @@ def main() -> int:
         _flush_log(repo_root, log, args.dry_run)
         print("\n".join(log))
         return exc.exit_code
+
+    except Exception as exc:  # noqa: BLE001 —— 队列 #198(a) 通用异常兜底
+        # main() 此前只有 `except SweepAbort`，任何其它异常（子进程异常/
+        # 编码错误/FileNotFoundError 等）会直接冒泡，_flush_log 根本没机会
+        # 执行——sweep-commit.log 零新增行，与"任务根本没启动"外观完全相同
+        # （#96 清单 ⑦判据据此失效）。本层兜底后，日志零新增行只剩一个
+        # 含义："任务根本没启动"；"跑了但崩了"改为走这里，有日志+告警+
+        # 独立退出码，判据恢复单义（见 #198(a) 验收物）。
+        tb_tail = traceback.format_exc().strip().splitlines()[-6:]
+        log.append(f"✗ 未预期异常（{_now_utc_str()}）：{type(exc).__name__}: {exc}")
+        log.extend(f"    {line}" for line in tb_tail)
+        if not args.dry_run:
+            webhook_url = _load_webhook_url(repo_root)
+            if webhook_url is None:
+                log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过未预期异常告警推送（仅留痕日志）。")
+            else:
+                try:
+                    _send_wecom_markdown(
+                        webhook_url,
+                        f"🔱 落库sweep 遇到未预期异常：{type(exc).__name__}: {exc}\n"
+                        "详见 reports/sweep-commit.log。",
+                    )
+                    log.append("✓ 未预期异常告警已推送。")
+                except Exception as send_exc:  # noqa: BLE001 —— 告警失败不应影响退出码
+                    log.append(f"⚠ 未预期异常告警推送失败（不影响本轮退出码）：{send_exc}")
+        try:
+            _flush_log(repo_root, log, args.dry_run)
+        except Exception:  # noqa: BLE001 —— 日志落盘本身失败也不应掩盖原始异常的退出码
+            pass
+        print("\n".join(log))
+        return UNEXPECTED_EXIT_CODE
 
 
 def _rerun_ledger(repo_root: Path, log: list[str]) -> None:

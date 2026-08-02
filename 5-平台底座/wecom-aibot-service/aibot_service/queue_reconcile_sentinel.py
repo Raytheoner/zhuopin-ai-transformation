@@ -59,7 +59,15 @@ def find_unreconciled_archives(
     """`audit_events` 应为按 `scenario="wecom-aibot"` 过滤、按审计日志写入
     顺序（`AuditLogger.query_by` 保留 JSONL 文件的追加顺序，等价于时间顺序）
     排列的记录列表，不要求预先过滤 action（本函数内部只挑出 `archived`/
-    `queue_appended` 两类，忽略其余）。
+    `queue_appended`/`queue_append_pending_flushed` 三类，忽略其余）。
+
+    队列 #192-B：`queue_append_pending_flushed`（`queue_lock_pending.py`
+    补录锁忙推迟消息成功时记的事件）与 `queue_appended` 一样视为"清空
+    pending"——此前只认 `queue_appended`，导致被 #168 推迟过、走补录路径
+    成功落队列的消息，在本判据下被误判"未配对"（当日 9 个 archived vs 8
+    个 queue_appended，差的正是被补录的那条），只是恰好被下方的 `queue_text`
+    二级交叉校验兜住、未造成误报——但那正是 #107 判据变迁想摆脱的"依赖
+    文本匹配"退路，理应在配对本身这一层就解决。
 
     判据（队列 #107，见模块 docstring 判据变迁）：按出现顺序做**单件在途**
     配对——`connection.py::on_message` 逐条 `await` 处理消息，同一条连接上
@@ -88,7 +96,7 @@ def find_unreconciled_archives(
             if pending is not None:
                 unpaired_candidates.append(pending)
             pending = event
-        elif action == "queue_appended":
+        elif action in ("queue_appended", "queue_append_pending_flushed"):
             pending = None
     if pending is not None:
         unpaired_candidates.append(pending)

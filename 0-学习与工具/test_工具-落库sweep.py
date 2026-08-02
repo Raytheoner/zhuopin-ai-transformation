@@ -583,5 +583,243 @@ class ForkAlertTests(SweepTestBase):
         self.assertEqual(len(_CapturingWebhookHandler.received), 0)
 
 
+class EditLockProbeUnitTests(unittest.TestCase):
+    """队列 #198(b)：`_edit_lock_is_actively_held` 纯函数级判据——三态输出
+    文本里只有"占用中且未陈旧"含"（有效）"三字。"""
+
+    def test_active_lock_output_is_detected(self):
+        stdout = "占用方：Cowork-财务专线（改队列）\n备注：\n已持锁：3 分钟（有效）\n"
+        self.assertTrue(sweep._edit_lock_is_actively_held(stdout))
+
+    def test_no_lock_output_is_not_detected(self):
+        self.assertFalse(sweep._edit_lock_is_actively_held("（无锁，可直接编辑）\n"))
+
+    def test_stale_lock_output_is_not_detected(self):
+        stdout = "占用方：某会话\n备注：\n已持锁：40 分钟（已陈旧（可接管））\n"
+        self.assertFalse(sweep._edit_lock_is_actively_held(stdout))
+
+
+class EditLockProbeIntegrationTests(SweepTestBase):
+    """队列 #198(b) CLI 级集成：真实占用编辑锁后跑 sweep，验证零 git 动作。"""
+
+    def test_active_lock_blocks_whole_run_with_zero_git_actions(self):
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._init_and_push(rows=row)
+        self._write_queue(row)
+
+        acquire = subprocess.run(
+            [sys.executable, str(self.work / "0-学习与工具" / "工具-共享文档编辑锁.py"),
+             "--file", sweep.QUEUE_REL, "acquire", "--who", "测试占用方", "--note", "模拟人类持锁"],
+            cwd=self.work, capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(acquire.returncode, 0, acquire.stdout + acquire.stderr)
+
+        before_log = self._origin_log()
+        result = _run_sweep(self.work)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("有效占用", result.stdout)
+        self.assertEqual(self._origin_log(), before_log, "锁占用期间不应有任何提交被推送")
+        self.assertIn("待 CC 取活", self._queue_text(), "队列不应被改动，连 git add 都不应发生")
+
+
+class UnpushedCommitBackfillTests(SweepTestBase):
+    """队列 #194：起跑段无条件补推未推送提交，不绑定"§二 有无待处理批次"。"""
+
+    def test_unpushed_commit_with_no_pending_batches_is_backfilled(self):
+        """仿真真实复现场景：上一轮已在本地 commit 完批次内容但 push 失败
+        （网络抖动），队列文件里该行已是"✅已完成"（销行随 commit 一起落盘）
+        ——本轮 §二 无待处理批次，旧判据会直接空转、提交永远滞留本地。"""
+        self._init_and_push(rows="")
+        (self.work / "已提交未推送.md").write_text("上一轮本地提交的内容\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "docs(test): 模拟上一轮提交成功推送失败")
+        local_head = _git(self.work, "rev-parse", "HEAD").stdout.strip()
+        origin_head_before = _git(self.origin, "rev-parse", "master").stdout.strip()
+        self.assertNotEqual(local_head, origin_head_before, "前提：本地确实领先未推送")
+
+        result = _run_sweep(self.work)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("起跑补推", result.stdout)
+        origin_head_after = _git(self.origin, "rev-parse", "master").stdout.strip()
+        self.assertEqual(origin_head_after, local_head, "滞留的本地提交应已被补推上去")
+
+    def test_dry_run_reports_would_push_without_pushing(self):
+        self._init_and_push(rows="")
+        (self.work / "已提交未推送.md").write_text("内容\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "docs(test): 本地提交")
+        origin_head_before = _git(self.origin, "rev-parse", "master").stdout.strip()
+
+        result = _run_sweep(self.work, "--dry-run")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[dry-run] 起跑将补推", result.stdout)
+        self.assertEqual(_git(self.origin, "rev-parse", "master").stdout.strip(), origin_head_before,
+                          "dry-run 不应真实 push")
+
+
+class FlushPendingLockAppendsTests(SweepTestBase):
+    """队列 #192-A（主载体）：sweep 起跑段子进程调用 flush 脚本，异常隔离不
+    中断批次处理主流程。"""
+
+    def _flush_script_path(self) -> Path:
+        path = self.work / sweep.FLUSH_PENDING_LOCK_SCRIPT_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def test_missing_flush_script_is_silently_skipped(self):
+        """本 checkout 未部署机器人服务（脚本不存在）——静默跳过，不产生噪音日志，
+        批次处理照常进行（回归既有 happy path）。"""
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("flush", result.stdout.lower())
+
+    def test_flush_script_failure_does_not_block_batch_processing(self):
+        """flush 异常必须捕获并记日志后继续跑批次，不可让兜底把主干带崩。"""
+        self._flush_script_path().write_text(
+            "import sys\nsys.stderr.write('模拟flush失败：目标文件损坏')\nsys.exit(1)\n",
+            encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("flush 失败", result.stdout)
+        self.assertIn("模拟flush失败", result.stdout)
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue, "flush 失败不应阻止批次照常落库")
+
+    def test_flush_script_success_output_is_logged(self):
+        self._flush_script_path().write_text(
+            "print('已补录 2 条')\n", encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("已补录 2 条", result.stdout)
+
+    def test_dry_run_does_not_invoke_flush_script(self):
+        """dry-run 不应产生真实副作用——flush 脚本存在也不应被调用。"""
+        marker = self.work.parent / "flush_invoked.marker"
+        self._flush_script_path().write_text(
+            f"from pathlib import Path\nPath(r'{marker}').write_text('invoked')\n", encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+
+        result = _run_sweep(self.work, "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(marker.exists(), "dry-run 不应真实调用 flush 脚本")
+
+
+class UnexpectedExceptionFallbackTests(SweepTestBase):
+    """队列 #198(a)：main() 通用异常兜底——未预期异常必须写日志（含 UTC）+
+    webhook 告警 + 独立退出码，判据与"任务根本没启动"（零日志）区分开。"""
+
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+    def test_injected_unexpected_exception_writes_log_and_alerts_with_independent_exit_code(self):
+        self._init_and_push(rows="")
+        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+
+        import unittest.mock as mock
+        with mock.patch.object(
+            sweep, "_heal_stale_index_lock", side_effect=RuntimeError("模拟未预期异常")
+        ):
+            argv_backup = sys.argv
+            try:
+                sys.argv = ["工具-落库sweep.py", "--repo-root", str(self.work)]
+                returncode = sweep.main()
+            finally:
+                sys.argv = argv_backup
+
+        self.assertEqual(returncode, sweep.UNEXPECTED_EXIT_CODE)
+        self.assertNotEqual(sweep.UNEXPECTED_EXIT_CODE, 0)
+        self.assertNotEqual(sweep.UNEXPECTED_EXIT_CODE, sweep.FORK_EXIT_CODE)
+
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertIn("未预期异常", log_text)
+        self.assertIn("RuntimeError", log_text)
+        self.assertIn("模拟未预期异常", log_text)
+        self.assertIn("UTC", log_text)  # 时间基准必须显式标注（CLAUDE.md §5）
+
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        alert_text = _CapturingWebhookHandler.received[0]["markdown"]["content"]
+        self.assertIn("未预期异常", alert_text)
+        self.assertIn("RuntimeError", alert_text)
+
+
+class ResidentServiceDeploymentHintTests(SweepTestBase):
+    """队列 #198(c)：本轮 commit 命中常驻服务路径时，日志与 webhook 附部署提示。"""
+
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+    def test_batch_touching_resident_service_path_gets_hint(self):
+        # .env 须先落进初始提交（随 init 一起 clean）——否则它作为未声明的
+        # 脏文件会被"非 clean"门禁拦在批次处理之前，测试永远走不到本条要验的逻辑。
+        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        self._init_and_push(rows="")
+        service_file = self.work / "5-平台底座" / "wecom-aibot-service" / "aibot_service" / "foo.py"
+        service_file.parent.mkdir(parents=True)
+        service_file.write_text("# 测试改动\n", encoding="utf-8")
+
+        row = ("| B-TEST | `5-平台底座/wecom-aibot-service/aibot_service/foo.py`、"
+               "`0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 涉常驻服务的批次` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("涉及常驻服务", result.stdout)
+        self.assertIn("ZhuopinAibotDevListener", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        self.assertIn("常驻服务", _CapturingWebhookHandler.received[0]["markdown"]["content"])
+
+    def test_batch_not_touching_resident_service_path_gets_no_hint(self):
+        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 不涉常驻服务` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("涉及常驻服务", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

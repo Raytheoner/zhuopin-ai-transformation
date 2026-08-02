@@ -32,6 +32,17 @@ REPO_ROOT_OVERRIDE_ENV = "WECOM_AIBOT_REPO_ROOT"
 # 都能读到路径配置、且始终落在主工作区的稳定锚点。
 DEFAULT_QUEUE_RELATIVE_PATH = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列.md"
 AUDIT_RELATIVE_PATH = Path("5-平台底座") / "wecom-aibot-service" / "reports" / "wecom_aibot_audit.jsonl"
+# 队列 #192-C：此前 `run_aibot_service.py` 用 `SERVICE_DIR / "reports"`
+# （机器人常驻 checkout 自身）硬编码这两个 pending 暂存文件落点，与
+# AUDIT_RELATIVE_PATH 早已按 #126 解析到的主工作区分处两地——sweep 跑在
+# 主工作区，找不到这两个文件，flush 永远空转且不报错。改与 audit 同一套
+# `resolve_repo_root()` 解析结果，统一落盘位置。
+PENDING_QUEUE_APPENDS_RELATIVE_PATH = (
+    Path("5-平台底座") / "wecom-aibot-service" / "reports" / "pending_queue_appends.jsonl"
+)
+PENDING_QUEUE_LOCK_APPENDS_RELATIVE_PATH = (
+    Path("5-平台底座") / "wecom-aibot-service" / "reports" / "pending_queue_lock_appends.jsonl"
+)
 
 
 def resolve_repo_root(
@@ -72,3 +83,15 @@ def resolve_audit_path(repo_root: Path) -> Path:
     """统一的审计文件物理位置——常驻服务与一次性脚本共用同一份文件，
     消除收发留痕分裂（队列 #126 缺陷②）。"""
     return repo_root / AUDIT_RELATIVE_PATH
+
+
+def resolve_pending_queue_appends_path(repo_root: Path) -> Path:
+    """队列 #192-C：git 推送失败暂存（`queue_git_sync._append_pending_record`）
+    的统一落点，与 `resolve_audit_path` 同一套 `repo_root`。"""
+    return repo_root / PENDING_QUEUE_APPENDS_RELATIVE_PATH
+
+
+def resolve_pending_queue_lock_appends_path(repo_root: Path) -> Path:
+    """队列 #192-C：编辑锁忙推迟暂存（`queue_lock_pending.py`）的统一落点，
+    与 `resolve_audit_path` 同一套 `repo_root`。"""
+    return repo_root / PENDING_QUEUE_LOCK_APPENDS_RELATIVE_PATH

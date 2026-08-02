@@ -41,7 +41,12 @@ from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp, send_gap_alert  # noqa: E402
 from aibot_service.liveness import read_liveness, run_liveness_heartbeat  # noqa: E402
 from aibot_service.queue_reconcile_sentinel import run_reconciliation_sentinel  # noqa: E402
-from aibot_service.repo_paths import resolve_audit_path, resolve_repo_root  # noqa: E402
+from aibot_service.repo_paths import (  # noqa: E402
+    resolve_audit_path,
+    resolve_pending_queue_appends_path,
+    resolve_pending_queue_lock_appends_path,
+    resolve_repo_root,
+)
 
 
 class ConnectionAbandonedError(RuntimeError):
@@ -127,11 +132,23 @@ def main() -> None:
         os.environ.get("WECOM_AIBOT_AUDIT_PATH", resolve_audit_path(resolved_repo_root))
     )
     audit_path.parent.mkdir(parents=True, exist_ok=True)
-    pending_queue_appends_path = SERVICE_DIR / "reports" / "pending_queue_appends.jsonl"
     # 队列 #168：机器人本地追加队列行前占用协议〇.7 共享编辑锁，占用中推迟
     # 补录而不是直接写盘覆盖人类正在编辑的内容——见 connection.py::
     # build_connector 的 `enable_queue_edit_lock` 文档。
-    pending_lock_path = SERVICE_DIR / "reports" / "pending_queue_lock_appends.jsonl"
+    # 队列 #192-C：此前硬编码 `SERVICE_DIR / "reports"`（机器人常驻 checkout
+    # 自身），与 audit_path 分处两地——sweep 跑在主工作区，flush 会去错的
+    # checkout 找、永远空转且不报错。改用与 audit_path 同一套 resolve_repo_root
+    # 解析结果，统一落盘位置；两个环境变量覆盖口留作显式指定/测试隔离用。
+    pending_queue_appends_path = Path(
+        os.environ.get(
+            "WECOM_AIBOT_PENDING_APPENDS_PATH", resolve_pending_queue_appends_path(resolved_repo_root)
+        )
+    )
+    pending_lock_path = Path(
+        os.environ.get(
+            "WECOM_AIBOT_PENDING_LOCK_PATH", resolve_pending_queue_lock_appends_path(resolved_repo_root)
+        )
+    )
     # 队列 #147：存活戳文件——与审计 JSONL 物理隔离（见 liveness.py 模块
     # docstring），不随 WECOM_AIBOT_AUDIT_PATH 迁移。
     liveness_path = SERVICE_DIR / "reports" / "aibot_liveness.json"
@@ -162,6 +179,9 @@ def main() -> None:
         queue_sync_fallback_send=fallback_send,
         enable_queue_edit_lock=True,
         pending_lock_path=pending_lock_path,
+        # 队列 #193：断连期间"进行中"提示，复用同一条 webhook 兜底通道
+        # （未配置 WECOM_WEBHOOK_URL 时 fallback_send 为 None，功能自动关闭）。
+        disconnect_alert_fallback_send=fallback_send,
     )
 
     asyncio.run(

@@ -47,6 +47,16 @@ def _queue_appended_event(ts: str, owner: str = "财务专线") -> dict:
     }
 
 
+def _queue_append_pending_flushed_event(ts: str, sender: str = "YaoZuYi") -> dict:
+    return {
+        "scenario": "wecom-aibot",
+        "action": "queue_append_pending_flushed",
+        "timestamp": ts,
+        "decision": {"recorded_at": ts},
+        "data_sources": {"sender": sender},
+    }
+
+
 # ── 判据核心：审计日志内部配对（队列 #107）────────────────────────────────
 #
 # intake.py::archive_inbound_message 对每条消息总是先记一条 "archived"、
@@ -157,6 +167,66 @@ def test_find_unreconciled_archives_ignores_unrelated_actions_interleaved():
         {"scenario": "wecom-aibot", "action": "forward_delivered", "timestamp": "2026-07-21T01:00:02+00:00"},
     ]
     assert find_unreconciled_archives(events, now=now) == []
+
+
+# ── 队列 #192-B：锁忙推迟→补录成功的配对不变式 ─────────────────────────────
+#
+# queue_lock_pending.py 补录成功时记的是 queue_append_pending_flushed，不是
+# queue_appended——修复前只认后者，导致这类消息被误判"未配对"（当日 9 个
+# archived vs 8 个 queue_appended，差的正是被补录的那条），只是恰好被
+# queue_text 二级交叉校验兜住、未造成误报。
+
+def test_find_unreconciled_archives_deferred_then_flushed_is_reconciled():
+    """真实场景（队列 #192 行内记录）：13:04 姚祖怡回件因编辑锁占用被推迟
+    （archived 已记，queue_appended 因锁忙未记），17:06 唐燕萍新消息到达
+    触发补录成功（记 queue_append_pending_flushed）——应视为已配对，不应
+    被判定为漏行。"""
+    now = datetime(2026, 7, 31, 18, 0, tzinfo=timezone.utc)
+    events = [
+        _archived_event("2026-07-31T13:04:31+00:00", "姚祖怡回件.docx", sender="YaoZuYi"),
+        _queue_append_pending_flushed_event("2026-07-31T17:06:56+00:00", sender="YaoZuYi"),
+    ]
+    assert find_unreconciled_archives(events, now=now) == []
+
+
+def test_find_unreconciled_archives_deferred_flush_does_not_swallow_next_genuine_gap():
+    """补录事件只清空它对应的那一个 pending，不应把后续真实漏行也一并
+    误判为已配对——同一"单件在途"配对逻辑，只是新增一种能清空 pending 的
+    事件类型，不改变整体判定结构。"""
+    now = datetime(2026, 7, 31, 18, 0, tzinfo=timezone.utc)
+    events = [
+        _archived_event("2026-07-31T13:04:31+00:00", "姚祖怡回件.docx", sender="YaoZuYi"),
+        _queue_append_pending_flushed_event("2026-07-31T17:06:56+00:00", sender="YaoZuYi"),
+        _archived_event("2026-07-31T18:00:00+00:00", "后续真实漏行.docx"),
+    ]
+    result = find_unreconciled_archives(events, now=now)
+    assert len(result) == 1
+    assert result[0]["decision"]["archived_path"].endswith("后续真实漏行.docx")
+
+
+def test_run_reconciliation_sentinel_deferred_then_flushed_sends_nothing(tmp_path: Path):
+    """端到端：推迟补录成功场景下，哨兵不应发送任何疑似漏行私信。"""
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    audit.record(AuditEvent(
+        scenario="wecom-aibot", action="archived", evaluator="system", automation_level="L1",
+        decision={"archived_path": "C:\\repo\\7-外部文档\\采购部\\姚祖怡回件.docx"},
+        data_sources={"sender": "YaoZuYi"},
+    ))
+    audit.record(AuditEvent(
+        scenario="wecom-aibot", action="queue_append_pending_flushed", evaluator="system",
+        automation_level="L1", decision={"recorded_at": "2026-07-31T17:06:56+00:00"},
+        data_sources={"sender": "YaoZuYi"},
+    ))
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text("队列正文里完全没有这个文件名", encoding="utf-8")
+    connector = _FakeConnector()
+
+    asyncio.run(run_reconciliation_sentinel(
+        connector, audit, queue_path, "ShaoPeiShen", now=datetime.now(timezone.utc)
+    ))
+
+    assert connector.calls == []
+    assert _actions(audit) == []
 
 
 # ── 二级交叉校验兜底（queue_text 可选参数）─────────────────────────────────

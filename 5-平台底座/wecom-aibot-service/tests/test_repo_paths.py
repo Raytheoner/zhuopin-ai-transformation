@@ -8,8 +8,12 @@ from pathlib import Path
 
 from aibot_service.repo_paths import (
     AUDIT_RELATIVE_PATH,
+    PENDING_QUEUE_APPENDS_RELATIVE_PATH,
+    PENDING_QUEUE_LOCK_APPENDS_RELATIVE_PATH,
     REPO_ROOT_OVERRIDE_ENV,
     resolve_audit_path,
+    resolve_pending_queue_appends_path,
+    resolve_pending_queue_lock_appends_path,
     resolve_repo_root,
 )
 
@@ -114,3 +118,20 @@ def test_resolve_audit_path_anchors_under_repo_root(tmp_path: Path):
     assert resolved.as_posix().endswith(
         "5-平台底座/wecom-aibot-service/reports/wecom_aibot_audit.jsonl"
     )
+
+
+# ── 队列 #192-C：两个 pending 暂存文件路径与 resolve_audit_path 同源 ───────
+
+def test_resolve_pending_queue_appends_path_anchors_under_repo_root(tmp_path: Path):
+    resolved = resolve_pending_queue_appends_path(tmp_path)
+
+    assert resolved == tmp_path / PENDING_QUEUE_APPENDS_RELATIVE_PATH
+    assert resolved.parent == resolve_audit_path(tmp_path).parent  # 与 audit 同一目录
+
+
+def test_resolve_pending_queue_lock_appends_path_anchors_under_repo_root(tmp_path: Path):
+    resolved = resolve_pending_queue_lock_appends_path(tmp_path)
+
+    assert resolved == tmp_path / PENDING_QUEUE_LOCK_APPENDS_RELATIVE_PATH
+    assert resolved.parent == resolve_audit_path(tmp_path).parent
+    assert resolved != resolve_pending_queue_appends_path(tmp_path)  # 两个暂存文件物理分开

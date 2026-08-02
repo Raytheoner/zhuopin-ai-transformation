@@ -717,4 +717,69 @@ def test_on_message_with_lock_disabled_by_default_behaves_exactly_as_before(tmp_
     assert "采购专线" in new_queue
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "queue_append_deferred_lock_busy" not in actions
+
+
+# ── 队列 #193：断连"进行中"提示接线 ──────────────────────────────────────
+
+def test_disconnect_alert_disabled_by_default_lifecycle_events_work_outside_event_loop(tmp_path):
+    """`disconnect_alert_fallback_send` 默认 None——不传时必须零副作用，
+    连接生命周期回调（既有测试大量在无运行中事件循环的同步上下文里直接
+    调用这些 handler）不应因新增本特性而报
+    `RuntimeError: no running event loop`（回归本次改动引入的潜在缺陷）。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+    )
+    client = store["client"]
+
+    # 无 asyncio.run 包裹，纯同步调用——不传 disconnect_alert_fallback_send
+    # 时这里不应抛出。
+    client.handlers["disconnected"][0]("network glitch")
+    client.handlers["reconnecting"][0](1)
+    client.handlers["authenticated"][0]()
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert actions == ["disconnected", "reconnecting", "authenticated"]
+
+
+def test_disconnect_alert_enabled_wires_lifecycle_without_firing_within_short_test_window(tmp_path):
+    """启用本特性（传入 fallback）时，断连→（在阈值内）恢复的完整生命周期
+    须能在真实事件循环里跑通、不抛异常、不产生未取消的悬空任务；默认阈值
+    75 秒远大于本测试实际耗时，故不应触发提示（提示逻辑本身的判据已在
+    test_disconnect_inprogress_alert.py 用可控假 _sleep 精确覆盖，此处只
+    验证接线本身）。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+    fallback_calls: list = []
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+        disconnect_alert_fallback_send=fallback_calls.append,
+    )
+    client = store["client"]
+
+    async def scenario():
+        client.handlers["disconnected"][0]("network glitch")
+        client.handlers["reconnecting"][0](1)
+        await asyncio.sleep(0)  # 让计时任务真正启动
+        client.handlers["authenticated"][0]()  # 阈值内恢复，取消计时任务
+        await asyncio.sleep(0)  # 让取消传播完成
+
+    asyncio.run(scenario())
+
+    assert fallback_calls == []
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert actions == ["disconnected", "reconnecting", "authenticated"]
     assert "pending_lock_flush_dispatch_failed" not in actions

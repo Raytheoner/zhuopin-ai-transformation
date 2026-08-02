@@ -55,13 +55,64 @@ from aibot_service.decision_reminder import (  # noqa: E402
     save_state,
     send_decision_reminder,
 )
+from aibot_service.queue_edit_lock import AIBOT_LOCK_WHO, SubprocessQueueEditLock  # noqa: E402
+from aibot_service.queue_lock_pending import flush_pending_queue_appends  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
     DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
+    resolve_pending_queue_appends_path,
+    resolve_pending_queue_lock_appends_path,
     resolve_repo_root,
 )
 
 QUEUE_REL = DEFAULT_QUEUE_RELATIVE_PATH
+
+
+async def _flush_pending_lock_appends_second_carrier(
+    resolved_repo_root: Path, queue_path: Path, audit: AuditLogger, fallback_send,
+) -> None:
+    """队列 #192-A 第二道载体（主载体＝`工具-落库sweep.py` 每小时子进程调用，
+    见其 `_flush_pending_lock_appends`）——两处各调一次，互为冗余，成本近乎
+    为零；`#199` 的 `0x800710E0` 间歇性失败正说明单一载体不可靠。
+
+    刻意不建 WS 长连接（`connector=None`，同独立脚本
+    `flush_pending_lock_appends.py` 用法）——本函数只在决策提醒判定之前
+    调用一次，不因新增这一步而让原有决策提醒逻辑多等一次连接握手。失败
+    只降级记 audit（`flush_pending_queue_appends` 内部已有），不向上抛出，
+    不得影响本脚本原有的决策提醒判定与发送。"""
+    pending_lock_path = Path(
+        os.environ.get(
+            "WECOM_AIBOT_PENDING_LOCK_PATH", resolve_pending_queue_lock_appends_path(resolved_repo_root)
+        )
+    )
+    pending_queue_appends_path = Path(
+        os.environ.get(
+            "WECOM_AIBOT_PENDING_APPENDS_PATH", resolve_pending_queue_appends_path(resolved_repo_root)
+        )
+    )
+
+    def _lock_factory():
+        return SubprocessQueueEditLock(
+            resolved_repo_root, queue_path, who=AIBOT_LOCK_WHO, note="每日提醒兜底补录",
+        )
+
+    try:
+        flushed = await flush_pending_queue_appends(
+            pending_path=pending_lock_path,
+            queue_path=queue_path,
+            repo_root=resolved_repo_root,
+            audit=audit,
+            lock_factory=_lock_factory,
+            connector=None,
+            recipient=PAUL_USERID,
+            fallback_send=fallback_send,
+            git_sync_pending_path=pending_queue_appends_path,
+        )
+    except Exception as exc:  # noqa: BLE001 —— 第二道载体失败不应影响本脚本主流程
+        print(f"[WARN] pending_queue_lock_appends.jsonl flush 失败（不影响决策提醒本身）：{exc}", file=sys.stderr)
+        return
+    if flushed:
+        print(f"[OK] 兜底 flush：已补录 {flushed} 条")
 
 
 async def _run(dry_run: bool) -> int:
@@ -77,6 +128,24 @@ async def _run(dry_run: bool) -> int:
     if not queue_path.exists():
         print(f"[SKIP] 队列文件不存在：{queue_path}", file=sys.stderr)
         return 1
+
+    audit_path = Path(
+        os.environ.get("WECOM_AIBOT_AUDIT_PATH", resolve_audit_path(resolved_repo_root))
+    )
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    audit = AuditLogger.jsonl(audit_path)
+
+    webhook_url = os.environ.get("WECOM_WEBHOOK_URL")
+    fallback_send = (
+        (lambda text: wecom.send_text(webhook_url, f"⚠️ {text}")) if webhook_url else None
+    )
+
+    # 队列 #192-A 第二道载体：dry-run 不做真实动作（会真实 commit/push），
+    # 与主载体 sweep 的 dry-run 处理方式一致。
+    if not dry_run:
+        await _flush_pending_lock_appends_second_carrier(
+            resolved_repo_root, queue_path, audit, fallback_send,
+        )
 
     queue_text = queue_path.read_text(encoding="utf-8")
     today = date.today()
@@ -97,12 +166,6 @@ async def _run(dry_run: bool) -> int:
 
     save_state(state_path, new_state)  # 先落状态，即便发送失败也不重复计入下次判定
 
-    audit_path = Path(
-        os.environ.get("WECOM_AIBOT_AUDIT_PATH", resolve_audit_path(resolved_repo_root))
-    )
-    audit_path.parent.mkdir(parents=True, exist_ok=True)
-    audit = AuditLogger.jsonl(audit_path)
-
     secrets = EnvSecretsProvider()
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
@@ -110,10 +173,6 @@ async def _run(dry_run: bool) -> int:
     await connector.connect()
     await asyncio.sleep(1)  # 等 aibot_subscribe 认证完成
 
-    webhook_url = os.environ.get("WECOM_WEBHOOK_URL")
-    fallback_send = (
-        (lambda text: wecom.send_text(webhook_url, f"⚠️ {text}")) if webhook_url else None
-    )
     try:
         await send_decision_reminder(connector, audit, message, PAUL_USERID, fallback_send=fallback_send)
     finally:

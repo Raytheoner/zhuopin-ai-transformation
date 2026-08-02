@@ -101,8 +101,13 @@ $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $psArgs -W
 $trigger = New-ScheduledTaskTrigger -Daily -At $DAILY_TIME
 
 $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive
+# 队列 #199：此前缺 -StartWhenAvailable——ZhuopinCommitSweep/ZhuopinAibotDevListener
+# 均已带此项（#189），本任务是同日稍晚新建、注册脚本没带上，属"靠照抄
+# 上一个传承"漏项（#96 清单要防的形态）。缺此项时错过的每日 08:30 触发
+# 不会在机器后续开机/唤醒后补跑，#192-A 的第二道兜底 flush 恰好挂在本任务
+# 上，唯一被需要的场景（周末/清晨未开机）下会一并失效。
 $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
-    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
 Register-ScheduledTask -TaskName $TASK `
     -Action $action -Trigger $trigger `
