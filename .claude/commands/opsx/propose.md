@@ -111,29 +111,13 @@ After completing all artifacts, summarize:
   - Do NOT copy `<context>`, `<rules>`, `<project_context>` blocks into the artifact
   - These guide what you write, but should never appear in the output
 
-<!-- ⚠️ 以下为卓品项目定制段，非 OpenSpec 上游内容。
-     2026-08-02 实证：`openspec update` 会整段静默删除本段（1.4.1→1.7.0 升级时已发生一次并被还原）。
-     每次升级 OpenSpec 后必须复检本段是否还在；根治方案见跨桌任务队列 #206。 -->
-
-**MANDATORY: proposal.md 必须包含以下两个强制节**（来源：`openspec/templates/proposal-template.md`，Antigravity 评审整改项 ④，2026-07-04 起生效）
-
-每次生成 `proposal.md` 时，无论场景类型，必须在文件中包含以下两节内容（缺任一节，Paul 审 design 时视为 proposal 不完整，不进入 design 审）：
-
-1. **`## 知识资产三问（强制，全景规划 §1.4 第 2 条）`**
-
-   回答三个问题：
-   - 本流程哪些判断是人脑默会经验？（列出规则/阈值/例外/尺度）
-   - 由谁显性化？（持有人 + backup 双人制，实名）
-   - 用什么方法提取？（AI起草·专家批改 / 历史案例反推 / L2改判判例累积，三选一或组合）
-
-2. **`## 验收与晋档条件（强制，四档口径）`**
-
-   填写以下三项：
-   - 本变更包交付后场景所处档位（档1 mock验证 / 档2 真实数据跑通 / 档3 内部服务 / 档4 对客交付）
-   - 晋下一档的条件（数据/签字/门禁前提，逐条）
-   - 价值指标（工时型 / 质量型 / 风险型，基线由业务 Champion 确认）
-
-参考完整模板：`openspec/templates/proposal-template.md`
+<!-- ⚠️ 卓品项目定制：proposal.md 的两个强制节（《知识资产三问》《验收与晋档条件》）要求已迁至
+     `openspec/config.yaml` 的 `rules.proposal`（不再硬写在本文件——2026-08-02 实证 `openspec
+     update` 会整段静默删除写在本文件里的定制段，config.yaml 不受 update 覆盖；本注释本身也会
+     被 update 删掉，但这不影响门禁生效——2026-08-02 双盲测已验证即使没有本注释，agent 仅凭
+     config.yaml 的 rules 字段也能正确生成两节，本注释纯属人类可读性冗余）。上面"rules 是约束
+     你、不得复制进产出"指的是不得照抄规则原文，若某条 rule 明确要求产出包含特定章节，仍须照办。
+     根治背景见跨桌任务队列 #206。 -->
 
 **Guardrails**
 - Create every artifact the apply phase transitively depends on, not just the ids listed in `apply.requires`
