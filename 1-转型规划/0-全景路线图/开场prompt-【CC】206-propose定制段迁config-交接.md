@@ -12,7 +12,7 @@ status: 待执行
 ## 【开场词（复制即用）】
 
 ```
-【设置】执行环境：CC ｜ 分支：新建 feat/openspec-config-proposal-rules ｜ worktree：☑ ｜ 工作区：🔴 影响全项目所有 session 与五个 worktree——见「工作区字段」段
+【设置】执行环境：CC ｜ 分支：新建 feat/openspec-config-proposal-rules ｜ worktree：☑ ｜ 工作区：🔴 影响全项目所有 session 与 3 个长驻 worktree——见「工作区字段」段
 
 读 1-转型规划/0-全景路线图/开场prompt-【CC】206-propose定制段迁config-交接.md ＋ CLAUDE.md 当前进度恢复上下文，按文件执行。
 🔴 本件须走 openspec 变更包 + design 审（Shao Peishen 已拍板，理由见文件）；A 段的可行性验证若结论为"rules 语义不匹配"，那也是合格交付，不要硬做。
@@ -36,8 +36,9 @@ status: 待执行
 
 🔴 **有，而且是全项目范围**：`openspec/` 与 `.claude/commands/opsx/` 的内容**被每一个 session（CC 与 Cowork）、每一个 worktree 读取**。
 
-- **五个长驻 worktree 的状态（2026-08-02 实测）**：`musing-pascal-68d14e`／`qd-b-grayscale-improvements-9dbe6f`／`wecom-service-home` 与 `sweep-criteria-sync-fix-7eb8a7` 已由 #207 刷新至当前 master；**仅 `fi2-validation-prep-66ed2c` 仍停在旧基线（落后 338 提交），其清理已并入 #165**。
-- **含义**：本件落地后，**先刷新/清理完 `fi2-validation-prep` 才算全项目一致**；若 #165 尚未执行，须在 #206 行内写明"该 worktree 尚未同步"。
+- ~~**五个长驻 worktree 的状态（2026-08-02 实测）**：`musing-pascal-68d14e`／`qd-b-grayscale-improvements-9dbe6f`／`wecom-service-home` 与 `sweep-criteria-sync-fix-7eb8a7` 已由 #207 刷新至当前 master；**仅 `fi2-validation-prep-66ed2c` 仍停在旧基线（落后 338 提交），其清理已并入 #165**。~~ ← **本条已于 2026-08-02 晚过时，勿据以执行**
+- ✅ **现状（2026-08-02 15:45 本地 / 07:45Z，本机 `git worktree list` 实测）——#165 执行后由 5 降至 3**：`musing-pascal-68d14e`（`claude/queue-numbering-alert-criteria-855665`）／`qd-b-grayscale-improvements-9dbe6f`（detached HEAD）／`wecom-service-home`（`ops/wecom-service-home`）。**`fi2-validation-prep-66ed2c` 已随 #165 整体删除**——即原先那个"仍缺警示注释、落后 338 提交"的 worktree **已不存在，本件不再有该前置依赖**。另有 `sweep-criteria-sync-fix-7eb8a7` 一个**0 文件空壳目录**（git 已不认、`worktree list` 无此条，因句柄占用未删，待 #98 下期体检顺手清），**不是 checkout、不读取 openspec 配置、与本件无关**。
+- **含义（改写）**：**本件落地后即达成全项目一致，无须再等任何 worktree**；#206 行内原要求的"写明该 worktree 尚未同步"**已因该 worktree 被删而自然消解**。**但请注意另一件事**：三个现存 worktree 当前停在 `fa9c5b8`、**落后 master 17 提交**（属 linked worktree 的正常漂移，非缺陷），故**它们读到的 `openspec/`＋`.claude/commands/opsx/` 仍是旧副本**——本件若在独立 worktree 内验证（§五 问题 1 选 (a)），须先确认该 worktree 已快进到含本次改动的 commit，否则验的是旧载体。
 - **无常驻服务受影响**（不涉 `.51` 四服务、不涉企微机器人）。
 
 ---
@@ -79,7 +80,7 @@ status: 待执行
 - **验收**：C2 与 C3 各留一份可核验的证据（产出文件片段 / diff 统计）。**C3 未做等于本件没完成**——它才是本件的目的。
 
 ### D 段 · 收尾
-- 回填 #206；若 `fi2-validation-prep-66ed2c` 尚未同步，**在行内写明**。
+- 回填 #206。~~若 `fi2-validation-prep-66ed2c` 尚未同步，在行内写明~~ ← **该 worktree 已随 #165 于 2026-08-02 晚整体删除，本条要求作废**；改为：**在行内写明本件落地时三个现存 worktree（`musing-pascal-68d14e`／`qd-b-grayscale-improvements-9dbe6f`／`wecom-service-home`）是否已快进到含本次改动的 commit**，未快进则如实写"读到的仍是旧载体"。
 - 顺带看一眼 **#195**：1.7.0 的 `skip_specs: true` 是否能替 #195 的 8 个候选 capability 里的一部分给出"标 skip 而非补 spec"的答案——**只写观察，不在本件里动 #195**。
 
 ---
