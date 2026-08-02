@@ -55,14 +55,31 @@ REPO_ROOT 按 `git rev-parse --git-common-dir` 定位——所有 git worktree
 
 陈旧锁判定：超过 STALE_MINUTES（默认 30 分钟）未释放的锁视为会话异常退出的
 遗留物，下一个 acquire 会打印警告后接管，不会死锁。
+
+#197（2026-08-01 环境保障线只读审计取证，2026-08-02 CC 修复）：acquire 原
+实现是"读判定→写"两步、中间无任何互斥——两个进程若在同一窗口内调用，会
+双双读到"无锁"、双双写入成功、双方都相信自己持锁，正是协议〇.7 要防的
+静默覆盖，只不过这次发生在锁自己身上。单纯把"创建"那一步换成 O_EXCL 治
+不了根：release 按 #121(a) 改写为 released 标记而不删除文件，锁文件此后
+永久存在，O_EXCL 对着一个永久存在的文件只会永远 FileExistsError。真正
+需要原子化的是"读判定→写"整段临界区。修法：用一个与 `.editlock` 完全
+独立、生命周期仅限单次 acquire 调用（创建→用完即删）的互斥标记文件
+（`.editlock.mutex`）包住这段临界区——它不需要像 `.editlock` 那样永久
+保留可查询，因此可以放心复用 `O_CREAT|O_EXCL`"不存在才创建"的原子语义，
+不受 #121(a)"永久文件不能删"的限制约束（见 `_acquire_mutex`）；写入本身
+改用临时文件 + `os.replace` 原子换入（避免 `write_text` 直接截断写入被
+并发读到半截内容），并在写完后立即回读校验（不信"写成功了"）。
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -97,6 +114,67 @@ SECTION_NUMBER_PATTERNS = {
     "一": re.compile(r"(§一\s*#\s*)(\d+)"),
     "四": re.compile(r"(§四\s*#\s*)(\d+)"),
 }
+
+# #197：互斥标记的陈旧判定用秒级——它只需要包住"读判定→写"这一小段临界区
+# （正常毫秒级完成），不是 STALE_MINUTES 那种"人可能真忘了 release"的场景。
+MUTEX_STALE_SECONDS = 10
+MUTEX_POLL_SECONDS = 0.02
+MUTEX_WAIT_TIMEOUT_SECONDS = 5.0
+
+
+def _mutex_path(lock_path: Path) -> Path:
+    return lock_path.with_name(lock_path.name + ".mutex")
+
+
+@contextlib.contextmanager
+def _acquire_mutex(lock_path: Path):
+    """包住 acquire 内部"读判定→写"临界区，确保同一时刻只有一个进程执行
+    这段逻辑（#197）。与 `.editlock` 本身完全独立——本文件创建于进入临界
+    区之时、删除于离开之时，不像 `.editlock` 需要"released 标记永久可
+    查询"，因此可以放心用 `O_CREAT|O_EXCL` 的原子创建语义。
+    """
+    mutex_path = _mutex_path(lock_path)
+    deadline = time.monotonic() + MUTEX_WAIT_TIMEOUT_SECONDS
+    while True:
+        try:
+            fd = os.open(str(mutex_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            break
+        except FileExistsError:
+            age = None
+            try:
+                age = time.time() - mutex_path.stat().st_mtime
+            except OSError:
+                pass  # 竞态：文件在 stat 前被对方删了，直接重试即可
+            if age is not None and age > MUTEX_STALE_SECONDS:
+                # 正常临界区仅毫秒级，超此判定为异常退出遗留，强制清理重试。
+                try:
+                    mutex_path.unlink()
+                except OSError:
+                    pass
+                continue
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"等待锁内部互斥超时（{MUTEX_WAIT_TIMEOUT_SECONDS}s）：{mutex_path}"
+                )
+            time.sleep(MUTEX_POLL_SECONDS)
+    try:
+        yield
+    finally:
+        try:
+            mutex_path.unlink()
+        except OSError:
+            pass  # 删不掉不致命：MUTEX_STALE_SECONDS 后自动被下一次调用接管
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    """写临时文件后 `os.replace` 原子换入（POSIX/Windows 均保证原子），
+    避免 `write_text` 直接截断写入可能被并发读到半截内容的风险。"""
+    tmp_path = path.with_name(f"{path.name}.tmp.{os.getpid()}.{time.time_ns()}")
+    tmp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    os.replace(tmp_path, path)
 
 
 def _target_path(target: str) -> Path:
@@ -208,14 +286,10 @@ def _age_minutes(lock: dict) -> float:
 
 def _write_released_marker(lock_path: Path, who: str, note: str, held_since: str) -> None:
     """写released标记（release 与"预留失败回滚 acquire"共用同一写法）。"""
-    lock_path.write_text(
-        json.dumps(
-            {"who": who, "note": note, "held_since": held_since,
-             "released": True, "released_at": _now().isoformat()},
-            ensure_ascii=False, indent=2,
-        ),
-        encoding="utf-8",
-    )
+    _atomic_write_json(lock_path, {
+        "who": who, "note": note, "held_since": held_since,
+        "released": True, "released_at": _now().isoformat(),
+    })
 
 
 def cmd_acquire(args: argparse.Namespace) -> int:
@@ -230,6 +304,20 @@ def cmd_acquire(args: argparse.Namespace) -> int:
             return 1
 
     lock_path = _lock_path(args.file)
+    # #197：以下"读判定→写"整段包进互斥临界区，防两个进程在同一窗口内都
+    # 读到"无锁"、都写入成功、都相信自己持锁。
+    try:
+        with _acquire_mutex(lock_path):
+            return _acquire_locked(args, lock_path)
+    except TimeoutError as exc:
+        print(f"✗ {exc}——本次占锁放弃，请稍后重试（不代表锁被他人占用，"
+              "只是内部互斥等待超时，理论上不应发生，出现即说明有异常并发压力）。")
+        return 1
+
+
+def _acquire_locked(args: argparse.Namespace, lock_path: Path) -> int:
+    """`_acquire_mutex` 保护下执行的 acquire 逻辑，行为与改造前完全一致，
+    仅多一步写后回读校验（#197：不信"写成功了"，CLAUDE.md §5 既有纪律）。"""
     existing = _read_lock(lock_path)
     if existing is not None:
         age = _age_minutes(existing)
@@ -244,13 +332,19 @@ def cmd_acquire(args: argparse.Namespace) -> int:
               f"超过 {STALE_MINUTES} 分钟未释放，判定为异常退出遗留）——已接管。")
 
     held_since = _now().isoformat()
-    lock_path.write_text(
-        json.dumps(
-            {"who": args.who, "note": args.note or "", "held_since": held_since},
-            ensure_ascii=False, indent=2,
-        ),
-        encoding="utf-8",
+    _atomic_write_json(
+        lock_path, {"who": args.who, "note": args.note or "", "held_since": held_since}
     )
+
+    # 写后回读校验（#197②）：互斥锁已确保本段不会与另一次 acquire 交叉
+    # 执行，这里仍核验一次——既是"不信写成功了"的既有纪律，也对互斥锁
+    # 实现本身出现意料外 bug 这层未知风险留一道网。
+    verify = _read_lock(lock_path)
+    if (verify is None or verify.get("who") != args.who
+            or verify.get("held_since") != held_since):
+        print("✗ 写入后回读校验未通过（占锁内容与预期不符）——本次占锁失败，请重试。")
+        return 1
+
     print(f"✓ 已占锁：{args.who}（{args.note or '无备注'}）→ {lock_path.name}")
 
     if args.reserve is not None:

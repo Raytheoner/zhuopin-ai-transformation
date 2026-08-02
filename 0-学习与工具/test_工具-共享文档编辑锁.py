@@ -17,18 +17,34 @@ acquire 空锁成功 / 新鲜锁被占返回非0 / 陈旧锁可接管 / release 
 (c) acquire 成功时回显持锁瞬间从目标文件读到的"编号高水位线"行，供新行编号
     在锁保护窗口内重算，从机制上消灭"编号在 acquire 之前算、锁前读到的高水位
     线已被推高"这类撞号。
+
+另覆盖 #197（2026-08-02）：acquire 原是"读判定→写"两步、中间无互斥，两个
+进程可同一窗口内都读到"无锁"、都写入成功、都相信自己持锁。新增更强并发
+用例（比既有两进程用例更多并发、更可靠地证伪"双授权"）+ 白盒用例（直接
+import 模块，覆盖子进程黑盒难以可靠触发的"陈旧互斥标记被接管"路径）。
 """
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().with_name("工具-共享文档编辑锁.py")
+
+
+def _load_module():
+    """白盒 import 脚本本体（文件名含连字符/中文，不能直接 `import`）。"""
+    spec = importlib.util.spec_from_file_location("_edit_lock_tool_under_test", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def run(*args: str) -> subprocess.CompletedProcess:
@@ -164,6 +180,105 @@ class EditLockTests(unittest.TestCase):
         self.assertTrue(self.lock_path.exists())
         winner = json.loads(self.lock_path.read_text(encoding="utf-8"))["who"]
         self.assertIn(winner, ("A", "B"))
+
+    def test_concurrent_acquire_many_processes_exactly_one_winner(self):
+        # #197：比上一用例（仅两进程）更强的回归——原 check-then-act 实现
+        # 下，并发进程数越多、"都读到无锁"的重叠概率越高，更可靠地证伪
+        # "双授权"这一具体 bug 形态（而非依赖两进程恰好撞上的运气）。
+        whos = [f"P{i}" for i in range(16)]
+        procs = [
+            subprocess.Popen([sys.executable, str(SCRIPT), "--file", self.target,
+                               "acquire", "--who", who],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                              encoding="utf-8")
+            for who in whos
+        ]
+        results = [p.communicate() for p in procs]
+        codes = [p.returncode for p in procs]
+
+        winners = [who for who, code in zip(whos, codes) if code == 0]
+        self.assertEqual(len(winners), 1,
+                          f"期望恰好一个成功，实际 codes={list(zip(whos, codes))}\n{results}")
+        self.assertEqual(
+            json.loads(self.lock_path.read_text(encoding="utf-8"))["who"], winners[0]
+        )
+        mutex_path = Path(str(self.lock_path) + ".mutex")
+        self.assertFalse(mutex_path.exists(), "互斥标记不应在全部调用结束后遗留")
+
+    def test_concurrent_stale_takeover_exactly_one_winner(self):
+        # #197 修法要点③：陈旧锁被多个进程同时接管——只允许恰好一个成功，
+        # 不能像原实现那样多个进程都判定"陈旧、可接管"并各自写入。
+        self._write_lock("OLD", minutes_ago=31)  # > STALE_MINUTES=30
+        whos = [f"P{i}" for i in range(10)]
+        procs = [
+            subprocess.Popen([sys.executable, str(SCRIPT), "--file", self.target,
+                               "acquire", "--who", who],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                              encoding="utf-8")
+            for who in whos
+        ]
+        results = [p.communicate() for p in procs]
+        codes = [p.returncode for p in procs]
+
+        winners = [who for who, code in zip(whos, codes) if code == 0]
+        self.assertEqual(len(winners), 1,
+                          f"陈旧锁接管应恰好一个成功，实际 codes={list(zip(whos, codes))}\n{results}")
+        self.assertEqual(
+            json.loads(self.lock_path.read_text(encoding="utf-8"))["who"], winners[0]
+        )
+
+
+class AcquireMutexInternalsTests(unittest.TestCase):
+    """#197：白盒直接测试互斥锁内部实现——覆盖子进程黑盒测试难以可靠
+    触发的"陈旧互斥标记被接管"路径（需要一个"崩溃后遗留互斥文件"的
+    人为场景，比起真的杀掉子进程，直接摆好文件状态更稳定可靠）。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.lock_path = Path(self._tmpdir.name) / "假想队列.md.editlock"
+        self.module = _load_module()
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_mutex_not_left_behind_after_normal_use(self):
+        mutex_path = self.module._mutex_path(self.lock_path)
+        with self.module._acquire_mutex(self.lock_path):
+            self.assertTrue(mutex_path.exists())
+        self.assertFalse(mutex_path.exists())
+
+    def test_mutex_blocks_concurrent_holder(self):
+        mutex_path = self.module._mutex_path(self.lock_path)
+        with self.module._acquire_mutex(self.lock_path):
+            with self.assertRaises(FileExistsError):
+                fd = os.open(str(mutex_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.close(fd)
+
+    def test_stale_mutex_is_reclaimed_promptly(self):
+        # 模拟"上一个持有互斥的进程异常退出、未清理"——新调用应很快接管，
+        # 不应傻等到 MUTEX_WAIT_TIMEOUT_SECONDS 超时才成功。
+        mutex_path = self.module._mutex_path(self.lock_path)
+        mutex_path.write_text("", encoding="utf-8")
+        stale_time = time.time() - (self.module.MUTEX_STALE_SECONDS + 5)
+        os.utime(mutex_path, (stale_time, stale_time))
+
+        start = time.monotonic()
+        with self.module._acquire_mutex(self.lock_path):
+            pass
+        elapsed = time.monotonic() - start
+        self.assertLess(elapsed, self.module.MUTEX_WAIT_TIMEOUT_SECONDS)
+        self.assertFalse(mutex_path.exists())
+
+    def test_atomic_write_json_readback_matches(self):
+        target = self.lock_path
+        self.module._atomic_write_json(target, {"who": "A", "held_since": "t0"})
+        self.assertEqual(
+            json.loads(target.read_text(encoding="utf-8")),
+            {"who": "A", "held_since": "t0"},
+        )
+        # 无临时文件遗留。
+        leftovers = list(target.parent.glob(f"{target.name}.tmp.*"))
+        self.assertEqual(leftovers, [])
 
 
 class ReserveIdsTests(unittest.TestCase):
