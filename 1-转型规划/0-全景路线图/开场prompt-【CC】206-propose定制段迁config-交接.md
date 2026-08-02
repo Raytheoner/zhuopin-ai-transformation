@@ -56,6 +56,27 @@ status: 待执行
 
 ## 任务分段
 
+### 🔎 A 段前置：环境保障线已完成的只读源码取证（2026-08-02 晚，**直接用，不要重做**）
+
+> **取证对象＝本机全局包真身** `C:\Users\Paul Shao\AppData\Roaming\npm\node_modules\@fission-ai\openspec`（v1.7.0，`openspec --version` 实测）。**纯只读，未跑任何写命令。**
+
+**🔴 结论一：`config.yaml` 与 `openspec/schemas/` 都不会被 `openspec update` 覆盖——本件"换个坑再跳一次"的风险已排除。**
+- 依据＝`dist/core/update.js` **全文 774 行**，**全部写/删动作**（`writeFile`／`rm`／`unlink`）**只落在两类目标**：`skillFile`（`<tool>/skills/*/SKILL.md`）与 `commandFile`（`.claude/commands/opsx/*`）；**`schemas` 与 `config.yaml` 在该文件内零命中**。
+- ⇒ 这正面回答了 A2 的验收要求。**#206 的根因也由此坐实**：定制段之所以被删，正因为它被写在**唯一会被 update 重写的那类文件**里。
+
+**🟠 结论二：`rules` 的语义张力真实存在，但"不匹配"这个判断不能只靠读源码下定论——两种读法都成立，必须实跑。**
+- `dist/core/templates/workflows/propose.js` 有 **4 处**明写：`rules` 是 *"constraints for you — do NOT include in output"*、*"Apply context and rules as constraints - but do NOT copy them into the file"*。
+- 🔴 **但它禁的是"把规则原文复制进产出"，不等于禁"规则要求产出包含某两个小节"**——后者是对**产出结构**的约束，照做的结果是生成那两节，并没有复制规则文本。**两种读法都讲得通，读源码分不出来，必须靠 A 段实跑定。**
+- 加载链已核实：`instruction-loader.js` L147-161 按 **artifact id 取 `projectConfig.rules[artifactId]`**，作为**独立字段**传入（注释明写 *"Extract context and rules as separate fields (not prepended to template)"*），并有 `validateConfigRules` 校验 artifact id 合法性。
+
+**🟢 结论三（本次最有价值的发现，原派单件未想到）：还有一个比 `rules` 更强的载体——项目本地 schema。**
+- `dist/core/artifact-graph/resolver.js` L74-75 明写解析顺序：**① 项目本地 `<projectRoot>/openspec/schemas/<name>/schema.yaml` → ② 用户级 `${XDG_DATA_HOME}/openspec/schemas/` → ③ 包内置**；`getProjectSchemasDir()` 返回的就是 `<root>/openspec/schemas`。`project-config.js` L23-27 的 zod 描述亦写 `schema` 字段接受 *"project-local schema name"*。
+- **包内置 schema 的结构已看过**：`schemas/spec-driven/schema.yaml` 逐 artifact 声明 `generates` / `template`，`templates/proposal.md` **就是产出的小节骨架**（`## Why` / `## What Changes` / `## Capabilities` / `## Impact`）。
+- ⇒ **把两个强制节放进项目本地 schema 的 `templates/proposal.md`，它们就成为产出骨架的一部分（结构性），而不是"指望 agent 照做"的指令**——**这比 `rules` 强一个量级，且同样不被 update 覆盖**。
+- ⚠️ **代价须一并评估、不要只看好处**：自建 schema 意味着**包内置 schema 的后续升级不再自动惠及本项目**（要手工跟进 diff），**这本身就是另一种"脱节"风险**（同 #188 真身 vs 镜像）。**孰轻孰重由 design 审定，本线不替你决定。**
+
+**📌 顺带一条与 #195/#196 相关**：包内 `templates/proposal.md` 明写——**零 capability 的变更（纯重构/工具/文档）必须在 `.openspec.yaml` 里设 `skip_specs: true`，否则 `openspec validate` 拒绝**；且强调 *"Do not invent a requirement just to satisfy validation"*。**D 段那条"看一眼 #195"照此推进即可。**
+
 ### A 段 · 可行性验证（**先做完再动手改，结论为"不可行"也是合格交付**）
 
 **A1 摸清 1.7.0 的 `config.yaml` 语义**
@@ -65,8 +86,9 @@ status: 待执行
 - **验收**：给出"匹配／不匹配／部分匹配"的明确结论 + 依据。**不匹配则转 A2。**
 
 **A2 若 `rules` 不匹配，评估替代载体**
-- 候选：`openspec/templates/`（本项目已有 `proposal-template.md`）／自定义 schema（1.0 起支持 `openspec/schemas/`，**且明确写着"不触碰包代码、可随版本控制共享"**）。
-- **验收**：给出选定载体与理由；**并说明该载体是否同样会被 `openspec update` 覆盖**（这是本件存在的全部意义，不能换个坑再跳一次）。
+- 候选：`openspec/templates/`（本项目已有 `proposal-template.md`）／**项目本地 schema `openspec/schemas/<name>/`（路径与优先级已由上方取证坐实，且其 `templates/proposal.md` 直接就是产出骨架）**。
+- ~~**并说明该载体是否同样会被 `openspec update` 覆盖**~~ ← **此项已由上方「结论一」回答（两个候选均不被覆盖，`update.js` 全文零命中）**，A2 只需给出**选定载体与理由**，以及 **`rules` 与项目本地 schema 二选一的取舍论证**（指令性 vs 结构性；自建 schema 会失去包内置 schema 的后续升级红利，须手工跟 diff）。
+- 🔴 **A2 的真正待答项改为**：若选项目本地 schema，**如何在"拿到结构性强制"与"不与上游 schema 脱节"之间取舍**——这是 design 审要拍的那一刀，**必须写进 design 的备选方案对比，不能只写选了什么**。
 
 ### B 段 · openspec 变更包 + design 审
 - 按 §5「机制/工具类 openspec 触发门槛」第 ① 条（改变全项目口径）走完整流程：`/opsx:propose` → **停下等 Shao Peishen 审 design** → `/opsx:apply`。
