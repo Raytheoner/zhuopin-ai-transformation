@@ -20,7 +20,7 @@ title: "Hermes × SuperPowers 协作架构"
 SuperPowers 是 VibeCoding 的**执行框架**，本质是一套让 Claude Code 输出企业级质量的工程工具链：
 
 > **安装状态**：SuperPowers v5.1.0 ✅（Claude Code 官方插件，全局已安装）
-> **安装状态**：OpenSpec v1.4.1 ✅（npm 全局安装，`openspec` 命令可用）
+> **安装状态**：OpenSpec **v1.7.0** ✅（npm 全局安装，`openspec` 命令可用；2026-08-02 由 v1.4.1 升级，队列 #205-A。**版本单一可信源＝`0-学习与工具/环境依赖清单.md`**）
 
 ```
 SuperPowers 完整工具链
@@ -496,7 +496,7 @@ Week 3-4：
 |------|------|------|---------|
 | Claude Code | v2.1.160 | ✅ 全局安装 | 执行引擎 |
 | SuperPowers | v5.1.0 | ✅ 全局插件 | 建造层（14 Skills）|
-| OpenSpec | v1.4.1 | ✅ 全局安装 | 需求层 |
+| OpenSpec | **v1.7.0**（2026-08-02 升级，原 v1.4.1） | ✅ 全局安装 | 需求层 |
 | 全局 CLAUDE.md | — | ✅ 已创建 | Hermes L1 |
 | 全局 Agents | — | ✅ 采购/库存/物流 | Hermes L4 |
 | Auto Memory | — | ✅ 默认开启 | Hermes L2/L3 |
