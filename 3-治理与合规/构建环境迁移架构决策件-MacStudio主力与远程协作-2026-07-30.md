@@ -46,7 +46,7 @@ created: 2026-07-30
 | 组件 | 跑在哪 | 实测证据 |
 |---|---|---|
 | 企微机器人常驻监听 | **Win 笔记本** | 计划任务 `ZhuopinAibotDevListener` → `wscript.exe run-hidden.vbs`；进程 PID 31608 = `python.exe …\wecom-service-home\scripts\run_aibot_service.py`；审计 `5-平台底座/wecom-aibot-service/reports/wecom_aibot_audit.jsonl` 798 行、18:09 仍在写 |
-| 落库 sweep | **Win 笔记本** | 计划任务 `ZhuopinCommitSweep`（每 4 小时 + 开机） |
+| 落库 sweep | **Win 笔记本** | 计划任务 `ZhuopinCommitSweep`（**每 1 小时**［`PT1H`］+ 开机 + `StartWhenAvailable=True`）⚠️ 本行原写"每 4 小时"，系 v3 成文时（2026-07-30）的真值；**#189 已于 2026-07-31 改为 `PT1H`**，2026-08-02 按队列 #203 复检时修正——**照旧值配置 launchd/计划任务会把周期静默配回 4 小时且对外表现正常** |
 | 拆件巡逻 / 值周巡检 | **Win 笔记本** | Claude 定时任务（`Claude\Scheduled\`），随桌面 app 运行 |
 | CC 建造 / Cowork 治理 | **Win 笔记本** | 一任务一 worktree，共享同一 `.git` |
 | 四个 Web 服务 | **`.51`（Windows Server）** | 8091/8092/8093/8094，`/api/ping` 全 200、首页全 302（门禁生效） |
