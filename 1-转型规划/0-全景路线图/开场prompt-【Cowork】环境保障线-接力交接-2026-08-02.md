@@ -92,7 +92,20 @@ foreach($n in @("ZhuopinCommitSweep","ZhuopinAibotDevListener","ZhuopinDecisionR
 
 ## 三、机制现状（**只留不可直读的判断性内容**）
 
-**健康面**：四条自动化均在跑；协议〇.7/〇.8 生效；#160 门禁四服务在位；审计单文件（真身在 `5-平台底座/wecom-aibot-service/reports/wecom_aibot_audit.jsonl`，**不是仓库根 `reports/`** ← 08-02 我在此栽过一次）。
+**健康面**：**六条自动化**均在跑；协议〇.7/〇.8 生效；#160 门禁四服务在位；审计单文件（真身在 `5-平台底座/wecom-aibot-service/reports/wecom_aibot_audit.jsonl`，**不是仓库根 `reports/`** ← 08-02 我在此栽过一次）。
+
+**🔴 六条自动化的完整清单（勿再写"四条"——2026-08-02 初稿即漏，见 §六 第 5 条）**
+
+| 载体 | 任务 | 周期 | 可否 PowerShell 直读 |
+|---|---|---|---|
+| Windows 计划任务 | `ZhuopinCommitSweep` | `PT1H` + 开机 | ✅ 见 §〇bis |
+| Windows 计划任务 | `ZhuopinAibotDevListener` | `AtLogOn` 常驻 | ✅ |
+| Windows 计划任务 | `ZhuopinDecisionReminderDaily` | 每日 08:30 | ✅ |
+| **Cowork 定时任务**（真身在仓库外 `C:\Users\Paul Shao\Claude\Scheduled\`） | `huijian-chaijian-patrol` | 工作日双班 09:00／13:00 | ❌ 只能读镜像 |
+| **Cowork 定时任务** | `weekly-status-update` | 周一 10:00（先跑对账审计） | ❌ |
+| **Cowork 定时任务** | **`check-skill-plugin-updates`** | **每月 1 日**（环境依赖巡检，报 SuperPowers/OpenSpec 等新版本） | ❌ |
+
+> **镜像范围＝刻意只镜这三条 Cowork 任务**（`0-学习与工具/定时任务源码/README.md` §镜像范围已明列）；Shao Peishen 个人投资类扫描等**不镜**。**改动须真身+镜像两处同步**（#188）。
 
 **两条 P0 缺陷仍未修（这是当前机制最大的两个洞）**：
 - **#197 编辑锁 `acquire` 是 check-then-act、全文无 `O_EXCL`** —— 整套协作的根基自身可被"双授"。**已插队排第一。**
@@ -147,6 +160,8 @@ foreach($n in @("ZhuopinCommitSweep","ZhuopinAibotDevListener","ZhuopinDecisionR
 | 2 | **裸竖线 ×2**（#197 行写 `os.open` 标志） | 第一次修完仍剩 9 列——**反引号内的竖线同样会被切列**，这点原先没意识到 | 机制挡住（#164 列数自检两次抓出）；**且发生在我正为"机制不严谨"做审计的同一条回复里** |
 | 3 | **批次行写到 §二 标题之上**（落在 §一 尾部） | sweep 按 `SECTION_TWO_HEADING` 之后解析，**位置错则该批次完全不可见、静默不落库** | 自查发现并移正；已建议 #200 领取方把位置校验挂到 `release` |
 | 4 | **"按固定路径找 audit 文件失败"记成机制问题** | 我把 #126 的"落主工作区"理解成"仓库根 `reports/`" | 08-02 复检时自查发现；真身在 `5-平台底座/wecom-aibot-service/reports/`，**顺带证实 #126 生效** |
+| 5 | **本 opener 初稿把自动化写成"四条"、且完全漏了 `check-skill-plugin-updates`** | **不是信息不可得**——`0-学习与工具/定时任务源码/README.md` §镜像范围**白纸黑字列了三条 live Cowork 任务**，我只抄了两条 | 🔴 **未挡住**，是 Shao Peishen 把该任务 08-01 的巡检报告贴过来才发现；已补全为**六条清单**并标注"可否 PowerShell 直读" |
+| 6 | **漏声明批次文件清单里的队列文件自身** | 同坑本项目第三次（07-27／07-31／08-02） | 机制挡住（sweep 安全门）；**三次都靠安全门、说明靠人记住不成立** → 已强化 #200 论证 |
 
 **三条防线**（比记住案例有用）：
 1. **判据本身也要被质疑一次** —— 换一种系统行为（快速启动／休眠／时区／清扫／锁忙）下它还成立吗？**过滤/枚举类判据尤其危险**。
