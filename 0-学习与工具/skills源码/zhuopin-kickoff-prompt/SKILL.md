@@ -4,7 +4,7 @@ name: zhuopin-kickoff-prompt
 description: 卓品AI转型项目·交接/转场开场prompt生成器。当 Shao Peishen 说"给我去XX专线/CC的转场prompt""出一份交接prompt""新开session的开场"时使用。产出引用版 prompt 文件 + 复制即用开场词，不复制权威内容正文。
 ---
 
-# 卓品 · 交接/转场 Prompt 生成器（v1.4）
+# 卓品 · 交接/转场 Prompt 生成器（v1.5）
 
 为"企业AI转型"项目生成新 session 的交接 prompt。**铁律：引用版**——prompt 只放权威文件的路径与章节指针，绝不复制其内容（防双份漂移，Shao Peishen 2026-07-06 定为标配）。
 
