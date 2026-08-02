@@ -91,13 +91,39 @@ A 段做完回填队列 #205 🅱 段即可收工，B 段等 #197 合入后另�
 
 ---
 
+## 🔎 A 段前置：环境保障线已完成的只读取证（2026-08-02 晚，**直接用，但第 5 条必须你实跑**）
+
+> 纯只读（文件系统 + `git ls-remote` + 官方 raw 文件），**未安装、未升级、未改任何配置**。工具链改动仍归你。
+
+**🔴 1. 登记的"本机 v6.1.1"无任何本机证据支持——本机唯一可见的插件真身是 `5.1.0`。**
+- 三处一致：缓存目录名 `~\.claude\plugins\cache\claude-plugins-official\superpowers\**5.1.0**\`（目录 mtime 2026-05-13）／其 `.claude-plugin\plugin.json` 的 `version` 字段＝**5.1.0**（三个 plugin.json 全是）／其 `RELEASE-NOTES.md` 首节＝**v5.1.0 (2026-04-30)**。
+- **全盘搜索**（`~\.claude` 与项目 `.claude` 递归 6 层找 `plugin.json`）**只找到这一份**；`~\.claude\plugins\data\superpowers-*` 两个目录**均为空**。
+- ⇒ **与 #205-A 的错误登记是同一模式的第二个实例**（07-05 那次巡检把"当时查到的上游最新 tag"当作本机版登记）。**这条本身就是本件的一个合格交付物。**
+
+**🟢 2. 市场 pin 的不是某个 tag，而是 `refs/heads/main` 的一个 SHA——而该 SHA 已经是 6.2.0。**
+- `~\.claude\plugins\marketplaces\claude-plugins-official\.claude-plugin\marketplace.json` 里 superpowers 的 source＝`url: https://github.com/obra/superpowers.git`＋`sha: 44c9b2d6e889982ac18c27d05a19fefe335194e1`。
+- `git ls-remote` 实测：该 SHA **不命中任何 tag**，命中 **`refs/heads/main`**；上游最新 tag＝**v6.2.0**（v6.0.0/6.0.2/6.0.3/6.1.0/6.1.1/6.2.0 序列已核）。
+- 拉取该 SHA 的 `.claude-plugin/plugin.json` 实测 `"version": "6.2.0"`。
+- ⇒ **"升级"很可能不需要改市场，只需让 Claude Code 重新安装/刷新该插件即可拿到 6.2.0。** 这与派单件原先设想的"改版本号升级"路径不同，**请据此重新设计 B 段**。
+
+**🟠 3. 升级跨度可能是 `5.1.0 → 6.2.0`（跨一个大版本），不是登记里写的"落后 1 版"。** v6.0.0 是 major bump，**须读 v6.0.0 段的 breaking changes**，不能按小版本升级对待。
+
+**🟢 4. 两条与本项目直接相关的升级理由（来自 v6.2.0 release notes 原文，非二手摘要）**：
+- **Windows：SessionStart hook 改经 Git Bash 分发** —— 修的正是"命令串以带引号路径开头，PowerShell 解析报错(#1751)／cmd.exe 引号剥离在路径含 `(` 等元字符时截断(#1918)，**两种情况下 bootstrap 都静默不加载**"。**本机路径 `C:\Users\Paul Shao\...` 含空格**，且我们跑的就是 Windows —— **这直接关系到 A3 那个"当前 bootstrap 是否正常加载"的判据**。
+- **`finishing-a-development-branch` 不再把"Discard this work"摆在"Merge" 旁边**，且修了一个真实 bug：**worktree 路径在 cleanup 已切换目录之后才重算，导致 provenance 检查永不匹配、清理静默 no-op**。⚠️ **别过度联想**：我们 #125／#165／#207 的空壳删不掉是 `Permission denied`（句柄占用），**与该 no-op bug 不是同一成因**；但"误弃"那一面与本项目 2026-07-24 的三连误弃事故形态相符，**值得在评估里点名**。
+
+**🔴 5. 一条只读答不了的、必须你实跑的：缓存目录名与内容是 5.1.0，不等于运行时加载的就是 5.1.0。**
+- Claude Code 可能在运行期按市场 SHA 另行解析而未重命名缓存目录。**判别测试＝你跑 `claude plugin list`（或 `/plugin` 界面）看实际生效版本**，这是 A1 的真正落点。**两种结果都要如实写**——若实际已是 6.2.0，则本件退化为"只更正登记值"，**那也是合格交付**。
+
+---
+
 ## 任务分段
 
 ### A 段 · 开工核实（**必须先做完，不要跳到升级**）
 
 **A1 实测当前版本**（不信登记值——A 阶段的第一条教训）
-- 至少两处交叉核实实际版本（插件目录 `package.json`／`plugin.json` 与 Claude Code 侧插件列表），**以实际读到的为准**。
-- **验收**：写明实测版本；**若与登记的 v6.1.1 不符，这本身就是有价值的结论**，须回填 `环境依赖清单.md` 并在队列留痕（同 A 阶段对 OpenSpec 的处置）。
+- ~~至少两处交叉核实~~ ← **文件侧三处交叉已由环境保障线做完（见上，结论＝5.1.0）**；**A1 现在只剩一件事：跑 `claude plugin list` 看运行期实际生效版本**，与文件侧结论比对。
+- **验收**：写明实测版本 + 与文件侧 `5.1.0` 是否一致；**无论是 5.1.0 还是 6.2.0，都须回填 `环境依赖清单.md`**（该表"本机"列口径＝一律填实测值），并在队列留痕。**登记的 v6.1.1 已被证伪，不得再沿用。**
 
 **A2 核实"独立 worktree 内升级"是否技术可行**
 - 判断 SuperPowers 的安装作用域（全局用户级 vs 项目级 `.claude/settings.json` 的 `enabledPlugins`），确认能否在不改主工作区全局配置的前提下，只让某个 worktree 用 6.2.0。
