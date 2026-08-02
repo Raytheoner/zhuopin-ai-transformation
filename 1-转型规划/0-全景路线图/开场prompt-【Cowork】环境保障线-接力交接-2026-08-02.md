@@ -31,7 +31,7 @@ status: 待执行
 **开工第一件事，逐条跑完再动手：**
 
 1. **接力新鲜度**：`session接力-Phase1收口.md` 最新日期节 **是否 = 2026-08-02**？不等 → 中间有人动过，先读差异。
-2. **清单一致性**：从 §四 抽 **2 行**（建议 #197／#204，最可能被动过），用本机 PowerShell 直读队列**实际状态列**逐字比对。**不一致一律以队列为准**，并在首条回复列出差异。
+2. **清单一致性**：从 §四 抽 **2 行**（**2026-08-02 起改为 #197／#206**——原写 #204，但它已降 P3、变动概率低；#206 是最新登记且最可能被动过的一行），用本机 PowerShell 直读队列**实际状态列**逐字比对。**⚠️ 只比状态列、不要整行 grep**（同 §〇bis 那处假阴性的教训）。**不一致一律以队列为准**，并在首条回复列出差异。
 3. **降级残留**：grep 四条 session 接力文件顶部「⏳ 队列更新待补」小节，有内容 → **先回补**。
 
 **判定**：三查全通过 → 按 §四 直接开工、不提问，首条回复一句"自检三查通过，按 §四 从 X 开始"。任一不通过 → 只就**该差异**出带推荐项的选择题。**禁止开放式提问。**
@@ -48,7 +48,10 @@ git fetch origin master 2>&1 | Out-Null
 "behind/ahead = " + (git rev-list --left-right --count origin/master...HEAD)
 "脏文件 = " + ((git status --porcelain --untracked-files=all)|Measure-Object).Count + " ｜ 分支 = " + (git rev-parse --abbrev-ref HEAD)
 $q = ".\1-转型规划\0-全景路线图\跨桌任务队列.md"
-"§二 剩余待处理 = " + (((Select-String -Path $q -Pattern "^\| B-")|Where-Object{$_.Line -notmatch "✅"})|Measure-Object).Count
+# ⚠️ 下一行 2026-08-02 修正过一次假阴性：原写 Where-Object{$_.Line -notmatch "✅"}（整行 grep），
+# 而 ✅ 完全可能合法出现在批次的**描述文字**里，于是真实待处理的批次被统计为 0。
+# 与 #172 确立的"截止列含 ✅ 即已关闭、**不看整行**"是同一个坑。判据必须取状态列（倒数第二列），勿改回去。
+"§二 剩余待处理 = " + (((Select-String -Path $q -Pattern "^\| B-")|Where-Object{ (($_.Line -split '\|')[-2]).Trim() -notmatch "✅" })|Measure-Object).Count
 (Select-String -Path $q -Pattern "编号高水位线").Line[0].Substring(0,44)
 "锁 = " + ((Get-Content "$q.editlock" -Raw|ConvertFrom-Json).released) + " ｜ index.lock = " + (Test-Path ".git\index.lock")
 foreach($n in @("ZhuopinCommitSweep","ZhuopinAibotDevListener","ZhuopinDecisionReminderDaily")){
@@ -71,6 +74,10 @@ foreach($n in @("ZhuopinCommitSweep","ZhuopinAibotDevListener","ZhuopinDecisionR
 | 构建环境、git/队列台面、worktree/stash 卫生 | 业务口径裁决、场景排期、**专员协作内容** |
 | 自动化机制（sweep/编辑锁/巡逻/巡检/机器人链路） | 建造与部署实施（CC 干）、发信（机器人干） |
 | 事故拦截与根因取证、机制缺陷登记 | 派活与开 opener（业务总线干） |
+| 对工具链**只读核实**版本与状态、把差异登记成待领行 | 🔴 **改本机工具链本身**——全局 npm 包/插件/CLI 的安装与升级、`openspec update` 一类会重写生成物的命令 → **归 CC**（Shao Peishen 2026-08-02 定） |
+
+> **🔴 最后一行是 2026-08-02 新增，成因是本线自己踩的**：#205-A 那次由他破例授权本线跑了 `npm install -g` + `openspec update`，结果 `openspec update` **静默删掉了 `.claude/commands/opsx/propose.md` 里 2026-07-04 落地的强制门禁段**（零提示零报错，混在 10 个文件的上游 diff 里）。**虽然当场逐文件过目抓住并还原了，但那属于运气与纪律，不属于机制。** 他的原话：「**本线不到紧急修复到了迫不得已，还是归 CC 让机制流程修复更加稳妥**」。
+> **今后遇到同类，本线的正确动作＝只读核实 + 登记待领行 + 交业务总线派单，不再问"要不要我来做"。** 若确属紧急且他明示授权破例，**必须**：① 先固化升级前证据（版本三处交叉 + 受影响文件基线）；② 逐文件过目 diff，**判据用中文行增删计数**（本次正是靠它抓到的：删 13 增 0、且仅一个文件）；③ 事后如实登记为破例。同条已入 CLAUDE.md §5「执行环境标注」。
 
 **铁律三条**：
 1. **业务问题只出分析与建议，不派活、不写 opener** —— 请 Shao Peishen 转业务总线。例外须其明示授权。
@@ -120,6 +127,8 @@ foreach($n in @("ZhuopinCommitSweep","ZhuopinAibotDevListener","ZhuopinDecisionR
 ## 四、本线在办/待跟进（**按 2026-08-02 收工实况，勿用 07-31 版**）
 
 **领取顺序（Shao Peishen 拍板）**：`#197 → #192/#193/#194/#198/#199 同批 → #200`
+**➕ 2026-08-02 新增两条，均归 CC、不挤占上述顺序**：**#206（P1）** 与 **#205-B（P3）**——#206 虽为 P1，但主工作区已还原、当前可正常用，**不阻塞 #197**；其紧迫性在于"下次 `openspec update` 会再删一次"，故宜在下一次工具链升级之前完成。
+**⚠️ 本表已有过一次结构性教训**：08-02 开工自检发现 opener §四 漏了整行 #205（它是 opener 写完后同一 session 内拍板产生的）。**§〇 第 ② 条抽查行随之更新为 `#197`／`#206`**（#204 已降 P3、变动概率低，#206 是最新且最可能被动过的一行）。
 
 | 行 | 事项 | 状态 |
 |---|------|------|
@@ -128,7 +137,9 @@ foreach($n in @("ZhuopinCommitSweep","ZhuopinAibotDevListener","ZhuopinDecisionR
 | **#200** | 无锁裸改队列无检测（指纹比对+周汇总频次起步） | **常驻观察项不销行**；🔔 复评锚点挂 #98：单月无锁改动 ≥5 次 **或** 出现任一次真实覆盖/撞号，取先到者即重提硬阻断 |
 | **#203** | 前提/参数变更后既有决策无人复检 | 修法① **已入协议〇.8**（批次声明变更参数）；②skill 第八类失真随下次升版评估；③反向索引**明确不做** |
 | **#204** | QD-B 灰度 SOP L24 仍写"无需登录" | 待领 **P3**（人已由 Shao Peishen 企微手动传达、紧急性解除；**剩纯文件修正，口令不得入文件**） |
-| **#195／#196** | openspec 补写缺失 capability（约 8 个，含 #160 鉴权边界）／在途包积压清理 | 待领 P2／P3 |
+| **#206** | 🔴 `openspec update` **静默删除** `.claude/commands/opsx/propose.md` 里 2026-07-04 落地的强制门禁段（《知识资产三问》+《验收与晋档条件》），零提示零报错 | 待领 **P1 · CC**。**Shao Peishen 2026-08-02 拍板走选项 A**：openspec 变更包 + design 审，把两节迁进 `openspec/config.yaml` 的 `rules.proposal`（`doctor` 已报本库缺 config.yaml＝根因土壤）。**三点须先验证**：`rules` 语义是"约束你写什么、不得复制进产出"，与"产出里必须出现某两节"**可能不匹配**；新建 config.yaml 改变全项目行为故须 design 审；迁完**必须真跑一次 `/opsx:propose`** 验证。**主工作区已还原、当前可正常使用**，但下次 `openspec update` 会再删一次 |
+| **#205** | 🅰 OpenSpec v1.4.1→v1.7.0 ／ 🅱 SuperPowers v6.1.1→v6.2.0 | **🅰 ✅ 已完成 2026-08-02（勿重复领）**——四项验收全通过，另撞出三处计划外发现（错登记值／定制段被删→#206／#196 归因证伪）。**🅱 待领 P3 · CC**，独立 worktree、不动主工作区全局插件配置；**⚠️ 本机 v6.1.1 至今仍是未核实的登记值，领取时须先实测**（#205-A 已证明"登记值可能从来就是错的"） |
+| **#195／#196** | openspec 补写缺失 capability（约 8 个，含 #160 鉴权边界）／在途包积压清理 | 待领 P2／P3。**#196 阻塞已于 2026-08-02 解除**：其"1.5.0 archive 竞态"假设**已证伪**（本机从未装过 1.5.0），残留仅空目录树、`archive/` 正本完整，**可直接删**；顺带修正——`openspec list` 的 9 个在途包中 **2 个是幻影**，真实 7 个 |
 | **#185** | 编辑锁 `--reserve` 双 section | 待领 **P2**（外部评审建议提 P0，**经核证维持 P2**，理由见 triage 件 A-4） |
 | **#96** | 《.51 部署标准清单》**已生效**；CC 半边＝psm1 抽公共段 + 五份 `deploy-server.ps1` 改薄 | CC 待领 |
 | #101① | 主工作区安全同步加"脏文件命中 §二 即禁 `checkout --`"硬检查 | 待领 P1 |
