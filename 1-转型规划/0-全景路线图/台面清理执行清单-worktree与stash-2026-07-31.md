@@ -88,15 +88,30 @@ Remove-Item -Recurse -Force ".claude\worktrees\<目录名>"
 
 ## 三、B 类：仍在册、有内容的 worktree —— 7 个
 
+> **⚠️ 2026-08-02 快照差异提示（本表为 07-31 快照，§〇 已说明会过期，此处只给差量、省你一轮排查）**：`git worktree list` 今日只剩 **5 个**——**B4 `dreamy-ramanujan-35e2e8` 与 B5 `loving-mestorf-98749e` 已不在册**（本表 7 个中的这两个无需处理）；**B2 `sweep-criteria-sync-fix-7eb8a7` 现在 `claude/queue-lock-atomicity-6f20c3`（#197 刚用完、ahead=0、clean，可清）**；**B6 `musing-pascal-68d14e` 现在 `claude/queue-numbering-alert-criteria-855665`**；**B7 `qd-b-grayscale-improvements-9dbe6f` 现为 detached HEAD**。**以上仅供对照，仍以你开工重跑的三连为准。**
+
 | # | 物理目录 | 实际 checkout 分支 | ahead | 处置 |
 |---|---------|-------------------|:---:|------|
 | B1 | `wecom-service-home` | `ops/wecom-service-home` | 0 | 🔴 **绝不可动**——企微机器人常驻运行目录，服务中 |
 | B2 | `sweep-criteria-sync-fix-7eb8a7` | `claude/sweep-criteria-sync-fix-7eb8a7` | 0 | 可清（#165(b) 已取证：`工具-落库sweep.py` 与主工作区版逐字节哈希相同） |
-| B3 | `fi2-validation-prep-66ed2c` | `claude/fi2-validation-prep-66ed2c` | 0 | 可清（#165(b) 已取证：其内容是被 master 超越的陈旧副本） |
+| B3 | `fi2-validation-prep-66ed2c` | `claude/fi2-validation-prep-66ed2c` | 0 | 可清（#165(b) 已取证：其内容是被 master 超越的陈旧副本）🔴 **本行 08-02 已更新，务必读下方 B3 补注——本表"0 未提交改动"已过时** |
 | B4 | `dreamy-ramanujan-35e2e8` | `claude/fi2-web-service-16da2a` | 0 | 可清 · **需先跑 `status --porcelain`** |
 | B5 | `loving-mestorf-98749e` | `claude/notify-gap-batch-7f93ba` | 0 | ⚠️ **取证期间分支刚变过，疑为活动中**，执行前二次确认；有内容即跳过 |
 | B6 | `musing-pascal-68d14e` | `claude/four-services-temp-auth-3c6bd5` | 0 | 可清 · **需先跑 `status --porcelain`** |
 | B7 | `qd-b-grayscale-improvements-9dbe6f` | `claude/qd-b-grayscale-improvements-9dbe6f` | 0 | 可清 · **需先跑 `status --porcelain`** |
+
+> ### 🔴 B3 补注（2026-08-02 Cowork 只读取证追加，**执行 B3 前必读，否则会按规则误跳过**）
+>
+> **本表 07-31 快照记 B3 "0 未提交改动"，08-02 实测已不成立：它有 1 个脏文件** —— ` M 1-转型规划/0-全景路线图/跨桌任务队列.md`（mtime 2026-07-23 19:52）。
+> **按上方"① 先查未提交改动——有输出即停手，不删"的硬规则，CC 会直接跳过 B3** —— 而 **B3 正是 #207 唯一未处置的那 1/5**（CC 2026-08-02 处置其余 4 个时刻意搁置它，理由是"#165 已对这个具体 worktree 给出结论并备好清单，处置权已移交"）。**若这里再跳过一次，#207 将永远停在 4/5。**
+>
+> **✅ 那份脏文件已核实：是过时残留，不是丢失内容，可安全丢弃。** 其内容为队列 #79「分支不一致已收口」，**早已通过另一路径进入 master**——现见 `1-转型规划/0-全景路线图/跨桌任务队列.md` L37、`6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md` L96、`1-转型规划/0-全景路线图/环境体检-2026-07-30-第0期基线.md` L62 三处；那封姚祖怡的信也确实已删且 README「已删除记录」有留痕。
+>
+> **⚠️ 但仍请自行复核一次再丢**（守 #101① "脏文件命中 §二 即禁 `checkout --`" 的精神）——本结论由 Cowork 只读取证得出，**你有条件做得更硬**（如 `git diff` 逐行比对该脏文件与 master 现状）。
+>
+> **另附 B3 的滞后深度（说明为什么它值得清）**：落后 master **338 提交**（五个 worktree 里最深），其 `CLAUDE.md` 仅 30761B（master 43632B，**缺约 13KB 纪律**，含「改本机工具链＝CC」「时间戳必判 UTC」「判重启只认 ID=27」三条会直接导致误判的硬规则）。
+>
+> **验收**：处置结论（删除／保留）+ 脏文件复核留痕；**处置完须回填队列 #207，把它从"4/5 部分完成"改为闭合**。
 
 **执行方式（B2–B7，逐个，四步不可跳）**：
 
