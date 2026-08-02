@@ -91,6 +91,24 @@ title: "Session 接力（滚动·最新）—— 全景规划实现"
 
 ⚠️ **一处刻意不联想**：v6.2.0 修的 worktree cleanup 静默 no-op 是 provenance 路径重算问题，**与我们 #125／#165／#207 的 `Permission denied`（句柄占用）不同源**——形态像但成因不同，已在派单件里写明"别过度联想"。
 
+### 九、#206 交付复核与 ff 合并（CC 完成后）
+
+**🔴 合并前本线主动暂停了全部写动作。** CC 的两个提交里**包含队列 #206 回填与 CLAUDE.md 更新**，都还在分支上；**master 只要前进一格，ff-only 即失效**（本项目合并策略就是 ff-only）。我实测 `origin/master...分支 = 0/2`、`merge-base = 当刻 master`、**可 ff = True**——**我原本怀疑 master 上已有 `config.yaml` 会冲突，实测把我自己的怀疑证伪了。**
+
+**✅ 合并后复核（只读，不采信 CC 自述）**：`origin/master` = **`17fccab`**，`merge-base --is-ancestor` 通过，归档目录 `openspec/changes/archive/2026-08-02-openspec-config-proposal-rules/` 已在远端 master 上，主工作区已 ff 同步 `0/0`、脏文件 0。
+
+**🔴 一处前提被证伪（不改结论，但必须记）**：#206 派单件与队列行都写着"本库 `openspec/` 下**从来没有** `config.yaml`，这正是根因土壤"——**实测该文件早在五行同批的 `5601c0e` 就已进 master**（`git log -- openspec/config.yaml` 唯一历史提交即它，很可能是那次**路径事故**期间在主工作区跑 openspec 命令顺带生成、随批次提交）。故 #206 实为**在已有文件上追加 `rules.proposal`**（+18 行 0 删除），**不是新建**。**根因判断不变**，但那句话不再成立。
+
+**⚠️ CC 收工总结的 worktree 清单与实测不符**：它写"3 个长驻 worktree＝`musing-pascal` / `qd-b-grayscale-improvements-9dbe6f` / `wecom-service-home`"——**列了一个已不存在的**（`qd-b-grayscale` 早已是 0 文件空壳、不在 `worktree list`），**漏了一个自己刚建且未清理的**（`openspec-config-proposal-rules-f452d3`，997 文件、仍注册）。**沿用旧快照未复核，非事故**，已记入 #98 以免下期体检据其推理。
+
+**🔎 一个让我下调自己此前假说的观察**：`musing-pascal-68d14e` 今日**第三次换身份**（早 `claude/queue-numbering-…` → 20:00 detached → 合并后 `claude/sweep-aibot-mechanism-batch-10360b`）。**三次变化更像 Claude Code 复用 worktree 目录并重新绑定分支的常规行为，而非某次误操作**——我此前登记的 (甲) 误操作假说**可信度下降**。据此调整 #98 首期体检的判读口径：**"目录名与分支不符"不再当异常信号**（#166 口径本就是"身份以当刻实测为准"），真正该看的是**空壳数**与**未清理的完工 worktree**。
+
+**新增两行（按分线边界拆开，`--reserve 2 --section 一` 取号）**：
+- **#209（本线，P3）** `spec/platform-oem-isolation` 缺 SHALL/MUST 致 `validate --strict` 失败。**本行真正的价值不在缺陷本身，而在它差点丢掉的方式**——CC 用 harness 的 `spawn_task` 挂了张内部任务卡，**任务卡不进队列、不进对账审计、不进巡检**，无人转录就彻底活在队列之外。**同族病换了个载体（从日志/暂存文件换成 harness UI）。** 已按他的默认项：**不点那张卡，走队列。**
+- **#210（业务总线派发，P3）** 另两个失败是**业务场景变更包**（`qd-b-project-gate-review` / `sc8-real-data-cutover`），按分线边界不归本线；**本行如实写明"只跑了汇总、未展开逐项取证"。**
+
+> 实测汇总：`openspec validate --all --strict` **退出码 1，40 passed / 3 failed（43 items）**——**比 CC 说的一个多两个。**
+
 ---
 
 ## 【2026-08-02（Cowork · 环境保障线）】Antigravity 工作流机制报告 triage —— 4 条缺陷零新增，驳回两项，采纳一项小增量，升一项决策
