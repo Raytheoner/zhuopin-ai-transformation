@@ -7,17 +7,20 @@ from __future__ import annotations
 
 import pytest
 
-from sc8.loaders import MVP_ITEM_PREFIXES, parse_forecast_order_rows
+from sc8.loaders import FO_LINE_STATUS_CLOSED, MVP_ITEM_PREFIXES, parse_forecast_order_rows
 from sc8.models import ForecastOrder
 
 
 def _row(doc="FO2026060001", code="F02N.0184", name="EQ40S", num=1000,
-         ship="2026-06-15", cust="安徽某客户"):
+         ship="2026-06-15", cust="安徽某客户", line_status=None):
     # 字段名对齐 IT 正式库接口 ForecastOrderLineDTO（PascalCase）
-    return {
+    row = {
         "DocNo": doc, "ItemCode": code, "ItemName": name,
         "Num": num, "ShipPlanDate": ship, "CustomerName": cust,
     }
+    if line_status is not None:
+        row["LineStatus"] = line_status
+    return row
 
 
 def test_parse_valid_row_maps_to_forecast_order():
@@ -66,3 +69,35 @@ def test_missing_item_code_rejected_when_validate():
 def test_num_coerced_from_string():
     fos = parse_forecast_order_rows([_row(num="500.0")])
     assert fos[0].qty == 500
+
+
+# ── 行级关闭过滤（队列 #173，#19 根治，IT 2026-07-30 补齐 LineStatus 字段）────────
+
+def test_line_status_closed_excluded_when_validate():
+    """LineStatus=3（关闭）在 validate=True 路径下被剔除——真实案例 FO2026070001
+    行60 S02Y.0120/行230 S02Y.0166 均为此态。"""
+    rows = [_row(code="S02Y.0120", line_status=3), _row(code="S02Y.0166", line_status=3),
+            _row(code="S02Y.0035", line_status=2)]
+    fos = parse_forecast_order_rows(rows, validate=True)
+    kept = {f.item_code for f in fos}
+    assert kept == {"S02Y.0035"}
+
+
+def test_line_status_closed_excluded_when_not_validate():
+    """LineStatus=3 在 validate=False（快速路径）下同样被剔除。"""
+    rows = [_row(code="S02Y.0120", line_status=3), _row(code="S02Y.0035", line_status=2)]
+    fos = parse_forecast_order_rows(rows, validate=False)
+    assert {f.item_code for f in fos} == {"S02Y.0035"}
+
+
+def test_line_status_missing_defaults_to_kept():
+    """LineStatus 缺失（旧样本/mock 未提供该字段）视为核准，向后兼容不误伤。"""
+    fos = parse_forecast_order_rows([_row(code="F02N.0001")], validate=True)
+    assert len(fos) == 1
+    fos2 = parse_forecast_order_rows([_row(code="F02N.0001")], validate=False)
+    assert len(fos2) == 1
+
+
+def test_fo_line_status_closed_constant_matches_it_semantics():
+    """IT 陈承 2026-07-30 回件：LineStatus 2=核准，3=关闭。"""
+    assert FO_LINE_STATUS_CLOSED == 3

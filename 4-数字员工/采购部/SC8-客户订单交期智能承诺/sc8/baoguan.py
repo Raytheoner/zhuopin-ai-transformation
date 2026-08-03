@@ -398,6 +398,13 @@ def _component_supply_status(
     纳入返回列表**（#151，姚祖怡 07-26 V6 回件原文签认"缺口数量如≤0，则该行视为
     满足齐套需求，不应该体现在缺料子件中"）——纯展示层过滤，不改变 mat/gross 等
     计算输入，不影响 component_count/kittable_qty 等既有统计口径。
+
+    答交数量/日期累计目标（队列 #211 v2，2026-08-03 姚祖怡权威判定纠正）：累计
+    目标是**缺口数量**（gap_qty），不是本项目需求数量（gross）——"答交数量展示
+    如第一个答交数量小于缺口数量，则继续显示下一个答交数量，直至累计答交数量
+    满足缺口数量为止"（姚祖怡原话）。此前 `_cumulative_confirmed_batches` 一直
+    以 `gross` 为累计目标，净额开关关闭/无 inventory 时无 gap_qty 可用，仍按
+    gross 累计（向后兼容，零漂移）。
     """
     nf_set = set(mat.no_feedback_materials)
     out: list[ComponentSupplyStatus] = []
@@ -412,10 +419,6 @@ def _component_supply_status(
             status = STATUS_CONFIRMED_NO_TRANSIT
         else:
             status = STATUS_NO_TRANSIT
-        batches: tuple[tuple[date, float], ...] = ()
-        if confirmed and material_commitments:
-            batches = _cumulative_confirmed_batches(
-                material_commitments.get(m, []), gross.get(m, 0.0))
         need = gross.get(m, 0.0)
         available_qty: float | None = None
         gap_qty: float | None = None
@@ -424,6 +427,11 @@ def _component_supply_status(
             gap_qty = need - available_qty
             if gap_qty <= 0:
                 continue   # #151：缺口≤0 不进 BOM 缺口物料清单（展示层过滤）
+        batches: tuple[tuple[date, float], ...] = ()
+        if confirmed and material_commitments:
+            target_qty = gap_qty if gap_qty is not None else need
+            batches = _cumulative_confirmed_batches(
+                material_commitments.get(m, []), target_qty)
         out.append(ComponentSupplyStatus(
             component_id=m, component_name=names.get(m, ""),
             qty_needed=need, status=status,
@@ -858,11 +866,18 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);fon
 .cst-table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed}
 .cst-table th,.cst-table td{padding:5px 6px;text-align:left;vertical-align:top;font-size:12px;border-bottom:1px solid var(--border);word-break:break-word;white-space:normal}
 .cst-table th{color:var(--text2);font-weight:500;white-space:nowrap}
-.cst-tag{font-size:11px;padding:1px 7px;border-radius:6px;white-space:nowrap;display:inline-block}
+/* 队列 #212（姚祖怡 07-31 补充问题1）：cst-tag 此前强制 white-space:nowrap，
+   confirmed_no_transit 状态文案（含"（异常，如实展示）"注释）明显长于其余三态，
+   在 table-layout:fixed 的窄列（状态列约占表宽 1/8）里溢出、视觉上盖住右侧
+   "可用现货数量"列内容——这正是他红圈标出"看不清楚"的两个字段。改为允许换行
+   （继承 .cst-table td 既有的 white-space:normal/word-break），并把注释性文字
+   拆到独立的 .cst-tag-note 行单独展示，不再挤进同一个不可换行的徽标里。 */
+.cst-tag{font-size:11px;padding:1px 7px;border-radius:6px;white-space:normal;display:inline-block;max-width:100%}
 .cst-tag.no{background:var(--danger-bg);color:var(--danger)}
 .cst-tag.un{background:var(--gap-bg);color:var(--gap)}
 .cst-tag.co{background:var(--ok-bg);color:var(--ok)}
 .cst-tag.cn{background:var(--warn-bg);color:var(--warn)}
+.cst-tag-note{font-size:11px;color:var(--text3);margin-top:2px}
 </style>"""
 
 # 纯前端交互逻辑（raw 字符串：\n/﻿ 等保持 JS 字面量；__DATA__/__META__ 由 render_html 注入）。
@@ -878,7 +893,11 @@ const CLS={red:'danger',gap:'gapc',yel:'warn',grn:'ok'};
 // （无未交订单无答交/无未交订单有答交/有未交订单已答交/有未交订单无答交），均由既有
 // STATUS_* 字段派生，不改判定本身，仅重述文案。
 const CST_LABEL={no_transit:'无未交订单无答交',transit_unconfirmed:'有未交订单无答交',
-  transit_confirmed:'有未交订单已答交',confirmed_no_transit:'无未交订单有答交（异常，如实展示）'};
+  transit_confirmed:'有未交订单已答交',confirmed_no_transit:'无未交订单有答交'};
+// 队列 #212：解释性注释（"数据口径不一致，如实展示不隐藏"）此前挤在 CST_LABEL 徽标
+// 文本里，是长文案在窄列溢出的直接原因——拆成独立小字注释（cst-tag-note），徽标本身
+// 与其余三态保持同等长度。
+const CST_NOTE={confirmed_no_transit:'异常，如实展示'};
 const CST_CLS={no_transit:'no',transit_unconfirmed:'un',transit_confirmed:'co',confirmed_no_transit:'cn'};
 // 分页（②，功能批1）：10/50/100/200 行/页，初始 10 条/页（姚祖怡判据说明V2答复1明确要求）
 var state={f:'all',q:'',sort:'gap',page:1,pageSize:10};
@@ -938,11 +957,13 @@ function componentStatusHtml(r){
  if(!r.cst||!r.cst.length)return'';
  var rows=r.cst.map(function(s){
   var label=CST_LABEL[s.st]||s.st;
+  var note=CST_NOTE[s.st];
   var tagCls=CST_CLS[s.st]||'no';
   var avail=s.aq==null?'—':fmt(s.aq);
   var gapq=s.gq==null?'—':fmt(s.gq);
   return '<tr><td class="mono">'+esc(s.id)+'</td><td>'+(s.name?esc(s.name):'—')+'</td>'
-    +'<td><span class="cst-tag '+tagCls+'">'+label+'</span></td>'
+    +'<td><span class="cst-tag '+tagCls+'">'+label+'</span>'
+    +(note?'<div class="cst-tag-note">'+esc(note)+'</div>':'')+'</td>'
     +'<td>'+avail+'</td><td>'+fmt(s.qty)+'</td><td>'+gapq+'</td>'
     +'<td>'+answerQtyText(s)+'</td><td>'+answerDateText(s)+'</td></tr>';
  }).join('');
@@ -1063,8 +1084,9 @@ function exportExcel(){
    // 卡片视图 answerQtyText/answerDateText 同源、同一"无数据显示无/—"约定）。
    var avail=s.aq==null?'':s.aq;
    var gapq=s.gq==null?'':s.gq;
+   var stLabel=(CST_LABEL[s.st]||s.st)+(CST_NOTE[s.st]?'（'+CST_NOTE[s.st]+'）':'');
    var sub=['','','','','','','','','','','',
-     s.id, s.name, CST_LABEL[s.st]||s.st, avail, s.qty, gapq, s.tq, answerQtyText(s), answerDateText(s)];
+     s.id, s.name, stLabel, avail, s.qty, gapq, s.tq, answerQtyText(s), answerDateText(s)];
    tbody+='<tr>'+sub.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';
   });
  });

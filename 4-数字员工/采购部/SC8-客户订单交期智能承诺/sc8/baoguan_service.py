@@ -32,8 +32,9 @@ class Snapshot:
     rows:         list[dict] = field(default_factory=list)   # row_to_dict 序列化的成品行
     counts:       dict = field(default_factory=dict)         # {"red","gap","yel","grn"}
     status:       str | None = None         # FO 状态过滤口径（"2"=已审核 / None=全部；
-                                            # ⚠️ 该字段是单据头状态，不反映行级"关闭"，
-                                            # 见 sources.load_real_orders docstring）
+                                            # 该字段是单据头状态，不反映行级"关闭"——
+                                            # 行级关闭另由 loaders.parse_forecast_order_rows
+                                            # 按 LineStatus 过滤，见队列 #173）
     param_version: str = ""
     components:   int = 0                   # 直接子件总数
     srm_hit:      int = 0                   # 携客云承诺命中子件数
@@ -61,8 +62,9 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
                      srm_ttl_sec: int = 0) -> Snapshot:
     """进程内重算保供看板：FO + U9C BOM + 携客云承诺（分层）→ build_dashboard → Snapshot。
 
-    status：FO 状态过滤（"2"=已审核；None=不过滤）。⚠️ 不剔除行级"关闭"（接口无该
-    字段，见 sources.load_real_orders docstring 与队列 #139 ①）。
+    status：FO 状态过滤（"2"=已审核；None=不过滤），单据头口径。行级"关闭"由
+    `load_real_orders`→`load_forecast_orders_from_api` 内部按 LineStatus 过滤，
+    本参数与之独立、无需调用方额外处理（队列 #173，#19 根治）。
     audit / trace：平台 AuditLogger / ConnectorAudit，缺省 None（生产应注入）。
     cache_dir/srm_ttl_sec：firm 承诺交期缓存（提速立即重算）。给定时把
         cache_dir/srm_answer_cache.json + ttl 传入 load_srm_deliveries；

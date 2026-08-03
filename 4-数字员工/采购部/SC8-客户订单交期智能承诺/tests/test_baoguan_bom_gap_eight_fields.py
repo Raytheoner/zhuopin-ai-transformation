@@ -74,6 +74,24 @@ def test_component_supply_status_gap_filter_does_not_mutate_gross_input():
     assert gross == {"A": 100.0}   # 调用前后原样不变
 
 
+def test_confirmed_batches_accumulate_to_gap_qty_not_gross_need(monkeypatch):
+    """队列 #211 v2（姚祖怡 07-31 权威判定纠正）：答交数量累计目标是**缺口数量**，
+    不是本项目需求数量——需求900、现货784→缺口116，答交明细 100+50=150>116，
+    累计应在 100（<116，继续）→+50=150（≥116，止）后停止，不应继续累加到覆盖 900。"""
+    mat = MaterialArrivals(arrivals={"A": date(2026, 8, 20)}, no_feedback_materials=[],
+                           bottleneck_material="A", has_bom=True)
+    out = _component_supply_status(
+        mat, gross={"A": 900.0}, names={"A": "电容"},
+        purchase_orders={"A": 0.0}, inventory={"A": 784.0},
+        material_commitments={"A": [(date(2026, 8, 25), 100.0), (date(2026, 9, 5), 50.0),
+                                    (date(2026, 10, 1), 800.0)]})
+    assert len(out) == 1
+    s = out[0]
+    assert s.gap_qty == 116.0
+    # 累计到 150（100+50）已 ≥116（缺口），第三条 800 不应被纳入
+    assert s.confirmed_batches == ((date(2026, 8, 25), 100.0), (date(2026, 9, 5), 50.0))
+
+
 def test_component_supply_status_available_and_gap_none_without_inventory():
     """inventory 缺省（净额开关关/无库存数据）→ available_qty/gap_qty 恒为 None，不做
     任何过滤（零漂移，与既有 kittable_qty 等字段"不以 0 冒充"同一约定）。"""
@@ -132,6 +150,24 @@ def test_render_html_bom_gap_list_is_a_real_table_with_eight_columns():
     for header in ("料号", "品名", "状态", "可用现货数量", "本项目需求数量",
                    "缺口数量", "答交数量", "答交日期"):
         assert header in html
+
+
+def test_confirmed_no_transit_tag_and_note_rendered_separately():
+    """队列 #212（姚祖怡 07-31 补充问题1）：confirmed_no_transit 状态徽标（cst-tag）与
+    其解释性注释（"异常，如实展示"）此前挤在同一个 white-space:nowrap 徽标里，在
+    table-layout:fixed 窄列中溢出、盖住右侧"可用现货数量"列——改为徽标与注释各自
+    独立元素，徽标本身长度与其余三态一致，不再依赖 nowrap 强制单行。"""
+    so = _so(item="S1", qty=100)
+    bom = [_row("S1", "A", name="电容")]
+    # 有 SRM 承诺（confirmed=True）但查无在途 PO（purchase_orders 不含该料号）→
+    # STATUS_CONFIRMED_NO_TRANSIT 边界态。
+    rows = [assess_supply_risk(so, bom, [_srm("A", "2026-08-20")], today=TODAY,
+                               purchase_orders={})]
+    html = render_html(rows, today=TODAY)
+    assert "cst-tag-note" in html
+    assert "white-space:nowrap" not in html.split(".cst-tag{")[1].split("}")[0]
+    # 徽标本身不再内嵌注释文字（注释已拆到独立的 CST_NOTE/cst-tag-note）
+    assert "confirmed_no_transit:'无未交订单有答交（异常，如实展示）'" not in html
 
 
 def test_answer_qty_and_date_show_none_instead_of_falling_back_to_stale_po_answer():

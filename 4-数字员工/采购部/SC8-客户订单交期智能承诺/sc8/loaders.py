@@ -48,6 +48,11 @@ class _FoApiRow(BaseModel):
 
     缺 DocNo / ItemCode / ShipPlanDate 或类型不符 → ValidationError，脏数据不进下游。
     字段名对齐 IT 正式库接口 ForecastOrderLineDTO（PascalCase，无 `ItemInfo_` 前缀）。
+
+    LineStatus（队列 #173，#19 根治，IT 陈承 2026-07-30 回件补齐字段）：取自
+    `SM_ForecastOrderLine.Status`，2=核准／3=关闭。此前 `status` 参数只能过滤到
+    单据头审核状态（恒为 2，见 `load_forecast_orders_from_api` 旧注释），本字段是
+    真正的行级关闭状态；`_Opt[int]=None` 保持向后兼容（缺字段的旧样本/mock 不受影响）。
     """
     DocNo:         str
     ItemCode:      str
@@ -55,6 +60,7 @@ class _FoApiRow(BaseModel):
     Num:           _Opt[float] = 0
     ShipPlanDate:  str
     CustomerName:  _Opt[str] = ""
+    LineStatus:    _Opt[int] = None
 
     @field_validator("DocNo", "ItemCode", "ShipPlanDate", mode="before")
     @classmethod
@@ -72,10 +78,19 @@ class _FoApiRow(BaseModel):
             return 0.0
 
 
+# 行级关闭状态（队列 #173，#19 根治）：SM_ForecastOrderLine.Status==3 → 该行已关闭，
+# 不应再作为在办需求参与保供计算。LineStatus 缺失（None，旧样本/mock 未提供该字段）
+# 视为核准，保持向后兼容——不因新字段缺失而误伤既有行为。
+FO_LINE_STATUS_CLOSED = 3
+
+
 def parse_forecast_order_rows(rows: list[dict], *, validate: bool = True) -> list[ForecastOrder]:
     """把 FO API 返回的原始行解析为 ForecastOrder（与网络分离，便于测试）。
 
     - 按 MVP 料号前缀（F/S/Y/X）过滤，跳过原材料/非生产物料。
+    - 按行级 LineStatus 过滤已关闭行（队列 #173，#19 根治，见 `FO_LINE_STATUS_CLOSED`）——
+      此前"只取核准状态 FO"诉求因接口无行级字段无法实现（`status` 参数只能过滤到单据头，
+      恒为 2），IT 2026-07-30 已补齐 `LineStatus` 字段，本函数据此剔除行级已关闭的需求行。
     - validate=True 时走 Pydantic 边界校验，脏数据/缺字段显式报错。
     - customer_id 缺省为空：FO API 仅返回 Customer_Name（隔离键见 config.customer_isolation_key）。
     """
@@ -83,15 +98,19 @@ def parse_forecast_order_rows(rows: list[dict], *, validate: bool = True) -> lis
     for raw in rows:
         if validate:
             # 先校验（缺 DocNo/ItemCode/ShipPlanDate 或类型不符 → 显式报错挡脏数据），
-            # 再按校验后的料号前缀过滤（原材料等非 MVP 料号静默跳过）。
+            # 再按校验后的料号前缀/行级状态过滤（原材料/已关闭行静默跳过）。
             row = _FoApiRow.model_validate(raw)
             code = row.ItemCode
             if code[:1].upper() not in MVP_ITEM_PREFIXES:
+                continue
+            if row.LineStatus == FO_LINE_STATUS_CLOSED:
                 continue
             doc_no, name, num, ship = row.DocNo, row.ItemName or "", row.Num or 0, row.ShipPlanDate
         else:
             code = str(raw.get("ItemCode") or "").strip()
             if not code or code[:1].upper() not in MVP_ITEM_PREFIXES:
+                continue
+            if raw.get("LineStatus") == FO_LINE_STATUS_CLOSED:
                 continue
             doc_no = str(raw.get("DocNo") or "").strip()
             name, num = str(raw.get("ItemName") or "").strip(), raw.get("Num") or 0

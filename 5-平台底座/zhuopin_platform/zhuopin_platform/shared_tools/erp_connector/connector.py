@@ -49,6 +49,7 @@ from ..models import (
 class _ZpPurOrderRow(BaseModel):
     """zp API ZpViewPurOrder 行（Pydantic 边界校验）。"""
     erpNo:    _Opt[str] = None
+    erpLineNo: _Opt[int] = None   # 行号，供跨端点 JOIN Purchase/Query 的 DocLineNo（队列 #173）
     itemCode: str                 # 必填；None → 抛 ValidationError
     qty:      _Opt[float] = 0
     rcvQtyTU: _Opt[float] = 0
@@ -445,6 +446,7 @@ class ZpConnector(DataConnector):
                 supplier_confirmed_date=expected_date,
                 supplier_id=            validated.supplyCode or "",
                 status=                 status,
+                line_no=                str(validated.erpLineNo) if validated.erpLineNo is not None else "",
             ))
 
         self._overlay_srm_confirmed_dates(result)
@@ -612,6 +614,37 @@ class ZpConnector(DataConnector):
     def get_purchase_lines(self, doc_no: str) -> list[dict]:
         """采购订单明细行（真实源，design D15）——GET `/zp/api/Purchase/Query`。"""
         return self._fi_query("/zp/api/Purchase/Query", doc_no)
+
+    def get_purchase_line_status(self, item_codes: list[str]) -> dict[tuple[str, str], int]:
+        """按料号批量查询采购订单行级关闭状态（队列 #173，#139④ 根治，2026-08-03）。
+
+        `ZpViewPurOrder/Query`（`get_purchase_orders` 用的端点）不带行级状态字段
+        （2026-08-03 真实探测确认，27,641 行 0 命中 `LineStatus`）；行级状态实际
+        暴露在 `Purchase/Query`（与 `get_purchase_lines` 同一端点，IT 2026-07-30
+        已补齐 `LineStatus` 字段，取自 `PM_POLine.Status`：0=开立/1=审核中/
+        2=已审核未交清/3=自然关闭/4=短缺关闭/5=超额关闭）。复用该端点已支持的
+        `itemCode` 批量过滤路径（与 `AP/Query` 的 supplierCode/itemCode 分页取数
+        同源，design D16/队列 #61）——按料号逐个查询（服务端每次只接受一个
+        itemCode 过滤值，不支持"多料号一次查全部"），返回
+        `{(DocNo, str(DocLineNo)): LineStatus}`，供 `sc8.sources.load_purchase_orders_by_material`
+        按 `(po_id, line_no)` 与 `ZpViewPurOrder` 数据 JOIN，剔除已关闭行——不受其
+        数量口径（`qty_ordered` vs `qty_received`）误判"仍在途"影响（真实案例：
+        短缺关闭/超额关闭的行 `qty_received` 常年小于/大于 `qty_ordered`，纯数量
+        启发式会一直误判为"partial"/"in_transit"）。
+
+        real fail-loud：任一料号查询异常原样上抛，与 `get_purchase_orders` 同一
+        约定，由调用方（`load_purchase_orders_by_material`）决定是否降级。
+        """
+        out: dict[tuple[str, str], int] = {}
+        for code in item_codes:
+            rows = self._fi_query_paginated("/zp/api/Purchase/Query", {"itemCode": code})
+            for r in rows:
+                doc_no = str(r.get("DocNo") or "")
+                line_no = str(r.get("DocLineNo") or "")
+                status = r.get("LineStatus")
+                if doc_no and line_no and status is not None:
+                    out[(doc_no, line_no)] = int(status)
+        return out
 
     def get_gr_lines(self, doc_no: str) -> list[dict]:
         """收货单明细行（真实源，design D15）——GET `/zp/api/GR/Query`。"""

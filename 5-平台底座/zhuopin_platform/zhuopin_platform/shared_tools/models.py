@@ -46,6 +46,10 @@ class PurchaseOrder:
     supplier_confirmed_date: str
     supplier_id: str
     status: str  # placed | in_transit | partial | received
+    # 行号（队列 #173，#139④ 根治，2026-08-03）：来自 ZpViewPurOrder.erpLineNo，
+    # 与 Purchase/Query 的 DocLineNo 一一对应，供跨端点按行 JOIN 行级关闭状态
+    # （LineStatus）。缺省空串保持向后兼容（旧 mock/CSV 夹具不受影响）。
+    line_no: str = ""
 
 
 @dataclass

@@ -10,8 +10,10 @@ from datetime import date
 from sc8.sources import _extract_board_commitments, load_material_commitments
 
 
-def _rec(material: str, vendor: str, items: list[dict]) -> dict:
-    return {"productCode": material, "innerVendorCode": vendor, "itemList": items}
+def _rec(material: str, vendor: str, items: list[dict], *, receive_type: int = 2) -> dict:
+    """默认 receiveType=2（按排程交货，队列 #211 v2 权威口径）。"""
+    return {"productCode": material, "innerVendorCode": vendor, "itemList": items,
+            "receiveType": receive_type}
 
 
 def _item(board_date: str, answer_qty: int, *, cancel_flag=None) -> dict:
@@ -59,6 +61,23 @@ def test_materials_filter_bounds_result():
              _rec("M2", "V1", [_item("2026-07-01", 20)])]
     result = _extract_board_commitments(board, materials={"M1"})
     assert list(result.keys()) == ["M1"]
+
+
+def test_order_based_delivery_excluded(): # 队列 #211 v2：receiveType=1（按订单交货）不得计入
+    board = [_rec("M1", "V1", [_item("2026-07-01", 30)], receive_type=1)]
+    result = _extract_board_commitments(board, materials=None)
+    assert "M1" not in result
+
+
+def test_scheduled_and_order_based_mixed_only_scheduled_counted():
+    """同料号同时存在按排程交货与按订单交货两条记录（姚祖怡 07-31 举证的真实拓扑），
+    只有 receiveType=2（按排程交货）参与累加。"""
+    board = [
+        _rec("M1", "V1", [_item("2026-08-07", 500)], receive_type=1),   # 按订单交货，错误来源
+        _rec("M1", "V2", [_item("2026-12-25", 14000)], receive_type=2),  # 按排程交货，权威来源
+    ]
+    result = _extract_board_commitments(board, materials=None)
+    assert result["M1"] == [(date(2026, 12, 25), 14000.0)]
 
 
 def test_load_material_commitments_mock_mode_returns_empty():

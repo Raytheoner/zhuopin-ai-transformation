@@ -163,6 +163,60 @@ def test_get_ap_lines_by_supplier_url_contains_filter_no_docno(tmp_path, monkeyp
     assert "page=1" in captured["url"] and "pageSize=" in captured["url"]
 
 
+# ── 采购订单行级关闭状态（队列 #173，#139④ 根治，2026-08-03）─────────────────
+
+def test_get_purchase_line_status_builds_status_map(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    body = json.dumps({"Success": True, "Data": {"Total": 2, "Rows": [
+        {"DocNo": "ZPCG1", "DocLineNo": 10, "LineStatus": 2, "ItemCode": "R01D.0006"},
+        {"DocNo": "ZPCG2", "DocLineNo": 210, "LineStatus": 4, "ItemCode": "R01D.0006"},
+    ]}}).encode()
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+
+    result = conn.get_purchase_line_status(["R01D.0006"])
+    assert result == {("ZPCG1", "10"): 2, ("ZPCG2", "210"): 4}
+
+
+def test_get_purchase_line_status_queries_each_item_code(tmp_path, monkeypatch):
+    """服务端每次只接受一个 itemCode 过滤值，多料号逐个查询。"""
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    seen_item_codes = []
+
+    def _fake_urlopen(req, timeout=None, context=None):
+        qs = dict(x.split("=") for x in req.full_url.split("?", 1)[1].split("&"))
+        code = qs["itemCode"]
+        seen_item_codes.append(code)
+        row = {"DocNo": f"PO-{code}", "DocLineNo": 10, "LineStatus": 2, "ItemCode": code}
+        body = json.dumps({"Success": True, "Data": {"Total": 1, "Rows": [row]}}).encode()
+        return _Resp(body)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    result = conn.get_purchase_line_status(["A", "B"])
+    assert seen_item_codes == ["A", "B"]
+    assert result == {("PO-A", "10"): 2, ("PO-B", "10"): 2}
+
+
+def test_get_purchase_line_status_skips_rows_missing_key_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    body = json.dumps({"Success": True, "Data": {"Total": 2, "Rows": [
+        {"DocNo": "", "DocLineNo": 10, "LineStatus": 2},          # 缺 DocNo
+        {"DocNo": "ZPCG1", "DocLineNo": 10, "LineStatus": None},  # 缺 LineStatus
+    ]}}).encode()
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+    assert conn.get_purchase_line_status(["A"]) == {}
+
+
+def test_get_purchase_line_status_empty_item_codes_returns_empty(tmp_path):
+    conn = _make_conn(tmp_path)
+    assert conn.get_purchase_line_status([]) == {}
+
+
 # ── 期间/余额窄化参数（design D17，队列 #70 追加，2026-07-22）──────────────
 
 def test_get_ap_lines_by_supplier_period_params_in_url(tmp_path, monkeypatch):

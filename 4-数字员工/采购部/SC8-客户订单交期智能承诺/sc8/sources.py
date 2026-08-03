@@ -32,17 +32,16 @@ def load_real_orders(*, api_base: str | None = None,
                      date_to: str | None = None) -> list[SalesOrder]:
     """从 FO API 拉真实预测订单 → SalesOrder（计划出货日作 required_date）。
 
-    status：接口状态过滤（"2"=已审核；None=不过滤）。
-    ⚠️ **已知缺口，未解决（队列 #139 ①，2026-07-28 真实探测证实，未实现）**：
-    姚祖怡诉求"只取 ERP 里状态=核准的预测订单，剔除已关闭的"——探测发现 `status`
-    过滤的判据是**单据头**审核状态，恒为 2（全量样本 100%），与 U9C 预测订单
-    UI 上**行级**"状态"列（可独立为"核准"或"关闭"，如实测 `FO2026070001`
-    行60 `S02Y.0120`/行230 `S02Y.0166` UI 均显示"关闭"）是两回事——`status=2`
-    过滤对行级关闭**完全没有过滤效果**，本函数当前**无法**实现姚祖怡的诉求。
-    根因：`/zp/api/ForecastOrder/Query` 响应体没有行级状态字段（只有单据头
-    `Status`，逐行同值广播）。需 IT 在该接口补一个行级"关闭/核准"状态字段，
-    或提供等价查询能力，才能真正实现——不是本函数的过滤逻辑写错，是接口
-    没有可用字段。**不要凭旧假设"传 status=2 即可剔除关闭"，已被证伪。**
+    status：接口状态过滤（"2"=已审核；None=不过滤）——**这是单据头审核状态，恒为 2**
+    （全量样本 100%，2026-07-28 真实探测证实），与"只取核准状态 FO"的行级关闭诉求
+    是两回事，本参数对行级关闭**没有过滤效果**（历史遗留，保留仅为向后兼容既有调用）。
+
+    ✅ **行级关闭过滤已实现（队列 #173，#19 根治，2026-08-03）**：`load_forecast_orders_from_api`
+    → `parse_forecast_order_rows` 现按行级 `LineStatus` 剔除已关闭行（IT 2026-07-30 已在
+    `/zp/api/ForecastOrder/Query` 补齐该字段，取自 `SM_ForecastOrderLine.Status`，
+    2=核准/3=关闭；已用真实单号 `FO2026070001` 行60 `S02Y.0120`/行230 `S02Y.0166`
+    验证 `LineStatus=3` 与 U9C 界面"关闭"一致）——姚祖怡"只取核准状态 FO"的诉求已解锁，
+    本函数无需额外改动即自动生效（过滤发生在 `load_forecast_orders_from_api` 内部）。
     date_from/date_to：按 ShipPlanDate 区间过滤（None=不限）。
     limit：小样本验证时只取前 N 条（按订单行，不放量）。
     FO 不可达时：先发内部运维告警（audit + 企微内部群，见 fo_health），**再 re-raise**——
@@ -141,6 +140,17 @@ def _extract_board_po_map(board: list, materials: set[str] | None):
     return mat_pairs, mat_board
 
 
+# 交货方式（队列 #211，姚祖怡 07-31 权威判定）：供应计划看板每条 record 自带
+# `receiveType`，2026-08-03 真实探测确认取值语义——
+#   receiveType=2：按排程交货（有 scheduleBatch/排程计划编号，poLineList 恒空）
+#   receiveType=1：按订单交货（挂 poErpNo，无 scheduleBatch）
+# 真实复现 R01B.0754 案例（姚祖怡举证的错误答交 500/2026-08-07）：命中的正是
+# receiveType=1（按订单交货）那条记录；同料号同时存在的 receiveType=2（按排程
+# 交货）记录才是姚祖怡指定的权威口径来源。此前 `_extract_board_commitments`
+# 未按 receiveType 筛选，两种交货方式的记录被一并计入答交数量，是本次偏差主因。
+_RECEIVE_TYPE_SCHEDULED = 2   # 按排程交货（唯一权威口径，姚祖怡 07-31 指定）
+
+
 def _extract_board_commitments(
     board: list, materials: set[str] | None
 ) -> dict[str, list[tuple[date, float]]]:
@@ -151,11 +161,20 @@ def _extract_board_commitments(
     逐笔累加（现状 `load_srm_deliveries` 硬编码 `qty_committed=0`，本函数是
     B2 需要的真实数量数据管线）。`answerQty <= 0`（未答交）不产生记录；
     已作废的排程明细（见 `_is_cancelled_plan`）同样不产生记录。
+
+    交货方式筛选（队列 #211 v2，2026-08-03）：只取 `receiveType==2`（按排程交货），
+    剔除 `receiveType==1`（按订单交货）的记录——姚祖怡权威判定"SRM 交付计划看板-
+    交货方式只能选取『按排程交货』，不要选取『按订单交货』"。**范围仅限本函数**
+    （驱动 `_component_supply_status` 的答交数量/日期⑦⑧展示与 B2 周期匹配展示），
+    不影响 `_extract_board_po_map`/`load_srm_deliveries`（驱动 kit_date/gap_days/
+    四色风险判定的既有口径）——未经授权不改判定逻辑，本次范围只是展示层取数源头。
     """
     out: dict[str, list[tuple[date, float]]] = {}
     for rec in board:
         material = str(rec.get("productCode") or "")
         if not material or (materials is not None and material not in materials):
+            continue
+        if rec.get("receiveType") != _RECEIVE_TYPE_SCHEDULED:
             continue
         for item in (rec.get("itemList") or []):
             if _is_cancelled_plan(item):
@@ -202,6 +221,15 @@ def load_material_commitments(
     return _extract_board_commitments(board, materials)
 
 
+# 采购订单行级关闭状态（队列 #173，#139④ 根治，2026-08-03）：`PM_POLine.Status`
+# 取值（IT 陈承 2026-07-30 回件）——0=开立/1=审核中/2=已审核未交清/3=自然关闭/
+# 4=短缺关闭/5=超额关闭。3/4/5 三态即便数量口径（qty_ordered vs qty_received）
+# 显示"仍有未清量"，ERP 判定上也已是关闭状态，不应再计入"在途"（真实案例：短缺
+# 关闭/超额关闭的行 qty_received 常年不等于 qty_ordered，纯数量启发式会一直误判
+# 为 partial/in_transit）。
+PO_LINE_STATUS_CLOSED = frozenset({3, 4, 5})
+
+
 def load_purchase_orders_by_material(
     materials: set[str] | None = None, *, days: int | None = None, audit=None, connector=None,
 ) -> dict[str, float]:
@@ -215,6 +243,19 @@ def load_purchase_orders_by_material(
     见该函数 docstring 的根因说明——#18-c，队列 #139：60 天窗口曾漏掉一张创建于
     ~266 天前、至今仍有未清量的真实在途 PO，导致对应子件误判"无未交订单"）。
 
+    行级关闭状态过滤（队列 #173，#139④ 根治，2026-08-03）：`ZpViewPurOrder/Query`
+    （本函数在途未清量的数量来源）不带行级关闭字段（2026-08-03 真实探测确认，
+    27,641 行 0 命中 `LineStatus`）；真实行级关闭状态另在 `Purchase/Query` 暴露
+    （`ZpConnector.get_purchase_line_status`，按 `itemCode` 批量查询，与 `materials`
+    同一收窄集合），按 `(po_id, line_no)` JOIN 后剔除 `PO_LINE_STATUS_CLOSED` 三态
+    的行。**365 天回溯窗口未退役**——它是数量数据（qty_ordered/qty_received）
+    本身的取数范围折衷（见上），行级关闭过滤是叠加其上的正确性修正，两者互补
+    非互斥；`materials` 为空/None 时（无法按料号收窄查询）跳过本步，行为与改造
+    前完全一致。line_status 查询失败**单独降级**（fail-soft，与本函数其余部分
+    real fail-loud 的既有约定有意区分）——它是本函数在既有数量口径之上的附加
+    修正信号，其失败不应连累"仅按数量口径判定"这条改造前就存在、独立可用的
+    既有能力退化。
+
     connector：注入 ZpConnector（测试用）；None 时 from_env（复用与 BOM 相同的凭据）。
     real fail-loud：连接器异常原样上抛，由调用方（compute_snapshot）决定是否降级
     （本功能为纯展示派生列，调用方对失败采用"降级为无数据"而非阻断整体重算，
@@ -227,11 +268,19 @@ def load_purchase_orders_by_material(
         from zhuopin_platform.shared_tools.erp_connector.connector import ZpConnector
         connector = ZpConnector.from_env(audit=audit)
     orders = connector.get_purchase_orders(days=days)
+    line_status: dict[tuple[str, str], int] = {}
+    if materials:
+        try:
+            line_status = connector.get_purchase_line_status(sorted(materials))
+        except Exception:
+            line_status = {}   # fail-soft：仅放弃本次新增的关闭行剔除，不连累既有数量口径
     out: dict[str, float] = {}
     for po in orders:
         if po.status not in ("in_transit", "partial"):
             continue
         if materials is not None and po.material_id not in materials:
+            continue
+        if line_status.get((po.po_id, po.line_no)) in PO_LINE_STATUS_CLOSED:
             continue
         outstanding = max(float(po.qty_ordered) - float(po.qty_received), 0.0)
         if outstanding <= 0:
