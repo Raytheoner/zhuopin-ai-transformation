@@ -1117,5 +1117,96 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertFalse(log_path.exists())
 
 
+class FollowupReadmeStructuralValidationTests(unittest.TestCase):
+    """队列 #124 阶段二（design.md D1）：跟进信 README 两态语义的结构性
+    拦截"新建即终态"反模式。
+
+    白盒方式，同 ReleaseStructuralValidationTests：monkeypatch
+    REPO_ROOT/FOLLOWUP_README_TARGET 指向本用例专属临时目录（不能用真实
+    生产路径走黑盒子进程，会误触真实文件）。
+    """
+
+    HEADER = (
+        "| 编号 | 日期 | 收信人 | 主要事项 | 交期要点 | 发送状态（2026-07-06） |\n"
+        "|--------|------|--------|---------|---------|---------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.FOLLOWUP_README_TARGET = "README.md"
+        self.target_path = self.repo_root / "README.md"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_readme(self, rows=""):
+        text = "## 现有跟进信清单\n\n" + self.HEADER + rows
+        self.target_path.write_text(text, encoding="utf-8")
+
+    def _acquire(self, who="A"):
+        ns = argparse.Namespace(
+            file=self.module.FOLLOWUP_README_TARGET, who=who, note="",
+            reserve=None, section=None,
+        )
+        return self.module.cmd_acquire(ns)
+
+    def _release(self, who=""):
+        ns = argparse.Namespace(file=self.module.FOLLOWUP_README_TARGET, who=who)
+        return self.module.cmd_release(ns)
+
+    def test_release_succeeds_with_no_changes(self):
+        self._write_readme()
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_new_row_with_draft_status_passes(self):
+        self._write_readme()
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(new_row)
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_new_row_with_finalized_status_blocks_release(self):
+        """D1 核心场景：起草物理上不能一步到位写终态——本次持锁窗口内
+        新增的行若直接是「🆕 待发」，release 必须被拒绝、锁保持占用。"""
+        self._write_readme()
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | 🆕 待发 |\n"
+        self._write_readme(new_row)
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+        self.assertFalse(
+            json.loads((self.repo_root / "README.md.editlock").read_text(
+                encoding="utf-8")).get("released")
+        )
+
+    def test_existing_row_draft_to_finalized_transition_passes(self):
+        """既有行从「⏳ 待你审」转为「🆕 待发」是批准脚本
+        （approve_followup_letter.py）的合法产物，其身份在快照里能找到，
+        不应被本拦截误伤。"""
+        existing_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(existing_row)
+        self.assertEqual(self._acquire(who="A"), 0)
+        finalized_row = existing_row.replace("⏳ 待你审", "🆕 待发")
+        self._write_readme(finalized_row)
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_unrelated_edit_to_non_finalized_row_passes(self):
+        """编辑一个既有行、但改动后状态列不是终态（如仍是「✅ 已发」）——
+        即便非状态列内容也变了（身份不再匹配快照），也不应被拦：本拦截
+        只关心「新增行 + 终态」这一种组合。"""
+        existing_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ✅ 已发 |\n"
+        self._write_readme(existing_row)
+        self.assertEqual(self._acquire(who="A"), 0)
+        edited_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项（已更新） | 不急 | ✅ 已发 |\n"
+        self._write_readme(edited_row)
+
+        self.assertEqual(self._release(who="A"), 0)
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,13 @@
 import pytest
 
-from aibot_service.readme_table import locate_row, write_status, ReadmeTableError
+from aibot_service.readme_table import (
+    DraftNotPendingReviewError,
+    ReadmeTableError,
+    assert_draft_pending_review,
+    iter_rows,
+    locate_row,
+    write_status,
+)
 
 SAMPLE = """\
 ## 现有跟进信清单
@@ -49,3 +56,24 @@ def test_write_status_preserves_trailing_content():
     loc = locate_row(SAMPLE, lambda cells: "整合信" in cells[2])
     new_text = write_status(SAMPLE, loc, "✅ 已推送 X")
     assert "## 下一节" in new_text
+
+
+def test_iter_rows_returns_all_data_rows_in_order():
+    rows = iter_rows(SAMPLE)
+    assert [r.cells[0] for r in rows] == ["2026-07-04", "2026-07-06", "2026-07-09"]
+    assert all(r.status_col_index == 4 for r in rows)
+
+
+def test_iter_rows_raises_when_no_status_column():
+    with pytest.raises(ReadmeTableError):
+        iter_rows("| 日期 | 收信人 |\n|---|---|\n| 2026-07-04 | 陈忱 |\n")
+
+
+def test_assert_draft_pending_review_accepts_draft_status():
+    assert_draft_pending_review("⏳ 待你审")  # 不抛异常即通过
+
+
+def test_assert_draft_pending_review_rejects_other_values():
+    for bad_value in ("🆕 待发", "✅ 已发", "", "⏳待你审"):
+        with pytest.raises(DraftNotPendingReviewError):
+            assert_draft_pending_review(bad_value)

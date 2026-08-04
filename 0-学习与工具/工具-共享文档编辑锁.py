@@ -172,6 +172,13 @@ MUTEX_WAIT_TIMEOUT_SECONDS = 5.0
 RECENT_ACQUIRE_WINDOW_MINUTES = 120
 HISTORY_RETENTION_MINUTES = 24 * 60
 
+# 队列 #124 阶段二（design.md D1）：跟进信 README 的两态语义结构性拦截——
+# release 时锁定目标是这个文件才跑（判定逻辑与 §一/§二/§三/§四 那套无关，
+# 是完全独立的一张单表，见 `_validate_followup_readme_release`）。
+FOLLOWUP_README_TARGET = "6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md"
+FOLLOWUP_DRAFT_STATUS = "⏳ 待你审"
+FOLLOWUP_FINALIZED_STATUS = "🆕 待发"
+
 # 队列 #225：release 时对跨桌任务队列.md 做结构校验，仅当锁定目标是这个
 # 默认队列文件时才跑（§一/§二/§三/§四 的语义只对它成立，--file 指向其他
 # 共享文件时这套校验没有意义）。
@@ -557,6 +564,81 @@ def _diff_touched_rows(
     ]
 
 
+def _followup_readme_rows(text: str) -> list[tuple[str, list[str], int]]:
+    """跟进信 README「现有跟进信清单」表的数据行——(原始行文本, 单元格,
+    状态列索引) 三元组列表。判定逻辑与 `aibot_service.readme_table.iter_rows`
+    一致（本工具不 import aibot_service 包，独立实现一份，避免额外的跨包
+    耦合——两处各自维护成本极低，均为几行纯文本切分）：表头＝任意以 `|`
+    开头且含"发送状态"字样的行；其后跳过 `|---|...` 分隔行，直到第一条非
+    `|` 开头的行为止都是数据行。目标文件不存在/无此表时返回空列表。
+    """
+    lines = text.splitlines()
+    header_idx = None
+    status_col_index = -1
+    for i, line in enumerate(lines):
+        if line.strip().startswith("|") and "发送状态" in line:
+            header_cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            for j, cell in enumerate(header_cells):
+                if cell.startswith("发送状态"):
+                    status_col_index = j
+                    break
+            header_idx = i
+            break
+    if header_idx is None or status_col_index < 0:
+        return []
+
+    rows: list[tuple[str, list[str], int]] = []
+    for i in range(header_idx + 2, len(lines)):
+        line = lines[i]
+        if not line.strip().startswith("|"):
+            break
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) <= status_col_index:
+            continue
+        rows.append((line, cells, status_col_index))
+    return rows
+
+
+def _followup_row_identity(cells: list[str], status_col_index: int) -> tuple[str, ...]:
+    """行身份＝除状态列外全部单元格——只要其余内容不变，状态列如何转换
+    都指向同一行（与 `approval.py._row_identity` 同一判据，两处独立实现
+    但语义必须一致，否则"既有行合法转终态"会被这里误判为"新增行"）。"""
+    return tuple(c for i, c in enumerate(cells) if i != status_col_index)
+
+
+def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> list[str]:
+    """队列 #124 阶段二（design.md D1）：跟进信 README 两态语义的结构性
+    拦截"新建即终态"反模式。比对 acquire 快照与当前内容，若某行的"非状态
+    列身份"在快照里不存在（本次持锁窗口内新增），且当前状态列值为终态
+    标记 `🆕 待发`，判违规——起草物理上不能一步到位写终态，必须先写
+    `⏳ 待你审`，再经独立的 `approve_followup_letter.py` 转终态（该脚本
+    在专属的另一次持锁窗口外运行，不改队列文件锁，不受本函数约束）。
+    既有行从 `⏳ 待你审` 转为 `🆕 待发`（批准脚本的合法产物，其身份在
+    快照里能找到）不受影响，正常放行。
+    """
+    violations: list[str] = []
+    old_rows = _followup_readme_rows(snapshot_text)
+    old_identities = {
+        _followup_row_identity(cells, idx) for _, cells, idx in old_rows
+    }
+
+    for line, cells, status_col_index in _followup_readme_rows(current_text):
+        status_value = cells[status_col_index]
+        if status_value != FOLLOWUP_FINALIZED_STATUS:
+            continue
+        identity = _followup_row_identity(cells, status_col_index)
+        if identity not in old_identities:
+            preview = line.strip()
+            if len(preview) > 80:
+                preview = preview[:80] + "…"
+            violations.append(
+                f"新增行状态列直接写终态「{FOLLOWUP_FINALIZED_STATUS}」，违反两态语义"
+                f"（起草只能写「{FOLLOWUP_DRAFT_STATUS}」，转终态须经独立的 "
+                f"approve_followup_letter.py）：{preview}"
+            )
+    return violations
+
+
 def _validate_release_structure(
     args: argparse.Namespace, lock_data: dict, repo_root: Path,
 ) -> list[str]:
@@ -922,13 +1004,21 @@ def cmd_release(args: argparse.Namespace) -> int:
     # 队列 #225：锁定目标是默认队列文件时，release 前做四项结构校验——
     # 不通过则拒绝释放（锁保持占用，逼持有者原地修正后重试），不对其他
     # `--file` 目标生效（§一/§二/§三/§四 语义只对这份文件成立）。
+    violations: list[str] = []
     if args.file == DEFAULT_TARGET:
         violations = _validate_release_structure(args, existing, REPO_ROOT)
-        if violations:
-            print(f"✗ release 被拒绝（{len(violations)} 项结构问题，锁保持占用，请修正后重试）：")
-            for v in violations:
-                print(f"  - {v}")
-            return 1
+    elif args.file == FOLLOWUP_README_TARGET:
+        # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
+        # 拦截，与上面那套队列专属校验各自独立、互不干扰。
+        target_path = _target_path(args.file)
+        current_text = target_path.read_text(encoding="utf-8") if target_path.exists() else ""
+        snapshot_text = _read_snapshot(args.file)
+        violations = _validate_followup_readme_release(current_text, snapshot_text)
+    if violations:
+        print(f"✗ release 被拒绝（{len(violations)} 项结构问题，锁保持占用，请修正后重试）：")
+        for v in violations:
+            print(f"  - {v}")
+        return 1
 
     # 队列 #200：把"正式交还"的目标文件内容记为基准——下一次 acquire 据此
     # 判断这期间文件是否被绕过锁直接改写过。放在结构校验通过之后（不通过
