@@ -1,0 +1,34 @@
+# 域成员/域管理员映射表（决策件§五决策3，手工维护，不取企微通讯录 contact 权限）。
+# 键 = 企微 userid（与 wecom-aibot-service/aibot_service/department_mapping.yaml 同一
+# userid 命名空间，non 大小写敏感字面匹配）；值 = 该 userid 在各域的角色列表
+# （一人可跨多域，如 ShaoPeiShen）。domain 用英文小写，对齐未来路由前缀
+# `/{域}/{场景}`（procurement/quality/finance/sales）；"*" 表示对全部域生效。
+#
+# 未登记的 userid 一律 fail-closed 为公开只读（design.md 决策5，spec
+# portal-permission-model 「部门映射用手工表」Scenario）——本表不做任何猜测式
+# 补全，宁可暂缺。
+
+YaoZuYi:          # 姚祖怡，采购部 AI 专员
+  - { domain: procurement, tier: domain_admin }
+
+tangyanping:      # 唐燕萍，财务部 AI 专员
+  - { domain: finance, tier: domain_admin }
+
+ChenChen:         # 陈忱，质量部 AI 专员
+  - { domain: quality, tier: domain_admin }
+
+Hongqin.Wang:     # 王泓钦，销售部 AI 专员
+  - { domain: sales, tier: domain_admin }
+
+ShaoPeiShen:      # Shao Peishen，OPVP，跨域决策权
+  - { domain: "*", tier: domain_admin }
+
+# ── 待补（如实留白，不臆造 userid）──────────────────────────────────
+# 决策件 §五决策3 同时点名以下四人为域管理员（"指定一线"），但其企微 userid
+# 尚未在任何既有系统（wecom-aibot-service 白名单/部门映射）中收集到——
+# 同 2026-07-22 陈承(IT) 补入 wecom-aibot-service department_mapping.yaml
+# 的先例，待各专线提供真实 userid 后比照本文件格式补入，不阻塞本次交付：
+#   - 解植雅（采购一线标注）→ procurement
+#   - 汤易水（采购一线标注）→ procurement
+#   - 朱映桦（质量 backup，QD-B 灰度）→ quality
+#   - 李姣龙（财务一线核对，FI2 灰度）→ finance
