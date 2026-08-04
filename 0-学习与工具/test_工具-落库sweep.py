@@ -36,6 +36,7 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -174,22 +175,28 @@ class HappyPathTests(SweepTestBase):
 
 
 class SafetyGateTests(SweepTestBase):
-    def test_unaccounted_dirty_file_blocks_whole_run(self):
+    def test_orphan_dirty_file_does_not_block_unrelated_batch(self):
+        """队列 #238：批次隔离生效后，一个与在办批次毫无关系的孤儿脏文件
+        不应再让整轮 return 0——旧行为（本用例修复前的名字正是
+        test_unaccounted_dirty_file_blocks_whole_run）在 08-04 实测里正是
+        20 批积压的根因，故本用例断言方向整体反转：批次应正常落库，孤儿
+        文件只在日志里留痕提示，不阻塞任何人、也不被误删/误动。"""
         self._init_and_push(rows="")
         row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
-        # 无关脏文件——不属于任何待 commit 批次声明。
+        # 无关脏文件——不属于任何待 commit 批次声明，且不与 B-TEST 的声明
+        # 片段有任何交集（B-TEST 只声明了队列文件本身）。
         (self.work / "杂物.md").write_text("别人session的未提交东西\n", encoding="utf-8")
 
-        before_log = self._origin_log()
         result = _run_sweep(self.work)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("非 clean", result.stdout)
+        self.assertIn("孤儿", result.stdout)
         self.assertIn("杂物.md", result.stdout)
-        self.assertEqual(self._origin_log(), before_log, "不应有任何提交被推送")
-        self.assertIn("待 CC 取活", self._queue_text(), "队列不应被改动")
+        # 关键反转：B-TEST 与孤儿文件毫无声明交集，应正常落库并推送。
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue)
         self.assertTrue((self.work / "杂物.md").exists(), "无关文件不应被误删/误动")
 
     def test_non_master_branch_skips(self):
@@ -405,8 +412,10 @@ class ResolveBatchFilesUnitTests(unittest.TestCase):
 
 class ExactMatchEndToEndTests(SweepTestBase):
     """队列 #234(1) 的 CLI 端到端复现：批次已正确声明的文件不应因"另一个
-    同名文件也脏"而被误判歧义、连累进 unaccounted 清单（08-04 真实现场：
-    根 CLAUDE.md 因与 SC8/CLAUDE.md 同时脏被判 ambiguous，20 批积压）。"""
+    同名文件也脏"而被误判歧义（08-04 真实现场：根 CLAUDE.md 因与
+    SC8/CLAUDE.md 同时脏被判 ambiguous，20 批积压）。队列 #238 批次隔离
+    落地后，SC8 那份孤儿文件也不再拖累 B-TEST 整批——断言方向随之更新为
+    "B-TEST 正常落库 + SC8 只作孤儿提示"，不再是"整轮安全跳过"。"""
 
     def test_correctly_declared_file_not_flagged_ambiguous_by_duplicate_basename(self):
         self._init_and_push(rows="")
@@ -423,21 +432,89 @@ class ExactMatchEndToEndTests(SweepTestBase):
 
         result = _run_sweep(self.work)
 
-        # SC8 那份始终未被任何批次声明，仍应触发"非 clean"整轮安全跳过——
-        # 精确相等优先修复只解除"自己已声明的文件被连累判歧义"，不代表
-        # "任何同名脏文件都被放行"（CLAUDE.md §5 反向用例要求）。
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("非 clean", result.stdout)
-        self.assertIn("SC8", result.stdout)
-        # 关键断言：根 CLAUDE.md 已被正确声明+精确解析，不应出现在未声明
-        # 清单里——修复前它会因与 SC8/CLAUDE.md"同片段候选"被判 ambiguous，
-        # 连 unaccounted 都进不去日志描述，但会通过 declared_all 缺失而
-        # 静默地把整批拖下水。
-        unaccounted_lines = [
+        # 关键断言：根 CLAUDE.md 已被正确声明+精确解析，B-TEST 与 SC8 那份
+        # 孤儿文件毫无声明交集，队列 #238 批次隔离后应正常落库并推送——
+        # 修复前（#234(1) 只做精确相等优先、未做批次隔离）此处会因
+        # "非 clean"整轮跳过，SC8 拖累了本已正确声明的 B-TEST。
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue)
+        # SC8 那份始终未被任何批次声明，应作为孤儿在日志里留痕提示（不阻塞）。
+        self.assertIn("孤儿", result.stdout)
+        orphan_lines = [
             line for line in result.stdout.splitlines() if line.strip().startswith("- ")
         ]
-        self.assertTrue(unaccounted_lines)
-        self.assertTrue(all("SC8" in line for line in unaccounted_lines), unaccounted_lines)
+        self.assertTrue(orphan_lines)
+        self.assertTrue(all("SC8" in line for line in orphan_lines), orphan_lines)
+
+
+class BatchIsolationIntegrationTests(SweepTestBase):
+    """队列 #238 CLI 端到端：一批因自身声明歧义而暂缓，另一批与之无关，
+    应正常落库——验证"部分批次落库 + 部分暂缓"这一核心场景，及可解释
+    日志（打印歧义片段的匹配候选，回应 #234 附带要求）。"""
+
+    def test_ambiguous_batch_deferred_while_unrelated_clean_batch_proceeds(self):
+        self._init_and_push(rows="")
+        (self.work / "content1.md").write_text("干净批次的内容\n", encoding="utf-8")
+        sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8"
+        sc8_dir.mkdir(parents=True)
+        (sc8_dir / "CLAUDE.md").write_text("SC8 的 CLAUDE.md\n", encoding="utf-8")
+        qdb_dir = self.work / "4-数字员工" / "质量部" / "QD-B"
+        qdb_dir.mkdir(parents=True)
+        (qdb_dir / "CLAUDE.md").write_text("QD-B 的 CLAUDE.md\n", encoding="utf-8")
+
+        rows = (
+            "| B-CLEAN | `content1.md`、`0-全景路线图/跨桌任务队列.md`（新行占位） "
+            "| `docs(test): 干净批次应正常落库` | 待处理 |\n"
+            "| B-BLOCKED | `CLAUDE.md` "
+            "| `docs(test): 歧义批次应被暂缓` | 待处理 |\n"
+        )
+        self._write_queue(rows)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        # B-CLEAN 正常落库并推送；B-BLOCKED 因自身声明歧义而暂缓，队列里
+        # 原样保留"待处理"，未被误标记已完成。
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        rows_after = {r["batch_id"]: r for r in sweep._parse_section_two(self._queue_text())}
+        self.assertIn("sweep 自动落库", rows_after["B-CLEAN"]["status_cell"])
+        self.assertIn("✅", pushed_queue)
+        self.assertEqual(rows_after["B-BLOCKED"]["status_cell"], "待处理",
+                          "被暂缓的批次不应被误标记为已完成")
+        self.assertEqual(_git(self.origin, "show", "master:content1.md", check=False).returncode, 0,
+                          "B-CLEAN 的内容文件应已真实落库")
+
+        # 可解释日志：逐条写明因哪个片段命中几处候选而暂缓。
+        self.assertIn("B-BLOCKED", result.stdout)
+        self.assertIn("因声明片段未能唯一判定而暂缓", result.stdout)
+        self.assertIn("CLAUDE.md", result.stdout)
+        self.assertIn("命中 2 处", result.stdout)
+        self.assertIn("SC8", result.stdout)
+        self.assertIn("QD-B", result.stdout)
+
+    def test_all_batches_blocked_logs_no_batch_processable_without_crashing(self):
+        """两个批次全部因自身歧义暂缓时，main() 应正常收尾（不崩溃、
+        退出码 0），且日志明确说明"本轮无批次可落库"，而不是安静地什么
+        都不说。"""
+        self._init_and_push(rows="")
+        sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8"
+        sc8_dir.mkdir(parents=True)
+        (sc8_dir / "CLAUDE.md").write_text("SC8\n", encoding="utf-8")
+        qdb_dir = self.work / "4-数字员工" / "质量部" / "QD-B"
+        qdb_dir.mkdir(parents=True)
+        (qdb_dir / "CLAUDE.md").write_text("QD-B\n", encoding="utf-8")
+
+        row = "| B-BLOCKED | `CLAUDE.md` | `docs(test): 歧义批次` | 待处理 |\n"
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("本轮无批次可落库", result.stdout)
+        self.assertEqual(len(self._origin_log().strip().splitlines()), 1,
+                          "全部批次暂缓时不应产生任何新提交")
+        self.assertIn("init", self._origin_log())
+        self.assertEqual(sweep._parse_section_two(self._queue_text())[0]["status_cell"], "待处理")
 
 
 class PendingCriteriaIntegrationTests(SweepTestBase):
@@ -1051,6 +1128,293 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("涉及常驻服务", result.stdout)
         self.assertEqual(len(_CapturingWebhookHandler.received), 0)
+
+
+class PartitionPendingRowsUnitTests(unittest.TestCase):
+    """`_partition_pending_rows_by_batch_isolation` 纯函数级单测——队列
+    #238 批次隔离核心判据，不经过完整 git 流程，快且精确。"""
+
+    def test_clean_row_with_unrelated_orphan_stays_in_clean_rows(self):
+        rows = [{"batch_id": "B-CLEAN", "files_cell": "`content1.md`"}]
+        dirty = ["content1.md", "杂物.md"]
+        log: list[str] = []
+        clean_rows, resolution, orphans = sweep._partition_pending_rows_by_batch_isolation(
+            rows, dirty, log,
+        )
+        self.assertEqual([r["batch_id"] for r in clean_rows], ["B-CLEAN"])
+        self.assertEqual(resolution["B-CLEAN"], (["content1.md"], [], []))
+        self.assertEqual(orphans, ["杂物.md"])
+        self.assertTrue(any("孤儿" in line for line in log))
+        self.assertTrue(any("杂物.md" in line for line in log))
+
+    def test_ambiguous_row_excluded_from_clean_rows_with_explain_log(self):
+        rows = [{"batch_id": "B-BLOCKED", "files_cell": "`CLAUDE.md`"}]
+        dirty = [
+            "4-数字员工/采购部/SC8-.../CLAUDE.md",
+            "4-数字员工/质量部/QD-B-.../CLAUDE.md",
+        ]
+        log: list[str] = []
+        clean_rows, resolution, orphans = sweep._partition_pending_rows_by_batch_isolation(
+            rows, dirty, log,
+        )
+        self.assertEqual(clean_rows, [])
+        self.assertEqual(resolution["B-BLOCKED"], ([], [], ["CLAUDE.md"]))
+        # 歧义片段的候选路径不应被算作"孤儿"——它们是有人声明（只是歧义）。
+        self.assertEqual(orphans, [])
+        self.assertTrue(any("B-BLOCKED" in line and "暂缓" in line for line in log))
+        self.assertTrue(any("命中 2 处" in line for line in log))
+
+    def test_one_ambiguous_row_does_not_affect_other_clean_rows(self):
+        rows = [
+            {"batch_id": "B-CLEAN", "files_cell": "`content1.md`"},
+            {"batch_id": "B-BLOCKED", "files_cell": "`CLAUDE.md`"},
+        ]
+        dirty = [
+            "content1.md",
+            "4-数字员工/采购部/SC8-.../CLAUDE.md",
+            "4-数字员工/质量部/QD-B-.../CLAUDE.md",
+        ]
+        log: list[str] = []
+        clean_rows, resolution, orphans = sweep._partition_pending_rows_by_batch_isolation(
+            rows, dirty, log,
+        )
+        self.assertEqual([r["batch_id"] for r in clean_rows], ["B-CLEAN"])
+        self.assertEqual(orphans, [], "两份 CLAUDE.md 均已被 B-BLOCKED 的歧义片段引用，不是孤儿")
+
+    def test_no_pending_rows_all_dirty_paths_are_orphans(self):
+        """零批次登记时，所有脏文件都应被视为孤儿（供 #236(2) 追踪告警），
+        不因"没有批次可比对"而漏检。"""
+        log: list[str] = []
+        clean_rows, resolution, orphans = sweep._partition_pending_rows_by_batch_isolation(
+            [], ["杂物1.md", "杂物2.md"], log,
+        )
+        self.assertEqual(clean_rows, [])
+        self.assertEqual(resolution, {})
+        self.assertEqual(orphans, ["杂物1.md", "杂物2.md"])
+
+
+class OrphanFileAlertTests(SweepTestBase):
+    """队列 #236(2)：孤儿脏文件持续超过阈值即主动告警——首次出现不告警、
+    跨阈值告警一次、阈值窗口内不重复、窗口外再度提醒、脱离孤儿状态即清空。"""
+
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+    def _write_env_webhook(self) -> None:
+        (self.work / ".env").write_text(
+            f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8",
+        )
+
+    def _write_orphan_state(self, entries: dict) -> None:
+        path = self.work / sweep.ORPHAN_STATE_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+
+    def _iso(self, hours_ago: float) -> str:
+        return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+
+    def test_newly_seen_orphan_is_tracked_but_not_alerted(self):
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        (self.work / "杂物.md").write_text("刚出现的孤儿\n", encoding="utf-8")
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0, "首次出现不应立即告警")
+        state = json.loads((self.work / sweep.ORPHAN_STATE_REL).read_text(encoding="utf-8"))
+        self.assertIn("杂物.md", state)
+        self.assertIsNone(state["杂物.md"]["last_alerted"])
+
+    def test_orphan_past_threshold_triggers_alert(self):
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        (self.work / "杂物.md").write_text("持续存在的孤儿\n", encoding="utf-8")
+        self._write_orphan_state({
+            "杂物.md": {
+                "first_seen": self._iso(sweep.ORPHAN_ALERT_THRESHOLD_HOURS + 0.5),
+                "last_alerted": None,
+            },
+        })
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        content = _CapturingWebhookHandler.received[0]["markdown"]["content"]
+        self.assertIn("杂物.md", content)
+        state = json.loads((self.work / sweep.ORPHAN_STATE_REL).read_text(encoding="utf-8"))
+        self.assertIsNotNone(state["杂物.md"]["last_alerted"])
+
+    def test_alert_not_repeated_within_threshold_window(self):
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        (self.work / "杂物.md").write_text("持续存在的孤儿\n", encoding="utf-8")
+        self._write_orphan_state({
+            "杂物.md": {
+                "first_seen": self._iso(sweep.ORPHAN_ALERT_THRESHOLD_HOURS * 3),
+                "last_alerted": self._iso(0.5),  # 半小时前刚提醒过
+            },
+        })
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0,
+                          "阈值窗口内不应重复打扰（#147 狼来了教训）")
+
+    def test_alert_repeats_after_another_threshold_window(self):
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        (self.work / "杂物.md").write_text("持续存在的孤儿\n", encoding="utf-8")
+        self._write_orphan_state({
+            "杂物.md": {
+                "first_seen": self._iso(sweep.ORPHAN_ALERT_THRESHOLD_HOURS * 3),
+                "last_alerted": self._iso(sweep.ORPHAN_ALERT_THRESHOLD_HOURS + 0.1),
+            },
+        })
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1,
+                          "满一个阈值周期后应再次提醒")
+
+    def test_resolved_orphan_is_cleared_from_state(self):
+        """孤儿一旦被声明（本轮不再出现在脏路径里）即从状态清除，不留陈旧
+        记录误导下一次真实孤儿的"已孤儿多久"文案。"""
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        self._write_orphan_state({
+            "已消失的文件.md": {"first_seen": self._iso(10), "last_alerted": None},
+        })
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        state = json.loads((self.work / sweep.ORPHAN_STATE_REL).read_text(encoding="utf-8"))
+        self.assertNotIn("已消失的文件.md", state)
+
+    def test_orphan_alert_without_webhook_env_skips_send_but_logs(self):
+        self._init_and_push(rows="")
+        (self.work / "杂物.md").write_text("持续存在的孤儿\n", encoding="utf-8")
+        self._write_orphan_state({
+            "杂物.md": {
+                "first_seen": self._iso(sweep.ORPHAN_ALERT_THRESHOLD_HOURS + 0.5),
+                "last_alerted": None,
+            },
+        })
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("未在 .env 找到", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0)
+
+    def test_dry_run_does_not_write_orphan_state(self):
+        self._init_and_push(rows="")
+        (self.work / "杂物.md").write_text("孤儿\n", encoding="utf-8")
+
+        result = _run_sweep(self.work, "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.work / sweep.ORPHAN_STATE_REL).exists(),
+                          "dry-run 不应产生真实状态文件副作用")
+
+
+class DeploymentTraceHintTests(SweepTestBase):
+    """队列 #229：发布收口第②关——命中已部署场景白名单但未同批改动其部署
+    留痕文件时提示；同批已改留痕则静默。纯提示、不阻断、不改退出码。"""
+
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+    def test_deployed_scenario_touched_without_trace_gets_hint(self):
+        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        self._init_and_push(rows="")
+        sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8-客户订单交期智能承诺"
+        sc8_dir.mkdir(parents=True)
+        (sc8_dir / "webapp.py").write_text("# 改动\n", encoding="utf-8")
+
+        row = ("| B-TEST | "
+               "`4-数字员工/采购部/SC8-客户订单交期智能承诺/webapp.py`、"
+               "`0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 命中已部署场景但未补留痕` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("未见部署留痕行", result.stdout)
+        self.assertIn("SC8-客户订单交期智能承诺", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        self.assertIn("部署留痕", _CapturingWebhookHandler.received[0]["markdown"]["content"])
+
+    def test_deployed_scenario_touched_with_same_batch_trace_stays_silent(self):
+        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        self._init_and_push(rows="")
+        sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8-客户订单交期智能承诺"
+        sc8_dir.mkdir(parents=True)
+        (sc8_dir / "webapp.py").write_text("# 改动\n", encoding="utf-8")
+        (sc8_dir / "CLAUDE.md").write_text("已补充部署状态段\n", encoding="utf-8")
+
+        row = ("| B-TEST | "
+               "`4-数字员工/采购部/SC8-客户订单交期智能承诺/webapp.py`、"
+               "`4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md`、"
+               "`0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 已同批补留痕` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("未见部署留痕行", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0)
+
+    def test_non_deployed_scenario_path_gets_no_hint(self):
+        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 不涉已部署场景` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("未见部署留痕行", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0)
+
+
+class FindMissingDeploymentTraceUnitTests(unittest.TestCase):
+    """`_find_missing_deployment_trace` 纯函数级单测。"""
+
+    def test_only_claude_md_touched_is_not_treated_as_scenario_touch(self):
+        """只改场景自己的 CLAUDE.md（无其它代码改动）——视为纯文档更新，
+        不应触发"未见留痕"提示（本身就是留痕文件的改动）。"""
+        touched = {"4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md"}
+        self.assertEqual(sweep._find_missing_deployment_trace(touched), [])
+
+    def test_unrelated_path_produces_no_hits(self):
+        touched = {"0-学习与工具/工具-落库sweep.py"}
+        self.assertEqual(sweep._find_missing_deployment_trace(touched), [])
+
+    def test_command_center_uses_root_claude_md_as_trace(self):
+        touched = {"1-转型规划/AI运营指挥中心/serve.py"}
+        hits = sweep._find_missing_deployment_trace(touched)
+        self.assertEqual(hits, ["1-转型规划/AI运营指挥中心/"])
+
+        touched_with_trace = {"1-转型规划/AI运营指挥中心/serve.py", "CLAUDE.md"}
+        self.assertEqual(sweep._find_missing_deployment_trace(touched_with_trace), [])
 
 
 if __name__ == "__main__":

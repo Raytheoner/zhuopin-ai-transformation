@@ -105,6 +105,44 @@ carrier`，走子进程调用 `decision_reminder_check.py`（每小时随 sweep 
 打扰），须排在 sweep 自己取编辑锁窗口之外（main() 接线固定顺序，见其内
 注释）。
 
+批次隔离——unaccounted 从"全局门"改为"逐批次判定"（队列 #238，合并
+#234(2) 与 #230-2d，2026-08-05）：原实现只要 `git status` 里存在一个不属于
+任何批次声明的脏路径，`main()` 就整轮 `return 0`——已正确声明、彼此毫无
+关系的批次被连带跳过（08-04 实测 17-20 批积压，堵点常常只有几个真文件，
+详见 #234/#236 取证）。改为 `_partition_pending_rows_by_batch_isolation`：
+一个批次是否被阻塞，只取决于它**自己**的声明片段解析是否命中
+`ambiguous`（即该片段在当前脏路径中有 ≥2 个候选、且无精确相等命中，见
+`_resolve_batch_files` 队列 #234(1)）——`ambiguous` 片段对应的候选路径
+必然不在 `declared_all` 里，这正是"声明片段与未声明脏文件有交集"的精确
+含义。与它无关的其它批次不受影响，照常落库；被阻塞的批次逐条写明因
+哪个片段命中几处候选而暂缓（可解释日志，回应 #234 附带要求：08-03 本
+项目正因缺这行日志而误判为 bug、白花一轮取证）。真正"没人声明"的孤儿
+脏文件（不出现在任何批次的 resolved 或 ambiguous 候选里）不阻塞任何
+批次，只作为独立提示列出——持续存在则交给 #236(2) 的孤儿脏文件告警去
+处理，sweep 主流程本身不再因它们停摆。
+
+孤儿脏文件告警（队列 #236(2)，2026-08-05）：#238 解除"孤儿阻塞全局"后，
+孤儿脏文件仍需要"被人看见"——2026-08-04 实测 4 个无主孤儿文件（原
+session 随 Claude Desktop 重启失联）挡住 20 个批次跨天不落库，根因是
+"收工登记批次没有触发点"（协议〇.1/〇.3 要求认领即声明，但回合制
+session 没有回合可用来执行）；sweep 只说"不属于任何批次声明"，既不
+追溯也不告警。`_track_and_alert_orphan_paths` 持久化每个孤儿路径的
+首次发现时刻（`reports/sweep-orphan-state.json`），超过
+`ORPHAN_ALERT_THRESHOLD_HOURS` 才复用 #171 的 webhook 通道点名一次，
+此后每满一个阈值周期再提醒一次（不逐轮/每小时重复打扰——#147
+`gap_alert` 的"狼来了"教训：过密提醒会被无视）；孤儿一旦被声明或消失
+即从状态里清除。
+
+发布收口第②关：部署留痕检查（队列 #229，Shao Peishen 2026-08-03 拍板
+选 (a)，2026-08-05）：同族本周复发三次的"收口最后一段没人记得"——#204
+问题已解决但载体未更正／#221 代码未并 master 而生产已部署／#228 通知
+已送达而生产未更新。`_find_missing_deployment_trace` 在批次落库后检查
+本轮 touched_paths 是否命中已部署场景白名单（初版宁窄勿宽，仅
+SC8/QD-B/FI2 三场景目录 + 命令中心，判据落在各自 CLAUDE.md／仓库根
+CLAUDE.md 是否同批改动这一可机检事实，不解析内容语义、不判断"是否
+真的部署了"），命中且未见留痕即在日志与 webhook 附一句提示——纯提示，
+不阻断、不改退出码（同 #198(c) 范式）。
+
 用法：
   python 0-学习与工具/工具-落库sweep.py            # 真跑
   python 0-学习与工具/工具-落库sweep.py --dry-run   # 只打印计划动作，不落地
@@ -168,6 +206,27 @@ DECISION_REMINDER_TIMEOUT_SECONDS = 120
 # 队列 #198(c)：本轮 commit 若命中这些前缀下的路径，视为"涉常驻服务"，
 # 需部署脚本同步+重启对应计划任务才在生产生效（现状全靠人记得）。
 RESIDENT_SERVICE_PATH_PREFIXES = ("5-平台底座/wecom-aibot-service/",)
+
+# 队列 #236(2)：孤儿脏文件（不属于任何批次声明）状态持久化 + 告警阈值。
+# 与 sweep 每小时一轮对齐，约 3 轮仍孤儿才点名，避免"批次登记与实际改动
+# 之间几分钟时间差"这类偶发情形被误报（#147 gap_alert 的"狼来了"教训）。
+ORPHAN_STATE_REL = "reports/sweep-orphan-state.json"
+ORPHAN_ALERT_THRESHOLD_HOURS = 3
+
+# 队列 #229：发布收口第②关——已部署场景白名单（初版宁窄勿宽）。
+# key＝场景目录前缀，value＝该场景的部署留痕文件——本批 touched_paths 命中
+# 前缀下的其它文件、但未同时命中这个留痕文件，即视为"未见留痕"。命令中心
+# （AI运营指挥中心）没有独立场景 CLAUDE.md，其部署历史落在仓库根 CLAUDE.md，
+# 沿用同一判据（宁可因根 CLAUDE.md 被顺手一并改动而漏报，也不误报）。
+DEPLOYED_SCENARIO_PREFIXES = {
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/":
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md",
+    "4-数字员工/质量部/QD-B-立项审核门禁/":
+        "4-数字员工/质量部/QD-B-立项审核门禁/CLAUDE.md",
+    "4-数字员工/财务部/FI2-三单匹配自动对账/":
+        "4-数字员工/财务部/FI2-三单匹配自动对账/CLAUDE.md",
+    "1-转型规划/AI运营指挥中心/": "CLAUDE.md",
+}
 
 
 class SweepAbort(Exception):
@@ -653,10 +712,11 @@ def _resolve_batch_files(files_cell: str, dirty_paths: list[str]) -> tuple[list[
     的候选一并计入歧义。根因实例：根 `CLAUDE.md` 与
     `4-数字员工/采购部/SC8-.../CLAUDE.md` 同时脏时，片段 `` `CLAUDE.md` ``
     在原实现下对根 `CLAUDE.md`（精确命中）与 SC8 那份（`endswith` 命中）各算一次，
-    被判 ambiguous，进而使这个早已正确声明的批次被 `unaccounted` 全局门槛
-    连带跳过——已声明齐全的批次不该因为"另一个 session 同时改了一个同名文件"
-    而遭殃。只做这一处收窄，**不做按批次隔离**（结构性改动，见 #230-2d 评估，
-    需独立验证场景，本次不动 `main()` 控制流）。
+    被判 ambiguous，进而使这个早已正确声明的批次被彼时的 `unaccounted` 全局
+    门槛连带跳过——已声明齐全的批次不该因为"另一个 session 同时改了一个同名
+    文件"而遭殃。本函数当时只做了这一处收窄，**按批次隔离**（结构性改动，
+    #230-2d 评估结论）已于队列 #238 落地，见 `_partition_pending_rows_by_
+    batch_isolation` 与 `main()`。
 
     返回 (resolved, not_dirty, ambiguous)：
       resolved   — 恰好命中 1 个脏路径的片段，对应的真实路径（用于 git add）
@@ -680,6 +740,225 @@ def _resolve_batch_files(files_cell: str, dirty_paths: list[str]) -> tuple[list[
         else:
             ambiguous.append(frag)
     return resolved, not_dirty, ambiguous
+
+
+def _explain_ambiguous_candidates(frag: str, dirty_paths: list[str]) -> list[str]:
+    """返回某片段在当前脏路径中命中的全部候选（队列 #238 可解释日志）。
+
+    与 `_resolve_batch_files` 内部同一套匹配规则（精确相等或按 "/" 前缀的
+    后缀匹配），这里不做优先级取舍、原样列出候选，只为把"为什么判为歧义"
+    说清楚——2026-08-03 本项目正因缺这行可解释日志而把一次正常判定误认成
+    bug、白花一轮取证（见文件头部 #234 相关说明）。
+    """
+    return [d for d in dirty_paths if d == frag or d.endswith("/" + frag)]
+
+
+def _partition_pending_rows_by_batch_isolation(
+    pending_rows: list[dict], dirty_paths: list[str], log: list[str],
+) -> tuple[list[dict], dict[str, tuple[list[str], list[str], list[str]]], list[str]]:
+    """队列 #238：sweep 批次隔离——把"任一脏文件未声明即整轮 return 0"的
+    全局门，改为"只阻塞自身声明存在歧义的批次，其余批次照常落库"。
+
+    背景（详见文件头部说明）：旧实现里，凡 `git status` 存在一个不属于任何
+    批次声明的脏路径——哪怕只有一个、哪怕与在办批次毫无关系——`main()`
+    就整轮 `return 0`，已正确声明、彼此互不相关的批次被连带跳过（08-04
+    实测 17-20 批积压，堵点常常只有 1-5 个真文件）。
+
+    新判据：一个批次是否被阻塞，只取决于**它自己**的声明片段解析结果是否
+    存在 `ambiguous`（该片段在当前脏路径中命中 ≥2 个候选、且无精确相等
+    命中——见 `_resolve_batch_files` 队列 #234(1) 的精确相等优先收窄）。
+    `ambiguous` 片段对应的候选路径必然不在 `declared_all` 里（未被计入
+    resolved），这正是"声明片段与未声明脏文件有交集"这句话的精确含义——
+    该批次自己声明的一部分，客观上无法安全判定它是不是这些脏文件之一，
+    此时**整个批次**（含它其它已能干净解析的片段）都暂缓，不做部分提交
+    ——批次内容仍要求原子提交，不拆半。
+
+    与它无关的其它批次（resolved/not_dirty 均已确定、`ambiguous` 为空）
+    不受影响，正常进入后续 normal_rows/straggler_rows 处理。
+
+    真正"没人声明"的孤儿脏文件（不出现在任何批次的 resolved 或 ambiguous
+    候选里）不阻塞任何批次，只作为独立提示列出（不写入 `log` 之外的任何
+    地方）——这类文件的持续存在交给调用方接线的 #236(2) 孤儿脏文件告警去
+    处理，sweep 主流程本身不再因它们停摆。
+
+    返回 (clean_rows, row_resolution, orphan_paths)：
+      clean_rows     — 未被阻塞、可继续按原逻辑分流 normal/straggler 的批次
+      row_resolution — {batch_id: (resolved, not_dirty, ambiguous)}，
+                        供调用方复用（避免重复调用 `_resolve_batch_files`）
+      orphan_paths   — 不属于任何批次任何片段（含歧义候选）的脏路径，
+                        按字典序排列，供调用方接线孤儿告警
+    """
+    row_resolution: dict[str, tuple[list[str], list[str], list[str]]] = {}
+    declared_all: set[str] = set()
+    for row in pending_rows:
+        resolved, not_dirty, ambiguous = _resolve_batch_files(row["files_cell"], dirty_paths)
+        row_resolution[row["batch_id"]] = (resolved, not_dirty, ambiguous)
+        declared_all.update(resolved)
+
+    ambiguous_candidates: set[str] = set()
+    clean_rows: list[dict] = []
+    for row in pending_rows:
+        resolved, not_dirty, ambiguous = row_resolution[row["batch_id"]]
+        if not ambiguous:
+            clean_rows.append(row)
+            continue
+        explain_parts = []
+        for frag in ambiguous:
+            candidates = _explain_ambiguous_candidates(frag, dirty_paths)
+            ambiguous_candidates.update(candidates)
+            explain_parts.append(
+                f"`{frag}` 命中 {len(candidates)} 处（{'、'.join(candidates)}），判为歧义"
+            )
+        log.append(
+            f"⚠ 批次 {row['batch_id']} 因声明片段未能唯一判定而暂缓（不影响其它批次）："
+            + "；".join(explain_parts)
+        )
+
+    orphan_paths = sorted(
+        p for p in dirty_paths if p not in declared_all and p not in ambiguous_candidates
+    )
+    if orphan_paths:
+        log.append(
+            "⚠ 以下脏路径不属于任何待 commit 批次声明（孤儿，不阻塞其它批次，"
+            "长期未认领由 #236 孤儿告警另行点名）："
+        )
+        log.extend(f"    - {p}" for p in orphan_paths)
+
+    return clean_rows, row_resolution, orphan_paths
+
+
+def _read_orphan_state(repo_root: Path) -> dict:
+    path = repo_root / ORPHAN_STATE_REL
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_orphan_state(repo_root: Path, state: dict) -> None:
+    path = repo_root / ORPHAN_STATE_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _track_and_alert_orphan_paths(
+    repo_root: Path, orphan_paths: list[str], log: list[str],
+) -> None:
+    """队列 #236(2)：孤儿脏文件（不属于任何批次声明）持续超过阈值即主动
+    告警——#238 批次隔离后 sweep 不再因孤儿文件整轮停摆，但"安静地跳过"
+    本身仍是问题（#236 取证：4 个孤儿文件挡住 20 个批次跨天不落库，根因
+    正是"没人知道"）。复用 #171 已建的 webhook 通道。
+
+    去重：每个路径只在跨过 `ORPHAN_ALERT_THRESHOLD_HOURS` 阈值时首次告警，
+    此后每满一个阈值周期再提醒一次，不逐轮（每小时）重复打扰——#147
+    `gap_alert` 的"狼来了"教训：过密的提醒会被无视。路径一旦不再是孤儿
+    （被声明或已消失）即从状态里清除，不留陈旧记录误导下一次真实孤儿的
+    "已孤儿多久"文案。
+    """
+    state = _read_orphan_state(repo_root)
+    now = datetime.now(timezone.utc)
+    current = set(orphan_paths)
+    for path in list(state.keys()):
+        if path not in current:
+            del state[path]
+
+    to_alert: list[tuple[str, float]] = []
+    for path in orphan_paths:
+        entry = state.get(path)
+        if entry is None:
+            state[path] = {"first_seen": now.isoformat(), "last_alerted": None}
+            continue
+        first_seen = datetime.fromisoformat(entry["first_seen"])
+        age_hours = (now - first_seen).total_seconds() / 3600
+        if age_hours < ORPHAN_ALERT_THRESHOLD_HOURS:
+            continue
+        last_alerted = entry.get("last_alerted")
+        if last_alerted is not None:
+            since_last = (now - datetime.fromisoformat(last_alerted)).total_seconds() / 3600
+            if since_last < ORPHAN_ALERT_THRESHOLD_HOURS:
+                continue
+        to_alert.append((path, age_hours))
+        entry["last_alerted"] = now.isoformat()
+
+    _write_orphan_state(repo_root, state)
+
+    if not to_alert:
+        return
+
+    lines = "\n".join(f"- `{p}`（已孤儿 {age:.1f} 小时）" for p, age in to_alert)
+    alert_text = (
+        f"🧭 落库sweep 检测到 {len(to_alert)} 个脏文件持续未被任何批次声明"
+        f"（阈值 {ORPHAN_ALERT_THRESHOLD_HOURS} 小时）：\n{lines}\n"
+        "若确认无主，请登记 §二 批次代为声明入库；若仍在编辑中，登记一条"
+        "占位批次即可解除本告警。"
+    )
+    log.append(
+        f"🧭 孤儿脏文件告警：{len(to_alert)} 个文件超过 "
+        f"{ORPHAN_ALERT_THRESHOLD_HOURS} 小时未声明"
+    )
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过孤儿脏文件告警推送（仅留痕日志与状态文件）。")
+        return
+    try:
+        _send_wecom_markdown(webhook_url, alert_text)
+    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
+        log.append(f"⚠ 孤儿脏文件告警推送失败（不影响本轮退出码）：{exc}")
+        return
+    log.append("✓ 孤儿脏文件告警已推送。")
+
+
+def _find_missing_deployment_trace(touched_paths: set[str]) -> list[str]:
+    """队列 #229：发布收口第②关——本轮 touched_paths 是否命中已部署场景
+    白名单、却未同时改动该场景的部署留痕文件。返回命中但缺留痕的场景前缀
+    清单（可能为空）。
+
+    三条边界（Shao Peishen 2026-08-03 拍板选 (a)）：
+    ① 纯提示，调用方不得据此改变退出码或阻断提交；
+    ② 不判断"是否真的部署了"——sweep 拿不到 `.51` 状态，只判"留痕文件是否
+       同批改动"这一可机检事实，是否需要补部署留给人判断；
+    ③ 初版宁窄勿宽——命中判据是路径前缀白名单，不做内容语义解析（如判断
+       CLAUDE.md 的 diff 是否真的更新了"部署状态"段落），避免 #147
+       `gap_alert` 式的过度触发反被无视。
+    """
+    hits = []
+    for prefix, trace_file in DEPLOYED_SCENARIO_PREFIXES.items():
+        touches_scenario = any(
+            p.startswith(prefix) and p != trace_file for p in touched_paths
+        )
+        if touches_scenario and trace_file not in touched_paths:
+            hits.append(prefix)
+    return hits
+
+
+def _announce_missing_deployment_trace(
+    repo_root: Path, hits: list[str], log: list[str],
+) -> None:
+    """队列 #229：命中 `_find_missing_deployment_trace` 时在日志与 webhook
+    附一句部署留痕提示——同 #198(c) 范式，纯提示、不阻断、不改退出码。"""
+    for prefix in hits:
+        log.append(
+            f"⚠ 本批改动涉及已部署场景 `{prefix}`，但未见部署留痕行——"
+            "若已部署请补留痕；若未部署，请勿对专员宣称已上线"
+            "（见 CLAUDE.md §5 第 8 步发送硬前置）"
+        )
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过部署留痕提示推送（仅留痕日志）。")
+        return
+    try:
+        _send_wecom_markdown(
+            webhook_url,
+            "🔧 落库sweep：以下已部署场景本批改动未见部署留痕，请核实：\n"
+            + "\n".join(f"- `{p}`" for p in hits),
+        )
+    except Exception as exc:  # noqa: BLE001 —— 提示推送失败不应影响本轮退出码
+        log.append(f"⚠ 部署留痕提示推送失败（不影响本轮退出码）：{exc}")
+        return
+    log.append("✓ 部署留痕提示已推送。")
 
 
 def _edit_lock(repo_root: Path, action: str, extra: list[str] | None = None) -> subprocess.CompletedProcess:
@@ -856,34 +1135,25 @@ def main() -> int:
                 f"{row['batch_id']} | {row['status_cell']}"
             )
 
+        # 队列 #238：批次隔离——即便本轮无待处理批次，脏路径也可能全部是
+        # 孤儿（没有任何批次登记），仍需纳入 #236(2) 孤儿告警的追踪范围，
+        # 故这一步不依赖 `pending_rows` 是否非空，early return 挪到其后。
+        clean_rows, row_resolution, orphan_paths = _partition_pending_rows_by_batch_isolation(
+            pending_rows, dirty_paths, log,
+        )
+        if not args.dry_run:
+            _track_and_alert_orphan_paths(repo_root, orphan_paths, log)
+
         if not pending_rows:
             log.append("§二无待处理批次，本轮空转。")
             _flush_remaining_log(repo_root, log, args.dry_run)
             print("\n".join(log))
             return 0
 
-        declared_all: set[str] = set()
-        row_resolution = {}
-        for row in pending_rows:
-            resolved, not_dirty, ambiguous = _resolve_batch_files(row["files_cell"], dirty_paths)
-            row_resolution[row["batch_id"]] = (resolved, not_dirty, ambiguous)
-            declared_all.update(resolved)
-
-        unaccounted = [p for p in dirty_paths if p not in declared_all]
-        if unaccounted:
-            log.append("⚠ 非 clean：以下脏路径不属于任何待 commit 批次声明，跳过本轮：")
-            log.extend(f"    - {p}" for p in unaccounted)
-            _flush_remaining_log(repo_root, log, args.dry_run)
-            print("\n".join(log))
-            return 0
-
         straggler_rows = []
         normal_rows = []
-        for row in pending_rows:
+        for row in clean_rows:
             resolved, not_dirty, ambiguous = row_resolution[row["batch_id"]]
-            if ambiguous:
-                # 理论上应已被 unaccounted 拦截；防御性兜底，不在此处强行判断。
-                continue
             if resolved:
                 normal_rows.append((row, resolved))
             elif not_dirty:
@@ -915,11 +1185,19 @@ def main() -> int:
         processed_any = bool(normal_rows) or bool(straggler_rows)
         if processed_any and not args.dry_run:
             _rerun_ledger(repo_root, log)
+        elif not processed_any:
+            log.append("本轮无批次可落库（全部暂缓或声明片段当前均无对应脏改动）。")
 
         # #198(c)：批次落库之后，检查本轮实际 add 过的路径是否命中常驻服务——
         # 纯提示，不影响下方的正常返回。
-        if touched_paths and not args.dry_run and _touches_resident_service(touched_paths):
-            _announce_resident_service_deployment_hint(repo_root, log)
+        if touched_paths and not args.dry_run:
+            if _touches_resident_service(touched_paths):
+                _announce_resident_service_deployment_hint(repo_root, log)
+            # 队列 #229：发布收口第②关——命中已部署场景却未见部署留痕，纯
+            # 提示，不影响下方的正常返回。
+            missing_trace_hits = _find_missing_deployment_trace(touched_paths)
+            if missing_trace_hits:
+                _announce_missing_deployment_trace(repo_root, missing_trace_hits, log)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))
