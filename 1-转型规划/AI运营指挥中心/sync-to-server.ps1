@@ -32,6 +32,10 @@ scp "$CC\serve.py"             "${SshAlias}:${Base}/serve.py"
 scp "$CC\deploy-server.ps1"    "${SshAlias}:${Base}/deploy-server.ps1"
 if ($LASTEXITCODE -ne 0) { Write-Warning "部分文件同步失败，请检查 SSH/scp" }
 
+# deploy-server.ps1 在服务器上 Import-Module 复用注册/健康检查函数，需先推送该模块自身
+# （本脚本不走 Sync-ZhuopinPlatformAndApp，故需单独调用，其余四服务经该函数自动推送）
+Publish-ZhuopinDeployToolsModule -SshAlias $SshAlias -ServerBase $Base
+
 # —— 销售域实时数据（队列 #53，走脱敏管道 sync_sales_data.py，勿直接 scp 原始 JSON）——
 #   sync_sales_data.py：读 SalesMarketing/crm_data/dashboard_data.json → 脱敏高危线索联系方式
 #   （Paul 2026-07-20 拍板：泓钦对齐前一律脱敏）→ 写本地 data/sales_dashboard_data.json；

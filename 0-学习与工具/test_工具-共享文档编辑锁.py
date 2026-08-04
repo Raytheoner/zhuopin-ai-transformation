@@ -442,6 +442,212 @@ class ReserveIdsTests(unittest.TestCase):
         self.assertNotIn("| 171 |", final_text)
 
 
+class ReserveMultiTests(unittest.TestCase):
+    """队列 #185：`--reserve-multi 一:2 四:1` 一次性跨多分区预留 +
+    竞态防护（高水位线滞后于文件实际内容时 fail-loud）。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = str(Path(self._tmpdir.name) / "假想队列.md")
+        self.lock_path = Path(self.target + ".editlock")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_queue(self, section_one: int = 168, section_four: int = 37,
+                      section_one_rows: str = "") -> None:
+        Path(self.target).write_text(
+            f"> **编号高水位线：§一 #{section_one} ｜ §四 #{section_four}**"
+            "（2026-07-24 首次清扫起启用）\n\n"
+            "## 一、任务看板\n\n"
+            "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+            "|---|------|--------|-------------|----------|------|--------|------|\n"
+            f"{section_one_rows}"
+            "\n## 四、需 Shao Peishen 的动作（例外与拍板）\n\n"
+            "| # | 事项 | 等谁 | 截止 |\n"
+            "|---|------|------|------|\n",
+            encoding="utf-8",
+        )
+
+    def test_reserve_multi_reserves_both_sections_in_one_call(self):
+        self._write_queue(section_one=168, section_four=37)
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve-multi", "一:2", "四:1")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("§一 #169", result.stdout)
+        self.assertIn("§一 #170", result.stdout)
+        self.assertIn("§四 #38", result.stdout)
+
+        final_text = Path(self.target).read_text(encoding="utf-8")
+        self.assertIn("编号高水位线：§一 #170 ｜ §四 #38", final_text)
+
+        lock = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertEqual(lock["reserved"], {"一": [169, 170], "四": [38]})
+
+    def test_reserve_multi_rejects_when_combined_with_single_reserve(self):
+        self._write_queue()
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve", "1", "--section", "一", "--reserve-multi", "四:1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("不能与", result.stdout)
+        self.assertFalse(self.lock_path.exists(), "参数校验失败不应连锁文件都创建")
+
+    def test_reserve_multi_rejects_malformed_token(self):
+        self._write_queue()
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve-multi", "一2")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.lock_path.exists())
+
+    def test_reserve_multi_rejects_unknown_section(self):
+        self._write_queue()
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve-multi", "五:1")
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_reserve_multi_rejects_duplicate_section(self):
+        self._write_queue()
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve-multi", "一:1", "一:2")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("重复", result.stdout)
+
+    def test_reserve_multi_partial_failure_rolls_back_and_keeps_first_section_advance(self):
+        """第二个分区因高水位线行格式漂移而预留失败——整体回滚（锁被
+        释放），但第一个分区已成功推进的高水位线不回退（协议〇.8：允许
+        留空洞）。"""
+        Path(self.target).write_text(
+            "> **编号高水位线：§一 #168 ｜ §四 格式已变**（说明文字）\n\n"
+            "## 一、任务看板\n\n"
+            "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+            "|---|------|--------|-------------|----------|------|--------|------|\n",
+            encoding="utf-8",
+        )
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve-multi", "一:2", "四:1")
+        self.assertNotEqual(result.returncode, 0)
+
+        final_text = Path(self.target).read_text(encoding="utf-8")
+        self.assertIn("§一 #170", final_text)  # 168+2，第一分区已推进、不回退
+
+        marker = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertTrue(marker.get("released"), "回滚后锁应已释放，不留半成品锁")
+
+    def test_reserve_collision_with_live_row_blocks_reserve(self):
+        """队列 #185 竞态防护：若高水位线滞后于文件实际内容（如绕锁直写
+        了一行新编号但没同步推高水位线，见 #200），reserve 应拒绝而不是
+        静默分配一个已被占用的号。"""
+        self._write_queue(
+            section_one=149,
+            section_one_rows="| 150 | 绕锁直写的行 | 某人 | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n",
+        )
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve", "1", "--section", "一")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("已存在于当前文件", result.stdout)
+        # 高水位线不应被推进——拒绝发生在写回之前。
+        final_text = Path(self.target).read_text(encoding="utf-8")
+        self.assertIn("§一 #149", final_text)
+        # 且不留半成品锁。
+        marker = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertTrue(marker.get("released"))
+
+    def test_reserve_no_collision_when_no_live_row_conflicts(self):
+        """反向对照：高水位线领先于所有可见行号（正常情形）——预留照常
+        成功，新加的这一处校验不应误伤既有用法。"""
+        self._write_queue(
+            section_one=200,
+            section_one_rows="| 150 | 历史已完成行 | 某人 | 指针 | 产出 | ✅ 已完成 | 触碰区 | 2026-07-01 |\n",
+        )
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve", "1", "--section", "一")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("§一 #201", result.stdout)
+
+
+class BypassDetectionTests(unittest.TestCase):
+    """队列 #200：绕过锁直接改写目标文件的检测机制（通用，任意 --file
+    均生效）。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = str(Path(self._tmpdir.name) / "假想队列.md")
+        self.lock_path = Path(self.target + ".editlock")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_first_ever_release_writes_lastknown_without_warning(self):
+        Path(self.target).write_text("初始内容\n", encoding="utf-8")
+        acquire_result = run("--file", self.target, "acquire", "--who", "A")
+        self.assertEqual(acquire_result.returncode, 0, acquire_result.stdout)
+        self.assertNotIn("绕过", acquire_result.stdout)
+
+        result = run("--file", self.target, "release", "--who", "A")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lastknown_path = Path(self.target + ".editlock.lastknown")
+        self.assertTrue(lastknown_path.exists())
+        self.assertEqual(lastknown_path.read_text(encoding="utf-8"), "初始内容\n")
+
+    def test_no_warning_when_content_unchanged_between_release_and_acquire(self):
+        Path(self.target).write_text("内容\n", encoding="utf-8")
+        run("--file", self.target, "acquire", "--who", "A")
+        run("--file", self.target, "release", "--who", "A")
+
+        result = run("--file", self.target, "acquire", "--who", "B")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("绕过", result.stdout)
+
+    def test_bypass_edit_between_release_and_acquire_is_detected(self):
+        Path(self.target).write_text("原始内容\n", encoding="utf-8")
+        run("--file", self.target, "acquire", "--who", "A")
+        run("--file", self.target, "release", "--who", "A")
+
+        # 模拟绕过锁直接改写（不经 acquire）。
+        Path(self.target).write_text("原始内容\n绕锁写入的新行\n", encoding="utf-8")
+
+        result = run("--file", self.target, "acquire", "--who", "B")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)  # 不阻断，仅回显
+        self.assertIn("绕过协议〇.7", result.stdout)
+        self.assertIn("1→2 行", result.stdout)
+
+    def test_legitimate_reserve_release_acquire_cycle_shows_no_warning(self):
+        """正常经工具完成的 acquire→reserve→release 循环（含高水位线行被
+        自身改写）不应触发误报。"""
+        Path(self.target).write_text(
+            "> **编号高水位线：§一 #10 ｜ §四 #1**（说明）\n\n"
+            "## 一、任务看板\n\n"
+            "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+            "|---|------|--------|-------------|----------|------|--------|------|\n",
+            encoding="utf-8",
+        )
+        run("--file", self.target, "acquire", "--who", "A", "--reserve", "1", "--section", "一")
+        run("--file", self.target, "release", "--who", "A")
+
+        result = run("--file", self.target, "acquire", "--who", "B")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("绕过", result.stdout)
+
+    def test_stale_lock_takeover_also_checks_bypass(self):
+        """陈旧锁被接管时同样跑绕锁检测——不局限于"全新锁"路径。"""
+        Path(self.target).write_text("原始内容\n", encoding="utf-8")
+        run("--file", self.target, "acquire", "--who", "A")
+        run("--file", self.target, "release", "--who", "A")
+        Path(self.target).write_text("原始内容\n绕锁写入\n", encoding="utf-8")
+
+        # 手工构造一把陈旧锁（模拟"有人 acquire 后异常退出，从未 release"）。
+        stale_since = (datetime.now(timezone.utc) - timedelta(minutes=31)).isoformat()
+        self.lock_path.write_text(
+            json.dumps({"who": "STALE", "note": "", "held_since": stale_since}),
+            encoding="utf-8",
+        )
+
+        result = run("--file", self.target, "acquire", "--who", "B")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("陈旧", result.stdout)
+        self.assertIn("绕过协议〇.7", result.stdout)
+
+
 class EditLockCrossWorktreeTests(unittest.TestCase):
     """回归 2026-07-23 供应链看板批1 worktree 会话发现的 gap：
     REPO_ROOT 若按 __file__ 所在 checkout 推算，主工作区与
@@ -633,10 +839,10 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         )
         self.target_path.write_text(text, encoding="utf-8")
 
-    def _acquire(self, who="A", reserve=None, section=None):
+    def _acquire(self, who="A", reserve=None, section=None, reserve_multi=None):
         ns = argparse.Namespace(
             file=self.module.DEFAULT_TARGET, who=who, note="",
-            reserve=reserve, section=section,
+            reserve=reserve, section=section, reserve_multi=reserve_multi,
         )
         return self.module.cmd_acquire(ns)
 
@@ -718,14 +924,15 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertNotEqual(result, 0)
 
     def test_duplicate_number_within_file_blocks_release(self):
-        # 预先在文件里放一行 #150（模拟"另一处已存在同号"），reserve 拿到
-        # 的新号恰好撞上——用较低的高水位线人为制造这种撞号，而非依赖真实
-        # 并发时序。
+        """组内重复校验独立于 --reserve 触发——手写一行沿用了已存在的编号，
+        不经 --reserve（队列 #185 落地后，若真走 --reserve 撞上这种情况会
+        在预留阶段就先被拦下，见 `ReserveIdsTests` 的竞态用例；本用例改为
+        直接手写，验证 #225 release 时的组内重复检查本身仍然独立生效）。"""
         self._write_queue(
             section_one_rows="| 150 | 既有任务 | 姚祖怡 | 指针 | 产出 | 在办 | 触碰区 | 2026-07-01 |\n",
-            hwm_one=149,
+            hwm_one=200,
         )
-        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        self.assertEqual(self._acquire(who="A"), 0)  # 不使用 --reserve
         text = self.target_path.read_text(encoding="utf-8")
         new_row = "| 150 | 撞号新任务 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
         text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
@@ -863,11 +1070,143 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         other_path = self.repo_root / "其他共享文件.md"
         other_path.write_text("随便写点内容 | 只有两列\n", encoding="utf-8")
         ns = argparse.Namespace(file="其他共享文件.md", who="A", note="",
-                                 reserve=None, section=None)
+                                 reserve=None, section=None, reserve_multi=None)
         self.assertEqual(self.module.cmd_acquire(ns), 0)
         release_ns = argparse.Namespace(file="其他共享文件.md", who="A")
         self.assertEqual(self.module.cmd_release(release_ns), 0)
 
+    def test_bypass_detection_writes_durable_log_for_default_target(self):
+        """队列 #200：锁定默认队列文件时，检测到绕锁改写除了终端回显，
+        还应落一条持久审计记录（reports/queue_edit_lock_bypass.jsonl）。"""
+        self._write_queue()
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+        text = self.target_path.read_text(encoding="utf-8")
+        self.target_path.write_text(text + "\n绕锁写入的一行\n", encoding="utf-8")
+
+        self.assertEqual(self._acquire(who="B"), 0)
+
+        log_path = self.repo_root / "reports" / "queue_edit_lock_bypass.jsonl"
+        self.assertTrue(log_path.exists())
+        entry = json.loads(log_path.read_text(encoding="utf-8").strip().splitlines()[-1])
+        self.assertEqual(entry["acquiring_who"], "B")
+        self.assertEqual(entry["target"], "queue.md")
+
+    def test_bypass_detection_does_not_write_durable_log_for_non_default_target(self):
+        """通用检测机制对任意 --file 都生效（回显警告，见
+        `BypassDetectionTests` 黑盒覆盖），但落盘审计记录只在锁定默认队列
+        文件时才写——避免任意 --file 都往 REPO_ROOT/reports/ 写，污染真实
+        项目目录（本用例用白盒 monkeypatch 过的临时 REPO_ROOT，验证"其他
+        文件"路径确实不产生落盘记录）。"""
+        other_target = "其他共享文件.md"
+        (self.repo_root / other_target).write_text("原始内容\n", encoding="utf-8")
+        self.assertEqual(self.module.cmd_acquire(argparse.Namespace(
+            file=other_target, who="A", note="", reserve=None, section=None, reserve_multi=None,
+        )), 0)
+        self.assertEqual(self.module.cmd_release(
+            argparse.Namespace(file=other_target, who="A")
+        ), 0)
+        (self.repo_root / other_target).write_text("原始内容\n绕锁写入\n", encoding="utf-8")
+
+        self.assertEqual(self.module.cmd_acquire(argparse.Namespace(
+            file=other_target, who="B", note="", reserve=None, section=None, reserve_multi=None,
+        )), 0)
+
+        log_path = self.repo_root / "reports" / "queue_edit_lock_bypass.jsonl"
+        self.assertFalse(log_path.exists())
+
+
+class FollowupReadmeStructuralValidationTests(unittest.TestCase):
+    """队列 #124 阶段二（design.md D1）：跟进信 README 两态语义的结构性
+    拦截"新建即终态"反模式。
+
+    白盒方式，同 ReleaseStructuralValidationTests：monkeypatch
+    REPO_ROOT/FOLLOWUP_README_TARGET 指向本用例专属临时目录（不能用真实
+    生产路径走黑盒子进程，会误触真实文件）。
+    """
+
+    HEADER = (
+        "| 编号 | 日期 | 收信人 | 主要事项 | 交期要点 | 发送状态（2026-07-06） |\n"
+        "|--------|------|--------|---------|---------|---------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.FOLLOWUP_README_TARGET = "README.md"
+        self.target_path = self.repo_root / "README.md"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_readme(self, rows=""):
+        text = "## 现有跟进信清单\n\n" + self.HEADER + rows
+        self.target_path.write_text(text, encoding="utf-8")
+
+    def _acquire(self, who="A"):
+        ns = argparse.Namespace(
+            file=self.module.FOLLOWUP_README_TARGET, who=who, note="",
+            reserve=None, section=None, reserve_multi=None,
+        )
+        return self.module.cmd_acquire(ns)
+
+    def _release(self, who=""):
+        ns = argparse.Namespace(file=self.module.FOLLOWUP_README_TARGET, who=who)
+        return self.module.cmd_release(ns)
+
+    def test_release_succeeds_with_no_changes(self):
+        self._write_readme()
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_new_row_with_draft_status_passes(self):
+        self._write_readme()
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(new_row)
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_new_row_with_finalized_status_blocks_release(self):
+        """D1 核心场景：起草物理上不能一步到位写终态——本次持锁窗口内
+        新增的行若直接是「🆕 待发」，release 必须被拒绝、锁保持占用。"""
+        self._write_readme()
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | 🆕 待发 |\n"
+        self._write_readme(new_row)
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+        self.assertFalse(
+            json.loads((self.repo_root / "README.md.editlock").read_text(
+                encoding="utf-8")).get("released")
+        )
+
+    def test_existing_row_draft_to_finalized_transition_passes(self):
+        """既有行从「⏳ 待你审」转为「🆕 待发」是批准脚本
+        （approve_followup_letter.py）的合法产物，其身份在快照里能找到，
+        不应被本拦截误伤。"""
+        existing_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(existing_row)
+        self.assertEqual(self._acquire(who="A"), 0)
+        finalized_row = existing_row.replace("⏳ 待你审", "🆕 待发")
+        self._write_readme(finalized_row)
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_unrelated_edit_to_non_finalized_row_passes(self):
+        """编辑一个既有行、但改动后状态列不是终态（如仍是「✅ 已发」）——
+        即便非状态列内容也变了（身份不再匹配快照），也不应被拦：本拦截
+        只关心「新增行 + 终态」这一种组合。"""
+        existing_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ✅ 已发 |\n"
+        self._write_readme(existing_row)
+        self.assertEqual(self._acquire(who="A"), 0)
+        edited_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项（已更新） | 不急 | ✅ 已发 |\n"
+        self._write_readme(edited_row)
+
+        self.assertEqual(self._release(who="A"), 0)
 
 if __name__ == "__main__":
     unittest.main()

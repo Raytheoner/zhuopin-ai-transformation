@@ -8,8 +8,13 @@
     --readme "<README-跟进机制与命名约定.md 路径>" \
     --md "<跟进信 .md 路径>" \
     [--docx "<跟进信 .docx 路径>"] \
+    [--attachment "<其它附件路径>" [--attachment "<第三个附件路径>" ...]] \
     --chatid "<企微群/用户 chatid>" \
     --match-topic "<README「主要事项」列的唯一定位关键字>"
+
+队列 #93（多附件支持）：一次推送若需带多份材料，`--docx` 仍是首个附件的
+向后兼容位，`--attachment` 可重复传入以追加更多附件（docx/其他文件均
+可），不必再像此前那样拆成多次推送。
 
 环境变量（审计路径解析，队列 #126）：
   WECOM_AIBOT_QUEUE_PATH   可选，仅作仓库根解析的锚点（本脚本本身不读队列），
@@ -84,6 +89,7 @@ async def _run(args: argparse.Namespace) -> int:
             readme_path=Path(args.readme),
             md_path=Path(args.md),
             docx_path=Path(args.docx) if args.docx else None,
+            extra_attachments=[Path(p) for p in args.attachment] if args.attachment else None,
             connector=connector,
             chatid=args.chatid,
             # 2026-07-31 起 README 表格新增"编号"列（协议见 README-跟进机制与命名约定.md），
@@ -93,8 +99,8 @@ async def _run(args: argparse.Namespace) -> int:
             audit=audit,
         )
         print(f"[OK] 推送成功，README 已回填：{result.new_status}")
-        if result.media_id:
-            print(f"[OK] docx 素材已上传并发送，media_id={result.media_id}")
+        if result.media_ids:
+            print(f"[OK] {len(result.media_ids)} 份附件已上传并发送，media_ids={result.media_ids}")
         return 0
     except DeliveryNotFinalizedError as exc:
         print(f"[REJECTED] 门禁②拒绝发送：{exc}")
@@ -111,6 +117,11 @@ def main() -> None:
     parser.add_argument("--readme", required=True)
     parser.add_argument("--md", required=True)
     parser.add_argument("--docx")
+    parser.add_argument(
+        "--attachment",
+        action="append",
+        help="额外附件路径，可重复传入以追加多份材料（队列 #93）",
+    )
     parser.add_argument("--chatid", required=True)
     parser.add_argument(
         "--match-topic", required=True, help='README「主要事项」列的唯一定位关键字'

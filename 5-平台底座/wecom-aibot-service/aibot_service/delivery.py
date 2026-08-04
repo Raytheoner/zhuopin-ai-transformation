@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -27,28 +27,36 @@ class BackfillWriteError(RuntimeError):
 @dataclass
 class DeliveryResult:
     location: RowLocation
-    media_id: Optional[str]
+    media_id: Optional[str]  # 向后兼容：首个附件的 media_id（无附件为 None）
     new_status: str
+    media_ids: list[str] = field(default_factory=list)  # 全部附件的 media_id，含首个
 
 
 async def push_followup(
     *,
     readme_path: Path,
     md_path: Path,
-    docx_path: Optional[Path],
+    docx_path: Optional[Path] = None,
     connector: AibotConnector,
     chatid: str,
     match: Callable[[list[str]], bool],
     audit: AuditLogger,
     evaluator: str = "system",
     cc_to_paul: bool = True,
+    extra_attachments: Optional[list[Path]] = None,
 ) -> DeliveryResult:
     """定位 README 中一行跟进信、断言已定稿、推送、抄送 Paul、回填。
 
     `cc_to_paul`（Paul 拍板，出站跟进信固定抄送逻辑）：主推送成功后，额外把
-    同一份 markdown 正文 + docx 附件私聊发一份给 `PAUL_USERID`，供其掌握
+    同一份 markdown 正文 + 全部附件私聊发一份给 `PAUL_USERID`，供其掌握
     发送全貌；主送目标本身就是 Paul 时跳过（避免自己抄送自己）。CC 失败
     不影响主推送已成功的事实，只记审计不抛异常（见 `followup_cc_failed`）。
+
+    `docx_path`/`extra_attachments`（队列 #93，多附件支持）：`docx_path` 保留
+    作首个附件的向后兼容位；`extra_attachments` 是额外附件列表（docx/其他
+    文件均可），二者按顺序拼接后逐个上传+发送，互不影响彼此成败（单个
+    附件上传失败会中断本次推送，同旧行为——附件是正文的一部分，不做"部分
+    发送"的静默降级）。
 
     Raises:
         DeliveryNotFinalizedError: 门禁②拒绝（状态列非"🆕 待发"）。
@@ -77,11 +85,15 @@ async def push_followup(
     content = md_path.read_text(encoding="utf-8")
     await connector.send_markdown(chatid, content)
 
-    media_id = None
-    if docx_path is not None and docx_path.exists():
-        upload = await connector.upload_media(docx_path.read_bytes(), docx_path.name)
-        media_id = upload.media_id
-        await connector.send_file(chatid, media_id)
+    attachments = list(([docx_path] if docx_path is not None else []) + list(extra_attachments or []))
+    media_ids: list[str] = []
+    for attachment in attachments:
+        if attachment is None or not attachment.exists():
+            continue
+        upload = await connector.upload_media(attachment.read_bytes(), attachment.name)
+        media_ids.append(upload.media_id)
+        await connector.send_file(chatid, upload.media_id)
+    media_id = media_ids[0] if media_ids else None
 
     audit.record(
         AuditEvent(
@@ -89,16 +101,20 @@ async def push_followup(
             action="followup_delivered",
             evaluator=evaluator,
             automation_level="L1",
-            decision={"sent": True, "backfilled": False, "media_id": media_id},
-            data_sources={"md": str(md_path), "docx": str(docx_path) if docx_path else ""},
+            decision={"sent": True, "backfilled": False, "media_id": media_id, "media_ids": media_ids},
+            data_sources={
+                "md": str(md_path),
+                "docx": str(docx_path) if docx_path else "",
+                "attachments": [str(p) for p in attachments],
+            },
         )
     )
 
     if cc_to_paul and chatid != PAUL_USERID:
         try:
             await connector.send_markdown(PAUL_USERID, f"【抄送】{content}")
-            if media_id is not None:
-                await connector.send_file(PAUL_USERID, media_id)
+            for mid in media_ids:
+                await connector.send_file(PAUL_USERID, mid)
             audit.record(
                 AuditEvent(
                     scenario="wecom-aibot",
@@ -156,4 +172,4 @@ async def push_followup(
         )
     )
 
-    return DeliveryResult(location=loc, media_id=media_id, new_status=new_status)
+    return DeliveryResult(location=loc, media_id=media_id, new_status=new_status, media_ids=media_ids)

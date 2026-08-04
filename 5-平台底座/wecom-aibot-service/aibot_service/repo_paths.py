@@ -43,6 +43,11 @@ PENDING_QUEUE_APPENDS_RELATIVE_PATH = (
 PENDING_QUEUE_LOCK_APPENDS_RELATIVE_PATH = (
     Path("5-平台底座") / "wecom-aibot-service" / "reports" / "pending_queue_lock_appends.jsonl"
 )
+# 队列 #124 阶段二追加要求①：approval.py 冷却窗口"首次观测到该行"时间戳
+# 存放位置，与 audit/pending 系列文件同一套 repo_root 解析、同一目录。
+FOLLOWUP_APPROVAL_COOLDOWN_STATE_RELATIVE_PATH = (
+    Path("5-平台底座") / "wecom-aibot-service" / "reports" / "followup_approval_cooldown_state.json"
+)
 
 
 def resolve_repo_root(
@@ -95,3 +100,9 @@ def resolve_pending_queue_lock_appends_path(repo_root: Path) -> Path:
     """队列 #192-C：编辑锁忙推迟暂存（`queue_lock_pending.py`）的统一落点，
     与 `resolve_audit_path` 同一套 `repo_root`。"""
     return repo_root / PENDING_QUEUE_LOCK_APPENDS_RELATIVE_PATH
+
+
+def resolve_followup_approval_cooldown_state_path(repo_root: Path) -> Path:
+    """队列 #124 阶段二追加要求①：approval.py 冷却窗口状态文件的统一落点，
+    与 `resolve_audit_path` 同一套 `repo_root`。"""
+    return repo_root / FOLLOWUP_APPROVAL_COOLDOWN_STATE_RELATIVE_PATH

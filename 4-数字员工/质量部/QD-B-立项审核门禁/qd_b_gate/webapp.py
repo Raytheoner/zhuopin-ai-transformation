@@ -19,6 +19,7 @@ prompt §4）。
 from __future__ import annotations
 
 import html
+import re
 import time
 import traceback
 from pathlib import Path
@@ -46,6 +47,20 @@ from .xlsx_report import build_workbook, report_filename
 
 ALLOWED_EXTENSIONS = {".xlsx"}
 MAX_CONTENT_LENGTH = 20 * 1024 * 1024  # 20MB —— 华丰样本含嵌入图片约 2.3MB，留足余量
+
+# 队列 #108②（外部第二次交叉审核采纳项）：上传文件名此前只用 `Path(f.filename).name`
+# 去掉路径部分，未过滤控制字符/Windows 保留字符。werkzeug 自带的 secure_filename 会把
+# 非 ASCII 字符整体丢弃（中文文件名会变成空串），不适用——立项书文件名多为中文项目名，
+# 需要保留可读性。改为自写的类 secure_filename 过滤：只滤路径分隔符/控制字符/
+# Windows 非法字符，中文/常规标点原样保留。
+_UNSAFE_FILENAME_CHARS = re.compile(r'[\x00-\x1f\x7f<>:"/\\|?*]')
+
+
+def _secure_filename(filename: str) -> str:
+    name = Path(filename).name  # 去掉任何路径部分（防路径穿越，如 "../../etc/passwd"）
+    name = _UNSAFE_FILENAME_CHARS.sub("_", name)
+    name = name.strip(" .")  # Windows 文件名不允许以空格/点收尾
+    return name or "upload"
 
 _PAGE_HEAD = """<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -373,14 +388,15 @@ def create_app(*, upload_dir: Path, audit_path: Path, output_dir: Path | None = 
         f = request.files.get("proposal")
         if f is None or not f.filename:
             return Response(_error_page("请选择一份立项申请书 Excel 文件（.xlsx）"), mimetype="text/html"), 400
-        suffix = Path(f.filename).suffix.lower()
+        safe_name = _secure_filename(f.filename)
+        suffix = Path(safe_name).suffix.lower()
         if suffix not in ALLOWED_EXTENSIONS:
             return Response(
                 _error_page(f"仅支持 .xlsx 文件，收到：{suffix or '(无扩展名)'}"), mimetype="text/html"
             ), 400
 
         ts = time.strftime("%Y%m%d-%H%M%S")
-        saved_path = upload_dir / f"{ts}_{Path(f.filename).name}"
+        saved_path = upload_dir / f"{ts}_{safe_name}"
         f.save(saved_path)
 
         try:
@@ -388,7 +404,7 @@ def create_app(*, upload_dir: Path, audit_path: Path, output_dir: Path | None = 
                 saved_path,
                 evaluator="AI预审(Web-试用版)",
                 audit_path=audit_path,
-                sample_id=Path(f.filename).stem,
+                sample_id=Path(safe_name).stem,
             )
         except Exception as exc:  # noqa: BLE001 —— 解析/规则异常需如实呈现给用户，而非 500 空白页
             return Response(

@@ -133,16 +133,34 @@ SRM/ERP/U9C 采购供应商数据不属于 OEM 技术数据隔离范围，因此
 - **WHEN** 调用 `XkySrmConnector.from_env()` 且环境变量已设置
 - **THEN** 连接器正常构造，凭证从环境变量读取，与修改前行为一致
 
+### Requirement: 连接器 from_env 审计缺失 fail-loud 告警
+`ZpConnector.from_env` / `XkySrmConnector.from_env` 生产构造路径在未注入 `audit` 时 MUST 触发 `UserWarning`（生产访问将不留痕的显式告警），保留向后兼容（不抛错）。
+
+#### Scenario: from_env 无 audit 触发告警
+- **WHEN** 调用 `ZpConnector.from_env()` 未传 `audit`
+- **THEN** 触发 `UserWarning`；注入 audit 时不告警
+
 ### Requirement: U9C/ERP 连接器默认开启 TLS 证书校验
-平台 `ZpConnector`（U9C/ERP 唯一规范连接器）SHALL 对所有公网请求（含携带 `client_secret` 的 OAuth2 `AuthLogin`、`zp` 视图查询、`U9C/webapi/BOM/Query`）默认启用 TLS 证书与主机名校验（`ssl.create_default_context()`，`verify_mode=CERT_REQUIRED`、`check_hostname=True`）。MUST NOT 全局关闭证书校验。逃生阀 `U9C_TLS_INSECURE=true` 仅允许在 `mock` 模式下生效，`real` 模式下强制开启校验，配置显式逃生阀不影响 real 模式。
+平台 `ZpConnector`（U9C/ERP 唯一规范连接器）SHALL 对所有公网请求（含携带 `client_secret` 的 OAuth2 `AuthLogin`、`zp` 视图查询、`U9C/webapi/BOM/Query`）默认启用 TLS 证书与主机名校验（`ssl.create_default_context()`，`verify_mode=CERT_REQUIRED`、`check_hostname=True`）。MUST NOT 全局关闭证书校验。逃生阀 `U9C_TLS_INSECURE=true` 仅允许在 `mock` 模式下生效，`real` 模式下 MUST 拒绝生效（fail-loud，见下一条 Requirement）。
 
 #### Scenario: 默认 TLS 校验开启
 - **WHEN** `ZpConnector` 以默认配置发起 HTTPS 请求
 - **THEN** TLS 证书与主机名均经校验，伪造证书请求被拒绝
 
-#### Scenario: real 模式忽略逃生阀
-- **WHEN** `U9C_TLS_INSECURE=true` 且 `mode=real`
-- **THEN** 连接器仍开启 TLS 校验，记录警告日志，不使用不安全上下文
+#### Scenario: real 模式拒绝逃生阀（队列 #233，2026-08-04 修正：原文误写"忽略并继续"，与代码 fail-loud 行为不符）
+- **WHEN** `U9C_TLS_INSECURE=1` 且 `data_source=real`
+- **THEN** 连接器抛出 `InsecureTLSError`（对客权威路径绝不允许裸信道），不静默继续、不使用不安全上下文
+
+### Requirement: 不安全 TLS 仅经显式逃生开关并留痕
+连接器 SHALL 仅在显式设置环境变量 `U9C_TLS_INSECURE=1`（或 `true`/`yes`）时关闭证书校验，作为 IT 提供受信证书前的 LAN 应急通道。开启逃生开关时 MUST 触发 `UserWarning`，并在注入 `ConnectorAudit` 时写一条 `source="TLS_INSECURE"` 痕迹（无 audit 时至少 warn）。`real` 数据源（对客权威路径）下逃生开关 MUST NOT 生效（强制证书校验，见上一条 Requirement）。
+
+#### Scenario: 逃生开关关闭校验并告警留痕
+- **WHEN** 设置 `U9C_TLS_INSECURE=1` 且注入 audit 构造连接器（`mock` 模式）
+- **THEN** SSL context `verify_mode == ssl.CERT_NONE`，触发 `UserWarning`，且 audit 收到 `source="TLS_INSECURE"` 痕迹
+
+#### Scenario: real 模式拒绝不安全逃生
+- **WHEN** `data_source="real"` 且设置 `U9C_TLS_INSECURE=1`
+- **THEN** 连接器强制证书校验（拒绝以不安全模式连接对客权威路径）
 
 ### Requirement: BOM 拉取失败显式信号，不静默吞错
 `ZpConnector.get_bom_for_products` SHALL 在单品 BOM 查询失败时收集失败料号清单，不得静默丢弃返回残缺 BOM。部分失败 MUST 返回 `(rows, failed_ids)` 并写审计痕迹；全部产品查询失败 MUST 抛出带失败明细的错误，绝不返回空结果当成功。下游齐套据此不再因残缺 BOM 算出虚低毛需求。
@@ -154,6 +172,13 @@ SRM/ERP/U9C 采购供应商数据不属于 OEM 技术数据隔离范围，因此
 #### Scenario: 全部失败抛出错误
 - **WHEN** 所有产品 BOM 查询均失败
 - **THEN** 抛出含失败明细的错误，不返回空成功结果
+
+### Requirement: get_bom 回退走 fail-loud 闸门
+`ZpConnector.get_bom()` 在真实 BOM 为空时的 CSV 回退 MUST 经 `_fallback_or_failloud` 闸门：`real` 模式未显式 opt-in → fail-loud（`RealEndpointNotReadyError`）；显式 opt-in → CSV 但审计标 `CSV_mock` + `UserWarning`（非权威、禁入对客/L2），消除 mock BOM 静默混入且审计错标 `CSV` 的旁路。
+
+#### Scenario: real 模式真实 BOM 空时 fail-loud
+- **WHEN** `data_source=real` 且未 opt-in，真实 BOM 为空，调用 `get_bom()`
+- **THEN** 抛 `RealEndpointNotReadyError`，不静默回退 mock CSV
 
 ### Requirement: BOM 取数按生效日期区间过滤当前版本（B3，2026-07-10 会议定稿，字段更正）
 `get_bom_for_products` SHALL 对同一物料返回的多条 BOM 主记录，按 `m_effectiveDate ≤ 今天 < m_disableDate` 区间判定，只保留当前生效的那一条版本；该条内的子件行才纳入返回结果。`BomRow` 字段结构不变。
@@ -188,6 +213,13 @@ SRM/ERP/U9C 采购供应商数据不属于 OEM 技术数据隔离范围，因此
 #### Scenario: SRM 查询失败不阻断其他采购单
 - **WHEN** 部分采购单的 SRM 查询发生异常（超时/接口错误）
 - **THEN** 其余采购单的取数与确认日期查询不受影响，异常采购单退回 `expected_date` 并留痕，不中断整体流程
+
+### Requirement: SRM 承诺交期区分查询失败与未答交
+`XkySrmConnector.get_confirmed_dates` SHALL 区分"查询失败"（异常）与"供应商未答交"（正常返回 None）。单 PO 查询异常 MUST 计入失败 PO 清单并写 audit error 痕迹，返回 `(confirmed, failed_pos)`；"未答交"不计入失败。在途三色清单据此不再把查询失败误当无延期。
+
+#### Scenario: 单 PO 查询失败计入失败清单
+- **WHEN** 批量查询承诺交期，其中一个 PO 查询抛异常、一个未答交、一个有交期
+- **THEN** 返回 confirmed 仅含有交期者、failed_pos 含异常 PO，并写 `confirmed_date_query_failed` 审计；未答交者既不在 confirmed 也不在 failed
 
 ### Requirement: BOM 取数提取项次与替代料关系（C-1，2026-07-14 口径定稿）
 `get_bom_for_products` SHALL 对每条 U9C BOM 主件行提取其项次（`m_sequence`）与子项类型（`m_componentType`），并读取其嵌套的替代料列表（`m_bOMCompSubstituteDTO4CreateSv`），为每条替代料生成对等的 `BomRow`（与主件行共享同一 `sequence`、`is_substitute=True`）。`BomRow` 新增的 `sequence`/`is_substitute` 字段 MUST 为可选（默认值 `""`/`False`），不改变现有调用方在不使用这两个字段时的行为。

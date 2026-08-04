@@ -53,6 +53,29 @@
 历史行不追溯，见
 `_validate_release_structure`。
 
+队列 #200（2026-08-04）：`acquire` 成功授予（新锁或接管陈旧锁）时，会把
+目标文件此刻内容与"上次 release 时记录的内容"比对——不同即说明文件在
+两次合法 release/acquire 之间被直接改写过（未经本工具），大概率是绕过
+协议〇.7 锁保护的直接写入。检测到即打印警告（不阻断 acquire，锁仍照常
+授予——协议〇.7 一贯是协作性质而非硬互斥，见下），锁定默认队列文件时还
+落一条持久审计记录到 `reports/queue_edit_lock_bypass.jsonl`（终端输出转瞬
+即逝，调用方未必是人在盯屏幕）。机制通用（任意 `--file` 均生效，复用
+`.editlock.lastknown` 这一每目标文件独立的小状态文件），只有落盘审计
+记录这一步限定默认队列文件（避免任意 `--file` 都写 `REPO_ROOT/reports/`
+在测试等场景污染真实项目目录）。
+
+队列 #185（2026-08-04）：`--reserve N --section 一|四` 原本一次只能预留一个
+分区的号，而"同时要 §一/§四 两套号"是最高频的消费场景之一（值周巡检等
+每次都得手工分两次取、或自行 +1 续排另一套，2026-08-03/08-04 连续多次
+真实撞见）——新增 `--reserve-multi 一:2 四:1` 形式一次性跨多分区预留，
+与 `--reserve`/`--section` 互斥（选一种方式）。**竞态防护（同日实测）**：
+若高水位线本身已滞后于文件实际内容（如 #200 描述的绕锁直写场景，写入了
+新行但没同步推高水位线），单纯"高水位线+1"会算出一个其实已被占用的号
+——`_reserve_ids` 现在写回高水位线之前，额外核对即将分配的号是否已出现
+在当前文件同分区的可见行里，命中即 fail-loud（不静默跳过冲突号、不改用
+"扫描可见最大值"这类会撞已归档编号的替代路径），逼调用方先核实文件真实
+状态再重试。
+
 锁本地存在于文件系统（gitignore，不入库、不需要 git commit 才生效）。
 REPO_ROOT 按 `git rev-parse --git-common-dir` 定位——所有 git worktree
 共享同一个 `.git`，故不论从主工作区还是任一 `.claude/worktrees/<name>/`
@@ -70,6 +93,9 @@ REPO_ROOT 按 `git rev-parse --git-common-dir` 定位——所有 git worktree
 
   # 队列 #163：预留取号，直接拿字面编号，不再自己读高水位线 +1
   python 0-学习与工具/工具-共享文档编辑锁.py acquire --who "Cowork-采购专线" --note "v2.4 回灌" --reserve 2 --section 一
+
+  # 队列 #185：一次性跨 §一/§四 两个分区预留（与 --reserve/--section 互斥）
+  python 0-学习与工具/工具-共享文档编辑锁.py acquire --who "值周巡检" --note "本周计划" --reserve-multi 一:2 四:1
 
 陈旧锁判定：超过 STALE_MINUTES（默认 30 分钟）未释放的锁视为会话异常退出的
 遗留物，下一个 acquire 会打印警告后接管，不会死锁。
@@ -146,6 +172,13 @@ MUTEX_WAIT_TIMEOUT_SECONDS = 5.0
 RECENT_ACQUIRE_WINDOW_MINUTES = 120
 HISTORY_RETENTION_MINUTES = 24 * 60
 
+# 队列 #124 阶段二（design.md D1）：跟进信 README 的两态语义结构性拦截——
+# release 时锁定目标是这个文件才跑（判定逻辑与 §一/§二/§三/§四 那套无关，
+# 是完全独立的一张单表，见 `_validate_followup_readme_release`）。
+FOLLOWUP_README_TARGET = "6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md"
+FOLLOWUP_DRAFT_STATUS = "⏳ 待你审"
+FOLLOWUP_FINALIZED_STATUS = "🆕 待发"
+
 # 队列 #225：release 时对跨桌任务队列.md 做结构校验，仅当锁定目标是这个
 # 默认队列文件时才跑（§一/§二/§三/§四 的语义只对它成立，--file 指向其他
 # 共享文件时这套校验没有意义）。
@@ -159,6 +192,10 @@ P0_P1_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])P[01](?![A-Za-z0-9])")
 LIVE_SECTION_HEADING_RE = re.compile(r"^## ([一二三四])、", re.MULTILINE)
 # §一/§四 表头首列 "#"、§二 表头首列 "批次"；分隔行首列全为 "-"/空白。
 _TABLE_HEADER_FIRST_CELLS = ("#", "批次", "")
+
+# 队列 #200：绕过锁直接改写的持久审计记录（仅锁定默认队列文件时落盘，
+# 见模块文档）。
+BYPASS_LOG_REL = "reports/queue_edit_lock_bypass.jsonl"
 
 
 def _mutex_path(lock_path: Path) -> Path:
@@ -240,20 +277,25 @@ def _read_high_water_mark(target: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def _read_target_text(target: str) -> str:
+    """读取目标文件此刻内容；不存在（如 `--file` 指向尚未创建的新共享
+    文件）时返回空串，不视为错误——多处（快照/lastknown 比对）共用同一个
+    读取口径。"""
+    try:
+        return _target_path(target).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
 def _snapshot_path(target: str) -> Path:
     lock_path = _lock_path(target)
     return lock_path.with_name(lock_path.name + ".snapshot")
 
 
-def _write_snapshot(target: str) -> None:
+def _write_snapshot(target: str, content: str) -> None:
     """acquire 成功时把目标文件此刻内容存一份快照（队列 #225）——release 时
     据此 diff 出"本次持锁期间新增/修改"的行，结构校验只对这些行生效，不
-    对历史行秋后算账。目标文件不存在（如 `--file` 指向一个尚未创建的新
-    共享文件）时快照为空串，不视为错误。"""
-    try:
-        content = _target_path(target).read_text(encoding="utf-8")
-    except OSError:
-        content = ""
+    对历史行秋后算账。"""
     _snapshot_path(target).write_text(content, encoding="utf-8")
 
 
@@ -262,6 +304,60 @@ def _read_snapshot(target: str) -> str:
         return _snapshot_path(target).read_text(encoding="utf-8")
     except OSError:
         return ""
+
+
+def _lastknown_path(target: str) -> Path:
+    lock_path = _lock_path(target)
+    return lock_path.with_name(lock_path.name + ".lastknown")
+
+
+def _read_lastknown(target: str) -> str | None:
+    """读取"上次成功 release 时的目标文件内容"——队列 #200 绕锁检测的比对
+    基准。文件不存在（从未有过一次经本工具完成的 release，如首次使用）
+    时返回 `None`，与"内容为空字符串"区分开，避免把"从未记录过"误判为
+    "内容被清空"。"""
+    path = _lastknown_path(target)
+    if not path.exists():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _write_lastknown(target: str, content: str) -> None:
+    """release 成功时把"正式交还"的目标文件内容存一份（队列 #200）——下一次
+    acquire 据此判断这期间文件是否被绕过锁直接改写过。"""
+    _lastknown_path(target).write_text(content, encoding="utf-8")
+
+
+def _summarize_content_diff(old: str, new: str) -> str:
+    """轻量摘要两段文本的差异规模，不做真正的逐行 diff（那是给人看的，
+    这里只需要一个"变化有多大"的量级提示）。"""
+    old_lines = old.splitlines()
+    new_lines = new.splitlines()
+    changed = len(set(old_lines) ^ set(new_lines))
+    return f"{len(old_lines)}→{len(new_lines)} 行，约 {changed} 行不同"
+
+
+def _record_bypass_detection(repo_root: Path, target: str, who: str, diff_summary: str) -> None:
+    """队列 #200：检测到绕过锁的直接改写时，落一条持久审计记录——终端
+    输出转瞬即逝，调用方未必是人在盯屏幕（如子进程调用），只回显不留痕
+    等于没有检测。写入失败不应影响 acquire 本身（best-effort，同 sweep 里
+    审计/告警失败不影响主流程退出码的既有惯例）。"""
+    log_path = repo_root / BYPASS_LOG_REL
+    entry = {
+        "detected_at": _now().isoformat(),
+        "target": target,
+        "acquiring_who": who,
+        "diff_summary": diff_summary,
+    }
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 def _read_raw_lock(lock_path: Path) -> dict:
@@ -358,6 +454,27 @@ def _reserve_ids(target: str, section: str, count: int) -> list[int]:
 
     current = int(section_match.group(2))
     reserved = list(range(current + 1, current + 1 + count))
+
+    # 队列 #185（2026-08-04 实测竞态）：高水位线可能已经滞后于文件实际
+    # 内容——例如有人绕过编辑锁直接写入了一行新编号（见 #200），却没有
+    # 同步推高水位线；此时单纯"高水位线+1"会算出一个其实已被占用的号。
+    # 写回高水位线之前，核对即将分配的号是否已出现在当前文件同分区的
+    # 可见行里——命中即 fail-loud（不静默跳过冲突号、不改用"扫描可见
+    # 最大值"这类会撞已归档编号的替代路径，见本函数一贯的 fail-loud 原则
+    # 与 ReserveFailedError 文档），逼调用方先核实文件真实状态再重试。
+    live_numbers = {
+        int(cells[0])
+        for _, cells in _table_data_rows(_split_live_sections(text).get(section, ""))
+        if cells[0].isdigit()
+    }
+    collided = sorted(set(reserved) & live_numbers)
+    if collided:
+        raise ReserveFailedError(
+            f"拒绝预留：即将分配的编号 {collided} 已存在于当前文件 §{section} "
+            f"可见行中（高水位线={current}，落后于文件实际内容——很可能有绕过"
+            "编辑锁的直接写入，见队列 #200/#233）。请先核实文件真实状态后再重试。"
+        )
+
     new_value = reserved[-1]
     new_line = (
         line[:section_match.start(2)] + str(new_value) + line[section_match.end(2):]
@@ -447,6 +564,81 @@ def _diff_touched_rows(
     ]
 
 
+def _followup_readme_rows(text: str) -> list[tuple[str, list[str], int]]:
+    """跟进信 README「现有跟进信清单」表的数据行——(原始行文本, 单元格,
+    状态列索引) 三元组列表。判定逻辑与 `aibot_service.readme_table.iter_rows`
+    一致（本工具不 import aibot_service 包，独立实现一份，避免额外的跨包
+    耦合——两处各自维护成本极低，均为几行纯文本切分）：表头＝任意以 `|`
+    开头且含"发送状态"字样的行；其后跳过 `|---|...` 分隔行，直到第一条非
+    `|` 开头的行为止都是数据行。目标文件不存在/无此表时返回空列表。
+    """
+    lines = text.splitlines()
+    header_idx = None
+    status_col_index = -1
+    for i, line in enumerate(lines):
+        if line.strip().startswith("|") and "发送状态" in line:
+            header_cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            for j, cell in enumerate(header_cells):
+                if cell.startswith("发送状态"):
+                    status_col_index = j
+                    break
+            header_idx = i
+            break
+    if header_idx is None or status_col_index < 0:
+        return []
+
+    rows: list[tuple[str, list[str], int]] = []
+    for i in range(header_idx + 2, len(lines)):
+        line = lines[i]
+        if not line.strip().startswith("|"):
+            break
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) <= status_col_index:
+            continue
+        rows.append((line, cells, status_col_index))
+    return rows
+
+
+def _followup_row_identity(cells: list[str], status_col_index: int) -> tuple[str, ...]:
+    """行身份＝除状态列外全部单元格——只要其余内容不变，状态列如何转换
+    都指向同一行（与 `approval.py._row_identity` 同一判据，两处独立实现
+    但语义必须一致，否则"既有行合法转终态"会被这里误判为"新增行"）。"""
+    return tuple(c for i, c in enumerate(cells) if i != status_col_index)
+
+
+def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> list[str]:
+    """队列 #124 阶段二（design.md D1）：跟进信 README 两态语义的结构性
+    拦截"新建即终态"反模式。比对 acquire 快照与当前内容，若某行的"非状态
+    列身份"在快照里不存在（本次持锁窗口内新增），且当前状态列值为终态
+    标记 `🆕 待发`，判违规——起草物理上不能一步到位写终态，必须先写
+    `⏳ 待你审`，再经独立的 `approve_followup_letter.py` 转终态（该脚本
+    在专属的另一次持锁窗口外运行，不改队列文件锁，不受本函数约束）。
+    既有行从 `⏳ 待你审` 转为 `🆕 待发`（批准脚本的合法产物，其身份在
+    快照里能找到）不受影响，正常放行。
+    """
+    violations: list[str] = []
+    old_rows = _followup_readme_rows(snapshot_text)
+    old_identities = {
+        _followup_row_identity(cells, idx) for _, cells, idx in old_rows
+    }
+
+    for line, cells, status_col_index in _followup_readme_rows(current_text):
+        status_value = cells[status_col_index]
+        if status_value != FOLLOWUP_FINALIZED_STATUS:
+            continue
+        identity = _followup_row_identity(cells, status_col_index)
+        if identity not in old_identities:
+            preview = line.strip()
+            if len(preview) > 80:
+                preview = preview[:80] + "…"
+            violations.append(
+                f"新增行状态列直接写终态「{FOLLOWUP_FINALIZED_STATUS}」，违反两态语义"
+                f"（起草只能写「{FOLLOWUP_DRAFT_STATUS}」，转终态须经独立的 "
+                f"approve_followup_letter.py）：{preview}"
+            )
+    return violations
+
+
 def _validate_release_structure(
     args: argparse.Namespace, lock_data: dict, repo_root: Path,
 ) -> list[str]:
@@ -476,8 +668,7 @@ def _validate_release_structure(
       dogfooding 本行改造时的真实案例，见 #225/#230 行）。
     """
     violations: list[str] = []
-    target_path = _target_path(args.file)
-    current_text = target_path.read_text(encoding="utf-8") if target_path.exists() else ""
+    current_text = _read_target_text(args.file)
     snapshot_text = _read_snapshot(args.file)
 
     new_sections = _split_live_sections(current_text)
@@ -618,30 +809,70 @@ def _write_released_marker(
     })
 
 
+def _parse_reserve_multi(tokens: list[str]) -> list[tuple[str, int]]:
+    """解析 `--reserve-multi 一:2 四:1` 形式的多分区预留请求（队列 #185）。
+    校验失败抛 `ValueError`，由调用方转成用户可读的错误信息（连锁文件都
+    不碰，同 `--reserve`/`--section` 既有的"校验失败不制造半成品状态"原则）。
+    """
+    requests: list[tuple[str, int]] = []
+    seen_sections: set[str] = set()
+    for token in tokens:
+        if ":" not in token:
+            raise ValueError(f"格式应为 分区:数量（如 一:2），收到 {token!r}")
+        section, _, count_str = token.partition(":")
+        if section not in SECTION_NUMBER_PATTERNS:
+            raise ValueError(f"未知分区 {section!r}，仅支持 {sorted(SECTION_NUMBER_PATTERNS)}")
+        if section in seen_sections:
+            raise ValueError(f"分区 {section!r} 重复出现，每个分区只能指定一次")
+        try:
+            count = int(count_str)
+        except ValueError:
+            raise ValueError(f"数量应为整数，收到 {count_str!r}") from None
+        if count <= 0:
+            raise ValueError(f"数量须为正整数，收到 {count}")
+        seen_sections.add(section)
+        requests.append((section, count))
+    return requests
+
+
 def cmd_acquire(args: argparse.Namespace) -> int:
-    # 队列 #163：--reserve 必须配 --section，且计数须为正——先做参数校验，
-    # 校验失败时连锁文件都不碰（不制造"锁占了、但没预留成功"的半成品状态）。
-    if args.reserve is not None:
+    # 队列 #163/#185：--reserve/--section 与 --reserve-multi 二选一，先做
+    # 参数校验，校验失败时连锁文件都不碰（不制造"锁占了、但没预留成功"的
+    # 半成品状态）。
+    reserve_requests: list[tuple[str, int]] = []
+    if args.reserve_multi is not None:
+        if args.reserve is not None or args.section is not None:
+            print("✗ --reserve-multi 不能与 --reserve/--section 同时使用（选一种方式）。")
+            return 1
+        try:
+            reserve_requests = _parse_reserve_multi(args.reserve_multi)
+        except ValueError as exc:
+            print(f"✗ --reserve-multi 参数有误：{exc}")
+            return 1
+    elif args.reserve is not None:
         if args.section is None:
             print("✗ --reserve 必须同时指定 --section 一|四（工具不猜你要预留哪个分区的号）。")
             return 1
         if args.reserve <= 0:
             print(f"✗ --reserve 必须为正整数，收到 {args.reserve}。")
             return 1
+        reserve_requests = [(args.section, args.reserve)]
 
     lock_path = _lock_path(args.file)
     # #197：以下"读判定→写"整段包进互斥临界区，防两个进程在同一窗口内都
     # 读到"无锁"、都写入成功、都相信自己持锁。
     try:
         with _acquire_mutex(lock_path):
-            return _acquire_locked(args, lock_path)
+            return _acquire_locked(args, lock_path, reserve_requests)
     except TimeoutError as exc:
         print(f"✗ {exc}——本次占锁放弃，请稍后重试（不代表锁被他人占用，"
               "只是内部互斥等待超时，理论上不应发生，出现即说明有异常并发压力）。")
         return 1
 
 
-def _acquire_locked(args: argparse.Namespace, lock_path: Path) -> int:
+def _acquire_locked(
+    args: argparse.Namespace, lock_path: Path, reserve_requests: list[tuple[str, int]],
+) -> int:
     """`_acquire_mutex` 保护下执行的 acquire 逻辑，行为与改造前完全一致，
     仅多一步写后回读校验（#197：不信"写成功了"，CLAUDE.md §5 既有纪律）。"""
     existing = _read_lock(lock_path)
@@ -685,9 +916,25 @@ def _acquire_locked(args: argparse.Namespace, lock_path: Path) -> int:
         print("✗ 写入后回读校验未通过（占锁内容与预期不符）——本次占锁失败，请重试。")
         return 1
 
+    current_content = _read_target_text(args.file)
+
     # 队列 #225：目标文件此刻内容存一份快照，release 时据此 diff 出本次
     # 持锁期间新增/修改的行，结构校验只对这些行生效。
-    _write_snapshot(args.file)
+    _write_snapshot(args.file, current_content)
+
+    # 队列 #200：与"上次 release 时记录的内容"比对，检测两次合法
+    # release/acquire 之间是否发生过绕锁直接改写。不阻断——协议〇.7 一贯
+    # 是协作性质而非硬互斥（见模块文档），只回显+（默认队列文件时）留痕。
+    lastknown = _read_lastknown(args.file)
+    if lastknown is not None and current_content != lastknown:
+        diff_summary = _summarize_content_diff(lastknown, current_content)
+        print(
+            f"⚠ 检测到目标文件在上次 release 之后被直接改写（未经本工具 "
+            f"acquire/release，{diff_summary}）——可能绕过协议〇.7 锁保护写入，"
+            "请核查改动是否符合预期（队列 #200）。"
+        )
+        if args.file == DEFAULT_TARGET:
+            _record_bypass_detection(REPO_ROOT, args.file, args.who, diff_summary)
 
     print(f"✓ 已占锁：{args.who}（{args.note or '无备注'}）→ {lock_path.name}")
 
@@ -699,25 +946,35 @@ def _acquire_locked(args: argparse.Namespace, lock_path: Path) -> int:
         )
         print(f"⚠ 最近 {RECENT_ACQUIRE_WINDOW_MINUTES} 分钟内还有其它身份 acquire 过本锁：{others_desc}")
 
-    if args.reserve is not None:
-        # 队列 #163：直接分配并返回字面编号，同一次持锁窗口内原子回写高水
-        # 位线——不再回显一个需要调用方自己 +1 的数（那正是 2026-07-29 #162
-        # 撞号的成因：回显本身没错，人读的时候算错/抄错）。
-        try:
-            reserved = _reserve_ids(args.file, args.section, args.reserve)
-        except ReserveFailedError as exc:
-            print(f"✗ 预留取号失败，本次 acquire 一并回滚（不留半成品锁）：{exc}")
-            _write_released_marker(lock_path, args.who, args.note or "", held_since, history=new_history)
-            return 1
+    if reserve_requests:
+        # 队列 #163/#185：直接分配并返回字面编号，同一次持锁窗口内原子
+        # 回写高水位线——不再回显一个需要调用方自己 +1 的数（那正是
+        # 2026-07-29 #162 撞号的成因：回显本身没错，人读的时候算错/抄错）。
+        # 多个分区在同一次持锁窗口内依次预留（各分区在高水位线行里的号
+        # 相互独立，见 SECTION_NUMBER_PATTERNS）；任一分区失败即整体回滚
+        # （已成功预留的分区其高水位线不回退，允许留空洞，见协议〇.8）。
+        reserved_map: dict[str, list[int]] = {}
+        for section, count in reserve_requests:
+            try:
+                reserved_map[section] = _reserve_ids(args.file, section, count)
+            except ReserveFailedError as exc:
+                done = "、".join(reserved_map) or "无"
+                print(f"✗ 预留取号失败（§{section}），本次 acquire 一并回滚（不留半成品锁；"
+                      f"已成功预留的分区（{done}）高水位线不回退，允许留空洞）：{exc}")
+                _write_released_marker(lock_path, args.who, args.note or "", held_since, history=new_history)
+                return 1
         # 队列 #225 校验③：把本次预留的编号写回锁文件，release 时据此判定
         # "新增编号是否属于本次持锁期间实际预留过的集合"。
         _atomic_write_json(
             lock_path, {
                 "who": args.who, "note": args.note or "", "held_since": held_since,
-                "history": new_history, "reserved": {args.section: reserved},
+                "history": new_history, "reserved": reserved_map,
             }
         )
-        nums = "、".join(f"§{args.section} #{n}" for n in reserved)
+        nums = "；".join(
+            "、".join(f"§{section} #{n}" for n in nums_list)
+            for section, nums_list in reserved_map.items()
+        )
         print(f"📍 已为你预留：{nums}")
         print("   （顶部高水位线已同步回写；即使本次未写满，编号不复用、留空即可）")
         print("   改完请立刻 release。")
@@ -747,13 +1004,23 @@ def cmd_release(args: argparse.Namespace) -> int:
     # 队列 #225：锁定目标是默认队列文件时，release 前做四项结构校验——
     # 不通过则拒绝释放（锁保持占用，逼持有者原地修正后重试），不对其他
     # `--file` 目标生效（§一/§二/§三/§四 语义只对这份文件成立）。
+    violations: list[str] = []
     if args.file == DEFAULT_TARGET:
         violations = _validate_release_structure(args, existing, REPO_ROOT)
-        if violations:
-            print(f"✗ release 被拒绝（{len(violations)} 项结构问题，锁保持占用，请修正后重试）：")
-            for v in violations:
-                print(f"  - {v}")
-            return 1
+    elif args.file == FOLLOWUP_README_TARGET:
+        # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
+        # 拦截，与上面那套队列专属校验各自独立、互不干扰。
+        violations = _validate_followup_readme_release(_read_target_text(args.file), _read_snapshot(args.file))
+    if violations:
+        print(f"✗ release 被拒绝（{len(violations)} 项结构问题，锁保持占用，请修正后重试）：")
+        for v in violations:
+            print(f"  - {v}")
+        return 1
+
+    # 队列 #200：把"正式交还"的目标文件内容记为基准——下一次 acquire 据此
+    # 判断这期间文件是否被绕过锁直接改写过。放在结构校验通过之后（不通过
+    # 时不算真正 release，不应更新基准）。
+    _write_lastknown(args.file, _read_target_text(args.file))
 
     # 改写为 released 标记而非 unlink（#121(a)）：Cowork 沙箱挂载对本文件
     # unlink 会返回 PermissionError（acquire 建文件正常，release 删不掉），
@@ -798,6 +1065,11 @@ def main() -> int:
     p_acquire.add_argument(
         "--section", choices=sorted(SECTION_NUMBER_PATTERNS), default=None,
         help="--reserve 配套：要预留哪个分区的号（§一/§四 各自独立计数）",
+    )
+    p_acquire.add_argument(
+        "--reserve-multi", nargs="+", default=None, metavar="SECTION:COUNT",
+        help="队列 #185：一次性跨多分区预留（如 --reserve-multi 一:2 四:1），"
+             "与 --reserve/--section 互斥",
     )
     p_acquire.set_defaults(func=cmd_acquire)
 

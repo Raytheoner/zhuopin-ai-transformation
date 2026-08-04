@@ -1,4 +1,5 @@
-"""跟进信 README 的 markdown 表格读写（仅供 delivery.py 场景①使用）。
+"""跟进信 README 的 markdown 表格读写（供 delivery.py 场景①、
+approval.py 场景③、dispatch.py 场景④共用）。
 
 只处理"现有跟进信清单"这一张表——按管道符 `|` 切分/拼接，不支持单元格内含
 转义 `|`（该 README 目前全是中文自然语言内容，无代码块/管道符，够用）。
@@ -11,6 +12,23 @@ from typing import Callable
 
 class ReadmeTableError(LookupError):
     pass
+
+
+# design.md D1：两态语义草稿标记——起草唯一合法产物，转终态（gates.py 的
+# FINALIZED_STATUS_MARKER = "🆕 待发"）仅能经 approve_followup_letter.py。
+DRAFT_PENDING_REVIEW_STATUS = "⏳ 待你审"
+
+
+class DraftNotPendingReviewError(RuntimeError):
+    """批准脚本拒绝：目标行「发送状态」列不是约定的待审草稿标记。"""
+
+
+def assert_draft_pending_review(status_value: str) -> None:
+    if status_value.strip() != DRAFT_PENDING_REVIEW_STATUS:
+        raise DraftNotPendingReviewError(
+            f'批准被拒绝：当前状态 "{status_value.strip()}" 非约定的待审草稿标记 '
+            f'"{DRAFT_PENDING_REVIEW_STATUS}"'
+        )
 
 
 def _split_row(line: str) -> list[str]:
@@ -34,8 +52,10 @@ class RowLocation:
     header_cells: list[str]
 
 
-def locate_row(text: str, match: Callable[[list[str]], bool]) -> RowLocation:
-    """定位表格中"发送状态"列所在、且满足 `match(cells)` 的第一行。
+def iter_rows(text: str) -> list[RowLocation]:
+    """返回表格全部数据行（供批量扫描场景使用，如 dispatch.py 场景④逐行
+    判定是否可发送）——与 `locate_row` 共用同一套表头/分隔行判定逻辑，
+    区别只在"取第一个匹配"还是"取全部"。
 
     表头行：任意以 `|` 开头且含"发送状态"字样的行。表头下一行是
     `|---|---|...` 分隔行，再往下直到第一条非 `|` 开头的行为止都是数据行。
@@ -58,6 +78,7 @@ def locate_row(text: str, match: Callable[[list[str]], bool]) -> RowLocation:
     if header_idx is None or status_col_index < 0:
         raise ReadmeTableError('未找到含"发送状态"列的表格')
 
+    rows: list[RowLocation] = []
     for i in range(header_idx + 2, len(lines)):
         line = lines[i]
         if not line.strip().startswith("|"):
@@ -65,14 +86,22 @@ def locate_row(text: str, match: Callable[[list[str]], bool]) -> RowLocation:
         cells = _split_row(line)
         if len(cells) <= status_col_index:
             continue
-        if match(cells):
-            return RowLocation(
+        rows.append(
+            RowLocation(
                 line_index=i,
                 cells=cells,
                 status_col_index=status_col_index,
                 header_cells=header_cells,
             )
+        )
+    return rows
 
+
+def locate_row(text: str, match: Callable[[list[str]], bool]) -> RowLocation:
+    """定位表格中"发送状态"列所在、且满足 `match(cells)` 的第一行。"""
+    for row in iter_rows(text):
+        if match(row.cells):
+            return row
     raise ReadmeTableError("未找到匹配的跟进信行")
 
 
