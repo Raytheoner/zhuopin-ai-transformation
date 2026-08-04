@@ -26,6 +26,21 @@
 #  （笔记本工作日常态，可接受）；若未来需要"未登录也能跑"，须由 Paul 或
 #  管理员账户手动重跑本脚本改用 S4U/Password 登录类型。
 #
+#  队列 #231（2026-08-04，环境保障线取证）：Action 此前直接 Execute=powershell.exe，
+#          每天 08:30 触发都会弹出一闪而过的控制台窗口（Shao Peishen 反馈"屏幕
+#          一闪不知做了啥"）。本项目已有验证过的根治范式（同账户下的
+#          ZhuopinAibotDevListener，见 run-hidden.vbs）：改用
+#          "wscript.exe + WScript.Shell.Run SW_HIDE(0)"，Action 改为
+#          Execute=wscript.exe，Argument 指向新增的
+#          run-decision-reminder-hidden.vbs（committed、无机器专属路径，动态
+#          解析自身所在目录），由它拉起本脚本原生成的
+#          run-decision-reminder-check.ps1（内容不变）。⚠️ 两处未实测，如实
+#          标注：①单把 Settings.Hidden=$true 是否足以消除控制台窗口未验证过
+#          （对本任务同样不赌，直接走 VBS）；②本次只改了 Action 定义、未在
+#          真实机器上重新 Register-ScheduledTask 验证——收工不触碰 .51 与
+#          常驻服务，改后需 Shao Peishen/CC 后续（待 ops/wecom-service-home
+#          同步到含本次改动的提交后）重跑本脚本一次才会在生产任务上生效。
+#
 #  用法（本机管理员或当前用户 PowerShell，在 ops/wecom-service-home 目录下
 #        执行一次；重复执行幂等——会先注销旧任务再重建）：
 #    powershell -ExecutionPolicy Bypass -File "5-平台底座\wecom-aibot-service\register-decision-reminder-task.ps1"
@@ -45,6 +60,7 @@ $MAIN_WORKSPACE_QUEUE = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\1-�
 $SERVICE_DIR  = Join-Path $REPO "5-平台底座\wecom-aibot-service"
 $CHECK_SCRIPT = Join-Path $SERVICE_DIR "scripts\decision_reminder_check.py"
 $WRAPPER      = Join-Path $SERVICE_DIR "run-decision-reminder-check.ps1"
+$VBS_LAUNCHER = Join-Path $SERVICE_DIR "run-decision-reminder-hidden.vbs"
 $TASK         = "ZhuopinDecisionReminderDaily"
 $DAILY_TIME   = "08:30"
 
@@ -55,6 +71,10 @@ Write-Host "   周期    : 每天 $DAILY_TIME`n"
 
 if (-not (Test-Path $CHECK_SCRIPT)) {
     Write-Error "未找到 $CHECK_SCRIPT —— 请确认 ops/wecom-service-home 已同步到含本脚本的 commit。"
+    exit 1
+}
+if (-not (Test-Path $VBS_LAUNCHER)) {
+    Write-Error "未找到 $VBS_LAUNCHER —— 请确认 ops/wecom-service-home 已同步到含本文件的 commit（队列 #231）。"
     exit 1
 }
 $gitMarker = Join-Path $REPO ".git"
@@ -96,8 +116,10 @@ Write-Host "[3/3] 注册计划任务 $TASK..." -ForegroundColor Yellow
 if (Get-ScheduledTask -TaskName $TASK -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $TASK -Confirm:$false
 }
-$psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$WRAPPER`""
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $psArgs -WorkingDirectory $REPO
+# 队列 #231：Execute 改为 wscript.exe 拉起隐藏窗口的 VBS 启动器（同
+# ZhuopinAibotDevListener 既有范式），不再直接 Execute=powershell.exe——见
+# 文件头部说明。VBS 内部仍会拉起上面这份 $WRAPPER（内容不变）。
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VBS_LAUNCHER`"" -WorkingDirectory $REPO
 $trigger = New-ScheduledTaskTrigger -Daily -At $DAILY_TIME
 
 $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive

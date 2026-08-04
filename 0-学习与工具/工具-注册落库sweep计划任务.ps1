@@ -25,6 +25,22 @@
 #          权限（sweep 只需一般用户权限即可 git add/commit/push 本仓库，无需
 #          RunLevel Highest）。
 #
+#  队列 #231（2026-08-04，环境保障线取证）：Action 此前直接 Execute=powershell.exe，
+#          每小时触发一次都会弹出一闪而过的控制台窗口（Shao Peishen 反馈"屏幕
+#          一闪不知做了啥"）。本机同一账户下的 ZhuopinAibotDevListener 早已用
+#          "wscript.exe + WScript.Shell.Run SW_HIDE(0)"根治过同类问题（见
+#          5-平台底座/wecom-aibot-service/run-hidden.vbs），本次沿用同一范式：
+#          Action 改为 Execute=wscript.exe，Argument 指向新增的
+#          run-commit-sweep-hidden.vbs（committed、无机器专属路径，动态解析
+#          自身所在目录），由它再拉起本脚本原生成的 run-commit-sweep.ps1（内容
+#          不变，仍是那个绝对路径烘焙包装脚本）。⚠️ 两处未实测，如实标注：
+#          ①单把 Settings.Hidden=$true 打开是否足以消除控制台窗口未验证过
+#          （Hidden 主要影响任务在 UI 里是否可见，对控制台窗口未必生效，故不
+#          赌，直接走 VBS）；②本次只改了 Action 定义、未在真实机器上重新
+#          Register-ScheduledTask 验证——收工不触碰 .51 与常驻服务，改后需
+#          Shao Peishen/CC 后续重跑本脚本一次（幂等，会先注销旧任务再重建）
+#          才会在生产任务上生效。
+#
 #  用法（本机管理员 PowerShell，在主工作区目录下执行一次；重复执行幂等——
 #        会先注销旧任务再重建，用于路径变化后刷新）：
 #    powershell -ExecutionPolicy Bypass -File "0-学习与工具\工具-注册落库sweep计划任务.ps1"
@@ -45,6 +61,7 @@ $ErrorActionPreference = "Stop"
 $REPO           = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型"
 $SWEEP_SCRIPT   = Join-Path $REPO "0-学习与工具\工具-落库sweep.py"
 $WRAPPER        = Join-Path $REPO "0-学习与工具\run-commit-sweep.ps1"
+$VBS_LAUNCHER   = Join-Path $REPO "0-学习与工具\run-commit-sweep-hidden.vbs"
 $TASK           = "ZhuopinCommitSweep"
 $INTERVAL_HOURS = 1
 
@@ -55,6 +72,10 @@ Write-Host "   周期    : 开机启动 + 此后每 $INTERVAL_HOURS 小时一次
 
 if (-not (Test-Path $SWEEP_SCRIPT)) {
     Write-Error "未找到 $SWEEP_SCRIPT —— 请确认在主工作区（非 worktree）执行本脚本。"
+    exit 1
+}
+if (-not (Test-Path $VBS_LAUNCHER)) {
+    Write-Error "未找到 $VBS_LAUNCHER —— 请确认主工作区已同步到含本文件的 commit（队列 #231）。"
     exit 1
 }
 $gitMarker = Join-Path $REPO ".git"
@@ -98,8 +119,12 @@ Write-Host "[3/3] 注册计划任务 $TASK..." -ForegroundColor Yellow
 if (Get-ScheduledTask -TaskName $TASK -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $TASK -Confirm:$false   # 重建以更新路径
 }
-$psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$WRAPPER`""
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $psArgs -WorkingDirectory $REPO
+# 队列 #231：Execute 改为 wscript.exe 拉起隐藏窗口的 VBS 启动器（同
+# ZhuopinAibotDevListener 既有范式），不再直接 Execute=powershell.exe——
+# 后者即便配合 -WindowStyle Hidden 也曾在本项目实测不可靠（见 run-hidden.vbs
+# 头部说明），故不赌，改走已验证过的 WScript.Shell.Run SW_HIDE(0) 路线。
+# VBS 内部仍会拉起下面这份 $WRAPPER（内容不变，绝对路径烘焙包装脚本）。
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VBS_LAUNCHER`"" -WorkingDirectory $REPO
 
 $triggerStartup = New-ScheduledTaskTrigger -AtStartup
 # 注意：[TimeSpan]::MaxValue 序列化成 "P99999999DT23H59M59S"，

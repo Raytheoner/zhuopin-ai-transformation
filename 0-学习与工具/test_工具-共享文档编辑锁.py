@@ -25,6 +25,7 @@ import 模块，覆盖子进程黑盒难以可靠触发的"陈旧互斥标记被
 """
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
@@ -507,6 +508,313 @@ class EditLockCrossWorktreeTests(unittest.TestCase):
         r2 = run_at(self._tool(self.linked_root), "--file", "queue.md",
                     "acquire", "--who", "B")
         self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+
+
+class RecentAcquireHistoryTests(unittest.TestCase):
+    """队列 #230-1c：acquire 成功时回显"最近 120 分钟内还有哪些其它身份
+    acquire 过本锁"（纯回显，复用 `.editlock` 自身的 history 字段，零新增
+    状态文件）。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = str(Path(self._tmpdir.name) / "假想队列.md")
+        self.lock_path = Path(self.target + ".editlock")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_first_ever_acquire_has_no_recent_others(self):
+        result = run("--file", self.target, "acquire", "--who", "A")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("其它身份", result.stdout)
+
+    def test_recent_acquirer_within_window_is_echoed(self):
+        run("--file", self.target, "acquire", "--who", "Cowork-财务专线", "--note", "登记#1")
+        run("--file", self.target, "release", "--who", "Cowork-财务专线")
+
+        result = run("--file", self.target, "acquire", "--who", "CC-QD-B")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("120 分钟内还有其它身份", result.stdout)
+        self.assertIn("Cowork-财务专线", result.stdout)
+
+    def test_acquirer_outside_window_is_not_echoed(self):
+        run("--file", self.target, "acquire", "--who", "A")
+        run("--file", self.target, "release", "--who", "A")
+        # 直接改写历史时间戳到 121 分钟前，模拟"很久以前来过"。
+        data = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        stale_at = (datetime.now(timezone.utc) - timedelta(minutes=121)).isoformat()
+        data["history"] = [{"who": "A", "note": "", "at": stale_at}]
+        self.lock_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+        result = run("--file", self.target, "acquire", "--who", "B")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("其它身份", result.stdout)
+
+    def test_history_survives_stale_lock_takeover(self):
+        """陈旧锁被接管时，历史记录不应丢失——下一位调用者仍应看到更早
+        之前的在场者，不因"接管"这个动作而清空记忆。"""
+        self._write_lock_with_history("A", minutes_ago=31, history=[
+            {"who": "PRIOR", "note": "", "at": (
+                datetime.now(timezone.utc) - timedelta(minutes=60)
+            ).isoformat()},
+        ])
+        result = run("--file", self.target, "acquire", "--who", "B")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PRIOR", result.stdout)
+
+    def test_reserve_failure_rollback_still_records_history(self):
+        """预留失败回滚（acquire 整体失败）也应把这次尝试计入历史——本人
+        确实在这个时刻出现过，即便最终没能真正持锁。"""
+        Path(self.target).write_text("没有高水位线这一行\n", encoding="utf-8")
+        result = run("--file", self.target, "acquire", "--who", "A",
+                      "--reserve", "1", "--section", "一")
+        self.assertNotEqual(result.returncode, 0)
+        history = json.loads(self.lock_path.read_text(encoding="utf-8")).get("history")
+        self.assertTrue(history)
+        self.assertEqual(history[-1]["who"], "A")
+
+    def _write_lock_with_history(self, who: str, minutes_ago: float, history: list) -> None:
+        held_since = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        self.lock_path.write_text(
+            json.dumps({
+                "who": who, "note": "", "held_since": held_since.isoformat(),
+                "history": history,
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+
+class ReleaseStructuralValidationTests(unittest.TestCase):
+    """队列 #225：release 时对跨桌任务队列.md 的四项结构校验。
+
+    白盒方式：用 `_load_module()` 加载独立模块实例，monkeypatch
+    `REPO_ROOT`/`DEFAULT_TARGET` 指向本用例专属临时目录——不能像其它用例
+    那样用任意 `--file` 走黑盒子进程：结构校验只在 `args.file ==
+    DEFAULT_TARGET` 时生效，而生产脚本里 DEFAULT_TARGET 是真实项目队列
+    文件的相对路径，子进程黑盒调用会解到真实 REPO_ROOT、误触真实队列锁。
+    """
+
+    SECTION_ONE_HEADER = (
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+    )
+    SECTION_FOUR_HEADER = (
+        "| # | 事项 | 等谁 | 截止 |\n"
+        "|---|------|------|------|\n"
+    )
+    SECTION_TWO_HEADER = (
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.DEFAULT_TARGET = "queue.md"
+        self.target_path = self.repo_root / "queue.md"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_queue(self, section_one_rows="", section_two_rows="", section_four_rows="",
+                      hwm_one=200, hwm_four=40):
+        text = (
+            f"> **编号高水位线：§一 #{hwm_one} ｜ §四 #{hwm_four}**（说明文字）\n\n"
+            "## 一、任务看板\n\n" + self.SECTION_ONE_HEADER + section_one_rows +
+            "\n## 二、待 commit 批次（CC 取活销行）\n\n" + section_two_rows +
+            self.SECTION_TWO_HEADER +
+            "\n## 三、口径冻结标（重梳期防在途建造撞车）\n\n"
+            "| 域/场景 | 冻结原因 | 挂标 | 解除条件 |\n"
+            "|---------|---------|------|---------|\n"
+            "\n## 四、需 Shao Peishen 的动作（例外与拍板）\n\n" +
+            self.SECTION_FOUR_HEADER + section_four_rows
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+    def _acquire(self, who="A", reserve=None, section=None):
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who=who, note="",
+            reserve=reserve, section=section,
+        )
+        return self.module.cmd_acquire(ns)
+
+    def _release(self, who=""):
+        ns = argparse.Namespace(file=self.module.DEFAULT_TARGET, who=who)
+        return self.module.cmd_release(ns)
+
+    def test_release_succeeds_with_no_changes(self):
+        self._write_queue()
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_new_well_formed_reserved_row_passes(self):
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试任务 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_column_count_mismatch_blocks_release(self):
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        # 少一列（7 列，缺"登记"）。
+        malformed_row = "| 201 | 测试任务 | CC | 指针 | 产出 | 待领 | 触碰区 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + malformed_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+        # 锁应保持占用，不因校验失败而被释放。
+        self.assertFalse(json.loads((self.repo_root / "queue.md.editlock").read_text(
+            encoding="utf-8")).get("released"))
+
+    def test_bare_pipe_inside_backtick_causes_column_mismatch(self):
+        """#164 同族形态：反引号内裸竖线致列数偏移，应被①拦下。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        bad_row = (
+            "| 201 | 测试任务 `a|b` | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + bad_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_new_batch_without_declaring_queue_file_itself_blocks_release(self):
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(section_two_rows=(
+            "| B-TEST | `某个文件.md` | `docs(test): 测试` | 待处理 |\n"
+        ))
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_new_batch_declaring_queue_file_itself_passes(self):
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(section_two_rows=(
+            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |\n"
+        ))
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_new_row_number_not_reserved_blocks_release(self):
+        """协议〇.7：此后新行编号一律用 --reserve 取——未预留就手写一个新
+        编号，即便该号本身并未与任何既有行重复，仍应被拒绝。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A"), 0)  # 未 --reserve
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试任务 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_duplicate_number_within_file_blocks_release(self):
+        # 预先在文件里放一行 #150（模拟"另一处已存在同号"），reserve 拿到
+        # 的新号恰好撞上——用较低的高水位线人为制造这种撞号，而非依赖真实
+        # 并发时序。
+        self._write_queue(
+            section_one_rows="| 150 | 既有任务 | 姚祖怡 | 指针 | 产出 | 在办 | 触碰区 | 2026-07-01 |\n",
+            hwm_one=149,
+        )
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 150 | 撞号新任务 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_duplicate_number_with_archive_blocks_release(self):
+        archive_dir = self.repo_root  # DEFAULT_TARGET="queue.md" 的父目录即 repo_root
+        (archive_dir / "跨桌任务队列-归档-202607.md").write_text(
+            "## 一、任务看板（已完成行）\n\n" + self.SECTION_ONE_HEADER +
+            "| 150 | 已归档任务 | 姚祖怡 | 指针 | 产出 | ✅ 已完成 | 触碰区 | 2026-07-01 |\n",
+            encoding="utf-8",
+        )
+        self._write_queue(hwm_one=149)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 150 | 撞归档号新任务 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_editing_existing_row_status_does_not_trigger_number_checks(self):
+        """只是改一个既有行的状态列（编号不变、此前已在快照里出现过），
+        不应触发③编号校验——那是给"真正新增行"用的，不是给"编辑既有行"
+        用的。"""
+        self._write_queue(
+            section_one_rows="| 150 | 既有任务 | 姚祖怡 | 指针 | 产出 | 在办 | 触碰区 | 2026-07-01 |\n",
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)  # 未 --reserve，也应无妨
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "| 150 | 既有任务 | 姚祖怡 | 指针 | 产出 | 在办 | 触碰区 | 2026-07-01 |",
+            "| 150 | 既有任务 | 姚祖怡 | 指针 | 产出 | 待验收 | 触碰区 | 2026-07-01 |",
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_p0_p1_row_with_unverified_phrase_blocks_release(self):
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        risky_row = (
+            "| 201 | 风险项（P1）**未核**：待确认影响面 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + risky_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_p0_p1_row_without_unverified_phrase_passes(self):
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        row = (
+            "| 201 | 风险项（P1）：已核实影响面仅限本模块 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_non_priority_row_with_unverified_phrase_is_not_blocked(self):
+        """④断言门槛只对 P0/P1 定级行生效——普通行提到"未核"不应被拦。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        row = "| 201 | 普通任务，细节未核 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_non_default_target_skips_structural_validation(self):
+        """`--file` 指向非默认队列文件时，四项校验一律不生效——即便内容
+        显然不合规（列数错、无高水位线行等）。"""
+        other_path = self.repo_root / "其他共享文件.md"
+        other_path.write_text("随便写点内容 | 只有两列\n", encoding="utf-8")
+        ns = argparse.Namespace(file="其他共享文件.md", who="A", note="",
+                                 reserve=None, section=None)
+        self.assertEqual(self.module.cmd_acquire(ns), 0)
+        release_ns = argparse.Namespace(file="其他共享文件.md", who="A")
+        self.assertEqual(self.module.cmd_release(release_ns), 0)
 
 
 if __name__ == "__main__":

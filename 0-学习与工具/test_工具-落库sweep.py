@@ -91,6 +91,14 @@ class SweepTestBase(unittest.TestCase):
         _git(self.work, "config", "user.name", "Test")
         _git(self.work, "remote", "add", "origin", str(self.origin))
 
+        # 真实项目 reports/ 全局 gitignore（**/reports/）——队列 #222 起，
+        # sweep 在起跑最开头就会往 LOG_REL 写一行（启动即写日志首行），若
+        # 测试仓库不还原这条 gitignore，该写入会把日志文件自己变成一个
+        # "不属于任何批次声明"的脏文件，被 _status_paths 捕获后触发"非
+        # clean"整轮跳过——这不是生产环境会出现的问题（生产仓库确有该
+        # gitignore 规则），只是测试夹具需要还原真实布局才能验证真实行为。
+        (self.work / ".gitignore").write_text("**/reports/\n", encoding="utf-8")
+
         (self.work / "0-学习与工具").mkdir(parents=True)
         shutil.copy(EDIT_LOCK_SOURCE, self.work / "0-学习与工具" / "工具-共享文档编辑锁.py")
         (self.work / "0-学习与工具" / "工具-文档台账生成.py").write_text(
@@ -348,6 +356,88 @@ class ClassifySectionTwoRowsUnitTests(unittest.TestCase):
         # C-已完成 既不在待处理也不在模糊状态里——正常略过，不告警。
         all_ids = {r["batch_id"] for r in pending} | {r["batch_id"] for r in ambiguous}
         self.assertNotIn("C-已完成", all_ids)
+
+
+class ResolveBatchFilesUnitTests(unittest.TestCase):
+    """`_resolve_batch_files` 纯函数级单测——队列 #234(1) 精确相等优先修复。"""
+
+    def test_exact_match_wins_even_when_another_path_also_ends_with_fragment(self):
+        # 08-04 真实现场复现：根 CLAUDE.md 与 SC8/CLAUDE.md 同时脏，片段
+        # `CLAUDE.md` 在旧实现下对两者各算一次 → 判为 ambiguous。
+        dirty = ["CLAUDE.md", "4-数字员工/采购部/SC8-.../CLAUDE.md"]
+        resolved, not_dirty, ambiguous = sweep._resolve_batch_files(
+            "`CLAUDE.md`（根 CLAUDE.md 的改动）", dirty,
+        )
+        self.assertEqual(resolved, ["CLAUDE.md"])
+        self.assertEqual(not_dirty, [])
+        self.assertEqual(ambiguous, [], "精确命中应唯一采用，不应被判为歧义")
+
+    def test_suffix_match_still_works_when_no_exact_match(self):
+        dirty = ["4-数字员工/采购部/SC8-.../CLAUDE.md", "杂物.md"]
+        resolved, not_dirty, ambiguous = sweep._resolve_batch_files(
+            "`SC8-.../CLAUDE.md`（省略前缀写法）", dirty,
+        )
+        self.assertEqual(resolved, ["4-数字员工/采购部/SC8-.../CLAUDE.md"])
+        self.assertEqual(not_dirty, [])
+        self.assertEqual(ambiguous, [])
+
+    def test_true_ambiguity_without_exact_match_is_still_flagged(self):
+        # 反向用例（CLAUDE.md §5"清单确实缺其它文件时安全门仍必须拦截"）：
+        # 两个候选都只是后缀匹配、没有一个精确相等——真实无法判定，仍须
+        # 落 ambiguous，不能因本次收窄而放松成"随便选一个"。
+        dirty = [
+            "4-数字员工/采购部/SC8-.../CLAUDE.md",
+            "4-数字员工/质量部/QD-B-.../CLAUDE.md",
+        ]
+        resolved, not_dirty, ambiguous = sweep._resolve_batch_files("`CLAUDE.md`", dirty)
+        self.assertEqual(resolved, [])
+        self.assertEqual(not_dirty, [])
+        self.assertEqual(ambiguous, ["CLAUDE.md"])
+
+    def test_no_match_is_not_dirty(self):
+        resolved, not_dirty, ambiguous = sweep._resolve_batch_files(
+            "`不存在的文件.md`", ["杂物.md"],
+        )
+        self.assertEqual(resolved, [])
+        self.assertEqual(not_dirty, ["不存在的文件.md"])
+        self.assertEqual(ambiguous, [])
+
+
+class ExactMatchEndToEndTests(SweepTestBase):
+    """队列 #234(1) 的 CLI 端到端复现：批次已正确声明的文件不应因"另一个
+    同名文件也脏"而被误判歧义、连累进 unaccounted 清单（08-04 真实现场：
+    根 CLAUDE.md 因与 SC8/CLAUDE.md 同时脏被判 ambiguous，20 批积压）。"""
+
+    def test_correctly_declared_file_not_flagged_ambiguous_by_duplicate_basename(self):
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `CLAUDE.md`、`0-全景路线图/跨桌任务队列.md` "
+               "| `docs(test): 精确相等优先` | 待 CC 取活 |\n")
+        self._write_queue(row)
+        (self.work / "CLAUDE.md").write_text("根 CLAUDE.md 的改动，属于本批次\n", encoding="utf-8")
+        # 制造"另一个同名文件也脏"的现场——不属于本批次声明，与批次声明的
+        # 片段字符串完全相同（模拟根 CLAUDE.md vs SC8/CLAUDE.md 撞名）。
+        other_dir = self.work / "4-数字员工" / "采购部" / "SC8"
+        other_dir.mkdir(parents=True)
+        (other_dir / "CLAUDE.md").write_text("另一份同名文件，不属于本批次（模拟并发 session）\n",
+                                               encoding="utf-8")
+
+        result = _run_sweep(self.work)
+
+        # SC8 那份始终未被任何批次声明，仍应触发"非 clean"整轮安全跳过——
+        # 精确相等优先修复只解除"自己已声明的文件被连累判歧义"，不代表
+        # "任何同名脏文件都被放行"（CLAUDE.md §5 反向用例要求）。
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("非 clean", result.stdout)
+        self.assertIn("SC8", result.stdout)
+        # 关键断言：根 CLAUDE.md 已被正确声明+精确解析，不应出现在未声明
+        # 清单里——修复前它会因与 SC8/CLAUDE.md"同片段候选"被判 ambiguous，
+        # 连 unaccounted 都进不去日志描述，但会通过 declared_all 缺失而
+        # 静默地把整批拖下水。
+        unaccounted_lines = [
+            line for line in result.stdout.splitlines() if line.strip().startswith("- ")
+        ]
+        self.assertTrue(unaccounted_lines)
+        self.assertTrue(all("SC8" in line for line in unaccounted_lines), unaccounted_lines)
 
 
 class PendingCriteriaIntegrationTests(SweepTestBase):
@@ -721,6 +811,148 @@ class FlushPendingLockAppendsTests(SweepTestBase):
         result = _run_sweep(self.work, "--dry-run")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(marker.exists(), "dry-run 不应真实调用 flush 脚本")
+
+
+class DecisionReminderSecondCarrierTests(SweepTestBase):
+    """队列 #219：决策提醒第二载体——sweep 起跑段子进程调用
+    `decision_reminder_check.py`，须在编辑锁窗口之外、异常隔离不中断批次
+    处理主流程（同 #192-A `FlushPendingLockAppendsTests` 同一测试范式）。"""
+
+    def _reminder_script_path(self) -> Path:
+        path = self.work / sweep.DECISION_REMINDER_SCRIPT_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def test_missing_reminder_script_is_silently_skipped(self):
+        """本 checkout 未部署机器人服务（脚本不存在）——静默跳过，不产生
+        噪音日志，批次处理照常进行（回归既有 happy path）。"""
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("决策提醒", result.stdout)
+
+    def test_reminder_script_failure_does_not_block_batch_processing(self):
+        """异常（含非零退出码）必须捕获并记日志后继续跑批次，不可让第二
+        载体把主干带崩（实现约束③）。"""
+        self._reminder_script_path().write_text(
+            "import sys\nsys.stderr.write('模拟决策提醒失败：WS 连接超时')\nsys.exit(1)\n",
+            encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("决策提醒第二载体退出码", result.stdout)
+        self.assertIn("模拟决策提醒失败", result.stdout)
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue, "第二载体失败不应阻止批次照常落库")
+
+    def test_reminder_script_success_with_new_items_is_logged(self):
+        self._reminder_script_path().write_text(
+            "print('已发送提醒（2 项）。')\n", encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("决策提醒第二载体", result.stdout)
+        self.assertIn("已发送提醒（2 项）", result.stdout)
+
+    def test_reminder_script_no_new_items_produces_no_noise_log(self):
+        """判定为"无新增/超期决策项"是最常见的正常态（每小时跑一次，大多数
+        时候没有新东西）——不应刷屏，只在真有内容时才记一行。"""
+        self._reminder_script_path().write_text(
+            "print('[OK] 无新增/超期决策项，本次不发送。')\n", encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("决策提醒第二载体：", result.stdout)
+
+    def test_dry_run_does_not_invoke_reminder_script(self):
+        """dry-run 不应产生真实副作用——第二载体脚本存在也不应被调用（会
+        真实触发发送企微消息，不可在 dry-run 里发生）。"""
+        marker = self.work.parent / "reminder_invoked.marker"
+        self._reminder_script_path().write_text(
+            f"from pathlib import Path\nPath(r'{marker}').write_text('invoked')\n", encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+
+        result = _run_sweep(self.work, "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(marker.exists(), "dry-run 不应真实调用决策提醒第二载体脚本")
+
+    def test_reminder_invoked_before_edit_lock_would_be_taken(self):
+        """实现约束①：须在 sweep 自己取编辑锁窗口之外调用——用一个会记录
+        "调用瞬间编辑锁文件是否存在"的探测脚本，验证调用发生在
+        `_strike_off_rows` 真正 acquire 锁之前（此刻锁文件应尚不存在）。"""
+        probe_marker = self.work.parent / "lock_state_at_reminder_call.txt"
+        lock_file_rel = sweep.QUEUE_REL + ".editlock"
+        self._reminder_script_path().write_text(
+            "import os\nfrom pathlib import Path\n"
+            f"lock_exists = os.path.exists(r'{self.work}/{lock_file_rel}')\n"
+            f"Path(r'{probe_marker}').write_text(str(lock_exists))\n",
+            encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(probe_marker.exists())
+        self.assertEqual(probe_marker.read_text(encoding="utf-8").strip(), "False",
+                          "第二载体调用瞬间不应有编辑锁被 sweep 自己持有")
+
+
+class StartupLogLineTests(SweepTestBase):
+    """队列 #222：启动即写日志首行——不等收尾统一 flush，即便本轮在起跑
+    极早期就发生"连 except Exception 都接不住"的崩溃，也应已有一行落盘，
+    使"启动后立刻崩溃"与"压根没启动"在日志上不再表现完全相同（#121(b)
+    遗留未做项）。"""
+
+    def test_start_line_is_flushed_before_any_risky_code_runs(self):
+        self._init_and_push(rows="")
+        import unittest.mock as mock
+
+        with mock.patch.object(
+            sweep, "_heal_stale_index_lock", side_effect=SystemExit(1),
+        ):
+            argv_backup = sys.argv
+            try:
+                sys.argv = ["工具-落库sweep.py", "--repo-root", str(self.work)]
+                with self.assertRaises(SystemExit):
+                    sweep.main()
+            finally:
+                sys.argv = argv_backup
+
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertIn("=== sweep 运行", log_text,
+                      "即便后续代码发生 except Exception 都接不住的崩溃，启动首行也应已落盘")
+
+    def test_start_line_not_duplicated_on_normal_run(self):
+        """回归：正常运行一轮，日志文件里"=== sweep 运行"这一行应恰好出现
+        一次（首行单独 flush + 收尾 flush 剩余部分，不应重复写入同一行）。"""
+        self._init_and_push(rows="")
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertEqual(log_text.count("=== sweep 运行"), 1, log_text)
+
+    def test_dry_run_does_not_flush_start_line(self):
+        self._init_and_push(rows="")
+        result = _run_sweep(self.work, "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.work / sweep.LOG_REL).exists(), "dry-run 不应落盘日志")
 
 
 class UnexpectedExceptionFallbackTests(SweepTestBase):

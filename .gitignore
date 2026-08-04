@@ -56,3 +56,11 @@ start-aibot-service-dev.ps1
 # 意外遗留时也不应入库）
 *.editlock.mutex
 *.editlock.tmp.*
+# #225：acquire 时存的目标文件快照（release 时用于 diff 出本次持锁期间
+# 新增/修改的行），本机瞬时协作状态，不入库
+*.editlock.snapshot
+
+# #226：需 Shao Peishen 决策项每日提醒计划任务的启动包装，由
+# register-decision-reminder-task.ps1 在注册时机械生成（写死本机账户的
+# 绝对路径），同 start-aibot-service-dev.ps1 一样本机专属、不同环境不通用
+run-decision-reminder-check.ps1

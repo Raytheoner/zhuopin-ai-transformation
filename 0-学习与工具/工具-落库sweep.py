@@ -80,6 +80,31 @@ fetch` 只更新 `origin/master` 远程跟踪分支，本地分支需要显式 m
 origin/master` 追上再继续干活；两边已分叉（互不为祖先）则不动手，仍按原
 语义告警跳过本轮，不强推、不自动 rebase。
 
+批次文件匹配精确相等优先（队列 #234(1)，2026-08-04 值周巡检取证）：
+`_resolve_batch_files` 原按后缀匹配（`d == frag or d.endswith("/" + frag)`）
+把片段对到脏路径，同名文件出现在两处时（如根 `CLAUDE.md` 与某场景目录下
+也有一份 `CLAUDE.md`）会各算一次命中而判 ambiguous——即便其中一个是精确
+相等，也会被同一片段的其它候选连累，导致早已正确声明的批次被
+`unaccounted` 全局门槛一并跳过（08-04 实测 20 批积压）。现改为存在精确
+相等命中时唯一采用它，不再把同一轮的后缀命中一并计入歧义；无精确命中
+时仍按原逻辑处理（≥2 个后缀命中依然判 ambiguous，安全边界不变）。
+
+启动即写日志首行（队列 #222，2026-08-04）：main() 起跑最开头（`_heal_
+stale_index_lock` 等任何有风险的代码执行之前）就把"=== sweep 运行 ... ==="
+这一行单独落盘一次，不再等到收尾统一 flush——否则"启动后立刻发生连
+`except Exception` 都接不住的崩溃"与"计划任务压根没触发"在日志上表现
+完全相同（`sweep-commit.log` 均无新内容），判据失去分辨力（#121(b) 遗留
+未做项）。此后各退出路径改用 `_flush_remaining_log`，只落盘首行之后
+新增的内容，不重复写入这一行。
+
+决策提醒第二载体（队列 #219，2026-08-04）：`ZhuopinDecisionReminderDaily`
+是决策提醒的唯一载体——每日仅一次、需已登录、错过不补、失败无告警，
+2026-08-03 真实丢过一轮。起跑段新增 `_run_decision_reminder_second_
+carrier`，走子进程调用 `decision_reminder_check.py`（每小时随 sweep 一并
+触发，去重沿用其自身既有 `ESCALATION_INTERVALS_DAYS`，双载体不会重复
+打扰），须排在 sweep 自己取编辑锁窗口之外（main() 接线固定顺序，见其内
+注释）。
+
 用法：
   python 0-学习与工具/工具-落库sweep.py            # 真跑
   python 0-学习与工具/工具-落库sweep.py --dry-run   # 只打印计划动作，不落地
@@ -130,6 +155,15 @@ UNEXPECTED_EXIT_CODE = 3
 FLUSH_PENDING_LOCK_SCRIPT_REL = (
     "5-平台底座/wecom-aibot-service/scripts/flush_pending_lock_appends.py"
 )
+
+# 队列 #219：决策提醒第二载体——原 `ZhuopinDecisionReminderDaily` 是唯一
+# 载体，每日仅一次、需已登录、错过不补、失败无告警，2026-08-03 真实丢过
+# 一轮。同 `FLUSH_PENDING_LOCK_SCRIPT_REL` 一样走子进程隔离（零依赖设计，
+# async 边界完全留在子进程内，sweep 自身不需要 `asyncio.run()`）。
+DECISION_REMINDER_SCRIPT_REL = (
+    "5-平台底座/wecom-aibot-service/scripts/decision_reminder_check.py"
+)
+DECISION_REMINDER_TIMEOUT_SECONDS = 120
 
 # 队列 #198(c)：本轮 commit 若命中这些前缀下的路径，视为"涉常驻服务"，
 # 需部署脚本同步+重启对应计划任务才在生产生效（现状全靠人记得）。
@@ -359,6 +393,58 @@ def _flush_pending_lock_appends(repo_root: Path, log: list[str]) -> None:
         log.append(f"✓ pending 锁忙暂存 flush：{result.stdout.strip()}")
 
 
+def _run_decision_reminder_second_carrier(repo_root: Path, log: list[str]) -> None:
+    """队列 #219：决策提醒第二载体（每小时，随 sweep 一并触发）。
+
+    背景：`ZhuopinDecisionReminderDaily` 是唯一载体——每日仅一次、需
+    `LogonType=Interactive`（要求已登录）、错过不补（`NumberOfMissedRuns`
+    不会自动补跑）、失败无任何告警。2026-08-03 真实丢了一轮（机器在 08:30
+    触发窗口处于休眠恢复中），直到环境保障线手工核查才发现。判定逻辑本身
+    （`decision_reminder.py::evaluate_candidates`）已用 `ESCALATION_INTERVALS_
+    DAYS` 去重，双载体同一天各调一次不会重复打扰，故可安全复用、不改判据。
+
+    走独立子进程调用 `scripts/decision_reminder_check.py`（与 #192-A
+    `_flush_pending_lock_appends` 同一理由：本脚本刻意不 import
+    `aibot_service`/`zhuopin_platform`，规避多 worktree 共享 editable
+    install 被静默劫持到别的 checkout 的风险；async 事件循环边界因此完全
+    留在子进程内，sweep 自身不需要 `asyncio.run()`——用进程隔离满足"async
+    边界"这条实现约束，而非在 sweep 内直接 import 该异步函数）。
+
+    **须在 sweep 自己的编辑锁窗口之外调用**（实现约束①）：被调脚本内部会
+    走一遍 `queue_git_sync`/编辑锁 flush（同 #192-A 第二道载体），与
+    `_strike_off_rows` 的持锁窗口重叠会构成重入；main() 接线固定排在批次
+    处理开始之前调用，不与之重叠。
+
+    路径解析走被调脚本自身的 `resolve_repo_root()`（#126）——本函数只按
+    绝对路径 `repo_root / DECISION_REMINDER_SCRIPT_REL` 调用，不额外硬编码
+    `SERVICE_DIR/reports` 之类的路径（实现约束④）。
+
+    异常（含超时）必须捕获+记日志（标 UTC）后继续跑主流程，不得把 sweep
+    带崩（实现约束③）。"""
+    script = repo_root / DECISION_REMINDER_SCRIPT_REL
+    if not script.exists():
+        return  # 本 checkout 未部署机器人服务（如独立测试环境），静默跳过
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)], cwd=repo_root, capture_output=True,
+            text=True, encoding="utf-8", timeout=DECISION_REMINDER_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:  # noqa: BLE001 —— 第二载体失败不得影响 sweep 主流程
+        log.append(
+            f"⚠ 决策提醒第二载体调用异常（{_now_utc_str()}，不影响本轮批次处理）：{exc}"
+        )
+        return
+    if result.returncode != 0:
+        log.append(
+            f"⚠ 决策提醒第二载体退出码 {result.returncode}（{_now_utc_str()}，不影响本轮批次处理）："
+            f"{(result.stderr or result.stdout).strip()[:500]}"
+        )
+        return
+    stdout = result.stdout.strip()
+    if stdout and "无新增/超期决策项" not in stdout:
+        log.append(f"✓ 决策提醒第二载体：{stdout.splitlines()[-1]}")
+
+
 def _load_webhook_url(repo_root: Path) -> str | None:
     """读 `<repo_root>/.env` 的 `WECOM_WEBHOOK_URL`（同 `发企微.py::load_webhook`
     同款零依赖读法，唯一区别：找不到时返回 None 而非 sys.exit——告警发不出去
@@ -562,17 +648,31 @@ def _resolve_batch_files(files_cell: str, dirty_paths: list[str]) -> tuple[list[
     `dirty_path.endswith("/" + frag)`），天然兼容"根 CLAUDE.md"与省略前缀两种写法，
     且只会对到真实存在的脏文件,不会凭空造出一个不存在的 add 目标。
 
+    队列 #234(1)（2026-08-04 值周巡检取证）：**精确相等优先**——若脏路径集合里
+    存在与片段字面完全相等的路径，即唯一采用它，不再把同一轮里其它仅"后缀匹配"
+    的候选一并计入歧义。根因实例：根 `CLAUDE.md` 与
+    `4-数字员工/采购部/SC8-.../CLAUDE.md` 同时脏时，片段 `` `CLAUDE.md` ``
+    在原实现下对根 `CLAUDE.md`（精确命中）与 SC8 那份（`endswith` 命中）各算一次，
+    被判 ambiguous，进而使这个早已正确声明的批次被 `unaccounted` 全局门槛
+    连带跳过——已声明齐全的批次不该因为"另一个 session 同时改了一个同名文件"
+    而遭殃。只做这一处收窄，**不做按批次隔离**（结构性改动，见 #230-2d 评估，
+    需独立验证场景，本次不动 `main()` 控制流）。
+
     返回 (resolved, not_dirty, ambiguous)：
       resolved   — 恰好命中 1 个脏路径的片段，对应的真实路径（用于 git add）
       not_dirty  — 0 个命中（可能已被别处提交，见"遗留尾巴"处置）
-      ambiguous  — 命中 ≥2 个脏路径（无法安全判定，本片段对应的候选路径会
-                   保留在全局脏路径集合里，从而让上层"非 clean"整体门禁自然拦截，
-                   不需要在此单独报错）
+      ambiguous  — 命中 ≥2 个脏路径且无精确相等命中（无法安全判定，本片段对应的
+                   候选路径会保留在全局脏路径集合里，从而让上层"非 clean"整体
+                   门禁自然拦截，不需要在此单独报错）
     """
     fragments = re.findall(r"`([^`]+)`", files_cell)
     resolved, not_dirty, ambiguous = [], [], []
     for frag in fragments:
-        matches = [d for d in dirty_paths if d == frag or d.endswith("/" + frag)]
+        exact = [d for d in dirty_paths if d == frag]
+        if exact:
+            resolved.append(exact[0])
+            continue
+        matches = [d for d in dirty_paths if d.endswith("/" + frag)]
         if len(matches) == 1:
             resolved.append(matches[0])
         elif len(matches) == 0:
@@ -717,20 +817,29 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = _resolve_repo_root(args.repo_root)
-    log: list[str] = [f"=== sweep 运行 {_now_utc_str()} ==="]
+    start_line = f"=== sweep 运行 {_now_utc_str()} ==="
+    log: list[str] = [start_line]
+    # 队列 #222：启动即写日志首行——不等收尾统一 flush，避免"启动后立刻
+    # 崩溃"与"压根没启动"在日志上表现完全相同（#121(b) 遗留未做项；判据
+    # 基础设施，见 #96 清单）。此后各退出路径改用 `_flush_remaining_log`，
+    # 只落盘首行之后新增的内容，不重复写入这一行。
+    if not args.dry_run:
+        _flush_log(repo_root, [start_line], dry_run=False)
 
     try:
         _heal_stale_index_lock(repo_root, log)
         _check_preconditions(repo_root, production=args.repo_root is None)
-        # 队列 #192/#194/#198 起跑段写死顺序（勿自行调整，详见各函数 docstring）：
+        # 队列 #192/#194/#198/#219 起跑段写死顺序（勿自行调整，详见各函数 docstring）：
         # ① #198(b) 编辑锁前置探测（任何 git 写动作之前）
         _abort_if_edit_lock_held(repo_root, log)
         # ② #194 无条件补推未推送提交
         _push_any_unpushed_commits(repo_root, log, dry_run=args.dry_run)
-        # ③ #192-A flush 锁忙推迟暂存（须在 sweep 自己取锁窗口之外，此处
-        #   批次处理尚未开始，安全）；dry-run 不做真实动作，避免副作用。
+        # ③ #192-A flush 锁忙推迟暂存 + #219 决策提醒第二载体（均须在 sweep
+        #   自己取锁窗口之外，此处批次处理尚未开始，安全）；dry-run 不做
+        #   真实动作，避免副作用。
         if not args.dry_run:
             _flush_pending_lock_appends(repo_root, log)
+            _run_decision_reminder_second_carrier(repo_root, log)
         # ④ 原有前置检查与批次处理
         _sync_master_if_behind_origin(repo_root, log)
         _verify_fast_forward(repo_root, refetch=False, on_fail_exit_code=FORK_EXIT_CODE, is_fork=True)
@@ -749,7 +858,7 @@ def main() -> int:
 
         if not pending_rows:
             log.append("§二无待处理批次，本轮空转。")
-            _flush_log(repo_root, log, args.dry_run)
+            _flush_remaining_log(repo_root, log, args.dry_run)
             print("\n".join(log))
             return 0
 
@@ -764,7 +873,7 @@ def main() -> int:
         if unaccounted:
             log.append("⚠ 非 clean：以下脏路径不属于任何待 commit 批次声明，跳过本轮：")
             log.extend(f"    - {p}" for p in unaccounted)
-            _flush_log(repo_root, log, args.dry_run)
+            _flush_remaining_log(repo_root, log, args.dry_run)
             print("\n".join(log))
             return 0
 
@@ -812,7 +921,7 @@ def main() -> int:
         if touched_paths and not args.dry_run and _touches_resident_service(touched_paths):
             _announce_resident_service_deployment_hint(repo_root, log)
 
-        _flush_log(repo_root, log, args.dry_run)
+        _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))
         return 0
 
@@ -820,7 +929,7 @@ def main() -> int:
         log.append(str(exc))
         if exc.is_fork and not args.dry_run:
             _handle_fork_detected(repo_root, log)
-        _flush_log(repo_root, log, args.dry_run)
+        _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))
         return exc.exit_code
 
@@ -849,7 +958,7 @@ def main() -> int:
                 except Exception as send_exc:  # noqa: BLE001 —— 告警失败不应影响退出码
                     log.append(f"⚠ 未预期异常告警推送失败（不影响本轮退出码）：{send_exc}")
         try:
-            _flush_log(repo_root, log, args.dry_run)
+            _flush_remaining_log(repo_root, log, args.dry_run)
         except Exception:  # noqa: BLE001 —— 日志落盘本身失败也不应掩盖原始异常的退出码
             pass
         print("\n".join(log))
@@ -880,10 +989,19 @@ def _rerun_ledger(repo_root: Path, log: list[str]) -> None:
 def _flush_log(repo_root: Path, log: list[str], dry_run: bool) -> None:
     if dry_run:
         return
+    if not log:
+        return
     log_path = repo_root / LOG_REL
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as f:
         f.write("\n".join(log) + "\n\n")
+
+
+def _flush_remaining_log(repo_root: Path, log: list[str], dry_run: bool) -> None:
+    """把本轮 log 中"启动首行之后"新增的部分落盘（队列 #222）——首行已在
+    main() 起跑时单独 `_flush_log` 过一次，各退出路径改调本函数而非直接
+    调 `_flush_log(repo_root, log, ...)`，避免同一行被重复写入日志文件。"""
+    _flush_log(repo_root, log[1:], dry_run)
 
 
 if __name__ == "__main__":

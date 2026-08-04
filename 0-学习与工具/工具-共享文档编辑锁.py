@@ -35,6 +35,21 @@
            acquire 会当作空锁立即成功，不会误判为陈旧锁走接管提示
   status   查看当前锁状态，不产生副作用
 
+队列 #230-1c（2026-08-04）：`acquire` 成功时会顺带回显"最近 120 分钟内
+还有哪些其它身份 acquire 过本锁"——并发 session 互不可见是本项目反复出现
+的实证风险（如 #221 错定 P1、批次被并发线未声明脏文件阻塞），本回显不
+解决"两线各自推理数小时"的问题，只让"对方最近也在场"这件事在场者可见，
+纯回显、零新增状态文件（复用 `.editlock` 自身的 `history` 字段）。
+
+队列 #225（2026-08-04）：锁定目标是默认队列文件（跨桌任务队列.md）时，
+`release` 前会对**本次持锁期间新增/修改**的行做四项结构校验（不通过则
+拒绝释放，锁保持占用，逼原地修正）：①§一 行须 8 列、§二/§四 行须 4 列
+（含反引号内裸竖线致列偏移）；②新增 §二 批次须在"文件清单"里声明队列
+文件自身路径；③新增 §一/§四 行编号不得与现役/归档件重复，且须属于本次
+`--reserve` 预留的编号集合；④P0/P1 定级行不得含"未核／未做的核实"字样
+（标注未核不等于可据此下结论，见 #221 教训）。历史行不追溯，见
+`_validate_release_structure`。
+
 锁本地存在于文件系统（gitignore，不入库、不需要 git commit 才生效）。
 REPO_ROOT 按 `git rev-parse --git-common-dir` 定位——所有 git worktree
 共享同一个 `.git`，故不论从主工作区还是任一 `.claude/worktrees/<name>/`
@@ -80,6 +95,7 @@ import re
 import subprocess
 import sys
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -120,6 +136,26 @@ SECTION_NUMBER_PATTERNS = {
 MUTEX_STALE_SECONDS = 10
 MUTEX_POLL_SECONDS = 0.02
 MUTEX_WAIT_TIMEOUT_SECONDS = 5.0
+
+# 队列 #230-1c：acquire 成功时回显"最近 N 分钟内还有哪些身份 acquire 过"。
+# 历史记录本身保留更久（RETENTION），只是展示窗口固定 120 分钟——保留窗口
+# 留出余量，避免恰好卡在展示窗口边界的条目因保留期过短而提前被裁掉。
+RECENT_ACQUIRE_WINDOW_MINUTES = 120
+HISTORY_RETENTION_MINUTES = 24 * 60
+
+# 队列 #225：release 时对跨桌任务队列.md 做结构校验，仅当锁定目标是这个
+# 默认队列文件时才跑（§一/§二/§三/§四 的语义只对它成立，--file 指向其他
+# 共享文件时这套校验没有意义）。
+ARCHIVE_GLOB = "跨桌任务队列-归档-*.md"
+SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
+ROW_NUMBER_SECTIONS = ("一", "四")
+# ④ 断言门槛（咽喉4甲案，2026-08-03 拍板，成因见 #221）：P0/P1 定级行内
+# 若含"未核／未做的核实"字样即拒绝 release——标注未核不等于可据此下结论。
+UNVERIFIED_ROW_PHRASES = ("未核", "未做的核实")
+P0_P1_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])P[01](?![A-Za-z0-9])")
+LIVE_SECTION_HEADING_RE = re.compile(r"^## ([一二三四])、", re.MULTILINE)
+# §一/§四 表头首列 "#"、§二 表头首列 "批次"；分隔行首列全为 "-"/空白。
+_TABLE_HEADER_FIRST_CELLS = ("#", "批次", "")
 
 
 def _mutex_path(lock_path: Path) -> Path:
@@ -201,6 +237,75 @@ def _read_high_water_mark(target: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def _snapshot_path(target: str) -> Path:
+    lock_path = _lock_path(target)
+    return lock_path.with_name(lock_path.name + ".snapshot")
+
+
+def _write_snapshot(target: str) -> None:
+    """acquire 成功时把目标文件此刻内容存一份快照（队列 #225）——release 时
+    据此 diff 出"本次持锁期间新增/修改"的行，结构校验只对这些行生效，不
+    对历史行秋后算账。目标文件不存在（如 `--file` 指向一个尚未创建的新
+    共享文件）时快照为空串，不视为错误。"""
+    try:
+        content = _target_path(target).read_text(encoding="utf-8")
+    except OSError:
+        content = ""
+    _snapshot_path(target).write_text(content, encoding="utf-8")
+
+
+def _read_snapshot(target: str) -> str:
+    try:
+        return _snapshot_path(target).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _read_raw_lock(lock_path: Path) -> dict:
+    """读取锁文件的完整原始 JSON，不做"released 即无锁"的语义过滤（那是
+    `_read_lock` 的职责）——供 `history`/`reserved` 等元数据字段读取，这些
+    字段需要跨越 acquire→release 的整个生命周期保留，不随锁被释放而消失。"""
+    if not lock_path.exists():
+        return {}
+    try:
+        data = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_history(lock_path: Path) -> list[dict]:
+    history = _read_raw_lock(lock_path).get("history")
+    return history if isinstance(history, list) else []
+
+
+def _prune_history(history: list[dict], now: datetime) -> list[dict]:
+    kept = []
+    for entry in history:
+        try:
+            at = datetime.fromisoformat(entry["at"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (now - at).total_seconds() / 60 <= HISTORY_RETENTION_MINUTES:
+            kept.append(entry)
+    return kept
+
+
+def _recent_entries(history: list[dict], now: datetime, window_minutes: float) -> list[dict]:
+    """筛出 `history` 里"距今 window_minutes 以内"的条目，附带算好的
+    `age_minutes`（供 acquire 回显用）。"""
+    result = []
+    for entry in history:
+        try:
+            at = datetime.fromisoformat(entry["at"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        age = (now - at).total_seconds() / 60
+        if 0 <= age <= window_minutes:
+            result.append({**entry, "age_minutes": age})
+    return result
+
+
 class ReserveFailedError(RuntimeError):
     """预留取号失败——高水位线行缺失/格式漂移，或目标文件读取失败。
 
@@ -259,6 +364,195 @@ def _reserve_ids(target: str, section: str, count: int) -> list[int]:
     return reserved
 
 
+def _split_live_sections(text: str) -> dict[str, str]:
+    """按 `## 一、`/`## 二、`/`## 三、`/`## 四、` 切分跨桌任务队列.md 正文
+    （只用于活文件本身——归档件历次标题措辞不统一，见 `_archive_row_numbers`
+    改用不依赖标题的按列数分类法）。"""
+    matches = list(LIVE_SECTION_HEADING_RE.finditer(text))
+    sections: dict[str, str] = {}
+    for i, m in enumerate(matches):
+        label = m.group(1)
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        sections[label] = text[start:end]
+    return sections
+
+
+def _table_data_rows(section_text: str) -> list[tuple[str, list[str]]]:
+    """提取表格数据行（原始行文本 + 拆分后的单元格），跳过表头/分隔行。
+
+    判据与 `工具-落库sweep.py::_parse_section_two` 保持一致（首列等于表头
+    已知取值，或首列仅由 "-"/空白组成即视为分隔行）——同一份文件、同一套
+    表格约定，两处判据不该各写一套。裸竖线致列数偏移的行（#164/#225①要
+    抓的那种）不会被这里过滤掉，会原样进入返回列表、留给调用方按列数校验。
+    """
+    rows: list[tuple[str, list[str]]] = []
+    for line in section_text.splitlines():
+        s = line.strip()
+        if not (s.startswith("|") and s.endswith("|")):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        first = cells[0]
+        if first in _TABLE_HEADER_FIRST_CELLS:
+            continue
+        if set(first) <= {"-", " "}:
+            continue
+        rows.append((line, cells))
+    return rows
+
+
+def _archive_row_numbers(repo_root: Path) -> dict[str, set[int]]:
+    """扫描所有《跨桌任务队列-归档-YYYYMM.md》，按列数分类出已用编号——
+    §一（8 列）归一类、§四（4 列且首列纯数字，与 §二 的 "B-xxx" 批次行区分
+    开）归另一类。不依赖归档件标题措辞：202607 档用"一、任务看板（已完成
+    行）"，202608 档用"§一 任务看板 · ... 迁入"，写法并不统一，按列数+首列
+    形态分类比按标题正则更稳。"""
+    numbers: dict[str, set[int]] = {"一": set(), "四": set()}
+    archive_dir = repo_root / Path(DEFAULT_TARGET).parent
+    if not archive_dir.is_dir():
+        return numbers
+    for path in sorted(archive_dir.glob(ARCHIVE_GLOB)):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            s = line.strip()
+            if not (s.startswith("|") and s.endswith("|")):
+                continue
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            first = cells[0]
+            if not first.isdigit():
+                continue
+            if len(cells) == 8:
+                numbers["一"].add(int(first))
+            elif len(cells) == 4:
+                numbers["四"].add(int(first))
+    return numbers
+
+
+def _diff_touched_rows(
+    old_section_text: str, new_section_text: str,
+) -> list[tuple[str, list[str]]]:
+    """本次持锁期间"新增或内容有变化"的数据行——凡当前行原文在快照的同一
+    分区文本里逐字找不到，即视为触碰过（新增/编辑均算，未改动的行原样
+    保留、逐字可命中，不会被误判）。"""
+    old_lines = set(old_section_text.splitlines())
+    return [
+        (line, cells) for line, cells in _table_data_rows(new_section_text)
+        if line not in old_lines
+    ]
+
+
+def _validate_release_structure(
+    args: argparse.Namespace, lock_data: dict, repo_root: Path,
+) -> list[str]:
+    """队列 #225：release 时对跨桌任务队列.md 做四项结构校验，只对本次
+    持锁期间新增/修改的行生效（历史行不追溯）。返回违规说明列表，空列表
+    即通过。
+
+    ①列数：§一 行应为 8 列、§二/§四 行应为 4 列，不符即报（含反引号内裸
+      竖线致列数偏移的情形——本函数按原样切分列，不做任何"容错"，这正是
+      要抓的失效形态）。
+    ②批次清单（仅 §二）：新增批次行的"文件清单"列须含队列文件自身路径——
+      两种实现路径（① sweep 侧隐式声明 / ② 本处 release 时显式校验）二选
+      一，本工具选②：在编辑发生的源头把关，比在消费端悄悄兜底更能让"文件
+      清单"这一列本身保持诚实（消费端兜底会让人看着清单以为完整、实则不
+      是，长期侵蚀 grep/审计工具对这份清单的信任）。
+    ③编号（仅 §一/§四）：真正新增的行（编号此前不存在于快照同分区）不得
+      与当前文件或归档件里任何既有编号重复，且必须属于本次持锁期间
+      `--reserve` 预留的编号集合——协议〇.7（2026-07-31 补）已明文"此后新
+      行编号一律用 --reserve 取"，未预留即新增编号视为违规，逼回正确路径。
+    ④断言门槛（仅 §一，咽喉4甲）：P0/P1 定级行若含"未核／未做的核实"字样
+      即报——标注未核不等于可据此下结论（成因见 #221）。
+    """
+    violations: list[str] = []
+    target_path = _target_path(args.file)
+    current_text = target_path.read_text(encoding="utf-8") if target_path.exists() else ""
+    snapshot_text = _read_snapshot(args.file)
+
+    new_sections = _split_live_sections(current_text)
+    old_sections = _split_live_sections(snapshot_text)
+    reserved_map = lock_data.get("reserved") or {}
+    archive_numbers: dict[str, set[int]] | None = None  # 惰性计算，仅在需要时扫描
+
+    for label, expected_cols in SECTION_COLUMN_COUNTS.items():
+        new_text = new_sections.get(label, "")
+        old_text = old_sections.get(label, "")
+        touched = _diff_touched_rows(old_text, new_text)
+        if not touched:
+            continue
+
+        old_numbers: set[int] = set()
+        current_number_counts: Counter = Counter()
+        if label in ROW_NUMBER_SECTIONS:
+            old_numbers = {
+                int(cells[0]) for _, cells in _table_data_rows(old_text) if cells[0].isdigit()
+            }
+            current_number_counts = Counter(
+                int(cells[0]) for _, cells in _table_data_rows(new_text) if cells[0].isdigit()
+            )
+
+        for line, cells in touched:
+            preview = line.strip()
+            if len(preview) > 80:
+                preview = preview[:80] + "…"
+
+            if len(cells) != expected_cols:
+                violations.append(
+                    f"§{label} 行列数为 {len(cells)}（应为 {expected_cols}，"
+                    f"含反引号内裸竖线等致列偏移的情形）：{preview}"
+                )
+                continue  # 列数都不对，按列取值的后续校验没有意义
+
+            if label == "二":
+                fragments = re.findall(r"`([^`]+)`", cells[1])
+                declares_self = any(
+                    frag == DEFAULT_TARGET
+                    or frag == Path(DEFAULT_TARGET).name
+                    or frag.endswith("/" + Path(DEFAULT_TARGET).name)
+                    for frag in fragments
+                )
+                if not declares_self:
+                    violations.append(
+                        f"§二 批次「{cells[0]}」文件清单未声明队列文件自身路径"
+                        f"（须含 `{DEFAULT_TARGET}`）：{preview}"
+                    )
+
+            if label in ROW_NUMBER_SECTIONS and cells[0].isdigit():
+                number = int(cells[0])
+                # 组内重复：不论这个编号本身是"新增"还是"编辑既有行"，只要
+                # 当前文件里它此刻出现超过一次，就是真实撞号——即便撞的
+                # 对象是一行本次完全没碰过的历史行（如"新增一行沿用了某个
+                # 已存在行的旧编号"），这条检查也必须抓住，不能因为该编号
+                # 本身"不算新"就放过。
+                if current_number_counts[number] > 1:
+                    violations.append(f"§{label} #{number} 与当前文件内其它行编号重复：{preview}")
+                if number not in old_numbers:  # 真正新增的行，才做归档去重+预留归属校验
+                    if archive_numbers is None:
+                        archive_numbers = _archive_row_numbers(repo_root)
+                    if number in archive_numbers.get(label, set()):
+                        violations.append(f"§{label} #{number} 与已归档行编号重复：{preview}")
+                    reserved_here = set(reserved_map.get(label, []))
+                    if number not in reserved_here:
+                        shown = "、".join(str(n) for n in sorted(reserved_here)) or "本次未预留任何编号"
+                        violations.append(
+                            f"§{label} #{number} 不属于本次持锁期间 --reserve 预留的编号集合"
+                            f"（{shown}）：{preview}"
+                        )
+
+            if label == "一" and P0_P1_TOKEN_RE.search(line) and any(
+                p in line for p in UNVERIFIED_ROW_PHRASES
+            ):
+                violations.append(
+                    f"§一 #{cells[0]} 为 P0/P1 定级行且含「未核／未做的核实」字样"
+                    f"（标注未核不等于可据此下结论，见 #221 教训，请补核实或改标「待核实」）："
+                    f"{preview}"
+                )
+
+    return violations
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -284,11 +578,20 @@ def _age_minutes(lock: dict) -> float:
     return (_now() - held_since).total_seconds() / 60
 
 
-def _write_released_marker(lock_path: Path, who: str, note: str, held_since: str) -> None:
-    """写released标记（release 与"预留失败回滚 acquire"共用同一写法）。"""
+def _write_released_marker(
+    lock_path: Path, who: str, note: str, held_since: str,
+    history: list[dict] | None = None,
+) -> None:
+    """写released标记（release 与"预留失败回滚 acquire"共用同一写法）。
+
+    `history`（队列 #230-1c）随标记一并写回、不丢弃——即便本次锁已释放，
+    "谁在什么时候 acquire 过"这份记录仍需保留给下一次 acquire 用来回显
+    "最近 120 分钟内还有哪些身份拿过锁"，released 之后并不代表这段历史
+    失去意义。"""
     _atomic_write_json(lock_path, {
         "who": who, "note": note, "held_since": held_since,
         "released": True, "released_at": _now().isoformat(),
+        "history": history or [],
     })
 
 
@@ -331,9 +634,23 @@ def _acquire_locked(args: argparse.Namespace, lock_path: Path) -> int:
         print(f"⚠ 发现陈旧锁（{existing.get('who', '未知')}，{age:.0f} 分钟前，"
               f"超过 {STALE_MINUTES} 分钟未释放，判定为异常退出遗留）——已接管。")
 
-    held_since = _now().isoformat()
+    now = _now()
+    held_since = now.isoformat()
+
+    # 队列 #230-1c：合并本次 acquire 进历史（无论后面是否走 --reserve、
+    # 是否发生 reserve 失败回滚——"曾经 acquire 过"这件事本身就值得让下一
+    # 位调用者看到），并计算"最近 120 分钟内还有哪些其它身份"供回显。
+    prior_history = _prune_history(_read_history(lock_path), now)
+    recent_others = _recent_entries(prior_history, now, RECENT_ACQUIRE_WINDOW_MINUTES)
+    new_history = prior_history + [
+        {"who": args.who, "note": args.note or "", "at": held_since}
+    ]
+
     _atomic_write_json(
-        lock_path, {"who": args.who, "note": args.note or "", "held_since": held_since}
+        lock_path, {
+            "who": args.who, "note": args.note or "", "held_since": held_since,
+            "history": new_history, "reserved": {},
+        }
     )
 
     # 写后回读校验（#197②）：互斥锁已确保本段不会与另一次 acquire 交叉
@@ -345,7 +662,19 @@ def _acquire_locked(args: argparse.Namespace, lock_path: Path) -> int:
         print("✗ 写入后回读校验未通过（占锁内容与预期不符）——本次占锁失败，请重试。")
         return 1
 
+    # 队列 #225：目标文件此刻内容存一份快照，release 时据此 diff 出本次
+    # 持锁期间新增/修改的行，结构校验只对这些行生效。
+    _write_snapshot(args.file)
+
     print(f"✓ 已占锁：{args.who}（{args.note or '无备注'}）→ {lock_path.name}")
+
+    if recent_others:
+        others_desc = "、".join(
+            f"{h['who']}（{h['age_minutes']:.0f} 分钟前，{h['note']}）" if h.get("note")
+            else f"{h['who']}（{h['age_minutes']:.0f} 分钟前）"
+            for h in recent_others
+        )
+        print(f"⚠ 最近 {RECENT_ACQUIRE_WINDOW_MINUTES} 分钟内还有其它身份 acquire 过本锁：{others_desc}")
 
     if args.reserve is not None:
         # 队列 #163：直接分配并返回字面编号，同一次持锁窗口内原子回写高水
@@ -355,8 +684,16 @@ def _acquire_locked(args: argparse.Namespace, lock_path: Path) -> int:
             reserved = _reserve_ids(args.file, args.section, args.reserve)
         except ReserveFailedError as exc:
             print(f"✗ 预留取号失败，本次 acquire 一并回滚（不留半成品锁）：{exc}")
-            _write_released_marker(lock_path, args.who, args.note or "", held_since)
+            _write_released_marker(lock_path, args.who, args.note or "", held_since, history=new_history)
             return 1
+        # 队列 #225 校验③：把本次预留的编号写回锁文件，release 时据此判定
+        # "新增编号是否属于本次持锁期间实际预留过的集合"。
+        _atomic_write_json(
+            lock_path, {
+                "who": args.who, "note": args.note or "", "held_since": held_since,
+                "history": new_history, "reserved": {args.section: reserved},
+            }
+        )
         nums = "、".join(f"§{args.section} #{n}" for n in reserved)
         print(f"📍 已为你预留：{nums}")
         print("   （顶部高水位线已同步回写；即使本次未写满，编号不复用、留空即可）")
@@ -383,13 +720,25 @@ def cmd_release(args: argparse.Namespace) -> int:
               f"等其自然陈旧（{STALE_MINUTES} 分钟）由下一次 acquire 自动接管；"
               f"或确认后不带 --who 强制释放。")
         return 1
+
+    # 队列 #225：锁定目标是默认队列文件时，release 前做四项结构校验——
+    # 不通过则拒绝释放（锁保持占用，逼持有者原地修正后重试），不对其他
+    # `--file` 目标生效（§一/§二/§三/§四 语义只对这份文件成立）。
+    if args.file == DEFAULT_TARGET:
+        violations = _validate_release_structure(args, existing, REPO_ROOT)
+        if violations:
+            print(f"✗ release 被拒绝（{len(violations)} 项结构问题，锁保持占用，请修正后重试）：")
+            for v in violations:
+                print(f"  - {v}")
+            return 1
+
     # 改写为 released 标记而非 unlink（#121(a)）：Cowork 沙箱挂载对本文件
     # unlink 会返回 PermissionError（acquire 建文件正常，release 删不掉），
     # 改写规避了这个问题，且本地/CC 环境同样适用——不需要按环境分叉代码路径。
     # released 标记等价于"无锁"（见 _read_lock），下一次 acquire 当空锁立即成功。
     _write_released_marker(
         lock_path, existing.get("who", ""), existing.get("note", ""),
-        existing.get("held_since", ""),
+        existing.get("held_since", ""), history=existing.get("history", []),
     )
     print("✓ 已释放（改写为释放标记，未删除文件——沙箱环境亦可用）")
     return 0
