@@ -43,6 +43,8 @@ $TASK     = "WecomAibotService"
 $RUNSCRIPT = Join-Path $APP "scripts\run_aibot_service.py"
 $ALERTSCRIPT = Join-Path $APP "scripts\alert_webhook.py"
 
+Import-Module (Join-Path $BASE "deploy-tools\ZhuopinDeploy.psm1") -Force
+
 Write-Host "`n== 企微智能机器人双向通道服务 — 服务器部署 ==" -ForegroundColor Cyan
 Write-Host "   基目录  : $BASE"
 Write-Host "   平台底座: $PLATFORM"
@@ -132,18 +134,12 @@ Write-Host "      已生成" -ForegroundColor Green
 
 # ── 6. 计划任务（开机自启、SYSTEM、单实例、无入站端口）──
 Write-Host "[6/7] 注册计划任务 $TASK..." -ForegroundColor Yellow
-if (Get-ScheduledTask -TaskName $TASK -ErrorAction SilentlyContinue) {
-    Unregister-ScheduledTask -TaskName $TASK -Confirm:$false   # 重建以更新路径
-}
-$psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $psArgs -WorkingDirectory $APP
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
-                -MultipleInstances IgnoreNew -AllowStartIfOnBatteries
-Register-ScheduledTask -TaskName $TASK -Action $action -Trigger $trigger `
-    -Principal $principal -Settings $settings `
-    -Description "企微智能机器人双向通道服务（纯出站 WS 客户端，无入站端口）" | Out-Null
+# RestartCount=0：本服务自行实现三级退避（start-aibot-service.ps1 的 while 循环），
+# 不用计划任务原生的单级重启，避免两套重启机制互相打架。
+Register-ZhuopinScheduledTask -TaskName $TASK `
+    -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"" `
+    -WorkingDirectory $APP -RestartCount 0 -MultipleInstancesIgnoreNew `
+    -Description "企微智能机器人双向通道服务（纯出站 WS 客户端，无入站端口）"
 Write-Host "      已注册（-MultipleInstances IgnoreNew，防双实例互踢）" -ForegroundColor Green
 
 # ── 7. 启动 + 健康检查（无 HTTP 端口，改看进程是否存活 + 日志/审计文件是否更新）──

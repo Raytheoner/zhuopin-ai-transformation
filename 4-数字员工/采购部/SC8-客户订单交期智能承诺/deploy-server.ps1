@@ -11,6 +11,10 @@
 #
 #  端口 8091（避开 supplychain 8080 / SalesMarketing 8090，可同机共存）。
 #  红线：含真实客户名 → 仅内网 LAN 开放(不对公网)；对客闸全程关；外网开放须先加鉴权(待办#10)。
+#
+#  2026-08-04（队列 #96）：防火墙/计划任务注册/健康检查已收拢进
+#  `deploy-tools\ZhuopinDeploy.psm1`（由 sync-to-server.ps1 自动推送到本机同层级，
+#  与 zhuopin_platform/app 并列）。
 # ============================================================
 
 $ErrorActionPreference = "Stop"
@@ -22,6 +26,8 @@ $VENV     = Join-Path $BASE ".venv"
 $PORT     = 8091
 $TASK     = "BaoguanWebServer"
 $WEBSCRIPT = Join-Path $APP "scripts\run_baoguan_web.py"
+
+Import-Module (Join-Path $BASE "deploy-tools\ZhuopinDeploy.psm1") -Force
 
 Write-Host "`n== 成品保供预警看板 — 服务器部署 ==" -ForegroundColor Cyan
 Write-Host "   基目录  : $BASE"
@@ -99,28 +105,12 @@ if (Test-Path $envFile) {
 }
 # 幂等确保 ZP_GATE_PASSWORD 这一行存在（既有 .env 早于本次门禁上线时不会有此行）；
 # 首次生成的模板已含此行，这里只补"已存在的老 .env 缺这一行"的场景，不覆盖已填的值。
-if (Test-Path $envFile) {
-    $hasGate = (Get-Content $envFile) -match '^\s*ZP_GATE_PASSWORD='
-    if (-not $hasGate) {
-        Add-Content -Path $envFile -Value "`n# 四服务共享访问口令门禁（临时止血,跨桌任务队列#10）——四份.env须填同一个值`nZP_GATE_PASSWORD=`n"
-        Write-Host "      已在既有 .env 追加 ZP_GATE_PASSWORD（待填，四服务须同一个值）" -ForegroundColor DarkYellow
-    }
-}
+Set-ZhuopinGatePasswordEnv -EnvFile $envFile
 
 # ── 5. 防火墙放行 8091（内网 LAN 全网段，与 supplychain/SalesMarketing 一致）──
-# 注意：不要限 LocalSubnet —— 组员笔记本常在不同网段(如 WLAN)，LocalSubnet 会挡掉。
 # 红线针对的是「公网开放」(须先加鉴权,待办#10)，内网 LAN 全网段是这些看板的统一档。
 Write-Host "[5/8] 防火墙（入站 TCP $PORT，LAN 全网段）..." -ForegroundColor Yellow
-$ruleName = "Baoguan-WebServer-$PORT"
-if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP `
-        -LocalPort $PORT -Action Allow | Out-Null
-    Write-Host "      已放行 $PORT（LAN 全网段）" -ForegroundColor Green
-} else {
-    # 已存在则确保为全网段/全配置文件、启用（修早前 LocalSubnet 收窄导致跨网段打不开）
-    Set-NetFirewallRule -DisplayName $ruleName -RemoteAddress Any -Profile Any -Enabled True | Out-Null
-    Write-Host "      规则已存在，已确保放行 LAN 全网段" -ForegroundColor Green
-}
+Register-ZhuopinFirewallRule -RuleName "Baoguan-WebServer-$PORT" -Port $PORT
 
 # ── 6. 启动包装脚本（设 real + 端口，PowerShell 对中文/UTF-8 路径友好）──
 Write-Host "[6/8] 生成 start-baoguan.ps1..." -ForegroundColor Yellow
@@ -136,34 +126,13 @@ Write-Host "      已生成" -ForegroundColor Green
 
 # ── 7. 计划任务（开机自启、SYSTEM、失败重启3次）──
 Write-Host "[7/8] 注册计划任务 $TASK..." -ForegroundColor Yellow
-if (Get-ScheduledTask -TaskName $TASK -ErrorAction SilentlyContinue) {
-    Unregister-ScheduledTask -TaskName $TASK -Confirm:$false   # 重建以更新路径
-}
-$psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $psArgs -WorkingDirectory $APP
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
-                -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries
-Register-ScheduledTask -TaskName $TASK -Action $action -Trigger $trigger `
-    -Principal $principal -Settings $settings `
-    -Description "成品保供预警看板 Web 服务（端口 $PORT，real）" | Out-Null
-Write-Host "      已注册" -ForegroundColor Green
+Register-ZhuopinScheduledTask -TaskName $TASK `
+    -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"" `
+    -WorkingDirectory $APP -Description "成品保供预警看板 Web 服务（端口 $PORT，real）"
 
 # ── 8. 启动 + 健康检查 ──
 Write-Host "[8/8] 启动服务..." -ForegroundColor Yellow
-# 先清掉占用该端口的旧实例（重部署时可能有 powershell 包装遗留的孤儿 python），保证单实例
-Get-NetTCPConnection -LocalPort $PORT -State Listen -ErrorAction SilentlyContinue |
-    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
-Start-ScheduledTask -TaskName $TASK
-Start-Sleep -Seconds 6
-try {
-    $r = Invoke-WebRequest -Uri "http://127.0.0.1:$PORT/api/ping" -TimeoutSec 5 -UseBasicParsing
-    Write-Host "      健康检查 OK：$($r.Content)" -ForegroundColor Green
-} catch {
-    Write-Host "      健康检查未过——多半 .env 凭据未填或 Python 报错。" -ForegroundColor Red
-    Write-Host "      排查：powershell -File `"$startPs1`"  看前台报错。" -ForegroundColor DarkYellow
-}
+Start-ZhuopinWebServiceAndCheckHealth -TaskName $TASK -Port $PORT | Out-Null
 
 Write-Host "`n部署完成。" -ForegroundColor Green
 Write-Host "   看板地址 : http://192.168.100.51:$PORT/"        -ForegroundColor Cyan

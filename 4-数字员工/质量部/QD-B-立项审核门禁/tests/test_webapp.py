@@ -5,7 +5,7 @@ from io import BytesIO
 
 import pytest
 
-from qd_b_gate.webapp import create_app
+from qd_b_gate.webapp import _secure_filename, create_app
 
 
 @pytest.fixture()
@@ -28,6 +28,50 @@ def test_index_shows_disclaimer_and_trial_badge(client):
     assert "试用版" in body
     assert "评审委员会" in body
     assert "<form" in body
+
+
+class TestSecureFilename:
+    """队列 #108②：上传文件名过滤——保留中文可读性，滤路径穿越/控制字符/Windows 非法字符。"""
+
+    def test_preserves_chinese_filename(self):
+        assert _secure_filename("华丰立项申请书.xlsx") == "华丰立项申请书.xlsx"
+
+    def test_strips_path_traversal_unix_style(self):
+        assert _secure_filename("../../etc/passwd.xlsx") == "passwd.xlsx"
+
+    def test_strips_path_traversal_windows_style(self):
+        assert _secure_filename("..\\..\\Windows\\evil.xlsx") == "evil.xlsx"
+
+    def test_strips_absolute_windows_path(self):
+        assert _secure_filename("C:\\secret\\立项书.xlsx") == "立项书.xlsx"
+
+    def test_replaces_windows_illegal_characters(self):
+        result = _secure_filename('a<b>c:d"e|f?g*h.xlsx')
+        assert not any(ch in result for ch in '<>:"|?*')
+
+    def test_strips_control_characters(self):
+        result = _secure_filename("立项书\x00\x01.xlsx")
+        assert "\x00" not in result and "\x01" not in result
+
+    def test_strips_trailing_dots_and_spaces(self):
+        result = _secure_filename("立项书.xlsx   ...")
+        assert not result.endswith(" ") and not result.endswith(".")
+
+    def test_empty_after_filtering_falls_back_to_default(self):
+        assert _secure_filename("////") == "upload"
+
+
+def test_evaluate_with_malicious_filename_stays_inside_upload_dir(client, tmp_path):
+    """恶意文件名（路径穿越+特殊字符）不应逃逸 upload_dir，也不应导致落盘失败。"""
+    data = {"proposal": (BytesIO(b"not a real xlsx"), "../../../evil<>:.xlsx")}
+    r = client.post("/evaluate", data=data, content_type="multipart/form-data")
+    # 内容本身不是合法 xlsx，评估会失败（500），但落盘阶段不应抛异常/逃逸目录——
+    # 断言 uploads 目录下只新增了一个受控命名的文件，且不在目录之外。
+    assert r.status_code in (400, 500)
+    uploads_dir = tmp_path / "uploads"
+    saved = list(uploads_dir.glob("*evil*"))
+    assert len(saved) == 1
+    assert saved[0].parent == uploads_dir
 
 
 def test_evaluate_rejects_missing_file(client):

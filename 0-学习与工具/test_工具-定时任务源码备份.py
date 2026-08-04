@@ -111,6 +111,25 @@ class MirrorOneTaskTests(unittest.TestCase):
         mirrored = self.mirror_dir / "weekly-status-update.SKILL.md"
         self.assertEqual(mirrored.read_text(encoding="utf-8"), "v2 已改\n")
 
+    def test_line_ending_only_difference_is_unchanged_not_false_positive(self):
+        """队列 #188 判据：不得用裸字节哈希比对（换行符差异会造成"内容完全一致但
+        字节数不同"的假阳性，2026-07-31 实测两份内容逐字一致但字节数差 1055）。
+        `Path.read_text()` 走 Python 通用换行符转换，`\\r\\n`/`\\r` 均归一化为 `\\n`
+        再计算哈希，本测试验证真身用 CRLF、镜像用 LF 写入同一段文字时仍判 unchanged。"""
+        task_dir = self.source_dir / "weekly-status-update"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        # 真身用 CRLF 换行（模拟 Windows 编辑器保存），原始字节含 \r\n
+        (task_dir / "SKILL.md").write_bytes("第一行\r\n第二行\r\n第三行\r\n".encode("utf-8"))
+        # 镜像已存在且内容逐字相同，但用 LF 换行写入（原始字节不同、规范化后文本相同）
+        self.mirror_dir.mkdir(parents=True, exist_ok=True)
+        (self.mirror_dir / "weekly-status-update.SKILL.md").write_bytes(
+            "第一行\n第二行\n第三行\n".encode("utf-8")
+        )
+
+        result = backup.mirror_one_task(self.source_dir, self.mirror_dir, "weekly-status-update")
+
+        self.assertEqual(result.status, "unchanged")
+
     def test_credential_hit_blocks_write_fail_closed(self):
         _write_task(
             self.source_dir, "check-skill-plugin-updates",

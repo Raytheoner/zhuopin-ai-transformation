@@ -97,6 +97,83 @@ def test_push_followup_with_docx_uploads_and_sends_file(tmp_path):
     assert client.sent_messages[1][1] == {"msgtype": "file", "file": {"media_id": "M1"}}
 
 
+def test_push_followup_multiple_attachments(tmp_path):
+    """队列 #93：docx_path（首个）+ extra_attachments（追加）一次全部发出。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+    docx_path = tmp_path / "letter.docx"
+    docx_path.write_bytes(b"fake docx bytes")
+    extra1 = tmp_path / "attachment1.xlsx"
+    extra1.write_bytes(b"fake xlsx bytes")
+    extra2 = tmp_path / "attachment2.pdf"
+    extra2.write_bytes(b"fake pdf bytes")
+
+    client = store["client"]
+    client.raw_frame_responses["aibot_upload_media_init"] = [
+        {"body": {"upload_id": "U1"}},
+        {"body": {"upload_id": "U2"}},
+        {"body": {"upload_id": "U3"}},
+    ]
+    client.raw_frame_responses["aibot_upload_media_finish"] = [
+        {"body": {"media_id": "M1"}},
+        {"body": {"media_id": "M2"}},
+        {"body": {"media_id": "M3"}},
+    ]
+
+    result = asyncio.run(
+        push_followup(
+            readme_path=readme_path,
+            md_path=md_path,
+            docx_path=docx_path,
+            extra_attachments=[extra1, extra2],
+            connector=connector,
+            chatid="chat-1",
+            match=_match_8d,
+            audit=audit,
+            cc_to_paul=False,
+        )
+    )
+
+    assert result.media_id == "M1"
+    assert result.media_ids == ["M1", "M2", "M3"]
+    # 正文 markdown 1 条 + 三份附件各 1 条 file 消息 = 4 条
+    assert len(client.sent_messages) == 4
+    assert client.sent_messages[1] == ("chat-1", {"msgtype": "file", "file": {"media_id": "M1"}})
+    assert client.sent_messages[2] == ("chat-1", {"msgtype": "file", "file": {"media_id": "M2"}})
+    assert client.sent_messages[3] == ("chat-1", {"msgtype": "file", "file": {"media_id": "M3"}})
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    delivered = [r for r in audit.query_by(scenario="wecom-aibot") if r["action"] == "followup_delivered"]
+    assert delivered[0]["decision"]["media_ids"] == ["M1", "M2", "M3"]
+
+
+def test_push_followup_extra_attachments_only_no_docx(tmp_path):
+    """docx_path 为空、只有 extra_attachments 时仍能正常工作（无隐含依赖首位必须是 docx）。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+    extra1 = tmp_path / "attachment1.xlsx"
+    extra1.write_bytes(b"fake xlsx bytes")
+
+    client = store["client"]
+    client.raw_frame_responses["aibot_upload_media_init"] = [{"body": {"upload_id": "U1"}}]
+    client.raw_frame_responses["aibot_upload_media_finish"] = [{"body": {"media_id": "M1"}}]
+
+    result = asyncio.run(
+        push_followup(
+            readme_path=readme_path,
+            md_path=md_path,
+            docx_path=None,
+            extra_attachments=[extra1],
+            connector=connector,
+            chatid="chat-1",
+            match=_match_8d,
+            audit=audit,
+            cc_to_paul=False,
+        )
+    )
+
+    assert result.media_id == "M1"
+    assert result.media_ids == ["M1"]
+
+
 def test_push_followup_rejects_when_not_finalized(tmp_path):
     text = README_TEXT.replace("| 🆕 待发 |", "| ✅ 已发 |", 1)
     readme_path, md_path, audit, connector, store = _setup(tmp_path, text)
