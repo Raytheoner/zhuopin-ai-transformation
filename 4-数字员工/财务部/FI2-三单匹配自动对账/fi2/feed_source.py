@@ -8,9 +8,10 @@ v3 口径修正（2026-07-09）：核对对象改 AP 单 vs INV，PO/GR 保留�
   · csv ：应急桥接（同字段约定，接口先搭，真实路径待 9 月数据闸接通）。
   · u9c ：U9C 财务接口直读（design D15，队列 #60，2026-07-20 起 PO/GR/AP 三单可用）——
     注入 `u9c_connector`+`ap_doc_nos` 时按 AP 单号驱动真实查询（AP→去重 SrcPONo/SrcRcvNo
-    →PO/GR）；未注入连接器时维持 fail-loud（不静默回退 mock/csv）。发票/付款（Invoice/
-    Payment）因 Attachment/OCR 未就绪（队列 #59），u9c 源下无条件 fail-loud，不受连接器
-    注入影响。
+    →PO/GR）；未注入连接器时维持 fail-loud（不静默回退 mock/csv）。发票（Invoice）默认仍
+    fail-loud（Attachment/OCR 未就绪，队列 #59），但 design D19（队列 #214/§四#43，
+    2026-08-03）新增例外：显式提供 `invoice_sample_dir`（人工誊录小样目录）时改读该目录，
+    未提供则行为不变。付款（Payment）u9c 源下始终 fail-loud，不受本次改动影响。
 """
 from __future__ import annotations
 
@@ -301,12 +302,19 @@ class FeedSource:
         ap_doc_nos:  `u9c` 源下待对账的 AP 单号清单（显式给单号的原始 MVP 形态，
             design D15-a①）——`ap_supplier_codes` 未注入时的手工兜底路径，仍受支持
             （如财务专员只想追一批具体单号，不想拉某供应商全量）。
+        invoice_sample_dir: `u9c` 源下人工誊录发票小样目录（design D19，队列 #214/
+            §四#43）——提供时 `load_invoice()` 改读该目录 `invoice.csv`（同既有
+            `parse_invoice`/`_InvoiceRow` 边界校验），不再 fail-loud；`None`（默认）→
+            `load_invoice()` 维持现状 fail-loud（Attachment/OCR 未就绪，队列 #59），
+            行为与本参数引入前完全一致。仅影响 `load_invoice()`，不影响
+            `load_po_lines`/`load_grn`/`load_ap_lines`/`load_payment`。
     """
 
     def __init__(self, data_source: str | None = None, *, mock_dir: Path | str | None = None,
                  csv_dir: Path | str | None = None, audit=None, cfg=_config,
                  u9c_connector=None, ap_doc_nos: list[str] | None = None,
-                 ap_supplier_codes: list[str] | None = None):
+                 ap_supplier_codes: list[str] | None = None,
+                 invoice_sample_dir: Path | str | None = None):
         self.data_source = (data_source or cfg.DATA_SOURCE_DEFAULT).strip().lower()
         self.mock_dir = Path(mock_dir) if mock_dir else None
         self.csv_dir = Path(csv_dir) if csv_dir else None
@@ -315,6 +323,7 @@ class FeedSource:
         self.u9c_connector = u9c_connector
         self.ap_doc_nos = list(ap_doc_nos) if ap_doc_nos else None
         self.ap_supplier_codes = list(ap_supplier_codes) if ap_supplier_codes else None
+        self.invoice_sample_dir = Path(invoice_sample_dir) if invoice_sample_dir else None
         self._u9c_ap_rows_cache: list[dict] | None = None
 
     def _dir(self) -> Path:
@@ -383,8 +392,12 @@ class FeedSource:
 
     def load_invoice(self) -> list[InvoiceLine]:
         if self.data_source == "u9c":
-            # Attachment/OCR 未就绪（队列 #59），u9c 源发票加载维持无条件 fail-loud，
-            # 不因本次 u9c_connector 接入而变化（design D15-b）。
+            # design D19（队列 #214/§四#43）：显式提供人工誊录小样目录时读取该目录，
+            # 不再 fail-loud——但这不是"发票源已解决"，只是把已知的人工誊录小样接进来；
+            # 未提供该参数（默认）时，Attachment/OCR 未就绪（队列 #59）的 fail-loud 行为
+            # 与本次改动前完全一致，不静默变化。
+            if self.invoice_sample_dir is not None:
+                return parse_invoice(_read_csv(self.invoice_sample_dir / "invoice.csv"))
             raise RealEndpointNotReadyError("load_invoice", self.cfg.U9C_FI_NOT_READY)
         return parse_invoice(_read_csv(self._dir() / "invoice.csv"))
 

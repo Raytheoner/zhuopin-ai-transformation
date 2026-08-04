@@ -26,6 +26,18 @@
 - **WHEN** `data_source="u9c"` 且 U9C 财务接口尚未开放
 - **THEN** 系统 SHALL 抛出 `RealEndpointNotReadyError`，不返回部分数据、不静默降级
 
+### Requirement: u9c 源发票加载——人工誊录小样例外路径（D19，2026-08-03）
+
+系统在 `data_source="u9c"` 下 MAY 接受一个可选的人工誊录发票小样目录；调用方显式提供该目录时，`load_invoice()` SHALL 改为从该目录读取并按既有 `_InvoiceRow` 边界校验解析，不再对该次调用 fail-loud；调用方未提供该参数（默认）时，`load_invoice()` MUST 维持原有 fail-loud 行为（`RealEndpointNotReadyError`），不得静默变化。本例外路径 MUST NOT 影响 `load_po_lines`/`load_grn`/`load_ap_lines`/`load_payment` 四个 loader 的既有行为。
+
+#### Scenario: 已提供人工誊录小样目录
+- **WHEN** `data_source="u9c"` 且调用方显式提供了人工誊录发票小样目录（该目录含符合既有 schema 的 `invoice.csv`）
+- **THEN** `load_invoice()` SHALL 从该目录读取并解析，不抛 `RealEndpointNotReadyError`
+
+#### Scenario: 未提供人工誊录小样目录（默认）
+- **WHEN** `data_source="u9c"` 且调用方未提供该参数
+- **THEN** `load_invoice()` MUST 维持现状 fail-loud，行为与本次变更前完全一致
+
 ### Requirement: 缺字段/缺单据显式拒收
 
 系统 SHALL 对完整性不足的数据（必填字段缺失、单据孤立无法关联锚点）显式标记退回，不得进入匹配引擎当作"正常齐套"处理。

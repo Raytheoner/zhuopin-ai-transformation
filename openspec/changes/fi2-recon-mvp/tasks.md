@@ -164,3 +164,18 @@
 - [x] 14.12 场景 `CLAUDE.md` 更新状态段 + 队列 #78 回填结果——见场景 CLAUDE.md 2026-07-23 段；全量回归：平台 218 passed+1 skip（原 211，+7）、FI2 77 passed+7 skip（原 67+7，+10 net）
 - [ ] 14.13 OCR（腾讯云）自动直读集成——独立第二轮，不在本节范围，另行登记后续任务；同时登记一项后续：AP-2025120181 的 `Attachment/Download` 302 bug 需 IT（陈承）跟进
 - [x] 14.14 `POChange/Query` 纳入 R7 价格比对基准评估（14.9 方法论发现，队列 #80）——**✅ 已评估完成，结论=不采纳**（2026-07-28，CC，独立 worktree 只读真实探测，未改代码）：真实探测证实该端点①过滤参数名是 `PODocNo` 非 `docNo`，传错参数名不报错、静默返回全表（Total=2412），比此前 `AP/Query` 的报错型 bug 更危险；②是 PO 单据级而非行项级，无 `ItemCode`/单价字段，结构上给不出"某料品最新单价"；③决定性交叉验证——`ZPCG20220815002` 全部 25 行 `Purchase/Query.TotalMnyTC` 求和精确等于 `POChange/Query` 最后一条变更记录的"变更后"`TotalAmt`，证明 `Purchase/Query.FinalPriceTC`（`price_check.py` 现用基准）本就是当前生效价、并非"原始下单价"——**不存在需要修的基准过时 bug**，不实现方向 B 的接入方案。详见 design D18-f 补充段、`1-转型规划/session接力-财务域场景落地.md`【第十九轮】、队列 #80。
+
+## 15. 面板真实数据接入·轮1（design D19，2026-08-03，队列 #214/§四#43，🔴 apply 前待 Shao Peishen 审 D19）
+
+- [x] 15.1 Shao Peishen 审 D19（范围 D19-a / 誊录处置 D19-b / 实现范围 D19-c / 验证方式 D19-d / 如实边界 D19-e）——**✅ 已批准（2026-08-03，会话内 AskUserQuestion 明确选择"批准，按D19执行apply"）**
+- [x] 15.2 核查 round-1（D18）誊录成果是否可复用——遍历全部现存 worktree + 主工作区，确认 `data/real_round1/` 均不存在（产出 worktree `fi2-web-service-16da2a` 已被此后台面清理删除），结论：不可复用，需重新取数+誊录（如实记录，见 D19-b）
+- [x] 15.3 用真实 `STOCK_API_BASE`/`STOCK_API_KEY`（只读 GET，未落代码改动）重新拉取 8 组 AP 单的 `AP/Query`/`Purchase/Query`/`Attachment/List`/`Attachment/Download`——结果与 D18-f 逐字复现：6/8 可用、AP-2025120181 仍 302 到 localhost、AP-2026050057 仍为合并结算大票超出范围
+- [x] 15.4 逐张阅读 6 张发票 PDF，人工誊录 `data/real_round1/invoice.csv`（`.gitignore` 已覆盖不入库）；AP-2026060004 一票未按内部料号拆分的处置方式已写入 design D19-b（对半拆分+±0.01 分摊误差如实保留）
+- [x] 15.5 `FeedSource` 新增 `invoice_sample_dir` 可选参数（`fi2/feed_source.py`）；`load_invoice()` 分支：u9c 源 + 已提供该参数 → 读取该目录 CSV；未提供 → 维持 fail-loud；`test_feed_source.py` 新增 2 例（正常路径 + 脏数据仍被拒收）
+- [x] 15.6 `webapp.py` u9c 模式接线固定指向 `data/real_round1/`（只读展示型开关，非用户自由填路径）+ 面板新增"⚠️ 发票为人工誊录小样，OCR 未接入"标注（`.disclaimer-d19` 样式）+ 数据源行发票列标注 `u9c+人工誊录小样`；`test_webapp.py` 新增 3 例（无小样仍报错/有小样端到端跑通并标注/目录存在但缺CSV仍报错）
+- [x] 15.7 全量测试绿 + 零回归：FI2 104 passed+7 skip（原99+5，净+5）；mock 模式路径本轮零改动（`load_invoice` 的新分支仅在 `data_source=="u9c"` 内，webapp 展示层新增分支仅在 `ds["invoice"]==_INVOICE_SAMPLE_LABEL` 时触发，均不可能影响 mock/csv 路径）——既有 `TestRunMockModeV8Panel` 全套结构断言（KPI/免责声明/R7提示/展开收起等）原样通过，构成判据零漂移的显式证明
+- [x] 15.8 面板 `u9c` 模式 + 6 组真实 AP 号 + 誊录发票小样端到端跑通（直接调用面板同一入口函数 `webapp._run_with_detail`，真实 `ZpConnector`）：10 料品（8完全匹配+2金额微差已自动L2消化）、3 例 AP-PO 单价超差，**价格超差 3 例与 D18-f 逐位精确一致**（-44.72%/-6.11%/-8.22% vs round-1 记录 -44.7%/-6.1%/-8.2%）；AP-2026060004 两料品判"金额微差"而非 round-1 的"完全匹配"，已查明系本轮誊录 50/50 拆分产生 ±0.01 分摊误差所致（非业务变化/非代码缺陷），详见验证报告 §五
+- [x] 15.9 产出 `1-转型规划/FI2-round1真实验证报告-2026-08-03-面板轮1.md`（含 D19-b 誊录方法论摘要 + §五差异说明，供财务专线/Shao Peishen/唐燕萍复核，且不依赖 gitignored 文件留存）
+- [ ] 15.10 真实部署 `.51:8094` + 冒烟（`/api/ping`/首页/真实 POST `/run` u9c 模式端到端）
+- [ ] 15.11 场景 `CLAUDE.md` 更新状态段；跨桌任务队列 #214 回填结果（本节完工不代表整个变更包 `fi2-recon-mvp` 可归档——14.13 OCR round-2 等既有开放项仍在，归档判断以变更包全部任务而非单节为准，本次不执行 `/opsx:archive`）
+- [ ] 15.12 交付后回请唐燕萍复核，信中明确告知"这是第一轮，发票侧待 OCR（#82 round-2）到位后还有第二轮"；发送前核对 CLAUDE.md §5 跟进信串行原则与发送硬前置三条件

@@ -18,6 +18,13 @@ v8 改造（2026-07-31，唐燕萍回件《FI2面板改造指令及效果图》�
   "PO↔AP"列同理仅覆盖真实计算的单价维度（`price_check.py`），非四维全覆盖，列头已标注口径。
 - 料品名称：数据模型（`models.py`）无独立"料品名称"字段，只有 `item_code`；本页如实展示
   为"料品编码"，不杜撰名称。
+
+D19 改造（2026-08-03，队列 #214/§四#43，唐燕萍验收 v8 结构后唯一诉求"接真实数据"）：
+`u9c` 模式接线真实 PO/AP（连接器代码 D15/D16 已就绪，本次首次被面板端到端驱动）；发票段
+新增例外——若场景内 `data/real_round1/invoice.csv`（人工誊录小样，固定目录、非用户自由
+填路径）存在则读取，否则维持现状 fail-loud（design D15-b 既定行为不变）。判定口径
+（`match_engine.py`/`result_classify.py`/`price_check.py`/`config.py`/`models.py`）一字
+未动。报告页在发票源为人工誊录小样时显式标注"⚠️ 发票为人工誊录小样，OCR 未接入"。
 """
 from __future__ import annotations
 
@@ -39,6 +46,11 @@ from .result_classify import classify_all
 
 _ROOT = Path(__file__).resolve().parent.parent
 _MOCK_DIR = _ROOT / "data" / "mock"
+# design D19（队列 #214/§四#43，2026-08-03）：u9c 模式下发票人工誊录小样固定目录——
+# 刻意不做成 Web 表单自由填路径（避免用户填任意本机路径造成路径穿越/信息泄露面），
+# 目录不存在或缺 invoice.csv 时行为不变（load_invoice 维持现状 fail-loud）。
+_INVOICE_SAMPLE_DIR = _ROOT / "data" / "real_round1"
+_INVOICE_SAMPLE_LABEL = "u9c+人工誊录小样"
 
 _R7_TIP = (
     "口径提示：超差为强制转人工标记，<b>不代表一定是记账错误</b>——round-1 真实数据溯源"
@@ -69,6 +81,8 @@ _PAGE_HEAD = """<!doctype html>
               font-size:13px;color:#8a5a00;margin-bottom:16px}
   .disclaimer-183{background:#fff8dc;border:1px solid #f0c419;border-radius:6px;padding:10px 16px;
                   font-size:13.5px;font-weight:700;color:#7a5200;margin:14px 0}
+  .disclaimer-d19{background:#e3f2fd;border-left:4px solid #1565c0;border-radius:4px;padding:9px 14px;
+                   font-size:13px;font-weight:700;color:#0d47a1;margin:10px 0}
   .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:14px;
         box-shadow:0 1px 2px rgba(0,0,0,.04)}
   form{background:#fff;border:1px dashed #cbd5e1;border-radius:8px;padding:24px}
@@ -180,7 +194,9 @@ _DATA_SOURCE_HELP = (
     "mock＝内置演示夹具（无需填写下方任何字段，用于查看面板长相）｜"
     "csv＝应急桥接目录（如 dump_u9c_snapshot.py 产出的真实 PO/GR/AP 快照 + 人工誊录 invoice.csv"
     "，round-1 已验证路径，不依赖 OCR）｜"
-    "u9c＝真实直读 PO/GR/AP（发票源 Attachment/OCR 尚未就绪，design D15-b，将在此步如实报错）"
+    "u9c＝真实直读 PO/GR/AP；发票段：若场景内已备好人工誊录小样（design D19，队列 #214）"
+    "则自动读取并在报告页显式标注'人工誊录小样，OCR未接入'，未备好则如实报错（design D15-b，"
+    "Attachment/OCR 尚未就绪）——本模式不支持自由填写发票路径，样本目录固定，不开放任意本机路径"
 )
 
 _INDEX_BODY = f"""
@@ -209,6 +225,8 @@ _INDEX_BODY = f"""
     <input type="text" name="ap_doc_nos" placeholder="如 AP-2026070036,AP-2026070035">
     <label class="f">供应商代码清单（逗号分隔，批量）</label>
     <input type="text" name="ap_supplier_codes" placeholder="如 ZA0066">
+    <div class="note">发票段无需填写：若场景内已备好人工誊录小样则自动读取（报告页会显式标注
+      "人工誊录小样，OCR未接入"），未备好则如实报错——不支持自由填写发票路径（design D19）。</div>
   </fieldset>
   <fieldset>
     <legend>报告标注（不参与过滤/判定，仅留痕）</legend>
@@ -252,14 +270,18 @@ def _money(v) -> str:
 def _run_with_detail(
     data_source: str, *, csv_dir: Path | None = None, evaluator: str = "", period: str = "",
     audit=None, u9c_connector=None, ap_doc_nos: list[str] | None = None,
-    ap_supplier_codes: list[str] | None = None,
+    ap_supplier_codes: list[str] | None = None, invoice_sample_dir: Path | None = None,
 ):
     """与 `fi2.run.run()` 调用序列逐字相同（FeedSource→partition_invoices→classify_all→
     check_ap_po_price→build_report，均为既有未改动函数），额外把中间产出的原始明细行
-    一并返回供展开详情渲染，不改变 `rep`（审计/报告落盘内容）本身。"""
+    一并返回供展开详情渲染，不改变 `rep`（审计/报告落盘内容）本身。
+
+    `invoice_sample_dir`（design D19，队列 #214/§四#43）：仅在 `data_source="u9c"` 下有
+    意义，调用方传入 `_INVOICE_SAMPLE_DIR`（已存在 invoice.csv 时）或 `None`；原样透传给
+    `FeedSource`，不新增判定逻辑。"""
     fs = FeedSource(data_source, mock_dir=_MOCK_DIR, csv_dir=csv_dir,
                      u9c_connector=u9c_connector, ap_doc_nos=ap_doc_nos,
-                     ap_supplier_codes=ap_supplier_codes)
+                     ap_supplier_codes=ap_supplier_codes, invoice_sample_dir=invoice_sample_dir)
     po_lines = fs.load_po_lines()
     ap_lines = fs.load_ap_lines()
     invoice_rows = fs.load_invoice()
@@ -268,10 +290,13 @@ def _run_with_detail(
     items = classify_all(ap_lines, linked)
     price_results = check_ap_po_price(ap_lines, po_lines)
 
+    invoice_source_label = (
+        _INVOICE_SAMPLE_LABEL if fs.invoice_sample_dir is not None else fs.data_source
+    )
     rep = build_report(
         items, orphaned, price_results,
         ap_lines=ap_lines, po_lines=po_lines,
-        data_sources={"po": fs.data_source, "ap": fs.data_source, "invoice": fs.data_source},
+        data_sources={"po": fs.data_source, "ap": fs.data_source, "invoice": invoice_source_label},
         evaluator=evaluator, period=period, audit=audit,
     )
     return rep, po_lines, ap_lines, linked, orphaned, price_results
@@ -585,12 +610,21 @@ def _report_page(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price
     n_block = rep["summary"]["needs_review"] + len(orphaned)
     total_rows = rep["summary"]["total"] + len(orphaned)
 
+    invoice_is_sample = ds.get("invoice") == _INVOICE_SAMPLE_LABEL
+    d19_banner = (
+        '<div class="disclaimer-d19">⚠️ 发票为人工誊录小样，OCR 未接入——'
+        '本轮真实数据接入第一轮（design D19，队列 #214），仅 PO/AP 为真实直读，'
+        '发票段来自人工誊录的真实发票小样（非自动解析），供核对判定口径用；'
+        '规模化自动读票待 OCR round-2（队列 #82）。</div>'
+    ) if invoice_is_sample else ""
+
     return _PAGE_HEAD + f"""
 <h1>FI2 三单匹配核对面板<span class="badge">试用版·灰度</span></h1>
 <div class="sub">规则版本 {html.escape(rep["rule_version"])} ｜ 自动化等级 {html.escape(rep["automation_level"])}
  ｜ 数据源 PO={html.escape(ds["po"])}/AP={html.escape(ds["ap"])}/发票={html.escape(ds["invoice"])}
  ｜ 期间 {html.escape(rep["period"] or "（未填）")}</div>
 <div class="disclaimer">{html.escape(rep["disclaimer"])}</div>
+{d19_banner}
 
 <div class="card">
   {_render_kpi(total_rows, n_pass, n_l2, n_block)}
@@ -661,6 +695,7 @@ def create_app(*, reports_dir: Path) -> Flask:
                 ), 400
 
         u9c_connector = None
+        invoice_sample_dir = None
         if data_source == "u9c":
             if not ap_doc_nos and not ap_supplier_codes:
                 return Response(
@@ -678,6 +713,10 @@ def create_app(*, reports_dir: Path) -> Flask:
                 return Response(
                     _error_page(f"U9C 连接构造失败：{exc}"), mimetype="text/html"
                 ), 500
+            # design D19（队列 #214/§四#43）：固定目录、非用户可填路径（见模块常量注释）；
+            # 目录或 invoice.csv 缺失时保持 None，`load_invoice()` 维持现状 fail-loud。
+            if (_INVOICE_SAMPLE_DIR / "invoice.csv").is_file():
+                invoice_sample_dir = _INVOICE_SAMPLE_DIR
 
         audit = AuditLogger.jsonl(audit_path)
         try:
@@ -685,6 +724,7 @@ def create_app(*, reports_dir: Path) -> Flask:
                 data_source, csv_dir=csv_dir, evaluator=evaluator, period=period,
                 audit=audit, u9c_connector=u9c_connector,
                 ap_doc_nos=ap_doc_nos, ap_supplier_codes=ap_supplier_codes,
+                invoice_sample_dir=invoice_sample_dir,
             )
         except Exception as exc:  # noqa: BLE001 —— 引擎异常（含 fail-loud）需如实回显，而非空白 500
             import traceback

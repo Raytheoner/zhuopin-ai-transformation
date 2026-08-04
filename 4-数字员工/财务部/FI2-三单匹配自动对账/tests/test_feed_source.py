@@ -206,12 +206,48 @@ def test_u9c_real_connector_requires_ap_doc_nos_or_supplier_codes():
 
 def test_u9c_real_connector_invoice_payment_still_failloud():
     """Attachment/OCR 未就绪（队列 #59），u9c 源 Invoice/Payment 无条件 fail-loud，
-    不因注入连接器而改变（design D15-b）。"""
+    不因注入连接器而改变（design D15-b）。未提供 invoice_sample_dir 时，design D19
+    引入的例外路径不生效，行为与本次改动前完全一致。"""
     fs = FeedSource("u9c", u9c_connector=_FakeU9cConnector(), ap_doc_nos=["AP-REAL-1"])
     with pytest.raises(RealEndpointNotReadyError):
         fs.load_invoice()
     with pytest.raises(RealEndpointNotReadyError):
         fs.load_payment()
+
+
+def test_u9c_invoice_sample_dir_overrides_failloud(tmp_path):
+    """design D19（队列 #214/§四#43）：u9c 源下显式提供人工誊录发票小样目录时，
+    `load_invoice()` 改读该目录，不再 fail-loud；`load_payment()` 不受影响、仍
+    fail-loud（本次改动范围明确不含 Payment）。"""
+    (tmp_path / "invoice.csv").write_text(
+        "inv_no,ap_no,item_code,unit,unit_price,inv_qty,untaxed_amount,tax_rate,tax_amount,inv_date\n"
+        "INV-REAL-1,AP-REAL-1,R01A.0175,个,0.371682,5000,1858.41,0.13,241.59,2026-06-01\n",
+        encoding="utf-8",
+    )
+    fs = FeedSource("u9c", u9c_connector=_FakeU9cConnector(), ap_doc_nos=["AP-REAL-1"],
+                     invoice_sample_dir=tmp_path)
+    invoices = fs.load_invoice()
+    assert len(invoices) == 1
+    assert invoices[0].inv_no == "INV-REAL-1"
+    assert invoices[0].ap_no == "AP-REAL-1"
+    assert invoices[0].untaxed_amount == 1858.41
+
+    with pytest.raises(RealEndpointNotReadyError):
+        fs.load_payment()
+
+
+def test_u9c_invoice_sample_dir_still_validates_dirty_rows(tmp_path):
+    """人工誊录小样仍走既有 Pydantic 边界校验（同 mock/csv 源），不因来自 u9c 源例外
+    路径而放松——脏数据（缺 inv_no）应照常拒收，不静默跳过。"""
+    (tmp_path / "invoice.csv").write_text(
+        "inv_no,ap_no,item_code,unit,unit_price,inv_qty,untaxed_amount,tax_rate,tax_amount,inv_date\n"
+        ",AP-REAL-1,R01A.0175,个,0.37,5000,1850,0.13,240.5,2026-06-01\n",
+        encoding="utf-8",
+    )
+    fs = FeedSource("u9c", u9c_connector=_FakeU9cConnector(), ap_doc_nos=["AP-REAL-1"],
+                     invoice_sample_dir=tmp_path)
+    with pytest.raises(ValueError):
+        fs.load_invoice()
 
 
 def test_dirty_po_line_rejected():

@@ -5,7 +5,9 @@ import shutil
 
 import pytest
 
+import fi2.webapp as webapp_module
 from fi2.webapp import create_app
+from zhuopin_platform.shared_tools.erp_connector import ZpConnector
 
 
 @pytest.fixture()
@@ -64,6 +66,81 @@ def test_run_u9c_mode_missing_credentials_surfaces_error(client, monkeypatch):
     r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-1"})
     assert r.status_code == 500
     assert "U9C 连接构造失败" in r.get_data(as_text=True)
+
+
+class _FakeU9cConnectorForD19:
+    """design D19（队列 #214/§四#43）测试用假连接器——固定返回一组 PO/AP，
+    与本文件下方誊录的 invoice.csv 精确对账（完全匹配），验证接线本身正确。"""
+
+    def get_ap_lines(self, doc_no):
+        return [
+            {"DocNo": "AP-D19-1", "SrcPONo": "PO-D19-1", "SrcPOLineNo": "10",
+             "ItemCode": "R01D19.001", "APQtyTU": 100.0, "TaxPrice": 1.13,
+             "NonTaxAmtTC": 100.0, "TaxAmtTC": 13.0,
+             "SrcRcvNo": "RCV-D19-1", "SrcRcvLineNo": "10"},
+        ]
+
+    def get_purchase_lines(self, doc_no):
+        return [
+            {"DocNo": "PO-D19-1", "DocLineNo": 10, "ItemCode": "R01D19.001",
+             "ConfirmQty": 100.0, "FinalPriceTC": 1.13, "TaxRate": 0.13,
+             "NetMnyTC": 100.0, "SupplierName": "测试供应商",
+             "BusinessDate": "2026-06-01T00:00:00"},
+        ]
+
+    def get_gr_lines(self, doc_no):
+        return []
+
+
+def _patch_u9c_connector(monkeypatch):
+    monkeypatch.setattr(
+        ZpConnector, "from_env",
+        classmethod(lambda cls, audit=None, **kw: _FakeU9cConnectorForD19()),
+    )
+
+
+class TestRunU9cModeInvoiceSampleD19:
+    """design D19（队列 #214/§四#43）：u9c 模式接真实 PO/AP + 发票人工誊录小样。"""
+
+    def test_no_sample_dir_still_failloud(self, client, monkeypatch, tmp_path):
+        """场景内未备好人工誊录小样目录（或缺 invoice.csv）时，行为与改造前完全一致——
+        如实报错，不静默假装成功。"""
+        _patch_u9c_connector(monkeypatch)
+        monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", tmp_path / "no-such-dir")
+        r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
+        assert r.status_code == 500
+        assert "对账失败" in r.get_data(as_text=True)
+
+    def test_sample_dir_present_runs_end_to_end_and_labels_source(self, client, monkeypatch, tmp_path):
+        """已备好人工誊录小样时：真实 PO/AP（假连接器模拟）+ 小样发票端到端跑通，
+        报告页显式标注"人工誊录小样，OCR 未接入"，数据源行发票列不再显示裸 "u9c"。"""
+        _patch_u9c_connector(monkeypatch)
+        sample_dir = tmp_path / "real_round1"
+        sample_dir.mkdir()
+        (sample_dir / "invoice.csv").write_text(
+            "inv_no,ap_no,item_code,unit,unit_price,inv_qty,untaxed_amount,tax_rate,tax_amount,inv_date\n"
+            "INV-D19-1,AP-D19-1,R01D19.001,个,1,100,100.0,0.13,13.0,2026-06-01\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", sample_dir)
+
+        r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "发票为人工誊录小样，OCR 未接入" in body
+        assert "发票=u9c+人工誊录小样" in body
+        assert "R01D19.001" in body
+        assert "PO=u9c/AP=u9c" in body  # PO/AP 仍如实标注 u9c（真实直读），未被误标
+
+    def test_sample_dir_present_but_missing_csv_still_failloud(self, client, monkeypatch, tmp_path):
+        """目录存在但缺 invoice.csv 文件——不得误判为"已备好"，维持 fail-loud。"""
+        _patch_u9c_connector(monkeypatch)
+        sample_dir = tmp_path / "real_round1"
+        sample_dir.mkdir()
+        monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", sample_dir)
+        r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
+        assert r.status_code == 500
+        assert "对账失败" in r.get_data(as_text=True)
 
 
 class TestRunMockModeV8Panel:
