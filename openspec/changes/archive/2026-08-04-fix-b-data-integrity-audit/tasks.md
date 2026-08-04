@@ -36,5 +36,5 @@
 
 ## 收尾
 - [x] 7.1 全仓回归全绿；黄金值 auto_total=35850 / review_total=640000 不漂移。（2026-07-02 验证：平台138/SC8 108/SC5 41/O2 20/SC3 29/SC1 53）
-- [ ] 7.2 `openspec validate fix-b-data-integrity-audit --strict`。（fix-b 无 specs delta，按 Q1 约定不走 archive，validate 亦跳过）
-- [ ] 7.3 commit（引用 B1–B6 编号）+ push + PR（base = A 分支，stacked）。（在本批 chore/sdd-hygiene-2026-07 分支统一处理）
+- [x] 7.2 `openspec validate fix-b-data-integrity-audit --strict` ✅ 通过（2026-08-04 CC 复核，队列 #196；原注"无 specs delta"已过时——本包实际有 4 个 specs delta 文件）
+- [x] 7.3 commit + push ✅ 已完成——`e606526 fix(data-integrity): 变更包B 数据正确性与审计强制化P1 — B1–B6`（2026-06-13，已在 origin/master）；`进度编年-CHANGELOG.md` 行 19 已有 A/B/C 完整状态记录，未再重复登记（2026-08-04 CC 核实，队列 #196）。**⚠️ 顺带发现**：本包 `specs/platform-data-connectors/` 的 3 个 ADDED Requirement（`get_bom 回退走 fail-loud 闸门`／`SRM 承诺交期区分查询失败与未答交`／`连接器 from_env 审计缺失 fail-loud 告警`）代码与测试均已在 master 落地，但**从未同步进主 spec** `openspec/specs/platform-data-connectors/spec.md`——已登记新队列行处理，不在本行顺手补（同 #196 行"发现真欠账则登记新行、不顺手做"边界）

@@ -19,6 +19,6 @@
 
 ## 收尾
 - [x] 3.1 全仓回归全绿；黄金值不漂移。（2026-07-02 验证：平台138/SC8 108/SC5 41/O2 20/SC3 29/SC1 53）
-- [ ] 3.2 `openspec validate fix-c-sc8-golive-prereq --strict`。（fix-c 无 specs delta，按 Q1 约定不走 archive，validate 亦跳过）
-- [ ] 3.3 commit（引用 C1/C2）+ push + PR（base = B 分支，stacked）。（在本批 chore/sdd-hygiene-2026-07 分支统一处理）
-- [ ] 3.4 CLAUDE.md 当前进度追加 A/B/C 状态行（含 C2 待 LAN、A1 后催 IT 6/20 轮换 secret）。（本次 chore 分支不改 CLAUDE.md，待阶段5收口时一并更新）
+- [x] 3.2 `openspec validate fix-c-sc8-golive-prereq --strict` ✅ 通过（2026-08-04 CC 复核，队列 #196；原注"无 specs delta"已过时——本包实际有 1 个 specs delta 文件）
+- [x] 3.3 commit + push ✅ 已完成——`ecd41f0 fix(sc8-golive): 变更包C SC8对客上线前置P1 — C1偏差监控 / C2真实黄金回归(待LAN)`（2026-06-13）+ `d77ef4c fix(sc8-golive): 变更包C C2 真实黄金回归落地(LAN) + SC1 SRM真实验证发现`（2026-06-18），均已在 origin/master
+- [x] 3.4 CLAUDE.md 当前进度追加 A/B/C 状态行 ✅ **已存在，无需新增**——`1-转型规划/0-全景路线图/进度编年-CHANGELOG.md` 行 19（"代码修复 A/B/C 已全量并入 master（2026-06-18...）"）已完整记录 A1-A3/B1-B6/C1-C2 逐项状态、PR 号、commit 引用，2026-07-07 R5 瘦身时随旧段落一并迁入该文件；2026-08-04 CC 核实内容准确、不重复登记（队列 #196）

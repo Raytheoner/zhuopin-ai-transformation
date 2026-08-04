@@ -28,5 +28,5 @@
 
 ## 收尾
 - [x] 4.1 全仓回归：平台 + O2 + SC5 + SC3 + SC8 + SC1 全绿；黄金值 auto_total=35850 / review_total=640000 不漂移。（2026-07-02 验证：平台138/SC8 108/SC5 41/O2 20/SC3 29/SC1 53，黄金值精确通过）
-- [ ] 4.2 `openspec validate fix-a-security-compliance-p0 --strict`（若 CLI 可用）。（fix-a 无 specs delta，按 Q1 约定不走 archive，validate 亦跳过）
-- [ ] 4.3 commit（message 引用 A1/A2/A3 条目编号）+ push；PR 描述附"链尾哈希外部锚定"建议 + 提醒 6/20 催 IT 轮换 secret。（不走 archive，commit 在本批 chore/sdd-hygiene-2026-07 分支统一处理）
+- [x] 4.2 `openspec validate fix-a-security-compliance-p0 --strict` ✅ 通过（2026-08-04 CC 复核，队列 #196；原注"无 specs delta"已过时——本包实际有 4 个 specs delta 文件，validate 本身与是否有 delta 无关，本次实测通过）
+- [x] 4.3 commit + push ✅ 已完成——`30962ec fix(security): 变更包A 安全与合规P0 — A1 TLS校验 / A2 对客外发旁路 / A3 审计链genesis`（2026-06-13，已在 origin/master）；`进度编年-CHANGELOG.md` 行 19 已有 A/B/C 完整状态记录，未再重复登记（2026-08-04 CC 核实，队列 #196）

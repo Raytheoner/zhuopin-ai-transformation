@@ -17,7 +17,7 @@ OEM 数据隔离层：按客户路由数据访问，拒绝跨 OEM 越权访问�
 - **THEN** 直接抛 `CrossOEMAccessError`，不崩溃
 
 ### Requirement: OEM 隔离边界（质量域扩展）
-隔离边界覆盖：研发/OEM 技术数据（R 系列）、含 OEM 信息的质量数据（PPAP/FMEA/含客户信息的 8D/客诉，按客户分库）。**不**覆盖：采购连接器 SRM/ERP 供应商数据、公司自有制造数据（IQC/SPC）。
+隔离边界 SHALL 覆盖研发/OEM 技术数据（R 系列）与质量域中含 OEM 信息的数据（PPAP/FMEA、8D/客诉中含特定 OEM 信息的部分），MUST 按客户分库/分检索域路由。隔离边界 MUST NOT 覆盖采购连接器的 SRM/ERP 供应商数据与公司自有制造数据（IQC/SPC）——这两类数据不强加 OEM 隔离路由。
 
 #### Scenario: 研发技术数据路由
 - **WHEN** 访问包含 OEM 技术参数的知识库（R 系列）

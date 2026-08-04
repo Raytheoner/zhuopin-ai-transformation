@@ -1,5 +1,15 @@
-# ============================================================
+﻿# ============================================================
 #  企微智能机器人双向通道服务 — 长开服务器部署（照搬 SC8 baoguan-web-service 套路）
+#
+#  ⚠️ 现状（2026-08-04 核实，队列 #167）：本脚本对应 D1（2026-07-11）"部署到 .51"
+#  的原定计划，但服务实际常驻改为 Paul 的 Windows 笔记本（计划任务
+#  `ZhuopinAibotDevListener`，走 `ops/wecom-service-home` worktree 本地的
+#  `start-aibot-service-dev.ps1`，未纳入版本控制），本脚本目前不在生产链路上
+#  ——同一处理原则见姊妹脚本 `sync-to-server.ps1` 头部说明。**保留、不删**：
+#  供日后 Paul 拍板把本服务正式发布到 .51 时直接用（同 #96 部署标准清单口径）。
+#  本次补齐 UTF-8 BOM，避免届时在 .51 内建 Windows PowerShell 5.1 上执行时
+#  因无 BOM 被按系统 ANSI 误读中文而语法报错（同 2026-07-21 命令中心已踩坑）。
+#
 #  在【服务器 192.168.100.51】上以管理员运行（首次部署 / 依赖变更时）：
 #    cd C:\wecom-aibot\app
 #    powershell -ExecutionPolicy Bypass -File deploy-server.ps1
