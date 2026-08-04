@@ -9,6 +9,39 @@ status: 滚动更新（每次收工覆盖，标日期）；R5 接力瘦身（202
 
 # 采购域场景落地 · 接力文件
 
+## 【2026-08-03 · ✅ 已回写：#211/#212/#213/#173/#94 五行交付结论（CC，独立 worktree `sc8-quote-qty-date-batch`）】
+
+> **本节已处理完毕**——锁释放后已用协议〇.7 编辑锁重新获取并把以下内容原样写入队列对应五行，无需再搬运。保留本节仅作交付留痕。
+
+> 本节写入原因：本次 session 完工时 `跨桌任务队列.md` 编辑锁被 `Cowork-质量专线-0803` 占用（#186/#77 回写），按协议〇.7 不直接改队列文件，先把待回写内容存在这里，下次开工/收工时请把以下内容原样搬进队列对应行并销行/更新状态。**代码/测试/部署/CLAUDE.md/openspec 均已在本 session 完成，仅剩队列行文字回写这一步。**
+
+**openspec 变更包**：`sc8-quote-qty-date-batch`，已归档 `archive/2026-08-03-sc8-quote-qty-date-batch/`。
+**commit**：见本次 push 记录（分支 `claude/sc8-quote-qty-date-batch`）。
+**部署**：`.51:8091` 已推送重启（`NEW_PID=8964`），`/api/ping`+首页+`/cases` 200，`POST /api/refresh` 成功（106行）。
+**跟进信**：`6-人才与组织/部门AI专员跟进/采购部-姚祖怡-跟进-2026-08-03-...md`（采购部#10），已登记 README，**状态"⏳待Shao Peishen审"，尚未发送**。
+
+### 队列 #211 行 → 改为"✅ 已完成"，回写内容：
+
+真实探测确认 SRM 供应计划看板每条 record 自带 `receiveType` 字段（1=按订单交货/2=按排程交货，此前从未读取）；用 R01B.0754 真实案例（他截图错误值 500/2026-08-07）交叉验证：错误值命中 `receiveType=1` 记录，同料号同时存在的 `receiveType=2` 记录（有 scheduleBatch）才是他指定的权威口径。`sc8/sources.py::_extract_board_commitments` 新增 `receiveType==2` 筛选（范围仅限该函数驱动的⑦⑧展示，不改四色判定既有口径）。**顺带发现第二个 bug**：累计答交目标此前用"本项目需求数量"而非他原话要求的"缺口数量"，已改正（`_component_supply_status`，净额开关关闭时退回需求数量、零漂移）。TDD 全程新增测试见 `test_material_commitments.py`+2、`test_baoguan_bom_gap_eight_fields.py`+1。真实部署验证：S04Y.0112/R01B.0754 现网 `cb=[]`（不再是错误的500/2026-08-07——该料真实确认批次2026-12-25超出SRM 60天查询窗口，如实显示"无"而非编造）。详见 `sc8/CLAUDE.md` 2026-08-03 行、`openspec/changes/archive/2026-08-03-sc8-quote-qty-date-batch/design.md` D1/D2。**待姚祖怡验收**（采购部#10 信已起草，待 Shao Peishen 审核发出）。
+
+### 队列 #212 行 → 改为"✅ 已完成"，回写内容：
+
+根因定位：`sc8/baoguan.py` 的 `.cst-tag{white-space:nowrap}` 在 `table-layout:fixed` 窄列中，`confirmed_no_transit` 状态文案（含内嵌"（异常，如实展示）"注释，16字符）远长于其余三态（8字符），溢出盖住右侧"可用现货数量"列——即他红圈标出的两个字段。修复：`.cst-tag` 允许换行 + 注释拆到独立 `.cst-tag-note` 元素；全站排查确认仅此一处组合有此风险。真实部署验证：现网 `confirmed_no_transit` 状态出现 141 次（该分支被真实数据充分覆盖），`.cst-tag` CSS 已确认改为 `white-space:normal`。详见 design.md D3。**待姚祖怡验收**。
+
+### 队列 #213 行 → 状态改为"✅ 只读取证已完成，判定逻辑未改，下轮需专员重核黄金基准另立项"，回写内容：
+
+真实验证 F02N.0233 案例：其直接子件（14行，均包材/结构件）无替代关系；R01A.0707↔R01A.0012 替代料关系实际定义在其半成品子件 S02Y.0207 自己的 BOM 里（`get_bom_for_products(max_depth=2)` 逐字段核对与 ERP 截图完全一致，seq=120/qty_per_unit=19.0 两侧相同）；真实库存 R01A.0707=15,538/R01A.0012=2,945,049。**根因**：`_substitute_groups(bom, so.item_code)` 只扫描 `product_id==so.item_code` 直属行，看不到嵌套一层的替代关系——该函数 2026-07-15 落地时的 docstring 已预留"未见真实需求前是独立后续任务"，本次即该真实需求。**与 #94 判定不同源、不合并**：#94 是 `pipeline.py::compute_forecasts`（SC8交付承诺主流程）未过滤 `is_substitute` 行导致幻影组件误查SRM；本次是 `baoguan.py::_substitute_groups`（保供看板）单层扫描漏判——文件不同、机制不同，**#94 维持独立 P2**（已复核 `pipeline.py` 第55行确认过滤仍未加，问题依旧存在）。**影响面估算**（真实FO数据41个不同料号）：17个F前缀（潜在受影响上界）/24个S前缀（如S04Y.0112自身即PCBA层不受影响）。**修复本身会改变缺口/齐套计算输出，触碰红线，需按SC8既有惯例（同SC8_NET_INVENTORY翻ON先例）由采购专员重核黄金基准并签字——本轮范围外，建议下轮独立立项**（含17个F前缀成品精确影响面核实，预估还需~100+次真实API调用）。详见 design.md D6、CLAUDE.md 2026-08-03 行。
+
+### 队列 #94 行 → 保持"待领（P2）"不变，仅更新说明文字：
+
+**2026-08-03 复核结论：与 #213 判定不同源，不合并**（详见 #213 行）。`pipeline.py::compute_forecasts` 第55行仍未加 `is_substitute` 过滤（复核确认问题依旧存在、未被本次任何改动触碰）。修法仍是一行 `main_bom = [row for row in bom if not row.is_substitute]` 过滤，与 `baoguan.py::assess_supply_risk` 既有模式一致，风险较低，可独立排期，无需等 #213 的多层穿透改造。
+
+### 队列 #173 行 → 改为"✅ 已完成"，回写内容：
+
+**① #19 FO 行级状态**：真实探测确认 IT 陈承 07-30 回件属实——`ForecastOrder/Query` 已补 `LineStatus`（真实单号 `FO2026070001` 行60/行230 均为3=关闭，与ERP界面一致）；`sc8/loaders.py::parse_forecast_order_rows` 新增按 `LineStatus==3` 过滤。**真实改造前后对照**：当前120行FO中14行关闭，剔除后106行。**② #139④ PO行级状态**：发现关键事实——`get_purchase_orders` 现用的 `ZpViewPurOrder/Query` 端点**不带**行级状态字段（27,641行实测0命中）；行级 `LineStatus`（0开立/1审核中/2未交清/3自然关闭/4短缺关闭/5超额关闭）实际暴露在**另一个已有端点** `Purchase/Query`（与既有 `get_purchase_lines` 同端点，此前只用于FI2三单匹配）。新增 `PurchaseOrder.line_no` + `ZpConnector.get_purchase_line_status()`（按料号批量查询，复用 `get_ap_lines_by_supplier` 已验证的批量分页模式）+ `load_purchase_orders_by_material` 按 `(po_id,line_no)` JOIN 剔除已关闭行（fail-soft，查询失败不连累既有数量口径）。**365天回溯窗口未退役**——两者互补非互斥（窗口管数量取数范围，行级状态管正确性）。**真实改造前后对照**（当前33个真实料号抽样）：PO在途20→19个料号命中，合计38070→37353件，6个料号数值变化，其中 `S01Y.0367` 从50件（数量口径误判partial）→0件（真实已短缺/超额关闭）整个消失。详见 design.md D4/D5、CLAUDE.md 2026-08-03 行。**交付后请姚祖怡抽验**（采购部#10信内已请其核对预测订单/采购订单在途数字）。
+
+---
+
 ## 【2026-08-03 · 队列 #190 拆件回灌：姚祖怡 07-31 八字段交付验收回件（拆件巡逻执行）】
 
 > 执行方＝Cowork 拆件巡逻（Dispatch v0.5）。来源＝`7-外部文档/采购部/采购部-YaoZuYi-回复-2026-07-31-采购部-姚祖怡-跟进-2026-07-30-BOM缺口物料清单八字段整体呈现+答交日期根治（姚祖怡回复）-5d786400f86e387b4d7e8eaa8b5cd21e.docx`（对 #152 交付＋采购部#9 跟进信的回件）。**本节只回灌事实与他已下的口径，不新裁决**；优先级与替代料范围已转 §四 #42。
