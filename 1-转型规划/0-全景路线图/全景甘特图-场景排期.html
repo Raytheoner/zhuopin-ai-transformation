@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>卓品智能 AI 转型 · 40 场景排期甘特图（2026-07-06 采购 v2.3 重排后）</title>
+<title>卓品智能 AI 转型 · 40 场景排期甘特图（2026-08-04 销售域 v5 重排后）</title>
 <style>
 :root{--bg:#ffffff;--surface:#faf9f5;--text:#2c2c2a;--muted:#5f5e5a;--hint:#888780;--border:rgba(0,0,0,.14);--borderd:rgba(0,0,0,.28);}
 @media (prefers-color-scheme: dark){:root{--bg:#262624;--surface:#2f2f2c;--text:#ece9e2;--muted:#b4b2a9;--hint:#888780;--border:rgba(255,255,255,.14);--borderd:rgba(255,255,255,.26);}}
@@ -28,10 +28,10 @@ h1{font-size:20px;font-weight:500;margin:0 0 4px;}
 <body>
 <div class="wrap">
 <h1>卓品智能 AI 转型 · 42 个数字员工场景排期</h1>
-<p class="sub">2026年7月 → 2027年6月 ｜ 六部门并行 ｜ 与《实施计划（最新版）》§二权威排期一致（含 supplychain 收割重排 + 2026-06-11 质量域序列修订 + 2026-07-01 Q6 提前 + 2026-07-03 财务域场景重编号【财务 8→10、全景 40→42】）</p>
+<p class="sub">2026年7月 → 2027年6月 ｜ 六部门并行 ｜ 与《实施计划（最新版）》§二权威排期一致（含 supplychain 收割重排 + 2026-06-11 质量域序列修订 + 2026-07-01 Q6 提前 + 2026-07-03 财务域场景重编号【财务 8→10、全景 40→42】+ 2026-07-06 采购 v2.3【采购 9→7、全景 42→40】+ **2026-08-04 销售域 v5 顺延【S1-S5 各 +2 月，S6 本体不动；场景总数仍 40】**）</p>
 <div class="gantt"><div id="g"></div></div>
 <div class="legend" id="legend"></div>
-<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，更新于 2026-07-01（Q6 m5→m4）、2026-07-03（财务 FI1-FI10，8→10）、2026-07-06（采购 v2.3：9→7、全景 42→40、文件名去数字化；财务 v2：FI1 条件复启暂缓）。</p>
+<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，更新于 2026-07-01（Q6 m5→m4）、2026-07-03（财务 FI1-FI10，8→10）、2026-07-06（采购 v2.3：9→7、全景 42→40、文件名去数字化；财务 v2：FI1 条件复启暂缓）、**2026-08-04（销售域 v5：S1 m3→m5、S2 m4→m6、S3 m5→m7、S4 m6→m8、S5 m7→m9；S6 m8 不动。源 §四#37 销售域推迟至 2026-09 启动 + 8 周纪律反推；场景总数不变 40）**。</p>
 </div>
 <script>
 const months=['7','8','9','10','11','12','1','2','3','4','5','6'];
@@ -53,8 +53,8 @@ const data=[
 {code:'FI7',name:'预算执行监控',m:11},{code:'FI8',name:'现金流预测',m:11},
 {code:'FI9',name:'研发费用归集',m:12},{code:'FI10',name:'存货跌价分析',m:12}]},
 {name:'销售 / BD',color:'pink',items:[
-{code:'S1',name:'销售日报',m:3},{code:'S2',name:'拜访助手',m:4},{code:'S3',name:'RFQ响应',m:5},
-{code:'S4',name:'技术支持文档',m:6},{code:'S5',name:'竞品监控',m:7},{code:'S6',name:'销售预测（含波动预测·原SC9并入）',m:8}]},
+{code:'S1',name:'销售日报',m:5,tag:'v5顺延'},{code:'S2',name:'拜访助手',m:6,tag:'v5顺延'},{code:'S3',name:'RFQ响应',m:7,tag:'v5顺延'},
+{code:'S4',name:'技术支持文档',m:8,tag:'v5顺延'},{code:'S5',name:'竞品监控',m:9,tag:'v5顺延'},{code:'S6',name:'销售预测（含波动预测·原SC9并入）',m:8}]},
 {name:'工程研发',color:'purple',items:[
 {code:'R1',name:'需求分析助手',m:4},{code:'R2',name:'AUTOSAR配置',m:5},{code:'R3',name:'代码审查',m:6},
 {code:'R4',name:'测试用例生成',m:7},{code:'R5',name:'技术文档生成',m:8}]},
