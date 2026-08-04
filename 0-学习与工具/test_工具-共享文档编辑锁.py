@@ -1149,7 +1149,7 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
     def _acquire(self, who="A"):
         ns = argparse.Namespace(
             file=self.module.FOLLOWUP_README_TARGET, who=who, note="",
-            reserve=None, section=None,
+            reserve=None, section=None, reserve_multi=None,
         )
         return self.module.cmd_acquire(ns)
 

@@ -1010,10 +1010,7 @@ def cmd_release(args: argparse.Namespace) -> int:
     elif args.file == FOLLOWUP_README_TARGET:
         # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
         # 拦截，与上面那套队列专属校验各自独立、互不干扰。
-        target_path = _target_path(args.file)
-        current_text = target_path.read_text(encoding="utf-8") if target_path.exists() else ""
-        snapshot_text = _read_snapshot(args.file)
-        violations = _validate_followup_readme_release(current_text, snapshot_text)
+        violations = _validate_followup_readme_release(_read_target_text(args.file), _read_snapshot(args.file))
     if violations:
         print(f"✗ release 被拒绝（{len(violations)} 项结构问题，锁保持占用，请修正后重试）：")
         for v in violations:
