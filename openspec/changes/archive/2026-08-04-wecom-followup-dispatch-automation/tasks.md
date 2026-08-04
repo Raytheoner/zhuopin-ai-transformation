@@ -40,14 +40,14 @@
 
 ## 6. 全量回归与真实部署验证
 
-- [ ] 6.1 `pytest` 全量跑 wecom-aibot-service + 平台底座，零回归
+- [x] 6.1 `pytest` 全量跑 wecom-aibot-service + 平台底座，零回归——wecom-aibot-service 265 passed+1 skip；平台 243 passed+1 skip（`test_po_srm_confirmed_date.py` 5 个失败为既有日历漂移缺陷，与本变更无关，见 2026-08-04 CLAUDE.md"平台杂项批"条目已登记，非本次引入）
 - [x] 6.2 apply 前核对 `wecom-aibot-channel` 变更包剩余 8 项未完成任务与本变更是否有文件级交集（见 0.1，已确认无交集）
-- [ ] 6.3 真实部署：新增 `ZhuopinFollowupDispatchDaily` 计划任务（工作日 **09:30**，`LogonType=Interactive` + `-StartWhenAvailable` + VBS 隐藏启动器，同 `ZhuopinDecisionReminderDaily`/#231 先例）；如涉及需管理员权限设置，整理提权代码块交 Shao Peishen 执行；复核 `Actions[0].Execute` 应为 `wscript.exe`
-- [ ] 6.4 端到端真实验证：构造一封测试用 `⏳ 待你审` 信 → 跑批准脚本确认冷却窗口生效+审计留痕 → 满冷却窗口后批准成功 → 手动触发一次 `ZhuopinFollowupDispatchDaily` → 确认真实发送 + README 回填 + 一条 `🔒人工发送` 行确认被跳过
+- [x] 6.3 真实部署：`ZhuopinFollowupDispatchDaily` 计划任务已注册（工作日 **09:30**，`LogonType=Interactive` + `-StartWhenAvailable=True` + wscript.exe/VBS 隐藏启动器，同 `ZhuopinDecisionReminderDaily`/#231 先例）；`Actions[0].Execute` 复核确认为 `wscript.exe`；`DaysOfWeek=62`（周一至周五）；无需管理员权限（当前用户 Interactive 注册，非 S4U，无 #231 那类阻塞）
+- [x] 6.4 端到端真实验证（2026-08-04，真实凭据+真实网络，scratch README 隔离生产数据）：① 构造测试用 `⏳ 待你审` 信 → 首次跑批准脚本被冷却窗口拒绝（`followup_approval_rejected`，审计留痕）→ 真实等待 65 秒（超 `--cooldown-minutes 1` 测试阈值）后重跑批准成功（`followup_approved`，`quote` 字段完整）；② 真实触发一次 `Start-ScheduledTask -TaskName ZhuopinFollowupDispatchDaily`（经完整 wscript→VBS→PowerShell 包装脚本→python 链路，非直接调用库函数）——`LastTaskResult=0`；③ 真实发送确认：markdown 正文经真实 WebSocket 连接送达（SDK 日志 `Reply ack received`），README 回填 `✅ 已推送 <UTC 时间戳>`，审计 `followup_delivered`/`followup_cc_delivered`/`followup_backfilled` 齐全；④ `🔒人工发送` 行确认被跳过（`dispatch_skipped_manual`）；⑤ 额外验证 D7 机器判据：未标记但交期含临近明确日期的行确认被跳过（`dispatch_skipped_unmarked_deadline`）。**真实生产数据副产物发现**：`Start-ScheduledTask` 真实触发时一并扫描到生产 README 里唯一现存的 `🆕 待发` 历史积压行（采购部/姚祖怡，2026-07-29 判例包），因同日期下存在 3 个候选 `.md` 文件（歧义），按设计安全降级为 `dispatch_row_skipped_unresolvable`（未发送、未回填、无副作用）——验证了对真实脏数据的安全降级行为，同时发现该积压行需人工消歧后才能被自动机制处理（已在收工回报中登记）
 
 ## 7. 收工
 
-- [ ] 7.1 队列 #124 回写（阶段二状态由"已拍板启动"更新为"已交付"）
-- [ ] 7.2 CLAUDE.md 当前进度段更新
-- [ ] 7.3 commit + push + 收工重跑文档台账 + §二 登记批次
-- [ ] 7.4 `/opsx:archive` 本变更包
+- [x] 7.1 队列 #124 回写（阶段二状态由"已拍板启动"更新为"已交付"）
+- [x] 7.2 CLAUDE.md 当前进度段更新
+- [x] 7.3 commit + push + 收工重跑文档台账 + §二 登记批次
+- [x] 7.4 `/opsx:archive` 本变更包
