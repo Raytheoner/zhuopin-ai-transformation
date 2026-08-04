@@ -770,11 +770,14 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertEqual(self._release(who="A"), 0)
 
     def test_p0_p1_row_with_unverified_phrase_blocks_release(self):
+        """④检查的是状态列本身（本项目约定优先级标注写在状态列，见
+        #219/#225/#234 等现存行）——P1 定级与「未核」须同时出现在状态列
+        才算命中。"""
         self._write_queue(hwm_one=200)
         self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
         text = self.target_path.read_text(encoding="utf-8")
         risky_row = (
-            "| 201 | 风险项（P1）**未核**：待确认影响面 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+            "| 201 | 风险项：待确认影响面 | CC | 指针 | 产出 | 待领（P1）**未核** | 触碰区 | 2026-08-04 |\n"
         )
         text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + risky_row, 1)
         self.target_path.write_text(text, encoding="utf-8")
@@ -787,7 +790,7 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
         text = self.target_path.read_text(encoding="utf-8")
         row = (
-            "| 201 | 风险项（P1）：已核实影响面仅限本模块 | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+            "| 201 | 风险项：已核实影响面仅限本模块 | CC | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-08-04 |\n"
         )
         text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + row, 1)
         self.target_path.write_text(text, encoding="utf-8")
@@ -795,7 +798,10 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertEqual(self._release(who="A"), 0)
 
     def test_non_priority_row_with_unverified_phrase_is_not_blocked(self):
-        """④断言门槛只对 P0/P1 定级行生效——普通行提到"未核"不应被拦。"""
+        """④断言门槛只对状态列同时含 P0/P1 定级的行生效——状态列不含
+        P0/P1 时，即便提到「未核」也不应被拦（哪怕任务描述列里恰好也提到
+        了 P1，见 test_editing_status_of_existing_p0_p1_row_ignores_
+        unchanged_description_wording 覆盖的正是这一分离）。"""
         self._write_queue(hwm_one=200)
         self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
         text = self.target_path.read_text(encoding="utf-8")
@@ -804,6 +810,52 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.target_path.write_text(text, encoding="utf-8")
 
         self.assertEqual(self._release(who="A"), 0)
+
+    def test_editing_status_of_existing_p0_p1_row_ignores_unchanged_description_wording(self):
+        """④断言门槛真实 dogfooding 案例（2026-08-04）：一行本身就是在
+        记录/提议这条规则，其（未改动的）任务描述天然含"P1"与"未核"这两个
+        词——只把状态列改成已完成时，不应因历史描述里的措辞被误拦，只应
+        检查真正新写入的单元格。"""
+        self._write_queue(
+            section_one_rows=(
+                "| 150 | 断言门槛提案（P1）：成因见 #221，标注未核不等于可据此下结论 "
+                "| 姚祖怡 | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-07-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "| 150 | 断言门槛提案（P1）：成因见 #221，标注未核不等于可据此下结论 "
+            "| 姚祖怡 | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-07-01 |",
+            "| 150 | 断言门槛提案（P1）：成因见 #221，标注未核不等于可据此下结论 "
+            "| 姚祖怡 | 指针 | 产出 | ✅ 已完成 | 触碰区 | 2026-07-01 |",
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_editing_status_that_newly_introduces_unverified_phrase_still_blocks(self):
+        """反向用例：编辑既有行的状态列时，若这次改动把 P0/P1 定级与「未核」
+        字样同时写进状态列，仍必须拦——只是把检查范围缩小到状态列本身，
+        不是彻底放弃对既有行的校验（成因即 #221：determination 与免责声明
+        同时出现在"当前判断"里）。"""
+        self._write_queue(
+            section_one_rows=(
+                "| 150 | 某风险项 | 姚祖怡 | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-07-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "| 150 | 某风险项 | 姚祖怡 | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-07-01 |",
+            "| 150 | 某风险项 | 姚祖怡 | 指针 | 产出 | 待领（P1），未核实影响面 | 触碰区 | 2026-07-01 |",
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
 
     def test_non_default_target_skips_structural_validation(self):
         """`--file` 指向非默认队列文件时，四项校验一律不生效——即便内容

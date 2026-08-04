@@ -46,8 +46,11 @@
 拒绝释放，锁保持占用，逼原地修正）：①§一 行须 8 列、§二/§四 行须 4 列
 （含反引号内裸竖线致列偏移）；②新增 §二 批次须在"文件清单"里声明队列
 文件自身路径；③新增 §一/§四 行编号不得与现役/归档件重复，且须属于本次
-`--reserve` 预留的编号集合；④P0/P1 定级行不得含"未核／未做的核实"字样
-（标注未核不等于可据此下结论，见 #221 教训）。历史行不追溯，见
+`--reserve` 预留的编号集合；④**状态列**同时含 P0/P1 定级与"未核／未做的
+核实"字样即拒绝（标注未核不等于可据此下结论，见 #221 教训；只检查状态
+列本身——本项目约定优先级标注写在状态列，任务描述列提到这两个词多半是
+在叙述/讨论相关内容，不是该行当前的权威结论，按整行扫描会误拦）。
+历史行不追溯，见
 `_validate_release_structure`。
 
 锁本地存在于文件系统（gitignore，不入库、不需要 git commit 才生效）。
@@ -463,8 +466,14 @@ def _validate_release_structure(
       与当前文件或归档件里任何既有编号重复，且必须属于本次持锁期间
       `--reserve` 预留的编号集合——协议〇.7（2026-07-31 补）已明文"此后新
       行编号一律用 --reserve 取"，未预留即新增编号视为违规，逼回正确路径。
-    ④断言门槛（仅 §一，咽喉4甲）：P0/P1 定级行若含"未核／未做的核实"字样
-      即报——标注未核不等于可据此下结论（成因见 #221）。
+    ④断言门槛（仅 §一，咽喉4甲）：**状态列本身**（cells[5]）同时含 P0/P1
+      定级与"未核／未做的核实"字样即报——标注未核不等于可据此下结论（成因
+      见 #221）。只检查状态列、不查整行：本项目约定优先级标注写在状态列
+      （#219/#225/#234 等现存行逐一核对一致），任务描述列出现"P0/P1"多半
+      是在叙述/讨论相关内容本身（如 #225/#230 两行正是在提议/记录这条
+      规则），不是该行当前的权威结论——按整行扫描会把这类历史叙述误判为
+      新违规，连"只把状态列改成已完成"这种收尾动作都拦下（2026-08-04
+      dogfooding 本行改造时的真实案例，见 #225/#230 行）。
     """
     violations: list[str] = []
     target_path = _target_path(args.file)
@@ -487,7 +496,8 @@ def _validate_release_structure(
         current_number_counts: Counter = Counter()
         if label in ROW_NUMBER_SECTIONS:
             old_numbers = {
-                int(cells[0]) for _, cells in _table_data_rows(old_text) if cells[0].isdigit()
+                int(old_cells[0]) for _, old_cells in _table_data_rows(old_text)
+                if old_cells[0].isdigit()
             }
             current_number_counts = Counter(
                 int(cells[0]) for _, cells in _table_data_rows(new_text) if cells[0].isdigit()
@@ -541,14 +551,27 @@ def _validate_release_structure(
                             f"（{shown}）：{preview}"
                         )
 
-            if label == "一" and P0_P1_TOKEN_RE.search(line) and any(
-                p in line for p in UNVERIFIED_ROW_PHRASES
-            ):
-                violations.append(
-                    f"§一 #{cells[0]} 为 P0/P1 定级行且含「未核／未做的核实」字样"
-                    f"（标注未核不等于可据此下结论，见 #221 教训，请补核实或改标「待核实」）："
-                    f"{preview}"
-                )
+            if label == "一":
+                # ④ 断言门槛：只检查**状态列本身**（cells[5]），不是整行。
+                # 三条真实现存行（#219/#225/#234，见 2026-08-04 实测）一致
+                # 证实本项目约定把优先级标注（P0/P1/P2/P3）写在状态列，不是
+                # 任务描述列——任务描述列里出现"P0/P1"多半是在叙述/讨论相关
+                # 内容本身（如 #225/#230 两行正是在提议/记录这条规则，其
+                # 未改动的任务描述天然含这两个词），不是该行的权威优先级
+                # 断言。按整行扫描会把这类历史叙述误判为"新违规"，连"只把
+                # 状态列改成已完成"这种收尾动作都拦下（2026-08-04 dogfooding
+                # 本行改造时的真实案例）。状态列是本项目实际存放"当前结论"
+                # 的地方，检查它才对应 #221 真正的失败模式：结论（P1）与
+                # 免责声明（未核）同时出现在同一处"当前判断"里。
+                status_cell = cells[5]
+                if P0_P1_TOKEN_RE.search(status_cell) and any(
+                    p in status_cell for p in UNVERIFIED_ROW_PHRASES
+                ):
+                    violations.append(
+                        f"§一 #{cells[0]} 状态列同时含 P0/P1 定级与「未核／未做的核实」字样"
+                        f"（标注未核不等于可据此下结论，见 #221 教训，请补核实或改标「待核实」）："
+                        f"{preview}"
+                    )
 
     return violations
 
