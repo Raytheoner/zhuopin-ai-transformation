@@ -356,3 +356,176 @@ def test_push_followup_cc_failure_does_not_break_primary_success(tmp_path, monke
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "followup_cc_failed" in actions
     assert "followup_cc_delivered" not in actions
+
+
+# 队列 #270：群 cc 改走机器人 chatid 通道（取代群机器人 webhook 单向通报）。
+
+
+def test_push_followup_group_cc_sent_when_chatid_provided(tmp_path):
+    """cc_group_chatid 提供时，主送后额外用同一机器人通道发一份到该群。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path,
+            md_path=md_path,
+            docx_path=None,
+            connector=connector,
+            chatid="chat-1",
+            match=_match_8d,
+            audit=audit,
+            cc_to_paul=False,  # 本测试只关心群 cc，避免与 Paul cc 消息数混淆
+            cc_group_chatid="group-procurement",
+        )
+    )
+
+    assert len(store["client"].sent_messages) == 2
+    primary_chatid, primary_body = store["client"].sent_messages[0]
+    group_chatid, group_body = store["client"].sent_messages[1]
+    assert primary_chatid == "chat-1"
+    assert group_chatid == "group-procurement"
+    assert "【抄送】" in group_body["markdown"]["content"]
+    assert "正文：请尽快回复。" in group_body["markdown"]["content"]
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_group_cc_delivered" in actions
+    assert "followup_group_cc_failed" not in actions
+
+
+def test_push_followup_group_cc_includes_attachments(tmp_path):
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+    docx_path = tmp_path / "letter.docx"
+    docx_path.write_bytes(b"fake docx bytes")
+    client = store["client"]
+    client.raw_frame_responses["aibot_upload_media_init"] = [{"body": {"upload_id": "U1"}}]
+    client.raw_frame_responses["aibot_upload_media_finish"] = [{"body": {"media_id": "M1"}}]
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path,
+            md_path=md_path,
+            docx_path=docx_path,
+            connector=connector,
+            chatid="chat-1",
+            match=_match_8d,
+            audit=audit,
+            cc_to_paul=False,
+            cc_group_chatid="group-procurement",
+        )
+    )
+
+    # 主markdown / 主file / 群cc markdown / 群cc file
+    assert len(client.sent_messages) == 4
+    assert client.sent_messages[2][0] == "group-procurement"
+    assert client.sent_messages[3] == ("group-procurement", {"msgtype": "file", "file": {"media_id": "M1"}})
+
+
+def test_push_followup_group_cc_not_attempted_when_chatid_missing(tmp_path):
+    """cc_group_chatid 未提供（默认 None）——完全不尝试群 cc，不产生相关审计。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path,
+            md_path=md_path,
+            docx_path=None,
+            connector=connector,
+            chatid="chat-1",
+            match=_match_8d,
+            audit=audit,
+            cc_to_paul=False,
+        )
+    )
+
+    assert len(store["client"].sent_messages) == 1
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_group_cc_delivered" not in actions
+    assert "followup_group_cc_failed" not in actions
+    assert "followup_group_cc_skipped" not in actions
+
+
+def test_push_followup_group_cc_skipped_when_same_as_primary_target(tmp_path):
+    """群 chatid 恰好就是主送目标时不重复发送。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path,
+            md_path=md_path,
+            docx_path=None,
+            connector=connector,
+            chatid="chat-1",
+            match=_match_8d,
+            audit=audit,
+            cc_to_paul=False,
+            cc_group_chatid="chat-1",
+        )
+    )
+
+    assert len(store["client"].sent_messages) == 1
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_group_cc_delivered" not in actions
+
+
+def test_push_followup_group_cc_failure_does_not_break_primary_success(tmp_path, monkeypatch):
+    """群 cc 失败不该掩盖主推送已成功的事实——不抛异常，只记审计。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    original_send_markdown = connector.send_markdown
+
+    async def flaky_send_markdown(chatid, content):
+        if chatid == "group-procurement":
+            raise RuntimeError("模拟企微群 cc 失败")
+        return await original_send_markdown(chatid, content)
+
+    monkeypatch.setattr(connector, "send_markdown", flaky_send_markdown)
+
+    result = asyncio.run(
+        push_followup(
+            readme_path=readme_path,
+            md_path=md_path,
+            docx_path=None,
+            connector=connector,
+            chatid="chat-1",
+            match=_match_8d,
+            audit=audit,
+            cc_to_paul=False,
+            cc_group_chatid="group-procurement",
+        )
+    )
+
+    # 主推送依旧成功、README 依旧正确回填
+    assert result.new_status.startswith("✅ 已推送")
+    new_text = readme_path.read_text(encoding="utf-8")
+    assert "✅ 已推送" in new_text
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_group_cc_failed" in actions
+    assert "followup_group_cc_delivered" not in actions
+
+
+def test_push_followup_group_cc_and_paul_cc_both_fire_independently(tmp_path):
+    """cc_to_paul 与 cc_group_chatid 互不影响，均可同时生效（各自独立隔离）。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path,
+            md_path=md_path,
+            docx_path=None,
+            connector=connector,
+            chatid="chat-1",
+            match=_match_8d,
+            audit=audit,
+            cc_group_chatid="group-procurement",
+        )
+    )
+
+    # 主送 + Paul cc + 群 cc = 3 条 markdown 消息
+    assert len(store["client"].sent_messages) == 3
+    chatids = [c for c, _ in store["client"].sent_messages]
+    assert chatids == ["chat-1", PAUL_USERID, "group-procurement"]
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_cc_delivered" in actions
+    assert "followup_group_cc_delivered" in actions

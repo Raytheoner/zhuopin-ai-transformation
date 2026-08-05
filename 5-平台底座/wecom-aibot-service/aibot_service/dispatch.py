@@ -33,6 +33,7 @@ from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
 from .delivery import BackfillWriteError, DeliveryNotFinalizedError, push_followup
+from .department_group_chatid_mapping import resolve_group_cc_chatid
 from .gates import FINALIZED_STATUS_MARKER
 from .readme_table import (
     column_index,
@@ -148,10 +149,20 @@ async def dispatch_followup_letters(
     audit: AuditLogger,
     today: date,
     evaluator: str = "system",
+    group_chatid_mapping: Optional[dict[str, str]] = None,
 ) -> DispatchOutcome:
     """扫描一遍 README，逐行处理，单行失败不阻塞其余行（design.md 既有
     Requirement）。返回本轮成功/失败/两类跳过的汇总——批次结束后由调用方
-    （脚本）决定是否需要告警（如疑似漏标硬截止时通知人工）。"""
+    （脚本）决定是否需要告警（如疑似漏标硬截止时通知人工）。
+
+    `group_chatid_mapping`（队列 #270，可选）：调用方（
+    `scripts/dispatch_followup_letters.py`）从
+    `department_group_chatid_mapping.load_department_group_chatid_mapping()`
+    加载后传入，本函数据此按行推导出的 `department` 调用
+    `resolve_group_cc_chatid` 决定是否给 `push_followup()` 传
+    `cc_group_chatid`——未配置该映射表（保持默认 `None`）时不做任何群 cc
+    尝试、不产生额外审计噪音（同旧调用方行为完全一致，向后兼容）；传入
+    映射表（即便是空 dict）则按行 fail-closed 判定并留痕。"""
     outcome = DispatchOutcome()
     text = readme_path.read_text(encoding="utf-8")
     rows = iter_rows(text)
@@ -231,6 +242,18 @@ async def dispatch_followup_letters(
         def _match(cells: list[str], _identity=identity_cells, _idx=row.status_col_index) -> bool:
             return tuple(c for i, c in enumerate(cells) if i != _idx) == _identity
 
+        # 队列 #270：group_chatid_mapping 未传入（默认 None）时完全不触碰
+        # 群 cc 判据，向后兼容旧调用方；传入后按本行推导出的 department
+        # fail-closed 判定（未配置/为空一律跳过并由 resolve_group_cc_chatid
+        # 记审计），不静默假装"这行不该有群 cc"。
+        cc_group_chatid = (
+            resolve_group_cc_chatid(
+                department=department, mapping=group_chatid_mapping, audit=audit, evaluator=evaluator,
+            )
+            if group_chatid_mapping is not None
+            else None
+        )
+
         try:
             await push_followup(
                 readme_path=readme_path,
@@ -241,6 +264,7 @@ async def dispatch_followup_letters(
                 match=_match,
                 audit=audit,
                 evaluator=evaluator,
+                cc_group_chatid=cc_group_chatid,
             )
             outcome.sent.append(preview)
         except (DeliveryNotFinalizedError, BackfillWriteError) as exc:

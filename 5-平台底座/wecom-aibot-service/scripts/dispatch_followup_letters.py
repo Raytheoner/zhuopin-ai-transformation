@@ -41,6 +41,9 @@ from zhuopin_platform.shared_tools.secrets import EnvSecretsProvider  # noqa: E4
 
 from aibot_service.connection import BOTID_KEY, SECRET_KEY  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
+from aibot_service.department_group_chatid_mapping import (  # noqa: E402
+    load_department_group_chatid_mapping,
+)
 from aibot_service.dispatch import dispatch_followup_letters  # noqa: E402
 from aibot_service.readme_table import iter_rows  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
@@ -96,9 +99,15 @@ async def _run(dry_run: bool) -> int:
     await connector.connect()
     await asyncio.sleep(1)  # 等 aibot_subscribe 认证完成
 
+    # 队列 #270：群 cc 改走机器人 chatid 通道——加载部门→群 chatid 映射表
+    # （真实值尚未采集，多数/全部部门当前会解析成占位空值，`dispatch_
+    # followup_letters` 内部按行 fail-closed 判定并留痕，不因此中断批处理）。
+    group_chatid_mapping = load_department_group_chatid_mapping()
+
     try:
         outcome = await dispatch_followup_letters(
             readme_path=readme_path, connector=connector, audit=audit, today=date.today(),
+            group_chatid_mapping=group_chatid_mapping,
         )
 
         if outcome.skipped_unmarked_deadline:

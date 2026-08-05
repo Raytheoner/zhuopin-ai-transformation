@@ -10,11 +10,18 @@
     [--docx "<跟进信 .docx 路径>"] \
     [--attachment "<其它附件路径>" [--attachment "<第三个附件路径>" ...]] \
     --chatid "<企微群/用户 chatid>" \
-    --match-topic "<README「主要事项」列的唯一定位关键字>"
+    --match-topic "<README「主要事项」列的唯一定位关键字>" \
+    [--department "<归属部门，如 财务部/质量部/采购部>"]
 
 队列 #93（多附件支持）：一次推送若需带多份材料，`--docx` 仍是首个附件的
 向后兼容位，`--attachment` 可重复传入以追加更多附件（docx/其他文件均
 可），不必再像此前那样拆成多次推送。
+
+队列 #270（群 cc 改走机器人通道）：`--department` 可选，提供后额外把同一份
+内容经机器人 chatid 通道抄送该部门群（取代旧的群机器人 webhook 单向通报，
+见 `department_group_chatid_mapping.py`）；部门→群 chatid 映射未配置/为空
+（真实值尚未采集）时 fail-closed 跳过并记审计，不报错、不中断本次推送；
+不传 `--department` 则完全不尝试群 cc。
 
 环境变量（审计路径解析，队列 #126）：
   WECOM_AIBOT_QUEUE_PATH   可选，仅作仓库根解析的锚点（本脚本本身不读队列），
@@ -51,6 +58,10 @@ from aibot_service.delivery import (  # noqa: E402
     DeliveryNotFinalizedError,
     BackfillWriteError,
 )
+from aibot_service.department_group_chatid_mapping import (  # noqa: E402
+    load_department_group_chatid_mapping,
+    resolve_group_cc_chatid,
+)
 from aibot_service.repo_paths import (  # noqa: E402
     resolve_audit_path,
     resolve_default_queue_anchor,
@@ -85,6 +96,24 @@ async def _run(args: argparse.Namespace) -> int:
     await asyncio.sleep(1)  # 等 aibot_subscribe 认证完成
 
     match_topic = args.match_topic
+
+    # 队列 #270：群 cc 改走机器人 chatid 通道——本 CLI 是"人工在命令行显式
+    # 指定要发给谁"的工具，天然不像 dispatch_followup_letters 那样能从
+    # README 行结构里自动推导部门（调用方本就是显式指定一切的操作者），
+    # 故新增 `--department` 可选参数，由操作者显式声明；未传则不尝试群 cc
+    # （与不传 `--docx` 时不发附件同一精神，非"配置缺失"，只是"这次没要
+    # 这个功能"，不产生审计噪音）。传了才走 fail-closed 判定+留痕。
+    cc_group_chatid = (
+        resolve_group_cc_chatid(
+            department=args.department,
+            mapping=load_department_group_chatid_mapping(),
+            audit=audit,
+            evaluator="cli-push_followup_letter",
+        )
+        if args.department
+        else None
+    )
+
     try:
         result = await push_followup(
             readme_path=Path(args.readme),
@@ -98,6 +127,7 @@ async def _run(args: argparse.Namespace) -> int:
             # 对未来表格加/减列天然免疫（match_topic 本就要求"唯一定位关键字"）。
             match=lambda cells: any(match_topic in cell for cell in cells),
             audit=audit,
+            cc_group_chatid=cc_group_chatid,
         )
         print(f"[OK] 推送成功，README 已回填：{result.new_status}")
         if result.media_ids:
@@ -126,6 +156,14 @@ def main() -> None:
     parser.add_argument("--chatid", required=True)
     parser.add_argument(
         "--match-topic", required=True, help='README「主要事项」列的唯一定位关键字'
+    )
+    parser.add_argument(
+        "--department",
+        help=(
+            "队列 #270：归属部门（如 财务部/质量部/采购部），提供后额外把同一份"
+            "内容经机器人 chatid 通道抄送该部门群（部门→群 chatid 映射未配置"
+            "/为空时 fail-closed 跳过并记审计，不报错）；不传则不尝试群 cc。"
+        ),
     )
     args = parser.parse_args()
 

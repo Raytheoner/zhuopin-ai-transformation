@@ -336,6 +336,12 @@ def build_connector(
                 )
 
         if archive_result is not None:
+            # 队列 #270：这是"部门群 webhook 通报"的**旧**调用点（`group_notify.py`
+            # + `department_group_mapping.yaml`，webhook 单向、群成员回复进
+            # 不到任何地方）。新的机器人 chatid 群 cc 路径已加在
+            # `delivery.push_followup(cc_group_chatid=...)`，是**并行新增**、
+            # 不冲突——本调用点本次未动，也不应动：真实群 chatid 值尚未采集，
+            # 待 aibot 群 cc 路径真实验证可用后再回来评估是否下线本调用。
             try:
                 await notify_department_group(
                     department=archive_result.department,

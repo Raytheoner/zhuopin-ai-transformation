@@ -244,6 +244,72 @@ def test_multi_row_mixed_success_and_failure_all_processed(tmp_path):
     assert len(store["client"].sent_messages) == 6
 
 
+# 队列 #270：群 cc 改走机器人 chatid 通道——group_chatid_mapping 参数。
+
+
+def test_group_chatid_mapping_not_provided_keeps_old_behavior_no_group_cc(tmp_path):
+    """不传 group_chatid_mapping（默认 None）——完全不尝试群 cc，行为与改动
+    前完全一致（回归防护：不因新增参数默认值而意外改变旧调用方消息数）。"""
+    rows = "| 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | 🆕 待发 |\n"
+    readme_path = _write_readme(tmp_path, rows)
+    _write_letter(tmp_path, "采购部", "姚祖怡", "2026-08-05")
+    audit, connector, store = _setup(tmp_path)
+
+    outcome = asyncio.run(
+        dispatch_followup_letters(readme_path=readme_path, connector=connector, audit=audit, today=TODAY)
+    )
+
+    assert len(outcome.sent) == 1
+    # cc_to_paul 默认开启=2条（主送+Paul cc），无群 cc
+    assert len(store["client"].sent_messages) == 2
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_group_cc_delivered" not in actions
+    assert "followup_group_cc_skipped" not in actions
+
+
+def test_group_chatid_mapping_configured_department_sends_group_cc(tmp_path):
+    rows = "| 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | 🆕 待发 |\n"
+    readme_path = _write_readme(tmp_path, rows)
+    _write_letter(tmp_path, "采购部", "姚祖怡", "2026-08-05")
+    audit, connector, store = _setup(tmp_path)
+
+    outcome = asyncio.run(
+        dispatch_followup_letters(
+            readme_path=readme_path, connector=connector, audit=audit, today=TODAY,
+            group_chatid_mapping={"采购部": "group-procurement"},
+        )
+    )
+
+    assert len(outcome.sent) == 1
+    # 主送 + Paul cc + 群 cc = 3 条
+    assert len(store["client"].sent_messages) == 3
+    assert store["client"].sent_messages[2][0] == "group-procurement"
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_group_cc_delivered" in actions
+
+
+def test_group_chatid_mapping_unconfigured_department_skips_group_cc_but_still_sends(tmp_path):
+    """部门不在映射表/值为空——fail-closed 跳过群 cc，但这不影响该行主推送
+    本身的成功（同 cc_to_paul 失败隔离的精神：群 cc 是主推送之外的附加动作）。"""
+    rows = "| 2026-08-05 | 质量部 · 陈忱 | 测试事项 | 不急 | 🆕 待发 |\n"
+    readme_path = _write_readme(tmp_path, rows)
+    _write_letter(tmp_path, "质量部", "陈忱", "2026-08-05")
+    audit, connector, store = _setup(tmp_path)
+
+    outcome = asyncio.run(
+        dispatch_followup_letters(
+            readme_path=readme_path, connector=connector, audit=audit, today=TODAY,
+            group_chatid_mapping={"采购部": "group-procurement"},  # 质量部不在表里
+        )
+    )
+
+    assert len(outcome.sent) == 1
+    assert len(store["client"].sent_messages) == 2  # 主送+Paul cc，无群 cc
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_group_cc_skipped" in actions
+    assert "followup_group_cc_delivered" not in actions
+
+
 def test_has_unmarked_imminent_deadline_true_for_near_date_without_marker():
     assert has_unmarked_imminent_deadline("2026-08-07 前给结论", TODAY) is True
 

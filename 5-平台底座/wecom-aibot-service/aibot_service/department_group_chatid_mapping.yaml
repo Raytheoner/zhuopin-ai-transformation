@@ -1,0 +1,22 @@
+# 部门 → 企微群 chatid 映射（队列 #270：群 cc 改走智能机器人 chatid 通道，
+# 取代此前的群机器人 webhook 通报——webhook 单向，群成员的回复进不到任何
+# 地方；智能机器人已是这些群的成员、群里也确实回复过，只是 chatid 值本身
+# 尚未采集）。
+#
+# 与 `department_group_mapping.yaml`（部门→webhook 环境变量名，服务旧的
+# webhook 通道）是姊妹表但服务不同通道，语义不同、不要合并：那张表存的是
+# **环境变量名**（真实 webhook URL 落 `.env`）；本表存的是 **chatid 本身**。
+#
+# chatid 不是秘密——同 `dispatch.py` 里明文放的 KNOWN_RECIPIENT_USERIDS
+# （如 "姚祖怡": "YaoZuYi"）一个敏感级别，可安全提交进 git。
+#
+# ⚠️ 真实 chatid 值目前未知——采集是另一条正在并行推进的依赖，本表先占位
+# （空字符串）。消费方（`resolve_group_cc_chatid`）遇空值一律 fail-closed
+# 跳过群 cc 并记审计，不拿空值当 chatid 发送。真实值到手后直接把等号右边
+# 填上即可，不需要改代码。
+#
+# 销售部：与 `department_group_mapping.yaml` 同一拍板（Paul 2026-07-15），
+# 暂不启用，故意不建映射条目。
+财务部: ""
+质量部: ""
+采购部: ""
