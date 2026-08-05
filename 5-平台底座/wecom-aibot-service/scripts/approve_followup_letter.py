@@ -16,9 +16,13 @@
 仅供测试/特殊场景使用）后再次调用才会真正批准——逼出一个独立、蓄意的
 等待动作，堵住"起草→release→立刻批准"这种同一 actor 一步做完的反模式。
 
-环境变量（审计路径解析，同 push_followup_letter.py，队列 #126）：
-  WECOM_AIBOT_QUEUE_PATH   可选，仅作仓库根解析的锚点，默认
-                           <本 checkout 根>/1-转型规划/0-全景路线图/跨桌任务队列.md
+环境变量（审计路径解析，同 push_followup_letter.py，队列 #126／#269）：
+  WECOM_AIBOT_QUEUE_PATH   可选，仅作仓库根解析的锚点；未设置时默认解析
+                           到 `git rev-parse --git-common-dir` 共享根（即
+                           主工作区，即便本脚本本身是从某个临时 linked
+                           worktree 里跑的也一样，见 `resolve_default_
+                           queue_anchor`，队列 #269）/1-转型规划/0-全景
+                           路线图/跨桌任务队列.md
   WECOM_AIBOT_AUDIT_PATH   可选，直接指定审计文件路径，跳过下方解析
   WECOM_AIBOT_REPO_ROOT    可选，显式指定仓库根，绕开动态 git 解析
 """
@@ -43,17 +47,15 @@ from aibot_service.approval import (  # noqa: E402
 )
 from aibot_service.readme_table import DraftNotPendingReviewError  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
-    DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
+    resolve_default_queue_anchor,
     resolve_followup_approval_cooldown_state_path,
     resolve_repo_root,
 )
 
 
 def _run(args: argparse.Namespace) -> int:
-    queue_anchor = Path(
-        os.environ.get("WECOM_AIBOT_QUEUE_PATH", NAIVE_REPO_ROOT / DEFAULT_QUEUE_RELATIVE_PATH)
-    )
+    queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT)
     resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
     audit_path = Path(
         os.environ.get("WECOM_AIBOT_AUDIT_PATH", resolve_audit_path(resolved_repo_root))

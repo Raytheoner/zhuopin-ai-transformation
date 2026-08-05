@@ -8,10 +8,13 @@ from pathlib import Path
 
 from aibot_service.repo_paths import (
     AUDIT_RELATIVE_PATH,
+    DEFAULT_QUEUE_RELATIVE_PATH,
     PENDING_QUEUE_APPENDS_RELATIVE_PATH,
     PENDING_QUEUE_LOCK_APPENDS_RELATIVE_PATH,
+    QUEUE_PATH_ANCHOR_ENV,
     REPO_ROOT_OVERRIDE_ENV,
     resolve_audit_path,
+    resolve_default_queue_anchor,
     resolve_pending_queue_appends_path,
     resolve_pending_queue_lock_appends_path,
     resolve_repo_root,
@@ -109,6 +112,88 @@ def test_resolve_repo_root_defaults_to_os_environ_when_env_not_passed(tmp_path: 
     resolved = resolve_repo_root(tmp_path / "whatever.md", fallback=tmp_path / "unused")
 
     assert resolved == override_root
+
+
+# ── 队列 #269：默认锚点未设 WECOM_AIBOT_QUEUE_PATH 时不再误判为临时 worktree ──
+
+def test_resolve_default_queue_anchor_env_override_wins(tmp_path: Path):
+    """显式设置 WECOM_AIBOT_QUEUE_PATH 时行为不变，优先级最高。"""
+    naive_root = tmp_path / "whatever"
+    override_path = tmp_path / "explicit_queue_path.md"
+
+    resolved = resolve_default_queue_anchor(
+        naive_root, env={QUEUE_PATH_ANCHOR_ENV: str(override_path)}
+    )
+
+    assert resolved == override_path
+
+
+def test_resolve_default_queue_anchor_same_checkout_zero_regression(tmp_path: Path):
+    """单一 checkout（无 linked worktree）场景：`--git-common-dir` 的父目录
+    就是这个 checkout 自己，默认锚点与修复前完全一致，零回归。"""
+    repo = _init_repo(tmp_path / "repo")
+
+    resolved = resolve_default_queue_anchor(repo, env={})
+
+    assert resolved.resolve() == (repo / DEFAULT_QUEUE_RELATIVE_PATH).resolve()
+
+
+def test_resolve_default_queue_anchor_from_linked_worktree_points_to_main(tmp_path: Path):
+    """队列 #269 核心场景：未设环境变量、从临时 linked worktree 里跑——
+    默认锚点必须解到主工作区（`--git-common-dir` 共享根），不能停留在这个
+    用完即删的临时 worktree 自己身上（此前的真实 bug）。"""
+    main_repo = _init_repo(tmp_path / "main_repo")
+    worktree_b = tmp_path / "worktree_b"
+    _git(main_repo, "worktree", "add", "-q", "-b", "feature", str(worktree_b))
+
+    resolved = resolve_default_queue_anchor(worktree_b, env={})
+
+    assert resolved.resolve() == (main_repo / DEFAULT_QUEUE_RELATIVE_PATH).resolve()
+    assert resolved.resolve() != (worktree_b / DEFAULT_QUEUE_RELATIVE_PATH).resolve()
+
+
+def test_resolve_default_queue_anchor_falls_back_when_not_a_repo(tmp_path: Path):
+    """极端环境（非 git 目录）——解析失败才回落"本 checkout 自身"，不引入
+    新的失败模式。"""
+    not_a_repo = tmp_path / "plain_dir"
+    not_a_repo.mkdir()
+
+    resolved = resolve_default_queue_anchor(not_a_repo, env={})
+
+    assert resolved == not_a_repo / DEFAULT_QUEUE_RELATIVE_PATH
+
+
+def test_resolve_default_queue_anchor_custom_relative_path(tmp_path: Path):
+    """支持传入非默认的相对路径（如 decision_reminder_check.py 用的
+    QUEUE_REL 常量），行为与默认路径一致。"""
+    main_repo = _init_repo(tmp_path / "main_repo")
+    worktree_b = tmp_path / "worktree_b"
+    _git(main_repo, "worktree", "add", "-q", "-b", "feature2", str(worktree_b))
+    custom_rel = Path("some") / "custom.md"
+
+    resolved = resolve_default_queue_anchor(worktree_b, custom_rel, env={})
+
+    assert resolved.resolve() == (main_repo / custom_rel).resolve()
+
+
+def test_resolve_default_queue_anchor_end_to_end_with_resolve_repo_root(tmp_path: Path):
+    """端到端：默认锚点接 resolve_repo_root 之后，从临时 worktree 跑
+    也能正确解到主工作区根（队列 #269 修复前后对比的关键断言）。
+
+    `anchor_path.parent` 须真实存在——`resolve_repo_root` 用 `git -C
+    <目录>` 定位，目录不存在时 git 直接报错、静默回落 fallback，
+    与"锚点目录存在但不在任何 git 仓库里"是两种不同的失败形态，
+    此处特意让目录真实存在以隔离验证目标行为（真实生产环境里
+    `1-转型规划/0-全景路线图/` 这层目录必然存在）。"""
+    main_repo = _init_repo(tmp_path / "main_repo")
+    (main_repo / DEFAULT_QUEUE_RELATIVE_PATH).parent.mkdir(parents=True, exist_ok=True)
+    worktree_b = tmp_path / "worktree_b"
+    _git(main_repo, "worktree", "add", "-q", "-b", "feature3", str(worktree_b))
+
+    anchor = resolve_default_queue_anchor(worktree_b, env={})
+    repo_root = resolve_repo_root(anchor, fallback=worktree_b, env={})
+
+    assert repo_root.resolve() == main_repo.resolve()
 
 
 def test_resolve_audit_path_anchors_under_repo_root(tmp_path: Path):

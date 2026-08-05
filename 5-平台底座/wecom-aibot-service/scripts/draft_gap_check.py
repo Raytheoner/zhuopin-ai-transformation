@@ -40,7 +40,7 @@ from aibot_service.draft_gap_detection import (  # noqa: E402
     find_missing_drafts,
     find_recent_scenario_commits,
 )
-from aibot_service.repo_paths import DEFAULT_QUEUE_RELATIVE_PATH, resolve_repo_root  # noqa: E402
+from aibot_service.repo_paths import resolve_default_queue_anchor, resolve_repo_root  # noqa: E402
 
 FOLLOWUP_README_RELATIVE_PATH = (
     Path("6-人才与组织") / "部门AI专员跟进" / "README-跟进机制与命名约定.md"
@@ -52,7 +52,7 @@ def main() -> None:
     parser.add_argument("--window-days", type=int, default=DEFAULT_WINDOW_DAYS)
     args = parser.parse_args()
 
-    queue_anchor = NAIVE_REPO_ROOT / DEFAULT_QUEUE_RELATIVE_PATH
+    queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT)
     repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
     readme_path = repo_root / FOLLOWUP_README_RELATIVE_PATH
 

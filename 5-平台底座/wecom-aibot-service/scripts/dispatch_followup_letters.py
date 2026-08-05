@@ -44,8 +44,8 @@ from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.dispatch import dispatch_followup_letters  # noqa: E402
 from aibot_service.readme_table import iter_rows  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
-    DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
+    resolve_default_queue_anchor,
     resolve_repo_root,
 )
 
@@ -67,9 +67,7 @@ def _print_dry_run(readme_path: Path) -> int:
 async def _run(dry_run: bool) -> int:
     load_dotenv(SERVICE_DIR.parent / ".env")
 
-    queue_anchor = Path(
-        os.environ.get("WECOM_AIBOT_QUEUE_PATH", NAIVE_REPO_ROOT / DEFAULT_QUEUE_RELATIVE_PATH)
-    )
+    queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT)
     resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
     readme_path = resolved_repo_root / README_RELATIVE_PATH
 

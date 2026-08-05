@@ -43,6 +43,7 @@ from aibot_service.liveness import read_liveness, run_liveness_heartbeat  # noqa
 from aibot_service.queue_reconcile_sentinel import run_reconciliation_sentinel  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
     resolve_audit_path,
+    resolve_default_queue_anchor,
     resolve_pending_queue_appends_path,
     resolve_pending_queue_lock_appends_path,
     resolve_repo_root,
@@ -113,16 +114,15 @@ async def _run_forever(
 def main() -> None:
     load_dotenv(SERVICE_DIR.parent / ".env")  # 5-平台底座/.env（照 SC8 .env 放置层级）
 
-    queue_path = Path(
-        os.environ.get(
-            "WECOM_AIBOT_QUEUE_PATH",
-            NAIVE_REPO_ROOT / "1-转型规划" / "0-全景路线图" / "跨桌任务队列.md",
-        )
-    )
     # 队列 #126：本 checkout（`NAIVE_REPO_ROOT`）与 `queue_path` 实际所在的
     # checkout 可能不是同一个（服务常驻某 worktree、队列文件固定指向主工
     # 作区）——以 `queue_path` 动态反查其真正所属的仓库根，`NAIVE_REPO_ROOT`
-    # 只作解析失败时的回落值。
+    # 只作解析失败时的回落值。队列 #269：未显式设置 `WECOM_AIBOT_QUEUE_PATH`
+    # 时（生产部署脚本会设置，此处是本地手工跑的兜底），默认锚点也改为
+    # git 共享根而非本 checkout 自身，见 `resolve_default_queue_anchor`。
+    queue_path = resolve_default_queue_anchor(
+        NAIVE_REPO_ROOT, Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列.md"
+    )
     resolved_repo_root = resolve_repo_root(queue_path, fallback=NAIVE_REPO_ROOT)
 
     external_docs_root = Path(

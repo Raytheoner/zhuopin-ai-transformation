@@ -60,6 +60,7 @@ from aibot_service.queue_lock_pending import flush_pending_queue_appends  # noqa
 from aibot_service.repo_paths import (  # noqa: E402
     DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
+    resolve_default_queue_anchor,
     resolve_pending_queue_appends_path,
     resolve_pending_queue_lock_appends_path,
     resolve_repo_root,
@@ -118,9 +119,7 @@ async def _flush_pending_lock_appends_second_carrier(
 async def _run(dry_run: bool) -> int:
     load_dotenv(SERVICE_DIR.parent / ".env")
 
-    queue_anchor = Path(
-        os.environ.get("WECOM_AIBOT_QUEUE_PATH", NAIVE_REPO_ROOT / QUEUE_REL)
-    )
+    queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT, QUEUE_REL)
     resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
     queue_path = resolved_repo_root / QUEUE_REL
     state_path = resolved_repo_root / "5-平台底座" / "wecom-aibot-service" / DEFAULT_STATE_REL

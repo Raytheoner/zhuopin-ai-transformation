@@ -52,8 +52,8 @@ from aibot_service.delivery import (  # noqa: E402
     BackfillWriteError,
 )
 from aibot_service.repo_paths import (  # noqa: E402
-    DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
+    resolve_default_queue_anchor,
     resolve_repo_root,
 )
 
@@ -68,10 +68,11 @@ async def _run(args: argparse.Namespace) -> int:
     # `ops/wecom-service-home` worktree——各自以 `__file__` 反推仓库根会解出
     # 两个不同的 checkout，审计留痕因此分裂成两个物理文件。统一改为以队列
     # 文件（`WECOM_AIBOT_QUEUE_PATH`，两边都读同一个环境变量约定）为锚点动态
-    # 解析所属仓库根，据此定位与监听服务共用的同一份审计文件。
-    queue_anchor = Path(
-        os.environ.get("WECOM_AIBOT_QUEUE_PATH", NAIVE_REPO_ROOT / DEFAULT_QUEUE_RELATIVE_PATH)
-    )
+    # 解析所属仓库根，据此定位与监听服务共用的同一份审计文件。队列 #269：
+    # 未设该环境变量时的默认锚点也不再停留在"本 checkout 自身"（CC 从临时
+    # worktree 跑本脚本时会解出与主工作区不同的物理位置），见
+    # `resolve_default_queue_anchor`。
+    queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT)
     resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
     audit_path = Path(
         os.environ.get("WECOM_AIBOT_AUDIT_PATH", resolve_audit_path(resolved_repo_root))

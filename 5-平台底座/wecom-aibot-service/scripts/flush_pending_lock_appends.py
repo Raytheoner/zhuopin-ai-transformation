@@ -51,6 +51,7 @@ from aibot_service.queue_lock_pending import flush_pending_queue_appends, read_d
 from aibot_service.repo_paths import (  # noqa: E402
     DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
+    resolve_default_queue_anchor,
     resolve_pending_queue_appends_path,
     resolve_pending_queue_lock_appends_path,
     resolve_repo_root,
@@ -60,9 +61,7 @@ from aibot_service.repo_paths import (  # noqa: E402
 async def _run() -> int:
     load_dotenv(SERVICE_DIR.parent / ".env")
 
-    queue_anchor = Path(
-        os.environ.get("WECOM_AIBOT_QUEUE_PATH", NAIVE_REPO_ROOT / DEFAULT_QUEUE_RELATIVE_PATH)
-    )
+    queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT)
     resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
     queue_path = resolved_repo_root / DEFAULT_QUEUE_RELATIVE_PATH
 

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 REPO_ROOT_OVERRIDE_ENV = "WECOM_AIBOT_REPO_ROOT"
+QUEUE_PATH_ANCHOR_ENV = "WECOM_AIBOT_QUEUE_PATH"
 
 # 队列文件在生产环境里被显式固定指向主工作区（见
 # start-aibot-service-dev.ps1 的 WECOM_AIBOT_QUEUE_PATH），是两个 checkout
@@ -48,6 +49,57 @@ PENDING_QUEUE_LOCK_APPENDS_RELATIVE_PATH = (
 FOLLOWUP_APPROVAL_COOLDOWN_STATE_RELATIVE_PATH = (
     Path("5-平台底座") / "wecom-aibot-service" / "reports" / "followup_approval_cooldown_state.json"
 )
+
+
+def resolve_default_queue_anchor(
+    naive_repo_root: Path,
+    relative_path: Path = DEFAULT_QUEUE_RELATIVE_PATH,
+    *,
+    env: Optional[Mapping[str, str]] = None,
+) -> Path:
+    """计算 `WECOM_AIBOT_QUEUE_PATH` 未显式设置时的默认锚点（队列 #269，
+    2026-08-06，真实事故：跟进信批准脚本的 10 分钟冷却窗口状态文件误判
+    丢失，根因见下）。
+
+    此前各脚本未设该环境变量时，直接用 `naive_repo_root / relative_path`
+    （即"本 checkout 自身"）当锚点——`resolve_repo_root` 据此把 repo_root
+    正确地解到锚点自己所在的那个 checkout（这是 `resolve_repo_root` 自身
+    的既定契约，见 `test_resolve_repo_root_cross_worktree`，未变、不能变）。
+    但当调用方是 CC 从临时 worktree 里跑的一次性脚本（本项目常规工作方式，
+    一任务一 worktree）、且没人记得手工设这个环境变量时，"本 checkout"
+    就是这个用完即删的临时 worktree——`resolve_audit_path`/
+    `resolve_followup_approval_cooldown_state_path` 等据此算出的落点全部
+    物理落在这个临时 worktree 的 `reports/` 里（`.gitignore` 覆盖，worktree
+    一删就丢）。批准脚本的 10 分钟冷却窗口状态因此每次从新 worktree 调用
+    都"重新观测"，永远等不到窗口过期——真实复现见队列 #269。
+
+    修法（与 `工具-共享文档编辑锁.py::_resolve_repo_root` 的 2026-07-23 修法
+    同源）：未显式设置该环境变量时，不再默认"本 checkout 自身"，改为先用
+    `git rev-parse --git-common-dir` 找到所有 linked worktree 共享的那个
+    `.git` 目录、取其父目录作为"规范仓库根"（对非 linked-worktree 场景，
+    即只有一个普通 clone 时，`--git-common-dir` 的父目录就是这个 clone
+    自己，行为不变）；解析失败（非 git 目录等极端环境）才回落
+    `naive_repo_root / relative_path`（修复前的既有行为，不引入新失败模式）。
+    机器人常驻服务的启动脚本显式设置了该环境变量，优先级不变、不受本次
+    改动影响。
+    """
+    if env is None:
+        env = os.environ
+    override = env.get(QUEUE_PATH_ANCHOR_ENV)
+    if override:
+        return Path(override)
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(naive_repo_root),
+             "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, encoding="utf-8", check=True,
+        )
+        common_dir = result.stdout.strip()
+        if common_dir:
+            return Path(common_dir).parent / relative_path
+    except (subprocess.CalledProcessError, OSError, FileNotFoundError):
+        pass
+    return naive_repo_root / relative_path
 
 
 def resolve_repo_root(
