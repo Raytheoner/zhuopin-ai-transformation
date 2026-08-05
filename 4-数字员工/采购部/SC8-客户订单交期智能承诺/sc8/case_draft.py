@@ -49,23 +49,37 @@ def _template(case: SupplyCase, kind: str) -> str:
                 f"待协调项：① 能否插单/替代料；② 是否需与客户沟通改期；③ 物流加急可行性。"
                 f"请相关同事评估反馈。")
     # customer —— 对客改期通知（落闸，仅草稿）
+    # #223：瓶颈子件"无任何供应商答复"时不得表述为"确定延期"——那是把未知说成已知，
+    # 一旦对客闸开闸会造成对客承诺口径失真。区分口径同 alert_dispatch._alert_markdown。
+    if case.bottleneck_unanswered:
+        delay_desc = (f"因上游关键子件交期尚未获供应商明确答复，存在延期风险，"
+                      f"本批原计划 {case.ship_date} 出货，"
+                      f"具体交货日期待供应商答复确认后另行通知")
+    else:
+        delay_desc = (f"因上游子件交期顺延，本批原计划 {case.ship_date} 出货，"
+                      f"预计调整至 {new_date} 前后")
     return (f"主题：关于订单 {case.fo_id} / {case.item_code} 交货安排的说明\n\n"
             f"尊敬的{case.customer_name or '客户'}：\n"
             f"您好！就贵司订单（{case.fo_id}，产品 {case.item_code}）的交货安排向您说明："
-            f"因上游子件交期顺延，本批原计划 {case.ship_date} 出货，"
-            f"预计调整至 {new_date} 前后。我司正全力协调加快到货，"
+            f"{delay_desc}。我司正全力协调加快到货，"
             f"如有进展将第一时间向您通报。给您带来不便，深表歉意。\n\n"
             f"[公司名称] 供应链管理部\n{date.today().strftime('%Y年%m月%d日')}")
 
 
 def _build_prompt(case: SupplyCase, events: list[CaseEvent], kind: str) -> str:
     notes = "\n".join(f"  - [{e.actor}] {e.note}" for e in events if e.note) or "  -（无）"
+    # #223：customer 口径下瓶颈子件若无供应商答复，不得向模型喂"确定延期"当事实，
+    # 否则生成文本会把未知说成已知（不改判定逻辑，只改喂给模型的措辞）。
+    if kind == "customer" and case.bottleneck_unanswered:
+        gap_desc = f"瓶颈子件 {case.bottleneck_material} 尚无供应商答复，交期未确认、存在延期风险"
+    else:
+        gap_desc = f"确定瓶颈子件 {case.bottleneck_material}，确定延期约 {case.confirmed_gap_days} 天"
     return (f"你是汽车 Tier1 工厂的供应链保供协调专员。请根据以下保供案例，"
             f"用中文起草一段「{_KIND_LABEL.get(kind, kind)}」文本。\n\n"
             f"【案例】成品 {case.item_code} / 预测订单 {case.fo_id} / 客户 {case.customer_name}\n"
-            f"计划出货日 {case.ship_date}，确定瓶颈子件 {case.bottleneck_material}，"
-            f"确定延期约 {case.confirmed_gap_days} 天。\n【处置记录】\n{notes}\n\n"
-            f"要求：专业、简洁（150 字内）；只输出正文，不要解释。")
+            f"计划出货日 {case.ship_date}，{gap_desc}。\n【处置记录】\n{notes}\n\n"
+            f"要求：专业、简洁（150 字内）；只输出正文，不要解释"
+            f"{'；不得把未确认的交期表述为确定事实' if kind == 'customer' and case.bottleneck_unanswered else ''}。")
 
 
 def generate(case: SupplyCase, events: list[CaseEvent] | None = None, *,

@@ -753,6 +753,35 @@ def _explain_ambiguous_candidates(frag: str, dirty_paths: list[str]) -> list[str
     return [d for d in dirty_paths if d == frag or d.endswith("/" + frag)]
 
 
+def _check_dirty_paths_against_pending_batches(
+    repo_root: Path, paths: list[str],
+) -> list[tuple[str, str | None]]:
+    """队列 #101①：只读核验——给定路径是否命中 §二 待处理批次的"文件清单"声明。
+
+    供 `工具-主工作区安全同步.ps1` 在建议 `git checkout --` 弃改前先调用（走
+    `--check-dirty-in-pending-batch` CLI 模式）：命中即不得建议丢弃，应改为
+    提示触发 sweep 落库（协议〇.8"批次即扫＋checkout 前核对 §二"）。复用
+    `_resolve_batch_files` 同一套匹配规则（精确相等优先，否则按 "/" 后缀），
+    不另起一套判据，避免两处独立实现随时间漂移出不一致结论。
+
+    返回 [(path, batch_id_or_None), ...]；batch_id 为 None 表示未命中任何
+    待处理批次（可以放心按现有逻辑处理，不属于本检查的管辖范围）。
+    """
+    queue_text = _read_queue(repo_root)
+    rows = _parse_section_two(queue_text)
+    pending_rows, _ = _classify_section_two_rows(rows)
+    results: list[tuple[str, str | None]] = []
+    for path in paths:
+        matched_batch = None
+        for row in pending_rows:
+            resolved, _, _ = _resolve_batch_files(row["files_cell"], [path])
+            if resolved:
+                matched_batch = row["batch_id"]
+                break
+        results.append((path, matched_batch))
+    return results
+
+
 def _partition_pending_rows_by_batch_isolation(
     pending_rows: list[dict], dirty_paths: list[str], log: list[str],
 ) -> tuple[list[dict], dict[str, tuple[list[str], list[str], list[str]]], list[str]]:
@@ -1093,9 +1122,26 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="只打印计划动作，不 add/commit/push/改队列")
     parser.add_argument("--repo-root", default=None, help="仅测试用：覆盖主工作区路径断言")
+    parser.add_argument(
+        "--check-dirty-in-pending-batch", nargs="+", metavar="PATH", default=None,
+        help="#101①：只读核验给定路径（相对仓库根）是否命中§二待处理批次声明，"
+             "不做任何写操作、不跑 sweep 主流程。每个路径输出一行 "
+             "'MATCH <batch_id> <path>' 或 'NOMATCH <path>'，供"
+             "工具-主工作区安全同步.ps1 在建议 git checkout -- 前调用。")
     args = parser.parse_args()
 
     repo_root = _resolve_repo_root(args.repo_root)
+
+    if args.check_dirty_in_pending_batch is not None:
+        # 只读检查模式：不写日志、不碰队列、不动 git 状态，独立于下方主流程。
+        results = _check_dirty_paths_against_pending_batches(
+            repo_root, args.check_dirty_in_pending_batch)
+        for path, batch_id in results:
+            if batch_id:
+                print(f"MATCH\t{batch_id}\t{path}")
+            else:
+                print(f"NOMATCH\t{path}")
+        return 0
     start_line = f"=== sweep 运行 {_now_utc_str()} ==="
     log: list[str] = [start_line]
     # 队列 #222：启动即写日志首行——不等收尾统一 flush，避免"启动后立刻

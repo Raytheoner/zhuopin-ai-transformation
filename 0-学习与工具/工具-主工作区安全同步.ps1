@@ -15,6 +15,13 @@
 #    本地领先 origin（非单纯落后）→ 中止（需人工 rebase/merge）
 #    干净且单纯落后 → git pull --ff-only
 #    有遗留 stash → 只打印查看/删除命令，不自动 drop（不可逆操作需人工确认）
+#
+#  队列 #101①（2026-08-05 补）：脏文件检查新增硬检查——命中 §二「待 commit 批次」
+#  声明清单的脏文件不再建议 `git checkout --`，改为提示触发 sweep 落库（协议〇.8
+#  "批次即扫 + checkout 前核对 §二"落到工具上）。核验复用
+#  `工具-落库sweep.py --check-dirty-in-pending-batch`（与 sweep 自身批次匹配同一套
+#  逻辑，不另起一套判据）；该脚本不可用或调用失败时按更保守方式处理（视为命中，
+#  不建议 checkout），不会因核验失败而放行危险操作。
 # ================================================================
 $ErrorActionPreference = "Stop"
 $REPO = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型"
@@ -48,9 +55,38 @@ $dirty = git status --porcelain
 if ($dirty) {
     Write-Host "   ⚠ 工作区仍有未提交改动：" -ForegroundColor DarkYellow
     $dirty | ForEach-Object { Write-Host "     $_" -ForegroundColor DarkYellow }
-    Write-Host "   若这些改动是你想保留的在办工作，请先自行 commit 或 stash，再重跑本脚本。" -ForegroundColor DarkYellow
-    Write-Host "   若确认这些改动已过时（比如被更早一次 stash 又写回来了），可以：" -ForegroundColor DarkYellow
-    Write-Host "     git checkout -- <文件>   （单个文件放弃改动）" -ForegroundColor DarkGray
+
+    # 队列 #101①：checkout 前先核对 §二"待 commit 批次"声明清单（协议〇.8
+    # "批次即扫 + checkout 前核对 §二"）——2026-07-24 曾有一批文件在 sweep
+    # 敞口期被本脚本按"改动已过时"误弃，靠会话记录重打恢复（见 CLAUDE.md
+    # §5、队列 #101 行）。本检查把这条纸面规则落到工具上：脏文件命中任一
+    # 待处理批次声明时，禁止建议 git checkout --，改为提示触发 sweep。
+    $dirtyPaths = $dirty | ForEach-Object { $_.Substring(3).Trim().Trim('"') }
+    $sweepScript = Join-Path $REPO "0-学习与工具\工具-落库sweep.py"
+    $checkOutput = @()
+    $hitBatch = $false
+    if ((Test-Path $sweepScript) -and $dirtyPaths.Count -gt 0) {
+        $checkOutput = & python $sweepScript --check-dirty-in-pending-batch @dirtyPaths 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $matched = $checkOutput | Where-Object { $_ -like "MATCH*" }
+            if ($matched) { $hitBatch = $true }
+        } else {
+            Write-Host "   ⚠ §二 批次核验脚本调用失败（退出码 $LASTEXITCODE），无法确认脏文件是否命中待处理批次，按更保守的方式处理——不建议 checkout。" -ForegroundColor DarkYellow
+            $hitBatch = $true   # 核验本身失败时，不能假装"未命中"，从低取值
+        }
+    }
+
+    if ($hitBatch) {
+        Write-Host "`n   🔴 以下脏文件命中 §二「待 commit 批次」的声明清单——禁止 git checkout --，那会丢弃尚未落库的合法在办工作：" -ForegroundColor Red
+        $matched | ForEach-Object { Write-Host "     $_" -ForegroundColor Red }
+        Write-Host "   正确处置：触发一次 sweep 落库，不要自己判断丢弃。" -ForegroundColor Cyan
+        Write-Host "     Start-ScheduledTask -TaskName ZhuopinCommitSweep" -ForegroundColor DarkGray
+        Write-Host "   sweep 落库后这些文件会自动变为 clean，再重跑本脚本即可继续同步。" -ForegroundColor Cyan
+    } else {
+        Write-Host "   若这些改动是你想保留的在办工作，请先自行 commit 或 stash，再重跑本脚本。" -ForegroundColor DarkYellow
+        Write-Host "   若确认这些改动已过时（比如被更早一次 stash 又写回来了），可以：" -ForegroundColor DarkYellow
+        Write-Host "     git checkout -- <文件>   （单个文件放弃改动）" -ForegroundColor DarkGray
+    }
     Write-Host "   本脚本不会替你决定，到此暂停。" -ForegroundColor DarkYellow
     exit 1
 }

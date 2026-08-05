@@ -66,6 +66,11 @@ class SupplyCase:
     created_at:         str
     updated_at:         str
     resolved_at:        str
+    # 瓶颈子件是否"无任何供应商答复"（#223，客户草稿措辞用；与 alert_dispatch._alert_markdown
+    # 的 unanswered 判据同源——建案时由 dispatch_new_reds 按 bn in nfd_ids 计算传入，
+    # 手动建案默认 False=已答复，可在建案表单勾选覆盖）。默认值仅为兼容旧记录/未知来源，
+    # 不代表"已核实答复"——对客措辞层面仍以此字段的实际取值为准，不得脑补。
+    bottleneck_unanswered: bool = False
 
     @property
     def status_label(self) -> str:
@@ -127,7 +132,8 @@ class CaseStore:
                 new_confirmed_date  TEXT    NOT NULL DEFAULT '',
                 created_at          TEXT    NOT NULL,
                 updated_at          TEXT    NOT NULL,
-                resolved_at         TEXT    NOT NULL DEFAULT ''
+                resolved_at         TEXT    NOT NULL DEFAULT '',
+                bottleneck_unanswered INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS supply_case_events (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,6 +146,12 @@ class CaseStore:
                 created_at  TEXT    NOT NULL
             );
         """)
+        # #223：为已存在的旧库（CREATE TABLE IF NOT EXISTS 对已有表不生效）补迁移新列，
+        # 幂等——真实部署库（reports/*.db，gitignore）可能已有历史行，不能假设总是新库。
+        existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(supply_cases)")}
+        if "bottleneck_unanswered" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE supply_cases ADD COLUMN bottleneck_unanswered INTEGER NOT NULL DEFAULT 0")
         conn.commit()
         return conn
 
@@ -155,6 +167,7 @@ class CaseStore:
             status=CaseStatus(row["status"]), new_confirmed_date=row["new_confirmed_date"],
             created_at=row["created_at"], updated_at=row["updated_at"],
             resolved_at=row["resolved_at"],
+            bottleneck_unanswered=bool(row["bottleneck_unanswered"]),
         )
 
     def _log_event(self, case_id: int, action: str, actor: str, note: str,
@@ -177,12 +190,14 @@ class CaseStore:
     # ── 建案 ─────────────────────────────────────────────────────────────────
     def create_case(self, *, item_code: str, fo_id: str, customer_name: str,
                     ship_date: str, confirmed_gap_days: int = 0,
-                    bottleneck_material: str = "", actor: str = "系统",
+                    bottleneck_material: str = "", bottleneck_unanswered: bool = False,
+                    actor: str = "系统",
                     note: str = "自动检测到真延期", manual: bool = False) -> tuple[SupplyCase, bool]:
         """建案（幂等）。返回 (案例, 是否新建)。
 
         同稳定键已有未关闭案例 → 返回 (已有案例, False)，不重建（去重核心）。
         manual=True 仅改建案事件文案（手动录入），状态机一致。
+        bottleneck_unanswered：瓶颈子件是否无任何供应商答复（#223，驱动对客草稿措辞）。
         """
         existing = self.find_open_by_key(item_code, fo_id, ship_date)
         if existing:
@@ -194,10 +209,12 @@ class CaseStore:
         cur = self._conn.execute(
             """INSERT INTO supply_cases
                (case_no, item_code, fo_id, customer_name, ship_date, confirmed_gap_days,
-                bottleneck_material, status, new_confirmed_date, created_at, updated_at, resolved_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, '')""",
+                bottleneck_material, status, new_confirmed_date, created_at, updated_at,
+                resolved_at, bottleneck_unanswered)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, '', ?)""",
             (case_no, item_code, fo_id, customer_name, ship_date, confirmed_gap_days,
-             bottleneck_material, CaseStatus.EXPEDITE.value, now, now))
+             bottleneck_material, CaseStatus.EXPEDITE.value, now, now,
+             int(bottleneck_unanswered)))
         self._conn.commit()
         case_id = cur.lastrowid
         self._log_event(case_id, "created", actor,

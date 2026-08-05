@@ -101,6 +101,26 @@ def test_alert_markdown_uses_conservative_wording_when_bottleneck_unanswered():
     assert "确定延期" not in sent[0]   # 不能把估算说成确定
 
 
+def test_dispatch_case_stores_bottleneck_unanswered_flag():
+    """#223：建案时 bottleneck_unanswered 落库需与 _alert_markdown 的 unanswered 判据同源——
+    瓶颈子件在 nfd 明细里即 True，供 case_draft.py 客户草稿据此选措辞分支。"""
+    store = CaseStore(":memory:")
+    row = _row("A", cg=41, gap=109, bn="C9", nfd=[{"id": "C9"}])
+    dispatch_new_reds(detect_new_red(_snap([row]), None), store,
+                      webhook_url=None, sender=lambda u, c: None)
+    case = store.get_open_cases()[0]
+    assert case.bottleneck_unanswered is True
+
+
+def test_dispatch_case_bottleneck_answered_flag_false():
+    store = CaseStore(":memory:")
+    row = _row("A", cg=41, gap=41, bn="C1", nfd=[])   # C1 已答复，不在 nfd 里
+    dispatch_new_reds(detect_new_red(_snap([row]), None), store,
+                      webhook_url=None, sender=lambda u, c: None)
+    case = store.get_open_cases()[0]
+    assert case.bottleneck_unanswered is False
+
+
 def test_dispatch_case_stores_gap_not_confirmed_gap():
     """建案的 confirmed_gap_days 字段改存 gap（全量口径，与建案原因——该行判红——同源）。"""
     store = CaseStore(":memory:")

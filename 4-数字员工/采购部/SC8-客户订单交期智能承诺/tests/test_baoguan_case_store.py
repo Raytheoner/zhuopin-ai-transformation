@@ -1,8 +1,11 @@
 """保供案例处置中心（case_store）测试 —— 内存 SQLite，全 mock。
 
-覆盖：建案幂等（同稳定键不重建）、状态机合法/非法流转、SLA 滞留、关闭、手动建案、events 留痕。
+覆盖：建案幂等（同稳定键不重建）、状态机合法/非法流转、SLA 滞留、关闭、手动建案、events 留痕、
+#223 bottleneck_unanswered 字段落库与旧库迁移。
 """
 from __future__ import annotations
+
+import sqlite3
 
 from sc8.case_store import CaseStatus, CaseStore
 
@@ -94,3 +97,58 @@ def test_stale_case_detection(monkeypatch):
     stale = store.get_stale_cases()
     assert len(stale) == 1 and stale[0].id == c.id
     assert stale[0].is_overdue_sla is True
+
+
+# ── 队列 #223：bottleneck_unanswered 落库与旧库迁移 ──────────────────────────────
+
+def test_bottleneck_unanswered_defaults_false():
+    store = _store()
+    c, _ = _new(store)
+    assert c.bottleneck_unanswered is False
+
+
+def test_bottleneck_unanswered_persists_true():
+    store = _store()
+    c, _ = _new(store, bottleneck_unanswered=True)
+    assert c.bottleneck_unanswered is True
+    # 重新查询（走 get_case，非 create_case 返回值）同样为 True，证明真落库而非仅内存对象
+    reloaded = store.get_case(c.id)
+    assert reloaded.bottleneck_unanswered is True
+
+
+def test_old_db_without_bottleneck_unanswered_column_migrates(tmp_path):
+    """真实部署库（reports/*.db）可能已有旧 schema（无本列）——CaseStore 打开时须
+    自动补迁移列，不能因 CREATE TABLE IF NOT EXISTS 对已存在表不生效而报错。"""
+    db_path = tmp_path / "legacy_cases.db"
+    # 手工建一个不含 bottleneck_unanswered 列的旧版表结构
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript("""
+        CREATE TABLE supply_cases (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_no             TEXT    UNIQUE NOT NULL,
+            item_code           TEXT    NOT NULL,
+            fo_id               TEXT    NOT NULL DEFAULT '',
+            customer_name       TEXT    NOT NULL DEFAULT '',
+            ship_date           TEXT    NOT NULL DEFAULT '',
+            confirmed_gap_days  INTEGER NOT NULL DEFAULT 0,
+            bottleneck_material TEXT    NOT NULL DEFAULT '',
+            status              TEXT    NOT NULL DEFAULT 'expedite',
+            new_confirmed_date  TEXT    NOT NULL DEFAULT '',
+            created_at          TEXT    NOT NULL,
+            updated_at          TEXT    NOT NULL,
+            resolved_at         TEXT    NOT NULL DEFAULT ''
+        );
+        INSERT INTO supply_cases (case_no, item_code, fo_id, ship_date, created_at, updated_at)
+        VALUES ('BG-0001', 'S02Y.0188', 'FO-1', '2026-06-10', '2026-06-10T00:00:00', '2026-06-10T00:00:00');
+    """)
+    conn.commit()
+    conn.close()
+
+    store = CaseStore(str(db_path))   # 打开旧库不应报错，且自动补列
+    cases = store.get_all_cases()
+    assert len(cases) == 1
+    assert cases[0].bottleneck_unanswered is False   # 迁移默认值，旧行按"已答复"兼容
+    # 迁移后可正常建新案（新列可写）
+    c2, created = store.create_case(item_code="S02Y.0189", fo_id="FO-2", customer_name="",
+                                    ship_date="2026-06-11", bottleneck_unanswered=True)
+    assert created is True and c2.bottleneck_unanswered is True

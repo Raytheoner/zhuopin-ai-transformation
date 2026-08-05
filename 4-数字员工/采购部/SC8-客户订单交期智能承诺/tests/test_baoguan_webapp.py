@@ -122,3 +122,30 @@ def test_cases_flow_and_customer_gate(monkeypatch):
     r = c.post("/cases/1", data={"actor": "保供小王", "note": "已催", "action": "advance"})
     assert r.status_code in (301, 302)
     assert "协调" in c.get("/cases/1").get_data(as_text=True)
+
+
+def test_manual_case_bottleneck_unanswered_checkbox_flows_to_customer_draft(monkeypatch):
+    """#223：手动建案勾选"瓶颈子件尚无供应商答复" → 对客草稿不得写"确定延期"。"""
+    app, c = _client(monkeypatch)
+    r = c.post("/cases/new", data={"item_code": "S02Y.0188", "fo_id": "FO-1",
+                                   "customer_name": "比亚迪", "ship_date": "2026-06-10",
+                                   "confirmed_gap_days": "61", "bottleneck_material": "S02Y.0188",
+                                   "bottleneck_unanswered": "on",
+                                   "actor": "运维"}, follow_redirects=False)
+    assert r.status_code in (301, 302)
+    detail = c.get("/cases/1").get_data(as_text=True)
+    assert "未答复，对客草稿将改用保守措辞" in detail
+    draft = c.get("/cases/1/draft?kind=customer").get_data(as_text=True)
+    assert "确定延期" not in draft
+    assert "交期未确认" in draft or "延期风险" in draft
+
+
+def test_manual_case_without_checkbox_defaults_to_answered(monkeypatch):
+    """未勾选 → 默认按已答复处理（与既有行为兼容），对客草稿沿用"确定延期"措辞。"""
+    app, c = _client(monkeypatch)
+    c.post("/cases/new", data={"item_code": "S02Y.0188", "fo_id": "FO-1",
+                               "customer_name": "比亚迪", "ship_date": "2026-06-10",
+                               "confirmed_gap_days": "61", "bottleneck_material": "S02Y.0188",
+                               "actor": "运维"}, follow_redirects=False)
+    draft = c.get("/cases/1/draft?kind=customer").get_data(as_text=True)
+    assert "预计调整至" in draft

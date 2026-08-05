@@ -28,6 +28,14 @@ def detect_new_red(curr, prev) -> list[dict]:
     return [r for r in curr.rows if r.get("risk") == "red" and red_key(r) not in prev_red]
 
 
+def _is_bottleneck_unanswered(row: dict) -> bool:
+    """瓶颈子件是否在本行"无答复子件明细"里——与 case_store.bottleneck_unanswered
+    同一判据（#223），建案时据此传入，驱动 case_draft.py 客户草稿措辞分支。"""
+    bn = row.get("bn") or "—"
+    nfd_ids = {d.get("id") for d in (row.get("nfd") or [])}
+    return bn in nfd_ids
+
+
 def _alert_markdown(row: dict) -> str:
     """单条真延期的企微保供运维消息（内部口径，不含客户名）。
 
@@ -38,8 +46,7 @@ def _alert_markdown(row: dict) -> str:
     """
     gap = row.get("gap")
     bn = row.get("bn") or "—"
-    nfd_ids = {d.get("id") for d in (row.get("nfd") or [])}
-    unanswered = bn in nfd_ids
+    unanswered = _is_bottleneck_unanswered(row)
     if unanswered:
         gap_txt = f"保守预警 +{gap} 天（未答复估算）" if gap is not None else "保守预警（未答复估算）"
         bn_txt = f"瓶颈子件（未答复）`{bn}`"
@@ -68,15 +75,13 @@ def dispatch_new_reds(new_reds: list[dict], case_store, *, webhook_url: str | No
             continue
         # 队列#147续：建案天数改用 gap（全量口径，与建案原因——该行判红——同源），
         # 不再用 cg（仅确定承诺，可能远小于实际驱动红色的全量估算天数）。
-        # ⚠️ 已知后续项（未在本次一并做）：case_store 的 confirmed_gap_days 字段名/
-        # case_draft.py 客户草稿模板"确定延期约X天"措辞仍隐含"这是真实确认"语义，
-        # 当驱动瓶颈是无答复子件时会不准确——案例处置中心/对客草稿层面的"确定 vs
-        # 保守预警"区分待后续任务补齐（对客闸 CUSTOMER_OUTBOUND_ENABLED 全程关闭，
-        # 当前无实际外发风险，仅内部案例记录措辞有此已知局限）。
+        # #223 已解决：bottleneck_unanswered 随建案一并落库，驱动 case_draft.py
+        # 客户草稿的"确定 vs 交期未确认"措辞分支，不再隐含"这是真实确认"的固定语义。
         case, created = case_store.create_case(
             item_code=item_code, fo_id=fo_id, customer_name=row.get("cust", ""),
             ship_date=ship_date, confirmed_gap_days=int(row.get("gap") or 0),
-            bottleneck_material=row.get("bn", ""))
+            bottleneck_material=row.get("bn", ""),
+            bottleneck_unanswered=_is_bottleneck_unanswered(row))
         if not created:        # 并发兜底：刚被别处建案
             continue
         content = _alert_markdown(row)

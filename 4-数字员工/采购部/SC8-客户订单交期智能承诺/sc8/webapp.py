@@ -120,6 +120,7 @@ def create_app(*, snapshot_store: SnapshotStore, case_store: CaseStore,
                 ship_date=(f.get("ship_date") or "").strip(),
                 confirmed_gap_days=int(f.get("confirmed_gap_days") or 0),
                 bottleneck_material=(f.get("bottleneck_material") or "").strip(),
+                bottleneck_unanswered=(f.get("bottleneck_unanswered") == "on"),
                 actor=(f.get("actor") or "运维").strip(), manual=True)
             if audit is not None:
                 _audit_case(audit, "baoguan_case_manual", item_code, fo_id)
@@ -340,6 +341,7 @@ def _case_detail_html(case, events) -> str:
             f'<b>计划出货</b> {_html.escape(case.ship_date)} · '
             f'<b>确定延期</b> <span style="color:#A32D2D">+{case.confirmed_gap_days} 天</span> · '
             f'<b>瓶颈子件</b> {_html.escape(case.bottleneck_material or "—")}'
+            f'{" <span style=\"color:#A32D2D\">（未答复，对客草稿将改用保守措辞）</span>" if case.bottleneck_unanswered else ""}'
             f'{(" · <b>新承诺</b> " + _html.escape(case.new_confirmed_date)) if case.new_confirmed_date else ""}</div>'
             f'{drafts}{form}'
             f'<div class="bg-card"><h3 style="margin:0 0 8px">操作历史</h3>'
@@ -363,6 +365,9 @@ def _case_new_html() -> str:
             '<label>计划出货日</label><input name="ship_date" type="date">'
             '<label>确定延期天数</label><input name="confirmed_gap_days" type="number" value="0">'
             '<label>瓶颈子件</label><input name="bottleneck_material">'
+            '<label style="display:flex;align-items:center;gap:6px;font-weight:normal">'
+            '<input type="checkbox" name="bottleneck_unanswered" style="width:auto">'
+            '瓶颈子件尚无供应商答复（对客草稿将改用"交期未确认"措辞，不写"确定延期"）</label>'
             '<label>操作人</label><input name="actor" placeholder="运维">'
             '<div style="margin-top:14px;display:flex;gap:10px">'
             '<button class="bg-btn primary" type="submit">建案</button>'

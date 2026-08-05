@@ -410,6 +410,70 @@ class ResolveBatchFilesUnitTests(unittest.TestCase):
         self.assertEqual(ambiguous, [])
 
 
+class CheckDirtyPathAgainstPendingBatchTests(unittest.TestCase):
+    """队列 #101①：`_check_dirty_paths_against_pending_batches` + CLI 模式单测。
+
+    只读、不需要 git 仓库——被测函数只读队列 markdown 文件，本类用普通临时目录
+    （非 git 仓库）验证 CLI 短路确实发生在 `_check_preconditions`/`.git` 断言之前。
+    供 `工具-主工作区安全同步.ps1` 在建议 `git checkout --` 弃改前调用。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmp.name)
+        (self.repo_root / "1-转型规划" / "0-全景路线图").mkdir(parents=True, exist_ok=True)
+        # 刻意不 git init——验证本检查模式不依赖真实 git 仓库。
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_queue(self, rows_md: str) -> None:
+        text = QUEUE_HEADER_ONLY.format(rows=rows_md)
+        (self.repo_root / sweep.QUEUE_REL).write_text(text, encoding="utf-8")
+
+    def test_declared_dirty_file_matches_pending_batch(self):
+        self._write_queue("| B-x | `4-数字员工/采购部/x.py` | `msg` | 待处理（登记）|\n")
+        results = sweep._check_dirty_paths_against_pending_batches(
+            self.repo_root, ["4-数字员工/采购部/x.py"])
+        self.assertEqual(results, [("4-数字员工/采购部/x.py", "B-x")])
+
+    def test_undeclared_dirty_file_does_not_match(self):
+        self._write_queue("| B-x | `4-数字员工/采购部/x.py` | `msg` | 待处理（登记）|\n")
+        results = sweep._check_dirty_paths_against_pending_batches(
+            self.repo_root, ["某个无关文件.md"])
+        self.assertEqual(results, [("某个无关文件.md", None)])
+
+    def test_completed_batch_not_treated_as_pending(self):
+        """已 ✅ 完成的批次不再算"待处理"——即便文件路径字面对得上，也不该拦
+        `git checkout --`：那属于批次完工后的新改动，不是本机制要保护的对象。"""
+        self._write_queue(
+            "| B-done | `4-数字员工/采购部/x.py` | `msg` | ✅ 已完成（sweep 自动落库）|\n")
+        results = sweep._check_dirty_paths_against_pending_batches(
+            self.repo_root, ["4-数字员工/采购部/x.py"])
+        self.assertEqual(results, [("4-数字员工/采购部/x.py", None)])
+
+    def test_multiple_paths_independently_resolved(self):
+        self._write_queue(
+            "| B-x | `a.py`／`b.py` | `msg` | 待处理（登记）|\n"
+            "| B-y | `c.py` | `msg` | 待处理（登记）|\n"
+        )
+        results = sweep._check_dirty_paths_against_pending_batches(
+            self.repo_root, ["a.py", "c.py", "d.py"])
+        self.assertEqual(results, [("a.py", "B-x"), ("c.py", "B-y"), ("d.py", None)])
+
+    def test_cli_mode_short_circuits_before_git_repo_assertion(self):
+        """CLI 模式须在 `_check_preconditions`（要求真实 `.git`）之前短路返回——
+        本用例的 repo_root 根本不是 git 仓库，若短路顺序错了会在此处报错而非
+        输出 MATCH/NOMATCH 行。"""
+        self._write_queue("| B-x | `4-数字员工/采购部/x.py` | `msg` | 待处理（登记）|\n")
+        proc = _run_sweep(self.repo_root, "--check-dirty-in-pending-batch",
+                          "4-数字员工/采购部/x.py", "无关文件.md")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        lines = proc.stdout.strip().splitlines()
+        self.assertIn("MATCH\tB-x\t4-数字员工/采购部/x.py", lines)
+        self.assertIn("NOMATCH\t无关文件.md", lines)
+
+
 class ExactMatchEndToEndTests(SweepTestBase):
     """队列 #234(1) 的 CLI 端到端复现：批次已正确声明的文件不应因"另一个
     同名文件也脏"而被误判歧义（08-04 真实现场：根 CLAUDE.md 因与
