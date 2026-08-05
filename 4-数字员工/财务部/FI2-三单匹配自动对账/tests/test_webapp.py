@@ -150,16 +150,18 @@ class _FakeU9cConnectorForQueue250:
     （10/20）与 `SrcPOLineNo`（30/40）刻意取不同数值——若问题3/4 的修复不小心把两者
     搞混，两组数字长得不像会立刻在测试里暴露。PO `FinalPriceTC`=11.30（含税）对应
     未税单价 10.00（`tax_rate`=0.13，300*1.13=339.00），验证问题1（不含税/价税合计
-    互换）与问题2（PO/AP 单价改未税）。
+    互换）与问题2（PO/AP 单价改未税）。`po_no` 用不带前缀的"ZPCGQ250001"（贴真实
+    U9C 单号命名，如"ZPCG20250902009"），避免与"PO-"展示前缀重叠掩盖问题6 的
+    "AP-AP-"双重前缀 bug（2026-08-05 真实部署冒烟发现，见 `_mapping_lines` 注释）。
     """
 
     def get_ap_lines(self, doc_no):
         return [
-            {"DocNo": "AP-Q250-1", "SrcPONo": "PO-Q250-1", "SrcPOLineNo": "30",
+            {"DocNo": "AP-Q250-1", "SrcPONo": "ZPCGQ250001", "SrcPOLineNo": "30",
              "DocLineNo": 10, "ItemCode": "Q250.001", "APQtyTU": 30.0, "TaxPrice": 11.3,
              "NonTaxAmtTC": 300.0, "TaxAmtTC": 39.0,
              "SrcRcvNo": "RCV-Q250-1", "SrcRcvLineNo": "30"},
-            {"DocNo": "AP-Q250-1", "SrcPONo": "PO-Q250-1", "SrcPOLineNo": "40",
+            {"DocNo": "AP-Q250-1", "SrcPONo": "ZPCGQ250001", "SrcPOLineNo": "40",
              "DocLineNo": 20, "ItemCode": "Q250.001", "APQtyTU": 20.0, "TaxPrice": 11.3,
              "NonTaxAmtTC": 200.0, "TaxAmtTC": 26.0,
              "SrcRcvNo": "RCV-Q250-1", "SrcRcvLineNo": "40"},
@@ -167,13 +169,41 @@ class _FakeU9cConnectorForQueue250:
 
     def get_purchase_lines(self, doc_no):
         return [
-            {"DocNo": "PO-Q250-1", "DocLineNo": 30, "ItemCode": "Q250.001",
+            {"DocNo": "ZPCGQ250001", "DocLineNo": 30, "ItemCode": "Q250.001",
              "ConfirmQty": 30.0, "FinalPriceTC": 11.3, "TaxRate": 0.13,
              "NetMnyTC": 300.0, "SupplierName": "测试供应商Q250",
              "BusinessDate": "2026-06-01T00:00:00"},
-            {"DocNo": "PO-Q250-1", "DocLineNo": 40, "ItemCode": "Q250.001",
+            {"DocNo": "ZPCGQ250001", "DocLineNo": 40, "ItemCode": "Q250.001",
              "ConfirmQty": 20.0, "FinalPriceTC": 11.3, "TaxRate": 0.13,
              "NetMnyTC": 200.0, "SupplierName": "测试供应商Q250",
+             "BusinessDate": "2026-06-01T00:00:00"},
+        ]
+
+    def get_gr_lines(self, doc_no):
+        return []
+
+
+class _FakeU9cConnectorForQueue250OutOfOrderLines:
+    """真实部署冒烟（2026-08-05）发现的两处边界打磨专测连接器：① 两条 AP 行共享同一
+    `SrcPOLineNo`（验证 ⑥ 行级映射不应重复列出该 PO 行号）；② 真实 AP 行号
+    （`DocLineNo`=50/5）与 `ap_list` 的排序键（`SrcPOLineNo`，两行相同故顺序不定）
+    方向不保证一致，验证多值"/"拼接按数值大小排序而非原始迭代顺序裸拼。"""
+
+    def get_ap_lines(self, doc_no):
+        return [
+            {"DocNo": "AP-Q250-3", "SrcPONo": "ZPCGQ250003", "SrcPOLineNo": "10",
+             "DocLineNo": 50, "ItemCode": "Q250.003", "APQtyTU": 10.0, "TaxPrice": 11.3,
+             "NonTaxAmtTC": 100.0, "TaxAmtTC": 13.0},
+            {"DocNo": "AP-Q250-3", "SrcPONo": "ZPCGQ250003", "SrcPOLineNo": "10",
+             "DocLineNo": 5, "ItemCode": "Q250.003", "APQtyTU": 5.0, "TaxPrice": 11.3,
+             "NonTaxAmtTC": 50.0, "TaxAmtTC": 6.5},
+        ]
+
+    def get_purchase_lines(self, doc_no):
+        return [
+            {"DocNo": "ZPCGQ250003", "DocLineNo": 10, "ItemCode": "Q250.003",
+             "ConfirmQty": 15.0, "FinalPriceTC": 11.3, "TaxRate": 0.13,
+             "NetMnyTC": 150.0, "SupplierName": "测试供应商Q250",
              "BusinessDate": "2026-06-01T00:00:00"},
         ]
 
@@ -232,9 +262,41 @@ class TestRunU9cModeQueue250DisplayFixes:
         assert "INV-Q250-A+" not in body and "INV-Q250-B+" not in body
 
         # 问题6：⑥行级映射链条格式——PO 行号(SrcPOLineNo)/AP 真实行号(DocLineNo)分列，
-        # 发票号只列一次（不再按 AP 行数重复整段发票列表）
-        assert "PO-PO-Q250-1 行30/行40 → AP-AP-Q250-1 行10/行20 → INV-Q250-A/INV-Q250-B" in body
+        # 发票号只列一次（不再按 AP 行数重复整段发票列表）；`ap_no` 本身已含"AP-"前缀，
+        # 不再叠出"AP-AP-"（真实部署冒烟发现，见 _mapping_lines 注释）
+        assert "PO-ZPCGQ250001 行30/行40 → AP-Q250-1 行10/行20 → INV-Q250-A/INV-Q250-B" in body
+        assert "AP-AP-Q250-1" not in body
         assert body.count("INV-Q250-A") == body.count("INV-Q250-B")
+
+    def test_out_of_order_ap_lines_dedup_and_numeric_sort(self, client, monkeypatch, tmp_path):
+        """真实部署冒烟（2026-08-05）发现的两处边界打磨：① 同一 PO 行被多条 AP 行共同
+        引用时，⑥行级映射不应重复列出该 PO 行号（如"行10/行10"）；② 多值"/"拼接须
+        按数值大小排序，不能按 `ap_list`（按 SrcPOLineNo 排序，两行相同时顺序不定）
+        的原始顺序裸拼导致真实 AP 行号乱序（如"50/5"）。"""
+        monkeypatch.setattr(
+            ZpConnector, "from_env",
+            classmethod(lambda cls, audit=None, **kw: _FakeU9cConnectorForQueue250OutOfOrderLines()),
+        )
+        sample_dir = tmp_path / "real_round1"
+        sample_dir.mkdir()
+        (sample_dir / "invoice.csv").write_text(
+            "inv_no,ap_no,item_code,unit,unit_price,inv_qty,untaxed_amount,tax_rate,tax_amount,inv_date\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", sample_dir)
+
+        r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-Q250-3"})
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+
+        # 问题3/4 格式（单号·行号列）：单个"行"前缀 + 数字用"/"隔开
+        assert "AP-Q250-3·行5/50" in body
+        assert "行50/5" not in body
+
+        # 问题6 链条格式：她的模板每个数字各自带"行"前缀（"行10/行20/行30"），与上面
+        # 的单号·行号列格式不同，此处按其模板核对
+        assert "PO-ZPCGQ250003 行10 → AP-Q250-3 行5/行50 → 缺发票" in body
+        assert "行10/行10" not in body
 
     def test_mock_po_card_untaxed_gross_direction_unchanged(self, client):
         """mock 夹具的 `unit_price`/`amount` 基准方向与真实 u9c 相反（mock：`unit_price`=

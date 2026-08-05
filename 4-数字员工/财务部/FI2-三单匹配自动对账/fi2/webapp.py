@@ -429,6 +429,16 @@ def _ap_real_line(a: APLine, ap_real_line_no: dict[int, str]) -> str:
     return v if v else a.line_no
 
 
+def _sorted_unique(values) -> list[str]:
+    """去重＋数字感知排序（真实部署冒烟发现，2026-08-05）：AP/PO 行号多为纯数字字符串
+    （如"10"/"20"），直接按字符串排序会把"10"排到"2"前面；`ap_list` 本身按
+    `a.line_no`（SrcPOLineNo）排序，同一料品分摊到多条 AP 行时，其真实 AP 行号
+    （DocLineNo）未必按同一顺序递增，直接拼接会得到"30/40/50/20/10"这类乱序、以及
+    同一 PO 行被多条 AP 行共同引用时的"行180/行180"重复——本函数统一去重+排序。"""
+    uniq = list(dict.fromkeys(values))
+    return sorted(uniq, key=lambda v: (0, int(v)) if v.isdigit() else (1, v))
+
+
 def _doc_card_po(po: POLine | None) -> str:
     if po is None:
         return '<div class="doc-card po"><h4>PO 采购订单</h4><div class="miss">— 缺失</div></div>'
@@ -451,7 +461,7 @@ def _doc_card_ap(ap_list: list[APLine], ap_real_line_no: dict[int, str]) -> str:
     untaxed = sum(x.untaxed_amount for x in ap_list)
     tax = sum(x.tax_amount for x in ap_list)
     # 问题4：多行用"/"列出真实 AP 行号，替代原"首行+裸'+'"的折叠指示符
-    line_disp = "/".join(dict.fromkeys(_ap_real_line(x, ap_real_line_no) for x in ap_list))
+    line_disp = "/".join(_sorted_unique(_ap_real_line(x, ap_real_line_no) for x in ap_list))
     rows = (
         ("单号·行号", f"{a.ap_no}·行{line_disp}"),
         ("料品编码", a.item_code), ("数量·单位", f"{qty:g}"),
@@ -493,18 +503,24 @@ def _mapping_lines(ap_list: list[APLine], inv_list: list[InvoiceLine], ap_real_l
     SrcPOLineNo，判定引擎既有语义不变）与 AP 自身行号（`ap_real_line_no`，问题3/4 同源
     新增的展示层专用映射）分开列出，不再混为一谈；② 原实现按 AP 行数逐行输出、每行都
     重复一次完整发票列表，是"发票号重复写了2次"的根因——改为整组只拼装一行，发票号
-    去重后只列一次；③ 多 PO 行/AP 行/发票号均用「/」隔开，不再用无分隔符的粘连字符串。"""
+    去重后只列一次；③ 多 PO 行/AP 行/发票号均去重＋数字感知排序后用「/」隔开（真实部署
+    冒烟发现：不去重会在同一 PO 行被多条 AP 行共同引用时重复出现，如"行180/行180"）；
+    ④ `ap_no`（如"AP-2026040083"）本身已含"AP-"前缀，不再像原实现那样再叠一层拼成
+    "AP-AP-2026040083"（同一真实部署冒烟发现，`po_no` 如"ZPCG...09"不含前缀，"PO-"
+    前缀予以保留）。"""
     if not ap_list:
         return "无PO无AP，孤立发票"
     po_nos = list(dict.fromkeys(a.po_no for a in ap_list))
     po_part = "、".join(
-        f'PO-{po_no} {"/".join(f"行{a.line_no}" for a in ap_list if a.po_no == po_no)}'
+        f'PO-{po_no} {"/".join("行" + ln for ln in _sorted_unique(a.line_no for a in ap_list if a.po_no == po_no))}'
         for po_no in po_nos
     )
     ap_no = ap_list[0].ap_no
-    ap_line_part = "/".join(dict.fromkeys(f"行{_ap_real_line(a, ap_real_line_no)}" for a in ap_list))
+    ap_line_part = "/".join(
+        "行" + ln for ln in _sorted_unique(_ap_real_line(a, ap_real_line_no) for a in ap_list)
+    )
     inv_part = "/".join(dict.fromkeys(i.inv_no for i in inv_list)) if inv_list else "缺发票"
-    return html.escape(f"{po_part} → AP-{ap_no} {ap_line_part} → {inv_part}")
+    return html.escape(f"{po_part} → {ap_no} {ap_line_part} → {inv_part}")
 
 
 def _four_dim_block(item: dict, price_infos, ap_list: list[APLine]) -> str:
@@ -540,7 +556,7 @@ def _build_row(idx: int, item: dict, ap_by_key, inv_by_key, price_by_key, ap_rea
     css_cls, row_cls, status_label = _STATUS_META[item["status"]]
     if ap_list:
         # 问题3：改用真实 AP 行号，多行用"/"隔开，替代原先误用 PO 行号拼出的"30-50"区间
-        line_disp = "/".join(dict.fromkeys(_ap_real_line(a, ap_real_line_no) for a in ap_list))
+        line_disp = "/".join(_sorted_unique(_ap_real_line(a, ap_real_line_no) for a in ap_list))
         ap_no_disp = f'{item["ap_no"]}·行{line_disp}'
     else:
         ap_no_disp = item["ap_no"]
