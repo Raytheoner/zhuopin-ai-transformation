@@ -22,8 +22,8 @@
 
 ## 5. 验收与收尾
 
-- [x] 5.1 全量回归（sweep + 编辑锁工具对应测试文件）零漂移：编辑锁 71 passed（含 2 条新增）；sweep 72→73 passed（含 5 条新增：4 条纯函数级 + 1 条端到端）
+- [x] 5.1 全量回归（sweep + 编辑锁工具对应测试文件）零漂移——**最终确认**：编辑锁 `python -m pytest test_工具-共享文档编辑锁.py` 71 passed（含 2 条新增，51.64s）；sweep `python -m pytest test_工具-落库sweep.py` **73 passed（含 5 条新增：4 条纯函数级 + 1 条端到端 subprocess/真实 git），532.48s，退出码 0**
 - [x] 5.2 两份工具文件头部说明段补充本次判据锚定的背景（沿用既有"文件头部记录设计决策历史"惯例）
-- [ ] 5.3 队列 §一 #248 行回填：状态、产出路径、单测清单、真实验证记录、历史兼容核对结果
-- [ ] 5.4 `/opsx:archive` 归档本变更包
-- [ ] 5.5 收工重跑文档台账
+- [x] 5.3 队列 §一 #248 行回填：状态、产出路径、单测清单、真实验证记录、历史兼容核对结果（本次 apply 收工段一并完成）
+- [x] 5.4 `/opsx:archive` 归档本变更包——已移至 `openspec/changes/archive/2026-08-05-sweep-editlock-status-keyword-anchoring/`；两个新增 capability（`sweep-batch-status-classification`/`editlock-assertion-gate-scope`）已同步进 `openspec/specs/`，`openspec validate --specs --strict` 43/43 通过
+- [x] 5.5 收工重跑文档台账
