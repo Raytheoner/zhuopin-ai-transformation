@@ -191,6 +191,25 @@ def _extract_board_commitments(
     return out
 
 
+def _chunk_date_windows(
+    start: date, end: date, *, max_span_days: int = 60,
+) -> list[tuple[str, str]]:
+    """把 `[start, end]` 切分成若干首尾相接、互不重叠的 ≤max_span_days 天窗口。
+
+    SRM `get_receive_board` 硬性单次查询跨度 ≤60 天（超出即抛错），故任何超过
+    该跨度的需求都必须拆成多次顺序查询（队列 #262）。窗口刻意不重叠（下一段
+    起点 = 上一段终点 + 1 天），避免边界日期的记录被两个窗口重复命中、在下游
+    累计计算里被计两次。`start > end` 返回空列表（调用方传参异常时不查）。
+    """
+    windows: list[tuple[str, str]] = []
+    cur = start
+    while cur <= end:
+        chunk_end = min(cur + timedelta(days=max_span_days), end)
+        windows.append((cur.isoformat(), chunk_end.isoformat()))
+        cur = chunk_end + timedelta(days=1)
+    return windows
+
+
 def load_material_commitments(
     mode: str, *, start: str | None = None, end: str | None = None,
     materials: set[str] | None = None, connector=None,
@@ -202,10 +221,20 @@ def load_material_commitments(
     的周期累计供需匹配、以及 `baoguan._component_supply_status` 的"答交数量/答交
     日期累计展示"（#18-a/b，队列 #139）共用。不做"取最早/去重"，原样保留全部承诺记录。
 
+    窗口（队列 #262，2026-08-05 根治）：`end` 缺省时不再是 `今天+60`——姚祖怡三度
+    举证（含本次 `R01A.1028` 案例）证实真实确认批次常落在 60 天窗口外（真实探测
+    见 `config.material_commitment_lookahead_days`），固定 60 天窗口会让"查不到"
+    和"真的没有"无法区分、看板对本该有答交的物料如实展示"无"。默认改用
+    `config.material_commitment_lookahead_days()`（180 天）；因 SRM 单次查询硬性
+    跨度 ≤60 天，`[今天, 今天+180]` 按 `_chunk_date_windows` 拆成多段顺序查询、
+    结果合并后再统一提取——**范围仅限本函数**，`load_srm_deliveries`/
+    `_extract_board_po_map`（驱动 kit_date/gap_days/四色风险判定的既有口径）
+    仍是各自独立的 60 天窗口，未经授权不改判定逻辑（红线不动，同 #211 v2 先例）。
+
     ⚠️ 与 `load_srm_deliveries` 各自独立请求 `get_receive_board`（未共享同一份响应）——
     两者在 `compute_snapshot` 里先后调用时会对携客云同一端点（1 req/30s 限流）连打
-    两次请求，第二次会被连接器自身的令牌桶/退避逻辑自动等待或重试（非本函数处理，
-    见 XkySrmConnector.get_receive_board），不会报错，只是多等最多约 30 秒。刻意不做
+    请求，后续请求会被连接器自身的令牌桶/退避逻辑自动等待或重试（非本函数处理，
+    见 XkySrmConnector.get_receive_board），不会报错，只是排队等待。刻意不做
     "预取 board 后共享"式耦合——保持与既有 `load_srm_deliveries`/`load_purchase_orders_by_material`
     一致的"各数据源独立可 monkeypatch/独立失败域"测试与降级架构，避免为省一次请求
     引入跨函数的隐式依赖。
@@ -215,9 +244,15 @@ def load_material_commitments(
     if connector is None:
         from zhuopin_platform.shared_tools.srm_connector.connector import XkySrmConnector
         connector = XkySrmConnector.from_env()
-    s = start or date.today().isoformat()
-    e = end or (date.today() + timedelta(days=60)).isoformat()
-    board = connector.get_receive_board(s, e)
+    start_d = date.fromisoformat(start) if start else date.today()
+    if end:
+        end_d = date.fromisoformat(end)
+    else:
+        from . import config
+        end_d = start_d + timedelta(days=config.material_commitment_lookahead_days())
+    board: list = []
+    for s, e in _chunk_date_windows(start_d, end_d):
+        board.extend(connector.get_receive_board(s, e))
     return _extract_board_commitments(board, materials)
 
 
