@@ -5,6 +5,7 @@ from zhuopin_platform.audit import AuditLogger
 from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
 from aibot_service.dispatch import dispatch_followup_letters, has_unmarked_imminent_deadline
+from aibot_service.readme_table import build_target_file_annotation
 
 from fakes import fake_client_factory
 
@@ -152,6 +153,64 @@ def test_unresolvable_file_ambiguity_is_recorded_as_failed(tmp_path):
     assert len(outcome.failed) == 1
     assert "无法唯一定位" in outcome.failed[0][1]
     assert store["client"].sent_messages == []
+
+
+# 队列 #241：dispatch 的行→文件匹配判据只用「收信人＋日期」，同日多封
+# 必然歧义（2026-08-04 首次真实触发命中）。修法⑴——README 行携带目标
+# 文件名标注，dispatch 优先读标注，不再仅凭「收信人＋日期」猜测。
+
+
+def test_annotated_row_resolves_uniquely_despite_same_day_ambiguity(tmp_path):
+    # 复现 #241 真实触发场景：同一收信人、同一天 3 个候选文件，仅凭
+    # 「收信人＋日期」必然歧义；标注目标文件名后应能唯一定位其中一个。
+    target = _write_letter(tmp_path, "采购部", "姚祖怡", "2026-07-29", topic="批2上月未齐套跨月占用判例批改")
+    _write_letter(tmp_path, "采购部", "姚祖怡", "2026-07-29", topic="批2修复交付与18-19两条如实说明")
+    _write_letter(tmp_path, "采购部", "姚祖怡", "2026-07-29", topic="齐料晚N天徽标真实缺陷已修复")
+    topic_cell = "批 2 引擎最后一项口径判例包" + build_target_file_annotation(target.name)
+    rows = f"| 2026-07-29 | 采购部 · 姚祖怡 | {topic_cell} | 不急 | 🆕 待发 |\n"
+    readme_path = _write_readme(tmp_path, rows)
+    audit, connector, store = _setup(tmp_path)
+
+    outcome = asyncio.run(
+        dispatch_followup_letters(readme_path=readme_path, connector=connector, audit=audit, today=TODAY)
+    )
+
+    assert outcome.failed == []
+    assert len(outcome.sent) == 1
+
+
+def test_annotated_row_with_missing_file_fails_without_falling_back_to_guessing(tmp_path):
+    # 标注的目标文件不存在（如被改名/移动）时，即便「收信人＋日期」glob
+    # 恰好唯一命中另一个文件，也不得静默回退去猜——标注失效本身就该被
+    # 看见，而不是悄悄发出一封可能文不对题的信。
+    _write_letter(tmp_path, "采购部", "姚祖怡", "2026-07-29", topic="真实存在的文件")
+    topic_cell = "主题" + build_target_file_annotation("采购部-姚祖怡-跟进-2026-07-29-不存在的文件.md")
+    rows = f"| 2026-07-29 | 采购部 · 姚祖怡 | {topic_cell} | 不急 | 🆕 待发 |\n"
+    readme_path = _write_readme(tmp_path, rows)
+    audit, connector, store = _setup(tmp_path)
+
+    outcome = asyncio.run(
+        dispatch_followup_letters(readme_path=readme_path, connector=connector, audit=audit, today=TODAY)
+    )
+
+    assert len(outcome.failed) == 1
+    assert "标注的目标文件不存在" in outcome.failed[0][1]
+    assert store["client"].sent_messages == []
+
+
+def test_unannotated_row_still_falls_back_to_department_name_date_glob(tmp_path):
+    # 未标注的历史行必须仍走旧判据（向后兼容），不因新增标注判据而失效。
+    rows = "| 2026-08-05 | 采购部 · 姚祖怡 | 未标注的旧行 | 不急 | 🆕 待发 |\n"
+    readme_path = _write_readme(tmp_path, rows)
+    _write_letter(tmp_path, "采购部", "姚祖怡", "2026-08-05")
+    audit, connector, store = _setup(tmp_path)
+
+    outcome = asyncio.run(
+        dispatch_followup_letters(readme_path=readme_path, connector=connector, audit=audit, today=TODAY)
+    )
+
+    assert outcome.failed == []
+    assert len(outcome.sent) == 1
 
 
 def test_multi_row_mixed_success_and_failure_all_processed(tmp_path):

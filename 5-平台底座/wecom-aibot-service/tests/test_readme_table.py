@@ -4,8 +4,12 @@ from aibot_service.readme_table import (
     DraftNotPendingReviewError,
     ReadmeTableError,
     assert_draft_pending_review,
+    build_target_file_annotation,
+    column_index,
+    extract_target_filename,
     iter_rows,
     locate_row,
+    split_department_and_name,
     write_status,
 )
 
@@ -77,3 +81,51 @@ def test_assert_draft_pending_review_rejects_other_values():
     for bad_value in ("🆕 待发", "✅ 已发", "", "⏳待你审"):
         with pytest.raises(DraftNotPendingReviewError):
             assert_draft_pending_review(bad_value)
+
+
+def test_column_index_finds_containing_header():
+    assert column_index(["日期", "收信人", "主要事项"], "收信人") == 1
+
+
+def test_column_index_returns_none_when_absent():
+    assert column_index(["日期", "收信人"], "交期要点") is None
+
+
+def test_split_department_and_name_extracts_department_and_bare_name():
+    assert split_department_and_name("质量部 · 陈忱（可分担朱映桦）") == ("质量部", "陈忱")
+
+
+def test_split_department_and_name_returns_none_pair_without_separator():
+    assert split_department_and_name("未知格式的收信人") == (None, None)
+
+
+# 队列 #241：dispatch 的行→文件匹配判据只用「收信人＋日期」，同日多封
+# 必然歧义。修法⑴——README 行携带目标文件名，dispatch 直接读、不再猜。
+
+
+def test_extract_target_filename_reads_canonical_annotation():
+    topic = "批 2 引擎最后一项口径判例包" + build_target_file_annotation("采购部-姚祖怡-跟进-2026-07-29-x.md")
+    assert extract_target_filename(topic) == "采购部-姚祖怡-跟进-2026-07-29-x.md"
+
+
+def test_extract_target_filename_reads_historical_verbose_annotation():
+    # 队列 #150 那行的真实措辞（值周巡检人工消歧时手写，非本函数生成），
+    # 用词比 build_target_file_annotation 的固定格式更啰嗦——本函数须兼容，
+    # 不要求回改历史行。
+    topic = (
+        "请批\"上月未齐套项目的物料\"这 1 项　→ **目标文件（2026-08-04 值周"
+        "巡检消歧）**：`采购部-姚祖怡-跟进-2026-07-29-批2上月未齐套跨月占用"
+        "判例批改.md`（同日另两封…不是本行…）"
+    )
+    assert extract_target_filename(topic) == (
+        "采购部-姚祖怡-跟进-2026-07-29-批2上月未齐套跨月占用判例批改.md"
+    )
+
+
+def test_extract_target_filename_returns_none_when_absent():
+    assert extract_target_filename("普通主题，未标注目标文件") is None
+
+
+def test_build_target_file_annotation_round_trips():
+    annotation = build_target_file_annotation("部门-姓名-跟进-2026-08-05-事项.md")
+    assert extract_target_filename(annotation) == "部门-姓名-跟进-2026-08-05-事项.md"

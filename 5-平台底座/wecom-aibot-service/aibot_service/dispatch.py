@@ -14,8 +14,12 @@
   "·"后、遇"（"/"("截断前的主名，映射到已知的五位专员/IT userid（同
   `whitelist.py`/`department_mapping.yaml` 既有真实值）。未知姓名一律
   跳过+记失败原因，不臆造。
-- 文件路径：按 R4 命名律 `<部门>-<姓名>-跟进-<日期>-*.md` 在 README 同
-  目录下 glob；零匹配或多于一个匹配（歧义）一律跳过+记失败原因，不猜。
+- 文件路径：**优先**读"主要事项"列里队列 #241 标注的目标文件名
+  （`readme_table.extract_target_filename`，起草时统一写入）直接定位；
+  未标注的历史行回落按 R4 命名律 `<部门>-<姓名>-跟进-<日期>-*.md` 在
+  README 同目录下 glob——零匹配或多于一个匹配（歧义）一律跳过+记失败
+  原因，不猜（这条兜底判据本身在同日多封时必然歧义，正是 #241 要根治
+  的场景，标注优先后只作向后兼容）。
 """
 from __future__ import annotations
 
@@ -30,7 +34,12 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
 from .delivery import BackfillWriteError, DeliveryNotFinalizedError, push_followup
 from .gates import FINALIZED_STATUS_MARKER
-from .readme_table import iter_rows
+from .readme_table import (
+    column_index,
+    extract_target_filename,
+    iter_rows,
+    split_department_and_name,
+)
 
 # design.md D3（既有）：硬截止交付的跟进信显式标注，自动任务结构性跳过。
 MANUAL_ONLY_MARKER = "🔒人工发送"
@@ -86,41 +95,35 @@ def has_unmarked_imminent_deadline(
     )
 
 
-def _column_index(header_cells: list[str], contains: str) -> Optional[int]:
-    for i, cell in enumerate(header_cells):
-        if contains in cell:
-            return i
-    return None
-
-
-def _split_department_and_name(recipient_cell: str) -> tuple[Optional[str], Optional[str]]:
-    """"质量部 · 陈忱（可分担朱映桦）" -> ("质量部", "陈忱")。取不到则返回
-    (None, None)，调用方据此判失败，不臆造。"""
-    if "·" not in recipient_cell:
-        return None, None
-    department, _, rest = recipient_cell.partition("·")
-    department = department.strip()
-    name = rest.strip()
-    for cut in ("（", "("):
-        idx = name.find(cut)
-        if idx != -1:
-            name = name[:idx]
-    name = name.strip()
-    if not department or not name:
-        return None, None
-    return department, name
-
-
 def _resolve_letter_files(
     letters_dir: Path, department: str, name: str, date_str: str,
 ) -> tuple[Optional[Path], Optional[Path]]:
     """按 R4 命名律 `<部门>-<姓名>-跟进-<日期>-*.md` 唯一匹配；零匹配/多
-    匹配均视为无法解析（返回 (None, None)），不猜哪个是正确文件。"""
+    匹配均视为无法解析（返回 (None, None)），不猜哪个是正确文件。
+
+    队列 #241：仅在 README 行未标注目标文件名（`readme_table.extract_
+    target_filename` 返回 None）时才走到这条 glob 判据——同日多封给同一
+    收信人时，这条判据本身就会命中多个候选、必然歧义，这正是 #241 的
+    触发场景，判据侧的根治是标注优先，本函数只作向后兼容的兜底。"""
     pattern = f"{department}-{name}-跟进-{date_str}-*.md"
     matches = sorted(letters_dir.glob(pattern))
     if len(matches) != 1:
         return None, None
     md_path = matches[0]
+    docx_path = md_path.with_suffix(".docx")
+    return md_path, (docx_path if docx_path.exists() else None)
+
+
+def _resolve_letter_file_by_name(
+    letters_dir: Path, filename: str,
+) -> tuple[Optional[Path], Optional[Path]]:
+    """队列 #241：README 行标注了目标文件名时按文件名直接定位，不再走
+    「收信人＋日期」glob 猜测。文件不存在即视为无法解析（标注失效——如
+    被改名/移动），不静默回退到旧的猜测逻辑：「标注说是这个、实际发的是
+    猜出来的另一个」比"安全跳过"更危险，不可取。"""
+    md_path = letters_dir / filename
+    if not md_path.exists():
+        return None, None
     docx_path = md_path.with_suffix(".docx")
     return md_path, (docx_path if docx_path.exists() else None)
 
@@ -156,9 +159,10 @@ async def dispatch_followup_letters(
         return outcome
 
     header_cells = rows[0].header_cells
-    deadline_idx = _column_index(header_cells, "交期要点")
-    date_idx = _column_index(header_cells, "日期")
-    recipient_idx = _column_index(header_cells, "收信人")
+    deadline_idx = column_index(header_cells, "交期要点")
+    date_idx = column_index(header_cells, "日期")
+    recipient_idx = column_index(header_cells, "收信人")
+    topic_idx = column_index(header_cells, "主要事项")
     letters_dir = readme_path.parent
 
     for row in rows:
@@ -187,13 +191,23 @@ async def dispatch_followup_letters(
             row.cells[recipient_idx] if recipient_idx is not None and recipient_idx < len(row.cells) else ""
         )
         date_cell = row.cells[date_idx] if date_idx is not None and date_idx < len(row.cells) else ""
-        department, name = _split_department_and_name(recipient_cell)
+        topic_cell = row.cells[topic_idx] if topic_idx is not None and topic_idx < len(row.cells) else ""
+        department, name = split_department_and_name(recipient_cell)
         chatid = KNOWN_RECIPIENT_USERIDS.get(name) if name else None
-        md_path, docx_path = (
-            _resolve_letter_files(letters_dir, department, name, date_cell)
-            if department and name and date_cell
-            else (None, None)
-        )
+
+        # 队列 #241：标注优先——README 行若在"主要事项"列携带目标文件名
+        # （起草时统一由 readme_table.build_target_file_annotation 写入），
+        # 直接按文件名定位，不再仅凭「收信人＋日期」猜测（同日多封必然
+        # 歧义）。未标注的历史行回落旧判据，向后兼容。
+        target_filename = extract_target_filename(topic_cell)
+        if target_filename:
+            md_path, docx_path = _resolve_letter_file_by_name(letters_dir, target_filename)
+        else:
+            md_path, docx_path = (
+                _resolve_letter_files(letters_dir, department, name, date_cell)
+                if department and name and date_cell
+                else (None, None)
+            )
 
         if chatid is None:
             reason = f"无法解析收件人 chatid（收信人列：{recipient_cell!r}）"
@@ -201,7 +215,10 @@ async def dispatch_followup_letters(
             _record(audit, "dispatch_row_skipped_unresolvable", evaluator, preview, reason=reason)
             continue
         if md_path is None:
-            reason = f"无法唯一定位对应 .md 文件（部门={department}/姓名={name}/日期={date_cell}）"
+            if target_filename:
+                reason = f"标注的目标文件不存在：{target_filename!r}"
+            else:
+                reason = f"无法唯一定位对应 .md 文件（部门={department}/姓名={name}/日期={date_cell}）"
             outcome.failed.append((preview, reason))
             _record(audit, "dispatch_row_skipped_unresolvable", evaluator, preview, reason=reason)
             continue
