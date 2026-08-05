@@ -361,6 +361,18 @@ class FeedSource:
                 )
         return self._u9c_ap_rows_cache
 
+    def raw_ap_rows(self) -> list[dict]:
+        """展示层专用（队列 #250，问题3/4）：u9c 源下曝出最近一次 `load_ap_lines()`
+        已缓存的原始 `AP/Query` 行（含 `DocLineNo`——AP 单据自身行号，`_map_u9c_ap_row`
+        未映射进 `APLine` 的字段，因 `APLine.line_no` 固定语义为 `SrcPOLineNo`，供
+        `price_check.py` 与 PO 做 `(po_no, line_no)` join，不可挪作他用，见该方法注释）。
+        与 `load_ap_lines()` 返回的 `APLine` 列表按同序一一对应（`_map_u9c_ap_row` 经
+        list comprehension、`parse_ap_lines` 经同序 append，均不重排/不过滤），调用方
+        （webapp.py）借此按位置配对还原真实 AP 行号，供"展开详情"展示用，不影响任何
+        判定逻辑。非 u9c 源或尚未调用过 `load_ap_lines()`/`load_po_lines()`/`load_grn()`
+        （三者共享同一缓存）时返回空列表。"""
+        return list(self._u9c_ap_rows_cache) if self._u9c_ap_rows_cache else []
+
     def load_po_lines(self) -> list[POLine]:
         if self.data_source == "u9c":
             if self.u9c_connector is None:

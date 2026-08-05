@@ -25,6 +25,29 @@ D19 改造（2026-08-03，队列 #214/§四#43，唐燕萍验收 v8 结构后唯
 填路径）存在则读取，否则维持现状 fail-loud（design D15-b 既定行为不变）。判定口径
 （`match_engine.py`/`result_classify.py`/`price_check.py`/`config.py`/`models.py`）一字
 未动。报告页在发票源为人工誊录小样时显式标注"⚠️ 发票为人工誊录小样，OCR 未接入"。
+
+队列 #250 六项显示修正（2026-08-05，唐燕萍用真实 AP 号跑通 D19 轮1后回件"判定逻辑结果
+与预期一致，仅面板显示有6处问题"）：**继续只改本文件，判定口径零改动**。
+1. **问题1**（PO 卡片"不含税金额"/"价税合计"两列写反）——新增 `_po_untaxed_gross()`：
+   不假设 `POLine.unit_price`/`amount` 哪个是含税，取 `qty*unit_price` 与 `amount` 两个
+   总额中较大者为价税合计、较小者为不含税金额（税率>0 时恒成立）。根因：`amount` 字段
+   在 mock/csv 手工夹具里是价税合计、在真实 u9c 映射（`NetMnyTC`）里是未税金额，两个方向
+   相反，原代码硬编码只对前者成立。
+2. **问题2**（PO/AP 卡片"单价"应改未税，与发票口径一致）——PO 用
+   `_po_untaxed_gross()` 拆出的未税金额 / qty；AP 用 `untaxed_amount`/qty（该字段
+   在两种基准下都无歧义，不需 `_po_untaxed_gross()` 式判据）。**已核实**：R7 单价强制
+   比对（`price_check.py`）比对的是 `unit_price` 原始字段（PO=`FinalPriceTC`、
+   AP=`TaxPrice`，均含税、同基准），与本次仅调整展示值互不影响，比对口径未变。
+3. **问题3/4**（AP 行号显示成 PO 行号）——根因：`feed_source._map_u9c_ap_row` 把
+   `APLine.line_no` 固定映射为 `SrcPOLineNo`（PO join 用，`price_check.py` 依赖，不可
+   改），从未捕获真实 `DocLineNo`（AP 单据自身行号，见 U9C API 文档 §3）。新增
+   `FeedSource.raw_ap_rows()`（展示层专用只读访问器，暴露已缓存的原始 u9c AP 行）+
+   `webapp._u9c_ap_real_line_no()`（按位置对应生成 `id(APLine)→DocLineNo` 展示层映射，
+   mock/csv 源或映射缺失时回落 `a.line_no`，行为不变）。
+4. **问题5**（发票号末尾多余"+"）——与问题4 同源：原实现对"多行折叠"统一用
+   "首个值+裸'+'"表示，改为对多值去重后用"/"列出全部真实值（AP 行号/发票号）。
+5. **问题6**（⑥行级映射：缺 AP 行号 + 发票号重复 + 粘连难读）——`_mapping_lines()`
+   重写为链条格式，PO 行号与 AP 真实行号分列、发票号去重只列一次、多值用"/"分隔。
 """
 from __future__ import annotations
 
@@ -265,7 +288,28 @@ def _money(v) -> str:
     return "—" if v is None else f"{v:,.2f}"
 
 
+def _safe_div(a, b):
+    return a / b if b else None
+
+
 # ────────────────────────────── 引擎编排（原样复用 fi2.run.run 的调用序列，见模块 docstring）──────────────────────────────
+
+def _u9c_ap_real_line_no(ap_lines: list[APLine], raw_ap_rows: list[dict]) -> dict[int, str]:
+    """展示层专用映射（队列 #250，问题3/4）：u9c 源下 AP 单据自身行号（`DocLineNo`，
+    真实 API 字段文档 `7-外部文档/财务部/...API接口文档...md` §3 已列明，与
+    `SrcPOLineNo`——即 `APLine.line_no`，price_check.py 做 PO join 的固定语义——是两个
+    不同字段）。`id(APLine 实例) → DocLineNo`，与 `raw_ap_rows`（`fs.raw_ap_rows()`）按
+    位置一一对应（见该方法注释）；长度不一致（非 u9c 源、或调用方未先跑
+    `load_ap_lines()`）时返回空 dict，调用方一律回落 `a.line_no` 展示（mock/csv 模式
+    维持原有展示不变）。不改变 `APLine.line_no` 本身，不影响任何判定逻辑。"""
+    if not raw_ap_rows or len(ap_lines) != len(raw_ap_rows):
+        return {}
+    out: dict[int, str] = {}
+    for ap, raw in zip(ap_lines, raw_ap_rows):
+        v = raw.get("DocLineNo")
+        out[id(ap)] = "" if v is None else str(v)
+    return out
+
 
 def _run_with_detail(
     data_source: str, *, csv_dir: Path | None = None, evaluator: str = "", period: str = "",
@@ -278,13 +322,16 @@ def _run_with_detail(
 
     `invoice_sample_dir`（design D19，队列 #214/§四#43）：仅在 `data_source="u9c"` 下有
     意义，调用方传入 `_INVOICE_SAMPLE_DIR`（已存在 invoice.csv 时）或 `None`；原样透传给
-    `FeedSource`，不新增判定逻辑。"""
+    `FeedSource`，不新增判定逻辑。
+
+    返回值新增 `ap_real_line_no`（队列 #250，问题3/4）：见 `_u9c_ap_real_line_no`。"""
     fs = FeedSource(data_source, mock_dir=_MOCK_DIR, csv_dir=csv_dir,
                      u9c_connector=u9c_connector, ap_doc_nos=ap_doc_nos,
                      ap_supplier_codes=ap_supplier_codes, invoice_sample_dir=invoice_sample_dir)
     po_lines = fs.load_po_lines()
     ap_lines = fs.load_ap_lines()
     invoice_rows = fs.load_invoice()
+    ap_real_line_no = _u9c_ap_real_line_no(ap_lines, fs.raw_ap_rows())
 
     linked, orphaned = partition_invoices(ap_lines, invoice_rows)
     items = classify_all(ap_lines, linked)
@@ -299,7 +346,7 @@ def _run_with_detail(
         data_sources={"po": fs.data_source, "ap": fs.data_source, "invoice": invoice_source_label},
         evaluator=evaluator, period=period, audit=audit,
     )
-    return rep, po_lines, ap_lines, linked, orphaned, price_results
+    return rep, po_lines, ap_lines, linked, orphaned, price_results, ap_real_line_no
 
 
 # ────────────────────────────── v8 行视图构建（纯展示层聚合，不改判定）──────────────────────────────
@@ -360,30 +407,58 @@ _STATUS_META = {
 }
 
 
+def _po_untaxed_gross(po: POLine) -> tuple[float, float]:
+    """PO 未税金额／价税合计（问题1，唐燕萍 2026-08-04 回件）：不假设 `unit_price`／
+    `amount` 哪个是含税——两者在 mock/csv 手工夹具（`unit_price`=未税单价／`amount`=
+    价税合计）与真实 u9c 映射（`FinalPriceTC`=含税单价／`NetMnyTC`=未税金额，design
+    D15-a②/D19 已实测确认）里方向相反，原代码 `不含税金额=qty*unit_price`／
+    `价税合计=amount` 只在其中一种方向下成立，另一方向（真实 u9c，她举证
+    `ZPCG20250902009` 即命中）恰好读反。税率>0 时价税合计恒大于未税金额，两个总额
+    （`qty*unit_price` 与 `amount`）里较大者即价税合计、较小者即未税金额——与两种基准
+    方向均自洽，故本判据不依赖某一方数据源的字段命名假设。"""
+    total_a = po.qty * po.unit_price
+    total_b = po.amount
+    return (total_a, total_b) if total_a <= total_b else (total_b, total_a)
+
+
+def _ap_real_line(a: APLine, ap_real_line_no: dict[int, str]) -> str:
+    """问题3/4 共享：优先取 u9c 源下的真实 AP 行号（`DocLineNo`），未命中（mock/csv 源，
+    或未提供映射）时回落 `a.line_no`（=SrcPOLineNo，mock/csv 夹具里historically 即被
+    当作"行号"直接使用，展示层不变）。"""
+    v = ap_real_line_no.get(id(a))
+    return v if v else a.line_no
+
+
 def _doc_card_po(po: POLine | None) -> str:
     if po is None:
         return '<div class="doc-card po"><h4>PO 采购订单</h4><div class="miss">— 缺失</div></div>'
+    untaxed, gross = _po_untaxed_gross(po)
     rows = (
         ("单号·行号", f"{po.po_no}·行{po.line_no}"), ("供应商", po.supplier or "—"),
-        ("数量·单位", f"{po.qty:g}"), ("单价", _money(po.unit_price)),
-        ("不含税金额", _money(po.qty * po.unit_price)), ("税率", _pct_plain(po.tax_rate)),
-        ("价税合计", _money(po.amount)), ("下单日期", po.po_date or "—"),
+        ("数量·单位", f"{po.qty:g}"), ("单价", _money(_safe_div(untaxed, po.qty))),
+        ("不含税金额", _money(untaxed)), ("税率", _pct_plain(po.tax_rate)),
+        ("价税合计", _money(gross)), ("下单日期", po.po_date or "—"),
     )
     dl = "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(str(v))}</dd>" for k, v in rows)
     return f'<div class="doc-card po"><h4>PO 采购订单</h4><dl>{dl}</dl></div>'
 
 
-def _doc_card_ap(ap_list: list[APLine]) -> str:
+def _doc_card_ap(ap_list: list[APLine], ap_real_line_no: dict[int, str]) -> str:
     if not ap_list:
         return '<div class="doc-card ap"><h4>AP 应付单</h4><div class="miss">— 缺失</div></div>'
     a = ap_list[0]
     qty = sum(x.qty for x in ap_list)
     untaxed = sum(x.untaxed_amount for x in ap_list)
     tax = sum(x.tax_amount for x in ap_list)
+    # 问题4：多行用"/"列出真实 AP 行号，替代原"首行+裸'+'"的折叠指示符
+    line_disp = "/".join(dict.fromkeys(_ap_real_line(x, ap_real_line_no) for x in ap_list))
     rows = (
-        ("单号·行号", f"{a.ap_no}·行{a.line_no}" + ("+" if len(ap_list) > 1 else "")),
+        ("单号·行号", f"{a.ap_no}·行{line_disp}"),
         ("料品编码", a.item_code), ("数量·单位", f"{qty:g}"),
-        ("单价", _money(a.unit_price)), ("不含税金额", _money(untaxed)),
+        # 问题2：单价改未税（untaxed_amount/qty 在 mock/csv/u9c 三种源下均无歧义，见 models.py
+        # 字段注释——不同于 PO，AP 本就带独立的 untaxed_amount/tax_amount 字段，不需 _po_untaxed_gross
+        # 式的方向判据）
+        ("单价", _money(_safe_div(untaxed, qty))), ("不含税金额", _money(untaxed)),
         ("税额", _money(tax)), ("价税合计", _money(untaxed + tax)), ("配票日期", a.ap_date or "—"),
     )
     dl = "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(str(v))}</dd>" for k, v in rows)
@@ -397,8 +472,10 @@ def _doc_card_inv(inv_list: list[InvoiceLine]) -> str:
     qty = sum(x.inv_qty for x in inv_list)
     untaxed = sum(x.untaxed_amount for x in inv_list)
     tax = sum(x.tax_amount for x in inv_list)
+    # 问题5：多票去重后用"/"列出，替代原"首票+裸'+'"（与问题4 同一折叠指示符实现，同源同修）
+    inv_no_disp = "/".join(dict.fromkeys(x.inv_no for x in inv_list))
     rows = (
-        ("发票号", i.inv_no + ("+" if len(inv_list) > 1 else "")), ("料品编码", i.item_code),
+        ("发票号", inv_no_disp), ("料品编码", i.item_code),
         ("数量·单位", f"{qty:g}{i.unit or ''}"), ("单价", _money(i.unit_price)),
         ("不含税金额", _money(untaxed)), ("税率", _pct_plain(i.tax_rate)),
         ("税额", _money(tax)), ("价税合计", _money(untaxed + tax)), ("开票日期", i.inv_date or "—"),
@@ -411,14 +488,23 @@ def _pct_plain(v) -> str:
     return "—" if v is None else f"{v * 100:.0f}%"
 
 
-def _mapping_lines(po_no_lines: list[APLine], inv_list: list[InvoiceLine]) -> str:
-    if not po_no_lines:
+def _mapping_lines(ap_list: list[APLine], inv_list: list[InvoiceLine], ap_real_line_no: dict[int, str]) -> str:
+    """⑥ 行级映射链条格式（问题6，唐燕萍 2026-08-04 回件）：① PO 行号（`a.line_no`／
+    SrcPOLineNo，判定引擎既有语义不变）与 AP 自身行号（`ap_real_line_no`，问题3/4 同源
+    新增的展示层专用映射）分开列出，不再混为一谈；② 原实现按 AP 行数逐行输出、每行都
+    重复一次完整发票列表，是"发票号重复写了2次"的根因——改为整组只拼装一行，发票号
+    去重后只列一次；③ 多 PO 行/AP 行/发票号均用「/」隔开，不再用无分隔符的粘连字符串。"""
+    if not ap_list:
         return "无PO无AP，孤立发票"
-    lines = []
-    for a in po_no_lines:
-        inv_part = "、".join(f"发票{i.inv_no}" for i in inv_list) if inv_list else "缺发票"
-        lines.append(f"PO-{a.po_no} 行{a.line_no} → AP-{a.ap_no} → {inv_part}")
-    return "<br>".join(html.escape(x) for x in lines)
+    po_nos = list(dict.fromkeys(a.po_no for a in ap_list))
+    po_part = "、".join(
+        f'PO-{po_no} {"/".join(f"行{a.line_no}" for a in ap_list if a.po_no == po_no)}'
+        for po_no in po_nos
+    )
+    ap_no = ap_list[0].ap_no
+    ap_line_part = "/".join(dict.fromkeys(f"行{_ap_real_line(a, ap_real_line_no)}" for a in ap_list))
+    inv_part = "/".join(dict.fromkeys(i.inv_no for i in inv_list)) if inv_list else "缺发票"
+    return html.escape(f"{po_part} → AP-{ap_no} {ap_line_part} → {inv_part}")
 
 
 def _four_dim_block(item: dict, price_infos, ap_list: list[APLine]) -> str:
@@ -445,19 +531,20 @@ def _four_dim_block(item: dict, price_infos, ap_list: list[APLine]) -> str:
     return f'<div class="check-block"><h5>① 四维匹配</h5>{body}{tip}</div>'
 
 
-def _build_row(idx: int, item: dict, ap_by_key, inv_by_key, price_by_key) -> str:
+def _build_row(idx: int, item: dict, ap_by_key, inv_by_key, price_by_key, ap_real_line_no: dict[int, str]) -> str:
     """渲染一行（并拢 <tr> + 展开 <tr id=detail-N>）。"""
     key = (item["ap_no"], normalize_item_code(item["item_code"]))
     ap_list = sorted(ap_by_key.get(key, []), key=lambda a: a.line_no)
     price_infos = price_by_key.get(key, [])
 
     css_cls, row_cls, status_label = _STATUS_META[item["status"]]
-    ap_no_disp = f'{item["ap_no"]}·行{ap_list[0].line_no}' if ap_list else item["ap_no"]
-    if len(ap_list) > 1:
-        ap_no_disp = f'{item["ap_no"]}·行{ap_list[0].line_no}-{ap_list[-1].line_no}'
-        merge_badge = '<span class="merge-badge">合并</span>'
+    if ap_list:
+        # 问题3：改用真实 AP 行号，多行用"/"隔开，替代原先误用 PO 行号拼出的"30-50"区间
+        line_disp = "/".join(dict.fromkeys(_ap_real_line(a, ap_real_line_no) for a in ap_list))
+        ap_no_disp = f'{item["ap_no"]}·行{line_disp}'
     else:
-        merge_badge = ""
+        ap_no_disp = item["ap_no"]
+    merge_badge = '<span class="merge-badge">合并</span>' if len(ap_list) > 1 else ""
 
     if item["status"] == "needs_review":
         reason = html.escape(_ap_inv_reason_text(item))
@@ -495,7 +582,8 @@ def _ap_inv_reason_text(item: dict) -> str:
     return "；".join(bits)
 
 
-def _render_table(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price_results) -> str:
+def _render_table(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price_results,
+                   ap_real_line_no: dict[int, str]) -> str:
     ap_by_key, inv_by_key = _group_lines(ap_lines, linked_invoices)
     price_by_key = _price_group(price_results)
     po_by_key = {(p.po_no, p.line_no): p for p in po_lines}
@@ -508,20 +596,20 @@ def _render_table(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, pric
         inv_list = inv_by_key.get(key, [])
         price_infos = price_by_key.get(key, [])
 
-        rows_html.append(_build_row(idx, item, ap_by_key, inv_by_key, price_by_key))
+        rows_html.append(_build_row(idx, item, ap_by_key, inv_by_key, price_by_key, ap_real_line_no))
 
         po_cards = "".join(_doc_card_po(po_by_key.get((a.po_no, a.line_no))) for a in ap_list) or _doc_card_po(None)
         detail = f"""
 <tr class="row-detail" id="detail-{idx}" style="display:none">
   <td colspan="10">
-    <div class="doc-cards">{po_cards}{_doc_card_ap(ap_list)}{_doc_card_inv(inv_list)}</div>
+    <div class="doc-cards">{po_cards}{_doc_card_ap(ap_list, ap_real_line_no)}{_doc_card_inv(inv_list)}</div>
     <div class="check-blocks">
       {_four_dim_block(item, price_infos, ap_list)}
       <div class="check-block"><h5>② OCR 字段校验（8字段）</h5>{_STUB}</div>
       <div class="check-block"><h5>③ 税率合规</h5>{_STUB}</div>
       <div class="check-block"><h5>④ 重复发票检测</h5>{_STUB}</div>
       <div class="check-block"><h5>⑤ PO 变更检测</h5>{_STUB_POCHANGE}</div>
-      <div class="check-block"><h5>⑥ 行级映射</h5>{_mapping_lines(ap_list, inv_list)}</div>
+      <div class="check-block"><h5>⑥ 行级映射</h5>{_mapping_lines(ap_list, inv_list, ap_real_line_no)}</div>
     </div>
   </td>
 </tr>"""
@@ -553,7 +641,7 @@ def _render_table(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, pric
 </tr>
 <tr class="row-detail" id="detail-{idx}" style="display:none">
   <td colspan="10">
-    <div class="doc-cards">{_doc_card_po(None)}{_doc_card_ap([])}{_doc_card_inv([inv])}</div>
+    <div class="doc-cards">{_doc_card_po(None)}{_doc_card_ap([], ap_real_line_no)}{_doc_card_inv([inv])}</div>
     <div class="check-blocks">
       <div class="check-block"><h5>① 四维匹配</h5>无法核对（孤立发票，找不到对应AP单/PO单）</div>
       <div class="check-block"><h5>② OCR 字段校验（8字段）</h5>{_STUB}</div>
@@ -603,7 +691,8 @@ def _render_block_flow() -> str:
     )
 
 
-def _report_page(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price_results) -> str:
+def _report_page(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price_results,
+                  ap_real_line_no: dict[int, str]) -> str:
     ds = rep["data_sources"]
     n_pass = rep["summary"]["l3_suggested_pass"]
     n_l2 = rep["summary"]["l2_self_resolved"]
@@ -639,7 +728,7 @@ def _report_page(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price
 
 <div class="card">
   <h3 style="margin:0 0 8px;font-size:14px">📋 三单核对明细表 — 点击行号展开/收起详情</h3>
-  {_render_table(rep, po_lines, ap_lines, linked_invoices, orphaned, price_results)}
+  {_render_table(rep, po_lines, ap_lines, linked_invoices, orphaned, price_results, ap_real_line_no)}
 </div>
 
 {_render_block_flow()}
@@ -720,7 +809,7 @@ def create_app(*, reports_dir: Path) -> Flask:
 
         audit = AuditLogger.jsonl(audit_path)
         try:
-            rep, po_lines, ap_lines, linked, orphaned, price_results = _run_with_detail(
+            rep, po_lines, ap_lines, linked, orphaned, price_results, ap_real_line_no = _run_with_detail(
                 data_source, csv_dir=csv_dir, evaluator=evaluator, period=period,
                 audit=audit, u9c_connector=u9c_connector,
                 ap_doc_nos=ap_doc_nos, ap_supplier_codes=ap_supplier_codes,
@@ -732,6 +821,9 @@ def create_app(*, reports_dir: Path) -> Flask:
                 _error_page(f"对账失败：{exc}\n\n{traceback.format_exc()}"), mimetype="text/html"
             ), 500
 
-        return Response(_report_page(rep, po_lines, ap_lines, linked, orphaned, price_results), mimetype="text/html")
+        return Response(
+            _report_page(rep, po_lines, ap_lines, linked, orphaned, price_results, ap_real_line_no),
+            mimetype="text/html",
+        )
 
     return app

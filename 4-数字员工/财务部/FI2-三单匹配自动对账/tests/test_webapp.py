@@ -143,6 +143,115 @@ class TestRunU9cModeInvoiceSampleD19:
         assert "对账失败" in r.get_data(as_text=True)
 
 
+class _FakeU9cConnectorForQueue250:
+    """队列 #250（唐燕萍 2026-08-04 回件 6 项显示问题）测试用假连接器。
+
+    同一 AP 单号下两条行共享料号（触发合并展示，验证多值场景）：真实 `DocLineNo`
+    （10/20）与 `SrcPOLineNo`（30/40）刻意取不同数值——若问题3/4 的修复不小心把两者
+    搞混，两组数字长得不像会立刻在测试里暴露。PO `FinalPriceTC`=11.30（含税）对应
+    未税单价 10.00（`tax_rate`=0.13，300*1.13=339.00），验证问题1（不含税/价税合计
+    互换）与问题2（PO/AP 单价改未税）。
+    """
+
+    def get_ap_lines(self, doc_no):
+        return [
+            {"DocNo": "AP-Q250-1", "SrcPONo": "PO-Q250-1", "SrcPOLineNo": "30",
+             "DocLineNo": 10, "ItemCode": "Q250.001", "APQtyTU": 30.0, "TaxPrice": 11.3,
+             "NonTaxAmtTC": 300.0, "TaxAmtTC": 39.0,
+             "SrcRcvNo": "RCV-Q250-1", "SrcRcvLineNo": "30"},
+            {"DocNo": "AP-Q250-1", "SrcPONo": "PO-Q250-1", "SrcPOLineNo": "40",
+             "DocLineNo": 20, "ItemCode": "Q250.001", "APQtyTU": 20.0, "TaxPrice": 11.3,
+             "NonTaxAmtTC": 200.0, "TaxAmtTC": 26.0,
+             "SrcRcvNo": "RCV-Q250-1", "SrcRcvLineNo": "40"},
+        ]
+
+    def get_purchase_lines(self, doc_no):
+        return [
+            {"DocNo": "PO-Q250-1", "DocLineNo": 30, "ItemCode": "Q250.001",
+             "ConfirmQty": 30.0, "FinalPriceTC": 11.3, "TaxRate": 0.13,
+             "NetMnyTC": 300.0, "SupplierName": "测试供应商Q250",
+             "BusinessDate": "2026-06-01T00:00:00"},
+            {"DocNo": "PO-Q250-1", "DocLineNo": 40, "ItemCode": "Q250.001",
+             "ConfirmQty": 20.0, "FinalPriceTC": 11.3, "TaxRate": 0.13,
+             "NetMnyTC": 200.0, "SupplierName": "测试供应商Q250",
+             "BusinessDate": "2026-06-01T00:00:00"},
+        ]
+
+    def get_gr_lines(self, doc_no):
+        return []
+
+
+class TestRunU9cModeQueue250DisplayFixes:
+    """队列 #250：判定逻辑无误（唐燕萍原话），只修展示层——本类验证 6 项均已修正
+    且互不冲突，判定/分类结果不受影响（结构断言沿用既有 D19 全链路验证方式）。"""
+
+    def test_six_display_issues_fixed_in_u9c_mode(self, client, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            ZpConnector, "from_env",
+            classmethod(lambda cls, audit=None, **kw: _FakeU9cConnectorForQueue250()),
+        )
+        sample_dir = tmp_path / "real_round1"
+        sample_dir.mkdir()
+        (sample_dir / "invoice.csv").write_text(
+            "inv_no,ap_no,item_code,unit,unit_price,inv_qty,untaxed_amount,tax_rate,tax_amount,inv_date\n"
+            "INV-Q250-A,AP-Q250-1,Q250.001,个,10,30,300.0,0.13,39.0,2026-06-01\n"
+            "INV-Q250-B,AP-Q250-1,Q250.001,个,10,20,200.0,0.13,26.0,2026-06-01\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", sample_dir)
+
+        r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-Q250-1"})
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+
+        po_card = body[body.index('<div class="doc-card po">'):]
+        po_card = po_card[:po_card.index("</div>")]
+        ap_card = body[body.index('<div class="doc-card ap">'):]
+        ap_card = ap_card[:ap_card.index("</div>")]
+        inv_card = body[body.index('<div class="doc-card inv">'):]
+        inv_card = inv_card[:inv_card.index("</div>")]
+
+        # 问题1：PO 卡片"不含税金额"/"价税合计"不再写反（300.00 未税 / 339.00 价税合计）
+        assert "<dt>不含税金额</dt><dd>300.00</dd>" in po_card
+        assert "<dt>价税合计</dt><dd>339.00</dd>" in po_card
+
+        # 问题2：PO/AP"单价"均改未税单价 10.00（原含税 11.30 不再直接当"单价"展示）
+        assert "<dt>单价</dt><dd>10.00</dd>" in po_card
+        assert "<dt>单价</dt><dd>10.00</dd>" in ap_card
+
+        # 问题3：并拢行"AP单号·行号"显示真实 AP 行号 10/20，不是被误用的 PO 行号 30/40
+        assert "AP-Q250-1·行10/20" in body
+        assert "行30-40" not in body
+
+        # 问题4：AP 卡片"单号·行号"同样显示真实行号，多行"/"分隔，无裸"+"折叠符
+        assert "AP-Q250-1·行10/20" in ap_card
+        assert "行30+" not in ap_card and "行10+" not in ap_card
+
+        # 问题5：发票号去重后"/"列出，末尾不再有多余"+"
+        assert "<dt>发票号</dt><dd>INV-Q250-A/INV-Q250-B</dd>" in inv_card
+        assert "INV-Q250-A+" not in body and "INV-Q250-B+" not in body
+
+        # 问题6：⑥行级映射链条格式——PO 行号(SrcPOLineNo)/AP 真实行号(DocLineNo)分列，
+        # 发票号只列一次（不再按 AP 行数重复整段发票列表）
+        assert "PO-PO-Q250-1 行30/行40 → AP-AP-Q250-1 行10/行20 → INV-Q250-A/INV-Q250-B" in body
+        assert body.count("INV-Q250-A") == body.count("INV-Q250-B")
+
+    def test_mock_po_card_untaxed_gross_direction_unchanged(self, client):
+        """mock 夹具的 `unit_price`/`amount` 基准方向与真实 u9c 相反（mock：`unit_price`=
+        未税单价／`amount`=价税合计；u9c：`unit_price`=含税单价／`amount`=未税金额，
+        见 webapp.py 模块 docstring 问题1 说明）。`_po_untaxed_gross()` 对两个方向都要
+        给出正确结果——本测试锁定 mock 方向（本来就正确）不因本次改动而漂移。
+        PO-1000：qty=100,unit_price=10,amount=1130,tax_rate=0.13 → 不含税金额=1,000.00／
+        价税合计=1,130.00／单价=10.00，与改造前展示值完全一致。"""
+        r = client.post("/run", data={"data_source": "mock"})
+        body = r.get_data(as_text=True)
+        po_card = body[body.index('<div class="doc-card po">'):]
+        po_card = po_card[:po_card.index("</div>")]
+        assert "<dt>不含税金额</dt><dd>1,000.00</dd>" in po_card
+        assert "<dt>价税合计</dt><dd>1,130.00</dd>" in po_card
+        assert "<dt>单价</dt><dd>10.00</dd>" in po_card
+
+
 class TestRunMockModeV8Panel:
     """mock 演示数据全链路：v8 结论看板 + 并拢主表 + 展开详情（工程细节由 test_golden.py 覆盖，
     本处只验证 Web 层正确透传 recon_report 输出并按 v8 规格重新排布，不重复验证引擎判定逻辑本身）。"""
