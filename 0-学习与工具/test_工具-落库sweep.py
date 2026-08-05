@@ -173,6 +173,38 @@ class HappyPathTests(SweepTestBase):
         self.assertTrue(log_file.exists())
         self.assertIn("已落库并推送", log_file.read_text(encoding="utf-8"))
 
+    def test_end_to_end_248_incident_row_is_not_swept_while_genuine_pending_row_still_is(self):
+        """队列 #248 端到端真实验证（非 dry-run，走真实 CLI + 真实 git 提交）：
+        一行状态列开头是 ✅ 已完成、句级分隔符之后的说明文字引用了判据原文
+        （含"待"字）的行，不应被 sweep 取活覆写；同一轮里一条真正待处理的行
+        仍应正常落库——证明取活→落库→回写全链路在修法后依然正常工作，
+        判据既不误取活也不会收得过紧。"""
+        self._init_and_push(rows="")
+        done_row_status = (
+            "**✅ 已完成**（sweep 自动落库 2026-08-05 08:00 UTC）。"
+            "说明：本次登记文字引用了 sweep 判据原文"
+            "「既不含 ✅ 也不含表示尚未处理的单字」，仅作说明，不影响本行已完成状态。"
+        )
+        rows = (
+            f"| B-248复现 | `0-全景路线图/跨桌任务队列.md`（占位，不应被处理） "
+            f"| `docs(test): 不应发生的提交` | {done_row_status} |\n"
+            "| B-真实待处理 | `0-全景路线图/跨桌任务队列.md`（同文件，验证不受上一行影响） "
+            "| `docs(test): 应该发生的提交` | 待处理（登记，待 sweep 落库） |\n"
+        )
+        self._write_queue(rows)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertIn("B-248复现", pushed_queue)
+        self.assertIn(done_row_status, pushed_queue,
+                       "开头✅、分隔符之后引用判据关键词的行，内容不应被 sweep 改动/覆写")
+        self.assertIn("B-真实待处理", pushed_queue)
+        self.assertNotIn("待处理（登记，待 sweep 落库）", pushed_queue,
+                          "真正待处理的行应被正常取活并回写为已完成，不能因本次修法而收得过紧")
+        self.assertIn("sweep 自动落库", pushed_queue)
+
 
 class SafetyGateTests(SweepTestBase):
     def test_orphan_dirty_file_does_not_block_unrelated_batch(self):
@@ -363,6 +395,45 @@ class ClassifySectionTwoRowsUnitTests(unittest.TestCase):
         # C-已完成 既不在待处理也不在模糊状态里——正常略过，不告警。
         all_ids = {r["batch_id"] for r in pending} | {r["batch_id"] for r in ambiguous}
         self.assertNotIn("C-已完成", all_ids)
+
+    def test_leading_segment_excludes_quoted_rule_citation_after_separator(self):
+        """队列 #248 真实事故复现：开头是完成标记，句级分隔符之后的说明文字
+        引用了判据原文（含"待"字），不应因此被误判为待处理。"""
+        row = {
+            "batch_id": "B-0805_复现248事故",
+            "status_cell": (
+                "**✅ 已完成**（sweep 自动落库 2026-08-05 08:00 UTC）。"
+                "说明：本次登记文字引用了 sweep 判据原文"
+                "「既不含 ✅ 也不含表示尚未处理的单字」，仅作说明，不影响本行已完成状态。"
+            ),
+        }
+        pending, ambiguous = sweep._classify_section_two_rows([row])
+        self.assertEqual(pending, [], "句级分隔符之后引用判据关键词，不应被判为待处理（回归 #248）")
+        self.assertEqual(ambiguous, [])
+
+    def test_leading_segment_excludes_citation_after_dash_separator(self):
+        """同 #248 场景，但用"——"破折号分隔（项目另一常见句级分隔写法）。"""
+        row = {
+            "batch_id": "B-0805_破折号变体",
+            "status_cell": "**✅ 已完成**（sweep 自动落库）——原判据讨论：待字样出现在此处不应触发误判",
+        }
+        pending, ambiguous = sweep._classify_section_two_rows([row])
+        self.assertEqual(pending, [], "破折号之后的判据讨论文字不应触发误判")
+        self.assertEqual(ambiguous, [])
+
+    def test_no_separator_still_detects_pending_within_short_cell(self):
+        """反向用例：短促、无句级分隔符的状态列（真实误写场景），'待'字仍须被检出，
+        不能因为本次改判据而让判据收得过紧、导致真正待处理的批次被漏判。"""
+        row = {"batch_id": "B-短促误写", "status_cell": "✅ 已完成（本次登记，待 sweep 落库）"}
+        pending, ambiguous = sweep._classify_section_two_rows([row])
+        self.assertEqual([r["batch_id"] for r in pending], ["B-短促误写"])
+
+    def test_fullwidth_space_and_asterisk_prefix_stripped(self):
+        """队列 #248 决策点 4：前导剥离字符集含全角空格。"""
+        row = {"batch_id": "B-全角空格前导", "status_cell": "　**✅ 已完成**（sweep 自动落库）"}
+        pending, ambiguous = sweep._classify_section_two_rows([row])
+        self.assertEqual(pending, [])
+        self.assertEqual(ambiguous, [], "全角空格+星号剥离后开头即为✅，应判已完成而非模糊状态")
 
 
 class ResolveBatchFilesUnitTests(unittest.TestCase):

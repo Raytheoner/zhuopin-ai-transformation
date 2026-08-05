@@ -1064,6 +1064,52 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         result = self._release(who="A")
         self.assertNotEqual(result, 0)
 
+    def test_quoted_unverified_phrase_alongside_unquoted_p1_does_not_block(self):
+        """队列 #248 真实取证复现（#221 行）：状态列同时含未加引号保护的 P1
+        定级 token 与被「」引号包裹的"未做的核实"字样——后者是在引用/复述
+        这条规则本身（如"「未做的核实如实登记」起了作用的正面案例"），不是
+        在断言当前判断未核实，不应拦截。"""
+        self._write_queue(
+            section_one_rows=(
+                "| 150 | 某降级项 | 姚祖怡 | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-07-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "| 150 | 某降级项 | 姚祖怡 | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-07-01 |",
+            "| 150 | 某降级项 | 姚祖怡 | 指针 | 产出 | "
+            "🔽 P1 → P3 降级：本行是「未做的核实如实登记」起了作用的正面案例 "
+            "| 触碰区 | 2026-07-01 |",
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0, "引号内的未核实字样不应触发断言门槛")
+
+    def test_unquoted_unverified_phrase_outside_quotes_still_blocks(self):
+        """反向用例：即便状态列里有一部分被引号保护，只要引号之外仍存在真实
+        的 P0/P1 定级 + 未核实字样共现，仍必须拦——引号剔除不能被用来"藏"
+        一处真实的未核实断言。"""
+        self._write_queue(
+            section_one_rows=(
+                "| 150 | 某风险项 | 姚祖怡 | 指针 | 产出 | 待领 | 触碰区 | 2026-07-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "| 150 | 某风险项 | 姚祖怡 | 指针 | 产出 | 待领 | 触碰区 | 2026-07-01 |",
+            "| 150 | 某风险项 | 姚祖怡 | 指针 | 产出 | "
+            "「引用讨论未做的核实这条规则」，但本行结论 P1 未核实影响面 "
+            "| 触碰区 | 2026-07-01 |",
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0, "引号之外的真实 P1+未核实共现仍须拦截")
+
     def test_non_default_target_skips_structural_validation(self):
         """`--file` 指向非默认队列文件时，四项校验一律不生效——即便内容
         显然不合规（列数错、无高水位线行等）。"""

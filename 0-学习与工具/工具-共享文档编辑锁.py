@@ -83,6 +83,24 @@ REPO_ROOT 按 `git rev-parse --git-common-dir` 定位——所有 git worktree
 `Path(__file__).resolve()` 推算，会按各 worktree 自己的 checkout 路径
 各算各的锁、互相看不见，已修复，见交接说明）。
 
+④断言门槛引号剔除（队列 #248，openspec 变更包
+`sweep-editlock-status-keyword-anchoring`，2026-08-05）：2026-08-03 落地
+的④断言门槛（见上，成因 #221）已把扫描范围从整行收窄到状态列本身，但
+仍是状态列内的整体子串扫描——真实取证：队列 §一 #221 行状态列当前就带着
+未加引号保护的 P1 定级 token，与被「」引号包裹的"未做的核实"字样（该行
+讲述的是它自己被"未做的核实如实登记"这条纪律救回的正面案例，是在
+**引用/复述**这条规则，不是在**断言**当前判断未核实）——若该行被再次
+编辑触发本校验，会被误拦。改为扫描前先剔除被「」/『』（现存生产队列
+文件里出现 339/339、9/9 次，完全均衡，是稳定且专用于引用语境的书写
+惯例）完整包裹的片段，只对剩余文本做原有的 P0/P1+未核实共现检测——
+真正未加引号保护、共现于状态列的断言仍被正确拦截，见 `_strip_quoted_
+spans` 与 `test_quoted_unverified_phrase_alongside_unquoted_p1_does_
+not_block`/`test_unquoted_unverified_phrase_outside_quotes_still_
+blocks` 两个反向配对用例。同批同源修法见 sweep 侧
+`_leading_status_segment`（两处判据历史上都经历过"整行扫描→只查状态列"
+这一次收窄，本次是该收窄路径的下一步；两处具体实现不同，design.md
+完整论证了原因）。
+
 用法：
   python 0-学习与工具/工具-共享文档编辑锁.py acquire --who "CC-QD-B" --note "登记#87完成"
   python 0-学习与工具/工具-共享文档编辑锁.py release
@@ -189,6 +207,22 @@ ROW_NUMBER_SECTIONS = ("一", "四")
 # 若含"未核／未做的核实"字样即拒绝 release——标注未核不等于可据此下结论。
 UNVERIFIED_ROW_PHRASES = ("未核", "未做的核实")
 P0_P1_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])P[01](?![A-Za-z0-9])")
+# 队列 #248（2026-08-05）：④断言门槛扫描前先剔除中文引号包裹的片段——现存
+# 生产队列文件里「」出现 339/339 次、『』出现 9/9 次，完全均衡，是稳定且
+# 专用于"引用/复述一段话"的书写惯例（区别于英文直引号 `"` 在本项目里 1000
+# 次高频出现但大量用于路径/代码片段等无关语境、且不成对，纳入会有误伤真实
+# 断言文本的风险，故不在剔除范围内）。真实取证：队列 §一 #221 行状态列
+# 当前就带着未加引号保护的 P1 定级 token，与被「」包裹的"未做的核实"字样
+# （该行讲述的是它自己被"未核实如实登记"这条纪律救回的正面案例，是在引用
+# /复述这条规则，不是在断言当前判断未核实）——若该行被再次编辑触发本校验，
+# 剔除引号片段前会被误拦；剔除后不再命中，与人工判断一致（详见 openspec
+# 变更包 `sweep-editlock-status-keyword-anchoring` design.md「历史兼容核对」）。
+QUOTED_SPAN_RE = re.compile(r"「[^」]*」|『[^』]*』")
+
+
+def _strip_quoted_spans(text: str) -> str:
+    """剔除文本中被「」/『』完整包裹的片段，仅用于④断言门槛的扫描预处理。"""
+    return QUOTED_SPAN_RE.sub("", text)
 LIVE_SECTION_HEADING_RE = re.compile(r"^## ([一二三四])、", re.MULTILINE)
 # §一/§四 表头首列 "#"、§二 表头首列 "批次"；分隔行首列全为 "-"/空白。
 _TABLE_HEADER_FIRST_CELLS = ("#", "批次", "")
@@ -665,7 +699,10 @@ def _validate_release_structure(
       是在叙述/讨论相关内容本身（如 #225/#230 两行正是在提议/记录这条
       规则），不是该行当前的权威结论——按整行扫描会把这类历史叙述误判为
       新违规，连"只把状态列改成已完成"这种收尾动作都拦下（2026-08-04
-      dogfooding 本行改造时的真实案例，见 #225/#230 行）。
+      dogfooding 本行改造时的真实案例，见 #225/#230 行）。队列 #248（2026-08-05）
+      再收窄一层：扫描前剔除被「」/『』引号包裹的片段——只查状态列仍不够，
+      状态列内引用/复述判据关键词本身（而非断言当前判断）同样不应触发，
+      见 QUOTED_SPAN_RE 定义处的真实案例（#221 行）。
     """
     violations: list[str] = []
     current_text = _read_target_text(args.file)
@@ -754,7 +791,7 @@ def _validate_release_structure(
                 # 本行改造时的真实案例）。状态列是本项目实际存放"当前结论"
                 # 的地方，检查它才对应 #221 真正的失败模式：结论（P1）与
                 # 免责声明（未核）同时出现在同一处"当前判断"里。
-                status_cell = cells[5]
+                status_cell = _strip_quoted_spans(cells[5])
                 if P0_P1_TOKEN_RE.search(status_cell) and any(
                     p in status_cell for p in UNVERIFIED_ROW_PHRASES
                 ):
