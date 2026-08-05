@@ -208,23 +208,60 @@ def _classify(gap_days: int | None, confirmed_gap: int | None, has_bom: bool,
     return RISK_GREEN, f"齐料按期（{gap_txt}）{cbn}"
 
 
+def _bom_subtree_product_ids(bom: list, product_id: str) -> set[str]:
+    """从 product_id 出发（沿主料/非替代料路径）递归收集其全部半成品子件的
+    product_id（含自身）。
+
+    只沿主料路径下钻（`not row.is_substitute`）——与 `_gross_need` 的 `main_bom`
+    过滤同一口径：替代料本身的子结构不算这个成品"官方" BOM 树的一部分，它只是
+    某个料位的候选之一。半成品判定：component_id 本身在 bom 里也作为某行的
+    product_id 出现（即它自己还有子件），与 `kit_engine.explode_bom` 判定
+    "是否继续展开"的 sub_assemblies 同一口径。
+    """
+    all_product_ids = {row.product_id for row in bom}
+    result = {product_id}
+    frontier = {product_id}
+    while frontier:
+        next_frontier = set()
+        for row in bom:
+            if (row.product_id in frontier and not row.is_substitute
+                    and row.component_id in all_product_ids
+                    and row.component_id not in result):
+                result.add(row.component_id)
+                next_frontier.add(row.component_id)
+        frontier = next_frontier
+    return result
+
+
 def _substitute_groups(bom: list, product_id: str) -> dict[str, list[str]]:
-    """按 sequence 把 product_id 直属行的主料/替代料分组（C-1，2026-07-15）。
+    """按 (product_id, sequence) 把 product_id 及其全部半成品子件（递归）的
+    主料/替代料分组（C-1，2026-07-15；多层穿透，队列 #263，2026-08-05）。
 
     返回 {主料 component_id: [替代料 component_id, ...]}；无替代料关系的料位不出现在结果中。
 
-    仅扫描 `product_id` 直属行——本函数只关心"这个成品自己的直接子件里谁跟谁互为
-    替代料"，与 BOM 取数深度（`config.bom_max_depth`，姚祖怡 07-26 V6 #9 后已提高到
-    多层）无关。半成品自身的替代料关系（若半成品自己的子件里也有替代料）需要对其
-    自身 product_id 再调一次本函数，未见真实需求前是独立后续任务。
+    **根因与范围（队列 #213 真实举证，#263 落地）**：C-1 落地时只扫描 `product_id`
+    直属行，替代料若定义在半成品子件**自己的** BOM 里（而非成品直属行）则永远
+    看不到——本函数当初的 docstring 已预留"半成品自身的替代料关系……未见真实
+    需求前是独立后续任务"。真实案例 `F02N.0233`：替代关系 `R01A.0707`↔`R01A.0012`
+    定义在半成品子件 `S02Y.0207` 自己的 BOM 里，此前误判为缺口（该替代料从未
+    被纳入齐套判定）。本次改为先算出 `product_id` 的全部半成品子件闭包
+    （`_bom_subtree_product_ids`），再跨全部层级扫描分组，合并到同一份扁平
+    字典（下游 `_covered_by_stock`/`_kittable_qty`/`_demand_kittable_qty` 按
+    component_id 查找，不关心该替代关系定义在哪一层）。
+
+    分组键改用 `(product_id, sequence)` 而非单纯 `sequence`——不同半成品各自
+    的项次编号互相独立，同序号在不同产品下代表完全不同的料位，混用会误并组
+    （单层 BOM 场景下 `product_id` 恒为传入的 `product_id` 本身，退化为与改造
+    前等价，零漂移）。
     """
-    by_sequence: dict[str, list] = {}
+    subtree_ids = _bom_subtree_product_ids(bom, product_id)
+    by_key: dict[tuple[str, str], list] = {}
     for row in bom:
-        if row.product_id != product_id or not row.sequence:
+        if row.product_id not in subtree_ids or not row.sequence:
             continue
-        by_sequence.setdefault(row.sequence, []).append(row)
+        by_key.setdefault((row.product_id, row.sequence), []).append(row)
     result: dict[str, list[str]] = {}
-    for rows in by_sequence.values():
+    for rows in by_key.values():
         primaries = [r for r in rows if not r.is_substitute]
         substitutes = [r for r in rows if r.is_substitute]
         if not primaries or not substitutes:
