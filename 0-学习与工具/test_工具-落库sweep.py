@@ -171,7 +171,12 @@ class HappyPathTests(SweepTestBase):
 
         log_file = self.work / sweep.LOG_REL
         self.assertTrue(log_file.exists())
-        self.assertIn("已落库并推送", log_file.read_text(encoding="utf-8"))
+        # 队列 #288 起，提交与推送职责拆分——批次先"已本地提交"，推送发生
+        # 在本轮末尾统一的一次"已统一推送"，不再是单个批次自己的"已落库
+        # 并推送"（旧文案）。
+        log_text = log_file.read_text(encoding="utf-8")
+        self.assertIn("已本地提交", log_text)
+        self.assertIn("已统一推送", log_text)
 
     def test_end_to_end_248_incident_row_is_not_swept_while_genuine_pending_row_still_is(self):
         """队列 #248 端到端真实验证（非 dry-run，走真实 CLI + 真实 git 提交）：
@@ -281,11 +286,16 @@ class StragglerTailTests(SweepTestBase):
 
 
 class LateForwardCheckTests(SweepTestBase):
-    """要求③"推送非快进"里最难构造的时序：本地已经 commit 完批次内容，
-    真要 push 前才发现 origin/master 已经分叉——用直接调用内部函数的方式
-    构造该状态，CLI 级黑盒测试无法确定性地插入这个时间点。"""
+    """要求③"推送非快进"场景——2026-08-06 起（队列 #288，openspec 变更包
+    `sweep-ff-sync-batch-reorder`）职责已拆分：`_process_normal_batch` 只
+    负责本地提交，不再自己校验快进/推送；"origin 已分叉时如何处理"这一
+    职责整体移到批次提交完成后的统一对齐步骤（见 `SyncReorderTests`，覆盖
+    "不冲突自动 rebase 推送成功"与"真实冲突安全回滚+复用分叉告警"两种
+    子场景）。本类保留下来，专门验证"职责已经真的移走"这一契约本身：
+    `_process_normal_batch` 在 origin 已分叉时应该正常完成本地提交、
+    不再抛出任何异常——避免未来有人不小心把校验逻辑加回这个函数里。"""
 
-    def test_process_normal_batch_stops_when_push_not_fast_forward(self):
+    def test_process_normal_batch_only_commits_locally_even_when_origin_has_diverged(self):
         self._init_and_push(rows="")
         row_line = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
                     "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
@@ -295,7 +305,7 @@ class LateForwardCheckTests(SweepTestBase):
         row = next(r for r in rows if r["batch_id"] == "B-TEST")
 
         # 另开一个 clone，向 origin 推一个本地工作区看不到的提交，制造分叉——
-        # 模拟"其他并发 session 在本次 sweep 处理期间抢先 push 了 master"。
+        # 模拟"其他并发 session 已经抢先 push 了 master"。
         other_clone = self.work.parent / "other_clone"
         _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
         _git(other_clone, "config", "user.email", "other@example.com")
@@ -306,15 +316,21 @@ class LateForwardCheckTests(SweepTestBase):
         _git(other_clone, "push", "-q", "origin", "master")
 
         log: list[str] = []
-        with self.assertRaises(sweep.SweepAbort) as ctx:
-            sweep._process_normal_batch(self.work, row, [sweep.QUEUE_REL], dry_run=False, log=log)
-        self.assertEqual(ctx.exception.exit_code, 2)
-        self.assertIn("本地已提交", str(ctx.exception))
-        self.assertIn("推送非快进", str(ctx.exception))
+        # 不应再抛出 SweepAbort——是否能与 origin 对齐已不是这个函数的职责。
+        sweep._process_normal_batch(self.work, row, [sweep.QUEUE_REL], dry_run=False, log=log)
 
-        # 本地提交没有被撤销（不是"假装什么都没发生"），但也没有被强推上去。
-        local_head = _git(self.work, "rev-parse", "HEAD").stdout.strip()
+        local_log = _git(self.work, "log", "--oneline").stdout
+        self.assertIn("测试批次落库", local_log, "批次内容应已在本地提交")
+        # 不要求 git status 完全无输出——编辑锁工具留下的 `.editlock*` 标记
+        # 文件在真实项目里已被 .gitignore 排除，本测试夹具未声明同款忽略
+        # 规则，属正常噪音（同 SyncReorderTests 里同一处说明）；真正要断言
+        # 的是队列文件本身已提交、不再是脏改动。
+        dirty_after = [ln for ln in _git(self.work, "status", "--porcelain").stdout.splitlines()
+                       if ln[3:] == sweep.QUEUE_REL]  # 精确比对路径，避免误配 .editlock* 等前缀同名文件
+        self.assertEqual(dirty_after, [], "队列文件应已随批次一起提交，不应仍是脏改动")
+        # origin 完全不受影响——分叉的处理是另一个函数的职责，不在这里发生。
         origin_head = _git(self.origin, "rev-parse", "master").stdout.strip()
+        local_head = _git(self.work, "rev-parse", "HEAD").stdout.strip()
         self.assertNotEqual(local_head, origin_head)
         local_log = _git(self.work, "log", "--oneline").stdout
         self.assertIn("测试批次落库", local_log)
@@ -714,10 +730,21 @@ class SyncBehindOriginTests(SweepTestBase):
         _git(other_clone, "commit", "-q", "-m", message)
         _git(other_clone, "push", "-q", "origin", "master")
 
-    def test_pure_behind_auto_ff_merges_then_processes_pending_batch(self):
+    def test_behind_origin_with_pending_batch_commits_then_rebases_and_pushes(self):
+        """队列 #288（2026-08-06，openspec 变更包 `sweep-ff-sync-batch-reorder`）
+        起，本用例的实际路径已变化——原名
+        `test_pure_behind_auto_ff_merges_then_processes_pending_batch` 断言
+        "落后 origin/master" 这句 ff-only 文案，但批次改为"先本地提交再对齐"
+        后，提交完成的那一刻本地相对最初的 origin 快照已经是**领先**（多了
+        这个批次的提交），而 origin 同时也领先（多了另一 worktree 的推送）
+        ——两者互不为祖先，构成分叉，故实际走的是 `git rebase` 分支，不是
+        `--ff-only`。断言相应更新为检查 rebase 相关文案与最终结果；真正
+        "落后但当轮无批次可提交"的 ff-only 直接路径见
+        `SyncReorderTests.test_pure_behind_with_no_pending_batch_still_ff_merges`。
+        （如实记录：本次调整属于职责重排的自然结果，不是发现了新缺陷。）"""
         self._init_and_push(rows="")
         # 模拟另一 worktree 的 CC session 已把改动推去 origin/master——
-        # 本地工作区尚未 fetch/merge，此时本地 master 纯粹落后（直线历史，可快进）。
+        # 本地工作区尚未 fetch/merge。
         self._push_from_other_clone("另一worktree产出.md", "另一worktree推送")
 
         local_head_before = _git(self.work, "rev-parse", "HEAD").stdout.strip()
@@ -730,9 +757,10 @@ class SyncBehindOriginTests(SweepTestBase):
 
         result = _run_sweep(self.work)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("落后 origin/master", result.stdout)
+        self.assertIn("git rebase 自动对齐", result.stdout)
+        self.assertNotIn("跳过本轮", result.stdout)
 
-        # 本地已通过 --ff-only 追上另一 worktree 的推送，且当轮批次照常处理。
+        # 本地已通过 rebase 追上另一 worktree 的推送，且当轮批次照常处理。
         local_log = _git(self.work, "log", "--oneline").stdout
         self.assertIn("另一worktree推送", local_log)
         pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
@@ -1550,6 +1578,235 @@ class FindMissingDeploymentTraceUnitTests(unittest.TestCase):
 
         touched_with_trace = {"1-转型规划/AI运营指挥中心/serve.py", "CLAUDE.md"}
         self.assertEqual(sweep._find_missing_deployment_trace(touched_with_trace), [])
+
+
+class SyncReorderTests(SweepTestBase):
+    """队列 #288（openspec 变更包 `sweep-ff-sync-batch-reorder`）：批次先提交
+    后同步——复现"本地队列文件脏（有对应 §二 批次声明）＋ origin 有改动同一
+    文件的新提交"这一 2026-08-06 真实故障链的核心场景，及其修法覆盖的
+    纯落后/纯领先/多批次单次推送等相邻场景。"""
+
+    def _push_queue_edit_from_other_clone(self, transform, message: str) -> None:
+        """仿真"另一并发 session 已经提交并推送了对队列文件的改动"——
+        transform 接收当前队列文件文本、返回修改后的文本，供调用方精确控制
+        改动落在哪一行（用于分别构造"不冲突"与"真实冲突"两种场景）。"""
+        other_clone = self.work.parent / f"other_clone_{abs(hash(message))}"
+        _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
+        _git(other_clone, "config", "user.email", "other@example.com")
+        _git(other_clone, "config", "user.name", "Other")
+        queue_path = other_clone / sweep.QUEUE_REL
+        queue_path.write_text(
+            transform(queue_path.read_text(encoding="utf-8")), encoding="utf-8", newline="")
+        _git(other_clone, "add", "-A")
+        _git(other_clone, "commit", "-q", "-m", message)
+        _git(other_clone, "push", "-q", "origin", "master")
+
+    def _mutate_local_queue(self, transform) -> None:
+        path = self.work / sweep.QUEUE_REL
+        path.write_text(transform(path.read_text(encoding="utf-8")), encoding="utf-8", newline="")
+
+    def test_dirty_batch_plus_origin_edit_same_file_no_conflict_auto_reconciles(self):
+        """核心复现用例（验收要求①）：origin 在 §一 追加一行并发新增任务
+        （与本地要提交的 §二 批次改动落在不同行），本地队列文件此时正处于
+        "有待 commit 批次声明"的脏状态——这正是 2026-08-06 故障链的前提。
+        修复前：`_sync_master_if_behind_origin` 的 `git merge --ff-only` 会因
+        本地未提交改动被 git 拒绝而 SweepAbort，批次整轮走不到。
+        修复后：批次先本地提交，工作区变干净，据此与 origin 对齐时按
+        design.md「决策点1」走 rebase（此刻本地因刚提交而领先、origin 也
+        领先，构成分叉），两边改动不重叠，rebase 应能自动合并成功并推送。"""
+        self._init_and_push(rows="")
+
+        def append_concurrent_task_row(text: str) -> str:
+            return text.replace(
+                "| 1 | 占位 | 待领 |\n",
+                "| 1 | 占位 | 待领 |\n| 2 | 并发session新增任务 | 待领 |\n",
+            )
+        self._push_queue_edit_from_other_clone(
+            append_concurrent_task_row, "并发session追加任务行")
+
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)  # 此刻工作区相对本地 HEAD 是脏的——§二 新增了这一行
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("跳过本轮", result.stdout,
+                          "不应再因 origin 同文件新提交而整轮跳过——这正是本次要修复的故障")
+
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue, "本轮批次应已正常落库推送")
+        self.assertIn("并发session新增任务", pushed_queue,
+                       "rebase 应保留 origin 侧并发新增的内容，不能丢")
+
+        local_head = _git(self.work, "rev-parse", "HEAD").stdout.strip()
+        origin_head = _git(self.origin, "rev-parse", "master").stdout.strip()
+        self.assertEqual(local_head, origin_head, "对齐成功后本地应与 origin 完全同步")
+
+    def test_dirty_batch_plus_origin_edit_same_line_real_conflict_safely_aborts(self):
+        """真实内容冲突（验收要求①的另一半）：本地与 origin 都改了 §一
+        占位行的同一处文本——rebase 无法自动合并。要求：`git rebase --abort`
+        回到批次已提交的干净状态（本地提交不丢），复用既有 #171 分叉告警
+        （退出码/`is_fork`/webhook/连续轮次持久化），不强推、不自动解冲突。"""
+        _CapturingWebhookHandler.received = []
+        server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        try:
+            webhook_url = f"http://127.0.0.1:{server.server_port}/webhook"
+            self._init_and_push(rows="")
+            (self.work / ".env").write_text(
+                f"WECOM_WEBHOOK_URL={webhook_url}\n", encoding="utf-8")
+
+            def modify_placeholder_status_on_origin(text: str) -> str:
+                return text.replace("| 1 | 占位 | 待领 |", "| 1 | 占位 | 已被并发session领走 |")
+            self._push_queue_edit_from_other_clone(
+                modify_placeholder_status_on_origin, "并发session修改占位任务状态")
+
+            row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+                   "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+            self._write_queue(row)
+            # 本地也改同一行占位任务的状态列——与 origin 的改动落在完全相同的
+            # 文本位置，构成 rebase 无法自动合并的真实冲突。
+            self._mutate_local_queue(
+                lambda t: t.replace("| 1 | 占位 | 待领 |", "| 1 | 占位 | 本地在办 |"))
+
+            result = _run_sweep(self.work)
+            self.assertEqual(result.returncode, sweep.FORK_EXIT_CODE,
+                              result.stdout + result.stderr)
+
+            # 本地批次提交必须完整保留（rebase --abort 应回到提交后的干净状态），
+            # 不是"假装什么都没发生"（不能连本地提交本身都丢了）。
+            local_log = _git(self.work, "log", "--oneline").stdout
+            self.assertIn("测试批次落库", local_log)
+            # 不要求 git status 完全无输出——编辑锁工具自身会留下 `.editlock*`
+            # 标记文件（真实项目里已被 .gitignore 排除，本测试夹具未声明
+            # 同款忽略规则，属正常噪音）；真正要断言的是"没有半完成的冲突
+            # 标记"：无未合并路径（U/AA/DD），且 rebase 相关目录已被
+            # `git rebase --abort` 清理干净。
+            status_lines = _git(self.work, "status", "--porcelain").stdout.splitlines()
+            unmerged = [ln for ln in status_lines if ln[:2].strip().upper() == "U"
+                        or ln[:2] in ("AA", "DD")]
+            self.assertEqual(unmerged, [], "rebase --abort 后不应残留任何未合并冲突路径")
+            self.assertFalse((self.work / ".git" / "rebase-merge").exists())
+            self.assertFalse((self.work / ".git" / "rebase-apply").exists())
+
+            # 没有任何强推——origin 上不应出现本地批次的"✅ 已完成"内容。
+            origin_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+            self.assertNotIn("✅ 已完成", origin_queue)
+            self.assertIn("已被并发session领走", origin_queue)
+
+            # 复用既有 #171 分叉告警机制，不新造一套。
+            self.assertTrue((self.work / sweep.FORK_STATE_REL).exists())
+            self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+            alert_text = _CapturingWebhookHandler.received[0]["markdown"]["content"]
+            self.assertIn("分叉", alert_text)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_pure_behind_with_no_pending_batch_still_ff_merges(self):
+        """§二 完全无待处理批次时（无内容可提交），本地 master 纯落后 origin
+        仍应正常 ff-only 追上——不依赖"本轮有没有批次要提交"这一前提，
+        对齐步骤本身在两种情况下都要跑。"""
+        self._init_and_push(rows="")
+
+        def append_concurrent_task_row(text: str) -> str:
+            return text.replace(
+                "| 1 | 占位 | 待领 |\n",
+                "| 1 | 占位 | 待领 |\n| 2 | 并发session新增任务 | 待领 |\n",
+            )
+        self._push_queue_edit_from_other_clone(
+            append_concurrent_task_row, "并发session追加任务行")
+
+        local_head_before = _git(self.work, "rev-parse", "HEAD").stdout.strip()
+        origin_head_before = _git(self.origin, "rev-parse", "master").stdout.strip()
+        self.assertNotEqual(local_head_before, origin_head_before, "前提：本地确实落后")
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        local_head_after = _git(self.work, "rev-parse", "HEAD").stdout.strip()
+        self.assertEqual(local_head_after, origin_head_before,
+                          "无批次可提交时，纯落后仍应被 ff-only 追上")
+
+    def test_multiple_batches_in_one_round_push_exactly_once(self):
+        """多个批次在同一轮被处理时，只应有一次 `git push` 调用（而非每个
+        批次各自 push）——直接在进程内调用 `sweep.main()` 并包一层记录调用
+        次数的 `_run_git`，比黑盒 CLI 更精确，且不改变任何真实 git 行为
+        （包装函数原样转发给真实实现，只做计数）。"""
+        self._init_and_push(rows="")
+        rows = (
+            "| B-ONE | `0-全景路线图/跨桌任务队列.md`（新行占位一） "
+            "| `docs(test): 批次一` | 待 CC 取活 |\n"
+            "| B-TWO | `0-全景路线图/跨桌任务队列.md`（新行占位二） "
+            "| `docs(test): 批次二` | 待 CC 取活 |\n"
+        )
+        self._write_queue(rows)
+
+        real_run_git = sweep._run_git
+        push_calls: list[list[str]] = []
+
+        def counting_run_git(args, cwd, check=True):
+            if args and args[0] == "push":
+                push_calls.append(list(args))
+            return real_run_git(args, cwd, check=check)
+
+        import unittest.mock as mock
+        argv_backup = sys.argv
+        try:
+            sys.argv = ["工具-落库sweep.py", "--repo-root", str(self.work)]
+            with mock.patch.object(sweep, "_run_git", side_effect=counting_run_git):
+                returncode = sweep.main()
+        finally:
+            sys.argv = argv_backup
+
+        self.assertEqual(returncode, 0)
+        self.assertEqual(len(push_calls), 1,
+                          f"应恰好一次 git push，实际 {len(push_calls)} 次：{push_calls}")
+
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertEqual(pushed_queue.count("✅ 已完成"), 2, "两个批次都应落库")
+
+    def test_push_failure_after_successful_reconcile_keeps_local_commit(self):
+        """对齐成功（无分叉或 rebase 成功）后，最终统一推送因非分叉原因失败
+        （如网络抖动）——本地提交不应被撤销，退出码沿用既有"本地已提交但
+        推送失败，需人工核查"语义（既有 exit_code=2）。用包装 `_run_git`
+        在真正的 `push` 调用上注入一次性失败来确定性构造，不依赖真实网络。"""
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        real_run_git = sweep._run_git
+
+        class _Faux:
+            def __init__(self, returncode, stderr=""):
+                self.returncode = returncode
+                self.stdout = ""
+                self.stderr = stderr
+
+        def faulty_run_git(args, cwd, check=True):
+            if args and args[0] == "push":
+                if check:
+                    raise subprocess.CalledProcessError(1, args, output="", stderr="模拟网络错误")
+                return _Faux(1, stderr="模拟网络错误：无法连接远端")
+            return real_run_git(args, cwd, check=check)
+
+        import unittest.mock as mock
+        argv_backup = sys.argv
+        try:
+            sys.argv = ["工具-落库sweep.py", "--repo-root", str(self.work)]
+            with mock.patch.object(sweep, "_run_git", side_effect=faulty_run_git):
+                returncode = sweep.main()
+        finally:
+            sys.argv = argv_backup
+
+        self.assertEqual(returncode, 2, "推送失败（非分叉）应沿用既有『本地提交不会被撤销』语义")
+        local_log = _git(self.work, "log", "--oneline").stdout
+        self.assertIn("测试批次落库", local_log, "推送失败不应撤销已完成的本地提交")
+        local_head = _git(self.work, "rev-parse", "HEAD").stdout.strip()
+        origin_head = _git(self.origin, "rev-parse", "master").stdout.strip()
+        self.assertNotEqual(local_head, origin_head, "推送既已失败，origin 不应变化")
 
 
 if __name__ == "__main__":

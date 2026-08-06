@@ -14,7 +14,7 @@ git 历史才救回，见协议〇.7 背景）。
 ② 改队列销行前 acquire 编辑锁、改完 release；销行标记与批次文件同一 commit——
    见 _process_batch()：git add 批次文件 → 加锁改队列 → 一次 commit 两者一起进。
 ③ 主工作区非 master / 非 clean / 推送非快进时跳过本轮并告警，不强推——见
-   _check_preconditions() 与 _verify_fast_forward()。
+   _check_preconditions() 与 _reconcile_with_origin_and_push()。
 ④ 计划任务 Action 指主工作区稳定路径（非建造 worktree）+ SYSTEM + AtStartup +
    绝对路径烘焙——本脚本运行时另有 MAIN_WORKSPACE 断言兜底（见 _resolve_repo_root），
    注册脚本见 `register-commit-sweep-task.ps1`。
@@ -163,6 +163,45 @@ CLAUDE.md 是否同批改动这一可机检事实，不解析内容语义、不�
 的具体实现不同（本处锚定开头，编辑锁排除引号片段），design.md 完整
 论证了原因（sweep 状态列是短符号前缀，编辑锁状态列是多分句长叙述，
 "只看开头"这一具体规则对后者不成立）。
+
+批次先提交、后统一对齐 origin/master（队列 #288，openspec 变更包
+`sweep-ff-sync-batch-reorder`，2026-08-06）：本节修法的既有实现里，`main()`
+在**批次处理之前**调用 `_sync_master_if_behind_origin`（`git merge
+--ff-only origin/master`）——但 §二 待 commit 批次的存在本身就意味着工作区
+必然脏（见上"非 clean 的定义"一节），一旦 origin 上有提交也改了同一个
+文件（跨桌任务队列.md 是 sweep 的核心工作对象，2026-08-06 实测近 20 个
+提交 100% 触碰它），git 会因"本地未提交改动将被合并覆盖"拒绝这次 ff
+合并，函数据此 `SweepAbort`，**排在其后的批次处理整轮走不到**——2026-08-06
+当日已两次真实卡死需人工介入（先 `git commit`，再 `git pull --rebase`，
+再 `git push`）。
+
+三个候选修法（A·先提交再同步再 rebase／B·stash 保护式 ff／C·失败降级为
+告警但继续，完整分析见队列 #288）中选定并加强了 A，否掉 B（挡住 ff 的
+常常正是"已被批次声明、不能 stash"的那个文件）与单独的 C（只解决"不
+整轮跳过"，不解决"最终仍需人工 rebase"）——完整取舍见 design.md「决策点
+1」。改法：`_process_normal_batch`/遗留尾巴批次/`_rerun_ledger` 均改为
+**只本地提交，不再各自校验快进或推送**；`main()` 在这些提交全部完成、
+工作区因此恢复干净之后，调用新增的 `_reconcile_with_origin_and_push`
+统一对齐一次——按本地 HEAD 与 origin/master 的关系分派：相等则无事可做；
+纯落后则 `--ff-only` 合并追上；纯领先则跳过合并直接推送；**已分叉则
+`git rebase origin/master`**（提交完成后本地必然领先，origin 若同期也有
+新提交即构成分叉，这在旧设计里是"绝不尝试、直接跳过"的场景，本次改为
+主动尝试自动对齐）——rebase 失败即 `git rebase --abort` 回滚到批次已提交
+的干净状态（本地提交完整保留，不丢失），复用既有 #171 分叉告警（含
+`is_fork=True`／`FORK_EXIT_CODE`／webhook／连续轮次持久化），不自动解
+冲突、不强推。对齐成功后统一 `git push` 一次，覆盖本轮全部提交（不再是
+每个批次各自 push）。旧的 `_sync_master_if_behind_origin` 与
+`_verify_fast_forward` 两个函数在重构后调用点清零，已整体删除。
+
+**是打破了自锁循环，还是只是让它不再阻塞批次？——两者都是，取决于是否
+发生真实冲突**（design.md「决策点 2」完整论证，此处摘要结论）：队列文件
+是追加型文件，不同会话通常编辑不同行——对这**绝大多数不冲突**的并发编辑
+场景，是真正打破了"越需要同步越同步不了"的自锁循环（提交→rebase→推送
+一次跑完，不会自我延续、不会越拖越大）；对**少数真实内容冲突**（同一行
+被双方修改）的场景，不是打破循环，而是让循环不再阻塞其它批次——本地
+提交安全保留、告警主动发出，但仍需人工介入才能真正解除，这与候选 C 的
+止血效果相同。**不追求消灭一切需要人工介入的情形**，是把"需要人工介入
+的情形"从"20/20 的必然"收窄到"真实内容冲突的少数概率事件"。
 
 用法：
   python 0-学习与工具/工具-落库sweep.py            # 真跑
@@ -357,24 +396,6 @@ def _fetch(repo_root: Path) -> None:
         raise SweepAbort(f"⚠ git fetch origin master 失败（{result.stderr.strip()}）——跳过本轮。")
 
 
-def _verify_fast_forward(
-    repo_root: Path, *, refetch: bool, on_fail_exit_code: int, is_fork: bool = False,
-) -> None:
-    """确保把当前 HEAD 推去 master 会是快进。不是快进时绝不强推，交人工处理。"""
-    if refetch:
-        _fetch(repo_root)
-    check = _run_git(
-        ["merge-base", "--is-ancestor", "origin/master", "HEAD"], repo_root, check=False,
-    )
-    if check.returncode != 0:
-        raise SweepAbort(
-            "⚠ 推送非快进（origin/master 不是当前 HEAD 的祖先，本地落后或已分叉）——"
-            "跳过本轮，不强推、不自动 rebase。",
-            exit_code=on_fail_exit_code,
-            is_fork=is_fork,
-        )
-
-
 def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
     """队列 #194：起跑段无条件检查是否存在未推送的本地提交，不绑定"§二
     有无待处理批次"（正是这个绑定让 07-31/08-01 多次真实复现"本地已提交、
@@ -415,31 +436,85 @@ def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = 
     log.append(f"✓ 起跑补推 {ahead} 个此前未推送的本地提交。")
 
 
-def _sync_master_if_behind_origin(repo_root: Path, log: list[str]) -> None:
-    """本地 master 落后 origin/master 且可快进时自动追上（2026-07-28 补，见文件头部说明）。
+def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
+    """队列 #288（openspec 变更包 `sweep-ff-sync-batch-reorder`，2026-08-06）：
+    批次已在本地提交、工作区已干净之后，统一对齐 `origin/master` 并推送
+    一次——取代原先排在批次处理**之前**的 `_sync_master_if_behind_origin`
+    （只会 ff-only、且要求工作区干净这一隐含前提恰恰与"§二 待 commit 批次
+    必然导致工作区脏"这一 sweep 自身的设计假设冲突，是本次故障的根因，
+    见文件头部本节说明）。
 
-    只处理"本地是 origin/master 祖先"（纯落后、直线历史）这一种情形；两边
-    已分叉（互不为祖先）本函数不动手，交给后续 `_verify_fast_forward` 按
-    既有语义告警跳过——不强推、不自动 rebase。假设调用方已在此之前 fetch
-    过（本函数自身也会 fetch 一次，保证独立调用时行为完整）。
+    调用时机：main() 在批次提交 + 遗留尾巴提交 + 台账重跑提交全部完成之后
+    才调用本函数一次——此时工作区里"已被批次声明的脏改动"均已转为本地
+    提交，只可能残留 #238 判定为孤儿/歧义、本函数不该也不会去动的脏文件。
+
+    fetch 一次后按本地 HEAD 与 origin/master 的关系分派：
+    - 相等：无事可做。
+    - 纯落后（HEAD 是 origin/master 祖先）：`git merge --ff-only` 追上；
+      工作区仍有未声明的脏文件挡住合并时，按既有语义告警跳过（不强推、
+      不 rebase），退出码沿用健康跳过语义（0），不当作分叉处理。
+    - 纯领先（origin/master 是 HEAD 祖先，即本轮只有本地新提交、origin
+      未变）：跳过合并，直接推送。
+    - 已分叉（互不为对方祖先——本轮批次提交后本地必然领先，origin 若同期
+      也有新提交即构成分叉）：`git rebase origin/master`；rebase 冲突时
+      `git rebase --abort` 回滚到批次已提交的干净状态（本地提交不丢），
+      复用既有 #171 分叉告警（`is_fork=True`／`FORK_EXIT_CODE`／webhook／
+      连续轮次持久化），不自动解冲突、不强推。
+
+    对齐成功（含"无事可做"）后如需推送，统一执行一次 `git push`；推送本身
+    失败（非分叉，如网络/权限）以 exit_code=2（既有"本地提交不会被撤销，
+    需人工核查"语义）收尾。对齐/推送成功时清空任何陈旧的分叉连续计数
+    （`_reset_fork_state`）——即便本轮压根没有分叉过，调用也是幂等的。
     """
+    if dry_run:
+        log.append("[dry-run] 将 fetch 并按需 ff-only 合并/rebase，随后统一 push 一次（本次不实际执行）。")
+        return
+
     _fetch(repo_root)
     head = _run_git(["rev-parse", "HEAD"], repo_root).stdout.strip()
     origin_head = _run_git(["rev-parse", "origin/master"], repo_root).stdout.strip()
     if head == origin_head:
+        _reset_fork_state(repo_root)
         return
-    is_behind = _run_git(
-        ["merge-base", "--is-ancestor", "HEAD", "origin/master"], repo_root, check=False,
-    )
-    if is_behind.returncode != 0:
-        return  # 本地未落后（领先或已分叉），交后续 _verify_fast_forward 处理
-    merge = _run_git(["merge", "--ff-only", "origin/master"], repo_root, check=False)
-    if merge.returncode != 0:
+
+    ahead_raw = _run_git(["rev-list", "--count", "origin/master..HEAD"], repo_root).stdout.strip()
+    behind_raw = _run_git(["rev-list", "--count", "HEAD..origin/master"], repo_root).stdout.strip()
+    ahead = int(ahead_raw) if ahead_raw.isdigit() else 0
+    behind = int(behind_raw) if behind_raw.isdigit() else 0
+
+    if ahead == 0 and behind > 0:
+        merge = _run_git(["merge", "--ff-only", "origin/master"], repo_root, check=False)
+        if merge.returncode != 0:
+            raise SweepAbort(
+                f"⚠ 本地 master 落后 origin/master 但 --ff-only 合并失败"
+                f"（{merge.stderr.strip()}）——跳过本轮，不强推、不 rebase。",
+            )
+        log.append(f"✓ 本地 master 落后 origin/master，已 git merge --ff-only 同步至 {origin_head[:7]}。")
+        _reset_fork_state(repo_root)
+        return
+
+    if ahead > 0 and behind > 0:
+        rebase = _run_git(["rebase", "origin/master"], repo_root, check=False)
+        if rebase.returncode != 0:
+            _run_git(["rebase", "--abort"], repo_root, check=False)
+            raise SweepAbort(
+                f"⚠ 本轮批次已本地提交，但与 origin/master 分叉且自动 rebase 失败"
+                f"（{rebase.stderr.strip()}）——已 git rebase --abort 回滚，本地提交完整保留、"
+                "不丢失、不强推，需人工介入手动 rebase。",
+                exit_code=FORK_EXIT_CODE,
+                is_fork=True,
+            )
+        log.append(f"✓ 本轮批次提交后与 origin/master 分叉，已 git rebase 自动对齐至 {origin_head[:7]}。")
+
+    push = _run_git(["push", "origin", "HEAD:refs/heads/master"], repo_root, check=False)
+    if push.returncode != 0:
         raise SweepAbort(
-            f"⚠ 本地 master 落后 origin/master 但 --ff-only 合并失败"
-            f"（{merge.stderr.strip()}）——跳过本轮，不强推、不 rebase。",
+            f"✗ 本轮已提交但推送失败：{push.stderr.strip()}——"
+            "本地提交不会被撤销，需人工核查后手动 push，本轮就此停止。",
+            exit_code=2,
         )
-    log.append(f"✓ 本地 master 落后 origin/master，已 git merge --ff-only 同步至 {origin_head[:7]}。")
+    log.append("✓ 本轮全部提交已统一推送。")
+    _reset_fork_state(repo_root)
 
 
 def _flush_pending_lock_appends(repo_root: Path, log: list[str]) -> None:
@@ -1147,10 +1222,14 @@ def _strike_off_rows(
 
 
 def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str], dry_run: bool, log: list[str]) -> None:
+    """队列 #288（2026-08-06 起）：只负责把批次内容落成本地提交，不再自己
+    校验快进或推送——是否能与 origin/master 对齐、何时推送，统一交给批次
+    提交阶段结束后调用一次的 `_reconcile_with_origin_and_push`（main() 接
+    线顺序），原因见该函数与文件头部本节说明。"""
     batch_id = row["batch_id"]
     if dry_run:
         print(f"[dry-run] 批次 {batch_id}：会 git add {resolved_files}，"
-              f"提交信息「{_extract_commit_message(row['message_cell'])}」，标记销行后 push。")
+              f"提交信息「{_extract_commit_message(row['message_cell'])}」，标记销行后本地提交。")
         log.append(f"[dry-run] {batch_id} 待落库：{resolved_files}")
         return
 
@@ -1163,25 +1242,7 @@ def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str],
     message = _extract_commit_message(row["message_cell"])
     _run_git(["commit", "-m", message], repo_root)
     sha = _run_git(["rev-parse", "--short", "HEAD"], repo_root).stdout.strip()
-
-    try:
-        _verify_fast_forward(repo_root, refetch=True, on_fail_exit_code=2)
-    except SweepAbort as exc:
-        # 到这一步本地提交已经做完——比通用的 _verify_fast_forward 消息更进一步，
-        # 明确告知"有一个不会被撤销的本地提交在等人工处理"，而不是泛泛的"跳过"。
-        raise SweepAbort(
-            f"✗ 批次 {batch_id} 本地已提交（{sha}）但{str(exc)}"
-            "本地提交不会被撤销，需人工核查后手动 push 或走 cherry-pick 路线，本轮就此停止。",
-            exit_code=2,
-        ) from exc
-    push = _run_git(["push", "origin", "HEAD:refs/heads/master"], repo_root, check=False)
-    if push.returncode != 0:
-        raise SweepAbort(
-            f"✗ 批次 {batch_id} 本地已提交（{sha}）但推送失败：{push.stderr.strip()}——"
-            "本地提交不会被撤销，需人工核查后手动 push 或走 cherry-pick 路线，本轮就此停止。",
-            exit_code=2,
-        )
-    log.append(f"✓ 批次 {batch_id} 已落库并推送（{sha}）")
+    log.append(f"✓ 批次 {batch_id} 已本地提交（{sha}），等待本轮末尾统一对齐并推送。")
 
 
 def main() -> int:
@@ -1231,11 +1292,13 @@ def main() -> int:
         if not args.dry_run:
             _flush_pending_lock_appends(repo_root, log)
             _run_decision_reminder_second_carrier(repo_root, log)
-        # ④ 原有前置检查与批次处理
-        _sync_master_if_behind_origin(repo_root, log)
-        _verify_fast_forward(repo_root, refetch=False, on_fail_exit_code=FORK_EXIT_CODE, is_fork=True)
-        if not args.dry_run:
-            _reset_fork_state(repo_root)  # 前置检查通过=未分叉，清空任何陈旧的连续计数
+        # ④ 队列 #288（2026-08-06 起）：不再在批次处理之前尝试同步/分叉早检
+        # ——`_sync_master_if_behind_origin` 的 `git merge --ff-only` 要求工作区
+        # 干净，而"§二 待 commit 批次的存在本身就意味着工作区必然脏"是 sweep
+        # 自身的设计前提，两者直接冲突，是本次故障的根因（见文件头部本节
+        # 说明）。改为：先把批次提交到本地（工作区因此变干净），再统一对齐
+        # origin/master 并推送一次——见本函数末尾对 `_reconcile_with_origin_
+        # and_push` 的调用。
 
         dirty_paths = _status_paths(repo_root)
         queue_text = _read_queue(repo_root)
@@ -1257,10 +1320,10 @@ def main() -> int:
             _track_and_alert_orphan_paths(repo_root, orphan_paths, log)
 
         if not pending_rows:
+            # 队列 #288：不再在此处提前 return——即便本轮无批次可提交，末尾
+            # 的统一对齐步骤仍要跑一次（纯落后时把本地 master 追上 origin
+            # 这一常规维护动作，不依赖"本轮有没有内容要提交"）。
             log.append("§二无待处理批次，本轮空转。")
-            _flush_remaining_log(repo_root, log, args.dry_run)
-            print("\n".join(log))
-            return 0
 
         straggler_rows = []
         normal_rows = []
@@ -1288,17 +1351,21 @@ def main() -> int:
                                   f"sweep 补销尾巴 {ids}", dry_run=False)
                 _run_git(["add", "--", QUEUE_REL], repo_root)
                 _run_git(["commit", "-m", f"docs(队列): sweep 补销遗留尾巴批次 {ids}"], repo_root)
-                _verify_fast_forward(repo_root, refetch=True, on_fail_exit_code=2)
-                push = _run_git(["push", "origin", "HEAD:refs/heads/master"], repo_root, check=False)
-                if push.returncode != 0:
-                    raise SweepAbort(f"✗ 补销尾巴提交推送失败：{push.stderr.strip()}", exit_code=2)
-                log.append(note)
+                log.append(note)  # 队列 #288：只本地提交，不在此处单独推送
 
         processed_any = bool(normal_rows) or bool(straggler_rows)
         if processed_any and not args.dry_run:
             _rerun_ledger(repo_root, log)
-        elif not processed_any:
+        elif not processed_any and pending_rows:
             log.append("本轮无批次可落库（全部暂缓或声明片段当前均无对应脏改动）。")
+
+        # 队列 #288：批次提交（含遗留尾巴、台账重跑）全部完成、工作区已干净
+        # 之后，统一对齐 origin/master 并推送一次——纯落后/纯领先/已分叉三种
+        # 关系的分派与失败处理见 `_reconcile_with_origin_and_push` 自身
+        # docstring；对齐失败（含 rebase 冲突/推送失败）会抛出 SweepAbort，
+        # 由外层 except 统一处理，下面的部署提示不会执行（只在真正推送
+        # 成功后才提示，语义与此前一致）。
+        _reconcile_with_origin_and_push(repo_root, log, dry_run=args.dry_run)
 
         # #198(c)：批次落库之后，检查本轮实际 add 过的路径是否命中常驻服务——
         # 纯提示，不影响下方的正常返回。
@@ -1356,6 +1423,9 @@ def main() -> int:
 
 
 def _rerun_ledger(repo_root: Path, log: list[str]) -> None:
+    """队列 #288（2026-08-06 起）：只负责生成台账并按需本地提交，不再自己
+    校验快进或推送——原因同 `_process_normal_batch`，统一交给
+    `_reconcile_with_origin_and_push`。"""
     result = subprocess.run(
         [sys.executable, str(repo_root / LEDGER_SCRIPT_REL)],
         cwd=repo_root, capture_output=True, text=True, encoding="utf-8",
@@ -1369,11 +1439,7 @@ def _rerun_ledger(repo_root: Path, log: list[str]) -> None:
         return
     _run_git(["add", "--", LEDGER_OUTPUT_REL], repo_root)
     _run_git(["commit", "-m", "docs(队列): 收工重跑文档台账（sweep 自动）"], repo_root)
-    _verify_fast_forward(repo_root, refetch=True, on_fail_exit_code=2)
-    push = _run_git(["push", "origin", "HEAD:refs/heads/master"], repo_root, check=False)
-    if push.returncode != 0:
-        raise SweepAbort(f"✗ 台账重跑提交推送失败：{push.stderr.strip()}", exit_code=2)
-    log.append("✓ 台账已重跑并推送。")
+    log.append("✓ 台账已重跑并本地提交，等待本轮末尾统一对齐并推送。")
 
 
 def _flush_log(repo_root: Path, log: list[str], dry_run: bool) -> None:
