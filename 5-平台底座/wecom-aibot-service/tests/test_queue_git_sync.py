@@ -12,15 +12,19 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from zhuopin_platform.audit import AuditLogger
 
 from aibot_service.queue_appender import append_pending_task
+from aibot_service.queue_edit_lock import QueueLockBusy
 from aibot_service.queue_git_sync import (
     UNSYNCED_MARKER,
     _clear_unsynced_markers,
     _is_non_fast_forward,
     _mark_row_unsynced,
     append_task_and_sync_to_git,
+    flush_pending_git_sync_appends,
     sync_after_archive,
 )
 from aibot_service.repo_paths import REPO_ROOT_OVERRIDE_ENV
@@ -529,6 +533,57 @@ def test_clear_unsynced_markers_handles_legacy_leading_space_format(tmp_path: Pa
     assert queue_path.read_text(encoding="utf-8") == header + original_line
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "队列 #287 根因复现，待 openspec 变更包 aibot-queue-sync-checkout-guard "
+        "design 审批通过并 apply 护栏后应转为通过（届时移除本 xfail 标记）"
+    ),
+)
+def test_conflict_recompute_destroys_uninvolved_uncommitted_edits(tmp_path: Path):
+    """队列 #287 根因复现（真实代码路径，非 mock）：人类会话经协议〇.7
+    编辑锁 acquire→写盘→release 后，改动仍只落在工作区（未 commit，等待
+    sweep 按 §二 批次统一提交）——这期间若机器人恰好处理另一条消息、且
+    推送撞上非快进冲突（origin 已被第三方推进，属日常高频场景），冲突后的
+    `fetch`+`reset --mixed`+`checkout -- relative_path` 会把队列文件的
+    工作区内容整体替换成 origin 版本，人类那份从未涉及本次冲突的未提交
+    编辑被静默一并抹掉——即 #287 描述的"锁与结构校验都正常工作，只是它们
+    保护的那份文件在其之外被另一个进程整体替换"。
+
+    本用例不依赖任何 mock：真实 bare origin + 真实 git 子进程 + 真实调用
+    生产函数 `append_task_and_sync_to_git`。"""
+    origin, clone_a, clone_b = _init_bare_origin_with_clones(tmp_path)
+
+    # 人类会话：acquire 编辑锁编辑 → 写盘 → release（协议〇.7/〇.8），
+    # 改动此刻只在工作区，尚未 commit（等 sweep 处理 §二 批次时才提交）。
+    human_marker = "人类会话已release但尚未commit的真实成果——不得被机器人抹掉"
+    queue_text = (clone_a / "queue.md").read_text(encoding="utf-8")
+    queue_text = queue_text.replace(
+        "## 二、占位小节", f"## 二、占位小节\n\n{human_marker}\n"
+    )
+    (clone_a / "queue.md").write_text(queue_text, encoding="utf-8")
+    assert _git(clone_a, "status", "--porcelain").stdout.strip() != "", "前置条件：工作区应处于脏状态"
+
+    # 第三方（另一 CC session/机器人自己处理的另一条消息）先手推送，制造
+    # 非快进冲突——这是高频并发仓库里的日常场景，不是刻意构造的极端条件。
+    _push_other_writer_row(clone_b, "并发的另一条消息")
+
+    outcome = append_task_and_sync_to_git(
+        clone_a, clone_a / "queue.md", **_sample_kwargs("机器人正在处理的这条消息")
+    )
+
+    assert outcome.pushed is True, f"重算后应成功推送，last_error={outcome.last_error!r}"
+    assert outcome.attempts == 2, "第 1 次应因非快进被拒，第 2 次重算后才成功"
+
+    on_disk = (clone_a / "queue.md").read_text(encoding="utf-8")
+    pushed_content = _show_origin_file(origin, "master", "queue.md")
+    assert human_marker in on_disk, (
+        "根因复现：人类已 release 但未 commit 的改动被 reset/checkout 静默抹掉，"
+        "工作区里已找不到，见队列 #287"
+    )
+    assert human_marker in pushed_content, "人类的改动应随本次同步一并保留并推送，而非彻底消失"
+
+
 def test_append_task_and_sync_to_git_clears_stale_marker_from_earlier_row_on_success(
     tmp_path: Path,
 ):
@@ -556,3 +611,178 @@ def test_append_task_and_sync_to_git_clears_stale_marker_from_earlier_row_on_suc
     assert UNSYNCED_MARKER not in on_disk, "本次成功同步应顺带清掉陈旧标记"
     pushed = _show_origin_file(origin, "master", "queue.md")
     assert UNSYNCED_MARKER not in pushed, "陈旧标记也应随本次推送从 origin 上被清除"
+
+
+# ── 队列 #286：flush 通道覆盖两类暂存文件 ──────────────────────────────
+
+
+class _AlwaysBusyLock:
+    def try_acquire(self) -> None:
+        raise QueueLockBusy("模拟：冲突重算时人类恰好持锁")
+
+    def release(self) -> None:
+        pass
+
+
+def test_lock_busy_during_conflict_recompute_routes_to_lock_pending_file(tmp_path: Path):
+    """队列 #286 核心场景（真实还原故障链路）：`already_appended_row` 已
+    落盘（模拟 intake.py 直接落盘的这一行）→ 第 1 次尝试提交推送，撞上
+    非快进冲突（另一写手先手推送）→ `fetch`+`reset`+`checkout` 对齐后进入
+    第 2 次尝试，`append_pending_task(..., lock=lock_factory())` 重算时
+    恰好撞上人类持锁。此前该记录与"真实 git 失败"混用同一个 `pending_
+    path`（`_append_pending_record` 扁平 schema），而唯一有 flush 通道的
+    是另一个 schema 不同的锁忙暂存文件，导致这条记录永远等不到补录。
+    修复后应改落 `lock_pending_path`，schema 与 `queue_lock_pending.
+    record_deferred_append` 一致（`append_kwargs` 嵌套一层）。"""
+    origin, clone_a, clone_b = _init_bare_origin_with_clones(tmp_path)
+    _push_other_writer_row(clone_b, "先手推送制造非快进冲突")
+    pre_appended_row = append_pending_task(
+        clone_a / "queue.md", **_sample_kwargs("撞上冲突重算时的锁忙")
+    )
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    git_sync_pending = tmp_path / "pending_queue_appends.jsonl"
+    lock_pending = tmp_path / "pending_queue_lock_appends.jsonl"
+
+    outcome = asyncio.run(sync_after_archive(
+        repo_root=clone_a, queue_path=clone_a / "queue.md",
+        append_kwargs=_sample_kwargs("撞上冲突重算时的锁忙"),
+        already_appended_row=pre_appended_row,
+        audit=audit, connector=None, recipient="",
+        pending_path=git_sync_pending, lock_pending_path=lock_pending,
+        lock_factory=lambda: _AlwaysBusyLock(),
+    ))
+
+    assert outcome.pushed is False
+    assert not git_sync_pending.exists(), "锁忙不该落进真实 git 失败暂存文件"
+    assert lock_pending.exists(), "锁忙应改落锁忙专用暂存文件，供既有 flush_pending_queue_appends 补录"
+    record = json.loads(lock_pending.read_text(encoding="utf-8").strip())
+    assert record["append_kwargs"]["description"] == "撞上冲突重算时的锁忙"
+    assert outcome.pending_recorded_at == lock_pending
+
+
+def test_non_lock_busy_failure_still_routes_to_git_sync_pending_file(tmp_path: Path):
+    """护栏是"锁忙才转向"，真实网络/编号冲突失败（非 QueueLockBusy）应
+    维持现状——落 `pending_path`（扁平 schema，向后兼容既有测试断言）。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    git_sync_pending = tmp_path / "pending_queue_appends.jsonl"
+    lock_pending = tmp_path / "pending_queue_lock_appends.jsonl"
+
+    outcome = asyncio.run(sync_after_archive(
+        repo_root=clone_a, queue_path=clone_a / "queue.md",
+        append_kwargs=_sample_kwargs("网络类失败"),
+        audit=audit, connector=None, recipient="",
+        pending_path=git_sync_pending, lock_pending_path=lock_pending,
+        remote="nonexistent-remote",
+    ))
+
+    assert outcome.pushed is False
+    assert git_sync_pending.exists()
+    assert not lock_pending.exists()
+    record = json.loads(git_sync_pending.read_text(encoding="utf-8").strip())
+    assert record["description"] == "网络类失败", "既有扁平 schema 不变"
+    assert outcome.pending_recorded_at == git_sync_pending
+
+
+def test_degraded_alert_includes_pending_file_path_and_input_pointer(tmp_path: Path):
+    """队列 #286 建议③：告警文案带上暂存文件路径与 input_pointer，使人工
+    承接有明确落点，不再只是一句"一行待人工核对合并"。"""
+    origin, clone_a, clone_b = _init_bare_origin_with_clones(tmp_path)
+    _push_other_writer_row(clone_b, "初始阻挡")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    connector = _FakeConnector()
+    git_sync_pending = tmp_path / "pending_queue_appends.jsonl"
+
+    asyncio.run(sync_after_archive(
+        repo_root=clone_a, queue_path=clone_a / "queue.md",
+        append_kwargs=_sample_kwargs("带落点的降级告警"),
+        audit=audit, connector=connector, recipient="ShaoPeiShen",
+        pending_path=git_sync_pending, max_retries=1,
+    ))
+
+    assert connector.calls, "降级必须私信"
+    alert_text = connector.calls[0][1]
+    assert str(git_sync_pending) in alert_text, "告警文案应包含暂存文件路径"
+    assert "指针X" in alert_text, "告警文案应包含 input_pointer，供人工按图索骥"
+
+
+def test_flush_pending_git_sync_appends_recomputes_and_pushes(tmp_path: Path):
+    """队列 #286 核心修复：`pending_queue_appends.jsonl` 此前没有任何 flush
+    通道，记录只会永久躺在磁盘上。补录时不假设原始行仍在磁盘（该文件被
+    写入时磁盘几乎总已被 reset 清空过），必须让 `append_pending_task`
+    对最新内容重新计算，而非重放。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    pending_path = tmp_path / "pending_queue_appends.jsonl"
+    pending_path.write_text(
+        json.dumps({
+            "recorded_at": "2026-08-06T08:08:12+00:00",
+            "error": "此前一次真实 git 失败",
+            **_sample_kwargs("此前失败、待补录的任务"),
+        }, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    flushed = asyncio.run(flush_pending_git_sync_appends(
+        pending_path=pending_path, repo_root=clone_a, queue_path=clone_a / "queue.md",
+        audit=audit, connector=None, recipient="",
+    ))
+
+    assert flushed == 1
+    assert not pending_path.exists(), "补录成功后暂存文件应清空（无剩余记录时直接删除）"
+    pushed_content = _show_origin_file(origin, "master", "queue.md")
+    assert "此前失败、待补录的任务" in pushed_content
+
+
+def test_flush_pending_git_sync_appends_keeps_still_failing_records(tmp_path: Path):
+    """补录仍然失败（如推送目标依旧不通）时，记录必须留在暂存文件里，
+    不能被静默丢弃或错误地标记为已处理。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    pending_path = tmp_path / "pending_queue_appends.jsonl"
+    kwargs = _sample_kwargs("依旧失败的任务")
+    pending_path.write_text(
+        json.dumps({"recorded_at": "2026-08-06T08:08:12+00:00", "error": "上次失败", **kwargs},
+                    ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    flushed = asyncio.run(flush_pending_git_sync_appends(
+        pending_path=pending_path, repo_root=clone_a, queue_path=clone_a / "queue.md",
+        audit=audit, connector=None, recipient="", remote="nonexistent-remote",
+    ))
+
+    assert flushed == 0
+    assert pending_path.exists(), "仍失败的记录不能凭空消失"
+    remaining = [json.loads(l) for l in pending_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(remaining) == 1
+    assert remaining[0]["description"] == "依旧失败的任务"
+
+
+def test_flush_pending_git_sync_appends_migrates_lock_busy_without_duplication(tmp_path: Path):
+    """补录过程中若重新撞上锁忙，记录应"迁移"到锁忙暂存文件、并从
+    `pending_queue_appends.jsonl` 里彻底移除——不能同时留在两处（否则同一
+    条消息未来会被两条独立的 flush 逻辑各补录一次，造成队列里出现重复行）。"""
+    origin, clone_a, clone_b = _init_bare_origin_with_clones(tmp_path)
+    _push_other_writer_row(clone_b, "制造非快进冲突")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    pending_path = tmp_path / "pending_queue_appends.jsonl"
+    lock_pending = tmp_path / "pending_queue_lock_appends.jsonl"
+    kwargs = _sample_kwargs("补录时又撞上锁忙")
+    pending_path.write_text(
+        json.dumps({"recorded_at": "2026-08-06T08:08:12+00:00", "error": "上次失败", **kwargs},
+                    ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    flushed = asyncio.run(flush_pending_git_sync_appends(
+        pending_path=pending_path, repo_root=clone_a, queue_path=clone_a / "queue.md",
+        audit=audit, connector=None, recipient="",
+        lock_pending_path=lock_pending, lock_factory=lambda: _AlwaysBusyLock(),
+    ))
+
+    assert flushed == 0
+    assert not pending_path.exists(), "已迁移的记录不应继续留在原文件"
+    assert lock_pending.exists(), "应迁移进锁忙暂存文件"
+    migrated = json.loads(lock_pending.read_text(encoding="utf-8").strip())
+    assert migrated["append_kwargs"]["description"] == "补录时又撞上锁忙"

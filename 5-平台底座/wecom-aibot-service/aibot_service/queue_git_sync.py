@@ -46,7 +46,6 @@ unsynced` 打标记后，任何后续一次成功的 git 同步都会把**当时
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import subprocess
 import time
@@ -57,7 +56,9 @@ from typing import Callable, Mapping, Optional
 
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 
+from . import pending_jsonl
 from .queue_appender import append_pending_task
+from .queue_edit_lock import QueueLockBusy
 from .repo_paths import resolve_repo_root
 
 DEFAULT_MAX_RETRIES = 3
@@ -116,6 +117,11 @@ class GitSyncOutcome:
     pushed: bool
     attempts: int
     last_error: str = ""
+    # 队列 #286：失败时实际写入了哪个暂存文件（`pending_queue_appends.jsonl`
+    # 或锁忙专用暂存文件），None 表示未写入任何文件（未提供暂存路径，或
+    # 推送成功无需暂存）。供 `flush_pending_git_sync_appends` 判断一条记录
+    # 是否已在补录过程中"迁移"到另一个暂存文件，避免同时留在两处。
+    pending_recorded_at: Optional[Path] = None
 
 
 def append_task_and_sync_to_git(
@@ -290,14 +296,55 @@ def _mark_row_unsynced_safely(queue_path: Path, row: Optional[str]) -> None:
 
 
 def _append_pending_record(pending_path: Path, append_kwargs: dict, error: str) -> None:
-    pending_path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "recorded_at": datetime.now(timezone.utc).isoformat(),
         "error": error,
         **append_kwargs,
     }
-    with pending_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    pending_jsonl.append_record(pending_path, record)
+
+
+def _extract_append_kwargs_from_flat_record(record: dict) -> dict:
+    """`_append_pending_record` 把 `recorded_at`/`error` 与 append_kwargs
+    摊平写在同一层（历史 schema，`pending_queue_appends.jsonl` 专用，见该
+    函数与既有测试对其形状的既有断言）——补录时反向剥离出纯 append_kwargs。"""
+    return {k: v for k, v in record.items() if k not in ("recorded_at", "error")}
+
+
+def _route_pending_failure(
+    *,
+    is_lock_busy: bool,
+    append_kwargs: dict,
+    error: str,
+    pending_path: Optional[Path],
+    lock_pending_path: Optional[Path],
+) -> Optional[Path]:
+    """队列 #286 根因：锁忙与真实 git 失败此前混用同一个暂存文件/同一套
+    "不知道该找谁补录"的处境——锁忙应当被 `queue_lock_pending.flush_
+    pending_queue_appends` 的既有补录逻辑重试（它深知"锁忙就该等下一条
+    消息到达再试"，且已在生产环境验证过），真实 git 失败（网络/非快进
+    重试耗尽）此前根本没有 flush 通道（见本模块新增的 `flush_pending_git_
+    sync_appends`）。混在一起会导致"同一种失败从两个不同层抛出，只有一层
+    的暂存会被补录"（队列 #286 原文）。
+
+    `is_lock_busy=True` 且提供了 `lock_pending_path` 时，写入锁忙暂存文件
+    （与 `queue_lock_pending.record_deferred_append` 同一 schema，供其既有
+    flush 逻辑直接消费，不需要它感知"这条记录其实是从 git 同步层转过来
+    的"）；否则（含锁忙但未提供 `lock_pending_path` 的旧调用方场景，向后
+    兼容）落回 `pending_path`（`_append_pending_record` 既有扁平 schema）。
+    两者都未提供时返回 `None`，不写入任何文件（未提供暂存路径的调用方，
+    如既有部分单测——不引入新的失败模式）。"""
+    if is_lock_busy and lock_pending_path is not None:
+        pending_jsonl.append_record(lock_pending_path, {
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "sender": "",
+            "append_kwargs": append_kwargs,
+        })
+        return lock_pending_path
+    if pending_path is not None:
+        _append_pending_record(pending_path, append_kwargs, error)
+        return pending_path
+    return None
 
 
 async def _send_degraded_alert(
@@ -342,6 +389,19 @@ async def _send_degraded_alert(
     ))
 
 
+def _location_hint(pending_recorded_at: Optional[Path], append_kwargs: dict) -> str:
+    """队列 #286：告警文案带上暂存文件路径与该条 `input_pointer`，使人工
+    承接有明确落点——此前文案只说"一行待人工核对合并"，没人知道该去哪个
+    文件捞哪一行。"""
+    pointer = append_kwargs.get("input_pointer", "")
+    parts = []
+    if pending_recorded_at is not None:
+        parts.append(f"已暂存于 {pending_recorded_at}")
+    if pointer:
+        parts.append(f"指针 {pointer}")
+    return f"（{'，'.join(parts)}）" if parts else ""
+
+
 async def sync_after_archive(
     *,
     repo_root: Path,
@@ -352,6 +412,7 @@ async def sync_after_archive(
     recipient: str = "",
     fallback_send: Optional[Callable[[str], None]] = None,
     pending_path: Optional[Path] = None,
+    lock_pending_path: Optional[Path] = None,
     evaluator: str = "system",
     remote: str = "origin",
     branch: str = "master",
@@ -368,7 +429,13 @@ async def sync_after_archive(
     追加两次。
 
     `lock_factory`：见 `append_task_and_sync_to_git` 同名参数文档（队列
-    #168）——非快进冲突重算时用于保护本地写入不被人类编辑窗口覆盖。"""
+    #168）——非快进冲突重算时用于保护本地写入不被人类编辑窗口覆盖。
+
+    `lock_pending_path`（队列 #286）：失败原因是 `QueueLockBusy`（冲突重算
+    时人类恰好持锁）时，记录改落这个文件而非 `pending_path`——与
+    `queue_lock_pending.record_deferred_append` 同一 schema，供其既有
+    `flush_pending_queue_appends` 直接补录，不需要新造一套"锁忙从 git 层
+    抛出"的处理逻辑。未提供时（向后兼容旧调用方）回落 `pending_path`。"""
     try:
         outcome = await asyncio.to_thread(
             append_task_and_sync_to_git,
@@ -387,15 +454,22 @@ async def sync_after_archive(
             scenario="wecom-aibot", action="queue_sync_degraded", evaluator=evaluator,
             automation_level="L1", decision={"attempts": 0}, data_sources={}, error=str(exc),
         ))
-        if pending_path is not None:
-            _append_pending_record(pending_path, append_kwargs, str(exc))
+        written_to = _route_pending_failure(
+            is_lock_busy=isinstance(exc, QueueLockBusy),
+            append_kwargs=append_kwargs, error=str(exc),
+            pending_path=pending_path, lock_pending_path=lock_pending_path,
+        )
         _mark_row_unsynced_safely(queue_path, already_appended_row)
         if connector is not None and recipient:
             await _send_degraded_alert(
-                connector, audit, f"队列同步异常：{exc}", recipient,
+                connector, audit,
+                f"队列同步异常：{exc}{_location_hint(written_to, append_kwargs)}", recipient,
                 fallback_send=fallback_send, evaluator=evaluator,
             )
-        return GitSyncOutcome(row=already_appended_row or "", pushed=False, attempts=0, last_error=str(exc))
+        return GitSyncOutcome(
+            row=already_appended_row or "", pushed=False, attempts=0, last_error=str(exc),
+            pending_recorded_at=written_to,
+        )
 
     if outcome.pushed:
         audit.record(AuditEvent(
@@ -409,14 +483,104 @@ async def sync_after_archive(
         automation_level="L1", decision={"attempts": outcome.attempts}, data_sources={},
         error=outcome.last_error,
     ))
-    if pending_path is not None:
-        _append_pending_record(pending_path, append_kwargs, outcome.last_error)
+    # 非快进重试耗尽/网络类失败均由 append_task_and_sync_to_git 内部处理，
+    # 从不以 QueueLockBusy 形式反映在 outcome.last_error 里——恒定路由到
+    # pending_path（真实 git 失败暂存文件），不涉及锁忙分流。
+    written_to = _route_pending_failure(
+        is_lock_busy=False, append_kwargs=append_kwargs, error=outcome.last_error,
+        pending_path=pending_path, lock_pending_path=lock_pending_path,
+    )
+    outcome.pending_recorded_at = written_to
     _mark_row_unsynced_safely(queue_path, outcome.row or already_appended_row)
     if connector is not None and recipient:
         desc = append_kwargs.get("description", "")
-        alert_text = f"队列同步失败 {outcome.attempts} 次，一行待人工核对合并：{desc}"
+        alert_text = (
+            f"队列同步失败 {outcome.attempts} 次，一行待人工核对合并："
+            f"{desc}{_location_hint(written_to, append_kwargs)}"
+        )
         await _send_degraded_alert(
             connector, audit, alert_text, recipient,
             fallback_send=fallback_send, evaluator=evaluator,
         )
     return outcome
+
+
+async def flush_pending_git_sync_appends(
+    *,
+    pending_path: Path,
+    repo_root: Path,
+    queue_path: Path,
+    audit: AuditLogger,
+    connector=None,
+    recipient: str = "",
+    fallback_send: Optional[Callable[[str], None]] = None,
+    evaluator: str = "system",
+    remote: str = "origin",
+    branch: str = "master",
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
+    lock_factory: Optional[Callable[[], object]] = None,
+    lock_pending_path: Optional[Path] = None,
+) -> int:
+    """队列 #286：补录此前因非快进重试耗尽/网络等真实 git 失败被暂存进
+    `pending_queue_appends.jsonl` 的记录——该文件此前没有任何自动 flush
+    通道（`queue_lock_pending.flush_pending_queue_appends` 只认另一个
+    schema 不同的锁忙专用暂存文件），记录只会永久躺在磁盘上直到人工翻
+    日志才会发现，是队列 #286 三条真实丢失行的直接成因。
+
+    与锁忙补录的一处关键差异：这里**不**假设原始那一行仍在磁盘上——记录
+    被写入这个文件时，磁盘上的队列文件几乎总已经被 `append_task_and_
+    sync_to_git` 的冲突重算或重试耗尽清空过（`reset --mixed`/`reset
+    --hard`），原始那次算出的行号/位置可能已经过期，必须让
+    `sync_after_archive` 内部重新调用 `append_pending_task` 对最新内容
+    重算（`already_appended_row` 留空），而不是重放一个可能已经撞号的
+    旧结果。
+
+    也不像锁忙补录那样"一条失败就整体停止"——那是因为锁被同一个人类
+    会话占用大概率会持续一段时间，continue 尝试后面的记录没有意义；这里
+    的失败通常是相互独立的网络抖动/编号冲突，continue 反而更可能多挽回
+    几条。若某条重试后又变成锁忙（`outcome.pending_recorded_at ==
+    lock_pending_path`），它已经被 `sync_after_archive` 转移到锁忙暂存
+    文件、交由那条既有链路补录，本函数不重复保留它，避免同一条记录同时
+    躺在两个文件里。
+
+    返回本次成功补录（真正推送成功）的行数。"""
+    records = pending_jsonl.read_records(pending_path)
+    if not records:
+        return 0
+
+    flushed = 0
+    remaining: list[dict] = []
+    for record in records:
+        append_kwargs = _extract_append_kwargs_from_flat_record(record)
+        outcome = await sync_after_archive(
+            repo_root=repo_root,
+            queue_path=queue_path,
+            append_kwargs=append_kwargs,
+            audit=audit,
+            connector=connector,
+            recipient=recipient,
+            fallback_send=fallback_send,
+            pending_path=None,
+            lock_pending_path=lock_pending_path,
+            evaluator=evaluator,
+            remote=remote,
+            branch=branch,
+            max_retries=max_retries,
+            backoff_seconds=backoff_seconds,
+            lock_factory=lock_factory,
+        )
+        if outcome.pushed:
+            flushed += 1
+            audit.record(AuditEvent(
+                scenario="wecom-aibot", action="queue_sync_pending_flushed", evaluator=evaluator,
+                automation_level="L1",
+                decision={"recorded_at": record.get("recorded_at", "")},
+                data_sources={"input_pointer": append_kwargs.get("input_pointer", "")},
+            ))
+        elif outcome.pending_recorded_at != lock_pending_path or lock_pending_path is None:
+            remaining.append(record)
+        # else：已被转移进锁忙暂存文件，不在本文件里重复保留。
+
+    pending_jsonl.rewrite_records(pending_path, remaining)
+    return flushed

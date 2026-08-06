@@ -1,4 +1,6 @@
 import asyncio
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -529,3 +531,207 @@ def test_push_followup_group_cc_and_paul_cc_both_fire_independently(tmp_path):
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "followup_cc_delivered" in actions
     assert "followup_group_cc_delivered" in actions
+
+
+# ── 队列 #289：README 回填自动落库（不再是稳定的孤儿脏文件来源） ─────────
+
+
+def _run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, encoding="utf-8"
+    )
+
+
+def _init_git_repo_with_origin(tmp_path: Path) -> tuple[Path, Path]:
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    _run_git(origin, "init", "--bare", "-q", "-b", "master")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_git(repo, "init", "-q", "-b", "master")
+    _run_git(repo, "config", "user.email", "bot@example.com")
+    _run_git(repo, "config", "user.name", "Test Bot")
+    (repo / "README.md").write_text(README_TEXT, encoding="utf-8")
+    _run_git(repo, "add", "-A")
+    _run_git(repo, "commit", "-q", "-m", "init")
+    _run_git(repo, "remote", "add", "origin", str(origin))
+    _run_git(repo, "push", "-q", "origin", "master")
+    return origin, repo
+
+
+def _show_origin_file(origin: Path, rel_path: str) -> str:
+    return subprocess.run(
+        ["git", "--git-dir", str(origin), "show", f"master:{rel_path}"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    ).stdout
+
+
+def test_push_followup_commits_and_pushes_readme_backfill(tmp_path):
+    """队列 #289 核心修复：回填后自动 commit+push，不再永久停留在磁盘上
+    等一个从未到来的手工提交——发一封信，工作区应恢复干净。"""
+    origin, repo = _init_git_repo_with_origin(tmp_path)
+    readme_path = repo / "README.md"
+    md_path = repo / "letter.md"
+    md_path.write_text("正文：请尽快回复。", encoding="utf-8")
+    audit = AuditLogger.jsonl(repo / "audit.jsonl")
+    store: dict = {}
+    connector = AibotConnector("bot", "secret", client_factory=fake_client_factory(store))
+
+    result = asyncio.run(
+        push_followup(
+            readme_path=readme_path, md_path=md_path, docx_path=None,
+            connector=connector, chatid="chat-1", match=_match_8d, audit=audit, cc_to_paul=False,
+        )
+    )
+
+    assert result.backfill_committed is True
+    assert result.backfill_commit_error == ""
+    assert "跟进信" in _run_git(repo, "log", "-1", "--format=%s").stdout
+    assert "✅ 已推送" in _show_origin_file(origin, "README.md")
+    status = _run_git(repo, "status", "--porcelain", "--", "README.md").stdout
+    assert status.strip() == "", (
+        f"README.md 回填并推送成功后不应再显示为脏文件，实际：{status!r}"
+    )
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_backfill_committed" in actions
+
+
+def test_push_followup_backfill_rebases_past_unrelated_origin_advance(tmp_path):
+    """origin 在此期间被另一写手推进（改的是无关文件）——须能自动
+    rebase 追上并推送成功，且不得覆盖/丢失对方的提交（队列 #287 教训：
+    绝不能用销毁性 reset/checkout 解决这类冲突）。"""
+    origin, repo = _init_git_repo_with_origin(tmp_path)
+    other_clone = tmp_path / "other_clone"
+    _run_git(tmp_path, "clone", "-q", str(origin), str(other_clone))
+    _run_git(other_clone, "config", "user.email", "x@example.com")
+    _run_git(other_clone, "config", "user.name", "X")
+    (other_clone / "other.txt").write_text("other writer content", encoding="utf-8")
+    _run_git(other_clone, "add", "other.txt")
+    _run_git(other_clone, "commit", "-q", "-m", "other writer commit")
+    _run_git(other_clone, "push", "-q", "origin", "master")
+
+    readme_path = repo / "README.md"
+    md_path = repo / "letter.md"
+    md_path.write_text("正文：请尽快回复。", encoding="utf-8")
+    audit = AuditLogger.jsonl(repo / "audit.jsonl")
+    store: dict = {}
+    connector = AibotConnector("bot", "secret", client_factory=fake_client_factory(store))
+
+    result = asyncio.run(
+        push_followup(
+            readme_path=readme_path, md_path=md_path, docx_path=None,
+            connector=connector, chatid="chat-1", match=_match_8d, audit=audit, cc_to_paul=False,
+        )
+    )
+
+    assert result.backfill_committed is True
+    origin_files = subprocess.run(
+        ["git", "--git-dir", str(origin), "ls-tree", "-r", "--name-only", "master"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    ).stdout
+    assert "other.txt" in origin_files, "对方的提交不得被覆盖丢失"
+    assert "✅ 已推送" in _show_origin_file(origin, "README.md")
+
+
+# ── 队列 #283：私信剥离 YAML frontmatter ──────────────────────────────────
+
+FRONTMATTER_LETTER = """\
+---
+title: "财务部 · 唐燕萍 跟进信 — 测试"
+created: 2026-08-03
+status: 待发
+编号: 财务部#11
+配套: 队列 #250、#249
+备注: 发送前须满足三项硬前置
+合并说明: 另发第二封会违反跟进信串行原则
+---
+
+# 唐燕萍，你好
+
+正文：请尽快回复。
+"""
+
+
+def test_strip_frontmatter_removes_header_block():
+    from aibot_service.delivery import _strip_frontmatter
+
+    stripped = _strip_frontmatter(FRONTMATTER_LETTER)
+    assert not stripped.startswith("---")
+    assert "status:" not in stripped
+    assert "编号:" not in stripped
+    assert "配套:" not in stripped
+    assert "合并说明:" not in stripped
+    assert stripped.startswith("# 唐燕萍，你好")
+    assert "正文：请尽快回复。" in stripped
+
+
+def test_strip_frontmatter_noop_without_frontmatter():
+    from aibot_service.delivery import _strip_frontmatter
+
+    plain = "正文：请尽快回复。"
+    assert _strip_frontmatter(plain) == plain
+
+
+def test_strip_frontmatter_noop_when_closing_delimiter_missing():
+    from aibot_service.delivery import _strip_frontmatter
+
+    malformed = "---\ntitle: 缺闭合\n\n正文：请尽快回复。"
+    assert _strip_frontmatter(malformed) == malformed
+
+
+def test_push_followup_sends_content_without_frontmatter(tmp_path):
+    """队列 #283 真实缺陷复现：`push_followup` 此前把整份 md 原样发送——
+    专员私信开头看到的是我方内部记账（`status: 待发` 会让她误以为信还
+    没发出、`编号`/`配套`/`合并说明` 是内部机制术语）。抄送路径同源，
+    须一并验证。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+    md_path.write_text(FRONTMATTER_LETTER, encoding="utf-8")
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path,
+            md_path=md_path,
+            docx_path=None,
+            connector=connector,
+            chatid="chat-1",
+            match=_match_8d,
+            audit=audit,
+        )
+    )
+
+    assert len(store["client"].sent_messages) == 2
+    primary_body = store["client"].sent_messages[0][1]["markdown"]["content"]
+    cc_body = store["client"].sent_messages[1][1]["markdown"]["content"]
+    assert not primary_body.startswith("---"), f"不应以 frontmatter 开头：{primary_body!r}"
+    assert cc_body.removeprefix("【抄送】").startswith("---") is False
+    for body in (primary_body, cc_body):
+        assert "编号:" not in body
+        assert "配套:" not in body
+        assert "合并说明:" not in body
+        assert "正文：请尽快回复。" in body
+
+    # 只改发送内容，源文件本身完整保留 frontmatter（内部核对/md2word docx
+    # 转换仍需要它，见 `_strip_frontmatter` docstring）。
+    assert md_path.read_text(encoding="utf-8") == FRONTMATTER_LETTER
+
+
+def test_push_followup_backfill_commit_failure_does_not_raise_or_undo_success(tmp_path):
+    """不在 git 仓库里时（既有测试大量使用的裸 tmp_path 场景）——提交失败
+    须优雅降级：不得抛出（发送本身已成功，不是 BackfillWriteError 那类
+    磁盘写入失败），磁盘上的回填内容依然正确保留。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    result = asyncio.run(
+        push_followup(
+            readme_path=readme_path, md_path=md_path, docx_path=None,
+            connector=connector, chatid="chat-1", match=_match_8d, audit=audit, cc_to_paul=False,
+        )
+    )
+
+    assert result.backfill_committed is False
+    assert result.backfill_commit_error != ""
+    assert "✅ 已推送" in readme_path.read_text(encoding="utf-8"), "未提交不代表回填内容本身有问题"
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_backfill_commit_failed" in actions

@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import re
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,8 +18,35 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 from .constants import PAUL_USERID
 from .gates import assert_finalized, DeliveryNotFinalizedError
 from .readme_table import locate_row, write_status, RowLocation
+from .repo_paths import resolve_repo_root
 
 DELIVERED_STATUS_PREFIX = "✅ 已推送"
+
+_NON_FAST_FORWARD_MARKERS = (
+    "non-fast-forward", "fetch first", "[rejected]", "Updates were rejected",
+)
+
+# 队列 #283：跟进信 md 源文件题头 YAML frontmatter（`---`…`---`），非贪婪
+# 匹配到第一个闭合 `---` 行为止；`\r?\n` 兼容 CRLF。
+_FRONTMATTER_RE = re.compile(r"\A---\r?\n.*?\r?\n---\r?\n", re.DOTALL)
+
+
+def _strip_frontmatter(content: str) -> str:
+    """剥离**发送内容**里的题头 YAML frontmatter（`status`/`编号`/`配套`/
+    `备注`/`合并说明`等内部记账字段），不改动源文件本身——队列 #283 真实
+    缺陷：专员私信开头看到的是我方内部状态（如 `status: 待发` 会让她误以
+    为这封信还没发出）与队列号/机制术语等内部内容，长期存在（自机器人
+    推送机制启用以来所有跟进信都在泄漏）。**只改这里算出的发送内容**，
+    `md_path` 指向的源文件不动——docx 附件不受影响（`md2word` 把
+    frontmatter 当元数据解析而非正文渲染，本就是干净的，见队列 #283）。
+
+    内容不以 `---` 开头，或找不到闭合的 `---` 行（格式不符合预期）时原样
+    返回，不强行处理——宁可保留 frontmatter 这种保守失败，也不能因为解析
+    错误把正文内容一起吞掉。"""
+    match = _FRONTMATTER_RE.match(content)
+    if not match:
+        return content
+    return content[match.end():].lstrip("\n")
 
 
 class BackfillWriteError(RuntimeError):
@@ -30,6 +59,68 @@ class DeliveryResult:
     media_id: Optional[str]  # 向后兼容：首个附件的 media_id（无附件为 None）
     new_status: str
     media_ids: list[str] = field(default_factory=list)  # 全部附件的 media_id，含首个
+    backfill_committed: bool = False  # 队列 #289：README 回填是否已自动提交推送
+    backfill_commit_error: str = ""  # 未提交成功时的原因，供 audit/日志排查
+
+
+def _run_git(repo_root: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args], cwd=repo_root, capture_output=True, text=True, encoding="utf-8"
+    )
+
+
+def _is_non_fast_forward(stderr: str) -> bool:
+    return any(marker in stderr for marker in _NON_FAST_FORWARD_MARKERS)
+
+
+def _commit_readme_backfill(readme_path: Path, *, description: str) -> tuple[bool, str]:
+    """队列 #289：`push_followup` 回填 README 后自动落库——此前只落磁盘，
+    从不 `git commit`，`ZhuopinFollowupDispatchDaily` 每发一封信就稳定
+    产出一个孤儿脏文件（#236(2) 孤儿告警的持续来源，而非一次性偶发）。
+
+    与 `queue_appender`/机器人自动追行队列同一范式（"自动机制改文件后
+    自己提交"）：`git add` + `git commit` + `git push`；push 遇非快进冲突
+    （fetch 后 `git rebase origin/master`）——**不**使用 `queue_git_sync.py`
+    那套"reset --mixed + checkout --"的冲突重算策略（队列 #287 已坐实
+    那条路径会销毁工作区里与本次操作无关的未提交内容），rebase 失败即
+    `git rebase --abort` 回滚到 rebase 前的本地提交状态，本次回填内容
+    始终保留在本地这个 commit 里、绝不丢弃，只是暂时没推送成功，交后续
+    （下一次 dispatch/人工/#236(2) 孤儿告警）处理。
+
+    返回 `(committed, error)`——`committed=False` 时 `error` 是失败原因，
+    调用方只记审计，**不**因此让已经成功的推送失败（磁盘上的回填内容
+    本身已经正确、不会造成重复发送风险，未提交只是留痕/持久化层面的
+    残留，风险级别低于 `BackfillWriteError`，不适用同等的"必须抛出"处理）。
+    """
+    repo_root = resolve_repo_root(readme_path, fallback=readme_path.parent)
+    try:
+        relative_path = readme_path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError as exc:
+        return False, f"README 不在解析出的仓库根下：{exc}"
+
+    add = _run_git(repo_root, "add", relative_path)
+    if add.returncode != 0:
+        return False, add.stderr.strip()
+    commit = _run_git(repo_root, "commit", "-m", f"bot(跟进信): {description}")
+    if commit.returncode != 0:
+        return False, commit.stderr.strip()
+
+    push = _run_git(repo_root, "push", "origin", "master")
+    if push.returncode == 0:
+        return True, ""
+    if not _is_non_fast_forward(push.stderr):
+        return False, push.stderr.strip()
+
+    _run_git(repo_root, "fetch", "origin")
+    rebase = _run_git(repo_root, "rebase", "origin/master")
+    if rebase.returncode != 0:
+        _run_git(repo_root, "rebase", "--abort")
+        return False, f"推送冲突且 rebase 失败，已回滚保留本地提交：{push.stderr.strip()}"
+
+    push_after_rebase = _run_git(repo_root, "push", "origin", "master")
+    if push_after_rebase.returncode == 0:
+        return True, ""
+    return False, push_after_rebase.stderr.strip()
 
 
 async def push_followup(
@@ -102,7 +193,7 @@ async def push_followup(
         )
         raise
 
-    content = md_path.read_text(encoding="utf-8")
+    content = _strip_frontmatter(md_path.read_text(encoding="utf-8"))
     await connector.send_markdown(chatid, content)
 
     attachments = list(([docx_path] if docx_path is not None else []) + list(extra_attachments or []))
@@ -220,4 +311,25 @@ async def push_followup(
         )
     )
 
-    return DeliveryResult(location=loc, media_id=media_id, new_status=new_status, media_ids=media_ids)
+    # 队列 #289：回填成功后自动落库，避免每发一封信就积一个孤儿脏文件。
+    # 提交/推送失败不影响本次推送已成功的事实（见 `_commit_readme_backfill`
+    # docstring），只记审计，不抛出、不影响返回值语义。
+    committed, commit_error = _commit_readme_backfill(
+        readme_path, description=f"回填「{loc.cells[0] if loc.cells else ''}」发送状态"
+    )
+    audit.record(
+        AuditEvent(
+            scenario="wecom-aibot",
+            action="followup_backfill_committed" if committed else "followup_backfill_commit_failed",
+            evaluator=evaluator,
+            automation_level="L1",
+            decision={"committed": committed},
+            data_sources={"readme": str(readme_path)},
+            error=commit_error,
+        )
+    )
+
+    return DeliveryResult(
+        location=loc, media_id=media_id, new_status=new_status, media_ids=media_ids,
+        backfill_committed=committed, backfill_commit_error=commit_error,
+    )

@@ -23,7 +23,12 @@ from .frame_parsing import parse_inbound_frame
 from .group_notify import notify_department_group_via_chatid
 from .intake import archive_inbound_message
 from .queue_edit_lock import AIBOT_LOCK_WHO, SubprocessQueueEditLock
-from .queue_git_sync import DEFAULT_BACKOFF_SECONDS, DEFAULT_MAX_RETRIES, sync_after_archive
+from .queue_git_sync import (
+    DEFAULT_BACKOFF_SECONDS,
+    DEFAULT_MAX_RETRIES,
+    flush_pending_git_sync_appends,
+    sync_after_archive,
+)
 from .queue_lock_pending import flush_pending_queue_appends
 from .repo_paths import resolve_repo_root
 from .whitelist import is_whitelisted, NOT_ONBOARDED_REPLY
@@ -245,6 +250,46 @@ def build_connector(
                     )
                 )
 
+        # 队列 #286：同样在每条新消息到达时，先尝试补录此前因"非快进重试
+        # 耗尽/网络等真实 git 失败"被暂存进 `pending_queue_appends.jsonl`
+        # 的记录——此前该文件没有任何自动 flush 通道，是 #286 三条真实
+        # 丢失行的直接成因。不依赖 `enable_queue_edit_lock`（那是编辑锁
+        # 特性开关，与"git 推送本身失败"是两回事），只要求已接线 git 同步
+        # 能力（`repo_root`/`pending_queue_appends_path` 均非空）。
+        if repo_root is not None and pending_queue_appends_path is not None:
+            try:
+                await flush_pending_git_sync_appends(
+                    pending_path=pending_queue_appends_path,
+                    repo_root=repo_root,
+                    queue_path=queue_path,
+                    audit=audit,
+                    connector=connector_holder.get("connector"),
+                    recipient=PAUL_USERID,
+                    fallback_send=queue_sync_fallback_send,
+                    evaluator=evaluator,
+                    remote=queue_git_remote,
+                    branch=queue_git_branch,
+                    max_retries=queue_sync_max_retries,
+                    backoff_seconds=queue_sync_backoff_seconds,
+                    lock_factory=(
+                        (lambda: _make_queue_lock("补录git同步失败追加"))
+                        if lock_repo_root is not None else None
+                    ),
+                    lock_pending_path=resolved_pending_lock_path,
+                )
+            except Exception as exc:  # noqa: BLE001 —— 补录失败不应阻塞当前消息处理
+                audit.record(
+                    AuditEvent(
+                        scenario="wecom-aibot",
+                        action="pending_git_sync_flush_dispatch_failed",
+                        evaluator=evaluator,
+                        automation_level="L1",
+                        decision={},
+                        data_sources={},
+                        error=str(exc),
+                    )
+                )
+
         if not is_whitelisted(message.sender):
             try:
                 await connector_holder["connector"].send_markdown(
@@ -320,6 +365,7 @@ def build_connector(
                     recipient=PAUL_USERID,
                     fallback_send=queue_sync_fallback_send,
                     pending_path=pending_queue_appends_path,
+                    lock_pending_path=resolved_pending_lock_path,
                     evaluator=evaluator,
                     remote=queue_git_remote,
                     branch=queue_git_branch,
