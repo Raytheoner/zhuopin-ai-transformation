@@ -105,10 +105,39 @@ blocks` 两个反向配对用例。同批同源修法见 sweep 侧
 这一次收窄，本次是该收窄路径的下一步；两处具体实现不同，design.md
 完整论证了原因）。
 
+队列 #258（2026-08-07，接管 #294 修法⑵，openspec 变更包
+editlock-section-append-and-followup-consistency-guard）：两项加固。
+
+  append-row  新增子命令——把"追加行到指定分区"这一动作的插入位置、列数、
+              竖线合法性交给工具结构化保证，替代此前"用全文最后一个
+              # 数字 形态的行定位分区末尾"这一启发式（#248/#254 同一根因
+              两次插错分区）。调用方按分区列序传结构化 `--cell` 字段（不
+              含首列编号，另用 `--number` 单独传），工具拼装+定位+校验，
+              不接受预拼好的整行字符串。字段值含任何竖线 `|`（不论是否
+              反引号包裹）一律拒绝写入——本项目现有表格解析对反引号无
+              感知，`_validate_release_structure` ①列数校验本就把"反引号
+              内裸竖线"列为要抓的失效形态，本子命令口径与其一致，不引入
+              一个 release 校验不认可的豁免（apply 阶段发现并修正，见该
+              openspec 变更包 design.md）。
+
+  release ⑥  队列 §一/§四 行"暂缓结论"与跟进信 README 发送状态的交叉
+              一致性校验——命中"状态列/事项列含暂不发/暂缓/压着/不发字样
+              + 反引号 .md 文件名引用"的行，若该信在 README 中仍是终态
+              `🆕 待发`（机制唯一认可的可发送标记），拒绝 release；反向
+              （README 已是"已推送"类终态而队列仍称暂缓，多半是事后如实
+              追述）仅告警不阻断。治 2026-08-06 01:30 UTC 真实误发（#150：
+              队列行决定"暂不发"但未同步移出 README 的可发送标记，
+              `ZhuopinFollowupDispatchDaily` 照发，信不可撤回）。
+
 用法：
   python 0-学习与工具/工具-共享文档编辑锁.py acquire --who "CC-QD-B" --note "登记#87完成"
   python 0-学习与工具/工具-共享文档编辑锁.py release
   python 0-学习与工具/工具-共享文档编辑锁.py status
+
+  # 队列 #258：追加一行到 §一（编号通常来自上面 --reserve 的返回值）
+  python 0-学习与工具/工具-共享文档编辑锁.py append-row --section 一 --number 299 \
+    --cell "任务描述" --cell "CC" --cell "输入指针" --cell "期望产出" \
+    --cell "待领" --cell "触碰区" --cell "2026-08-07"
 
   # 默认锁跨桌任务队列.md；--file 可指向其他高频撞车的共享文件复用本机制
   python 0-学习与工具/工具-共享文档编辑锁.py acquire --file 1-转型规划/其他共享文件.md --who "..."
@@ -200,6 +229,23 @@ HISTORY_RETENTION_MINUTES = 24 * 60
 FOLLOWUP_README_TARGET = "6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md"
 FOLLOWUP_DRAFT_STATUS = "⏳ 待你审"
 FOLLOWUP_FINALIZED_STATUS = "🆕 待发"
+
+# 队列 #258（接管 #294 修法⑵，openspec 变更包
+# editlock-section-append-and-followup-consistency-guard）：release 时对
+# 队列 §一/§四 行的"暂缓结论"与 README 跟进信状态做交叉一致性校验——独立
+# 实现 README 目标文件标注提取正则（不 import aibot_service 包，同
+# `_followup_readme_rows` 既有惯例），口径与
+# aibot_service/readme_table.py::_TARGET_FILE_RE 保持一致。
+FOLLOWUP_TARGET_FILE_RE = re.compile(r"目标文件[^`]*`([^`]+\.md)`")
+# 派单件原文给出的四词（队列 #294 建议⑵原文），design.md 决策点5：不扩大
+# 范围（"不发"是"暂不发"的子串，保留全部四词只为与派单件原文一一对应，
+# 不影响判定结果）。
+HOLD_LANGUAGE_PHRASES = ("暂不发", "暂缓", "压着", "不发")
+# 判定 README 行是否处于非终态（⏳待你审／🆕待发／#294 新增的 ⏸暂缓 均视为
+# 非终态，其余取值视为"已推送"类终态）——用于反向告警判据（design.md 决策
+# 点4）。#294 落地后已核对：本判据"非🆕待发即放行"的正向口径前瞻性覆盖了
+# ⏸暂缓，无需改动，仅此处补列举供反向判据引用。
+FOLLOWUP_NON_TERMINAL_STATUSES = (FOLLOWUP_DRAFT_STATUS, FOLLOWUP_FINALIZED_STATUS, "⏸ 暂缓")
 
 # 队列 #225：release 时对跨桌任务队列.md 做结构校验，仅当锁定目标是这个
 # 默认队列文件时才跑（§一/§二/§三/§四 的语义只对它成立，--file 指向其他
@@ -598,6 +644,134 @@ def _table_data_rows(section_text: str) -> list[tuple[str, list[str]]]:
     return rows
 
 
+# 队列 #258：append-row 子命令——把插入位置/列数/裸竖线校验交给工具，替代
+# 此前"用全文最后一个 # 数字 形态的行定位分区末尾"这一容易插错分区的启发式
+# （#248/#254 同一根因两次踩坑，见 openspec 变更包
+# editlock-section-append-and-followup-consistency-guard）。
+BACKTICK_SPAN_RE = re.compile(r"`[^`]*`")
+SECTION_APPEND_CONTENT_COUNTS = {"一": 7, "二": 4, "四": 3}
+
+
+class AppendRowFailedError(RuntimeError):
+    """append-row 校验失败——不写入任何内容（同 `ReserveFailedError` 的
+    fail-loud 原则：宁可让调用方明确知道，也不可返回一个可能有问题的结果）。
+    """
+
+
+def _cell_has_bare_pipe(cell: str) -> bool:
+    """检测字段值中是否含竖线 `|`（队列 #258，援引 #164 教训）。
+
+    apply 阶段修正（design.md 有完整记录）：不对反引号包裹的片段做豁免——
+    本项目现有表格解析（`_table_data_rows` 等）对整行做原样 `split("|")`，
+    不具备反引号感知能力，`_validate_release_structure` ①列数校验本就把
+    "反引号内裸竖线致列偏移"列为要抓的失效形态，本函数口径须与其一致，
+    不得引入一个 release 校验不认可的"反引号豁免"。
+    """
+    return "|" in cell
+
+
+def _build_append_row_line(section: str, number: str | None, cells: list[str]) -> str:
+    """按分区列序把结构化字段拼装成一条完整的 Markdown 表格行文本（不含
+    首尾换行符）。校验失败抛 `AppendRowFailedError`，调用方据此不写入任何
+    内容——同 `_reserve_ids`/`ReserveFailedError` 一贯的"校验失败不制造
+    半成品状态"原则。
+    """
+    if section not in SECTION_APPEND_CONTENT_COUNTS:
+        raise AppendRowFailedError(f"未知分区 {section!r}，仅支持 {sorted(SECTION_APPEND_CONTENT_COUNTS)}")
+    expected = SECTION_APPEND_CONTENT_COUNTS[section]
+    if len(cells) != expected:
+        raise AppendRowFailedError(
+            f"§{section} 需要 {expected} 个 --cell（不含编号列），收到 {len(cells)} 个"
+        )
+    for i, cell in enumerate(cells, start=1):
+        if _cell_has_bare_pipe(cell):
+            preview = cell if len(cell) <= 60 else cell[:60] + "…"
+            raise AppendRowFailedError(
+                f"第 {i} 个 --cell 含竖线「|」（不论是否被反引号包裹均拒绝，"
+                f"改用全角「｜」或改写措辞）：{preview}"
+            )
+    if section in ROW_NUMBER_SECTIONS:
+        if number is None:
+            raise AppendRowFailedError(f"§{section} 需要 --number（行编号，通常来自 acquire --reserve 的返回值）")
+        row_cells = [number] + cells
+    else:
+        if number is not None:
+            raise AppendRowFailedError(f"§{section} 不使用编号列，不应提供 --number")
+        row_cells = cells
+    return "| " + " | ".join(row_cells) + " |"
+
+
+def _section_bounds(text: str, section: str) -> tuple[int, int] | None:
+    """定位分区标题在**全文**中的正文起止偏移（复用 `LIVE_SECTION_HEADING_RE`，
+    与 `_split_live_sections` 同一套匹配逻辑，额外返回偏移供插入定位用）。"""
+    matches = list(LIVE_SECTION_HEADING_RE.finditer(text))
+    for i, m in enumerate(matches):
+        if m.group(1) == section:
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            return start, end
+    return None
+
+
+def _last_table_line_end_offset(section_text: str) -> int | None:
+    """分区正文内最后一条 `|` 开头且以 `|` 结尾的行（表头/分隔行/数据行
+    均算）结束位置的相对偏移（含其后换行符）。分区内一条表格行都没有
+    （结构异常）时返回 None，交调用方 fail-loud。"""
+    offset = 0
+    last_end = None
+    for line in section_text.splitlines(keepends=True):
+        s = line.strip()
+        if s.startswith("|") and s.endswith("|"):
+            last_end = offset + len(line)
+        offset += len(line)
+    return last_end
+
+
+def cmd_append_row(args: argparse.Namespace) -> int:
+    target_path = _target_path(args.file)
+    try:
+        text = target_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"✗ 读取目标文件失败：{target_path}（{exc}）")
+        return 1
+
+    try:
+        new_line = _build_append_row_line(args.section, args.number, args.cell)
+    except AppendRowFailedError as exc:
+        print(f"✗ {exc}")
+        return 1
+
+    # 写入前最终校验：拼装结果按 | 切分列数应等于分区预期总列数（含编号列，
+    # 若有）——与既有 `_validate_release_structure` ①校验同一把尺子。
+    parsed_cells = [c.strip() for c in new_line.strip("|").split("|")]
+    expected_total = SECTION_COLUMN_COUNTS[args.section]
+    if len(parsed_cells) != expected_total:
+        print(f"✗ 拼装结果列数为 {len(parsed_cells)}（应为 {expected_total}），拒绝写入——请核查字段内容。")
+        return 1
+
+    bounds = _section_bounds(text, args.section)
+    if bounds is None:
+        print(f"✗ 目标文件不含 §{args.section} 分区标题，拒绝写入。")
+        return 1
+    start, end = bounds
+    section_text = text[start:end]
+    last_end = _last_table_line_end_offset(section_text)
+    if last_end is None:
+        print(f"✗ §{args.section} 分区内未找到任何表格行（含表头），拒绝写入——分区结构异常需人工核实。")
+        return 1
+
+    insert_at = start + last_end
+    prefix = text[:insert_at]
+    suffix = text[insert_at:]
+    if not prefix.endswith("\n"):
+        prefix += "\n"
+    new_text = prefix + new_line + "\n" + suffix
+
+    target_path.write_text(new_text, encoding="utf-8")
+    print(f"✓ 已追加一行到 §{args.section}：{new_line}")
+    return 0
+
+
 def _archive_row_numbers(repo_root: Path) -> dict[str, set[int]]:
     """扫描所有《跨桌任务队列-归档-YYYYMM.md》，按列数分类出已用编号——
     §一（8 列）归一类、§四（4 列且首列纯数字，与 §二 的 "B-xxx" 批次行区分
@@ -716,12 +890,103 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
     return violations
 
 
+def _row_hold_language_status(cells: list[str], section: str) -> tuple[bool, str | None]:
+    """判定一个 §一/§四 行是否"点名了跟进信且结论为暂缓"（队列 #258 正向
+    Requirement）：状态列（§一 cells[5]；§四 无独立状态列，回落事项列
+    cells[1]）含暂缓关键词，且行内（§一：cells[3]输入指针+cells[6]触碰区；
+    §四：cells[1]事项）能提取出一个反引号包裹的 `.md` 文件名引用。返回
+    (是否命中暂缓关键词, 提取到的文件名 basename 或 None——未提取到文件名
+    时第二个返回值为 None，调用方据此判定"仅关键词无文件名不触发"）。"""
+    if section == "一":
+        status_text = cells[5] if len(cells) > 5 else ""
+        filename_sources = [cells[3] if len(cells) > 3 else "", cells[6] if len(cells) > 6 else ""]
+    elif section == "四":
+        status_text = cells[1] if len(cells) > 1 else ""
+        filename_sources = [cells[1] if len(cells) > 1 else ""]
+    else:
+        return False, None
+
+    if not any(phrase in status_text for phrase in HOLD_LANGUAGE_PHRASES):
+        return False, None
+
+    for source in filename_sources:
+        found = re.findall(r"`([^`]+\.md)`", source)
+        if found:
+            return True, Path(found[0]).name
+    return True, None
+
+
+def _followup_status_by_filename(readme_text: str) -> dict[str, str]:
+    """README「现有跟进信清单」表按目标文件标注建立 文件名(basename) → 发送
+    状态 的映射（队列 #258，独立实现，正则口径同
+    `aibot_service/readme_table.py::_TARGET_FILE_RE`，不 import 该包，同
+    `_followup_readme_rows` 既有惯例）。未标注目标文件的行不在映射内——本
+    校验只认结构化引用（design.md 决策点3），判不出就不拦。"""
+    mapping: dict[str, str] = {}
+    for _, cells, status_col_index in _followup_readme_rows(readme_text):
+        topic_cell = cells[3] if len(cells) > 3 else ""
+        m = FOLLOWUP_TARGET_FILE_RE.search(topic_cell)
+        if not m:
+            continue
+        mapping[Path(m.group(1)).name] = cells[status_col_index]
+    return mapping
+
+
+def _validate_followup_hold_consistency(
+    touched_rows: list[tuple[str, list[str], str]], repo_root: Path,
+) -> list[str]:
+    """队列 #258（接管 #294 修法⑵，openspec 变更包
+    editlock-section-append-and-followup-consistency-guard）：本次持锁期间
+    新增/修改的 §一/§四 行中，"点名了跟进信且结论为暂缓"的行与 README 该信
+    当前发送状态做交叉一致性核对。正向（README 仍为终态 `🆕 待发`，即
+    `ZhuopinFollowupDispatchDaily` 唯一认可的可发送标记）拒绝 release；反向
+    （README 已是"已推送"类终态而队列文本仍称暂缓，多半是事后如实追述整个
+    事故经过，见 #150 真实案例）仅告警不阻断（design.md 决策点4）。
+    """
+    violations: list[str] = []
+    hold_rows = []
+    for line, cells, section in touched_rows:
+        is_hold, filename = _row_hold_language_status(cells, section)
+        if is_hold and filename:
+            hold_rows.append((line, cells, section, filename))
+    if not hold_rows:
+        return violations
+
+    readme_path = repo_root / FOLLOWUP_README_TARGET
+    try:
+        readme_text = readme_path.read_text(encoding="utf-8")
+    except OSError:
+        return violations  # README 读不到不阻断队列 release，本校验静默跳过
+    status_map = _followup_status_by_filename(readme_text)
+
+    for line, cells, section, filename in hold_rows:
+        preview = line.strip()
+        if len(preview) > 80:
+            preview = preview[:80] + "…"
+        status = status_map.get(filename)
+        if status is None:
+            continue  # README 未找到匹配行——判不出，不拦（design.md 决策点3）
+        if status == FOLLOWUP_FINALIZED_STATUS:
+            violations.append(
+                f"§{section} 行点名跟进信「{filename}」且结论为暂缓，但该信在 README "
+                f"中「发送状态」仍为「{FOLLOWUP_FINALIZED_STATUS}」（机制唯一认可的可"
+                f"发送标记，见 #150/#294 真实事故）：{preview}"
+            )
+        elif status not in FOLLOWUP_NON_TERMINAL_STATUSES:
+            print(
+                f"⚠ §{section} 行点名跟进信「{filename}」仍称暂缓，但该信 README「发送"
+                f"状态」已是「{status}」（疑似终态已推送，队列文本可能滞后，建议核实"
+                f"是否为事后如实追述）：{preview}"
+            )
+    return violations
+
+
 def _validate_release_structure(
     args: argparse.Namespace, lock_data: dict, repo_root: Path,
 ) -> list[str]:
-    """队列 #225：release 时对跨桌任务队列.md 做五项结构校验，只对本次
-    持锁期间新增/修改的行生效（历史行不追溯）。返回违规说明列表，空列表
-    即通过。
+    """队列 #225：release 时对跨桌任务队列.md 做结构校验（现已扩至六项，
+    见⑥），只对本次持锁期间新增/修改的行生效（历史行不追溯）。返回违规
+    说明列表，空列表即通过。
 
     ①列数：§一 行应为 8 列、§二/§四 行应为 4 列，不符即报（含反引号内裸
       竖线致列数偏移的情形——本函数按原样切分列，不做任何"容错"，这正是
@@ -753,6 +1018,13 @@ def _validate_release_structure(
       `_leading_status_segment`），并显式放行 #236(1) 引入的"在办（预登记
       ……）"约定文本——那是有意为之的第三态（sweep 也不该把它当"待处理"
       去 add+commit），不是需要拦截的误写。
+    ⑥跟进信暂缓一致性（仅 §一/§四，队列 #258，接管 #294 修法⑵）：命中"点名
+      了跟进信且结论为暂缓"（状态列/事项列含暂缓关键词 + 反引号 `.md` 文件
+      名引用）的行，若该信在 README 中「发送状态」仍为终态 `🆕 待发`，拒绝
+      release——治 2026-08-06 01:30 UTC 真实误发（#150：队列称暂缓、README
+      未同步移出待发标记，`ZhuopinFollowupDispatchDaily` 照发）。反向（README
+      已是"已推送"类终态而队列仍称暂缓）仅告警，见 `_validate_followup_
+      hold_consistency` 文档。
     """
     violations: list[str] = []
     current_text = _read_target_text(args.file)
@@ -762,6 +1034,7 @@ def _validate_release_structure(
     old_sections = _split_live_sections(snapshot_text)
     reserved_map = lock_data.get("reserved") or {}
     archive_numbers: dict[str, set[int]] | None = None  # 惰性计算，仅在需要时扫描
+    touched_for_hold_consistency: list[tuple[str, list[str], str]] = []  # ⑥用
 
     for label, expected_cols in SECTION_COLUMN_COUNTS.items():
         new_text = new_sections.get(label, "")
@@ -857,6 +1130,10 @@ def _validate_release_structure(
                         f"{preview}"
                     )
 
+            if label in ("一", "四"):
+                touched_for_hold_consistency.append((line, cells, label))
+
+    violations.extend(_validate_followup_hold_consistency(touched_for_hold_consistency, repo_root))
     return violations
 
 
@@ -1172,6 +1449,27 @@ def main() -> int:
 
     p_status = sub.add_parser("status", help="查看锁状态，无副作用")
     p_status.set_defaults(func=cmd_status)
+
+    p_append_row = sub.add_parser(
+        "append-row",
+        help="队列 #258：追加一行到指定分区，插入位置/列数/裸竖线由工具保证",
+    )
+    p_append_row.add_argument(
+        "--section", required=True, choices=sorted(SECTION_APPEND_CONTENT_COUNTS),
+        help="目标分区（§一/§二/§四）",
+    )
+    p_append_row.add_argument(
+        "--number", default=None,
+        help="§一/§四 必填：行编号（字符串形式，通常来自 acquire --reserve 的返回值）；"
+             "§二 不使用，不应提供",
+    )
+    p_append_row.add_argument(
+        "--cell", action="append", default=[],
+        help="按分区列序重复提供的字段值（不含首列编号）：§一 7 个"
+             "（任务/领取方/输入指针/期望产出/状态/触碰区/登记）、§二 4 个"
+             "（批次/文件清单/说明/状态，首个即批次号）、§四 3 个（事项/等谁/截止）",
+    )
+    p_append_row.set_defaults(func=cmd_append_row)
 
     args = parser.parse_args()
     return args.func(args)

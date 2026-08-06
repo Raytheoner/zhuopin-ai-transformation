@@ -1306,5 +1306,341 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
 
         self.assertEqual(self._release(who="A"), 0)
 
+
+class AppendRowTests(unittest.TestCase):
+    """队列 #258：`append-row` 子命令——插入位置/列数/裸竖线校验交给工具，
+    替代此前"用全文最后一个 # 数字 形态的行定位分区末尾"这一容易插错分区
+    的启发式（#248/#254 同一根因两次踩坑）。
+
+    黑盒方式：`--file` 指向本用例专属临时文件的绝对路径（同 `EditLockTests`
+    既有惯例），不触碰真实队列锁/REPO_ROOT。
+    """
+
+    FIXTURE = (
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+        "| 100 | 示例 | CC | 无 | 无 | ✅ 已完成 | 无 | 2026-08-01 |\n"
+        "\n## 二、待 commit 批次（CC 取活销行）\n\n"
+        "| 批次 | 文件清单 | 说明 | 状态 |\n"
+        "|------|---------|------|------|\n"
+        "\n## 四、需 Shao Peishen 的动作（例外与拍板）\n\n"
+        "| # | 事项 | 等谁 | 截止 |\n"
+        "|---|------|------|------|\n"
+        "| 50 | 示例 | Shao Peishen | 不急 |\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = Path(self._tmpdir.name) / "假想队列.md"
+        self.target.write_text(self.FIXTURE, encoding="utf-8")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _append(self, *args: str) -> subprocess.CompletedProcess:
+        return run("--file", str(self.target), "append-row", *args)
+
+    def test_structured_cells_assemble_correct_column_count(self):
+        result = self._append(
+            "--section", "一", "--number", "101",
+            "--cell", "新任务", "--cell", "CC", "--cell", "无",
+            "--cell", "无", "--cell", "待领", "--cell", "无", "--cell", "2026-08-07",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        text = self.target.read_text(encoding="utf-8")
+        self.assertIn(
+            "| 101 | 新任务 | CC | 无 | 无 | 待领 | 无 | 2026-08-07 |", text,
+        )
+
+    def test_wrong_cell_count_rejected_without_writing(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._append(
+            "--section", "一", "--number", "101",
+            "--cell", "只有一个字段",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_insert_lands_in_target_section_not_a_lookalike_section(self):
+        """核心场景（#248/#254 复现）：§一 与 §四 行格式相似（均以 `| 数字 |`
+        开头），插入 §一 不得影响 §四，反之亦然。"""
+        result = self._append(
+            "--section", "一", "--number", "101",
+            "--cell", "新任务", "--cell", "CC", "--cell", "无",
+            "--cell", "无", "--cell", "待领", "--cell", "无", "--cell", "2026-08-07",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        text = self.target.read_text(encoding="utf-8")
+        section_four_start = text.index("## 四、")
+        self.assertNotIn("| 101 |", text[section_four_start:])
+        section_one_text = text[text.index("## 一、"):text.index("## 二、")]
+        self.assertIn("| 101 |", section_one_text)
+
+    def test_append_to_section_four_after_section_one(self):
+        result = self._append(
+            "--section", "四", "--number", "51",
+            "--cell", "新事项", "--cell", "Shao Peishen", "--cell", "不急",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        text = self.target.read_text(encoding="utf-8")
+        section_four_text = text[text.index("## 四、"):]
+        self.assertIn("| 51 | 新事项 | Shao Peishen | 不急 |", section_four_text)
+        section_one_text = text[text.index("## 一、"):text.index("## 二、")]
+        self.assertNotIn("| 51 |", section_one_text)
+
+    def test_append_to_empty_section_two(self):
+        result = self._append(
+            "--section", "二",
+            "--cell", "B-测试批次", "--cell", "`文件.md`", "--cell", "说明", "--cell", "待处理",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        text = self.target.read_text(encoding="utf-8")
+        self.assertIn("| B-测试批次 | `文件.md` | 说明 | 待处理 |", text)
+
+    def test_bare_pipe_rejected(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._append(
+            "--section", "四", "--number", "51",
+            "--cell", "A|B", "--cell", "Shao Peishen", "--cell", "不急",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_backtick_wrapped_pipe_also_rejected(self):
+        """apply 阶段修正（design.md 有记录）：反引号不豁免裸竖线检测——
+        本项目表格解析对反引号无感知，豁免会制造"写入时放行、release ①
+        校验又拒绝"的自相矛盾状态。"""
+        before = self.target.read_text(encoding="utf-8")
+        result = self._append(
+            "--section", "四", "--number", "51",
+            "--cell", "`A|B`", "--cell", "Shao Peishen", "--cell", "不急",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_number_provided_for_section_two_rejected(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._append(
+            "--section", "二", "--number", "1",
+            "--cell", "B-测试", "--cell", "`x.md`", "--cell", "说明", "--cell", "待处理",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_missing_number_for_section_one_rejected(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._append(
+            "--section", "一",
+            "--cell", "新任务", "--cell", "CC", "--cell", "无",
+            "--cell", "无", "--cell", "待领", "--cell", "无", "--cell", "2026-08-07",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_missing_section_heading_rejected(self):
+        self.target.write_text("没有任何分区标题的文件", encoding="utf-8")
+        before = self.target.read_text(encoding="utf-8")
+        result = self._append(
+            "--section", "一", "--number", "101",
+            "--cell", "新任务", "--cell", "CC", "--cell", "无",
+            "--cell", "无", "--cell", "待领", "--cell", "无", "--cell", "2026-08-07",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+
+class HoldConsistencyValidationTests(unittest.TestCase):
+    """队列 #258（接管 #294 修法⑵）：release 时对队列暂缓结论与 README
+    跟进信状态的交叉一致性校验（⑥）。
+
+    白盒方式，同 ReleaseStructuralValidationTests：monkeypatch
+    REPO_ROOT/DEFAULT_TARGET/FOLLOWUP_README_TARGET 指向本用例专属临时
+    目录，同一 repo_root 下同时放队列文件与 README 文件。
+    """
+
+    SECTION_ONE_HEADER = (
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+    )
+    SECTION_FOUR_HEADER = (
+        "| # | 事项 | 等谁 | 截止 |\n"
+        "|---|------|------|------|\n"
+    )
+    SECTION_TWO_HEADER = (
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+    )
+    README_HEADER = (
+        "| 编号 | 日期 | 收信人 | 主要事项 | 交期要点 | 发送状态（2026-07-06） |\n"
+        "|--------|------|--------|---------|---------|---------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.DEFAULT_TARGET = "queue.md"
+        self.module.FOLLOWUP_README_TARGET = "readme.md"
+        self.target_path = self.repo_root / "queue.md"
+        self.readme_path = self.repo_root / "readme.md"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_queue(self, section_one_rows="", section_four_rows="", hwm_one=200, hwm_four=40):
+        text = (
+            f"> **编号高水位线：§一 #{hwm_one} ｜ §四 #{hwm_four}**（说明文字）\n\n"
+            "## 一、任务看板\n\n" + self.SECTION_ONE_HEADER + section_one_rows +
+            "\n## 二、待 commit 批次（CC 取活销行）\n\n" + self.SECTION_TWO_HEADER +
+            "\n## 三、口径冻结标（重梳期防在途建造撞车）\n\n"
+            "| 域/场景 | 冻结原因 | 挂标 | 解除条件 |\n"
+            "|---------|---------|------|---------|\n"
+            "\n## 四、需 Shao Peishen 的动作（例外与拍板）\n\n" +
+            self.SECTION_FOUR_HEADER + section_four_rows
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+    def _write_readme(self, rows=""):
+        text = "## 现有跟进信清单\n\n" + self.README_HEADER + rows
+        self.readme_path.write_text(text, encoding="utf-8")
+
+    def _acquire(self, who="A", reserve=None, section=None):
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who=who, note="",
+            reserve=reserve, section=section, reserve_multi=None,
+        )
+        return self.module.cmd_acquire(ns)
+
+    def _release(self, who=""):
+        ns = argparse.Namespace(file=self.module.DEFAULT_TARGET, who=who)
+        return self.module.cmd_release(ns)
+
+    def test_hold_row_with_readme_still_pending_blocks_release(self):
+        """正向核心场景（#150 真实事故复现）：队列行含暂缓关键词+反引号
+        文件名引用，README 对应行仍是「🆕 待发」——release 必须被拒绝。"""
+        self._write_readme(
+            "| 采购部#10 | 2026-07-29 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | 🆕 待发 |\n"
+        )
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试 | CC | `某跟进信.md` | 产出 | 本行拍板暂不发，待前信闭环 | 无 | 2026-08-07 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_hold_row_with_readme_already_non_pending_passes(self):
+        """README 已同步非待发（如 ⏳待你审）——正常放行。"""
+        self._write_readme(
+            "| 采购部#10 | 2026-07-29 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | ⏳ 待你审 |\n"
+        )
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试 | CC | `某跟进信.md` | 产出 | 本行拍板暂不发，待前信闭环 | 无 | 2026-08-07 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_hold_row_without_readme_match_passes(self):
+        """README 中找不到匹配行——判不出，不拦（design.md 决策点3）。"""
+        self._write_readme()  # 空表
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试 | CC | `不存在的信.md` | 产出 | 暂不发 | 无 | 2026-08-07 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_reverse_readme_already_sent_hold_text_still_present_warns_not_blocks(self):
+        """反向：README 已是"已推送"类终态，队列行仍称暂缓——仅告警不阻断
+        （design.md 决策点4；不阻断是为了不误伤"事后如实追述事故经过"这类
+        必要写法）。"""
+        self._write_readme(
+            "| 采购部#10 | 2026-07-29 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | ✅ 已推送 2026-08-06 01:30 UTC |\n"
+        )
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试 | CC | `某跟进信.md` | 产出 | 本行拍板暂不发（事后追述） | 无 | 2026-08-07 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_hold_keyword_without_filename_reference_does_not_trigger(self):
+        """仅命中暂缓关键词、无反引号文件名引用——不触发本校验。"""
+        self._write_readme(
+            "| 采购部#10 | 2026-07-29 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | 🆕 待发 |\n"
+        )
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试 | CC | 无 | 产出 | 暂不发 | 无 | 2026-08-07 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_filename_reference_without_hold_keyword_does_not_trigger(self):
+        """仅有反引号文件名引用、无暂缓关键词——不触发本校验（即便 README
+        仍待发）。"""
+        self._write_readme(
+            "| 采购部#10 | 2026-07-29 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | 🆕 待发 |\n"
+        )
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试 | CC | `某跟进信.md` | 产出 | 待领 | 无 | 2026-08-07 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_section_four_hold_row_uses_topic_column_as_status(self):
+        """§四 无独立状态列，检测应作用于"事项"列本身。"""
+        self._write_readme(
+            "| 采购部#10 | 2026-07-29 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | 🆕 待发 |\n"
+        )
+        self._write_queue(hwm_four=40)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="四"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 41 | 暂不发`某跟进信.md`，待其闭环 | Shao Peishen | 不急 |\n"
+        text = text.replace(self.SECTION_FOUR_HEADER, self.SECTION_FOUR_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_150_real_incident_row_recreated_triggers_reverse_warning_not_block(self):
+        """历史兼容核对固化（design.md「历史兼容核对」）：#150 真实事故场景
+        重现——README 已终态推送、队列行称暂缓，应仅告警放行，不拒绝。"""
+        self._write_readme(
+            "| 采购部（未发，不编号） | 2026-07-29 | 采购部 · 姚祖怡 | "
+            "批2引擎最后一项口径判例包 → 目标文件："
+            "`采购部-姚祖怡-跟进-2026-07-29-批2上月未齐套跨月占用判例批改.md` | "
+            "不卡时间 | ✅ 已推送 2026-08-06 01:30 UTC |\n"
+        )
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = (
+            "| 201 | #150 事后追述 | CC | "
+            "`采购部-姚祖怡-跟进-2026-07-29-批2上月未齐套跨月占用判例批改.md` | "
+            "产出 | 本行此前拍板暂不发，该信已因机制误判自动推送，信不可撤回 | 无 | 2026-08-07 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
