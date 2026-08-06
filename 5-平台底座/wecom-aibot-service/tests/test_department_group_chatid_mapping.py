@@ -9,7 +9,7 @@ from aibot_service.department_group_chatid_mapping import (
 
 
 def test_default_mapping_file_declares_four_departments():
-    """队列 #274/#275：2026-08-06 真实测试消息采集确认财务部/质量部/跨部门
+    """队列 #279：2026-08-06 真实测试消息采集确认财务部/质量部/跨部门
     三个真实 chatid（intake.py 归档审计事件里读出），采购部仍是待采集的
     占位空串——不是猜测，是"目前只有这几个真实到手"的如实状态。跨部门是
     与财务/质量/采购平级的独立第4个部门（Shao Peishen 2026-08-06 明确：

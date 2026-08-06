@@ -48,7 +48,7 @@ def test_parse_message_missing_body_does_not_raise():
     assert msg.sender == ""
 
 
-# ── 队列 #274：chatid/chattype 提取（此前从未进入 InboundMessage）───────────
+# ── 队列 #279：chatid/chattype 提取（此前从未进入 InboundMessage）───────────
 
 def test_parse_group_message_extracts_chatid_and_chattype():
     frame = {

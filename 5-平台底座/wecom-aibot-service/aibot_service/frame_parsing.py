@@ -44,7 +44,7 @@ def parse_inbound_frame(frame: dict[str, Any]) -> InboundMessage:
     else:
         sender = from_field or body.get("sender") or ""
 
-    # 队列 #274：此前只有 forwarding.py 为拼转发文案临时重读一次 body.chatid，
+    # 队列 #279：此前只有 forwarding.py 为拼转发文案临时重读一次 body.chatid，
     # 从未进入 InboundMessage 本身——归档/审计事件因此从来没留下过任何群
     # chatid 记录，即便消息确实来自群聊也一样（真实事故：Shao Peishen
     # 2026-08-06 在三个部门群里各发了一条测试消息，全部正确归档，但没有
