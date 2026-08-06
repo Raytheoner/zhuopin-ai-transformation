@@ -682,12 +682,15 @@ def _run_scheduled_task_mirror_sync(repo_root: Path, log: list[str]) -> None:
         )
         log.append("✓ 定时任务真身↔镜像核对：检出差异并已自动更正+本地提交，等待本轮末尾统一对齐并推送。")
         webhook_url = _load_webhook_url(repo_root)
-        if webhook_url is not None:
+        if webhook_url is None:
+            log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过定时任务镜像差异告警推送（仅留痕日志）。")
+        else:
             try:
                 _send_wecom_markdown(
                     webhook_url,
                     f"🪞 定时任务真身↔镜像核对：检出并已自动更正差异\n{stdout[:800]}",
                 )
+                log.append("✓ 定时任务镜像差异告警已推送。")
             except Exception as send_exc:  # noqa: BLE001 —— 告警失败不应影响主流程
                 log.append(f"⚠ 定时任务镜像差异告警推送失败（不影响本轮）：{send_exc}")
 
@@ -697,12 +700,15 @@ def _run_scheduled_task_mirror_sync(repo_root: Path, log: list[str]) -> None:
             f"{stdout[:500]}"
         )
         webhook_url = _load_webhook_url(repo_root)
-        if webhook_url is not None:
+        if webhook_url is None:
+            log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过凭据拦截告警推送（仅留痕日志）。")
+        else:
             try:
                 _send_wecom_markdown(
                     webhook_url,
                     f"🔴 定时任务真身↔镜像核对：命中凭据扫描，已拒绝写入镜像，需人工核实\n{stdout[:800]}",
                 )
+                log.append("✓ 凭据拦截告警已推送。")
             except Exception as send_exc:  # noqa: BLE001
                 log.append(f"⚠ 凭据拦截告警推送失败（不影响本轮）：{send_exc}")
 
