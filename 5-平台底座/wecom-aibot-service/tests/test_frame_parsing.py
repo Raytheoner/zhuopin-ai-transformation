@@ -46,3 +46,42 @@ def test_parse_message_missing_body_does_not_raise():
     msg = parse_inbound_frame({})
     assert msg.msgtype == ""
     assert msg.sender == ""
+
+
+# ── 队列 #274：chatid/chattype 提取（此前从未进入 InboundMessage）───────────
+
+def test_parse_group_message_extracts_chatid_and_chattype():
+    frame = {
+        "body": {
+            "msgtype": "text",
+            "from": {"userid": "ShaoPeiShen"},
+            "text": {"content": "@邵总数字人🤖 财务测试短信"},
+            "chatid": "wrkSFfCgAAxxxxxxxxxxxxxxxxxxxxx",
+            "chattype": "group",
+        }
+    }
+    msg = parse_inbound_frame(frame)
+    assert msg.chatid == "wrkSFfCgAAxxxxxxxxxxxxxxxxxxxxx"
+    assert msg.chattype == "group"
+
+
+def test_parse_single_chat_message_chattype_single():
+    frame = {
+        "body": {
+            "msgtype": "text",
+            "from": {"userid": "YaoZuYi"},
+            "text": {"content": "收到"},
+            "chatid": "wrSingleChatIdXXXXXXXXXXXXXXXXX",
+            "chattype": "single",
+        }
+    }
+    msg = parse_inbound_frame(frame)
+    assert msg.chatid == "wrSingleChatIdXXXXXXXXXXXXXXXXX"
+    assert msg.chattype == "single"
+
+
+def test_parse_message_missing_chatid_defaults_to_none():
+    frame = {"body": {"msgtype": "text", "from": {"userid": "x"}, "text": {"content": "y"}}}
+    msg = parse_inbound_frame(frame)
+    assert msg.chatid is None
+    assert msg.chattype is None

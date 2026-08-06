@@ -29,6 +29,8 @@ class InboundMessage:
     file_aes_key: Optional[str] = None
     file_name_hint: Optional[str] = None
     msgid: Optional[str] = None
+    chatid: Optional[str] = None
+    chattype: Optional[str] = None
 
 
 def parse_inbound_frame(frame: dict[str, Any]) -> InboundMessage:
@@ -41,6 +43,17 @@ def parse_inbound_frame(frame: dict[str, Any]) -> InboundMessage:
         sender = from_field.get("userid") or from_field.get("name") or ""
     else:
         sender = from_field or body.get("sender") or ""
+
+    # 队列 #274：此前只有 forwarding.py 为拼转发文案临时重读一次 body.chatid，
+    # 从未进入 InboundMessage 本身——归档/审计事件因此从来没留下过任何群
+    # chatid 记录，即便消息确实来自群聊也一样（真实事故：Shao Peishen
+    # 2026-08-06 在三个部门群里各发了一条测试消息，全部正确归档，但没有
+    # 任何日志留下 chatid，无法据此配置 department_group_chatid_mapping.yaml
+    # 完成队列 #270）。改为在此处随 sender/msgtype 一并提取——字段路径同
+    # forwarding.py 里已实测确认的路径：`chatid` 在顶层 `body.chatid`
+    # （不嵌在 from 里），`chattype` 为 "group"/"single"。
+    chatid = body.get("chatid")
+    chattype = body.get("chattype")
 
     text_content = None
     file_url = file_aes_key = file_name_hint = None
@@ -61,4 +74,6 @@ def parse_inbound_frame(frame: dict[str, Any]) -> InboundMessage:
         file_aes_key=file_aes_key,
         file_name_hint=file_name_hint,
         msgid=str(msgid) if msgid else None,
+        chatid=str(chatid) if chatid else None,
+        chattype=str(chattype) if chattype else None,
     )

@@ -184,7 +184,16 @@ async def archive_inbound_message(
                 "matched": matched,
                 "archived_path": str(target_path),
             },
-            data_sources={"sender": sender_label, "msgtype": message.msgtype},
+            # 队列 #274：chatid/chattype 随归档事件一并留痕——此前从未记录，
+            # 群聊消息即便真实到达也查不出是哪个群发来的（队列 #270 卡在
+            # 拿不到群 chatid 正是这个空洞）。None 时序列化为空字符串，
+            # 与既有 sender/msgtype 字段保持同一"缺失即空串"约定。
+            data_sources={
+                "sender": sender_label,
+                "msgtype": message.msgtype,
+                "chatid": message.chatid or "",
+                "chattype": message.chattype or "",
+            },
         )
     )
     if not matched:
