@@ -10,13 +10,22 @@
 # chatid 不是秘密——同 `dispatch.py` 里明文放的 KNOWN_RECIPIENT_USERIDS
 # （如 "姚祖怡": "YaoZuYi"）一个敏感级别，可安全提交进 git。
 #
-# ⚠️ 真实 chatid 值目前未知——采集是另一条正在并行推进的依赖，本表先占位
-# （空字符串）。消费方（`resolve_group_cc_chatid`）遇空值一律 fail-closed
-# 跳过群 cc 并记审计，不拿空值当 chatid 发送。真实值到手后直接把等号右边
-# 填上即可，不需要改代码。
+# 真实 chatid 值由 Shao Peishen 2026-08-06 在各群发送带部门标签的测试消息
+# （"财务测试短信"/"质量测试短信"等）、经 intake.py 归档审计事件（队列
+# #274 新增的 chatid/chattype 字段）真实采集确认——不是猜测/占位。消费方
+# （`resolve_group_cc_chatid`）遇空值一律 fail-closed 跳过群 cc 并记审计，
+# 不拿空值当 chatid 发送；尚未采集到的部门（如本文件当前的采购部）继续
+# 留空，待采集到后直接把等号右边填上即可，不需要改代码。
 #
 # 销售部：与 `department_group_mapping.yaml` 同一拍板（Paul 2026-07-15），
 # 暂不启用，故意不建映射条目。
-财务部: ""
-质量部: ""
+#
+# 跨部门（2026-08-06 新增，Shao Peishen 明确："采购部还是自己的部门，
+# 我现在有4个部门单独使用，跟其他部门的信件无关"——即"跨部门"是与财务/
+# 质量/采购平级的独立第4个部门，只收发给它自己的跟进信，不是"额外收全部
+# 部门"的广播/cc 对象；此前一度按后者设计过、已撤销，仅登记本次以防
+# 未来又走回头路）。
+财务部: "wrvDL_DAAAva1MWrKjLmuDWOu1BNxHaA"
+质量部: "wrvDL_DAAAiR1HJ_JFx1H-k-tjnriXEg"
 采购部: ""
+跨部门: "wrvDL_DAAAntxO_zDcRCmGHMcuhvBTGw"
