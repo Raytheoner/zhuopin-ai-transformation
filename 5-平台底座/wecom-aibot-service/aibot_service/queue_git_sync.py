@@ -42,6 +42,26 @@ unsynced` 打标记后，任何后续一次成功的 git 同步都会把**当时
 "紧跟编号列之后"（挤占任务描述开头，扫读第一眼看到的是"未同步"而非
 "这是什么任务"）改为行**末尾**（登记列之后、闭合竖线之前），不再顶偏
 正文。
+
+**队列 #287 修复（2026-08-06，openspec `aibot-queue-sync-checkout-guard`，
+Shao Peishen 批准候选 A）**：上方"reset --mixed 只移动分支指针+索引，不动
+工作区；随后单独 checkout 这一个文件，确保不误伤工作区里其他未提交内容"
+这句"设计要求"此前从未被真正校验过——`_commit` 的 `git add` 会把磁盘上
+当次的**全部**内容（含协议〇.7/〇.8 允许存在的"人类会话已 release 编辑锁
+但尚未 commit"这一合法状态，可持续数分钟到数小时）一并暂存进本地 commit，
+一旦推送因非快进被拒（日常高频场景），后续 `reset`/`checkout` 会把这个
+混合了人类成果的本地 commit 连根拔起——人类的内容既不在工作区、也不在
+任何可达的 git 历史里。真实事故与代码路径复现见队列 #287。**修法**：新增
+`_diff_exceeds_expected`，在执行 `reset`/`checkout` 前校验刚提交的这个
+本地 commit 相对其父提交的实际改动是否超出"仅本次追加"的预期规模（插入
+≤2 行、删除 ≤1 行，只用行数量级判断，不解析表格语义）；超出即判定磁盘上
+混入了外来内容，**放弃销毁性 reset/checkout**，改为 `reset --soft
+HEAD~1` 撤销本地 commit（不动工作区），人类内容与机器人本次算出的行都
+原样保留在工作区、交人工/sweep 后续处理；`GitSyncOutcome` 新增
+`foreign_content_detected` 字段，`sync_after_archive` 据此使用与网络/
+冲突类失败明确区分的 audit reason 与告警文案（不得让人误判为可通过
+重试解决）。护栏未命中时（磁盘只有本次追加自身差异）行为与护栏引入前
+完全一致。
 """
 from __future__ import annotations
 
@@ -98,6 +118,42 @@ def _is_non_fast_forward(stderr: str) -> bool:
     return any(marker in stderr for marker in _NON_FAST_FORWARD_MARKERS)
 
 
+def _diff_exceeds_expected(
+    repo_root: Path, relative_path: str, *, max_insertions: int = 2, max_deletions: int = 1,
+) -> bool:
+    """队列 #287 护栏（openspec `aibot-queue-sync-checkout-guard` 决策点1/3，
+    Shao Peishen 2026-08-06 批准候选 A）：刚完成的本地 commit（`HEAD`，相对
+    `HEAD~1`）对 `relative_path` 的实际改动是否超出"本次追加预期产生的差异"
+    （新增一行任务 ＋ 至多一行高水位线自增，即插入 ≤2 行、删除 ≤1 行）。
+
+    超出即判定磁盘上原本存在与本次追加无关的外来未提交内容（该内容已被
+    `git add` 一并暂存进这个 commit 里，见 `_commit`）——协议〇.7/〇.8 允许
+    "人类已 release 编辑锁但内容尚未提交"这一合法状态持续数分钟到数小时，
+    此时若恰好撞上非快进冲突，后续的 `reset`/`checkout` 会把这份混合内容
+    连根拔起（队列 #287 真实事故，已用 `test_conflict_recompute_destroys_
+    uninvolved_uncommitted_edits` 复现坐实）。
+
+    只用行数量级判断，不解析队列表格语义——见 design.md 决策点3：语义
+    解析引入的新失败面（表格格式漂移）比行数判断更大，量级判断对"本次
+    只是自己的一行 vs 混入了一整个编辑锁窗口的改动"这一区分已经足够。
+
+    无法判断时（如首次提交没有 `HEAD~1`、diff 输出为空）保守放行——返回
+    `False`，沿用护栏加入前的既有行为，不引入新的失败面。"""
+    result = _run_git(repo_root, "diff", "--numstat", "HEAD~1", "HEAD", "--", relative_path)
+    if result.returncode != 0 or not result.stdout.strip():
+        return False
+    line = result.stdout.strip().splitlines()[0]
+    parts = line.split("\t")
+    if len(parts) < 2:
+        return False
+    try:
+        insertions = int(parts[0])
+        deletions = int(parts[1])
+    except ValueError:
+        return False
+    return insertions > max_insertions or deletions > max_deletions
+
+
 def _commit(repo_root: Path, relative_path: str, row: str) -> str:
     """git add + commit。返回空串=成功，否则错误信息。"""
     add = _run_git(repo_root, "add", relative_path)
@@ -122,6 +178,11 @@ class GitSyncOutcome:
     # 推送成功无需暂存）。供 `flush_pending_git_sync_appends` 判断一条记录
     # 是否已在补录过程中"迁移"到另一个暂存文件，避免同时留在两处。
     pending_recorded_at: Optional[Path] = None
+    # 队列 #287：`_diff_exceeds_expected` 护栏是否拦截了一次销毁性重算——
+    # True 时磁盘上的外来内容已被保留（未执行 reset/checkout），供
+    # `sync_after_archive` 选用差异化的 audit reason/告警文案，不与网络/
+    # 冲突类失败共用同一套"可通过重试解决"的措辞。
+    foreign_content_detected: bool = False
 
 
 def append_task_and_sync_to_git(
@@ -173,6 +234,7 @@ def append_task_and_sync_to_git(
     last_error = ""
     attempt = 0
     exhausted_conflict = False
+    guard_triggered = False
 
     for attempt in range(1, max_retries + 1):
         if attempt == 1 and already_appended_row is not None:
@@ -210,21 +272,47 @@ def append_task_and_sync_to_git(
             exhausted_conflict = True
             break
 
+        # 队列 #287 护栏（openspec aibot-queue-sync-checkout-guard，Shao
+        # Peishen 2026-08-06 批准候选 A）：在执行会覆盖工作区文件内容的
+        # reset/checkout 之前，先校验刚提交的这个本地 commit 对该文件的
+        # 实际改动是否超出"本次追加"应有的规模——超出即说明磁盘上原本
+        # 存在与本次追加无关的外来未提交内容（如协议〇.7/〇.8 允许的
+        # "人类已 release 编辑锁但内容尚未提交"合法状态），此时绝不能继续
+        # 执行销毁性 reset/checkout（队列 #287 真实事故的根因）。
+        if _diff_exceeds_expected(resolved_repo_root, relative_path):
+            guard_triggered = True
+            last_error = (
+                "护栏拦截（foreign_dirty_content_detected）：磁盘上存在与本次"
+                f"追加无关的外来未提交内容，已放弃销毁性 reset/checkout；"
+                f"原始推送错误：{last_error}"
+            )
+            break
+
         # origin 已前进——对齐到最新版本后重新计算插入点/编号（而非重放）。
         # reset --mixed 只移动分支指针+索引，不动工作区；随后单独 checkout
-        # 这一个文件，确保不误伤工作区里其他未提交内容（设计要求）。
+        # 这一个文件，确保不误伤工作区里其他未提交内容（设计要求；上方
+        # 护栏是这条"设计要求"此前从未被真正校验过的补强）。
         _run_git(resolved_repo_root, "fetch", remote)
         _run_git(resolved_repo_root, "reset", "--mixed", f"{remote}/{branch}")
         _run_git(resolved_repo_root, "checkout", "--", relative_path)
         _sleep(backoff_seconds)
 
-    if exhausted_conflict:
+    if guard_triggered:
+        # 护栏命中：不执行任何销毁性操作。撤销本地这个（可能混入外来内容
+        # 的）commit（--soft，不动工作区），工作区随之恢复为"外来内容 ＋
+        # 本次追加已插入的这一行"混合的未提交状态——与进入本函数之前相比
+        # 只多了这一行（这一行本就该留在磁盘上，交人工/sweep 后续处理）。
+        _run_git(resolved_repo_root, "reset", "--soft", "HEAD~1")
+    elif exhausted_conflict:
         # 重试耗尽：丢弃本地这个基于过期基线算出、编号可能已不准确的 commit，
         # 仓库恢复到与远端一致的干净状态，不挡住后续自动化写入。
         _run_git(resolved_repo_root, "fetch", remote)
         _run_git(resolved_repo_root, "reset", "--hard", f"{remote}/{branch}")
 
-    return GitSyncOutcome(row=row, pushed=False, attempts=attempt, last_error=last_error)
+    return GitSyncOutcome(
+        row=row, pushed=False, attempts=attempt, last_error=last_error,
+        foreign_content_detected=guard_triggered,
+    )
 
 
 def _mark_row_unsynced(queue_path: Path, task_id: str) -> bool:
@@ -480,12 +568,18 @@ async def sync_after_archive(
 
     audit.record(AuditEvent(
         scenario="wecom-aibot", action="queue_sync_degraded", evaluator=evaluator,
-        automation_level="L1", decision={"attempts": outcome.attempts}, data_sources={},
-        error=outcome.last_error,
+        automation_level="L1",
+        decision={
+            "attempts": outcome.attempts,
+            "reason": "foreign_dirty_content_detected" if outcome.foreign_content_detected else "",
+        },
+        data_sources={}, error=outcome.last_error,
     ))
-    # 非快进重试耗尽/网络类失败均由 append_task_and_sync_to_git 内部处理，
-    # 从不以 QueueLockBusy 形式反映在 outcome.last_error 里——恒定路由到
-    # pending_path（真实 git 失败暂存文件），不涉及锁忙分流。
+    # 非快进重试耗尽/网络类失败/护栏拦截均由 append_task_and_sync_to_git
+    # 内部处理，从不以 QueueLockBusy 形式反映在 outcome.last_error 里——
+    # 恒定路由到 pending_path（真实 git 失败暂存文件，队列 #287 护栏命中
+    # 也复用这一个通道，见 design.md 决策点2：不新增第三个暂存文件），
+    # 不涉及锁忙分流。
     written_to = _route_pending_failure(
         is_lock_busy=False, append_kwargs=append_kwargs, error=outcome.last_error,
         pending_path=pending_path, lock_pending_path=lock_pending_path,
@@ -494,10 +588,21 @@ async def sync_after_archive(
     _mark_row_unsynced_safely(queue_path, outcome.row or already_appended_row)
     if connector is not None and recipient:
         desc = append_kwargs.get("description", "")
-        alert_text = (
-            f"队列同步失败 {outcome.attempts} 次，一行待人工核对合并："
-            f"{desc}{_location_hint(written_to, append_kwargs)}"
-        )
+        if outcome.foreign_content_detected:
+            # 队列 #287：文案须与"网络/冲突类失败"明确区分——那类失败
+            # 靠重试就可能自愈，本情形重试无意义（磁盘上的外来内容不会
+            # 因为再试一次而消失），必须显式说明"已跳过、未做任何覆盖"，
+            # 避免人工误判成可以再等一等的暂时性故障。
+            alert_text = (
+                f"队列同步护栏拦截：磁盘上存在其它未提交内容（并非本次追加），"
+                f"已跳过自动同步、未执行任何覆盖性操作，需人工核实后处理："
+                f"{desc}{_location_hint(written_to, append_kwargs)}"
+            )
+        else:
+            alert_text = (
+                f"队列同步失败 {outcome.attempts} 次，一行待人工核对合并："
+                f"{desc}{_location_hint(written_to, append_kwargs)}"
+            )
         await _send_degraded_alert(
             connector, audit, alert_text, recipient,
             fallback_send=fallback_send, evaluator=evaluator,

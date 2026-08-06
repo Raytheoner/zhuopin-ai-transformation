@@ -21,6 +21,7 @@ from aibot_service.queue_edit_lock import QueueLockBusy
 from aibot_service.queue_git_sync import (
     UNSYNCED_MARKER,
     _clear_unsynced_markers,
+    _diff_exceeds_expected,
     _is_non_fast_forward,
     _mark_row_unsynced,
     append_task_and_sync_to_git,
@@ -533,22 +534,22 @@ def test_clear_unsynced_markers_handles_legacy_leading_space_format(tmp_path: Pa
     assert queue_path.read_text(encoding="utf-8") == header + original_line
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "队列 #287 根因复现，待 openspec 变更包 aibot-queue-sync-checkout-guard "
-        "design 审批通过并 apply 护栏后应转为通过（届时移除本 xfail 标记）"
-    ),
-)
-def test_conflict_recompute_destroys_uninvolved_uncommitted_edits(tmp_path: Path):
-    """队列 #287 根因复现（真实代码路径，非 mock）：人类会话经协议〇.7
-    编辑锁 acquire→写盘→release 后，改动仍只落在工作区（未 commit，等待
-    sweep 按 §二 批次统一提交）——这期间若机器人恰好处理另一条消息、且
-    推送撞上非快进冲突（origin 已被第三方推进，属日常高频场景），冲突后的
-    `fetch`+`reset --mixed`+`checkout -- relative_path` 会把队列文件的
-    工作区内容整体替换成 origin 版本，人类那份从未涉及本次冲突的未提交
-    编辑被静默一并抹掉——即 #287 描述的"锁与结构校验都正常工作，只是它们
-    保护的那份文件在其之外被另一个进程整体替换"。
+def test_conflict_recompute_guard_preserves_uninvolved_uncommitted_edits(tmp_path: Path):
+    """队列 #287 根因复现 + 护栏验证（真实代码路径，非 mock，openspec
+    `aibot-queue-sync-checkout-guard` 已获 Shao Peishen 批准候选 A 并落地）：
+    人类会话经协议〇.7 编辑锁 acquire→写盘→release 后，改动仍只落在工作区
+    （未 commit，等待 sweep 按 §二 批次统一提交）——这期间若机器人恰好处理
+    另一条消息、且推送撞上非快进冲突（origin 已被第三方推进，属日常高频
+    场景），护栏加入前 `fetch`+`reset --mixed`+`checkout -- relative_path`
+    会把队列文件的工作区内容整体替换成 origin 版本，人类那份从未涉及本次
+    冲突的未提交编辑被静默一并抹掉。
+
+    护栏加入后：`_diff_exceeds_expected` 检测到这次本地 commit 的实际改动
+    （人类多行编辑 ＋ 机器人一行）远超"仅本次追加"的预期规模，放弃销毁性
+    reset/checkout，改为 `reset --soft HEAD~1` 撤销本地 commit——人类的
+    内容与机器人这次算出的行都完整保留在工作区（未提交、未推送），交人工
+    /sweep 后续处理；origin 上不出现任何一方的内容（既没有销毁人类的，也
+    没有把机器人这次可能编号不准的行错误地推上去）。
 
     本用例不依赖任何 mock：真实 bare origin + 真实 git 子进程 + 真实调用
     生产函数 `append_task_and_sync_to_git`。"""
@@ -566,22 +567,103 @@ def test_conflict_recompute_destroys_uninvolved_uncommitted_edits(tmp_path: Path
 
     # 第三方（另一 CC session/机器人自己处理的另一条消息）先手推送，制造
     # 非快进冲突——这是高频并发仓库里的日常场景，不是刻意构造的极端条件。
-    _push_other_writer_row(clone_b, "并发的另一条消息")
+    other_row = _push_other_writer_row(clone_b, "并发的另一条消息")
 
     outcome = append_task_and_sync_to_git(
         clone_a, clone_a / "queue.md", **_sample_kwargs("机器人正在处理的这条消息")
     )
 
-    assert outcome.pushed is True, f"重算后应成功推送，last_error={outcome.last_error!r}"
-    assert outcome.attempts == 2, "第 1 次应因非快进被拒，第 2 次重算后才成功"
+    assert outcome.pushed is False, "护栏应拦截，本次不推送"
+    assert outcome.foreign_content_detected is True
+    assert "foreign_dirty_content_detected" in outcome.last_error
 
     on_disk = (clone_a / "queue.md").read_text(encoding="utf-8")
-    pushed_content = _show_origin_file(origin, "master", "queue.md")
     assert human_marker in on_disk, (
-        "根因复现：人类已 release 但未 commit 的改动被 reset/checkout 静默抹掉，"
-        "工作区里已找不到，见队列 #287"
+        "护栏应保留人类已 release 但未 commit 的改动，不得被 reset/checkout 抹掉"
     )
-    assert human_marker in pushed_content, "人类的改动应随本次同步一并保留并推送，而非彻底消失"
+    assert "机器人正在处理的这条消息" in on_disk, "机器人本次算出的行也应保留在工作区，不丢弃"
+    assert _git(clone_a, "status", "--porcelain").stdout.strip() != "", (
+        "护栏命中后工作区应仍处于未提交状态（reset --soft 不动工作区）"
+    )
+
+    pushed_content = _show_origin_file(origin, "master", "queue.md")
+    assert human_marker not in pushed_content, "人类内容本就不该被机器人代为推送"
+    assert "机器人正在处理的这条消息" not in pushed_content, "护栏拦截时不得推送任何内容"
+    assert "并发的另一条消息" in pushed_content, f"另一写手（{other_row!r}）的推送不受影响"
+
+
+def test_diff_exceeds_expected_false_for_single_row_insertion(tmp_path: Path):
+    """护栏未命中场景：磁盘只有本次追加自身产生的差异（一行新增，未触及
+    高水位线标注行）——应判定为"预期内"，不拦截。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    append_pending_task(clone_a / "queue.md", **_sample_kwargs("仅此一行"))
+    _git(clone_a, "add", "queue.md")
+    _git(clone_a, "commit", "-q", "-m", "test")
+
+    assert _diff_exceeds_expected(clone_a, "queue.md") is False
+
+
+def test_diff_exceeds_expected_true_for_extra_foreign_content(tmp_path: Path):
+    """护栏命中场景：本地 commit 除了本次追加的一行，还混入了大段与之
+    无关的外来内容——应判定为超出预期规模。"""
+    origin, clone_a, _clone_b = _init_bare_origin_with_clones(tmp_path)
+    queue_path = clone_a / "queue.md"
+    text = queue_path.read_text(encoding="utf-8")
+    queue_path.write_text(
+        text.replace("## 二、占位小节", "## 二、占位小节\n\n外来内容第一行\n外来内容第二行\n"),
+        encoding="utf-8",
+    )
+    append_pending_task(queue_path, **_sample_kwargs("混入外来内容的这一行"))
+    _git(clone_a, "add", "queue.md")
+    _git(clone_a, "commit", "-q", "-m", "test")
+
+    assert _diff_exceeds_expected(clone_a, "queue.md") is True
+
+
+def test_diff_exceeds_expected_false_when_no_parent_commit(tmp_path: Path):
+    """无 `HEAD~1`（如目标目录根本不是 git 仓库，`git diff` 会失败退出）时
+    保守放行，不引入新的失败面。"""
+    assert _diff_exceeds_expected(tmp_path, "queue.md") is False
+
+
+def test_sync_after_archive_guard_uses_distinct_audit_reason_and_alert_text(tmp_path: Path):
+    """队列 #287 spec Requirement「护栏命中必须留痕」：audit `reason` 与
+    告警文案均须与网络/冲突类失败明确区分，避免人工误判为可通过重试解决。"""
+    origin, clone_a, clone_b = _init_bare_origin_with_clones(tmp_path)
+    queue_path = clone_a / "queue.md"
+    text = queue_path.read_text(encoding="utf-8")
+    queue_path.write_text(
+        text.replace("## 二、占位小节", "## 二、占位小节\n\n外来内容第一行\n外来内容第二行\n"),
+        encoding="utf-8",
+    )
+    _push_other_writer_row(clone_b, "并发的另一条消息")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    connector = _FakeConnector()
+    pending_path = tmp_path / "pending_queue_appends.jsonl"
+
+    outcome = asyncio.run(sync_after_archive(
+        repo_root=clone_a, queue_path=queue_path,
+        append_kwargs=_sample_kwargs("触发护栏的这条"),
+        audit=audit, connector=connector, recipient="ShaoPeiShen",
+        pending_path=pending_path,
+    ))
+
+    assert outcome.pushed is False
+    assert outcome.foreign_content_detected is True
+    degraded_events = [r for r in audit.query_by(scenario="wecom-aibot") if r["action"] == "queue_sync_degraded"]
+    assert degraded_events, "应记一条 queue_sync_degraded"
+    assert degraded_events[0]["decision"]["reason"] == "foreign_dirty_content_detected"
+
+    assert connector.calls, "护栏命中也须私信告警"
+    alert_text = connector.calls[0][1]
+    assert "护栏拦截" in alert_text
+    assert "未执行任何覆盖性操作" in alert_text
+    assert "队列同步失败" not in alert_text, "不得与网络/冲突类失败共用可能被误判为可重试的文案"
+
+    pending_lines = pending_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(pending_lines) == 1
+    record = json.loads(pending_lines[0])
+    assert "foreign_dirty_content_detected" in record["error"]
 
 
 def test_append_task_and_sync_to_git_clears_stale_marker_from_earlier_row_on_success(
