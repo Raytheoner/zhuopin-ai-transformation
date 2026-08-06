@@ -71,6 +71,27 @@ def test_manual_only_marked_row_is_skipped(tmp_path):
     assert "dispatch_skipped_manual" in actions
 
 
+def test_paused_row_is_skipped_and_recorded(tmp_path):
+    """队列 #294 修法⑴：批准后又主动暂缓发送的行（`⏸ 暂缓`）——批处理不得
+    当作待发处理，须显式排除并留痕（区别于草稿态的静默跳过，因为这行
+    曾经批准过，更容易被误当待发沿用旧假设）。"""
+    rows = "| 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ⏸ 暂缓 |\n"
+    readme_path = _write_readme(tmp_path, rows)
+    _write_letter(tmp_path, "采购部", "姚祖怡", "2026-08-05")
+    audit, connector, store = _setup(tmp_path)
+
+    outcome = asyncio.run(
+        dispatch_followup_letters(readme_path=readme_path, connector=connector, audit=audit, today=TODAY)
+    )
+
+    assert len(outcome.skipped_paused) == 1
+    assert outcome.sent == []
+    assert outcome.failed == []
+    assert store["client"].sent_messages == []
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "dispatch_skipped_paused" in actions
+
+
 def test_unmarked_imminent_deadline_row_is_skipped_and_recorded(tmp_path):
     # 2026-08-07 距 TODAY(2026-08-05) 仅 2 天，在 3 天窗口内，但未标 🔒人工发送。
     rows = "| 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 2026-08-07 前给结论 | 🆕 待发 |\n"

@@ -132,7 +132,8 @@ async def _run(dry_run: bool) -> int:
 
     print(f"[OK] 本轮发送成功 {len(outcome.sent)} 行、失败 {len(outcome.failed)} 行、"
           f"跳过（🔒人工发送）{len(outcome.skipped_manual)} 行、"
-          f"跳过（疑似漏标硬截止）{len(outcome.skipped_unmarked_deadline)} 行")
+          f"跳过（疑似漏标硬截止）{len(outcome.skipped_unmarked_deadline)} 行、"
+          f"跳过（⏸ 暂缓）{len(outcome.skipped_paused)} 行")
     for preview, reason in outcome.failed:
         print(f"  [FAILED] {preview} —— {reason}")
 

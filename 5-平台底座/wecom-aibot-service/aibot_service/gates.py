@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 # 门禁②：README「发送状态」列的"已定稿待推送"标记（README 既有约定值）。
-# 只有此值才允许推送；其余任何取值（含空/已发/待对齐等）一律拒绝。
+# 只有此值才允许推送；其余任何取值（含空/已发/待对齐/队列 #294 新增的
+# `readme_table.PAUSED_STATUS` "⏸ 暂缓"等）一律拒绝——本门禁按等值断言
+# 实现（非排除名单），新增状态天然被结构性排除，无需在此逐一列举。
 FINALIZED_STATUS_MARKER = "🆕 待发"
 
 

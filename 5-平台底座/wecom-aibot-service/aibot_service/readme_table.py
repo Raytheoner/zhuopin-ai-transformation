@@ -19,6 +19,18 @@ class ReadmeTableError(LookupError):
 # FINALIZED_STATUS_MARKER = "🆕 待发"）仅能经 approve_followup_letter.py。
 DRAFT_PENDING_REVIEW_STATUS = "⏳ 待你审"
 
+# 队列 #294 修法⑴：三态语义第三态——已批准（内容审过）但主动暂缓发送，
+# 与草稿态语义不同（草稿是"内容还没审"，暂缓是"内容已审、只是主动不发"）。
+# 真实事故：队列行写了"暂不发"，但 README 状态列因为没有这个状态可写，
+# 只能留在 FINALIZED_STATUS_MARKER 不变，`ZhuopinFollowupDispatchDaily`
+# 只认状态列字面值，次日照发。此状态存在的意义正是让"暂缓"这个决定本身
+# 也能被机制读到，而不是只能被人读到。不经任何脚本转换——由持锁编辑者
+# 直接把状态列从 FINALIZED_STATUS_MARKER 手工改写为此值（反向恢复同理）；
+# delivery.py/dispatch.py 的门禁只认 FINALIZED_STATUS_MARKER 这一个可发送
+# 值，此值与草稿态一样被结构性排除在可发送范围之外。
+# ⚠️ 本状态与队列侧决定是否一致，本次未做强制校验（那是 #258 的范围）。
+PAUSED_STATUS = "⏸ 暂缓"
+
 
 class DraftNotPendingReviewError(RuntimeError):
     """批准脚本拒绝：目标行「发送状态」列不是约定的待审草稿标记。"""

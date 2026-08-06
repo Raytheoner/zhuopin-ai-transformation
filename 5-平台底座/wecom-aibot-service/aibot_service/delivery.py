@@ -177,6 +177,9 @@ async def push_followup(
     loc = locate_row(text, match)
     status_value = loc.cells[loc.status_col_index]
 
+    # 队列 #294 修法⑴：门禁②按等值断言实现——一行若处于 `⏸ 暂缓`
+    # （readme_table.PAUSED_STATUS，批准后又主动暂缓发送）同样在此被拒绝，
+    # 与草稿态一样被结构性排除，不需要为新状态单独加判断分支。
     try:
         assert_finalized(status_value)
     except DeliveryNotFinalizedError as exc:

@@ -198,6 +198,32 @@ def test_push_followup_rejects_when_not_finalized(tmp_path):
     assert "delivery_rejected" in actions
 
 
+def test_push_followup_rejects_paused_row(tmp_path):
+    """队列 #294 修法⑴：批准后又主动暂缓发送的行（`⏸ 暂缓`）——门禁②必须
+    继续拒绝发送，不因"曾经批准过"而放行，同草稿态一样被结构性排除
+    （真实事故：此前没有这个状态可写，暂缓的决定只能记在别处、README
+    状态列原样留在可发送标记上，机制照发）。"""
+    text = README_TEXT.replace("| 🆕 待发 |", "| ⏸ 暂缓 |", 1)
+    readme_path, md_path, audit, connector, store = _setup(tmp_path, text)
+
+    with pytest.raises(DeliveryNotFinalizedError):
+        asyncio.run(
+            push_followup(
+                readme_path=readme_path,
+                md_path=md_path,
+                docx_path=None,
+                connector=connector,
+                chatid="chat-1",
+                match=_match_8d,
+                audit=audit,
+            )
+        )
+
+    assert store["client"].sent_messages == []
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "delivery_rejected" in actions
+
+
 def test_push_followup_backfill_failure_still_raises_after_send(tmp_path, monkeypatch):
     readme_path, md_path, audit, connector, store = _setup(tmp_path)
 

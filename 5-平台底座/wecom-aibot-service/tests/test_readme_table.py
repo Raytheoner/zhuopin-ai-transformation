@@ -1,6 +1,8 @@
 import pytest
 
 from aibot_service.readme_table import (
+    DRAFT_PENDING_REVIEW_STATUS,
+    PAUSED_STATUS,
     DraftNotPendingReviewError,
     ReadmeTableError,
     assert_draft_pending_review,
@@ -129,3 +131,25 @@ def test_extract_target_filename_returns_none_when_absent():
 def test_build_target_file_annotation_round_trips():
     annotation = build_target_file_annotation("部门-姓名-跟进-2026-08-05-事项.md")
     assert extract_target_filename(annotation) == "部门-姓名-跟进-2026-08-05-事项.md"
+
+
+# 队列 #294 修法⑴：两态语义扩为三态，新增 `⏸ 暂缓`（批准后又主动暂缓发送）。
+
+
+def test_paused_status_is_distinct_marker():
+    from aibot_service.gates import FINALIZED_STATUS_MARKER
+
+    assert PAUSED_STATUS == "⏸ 暂缓"
+    assert PAUSED_STATUS != DRAFT_PENDING_REVIEW_STATUS
+    assert PAUSED_STATUS != FINALIZED_STATUS_MARKER
+
+
+def test_write_status_can_move_row_to_paused_and_back():
+    loc = locate_row(SAMPLE, lambda cells: "8D 预填校准会议程" in cells[2])
+    paused_text = write_status(SAMPLE, loc, PAUSED_STATUS)
+    reparsed = locate_row(paused_text, lambda cells: "8D 预填校准会议程" in cells[2])
+    assert reparsed.cells[4] == PAUSED_STATUS
+
+    resumed_text = write_status(paused_text, reparsed, "🆕 待发")
+    reparsed_again = locate_row(resumed_text, lambda cells: "8D 预填校准会议程" in cells[2])
+    assert reparsed_again.cells[4] == "🆕 待发"

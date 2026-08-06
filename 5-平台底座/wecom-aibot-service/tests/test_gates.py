@@ -9,6 +9,7 @@ from aibot_service.gates import (
     assert_finalized,
     DeliveryNotFinalizedError,
 )
+from aibot_service.readme_table import PAUSED_STATUS
 
 SERVICE_ROOT = Path(__file__).resolve().parent.parent
 
@@ -19,13 +20,20 @@ def test_assert_finalized_accepts_marker():
 
 @pytest.mark.parametrize(
     "status_value",
-    ["", "✅ 已发", "⏳ 待 Paul 线下对齐新协同流程后发", "🆕 待发 ", "待发", "已推送"],
+    ["", "✅ 已发", "⏳ 待 Paul 线下对齐新协同流程后发", "🆕 待发 ", "待发", "已推送", PAUSED_STATUS],
 )
 def test_assert_finalized_rejects_everything_else(status_value):
     if status_value.strip() == FINALIZED_STATUS_MARKER:
         pytest.skip("trimmed 后等于合法值，不属于本测试范围")
     with pytest.raises(DeliveryNotFinalizedError):
         assert_finalized(status_value)
+
+
+def test_assert_finalized_rejects_paused_status():
+    """队列 #294 修法⑴：批准后又主动暂缓发送的行——门禁②必须继续拒绝，
+    不因"曾经批准过"而放行，与草稿态一样被结构性排除。"""
+    with pytest.raises(DeliveryNotFinalizedError):
+        assert_finalized(PAUSED_STATUS)
 
 
 def test_gate1_pyproject_excludes_business_connectors():

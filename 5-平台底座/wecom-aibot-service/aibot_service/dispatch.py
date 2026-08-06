@@ -8,6 +8,11 @@
 正是那个调用方——只不过调用方是批处理循环，逐行推导出 `chatid`/
 `md_path`/`docx_path` 后再调用，而非人工在 CLI 上敲一次。
 
+队列 #294 修法⑴：`⏸ 暂缓` 态（`readme_table.PAUSED_STATUS`）单独识别并
+留痕（见 `DispatchOutcome.skipped_paused`），与草稿态等其它非终态的静默
+跳过区分开——该状态曾经历过批准，更容易被后续读者误当"待发"沿用旧
+假设，值得单独可观测。
+
 **行→文件/收件人的推导**（README 本身不存字面路径/chatid，只有约定俗成
 的命名律）：
 - 收件人 userid：从"收信人"列（如"质量部 · 陈忱（可分担朱映桦）"）取
@@ -36,6 +41,7 @@ from .delivery import BackfillWriteError, DeliveryNotFinalizedError, push_follow
 from .department_group_chatid_mapping import resolve_group_cc_chatid
 from .gates import FINALIZED_STATUS_MARKER
 from .readme_table import (
+    PAUSED_STATUS,
     column_index,
     extract_target_filename,
     iter_rows,
@@ -70,6 +76,7 @@ class DispatchOutcome:
     failed: list[tuple[str, str]] = field(default_factory=list)
     skipped_manual: list[str] = field(default_factory=list)
     skipped_unmarked_deadline: list[str] = field(default_factory=list)
+    skipped_paused: list[str] = field(default_factory=list)
 
 
 def _extract_explicit_dates(text: str) -> list[date]:
@@ -178,10 +185,20 @@ async def dispatch_followup_letters(
 
     for row in rows:
         status_value = row.cells[row.status_col_index].strip()
+        preview = " / ".join(c for c in row.cells[:3] if c)
+
+        if status_value == PAUSED_STATUS:
+            # 队列 #294：批准后又主动暂缓发送的行——显式识别并留痕，不与
+            # 草稿等其它非终态混在同一条静默 continue 里。#294 真实事故：
+            # "暂不发"这个决定只写在队列文件里，README 状态列却仍是
+            # FINALIZED_STATUS_MARKER，机制照发；此状态存在正是让这个
+            # 决定本身也能被机制读到，故单独可观测（区别于草稿态——那
+            # 从未被批准过，没有"曾经以为已批准"的误用风险）。
+            outcome.skipped_paused.append(preview)
+            _record(audit, "dispatch_skipped_paused", evaluator, preview)
+            continue
         if status_value != FINALIZED_STATUS_MARKER:
             continue
-
-        preview = " / ".join(c for c in row.cells[:3] if c)
 
         deadline_cell = (
             row.cells[deadline_idx] if deadline_idx is not None and deadline_idx < len(row.cells) else ""
