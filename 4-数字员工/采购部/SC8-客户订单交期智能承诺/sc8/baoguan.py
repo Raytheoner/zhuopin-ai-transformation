@@ -915,6 +915,12 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);fon
 .cst-tag.co{background:var(--ok-bg);color:var(--ok)}
 .cst-tag.cn{background:var(--warn-bg);color:var(--warn)}
 .cst-tag-note{font-size:11px;color:var(--text3);margin-top:2px}
+/* 看板逐行反馈按钮（队列 #110 Feature A）：只采集标注、不改任何判据。 */
+.fb{margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fb-btn{font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer}
+.fb-btn:hover{background:var(--surface2)}
+.fb-reason{flex:1;min-width:120px;height:26px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;font-family:var(--sans);box-sizing:border-box}
+.fb-msg{font-size:12px;color:var(--text3)}
 </style>"""
 
 # 纯前端交互逻辑（raw 字符串：\n/﻿ 等保持 JS 字面量；__DATA__/__META__ 由 render_html 注入）。
@@ -1027,7 +1033,40 @@ function card(r){
  return '<div class="card"><div class="card-h"><div><span class="id">'+esc(r.id)+'</span><span class="nm">'+esc(r.name)+'</span></div><span class="gap '+c+'">'+gapText(r)+'</span></div>'
   +'<div class="meta">客户 '+(esc(r.cust)||'—')+' · 数量 '+fmt(r.qty)+(kit?' · '+kit:'')+(dk?' · '+dk:'')+'</div>'
   +'<div class="strip"><span>出货 <b>'+esc(r.ship)+'</b></span><span>→</span><span>齐料 <b class="kd '+c+'">'+(r.kit?esc(r.kit):'—')+'</b></span>'+bn+'</div>'
-  +cov+nfdText(r)+componentStatusHtml(r)+'<div class="act">建议：'+esc(r.action)+'</div></div>';
+  +cov+nfdText(r)+componentStatusHtml(r)+'<div class="act">建议：'+esc(r.action)+'</div>'+feedbackHtml(r)+'</div>';
+}
+
+// 看板逐行反馈按钮（队列 #110 Feature A：判例确认搬进工具本身）。行标识用
+// (product_id, so_id, ship_date) 三元组，与案例去重/建案稳定键同一口径（case_store.py）。
+// 红线：只采集标注、写入 /api/baoguan/feedback，不自动改任何判据。
+function feedbackHtml(r){
+ return '<div class="fb" data-id="'+esc(r.id)+'" data-so="'+esc(r.so)+'" data-ship="'+esc(r.ship)+'" data-risk="'+esc(r.risk)+'">'
+   +'<button class="fb-btn fb-ok" type="button" data-verdict="correct">✅ 正确</button>'
+   +'<button class="fb-btn fb-bad" type="button" data-verdict="incorrect">❌ 误判</button>'
+   +'<input class="fb-reason" type="text" placeholder="原因（可选）">'
+   +'<span class="fb-msg"></span></div>';
+}
+function bindFeedback(){
+ var fbs=document.querySelectorAll('.fb');
+ for(var i=0;i<fbs.length;i++){
+  (function(fb){
+   var btns=fb.querySelectorAll('.fb-btn');
+   for(var j=0;j<btns.length;j++){
+    btns[j].onclick=function(){submitFeedback(fb,this.getAttribute('data-verdict'));};
+   }
+  })(fbs[i]);
+ }
+}
+function submitFeedback(fb,verdict){
+ var msg=fb.querySelector('.fb-msg'),reason=fb.querySelector('.fb-reason').value;
+ msg.textContent='提交中…';
+ fetch('/api/baoguan/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({product_id:fb.getAttribute('data-id'),so_id:fb.getAttribute('data-so'),
+     ship_date:fb.getAttribute('data-ship'),risk:fb.getAttribute('data-risk'),
+     verdict:verdict,reason:reason})})
+  .then(function(r){return r.json();})
+  .then(function(j){msg.textContent=j.ok?'✓ 已记录，感谢反馈':'提交失败：'+(j.error||'未知');})
+  .catch(function(){msg.textContent='提交失败（网络）';});
 }
 
 function view(){
@@ -1098,6 +1137,7 @@ function render(){
  $('cards').innerHTML=pageItems.length?pageItems.map(card).join(''):'<div class="empty">没有匹配的成品</div>';
  $('cnt').textContent=(pageItems.length?'显示 '+(start+1)+'-'+(start+pageItems.length):'显示 0')+' / '+l.length+' 个成品（共 '+DATA.length+' 条）';
  renderPager(l.length,totalPages);
+ bindFeedback();
 }
 
 // 明细导出 Excel（功能批1；姚祖怡 07-26 V6 #13 增强：每个成品行下追加子件明细展开行）：

@@ -6,6 +6,9 @@ real_frozen/
 *.sqlite
 .env
 .env.*
+# 队列 #110 Feature B：判例包定义是 Cowork 手写的业务内容（非运行产物），须入库
+# 追溯——上方 *.json 的例外，必须放在其后才生效（git 规则）。
+!sc8/case_reviews/*.json
 # Python
 __pycache__/
 *.py[cod]

@@ -52,8 +52,9 @@ def main() -> int:
     upload_dir = reports / "uploads"
     audit_path = reports / "qd_b_web_audit.jsonl"
     port = int(os.environ.get("QD_B_WEB_PORT", "8093"))
+    access_log_path = reports / "qd_b_http_requests.jsonl"  # 队列 #112 轻量访问日志
 
-    app = create_app(upload_dir=upload_dir, audit_path=audit_path)
+    app = create_app(upload_dir=upload_dir, audit_path=audit_path, access_log_path=access_log_path)
 
     print("QD-B 立项审核门禁 — Web 服务启动中…")
     print(f"  上传目录：{upload_dir}（git-ignored，含未脱敏立项书）")

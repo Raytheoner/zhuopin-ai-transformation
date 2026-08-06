@@ -27,6 +27,7 @@ from urllib.parse import quote
 
 from flask import Flask, Response, request, send_from_directory
 
+from zhuopin_platform.shared_tools.access_log import install_flask_access_log
 from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
 
 from .evaluate import EvaluationResult, evaluate
@@ -361,10 +362,15 @@ def _report_page(result: EvaluationResult, download_url: str) -> str:
 """ + _PAGE_FOOT
 
 
-def create_app(*, upload_dir: Path, audit_path: Path, output_dir: Path | None = None) -> Flask:
-    """构建 Flask app。upload_dir/audit_path/output_dir 由调用方传入（通常是 reports/，gitignore）。"""
+def create_app(*, upload_dir: Path, audit_path: Path, output_dir: Path | None = None,
+               access_log_path: Path | str | None = None) -> Flask:
+    """构建 Flask app。upload_dir/audit_path/output_dir 由调用方传入（通常是 reports/，gitignore）。
+
+    access_log_path：队列 #112 轻量访问日志落盘路径，None 时不采集（零回归）。
+    """
     app = Flask(__name__)
     install_flask_gate(app, service_name="QD-B 立项审核门禁")
+    install_flask_access_log(app, service_name="QD-B 立项审核门禁", log_path=access_log_path)
     app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
     upload_dir.mkdir(parents=True, exist_ok=True)
     audit_path.parent.mkdir(parents=True, exist_ok=True)

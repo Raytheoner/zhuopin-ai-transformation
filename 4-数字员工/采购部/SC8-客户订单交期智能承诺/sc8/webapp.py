@@ -24,6 +24,7 @@ from datetime import date, datetime
 
 from flask import Flask, jsonify, redirect, request
 
+from zhuopin_platform.shared_tools.access_log import install_flask_access_log
 from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
 
 from . import config
@@ -31,19 +32,31 @@ from .alert_dispatch import detect_new_red, dispatch_new_reds
 from .baoguan import _HTML_JS, _HTML_STYLE, render_legend
 from .baoguan_service import SnapshotStore, compute_snapshot
 from .case_draft import generate as generate_draft
+from .case_review import list_packages, load_package, render_review_page
 from .case_store import NEXT_STATUS, CaseStatus, CaseStore
+from .feedback_store import JsonlAppendStore
 
 
 def create_app(*, snapshot_store: SnapshotStore, case_store: CaseStore,
                audit=None, trace=None, ops_webhook_url: str | None = None,
                fo_status: str | None = "2",
-               cache_dir=None, srm_ttl_sec: int = 0) -> Flask:
+               cache_dir=None, srm_ttl_sec: int = 0,
+               access_log_path=None,
+               feedback_store: JsonlAppendStore | None = None,
+               case_review_dir=None,
+               case_review_store: JsonlAppendStore | None = None) -> Flask:
     """组装 Flask app（依赖注入，便于测试）。
 
     cache_dir/srm_ttl_sec：firm 承诺缓存目录与有效期（提速立即重算）；缺省关闭。
+    access_log_path：队列 #112 轻量访问日志落盘路径，None 时不采集（零回归）。
+    feedback_store：队列 #110 Feature A 看板逐行反馈落盘，None 时反馈接口返回 503。
+    case_review_dir/case_review_store：队列 #110 Feature B 判例包网页表单化——分别为
+    判例包定义文件所在目录（Cowork 手写 JSON，见 `sc8/case_review.py` 顶部说明）与
+    提交落盘存储，任一为 None 时判例包路由返回 503。
     """
     app = Flask(__name__)
     install_flask_gate(app, service_name="成品保供预警看板")
+    install_flask_access_log(app, service_name="成品保供预警看板", log_path=access_log_path)
     app.config["SNAP"] = snapshot_store
     app.config["CASES"] = case_store
     refresh_lock = threading.Lock()
@@ -92,6 +105,67 @@ def create_app(*, snapshot_store: SnapshotStore, case_store: CaseStore,
         if not ok:
             return jsonify({"ok": False, "busy": True, "msg": payload}), 409
         return jsonify({"ok": True, **payload})
+
+    # ── 看板逐行反馈（队列 #110 Feature A：判例确认搬进工具本身）────────────────
+    # 红线：只采集标注、不自动改任何判据（改口径仍走判例批改+显式签认）。
+    @app.post("/api/baoguan/feedback")
+    def api_baoguan_feedback():
+        if feedback_store is None:
+            return jsonify({"ok": False, "error": "反馈功能未配置"}), 503
+        body = request.get_json(silent=True) or {}
+        product_id = (body.get("product_id") or "").strip()
+        so_id = (body.get("so_id") or "").strip()
+        verdict = (body.get("verdict") or "").strip()
+        if not product_id or not so_id or verdict not in ("correct", "incorrect"):
+            return jsonify({"ok": False, "error": "缺少必填字段（product_id/so_id/verdict）"}), 400
+        feedback_store.append({
+            "product_id": product_id,
+            "so_id": so_id,
+            "ship_date": (body.get("ship_date") or "").strip(),
+            "verdict": verdict,
+            "reason": (body.get("reason") or "").strip(),
+            "risk": (body.get("risk") or "").strip(),
+        })
+        return jsonify({"ok": True})
+
+    # ── 判例包网页表单化（队列 #110 Feature B）──────────────────────────────────
+    @app.get("/cases/review")
+    def cases_review_list():
+        if case_review_dir is None:
+            return "<p>判例包功能未配置</p><a href='/'>返回</a>", 503
+        submitted_ids = (set(r.get("package_id", "") for r in case_review_store.read_all())
+                        if case_review_store is not None else set())
+        return _case_review_list_html(list_packages(case_review_dir), submitted_ids)
+
+    @app.route("/cases/review/<package_id>", methods=["GET", "POST"])
+    def cases_review_detail(package_id: str):
+        if case_review_dir is None or case_review_store is None:
+            return "<p>判例包功能未配置</p><a href='/'>返回</a>", 503
+        try:
+            package = load_package(case_review_dir, package_id)
+        except FileNotFoundError:
+            return "<p>判例包不存在</p><a href='/cases/review'>返回</a>", 404
+        if request.method == "POST":
+            f = request.form
+            responses = []
+            for case in package.cases:
+                verdict = f.get(f"verdict_{case.case_no}", "").strip()
+                note = f.get(f"note_{case.case_no}", "").strip()
+                responses.append({
+                    "case_no": case.case_no,
+                    "verdict": verdict or None,   # ✅/❌ 独立于 ✏️，允许只填其一
+                    "note": note,
+                })
+            new_issues = [v.strip() for v in f.getlist("new_issue") if v.strip()]
+            case_review_store.append({
+                "package_id": package_id,
+                "respondent": (f.get("respondent") or "").strip(),
+                "responses": responses,
+                "supplement": (f.get("supplement") or "").strip(),
+                "new_issues": new_issues,
+            })
+            return _case_review_thanks_html(package)
+        return render_review_page(package)
 
     # ── 看板壳页 ──────────────────────────────────────────────────────────────
     @app.get("/")
@@ -266,9 +340,11 @@ _NAV_CSS = """<style>
 def _nav_html(active: str) -> str:
     d = "active" if active == "dashboard" else ""
     c = "active" if active == "cases" else ""
+    r = "active" if active == "review" else ""
     return (f'<nav class="bg-nav"><div class="brand">⚡ 成品<span>保供预警</span></div>'
             f'<a href="/" class="{d}">📊 看板</a>'
-            f'<a href="/cases" class="{c}">🚨 案例处置</a></nav>')
+            f'<a href="/cases" class="{c}">🚨 案例处置</a>'
+            f'<a href="/cases/review" class="{r}">📋 判例批改</a></nav>')
 
 
 def _page(title: str, active: str, body: str) -> str:
@@ -373,6 +449,31 @@ def _case_new_html() -> str:
             '<button class="bg-btn primary" type="submit">建案</button>'
             '<a href="/cases" class="bg-btn">取消</a></div></form></div>')
     return _page("手动建案", "cases", body)
+
+
+# ── 判例包网页表单化页面（队列 #110 Feature B）─────────────────────────────────
+
+def _case_review_list_html(packages, submitted_ids) -> str:
+    rows = ""
+    for p in packages:
+        status = '<span class="bg-stale">✅ 已提交</span>' if p.package_id in submitted_ids else "待作答"
+        rows += (f'<tr><td><a href="/cases/review/{_html.escape(p.package_id)}">'
+                 f'{_html.escape(p.title)}</a></td><td>{_html.escape(p.recipient)}</td>'
+                 f'<td>{len(p.cases)}</td><td>{status}</td></tr>')
+    body = (f'<h2 style="margin:0 0 4px">📋 判例批改（网页表单）</h2>'
+            f'<p class="sub">点击标题进入作答，一次提交即可</p>'
+            f'<table class="bg-tbl"><thead><tr><th>判例包</th><th>收件人</th>'
+            f'<th>项数</th><th>状态</th></tr></thead>'
+            f'<tbody>{rows or "<tr><td colspan=4 style=text-align:center;padding:28px;color:#888>暂无判例包</td></tr>"}</tbody></table>'
+            f'<div style="margin-top:14px"><a href="/" class="bg-btn">← 看板</a></div>')
+    return _page("判例批改", "review", body)
+
+
+def _case_review_thanks_html(package) -> str:
+    body = (f'<h2 style="margin:0 0 8px">✅ 已提交</h2>'
+            f'<p class="sub">感谢批改「{_html.escape(package.title)}」，本次意见已记录。</p>'
+            f'<a href="/cases/review" class="bg-btn">← 返回判例包列表</a>')
+    return _page("已提交", "review", body)
 
 
 def _draft_html(case, result) -> str:

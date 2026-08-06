@@ -74,6 +74,7 @@ def main() -> int:
 
     from sc8.baoguan_service import SnapshotStore
     from sc8.case_store import CaseStore
+    from sc8.feedback_store import JsonlAppendStore
     from sc8.webapp import create_app, start_background_refresh
 
     snap_store = SnapshotStore(reports / "baoguan_snapshot.json")
@@ -87,9 +88,19 @@ def main() -> int:
     # firm 承诺缓存有效期（分钟，默认 360=6h）→ 提速立即重算；未答交始终重查
     srm_ttl_sec = int(os.environ.get("SC8_SRM_ANSWER_TTL_MIN", "360")) * 60
 
+    # 队列 #112：轻量访问日志采集（时间/来源IP/动作，不采集个人身份）
+    access_log_path = reports / "baoguan_http_requests.jsonl"
+    # 队列 #110 Feature A/B：反馈按钮 JSONL + 判例包网页表单化（判例包定义由
+    # Cowork 手写 JSON，放 sc8/case_reviews/，见 case_review.py 顶部说明）
+    feedback_store = JsonlAppendStore(reports / "baoguan_feedback.jsonl")
+    case_review_dir = SC8 / "sc8" / "case_reviews"
+    case_review_store = JsonlAppendStore(reports / "case_review_submissions.jsonl")
+
     app = create_app(snapshot_store=snap_store, case_store=case_store,
                      audit=audit, trace=trace, ops_webhook_url=ops_hook,
-                     fo_status=fo_status, cache_dir=reports, srm_ttl_sec=srm_ttl_sec)
+                     fo_status=fo_status, cache_dir=reports, srm_ttl_sec=srm_ttl_sec,
+                     access_log_path=access_log_path, feedback_store=feedback_store,
+                     case_review_dir=case_review_dir, case_review_store=case_review_store)
     start_background_refresh(app, interval_min=refresh_min)
 
     print("成品保供预警看板 — Web 服务启动中…")

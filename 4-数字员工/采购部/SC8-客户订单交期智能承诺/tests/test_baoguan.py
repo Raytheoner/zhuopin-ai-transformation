@@ -366,3 +366,17 @@ def test_render_html_shows_no_feedback_detail():
     html = render_html(rows, today=TODAY)
     assert '"nfd": [{"id": "R01B.0365", "qty": 200.0, "eta": "2026-09-20", "name": "R01B.0365"}]' in html
     assert "function nfdText" in html and ".nfd{" in html
+
+
+def test_render_html_has_feedback_buttons(monkeypatch):
+    """队列 #110 Feature A：看板每行内嵌 ✅正确/❌误判 反馈按钮，POST 到 /api/baoguan/feedback，
+    行标识用 (id, so, ship) 三元组（与案例去重稳定键同一口径）。红线：只采集标注，不改判据
+    ——本测试只断言渲染/接口存在，不涉及任何判据字段。"""
+    so = _so(item="S02Y.0188", ship="2026-06-10")
+    bom = _bom("S02Y.0188", "R01B.0365")
+    rows = build_dashboard([so], bom, [], today=TODAY)
+    html = render_html(rows, today=TODAY)
+    assert "function feedbackHtml" in html and "function submitFeedback" in html
+    assert "/api/baoguan/feedback" in html
+    assert "data-id=" in html and "data-so=" in html and "data-ship=" in html
+    assert "✅ 正确" in html and "❌ 误判" in html

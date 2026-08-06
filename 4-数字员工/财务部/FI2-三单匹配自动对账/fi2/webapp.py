@@ -57,6 +57,7 @@ from pathlib import Path
 from flask import Flask, Response, request
 
 from zhuopin_platform.audit import AuditLogger
+from zhuopin_platform.shared_tools.access_log import install_flask_access_log
 from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
 
 from . import config as _config
@@ -768,6 +769,10 @@ def create_app(*, reports_dir: Path) -> Flask:
     reports_dir.mkdir(parents=True, exist_ok=True)
     audit_path = reports_dir / "fi2_web_audit.jsonl"
     access_trace_path = reports_dir / "fi2_web_access_trace.jsonl"
+    # 队列 #112：轻量访问日志（时间/来源IP/动作），与上面的连接器 access_trace 语义不同
+    # （那个记"本服务调用了谁"，这个记"谁调用了本服务"），命名故意不同避免混淆。
+    install_flask_access_log(app, service_name="FI2 三单匹配自动对账",
+                             log_path=reports_dir / "fi2_http_requests.jsonl")
 
     @app.get("/api/ping")
     def ping():

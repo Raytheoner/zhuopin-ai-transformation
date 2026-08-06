@@ -24,13 +24,36 @@ import hmac
 import json
 import os
 import sys
+import threading
 import time
+from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlsplit
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("CC_PORT", "8092"))
+
+# ── 轻量访问日志（队列 #112，自包含实现——本服务"零三方依赖"是既定设计原则，
+#    见文件顶部门禁说明，不引入 zhuopin_platform.shared_tools.access_log 依赖；
+#    字段/落盘约定与该模块保持一致，供 SC8/QD-B/FI2 三个 Flask 场景对照）──────
+ACCESS_LOG_PATH = os.path.join(ROOT, "reports", "command_center_http_requests.jsonl")
+_ACCESS_LOG_LOCK = threading.Lock()
+_ACCESS_LOG_EXEMPT_PATHS = {"/api/ping"}
+
+
+def _log_access(method: str, path: str, status: int, source_ip: str) -> None:
+    if path in _ACCESS_LOG_EXEMPT_PATHS:
+        return
+    entry = {
+        "service": "AI 运营指挥中心", "method": method, "path": path,
+        "status": status, "source_ip": source_ip,
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+    }
+    line = json.dumps(entry, ensure_ascii=False) + "\n"
+    os.makedirs(os.path.dirname(ACCESS_LOG_PATH), exist_ok=True)
+    with _ACCESS_LOG_LOCK:
+        with open(ACCESS_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(line)
 
 # ── .env 加载（同 run_baoguan_web.py 等范式，向上逐级找最近的 .env）──────────
 _GATE_ENV_VAR = "ZP_GATE_PASSWORD"
@@ -153,7 +176,12 @@ def _login_page_html(next_url: str, *, error: bool = False) -> bytes:
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **k):
+        self._zp_status = 200   # 队列 #112：由 send_response 覆写捕获，供访问日志使用
         super().__init__(*a, directory=ROOT, **k)
+
+    def send_response(self, code, message=None):
+        self._zp_status = code
+        super().send_response(code, message)
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
@@ -230,31 +258,45 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = self._path_only()
-        if path == "/api/ping":
-            return self._serve_ping()
-        if path == LOGIN_PATH:
-            return self._serve_login_get()
-        if path == LOGOUT_PATH:
-            return self._handle_logout()
-        if not self._authorized():
-            return self._redirect_to_login()
-        super().do_GET()
+        try:
+            if path == "/api/ping":
+                return self._serve_ping()
+            if path == LOGIN_PATH:
+                return self._serve_login_get()
+            if path == LOGOUT_PATH:
+                return self._handle_logout()
+            if not self._authorized():
+                return self._redirect_to_login()
+            super().do_GET()
+        finally:
+            _log_access("GET", path, self._zp_status, self.client_address[0])
 
     def do_HEAD(self):
         path = self._path_only()
-        if path in (LOGIN_PATH, "/api/ping", LOGOUT_PATH):
-            return self._serve_login_get()   # 简化处理：HEAD 探这几个路径场景极少
-        if not self._authorized():
-            return self._redirect_to_login()
-        super().do_HEAD()
+        try:
+            if path in (LOGIN_PATH, "/api/ping", LOGOUT_PATH):
+                return self._serve_login_get()   # 简化处理：HEAD 探这几个路径场景极少
+            if not self._authorized():
+                return self._redirect_to_login()
+            super().do_HEAD()
+        finally:
+            _log_access("HEAD", path, self._zp_status, self.client_address[0])
 
     def do_POST(self):
-        if self._path_only() == LOGIN_PATH:
-            return self._handle_login_post()
-        self.send_error(501, "Unsupported method (POST)")
+        path = self._path_only()
+        try:
+            if path == LOGIN_PATH:
+                return self._handle_login_post()
+            self.send_error(501, "Unsupported method (POST)")
+        finally:
+            _log_access("POST", path, self._zp_status, self.client_address[0])
 
 
 if __name__ == "__main__":
+    # 队列 #112 测试期间发现：PORT 此前在模块级读 sys.argv[1]，导致 import serve
+    # 时若 sys.argv 携带其它参数（如 pytest 自身的命令行）会直接崩溃——PORT 只在
+    # 本执行入口用到，移到这里既修掉这个隐患，也不改变命令行用法本身。
+    PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("CC_PORT", "8092"))
     os.chdir(ROOT)
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print("AI 运营指挥中心 serving %s on 0.0.0.0:%d" % (ROOT, PORT), flush=True)
