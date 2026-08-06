@@ -15,12 +15,12 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import (
 from zhuopin_platform.shared_tools.secrets import SecretsProvider
 
 from .constants import PAUL_USERID
-from .department_group_mapping import load_department_group_mapping
+from .department_group_chatid_mapping import load_department_group_chatid_mapping
 from .disconnect_inprogress_alert import DisconnectInProgressMonitor
 from .department_mapping import load_department_mapping
 from .forwarding import forward_inbound_to_paul
 from .frame_parsing import parse_inbound_frame
-from .group_notify import notify_department_group
+from .group_notify import notify_department_group_via_chatid
 from .intake import archive_inbound_message
 from .queue_edit_lock import AIBOT_LOCK_WHO, SubprocessQueueEditLock
 from .queue_git_sync import DEFAULT_BACKOFF_SECONDS, DEFAULT_MAX_RETRIES, sync_after_archive
@@ -71,6 +71,7 @@ def build_connector(
     evaluator: str = "system",
     mapping_path: Optional[Path] = None,
     group_mapping_path: Optional[Path] = None,
+    group_chatid_mapping_path: Optional[Path] = None,
     max_reconnect_attempts: int = DEFAULT_MAX_RECONNECT_ATTEMPTS,
     reconnect_base_delay_ms: int = DEFAULT_RECONNECT_BASE_DELAY_MS,
     heartbeat_interval_ms: int = DEFAULT_HEARTBEAT_INTERVAL_MS,
@@ -119,7 +120,11 @@ def build_connector(
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
     mapping = load_department_mapping(mapping_path)
-    group_mapping = load_department_group_mapping(group_mapping_path)
+    # 队列 #279/#280：归档通报改走 aibot chatid（见下方 notify_department_
+    # group_via_chatid 调用点），webhook 版 `group_mapping` 不再被消费——
+    # `group_mapping_path` 形参仍保留在签名里（向后兼容任何仍在传它的
+    # 调用方/测试，静默忽略而非报错），不再据此加载。
+    group_chatid_mapping = load_department_group_chatid_mapping(group_chatid_mapping_path)
 
     # 队列 #168：锁工具（0-学习与工具/工具-共享文档编辑锁.py）所在仓库根，
     # 只在启用锁时才解析——未启用时不产生任何额外 git 子进程调用，向后
@@ -336,21 +341,23 @@ def build_connector(
                 )
 
         if archive_result is not None:
-            # 队列 #270：这是"部门群 webhook 通报"的**旧**调用点（`group_notify.py`
-            # + `department_group_mapping.yaml`，webhook 单向、群成员回复进
-            # 不到任何地方）。新的机器人 chatid 群 cc 路径已加在
-            # `delivery.push_followup(cc_group_chatid=...)`，是**并行新增**、
-            # 不冲突——本调用点本次未动，也不应动：真实群 chatid 值尚未采集，
-            # 待 aibot 群 cc 路径真实验证可用后再回来评估是否下线本调用。
+            # 队列 #279/#280：部门群通报改走机器人 chatid 通道（原"部门群
+            # webhook 通报"，`group_notify.py::notify_department_group`，
+            # webhook 单向、群成员回复进不到任何地方）——四个部门真实
+            # chatid 已于 2026-08-06 采集验证完毕（含新增"跨部门"），与
+            # 跟进信群 cc（`delivery.push_followup(cc_group_chatid=...)`）
+            # 共用同一份 `department_group_chatid_mapping.py` 映射表。
+            # webhook 版函数仍保留在 `group_notify.py`（未删除，留观察期
+            # 回滚余地），只是不再从这里调用。
             try:
-                await notify_department_group(
+                await notify_department_group_via_chatid(
                     department=archive_result.department,
                     matched=archive_result.matched,
                     sender=message.sender,
                     msgtype=message.msgtype,
                     filename=archive_result.archived_path.name,
-                    secrets=secrets,
-                    group_mapping=group_mapping,
+                    connector=connector_holder.get("connector"),
+                    chatid_mapping=group_chatid_mapping,
                     audit=audit,
                     evaluator=evaluator,
                 )

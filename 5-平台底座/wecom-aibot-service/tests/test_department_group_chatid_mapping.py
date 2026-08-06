@@ -8,19 +8,18 @@ from aibot_service.department_group_chatid_mapping import (
 )
 
 
-def test_default_mapping_file_declares_four_departments():
-    """队列 #279：2026-08-06 真实测试消息采集确认财务部/质量部/跨部门
-    三个真实 chatid（intake.py 归档审计事件里读出），采购部仍是待采集的
-    占位空串——不是猜测，是"目前只有这几个真实到手"的如实状态。跨部门是
-    与财务/质量/采购平级的独立第4个部门（Shao Peishen 2026-08-06 明确：
-    "跟其他部门的信件无关"，不是广播/cc 全部门的特殊对象）。销售部与
-    department_group_mapping.yaml 同一拍板，故意不建映射。"""
+def test_default_mapping_file_declares_four_departments_all_captured():
+    """队列 #279/#280：2026-08-06 真实测试消息采集确认财务部/质量部/采购部/
+    跨部门四个真实 chatid（intake.py 归档审计事件里读出，非猜测/占位）——
+    四个部门全部采集完毕。跨部门是与财务/质量/采购平级的独立第4个部门
+    （Shao Peishen 2026-08-06 明确："跟其他部门的信件无关"，不是广播/cc
+    全部门的特殊对象）。销售部与 department_group_mapping.yaml 同一拍板，
+    故意不建映射。"""
     mapping = load_department_group_chatid_mapping()
     assert DEFAULT_GROUP_CHATID_MAPPING_PATH.exists()
     assert set(mapping) == {"财务部", "质量部", "采购部", "跨部门"}
     assert "销售部" not in mapping
-    assert mapping["采购部"] == ""  # 仍待采集，fail-closed 跳过
-    assert mapping["财务部"] and mapping["质量部"] and mapping["跨部门"]  # 已采集，非空
+    assert all(mapping.values())  # 四个部门均已采集，无空占位
 
 
 def test_load_from_custom_path_with_real_value(tmp_path):

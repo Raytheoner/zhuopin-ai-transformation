@@ -262,25 +262,21 @@ def test_on_message_forward_failure_is_audited_not_raised(tmp_path, monkeypatch)
     assert "archived" in actions
 
 
-def test_on_message_notifies_department_group_when_configured(tmp_path, monkeypatch):
-    """Paul 2026-07-12 拍板/2026-07-15 落地：归档成功后回部门群 webhook 发一条通报。"""
+def test_on_message_notifies_department_group_when_configured(tmp_path):
+    """Paul 2026-07-12 拍板/2026-07-15 落地，队列 #279/#280 改走机器人
+    chatid 通道：归档成功后回部门群发一条通报。"""
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
-    group_mapping_path = tmp_path / "group_mapping.yaml"
-    group_mapping_path.write_text("采购部: WECOM_WEBHOOK_URL_PROCUREMENT\n", encoding="utf-8")
+    group_chatid_mapping_path = tmp_path / "group_chatid_mapping.yaml"
+    group_chatid_mapping_path.write_text("采购部: GroupChatIdProcurement\n", encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
     store: dict = {}
-    calls = []
-    monkeypatch.setattr(
-        "aibot_service.group_notify.wecom.send_markdown",
-        lambda url, content: calls.append((url, content)),
-    )
 
     build_connector(
-        secrets=_secrets(WECOM_WEBHOOK_URL_PROCUREMENT="https://example/webhook?key=P"),
+        secrets=_secrets(),
         audit=audit,
         external_docs_root=tmp_path / "7-外部文档",
         queue_path=tmp_path / "queue.md",
-        group_mapping_path=group_mapping_path,
+        group_chatid_mapping_path=group_chatid_mapping_path,
         client_factory=fake_client_factory(store),
     )
     client = store["client"]
@@ -294,23 +290,18 @@ def test_on_message_notifies_department_group_when_configured(tmp_path, monkeypa
     }
     asyncio.run(client.handlers["message"][0](frame))
 
-    assert len(calls) == 1
-    assert calls[0][0] == "https://example/webhook?key=P"
-    assert "已归档" in calls[0][1]
+    notify_calls = [m for m in client.sent_messages if m[0] == "GroupChatIdProcurement"]
+    assert len(notify_calls) == 1
+    assert "已归档" in notify_calls[0][1]["markdown"]["content"]
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "group_notified" in actions
 
 
-def test_on_message_skips_group_notify_when_unconfigured_by_default(tmp_path, monkeypatch):
+def test_on_message_skips_group_notify_when_unconfigured_by_default(tmp_path):
     """默认 yaml 不含销售部——不应误发。"""
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
     store: dict = {}
-    calls = []
-    monkeypatch.setattr(
-        "aibot_service.group_notify.wecom.send_markdown",
-        lambda url, content: calls.append((url, content)),
-    )
 
     build_connector(
         secrets=_secrets(),
@@ -330,7 +321,6 @@ def test_on_message_skips_group_notify_when_unconfigured_by_default(tmp_path, mo
     }
     asyncio.run(client.handlers["message"][0](frame))
 
-    assert calls == []
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "group_notify_skipped" in actions
     assert "group_notified" not in actions
@@ -338,17 +328,17 @@ def test_on_message_skips_group_notify_when_unconfigured_by_default(tmp_path, mo
 
 def test_on_message_group_notify_failure_is_audited_not_raised(tmp_path, monkeypatch):
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
-    group_mapping_path = tmp_path / "group_mapping.yaml"
-    group_mapping_path.write_text("采购部: WECOM_WEBHOOK_URL_PROCUREMENT\n", encoding="utf-8")
+    group_chatid_mapping_path = tmp_path / "group_chatid_mapping.yaml"
+    group_chatid_mapping_path.write_text("采购部: GroupChatIdProcurement\n", encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
     store: dict = {}
 
     build_connector(
-        secrets=_secrets(WECOM_WEBHOOK_URL_PROCUREMENT="https://example/webhook?key=P"),
+        secrets=_secrets(),
         audit=audit,
         external_docs_root=tmp_path / "7-外部文档",
         queue_path=tmp_path / "queue.md",
-        group_mapping_path=group_mapping_path,
+        group_chatid_mapping_path=group_chatid_mapping_path,
         client_factory=fake_client_factory(store),
     )
     client = store["client"]
@@ -358,7 +348,7 @@ def test_on_message_group_notify_failure_is_audited_not_raised(tmp_path, monkeyp
     async def _boom(**kwargs):
         raise RuntimeError("通报模拟失败")
 
-    monkeypatch.setattr(connection_mod, "notify_department_group", _boom)
+    monkeypatch.setattr(connection_mod, "notify_department_group_via_chatid", _boom)
 
     frame = {"body": {"msgtype": "text", "from": {"userid": "YaoZuYi"}, "text": {"content": "x"}}}
     # 不应向上抛出，也不影响归档已成功
