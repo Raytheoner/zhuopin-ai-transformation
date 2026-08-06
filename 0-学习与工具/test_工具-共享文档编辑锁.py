@@ -1110,6 +1110,58 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         result = self._release(who="A")
         self.assertNotEqual(result, 0, "引号之外的真实 P1+未核实共现仍须拦截")
 
+    def test_new_batch_ambiguous_status_blocks_release(self):
+        """队列 #247②：状态列开头片段既不含"待"也不含"✅"——会被 sweep 判为
+        "状态列模糊"、每轮跳过并重复告警——须在写入那一刻就拦下。"""
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(section_two_rows=(
+            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
+            "本session直接commit+push |\n"
+        ))
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_new_batch_pending_status_passes(self):
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(section_two_rows=(
+            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |\n"
+        ))
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_new_batch_done_status_passes(self):
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(section_two_rows=(
+            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
+            "✅ 已完成（CC 直接提交，未走 sweep） |\n"
+        ))
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_new_batch_preregistered_status_passes(self):
+        """队列 #236(1)：认领即预登记的约定文本——虽然既不含"待"也不含
+        "✅"，但这是有意为之的合法第三态，不应被⑤误拦。"""
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(section_two_rows=(
+            "| B-TEST | `4-数字员工/采购部/SC8-.../` 全部改动、`queue.md` "
+            "| `docs(test): 待精确化` | 在办（预登记，收工时精确化） |\n"
+        ))
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_editing_existing_ambiguous_status_row_not_touched_this_session_does_not_block(self):
+        """⑤只对本次持锁期间新增/修改的行生效——历史遗留的模糊状态行（如
+        #247①所述、修复前留存的旧行）不因本次持锁而被追溯拦截。"""
+        self._write_queue(section_two_rows=(
+            "| B-OLD | `某个文件.md`、`queue.md` | `docs(old): 历史遗留` | "
+            "本session直接commit+push |\n"
+        ))
+        self.assertEqual(self._acquire(who="A"), 0)
+        # 本次持锁期间不改动 §二，只改 §一 之外的内容不存在——直接 release，
+        # 验证未触碰的 §二 历史行不参与①~⑤任何一项校验。
+        self.assertEqual(self._release(who="A"), 0)
+
     def test_non_default_target_skips_structural_validation(self):
         """`--file` 指向非默认队列文件时，四项校验一律不生效——即便内容
         显然不合规（列数错、无高水位线行等）。"""

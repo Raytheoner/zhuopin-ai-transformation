@@ -203,6 +203,30 @@ CLAUDE.md 是否同批改动这一可机检事实，不解析内容语义、不�
 止血效果相同。**不追求消灭一切需要人工介入的情形**，是把"需要人工介入
 的情形"从"20/20 的必然"收窄到"真实内容冲突的少数概率事件"。
 
+定时任务真身↔镜像自动核对（队列 #235/#188，2026-08-06）：#169 已实现
+`工具-定时任务源码备份.py`（规范化逐行比对+差异自动写回镜像，见其文件头
+说明），但"挂载到自动触发器"这一半此前未做——真身漂移因此只能靠人想起来
+手动跑一次，而 #188 已实证这类漂移"不报错、只是安静地给出反向答案"。
+`_run_scheduled_task_mirror_sync` 在起跑段（与 #192-A/#219 同一批、须排在
+sweep 自己取编辑锁窗口之外）走子进程调用该脚本（零依赖隔离，理由同
+`_flush_pending_lock_appends`）。与 #192-A/#219 两个"纯记日志"子进程不同，
+本次调用**自身会写文件**（更正镜像内容）——若不处理，这些改动会在
+`dirty_paths = _status_paths(...)` 那一刻变成"没人声明的孤儿脏文件"（同
+#289 指出的"自动机制改了文件、没人负责让它落库"）。故本函数仿照
+`_rerun_ledger` 的做法：调用脚本后立即检查镜像目录的 git 状态，有变化即
+就地 `git add`+本地 commit（不单独 push，随本轮末尾的
+`_reconcile_with_origin_and_push` 一并推送），使 `dirty_paths` 捕获时这些
+文件已经是 clean 的——不产生新孤儿。检出真实差异（脚本报 `updated`）或
+命中凭据扫描拦截（脚本退出码 1）时复用 #171 的 webhook 通道各发一次告警
+（满足 #188 原始诉求"不一致即告警"）；无变化时静默，不产生噪音。
+
+每轮落库批次数计数（队列 #257，2026-08-06，P3，先计数不告警）：判断"该
+转场了"目前全靠人的主观感觉，2026-08-05 单 session 实证错误集中在第 6 次
+落库之后。在把"批次数 ≥N 即提示"这类阈值机制化之前，样本量只有 1、不足以
+定阈值——本轮只做 `_record_batch_landing_count`：每轮 sweep 把本轮实际落库
+的批次数与批次 ID 写入 `reports/sweep-batch-landing-count.jsonl`，不告警、
+不阻断、不改变任何既有行为，纯粹积累数据供后续（样本足够时）另行评估阈值。
+
 用法：
   python 0-学习与工具/工具-落库sweep.py            # 真跑
   python 0-学习与工具/工具-落库sweep.py --dry-run   # 只打印计划动作，不落地
@@ -262,6 +286,16 @@ DECISION_REMINDER_SCRIPT_REL = (
     "5-平台底座/wecom-aibot-service/scripts/decision_reminder_check.py"
 )
 DECISION_REMINDER_TIMEOUT_SECONDS = 120
+
+# 队列 #235/#188：定时任务真身↔镜像自动核对——脚本本身零依赖（不 import
+# zhuopin_platform/aibot_service），走子进程调用同 #192-A/#219 一样的隔离
+# 理由；镜像目录常量供本轮"检出变化即本地提交"复用，避免遗留孤儿脏文件。
+SCHEDULED_TASK_BACKUP_SCRIPT_REL = "0-学习与工具/工具-定时任务源码备份.py"
+SCHEDULED_TASK_MIRROR_DIR_REL = "0-学习与工具/定时任务源码"
+SCHEDULED_TASK_MIRROR_TIMEOUT_SECONDS = 60
+
+# 队列 #257（P3，先计数不告警）：每轮落库批次数记录，供后续攒样本定阈值。
+SESSION_BATCH_COUNT_LOG_REL = "reports/sweep-batch-landing-count.jsonl"
 
 # 队列 #198(c)：本轮 commit 若命中这些前缀下的路径，视为"涉常驻服务"，
 # 需部署脚本同步+重启对应计划任务才在生产生效（现状全靠人记得）。
@@ -598,6 +632,96 @@ def _run_decision_reminder_second_carrier(repo_root: Path, log: list[str]) -> No
     stdout = result.stdout.strip()
     if stdout and "无新增/超期决策项" not in stdout:
         log.append(f"✓ 决策提醒第二载体：{stdout.splitlines()[-1]}")
+
+
+def _run_scheduled_task_mirror_sync(repo_root: Path, log: list[str]) -> None:
+    """队列 #235/#188：定时任务真身↔镜像自动核对（每小时，随 sweep 一并触发）。
+
+    走子进程调用 `工具-定时任务源码备份.py`（#169，规范化逐行比对+差异自动
+    写回镜像，理由同 `_flush_pending_lock_appends`/`_run_decision_reminder_
+    second_carrier`：多 worktree 共享全局 editable install 存在被静默劫持
+    到别的 checkout 的风险，子进程隔离规避）。
+
+    **与另外两个起跑段子进程不同：本次调用自身会写文件**（脚本检出真身与
+    镜像不一致时直接把镜像内容改正）。若放任不管，这些改动会在下方
+    `dirty_paths = _status_paths(...)` 捕获时变成"没人声明的孤儿脏文件"
+    （同 #289 指出的"自动机制改了文件、没人负责让它落库"——本函数不能重蹈
+    覆辙）。故仿照 `_rerun_ledger` 的做法：调用后检查镜像目录的 git 状态，
+    有变化即就地 `git add`+本地 commit，不在此处单独推送，随本轮末尾的
+    `_reconcile_with_origin_and_push` 一并对齐 origin 并推送——由此
+    `dirty_paths` 捕获时这些文件已经是 clean 的，不产生新孤儿。
+
+    检出真实差异（脚本报 `updated`）或命中凭据扫描拦截（脚本退出码 1，见其
+    `credential_blocked` 状态）时，复用 #171 的 webhook 通道各发一次告警，
+    满足 #188 原始诉求"不一致即告警"；无变化时静默，不产生 #147 式噪音。
+
+    须在 sweep 自己的编辑锁窗口之外调用（main() 接线固定顺序，同
+    #192-A/#219）；异常（含超时）必须捕获+记日志后继续跑主流程，不得把
+    sweep 带崩。"""
+    script = repo_root / SCHEDULED_TASK_BACKUP_SCRIPT_REL
+    if not script.exists():
+        return  # 本 checkout 未部署该脚本（如独立测试环境），静默跳过
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)], cwd=repo_root, capture_output=True,
+            text=True, encoding="utf-8", timeout=SCHEDULED_TASK_MIRROR_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:  # noqa: BLE001 —— 本检查失败不得影响 sweep 主流程
+        log.append(f"⚠ 定时任务镜像核对调用异常（{_now_utc_str()}，不影响本轮批次处理）：{exc}")
+        return
+
+    stdout = result.stdout.strip()
+    changed = _run_git(
+        ["status", "--porcelain=v1", "--", SCHEDULED_TASK_MIRROR_DIR_REL], repo_root,
+    ).stdout.strip()
+    if changed:
+        _run_git(["add", "--", SCHEDULED_TASK_MIRROR_DIR_REL], repo_root)
+        _run_git(
+            ["commit", "-m", "docs(定时任务镜像): sweep 自动核对并更正真身↔镜像差异"],
+            repo_root,
+        )
+        log.append("✓ 定时任务真身↔镜像核对：检出差异并已自动更正+本地提交，等待本轮末尾统一对齐并推送。")
+        webhook_url = _load_webhook_url(repo_root)
+        if webhook_url is not None:
+            try:
+                _send_wecom_markdown(
+                    webhook_url,
+                    f"🪞 定时任务真身↔镜像核对：检出并已自动更正差异\n{stdout[:800]}",
+                )
+            except Exception as send_exc:  # noqa: BLE001 —— 告警失败不应影响主流程
+                log.append(f"⚠ 定时任务镜像差异告警推送失败（不影响本轮）：{send_exc}")
+
+    if result.returncode != 0:
+        log.append(
+            f"⚠ 定时任务镜像核对退出码 {result.returncode}（疑似命中凭据扫描被拒绝写入，需人工核实）："
+            f"{stdout[:500]}"
+        )
+        webhook_url = _load_webhook_url(repo_root)
+        if webhook_url is not None:
+            try:
+                _send_wecom_markdown(
+                    webhook_url,
+                    f"🔴 定时任务真身↔镜像核对：命中凭据扫描，已拒绝写入镜像，需人工核实\n{stdout[:800]}",
+                )
+            except Exception as send_exc:  # noqa: BLE001
+                log.append(f"⚠ 凭据拦截告警推送失败（不影响本轮）：{send_exc}")
+
+
+def _record_batch_landing_count(repo_root: Path, landed_batch_ids: list[str]) -> None:
+    """队列 #257（P3，先计数不告警）：记录每轮 sweep 落库的批次数，供后续
+    攒样本判断"该转场了"的定量阈值——现阶段样本量不足以定阈值，本函数只
+    落数据，不做任何告警/阻断，不改变既有行为。"""
+    if not landed_batch_ids:
+        return
+    log_path = repo_root / SESSION_BATCH_COUNT_LOG_REL
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts_utc": _now_utc_str(),
+        "batch_count": len(landed_batch_ids),
+        "batch_ids": landed_batch_ids,
+    }
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def _load_webhook_url(repo_root: Path) -> str | None:
@@ -1281,17 +1405,20 @@ def main() -> int:
     try:
         _heal_stale_index_lock(repo_root, log)
         _check_preconditions(repo_root, production=args.repo_root is None)
-        # 队列 #192/#194/#198/#219 起跑段写死顺序（勿自行调整，详见各函数 docstring）：
+        # 队列 #192/#194/#198/#219/#235 起跑段写死顺序（勿自行调整，详见各函数 docstring）：
         # ① #198(b) 编辑锁前置探测（任何 git 写动作之前）
         _abort_if_edit_lock_held(repo_root, log)
         # ② #194 无条件补推未推送提交
         _push_any_unpushed_commits(repo_root, log, dry_run=args.dry_run)
-        # ③ #192-A flush 锁忙推迟暂存 + #219 决策提醒第二载体（均须在 sweep
-        #   自己取锁窗口之外，此处批次处理尚未开始，安全）；dry-run 不做
-        #   真实动作，避免副作用。
+        # ③ #192-A flush 锁忙推迟暂存 + #219 决策提醒第二载体 + #235/#188 定时
+        #   任务真身↔镜像核对（均须在 sweep 自己取锁窗口之外，此处批次处理
+        #   尚未开始，安全；#235/#188 的核对若检出差异会当场本地提交，须排在
+        #   下方 dirty_paths 捕获之前，使更正后的镜像文件不留作孤儿脏文件）；
+        #   dry-run 不做真实动作，避免副作用。
         if not args.dry_run:
             _flush_pending_lock_appends(repo_root, log)
             _run_decision_reminder_second_carrier(repo_root, log)
+            _run_scheduled_task_mirror_sync(repo_root, log)
         # ④ 队列 #288（2026-08-06 起）：不再在批次处理之前尝试同步/分叉早检
         # ——`_sync_master_if_behind_origin` 的 `git merge --ff-only` 要求工作区
         # 干净，而"§二 待 commit 批次的存在本身就意味着工作区必然脏"是 sweep
@@ -1355,6 +1482,12 @@ def main() -> int:
 
         processed_any = bool(normal_rows) or bool(straggler_rows)
         if processed_any and not args.dry_run:
+            # 队列 #257：先记数据（不告警），再重跑台账——两者均只在真实
+            # 落库时才有意义，dry-run 不产生持久化副作用。
+            landed_batch_ids = [r["batch_id"] for r, _ in normal_rows] + [
+                r["batch_id"] for r in straggler_rows
+            ]
+            _record_batch_landing_count(repo_root, landed_batch_ids)
             _rerun_ledger(repo_root, log)
         elif not processed_any and pending_rows:
             log.append("本轮无批次可落库（全部暂缓或声明片段当前均无对应脏改动）。")

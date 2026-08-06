@@ -1154,6 +1154,160 @@ class DecisionReminderSecondCarrierTests(SweepTestBase):
                           "第二载体调用瞬间不应有编辑锁被 sweep 自己持有")
 
 
+class ScheduledTaskMirrorSyncTests(SweepTestBase):
+    """队列 #235/#188：定时任务真身↔镜像自动核对——检出差异需就地本地提交
+    （不留孤儿脏文件）+ 复用 #171 webhook 告警；无变化时静默；凭据拦截同样
+    告警但不产生 commit（脚本自身不写该任务的镜像文件）。"""
+
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+    def _write_env_webhook(self) -> None:
+        (self.work / ".env").write_text(
+            f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8",
+        )
+
+    def _backup_script_path(self) -> Path:
+        path = self.work / sweep.SCHEDULED_TASK_BACKUP_SCRIPT_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def test_missing_backup_script_is_silently_skipped(self):
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("镜像核对", result.stdout)
+
+    def test_no_diff_produces_no_commit_and_no_webhook_noise(self):
+        self._backup_script_path().write_text(
+            "print('=== 定时任务 prompt 回镜报告 ===\\n  任务甲: · 无变化')\n",
+            encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("镜像核对", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0)
+
+    def test_detected_diff_is_committed_locally_and_pushed_plus_alerted(self):
+        """脚本模拟"检出差异并写回镜像文件"——须被就地 add+commit（不留
+        孤儿脏文件），随本轮末尾统一推送，并触发一次 webhook 告警。"""
+        mirror_dir_rel = sweep.SCHEDULED_TASK_MIRROR_DIR_REL
+        mirror_leaf = mirror_dir_rel.split("/")[-1]
+        self._backup_script_path().write_text(
+            "from pathlib import Path\n"
+            f"mirror = Path(__file__).resolve().with_name({mirror_leaf!r})\n"
+            "mirror.mkdir(parents=True, exist_ok=True)\n"
+            "(mirror / '任务甲.SKILL.md').write_text('更正后的内容\\n', encoding='utf-8')\n"
+            "print('=== 定时任务 prompt 回镜报告 ===\\n  任务甲: ✓ 已更新镜像')\n",
+            encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("检出差异并已自动更正", result.stdout)
+
+        # 不留孤儿脏文件：镜像目录本身必须已被提交（不针对整个工作区断言——
+        # 测试夹具自己写的 .env 未加入 .gitignore，与本用例验证的行为无关）。
+        mirror_status = _git(self.work, "status", "--porcelain", "--", mirror_dir_rel).stdout
+        self.assertEqual(mirror_status.strip(), "", "镜像差异必须在 dirty_paths 捕获前就地提交，不留孤儿")
+
+        # 随本轮末尾统一推送——origin 应能看到这次镜像更正的提交。
+        pushed_mirror = _git(
+            self.origin, "show", f"master:{mirror_dir_rel}/任务甲.SKILL.md",
+        ).stdout
+        self.assertIn("更正后的内容", pushed_mirror)
+
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        payload = _CapturingWebhookHandler.received[0]
+        self.assertIn("镜像核对", payload["markdown"]["content"])
+
+    def test_credential_blocked_alerts_without_local_changes(self):
+        """命中凭据扫描——脚本按自身设计不写入该任务镜像（无 git 变化），
+        但退出码非零，须告警提示人工核实，不应静默。"""
+        self._backup_script_path().write_text(
+            "import sys\n"
+            "print('=== 定时任务 prompt 回镜报告 ===\\n  任务乙: 🔴 命中凭据扫描·已拒绝写入')\n"
+            "sys.exit(1)\n",
+            encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, "凭据拦截是纯提示，不应改变 sweep 本轮退出码：" +
+                          result.stdout + result.stderr)
+        self.assertIn("疑似命中凭据扫描", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        payload = _CapturingWebhookHandler.received[0]
+        self.assertIn("凭据扫描", payload["markdown"]["content"])
+
+    def test_dry_run_does_not_invoke_backup_script(self):
+        marker = self.work.parent / "mirror_sync_invoked.marker"
+        self._backup_script_path().write_text(
+            f"from pathlib import Path\nPath(r'{marker}').write_text('invoked')\n", encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+
+        result = _run_sweep(self.work, "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(marker.exists(), "dry-run 不应真实调用定时任务镜像核对脚本")
+
+
+class BatchLandingCountTests(SweepTestBase):
+    """队列 #257（P3，先计数不告警）：每轮落库批次数记录——纯数据积累，
+    不改变任何既有行为。"""
+
+    def test_processed_batch_records_landing_count(self):
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        log_path = self.work / sweep.SESSION_BATCH_COUNT_LOG_REL
+        self.assertTrue(log_path.exists())
+        record = json.loads(log_path.read_text(encoding="utf-8").strip().splitlines()[-1])
+        self.assertEqual(record["batch_count"], 1)
+        self.assertIn("B-TEST", record["batch_ids"])
+
+    def test_no_pending_batches_does_not_create_landing_count_file(self):
+        self._init_and_push(rows="")
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.work / sweep.SESSION_BATCH_COUNT_LOG_REL).exists())
+
+    def test_dry_run_does_not_write_landing_count(self):
+        self._init_and_push(rows="")
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work, "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.work / sweep.SESSION_BATCH_COUNT_LOG_REL).exists())
+
+
 class StartupLogLineTests(SweepTestBase):
     """队列 #222：启动即写日志首行——不等收尾统一 flush，即便本轮在起跑
     极早期就发生"连 except Exception 都接不住"的崩溃，也应已有一行落盘，

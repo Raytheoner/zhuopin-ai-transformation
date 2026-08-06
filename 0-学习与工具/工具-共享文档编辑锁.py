@@ -42,14 +42,18 @@
 纯回显、零新增状态文件（复用 `.editlock` 自身的 `history` 字段）。
 
 队列 #225（2026-08-04）：锁定目标是默认队列文件（跨桌任务队列.md）时，
-`release` 前会对**本次持锁期间新增/修改**的行做四项结构校验（不通过则
+`release` 前会对**本次持锁期间新增/修改**的行做结构校验（不通过则
 拒绝释放，锁保持占用，逼原地修正）：①§一 行须 8 列、§二/§四 行须 4 列
 （含反引号内裸竖线致列偏移）；②新增 §二 批次须在"文件清单"里声明队列
 文件自身路径；③新增 §一/§四 行编号不得与现役/归档件重复，且须属于本次
 `--reserve` 预留的编号集合；④**状态列**同时含 P0/P1 定级与"未核／未做的
 核实"字样即拒绝（标注未核不等于可据此下结论，见 #221 教训；只检查状态
 列本身——本项目约定优先级标注写在状态列，任务描述列提到这两个词多半是
-在叙述/讨论相关内容，不是该行当前的权威结论，按整行扫描会误拦）。
+在叙述/讨论相关内容，不是该行当前的权威结论，按整行扫描会误拦）；
+⑤（队列 #247②，2026-08-06）**§二状态列**开头片段既不含"待"也不含"✅"
+即拒绝——这类写法会被 sweep 判为"状态列模糊"、每轮跳过并重复告警（#247①
+实测最长 49 轮），在写入那一刻挡住比事后修法更彻底；显式放行 #236(1)
+"在办（预登记……）"约定文本，不误伤这一合法新状态。
 历史行不追溯，见
 `_validate_release_structure`。
 
@@ -223,6 +227,45 @@ QUOTED_SPAN_RE = re.compile(r"「[^」]*」|『[^』]*』")
 def _strip_quoted_spans(text: str) -> str:
     """剔除文本中被「」/『』完整包裹的片段，仅用于④断言门槛的扫描预处理。"""
     return QUOTED_SPAN_RE.sub("", text)
+
+
+# 队列 #247②：§二 批次状态列若既不含"待"也不含"✅"，会被 sweep 判为"状态列
+# 模糊"、每轮跳过并重复告警（#247①实测最长 49 轮）。比起"发生后修法"，在
+# 写入那一刻（release）就挡住这种中间态写法更彻底——见 #247「更佳」选项。
+# 判据复刻 sweep `_leading_status_segment`/`_classify_section_two_rows` 的
+# 锚定口径（开头片段＝去除前导强调符/空白后、第一个句级分隔符之前的文本），
+# 两处各自独立实现（同 P0/P1 判据一样刻意不跨文件 import，避免多 worktree
+# 共享 editable install 的静默劫持风险；若锚定口径未来变化，两处需同步改，
+# 见 sweep 侧同名常量的注释）。
+STATUS_LEADING_STRIP_CHARS = "* \t　"
+STATUS_LEADING_SEGMENT_SEPARATORS = ("。", "——", "━━━")
+# 队列 #236(1)：认领即预登记批次——协议〇.1 新增"认领时先登记预登记批次
+# 行"，状态列固定文案以此为前缀（design.md 已给出的约定文本）。这类行既不
+# 含"✅"也不含"待"，是有意为之（sweep 不应把预登记批次误当"待处理"去
+# add+commit），本校验须放行，不能把这个合法新状态当模糊态拦下。
+PREREGISTERED_STATUS_PREFIX = "在办（预登记"
+
+
+def _leading_status_segment(status_cell: str) -> str:
+    """§二 状态列"开头片段"——与 sweep `_leading_status_segment()` 同一口径
+    （独立实现，理由见上）。"""
+    stripped = status_cell.lstrip(STATUS_LEADING_STRIP_CHARS)
+    cut = len(stripped)
+    for sep in STATUS_LEADING_SEGMENT_SEPARATORS:
+        idx = stripped.find(sep)
+        if idx != -1:
+            cut = min(cut, idx)
+    return stripped[:cut]
+
+
+def _section_two_status_is_ambiguous(status_cell: str) -> bool:
+    """判定§二状态列是否会落进 sweep 的"模糊状态"桶（不含"✅"也不含"待"），
+    但放行 #236(1) 的预登记约定文本——那是有意为之的第三态，不是需要拦截
+    的中间态误写。"""
+    leading = _leading_status_segment(status_cell)
+    if leading.startswith(PREREGISTERED_STATUS_PREFIX):
+        return False
+    return "待" not in leading and "✅" not in leading
 LIVE_SECTION_HEADING_RE = re.compile(r"^## ([一二三四])、", re.MULTILINE)
 # §一/§四 表头首列 "#"、§二 表头首列 "批次"；分隔行首列全为 "-"/空白。
 _TABLE_HEADER_FIRST_CELLS = ("#", "批次", "")
@@ -676,7 +719,7 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
 def _validate_release_structure(
     args: argparse.Namespace, lock_data: dict, repo_root: Path,
 ) -> list[str]:
-    """队列 #225：release 时对跨桌任务队列.md 做四项结构校验，只对本次
+    """队列 #225：release 时对跨桌任务队列.md 做五项结构校验，只对本次
     持锁期间新增/修改的行生效（历史行不追溯）。返回违规说明列表，空列表
     即通过。
 
@@ -703,6 +746,13 @@ def _validate_release_structure(
       再收窄一层：扫描前剔除被「」/『』引号包裹的片段——只查状态列仍不够，
       状态列内引用/复述判据关键词本身（而非断言当前判断）同样不应触发，
       见 QUOTED_SPAN_RE 定义处的真实案例（#221 行）。
+    ⑤模糊状态（仅 §二，队列 #247②）：状态列"开头片段"既不含"待"也不含
+      "✅"，会被 sweep 判为"状态列模糊"、每轮跳过并重复告警（#247①实测
+      最长 49 轮）——在写入那一刻挡住这种中间态写法，比"发生后修法"更
+      彻底。判据复刻 sweep 侧的"开头片段"锚定口径（独立实现，见
+      `_leading_status_segment`），并显式放行 #236(1) 引入的"在办（预登记
+      ……）"约定文本——那是有意为之的第三态（sweep 也不该把它当"待处理"
+      去 add+commit），不是需要拦截的误写。
     """
     violations: list[str] = []
     current_text = _read_target_text(args.file)
@@ -755,6 +805,12 @@ def _validate_release_structure(
                     violations.append(
                         f"§二 批次「{cells[0]}」文件清单未声明队列文件自身路径"
                         f"（须含 `{DEFAULT_TARGET}`）：{preview}"
+                    )
+                if _section_two_status_is_ambiguous(cells[3]):
+                    violations.append(
+                        f"§二 批次「{cells[0]}」状态列开头片段既不含"
+                        f"「待」也不含「✅」（会被 sweep 判为状态列模糊、每轮"
+                        f"跳过并重复告警，见 #247）：{preview}"
                     )
 
             if label in ROW_NUMBER_SECTIONS and cells[0].isdigit():
