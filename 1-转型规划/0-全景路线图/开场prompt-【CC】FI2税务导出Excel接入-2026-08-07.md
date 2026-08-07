@@ -85,7 +85,33 @@ created: 2026-08-07
 
 ---
 
+## 六bis、🔴 开工前必须先知道的一件事：**FI2 在 spec 层目前不存在**
+
+**2026-08-07 实测（附证伪命令，别信这段话本身，自己跑一遍）：**
+
+| 事实 | 证伪命令 | 实测 |
+|---|---|---|
+| FI2 在 `openspec/specs/` **零覆盖** | `ls openspec/specs/ \| grep -i "fi2\|invoice"` | **零命中** |
+| 但它的 spec 其实早写好了——**5 个** capability delta | `find openspec/changes/fi2-recon-mvp -name spec.md` | `fi2-feed-source`／`fi2-match-engine`／`fi2-price-check`／`fi2-recon-report`／`fi2-result-classify` |
+| 进不去的唯一原因：**`fi2-recon-mvp` 包没归档** | `git log -1 --date=short -- openspec/changes/fi2-recon-mvp` | 最后改动 **2026-08-04**，仍在 `changes/` |
+| 而这个包**已完成 116 项、只剩 13 项** | `grep -c '^- \[x\]' tasks.md` | **116 ／ 13** |
+
+**⇒ 你跑 `/opsx:propose` 时，要 delta 的那个基线是空的。**
+**⇒ 而你本次要动的 `feed_source.py`，正好就是躺在那个包里的 `fi2-feed-source` capability 的范围。**
+
+这不是让你顺手去归档别人的包（那需要判断剩下 13 项是不是真该完成，不是你本任务的范围）。这是让你**在 propose 之前先做一个决定**，见下方 Q0。
+
+> 机制侧的根治已登记为队列 **#298**（sweep 增 spec 覆盖缺口检测），与本任务并行、不阻塞你。
+
+---
+
 ## 七、开工前的澄清问题（B 类跨线交接，**必问**；已预置为选择题）
+
+**Q0 · FI2 无 spec 基线，怎么处理？（🔴 最优先，其余问题都在它之后）**
+- (a) **本次 propose 只针对「发票源改道」新建一个独立 capability（推荐）** —— 不碰 `fi2-recon-mvp` 那个包；代价＝FI2 的 spec 层暂时仍是残缺的（只有新的这一个），但你的改动本身可追溯。
+- (b) 先把 `fi2-recon-mvp` 归档（要先判断剩余 13 项）再 propose —— 代价＝把一件别人的收尾工作扛进本任务，剩余 13 项若涉真实验证会阻塞你开工。
+- (c) 不 propose，直接改代码 —— **不建议**，那正是本次要根治的可追溯断链。
+- **默认：(a)**，并在交付里如实写明「FI2 spec 层仍残缺，根因＝`fi2-recon-mvp` 未归档，已登记队列 #298／#196 同族」。
 
 **Q1 · 本次做到第几层？**
 - (a) **只做第 1 层（推荐）** —— 能读固定目录里的 Excel，足以支撑 8 月底评估；代价＝仍需人工触发，第 2 层另排。
