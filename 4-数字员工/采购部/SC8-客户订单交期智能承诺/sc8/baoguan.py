@@ -97,6 +97,10 @@ class ComponentSupplyStatus:
     # 在构造前过滤掉，不会出现在返回列表里（#151，展示层过滤，不改计算输入）。
     available_qty:     float | None = None
     gap_qty:           float | None = None
+    # 替代料并列展示（#297，姚祖怡 08-06 新提要求）：""=无替代关系的普通行；
+    # "primary"=有替代料的主料行；"substitute"=紧随主料行之后的替代料展示行
+    # （见 baoguan._substitute_display_row）。纯展示标注，不参与任何计算。
+    role:              str = ""
 
 
 @dataclass
@@ -396,6 +400,16 @@ def _cumulative_confirmed_batches(
     返回按顺序纳入的 (确认日期, 确认数量) 元组；每条记录的数量原样展示，不因
     "凑够即止"而截断最后一条的数值（Yao 原话未要求截断，只要求"够了就不再往下加"）。
     target_qty<=0 或无承诺记录 → 空元组。
+
+    队列 #296（v4）修正：`q==0` 是合法的"差异已确认、答复为0"记录（此前
+    `_extract_board_commitments` 会把它与"待答交"混淆一并丢弃，D2a 已根治
+    该源头 bug）——本函数**不得**再跳过 `q==0` 的记录（此前 `if q <= 0:
+    continue` 是同一个"「无」与「0」混为一谈"缺陷在下游的第二处落点，2026-08-07
+    真实数据核验时发现：R01D.0015 唯一的确认记录恰好是 `answerQty=0`，若继续
+    跳过会导致状态列正确显示"已答交"、但答交数量却错误显示"无"，重新引入
+    #296 要根治的同一矛盾）。`q==0` 记录累计贡献为 0（不推进 `total`），故不会
+    单独让循环提前 break，符合"0 不构成满足缺口"的直觉；仍保留对负数的防御
+    （实测数据从未出现，属数据异常，不应计入累计展示）。
     """
     if target_qty <= 0 or not commitments:
         return ()
@@ -403,8 +417,8 @@ def _cumulative_confirmed_batches(
     out: list[tuple[date, float]] = []
     total = 0.0
     for d, q in ordered:
-        if q <= 0:
-            continue
+        if q < 0:
+            continue   # 负数视为数据异常，不计入展示（真实数据从未出现，防御性保留）
         out.append((d, q))
         total += q
         if total >= target_qty:
@@ -417,14 +431,26 @@ def _component_supply_status(
     purchase_orders: dict[str, float],
     material_commitments: dict[str, list[tuple[date, float]]] | None = None,
     inventory: dict[str, float] | None = None,
+    substitute_groups: dict[str, list[str]] | None = None,
 ) -> list[ComponentSupplyStatus]:
     """对 mat.arrivals 里每个"无法从现货立即满足需求"的子件，交叉 PO 在途 + SRM 答交
     分类出四态之一（#12，功能批1）。按料号排序，输出稳定、便于测试/前端渲染。
 
-    material_commitments（#18-a/b，队列 #139，可选）：给出时为"已答交"两态
-    （STATUS_TRANSIT_CONFIRMED / STATUS_CONFIRMED_NO_TRANSIT）额外计算
-    confirmed_batches（供应计划逐期累计明细）；缺省 None 时该字段恒为空元组，
-    不影响既有 status/transit_qty/confirmed_date 判定（零漂移）。
+    material_commitments（#18-a/b，队列 #139；状态列判定来源，队列 #296 v4）：
+    该料号是否"已答交"（confirmed，驱动 status 四态判定本身）**改由本参数是否
+    含该料号的有效记录派生**——`material_commitments.get(m)` 非空 → 已答交；
+    为空或缺失 → 未答交（"待答交"）。此前 `confirmed` 来自 `mat.no_feedback_
+    materials`（旧 `/purchase/answer`+看板最早日期 60 天窗口口径），与驱动⑦⑧
+    答交数量/日期展示的 `material_commitments`（`receiveType==2` 口径）是两条
+    独立管线，会产生"答交数量/日期显示无、状态却显示已答交"的自相矛盾（真实
+    案例 `R02A.0019`，姚祖怡 08-06 举证）。改挂同一数据源后两者天然一致。
+
+    **降级兜底**：仅当 `material_commitments is None`（整体加载失败，见
+    `baoguan_service.py` 的 fail-soft `try/except`）时才退回旧口径
+    （`m not in mat.no_feedback_materials`）——若强行套用新口径，会让状态列
+    在数据源本身不可用时全部显示"未答交"，比失败前更差。`material_commitments`
+    加载成功但恰好是空字典（或该料号确实无记录）与"整体加载失败"是两种不同
+    情形，前者应正常按新口径判"未答交"，只有后者才降级。
 
     inventory（④可用现货数量/⑥缺口数量，姚祖怡 07-29 三次重申，队列 #152，可选）：
     调用方仅在净额开关开启时传入（见 assess_supply_risk），值为该行订单在优先级分配
@@ -442,11 +468,21 @@ def _component_supply_status(
     满足缺口数量为止"（姚祖怡原话）。此前 `_cumulative_confirmed_batches` 一直
     以 `gross` 为累计目标，净额开关关闭/无 inventory 时无 gap_qty 可用，仍按
     gross 累计（向后兼容，零漂移）。
+
+    substitute_groups（#297，姚祖怡 08-06 新提要求，可选）：`{主料 component_id:
+    [替代料 component_id, ...]}`（`_substitute_groups()` 的输出，调用方传
+    `assess_supply_risk` 里已算好的同一份，不重复计算）。命中时在主料行后追加
+    替代料展示行（`role="substitute"`），详见 `_substitute_display_row`。缺省
+    None 时零漂移（不追加任何行，向后兼容）。
     """
     nf_set = set(mat.no_feedback_materials)
+    substitute_groups = substitute_groups or {}
     out: list[ComponentSupplyStatus] = []
     for m in sorted(mat.arrivals):
-        confirmed = m not in nf_set
+        if material_commitments is not None:
+            confirmed = bool(material_commitments.get(m))
+        else:
+            confirmed = m not in nf_set   # material_commitments 整体加载失败时的降级兜底
         transit_qty = float(purchase_orders.get(m, 0.0) or 0.0)
         if transit_qty > 0 and confirmed:
             status = STATUS_TRANSIT_CONFIRMED
@@ -469,6 +505,7 @@ def _component_supply_status(
             target_qty = gap_qty if gap_qty is not None else need
             batches = _cumulative_confirmed_batches(
                 material_commitments.get(m, []), target_qty)
+        subs = substitute_groups.get(m, [])
         out.append(ComponentSupplyStatus(
             component_id=m, component_name=names.get(m, ""),
             qty_needed=need, status=status,
@@ -477,8 +514,71 @@ def _component_supply_status(
             confirmed_batches=batches,
             available_qty=available_qty,
             gap_qty=gap_qty,
+            role="primary" if subs else "",
         ))
+        # 队列 #297（替代料并列展示）：紧随主料行追加每个替代料的展示行——沿用
+        # 主料的 qty_needed（同一份需求，两种满足路径，她的模板逐字段吻合：
+        # 主料/替代料两行需求数量相同），status/avail/gap/答交明细各自独立按
+        # 替代料自身 id 在 purchase_orders/inventory/material_commitments 里查
+        # （这三个字典本就按 components 全集加载，含替代料 id，见
+        # baoguan_service.py 的 `components` 集合构造，无需新增数据加载）。
+        # 不参与既有 _covered_by_stock/_kittable_qty 聚合判定，不改变主料行
+        # 是否出现在清单里的既有过滤口径（红线：本函数不改判定，纯展示追加）。
+        for sub_id in subs:
+            out.append(_substitute_display_row(
+                sub_id, need, names=names, purchase_orders=purchase_orders,
+                material_commitments=material_commitments, inventory=inventory))
     return out
+
+
+def _substitute_display_row(
+    component_id: str, qty_needed: float, *, names: dict[str, str],
+    purchase_orders: dict[str, float],
+    material_commitments: dict[str, list[tuple[date, float]]] | None,
+    inventory: dict[str, float] | None,
+) -> ComponentSupplyStatus:
+    """替代料并列展示行（#297，姚祖怡 08-06 新提要求，见 design.md D4）。
+
+    与主料行完全相同的取值规则，独立按替代料自身 `component_id` 查
+    purchase_orders/material_commitments/inventory；`qty_needed` 由调用方传入
+    （沿用主料的需求量，不是替代料自己的 BOM 用量——替代关系语义是"同一份
+    需求、两种满足路径"，与她给的模板逐字段吻合）。`confirmed_date`（旧内部
+    参考字段）对替代料恒为 None——旧 `/purchase/answer` 管线（`mat.arrivals`）
+    从不包含替代料料号，本就没有对应值可取。
+    """
+    if material_commitments is not None:
+        confirmed = bool(material_commitments.get(component_id))
+    else:
+        confirmed = False   # 无旧管线可退回（mat.arrivals 恒不含替代料），保守判未答交
+    transit_qty = float(purchase_orders.get(component_id, 0.0) or 0.0)
+    if transit_qty > 0 and confirmed:
+        status = STATUS_TRANSIT_CONFIRMED
+    elif transit_qty > 0:
+        status = STATUS_TRANSIT_UNCONFIRMED
+    elif confirmed:
+        status = STATUS_CONFIRMED_NO_TRANSIT
+    else:
+        status = STATUS_NO_TRANSIT
+    available_qty: float | None = None
+    gap_qty: float | None = None
+    if inventory is not None:
+        available_qty = float(inventory.get(component_id, 0.0) or 0.0)
+        gap_qty = qty_needed - available_qty
+    batches: tuple[tuple[date, float], ...] = ()
+    if confirmed and material_commitments:
+        target_qty = gap_qty if gap_qty is not None else qty_needed
+        batches = _cumulative_confirmed_batches(
+            material_commitments.get(component_id, []), target_qty)
+    return ComponentSupplyStatus(
+        component_id=component_id, component_name=names.get(component_id, ""),
+        qty_needed=qty_needed, status=status,
+        transit_qty=transit_qty,
+        confirmed_date=None,
+        confirmed_batches=batches,
+        available_qty=available_qty,
+        gap_qty=gap_qty,
+        role="substitute",
+    )
 
 
 def _demand_kittable_qty(
@@ -596,7 +696,8 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     # kittable_qty 等既有字段同一开关同一语义，开关关闭时两个新字段恒为 None。
     component_status = (_component_supply_status(
             mat, gross, component_names, purchase_orders, material_commitments,
-            inventory=inventory if net_inventory_active else None)
+            inventory=inventory if net_inventory_active else None,
+            substitute_groups=substitute_groups)
         if had_bom and purchase_orders is not None else [])
 
     if not had_bom:
@@ -996,6 +1097,11 @@ function answerDateText(s){return (s.cb&&s.cb.length)?s.cb.map(function(b){retur
 // 换行（CSS word-break，见 .cst-table）。八字段：①料号 ②品名 ③状态 ④可用现货数量
 // ⑤本项目需求数量 ⑥缺口数量 ⑦答交数量 ⑧答交日期；④⑥无库存数据时显示"—"（不以 0
 // 冒充，同 kq/dkq 等既有字段约定），⑦⑧未答交时显示"无"（姚祖怡原话）。
+// 队列 #297（替代料并列展示，姚祖怡 08-06 新提要求）：role==="primary"（有替代料
+// 的主料行）料号后标"（主料）"，role==="substitute"（紧随其后的替代料展示行）
+// 标"（替代料）"；role===""（无替代关系的普通行）不加任何文案，不给多数普通行
+// 增加视觉噪音。
+var ROLE_TAG={primary:'（主料）',substitute:'（替代料）'};
 function componentStatusHtml(r){
  if(!r.cst||!r.cst.length)return'';
  var rows=r.cst.map(function(s){
@@ -1004,7 +1110,8 @@ function componentStatusHtml(r){
   var tagCls=CST_CLS[s.st]||'no';
   var avail=s.aq==null?'—':fmt(s.aq);
   var gapq=s.gq==null?'—':fmt(s.gq);
-  return '<tr><td class="mono">'+esc(s.id)+'</td><td>'+(s.name?esc(s.name):'—')+'</td>'
+  var roleTag=ROLE_TAG[s.role]||'';
+  return '<tr><td class="mono">'+esc(s.id)+roleTag+'</td><td>'+(s.name?esc(s.name):'—')+'</td>'
     +'<td><span class="cst-tag '+tagCls+'">'+label+'</span>'
     +(note?'<div class="cst-tag-note">'+esc(note)+'</div>':'')+'</td>'
     +'<td>'+avail+'</td><td>'+fmt(s.qty)+'</td><td>'+gapq+'</td>'
@@ -1163,7 +1270,7 @@ function exportExcel(){
    var gapq=s.gq==null?'':s.gq;
    var stLabel=(CST_LABEL[s.st]||s.st)+(CST_NOTE[s.st]?'（'+CST_NOTE[s.st]+'）':'');
    var sub=['','','','','','','','','','','',
-     s.id, s.name, stLabel, avail, s.qty, gapq, s.tq, answerQtyText(s), answerDateText(s)];
+     s.id+(ROLE_TAG[s.role]||''), s.name, stLabel, avail, s.qty, gapq, s.tq, answerQtyText(s), answerDateText(s)];
    tbody+='<tr>'+sub.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';
   });
  });
@@ -1225,11 +1332,15 @@ def row_to_dict(r: BaoguanRow) -> dict:
         # 的字段，队列 #152）**只保留供内部排障参考，前端不再用它回填 cb 为空时的
         # 展示**——cb 为空时前端如实显示"无"（见 answerQtyText/answerDateText），
         # 不再静默顶替成这个已知不准的旧数值。
+        # role（#297，队列 #296/#297 同车）：""=无替代关系；"primary"=有替代料的
+        # 主料行；"substitute"=紧随其后的替代料展示行，前端据此追加"（主料）"/
+        # "（替代料）"文案。
         "cst": [{"id": s.component_id, "name": s.component_name, "qty": s.qty_needed,
                 "st": s.status, "tq": s.transit_qty,
                 "aq": s.available_qty, "gq": s.gap_qty,
                 "cd": s.confirmed_date.isoformat() if s.confirmed_date else None,
-                "cb": [{"d": d.isoformat(), "q": q} for d, q in s.confirmed_batches]}
+                "cb": [{"d": d.isoformat(), "q": q} for d, q in s.confirmed_batches],
+                "role": s.role}
                for s in r.component_status],
         # #14 需求日可齐套数量（功能批1，None → 前端不显示徽标，不以 0 冒充）
         "dkq": r.demand_kittable_qty, "dkbn": r.demand_kittable_bottleneck,

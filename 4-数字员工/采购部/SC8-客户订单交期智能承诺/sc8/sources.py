@@ -179,9 +179,20 @@ def _extract_board_commitments(
         for item in (rec.get("itemList") or []):
             if _is_cancelled_plan(item):
                 continue
-            answer_qty = int(item.get("answerQty") or 0)
-            if answer_qty <= 0:
-                continue
+            # 队列 #296（v4，姚祖怡 08-06 首次给出完整三态判据）：SRM 单据状态
+            # 「待答交」／「差异已确认」／「无差异」在原始 API 里没有独立字段
+            # （2026-08-07 真实穷举 763 条 record／1302 条 item 全字段确认），
+            # 由 answerQty 是否为 None 派生——None＝供应商尚未回复（待答交），
+            # 上游据此如实显示"无"；非 None（含 0）＝已回复（差异已确认/无
+            # 差异，两者对本函数驱动的展示逻辑等价），必须显示实际数字。此前
+            # `int(item.get("answerQty") or 0); if answer_qty <= 0: continue`
+            # 把 None 与 0 一并跳过，是"「无」与「0」被混为一谈"的根因（真实
+            # 案例 R01A.1022：planQty=5000, answerQty=0，此前误显示"无"，
+            # 正确应显示 0）。
+            raw_answer_qty = item.get("answerQty")
+            if raw_answer_qty is None:
+                continue   # 待答交：无记录，上游如实显示"无"
+            answer_qty = float(raw_answer_qty)   # 含 0——合法的"已答交"值
             s = str(item.get("boardDate") or "")
             if not s:
                 continue

@@ -139,7 +139,8 @@ def test_compute_snapshot_wires_purchase_orders_into_rows(monkeypatch):
     red = next(r for r in snap.rows if r["id"] == "RED")
     assert red["cst"] == [{"id": "C1", "name": "C1", "qty": 10.0,
                           "st": "transit_unconfirmed", "tq": 40.0,
-                          "aq": None, "gq": None, "cd": None, "cb": []}]
+                          "aq": None, "gq": None, "cd": None, "cb": [],
+                          "role": ""}]
 
 
 def test_compute_snapshot_degrades_gracefully_when_po_source_fails(monkeypatch):

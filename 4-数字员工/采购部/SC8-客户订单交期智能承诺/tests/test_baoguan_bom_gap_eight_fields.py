@@ -74,6 +74,38 @@ def test_component_supply_status_gap_filter_does_not_mutate_gross_input():
     assert gross == {"A": 100.0}   # 调用前后原样不变
 
 
+def test_confirmed_batches_includes_zero_answer_qty_record():
+    """队列 #296（v4）真实数据核验发现的第二处同族缺陷（R01D.0015，2026-08-07）：
+    唯一确认记录恰好是 answerQty=0（差异已确认，供应商回复"0"）——`_cumulative_
+    confirmed_batches` 此前 `if q<=0: continue` 会把它跳过，导致状态列正确显示
+    "已答交"（D2b 改挂 material_commitments 后）、但答交数量却错误显示"无"，
+    重新引入 D2a 已在上游根治的同一"『无』与『0』混为一谈"矛盾。本测试锁住：
+    q=0 的记录必须原样出现在 confirmed_batches 里，不被静默丢弃。"""
+    mat = MaterialArrivals(arrivals={"A": date(2026, 8, 20)}, no_feedback_materials=[],
+                           bottleneck_material="A", has_bom=True)
+    out = _component_supply_status(
+        mat, gross={"A": 150.0}, names={"A": "电容"},
+        purchase_orders={"A": 0.0}, inventory={"A": 0.0},
+        material_commitments={"A": [(date(2026, 7, 20), 0.0)]})
+    assert len(out) == 1
+    s = out[0]
+    assert s.gap_qty == 150.0
+    assert s.confirmed_batches == ((date(2026, 7, 20), 0.0),)   # 0 必须显示，不能是 ()
+
+
+def test_confirmed_batches_zero_answer_does_not_satisfy_target_keeps_accumulating():
+    """q=0 记录累计贡献为 0，不满足缺口，须继续累加下一条直至满足——0 本身不能
+    让累计"提前止步"（呼应"0 不构成满足缺口"的业务直觉）。"""
+    mat = MaterialArrivals(arrivals={"A": date(2026, 8, 20)}, no_feedback_materials=[],
+                           bottleneck_material="A", has_bom=True)
+    out = _component_supply_status(
+        mat, gross={"A": 500.0}, names={},
+        purchase_orders={"A": 0.0}, inventory={"A": 0.0},
+        material_commitments={"A": [(date(2026, 7, 1), 0.0), (date(2026, 8, 1), 500.0)]})
+    s = out[0]
+    assert s.confirmed_batches == ((date(2026, 7, 1), 0.0), (date(2026, 8, 1), 500.0))
+
+
 def test_confirmed_batches_accumulate_to_gap_qty_not_gross_need(monkeypatch):
     """队列 #211 v2（姚祖怡 07-31 权威判定纠正）：答交数量累计目标是**缺口数量**，
     不是本项目需求数量——需求900、现货784→缺口116，答交明细 100+50=150>116，

@@ -224,7 +224,8 @@ def test_row_to_dict_serializes_new_fields(monkeypatch):
     d = row_to_dict(row)
     assert d["cn"] == {"A": "电容"}
     assert d["cst"] == [{"id": "A", "name": "电容", "qty": 100.0, "st": "transit_unconfirmed",
-                         "tq": 20.0, "aq": 50.0, "gq": 50.0, "cd": None, "cb": []}]
+                         "tq": 20.0, "aq": 50.0, "gq": 50.0, "cd": None, "cb": [],
+                         "role": ""}]   # 队列 #297：无替代关系时 role 恒为空串
     assert d["dkq"] == 50 and d["dkbn"] == "A"   # 到货远超出货日，只算现货50
 
 
@@ -353,16 +354,48 @@ def test_component_status_confirmed_batches_cumulative_multiple():
 
 
 def test_component_status_confirmed_batches_only_for_confirmed_states():
-    """无答复子件（STATUS_TRANSIT_UNCONFIRMED/STATUS_NO_TRANSIT）不计算 confirmed_batches。"""
+    """无答复子件（STATUS_TRANSIT_UNCONFIRMED/STATUS_NO_TRANSIT）不计算 confirmed_batches。
+
+    队列 #296（v4）：confirmed 判定改挂 material_commitments 本身（状态列改挂同一
+    数据源，见 design.md D2b）——本料号在 material_commitments 里无记录即为
+    "未答交"，不再看旧的 srm_deliveries/no_feedback_materials 信号。"""
     so = _so(item="P1", qty=100, ship="2026-09-01")
     bom = [_row("P1", "A")]
-    commitments = {"A": [(date(2026, 8, 1), 999.0)]}   # 即便有承诺记录，无答复子件也不展示
+    commitments: dict = {}   # A 在 material_commitments 里无记录 → 待答交（新口径来源）
     row = assess_supply_risk(so, bom, [], today=TODAY,
                              purchase_orders={"A": 50.0},
                              material_commitments=commitments)
     s = row.component_status[0]
     assert s.status == STATUS_TRANSIT_UNCONFIRMED
     assert s.confirmed_batches == ()
+
+
+def test_component_status_confirmed_reanchored_to_material_commitments_not_old_srm(monkeypatch):
+    """队列 #296 核心修复（真实案例 R02A.0019）：旧 srm_deliveries 管线判"已答交"，
+    但 material_commitments（新权威源）判"待答交"——状态列须以后者为准，不再
+    出现"答交数量/日期显示无、状态却显示已答交"的自相矛盾。"""
+    so = _so(item="P1", qty=100, ship="2026-09-01")
+    bom = [_row("P1", "A")]
+    # 旧管线：srm_deliveries 里 A 有确认交期 → 若仍用旧口径会判 confirmed=True
+    row = assess_supply_risk(so, bom, [_srm("A", "2026-08-20")], today=TODAY,
+                             purchase_orders={"A": 50.0},
+                             material_commitments={})   # 新权威源：A 无记录 → 待答交
+    s = row.component_status[0]
+    assert s.status == STATUS_TRANSIT_UNCONFIRMED   # 以 material_commitments 为准，非旧管线
+    assert s.confirmed_batches == ()
+
+
+def test_component_status_falls_back_to_old_signal_when_commitments_load_failed():
+    """降级兜底：material_commitments 整体加载失败（None，非空字典）时退回旧口径
+    （mat.no_feedback_materials），不能让状态列在数据源不可用时全部显示"未答交"
+    （比失败前更差）。"""
+    so = _so(item="P1", qty=100, ship="2026-09-01")
+    bom = [_row("P1", "A")]
+    row = assess_supply_risk(so, bom, [_srm("A", "2026-08-20")], today=TODAY,
+                             purchase_orders={"A": 50.0},
+                             material_commitments=None)   # 加载失败，非"确认无记录"
+    s = row.component_status[0]
+    assert s.status == STATUS_TRANSIT_CONFIRMED   # 退回旧口径：srm_deliveries 有确认交期
 
 
 def test_row_to_dict_serializes_confirmed_batches():

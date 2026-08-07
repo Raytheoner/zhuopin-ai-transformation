@@ -106,7 +106,7 @@ def po_transit_lookback_days() -> int:
 
 
 def material_commitment_lookahead_days() -> int:
-    """物料答交承诺前瞻窗口：`SC8_COMMITMENT_LOOKAHEAD_DAYS`（默认 180）。
+    """物料答交承诺前瞻窗口：`SC8_COMMITMENT_LOOKAHEAD_DAYS`（默认 365）。
 
     根因修复（姚祖怡 08-05 三度举证，队列 #262）：`load_material_commitments`
     此前查询窗口固定 `[今天, 今天+60]`（SRM 单次查询跨度硬限 ≤60 天，见
@@ -129,15 +129,20 @@ def material_commitment_lookahead_days() -> int:
     实现为多段 ≤60 天窗口顺序查询（`sources._chunk_date_windows`，SRM 硬性
     单次跨度限制）。携客云限流 1 req/30s（进程级令牌桶，见
     `XkySrmConnector._get_bucket`）——本参数每增加 60 天，`load_material_commitments`
-    每次调用增加约 30 秒阻塞等待（不重试不丢弃，只是排队）。默认 180 天 = 3 段
-    ≈ 60-90 秒；该函数是保供看板每小时后台重算/手动"立即重算"里的一步，与
-    同一 compute_snapshot 里 BOM 多层递归、PO 在途等步骤同数量级，可接受。
+    每次调用增加约 30 秒阻塞等待（不重试不丢弃，只是排队）。
+
+    365 天（队列 #296，姚祖怡 08-06 第四次举证后明确要求放宽，v4）：真实测算
+    `_chunk_date_windows` 从 180 天的 3 段增至 6 段（非估算"约7段"，实测 6 段），
+    比 180 天多 3 次顺序调用，最坏情形（令牌桶初始为空）多等约 90 秒——与
+    180 天口径落地时（#262）"约 60-90 秒、与 BOM 多层递归等步骤同数量级可接受"
+    同一论证成立，判定可接受，不设止步点（design.md D3）。该函数是保供看板
+    每小时后台重算/手动"立即重算"里的一步。
     """
-    raw = os.environ.get("SC8_COMMITMENT_LOOKAHEAD_DAYS", "180").strip()
+    raw = os.environ.get("SC8_COMMITMENT_LOOKAHEAD_DAYS", "365").strip()
     try:
         days = int(raw)
     except ValueError:
-        days = 180
+        days = 365
     return max(1, days)
 
 

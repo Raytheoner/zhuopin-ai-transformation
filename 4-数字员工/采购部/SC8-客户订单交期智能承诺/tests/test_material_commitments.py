@@ -5,7 +5,7 @@ answerQty>0 的 (承诺日期, 数量) 记录，供 sc8.period_match 逐笔累�
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from sc8 import config
 from sc8.sources import _chunk_date_windows, _extract_board_commitments, load_material_commitments
@@ -42,11 +42,22 @@ def test_multiple_commitments_preserved_not_collapsed():
     assert sorted(result["M1"]) == [(date(2026, 6, 25), 30.0), (date(2026, 7, 5), 40.0)]
 
 
-def test_zero_answer_qty_excluded():
-    """answerQty<=0（未答交）不产生记录，不能当成"承诺数量为 0"参与累加。"""
-    board = [_rec("M1", "V1", [_item("2026-07-01", 0)])]
+def test_unanswered_item_none_excluded():
+    """队列 #296（v4，三态判据）：answerQty is None（待答交，供应商未回复）不产生
+    记录——上游据此如实显示"无"。"""
+    board = [_rec("M1", "V1", [_item("2026-07-01", None)])]
     result = _extract_board_commitments(board, materials=None)
     assert "M1" not in result
+
+
+def test_answered_zero_qty_included_not_confused_with_no_reply():
+    """队列 #296（v4）核心修复：answerQty==0（已答交、供应商确认答不了，"差异
+    已确认"）是合法记录，**必须**产生记录、显示为 0——此前与"待答交"（None）
+    被混为一谈是本次核心缺陷（姚祖怡原话："『无』与『0』被混为一谈"）。真实案例
+    `R01A.1022`：planQty=5000, answerQty=0（2026-08-07 生产凭据实测）。"""
+    board = [_rec("R01A.1022", "V1", [_item("2026-07-01", 0)])]
+    result = _extract_board_commitments(board, materials=None)
+    assert result["R01A.1022"] == [(date(2026, 7, 1), 0.0)]
 
 
 def test_cancelled_plan_excluded_from_commitments():
@@ -142,10 +153,14 @@ def test_default_window_queries_multiple_chunks_and_merges(monkeypatch):
 
 
 def test_far_future_commitment_no_longer_lost_to_60_day_window(monkeypatch):
-    """R01A.1028 真实复现：60 天默认窗口下"无"，扩大窗口后正确取得 10000/2026-11-25。"""
+    """R01A.1028 真实复现：60 天默认窗口下"无"，扩大窗口后正确取得 10000/2026-11-25。
+
+    队列 #296（v4）修正：段一的"未答交排程"占位改用 `answer_qty=None`——0 现在是
+    合法的"已答交=0"值（见 test_answered_zero_qty_included_not_confused_with_no_reply），
+    不能再用 0 表示"未答交"，否则测试会随实现修正而意外通过/失败。"""
     monkeypatch.setenv("SC8_COMMITMENT_LOOKAHEAD_DAYS", "120")
     conn = _MultiWindowConnector([
-        [_rec("R01A.1028", "V1", [_item("2026-08-05", 0)])],      # 段一：60天内仅未答交排程
+        [_rec("R01A.1028", "V1", [_item("2026-08-05", None)])],   # 段一：60天内仅未答交排程
         [_rec("R01A.1028", "V1", [_item("2026-11-25", 10000)])],  # 段二：真实答交批次
     ])
     result = load_material_commitments("real", connector=conn)
@@ -166,9 +181,10 @@ def test_no_overlap_across_chunk_boundary_avoids_double_counting():
 
 # ── config.material_commitment_lookahead_days()（队列 #262 根因修复）───────────
 
-def test_material_commitment_lookahead_days_defaults_180(monkeypatch):
+def test_material_commitment_lookahead_days_defaults_365(monkeypatch):
+    """队列 #296 v4：默认值 180→365（姚祖怡 08-06 第四次举证后明确要求）。"""
     monkeypatch.delenv("SC8_COMMITMENT_LOOKAHEAD_DAYS", raising=False)
-    assert config.material_commitment_lookahead_days() == 180
+    assert config.material_commitment_lookahead_days() == 365
 
 
 def test_material_commitment_lookahead_days_explicit_override(monkeypatch):
@@ -178,7 +194,14 @@ def test_material_commitment_lookahead_days_explicit_override(monkeypatch):
 
 def test_material_commitment_lookahead_days_invalid_falls_back_to_default(monkeypatch):
     monkeypatch.setenv("SC8_COMMITMENT_LOOKAHEAD_DAYS", "not-a-number")
-    assert config.material_commitment_lookahead_days() == 180
+    assert config.material_commitment_lookahead_days() == 365
+
+
+def test_365_day_window_chunks_into_six_segments():
+    """队列 #296：真实测算 365 天窗口分段数（非估算"约7段"，实测 6 段）。"""
+    today = date(2026, 8, 7)
+    windows = _chunk_date_windows(today, today + timedelta(days=365))
+    assert len(windows) == 6
 
 
 def test_material_commitment_lookahead_days_floor_is_one(monkeypatch):
