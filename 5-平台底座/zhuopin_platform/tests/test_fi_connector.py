@@ -369,3 +369,43 @@ def test_download_attachment_apikey_scrubbed_on_error(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError) as ei:
         conn.download_attachment("AP-1", "AP")
     assert "SUPERSECRETKEY123" not in str(ei.value)
+
+
+# ── get_ap_lines_by_invoice_no（队列 #295，FI2 税务导出 Excel 接入追加）───────
+
+def test_get_ap_lines_by_invoice_no_paginates(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    body = json.dumps({"Success": True, "Data": {"Total": 2, "Rows": [
+        {"DocNo": "AP-1", "InvoiceNo": "42719331"},
+        {"DocNo": "AP-1", "InvoiceNo": "42719331"},
+    ]}}).encode()
+    captured = {}
+
+    def _fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        return _Resp(body)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    rows = conn.get_ap_lines_by_invoice_no("42719331")
+    assert [r["DocNo"] for r in rows] == ["AP-1", "AP-1"]
+    assert "invoiceNo=42719331" in captured["url"]
+    assert "docNo=" not in captured["url"]
+
+
+def test_get_ap_lines_by_invoice_no_empty_result(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    body = json.dumps({"Success": True, "Data": {"Total": 0, "Rows": []}}).encode()
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+    assert conn.get_ap_lines_by_invoice_no("00000000") == []
+
+
+def test_get_ap_lines_by_invoice_no_failloud_without_config(tmp_path, monkeypatch):
+    monkeypatch.delenv("STOCK_API_BASE", raising=False)
+    monkeypatch.delenv("STOCK_API_KEY", raising=False)
+    conn = _make_conn(tmp_path)
+    with pytest.raises(RealEndpointNotReadyError):
+        conn.get_ap_lines_by_invoice_no("42719331")

@@ -681,6 +681,18 @@ class ZpConnector(DataConnector):
             filters["minBalance"] = min_balance
         return self._fi_query_paginated("/zp/api/AP/Query", filters)
 
+    def get_ap_lines_by_invoice_no(self, invoice_no: str) -> list[dict]:
+        """应付单明细行·按发票号查询（队列 #295，FI2 税务导出 Excel 接入追加）——GET
+        `/zp/api/AP/Query` 的 `invoiceNo` 过滤 + 自动分页。
+
+        ⚠️ 2026-08-07 真实探测确认：该过滤参数是服务端 **CONTAINS 语义**（非精确
+        匹配）——用哨兵值 `"00000000"` 查询命中 97 行（非 0 行），用非尾部中段
+        子串查询同样有命中。**调用方必须对返回行的 `InvoiceNo` 字段做客户端二次
+        校验**（如右侧子串匹配），不得直接信任本方法的返回集合等于精确匹配结果，
+        否则存在把不相关发票误配对到错误应付单的风险（财务场景不可接受）。
+        """
+        return self._fi_query_paginated("/zp/api/AP/Query", {"invoiceNo": invoice_no})
+
     # ── 附件（发票扫描件，design D18，队列 #78，2026-07-23 首碰真实探测已确认）──
     # 与 Purchase/GR/AP/Stock 不同：List 的信封是 {Data:[...]}（数组，无 Rows 包裹），
     # Download 直接返回原始文件二进制（非 JSON）。均不能复用 _fi_query/_fi_request
