@@ -227,9 +227,81 @@ sweep 自己取编辑锁窗口之外）走子进程调用该脚本（零依赖�
 的批次数与批次 ID 写入 `reports/sweep-batch-landing-count.jsonl`，不告警、
 不阻断、不改变任何既有行为，纯粹积累数据供后续（样本足够时）另行评估阈值。
 
+孤儿脏文件解除通知（队列 #301，2026-08-07，Shao Peishen 选 (b)）：
+`_track_and_alert_orphan_paths` 此前只在孤儿"出现且跨阈值"时告警，孤儿
+消失（被声明或已处理）后无任何通知——2026-08-07 实测：孤儿告警送达
+Shao Peishen 前它已自愈，他只能凭消息本身判断不了当前是否还成立，被迫
+转人查证（成本落在他身上）。修法：孤儿从状态清除时，若其 `last_alerted`
+非空（即真的告警过），补发一条"✅ 已解除"通知（路径+存续时长+"无需
+处置"）；`last_alerted` 为空（从未跨过阈值即消失）不补发——为一件对方
+根本没听说过的事发解除通知，本身就是新噪音（#147 教训）。复用既有
+webhook 通道，不新起通道。
+
+抄近路后补全欠账机制化（队列 #298，2026-08-07，Shao Peishen「推广到所有
+域和所有任务」当日扩容拍板）：完工即归档是人守规则（CLAUDE.md §5），无
+任何机制检查——#295 实证：FI2 已部署 `.51:8094` 并接新建造，但其
+`fi2-recon-mvp` 变更包 90% 完成、3 天未归档，5 个 capability delta 全部
+躺在 `openspec/changes/` 进不了 `openspec/specs/`，可追溯链断在此。两项
+检测，纯提示不阻断，挂 sweep 每小时随批次处理一并跑（与本轮是否有批次
+落库无关，检测对象是仓库整体 openspec 状态，不依赖 touched_paths）：
+M1 · 已建造场景 spec 覆盖缺口——扫描域按 Shao Peishen 当日扩容拍板由
+"已部署场景白名单"（#229 `DEPLOYED_SCENARIO_PREFIXES`）扩为
+`4-数字员工/*/*/` 全部场景：已建造（≥1 个 .py）、未标退役（CLAUDE.md
+含"退役"字样即豁免）的场景，按其目录名短代码前缀（`_scenario_short_code`
+——兼容 `QD-A`/`QD-B` 这类代码本身含连字符的写法）查 `openspec/specs/`
+是否至少有一个同前缀 capability，零命中即缺口，并顺带查
+`openspec/changes/*/specs/` 指出 delta 躺在哪个未归档包（形态甲）还是
+压根没写过（形态乙，归档也救不了，须重新补写）。`5-平台底座/*/` 全部包
+无短代码前缀约定可循（`platform-*`/`aibot-*`/`sweep-*` 等 capability 名称
+与包目录名之间没有机械对应关系），改用弱信号（spec.md 内容是否提及
+包名字面）且只列入日志、不触发 webhook——`deploy-tools` 是当前唯一
+"零提及"实例，与本行原始判断一致，见 `_find_platform_packages_without_
+spec_mention`。
+M2 · 在途变更包滞留提示——完成率（`tasks.md` 勾选比例）≥
+`STALE_CHANGE_COMPLETION_THRESHOLD` 且距最后一次改动≥
+`STALE_CHANGE_MIN_DAYS_IDLE` 天即滞留；⚠️ 行内原文示例阈值写「≥80% 且
+≥7 天」，但同段给出的命中案例 `fi2-recon-mvp`（90%/3天）与该阈值本身
+矛盾（3<7，按字面不会命中，已用 `git log -1 --format=%ct` 核实其真实
+最后改动确为 3 天前）——判定为行文疏漏，天数阈值改取与给出的最小真实
+命中案例一致的下界（3 天），完成率阈值不变；两个真实命中案例
+（90%/3天、82%/16天）与放过案例（19%/`wecom-listener-macos-migration`，
+明显没做完）在新阈值下判定结果不变，已实测核对。降噪：包自身
+`proposal.md`/`design.md`/`tasks.md` 含"暂不归档"字样即跳过（不入
+"滞留"清单）——`aibot-queue-sync-checkout-guard` 即为此类（`tasks.md`
+第 29 行原文引用"暂不归档"，#287 明写须先观察真实生产流量）。
+两项检测均持久化"已告警过的 key"（`SCENARIO_SPEC_GAP_STATE_REL`/
+`STALE_CHANGE_STATE_REL`），24 小时内不重复推送同一 key（同 #236(2) 的
+"狼来了"防线——M1/M2 检测的都是标准长期存在的结构性状态，逐轮/每小时
+重复推送必被无视）；只提示、不阻断、不改退出码、不自动归档（归档要跑
+`/opsx:archive` 并做完工判断，机制只负责让欠账不静默）；只判"spec
+存不存在"，不判"spec对不对"（空壳 capability 也能让 M1 静音，拦不住
+"同步得不对"）；存量缺口的实际补齐是队列 #299 的另一项工作，本节只管
+"机制不让它再发生"。
+
+批量派活前状态核对（队列 #302，2026-08-07，Shao Peishen「这个问题需要
+马上解决」P1）：2026-08-07 一次批量派活扫描撞出 4 条状态滞后行（#205-A/
+#258/#236(1)/#188——均已被别的批次"顺带做完"，做的人不知道要回写哪
+一行，回写因此无人执行）。新增只读 CLI `--check-stale-pending-rows`
+（不写入任何状态，只作派活前核对清单）：扫 §一 状态列开头片段含"待"的
+行，与近 `--stale-lookback-days`（默认 `STALE_ROW_LOOKBACK_DAYS`）天的
+commit 交叉——主判据（高精度低召回）＝commit 首行 `type(scope):` 里的
+scope 含该行号（`_extract_commit_scope` 用 `rfind` 定位右括号，兼容
+scope 内自带嵌套括号的行号写法；`_extract_row_numbers` 用 `#(\\d+)`
+提取完整数字游程，天然不会把 `#22` 误判命中 `#225`——词边界由数字游程
+本身保证，不依赖显式的正则边界断言）；副判据（高召回低精度）＝行的
+"触碰区"列路径与 commit 改动文件路径交叉（`_touch_zone_path_matches`，
+判据同 `_resolve_batch_files` 的后缀匹配）。三个已实测坐实的误报源均已
+在设计层面堵住：子串误命中——按完整数字游程提取，非子串搜索；正文
+提及不算完成——只解析 `git log --format=%s` 的首行，不碰 commit body；
+校准 commit 自我污染——`_extract_commit_scope` 只认冒号前的 scope 括号
+内容，"四行滞后状态校准(#205A.../...)" 这类描述性文字出现在冒号之后，
+不在 scope 提取范围内，天然被排除。纯只读、纯提示，不改任何状态，判定
+权留给人。
+
 用法：
   python 0-学习与工具/工具-落库sweep.py            # 真跑
   python 0-学习与工具/工具-落库sweep.py --dry-run   # 只打印计划动作，不落地
+  python 0-学习与工具/工具-落库sweep.py --check-stale-pending-rows  # 队列 #302 只读核对
   # --repo-root 仅供单测覆盖 MAIN_WORKSPACE 断言，生产不要传
 """
 from __future__ import annotations
@@ -321,6 +393,39 @@ DEPLOYED_SCENARIO_PREFIXES = {
         "4-数字员工/财务部/FI2-三单匹配自动对账/CLAUDE.md",
     "1-转型规划/AI运营指挥中心/": "CLAUDE.md",
 }
+
+# 队列 #298（2026-08-07 当日扩容）：M1 场景 spec 覆盖缺口检测的扫描域。
+SCENARIO_ROOT_REL = "4-数字员工"
+PLATFORM_PACKAGES_ROOT_REL = "5-平台底座"
+OPENSPEC_SPECS_REL = "openspec/specs"
+OPENSPEC_CHANGES_REL = "openspec/changes"
+# 场景目录名短代码前缀：首个 `-` 前的字母数字段；兼容 `QD-A`/`QD-B` 这类
+# 代码本身含连字符的写法（贪婪尝试再吞一段 `-字母数字`，仍要求其后紧跟
+# `-` 才采信，见 `_scenario_short_code` 用例）。
+SCENARIO_SHORT_CODE_RE = re.compile(r"^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)?)-")
+SCENARIO_RETIREMENT_MARKER = "退役"
+SCENARIO_SPEC_GAP_STATE_REL = "reports/sweep-scenario-spec-gap-state.json"
+SCENARIO_SPEC_GAP_ALERT_INTERVAL_HOURS = 24
+
+# 队列 #298 M2：在途变更包滞留判据——完成率阈值与本行给出的两个真实
+# 命中案例一致；天数阈值见文件头部本节说明（已更正原文"≥7天"与其自身
+# 举例"fi2-recon-mvp 90%/3天"的矛盾）。
+STALE_CHANGE_COMPLETION_THRESHOLD = 0.80
+STALE_CHANGE_MIN_DAYS_IDLE = 3
+STALE_CHANGE_DEFER_MARKER = "暂不归档"
+STALE_CHANGE_STATE_REL = "reports/sweep-stale-change-state.json"
+STALE_CHANGE_ALERT_INTERVAL_HOURS = 24
+
+# 队列 #302：批量派活前状态核对——近期 commit 扫描窗口默认天数。
+STALE_ROW_LOOKBACK_DAYS = 14
+# 副判据在高频改动的文件（如本脚本自身）上天然命中大量 commit——真实
+# 验证实测某些行触碰区含 `工具-落库sweep.py` 时单行可命中 300+ 个 commit
+# sha，全量列出会让输出不可读。只截断"展示"的 sha 数量，不改变
+# `primary`/`secondary` 判定本身（判定仍是"是否非空"这一布尔结果）。
+STALE_ROW_MAX_DISPLAYED_COMMITS = 5
+SECTION_ONE_HEADING = "## 一、"
+COMMIT_TYPE_PREFIX_RE = re.compile(r"^[A-Za-z]+\(")
+ROW_NUMBER_RE = re.compile(r"#(\d+)")
 
 
 class SweepAbort(Exception):
@@ -1053,6 +1158,170 @@ def _check_dirty_paths_against_pending_batches(
     return results
 
 
+# ============================================================
+# 队列 #302（2026-08-07）：批量派活前状态核对
+# ============================================================
+
+
+def _parse_section_one(queue_text: str) -> list[dict]:
+    """解析队列 §一"任务看板"表格，返回每行的原始文本+八列内容。与
+    `_parse_section_two` 同一套简单表格解析取舍——命中不了整八列即静默
+    跳过该行（不处理单元格内嵌 `|` 的极端情形），不崩溃、不误判。"""
+    start = queue_text.find(SECTION_ONE_HEADING)
+    if start == -1:
+        return []
+    rest = queue_text[start + len(SECTION_ONE_HEADING):]
+    next_heading = rest.find("\n" + NEXT_SECTION_PREFIX)
+    section = rest if next_heading == -1 else rest[:next_heading]
+
+    rows = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|") or not stripped.endswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if len(cells) != 8:
+            continue
+        if cells[0] in ("#", ""):
+            continue
+        if set(cells[0]) <= {"-", " "}:
+            continue  # 分隔行 |---|---|...|
+        rows.append({
+            "raw_line": line,
+            "row_id": cells[0],
+            "task_cell": cells[1],
+            "owner_cell": cells[2],
+            "input_cell": cells[3],
+            "output_cell": cells[4],
+            "status_cell": cells[5],
+            "touch_zone_cell": cells[6],
+            "registered_cell": cells[7],
+        })
+    return rows
+
+
+def _extract_commit_scope(subject: str) -> str | None:
+    """从 commit 首行提取 `type(scope):` 里的 scope 文本（队列 #302 主
+    判据）。只认紧随消息开头的 `type(`（`COMMIT_TYPE_PREFIX_RE`），用
+    `rfind` 而非贪婪/非贪婪正则定位冒号前最后一个右括号——兼容 scope 内
+    自带嵌套括号的行号写法（如 `队列#236(1)`：字面按普通"找第一个)"的
+    正则会在内层 `)` 处提前截断，`rfind` 从冒号往回找则能正确定位到
+    外层右括号）。不满足 `type(...):` 结构时返回 None，调用方据此判定
+    该 commit 不参与主判据匹配（不误判为"scope 为空"）。"""
+    if not COMMIT_TYPE_PREFIX_RE.match(subject):
+        return None
+    paren_start = subject.find("(")
+    colon_idx = subject.find(":", paren_start)
+    if colon_idx == -1:
+        return None
+    paren_end = subject.rfind(")", paren_start, colon_idx)
+    if paren_end == -1 or paren_end + 1 != colon_idx:
+        return None
+    return subject[paren_start + 1:paren_end]
+
+
+def _extract_row_numbers(text: str) -> set[int]:
+    """从文本中提取全部 `#数字` 形式的队列行号引用。用 `ROW_NUMBER_RE`
+    （`#(\\d+)`）按完整数字游程提取——`\\d+` 贪婪匹配整串数字，`#220` 只会
+    被提取为整数 220，不会被"#22 是否为其子串"这类朴素子串搜索误判命中
+    （2026-08-07 实测坐实：`git log --grep="#22"` 命中 29 条，因 `#22` 是
+    `#220`/`#221`/`#223`/`#225`/`#227` 的子串——本函数按数字游程而非字符
+    子串比对，天然规避这一误报源，不依赖额外的正则单词边界断言）。"""
+    return {int(n) for n in ROW_NUMBER_RE.findall(text)}
+
+
+def _touch_zone_path_matches(file_path: str, frag: str) -> bool:
+    """触碰区片段与 commit 实际改动文件路径的匹配判据（队列 #302 副
+    判据）——目录型片段（以 `/` 结尾）用前缀匹配；文件型片段沿用
+    `_resolve_batch_files` 同一套精确相等/`/` 后缀匹配规则，不另起一套
+    判据。"""
+    if frag.endswith("/"):
+        return file_path.startswith(frag)
+    return file_path == frag or file_path.endswith("/" + frag)
+
+
+def _recent_commit_records(repo_root: Path, days: int) -> list[dict]:
+    """队列 #302：扫近 `days` 天全部 commit，返回 [{sha, subject, scope,
+    row_numbers, files}, ...]。只读 `git log`，不修改任何状态。
+
+    只解析 `%s`（commit 首行/subject），不碰 commit body——"正文提及不算
+    完成"这一误报源由此在数据源头就被排除，不需要在 scope 提取之后再
+    额外过滤（本项目 commit 习惯把讨论性文字也写进单行 subject 的冒号
+    之后，`_extract_commit_scope` 只取冒号之前的括号内容，同样把这部分
+    排除在外，两层防线共同生效）。"""
+    result = _run_git(
+        ["log", f"--since={days} days ago", "--name-only", "--format=%x01%H%x02%s%x03"],
+        repo_root, check=False,
+    )
+    if result.returncode != 0:
+        return []
+    records = []
+    for block in result.stdout.split("\x01"):
+        block = block.strip("\n")
+        if not block or "\x02" not in block or "\x03" not in block:
+            continue
+        header, _, rest = block.partition("\x03")
+        sha, _, subject = header.partition("\x02")
+        files = [line.strip() for line in rest.splitlines() if line.strip()]
+        scope = _extract_commit_scope(subject)
+        row_numbers = _extract_row_numbers(scope) if scope else set()
+        records.append({
+            "sha": sha.strip(), "subject": subject.strip(),
+            "scope": scope, "row_numbers": row_numbers, "files": files,
+        })
+    return records
+
+
+def _find_stale_pending_rows(repo_root: Path, days: int = STALE_ROW_LOOKBACK_DAYS) -> list[dict]:
+    """队列 #302：批量派活前核对——§一 状态列开头片段含"待"的行，是否
+    已被近 `days` 天内的 commit 明确声称做过（主判据）或触碰过其"触碰区"
+    列声明的路径（副判据）。纯只读、纯提示，不改任何状态，判定权留给人
+    （"触碰区被动过"不等于"那件事做完了"，副判据必然有误报，它的定位是
+    把"逐行凭记忆判断"变成"只核这几条被标红的"，不是判定器）。"""
+    queue_text = _read_queue(repo_root)
+    rows = _parse_section_one(queue_text)
+    pending = [r for r in rows if "待" in _leading_status_segment(r["status_cell"])]
+    commits = _recent_commit_records(repo_root, days)
+
+    results = []
+    for row in pending:
+        try:
+            row_id = int(row["row_id"])
+        except ValueError:
+            continue
+        primary_hits = [c for c in commits if row_id in c["row_numbers"]]
+        touch_fragments = re.findall(r"`([^`]+)`", row["touch_zone_cell"])
+        secondary_hits = []
+        if touch_fragments:
+            for c in commits:
+                if any(
+                    _touch_zone_path_matches(f, frag)
+                    for f in c["files"] for frag in touch_fragments
+                ):
+                    secondary_hits.append(c)
+        results.append({
+            "row_id": row["row_id"],
+            "primary": bool(primary_hits),
+            "secondary": bool(secondary_hits),
+            "primary_commits": _format_commit_shas(primary_hits),
+            "secondary_commits": _format_commit_shas(secondary_hits),
+        })
+    return results
+
+
+def _format_commit_shas(hits: list[dict]) -> list[str]:
+    """把命中 commit 列表格式化为展示用的短 sha 列表——`git log` 输出本就
+    是新→旧序，截断只保留最近 `STALE_ROW_MAX_DISPLAYED_COMMITS` 个（对
+    "这行最近是不是刚被动过"这一问题最有信息量），超出部分折成一条
+    `+N more` 提示，不静默丢弃计数（同"不留无过滤清单"的一贯纪律）。"""
+    shas = [c["sha"][:7] for c in hits]
+    if len(shas) <= STALE_ROW_MAX_DISPLAYED_COMMITS:
+        return shas
+    kept = shas[:STALE_ROW_MAX_DISPLAYED_COMMITS]
+    kept.append(f"+{len(shas) - STALE_ROW_MAX_DISPLAYED_COMMITS} more")
+    return kept
+
+
 def _partition_pending_rows_by_batch_isolation(
     pending_rows: list[dict], dirty_paths: list[str], log: list[str],
 ) -> tuple[list[dict], dict[str, tuple[list[str], list[str], list[str]]], list[str]]:
@@ -1157,12 +1426,24 @@ def _track_and_alert_orphan_paths(
     `gap_alert` 的"狼来了"教训：过密的提醒会被无视。路径一旦不再是孤儿
     （被声明或已消失）即从状态里清除，不留陈旧记录误导下一次真实孤儿的
     "已孤儿多久"文案。
+
+    队列 #301（2026-08-07，Shao Peishen 选 (b)）：路径从状态清除时，若其
+    `last_alerted` 非空（即真的对它告警过），补发一条"✅ 已解除"通知——
+    2026-08-07 实测：告警送达前孤儿已自愈，读者只能凭消息本身判断不了
+    是否还成立，被迫转人查证。`last_alerted` 为空（从未跨阈值即消失）不
+    补发——为一件对方根本没听说过的事发解除通知，本身就是新噪音（#147
+    教训）。
     """
     state = _read_orphan_state(repo_root)
     now = datetime.now(timezone.utc)
     current = set(orphan_paths)
+    resolved: list[tuple[str, float]] = []
     for path in list(state.keys()):
         if path not in current:
+            entry = state[path]
+            if entry.get("last_alerted") is not None:
+                first_seen = datetime.fromisoformat(entry["first_seen"])
+                resolved.append((path, (now - first_seen).total_seconds() / 3600))
             del state[path]
 
     to_alert: list[tuple[str, float]] = []
@@ -1184,6 +1465,25 @@ def _track_and_alert_orphan_paths(
         entry["last_alerted"] = now.isoformat()
 
     _write_orphan_state(repo_root, state)
+
+    # 队列 #301：解除通知与"出现"告警相互独立——即便本轮没有新的
+    # to_alert，此前告警过的孤儿一旦解除仍要补发通知，反之亦然，两条
+    # 分支不得用同一个 early return 互相挡住。
+    if resolved:
+        lines = "\n".join(f"- `{p}`（存续 {age:.1f} 小时，无需处置）" for p, age in resolved)
+        resolved_text = (
+            f"✅ 落库sweep：{len(resolved)} 个此前告警过的孤儿脏文件已解除：\n{lines}"
+        )
+        log.append(f"✅ 孤儿脏文件解除通知：{len(resolved)} 个文件")
+        webhook_url = _load_webhook_url(repo_root)
+        if webhook_url is None:
+            log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过孤儿解除通知推送（仅留痕日志）。")
+        else:
+            try:
+                _send_wecom_markdown(webhook_url, resolved_text)
+                log.append("✓ 孤儿脏文件解除通知已推送。")
+            except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
+                log.append(f"⚠ 孤儿脏文件解除通知推送失败（不影响本轮退出码）：{exc}")
 
     if not to_alert:
         return
@@ -1259,6 +1559,349 @@ def _announce_missing_deployment_trace(
         log.append(f"⚠ 部署留痕提示推送失败（不影响本轮退出码）：{exc}")
         return
     log.append("✓ 部署留痕提示已推送。")
+
+
+# ============================================================
+# 队列 #298（2026-08-07）：M1 场景 spec 覆盖缺口检测
+# ============================================================
+
+
+def _scenario_short_code(dir_name: str) -> str | None:
+    """从场景目录名提取短代码前缀（`SCENARIO_SHORT_CODE_RE`），供匹配
+    `openspec/specs/` 里同前缀的 capability。已用现存全部场景目录验证：
+    `SC1-供应商风险初筛`→`SC1`、`QD-A-8D不良分析`→`QD-A`（代码本身含
+    连字符也能正确取到）、`FI2-三单匹配自动对账`→`FI2`。取不到时返回
+    None（目录名不含预期的"代码-中文"结构）。"""
+    match = SCENARIO_SHORT_CODE_RE.match(dir_name)
+    return match.group(1).lower() if match else None
+
+
+def _scenario_dirs(repo_root: Path) -> list[Path]:
+    root = repo_root / SCENARIO_ROOT_REL
+    if not root.is_dir():
+        return []
+    dirs = []
+    for dept_dir in sorted(root.iterdir()):
+        if not dept_dir.is_dir():
+            continue
+        for scenario_dir in sorted(dept_dir.iterdir()):
+            if scenario_dir.is_dir():
+                dirs.append(scenario_dir)
+    return dirs
+
+
+def _scenario_is_retired(scenario_dir: Path) -> bool:
+    claude_md = scenario_dir / "CLAUDE.md"
+    if not claude_md.exists():
+        return False
+    try:
+        return SCENARIO_RETIREMENT_MARKER in claude_md.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def _spec_capability_names(repo_root: Path) -> set[str]:
+    specs_dir = repo_root / OPENSPEC_SPECS_REL
+    if not specs_dir.is_dir():
+        return set()
+    return {p.name for p in specs_dir.iterdir() if p.is_dir()}
+
+
+def _in_flight_change_capability_names(repo_root: Path) -> dict[str, list[str]]:
+    """{capability_name: [尚未归档、含该 capability delta 的变更包名, ...]}
+    ——只扫 `openspec/changes/` 顶层（不含 `archive/`）里带 `specs/` 子目录
+    的包，供 M1"顺带指出未归档包名"使用（形态甲：躺在这里；形态乙：
+    这里也找不到，须重新补写）。"""
+    changes_dir = repo_root / OPENSPEC_CHANGES_REL
+    result: dict[str, list[str]] = {}
+    if not changes_dir.is_dir():
+        return result
+    for change_dir in sorted(changes_dir.iterdir()):
+        if not change_dir.is_dir() or change_dir.name == "archive":
+            continue
+        specs_subdir = change_dir / "specs"
+        if not specs_subdir.is_dir():
+            continue
+        for cap_dir in specs_subdir.iterdir():
+            if cap_dir.is_dir():
+                result.setdefault(cap_dir.name, []).append(change_dir.name)
+    return result
+
+
+def _find_scenario_spec_coverage_gaps(repo_root: Path) -> list[dict]:
+    """队列 #298 M1（2026-08-07 当日扩容，扫描域由已部署场景白名单扩为
+    `4-数字员工/*/*/` 全部场景）：已建造（≥1 个 .py）、未标退役的场景，
+    若其短代码前缀在 `openspec/specs/` 零命中即视为缺口，区分形态甲
+    （delta 躺在某未归档包）与形态乙（压根没写过，归档也救不了）。
+
+    边界（同 #229/#236(2) 先例）：只判"spec 存不存在"，不判"spec 对不
+    对"——空壳/仅覆盖新分支的 capability 也能让本函数静音，这是刻意的
+    粗粒度取舍，见文件头部本节说明。"""
+    spec_names = _spec_capability_names(repo_root)
+    in_flight = _in_flight_change_capability_names(repo_root)
+    gaps = []
+    for scenario_dir in _scenario_dirs(repo_root):
+        short_code = _scenario_short_code(scenario_dir.name)
+        if short_code is None:
+            continue
+        if not any(scenario_dir.rglob("*.py")):
+            continue  # 未建造，谈不上 spec 缺口
+        if _scenario_is_retired(scenario_dir):
+            continue
+        has_spec = any(
+            name == short_code or name.startswith(short_code + "-") for name in spec_names
+        )
+        if has_spec:
+            continue
+        pending_delta_packages = sorted({
+            pkg for cap, pkgs in in_flight.items()
+            if cap == short_code or cap.startswith(short_code + "-")
+            for pkg in pkgs
+        })
+        gaps.append({
+            "scenario": scenario_dir.name,
+            "short_code": short_code,
+            "form": "甲" if pending_delta_packages else "乙",
+            "pending_delta_packages": pending_delta_packages,
+        })
+    return gaps
+
+
+def _spec_dirs_mentioning(repo_root: Path, needle: str) -> list[str]:
+    specs_dir = repo_root / OPENSPEC_SPECS_REL
+    if not specs_dir.is_dir():
+        return []
+    hits = []
+    for cap_dir in sorted(specs_dir.iterdir()):
+        spec_file = cap_dir / "spec.md"
+        if not spec_file.is_file():
+            continue
+        try:
+            if needle in spec_file.read_text(encoding="utf-8"):
+                hits.append(cap_dir.name)
+        except OSError:
+            continue
+    return hits
+
+
+def _find_platform_packages_without_spec_mention(repo_root: Path) -> list[str]:
+    """队列 #298（2026-08-07 当日扩容）：`5-平台底座/*/` 全部包无短代码
+    前缀约定可循（`platform-*`/`aibot-*`/`sweep-*` 等 capability 名称与
+    包目录名之间没有机械对应关系），改用弱信号——`openspec/specs/*/
+    spec.md` 内容是否字面提及包目录名。精度低于场景的短代码前缀匹配，
+    故调用方只把结果列入日志、不触发 webhook（`deploy-tools` 是当前唯一
+    "零提及"实例，与队列行原始判断"待判，只列不报"一致）。"""
+    root = repo_root / PLATFORM_PACKAGES_ROOT_REL
+    if not root.is_dir():
+        return []
+    hits = []
+    for pkg_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        # 与场景侧不同：平台底座包不保证是 Python（如 `deploy-tools` 纯
+        # PowerShell），"是否已建造"改判目录内是否有任何文件，不锁定 `.py`。
+        if not any(p.is_file() for p in pkg_dir.rglob("*")):
+            continue
+        if not _spec_dirs_mentioning(repo_root, pkg_dir.name):
+            hits.append(pkg_dir.name)
+    return hits
+
+
+def _read_json_state(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_json_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _announce_scenario_spec_coverage_gaps(
+    repo_root: Path, gaps: list[dict], log: list[str],
+) -> None:
+    """队列 #298 M1：日志逐条列出全部缺口（不论是否跨过告警节流）；
+    webhook 每个场景 24 小时内只推一次（同 #236(2) 的"狼来了"防线——
+    这是标准长期存在的结构性状态，逐轮/每小时重复推送必被无视）。"""
+    for gap in gaps:
+        pkgs = "、".join(f"`{p}`" for p in gap["pending_delta_packages"]) or "无（需重新补写 spec delta）"
+        log.append(
+            f"⚠ 场景 `{gap['scenario']}` 已建造但 openspec/specs/ 零命中 "
+            f"`{gap['short_code']}` 前缀 capability（形态{gap['form']}，"
+            f"delta 所在未归档包：{pkgs}）"
+        )
+
+    state_path = repo_root / SCENARIO_SPEC_GAP_STATE_REL
+    state = _read_json_state(state_path)
+    now = datetime.now(timezone.utc)
+    current_keys = {g["scenario"] for g in gaps}
+    for key in list(state.keys()):
+        if key not in current_keys:
+            del state[key]
+
+    to_alert = []
+    for gap in gaps:
+        key = gap["scenario"]
+        last_alerted = state.get(key)
+        if last_alerted is not None:
+            since = (now - datetime.fromisoformat(last_alerted)).total_seconds() / 3600
+            if since < SCENARIO_SPEC_GAP_ALERT_INTERVAL_HOURS:
+                continue
+        to_alert.append(gap)
+        state[key] = now.isoformat()
+    _write_json_state(state_path, state)
+
+    if not to_alert:
+        return
+
+    lines = []
+    for gap in to_alert:
+        pkgs = "、".join(f"`{p}`" for p in gap["pending_delta_packages"]) or "需重新补写"
+        lines.append(f"- `{gap['scenario']}`（形态{gap['form']}，{pkgs}）")
+    alert_text = (
+        f"📋 落库sweep：{len(to_alert)} 个已建造场景在 openspec/specs/ 零命中（可追溯链断），"
+        "存量补齐见队列 #299：\n" + "\n".join(lines)
+    )
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过场景 spec 缺口告警推送（仅留痕日志）。")
+        return
+    try:
+        _send_wecom_markdown(webhook_url, alert_text)
+        log.append("✓ 场景 spec 缺口告警已推送。")
+    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
+        log.append(f"⚠ 场景 spec 缺口告警推送失败（不影响本轮退出码）：{exc}")
+
+
+# ============================================================
+# 队列 #298（2026-08-07）：M2 在途变更包滞留提示
+# ============================================================
+
+TASK_DONE_RE = re.compile(r"^\s*-\s*\[x\]", re.MULTILINE | re.IGNORECASE)
+TASK_TODO_RE = re.compile(r"^\s*-\s*\[ \]", re.MULTILINE)
+
+
+def _parse_tasks_completion(tasks_md_path: Path) -> tuple[int, int] | None:
+    """返回 (done, total)；`tasks.md` 不存在或零任务项时返回 None。"""
+    if not tasks_md_path.exists():
+        return None
+    try:
+        text = tasks_md_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    done = len(TASK_DONE_RE.findall(text))
+    todo = len(TASK_TODO_RE.findall(text))
+    total = done + todo
+    return (done, total) if total else None
+
+
+def _change_package_last_touched_days(repo_root: Path, change_dir_rel: str) -> float | None:
+    result = _run_git(["log", "-1", "--format=%ct", "--", change_dir_rel], repo_root, check=False)
+    ts = result.stdout.strip()
+    if not ts.isdigit():
+        return None
+    last_commit = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+    return (datetime.now(timezone.utc) - last_commit).total_seconds() / 86400
+
+
+def _change_package_has_defer_marker(change_dir: Path) -> bool:
+    for name in ("proposal.md", "design.md", "tasks.md"):
+        p = change_dir / name
+        if not p.exists():
+            continue
+        try:
+            if STALE_CHANGE_DEFER_MARKER in p.read_text(encoding="utf-8"):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _find_stale_in_flight_changes(repo_root: Path) -> list[dict]:
+    """队列 #298 M2：在途 openspec 变更包滞留——完成率≥
+    `STALE_CHANGE_COMPLETION_THRESHOLD` 且距最后一次改动≥
+    `STALE_CHANGE_MIN_DAYS_IDLE` 天，且未在自身 proposal/design/tasks 内
+    声明"暂不归档"（降噪，见文件头部本节说明——天数阈值已更正原文
+    "≥7天"与其自身举例"fi2-recon-mvp 90%/3天"的矛盾，改取 3 天）。"""
+    changes_dir = repo_root / OPENSPEC_CHANGES_REL
+    if not changes_dir.is_dir():
+        return []
+    hits = []
+    for change_dir in sorted(changes_dir.iterdir()):
+        if not change_dir.is_dir() or change_dir.name == "archive":
+            continue
+        completion = _parse_tasks_completion(change_dir / "tasks.md")
+        if completion is None:
+            continue
+        done, total = completion
+        rate = done / total
+        if rate < STALE_CHANGE_COMPLETION_THRESHOLD:
+            continue
+        rel_path = f"{OPENSPEC_CHANGES_REL}/{change_dir.name}"
+        days_idle = _change_package_last_touched_days(repo_root, rel_path)
+        if days_idle is None or days_idle < STALE_CHANGE_MIN_DAYS_IDLE:
+            continue
+        if _change_package_has_defer_marker(change_dir):
+            continue
+        hits.append({
+            "change": change_dir.name, "done": done, "total": total,
+            "rate": rate, "days_idle": days_idle,
+        })
+    return hits
+
+
+def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: list[str]) -> None:
+    """队列 #298 M2：日志逐条列出，webhook 每个包 24 小时内只推一次
+    （同 M1/`_track_and_alert_orphan_paths` 的节流理由）。"""
+    for hit in hits:
+        log.append(
+            f"⚠ 在途变更包 `{hit['change']}` 完成率 {hit['rate']:.0%}"
+            f"（{hit['done']}/{hit['total']}）但已 {hit['days_idle']:.1f} 天无改动，"
+            "疑似遗忘归档"
+        )
+
+    state_path = repo_root / STALE_CHANGE_STATE_REL
+    state = _read_json_state(state_path)
+    now = datetime.now(timezone.utc)
+    current_keys = {h["change"] for h in hits}
+    for key in list(state.keys()):
+        if key not in current_keys:
+            del state[key]
+
+    to_alert = []
+    for hit in hits:
+        key = hit["change"]
+        last_alerted = state.get(key)
+        if last_alerted is not None:
+            since = (now - datetime.fromisoformat(last_alerted)).total_seconds() / 3600
+            if since < STALE_CHANGE_ALERT_INTERVAL_HOURS:
+                continue
+        to_alert.append(hit)
+        state[key] = now.isoformat()
+    _write_json_state(state_path, state)
+
+    if not to_alert:
+        return
+
+    lines = [
+        f"- `{h['change']}`（{h['rate']:.0%}，{h['days_idle']:.1f} 天无改动）" for h in to_alert
+    ]
+    alert_text = (
+        f"📋 落库sweep：{len(to_alert)} 个在途 openspec 变更包高完成率但长期无改动，"
+        "疑似遗忘归档：\n" + "\n".join(lines)
+    )
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过在途变更包滞留告警推送（仅留痕日志）。")
+        return
+    try:
+        _send_wecom_markdown(webhook_url, alert_text)
+        log.append("✓ 在途变更包滞留告警已推送。")
+    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
+        log.append(f"⚠ 在途变更包滞留告警推送失败（不影响本轮退出码）：{exc}")
 
 
 def _edit_lock(repo_root: Path, action: str, extra: list[str] | None = None) -> subprocess.CompletedProcess:
@@ -1385,6 +2028,16 @@ def main() -> int:
              "不做任何写操作、不跑 sweep 主流程。每个路径输出一行 "
              "'MATCH <batch_id> <path>' 或 'NOMATCH <path>'，供"
              "工具-主工作区安全同步.ps1 在建议 git checkout -- 前调用。")
+    parser.add_argument(
+        "--check-stale-pending-rows", action="store_true",
+        help="#302：只读核验 §一 状态列开头片段含'待'的行是否已被近期 commit "
+             "顺带做掉（批量派活前核对清单），不做任何写操作、不跑 sweep "
+             "主流程。每行输出 'STALE_SUSPECT <row_id> primary=<Y/N> "
+             "secondary=<Y/N> primary_commits=<...> secondary_commits=<...>' "
+             "或 'PENDING_CLEAN <row_id>'。")
+    parser.add_argument(
+        "--stale-lookback-days", type=int, default=STALE_ROW_LOOKBACK_DAYS,
+        help="#302：--check-stale-pending-rows 的近期 commit 扫描窗口天数，默认 %(default)s。")
     args = parser.parse_args()
 
     repo_root = _resolve_repo_root(args.repo_root)
@@ -1399,6 +2052,22 @@ def main() -> int:
             else:
                 print(f"NOMATCH\t{path}")
         return 0
+
+    if args.check_stale_pending_rows:
+        # 只读检查模式：不写日志、不碰队列、不动 git 状态，独立于下方主流程。
+        for result in _find_stale_pending_rows(repo_root, days=args.stale_lookback_days):
+            if result["primary"] or result["secondary"]:
+                print(
+                    f"STALE_SUSPECT\t{result['row_id']}\t"
+                    f"primary={'Y' if result['primary'] else 'N'}\t"
+                    f"secondary={'Y' if result['secondary'] else 'N'}\t"
+                    f"primary_commits={','.join(result['primary_commits'])}\t"
+                    f"secondary_commits={','.join(result['secondary_commits'])}"
+                )
+            else:
+                print(f"PENDING_CLEAN\t{result['row_id']}")
+        return 0
+
     start_line = f"=== sweep 运行 {_now_utc_str()} ==="
     log: list[str] = [start_line]
     # 队列 #222：启动即写日志首行——不等收尾统一 flush，避免"启动后立刻
@@ -1516,6 +2185,26 @@ def main() -> int:
             missing_trace_hits = _find_missing_deployment_trace(touched_paths)
             if missing_trace_hits:
                 _announce_missing_deployment_trace(repo_root, missing_trace_hits, log)
+
+        # 队列 #298：M1/M2 openspec 覆盖/滞留检测——检测对象是仓库整体
+        # openspec 状态，与本轮是否有批次落库无关，故不依赖 touched_paths，
+        # 每轮真跑（非 dry-run）都检查一次；告警本身按 key 做 24 小时节流
+        # （见 `_announce_scenario_spec_coverage_gaps`/`_announce_stale_
+        # in_flight_changes`），不会逐轮刷屏。
+        if not args.dry_run:
+            spec_gaps = _find_scenario_spec_coverage_gaps(repo_root)
+            if spec_gaps:
+                _announce_scenario_spec_coverage_gaps(repo_root, spec_gaps, log)
+            undetermined_packages = _find_platform_packages_without_spec_mention(repo_root)
+            if undetermined_packages:
+                log.append(
+                    "🟡 以下平台底座包在 openspec/specs/ 内容里零提及包名（弱信号，"
+                    "只列不报，是否需要 capability 待人工判断）："
+                    + "、".join(f"`{p}`" for p in undetermined_packages)
+                )
+            stale_changes = _find_stale_in_flight_changes(repo_root)
+            if stale_changes:
+                _announce_stale_in_flight_changes(repo_root, stale_changes, log)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))

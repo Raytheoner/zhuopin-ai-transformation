@@ -1659,9 +1659,19 @@ class DeploymentTraceHintTests(SweepTestBase):
         self._server.server_close()
         super().tearDown()
 
+    def _stub_sc8_spec_so_m1_stays_silent(self) -> None:
+        # 队列 #298 M1 也会扫 `4-数字员工/*/*/`——本类测试的 SC8 夹具目录
+        # 与 #229 部署留痕检测无关，补一个匹配的 spec 目录使 M1 保持静默，
+        # 不干扰本类测试要验证的 #229 独立行为（否则 webhook 计数会被 M1
+        # 的额外一次告警污染）。
+        spec_dir = self.work / "openspec" / "specs" / "sc8-stub"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "spec.md").write_text("# sc8 stub\n", encoding="utf-8")
+
     def test_deployed_scenario_touched_without_trace_gets_hint(self):
         (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
         self._init_and_push(rows="")
+        self._stub_sc8_spec_so_m1_stays_silent()
         sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8-客户订单交期智能承诺"
         sc8_dir.mkdir(parents=True)
         (sc8_dir / "webapp.py").write_text("# 改动\n", encoding="utf-8")
@@ -1682,6 +1692,7 @@ class DeploymentTraceHintTests(SweepTestBase):
     def test_deployed_scenario_touched_with_same_batch_trace_stays_silent(self):
         (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
         self._init_and_push(rows="")
+        self._stub_sc8_spec_so_m1_stays_silent()
         sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8-客户订单交期智能承诺"
         sc8_dir.mkdir(parents=True)
         (sc8_dir / "webapp.py").write_text("# 改动\n", encoding="utf-8")
@@ -1961,6 +1972,493 @@ class SyncReorderTests(SweepTestBase):
         local_head = _git(self.work, "rev-parse", "HEAD").stdout.strip()
         origin_head = _git(self.origin, "rev-parse", "master").stdout.strip()
         self.assertNotEqual(local_head, origin_head, "推送既已失败，origin 不应变化")
+
+
+class OrphanResolvedNotificationTests(SweepTestBase):
+    """队列 #301：孤儿脏文件解除通知——真告警过的路径解除时补发"✅已解除"
+    通知，从未跨阈值告警过的路径解除时不补发（#147"狼来了"教训：不为
+    对方没听说过的事发通知）。"""
+
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+    def _write_env_webhook(self) -> None:
+        (self.work / ".env").write_text(
+            f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8",
+        )
+
+    def _write_orphan_state(self, entries: dict) -> None:
+        path = self.work / sweep.ORPHAN_STATE_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+
+    def _iso(self, hours_ago: float) -> str:
+        return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+
+    def test_previously_alerted_orphan_resolved_sends_notice(self):
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        self._write_orphan_state({
+            "已解决.md": {"first_seen": self._iso(10), "last_alerted": self._iso(5)},
+        })
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        content = _CapturingWebhookHandler.received[0]["markdown"]["content"]
+        self.assertIn("已解决.md", content)
+        self.assertIn("已解除", content)
+        state = json.loads((self.work / sweep.ORPHAN_STATE_REL).read_text(encoding="utf-8"))
+        self.assertNotIn("已解决.md", state)
+
+    def test_never_alerted_orphan_resolved_sends_no_notice(self):
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        self._write_orphan_state({
+            "从未告警过.md": {"first_seen": self._iso(1), "last_alerted": None},
+        })
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0,
+                          "从未越过阈值告警过的孤儿，解除时不应补发通知")
+        state = json.loads((self.work / sweep.ORPHAN_STATE_REL).read_text(encoding="utf-8"))
+        self.assertNotIn("从未告警过.md", state)
+
+
+class ScenarioSpecCoverageGapUnitTests(unittest.TestCase):
+    """队列 #298 M1：场景 spec 覆盖缺口检测——短代码提取、退役豁免、
+    形态甲/乙区分。纯文件系统操作，不需要真实 git 仓库。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _make_scenario(self, dept: str, name: str, py_files: int = 1, retired: bool = False) -> Path:
+        d = self.repo / sweep.SCENARIO_ROOT_REL / dept / name
+        d.mkdir(parents=True)
+        for i in range(py_files):
+            (d / f"m{i}.py").write_text("pass\n", encoding="utf-8")
+        marker = "本场景编号已于 2026-07-06 采购域 v2.3 重排退役\n" if retired else "占位\n"
+        (d / "CLAUDE.md").write_text(marker, encoding="utf-8")
+        return d
+
+    def _make_spec(self, cap_name: str) -> None:
+        d = self.repo / "openspec" / "specs" / cap_name
+        d.mkdir(parents=True)
+        (d / "spec.md").write_text(f"# {cap_name}\n", encoding="utf-8")
+
+    def _make_in_flight_delta(self, change_name: str, cap_name: str) -> None:
+        d = self.repo / "openspec" / "changes" / change_name / "specs" / cap_name
+        d.mkdir(parents=True)
+        (d / "spec.md").write_text(f"# {cap_name} delta\n", encoding="utf-8")
+
+    def test_short_code_extraction_handles_hyphenated_codes(self):
+        self.assertEqual(sweep._scenario_short_code("SC1-供应商风险初筛"), "sc1")
+        self.assertEqual(sweep._scenario_short_code("QD-A-8D不良分析"), "qd-a")
+        self.assertEqual(sweep._scenario_short_code("QD-B-立项审核门禁"), "qd-b")
+        self.assertEqual(sweep._scenario_short_code("FI2-三单匹配自动对账"), "fi2")
+        self.assertIsNone(sweep._scenario_short_code("无代码场景目录"))
+
+    def test_built_scenario_with_matching_spec_is_not_a_gap(self):
+        self._make_scenario("采购部", "SC1-供应商风险初筛")
+        self._make_spec("sc1-audit-platform-bridge")
+        self.assertEqual(sweep._find_scenario_spec_coverage_gaps(self.repo), [])
+
+    def test_built_scenario_without_spec_but_with_pending_delta_is_form_a(self):
+        self._make_scenario("财务部", "FI1-供应链仓库对账")
+        self._make_in_flight_delta("fi1-warehouse-reconcile", "fi1-feed-source")
+        gaps = sweep._find_scenario_spec_coverage_gaps(self.repo)
+        self.assertEqual(len(gaps), 1)
+        self.assertEqual(gaps[0]["scenario"], "FI1-供应链仓库对账")
+        self.assertEqual(gaps[0]["form"], "甲")
+        self.assertEqual(gaps[0]["pending_delta_packages"], ["fi1-warehouse-reconcile"])
+
+    def test_built_scenario_without_any_delta_anywhere_is_form_b(self):
+        self._make_scenario("质量部", "QD-A-8D不良分析")
+        gaps = sweep._find_scenario_spec_coverage_gaps(self.repo)
+        self.assertEqual(len(gaps), 1)
+        self.assertEqual(gaps[0]["form"], "乙")
+        self.assertEqual(gaps[0]["pending_delta_packages"], [])
+
+    def test_retired_scenario_is_exempt_even_without_spec(self):
+        self._make_scenario("采购部", "SC3-供应商在途跟踪与绩效", py_files=0, retired=True)
+        self.assertEqual(sweep._find_scenario_spec_coverage_gaps(self.repo), [])
+
+    def test_unbuilt_scenario_with_zero_py_files_is_skipped(self):
+        self._make_scenario("采购部", "SC10-未来场景", py_files=0, retired=False)
+        self.assertEqual(sweep._find_scenario_spec_coverage_gaps(self.repo), [])
+
+
+class PlatformPackageSpecMentionUnitTests(unittest.TestCase):
+    """队列 #298 M1（当日扩容）：`5-平台底座/*/` 包无短代码前缀约定，改用
+    spec.md 内容提及包名作弱信号——只列不报，`deploy-tools` 是当前唯一
+    "零提及"实例。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_package_mentioned_in_spec_content_is_not_flagged(self):
+        pkg = self.repo / sweep.PLATFORM_PACKAGES_ROOT_REL / "zhuopin_platform"
+        pkg.mkdir(parents=True)
+        (pkg / "x.py").write_text("pass\n", encoding="utf-8")
+        spec_dir = self.repo / "openspec" / "specs" / "platform-kit-engine"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "spec.md").write_text("涉及 zhuopin_platform 包\n", encoding="utf-8")
+        self.assertEqual(sweep._find_platform_packages_without_spec_mention(self.repo), [])
+
+    def test_package_never_mentioned_is_flagged_as_undetermined(self):
+        pkg = self.repo / sweep.PLATFORM_PACKAGES_ROOT_REL / "deploy-tools"
+        pkg.mkdir(parents=True)
+        (pkg / "x.psm1").write_text("# ps module\n", encoding="utf-8")
+        self.assertEqual(
+            sweep._find_platform_packages_without_spec_mention(self.repo), ["deploy-tools"])
+
+    def test_empty_package_directory_is_skipped(self):
+        (self.repo / sweep.PLATFORM_PACKAGES_ROOT_REL / "empty-pkg").mkdir(parents=True)
+        self.assertEqual(sweep._find_platform_packages_without_spec_mention(self.repo), [])
+
+
+class TasksCompletionParsingUnitTests(unittest.TestCase):
+    def test_counts_done_and_todo_checkboxes_case_insensitively(self):
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            p = Path(tmp.name) / "tasks.md"
+            p.write_text("- [x] a\n- [X] b\n- [ ] c\n", encoding="utf-8")
+            self.assertEqual(sweep._parse_tasks_completion(p), (2, 3))
+        finally:
+            tmp.cleanup()
+
+    def test_missing_file_returns_none(self):
+        self.assertIsNone(sweep._parse_tasks_completion(Path(tempfile.gettempdir()) / "不存在的任务.md"))
+
+
+class StaleInFlightChangeUnitTests(unittest.TestCase):
+    """队列 #298 M2：在途变更包滞留检测——完成率+天数阈值组合判据、
+    "暂不归档"降噪、`archive/` 目录本身永不被扫描。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        _git(self.repo, "init", "-q")
+        _git(self.repo, "config", "user.email", "test@example.com")
+        _git(self.repo, "config", "user.name", "Test")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _make_change(
+        self, name: str, done: int, todo: int, days_ago: float = 0, defer_marker: bool = False,
+    ) -> None:
+        d = self.repo / "openspec" / "changes" / name
+        d.mkdir(parents=True)
+        lines = [f"- [x] {i}\n" for i in range(done)] + [f"- [ ] {i}\n" for i in range(todo)]
+        if defer_marker:
+            lines.append("- [ ] 归档：**暂不归档**，§3 真实验证未完成\n")
+        (d / "tasks.md").write_text("".join(lines), encoding="utf-8")
+        past = (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        env = dict(os.environ, GIT_COMMITTER_DATE=past, GIT_AUTHOR_DATE=past)
+        _git(self.repo, "add", "-A")
+        subprocess.run(
+            ["git", "-c", "core.quotepath=false", "commit", "-q", "-m", f"chore: {name}"],
+            cwd=self.repo, capture_output=True, text=True, encoding="utf-8", check=True, env=env,
+        )
+
+    def test_high_completion_and_stale_is_flagged(self):
+        # 实测数据：fi2-recon-mvp 90%/3天。
+        self._make_change("fi2-recon-mvp", done=116, todo=13, days_ago=3.5)
+        hits = sweep._find_stale_in_flight_changes(self.repo)
+        self.assertEqual([h["change"] for h in hits], ["fi2-recon-mvp"])
+
+    def test_low_completion_is_never_flagged_regardless_of_age(self):
+        # 实测数据：wecom-listener-macos-migration 19%，明显没做完，即便
+        # 长期无改动也不该被当成"疑似遗忘归档"。
+        self._make_change("wecom-listener-macos-migration", done=7, todo=30, days_ago=30)
+        self.assertEqual(sweep._find_stale_in_flight_changes(self.repo), [])
+
+    def test_recently_touched_high_completion_is_not_flagged(self):
+        self._make_change("just-finished", done=90, todo=10, days_ago=0.1)
+        self.assertEqual(sweep._find_stale_in_flight_changes(self.repo), [])
+
+    def test_defer_marker_suppresses_alert_even_when_thresholds_met(self):
+        self._make_change(
+            "aibot-queue-sync-checkout-guard", done=85, todo=10, days_ago=10, defer_marker=True)
+        self.assertEqual(sweep._find_stale_in_flight_changes(self.repo), [])
+
+    def test_archive_directory_itself_is_never_scanned(self):
+        self._make_change("archive", done=100, todo=0, days_ago=30)
+        self.assertEqual(sweep._find_stale_in_flight_changes(self.repo), [])
+
+
+class ScenarioSpecGapAnnounceIntegrationTests(SweepTestBase):
+    """队列 #298 M1 挂载 sweep 主流程：真实跑一轮，确认告警触发与 24
+    小时节流状态生效（同 #236(2) 节流范式）。"""
+
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+    def _write_env_webhook(self) -> None:
+        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+
+    def test_scenario_gap_triggers_alert_once_then_throttled(self):
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        scenario = self.work / sweep.SCENARIO_ROOT_REL / "财务部" / "FI9-测试场景"
+        scenario.mkdir(parents=True)
+        (scenario / "m.py").write_text("pass\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "chore: 新增测试场景")
+        _git(self.work, "push", "-q", "origin", "master")
+
+        first = _run_sweep(self.work)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        self.assertIn("FI9", _CapturingWebhookHandler.received[0]["markdown"]["content"])
+
+        second = _run_sweep(self.work)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1, "24 小时内不应重复推送同一场景")
+
+
+class StaleChangeAnnounceIntegrationTests(SweepTestBase):
+    """队列 #298 M2 挂载 sweep 主流程：真实跑一轮，确认告警触发与节流。"""
+
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+    def _write_env_webhook(self) -> None:
+        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+
+    def test_high_completion_stale_change_triggers_alert_once(self):
+        self._init_and_push(rows="")
+        self._write_env_webhook()
+        change_dir = self.work / "openspec" / "changes" / "test-stale-pkg"
+        change_dir.mkdir(parents=True)
+        tasks_md = "".join([f"- [x] {i}\n" for i in range(9)] + ["- [ ] 10\n"])
+        (change_dir / "tasks.md").write_text(tasks_md, encoding="utf-8")
+        past = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        env = dict(os.environ, GIT_COMMITTER_DATE=past, GIT_AUTHOR_DATE=past)
+        _git(self.work, "add", "-A")
+        subprocess.run(
+            ["git", "-c", "core.quotepath=false", "commit", "-q", "-m", "chore: 新增在途变更包"],
+            cwd=self.work, capture_output=True, text=True, encoding="utf-8", check=True, env=env,
+        )
+        _git(self.work, "push", "-q", "origin", "master")
+
+        first = _run_sweep(self.work)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
+        self.assertIn("test-stale-pkg", _CapturingWebhookHandler.received[0]["markdown"]["content"])
+
+        second = _run_sweep(self.work)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 1, "24 小时内不应重复")
+
+
+class CommitScopeExtractionUnitTests(unittest.TestCase):
+    """队列 #302 主判据：`type(scope):` 解析——嵌套括号、无 type 前缀、
+    无冒号、校准 commit 自我污染（误报源⑶）。"""
+
+    def test_simple_scope(self):
+        self.assertEqual(sweep._extract_commit_scope("feat(队列#258): apply"), "队列#258")
+
+    def test_nested_parens_in_scope_are_preserved(self):
+        self.assertEqual(sweep._extract_commit_scope("feat(队列#236(1)): apply"), "队列#236(1)")
+
+    def test_no_type_prefix_returns_none(self):
+        self.assertIsNone(sweep._extract_commit_scope("just a message mentioning #258"))
+
+    def test_no_colon_after_parens_returns_none(self):
+        self.assertIsNone(sweep._extract_commit_scope("feat(队列#258) apply without colon"))
+
+    def test_calibration_commit_scope_has_no_row_numbers(self):
+        subject = (
+            "docs(队列): 四行滞后状态校准"
+            "(#205A已升1.7.0/#258已apply/#236(1)已归档/#188镜像已生效)——说明"
+        )
+        scope = sweep._extract_commit_scope(subject)
+        self.assertEqual(scope, "队列")
+        self.assertEqual(sweep._extract_row_numbers(scope), set())
+
+
+class RowNumberExtractionUnitTests(unittest.TestCase):
+    """队列 #302：`#(\\d+)` 按完整数字游程提取，天然规避误报源⑴（子串
+    误命中）。"""
+
+    def test_full_digit_run_extracted_not_substring(self):
+        numbers = sweep._extract_row_numbers("队列#225")
+        self.assertEqual(numbers, {225})
+        self.assertNotIn(22, numbers)
+
+    def test_multiple_numbers_in_one_scope(self):
+        self.assertEqual(sweep._extract_row_numbers("队列#296/#297"), {296, 297})
+
+    def test_scope_only_extraction_excludes_description_text_numbers(self):
+        # 误报源⑵的另一面：即便 subject 冒号之后的正文提到别的行号，
+        # scope 提取只取冒号之前的括号内容，不受其影响。
+        subject = "feat(队列#302): 实现两判据，顺带讨论 #205 #258 两条历史行"
+        scope = sweep._extract_commit_scope(subject)
+        self.assertEqual(scope, "队列#302")
+        self.assertEqual(sweep._extract_row_numbers(scope), {302})
+
+
+SECTION_ONE_EIGHT_COL_QUEUE = (
+    "---\ntitle: 测试队列\n---\n\n# 测试队列\n\n"
+    "## 一、任务看板\n\n"
+    "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+    "|---|------|--------|------|------|------|------|------|\n"
+    "{rows}"
+    "\n## 二、待 commit 批次\n\n"
+    "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+    "|------|---------|--------------|------|\n"
+    "\n## 三、口径冻结标\n\n（无）\n"
+)
+
+
+class ParseSectionOneUnitTests(unittest.TestCase):
+    def test_parses_eight_column_rows_and_skips_header_and_separator(self):
+        text = SECTION_ONE_EIGHT_COL_QUEUE.format(
+            rows="| 1 | 任务A | CC | 输入 | 产出 | 待领 | `a.py` | 2026-08-01 |\n"
+        )
+        rows = sweep._parse_section_one(text)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["row_id"], "1")
+        self.assertEqual(rows[0]["status_cell"], "待领")
+        self.assertEqual(rows[0]["touch_zone_cell"], "`a.py`")
+
+    def test_missing_section_returns_empty(self):
+        self.assertEqual(sweep._parse_section_one("# 无任何章节的文档\n"), [])
+
+
+class TouchZonePathMatchUnitTests(unittest.TestCase):
+    def test_directory_fragment_matches_prefix(self):
+        self.assertTrue(sweep._touch_zone_path_matches("openspec/changes/x/tasks.md", "openspec/"))
+
+    def test_file_fragment_exact_or_suffix(self):
+        self.assertTrue(sweep._touch_zone_path_matches(
+            "0-学习与工具/工具-落库sweep.py", "0-学习与工具/工具-落库sweep.py"))
+        self.assertTrue(sweep._touch_zone_path_matches(
+            "a/b/工具-落库sweep.py", "工具-落库sweep.py"))
+        self.assertFalse(sweep._touch_zone_path_matches("other.py", "工具-落库sweep.py"))
+
+
+class CheckStalePendingRowsCliTests(SweepTestBase):
+    """队列 #302 端到端：主判据（scope 行号）与副判据（触碰区路径）分别
+    命中；#129 类真待领行不误标；三个已实测坐实的误报源不产生误命中。"""
+
+    def _write_section_one_queue(self, rows: str) -> None:
+        (self.work / sweep.QUEUE_REL).write_text(
+            SECTION_ONE_EIGHT_COL_QUEUE.format(rows=rows), encoding="utf-8", newline="")
+
+    def test_primary_judge_catches_explicitly_claimed_row(self):
+        self._write_section_one_queue(
+            "| 258 | 示例任务 | CC | 输入 | 产出 | 待你审批 | `不存在.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "占位.md").write_text("x\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "feat(队列#258): apply 决策点")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        hit = next(
+            line for line in result.stdout.strip().splitlines() if line.startswith("STALE_SUSPECT\t258")
+        )
+        self.assertIn("primary=Y", hit)
+
+    def test_secondary_judge_catches_touched_path_without_explicit_claim(self):
+        self._write_section_one_queue(
+            "| 236 | 示例任务 | CC | 输入 | 产出 | 仍待领 | `目标文件.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "目标文件.md").write_text("改动\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "feat(sweep+编辑锁): 顺带改了这个文件")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        hit = next(
+            line for line in result.stdout.strip().splitlines() if line.startswith("STALE_SUSPECT\t236")
+        )
+        self.assertIn("primary=N", hit)
+        self.assertIn("secondary=Y", hit)
+
+    def test_genuinely_pending_row_untouched_by_recent_commits_stays_clean(self):
+        self._write_section_one_queue(
+            "| 129 | 示例任务 | CC | 输入 | 产出 | 待领（P2） | `unrelated.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "别的文件.md").write_text("x\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "docs(其它): 不相关改动")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        self.assertIn("PENDING_CLEAN\t129", result.stdout)
+
+    def test_substring_row_number_does_not_false_positive(self):
+        # 误报源⑴：`git log --grep="#22"` 命中 `#225` 的子串误报，本函数
+        # 按完整数字游程提取，不应重现该误报。
+        self._write_section_one_queue(
+            "| 22 | 示例任务 | CC | 输入 | 产出 | 待领 | `无关.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "另一份.md").write_text("x\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "feat(队列#225): 别的行的改动")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        self.assertIn("PENDING_CLEAN\t22", result.stdout,
+                       "commit 声称的是 #225，不应误判成命中了 #22")
+
+    def test_calibration_commit_does_not_self_pollute(self):
+        # 误报源⑶：校准 commit 本身在描述文字里列出一堆行号，不应让这些
+        # 行号被判定"已被主判据声明做过"。
+        self._write_section_one_queue(
+            "| 205 | 示例任务 | CC | 输入 | 产出 | 待领 | `无关.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "另一份.md").write_text("x\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m",
+             "docs(队列): 四行滞后状态校准(#205已升级/#258已apply)")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        self.assertIn("PENDING_CLEAN\t205", result.stdout)
 
 
 if __name__ == "__main__":
