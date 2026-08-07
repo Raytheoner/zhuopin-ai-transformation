@@ -1,0 +1,57 @@
+# wecom-feedback-intake Specification
+
+## Purpose
+TBD - synced from change wecom-aibot-channel (change remains active, not yet archived; §7/§8 部分验收项与晋档条件仍待观察/待 Paul 定，见 tasks.md). Update Purpose after archive.
+
+## Requirements
+
+### Requirement: 接收专员消息/文件自动归档
+系统 SHALL 在收到项目群内专员发送的消息或文件时，按《文档治理规范》R6 命名规范自动落档至 `7-外部文档/<部门>/`；文件类消息 MUST 经多媒体资源解密下载后再落盘。
+
+#### Scenario: 收到专员文件消息
+- **WHEN** 项目群内已映射部门的专员发送一个文件（如 xlsx/docx）
+- **THEN** 系统解密下载该文件并按 R6 命名规范存入对应部门目录，记录审计 `action="archived"` 及落档路径
+
+#### Scenario: 收到专员文本消息
+- **WHEN** 项目群内已映射部门的专员发送一段文本反馈
+- **THEN** 系统将文本内容落为 `.md` 文件存入对应部门目录，命名规则同 R6
+
+### Requirement: 发送人→部门映射
+系统 SHALL 依据静态配置表将消息发送人映射到四域专员所属部门；未命中映射表的发送人 MUST fail-closed 归入 `7-外部文档/待分拣/`，不得猜测或默认归入任一具体部门。
+
+#### Scenario: 发送人在映射表中
+- **WHEN** 消息发送人字段命中配置表中某一部门
+- **THEN** 文件归档至该部门目录
+
+#### Scenario: 发送人不在映射表中
+- **WHEN** 消息发送人字段未命中配置表任何一条
+- **THEN** 文件归档至 `7-外部文档/待分拣/`，审计记录 `action="mapping_unmatched"`，并触发队列追加（见下一需求）标注"发送人身份待确认"
+
+### Requirement: 归档后追加跨桌任务队列待领行
+每次成功归档后，系统 SHALL 向 `1-转型规划/0-全景路线图/跨桌任务队列.md` §一任务看板追加一条"待领"状态的新行，领取方按归档所属部门映射到对应域专线；`待分拣`归档的追加行领取方标注"待 Paul 确认发送人"。
+
+#### Scenario: 正常归档追加队列行
+- **WHEN** 文件成功归档至某具体部门目录
+- **THEN** 队列文件新增一行，任务描述含落档路径引用，领取方=该部门对应域专线，状态=待领
+
+#### Scenario: 待分拣归档追加队列行
+- **WHEN** 文件因映射未命中归档至 `待分拣` 目录
+- **THEN** 队列文件新增一行，领取方标注"待 Paul 确认发送人"，状态=待领
+
+### Requirement: 门禁①——结构性不触达业务系统
+本能力的实现 MUST NOT 依赖任何 ERP/SRM/CRM 连接器（`zhuopin_platform.shared_tools.erp_connector`/`srm_connector` 等），代码路径仅允许三类动作：归档写文件、追加队列行、发送确认收讫回执；不得存在第四条动作路径（如修改口径文档、触发 ERP/SRM 写操作、自动回复业务承诺）。
+
+#### Scenario: 收到内容疑似业务指令的消息
+- **WHEN** 专员消息内容包含类似"请把这个改一下""帮我提交采购单"等业务指令性文本
+- **THEN** 系统仍只执行归档 + 登记 + 收讫回执三个动作，不解析或执行消息中的业务指令
+
+### Requirement: 中文文件名写后读回抽验
+归档写盘后，系统 SHALL 立即读回文件名与部分内容做完整性校验，防止中文路径写入损坏（U+FFFD 乱码），校验失败 MUST 记审计并触发告警，不得静默留下损坏文件。
+
+#### Scenario: 写入正常
+- **WHEN** 归档文件写入完成后立即读回
+- **THEN** 读回的文件名与内容与写入前一致，无 U+FFFD 替换字符
+
+#### Scenario: 写入损坏
+- **WHEN** 读回校验发现文件名或内容含 U+FFFD 替换字符
+- **THEN** 系统记录审计 `action="archive_corruption_detected"` 并通过现有 webhook 通道告警，不得视为归档成功

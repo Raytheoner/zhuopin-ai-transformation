@@ -1,0 +1,32 @@
+# fi2-result-classify Specification
+
+## Purpose
+TBD - synced from change fi2-recon-mvp (change remains active, not yet archived). Update Purpose after archive.
+
+## Requirements
+
+> **v3 口径修正（2026-07-09，design D11）**：判定单元从"PO 行"改"料品"（`(ap_no, item_code)`），"无 GR 支撑"改名"无发票支撑"，"金额"维度改"未税金额"。
+
+### Requirement: 五类判定规则注册表（临时口径）
+
+系统 SHALL 把每个料品的三维比对结果 + 判定优先级结果映射为五类结果之一：🟢完全匹配 / 🟡金额微差 / 🔴明细错位 / 🔴数量金额不符 / 🔴无发票支撑。容差量级与判定边界 MUST 从配置层（`config.py` + 规则注册表）读取，不得硬编码在分类逻辑中；配置变更 MUST NOT 要求修改分类函数代码。
+
+#### Scenario: 完全匹配
+- **WHEN** 某料品三维比对结果全部在容差内
+- **THEN** 该料品分类为"🟢完全匹配"
+
+#### Scenario: 金额微差
+- **WHEN** 某料品仅未税金额维度有差异，且差异在配置的"尾差容差"范围内（默认 ±0.5 元/料品）
+- **THEN** 该料品分类为"🟡金额微差"
+
+#### Scenario: 配置变更不改代码
+- **WHEN** 唐燕萍规则定稿后修改 `config.py` 中的容差常量或规则注册表条目
+- **THEN** 分类结果 SHALL 按新配置重新计算，无需修改 `match_engine`/`result_classify` 的函数代码
+
+### Requirement: 差异比例计算
+
+系统 SHALL 为每个非"完全匹配"结果计算差异比例（数量差异比例、未税金额差异比例、税额差异比例，视触发维度而定），供报告与审计使用，且 MUST NOT 直接输出原始金额绝对值作为唯一记录形式。
+
+#### Scenario: 未税金额差异比例
+- **WHEN** 某料品未税金额维度超容差，发票未税金额合计 1050、AP 未税金额合计 1000
+- **THEN** 系统 SHALL 计算未税金额差异比例 = 5%，作为分类结果的附加信息

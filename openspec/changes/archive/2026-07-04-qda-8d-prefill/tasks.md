@@ -23,3 +23,12 @@
 - [x] 4.1 `.gitignore` — 真实 8D docx/pdf/csv/json 一律不入库
 - [x] 4.2 场景 `CLAUDE.md` — 六段式（定位/决策/底座/红线/时间线/依赖）
 - [x] 4.3 commit + push
+
+## 5. 补记：spec 缺口回溯补写（2026-08-07，队列 #299，CC）
+
+> 本变更原始 4 节内容不追改（历史记录不追改）。归档时（2026-07-04）proposal.md 未声明 `## Capabilities` 段，`/opsx:archive` 因而未产出任何 delta spec，`openspec/specs/` 长期对本场景零覆盖——2026-08-07 队列 #299 全域实扫发现（形态乙：包已归档但当初就没写 spec，归档流程本身无问题）。
+
+- [x] 5.1 反向读现有代码（`doc_reader.py`/`field_extractor.py`/`scrubber.py`/`calibrate.py`）+ 既有测试断言，补写 4 个 capability spec：`qd-a-doc-reader`/`qd-a-field-extractor`/`qd-a-scrubber`/`qd-a-calibrate`
+- [x] 5.2 delta spec 补录至本归档目录 `specs/`（历史存档补全，非当初漏交付的重新计价）+ 合并进 `openspec/specs/`
+- [x] 5.3 `openspec validate` 四项 `--strict` 通过；`openspec validate --all --strict` 复核不引入新失败
+- [x] 5.4 如实登记：本次仅补 spec 文档，未反向修改任何 `qda_prefill/` 代码；spec 内容与代码当前行为一致性核对方式＝逐函数对照源码与既有测试（非独立复跑真实数据校准），不代表已重新验证真实 8D 样本上的提取准确率
