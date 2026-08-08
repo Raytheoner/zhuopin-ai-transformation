@@ -31,4 +31,8 @@
 
 ## 真实验证（如实记录）
 
-主工作区 2026-08-08 当日已发生一次真实故障（本地 `e3e7f34` ／ origin `2ae585f` 分叉，sweep 连续 4 轮整轮跳过），本次修法上线前已由本 session 在主工作区手工解卡（commit + rebase + push，见队列 #309 主行）——**该次解卡发生在本修法之前，不构成对本修法本身的验证**。本修法合入主工作区后，额外用一个真实的临时旁路 clone 向 origin 推送一个非冲突的真实小改动，制造"主工作区本地已有未推送提交 + origin 同期被推进"的真实分叉状态，随后在主工作区触发一次真实（非 `--repo-root` 覆盖）的 `python 0-学习与工具/工具-落库sweep.py`，验证其不再在起跑段整轮中止、批次/台账改动正常本地提交并由收尾段自动 rebase 对齐推送成功，退出码 0，无需人工介入——过程与结果见 CLAUDE.md 队列 #309 行回填。真实冲突（无法自动解决）这一子场景本次未在主工作区额外构造真实案例（同 #288 4.3 的既有权衡：需要精确控制两个 checkout 同时改动同一行文本、且会产生一次真实分叉告警 webhook 推送，风险大于收益），该分支已由单测（`ForkAlertTests`／`SyncBehindOriginTests.test_diverged_with_genuine_conflict_still_ends_in_fork_alert_via_reconcile`，真实 git 子进程、真实临时仓库，非 mock）完整覆盖。
+主工作区 2026-08-08 当日已发生一次真实故障（本地 `e3e7f34` ／ origin `2ae585f` 分叉，sweep 连续 4 轮整轮跳过），本次修法上线前已由本 session 在主工作区手工解卡（commit + rebase + push，见队列 #309 主行）——**该次解卡发生在本修法之前，是本次修法要解决的问题本身，不构成对修法效果的验证**。
+
+修法合入主工作区、推送后，本 session 触发了一次真实（非 `--repo-root` 覆盖）的 `python 0-学习与工具/工具-落库sweep.py`，处理本次收工登记的真实 §二 批次（本变更包自身的队列回填），确认新代码路径在**健康场景（无分叉）**下运行正常、批次正常提交推送、无异常无回归。
+
+**未额外构造的部分（如实登记）**：本次未在共享主工作区人为制造一次"本地已有未推送提交 + origin 同期被推进"的真实分叉来驱动 `_push_any_unpushed_commits` 走新的分支——本仓库当前有多个其它 CC worktree session 并行活跃（`git worktree list` 可见 10+ 个在办 worktree），在共享的 origin/master 上人为插入一次分叉演练，会与这些并行会话的真实推送产生不可控的时序竞争，风险判断后不做（同 #288 design.md「决策点」与其 tasks.md 4.3 的既有权衡方式一致：真实性收益 vs. 对生产共享状态的风险，两次都判断后者更高）。该分支（分叉 + 待处理批次 + 不冲突可自动解决／真实冲突需人工介入两种子场景）已由 `StartupGuardDoesNotBlockBatchProcessingTests` 与更新后的 `ForkAlertTests`／`SyncBehindOriginTests.test_diverged_with_genuine_conflict_still_ends_in_fork_alert_via_reconcile` 用真实 git 子进程 + 真实临时仓库（非 mock）完整覆盖，且测试构造的场景（预先提交未推送 + origin 同期推进 + 待处理批次三要素同时具备）比 2026-08-08 的真实故障更严格。留待下一次真实分叉自然发生时（大概率会发生，见 #288 proposal.md"队列文件近 20 提交 100% 触碰"的实测频率），由值周巡检/CC 被动观察一次真实生效证据并回填。

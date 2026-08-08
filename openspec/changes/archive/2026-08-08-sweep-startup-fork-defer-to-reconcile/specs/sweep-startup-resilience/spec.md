@@ -7,9 +7,9 @@ sweep MUST 在每轮起跑时无条件检查本地 `HEAD` 相对 `origin/master`
 - **WHEN** 上一轮 sweep 已在本地完成 commit 但 push 因网络等原因失败
 - **THEN** 下一轮 sweep 起跑时必须检测到该未推送提交并尝试补推，补推成功后继续正常批次处理
 
-#### Scenario: 非快进时不在起跑段整轮中止
+#### Scenario: 非快进时不强推
 - **WHEN** 本地 HEAD 与 origin/master 已分叉（互不为祖先）
-- **THEN** sweep 不得在 `_push_any_unpushed_commits` 处 `SweepAbort`，MUST 记录日志后继续执行本轮其余流程（含 §二 批次处理），分叉是否最终导致本轮以非 0 退出码结束，由收尾段的对齐尝试结果决定
+- **THEN** sweep 不得在 `_push_any_unpushed_commits` 处强推或 `SweepAbort`，MUST 记录日志后继续执行本轮其余流程（含 §二 批次处理），分叉是否最终导致本轮以非 0 退出码结束，由收尾段的对齐尝试结果决定，而不是在此处一律以非 0 退出码结束
 
 #### Scenario: 分叉但可自动对齐时批次仍正常落库
 - **WHEN** 本地 HEAD 与 origin/master 已分叉，且本轮存在待处理的 §二 批次，且分叉双方的改动互不冲突
