@@ -7,11 +7,26 @@
 测到以为的那些东西（同根 CLAUDE.md §5「工具静默回退」教训）。故设三条
 独立于发现规则是否完美的下界，任一跌破即 CI 亮红：
 
-- **总 passed 用例数 ≥ 基线**（步骤 1 实测 1704，2026-08-08）
-- **总 skipped 用例数 ≤ 基线**（步骤 1 实测 40——CI 环境无 `.env`/`.51`，
+- **总 passed 用例数 ≥ 基线**（**1698**，见下方"基线勘误"）
+- **总 skipped 用例数 ≤ 基线**（**46**——CI 环境无 `.env`/`.51`，
   skip 是预期的；但 skip 数若**上升**，说明有测试在 CI 里悄悄不跑了，
   表现同样是"全绿"，这与判据静默失效是同一形态）
 - **参与聚合的子项目（矩阵腿）数 ≥ 基线**（13）
+
+**基线勘误（2026-08-08，如实登记）**：步骤 1 本机"干净 worktree"实测最初
+记为 1704 passed / 40 skipped，但两个真实 CI 运行（`gh run 31249058308`／
+`31252676477`）稳定复现 **1698 passed / 46 skipped**——真实差值精确定位
+到 QD-B（`real_a21_path`/`huafeng_path` 两个 session 级 fixture 依赖的
+真实立项书样本，分别落在 `7-外部文档/`〔整体 gitignore〕与
+`data/golden/`〔湘 .gitignore〕，从未进入 git 历史）与 QD-A
+（`test_track_a_calibration.py:90` 同类"答案页 xlsx 不在预期路径"跳过）
+各一处。当场用一个全新 `git worktree add` 直接核验：这两处真实样本文件
+在干净 worktree 里确实不存在，与真实 CI 的跳过结果完全吻合——**本机
+早前记录的 1704/40 本身不是干净环境的真实值**，具体是本机早前哪一次
+`git worktree` 验证残留了额外状态导致数字偏高，未能完全回溯复原，但
+不影响结论：**1698/46 才是有据可查、可反复复现的真实基线**，本文件与
+队列 #309 行的历史记录已同步勘误（历史记录本身不追改，只标注勘误，
+见 CLAUDE.md「历史记录不追改」惯例）。
 
 聚合数据来源：每个矩阵腿运行 `pytest --junit-xml=pytest-result.xml` 产出
 的结构化报告（JUnit XML，`<testsuite tests= skipped= failures= errors=>`
@@ -30,8 +45,8 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-BASELINE_PASSED_MIN = 1704
-BASELINE_SKIPPED_MAX = 40
+BASELINE_PASSED_MIN = 1698
+BASELINE_SKIPPED_MAX = 46
 BASELINE_PROJECT_COUNT_MIN = 13
 
 

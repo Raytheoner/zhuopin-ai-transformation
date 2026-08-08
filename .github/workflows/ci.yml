@@ -15,7 +15,10 @@ name: CI 基线
 # 解除"的告警，须等 #308 子项 D1 的告警解除通用骨架落地后再建，本次不做。
 #
 # 步骤 1（2026-08-08，干净环境即本文件所依赖的这套 CI 本身、无 .env、无
-# 内网 LAN）实测基线：13 个子项目，1704 passed / 40 skipped / 0 failed。
+# 内网 LAN）实测基线：13 个子项目，1698 passed / 46 skipped / 0 failed
+# （本机早前一度误记为 1704/40，经真实 CI 复现坐实并勘误——QD-A/QD-B
+# 各一处依赖真实立项书样本的测试在真正干净的环境下会跳过，本机早前的
+# 记录环境不够干净；详见 `工具-CI覆盖率护栏.py` 头部"基线勘误"说明）。
 # 见 `.github/ci-requirements.txt` 头部注释与队列 #309 行回填。
 #
 # 🔴 全局 PYTHONUTF8（首次真实跑通 CI 后实测坐实，非预防性配置）：
@@ -40,7 +43,7 @@ name: CI 基线
 # 立项要消灭的"靠人记得"，不能在 CI 自己身上原样复活。
 # 另加 `coverage-guardrail` job 作第二道独立防线（不依赖发现规则完美）：
 # 汇总全部矩阵腿的 JUnit XML 报告，断言三条不随发现规则变化的硬下界
-# ——总 passed≥1704／总 skipped≤40／参与矩阵的子项目数≥13，任一跌破即
+# ——总 passed≥1698／总 skipped≤46／参与矩阵的子项目数≥13，任一跌破即
 # 红（哪怕发现规则本身出错导致"矩阵变短了但每腿都绿"这种静默失效，见
 # 根 CLAUDE.md §5「工具静默回退」教训）。
 env:
@@ -141,7 +144,7 @@ jobs:
         with:
           pattern: pytest-result-*
           path: pytest-results
-      - name: 汇总并断言下界（passed≥1704／skipped≤40／子项目数≥13）
+      - name: 汇总并断言下界（passed≥1698／skipped≤46／子项目数≥13）
         run: python 0-学习与工具/工具-CI覆盖率护栏.py --results-dir pytest-results
 
   openspec-validate:
