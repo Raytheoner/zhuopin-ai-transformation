@@ -17,6 +17,21 @@ name: CI 基线
 # 步骤 1（2026-08-08，干净环境即本文件所依赖的这套 CI 本身、无 .env、无
 # 内网 LAN）实测基线：13 个子项目，1704 passed / 40 skipped / 0 failed。
 # 见 `.github/ci-requirements.txt` 头部注释与队列 #309 行回填。
+#
+# 🔴 全局 PYTHONUTF8（首次真实跑通 CI 后实测坐实，非预防性配置）：
+# `windows-latest` runner 的 Python stdout/stderr 默认编码是 cp1252（legacy
+# Windows 代码页），本仓库大量脚本/测试直接 print 中文与 ✓/✗ 等 Unicode
+# 符号（本地开发机 Windows 11 终端默认 UTF-8，从未暴露过这个问题）——
+# 首次真实 CI 运行（gh run 31248705932）5 个作业全部因
+# `UnicodeEncodeError: 'charmap' codec can't encode character...` 失败，
+# 覆盖新增的两个 lint 脚本、`0-学习与工具` 套件里多个既有工具脚本，以及
+# `zhuopin_platform`/`wecom-aibot-service` 两处"子进程预期 stderr 含中文
+# fail-loud 文案"的测试（子进程自己先因同一个编码错误崩溃，产出的是
+# Python Traceback 而不是预期的中文错误信息）。设为环境变量而非逐个脚本
+# 改代码——同一个环境差异在这个仓库的体量下几乎必然继续在未覆盖到的脚本
+# 里复现，在 CI 环境层面一次性设对，比追着每个新增的 print 语句修更彻底。
+env:
+  PYTHONUTF8: "1"
 
 "on":
   push:
