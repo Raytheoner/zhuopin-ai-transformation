@@ -155,6 +155,56 @@ def test_priority_pending_mmdd_rolls_back_a_year_when_later_than_today():
     assert rows[0].registered_date == date(2025, 12, 15)
 
 
+# ── 队列 #308 决策点 4：§一 状态列机器字段（改读字段，非静默降级）────────
+
+MACHINE_FIELD_SECTION_ONE = (
+    "## 一、任务看板\n\n"
+    "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+    "|---|------|--------|-------------|----------|------|--------|------|\n"
+    "| 171 | 真待领 | CC | 输入 | 产出 | [S:open][D:机] 待领（P1，建议尽早） | 工具 | 07-30 |\n"
+    "| 172 | 在办中不再提醒 | CC | 输入 | 产出 | [S:partial][D:机] 待领（P1，说明：三步已完成两步） | 工具 | 07-30 |\n"
+    "| 129 | 定时触发型不应误判（E1） | CC | 输入 | 产出 | [S:timed=2026-08-25][D:机] 待领（定时触发型） | 工具 | 07-30 |\n"
+    "| 224 | 受外部阻塞不应误判 | CC | 输入 | 产出 | [S:blocked][D:业] 待领（P1，依赖签认） | 工具 | 07-30 |\n"
+)
+
+
+def test_machine_field_open_p1_row_included():
+    rows = {r.row_id: r for r in parse_priority_pending_rows(MACHINE_FIELD_SECTION_ONE, date(2026, 7, 31))}
+    assert "171" in rows
+    assert rows["171"].priority == "P1"
+
+
+def test_machine_field_partial_row_excluded_even_with_pending_text():
+    """`partial`（在办中）不触发"待领"提醒——即便自然语言正文里仍带"待领"
+    字样，已有人认领、正在推进不需要"这条无人认领"式提醒。"""
+    rows = {r.row_id: r for r in parse_priority_pending_rows(MACHINE_FIELD_SECTION_ONE, date(2026, 7, 31))}
+    assert "172" not in rows
+
+
+def test_machine_field_timed_row_excluded_e1_resolved():
+    """队列 #308 子项 E1：定时触发型只在自然语言里写了触发日期，旧的
+    "待领"子串判据会误判为立即待领——机器字段落地后天然排除。"""
+    rows = {r.row_id: r for r in parse_priority_pending_rows(MACHINE_FIELD_SECTION_ONE, date(2026, 7, 31))}
+    assert "129" not in rows
+
+
+def test_machine_field_blocked_row_excluded():
+    rows = {r.row_id: r for r in parse_priority_pending_rows(MACHINE_FIELD_SECTION_ONE, date(2026, 7, 31))}
+    assert "224" not in rows
+
+
+def test_missing_field_emits_runtime_warning_and_degrades():
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rows = {r.row_id: r for r in parse_priority_pending_rows(SECTION_ONE_SAMPLE, date(2026, 7, 31))}
+    assert "171" in rows  # 回退旧判据仍能正确识别
+    assert any(
+        issubclass(w.category, RuntimeWarning) and "状态字段缺失" in str(w.message)
+        for w in caught
+    )
+
+
 # ── 超龄：§一 P0/P1 待领 ─────────────────────────────────────────────────
 
 

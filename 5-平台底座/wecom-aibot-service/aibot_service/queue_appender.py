@@ -223,10 +223,15 @@ def append_pending_task(
                     insert_at = i
 
             task_id = _next_task_id(lines, start, end)
+            # 队列 #308（2026-08-09）：§一 新行状态列须以机器字段开头（CI
+            # lint 硬门禁，见 工具-队列结构lint.py），自动追加行状态恒为
+            # "open"；域字段留空——机器人无法判定机制/业务归属，交人工事后
+            # 补（`[D:...]` 缺省不影响解析，只是不计入协议〇.9 措施 C 的
+            # WIP 计数）。
             row = (
                 f"| {task_id} | {_normalize_row_field(description)} | "
                 f"{_normalize_row_field(owner)} | {_normalize_row_field(input_pointer)} | "
-                f"{_normalize_row_field(expected_output)} | 待领 | "
+                f"{_normalize_row_field(expected_output)} | [S:open] 待领 | "
                 f"{_normalize_row_field(touch_zone)} | {date_str} |"
             )
             _assert_row_column_count(row, task_id=task_id)

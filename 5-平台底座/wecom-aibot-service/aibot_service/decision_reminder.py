@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import warnings
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -58,6 +59,22 @@ DEFAULT_STATE_REL = "reports/decision_reminder_state.json"
 _FULL_DATE_RE = re.compile(r"20\d{2}-\d{2}-\d{2}")
 _MMDD_RE = re.compile(r"(?<!\d)(\d{2})-(\d{2})(?!\d)")
 _PRIORITY_RE = re.compile(r"\bP[01]\b")
+# 队列 #308（2026-08-09，决策点 4）：§一 状态列开头机器可读字段——本文件
+# 独立实现一份解析（同本项目"跨文件不 import 同一份判据"既有惯例，见
+# 编辑锁/sweep 两处同名常量的注释）。
+_STATUS_FIELD_RE = re.compile(
+    r"^\[S:(done|open|partial|hold|blocked|timed=\d{4}-\d{2}-\d{2})\]"
+    r"(?:\[D:(机|业)\])?"
+)
+_STATUS_LEADING_STRIP_CHARS = "* \t　"
+
+
+def _parse_status_domain_fields(status_cell: str) -> tuple[str | None, str | None, str]:
+    stripped = status_cell.lstrip(_STATUS_LEADING_STRIP_CHARS)
+    m = _STATUS_FIELD_RE.match(stripped)
+    if not m:
+        return None, None, status_cell
+    return m.group(1), m.group(2), stripped[m.end():]
 
 
 @dataclass
@@ -165,16 +182,32 @@ def parse_section_four_rows(queue_text: str) -> list[SectionFourRow]:
 
 
 def parse_priority_pending_rows(queue_text: str, today: date) -> list[PriorityPendingRow]:
-    """解析队列 §一"任务看板"里状态列含"待领"且带 P0/P1 标记的行
+    """解析队列 §一"任务看板"里状态列为待领（机器字段 `open`，队列 #308
+    决策点 4 起改读字段）且带 P0/P1 标记的行
     （# | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记）。
     `today` 用于消解"登记"列 MM-DD 缺年份的歧义（见 `_first_mmdd_date`），
-    纯函数不读系统时钟，保证可测。"""
+    纯函数不读系统时钟，保证可测。
+
+    只认 `open`（不含 `partial`——在办中已有人认领，无需"待领"提醒；也不含
+    `blocked`/`timed=`/`hold`/`done`，这正是队列 #308 E1 子项要根治的
+    形态：`timed=` 只是自然语言写了触发日期，旧的"待领"子串判据会误判
+    为立即待领，机器字段落地后天然区分）。字段缺失/非法时（未来绕锁写入
+    等场景）非静默降级——发出 `RuntimeWarning` 并回退旧的"待领"子串判据，
+    不静默改变行为。"""
     rows = []
     for cells in _parse_table_rows(queue_text, SECTION_ONE_HEADING):
         if len(cells) != 8:
             continue  # 列数不符的行不纳入判定，交人工核查（如队列 #164 修复前的六行）
         row_id, task_cell, _owner, _input, _output, status_cell, _touch, registered_cell = cells
-        if "待领" not in status_cell:
+        status_value, _, _ = _parse_status_domain_fields(status_cell)
+        if status_value is None:
+            warnings.warn(
+                f"§一 #{row_id} 状态字段缺失/非法，已回退旧「待领」子串判据（非静默降级，见队列 #308）",
+                RuntimeWarning, stacklevel=2,
+            )
+            if "待领" not in status_cell:
+                continue
+        elif status_value != "open":
             continue
         m = _PRIORITY_RE.search(status_cell)
         if not m:

@@ -77,6 +77,25 @@ LEADING_SEGMENT_SEPARATORS = ("。", "——", "━━━")
 DONE_MARKERS = ("✅", "已完成", "已拍板")
 PENDING_MARKERS = ("待领", "待你审", "在办")
 
+# 队列 #308（2026-08-09，决策点 4）：§一 状态列开头机器可读字段——本工具
+# 与编辑锁/sweep 两处各自独立实现一份解析（同 #248 既有惯例）。仅 §一
+# 适用，§二/§四 继续沿用上面既有的 DONE_MARKERS/PENDING_MARKERS 头尾冲突
+# 检测（不在本次机器字段范围内，见 design.md Non-Goals）。
+STATUS_FIELD_RE = re.compile(
+    r"^\[S:(done|open|partial|hold|blocked|timed=\d{4}-\d{2}-\d{2})\]"
+    r"(?:\[D:(机|业)\])?"
+)
+
+
+def _parse_status_domain_fields(status_cell: str) -> tuple[str | None, str | None, str]:
+    """解析 §一 状态列开头的机器字段，返回 (状态取值或 None, 域取值或
+    None, 字段之后的自然语言正文)。缺失/非法时返回 (None, None, 原文)。"""
+    stripped = status_cell.lstrip(LEADING_STRIP_CHARS)
+    m = STATUS_FIELD_RE.match(stripped)
+    if not m:
+        return None, None, status_cell
+    return m.group(1), m.group(2), stripped[m.end():]
+
 
 def _leading_segment(cell_text: str) -> str:
     stripped = cell_text.lstrip(LEADING_STRIP_CHARS)
@@ -183,8 +202,22 @@ def main() -> int:
     print(f"【§{label} #{args.row} · {SECTION_STATUS_LABEL[label]}列全文】")
     print(status_text)
 
-    leading = _leading_segment(status_text)
-    remainder = status_text[len(leading):]
+    natural_text = status_text
+    if label == "一":
+        # 队列 #308 决策点 4：§一 优先展示机器字段解析结果——这是判据应
+        # 该读取的权威值，不需要再靠头尾关键词猜测；关键词冲突检测仍对
+        # 字段之后的自然语言正文生效（正文内部前后打架仍是有用信号，见
+        # 编辑锁 F2 同一立场），不再对整段状态列（含字段本身）扫描。
+        status_value, domain_value, natural_text = _parse_status_domain_fields(status_text)
+        if status_value is None:
+            print("\n⚠ 未识别到 [S:...] 机器字段（缺失/非法，回退关键词判据展示）——"
+                  "见队列 #308「非静默降级」。")
+        else:
+            domain_desc = f"，域 {domain_value}" if domain_value else "（域字段缺失）"
+            print(f"\n【机器字段解析】状态＝{status_value}{domain_desc}")
+
+    leading = _leading_segment(natural_text)
+    remainder = natural_text[len(leading):]
     head_done = any(m in leading for m in DONE_MARKERS)
     head_pending = any(m in leading for m in PENDING_MARKERS)
     tail_done = any(m in remainder for m in DONE_MARKERS)

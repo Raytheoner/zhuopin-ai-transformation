@@ -166,6 +166,26 @@ def test_append_pending_task_inserts_after_last_row(tmp_path):
     assert "后续内容不动。" in new_text
 
 
+def test_append_pending_task_emits_machine_status_field(tmp_path):
+    """队列 #308（2026-08-09）：新增 §一 行状态列须以机器字段开头，否则
+    会被 工具-队列结构lint.py 的 CI 硬门禁拦下；自动追加行状态恒为
+    `[S:open]`（域字段留空，机器人不判定机制/业务归属）。"""
+    text = (
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+        "\n## 二、下一节\n"
+    )
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(text, encoding="utf-8")
+
+    row = append_pending_task(
+        queue_path, description="d", owner="o", input_pointer="i",
+        expected_output="e", date_str="2026-08-09",
+    )
+    assert "[S:open] 待领" in row
+
+
 def test_append_pending_task_on_empty_table_starts_at_one(tmp_path):
     text = """\
 ## 一、任务看板
@@ -187,7 +207,7 @@ def test_append_pending_task_on_empty_table_starts_at_one(tmp_path):
         date_str="2026-07-11",
     )
     new_text = queue_path.read_text(encoding="utf-8")
-    assert "| 1 | d | o | i | e | 待领 |  | 2026-07-11 |" in new_text
+    assert "| 1 | d | o | i | e | [S:open] 待领 |  | 2026-07-11 |" in new_text
 
 
 def test_append_pending_task_does_not_leak_into_later_differently_shaped_table(tmp_path):
@@ -668,7 +688,7 @@ def test_append_pending_task_with_normal_filename_is_byte_for_byte_unaffected(tm
     )
     assert row == (
         "| 19 | 企微反馈自动归档：姚祖怡 发来文件 正常文件.xlsx | 采购专线 | "
-        "`7-外部文档/采购部/正常文件.xlsx` | 核实内容并按需处理 | 待领 |  | 2026-08-08 |"
+        "`7-外部文档/采购部/正常文件.xlsx` | 核实内容并按需处理 | [S:open] 待领 |  | 2026-08-08 |"
     )
 
 

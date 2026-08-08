@@ -433,6 +433,10 @@ STALE_CHANGE_MIN_DAYS_IDLE = 3
 STALE_CHANGE_DEFER_MARKER = "暂不归档"
 STALE_CHANGE_STATE_REL = "reports/sweep-stale-change-state.json"
 STALE_CHANGE_ALERT_INTERVAL_HOURS = 24
+# 队列 #308 子项 D2：判断型告警的指纹确认状态（`--ack-stale-change`），
+# 与上面的 STALE_CHANGE_DEFER_MARKER（文本标记，永久生效）是两套独立
+# 机制，见 `cmd_ack_stale_change`/`_find_stale_in_flight_changes` 文档。
+STALE_CHANGE_ACK_STATE_REL = "reports/sweep-stale-change-ack.json"
 
 # 队列 #302：批量派活前状态核对——近期 commit 扫描窗口默认天数。
 STALE_ROW_LOOKBACK_DAYS = 14
@@ -644,7 +648,7 @@ def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bo
     head = _run_git(["rev-parse", "HEAD"], repo_root).stdout.strip()
     origin_head = _run_git(["rev-parse", "origin/master"], repo_root).stdout.strip()
     if head == origin_head:
-        _reset_fork_state(repo_root)
+        _reset_fork_state(repo_root, log)
         return
 
     ahead_raw = _run_git(["rev-list", "--count", "origin/master..HEAD"], repo_root).stdout.strip()
@@ -660,7 +664,7 @@ def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bo
                 f"（{merge.stderr.strip()}）——跳过本轮，不强推、不 rebase。",
             )
         log.append(f"✓ 本地 master 落后 origin/master，已 git merge --ff-only 同步至 {origin_head[:7]}。")
-        _reset_fork_state(repo_root)
+        _reset_fork_state(repo_root, log)
         return
 
     if ahead > 0 and behind > 0:
@@ -684,7 +688,7 @@ def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bo
             exit_code=2,
         )
     log.append("✓ 本轮全部提交已统一推送。")
-    _reset_fork_state(repo_root)
+    _reset_fork_state(repo_root, log)
 
 
 def _flush_pending_lock_appends(repo_root: Path, log: list[str]) -> None:
@@ -920,12 +924,32 @@ def _write_fork_state(repo_root: Path, state: dict) -> None:
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _reset_fork_state(repo_root: Path) -> None:
+def _reset_fork_state(repo_root: Path, log: list[str] | None = None) -> None:
     """分叉解除（前置检查转为通过）后清空连续计数——防止陈旧计数误导下一次
-    真实分叉的"连续轮次"文案，也避免状态文件无限堆积历史分叉的旧数据。"""
+    真实分叉的"连续轮次"文案，也避免状态文件无限堆积历史分叉的旧数据。
+
+    队列 #308 子项 D1：若重置前状态存在（即此前确实告警过至少一轮，
+    `_handle_fork_detected` 每次检测到都会尝试发送），补发一条"✅ 分叉
+    已解除"通知——治 2026-08-08 真实实证：分叉已解除但此前发出的告警
+    消息无解除通道，读者只能凭空猜测是否仍成立。`log` 为 None（如既有
+    调用点未传入）时静默跳过通知，只做原有的状态清空，向后兼容。
+    """
     path = repo_root / FORK_STATE_REL
+    was_alerted = path.exists()
     if path.exists():
         path.unlink()
+    if not was_alerted or log is None:
+        return
+    log.append("✅ 分叉已解除")
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过分叉解除通知推送（仅留痕日志）。")
+        return
+    try:
+        _send_wecom_markdown(webhook_url, "✅ 落库sweep：此前告警的主工作区与 origin/master 分叉已解除。")
+        log.append("✓ 分叉解除通知已推送。")
+    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
+        log.append(f"⚠ 分叉解除通知推送失败（不影响本轮退出码）：{exc}")
 
 
 def _handle_fork_detected(repo_root: Path, log: list[str]) -> None:
@@ -1077,6 +1101,30 @@ def _leading_status_segment(status_cell: str) -> str:
         if idx != -1:
             cut = min(cut, idx)
     return stripped[:cut]
+
+
+# 队列 #308（2026-08-09，openspec 变更包 queue-status-machine-field，决策点
+# 4）：§一 消费者切换——106 行存量已回填 `[S:...][D:...]` 机器字段，本文件
+# 与 `工具-共享文档编辑锁.py` 各自独立实现一份解析（同 `_leading_status_
+# segment` 既有的"跨文件不 import"惯例，避免多 worktree 共享 editable
+# install 的静默劫持风险）。仅用于 §一；§二 的 `_classify_section_two_rows`
+# 不在本次范围内，继续使用既有"待/✅"开头片段判据（design.md Non-Goals）。
+STATUS_FIELD_RE = re.compile(
+    r"^\[S:(done|open|partial|hold|blocked|timed=\d{4}-\d{2}-\d{2})\]"
+    r"(?:\[D:(机|业)\])?"
+)
+
+
+def _parse_status_domain_fields(status_cell: str) -> tuple[str | None, str | None, str]:
+    """解析 §一 状态列开头的机器字段，返回 (状态取值或 None, 域取值或
+    None, 字段之后的自然语言正文)。缺失/非法时返回 (None, None, 原文)——
+    调用方须走非静默降级（记录一条降级提示），不得静默回退旧判据而不
+    留痕。"""
+    stripped = status_cell.lstrip(LEADING_STRIP_CHARS)
+    m = STATUS_FIELD_RE.match(stripped)
+    if not m:
+        return None, None, status_cell
+    return m.group(1), m.group(2), stripped[m.end():]
 
 
 def _classify_section_two_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -1304,14 +1352,32 @@ def _recent_commit_records(repo_root: Path, days: int) -> list[dict]:
 
 
 def _find_stale_pending_rows(repo_root: Path, days: int = STALE_ROW_LOOKBACK_DAYS) -> list[dict]:
-    """队列 #302：批量派活前核对——§一 状态列开头片段含"待"的行，是否
-    已被近 `days` 天内的 commit 明确声称做过（主判据）或触碰过其"触碰区"
-    列声明的路径（副判据）。纯只读、纯提示，不改任何状态，判定权留给人
-    （"触碰区被动过"不等于"那件事做完了"，副判据必然有误报，它的定位是
-    把"逐行凭记忆判断"变成"只核这几条被标红的"，不是判定器）。"""
+    """队列 #302：批量派活前核对——§一 待处理行（含在办中，即机器字段
+    `open`/`partial`，队列 #308 决策点 4 起改读字段），是否已被近 `days`
+    天内的 commit 明确声称做过（主判据）或触碰过其"触碰区"列声明的路径
+    （副判据）。纯只读、纯提示，不改任何状态，判定权留给人（"触碰区被动
+    过"不等于"那件事做完了"，副判据必然有误报，它的定位是把"逐行凭记忆
+    判断"变成"只核这几条被标红的"，不是判定器）。
+
+    `blocked`/`timed=`/`hold`/`done` 结构性排除（受外部阻塞/触发日未到/
+    我方主动搁置/已完成——均非"看起来待处理、实则可能已被顺手做完"这一
+    误报形态的目标），队列 #308 E1 子项指出的正是这类误报（如 #129 曾被
+    仅凭"待"字样误标为待处理，其实是定时触发型）。"""
     queue_text = _read_queue(repo_root)
     rows = _parse_section_one(queue_text)
-    pending = [r for r in rows if "待" in _leading_status_segment(r["status_cell"])]
+    pending = []
+    for r in rows:
+        status_value, _, _ = _parse_status_domain_fields(r["status_cell"])
+        if status_value is None:
+            # 非静默降级：字段缺失/非法（未来绕锁写入等场景），回退旧的
+            # "开头片段含待"关键词判据，但显式留痕，不装作字段一直存在。
+            print(f"⚠ §一 #{r.get('row_id', '?')} 状态字段缺失/非法，"
+                  "已回退旧关键词判据（非静默降级，见队列 #308）")
+            if "待" in _leading_status_segment(r["status_cell"]):
+                pending.append(r)
+            continue
+        if status_value in ("open", "partial"):
+            pending.append(r)
     commits = _recent_commit_records(repo_root, days)
 
     results = []
@@ -1751,12 +1817,79 @@ def _write_json_state(path: Path, state: dict) -> None:
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _track_and_alert_standing_state(
+    repo_root: Path, label: str, state_rel_path: str, current_keys: set,
+    realert_interval_hours: float, render_alert_text, render_resolved_text, log: list[str],
+) -> None:
+    """队列 #308 子项 D1：标准长期存在状态类告警的出现→告警／消失→解除
+    通用骨架，复刻 `_track_and_alert_orphan_paths`（#301）已验证的模式，
+    供场景 spec 缺口（M1）／在途变更包滞留（M2）复用（分叉告警状态形状
+    不同，单独在 `_handle_fork_detected`/`_reset_fork_state` 处理，未纳入
+    本函数）。
+
+    与孤儿脏文件那版的一处不同：本函数面向的两类 retrofit 对象现状均为
+    "发现即告警"，不设首次出现的存续阈值，只保留"多久后允许再提醒一次"
+    这一节流维度（`realert_interval_hours`）；resolved 消息也不携带
+    "存续了多久"（孤儿脏文件的 `first_seen`/`last_alerted` 双字段状态形状
+    更丰富，本函数保持与既有 `SCENARIO_SPEC_GAP_STATE_REL`/
+    `STALE_CHANGE_STATE_REL` 单时间戳状态形状兼容，不做 schema 迁移）。
+
+    `render_alert_text(to_alert_keys) -> str` / `render_resolved_text(resolved_keys) -> str`
+    由调用方提供，负责把 key 列表渲染成具体消息正文（各调用方的详情信息
+    不在本函数持有的 key 集合里，闭包捕获）。
+    """
+    state_path = repo_root / state_rel_path
+    state = _read_json_state(state_path)
+    now = datetime.now(timezone.utc)
+
+    resolved = [key for key in state if key not in current_keys]
+    for key in resolved:
+        del state[key]
+
+    to_alert = []
+    for key in current_keys:
+        last_alerted = state.get(key)
+        if last_alerted is not None:
+            since = (now - datetime.fromisoformat(last_alerted)).total_seconds() / 3600
+            if since < realert_interval_hours:
+                continue
+        to_alert.append(key)
+        state[key] = now.isoformat()
+    _write_json_state(state_path, state)
+
+    webhook_url = _load_webhook_url(repo_root)
+
+    if resolved:
+        log.append(f"✅ {label}解除通知：{len(resolved)} 项")
+        if webhook_url is None:
+            log.append(f"⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过{label}解除通知推送（仅留痕日志）。")
+        else:
+            try:
+                _send_wecom_markdown(webhook_url, render_resolved_text(resolved))
+                log.append(f"✓ {label}解除通知已推送。")
+            except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
+                log.append(f"⚠ {label}解除通知推送失败（不影响本轮退出码）：{exc}")
+
+    if not to_alert:
+        return
+    if webhook_url is None:
+        log.append(f"⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过{label}告警推送（仅留痕日志与状态文件）。")
+        return
+    try:
+        _send_wecom_markdown(webhook_url, render_alert_text(to_alert))
+        log.append(f"✓ {label}告警已推送。")
+    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
+        log.append(f"⚠ {label}告警推送失败（不影响本轮退出码）：{exc}")
+
+
 def _announce_scenario_spec_coverage_gaps(
     repo_root: Path, gaps: list[dict], log: list[str],
 ) -> None:
     """队列 #298 M1：日志逐条列出全部缺口（不论是否跨过告警节流）；
     webhook 每个场景 24 小时内只推一次（同 #236(2) 的"狼来了"防线——
-    这是标准长期存在的结构性状态，逐轮/每小时重复推送必被无视）。"""
+    这是标准长期存在的结构性状态，逐轮/每小时重复推送必被无视）。
+    队列 #308 子项 D1：alert/resolve 记账部分改用通用骨架
+    `_track_and_alert_standing_state`。"""
     for gap in gaps:
         pkgs = "、".join(f"`{p}`" for p in gap["pending_delta_packages"]) or "无（需重新补写 spec delta）"
         log.append(
@@ -1765,46 +1898,28 @@ def _announce_scenario_spec_coverage_gaps(
             f"delta 所在未归档包：{pkgs}）"
         )
 
-    state_path = repo_root / SCENARIO_SPEC_GAP_STATE_REL
-    state = _read_json_state(state_path)
-    now = datetime.now(timezone.utc)
-    current_keys = {g["scenario"] for g in gaps}
-    for key in list(state.keys()):
-        if key not in current_keys:
-            del state[key]
+    gaps_by_scenario = {g["scenario"]: g for g in gaps}
 
-    to_alert = []
-    for gap in gaps:
-        key = gap["scenario"]
-        last_alerted = state.get(key)
-        if last_alerted is not None:
-            since = (now - datetime.fromisoformat(last_alerted)).total_seconds() / 3600
-            if since < SCENARIO_SPEC_GAP_ALERT_INTERVAL_HOURS:
-                continue
-        to_alert.append(gap)
-        state[key] = now.isoformat()
-    _write_json_state(state_path, state)
+    def render_alert(keys):
+        lines = []
+        for key in keys:
+            gap = gaps_by_scenario[key]
+            pkgs = "、".join(f"`{p}`" for p in gap["pending_delta_packages"]) or "需重新补写"
+            lines.append(f"- `{key}`（形态{gap['form']}，{pkgs}）")
+        return (
+            f"📋 落库sweep：{len(keys)} 个已建造场景在 openspec/specs/ 零命中（可追溯链断），"
+            "存量补齐见队列 #299：\n" + "\n".join(lines)
+        )
 
-    if not to_alert:
-        return
+    def render_resolved(keys):
+        lines = "\n".join(f"- `{key}`（已重新命中 capability，无需处置）" for key in keys)
+        return f"✅ 落库sweep：{len(keys)} 个此前告警过的场景 spec 缺口已解除：\n{lines}"
 
-    lines = []
-    for gap in to_alert:
-        pkgs = "、".join(f"`{p}`" for p in gap["pending_delta_packages"]) or "需重新补写"
-        lines.append(f"- `{gap['scenario']}`（形态{gap['form']}，{pkgs}）")
-    alert_text = (
-        f"📋 落库sweep：{len(to_alert)} 个已建造场景在 openspec/specs/ 零命中（可追溯链断），"
-        "存量补齐见队列 #299：\n" + "\n".join(lines)
+    _track_and_alert_standing_state(
+        repo_root, "场景 spec 缺口", SCENARIO_SPEC_GAP_STATE_REL,
+        set(gaps_by_scenario), SCENARIO_SPEC_GAP_ALERT_INTERVAL_HOURS,
+        render_alert, render_resolved, log,
     )
-    webhook_url = _load_webhook_url(repo_root)
-    if webhook_url is None:
-        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过场景 spec 缺口告警推送（仅留痕日志）。")
-        return
-    try:
-        _send_wecom_markdown(webhook_url, alert_text)
-        log.append("✓ 场景 spec 缺口告警已推送。")
-    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
-        log.append(f"⚠ 场景 spec 缺口告警推送失败（不影响本轮退出码）：{exc}")
 
 
 # ============================================================
@@ -1851,15 +1966,61 @@ def _change_package_has_defer_marker(change_dir: Path) -> bool:
     return False
 
 
+def _read_stale_change_acks(repo_root: Path) -> dict:
+    return _read_json_state(repo_root / STALE_CHANGE_ACK_STATE_REL)
+
+
+def _write_stale_change_acks(repo_root: Path, acks: dict) -> None:
+    _write_json_state(repo_root / STALE_CHANGE_ACK_STATE_REL, acks)
+
+
+def cmd_ack_stale_change(repo_root: Path, change_name: str, note: str) -> int:
+    """队列 #308 子项 D2：记录一次对"疑似遗忘归档"候选的人工判定，连同
+    判定当时的完成度指纹（done/total）——与 `STALE_CHANGE_DEFER_MARKER`
+    （"暂不归档"文本标记，变更作者对未来的永久声明）不同，本确认是复核者
+    对过去某一刻状态的确认："我在 X 指纹下判定过这是合理的，指纹变了要
+    重新看"，不是永久白名单。"""
+    if not note.strip():
+        print("✗ --note 不能为空——须提供本次判定依据摘录，不得留空确认（同 approve_followup_letter.py 的既有强制惯例）。")
+        return 1
+    change_dir = repo_root / OPENSPEC_CHANGES_REL / change_name
+    tasks_path = change_dir / "tasks.md"
+    if not tasks_path.exists():
+        print(f"✗ 未找到 {tasks_path}，拒绝记录确认（无法计算指纹）。")
+        return 1
+    completion = _parse_tasks_completion(tasks_path)
+    if completion is None:
+        print(f"✗ {tasks_path} 未解析出任何任务勾选项，拒绝记录确认（无法计算指纹）。")
+        return 1
+    done, total = completion
+    acks = _read_stale_change_acks(repo_root)
+    acks[change_name] = {
+        "fingerprint": [done, total],
+        "acked_at": datetime.now(timezone.utc).isoformat(),
+        "note": note,
+    }
+    _write_stale_change_acks(repo_root, acks)
+    print(f"✓ 已记录确认：{change_name}（指纹 {done}/{total}），指纹未变期间本变更包不再触发"
+          "「疑似遗忘归档」告警；tasks.md 有新的勾选变化后自动失效、恢复正常告警流程。")
+    return 0
+
+
 def _find_stale_in_flight_changes(repo_root: Path) -> list[dict]:
     """队列 #298 M2：在途 openspec 变更包滞留——完成率≥
     `STALE_CHANGE_COMPLETION_THRESHOLD` 且距最后一次改动≥
     `STALE_CHANGE_MIN_DAYS_IDLE` 天，且未在自身 proposal/design/tasks 内
     声明"暂不归档"（降噪，见文件头部本节说明——天数阈值已更正原文
-    "≥7天"与其自身举例"fi2-recon-mvp 90%/3天"的矛盾，改取 3 天）。"""
+    "≥7天"与其自身举例"fi2-recon-mvp 90%/3天"的矛盾，改取 3 天）。
+
+    队列 #308 子项 D2：命中上述条件后，若存在对该变更包的确认记录
+    （`--ack-stale-change`）且其指纹（done/total）与当前完全一致，本候选
+    完全静默（不出现在返回列表里，不进日志、不进 webhook）——"已判定 ＋
+    指纹未变"双条件，区别于 `STALE_CHANGE_DEFER_MARKER` 那种一次性永久
+    白名单。"""
     changes_dir = repo_root / OPENSPEC_CHANGES_REL
     if not changes_dir.is_dir():
         return []
+    acks = _read_stale_change_acks(repo_root)
     hits = []
     for change_dir in sorted(changes_dir.iterdir()):
         if not change_dir.is_dir() or change_dir.name == "archive":
@@ -1877,6 +2038,9 @@ def _find_stale_in_flight_changes(repo_root: Path) -> list[dict]:
             continue
         if _change_package_has_defer_marker(change_dir):
             continue
+        ack = acks.get(change_dir.name)
+        if ack is not None and ack.get("fingerprint") == [done, total]:
+            continue  # D2：已判定且指纹未变，完全静默
         hits.append({
             "change": change_dir.name, "done": done, "total": total,
             "rate": rate, "days_idle": days_idle,
@@ -1886,7 +2050,9 @@ def _find_stale_in_flight_changes(repo_root: Path) -> list[dict]:
 
 def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: list[str]) -> None:
     """队列 #298 M2：日志逐条列出，webhook 每个包 24 小时内只推一次
-    （同 M1/`_track_and_alert_orphan_paths` 的节流理由）。"""
+    （同 M1/`_track_and_alert_orphan_paths` 的节流理由）。队列 #308 子项
+    D1：alert/resolve 记账部分改用通用骨架 `_track_and_alert_standing_
+    state`。"""
     for hit in hits:
         log.append(
             f"⚠ 在途变更包 `{hit['change']}` 完成率 {hit['rate']:.0%}"
@@ -1894,45 +2060,27 @@ def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: li
             "疑似遗忘归档"
         )
 
-    state_path = repo_root / STALE_CHANGE_STATE_REL
-    state = _read_json_state(state_path)
-    now = datetime.now(timezone.utc)
-    current_keys = {h["change"] for h in hits}
-    for key in list(state.keys()):
-        if key not in current_keys:
-            del state[key]
+    hits_by_change = {h["change"]: h for h in hits}
 
-    to_alert = []
-    for hit in hits:
-        key = hit["change"]
-        last_alerted = state.get(key)
-        if last_alerted is not None:
-            since = (now - datetime.fromisoformat(last_alerted)).total_seconds() / 3600
-            if since < STALE_CHANGE_ALERT_INTERVAL_HOURS:
-                continue
-        to_alert.append(hit)
-        state[key] = now.isoformat()
-    _write_json_state(state_path, state)
+    def render_alert(keys):
+        lines = [
+            f"- `{k}`（{hits_by_change[k]['rate']:.0%}，{hits_by_change[k]['days_idle']:.1f} 天无改动）"
+            for k in keys
+        ]
+        return (
+            f"📋 落库sweep：{len(keys)} 个在途 openspec 变更包高完成率但长期无改动，"
+            "疑似遗忘归档：\n" + "\n".join(lines)
+        )
 
-    if not to_alert:
-        return
+    def render_resolved(keys):
+        lines = "\n".join(f"- `{k}`（已归档或完成率/滞留天数不再满足条件）" for k in keys)
+        return f"✅ 落库sweep：{len(keys)} 个此前告警过的在途变更包滞留已解除：\n{lines}"
 
-    lines = [
-        f"- `{h['change']}`（{h['rate']:.0%}，{h['days_idle']:.1f} 天无改动）" for h in to_alert
-    ]
-    alert_text = (
-        f"📋 落库sweep：{len(to_alert)} 个在途 openspec 变更包高完成率但长期无改动，"
-        "疑似遗忘归档：\n" + "\n".join(lines)
+    _track_and_alert_standing_state(
+        repo_root, "在途变更包滞留", STALE_CHANGE_STATE_REL,
+        set(hits_by_change), STALE_CHANGE_ALERT_INTERVAL_HOURS,
+        render_alert, render_resolved, log,
     )
-    webhook_url = _load_webhook_url(repo_root)
-    if webhook_url is None:
-        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过在途变更包滞留告警推送（仅留痕日志）。")
-        return
-    try:
-        _send_wecom_markdown(webhook_url, alert_text)
-        log.append("✓ 在途变更包滞留告警已推送。")
-    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
-        log.append(f"⚠ 在途变更包滞留告警推送失败（不影响本轮退出码）：{exc}")
 
 
 def _edit_lock(repo_root: Path, action: str, extra: list[str] | None = None) -> subprocess.CompletedProcess:
@@ -2069,9 +2217,21 @@ def main() -> int:
     parser.add_argument(
         "--stale-lookback-days", type=int, default=STALE_ROW_LOOKBACK_DAYS,
         help="#302：--check-stale-pending-rows 的近期 commit 扫描窗口天数，默认 %(default)s。")
+    parser.add_argument(
+        "--ack-stale-change", default=None, metavar="CHANGE_NAME",
+        help="队列 #308 子项 D2：记录一次对指定 openspec 变更包「疑似遗忘归档」"
+             "候选的人工确认（须同时提供 --note），只写确认状态文件，不做任何"
+             "写操作、不跑 sweep 主流程。指纹（done/total）未变期间不再告警，"
+             "tasks.md 有新勾选变化后自动失效。")
+    parser.add_argument(
+        "--note", default="", help="--ack-stale-change 配套：本次判定依据摘录，必填。")
     args = parser.parse_args()
 
     repo_root = _resolve_repo_root(args.repo_root)
+
+    if args.ack_stale_change is not None:
+        # 只读写确认状态文件：不碰队列、不动 git 状态，独立于下方主流程。
+        return cmd_ack_stale_change(repo_root, args.ack_stale_change, args.note)
 
     if args.check_dirty_in_pending_batch is not None:
         # 只读检查模式：不写日志、不碰队列、不动 git 状态，独立于下方主流程。

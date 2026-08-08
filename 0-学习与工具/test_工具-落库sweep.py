@@ -2306,7 +2306,7 @@ class StaleInFlightChangeUnitTests(unittest.TestCase):
         self, name: str, done: int, todo: int, days_ago: float = 0, defer_marker: bool = False,
     ) -> None:
         d = self.repo / "openspec" / "changes" / name
-        d.mkdir(parents=True)
+        d.mkdir(parents=True, exist_ok=True)  # 队列 #308 D2 用例需对同一 change 重复调用以模拟指纹变化
         lines = [f"- [x] {i}\n" for i in range(done)] + [f"- [ ] {i}\n" for i in range(todo)]
         if defer_marker:
             lines.append("- [ ] 归档：**暂不归档**，§3 真实验证未完成\n")
@@ -2343,6 +2343,101 @@ class StaleInFlightChangeUnitTests(unittest.TestCase):
     def test_archive_directory_itself_is_never_scanned(self):
         self._make_change("archive", done=100, todo=0, days_ago=30)
         self.assertEqual(sweep._find_stale_in_flight_changes(self.repo), [])
+
+    # ---- 队列 #308 子项 D2：判断型告警指纹抑制 ------------------------------
+
+    def test_ack_with_matching_fingerprint_fully_silences_hit(self):
+        self._make_change("fi2-recon-mvp", done=116, todo=13, days_ago=3.5)
+        rc = sweep.cmd_ack_stale_change(self.repo, "fi2-recon-mvp", "已逐项判定为真实未完工，有意保留")
+        self.assertEqual(rc, 0)
+        self.assertEqual(sweep._find_stale_in_flight_changes(self.repo), [])
+
+    def test_ack_missing_note_rejected(self):
+        self._make_change("fi2-recon-mvp", done=116, todo=13, days_ago=3.5)
+        rc = sweep.cmd_ack_stale_change(self.repo, "fi2-recon-mvp", "")
+        self.assertNotEqual(rc, 0)
+        # 未写入确认状态文件，候选仍会被扫到。
+        hits = sweep._find_stale_in_flight_changes(self.repo)
+        self.assertEqual([h["change"] for h in hits], ["fi2-recon-mvp"])
+
+    def test_ack_fingerprint_stale_after_tasks_change_resumes_alert(self):
+        self._make_change("fi2-recon-mvp", done=116, todo=13, days_ago=3.5)
+        rc = sweep.cmd_ack_stale_change(self.repo, "fi2-recon-mvp", "已判定为真实未完工")
+        self.assertEqual(rc, 0)
+        self.assertEqual(sweep._find_stale_in_flight_changes(self.repo), [])
+
+        # tasks.md 有新的勾选变化——指纹从 116/129 变为 117/129，确认过期。
+        self._make_change("fi2-recon-mvp", done=117, todo=12, days_ago=3.5)
+        hits = sweep._find_stale_in_flight_changes(self.repo)
+        self.assertEqual([h["change"] for h in hits], ["fi2-recon-mvp"])
+
+    def test_ack_unknown_change_rejected(self):
+        rc = sweep.cmd_ack_stale_change(self.repo, "不存在的变更包", "理由")
+        self.assertNotEqual(rc, 0)
+
+
+class StandingStateAlertLifecycleUnitTests(unittest.TestCase):
+    """队列 #308 子项 D1：通用出现→告警／消失→解除骨架
+    （`_track_and_alert_standing_state`）与分叉告警 retrofit
+    （`_reset_fork_state`）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_first_alert_then_resolved_notification_on_disappearance(self):
+        log = []
+        sweep._track_and_alert_standing_state(
+            self.repo, "测试标签", "reports/test-state.json", {"a", "b"},
+            realert_interval_hours=24,
+            render_alert_text=lambda keys: f"ALERT:{sorted(keys)}",
+            render_resolved_text=lambda keys: f"RESOLVED:{sorted(keys)}",
+            log=log,
+        )
+        self.assertTrue(any("告警已推送" in l or "跳过" in l for l in log))
+
+        log2 = []
+        sweep._track_and_alert_standing_state(
+            self.repo, "测试标签", "reports/test-state.json", {"a"},  # b 消失
+            realert_interval_hours=24,
+            render_alert_text=lambda keys: f"ALERT:{sorted(keys)}",
+            render_resolved_text=lambda keys: f"RESOLVED:{sorted(keys)}",
+            log=log2,
+        )
+        self.assertTrue(any("解除通知" in l for l in log2))
+
+    def test_realert_throttled_within_interval(self):
+        log1, log2 = [], []
+        sweep._track_and_alert_standing_state(
+            self.repo, "测试标签", "reports/test-state2.json", {"a"},
+            realert_interval_hours=24,
+            render_alert_text=lambda keys: "ALERT",
+            render_resolved_text=lambda keys: "RESOLVED",
+            log=log1,
+        )
+        sweep._track_and_alert_standing_state(
+            self.repo, "测试标签", "reports/test-state2.json", {"a"},  # 仍存在，未过节流窗口
+            realert_interval_hours=24,
+            render_alert_text=lambda keys: "ALERT",
+            render_resolved_text=lambda keys: "RESOLVED",
+            log=log2,
+        )
+        self.assertFalse(any("告警已推送" in l for l in log2))
+
+    def test_fork_reset_without_prior_alert_is_silent(self):
+        log = []
+        sweep._reset_fork_state(self.repo, log)
+        self.assertEqual(log, [])
+
+    def test_fork_reset_after_prior_alert_notifies(self):
+        sweep._write_fork_state(self.repo, {"consecutive": 2, "first_detected_at": "2026-08-08T00:00:00+00:00"})
+        log = []
+        sweep._reset_fork_state(self.repo, log)
+        self.assertTrue(any("分叉已解除" in l for l in log))
+        self.assertFalse((self.repo / sweep.FORK_STATE_REL).exists())
 
 
 class ScenarioSpecGapAnnounceIntegrationTests(SweepTestBase):
@@ -2597,6 +2692,87 @@ class CheckStalePendingRowsCliTests(SweepTestBase):
 
         result = _run_sweep(self.work, "--check-stale-pending-rows")
         self.assertIn("PENDING_CLEAN\t205", result.stdout)
+
+    # ---- 队列 #308 决策点 4：§一 消费者切换（改读机器字段）------------------
+
+    def test_machine_field_open_row_is_pending(self):
+        self._write_section_one_queue(
+            "| 258 | 示例任务 | CC | 输入 | 产出 | [S:open][D:机] 待领 | `不存在.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "占位.md").write_text("x\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "feat(队列#258): apply 决策点")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        hit = next(
+            line for line in result.stdout.strip().splitlines() if line.startswith("STALE_SUSPECT\t258")
+        )
+        self.assertIn("primary=Y", hit)
+
+    def test_machine_field_partial_row_is_pending(self):
+        """`partial`（在办中）与 `open` 同样纳入待核范围——部分完成的行，
+        recent commit 完全可能是"完成了剩余部分"。"""
+        self._write_section_one_queue(
+            "| 236 | 示例任务 | CC | 输入 | 产出 | [S:partial][D:机] 在办中 | `目标文件.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "目标文件.md").write_text("改动\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "feat(sweep+编辑锁): 顺带改了这个文件")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        hit = next(
+            line for line in result.stdout.strip().splitlines() if line.startswith("STALE_SUSPECT\t236")
+        )
+        self.assertIn("secondary=Y", hit)
+
+    def test_machine_field_timed_row_not_pending_e1_resolved(self):
+        """队列 #308 子项 E1：#129 类误报（定时触发型只在自然语言里写了
+        日期，旧判据只看"待"字样）——机器字段落地后 `[S:timed=...]` 天然
+        不进入待核范围，自动消解，不需要任何额外判据。"""
+        self._write_section_one_queue(
+            "| 129 | 示例任务 | CC | 输入 | 产出 | [S:timed=2026-08-25][D:机] 待领（定时触发型） | `unrelated.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "别的文件.md").write_text("x\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "docs(其它): 不相关改动")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        # 既不在 STALE_SUSPECT 也不在 PENDING_CLEAN——机器字段判定其压根
+        # 不属于"待处理"范围，不参与本轮扫描输出。
+        self.assertNotIn("STALE_SUSPECT\t129", result.stdout)
+        self.assertNotIn("PENDING_CLEAN\t129", result.stdout)
+
+    def test_machine_field_blocked_row_not_pending(self):
+        self._write_section_one_queue(
+            "| 224 | 示例任务 | CC | 输入 | 产出 | [S:blocked][D:业] 待领（依赖签认） | `unrelated.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "别的文件.md").write_text("x\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "docs(其它): 不相关改动")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        self.assertNotIn("STALE_SUSPECT\t224", result.stdout)
+        self.assertNotIn("PENDING_CLEAN\t224", result.stdout)
+
+    def test_missing_field_degrades_to_legacy_keyword_judge(self):
+        """字段缺失（未来绕锁写入等场景）——非静默降级，回退旧"待"关键词
+        判据，仍能正确纳入待核范围（不因字段缺失而彻底失明）。"""
+        self._write_section_one_queue(
+            "| 129 | 示例任务 | CC | 输入 | 产出 | 待领（未回填字段的历史遗留行） | `unrelated.md` | 2026-08-01 |\n"
+        )
+        self._commit_all("init")
+        (self.work / "别的文件.md").write_text("x\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "docs(其它): 不相关改动")
+
+        result = _run_sweep(self.work, "--check-stale-pending-rows")
+        self.assertIn("PENDING_CLEAN\t129", result.stdout)
+        self.assertIn("字段缺失/非法", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

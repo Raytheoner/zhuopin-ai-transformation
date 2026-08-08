@@ -312,6 +312,80 @@ def _section_two_status_is_ambiguous(status_cell: str) -> bool:
     if leading.startswith(PREREGISTERED_STATUS_PREFIX):
         return False
     return "待" not in leading and "✅" not in leading
+
+
+# 队列 #308（2026-08-09，openspec 变更包 queue-status-machine-field）：§一
+# 状态列开头机器可读字段，消灭"用正则猜中文"这一整族判据（design.md
+# Context 完整列出源头与四个衍生 bug 家族）。语法固定为
+# `[S:<value>][D:<value>]`——状态字段在前、域字段可选紧随其后，字段之后的
+# 自然语言正文完全自由、不受本字段语法约束，且回填/新增该字段 MUST NOT
+# 改写正文一字（design.md 决策点 1 范围红线）。字段仅适用于 §一，§二/§四
+# 状态语义不变（design.md Non-Goals）。
+STATUS_FIELD_VALUES = ("done", "open", "partial", "hold", "blocked")
+STATUS_FIELD_RE = re.compile(
+    r"^\[S:(done|open|partial|hold|blocked|timed=\d{4}-\d{2}-\d{2})\]"
+    r"(?:\[D:(机|业)\])?"
+)
+# 协议〇.9 措施 C（队列 #308 决策点 6）：机制类可动 WIP 上限，默认 8，可通过
+# release 的 --mechanism-wip-cap 覆盖（避免上限值本身未来调整时要改代码）。
+MECHANISM_WIP_CAP_DEFAULT = 8
+# 子项 G（队列 #308 决策点 10）：跟进信串行原则闸——"前一封"发送状态以此
+# 前缀开头即视为已闭环；新增行任一单元格含此逃生阀标记即放行但留痕。
+FOLLOWUP_SERIAL_CLOSED_PREFIX = "📥 已回件并回灌"
+FOLLOWUP_SERIAL_WAIVER_MARKER = "串行豁免："
+
+
+def _parse_status_domain_fields(status_cell: str) -> tuple[str | None, str | None, str]:
+    """解析 §一 状态列开头的 `[S:...][D:...]` 机器字段（队列 #308 决策点
+    1/2）。返回 (状态取值或 None, 域取值或 None, 字段之后的自然语言正文)。
+
+    字段缺失或不匹配语法时返回 (None, None, 原始整段文本)——消费方须据此
+    走"非静默降级"路径（design.md 决策点 1：不得静默套用字段缺失前的旧
+    关键词判据结果而不留痕迹，须显式记录降级日志），本函数本身只负责
+    解析、不代消费方决定降级行为。
+    """
+    stripped = status_cell.lstrip(STATUS_LEADING_STRIP_CHARS)
+    m = STATUS_FIELD_RE.match(stripped)
+    if not m:
+        return None, None, status_cell
+    status_value = m.group(1)
+    domain_value = m.group(2)
+    rest = stripped[m.end():]
+    return status_value, domain_value, rest
+
+
+def _count_mechanism_wip(section_one_text: str) -> tuple[int, list[str]]:
+    """协议〇.9 措施 C：机制类可动 WIP 计数（队列 #308 决策点 6）。统计
+    满足以下全部条件的 §一 行：域字段为「机」；状态字段取值属于
+    open/partial/hold 三者之一；自然语言正文不以 🛑 开头。`blocked`/
+    `timed=`/`done` 结构性排除，无需再判断自然语言正文（对齐
+    `queue-row-domain-field` 能力定义的口径）。
+
+    返回 (计数, 降级日志列表)——状态字段缺失/非法的行不计入计数，且不静默
+    跳过：每一行都产出一条降级日志交调用方按需打印（design.md 决策点 1
+    "非静默降级"）。
+    """
+    count = 0
+    degraded: list[str] = []
+    for line, cells in _table_data_rows(section_one_text):
+        if len(cells) <= 5:
+            continue
+        row_id = cells[0] if cells and cells[0] else "?"
+        status_value, domain_value, rest = _parse_status_domain_fields(cells[5])
+        if status_value is None:
+            degraded.append(f"§一 #{row_id} 状态字段缺失/非法，已跳过 WIP 计数（非静默降级）")
+            continue
+        if domain_value != "机":
+            continue
+        if status_value == "done" or status_value == "blocked" or status_value.startswith("timed="):
+            continue
+        natural_text = rest.lstrip(STATUS_LEADING_STRIP_CHARS)
+        if natural_text.startswith("🛑"):
+            continue
+        count += 1
+    return count, degraded
+
+
 LIVE_SECTION_HEADING_RE = re.compile(r"^## ([一二三四])、", re.MULTILINE)
 # §一/§四 表头首列 "#"、§二 表头首列 "批次"；分隔行首列全为 "-"/空白。
 _TABLE_HEADER_FIRST_CELLS = ("#", "批次", "")
@@ -857,6 +931,21 @@ def _followup_row_identity(cells: list[str], status_col_index: int) -> tuple[str
     return tuple(c for i, c in enumerate(cells) if i != status_col_index)
 
 
+def _followup_header_col_index(text: str, label: str) -> int:
+    """跟进信 README 清单表头按列名前缀定位列索引，未找到返回 -1（队列
+    #308 子项 G 复用 `_followup_readme_rows` 已确立的"按表头字样定位"手法，
+    独立于其固定返回的状态列索引，供收信人列定位复用，避免改动该函数
+    既有签名与其两个既有调用方）。"""
+    for line in text.splitlines():
+        if line.strip().startswith("|") and "发送状态" in line:
+            header_cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            for j, cell in enumerate(header_cells):
+                if cell.startswith(label):
+                    return j
+            return -1
+    return -1
+
+
 def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> list[str]:
     """队列 #124 阶段二（design.md D1）：跟进信 README 两态语义的结构性
     拦截"新建即终态"反模式。比对 acquire 快照与当前内容，若某行的"非状态
@@ -866,6 +955,14 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
     在专属的另一次持锁窗口外运行，不改队列文件锁，不受本函数约束）。
     既有行从 `⏳ 待你审` 转为 `🆕 待发`（批准脚本的合法产物，其身份在
     快照里能找到）不受影响，正常放行。
+
+    队列 #308 子项 G（决策点 10）：同批新增跟进信串行原则闸——本次持锁
+    窗口内新增了某收信人的登记行时，回查该收信人此前最靠近的一行（表格
+    顺序上排在新增行之前）；若其发送状态不以 `📥 已回件并回灌` 开头（视为
+    非闭环），MUST 拒绝 release，除非新增行任一单元格显式含
+    `串行豁免：〈理由〉`（放行但打印留痕提示，不静默）。该收信人历史上
+    首次出现（无"前一封"可比对）不受本项约束。判别新增行的方法复用上面
+    两态语义检查已用的 `_followup_row_identity`，历史行不追溯。
     """
     violations: list[str] = []
     old_rows = _followup_readme_rows(snapshot_text)
@@ -887,6 +984,50 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
                 f"（起草只能写「{FOLLOWUP_DRAFT_STATUS}」，转终态须经独立的 "
                 f"approve_followup_letter.py）：{preview}"
             )
+
+    recipient_col_index = _followup_header_col_index(current_text, "收信人")
+    if recipient_col_index >= 0:
+        current_rows = _followup_readme_rows(current_text)
+        for idx, (line, cells, status_col_index) in enumerate(current_rows):
+            identity = _followup_row_identity(cells, status_col_index)
+            if identity in old_identities:
+                continue  # 既有行的状态转换不受本项约束
+            if len(cells) <= recipient_col_index:
+                continue
+            recipient = cells[recipient_col_index]
+            prior_status = None
+            prior_preview = None
+            for j in range(idx - 1, -1, -1):
+                prior_cells = current_rows[j][1]
+                if len(prior_cells) <= recipient_col_index:
+                    continue
+                if prior_cells[recipient_col_index] == recipient:
+                    prior_status = prior_cells[current_rows[j][2]]
+                    prior_preview = current_rows[j][0].strip()
+                    if len(prior_preview) > 80:
+                        prior_preview = prior_preview[:80] + "…"
+                    break
+            if prior_status is None:
+                continue  # 该收信人历史上首次出现，不受串行原则约束
+            if prior_status.startswith(FOLLOWUP_SERIAL_CLOSED_PREFIX):
+                continue  # 前一封已闭环
+            waiver_cell = next((c for c in cells if FOLLOWUP_SERIAL_WAIVER_MARKER in c), None)
+            if waiver_cell is not None:
+                waiver_text = waiver_cell.strip()
+                if len(waiver_text) > 80:
+                    waiver_text = waiver_text[:80] + "…"
+                print(f"✓ 检测到串行豁免声明，已放行：{waiver_text}")
+                continue
+            preview = line.strip()
+            if len(preview) > 80:
+                preview = preview[:80] + "…"
+            violations.append(
+                f"跟进信串行原则：新增行收信人「{recipient}」前一封（{prior_preview}）"
+                f"发送状态为「{prior_status}」尚未闭环，请先据实把它改为"
+                f"「{FOLLOWUP_SERIAL_CLOSED_PREFIX} <日期>」，或在本行内写明"
+                f"「{FOLLOWUP_SERIAL_WAIVER_MARKER}〈理由〉」：{preview}"
+            )
+
     return violations
 
 
@@ -1025,6 +1166,19 @@ def _validate_release_structure(
       未同步移出待发标记，`ZhuopinFollowupDispatchDaily` 照发）。反向（README
       已是"已推送"类终态而队列仍称暂缓）仅告警，见 `_validate_followup_
       hold_consistency` 文档。
+    ⑦§二新增即终态防写（队列 #308 子项 F1）：新增批次行（identity＝批次名
+      cells[0]，不存在于快照 §二 批次名集合）状态列开头片段以「✅」开头即
+      拒绝——既有批次行合法转「✅」不受影响。治 `B-0728财务专线核实`／
+      `B-0728队列#125回填` 两批因登记时写了 ✅ 被 sweep 判为已处理、内容
+      石沉大海的真实事故。
+    ⑧头尾不一致（§一/§二，队列 #308 子项 F2）：状态列含「✅」但不在开头
+      片段内即拒绝——直接复用⑤已有的 `_leading_status_segment()`，零新造
+      判据。治 2026-08-03 一次性抓出的 6 行"行尾写完成、开头仍待领"真实
+      事故。
+    ⑨机制类可动 WIP 上限（仅 §一，队列 #308 决策点 6，协议〇.9 措施 C）：
+      本次持锁期间新增了域为「机」的 §一 行时，重新计算全文当前的可动
+      WIP 计数；超过上限（默认 8，`--mechanism-wip-cap` 可覆盖）**仅提示
+      不阻断**——不加入返回的 violations，release 仍正常放行。
     """
     violations: list[str] = []
     current_text = _read_target_text(args.file)
@@ -1035,6 +1189,7 @@ def _validate_release_structure(
     reserved_map = lock_data.get("reserved") or {}
     archive_numbers: dict[str, set[int]] | None = None  # 惰性计算，仅在需要时扫描
     touched_for_hold_consistency: list[tuple[str, list[str], str]] = []  # ⑥用
+    new_mechanism_row_added = False  # ⑨用：本次是否新增了 [D:机] 的 §一 行
 
     for label, expected_cols in SECTION_COLUMN_COUNTS.items():
         new_text = new_sections.get(label, "")
@@ -1053,6 +1208,14 @@ def _validate_release_structure(
             current_number_counts = Counter(
                 int(cells[0]) for _, cells in _table_data_rows(new_text) if cells[0].isdigit()
             )
+        old_batch_names: set[str] = set()
+        if label == "二":
+            # ⑦用：§二 无编号列，identity＝批次名（cells[0]），与 ROW_NUMBER_
+            # SECTIONS 的"编号不在 old_numbers ⇒ 新增"同构，只是 identity
+            # 换成字符串。
+            old_batch_names = {
+                old_cells[0] for _, old_cells in _table_data_rows(old_text)
+            }
 
         for line, cells in touched:
             preview = line.strip()
@@ -1084,6 +1247,27 @@ def _validate_release_structure(
                         f"§二 批次「{cells[0]}」状态列开头片段既不含"
                         f"「待」也不含「✅」（会被 sweep 判为状态列模糊、每轮"
                         f"跳过并重复告警，见 #247）：{preview}"
+                    )
+                if cells[0] not in old_batch_names:
+                    # ⑦ 队列 #308 子项 F1：新增批次行状态列不得以 ✅ 开头
+                    # （既有批次合法转 ✅ 走上面 old_batch_names 判据放行）。
+                    leading = _leading_status_segment(cells[3])
+                    if leading.startswith("✅"):
+                        violations.append(
+                            f"§二 新增批次「{cells[0]}」状态列不得以「✅」开头"
+                            f"（新建即终态，见 `B-0728财务专线核实` 等真实事故）：{preview}"
+                        )
+
+            # ⑧ 队列 #308 子项 F2：状态列含「✅」但不在开头片段即报（§一/§二
+            # 均适用，与决策点 1 的机器字段是否存在正交——即便 §一 已有
+            # [S:done] 前缀，其后自然语言正文仍可能含「✅」字样）。
+            if label in ("一", "二"):
+                status_idx = 5 if label == "一" else 3
+                status_cell = cells[status_idx] if len(cells) > status_idx else ""
+                if "✅" in status_cell and "✅" not in _leading_status_segment(status_cell):
+                    violations.append(
+                        f"§{label} 行状态列含「✅」但不在开头片段（头尾不一致，"
+                        f"见 2026-08-03 六行真实事故）：{preview}"
                     )
 
             if label in ROW_NUMBER_SECTIONS and cells[0].isdigit():
@@ -1130,10 +1314,32 @@ def _validate_release_structure(
                         f"{preview}"
                     )
 
+                # ⑨ 队列 #308 决策点 6（协议〇.9 措施 C）：只在本次真正新增了
+                # [D:机] 的 §一 行时才触发重新计数（不为纯编辑既有行的场景
+                # 做无意义的全表重算）。
+                if cells[0].isdigit() and int(cells[0]) not in old_numbers:
+                    _, domain_value, _ = _parse_status_domain_fields(cells[5])
+                    if domain_value == "机":
+                        new_mechanism_row_added = True
+
             if label in ("一", "四"):
                 touched_for_hold_consistency.append((line, cells, label))
 
     violations.extend(_validate_followup_hold_consistency(touched_for_hold_consistency, repo_root))
+
+    if new_mechanism_row_added:
+        # ⑨ 非阻断提示——不加入 violations，release 仍正常放行（协议〇.9
+        # 措施 C 原文："提示不阻断"，上限用途是给建行踩刹车，不是精确会计）。
+        cap = args.mechanism_wip_cap
+        wip_count, degraded = _count_mechanism_wip(new_sections.get("一", ""))
+        for note in degraded:
+            print(f"⚠ {note}")
+        if wip_count > cap:
+            print(
+                f"⚠ 机制类可动 WIP 当前 {wip_count}／{cap}，已超上限（协议〇.9 措施 C）——"
+                "建议本次新增前先关闭一条，或在任务描述内说明为何必须此时新增。"
+            )
+
     return violations
 
 
@@ -1228,6 +1434,14 @@ def cmd_acquire(args: argparse.Namespace) -> int:
             return 1
         reserve_requests = [(args.section, args.reserve)]
 
+    # 队列 #308 决策点 2：--domain 只对 §一 有意义（域字段范围红线仅 §一，
+    # 见 design.md Non-Goals）；未随任何 §一 预留请求提供即用法错误，不静默
+    # 忽略。
+    if args.domain is not None and "一" not in {s for s, _ in reserve_requests}:
+        print("✗ --domain 仅对 §一 预留请求生效，本次预留请求不含 §一（用法错误，"
+              "不静默忽略该参数）。")
+        return 1
+
     lock_path = _lock_path(args.file)
     # #197：以下"读判定→写"整段包进互斥临界区，防两个进程在同一窗口内都
     # 读到"无锁"、都写入成功、都相信自己持锁。
@@ -1273,7 +1487,7 @@ def _acquire_locked(
     _atomic_write_json(
         lock_path, {
             "who": args.who, "note": args.note or "", "held_since": held_since,
-            "history": new_history, "reserved": {},
+            "history": new_history, "reserved": {}, "domains": {},
         }
     )
 
@@ -1335,10 +1549,15 @@ def _acquire_locked(
                 return 1
         # 队列 #225 校验③：把本次预留的编号写回锁文件，release 时据此判定
         # "新增编号是否属于本次持锁期间实际预留过的集合"。
+        # 队列 #308 决策点 2：--domain 声明随同写入（仅 §一 有意义，见上方
+        # cmd_acquire 的用法校验）。
+        domains_map: dict[str, str] = {}
+        if args.domain is not None and "一" in reserved_map:
+            domains_map["一"] = args.domain
         _atomic_write_json(
             lock_path, {
                 "who": args.who, "note": args.note or "", "held_since": held_since,
-                "history": new_history, "reserved": reserved_map,
+                "history": new_history, "reserved": reserved_map, "domains": domains_map,
             }
         )
         nums = "；".join(
@@ -1346,6 +1565,9 @@ def _acquire_locked(
             for section, nums_list in reserved_map.items()
         )
         print(f"📍 已为你预留：{nums}")
+        if domains_map:
+            print(f"   域声明：{'；'.join(f'§{s}=[D:{d}]' for s, d in domains_map.items())}"
+                  "（写行时请在状态列开头带上对应的 [D:...] 域字段）")
         print("   （顶部高水位线已同步回写；即使本次未写满，编号不复用、留空即可）")
         print("   改完请立刻 release。")
         return 0
@@ -1441,10 +1663,21 @@ def main() -> int:
         help="队列 #185：一次性跨多分区预留（如 --reserve-multi 一:2 四:1），"
              "与 --reserve/--section 互斥",
     )
+    p_acquire.add_argument(
+        "--domain", choices=("机", "业"), default=None,
+        help="队列 #308 决策点 2：预留 §一 编号时一并声明域（机制/环境类 或 "
+             "业务场景类），随协议〇.10 并入审核门禁同一次交互完成；仅对本次"
+             "预留请求中含 §一 的部分生效，§一 之外（如仅 §四）提供本参数视为用法错误",
+    )
     p_acquire.set_defaults(func=cmd_acquire)
 
     p_release = sub.add_parser("release", help="编辑完立刻释放")
     p_release.add_argument("--who", default="", help="可选：校验释放的是自己占的锁")
+    p_release.add_argument(
+        "--mechanism-wip-cap", type=int, default=MECHANISM_WIP_CAP_DEFAULT,
+        help=f"队列 #308 决策点 6：机制类可动 WIP 上限（默认 {MECHANISM_WIP_CAP_DEFAULT}，"
+             "对齐协议〇.9 措施 C），超限仅提示不阻断",
+    )
     p_release.set_defaults(func=cmd_release)
 
     p_status = sub.add_parser("status", help="查看锁状态，无副作用")

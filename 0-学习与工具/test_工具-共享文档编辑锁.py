@@ -26,7 +26,9 @@ import 模块，覆盖子进程黑盒难以可靠触发的"陈旧互斥标记被
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -790,6 +792,102 @@ class RecentAcquireHistoryTests(unittest.TestCase):
         )
 
 
+class StatusDomainFieldParsingTests(unittest.TestCase):
+    """队列 #308 决策点 1/2/6：状态机器字段/域字段解析与措施 C 计数——纯
+    函数级白盒用例，不涉及 acquire/release 锁流程。"""
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def test_all_six_status_values_parse(self):
+        for value in ("done", "open", "partial", "hold", "blocked"):
+            with self.subTest(value=value):
+                status, domain, rest = self.module._parse_status_domain_fields(
+                    f"[S:{value}] 一些正文"
+                )
+                self.assertEqual(status, value)
+                self.assertIsNone(domain)
+                self.assertEqual(rest, " 一些正文")
+
+    def test_timed_value_with_date_parses(self):
+        status, domain, rest = self.module._parse_status_domain_fields(
+            "[S:timed=2026-08-25] 定时触发型，日期未到"
+        )
+        self.assertEqual(status, "timed=2026-08-25")
+        self.assertIsNone(domain)
+        self.assertEqual(rest, " 定时触发型，日期未到")
+
+    def test_status_and_domain_fields_together(self):
+        status, domain, rest = self.module._parse_status_domain_fields(
+            "[S:open][D:机] 待领（P1）"
+        )
+        self.assertEqual(status, "open")
+        self.assertEqual(domain, "机")
+        self.assertEqual(rest, " 待领（P1）")
+
+    def test_domain_business_value_parses(self):
+        _, domain, _ = self.module._parse_status_domain_fields("[S:partial][D:业] 在办中")
+        self.assertEqual(domain, "业")
+
+    def test_missing_field_returns_none_none_original_text(self):
+        """字段缺失——不得静默假定某个默认状态，返回 (None, None, 原文)。"""
+        original = "待领（P1，历史遗留行，尚未回填机器字段）"
+        status, domain, rest = self.module._parse_status_domain_fields(original)
+        self.assertIsNone(status)
+        self.assertIsNone(domain)
+        self.assertEqual(rest, original)
+
+    def test_malformed_status_value_returns_none(self):
+        """取值集合外的值（如中文枚举、拼写错误）不匹配语法，视同缺失。"""
+        status, domain, rest = self.module._parse_status_domain_fields("[S:已完成] 正文")
+        self.assertIsNone(status)
+        self.assertIsNone(domain)
+
+    def test_leading_whitespace_before_field_stripped(self):
+        status, domain, _ = self.module._parse_status_domain_fields("  [S:done][D:机] 正文")
+        self.assertEqual(status, "done")
+        self.assertEqual(domain, "机")
+
+    def test_count_mechanism_wip_counts_open_partial_hold_with_domain_ji(self):
+        section = (
+            "| 1 | 任务A | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 登记 |\n"
+            "| 2 | 任务B | CC | 指针 | 产出 | [S:partial][D:机] 在办 | 触碰区 | 登记 |\n"
+            "| 3 | 任务C | CC | 指针 | 产出 | [S:hold][D:机] 暂缓 | 触碰区 | 登记 |\n"
+        )
+        count, degraded = self.module._count_mechanism_wip(section)
+        self.assertEqual(count, 3)
+        self.assertEqual(degraded, [])
+
+    def test_count_mechanism_wip_excludes_blocked_timed_done(self):
+        section = (
+            "| 1 | 任务A | CC | 指针 | 产出 | [S:blocked][D:机] 等专员签认 | 触碰区 | 登记 |\n"
+            "| 2 | 任务B | CC | 指针 | 产出 | [S:timed=2026-09-01][D:机] 定时触发 | 触碰区 | 登记 |\n"
+            "| 3 | 任务C | CC | 指针 | 产出 | [S:done][D:机] 已完成 | 触碰区 | 登记 |\n"
+        )
+        count, degraded = self.module._count_mechanism_wip(section)
+        self.assertEqual(count, 0)
+
+    def test_count_mechanism_wip_excludes_business_domain(self):
+        section = "| 1 | 任务A | CC | 指针 | 产出 | [S:open][D:业] 待领 | 触碰区 | 登记 |\n"
+        count, _ = self.module._count_mechanism_wip(section)
+        self.assertEqual(count, 0)
+
+    def test_count_mechanism_wip_excludes_stop_marker_rows(self):
+        """🛑（永久关闭·仅手动唤醒）与状态字段正交——即便 [S:open][D:机]，
+        自然语言正文以 🛑 开头即不计入可动 WIP。"""
+        section = "| 1 | 任务A | CC | 指针 | 产出 | [S:open][D:机] 🛑 永久关闭，仅手动唤醒 | 触碰区 | 登记 |\n"
+        count, _ = self.module._count_mechanism_wip(section)
+        self.assertEqual(count, 0)
+
+    def test_count_mechanism_wip_missing_field_degrades_not_silently(self):
+        section = "| 1 | 任务A | CC | 指针 | 产出 | 待领（未回填机器字段的历史行） | 触碰区 | 登记 |\n"
+        count, degraded = self.module._count_mechanism_wip(section)
+        self.assertEqual(count, 0)
+        self.assertEqual(len(degraded), 1)
+        self.assertIn("#1", degraded[0])
+        self.assertIn("非静默降级", degraded[0])
+
+
 class ReleaseStructuralValidationTests(unittest.TestCase):
     """队列 #225：release 时对跨桌任务队列.md 的四项结构校验。
 
@@ -839,15 +937,21 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         )
         self.target_path.write_text(text, encoding="utf-8")
 
-    def _acquire(self, who="A", reserve=None, section=None, reserve_multi=None):
+    def _acquire(self, who="A", reserve=None, section=None, reserve_multi=None, domain=None):
         ns = argparse.Namespace(
             file=self.module.DEFAULT_TARGET, who=who, note="",
-            reserve=reserve, section=section, reserve_multi=reserve_multi,
+            reserve=reserve, section=section, reserve_multi=reserve_multi, domain=domain,
         )
         return self.module.cmd_acquire(ns)
 
-    def _release(self, who=""):
-        ns = argparse.Namespace(file=self.module.DEFAULT_TARGET, who=who)
+    def _release(self, who="", mechanism_wip_cap=None):
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who=who,
+            mechanism_wip_cap=(
+                mechanism_wip_cap if mechanism_wip_cap is not None
+                else self.module.MECHANISM_WIP_CAP_DEFAULT
+            ),
+        )
         return self.module.cmd_release(ns)
 
     def test_release_succeeds_with_no_changes(self):
@@ -1130,12 +1234,23 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
 
         self.assertEqual(self._release(who="A"), 0)
 
-    def test_new_batch_done_status_passes(self):
-        self.assertEqual(self._acquire(who="A"), 0)
+    def test_existing_batch_transitioning_to_done_status_passes(self):
+        """⑤不拦"✅"本身；队列 #308 子项 F1 新增的边界是"新增批次不得以 ✅
+        开头"，既有批次（本次持锁前已在快照里）合法转 ✅（sweep 或 CC 收工
+        标记完成）不受影响——用"先注册待处理、本次持锁内编辑为已完成"复现
+        这一合法路径（与 F1 用例集的"真正新增"场景区分开，见
+        `test_new_batch_status_starting_with_check_mark_blocks_release`）。"""
         self._write_queue(section_two_rows=(
-            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
-            "✅ 已完成（CC 直接提交，未走 sweep） |\n"
+            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |\n"
         ))
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |",
+            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
+            "✅ 已完成（CC 直接提交，未走 sweep） |",
+        )
+        self.target_path.write_text(text, encoding="utf-8")
 
         self.assertEqual(self._release(who="A"), 0)
 
@@ -1168,9 +1283,12 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         other_path = self.repo_root / "其他共享文件.md"
         other_path.write_text("随便写点内容 | 只有两列\n", encoding="utf-8")
         ns = argparse.Namespace(file="其他共享文件.md", who="A", note="",
-                                 reserve=None, section=None, reserve_multi=None)
+                                 reserve=None, section=None, reserve_multi=None, domain=None)
         self.assertEqual(self.module.cmd_acquire(ns), 0)
-        release_ns = argparse.Namespace(file="其他共享文件.md", who="A")
+        release_ns = argparse.Namespace(
+            file="其他共享文件.md", who="A",
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+        )
         self.assertEqual(self.module.cmd_release(release_ns), 0)
 
     def test_bypass_detection_writes_durable_log_for_default_target(self):
@@ -1200,19 +1318,174 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         other_target = "其他共享文件.md"
         (self.repo_root / other_target).write_text("原始内容\n", encoding="utf-8")
         self.assertEqual(self.module.cmd_acquire(argparse.Namespace(
-            file=other_target, who="A", note="", reserve=None, section=None, reserve_multi=None,
+            file=other_target, who="A", note="", reserve=None, section=None,
+            reserve_multi=None, domain=None,
         )), 0)
         self.assertEqual(self.module.cmd_release(
-            argparse.Namespace(file=other_target, who="A")
+            argparse.Namespace(
+                file=other_target, who="A",
+                mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            )
         ), 0)
         (self.repo_root / other_target).write_text("原始内容\n绕锁写入\n", encoding="utf-8")
 
         self.assertEqual(self.module.cmd_acquire(argparse.Namespace(
-            file=other_target, who="B", note="", reserve=None, section=None, reserve_multi=None,
+            file=other_target, who="B", note="", reserve=None, section=None,
+            reserve_multi=None, domain=None,
         )), 0)
 
         log_path = self.repo_root / "reports" / "queue_edit_lock_bypass.jsonl"
         self.assertFalse(log_path.exists())
+
+    # ---- 队列 #308 子项 F1（§二新增即终态防写）----------------------------
+
+    def test_new_batch_status_starting_with_check_mark_blocks_release(self):
+        """真正新增的批次（identity＝批次名，不在快照 §二 批次名集合内）
+        状态列以「✅」开头即拒绝——复现 `B-0728财务专线核实`/
+        `B-0728队列#125回填` 两批真实事故：登记时写了 ✅、被 sweep 判为
+        已处理、内容石沉大海。"""
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(section_two_rows=(
+            "| B-NEW | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
+            "✅ 已完成（新增批次直接写终态） |\n"
+        ))
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    # ---- 队列 #308 子项 F2（头尾不一致）------------------------------------
+
+    def test_section_one_check_mark_not_leading_blocks_release(self):
+        """开头片段（句级分隔符"。"之前）为"待处理"，✅ 出现在分隔符之后的
+        正文段落——头尾不一致，见 2026-08-03 六行真实事故。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = (
+            "| 201 | 测试任务 | CC | 指针 | 产出 | "
+            "待处理。子项已 ✅ 完成待收尾 | 触碰区 | 2026-08-09 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_section_two_check_mark_not_leading_blocks_release(self):
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(section_two_rows=(
+            "| B-NEW | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
+            "待处理。其中一步已 ✅ 完成 |\n"
+        ))
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_section_one_check_mark_leading_passes(self):
+        """§一（不同于 §二）没有"新增即终态"限制（F1 仅 §二）——新增行状态列
+        直接以「✅」开头且在最前（如补登记一件已实际完成的任务）应放行。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试任务 | CC | 指针 | 产出 | ✅ 已完成（补登记） | 触碰区 | 2026-08-09 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    # ---- 队列 #308 决策点 6（措施 C：机制类可动 WIP 上限提示）--------------
+
+    def test_mechanism_wip_over_cap_prints_warning_but_does_not_block(self):
+        self._write_queue(
+            section_one_rows=(
+                "| 150 | 既有机制行1 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-01 |\n"
+                "| 151 | 既有机制行2 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 新机制行 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-09 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A", mechanism_wip_cap=2)
+        self.assertEqual(result, 0, "超限仅提示不阻断，release 仍应成功")
+        self.assertIn("机制类可动 WIP 当前 3／2", buf.getvalue())
+
+    def test_mechanism_wip_within_cap_no_warning(self):
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 新机制行 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-09 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A", mechanism_wip_cap=8)
+        self.assertEqual(result, 0)
+        self.assertNotIn("机制类可动 WIP", buf.getvalue())
+
+    def test_mechanism_wip_not_recomputed_when_new_row_is_business_domain(self):
+        """新增行域为「业」（非「机」）——不触发本项重新计数（无提示，也不
+        因不触发本项而误判为通过失败，release 正常放行）。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="业"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 新业务行 | CC | 指针 | 产出 | [S:open][D:业] 待领 | 触碰区 | 2026-08-09 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A", mechanism_wip_cap=0)
+        self.assertEqual(result, 0)
+        self.assertNotIn("机制类可动 WIP", buf.getvalue())
+
+    def test_mechanism_wip_not_recomputed_when_only_existing_rows_edited(self):
+        """本次持锁期间只编辑既有行（无真正新增的 [D:机] 行）——不触发重新
+        计数，即便全表早已超过上限。"""
+        self._write_queue(
+            section_one_rows=(
+                "| 150 | 既有机制行 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "| 150 | 既有机制行 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-01 |",
+            "| 150 | 既有机制行 | CC | 指针 | 产出 | [S:partial][D:机] 在办中 | 触碰区 | 2026-08-01 |",
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A", mechanism_wip_cap=0)
+        self.assertEqual(result, 0)
+        self.assertNotIn("机制类可动 WIP", buf.getvalue())
+
+    # ---- 队列 #308 决策点 2（--domain 用法校验）----------------------------
+
+    def test_domain_without_section_one_in_request_rejected(self):
+        """--domain 仅对 §一 有意义——只预留 §四 时提供 --domain 是用法
+        错误，不静默忽略。"""
+        self._write_queue(hwm_four=40)
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who="A", note="",
+            reserve=1, section="四", reserve_multi=None, domain="机",
+        )
+        result = self.module.cmd_acquire(ns)
+        self.assertNotEqual(result, 0)
+
+    def test_domain_recorded_in_lock_data_when_reserving_section_one(self):
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        lock_data = json.loads((self.repo_root / "queue.md.editlock").read_text(encoding="utf-8"))
+        self.assertEqual(lock_data.get("domains"), {"一": "机"})
 
 
 class FollowupReadmeStructuralValidationTests(unittest.TestCase):
@@ -1247,12 +1520,15 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
     def _acquire(self, who="A"):
         ns = argparse.Namespace(
             file=self.module.FOLLOWUP_README_TARGET, who=who, note="",
-            reserve=None, section=None, reserve_multi=None,
+            reserve=None, section=None, reserve_multi=None, domain=None,
         )
         return self.module.cmd_acquire(ns)
 
     def _release(self, who=""):
-        ns = argparse.Namespace(file=self.module.FOLLOWUP_README_TARGET, who=who)
+        ns = argparse.Namespace(
+            file=self.module.FOLLOWUP_README_TARGET, who=who,
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+        )
         return self.module.cmd_release(ns)
 
     def test_release_succeeds_with_no_changes(self):
@@ -1303,6 +1579,98 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
         self.assertEqual(self._acquire(who="A"), 0)
         edited_row = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项（已更新） | 不急 | ✅ 已发 |\n"
         self._write_readme(edited_row)
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    # ---- 队列 #308 子项 G（跟进信串行原则闸）--------------------------------
+
+    def test_serial_gate_blocks_when_prior_status_is_draft(self):
+        prior = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(prior)
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(prior + new_row)
+
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_serial_gate_blocks_when_prior_status_is_finalized(self):
+        prior = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | 🆕 待发 |\n"
+        self._write_readme(prior)
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(prior + new_row)
+
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_serial_gate_blocks_when_prior_status_is_paused(self):
+        prior = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ⏸ 暂缓 |\n"
+        self._write_readme(prior)
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(prior + new_row)
+
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_serial_gate_blocks_when_prior_status_is_pushed_but_not_closed(self):
+        """「✅ 已推送 <时刻>」不是闭环态——闭环态唯一取值是
+        「📥 已回件并回灌 <日期>」（信推送出去不等于对方已回件回灌完毕）。"""
+        prior = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | ✅ 已推送 2026-08-06 01:30 UTC |\n"
+        self._write_readme(prior)
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(prior + new_row)
+
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_serial_gate_passes_when_prior_status_closed(self):
+        prior = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | 📥 已回件并回灌 2026-08-08 |\n"
+        self._write_readme(prior)
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(prior + new_row)
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_serial_gate_waiver_allows_release_and_prints_notice(self):
+        prior = "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项 | 不急 | 🆕 待发 |\n"
+        self._write_readme(prior)
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = (
+            "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | "
+            "新事项，串行豁免：业务方要求两条并行跟进 | 不急 | ⏳ 待你审 |\n"
+        )
+        self._write_readme(prior + new_row)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        self.assertEqual(result, 0)
+        self.assertIn("检测到串行豁免声明", buf.getvalue())
+
+    def test_serial_gate_not_triggered_for_first_time_recipient(self):
+        """该收信人历史上首次出现——无「前一封」可比对，不受串行原则约束。"""
+        self._write_readme()
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 财务部#1 | 2026-08-09 | 财务部 · 唐燕萍 | 首次跟进 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(new_row)
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_serial_gate_not_triggered_by_editing_existing_row(self):
+        """本次持锁期间只编辑既有行（approve_followup_letter.py 的合法产物），
+        不涉及"新增"某收信人的登记行——即便同一收信人另有一封非闭环的旧信，
+        也不应触发串行闸（本项只管新增行）。"""
+        rows = (
+            "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 测试事项一 | 不急 | 🆕 待发 |\n"
+            "| 采购部#12 | 2026-08-06 | 采购部 · 姚祖怡 | 测试事项二 | 不急 | ⏳ 待你审 |\n"
+        )
+        self._write_readme(rows)
+        self.assertEqual(self._acquire(who="A"), 0)
+        edited_rows = rows.replace(
+            "| 采购部#12 | 2026-08-06 | 采购部 · 姚祖怡 | 测试事项二 | 不急 | ⏳ 待你审 |",
+            "| 采购部#12 | 2026-08-06 | 采购部 · 姚祖怡 | 测试事项二 | 不急 | 🆕 待发 |",
+        )
+        self._write_readme(edited_rows)
 
         self.assertEqual(self._release(who="A"), 0)
 
@@ -1509,12 +1877,15 @@ class HoldConsistencyValidationTests(unittest.TestCase):
     def _acquire(self, who="A", reserve=None, section=None):
         ns = argparse.Namespace(
             file=self.module.DEFAULT_TARGET, who=who, note="",
-            reserve=reserve, section=section, reserve_multi=None,
+            reserve=reserve, section=section, reserve_multi=None, domain=None,
         )
         return self.module.cmd_acquire(ns)
 
     def _release(self, who=""):
-        ns = argparse.Namespace(file=self.module.DEFAULT_TARGET, who=who)
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who=who,
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+        )
         return self.module.cmd_release(ns)
 
     def test_hold_row_with_readme_still_pending_blocks_release(self):

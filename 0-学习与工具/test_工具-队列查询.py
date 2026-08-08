@@ -21,6 +21,8 @@ FIXTURE = """## 一、任务看板
 | 101 | 示例任务B（头尾冲突场景，模拟 #268 真实事故） | CC | 无 | 无 | ✅ 已完成初判——但深入核实后发现前提有误，实际仍待领，需重新处理。 | 无 | 2026-08-01 |
 | 102 | 示例任务C（反方向：开头待领，结尾已拍板） | CC | 无 | 无 | 待领——补充说明：Shao Peishen 已拍板选项 (a)，只是尚未回填措辞。 | 无 | 2026-08-01 |
 | 103 | 列偏移场景 | CC | 无 | 无 | 状态含裸竖线|导致列数偏移 | 无 | 2026-08-01 |
+| 104 | 机器字段场景（队列 #308） | CC | 无 | 无 | [S:open][D:机] 待领（P1） | 无 | 2026-08-01 |
+| 105 | 机器字段+正文头尾冲突场景 | CC | 无 | 无 | [S:done][D:机] ✅ 已完成初判——但深入核实后发现前提有误，实际仍待领。 | 无 | 2026-08-01 |
 
 ## 二、待 commit 批次（CC 取活销行）
 
@@ -75,6 +77,28 @@ class QueueQueryTests(unittest.TestCase):
     def test_clean_row_no_conflict_warning(self):
         result = run("--row", "100", "--section", "一", "--file", str(self.target))
         self.assertNotIn("冲突警告", result.stdout)
+
+    def test_row_without_machine_field_shows_degradation_notice(self):
+        result = run("--row", "100", "--section", "一", "--file", str(self.target))
+        self.assertIn("未识别到 [S:...] 机器字段", result.stdout)
+
+    def test_row_with_machine_field_shows_parsed_values(self):
+        result = run("--row", "104", "--section", "一", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("机器字段解析", result.stdout)
+        self.assertIn("状态＝open", result.stdout)
+        self.assertIn("域 机", result.stdout)
+        self.assertNotIn("冲突警告", result.stdout)
+
+    def test_machine_field_row_conflict_check_applies_to_natural_text_only(self):
+        """字段本身（[S:done][D:机]）不参与头尾冲突扫描，只扫字段之后的
+        自然语言正文——本例正文本身仍有真实头尾冲突（✅已完成…实际仍待
+        领），应仍被检出。"""
+        result = run("--row", "105", "--section", "一", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("机器字段解析", result.stdout)
+        self.assertIn("状态＝done", result.stdout)
+        self.assertIn("冲突警告", result.stdout)
 
     def test_section_two_lookup_by_batch_id(self):
         result = run("--row", "B-0801_示例批次", "--section", "二", "--file", str(self.target))

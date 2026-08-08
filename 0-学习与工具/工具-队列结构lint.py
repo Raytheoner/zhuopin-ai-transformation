@@ -68,6 +68,18 @@ def lint(repo_root: Path) -> list[str]:
                     f"§二 行状态列开头片段既不含「待」也不含「✅」"
                     f"（会被 sweep 判为状态列模糊，见 #247）：{preview}"
                 )
+            if label == "一":
+                # 队列 #308 决策点 1：106 行存量回填与七处消费者切换均已
+                # 完成后新增的硬门禁——§一 任意数据行状态列不以 `[S:` 开头
+                # 即判违规，把"未来新行必须带机器字段"从约定升级为可执行
+                # 门禁。回填/消费者切换完成前不得上线（会对存量误报），
+                # 现已确认全部完成（见队列 #308 行内回写）。
+                status_value, _, _ = editlock._parse_status_domain_fields(cells[5])
+                if status_value is None:
+                    violations.append(
+                        f"§一 行状态列缺少机器可读字段（须以 `[S:done/open/partial/"
+                        f"hold/blocked/timed=YYYY-MM-DD]` 开头，见队列 #308）：{preview}"
+                    )
     return violations
 
 
