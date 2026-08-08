@@ -9,6 +9,9 @@ from aibot_service.queue_appender import (
     _bump_section_one_high_water_mark,
     _section_bounds,
     _ROW_ID_RE,
+    _normalize_row_field,
+    _assert_row_column_count,
+    RowColumnIntegrityError,
 )
 from aibot_service.queue_edit_lock import QueueLockBusy
 
@@ -593,6 +596,107 @@ def test_append_pending_task_with_busy_lock_does_not_write_and_raises(tmp_path):
     assert lock.acquire_calls == 1
     # 锁忙时从未进入读改写循环，release 不应被调用（试都没试，谈不上要释放）。
     assert lock.release_calls == 0
+
+
+# ── 写侧竖线归一化 + 列数自检（队列 #305）─────────────────────────────────
+#
+# `append_pending_task` 此前把 description/owner/input_pointer/expected_
+# output/touch_zone 五个插值字段裸拼进表格行，零转义、零列数自检。真实取
+# 证：`intake.py` 会把企微上传件的**原始文件名**拼进 description/input_
+# pointer——`|` 在 macOS／Linux／Android 上是合法文件名字符，专员从这些
+# 端上传一个名字里带竖线的文件即可让机器人往队列写进一行列数被撑大的
+# 行，是队列写入侧唯一一条不经编辑锁、不经任何校验、由外部输入直达文件
+# 的路径。本节验证两层止血：①插值前竖线归一化（半角 `|` → 全角 `／`，
+# 与 #164 既有约定同口径）②写回前列数自检兜底，不符即 fail-loud 不写入。
+
+
+def test_normalize_row_field_replaces_bare_pipe_with_fullwidth_slash():
+    assert _normalize_row_field("危险|文件.xlsx") == "危险／文件.xlsx"
+
+
+def test_normalize_row_field_leaves_text_without_pipe_unchanged():
+    assert _normalize_row_field("正常文件.xlsx") == "正常文件.xlsx"
+    assert _normalize_row_field("") == ""
+
+
+def test_assert_row_column_count_accepts_well_formed_row():
+    row = "| 1 | d | o | i | e | 待领 |  | 2026-08-08 |"
+    _assert_row_column_count(row, task_id=1)  # 不抛异常即通过
+
+
+def test_assert_row_column_count_rejects_row_with_extra_column():
+    malformed_row = "| 1 | d | o | i|extra | e | 待领 |  | 2026-08-08 |"
+    with pytest.raises(RowColumnIntegrityError):
+        _assert_row_column_count(malformed_row, task_id=1)
+
+
+def test_append_pending_task_normalizes_bare_pipe_from_malicious_filename(tmp_path):
+    """真实攻击面复现（队列 #305 取证）：企微上传件文件名含裸竖线，拼进
+    description 与 input_pointer 后必须被归一化，不得撑出多余列。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+
+    row = append_pending_task(
+        queue_path,
+        description="企微反馈自动归档：姚祖怡 发来文件 危险|文件.xlsx",
+        owner="采购专线",
+        input_pointer="`7-外部文档/采购部/危险|文件.xlsx`",
+        expected_output="核实内容并按需处理",
+        date_str="2026-08-08",
+    )
+
+    assert row.count("|") == 9  # § 一表格 8 列 = 9 条边界/分隔竖线
+    assert "危险／文件.xlsx" in row
+    assert "危险|文件.xlsx" not in row
+    new_text = queue_path.read_text(encoding="utf-8")
+    assert row in new_text
+
+
+def test_append_pending_task_with_normal_filename_is_byte_for_byte_unaffected(tmp_path):
+    """回归防线：不含竖线的正常内容，归一化前后行文本必须完全一致，不
+    得误伤不需要处理的内容。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+
+    row = append_pending_task(
+        queue_path,
+        description="企微反馈自动归档：姚祖怡 发来文件 正常文件.xlsx",
+        owner="采购专线",
+        input_pointer="`7-外部文档/采购部/正常文件.xlsx`",
+        expected_output="核实内容并按需处理",
+        date_str="2026-08-08",
+    )
+    assert row == (
+        "| 19 | 企微反馈自动归档：姚祖怡 发来文件 正常文件.xlsx | 采购专线 | "
+        "`7-外部文档/采购部/正常文件.xlsx` | 核实内容并按需处理 | 待领 |  | 2026-08-08 |"
+    )
+
+
+def test_append_pending_task_column_self_check_blocks_write_when_normalization_bypassed(
+    tmp_path, monkeypatch
+):
+    """列数自检是止血第二层：即便归一化本身因未来新增插值字段/改动出现
+    遗漏（此处用 monkeypatch 模拟"归一化失效"这一前提），也必须 fail-
+    loud 拒绝写入，不能让一行结构被破坏的行悄悄进了队列文件。"""
+    import aibot_service.queue_appender as qa
+
+    monkeypatch.setattr(qa, "_normalize_row_field", lambda value: value)
+
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(SAMPLE_QUEUE, encoding="utf-8")
+
+    with pytest.raises(RowColumnIntegrityError):
+        append_pending_task(
+            queue_path,
+            description="含裸竖线|的描述",
+            owner="采购专线",
+            input_pointer="p",
+            expected_output="e",
+            date_str="2026-08-08",
+        )
+
+    # 拒绝写入：文件内容必须与写入前完全一致，不留半成品
+    assert queue_path.read_text(encoding="utf-8") == SAMPLE_QUEUE
 
 
 def test_append_pending_task_releases_lock_even_when_body_raises(tmp_path):

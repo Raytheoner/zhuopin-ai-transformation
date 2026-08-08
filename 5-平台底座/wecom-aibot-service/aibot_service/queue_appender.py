@@ -13,6 +13,53 @@ _SECTION_HEADING_RE = re.compile(r"^##\s")
 _HIGH_WATER_MARK_LINE_RE = re.compile(r"编号高水位线")
 _HIGH_WATER_MARK_SECTION_ONE_RE = re.compile(r"§一\s*#\s*(\d+)")
 
+# 队列 #305：§一 表格每行 8 个字段（#/任务/领取方/输入指针/期望产出/状态/
+# 触碰区/登记）＝ 9 条边界/分隔竖线（首尾各 1 条 + 7 条字段间分隔）。
+_SECTION_ONE_COLUMN_COUNT = 8
+_BARE_PIPE = "|"
+_PIPE_SUBSTITUTE = "／"
+
+
+class RowColumnIntegrityError(RuntimeError):
+    """拼装后的队列行列数与预期不符（队列 #305）——不写入，交调用方既有
+    异常处理路径（`connection.py` 的 `message_dispatch_failed` 审计留痕）
+    处理，而不是把一行列数被撑大/压小的行悄悄写进队列文件。"""
+
+
+def _normalize_row_field(value: str) -> str:
+    """插值进队列行前的裸竖线归一化（队列 #305）。
+
+    半角 `|` 是 Markdown 表格的列分隔符——`append_pending_task` 此前把
+    description/owner/input_pointer/expected_output/touch_zone 五个插值
+    字段裸拼进表格行，零转义。真实取证：`intake.py` 会把企微上传件的
+    **原始文件名**拼进 description/input_pointer，而 `|` 在 macOS／
+    Linux／Android 上是合法文件名字符——专员从这些端上传一个名字里带竖
+    线的文件，就能让机器人往队列写进一行列数被撑大的行，是队列写入侧唯
+    一一条不经编辑锁、不经任何校验、由外部输入直达文件的路径。对全部插
+    值字段一视同仁做同一处理，不依赖调用方自证"这个字段安全"。改用全角
+    `／` 替换，与 #164 既有约定（`一｜四` → `一／四`）同口径，不新起一套
+    符号约定。
+    """
+    return value.replace(_BARE_PIPE, _PIPE_SUBSTITUTE)
+
+
+def _assert_row_column_count(row: str, *, task_id: int) -> None:
+    """写回前对拼好的整行做结构自检（队列 #305 止血第二层）。
+
+    正常路径下 `_normalize_row_field` 已消掉全部裸竖线，本函数理论上恒
+    真——留作 fail-loud 兜底：若未来新增插值字段时漏做归一化，或归一化
+    本身有遗漏，宁可拒绝写入让调用方的既有异常处理路径接住，也不能让一
+    行结构被破坏的行悄悄进了队列文件。
+    """
+    expected_pipes = _SECTION_ONE_COLUMN_COUNT + 1
+    actual_pipes = row.count(_BARE_PIPE)
+    if actual_pipes != expected_pipes:
+        raise RowColumnIntegrityError(
+            f"append_pending_task：拼装的第 {task_id} 行竖线数 {actual_pipes} "
+            f"≠ 预期 {expected_pipes}（§一应为 {_SECTION_ONE_COLUMN_COUNT} 列），"
+            f"已拒绝写入，不落盘：{row!r}"
+        )
+
 
 class QueueEditLock(Protocol):
     """队列文件本地写入前的占锁契约（队列 #168）。
@@ -177,9 +224,12 @@ def append_pending_task(
 
             task_id = _next_task_id(lines, start, end)
             row = (
-                f"| {task_id} | {description} | {owner} | {input_pointer} | "
-                f"{expected_output} | 待领 | {touch_zone} | {date_str} |"
+                f"| {task_id} | {_normalize_row_field(description)} | "
+                f"{_normalize_row_field(owner)} | {_normalize_row_field(input_pointer)} | "
+                f"{_normalize_row_field(expected_output)} | 待领 | "
+                f"{_normalize_row_field(touch_zone)} | {date_str} |"
             )
+            _assert_row_column_count(row, task_id=task_id)
             # 与追加同一次读改写内回写高水位线（队列 #146）——标注行不存在/解析
             # 失败时 _bump_section_one_high_water_mark 原样跳过，不影响追加本身。
             _bump_section_one_high_water_mark(lines, task_id)
