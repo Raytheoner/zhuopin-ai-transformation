@@ -14,6 +14,19 @@ worktree 的所有提交都已包含在 origin/master 里——删除不会丢�
 ahead=0 但工作区仍有未提交改动的 worktree，不视为"安全"候选，只作为观察项
 单独列出，交人工确认那些改动是否无价值。
 
+第三个桶（队列 #267，2026-08-08 加）：ahead=0 且 tracked 干净，但工作区内存在
+`.gitignore` 命中的非空内容（如 `reports/`、`.env`、`real_frozen/`、`*.db`）——
+这类内容不会被 `git status --porcelain`（不带 `--ignored`）识别，此前会被误判为
+"安全可删"落进第①桶，而 `git worktree remove` 实际会把这些文件一并永久清空。
+**真实事故（非假想）**：队列 #262/#263 两份签字审计报告落在某 worktree 的
+`reports/`（gitignore 命中），该 worktree 被判定为"ahead=0 且干净"后
+`git worktree remove`，两份文件随之真实丢失，事后靠重新独立核验补救——详见
+队列 #267。本桶只做标注、逐个列出具体路径，不做任何删除，红线与前两桶一致。
+**边界（如实登记，不得假装闭合，Shao Peishen 2026-08-07 明示要求）**：它只覆盖
+『经工具走』的路径，直接手敲 `git worktree remove` 仍无拦截——本次事故本身
+正是手敲触发，要覆盖需在 `remove` 前加包装器，经评估判断不值得（多一层包装即
+多一个可绕过物），故未做，如实登记为未覆盖缺口。
+
 用法：
   python 0-学习与工具/工具-孤儿worktree扫描.py
   python 0-学习与工具/工具-孤儿worktree扫描.py --repo-root <path>   # 仅测试用
@@ -80,6 +93,40 @@ def _is_dirty(repo_root: Path, worktree_path: str) -> bool:
     return bool(result.stdout.strip()) if result.returncode == 0 else True  # 查不出时保守当"脏"
 
 
+def _has_any_file(path: Path) -> bool:
+    """path 自身是文件，或是包含至少一个文件（递归）的目录——用于排除"目录存在
+    但完全为空"的假阳性：git 对显式匹配 ignore 规则的目录，即便其内容为空，
+    `--ignored=matching` 仍会原样报告该目录（已实测坐实，非文档推测），必须
+    再查一次文件系统才能兑现"非空内容"这个判据。"""
+    if path.is_file():
+        return True
+    if path.is_dir():
+        return any(p.is_file() for p in path.rglob("*"))
+    return False  # 路径已不存在
+
+
+def _ignored_content_paths(worktree_path: str) -> list[str]:
+    """worktree 内命中 `.gitignore` 规则的非空内容路径。
+
+    `--ignored=matching` 对显式匹配某条 ignore 规则的目录只报告目录本身一行
+    （不展开成员文件——已实测坐实，`traditional`/`matching` 两模式的差异只体现
+    在"目录本身不匹配、但内容全被忽略"这一更细分场景，本项目 `.gitignore` 里
+    `**/reports/` 这类目录级规则不落在那个场景）；对单独匹配的文件（如 `.env`）
+    则逐个列出。查不出时（如路径已不存在）返回空列表——本函数是"锦上添花"的
+    第三桶，缺失信息不应生成误导性阻塞项，这与 `_is_dirty` 遇错误时保守判"脏"
+    的策略刻意不同：那里判断的是"能不能安全删"，本函数只是在"已判定安全"之后
+    再加一层如实标注。
+    """
+    result = _run_git(
+        ["status", "--porcelain=v1", "--ignored=matching"], Path(worktree_path), check=False,
+    )
+    if result.returncode != 0:
+        return []
+    wt_path = Path(worktree_path)
+    candidates = [line[3:].strip() for line in result.stdout.splitlines() if line.startswith("!! ")]
+    return [p for p in candidates if _has_any_file(wt_path / p)]
+
+
 def scan(repo_root: Path) -> dict:
     _run_git(["fetch", "origin", "master", "--quiet"], repo_root, check=False)  # 尽力而为，失败不致命
 
@@ -89,6 +136,7 @@ def scan(repo_root: Path) -> dict:
 
     orphan_worktrees = []
     dirty_but_merged = []
+    ignored_content_worktrees = []
     for wt in worktrees[1:] if worktrees else []:
         ref = wt.get("branch") or wt.get("head")
         if not ref:
@@ -98,6 +146,10 @@ def scan(repo_root: Path) -> dict:
             continue
         if _is_dirty(repo_root, wt["path"]):
             dirty_but_merged.append({**wt, "ahead": ahead})
+            continue
+        ignored_paths = _ignored_content_paths(wt["path"])
+        if ignored_paths:
+            ignored_content_worktrees.append({**wt, "ahead": ahead, "ignored_paths": ignored_paths})
         else:
             orphan_worktrees.append({**wt, "ahead": ahead})
 
@@ -119,6 +171,7 @@ def scan(repo_root: Path) -> dict:
         "main_worktree": main_worktree,
         "orphan_worktrees": orphan_worktrees,
         "dirty_but_merged_worktrees": dirty_but_merged,
+        "ignored_content_worktrees": ignored_content_worktrees,
         "orphan_branches": orphan_branches,
     }
 
@@ -141,8 +194,23 @@ def format_report(findings: dict) -> str:
     for wt in dm:
         lines.append(f"  - {wt['path']}（分支 {wt.get('branch') or wt.get('head')}）——不建议直接删")
 
+    ic = findings["ignored_content_worktrees"]
+    lines.append(
+        f"\n③ 观察项：ahead=0 且 tracked 干净，但存在 .gitignore 命中的非空内容（{len(ic)} 个）——"
+        "删除将永久销毁以下不在 git 里的文件（队列 #267，真实事故：#262/#263 两份签字审计报告"
+        "曾因此被 `git worktree remove` 一并清空）。**边界（如实登记，不得假装闭合）**："
+        "它只覆盖『经工具走』的路径，直接手敲 `git worktree remove` 仍无拦截："
+    )
+    if not ic:
+        lines.append("  （无）")
+    for wt in ic:
+        lines.append(f"  - {wt['path']}（分支 {wt.get('branch') or wt.get('head')}）"
+                     "——不在 git 里、删除即永久丢失：")
+        for p in wt["ignored_paths"]:
+            lines.append(f"      · {p}")
+
     ob = findings["orphan_branches"]
-    lines.append(f"\n③ 孤儿分支候选（无 worktree 关联，ahead=0，{len(ob)} 个）：")
+    lines.append(f"\n④ 孤儿分支候选（无 worktree 关联，ahead=0，{len(ob)} 个）：")
     if not ob:
         lines.append("  （无）")
     for b in ob:

@@ -107,6 +107,64 @@ class OrphanWorktreeScanTests(unittest.TestCase):
         branches = [b["branch"] for b in findings["orphan_branches"]]
         self.assertIn("claude/stale-no-worktree", branches)
 
+    def test_ignored_content_worktree_reported_separately_not_as_safe_orphan(self):
+        """队列 #267 真实事故复现：ahead=0 且 tracked 干净，但 gitignore 命中的
+        非空内容（如 reports/ 下的签字材料）此前会被误判入①桶"安全可删"，
+        `git worktree remove` 会把这些文件一并永久清空。"""
+        (self.main / ".gitignore").write_text("reports/\n", encoding="utf-8")
+        _git(self.main, "add", "-A")
+        _git(self.main, "commit", "-q", "-m", "add gitignore")
+        _git(self.main, "push", "-q", "origin", "master")
+
+        wt = self._add_worktree("has-ignored-reports", "claude/has-ignored-reports")
+        (wt / "output.md").write_text("完成的产出\n", encoding="utf-8")
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-q", "-m", "worktree 产出")
+        self._merge_branch_into_master("claude/has-ignored-reports")
+
+        reports_dir = wt / "reports"
+        reports_dir.mkdir()
+        (reports_dir / "签字材料.md").write_text("重要凭证\n", encoding="utf-8")
+
+        findings = orphan_scan.scan(self.main)
+        orphan_paths = [w["path"] for w in findings["orphan_worktrees"]]
+        ignored_entries = findings["ignored_content_worktrees"]
+        ignored_paths = [w["path"] for w in ignored_entries]
+        self.assertFalse(any(_same_path(p, wt) for p in orphan_paths),
+                          "存在未入库的 gitignore 内容时不应判定为可安全删除")
+        self.assertTrue(any(_same_path(p, wt) for p in ignored_paths), ignored_paths)
+        matched = next(w for w in ignored_entries if _same_path(w["path"], wt))
+        # git --ignored=matching 对显式匹配规则的目录只报告目录本身一行（已实测
+        # 坐实，不展开成员文件），故断言目录路径本身出现，而非其内部文件名。
+        self.assertTrue(any("reports" in p for p in matched["ignored_paths"]),
+                         matched["ignored_paths"])
+
+        report = orphan_scan.format_report(findings)
+        self.assertIn("删除将永久销毁以下不在 git 里的文件", report)
+        self.assertIn("经工具走", report)  # 边界如实登记，不得假装闭合
+        self.assertIn("reports", report)
+
+    def test_worktree_with_only_empty_ignored_dir_still_treated_as_safe_orphan(self):
+        """空的 gitignore 目录（无任何文件）不应触发③桶——判据是"非空内容"，
+        不是"目录是否存在"，避免把真正无害的空壳误判为需要人工介入。"""
+        (self.main / ".gitignore").write_text("empty_reports/\n", encoding="utf-8")
+        _git(self.main, "add", "-A")
+        _git(self.main, "commit", "-q", "-m", "add gitignore")
+        _git(self.main, "push", "-q", "origin", "master")
+
+        wt = self._add_worktree("empty-ignored-dir", "claude/empty-ignored-dir")
+        (wt / "output.md").write_text("完成的产出\n", encoding="utf-8")
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-q", "-m", "worktree 产出")
+        self._merge_branch_into_master("claude/empty-ignored-dir")
+        (wt / "empty_reports").mkdir()  # 目录存在但为空——git 不追踪空目录
+
+        findings = orphan_scan.scan(self.main)
+        orphan_paths = [w["path"] for w in findings["orphan_worktrees"]]
+        ignored_paths = [w["path"] for w in findings["ignored_content_worktrees"]]
+        self.assertTrue(any(_same_path(p, wt) for p in orphan_paths), orphan_paths)
+        self.assertFalse(any(_same_path(p, wt) for p in ignored_paths), ignored_paths)
+
     def test_scan_never_deletes_anything(self):
         wt = self._add_worktree("must-survive", "claude/must-survive")
         (wt / "output.md").write_text("完成的产出\n", encoding="utf-8")
