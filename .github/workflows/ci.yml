@@ -1,0 +1,94 @@
+name: CI 基线
+
+# 队列 #309 步骤 2（CI 基线上线）。交付条件仍是步骤 3「退休等量 sweep
+# 检查」，本文件只是步骤 2 本身，不代表 #309 已完工。
+#
+# 🔴 硬约束（步骤 1 实测坐实，配置前提非可选优化，详见
+# 3-治理与合规/构建环境基建方案-CI基线与业务环境双队列-2026-08-08.md）：
+# 测试作业必须逐子项目 `cd` 后独立跑 pytest，不得在仓库根一次性跑——
+# 根目录一次性跑会因多个场景同名 `tests/test_golden.py` 等模块名冲突产生
+# 20 个 collection error（pytest 无 `__init__.py` 时按 rootdir 相对路径
+# 解析模块名，同名文件跨目录会撞）。已被两条外部评审建议否决：
+# ①「先重构 20 个冲突文件」——前提是"存在真实盲区"，已证伪：逐子项目跑
+# 时这些文件全部正常收集执行，不存在盲区，重构没有对应的真实问题要解决；
+# ②「失败步骤挂企微 webhook 告警」——方向对但会新增第 9 类"只报出现不报
+# 解除"的告警，须等 #308 子项 D1 的告警解除通用骨架落地后再建，本次不做。
+#
+# 步骤 1（2026-08-08，干净环境即本文件所依赖的这套 CI 本身、无 .env、无
+# 内网 LAN）实测基线：13 个子项目，1704 passed / 40 skipped / 0 failed。
+# 见 `.github/ci-requirements.txt` 头部注释与队列 #309 行回填。
+
+"on":
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: "测试 · ${{ matrix.project }}"
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - "0-学习与工具"
+          - "0-学习与工具/md转Word工具"
+          - "1-转型规划/AI运营指挥中心"
+          - "4-数字员工/财务部/FI1-供应链仓库对账"
+          - "4-数字员工/财务部/FI2-三单匹配自动对账"
+          - "4-数字员工/质量部/QD-A-8D不良分析"
+          - "4-数字员工/质量部/QD-B-立项审核门禁"
+          - "4-数字员工/运营部/O2-物料齐套预警"
+          - "4-数字员工/采购部/SC1-供应商风险初筛"
+          - "4-数字员工/采购部/SC7-库存优化建议"
+          - "4-数字员工/采购部/SC8-客户订单交期智能承诺"
+          - "5-平台底座/wecom-aibot-service"
+          - "5-平台底座/zhuopin_platform"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: "pip"
+          cache-dependency-path: ".github/ci-requirements.txt"
+
+      - name: 安装 CI 依赖闭包
+        run: pip install -r .github/ci-requirements.txt
+
+      # 无 .env（checkout 天然不带，.env 系列全部 gitignore）、无内网 LAN
+      # （GitHub 托管 runner 出不了公司内网），复刻步骤 1 的干净环境前提。
+      - name: "cd 子项目后独立跑 pytest（不得在仓库根一次性跑，见文件头部说明）"
+        working-directory: ${{ matrix.project }}
+        run: python -m pytest -q --tb=short
+
+  openspec-validate:
+    name: "openspec validate --all --strict"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: 安装 openspec CLI
+        run: npm install -g @fission-ai/openspec@1.7.0
+      - run: openspec validate --all --strict
+
+  queue-structure-lint:
+    name: "队列结构 lint（列数／裸竖线／§二状态列格式）"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python 0-学习与工具/工具-队列结构lint.py
+
+  secret-scan:
+    name: "凭据扫描"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python 0-学习与工具/工具-密钥扫描lint.py
