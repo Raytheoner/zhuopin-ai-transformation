@@ -104,9 +104,18 @@ TEST_FILE_RE = re.compile(r"(^|/)(test_[^/]+\.py|[^/]+_test\.py)$|(^|/)tests/")
 
 
 def _tracked_files(repo_root: Path) -> list[str]:
+    # -c core.quotepath=false：git 默认（true）会把路径里的非 ASCII 字节
+    # 八进制转义（如中文目录名），本项目路径几乎全是中文，不关掉这个开关
+    # 会让 ENV_EXAMPLE_RE 等按字面 UTF-8 文本匹配的正则全部落空——本机
+    # 全局 git 配置恰好已把 core.quotepath 设为 false，本地测试因此从未
+    # 暴露这个问题；GitHub Actions runner 是全新 checkout、用 git 默认值，
+    # 首次真实 CI 运行（gh run 31249058308）才把它暴露出来（`.env.example`
+    # 被误判为需要跟踪限制之外的 .env 类文件）。理由与 `工具-落库sweep.py`
+    # `_run_git`/测试文件 `_git` helper 里同款设置完全一致，不是本文件
+    # 独有的新踩坑。
     result = subprocess.run(
-        ["git", "ls-files"], cwd=repo_root, capture_output=True, text=True,
-        encoding="utf-8", check=True,
+        ["git", "-c", "core.quotepath=false", "ls-files"], cwd=repo_root,
+        capture_output=True, text=True, encoding="utf-8", check=True,
     )
     return [line for line in result.stdout.splitlines() if line]
 
