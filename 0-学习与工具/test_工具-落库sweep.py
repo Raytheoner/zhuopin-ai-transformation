@@ -770,26 +770,58 @@ class SyncBehindOriginTests(SweepTestBase):
         # init + 另一worktree推送 + 本批次 + 台账重跑 = 4
         self.assertEqual(len(origin_log.strip().splitlines()), 4, origin_log)
 
-    def test_diverged_from_origin_master_skips_without_forcing(self):
+    def test_diverged_with_genuine_conflict_still_ends_in_fork_alert_via_reconcile(self):
+        """队列 #309 子项 F（2026-08-08）起，本用例的实际路径已变化——原名
+        `test_diverged_from_origin_master_skips_without_forcing` 断言分叉
+        在起跑段 `_push_any_unpushed_commits` 就直接 `SweepAbort`、连
+        fetch 之外的任何 git 动作都不发生。修法后起跑段发现分叉不再整轮
+        中止，对齐统一交给收尾段 `_reconcile_with_origin_and_push` 尝试
+        `git rebase origin/master`——本用例改为构造两侧真实冲突同一份
+        文件的同一处内容（而非各自新增独立文件），确保 rebase 必然失败、
+        走 `git rebase --abort` 回滚，最终结果与此前等价（FORK_EXIT_CODE、
+        本地 HEAD 与 origin 均不变），但触发路径与文案已不同（如实记录：
+        这是职责重排的自然结果，不是发现了新缺陷；真正验证"不冲突场景
+        应自动解决、不再触发本告警"的用例见
+        `StartupGuardDoesNotBlockBatchProcessingTests`）。"""
         self._init_and_push(rows="")
-        # 本地有一个尚未推送的本地提交。
-        (self.work / "本地未推送.md").write_text("本地独有内容\n", encoding="utf-8")
+        # 本地有一个尚未推送的本地提交——与 origin 侧冲突同一处内容。
+        queue_path = self.work / sweep.QUEUE_REL
+        queue_path.write_text(
+            queue_path.read_text(encoding="utf-8").replace("占位", "本地未推送改动", 1),
+            encoding="utf-8",
+        )
         _git(self.work, "add", "-A")
         _git(self.work, "commit", "-q", "-m", "本地未推送提交")
-        # 另一 clone 基于同一起点推了一支不同的提交——制造真分叉（互不为祖先）。
-        self._push_from_other_clone("并发内容.md", "并发提交")
+
+        # 另一 clone 基于同一起点推了一支冲突的提交——制造真分叉且不可
+        # 自动合并（互不为祖先，且改的是同一处内容）。
+        other_clone = self.work.parent / "other_clone_conflict"
+        _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
+        _git(other_clone, "config", "user.email", "other@example.com")
+        _git(other_clone, "config", "user.name", "Other")
+        other_queue_path = other_clone / sweep.QUEUE_REL
+        other_queue_path.write_text(
+            other_queue_path.read_text(encoding="utf-8").replace("占位", "并发session冲突改动", 1),
+            encoding="utf-8",
+        )
+        _git(other_clone, "add", "-A")
+        _git(other_clone, "commit", "-q", "-m", "并发提交")
+        _git(other_clone, "push", "-q", "origin", "master")
 
         local_head_before = _git(self.work, "rev-parse", "HEAD").stdout.strip()
         origin_head_before = _git(self.origin, "rev-parse", "master").stdout.strip()
 
         result = _run_sweep(self.work)
-        # 队列 #171：分叉此前静默退出码 0（计划任务看到"成功"），修复后
-        # 前置分叉检测改用 is_fork=True，退出码变为 FORK_EXIT_CODE（人工介入语义）。
+        # 队列 #171：分叉此前静默退出码 0（计划任务看到"成功"）；#309 子项 F
+        # 修复前是起跑段直接 SweepAbort；修复后是收尾段 rebase 真失败才
+        # SweepAbort——三个阶段殊途同归，均以 FORK_EXIT_CODE（人工介入
+        # 语义）收尾。
         self.assertEqual(result.returncode, sweep.FORK_EXIT_CODE, result.stdout + result.stderr)
-        self.assertIn("非快进", result.stdout)
+        self.assertIn("本轮不在此处提前中止", result.stdout)
+        self.assertIn("自动 rebase 失败", result.stdout)
 
         self.assertEqual(_git(self.work, "rev-parse", "HEAD").stdout.strip(), local_head_before,
-                          "分叉场景不应尝试合并，本地 HEAD 不应变化")
+                          "rebase 失败已 abort 回滚，本地 HEAD 应恢复原状（本地提交不丢失）")
         self.assertEqual(_git(self.origin, "rev-parse", "master").stdout.strip(), origin_head_before,
                           "不应有任何强推，origin 端不应变化")
 
@@ -835,15 +867,30 @@ class ForkAlertTests(SweepTestBase):
         )
 
     def _diverge(self) -> None:
+        """队列 #309 子项 F 修复后，起跑段发现分叉不再整轮 `SweepAbort`——
+        对齐改由收尾段 `_reconcile_with_origin_and_push` 统一尝试
+        `git rebase origin/master`，绝大多数不冲突的并发编辑（各自新增
+        独立文件）会被它自动解开、走不到本告警族要验证的路径。为了让本
+        测试族继续验证"真正无法自动解决、需要人工介入"这一分支，两侧
+        改动须冲突同一份文件的同一处内容（而非各自新增独立文件），使
+        rebase 必然失败、`git rebase --abort` 回滚后落回既有分叉告警。"""
         self._init_and_push(rows="")
-        (self.work / "本地未推送.md").write_text("本地独有内容\n", encoding="utf-8")
+        queue_path = self.work / sweep.QUEUE_REL
+        queue_path.write_text(
+            queue_path.read_text(encoding="utf-8").replace("占位", "本地未推送改动", 1),
+            encoding="utf-8",
+        )
         _git(self.work, "add", "-A")
         _git(self.work, "commit", "-q", "-m", "本地未推送提交")
         other_clone = self.work.parent / "other_clone_fork"
         _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
         _git(other_clone, "config", "user.email", "other@example.com")
         _git(other_clone, "config", "user.name", "Other")
-        (other_clone / "并发内容.md").write_text("并发 session 的内容\n", encoding="utf-8")
+        other_queue_path = other_clone / sweep.QUEUE_REL
+        other_queue_path.write_text(
+            other_queue_path.read_text(encoding="utf-8").replace("占位", "并发session冲突改动", 1),
+            encoding="utf-8",
+        )
         _git(other_clone, "add", "-A")
         _git(other_clone, "commit", "-q", "-m", "并发提交")
         _git(other_clone, "push", "-q", "origin", "master")
@@ -989,6 +1036,97 @@ class UnpushedCommitBackfillTests(SweepTestBase):
         self.assertIn("[dry-run] 起跑将补推", result.stdout)
         self.assertEqual(_git(self.origin, "rev-parse", "master").stdout.strip(), origin_head_before,
                           "dry-run 不应真实 push")
+
+
+class StartupGuardDoesNotBlockBatchProcessingTests(SweepTestBase):
+    """队列 #309 子项 F：起跑段 `_push_any_unpushed_commits` 探测到分叉时
+    此前直接 `SweepAbort(is_fork=True)` 整轮中止，与 #288 治的
+    `_sync_master_if_behind_origin`"前置守卫排在批次处理之前、挡住收尾段
+    自带 rebase 能力的 `_reconcile_with_origin_and_push`"同构复发——
+    2026-08-08 02:35 UTC 起真实连续 4 轮整轮跳过、已登记批次落不了库。
+    本测试族复现该真实场景：本地存在一个此前已提交但未推送的提交，同时
+    origin 侧被另一方推进（两者改动互不冲突，可自动 rebase），且本轮
+    队列里还有一条真正待处理的批次——验证修复后批次仍能正常落库并推送，
+    不再在起跑段就整轮放弃。"""
+
+    def _diverge_without_conflict_and_leave_pending_batch(self) -> str:
+        """搭建"本地已有未推送提交 + origin 同期被推进 + 本轮还有待处理
+        批次"的复合场景——精确对应真实事故的三个要素。两侧改动分别落在
+        独立文件上，互不冲突，rebase 应能自动解决。返回批次登记前的
+        origin HEAD（供断言用）。"""
+        row = ("| B-309F复现 | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "| `docs(test): 队列#309子项F复现批次落库` | 待处理（登记，待 sweep 落库） |\n")
+        self._init_and_push(rows="")
+
+        # 环境总线一侧：此前已在本地提交、但尚未推送成功的改动（同 #194
+        # `UnpushedCommitBackfillTests` 的"上一轮 push 失败"场景）。
+        (self.work / "本地已提交未推送.md").write_text("环境总线一侧的内容\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "docs(test): 模拟环境总线一侧已提交未推送")
+
+        # CC 平台一侧：同期把 origin 推进（与本地改动互不冲突）。
+        other_clone = self.work.parent / "other_clone_309f"
+        _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
+        _git(other_clone, "config", "user.email", "other@example.com")
+        _git(other_clone, "config", "user.name", "Other")
+        (other_clone / "CC平台一侧.md").write_text("CC 平台一侧的内容\n", encoding="utf-8")
+        _git(other_clone, "add", "-A")
+        _git(other_clone, "commit", "-q", "-m", "docs(test): 模拟 CC 平台一侧同期推进")
+        _git(other_clone, "push", "-q", "origin", "master")
+
+        origin_head_before = _git(self.origin, "rev-parse", "master").stdout.strip()
+        local_head = _git(self.work, "rev-parse", "HEAD").stdout.strip()
+        self.assertNotEqual(
+            local_head, origin_head_before,
+            "前提：本地已提交未推送的同时 origin 也已被推进，构成真实分叉",
+        )
+
+        # 本轮还有一条真正待处理的 §二 批次（登记但不提交，模拟"批次已
+        # 登记、CC 尚未取活"这一常见时序）。
+        self._write_queue(row)
+        return origin_head_before
+
+    def test_divergent_startup_state_does_not_abort_before_batch_processing(self):
+        origin_head_before = self._diverge_without_conflict_and_leave_pending_batch()
+
+        result = _run_sweep(self.work)
+
+        self.assertEqual(
+            result.returncode, 0, result.stdout + result.stderr,
+        )
+        self.assertNotEqual(
+            result.returncode, sweep.FORK_EXIT_CODE,
+            "分叉不应再让起跑段整轮中止——批次处理应照常进行",
+        )
+        # 起跑段应只降级记录，不应再输出旧版"跳过本轮"的中止措辞。
+        self.assertIn("本轮不在此处提前中止", result.stdout)
+        self.assertNotIn("跳过本轮，不强推、不自动 rebase", result.stdout)
+
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue, "待处理批次应已正常落库，未被起跑段的分叉检测挡住")
+
+        origin_head_after = _git(self.origin, "rev-parse", "master").stdout.strip()
+        self.assertNotEqual(origin_head_after, origin_head_before, "origin 应已推进（分叉已被自动 rebase 解决）")
+
+        # 两侧此前各自独立的改动均应完整保留在最终推送结果里——证明是
+        # 真正的 rebase 对齐，不是任何一方内容被丢弃或覆盖。
+        self.assertIn("本地已提交未推送.md",
+                       _git(self.origin, "ls-tree", "-r", "--name-only", "master").stdout)
+        self.assertIn("CC平台一侧.md",
+                       _git(self.origin, "ls-tree", "-r", "--name-only", "master").stdout)
+
+        self.assertFalse(
+            (self.work / sweep.FORK_STATE_REL).exists(),
+            "自动对齐成功、无需人工介入，不应残留分叉计数状态",
+        )
+
+    def test_dry_run_still_reports_divergence_without_aborting(self):
+        self._diverge_without_conflict_and_leave_pending_batch()
+
+        result = _run_sweep(self.work, "--dry-run")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("本轮不在此处提前中止", result.stdout)
 
 
 class FlushPendingLockAppendsTests(SweepTestBase):

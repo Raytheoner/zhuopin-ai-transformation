@@ -203,6 +203,24 @@ CLAUDE.md 是否同批改动这一可机检事实，不解析内容语义、不�
 止血效果相同。**不追求消灭一切需要人工介入的情形**，是把"需要人工介入
 的情形"从"20/20 的必然"收窄到"真实内容冲突的少数概率事件"。
 
+起跑段前置守卫不再整轮中止（队列 #309 子项 F，2026-08-08）：`_push_any_
+unpushed_commits`（起跑段①之后，批次处理之前）此前一旦发现"本地领先
+且不可快进"（已分叉）即 `SweepAbort(is_fork=True)`，与本节修法的旧
+`_sync_master_if_behind_origin` 犯的是**同一个错**——前置检查排在批次
+处理之前、且检测到分叉就整轮退出，把排在收尾段、自带 rebase 能力的
+`_reconcile_with_origin_and_push` 挡在门外，走不到。2026-08-08 02:35
+UTC 起连续 4 轮整轮跳过、连发 4 条分叉告警即实测坐实（本地环境总线的
+提交 / origin CC 的提交两侧都改了队列文件），期间已登记的 §二 批次
+始终落不了库。修法：检测到分叉时不再 `SweepAbort`，只记录日志后
+`return`，把对齐统一交给收尾段——批次照常本地提交，工作区恢复干净后
+`_reconcile_with_origin_and_push` 重新 fetch 一次并按当时的 ahead/behind
+关系自动 `git rebase origin/master`；真无法自动解决（真实内容冲突）时
+仍会落回既有的 `git rebase --abort` + 分叉告警路径，语义不变，只是
+判定时机从"起跑段一律拦"收窄为"收尾段确认真无法自动解决才拦"，与
+本节上方"决策点 2"的既有结论（少数真实冲突场景止血、多数场景真正
+打破自锁循环）一致——本次只是把该结论应用到另一处犯了同样错误的
+前置检查上。
+
 定时任务真身↔镜像自动核对（队列 #235/#188，2026-08-06）：#169 已实现
 `工具-定时任务源码备份.py`（规范化逐行比对+差异自动写回镜像，见其文件头
 说明），但"挂载到自动触发器"这一半此前未做——真身漂移因此只能靠人想起来
@@ -544,11 +562,23 @@ def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = 
     （批次主流程与 `_rerun_ledger` 台账重跑），本函数在起跑段统一兜底，
     不依赖具体是哪个出口造成的滞留。
 
-    存在且可快进即先补推（推成功再继续本轮其余流程）；不可快进（已分叉）
-    复用 #171 已建的分叉告警通道（`is_fork=True`，main() 据此触发
-    `_handle_fork_detected`）+ `FORK_EXIT_CODE`，不强推、不自动 rebase；
-    补推本身失败（网络/鉴权等）以 exit_code=2（人工介入语义）收尾——本地
-    提交不会被撤销。"""
+    存在且可快进即先补推（推成功再继续本轮其余流程）；补推本身失败
+    （网络/鉴权等）以 exit_code=2（人工介入语义）收尾——本地提交不会被
+    撤销。
+
+    队列 #309 子项 F（2026-08-08）：不可快进（已分叉）时**不再** `SweepAbort`
+    整轮中止——旧实现在此处直接退出，排在其后的批次处理（§二待 commit）与
+    收尾段 `_reconcile_with_origin_and_push`（#288 新增、自带 rebase 能力）
+    整轮走不到，与 #288 当初治的"`_sync_master_if_behind_origin` 排在批次
+    处理之前、前置守卫挡住后置修复"完全同构复发（2026-08-08 02:35 UTC 起
+    连续 4 轮整轮跳过实测坐实）。改为记录 + 降级：本轮继续处理待落库批次，
+    分叉对齐统一交给收尾段 `_reconcile_with_origin_and_push` 处理——它会在
+    批次全部本地提交、工作区恢复干净后重新 fetch 一次最新状态，按彼时的
+    ahead/behind 关系自动 `git rebase origin/master`；绝大多数不冲突的
+    并发编辑（同 #288 观察）可自动对齐并推送成功，只有真实内容冲突才会
+    落回既有的 `git rebase --abort` + 分叉告警路径（`is_fork=True`／
+    `FORK_EXIT_CODE`），与此前语义一致，只是判定时机从"起跑段一律拦"
+    收窄为"收尾段确认真无法自动解决才拦"。"""
     _fetch(repo_root)
     ahead_raw = _run_git(["rev-list", "--count", "origin/master..HEAD"], repo_root).stdout.strip()
     ahead = int(ahead_raw) if ahead_raw.isdigit() else 0
@@ -556,12 +586,13 @@ def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = 
         return
     check = _run_git(["merge-base", "--is-ancestor", "origin/master", "HEAD"], repo_root, check=False)
     if check.returncode != 0:
-        raise SweepAbort(
+        log.append(
             f"⚠ 起跑发现 {ahead} 个未推送的本地提交，且推送非快进"
-            "（origin/master 不是当前 HEAD 的祖先，已分叉）——跳过本轮，不强推、不自动 rebase。",
-            exit_code=FORK_EXIT_CODE,
-            is_fork=True,
+            "（origin/master 不是当前 HEAD 的祖先，已分叉）——本轮不在此处提前中止，"
+            "继续处理待落库批次；分叉对齐交给收尾段 `_reconcile_with_origin_and_push` "
+            "统一处理（自带 rebase 能力，真无法自动解决时才走既有分叉告警路径）。"
         )
+        return
     if dry_run:
         log.append(f"[dry-run] 起跑将补推 {ahead} 个此前未推送的本地提交（本次不实际 push）。")
         return
