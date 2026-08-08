@@ -30,6 +30,19 @@ name: CI 基线
 # Python Traceback 而不是预期的中文错误信息）。设为环境变量而非逐个脚本
 # 改代码——同一个环境差异在这个仓库的体量下几乎必然继续在未覆盖到的脚本
 # 里复现，在 CI 环境层面一次性设对，比追着每个新增的 print 语句修更彻底。
+#
+# 🔴 矩阵清单不再手写（步骤 2 追加设计输入，2026-08-08 Cowork「环境总线」
+# 独立复核步骤 1 产出时发现并指出）：`discover-projects` job 用
+# `工具-CI矩阵发现.py` 从 `git ls-files` 动态发现测试所在子项目，`test`
+# job 的矩阵直接消费该发现结果——新场景（SC2/SC4/SC10/SC11、质量域
+# 8D/IQC/SPC 等）建成后只要遵循既有的 `X/tests/test_*.py` 或
+# `X/test_*.py` 命名约定，**不需要任何人记得手改这份清单**，这正是 CI
+# 立项要消灭的"靠人记得"，不能在 CI 自己身上原样复活。
+# 另加 `coverage-guardrail` job 作第二道独立防线（不依赖发现规则完美）：
+# 汇总全部矩阵腿的 JUnit XML 报告，断言三条不随发现规则变化的硬下界
+# ——总 passed≥1704／总 skipped≤40／参与矩阵的子项目数≥13，任一跌破即
+# 红（哪怕发现规则本身出错导致"矩阵变短了但每腿都绿"这种静默失效，见
+# 根 CLAUDE.md §5「工具静默回退」教训）。
 env:
   PYTHONUTF8: "1"
 
@@ -38,26 +51,33 @@ env:
   pull_request:
 
 jobs:
+  discover-projects:
+    name: "CI 矩阵自动发现（替代手写清单，防隐性白名单，见文件头部说明）"
+    runs-on: windows-latest
+    outputs:
+      projects: ${{ steps.discover.outputs.projects }}
+      project_count: ${{ steps.discover.outputs.project_count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - id: discover
+        run: |
+          $json = python 0-学习与工具/工具-CI矩阵发现.py
+          $count = ($json | ConvertFrom-Json).Count
+          echo "projects=$json" >> $env:GITHUB_OUTPUT
+          echo "project_count=$count" >> $env:GITHUB_OUTPUT
+          Write-Host "发现 $count 个子项目：$json"
+
   test:
     name: "测试 · ${{ matrix.project }}"
     runs-on: windows-latest
+    needs: discover-projects
     strategy:
       fail-fast: false
       matrix:
-        project:
-          - "0-学习与工具"
-          - "0-学习与工具/md转Word工具"
-          - "1-转型规划/AI运营指挥中心"
-          - "4-数字员工/财务部/FI1-供应链仓库对账"
-          - "4-数字员工/财务部/FI2-三单匹配自动对账"
-          - "4-数字员工/质量部/QD-A-8D不良分析"
-          - "4-数字员工/质量部/QD-B-立项审核门禁"
-          - "4-数字员工/运营部/O2-物料齐套预警"
-          - "4-数字员工/采购部/SC1-供应商风险初筛"
-          - "4-数字员工/采购部/SC7-库存优化建议"
-          - "4-数字员工/采购部/SC8-客户订单交期智能承诺"
-          - "5-平台底座/wecom-aibot-service"
-          - "5-平台底座/zhuopin_platform"
+        project: ${{ fromJSON(needs.discover-projects.outputs.projects) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -93,9 +113,36 @@ jobs:
 
       # 无 .env（checkout 天然不带，.env 系列全部 gitignore）、无内网 LAN
       # （GitHub 托管 runner 出不了公司内网），复刻步骤 1 的干净环境前提。
+      # --junit-xml 产出结构化报告供 coverage-guardrail 聚合，比正则解析
+      # "X passed, Y skipped" 这类自由格式摘要行更可靠（见该 job 说明）。
       - name: "cd 子项目后独立跑 pytest（不得在仓库根一次性跑，见文件头部说明）"
         working-directory: ${{ matrix.project }}
-        run: python -m pytest -q --tb=short
+        run: python -m pytest -q --tb=short --junit-xml=pytest-result.xml
+
+      - name: 上传测试结果供覆盖率 guardrail 聚合
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-result-${{ strategy.job-index }}
+          path: ${{ matrix.project }}/pytest-result.xml
+          retention-days: 7
+
+  coverage-guardrail:
+    name: "CI 覆盖率下界护栏（防矩阵/skip 数悄悄下滑）"
+    runs-on: windows-latest
+    needs: [discover-projects, test]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pytest-result-*
+          path: pytest-results
+      - name: 汇总并断言下界（passed≥1704／skipped≤40／子项目数≥13）
+        run: python 0-学习与工具/工具-CI覆盖率护栏.py --results-dir pytest-results
 
   openspec-validate:
     name: "openspec validate --all --strict"

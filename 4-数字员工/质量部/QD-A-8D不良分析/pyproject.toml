@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "qda-8d-prefill"
@@ -16,6 +16,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+
+# setuptools 自动发现在 flat-layout 下把 data/（真实 8D 样本的 gitignore
+# 占位目录，见本场景 CLAUDE.md 红线①，只含 data/golden/.gitkeep）误判为
+# 第二个顶层包，拒绝猜测、build 直接失败；显式声明只打包 qda_prefill，
+# 与 5-平台底座/zhuopin_platform/pyproject.toml 的既有写法同一约定。
+[tool.setuptools.packages.find]
+include = ["qda_prefill*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
