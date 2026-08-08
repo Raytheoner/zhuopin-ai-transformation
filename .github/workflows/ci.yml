@@ -55,6 +55,27 @@ jobs:
       - name: 安装 CI 依赖闭包
         run: pip install -r .github/ci-requirements.txt
 
+      # 平台底座包须以 editable 方式装入 CI 这个一次性 VM 才能被 8 个场景
+      # 的 `import zhuopin_platform...` 解析到——本地开发机上"pip install -e
+      # 可选"（队列 #300）成立，是因为 conftest.py 的 sys.path 引导 +
+      # 本地历史上已 pip install -e 过的全局指针兜底；CI 是全新 VM、没有
+      # 任何历史指针，且并不存在 #300 要规避的"多 worktree 共享同一全局
+      # 指针"问题（每个 job 都是独立一次性 VM），故在这里直接装是安全、
+      # 正确的选择，不与 #300 的结论冲突。--no-deps 是关键：平台
+      # pyproject.toml 声明的 chromadb 依赖体积巨大（本地实测拉起
+      # kubernetes-client/huggingface-hub/tokenizers/opentelemetry 等一整
+      # 条传递依赖链，单独安装耗时数分钟），而 AST 扫描已确认 13 个子
+      # 项目零处实际 import chromadb（见 `.github/ci-requirements.txt`
+      # 头部说明）——只需要 zhuopin_platform 这个包本身可被导入，不需要
+      # 它声明的第三方依赖（那些已经在上一步按实测需要的子集单独装过）。
+      # 8 个场景自身的包（sc1-supplier-risk-screening 等）经实测**不需要**
+      # 额外 `pip install -e`——pytest 对没有 `__init__.py` 的测试目录会把
+      # 场景根目录（即 working-directory）本身插入 sys.path，场景内部的
+      # 同目录导入（如 `from src.audit_log import ...`）已经解析得到，
+      # 只有跨场景的 `zhuopin_platform` 才需要真正的已安装包。
+      - name: 安装平台底座包（editable，--no-deps）
+        run: pip install --no-deps -e "5-平台底座/zhuopin_platform"
+
       # 无 .env（checkout 天然不带，.env 系列全部 gitignore）、无内网 LAN
       # （GitHub 托管 runner 出不了公司内网），复刻步骤 1 的干净环境前提。
       - name: "cd 子项目后独立跑 pytest（不得在仓库根一次性跑，见文件头部说明）"
