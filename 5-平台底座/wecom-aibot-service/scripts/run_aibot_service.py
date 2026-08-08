@@ -28,14 +28,28 @@ from typing import Callable, Optional
 
 from dotenv import load_dotenv
 
+SERVICE_DIR = Path(__file__).resolve().parent.parent
+NAIVE_REPO_ROOT = SERVICE_DIR.parents[1]  # 5-平台底座/wecom-aibot-service -> 本 checkout 自身的根
+
+# —— worktree 隔离引导（队列 #300）：把本 worktree 的平台底座与本服务自身路径插到
+# sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在下方任何
+# zhuopin_platform / aibot_service import 之前。此前只有 aibot_service 自身包（下面
+# sys.path.insert(0, str(SERVICE_DIR)) 一行）有这层保护，zhuopin_platform 完全没有——
+# 是本项目里"给自己包做保护但漏平台底座"这个缺口的真实样本，本次一并合并统一处理。——
+_HERE = Path(__file__).resolve()
+for _p in (_HERE, *_HERE.parents):
+    if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
+        for _entry in (_p / "5-平台底座" / "zhuopin_platform", SERVICE_DIR):
+            if str(_entry) not in sys.path:
+                sys.path.insert(0, str(_entry))
+        break
+else:
+    raise RuntimeError(f"未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找）")
+
 from zhuopin_platform.audit import AuditLogger
 from zhuopin_platform.shared_tools.notifiers import wecom
 from zhuopin_platform.shared_tools.secrets import EnvSecretsProvider
 
-SERVICE_DIR = Path(__file__).resolve().parent.parent
-NAIVE_REPO_ROOT = SERVICE_DIR.parents[1]  # 5-平台底座/wecom-aibot-service -> 本 checkout 自身的根
-
-sys.path.insert(0, str(SERVICE_DIR))
 from aibot_service.connection import build_connector  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp, send_gap_alert  # noqa: E402
