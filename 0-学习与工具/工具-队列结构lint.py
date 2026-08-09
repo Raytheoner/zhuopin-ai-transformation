@@ -28,6 +28,19 @@ CI 治的是"不管改动经没经过编辑锁协议（如 #305 指出的机器�
 会话上下文，硬套会产生大量"整份历史文件都是新改动"式的假阳性，且不在
 #309 行内 lint 范围文字里，不属于本次要补的那一块。
 
+第③项（队列 #313，拍板项 10 选 (b)）：断言权威模块
+`zhuopin_platform.shared_tools.queue_table` 可 import。背景——编辑锁/
+台账/sweep/队列查询四处消费者各自都用
+`try: from zhuopin_platform.shared_tools.queue_table import ... except
+ImportError: class queue_table: ...` 兜底桩隔离测试环境（#306 apply 时
+两个真实隔离测试用例逼出，桩本身不主张删），但这意味着"哪天路径变了或
+包装坏了，四处会各自静默降级回本地实现、零报错"——本项断言只求把这条
+本会静默的路径变成 CI 会显式报红的路径，不改桩本身。**故意不用
+`pip install -e`**：`queue_table.py` 自身与其所在的 `zhuopin_platform`/
+`shared_tools` 两层 `__init__.py` 均无第三方依赖（纯标准库），走与场景
+入口脚本同款的 #300 式 sys.path 引导即可稳定 import，不必为一个零依赖
+模块在 CI 里多装一次平台底座包（`queue-structure-lint` job 目前不装）。
+
 用法：
   python 0-学习与工具/工具-队列结构lint.py
   # 退出码 0=通过；1=发现违规（详情打印到 stdout）
@@ -83,10 +96,48 @@ def lint(repo_root: Path) -> list[str]:
     return violations
 
 
+def check_queue_table_importable(repo_root: Path) -> str | None:
+    """队列 #313：断言权威模块 `zhuopin_platform.shared_tools.queue_table`
+    可 import。返回 None＝可 import；否则返回违规说明字符串。
+
+    走与场景入口脚本同款的 #300 式 sys.path 引导（本函数自己插一次，
+    不依赖调用方是否已引导过），不用 `pip install -e`——该模块与其两层
+    `__init__.py` 均无第三方依赖，直接插路径即可稳定导入。"""
+    platform_dir = repo_root / "5-平台底座" / "zhuopin_platform"
+    if not platform_dir.is_dir():
+        return f"未找到 {platform_dir}（仓库根标记缺失，无法校验权威模块可达性）"
+    inserted = str(platform_dir) not in sys.path
+    if inserted:
+        sys.path.insert(0, str(platform_dir))
+    try:
+        import importlib
+
+        module = importlib.import_module("zhuopin_platform.shared_tools.queue_table")
+        if not hasattr(module, "SECTION_COLUMN_COUNTS"):
+            return (
+                "zhuopin_platform.shared_tools.queue_table 可 import，但缺少"
+                "预期符号 SECTION_COLUMN_COUNTS（模块内容被改动？）"
+            )
+        return None
+    except ImportError as exc:
+        return (
+            f"zhuopin_platform.shared_tools.queue_table 无法 import：{exc}"
+            "（四处消费者——编辑锁／台账／sweep／队列查询——的兜底桩会各自"
+            "静默降级回本地实现，此断言正是为了不让那次降级零报错，见队列 #313）"
+        )
+    finally:
+        if inserted:
+            sys.path.remove(str(platform_dir))
+
+
 def main() -> int:
     violations = lint(REPO_ROOT)
+    import_error = check_queue_table_importable(REPO_ROOT)
+    if import_error:
+        violations.append(import_error)
+
     if not violations:
-        print(f"✓ {QUEUE_REL} 结构 lint 通过（列数／§二状态列格式）。")
+        print(f"✓ {QUEUE_REL} 结构 lint 通过（列数／§二状态列格式／权威模块可 import）。")
         return 0
 
     print(f"✗ {QUEUE_REL} 结构 lint 发现 {len(violations)} 处违规：")

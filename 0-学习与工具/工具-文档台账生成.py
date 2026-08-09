@@ -32,9 +32,10 @@ else:
         保持一致，见该模块。"""
 
         SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
+        QUEUE_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 
 OUTPUT_PATH = REPO_ROOT / "1-转型规划" / "0-全景路线图" / "文档台账-自动生成.md"
-QUEUE_PATH = REPO_ROOT / "1-转型规划" / "0-全景路线图" / "跨桌任务队列.md"
+QUEUE_PATH = REPO_ROOT / queue_table.QUEUE_PATH_REL  # 队列 #313：收拢自本地字面量
 QUEUE_SECTION_ONE_HEADING = "## 一、任务看板"
 QUEUE_EXPECTED_COLUMNS = queue_table.SECTION_COLUMN_COUNTS["一"]
 

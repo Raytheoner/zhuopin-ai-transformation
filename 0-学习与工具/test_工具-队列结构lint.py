@@ -104,5 +104,36 @@ class QueueLintTests(unittest.TestCase):
         self.assertEqual(violations, [], f"真实生产队列文件不应有 lint 违规：{violations}")
 
 
+class QueueTableImportableCheckTests(unittest.TestCase):
+    """队列 #313：权威模块 zhuopin_platform.shared_tools.queue_table
+    可 import 断言——兜底桩静默降级的可见化，真实场景（模块健在／
+    仓库根标记缺失）均需覆盖，不能只靠人读代码确认。"""
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def test_real_repo_root_is_importable(self):
+        self.assertIsNone(self.module.check_queue_table_importable(self.module.REPO_ROOT))
+
+    def test_missing_platform_dir_is_violation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_root = Path(tmp)
+            result = self.module.check_queue_table_importable(fake_root)
+            self.assertIsNotNone(result)
+            self.assertIn("未找到", result)
+
+    def test_does_not_leak_sys_path_entry_on_success(self):
+        import sys
+
+        platform_dir = str(self.module.REPO_ROOT / "5-平台底座" / "zhuopin_platform")
+        was_present_before = platform_dir in sys.path
+        self.module.check_queue_table_importable(self.module.REPO_ROOT)
+        if not was_present_before:
+            self.assertNotIn(
+                platform_dir, sys.path,
+                "本函数临时插入的 sys.path 条目须自行清理，不得残留影响后续 import 解析",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

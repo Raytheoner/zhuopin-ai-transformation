@@ -55,6 +55,7 @@ else:
         保持一致，见该模块。"""
 
         SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
+        QUEUE_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 
 
 def _resolve_repo_root() -> Path:
@@ -70,7 +71,7 @@ def _resolve_repo_root() -> Path:
 
 
 REPO_ROOT = _resolve_repo_root()
-DEFAULT_TARGET = "1-转型规划/0-全景路线图/跨桌任务队列.md"
+DEFAULT_TARGET = queue_table.QUEUE_PATH_REL  # 队列 #313：收拢自本地字面量
 
 LIVE_SECTION_HEADING_RE = re.compile(r"^## ([一二三四])、", re.MULTILINE)
 _TABLE_HEADER_FIRST_CELLS = ("#", "批次", "")

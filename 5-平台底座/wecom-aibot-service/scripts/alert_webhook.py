@@ -18,6 +18,19 @@ from dotenv import load_dotenv
 SERVICE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(SERVICE_DIR.parent / ".env")
 
+# —— worktree 隔离引导（队列 #300／#313 补漏）：把本 worktree 的平台底座与本服务
+# 自身路径插到 sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。
+# 必须放在下方任何 zhuopin_platform / aibot_service import 之前。——
+_HERE = Path(__file__).resolve()
+for _p in (_HERE, *_HERE.parents):
+    if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
+        for _entry in (_p / "5-平台底座" / "zhuopin_platform", SERVICE_DIR):
+            if str(_entry) not in sys.path:
+                sys.path.insert(0, str(_entry))
+        break
+else:
+    raise RuntimeError(f"未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找）")
+
 from zhuopin_platform.shared_tools.notifiers import wecom  # noqa: E402
 
 

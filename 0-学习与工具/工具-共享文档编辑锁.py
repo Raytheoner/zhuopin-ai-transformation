@@ -219,6 +219,7 @@ else:
         保持一致，见该模块。"""
 
         SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
+        QUEUE_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 
         @staticmethod
         def has_bare_pipe(cell: str) -> bool:
@@ -245,7 +246,7 @@ def _resolve_repo_root() -> Path:
 
 
 REPO_ROOT = _resolve_repo_root()
-DEFAULT_TARGET = "1-转型规划/0-全景路线图/跨桌任务队列.md"
+DEFAULT_TARGET = queue_table.QUEUE_PATH_REL  # 队列 #313：收拢自本地字面量
 STALE_MINUTES = 30
 HIGH_WATER_MARK_PATTERN = re.compile(r"编号高水位线[：:]\s*(.+?)\*\*")
 HIGH_WATER_MARK_LINE_PATTERN = re.compile(r"编号高水位线")
@@ -373,9 +374,13 @@ STATUS_FIELD_RE = re.compile(
     r"^\[S:(done|open|partial|hold|blocked|timed=\d{4}-\d{2}-\d{2})\]"
     r"(?:\[D:(机|业)\])?"
 )
-# 协议〇.9 措施 C（队列 #308 决策点 6）：机制类可动 WIP 上限，默认 8，可通过
+# 协议〇.9 措施 C（队列 #308 决策点 6）：机制类可动 WIP 上限，可通过
 # release 的 --mechanism-wip-cap 覆盖（避免上限值本身未来调整时要改代码）。
-MECHANISM_WIP_CAP_DEFAULT = 8
+# 8 → 16（Shao Peishen 2026-08-09 拍板 (b)，队列 #313 顺带项）：旧值 8 系
+# 2026-08-08 人工数出且只数了"待领"一档的低估基准；#308 机器字段落地后
+# 实测机制类可动 WIP（open+partial+hold 且不以 🛑 起首）为 16，按新口径
+# 冻结一周观察，协议正文与值周巡检 prompt 两处已同批改完，本处补最后一处。
+MECHANISM_WIP_CAP_DEFAULT = 16
 # 子项 G（队列 #308 决策点 10）：跟进信串行原则闸——"前一封"发送状态以此
 # 前缀开头即视为已闭环；新增行任一单元格含此逃生阀标记即放行但留痕。
 FOLLOWUP_SERIAL_CLOSED_PREFIX = "📥 已回件并回灌"
