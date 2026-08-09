@@ -287,6 +287,14 @@ M2 · 在途变更包滞留提示——完成率（`tasks.md` 勾选比例）≥
 `proposal.md`/`design.md`/`tasks.md` 含"暂不归档"字样即跳过（不入
 "滞留"清单）——`aibot-queue-sync-checkout-guard` 即为此类（`tasks.md`
 第 29 行原文引用"暂不归档"，#287 明写须先观察真实生产流量）。
+队列 #314②（2026-08-09，Shao Peishen 拍板 (c)）：命中上述条件后，若
+包内声明了"预期观察窗口"（`OBSERVATION_WINDOW_RE`，同一扫描范围），
+且未超窗，改报"观察中（已等 N 天／窗口 M 天）"、不计入"疑似遗忘归档"
+异常 key 集合（`_announce_stale_in_flight_changes` 内 `observing`/
+`escalate` 两分支）——立论：这三个包不是被遗忘，是在等真实场景自然
+发生，"疑似遗忘归档"这个措辞与事实不符、没有信息量，久而久之会训练
+人忽略这一整类告警。超窗、或未声明窗口的（后者即向后兼容：维持现状
+报法，不因未声明而报错），一律走原有"疑似遗忘归档"路径不变。
 两项检测均持久化"已告警过的 key"（`SCENARIO_SPEC_GAP_STATE_REL`/
 `STALE_CHANGE_STATE_REL`），24 小时内不重复推送同一 key（同 #236(2) 的
 "狼来了"防线——M1/M2 检测的都是标准长期存在的结构性状态，逐轮/每小时
@@ -481,6 +489,19 @@ STALE_CHANGE_ALERT_INTERVAL_HOURS = 24
 # 与上面的 STALE_CHANGE_DEFER_MARKER（文本标记，永久生效）是两套独立
 # 机制，见 `cmd_ack_stale_change`/`_find_stale_in_flight_changes` 文档。
 STALE_CHANGE_ACK_STATE_REL = "reports/sweep-stale-change-ack.json"
+# 队列 #314②（2026-08-09，Shao Peishen 拍板 (c)）：告警在说谎——三个
+# 高完成率变更包（`queue-status-machine-field`/`fi2-recon-mvp`/
+# `wecom-aibot-channel`）不是被遗忘，是在等真实场景自然发生，报"疑似
+# 遗忘归档"与事实不符。改法：变更包可在 proposal.md/design.md/tasks.md
+# 任一处用本正则声明"预期观察窗口"（如"预期观察窗口：14 天"），与
+# STALE_CHANGE_DEFER_MARKER 同一扫描范围/顺序，复用既有"文本标记声明"
+# 惯例，不新造载体——这是刻意选择，非偷懒：判据本身不猜"是否仅剩被动
+# 观察项"（那正是 #308 要根治的"关键词猜中文"家族），只认"是否声明了
+# 窗口"这一显式信号，把"是不是观察项"的判断权交给声明方自己。窗口内
+# 报"观察中"（不计异常，不进 `_track_and_alert_standing_state` 的
+# 异常 key 集合）；超窗才升级为"疑似遗忘归档"（现有行为不变）；未声明
+# 窗口的包维持现状（现有行为不变，向后兼容）。
+OBSERVATION_WINDOW_RE = re.compile(r"预期观察窗口[:：]\s*(\d+(?:\.\d+)?)\s*天")
 
 # 队列 #302：批量派活前状态核对——近期 commit 扫描窗口默认天数。
 STALE_ROW_LOOKBACK_DAYS = 14
@@ -2021,6 +2042,25 @@ def _change_package_has_defer_marker(change_dir: Path) -> bool:
     return False
 
 
+def _change_package_observation_window_days(change_dir: Path) -> float | None:
+    """队列 #314②：在 proposal.md/design.md/tasks.md（同 `_change_package_
+    has_defer_marker` 一致的扫描范围与顺序，取第一处命中）里查找显式声明
+    的"预期观察窗口"，返回声明的天数；三处均未声明则返回 None（未声明
+    时调用方须维持现状报法，不得当错误处理）。"""
+    for name in ("proposal.md", "design.md", "tasks.md"):
+        p = change_dir / name
+        if not p.exists():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        m = OBSERVATION_WINDOW_RE.search(text)
+        if m:
+            return float(m.group(1))
+    return None
+
+
 def _read_stale_change_acks(repo_root: Path) -> dict:
     return _read_json_state(repo_root / STALE_CHANGE_ACK_STATE_REL)
 
@@ -2099,6 +2139,7 @@ def _find_stale_in_flight_changes(repo_root: Path) -> list[dict]:
         hits.append({
             "change": change_dir.name, "done": done, "total": total,
             "rate": rate, "days_idle": days_idle,
+            "observation_window_days": _change_package_observation_window_days(change_dir),
         })
     return hits
 
@@ -2107,15 +2148,39 @@ def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: li
     """队列 #298 M2：日志逐条列出，webhook 每个包 24 小时内只推一次
     （同 M1/`_track_and_alert_orphan_paths` 的节流理由）。队列 #308 子项
     D1：alert/resolve 记账部分改用通用骨架 `_track_and_alert_standing_
-    state`。"""
-    for hit in hits:
+    state`。
+
+    队列 #314②（2026-08-09 拍板 (c)）：`hits` 内每条已带
+    `observation_window_days`——声明了窗口且未超窗的，划入 `observing`：
+    只记一行"观察中"日志，不进异常 key 集合、不进 `_track_and_alert_
+    standing_state`（即不告警、不节流记账，因为它本就不是异常）。声明
+    了窗口但已超窗的、以及未声明窗口的（维持现状），一律划入
+    `escalate`，走原有"疑似遗忘归档"告警路径，逻辑不变。"""
+    observing = [
+        h for h in hits
+        if h["observation_window_days"] is not None and h["days_idle"] <= h["observation_window_days"]
+    ]
+    observing_names = {h["change"] for h in observing}
+    escalate = [h for h in hits if h["change"] not in observing_names]
+
+    for hit in observing:
+        log.append(
+            f"🔭 在途变更包 `{hit['change']}` 观察中（已等 {hit['days_idle']:.1f} 天／"
+            f"窗口 {hit['observation_window_days']:.0f} 天），不计异常"
+        )
+
+    for hit in escalate:
+        window_note = (
+            f"，超出其声明的观察窗口 {hit['observation_window_days']:.0f} 天"
+            if hit["observation_window_days"] is not None else ""
+        )
         log.append(
             f"⚠ 在途变更包 `{hit['change']}` 完成率 {hit['rate']:.0%}"
-            f"（{hit['done']}/{hit['total']}）但已 {hit['days_idle']:.1f} 天无改动，"
+            f"（{hit['done']}/{hit['total']}）但已 {hit['days_idle']:.1f} 天无改动{window_note}，"
             "疑似遗忘归档"
         )
 
-    hits_by_change = {h["change"]: h for h in hits}
+    hits_by_change = {h["change"]: h for h in escalate}
 
     def render_alert(keys):
         lines = [

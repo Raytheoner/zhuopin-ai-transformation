@@ -1,3 +1,5 @@
+> **预期观察窗口：待定**（队列 #314②，2026-08-09 判定，未声明数值窗口）——如实登记：本包剩余未完成项**不是纯被动观察项**，故不套用观察窗口机制，维持现状（正常"疑似遗忘归档"告警流程）。判据：7.2（人为断网重连自愈验证）与 9.1-9.4（场景 `CLAUDE.md` 撰写／队列 #18 回写／文档台账重跑／commit）均是当前即可主动完成的具体工作，非等待外部触发；8.5（真实群运行满一周）虽属观察型，但其观察时钟尚未起算——阻塞点是"在开发环境跑满周还是等 `.51` 正式发布后再计"这一决策，需 Paul 定，与"已在观察、等窗口到期"性质不同；10.5（二期 dry-run 观察）已明写"本次不做，登记后续待领行"，不计入本包当前范围。**⇒ 若要让本包受益于观察窗口机制，须先完成 7.2/9.1-9.4 或补齐 8.5 的前置决策，届时可重新声明窗口**——本次不代为判断或代为拍板，如实登记交后续处理。
+
 ## 1. 脚手架
 
 - [x] 1.1 新建 `5-平台底座/wecom-aibot-service/`（`pyproject.toml` 依赖 `zhuopin_platform[aibot]`（`pip install -e`）+ WS 客户端库；`aibot_service/` 包骨架：`connection.py`/`delivery.py`/`intake.py`/`gates.py`/`readme_table.py`/`department_mapping.py`/`frame_parsing.py`/`queue_appender.py`；`scripts/run_aibot_service.py`；`tests/`）

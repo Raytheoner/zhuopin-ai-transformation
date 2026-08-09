@@ -2304,12 +2304,15 @@ class StaleInFlightChangeUnitTests(unittest.TestCase):
 
     def _make_change(
         self, name: str, done: int, todo: int, days_ago: float = 0, defer_marker: bool = False,
+        observation_window_text: str | None = None,
     ) -> None:
         d = self.repo / "openspec" / "changes" / name
         d.mkdir(parents=True, exist_ok=True)  # 队列 #308 D2 用例需对同一 change 重复调用以模拟指纹变化
         lines = [f"- [x] {i}\n" for i in range(done)] + [f"- [ ] {i}\n" for i in range(todo)]
         if defer_marker:
             lines.append("- [ ] 归档：**暂不归档**，§3 真实验证未完成\n")
+        if observation_window_text is not None:
+            lines.insert(0, f"> {observation_window_text}\n\n")
         (d / "tasks.md").write_text("".join(lines), encoding="utf-8")
         past = (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         env = dict(os.environ, GIT_COMMITTER_DATE=past, GIT_AUTHOR_DATE=past)
@@ -2374,6 +2377,133 @@ class StaleInFlightChangeUnitTests(unittest.TestCase):
     def test_ack_unknown_change_rejected(self):
         rc = sweep.cmd_ack_stale_change(self.repo, "不存在的变更包", "理由")
         self.assertNotEqual(rc, 0)
+
+    # ---- 队列 #314②：观察窗口声明 -----------------------------------------
+
+    def test_hit_without_window_declaration_has_none_field(self):
+        # 未声明窗口的包维持现状（向后兼容）：仍进 hits，字段为 None。
+        self._make_change("fi2-recon-mvp", done=116, todo=13, days_ago=3.5)
+        hits = sweep._find_stale_in_flight_changes(self.repo)
+        self.assertEqual(len(hits), 1)
+        self.assertIsNone(hits[0]["observation_window_days"])
+
+    def test_hit_within_declared_window_carries_window_value(self):
+        self._make_change(
+            "fi2-recon-mvp", done=116, todo=13, days_ago=5,
+            observation_window_text="预期观察窗口：30 天",
+        )
+        hits = sweep._find_stale_in_flight_changes(self.repo)
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["observation_window_days"], 30.0)
+
+    def test_window_declaration_accepts_fullwidth_colon_and_decimal(self):
+        self._make_change(
+            "fi2-recon-mvp", done=116, todo=13, days_ago=5,
+            observation_window_text="预期观察窗口：14.5天",
+        )
+        hits = sweep._find_stale_in_flight_changes(self.repo)
+        self.assertEqual(hits[0]["observation_window_days"], 14.5)
+
+    def test_window_declared_in_design_md_is_found(self):
+        # 与 STALE_CHANGE_DEFER_MARKER 同一扫描范围：proposal/design/tasks
+        # 任一处声明均可，不限定 tasks.md。design.md 须与 tasks.md 同一次
+        # （已回填过去时间戳的）提交写入，否则第二次不带时间戳的提交会把
+        # `_change_package_last_touched_days` 拉回"刚刚"，跌破
+        # STALE_CHANGE_MIN_DAYS_IDLE 门槛、根本进不了 hits。
+        d = self.repo / "openspec" / "changes" / "fi2-recon-mvp"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "design.md").write_text("预期观察窗口：21 天\n", encoding="utf-8")
+        self._make_change("fi2-recon-mvp", done=116, todo=13, days_ago=5)
+        hits = sweep._find_stale_in_flight_changes(self.repo)
+        self.assertEqual(hits[0]["observation_window_days"], 21.0)
+
+    def test_malformed_window_text_is_not_parsed_falls_back_to_none(self):
+        # 格式不合法（缺"天"字）不解析、不报错，等同未声明——维持现状。
+        self._make_change(
+            "fi2-recon-mvp", done=116, todo=13, days_ago=5,
+            observation_window_text="预期观察窗口：30",
+        )
+        hits = sweep._find_stale_in_flight_changes(self.repo)
+        self.assertIsNone(hits[0]["observation_window_days"])
+
+
+class ObservationWindowAnnounceUnitTests(unittest.TestCase):
+    """队列 #314②：`_announce_stale_in_flight_changes` 按窗口内/超窗/未
+    声明三分支渲染日志，且只有超窗与未声明两类进入
+    `_track_and_alert_standing_state` 的异常 key 集合（观察中的不计入，
+    不产生"疑似遗忘归档"告警，也不会被节流状态文件记住）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "reports").mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _hit(self, change, days_idle, window_days):
+        return {
+            "change": change, "done": 90, "total": 100, "rate": 0.9,
+            "days_idle": days_idle, "observation_window_days": window_days,
+        }
+
+    def test_within_window_logs_observing_not_forgotten(self):
+        import unittest.mock as mock
+        log = []
+        hits = [self._hit("pkg-a", days_idle=5.0, window_days=30.0)]
+        with mock.patch.object(sweep, "_load_webhook_url", return_value=None):
+            sweep._announce_stale_in_flight_changes(self.repo, hits, log)
+        joined = "\n".join(log)
+        self.assertIn("观察中", joined)
+        self.assertIn("已等 5.0 天／窗口 30 天", joined)
+        self.assertNotIn("疑似遗忘归档", joined)
+
+    def test_exceeded_window_escalates_with_window_note(self):
+        import unittest.mock as mock
+        log = []
+        hits = [self._hit("pkg-b", days_idle=40.0, window_days=30.0)]
+        with mock.patch.object(sweep, "_load_webhook_url", return_value=None):
+            sweep._announce_stale_in_flight_changes(self.repo, hits, log)
+        joined = "\n".join(log)
+        self.assertIn("疑似遗忘归档", joined)
+        self.assertIn("超出其声明的观察窗口 30 天", joined)
+
+    def test_no_window_declared_keeps_existing_behavior(self):
+        import unittest.mock as mock
+        log = []
+        hits = [self._hit("pkg-c", days_idle=10.0, window_days=None)]
+        with mock.patch.object(sweep, "_load_webhook_url", return_value=None):
+            sweep._announce_stale_in_flight_changes(self.repo, hits, log)
+        joined = "\n".join(log)
+        self.assertIn("疑似遗忘归档", joined)
+        self.assertNotIn("观察中", joined)
+        self.assertNotIn("超出其声明的观察窗口", joined)
+
+    def test_observing_hit_excluded_from_standing_state_anomaly_set(self):
+        import unittest.mock as mock
+        # 窗口内的包不应被 `_track_and_alert_standing_state` 记住为异常，
+        # 混一个真正超窗的包进来做对照，确认只有后者被记账。
+        log = []
+        hits = [
+            self._hit("observing-pkg", days_idle=5.0, window_days=30.0),
+            self._hit("escalate-pkg", days_idle=40.0, window_days=30.0),
+        ]
+        with mock.patch.object(sweep, "_load_webhook_url", return_value=None):
+            sweep._announce_stale_in_flight_changes(self.repo, hits, log)
+        state = sweep._read_json_state(self.repo / sweep.STALE_CHANGE_STATE_REL)
+        self.assertIn("escalate-pkg", state)
+        self.assertNotIn("observing-pkg", state)
+
+    def test_exactly_at_window_boundary_counts_as_within_window(self):
+        import unittest.mock as mock
+        # days_idle == window_days（尚未超窗）应仍判"观察中"，不升级。
+        log = []
+        hits = [self._hit("pkg-d", days_idle=30.0, window_days=30.0)]
+        with mock.patch.object(sweep, "_load_webhook_url", return_value=None):
+            sweep._announce_stale_in_flight_changes(self.repo, hits, log)
+        joined = "\n".join(log)
+        self.assertIn("观察中", joined)
+        self.assertNotIn("疑似遗忘归档", joined)
 
 
 class StandingStateAlertLifecycleUnitTests(unittest.TestCase):
