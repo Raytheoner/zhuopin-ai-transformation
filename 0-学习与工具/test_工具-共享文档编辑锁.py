@@ -1462,6 +1462,42 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
 
         self.assertEqual(self._release(who="A"), 0)
 
+    def test_section_one_check_mark_not_leading_but_status_field_present_passes(self):
+        """队列 #308 收尾 session（2026-08-09）退休 ⑧ 对 §一 的适用范围：
+        行首已带可解析的 `[S:...]` 机器字段时，字段本身即该行是否完成的
+        权威源，本判据不再对该行生效——不论字段取值是否 `done`，正文later
+        出现的「✅」（真实场景常见形态：带日期的子里程碑追记，如"✅ 节奏
+        已定（日期）"）都不应被误判为"头尾不一致"。复现 2026-08-09 §一
+        首次全量重跑本判据命中的 9 行同型假阳性（#22/#67/#96/#98/#118/
+        #170/#234/#240/#264，均为 `[S:partial]`/`[S:blocked]`/`[S:hold]`/
+        `[S:open]` 且正文含晚出现的「✅」子里程碑记录）。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = (
+            "| 201 | 测试任务 | CC | 指针 | 产出 | "
+            "[S:partial][D:机] 待处理。子项已 ✅ 完成待收尾 | 触碰区 | 2026-08-09 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_section_one_check_mark_not_leading_status_field_done_passes(self):
+        """字段取值为 `done` 时同样退休（字段已是最强信号，正文位置无需
+        再查）——覆盖字段取值的另一端，避免只用 `partial` 一种取值验证。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = (
+            "| 201 | 测试任务 | CC | 指针 | 产出 | "
+            "[S:done][D:机] 已完成。附带说明：另一步骤 ✅ 已核验 | 触碰区 | 2026-08-09 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
     # ---- 队列 #308 决策点 6（措施 C：机制类可动 WIP 上限提示）--------------
 
     def test_mechanism_wip_over_cap_prints_warning_but_does_not_block(self):
