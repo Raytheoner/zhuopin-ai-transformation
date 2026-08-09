@@ -1097,11 +1097,15 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertNotEqual(result, 0)
 
     def test_p0_p1_row_without_unverified_phrase_passes(self):
+        """状态列须含反引号包裹的证伪命令片段（⑩，队列 #285）才能通过——
+        本用例只测④本身（无「未核」字样即不因④而拦），故状态列另附一条
+        证伪命令片段以满足⑩，避免与⑩混淆而误判本用例。"""
         self._write_queue(hwm_one=200)
         self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
         text = self.target_path.read_text(encoding="utf-8")
         row = (
-            "| 201 | 风险项：已核实影响面仅限本模块 | CC | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-08-04 |\n"
+            "| 201 | 风险项：已核实影响面仅限本模块 | CC | 指针 | 产出 | "
+            "待领（P1）`git log --oneline -1` | 触碰区 | 2026-08-04 |\n"
         )
         text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + row, 1)
         self.target_path.write_text(text, encoding="utf-8")
@@ -1172,7 +1176,8 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         """队列 #248 真实取证复现（#221 行）：状态列同时含未加引号保护的 P1
         定级 token 与被「」引号包裹的"未做的核实"字样——后者是在引用/复述
         这条规则本身（如"「未做的核实如实登记」起了作用的正面案例"），不是
-        在断言当前判断未核实，不应拦截。"""
+        在断言当前判断未核实，不应拦截。状态列另附一条反引号命令片段以
+        满足⑩（队列 #285），避免与本用例要测的④混淆。"""
         self._write_queue(
             section_one_rows=(
                 "| 150 | 某降级项 | 姚祖怡 | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-07-01 |\n"
@@ -1184,7 +1189,8 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         text = text.replace(
             "| 150 | 某降级项 | 姚祖怡 | 指针 | 产出 | 待领（P1） | 触碰区 | 2026-07-01 |",
             "| 150 | 某降级项 | 姚祖怡 | 指针 | 产出 | "
-            "🔽 P1 → P3 降级：本行是「未做的核实如实登记」起了作用的正面案例 "
+            "🔽 P1 → P3 降级：本行是「未做的核实如实登记」起了作用的正面案例"
+            "（`git log --oneline -1` 核实无相关改动） "
             "| 触碰区 | 2026-07-01 |",
         )
         self.target_path.write_text(text, encoding="utf-8")
@@ -1213,6 +1219,69 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
 
         result = self._release(who="A")
         self.assertNotEqual(result, 0, "引号之外的真实 P1+未核实共现仍须拦截")
+
+    def test_p0_row_missing_falsifiability_command_blocks_release(self):
+        """⑩因果断言证伪命令（队列 #285）正例：P0 定级但状态列不含任何
+        反引号包裹的片段——即便不含「未核」字样（不触发④），仍须因缺证伪
+        命令而拦。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        row = "| 201 | 高危项 | CC | 指针 | 产出 | 待领（P0） | 触碰区 | 2026-08-09 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+
+    def test_p0_row_with_falsifiability_command_passes(self):
+        """⑩反例：P0 定级且状态列含反引号包裹的证伪命令片段——正常放行。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        row = (
+            "| 201 | 高危项 | CC | 指针 | 产出 | "
+            "待领（P0）`git rev-parse HEAD~1` | 触碰区 | 2026-08-09 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_quoted_p1_reference_without_command_does_not_trigger_falsifiability_gate(self):
+        """⑩回归：状态列中的 P1 定级 token 完整落在「」引号包裹片段内（引用
+        /复述判据本身，非本行当前断言），即便整个单元格没有任何反引号命令
+        片段，也不应因⑩而拦——与④共用同一套引号剔除逻辑（#248）。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        row = (
+            "| 201 | 讨论 #285 断言门槛 | CC | 指针 | 产出 | "
+            "已完成：本行示例引用「P1 定级」这一说法，非本行当前断言 "
+            "| 触碰区 | 2026-08-09 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_p0_row_missing_both_command_and_verification_reports_two_violations(self):
+        """⑩与④相互独立：一行同时缺证伪命令、又同时含 P0/P1 定级与「未核」
+        字样，应各自独立命中，不因命中其一而跳过另一项。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        row = "| 201 | 高危项 | CC | 指针 | 产出 | 待领（P0）未核 | 触碰区 | 2026-08-09 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        self.assertNotEqual(result, 0)
+        output = buf.getvalue()
+        self.assertIn("缺证伪命令", output)
+        self.assertIn("未核／未做的核实", output)
 
     def test_new_batch_ambiguous_status_blocks_release(self):
         """队列 #247②：状态列开头片段既不含"待"也不含"✅"——会被 sweep 判为

@@ -316,6 +316,12 @@ scope 内自带嵌套括号的行号写法；`_extract_row_numbers` 用 `#(\\d+)
 不在 scope 提取范围内，天然被排除。纯只读、纯提示，不改任何状态，判定
 权留给人。
 
+队列 #306（转义与列数校验收归权威模块，openspec 变更包
+queue-table-shared-parser-consolidation）：`_parse_section_two`/
+`_parse_section_one` 的列数校验改从
+`zhuopin_platform.shared_tools.queue_table.SECTION_COLUMN_COUNTS` 读取，
+不再本地硬编码 4/8。
+
 用法：
   python 0-学习与工具/工具-落库sweep.py            # 真跑
   python 0-学习与工具/工具-落库sweep.py --dry-run   # 只打印计划动作，不落地
@@ -335,6 +341,23 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+# 队列 #306：本脚本自身所在的 worktree 本地路径找 zhuopin_platform（同
+# 工具-共享文档编辑锁.py 既有引导，与队列 #300 conftest.py 同一原则）。
+# 仅当目录真实存在时才尝试 import，缺失时（隔离环境）用本地兜底桩，import
+# 本身失败（包损坏）则如实抛出，不静默吞掉。
+_QUEUE_TABLE_SEARCH_ROOT = Path(__file__).resolve().parents[1]
+_PLATFORM_PATH = _QUEUE_TABLE_SEARCH_ROOT / "5-平台底座" / "zhuopin_platform"
+if _PLATFORM_PATH.is_dir():
+    if str(_PLATFORM_PATH) not in sys.path:
+        sys.path.insert(0, str(_PLATFORM_PATH))
+    from zhuopin_platform.shared_tools import queue_table  # noqa: E402
+else:
+    class queue_table:  # type: ignore[no-redef]
+        """隔离环境兜底桩——取值须与 zhuopin_platform.shared_tools.queue_table
+        保持一致，见该模块。"""
+
+        SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
 
 MAIN_WORKSPACE = Path(r"C:\Users\Paul Shao\OneDrive\Projects\企业AI转型")
 QUEUE_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
@@ -1049,7 +1072,7 @@ def _parse_section_two(queue_text: str) -> list[dict]:
         if not stripped.startswith("|") or not stripped.endswith("|"):
             continue
         cells = [c.strip() for c in stripped.strip("|").split("|")]
-        if len(cells) != 4:
+        if len(cells) != queue_table.SECTION_COLUMN_COUNTS["二"]:
             continue
         if cells[0] in ("批次", ""):
             continue
@@ -1259,7 +1282,7 @@ def _parse_section_one(queue_text: str) -> list[dict]:
         if not stripped.startswith("|") or not stripped.endswith("|"):
             continue
         cells = [c.strip() for c in stripped.strip("|").split("|")]
-        if len(cells) != 8:
+        if len(cells) != queue_table.SECTION_COLUMN_COUNTS["一"]:
             continue
         if cells[0] in ("#", ""):
             continue

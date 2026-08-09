@@ -129,6 +129,24 @@ editlock-section-append-and-followup-consistency-guard）：两项加固。
               队列行决定"暂不发"但未同步移出 README 的可发送标记，
               `ZhuopinFollowupDispatchDaily` 照发，信不可撤回）。
 
+队列 #285（因果断言证伪命令，openspec 变更包
+editlock-causal-assertion-falsifiability-gate）：④断言门槛新增一项独立
+检测——§一 状态列（剔除引号包裹片段后）一旦出现 P0/P1 定级 token，须在
+同一单元格内找到至少一处反引号包裹的非空片段（"如果这个断言错了，哪
+一条命令会证明它错"），缺失即拒绝 release。沿用既有的"只查状态列"边界
+与 #248 引号剔除逻辑，不新增扫描面。**边界声明（须原样保留，不得表述
+为质量保证）**：本项检测只判"有没有"证伪命令片段，判不了"对不对"（片段
+内容是否真的具备证伪能力）——覆盖"根本没想过怎么证伪"这一形态（2/3），
+防不住"想过但用了错的证据"这一形态（1/3，见 #221）。人守条目原文（曾称
+"防线4"）已降为指针，见 `专线opander模板库.md`。
+
+队列 #306＋#307（转义与列数校验收归权威模块，openspec 变更包
+queue-table-shared-parser-consolidation）：`SECTION_COLUMN_COUNTS` 常量
+与 `_cell_has_bare_pipe` 的检测逻辑改为从
+`zhuopin_platform.shared_tools.queue_table` 导入/委托，不再本地独立定义
+——该模块是队列表格"转义"与"列数校验"两件事的唯一权威实现，供本文件
+及其余五处消费者共用（详见该 openspec 变更包 proposal.md 的取证与范围）。
+
 用法：
   python 0-学习与工具/工具-共享文档编辑锁.py acquire --who "CC-QD-B" --note "登记#87完成"
   python 0-学习与工具/工具-共享文档编辑锁.py release
@@ -178,6 +196,33 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+
+# 队列 #306：本脚本自身所在的 worktree 本地路径找 zhuopin_platform（而非
+# 经 REPO_ROOT——那按 git-common-dir 解析总是指向主工作区，见本文件顶部
+# REPO_ROOT 文档），与队列 #300 conftest.py 的 worktree 隔离引导同一原则：
+# import 结果与全局 editable 安装当前指向谁无关。
+#
+# 仅当本脚本所在目录旁真实存在 5-平台底座/zhuopin_platform 时才尝试 import
+# ——若目录确实缺失（如测试把本脚本单独复制到不含平台包的隔离临时目录，
+# 见 test_工具-共享文档编辑锁.py::EditLockCrossWorktreeTests），改用与
+# queue_table 模块完全一致的本地取值兜底，不因隔离环境改变行为；若目录
+# 存在但 import 本身失败（如包损坏），则如实抛出，不静默吞掉真实错误。
+_QUEUE_TABLE_SEARCH_ROOT = Path(__file__).resolve().parents[1]
+_PLATFORM_PATH = _QUEUE_TABLE_SEARCH_ROOT / "5-平台底座" / "zhuopin_platform"
+if _PLATFORM_PATH.is_dir():
+    if str(_PLATFORM_PATH) not in sys.path:
+        sys.path.insert(0, str(_PLATFORM_PATH))
+    from zhuopin_platform.shared_tools import queue_table  # noqa: E402
+else:
+    class queue_table:  # type: ignore[no-redef]
+        """隔离环境兜底桩——取值须与 zhuopin_platform.shared_tools.queue_table
+        保持一致，见该模块。"""
+
+        SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
+
+        @staticmethod
+        def has_bare_pipe(cell: str) -> bool:
+            return "|" in cell
 
 
 def _resolve_repo_root() -> Path:
@@ -251,7 +296,9 @@ FOLLOWUP_NON_TERMINAL_STATUSES = (FOLLOWUP_DRAFT_STATUS, FOLLOWUP_FINALIZED_STAT
 # 默认队列文件时才跑（§一/§二/§三/§四 的语义只对它成立，--file 指向其他
 # 共享文件时这套校验没有意义）。
 ARCHIVE_GLOB = "跨桌任务队列-归档-*.md"
-SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
+# 队列 #306：改为委托 zhuopin_platform.shared_tools.queue_table 的权威
+# 常量，不再本地独立定义（原值 {"一": 8, "二": 4, "四": 4} 与其一致）。
+SECTION_COLUMN_COUNTS = queue_table.SECTION_COLUMN_COUNTS
 ROW_NUMBER_SECTIONS = ("一", "四")
 # ④ 断言门槛（咽喉4甲案，2026-08-03 拍板，成因见 #221）：P0/P1 定级行内
 # 若含"未核／未做的核实"字样即拒绝 release——标注未核不等于可据此下结论。
@@ -740,8 +787,12 @@ def _cell_has_bare_pipe(cell: str) -> bool:
     不具备反引号感知能力，`_validate_release_structure` ①列数校验本就把
     "反引号内裸竖线致列偏移"列为要抓的失效形态，本函数口径须与其一致，
     不得引入一个 release 校验不认可的"反引号豁免"。
+
+    队列 #306：实现委托 `queue_table.has_bare_pipe`（权威模块，口径一致），
+    本函数保留作薄封装——docstring 记录的历史成因对本文件的读者仍有价值，
+    不因委托而删除。
     """
-    return "|" in cell
+    return queue_table.has_bare_pipe(cell)
 
 
 def _build_append_row_line(section: str, number: str | None, cells: list[str]) -> str:
@@ -1179,6 +1230,12 @@ def _validate_release_structure(
       本次持锁期间新增了域为「机」的 §一 行时，重新计算全文当前的可动
       WIP 计数；超过上限（默认 8，`--mechanism-wip-cap` 可覆盖）**仅提示
       不阻断**——不加入返回的 violations，release 仍正常放行。
+    ⑩因果断言证伪命令（仅 §一，队列 #285）：状态列（同④先剔除引号包裹
+      片段）一旦含 P0/P1 定级 token，须在同一单元格内含至少一处反引号
+      包裹的非空片段，缺失即报——与④是两条独立校验，一行可同时触发两者
+      互不影响判定。**只判"有没有"，判不了"对不对"**：覆盖"根本没想过
+      怎么证伪"（2/3），防不住"想过但用了错的证据"（1/3，见 #221），不得
+      表述为质量保证。
     """
     violations: list[str] = []
     current_text = _read_target_text(args.file)
@@ -1311,6 +1368,22 @@ def _validate_release_structure(
                     violations.append(
                         f"§一 #{cells[0]} 状态列同时含 P0/P1 定级与「未核／未做的核实」字样"
                         f"（标注未核不等于可据此下结论，见 #221 教训，请补核实或改标「待核实」）："
+                        f"{preview}"
+                    )
+
+                # ⑩ 因果断言证伪命令（队列 #285）：P0/P1 定级行须在状态列内
+                # 含至少一处反引号包裹的证伪命令片段——沿用④既有的引号
+                # 剔除文本与"只查状态列"边界，不新增扫描面。与④是两条
+                # 独立的 violation 来源，一行可能同时触发两者，互不影响
+                # 判定（不去重、不合并成一条消息）。**边界声明**：本项只判
+                # "有没有"证伪命令片段，判不了"对不对"（片段内容是否真的
+                # 具备证伪能力）——覆盖"根本没想过怎么证伪"（2/3），防不住
+                # "想过但用了错的证据"（1/3，见 #221），不得表述为质量保证。
+                if P0_P1_TOKEN_RE.search(status_cell) and not BACKTICK_SPAN_RE.search(status_cell):
+                    violations.append(
+                        f"§一 #{cells[0]} 状态列含 P0/P1 定级但缺证伪命令"
+                        f"（须在状态列内附一条反引号包裹的命令片段，回答"
+                        f"「如果我错了，哪一条命令会证明我错」，见 #285）："
                         f"{preview}"
                     )
 

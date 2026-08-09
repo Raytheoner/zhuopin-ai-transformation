@@ -16,14 +16,14 @@ CLAUDE.md §5"工具静默回退"）。#248 刚落地的 release 校验只治"�
 为准（较早的 CLAUDE.md 判据惯例），但本工具的职责只是"让人看见冲突"，
 不代替人做判断。
 
-判据独立实现（不 import `工具-落库sweep.py`/`工具-共享文档编辑锁.py`）：
-本项目一贯做法是同一份判据在多处场景各自独立实现一份（如编辑锁 ④断言
-门槛与 sweep §二判据锚定各自维护"开头片段"提取，见两处文件头部说明），
-理由是避免脚本间跨 import 耦合（本目录下多个 `.py` 文件名含中文/连字符，
-不是标准可 import 的模块路径，历史上也从未互相 import）——本工具的表格
-切分/开头片段提取与 `工具-共享文档编辑锁.py::_split_live_sections`/
-`_table_data_rows` 及 `工具-落库sweep.py::_leading_status_segment` 逻辑
-一致，是"复用同一套判据、独立实现"的第三份拷贝，非全新算法。
+判据实现指针（队列 #307，2026-08-09）：表格切分／开头片段提取一律 import
+`zhuopin_platform.shared_tools.queue_table`，不再新起独立实现；本文件历史
+上曾把"独立实现是本项目一贯做法"写在这里（理由是本目录多个 `.py` 文件名
+含中文/连字符、不是标准可 import 的模块路径），该理由已被证伪——
+`zhuopin_platform` 本就是可安装包，见 #306。本工具目前列数校验已切换至该
+模块（见文件顶部 import）；表格切分/开头片段提取因 #308 状态机器字段
+落地已大部分作废，不在 #306 权威化范围内，本文件按需继续本地实现。历史上
+的独立实现清单及其成因见队列 #306。
 
 用法：
   python 0-学习与工具/工具-队列查询.py --row 258
@@ -39,6 +39,22 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+# 队列 #306：本脚本自身所在的 worktree 本地路径找 zhuopin_platform（同
+# 工具-共享文档编辑锁.py 既有引导，与队列 #300 conftest.py 同一原则）。
+# 仅当目录真实存在时才尝试 import，缺失时（隔离环境）用本地兜底桩。
+_QUEUE_TABLE_SEARCH_ROOT = Path(__file__).resolve().parents[1]
+_PLATFORM_PATH = _QUEUE_TABLE_SEARCH_ROOT / "5-平台底座" / "zhuopin_platform"
+if _PLATFORM_PATH.is_dir():
+    if str(_PLATFORM_PATH) not in sys.path:
+        sys.path.insert(0, str(_PLATFORM_PATH))
+    from zhuopin_platform.shared_tools import queue_table  # noqa: E402
+else:
+    class queue_table:  # type: ignore[no-redef]
+        """隔离环境兜底桩——取值须与 zhuopin_platform.shared_tools.queue_table
+        保持一致，见该模块。"""
+
+        SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
 
 
 def _resolve_repo_root() -> Path:
@@ -60,12 +76,18 @@ LIVE_SECTION_HEADING_RE = re.compile(r"^## ([一二三四])、", re.MULTILINE)
 _TABLE_HEADER_FIRST_CELLS = ("#", "批次", "")
 
 # §一/§二/§四 各自的列结构——用于定位"状态列"（§四 无独立状态列，取"事项"
-# 列展示，见 SECTION_STATUS_LABEL 与 main() 里的提示文案）。
+# 列展示，见 SECTION_STATUS_LABEL 与 main() 里的提示文案）。列名语义仍本地
+# 维护（展示用，非 #306 权威化范围）；列数一致性见下方断言。
 SECTION_COLUMNS = {
     "一": ["#", "任务", "领取方", "输入（指针）", "期望产出", "状态", "触碰区", "登记"],
     "二": ["批次", "文件清单", "说明", "状态"],
     "四": ["#", "事项", "等谁", "截止"],
 }
+# 队列 #306：与权威列数常量保持一致——若两者漂移，说明本文件的列名列表
+# 与共享模块的列数定义已不同步，模块加载时即报错，不留到运行期误判。
+assert {k: len(v) for k, v in SECTION_COLUMNS.items()} == queue_table.SECTION_COLUMN_COUNTS, (
+    "SECTION_COLUMNS 列数与 queue_table.SECTION_COLUMN_COUNTS 不一致，请核对"
+)
 SECTION_STATUS_INDEX = {"一": 5, "二": 3, "四": 1}
 SECTION_STATUS_LABEL = {"一": "状态", "二": "状态", "四": "事项（§四无独立状态列，取本列展示）"}
 ROW_NUMBER_SECTIONS = ("一", "四")

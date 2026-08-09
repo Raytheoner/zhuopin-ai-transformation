@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Optional
 
 from zhuopin_platform.audit import AuditEvent
+from zhuopin_platform.shared_tools.queue_table import SECTION_COLUMN_COUNTS
 
 SECTION_FOUR_HEADING = "## 四、"
 SECTION_ONE_HEADING = "## 一、"
@@ -167,7 +168,7 @@ def parse_section_four_rows(queue_text: str) -> list[SectionFourRow]:
     """解析队列 §四"需 Shao Peishen 的动作"表格（# | 事项 | 等谁 | 截止）。"""
     rows = []
     for cells in _parse_table_rows(queue_text, SECTION_FOUR_HEADING):
-        if len(cells) != 4:
+        if len(cells) != SECTION_COLUMN_COUNTS["四"]:
             continue  # 列数不符（如仍含裸竖线）的行不纳入判定，交人工核查
         row_id, item_cell, waiting_on_cell, deadline_cell = cells
         rows.append(SectionFourRow(
@@ -196,7 +197,7 @@ def parse_priority_pending_rows(queue_text: str, today: date) -> list[PriorityPe
     不静默改变行为。"""
     rows = []
     for cells in _parse_table_rows(queue_text, SECTION_ONE_HEADING):
-        if len(cells) != 8:
+        if len(cells) != SECTION_COLUMN_COUNTS["一"]:
             continue  # 列数不符的行不纳入判定，交人工核查（如队列 #164 修复前的六行）
         row_id, task_cell, _owner, _input, _output, status_cell, _touch, registered_cell = cells
         status_value, _, _ = _parse_status_domain_fields(status_cell)

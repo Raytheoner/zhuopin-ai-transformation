@@ -6,18 +6,37 @@
 
 用法：python 0-学习与工具/工具-文档台账生成.py
 纪律：CC 每次收工重新生成一次（一行命令，见上）。
+
+队列 #306：§一 列数校验（QUEUE_EXPECTED_COLUMNS）改从
+zhuopin_platform.shared_tools.queue_table 读取权威值，不再本地硬编码。
 """
 from __future__ import annotations
 
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# 队列 #306：仅当目录真实存在时才尝试 import，缺失时（隔离环境）用本地
+# 兜底桩，与 工具-共享文档编辑锁.py/工具-落库sweep.py 既有引导同一原则。
+_PLATFORM_PATH = REPO_ROOT / "5-平台底座" / "zhuopin_platform"
+if _PLATFORM_PATH.is_dir():
+    if str(_PLATFORM_PATH) not in sys.path:
+        sys.path.insert(0, str(_PLATFORM_PATH))
+    from zhuopin_platform.shared_tools import queue_table  # noqa: E402
+else:
+    class queue_table:  # type: ignore[no-redef]
+        """隔离环境兜底桩——取值须与 zhuopin_platform.shared_tools.queue_table
+        保持一致，见该模块。"""
+
+        SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
+
 OUTPUT_PATH = REPO_ROOT / "1-转型规划" / "0-全景路线图" / "文档台账-自动生成.md"
 QUEUE_PATH = REPO_ROOT / "1-转型规划" / "0-全景路线图" / "跨桌任务队列.md"
 QUEUE_SECTION_ONE_HEADING = "## 一、任务看板"
-QUEUE_EXPECTED_COLUMNS = 8
+QUEUE_EXPECTED_COLUMNS = queue_table.SECTION_COLUMN_COUNTS["一"]
 
 # 治理范围目录（见文档治理规范 §二 目录职能确认）。
 # 4-数字员工/5-平台底座/openspec 有各自 Hermes L2 场景级约定，不入本台账；
