@@ -101,6 +101,7 @@ status: 待执行
 - 🔴 **写后反查**：`Test-Path`／字节数或行数变化／关键词命中数。**反查工具自身也会静默失效**。**已验证写法**：`(Select-String -Path $f -Pattern $k -SimpleMatch).Count`（**不加 `-AllMatches`**）。🔑 **交叉验证比重复同一验证更有效**（第 4 轮实例：skill description 同时用「沙箱 diff」与「系统提示注入值逐字比对」两个互不相关通道互证）。
 - 🔴 **查主工作区脏文件须本机直读**：沙箱侧 git 因 `core.autocrlf` 差异会**虚报 30+ 个未修改文件为已修改**。
 - 🔴 **判"某事是否已做"必须实测、且读状态列开头**。
+- 🆕 🔴 **每个 opener 的【设置】行必须写第五字段 `session：新开 / 续用〈名〉`**（Shao Peishen 2026-08-09 定，规则真身见 `专线opener模板库.md` §〇.11）——`worktree` 管**文件空间**、`session` 管**对话上下文**，两者不同维度，`worktree：☐` 不蕴含"续用某个 session"。
 - 🔴 **「回填进已有批次行」前先核那行是否仍为待处理**——已 ✅ 的行不能再承载新改动。
 - **批次即扫**：登记后立即 `Start-ScheduledTask -TaskName ZhuopinCommitSweep`。🆕 **但须知**：若此刻编辑锁被他人有效占用，**本轮 sweep 零动作跳过且只写日志、不告警**（第三批实测，见核查件 §3.6.2）——触发后顺手看一眼 `reports/sweep-commit.log`，或等下一个整点轮。
 
