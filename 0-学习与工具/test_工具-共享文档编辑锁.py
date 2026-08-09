@@ -1080,6 +1080,50 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
 
         self.assertEqual(self._release(who="A"), 0)
 
+    def test_fixing_a_row_truncated_before_closing_pipe_does_not_need_reserve(self):
+        """队列 #314②：真实事故复现——#313 行结构损坏（触碰区/日期两列被
+        `git grep` 正则交替符撑破后整体吞掉，行不再以 `|` 收尾）期间，两次
+        尝试修复均被 release 拒绝，理由是"该编号不属于本次 --reserve 预留
+        的编号集合"，即便修复方并未新增任何编号、只是把一个既有行修好。
+
+        根因链：`_diff_touched_rows` 靠 `_table_data_rows(old_text)` 算
+        `old_numbers`；旧版 `_table_data_rows` 要求行首行尾都必须是 `|`，
+        而快照里这个既有行本就因结构损坏而不以 `|` 收尾——于是它连
+        `old_numbers` 都进不去。一旦有人把行修复到重新以 `|` 收尾（哪怕
+        编号和内容都没变，只是把被吞的两列补回来），`_table_data_rows
+        (new_text)` 首次能正确解析出该行，`_diff_touched_rows` 判定"内容
+        变了"→touched；但 `number not in old_numbers` 仍为真（因为
+        old_numbers 从未见过这一行）→ 被误判成"全新行"，要求必须在
+        --reserve 预留集合内，而修复方当然没有为一个既有编号申请预留。
+
+        修复后：只要求行首是 `|`，旧版快照里这行虽然列数不对，但已能被
+        `_table_data_rows` 收录、`cells[0]` 正确取到编号，`old_numbers`
+        因此包含该编号——修复该行结构不再被误判为新增行。"""
+        truncated_row = (
+            "| 150 | 结构损坏的既有任务（模拟 #313：触碰区/日期两列被吞，"
+            "行不以竖线收尾） | 姚祖怡 | 指针 | 产出 | 在办，正文写到一半就断了"
+        )
+        self.assertFalse(truncated_row.rstrip().endswith("|"))
+        self._write_queue(section_one_rows=truncated_row + "\n", hwm_one=200)
+
+        self.assertEqual(self._acquire(who="A"), 0)  # 未 --reserve——修复既有行，不是新增
+
+        fixed_row = (
+            "| 150 | 结构损坏的既有任务（模拟 #313：触碰区/日期两列被吞，"
+            "行不以竖线收尾） | 姚祖怡 | 指针 | 产出 | 待验收（已补回缺失两列） "
+            "| 触碰区 | 2026-08-09 |\n"
+        )
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(truncated_row + "\n", fixed_row)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="A")
+        self.assertEqual(
+            result, 0,
+            "修复一个既有行的结构损坏（未新增编号）不应被③编号校验误判为"
+            "「不属于预留集合」而拒绝——见队列 #313/#314 真实事故",
+        )
+
     def test_p0_p1_row_with_unverified_phrase_blocks_release(self):
         """④检查的是状态列本身（本项目约定优先级标注写在状态列，见
         #219/#225/#234 等现存行）——P1 定级与「未核」须同时出现在状态列

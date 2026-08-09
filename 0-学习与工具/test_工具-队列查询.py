@@ -23,6 +23,7 @@ FIXTURE = """## 一、任务看板
 | 103 | 列偏移场景 | CC | 无 | 无 | 状态含裸竖线|导致列数偏移 | 无 | 2026-08-01 |
 | 104 | 机器字段场景（队列 #308） | CC | 无 | 无 | [S:open][D:机] 待领（P1） | 无 | 2026-08-01 |
 | 105 | 机器字段+正文头尾冲突场景 | CC | 无 | 无 | [S:done][D:机] ✅ 已完成初判——但深入核实后发现前提有误，实际仍待领。 | 无 | 2026-08-01 |
+| 106 | 行尾被截断场景（模拟队列 #313 真实事故，触碰区/日期两列被外部工具吞掉） | CC | 无 | 无 | 状态列写到一半就断了，没有收尾
 
 ## 二、待 commit 批次（CC 取活销行）
 
@@ -132,6 +133,17 @@ class QueueQueryTests(unittest.TestCase):
     def test_column_offset_row_warns_about_mismatch(self):
         result = run("--row", "103", "--section", "一", "--file", str(self.target))
         self.assertIn("列偏移", result.stdout)
+
+    def test_row_not_ending_in_pipe_is_still_found(self):
+        """队列 #314①：`_table_data_rows` 此前要求行首行尾都必须是 `|`，
+        导致行尾被外部工具吞掉的行（真实事故见队列 #313——`git show
+        298c152` 可复现）连"未找到"都不会真的报"结构损坏"，只会静默报
+        "未找到"，看起来像编号写错而非文件本身坏了。放宽为只要求行首后，
+        该行仍应被找到（同时被判定为列数偏移，两件事互不矛盾）。"""
+        result = run("--row", "106", "--section", "一", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("列偏移", result.stdout)
+        self.assertIn("状态列写到一半就断了", result.stdout)
 
     def test_missing_file_reports_error(self):
         result = run("--row", "1", "--file", str(Path(self._tmpdir.name) / "不存在.md"))

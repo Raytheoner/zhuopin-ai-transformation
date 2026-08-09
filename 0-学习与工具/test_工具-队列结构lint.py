@@ -97,6 +97,39 @@ class QueueLintTests(unittest.TestCase):
         violations = self.module.lint(self.repo_root)
         self.assertTrue(any("状态列模糊" in v for v in violations))
 
+    def test_row_truncated_before_closing_pipe_is_caught_not_silently_passed(self):
+        """队列 #314①：真实历史事故复现——#313 行在 commit `298c152` 起被
+        `git grep` 的正则交替符 `|` 撑破，触碰区/日期两列被整体吞掉，行不再
+        以 `|` 收尾（`git show 298c152:跨桌任务队列.md` 可复现，下方首尾
+        文本逐字取自该提交的真实 #313 行，中段省略）。
+
+        修复前：`_table_data_rows` 要求行首行尾都必须是 `|`，这种行连
+        `_table_data_rows` 的返回列表都进不去，`lint()` 因此报 0 violations
+        （见 #314 调查记录——这正是"lint 放行"的真实机制，而非最初怀疑的
+        "列数判据只查多不查少"，`column_count_ok`/`len(cells) != expected`
+        本就是双向比较）。修复后：该行仍应被 `_table_data_rows` 收录、并被
+        列数校验命中。"""
+        real_head = (
+            "🔴🔴 **`queue_table` 权威化收尾——③ 已有一处真实生产失效正在发生"
+            "（P2 → 升 P1，2026-08-09 同日两次追加）**"
+        )
+        real_tail_no_closing_pipe = (
+            "按 `CLAUDE.md` §5 机制类三条门槛：① 属纯可观测性增强、不改对外"
+            "语义，大概率不触发；② 改的是模块解析路径的来源，**若使既有函数"
+            "在相同输入下行为改变即命中第③条**，判不准就走"
+        )
+        truncated_row = (
+            f"| 313 | {real_head}……（中段省略，完整正文见真实历史提交）"
+            f"……{real_tail_no_closing_pipe}\n"
+        )
+        self.assertFalse(truncated_row.strip().endswith("|"))
+        self._write(truncated_row)
+        violations = self.module.lint(self.repo_root)
+        self.assertTrue(
+            any("列数为" in v and "313" in v for v in violations),
+            f"应命中列数违规，实际：{violations}",
+        )
+
     def test_real_production_queue_file_passes(self):
         """回归护栏：确保 106 行存量回填后的真实生产队列文件通过本 lint
         （队列 #308 决策点 3 回填完成的直接验证）。"""

@@ -142,10 +142,15 @@ def _split_live_sections(text: str) -> dict[str, str]:
 
 
 def _table_data_rows(section_text: str) -> list[list[str]]:
+    """队列 #314①：只要求行首为 `|`，不再要求行尾也是 `|`——与
+    `工具-共享文档编辑锁.py::_table_data_rows` 同一根因同一修法（该文件
+    docstring 有完整实测记录）：结尾若干列被整段吞掉、连最后一个 `|` 都
+    没了的行（如 #313），此前会被行尾检查静默排除，本工具据此对存在的
+    行号报"未找到"（2026-08-09 实测复现：`--row 313` 命中此故障）。"""
     rows: list[list[str]] = []
     for line in section_text.splitlines():
         s = line.strip()
-        if not (s.startswith("|") and s.endswith("|")):
+        if not s.startswith("|"):
             continue
         cells = [c.strip() for c in s.strip("|").split("|")]
         first = cells[0]

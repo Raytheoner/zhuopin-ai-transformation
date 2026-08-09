@@ -51,13 +51,27 @@ import importlib.util
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 QUEUE_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 EDIT_LOCK_SCRIPT = Path(__file__).resolve().with_name("工具-共享文档编辑锁.py")
 
 _spec = importlib.util.spec_from_file_location("queue_lint_editlock_reuse", EDIT_LOCK_SCRIPT)
 editlock = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(editlock)
+
+# 队列 #314①：REPO_ROOT 复用 editlock 已算好的值（`_resolve_repo_root()`，
+# 经 `git rev-parse --git-common-dir` 解到"所有 worktree 共享的主工作区"），
+# 不再自己按 `Path(__file__).resolve().parents[1]` 算一份worktree本地路径。
+# 2026-08-09 实测坐实两者会给出不同答案：本脚本在建造用的 linked worktree
+# 里跑时，旧写法算出的是"这个 worktree 自己签出的那份队列文件"（可能是
+# 创建 worktree 那一刻的旧快照，此后主工作区经 editlock 协议〇.7 发生的
+# 任何编辑都不会体现在这份本地副本里）；而 `工具-共享文档编辑锁.py`／
+# `工具-队列查询.py` 的 `_resolve_repo_root()` 一律解到主工作区（其
+# docstring 明文"所有 git worktree 共享同一把锁的关键"）——队列文件的
+# 权威副本只有主工作区那一份。两者不一致意味着：在 linked worktree 里
+# 直接跑 `python 工具-队列结构lint.py`（本脚本 docstring 给出的原样用法）
+# 校验的是错误的文件，可能得出与 editlock release 校验完全相反的结论，
+# 且不报错——同 `CLAUDE.md` §5"工具静默回退"的教科书形态。
+REPO_ROOT = editlock.REPO_ROOT
 
 
 def lint(repo_root: Path) -> list[str]:
