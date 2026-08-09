@@ -11,6 +11,20 @@ import argparse
 import sys
 from pathlib import Path
 
+# —— worktree 隔离引导（队列 #300／#313 补漏）：把本 worktree 的平台底座路径插到
+# sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在本文件
+# 任何 zhuopin_platform / 场景包 import 之前（`src.audit_log`/`src.data_providers`
+# 均在模块或函数内 import zhuopin_platform，本引导同样覆盖）。——
+_HERE = Path(__file__).resolve()
+for _p in (_HERE, *_HERE.parents):
+    if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
+        for _entry in (_p / "5-平台底座" / "zhuopin_platform", _HERE.parent):
+            if str(_entry) not in sys.path:
+                sys.path.insert(0, str(_entry))
+        break
+else:
+    raise RuntimeError(f"未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找）")
+
 import config
 from src.audit_log import SC1AuditAdapter as AuditLogger
 from src.data_providers import get_delivery_data
