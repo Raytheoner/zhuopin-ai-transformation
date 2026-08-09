@@ -984,13 +984,32 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertFalse(json.loads((self.repo_root / "queue.md.editlock").read_text(
             encoding="utf-8")).get("released"))
 
-    def test_bare_pipe_inside_backtick_causes_column_mismatch(self):
-        """#164 同族形态：反引号内裸竖线致列数偏移，应被①拦下。"""
+    def test_pipe_inside_backtick_no_longer_causes_column_mismatch(self):
+        """队列 #314（openspec 变更包 `queue-table-backtick-aware-split`）：
+        反引号跨度内的竖线不再被当作列分隔符，行为与本用例改造前（#164
+        同族形态，曾断言"反引号内裸竖线致列数偏移，应被①拦下"）相反——
+        这是本变更 proposal.md 明写的 BREAKING 行为修正，不是新缺陷。
+        真正的裸竖线（不在反引号内）仍须被拦下，见
+        `test_bare_pipe_outside_backtick_still_causes_column_mismatch`。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        row = (
+            "| 201 | 测试任务 `a|b` | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_bare_pipe_outside_backtick_still_causes_column_mismatch(self):
+        """#164 原始形态：反引号外的裸竖线仍是真实撑列，须被①拦下——
+        反引号感知只保护跨度内的竖线，不豁免跨度外的。"""
         self._write_queue(hwm_one=200)
         self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
         text = self.target_path.read_text(encoding="utf-8")
         bad_row = (
-            "| 201 | 测试任务 `a|b` | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
+            "| 201 | 测试任务 a|b（不在反引号内） | CC | 指针 | 产出 | 待领 | 触碰区 | 2026-08-04 |\n"
         )
         text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + bad_row, 1)
         self.target_path.write_text(text, encoding="utf-8")

@@ -225,6 +225,30 @@ else:
         def has_bare_pipe(cell: str) -> bool:
             return "|" in cell
 
+        # 简化近似，非逐字节镜像——权威实现按 CommonMark 反引号游程规则
+        # 配对（见 queue_table.py::_mask_backtick_spans，队列 #314 apply
+        # 阶段真实数据踩坑后从单反引号正则升级而来）；本桩只保证隔离测试
+        # 环境（无 5-平台底座/zhuopin_platform 目录，见 `EditLockCross
+        # WorktreeTests`）不崩、能正确处理最常见的单反引号跨度，不追求
+        # 对双反引号转义单反引号这类少见写法字节级一致——隔离测试从不
+        # 喂这类内容，为一个仅覆盖降级路径的桩复刻完整算法是过度实现。
+        _BACKTICK_SPAN_RE = re.compile(r"`[^`]*`")
+        _PROTECTED_PIPE_SENTINEL = ""
+
+        @staticmethod
+        def split_row_cells(line: str) -> list[str] | None:
+            s = line.strip()
+            if not s.startswith("|"):
+                return None
+            sentinel = queue_table._PROTECTED_PIPE_SENTINEL
+            protected = queue_table._BACKTICK_SPAN_RE.sub(
+                lambda m: m.group(0).replace("|", sentinel), s,
+            )
+            return [
+                c.replace(sentinel, "|").strip()
+                for c in protected.strip("|").split("|")
+            ]
+
 
 def _resolve_repo_root() -> Path:
     """定位主工作区根目录（所有 git worktree 共享同一把锁的关键）。
@@ -755,29 +779,22 @@ def _table_data_rows(section_text: str) -> list[tuple[str, list[str]]]:
     表格约定，两处判据不该各写一套。裸竖线致列数偏移的行（#164/#225①要
     抓的那种）不会被这里过滤掉，会原样进入返回列表、留给调用方按列数校验。
 
-    队列 #314①：只要求行首为 `|`，**不**再要求行尾也是 `|`——2026-08-09
-    实测坐实，此前 `s.startswith("|") and s.endswith("|")` 的双端要求恰好
-    与本函数上一段 docstring 自相矛盾：当撑坏一行的不是"单元格内插入一个
-    裸竖线"（那种情形行尾的 `|` 还在，本就能正常走到列数校验），而是"结尾
-    若干列被正则/编辑整段吞掉、连最后一个 `|` 都没了"（队列 #313 行的真实
-    根因，`git grep` 交替符撑破触碰区/日期两列），行尾检查会让该行连
-    `_table_data_rows` 的返回列表都进不去——不是"列数校验放行"，是"根本
-    没有机会被列数校验看到"，docstring 承诺的"原样进入返回列表"因而落空。
-    本次同一根因还实测坐实了另外两处真实故障：① `_validate_release_structure`
-    ③编号校验用 `_table_data_rows(old_text)` 算 `old_numbers`——快照里同样
-    残缺的 #313 行从未进入过 `old_numbers`，导致任何后续把该行修复到行尾
-    带 `|` 的尝试，都会被误判成"新增行、须在 --reserve 预留集合内"而拒绝
-    release；② `python 工具-队列查询.py --row 313` 直接报"未找到"（该行
-    明明存在于文件里）。放宽为只查行首后，两处故障与 lint 盲区同时解除，
-    不改变本函数对"结构完好、只是列数不对"的行的既有处理方式（这类行原本
-    就能正常返回，未受影响）。
+    队列 #314①（2026-08-09 实测坐实）：切列曾要求行首行尾都必须是 `|`，
+    导致结尾被外部工具整段吞掉的行（#313 真实事故）连本函数返回列表都
+    进不去，是"lint 放行"与"release③误判为新增行拒绝"两处真实故障的
+    共同根因，完整实测记录见队列 #313/#314。
+
+    队列 #314（openspec 变更包 `queue-table-backtick-aware-split`）：切列
+    实现改为委托 `queue_table.split_row_cells`（反引号感知——反引号跨度
+    内的竖线不再被误当列分隔符，如 #313 行状态列里 `git grep` 正则交替符
+    那样的合法内容），行首要求／行尾不作要求的既有口径随委托一并继承，
+    不在本函数重复实现。
     """
     rows: list[tuple[str, list[str]]] = []
     for line in section_text.splitlines():
-        s = line.strip()
-        if not s.startswith("|"):
+        cells = queue_table.split_row_cells(line)
+        if cells is None:
             continue
-        cells = [c.strip() for c in s.strip("|").split("|")]
         first = cells[0]
         if first in _TABLE_HEADER_FIRST_CELLS:
             continue

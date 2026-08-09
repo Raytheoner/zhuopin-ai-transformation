@@ -57,6 +57,30 @@ else:
         SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
         QUEUE_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 
+        # 简化近似，非逐字节镜像——权威实现按 CommonMark 反引号游程规则
+        # 配对（见 queue_table.py::_mask_backtick_spans，队列 #314 apply
+        # 阶段真实数据踩坑后从单反引号正则升级而来）；本桩只保证隔离测试
+        # 环境（无 5-平台底座/zhuopin_platform 目录）不崩、能正确处理最
+        # 常见的单反引号跨度，不追求对双反引号转义单反引号这类少见写法
+        # 字节级一致——隔离测试从不喂这类内容，为一个仅覆盖降级路径的
+        # 桩复刻完整算法是过度实现。
+        _BACKTICK_SPAN_RE = re.compile(r"`[^`]*`")
+        _PROTECTED_PIPE_SENTINEL = ""
+
+        @staticmethod
+        def split_row_cells(line: str) -> list[str] | None:
+            s = line.strip()
+            if not s.startswith("|"):
+                return None
+            sentinel = queue_table._PROTECTED_PIPE_SENTINEL
+            protected = queue_table._BACKTICK_SPAN_RE.sub(
+                lambda m: m.group(0).replace("|", sentinel), s,
+            )
+            return [
+                c.replace(sentinel, "|").strip()
+                for c in protected.strip("|").split("|")
+            ]
+
 
 def _resolve_repo_root() -> Path:
     try:
@@ -142,17 +166,16 @@ def _split_live_sections(text: str) -> dict[str, str]:
 
 
 def _table_data_rows(section_text: str) -> list[list[str]]:
-    """队列 #314①：只要求行首为 `|`，不再要求行尾也是 `|`——与
-    `工具-共享文档编辑锁.py::_table_data_rows` 同一根因同一修法（该文件
-    docstring 有完整实测记录）：结尾若干列被整段吞掉、连最后一个 `|` 都
-    没了的行（如 #313），此前会被行尾检查静默排除，本工具据此对存在的
-    行号报"未找到"（2026-08-09 实测复现：`--row 313` 命中此故障）。"""
+    """队列 #314①（2026-08-09 实测复现：`--row 313` 曾报"未找到"）：结尾
+    被外部工具整段吞掉的行此前会被行尾检查静默排除。队列 #314（openspec
+    变更包 `queue-table-backtick-aware-split`）：切列实现改为委托
+    `queue_table.split_row_cells`（反引号感知，行首要求／行尾不作要求的
+    既有口径随委托一并继承，不在本函数重复实现）。"""
     rows: list[list[str]] = []
     for line in section_text.splitlines():
-        s = line.strip()
-        if not s.startswith("|"):
+        cells = queue_table.split_row_cells(line)
+        if cells is None:
             continue
-        cells = [c.strip() for c in s.strip("|").split("|")]
         first = cells[0]
         if first in _TABLE_HEADER_FIRST_CELLS:
             continue

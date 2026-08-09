@@ -359,6 +359,27 @@ else:
 
         SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
 
+        # 简化近似，非逐字节镜像——权威实现按 CommonMark 反引号游程规则
+        # 配对（见 queue_table.py::_mask_backtick_spans，队列 #314 apply
+        # 阶段真实数据踩坑后从单反引号正则升级而来）；本桩只保证隔离环境
+        # 不崩，不追求对双反引号转义单反引号这类少见写法字节级一致。
+        _BACKTICK_SPAN_RE = re.compile(r"`[^`]*`")
+        _PROTECTED_PIPE_SENTINEL = ""
+
+        @staticmethod
+        def split_row_cells(line: str) -> list[str] | None:
+            s = line.strip()
+            if not s.startswith("|"):
+                return None
+            sentinel = queue_table._PROTECTED_PIPE_SENTINEL
+            protected = queue_table._BACKTICK_SPAN_RE.sub(
+                lambda m: m.group(0).replace("|", sentinel), s,
+            )
+            return [
+                c.replace(sentinel, "|").strip()
+                for c in protected.strip("|").split("|")
+            ]
+
 MAIN_WORKSPACE = Path(r"C:\Users\Paul Shao\OneDrive\Projects\企业AI转型")
 QUEUE_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 LEDGER_SCRIPT_REL = "0-学习与工具/工具-文档台账生成.py"
@@ -1058,7 +1079,16 @@ def _status_paths(repo_root: Path) -> list[str]:
 
 
 def _parse_section_two(queue_text: str) -> list[dict]:
-    """解析队列 §二"待 commit 批次"表格，返回每行的原始文本+四列内容。"""
+    """解析队列 §二"待 commit 批次"表格，返回每行的原始文本+四列内容。
+
+    队列 #314（openspec 变更包 `queue-table-backtick-aware-split`）：切列
+    改为委托 `queue_table.split_row_cells`（反引号感知）——但本函数"行首
+    行尾都必须是 `|`"这一行首行尾双检查**保持不变**，不随 #314① 对
+    `工具-共享文档编辑锁.py::_table_data_rows` 的放宽而放宽：那是刻意的
+    设计取舍（"命中不了整八列即静默跳过、不崩溃、不误判"，见 `_parse_
+    section_one` 文档），sweep 需要在无人值守场景下绝不误判，与编辑锁
+    "原样返回交调用方判"的既有策略是两种不同、都各自成立的取舍，本次
+    只升级切列算法本身，不改变这一判断。"""
     start = queue_text.find(SECTION_TWO_HEADING)
     if start == -1:
         return []
@@ -1071,7 +1101,7 @@ def _parse_section_two(queue_text: str) -> list[dict]:
         stripped = line.strip()
         if not stripped.startswith("|") or not stripped.endswith("|"):
             continue
-        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        cells = queue_table.split_row_cells(line)
         if len(cells) != queue_table.SECTION_COLUMN_COUNTS["二"]:
             continue
         if cells[0] in ("批次", ""):
@@ -1268,7 +1298,9 @@ def _check_dirty_paths_against_pending_batches(
 def _parse_section_one(queue_text: str) -> list[dict]:
     """解析队列 §一"任务看板"表格，返回每行的原始文本+八列内容。与
     `_parse_section_two` 同一套简单表格解析取舍——命中不了整八列即静默
-    跳过该行（不处理单元格内嵌 `|` 的极端情形），不崩溃、不误判。"""
+    跳过该行，不崩溃、不误判；行首行尾双检查刻意保持不变，见
+    `_parse_section_two` 文档（队列 #314，仅切列算法本身升级为反引号
+    感知，不改变这一取舍）。"""
     start = queue_text.find(SECTION_ONE_HEADING)
     if start == -1:
         return []
@@ -1281,7 +1313,7 @@ def _parse_section_one(queue_text: str) -> list[dict]:
         stripped = line.strip()
         if not stripped.startswith("|") or not stripped.endswith("|"):
             continue
-        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        cells = queue_table.split_row_cells(line)
         if len(cells) != queue_table.SECTION_COLUMN_COUNTS["一"]:
             continue
         if cells[0] in ("#", ""):

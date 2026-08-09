@@ -12,11 +12,12 @@
 两件事，完整决策记录见 openspec 变更包
 `queue-table-shared-parser-consolidation`。
 
-本模块**不**承载①表格切分/列语义解析或③开头片段提取——这两件事已随
-#308 的状态机器字段作废/大幅萎缩，各消费者按需继续各自独立按 `|`
-切分表格行（同项目既有惯例：判据独立实现、不跨 `0-学习与工具/*.py`
-互相 import，理由见 `工具-队列查询.py` 文件头），不在本模块权威化
-范围内。
+本模块**原不**承载①表格切分/列语义解析或③开头片段提取——这两件事
+曾随 #308 的状态机器字段作废/大幅萎缩，一度交各消费者按需继续各自独立
+按 `|` 切分表格行。**队列 #314 起，①表格切分的其中一个子问题（反引号
+感知）已收拢进本模块**（见下方"队列 #314"段），③开头片段提取仍不在
+本模块权威化范围内、仍各消费者独立实现（同项目既有惯例：判据独立实现、
+不跨 `0-学习与工具/*.py` 互相 import，理由见 `工具-队列查询.py` 文件头）。
 
 队列 #313 追加第④件事——队列文件自身相对路径 `QUEUE_PATH_REL`：
 `工具-共享文档编辑锁.py`／`工具-队列查询.py`／`工具-文档台账生成.py`
@@ -26,6 +27,17 @@
 本次未纳入，如实登记见队列 #313 回写。仓库根解析（10 处，各工具自行
 拼出仓库根目录，与"队列文件在仓库根下的哪个相对路径"是不同层面的
 关注点）同样不在本次范围内。
+
+队列 #314：新增反引号感知切列（`split_row_cells`）与"列数不变式收进
+解析入口"（`parse_section_rows`），openspec 变更包
+`queue-table-backtick-aware-split`。背景——#313 行的真实破损（`git grep`
+的正则交替符——用反引号包裹的一段代码示例，内含连接两个搜索关键词的
+半角竖线——被朴素 `str.split("|")` 当作列分隔符撑破）暴露出本模块此前
+只做"转义/列数校验两件小事"，切列本身仍是 4 处消费者各自独立的朴素
+实现，对 Markdown 表格规范允许的"反引号内的竖线是字面量、不算列分隔符"
+这一约定完全无感知。本次新增两个函数把这一子问题收拢进来，`has_bare_pipe`
+的"反引号包裹不豁免"既有语义不变（服务不同问题：能不能写入，不是该
+不该被当分隔符）。
 """
 from __future__ import annotations
 
@@ -80,3 +92,118 @@ def column_count_ok(section: str, cells: list[str]) -> bool:
     if expected is None:
         return True
     return len(cells) == expected
+
+
+# 队列 #314：反引号跨度识别——按 CommonMark code span 规则（反引号
+# **游程**开合，闭合游程须与开启游程长度完全一致），不是简单的
+# `` `[^`]*` `` 单反引号配对正则。
+#
+# apply 阶段真实数据踩坑记录（design.md 决策点 1 的原定方案在此处修正，
+# 不是纸面推演）：最初按 design.md 决策点 1 直接复用
+# `工具-共享文档编辑锁.py::BACKTICK_SPAN_RE`（单反引号正则），对当前
+# 生产队列文件跑任务 3.2 的新旧切列 diff 时，真实命中 §二 批次
+# `B-0809_312可Open池立行与接力收工` 的"文件清单"列从 4 列被错误合并成
+# 3 列——该列正文用 CommonMark 标准写法（双反引号游程，专门用于包裹
+# "内容本身含单个反引号"的文本，本例是在描述"字符串里的反引号被吃掉"
+# 这件事本身）：单反引号正则把这类双反引号游程里的每个反引号都当成
+# 独立的配对边界，游程配对全部错位，导致后续所有竖线（含真正的列分
+# 隔符）保护范围全部漂移。**这不是理论风险，是 2026-08-09 真实生产数据
+# 实测坐实的缺陷**，故改为下方 `_mask_backtick_spans`——手写扫描而非
+# 正则，逐字符找"同长度反引号游程"配对，忠实复刻 CommonMark 规则；找
+# 不到同长度闭合游程的开启游程视为普通文本（等同 Markdown 渲染器对
+# "落单/无匹配反引号"的既有处理，design.md 决策点 1 关于"未闭合情形是
+# 期望行为"的论证依然成立，只是配对算法本身升级为游程感知）。
+_PROTECTED_PIPE_SENTINEL = ""
+
+
+def _mask_backtick_spans(s: str) -> str:
+    """按 CommonMark 规则扫描 `s`，把反引号 code span 跨度内的竖线替换
+    为 `_PROTECTED_PIPE_SENTINEL`，返回等长（跨度外原样、跨度内竖线被
+    替换）的字符串。非跨度部分与原字符串逐字符一致，供调用方按 `|`
+    切分。"""
+    out: list[str] = []
+    i = 0
+    n = len(s)
+    while i < n:
+        if s[i] != "`":
+            out.append(s[i])
+            i += 1
+            continue
+        j = i
+        while j < n and s[j] == "`":
+            j += 1
+        run_len = j - i
+        k = j
+        close_start = -1
+        close_end = -1
+        while k < n:
+            if s[k] != "`":
+                k += 1
+                continue
+            k2 = k
+            while k2 < n and s[k2] == "`":
+                k2 += 1
+            if k2 - k == run_len:
+                close_start, close_end = k, k2
+                break
+            k = k2
+        if close_start == -1:
+            # 找不到同长度闭合游程——开启游程本身视为普通文本（同
+            # Markdown 渲染器对未闭合反引号的处理），照原样输出后继续。
+            out.append(s[i:j])
+            i = j
+        else:
+            span = s[i:close_end]
+            out.append(span.replace("|", _PROTECTED_PIPE_SENTINEL))
+            i = close_end
+    return "".join(out)
+
+
+def split_row_cells(line: str) -> list[str] | None:
+    """反引号感知切列——把一行 Markdown 表格文本切分为单元格列表；反引号
+    跨度内的竖线 `|` 不被当作列分隔符（跨度识别按 CommonMark 反引号游程
+    规则，见 `_mask_backtick_spans`）。
+
+    行不以 `|` 开头返回 `None`（不是一条表格行）。行不以 `|` 结尾**不**
+    导致返回 `None`——沿用队列 #314① 的教训（`工具-共享文档编辑锁.py::
+    _table_data_rows` 曾因误要求"行首行尾都必须是 `|`"，把结尾被外部
+    工具截断的行静默排除在返回结果之外，连列数校验都没机会跑，见该函数
+    docstring 的完整实测记录）：结构本身已经损坏的行，仍应被切出单元格
+    交调用方通过列数校验发现异常，不得在切分这一步就静默丢弃。
+    """
+    s = line.strip()
+    if not s.startswith("|"):
+        return None
+    protected = _mask_backtick_spans(s)
+    cells = [
+        c.replace(_PROTECTED_PIPE_SENTINEL, "|").strip()
+        for c in protected.strip("|").split("|")
+    ]
+    return cells
+
+
+_TABLE_HEADER_OR_SEPARATOR_FIRST_CELLS = ("#", "批次", "")
+
+
+def parse_section_rows(
+    section_text: str, section: str,
+) -> list[tuple[str, list[str], bool]]:
+    """逐行调用 `split_row_cells` 解析给定分区正文，跳过表头/分隔行，
+    为每条数据行返回 `(原始行文本, 单元格列表, 列数是否符合该分区标准
+    列数)` 三元组——把"这一行列数对不对"这件事收进解析入口本身，调用方
+    不需要另外记得调用 `column_count_ok`。
+
+    复用 `column_count_ok` 完成列数判定，不重新实现列数比较逻辑。
+    """
+    rows: list[tuple[str, list[str], bool]] = []
+    for line in section_text.splitlines():
+        cells = split_row_cells(line)
+        if cells is None:
+            continue
+        first = cells[0] if cells else ""
+        if first in _TABLE_HEADER_OR_SEPARATOR_FIRST_CELLS:
+            continue
+        if set(first) <= {"-", " "}:
+            continue
+        rows.append((line, cells, column_count_ok(section, cells)))
+    return rows
