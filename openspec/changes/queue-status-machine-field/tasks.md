@@ -81,5 +81,5 @@
 
 - [x] 9.1 `/opsx:archive queue-status-machine-field -y`——**仍不做（2026-08-09 复评，`queue-308-f2-cleanup` session）**：8.6 本轮已收口，不再是 archive 的阻塞项；但 7.3／7.5／8.3（部分）／8.4／9.4 仍是此前 session 已如实登记、本轮未处理的未完成项（不在本轮"F2 命中处置"授权范围内，未擅自重开这些判断）——`/opsx:archive` 前置条件依旧不满足，留待后续 session。
 - [x] 9.2 队列 §二 登记待 commit 批次（`B-0809_队列308apply核心实现`），文件清单含队列文件自身。
-- [x] 9.3 commit + push——已完成（apply 核心实现 commit `efa522f`；主工作区分叉恢复 rebase 后 commit `bbd598a`，均已推送 origin/master，`git rev-list --left-right --count` 验证 0 0）。
-- [ ] 9.4 worktree 收工自删——预期会因自身会话锚定其上而 Permission denied（已知限制，见 #267），届时如实登记待后续会话清理。
+- [x] 9.3 commit + push——已完成（apply 核心实现 commit `efa522f`；主工作区分叉恢复 rebase 后 commit `bbd598a`，均已推送 origin/master，`git rev-list --left-right --count` 验证 0 0）。**`queue-308-f2-cleanup` session 追加**：队列 #308 行回写 `178624a`、F2 退休代码修复 `2668104`、文档台账重跑 `3621901`，均 ff-only 已推送 origin/master，主工作区本地 master 指针已同步。
+- [x] 9.4 worktree 收工自删——**实测确认预期成立**：`git worktree remove` 报 `Permission denied`（本 worktree 正是当前会话锚定的 cwd，与 #267 已知限制完全同构）；但 `git worktree list` 已确认 git 侧**成功注销注册**，物理目录内容随之清空（仅剩空壳），零数据风险（改动已推送）。**留待后续会话/Paul 手动清理外层空壳目录**：`.claude/worktrees/fi2-tax-export-excel-d3938b`。
