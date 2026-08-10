@@ -79,6 +79,48 @@
 > （面板 u9c 模式仍固定读 D19 的 `data/real_round1/`）——只交付摄取能力本身，是否/如何
 > 接入面板默认路径留待下一步评估；第 2 层（定时扫描+失败告警）按 Q1 默认(a)后置未做。
 > 详见队列 #295／#249，openspec 归档 `archive/2026-08-07-fi2-tax-export-ingest/`。
+>
+> ✅ **第2层（定时扫描+失败告警）+ 摄取产出接入面板默认展示路径已建成（2026-08-10，
+> 队列 #82，独立 worktree `layer2-scheduled-scan-alerts-fff92e`）**：领取 #82 剩余范围
+> 两项（08-10 唐燕萍首次真实按约投放后由 CC 回填标注）。**① 第2层**：新增
+> `fi2/tax_export_scan.py::scan_once()`——原样复用 `tax_export_ingest.ingest_directory`/
+> `write_invoice_csv`（判据零改动），新增两件事：文件级失败判定（`sheet_missing`/
+> `field_missing`/`parse_error`——今天 #82 sheet 名事故正是这一类，12 个真实文件
+> 100% 失败但手动 CLI 退出码仍是 0、无人会注意到）与行级诊断（`ap_no_zero_match` 等，
+> 真实数据约 89% 属预期噪声，见队列 #82 08-10 回填）严格区分，只对前者告警；命中时经
+> 既有群 webhook 逃生通道（`WECOM_WEBHOOK_URL`）通知 Shao Peishen——按
+> `3-治理与合规/通知通道架构决策件-webhook退役与aibot单一出口-2026-08-06.md` §4.2
+> 判据（本告警主题是"机制自身故障"非业务内容），不经 aibot、不触达唐燕萍；webhook
+> 未配置时静默跳过（不阻断扫描），同 `alert_webhook.py` 既有降级方式。新增
+> `scripts/scan_tax_export_scheduled.py`（计划任务专用入口，与手动 CLI
+> `scripts/ingest_tax_export.py` 并存不改、共享同一 `out-dir`/`ledger`，谁先跑到都一样）
+> + `register-tax-export-scan-task.ps1`（`.51` 本机运行，`Fi2TaxExportDailyScan`，
+> 每天 10:30，SYSTEM+ServiceAccount，同 `Fi2WebServer` 既有先例）。**② 摄取产出接入
+> 面板默认展示路径**：`webapp.py` 新增 `_resolve_invoice_sample()`——`u9c` 模式发票段
+> 固定目录解析优先读 `data/tax_export/invoice.csv`（税务导出摄取，规模化路径），仅当
+> 缺失/无产出时才回落 `data/real_round1/invoice.csv`（D19 人工誊录小样，仅 8 张样本、
+> round-1 验证专用），两者皆缺仍 fail-loud（行为不变）；报告页新增对应 banner 如实
+> 区分标注"税务导出摄取"或"人工誊录小样"，不混淆两者，判定口径
+> （`match_engine.py`/`result_classify.py`/`price_check.py`/`config.py`/`models.py`/
+> `feed_source.py`）一字未动。**新增 gitignore 规则**：`data/tax_export/` 此前未被
+> 任何既有规则覆盖（含真实 ap_no/单价/金额，同 `data/real_*` 红线，此次补上）。**测试**：
+> 新增 `test_tax_export_scan.py`（10 用例，全程假连接器/假发送函数）+ `test_webapp.py`
+> 新增 4 用例（税务导出优先/两者皆备优先税务导出/税务导出缺 csv 回落/两者皆缺
+> fail-loud），另有既有 5 处 round-1 测试补做 `_TAX_EXPORT_DIR` 隔离（防止本地
+> worktree 真实存在 `data/tax_export/invoice.csv` 时产生非确定性）。全量回归零漂移：
+> FI2 143 passed+9 skip（原129+9，+14）、平台 289 passed+1 skip（不变）。**未做/未验证
+> （如实登记，本次执行环境无 LAN 路由到 `192.168.100.51`——`ssh`/`ping` 均超时，非沙箱
+> 限制，是本机当前网络出口不在 .51 所在子网）**：① 代码未同步部署到 `.51`（
+> `sync-to-server.ps1` 未跑，`webapp.py`/新增两个脚本改动尚未在生产面板生效，
+> `data/real_round1/` 回落路径本身在生产环境仍是此前唯一有效路径，直到部署完成）；
+> ② `Fi2TaxExportDailyScan` 计划任务未在 `.51` 上真实注册/未验证；③ `.51:C:\fi2\.env`
+> 是否已含 `WECOM_WEBHOOK_URL` 未核实（U9C/Stock 凭据已知存在，webhook 凭据未知，见
+> D19 部署段"同一物理服务器同一凭据"约定——若缺失，告警会静默跳过而非报错，需部署时
+> 一并确认/补齐）；④ 未做任何真实企微 webhook 调用（本地仅用假发送函数验证告警组装
+> 逻辑，未触碰生产 `WECOM_WEBHOOK_URL`，避免误发真实群消息）。**下一步（需 LAN 访问
+> `.51` 的 CC session 执行）**：`sync-to-server.ps1` → 确认/补齐 `.env` 的
+> `WECOM_WEBHOOK_URL` → `register-tax-export-scan-task.ps1` → `Start-ScheduledTask`
+> 验证一次 → 用真实面板确认发票段展示"税务导出摄取"标签。详见队列 #82。
 
 ## 定位（Paul 2026-07-07 拍板；口径 2026-07-09 v3 修正）
 - FI2 = 财务/采购交叉场景，**2026-09 启动**。财务域 2026 年唯一按期落地场景（FI1 因需求变更暂缓封存）。
@@ -170,7 +212,7 @@
 
 ## 关键依赖/前置（解锁条件）
 - ~~🔴 唐燕萍（财务 AI 专员）R1-R7 规则草案~~ ✅ 已交付（2026-07-10，较原计划提前 7 周）——真值已落 `config.py`（见上）；黄金用例专家批改仍待唐燕萍团队（strawman 用例本身未经批改）。
-- ~~🔴 U9C 财务接口（PO/GR/AP 配票）~~ ✅ 已接入（2026-07-20，design D15）+ ✅ **round-1 真实小样本验证通过**（2026-07-23，design D18，见上）；~~apiKey 一度失效~~ **✅ 2026-07-21 已由陈承修复**（见上）。~~🔴 OCR 选型仍未就绪~~ **✅ OCR 方案已作废、改道税务导出 Excel（唐燕萍 2026-08-04 拍板，队列 #249/#59/#127 同步关闭）+ 摄取能力已建成（2026-08-07，队列 #295，见上）**——发票源自动直读晋档 2 前置由"待 OCR round-2"变为"待摄取产出接入面板默认展示路径"（未做，见上方 08-07 段"未做"项）。
+- ~~🔴 U9C 财务接口（PO/GR/AP 配票）~~ ✅ 已接入（2026-07-20，design D15）+ ✅ **round-1 真实小样本验证通过**（2026-07-23，design D18，见上）；~~apiKey 一度失效~~ **✅ 2026-07-21 已由陈承修复**（见上）。~~🔴 OCR 选型仍未就绪~~ **✅ OCR 方案已作废、改道税务导出 Excel（唐燕萍 2026-08-04 拍板，队列 #249/#59/#127 同步关闭）+ 摄取能力已建成（2026-08-07，队列 #295，见上）+ 第2层定时扫描/失败告警＋摄取产出接入面板默认展示路径已建成（2026-08-10，队列 #82，见上）**——代码已就绪，**部署到 `.51` 待下一个有 LAN 访问权限的 CC session**（本次执行环境无 LAN 路由，见上方 08-10 段"未做"项）。
 - ~~🟡 AP 端批量查询 SQL bug~~ ✅ **2026-07-21 已由 IT 修复 + 批量自动取数已改造完成**（design D16，见上）——`FeedSource` 同时支持 `ap_supplier_codes`（批量，推荐）/`ap_doc_nos`（手工单号）两种驱动模式。
 - 🟡 料品↔INV规格型号/项目名称映射表（v3 改名，原"物料编码映射表"）——真实场景前置，round-1 已用"人工对照 AP 配票记录反推映射"验证过匹配逻辑本身可靠（design D18-f），但**规模化映射表基础设施仍未建**，模糊匹配/置信度分档/自学习长线机制仍待真实映射表来源确认（本次仅落地"归一化预处理"子项 `item_normalize.py`）。
 - ~~🟡 `price_check.py` 未消费 `POChange/Query`~~ ✅ **已评估完成，结论=不采纳（2026-07-28，队列 #80）**——真实探测证伪了"比对基准未跟进变更价"这个假设：`Purchase/Query.FinalPriceTC` 本来就是当前生效价（PO 每次变更审批后 ERP 原地更新主记录），`POChange/Query` 也是单据级无行项单价，给不出"某料品最新价"。`price_check.py` 维持现状不改，详见上方"已知真实端点行为坑"第 3 条 + 决策件已作废勘误段。
@@ -253,3 +295,17 @@
   "只建摄取能力"范围内。回滚 SOP 不变（见上），本次新增内容删除
   `C:\fi2\app\data\tax_export\`、`fi2/tax_export_ingest.py`、
   `scripts/ingest_tax_export.py` 即可完全撤回，不影响其余功能。
+- **2026-08-10 第2层定时扫描/失败告警 + 摄取产出接入面板默认展示路径——代码已就绪，
+  🔴 尚未部署到 `.51`**（队列 #82，本次执行环境无 LAN 路由到 `192.168.100.51`，`ssh`/
+  `ping` 均超时，非沙箱限制，是本机当前网络出口不在 `.51` 所在子网——真实网络约束，
+  非授权问题）。生产 `webapp.py` 仍是部署前版本（发票段固定读 `data/real_round1/`），
+  `Fi2TaxExportDailyScan` 计划任务未注册，`data/tax_export/` 目录内容不受影响（未触碰）。
+  **待下一个有 LAN 访问权限的 CC session 执行**：① `sync-to-server.ps1`（推送
+  `webapp.py`/`fi2/tax_export_scan.py`/`scripts/scan_tax_export_scheduled.py`/
+  `register-tax-export-scan-task.ps1`，`Fi2WebServer` 会随之重启）；② 确认/补齐
+  `C:\fi2\.env` 的 `WECOM_WEBHOOK_URL`（U9C/Stock 凭据已知存在，此项未知，缺失时告警
+  会静默跳过而非报错，非阻断项但需确认）；③ `register-tax-export-scan-task.ps1`
+  （`.51` 本机管理员运行）；④ `Start-ScheduledTask -TaskName Fi2TaxExportDailyScan`
+  验证一次真实运行；⑤ 用真实 u9c 模式跑一次面板，确认发票段展示"税务导出摄取"标签
+  （非"人工誊录小样"）。回滚：`register-tax-export-scan-task.ps1` 注册前无需回滚（未
+  注册即无副作用）；注册后回滚同文件头部 SOP（`schtasks /End` + `/Delete`）。

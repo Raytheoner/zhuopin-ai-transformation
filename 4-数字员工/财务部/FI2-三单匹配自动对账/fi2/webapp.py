@@ -48,6 +48,14 @@ D19 改造（2026-08-03，队列 #214/§四#43，唐燕萍验收 v8 结构后唯
    "首个值+裸'+'"表示，改为对多值去重后用"/"列出全部真实值（AP 行号/发票号）。
 5. **问题6**（⑥行级映射：缺 AP 行号 + 发票号重复 + 粘连难读）——`_mapping_lines()`
    重写为链条格式，PO 行号与 AP 真实行号分列、发票号去重只列一次、多值用"/"分隔。
+
+队列 #82 第2层收尾（2026-08-10，摄取产出接入面板默认展示路径）：`u9c` 模式发票段固定
+目录解析改为优先读取 `data/tax_export/invoice.csv`（税务导出摄取产出，队列 #295/#82，
+规模化路径），仅当该目录缺失/无产出时才回落 `data/real_round1/invoice.csv`（D19 人工誊录
+小样，8 张样本、仅round-1验证用）——两者均为固定目录、非用户可填路径（同 D19 既有红线，
+避免路径穿越面）。判定口径一字未动，`load_invoice()`/`FeedSource` 均未改；仅新增
+`_resolve_invoice_sample()` 与对应展示层 banner 文案（如实标注数据源为"税务导出摄取"或
+"人工誊录小样"二选一，不混淆两者）。
 """
 from __future__ import annotations
 
@@ -75,6 +83,26 @@ _MOCK_DIR = _ROOT / "data" / "mock"
 # 目录不存在或缺 invoice.csv 时行为不变（load_invoice 维持现状 fail-loud）。
 _INVOICE_SAMPLE_DIR = _ROOT / "data" / "real_round1"
 _INVOICE_SAMPLE_LABEL = "u9c+人工誊录小样"
+# 队列 #82 第2层收尾（2026-08-10）：税务导出摄取产出（队列 #295/#82，规模化路径），
+# 同样固定目录、非用户可填路径。优先于上面的 round-1 人工誊录小样——见
+# `_resolve_invoice_sample()`。
+_TAX_EXPORT_DIR = _ROOT / "data" / "tax_export"
+_TAX_EXPORT_LABEL = "u9c+税务导出摄取"
+
+
+def _resolve_invoice_sample() -> tuple[Path | None, str]:
+    """u9c 模式发票源固定目录解析（队列 #82 第2层）：`_TAX_EXPORT_DIR` 存在
+    `invoice.csv` 即优先采用（税务导出摄取产出，规模化路径已建成，见队列
+    #295/#82）；否则回落 `_INVOICE_SAMPLE_DIR`（D19 人工誊录小样，仅 8 张样本、
+    round-1 验证专用）；两者皆缺则回落 `(None, "")`，`load_invoice()` 维持现状
+    fail-loud，行为与改造前一致。不比较新旧/行数——规模化路径一旦有产出即优先于
+    验证期小样是既定方向（队列 #249："发票侧此前两个不确定源，OCR 已作废后，
+    它是唯一剩余的一个"），不需要更复杂的判据。"""
+    if (_TAX_EXPORT_DIR / "invoice.csv").is_file():
+        return _TAX_EXPORT_DIR, _TAX_EXPORT_LABEL
+    if (_INVOICE_SAMPLE_DIR / "invoice.csv").is_file():
+        return _INVOICE_SAMPLE_DIR, _INVOICE_SAMPLE_LABEL
+    return None, ""
 
 _R7_TIP = (
     "口径提示：超差为强制转人工标记，<b>不代表一定是记账错误</b>——round-1 真实数据溯源"
@@ -218,9 +246,10 @@ _DATA_SOURCE_HELP = (
     "mock＝内置演示夹具（无需填写下方任何字段，用于查看面板长相）｜"
     "csv＝应急桥接目录（如 dump_u9c_snapshot.py 产出的真实 PO/GR/AP 快照 + 人工誊录 invoice.csv"
     "，round-1 已验证路径，不依赖 OCR）｜"
-    "u9c＝真实直读 PO/GR/AP；发票段：若场景内已备好人工誊录小样（design D19，队列 #214）"
-    "则自动读取并在报告页显式标注'人工誊录小样，OCR未接入'，未备好则如实报错（design D15-b，"
-    "Attachment/OCR 尚未就绪）——本模式不支持自由填写发票路径，样本目录固定，不开放任意本机路径"
+    "u9c＝真实直读 PO/GR/AP；发票段：优先读取税务导出摄取产出（规模化路径，队列 #82/#295，"
+    "定时扫描 D:\\airead 新增文件自动摄取），未就绪则回落人工誊录小样（design D19，队列 #214，"
+    "仅 round-1 验证用），两者皆缺则如实报错（design D15-b）——本模式不支持自由填写发票路径，"
+    "样本目录固定，不开放任意本机路径"
 )
 
 _INDEX_BODY = f"""
@@ -249,8 +278,9 @@ _INDEX_BODY = f"""
     <input type="text" name="ap_doc_nos" placeholder="如 AP-2026070036,AP-2026070035">
     <label class="f">供应商代码清单（逗号分隔，批量）</label>
     <input type="text" name="ap_supplier_codes" placeholder="如 ZA0066">
-    <div class="note">发票段无需填写：若场景内已备好人工誊录小样则自动读取（报告页会显式标注
-      "人工誊录小样，OCR未接入"），未备好则如实报错——不支持自由填写发票路径（design D19）。</div>
+    <div class="note">发票段无需填写：优先读取税务导出摄取产出（报告页标注"税务导出摄取"，
+      队列 #82/#295），未就绪则回落人工誊录小样（标注"人工誊录小样，OCR未接入"），两者皆缺
+      则如实报错——不支持自由填写发票路径（design D19，队列 #82 第2层）。</div>
   </fieldset>
   <fieldset>
     <legend>报告标注（不参与过滤/判定，仅留痕）</legend>
@@ -338,9 +368,12 @@ def _run_with_detail(
     items = classify_all(ap_lines, linked)
     price_results = check_ap_po_price(ap_lines, po_lines)
 
-    invoice_source_label = (
-        _INVOICE_SAMPLE_LABEL if fs.invoice_sample_dir is not None else fs.data_source
-    )
+    if fs.invoice_sample_dir == _TAX_EXPORT_DIR:
+        invoice_source_label = _TAX_EXPORT_LABEL
+    elif fs.invoice_sample_dir is not None:
+        invoice_source_label = _INVOICE_SAMPLE_LABEL
+    else:
+        invoice_source_label = fs.data_source
     rep = build_report(
         items, orphaned, price_results,
         ap_lines=ap_lines, po_lines=po_lines,
@@ -716,13 +749,21 @@ def _report_page(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price
     n_block = rep["summary"]["needs_review"] + len(orphaned)
     total_rows = rep["summary"]["total"] + len(orphaned)
 
-    invoice_is_sample = ds.get("invoice") == _INVOICE_SAMPLE_LABEL
-    d19_banner = (
-        '<div class="disclaimer-d19">⚠️ 发票为人工誊录小样，OCR 未接入——'
-        '本轮真实数据接入第一轮（design D19，队列 #214），仅 PO/AP 为真实直读，'
-        '发票段来自人工誊录的真实发票小样（非自动解析），供核对判定口径用；'
-        '规模化自动读票待 OCR round-2（队列 #82）。</div>'
-    ) if invoice_is_sample else ""
+    _INVOICE_SOURCE_BANNERS = {
+        _TAX_EXPORT_LABEL: (
+            '<div class="disclaimer-d19">⚠️ 发票为税务系统导出摄取（规模化路径，队列 #82/#295，'
+            '税务导出 Excel → ap_no/item_code 自动反查）——反查失败或歧义的明细行按诊断留痕、'
+            '不计入本次核对结果，不静默丢弃也不猜测赋值；发票原文不经 OCR，来自税务系统人工'
+            '导出的结构化明细表。</div>'
+        ),
+        _INVOICE_SAMPLE_LABEL: (
+            '<div class="disclaimer-d19">⚠️ 发票为人工誊录小样，OCR 未接入——'
+            '本轮真实数据接入第一轮（design D19，队列 #214），仅 PO/AP 为真实直读，'
+            '发票段来自人工誊录的真实发票小样（非自动解析），供核对判定口径用；'
+            '规模化自动读票已改道税务导出摄取（队列 #82/#295）。</div>'
+        ),
+    }
+    d19_banner = _INVOICE_SOURCE_BANNERS.get(ds.get("invoice"), "")
 
     return _PAGE_HEAD + f"""
 <h1>FI2 三单匹配核对面板<span class="badge">试用版·灰度</span></h1>
@@ -823,10 +864,10 @@ def create_app(*, reports_dir: Path) -> Flask:
                 return Response(
                     _error_page(f"U9C 连接构造失败：{exc}"), mimetype="text/html"
                 ), 500
-            # design D19（队列 #214/§四#43）：固定目录、非用户可填路径（见模块常量注释）；
-            # 目录或 invoice.csv 缺失时保持 None，`load_invoice()` 维持现状 fail-loud。
-            if (_INVOICE_SAMPLE_DIR / "invoice.csv").is_file():
-                invoice_sample_dir = _INVOICE_SAMPLE_DIR
+            # 队列 #82 第2层：固定目录、非用户可填路径，税务导出摄取产出优先于
+            # round-1 人工誊录小样（见 `_resolve_invoice_sample()`）；两者皆缺
+            # 时保持 None，`load_invoice()` 维持现状 fail-loud。
+            invoice_sample_dir, _ = _resolve_invoice_sample()
 
         audit = AuditLogger.jsonl(audit_path)
         try:

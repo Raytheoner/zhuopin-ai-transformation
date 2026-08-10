@@ -27,7 +27,7 @@ Sync-ZhuopinPlatformAndApp `
     -ServerBase $Base `
     -LocalPlatformDir (Join-Path $REPO "5-平台底座\zhuopin_platform") `
     -LocalAppDir $APP `
-    -AppFiles @("pyproject.toml", "fi2", "scripts", "deploy-server.ps1") `
+    -AppFiles @("pyproject.toml", "fi2", "scripts", "deploy-server.ps1", "register-tax-export-scan-task.ps1") `
     -AppLabel "FI2 工程"
 
 Write-Host "[mock 演示数据] 单独推送 data/mock/（纯合成，不含真实数据）..." -ForegroundColor Yellow

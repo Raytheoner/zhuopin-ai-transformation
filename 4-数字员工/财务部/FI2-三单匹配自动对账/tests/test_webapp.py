@@ -99,6 +99,14 @@ def _patch_u9c_connector(monkeypatch):
     )
 
 
+def _patch_no_tax_export(monkeypatch, tmp_path):
+    """队列 #82 第2层：`_resolve_invoice_sample()` 优先检查 `_TAX_EXPORT_DIR`——
+    round-1 人工誊录小样相关测试须显式把它指向一个不存在的目录，使断言不受"本地
+    worktree 是否恰好存在真实 data/tax_export/invoice.csv"影响（幂等/隔离，
+    不依赖本机磁盘状态）。"""
+    monkeypatch.setattr(webapp_module, "_TAX_EXPORT_DIR", tmp_path / "no-tax-export")
+
+
 class TestRunU9cModeInvoiceSampleD19:
     """design D19（队列 #214/§四#43）：u9c 模式接真实 PO/AP + 发票人工誊录小样。"""
 
@@ -107,6 +115,7 @@ class TestRunU9cModeInvoiceSampleD19:
         如实报错，不静默假装成功。"""
         _patch_u9c_connector(monkeypatch)
         monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", tmp_path / "no-such-dir")
+        _patch_no_tax_export(monkeypatch, tmp_path)
         r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
         assert r.status_code == 500
         assert "对账失败" in r.get_data(as_text=True)
@@ -123,6 +132,7 @@ class TestRunU9cModeInvoiceSampleD19:
             encoding="utf-8",
         )
         monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", sample_dir)
+        _patch_no_tax_export(monkeypatch, tmp_path)
 
         r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
         assert r.status_code == 200
@@ -138,6 +148,95 @@ class TestRunU9cModeInvoiceSampleD19:
         sample_dir = tmp_path / "real_round1"
         sample_dir.mkdir()
         monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", sample_dir)
+        _patch_no_tax_export(monkeypatch, tmp_path)
+        r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
+        assert r.status_code == 500
+        assert "对账失败" in r.get_data(as_text=True)
+
+
+class TestRunU9cModeTaxExportPriorityQueue82:
+    """队列 #82 第2层收尾：u9c 模式发票源优先读取税务导出摄取产出
+    （`_TAX_EXPORT_DIR`），仅在其缺失/无产出时才回落 round-1 人工誊录小样。"""
+
+    def test_tax_export_dir_present_labels_and_banners_correctly(self, client, monkeypatch, tmp_path):
+        _patch_u9c_connector(monkeypatch)
+        tax_export_dir = tmp_path / "tax_export"
+        tax_export_dir.mkdir()
+        (tax_export_dir / "invoice.csv").write_text(
+            "inv_no,ap_no,item_code,unit,unit_price,inv_qty,untaxed_amount,tax_rate,tax_amount,inv_date\n"
+            "INV-TAX-1,AP-D19-1,R01D19.001,个,1,100,100.0,0.13,13.0,2026-06-01\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(webapp_module, "_TAX_EXPORT_DIR", tax_export_dir)
+
+        r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "发票为税务系统导出摄取" in body
+        assert "发票=u9c+税务导出摄取" in body
+        assert "人工誊录小样" not in body  # 未误标为 round-1 小样
+        assert "R01D19.001" in body
+        assert "PO=u9c/AP=u9c" in body
+
+    def test_tax_export_dir_takes_priority_over_round1_sample(self, client, monkeypatch, tmp_path):
+        """两目录皆备好时，税务导出摄取优先——不比较新旧/行数，规模化路径既已建成
+        即优先于验证期小样（队列 #249 既定方向）。"""
+        _patch_u9c_connector(monkeypatch)
+
+        round1_dir = tmp_path / "real_round1"
+        round1_dir.mkdir()
+        (round1_dir / "invoice.csv").write_text(
+            "inv_no,ap_no,item_code,unit,unit_price,inv_qty,untaxed_amount,tax_rate,tax_amount,inv_date\n"
+            "INV-D19-1,AP-D19-1,R01D19.001,个,1,100,100.0,0.13,13.0,2026-06-01\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", round1_dir)
+
+        tax_export_dir = tmp_path / "tax_export"
+        tax_export_dir.mkdir()
+        (tax_export_dir / "invoice.csv").write_text(
+            "inv_no,ap_no,item_code,unit,unit_price,inv_qty,untaxed_amount,tax_rate,tax_amount,inv_date\n"
+            "INV-TAX-1,AP-D19-1,R01D19.001,个,1,100,100.0,0.13,13.0,2026-06-01\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(webapp_module, "_TAX_EXPORT_DIR", tax_export_dir)
+
+        r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "发票=u9c+税务导出摄取" in body
+        assert "INV-TAX-1" in body
+        assert "INV-D19-1" not in body  # round1 那份未被读取
+
+    def test_tax_export_dir_present_but_missing_csv_falls_back_to_round1(
+        self, client, monkeypatch, tmp_path,
+    ):
+        """税务导出目录存在但缺 invoice.csv——不得误判为"已备好"，回落 round-1。"""
+        _patch_u9c_connector(monkeypatch)
+
+        tax_export_dir = tmp_path / "tax_export"
+        tax_export_dir.mkdir()   # 无 invoice.csv
+        monkeypatch.setattr(webapp_module, "_TAX_EXPORT_DIR", tax_export_dir)
+
+        round1_dir = tmp_path / "real_round1"
+        round1_dir.mkdir()
+        (round1_dir / "invoice.csv").write_text(
+            "inv_no,ap_no,item_code,unit,unit_price,inv_qty,untaxed_amount,tax_rate,tax_amount,inv_date\n"
+            "INV-D19-1,AP-D19-1,R01D19.001,个,1,100,100.0,0.13,13.0,2026-06-01\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", round1_dir)
+
+        r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "发票=u9c+人工誊录小样" in body
+        assert "发票为人工誊录小样，OCR 未接入" in body
+
+    def test_both_missing_still_failloud(self, client, monkeypatch, tmp_path):
+        _patch_u9c_connector(monkeypatch)
+        monkeypatch.setattr(webapp_module, "_TAX_EXPORT_DIR", tmp_path / "no-tax-export")
+        monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", tmp_path / "no-round1")
         r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-D19-1"})
         assert r.status_code == 500
         assert "对账失败" in r.get_data(as_text=True)
@@ -229,6 +328,7 @@ class TestRunU9cModeQueue250DisplayFixes:
             encoding="utf-8",
         )
         monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", sample_dir)
+        _patch_no_tax_export(monkeypatch, tmp_path)
 
         r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-Q250-1"})
         assert r.status_code == 200
@@ -284,6 +384,7 @@ class TestRunU9cModeQueue250DisplayFixes:
             encoding="utf-8",
         )
         monkeypatch.setattr(webapp_module, "_INVOICE_SAMPLE_DIR", sample_dir)
+        _patch_no_tax_export(monkeypatch, tmp_path)
 
         r = client.post("/run", data={"data_source": "u9c", "ap_doc_nos": "AP-Q250-3"})
         assert r.status_code == 200
