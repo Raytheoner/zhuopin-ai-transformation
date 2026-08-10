@@ -21,7 +21,10 @@ from pathlib import Path
 
 # —— worktree 隔离引导（队列 #300／#313 补漏）：把本 worktree 的平台底座与场景自身路径插到
 # sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在本文件
-# 任何 zhuopin_platform / 场景包 import 之前（下方 main() 内的延迟 import 亦受此保护）。——
+# 任何 zhuopin_platform / 场景包 import 之前（下方 main() 内的延迟 import 亦受此保护）。
+# 找不到该标记（如 `.51` 等部署环境是扁平布局 C:\fi2\{app,zhuopin_platform}，没有
+# 5-平台底座 这层嵌套）不视为致命错误——部署脚本已对两个包做过 editable install，
+# 退化为跳过、交给正常 import 机制兜底，不阻断启动（2026-08-10 队列 #82 生产事故修复）。——
 _HERE = Path(__file__).resolve()
 for _p in (_HERE, *_HERE.parents):
     if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
@@ -29,8 +32,6 @@ for _p in (_HERE, *_HERE.parents):
             if str(_entry) not in sys.path:
                 sys.path.insert(0, str(_entry))
         break
-else:
-    raise RuntimeError(f"未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找）")
 
 _ROOT = Path(__file__).resolve().parent.parent
 
