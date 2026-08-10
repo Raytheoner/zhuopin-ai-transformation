@@ -49,6 +49,11 @@ PENDING_QUEUE_LOCK_APPENDS_RELATIVE_PATH = (
 FOLLOWUP_APPROVAL_COOLDOWN_STATE_RELATIVE_PATH = (
     Path("5-平台底座") / "wecom-aibot-service" / "reports" / "followup_approval_cooldown_state.json"
 )
+# 队列 #312：可 Open 池指纹状态（当前已提醒过的行号集合），与 audit/
+# pending 系列文件同一套 repo_root 解析、同一目录。
+OPEN_POOL_REMINDER_STATE_RELATIVE_PATH = (
+    Path("5-平台底座") / "wecom-aibot-service" / "reports" / "open_pool_reminder_state.json"
+)
 
 
 def resolve_default_queue_anchor(
@@ -158,3 +163,9 @@ def resolve_followup_approval_cooldown_state_path(repo_root: Path) -> Path:
     """队列 #124 阶段二追加要求①：approval.py 冷却窗口状态文件的统一落点，
     与 `resolve_audit_path` 同一套 `repo_root`。"""
     return repo_root / FOLLOWUP_APPROVAL_COOLDOWN_STATE_RELATIVE_PATH
+
+
+def resolve_open_pool_reminder_state_path(repo_root: Path) -> Path:
+    """队列 #312：可 Open 池指纹状态文件的统一落点，与 `resolve_audit_path`
+    同一套 `repo_root`。"""
+    return repo_root / OPEN_POOL_REMINDER_STATE_RELATIVE_PATH

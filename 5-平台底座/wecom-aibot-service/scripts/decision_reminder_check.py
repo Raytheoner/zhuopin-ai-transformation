@@ -1,18 +1,27 @@
-"""需 Shao Peishen 决策项/待领 opener 主动提醒——一次性触发工具（队列 #172）。
+"""需 Shao Peishen 决策项/待领 opener 主动提醒——一次性触发工具（队列 #172，
+2026-08-10 起同进程并入队列 #312 可 Open 池提醒）。
 
-两层提醒共用本脚本、同一套判定（见 `aibot_service.decision_reminder` 模块
-docstring）：
-  ① 事件驱动即时提醒——拆件巡逻收工时调用本脚本一次，新登的 §四 项/新增
-     的 P0/P1 待领行因从未见过而立即触发。
-  ② 每日超期汇总——独立 Windows 计划任务（见 `register-decision-reminder-
-     task.ps1`）每日固定时点调用本脚本一次，捕捉"已过截止"/"待领超期"的
-     升级提醒（1/3/7 天递减间隔，同一天两层都调用也不会重复提醒）。
+两条互补的提醒共用本脚本、共用同一次 aibot 连接，各自独立判定/独立状态
+文件/独立发送与否（互不阻塞——一条有内容另一条没有也照常各自处理）：
 
-**分工边界（写在这里，供 Cowork 侧协作者一眼看到）**：巡逻侧的调用点在
-拆件巡逻定时任务 prompt（仓库外，`C:\\Users\\Paul Shao\\Claude\\Scheduled\\
-huijian-chaijian-patrol\\SKILL.md`），本脚本无法从仓库内触达——巡逻收工段
-补一句 `python <本脚本路径>` 调用，需 Cowork 侧改动该 prompt 本体。本脚本
-只负责把"调用后会做什么"实现好、可被稳定调用。
+  **① 决策提醒（队列 #172，见 `aibot_service.decision_reminder` 模块
+  docstring）**——管"待你定夺"：拆件巡逻收工时调用本脚本一次，新登的
+  §四 项/新增的 P0/P1 待领行因从未见过而立即触发（事件驱动即时提醒）；
+  独立 Windows 计划任务每日固定时点再调用一次，捕捉"已过截止"/"待领
+  超期"的升级提醒（1/3/7 天递减间隔，同一天两层都调用也不会重复提醒）。
+
+  **② 可 Open 池提醒（队列 #312，见 `aibot_service.open_pool_reminder`
+  模块 docstring）**——管"待你开工"：§一 状态字段为 `[S:open]` 的行即
+  "可立即开工"，指纹（当前可 Open 行号集合）出现新行号才推一次，池子
+  缩小或维持不变均静默（队列 #147「狼来了」教训，不做"存在即提醒"）。
+
+**两者为何同进程（而非各开一个脚本/各注册一个定时任务）**：队列 #312
+行内设计明确"两者互补，可同进程"——巡逻侧的调用点在拆件巡逻定时任务
+prompt（仓库外，`C:\\Users\\Paul Shao\\Claude\\Scheduled\\huijian-chaijian-
+patrol\\SKILL.md`），本脚本无法从仓库内触达，需 Cowork 侧改动该 prompt
+本体才能新增一个调用点；把 ② 并进本脚本本体，巡逻/每日定时任务侧维持
+"调用本脚本一次"不变，零新增仓库外改动面，同时省下一次多余的 WS 连接
+握手。
 
 用法：
   python scripts/decision_reminder_check.py
@@ -63,16 +72,26 @@ from aibot_service.decision_reminder import (  # noqa: E402
     DEFAULT_STATE_REL,
     evaluate_candidates,
     format_digest_message,
-    load_state,
-    save_state,
     send_decision_reminder,
 )
+from aibot_service.decision_reminder import load_state as load_decision_state  # noqa: E402
+from aibot_service.decision_reminder import save_state as save_decision_state  # noqa: E402
+from aibot_service.open_pool_reminder import (  # noqa: E402
+    build_pool_items,
+    compute_new_ids,
+    format_pool_reminder_message,
+    new_known_state,
+    send_open_pool_reminder,
+)
+from aibot_service.open_pool_reminder import load_state as load_pool_state  # noqa: E402
+from aibot_service.open_pool_reminder import save_state as save_pool_state  # noqa: E402
 from aibot_service.queue_edit_lock import AIBOT_LOCK_WHO, SubprocessQueueEditLock  # noqa: E402
 from aibot_service.queue_lock_pending import flush_pending_queue_appends  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
     DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
     resolve_default_queue_anchor,
+    resolve_open_pool_reminder_state_path,
     resolve_pending_queue_appends_path,
     resolve_pending_queue_lock_appends_path,
     resolve_repo_root,
@@ -134,7 +153,8 @@ async def _run(dry_run: bool) -> int:
     queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT, QUEUE_REL)
     resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
     queue_path = resolved_repo_root / QUEUE_REL
-    state_path = resolved_repo_root / "5-平台底座" / "wecom-aibot-service" / DEFAULT_STATE_REL
+    decision_state_path = resolved_repo_root / "5-平台底座" / "wecom-aibot-service" / DEFAULT_STATE_REL
+    pool_state_path = resolve_open_pool_reminder_state_path(resolved_repo_root)
 
     if not queue_path.exists():
         print(f"[SKIP] 队列文件不存在：{queue_path}", file=sys.stderr)
@@ -160,22 +180,39 @@ async def _run(dry_run: bool) -> int:
 
     queue_text = queue_path.read_text(encoding="utf-8")
     today = date.today()
-    state = load_state(state_path)
-    items, new_state = evaluate_candidates(queue_text, today, state)
-    message = format_digest_message(items)
 
-    if message is None:
-        print("[OK] 无新增/超期决策项，本次不发送。")
+    # ① 队列 #172：需 Shao Peishen 决策项/待领 opener 主动提醒。
+    decision_state = load_decision_state(decision_state_path)
+    decision_items, new_decision_state = evaluate_candidates(queue_text, today, decision_state)
+    decision_message = format_digest_message(decision_items)
+
+    # ② 队列 #312：可 Open 池事件驱动提醒——判据与 ① 均读 #308 同一份
+    # 机器字段，互不依赖，各自独立算、独立决定是否有内容要发。
+    pool_state = load_pool_state(pool_state_path)
+    pool_items = build_pool_items(queue_text, resolved_repo_root)
+    new_pool_ids = compute_new_ids(pool_items, pool_state)
+    pool_message = format_pool_reminder_message(pool_items, new_pool_ids)
+    new_pool_state = new_known_state(pool_items)
+
+    if decision_message is None and pool_message is None:
+        print("[OK] 无新增/超期决策项，可 Open 池亦无新增行号，本次不发送。")
         if not dry_run:
-            save_state(state_path, new_state)
+            save_decision_state(decision_state_path, new_decision_state)
+            save_pool_state(pool_state_path, new_pool_state)
         return 0
 
-    print(message)
+    if decision_message:
+        print(decision_message)
+    if pool_message:
+        print(pool_message)
+
     if dry_run:
         print("[dry-run] 以上内容不实际发送，状态文件不落地。")
         return 0
 
-    save_state(state_path, new_state)  # 先落状态，即便发送失败也不重复计入下次判定
+    # 先落两份状态，即便发送失败也不重复计入下次判定（同既有决策提醒惯例）。
+    save_decision_state(decision_state_path, new_decision_state)
+    save_pool_state(pool_state_path, new_pool_state)
 
     secrets = EnvSecretsProvider()
     bot_id = secrets.get(BOTID_KEY)
@@ -185,11 +222,23 @@ async def _run(dry_run: bool) -> int:
     await asyncio.sleep(1)  # 等 aibot_subscribe 认证完成
 
     try:
-        await send_decision_reminder(connector, audit, message, PAUL_USERID, fallback_send=fallback_send)
+        if decision_message:
+            await send_decision_reminder(
+                connector, audit, decision_message, PAUL_USERID, fallback_send=fallback_send,
+            )
+        if pool_message:
+            await send_open_pool_reminder(
+                connector, audit, pool_message, PAUL_USERID, fallback_send=fallback_send,
+            )
     finally:
         connector.disconnect()
 
-    print(f"[OK] 已发送提醒（{len(items)} 项）。")
+    sent_summary = []
+    if decision_message:
+        sent_summary.append(f"决策提醒 {len(decision_items)} 项")
+    if pool_message:
+        sent_summary.append(f"可 Open 池新增 {len(new_pool_ids)} 项")
+    print(f"[OK] 已发送：{'；'.join(sent_summary)}。")
     return 0
 
 
