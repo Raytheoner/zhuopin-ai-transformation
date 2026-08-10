@@ -36,6 +36,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -271,6 +272,77 @@ class AcquireMutexInternalsTests(unittest.TestCase):
         elapsed = time.monotonic() - start
         self.assertLess(elapsed, self.module.MUTEX_WAIT_TIMEOUT_SECONDS)
         self.assertFalse(mutex_path.exists())
+
+    def test_stale_mutex_unlink_always_fails_falls_back_to_rename_away(self):
+        # #322：Cowork 沙箱对挂载目录无删除权限，unlink 恒 PermissionError；
+        # 退路 os.replace 到固定 .stale 伴生路径应让 canonical 路径立即清空，
+        # _acquire_mutex 不应挂起（旧实现在此死循环，MUTEX_WAIT_TIMEOUT_SECONDS
+        # 形同虚设）。
+        mutex_path = self.module._mutex_path(self.lock_path)
+        mutex_path.write_text("", encoding="utf-8")
+        stale_time = time.time() - (self.module.MUTEX_STALE_SECONDS + 5)
+        os.utime(mutex_path, (stale_time, stale_time))
+
+        with unittest.mock.patch.object(Path, "unlink", side_effect=PermissionError("模拟无删除权限")):
+            start = time.monotonic()
+            with self.module._acquire_mutex(self.lock_path):
+                pass
+            elapsed = time.monotonic() - start
+
+        self.assertLess(elapsed, self.module.MUTEX_WAIT_TIMEOUT_SECONDS,
+                         "unlink 恒失败时应走 rename-away 退路立即接管，不应等满超时")
+        self.assertFalse(mutex_path.exists(), "canonical 路径应已被改名清空")
+        self.assertTrue(Path(str(mutex_path) + ".stale").exists(),
+                         "应改名到固定 .stale 伴生路径")
+
+    def test_cleanup_completely_fails_raises_timeout_not_hang(self):
+        # #322 核心回归：unlink 与改名退路都失败时，不得无条件 continue 跳过
+        # deadline 判断（那正是死循环的成因）；须在 MUTEX_WAIT_TIMEOUT_SECONDS
+        # 内 fail-loud 抛 TimeoutError，而不是无限挂起、零输出。
+        mutex_path = self.module._mutex_path(self.lock_path)
+        mutex_path.write_text("", encoding="utf-8")
+        stale_time = time.time() - (self.module.MUTEX_STALE_SECONDS + 5)
+        os.utime(mutex_path, (stale_time, stale_time))
+
+        with unittest.mock.patch.object(Path, "unlink", side_effect=PermissionError("模拟无删除权限")), \
+             unittest.mock.patch.object(self.module.os, "replace", side_effect=PermissionError("模拟改名也失败")):
+            start = time.monotonic()
+            with self.assertRaises(TimeoutError):
+                with self.module._acquire_mutex(self.lock_path):
+                    pass
+            elapsed = time.monotonic() - start
+
+        self.assertLess(elapsed, self.module.MUTEX_WAIT_TIMEOUT_SECONDS + 2,
+                         "清理彻底失败应在超时窗口内报错退出，不应无限挂起")
+
+    def test_stale_companion_path_is_fixed_not_proliferating(self):
+        # #322：伴生路径固定复用，不随每次清理事件新增一个文件（避免像本次
+        # 巡逻手工处置那样无界堆积）。
+        mutex_path = self.module._mutex_path(self.lock_path)
+        with unittest.mock.patch.object(Path, "unlink", side_effect=PermissionError("模拟无删除权限")):
+            for _ in range(3):
+                mutex_path.write_text("", encoding="utf-8")
+                stale_time = time.time() - (self.module.MUTEX_STALE_SECONDS + 5)
+                os.utime(mutex_path, (stale_time, stale_time))
+                with self.module._acquire_mutex(self.lock_path):
+                    pass
+
+        companions = sorted(
+            p.name for p in self.lock_path.parent.glob(mutex_path.name + "*")
+        )
+        self.assertEqual(companions, [mutex_path.name + ".stale"],
+                          "多轮清理事件应复用同一固定伴生文件，不应堆积多个")
+
+    def test_release_falls_back_to_rename_when_unlink_fails(self):
+        # #322：release（finally 块）unlink 失败时也应立即改名清空 canonical
+        # 路径，不必等 MUTEX_STALE_SECONDS 超时才被下一次 acquire 的陈旧清理
+        # 分支接管——Cowork 沙箱下每次正常 release 后都应能让路径立即空闲。
+        mutex_path = self.module._mutex_path(self.lock_path)
+        with unittest.mock.patch.object(Path, "unlink", side_effect=PermissionError("模拟无删除权限")):
+            with self.module._acquire_mutex(self.lock_path):
+                pass
+        self.assertFalse(mutex_path.exists(), "release 后 canonical 路径应已清空")
+        self.assertTrue(Path(str(mutex_path) + ".stale").exists())
 
     def test_atomic_write_json_readback_matches(self):
         target = self.lock_path

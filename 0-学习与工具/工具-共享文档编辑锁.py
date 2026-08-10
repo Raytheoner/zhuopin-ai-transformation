@@ -182,6 +182,23 @@ queue-table-shared-parser-consolidation）：`SECTION_COLUMN_COUNTS` 常量
 不受 #121(a)"永久文件不能删"的限制约束（见 `_acquire_mutex`）；写入本身
 改用临时文件 + `os.replace` 原子换入（避免 `write_text` 直接截断写入被
 并发读到半截内容），并在写完后立即回读校验（不信"写成功了"）。
+
+#322（2026-08-10 拆件巡逻实测坐实，openspec 变更包
+`editlock-mutex-stale-cleanup-resilience`）：`_acquire_mutex` 判定 mutex
+陈旧后原实现是"尝试 unlink → 无论成败都 continue"——Cowork 沙箱对挂载
+目录没有删除权限（`unlink` 恒 `PermissionError`，但 `rename` 可用），于
+是这个 continue 永远命中、永远跳过紧随其后的 deadline 判断，
+`MUTEX_WAIT_TIMEOUT_SECONDS` 形同虚设：不是超时报错，是无限循环、零输
+出的死锁；release 的 `finally` 块是同一模式，只是后果是"遗留"而非"死
+循环"。修法（Shao Peishen 2026-08-10 拍板选 design.md 决策点 1 候选
+A）：新增 `_discard_mutex_path` 助手，`unlink` 优先，失败则退路为
+`os.replace` 原子改名到固定的 `.stale` 伴生路径（同一目标复用同一文件
+名，不随每次清理事件新增文件）；stale 清理分支与 release 均改用此助
+手，仅路径确认清空才重试/视为已释放，两条退路都失败时不再无条件
+continue，落回既有 deadline 判断——fail-loud，不得静默死循环。互斥保证
+本身仍完全来自 `O_CREAT|O_EXCL`，改名只是清空路径这一个动作，不改变谁
+能在 canonical 路径抢到创建权，故不引入双持有风险（论证见
+`_discard_mutex_path` 文档字符串与 design.md）。
 """
 from __future__ import annotations
 
@@ -475,12 +492,51 @@ def _mutex_path(lock_path: Path) -> Path:
     return lock_path.with_name(lock_path.name + ".mutex")
 
 
+def _discard_mutex_path(mutex_path: Path) -> bool:
+    """让 `mutex_path` 这个 canonical 路径不再存在，供调用方据此判断能否
+    立即重试 `O_CREAT|O_EXCL`（队列 #322，openspec 变更包
+    `editlock-mutex-stale-cleanup-resilience` 决策点 1，Shao Peishen
+    2026-08-10 拍板选候选 A）。
+
+    优先 `unlink()`；失败（如 Cowork 沙箱挂载目录无删除权限，实测连自建
+    临时文件都 `PermissionError`，但 `rename` 可用）则退路为 `os.replace`
+    原子改名到同一目标固定复用的 `.stale` 伴生路径——固定文件名，不随每
+    次调用生成新文件，避免无界堆积。两条路都失败返回 `False`，调用方
+    MUST NOT 据此假定路径已清空、也 MUST NOT 无条件重试，交回既有的
+    deadline 判断处理（不得再现 #322 的死循环：旧实现在这里无论成败都
+    `continue`，跳过了紧随其后的超时检查）。
+
+    正确性论证（为何改名不会破坏互斥语义）：真正的互斥保证来自
+    `O_CREAT|O_EXCL` 在 canonical 路径上的原子创建，本函数只负责"清空
+    路径"这一个动作，不改变谁能在 canonical 路径成功创建的判定规则。
+    并发场景下若两个等待者同时调用本函数，至多一个能真正搬空源文件，
+    另一个会因源文件已不存在而收到 `OSError`（`FileNotFoundError` 是其
+    子类），返回 `False`——它不会因此误判自己已清空路径，下一轮循环会
+    看到一枚年龄很小的新鲜 mutex，老实排队，不会导致双持有。
+    """
+    try:
+        mutex_path.unlink()
+        return True
+    except OSError:
+        pass
+    try:
+        os.replace(str(mutex_path), str(mutex_path) + ".stale")
+        return True
+    except OSError:
+        return False
+
+
 @contextlib.contextmanager
 def _acquire_mutex(lock_path: Path):
     """包住 acquire 内部"读判定→写"临界区，确保同一时刻只有一个进程执行
     这段逻辑（#197）。与 `.editlock` 本身完全独立——本文件创建于进入临界
-    区之时、删除于离开之时，不像 `.editlock` 需要"released 标记永久可
+    区之时、清空于离开之时，不像 `.editlock` 需要"released 标记永久可
     查询"，因此可以放心用 `O_CREAT|O_EXCL` 的原子创建语义。
+
+    队列 #322（2026-08-10）：陈旧 mutex 清理与 release 释放均统一改用
+    `_discard_mutex_path`——无删除权限环境下退路为改名而非放弃，清理
+    失败时不得跳过下方的 deadline 判断（否则复现 #322 的无限循环、零
+    输出的死锁）。
     """
     mutex_path = _mutex_path(lock_path)
     deadline = time.monotonic() + MUTEX_WAIT_TIMEOUT_SECONDS
@@ -497,11 +553,10 @@ def _acquire_mutex(lock_path: Path):
                 pass  # 竞态：文件在 stat 前被对方删了，直接重试即可
             if age is not None and age > MUTEX_STALE_SECONDS:
                 # 正常临界区仅毫秒级，超此判定为异常退出遗留，强制清理重试。
-                try:
-                    mutex_path.unlink()
-                except OSError:
-                    pass
-                continue
+                # 仅当路径确认已清空才重试；清理失败不得无条件 continue
+                # （#322：那会跳过下面的 deadline 判断，变成无限循环）。
+                if _discard_mutex_path(mutex_path):
+                    continue
             if time.monotonic() >= deadline:
                 raise TimeoutError(
                     f"等待锁内部互斥超时（{MUTEX_WAIT_TIMEOUT_SECONDS}s）：{mutex_path}"
@@ -510,10 +565,10 @@ def _acquire_mutex(lock_path: Path):
     try:
         yield
     finally:
-        try:
-            mutex_path.unlink()
-        except OSError:
-            pass  # 删不掉不致命：MUTEX_STALE_SECONDS 后自动被下一次调用接管
+        # Cowork 沙箱下 unlink 恒失败时，退路改名能让 canonical 路径立即
+        # 清空——下一次 acquire 直接命中快路径，不必等满 MUTEX_STALE_SECONDS
+        # 才触发上面的陈旧清理分支（#322）。
+        _discard_mutex_path(mutex_path)
 
 
 def _atomic_write_json(path: Path, payload: dict) -> None:
