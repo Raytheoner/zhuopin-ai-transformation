@@ -27,5 +27,5 @@
 
 ## 5. 收工
 
-- [ ] 5.1 队列 #322 行回填完工状态。
-- [ ] 5.2 `/opsx:archive editlock-mutex-stale-cleanup-resilience -y`。
+- [x] 5.1 队列 #322 行回填完工状态（commit 待补，见跨桌任务队列.md 本行）。
+- [x] 5.2 `openspec archive editlock-mutex-stale-cleanup-resilience -y`，归档为 `2026-08-10-editlock-mutex-stale-cleanup-resilience`。
