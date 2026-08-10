@@ -100,16 +100,33 @@ def mark_processed(ledger: dict, file_hash: str, filename: str, *, row_count: in
 
 # ── Excel 解析 ────────────────────────────────────────────────────────────
 
+def _resolve_sheet_name(sheetnames: list[str]) -> Optional[str]:
+    """匹配「信息汇总表」sheet：精确名优先，否则退而取第一个以该名为前缀的 sheet。
+
+    队列 #82 第二班拆件巡逻真实数据比对发现：唐燕萍手工导出的真实批量文件里，该
+    sheet 实际命名为「信息汇总表1」（round-1 那 8 个验证样本里是精确的「信息汇总表」，
+    无后缀）——两者列结构逐字段核对完全一致，只是 sheet 名多一个后缀，故按前缀匹配
+    兼容两种命名，不改变列结构解析逻辑。
+    """
+    if _SHEET_NAME in sheetnames:
+        return _SHEET_NAME
+    for name in sheetnames:
+        if name.startswith(_SHEET_NAME):
+            return name
+    return None
+
+
 def parse_export_workbook(path: Path | str) -> list[dict]:
-    """解析「信息汇总表」sheet，返回逐行原始字典（键=表头原文）。
+    """解析「信息汇总表」（或「信息汇总表1」等前缀变体）sheet，返回逐行原始字典（键=表头原文）。
 
     工作表缺失/必需列缺失时抛 ValueError（调用方据此产出 sheet_missing/field_missing
     诊断，不产出该文件的任何发票明细记录——spec「工作表缺失或结构不符」场景）。
     """
     wb = openpyxl.load_workbook(path, data_only=True)
-    if _SHEET_NAME not in wb.sheetnames:
+    sheet_name = _resolve_sheet_name(wb.sheetnames)
+    if sheet_name is None:
         raise ValueError(f"缺少「{_SHEET_NAME}」工作表（现有 sheet：{wb.sheetnames}）")
-    ws = wb[_SHEET_NAME]
+    ws = wb[sheet_name]
     header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
     header = [str(h).strip() if h is not None else "" for h in header_row]
     missing = [c for c in _REQUIRED_COLUMNS if c not in header]

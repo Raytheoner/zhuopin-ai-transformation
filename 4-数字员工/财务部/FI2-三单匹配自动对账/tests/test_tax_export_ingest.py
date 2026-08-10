@@ -61,6 +61,16 @@ def test_parse_export_workbook_reads_rows(tmp_path):
     assert rows[1]["数电发票号码"] == "26327000000742719332"
 
 
+def test_parse_export_workbook_accepts_suffixed_sheet_name(tmp_path):
+    """队列 #82 真实数据核验：真实批量导出文件的 sheet 名是「信息汇总表1」（带后缀），
+    与 round-1 验证样本的精确「信息汇总表」不同，须前缀匹配兼容、不得判为 parse_error。"""
+    p = tmp_path / "sample.xlsx"
+    _make_export_xlsx(p, [_row()], sheet_name="信息汇总表1")
+    rows = parse_export_workbook(p)
+    assert len(rows) == 1
+    assert rows[0]["数电发票号码"] == "26327000000742719331"
+
+
 def test_parse_export_workbook_missing_sheet_raises(tmp_path):
     p = tmp_path / "bad.xlsx"
     wb = openpyxl.Workbook()
