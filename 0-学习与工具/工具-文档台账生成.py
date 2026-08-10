@@ -134,11 +134,15 @@ def status_bucket(status_raw: str) -> str:
 def check_queue_row_column_counts(queue_text: str) -> list[tuple[str, int]]:
     """队列 §一「任务看板」逐行列数自检（队列 #164，2026-07-30 状态页取数时实测发现）。
 
-    正文里出现裸竖线（PowerShell 管道符、命令行或选分隔符等）会被朴素按列下标
-    解析的工具误判为额外列分隔符，致使该行实际列数偏离标准
-    `QUEUE_EXPECTED_COLUMNS`（8）——本函数只做最朴素的"按 `|` 切分数一遍"，
-    不理解 Markdown 语义（不识别反引号代码span 内的 `|` 是否"应该"被豁免），
-    这正是它要发现的问题本身：任何这样朴素解析的下游工具都会中招。
+    队列 #313/#314（openspec 变更包 `queue-table-backtick-aware-split`，
+    commit `6d7871d`）：切列改为委托权威模块
+    `queue_table.parse_section_rows`（反引号感知——CommonMark code span
+    跨度内的竖线不再被误当列分隔符）。本函数此前自行实现"按 `|` 切分数
+    一遍"的朴素解析，会把反引号包裹的代码示例（如 shell 命令片段）里的
+    竖线误判为额外列分隔符，产生假阳性（#313 行实测命中）；委托权威模块
+    后与 `工具-共享文档编辑锁.py`／`工具-队列查询.py`／`工具-队列结构
+    lint.py`／`工具-落库sweep.py` 其余四处消费者判据一致，不再独立实现。
+
     只扫 §一 到下一个 `## ` 标题之间的表格行；跳过表头行与分隔行（`|---|...`）。
 
     返回 (行首 `#` 编号, 实际列数) 列表，仅含列数 ≠ 8 的行；无异常返回空列表。
@@ -151,18 +155,9 @@ def check_queue_row_column_counts(queue_text: str) -> list[tuple[str, int]]:
     section = rest if next_heading == -1 else rest[:next_heading]
 
     anomalies: list[tuple[str, int]] = []
-    for line in section.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("|") or not stripped.endswith("|"):
-            continue
-        cells = stripped.strip("|").split("|")
-        if len(cells) == 0:
-            continue
-        row_id = cells[0].strip()
-        if row_id == "#" or set(row_id) <= {"-", " ", ""}:
-            continue  # 表头行 / 分隔行
-        if len(cells) != QUEUE_EXPECTED_COLUMNS:
-            anomalies.append((row_id, len(cells)))
+    for _, cells, ok in queue_table.parse_section_rows(section, "一"):
+        if not ok:
+            anomalies.append((cells[0] if cells else "", len(cells)))
     return anomalies
 
 

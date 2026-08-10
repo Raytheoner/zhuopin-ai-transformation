@@ -83,6 +83,19 @@ class CheckQueueRowColumnCountsTests(unittest.TestCase):
         text = QUEUE_HEADER.format(rows=rows)
         self.assertEqual(ledger.check_queue_row_column_counts(text), [])
 
+    def test_backtick_wrapped_bare_pipe_is_not_miscounted(self):
+        """队列 #313/#314 回归：反引号包裹的代码示例内出现裸竖线（如
+        `git grep` 正则交替符）此前会被本函数自行实现的朴素 `split("|")`
+        误判为额外列分隔符、产生假阳性（#313 行实测命中，11 列 vs 应有
+        8 列）。委托 `queue_table.parse_section_rows`（反引号感知，#314）
+        后不应再误报。"""
+        row = (
+            '| 4 | 任务描述含代码示例 `git grep -E "a|b"` 结尾 '
+            "| CC | 输入 | 产出 | 待领 | 触碰区 | 08-09 |\n"
+        )
+        text = QUEUE_HEADER.format(rows=row)
+        self.assertEqual(ledger.check_queue_row_column_counts(text), [])
+
 
 if __name__ == "__main__":
     unittest.main()
