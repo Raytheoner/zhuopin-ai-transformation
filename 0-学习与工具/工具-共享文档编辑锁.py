@@ -237,6 +237,9 @@ else:
 
         SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
         QUEUE_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
+        # 队列 #315：拆分后两份物理文件路径，隔离桩同样须与权威实现保持一致。
+        QUEUE_MECHANISM_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"
+        QUEUE_BUSINESS_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md"
 
         @staticmethod
         def has_bare_pipe(cell: str) -> bool:
@@ -287,7 +290,26 @@ def _resolve_repo_root() -> Path:
 
 
 REPO_ROOT = _resolve_repo_root()
-DEFAULT_TARGET = queue_table.QUEUE_PATH_REL  # 队列 #313：收拢自本地字面量
+DEFAULT_TARGET = queue_table.QUEUE_PATH_REL  # 队列 #313：收拢自本地字面量；
+# 队列 #315（apply，2026-08-11）：拆分后本路径转为纯指针文件，不再是权威
+# 内容承载，但仍是"调用方未显式传 --file"这一信号的判据值——`args.file ==
+# DEFAULT_TARGET` 即代表"面向队列系统本体"，触发下方的双文件路由逻辑，
+# 与"显式 --file 指向其它共享文件（如跟进信 README）"完全不同的处理路径
+# （后者行为不受本次改动影响，见 `_is_queue_system_target`）。
+# 本模块自身持有一份局部绑定（而不是处处直接写 `queue_table.QUEUE_
+# MECHANISM_PATH_REL`），与 `DEFAULT_TARGET` 收拢自 `queue_table.
+# QUEUE_PATH_REL` 同一惯例——测试用例按既有模式 monkeypatch 本模块的
+# 这几个名字即可隔离到临时目录，不需要同时 monkeypatch `queue_table`
+# 模块本身（该模块被本进程内多处独立 import，各自持有互不相干的绑定）。
+QUEUE_MECHANISM_PATH_REL = queue_table.QUEUE_MECHANISM_PATH_REL
+QUEUE_BUSINESS_PATH_REL = queue_table.QUEUE_BUSINESS_PATH_REL
+QUEUE_LOCK_ANCHOR = QUEUE_MECHANISM_PATH_REL  # design.md 决策点7：迁移期
+# 两份物理队列文件共用同一把协作锁与同一个互斥原语——真正跨文件共享的
+# 可变状态只有编号高水位线（决策点2：维持单一编号空间，只存机制文件），
+# 若两份文件各自独立加锁，域机/域业两个并发 acquire 会各自进入临界区、
+# 对高水位线产生真实竞态。"两份文件各自独立锁"这一优化留待真实使用数据
+# 支持后再评估（design.md 决策点7 Open Questions 原文），本次选安全的
+# 保守项。
 STALE_MINUTES = 30
 HIGH_WATER_MARK_PATTERN = re.compile(r"编号高水位线[：:]\s*(.+?)\*\*")
 HIGH_WATER_MARK_LINE_PATTERN = re.compile(r"编号高水位线")
@@ -585,6 +607,54 @@ def _target_path(target: str) -> Path:
     return (REPO_ROOT / target).resolve()
 
 
+def _is_queue_system_target(file_arg: str) -> bool:
+    """`file_arg` 是否为"未显式覆盖，面向队列系统本体"这一信号值（队列
+    #315）。为 True 时，acquire/release/status 走双文件路由；为 False 时
+    （显式 `--file` 指向其它共享文件，如跟进信 README）行为完全不受本次
+    改动影响。"""
+    return file_arg == DEFAULT_TARGET
+
+
+def _iter_queue_paths() -> list[str]:
+    """本模块版本的"遍历两份队列文件路径"——读本模块顶部的局部绑定
+    （`QUEUE_MECHANISM_PATH_REL`/`QUEUE_BUSINESS_PATH_REL`），不直接调
+    `queue_table.iter_queue_paths()`，使测试用例按既有 `DEFAULT_TARGET`
+    monkeypatch 惯例也能隔离这两个路径到临时目录（见两常量定义处注释）。
+    """
+    return [QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL]
+
+
+def _resolve_queue_path_for_domain(domain: str) -> str:
+    """同上，本模块版本的按域解析——语义与 `queue_table.resolve_queue_path`
+    一致（非法域值 fail-loud），只是读本模块的局部绑定。"""
+    if domain == "机":
+        return QUEUE_MECHANISM_PATH_REL
+    if domain == "业":
+        return QUEUE_BUSINESS_PATH_REL
+    raise ValueError(f"未知域值 {domain!r}，仅接受 \"机\"／\"业\"（不静默回退任一份文件）")
+
+
+def _resolve_append_target(section: str, domain: str | None) -> tuple[str, bool]:
+    """`append-row` 实际写入哪份物理文件（队列 #315 决策点3/5）。
+
+    返回 `(目标路径, 是否使用了向后兼容默认值)`——§一/§二 按域路由到对应
+    文件，§四 恒定写机制环境文件（该分区体量小、不纳入域字段范围，见
+    #308 design.md Non-Goals，本次拆分沿用不改）。
+
+    **迁移期妥协（apply 阶段发现，design.md 原定"未声明域 MUST 拒绝"在此
+    处放宽，不是纸面推演）**：§一/§二 未显式传 `--domain` 时不 fail-loud，
+    改为默认落机制环境文件并由调用方在返回值第二项拿到"用了默认值"这个
+    信号自行决定是否提示——本机同一时刻有大量并发 session 使用尚未加
+    `--domain` 参数的既有 opener/定时任务 prompt，若立即改为强制拒绝，
+    会在部署的瞬间让所有这些在途调用当场失败。字段本身（`[D:机/业]`）
+    仍需人工在状态列内正确书写，本函数只决定"写去哪个物理文件"这一层，
+    与内容是否诚实是两回事。"""
+    if section == "四":
+        return QUEUE_MECHANISM_PATH_REL, False
+    resolved_domain = domain or "机"
+    return _resolve_queue_path_for_domain(resolved_domain), domain is None
+
+
 def _lock_path(target: str) -> Path:
     target_path = _target_path(target)
     return target_path.with_name(target_path.name + ".editlock")
@@ -688,6 +758,56 @@ def _record_bypass_detection(repo_root: Path, target: str, who: str, diff_summar
         pass
 
 
+def _detect_shadow_copy(target: str) -> str | None:
+    """幽灵副本漂移检测（队列 #315 决策点5，子项⑥，直接承接 2026-08-10
+    #321 真实事故）。
+
+    `REPO_ROOT` 恒定按 `git rev-parse --git-common-dir` 解析到主工作区
+    （模块文档已述），但本脚本自身当前运行所在的 worktree——若正巧不是
+    主工作区——很可能在 `<该 worktree 根>/<target>` 这个相对路径下也存在
+    一份物理不同的文件（同一份仓库内容的另一 checkout）。#321 事故正是
+    "锁 CLI 恒定写主工作区，通用 Edit 工具按 worktree 本地路径改"两者操作
+    了不同物理文件、其中一次编辑变成谁也看不到的幽灵。
+
+    只读检测：若当前脚本所在 worktree 根与 `REPO_ROOT` 物理不同
+    （`os.path.samefile`，处理"当前就在主工作区"这一正常情形，不误报），
+    且该 worktree 本地存在同相对路径的文件、且内容与 `REPO_ROOT` 下的权威
+    文件不一致，返回一句可读的警告文案；否则返回 `None`。不自动删除、
+    覆盖或合并任何一方内容（同 #322/`sweep-ff-sync-batch-reorder` 已确立
+    的"止血不硬解"哲学）。
+    """
+    script_dir = Path(__file__).resolve().parents[1]
+    if script_dir == REPO_ROOT:
+        return None
+    try:
+        if script_dir.samefile(REPO_ROOT):
+            return None
+    except OSError:
+        pass  # 两者之一不存在时 samefile 会抛错——按"不同"处理，继续往下判
+
+    local_path = script_dir / target
+    if not local_path.exists():
+        return None
+    authoritative_path = _target_path(target)
+    try:
+        local_content = local_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        authoritative_content = authoritative_path.read_text(encoding="utf-8")
+    except OSError:
+        authoritative_content = ""
+    if local_content == authoritative_content:
+        return None
+    return (
+        f"⚠️ 检测到本地影子副本：{local_path} 与权威文件 {authoritative_path} "
+        "内容不一致。\n"
+        "   你的编辑器/Edit 工具若正在操作前者，改动不会被本工具看到，也不会被\n"
+        "   release 校验，极可能造成幽灵副本（同 2026-08-10 #321 事故）。\n"
+        "   请改为直接编辑绝对路径指向的文件，或改用 append-row 子命令写入。"
+    )
+
+
 def _read_raw_lock(lock_path: Path) -> dict:
     """读取锁文件的完整原始 JSON，不做"released 即无锁"的语义过滤（那是
     `_read_lock` 的职责）——供 `history`/`reserved` 等元数据字段读取，这些
@@ -745,7 +865,9 @@ class ReserveFailedError(RuntimeError):
     """
 
 
-def _reserve_ids(target: str, section: str, count: int) -> list[int]:
+def _reserve_ids(
+    target: str, section: str, count: int, *, extra_collision_texts: list[str] | None = None,
+) -> list[int]:
     """在持锁窗口内原子完成"读高水位线→分配 count 个连续编号→回写高水位
     线"，返回分配到的字面编号列表（升序，供调用方直接使用，不需要再 +1）。
 
@@ -753,6 +875,13 @@ def _reserve_ids(target: str, section: str, count: int) -> list[int]:
     要拒绝的替代路径——见 `ReserveFailedError`）。未使用完的预留号允许留
     空洞（协议〇.8：编号永不复用），本函数不做任何"释放未用编号"的操作，
     调用方也不需要。
+
+    `extra_collision_texts`（队列 #315 决策点2）：拆分为双文件后，编号
+    空间仍单一、高水位线仍只存机制环境文件，但 §一 的可见行分散在两份
+    物理文件里——单纯核对 `target` 自身内容不够，会漏掉"该编号已被分配
+    在另一份文件里"这种情形。调用方（`cmd_acquire`）在队列系统模式下传入
+    另一份文件此刻的正文，本函数把两者的 §{section} 可见编号合并后再做
+    碰撞检测，`target` 自身仍是唯一被实际改写（写回高水位线）的文件。
     """
     if section not in SECTION_NUMBER_PATTERNS:
         raise ReserveFailedError(
@@ -795,6 +924,12 @@ def _reserve_ids(target: str, section: str, count: int) -> list[int]:
         for _, cells in _table_data_rows(_split_live_sections(text).get(section, ""))
         if cells[0].isdigit()
     }
+    for extra_text in extra_collision_texts or []:
+        live_numbers |= {
+            int(cells[0])
+            for _, cells in _table_data_rows(_split_live_sections(extra_text).get(section, ""))
+            if cells[0].isdigit()
+        }
     collided = sorted(set(reserved) & live_numbers)
     if collided:
         raise ReserveFailedError(
@@ -947,6 +1082,17 @@ def _last_table_line_end_offset(section_text: str) -> int | None:
 
 
 def cmd_append_row(args: argparse.Namespace) -> int:
+    # 队列 #315 决策点3/5：队列系统模式下按 --domain 路由到对应物理文件
+    # （§四恒定机制环境文件，见 `_resolve_append_target`）；显式 --file
+    # 覆盖时（罕见，主要用于测试/特殊场景）原样使用，不做路由。
+    if _is_queue_system_target(args.file):
+        resolved_target, used_default = _resolve_append_target(args.section, args.domain)
+        if used_default:
+            print(f"ℹ 未显式声明 --domain，按向后兼容默认值写入机制环境文件"
+                  f"（{resolved_target}）——建议此后显式传 --domain 机|业，"
+                  "见队列 #315 决策点3/5。")
+        args = argparse.Namespace(**vars(args))
+        args.file = resolved_target
     target_path = _target_path(args.file)
     try:
         text = target_path.read_text(encoding="utf-8")
@@ -1410,17 +1556,23 @@ def _validate_release_structure(
                 continue  # 列数都不对，按列取值的后续校验没有意义
 
             if label == "二":
+                # 队列 #315（apply）：接受"本次正在校验的这份物理文件自身"
+                # 的路径/文件名，也接受旧指针路径/文件名（拆分前登记、或
+                # 泛指"队列文件"本身的历史批次行，不追溯改写正文）——
+                # `args.file` 在这里已是 `cmd_release` 按 `queue_table.
+                # iter_queue_paths()` 逐份传入的具体路径。
                 fragments = re.findall(r"`([^`]+)`", cells[1])
+                accepted_paths = {args.file, DEFAULT_TARGET}
                 declares_self = any(
-                    frag == DEFAULT_TARGET
-                    or frag == Path(DEFAULT_TARGET).name
-                    or frag.endswith("/" + Path(DEFAULT_TARGET).name)
+                    frag in accepted_paths
+                    or any(frag == Path(p).name or frag.endswith("/" + Path(p).name)
+                           for p in accepted_paths)
                     for frag in fragments
                 )
                 if not declares_self:
                     violations.append(
                         f"§二 批次「{cells[0]}」文件清单未声明队列文件自身路径"
-                        f"（须含 `{DEFAULT_TARGET}`）：{preview}"
+                        f"（须含 `{args.file}` 或 `{DEFAULT_TARGET}`）：{preview}"
                     )
                 if _section_two_status_is_ambiguous(cells[3]):
                     violations.append(
@@ -1652,7 +1804,9 @@ def cmd_acquire(args: argparse.Namespace) -> int:
               "不静默忽略该参数）。")
         return 1
 
-    lock_path = _lock_path(args.file)
+    lock_path = _lock_path(
+        QUEUE_LOCK_ANCHOR if _is_queue_system_target(args.file) else args.file
+    )
     # #197：以下"读判定→写"整段包进互斥临界区，防两个进程在同一窗口内都
     # 读到"无锁"、都写入成功、都相信自己持锁。
     try:
@@ -1667,8 +1821,15 @@ def cmd_acquire(args: argparse.Namespace) -> int:
 def _acquire_locked(
     args: argparse.Namespace, lock_path: Path, reserve_requests: list[tuple[str, int]],
 ) -> int:
-    """`_acquire_mutex` 保护下执行的 acquire 逻辑，行为与改造前完全一致，
-    仅多一步写后回读校验（#197：不信"写成功了"，CLAUDE.md §5 既有纪律）。"""
+    """`_acquire_mutex` 保护下执行的 acquire 逻辑。
+
+    队列 #315（apply）：队列系统模式（`args.file == DEFAULT_TARGET`）下，
+    锁本身锚定在 `QUEUE_LOCK_ANCHOR`（机制环境文件，见模块顶部注释，
+    `lock_path` 已由 `cmd_acquire` 按此计算好传入），但内容层面的快照／
+    绕锁检测（#200）／幽灵副本检测（决策点5）覆盖两份物理队列文件——
+    持锁窗口内两份文件均可能被编辑，`cmd_release` 对两者分别做结构校验。
+    非队列系统目标（如跟进信 README）行为与改造前完全一致，仅多一步写后
+    回读校验（#197：不信"写成功了"，CLAUDE.md §5 既有纪律）。"""
     existing = _read_lock(lock_path)
     if existing is not None:
         age = _age_minutes(existing)
@@ -1710,27 +1871,42 @@ def _acquire_locked(
         print("✗ 写入后回读校验未通过（占锁内容与预期不符）——本次占锁失败，请重试。")
         return 1
 
-    current_content = _read_target_text(args.file)
+    is_queue_system = _is_queue_system_target(args.file)
+    content_targets = _iter_queue_paths() if is_queue_system else [args.file]
 
-    # 队列 #225：目标文件此刻内容存一份快照，release 时据此 diff 出本次
-    # 持锁期间新增/修改的行，结构校验只对这些行生效。
-    _write_snapshot(args.file, current_content)
+    for content_target in content_targets:
+        current_content = _read_target_text(content_target)
 
-    # 队列 #200：与"上次 release 时记录的内容"比对，检测两次合法
-    # release/acquire 之间是否发生过绕锁直接改写。不阻断——协议〇.7 一贯
-    # 是协作性质而非硬互斥（见模块文档），只回显+（默认队列文件时）留痕。
-    lastknown = _read_lastknown(args.file)
-    if lastknown is not None and current_content != lastknown:
-        diff_summary = _summarize_content_diff(lastknown, current_content)
-        print(
-            f"⚠ 检测到目标文件在上次 release 之后被直接改写（未经本工具 "
-            f"acquire/release，{diff_summary}）——可能绕过协议〇.7 锁保护写入，"
-            "请核查改动是否符合预期（队列 #200）。"
-        )
-        if args.file == DEFAULT_TARGET:
-            _record_bypass_detection(REPO_ROOT, args.file, args.who, diff_summary)
+        # 队列 #225：目标文件此刻内容存一份快照，release 时据此 diff 出本次
+        # 持锁期间新增/修改的行，结构校验只对这些行生效。
+        _write_snapshot(content_target, current_content)
+
+        # 队列 #200：与"上次 release 时记录的内容"比对，检测两次合法
+        # release/acquire 之间是否发生过绕锁直接改写。不阻断——协议〇.7 一贯
+        # 是协作性质而非硬互斥（见模块文档），只回显+（队列系统目标时）留痕。
+        lastknown = _read_lastknown(content_target)
+        if lastknown is not None and current_content != lastknown:
+            diff_summary = _summarize_content_diff(lastknown, current_content)
+            print(
+                f"⚠ 检测到 {content_target} 在上次 release 之后被直接改写（未经本工具 "
+                f"acquire/release，{diff_summary}）——可能绕过协议〇.7 锁保护写入，"
+                "请核查改动是否符合预期（队列 #200）。"
+            )
+            if is_queue_system:
+                _record_bypass_detection(REPO_ROOT, content_target, args.who, diff_summary)
+
+        # 决策点5（队列 #315 子项⑥，2026-08-10 #321 真实事故）：本地影子
+        # 副本漂移检测——只读警告，不自动处理。
+        shadow_warning = _detect_shadow_copy(content_target)
+        if shadow_warning:
+            print(shadow_warning)
 
     print(f"✓ 已占锁：{args.who}（{args.note or '无备注'}）→ {lock_path.name}")
+    # 决策点5：绝对路径打印，供操作方核对接下来要打开的编辑器路径是否
+    # 与此一致（此前只回显相对路径/文件名，是 #321 事故未被及时发现的
+    # 一个诱因——两个不同的相对路径字符串"看起来都合理"）。
+    for content_target in content_targets:
+        print(f"📍 权威物理路径：{_target_path(content_target)}")
 
     if recent_others:
         others_desc = "、".join(
@@ -1747,10 +1923,19 @@ def _acquire_locked(
         # 多个分区在同一次持锁窗口内依次预留（各分区在高水位线行里的号
         # 相互独立，见 SECTION_NUMBER_PATTERNS）；任一分区失败即整体回滚
         # （已成功预留的分区其高水位线不回退，允许留空洞，见协议〇.8）。
+        reservation_target = (
+            QUEUE_MECHANISM_PATH_REL if is_queue_system else args.file
+        )
         reserved_map: dict[str, list[int]] = {}
         for section, count in reserve_requests:
             try:
-                reserved_map[section] = _reserve_ids(args.file, section, count)
+                extra_texts = (
+                    [_read_target_text(QUEUE_BUSINESS_PATH_REL)]
+                    if is_queue_system else None
+                )
+                reserved_map[section] = _reserve_ids(
+                    reservation_target, section, count, extra_collision_texts=extra_texts,
+                )
             except ReserveFailedError as exc:
                 done = "、".join(reserved_map) or "无"
                 print(f"✗ 预留取号失败（§{section}），本次 acquire 一并回滚（不留半成品锁；"
@@ -1782,7 +1967,10 @@ def _acquire_locked(
         print("   改完请立刻 release。")
         return 0
 
-    hwm = _read_high_water_mark(args.file)
+    # 高水位线声明恒定只存机制环境文件（决策点1/2），队列系统模式下不论
+    # args.file 解析到哪一份都读机制环境文件。
+    hwm_source = QUEUE_MECHANISM_PATH_REL if is_queue_system else args.file
+    hwm = _read_high_water_mark(hwm_source)
     if hwm:
         print(f"📍 持锁瞬间高水位线：{hwm}——新行编号从此值 +1 续排，"
               "勿用 acquire 之前读到的旧值（见协议〇.7）。")
@@ -1791,7 +1979,9 @@ def _acquire_locked(
 
 
 def cmd_release(args: argparse.Namespace) -> int:
-    lock_path = _lock_path(args.file)
+    lock_path = _lock_path(
+        QUEUE_LOCK_ANCHOR if _is_queue_system_target(args.file) else args.file
+    )
     existing = _read_lock(lock_path)
     if existing is None:
         print("（无锁，无需释放）")
@@ -1803,12 +1993,20 @@ def cmd_release(args: argparse.Namespace) -> int:
               f"或确认后不带 --who 强制释放。")
         return 1
 
-    # 队列 #225：锁定目标是默认队列文件时，release 前做四项结构校验——
-    # 不通过则拒绝释放（锁保持占用，逼持有者原地修正后重试），不对其他
-    # `--file` 目标生效（§一/§二/§三/§四 语义只对这份文件成立）。
+    # 队列 #225：锁定目标是队列系统本体时，release 前做结构校验——不通过
+    # 则拒绝释放（锁保持占用，逼持有者原地修正后重试），不对其他 `--file`
+    # 目标生效（§一/§二/§三/§四 语义只对队列文件成立）。队列 #315（apply）：
+    # 拆分后对两份物理文件分别校验、violations 汇总（§三/§四/协议〇只存于
+    # 机制环境文件，业务场景文件里天然找不到这些分区、`_split_live_
+    # sections` 返回空文本、`_diff_touched_rows` 判定零改动、优雅跳过，
+    # 该函数无需为"文件缺某个分区"专门改造）。
     violations: list[str] = []
-    if args.file == DEFAULT_TARGET:
-        violations = _validate_release_structure(args, existing, REPO_ROOT)
+    if _is_queue_system_target(args.file):
+        for content_target in _iter_queue_paths():
+            file_args = argparse.Namespace(**vars(args))
+            file_args.file = content_target
+            file_violations = _validate_release_structure(file_args, existing, REPO_ROOT)
+            violations.extend(f"[{content_target}] {v}" for v in file_violations)
     elif args.file == FOLLOWUP_README_TARGET:
         # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
         # 拦截，与上面那套队列专属校验各自独立、互不干扰。
@@ -1822,7 +2020,9 @@ def cmd_release(args: argparse.Namespace) -> int:
     # 队列 #200：把"正式交还"的目标文件内容记为基准——下一次 acquire 据此
     # 判断这期间文件是否被绕过锁直接改写过。放在结构校验通过之后（不通过
     # 时不算真正 release，不应更新基准）。
-    _write_lastknown(args.file, _read_target_text(args.file))
+    lastknown_targets = _iter_queue_paths() if _is_queue_system_target(args.file) else [args.file]
+    for content_target in lastknown_targets:
+        _write_lastknown(content_target, _read_target_text(content_target))
 
     # 改写为 released 标记而非 unlink（#121(a)）：Cowork 沙箱挂载对本文件
     # unlink 会返回 PermissionError（acquire 建文件正常，release 删不掉），
@@ -1837,7 +2037,17 @@ def cmd_release(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    lock_path = _lock_path(args.file)
+    lock_path = _lock_path(
+        QUEUE_LOCK_ANCHOR if _is_queue_system_target(args.file) else args.file
+    )
+    # 决策点5：status 是最低成本的高频只读检查（本机常用于"开工前先核实
+    # 无锁"），幽灵副本检测放在这里同样生效，不必等到 acquire 才第一次
+    # 被提醒。
+    status_targets = _iter_queue_paths() if _is_queue_system_target(args.file) else [args.file]
+    for content_target in status_targets:
+        shadow_warning = _detect_shadow_copy(content_target)
+        if shadow_warning:
+            print(shadow_warning)
     existing = _read_lock(lock_path)
     if existing is None:
         print("（无锁，可直接编辑）")
@@ -1852,8 +2062,14 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--file", default=DEFAULT_TARGET,
-                        help=f"目标文件相对仓库根路径（默认 {DEFAULT_TARGET}）")
+    parser.add_argument(
+        "--file", default=DEFAULT_TARGET,
+        help=f"目标文件相对仓库根路径（默认 {DEFAULT_TARGET}——队列 #315 起，"
+             "这一默认值触发队列系统双文件路由：acquire/release/status 覆盖"
+             "机制环境与业务场景两份物理文件、共用一把锁；append-row 按 "
+             "--domain 路由到其中一份。显式传其它路径（如跟进信 README）时"
+             "行为与拆分前完全一致，单文件单锁）",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_acquire = sub.add_parser("acquire", help="编辑前占锁")
@@ -1911,6 +2127,13 @@ def main() -> int:
         help="按分区列序重复提供的字段值（不含首列编号）：§一 7 个"
              "（任务/领取方/输入指针/期望产出/状态/触碰区/登记）、§二 4 个"
              "（批次/文件清单/说明/状态，首个即批次号）、§四 3 个（事项/等谁/截止）",
+    )
+    p_append_row.add_argument(
+        "--domain", choices=("机", "业"), default=None,
+        help="队列 #315 决策点3/5：§一/§二 写入哪份物理队列文件（机制环境／"
+             "业务场景）；§四 恒定写机制环境文件，本参数对 §四 无效果。未给出"
+             "时向后兼容默认落机制环境文件（迁移期妥协，见函数"
+             "`_resolve_append_target` 文档）",
     )
     p_append_row.set_defaults(func=cmd_append_row)
 

@@ -1,12 +1,18 @@
 """queue_table.py 单测（队列 #306+#307+#314）。"""
 from __future__ import annotations
 
+import pytest
+
 from zhuopin_platform.shared_tools.queue_table import (
+    QUEUE_BUSINESS_PATH_REL,
+    QUEUE_MECHANISM_PATH_REL,
     SECTION_COLUMN_COUNTS,
     column_count_ok,
     escape_bare_pipe,
     has_bare_pipe,
+    iter_queue_paths,
     parse_section_rows,
+    resolve_queue_path,
     split_row_cells,
 )
 
@@ -186,3 +192,37 @@ def test_parse_section_rows_skips_header_and_separator():
     ids = [cells[0] for _, cells, _ in rows]
     assert "#" not in ids
     assert not any(set(i) <= {"-"} for i in ids)
+
+
+# ---------------------------------------------------------------------------
+# resolve_queue_path / iter_queue_paths（队列 #315，openspec 变更包
+# queue-dual-file-split 决策点4）
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_queue_path_mechanism():
+    assert resolve_queue_path("机") == QUEUE_MECHANISM_PATH_REL
+
+
+def test_resolve_queue_path_business():
+    assert resolve_queue_path("业") == QUEUE_BUSINESS_PATH_REL
+
+
+def test_resolve_queue_path_illegal_domain_fail_loud():
+    with pytest.raises(ValueError):
+        resolve_queue_path("其它")
+
+
+def test_resolve_queue_path_does_not_silently_default():
+    # 非法域值不得静默返回任一份文件——两份都不能作为兜底。
+    with pytest.raises(ValueError):
+        resolve_queue_path("")
+
+
+def test_iter_queue_paths_returns_both_files():
+    paths = iter_queue_paths()
+    assert paths == [QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL]
+
+
+def test_queue_mechanism_and_business_paths_are_distinct():
+    assert QUEUE_MECHANISM_PATH_REL != QUEUE_BUSINESS_PATH_REL
