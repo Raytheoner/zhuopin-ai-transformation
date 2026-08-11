@@ -2462,6 +2462,48 @@ class DualFileRoutingTests(unittest.TestCase):
         result = self.module._detect_shadow_copy("queue-mech.md")
         self.assertIsNone(result)
 
+    # ---- 锁域分裂止血：绝对路径归一化判定（队列 #315 apply 中途追加，
+    # Shao Peishen 2026-08-11 现时风险提醒——企微机器人 SubprocessQueueEdit
+    # Lock 传绝对路径，字面量比较永不命中，双文件路由从不触发）----
+
+    def test_absolute_path_to_default_target_is_recognized_as_queue_system(self):
+        absolute = str(self.repo_root / "queue.md")
+        self.assertTrue(self.module._is_queue_system_target(absolute))
+
+    def test_absolute_path_to_mechanism_file_is_recognized_as_queue_system(self):
+        absolute = str(self.repo_root / "queue-mech.md")
+        self.assertTrue(self.module._is_queue_system_target(absolute))
+
+    def test_absolute_path_to_business_file_is_recognized_as_queue_system(self):
+        absolute = str(self.repo_root / "queue-biz.md")
+        self.assertTrue(self.module._is_queue_system_target(absolute))
+
+    def test_absolute_path_to_unrelated_file_is_not_queue_system(self):
+        absolute = str(self.repo_root / "跟进信README.md")
+        self.assertFalse(self.module._is_queue_system_target(absolute))
+
+    def test_acquire_with_absolute_path_to_old_pointer_file_routes_dual_file(self):
+        """真实复现：企微机器人常驻服务当前仍以 `DEFAULT_QUEUE_RELATIVE_
+        PATH`（旧指针文件相对路径）算出的绝对路径调用编辑锁 CLI——本用例
+        验证即便调用方传的是这个"迁移前"的绝对路径，`cmd_acquire` 仍应
+        正确识别为队列系统本体、双文件路由生效（锁锚定机制文件、两份内容
+        文件都被读到快照里），而不是把它当成一个无关的普通共享文件。"""
+        self._write(self.mech_path, hwm_one=300)
+        self._write(self.biz_path, hwm_one=300)
+        absolute_old_pointer = str(self.repo_root / "queue.md")
+        ns = argparse.Namespace(
+            file=absolute_old_pointer, who="A", note="",
+            reserve=None, section=None, reserve_multi=None, domain=None,
+        )
+        self.assertEqual(self.module.cmd_acquire(ns), 0)
+        lock_path = self.repo_root / "queue-mech.md.editlock"
+        self.assertTrue(lock_path.exists(), "锁应锚定在机制文件，而非旧指针文件")
+        ns_release = argparse.Namespace(
+            file=absolute_old_pointer, who="A",
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+        )
+        self.assertEqual(self.module.cmd_release(ns_release), 0)
+
 
 class ShadowCopyCrossWorktreeTests(unittest.TestCase):
     """幽灵副本检测的真实跨 worktree 复现（队列 #315 子项⑥，直接承接

@@ -611,8 +611,30 @@ def _is_queue_system_target(file_arg: str) -> bool:
     """`file_arg` 是否为"未显式覆盖，面向队列系统本体"这一信号值（队列
     #315）。为 True 时，acquire/release/status 走双文件路由；为 False 时
     （显式 `--file` 指向其它共享文件，如跟进信 README）行为完全不受本次
-    改动影响。"""
-    return file_arg == DEFAULT_TARGET
+    改动影响。
+
+    队列 #315（apply 中途追加，Shao Peishen 2026-08-11 现时风险提醒）：
+    字符串字面量相等（`file_arg == DEFAULT_TARGET`，比较的是相对路径）只
+    覆盖"调用方压根没传 --file"这一种情形。企微机器人常驻服务
+    （`SubprocessQueueEditLock`）为跨 checkout 稳定，构造的是一个绝对路径
+    传给 --file——字面量恒不相等，双文件路由永不触发，机器人这把锁与人类
+    会话默认拿的锁分别锚定两个不同判据，互相看不见（"锁域分裂"，协议〇.7
+    的保护在迁移期实际失效）。改为：字面量相等仍走最快路径；否则把
+    `file_arg` 归一化解析为绝对路径，与 `DEFAULT_TARGET`／机制文件／业务
+    文件三者的绝对路径逐一比较——命中任一个都判定为"面向队列系统本体"，
+    不论调用方传来的是相对写法、绝对写法，还是（迁移期）仍指着旧指针文件
+    这三种历史写法中的哪一种。文件尚不存在时 `Path.resolve()`
+    不要求存在，纯字符串层面归一化，不受"文件还没创建"影响。"""
+    if file_arg == DEFAULT_TARGET:
+        return True
+    try:
+        resolved = Path(file_arg).resolve()
+    except OSError:
+        return False
+    for candidate in (DEFAULT_TARGET, QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL):
+        if resolved == (REPO_ROOT / candidate).resolve():
+            return True
+    return False
 
 
 def _iter_queue_paths() -> list[str]:
