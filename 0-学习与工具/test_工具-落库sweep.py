@@ -47,6 +47,17 @@ _spec = importlib.util.spec_from_file_location("commit_sweep", SCRIPT)
 sweep = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(sweep)
 
+# 队列 #315：本测试文件绝大多数用例走黑盒子进程（`_run_sweep`/`_run_git`
+# 等），子进程加载的是脚本文件本身、不继承本测试进程内对 `sweep` 模块
+# 对象的 monkeypatch——故不能用"重绑定 QUEUE_MECHANISM_PATH_REL=QUEUE_REL"
+# 这种进程内小聪明，必须让测试夹具真的把内容写到 `QUEUE_MECHANISM_PATH_
+# REL` 这个真实相对路径上（子进程按脚本里硬编码的真实值解析，与测试
+# 进程内 `sweep.*` 常量是否被改过无关）。全文件既有的 `sweep.QUEUE_MECHANISM_PATH_REL`
+# 引用因此统一改为 `sweep.QUEUE_MECHANISM_PATH_REL`——业务场景文件在这些
+# 既有用例的工作区里不存在，`_read_queue` 对缺失文件返回空串，天然不
+# 产生任何行，不影响既有断言；需要真实验证双文件路由/隔离的用例另行
+# 创建 `sweep.QUEUE_BUSINESS_PATH_REL` 路径下的文件。
+
 QUEUE_HEADER_ONLY = (
     "---\ntitle: 测试队列\n---\n\n# 测试队列\n\n"
     "## 一、任务看板\n\n| # | 任务 | 状态 |\n|---|------|------|\n| 1 | 占位 | 待领 |\n\n"
@@ -98,7 +109,20 @@ class SweepTestBase(unittest.TestCase):
         # "不属于任何批次声明"的脏文件，被 _status_paths 捕获后触发"非
         # clean"整轮跳过——这不是生产环境会出现的问题（生产仓库确有该
         # gitignore 规则），只是测试夹具需要还原真实布局才能验证真实行为。
-        (self.work / ".gitignore").write_text("**/reports/\n", encoding="utf-8")
+        # 队列 #315：双文件拆分后，编辑锁对机制/业务两份物理文件各自维护
+        # 一套 .editlock*/.snapshot/.lastknown 旁路文件——真实项目 .gitignore
+        # 早已用 `*.editlock`/`*.editlock.snapshot`/`*.editlock.lastknown`
+        # 等通配规则覆盖（与文件名无关），测试夹具此前只精确还原了
+        # `**/reports/` 这一条，现补齐这几条通配规则，避免这些旁路文件被
+        # `_status_paths` 当作"无人声明的孤儿脏文件"报出、干扰批次处理
+        # 断言（业务场景文件在多数既有用例里并不存在，但其锁旁路文件仍
+        # 会被创建，见 `_detect_shadow_copy`/snapshot 逻辑对"文件不存在"
+        # 的既有容忍设计）。
+        (self.work / ".gitignore").write_text(
+            "**/reports/\n*.editlock\n*.editlock.mutex\n*.editlock.tmp.*\n"
+            "*.editlock.snapshot\n*.editlock.lastknown\n",
+            encoding="utf-8",
+        )
 
         (self.work / "0-学习与工具").mkdir(parents=True)
         shutil.copy(EDIT_LOCK_SOURCE, self.work / "0-学习与工具" / "工具-共享文档编辑锁.py")
@@ -110,7 +134,7 @@ class SweepTestBase(unittest.TestCase):
         self._tmp.cleanup()
 
     def _write_queue(self, rows: str) -> None:
-        (self.work / sweep.QUEUE_REL).write_text(
+        (self.work / sweep.QUEUE_MECHANISM_PATH_REL).write_text(
             QUEUE_HEADER_ONLY.format(rows=rows), encoding="utf-8", newline="")
 
     def _commit_all(self, message: str) -> None:
@@ -127,7 +151,7 @@ class SweepTestBase(unittest.TestCase):
         return _git(self.origin, "log", "--oneline").stdout
 
     def _queue_text(self) -> str:
-        return (self.work / sweep.QUEUE_REL).read_text(encoding="utf-8")
+        return (self.work / sweep.QUEUE_MECHANISM_PATH_REL).read_text(encoding="utf-8")
 
 
 class HappyPathTests(SweepTestBase):
@@ -135,7 +159,7 @@ class HappyPathTests(SweepTestBase):
         self._init_and_push(rows="")
         # 仿真"Cowork 登记了一条待 commit 批次"——只改队列文件、不提交，
         # 声明片段刻意省略"1-转型规划/"前缀（真实项目里的通行写法）。
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -149,7 +173,7 @@ class HappyPathTests(SweepTestBase):
         self.assertEqual(len(origin_log.strip().splitlines()), 3,  # init + 批次 + 台账
                           origin_log)
 
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue)
         self.assertIn("sweep 自动落库", pushed_queue)
         # 要求②：批次内容与销行标记在同一个 commit——队列历史上唯一一次
@@ -157,7 +181,7 @@ class HappyPathTests(SweepTestBase):
         # 提交记录过"待 CC 取活"的中间状态（即"内容已提交、销行还没跟上"的
         # 慢一拍尾巴不会发生，因为压根没有分两次提交）。
         history_touching_row = _git(
-            self.origin, "log", "-p", "--", sweep.QUEUE_REL,
+            self.origin, "log", "-p", "--", sweep.QUEUE_MECHANISM_PATH_REL,
         ).stdout
         self.assertEqual(history_touching_row.count("B-TEST |"), 1,
                           "队列历史上应恰好一次出现该行——只有落地态，没有过渡态")
@@ -191,9 +215,9 @@ class HappyPathTests(SweepTestBase):
             "「既不含 ✅ 也不含表示尚未处理的单字」，仅作说明，不影响本行已完成状态。"
         )
         rows = (
-            f"| B-248复现 | `0-全景路线图/跨桌任务队列.md`（占位，不应被处理） "
+            f"| B-248复现 | `0-全景路线图/跨桌任务队列-机制环境.md`（占位，不应被处理） "
             f"| `docs(test): 不应发生的提交` | {done_row_status} |\n"
-            "| B-真实待处理 | `0-全景路线图/跨桌任务队列.md`（同文件，验证不受上一行影响） "
+            "| B-真实待处理 | `0-全景路线图/跨桌任务队列-机制环境.md`（同文件，验证不受上一行影响） "
             "| `docs(test): 应该发生的提交` | 待处理（登记，待 sweep 落库） |\n"
         )
         self._write_queue(rows)
@@ -201,7 +225,7 @@ class HappyPathTests(SweepTestBase):
         result = _run_sweep(self.work)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("B-248复现", pushed_queue)
         self.assertIn(done_row_status, pushed_queue,
                        "开头✅、分隔符之后引用判据关键词的行，内容不应被 sweep 改动/覆写")
@@ -219,7 +243,7 @@ class SafetyGateTests(SweepTestBase):
         20 批积压的根因，故本用例断言方向整体反转：批次应正常落库，孤儿
         文件只在日志里留痕提示，不阻塞任何人、也不被误删/误动。"""
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
         # 无关脏文件——不属于任何待 commit 批次声明，且不与 B-TEST 的声明
@@ -232,7 +256,7 @@ class SafetyGateTests(SweepTestBase):
         self.assertIn("孤儿", result.stdout)
         self.assertIn("杂物.md", result.stdout)
         # 关键反转：B-TEST 与孤儿文件毫无声明交集，应正常落库并推送。
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue)
         self.assertTrue((self.work / "杂物.md").exists(), "无关文件不应被误删/误动")
 
@@ -246,7 +270,7 @@ class SafetyGateTests(SweepTestBase):
 
     def test_dry_run_makes_no_changes(self):
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
         before_log = self._origin_log()
@@ -274,7 +298,7 @@ class StragglerTailTests(SweepTestBase):
         # 但补销尾巴分支同样会触发 processed_any=True 进而重跑台账，故为 3 行）。
         self.assertEqual(len(origin_log.strip().splitlines()), 3, origin_log)
 
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue)
         self.assertIn("补销遗留尾巴", pushed_queue)
 
@@ -282,7 +306,7 @@ class StragglerTailTests(SweepTestBase):
         tail_commit_files = _git(
             self.origin, "show", "--name-only", "--format=", "master~1",
         ).stdout.strip().splitlines()
-        self.assertEqual(tail_commit_files, [sweep.QUEUE_REL])
+        self.assertEqual(tail_commit_files, [sweep.QUEUE_MECHANISM_PATH_REL])
 
 
 class LateForwardCheckTests(SweepTestBase):
@@ -297,11 +321,11 @@ class LateForwardCheckTests(SweepTestBase):
 
     def test_process_normal_batch_only_commits_locally_even_when_origin_has_diverged(self):
         self._init_and_push(rows="")
-        row_line = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row_line = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                     "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row_line)
         queue_text = self._queue_text()
-        rows = sweep._parse_section_two(queue_text)
+        rows = sweep._parse_section_two(queue_text, sweep.QUEUE_MECHANISM_PATH_REL)
         row = next(r for r in rows if r["batch_id"] == "B-TEST")
 
         # 另开一个 clone，向 origin 推一个本地工作区看不到的提交，制造分叉——
@@ -317,7 +341,7 @@ class LateForwardCheckTests(SweepTestBase):
 
         log: list[str] = []
         # 不应再抛出 SweepAbort——是否能与 origin 对齐已不是这个函数的职责。
-        sweep._process_normal_batch(self.work, row, [sweep.QUEUE_REL], dry_run=False, log=log)
+        sweep._process_normal_batch(self.work, row, [sweep.QUEUE_MECHANISM_PATH_REL], dry_run=False, log=log)
 
         local_log = _git(self.work, "log", "--oneline").stdout
         self.assertIn("测试批次落库", local_log, "批次内容应已在本地提交")
@@ -326,7 +350,7 @@ class LateForwardCheckTests(SweepTestBase):
         # 规则，属正常噪音（同 SyncReorderTests 里同一处说明）；真正要断言
         # 的是队列文件本身已提交、不再是脏改动。
         dirty_after = [ln for ln in _git(self.work, "status", "--porcelain").stdout.splitlines()
-                       if ln[3:] == sweep.QUEUE_REL]  # 精确比对路径，避免误配 .editlock* 等前缀同名文件
+                       if ln[3:] == sweep.QUEUE_MECHANISM_PATH_REL]  # 精确比对路径，避免误配 .editlock* 等前缀同名文件
         self.assertEqual(dirty_after, [], "队列文件应已随批次一起提交，不应仍是脏改动")
         # origin 完全不受影响——分叉的处理是另一个函数的职责，不在这里发生。
         origin_head = _git(self.origin, "rev-parse", "master").stdout.strip()
@@ -343,7 +367,7 @@ class IndexLockSelfHealTests(SweepTestBase):
 
     def test_stale_index_lock_is_self_healed_and_run_proceeds(self):
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -360,12 +384,12 @@ class IndexLockSelfHealTests(SweepTestBase):
         # 自愈只是前置步骤，不是自愈完就停手——本轮应正常继续处理批次。
         origin_log = self._origin_log()
         self.assertEqual(len(origin_log.strip().splitlines()), 3, origin_log)  # init+批次+台账
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue)
 
     def test_fresh_index_lock_aborts_gracefully_with_log(self):
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -516,7 +540,7 @@ class CheckDirtyPathAgainstPendingBatchTests(unittest.TestCase):
 
     def _write_queue(self, rows_md: str) -> None:
         text = QUEUE_HEADER_ONLY.format(rows=rows_md)
-        (self.repo_root / sweep.QUEUE_REL).write_text(text, encoding="utf-8")
+        (self.repo_root / sweep.QUEUE_MECHANISM_PATH_REL).write_text(text, encoding="utf-8")
 
     def test_declared_dirty_file_matches_pending_batch(self):
         self._write_queue("| B-x | `4-数字员工/采购部/x.py` | `msg` | 待处理（登记）|\n")
@@ -570,7 +594,7 @@ class ExactMatchEndToEndTests(SweepTestBase):
 
     def test_correctly_declared_file_not_flagged_ambiguous_by_duplicate_basename(self):
         self._init_and_push(rows="")
-        row = ("| B-TEST | `CLAUDE.md`、`0-全景路线图/跨桌任务队列.md` "
+        row = ("| B-TEST | `CLAUDE.md`、`0-全景路线图/跨桌任务队列-机制环境.md` "
                "| `docs(test): 精确相等优先` | 待 CC 取活 |\n")
         self._write_queue(row)
         (self.work / "CLAUDE.md").write_text("根 CLAUDE.md 的改动，属于本批次\n", encoding="utf-8")
@@ -588,7 +612,7 @@ class ExactMatchEndToEndTests(SweepTestBase):
         # 孤儿文件毫无声明交集，队列 #238 批次隔离后应正常落库并推送——
         # 修复前（#234(1) 只做精确相等优先、未做批次隔离）此处会因
         # "非 clean"整轮跳过，SC8 拖累了本已正确声明的 B-TEST。
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue)
         # SC8 那份始终未被任何批次声明，应作为孤儿在日志里留痕提示（不阻塞）。
         self.assertIn("孤儿", result.stdout)
@@ -615,7 +639,7 @@ class BatchIsolationIntegrationTests(SweepTestBase):
         (qdb_dir / "CLAUDE.md").write_text("QD-B 的 CLAUDE.md\n", encoding="utf-8")
 
         rows = (
-            "| B-CLEAN | `content1.md`、`0-全景路线图/跨桌任务队列.md`（新行占位） "
+            "| B-CLEAN | `content1.md`、`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
             "| `docs(test): 干净批次应正常落库` | 待处理 |\n"
             "| B-BLOCKED | `CLAUDE.md` "
             "| `docs(test): 歧义批次应被暂缓` | 待处理 |\n"
@@ -627,8 +651,8 @@ class BatchIsolationIntegrationTests(SweepTestBase):
 
         # B-CLEAN 正常落库并推送；B-BLOCKED 因自身声明歧义而暂缓，队列里
         # 原样保留"待处理"，未被误标记已完成。
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
-        rows_after = {r["batch_id"]: r for r in sweep._parse_section_two(self._queue_text())}
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        rows_after = {r["batch_id"]: r for r in sweep._parse_section_two(self._queue_text(), sweep.QUEUE_MECHANISM_PATH_REL)}
         self.assertIn("sweep 自动落库", rows_after["B-CLEAN"]["status_cell"])
         self.assertIn("✅", pushed_queue)
         self.assertEqual(rows_after["B-BLOCKED"]["status_cell"], "待处理",
@@ -665,7 +689,7 @@ class BatchIsolationIntegrationTests(SweepTestBase):
         self.assertEqual(len(self._origin_log().strip().splitlines()), 1,
                           "全部批次暂缓时不应产生任何新提交")
         self.assertIn("init", self._origin_log())
-        self.assertEqual(sweep._parse_section_two(self._queue_text())[0]["status_cell"], "待处理")
+        self.assertEqual(sweep._parse_section_two(self._queue_text(), sweep.QUEUE_MECHANISM_PATH_REL)[0]["status_cell"], "待处理")
 
 
 class PendingCriteriaIntegrationTests(SweepTestBase):
@@ -677,7 +701,7 @@ class PendingCriteriaIntegrationTests(SweepTestBase):
         (self.work / "content2.md").write_text("待处理批次2内容\n", encoding="utf-8")
 
         rows = (
-            "| B-CHECK-AND-DAI | `content1.md`、`0-全景路线图/跨桌任务队列.md`（新行占位） "
+            "| B-CHECK-AND-DAI | `content1.md`、`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
             "| `docs(test): 含✅误写的待处理批次` "
             "| ✅ 已完成（本次登记，待 sweep 落库） |\n"
             "| B-DAI-ONLY | `content2.md` "
@@ -696,7 +720,7 @@ class PendingCriteriaIntegrationTests(SweepTestBase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
         # 含✅误写 + 纯待处理 均应被识别并落库销行。
-        rows_after = {r["batch_id"]: r for r in sweep._parse_section_two(self._queue_text())}
+        rows_after = {r["batch_id"]: r for r in sweep._parse_section_two(self._queue_text(), sweep.QUEUE_MECHANISM_PATH_REL)}
         self.assertIn("sweep 自动落库", rows_after["B-CHECK-AND-DAI"]["status_cell"],
                        "含✅但带'待'字样的误写，此前会被永久判定已处理而漏掉——本次应被正常处理")
         self.assertIn("sweep 自动落库", rows_after["B-DAI-ONLY"]["status_cell"])
@@ -751,7 +775,7 @@ class SyncBehindOriginTests(SweepTestBase):
         origin_head_before = _git(self.origin, "rev-parse", "master").stdout.strip()
         self.assertNotEqual(local_head_before, origin_head_before, "前提：本地确实落后")
 
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -763,7 +787,7 @@ class SyncBehindOriginTests(SweepTestBase):
         # 本地已通过 rebase 追上另一 worktree 的推送，且当轮批次照常处理。
         local_log = _git(self.work, "log", "--oneline").stdout
         self.assertIn("另一worktree推送", local_log)
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue)
 
         origin_log = self._origin_log()
@@ -785,7 +809,7 @@ class SyncBehindOriginTests(SweepTestBase):
         `StartupGuardDoesNotBlockBatchProcessingTests`）。"""
         self._init_and_push(rows="")
         # 本地有一个尚未推送的本地提交——与 origin 侧冲突同一处内容。
-        queue_path = self.work / sweep.QUEUE_REL
+        queue_path = self.work / sweep.QUEUE_MECHANISM_PATH_REL
         queue_path.write_text(
             queue_path.read_text(encoding="utf-8").replace("占位", "本地未推送改动", 1),
             encoding="utf-8",
@@ -799,7 +823,7 @@ class SyncBehindOriginTests(SweepTestBase):
         _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
         _git(other_clone, "config", "user.email", "other@example.com")
         _git(other_clone, "config", "user.name", "Other")
-        other_queue_path = other_clone / sweep.QUEUE_REL
+        other_queue_path = other_clone / sweep.QUEUE_MECHANISM_PATH_REL
         other_queue_path.write_text(
             other_queue_path.read_text(encoding="utf-8").replace("占位", "并发session冲突改动", 1),
             encoding="utf-8",
@@ -875,7 +899,7 @@ class ForkAlertTests(SweepTestBase):
         改动须冲突同一份文件的同一处内容（而非各自新增独立文件），使
         rebase 必然失败、`git rebase --abort` 回滚后落回既有分叉告警。"""
         self._init_and_push(rows="")
-        queue_path = self.work / sweep.QUEUE_REL
+        queue_path = self.work / sweep.QUEUE_MECHANISM_PATH_REL
         queue_path.write_text(
             queue_path.read_text(encoding="utf-8").replace("占位", "本地未推送改动", 1),
             encoding="utf-8",
@@ -886,7 +910,7 @@ class ForkAlertTests(SweepTestBase):
         _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
         _git(other_clone, "config", "user.email", "other@example.com")
         _git(other_clone, "config", "user.name", "Other")
-        other_queue_path = other_clone / sweep.QUEUE_REL
+        other_queue_path = other_clone / sweep.QUEUE_MECHANISM_PATH_REL
         other_queue_path.write_text(
             other_queue_path.read_text(encoding="utf-8").replace("占位", "并发session冲突改动", 1),
             encoding="utf-8",
@@ -980,14 +1004,14 @@ class EditLockProbeIntegrationTests(SweepTestBase):
     """队列 #198(b) CLI 级集成：真实占用编辑锁后跑 sweep，验证零 git 动作。"""
 
     def test_active_lock_blocks_whole_run_with_zero_git_actions(self):
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._init_and_push(rows=row)
         self._write_queue(row)
 
         acquire = subprocess.run(
             [sys.executable, str(self.work / "0-学习与工具" / "工具-共享文档编辑锁.py"),
-             "--file", sweep.QUEUE_REL, "acquire", "--who", "测试占用方", "--note", "模拟人类持锁"],
+             "--file", sweep.QUEUE_MECHANISM_PATH_REL, "acquire", "--who", "测试占用方", "--note", "模拟人类持锁"],
             cwd=self.work, capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(acquire.returncode, 0, acquire.stdout + acquire.stderr)
@@ -1054,7 +1078,7 @@ class StartupGuardDoesNotBlockBatchProcessingTests(SweepTestBase):
         批次"的复合场景——精确对应真实事故的三个要素。两侧改动分别落在
         独立文件上，互不冲突，rebase 应能自动解决。返回批次登记前的
         origin HEAD（供断言用）。"""
-        row = ("| B-309F复现 | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-309F复现 | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 队列#309子项F复现批次落库` | 待处理（登记，待 sweep 落库） |\n")
         self._init_and_push(rows="")
 
@@ -1102,7 +1126,7 @@ class StartupGuardDoesNotBlockBatchProcessingTests(SweepTestBase):
         self.assertIn("本轮不在此处提前中止", result.stdout)
         self.assertNotIn("跳过本轮，不强推、不自动 rebase", result.stdout)
 
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue, "待处理批次应已正常落库，未被起跑段的分叉检测挡住")
 
         origin_head_after = _git(self.origin, "rev-parse", "master").stdout.strip()
@@ -1142,7 +1166,7 @@ class FlushPendingLockAppendsTests(SweepTestBase):
         """本 checkout 未部署机器人服务（脚本不存在）——静默跳过，不产生噪音日志，
         批次处理照常进行（回归既有 happy path）。"""
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1157,7 +1181,7 @@ class FlushPendingLockAppendsTests(SweepTestBase):
             encoding="utf-8",
         )
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1165,7 +1189,7 @@ class FlushPendingLockAppendsTests(SweepTestBase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("flush 失败", result.stdout)
         self.assertIn("模拟flush失败", result.stdout)
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue, "flush 失败不应阻止批次照常落库")
 
     def test_flush_script_success_output_is_logged(self):
@@ -1205,7 +1229,7 @@ class DecisionReminderSecondCarrierTests(SweepTestBase):
         """本 checkout 未部署机器人服务（脚本不存在）——静默跳过，不产生
         噪音日志，批次处理照常进行（回归既有 happy path）。"""
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1221,7 +1245,7 @@ class DecisionReminderSecondCarrierTests(SweepTestBase):
             encoding="utf-8",
         )
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1229,7 +1253,7 @@ class DecisionReminderSecondCarrierTests(SweepTestBase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("决策提醒第二载体退出码", result.stdout)
         self.assertIn("模拟决策提醒失败", result.stdout)
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue, "第二载体失败不应阻止批次照常落库")
 
     def test_reminder_script_success_with_new_items_is_logged(self):
@@ -1273,7 +1297,7 @@ class DecisionReminderSecondCarrierTests(SweepTestBase):
         "调用瞬间编辑锁文件是否存在"的探测脚本，验证调用发生在
         `_strike_off_rows` 真正 acquire 锁之前（此刻锁文件应尚不存在）。"""
         probe_marker = self.work.parent / "lock_state_at_reminder_call.txt"
-        lock_file_rel = sweep.QUEUE_REL + ".editlock"
+        lock_file_rel = sweep.QUEUE_MECHANISM_PATH_REL + ".editlock"
         self._reminder_script_path().write_text(
             "import os\nfrom pathlib import Path\n"
             f"lock_exists = os.path.exists(r'{self.work}/{lock_file_rel}')\n"
@@ -1281,7 +1305,7 @@ class DecisionReminderSecondCarrierTests(SweepTestBase):
             encoding="utf-8",
         )
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1322,7 +1346,7 @@ class ScheduledTaskMirrorSyncTests(SweepTestBase):
 
     def test_missing_backup_script_is_silently_skipped(self):
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1416,7 +1440,7 @@ class BatchLandingCountTests(SweepTestBase):
 
     def test_processed_batch_records_landing_count(self):
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1437,7 +1461,7 @@ class BatchLandingCountTests(SweepTestBase):
 
     def test_dry_run_does_not_write_landing_count(self):
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1561,7 +1585,7 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
         service_file.write_text("# 测试改动\n", encoding="utf-8")
 
         row = ("| B-TEST | `5-平台底座/wecom-aibot-service/aibot_service/foo.py`、"
-               "`0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 涉常驻服务的批次` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1575,7 +1599,7 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
     def test_batch_not_touching_resident_service_path_gets_no_hint(self):
         (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 不涉常驻服务` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1816,7 +1840,7 @@ class DeploymentTraceHintTests(SweepTestBase):
 
         row = ("| B-TEST | "
                "`4-数字员工/采购部/SC8-客户订单交期智能承诺/webapp.py`、"
-               "`0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 命中已部署场景但未补留痕` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1839,7 +1863,7 @@ class DeploymentTraceHintTests(SweepTestBase):
         row = ("| B-TEST | "
                "`4-数字员工/采购部/SC8-客户订单交期智能承诺/webapp.py`、"
                "`4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md`、"
-               "`0-全景路线图/跨桌任务队列.md`（新行占位） "
+               "`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 已同批补留痕` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1851,7 +1875,7 @@ class DeploymentTraceHintTests(SweepTestBase):
     def test_non_deployed_scenario_path_gets_no_hint(self):
         (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 不涉已部署场景` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -1897,7 +1921,7 @@ class SyncReorderTests(SweepTestBase):
         _git(self.work.parent, "clone", "-q", str(self.origin), str(other_clone))
         _git(other_clone, "config", "user.email", "other@example.com")
         _git(other_clone, "config", "user.name", "Other")
-        queue_path = other_clone / sweep.QUEUE_REL
+        queue_path = other_clone / sweep.QUEUE_MECHANISM_PATH_REL
         queue_path.write_text(
             transform(queue_path.read_text(encoding="utf-8")), encoding="utf-8", newline="")
         _git(other_clone, "add", "-A")
@@ -1905,7 +1929,7 @@ class SyncReorderTests(SweepTestBase):
         _git(other_clone, "push", "-q", "origin", "master")
 
     def _mutate_local_queue(self, transform) -> None:
-        path = self.work / sweep.QUEUE_REL
+        path = self.work / sweep.QUEUE_MECHANISM_PATH_REL
         path.write_text(transform(path.read_text(encoding="utf-8")), encoding="utf-8", newline="")
 
     def test_dirty_batch_plus_origin_edit_same_file_no_conflict_auto_reconciles(self):
@@ -1927,7 +1951,7 @@ class SyncReorderTests(SweepTestBase):
         self._push_queue_edit_from_other_clone(
             append_concurrent_task_row, "并发session追加任务行")
 
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)  # 此刻工作区相对本地 HEAD 是脏的——§二 新增了这一行
 
@@ -1936,7 +1960,7 @@ class SyncReorderTests(SweepTestBase):
         self.assertNotIn("跳过本轮", result.stdout,
                           "不应再因 origin 同文件新提交而整轮跳过——这正是本次要修复的故障")
 
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertIn("✅ 已完成", pushed_queue, "本轮批次应已正常落库推送")
         self.assertIn("并发session新增任务", pushed_queue,
                        "rebase 应保留 origin 侧并发新增的内容，不能丢")
@@ -1965,7 +1989,7 @@ class SyncReorderTests(SweepTestBase):
             self._push_queue_edit_from_other_clone(
                 modify_placeholder_status_on_origin, "并发session修改占位任务状态")
 
-            row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+            row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                    "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
             self._write_queue(row)
             # 本地也改同一行占位任务的状态列——与 origin 的改动落在完全相同的
@@ -1994,7 +2018,7 @@ class SyncReorderTests(SweepTestBase):
             self.assertFalse((self.work / ".git" / "rebase-apply").exists())
 
             # 没有任何强推——origin 上不应出现本地批次的"✅ 已完成"内容。
-            origin_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+            origin_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
             self.assertNotIn("✅ 已完成", origin_queue)
             self.assertIn("已被并发session领走", origin_queue)
 
@@ -2039,9 +2063,9 @@ class SyncReorderTests(SweepTestBase):
         （包装函数原样转发给真实实现，只做计数）。"""
         self._init_and_push(rows="")
         rows = (
-            "| B-ONE | `0-全景路线图/跨桌任务队列.md`（新行占位一） "
+            "| B-ONE | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位一） "
             "| `docs(test): 批次一` | 待 CC 取活 |\n"
-            "| B-TWO | `0-全景路线图/跨桌任务队列.md`（新行占位二） "
+            "| B-TWO | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位二） "
             "| `docs(test): 批次二` | 待 CC 取活 |\n"
         )
         self._write_queue(rows)
@@ -2067,7 +2091,7 @@ class SyncReorderTests(SweepTestBase):
         self.assertEqual(len(push_calls), 1,
                           f"应恰好一次 git push，实际 {len(push_calls)} 次：{push_calls}")
 
-        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_REL).stdout
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
         self.assertEqual(pushed_queue.count("✅ 已完成"), 2, "两个批次都应落库")
 
     def test_push_failure_after_successful_reconcile_keeps_local_commit(self):
@@ -2076,7 +2100,7 @@ class SyncReorderTests(SweepTestBase):
         推送失败，需人工核查"语义（既有 exit_code=2）。用包装 `_run_git`
         在真正的 `push` 调用上注入一次性失败来确定性构造，不依赖真实网络。"""
         self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列.md`（新行占位） "
+        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
         self._write_queue(row)
 
@@ -2746,7 +2770,7 @@ class CheckStalePendingRowsCliTests(SweepTestBase):
     命中；#129 类真待领行不误标；三个已实测坐实的误报源不产生误命中。"""
 
     def _write_section_one_queue(self, rows: str) -> None:
-        (self.work / sweep.QUEUE_REL).write_text(
+        (self.work / sweep.QUEUE_MECHANISM_PATH_REL).write_text(
             SECTION_ONE_EIGHT_COL_QUEUE.format(rows=rows), encoding="utf-8", newline="")
 
     def test_primary_judge_catches_explicitly_claimed_row(self):

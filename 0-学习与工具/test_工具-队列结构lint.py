@@ -37,6 +37,11 @@ class QueueLintTests(unittest.TestCase):
         self.module = _load_module()
         self.target_path = self.repo_root / self.module.QUEUE_REL
         self.target_path.parent.mkdir(parents=True, exist_ok=True)
+        # 队列 #315：既有用例把 §一/§二/§三/§四 全部写在这一份文件里——
+        # 白盒直接调用，故可直接 monkeypatch `QUEUE_PATHS_REL` 只含这一份，
+        # 不必逐个用例改造为双文件夹具（业务场景文件相关行为另有专门用例
+        # 覆盖，见 `DualFileLintTests`）。
+        self.module.QUEUE_PATHS_REL = [self.module.QUEUE_REL]
 
     def tearDown(self):
         self._tmpdir.cleanup()
@@ -131,8 +136,13 @@ class QueueLintTests(unittest.TestCase):
         )
 
     def test_real_production_queue_file_passes(self):
-        """回归护栏：确保 106 行存量回填后的真实生产队列文件通过本 lint
-        （队列 #308 决策点 3 回填完成的直接验证）。"""
+        """回归护栏：确保存量回填后的真实生产队列文件通过本 lint（队列
+        #308 决策点 3 回填完成的直接验证）。队列 #315：本用例须验证真实
+        的两份物理文件，先撤销 setUp 里为其它单文件用例做的 monkeypatch，
+        换回模块加载时算出的真实生产路径。"""
+        real_paths = [self.module.editlock.QUEUE_MECHANISM_PATH_REL,
+                      self.module.editlock.QUEUE_BUSINESS_PATH_REL]
+        self.module.QUEUE_PATHS_REL = real_paths
         violations = self.module.lint(self.module.REPO_ROOT)
         self.assertEqual(violations, [], f"真实生产队列文件不应有 lint 违规：{violations}")
 

@@ -366,6 +366,9 @@ else:
         保持一致，见该模块。"""
 
         SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
+        # 队列 #315：拆分后两份物理文件路径，隔离桩同样须与权威实现保持一致。
+        QUEUE_MECHANISM_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"
+        QUEUE_BUSINESS_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md"
 
         # 简化近似，非逐字节镜像——权威实现按 CommonMark 反引号游程规则
         # 配对（见 queue_table.py::_mask_backtick_spans，队列 #314 apply
@@ -389,7 +392,17 @@ else:
             ]
 
 MAIN_WORKSPACE = Path(r"C:\Users\Paul Shao\OneDrive\Projects\企业AI转型")
+# 队列 #315（apply，2026-08-11）：拆分后本路径转为纯指针文件，不再是权威
+# 内容承载——sweep 自身不再用它做任何读写，只在极少数"报告曾经的单一
+# 文件路径"式提示文案里可能出现，保留常量本身不删（避免破坏尚未清理的
+# 引用），但 `_read_queue`/`_write_queue` 一律改用下方 `_iter_queue_paths()`
+# 返回的两份真实内容文件。
 QUEUE_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
+# 本模块局部绑定（同 `工具-共享文档编辑锁.py` 既有惯例，非直接处处引用
+# `queue_table` 模块本身）——测试用例按既有 `QUEUE_REL` monkeypatch 惯例
+# 也可以同样 monkeypatch 这两个名字，隔离到临时目录。
+QUEUE_MECHANISM_PATH_REL = queue_table.QUEUE_MECHANISM_PATH_REL
+QUEUE_BUSINESS_PATH_REL = queue_table.QUEUE_BUSINESS_PATH_REL
 LEDGER_SCRIPT_REL = "0-学习与工具/工具-文档台账生成.py"
 LEDGER_OUTPUT_REL = "1-转型规划/0-全景路线图/文档台账-自动生成.md"
 EDIT_LOCK_SCRIPT_REL = "0-学习与工具/工具-共享文档编辑锁.py"
@@ -1099,7 +1112,7 @@ def _status_paths(repo_root: Path) -> list[str]:
     return paths
 
 
-def _parse_section_two(queue_text: str) -> list[dict]:
+def _parse_section_two(queue_text: str, queue_path: str) -> list[dict]:
     """解析队列 §二"待 commit 批次"表格，返回每行的原始文本+四列内容。
 
     队列 #314（openspec 变更包 `queue-table-backtick-aware-split`）：切列
@@ -1109,7 +1122,12 @@ def _parse_section_two(queue_text: str) -> list[dict]:
     设计取舍（"命中不了整八列即静默跳过、不崩溃、不误判"，见 `_parse_
     section_one` 文档），sweep 需要在无人值守场景下绝不误判，与编辑锁
     "原样返回交调用方判"的既有策略是两种不同、都各自成立的取舍，本次
-    只升级切列算法本身，不改变这一判断。"""
+    只升级切列算法本身，不改变这一判断。
+
+    队列 #315：每行附带 `queue_path`（本次解析的物理文件相对路径）——
+    批次现分散在两份文件里，下游写回（`_strike_off_rows`/`_process_
+    normal_batch`）需要知道该写去哪一份，不能再假设只有一份队列文件。
+    """
     start = queue_text.find(SECTION_TWO_HEADING)
     if start == -1:
         return []
@@ -1135,6 +1153,7 @@ def _parse_section_two(queue_text: str) -> list[dict]:
             "files_cell": cells[1],
             "message_cell": cells[2],
             "status_cell": cells[3],
+            "queue_path": queue_path,
         })
     return rows
 
@@ -1295,10 +1314,17 @@ def _check_dirty_paths_against_pending_batches(
 
     返回 [(path, batch_id_or_None), ...]；batch_id 为 None 表示未命中任何
     待处理批次（可以放心按现有逻辑处理，不属于本检查的管辖范围）。
+
+    队列 #315：批次分散在两份物理文件里，须都查——遗漏任一份会让本检查
+    对该份文件里的待处理批次失明，复现"建议 checkout 前未核对 §二"这一
+    本检查本来要防的事故。
     """
-    queue_text = _read_queue(repo_root)
-    rows = _parse_section_two(queue_text)
-    pending_rows, _ = _classify_section_two_rows(rows)
+    pending_rows: list[dict] = []
+    for queue_path in _iter_queue_paths():
+        queue_text = _read_queue(repo_root, queue_path)
+        rows = _parse_section_two(queue_text, queue_path)
+        file_pending, _ = _classify_section_two_rows(rows)
+        pending_rows.extend(file_pending)
     results: list[tuple[str, str | None]] = []
     for path in paths:
         matched_batch = None
@@ -1438,9 +1464,14 @@ def _find_stale_pending_rows(repo_root: Path, days: int = STALE_ROW_LOOKBACK_DAY
     `blocked`/`timed=`/`hold`/`done` 结构性排除（受外部阻塞/触发日未到/
     我方主动搁置/已完成——均非"看起来待处理、实则可能已被顺手做完"这一
     误报形态的目标），队列 #308 E1 子项指出的正是这类误报（如 #129 曾被
-    仅凭"待"字样误标为待处理，其实是定时触发型）。"""
-    queue_text = _read_queue(repo_root)
-    rows = _parse_section_one(queue_text)
+    仅凭"待"字样误标为待处理，其实是定时触发型）。
+
+    队列 #315：§一 现分散在两份物理文件里（按 `[D:机/业]` 拆分），编号
+    空间单一（决策点2），聚合两份文件的行不会撞号，直接合并处理。"""
+    rows: list[dict] = []
+    for queue_path in _iter_queue_paths():
+        queue_text = _read_queue(repo_root, queue_path)
+        rows.extend(_parse_section_one(queue_text))
     pending = []
     for r in rows:
         status_value, _, _ = _parse_status_domain_fields(r["status_cell"])
@@ -2255,30 +2286,61 @@ def _now_utc_str() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
-def _read_queue(repo_root: Path) -> str:
-    with open(repo_root / QUEUE_REL, "r", encoding="utf-8", newline="") as f:
-        return f.read()
+def _iter_queue_paths() -> list[str]:
+    """队列 #315：遍历两份物理队列文件的仓库相对路径——机制环境／业务
+    场景，替代拆分前"只有一份队列文件"的假设。"""
+    return [QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL]
 
 
-def _write_queue(repo_root: Path, text: str) -> None:
-    with open(repo_root / QUEUE_REL, "w", encoding="utf-8", newline="") as f:
+def _read_queue(repo_root: Path, queue_path: str) -> str:
+    """队列 #315：文件不存在时返回空串而非抛错——两份物理文件里若有一份
+    尚不存在（如测试夹具只搭了单文件场景，或迁移过渡期个别环境未同步）
+    ，下游 `_parse_section_two`/`_parse_section_one` 对空文本天然返回零行，
+    等价于"这份文件当前没有需要处理的内容"，不应让 sweep 整轮崩溃。"""
+    try:
+        with open(repo_root / queue_path, "r", encoding="utf-8", newline="") as f:
+            return f.read()
+    except FileNotFoundError:
+        # 非静默降级（同 #302/#308 一贯纪律）：留痕但不 abort——测试夹具与
+        # 迁移过渡期的合法单文件场景需要这条路径可用，真实生产环境下两份
+        # 文件长期缺失才是异常，留痕即可让值周巡检/日志复核发现。
+        print(f"⚠ {queue_path} 不存在，本轮按空内容处理（若非预期请核实文件是否遗失）。")
+        return ""
+
+
+def _write_queue(repo_root: Path, queue_path: str, text: str) -> None:
+    with open(repo_root / queue_path, "w", encoding="utf-8", newline="") as f:
         f.write(text)
 
 
 def _strike_off_rows(
     repo_root: Path, rows: list[dict], new_status_fn, lock_note: str, dry_run: bool,
 ) -> bool:
-    """对给定行批量替换状态列并写回队列文件；调用方负责 add/commit。返回是否真的改了内容。"""
+    """对给定行批量替换状态列并写回队列文件；调用方负责 add/commit。返回是否真的改了内容。
+
+    队列 #315：`rows` 须全部来自同一份物理队列文件（`row["queue_path"]`
+    一致）——调用方（本文件内均按物理文件分组处理批次）保证这一点，这里
+    仅做断言，不静默兼容跨文件混合，避免"写对了一半、另一半找不到行"这
+    类难排查的部分失败。
+    """
     if dry_run:
         for row in rows:
             print(f"  [dry-run] 将标记 {row['batch_id']} → {new_status_fn(row)}")
         return True
 
+    queue_paths = {row["queue_path"] for row in rows}
+    if len(queue_paths) > 1:
+        raise SweepAbort(
+            f"✗ _strike_off_rows 收到跨物理文件混合的行（{queue_paths}），"
+            "调用方须按 queue_path 分组后分别调用——拒绝执行，避免部分写入。"
+        )
+    queue_path = next(iter(queue_paths))
+
     lock = _edit_lock(repo_root, "acquire", ["--note", lock_note])
     if lock.returncode != 0:
         raise SweepAbort(f"⚠ 编辑锁占用中，跳过本轮：{lock.stdout.strip()}")
     try:
-        text = _read_queue(repo_root)
+        text = _read_queue(repo_root, queue_path)
         for row in rows:
             new_line = _replace_status_cell(row["raw_line"], row["status_cell"], new_status_fn(row))
             if row["raw_line"] not in text:
@@ -2287,7 +2349,7 @@ def _strike_off_rows(
                     "可能被并发编辑，跳过本轮不强写。",
                 )
             text = text.replace(row["raw_line"], new_line, 1)
-        _write_queue(repo_root, text)
+        _write_queue(repo_root, queue_path, text)
         return True
     finally:
         _edit_lock(repo_root, "release")
@@ -2309,7 +2371,7 @@ def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str],
 
     new_status = f"**✅ 已完成**（sweep 自动落库 {_now_utc_str()}）"
     _strike_off_rows(repo_root, [row], lambda r: new_status, f"sweep 落库 {batch_id}", dry_run=False)
-    _run_git(["add", "--", QUEUE_REL], repo_root)
+    _run_git(["add", "--", row["queue_path"]], repo_root)
 
     message = _extract_commit_message(row["message_cell"])
     _run_git(["commit", "-m", message], repo_root)
@@ -2413,69 +2475,81 @@ def main() -> int:
         # origin/master 并推送一次——见本函数末尾对 `_reconcile_with_origin_
         # and_push` 的调用。
 
-        dirty_paths = _status_paths(repo_root)
-        queue_text = _read_queue(repo_root)
-        rows = _parse_section_two(queue_text)
-        pending_rows, ambiguous_status_rows = _classify_section_two_rows(rows)
-        for row in ambiguous_status_rows:
-            log.append(
-                f"⚠ 状态列模糊（既不含✅也不含待字样），未纳入本轮处理，人工核查："
-                f"{row['batch_id']} | {row['status_cell']}"
+        # 队列 #315：批次分散在两份物理文件里（机制环境／业务场景），逐份
+        # 文件独立完成"解析→隔离判定→落库→补销尾巴"整套流程后再进入下一
+        # 份——`dirty_paths` 在每份文件处理前重新取（上一份文件的批次落库
+        # 会改变工作区状态，须用最新状态判定这一份文件的孤儿/批次关系）；
+        # ledger 重跑与最终的对齐推送只在两份文件都处理完后统一做一次。
+        all_pending_rows: list[dict] = []
+        all_normal_rows: list[tuple[dict, list[str]]] = []
+        all_straggler_ids: list[str] = []
+        touched_paths: set[str] = set()
+
+        for queue_path in _iter_queue_paths():
+            queue_text = _read_queue(repo_root, queue_path)
+            rows = _parse_section_two(queue_text, queue_path)
+            pending_rows, ambiguous_status_rows = _classify_section_two_rows(rows)
+            all_pending_rows.extend(pending_rows)
+            for row in ambiguous_status_rows:
+                log.append(
+                    f"⚠ 状态列模糊（既不含✅也不含待字样），未纳入本轮处理，人工核查："
+                    f"[{queue_path}] {row['batch_id']} | {row['status_cell']}"
+                )
+
+            # 队列 #238：批次隔离——即便本轮无待处理批次，脏路径也可能全部是
+            # 孤儿（没有任何批次登记），仍需纳入 #236(2) 孤儿告警的追踪范围，
+            # 故这一步不依赖 `pending_rows` 是否非空。
+            dirty_paths = _status_paths(repo_root)
+            clean_rows, row_resolution, orphan_paths = _partition_pending_rows_by_batch_isolation(
+                pending_rows, dirty_paths, log,
             )
+            if not args.dry_run:
+                _track_and_alert_orphan_paths(repo_root, orphan_paths, log)
 
-        # 队列 #238：批次隔离——即便本轮无待处理批次，脏路径也可能全部是
-        # 孤儿（没有任何批次登记），仍需纳入 #236(2) 孤儿告警的追踪范围，
-        # 故这一步不依赖 `pending_rows` 是否非空，early return 挪到其后。
-        clean_rows, row_resolution, orphan_paths = _partition_pending_rows_by_batch_isolation(
-            pending_rows, dirty_paths, log,
-        )
-        if not args.dry_run:
-            _track_and_alert_orphan_paths(repo_root, orphan_paths, log)
+            straggler_rows = []
+            normal_rows = []
+            for row in clean_rows:
+                resolved, not_dirty, ambiguous = row_resolution[row["batch_id"]]
+                if resolved:
+                    normal_rows.append((row, resolved))
+                elif not_dirty:
+                    straggler_rows.append(row)
 
-        if not pending_rows:
+            for row, resolved in normal_rows:
+                _process_normal_batch(repo_root, row, resolved, args.dry_run, log)
+                touched_paths.update(resolved)
+
+            if straggler_rows:
+                ids = "/".join(r["batch_id"] for r in straggler_rows)
+                note = f"✓ 补销遗留尾巴批次 {ids}"
+                if args.dry_run:
+                    print(f"[dry-run] {note}")
+                    log.append(f"[dry-run] {note}")
+                else:
+                    new_status = f"**✅ 已完成**（sweep 自动补销遗留尾巴 {_now_utc_str()}，未发现对应待落库改动）"
+                    _strike_off_rows(repo_root, straggler_rows, lambda r: new_status,
+                                      f"sweep 补销尾巴 {ids}", dry_run=False)
+                    _run_git(["add", "--", queue_path], repo_root)
+                    _run_git(["commit", "-m", f"docs(队列): sweep 补销遗留尾巴批次 {ids}"], repo_root)
+                    log.append(note)  # 队列 #288：只本地提交，不在此处单独推送
+
+            all_normal_rows.extend(normal_rows)
+            all_straggler_ids.extend(r["batch_id"] for r in straggler_rows)
+
+        if not all_pending_rows:
             # 队列 #288：不再在此处提前 return——即便本轮无批次可提交，末尾
             # 的统一对齐步骤仍要跑一次（纯落后时把本地 master 追上 origin
             # 这一常规维护动作，不依赖"本轮有没有内容要提交"）。
             log.append("§二无待处理批次，本轮空转。")
 
-        straggler_rows = []
-        normal_rows = []
-        for row in clean_rows:
-            resolved, not_dirty, ambiguous = row_resolution[row["batch_id"]]
-            if resolved:
-                normal_rows.append((row, resolved))
-            elif not_dirty:
-                straggler_rows.append(row)
-
-        touched_paths: set[str] = set()
-        for row, resolved in normal_rows:
-            _process_normal_batch(repo_root, row, resolved, args.dry_run, log)
-            touched_paths.update(resolved)
-
-        if straggler_rows:
-            ids = "/".join(r["batch_id"] for r in straggler_rows)
-            note = f"✓ 补销遗留尾巴批次 {ids}"
-            if args.dry_run:
-                print(f"[dry-run] {note}")
-                log.append(f"[dry-run] {note}")
-            else:
-                new_status = f"**✅ 已完成**（sweep 自动补销遗留尾巴 {_now_utc_str()}，未发现对应待落库改动）"
-                _strike_off_rows(repo_root, straggler_rows, lambda r: new_status,
-                                  f"sweep 补销尾巴 {ids}", dry_run=False)
-                _run_git(["add", "--", QUEUE_REL], repo_root)
-                _run_git(["commit", "-m", f"docs(队列): sweep 补销遗留尾巴批次 {ids}"], repo_root)
-                log.append(note)  # 队列 #288：只本地提交，不在此处单独推送
-
-        processed_any = bool(normal_rows) or bool(straggler_rows)
+        processed_any = bool(all_normal_rows) or bool(all_straggler_ids)
         if processed_any and not args.dry_run:
             # 队列 #257：先记数据（不告警），再重跑台账——两者均只在真实
             # 落库时才有意义，dry-run 不产生持久化副作用。
-            landed_batch_ids = [r["batch_id"] for r, _ in normal_rows] + [
-                r["batch_id"] for r in straggler_rows
-            ]
+            landed_batch_ids = [r["batch_id"] for r, _ in all_normal_rows] + all_straggler_ids
             _record_batch_landing_count(repo_root, landed_batch_ids)
             _rerun_ledger(repo_root, log)
-        elif not processed_any and pending_rows:
+        elif not processed_any and all_pending_rows:
             log.append("本轮无批次可落库（全部暂缓或声明片段当前均无对应脏改动）。")
 
         # 队列 #288：批次提交（含遗留尾巴、台账重跑）全部完成、工作区已干净

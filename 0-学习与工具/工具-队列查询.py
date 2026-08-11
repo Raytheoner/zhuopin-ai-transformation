@@ -56,6 +56,9 @@ else:
 
         SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
         QUEUE_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
+        # 队列 #315：拆分后两份物理文件路径，隔离桩同样须与权威实现保持一致。
+        QUEUE_MECHANISM_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"
+        QUEUE_BUSINESS_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md"
 
         # 简化近似，非逐字节镜像——权威实现按 CommonMark 反引号游程规则
         # 配对（见 queue_table.py::_mask_backtick_spans，队列 #314 apply
@@ -96,6 +99,14 @@ def _resolve_repo_root() -> Path:
 
 REPO_ROOT = _resolve_repo_root()
 DEFAULT_TARGET = queue_table.QUEUE_PATH_REL  # 队列 #313：收拢自本地字面量
+# 队列 #315（apply）：拆分后本路径转为纯指针文件；`--file` 未显式覆盖时
+# （即等于本值）触发双文件查询——见 main() 与 `_is_queue_system_target`。
+QUEUE_MECHANISM_PATH_REL = queue_table.QUEUE_MECHANISM_PATH_REL
+QUEUE_BUSINESS_PATH_REL = queue_table.QUEUE_BUSINESS_PATH_REL
+
+
+def _is_queue_system_target(file_arg: str) -> bool:
+    return file_arg == DEFAULT_TARGET
 
 LIVE_SECTION_HEADING_RE = re.compile(r"^## ([一二三四])、", re.MULTILINE)
 _TABLE_HEADER_FIRST_CELLS = ("#", "批次", "")
@@ -212,27 +223,59 @@ def main() -> int:
                              "多个分区命中同一编号时须显式指定以消歧")
     parser.add_argument("--field", choices=("status", "all"), default="status",
                         help="status=只打印状态列全文（默认）；all=打印整行全部列")
-    parser.add_argument("--file", default=DEFAULT_TARGET, help=f"目标文件（默认 {DEFAULT_TARGET}）")
+    parser.add_argument(
+        "--file", default=DEFAULT_TARGET,
+        help=f"目标文件（默认 {DEFAULT_TARGET}——队列 #315 起，这一默认值触发"
+             "机制环境/业务场景两份物理文件的联合查询；显式传其它路径时只查"
+             "该文件，行为与拆分前一致）",
+    )
     args = parser.parse_args()
 
-    target_path = (REPO_ROOT / args.file).resolve()
-    try:
-        text = target_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        print(f"✗ 读取目标文件失败：{target_path}（{exc}）")
-        return 1
+    # 队列 #315：查询系统模式下遍历两份物理文件，聚合命中结果并标注来源
+    # 文件——编号空间单一（决策点2），两份文件不会有同编号的两条不同数据
+    # 行，但调用方仍需要知道命中落在哪一份，便于核对/后续编辑时定位。
+    query_paths = (
+        [QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL]
+        if _is_queue_system_target(args.file) else [args.file]
+    )
+    hits: list[tuple[str, str, list[str]]] = []  # (来源文件, 分区标签, 单元格)
+    read_errors: list[str] = []
+    for query_path in query_paths:
+        target_path = (REPO_ROOT / query_path).resolve()
+        try:
+            text = target_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            if len(query_paths) == 1:
+                # 显式单文件目标（非队列系统模式）读取失败——保持拆分前的
+                # 既有直接报错语义，不落入下方"聚合未命中"的框架式措辞。
+                print(f"✗ 读取目标文件失败：{target_path}（{exc}）")
+                return 1
+            read_errors.append(f"{target_path}（{exc}）")
+            continue
+        for label, cells in _find_rows(text, args.row, args.section):
+            hits.append((query_path, label, cells))
 
-    hits = _find_rows(text, args.row, args.section)
     if not hits:
         scope = f"§{args.section}" if args.section else "§一／§二／§四"
-        print(f"✗ 未找到 {scope} 中编号/批次为「{args.row}」的行。")
+        files_desc = "、".join(query_paths)
+        print(f"✗ 未找到 {scope} 中编号/批次为「{args.row}」的行"
+              f"（已查：{files_desc}）。")
+        if read_errors:
+            print("  以下文件读取失败，如实登记：")
+            for err in read_errors:
+                print(f"  - {err}")
         return 1
+    if read_errors:
+        for err in read_errors:
+            print(f"⚠ 读取失败（不影响已命中结果，如实登记）：{err}")
     if len(hits) > 1:
-        labels = "、".join(f"§{label}" for label, _ in hits)
+        labels = "、".join(f"{p}:§{label}" for p, label, _ in hits)
         print(f"✗ 「{args.row}」在多个分区命中（{labels}）——请加 --section 消歧，不猜测取哪一个。")
         return 1
 
-    label, cells = hits[0]
+    query_path, label, cells = hits[0]
+    if _is_queue_system_target(args.file):
+        print(f"【命中于：{query_path}】")
     columns = SECTION_COLUMNS[label]
     if len(cells) != len(columns):
         print(f"⚠ §{label} 该行实际列数（{len(cells)}）与预期（{len(columns)}）不符，"

@@ -58,6 +58,13 @@ _spec = importlib.util.spec_from_file_location("queue_lint_editlock_reuse", EDIT
 editlock = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(editlock)
 
+# 队列 #315（apply）：拆分后 QUEUE_REL 转为纯指针文件，不再是权威内容
+# 承载——lint 改遍历两份真实内容文件，否则本 CI 门禁会对着一份几乎空的
+# 指针文件永远报"零违规"，把"未来新行必须带机器字段"这道硬门禁静默
+# 失效（同 CLAUDE.md §5"工具静默回退"反模式）。两个具体路径读 `editlock`
+# 已加载的局部绑定（同一惯例，供测试 monkeypatch）。
+QUEUE_PATHS_REL = [editlock.QUEUE_MECHANISM_PATH_REL, editlock.QUEUE_BUSINESS_PATH_REL]
+
 # 队列 #314①：REPO_ROOT 复用 editlock 已算好的值（`_resolve_repo_root()`，
 # 经 `git rev-parse --git-common-dir` 解到"所有 worktree 共享的主工作区"），
 # 不再自己按 `Path(__file__).resolve().parents[1]` 算一份worktree本地路径。
@@ -75,7 +82,23 @@ REPO_ROOT = editlock.REPO_ROOT
 
 
 def lint(repo_root: Path) -> list[str]:
-    text = (repo_root / QUEUE_REL).read_text(encoding="utf-8")
+    """队列 #315：遍历两份物理队列文件（机制环境／业务场景），每份独立跑
+    同一套校验，违规说明前缀标注来源文件，避免两份文件都出问题时混在
+    一起分不清是哪一份。"""
+    violations: list[str] = []
+    for queue_path in QUEUE_PATHS_REL:
+        target = repo_root / queue_path
+        if not target.exists():
+            violations.append(f"[{queue_path}] 文件不存在，无法校验。")
+            continue
+        text = target.read_text(encoding="utf-8")
+        violations.extend(
+            f"[{queue_path}] {v}" for v in _lint_one_file(text)
+        )
+    return violations
+
+
+def _lint_one_file(text: str) -> list[str]:
     sections = editlock._split_live_sections(text)
     violations: list[str] = []
     for label, expected_cols in editlock.SECTION_COLUMN_COUNTS.items():
@@ -150,11 +173,12 @@ def main() -> int:
     if import_error:
         violations.append(import_error)
 
+    files_desc = "、".join(QUEUE_PATHS_REL)
     if not violations:
-        print(f"✓ {QUEUE_REL} 结构 lint 通过（列数／§二状态列格式／权威模块可 import）。")
+        print(f"✓ {files_desc} 结构 lint 通过（列数／§二状态列格式／权威模块可 import）。")
         return 0
 
-    print(f"✗ {QUEUE_REL} 结构 lint 发现 {len(violations)} 处违规：")
+    print(f"✗ {files_desc} 结构 lint 发现 {len(violations)} 处违规：")
     for v in violations:
         print(f"  - {v}")
     return 1

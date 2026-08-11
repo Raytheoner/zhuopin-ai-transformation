@@ -33,9 +33,19 @@ else:
 
         SECTION_COLUMN_COUNTS = {"一": 8, "二": 4, "四": 4}
         QUEUE_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
+        # 队列 #315：拆分后两份物理文件路径，隔离桩同样须与权威实现保持一致。
+        QUEUE_MECHANISM_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"
+        QUEUE_BUSINESS_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md"
 
 OUTPUT_PATH = REPO_ROOT / "1-转型规划" / "0-全景路线图" / "文档台账-自动生成.md"
-QUEUE_PATH = REPO_ROOT / queue_table.QUEUE_PATH_REL  # 队列 #313：收拢自本地字面量
+# 队列 #315（apply）：拆分后 `QUEUE_PATH_REL` 转为纯指针文件，不再是权威
+# 内容承载——§一 列数自检改遍历两份真实内容文件，否则该检查会对着一份
+# 几乎空的指针文件永远报"零异常"，是 CLAUDE.md §5"工具静默回退"反模式
+# 的又一实例，不是真的没有异常。
+QUEUE_PATHS = [
+    REPO_ROOT / queue_table.QUEUE_MECHANISM_PATH_REL,
+    REPO_ROOT / queue_table.QUEUE_BUSINESS_PATH_REL,
+]
 QUEUE_SECTION_ONE_HEADING = "## 一、任务看板"
 QUEUE_EXPECTED_COLUMNS = queue_table.SECTION_COLUMN_COUNTS["一"]
 
@@ -230,10 +240,11 @@ def main() -> None:
         lines.append("")
 
     queue_anomalies: list[tuple[str, int]] = []
-    if QUEUE_PATH.exists():
-        queue_anomalies = check_queue_row_column_counts(
-            QUEUE_PATH.read_text(encoding="utf-8", errors="ignore")
-        )
+    for queue_path in QUEUE_PATHS:
+        if queue_path.exists():
+            queue_anomalies.extend(check_queue_row_column_counts(
+                queue_path.read_text(encoding="utf-8", errors="ignore")
+            ))
     if queue_anomalies:
         lines.append(f"## 队列 §一 行列数自检（{len(queue_anomalies)} 处异常，队列 #164）")
         lines.append("")
