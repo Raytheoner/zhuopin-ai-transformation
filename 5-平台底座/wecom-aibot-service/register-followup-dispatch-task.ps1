@@ -42,7 +42,10 @@
 $ErrorActionPreference = "Stop"
 
 $REPO         = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\.claude\worktrees\wecom-service-home"
-$MAIN_WORKSPACE_QUEUE = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\1-转型规划\0-全景路线图\跨桌任务队列.md"
+# 队列 #315（2026-08-11 最小止血）：拆分后旧路径已是纯指针文件，改指
+# 向机制环境文件（本脚本只用它作 repo-root 锚点、不读队列内容，严格说
+# 非必需，但与另两处 WECOM_AIBOT_QUEUE_PATH 用法保持一致，避免误导）。
+$MAIN_WORKSPACE_QUEUE = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\1-转型规划\0-全景路线图\跨桌任务队列-机制环境.md"
 $SERVICE_DIR  = Join-Path $REPO "5-平台底座\wecom-aibot-service"
 $DISPATCH_SCRIPT = Join-Path $SERVICE_DIR "scripts\dispatch_followup_letters.py"
 $WRAPPER      = Join-Path $SERVICE_DIR "run-followup-dispatch-check.ps1"

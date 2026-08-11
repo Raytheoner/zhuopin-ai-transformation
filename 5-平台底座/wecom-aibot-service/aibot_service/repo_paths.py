@@ -31,7 +31,21 @@ QUEUE_PATH_ANCHOR_ENV = "WECOM_AIBOT_QUEUE_PATH"
 # 队列文件在生产环境里被显式固定指向主工作区（见
 # start-aibot-service-dev.ps1 的 WECOM_AIBOT_QUEUE_PATH），是两个 checkout
 # 都能读到路径配置、且始终落在主工作区的稳定锚点。
-DEFAULT_QUEUE_RELATIVE_PATH = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列.md"
+#
+# 队列 #315（2026-08-11，最小止血）：拆分为两份物理文件后，旧路径已改为
+# 1237 字节的纯指针文件——不含 "## 一、任务看板" 标题行，`queue_appender.
+# _section_bounds` 找不到 TABLE_HEADER_MARKER 即抛 LookupError；
+# `intake.py` 只接 QueueLockBusy，接不住该异常，上抛后被 `connection.py`
+# 的通用兜底捕获——消息仍正常归档进 7-外部文档，但**队列行不会生成**，
+# 而拆件巡逻只认队列行，等同于这条回件在调度视野里从未发生（同 #286
+# 「队列行真实丢失」的形态）。改指向机制环境文件（拆分后仍是含完整
+# "## 一、任务看板" 与合法编号高水位线声明行的真实内容文件）——机器人
+# 写入的行会落在机制环境文件而非按内容应属的业务/机制域精确路由，这是
+# 与 `工具-共享文档编辑锁.py::_resolve_append_target` 未声明域时默认落
+# 机制环境文件完全一致的"迁移期妥协"（决策点3），并非本次新发明的口径。
+# 完整的按 [D:机/业] 域路由与跨文件高水位线同步，留给下一轮独立实现
+# （队列 #315 tasks.md 3.7，本次只做止血、不做完整迁移）。
+DEFAULT_QUEUE_RELATIVE_PATH = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列-机制环境.md"
 AUDIT_RELATIVE_PATH = Path("5-平台底座") / "wecom-aibot-service" / "reports" / "wecom_aibot_audit.jsonl"
 # 队列 #192-C：此前 `run_aibot_service.py` 用 `SERVICE_DIR / "reports"`
 # （机器人常驻 checkout 自身）硬编码这两个 pending 暂存文件落点，与

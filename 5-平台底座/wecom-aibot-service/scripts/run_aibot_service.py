@@ -56,6 +56,7 @@ from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp
 from aibot_service.liveness import read_liveness, run_liveness_heartbeat  # noqa: E402
 from aibot_service.queue_reconcile_sentinel import run_reconciliation_sentinel  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
+    DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
     resolve_default_queue_anchor,
     resolve_pending_queue_appends_path,
@@ -134,8 +135,12 @@ def main() -> None:
     # 只作解析失败时的回落值。队列 #269：未显式设置 `WECOM_AIBOT_QUEUE_PATH`
     # 时（生产部署脚本会设置，此处是本地手工跑的兜底），默认锚点也改为
     # git 共享根而非本 checkout 自身，见 `resolve_default_queue_anchor`。
+    # 队列 #315（2026-08-11 最小止血）：此前此处独立硬编码字面量指向旧
+    # 单文件（拆分后已是不含表格的纯指针文件），与 `repo_paths.py` 里
+    # `DEFAULT_QUEUE_RELATIVE_PATH` 各自维护一份、彼此漂移——改直接复用
+    # 该常量（已改指机制环境文件），单一可信源。
     queue_path = resolve_default_queue_anchor(
-        NAIVE_REPO_ROOT, Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列.md"
+        NAIVE_REPO_ROOT, DEFAULT_QUEUE_RELATIVE_PATH
     )
     resolved_repo_root = resolve_repo_root(queue_path, fallback=NAIVE_REPO_ROOT)
 

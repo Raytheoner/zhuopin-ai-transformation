@@ -56,7 +56,9 @@
 $ErrorActionPreference = "Stop"
 
 $REPO         = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\.claude\worktrees\wecom-service-home"
-$MAIN_WORKSPACE_QUEUE = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\1-转型规划\0-全景路线图\跨桌任务队列.md"
+# 队列 #315（2026-08-11 最小止血）：拆分后旧路径已是纯指针文件，改指
+# 向机制环境文件（含真实"## 一、任务看板"表格与合法编号高水位线声明）。
+$MAIN_WORKSPACE_QUEUE = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\1-转型规划\0-全景路线图\跨桌任务队列-机制环境.md"
 $SERVICE_DIR  = Join-Path $REPO "5-平台底座\wecom-aibot-service"
 $CHECK_SCRIPT = Join-Path $SERVICE_DIR "scripts\decision_reminder_check.py"
 $WRAPPER      = Join-Path $SERVICE_DIR "run-decision-reminder-check.ps1"
