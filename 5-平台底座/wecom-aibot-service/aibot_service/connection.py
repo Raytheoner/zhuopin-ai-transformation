@@ -92,6 +92,7 @@ def build_connector(
     enable_queue_edit_lock: bool = False,
     pending_lock_path: Optional[Path] = None,
     disconnect_alert_fallback_send: Optional[Callable[[str], None]] = None,
+    queue_edit_lock_alert_fallback_send: Optional[Callable[[str], None]] = None,
 ) -> AibotConnector:
     """构造已接好审计 + 归档分发的 `AibotConnector`；不建立实际连接（调用方
     另行 `await connector.connect()`）。凭据缺失时 `SecretsProvider` 抛
@@ -121,6 +122,14 @@ def build_connector(
     时用它发一条"进行中"提示。**必须是独立 webhook 通道，不能依赖同一条
     故障连接**——断连期间用 `connector.send_markdown` 发送必然失败（与
     `gap_alert.py` 2026-07-19 事故同一教训）。未传时功能整体关闭。
+
+    `queue_edit_lock_alert_fallback_send`（队列 #333③，默认 None——不影响
+    任何既有测试/调用方）：机器人 `release` 队列编辑锁被结构校验拒绝（锁
+    保持占用）时用它发一条告警，与 `audit`（本函数必填参数，同时用于记
+    `queue_edit_lock_release_rejected` 审计事件）一起补上此前"锁为什么迟
+    迟不放"的可观测性空白（#333 真实事故：拒绝原因全程无人知道，锁卡满
+    30 分钟才被陈旧接管）。未传时只记审计、不发告警，行为与本次改动前
+    一致；`enable_queue_edit_lock=False` 时本参数不产生任何效果。
     """
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
@@ -148,7 +157,10 @@ def build_connector(
     def _make_queue_lock(note: str) -> Optional[SubprocessQueueEditLock]:
         if lock_repo_root is None:
             return None
-        return SubprocessQueueEditLock(lock_repo_root, queue_path, who=AIBOT_LOCK_WHO, note=note)
+        return SubprocessQueueEditLock(
+            lock_repo_root, queue_path, who=AIBOT_LOCK_WHO, note=note,
+            audit=audit, alert_send=queue_edit_lock_alert_fallback_send,
+        )
 
     connector_holder: dict[str, AibotConnector] = {}
 

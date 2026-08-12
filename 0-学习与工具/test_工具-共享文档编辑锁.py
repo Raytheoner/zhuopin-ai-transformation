@@ -1127,6 +1127,56 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         result = self._release(who="A")
         self.assertNotEqual(result, 0)
 
+    def test_aibot_intake_row_without_reserve_passes(self):
+        """队列 #333②：企微机器人收件登记路径（who=企微机器人 且任务列以
+        「企微反馈自动归档：」开头）即便未 --reserve 也应放行——协议〇.10
+        ⑶ 早已明文豁免这条路径的并入审核，`queue_appender.py::
+        _next_task_id` 走独立取号路径、从不 --reserve，此前③预留归属
+        校验不识别这条既有豁免，导致机器人 release 必被拒（#333 真实
+        事故，锁卡满 30 分钟才被陈旧接管）。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="企微机器人"), 0)  # 未 --reserve
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = (
+            "| 201 | 企微反馈自动归档：姚祖怡 发来文本反馈 | 采购专线 | 指针 | "
+            "产出 | [S:open] 待领 | 触碰区 | 2026-08-12 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="企微机器人"), 0)
+
+    def test_aibot_non_intake_row_without_reserve_still_blocked(self):
+        """防止豁免被当成绕过口（协议〇.10 ⑶ 自带的失效条款）：who=企微
+        机器人 但任务列不以「企微反馈自动归档：」开头——不是收件登记，
+        必须仍走正常预留校验，未预留即拒绝。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="企微机器人"), 0)  # 未 --reserve
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试任务（非收件登记） | 采购专线 | 指针 | 产出 | 待领 | 触碰区 | 2026-08-12 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="企微机器人")
+        self.assertNotEqual(result, 0)
+
+    def test_non_aibot_who_with_intake_prefix_text_still_blocked(self):
+        """豁免判据要求 who 与前缀同时成立——非机器人身份即便写出一模一样
+        的「企微反馈自动归档：」前缀文本，也不构成豁免（防止有人手写模仿
+        前缀绕开并入审核，这正是协议〇.10 ⑶ 明写的风险场景）。"""
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="Cowork-采购专线"), 0)  # 未 --reserve
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = (
+            "| 201 | 企微反馈自动归档：手写模仿前缀 | 采购专线 | 指针 | "
+            "产出 | 待领 | 触碰区 | 2026-08-12 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        result = self._release(who="Cowork-采购专线")
+        self.assertNotEqual(result, 0)
+
     def test_duplicate_number_within_file_blocks_release(self):
         """组内重复校验独立于 --reserve 触发——手写一行沿用了已存在的编号，
         不经 --reserve（队列 #185 落地后，若真走 --reserve 撞上这种情况会

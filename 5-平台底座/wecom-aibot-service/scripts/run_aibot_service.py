@@ -201,6 +201,9 @@ def main() -> None:
         # 队列 #193：断连期间"进行中"提示，复用同一条 webhook 兜底通道
         # （未配置 WECOM_WEBHOOK_URL 时 fallback_send 为 None，功能自动关闭）。
         disconnect_alert_fallback_send=fallback_send,
+        # 队列 #333③：release 队列编辑锁被拒绝时的告警，同样复用这条通道
+        # （未配置 WECOM_WEBHOOK_URL 时为 None，功能自动关闭；仍会记审计）。
+        queue_edit_lock_alert_fallback_send=fallback_send,
     )
 
     asyncio.run(

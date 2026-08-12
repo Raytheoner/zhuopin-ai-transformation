@@ -199,6 +199,15 @@ continue，落回既有 deadline 判断——fail-loud，不得静默死循环�
 本身仍完全来自 `O_CREAT|O_EXCL`，改名只是清空路径这一个动作，不改变谁
 能在 canonical 路径抢到创建权，故不引入双持有风险（论证见
 `_discard_mutex_path` 文档字符串与 design.md）。
+
+#333（2026-08-12，openspec 变更包 `editlock-aibot-intake-reservation-
+exemption`）：③预留归属校验此前未识别协议〇.10 ⑶ 早已定义的"企微机器人
+收件登记路径豁免"（`queue_appender.py::_next_task_id` 走独立取号路径、
+不经 `--reserve`），导致机器人 `release` 必被③拒绝、锁保持占用直到 30
+分钟陈旧接管——三方（③校验／机器人不检查 returncode／协议〇.10 豁免）
+各自按设计工作，问题出在组合上。修法：③新增豁免分支（见
+`AIBOT_LOCK_WHO`/`AIBOT_INTAKE_TASK_PREFIX` 定义处与 `_validate_release_
+structure` 文档），不是放宽校验，是让校验认得这条既有豁免。
 """
 from __future__ import annotations
 
@@ -364,6 +373,17 @@ ARCHIVE_GLOB = "跨桌任务队列-归档-*.md"
 # 常量，不再本地独立定义（原值 {"一": 8, "二": 4, "四": 4} 与其一致）。
 SECTION_COLUMN_COUNTS = queue_table.SECTION_COLUMN_COUNTS
 ROW_NUMBER_SECTIONS = ("一", "四")
+# 队列 #333②：③预留归属校验对"企微机器人收件登记"路径开口——协议〇.10 ⑶
+# 早已明文豁免这条路径的并入审核（"收件登记≠建任务，且机器无法判断并入"），
+# 但 #308 落地的③预留归属校验从未识别这条既有豁免，导致机器人 release 必
+# 被拒（锁卡满 30 分钟才被陈旧接管，见 #333 真实事故）。判据取协议〇.10 ⑶
+# 自带的代理判据（who=企微机器人 且新增行任务列以该前缀开头），与
+# `queue_appender.py::append_pending_task` 实际写入的行内容严格对应——不是
+# 放宽校验，是让校验认得这条协议早已承认的合法路径；若这条豁免被人冒用
+# （伪造 who 走机器人通道绕开并入审核），豁免立即失效由值周巡检对账时留意
+# （协议〇.10 ⑶ 自带的失效条款，本判据不重复实现监测，只实现判据本身）。
+AIBOT_LOCK_WHO = "企微机器人"
+AIBOT_INTAKE_TASK_PREFIX = "企微反馈自动归档："
 # ④ 断言门槛（咽喉4甲案，2026-08-03 拍板，成因见 #221）：P0/P1 定级行内
 # 若含"未核／未做的核实"字样即拒绝 release——标注未核不等于可据此下结论。
 UNVERIFIED_ROW_PHRASES = ("未核", "未做的核实")
@@ -1454,6 +1474,16 @@ def _validate_release_structure(
       与当前文件或归档件里任何既有编号重复，且必须属于本次持锁期间
       `--reserve` 预留的编号集合——协议〇.7（2026-07-31 补）已明文"此后新
       行编号一律用 --reserve 取"，未预留即新增编号视为违规，逼回正确路径。
+      🔴 **豁免（队列 #333②，2026-08-12）**：预留归属校验对"企微机器人
+      收件登记"路径开口——`lock_data` 记录的持锁者为 `AIBOT_LOCK_WHO`
+      （"企微机器人"）且该新增行任务列（cells[1]）以 `AIBOT_INTAKE_TASK_
+      PREFIX`（"企微反馈自动归档："）开头时，即便未预留也不因本项拒绝。
+      这不是新增豁免，是让本校验认得协议〇.10 ⑶ 早已定义的既有豁免——
+      `queue_appender.py::_next_task_id` 走的是独立取号路径（不经
+      `--reserve`），协议原文"收件登记≠建任务，且机器无法判断并入"正是
+      这条豁免的依据；本判据仅在 §一 生效（机器人自动追行只写 §一），
+      §四 不适用。**仅豁免本项（预留归属），不豁免同一循环内其它校验**
+      （组内重复、与归档号重复等仍正常生效）。
     ④断言门槛（仅 §一，咽喉4甲）：**状态列本身**（cells[5]）同时含 P0/P1
       定级与"未核／未做的核实"字样即报——标注未核不等于可据此下结论（成因
       见 #221）。只检查状态列、不查整行：本项目约定优先级标注写在状态列
@@ -1654,11 +1684,21 @@ def _validate_release_structure(
                         violations.append(f"§{label} #{number} 与已归档行编号重复：{preview}")
                     reserved_here = set(reserved_map.get(label, []))
                     if number not in reserved_here:
-                        shown = "、".join(str(n) for n in sorted(reserved_here)) or "本次未预留任何编号"
-                        violations.append(
-                            f"§{label} #{number} 不属于本次持锁期间 --reserve 预留的编号集合"
-                            f"（{shown}）：{preview}"
+                        # 队列 #333②：企微机器人收件登记路径豁免——见函数
+                        # docstring ③段与 AIBOT_LOCK_WHO/AIBOT_INTAKE_TASK_
+                        # PREFIX 定义处。仅豁免本项判定，组内重复/归档号
+                        # 重复两项校验（上方）对这一行仍正常生效。
+                        is_aibot_intake_row = (
+                            label == "一"
+                            and lock_data.get("who") == AIBOT_LOCK_WHO
+                            and cells[1].strip().startswith(AIBOT_INTAKE_TASK_PREFIX)
                         )
+                        if not is_aibot_intake_row:
+                            shown = "、".join(str(n) for n in sorted(reserved_here)) or "本次未预留任何编号"
+                            violations.append(
+                                f"§{label} #{number} 不属于本次持锁期间 --reserve 预留的编号集合"
+                                f"（{shown}）：{preview}"
+                            )
 
             if label == "一":
                 # ④ 断言门槛：只检查**状态列本身**（cells[5]），不是整行。
