@@ -111,16 +111,19 @@ class SweepTestBase(unittest.TestCase):
         # gitignore 规则），只是测试夹具需要还原真实布局才能验证真实行为。
         # 队列 #315：双文件拆分后，编辑锁对机制/业务两份物理文件各自维护
         # 一套 .editlock*/.snapshot/.lastknown 旁路文件——真实项目 .gitignore
-        # 早已用 `*.editlock`/`*.editlock.snapshot`/`*.editlock.lastknown`
-        # 等通配规则覆盖（与文件名无关），测试夹具此前只精确还原了
-        # `**/reports/` 这一条，现补齐这几条通配规则，避免这些旁路文件被
+        # 早已用通配规则覆盖（与文件名无关），测试夹具此前只精确还原了
+        # `**/reports/` 这一条，现补齐这条通配规则，避免这些旁路文件被
         # `_status_paths` 当作"无人声明的孤儿脏文件"报出、干扰批次处理
         # 断言（业务场景文件在多数既有用例里并不存在，但其锁旁路文件仍
         # 会被创建，见 `_detect_shadow_copy`/snapshot 逻辑对"文件不存在"
         # 的既有容忍设计）。
+        # 队列 #328②：真实项目 .gitignore 已把原五条精确规则（*.editlock/
+        # *.editlock.mutex/*.editlock.tmp.*/*.editlock.snapshot/
+        # *.editlock.lastknown）合并为一条 `*.editlock*`（同时覆盖
+        # .mutex.stale 及未来派生物），测试夹具同步收窄，避免与真实项目
+        # .gitignore 内容漂移。
         (self.work / ".gitignore").write_text(
-            "**/reports/\n*.editlock\n*.editlock.mutex\n*.editlock.tmp.*\n"
-            "*.editlock.snapshot\n*.editlock.lastknown\n",
+            "**/reports/\n*.editlock*\n",
             encoding="utf-8",
         )
 

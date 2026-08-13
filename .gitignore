@@ -53,18 +53,13 @@ start-aibot-service-dev.ps1
 # 销售域实时数据缓存（同步自 SalesMarketing/crm_data/dashboard_data.json，含客户线索联系方式，不入库）
 1-转型规划/AI运营指挥中心/data/
 
-# 共享文档编辑锁（协议〇.7，工具-共享文档编辑锁.py 生成，本机瞬时协作状态，不入库）
-*.editlock
-# #197：acquire 内部互斥标记（生命周期仅限单次 acquire 调用，正常即建即删，
-# 意外遗留时也不应入库）
-*.editlock.mutex
-*.editlock.tmp.*
-# #225：acquire 时存的目标文件快照（release 时用于 diff 出本次持锁期间
-# 新增/修改的行），本机瞬时协作状态，不入库
-*.editlock.snapshot
-# #200：release 时存的"正式交还"内容基准（下次 acquire 用于检测绕锁直改），
-# 本机瞬时协作状态，不入库
-*.editlock.lastknown
+# 共享文档编辑锁（协议〇.7，工具-共享文档编辑锁.py 生成，本机瞬时协作状态，不入库）。
+# 队列 #328②：原五条精确规则（*.editlock / *.editlock.mutex（#197）/
+# *.editlock.tmp.* / *.editlock.snapshot（#225）/ *.editlock.lastknown（#200））
+# 已合并为一条通配，同时覆盖 .editlock/.mutex/.tmp.*/.snapshot/.lastknown/
+# .mutex.stale（#322 rename-away 退路的伴生文件，此前恒未命中、被 sweep
+# 判为永久孤儿脏文件）及未来派生物，勿再拆回精确规则。
+*.editlock*
 
 # #226：需 Shao Peishen 决策项每日提醒计划任务的启动包装，由
 # register-decision-reminder-task.ps1 在注册时机械生成（写死本机账户的

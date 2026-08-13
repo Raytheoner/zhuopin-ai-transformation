@@ -2188,7 +2188,7 @@ def main() -> int:
         "--cell", action="append", default=[],
         help="按分区列序重复提供的字段值（不含首列编号）：§一 7 个"
              "（任务/领取方/输入指针/期望产出/状态/触碰区/登记）、§二 4 个"
-             "（批次/文件清单/说明/状态，首个即批次号）、§四 3 个（事项/等谁/截止）",
+             "（批次/文件清单/建议 message/状态，首个即批次号）、§四 3 个（事项/等谁/截止）",
     )
     p_append_row.add_argument(
         "--domain", choices=("机", "业"), default=None,
