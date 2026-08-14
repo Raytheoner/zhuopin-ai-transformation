@@ -27,7 +27,11 @@ status: 生效
 4. **skill 两向漂移扫**：把只读挂载 `.claude/skills/zhuopin-*/SKILL.md` 与 `0-学习与工具/skills源码/<同名>/SKILL.md` 逐份 `diff`（跳过各自 frontmatter 后比正文）。**2026-08-12 基准：四份全部 0 差异行。**
    🔴 **必须先 `tr -d '\r'` 再比**——源码侧是 **CRLF**，直接用 `awk '/^---$/'` 之类会失配、**报出 95 行的假漂移**（2026-08-12 实测，本 session 当日共踩 CRLF 陷阱 4 次）。
 
-> 🔑 **本节四查里，查 4 与"查主工作区脏文件"是同一类坑的两面**：**沙箱侧 git 因 `core.autocrlf` 未启用会虚报 30+ 文件为已修改**（2026-08-13 又踩一次，把 `propose.md` 误判为脏）。**凡涉主工作区 git 状态，一律本机直读。**
+5. 🆕 **同线近期班次扫（Shao Peishen 2026-08-13 拍板 (a) 入法）**：`mcp__session_info__list_sessions --limit 10`，挑出与本次任务同域的班次、**尤其两个非交互定时班次**（`回件拆件巡逻 patrol` / `Weekly status update`），`read_transcript --limit 1` 读其结论段；**凡其中出现「机制发现／缺口／未落队列的判断」而队列查不到对应行的，先补登记再开工。**
+   🔑 **为什么值得单列一查**：其余四查查的都是「**已写下来的东西还准不准**」，**只有第 5 查能查「有没有东西根本没被写下来」**。2026-08-13 实测当场撞到活例——拆件巡逻在 transcript 里报了「巡逻 prompt 指向的 `跨桌任务队列.md` 已成纯指针文件，照读会解析到零行→静默输出空巡，下一个有待拆件行的班次即会漏拆」，**该发现在队列里查不到独立行**。
+   ⚠️ **本查只覆盖 Cowork↔Cowork**（`list_sessions` 只列 Cowork 会话，CC 一个都不列，2026-08-13 实测 102/102）。**CC 那一棒走磁盘直读，见 §五「CC 复命零粘贴」。**
+
+> 🔑 **本节前四查里，查 4 与"查主工作区脏文件"是同一类坑的两面**：**沙箱侧 git 因 `core.autocrlf` 未启用会虚报 30+ 文件为已修改**（2026-08-13 又踩一次，把 `propose.md` 误判为脏）。**凡涉主工作区 git 状态，一律本机直读。**
 
 ---
 
@@ -166,6 +170,7 @@ status: 生效
 - 🔴 **写后反查**：`(Select-String -Path $f -Pattern $k -SimpleMatch).Count`（**不加 `-AllMatches`**；`-Pattern` 串内勿含反引号）。**交叉验证优于重复同一验证**，至少配两个互不相关的指标
 - 🔴 **查主工作区脏文件须本机直读**（沙箱侧 git 因 `core.autocrlf` 虚报）
 - **批次即扫**：登记后 `Start-ScheduledTask -TaskName ZhuopinCommitSweep`；⚠️ **触发 ≠ 落库**，须回看 `reports/sweep-commit.log`
+- 🆕 🔴 **CC 复命零粘贴（2026-08-13 拍板 (a) 入法，正本在根 `CLAUDE.md` §5「会话接力」条下）**：他说一句「**CC 跑完了**」即自行取件，**不再要他粘贴 CC 的收工报告**。取件＝三条独立信源：① `C:\Users\Paul Shao\.claude\projects\<路径编码>\*.jsonl` 按 mtime 取最新、逐行 `ConvertFrom-Json` 取 `type=assistant` 的 `message.content[].text`（**CC 原话全文**）；② 队列行；③ `git log` ＋ `git rev-list --count origin/master..master`。**不一致时以队列与 git 为准。** ⚠️ 三条边界：**非公开格式、解析不出立即退回粘贴不得猜**／**只能读不能反向发**（Cowork→CC 仍粘一句开场词）／**目录名编码吃掉中文**（`企业AI转型`→`---AI--`），须 mtime ＋ 内容二次确认。 📌 **`.claude/handoff/` 与 `hoff.ps1` 已明确不做**（2026-08-13 拍板 2(a)）——其收益已被磁盘直读拿走大半，建它等于新增一个 gitignore 里的第二份副本。
 
 **§六bis 本线边界（C1 派单边界／C2 机制收口为默认交付）正本仍在** `开场prompt-【Cowork】环境总线-接力交接-2026-08-08.md` §六bis，**未迁移、以那份为准**；本文件 §一 是其收窄。
 
