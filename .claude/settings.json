@@ -1,1 +1,21 @@
-{"extraKnownMarketplaces":{"claude-plugins-official":{"source":{"source":"github","repo":"anthropics/claude-plugins-official"}}},"enabledPlugins":{"superpowers@claude-plugins-official":true}}
+{
+  "extraKnownMarketplaces": {
+    "claude-plugins-official": {
+      "source": { "source": "github", "repo": "anthropics/claude-plugins-official" }
+    }
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git fetch *)",
+      "Bash(git rev-list *)",
+      "Bash(git merge-base *)",
+      "Bash(openspec validate *)",
+      "Bash(openspec instructions *)",
+      "Bash(openspec status *)",
+      "Bash(git check-ignore *)"
+    ]
+  }
+}
