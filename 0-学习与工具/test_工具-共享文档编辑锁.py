@@ -1025,13 +1025,14 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         )
         return self.module.cmd_acquire(ns)
 
-    def _release(self, who="", mechanism_wip_cap=None):
+    def _release(self, who="", mechanism_wip_cap=None, force_mechanism_wip=False):
         ns = argparse.Namespace(
             file=self.module.DEFAULT_TARGET, who=who,
             mechanism_wip_cap=(
                 mechanism_wip_cap if mechanism_wip_cap is not None
                 else self.module.MECHANISM_WIP_CAP_DEFAULT
             ),
+            force_mechanism_wip=force_mechanism_wip,
         )
         return self.module.cmd_release(ns)
 
@@ -1551,6 +1552,7 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         release_ns = argparse.Namespace(
             file="其他共享文件.md", who="A",
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
         )
         self.assertEqual(self.module.cmd_release(release_ns), 0)
 
@@ -1588,6 +1590,7 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
             argparse.Namespace(
                 file=other_target, who="A",
                 mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+                force_mechanism_wip=False,
             )
         ), 0)
         (self.repo_root / other_target).write_text("原始内容\n绕锁写入\n", encoding="utf-8")
@@ -1692,9 +1695,9 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
 
         self.assertEqual(self._release(who="A"), 0)
 
-    # ---- 队列 #308 决策点 6（措施 C：机制类可动 WIP 上限提示）--------------
+    # ---- 队列 §四 #58 ⑶（措施 C：机制类可动 WIP 上限，2026-08-17 起阻断）----
 
-    def test_mechanism_wip_over_cap_prints_warning_but_does_not_block(self):
+    def _write_two_existing_mechanism_rows(self):
         self._write_queue(
             section_one_rows=(
                 "| 150 | 既有机制行1 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-01 |\n"
@@ -1702,17 +1705,105 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
             ),
             hwm_one=200,
         )
-        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+
+    def _append_new_mechanism_row(self, status="[S:open][D:机] 待领", number="201"):
         text = self.target_path.read_text(encoding="utf-8")
-        new_row = "| 201 | 新机制行 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-09 |\n"
+        new_row = f"| {number} | 新机制行 | CC | 指针 | 产出 | {status} | 触碰区 | 2026-08-17 |\n"
         text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
         self.target_path.write_text(text, encoding="utf-8")
+
+    def test_mechanism_wip_over_cap_blocks_release(self):
+        """2026-08-17 起由提示改为阻断：新增机制行且超限 ⇒ release 被拒绝、
+        锁保持占用（§四 #58 ⑶ 的核心断言）。"""
+        self._write_two_existing_mechanism_rows()
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_new_mechanism_row()
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             result = self._release(who="A", mechanism_wip_cap=2)
-        self.assertEqual(result, 0, "超限仅提示不阻断，release 仍应成功")
-        self.assertIn("机制类可动 WIP 当前 3／2", buf.getvalue())
+        self.assertNotEqual(result, 0, "超限须拒绝 release，不再是仅提示")
+        out = buf.getvalue()
+        self.assertIn("机制类可动 WIP 当前 3／2", out)
+        # 锁保持占用——拒绝不等于释放
+        self.assertIsNotNone(self.module._read_lock(self.module._lock_path(
+            self.module.QUEUE_LOCK_ANCHOR)))
+
+    def test_mechanism_wip_rejection_message_is_actionable(self):
+        """决策点 6：拒绝必须可行动——含当前计数／上限、本次新增行编号、
+        两条出路的确切写法。否则只是把噪音从"每次都响"换成"每次都堵"。"""
+        self._write_two_existing_mechanism_rows()
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_new_mechanism_row()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self._release(who="A", mechanism_wip_cap=2)
+        out = buf.getvalue()
+        self.assertIn("3／2", out)          # 当前计数／上限
+        self.assertIn("#201", out)          # 本次新增的是哪一行
+        self.assertIn("[S:done]", out)      # 出路⑴ 的确切写法
+        self.assertIn("WIP豁免：", out)      # 出路⑵ 的确切写法
+        self.assertIn("--force-mechanism-wip", out)
+
+    def test_mechanism_wip_waiver_switch_and_marker_together_pass(self):
+        """逃生阀齐备（开关 ＋ 行内 `WIP豁免：<理由>`）⇒ 放行，理由随行落盘。"""
+        self._write_two_existing_mechanism_rows()
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_new_mechanism_row(
+            status="[S:open][D:机] 待领（WIP豁免：生产链路已停摆，须立刻立行止血）")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A", mechanism_wip_cap=2, force_mechanism_wip=True)
+        self.assertEqual(result, 0, "开关与行内标记齐备时应放行")
+        self.assertIn("逃生阀齐备", buf.getvalue())
+        # 理由确实留在队列行里（进 git 的那一份），不是只出现在终端
+        self.assertIn("WIP豁免：生产链路已停摆",
+                      self.target_path.read_text(encoding="utf-8"))
+
+    def test_mechanism_wip_switch_without_inline_marker_rejected(self):
+        """只给开关、行内未写理由 ⇒ 仍拒绝——理由的唯一真源是行内标记，
+        命令行参数随窗口关闭即消失。"""
+        self._write_two_existing_mechanism_rows()
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_new_mechanism_row()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A", mechanism_wip_cap=2, force_mechanism_wip=True)
+        self.assertNotEqual(result, 0)
+        self.assertIn("理由必须写在队列行里", buf.getvalue())
+
+    def test_mechanism_wip_inline_marker_without_switch_rejected(self):
+        """只写行内理由、未给开关 ⇒ 仍拒绝——越过须是一次显式选择。"""
+        self._write_two_existing_mechanism_rows()
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_new_mechanism_row(
+            status="[S:open][D:机] 待领（WIP豁免：紧急止血）")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A", mechanism_wip_cap=2)
+        self.assertNotEqual(result, 0)
+        self.assertIn("未传 `--force-mechanism-wip` 开关", buf.getvalue())
+
+    def test_mechanism_wip_multiple_new_rows_each_need_own_waiver(self):
+        """一次新增多条机制行时每条都须自带理由——只在其中一条写理由，
+        后来的读者无从判断另一条凭什么立起来。"""
+        self._write_two_existing_mechanism_rows()
+        self.assertEqual(self._acquire(who="A", reserve=2, section="一", domain="机"), 0)
+        self._append_new_mechanism_row(
+            status="[S:open][D:机] 待领（WIP豁免：紧急止血）", number="201")
+        self._append_new_mechanism_row(status="[S:open][D:机] 待领", number="202")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A", mechanism_wip_cap=2, force_mechanism_wip=True)
+        self.assertNotEqual(result, 0)
+        out = buf.getvalue()
+        self.assertIn("#202", out)
+        self.assertNotIn("新增行 #201／#202 的状态列", out)  # 只点名缺的那条
 
     def test_mechanism_wip_within_cap_no_warning(self):
         self._write_queue(hwm_one=200)
@@ -1746,7 +1837,13 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
 
     def test_mechanism_wip_not_recomputed_when_only_existing_rows_edited(self):
         """本次持锁期间只编辑既有行（无真正新增的 [D:机] 行）——不触发重新
-        计数，即便全表早已超过上限。"""
+        计数，即便全表早已超过上限。
+
+        🔴 **⑨ 阻断化之后这条是关键回归（design.md 决策点 4）**：若判据写成
+        "release 时超限即拒绝"，在存量已超限时每一次 release 都会失败，而编辑
+        锁是全项目唯一写入咽喉——**连这个正在关行降 WIP 的 session 也会被挡
+        在门外，规则把自己的解法一起锁死**。本用例正是"来关行的那个 session"
+        （cap=0、全表超限、只改既有行状态），必须放行。"""
         self._write_queue(
             section_one_rows=(
                 "| 150 | 既有机制行 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-01 |\n"
@@ -1827,6 +1924,7 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
         ns = argparse.Namespace(
             file=self.module.FOLLOWUP_README_TARGET, who=who,
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
         )
         return self.module.cmd_release(ns)
 
@@ -2188,6 +2286,7 @@ class HoldConsistencyValidationTests(unittest.TestCase):
         ns = argparse.Namespace(
             file=self.module.DEFAULT_TARGET, who=who,
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
         )
         return self.module.cmd_release(ns)
 
@@ -2233,21 +2332,31 @@ class HoldConsistencyValidationTests(unittest.TestCase):
 
         self.assertEqual(self._release(who="A"), 0)
 
-    def test_reverse_readme_already_sent_hold_text_still_present_warns_not_blocks(self):
-        """反向：README 已是"已推送"类终态，队列行仍称暂缓——仅告警不阻断
-        （design.md 决策点4；不阻断是为了不误伤"事后如实追述事故经过"这类
-        必要写法）。"""
+    def test_reverse_readme_already_sent_neither_blocks_nor_warns(self):
+        """反向：README 已是"已推送"类终态，队列行仍称暂缓——**既不拒绝、
+        也不再打印告警**（队列 #324 退休后的断言，2026-08-17）。
+
+        原行为是"仅告警不阻断"；该告警半边已按协议〇.9 措施 B 一进一出退休
+        （它在现网唯一的命中 #150 恰是 spec 自己承认合法的写法，一条只在合法
+        写法上响的规则产出的是噪音而非约束）。此处断言 stdout 不含该告警，
+        使"退休"这件事被钉住——否则代码删了、下次有人凭印象加回来也没人拦。
+        """
         self._write_readme(
             "| 采购部#10 | 2026-07-29 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | ✅ 已推送 2026-08-06 01:30 UTC |\n"
         )
         self._write_queue(hwm_one=200)
         self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
         text = self.target_path.read_text(encoding="utf-8")
-        new_row = "| 201 | 测试 | CC | `某跟进信.md` | 产出 | 本行拍板暂不发（事后追述） | 无 | 2026-08-07 |\n"
+        new_row = "| 201 | 测试 | CC | `某跟进信.md` | 产出 | 本行拍板暂不发（事后追述） | 无 | 2026-08-17 |\n"
         text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
         self.target_path.write_text(text, encoding="utf-8")
 
-        self.assertEqual(self._release(who="A"), 0)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        self.assertEqual(result, 0)
+        self.assertNotIn("疑似终态已推送", buf.getvalue())
+        self.assertNotIn("仍称暂缓", buf.getvalue())
 
     def test_hold_keyword_without_filename_reference_does_not_trigger(self):
         """仅命中暂缓关键词、无反引号文件名引用——不触发本校验。"""
@@ -2293,9 +2402,14 @@ class HoldConsistencyValidationTests(unittest.TestCase):
         result = self._release(who="A")
         self.assertNotEqual(result, 0)
 
-    def test_150_real_incident_row_recreated_triggers_reverse_warning_not_block(self):
+    def test_150_real_incident_row_recreated_passes_silently(self):
         """历史兼容核对固化（design.md「历史兼容核对」）：#150 真实事故场景
-        重现——README 已终态推送、队列行称暂缓，应仅告警放行，不拒绝。"""
+        重现——README 已终态推送、队列行称暂缓，放行。
+
+        队列 #324（2026-08-17）：原断言是"仅告警放行"，反向告警退休后改为
+        **静默放行**。#150 这一行正是本能力 spec 明文列为合法的写法（事故后
+        新增文本、如实记录"本应暂缓却已被机制误发"的经过），它同时也是该告警
+        在现网队列上唯一的命中——这正是退休它的第一条理由。"""
         self._write_readme(
             "| 采购部（未发，不编号） | 2026-07-29 | 采购部 · 姚祖怡 | "
             "批2引擎最后一项口径判例包 → 目标文件："
@@ -2314,6 +2428,97 @@ class HoldConsistencyValidationTests(unittest.TestCase):
         self.target_path.write_text(text, encoding="utf-8")
 
         self.assertEqual(self._release(who="A"), 0)
+
+    # ---- 队列 #324（2026-08-17）：⑥ 扫描面收窄到「当前结论段」-------------
+
+    def test_leading_conclusion_segment_splits_on_separator(self):
+        """`_leading_conclusion_segment` 单元行为：有 `━━━` 取首段，
+        无 `━━━` 原样返回。"""
+        self.assertEqual(
+            self.module._leading_conclusion_segment("当前结论 ━━━ 以下为原文 ━━━ 历史"),
+            "当前结论 ",
+        )
+        self.assertEqual(self.module._leading_conclusion_segment("没有分隔符"), "没有分隔符")
+        self.assertEqual(self.module._leading_conclusion_segment(""), "")
+
+    def test_hold_keyword_only_in_history_segment_passes(self):
+        """🔴 #52 误报回归（本次收窄的全部理由）：暂缓关键词只出现在 `━━━`
+        之后的历史段、当前结论段是"已闭环"类结论，而行内点名了一封 README
+        仍为 `🆕 待发` 的信——收窄前拒绝（真实误报，2026-08-10 业务总线），
+        收窄后应放行。"""
+        self._write_readme(
+            "| 采购部#13 | 2026-08-10 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | 🆕 待发 |\n"
+        )
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = (
+            "| 201 | 测试 | CC | `某跟进信.md` | 产出 | "
+            "✅ 本行已完全闭环，判例包已回件并回灌 "
+            "━━━ 以下为 2026-08-05 原文 ━━━ 07-29 判例包仍被压着，暂不发 "
+            "━━━ 以下为 2026-08-07 原文 ━━━ 该件继续暂缓 "
+            "| 无 | 2026-08-17 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0,
+                         "暂缓字样只在历史段时不应触发 ⑥（#52 真实误报）")
+
+    def test_hold_keyword_in_leading_segment_still_blocks(self):
+        """收窄不得削掉正向拦截力：暂缓结论写在**当前结论段**、README 仍
+        `🆕 待发` ⇒ 照旧拒绝（即便该格另有大量历史沉积）。"""
+        self._write_readme(
+            "| 采购部#13 | 2026-08-10 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | 🆕 待发 |\n"
+        )
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = (
+            "| 201 | 测试 | CC | `某跟进信.md` | 产出 | "
+            "本行拍板：该信暂不发，待前信闭环 "
+            "━━━ 以下为 2026-08-05 原文 ━━━ 当时判定可发 "
+            "| 无 | 2026-08-17 |\n"
+        )
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_section_four_filename_in_history_segment_not_paired(self):
+        """§四 的文件名提取同步收窄到首段（决策点 3：§四 关键词与文件名本就
+        同格，不同步会自相矛盾）——首段有暂缓字样但文件名在历史段 ⇒ 提取不到
+        文件名，不触发。"""
+        self._write_readme(
+            "| 采购部#13 | 2026-08-10 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | 🆕 待发 |\n"
+        )
+        self._write_queue(hwm_four=40)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="四"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = (
+            "| 41 | 本项暂缓，等口径定了再说 "
+            "━━━ 以下为原文 ━━━ 当时点名的是 `某跟进信.md` "
+            "| Shao Peishen | 不急 |\n"
+        )
+        text = text.replace(self.SECTION_FOUR_HEADER, self.SECTION_FOUR_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_cell_without_separator_behaves_exactly_as_before(self):
+        """无 `━━━` 的单元格行为与收窄前逐字一致——既有短单元格（本项目绝
+        大多数行）不因本次改动产生任何差异。"""
+        self._write_readme(
+            "| 采购部#10 | 2026-07-29 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` | 不急 | 🆕 待发 |\n"
+        )
+        self._write_queue(hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        new_row = "| 201 | 测试 | CC | `某跟进信.md` | 产出 | 本行拍板暂不发，待前信闭环 | 无 | 2026-08-17 |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self.assertNotEqual(self._release(who="A"), 0)
 
 
 class DualFileRoutingTests(unittest.TestCase):
@@ -2478,6 +2683,7 @@ class DualFileRoutingTests(unittest.TestCase):
         ns_release = argparse.Namespace(
             file=self.module.DEFAULT_TARGET, who="A",
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
         )
         self.assertEqual(self.module.cmd_release(ns_release), 0)
         # release 后两份文件均应有各自的 lastknown 基准。
@@ -2500,6 +2706,7 @@ class DualFileRoutingTests(unittest.TestCase):
         ns_release = argparse.Namespace(
             file=self.module.DEFAULT_TARGET, who="A",
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
         )
         self.assertNotEqual(self.module.cmd_release(ns_release), 0)
 
@@ -2551,6 +2758,7 @@ class DualFileRoutingTests(unittest.TestCase):
         ns_release = argparse.Namespace(
             file=absolute_old_pointer, who="A",
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
         )
         self.assertEqual(self.module.cmd_release(ns_release), 0)
 

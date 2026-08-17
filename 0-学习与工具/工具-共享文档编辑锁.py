@@ -121,13 +121,29 @@ editlock-section-append-and-followup-consistency-guard）：两项加固。
               openspec 变更包 design.md）。
 
   release ⑥  队列 §一/§四 行"暂缓结论"与跟进信 README 发送状态的交叉
-              一致性校验——命中"状态列/事项列含暂不发/暂缓/压着/不发字样
+              一致性校验——命中"**当前结论段**含暂不发/暂缓/压着/不发字样
               + 反引号 .md 文件名引用"的行，若该信在 README 中仍是终态
-              `🆕 待发`（机制唯一认可的可发送标记），拒绝 release；反向
-              （README 已是"已推送"类终态而队列仍称暂缓，多半是事后如实
-              追述）仅告警不阻断。治 2026-08-06 01:30 UTC 真实误发（#150：
-              队列行决定"暂不发"但未同步移出 README 的可发送标记，
-              `ZhuopinFollowupDispatchDaily` 照发，信不可撤回）。
+              `🆕 待发`（机制唯一认可的可发送标记），拒绝 release。治
+              2026-08-06 01:30 UTC 真实误发（#150：队列行决定"暂不发"但未
+              同步移出 README 的可发送标记，`ZhuopinFollowupDispatchDaily`
+              照发，信不可撤回）。
+
+队列 #324 ＋ §四 #58 ⑶（2026-08-17，openspec 变更包
+editlock-hold-scope-and-wip-block，Shao Peishen 当日审 design 六个决策点
+全按默认）：`release` 咽喉上的两处已实测失效同车修复——
+
+  ⑥ 收窄  暂缓关键词的扫描面由"整个单元格"收窄为按 `━━━` 切出的**首段**
+          （当前结论段）。队列单元格按「历史记录不追改」长期沉积多轮登记，
+          把整格当作"这一行此刻的结论"会使误报率随沉积单调上升：2026-08-10
+          §四 #52 那格 4062 字符／11 段，四个暂缓关键词**全部落在历史段**，
+          ⑥ 却据此拒绝了一封当日刚获批准待发的信。同批**退休 ⑥ 的反向告警
+          半边**（协议〇.9 措施 B 一进一出）。
+  ⑨ 阻断  机制类可动 WIP 超上限由"提示不阻断"改为**拒绝 release**，带
+          `--force-mechanism-wip` ＋ 行内 `WIP豁免：<理由>` 双条件逃生阀。
+          成因＝观察周实测 6 次新立机制行 6 次越过提示（详见
+          `_validate_release_structure` ⑨ 段）。**apply 当天起立刻见效**：
+          存量 24／16 已超限，此后任何新建机制行的 session 都会当场撞上
+          这道门——这是预期效果，不是回归。
 
 队列 #285（因果断言证伪命令，openspec 变更包
 editlock-causal-assertion-falsifiability-gate）：④断言门槛新增一项独立
@@ -359,11 +375,28 @@ FOLLOWUP_TARGET_FILE_RE = re.compile(r"目标文件[^`]*`([^`]+\.md)`")
 # 范围（"不发"是"暂不发"的子串，保留全部四词只为与派单件原文一一对应，
 # 不影响判定结果）。
 HOLD_LANGUAGE_PHRASES = ("暂不发", "暂缓", "压着", "不发")
-# 判定 README 行是否处于非终态（⏳待你审／🆕待发／#294 新增的 ⏸暂缓 均视为
-# 非终态，其余取值视为"已推送"类终态）——用于反向告警判据（design.md 决策
-# 点4）。#294 落地后已核对：本判据"非🆕待发即放行"的正向口径前瞻性覆盖了
-# ⏸暂缓，无需改动，仅此处补列举供反向判据引用。
-FOLLOWUP_NON_TERMINAL_STATUSES = (FOLLOWUP_DRAFT_STATUS, FOLLOWUP_FINALIZED_STATUS, "⏸ 暂缓")
+# 队列 #324（2026-08-17，openspec 变更包 editlock-hold-scope-and-wip-block，
+# design.md 决策点 1/2，Shao Peishen 当日选默认 (甲)）：⑥ 的暂缓关键词扫描
+# 面由"整个单元格"收窄为"当前结论段"——队列单元格按「历史记录不追改」会
+# 长期沉积多轮登记，把整格一视同仁当作"这一行此刻的结论"会使误报率随沉积
+# 单调上升。2026-08-10 §四 #52 真实误报：该格 4062 字符、按 `━━━` 切出 11
+# 段，头段仅 447 字符，四个暂缓关键词**全部落在历史段、头段一个都没有**，
+# ⑥ 却把"历史里的暂缓"与"今天新起草的那封信"配成了一对并拒绝放行。
+#
+# 分隔符取 `━━━`（U+3013 重横线）——它是**现存文本里已经存在的**段落惯例，
+# 不需要任何人回头改写历史即可识别。刻意**不复用** `_leading_status_segment`
+# （⑤ 用）：那一个还会在「。」「——」处切断，对 ⑥ 太激进（一句话里写完
+# "本信暂不发"很常见，切到句号前会把结论本身切掉）；两者判据目的不同，
+# 各自独立实现，不互相牵动。
+#
+# 🔴 已知残余风险（design.md 决策点 2 原样声明，不掩饰）：本项目往 `━━━`
+# 之后追加内容有**两种**形态——「`━━━ 以下为…原文 ━━━`」＝历史下压（新
+# 结论在头段，本判据判对）；「`━━━ ➕ 20xx-xx-xx 并入…`」＝并入新子项
+# （内容是新的、却在头段之后，本判据**判不到**）。即"决定暂缓某封信"若只
+# 写在 `➕ 并入` 段里而头段完全没提，⑥ 会漏。评估为可接受且**刻意不加特
+# 例**：加了就等于回到逐段扫描（design 决策点 1 的候选 (丙)），实测命中集
+# 反而由 9 涨到 14（收窄变放宽）。这是惯例假设、不是机器保证。
+CONCLUSION_SEGMENT_SEPARATOR = "━━━"
 
 # 队列 #225：release 时对跨桌任务队列.md 做结构校验，仅当锁定目标是这个
 # 默认队列文件时才跑（§一/§二/§三/§四 的语义只对它成立，--file 指向其他
@@ -468,6 +501,26 @@ MECHANISM_WIP_CAP_DEFAULT = 16
 # 前缀开头即视为已闭环；新增行任一单元格含此逃生阀标记即放行但留痕。
 FOLLOWUP_SERIAL_CLOSED_PREFIX = "📥 已回件并回灌"
 FOLLOWUP_SERIAL_WAIVER_MARKER = "串行豁免："
+# 队列 §四 #58 ⑶（2026-08-17，openspec 变更包 editlock-hold-scope-and-wip-
+# block，design.md 决策点 5，Shao Peishen 当日选默认 (c)）：⑨ 由非阻断提示
+# 改为阻断后配套的逃生阀标记——完全复用 `串行豁免：` 既有范式（标记写在行
+# 里、零新增写盘路径）。
+#
+# 🔴 **理由的唯一真源是行内标记，不是 CLI 参数**：`--force-mechanism-wip`
+# 开关**刻意不携带理由文本**，只表达"我知道我在越过一条规则"这个显式意图；
+# 理由必须写进本次新增那条机制行的状态列。命令行里的字符串是会话级的、随
+# 窗口关闭即消失，而这条逃生阀要治的恰恰是"越过之后没人知道为什么"；写在
+# 行里则进 git、被 `工具-队列结构lint.py` 与值周巡检看得见。
+#
+# 为何不让工具把理由自动追写进队列行（design 决策点 5 的选项 a）：那会给
+# 编辑锁**新增一条自己改写队列正文的写盘路径**，而本项目刚被这类路径咬过
+# 两次——#326 投递链路绕开编辑锁直接写 README 并自行 commit；#322 为编辑锁
+# 加"删不掉就改名"退路，改名这个动作凭空造出一种没人回头看的文件形态，
+# 企微群连响 17.1 小时。为一个逃生阀新增写盘路径，收益与风险不成比例。
+#
+# **监测方式**：`WIP豁免：` 在队列全文的出现次数可 grep 计数——若它开始批量
+# 出现，说明上限本身定错了，应回 §四 #58 重议上限，而不是继续加豁免。
+MECHANISM_WIP_WAIVER_MARKER = "WIP豁免："
 
 
 def _parse_status_domain_fields(status_cell: str) -> tuple[str | None, str | None, str]:
@@ -1364,19 +1417,46 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
     return violations
 
 
+def _leading_conclusion_segment(cell_text: str) -> str:
+    """单元格的「当前结论段」——按 `━━━` 切分后的首段（队列 #324 决策点 2）。
+
+    单元格不含 `━━━` 时返回整格，行为与收窄前逐字一致（既有短单元格不受
+    本次改动影响）。与 `_leading_status_segment()`（⑤ 用）是两条独立判据，
+    切法不同、互不复用，理由见 `CONCLUSION_SEGMENT_SEPARATOR` 定义处。
+    """
+    idx = cell_text.find(CONCLUSION_SEGMENT_SEPARATOR)
+    if idx == -1:
+        return cell_text
+    return cell_text[:idx]
+
+
 def _row_hold_language_status(cells: list[str], section: str) -> tuple[bool, str | None]:
     """判定一个 §一/§四 行是否"点名了跟进信且结论为暂缓"（队列 #258 正向
-    Requirement）：状态列（§一 cells[5]；§四 无独立状态列，回落事项列
-    cells[1]）含暂缓关键词，且行内（§一：cells[3]输入指针+cells[6]触碰区；
-    §四：cells[1]事项）能提取出一个反引号包裹的 `.md` 文件名引用。返回
+    Requirement）：**当前结论段**（§一 状态列 cells[5]／§四 无独立状态列，
+    回落事项列 cells[1]；两者均按 `━━━` 取首段，见
+    `_leading_conclusion_segment`）含暂缓关键词，且行内（§一：cells[3]输入
+    指针+cells[6]触碰区，**整格不收窄**；§四：cells[1]事项的**同一首段**）
+    能提取出一个反引号包裹的 `.md` 文件名引用。返回
     (是否命中暂缓关键词, 提取到的文件名 basename 或 None——未提取到文件名
-    时第二个返回值为 None，调用方据此判定"仅关键词无文件名不触发"）。"""
+    时第二个返回值为 None，调用方据此判定"仅关键词无文件名不触发"）。
+
+    队列 #324（2026-08-17）收窄了扫描面，两处**不对称是刻意的**（design.md
+    决策点 3，有实测支撑，非疏漏）：
+    - §四 的关键词与文件名本就同在 cells[1] 一格，只收窄其一会自相矛盾，
+      故同步收窄到首段；
+    - §一 的文件名来自 cells[3]（输入指针）与 cells[6]（触碰区）两列，这两
+      列**不沉积历史**（无 `━━━`），不是本次误报的成因；收窄它们不解决任何
+      已知问题，却会削掉 #150 那一类唯一的真命中路径（实测 9 次命中的 §一
+      文件名 9/9 全部来自 cells[3]）。`cells[6]` 虽实测零贡献也不删——
+      "实测零贡献"不等于"设计上不该有"，删它属于拿快照当规律。
+    """
     if section == "一":
-        status_text = cells[5] if len(cells) > 5 else ""
+        status_text = _leading_conclusion_segment(cells[5] if len(cells) > 5 else "")
         filename_sources = [cells[3] if len(cells) > 3 else "", cells[6] if len(cells) > 6 else ""]
     elif section == "四":
-        status_text = cells[1] if len(cells) > 1 else ""
-        filename_sources = [cells[1] if len(cells) > 1 else ""]
+        segment = _leading_conclusion_segment(cells[1] if len(cells) > 1 else "")
+        status_text = segment
+        filename_sources = [segment]
     else:
         return False, None
 
@@ -1413,9 +1493,21 @@ def _validate_followup_hold_consistency(
     editlock-section-append-and-followup-consistency-guard）：本次持锁期间
     新增/修改的 §一/§四 行中，"点名了跟进信且结论为暂缓"的行与 README 该信
     当前发送状态做交叉一致性核对。正向（README 仍为终态 `🆕 待发`，即
-    `ZhuopinFollowupDispatchDaily` 唯一认可的可发送标记）拒绝 release；反向
-    （README 已是"已推送"类终态而队列文本仍称暂缓，多半是事后如实追述整个
-    事故经过，见 #150 真实案例）仅告警不阻断（design.md 决策点4）。
+    `ZhuopinFollowupDispatchDaily` 唯一认可的可发送标记）拒绝 release。
+
+    🔴 **反向告警半边已于 2026-08-17 退休**（队列 #324，openspec 变更包
+    `editlock-hold-scope-and-wip-block`，协议〇.9 措施 B 的一进一出）：原
+    `elif` 分支在 README 已是"已推送"类终态而队列文本仍称暂缓时打印告警。
+    删除的三条理由——① **它设计上就会对自己承认合法的写法报警**：现网唯一
+    命中是 §一 #150，而 #150 恰恰是本能力 spec 自己明文列为合法的那一种
+    （事故后新增文本、如实记录"本应暂缓却已被机制误发"的经过）；一条只在
+    合法写法上响的规则，产出的不是约束是噪音。② 它正属 §四 #58（2026-08-17
+    复评）刚判定"信息量为零"的非阻断提示形态，而本变更包同批正把 ⑨ 从这一
+    形态里拿掉——留着同形态存量，退休制在同一个包里就自相矛盾了。③ 风险
+    不对称：正向拦的是"照发一封已决定暂缓的信"（对外、不可撤回、有
+    2026-08-06 01:30 UTC 真实事故），反向管的只是"队列文本滞后于 README"
+    （纯内部、可事后改、无外部后果）。**不新增替代守卫**——该情形此后由值
+    周巡检对账（既有职责，skill `zhuopin-queue-audit`）承接。
     """
     violations: list[str] = []
     hold_rows = []
@@ -1446,12 +1538,8 @@ def _validate_followup_hold_consistency(
                 f"中「发送状态」仍为「{FOLLOWUP_FINALIZED_STATUS}」（机制唯一认可的可"
                 f"发送标记，见 #150/#294 真实事故）：{preview}"
             )
-        elif status not in FOLLOWUP_NON_TERMINAL_STATUSES:
-            print(
-                f"⚠ §{section} 行点名跟进信「{filename}」仍称暂缓，但该信 README「发送"
-                f"状态」已是「{status}」（疑似终态已推送，队列文本可能滞后，建议核实"
-                f"是否为事后如实追述）：{preview}"
-            )
+        # 反向情形（status 为"已推送"类终态）此处**刻意不做任何事**——既不
+        # 拒绝也不打印，见本函数文档的退休说明（队列 #324，2026-08-17）。
     return violations
 
 
@@ -1503,12 +1591,20 @@ def _validate_release_structure(
       ……）"约定文本——那是有意为之的第三态（sweep 也不该把它当"待处理"
       去 add+commit），不是需要拦截的误写。
     ⑥跟进信暂缓一致性（仅 §一/§四，队列 #258，接管 #294 修法⑵）：命中"点名
-      了跟进信且结论为暂缓"（状态列/事项列含暂缓关键词 + 反引号 `.md` 文件
+      了跟进信且结论为暂缓"（**当前结论段**含暂缓关键词 + 反引号 `.md` 文件
       名引用）的行，若该信在 README 中「发送状态」仍为终态 `🆕 待发`，拒绝
       release——治 2026-08-06 01:30 UTC 真实误发（#150：队列称暂缓、README
-      未同步移出待发标记，`ZhuopinFollowupDispatchDaily` 照发）。反向（README
-      已是"已推送"类终态而队列仍称暂缓）仅告警，见 `_validate_followup_
-      hold_consistency` 文档。
+      未同步移出待发标记，`ZhuopinFollowupDispatchDaily` 照发）。
+      🔴 **扫描面已收窄（2026-08-17，队列 #324）**：关键词扫描面由整个状态列
+      ／事项列收窄为该单元格按 `━━━` 切出的**首段**（§四 的文件名提取同步
+      收窄；§一 的文件名来源 cells[3]/cells[6] 不变，两处不对称是刻意的，
+      理由见 `_row_hold_language_status` 文档）。成因＝2026-08-10 §四 #52
+      真实误报：4062 字符／11 段的单元格里，四个暂缓关键词全在历史段，⑥ 把
+      "历史里的暂缓"与"今天新起草的信"配成一对并拒绝放行；**误报率随沉积
+      单调上升**，那次是首次触发而非孤例。单元格不含 `━━━` 时行为逐字不变。
+      🔴 **反向告警半边已退休**（协议〇.9 措施 B 一进一出，同批）——README
+      已终态推送而队列仍称暂缓时不再打印任何东西，见
+      `_validate_followup_hold_consistency` 文档的三条理由。
     ⑦§二新增即终态防写（队列 #308 子项 F1）：新增批次行（identity＝批次名
       cells[0]，不存在于快照 §二 批次名集合）状态列开头片段以「✅」开头即
       拒绝——既有批次行合法转「✅」不受影响。治 `B-0728财务专线核实`／
@@ -1549,8 +1645,27 @@ def _validate_release_structure(
       Non-Goals），本判据原样保留、不受影响**。
     ⑨机制类可动 WIP 上限（仅 §一，队列 #308 决策点 6，协议〇.9 措施 C）：
       本次持锁期间新增了域为「机」的 §一 行时，重新计算全文当前的可动
-      WIP 计数；超过上限（默认 8，`--mechanism-wip-cap` 可覆盖）**仅提示
-      不阻断**——不加入返回的 violations，release 仍正常放行。
+      WIP 计数；超过上限（默认 `MECHANISM_WIP_CAP_DEFAULT`＝16，
+      `--mechanism-wip-cap` 可覆盖）即**拒绝 release**（进 violations，锁
+      保持占用），除非逃生阀齐备。
+      🔴 **2026-08-17 由"提示不阻断"改为阻断**（队列 §四 #58 ⑶，Shao
+      Peishen 当日答《本周计划-2026-08-17》B-1 选 (a)）：2026-08-10→08-16
+      观察周实测——可动 WIP 由 17／16 升至 24／16，周内新立机制行 6 条
+      （#324/#326/#327/#328/#337/#338）**无一伴随关行**；而本提示只在
+      `new_mechanism_rows` 非空那一刻响，**⇒ 它这 6 次每次都响了、每次都
+      被越过。一个非阻断提示在连续 6 次被无视后，信息量已经是零。**
+      🔴 **触发条件刻意保持原样不变——这是本项最容易出事的一处**：只在
+      本次持锁期间**真正新增**了 `[D:机]` §一 行时才判。若改成"release 时
+      超限即拒绝"，在存量已超限时（2026-08-17 实测 24／16）**此后每一次
+      release 都会失败**，而编辑锁是全项目唯一写入咽喉——**连那个来关行
+      降 WIP 的 session 也一起被挡在门外，规则会把自己的解法锁死。** 要压
+      的是"新立机制行"这个动作，不是"改队列"这个动作。
+      **逃生阀**：`--force-mechanism-wip` 开关 ＋ 新增行状态列内的
+      `WIP豁免：<理由>` 标记，两者缺一即仍拒绝，见
+      `_mechanism_wip_over_cap_violations` 与 `MECHANISM_WIP_WAIVER_MARKER`。
+      **上限值 16 不动**（§四 #58 ⑴：第三次为迁就现状改口径即等于废掉措施
+      C）；**存量 24／16 的清理不由本项代做**（§四 #58 ⑵ 交给"A 节收口后
+      复核、仍超限则强制关行至 16"）。
     ⑩因果断言证伪命令（仅 §一，队列 #285）：状态列（同④先剔除引号包裹
       片段）一旦含 P0/P1 定级 token，须在同一单元格内含至少一处反引号
       包裹的非空片段，缺失即报——与④是两条独立校验，一行可同时触发两者
@@ -1567,7 +1682,10 @@ def _validate_release_structure(
     reserved_map = lock_data.get("reserved") or {}
     archive_numbers: dict[str, set[int]] | None = None  # 惰性计算，仅在需要时扫描
     touched_for_hold_consistency: list[tuple[str, list[str], str]] = []  # ⑥用
-    new_mechanism_row_added = False  # ⑨用：本次是否新增了 [D:机] 的 §一 行
+    # ⑨用：本次新增的 [D:机] §一 行（编号, 状态列原文）——队列 #324 起由
+    # bool 改为清单，因为逃生阀要逐行核对行内 `WIP豁免：` 标记，且拒绝文案
+    # 须点名"本次新增的是哪一行"（design.md 决策点 6）。
+    new_mechanism_rows: list[tuple[str, str]] = []
 
     for label, expected_cols in SECTION_COLUMN_COUNTS.items():
         new_text = new_sections.get(label, "")
@@ -1744,27 +1862,91 @@ def _validate_release_structure(
                 if cells[0].isdigit() and int(cells[0]) not in old_numbers:
                     _, domain_value, _ = _parse_status_domain_fields(cells[5])
                     if domain_value == "机":
-                        new_mechanism_row_added = True
+                        new_mechanism_rows.append((cells[0], cells[5]))
 
             if label in ("一", "四"):
                 touched_for_hold_consistency.append((line, cells, label))
 
     violations.extend(_validate_followup_hold_consistency(touched_for_hold_consistency, repo_root))
 
-    if new_mechanism_row_added:
-        # ⑨ 非阻断提示——不加入 violations，release 仍正常放行（协议〇.9
-        # 措施 C 原文："提示不阻断"，上限用途是给建行踩刹车，不是精确会计）。
+    if new_mechanism_rows:
+        # ⑨ 阻断（队列 §四 #58 ⑶，2026-08-17）：超限进 violations，release 被
+        # 拒绝、锁保持占用。**触发条件与改造前逐字不变**——仅在本次持锁期间
+        # 真正新增了 [D:机] §一 行时才重算判定，理由见 docstring ⑨ 段那条
+        # "把自己锁在门外"的红字。
         cap = args.mechanism_wip_cap
         wip_count, degraded = _count_mechanism_wip(new_sections.get("一", ""))
         for note in degraded:
             print(f"⚠ {note}")
         if wip_count > cap:
-            print(
-                f"⚠ 机制类可动 WIP 当前 {wip_count}／{cap}，已超上限（协议〇.9 措施 C）——"
-                "建议本次新增前先关闭一条，或在任务描述内说明为何必须此时新增。"
+            violations.extend(
+                _mechanism_wip_over_cap_violations(args, new_mechanism_rows, wip_count, cap)
             )
 
     return violations
+
+
+def _mechanism_wip_over_cap_violations(
+    args: argparse.Namespace, new_mechanism_rows: list[tuple[str, str]],
+    wip_count: int, cap: int,
+) -> list[str]:
+    """⑨ 超限时的逃生阀判定与拒绝文案（队列 §四 #58 ⑶，design.md 决策点
+    5/6）。逃生阀须**两个条件同时到位**才放行：① release 传入
+    `--force-mechanism-wip` 开关（不携带理由文本）；② 本次新增的机制行状态
+    列内写明 `WIP豁免：<理由>`。缺任一即拒绝，并指出缺的是哪一个。
+
+    **一次新增多条机制行时，要求每一条都各自写明理由**（spec 原文按单条
+    表述，此处是它在多行输入下的显式取舍，不是加码）：每一条新行都是一次
+    独立的 WIP 增量，只在其中一条写理由会让后来的读者无从判断另一条凭什么
+    立起来——而这条逃生阀存在的全部意义就是"越过之后有人知道为什么"。
+
+    返回 violation 列表（空列表＝放行）。
+    """
+    # 直接取属性、不用 getattr 兜底：argparse 恒会设置该字段，兜底只会在
+    # 调用方漏传时静默按"未越过"处理（工具静默回退家族，本项目已踩过多次）。
+    forced = args.force_mechanism_wip
+    missing_marker = [
+        num for num, status in new_mechanism_rows
+        if MECHANISM_WIP_WAIVER_MARKER not in status
+    ]
+    numbers = "／".join(f"#{num}" for num, _ in new_mechanism_rows)
+    # 决策点 6：拒绝必须**可行动**，否则只是把噪音从"每次都响"换成"每次都
+    # 堵"。文案含当前计数与上限、本次新增的是哪一行、两条出路的确切写法。
+    head = (
+        f"§一 机制类可动 WIP 当前 {wip_count}／{cap}，已超上限（协议〇.9 措施 C，"
+        f"队列 §四 #58 ⑶：2026-08-17 起由提示改为阻断）——本次新增机制行 {numbers}。"
+    )
+    ways_out = (
+        "两条出路："
+        "⑴ 先关闭一条既有机制类可动行（把其状态字段改为 `[S:done]`，"
+        "或让正文以 🛑 起首），使计数回到上限内后重试；"
+        f"⑵ 若确属紧急必须此时立行，在本次新增行的状态列内写明"
+        f"「{MECHANISM_WIP_WAIVER_MARKER}<理由>」，并给 release 加"
+        f" `--force-mechanism-wip` 开关（两者缺一不可）。"
+    )
+    if not forced and missing_marker:
+        return [f"{head} {ways_out}"]
+    if not forced:
+        # 行内已写理由、只差开关：越过必须是一次显式选择，不能顺手。
+        return [
+            f"{head} 已在行内读到「{MECHANISM_WIP_WAIVER_MARKER}」标记，"
+            f"但 release 未传 `--force-mechanism-wip` 开关——请补上该开关以表明"
+            f"这是一次有意越过（开关表达意图，行内标记承载理由，两者缺一不可）。"
+        ]
+    if missing_marker:
+        shown = "／".join(f"#{num}" for num in missing_marker)
+        return [
+            f"{head} 已传 `--force-mechanism-wip`，但新增行 {shown} 的状态列内"
+            f"未写明「{MECHANISM_WIP_WAIVER_MARKER}<理由>」——理由必须写在队列行里，"
+            f"不能只写在命令行上（命令行参数随窗口关闭即消失，队列行进 git、"
+            f"被 `工具-队列结构lint.py` 与值周巡检看得见）。"
+        ]
+    print(
+        f"✓ 机制类可动 WIP {wip_count}／{cap} 已超上限，但检测到逃生阀齐备"
+        f"（`--force-mechanism-wip` ＋ 行内「{MECHANISM_WIP_WAIVER_MARKER}」标记），"
+        f"已放行 {numbers}——理由随该行落盘、进入版本历史。"
+    )
+    return []
 
 
 def _now() -> datetime:
@@ -2164,7 +2346,17 @@ def main() -> int:
     p_release.add_argument(
         "--mechanism-wip-cap", type=int, default=MECHANISM_WIP_CAP_DEFAULT,
         help=f"队列 #308 决策点 6：机制类可动 WIP 上限（默认 {MECHANISM_WIP_CAP_DEFAULT}，"
-             "对齐协议〇.9 措施 C），超限仅提示不阻断",
+             "对齐协议〇.9 措施 C）。本次持锁期间新增了 [D:机] 的 §一 行且重算后"
+             "超限时，release 被拒绝（队列 §四 #58 ⑶，2026-08-17 起由提示改为"
+             f"阻断）——见 --force-mechanism-wip",
+    )
+    p_release.add_argument(
+        "--force-mechanism-wip", action="store_true",
+        help="队列 §四 #58 ⑶ 逃生阀开关（不携带理由文本）：确属紧急必须在超限时"
+             f"新立机制行时传入。**须与行内标记同时到位**——本次新增行的状态列内"
+             f"还须写明「{MECHANISM_WIP_WAIVER_MARKER}<理由>」，缺任一即仍拒绝。"
+             "理由的唯一真源是行内标记（进 git、被 lint 与值周巡检看得见），"
+             "本开关只表达「我知道我在越过一条规则」这个显式意图",
     )
     p_release.set_defaults(func=cmd_release)
 
