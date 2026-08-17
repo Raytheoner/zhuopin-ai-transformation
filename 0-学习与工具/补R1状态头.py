@@ -16,6 +16,7 @@ R1 状态头一次性回填器（配合《文档治理规范》R1 + 台账 R2）
 """
 from __future__ import annotations
 
+import importlib.util
 import re
 import sys
 from pathlib import Path
@@ -23,6 +24,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCAN_DIRS = ["0-学习与工具", "1-转型规划", "2-试点项目", "3-治理与合规", "6-人才与组织"]
 SELF_OUTPUT = "文档台账-自动生成.md"
+
+# 队列 #98 并入项（2026-08-17）：构建/缓存产物排除口径**从台账生成器 import**，
+# 不在这里抄第二份——本脚本是台账「待补状态头」清单的执行端，两边判据一旦漂移，
+# 这里就会往 `.pytest_cache/README.md` 之类的产物里真的写入 frontmatter
+# （台账只是数错，本脚本是改文件，后果更重）。同一判据多份独立实现正是
+# 队列 #306/#307 要收敛的形态，故此处刻意 import 而非复制。
+_LEDGER_PATH = Path(__file__).resolve().with_name("工具-文档台账生成.py")
+_spec = importlib.util.spec_from_file_location("_doc_ledger", _LEDGER_PATH)
+_ledger = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_ledger)
+is_build_artifact = _ledger.is_build_artifact
 
 
 def has_frontmatter(text: str) -> bool:
@@ -73,9 +85,10 @@ def main() -> None:
         if not base.exists():
             continue
         for p in sorted(base.rglob("*.md")):
-            if "__pycache__" in p.parts or p.name == SELF_OUTPUT:
+            rel_path = p.relative_to(REPO_ROOT)
+            if is_build_artifact(rel_path) or p.name == SELF_OUTPUT:
                 continue
-            rel = str(p.relative_to(REPO_ROOT)).replace("\\", "/")
+            rel = str(rel_path).replace("\\", "/")
             text = p.read_text(encoding="utf-8", errors="ignore")
             if text.startswith("﻿"):  # 去 BOM，防 BOM 挡住 --- 被误判为无 frontmatter 而双加头
                 text = text[1:]

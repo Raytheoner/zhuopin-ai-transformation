@@ -7,6 +7,13 @@
 用法：python 0-学习与工具/工具-文档台账生成.py
 纪律：CC 每次收工重新生成一次（一行命令，见上）。
 
+排除口径（队列 #98 并入项，2026-08-17）：扫描时按**目录名黑名单**
+（`EXCLUDED_DIR_NAMES` / `EXCLUDED_DIR_SUFFIXES`，见下）跳过构建与缓存产物
+目录，不按文件名猜。⇒ **「共 N 份 md」是一个只随项目文档增删而变的稳定量，
+不随「这个 checkout 最近有没有跑过 pytest」漂移**——修的是这个信号的可信度，
+不是那几份文件本身。若不同 checkout 跑出的份数仍不一致，那是真的有文档增删，
+不是缓存残留，可直接据此判断。
+
 队列 #306：§一 列数校验（QUEUE_EXPECTED_COLUMNS）改从
 zhuopin_platform.shared_tools.queue_table 读取权威值，不再本地硬编码。
 """
@@ -59,6 +66,42 @@ SCAN_DIRS = [
     "3-治理与合规",
     "6-人才与组织",
 ]
+
+# 构建/缓存产物目录名黑名单（队列 #98 并入项，2026-08-17 实测立行）。
+# 实测：主工作区跑台账 338 份、同一 commit 的 worktree 内跑 335 份，差的 3 份
+# 全部是 pytest 生成的 `.pytest_cache/README.md`——它们已被 gitignore、不是项目
+# 文档，却长期占着"待补状态头"计数且**永远补不上**（补了下次 pytest 重跑又没了）。
+# 更要紧的是份数会随「最近有没有跑过测试」漂移，使「份数变了 ⇒ 有人动过文档」
+# 这个判断变成假信号。
+# 判据刻意用**目录名**而非文件名后缀：产物的共性在于"落在哪个目录下"，
+# 按文件名猜会既漏（cache 里的 README.md 与真文档同名）又误伤（正常文档可能
+# 恰好叫 README.md）。
+EXCLUDED_DIR_NAMES = frozenset({
+    ".git",
+    ".pytest_cache",
+    "__pycache__",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "node_modules",
+})
+# 名字随包名变化、只能按后缀认的产物目录（如 `zhuopin_platform.egg-info`）。
+EXCLUDED_DIR_SUFFIXES = (".egg-info",)
+
+
+def is_build_artifact(rel_path: Path) -> bool:
+    """路径的**任一目录段**命中黑名单即视为构建产物（不判最后一段的文件名）。
+
+    传入相对仓库根的路径——不用绝对路径，否则仓库若恰好被 clone 在一个名为
+    `node_modules` 之类的目录下，全库会被静默判成产物、台账整个变空。
+    （CLAUDE.md §5「工具静默回退」同族：返回值正常、结论却是反的。）
+    """
+    for part in rel_path.parts[:-1]:
+        if part in EXCLUDED_DIR_NAMES or part.endswith(EXCLUDED_DIR_SUFFIXES):
+            return True
+    return False
+
 
 STATUS_ORDER = ["生效", "在办", "待发", "已执行归档", "已作废", "历史快照"]
 
@@ -180,11 +223,11 @@ def main() -> None:
         if not base.exists():
             continue
         for path in sorted(base.rglob("*.md")):
-            if "__pycache__" in path.parts:
+            rel = path.relative_to(REPO_ROOT)
+            if is_build_artifact(rel):  # 构建/缓存产物，非项目文档（见文件头「排除口径」）
                 continue
             if path.name == OUTPUT_PATH.name:  # 跳过脚本自身输出（每跑必覆盖，无需状态头）
                 continue
-            rel = path.relative_to(REPO_ROOT)
             text = path.read_text(encoding="utf-8", errors="ignore")
             meta = parse_frontmatter(text)
             title = meta.get("title", path.stem).strip('"')
@@ -205,6 +248,11 @@ def main() -> None:
         f"扫描范围：{'、'.join(SCAN_DIRS)}"
         "（4-数字员工/5-平台底座/openspec 有各自 Hermes L2 场景级约定，"
         "7-外部文档 gitignore 因机而异，均不入本台账）"
+    )
+    lines.append(
+        "> 已排除构建/缓存产物目录（`.pytest_cache`／`__pycache__`／`*.egg-info` 等，"
+        "见脚本 `EXCLUDED_DIR_NAMES`）⇒ 份数不随「本 checkout 最近有没有跑过 pytest」"
+        "漂移；份数变了即真有文档增删。"
     )
     lines.append(f"> 找文档先查本表，不翻目录。共 {total} 份 md，{len(missing_status)} 份待补状态头。")
     lines.append("")
