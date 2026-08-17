@@ -221,6 +221,28 @@ UTC 起连续 4 轮整轮跳过、连发 4 条分叉告警即实测坐实（本�
 打破自锁循环）一致——本次只是把该结论应用到另一处犯了同样错误的
 前置检查上。
 
+起跑段中止判据立为通则（队列 #328，2026-08-17，变更包
+`sweep-startup-nonblocking`）：上面两段（#288／#309 子项 F）各自修的
+是"自己撞见的那一处"，而 #309-F 行内已自陈识别出**「起跑段不得整轮
+return」这条通则、却只写在一行队列正文里，没有任何机制拿它去扫剩下的
+起跑段检查**——于是第三例（`_fetch` 网络失败即整轮中止）原地不动，实测
+`reports/sweep-commit.log` 全量 715 轮命中 20 轮（2.8%、11 个不同日期）。
+本次因此不只修那一处：
+
+  判据（通则本体）——**一处起跑段检查是否该中止整轮，取决于它挡住的
+  那些本地工作，是否真的依赖它所检查的那个前提。** 依赖（仓库物理状态
+  不可用，继续会失败或有害）⇒ 拦；不依赖（外部依赖暂时不可用，本地
+  工作与之无关）⇒ 记录后继续，把该前提的职责交给真正需要它的那一段。
+
+按此判据把起跑段现存**九个** `raise SweepAbort` 位点逐一过了一遍，结论
+**7 处维持拦截、2 处降级**（`_fetch` 与 `_push_any_unpushed_commits` 的
+补推失败；后者不在派单件字面范围内，是扫描扫出来的"第四例"）。逐位点
+判定表见变更包 design §2。**通则本身由 `test_工具-落库sweep.py::
+StartupAbortSiteInventoryTests` 做成机制守**——AST 静态扫描起跑段六个
+函数的全部 `raise SweepAbort`，与冻结清单逐项比对，新增/删除/移位即
+失败，强制作者显式分类。刻意用 AST 而非正则：注释、字符串字面量与跨行
+调用会让正则给出假阴性，那正是本项目"用正则猜代码"要收敛的家族。
+
 定时任务真身↔镜像自动核对（队列 #235/#188，2026-08-06）：#169 已实现
 `工具-定时任务源码备份.py`（规范化逐行比对+差异自动写回镜像，见其文件头
 说明），但"挂载到自动触发器"这一半此前未做——真身漂移因此只能靠人想起来
@@ -629,10 +651,34 @@ def _check_preconditions(repo_root: Path, production: bool) -> None:
         raise SweepAbort("⚠ git status 显示存在未合并冲突路径——跳过本轮，不强行处理。")
 
 
-def _fetch(repo_root: Path) -> None:
+def _fetch(repo_root: Path, log: list[str], phase: str) -> bool:
+    """队列 #328（2026-08-17）：本函数**不再中止整轮**，失败只记录并返回 False，
+    由调用方按起跑段通则自行判定后续。
+
+    退休说明（协议〇.9 措施 B 的 one-in-one-out，本变更包的"一出"）：本函数
+    原有唯一职责就是"fetch 失败即 `SweepAbort` 整轮跳过"，是全文件唯一一处
+    网络类守卫。实测 `reports/sweep-commit.log` 全量 715 轮：**起跑段那次
+    fetch 失败致整轮跳过 20 轮（2.8%），分布 11 个不同日期**（收尾段另有 3
+    轮，2 个日期）——而本轮真正需要网络的只有收尾段的 push，起跑段挡掉的
+    批次落库/台账重跑/flush 暂存/孤儿告警/openspec 检测**没有一项依赖网络**；
+    其中 3 轮的批次在紧邻下一轮立刻落库，即被白推迟一个完整周期。
+
+    ⚠️ 统计口径提醒（原队列行记的"16 轮/567/10 个日期"混淆了两个调用点）：
+    起跑段 fetch 排在 `_flush_pending_lock_appends` **之前**，故其命中的日志块
+    内**不含**"pending 锁忙暂存 flush"与"§二…"行；收尾段命中块必含。按字面
+    grep "fetch 失败"统计会把两处合计，据此判断"要改几处"会漏掉收尾段。
+
+    `phase` 只用于日志措辞（"起跑段"/"收尾段"），使日志能直接分辨是哪一处
+    失败，不必再靠上下文行反推。
+    """
     result = _run_git(["fetch", "origin", "master", "--quiet"], repo_root, check=False)
     if result.returncode != 0:
-        raise SweepAbort(f"⚠ git fetch origin master 失败（{result.stderr.strip()}）——跳过本轮。")
+        log.append(
+            f"⚠ {phase} git fetch origin master 失败（{result.stderr.strip()}）"
+            "——不中止本轮，按起跑段通则记录后继续。"
+        )
+        return False
+    return True
 
 
 def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
@@ -660,8 +706,28 @@ def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = 
     并发编辑（同 #288 观察）可自动对齐并推送成功，只有真实内容冲突才会
     落回既有的 `git rebase --abort` + 分叉告警路径（`is_fork=True`／
     `FORK_EXIT_CODE`），与此前语义一致，只是判定时机从"起跑段一律拦"
-    收窄为"收尾段确认真无法自动解决才拦"。"""
-    _fetch(repo_root)
+    收窄为"收尾段确认真无法自动解决才拦"。
+
+    队列 #328（2026-08-17）：本函数**任何路径都不再中止整轮**，补齐 #309 子项 F
+    只修了自己撞见的那一处所留下的两个缺口——
+
+    ⑴ `_fetch` 失败：记录后直接返回，**跳过 ahead 计算与推送**。刻意不"用可能
+       陈旧的 origin/master 引用凑合算一下"——那会得出一个基于过期引用的
+       ahead，据此推送属于拿旧判据做写动作（同"工具静默回退"家族：返回值正常
+       但读的不是我以为的那个对象）。补推交收尾段，它会重新 fetch 到最新状态。
+
+    ⑵ 补推自身失败（原 `SweepAbort(exit_code=2)`）：记录后继续。它与 ⑴ 同因
+       （网络/鉴权），同样不影响本轮任何本地工作；本地提交本就不会被撤销，
+       推送交收尾段重试，**收尾段推送失败仍以 `exit_code=2` 收尾，对外语义不丢**，
+       只是判定时机后移——与 #309-F 当初"起跑段一律拦 → 收尾段确认真不行才拦"
+       的收窄完全同构。
+       📌 这一处**不在 #328 派单件的字面范围内**，是按本包新立的起跑段通则
+       逐位点扫描时发现的"第四例"（九个位点判定表见变更包 design §2），
+       即通则存在的意义所在——它不在任何人"撞见"的路径上。"""
+    if not _fetch(repo_root, log, "起跑段"):
+        log.append("⚠ 起跑段未能刷新 origin/master，本轮跳过补推判断（不依据陈旧引用推送），"
+                   "未推送提交交收尾段重试。")
+        return
     ahead_raw = _run_git(["rev-list", "--count", "origin/master..HEAD"], repo_root).stdout.strip()
     ahead = int(ahead_raw) if ahead_raw.isdigit() else 0
     if ahead == 0:
@@ -680,11 +746,13 @@ def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = 
         return
     push = _run_git(["push", "origin", "HEAD:refs/heads/master"], repo_root, check=False)
     if push.returncode != 0:
-        raise SweepAbort(
-            f"✗ 起跑发现 {ahead} 个未推送的本地提交，补推失败：{push.stderr.strip()}——"
-            "本地提交不会被撤销，需人工核查后手动 push，本轮就此停止。",
-            exit_code=2,
+        # 队列 #328：原为 SweepAbort(exit_code=2) 整轮中止，见本函数 docstring ⑵。
+        log.append(
+            f"⚠ 起跑发现 {ahead} 个未推送的本地提交，补推失败（{push.stderr.strip()}）"
+            "——不中止本轮，本地提交完整保留、不会被撤销，推送交收尾段重试；"
+            "收尾段仍失败时以既有『需人工核查』语义与退出码收尾。"
         )
+        return
     log.append(f"✓ 起跑补推 {ahead} 个此前未推送的本地提交。")
 
 
@@ -722,7 +790,29 @@ def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bo
         log.append("[dry-run] 将 fetch 并按需 ff-only 合并/rebase，随后统一 push 一次（本次不实际执行）。")
         return
 
-    _fetch(repo_root)
+    # 队列 #328（2026-08-17）：收尾段 fetch 失败同样不再中止整轮。此前由
+    # `_fetch` 抛 SweepAbort 统一处理，其副作用是**连带跳过其后一批纯本地
+    # 检测**——#198(c) 常驻服务部署提示、#229 部署留痕检查、#298 openspec
+    # 覆盖与滞留检测，这三者只读本地仓库、不依赖网络，属同一个错误的第四
+    # 个表现面（实测 3 轮命中，2 个日期）。退出码维持 0，与此前 `_fetch` 抛出的
+    # SweepAbort 默认退出码一致，对外语义不变。
+    if not _fetch(repo_root, log, "收尾段"):
+        ahead_probe = _run_git(
+            ["rev-list", "--count", "origin/master..HEAD"], repo_root, check=False)
+        if ahead_probe.returncode == 0 and ahead_probe.stdout.strip().isdigit():
+            pending = int(ahead_probe.stdout.strip())
+            detail = (f"，本轮有 {pending} 个本地提交未能推送、将由下一轮重试"
+                      if pending else "，本轮无未推送的本地提交")
+        else:
+            # 不猜：origin/master 引用本身读不到时如实说读不到，不填 0
+            # （填 0 会让"没东西要推"和"不知道有没有东西要推"在日志上同形）。
+            detail = "，且 origin/master 引用不可读、未推送提交数不可知"
+        log.append(
+            f"⚠ 收尾段跳过与 origin/master 的对齐与推送{detail}；"
+            "本地提交完整保留，其余本地检测照常执行。"
+        )
+        return
+
     head = _run_git(["rev-parse", "HEAD"], repo_root).stdout.strip()
     origin_head = _run_git(["rev-parse", "origin/master"], repo_root).stdout.strip()
     if head == origin_head:

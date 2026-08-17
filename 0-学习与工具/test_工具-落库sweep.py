@@ -26,6 +26,8 @@ CLI（`--repo-root` 覆盖生产路径断言）后核对 origin 侧的提交历�
 """
 from __future__ import annotations
 
+import ast
+import collections
 import importlib.util
 import json
 import os
@@ -2930,6 +2932,328 @@ class CheckStalePendingRowsCliTests(SweepTestBase):
         result = _run_sweep(self.work, "--check-stale-pending-rows")
         self.assertIn("PENDING_CLEAN\t129", result.stdout)
         self.assertIn("字段缺失/非法", result.stdout + result.stderr)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 队列 #328（变更包 sweep-startup-nonblocking，2026-08-17）
+# ════════════════════════════════════════════════════════════════════════
+
+# 起跑段＝main() 内批次处理开始之前会执行到的全部检查所在的函数。
+# 新增函数进入这一段时，须同步加进本清单，否则下面的扫描测试会失败。
+STARTUP_SEGMENT_FUNCTIONS = (
+    "_heal_stale_index_lock",
+    "_assert_not_a_linked_worktree",
+    "_check_preconditions",
+    "_abort_if_edit_lock_held",
+    "_push_any_unpushed_commits",
+    "_fetch",
+)
+
+# 冻结清单：起跑段每一处 `raise SweepAbort` 及其判定理由（队列 #328 通则）。
+# 判据——**一处起跑段检查是否该中止整轮，取决于它挡住的那些本地工作，是否
+# 真的依赖它所检查的那个前提**：依赖（仓库物理状态不可用）⇒ 拦；不依赖
+# （外部依赖暂时不可用）⇒ 记录后继续。
+#
+# 🔴 改动本清单前先读变更包 design §2 的九位点判定表。新增一处 abort 而不
+# 更新本清单，或更新本清单而不给理由，都属于"第四例"正在发生。
+FROZEN_STARTUP_ABORT_SITES = {
+    ("_heal_stale_index_lock", "新鲜 .git/index.lock"):
+        "维持拦截——另有 git 进程在跑，继续则后续每个 _run_git(check=True) 都会抛"
+        " CalledProcessError（#121(b) 症状）。本地 git 本身不可用，依赖成立。",
+    ("_assert_not_a_linked_worktree", ".git 非目录"):
+        "维持拦截——运行位置错误，继续会在一次性建造分支上提交，该分支可能被"
+        " git worktree remove 连同提交一起丢弃（协议〇.5），真实数据丢失风险。",
+    ("_check_preconditions", "repo_root 与主工作区不符"):
+        "维持拦截——同上，计划任务配置误指的兜底。",
+    ("_check_preconditions", "分支非 master"):
+        "维持拦截——落库目标是 master；在别的分支上提交即制造分叉，比不落库更糟。",
+    ("_check_preconditions", "未完成的 git 操作"):
+        "维持拦截——仓库处于半完成状态，任何写动作后果不可预期。",
+    ("_check_preconditions", "未合并冲突路径"):
+        "维持拦截——同上。",
+    ("_abort_if_edit_lock_held", "编辑锁被有效占用"):
+        "维持拦截——协议〇.7；继续即与他人并发写队列。#198(b) 立行理由原文即"
+        "「锁占用时连第一个 git add 都不该发生」。",
+}
+
+
+def _startup_abort_sites(source: str) -> set[tuple[str, int]]:
+    """AST 静态扫描：返回起跑段各函数内 `raise SweepAbort(...)` 的
+    (函数名, 该函数内第几处) 集合。
+
+    刻意用 AST 而非正则——注释、docstring、字符串字面量与跨行调用都会让
+    正则给出假阴性，而"用正则猜代码"正是本项目（#308）要收敛的家族；一个
+    漏报的扫描器比没有扫描器更糟，因为它会让人以为已经扫过了。
+    """
+    tree = ast.parse(source)
+    sites: set[tuple[str, int]] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name not in STARTUP_SEGMENT_FUNCTIONS:
+            continue
+        seq = 0
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Raise) or inner.exc is None:
+                continue
+            exc = inner.exc
+            callee = exc.func if isinstance(exc, ast.Call) else exc
+            if isinstance(callee, ast.Name) and callee.id == "SweepAbort":
+                seq += 1
+                sites.add((node.name, seq))
+    return sites
+
+
+class StartupAbortSiteInventoryTests(unittest.TestCase):
+    """队列 #328 交付条件⑵：把「起跑段不得整轮 return」这条通则做成**可扫描
+    判据**，而不是又写进一行队列正文里。
+
+    #288 → #309 子项 F → #328 是同一设计错误的三例；#309-F 行内已识别出通则，
+    但"没有任何机制拿它去扫剩下的起跑段检查"，于是第三例原地不动。本测试族
+    就是那个机制：新增/删除/移动任一起跑段 abort 位点即失败，强制作者按
+    design §2 的判据显式分类为"维持拦截"或"降级"。
+    """
+
+    def setUp(self):
+        self.source = SCRIPT.read_text(encoding="utf-8")
+
+    def test_起跑段中止位点须与冻结清单一致(self):
+        """对**真实生产源码**（非夹具副本）运行——夹具跑绿而生产漂移是这类
+        守卫最典型的失效方式。"""
+        actual = _startup_abort_sites(self.source)
+        expected_count = len(FROZEN_STARTUP_ABORT_SITES)
+        self.assertEqual(
+            len(actual), expected_count,
+            f"起跑段 raise SweepAbort 位点数为 {len(actual)}，冻结清单为 {expected_count}。\n"
+            f"实际位点：{sorted(actual)}\n"
+            "新增了 abort？请先读变更包 sweep-startup-nonblocking 的 design §2 判定表，"
+            "按「它挡住的本地工作是否真的依赖它检查的那个前提」判定该拦还是该降级，"
+            "再同步更新 FROZEN_STARTUP_ABORT_SITES 及其理由。",
+        )
+        # 位点须落在冻结清单登记过的那几个函数上（防"总数没变但换了个函数"）
+        frozen_funcs = collections.Counter(fn for fn, _ in FROZEN_STARTUP_ABORT_SITES)
+        actual_funcs = collections.Counter(fn for fn, _ in actual)
+        self.assertEqual(actual_funcs, frozen_funcs,
+                          "起跑段 abort 位点的函数分布与冻结清单不符")
+
+    def test_两处已降级位点确实不再抛SweepAbort(self):
+        """#328 主体（`_fetch`）与通则扫出的第四例（`_push_any_unpushed_commits`
+        补推失败）——这两个函数体内应一处 SweepAbort 都不剩。"""
+        actual = _startup_abort_sites(self.source)
+        for fn in ("_fetch", "_push_any_unpushed_commits"):
+            with self.subTest(函数=fn):
+                self.assertEqual(
+                    [s for s in actual if s[0] == fn], [],
+                    f"{fn} 内仍存在 raise SweepAbort——队列 #328 要求其降级为"
+                    "「记录后继续」，不得整轮中止。",
+                )
+
+    def test_清单每一项都写了判定理由(self):
+        for key, reason in FROZEN_STARTUP_ABORT_SITES.items():
+            with self.subTest(位点=key):
+                self.assertTrue(reason.strip(), f"{key} 缺判定理由")
+                self.assertTrue(
+                    reason.startswith("维持拦截") or reason.startswith("降级"),
+                    f"{key} 的理由须以「维持拦截」或「降级」开头，当前：{reason[:20]}",
+                )
+
+    def test_新增一处abort即被扫出(self):
+        """反向用例——证明这个扫描器真能拦住第四例，而不是恒真。"""
+        injected = self.source.replace(
+            "def _fetch(repo_root: Path, log: list[str], phase: str) -> bool:",
+            "def _fetch(repo_root: Path, log: list[str], phase: str) -> bool:\n"
+            "    if False:\n        raise SweepAbort('新加的第四例')",
+            1,
+        )
+        self.assertNotEqual(injected, self.source, "注入失败，测试自身失效")
+        self.assertEqual(
+            len(_startup_abort_sites(injected)), len(FROZEN_STARTUP_ABORT_SITES) + 1,
+            "注入的 abort 未被扫出——扫描器失效",
+        )
+
+    def test_注释与字符串内的同名文本不误报(self):
+        """AST 免疫性：正则实现会在这里翻车。"""
+        polluted = self.source.replace(
+            "def _fetch(repo_root: Path, log: list[str], phase: str) -> bool:",
+            "def _fetch(repo_root: Path, log: list[str], phase: str) -> bool:\n"
+            "    # raise SweepAbort('注释里的假位点')\n"
+            "    _ = \"raise SweepAbort('字符串里的假位点')\"\n"
+            "    _doc = '''raise SweepAbort(docstring 里的假位点)'''",
+            1,
+        )
+        self.assertNotEqual(polluted, self.source, "注入失败，测试自身失效")
+        self.assertEqual(
+            len(_startup_abort_sites(polluted)), len(FROZEN_STARTUP_ABORT_SITES),
+            "注释/字符串内的 raise SweepAbort 字样被误计为位点",
+        )
+
+
+class FetchFailureDoesNotAbortRoundTests(SweepTestBase):
+    """队列 #328 子项①（交付条件⑶）：起跑段 fetch 网络失败此前 `SweepAbort`
+    整轮跳过，把批次落库/台账重跑/flush 暂存/孤儿告警/openspec 检测一并挡掉
+    ——而这些**没有一项需要网络**。实测 715 轮命中 20 轮（2.8%、11 个日期），
+    其中 3 轮的批次在紧邻下一轮立刻落库＝被白推迟一个完整周期。
+    """
+
+    def _break_remote(self) -> None:
+        """把 origin 指到一个不存在的路径，使 `git fetch` 真实失败——不打桩、
+        走真实 git 失败路径，与生产的网络失败在 sweep 眼里同形。"""
+        _git(self.work, "remote", "set-url", "origin",
+             str(self.work.parent / "不存在的远端.git"))
+
+    def test_fetch失败时待处理批次仍正常落库(self):
+        row = ("| B-328复现 | `新增件.md` | `docs(test): 队列#328 fetch失败仍落库` "
+               "| 待处理（登记，待 sweep 落库） |\n")
+        self._init_and_push(rows="")
+        self._write_queue(rows=row)
+        (self.work / "新增件.md").write_text("批次声明的内容\n", encoding="utf-8")
+        self._break_remote()
+
+        result = _run_sweep(self.work)
+
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn("起跑段 git fetch origin master 失败", out)
+        self.assertIn("不中止本轮", out)
+        # 关键回归点：修复前这里整轮跳过，批次一行都不会动。
+        self.assertIn("已本地提交", out)
+        self.assertIn("**✅ 已完成**", self._queue_text())
+        committed = _git(self.work, "log", "--oneline", "-3").stdout
+        self.assertIn("队列#328 fetch失败仍落库", committed)
+
+    def test_fetch失败且无待处理批次时本轮仍跑到底(self):
+        """修复前：起跑段 fetch 失败即整轮跳过，其后的 flush 暂存、§二 解析、
+        孤儿告警、收尾对齐、openspec 检测**全不执行**。
+
+        断言取"本轮是否跑到了最后一段"——起跑段之后的每一段都在这两行之间，
+        故收尾段日志出现即证明中间各段都执行过。刻意不断言 flush 那行：本测试
+        夹具未部署机器人服务脚本（`_flush_pending_lock_appends` 对此静默跳过，
+        是其既有设计），断言它会得到一个恒假的判据——**一个永远测不到东西的
+        断言比没有断言更糟，它让人以为已经验过了**。"""
+        self._init_and_push(rows="")
+        self._break_remote()
+
+        result = _run_sweep(self.work)
+
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn("起跑段 git fetch origin master 失败", out)
+        self.assertIn("§二无待处理批次", out)          # 起跑段之后：批次解析已执行
+        self.assertIn("收尾段跳过与 origin/master", out)  # 已跑到最后一段
+
+    def test_fetch失败时不依据陈旧引用推送(self):
+        """降级 ≠ 凑合用旧引用算一遍——那是拿过期判据做写动作（工具静默回退
+        家族：返回值正常但读的不是我以为的那个对象）。"""
+        self._init_and_push(rows="")
+        (self.work / "本地已提交未推送.md").write_text("内容\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "docs(test): 本地提交未推送")
+        self._break_remote()
+
+        result = _run_sweep(self.work)
+
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn("本轮跳过补推判断", out)
+        self.assertNotIn("起跑补推", out)
+
+    def test_收尾段fetch失败仍执行其后本地检测且退出码为0(self):
+        """决策点 2(a)：收尾段 fetch 失败此前连带跳过 #198(c)/#229/#298 三类
+        纯本地检测（实测 3 轮命中）。"""
+        self._init_and_push(rows="")
+        self._break_remote()
+
+        result = _run_sweep(self.work)
+
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn("收尾段 git fetch origin master 失败", out)
+        self.assertIn("收尾段跳过与 origin/master 的对齐与推送", out)
+        self.assertIn("其余本地检测照常执行", out)
+
+    def test_收尾段fetch失败时日志点名未推送提交数(self):
+        """子项⑤同族要求：状态要显形，不能只说一句 fetch 失败。"""
+        row = ("| B-328未推送计数 | `新增件.md` | `docs(test): 队列#328 未推送计数` "
+               "| 待处理（登记，待 sweep 落库） |\n")
+        self._init_and_push(rows="")
+        self._write_queue(rows=row)
+        (self.work / "新增件.md").write_text("内容\n", encoding="utf-8")
+        self._break_remote()
+
+        result = _run_sweep(self.work)
+
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertRegex(out, r"本轮有 [1-9]\d* 个本地提交未能推送、将由下一轮重试")
+
+    def test_起跑段补推失败不中止本轮(self):
+        """通则扫出的「第四例」：补推 push 失败原为 exit_code=2 整轮中止。
+        构造 fetch 成功但 push 失败——把 origin 设为只读裸库不可行（跨平台
+        不稳），改用「origin 可 fetch 但推送被拒」：先让本地领先，再把
+        origin 的 master 推进到一个与本地无关的提交上，使快进判定通过后
+        push 因非快进被拒。"""
+        self._init_and_push(rows="")
+        (self.work / "本地件.md").write_text("本地内容\n", encoding="utf-8")
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "docs(test): 本地提交未推送")
+        # 让 origin 侧领先：另一克隆推进 origin，但本地**不**再 fetch，
+        # 于是本地 origin/master 引用陈旧、仍判定为可快进，push 时才被拒。
+        other = self.work.parent / "other_clone_328"
+        _git(self.work.parent, "clone", "-q", str(self.origin), str(other))
+        _git(other, "config", "user.email", "o@example.com")
+        _git(other, "config", "user.name", "O")
+        (other / "他方件.md").write_text("他方内容\n", encoding="utf-8")
+        _git(other, "add", "-A")
+        _git(other, "commit", "-q", "-m", "docs(test): 他方推进")
+        _git(other, "push", "-q", "origin", "master")
+
+        result = _run_sweep(self.work)
+
+        out = result.stdout + result.stderr
+        # 修复前：起跑段补推失败 ⇒ exit_code=2 整轮中止。
+        # 修复后：不中止；本轮由收尾段接手（此处两侧改动不冲突，rebase 可自动对齐）。
+        self.assertNotEqual(result.returncode, 2, "起跑段补推失败不应再以 exit 2 整轮中止\n" + out)
+        self.assertEqual(
+            _git(self.work, "log", "--oneline", "--all").returncode, 0)
+        self.assertIn("docs(test): 本地提交未推送",
+                      _git(self.work, "log", "--oneline", "-5").stdout,
+                      "本地提交必须完整保留、不被撤销")
+
+
+class StartupGuardsStillBlockTests(SweepTestBase):
+    """队列 #328 交付条件⑵ 的另一半：**7 处「维持拦截」位点行为逐一未变**。
+    通则的价值在于分类，不是一律降级——只验降级项而不验拦截项，等于没验。
+    """
+
+    def test_分支非master仍整轮跳过(self):
+        self._init_and_push(rows="")
+        _git(self.work, "checkout", "-q", "-b", "feature")
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("非 master", result.stdout + result.stderr)
+
+    def test_未完成git操作仍整轮跳过(self):
+        self._init_and_push(rows="")
+        (self.work / ".git" / "MERGE_HEAD").write_text("deadbeef\n", encoding="utf-8")
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("未完成的 git 操作", result.stdout + result.stderr)
+
+    def test_新鲜index_lock仍整轮跳过(self):
+        self._init_and_push(rows="")
+        (self.work / ".git" / "index.lock").write_text("", encoding="utf-8")
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("index.lock", result.stdout + result.stderr)
+
+    def test_linked_worktree仍以退出码1拒绝(self):
+        self._init_and_push(rows="")
+        fake = self.work.parent / "fake_linked"
+        fake.mkdir()
+        (fake / ".git").write_text("gitdir: /nowhere\n", encoding="utf-8")
+        result = _run_sweep(fake)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(".git 不是目录", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
