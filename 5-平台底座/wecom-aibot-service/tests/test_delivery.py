@@ -8,7 +8,7 @@ from zhuopin_platform.audit import AuditLogger
 from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
 from aibot_service.constants import PAUL_USERID
-from aibot_service.delivery import push_followup, BackfillWriteError
+from aibot_service.delivery import push_followup, BackfillWriteError, DeliveryAckError
 from aibot_service.gates import DeliveryNotFinalizedError
 
 from fakes import fake_client_factory
@@ -761,3 +761,112 @@ def test_push_followup_backfill_commit_failure_does_not_raise_or_undo_success(tm
     assert "✅ 已推送" in readme_path.read_text(encoding="utf-8"), "未提交不代表回填内容本身有问题"
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert "followup_backfill_commit_failed" in actions
+
+
+# ============================================================================
+# 队列 #326：`sent: True` 由「写死的假设」改为「有回执作证的观测」
+#
+# 🔎 本组用例存在的理由，与 #326 行内那句前置条件直接相关——该行写明"改码前
+# 须先构造或等到一次真实失败，否则 errcode 的判据又是一次『用假设当判据』"。
+# **本次改用白盒读码取证，而不是等一次真实失败**：官方 SDK
+# `aibot/ws.py::_handle_reply_ack` L511-521 在 `errcode != 0` 时给 ack future
+# `set_exception`，故真实链路上非零 errcode 会**抛异常**、根本走不到记
+# `sent: True` 的那行 —— 即 #326 原判断「照样记成功、照样回填」不成立，已在
+# `delivery.py` 模块注释与队列 #326 行内一并更正。读码比"等一次真实失败"更强：
+# 一个失败样本只能证明那一种失败长什么样，读码能穷举这条 ack 路径的全部分支。
+#
+# 那么本组用例断言的是**剩下的那个真缺陷**：`sent: True` 今天为真，靠的是
+# 第三方 SDK 选择了 raise 而不是把帧返回给调用方；本仓库对此既无断言也无
+# 测试。下面的 fake 客户端**恰好模拟"SDK 改成把非零 errcode 的帧原样返回"**
+# 这一升级后果 —— 在旧实现下它会静默记成功并回填 `✅ 已推送`，在新实现下
+# 被本仓库自己的 errcode 观测拦下。
+# ============================================================================
+
+def test_nonzero_errcode_ack_blocks_backfill_and_records_failure(tmp_path):
+    """回执 errcode 非零 ⇒ 抛 DeliveryAckError、不回填、审计记失败并带 errcode/errmsg。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+    store["client"].send_ack_by_chatid["chat-1"] = {
+        "errcode": 40003, "errmsg": "invalid userid"
+    }
+
+    with pytest.raises(DeliveryAckError) as excinfo:
+        asyncio.run(
+            push_followup(
+                readme_path=readme_path, md_path=md_path, docx_path=None,
+                connector=connector, chatid="chat-1", match=_match_8d,
+                audit=audit, cc_to_paul=False,
+            )
+        )
+    assert "40003" in str(excinfo.value) and "invalid userid" in str(excinfo.value)
+
+    text = readme_path.read_text(encoding="utf-8")
+    assert "🆕 待发" in text, "发送未被接受时 README 必须留在待发态，交下一班批处理重试"
+    assert "✅ 已推送" not in text
+
+    records = audit.query_by(scenario="wecom-aibot")
+    actions = [r["action"] for r in records]
+    assert "followup_delivered" not in actions
+    assert "followup_backfilled" not in actions
+    assert "followup_delivery_failed" in actions
+    failed = [r for r in records if r["action"] == "followup_delivery_failed"][0]
+    assert failed["decision"]["sent"] is False
+    assert "40003" in failed["error"]
+
+
+def test_successful_delivery_stores_ack_evidence_in_audit(tmp_path):
+    """成功路径也要把回执体存下——#326 期望产出②：当前连成功响应都没存，事后无从复核。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path, md_path=md_path, docx_path=None,
+            connector=connector, chatid="chat-1", match=_match_8d,
+            audit=audit, cc_to_paul=False,
+        )
+    )
+
+    delivered = [r for r in audit.query_by(scenario="wecom-aibot")
+                 if r["action"] == "followup_delivered"][0]
+    acks = delivered["decision"]["acks"]
+    assert acks == [{"step": "markdown", "chatid": "chat-1", "errcode": 0, "errmsg": None}]
+
+
+def test_ack_without_errcode_is_undecidable_not_failure(tmp_path):
+    """回执不含 errcode（或压根不是 dict）＝判不出，放行并记 None——不把"判不出"
+    伪装成"判为失败"（同校验⑥ `status_map.get(...) is None` 不拦的既有惯例）。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+    store["client"].send_ack_by_chatid["chat-1"] = None  # 老版本/别的替身可能什么都不返回
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path, md_path=md_path, docx_path=None,
+            connector=connector, chatid="chat-1", match=_match_8d,
+            audit=audit, cc_to_paul=False,
+        )
+    )
+
+    assert "✅ 已推送" in readme_path.read_text(encoding="utf-8")
+    delivered = [r for r in audit.query_by(scenario="wecom-aibot")
+                 if r["action"] == "followup_delivered"][0]
+    assert delivered["decision"]["acks"][0]["errcode"] is None
+
+
+def test_cc_nonzero_errcode_does_not_undo_successful_main_push(tmp_path):
+    """抄送回执非零 ⇒ 走既有 `followup_cc_failed` 分支；主推送已成功的事实不受影响。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+    store["client"].send_ack_by_chatid[PAUL_USERID] = {"errcode": 45009, "errmsg": "api freq out of limit"}
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path, md_path=md_path, docx_path=None,
+            connector=connector, chatid="chat-1", match=_match_8d,
+            audit=audit, cc_to_paul=True,
+        )
+    )
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_delivered" in actions
+    assert "followup_backfilled" in actions
+    assert "followup_cc_failed" in actions
+    assert "followup_cc_delivered" not in actions
+    assert "✅ 已推送" in readme_path.read_text(encoding="utf-8")

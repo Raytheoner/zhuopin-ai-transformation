@@ -35,6 +35,10 @@ class FakeAibotClient:
         self.raw_frame_responses: dict[str, list] = {}
         self.downloads: list[tuple[str, str | None]] = []
         self.download_response: tuple[bytes, str | None] = (b"", None)
+        # 队列 #326：按 chatid 定制 `send_message` 的回执帧，用于构造"企微回了
+        # 非零 errcode"这一手上没有真实样本的场景（未配置的 chatid 仍返回
+        # 既有的 `{"errcode": 0}`，故对全部既有测试零影响）。
+        self.send_ack_by_chatid: dict[str, object] = {}
 
     def on(self, event, handler):
         self.handlers.setdefault(event, []).append(handler)
@@ -47,6 +51,8 @@ class FakeAibotClient:
 
     async def send_message(self, chatid, body):
         self.sent_messages.append((chatid, body))
+        if chatid in self.send_ack_by_chatid:
+            return self.send_ack_by_chatid[chatid]
         return {"errcode": 0}
 
     async def send_raw_frame(self, cmd, body):

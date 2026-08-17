@@ -53,6 +53,61 @@ class BackfillWriteError(RuntimeError):
     """推送已成功但 README 回填写入失败——不得静默吞掉，需人工核实避免重复推送。"""
 
 
+class DeliveryAckError(RuntimeError):
+    """企微回执帧 `errcode` 非零——本次发送未被接受，不得回填、不得计入 sent。"""
+
+
+# 队列 #326：把「已推送」从**假设**改成**观测**。
+#
+# 🔎 **先把该行原始诊断更正掉（读码取证，2026-08-17）**：#326 立行时判断
+# 「企微若在 ACK 里回非零 errcode，当前代码照样记成功、照样回填 `✅ 已推送`」
+# ——**这一半不成立**。官方 SDK `aibot/ws.py::WSManager._handle_reply_ack`
+# （L511-521）在 `errcode != 0` 时给 ack future `set_exception(RuntimeError)`，
+# 而 `client.send_message()` → `send_reply()` 是 await 该 future 的
+# （`aibot/client.py` L286-302 / `ws.py` L382-430），**故非零 errcode 会在
+# `await connector.send_markdown(...)` 处直接抛出**，根本走不到下面记
+# `sent: True` 那一行。`send_file`／`upload_media` 的三个 cmd 走同一条
+# `send_reply` ack 原语，同样抛（`upload_media` 另有 upload_id/media_id
+# 缺失的显式检查）——这一并回答了 #326 期望产出④。
+#
+# 🔴 **但真正的缺陷仍然成立，只是位置不同**：`sent: True` 是**字面量**，它
+# 今天为真纯属**第三方 SDK 的内部实现选择**（它选择 raise 而不是把帧返回
+# 给调用方），本仓库既没有断言、也没有测试把这个前提钉住。SDK 一次升级把
+# `set_exception` 改成 `set_result`，`sent: True` 当天就变成谎话，而**审计
+# 里连回执体都没存**，事后无从复核——这正是 #326 那句"查出来的证据本身
+# 就是错的"。故本函数族做两件事，都不依赖对失败样本的猜测：
+#   ⑴ **把回执体存进审计**（`ack` 证据），使"已推送"事后可复核；
+#   ⑵ **在本仓库这一侧独立断言 errcode**（纵深防御），SDK 哪天不再抛，
+#      这里仍然拦得住，且拦截理由是**观测到的 errcode**，不是假设。
+# **判不出就不判**：回执不是 dict、或不含 `errcode` 键时记 `None` 并放行
+# ——不把"判不出"伪装成"判为失败"（同 ⑥ `status_map.get(...) is None`
+# 不拦的既有惯例）。
+def _ack_evidence(ack: object) -> dict:
+    """从回执帧提取可写进审计的观测证据。
+
+    返回 `{"errcode": int|None, "errmsg": str|None}`——`errcode` 为 `None`
+    表示**判不出**（回执不是 dict，或没有这个键），不是"判为 0"。
+    """
+    if not isinstance(ack, dict):
+        return {"errcode": None, "errmsg": None}
+    code = ack.get("errcode")
+    return {
+        "errcode": code if isinstance(code, int) else None,
+        "errmsg": ack.get("errmsg") if isinstance(ack.get("errmsg"), str) else None,
+    }
+
+
+def _assert_ack_accepted(ack: object, *, what: str) -> dict:
+    """观测回执码；非零即拒（抛 `DeliveryAckError`）。返回该次的观测证据。"""
+    evidence = _ack_evidence(ack)
+    if evidence["errcode"] is not None and evidence["errcode"] != 0:
+        raise DeliveryAckError(
+            f"{what}未被企微接受：errcode={evidence['errcode']}，"
+            f"errmsg={evidence['errmsg']!r}——不回填 README、不计入 sent"
+        )
+    return evidence
+
+
 @dataclass
 class DeliveryResult:
     location: RowLocation
@@ -197,16 +252,52 @@ async def push_followup(
         raise
 
     content = _strip_frontmatter(md_path.read_text(encoding="utf-8"))
-    await connector.send_markdown(chatid, content)
-
     attachments = list(([docx_path] if docx_path is not None else []) + list(extra_attachments or []))
     media_ids: list[str] = []
-    for attachment in attachments:
-        if attachment is None or not attachment.exists():
-            continue
-        upload = await connector.upload_media(attachment.read_bytes(), attachment.name)
-        media_ids.append(upload.media_id)
-        await connector.send_file(chatid, upload.media_id)
+    acks: list[dict] = []
+
+    # 队列 #326：主推送与附件整段包在一个 try 里——此前主推送失败**在本模块内
+    # 不留任何审计事件**（只有 `dispatch.py` 批处理侧记 `dispatch_row_failed`，
+    # 而人工 CLI `push_followup_letter.py` 那条路径连这个都没有，异常直接冒到
+    # 终端、审计日志上一片空白）。现改为在 delivery 这一层就记
+    # `followup_delivery_failed`（含观测到的 errcode/errmsg），再原样向上抛，
+    # 既不改变调用方看到的异常类型/传播行为，也不再让"发送失败"这件事只存在
+    # 于某一条调用路径的记账里。
+    try:
+        acks.append(
+            {"step": "markdown", "chatid": chatid,
+             **_assert_ack_accepted(
+                 await connector.send_markdown(chatid, content), what="跟进信正文推送")}
+        )
+        for attachment in attachments:
+            if attachment is None or not attachment.exists():
+                continue
+            upload = await connector.upload_media(attachment.read_bytes(), attachment.name)
+            media_ids.append(upload.media_id)
+            acks.append(
+                {"step": "file", "chatid": chatid, "media_id": upload.media_id,
+                 **_assert_ack_accepted(
+                     await connector.send_file(chatid, upload.media_id),
+                     what=f"附件「{attachment.name}」推送")}
+            )
+    except Exception as exc:  # noqa: BLE001 —— 记完审计原样重抛，不改变传播行为
+        audit.record(
+            AuditEvent(
+                scenario="wecom-aibot",
+                action="followup_delivery_failed",
+                evaluator=evaluator,
+                automation_level="L1",
+                decision={"sent": False, "backfilled": False, "chatid": chatid,
+                          "acks": acks, "media_ids": media_ids},
+                data_sources={
+                    "md": str(md_path),
+                    "readme": str(readme_path),
+                    "attachments": [str(p) for p in attachments],
+                },
+                error=str(exc),
+            )
+        )
+        raise
     media_id = media_ids[0] if media_ids else None
 
     audit.record(
@@ -215,7 +306,11 @@ async def push_followup(
             action="followup_delivered",
             evaluator=evaluator,
             automation_level="L1",
-            decision={"sent": True, "backfilled": False, "media_id": media_id, "media_ids": media_ids},
+            # `sent` 仍为 True，但它现在**有据可依**：同一条事件里带着每一步的
+            # 回执观测（`acks`），事后可复核"当时企微到底回了什么"，而不是只
+            # 留下一个无从证伪的断言（队列 #326）。
+            decision={"sent": True, "backfilled": False, "media_id": media_id,
+                      "media_ids": media_ids, "acks": acks},
             data_sources={
                 "md": str(md_path),
                 "docx": str(docx_path) if docx_path else "",
@@ -226,16 +321,23 @@ async def push_followup(
 
     if cc_to_paul and chatid != PAUL_USERID:
         try:
-            await connector.send_markdown(PAUL_USERID, f"【抄送】{content}")
+            # 队列 #326：抄送同样观测回执码——非零即走下面既有的
+            # `followup_cc_failed` 分支（抄送失败本就不影响主推送已成功的
+            # 事实，此处只是让"抄送成功"这个断言也有回执作证）。
+            cc_acks = [_assert_ack_accepted(
+                await connector.send_markdown(PAUL_USERID, f"【抄送】{content}"),
+                what="抄送正文推送")]
             for mid in media_ids:
-                await connector.send_file(PAUL_USERID, mid)
+                cc_acks.append(_assert_ack_accepted(
+                    await connector.send_file(PAUL_USERID, mid), what="抄送附件推送"))
             audit.record(
                 AuditEvent(
                     scenario="wecom-aibot",
                     action="followup_cc_delivered",
                     evaluator=evaluator,
                     automation_level="L1",
-                    decision={"sent": True, "recipient": PAUL_USERID, "cc_of": chatid},
+                    decision={"sent": True, "recipient": PAUL_USERID, "cc_of": chatid,
+                              "acks": cc_acks},
                     data_sources={"md": str(md_path)},
                 )
             )
@@ -254,16 +356,21 @@ async def push_followup(
 
     if cc_group_chatid and cc_group_chatid != chatid:
         try:
-            await connector.send_markdown(cc_group_chatid, f"【抄送】{content}")
+            # 队列 #326：同上，群抄送的回执码也观测、也进审计。
+            group_acks = [_assert_ack_accepted(
+                await connector.send_markdown(cc_group_chatid, f"【抄送】{content}"),
+                what="群抄送正文推送")]
             for mid in media_ids:
-                await connector.send_file(cc_group_chatid, mid)
+                group_acks.append(_assert_ack_accepted(
+                    await connector.send_file(cc_group_chatid, mid), what="群抄送附件推送"))
             audit.record(
                 AuditEvent(
                     scenario="wecom-aibot",
                     action="followup_group_cc_delivered",
                     evaluator=evaluator,
                     automation_level="L1",
-                    decision={"sent": True, "recipient": cc_group_chatid, "cc_of": chatid},
+                    decision={"sent": True, "recipient": cc_group_chatid, "cc_of": chatid,
+                              "acks": group_acks},
                     data_sources={"md": str(md_path)},
                 )
             )
