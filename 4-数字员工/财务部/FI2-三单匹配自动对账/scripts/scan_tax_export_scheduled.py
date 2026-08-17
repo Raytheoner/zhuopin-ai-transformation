@@ -3,9 +3,15 @@
 计划任务专用入口（`register-tax-export-scan-task.ps1` 每日调度）——与手动 CLI
 `scripts/ingest_tax_export.py`（Q3 拍板"不挂定时"，保留原样不改）并存：两者共享
 同一 `--out-dir`/`--ledger`（内容哈希幂等，谁先跑到都一样，互不冲突）。本脚本
-额外做手动 CLI 不做的事：文件级摄取失败（sheet 名/必需列不符、无法解析）经群
-webhook 告警 Shao Peishen，非零退出码，供计划任务"上次运行结果"留痕（见
-`fi2/tax_export_scan.py` 模块 docstring）。
+额外做手动 CLI 不做的事：文件级摄取失败（sheet 名/必需列不符、无法解析）与源头
+断供（连续 N 个工作日无新文件）经群 webhook 告警 Shao Peishen，非零退出码，供计划
+任务"上次运行结果"留痕（见 `fi2/tax_export_scan.py` 模块 docstring）。
+
+**退出码语义**（计划任务 `LastTaskResult` 据此区分，勿合并）：
+    0 = 扫描正常（有新文件摄取成功，或无新文件但未超断供阈值）
+    1 = 扫描本身异常，或有文件级摄取失败——**我方机制出问题**，需查代码/连接/目录
+    2 = 源头断供超阈值——**我方机制正常，是没有新文件来**，需人去问源头一声
+两者性质完全不同、处置动作也完全不同，故不共用一个非零码。
 
 用法（在 `.51` 服务器本机跑，可直接访问 `D:\\airead` 与 U9C 财务 API）：
     python scan_tax_export_scheduled.py --export-dir D:\\airead --out-dir C:\\fi2\\app\\data\\tax_export
@@ -69,9 +75,11 @@ def main() -> int:
                      help="产出 invoice.csv 的目录（即传给 FeedSource 的 invoice_sample_dir）")
     ap.add_argument("--ledger", default=None,
                      help="已处理清单路径（默认 <out-dir>/.processed_exports.json）")
+    ap.add_argument("--silence-workdays", type=int, default=None,
+                     help="源头断供阈值：连续多少个工作日无新文件即告警（默认 3）")
     args = ap.parse_args()
 
-    from fi2.tax_export_scan import ScanFailedError, scan_once
+    from fi2.tax_export_scan import SILENCE_WORKDAYS_DEFAULT, ScanFailedError, scan_once
     from zhuopin_platform.audit.sinks import JsonlSink
     from zhuopin_platform.shared_tools.connector_audit import ConnectorAudit
     from zhuopin_platform.shared_tools.erp_connector import ZpConnector
@@ -87,9 +95,12 @@ def main() -> int:
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     webhook_url = os.environ.get("WECOM_WEBHOOK_URL")
 
+    silence_workdays = (args.silence_workdays if args.silence_workdays is not None
+                        else SILENCE_WORKDAYS_DEFAULT)
+
     try:
         outcome = scan_once(args.export_dir, out_dir, ledger_path, conn, now=now,
-                             webhook_url=webhook_url)
+                             webhook_url=webhook_url, silence_workdays=silence_workdays)
     except ScanFailedError as e:
         print(f"扫描异常：{e.outcome.scan_error}", file=sys.stderr)
         if e.outcome.alert_sent:
@@ -111,15 +122,26 @@ def main() -> int:
               + (f" 发票号={d.digital_invoice_no}" if d.digital_invoice_no else "")
               + (f" {d.detail}" if d.detail else ""))
 
-    if outcome.file_level_failures:
-        print(f"⚠️ 文件级摄取失败 {len(outcome.file_level_failures)} 处", file=sys.stderr)
+    def _report_alert() -> None:
         if outcome.alert_sent:
             print("已发送 webhook 告警。", file=sys.stderr)
         elif webhook_url:
             print(f"webhook 告警发送失败：{outcome.alert_error}", file=sys.stderr)
         else:
             print("WECOM_WEBHOOK_URL 未配置，未发送告警。", file=sys.stderr)
+
+    if outcome.file_level_failures:
+        print(f"⚠️ 文件级摄取失败 {len(outcome.file_level_failures)} 处", file=sys.stderr)
+        _report_alert()
         return 1
+
+    if outcome.source_silence is not None:
+        s = outcome.source_silence
+        print(f"⚠️ 源头断供：已连续 {s.workdays_silent} 个工作日无新增导出文件"
+              f"（阈值 {s.threshold}），最后一次成功摄取 {s.last_ingest_at}（UTC）。"
+              "扫描机制本身正常，是源头没有新文件。", file=sys.stderr)
+        _report_alert()
+        return 2
     return 0
 
 
