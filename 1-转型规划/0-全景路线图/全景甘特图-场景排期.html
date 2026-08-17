@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>卓品智能 AI 转型 · 40 场景排期甘特图（2026-08-04 销售域 v5 重排后）</title>
+<title>卓品智能 AI 转型 · 40 场景排期甘特图（2026-08-18 v6 两域顺延 S3 重排后）</title>
 <style>
 :root{--bg:#ffffff;--surface:#faf9f5;--text:#2c2c2a;--muted:#5f5e5a;--hint:#888780;--border:rgba(0,0,0,.14);--borderd:rgba(0,0,0,.28);}
 @media (prefers-color-scheme: dark){:root{--bg:#262624;--surface:#2f2f2c;--text:#ece9e2;--muted:#b4b2a9;--hint:#888780;--border:rgba(255,255,255,.14);--borderd:rgba(255,255,255,.26);}}
@@ -13,7 +13,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"
 h1{font-size:20px;font-weight:500;margin:0 0 4px;}
 .sub{color:var(--muted);font-size:12.5px;margin:0 0 20px;}
 .gantt{overflow-x:auto;}
-.grid{display:grid;grid-template-columns:200px repeat(12,minmax(38px,1fr));align-items:center;}
+.grid{display:grid;grid-template-columns:200px repeat(18,minmax(30px,1fr));align-items:center;}
 .bar{height:19px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:500;}
 .row{min-height:27px;}
 .dh{font-weight:500;font-size:13px;}
@@ -27,14 +27,14 @@ h1{font-size:20px;font-weight:500;margin:0 0 4px;}
 </head>
 <body>
 <div class="wrap">
-<h1>卓品智能 AI 转型 · 42 个数字员工场景排期</h1>
-<p class="sub">2026年7月 → 2027年6月 ｜ 六部门并行 ｜ 与《实施计划（最新版）》§二权威排期一致（含 supplychain 收割重排 + 2026-06-11 质量域序列修订 + 2026-07-01 Q6 提前 + 2026-07-03 财务域场景重编号【财务 8→10、全景 40→42】+ 2026-07-06 采购 v2.3【采购 9→7、全景 42→40】+ **2026-08-04 销售域 v5 顺延【S1-S5 各 +2 月，S6 本体不动；场景总数仍 40】**）</p>
+<h1>卓品智能 AI 转型 · 40 个数字员工场景排期</h1>
+<p class="sub">2026年7月 → <b>2027年12月</b>（v6 延展至 Phase 1 收官月）｜ 与《实施计划（最新版）》§二权威排期一致 ｜ <b>🔴 2026-08-18 v6 结构级重排（重组循环第 7 例）：销售域 S1-S6 与工程研发域 R1-R5 共 11 个场景整域顺延入 S3（2027-07~12）；Q5 IATF 由 2027-01 提前至 2026-12；S1 目标场景数 14-16→11-13。全景总数仍 40（暂停≠注销）。</b> ⚠️ 2026-10~12 由六部门并行降为<b>四部门并行</b>（采购/运营/质量/财务），工程研发与销售在 Phase 1 前半段零上线。</p>
 <div class="gantt"><div id="g"></div></div>
 <div class="legend" id="legend"></div>
-<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，更新于 2026-07-01（Q6 m5→m4）、2026-07-03（财务 FI1-FI10，8→10）、2026-07-06（采购 v2.3：9→7、全景 42→40、文件名去数字化；财务 v2：FI1 条件复启暂缓）、**2026-08-04（销售域 v5：S1 m3→m5、S2 m4→m6、S3 m5→m7、S4 m6→m8、S5 m7→m9；S6 m8 不动。源 §四#37 销售域推迟至 2026-09 启动 + 8 周纪律反推；场景总数不变 40）**。</p>
+<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，历次更新见全景规划 §0.2；<b>最近一次＝2026-08-18 v6</b>（月份轴 12→18 列；R1-R5 m4~m8→m13~m17；S1-S6 m5~m9→m13~m18；Q5 m8→m6）。</p>
 </div>
 <script>
-const months=['7','8','9','10','11','12','1','2','3','4','5','6'];
+const months=['7','8','9','10','11','12','1','2','3','4','5','6','7','8','9','10','11','12'];
 const COL={gray:['#D3D1C7','#2C2C2A'],blue:['#85B7EB','#042C53'],teal:['#5DCAA5','#04342C'],amber:['#EF9F27','#412402'],pink:['#ED93B1','#4B1528'],purple:['#AFA9EC','#26215C'],coral:['#F0997B','#4A1B0C']};
 const data=[
 {name:'基建',color:'gray',items:[{code:'基建',name:'底座收割·U9C申请·ISO26262·OEM隔离·SOP·AIOps2',m:1,span:2}]},
@@ -53,24 +53,24 @@ const data=[
 {code:'FI7',name:'预算执行监控',m:11},{code:'FI8',name:'现金流预测',m:11},
 {code:'FI9',name:'研发费用归集',m:12},{code:'FI10',name:'存货跌价分析',m:12}]},
 {name:'销售 / BD',color:'pink',items:[
-{code:'S1',name:'销售日报',m:5,tag:'v5顺延'},{code:'S2',name:'拜访助手',m:6,tag:'v5顺延'},{code:'S3',name:'RFQ响应',m:7,tag:'v5顺延'},
-{code:'S4',name:'技术支持文档',m:8,tag:'v5顺延'},{code:'S5',name:'竞品监控',m:9,tag:'v5顺延'},{code:'S6',name:'销售预测（含波动预测·原SC9并入）',m:8}]},
+{code:'S1',name:'销售日报',m:13,tag:'v6顺延'},{code:'S2',name:'拜访助手',m:14,tag:'v6顺延'},{code:'S3',name:'RFQ响应',m:15,tag:'v6顺延'},
+{code:'S4',name:'技术支持文档',m:16,tag:'v6顺延'},{code:'S5',name:'竞品监控',m:17,tag:'v6顺延'},{code:'S6',name:'销售预测（含波动预测·原SC9并入）',m:18,tag:'v6顺延'}]},
 {name:'工程研发',color:'purple',items:[
-{code:'R1',name:'需求分析助手',m:4},{code:'R2',name:'AUTOSAR配置',m:5},{code:'R3',name:'代码审查',m:6},
-{code:'R4',name:'测试用例生成',m:7},{code:'R5',name:'技术文档生成',m:8}]},
+{code:'R1',name:'需求分析助手',m:13,tag:'v6顺延'},{code:'R2',name:'AUTOSAR配置',m:14,tag:'v6顺延'},{code:'R3',name:'代码审查',m:15,tag:'v6顺延'},
+{code:'R4',name:'测试用例生成',m:16,tag:'v6顺延'},{code:'R5',name:'技术文档生成',m:17,tag:'v6顺延'}]},
 {name:'质量',color:'coral',items:[
 {code:'Q2',name:'8D不良分析与根因',m:4,tag:'旗舰①'},{code:'Q6',name:'项目立项审核门禁',m:4,tag:'旗舰②'},
-{code:'Q1',name:'客诉智能分流',m:7},{code:'Q5',name:'IATF·体系文档',m:8},{code:'Q4',name:'PPAP审核',m:10},
+{code:'Q1',name:'客诉智能分流',m:7},{code:'Q5',name:'IATF·体系文档',m:6,tag:'v6提前'},{code:'Q4',name:'PPAP审核',m:10},
 {code:'Q3',name:'FMEA维护',m:11},{code:'Q7',name:'IQC来料检验',m:11,tag:'新'},{code:'Q8',name:'SPC异常预警',m:12,tag:'新'}]}
 ];
-const TAGC={'收割':'#185FA5','旗舰①':'#993C1D','旗舰②':'#993C1D','新':'#3B6D11','IoT':'#5F5E5A','提前':'#8A5A00','两期':'#185FA5','子功能':'#5F5E5A','暂缓':'#8E8E8E'};
+const TAGC={'收割':'#185FA5','旗舰①':'#993C1D','旗舰②':'#993C1D','新':'#3B6D11','IoT':'#5F5E5A','提前':'#8A5A00','两期':'#185FA5','子功能':'#5F5E5A','暂缓':'#8E8E8E','v6顺延':'#7A3E9D','v6提前':'#8A5A00','v5顺延':'#8E8E8E'};
 const g=document.getElementById('g');
-let h='<div class="grid" style="border-bottom:0.5px solid var(--borderd);padding-bottom:4px;margin-bottom:4px;"><div></div><div style="grid-column:2/8;font-size:11px;color:var(--hint);">2026 下半年</div><div style="grid-column:8/14;font-size:11px;color:var(--hint);">2027 上半年</div></div>';
+let h='<div class="grid" style="border-bottom:0.5px solid var(--borderd);padding-bottom:4px;margin-bottom:4px;"><div></div><div style="grid-column:2/8;font-size:11px;color:var(--hint);">2026 下半年</div><div style="grid-column:8/14;font-size:11px;color:var(--hint);">2027 上半年</div><div style="grid-column:14/20;font-size:11px;color:var(--hint);">2027 下半年 · S3（v6 两域入轨）</div></div>';
 h+='<div class="grid" style="margin-bottom:6px;"><div style="font-size:11px;color:var(--hint);">场景 / 月份</div>';
-months.forEach((m,i)=>{h+='<div style="text-align:center;font-size:11px;color:var(--muted);'+(i==6?'border-left:1px dashed var(--borderd);':'')+'">'+m+'月</div>';});
+months.forEach((m,i)=>{h+='<div style="text-align:center;font-size:11px;color:var(--muted);'+((i==6||i==12)?'border-left:1px dashed var(--borderd);':'')+'">'+m+'月</div>';});
 h+='</div>';
 data.forEach(d=>{const c=COL[d.color];
-h+='<div class="grid" style="margin-top:9px;margin-bottom:2px;"><div class="dh" style="color:'+c[1]+';">'+d.name+'</div><div style="grid-column:2/14;height:0.5px;background:'+c[0]+';opacity:.55;"></div></div>';
+h+='<div class="grid" style="margin-top:9px;margin-bottom:2px;"><div class="dh" style="color:'+c[1]+';">'+d.name+'</div><div style="grid-column:2/20;height:0.5px;background:'+c[0]+';opacity:.55;"></div></div>';
 d.items.forEach(it=>{const span=it.span||1;
 h+='<div class="grid row">';
 let lbl='<b style="font-weight:500;">'+it.code+'</b> <span style="color:var(--muted);">'+it.name+'</span>';
