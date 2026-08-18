@@ -169,6 +169,24 @@ jobs:
           python-version: "3.14"
       - run: python 0-学习与工具/工具-队列结构lint.py
 
+  bootstrap-stub-lint:
+    name: "平台底座引导样板 lint（非 stub 形态的内联引导即违规）"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      # 队列 #345 第二步 / 变更包 platform-bootstrap-ensure-paths 决策点 4(a)：
+      # 这道门禁是「退休 CLAUDE.md §5『新场景照抄既有引导片段』这条人守规则」欠下的
+      # 对价——退休制要求挂到不可绕过的咽喉上，否则只是用一条人守换另一条人守，而
+      # SC2（2026-08-18 新建）已证明人守在这里无效：规则被遵守了、结果仍是错的。
+      # 直接上 --enforce 而非只告警：决策点 4 要求的"过渡期先跑一轮"已在本地对**全部
+      # 已跟踪 .py**（与 CI 同一份 `git ls-files` 扫描面）跑过并按结果收窄了判据范围，
+      # 收窄后存量命中数真实为 0；本 job 首次运行即为绿。若日后它变红，说明有人新写
+      # 了带判断分支的内联引导——那正是它该拦下的事。
+      - run: python 0-学习与工具/工具-引导样板lint.py --enforce
+
   secret-scan:
     name: "凭据扫描"
     runs-on: windows-latest
