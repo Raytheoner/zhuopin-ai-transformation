@@ -13,13 +13,13 @@
 ## What Changes
 
 - **新增场景工程** `4-数字员工/采购部/SC2-采购周报自动生成/`（Python 包 `sc2/` + `tests/`），import 平台底座 `zhuopin_platform`，`tests/conftest.py` 照抄 SC7/O2 同款 worktree 路径引导（队列 #300）。
-- **双源取数**：ERP `ZpViewPurOrder/Query`（经既有 `ZpConnector.get_purchase_orders`）＋ SRM `get_receive_board`／`get_delivery_orders`／`get_confirmed_dates`（经既有 `XkySrmConnector`）。**不新增连接器方法即可覆盖主路径**；若周窗口取数发现既有方法不足，新增方法一律落在底座 `shared_tools/`、不落场景包（单一可信源）。
+- **ERP 单源双端点取数**（🔴 **2026-08-18 apply 实测修正，原为「ERP + SRM 双源」**）：订单侧 `ZpViewPurOrder/Query`、收货侧 `GR/Query`。**SRM 退出周报路径**——实测其供应计划看板不允许查询当前时间 7 天之前的数据（错误码 300234），周报的历史窗口结构性取不到。详见 design「二之零」与 D15-R。底座据此**纯新增**两项（零行为变更，平台回归 295 passed 零失败）：`ReceiptLine` 模型 ＋ `ZpConnector.get_receipt_lines()`；并给 `PurchaseOrder` 补 4 个带缺省值的可选字段（`make_date`/`unit_price`/`supplier_name`/`buyer`），解锁金额与采购员维度。
 - **指标引擎**：纯函数，输入冻结数据、输出指标集，同输入同输出、可单测。首版**把算得出的指标全部放上、不预先砍**（D5 推论，留给姚祖怡批改删减）。
 - **回溯窗口**：本周 + 上周对比 + 上月环比（D14，全景原文已定）。
 - **L3 异常确认**：周报页「确认发布」按钮，与 SC8 保供看板「✅正确/❌误判」同一套交互；确认动作写平台 `audit`。
 - **交付**：Web 页，**路由前缀自第一天即 `/procurement/sc2`**；过渡期自有 Flask 进程 + 复用 `install_flask_gate`（共享口令）+ `install_flask_access_log`，并预留网关 auth 接入点。
 - **推送**：首版只推采购部群 + 姚祖怡（D8），走底座 `notifiers/wecom`。
-- **不做（明确排除）**：自然语言查询（二期，D3）；推送管理层（二期，D8）；质检与物流数据（D1，MES/LAN 与 O3 短期取不到）；**统一门户网关本体**（D11/D12，独立机制类变更包、9 月上旬、归 CC 环境侧，本包只写前缀与接入点）。
+- **不做（明确排除）**：自然语言查询（二期，D3）；推送管理层（二期，D8）；质检与物流数据（D1，MES/LAN 与 O3 短期取不到）；**统一门户网关本体**（D11/D12，独立机制类变更包、9 月上旬、归 CC 环境侧，本包只写前缀与接入点）；🔴 **收货准时率**（O-6，**ERP 采购订单无任何交期字段**，六个候选名在 28,274 行中全部 0 命中 ⇒ 无基准可比，按「不可算不呈现」撤下，非遗漏）。
 
 ### ⚠️ 一处显式豁免，须在场景 CLAUDE.md 再留一次痕
 

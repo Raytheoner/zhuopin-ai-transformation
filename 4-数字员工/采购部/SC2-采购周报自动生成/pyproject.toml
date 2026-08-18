@@ -1,0 +1,27 @@
+[project]
+name = "sc2-weekly-report"
+version = "0.1.0"
+description = "SC2 采购周报自动生成数字员工 — ERP+SRM 双源取数、指标纯函数、L3 确认发布，import 底座 erp_connector/srm_connector/audit/simple_gate"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装（可选，仅利于 IDE 补全；tests/conftest.py 与 run_sc2.py
+# 已内置 worktree 路径引导，pytest 与服务入口不依赖它 —— 队列 #300）：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+dependencies = [
+    "zhuopin_platform",
+    "flask>=3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sc2*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

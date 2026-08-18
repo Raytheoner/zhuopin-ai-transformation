@@ -43,6 +43,7 @@ from ..models import (
     InventoryRow,
     ProductionPlan,
     PurchaseOrder,
+    ReceiptLine,
     Supplier,
 )
 
@@ -214,6 +215,8 @@ class ZpConnector(DataConnector):
         # PO 内存缓存（同次运行内有效）
         self._pos_cache: dict[int, list] = {}
         self._pos_cache_ts: dict[int, float] = {}
+        # 收货行内存缓存（SC2 采购周报新增）：{cache_key: (取数时刻, rows)}
+        self._gr_cache: dict[str, tuple[float, list]] = {}
 
         # CSV 回退（生产计划等暂无 API 的数据）
         # High5：把审计实例一并传入 fallback，保证回退路径（get_production_plan / get_bom
@@ -447,6 +450,12 @@ class ZpConnector(DataConnector):
                 supplier_id=            validated.supplyCode or "",
                 status=                 status,
                 line_no=                str(validated.erpLineNo) if validated.erpLineNo is not None else "",
+                # 四项纯新增字段（SC2 采购周报，2026-08-18）。既有字段取值一字未动；
+                # 新字段均带缺省值，旧磁盘缓存（不含这些键）仍可正常反序列化。
+                make_date=              make_date,
+                unit_price=             float(r.get("finallyPriceTC") or 0),
+                supplier_name=          str(r.get("supplyName") or ""),
+                buyer=                  str(r.get("makeEmpName") or ""),
             ))
 
         self._overlay_srm_confirmed_dates(result)
@@ -645,6 +654,91 @@ class ZpConnector(DataConnector):
                 if doc_no and line_no and status is not None:
                     out[(doc_no, line_no)] = int(status)
         return out
+
+    #: `GR/Query` 分页上限——实测服务端硬顶 500/页（传 1000/5000 均只返回 500），
+    #: 故按 500 拉取以把 27,785 行的整表请求数压到约 56 次（2026-08-18 SC2 实测）。
+    _GR_PAGE_SIZE = 500
+
+    #: 收货行缓存有效期（秒）。整表拉取较重，与采购订单同为 4 小时。
+    _GR_CACHE_TTL = 4 * 3600
+
+    def get_receipt_lines(self, days: int = 90) -> list["ReceiptLine"]:
+        """近 `days` 天的采购收货行（`GR/Query` 整表分页 + 客户端按业务日期过滤）。
+
+        **为什么必须整表拉取**：该端点不支持任何服务端日期过滤——2026-08-18 实测
+        `startDate`/`endDate`/`businessDate`/`beginDate` 以及一个**故意拼错的参数名**，
+        五者返回的 `Total` 全部等于无过滤基线（27,785），即 F14 那类「静默返回全表」
+        （同 `POChange/Query` 的已知行为）。既然服务端过滤不可信，就只能全量取回后
+        在客户端按 `BusinessDate` 过滤。
+
+        🔴 **本方法是「按周统计实际收货」唯一可用的真实源**：`ZpViewPurOrder` 只有
+        累计收货量、不带收货日期，按周归属做不到；SRM 供应计划看板则**不允许查询
+        当前时间 7 天之前的数据**（错误码 300234，2026-08-18 实测），历史窗口取不到。
+
+        real fail-loud：请求异常原样上抛，不降级、不返回部分数据。
+        """
+        cache_key = f"gr_{days}"
+        now = time.time()
+        cached = self._gr_cache.get(cache_key)
+        if cached and now - cached[0] < self._POS_MEM_CACHE_TTL:
+            return cached[1]
+
+        cache_file = self._po_cache_file.parent / f"gr_lines_{days}d.json"
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        if cache_file.exists() and now - cache_file.stat().st_mtime < self._GR_CACHE_TTL:
+            try:
+                rows = json.loads(cache_file.read_text(encoding="utf-8"))
+                result = [ReceiptLine(**r) for r in rows]
+                self._gr_cache[cache_key] = (now, result)
+                return result
+            except Exception:
+                pass  # 缓存损坏则重新下载
+
+        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        raw = self._gr_query_all()
+        result: list[ReceiptLine] = []
+        for r in raw:
+            business_date = str(r.get("BusinessDate") or "")[:10]
+            if business_date < cutoff:      # 客户端过滤（服务端过滤不可信，见上）
+                continue
+            result.append(ReceiptLine(
+                receipt_doc_no= str(r.get("RcvDocNo") or ""),
+                line_no=        str(r.get("DocLineNo") or ""),
+                po_id=          str(r.get("SrcDocNo") or ""),
+                po_line_no=     str(r.get("SrcDocLineNo") or ""),
+                material_id=    str(r.get("ItemCode") or ""),
+                material_name=  str(r.get("ItemName") or ""),
+                qty_received=   float(r.get("RcvQtyTU") or 0),
+                receipt_date=   business_date,
+                supplier_name=  str(r.get("SupplierName") or ""),
+                unit_price=     float(r.get("FinalPriceTC") or 0),
+            ))
+
+        try:
+            cache_file.write_text(
+                json.dumps([r.__dict__ for r in result], ensure_ascii=False),
+                encoding="utf-8")
+        except Exception:
+            pass  # 写缓存失败非致命
+
+        self._gr_cache[cache_key] = (now, result)
+        return result
+
+    def _gr_query_all(self) -> list[dict]:
+        """`GR/Query` 全量分页拉取（按 `_GR_PAGE_SIZE`）。"""
+        all_rows: list[dict] = []
+        page = 1
+        while True:
+            body = self._fi_request("/zp/api/GR/Query",
+                                    {"page": page, "pageSize": self._GR_PAGE_SIZE})
+            data = body.get("Data") or {}
+            rows = data.get("Rows") or []
+            all_rows.extend(rows)
+            total = data.get("Total", len(all_rows))
+            if not rows or len(all_rows) >= total:
+                break
+            page += 1
+        return all_rows
 
     def get_gr_lines(self, doc_no: str) -> list[dict]:
         """收货单明细行（真实源，design D15）——GET `/zp/api/GR/Query`。"""

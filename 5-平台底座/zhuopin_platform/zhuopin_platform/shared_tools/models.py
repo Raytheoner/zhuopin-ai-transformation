@@ -50,6 +50,39 @@ class PurchaseOrder:
     # 与 Purchase/Query 的 DocLineNo 一一对应，供跨端点按行 JOIN 行级关闭状态
     # （LineStatus）。缺省空串保持向后兼容（旧 mock/CSV 夹具不受影响）。
     line_no: str = ""
+    # ── 以下四项为 SC2 采购周报新增（2026-08-18，纯新增字段，全部带缺省值）──
+    # `expected_date` 在无 deliveryDate 时会降级自 makeDate，故它**不等于制单日**；
+    # 周报的「本周下单」必须按真实制单日落窗口，因此单列 make_date。
+    make_date: str = ""          # 制单日期，来自 ZpViewPurOrder.makeDate
+    unit_price: float = 0.0      # 含税单价，来自 ZpViewPurOrder.finallyPriceTC
+    supplier_name: str = ""      # 供应商名称，来自 ZpViewPurOrder.supplyName
+    buyer: str = ""              # 制单人（采购员），来自 ZpViewPurOrder.makeEmpName
+
+
+@dataclass
+class ReceiptLine:
+    """采购收货行（ERP `GR/Query`）。
+
+    🔴 **它是「本周实际收货」唯一的真实来源**：`ZpViewPurOrder` 只有累计收货量
+    `rcvQtyTU`、不带收货日期，无法按周归属；`GR/Query` 的 `BusinessDate` 才是
+    入库过账日。（2026-08-18 SC2 建造时实测确认，见 SC2 场景 CLAUDE.md。）
+
+    ⚠️ 该端点**不支持任何服务端日期过滤**——实测 `startDate`/`endDate`/
+    `businessDate`/`beginDate` 以及一个故意拼错的参数名，五者返回的 Total 全部
+    等于无过滤基线（27,785），即 F14 那类「静默返回全表」。故只能整表分页拉取
+    后在客户端按 `receipt_date` 过滤，不得信任服务端过滤。
+    """
+
+    receipt_doc_no: str          # 收货单号 RcvDocNo
+    line_no: str                 # 收货单行号 DocLineNo
+    po_id: str                   # 来源采购单号 SrcDocNo
+    po_line_no: str              # 来源采购单行号 SrcDocLineNo
+    material_id: str             # ItemCode
+    material_name: str           # ItemName
+    qty_received: float          # RcvQtyTU
+    receipt_date: str            # BusinessDate（YYYY-MM-DD）
+    supplier_name: str = ""      # SupplierName
+    unit_price: float = 0.0      # FinalPriceTC
 
 
 @dataclass
