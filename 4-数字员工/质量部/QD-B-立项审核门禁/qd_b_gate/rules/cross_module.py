@@ -306,6 +306,21 @@ def build_cross_module_items(
     return items
 
 
+def status_label(item: RuleResult) -> str:
+    """跨模块段专用状态标签（三处呈现载体共用）。
+
+    通用 `STATUS_LABELS` 把 PENDING 一律显示为"未实现"，但本段的 PENDING 有两种来历：
+    **判定口径未定、逻辑确实没写**（C05/C06/C07）与 **逻辑已写、这份文件缺数比不了**
+    （如华丰的 C04：起半边一致、止半边因项目结束日期未填无从比对）。
+    把后者也标成"未实现"，正是本变更包要消灭的"把已核的说成没核"，只是尺度更小。
+    """
+    from ..report_items import STATUS_LABELS  # noqa: PLC0415 —— 避免与展示层循环导入
+
+    if item.verdict != Verdict.PENDING:
+        return STATUS_LABELS.get(item.verdict, item.verdict.value)
+    return "待人工核" if item.rule_id in implemented_ids() else "未实现"
+
+
 def summarize(items: list[RuleResult]) -> str:
     """④段抬头一句：实现进度 ＋ 各判定计数（供三处呈现载体共用）。
 

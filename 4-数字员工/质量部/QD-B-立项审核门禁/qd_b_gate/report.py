@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .models import ProposalDocument, RuleResult, Verdict
-from .rules.cross_module import build_cross_module_items, summarize
+from .rules.cross_module import build_cross_module_items, status_label, summarize
 from .rules.engine import run_all
 from .rules.registry import RuleRegistry, load_registry
 from .scoring import ScoreResult, score
@@ -60,7 +60,7 @@ class GateReport:
         """④段逐条渲染：编号 校验内容｜判定｜证据。未实现项写具体原因，不写"扩容期"。"""
         out = []
         for it in self.cross_module_items:
-            line = f"  - {it.rule_id} {it.check_item}：[{it.verdict.value}] {it.evidence}"
+            line = f"  - {it.rule_id} {it.check_item}：[{status_label(it)}] {it.evidence}"
             if it.suggestion:
                 line += f"｜建议：{it.suggestion}"
             out.append(line)

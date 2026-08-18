@@ -44,6 +44,7 @@ from .report_items import (
     deduction_subtotals,
     module_order,
 )
+from .rules.cross_module import status_label as cross_status_label
 from .rules.registry import load_registry
 from .xlsx_report import build_workbook, report_filename
 
@@ -203,7 +204,7 @@ def _cross_module_html(items: list[RuleResult]) -> str:
     for it in items:
         tag_cls = _TAG_CLASS.get(it.verdict, "")
         row_cls = _ROW_CLASS.get(it.verdict, "")
-        label = STATUS_LABELS.get(it.verdict, it.verdict.value)
+        label = cross_status_label(it)
         detail = html.escape(it.evidence)
         if it.suggestion:
             detail += f'<div class="note">建议：{html.escape(it.suggestion)}</div>'

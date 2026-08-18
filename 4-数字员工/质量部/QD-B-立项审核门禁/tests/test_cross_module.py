@@ -244,3 +244,19 @@ def test_cross_checks_metadata_covers_ten_and_records_equivalence():
     eq = {c.check_id: c.equivalent for c in CROSS_CHECKS}
     assert eq["C09"] == "59" and eq["C10"] == "60" and eq["C01"] == "14+68"
     assert eq["C02"] == "" and eq["C03"] == ""   # 真新增，无既有等价规则
+
+
+# ---- 状态标签：未实现 vs 已实现但缺数 ----
+
+def test_status_label_distinguishes_未实现_from_待人工核():
+    """通用 STATUS_LABELS 把 PENDING 一律显示"未实现"——本段两种 PENDING 必须分开标。"""
+    from qd_b_gate.rules.cross_module import status_label
+
+    items = _by_id(build_cross_module_items(_doc()))          # 空文档：七条缺数、三条口径未定
+    assert status_label(items["C04"]) == "待人工核"            # 逻辑已实现，只是缺数
+    assert status_label(items["C01"]) == "待人工核"
+    for cid in ("C05", "C06", "C07"):
+        assert status_label(items[cid]) == "未实现"           # 逻辑确实没写
+
+    doc = _doc(personnel_total=50.0, stages=[_stage("S1", 50.0)])
+    assert status_label(_by_id(build_cross_module_items(doc))["C01"]) == "通过"

@@ -16,7 +16,16 @@ from pathlib import Path
 
 # —— worktree 隔离引导（队列 #300）：把本 worktree 的平台底座与场景自身路径插到
 # sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在本文件
-# 任何 zhuopin_platform / 场景包 import 之前（下方 main() 内的延迟 import 亦受此保护）。——
+# 任何 zhuopin_platform / 场景包 import 之前（下方 main() 内的延迟 import 亦受此保护）。
+#
+# 🔴 **未找到仓库根标记时不得硬失败**（2026-08-18 实测事故，见场景 CLAUDE.md §7）：
+# #300 要防的是"N 个平等 worktree 共用一套全局 site-packages、谁装的 editable 指针
+# 谁说了算"——**那个前提只在开发机成立**。`.51` 的部署布局是 `C:/qd-b/app` ＋
+# `C:/qd-b/zhuopin_platform`（venv 内已装，全机唯一一份、无歧义），**没有也不需要
+# `5-平台底座/` 这层目录**。原实现在找不到标记时直接 `raise`，等于把服务入口在生产
+# 布局上钉死；该地雷自 2026-08-08 埋下、直到 08-18 首次重启才引爆（服务起不来）。
+# ⇒ 找到标记 → 按 #300 前插（开发机，确定性优先）；找不到 → 交由环境自身解析
+# （生产机，唯一一份），**只有当环境里也没有 zhuopin_platform 时才失败**。——
 _HERE = Path(__file__).resolve()
 for _p in (_HERE, *_HERE.parents):
     if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
@@ -25,7 +34,14 @@ for _p in (_HERE, *_HERE.parents):
                 sys.path.insert(0, str(_entry))
         break
 else:
-    raise RuntimeError(f"未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找）")
+    # 部署布局：场景包与平台底座各自可导入即可，不要求仓库目录结构
+    if str(_HERE.parent.parent) not in sys.path:
+        sys.path.insert(0, str(_HERE.parent.parent))
+    from importlib.util import find_spec
+    if find_spec("zhuopin_platform") is None:
+        raise RuntimeError(
+            f"既未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找），"
+            "环境中也没有可导入的 zhuopin_platform——请检查部署或安装平台底座包")
 
 SCENE = Path(__file__).resolve().parent.parent
 

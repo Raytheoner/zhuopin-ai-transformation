@@ -21,7 +21,6 @@ from .evaluate import EvaluationResult
 from .models import Verdict
 from .report import GateReport
 from .report_items import (
-    STATUS_LABELS,
     ScoredItem,
     build_basic_info,
     build_financial_summary,
@@ -256,7 +255,8 @@ def _build_cross_module_sheet(wb: Workbook, report: GateReport) -> None:
     与网页④段、文本报告④段同源（`GateReport.cross_module_items`），三载体不得漂移。
     本 sheet 不参与扣分——跨模块结果不并入 82 条规则结果集（见变更包 design 决策 1）。
     """
-    from .rules.cross_module import check_meta  # noqa: PLC0415 —— 仅本 sheet 需要 §三 原文元数据
+    # noqa: PLC0415 —— 仅本 sheet 需要 §三 原文元数据与专用状态标签
+    from .rules.cross_module import check_meta, status_label
 
     ncols = len(_CROSS_COLUMNS)
     ws = wb.create_sheet("跨模块校验")
@@ -271,7 +271,7 @@ def _build_cross_module_sheet(wb: Workbook, report: GateReport) -> None:
         meta = check_meta(it.rule_id)
         values = [it.rule_id, it.check_item,
                   meta.rule_text if meta else "", meta.deviation if meta else "",
-                  STATUS_LABELS.get(it.verdict, it.verdict.value), it.evidence, it.suggestion]
+                  status_label(it), it.evidence, it.suggestion]
         fill_color, font_color = _STATUS_COLORS.get(it.verdict, ("FFFFFF", "000000"))
         for col_idx, v in enumerate(values, start=1):
             c = ws.cell(row=row_idx, column=col_idx, value=v)

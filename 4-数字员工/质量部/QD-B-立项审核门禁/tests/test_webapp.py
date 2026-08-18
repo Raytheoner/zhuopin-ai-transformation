@@ -178,10 +178,14 @@ class TestCrossModuleThreeCarriersAgree:
 
     def test_same_ten_checks_and_same_verdicts_across_carriers(
             self, client, huafeng_path, tmp_path):
-        from qd_b_gate.report_items import STATUS_LABELS
+        from qd_b_gate.rules.cross_module import status_label
 
         body, xlsx_rows, report = self._artifacts(client, huafeng_path, tmp_path)
-        expected = {i.rule_id: STATUS_LABELS[i.verdict] for i in report.cross_module_items}
+        expected = {i.rule_id: status_label(i) for i in report.cross_module_items}
+        # 华丰实证：C04 逻辑已实现、只是这份文件缺结束日期 → "待人工核"；
+        # C05/C06/C07 是判定口径未定、逻辑确实没写 → "未实现"。两者不得混为一谈。
+        assert expected["C04"] == "待人工核"
+        assert expected["C05"] == expected["C06"] == expected["C07"] == "未实现"
         assert xlsx_rows == expected
         text = report.to_text()
         for check_id, label in expected.items():
