@@ -112,3 +112,12 @@
 - 🟡 A2 采购提前期(L/T) SRM 承诺交期字段覆盖率 — IT 07-15 回复现状大量空缺，目标 2027-03 达 ≥95%；在此之前 A2 追料判断长期维持"净需求>0即追"兜底口径，不接 U9C `PurProcessLT`（不适用于实际交期运算）。
 - 🟢 姚祖怡真实数据抽验 C-1/C-2（`sc8-baoguan-substitute-partial-kit`）— 替代料 DTO 真实字段验证已于 2026-07-15 补做完成（发现并修正一处真实 usageQty 占位值 bug），姚祖怡本人抽验（07-16 回复"判断逻辑跟预期一致"）+`kittable_shortfall`口径确认（"凑够客户下单总量还差多少"）均已完成，代码已按新口径改造（2026-07-20，跨桌任务队列 #63）。
 - 运行：`python scripts/run_baoguan_web.py`（保供 Web 服务，LAN，0.0.0.0:8090）；答交可信度独立跑：`python -m sc8.answer_confidence`（mock 模式）。
+
+## 路径引导（队列 #345，2026-08-18）—— 扁平部署布局下不再硬失败
+
+- **改了什么**：本组件下列入口顶部的 #300 worktree 隔离引导，**找不到 `5-平台底座/zhuopin_platform` 标记时不再无条件 `raise`**：`sc8/answer_confidence.py`（Web 入口 `scripts/run_baoguan_web.py` 已于 `a858769` 修过）
+- **为什么**：`.51` 的部署布局是扁平的 `C:/<svc>/app` ＋ `C:/<svc>/zhuopin_platform`（后者已由 deploy 脚本 `pip install -e` 进该服务 venv，全机唯一一份），**本就没有 `5-平台底座/` 这层目录**。原实现在此直接 raise，等于把入口在生产布局上钉死。2026-08-18 SC8（8091）与 QD-B（8093）当天各自被它打挂过一次。
+- **改法**（同 QD-B `dcc4162` / SC8 `a858769` 已验证范式）：找到标记 → 按 #300 原样前插（开发机 N 个平等 worktree 需确定性）；找不到 → 只插自身包路径、平台底座交环境解析（生产机唯一一份、无歧义）；**只有当环境里也没有 `zhuopin_platform` 时才 raise** —— 不引入静默失败。
+- 🔑 **为什么这类雷本地测不出来**：**本地永远能找到仓库根标记**，全量测试全绿与它毫无关系。凡"引导/路径解析"类改动，**本地绿 ≠ 生产可启动**。
+- ⚠️ **`tests/conftest.py` 刻意不改**：在 monorepo 内 fail-loud 是**有价值的**——测试就该跑在仓库里，找不到标记说明环境真错了，此时静默回退才是隐患。
+- **收拢为平台底座共享函数** 见 `openspec/changes/platform-bootstrap-ensure-paths/`（已 propose，待 Shao Peishen 审 design，本次未 apply）。

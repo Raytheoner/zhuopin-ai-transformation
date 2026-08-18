@@ -52,7 +52,22 @@ for _p in (_HERE, *_HERE.parents):
                 sys.path.insert(0, str(_entry))
         break
 else:
-    raise RuntimeError(f"未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找）")
+    # 🔴 找不到仓库根标记时**不得硬失败**（2026-08-18 实测事故，队列 #345）：#300 要防的是
+    # "N 个平等 worktree 共用一套全局 site-packages、谁装的 editable 指针谁说了算"——
+    # **该前提只在开发机成立**。`.51` 的部署布局是扁平的 `C:/<svc>/app` ＋
+    # `C:/<svc>/zhuopin_platform`（后者已由 deploy 脚本 pip install -e 进 venv，全机唯一
+    # 一份、无歧义），**没有也不需要 `5-平台底座/` 这层目录**。原实现在此直接 raise，等于
+    # 把入口在生产布局上钉死（现象：计划任务 LastResult=0 但进程秒退、端口无监听）。
+    # ⇒ 找到标记 → 按 #300 前插（开发机，确定性优先）；找不到 → 只插自身包路径、平台底座
+    # 交由环境解析（生产机，唯一一份）。**不引入静默失败**：环境里也没有 zhuopin_platform
+    # 时仍然明确报错。——
+    if str(SERVICE_DIR) not in sys.path:
+        sys.path.insert(0, str(SERVICE_DIR))
+    from importlib.util import find_spec
+    if find_spec("zhuopin_platform") is None:
+        raise RuntimeError(
+            f"既未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找），"
+            "环境中也没有可导入的 zhuopin_platform——请检查部署或安装平台底座包")
 
 from zhuopin_platform.audit import AuditLogger  # noqa: E402
 from zhuopin_platform.shared_tools.notifiers import wecom  # noqa: E402
