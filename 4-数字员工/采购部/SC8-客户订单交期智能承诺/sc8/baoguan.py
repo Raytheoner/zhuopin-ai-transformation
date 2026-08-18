@@ -344,6 +344,60 @@ def _period_match_for_so(
     return result
 
 
+def _unit_usage(bom: list, product_id: str) -> dict[str, float] | None:
+    """沿主料路径把成品穿透到**叶子件**，返回 {叶子件料号: 单台用量}（逐层累乘）。
+
+    队列 #266（2026-08-18，姚祖怡 2026-08-12 采购部#13 判例批改签认「改造为多层穿透」）：
+    C-2 `_kittable_qty`（07-15）与 #14 `_demand_kittable_qty`（07-23）落地时只扫描
+    `product_id == so.item_code` 的第一层直接子件。真实数据里 F 开头成品的第一层子件
+    本身就是半成品（`F02N.0224`→`S02Y.0197`、`F02N.0233`→`S02Y.0207`），而半成品是自制件、
+    不进真实库存 Stock API（该 API 只覆盖采购/外购叶子件）→ `inventory.get(半成品,0)` 恒为 0
+    → 可齐套套数恒为 0、瓶颈恒锁定在半成品、缺口恒等于整单订货量。本函数即该缺陷的根治点。
+
+    **叶子件判定**与 `kit_engine.explode_bom` 的 sub_assemblies 同一口径：component_id 本身
+    不再作为任何 BOM 行的 product_id 出现即为叶子件。**只沿主料路径下钻**（`not is_substitute`），
+    与 `_gross_need` 的 `main_bom` 过滤、`_bom_subtree_product_ids` 的闭包口径一致。
+
+    🔴 **刻意不复用 `explode_bom`**：`explode_bom` 会逐层乘 `(1 + loss_rate)`，而改造前的
+    `_kittable_qty`/`_demand_kittable_qty` 用的是**裸 `qty_per_unit`、从不计损耗**。本仓库
+    真实 BOM 实测 4523 行中有 2 行 `loss_rate=0.003`，其中 `S02Y.0035`→`R01D.0017` 就在
+    **第一层**、且 `S02Y.0035` 是在单成品——改用 `explode_bom` 会让判例 3（第一层即采购件、
+    姚祖怡批改为 ✅「维持现状不用动」）那一族发生漂移。故本函数沿用**不计损耗**口径，保证
+    单层 BOM 场景逐值与改造前完全相同。（可齐套口径不计损耗、而毛需求 `_gross_need` 计损耗，
+    这一处既有不一致本次原样保留、不顺手改，已如实登记留待业务确认——判据类不默认生效。）
+
+    Returns:
+        {叶子件: 单台用量}；无子件 → 空字典；任一层用量非正（数据异常）→ None
+        （保留改造前"不以 0 冒充"的语义，由调用方转为 None 返回）。
+    """
+    by_product: dict[str, list] = {}
+    for row in bom:
+        if not row.is_substitute:
+            by_product.setdefault(row.product_id, []).append(row)
+    sub_assemblies = set(by_product)
+
+    usage: dict[str, float] = {}
+    anomalous = False
+
+    def _walk(pid: str, factor: float, visited: frozenset) -> None:
+        nonlocal anomalous
+        if pid in visited:
+            return                      # 循环引用防御，同 explode_bom 的 visited 口径
+        visited = visited | {pid}
+        for row in by_product.get(pid, []):
+            if row.qty_per_unit <= 0:
+                anomalous = True        # 数据异常，无法计算
+                return
+            child = factor * row.qty_per_unit
+            if row.component_id in sub_assemblies:
+                _walk(row.component_id, child, visited)
+            else:
+                usage[row.component_id] = usage.get(row.component_id, 0.0) + child
+
+    _walk(product_id, 1.0, frozenset())
+    return None if anomalous else usage
+
+
 def _kittable_qty(
     so: SalesOrder, bom: list, inventory: dict,
 ) -> tuple[int | None, str | None, int | None]:
@@ -357,24 +411,23 @@ def _kittable_qty(
         无直接子件或某子件单机用量非正（数据异常）时返回 (None, None, None)。
     """
     groups = _substitute_groups(bom, so.item_code)
-    direct = [row for row in bom
-             if row.product_id == so.item_code and not row.is_substitute]
-    if not direct:
+    usage = _unit_usage(bom, so.item_code)
+    if usage is None:
+        return None, None, None       # 数据异常，无法计算，不以 0 冒充
+    if not usage:
         return None, None, None
 
     best_qty: int | None = None
     best_material: str | None = None
     best_shortfall: int | None = None
-    for row in direct:
-        if row.qty_per_unit <= 0:
-            return None, None, None   # 数据异常，无法计算，不以 0 冒充
-        avail = float(inventory.get(row.component_id, 0) or 0)
-        avail += sum(float(inventory.get(s, 0) or 0) for s in groups.get(row.component_id, []))
-        possible = int(avail // row.qty_per_unit)
+    for component_id, per_unit in usage.items():
+        avail = float(inventory.get(component_id, 0) or 0)
+        avail += sum(float(inventory.get(s, 0) or 0) for s in groups.get(component_id, []))
+        possible = int(avail // per_unit)
         if best_qty is None or possible < best_qty:
             best_qty = possible
-            best_material = row.component_id
-            needed_for_order = so.qty * row.qty_per_unit
+            best_material = component_id
+            needed_for_order = so.qty * per_unit
             best_shortfall = max(int(round(needed_for_order - avail)), 0)
     return best_qty, best_material, best_shortfall
 
@@ -602,9 +655,10 @@ def _demand_kittable_qty(
     Returns: (可齐套套数, 瓶颈子件料号)；无直接子件或任一子件单机用量非正 → (None, None)。
     """
     groups = _substitute_groups(bom, so.item_code)
-    direct = [row for row in bom
-             if row.product_id == so.item_code and not row.is_substitute]
-    if not direct:
+    usage = _unit_usage(bom, so.item_code)
+    if usage is None:
+        return None, None             # 数据异常，无法计算，不以 0 冒充
+    if not usage:
         return None, None
 
     def _avail(component_id: str) -> float:
@@ -616,13 +670,11 @@ def _demand_kittable_qty(
 
     best_qty: int | None = None
     best_material: str | None = None
-    for row in direct:
-        if row.qty_per_unit <= 0:
-            return None, None   # 数据异常，无法计算，不以 0 冒充
-        total = _avail(row.component_id) + sum(_avail(s) for s in groups.get(row.component_id, []))
-        possible = int(total // row.qty_per_unit)
+    for component_id, per_unit in usage.items():
+        total = _avail(component_id) + sum(_avail(s) for s in groups.get(component_id, []))
+        possible = int(total // per_unit)
         if best_qty is None or possible < best_qty:
-            best_qty, best_material = possible, row.component_id
+            best_qty, best_material = possible, component_id
     return best_qty, best_material
 
 
@@ -796,13 +848,34 @@ def _resolve_priority_order(
     上线，**临时用出货日期升序代替**（谁出货早谁先占，Paul 07-29 原话："先用出货
     日期早晚当临时优先级，等#15真正的PMC优先级表上线后再替换掉这条临时规则"）。
     #15 上线后传入真实 `priority_resolver` 即自动切换，本兜底届时不再生效。
+
+    **判据补全（队列 #118，2026-08-18；源＝姚祖怡 2026-08-12 采购部#13 回件新问题 4）**：
+    首版（07-29）只实现了第 ① 级——当时 Paul 当面拍板"先用出货日期早晚当临时优先级"，
+    判据本就只到这一层。她本次把预测订单优先级判据**一次写全**为三级：
+      ① 计划出货日期在前的优先（2026-08-10 高于 2026-08-20）；
+      ② **出货日期相同则 ERP 预测订单数量大的优先**（她的举例：同为 2026-08-10 的
+         `F02N.0224` 数量 1100 与 `F02N.0226` 数量 600，F02N.0224 优先）；
+      ③ **数量与出货日期都相同则按取值的自然顺序，先取值的先占用**（＝`orders` 原始下标）。
+    ②③ 同时用作 resolver 分支的二级判据（resolver 接口粒度到 so_id，同一 FO 文档下的多个
+    行项它无从区分）——改造前该处仅按原始下标 `i`，现与兜底分支统一口径。
+    **边界（如实登记）**：这三级是否即 #15「真实 PMC 优先级表」的最终形态、还是仍需 PMC 侧
+    表格覆盖，她本次未提，故本次**不动 resolver 的优先地位**（传入真实 resolver 时仍以其
+    给出的 so_id 次序为准）。
     """
+    def _criteria(i: int) -> tuple:
+        """姚祖怡 2026-08-12 采购部#13 回件写全的三级判据（见函数文档串）：
+        ① 计划出货日期在前的优先 → ② 出货日期相同则数量大的优先 → ③ 都相同按取值自然顺序。"""
+        return (orders[i].required_date, -orders[i].qty, i)
+
     if priority_resolver is not None:
         so_ids = [orders[i].so_id for i in order_indices]
         ordered_so_ids = priority_resolver(material_id, so_ids)
         rank = {so_id: i for i, so_id in enumerate(ordered_so_ids)}
-        return sorted(order_indices, key=lambda i: (rank.get(orders[i].so_id, len(rank)), i))
-    return sorted(order_indices, key=lambda i: (orders[i].required_date, i))
+        # resolver 粒度只到 so_id：同一 so_id 下的多个行项它无从区分，用 ①②③ 作二级判据
+        # （与无 resolver 时同一口径；改造前此处仅按原始下标 i）。
+        return sorted(order_indices,
+                     key=lambda i: (rank.get(orders[i].so_id, len(rank)), *_criteria(i)))
+    return sorted(order_indices, key=_criteria)
 
 
 def _allocate_sequential_inventory(
