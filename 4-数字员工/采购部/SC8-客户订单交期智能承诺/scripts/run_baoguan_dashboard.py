@@ -26,14 +26,25 @@ from pathlib import Path
 # sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在本文件
 # 任何 zhuopin_platform / 场景包 import 之前（下方 main() 内的延迟 import 亦受此保护）。——
 _HERE = Path(__file__).resolve()
+# 🔴 布局无关：monorepo 命中"仓库根/5-平台底座/zhuopin_platform"；长开服务器扁平布局
+# （C:\baoguan\{zhuopin_platform,app}，见《部署到长开服务器-保供看板.md》）没有该标记，
+# 平台底座是 app 的**兄弟目录**且已由 deploy-server.ps1 `pip install -e` 进 venv。
+# 故找不到标记时**不得 fail-loud**——2026-08-18 实测：#300 引导上线后第一次 sync 到 .51，
+# 本文件即因此抛 RuntimeError、服务起不来（任务 LastResult=0 但进程秒退、8091 无监听）。
+# 兜底不引入静默失败风险：真的连平台底座都不可用时，下方 import 仍会以
+# ModuleNotFoundError 明确报错。
+_entries = [_HERE.parent.parent]                       # 场景自身目录（两种布局都要）
 for _p in (_HERE, *_HERE.parents):
     if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
-        for _entry in (_p / "5-平台底座" / "zhuopin_platform", _HERE.parent.parent):
-            if str(_entry) not in sys.path:
-                sys.path.insert(0, str(_entry))
+        _entries.insert(0, _p / "5-平台底座" / "zhuopin_platform")
         break
 else:
-    raise RuntimeError(f"未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找）")
+    _flat = _HERE.parent.parent.parent / "zhuopin_platform"   # 扁平布局的兄弟目录
+    if _flat.is_dir():
+        _entries.insert(0, _flat)
+for _entry in _entries:
+    if str(_entry) not in sys.path:
+        sys.path.insert(0, str(_entry))
 
 # 仓库根（本文件：<repo>/4-数字员工/采购部/SC8-.../scripts/run_baoguan_dashboard.py）
 REPO = Path(__file__).resolve().parents[4]
