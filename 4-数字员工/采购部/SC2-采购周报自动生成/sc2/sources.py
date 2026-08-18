@@ -307,7 +307,7 @@ class RealFeed:
         )
 
 
-def build_real_feed():
+def build_real_feed(max_status_materials: int | None = None):
     """从环境构造真实取数源（凭据走 `.env`，不落任何会被同步的 settings）。
 
     🔴 **必须注入 `ConnectorAudit`**：连接器对真实业务库的每次访问都要留痕，
@@ -321,13 +321,18 @@ def build_real_feed():
     from . import config
 
     audit = ConnectorAudit(JsonlSink(config.connector_trace_path()))
-    return RealFeed(erp=ZpConnector.from_env(audit=audit))
+    return RealFeed(erp=ZpConnector.from_env(audit=audit),
+                    max_status_materials=max_status_materials)
 
 
-def build_feed(mode: str) -> Feed:
-    """按模式取源。`mode` 只接受 ``"mock"`` / ``"real"``，拼错即报错不猜。"""
+def build_feed(mode: str, max_status_materials: int | None = None) -> Feed:
+    """按模式取源。`mode` 只接受 ``"mock"`` / ``"real"``，拼错即报错不猜。
+
+    `max_status_materials` 透传给 `RealFeed`（`None` ＝ 用其缺省 200，`0` ＝ 不限）。
+    对 `MockFeed` 无意义，忽略。
+    """
     if mode == "mock":
         return MockFeed()
     if mode == "real":
-        return build_real_feed()
+        return build_real_feed(max_status_materials)
     raise ValueError(f"未知取数模式：{mode!r}（只接受 'mock' / 'real'）")

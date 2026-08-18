@@ -187,7 +187,7 @@ def test_服务入口顶部含worktree路径引导():
 
 
 def test_端口默认为过渡期豁免端口():
-    assert config.DEFAULT_PORT == 8095
+    assert config.DEFAULT_PORT == 8096
 
 
 def test_生成物均落reports目录(client, tmp_path):
@@ -197,3 +197,59 @@ def test_生成物均落reports目录(client, tmp_path):
     assert produced
     for p in produced:
         assert p.parent == tmp_path
+
+
+# —— 页面表单确认路径（过渡期无网关身份，页面按钮走的就是这一路）——
+
+
+def test_页面表单确认可完成确认发布(client):
+    """🔴 复现 2026-08-18 部署前发现的缺陷：页面「确认发布」按钮提交的是表单、
+    不是 JSON，而原实现只认 JSON body 与网关身份 ⇒ 过渡期必然 400。
+    部署的全部意义就是让姚祖怡在页面上完成 L3 确认，故这一路必须真能走通。"""
+    r = client.post(f"{PREFIX}/api/confirm", data={"confirmed_by": "姚祖怡"})
+    assert r.status_code == 200
+    assert "已由 姚祖怡 确认发布" in r.get_data(as_text=True)
+
+
+def test_页面表单未填确认人不得匿名放行(client):
+    """没有主语的确认在 IATF 审核时等于没有确认——表单路径同样不得放行。"""
+    r = client.post(f"{PREFIX}/api/confirm", data={})
+    assert r.status_code == 400
+    assert "请先填写确认人姓名" in r.get_data(as_text=True)
+
+
+def test_健康检查端点在门禁下仍可达(monkeypatch):
+    """🔴 复现 2026-08-18 部署前发现的缺陷：门禁缺省豁免是裸 `/api/ping`，
+    而本场景 ping 在 `/procurement/sc2/api/ping` 之下 ⇒ 不显式传豁免路径就会被
+    302 到登录页，部署脚本的健康检查与此后的存活探测会一律误判服务不健康。"""
+    monkeypatch.setenv("ZP_GATE_PASSWORD", "s3cret")
+    app = create_app(base_date=BASE, mode="mock")
+    app.config["TESTING"] = True
+    r = app.test_client().get(f"{PREFIX}/api/ping")
+    assert r.status_code == 200, "健康检查端点被门禁挡下"
+    assert r.get_json()["ok"] is True
+
+
+
+def test_服务端缺省不截断行级状态取数():
+    """🔴 复现 2026-08-18 首次部署实测：窗口内料号 830 个，而 RealFeed 缺省上限
+    200 ⇒ 630 个料号拿不到行级状态、按「状态未知」计入在途，在途类指标偏高。
+    截断确实会写进周报取数说明（No silent caps），但那只是「诚实地报告一个次优数」，
+    而页面上那些数正是要请姚祖怡判例批改的对象。故服务入口缺省 0（不限），
+    慢的代价由 D21 承担：页面读快照，全量重算走独立的 POST /api/refresh。"""
+    import run_sc2
+    args = run_sc2.build_parser().parse_args(["serve"])
+    assert args.max_status_materials == 0
+
+
+def test_上限透传到取数层(monkeypatch):
+    """create_app/CLI 传下来的上限必须真落到 RealFeed，而不是被中间层吞掉。"""
+    from zhuopin_platform.shared_tools.erp_connector.connector import ZpConnector
+
+    monkeypatch.setattr(ZpConnector, "from_env",
+                        classmethod(lambda cls, **kw: object()))
+    from sc2.sources import build_feed
+
+    assert build_feed("real", 0).max_status_materials == 0      # 0 = 不限
+    assert build_feed("real", 7).max_status_materials == 7
+    assert build_feed("real").max_status_materials == 200       # 缺省仍是 RealFeed 的 200

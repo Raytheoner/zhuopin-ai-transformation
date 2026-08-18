@@ -1,7 +1,7 @@
 """SC2 采购周报服务入口 / CLI。
 
 用法：
-    python run_sc2.py serve --mode mock            # 起服务（过渡期端口 8095）
+    python run_sc2.py serve --mode mock            # 起服务（过渡期端口 8096）
     python run_sc2.py report --mode real           # 生成一期周报到 stdout 并存快照
     python run_sc2.py probe                        # F14 端点参数名对照取证（需真实网络）
 """
@@ -9,7 +9,17 @@ from __future__ import annotations
 
 # —— worktree 隔离引导（队列 #300）：把本 worktree 的平台底座与场景自身路径插到
 # sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在本文件
-# 任何 zhuopin_platform / 场景包 import 之前。——
+# 任何 zhuopin_platform / 场景包 import 之前。
+#
+# 🔴 **未找到仓库根标记时不得硬失败**（队列 #345，照抄 QD-B/SC8 已验证改法）：
+# #300 要防的是「N 个平等 worktree 共用一套全局 site-packages、谁装的 editable
+# 指针谁说了算」——**那个前提只在开发机成立**。`.51` 的部署布局是扁平的
+# `C:/sc2/app` ＋ `C:/sc2/zhuopin_platform`（venv 内已装，全机唯一一份、无歧义），
+# **没有也不需要 `5-平台底座/` 这层目录**。原实现在找不到标记时直接 `raise`，
+# 等于把服务入口在生产布局上钉死——该地雷 2026-08-18 在 SC8/QD-B 上真实引爆过
+# （计划任务 LastResult=0 而进程秒退、端口无监听、`/api/ping` 502）。
+# ⇒ 找到标记 → 按 #300 前插（开发机，确定性优先）；找不到 → 交由环境自身解析
+# （生产机，唯一一份），**只有当环境里也没有 zhuopin_platform 时才失败**。——
 import sys
 from pathlib import Path
 
@@ -21,7 +31,14 @@ for _p in (_HERE, *_HERE.parents):
                 sys.path.insert(0, str(_entry))
         break
 else:
-    raise RuntimeError(f"未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找）")
+    # 部署布局：场景包与平台底座各自可导入即可，不要求仓库目录结构
+    if str(_HERE.parent) not in sys.path:
+        sys.path.insert(0, str(_HERE.parent))
+    from importlib.util import find_spec
+    if find_spec("zhuopin_platform") is None:
+        raise RuntimeError(
+            f"既未找到仓库根标记 5-平台底座/zhuopin_platform（从 {_HERE} 向上查找），"
+            "环境中也没有可导入的 zhuopin_platform——请检查部署或安装平台底座包")
 
 import argparse  # noqa: E402
 import os  # noqa: E402
@@ -58,9 +75,23 @@ def _base_date(arg: str | None) -> date:
 def cmd_serve(args) -> int:
     from sc2.webapp import create_app
 
-    app = create_app(base_date=_base_date(args.base), mode=args.mode)
+    app = create_app(base_date=_base_date(args.base), mode=args.mode,
+                     max_status_materials=args.max_status_materials)
     # 绑定 0.0.0.0 供 LAN 访问；对外暴露由共享口令门禁把守（ZP_GATE_PASSWORD）。
-    app.run(host="0.0.0.0", port=args.port)
+    #
+    # 🔴 长开服务走 waitress，不用 Flask 开发服务器（同 QD-B/SC8 惯例）：`app.run()`
+    # 单线程、无请求排队，而本场景的 `POST /api/refresh` 真实模式要跑约 2 分 20 秒，
+    # 期间开发服务器会把同时到达的页面请求全部堵死——看起来就是「服务挂了」。
+    print(f"SC2 采购周报 — 服务启动中（mode={args.mode}, 路由前缀 {config.ROUTE_PREFIX}）…")
+    print("  ⚠ 仅 LAN 内部访问，由共享口令门禁 ZP_GATE_PASSWORD 把守")
+    print("  ⚠ L3：AI 自动汇总，经人工「确认发布」后方可对外推送")
+    try:
+        from waitress import serve
+        print(f"\n[OK] waitress 生产模式 · http://0.0.0.0:{args.port}{config.ROUTE_PREFIX}/\n")
+        serve(app, host="0.0.0.0", port=args.port, threads=4)
+    except ImportError:
+        print(f"\n[!] waitress 未安装，Flask 开发模式 · http://0.0.0.0:{args.port}{config.ROUTE_PREFIX}/\n")
+        app.run(host="0.0.0.0", port=args.port)
     return 0
 
 
@@ -106,7 +137,9 @@ def cmd_probe(args) -> int:
     return 0
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """构造 CLI parser。抽出来是为了能被单测直接检查缺省值——服务端缺省
+    `--max-status-materials 0` 是一条会影响页面数字的部署约定，值得有测试守住。"""
     p = argparse.ArgumentParser(description="SC2 采购周报自动生成")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -114,6 +147,10 @@ def main(argv=None) -> int:
     s.add_argument("--mode", choices=("mock", "real"), default="mock")
     s.add_argument("--port", type=int, default=config.DEFAULT_PORT)
     s.add_argument("--base", help="基准日期 YYYY-MM-DD，缺省今天")
+    # 🔴 服务端缺省 0（不限）而非 RealFeed 的 200：截断会让未取到状态的行按「状态
+    # 未知」计入在途，在途类指标偏高——那是页面上要给姚祖怡看的数。慢由 D21 兜。
+    s.add_argument("--max-status-materials", type=int, default=0,
+                   help="行级状态取数的料号上限（0=不限，服务端缺省）")
     s.set_defaults(func=cmd_serve)
 
     r = sub.add_parser("report", help="生成一期周报")
@@ -125,8 +162,17 @@ def main(argv=None) -> int:
 
     pr = sub.add_parser("probe", help="F14 端点参数名对照取证（需真实网络）")
     pr.set_defaults(func=cmd_probe)
+    return p
 
-    args = p.parse_args(argv)
+
+def main(argv=None) -> int:
+    # `.51` 的计划任务跑在 GBK 控制台下，print 中文会 UnicodeEncodeError 直接崩掉
+    # 服务进程（表现同「计划任务 LastResult=0 而进程秒退」）。同 QD-B 处置。
+    if sys.stdout.encoding and sys.stdout.encoding.lower() in ("gbk", "gb2312", "gb18030"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+    args = build_parser().parse_args(argv)
     load_env()
     return args.func(args)
 

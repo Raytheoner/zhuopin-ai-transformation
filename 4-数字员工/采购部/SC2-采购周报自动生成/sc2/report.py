@@ -70,6 +70,27 @@ def _fmt_delta(d: float | None) -> str:
     return f"{d * 100:+.1f}%"
 
 
+def _incomplete_week_note(base: date) -> str | None:
+    """本周窗口尚未走完时的显式声明。
+
+    🔴 **为什么非说不可**（2026-08-18 首次部署当天实测发现）：三窗口同为一个自然周
+    才使量纲可直接比较（D16-R），但**基准日落在周中时，本周只过了 N/7 天，而上周与
+    上月同期都是完整 7 天**——所有「量」类指标的环比/同比于是全线巨幅下降，当天
+    21 个指标里 16 个被打上 🔴。那不是业务波动，是把半周和整周放在一起比。
+    没有任何阈值调整能修掉它，因为它不是阈值问题。
+
+    故照 spec「不可算不呈现」的同一精神**显式声明**：宁可读者看到一句啰嗦的提示，
+    也不能让他把结构性假象当成真实的采购塌方。**周报按完整周（周一出上一周）运行时
+    本行不出现**，不构成日常噪音。
+    """
+    elapsed = base.weekday() + 1          # 周一=1 … 周日=7
+    if elapsed >= 7:
+        return None
+    return (f"- 🔴 **本周窗口尚未走完**：仅含 {elapsed}/7 天，而上周与上月同期均为完整 7 天"
+            f"⇒ **「量」类指标的周环比/月同比会系统性偏低，不是业务波动**。"
+            f"完整周的可比数请在本周结束后重算。")
+
+
 def render_text(report: WeeklyReport) -> str:
     """纯文本周报——企微推送与快照回归都用它，保证两处呈现同源。"""
     lines: list[str] = [
@@ -87,6 +108,9 @@ def render_text(report: WeeklyReport) -> str:
             lines.append(f"  - {k}：{v}")
     if not report.thresholds_confirmed:
         lines.append("- ⚠️ 异常阈值**未经专员确认**（判据类，须显式签认后方可定版）")
+    incomplete = _incomplete_week_note(report.base_date)
+    if incomplete:
+        lines.append(incomplete)
     lines.append("")
 
     for group, items in metric_groups(report.metrics).items():

@@ -162,3 +162,37 @@ def test_异常项可从周报直接取出(report):
     assert isinstance(report.anomalies, tuple)
     for m in report.anomalies:
         assert m.anomaly
+
+
+# —— 本周窗口未走完的显式声明（2026-08-18 首次部署实测发现）——
+
+
+def test_周中生成时显式声明本周窗口未走完():
+    """🔴 基准日落在周中时，本周只过了 N/7 天而上周/上月同期都是完整 7 天，
+    「量」类指标的环比同比会系统性偏低——首次部署当天 21 个指标里 16 个因此
+    被打 🔴。那是结构性假象，任何阈值调整都修不掉，故必须显式声明。"""
+    from datetime import date
+
+    from sc2.report import build_report, render_text
+    from sc2.sources import build_feed
+    from sc2.windows import build_windows
+
+    base = date(2026, 8, 18)          # 周二 ⇒ 2/7 天
+    windows = build_windows(base)
+    text = render_text(build_report(build_feed("mock").fetch(windows), windows))
+    assert "本周窗口尚未走完" in text
+    assert "2/7 天" in text
+
+
+def test_完整周生成时不出现该声明():
+    """周报按正常节奏（周日/周一出完整周）运行时本行不出现，不构成日常噪音。"""
+    from datetime import date
+
+    from sc2.report import build_report, render_text
+    from sc2.sources import build_feed
+    from sc2.windows import build_windows
+
+    base = date(2026, 8, 23)          # 周日 ⇒ 7/7 天，窗口已走完
+    windows = build_windows(base)
+    text = render_text(build_report(build_feed("mock").fetch(windows), windows))
+    assert "本周窗口尚未走完" not in text

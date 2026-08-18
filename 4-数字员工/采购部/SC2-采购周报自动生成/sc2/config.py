@@ -17,10 +17,13 @@ SCENE_ROOT = Path(__file__).resolve().parent.parent
 #: 不改场景代码。
 ROUTE_PREFIX = "/procurement/sc2"
 
-#: 过渡期服务端口（design 审 ④(a) 定＝8095，顺延现网 8091-8094）。
+#: 过渡期服务端口。**8096**，Shao Peishen 2026-08-18 部署当日改判。
+#: 🔴 design 审 ④(a) 原定 8095，其依据「顺延现网 8091-8094」是**错的**——部署前
+#: 实测 `.51` 上 8090（UnifiedPortalGateway）与 8095（ZhuopinRecruitAgent，
+#: uvicorn，计划任务已注册且 Running）**均已被占用**，当初那次端口普查漏了两个。
 #: ⚠️ 这是对「新场景一律不新起端口对外」硬约束的**显式豁免**，已获 Shao Peishen
 #: 认可；注销条件＝统一门户网关落地后收编。详见场景 CLAUDE.md「部署状态」段。
-DEFAULT_PORT = 8095
+DEFAULT_PORT = 8096
 
 SERVICE_NAME = "SC2 采购周报"
 

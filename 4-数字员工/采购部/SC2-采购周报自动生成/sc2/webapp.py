@@ -4,7 +4,7 @@
 链接与表单 action 也一律基于该前缀，**不用根路径绝对引用**——否则统一门户网关
 落地那天，页面里每一个 `/xxx` 都会指错，本要求存在的意义就是免掉那次返工。
 
-⚠️ **过渡期这是 `.51` 上的第 5 个对外端口**（8095），属对「新场景一律不新起
+⚠️ **过渡期这是 `.51` 上的第 7 个对外端口**（8096），属对「新场景一律不新起
 端口对外」硬约束的**显式豁免**，已获 Shao Peishen 认可；注销条件＝网关落地后
 收编。详见场景 CLAUDE.md「部署状态」段。
 """
@@ -44,10 +44,24 @@ def default_identity_resolver() -> str | None:
 
 
 def create_app(*, base_date: date | None = None, mode: str = "mock",
-               identity_resolver=None, store: ReviewStore | None = None) -> Flask:
-    """组装 Flask app（依赖注入，便于测试）。"""
+               identity_resolver=None, store: ReviewStore | None = None,
+               max_status_materials: int | None = None) -> Flask:
+    """组装 Flask app（依赖注入，便于测试）。
+
+    `max_status_materials`：行级状态取数的料号上限（D17 的已知代价开关）。
+    🔴 **长开服务应传 0（不限）**：默认 200 会在窗口料号更多时截断，未取到状态的
+    行按「状态未知」计入在途 ⇒ 在途类指标偏高。截断本身会写进周报取数说明
+    （No silent caps），但那是「诚实地报告一个次优数」——真实部署当天实测窗口
+    内料号 830 个，按默认值有 630 个拿不到状态。慢的代价由 D21 承担：页面读快照，
+    全量重算走独立的 POST /api/refresh。
+    """
     app = Flask(__name__)
-    install_flask_gate(app, service_name=config.SERVICE_NAME)
+    # 🔴 免口令路径必须带上路由前缀：`install_flask_gate` 的缺省豁免是裸 `/api/ping`，
+    # 而本场景所有路由都在 `/procurement/sc2` 之下 ⇒ 不显式传就没有任何路径命中豁免，
+    # 健康检查会被门禁 302 到登录页——部署脚本的 `Start-Zhuopin...CheckHealth` 与
+    # 此后任何存活探测都会当场判服务不健康（而服务其实是好的）。
+    install_flask_gate(app, service_name=config.SERVICE_NAME,
+                       exempt_paths=(f"{config.ROUTE_PREFIX}/api/ping",))
     install_flask_access_log(app, service_name=config.SERVICE_NAME,
                              log_path=config.access_log_path())
 
@@ -64,7 +78,8 @@ def create_app(*, base_date: date | None = None, mode: str = "mock",
         """
         base = base_date or date.today()
         windows = build_windows(base)
-        report = build_report(build_feed(mode).fetch(windows), windows)
+        report = build_report(
+            build_feed(mode, max_status_materials).fetch(windows), windows)
         (store or ReviewStore()).register(report)
         save_snapshot(report)
         return report
@@ -105,12 +120,21 @@ def create_app(*, base_date: date | None = None, mode: str = "mock",
         (store or ReviewStore()).register(report)
         snapshot = save_snapshot(report)
         payload = request.get_json(silent=True) or {}
-        who = (payload.get("confirmed_by") or "").strip() or resolve_identity()
+        # 三个来源按优先级取确认人：JSON body → 页面表单 → 网关身份。
+        # ⚠️ **表单这一路不是可有可无的**：过渡期没有网关下发身份，页面上那个
+        # 「确认发布」按钮提交的就是表单；只认 JSON 时它必然 400，等于页面上唯一的
+        # L3 动作是坏的——而部署的全部意义就是让姚祖怡在页面上完成这一步。
+        who = ((payload.get("confirmed_by") or request.form.get("confirmed_by") or "")
+               .strip() or resolve_identity())
         if not who:
             # 没有主语的确认在 IATF 审核时等于没有确认，故宁可拒绝也不匿名放行。
+            if not request.is_json:
+                return _render_page(report, error="请先填写确认人姓名，再点「确认发布」"), 400
             return jsonify(ok=False, error="缺少确认人（confirmed_by 或网关身份）"), 400
         confirm(store or ReviewStore(), report.period,
                 confirmed_by=who, snapshot_id=snapshot.name)
+        if not request.is_json:
+            return _render_page(report, confirmed_by=who)
         return jsonify(ok=True, period=report.period, confirmed_by=who)
 
     app.register_blueprint(bp)
@@ -126,19 +150,30 @@ _PAGE = """<!doctype html>
  th,td{{border:1px solid #d0d7de;padding:.35rem .7rem;text-align:left}}
  th{{background:#f6f8fa}}
  .warn{{color:#9a6700;background:#fff8c5;padding:.5rem .8rem;border-radius:6px}}
+ .ok{{color:#0a5c2e;background:#dafbe1;padding:.5rem .8rem;border-radius:6px}}
+ input{{padding:.4rem .6rem;font-size:1rem;margin-right:.6rem}}
  button{{padding:.5rem 1.2rem;font-size:1rem;cursor:pointer}}
  pre{{white-space:pre-wrap}}
 </style>
 <h1>采购周报 {period}</h1>
 <p class="warn">本页数字为 AI 自动汇总，<b>经人工「确认发布」后方可对外推送</b>（L3）。</p>
 <pre>{body}</pre>
+{notice}
 <form method="post" action="{prefix}/api/confirm">
+  <label>确认人姓名：<input name="confirmed_by" required autocomplete="name"></label>
   <button type="submit">确认发布</button>
 </form>
 """
 
 
-def _render_page(report) -> str:
+def _render_page(report, *, error: str | None = None,
+                 confirmed_by: str | None = None) -> str:
+    if error:
+        notice = f'<p class="warn">{html.escape(error)}</p>'
+    elif confirmed_by:
+        notice = f'<p class="ok">已由 {html.escape(confirmed_by)} 确认发布。</p>'
+    else:
+        notice = ""
     return _PAGE.format(period=html.escape(report.period),
                         body=html.escape(render_text(report)),
-                        prefix=config.ROUTE_PREFIX)
+                        prefix=config.ROUTE_PREFIX, notice=notice)

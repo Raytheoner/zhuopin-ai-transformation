@@ -1,7 +1,7 @@
 [project]
 name = "sc2-weekly-report"
 version = "0.1.0"
-description = "SC2 采购周报自动生成数字员工 — ERP+SRM 双源取数、指标纯函数、L3 确认发布，import 底座 erp_connector/srm_connector/audit/simple_gate"
+description = "SC2 采购周报自动生成数字员工 — ERP 单源双端点取数（D15-R）、指标纯函数、L3 确认发布，import 底座 erp_connector/audit/simple_gate"
 requires-python = ">=3.11"
 authors = [{ name = "卓品智能 AI 转型项目" }]
 # 平台底座以可编辑方式安装（可选，仅利于 IDE 补全；tests/conftest.py 与 run_sc2.py
@@ -10,6 +10,8 @@ authors = [{ name = "卓品智能 AI 转型项目" }]
 dependencies = [
     "zhuopin_platform",
     "flask>=3.0",
+    # 长开服务用 waitress（同 QD-B/SC8）；缺失时 run_sc2.py 回退 Flask 开发服务器
+    "waitress>=3.0",
 ]
 
 [project.optional-dependencies]
