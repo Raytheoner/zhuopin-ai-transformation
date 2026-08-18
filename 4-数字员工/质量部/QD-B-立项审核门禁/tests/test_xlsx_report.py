@@ -8,6 +8,7 @@ from datetime import datetime
 
 from qd_b_gate.evaluate import evaluate
 from qd_b_gate.xlsx_report import (
+    _CROSS_COLUMNS,
     _DETAIL_COLUMNS,
     _sanitize_filename_part,
     build_workbook,
@@ -21,9 +22,25 @@ class TestWithHuafeng:
     def _result(self, huafeng_path, tmp_path):
         return evaluate(huafeng_path, audit_path=tmp_path / "audit.jsonl", sample_id="华丰")
 
-    def test_workbook_has_three_sheets_matching_template(self, huafeng_path, tmp_path):
+    def test_workbook_has_four_sheets_matching_template(self, huafeng_path, tmp_path):
+        """前三 sheet 格式基准=陈忱回件模板；第四 sheet 跨模块校验为变更包
+        qd-b-cross-module-check 新增（模板无对应页，附在末尾不打乱前三页次序）。"""
         wb = build_workbook(self._result(huafeng_path, tmp_path))
-        assert wb.sheetnames == ["评审汇总", "评审明细", "扣分明细"]
+        assert wb.sheetnames == ["评审汇总", "评审明细", "扣分明细", "跨模块校验"]
+
+    def test_cross_module_sheet_lists_all_ten_checks_with_section_three_原文(
+            self, huafeng_path, tmp_path):
+        wb = build_workbook(self._result(huafeng_path, tmp_path))
+        ws = wb["跨模块校验"]
+        assert [c.value for c in ws[3]] == _CROSS_COLUMNS
+        ids = [ws.cell(row=r, column=1).value for r in range(4, 4 + 10)]
+        assert ids == [f"C{n:02d}" for n in range(1, 11)]
+        # §三 规则原文与偏差处理逐条在册（呈现层引用元数据，不复制文案）
+        assert "人月数①" in ws.cell(row=4, column=3).value
+        assert ws.cell(row=4, column=4).value == "偏差 > 10% → 警告"
+        # 未实现项写具体原因，不写"扩容期"
+        c05_reason = ws.cell(row=8, column=6).value
+        assert "所属里程碑" in c05_reason and "扩容期" not in c05_reason
 
     def test_detail_sheet_header_matches_template_columns(self, huafeng_path, tmp_path):
         wb = build_workbook(self._result(huafeng_path, tmp_path))

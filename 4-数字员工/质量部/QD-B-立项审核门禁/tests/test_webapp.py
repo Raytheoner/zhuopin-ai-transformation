@@ -106,7 +106,11 @@ class TestEvaluateWithHuafeng:
         body = r.get_data(as_text=True)
         assert "不合格" in body  # 华丰黄金基准真值 = 不合格
         assert "AI 预审建议" in body
-        assert "跨模块校验尚未实现" in body  # ④段如实标注未实现（report.py::CROSS_MODULE_NOTE），不空着不说明
+        # 跨模块段逐条呈现（变更包 qd-b-cross-module-check）：既不空着不说明，
+        # 也不再用一句"尚未实现"把已核过的 C01/C08/C09/C10 一并说成没核。
+        assert "跨模块校验尚未实现" not in body
+        assert "跨模块校验结果（C01–C10）" in body
+        assert "C05" in body and "所属里程碑" in body  # 未实现项写具体原因
         assert "转人工待办项" in body
 
     def test_report_page_陈忱反馈重排要素齐全(self, client, huafeng_path):
@@ -139,8 +143,47 @@ class TestEvaluateWithHuafeng:
         assert dl.status_code == 200
         assert "spreadsheetml" in dl.headers["Content-Type"]
         wb = openpyxl.load_workbook(io.BytesIO(dl.data))
-        assert wb.sheetnames == ["评审汇总", "评审明细", "扣分明细"]
+        assert wb.sheetnames == ["评审汇总", "评审明细", "扣分明细", "跨模块校验"]
 
     def test_download_route_rejects_path_traversal(self, client):
         r = client.get("/download/..%2F..%2Fwebapp.py")
         assert r.status_code == 404
+
+
+class TestCrossModuleThreeCarriersAgree:
+    """④跨模块段的三处呈现载体（文本报告/网页页/Excel）必须同源同结论。
+
+    此前三处各自写死"C01–C10 未实现"文案，任一处改了另两处不会跟着变——
+    本类把"三载体一致"钉成回归，防再次漂移（变更包 qd-b-cross-module-check）。
+    """
+
+    def _artifacts(self, client, huafeng_path, tmp_path):
+        import io
+        import re
+
+        import openpyxl
+
+        from qd_b_gate.evaluate import evaluate
+
+        with open(huafeng_path, "rb") as fh:
+            data = {"proposal": (fh, "华丰.xlsx")}
+            r = client.post("/evaluate", data=data, content_type="multipart/form-data")
+        body = r.get_data(as_text=True)
+        dl = client.get(re.search(r'href="(/download/[^"]+)"', body).group(1))
+        ws = openpyxl.load_workbook(io.BytesIO(dl.data))["跨模块校验"]
+        xlsx_rows = {ws.cell(row=i, column=1).value: ws.cell(row=i, column=5).value
+                     for i in range(4, 14)}
+        result = evaluate(huafeng_path, audit_path=tmp_path / "a.jsonl", sample_id="华丰")
+        return body, xlsx_rows, result.report
+
+    def test_same_ten_checks_and_same_verdicts_across_carriers(
+            self, client, huafeng_path, tmp_path):
+        from qd_b_gate.report_items import STATUS_LABELS
+
+        body, xlsx_rows, report = self._artifacts(client, huafeng_path, tmp_path)
+        expected = {i.rule_id: STATUS_LABELS[i.verdict] for i in report.cross_module_items}
+        assert xlsx_rows == expected
+        text = report.to_text()
+        for check_id, label in expected.items():
+            assert check_id in body and check_id in text
+            assert f"[{label}]" in text

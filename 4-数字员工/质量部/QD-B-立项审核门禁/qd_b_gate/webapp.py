@@ -5,7 +5,7 @@
 （总分+扣分小计/13模块得分率/扣分明细/全量明细双筛选/改进建议/跨模块/转人工/审计），
 并提供 Excel 评分表下载（评审汇总/评审明细/扣分明细 3 sheet）。
 **如实标注**：B 类语义判定/C 类转人工规则均是 MVP 占位版，报告如实写"转人工"；
-④跨模块校验段如实标注"C01-C10 任务4未实现"，不伪装已判定（红线，见开场
+跨模块校验段按 C01–C10 逐条呈现实现状态与判定，未实现项写具体原因（红线，见开场
 prompt §4）。
 
 红线（不得放宽）：
@@ -33,6 +33,7 @@ from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
 from .evaluate import EvaluationResult, evaluate
 from .models import RuleResult, Verdict
 from .report_items import (
+    STATUS_LABELS,
     ModuleRateRow,
     ScoredItem,
     build_basic_info,
@@ -190,6 +191,32 @@ def _items_html(items: list[RuleResult]) -> str:
     return "<ul>" + "".join(lines) + "</ul>"
 
 
+def _cross_module_html(items: list[RuleResult]) -> str:
+    """④跨模块校验表：逐条列出 C01–C10 的实现状态与判定。
+
+    此前此处是一行恒定文案"C01–C10 尚未实现"，而其中 4 条其实一直由规则 14/68/59/60
+    在核——把已核的说成没核（队列 #340）。故改为逐条呈现，未实现项写具体原因。
+    """
+    if not items:
+        return '<div class="empty">无跨模块校验结果</div>'
+    rows = []
+    for it in items:
+        tag_cls = _TAG_CLASS.get(it.verdict, "")
+        row_cls = _ROW_CLASS.get(it.verdict, "")
+        label = STATUS_LABELS.get(it.verdict, it.verdict.value)
+        detail = html.escape(it.evidence)
+        if it.suggestion:
+            detail += f'<div class="note">建议：{html.escape(it.suggestion)}</div>'
+        rows.append(
+            f'<tr class="{row_cls}"><td>{html.escape(it.rule_id)}</td>'
+            f'<td>{html.escape(it.check_item)}</td>'
+            f'<td><span class="tag {tag_cls}">{html.escape(label)}</span></td>'
+            f'<td>{detail}</td></tr>'
+        )
+    return ('<table><thead><tr><th>编号</th><th>校验内容</th><th>判定</th><th>依据</th></tr></thead>'
+            '<tbody>' + "".join(rows) + '</tbody></table>')
+
+
 def _item_table_rows_html(items: list[ScoredItem]) -> str:
     lines = []
     for it in items:
@@ -343,8 +370,9 @@ def _report_page(result: EvaluationResult, download_url: str) -> str:
 </div>
 
 <div class="card">
-  <h3>⑥ 跨模块校验结果</h3>
+  <h3>⑥ 跨模块校验结果（C01–C10）</h3>
   <div class="cross">{html.escape(rep.cross_module_note)}</div>
+  {_cross_module_html(rep.cross_module_items)}
 </div>
 
 <div class="card">

@@ -1,6 +1,6 @@
-"""评审报告 Excel 导出（陈忱灰度反馈 #116 ③）。
+"""评审报告 Excel 导出（陈忱灰度反馈 #116 ③；跨模块 sheet 见变更包 qd-b-cross-module-check）。
 
-3 sheet：评审汇总 / 评审明细 / 扣分明细，格式基准=陈忱回件模板
+4 sheet：评审汇总 / 评审明细 / 扣分明细 / 跨模块校验，格式基准=陈忱回件模板
 `7-外部文档/质量部/质量部-ChenChen-回复-2026-07-24-QD-B立项审核门禁_评审报告模板-*.xlsx`
 （sheet 名/列头/合并单元格布局对齐该模板；状态颜色/权重口径见下）。
 
@@ -21,6 +21,7 @@ from .evaluate import EvaluationResult
 from .models import Verdict
 from .report import GateReport
 from .report_items import (
+    STATUS_LABELS,
     ScoredItem,
     build_basic_info,
     build_financial_summary,
@@ -52,6 +53,9 @@ _STATUS_COLORS: dict[Verdict, tuple[str, str]] = {
 
 _DETAIL_COLUMNS = ["序号", "所属模块", "检查项", "评审标准", "状态", "权重", "标准分", "实际得分", "扣分", "详情"]
 _DETAIL_WIDTHS = [6, 20, 32, 34, 10, 8, 8, 10, 8, 46]
+
+_CROSS_COLUMNS = ["编号", "校验内容", "校验规则（规则说明§三原文）", "偏差处理", "状态", "依据", "建议"]
+_CROSS_WIDTHS = [8, 20, 46, 20, 10, 56, 32]
 
 _FORBIDDEN_FS_CHARS = re.compile(r'[\\/:*?"<>|\r\n\t]')
 
@@ -246,9 +250,46 @@ def _build_deduction_sheet(wb: Workbook, items: list[ScoredItem], ncols: int = 1
     ws.auto_filter.ref = f"A{header_row}:{get_column_letter(ncols)}{last_row}"
 
 
+def _build_cross_module_sheet(wb: Workbook, report: GateReport) -> None:
+    """④跨模块校验 sheet —— C01–C10 逐条呈现（含未实现项的具体原因）。
+
+    与网页④段、文本报告④段同源（`GateReport.cross_module_items`），三载体不得漂移。
+    本 sheet 不参与扣分——跨模块结果不并入 82 条规则结果集（见变更包 design 决策 1）。
+    """
+    from .rules.cross_module import check_meta  # noqa: PLC0415 —— 仅本 sheet 需要 §三 原文元数据
+
+    ncols = len(_CROSS_COLUMNS)
+    ws = wb.create_sheet("跨模块校验")
+    _set_col_widths(ws, _CROSS_WIDTHS)
+    _title_row(ws, f"跨模块一致性校验（C01–C10）｜{report.cross_module_note}", ncols)
+
+    header_row = 3
+    _write_header_row(ws, header_row, _CROSS_COLUMNS)
+
+    row_idx = header_row + 1
+    for it in report.cross_module_items:
+        meta = check_meta(it.rule_id)
+        values = [it.rule_id, it.check_item,
+                  meta.rule_text if meta else "", meta.deviation if meta else "",
+                  STATUS_LABELS.get(it.verdict, it.verdict.value), it.evidence, it.suggestion]
+        fill_color, font_color = _STATUS_COLORS.get(it.verdict, ("FFFFFF", "000000"))
+        for col_idx, v in enumerate(values, start=1):
+            c = ws.cell(row=row_idx, column=col_idx, value=v)
+            c.border = _BORDER
+            c.alignment = Alignment(vertical="top", wrap_text=col_idx in (3, 6, 7))
+            if col_idx == 5:
+                c.fill = PatternFill("solid", fgColor=fill_color)
+                c.font = Font(color=font_color, bold=True)
+        row_idx += 1
+
+    ws.freeze_panes = f"A{header_row + 1}"
+    if row_idx > header_row + 1:
+        ws.auto_filter.ref = f"A{header_row}:{get_column_letter(ncols)}{row_idx - 1}"
+
+
 def build_workbook(result: EvaluationResult, registry: RuleRegistry | None = None,
                    when: datetime | None = None) -> Workbook:
-    """构建三 sheet 评审报告工作簿（评审汇总/评审明细/扣分明细）。"""
+    """构建四 sheet 评审报告工作簿（评审汇总/评审明细/扣分明细/跨模块校验）。"""
     reg = registry or load_registry()
     items = build_scored_items(result.report, reg)
     when = when or datetime.now()
@@ -258,4 +299,5 @@ def build_workbook(result: EvaluationResult, registry: RuleRegistry | None = Non
     _build_summary_sheet(wb, result, reg, items, when)
     _build_detail_sheet(wb, items, result.report)
     _build_deduction_sheet(wb, items)
+    _build_cross_module_sheet(wb, result.report)
     return wb

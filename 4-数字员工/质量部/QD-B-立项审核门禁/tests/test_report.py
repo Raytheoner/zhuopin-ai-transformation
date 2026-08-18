@@ -44,11 +44,25 @@ def test_manual_items_are_the_transfer_to_human_todo_list():
     assert [r.rule_id for r in rep.manual_todo_items] == ["20"]
 
 
-def test_cross_module_is_explicitly_unimplemented_not_silently_empty():
-    """C01-C10 任务4未做——报告须如实标注"未实现"，不能表现成"已核验、全部通过"。"""
+def test_cross_module_is_reported_item_by_item_not_one_blanket_sentence():
+    """④段须逐条呈现 C01–C10。
+
+    此前这里断言的是"整段一句话说未实现"——而实测其中 4 条一直由规则 14/68/59/60 在核，
+    那句话把已核的说成没核（队列 #340）。故契约改为：十条都在、各带实现状态。
+    """
     rep = build_report(_doc(), results=[], score_result=_score())
-    assert rep.cross_module_items == []
-    assert "未实现" in rep.cross_module_note
+    assert [i.rule_id for i in rep.cross_module_items] == [f"C{n:02d}" for n in range(1, 11)]
+    assert "C01–C10 共 10 条" in rep.cross_module_note
+    assert "尚未实现" not in rep.cross_module_note
+
+
+def test_cross_module_section_never_says_the_whole_range_is_unimplemented():
+    """回归锁：只要有任何一条实际在核，报告就不得出现"C01–C10 尚未实现"式整段否定。"""
+    rep = build_report(_doc(), results=[], score_result=_score())
+    text = rep.to_text()
+    assert "C01–C10 跨模块校验尚未实现" not in text
+    for cid in ("C01", "C05", "C10"):
+        assert cid in text
 
 
 def test_verdict_follows_score_result_tier():

@@ -102,3 +102,56 @@ class TestFullPipelineWithManualAndSemanticClasses:
         assert by["81"].verdict == Verdict.MANUAL
         # B 类 10 条 + C 类 42/80/81 均落入转人工待办（82 恒 NA，不计入待办）
         assert len(rep.manual_todo_items) == 13
+
+
+class TestCrossModuleZeroScoreDrift:
+    """C01–C10 落地后的"零分数漂移可证"回归（变更包 qd-b-cross-module-check）。
+
+    `scoring.py::score()` 只遍历 registry 的 82 条，C01–C10 不在其内；只要跨模块结果
+    不并进 `results`，总分与档位在数学上不可能变。本类把这条"可证"钉成回归断言：
+    真值取自 `data/golden/manifest.md` 与场景 CLAUDE.md §7 冒烟记录。
+    """
+
+    GOLDEN = {"EQ17": ("合格", 98.80, []), "邦奇": ("不合格", 94.89, ["74"])}
+
+    @pytest.mark.parametrize("name, path", [("EQ17", EQ17), ("邦奇", BANGQI)])
+    def test_tier_score_and_veto_unchanged_after_cross_module(self, name, path):
+        doc = ProposalParser(_need(path)).parse()
+        results = run_all(doc)
+        sr = score(results)
+        rep = build_report(doc, results=results, score_result=sr, sample_id=name)
+        tier, total, veto = self.GOLDEN[name]
+        assert rep.verdict == tier
+        assert round(sr.total_score, 2) == total
+        assert sr.veto_rules == veto
+        assert len(results) == 82          # 跨模块条目未混入 82 条结果集
+
+    @pytest.mark.parametrize("name, path", [("EQ17", EQ17), ("邦奇", BANGQI)])
+    def test_cross_module_items_stay_out_of_every_scored_list(self, name, path):
+        doc = ProposalParser(_need(path)).parse()
+        results = run_all(doc)
+        rep = build_report(doc, results=results, sample_id=name)
+        cross_ids = {i.rule_id for i in rep.cross_module_items}
+        assert cross_ids == {f"C{n:02d}" for n in range(1, 11)}
+        for bucket in (rep.all_results, rep.blocking_items,
+                       rep.warning_items, rep.manual_todo_items):
+            assert not (cross_ids & {r.rule_id for r in bucket})
+
+    def test_eq17_reproduces_the_start_date_gap_found_in_the_340_assessment(self):
+        """#340 评估件实测：EQ17 项目开始 2026-06-01 vs 首阶段开始 2026-05-29，差 3 天。"""
+        doc = ProposalParser(_need(EQ17)).parse()
+        rep = build_report(doc, results=run_all(doc), sample_id="EQ17")
+        c04 = next(i for i in rep.cross_module_items if i.rule_id == "C04")
+        assert c04.verdict == Verdict.WARN
+        assert "2026-06-01" in c04.evidence and "2026-05-29" in c04.evidence
+
+    def test_bangqi_reproduces_the_cost_gap_found_in_the_340_assessment(self):
+        """#340 评估件实测：邦奇成本 E 131.96 万 vs 小计⑩和 85.298 万，差 46.662 万。
+
+        与已知 driving rule 74/69 缺口同源——是同一处缺陷的第二条独立检出路径。
+        """
+        doc = ProposalParser(_need(BANGQI)).parse()
+        rep = build_report(doc, results=run_all(doc), sample_id="邦奇")
+        c02 = next(i for i in rep.cross_module_items if i.rule_id == "C02")
+        assert c02.verdict == Verdict.WARN
+        assert "46.662" in c02.evidence
