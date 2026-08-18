@@ -1,0 +1,29 @@
+[project]
+name = "o1-smt-scheduling"
+version = "0.1.0"
+description = "O1 生产排程智能优化数字员工 — 收割 supplychain smt_scheduling，import 底座 audit/models，档1 mock 验证"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装（可选，仅利于 IDE 补全；tests/conftest.py 已内置路径引导，队列 #300）：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+#   pip install -e .
+dependencies = [
+    "zhuopin_platform",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["o1_smt_scheduling*"]
+
+[tool.setuptools.package-data]
+o1_smt_scheduling = ["fixtures/*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
