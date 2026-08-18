@@ -7,19 +7,6 @@
 """
 from __future__ import annotations
 
-# —— worktree 隔离引导（队列 #300）：把本 worktree 的平台底座与场景自身路径插到
-# sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在本文件
-# 任何 zhuopin_platform / 场景包 import 之前。
-#
-# 🔴 **未找到仓库根标记时不得硬失败**（队列 #345，照抄 QD-B/SC8 已验证改法）：
-# #300 要防的是「N 个平等 worktree 共用一套全局 site-packages、谁装的 editable
-# 指针谁说了算」——**那个前提只在开发机成立**。`.51` 的部署布局是扁平的
-# `C:/sc2/app` ＋ `C:/sc2/zhuopin_platform`（venv 内已装，全机唯一一份、无歧义），
-# **没有也不需要 `5-平台底座/` 这层目录**。原实现在找不到标记时直接 `raise`，
-# 等于把服务入口在生产布局上钉死——该地雷 2026-08-18 在 SC8/QD-B 上真实引爆过
-# （计划任务 LastResult=0 而进程秒退、端口无监听、`/api/ping` 502）。
-# ⇒ 找到标记 → 按 #300 前插（开发机，确定性优先）；找不到 → 交由环境自身解析
-# （生产机，唯一一份），**只有当环境里也没有 zhuopin_platform 时才失败**。——
 import sys
 from pathlib import Path
 

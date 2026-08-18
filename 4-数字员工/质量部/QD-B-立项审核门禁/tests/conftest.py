@@ -3,9 +3,6 @@
 值抽取（已填样本）回归用陈忱黄金样本（data/golden/，收口-3）后补；
 本批先用空白模板验证「锚点定位」与结构解析（解析探针 D4 的前半）。
 """
-# —— worktree 隔离引导（队列 #300）：把本 worktree 的平台底座与场景自身路径插到
-# sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在本文件
-# 任何 zhuopin_platform / 场景包 import 之前。——
 import sys
 from pathlib import Path
 

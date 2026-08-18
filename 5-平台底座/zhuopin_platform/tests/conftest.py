@@ -9,9 +9,6 @@
 ——这是 Python 自身的事件循环管线，不是业务代码在打真实网络，放行不削弱本
 守卫拦截真实 SRM/ERP/U9C/企微出站请求的原意（wecom_aibot 连接器测试需要）。
 """
-# —— worktree 隔离引导（队列 #300）：把本 worktree 的平台底座与场景自身路径插到
-# sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在本文件
-# 任何 zhuopin_platform / 场景包 import 之前。——
 import sys
 from pathlib import Path
 

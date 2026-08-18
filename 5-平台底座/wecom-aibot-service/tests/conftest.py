@@ -4,9 +4,6 @@
 企微端点。回环地址放行——Windows `asyncio.run()` 走 `socket.socketpair()`
 fallback 需要一次回环 connect 搭 self-pipe，与业务代码是否连了真实网络无关。
 """
-# —— worktree 隔离引导（队列 #300）：把本 worktree 的平台底座与场景自身路径插到
-# sys.path 最前，使 import 结果与全局 editable 安装当前指向谁无关。必须放在本文件
-# 任何 zhuopin_platform / 场景包 import 之前。——
 import sys
 from pathlib import Path
 
