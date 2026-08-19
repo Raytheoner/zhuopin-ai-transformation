@@ -32,13 +32,18 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import subprocess
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from zhuopin_platform.audit import AuditEvent
-from zhuopin_platform.shared_tools.queue_table import SECTION_COLUMN_COUNTS
+from zhuopin_platform.shared_tools.queue_table import (
+    SECTION_COLUMN_COUNTS,
+    iter_queue_paths,
+)
 
 SECTION_ONE_HEADING = "## 一、"
 _NEXT_HEADING = "\n## "
@@ -204,16 +209,21 @@ class OpenPoolItem:
     domain: Optional[str]
     summary: str
     opener_path: Optional[str]  # 仓库相对路径字符串；None＝尚未出 opener
+    # 队列 #312 缺口二：该行所在的物理队列文件（仓库相对路径）——陈化催办要
+    # 去这个文件上查该行的 git 末次触碰时间，池合并后无法再从"当初读的是哪
+    # 份文本"反推，故随行携带。`None` 表示调用方走的是单文本入口
+    # `build_pool_items` 且未声明来源（该入口保留给既有单测与单文件场景）。
+    queue_rel: Optional[str] = None
 
 
-def build_pool_items(queue_text: str, repo_root: Path) -> list[OpenPoolItem]:
-    """解析队列文本 → 可 Open 行 → 逐行核对是否已出 opener，返回完整
-    池快照（不筛"新增"，那是 `compute_new_ids` 的职责——本函数纯粹是
-    "此刻池子长什么样"）。"""
-    rows = parse_open_pool_rows(queue_text)
-    if not rows:
-        return []
-    opener_index = _build_opener_index(discover_opener_files(repo_root))
+def _items_from_rows(
+    rows: list[OpenPoolRow], opener_index: list[tuple[Path, set[int]]],
+    repo_root: Path, queue_rel: Optional[str],
+) -> list[OpenPoolItem]:
+    """把已解析出的可 Open 行配上 opener 路径与来源文件，组装成
+    `OpenPoolItem`。抽出来是为了让单文件入口（`build_pool_items`）与双文件
+    入口（`build_pool_items_from_repo`）共用同一段组装逻辑——两个入口的差别
+    只在"读哪些文本"，不该在"怎么组装"上再分叉一次。"""
     items: list[OpenPoolItem] = []
     for row in rows:
         opener = find_opener_path(row.row_id, opener_index)
@@ -224,13 +234,91 @@ def build_pool_items(queue_text: str, repo_root: Path) -> list[OpenPoolItem]:
             except ValueError:
                 opener_rel = str(opener)
         items.append(OpenPoolItem(
-            row_id=row.row_id, domain=row.domain, summary=row.summary, opener_path=opener_rel,
+            row_id=row.row_id, domain=row.domain, summary=row.summary,
+            opener_path=opener_rel, queue_rel=queue_rel,
         ))
     return items
 
 
+def build_pool_items(
+    queue_text: str, repo_root: Path, queue_rel: Optional[str] = None,
+) -> list[OpenPoolItem]:
+    """解析**单份**队列文本 → 可 Open 行 → 逐行核对是否已出 opener，返回
+    该份文本对应的池快照（不筛"新增"，那是 `compute_new_ids` 的职责——本
+    函数纯粹是"此刻池子长什么样"）。
+
+    🔴 **生产调用方一律用 `build_pool_items_from_repo`，不要用本函数**——
+    队列 #315 拆分后队列有两份物理文件，只读其中一份正是本轮要修的缺口一
+    （见该函数 docstring）。本函数保留为纯函数（给文本、给根，返回池）：
+    既有单测全部建立在这个形状上，且"给我一份文本、算出它的池"本身是一个
+    正当且可独立测试的能力，不必为了少一个入口而把 I/O 塞进来。
+    """
+    rows = parse_open_pool_rows(queue_text)
+    if not rows:
+        return []
+    opener_index = _build_opener_index(discover_opener_files(repo_root))
+    return _items_from_rows(rows, opener_index, repo_root, queue_rel)
+
+
+def build_pool_items_from_repo(repo_root: Path) -> list[OpenPoolItem]:
+    """队列 #312 缺口一（2026-08-19 零时巡检查清）：可 Open 池的取数覆盖
+    **全部**物理队列文件，而不是只读 `repo_paths.DEFAULT_QUEUE_RELATIVE_PATH`
+    指向的那一份。
+
+    **修的是什么**：`#315`（2026-08-11）把队列拆成"机制环境"与"业务场景"
+    两份物理文件，而本模块的调用方仍只读前者 ⇒ **采购／财务／质量三域的
+    构建任务全部住在后者里，从未进过池**。实测坐实：生产状态文件当时的
+    `known_open_ids` ＝ `["240","337","338","341","98"]`，五个全是机制环境行，
+    采购 `#334`／`#344` 一个都不在——而 `#334` 的两个排队前置已于 2026-08-18
+    全部完成、还经姚祖怡本人抽查验收通过，**却没有任何机制会去重算它**。
+
+    **为何不改 `DEFAULT_QUEUE_RELATIVE_PATH`**：那个常量还被写侧
+    （`queue_appender` 等）消费，其"按 `[D:机/业]` 域路由"是队列 `#341`
+    承接的另一笔独立欠账；读侧漏一份不在 `#341` 范围内，两者不要互相并入
+    （派单件 OP-0819-A ⑵ 明写的范围红线）。故本函数是"可 Open 池专用的
+    双文件取数"，`DEFAULT_QUEUE_RELATIVE_PATH` 一字未动。
+
+    🔴 **逐份解析后合并，绝不先拼接文本再解析一次**：`_parse_table_rows`
+    用 `text.find(heading)` 定位 `## 一、`，**只取第一个**——拼接两份文本会
+    让第二份的 §一 被静默丢弃，**症状与本次要修的缺口一模一样、且更难发现**。
+
+    某一份文件读取失败/不存在时发 `RuntimeWarning` 并跳过（同本模块
+    `parse_open_pool_rows` 对字段缺失的"非静默降级"既有惯例），继续处理
+    其余文件——**不把残缺的结果当作完整的池**，那正是缺口一的形态。
+    """
+    opener_index = _build_opener_index(discover_opener_files(repo_root))
+    items: list[OpenPoolItem] = []
+    for queue_rel in iter_queue_paths():
+        path = repo_root / queue_rel
+        try:
+            queue_text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            warnings.warn(
+                f"队列文件读取失败，可 Open 池已跳过该份（非静默降级，队列 #312 缺口一）："
+                f"{queue_rel}：{exc}",
+                RuntimeWarning, stacklevel=2,
+            )
+            continue
+        rows = parse_open_pool_rows(queue_text)
+        if not rows:
+            continue
+        items.extend(_items_from_rows(rows, opener_index, repo_root, queue_rel))
+    return items
+
+
+# 队列 #312 缺口二（2026-08-19 零时巡检查清，Shao Peishen 当日答定夺 1
+# 选 (a)、N＝7）：陈化阈值与催办间隔。
+#
+# **缺口二是什么**：既有指纹的定义是"当前可 Open 行号集合，集合不出现新
+# 行号即静默"——它只覆盖了"有新活了通知我"，**对"有活一直没开"结构性
+# 沉默**。而 Shao Peishen 要的恰恰是后者（原话「最好 workflow 可以提醒我
+# 加快」）。两件事在原实现里是同一个判据。
+STALE_THRESHOLD_DAYS = 7
+STALE_REMINDER_INTERVAL_DAYS = 7
+
+
 def default_state() -> dict:
-    return {"known_open_ids": []}
+    return {"known_open_ids": [], "stale_notified_at": {}}
 
 
 def load_state(path: Path) -> dict:
@@ -244,6 +332,11 @@ def load_state(path: Path) -> dict:
         return default_state()
     state = default_state()
     state.update({k: v for k, v in data.items() if k in state})
+    # 升级前写入的旧状态文件只有 `known_open_ids`——上面的 `update` 已让
+    # 缺失键自动取默认空 dict（无需迁移脚本）。此处只再防一手"键在但类型
+    # 不对"（手工编辑过的状态文件），不静默把非 dict 当 dict 用。
+    if not isinstance(state.get("stale_notified_at"), dict):
+        state["stale_notified_at"] = {}
     return state
 
 
@@ -275,6 +368,168 @@ def new_known_state(items: list[OpenPoolItem]) -> dict:
     return {"known_open_ids": sorted({item.row_id for item in items})}
 
 
+# —— 队列 #312 缺口二：陈化催办 ——————————————————————————————————
+
+def last_touched_at(repo_root: Path, queue_rel: str, row_id: str) -> Optional[datetime]:
+    r"""返回队列行 `#<row_id>` 在 `queue_rel` 这份文件上的**末次触碰提交
+    时间**（带时区的 `datetime`）；查不到返回 `None`。
+
+    🔴 **必须用 git，不能用文件 mtime**（派单件明写，`#338`④ 已记过 A9
+    教训）：队列文件几乎每天都被写入，其 mtime 恒为"最近"，**用它判"这一
+    行动没动"恒为假**——判据会永远认为每一行都刚动过，陈化催办永不触发。
+
+    **查法＝`git log -1 --format=%cI -G'^\| *<行号> *\|' -- <文件>`**。
+    `-G` 匹配"patch 里增删的行中有匹配该正则的行"；编辑一行 ＝ 删旧行 ＋
+    加新行，两侧都以 `| <行号> |` 起首 ⇒ **任何对该行正文的改动都会命中**。
+
+    **为何不用 `-L<n>,<n>` 或 `git blame -L`**：那两者追的是"当前第 n 行"
+    的历史，而队列行的物理行号随上方增删不断漂移，追出来的很可能是另一行
+    的历史——**是一个会静默给出错误答案的判据**（同 #308 要根治的形态）。
+
+    **已知精度边界（如实登记）**：若同一文件别处出现行首为 `| <同一数字> |`
+    的文本也会命中。实测队列文件里行首 `| <数字> |` 只可能是 §一 数据行
+    本身，概率极低；且**误命中的方向是"以为它动过、于是不催"**，属保守
+    失败——`#147` 狼来了教训指向"乱催"的代价更高，故取这一侧。
+    """
+    if not row_id.isdigit():
+        return None
+    pattern = rf"^\| *{row_id} *\|"
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "log", "-1", "--format=%cI",
+             f"-G{pattern}", "--", queue_rel],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+    except (OSError, FileNotFoundError):
+        return None
+    if result.returncode != 0:
+        return None
+    stamp = result.stdout.strip()
+    if not stamp:
+        return None
+    try:
+        return datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+
+
+@dataclass
+class StaleCandidate:
+    """一条判定为"陈化"的可 Open 行 ＋ 它已闲置的天数（供文案显示）。"""
+    item: OpenPoolItem
+    idle_days: int
+
+
+def _parse_iso(value) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def compute_stale_candidates(
+    items: list[OpenPoolItem], state: dict, now: datetime,
+    *, touched_at: Callable[[OpenPoolItem], Optional[datetime]],
+    threshold_days: int = STALE_THRESHOLD_DAYS,
+    interval_days: int = STALE_REMINDER_INTERVAL_DAYS,
+) -> tuple[list[StaleCandidate], list[str]]:
+    """队列 #312 缺口二：判定哪些可 Open 行该发陈化催办。返回
+    `(候选列表, 降级日志列表)`——降级日志交调用方打印/记 audit，**不静默**。
+
+    两条**合取**条件（缺一不催）：
+      ① 该行的末次触碰时间距 `now` 超过 `threshold_days`；
+      ② 距上次对该行发出陈化催办已满 `interval_days`（从未催过即满足）。
+
+    🔴 **与「新增即推」（`compute_new_ids`）分别计指纹、互不覆盖**——两者
+    判的是不同的事：前者判"池里出现了以前没有的活"（低延迟、事件驱动），
+    后者判"某条活一直没被领走"（周期性、存量催办）。用其一取代另一个，
+    要么让新活最多迟一周才被提醒，要么就是本轮要修的这个缺口本身。
+
+    **`touched_at` 由调用方注入**（生产接 `last_touched_at`，单测注入假
+    函数）——避免为了测一个纯判定逻辑而必须造一个真 git 仓库。
+
+    🔴 **时间比较必须同基准**：git `%cI` 自带时区偏移，`now` 也 MUST 是带
+    时区的时刻（根 CLAUDE.md「时间戳必判 UTC vs Win 本地」硬规则的具体
+    落点）；把带时区的时刻与朴素本地时刻相减在 Python 里会直接抛
+    `TypeError`，本函数不吞这个异常——它该炸出来，不该被兜成"不催"。
+    """
+    notified = state.get("stale_notified_at") or {}
+    candidates: list[StaleCandidate] = []
+    degraded: list[str] = []
+    threshold = timedelta(days=threshold_days)
+    interval = timedelta(days=interval_days)
+    for item in items:
+        touched = touched_at(item)
+        if touched is None:
+            # 尚未 commit 的新行等情形——**保守失败：视为"刚触碰、不催"**。
+            # 反过来把 None 当"很久没动"，会让每一条新行在下一次运行时立刻
+            # 被催，等于把机制退化成定夺 1 里已被否决的 (c)「池非空就推」。
+            degraded.append(
+                f"#{item.row_id} 取不到 git 末次触碰时间（{item.queue_rel or '来源未声明'}），"
+                f"按『刚触碰』处理、本轮不催（非静默降级，队列 #312 缺口二）"
+            )
+            continue
+        idle = now - touched
+        if idle <= threshold:
+            continue
+        last_notified = _parse_iso(notified.get(item.row_id))
+        if last_notified is not None and now - last_notified < interval:
+            continue
+        candidates.append(StaleCandidate(item=item, idle_days=idle.days))
+    return candidates, degraded
+
+
+def new_stale_state(
+    items: list[OpenPoolItem], state: dict, notified_ids: set[str], now: datetime,
+) -> dict:
+    """更新后的 `stale_notified_at`——**每轮裁剪为仅保留当前仍在池中的行
+    号**，本轮真发出催办的行时间戳刷新为 `now`。
+
+    裁剪的理由与 `new_known_state` 的"替换而非并集累加"同源：一条行被领走
+    （转 `partial`/`done`）后又退回 `open` 时，应按新的计时起点重新起算，
+    **而不是带着三个月前的催办记录立刻被催**。只增不减还会让状态文件无界
+    增长。
+    """
+    current = {item.row_id for item in items}
+    previous = state.get("stale_notified_at") or {}
+    kept = {k: v for k, v in previous.items() if k in current}
+    stamp = now.isoformat()
+    for row_id in notified_ids:
+        if row_id in current:
+            kept[row_id] = stamp
+    return kept
+
+
+def format_stale_reminder_message(candidates: list[StaleCandidate]) -> Optional[str]:
+    """陈化催办文案。同 `format_pool_reminder_message` 的既有红线——**自带
+    下一步动作**，不写"有 N 条可开"式的存在即提醒（队列 #147「狼来了」
+    教训）；尚未出 opener 的行如实标注，不假装存在一个路径。
+
+    与「新增即推」是**两条独立消息**（派单件：两条判据分别计指纹、不要
+    互相覆盖），故文案首行也明确区分，使他一眼能分清"这是新活"还是"这是
+    催我快点"。
+    """
+    if not candidates:
+        return None
+    lines = [f"⏳ 可 Open 池陈化催办 {len(candidates)} 条（已排队多日无进展，非新增）："]
+    for cand in sorted(
+        candidates, key=lambda c: (-c.idle_days, int(c.item.row_id) if c.item.row_id.isdigit() else 0)
+    ):
+        item = cand.item
+        domain_tag = f"[{item.domain}]" if item.domain else "[域未标注]"
+        if item.opener_path:
+            action = f"opener 在 `{item.opener_path}`，复制即用"
+        else:
+            action = "尚未出 opener，需先备一份"
+        lines.append(f"- #{item.row_id} {domain_tag} 已滞留 {cand.idle_days} 天 {item.summary}：{action}")
+    lines.append(
+        f"同一行每 {STALE_REMINDER_INTERVAL_DAYS} 天最多催一次；行被领走或状态改变即自动停催。"
+    )
+    return "\n".join(lines)
+
+
 def format_pool_reminder_message(items: list[OpenPoolItem], new_ids: set[str]) -> Optional[str]:
     """队列 #312 ⑶："提醒文案必须自带下一步动作"——不写"有 N 条可开"，
     写"有 N 条可开，opener 在 `<路径>`，复制即用"；尚未出 opener 的行
@@ -299,18 +554,24 @@ def format_pool_reminder_message(items: list[OpenPoolItem], new_ids: set[str]) -
 
 async def send_open_pool_reminder(
     connector, audit, alert_text: str, recipient: str, *, fallback_send=None,
+    action_prefix: str = "open_pool_reminder",
 ) -> None:
     """形状仿 `decision_reminder.send_decision_reminder`（同一通道范式：
     主通道——智能机器人私信——失败时若提供 `fallback_send`（同步函数，
     走独立群 webhook 通道）在线程池里兜底发一次）。审计 action 名单独
     区分（`open_pool_reminder_*` 而非 `decision_reminder_*`），避免两条
     互不相干的提醒链路在审计轨迹里混为一谈——IATF 可追溯性要求动作可
-    精确归因到具体机制，不是"反正都是提醒就共用一个标签"。"""
+    精确归因到具体机制，不是"反正都是提醒就共用一个标签"。
+
+    `action_prefix`（队列 #312 缺口二）——同一条发送通道服务两种判据
+    （「新增即推」与「陈化催办」），**两者的 audit action 名必须分开**，
+    否则事后无从判断某次推送是哪一条判据发出的，与上一段的理由同源。
+    缺省值保持既有 `open_pool_reminder`，既有调用点行为一字不变。"""
     try:
         await connector.send_markdown(recipient, alert_text)
     except Exception:  # noqa: BLE001
         audit.record(AuditEvent(
-            scenario="wecom-aibot", action="open_pool_reminder_send_failed", evaluator="system",
+            scenario="wecom-aibot", action=f"{action_prefix}_send_failed", evaluator="system",
             automation_level="L1", decision={"sent": False}, data_sources={},
         ))
         if fallback_send is None:
@@ -319,18 +580,18 @@ async def send_open_pool_reminder(
             await asyncio.to_thread(fallback_send, alert_text)
         except Exception:  # noqa: BLE001
             audit.record(AuditEvent(
-                scenario="wecom-aibot", action="open_pool_reminder_fallback_failed",
+                scenario="wecom-aibot", action=f"{action_prefix}_fallback_failed",
                 evaluator="system", automation_level="L1",
                 decision={"sent": False}, data_sources={},
             ))
         else:
             audit.record(AuditEvent(
-                scenario="wecom-aibot", action="open_pool_reminder_fallback_sent",
+                scenario="wecom-aibot", action=f"{action_prefix}_fallback_sent",
                 evaluator="system", automation_level="L1",
                 decision={"sent": True, "channel": "webhook"}, data_sources={},
             ))
         return
     audit.record(AuditEvent(
-        scenario="wecom-aibot", action="open_pool_reminder_sent", evaluator="system",
+        scenario="wecom-aibot", action=f"{action_prefix}_sent", evaluator="system",
         automation_level="L1", decision={"sent": True, "recipient": recipient}, data_sources={},
     ))

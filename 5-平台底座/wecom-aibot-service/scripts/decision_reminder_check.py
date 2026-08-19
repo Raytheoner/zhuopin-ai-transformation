@@ -14,6 +14,15 @@
   模块 docstring）**——管"待你开工"：§一 状态字段为 `[S:open]` 的行即
   "可立即开工"，指纹（当前可 Open 行号集合）出现新行号才推一次，池子
   缩小或维持不变均静默（队列 #147「狼来了」教训，不做"存在即提醒"）。
+  🔴 取数覆盖**两份**物理队列文件（#315 拆分后机制环境／业务场景各一
+  份），2026-08-19 前只读了机制环境那一份 ⇒ 采购／财务／质量三域从未
+  进过池（队列 #312 缺口一）。
+
+  **③ 可 Open 池陈化催办（队列 #312 缺口二，2026-08-19）**——管"你有活
+  一直没开"：某可 Open 行的 git 末次触碰时间超过 7 天且距上次催办已满
+  7 天，推一条催办。与 ② 分别计指纹、独立成一条消息、audit action 名
+  单独区分——② 判"池里出现了以前没有的活"，③ 判"某条活一直没被领走"，
+  用其一取代另一个都会漏掉另一半。
 
 **两者为何同进程（而非各开一个脚本/各注册一个定时任务）**：队列 #312
 行内设计明确"两者互补，可同进程"——巡逻侧的调用点在拆件巡逻定时任务
@@ -40,7 +49,7 @@ import argparse
 import asyncio
 import os
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -76,10 +85,14 @@ from aibot_service.decision_reminder import (  # noqa: E402
 from aibot_service.decision_reminder import load_state as load_decision_state  # noqa: E402
 from aibot_service.decision_reminder import save_state as save_decision_state  # noqa: E402
 from aibot_service.open_pool_reminder import (  # noqa: E402
-    build_pool_items,
+    build_pool_items_from_repo,
     compute_new_ids,
+    compute_stale_candidates,
     format_pool_reminder_message,
+    format_stale_reminder_message,
+    last_touched_at,
     new_known_state,
+    new_stale_state,
     send_open_pool_reminder,
 )
 from aibot_service.open_pool_reminder import load_state as load_pool_state  # noqa: E402
@@ -187,14 +200,40 @@ async def _run(dry_run: bool) -> int:
 
     # ② 队列 #312：可 Open 池事件驱动提醒——判据与 ① 均读 #308 同一份
     # 机器字段，互不依赖，各自独立算、独立决定是否有内容要发。
+    #
+    # 🔴 **取数走 `build_pool_items_from_repo`（双文件），不是 `queue_text`
+    # 那一份**（队列 #312 缺口一，2026-08-19 零时巡检查清）：`QUEUE_REL`
+    # 只指向机制环境那份，而 #315 拆分后采购／财务／质量三域的构建任务全
+    # 住在业务场景那份里 ⇒ 三个域从未进过池。① 决策提醒仍读 `queue_text`
+    # ——那是另一条独立链路，其取数范围是否同样欠账不在本次范围内（如实
+    # 登记，见队列 #312 回写）。
     pool_state = load_pool_state(pool_state_path)
-    pool_items = build_pool_items(queue_text, resolved_repo_root)
+    pool_items = build_pool_items_from_repo(resolved_repo_root)
     new_pool_ids = compute_new_ids(pool_items, pool_state)
     pool_message = format_pool_reminder_message(pool_items, new_pool_ids)
     new_pool_state = new_known_state(pool_items)
 
-    if decision_message is None and pool_message is None:
-        print("[OK] 无新增/超期决策项，可 Open 池亦无新增行号，本次不发送。")
+    # ③ 队列 #312 缺口二：陈化催办——「新增即推」对"有活一直没开"结构性
+    # 沉默，而这正是 Shao Peishen 要的那一半（「提醒我加快」）。与 ② 分别
+    # 计指纹、独立成一条消息，互不覆盖。
+    now = datetime.now(timezone.utc)
+    stale_candidates, stale_degraded = compute_stale_candidates(
+        pool_items, pool_state, now,
+        touched_at=lambda item: (
+            last_touched_at(resolved_repo_root, item.queue_rel, item.row_id)
+            if item.queue_rel else None
+        ),
+    )
+    for note in stale_degraded:
+        print(f"[WARN] {note}", file=sys.stderr)
+    stale_message = format_stale_reminder_message(stale_candidates)
+    stale_ids = {c.item.row_id for c in stale_candidates}
+    new_pool_state["stale_notified_at"] = new_stale_state(
+        pool_items, pool_state, stale_ids if stale_message else set(), now,
+    )
+
+    if decision_message is None and pool_message is None and stale_message is None:
+        print("[OK] 无新增/超期决策项，可 Open 池亦无新增行号、无陈化行，本次不发送。")
         if not dry_run:
             save_decision_state(decision_state_path, new_decision_state)
             save_pool_state(pool_state_path, new_pool_state)
@@ -204,6 +243,8 @@ async def _run(dry_run: bool) -> int:
         print(decision_message)
     if pool_message:
         print(pool_message)
+    if stale_message:
+        print(stale_message)
 
     if dry_run:
         print("[dry-run] 以上内容不实际发送，状态文件不落地。")
@@ -229,6 +270,11 @@ async def _run(dry_run: bool) -> int:
             await send_open_pool_reminder(
                 connector, audit, pool_message, PAUL_USERID, fallback_send=fallback_send,
             )
+        if stale_message:
+            await send_open_pool_reminder(
+                connector, audit, stale_message, PAUL_USERID, fallback_send=fallback_send,
+                action_prefix="open_pool_stale_reminder",
+            )
     finally:
         connector.disconnect()
 
@@ -237,6 +283,8 @@ async def _run(dry_run: bool) -> int:
         sent_summary.append(f"决策提醒 {len(decision_items)} 项")
     if pool_message:
         sent_summary.append(f"可 Open 池新增 {len(new_pool_ids)} 项")
+    if stale_message:
+        sent_summary.append(f"可 Open 池陈化催办 {len(stale_candidates)} 项")
     print(f"[OK] 已发送：{'；'.join(sent_summary)}。")
     return 0
 

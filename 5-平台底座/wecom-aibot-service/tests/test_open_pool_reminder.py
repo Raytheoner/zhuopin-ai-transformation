@@ -13,20 +13,26 @@ from __future__ import annotations
 
 import asyncio
 import warnings
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from zhuopin_platform.audit import AuditLogger
 
 from aibot_service.open_pool_reminder import (
     OpenPoolItem,
+    StaleCandidate,
     build_pool_items,
+    build_pool_items_from_repo,
     compute_new_ids,
+    compute_stale_candidates,
     default_state,
     discover_opener_files,
     find_opener_path,
     format_pool_reminder_message,
+    format_stale_reminder_message,
     load_state,
     new_known_state,
+    new_stale_state,
     parse_open_pool_rows,
     save_state,
     send_open_pool_reminder,
@@ -242,9 +248,20 @@ def test_new_known_state_replaces_not_unions_so_reappearance_counts_as_new():
 
 
 def test_state_round_trip_via_save_and_load(tmp_path: Path):
+    """队列 #312 缺口二：状态 schema 由单键扩为双键，`load_state` 恒返回
+    补齐后的完整形状（写入时缺的键按默认值补，见 `default_state`）——这是
+    "旧状态文件平滑升级"这条契约的另一面，故本用例断言的是补齐后的结果，
+    不是"写进去什么就读出什么"。"""
     path = tmp_path / "state.json"
     save_state(path, {"known_open_ids": ["82", "98"]})
-    assert load_state(path) == {"known_open_ids": ["82", "98"]}
+    assert load_state(path) == {"known_open_ids": ["82", "98"], "stale_notified_at": {}}
+
+
+def test_state_round_trip_preserves_stale_notified_at(tmp_path: Path):
+    path = tmp_path / "state.json"
+    state = {"known_open_ids": ["82"], "stale_notified_at": {"82": "2026-08-19T12:00:00+00:00"}}
+    save_state(path, state)
+    assert load_state(path) == state
 
 
 def test_load_state_missing_file_returns_default(tmp_path: Path):
@@ -352,3 +369,248 @@ def test_send_open_pool_reminder_no_fallback_configured_only_logs_failure(tmp_pa
     ))
 
     assert _actions(audit) == ["open_pool_reminder_send_failed"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 队列 #312 缺口一 · 双文件取数（2026-08-19 零时巡检查清）
+# ══════════════════════════════════════════════════════════════════════════
+
+_BUSINESS_SAMPLE = """\
+## 一、任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 334 | 保供看板新增物料看板视图 | 待领 | 输入 | 产出 | [S:open][D:业] 待领（P2） | — | 08-17 |
+| 344 | 齐料日期口径 | 待领 | 输入 | 产出 | [S:blocked][D:业] 等回件 | — | 08-18 |
+
+## 二、占位
+"""
+
+
+def _write_dual_queue(repo_root: Path, mechanism, business) -> None:
+    """按 `queue_table.iter_queue_paths()` 的真实相对路径落两份物理队列文件
+    （不硬编码路径字面量——那正是本轮要修的"下游各自记一份路径"形态）。"""
+    from zhuopin_platform.shared_tools.queue_table import iter_queue_paths
+
+    mech_rel, biz_rel = iter_queue_paths()
+    for rel, text in ((mech_rel, mechanism), (biz_rel, business)):
+        if text is None:
+            continue
+        path = repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+def test_business_file_open_rows_enter_pool(tmp_path: Path):
+    """缺口一的直接回归：业务场景文件里的 open 行必须进池。
+
+    修复前生产实测 known_open_ids ＝ ["240","337","338","341","98"] 五个
+    全是机制环境行，采购 #334 一个都不在——本用例即那个事实的可执行形式。
+    """
+    _write_dual_queue(tmp_path, SECTION_ONE_SAMPLE, _BUSINESS_SAMPLE)
+    items = build_pool_items_from_repo(tmp_path)
+    assert "334" in {i.row_id for i in items}
+
+
+def test_dual_files_merged_into_one_pool(tmp_path: Path):
+    _write_dual_queue(tmp_path, SECTION_ONE_SAMPLE, _BUSINESS_SAMPLE)
+    ids = {i.row_id for i in build_pool_items_from_repo(tmp_path)}
+    # 机制环境三条（82/98/315）＋ 业务场景一条（334）；另一条业务行是
+    # blocked，结构性排除。
+    assert ids == {"82", "98", "315", "334"}
+
+
+def test_pool_items_carry_source_queue_file(tmp_path: Path):
+    """陈化催办要去"该行所在的那份文件"上查 git 历史，故来源须随行携带。"""
+    from zhuopin_platform.shared_tools.queue_table import iter_queue_paths
+
+    mech_rel, biz_rel = iter_queue_paths()
+    _write_dual_queue(tmp_path, SECTION_ONE_SAMPLE, _BUSINESS_SAMPLE)
+    by_id = {i.row_id: i for i in build_pool_items_from_repo(tmp_path)}
+    assert by_id["98"].queue_rel == mech_rel
+    assert by_id["334"].queue_rel == biz_rel
+
+
+def test_missing_one_queue_file_warns_and_keeps_the_other(tmp_path: Path):
+    """一份缺失时不得静默把残缺结果当作完整的池——那正是缺口一的形态。"""
+    _write_dual_queue(tmp_path, SECTION_ONE_SAMPLE, None)  # 业务场景那份不落盘
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        items = build_pool_items_from_repo(tmp_path)
+    assert any(issubclass(w.category, RuntimeWarning) for w in caught)
+    assert {i.row_id for i in items} == {"82", "98", "315"}
+
+
+def test_concatenating_texts_would_silently_drop_second_section_one(tmp_path: Path):
+    """锁死"逐份解析后合并"这个选择，不是"拼接文本后解析一次"。
+
+    _parse_table_rows 用 text.find(heading) 只取**第一个** `## 一、`
+    ⇒ 拼接后第二份的 §一 会被静默丢弃，症状与缺口一一模一样且更难发现。
+    本用例把这个陷阱固化成断言，防止后来者"顺手简化"成拼接。
+    """
+    concatenated = SECTION_ONE_SAMPLE + "\n" + _BUSINESS_SAMPLE
+    assert "334" not in {r.row_id for r in parse_open_pool_rows(concatenated)}
+
+    _write_dual_queue(tmp_path, SECTION_ONE_SAMPLE, _BUSINESS_SAMPLE)
+    assert "334" in {i.row_id for i in build_pool_items_from_repo(tmp_path)}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 队列 #312 缺口二 · 陈化催办
+# ══════════════════════════════════════════════════════════════════════════
+
+_NOW = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+
+
+def _item(row_id: str, opener=None) -> OpenPoolItem:
+    return OpenPoolItem(
+        row_id=row_id, domain="机", summary=f"任务 {row_id}",
+        opener_path=opener, queue_rel="1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md",
+    )
+
+
+def _touched(days_ago):
+    def _fn(item: OpenPoolItem):
+        if item.row_id not in days_ago:
+            return None
+        return _NOW - timedelta(days=days_ago[item.row_id])
+    return _fn
+
+
+def test_stale_row_beyond_threshold_is_flagged():
+    cands, degraded = compute_stale_candidates(
+        [_item("334")], default_state(), _NOW, touched_at=_touched({"334": 9}),
+    )
+    assert [c.item.row_id for c in cands] == ["334"]
+    assert cands[0].idle_days == 9
+    assert degraded == []
+
+
+def test_fresh_row_within_threshold_is_silent():
+    """#334 在 2026-08-19 实测末次触碰 08-17（2 天）——本用例即那个真实取值
+    的形状：缺口一修好后它靠「新增即推」被推出来，而不是靠陈化催办。"""
+    cands, _ = compute_stale_candidates(
+        [_item("334")], default_state(), _NOW, touched_at=_touched({"334": 2}),
+    )
+    assert cands == []
+
+
+def test_stale_row_already_notified_within_interval_is_silent():
+    state = default_state()
+    state["stale_notified_at"] = {"334": (_NOW - timedelta(days=3)).isoformat()}
+    cands, _ = compute_stale_candidates(
+        [_item("334")], state, _NOW, touched_at=_touched({"334": 30}),
+    )
+    assert cands == []
+
+
+def test_stale_row_renotified_after_interval():
+    state = default_state()
+    state["stale_notified_at"] = {"334": (_NOW - timedelta(days=8)).isoformat()}
+    cands, _ = compute_stale_candidates(
+        [_item("334")], state, _NOW, touched_at=_touched({"334": 30}),
+    )
+    assert [c.item.row_id for c in cands] == ["334"]
+
+
+def test_unknown_touch_time_is_conservative_and_not_silent():
+    """取不到 git 时间 ⇒ 视为"刚触碰、不催"，且必须留下可见记录。
+
+    反过来把 None 当"很久没动"，会让每一条新行在下一次运行时立刻被催，
+    等于把机制退化成定夺 1 里已被否决的 (c)「池非空就推」。
+    """
+    cands, degraded = compute_stale_candidates(
+        [_item("999")], default_state(), _NOW, touched_at=_touched({}),
+    )
+    assert cands == []
+    assert len(degraded) == 1 and "999" in degraded[0]
+
+
+def test_naive_now_raises_rather_than_silently_not_nudging():
+    """时间基准不一致必须炸出来，不得被兜成"不催"（根 CLAUDE.md 时间戳硬规则）。"""
+    import pytest
+
+    with pytest.raises(TypeError):
+        compute_stale_candidates(
+            [_item("334")], default_state(), datetime(2026, 8, 19, 12, 0),
+            touched_at=_touched({"334": 30}),
+        )
+
+
+def test_stale_state_pruned_when_row_leaves_pool():
+    state = default_state()
+    state["stale_notified_at"] = {"334": _NOW.isoformat(), "341": _NOW.isoformat()}
+    kept = new_stale_state([_item("334")], state, set(), _NOW)
+    assert kept == {"334": _NOW.isoformat()}
+
+
+def test_reentering_row_restarts_from_new_touch_point():
+    """行离开池后又转回 open，不得带着旧催办记录立刻被催——记录已被裁剪，
+    此后按新的末次触碰时间重新起算。"""
+    state = default_state()
+    state["stale_notified_at"] = {"334": (_NOW - timedelta(days=90)).isoformat()}
+    pruned = new_stale_state([], state, set(), _NOW)  # 离开池那一轮
+    assert pruned == {}
+    state["stale_notified_at"] = pruned
+    cands, _ = compute_stale_candidates(
+        [_item("334")], state, _NOW, touched_at=_touched({"334": 1}),
+    )
+    assert cands == []
+
+
+def test_new_stale_state_stamps_only_actually_notified_rows():
+    kept = new_stale_state([_item("334"), _item("341")], default_state(), {"334"}, _NOW)
+    assert kept == {"334": _NOW.isoformat()}
+
+
+def test_legacy_state_file_without_stale_key_loads_clean(tmp_path: Path):
+    path = tmp_path / "state.json"
+    path.write_text('{"known_open_ids": ["98"]}', encoding="utf-8")
+    state = load_state(path)
+    assert state["known_open_ids"] == ["98"]
+    assert state["stale_notified_at"] == {}
+
+
+def test_stale_state_wrong_type_is_reset_not_crash(tmp_path: Path):
+    path = tmp_path / "state.json"
+    path.write_text('{"known_open_ids": [], "stale_notified_at": ["oops"]}', encoding="utf-8")
+    assert load_state(path)["stale_notified_at"] == {}
+
+
+def test_stale_message_carries_next_action_and_idle_days():
+    msg = format_stale_reminder_message([
+        StaleCandidate(item=_item("334", "1-转型规划/0-全景路线图/opener集-x.md"), idle_days=9),
+        StaleCandidate(item=_item("341"), idle_days=12),
+    ])
+    assert "陈化催办 2 条" in msg
+    assert "已滞留 12 天" in msg and "已滞留 9 天" in msg
+    assert "opener集-x.md" in msg
+    assert "尚未出 opener" in msg
+    # 滞留最久的排最前——他要先看到压得最久的那条。
+    assert msg.index("#341") < msg.index("#334")
+
+
+def test_stale_message_none_when_no_candidates():
+    assert format_stale_reminder_message([]) is None
+
+
+def test_new_and_stale_fingerprints_do_not_shadow_each_other():
+    """两条判据分别计指纹（派单件明写"不要互相覆盖"）：一条行已被「新增
+    即推」提醒过（进了 known_open_ids）之后，仍能独立地被陈化催办命中。"""
+    items = [_item("341")]
+    state = {"known_open_ids": ["341"], "stale_notified_at": {}}
+    assert compute_new_ids(items, state) == set()
+    cands, _ = compute_stale_candidates(
+        items, state, _NOW, touched_at=_touched({"341": 20}),
+    )
+    assert [c.item.row_id for c in cands] == ["341"]
+
+
+def test_stale_reminder_uses_distinct_audit_action(tmp_path: Path):
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    connector = _FakeConnector(should_fail=False)
+    asyncio.run(send_open_pool_reminder(
+        connector, audit, "⏳ 陈化催办", "ShaoPeiShen",
+        action_prefix="open_pool_stale_reminder",
+    ))
+    assert _actions(audit) == ["open_pool_stale_reminder_sent"]
