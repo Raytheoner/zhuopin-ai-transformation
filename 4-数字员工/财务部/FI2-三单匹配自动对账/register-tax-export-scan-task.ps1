@@ -17,8 +17,10 @@
 #
 #  前置：deploy-server.ps1 已跑过（venv 已建）；.env 已配置 U9C_*/STOCK_API_*
 #  （复用 Fi2WebServer 既有凭据，见场景 CLAUDE.md D19 部署段）；如需告警生效，
-#  另需 .env 配置 WECOM_WEBHOOK_URL（未配置时静默跳过告警，不阻断扫描本身，
-#  见 fi2/tax_export_scan.py `_try_alert` 既有降级方式）。
+#  另需 .env 配置 WECOM_WEBHOOK_URL_OPS（IT 运维部群；2026-08-19 队列 #82 更正——
+#  原写的裸 WECOM_WEBHOOK_URL 按队列 #282 指向业务部门群，本告警不得发到那里）。
+#  未配置时静默跳过告警、不阻断扫描本身，见 fi2/tax_export_scan.py `_try_alert`
+#  既有降级方式。
 #
 #  运行身份：SYSTEM + ServiceAccount 登录（同 Fi2WebServer 既有先例——SYSTEM
 #  只认机器级 PATH，故下方 Execute 用 venv 内 python.exe 绝对路径，不传裸命令名，

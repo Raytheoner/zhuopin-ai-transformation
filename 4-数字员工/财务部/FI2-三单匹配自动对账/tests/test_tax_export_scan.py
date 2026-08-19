@@ -453,3 +453,54 @@ def test_build_silence_message_states_facts_without_prescribing():
     assert "5 个工作日" in msg
     assert "D:\airead" in msg
     assert "扫描机制本身运行正常" in msg      # 不让读者误以为是我方坏了
+
+
+# ============================================================================
+# 告警去向：只认 WECOM_WEBHOOK_URL_OPS，不回退裸 WECOM_WEBHOOK_URL
+# （队列 #82，2026-08-19——原缺陷＝键名对不上；#282 已确认裸键指向业务部门群，
+#  一旦回退命中就是把"机制自身故障"播到业务群，比静默跳过更坏）
+# ============================================================================
+
+def _load_scheduled_cli():
+    """按路径加载计划任务 CLI（它在 `scripts/` 下、不是包内模块）。"""
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parent.parent / "scripts" / "scan_tax_export_scheduled.py"
+    spec = importlib.util.spec_from_file_location("_fi2_scan_cli_undertest", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_alert_webhook_env_key_is_ops():
+    cli = _load_scheduled_cli()
+    assert cli.ALERT_WEBHOOK_ENV == "WECOM_WEBHOOK_URL_OPS"
+
+
+def test_resolve_alert_webhook_reads_ops_key():
+    cli = _load_scheduled_cli()
+    assert cli.resolve_alert_webhook(
+        {"WECOM_WEBHOOK_URL_OPS": "https://example.invalid/ops"}) == "https://example.invalid/ops"
+
+
+def test_resolve_alert_webhook_never_falls_back_to_bare_key():
+    """裸 `WECOM_WEBHOOK_URL` 指向业务部门群——只有它在时必须视同未配置（静默跳过）。"""
+    cli = _load_scheduled_cli()
+    assert cli.resolve_alert_webhook(
+        {"WECOM_WEBHOOK_URL": "https://example.invalid/business-group"}) is None
+
+
+def test_resolve_alert_webhook_prefers_ops_when_both_present():
+    """两者并存（本机开发环境即如此）时只取 _OPS，业务群那条永不被选中。"""
+    cli = _load_scheduled_cli()
+    assert cli.resolve_alert_webhook({
+        "WECOM_WEBHOOK_URL": "https://example.invalid/business-group",
+        "WECOM_WEBHOOK_URL_OPS": "https://example.invalid/ops",
+    }) == "https://example.invalid/ops"
+
+
+def test_resolve_alert_webhook_treats_blank_as_unset():
+    """`5-平台底座/.env` 里有过空值键的先例——空串须等同未配置，不能当成 URL 发出去。"""
+    cli = _load_scheduled_cli()
+    assert cli.resolve_alert_webhook({"WECOM_WEBHOOK_URL_OPS": "   "}) is None
+    assert cli.resolve_alert_webhook({}) is None

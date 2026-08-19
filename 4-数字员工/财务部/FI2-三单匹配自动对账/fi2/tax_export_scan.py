@@ -14,7 +14,10 @@ Layer 1（队列 #295，已建成）：`tax_export_ingest.ingest_directory` 提�
 行级诊断发告警，否则告警会被真实数据的高噪声比例淹没，形同虚设。
 
 ② **告警**：命中文件级失败（或 `ingest_directory` 本身抛异常，如 U9C 连接/目录
-不可达）时，经既有群 webhook 逃生通道通知 Shao Peishen（`WECOM_WEBHOOK_URL`，同
+不可达）时，经群 webhook 逃生通道通知 Shao Peishen（**`WECOM_WEBHOOK_URL_OPS`＝IT
+运维部群；2026-08-19 队列 #82 更正——原写的裸 `WECOM_WEBHOOK_URL` 按 #282 指向业务
+部门群，键名对不上会把机制故障播到业务群，故调用入口
+`scripts/scan_tax_export_scheduled.py` 只读 `_OPS`、不回退**；同
 `wecom-aibot-service/scripts/alert_webhook.py`/`decision_reminder.py` 既定判据——
 本告警主题是"自动化机制自身出问题"，不是业务内容，按
 `3-治理与合规/通知通道架构决策件-webhook退役与aibot单一出口-2026-08-06.md` §4.2

@@ -19,6 +19,15 @@
 本地测试（指向本地样本目录 + 本地已处理清单）：
     python scan_tax_export_scheduled.py --export-dir data/tax_export_samples \\
         --out-dir data/tax_export --ledger data/tax_export/.processed_exports.json
+
+**告警去向**：只读 `WECOM_WEBHOOK_URL_OPS`（IT 运维部群），**刻意不回退到裸
+`WECOM_WEBHOOK_URL`**——后者按队列 #282 已确认指向业务部门群（本机根 `.env` 注释
+即写明"采购内部工作群"），而本告警的主题是"自动化机制自己出问题了"，按通知通道
+决策件 `3-治理与合规/通知通道架构决策件-webhook退役与aibot单一出口-2026-08-06.md`
+§4.2／§5.1，其受众收敛为「Shao Peishen ＋ IT 陈承」二人，**业务部门此后不从任何
+webhook 收消息**。回退一旦命中即等于把机制故障播到业务群——"静默跳过"只是没响，
+"发错群"是响在错的人面前，后者更坏，故不留这条回退路径。未配置时仍按既有降级
+方式静默跳过（不阻断扫描本身）。
 """
 from __future__ import annotations
 
@@ -65,6 +74,19 @@ def load_env() -> None:
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
+#: 本告警唯一的去向键——IT 运维部群 webhook（队列 #282 前提①，2026-08-07 已落 `.env`）。
+ALERT_WEBHOOK_ENV = "WECOM_WEBHOOK_URL_OPS"
+
+
+def resolve_alert_webhook(env) -> str | None:
+    """取告警 webhook：**只认 `WECOM_WEBHOOK_URL_OPS`，不回退裸 `WECOM_WEBHOOK_URL`**。
+
+    理由见模块 docstring「告警去向」段：裸键指向业务部门群，回退命中即为发错群。
+    """
+    url = (env.get(ALERT_WEBHOOK_ENV) or "").strip()
+    return url or None
+
+
 def main() -> int:
     load_env()
     ap = argparse.ArgumentParser(description="税务导出发票明细 Excel 定时扫描（队列 #82 第2层）")
@@ -91,7 +113,7 @@ def main() -> int:
     conn = ZpConnector.from_env(audit=trace)
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    webhook_url = os.environ.get("WECOM_WEBHOOK_URL")
+    webhook_url = resolve_alert_webhook(os.environ)
 
     silence_workdays = (args.silence_workdays if args.silence_workdays is not None
                         else SILENCE_WORKDAYS_DEFAULT)
@@ -106,7 +128,7 @@ def main() -> int:
         elif webhook_url:
             print(f"webhook 告警发送失败：{e.outcome.alert_error}", file=sys.stderr)
         else:
-            print("WECOM_WEBHOOK_URL 未配置，未发送告警。", file=sys.stderr)
+            print(f"{ALERT_WEBHOOK_ENV} 未配置，未发送告警。", file=sys.stderr)
         return 1
 
     result = outcome.result
@@ -126,7 +148,7 @@ def main() -> int:
         elif webhook_url:
             print(f"webhook 告警发送失败：{outcome.alert_error}", file=sys.stderr)
         else:
-            print("WECOM_WEBHOOK_URL 未配置，未发送告警。", file=sys.stderr)
+            print(f"{ALERT_WEBHOOK_ENV} 未配置，未发送告警。", file=sys.stderr)
 
     if outcome.file_level_failures:
         print(f"⚠️ 文件级摄取失败 {len(outcome.file_level_failures)} 处", file=sys.stderr)
