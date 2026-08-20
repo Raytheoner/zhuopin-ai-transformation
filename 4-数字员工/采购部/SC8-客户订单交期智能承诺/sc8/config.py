@@ -146,6 +146,28 @@ def material_commitment_lookahead_days() -> int:
     return max(1, days)
 
 
+def material_board_month_span() -> int:
+    """物料看板月度缺口列的月份跨度：`SC8_MATERIAL_BOARD_MONTHS`（默认 3）。
+
+    姚祖怡 2026-08-12 采购部#13 回件给出的列模板写的是「8 月／9 月／10 月／8-10 月
+    总缺口」，但他是在 8 月写的、且第 4 列表述为「三者相加」——是**相对表述而非
+    常量**（design D2）。故实现为「以快照业务日期所在月为首的连续 N 个自然月」，
+    月份随快照滚动、列标题显示真实月份，不写死。
+
+    **为何可配**：3 是他当天给出的实例，不是经过验证的业务判据——采购备料的可视
+    区间会随物料交期结构变化（长交期料看 6 个月才有意义）。本参数留给他在判例包
+    里确认；改一个 env 即改，不需改代码、不需重新 design 审。跨度加大**不增加任何
+    取数请求**（纯派生自同一份快照，见 material_board.build_material_board），只影响
+    列数与「窗口外缺口」的划分边界。
+    """
+    raw = os.environ.get("SC8_MATERIAL_BOARD_MONTHS", "3").strip()
+    try:
+        months = int(raw)
+    except ValueError:
+        months = 3
+    return max(1, months)
+
+
 # ── 对客外发总开关（红线 §7.4）──────────────────────────────────────────────
 # 全程关闭，直到 ① SRM 真正联调通过 ② 真实黄金基准零偏差 ③ 门禁 6 项全勾。
 # 关闭期间：所有对客通报只生成草稿、入待审批队列，绝不自动外发客户。

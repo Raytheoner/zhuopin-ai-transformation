@@ -20,7 +20,9 @@ from pathlib import Path
 from . import config
 from .baoguan import RISK_GAP, RISK_GREEN, RISK_RED, RISK_YELLOW, build_dashboard, row_to_dict
 # 模块级引用真实加载器：测试通过 monkeypatch 替换这几个符号（同 test_fo_health 套路）
-from .sources import (load_material_commitments, load_purchase_orders_by_material,
+from .material_board import build_material_board
+from .sources import (_fetch_line_status, load_material_commitments,
+                      load_purchase_orders_by_material, load_purchase_supply_by_material,
                       load_real_bom, load_real_orders, load_srm_deliveries)
 
 
@@ -40,6 +42,13 @@ class Snapshot:
     srm_hit:      int = 0                   # 携客云承诺命中子件数
     ok:           bool = True               # False = 尚未刷新（空态），非错误
     note:         str = ""                  # 状态说明（空态/错误摘要，不含客户敏感数据）
+    # ── 物料看板（队列 #334，2026-08-20）：同一份快照的第二种切法 ─────────────
+    # 纯派生自上面的 rows（见 material_board.build_material_board），一次计算两处消费，
+    # 不新拉任何数据源、不改任何既有判定。两个字段**都带缺省值**——旧格式缓存
+    # （无这两个键）经 `Snapshot(**raw)` 反序列化时取缺省，页面显示空态而非报错，
+    # 下一次重算即填满（design D1 向后兼容条款，有回归测试守护）。
+    materials:      list[dict] = field(default_factory=list)   # 物料行
+    materials_meta: dict = field(default_factory=dict)         # 月份列/窗口/窗口外计数
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -54,6 +63,22 @@ class Snapshot:
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _prefetch_line_status(components: set[str], *, audit=None) -> dict[tuple[str, str], int]:
+    """为 ⑥⑧ 预取一次采购订单行级关闭状态；任何失败都降级为 `{}`，绝不阻断重算。
+
+    单独抽成模块级函数（而非内联进 `compute_snapshot`）是为了让测试能像其它加载器一样
+    对它 monkeypatch —— 否则每个 `compute_snapshot` 测试都会真的去 `ZpConnector.from_env()`。
+    """
+    if not components:
+        return {}
+    try:
+        from zhuopin_platform.shared_tools.erp_connector.connector import ZpConnector
+        conn = ZpConnector.from_env(audit=audit)
+        return _fetch_line_status(conn, components)
+    except Exception:
+        return {}
 
 
 def compute_snapshot(*, today: date | None = None, status: str | None = "2",
@@ -105,9 +130,16 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
     #    load_purchase_orders_by_material docstring）；异常时降级为 None，#12/#14 相关
     #    字段随之退化为空/None，其余核心看板（四色/kit_date/净额）不受影响。
     purchase_orders = None
+    line_status: dict[tuple[str, str], int] = {}   # ⑥⑧ 共用；显式初始化，不依赖分支求值顺序
     if config.po_transit_enabled():
+        # 行级关闭状态预取一次，⑥⑧ 共用（`sources._fetch_line_status` docstring 说明为何：
+        # 该查询按料号逐个打 ERP、无缓存，约 1600 次 HTTP／约 2 分钟；物料看板若让它再跑
+        # 一遍，等于把每小时重算的这笔开销翻倍）。预取本身 fail-soft 返回 `{}`，两个 loader
+        # 拿到 `{}` 即跳过关闭行剔除，与改造前的降级行为完全一致。
+        line_status = _prefetch_line_status(components, audit=trace)
         try:
-            purchase_orders = load_purchase_orders_by_material(components, audit=trace)
+            purchase_orders = load_purchase_orders_by_material(
+                components, audit=trace, line_status=line_status)
         except Exception as e:
             purchase_orders = None
             if audit is not None:
@@ -135,6 +167,39 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
                            purchase_orders=purchase_orders,
                            material_commitments=material_commitments)
 
+    # ⑧ 未交 PO 的供应商/制单人（物料看板，队列 #334，design D4-a）：与 ⑥ 同一批 PO
+    #    行、同一份在途口径，只是汇总维度不同（⑥ 汇总数量、本步汇总名称）。ERP 连接器
+    #    自带 4 小时磁盘缓存，不增加真实请求量；同 ⑥⑦ 一样是纯展示派生列，fail-soft。
+    supply_by_material = None
+    if config.po_transit_enabled():
+        try:
+            supply_by_material = load_purchase_supply_by_material(
+                components, audit=trace, line_status=line_status)
+        except Exception as e:
+            supply_by_material = None
+            if audit is not None:
+                from zhuopin_platform.audit import AuditEvent
+                audit.record(AuditEvent(
+                    scenario="SC8", action="purchase_supply_load_failed", evaluator="system",
+                    automation_level="L1", decision={"error": f"{type(e).__name__}: {e}"[:200]},
+                ))
+    # ⑨ 物料看板派生（队列 #334）：纯派生自上面已算好的 rows，零取数、零判定改动。
+    #    本步异常同样不得阻断整体重算——物料看板是新增视图，它算不出来不应该让既有
+    #    四色看板一起打不开（与 ⑥⑦⑧ 同一 fail-soft 约定）。
+    board = None
+    try:
+        board = build_material_board(rows, today=today,
+                                     commitments=material_commitments,
+                                     supply_by_material=supply_by_material)
+    except Exception as e:
+        board = None
+        if audit is not None:
+            from zhuopin_platform.audit import AuditEvent
+            audit.record(AuditEvent(
+                scenario="SC8", action="material_board_build_failed", evaluator="system",
+                automation_level="L1", decision={"error": f"{type(e).__name__}: {e}"[:200]},
+            ))
+
     counts = {
         "red": sum(1 for r in rows if r.risk == RISK_RED),
         "gap": sum(1 for r in rows if r.risk == RISK_GAP),
@@ -145,6 +210,8 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
         generated_at=_now_iso(), today=today.isoformat(),
         rows=[row_to_dict(r) for r in rows], counts=counts, status=status,
         param_version=config.PARAM_VERSION, components=len(components), srm_hit=len(srm),
+        materials=board.rows if board is not None else [],
+        materials_meta=board.meta() if board is not None else {},
     )
     if audit is not None:
         from zhuopin_platform.audit import AuditEvent
@@ -152,7 +219,7 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
             scenario="SC8", action="baoguan_snapshot", evaluator="system",
             automation_level="L1",
             decision={"rows": len(rows), **counts, "components": len(components),
-                      "srm_hit": len(srm)},
+                      "srm_hit": len(srm), "materials": len(snap.materials)},
             data_sources={"fo": "real", "bom": "real", "srm_committed": "real"},
         ))
     return snap

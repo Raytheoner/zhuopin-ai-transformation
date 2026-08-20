@@ -209,3 +209,98 @@ def test_compute_snapshot_degrades_gracefully_when_material_commitments_fails(mo
     assert snap.ok is True
     red = next(r for r in snap.rows if r["id"] == "RED")
     assert red["cst"][0]["cb"] == []   # 降级：无 material_commitments 数据，cb 恒空
+
+
+# ── 物料看板接线（队列 #334，tasks 4.2）──────────────────────────────────────
+
+def test_compute_snapshot_attaches_material_board(monkeypatch):
+    """compute_snapshot 末尾派生物料看板，结果落进 Snapshot.materials/materials_meta。"""
+    bom = _bom("RED", "C1")
+    srm = [SrmDeliveryOrder(delivery_id="SRM-C1", demand_id="", supplier_id="",
+                            material_id="C1", qty_committed=0,
+                            committed_date="2026-11-30", status="confirmed")]
+    _patch_sources(monkeypatch, orders=[_orders()[0]], bom=bom, srm=srm,
+                   material_commitments={"C1": [(date(2026, 11, 30), 5.0)]})
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material",
+                        lambda materials, **kw: {"C1": 4.0})
+    monkeypatch.setattr(bs, "load_purchase_supply_by_material",
+                        lambda materials, **kw: {"C1": {"suppliers": ["S1"], "buyers": ["某某"]}})
+
+    snap = compute_snapshot(today=TODAY, status="2")
+    assert [m["id"] for m in snap.materials] == ["C1"]
+    row = snap.materials[0]
+    assert row["sup"] == ["S1"] and row["tq"] == 4.0
+    assert row["owner"] and row["brand"]          # 取数缺口列显式标注，不留空
+    assert snap.materials_meta["window"] == "2026-06 ~ 2026-08"
+    assert [m["label"] for m in snap.materials_meta["months"]] == ["6月", "7月", "8月"]
+
+
+def test_material_board_does_not_shift_existing_rows_or_counts(monkeypatch):
+    """红线：新增视图不得改动任何既有判定。逐字段比对「有无物料看板」两种情形。"""
+    bom = _bom("RED", "C1") + _bom("GRN", "C2")
+    srm = [SrmDeliveryOrder(delivery_id="SRM-C1", demand_id="", supplier_id="",
+                            material_id="C1", qty_committed=0,
+                            committed_date="2026-11-30", status="confirmed"),
+           SrmDeliveryOrder(delivery_id="SRM-C2", demand_id="", supplier_id="",
+                            material_id="C2", qty_committed=0,
+                            committed_date="2026-08-01", status="confirmed")]
+    _patch_sources(monkeypatch, orders=_orders(), bom=bom, srm=srm)
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material", lambda materials, **kw: {})
+    monkeypatch.setattr(bs, "load_purchase_supply_by_material", lambda materials, **kw: {})
+    with_board = compute_snapshot(today=TODAY, status="2")
+
+    monkeypatch.setattr(bs, "build_material_board",
+                        lambda rows, **kw: (_ for _ in ()).throw(RuntimeError("disabled")))
+    without_board = compute_snapshot(today=TODAY, status="2")
+
+    assert with_board.rows == without_board.rows          # 逐字段
+    assert with_board.counts == without_board.counts
+    assert with_board.components == without_board.components
+    assert with_board.srm_hit == without_board.srm_hit
+    assert without_board.materials == [] and without_board.materials_meta == {}
+
+
+def test_compute_snapshot_degrades_gracefully_when_supply_loader_fails(monkeypatch):
+    """供应商/制单人取数失败（纯展示派生列）→ 供应商列为空，物料看板与整体重算仍完成。"""
+    bom = _bom("RED", "C1")
+    srm = [SrmDeliveryOrder(delivery_id="SRM-C1", demand_id="", supplier_id="",
+                            material_id="C1", qty_committed=0,
+                            committed_date="2026-11-30", status="confirmed")]
+    _patch_sources(monkeypatch, orders=[_orders()[0]], bom=bom, srm=srm)
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material", lambda materials, **kw: {})
+
+    def _boom(materials, **kw):
+        raise RuntimeError("ERP unreachable")
+    monkeypatch.setattr(bs, "load_purchase_supply_by_material", _boom)
+
+    snap = compute_snapshot(today=TODAY, status="2")   # 不抛异常
+    assert snap.ok is True and snap.materials
+    assert snap.materials[0]["sup"] == []
+
+
+def test_line_status_is_fetched_once_and_shared_by_both_po_loaders(monkeypatch):
+    """行级关闭状态查询按料号逐个打 ERP、无缓存（生产约 1600 次 HTTP／约 2 分钟）——
+    物料看板不得让它跑第二遍。预取一次、显式传给 ⑥⑧ 两个 loader。"""
+    bom = _bom("RED", "C1")
+    srm = [SrmDeliveryOrder(delivery_id="SRM-C1", demand_id="", supplier_id="",
+                            material_id="C1", qty_committed=0,
+                            committed_date="2026-11-30", status="confirmed")]
+    _patch_sources(monkeypatch, orders=[_orders()[0]], bom=bom, srm=srm)
+
+    calls = {"prefetch": 0}
+    sentinel = {("PO1", "1"): 4}
+
+    def _prefetch(components, **kw):
+        calls["prefetch"] += 1
+        return sentinel
+    monkeypatch.setattr(bs, "_prefetch_line_status", _prefetch)
+
+    seen: list[object] = []
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material",
+                        lambda materials, **kw: (seen.append(kw.get("line_status")) or {}))
+    monkeypatch.setattr(bs, "load_purchase_supply_by_material",
+                        lambda materials, **kw: (seen.append(kw.get("line_status")) or {}))
+
+    compute_snapshot(today=TODAY, status="2")
+    assert calls["prefetch"] == 1                 # 只取一次
+    assert seen == [sentinel, sentinel]           # 两个 loader 拿到的是同一份

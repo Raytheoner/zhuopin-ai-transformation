@@ -5,6 +5,8 @@
   GET  /api/ping         健康检查（存活 + 时间）
   GET  /api/baoguan      读缓存快照 JSON（无缓存→空态，不打全量）
   POST /api/refresh      手动触发重算（全局非阻塞锁串行，进行中→返回"刷新进行中"）
+  GET  /materials        物料看板（队列 #334）：同一份快照按物料维度重新聚合的只读视图
+  GET  /api/materials    物料看板数据 JSON（读同一份快照的 materials 字段，不触发重算）
   GET  /cases            保供案例处置中心（待处置/超SLA/已关闭）
   GET/POST /cases/<id>   案例详情 + 推进/关闭表单
   GET/POST /cases/new    手动建案
@@ -18,6 +20,7 @@
 from __future__ import annotations
 
 import html as _html
+import json as _json
 import os
 import threading
 from datetime import date, datetime
@@ -35,6 +38,8 @@ from .case_draft import generate as generate_draft
 from .case_review import list_packages, load_package, render_review_page
 from .case_store import NEXT_STATUS, CaseStatus, CaseStore
 from .feedback_store import JsonlAppendStore
+from .material_board import FIELD_GAP as _MAT_FIELD_GAP
+from .material_board import STATUS_LABELS as _MAT_STATUS_LABELS
 
 
 def create_app(*, snapshot_store: SnapshotStore, case_store: CaseStore,
@@ -95,6 +100,19 @@ def create_app(*, snapshot_store: SnapshotStore, case_store: CaseStore,
     def api_baoguan():
         snap = snapshot_store.get()
         return jsonify(snap.to_dict())
+
+    @app.get("/api/materials")
+    def api_materials():
+        """物料看板数据（队列 #334）——同一份快照的第二种切法，不触发任何重算。
+
+        与 `/api/baoguan` 同一进程、同一端口、同一门禁（CLAUDE.md §5 硬约束：
+        新视图不新起端口）。旧格式缓存无 materials 键时取缺省空列表，页面显示
+        空态而非报错（design D1）。
+        """
+        snap = snapshot_store.get()
+        return jsonify({"ok": snap.ok, "generated_at": snap.generated_at,
+                        "today": snap.today, "note": snap.note,
+                        "rows": snap.materials, "meta": snap.materials_meta})
 
     @app.post("/api/refresh")
     def api_refresh():
@@ -171,6 +189,11 @@ def create_app(*, snapshot_store: SnapshotStore, case_store: CaseStore,
     @app.get("/")
     def index():
         return _shell_page()
+
+    # ── 物料看板（队列 #334）──────────────────────────────────────────────────
+    @app.get("/materials")
+    def materials_page():
+        return _materials_page()
 
     # ── 案例处置中心 ──────────────────────────────────────────────────────────
     @app.get("/cases")
@@ -315,6 +338,222 @@ setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全�
     )
 
 
+# ── 物料看板页（队列 #334）────────────────────────────────────────────────────
+
+_MAT_CSS = """<style>
+.mat-wrap{max-width:1500px;margin:0 auto}
+.mat-note{background:var(--surface2);border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.75}
+.mat-note b{color:var(--text)}
+.mat-note ol{margin:6px 0 0;padding-left:20px}
+.mat-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.mat-tbl{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+.mat-tbl th{background:var(--surface2);padding:9px 11px;text-align:left;font-size:12px;color:var(--text2);position:sticky;top:0}
+.mat-tbl td{padding:8px 11px;border-top:1px solid var(--border);vertical-align:top}
+.mat-tbl td.num{text-align:right;font-family:var(--mono)}
+.mat-tbl td.mono{font-family:var(--mono)}
+.mat-tbl tr:hover td{background:var(--surface2)}
+.mat-tot{font-weight:600;color:var(--danger)}
+.mat-gapmark{color:var(--text3);font-style:normal}
+.mat-tag{font-size:11px;padding:1px 6px;border-radius:6px;background:var(--surface2);color:var(--text2);margin-left:6px}
+.mat-div{color:var(--gap);font-weight:600}
+.mat-multi{white-space:normal;max-width:220px}
+</style>"""
+
+
+def _materials_page() -> str:
+    """物料看板页（队列 #334，design D9）：挂现服务路由之下，不新起端口。
+
+    与成品看板同源同一份快照——页面只 `fetch /api/materials` 读快照，**没有任何
+    重算入口**（重算约 15 分钟，且重算是成品看板那边的既有动作，两处共用同一份结果）。
+    """
+    st_label = _json.dumps(_MAT_STATUS_LABELS, ensure_ascii=False)
+    gap_mark = _json.dumps(_MAT_FIELD_GAP, ensure_ascii=False)
+    js = r"""
+var ROWS=[],MONTHS=[],META={},SNAP={};
+var ST_LABEL=__ST_LABEL__, GAP_MARK=__GAP_MARK__;
+var state={q:'',sort:'total',page:1,pageSize:50};
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function fmt(n){if(n==null||n==='')return '';var v=Number(n);
+  if(!isFinite(v))return String(n);
+  return (Math.round(v*100)/100).toLocaleString('zh-CN');}
+function stText(r){
+  var base=ST_LABEL[r.st]||r.st;
+  if(r.st!=='divergent')return base;
+  return base+'（'+(r.sts||[]).map(function(s){return ST_LABEL[s]||s;}).join(' / ')+'）';
+}
+function ansQty(r){return (r.cb&&r.cb.length)?r.cb.map(function(b){return fmt(b.q);}).join('、'):'无';}
+function ansDate(r){return (r.cb&&r.cb.length)?r.cb.map(function(b){return b.d;}).join('、'):'无';}
+function supText(r){return (r.sup&&r.sup.length)?r.sup.join('、'):GAP_MARK;}
+function view(){
+  var q=state.q.trim().toLowerCase();
+  var l=ROWS.filter(function(r){
+    if(!q)return true;
+    return (r.id||'').toLowerCase().indexOf(q)>=0
+        || (r.name||'').toLowerCase().indexOf(q)>=0
+        || (r.sup||[]).join(' ').toLowerCase().indexOf(q)>=0;
+  });
+  var s=state.sort;
+  l.sort(function(a,b){
+    if(s==='id')return a.id<b.id?-1:(a.id>b.id?1:0);
+    if(s==='tq')return (b.tq||0)-(a.tq||0);
+    if(s==='total')return (b.total||0)-(a.total||0)||(a.id<b.id?-1:1);
+    return 0;
+  });
+  return l;
+}
+function head(){
+  var h=['料号','品名','品牌','状态','未交订单数量'];
+  MONTHS.forEach(function(m){h.push(m.label+'缺口');});
+  h.push(MONTHS.length?(MONTHS[0].label+'-'+MONTHS[MONTHS.length-1].label+'总缺口'):'总缺口');
+  h.push('答交数量','答交日期','供应商名称','责任人');
+  return h;
+}
+function cells(r){
+  var c=[esc(r.id)+(r.hasSub?'<span class="mat-tag">含替代料</span>':'')
+        +(r.out>0?'<span class="mat-tag" title="该物料另有落在三个月窗口之外的缺口，按口径不计入下列各月与合计">窗口外 '+fmt(r.out)+'</span>':''),
+    esc(r.name),
+    '<span class="mat-gapmark">'+esc(r.brand)+'</span>',
+    (r.st==='divergent'?'<span class="mat-div">':'<span>')+esc(stText(r))+'</span>',
+    fmt(r.tq)];
+  (r.m||[]).forEach(function(v){c.push(fmt(v));});
+  c.push('<span class="mat-tot">'+fmt(r.total)+'</span>');
+  c.push(esc(ansQty(r)),esc(ansDate(r)),esc(supText(r)),
+         '<span class="mat-gapmark">'+esc(r.owner)+'</span>');
+  return c;
+}
+var NUMCOL={};   // 右对齐的列下标（未交订单量/各月/合计）
+function render(){
+  var l=view(),total=l.length;
+  var ps=state.pageSize,pages=Math.max(1,Math.ceil(total/ps));
+  if(state.page>pages)state.page=pages;
+  var from=(state.page-1)*ps,page=l.slice(from,from+ps);
+  var h=head();
+  NUMCOL={};for(var i=4;i<5+MONTHS.length+1;i++)NUMCOL[i]=1;
+  var html='<table class="mat-tbl"><thead><tr>'
+    +h.map(function(x){return '<th>'+esc(x)+'</th>';}).join('')+'</tr></thead><tbody>';
+  if(!page.length){
+    html+='<tr><td colspan="'+h.length+'" style="text-align:center;color:var(--text3);padding:24px">'
+      +(SNAP.ok?'没有符合条件的物料':'尚未刷新 —— 请到 <a href="/">成品看板</a> 点「立即重算」')+'</td></tr>';
+  }
+  page.forEach(function(r){
+    html+='<tr>'+cells(r).map(function(c,i){
+      var cl=i===0?' class="mono"':(NUMCOL[i]?' class="num"':(i>=h.length-4?' class="mat-multi"':''));
+      return '<td'+cl+'>'+c+'</td>';}).join('')+'</tr>';
+  });
+  html+='</tbody></table>';
+  $('tblBox').innerHTML=html;
+  $('cnt').textContent='共 '+total+' 个缺料物料'
+    +(META.out_of_window_materials?('　·　另有 '+META.out_of_window_materials
+      +' 个物料的缺口全部落在窗口之外，按口径未列出'):'')
+    +'　·　第 '+state.page+'/'+pages+' 页';
+  var pg='';
+  if(pages>1){
+    pg+='<button class="btn" '+(state.page<=1?'disabled':'')+' data-p="'+(state.page-1)+'">上一页</button>';
+    pg+='<button class="btn" '+(state.page>=pages?'disabled':'')+' data-p="'+(state.page+1)+'">下一页</button>';
+  }
+  $('pager').innerHTML=pg;
+  Array.prototype.forEach.call($('pager').querySelectorAll('button[data-p]'),function(b){
+    b.addEventListener('click',function(){state.page=parseInt(b.getAttribute('data-p'),10);render();});
+  });
+}
+function applySnap(s){
+  SNAP=s||{};ROWS=(s&&s.rows)||[];META=(s&&s.meta)||{};MONTHS=(META.months)||[];
+  var ts=$('ts');
+  if(ts)ts.textContent=(s&&s.ok)
+    ?('数据同源于成品保供快照　·　最后更新 '+(s.generated_at||'—')+'　·　业务日期 '+(s.today||'—'))
+    :'尚未刷新 —— 物料看板与成品看板共用同一份快照，请到成品看板点「立即重算」';
+  var w=$('win');
+  if(w)w.textContent=META.window?('本视图窗口＝'+META.window+'，共 '+MONTHS.length+' 个自然月，以快照业务日期所在月为首、随快照自动滚动。'):'';
+  state.page=1;render();
+}
+function loadSnap(){
+  fetch('/api/materials').then(function(r){return r.json();}).then(applySnap)
+   .catch(function(){$('tblBox').innerHTML='<div class="empty">加载失败</div>';});
+}
+function exportExcel(){
+  var l=view(),h=head();
+  var thead='<tr>'+h.map(function(x){return '<th>'+esc(x)+'</th>';}).join('')+'</tr>';
+  var tbody='';
+  l.forEach(function(r){
+    var c=[r.id+(r.hasSub?'（含替代料）':''),r.name,r.brand,stText(r),r.tq];
+    (r.m||[]).forEach(function(v){c.push(v);});
+    c.push(r.total,ansQty(r),ansDate(r),supText(r),r.owner);
+    tbody+='<tr>'+c.map(function(x){return '<td>'+esc(x)+'</td>';}).join('')+'</tr>';
+  });
+  var html='﻿<html><head><meta charset="UTF-8"></head><body><table border="1">'
+    +thead+tbody+'</table></body></html>';
+  var blob=new Blob([html],{type:'application/vnd.ms-excel'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='物料看板_'+(SNAP.today||'')+'.xls';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);
+}
+$('q').addEventListener('input',function(e){state.q=e.target.value;state.page=1;render();});
+$('sort').addEventListener('change',function(e){state.sort=e.target.value;state.page=1;render();});
+$('pageSize').addEventListener('change',function(e){
+  state.pageSize=parseInt(e.target.value,10)||50;state.page=1;render();});
+$('xlsx').addEventListener('click',exportExcel);
+$('refresh').addEventListener('click',loadSnap);
+loadSnap();
+setInterval(loadSnap,120000);
+"""
+    js = js.replace("__ST_LABEL__", st_label).replace("__GAP_MARK__", gap_mark)
+    # ── 取数说明（design D7）：可算但有前提，就把前提写在脸上 ──────────────────
+    note = (
+        '<div class="mat-note"><b>📌 取数说明（请先看一眼，这几条决定了下面的数字怎么读）</b>'
+        '<ol>'
+        '<li><b>本视图是「缺料视图」，不是全量物料台账</b>——只列出当前快照里<b>确实存在缺口</b>'
+        '（缺口数量 &gt; 0）的物料；不缺的料不会出现。</li>'
+        '<li><b>月度缺口按「计划出货日期所在自然月」归集</b>。<span id="win"></span>'
+        '<b>落在窗口之外的缺口不计入任何一个月度列与合计列</b>，故「总缺口」的含义是'
+        '「这几个月的缺口之和」，不是「该物料的全部缺口」。</li>'
+        '<li><b>答交数量/日期的累计口径与成品卡片不同，因此条数可能不一样，这是对的</b>——'
+        '成品卡片按<b>那一张单</b>的缺口累计到够为止，本视图按<b>这几个月的合计缺口</b>累计到够为止，'
+        '累计目标不同，取的批次自然不同。两者用的是同一份答交记录、同一个累计函数。</li>'
+        '<li>🔴 <b>「品牌」与「责任人」两列当前无可用真实取数源，故显式标注取数缺口、不留空、'
+        '也不用相近字段顶替。</b>2026-08-19 已用生产凭据实测：SRM「请购需求池-采购订单协同」页'
+        '（这两列指定的取值来源）在携客云 OpenAPI 上<b>没有对应端点</b>（8 个候选路径全部 404，'
+        '同批对照端点正常返回，排除探测方法本身的问题）；ERP 侧物料档案与采购订单逐字段查过，'
+        '<b>无品牌字段</b>；ERP 的「制单人」<b>已被真实数据证伪</b>不等于「负责采购」'
+        '（R01B.0115：SRM 页负责采购是一个人，该料未交 PO 的制单人却是三个人）。'
+        '<b>下一步</b>：已请 IT 侧核实携客云 OpenAPI 是否提供该端点；同时随判例包请采购部确认'
+        '「制单人」能否作为过渡替代。</li>'
+        '<li>「供应商名称」取自 <b>ERP 未交采购订单的供应商</b>（＝实际下单供应商），'
+        '与 SRM 页的「核定供应商」在极少数情况下可能不同；同一物料有多家时全部并列。</li>'
+        '<li>⚠️ <b>齐料日期口径正在与采购部确认中</b>（已知缺陷：齐料日/瓶颈物料只取最早答交'
+        '日期、不看答交数量，判例包已发出待回件）。本视图<b>不展示齐料日期</b>，不受该缺陷影响；'
+        '成品看板上的齐料日在该口径确认前请谨慎使用。</li>'
+        '</ol></div>'
+    )
+    return (
+        '<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        '<title>物料看板 · 成品保供预警</title>\n' + _HTML_STYLE + _NAV_CSS + _MAT_CSS
+        + '</head><body>\n' + _nav_html("materials") + '<div class="wrap mat-wrap">\n'
+        + '<div class="head"><div><div class="title">物料看板 · 按单个物料看缺口</div>\n'
+        + '<div class="sub" id="ts">加载中…</div></div>\n'
+        + '<div class="badges"><span class="badge">与成品看板同源同一份快照</span>'
+        + '<span class="badge">内部保供运维 · 不对客 · LAN</span></div></div>\n'
+        + note
+        + '<div class="toolbar">\n'
+        + '<input class="search" id="q" type="text" placeholder="搜索 料号 / 品名 / 供应商" aria-label="搜索">\n'
+        + '<select class="sel" id="sort" aria-label="排序"><option value="total">按总缺口</option>'
+        + '<option value="tq">按未交订单数量</option><option value="id">按料号</option></select>\n'
+        + '<select class="sel" id="pageSize" aria-label="每页行数"><option value="50">50 行/页</option>'
+        + '<option value="100">100 行/页</option><option value="200">200 行/页</option>'
+        + '<option value="1000">1000 行/页</option></select>\n'
+        + '<button class="btn" id="xlsx" type="button" title="导出当前筛选命中的全部物料行（不受分页限制）">导出 Excel</button>\n'
+        + '<button class="btn" id="refresh" type="button" title="重新读取最新快照（不触发重算）">🔄 刷新</button></div>\n'
+        + '<div class="cnt" id="cnt"></div>\n'
+        + '<div class="mat-scroll" id="tblBox"></div>\n'
+        + '<div class="pager" id="pager" style="margin-top:12px"></div>\n'
+        + '<div class="foot">本页为纯展示派生视图，不参与四色风险／齐料日／可齐套任何判定；'
+        + '数据与 <a href="/">成品看板</a> 同源同一份快照，重算入口在成品看板。</div>\n'
+        + '</div>\n<script>\n' + js + '\n</script></body></html>'
+    )
+
+
 # ── 案例页面 HTML ─────────────────────────────────────────────────────────────
 
 _NAV_CSS = """<style>
@@ -341,8 +580,10 @@ def _nav_html(active: str) -> str:
     d = "active" if active == "dashboard" else ""
     c = "active" if active == "cases" else ""
     r = "active" if active == "review" else ""
+    m = "active" if active == "materials" else ""
     return (f'<nav class="bg-nav"><div class="brand">⚡ 成品<span>保供预警</span></div>'
             f'<a href="/" class="{d}">📊 看板</a>'
+            f'<a href="/materials" class="{m}">📦 物料看板</a>'
             f'<a href="/cases" class="{c}">🚨 案例处置</a>'
             f'<a href="/cases/review" class="{r}">📋 判例批改</a></nav>')
 

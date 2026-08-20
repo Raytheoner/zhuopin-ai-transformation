@@ -212,3 +212,16 @@ def test_real_open_po_beyond_60_days_now_counted():
     conn = _FakeZpConnector([old_po])   # 忽略 days 值，直接返回全部（模拟真实无服务端日期过滤）
     result = load_purchase_orders_by_material(connector=conn)
     assert result == {"R01D.0006": 3000.0}
+
+
+def test_caller_supplied_line_status_is_used_and_not_refetched():
+    """队列 #334：`line_status` 由调用方传入时不再自取——新增可选入参，不传＝原行为。"""
+    class _NoRefetch(_FakeZpConnector):
+        def get_purchase_line_status(self, item_codes):
+            raise AssertionError("不应再自取：调用方已传入 line_status")
+
+    conn = _NoRefetch([_po("A", 100, 0, "in_transit", po_id="P1", line_no="1"),
+                       _po("B", 50, 0, "in_transit", po_id="P2", line_no="1")])
+    out = load_purchase_orders_by_material({"A", "B"}, connector=conn,
+                                           line_status={("P1", "1"): 4})
+    assert out == {"B": 50.0}

@@ -276,8 +276,34 @@ def load_material_commitments(
 PO_LINE_STATUS_CLOSED = frozenset({3, 4, 5})
 
 
+def _fetch_line_status(connector, materials: set[str] | None) -> dict[tuple[str, str], int]:
+    """取行级关闭状态映射（`{(po_id, line_no): LineStatus}`），失败即 fail-soft 返回 `{}`。
+
+    从 `load_purchase_orders_by_material` 原地抽出，供它与 `load_purchase_supply_by_material`
+    共用同一份实现（两者的口径必须逐条一致——同一行上"未交订单数量"与"供应商名称"若按
+    两套在途定义算出来，就是自相矛盾）。
+
+    ⚠️ **这个查询很贵**：`ZpConnector.get_purchase_line_status` 无缓存，按料号逐个打
+    `Purchase/Query`（服务端一次只接受一个 itemCode），生产上一轮约 1600 个叶子件即
+    约 1600 次 HTTP、耗时约 2 分钟。故 `compute_snapshot` **预取一次、显式传给两个
+    loader**（见 `line_status` 入参），避免物料看板把这笔开销翻倍——每小时重算一次的
+    服务，翻倍是真实成本，不是理论问题。缺省 `None` 时 loader 仍自取（向后兼容，既有
+    调用方与测试零改动）。
+
+    `materials` 为空/None 时不查（服务端无法"多料号一次查全"，无从收窄），返回 `{}`，
+    行为与改造前完全一致。
+    """
+    if not materials:
+        return {}
+    try:
+        return connector.get_purchase_line_status(sorted(materials))
+    except Exception:
+        return {}   # fail-soft：仅放弃关闭行剔除这一步修正，不连累既有数量口径
+
+
 def load_purchase_orders_by_material(
     materials: set[str] | None = None, *, days: int | None = None, audit=None, connector=None,
+    line_status: dict[tuple[str, str], int] | None = None,
 ) -> dict[str, float]:
     """按料号汇总在途采购订单未清量（PO 在途数据接入，#12/#14 共享基础，2026-07-23）。
 
@@ -314,12 +340,8 @@ def load_purchase_orders_by_material(
         from zhuopin_platform.shared_tools.erp_connector.connector import ZpConnector
         connector = ZpConnector.from_env(audit=audit)
     orders = connector.get_purchase_orders(days=days)
-    line_status: dict[tuple[str, str], int] = {}
-    if materials:
-        try:
-            line_status = connector.get_purchase_line_status(sorted(materials))
-        except Exception:
-            line_status = {}   # fail-soft：仅放弃本次新增的关闭行剔除，不连累既有数量口径
+    if line_status is None:
+        line_status = _fetch_line_status(connector, materials)
     out: dict[str, float] = {}
     for po in orders:
         if po.status not in ("in_transit", "partial"):
@@ -333,6 +355,68 @@ def load_purchase_orders_by_material(
             continue
         out[po.material_id] = out.get(po.material_id, 0.0) + outstanding
     return out
+
+
+def load_purchase_supply_by_material(
+    materials: set[str] | None = None, *, days: int | None = None, audit=None, connector=None,
+    line_status: dict[tuple[str, str], int] | None = None,
+) -> dict[str, dict[str, list[str]]]:
+    """按料号汇总**未交采购订单**的供应商名称与制单人（物料看板，队列 #334，design D4-a）。
+
+    返回 ``{料号: {"suppliers": [名称,...], "buyers": [制单人,...]}}``，两个列表均已
+    去重并按字典序排序（输出稳定，便于测试/前端渲染）。无未交订单的料号不出现在结果里。
+
+    **过滤口径与 `load_purchase_orders_by_material` 逐条一致**（同一批 PO 行、同一份
+    在途定义）：只统计 `status ∈ {in_transit, partial}`、剔除 `PO_LINE_STATUS_CLOSED`
+    三态的行级关闭行、剔除未清量 ≤0 的行。**刻意不复用那个函数的返回值**——它按料号
+    汇总的是一个 float，供应商/制单人在汇总时已经丢失；两者共用同一次
+    `get_purchase_orders()` 调用的结果由调用方（compute_snapshot）各调一次承担，
+    ERP 连接器自带 4 小时磁盘缓存，不增加真实请求量。
+
+    🔴 **`buyers` 是「制单人」（`ZpViewPurOrder.makeEmpName`），不是姚祖怡要的「负责
+    采购」——这一点已被真实数据证伪，不得用它填充物料看板的「责任人」列**（design
+    D5，2026-08-19 真实探测：他自己截图里的 `R01B.0115` 在 SRM 页负责采购＝沈潇敏，
+    而该料 7 张未交 PO 的制单人是尤胤栋(4)／沈潇敏(2)／汤易水(1)）。本字段只保留供
+    内部排障与判例包取证参考（同 `row_to_dict` 里 `cd` 字段的既有约定：保留在载荷里、
+    但前端不得用它回填），展示层的「责任人」列一律显式标注取数缺口。
+
+    `suppliers` 语义是「**实际下单供应商**」（`ZpViewPurOrder.supplyName`），与他指的
+    SRM「请购需求池-采购订单协同-供应商」（＝核定供应商）不保证恒等，但已用他自己的
+    样例交叉验证过（`R01B.0115` 未交 PO 6/7 为 `厦门信和达电子有限公司`，与其截图红框
+    内的值一致）。列头须标注取数源，见 `material_board.py`。
+
+    connector / real fail-loud 语义同 `load_purchase_orders_by_material`：异常原样上抛，
+    由调用方决定降级（compute_snapshot 对本函数采用 fail-soft，纯展示派生列失败不阻断
+    整体重算）。
+    """
+    if days is None:
+        from . import config
+        days = config.po_transit_lookback_days()
+    if connector is None:
+        from zhuopin_platform.shared_tools.erp_connector.connector import ZpConnector
+        connector = ZpConnector.from_env(audit=audit)
+    orders = connector.get_purchase_orders(days=days)
+    if line_status is None:
+        line_status = _fetch_line_status(connector, materials)
+    acc: dict[str, dict[str, set[str]]] = {}
+    for po in orders:
+        if po.status not in ("in_transit", "partial"):
+            continue
+        if materials is not None and po.material_id not in materials:
+            continue
+        if line_status.get((po.po_id, po.line_no)) in PO_LINE_STATUS_CLOSED:
+            continue
+        if max(float(po.qty_ordered) - float(po.qty_received), 0.0) <= 0:
+            continue
+        slot = acc.setdefault(po.material_id, {"suppliers": set(), "buyers": set()})
+        name = (getattr(po, "supplier_name", "") or "").strip()
+        if name:
+            slot["suppliers"].add(name)
+        buyer = (getattr(po, "buyer", "") or "").strip()
+        if buyer:
+            slot["buyers"].add(buyer)
+    return {mid: {"suppliers": sorted(v["suppliers"]), "buyers": sorted(v["buyers"])}
+            for mid, v in acc.items()}
 
 
 def load_srm_deliveries(mode: str, *, start: str | None = None,
