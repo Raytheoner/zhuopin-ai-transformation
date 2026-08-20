@@ -49,6 +49,10 @@ _spec = importlib.util.spec_from_file_location("commit_sweep", SCRIPT)
 sweep = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(sweep)
 
+# 队列 #282：业务部门群（采购内部工作群）那个裸键。本文件里它只该出现在
+# "验证它绝不被使用"的用例里——其余测试桩一律写 `sweep.WECOM_WEBHOOK_ENV_KEY`。
+BARE_WEBHOOK_ENV_KEY = "WECOM_WEBHOOK_URL"
+
 # 队列 #315：本测试文件绝大多数用例走黑盒子进程（`_run_sweep`/`_run_git`
 # 等），子进程加载的是脚本文件本身、不继承本测试进程内对 `sweep` 模块
 # 对象的 monkeypatch——故不能用"重绑定 QUEUE_MECHANISM_PATH_REL=QUEUE_REL"
@@ -892,7 +896,7 @@ class ForkAlertTests(SweepTestBase):
 
     def _write_env_webhook(self) -> None:
         (self.work / ".env").write_text(
-            f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8",
+            f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8",
         )
 
     def _diverge(self) -> None:
@@ -932,6 +936,53 @@ class ForkAlertTests(SweepTestBase):
         state = json.loads((self.work / sweep.FORK_STATE_REL).read_text(encoding="utf-8"))
         self.assertEqual(state["consecutive"], 1)
         self.assertEqual(len(_CapturingWebhookHandler.received), 0, "无 .env 时不应尝试网络请求")
+
+    def test_只有裸键时不回退不发送_止血负判据(self):
+        """队列 #282 ⑴ 包的**负判据**：`.env` 里确实有一个可用的 webhook，
+        但它是裸键（业务部门群）—— 必须视同未配置、一条都不发。
+
+        🔑 为什么单验"运维群收到了"不够：那只证明**多了一个收件人**，
+        证明不了**少了一个**。而本次切换的全部目的恰恰是后者
+        （#282 拍板：「业务部门此后不从任何 webhook 收消息」）。
+        本用例里的 HTTP 桩就扮演业务部门群——它收到任何一条即为止血失败。
+        """
+        self._diverge()
+        (self.work / ".env").write_text(
+            f"{BARE_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8",
+        )
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, sweep.FORK_EXIT_CODE, result.stdout + result.stderr)
+        self.assertIn("未在 .env 找到", result.stdout)
+        self.assertEqual(
+            len(_CapturingWebhookHandler.received), 0,
+            "裸键指向业务部门群：静默回退命中即为发错群，正是本次切换要消灭的那条路径",
+        )
+
+    def test_推送失败不改变本轮退出码(self):
+        """告警是对 sweep 运行结果的**播报**，不是 sweep 的**工作内容**。
+
+        播报失败不得掩盖 sweep 本身已完成（或已按其他原因失败）的事实 ——
+        反面即队列 #328「起跑段阻断整轮」那族教训：把"配置/网络出了点问题"
+        升格为"计划任务报失败"，会让真正的结论读不出来。
+        """
+        self._diverge()
+        # 开一个端口再立刻关掉，得到一个必然 connection-refused 的地址
+        dead = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        dead_port = dead.server_port
+        dead.server_close()
+        (self.work / ".env").write_text(
+            f"{sweep.WECOM_WEBHOOK_ENV_KEY}=http://127.0.0.1:{dead_port}/webhook\n",
+            encoding="utf-8",
+        )
+
+        result = _run_sweep(self.work)
+        self.assertEqual(
+            result.returncode, sweep.FORK_EXIT_CODE,
+            "推送失败只应降级记日志，不得改变 sweep 本应返回的退出码\n"
+            + result.stdout + result.stderr,
+        )
+        self.assertIn("推送失败", result.stdout)
 
     def test_fork_with_webhook_sends_alert_once(self):
         self._diverge()
@@ -1341,7 +1392,7 @@ class ScheduledTaskMirrorSyncTests(SweepTestBase):
 
     def _write_env_webhook(self) -> None:
         (self.work / ".env").write_text(
-            f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8",
+            f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8",
         )
 
     def _backup_script_path(self) -> Path:
@@ -1535,7 +1586,7 @@ class UnexpectedExceptionFallbackTests(SweepTestBase):
 
     def test_injected_unexpected_exception_writes_log_and_alerts_with_independent_exit_code(self):
         self._init_and_push(rows="")
-        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
 
         import unittest.mock as mock
         with mock.patch.object(
@@ -1583,7 +1634,7 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
     def test_batch_touching_resident_service_path_gets_hint(self):
         # .env 须先落进初始提交（随 init 一起 clean）——否则它作为未声明的
         # 脏文件会被"非 clean"门禁拦在批次处理之前，测试永远走不到本条要验的逻辑。
-        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
         self._init_and_push(rows="")
         service_file = self.work / "5-平台底座" / "wecom-aibot-service" / "aibot_service" / "foo.py"
         service_file.parent.mkdir(parents=True)
@@ -1602,7 +1653,7 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
         self.assertIn("常驻服务", _CapturingWebhookHandler.received[0]["markdown"]["content"])
 
     def test_batch_not_touching_resident_service_path_gets_no_hint(self):
-        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
         self._init_and_push(rows="")
         row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 不涉常驻服务` | 待 CC 取活 |\n")
@@ -1696,7 +1747,7 @@ class OrphanFileAlertTests(SweepTestBase):
 
     def _write_env_webhook(self) -> None:
         (self.work / ".env").write_text(
-            f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8",
+            f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8",
         )
 
     def _write_orphan_state(self, entries: dict) -> None:
@@ -1836,7 +1887,7 @@ class DeploymentTraceHintTests(SweepTestBase):
         (spec_dir / "spec.md").write_text("# sc8 stub\n", encoding="utf-8")
 
     def test_deployed_scenario_touched_without_trace_gets_hint(self):
-        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
         self._init_and_push(rows="")
         self._stub_sc8_spec_so_m1_stays_silent()
         sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8-客户订单交期智能承诺"
@@ -1857,7 +1908,7 @@ class DeploymentTraceHintTests(SweepTestBase):
         self.assertIn("部署留痕", _CapturingWebhookHandler.received[0]["markdown"]["content"])
 
     def test_deployed_scenario_touched_with_same_batch_trace_stays_silent(self):
-        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
         self._init_and_push(rows="")
         self._stub_sc8_spec_so_m1_stays_silent()
         sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8-客户订单交期智能承诺"
@@ -1878,7 +1929,7 @@ class DeploymentTraceHintTests(SweepTestBase):
         self.assertEqual(len(_CapturingWebhookHandler.received), 0)
 
     def test_non_deployed_scenario_path_gets_no_hint(self):
-        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
         self._init_and_push(rows="")
         row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
                "| `docs(test): 不涉已部署场景` | 待 CC 取活 |\n")
@@ -1987,7 +2038,7 @@ class SyncReorderTests(SweepTestBase):
             webhook_url = f"http://127.0.0.1:{server.server_port}/webhook"
             self._init_and_push(rows="")
             (self.work / ".env").write_text(
-                f"WECOM_WEBHOOK_URL={webhook_url}\n", encoding="utf-8")
+                f"{sweep.WECOM_WEBHOOK_ENV_KEY}={webhook_url}\n", encoding="utf-8")
 
             def modify_placeholder_status_on_origin(text: str) -> str:
                 return text.replace("| 1 | 占位 | 待领 |", "| 1 | 占位 | 已被并发session领走 |")
@@ -2161,7 +2212,7 @@ class OrphanResolvedNotificationTests(SweepTestBase):
 
     def _write_env_webhook(self) -> None:
         (self.work / ".env").write_text(
-            f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8",
+            f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8",
         )
 
     def _write_orphan_state(self, entries: dict) -> None:
@@ -2617,7 +2668,7 @@ class ScenarioSpecGapAnnounceIntegrationTests(SweepTestBase):
         super().tearDown()
 
     def _write_env_webhook(self) -> None:
-        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
 
     def test_scenario_gap_triggers_alert_once_then_throttled(self):
         self._init_and_push(rows="")
@@ -2656,7 +2707,7 @@ class StaleChangeAnnounceIntegrationTests(SweepTestBase):
         super().tearDown()
 
     def _write_env_webhook(self) -> None:
-        (self.work / ".env").write_text(f"WECOM_WEBHOOK_URL={self.webhook_url}\n", encoding="utf-8")
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
 
     def test_high_completion_stale_change_triggers_alert_once(self):
         self._init_and_push(rows="")
@@ -3254,6 +3305,90 @@ class StartupGuardsStillBlockTests(SweepTestBase):
         result = _run_sweep(fake)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn(".git 不是目录", result.stdout + result.stderr)
+
+
+class OpsWebhookRoutingUnitTests(unittest.TestCase):
+    """队列 #282 ⑴ 包（变更包 `sweep-ops-webhook-cutover`）：机制告警受众归属。
+
+    比照 FI2 `resolve_alert_webhook()` 三用例（commit `30d1736`）并补前缀边界。
+    🔑 本类是全套里**唯一**把键名写成字面量的地方——其余测试桩一律从
+    `sweep.WECOM_WEBHOOK_ENV_KEY` 派生。这是刻意的分工：派生的桩跟着常量走、
+    不会因日后改键名而假红；本类则把"常量该等于什么"钉死，使有人把它改回业务群
+    时必然当场红灯。两者缺一，要么测不出漂移，要么全套一改键名就崩。
+    """
+
+    OPS_KEY = "WECOM_WEBHOOK_URL_OPS"
+    BARE_KEY = BARE_WEBHOOK_ENV_KEY
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="sweep_ops_webhook_")
+        self.root = Path(self._tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _write_env(self, *lines: str) -> None:
+        (self.root / ".env").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def test_常量指向运维逃生通道而非业务群(self):
+        self.assertEqual(
+            sweep.WECOM_WEBHOOK_ENV_KEY, self.OPS_KEY,
+            "sweep 全部告警都是『机制自陈』，按通知通道架构决策件 §4.2 须发运维群；"
+            "该常量若被改回裸键，业务部门群会重新开始收 Python traceback（#282 拍板明禁）",
+        )
+
+    def test_只有运维键时正常取到(self):
+        self._write_env(f"{self.OPS_KEY}=https://qyapi.example.com/ops")
+        self.assertEqual(sweep._load_webhook_url(self.root), "https://qyapi.example.com/ops")
+
+    def test_只有裸键时返回None且绝不回退(self):
+        """本包最硬的一条：静默回退正是把告警发回业务群的那条路径。"""
+        self._write_env(f"{self.BARE_KEY}=https://qyapi.example.com/business")
+        self.assertIsNone(
+            sweep._load_webhook_url(self.root),
+            "裸键指向业务部门群；回退命中即为发错群，而『发错群』正是本次切换要消灭的事",
+        )
+
+    def test_两者并存时只取运维键(self):
+        """本机开发环境即如此——根 .env 两个键都在。"""
+        self._write_env(
+            f"{self.BARE_KEY}=https://qyapi.example.com/business",
+            f"{self.OPS_KEY}=https://qyapi.example.com/ops",
+        )
+        self.assertEqual(sweep._load_webhook_url(self.root), "https://qyapi.example.com/ops")
+
+    def test_互为前缀的两键不跨行误命中(self):
+        """`WECOM_WEBHOOK_URL` 是 `WECOM_WEBHOOK_URL_OPS` 的真前缀：若匹配写成不带
+        `=` 的 `startswith(KEY)`，切换后会静默读到业务群那一行——返回值完全正常、
+        收信人却是错的。此处把"按 `<键名>=` 精确前缀匹配"钉成硬约束。
+        本用例故意把裸键放在**后**一行：顺序颠倒时仍必须各取各的。"""
+        self._write_env(
+            f"{self.OPS_KEY}=https://qyapi.example.com/ops",
+            f"{self.BARE_KEY}=https://qyapi.example.com/business",
+        )
+        self.assertEqual(sweep._load_webhook_url(self.root), "https://qyapi.example.com/ops")
+
+    def test_运维键存在但值为空视同未配置(self):
+        self._write_env(
+            f"{self.OPS_KEY}=",
+            f"{self.BARE_KEY}=https://qyapi.example.com/business",
+        )
+        self.assertIsNone(sweep._load_webhook_url(self.root), "空值不得触发回退裸键")
+
+    def test_env缺失时返回None(self):
+        self.assertIsNone(sweep._load_webhook_url(self.root))
+
+    def test_模块内不残留键名字面量副本(self):
+        """决策点 3(a)：12 处字面量改为从常量派生后，副本数应归零——
+        全文只应剩常量定义那一处。副本归零之后，"日志说的键名 ≠ 实际读的键名"
+        在结构上不再可能发生，因而不需要一条守卫去检查它（决策点 6a）。"""
+        text = SCRIPT.read_text(encoding="utf-8")
+        hits = [ln for ln in text.splitlines() if self.BARE_KEY in ln]
+        self.assertEqual(
+            len(hits), 1,
+            f"应只剩常量定义一行，实际 {len(hits)} 行：{hits}",
+        )
+        self.assertIn("WECOM_WEBHOOK_ENV_KEY =", hits[0])
 
 
 if __name__ == "__main__":

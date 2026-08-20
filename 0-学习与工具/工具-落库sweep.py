@@ -434,7 +434,12 @@ STALE_INDEX_LOCK_MINUTES = 10
 
 # 队列 #171：分叉静默停摆告警。
 ENV_REL = ".env"
-WECOM_WEBHOOK_ENV_KEY = "WECOM_WEBHOOK_URL"
+# 队列 #282 ⑴ 包（变更包 sweep-ops-webhook-cutover，Shao Peishen 2026-08-19 审核通过
+# design、决策点 1a）：sweep 的告警全部是"某个自动化机制自己出问题了"，按
+# `3-治理与合规/通知通道架构决策件-webhook退役与aibot单一出口-2026-08-06.md` §4.2
+# 判据一律发运维逃生通道，MUST NOT 发业务部门群。本模块内该键名只此一份，
+# 其余位置（日志文案、docstring）一律从本常量派生，不留字面量副本。
+WECOM_WEBHOOK_ENV_KEY = "WECOM_WEBHOOK_URL_OPS"
 FORK_STATE_REL = "reports/sweep-fork-state.json"
 FORK_EXIT_CODE = 2  # 复用既有"需要人工介入"语义，不新造一套退出码
 
@@ -991,7 +996,7 @@ def _run_scheduled_task_mirror_sync(repo_root: Path, log: list[str]) -> None:
         log.append("✓ 定时任务真身↔镜像核对：检出差异并已自动更正+本地提交，等待本轮末尾统一对齐并推送。")
         webhook_url = _load_webhook_url(repo_root)
         if webhook_url is None:
-            log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过定时任务镜像差异告警推送（仅留痕日志）。")
+            log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过定时任务镜像差异告警推送（仅留痕日志）。")
         else:
             try:
                 _send_wecom_markdown(
@@ -1009,7 +1014,7 @@ def _run_scheduled_task_mirror_sync(repo_root: Path, log: list[str]) -> None:
         )
         webhook_url = _load_webhook_url(repo_root)
         if webhook_url is None:
-            log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过凭据拦截告警推送（仅留痕日志）。")
+            log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过凭据拦截告警推送（仅留痕日志）。")
         else:
             try:
                 _send_wecom_markdown(
@@ -1039,9 +1044,16 @@ def _record_batch_landing_count(repo_root: Path, landed_batch_ids: list[str]) ->
 
 
 def _load_webhook_url(repo_root: Path) -> str | None:
-    """读 `<repo_root>/.env` 的 `WECOM_WEBHOOK_URL`（同 `发企微.py::load_webhook`
-    同款零依赖读法，唯一区别：找不到时返回 None 而非 sys.exit——告警发不出去
-    不应让 sweep 本身失败退出，只应降级为"跳过告警、留痕"（见 `_handle_fork_detected`）。
+    """读 `<repo_root>/.env` 中 `WECOM_WEBHOOK_ENV_KEY` 常量所指的那个键（同
+    `发企微.py::load_webhook` 同款零依赖读法，唯一区别：找不到时返回 None 而非
+    sys.exit——告警发不出去不应让 sweep 本身失败退出，只应降级为"跳过告警、留痕"
+    （见 `_handle_fork_detected`）。
+
+    🔴 队列 #282 ⑴ 包：该常量指向运维逃生通道。取不到时返回 None，**绝不回退到
+    业务部门群那个裸键**——回退命中即为发错群，而"发错群"正是本次切换要消灭的事
+    （spec `sweep-alert-audience-routing`）。本 docstring 刻意只写常量名、不复制
+    其值：docstring 不能是 f-string（那会使 `__doc__` 变 None），故用"命名常量"
+    而非"派生"实现同一个目的——副本归零。
     """
     env_path = repo_root / ENV_REL
     if not env_path.exists():
@@ -1111,7 +1123,7 @@ def _reset_fork_state(repo_root: Path, log: list[str] | None = None) -> None:
     log.append("✅ 分叉已解除")
     webhook_url = _load_webhook_url(repo_root)
     if webhook_url is None:
-        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过分叉解除通知推送（仅留痕日志）。")
+        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过分叉解除通知推送（仅留痕日志）。")
         return
     try:
         _send_wecom_markdown(webhook_url, "✅ 落库sweep：此前告警的主工作区与 origin/master 分叉已解除。")
@@ -1152,7 +1164,7 @@ def _handle_fork_detected(repo_root: Path, log: list[str]) -> None:
 
     webhook_url = _load_webhook_url(repo_root)
     if webhook_url is None:
-        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过分叉告警推送（仅留痕日志与状态文件）。")
+        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过分叉告警推送（仅留痕日志与状态文件）。")
         return
     try:
         _send_wecom_markdown(webhook_url, alert_text)
@@ -1178,7 +1190,7 @@ def _announce_resident_service_deployment_hint(repo_root: Path, log: list[str]) 
     log.append(hint)
     webhook_url = _load_webhook_url(repo_root)
     if webhook_url is None:
-        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过部署提示推送（仅留痕日志）。")
+        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过部署提示推送（仅留痕日志）。")
         return
     try:
         _send_wecom_markdown(webhook_url, f"🔧 落库sweep：{hint}")
@@ -1771,7 +1783,7 @@ def _track_and_alert_orphan_paths(
         log.append(f"✅ 孤儿脏文件解除通知：{len(resolved)} 个文件")
         webhook_url = _load_webhook_url(repo_root)
         if webhook_url is None:
-            log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过孤儿解除通知推送（仅留痕日志）。")
+            log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过孤儿解除通知推送（仅留痕日志）。")
         else:
             try:
                 _send_wecom_markdown(webhook_url, resolved_text)
@@ -1795,7 +1807,7 @@ def _track_and_alert_orphan_paths(
     )
     webhook_url = _load_webhook_url(repo_root)
     if webhook_url is None:
-        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过孤儿脏文件告警推送（仅留痕日志与状态文件）。")
+        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过孤儿脏文件告警推送（仅留痕日志与状态文件）。")
         return
     try:
         _send_wecom_markdown(webhook_url, alert_text)
@@ -1841,7 +1853,7 @@ def _announce_missing_deployment_trace(
         )
     webhook_url = _load_webhook_url(repo_root)
     if webhook_url is None:
-        log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过部署留痕提示推送（仅留痕日志）。")
+        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过部署留痕提示推送（仅留痕日志）。")
         return
     try:
         _send_wecom_markdown(
@@ -2059,7 +2071,7 @@ def _track_and_alert_standing_state(
     if resolved:
         log.append(f"✅ {label}解除通知：{len(resolved)} 项")
         if webhook_url is None:
-            log.append(f"⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过{label}解除通知推送（仅留痕日志）。")
+            log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过{label}解除通知推送（仅留痕日志）。")
         else:
             try:
                 _send_wecom_markdown(webhook_url, render_resolved_text(resolved))
@@ -2070,7 +2082,7 @@ def _track_and_alert_standing_state(
     if not to_alert:
         return
     if webhook_url is None:
-        log.append(f"⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过{label}告警推送（仅留痕日志与状态文件）。")
+        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过{label}告警推送（仅留痕日志与状态文件）。")
         return
     try:
         _send_wecom_markdown(webhook_url, render_alert_text(to_alert))
@@ -2706,7 +2718,7 @@ def main() -> int:
         if not args.dry_run:
             webhook_url = _load_webhook_url(repo_root)
             if webhook_url is None:
-                log.append("⚠ 未在 .env 找到 WECOM_WEBHOOK_URL，跳过未预期异常告警推送（仅留痕日志）。")
+                log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过未预期异常告警推送（仅留痕日志）。")
             else:
                 try:
                     _send_wecom_markdown(
