@@ -96,3 +96,16 @@ def test_authorized_access_passes_the_gate(monkeypatch):
     monkeypatch.setenv("ZP_GATE_PASSWORD", "s3cret")
     c = _client(_snap())
     assert c.get("/materials", headers={"X-Auth-Token": "s3cret"}).status_code == 200
+
+
+def test_empty_supplier_is_not_shown_as_a_data_gap():
+    """🔴 供应商为空 ≠ 取数缺口：那是「该物料当前没有未交采购订单」这个**准确答案**。
+
+    生产实测 596 行里 100 行 `sup` 为空，与状态列 `no_transit`(82)+`confirmed_no_transit`(18)
+    逐个对上——两者同义。若沿用品牌/责任人那套「取数缺口」措辞，就是把「查不到」和
+    「确实没有」混为一谈（#296 那族缺陷的老路）。
+    """
+    body = _client(_snap()).get("/materials").get_data(as_text=True)
+    assert "'无未交订单'" in body            # 供应商列空值的措辞
+    # 品牌/责任人仍是取数缺口态，两者措辞必须不同
+    assert FIELD_GAP in body

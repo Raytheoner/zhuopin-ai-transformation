@@ -385,7 +385,12 @@ function stText(r){
 }
 function ansQty(r){return (r.cb&&r.cb.length)?r.cb.map(function(b){return fmt(b.q);}).join('、'):'无';}
 function ansDate(r){return (r.cb&&r.cb.length)?r.cb.map(function(b){return b.d;}).join('、'):'无';}
-function supText(r){return (r.sup&&r.sup.length)?r.sup.join('、'):GAP_MARK;}
+// 🔴 供应商为空 ≠ 取数缺口：品牌/责任人是「全库没有这个字段」，而供应商为空是
+// 「这个料当前没有未交采购订单」——那是一个**准确的答案**，不是取不到数。
+// 生产实测 596 行里恰好 100 行为空，与状态列 no_transit(82)+confirmed_no_transit(18)
+// 逐个对上，坐实两者同义。把它显示成「取数缺口」会重蹈 #296 那族「『无』与『0』
+// 混为一谈」的老路，故单列措辞。
+function supText(r){return (r.sup&&r.sup.length)?r.sup.join('、'):'无未交订单';}
 function view(){
   var q=state.q.trim().toLowerCase();
   var l=ROWS.filter(function(r){
@@ -520,7 +525,9 @@ setInterval(loadSnap,120000);
         '<b>下一步</b>：已请 IT 侧核实携客云 OpenAPI 是否提供该端点；同时随判例包请采购部确认'
         '「制单人」能否作为过渡替代。</li>'
         '<li>「供应商名称」取自 <b>ERP 未交采购订单的供应商</b>（＝实际下单供应商），'
-        '与 SRM 页的「核定供应商」在极少数情况下可能不同；同一物料有多家时全部并列。</li>'
+        '与 SRM 页的「核定供应商」在极少数情况下可能不同；同一物料有多家时全部并列。'
+        '该列显示<b>「无未交订单」</b>时是一个<b>准确的答案</b>（这个料当前确实没有在途采购订单），'
+        '<b>不是</b>上一条说的那种取不到数——两者措辞刻意不同，请勿混看。</li>'
         '<li>⚠️ <b>齐料日期口径正在与采购部确认中</b>（已知缺陷：齐料日/瓶颈物料只取最早答交'
         '日期、不看答交数量，判例包已发出待回件）。本视图<b>不展示齐料日期</b>，不受该缺陷影响；'
         '成品看板上的齐料日在该口径确认前请谨慎使用。</li>'
