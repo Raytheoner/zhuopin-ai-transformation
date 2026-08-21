@@ -17,7 +17,7 @@ created: 2026-08-21
 ## 开场词（⏸ 暂勿粘）
 
 ```
-【OP-0821-K】FI2起点反转方案
+[OP-0821-K]FI2起点反转方案
 【设置】执行环境：CC ｜ CC session：☑ 新建 ｜ worktree：☑ 新建 `fi2-source-inversion` ｜ 分支：claude/fi2-source-inversion ｜ 工作区：C:\Users\Paul Shao\OneDrive\Projects\企业AI转型 ｜ 派出线：Cowork 环境总线
 
 读 1-转型规划\0-全景路线图\派单件-【CC】FI2三单核对起点反转-propose与design-2026-08-21.md 全文 ＋ 队列 §一 #372（规格全文，跑 python 0-学习与工具/工具-队列查询.py --row 372 --section 一 --field all）。
