@@ -2091,6 +2091,59 @@ def _track_and_alert_standing_state(
         log.append(f"⚠ {label}告警推送失败（不影响本轮退出码）：{exc}")
 
 
+# ============================================================
+# 队列 §四 #87⑴（2026-08-21，OP-0821-G）：告警正文里的队列行指针改为
+# 动态解析
+# ============================================================
+# 原文把「存量补齐见队列 #299」写成硬编码字符串，而 §一 #299 已于
+# 2026-08-07 `[S:done]` 销号 ⇒ 该告警此后每天都在把读者指向一个已经
+# 关闭的行。这与本文件反复记的那一族问题同源：**一个指针写死在代码
+# 里，它指向的对象却会自己变状态，而变了不会有任何报错。**
+#
+# 改法取「发出时动态查」而非「换指一个长期有效的载体」——后者仍是硬
+# 编码，只是把过期时间推后。三条分支均显式措辞、不静默沿用旧文案：
+#   - 该行仍在办（open/partial/hold/blocked/timed） → 照旧指路；
+#   - 该行已 `[S:done]` → 改口为「原承接行已销号，需另行派单」；
+#   - 查不到该行（被迁走／队列文件缺失／状态字段缺失） → 如实说
+#     「状态未取到」，不假装它还在办（同本文件「非静默降级」纪律）。
+STOCK_BACKFILL_QUEUE_ROW_ID = "299"
+
+
+def _render_stock_backfill_pointer(repo_root) -> str:
+    """返回场景 spec 缺口告警里那句「存量补齐……」的当前措辞。
+
+    刻意不缓存、不在模块导入期求值——队列行状态随时可能被别的 session
+    改写，本函数的全部价值就在于「每次发出时重新看一眼」。"""
+    status = _lookup_section_one_status(repo_root, STOCK_BACKFILL_QUEUE_ROW_ID)
+    row_ref = f"队列 §一 #{STOCK_BACKFILL_QUEUE_ROW_ID}"
+    if status == "done":
+        return (
+            f"存量补齐的原承接行 {row_ref} 已销号（`[S:done]`），"
+            "本批缺口需另行派单"
+        )
+    if status is None:
+        return (
+            f"存量补齐原记于 {row_ref}（**该行当前状态未取到**，"
+            "请先核实它是否仍是有效承接行）"
+        )
+    return f"存量补齐见{row_ref}（当前 `[S:{status}]`）"
+
+
+def _lookup_section_one_status(repo_root, row_id: str) -> str | None:
+    """跨两份物理队列文件查 §一 某行的机器状态字段取值。
+
+    返回 `done`/`open`/`partial`/`hold`/`blocked`/`timed=YYYY-MM-DD`
+    之一；行不存在、或存在但状态列没有合法机器字段时返回 None——两种
+    情形调用方一律走「如实说未取到」，不猜。"""
+    for queue_path in _iter_queue_paths():
+        for row in _parse_section_one(_read_queue(repo_root, queue_path)):
+            if row["row_id"] != row_id:
+                continue
+            status, _domain, _rest = _parse_status_domain_fields(row["status_cell"])
+            return status
+    return None
+
+
 def _announce_scenario_spec_coverage_gaps(
     repo_root: Path, gaps: list[dict], log: list[str],
 ) -> None:
@@ -2117,7 +2170,9 @@ def _announce_scenario_spec_coverage_gaps(
             lines.append(f"- `{key}`（形态{gap['form']}，{pkgs}）")
         return (
             f"📋 落库sweep：{len(keys)} 个已建造场景在 openspec/specs/ 零命中（可追溯链断），"
-            "存量补齐见队列 #299：\n" + "\n".join(lines)
+            # §四 #87⑴：此处原为硬编码 "存量补齐见队列 #299"，该行已销号
+            # ⇒ 改为发出时动态查，见 `_render_stock_backfill_pointer`。
+            f"{_render_stock_backfill_pointer(repo_root)}：\n" + "\n".join(lines)
         )
 
     def render_resolved(keys):

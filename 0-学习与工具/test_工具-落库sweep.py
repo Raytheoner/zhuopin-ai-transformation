@@ -2809,6 +2809,72 @@ class ParseSectionOneUnitTests(unittest.TestCase):
         self.assertEqual(sweep._parse_section_one("# 无任何章节的文档\n"), [])
 
 
+class StockBackfillPointerUnitTests(unittest.TestCase):
+    """队列 §四 #87⑴（2026-08-21，OP-0821-G）：场景 spec 缺口告警里的
+    「存量补齐见队列 #299」原为硬编码，而该行已于 2026-08-07 销号 ⇒
+    告警此后每天都在把读者指向一个已关闭的行。改为发出时动态查状态后，
+    本组锁死三条分支的措辞必须**可区分**——措辞本身可改，真正不许回潮
+    的是"把一个会自己变状态的指针写死进字符串"。"""
+
+    def _write_queue(self, tmp: Path, status_cell: str | None) -> None:
+        """把夹具队列写进两份物理队列文件中的"机制环境"那一份。
+        `status_cell=None` 表示该行根本不存在（模拟行被迁走/改号）。"""
+        rows = "" if status_cell is None else (
+            f"| {sweep.STOCK_BACKFILL_QUEUE_ROW_ID} | 存量 spec 缺口补齐 | CC "
+            f"| 输入 | 产出 | {status_cell} | `openspec/` | 2026-08-07 |\n"
+        )
+        target = tmp / sweep.QUEUE_MECHANISM_PATH_REL
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(SECTION_ONE_EIGHT_COL_QUEUE.format(rows=rows), encoding="utf-8")
+
+    def _render(self, status_cell: str | None) -> str:
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._write_queue(tmp, status_cell)
+            return sweep._render_stock_backfill_pointer(tmp)
+
+    def test_done_row_says_closed_and_needs_new_dispatch(self):
+        text = self._render("[S:done][D:机] ✅ 已完成")
+        self.assertIn("已销号", text)
+        self.assertIn("另行派单", text)
+
+    def test_open_row_still_points_at_it_with_current_status(self):
+        text = self._render("[S:open][D:机] 待领")
+        self.assertIn(f"#{sweep.STOCK_BACKFILL_QUEUE_ROW_ID}", text)
+        self.assertIn("[S:open]", text)
+        self.assertNotIn("已销号", text)
+
+    def test_missing_row_says_status_unavailable_not_silently_stale(self):
+        """行查不到时必须如实说"未取到"——不得静默沿用"仍在办"的旧措辞
+        （同本文件一贯的"非静默降级"纪律）。"""
+        text = self._render(None)
+        self.assertIn("未取到", text)
+        self.assertNotIn("已销号", text)
+
+    def test_status_cell_without_machine_field_is_treated_as_unavailable(self):
+        """状态列没有 `[S:...]` 机器字段时同样走"未取到"，不猜。"""
+        text = self._render("✅ 已完成（自然语言，无机器字段）")
+        self.assertIn("未取到", text)
+
+    def test_alert_body_no_longer_hardcodes_a_row_number(self):
+        """反例守卫：告警渲染函数体内不得再出现写死的"见队列 #<行号>"。
+
+        只扫 `_announce_scenario_spec_coverage_gaps` 函数体——文件头部
+        历史沿革注释里提到 #299 是合法留痕，不该被这条守卫误伤。"""
+        tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+        func = next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef)
+            and n.name == "_announce_scenario_spec_coverage_gaps"
+        )
+        offenders = [
+            n.value for n in ast.walk(func)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and "见队列 #" in n.value
+        ]
+        self.assertEqual(offenders, [], f"告警正文又出现硬编码队列行号：{offenders}")
+
+
 class TouchZonePathMatchUnitTests(unittest.TestCase):
     def test_directory_fragment_matches_prefix(self):
         self.assertTrue(sweep._touch_zone_path_matches("openspec/changes/x/tasks.md", "openspec/"))
