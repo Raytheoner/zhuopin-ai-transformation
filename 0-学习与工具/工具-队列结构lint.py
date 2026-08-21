@@ -48,6 +48,7 @@ ImportError: class queue_table: ...` 兜底桩隔离测试环境（#306 apply �
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -81,6 +82,59 @@ QUEUE_PATHS_REL = [editlock.QUEUE_MECHANISM_PATH_REL, editlock.QUEUE_BUSINESS_PA
 REPO_ROOT = editlock.REPO_ROOT
 
 
+# ---------------------------------------------------------------------------
+# 队列 #366 / S2：队列禁止复述信状态（一期 --warn）
+# ---------------------------------------------------------------------------
+#
+# S1（Shao Peishen 2026-08-21 答 §四 #85 选 (b)）确立：**一封信的状态，唯一
+# 权威源是跟进信 README 的「发送状态」列，跨桌任务队列不是信状态的载体。**
+# 队列行里写「等某某#N 闭环／待某某回件」这类**复述**，一律是会过时的快照
+# ——2026-08-21 当天两次咬人（质量部#8 回灌全做完闸还锁着；采购部#17 回件
+# 13:13 到、13:15 队列已追行而 README 未动）都始于有人照着这类快照下判断。
+#
+# 判据只认「**等/待 + 部门#N + 闭环/回件/回灌**」这个紧凑形态，前后各留
+# ≤8 字的窗口。窗口是**实测标定**的，不是拍的：0 字窗口漏掉全部 5 处存量，
+# 40 字窗口把 18 处正常叙述（如「#344 判例包已作为 采购部#16 发出、现等
+# 回件」这类**事后陈述**）一并卷进来。8/8 恰好命中且仅命中那 5 处。
+_LETTER_STATUS_RESTATE_RE = re.compile(
+    r"(等|待).{0,8}?(采购部|财务部|质量部|IT部|销售部)#\d+.{0,8}?(闭环|回件|回灌)"
+)
+# §二 是 commit 批次行，天然是历史记录；§一 里 `[S:done]` 的行同理（「历史
+# 记录不追改」是本项目硬规则）。两者都**只统计、不报违规**——但必须把数
+# 打印出来，否则就成了"静默豁免"，与本判据要治的毛病同族。
+FOLLOWUP_RESTATE_SCOPE_SECTIONS = ("一", "四")
+FOLLOWUP_RESTATE_HINT = (
+    "队列不得复述信状态（它会过时）。改为写指针："
+    "「串行闸状态跑 python 0-学习与工具/工具-跟进闸查询.py --to <收信人>」"
+)
+
+
+def _followup_restate_scan(text: str) -> tuple[list[str], int]:
+    """返回 (活行违规说明列表, 历史行命中数)。
+
+    活行 ＝ §一 非 `[S:done]` 的行 ＋ §四 全部行；历史行 ＝ §一 `[S:done]`
+    的行（§二 不在扫描范围内，见上方常量注释）。
+    """
+    sections = editlock._split_live_sections(text)
+    live: list[str] = []
+    historical = 0
+    for label in FOLLOWUP_RESTATE_SCOPE_SECTIONS:
+        for line, cells in editlock._table_data_rows(sections.get(label, "")):
+            match = _LETTER_STATUS_RESTATE_RE.search(line)
+            if not match:
+                continue
+            if label == "一" and len(cells) > 5:
+                status_value, _, _ = editlock._parse_status_domain_fields(cells[5])
+                if status_value == "done":
+                    historical += 1
+                    continue
+            row_id = cells[0] if cells else "?"
+            live.append(
+                f"§{label} #{row_id} 复述了信状态「{match.group(0)}」——{FOLLOWUP_RESTATE_HINT}"
+            )
+    return live, historical
+
+
 def lint(repo_root: Path) -> list[str]:
     """队列 #315：遍历两份物理队列文件（机制环境／业务场景），每份独立跑
     同一套校验，违规说明前缀标注来源文件，避免两份文件都出问题时混在
@@ -96,6 +150,26 @@ def lint(repo_root: Path) -> list[str]:
             f"[{queue_path}] {v}" for v in _lint_one_file(text)
         )
     return violations
+
+
+def followup_restate_warnings(repo_root: Path) -> tuple[list[str], int]:
+    """队列 #366 / S2 一期：只 warn、不计入 `lint()` 的违规、不影响退出码。
+
+    🔴 一期刻意不硬拦，与 `claude-progress-lint` 同策略：本判据上线时存量
+    非零（实测 3 处活行），一期就 `--enforce` 会立刻挡住所有人的 push，而
+    「队列不得复述信状态」这条规则如果第一天就被绕过，绕过的将是 lint 本身。
+    二期存量清零后另派单件切硬拦。
+    """
+    warnings: list[str] = []
+    historical_total = 0
+    for queue_path in QUEUE_PATHS_REL:
+        target = repo_root / queue_path
+        if not target.exists():
+            continue
+        live, historical = _followup_restate_scan(target.read_text(encoding="utf-8"))
+        warnings.extend(f"[{queue_path}] {w}" for w in live)
+        historical_total += historical
+    return warnings, historical_total
 
 
 def _lint_one_file(text: str) -> list[str]:
@@ -155,6 +229,22 @@ def check_queue_table_importable(repo_root: Path) -> str | None:
                 "zhuopin_platform.shared_tools.queue_table 可 import，但缺少"
                 "预期符号 SECTION_COLUMN_COUNTS（模块内容被改动？）"
             )
+        # 队列 #366 / S4：同一条断言扩到 `followup_gate`。理由与 #313 逐字
+        # 相同——`工具-共享文档编辑锁.py` 对它也有兜底（import 不到时 S4
+        # 桥二整条校验跳过，只打一行 ⚠），**那条降级路径本身是静默的**，
+        # 本断言存在的唯一目的就是让它红。
+        gate = importlib.import_module("zhuopin_platform.shared_tools.followup_gate")
+        missing = [
+            name for name in ("CLOSED_STATUS_PREFIXES", "is_closed_status",
+                              "find_unsynced_letters", "reply_matches_letter")
+            if not hasattr(gate, name)
+        ]
+        if missing:
+            return (
+                "zhuopin_platform.shared_tools.followup_gate 可 import，但缺少"
+                f"预期符号 {'、'.join(missing)}（模块内容被改动？）"
+                "——编辑锁的 S4 桥二校验会因此静默跳过"
+            )
         return None
     except ImportError as exc:
         return (
@@ -172,6 +262,19 @@ def main() -> int:
     import_error = check_queue_table_importable(REPO_ROOT)
     if import_error:
         violations.append(import_error)
+
+    # 队列 #366 / S2 一期：先打印 warn 段，再打印硬判据结论——放在前面是
+    # 因为退出码由硬判据决定，读者看到 `✓ 通过` 后就不会再往下看了。
+    restate_warnings, restate_historical = followup_restate_warnings(REPO_ROOT)
+    if restate_warnings:
+        print(f"⚠ 队列复述信状态（S2 一期只告警，不计入退出码）：{len(restate_warnings)} 处活行")
+        for w in restate_warnings:
+            print(f"  - {w}")
+    print(
+        f"  二期基线：活行 {len(restate_warnings)} 处；"
+        f"另有 {restate_historical} 处落在 §一 `[S:done]` 历史行，"
+        "按「历史记录不追改」豁免、不计入（§二 批次行不在扫描范围）。"
+    )
 
     files_desc = "、".join(QUEUE_PATHS_REL)
     if not violations:

@@ -18,6 +18,8 @@ from .constants import PAUL_USERID
 from .department_group_chatid_mapping import load_department_group_chatid_mapping
 from .disconnect_inprogress_alert import DisconnectInProgressMonitor
 from .department_mapping import load_department_mapping
+from .followup_readme_bridge import LOCK_TARGET as FOLLOWUP_README_LOCK_TARGET
+from .followup_readme_bridge import mark_reply_arrived
 from .forwarding import forward_inbound_to_paul
 from .frame_parsing import parse_inbound_frame
 from .group_notify import notify_department_group_via_chatid
@@ -159,6 +161,19 @@ def build_connector(
             return None
         return SubprocessQueueEditLock(
             lock_repo_root, queue_path, who=AIBOT_LOCK_WHO, note=note,
+            audit=audit, alert_send=queue_edit_lock_alert_fallback_send,
+        )
+
+    def _make_followup_readme_lock() -> SubprocessQueueEditLock:
+        """S4 桥一（队列 #366 M1）用的锁——目标是跟进信 README，不是队列。
+
+        与 `_make_queue_lock` 共用同一个锁实现（协议〇.7 只有一份，不分叉），
+        只换 `target`。`FOLLOWUP_README_LOCK_TARGET` 是仓库相对、正斜杠的
+        `PurePosixPath`，理由见 `followup_readme_bridge` 里那段注释。
+        """
+        return SubprocessQueueEditLock(
+            lock_repo_root, FOLLOWUP_README_LOCK_TARGET, who=AIBOT_LOCK_WHO,
+            note="回件到达自动标第九态（S4 桥一）",
             audit=audit, alert_send=queue_edit_lock_alert_fallback_send,
         )
 
@@ -356,6 +371,45 @@ def build_connector(
                     error=str(exc),
                 )
             )
+
+        # 队列 #366 / S4 桥一：回件到达即在跟进信 README 打第九态
+        # 「📨 回件已到，待拆件」。
+        #
+        # 放在 `on_message` 而不是 `intake.archive_inbound_message` 里面，
+        # 有两条理由：⑴ `intake.py` 文件头的门禁①明写「代码路径只允许三类
+        # 动作——写文件归档／追加队列行／发确认收讫回执」，往里加第四类写盘
+        # 动作会让那句结构性保证不再成立；⑵ `sync_after_archive` 这个同族的
+        # 旁路增强本来就挂在这一层，保持一致。**「同一次动作」指的是同一条
+        # 消息的同一次处理，不是同一个函数体。**
+        #
+        # 仅在启用编辑锁时执行——桥一的硬约束之一就是「必须走编辑锁，不得
+        # 直接写文件绕开协议〇.7」，锁不可用时**宁可不标**，不裸写。
+        if (
+            archive_result is not None
+            and lock_repo_root is not None
+            and enable_queue_edit_lock
+        ):
+            try:
+                mark_reply_arrived(
+                    archived_filename=archive_result.archived_path.name,
+                    repo_root=lock_repo_root,
+                    audit=audit,
+                    lock_factory=_make_followup_readme_lock,
+                    evaluator=evaluator,
+                    alert_send=queue_edit_lock_alert_fallback_send,
+                )
+            except Exception as exc:  # noqa: BLE001 —— 该函数契约是"绝不向上抛"，这里是防御性兜底
+                audit.record(
+                    AuditEvent(
+                        scenario="wecom-aibot",
+                        action="followup_readme_bridge_dispatch_failed",
+                        evaluator=evaluator,
+                        automation_level="L1",
+                        decision={},
+                        data_sources={"sender": message.sender},
+                        error=str(exc),
+                    )
+                )
 
         # 队列 #168：队列文件被人类持锁编辑时，archive_inbound_message 会
         # 把本次追加推迟（queue_append_deferred=True，queue_row=None）——

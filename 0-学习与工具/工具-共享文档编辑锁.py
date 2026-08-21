@@ -269,7 +269,11 @@ if _PLATFORM_PATH.is_dir():
     if str(_PLATFORM_PATH) not in sys.path:
         sys.path.insert(0, str(_PLATFORM_PATH))
     from zhuopin_platform.shared_tools import queue_table  # noqa: E402
+    # 队列 #366 / S4：跟进信闭环判据的权威实现（本文件、`工具-跟进闸查询.py`、
+    # `aibot_service` 三处共用同一份）。与 queue_table 同一套引导与兜底惯例。
+    from zhuopin_platform.shared_tools import followup_gate  # noqa: E402
 else:
+    followup_gate = None  # 隔离环境（测试把本脚本复制到无平台包的临时目录）
     class queue_table:  # type: ignore[no-redef]
         """隔离环境兜底桩——取值须与 zhuopin_platform.shared_tools.queue_table
         保持一致，见该模块。"""
@@ -551,10 +555,44 @@ STATUS_FIELD_RE = re.compile(
 #   余量 ＝ **1** 格。
 # **⇒ 22 ＝ 21 ＋ 0 ＋ 1。**
 MECHANISM_WIP_CAP_DEFAULT = 22
-# 子项 G（队列 #308 决策点 10）：跟进信串行原则闸——"前一封"发送状态以此
-# 前缀开头即视为已闭环；新增行任一单元格含此逃生阀标记即放行但留痕。
-FOLLOWUP_SERIAL_CLOSED_PREFIX = "📥 已回件并回灌"
+# 子项 G（队列 #308 决策点 10）：跟进信串行原则闸——"前一封"发送状态属
+# **闭环四态**之一即视为已闭环；新增行任一单元格含此逃生阀标记即放行但留痕。
+#
+# 🔴 队列 #366 / S4（2026-08-21）把这条判据从「只认 `📥` 一个前缀」改为
+# 「闭环四态」，并收归 `zhuopin_platform.shared_tools.followup_gate` 权威实现。
+# **这是在修一处真实的判据分裂，不是放宽门禁**：README 串行原则段 2026-08-18
+# 起写的就是四态（`📥 已回件并回灌`／`✅ 无需回复`／`📨 已确认闭环`／
+# `❌ 已作废`），而本文件一直只认第一个。代价是实测过的——质量部#7 形态为
+# `✅ 无需回复`、按纪律闸早已打开，机器却不认，起草下一封时只能编一条
+# `串行豁免：` 去绕过它，**等于拿逃生阀去绕它本来要拦的那件事**；根
+# CLAUDE.md §5 把这条边界原样记了下来。判据分裂时，该改的是偏离书面纪律的
+# 那一侧。
+#
+# 下方两个常量保留为模块级名字（既有测试与外部引用按名取值），取值一律从
+# 权威模块取，隔离环境（无平台包）回落到与权威模块逐字一致的字面量。
+FOLLOWUP_SERIAL_CLOSED_PREFIXES = (
+    followup_gate.CLOSED_STATUS_PREFIXES if followup_gate is not None
+    else ("📥 已回件并回灌", "✅ 无需回复", "📨 已确认闭环", "❌ 已作废")
+)
+# 保留单数名以兼容既有文案/测试引用；语义收窄为"闭环四态里最典型的那一个"，
+# 只用于提示文案，**不再作为判定用的唯一前缀**。
+FOLLOWUP_SERIAL_CLOSED_PREFIX = FOLLOWUP_SERIAL_CLOSED_PREFIXES[0]
 FOLLOWUP_SERIAL_WAIVER_MARKER = "串行豁免："
+# 队列 #366 / S4 桥二：拆件已完成但确有理由暂不转闭环态时的逃生阀。
+FOLLOWUP_STATE_SYNC_WAIVER_MARKER = "转态豁免："
+# 队列 #366 / S4 桥二：入信行的识别标记（与 `aibot_service.intake` 里
+# `task_desc` 的固定前缀一致；那边改了这边就配不上，故两处都写明对方）。
+FOLLOWUP_INTAKE_TASK_MARKER = "企微反馈自动归档"
+FOLLOWUP_EXTERNAL_DOCS_POINTER_RE = re.compile(r"`(7-外部文档/[^`]+)`")
+
+
+def _followup_status_is_closed(status_value: str) -> bool:
+    """闭环四态判定的唯一入口（本文件内部用）。隔离环境无平台包时按同一份
+    字面量前缀比对，行为与权威实现一致。"""
+    if followup_gate is not None:
+        return followup_gate.is_closed_status(status_value)
+    normalized = status_value.replace("*", "").strip("*　 \t")
+    return any(normalized.startswith(p) for p in FOLLOWUP_SERIAL_CLOSED_PREFIXES)
 # 队列 §四 #58 ⑶（2026-08-17，openspec 变更包 editlock-hold-scope-and-wip-
 # block，design.md 决策点 5，Shao Peishen 当日选默认 (c)）：⑨ 由非阻断提示
 # 改为阻断后配套的逃生阀标记——完全复用 `串行豁免：` 既有范式（标记写在行
@@ -1585,8 +1623,8 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
                     break
             if prior_status is None:
                 continue  # 该收信人历史上首次出现，不受串行原则约束
-            if prior_status.startswith(FOLLOWUP_SERIAL_CLOSED_PREFIX):
-                continue  # 前一封已闭环
+            if _followup_status_is_closed(prior_status):
+                continue  # 前一封已闭环（闭环四态，队列 #366 / S4）
             waiver_cell = next((c for c in cells if FOLLOWUP_SERIAL_WAIVER_MARKER in c), None)
             if waiver_cell is not None:
                 waiver_text = waiver_cell.strip()
@@ -1599,8 +1637,8 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
                 preview = preview[:80] + "…"
             violations.append(
                 f"跟进信串行原则：新增行收信人「{recipient}」前一封（{prior_preview}）"
-                f"发送状态为「{prior_status}」尚未闭环，请先据实把它改为"
-                f"「{FOLLOWUP_SERIAL_CLOSED_PREFIX} <日期>」，或在本行内写明"
+                f"发送状态为「{prior_status}」尚未闭环，请先据实把它改为闭环四态"
+                f"之一（{'／'.join(FOLLOWUP_SERIAL_CLOSED_PREFIXES)}），或在本行内写明"
                 f"「{FOLLOWUP_SERIAL_WAIVER_MARKER}〈理由〉」：{preview}"
             )
 
@@ -1731,6 +1769,122 @@ def _validate_followup_hold_consistency(
         # 反向情形（status 为"已推送"类终态）此处**刻意不做任何事**——既不
         # 拒绝也不打印，见本函数文档的退休说明（队列 #324，2026-08-17）。
     return violations
+
+
+# ---------------------------------------------------------------------------
+# 队列 #366 / S4 桥二：回灌完成 ⇒ 强制 README 转态
+# ---------------------------------------------------------------------------
+
+def _followup_intake_records(queue_text: str, queue_file: str) -> list:
+    """从一份队列文件的 §一 里取出全部「企微反馈自动归档」入信行。
+
+    🔴 逐份解析后合并（调用方负责），**不得先把多份文本拼接再解析一次**
+    ——`_split_live_sections` 按标题定位、同名 label 后写覆盖先写，拼接会把
+    第一份的 §一 静默顶掉（队列 #312 缺口一踩过一模一样的坑，症状是"结果
+    看起来很正常，只是少了一半"）。
+    """
+    if followup_gate is None:
+        return []
+    records = []
+    section_one = _split_live_sections(queue_text).get("一", "")
+    for _, cells in _table_data_rows(section_one):
+        if len(cells) < 6 or FOLLOWUP_INTAKE_TASK_MARKER not in cells[1]:
+            continue
+        m = FOLLOWUP_EXTERNAL_DOCS_POINTER_RE.search(cells[3])
+        if not m:
+            continue
+        status_value, _, _ = _parse_status_domain_fields(cells[5])
+        records.append(followup_gate.IntakeRecord(
+            row_id=cells[0],
+            queue_file=queue_file,
+            archived_filename=m.group(1).rsplit("/", 1)[-1],
+            dismantled=(status_value == "done"),
+        ))
+    return records
+
+
+def _followup_letter_records(readme_text: str) -> list:
+    """README「现有跟进信清单」的行 → `followup_gate.LetterRecord`。
+    复用 `_followup_readme_rows`／`FOLLOWUP_TARGET_FILE_RE` 两处既有实现。"""
+    if followup_gate is None:
+        return []
+    records = []
+    for _, cells, status_col_index in _followup_readme_rows(readme_text):
+        topic_cell = cells[3] if len(cells) > 3 else ""
+        m = FOLLOWUP_TARGET_FILE_RE.search(topic_cell)
+        records.append(followup_gate.LetterRecord(
+            number=cells[0] if cells else "?",
+            target_filename=m.group(1) if m else None,
+            status=cells[status_col_index],
+        ))
+    return records
+
+
+def _validate_followup_reply_state_sync(
+    queue_texts: dict[str, str], repo_root: Path, waiver_sources: list[str],
+) -> list[str]:
+    """S4 桥二（队列 #366 M4）：**拆件完成了，README 就必须转态。**
+
+    判据：队列 §一 存在一条指向某封信的入信行、其状态已 `[S:done]`（＝已
+    拆件回灌），而 README 该信所在行的发送状态仍非闭环四态之一 ⇒ 拒绝
+    release，并指名道姓告诉持锁人该改哪一行。
+
+    ## 为什么这道校验必须存在
+
+    **串行闸永远不会自己开。** 机器只写队列（回件到达时机器人自动追 §一
+    行、拆件回灌由人写队列行），**没有任何东西去改 README 那一格**——而闸
+    只读 README。中间那一步一直是人。2026-08-21 一天之内咬了两次：质量部#8
+    回灌全做完闸还锁着；采购部#17 回件 13:13 到、13:15 队列已追行而 README
+    未动。**本校验把「人记得」换成「不改就 release 不掉」。**
+
+    ## 它的已知边界（**必须随违规文案一起说出去，不能让人以为零违规＝全同步**）
+
+    配对只走 `followup_gate.reply_matches_letter`（归一化后 stem 逐字相等），
+    **配不上就不配，绝不猜**（派单件 §二 原文）。因此两类天然在覆盖面之外：
+    ⑴ 纯文本回件（归档文件名主题段恒为 `文本反馈`，无从指向哪一封信）；
+    ⑵ README 行未带队列 #241 的 `目标文件：` 标注（实测 49 行里只有 14 行有）。
+
+    ## 逃生阀
+
+    本次持锁期间的改动里任一处写明 `转态豁免：〈理由〉` 即放行并打印留痕，
+    与既有 `串行豁免：` 完全同一范式（标记写在行里、零新增写盘路径）。
+    """
+    if followup_gate is None:
+        # fail-loud：不静默跳过。真实环境里这条永远不该出现——CI 的
+        # `queue-structure-lint` 有一条断言专盯"权威模块可 import"（#313 范式，
+        # 本次已扩到 followup_gate），它红了才轮得到这里。
+        print("⚠ 未能加载 zhuopin_platform.shared_tools.followup_gate，"
+              "S4 桥二（回灌⇒README 转态）本次未执行——请核实平台底座包完整性。")
+        return []
+
+    readme_path = repo_root / FOLLOWUP_README_TARGET
+    try:
+        readme_text = readme_path.read_text(encoding="utf-8")
+    except OSError:
+        return []  # README 不在（隔离环境/新 clone）——判不出，不拦
+
+    intakes: list = []
+    for queue_file, queue_text in queue_texts.items():
+        intakes.extend(_followup_intake_records(queue_text, queue_file))
+    unsynced = followup_gate.find_unsynced_letters(
+        intakes, _followup_letter_records(readme_text)
+    )
+    if not unsynced:
+        return []
+
+    waiver = next(
+        (s for s in waiver_sources if FOLLOWUP_STATE_SYNC_WAIVER_MARKER in s), None
+    )
+    if waiver is not None:
+        preview = waiver.strip()
+        if len(preview) > 120:
+            preview = preview[:120] + "…"
+        print(f"✓ 检测到转态豁免声明，已放行 {len(unsynced)} 处未同步：{preview}")
+        return []
+
+    return [
+        u.describe() + f"（改 {FOLLOWUP_README_TARGET}）" for u in unsynced
+    ]
 
 
 def _validate_release_structure(
@@ -2437,11 +2591,36 @@ def cmd_release(args: argparse.Namespace) -> int:
     violations: list[str] = []
     progress_waiver_notes: list[str] = []
     if _is_queue_system_target(args.file):
+        queue_texts: dict[str, str] = {}
         for content_target in _iter_queue_paths():
             file_args = argparse.Namespace(**vars(args))
             file_args.file = content_target
             file_violations = _validate_release_structure(file_args, existing, REPO_ROOT)
             violations.extend(f"[{content_target}] {v}" for v in file_violations)
+            queue_texts[content_target] = _read_target_text(content_target)
+        # 队列 #366 / S4 桥二：拆件完成（§一 入信行转 `[S:done]`）而 README
+        # 未转闭环态 ⇒ 拒绝 release。挂在**队列系统**的 release 上而不是
+        # README 的 release 上，是因为拆件回灌这个动作本身就发生在队列这一侧
+        # ——把校验放在动作发生的那一刻，才谈得上"拆件的人不可能忘"。
+        #
+        # 🔴 逃生阀取材面 ＝ 本次持锁的 note ＋ **本次持锁期间触碰过的队列行**，
+        # 刻意**不**含队列文件全文：`转态豁免：` 一旦写进这两份 1.9 MB 的文件
+        # 任何一处，全文匹配就等于把这道门禁永久关掉，且此后没有任何人会发现
+        # ——逃生阀必须一次一用，不能变成一个写一次就长期生效的开关。
+        # 与 `串行豁免：`（只看新增行自身的单元格）同一收敛方向。
+        waiver_sources = [existing.get("note", "") or ""]
+        for content_target, queue_text in queue_texts.items():
+            snapshot_sections = _split_live_sections(_read_snapshot(content_target))
+            current_sections = _split_live_sections(queue_text)
+            for label in current_sections:
+                waiver_sources.extend(
+                    line for line, _ in _diff_touched_rows(
+                        snapshot_sections.get(label, ""), current_sections[label]
+                    )
+                )
+        violations.extend(_validate_followup_reply_state_sync(
+            queue_texts, REPO_ROOT, waiver_sources=waiver_sources,
+        ))
     elif args.file == FOLLOWUP_README_TARGET:
         # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
         # 拦截，与上面那套队列专属校验各自独立、互不干扰。

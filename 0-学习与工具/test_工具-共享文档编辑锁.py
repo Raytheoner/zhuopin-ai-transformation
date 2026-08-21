@@ -2215,6 +2215,234 @@ class AppendRowTests(unittest.TestCase):
         self.assertEqual(self.target.read_text(encoding="utf-8"), before)
 
 
+class FollowupReplyStateSyncTests(unittest.TestCase):
+    """队列 #366 / S4 桥二：回灌完成（§一 入信行 `[S:done]`）⇒ README 必须
+    转闭环态，否则拒绝 release。
+
+    白盒方式，同 `HoldConsistencyValidationTests`：monkeypatch REPO_ROOT 与
+    两个目标路径常量指向本用例专属临时目录，不触碰真实文件。
+    """
+
+    SECTION_ONE_HEADER = (
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+    )
+    SECTION_TWO_HEADER = (
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+    )
+    SECTION_FOUR_HEADER = (
+        "| # | 事项 | 等谁 | 截止 |\n"
+        "|---|------|------|------|\n"
+    )
+    README_HEADER = (
+        "| 编号 | 日期 | 收信人 | 主要事项 | 交期要点 | 发送状态（2026-07-06） |\n"
+        "|--------|------|--------|---------|---------|---------|\n"
+    )
+    # 取自真实归档件与真实 README 标注（2026-08-21 实测）。
+    ARCHIVED = (
+        "财务部-tangyanping-回复-2026-08-06-财务部-唐燕萍-跟进-2026-08-05-"
+        "FI2面板6项显示问题已修复请复核-回复-b01f0dd5ed0005b5ac01d9ccd9eb3006.docx"
+    )
+    LETTER_FILE = "财务部-唐燕萍-跟进-2026-08-05-FI2面板6项显示问题已修复请复核.md"
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.DEFAULT_TARGET = "queue.md"
+        self.module.FOLLOWUP_README_TARGET = "readme.md"
+        self.module.QUEUE_MECHANISM_PATH_REL = "queue.md"
+        self.module.QUEUE_BUSINESS_PATH_REL = "queue-business.md"
+        self.module.QUEUE_LOCK_ANCHOR = "queue.md"
+        self.target_path = self.repo_root / "queue.md"
+        self.business_path = self.repo_root / "queue-business.md"
+        self.readme_path = self.repo_root / "readme.md"
+        self._write_queue()
+        self.business_path.write_text(self._queue_text(), encoding="utf-8")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _queue_text(self, section_one_rows="", hwm_one=200):
+        return (
+            f"> **编号高水位线：§一 #{hwm_one} ｜ §四 #40**（说明文字）\n\n"
+            "## 一、任务看板\n\n" + self.SECTION_ONE_HEADER + section_one_rows +
+            "\n## 二、待 commit 批次（CC 取活销行）\n\n" + self.SECTION_TWO_HEADER +
+            "\n## 三、口径冻结标（重梳期防在途建造撞车）\n\n"
+            "| 域/场景 | 冻结原因 | 挂标 | 解除条件 |\n"
+            "|---------|---------|------|---------|\n"
+            "\n## 四、需 Shao Peishen 的动作（例外与拍板）\n\n" +
+            self.SECTION_FOUR_HEADER
+        )
+
+    def _write_queue(self, section_one_rows="", hwm_one=200):
+        self.target_path.write_text(
+            self._queue_text(section_one_rows, hwm_one), encoding="utf-8")
+
+    def _write_readme(self, status, number="财务部#11"):
+        self.readme_path.write_text(
+            "## 现有跟进信清单\n\n" + self.README_HEADER
+            + f"| {number} | 2026-08-05 | 财务部 · 唐燕萍 | FI2 面板复核 → "
+              f"目标文件：`{self.LETTER_FILE}` | 尽快 | {status} |\n",
+            encoding="utf-8",
+        )
+
+    def _intake_row(self, row_id, status, extra=""):
+        return (
+            f"| {row_id} | 企微反馈自动归档：tangyanping 发来文件 {self.ARCHIVED} | "
+            f"财务专线 | `7-外部文档/财务部/{self.ARCHIVED}` | 核实内容 | "
+            f"{status}{extra} | 队列 | 2026-08-07 |\n"
+        )
+
+    def _acquire(self, who="A", reserve=None, section=None):
+        return self.module.cmd_acquire(argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who=who, note="",
+            reserve=reserve, section=section, reserve_multi=None, domain=None,
+        ))
+
+    def _release(self, who=""):
+        return self.module.cmd_release(argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who=who,
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
+        ))
+
+    def _stdout_of_release(self, who="A"):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = self._release(who=who)
+        return code, buf.getvalue()
+
+    # -------------------------------------------------------------- 核心
+
+    def test_已拆件而README未转态时拒绝release(self):
+        """真实存量复现：财务部#11 的回件 2026-08-06 到、§一 #291 早已
+        `[S:done]`，README 状态列却停在「✅ 已推送」至 2026-08-21 未动。"""
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        code, out = self._stdout_of_release(who="A")
+        self.assertNotEqual(code, 0)
+        self.assertIn("财务部#11", out)
+        self.assertIn("§一 #291", out)
+        self.assertIn("readme.md", out, "必须指名道姓告诉持锁人该改哪个文件")
+
+    def test_README已转闭环态即放行(self):
+        self._write_readme("📥 已回件并回灌（2026-08-07 拆件巡逻）")
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_闭环四态里的任一态都放行(self):
+        for status in ("✅ **无需回复**（发出即闭环）", "📨 **已确认闭环 2026-08-10**",
+                       "**❌ 已作废 · 9 月重写**"):
+            with self.subTest(status=status):
+                self._write_readme(status)
+                self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+                self.assertEqual(self._acquire(who="A"), 0)
+                self.assertEqual(self._release(who="A"), 0)
+
+    def test_入信行未拆件时不拦(self):
+        """桥二治的是「拆完了忘转态」；「还没拆」是桥一那一侧的事。"""
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(self._intake_row("291", "[S:open][D:业] 待领"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_第九态不算闭环仍被拦(self):
+        self._write_readme("📨 回件已到，待拆件 2026-08-06T01:30:00Z（企微机器人自动标记）")
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_文本反馈类入信永远配不上不会误拦(self):
+        text_feedback = "财务部-tangyanping-回复-2026-08-10-文本反馈-7340bdb81dd43aaaafcfa502e3f74e75.md"
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(
+            f"| 323 | 企微反馈自动归档：tangyanping 发来文本反馈 | 财务专线 | "
+            f"`7-外部文档/财务部/{text_feedback}` | 核实 | [S:done][D:业] ✅ 已拆件 | "
+            f"队列 | 2026-08-10 |\n"
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_README行未带目标文件标注时判不出就不拦(self):
+        self.readme_path.write_text(
+            "## 现有跟进信清单\n\n" + self.README_HEADER
+            + "| 财务部#3 | 2026-07-10 | 财务部 · 唐燕萍 | 规则定稿回灌 | 尽快 | ✅ 已推送 |\n",
+            encoding="utf-8",
+        )
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+    # -------------------------------------------------------------- 逃生阀
+
+    def test_本次触碰的行里写转态豁免即放行并留痕(self):
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        # 持锁窗口内改这一行，写上豁免理由。
+        text = self.target_path.read_text(encoding="utf-8").replace(
+            "✅ 已拆件 |", "✅ 已拆件 转态豁免：闭环依据待唐燕萍口头确认后再转 |", 1)
+        self.target_path.write_text(text, encoding="utf-8")
+        code, out = self._stdout_of_release(who="A")
+        self.assertEqual(code, 0)
+        self.assertIn("转态豁免", out, "放行必须留痕，不得静默")
+
+    def test_豁免只认本次持锁触碰过的行不认文件里的陈年旧字(self):
+        """🔴 逃生阀必须一次一用。若按队列全文匹配，`转态豁免：` 写进这两份
+        1.9 MB 文件任何一处就等于把整道门禁永久关掉，且此后无人会发现。"""
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(
+            self._intake_row("291", "[S:done][D:业] ✅ 已拆件")
+            + "| 99 | 一条陈年旧行 转态豁免：当年某个理由 | CC | `x` | y | "
+              "[S:done][D:机] ✅ 完成 | 无 | 2026-07-01 |\n"
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        # 本次持锁期间**什么都没改** ⇒ 那句陈年豁免不该生效。
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_持锁note里写转态豁免同样认(self):
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self.module.cmd_acquire(argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who="A",
+            note="转态豁免：本次只改机制行，README 归拆件班转", reserve=None,
+            section=None, reserve_multi=None, domain=None,
+        )), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+    # ------------------------------------------------------ 双文件与降级
+
+    def test_两份队列文件逐份解析后合并(self):
+        """入信行落在业务场景文件时同样要被看见。🔴 不得先拼接文本再解析
+        ——`_split_live_sections` 同名 label 后写覆盖先写，拼接会把第一份的
+        §一 静默顶掉（队列 #312 缺口一踩过一模一样的坑）。"""
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue()  # 机制环境文件里没有入信行
+        self.business_path.write_text(
+            self._queue_text(self._intake_row("291", "[S:done][D:业] ✅ 已拆件")),
+            encoding="utf-8",
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_权威模块缺失时fail_loud而不是静默跳过(self):
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        queue_texts = {"queue.md": self._queue_text(
+            self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))}
+        with unittest.mock.patch.object(self.module, "followup_gate", None):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                violations = self.module._validate_followup_reply_state_sync(
+                    queue_texts, self.repo_root, waiver_sources=[])
+        self.assertEqual(violations, [])
+        self.assertIn("未能加载", buf.getvalue(), "降级必须打印，不得无声无息")
+
+
 class HoldConsistencyValidationTests(unittest.TestCase):
     """队列 #258（接管 #294 修法⑵）：release 时对队列暂缓结论与 README
     跟进信状态的交叉一致性校验（⑥）。
