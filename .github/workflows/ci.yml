@@ -187,6 +187,25 @@ jobs:
       # 了带判断分支的内联引导——那正是它该拦下的事。
       - run: python 0-学习与工具/工具-引导样板lint.py --enforce
 
+  claude-progress-lint:
+    name: "CLAUDE.md 进度段 lint（J1 承接载体／J2 条目数／J3 单条长度／J5 场景级）"
+    runs-on: windows-latest
+    # 🔴 一期刻意 continue-on-error，与 bootstrap-stub-lint 的 `--enforce`
+    # 不同——那道门禁上线前存量已实测清零、首次运行即为绿；本道上线时存量
+    # **必然超限**（2026-08-21 实测：根 CLAUDE.md 两条各 3,131／3,066 字符，
+    # 全库 3 个文件违反 J2、15 条违反 J3）。一期就 `--enforce` 会立刻挡住
+    # 所有人的 push，而「顶部进度段只留最近一批」这条规则已经被绕过两次
+    # ——**第三次被绕过的将是 lint 本身**，那比现状更糟。故一期只把真实
+    # 违规量测出来（脚本自己打印「二期基线」两个数），二期存量清理到位后
+    # 另派单件切 `--enforce` 并删掉这行 continue-on-error。
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python 0-学习与工具/工具-CLAUDE进度段lint.py
+
   secret-scan:
     name: "凭据扫描"
     runs-on: windows-latest

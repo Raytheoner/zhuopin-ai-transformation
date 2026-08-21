@@ -163,6 +163,20 @@ queue-table-shared-parser-consolidation）：`SECTION_COLUMN_COUNTS` 常量
 ——该模块是队列表格"转义"与"列数校验"两件事的唯一权威实现，供本文件
 及其余五处消费者共用（详见该 openspec 变更包 proposal.md 的取证与范围）。
 
+队列 §四 #80（判据 J4，派单件 OP-0821-C，2026-08-21）：`--file` 指向仓库根
+`CLAUDE.md` 时，`release` 前对**本次持锁窗口内新增的顶部进度条目**做一项
+独立校验——条目含未闭合项措辞（词表见 `CLAUDE_PROGRESS_OPEN_ITEM_WORDS`）
+却未点名任何队列行号即拒绝释放。逃生阀 `进度豁免：<理由>` 写在条目正文内
+（理由同批落进锁的 `history` 留痕；空豁免不接受）。
+**为什么加这一项**：「顶部进度段只留最近一批」这条人守规则 2026-08-09／
+08-16 两次瘦身两次失效，5-6 天内超额长回、回涨速率由 3.4 KB/天升到
+7.7 KB/天。根因不是执行力——顶部段**同时承担「进度记录」与「未闭合项的
+唯一跨会话载体」两个职能**（SC2 那两条自己在正文里写着「本段是本任务仅有
+的跨会话载体」），迁走即丢，于是执行的人每次都在同一处卡死、整段一起不迁。
+CI 侧的 J1/J2/J3（`工具-CLAUDE进度段lint.py`）都是事后收拾，**本项是唯一
+在源头阻止这个二职合一继续新增的那条**。条目切分由本模块的
+`_claude_progress_entries` 唯一实现，lint 侧委托它，两处不各写一套。
+
 用法：
   python 0-学习与工具/工具-共享文档编辑锁.py acquire --who "CC-QD-B" --note "登记#87完成"
   python 0-学习与工具/工具-共享文档编辑锁.py release
@@ -561,6 +575,142 @@ FOLLOWUP_SERIAL_WAIVER_MARKER = "串行豁免："
 # **监测方式**：`WIP豁免：` 在队列全文的出现次数可 grep 计数——若它开始批量
 # 出现，说明上限本身定错了，应回 §四 #58 重议上限，而不是继续加豁免。
 MECHANISM_WIP_WAIVER_MARKER = "WIP豁免："
+
+# ── 判据 J4（队列 §四 #80 / 派单件 OP-0821-C）：根 CLAUDE.md 顶部进度段
+#    新增条目时的未闭合项拦截。lint 侧的 J1/J2/J3 在
+#    `工具-CLAUDE进度段lint.py`；**J4 才是治本的那条**——J1/J2/J3 都是事后
+#    收拾，J4 在源头不让「顶部进度段兼任未闭合项载体」这件事再发生。
+#
+# 成因：「顶部进度段只留最近一批」这条人守规则两次瘦身两次失效，而根因
+# 不是执行力——顶部段同时承担「进度记录」与「未闭合项的唯一跨会话载体」
+# 两个职能，SC2 那两条自己在正文里写着「本段是本任务仅有的跨会话载体」，
+# 迁走即丢。只要新增条目时就逼它点名一个队列行，这个二职合一就不再新增。
+CLAUDE_PROGRESS_TARGET = "CLAUDE.md"
+
+# 结构锚点：进度条目区 ＝ `> **当前进度**` 头行之后 → `📦` 迁移指针行之前。
+# 🔴 **不能只靠「像条目的行」这个形状**——2026-08-21 实测，`📦` 迁移指针行
+# 与「memory 层已收割并停用」元说明行在结构上与真进度条目**完全无法区分**
+# （都是「`> **` ＋ 粗体标题 ＋（日期）」），裸正则数出 4 条而真值是 2 条。
+CLAUDE_PROGRESS_HEADER_RE = re.compile(r"^>\s*\*\*当前进度\*\*")
+CLAUDE_PROGRESS_POINTER_RE = re.compile(r"^>\s*\*\*📦")
+# 🔴 两种前缀都要匹配：2026-08-21 两份输入件都因只匹配 `> **`（漏掉
+# `> 🔴 **`）而把 12 条数成 15 条／9 条——两次都错、且错得看起来很确定。
+CLAUDE_PROGRESS_ENTRY_RE = re.compile(r"^>\s*(?:🔴\s*)?\*\*")
+CLAUDE_PROGRESS_DATE_RE = re.compile(r"[（(]20\d\d-\d\d-\d\d")
+CLAUDE_PROGRESS_ROW_ID_RE = re.compile(r"#(\d{1,4})\b")
+
+# 未闭合措辞词表。
+# ⚠️ **只当筛子、不当判官**：2026-08-21 逐行读原文才发现它漏掉了「未结」
+# 「未接线」两个说法（已补入）。**命中即要求补载体，未命中不代表安全**
+# ——故 J4 只拦不放，不据此宣称「没命中即已闭合」。
+CLAUDE_PROGRESS_OPEN_ITEM_WORDS = (
+    "仍不做", "未执行", "留待", "留给", "未完成", "尚未", "阻塞", "下一轮",
+    "待办", "待补", "未做", "如实登记", "未闭合", "悬置", "待定", "后续会话",
+    "暂不", "未结", "未接线", "未部署",
+)
+# 逃生阀：完全复用 `串行豁免：`／`WIP豁免：` 既有范式——标记连同理由写在
+# **条目正文里**（进 git、被 lint 与值周巡检看得见），release 额外把这条
+# 理由追加进锁的 `history` 留痕。
+CLAUDE_PROGRESS_WAIVER_MARKER = "进度豁免："
+
+
+def _claude_progress_entries(text: str) -> list[tuple[int, str]]:
+    """切出根 CLAUDE.md 顶部进度段的条目，返回 `[(行号, 条目正文), …]`。
+
+    顶部段 ＝ 文件开头 → 第一条**独占一行**的 `---` 之前（该 `---` 是 §1 前
+    的分隔线，本项目根 CLAUDE.md 没有 frontmatter）。条目区 ＝ 段内
+    `> **当前进度**` 头行之后 → `📦` 迁移指针行之前；头行不存在时返回空表
+    （结构不符即不判，不猜）。
+
+    `工具-CLAUDE进度段lint.py::parse_structure_a` 委托本函数，两处不各写
+    一套——同 `_table_data_rows` 自身 docstring 的既有原则。
+    """
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if line.strip() == "---":
+            lines = lines[:i]
+            break
+
+    header_idx = next(
+        (i for i, ln in enumerate(lines) if CLAUDE_PROGRESS_HEADER_RE.match(ln)), None
+    )
+    if header_idx is None:
+        return []
+    pointer_idx = next(
+        (i for i, ln in enumerate(lines)
+         if i > header_idx and CLAUDE_PROGRESS_POINTER_RE.match(ln)),
+        len(lines),
+    )
+
+    entries: list[tuple[int, str]] = []
+    for i in range(header_idx + 1, min(pointer_idx, len(lines))):
+        line = lines[i]
+        if CLAUDE_PROGRESS_ENTRY_RE.match(line) and CLAUDE_PROGRESS_DATE_RE.search(line):
+            entries.append((i + 1, re.sub(r"^>\s?", "", line)))
+    return entries
+
+
+def _is_claude_progress_target(file_arg: str) -> bool:
+    """`--file` 是否指向仓库根 `CLAUDE.md`。归一化为绝对路径后比较，不只比
+    字符串字面量——同 `_is_queue_system_target` 的既有教训（机器人常驻服务
+    传绝对路径，字面量恒不相等会让判据永不触发、且零报错）。"""
+    if file_arg == CLAUDE_PROGRESS_TARGET:
+        return True
+    try:
+        return Path(file_arg).resolve() == (REPO_ROOT / CLAUDE_PROGRESS_TARGET).resolve()
+    except OSError:
+        return False
+
+
+def _validate_claude_progress_open_item(
+    current_text: str, snapshot_text: str,
+) -> tuple[list[str], list[str]]:
+    """判据 J4：本次持锁窗口内新增的顶部进度条目，若含未闭合措辞却未点名
+    任何队列行号，拒绝 release。返回 `(违规说明列表, 逃生阀留痕文本列表)`。
+
+    新增判定 ＝ 条目正文不在 acquire 快照的条目集合里（**按正文比对、不按
+    行号**——上方插入一条会让所有既有条目行号整体下移，按行号比对会把整段
+    历史条目误判成新增，与 `_validate_release_structure` 只对本次改动生效
+    的既有口径一致）。
+
+    逃生阀 `进度豁免：<理由>` 写在条目正文内即放行，但理由必须能被读出来
+    ——写了标记却没写理由（标记后为空）仍判违规，不接受空豁免。
+    """
+    old_bodies = {body.strip() for _line_no, body in _claude_progress_entries(snapshot_text)}
+    violations: list[str] = []
+    waiver_notes: list[str] = []
+
+    for line_no, body in _claude_progress_entries(current_text):
+        if body.strip() in old_bodies:
+            continue  # 历史条目不追溯
+        hits = [w for w in CLAUDE_PROGRESS_OPEN_ITEM_WORDS if w in body]
+        if not hits:
+            continue
+
+        preview = body[:60].replace("\n", " ")
+        if CLAUDE_PROGRESS_WAIVER_MARKER in body:
+            reason = body.split(CLAUDE_PROGRESS_WAIVER_MARKER, 1)[1].strip()
+            reason = re.split(r"[。\n]", reason, maxsplit=1)[0].strip()
+            if not reason:
+                violations.append(
+                    f"第 {line_no} 行新增的进度条目写了「{CLAUDE_PROGRESS_WAIVER_MARKER}」"
+                    f"但未写明理由——空豁免不接受，理由必须写在条目正文里：{preview}…"
+                )
+                continue
+            waiver_notes.append(f"{CLAUDE_PROGRESS_WAIVER_MARKER}{reason}（第 {line_no} 行）")
+            print(f"✓ 检测到进度豁免声明，已放行：{reason}")
+            continue
+
+        if CLAUDE_PROGRESS_ROW_ID_RE.search(body):
+            continue
+
+        violations.append(
+            f"第 {line_no} 行新增的进度条目含未闭合项措辞"
+            f"（命中「{'」「'.join(hits[:3])}」）但未点名队列行，不得只写进 "
+            f"CLAUDE.md 顶部。请先立队列行并在条目内点名其行号（`#N`）；"
+            f"确属无须承接的，写「{CLAUDE_PROGRESS_WAIVER_MARKER}<理由>」放行：{preview}…"
+        )
+    return violations, waiver_notes
 
 
 def _parse_status_domain_fields(status_cell: str) -> tuple[str | None, str | None, str]:
@@ -2285,6 +2435,7 @@ def cmd_release(args: argparse.Namespace) -> int:
     # sections` 返回空文本、`_diff_touched_rows` 判定零改动、优雅跳过，
     # 该函数无需为"文件缺某个分区"专门改造）。
     violations: list[str] = []
+    progress_waiver_notes: list[str] = []
     if _is_queue_system_target(args.file):
         for content_target in _iter_queue_paths():
             file_args = argparse.Namespace(**vars(args))
@@ -2295,6 +2446,13 @@ def cmd_release(args: argparse.Namespace) -> int:
         # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
         # 拦截，与上面那套队列专属校验各自独立、互不干扰。
         violations = _validate_followup_readme_release(_read_target_text(args.file), _read_snapshot(args.file))
+    elif _is_claude_progress_target(args.file):
+        # 判据 J4（队列 §四 #80）：根 CLAUDE.md 顶部进度段新增条目时的未闭合
+        # 项拦截，同样是一张与队列表格无关的独立判据，见
+        # `_validate_claude_progress_open_item`。
+        violations, progress_waiver_notes = _validate_claude_progress_open_item(
+            _read_target_text(args.file), _read_snapshot(args.file),
+        )
     if violations:
         print(f"✗ release 被拒绝（{len(violations)} 项结构问题，锁保持占用，请修正后重试）：")
         for v in violations:
@@ -2312,9 +2470,19 @@ def cmd_release(args: argparse.Namespace) -> int:
     # unlink 会返回 PermissionError（acquire 建文件正常，release 删不掉），
     # 改写规避了这个问题，且本地/CC 环境同样适用——不需要按环境分叉代码路径。
     # released 标记等价于"无锁"（见 _read_lock），下一次 acquire 当空锁立即成功。
+    # 判据 J4 逃生阀留痕：`进度豁免：<理由>` 的理由同时落进锁的 `history`
+    # ——正文里那份进 git（长期），history 这份给下一次 acquire 的回显看见
+    # （短期，`HISTORY_RETENTION_MINUTES` 后自然过期）。**两者不是冗余**：
+    # 前者答"当初为什么放行"，后者答"刚才谁在这把锁上放行过"。
+    released_history = list(existing.get("history", []))
+    for note in progress_waiver_notes:
+        released_history.append(
+            {"who": existing.get("who", ""), "note": note, "at": _now().isoformat()}
+        )
+
     _write_released_marker(
         lock_path, existing.get("who", ""), existing.get("note", ""),
-        existing.get("held_since", ""), history=existing.get("history", []),
+        existing.get("held_since", ""), history=released_history,
     )
     print("✓ 已释放（改写为释放标记，未删除文件——沙箱环境亦可用）")
     return 0

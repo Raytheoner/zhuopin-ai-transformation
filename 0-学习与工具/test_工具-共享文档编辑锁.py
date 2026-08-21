@@ -2824,5 +2824,194 @@ class ShadowCopyCrossWorktreeTests(unittest.TestCase):
         self.assertIn(str((self.main_root / self.MECH_REL).resolve()), r.stdout)
 
 
+class ClaudeProgressOpenItemTests(unittest.TestCase):
+    """判据 J4（队列 §四 #80 / 派单件 OP-0821-C）：根 CLAUDE.md 顶部进度段
+    新增条目含未闭合措辞却未点名队列行时，release 必须被拒绝。
+
+    白盒方式，同 FollowupReadmeStructuralValidationTests：monkeypatch
+    REPO_ROOT 指向本用例专属临时目录，不触碰真实生产 CLAUDE.md。
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.target_path = self.repo_root / self.module.CLAUDE_PROGRESS_TARGET
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write(self, entry_lines):
+        parts = [
+            "# CLAUDE.md — 测试夹具", "",
+            "> **当前进度**：历史进度已迁 CHANGELOG。", ">",
+        ]
+        for line in entry_lines:
+            parts += [line, ">"]
+        parts += [
+            "> **📦 更早条目已迁 CHANGELOG**（2026-08-05，队列 #253）：原文保留。",
+            "", "---", "", "## 1. 正文", "",
+        ]
+        self.target_path.write_text("\n".join(parts), encoding="utf-8")
+
+    def _acquire(self, who="A"):
+        ns = argparse.Namespace(
+            file=self.module.CLAUDE_PROGRESS_TARGET, who=who, note="",
+            reserve=None, section=None, reserve_multi=None, domain=None,
+        )
+        return self.module.cmd_acquire(ns)
+
+    def _release(self, who=""):
+        ns = argparse.Namespace(
+            file=self.module.CLAUDE_PROGRESS_TARGET, who=who,
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
+        )
+        return self.module.cmd_release(ns)
+
+    def _lock_released(self) -> bool:
+        raw = json.loads(
+            (self.repo_root / (self.module.CLAUDE_PROGRESS_TARGET + ".editlock")
+             ).read_text(encoding="utf-8")
+        )
+        return bool(raw.get("released"))
+
+    # ── 判据本身 ──────────────────────────────────────────────────────────
+
+    def test_零改动可正常release(self):
+        self._write(["> **甲（2026-08-01，CC）**：已全部完成。"])
+        self.assertEqual(self._acquire(), 0)
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_新增条目含未结且未点名队列行即拒绝release(self):
+        """派单件反例单测⑶：「未结」必须触发 J4。
+
+        这个词是 2026-08-21 逐行读原文才发现词表漏掉的两个之一（另一个是
+        「未接线」）——**词表只能当筛子、不能当判官**，本用例把补进去的这
+        两个锁死，防止后续有人"精简"词表时又把它们删回去。
+        """
+        self._write([])
+        self.assertEqual(self._acquire(), 0)
+        self._write(["> **甲（2026-08-01，CC）**：三项已办，9.2 archive 未结。"])
+        self.assertNotEqual(self._release(who="A"), 0)
+        self.assertFalse(self._lock_released(), "拒绝时锁必须保持占用")
+
+    def test_新增条目含未接线同样触发(self):
+        self._write([])
+        self.assertEqual(self._acquire(), 0)
+        self._write(["> **乙（2026-08-02，CC）**：告警通道尚未接线。"])
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_新增条目含未闭合措辞但点名了队列行即放行(self):
+        self._write([])
+        self.assertEqual(self._acquire(), 0)
+        self._write(["> **甲（2026-08-01，CC）**：9.2 archive 未结，已登记 §一 #361 承接。"])
+        self.assertEqual(self._release(who="A"), 0)
+        self.assertTrue(self._lock_released())
+
+    def test_新增条目无未闭合措辞不受约束(self):
+        self._write([])
+        self.assertEqual(self._acquire(), 0)
+        self._write(["> **甲（2026-08-01，CC）**：全部完成并已部署冒烟通过。"])
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_历史条目含未闭合措辞不追溯(self):
+        """只对本次持锁窗口内新增的条目生效——既有口径，历史行不秋后算账。"""
+        self._write(["> **旧条（2026-07-01，CC）**：某事尚未完成。"])
+        self.assertEqual(self._acquire(), 0)
+        self._write([
+            "> **旧条（2026-07-01，CC）**：某事尚未完成。",
+            "> **新条（2026-08-01，CC）**：全部完成。",
+        ])
+        self.assertEqual(self._release(who="A"), 0)
+
+    def test_在上方插入新条不会把既有条目误判为新增(self):
+        """新增判定按**正文**比对而非行号——上方插入一条会让所有既有条目
+        行号整体下移，按行号比对会把整段历史误判成新增、当场全线拒绝。"""
+        self._write(["> **旧条（2026-07-01，CC）**：某事尚未完成。"])
+        self.assertEqual(self._acquire(), 0)
+        self._write([
+            "> **新条（2026-08-01，CC）**：全部完成。",
+            "> **旧条（2026-07-01，CC）**：某事尚未完成。",
+        ])
+        self.assertEqual(self._release(who="A"), 0)
+
+    # ── 逃生阀 ────────────────────────────────────────────────────────────
+
+    def test_进度豁免带理由可放行且理由落进history(self):
+        self._write([])
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write([
+            "> **甲（2026-08-01，CC）**：某项暂不做。进度豁免：属产品侧，本项目无承接对象。"
+        ])
+        self.assertEqual(self._release(who="A"), 0)
+        raw = json.loads(
+            (self.repo_root / (self.module.CLAUDE_PROGRESS_TARGET + ".editlock")
+             ).read_text(encoding="utf-8")
+        )
+        notes = [e.get("note", "") for e in raw.get("history", [])]
+        self.assertTrue(any("进度豁免：属产品侧" in n for n in notes),
+                        f"逃生阀理由须落进 release 的 history，实际：{notes}")
+
+    def test_进度豁免无理由仍拒绝(self):
+        """空豁免不接受——否则逃生阀退化成一个只要写四个字就能过的开关。"""
+        self._write([])
+        self.assertEqual(self._acquire(), 0)
+        self._write(["> **甲（2026-08-01，CC）**：某项暂不做。进度豁免："])
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    # ── 解析器契约（与 lint 侧共用同一份实现） ──────────────────────────
+
+    def test_红色前缀条目必须被数到(self):
+        text = (
+            "# t\n\n> **当前进度**：说明。\n>\n"
+            "> **甲（2026-08-01，CC）**：正文。\n>\n"
+            "> 🔴 **乙（2026-08-02，CC）**：正文。\n\n---\n\n## 1. 正文\n"
+        )
+        entries = self.module._claude_progress_entries(text)
+        self.assertEqual(len(entries), 2)
+
+    def test_迁移指针行之后的元说明不算条目(self):
+        text = (
+            "# t\n\n> **当前进度**：说明。\n>\n"
+            "> **甲（2026-08-01，CC）**：正文。\n>\n"
+            "> **📦 更早条目已迁 CHANGELOG**（2026-08-05，队列 #253）：保留。\n>\n"
+            "> **🔴 memory 层已收割并停用（2026-08-21，OP-0821-B）**：元说明。\n"
+            "\n---\n\n## 1. 正文\n"
+        )
+        entries = self.module._claude_progress_entries(text)
+        self.assertEqual(len(entries), 1,
+                         "📦 之后的两行是元说明，不是进度条目（2026-08-21 实测："
+                         "裸正则在真身上数出 4 条而真值是 2 条）")
+
+    def test_无当前进度头行返回空表不猜(self):
+        self.assertEqual(
+            self.module._claude_progress_entries("# t\n\n> 无头行。\n\n---\n\n## 1\n"), []
+        )
+
+    def test_非CLAUDE目标不跑本判据(self):
+        """`--file` 指向别的共享文件时，J4 完全不生效——不同判据各管各的
+        目标，同 FOLLOWUP_README_TARGET 既有分支。"""
+        other = self.repo_root / "别的共享文件.md"
+        other.write_text("> **当前进度**：\n>\n> **甲（2026-08-01，CC）**：尚未完成。\n\n---\n",
+                         encoding="utf-8")
+        ns_a = argparse.Namespace(file="别的共享文件.md", who="A", note="",
+                                  reserve=None, section=None, reserve_multi=None, domain=None)
+        self.assertEqual(self.module.cmd_acquire(ns_a), 0)
+        other.write_text("> **当前进度**：\n>\n> **甲（2026-08-01，CC）**：尚未完成。\n"
+                         "> **乙（2026-08-02，CC）**：也尚未完成。\n\n---\n", encoding="utf-8")
+        ns_r = argparse.Namespace(file="别的共享文件.md", who="A",
+                                  mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+                                  force_mechanism_wip=False)
+        self.assertEqual(self.module.cmd_release(ns_r), 0)
+
+    def test_绝对路径指向根CLAUDE同样被识别(self):
+        """字面量相等只覆盖"没传 --file"这一种写法——机器人常驻服务传的是
+        绝对路径，字面量恒不相等会让判据永不触发且零报错（`_is_queue_
+        system_target` 的既有教训）。"""
+        self.assertTrue(self.module._is_claude_progress_target(str(self.target_path)))
+        self.assertFalse(self.module._is_claude_progress_target("别的共享文件.md"))
+
 if __name__ == "__main__":
     unittest.main()
