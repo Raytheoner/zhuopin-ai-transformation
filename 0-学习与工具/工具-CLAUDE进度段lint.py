@@ -47,14 +47,29 @@
 关键词排除只会再造一条会漂移的人守约定；靠**区间边界**才是结构性的。此事本身就是派单件
 警告的那类「判据看起来很确定但错了」的第三个实例（前两个是只匹配 `> **` 前缀那两次）。
 
+## 二期新增两条（J6 / J7，2026-08-22，OP-0822-D）
+
+- **J6 · 接力件定长交接卡**：R5 已于 2026-08-22 改版——四条在办 session 接力件
+  **不再是日志、是定长交接卡**，硬上限 **8 KB**、固定六块、**零日期节**。故本脚本
+  加两条断言：字节 ≤ `--handoff-byte-cap`（默认 8,192）、正文零 `## 【20xx-xx-xx`
+  形态的日期节。🔑 **必要性有当场证据**：立这个上限的同一个 session 自己两次越界
+  （8,376 → trim → 补写涨回 8,252 → 再 trim 到 8,113）——**每处补写单看都合理，
+  合起来就越界**，靠人守的上限必然失守。
+- **J7 · 开场预算**：算「开场读入件」的字节合计并回显，超 `--budget-cap`
+  （默认 120,000）告警。**这是唯一一条直接度量「新 session 开场要读多少字节」的判据**
+  ——J1-J3/J5 管的是单个文件的形状，管不住三份加起来是多少。
+
+🔴 **J6/J7 本期归 warnings、不进 violations**：切 `--enforce` 后 violations 会硬拦
+CI，而 J6 的三份存量接力件正超限 5-9 倍（R5 改版实际只改了一份），一并硬拦等于
+把 `--enforce` 这件事本身再推迟一轮。存量清理另派，见队列 §一。
+
 ## 分期上线（重要）
 
-存量必然超限（2026-08-21 实测根文件两条各 3,131／3,066 字符，均 > 1,200）。故：
-- **一期（本次）**：默认 `--warn`，只打印不退非零，CI job 配 `continue-on-error: true`。
-- **二期（另派）**：存量清理到位后切 `--enforce`，与 `bootstrap-stub-lint` 一致。
-
-🔴 **一期就上 `--enforce` 会立刻挡住所有人的 push，那会让这条规则第四次被绕过——这次
-是被绕过 lint 本身。**
+- **一期（2026-08-21，OP-0821-C）**：默认告警模式，CI job 配 `continue-on-error: true`。
+  当时存量必然超限（根文件两条各 3,131／3,066 字符），**一期就上 `--enforce` 会立刻
+  挡住所有人的 push，那会让这条规则第四次被绕过——这次是被绕过 lint 本身。**
+- **二期（2026-08-22，OP-0822-D，本次）**：存量清理到位后切 `--enforce`
+  （CI job 同批删掉 `continue-on-error: true`），与 `bootstrap-stub-lint` 一致。
 
 用法：
   python 0-学习与工具/工具-CLAUDE进度段lint.py             # 告警模式（退出码恒 0）
@@ -97,6 +112,30 @@ SCENE_GLOBS = ("4-数字员工/*/*/CLAUDE.md", "5-平台底座/*/CLAUDE.md")
 
 ENTRY_COUNT_CAP_DEFAULT = 6
 ENTRY_LENGTH_CAP_DEFAULT = 1200
+
+# ── J6 · 接力件定长交接卡（R5 2026-08-22 改版） ──
+# 🔴 **用 glob 而不是硬编码四个路径**：R5 说的「四条 session 接力」是当下的成员数，
+# 不是一条结构性事实——新开一条域专线就会有第五条，而硬编码名单**不会报错、只会漏查**
+# （同 §一 #312「一份拆成两份，下游只跟了一份」那族）。归档件（文件名含 `-归档-`）
+# 天然排除：它们正是「日期节」被迁去的地方，按定长卡去判它们方向就反了。
+HANDOFF_GLOBS = ("1-转型规划/session接力-*.md", "1-转型规划/*/session接力-*.md")
+HANDOFF_ARCHIVE_MARK = "-归档-"
+HANDOFF_BYTE_CAP_DEFAULT = 8192
+# 只认「`##` ＋ 全角方括号 ＋ ISO 日期」这一种形态，刻意不放宽到「标题里出现日期」
+# ——合规的那份卡里就有 `## 二、当前状态快照（2026-08-22）`，放宽即误伤。
+HANDOFF_DATE_SECTION_RE = re.compile(r"^#{2,6}\s*【\s*20\d\d-\d\d-\d\d")
+
+# ── J7 · 开场预算 ──
+# 「开场读入件」＝新 session 开场那一刻**真的会进上下文**的东西。
+# 🔴 **队列刻意不在此列，而这正是它的设计成果**：队列真身合计数百 KB，2026-08-06
+# 起改由只读 CLI `工具-队列查询.py` 按行号查（§一 #268），**开场读入量 ≈ 0**。
+# 把它按文件字节计进预算会得出一个吓人却毫无意义的数——真正该被盯住的是下面这两份。
+OPENING_BUDGET_PARTS = (
+    ("根 CLAUDE.md", "CLAUDE.md"),
+    ("交接卡", "1-转型规划/0-全景路线图/session接力-Phase1收口.md"),
+)
+OPENING_QUEUE_ENTRY = "0-学习与工具/工具-队列查询.py"
+OPENING_BUDGET_CAP_DEFAULT = 120_000
 
 # 结构 A 的四个锚点**一律取编辑锁那份定义**，本文件不另立——J4（release 侧）
 # 与 J2/J3（CI 侧）若各持一套正则，会出现「lint 说 7 条、release 说 6 条」
@@ -291,6 +330,52 @@ def carrier_of(body: str, repo_root: Path, queue_ids: set[str]) -> str | None:
     return None
 
 
+# ── J1 二期开口：「整条已闭合」⇒ 允许无队列行迁出 ──────────────────────────
+# （2026-08-22，OP-0822-D，Shao Peishen 当日拍板；变更包 tasks §0.2 的定夺项）
+#
+# 一期 J1 要求每条待迁条目点名承接载体。二期实测：26 条待迁里**只有 3 条有载体**，
+# 按字面执行 ＝ 为 23 条纯历史记录各立一条队列行，与 `[D:机]` WIP 上限直接冲突。
+#
+# 🔴 **本判据与 J4 方向相反，必须写明为何能并存**：J4 那份词表的定义处写着
+# 「**只当筛子、不当判官**——命中即要求补载体，**未命中不代表安全**」，而本判据
+# 恰恰是在用「未命中」推出「已闭合」。两者能并存的唯一理由是**代价不对称**：
+#   · J4 在**写入侧**，误放行 ⇒ 一条真未闭合项从此只活在顶部段，被后人迁走即丢
+#     ⇒ 故只拦不放；
+#   · 本判据在**迁出侧**，而迁出 ＝ 原文原样搬进 CHANGELOG（可 grep、未改写）
+#     ⇒ 误判的代价是「一条未闭合项被搬去了 CHANGELOG 而不是队列行」，**不是丢失**。
+# ⇒ 故本档的输出措辞刻意区别于「有承接载体」那一档，明写「词表只是筛子，迁前请
+#   人眼复核一次」——**不让它读起来像一个已经验证过的结论**。
+MIGRATE_CARRIER = "carrier"
+MIGRATE_CLOSED = "closed"
+MIGRATE_BLOCKED = "blocked"
+
+
+def open_item_hits(body: str) -> list[str]:
+    """条目正文命中的未闭合措辞。**复用 J4 那份词表，本文件不另立一份**——
+    两处各持一份词表，改了一处忘另一处就会出现「release 拦得住、lint 说可迁」
+    这种互相拆台的情形（同 `ENTRY_PREFIX_RE` 一律取编辑锁定义的既有理由）。"""
+    return [w for w in editlock.CLAUDE_PROGRESS_OPEN_ITEM_WORDS if w in body]
+
+
+def migration_verdict(body: str, repo_root: Path,
+                      queue_ids: set[str]) -> tuple[str, str]:
+    """J1 三态：返回 `(档位, 描述)`。
+
+    - `MIGRATE_CARRIER`：点名了真实承接载体 ⇒ 可迁，描述＝载体。
+    - `MIGRATE_CLOSED`：无载体，但正文不含任一未闭合措辞 ⇒ 判「整条已闭合」，
+      可迁，描述为空。
+    - `MIGRATE_BLOCKED`：无载体且含未闭合措辞 ⇒ **绝不说「请迁移」**，
+      描述＝命中的词。
+    """
+    carrier = carrier_of(body, repo_root, queue_ids)
+    if carrier:
+        return MIGRATE_CARRIER, carrier
+    hits = open_item_hits(body)
+    if hits:
+        return MIGRATE_BLOCKED, "」「".join(hits[:3])
+    return MIGRATE_CLOSED, ""
+
+
 # ───────────────────────────────── J2 / J3 ──────────────────────────────────
 
 def check_entry_count(parsed: ParsedFile, repo_root: Path, queue_ids: set[str],
@@ -306,13 +391,18 @@ def check_entry_count(parsed: ParsedFile, repo_root: Path, queue_ids: set[str],
         f"通过后迁入 1-转型规划/0-全景路线图/进度编年-CHANGELOG.md"
     ]
     for entry in to_migrate:
-        carrier = carrier_of(entry.body, repo_root, queue_ids)
-        if carrier:
+        verdict, detail = migration_verdict(entry.body, repo_root, queue_ids)
+        if verdict == MIGRATE_CARRIER:
             lines.append(f"  · 第 {entry.index} 条（第 {entry.line_no} 行）可迁——"
-                         f"承接载体：{carrier}｜{entry.preview}…")
+                         f"承接载体：{detail}｜{entry.preview}…")
+        elif verdict == MIGRATE_CLOSED:
+            lines.append(f"  · 第 {entry.index} 条（第 {entry.line_no} 行）可迁——"
+                         f"**无承接载体，但正文零未闭合措辞，判「整条已闭合」**"
+                         f"（词表只是筛子，迁前请人眼复核一次）｜{entry.preview}…")
         else:
             lines.append(f"  · 🔴 第 {entry.index} 条（第 {entry.line_no} 行）"
-                         f"**该条无承接载体，请先立队列行再迁**｜{entry.preview}…")
+                         f"**该条无承接载体且含未闭合措辞（命中「{detail}」），"
+                         f"请先立队列行再迁**｜{entry.preview}…")
     return lines
 
 
@@ -329,6 +419,74 @@ def check_entry_length(parsed: ParsedFile, cap: int) -> list[str]:
     return out
 
 
+# ──────────────────────────── J6 · 接力件定长交接卡 ────────────────────────────
+
+def handoff_files(repo_root: Path) -> list[str]:
+    """在办接力件清单（归档件排除）。按路径排序，结果稳定可断言。"""
+    found: set[str] = set()
+    for pattern in HANDOFF_GLOBS:
+        for path in repo_root.glob(pattern):
+            rel = path.relative_to(repo_root).as_posix()
+            if HANDOFF_ARCHIVE_MARK in path.name:
+                continue
+            found.add(rel)
+    return sorted(found)
+
+
+def check_handoff_cards(repo_root: Path, byte_cap: int) -> list[str]:
+    """J6：字节 ≤ byte_cap、正文零日期节。返回告警行（本期不进 violations）。
+
+    🔴 **按字节不按字符**：R5 写的是「硬上限 8 KB」，而这些文件几乎全是中文，
+    UTF-8 下一个汉字 3 字节——按字符数判会得出一个宽约 3 倍的假上限。
+    （J3 恰恰相反，明写 `len(str)` 非字节；两条判据的单位不同是有意的，不是笔误。）
+    """
+    out: list[str] = []
+    for rel in handoff_files(repo_root):
+        path = repo_root / rel
+        raw = path.read_bytes()
+        if len(raw) > byte_cap:
+            out.append(f"【J6】{rel}：{len(raw):,} 字节 > 上限 {byte_cap:,}"
+                       f"（超 {len(raw) / byte_cap:.1f} 倍）。R5 已改版为定长交接卡"
+                       f"（固定六块、收工覆盖而非追加），请把日期叙事迁 "
+                       f"`进度编年-CHANGELOG.md`、方法教训迁 `取证方法知识库.md`、"
+                       f"未闭合项迁队列行")
+        dated = [i + 1 for i, ln in enumerate(raw.decode("utf-8").split("\n"))
+                 if HANDOFF_DATE_SECTION_RE.match(ln)]
+        if dated:
+            preview = "、".join(str(n) for n in dated[:5])
+            more = f" 等 {len(dated)} 处" if len(dated) > 5 else ""
+            out.append(f"【J6】{rel}：仍含 {len(dated)} 个日期节（第 {preview} 行{more}）。"
+                       f"定长交接卡零日期节——**旧版「留最近 2 个日期节」不是没被执行，"
+                       f"是执行了也不管用**：它给日期节留了合法席位，于是每一棒只追加、"
+                       f"没有一棒负责删")
+    return out
+
+
+# ────────────────────────────── J7 · 开场预算 ──────────────────────────────
+
+def opening_budget(repo_root: Path) -> tuple[list[tuple[str, str, int]], int]:
+    """返回 (逐件 [(标签, 相对路径, 字节)], 合计字节)。缺件按 0 计并在标签上标注。"""
+    parts: list[tuple[str, str, int]] = []
+    total = 0
+    for label, rel in OPENING_BUDGET_PARTS:
+        path = repo_root / rel
+        size = len(path.read_bytes()) if path.is_file() else -1
+        parts.append((label, rel, size))
+        if size > 0:
+            total += size
+    return parts, total
+
+
+def check_opening_budget(repo_root: Path, cap: int) -> list[str]:
+    """J7：开场读入件字节合计超 cap 即告警。"""
+    _parts, total = opening_budget(repo_root)
+    if total <= cap:
+        return []
+    return [f"【J7】开场读入件合计 {total:,} 字节 > 预算 {cap:,}（超 {total - cap:,}）。"
+            f"这是新 session 每次开场都要付的固定成本——J1-J3/J5 管单个文件的形状，"
+            f"管不住三份加起来是多少"]
+
+
 # ─────────────────────────────────── 驱动 ───────────────────────────────────
 
 def target_files(repo_root: Path, root_only: bool) -> list[str]:
@@ -343,8 +501,15 @@ def target_files(repo_root: Path, root_only: bool) -> list[str]:
 
 def lint(repo_root: Path, *, root_only: bool = False,
          count_cap: int = ENTRY_COUNT_CAP_DEFAULT,
-         length_cap: int = ENTRY_LENGTH_CAP_DEFAULT) -> tuple[list[str], list[str], list[ParsedFile]]:
-    """返回 (违规说明列表, 告警列表, 逐文件解析结果)。"""
+         length_cap: int = ENTRY_LENGTH_CAP_DEFAULT,
+         handoff_byte_cap: int = HANDOFF_BYTE_CAP_DEFAULT,
+         budget_cap: int = OPENING_BUDGET_CAP_DEFAULT
+         ) -> tuple[list[str], list[str], list[ParsedFile]]:
+    """返回 (违规说明列表, 告警列表, 逐文件解析结果)。
+
+    J6／J7 的结果进**告警列表**、不进违规列表——见模块 docstring「二期新增两条」
+    段的红字：一并硬拦会把 `--enforce` 这件事本身再推迟一轮。
+    """
     queue_ids, warnings = load_queue_row_ids(repo_root)
     violations: list[str] = []
     parsed_all: list[ParsedFile] = []
@@ -364,6 +529,10 @@ def lint(repo_root: Path, *, root_only: bool = False,
             violations.append(f"[{rel}] {v}")
         for v in check_entry_length(parsed, length_cap):
             violations.append(f"[{rel}] {v}")
+
+    if not root_only:
+        warnings.extend(check_handoff_cards(repo_root, handoff_byte_cap))
+        warnings.extend(check_opening_budget(repo_root, budget_cap))
     return violations, warnings, parsed_all
 
 
@@ -375,6 +544,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--root-only", action="store_true", help="只查根 CLAUDE.md，跳过 J5")
     ap.add_argument("--count-cap", type=int, default=ENTRY_COUNT_CAP_DEFAULT)
     ap.add_argument("--length-cap", type=int, default=ENTRY_LENGTH_CAP_DEFAULT)
+    ap.add_argument("--handoff-byte-cap", type=int, default=HANDOFF_BYTE_CAP_DEFAULT,
+                    help="J6 接力件定长交接卡字节上限（默认 8192＝8 KB）")
+    ap.add_argument("--budget-cap", type=int, default=OPENING_BUDGET_CAP_DEFAULT,
+                    help="J7 开场读入件字节合计上限（默认 120000）")
     ap.add_argument("--repo-root", default=None, help="覆盖仓库根（默认＝本 checkout）")
     args = ap.parse_args(argv)
 
@@ -382,6 +555,7 @@ def main(argv: list[str] | None = None) -> int:
     violations, warnings, parsed_all = lint(
         repo_root, root_only=args.root_only,
         count_cap=args.count_cap, length_cap=args.length_cap,
+        handoff_byte_cap=args.handoff_byte_cap, budget_cap=args.budget_cap,
     )
 
     if args.stats:
@@ -400,6 +574,19 @@ def main(argv: list[str] | None = None) -> int:
 
     for w in warnings:
         print(f"⚠ {w}")
+
+    # J7 开场预算：**无论超没超都回显**（派单件 ⑷ 明写「算字节并回显」）——
+    # 只在超限时才打印，等于把「现在离上限还有多远」这个信息藏起来，而那正是
+    # 唯一能让人在越界前收手的信号。
+    if not args.root_only:
+        parts, total = opening_budget(repo_root)
+        detail = "　".join(
+            f"{label} {size:,} B" if size >= 0 else f"{label} ⚠缺件"
+            for label, _rel, size in parts
+        )
+        print(f"📐 开场预算：{detail}　｜　合计 {total:,} B / 上限 {args.budget_cap:,} B"
+              f"（{total / args.budget_cap * 100:.0f}%）"
+              f"　｜　队列 {OPENING_QUEUE_ENTRY} ＝ 只读 CLI 按行号查，开场读入 ≈ 0 B")
 
     # 二期工作量基线（派单件 §六硬要求：一期上线后必须给出这两个数）。
     over_count = [p for p in parsed_all if p.structure and len(p.entries) > args.count_cap]

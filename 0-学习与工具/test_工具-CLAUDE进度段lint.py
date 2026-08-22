@@ -208,7 +208,7 @@ class J1CarrierTests(_FixtureCase):
 
     def test_点名不存在的行号不算承接载体(self):
         self._write_root(self._over_cap_doc(
-            "> **甲收口（2026-08-01，CC）**：详见队列 #999。"))
+            "> **甲收口（2026-08-01，CC）**：详见队列 #999，7.2 验收尚未完成。"))
         violations, _warnings, _parsed = self._lint(count_cap=6)
         first = next(v for v in violations if "第 1 条" in v)
         self.assertIn("该条无承接载体", first)
@@ -227,7 +227,8 @@ class J1CarrierTests(_FixtureCase):
 
     def test_路径不存在时不算承接载体(self):
         self._write_root(self._over_cap_doc(
-            "> **甲收口（2026-08-01，CC）**：承接＝ `1-转型规划/查无此件.md` §0.2。"))
+            "> **甲收口（2026-08-01，CC）**：承接＝ `1-转型规划/查无此件.md` §0.2，"
+            "且 7.2 验收尚未完成。"))
         violations, _warnings, _parsed = self._lint(count_cap=6)
         first = next(v for v in violations if "第 1 条" in v)
         self.assertIn("该条无承接载体", first)
@@ -241,14 +242,20 @@ class J1CarrierTests(_FixtureCase):
         target.write_text("# x\n", encoding="utf-8")
         self._write_root(self._over_cap_doc(
             "> **甲收口（2026-08-01，CC）**：参见 `1-转型规划/全景规划.md`。"
-            + "另有一段与之无关的长正文" * 6 + "顺带提一句 §5 的纪律。"))
+            + "另有一段与之无关的长正文" * 6 + "顺带提一句 §5 的纪律，且验收尚未完成。"))
         violations, _warnings, _parsed = self._lint(count_cap=6)
         first = next(v for v in violations if "第 1 条" in v)
         self.assertIn("该条无承接载体", first)
 
     def test_无承接载体时绝不输出请迁移(self):
-        """J1 的核心契约：安全阀不通过 ⇒ 只说「请先立队列行再迁」。"""
-        self._write_root(self._over_cap_doc("> **甲收口（2026-08-01，CC）**：正文。"))
+        """J1 的核心契约：安全阀不通过 ⇒ 只说「请先立队列行再迁」。
+
+        ⚠️ 夹具正文必须含未闭合措辞——二期开了第 ⑵ 档后，「无载体 ＋ 零未闭合
+        措辞」会被判「整条已闭合、可迁」。**本用例守的是 blocked 档那一侧的
+        契约**，不是「凡无载体一律不许迁」。
+        """
+        self._write_root(self._over_cap_doc(
+            "> **甲收口（2026-08-01，CC）**：正文，7.2 验收尚未完成。"))
         violations, _warnings, _parsed = self._lint(count_cap=6)
         per_entry = [v for v in violations if "第 1 条" in v]
         self.assertTrue(per_entry)
@@ -354,6 +361,167 @@ class CliTests(_FixtureCase):
         argv = ["--root-only", "--repo-root", str(self.repo_root)]
         self.assertEqual(self.module.main(argv), 0)
         self.assertEqual(self.module.main(argv + ["--enforce"]), 0)
+
+
+class J1ClosedEntryTests(_FixtureCase):
+    """J1 第 ⑵ 档「整条已闭合」（二期开口，2026-08-22，OP-0822-D）。"""
+
+    def _over_cap_doc(self, first_entry: str) -> str:
+        return _root_doc([first_entry] + [
+            f"> **第{i}条（2026-08-1{i}，CC）**：正文。" for i in range(1, 7)
+        ])
+
+    def test_无载体但零未闭合措辞判为可迁(self):
+        self._write_root(self._over_cap_doc(
+            "> **甲收口（2026-08-01，CC）**：变更包已归档，全量回归绿。"))
+        violations, _warnings, _parsed = self._lint(count_cap=6)
+        first = next(v for v in violations if "第 1 条" in v)
+        self.assertIn("可迁", first)
+        self.assertIn("判「整条已闭合」", first)
+
+    def test_已闭合档的措辞必须区别于有载体档且带人眼复核提示(self):
+        """🔴 两档都说「可迁」，但**证据强度不同**：一档是点名了真实存在的
+        承接行，另一档只是「词表没命中」。措辞若无差别，读的人会把后者当成
+        前者那样的结论——而它不是。"""
+        self._write_root(self._over_cap_doc(
+            "> **甲收口（2026-08-01，CC）**：变更包已归档，全量回归绿。"))
+        violations, _warnings, _parsed = self._lint(count_cap=6)
+        first = next(v for v in violations if "第 1 条" in v)
+        self.assertIn("词表只是筛子", first)
+        self.assertNotIn("承接载体：", first)
+
+    def test_含未结的条目绝不被判可迁(self):
+        """🔴 本用例是这个开口最危险的失效模式的反例守卫。
+
+        「未结」正是 2026-08-21 逐行读原文才补进 J4 词表的两个漏词之一，而
+        SC8 那份 2026-08-21 的注解点名 `2026-06-24` 行「挂着未结：7.2 LAN
+        真实联调验收」。**若词表接不住这个词，这一族条目就会被静默判为可迁
+        并搬走——而它们正是迁走即丢的那一类。**
+        """
+        self._write_root(self._over_cap_doc(
+            "> **甲收口（2026-08-01，CC）**：上线完成。未结：7.2 LAN 真实联调验收。"))
+        violations, _warnings, _parsed = self._lint(count_cap=6)
+        first = next(v for v in violations if "第 1 条" in v)
+        self.assertNotIn("可迁", first)
+        self.assertIn("未结", first)
+        self.assertIn("请先立队列行再迁", first)
+
+    def test_有载体优先于已闭合判定(self):
+        """两者同时成立时报「承接载体」——证据强的那一档优先。"""
+        self._write_root(self._over_cap_doc(
+            "> **甲收口（2026-08-01，CC）**：见队列 #101，变更包已归档。"))
+        violations, _warnings, _parsed = self._lint(count_cap=6)
+        first = next(v for v in violations if "第 1 条" in v)
+        self.assertIn("承接载体：队列行 #101", first)
+        self.assertNotIn("整条已闭合", first)
+
+    def test_词表取自编辑锁不另立一份(self):
+        """两处各持一份词表 ⇒ 改了一处忘另一处就会「release 拦得住、lint 说
+        可迁」。本用例把「同一份对象」这件事钉死。"""
+        self.assertIs(self.module.editlock.CLAUDE_PROGRESS_OPEN_ITEM_WORDS,
+                      self.module.editlock.CLAUDE_PROGRESS_OPEN_ITEM_WORDS)
+        for word in ("未结", "未接线", "尚未", "阻塞"):
+            self.assertIn(word, self.module.editlock.CLAUDE_PROGRESS_OPEN_ITEM_WORDS)
+            self.assertTrue(self.module.open_item_hits(f"正文{word}正文"))
+
+
+class J6HandoffCardTests(_FixtureCase):
+    """J6 · 接力件定长交接卡（R5 2026-08-22 改版）。"""
+
+    CARD = ("# Session 接力（滚动·最新）\n\n"
+            "## 一、新会话起始词（复制即用）\n\n正文\n\n"
+            "## 二、当前状态快照（2026-08-22）\n\n正文\n")
+
+    def _write_handoff(self, rel: str, body: str) -> Path:
+        path = self.repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_合规交接卡零告警(self):
+        self._write_handoff("1-转型规划/session接力-采购域场景落地.md", self.CARD)
+        out = self.module.check_handoff_cards(self.repo_root, 8192)
+        self.assertEqual(out, [])
+
+    def test_标题里带括号日期的合规节不被误判为日期节(self):
+        """🔴 判据刻意只认「`##` ＋ 全角方括号 ＋ ISO 日期」——合规卡本身就有
+        `## 二、当前状态快照（2026-08-22）` 这样一行，放宽到「标题里出现日期」
+        即误伤，而误伤的后果是这条判据被当成噪音关掉。"""
+        self._write_handoff("1-转型规划/session接力-采购域场景落地.md", self.CARD)
+        out = self.module.check_handoff_cards(self.repo_root, 8192)
+        self.assertFalse([o for o in out if "日期节" in o])
+
+    def test_日期节被点名并给出行号(self):
+        body = self.CARD + "\n## 【2026-08-18 · 某某回件回灌】\n\n正文\n"
+        self._write_handoff("1-转型规划/session接力-质量域场景落地.md", body)
+        out = self.module.check_handoff_cards(self.repo_root, 8192)
+        hit = next(o for o in out if "日期节" in o)
+        self.assertIn("1 个日期节", hit)
+
+    def test_超字节上限被点名且按字节不按字符(self):
+        """🔴 R5 写的是「硬上限 8 KB」——这些文件几乎全是中文，UTF-8 下一个
+        汉字 3 字节，按字符数判会得出一个宽约 3 倍的假上限。"""
+        body = self.CARD + "正" * 3000          # 3,000 字符 ＝ 约 9,000 字节
+        path = self._write_handoff("1-转型规划/session接力-财务域场景落地.md", body)
+        self.assertLess(len(body), 8192, "夹具前提：字符数在上限内")
+        self.assertGreater(len(path.read_bytes()), 8192, "夹具前提：字节数超上限")
+        out = self.module.check_handoff_cards(self.repo_root, 8192)
+        self.assertTrue([o for o in out if "字节 > 上限" in o])
+
+    def test_归档件不进扫描范围(self):
+        """归档件正是日期节被迁去的地方，按定长卡去判它方向就反了。"""
+        self._write_handoff("1-转型规划/session接力-采购域-归档-202606.md",
+                            self.CARD + "\n## 【2026-06-01 · 旧节】\n\n" + "正" * 5000)
+        self.assertEqual(self.module.handoff_files(self.repo_root), [])
+        self.assertEqual(self.module.check_handoff_cards(self.repo_root, 8192), [])
+
+    def test_两级目录下的接力件同样被扫到(self):
+        """🔴 用 glob 而非硬编码四个路径：新开一条域专线就会有第五条，而硬编码
+        名单**不会报错、只会漏查**（同 §一 #312「一份拆成两份，下游只跟了一份」）。"""
+        self._write_handoff("1-转型规划/0-全景路线图/session接力-Phase1收口.md", self.CARD)
+        self._write_handoff("1-转型规划/session接力-新开一条域专线.md", self.CARD)
+        self.assertEqual(len(self.module.handoff_files(self.repo_root)), 2)
+
+    def test_J6结果进告警不进违规(self):
+        """本期刻意不硬拦：三份存量接力件正超限 5-9 倍，一并硬拦等于把
+        `--enforce` 这件事本身再推迟一轮。"""
+        self._write_handoff("1-转型规划/session接力-财务域场景落地.md", "正" * 4000)
+        self._write_root(_root_doc(["> **甲（2026-08-01，CC）**：正文。"]))
+        violations, warnings, _parsed = self._lint(root_only=False)
+        self.assertTrue([w for w in warnings if "【J6】" in w])
+        self.assertFalse([v for v in violations if "【J6】" in v])
+
+
+class J7OpeningBudgetTests(_FixtureCase):
+    """J7 · 开场预算。"""
+
+    def test_未超预算不报告警但仍回显(self):
+        self._write_root(_root_doc(["> **甲（2026-08-01，CC）**：正文。"]))
+        self.assertEqual(self.module.check_opening_budget(self.repo_root, 120_000), [])
+        parts, total = self.module.opening_budget(self.repo_root)
+        self.assertEqual(len(parts), 2)
+        self.assertGreater(total, 0)
+
+    def test_超预算报J7(self):
+        self._write_root(_root_doc(["> **甲（2026-08-01，CC）**：正文。"]))
+        out = self.module.check_opening_budget(self.repo_root, 10)
+        self.assertTrue(out)
+        self.assertIn("【J7】", out[0])
+
+    def test_缺件按缺件回显而不静默计零(self):
+        """🔴 交接卡缺失时若静默按 0 计，预算会凭空变小——「工具静默回退」同族。"""
+        self._write_root(_root_doc(["> **甲（2026-08-01，CC）**：正文。"]))
+        parts, _total = self.module.opening_budget(self.repo_root)
+        card = next(p for p in parts if p[0] == "交接卡")
+        self.assertEqual(card[2], -1, "缺件须以 -1 显式标注，不得按 0 混入合计")
+
+    def test_队列不计入预算(self):
+        """队列真身合计数百 KB，2026-08-06 起改由只读 CLI 按行号查（§一 #268）
+        ⇒ 开场读入量 ≈ 0。把它按文件字节计进预算会得出一个吓人却毫无意义的数。"""
+        rels = [rel for _label, rel in self.module.OPENING_BUDGET_PARTS]
+        self.assertNotIn(self.module.OPENING_QUEUE_ENTRY, rels)
+        for rel in rels:
+            self.assertNotIn("队列", rel)
 
 
 class RealRepoSmokeTests(unittest.TestCase):
