@@ -277,3 +277,74 @@ def test_窗口外的行不计入任何窗口():
     lines = [_line(po_id="OLD", order_date=date(2020, 1, 1))]
     m = {x.key: x for x in compute_metrics(_ds(lines, []), WS)}["order_line_count"]
     assert (m.current.value, m.previous.value, m.month_ago.value) == (0, 0, 0)
+
+
+# ── 阈值与用途（判例回灌 2026-08-22）──────────────────────────────────────────
+
+def test_默认阈值为正负四百且已签认():
+    """±400% 由姚祖怡 2026-08-21 判例批改回件显式签认（原为我方随手定的 ±50%）。"""
+    from sc2.metrics import DEFAULT_THRESHOLDS, THRESHOLDS_CONFIRMED_BY
+
+    assert DEFAULT_THRESHOLDS["wow_abs_pct"] == 4.0
+    assert DEFAULT_THRESHOLDS["mom_abs_pct"] == 4.0
+    assert "姚祖怡" in THRESHOLDS_CONFIRMED_BY and "2026-08-21" in THRESHOLDS_CONFIRMED_BY
+
+
+def test_百分之五十到四百之间的波动不再被标出():
+    """他给的阈值就是用来把这一段放过去的——±50% 下 11 个完整周里 7 周越线，
+    等于每周都报、也就等于没报。"""
+    from sc2.metrics import DEFAULT_THRESHOLDS, _flag_anomaly
+    from sc2.models import Metric, MetricValue
+
+    def _m(cur, prev):
+        return Metric(key="k", name="n", group="g",
+                      current=MetricValue(value=cur), previous=MetricValue(value=prev),
+                      month_ago=MetricValue(value=prev))
+
+    assert not _flag_anomaly(_m(300.0, 100.0), DEFAULT_THRESHOLDS).anomaly   # +200%
+    assert _flag_anomaly(_m(600.0, 100.0), DEFAULT_THRESHOLDS).anomaly       # +500%
+
+
+def test_标记措辞不是异常():
+    """🔴 他限定了用途「仅作为工作量参考使用」⇒ 这不是异常告警。"""
+    from sc2.metrics import ANOMALY_LABEL
+
+    assert "异常" not in ANOMALY_LABEL
+    assert "工作量" in ANOMALY_LABEL
+
+
+def test_波动标记不驱动任何推送():
+    """推送仍只有「人工确认发布」一条路径——本包一行未动，这里把它钉住。
+
+    做法是从源码层面证明：`notify.push` 的执行路径上必定先过确认门。
+    """
+    import inspect
+
+    from sc2 import notify
+
+    src = inspect.getsource(notify)
+    assert "ensure_publishable" in src
+    assert "anomaly" not in src, "推送层不该知道波动标记的存在，更不该据它决定发不发"
+
+
+def test_确认数量未知的行不进数量与金额求和但计入行数():
+    """D24：取不到就说取不到，不折成 0 参与求和、也不把整行抹掉。"""
+    from sc2.metrics import compute_metrics
+    from sc2.models import FrozenDataset, OrderLine
+    from sc2.windows import build_windows
+
+    ws = build_windows(date(2026, 8, 19))
+    lines = (
+        OrderLine(po_id="P1", line_no="1", material_id="M1", supplier_id="S1",
+                  qty_ordered=100.0, qty_received=0.0, order_date=ws.current.start,
+                  expected_date=None, confirmed_date=None, unit_price=2.0),
+        OrderLine(po_id="P2", line_no="1", material_id="M2", supplier_id="S1",
+                  qty_ordered=0.0, qty_received=0.0, order_date=ws.current.start,
+                  expected_date=None, confirmed_date=None, unit_price=2.0,
+                  qty_confirmed_known=False),
+    )
+    ds = FrozenDataset(order_lines=lines, receipts=(), mode="mock", fetched_at="")
+    got = {m.key: m.current.value for m in compute_metrics(ds, ws)}
+    assert got["order_line_count"] == 2        # 两行都在
+    assert got["order_qty"] == 100.0           # 只有已知那行进了求和
+    assert got["order_amount"] == 200.0

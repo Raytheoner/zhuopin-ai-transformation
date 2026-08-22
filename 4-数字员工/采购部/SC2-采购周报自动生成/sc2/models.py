@@ -30,6 +30,11 @@ class OrderLine:
     line_no: str
     material_id: str
     supplier_id: str
+    #: 🔴 **采购订单量 ＝ ERP 的「确认数量」**（`Purchase/Query.ConfirmQty`），
+    #: 不是 `ZpViewPurOrder.qty`（那是原始订单数量），也不是 `rcvQtyTU`（累计入库量）。
+    #: 依据＝姚祖怡 2026-08-21 判例批改回件：「ERP 标准采购中的采购订单量只取确认数量
+    #: 那一栏，这是采购最终下单给供应商的数量，也是收货数量的依据，其余数据不用考虑。」
+    #: ⚠️ `qty_confirmed_known=False` 时本字段为 0.0 且**无意义**，不得参与任何求和。
     qty_ordered: float
     qty_received: float
     order_date: date | None          # 制单日期 makeDate —— 「本周下单」按它落窗口
@@ -39,10 +44,17 @@ class OrderLine:
     unit_price: float = 0.0          # 含税单价 finallyPriceTC —— 金额类指标用
     supplier_name: str = ""
     buyer: str = ""                  # 制单人（采购员）makeEmpName
+    doc_type: str = ""               # 单据类型码 erpTypeCode（行集边界用，见 sources）
+    #: 确认数量是否已取到。**False 时 `qty_ordered` 为占位 0.0，不得参与求和**——
+    #: 取不到就说取不到，宁可让一个指标少算几行并写进取数说明，也不静默回退到
+    #: `ZpViewPurOrder.qty`：那个静默回退正是 2026-08-21 判例回件推翻的那个错误本身。
+    qty_confirmed_known: bool = True
 
     @property
     def amount(self) -> float:
-        """下单金额（含税）。"""
+        """下单金额（含税）。确认数量未知时为 0——调用方须先按 `qty_confirmed_known` 过滤。"""
+        if not self.qty_confirmed_known:
+            return 0.0
         return self.qty_ordered * self.unit_price
 
     @property
@@ -52,8 +64,11 @@ class OrderLine:
 
     @property
     def qty_open(self) -> float:
-        """未清数量。已关闭行一律记 0——关闭即不再期待到货。"""
-        if self.is_closed:
+        """未清数量。已关闭行一律记 0——关闭即不再期待到货。
+
+        确认数量未知时同样记 0，且该行本就不参与数量类求和（见 `qty_confirmed_known`）。
+        """
+        if self.is_closed or not self.qty_confirmed_known:
             return 0.0
         return max(0.0, self.qty_ordered - self.qty_received)
 
@@ -158,9 +173,15 @@ class Metric:
 class WeeklyReport:
     """一期周报。"""
 
-    period: str                       # ISO 周标签，如 2026-W34
+    #: 期次标识。🔴 **采购口径周标签**（如 `2026-W26`），不是 ISO 周号——
+    #: 2026 年两者恒差 1 周，见 `windows.procurement_week`。
+    period: str
     base_date: date
     metrics: tuple[Metric, ...]
+    #: 同一周的 ISO 周号对照。与 `period` 并列呈现，使编号口径分歧一眼可见。
+    iso_period: str = ""
+    #: 阈值签认来源与日期（IATF：签认须可追溯到人与时点）。空 ＝ 尚未签认。
+    thresholds_confirmed_by: str = ""
     #: 三窗口起止的人可读文本，供「可追溯标注」
     window_text: dict[str, str] = field(default_factory=dict)
     mode: str = "mock"

@@ -39,6 +39,14 @@ from .windows import WindowSet
 #: 故放宽天数不增加请求数。
 ERP_LOOKBACK_DAYS = 90
 
+#: 🔴 **不计入采购周报的单据类型**——全程委外订单（design D25）。
+#: 姚祖怡口径里的「采购下单行数」不含全程委外。判据来自对他 2026-08-21 回件中八个
+#: 自算周行数的全子集穷举反推：剔除这三类并按订单行去重后，八周里有六周逐字相等
+#: （此前绝对误差和 1275 → 7）。**固定资产采购 PO03 与费用采购 PO20/PO21 按同一
+#: 反推判为「计入」**——这一点他本人只说了「标准采购」四个字、没有逐类列举，故已作为
+#: 开放点 O-9 上交请其确认（见变更包 design 「四」）。
+OUTSOURCE_DOC_TYPES = frozenset({"PO14", "PO16", "PO17"})
+
 
 class FeedError(RuntimeError):
     """取数失败。real 模式下任一源出错都收敛到本异常，由调用方中止本次周报。"""
@@ -98,7 +106,15 @@ def _now_iso() -> str:
 
 _REAL_SOURCE_NOTES = {
     "订单侧": "ERP `ZpViewPurOrder/Query`（下单日＝制单日 makeDate）＋ "
-              "`Purchase/Query` 行级关闭状态",
+              "`Purchase/Query` 行级明细（关闭状态 LineStatus ＋ **确认数量 ConfirmQty**）",
+    "订单量口径": "🔴 **采购订单量 ＝ 确认数量（ConfirmQty）**，非 `ZpViewPurOrder.qty`"
+                  "（原始订单数量）、亦非 `rcvQtyTU`（累计入库量）。依据＝姚祖怡 "
+                  "2026-08-21 判例批改回件：确认数量是采购最终下给供应商的数量，"
+                  "也是收货数量的依据，其余数量字段不看",
+    "行集边界": "剔除全程委外订单（PO14/PO16/PO17）、按 (单号, 行号) 去重"
+                "（订单侧端点按交货计划行返回，采购口径数的是订单行）",
+    "周序口径": "🔴 **采购口径周序**（本年首个周一所在周为第 1 周），非 ISO 8601 周号 —— "
+                "2026 年 ISO 周号恒比采购口径大 1。周报同时呈现两套周号与起止日期",
     "已知缺口": "⚠️ ERP 采购订单**无任何交期字段**（2026-08-18 实测：deliveryDate/"
                 "expectDate/planDate/demandDate/arrivalDate 六个候选名在 28,274 行"
                 "中全部 0 命中）⇒ **收货准时率首版不做**，非遗漏（见 O-6）",
@@ -224,6 +240,8 @@ class RealFeed:
             str(getattr(o, "material_id", ""))
             for o in orders
             if getattr(o, "material_id", "")
+            # 全程委外行不进周报行集（D25），其料号也就不必去查行级明细。
+            and str(getattr(o, "doc_type", "")) not in OUTSOURCE_DOC_TYPES
             and (d := _to_date(getattr(o, "make_date", "")
                                or getattr(o, "expected_date", ""))) is not None
             and lo <= d <= hi
@@ -236,33 +254,77 @@ class RealFeed:
                 f"{self.max_status_materials}，仅取前 {self.max_status_materials} 个；"
                 f"未取到状态的行按「状态未知」处理（计入在途，不会被静默剔除）")
             material_ids = material_ids[:self.max_status_materials]
+        # 🔴 行级明细一次取回：既含 `LineStatus`（D17 在途判据），也含 **`ConfirmQty`
+        # ＝ 采购口径的订单量**（D24）。两者同端点同请求，不额外增加请求数。
         try:
-            status_map = self._erp.get_purchase_line_status(material_ids) or {}
+            details = self._erp.get_purchase_line_details(material_ids) or {}
         except Exception as e:                       # noqa: BLE001
-            raise self._wrap(e, "ERP 采购行级状态取数") from e
+            raise self._wrap(e, "ERP 采购行级明细取数") from e
 
-        lines = []
+        lines: list[OrderLine] = []
+        seen: set[tuple[str, str]] = set()
+        dropped_outsource = 0
+        deduped = 0
+        unknown_confirm_qty = 0
         for o in orders:
             key = (str(getattr(o, "po_id", "")), str(getattr(o, "line_no", "")))
+            doc_type = str(getattr(o, "doc_type", ""))
+            # ⑴ 行集边界之一：剔除全程委外（D25）。
+            if doc_type in OUTSOURCE_DOC_TYPES:
+                dropped_outsource += 1
+                continue
+            # ⑵ 行集边界之二：按订单行去重（D25）。订单侧端点是按**交货计划行**返回的，
+            #    同一订单行可对应多条记录；采购数的是订单行，重复计数会把行数抬高。
+            if key in seen:
+                deduped += 1
+                continue
+            seen.add(key)
             # 下单日取**真实制单日** `make_date`；旧夹具无该字段时降级 expected_date
             # 并在 source_notes 说明（不静默近似）。
             make_date = _to_date(getattr(o, "make_date", ""))
             if make_date is None:
                 make_date = _to_date(getattr(o, "expected_date", ""))
+            detail = details.get(key) or {}
+            confirm_qty = detail.get("confirm_qty")
+            raw_status = detail.get("line_status")
+            # 🔴 取不到确认数量**不回退到 `qty`**——那个静默回退正是本次判例推翻的错误
+            #    本身（`ZPCG20260409002` 的 `qty=3000` 而确认数量是 200）。标为未知、
+            #    行数照计、量与金额不参与求和，并在取数说明里写出条数。
+            known = confirm_qty is not None
+            # ⚠️ 只统计**落在三窗口内**的未知行。窗口外的行我们本来就没去查它的明细
+            #    （行级明细按料号逐个查，只对窗口内料号发起），把它们也算进来会让这条
+            #    提示恒为一个大数字、且与任何指标都无关——那就成了一句零信息量的话。
+            if not known and make_date is not None and lo <= make_date <= hi:
+                unknown_confirm_qty += 1
             lines.append(OrderLine(
                 po_id=key[0], line_no=key[1],
                 material_id=str(getattr(o, "material_id", "")),
                 supplier_id=str(getattr(o, "supplier_id", "")),
-                qty_ordered=float(getattr(o, "qty_ordered", 0) or 0),
+                qty_ordered=float(confirm_qty) if known else 0.0,
                 qty_received=float(getattr(o, "qty_received", 0) or 0),
                 order_date=make_date,
                 expected_date=_to_date(getattr(o, "expected_date", None)),
                 confirmed_date=_to_date(getattr(o, "supplier_confirmed_date", None)),
-                line_status=int(status_map.get(key, LINE_STATUS_UNKNOWN)),
+                line_status=LINE_STATUS_UNKNOWN if raw_status is None else int(raw_status),
                 unit_price=float(getattr(o, "unit_price", 0) or 0),
                 supplier_name=str(getattr(o, "supplier_name", "")),
                 buyer=str(getattr(o, "buyer", "")),
+                doc_type=doc_type,
+                qty_confirmed_known=known,
             ))
+        if dropped_outsource or deduped:
+            self.notes.append(
+                f"行集边界：剔除全程委外订单 {dropped_outsource} 行"
+                f"（{'/'.join(sorted(OUTSOURCE_DOC_TYPES))}）、"
+                f"按订单行去重合并 {deduped} 条交货计划行 —— 采购口径的「下单行数」"
+                f"数的是订单行且不含全程委外（姚祖怡 2026-08-21 判例回件反推）")
+        if unknown_confirm_qty:
+            # No silent caps：未知就说未知，否则数量/金额类指标会静默偏低而报表正常。
+            self.notes.append(
+                f"⚠️ 三窗口内有 {unknown_confirm_qty} 行未取到「确认数量」"
+                f"（`Purchase/Query.ConfirmQty`）⇒ 这些行**计入行数类指标、不计入数量与"
+                f"金额类指标**；**未回退到 `ZpViewPurOrder.qty`**（那是原始订单数量，"
+                f"非采购口径的订单量）")
         return tuple(lines)
 
     def _fetch_receipts(self, windows: WindowSet) -> tuple[ReceiptRecord, ...]:

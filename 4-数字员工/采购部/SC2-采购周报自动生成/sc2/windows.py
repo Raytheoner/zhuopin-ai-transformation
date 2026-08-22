@@ -19,6 +19,39 @@ from datetime import date, timedelta
 MONTH_AGO_WEEKS = 4
 
 
+def _first_monday(year: int) -> date:
+    """某年的第一个周一。采购口径周序以它为第 1 周的起点。"""
+    jan1 = date(year, 1, 1)
+    return jan1 + timedelta(days=(-jan1.weekday()) % 7)
+
+
+def procurement_week(monday: date) -> tuple[int, int]:
+    """采购口径周序（design D22/D23）——返回 ``(归属年, 周号)``。
+
+    **定义**：本年第一个完整周（＝本年首个周一所在的那一周）为第 1 周；某周的归属年
+    取**该周周一所在的年**，年初那段周一落在上一年的残日归上一年的末周。
+
+    🔴 **为什么不能用 ISO 周号**（2026-08-22 实测坐实，本函数即由此而生）：ISO 8601 把
+    「含首个周四的那一周」定为 W1 —— 2026 年那一周是 **2025-12-29 ~ 2026-01-04**，
+    主体落在上一年；而采购（与国内 ERP／Excel 惯例）从本年首个周一 **2026-01-05** 起
+    算 W1。于是 **2026 全年 ISO 周号恒比采购口径大 1**。
+
+    姚祖怡 2026-08-21 判例批改回件里五条环比与我方全部对不上，根因就是这一周之差：
+    我方叫 W27 的那一周（2026-06-29 ~ 07-05），采购叫 W26。实测中把我方周号整体减 1
+    后，他自算的 8 个周行数里有 6 个逐字相等（此前误差和 1275 → 7）。
+
+    🔑 **这个错误此前能一直活着，是因为它不产生任何信号**：两套编号各自自洽、都不越界、
+    都不报错，只是指的不是同一周——直到有人拿自己的数来对。故周报此后**同时呈现**两套
+    周号与起止日期（`Window.label_text`），使分歧一眼可见，不必再等人对数。
+    """
+    if monday.weekday() != 0:                    # 防御：本函数只接受周一
+        raise ValueError(f"procurement_week 只接受周一，收到 {monday}（周{monday.weekday() + 1}）")
+    # 归属年即周一所在年——因此「1 月 1~3 日这几天算上一年末周」是自动成立的：
+    # 它们的周一落在上一年，`monday.year` 本身就是上一年，无需额外分支。
+    year = monday.year
+    return year, (monday - _first_monday(year)).days // 7 + 1
+
+
 @dataclass(frozen=True)
 class Window:
     """一个自然周窗口（周一 → 周日，闭区间）。"""
@@ -31,9 +64,30 @@ class Window:
         return self.start <= day <= self.end
 
     def iso_label(self) -> str:
-        """ISO 周标签，如 ``2026-W34``——周报期次标识，跨年不回绕。"""
+        """ISO 周标签，如 ``2026-W34``。
+
+        🔴 **2026-08-22 起它不再是周报的期次标识**——期次改用 `label()`（采购口径）。
+        本方法保留为**对照信息**：周报同时呈现两套周号，使编号口径分歧一眼可见。
+        """
         iso = self.start.isocalendar()
         return f"{iso.year}-W{iso.week:02d}"
+
+    def label(self) -> str:
+        """采购口径周标签，如 ``2026-W26``——**周报期次标识**（design D22）。
+
+        与 `iso_label()` 的差别见 `procurement_week` 的说明：2026 年两者恒差 1 周。
+        """
+        year, week = procurement_week(self.start)
+        return f"{year}-W{week:02d}"
+
+    def label_text(self) -> str:
+        """期次的完整可读形式：采购口径周号 ＋ ISO 对照 ＋ 起止日期。
+
+        **三者必须一起出现**：只给一个周号时，两套编号各自自洽、相差整周也不报错，
+        读者无从判断自己看的是不是同一周——这正是 2026-08-21 判例回件里五条环比
+        全部对不上的成因。
+        """
+        return f"{self.label()}（采购口径；ISO {self.iso_label()}；{self.as_text()}）"
 
     def as_text(self) -> str:
         """人可读的起止范围，供周报「可追溯标注」使用。"""

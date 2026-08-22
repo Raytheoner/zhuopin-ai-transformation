@@ -217,6 +217,60 @@ def test_get_purchase_line_status_empty_item_codes_returns_empty(tmp_path):
     assert conn.get_purchase_line_status([]) == {}
 
 
+# ── 采购订单行级明细：确认数量 ConfirmQty（SC2 判例回灌，2026-08-22）─────────
+
+def test_get_purchase_line_details_exposes_confirm_qty(tmp_path, monkeypatch):
+    """🔴 「确认数量」是采购口径下的**采购订单量**，只有这个端点给得出。
+
+    姚祖怡 2026-08-21 判例批改回件：「ERP 标准采购中的采购订单量只取确认数量那一栏，
+    这是采购最终下单给供应商的数量，也是收货数量的依据，其余数据不用考虑。」
+    真实反例 ZPCG20260409002 行 10：`ZpViewPurOrder.qty=3000`，而 ConfirmQty=200。
+    """
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    body = json.dumps({"Success": True, "Data": {"Total": 1, "Rows": [
+        {"DocNo": "ZPCG20260409002", "DocLineNo": 10, "LineStatus": 3,
+         "ItemCode": "R01I.0846", "ConfirmQty": 200.0,
+         "FinalPriceTC": 19.15, "TotalMnyTC": 3830.0},
+    ]}}).encode()
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+
+    detail = conn.get_purchase_line_details(["R01I.0846"])[("ZPCG20260409002", "10")]
+    assert detail["confirm_qty"] == 200.0
+    assert detail["line_status"] == 3
+    assert detail["total_amount"] == 3830.0
+
+
+def test_get_purchase_line_details_keeps_missing_confirm_qty_as_none(tmp_path, monkeypatch):
+    """缺失**不折成 0.0**：0 会被下游当成「订了 0 个」正常求和，而真相是没取到。"""
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    body = json.dumps({"Success": True, "Data": {"Total": 1, "Rows": [
+        {"DocNo": "ZPCG1", "DocLineNo": 10, "LineStatus": 2},
+    ]}}).encode()
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+    assert conn.get_purchase_line_details(["A"])[("ZPCG1", "10")]["confirm_qty"] is None
+
+
+def test_get_purchase_line_status_unchanged_after_refactor(tmp_path, monkeypatch):
+    """`get_purchase_line_status` 改成了明细方法的薄封装 —— **返回值必须逐字不变**。
+
+    SC8 等既有调用方依赖它；本次重构对它们必须是零感知的。缺 LineStatus 的行
+    仍然被剔除（不得因为改成了取明细就悄悄多返回一个 None）。
+    """
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    body = json.dumps({"Success": True, "Data": {"Total": 2, "Rows": [
+        {"DocNo": "ZPCG1", "DocLineNo": 10, "LineStatus": 2, "ConfirmQty": 5.0},
+        {"DocNo": "ZPCG2", "DocLineNo": 20, "LineStatus": None, "ConfirmQty": 7.0},
+    ]}}).encode()
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+    assert conn.get_purchase_line_status(["A"]) == {("ZPCG1", "10"): 2}
+
+
 # ── 期间/余额窄化参数（design D17，队列 #70 追加，2026-07-22）──────────────
 
 def test_get_ap_lines_by_supplier_period_params_in_url(tmp_path, monkeypatch):
@@ -409,3 +463,61 @@ def test_get_ap_lines_by_invoice_no_failloud_without_config(tmp_path, monkeypatc
     conn = _make_conn(tmp_path)
     with pytest.raises(RealEndpointNotReadyError):
         conn.get_ap_lines_by_invoice_no("42719331")
+
+
+# ── 传输层瞬时失败重试（2026-08-22 实测：端点会随机 TLS 断连）────────────────
+
+def test_fi_request_retries_transport_error(tmp_path, monkeypatch):
+    """🔴 端点会随机 `SSL: UNEXPECTED_EOF_WHILE_READING` 断连，重打一次就成功。
+
+    按料号逐个查一次周报要打 589 次；**单次 5% 的失败率在 589 次串行调用下几乎
+    必然命中**，整份周报因此永远出不来。故传输层瞬时失败必须重试。
+    """
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    monkeypatch.setattr(erp_mod.time, "sleep", lambda *_: None)
+    conn = _make_conn(tmp_path)
+    calls = {"n": 0}
+    ok = json.dumps({"Success": True, "Data": {"Total": 0, "Rows": []}}).encode()
+
+    def _flaky(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise erp_mod.urllib.error.URLError("SSL: UNEXPECTED_EOF_WHILE_READING")
+        return _Resp(ok)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _flaky)
+
+    assert conn.get_purchase_line_details(["A"]) == {}
+    assert calls["n"] == 2, "第一次断连后应当重试"
+
+
+def test_fi_request_still_fails_loud_after_retries(tmp_path, monkeypatch):
+    """重试用尽仍原样失败——**不降级、不返回空集冒充"该窗口没数据"**。"""
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    monkeypatch.setattr(erp_mod.time, "sleep", lambda *_: None)
+    conn = _make_conn(tmp_path)
+
+    def _always_down(*a, **k):
+        raise erp_mod.urllib.error.URLError("down")
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _always_down)
+
+    with pytest.raises(RuntimeError, match="已重试"):
+        conn.get_purchase_line_details(["A"])
+
+
+def test_fi_request_does_not_retry_http_error(tmp_path, monkeypatch):
+    """HTTP 错误重试多少次结果都一样，重试只会掩盖问题——一次即上抛。"""
+    monkeypatch.setenv("STOCK_API_BASE", "http://h:6666")
+    monkeypatch.setenv("STOCK_API_KEY", "K")
+    conn = _make_conn(tmp_path)
+    calls = {"n": 0}
+
+    def _http_500(*a, **k):
+        calls["n"] += 1
+        raise erp_mod.urllib.error.HTTPError("u", 500, "boom", {}, None)
+    monkeypatch.setattr(erp_mod.urllib.request, "urlopen", _http_500)
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        conn.get_purchase_line_details(["A"])
+    assert calls["n"] == 1

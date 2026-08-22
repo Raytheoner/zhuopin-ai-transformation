@@ -56,6 +56,7 @@ class _ZpPurOrderRow(BaseModel):
     rcvQtyTU: _Opt[float] = 0
     makeDate: _Opt[str] = ""
     supplyCode: _Opt[str] = ""
+    erpTypeCode: _Opt[str] = ""   # 单据类型码（SC2 判例回灌 2026-08-22）
 
     @field_validator("itemCode", mode="before")
     @classmethod
@@ -356,6 +357,14 @@ class ZpConnector(DataConnector):
 
     _POS_MEM_CACHE_TTL = 300  # 内存缓存 5 分钟
 
+    #: PO 磁盘缓存的结构版本号。**每次给 `PurchaseOrder` 加字段必须 +1**。
+    #: 🔴 存在的理由是一次真实事故：2026-08-18 给 `PurchaseOrder` 加了四个带缺省值
+    #: 的字段，旧缓存里没有这些键，反序列化后静默取到缺省值——金额显示 0、采购员
+    #: 显示 0 人，**而报表本身看上去完全正常**。2026-08-22 新增的 `doc_type` 更危险：
+    #: 缺省空串会让"剔除全程委外"这条过滤静默失效。故把"缓存结构变了"做成机器可判的
+    #: 事实，而不是继续依赖某个人记得去清缓存。版本不符即视为缓存失效、重新下载。
+    _PO_CACHE_SCHEMA = 2
+
     def _overlay_srm_confirmed_dates(self, orders: list[PurchaseOrder]) -> None:
         """按 (po_id, supplier_id) 查真实 SRM 确认日期，覆盖 `supplier_confirmed_date`
         占位值（A1 扩展，shortage-baoguan-criteria-v3，2026-07-10 会议定稿方案B）。
@@ -399,7 +408,10 @@ class ZpConnector(DataConnector):
             if cache_age < self._po_cache_ttl:
                 try:
                     cached = json.loads(cache_file.read_text(encoding="utf-8"))
-                    if cached.get("days") == days:
+                    # schema 版本不符 ⇒ 缓存结构比当前 PurchaseOrder 少字段，
+                    # 反序列化会静默取到缺省值。宁可多下载一次，也不返回残缺行。
+                    if (cached.get("schema") == self._PO_CACHE_SCHEMA
+                            and cached.get("days") == days):
                         result = [PurchaseOrder(**r) for r in cached["rows"]]
                         self._pos_cache[days] = result
                         self._pos_cache_ts[days] = time.time()
@@ -456,13 +468,15 @@ class ZpConnector(DataConnector):
                 unit_price=             float(r.get("finallyPriceTC") or 0),
                 supplier_name=          str(r.get("supplyName") or ""),
                 buyer=                  str(r.get("makeEmpName") or ""),
+                doc_type=               validated.erpTypeCode or "",
             ))
 
         self._overlay_srm_confirmed_dates(result)
 
         # 写磁盘缓存
         try:
-            cache_data = {"days": days, "timestamp": time.time(),
+            cache_data = {"schema": self._PO_CACHE_SCHEMA,
+                          "days": days, "timestamp": time.time(),
                           "rows": [r.__dict__ for r in result]}
             cache_file.write_text(
                 json.dumps(cache_data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -570,23 +584,54 @@ class ZpConnector(DataConnector):
             )
         return base, key
 
+    #: 传输层瞬时失败的重试次数（**只重试传输层，不重试业务错误**）。
+    #: 🔴 2026-08-22 实测出来的：该端点会随机在 TLS 握手/读取中途断连
+    #: （`SSL: UNEXPECTED_EOF_WHILE_READING`），同一料号连着打 20 次里失败 4 次，
+    #: 而重打一次就成功 ⇒ 是**瞬时**故障，不是端点不可用。
+    #: 为什么非修不可：`get_purchase_line_details` 按料号逐个查，一次周报要打 589 次
+    #: —— 单次 5% 的失败率在 589 次串行调用下几乎必然命中，**整份周报因此永远出不来**。
+    #: ⚠️ 这**不违反 fail-loud**：重试用尽后仍原样上抛、不降级、不返回部分数据；
+    #: fail-loud 反对的是"悄悄给个次优结果"，不是"连一次抖动都不容忍"。
+    #: 次数取 6 而不是 3：2026-08-22 实测「失败后连续重打直到成功」，多数 1~2 次即恢复，
+    #: 但观测到过需要 4 次（累计约 18 秒）的一次 ⇒ 3 次会在那种抖动窗口里被打穿。
+    _FI_TRANSPORT_RETRIES = 6
+    _FI_RETRY_BACKOFF_SEC = 0.5
+
     def _fi_request(self, path: str, params: dict) -> dict:
         """单次财务 GET 请求，返回完整响应体（`Success`/`Data.Total`/`Data.Rows`）。
         `params` 不得含 `apiKey`（本方法统一注入），报错信息按 `params` 原样脱敏
         （即不含 apiKey，其余参数如 docNo/supplierCode 非敏感可直接展示）。
+
+        传输层瞬时失败按 `_FI_TRANSPORT_RETRIES` 重试（见该常量的成因）；**HTTP 错误
+        与业务错误一次即上抛**——那两类重试多少次结果都一样，重试只会掩盖问题。
         """
         base, key = self._fi_credentials()
         qs = urllib.parse.urlencode({"apiKey": key, **params})
         url = f"{base}{path}?{qs}"
         safe = f"{base}{path}?{urllib.parse.urlencode(params)}"   # 脱敏（无 apiKey），仅报错用
-        try:
-            req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=30, context=self._ctx) as r:
-                body = json.loads(r.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            raise RuntimeError(f"财务查询 API HTTP {e.code}: {safe}") from None
-        except (urllib.error.URLError, http.client.IncompleteRead) as e:
-            raise RuntimeError(f"财务查询 API 不可达: {safe}") from None
+        last_exc: Exception | None = None
+        for attempt in range(1, self._FI_TRANSPORT_RETRIES + 1):
+            try:
+                req = urllib.request.Request(url, headers={"Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=30, context=self._ctx) as r:
+                    body = json.loads(r.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                raise RuntimeError(f"财务查询 API HTTP {e.code}: {safe}") from None
+            except (urllib.error.URLError, http.client.IncompleteRead) as e:
+                last_exc = e
+                if attempt >= self._FI_TRANSPORT_RETRIES:
+                    # 重试用尽 ⇒ 原样失败。**不返回空集、不返回部分数据。**
+                    raise RuntimeError(
+                        f"财务查询 API 不可达（已重试 {attempt} 次）: {safe}") from None
+                # 重试要留痕：静默重试会让"端点在抖"这件事永远没人知道。
+                if self._audit is not None:
+                    self._audit.trace(
+                        source="zp_FI",
+                        action=f"retry{attempt}:{path}?{urllib.parse.urlencode(params)}")
+                time.sleep(self._FI_RETRY_BACKOFF_SEC * attempt)
+        else:                                    # pragma: no cover - 循环必 break 或 raise
+            raise RuntimeError(f"财务查询 API 不可达: {safe}") from last_exc
         if not body.get("Success"):
             raise RuntimeError(f"财务查询 API 错误: {safe} :: {body.get('ResMsg')}")
         if self._audit is not None:
@@ -644,15 +689,51 @@ class ZpConnector(DataConnector):
         real fail-loud：任一料号查询异常原样上抛，与 `get_purchase_orders` 同一
         约定，由调用方（`load_purchase_orders_by_material`）决定是否降级。
         """
-        out: dict[tuple[str, str], int] = {}
+        return {k: v["line_status"]
+                for k, v in self.get_purchase_line_details(item_codes).items()
+                if v["line_status"] is not None}
+
+    def get_purchase_line_details(
+            self, item_codes: list[str]) -> dict[tuple[str, str], dict]:
+        """按料号批量查询采购订单**行级明细**（SC2 判例回灌，2026-08-22）。
+
+        与 `get_purchase_line_status` 同一端点、同一次请求，只是不再把返回值压成
+        单个状态码。返回 ``{(DocNo, str(DocLineNo)): {...}}``，每项含：
+
+        - ``line_status``：`PM_POLine.Status`，语义见 `get_purchase_line_status`
+        - ``confirm_qty``：🔴 **确认数量 `ConfirmQty`** —— 采购口径下的**采购订单量**
+        - ``final_price`` / ``total_amount``：含税单价与含税总额
+
+        🔴 **为什么必须从这个端点取订单量**（姚祖怡 2026-08-21 判例批改回件）：
+        「ERP 标准采购中的采购订单量只取**确认数量**那一栏，这是采购最终下单给供应商
+        的数量，也是收货数量的依据，其余数据不用考虑。」而 `ZpViewPurOrder/Query`
+        的 23 个字段里**根本没有确认数量**——它的 `qty` 是原始订单数量。真实反例
+        `ZPCG20260409002` 行 10：`qty=3000`，而 `ConfirmQty=200`，采购说的是 200。
+
+        ⚠️ **不要用 `ZpViewPurOrder.rcvQtyTU` 代替**：它在若干已交清的行上恰好等于
+        确认数量（因为交清了），看上去"也对得上"，但用 `GR/Query` 交叉验证可知它是
+        **累计入库量**。照它取，尚未到货的行订单量会变成 0，而报表看上去完全正常。
+
+        real fail-loud：任一料号查询异常原样上抛，与 `get_purchase_orders` 同约定。
+        """
+        out: dict[tuple[str, str], dict] = {}
         for code in item_codes:
             rows = self._fi_query_paginated("/zp/api/Purchase/Query", {"itemCode": code})
             for r in rows:
                 doc_no = str(r.get("DocNo") or "")
                 line_no = str(r.get("DocLineNo") or "")
+                if not (doc_no and line_no):
+                    continue
                 status = r.get("LineStatus")
-                if doc_no and line_no and status is not None:
-                    out[(doc_no, line_no)] = int(status)
+                confirm_qty = r.get("ConfirmQty")
+                out[(doc_no, line_no)] = {
+                    "line_status": None if status is None else int(status),
+                    # None ＝ 该行没给确认数量。**刻意不折成 0.0**：0 会被下游当成
+                    # 「订单量为零」正常求和，而真相是这个数根本没取到。
+                    "confirm_qty": None if confirm_qty is None else float(confirm_qty),
+                    "final_price": float(r.get("FinalPriceTC") or 0),
+                    "total_amount": float(r.get("TotalMnyTC") or 0),
+                }
         return out
 
     #: `GR/Query` 分页上限——实测服务端硬顶 500/页（传 1000/5000 均只返回 500），

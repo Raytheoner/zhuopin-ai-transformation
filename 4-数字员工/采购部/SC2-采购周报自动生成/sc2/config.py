@@ -37,7 +37,7 @@ def reports_dir() -> Path:
 
 
 def snapshot_path(period: str) -> Path:
-    """某期周报快照。`period` 为 ISO 周标签，如 ``2026-W34``。"""
+    """某期周报快照。`period` 为**采购口径**周标签，如 ``2026-W26``（非 ISO，见 windows）。"""
     return reports_dir() / f"sc2_weekly_{period}.json"
 
 

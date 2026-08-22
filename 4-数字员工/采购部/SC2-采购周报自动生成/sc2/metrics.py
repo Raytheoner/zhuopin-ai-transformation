@@ -28,17 +28,32 @@ from .models import (
 )
 from .windows import Window, WindowSet
 
-#: 默认异常阈值（O-4，**未经姚祖怡确认**）。
-#: `wow_abs_pct` = 周环比绝对变化率超过该值即标异常（0.5 ＝ 50%）。
+#: 波动参考阈值（O-4）。`wow_abs_pct` ＝ 周环比绝对变化率超过该值即标出（4.0 ＝ 400%）。
+#:
+#: 🔴 **±400% 已由姚祖怡 2026-08-21 判例批改回件显式签认**（原为我方随手定的 ±50%，
+#: 真实回测下 11 个完整周里 7 周越线 ⇒ 几乎每周都报，等于没报）。签认来源见
+#: `THRESHOLDS_CONFIRMED_BY`，并随每期快照留存。
+#:
+#: ⚠️ **他同时限定了用途**：「仅作为工作量参考使用」⇒ 本阈值标出的是**工作量波动**、
+#: 不是异常告警，**不得接入任何推送或告警通道**。周报对外发送仍只有「人工确认发布」
+#: 这一条路径（`notify.push` 本包一行未动）。
 DEFAULT_THRESHOLDS: dict[str, float] = {
-    "wow_abs_pct": 0.5,
-    "mom_abs_pct": 0.5,
+    "wow_abs_pct": 4.0,
+    "mom_abs_pct": 4.0,
 }
+
+#: 阈值签认来源。IATF：签认必须可追溯到人与时点，不能只把状态位翻成"已确认"。
+THRESHOLDS_CONFIRMED_BY = "姚祖怡（采购部 AI 专员）· 采购部#17 判例批改回件 · 2026-08-21"
+
+#: 波动标记的对外措辞。**刻意不叫「异常」**——见 DEFAULT_THRESHOLDS 的用途限定。
+ANOMALY_LABEL = "工作量波动参考"
 
 # ── 口径假设标注（O-1 未定版期间，spec 要求写清假设内容本身）────────────────
 _CAVEAT_RECEIPT = ("收货口径＝ERP 已入库过账日（BusinessDate），"
                    "非供应商 SRM 答交回报（口径待确认）")
 _CAVEAT_AMOUNT = "金额为含税单价 × 数量（未扣退货与折让，口径待确认）"
+_CAVEAT_CONFIRM_QTY = ("订单量＝ERP「确认数量」（ConfirmQty）；"
+                       "未取到确认数量的行不参与本项求和，条数见取数说明")
 
 
 @dataclass(frozen=True)
@@ -71,13 +86,23 @@ def _open_lines(lines: Iterable[OrderLine]) -> list[OrderLine]:
     return [l for l in lines if not l.is_closed and l.qty_open > 0]
 
 
+def _qty_known(lines: Iterable[OrderLine]) -> list[OrderLine]:
+    """确认数量已取到的行 —— **数量类与金额类指标只对它们求和**（D24）。
+
+    取不到确认数量的行**不被折成 0 参与求和**：0 会被读成「这行订了 0 个」，
+    而真相是这个数没取到。行数类指标仍照计（那些行确实存在），未知条数写进取数说明。
+    """
+    return [l for l in lines if l.qty_confirmed_known]
+
+
 def _top_share(lines) -> float | None:
     """首位供应商的下单量占比。无下单量时无数据。"""
-    total = sum(l.qty_ordered for l in lines)
+    known = _qty_known(lines)
+    total = sum(l.qty_ordered for l in known)
     if total == 0:
         return None
     per = Counter()
-    for l in lines:
+    for l in known:
         per[l.supplier_id] += l.qty_ordered
     return _rate(max(per.values()), total)
 
@@ -112,15 +137,17 @@ _SPECS: list[tuple[str, str, str, Callable[[_Ctx], float | None], str, str]] = [
     ("order_line_count", "下单行数", "下单",
      lambda c: float(len(c.lines)), "行", ""),
     ("order_qty", "下单数量", "下单",
-     lambda c: float(sum(l.qty_ordered for l in c.lines)), "", ""),
+     lambda c: float(sum(l.qty_ordered for l in _qty_known(c.lines))), "", _CAVEAT_CONFIRM_QTY),
     ("order_amount", "下单金额", "下单",
-     lambda c: float(sum(l.amount for l in c.lines)), "元", _CAVEAT_AMOUNT),
+     lambda c: float(sum(l.amount for l in _qty_known(c.lines))), "元",
+     _CAVEAT_AMOUNT + "；" + _CAVEAT_CONFIRM_QTY),
     ("order_po_count", "下单单据数", "下单",
      lambda c: float(len({l.po_id for l in c.lines})), "单", ""),
     ("order_material_count", "下单涉及料号数", "下单",
      lambda c: float(len({l.material_id for l in c.lines if l.material_id})), "个", ""),
     ("avg_qty_per_line", "行均下单量", "下单",
-     lambda c: _rate(sum(l.qty_ordered for l in c.lines), len(c.lines)), "", ""),
+     lambda c: _rate(sum(l.qty_ordered for l in _qty_known(c.lines)),
+                     len(_qty_known(c.lines))), "", _CAVEAT_CONFIRM_QTY),
     ("buyer_count", "参与采购员数", "下单",
      lambda c: float(len({l.buyer for l in c.lines if l.buyer})), "人", ""),
     # ── 收货 ──
@@ -142,10 +169,12 @@ _SPECS: list[tuple[str, str, str, Callable[[_Ctx], float | None], str, str]] = [
     ("open_line_count", "未清行数", "在途",
      lambda c: float(len(_open_lines(c.lines))), "行", ""),
     ("open_qty", "未清数量", "在途",
-     lambda c: float(sum(l.qty_open for l in _open_lines(c.lines))), "", ""),
+     lambda c: float(sum(l.qty_open for l in _open_lines(_qty_known(c.lines)))),
+     "", _CAVEAT_CONFIRM_QTY),
     ("open_amount", "未清金额", "在途",
-     lambda c: float(sum(l.qty_open * l.unit_price for l in _open_lines(c.lines))),
-     "元", _CAVEAT_AMOUNT),
+     lambda c: float(sum(l.qty_open * l.unit_price
+                         for l in _open_lines(_qty_known(c.lines)))),
+     "元", _CAVEAT_AMOUNT + "；" + _CAVEAT_CONFIRM_QTY),
     ("closed_line_count", "已关闭行数", "在途",
      lambda c: float(sum(1 for l in c.lines if l.is_closed)), "行", ""),
     ("open_ratio", "未清行占比", "在途",

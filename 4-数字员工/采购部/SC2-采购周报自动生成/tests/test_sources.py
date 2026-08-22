@@ -53,6 +53,14 @@ def _rl(po="PO-1", po_line="1", d="2026-08-19", qty=100.0, **kw):
 
 
 class _OkErp:
+    """正常 ERP 替身。
+
+    ⚠️ `get_purchase_line_details` 是 2026-08-22 判例回灌后取数层依赖的方法——
+    行级明细里既有 `LineStatus`（D17），也有 **`ConfirmQty` ＝ 采购口径的订单量**
+    （D24）。这里让 `confirm_qty` 回显各订单行自己的 `qty_ordered`，使既有断言
+    （如金额 ＝ 100 × 5.5）表达的仍是同一件事。
+    """
+
     def __init__(self, orders=None, receipts=None):
         self._orders = [_po()] if orders is None else orders
         self._receipts = [_rl()] if receipts is None else receipts
@@ -61,9 +69,17 @@ class _OkErp:
     def get_purchase_orders(self, days=60):
         return self._orders
 
-    def get_purchase_line_status(self, item_codes):
+    def get_purchase_line_details(self, item_codes):
         self.asked_materials = list(item_codes)
-        return {("PO-1", "1"): 2}
+        return {
+            (str(o.po_id), str(o.line_no)): {
+                "line_status": 2,
+                "confirm_qty": float(o.qty_ordered),
+                "final_price": float(o.unit_price),
+                "total_amount": float(o.qty_ordered) * float(o.unit_price),
+            }
+            for o in self._orders
+        }
 
     def get_receipt_lines(self, days=60):
         return self._receipts
@@ -166,13 +182,95 @@ def test_金额字段随订单行带出():
 
 def test_行级状态取不到时记为未知而非误当作关闭():
     class _NoStatus(_OkErp):
-        def get_purchase_line_status(self, item_codes):
+        def get_purchase_line_details(self, item_codes):
             return {}
 
     ds = RealFeed(erp=_NoStatus()).fetch(build_windows(BASE))
     line = ds.order_lines[0]
     assert line.line_status == LINE_STATUS_UNKNOWN
     assert not line.is_closed          # 未知按未关闭处理，不静默吞掉在途量
+
+
+# ── ⑤ 采购订单量取确认数量（判例回灌 2026-08-22，spec 新增 requirement）──────
+
+def test_订单量取确认数量而非原始订单数量():
+    """姚祖怡 2026-08-21 判例回件 A-3 的真实形态：`qty=3000` 而确认数量是 200。
+
+    这是本次改造的核心断言——取错这一栏，周报上「下单数量／金额／在途金额」
+    三类指标全线是错的，而报表看上去完全正常。
+    """
+    class _Erp(_OkErp):
+        def get_purchase_line_details(self, item_codes):
+            self.asked_materials = list(item_codes)
+            return {("PO-1", "1"): {"line_status": 2, "confirm_qty": 200.0,
+                                    "final_price": 5.5, "total_amount": 1100.0}}
+
+    ds = RealFeed(erp=_Erp(orders=[_po(qty_ordered=3000)])).fetch(build_windows(BASE))
+    line = ds.order_lines[0]
+    assert line.qty_ordered == 200.0
+    assert line.qty_confirmed_known
+
+
+def test_确认数量取不到时标未知且不回退到原始数量():
+    """🔴 静默回退到 `qty` 正是本次判例推翻的那个错误本身，不得以任何理由复活。"""
+    class _Erp(_OkErp):
+        def get_purchase_line_details(self, item_codes):
+            return {("PO-1", "1"): {"line_status": 2, "confirm_qty": None,
+                                    "final_price": 0.0, "total_amount": 0.0}}
+
+    ds = RealFeed(erp=_Erp(orders=[_po(qty_ordered=3000)])).fetch(build_windows(BASE))
+    line = ds.order_lines[0]
+    assert not line.qty_confirmed_known
+    assert line.qty_ordered != 3000        # **没有**回退到原始订单数量
+    assert line.amount == 0.0
+    assert any("未取到「确认数量」" in v for v in ds.source_notes.values()), \
+        "未知就必须说出来（No silent caps），否则量与金额类指标静默偏低"
+
+
+def test_未取到确认数量的行仍计入行数():
+    """那些行确实存在——不能因为少一个字段就把整行从行数里抹掉。"""
+    class _Erp(_OkErp):
+        def get_purchase_line_details(self, item_codes):
+            return {}
+
+    ds = RealFeed(erp=_Erp(orders=[_po(pid="PO-A"), _po(pid="PO-B")])).fetch(
+        build_windows(BASE))
+    assert len(ds.order_lines) == 2
+
+
+# ── ⑥ 行集边界：剔除全程委外 ＋ 按订单行去重（判例回灌 2026-08-22）──────────
+
+def test_剔除全程委外订单():
+    """采购口径的「下单行数」不含全程委外（PO14/PO16/PO17）。"""
+    ds = RealFeed(erp=_OkErp(orders=[
+        _po(pid="PO-STD", doc_type="PO01"),
+        _po(pid="PO-OUT1", doc_type="PO14"),
+        _po(pid="PO-OUT2", doc_type="PO16"),
+        _po(pid="PO-OUT3", doc_type="PO17"),
+    ])).fetch(build_windows(BASE))
+    assert {l.po_id for l in ds.order_lines} == {"PO-STD"}
+    assert any("剔除全程委外订单 3 行" in v for v in ds.source_notes.values())
+
+
+def test_固定资产与费用采购仍计入():
+    """反推自他的自算行数：这三类计入（O-9 待其确认，但当下判据如此）。"""
+    ds = RealFeed(erp=_OkErp(orders=[
+        _po(pid="PO-FA", doc_type="PO03"),
+        _po(pid="PO-EXP1", doc_type="PO20"),
+        _po(pid="PO-EXP2", doc_type="PO21"),
+    ])).fetch(build_windows(BASE))
+    assert len(ds.order_lines) == 3
+
+
+def test_同一订单行的多条交货计划行只计一次():
+    """订单侧端点按交货计划行返回：28,345 行里只有 27,874 个唯一 (单号,行号)。"""
+    ds = RealFeed(erp=_OkErp(orders=[
+        _po(pid="PO-1", line="1"),
+        _po(pid="PO-1", line="1"),          # 同一订单行的第二条交货计划行
+        _po(pid="PO-1", line="2"),
+    ])).fetch(build_windows(BASE))
+    assert len(ds.order_lines) == 2
+    assert any("按订单行去重合并 1 条" in v for v in ds.source_notes.values())
 
 
 def test_限流表达为取数失败而非无数据():

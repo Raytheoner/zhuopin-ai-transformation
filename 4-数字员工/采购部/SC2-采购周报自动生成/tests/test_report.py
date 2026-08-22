@@ -89,8 +89,17 @@ def test_周报标明数据源(report):
         assert note[:10] in text
 
 
-def test_期次为ISO周标签(report):
-    assert report.period == "2026-W34"
+def test_期次为采购口径周标签且带ISO对照(report):
+    """🔴 期次改用采购口径周序（D22，2026-08-22 判例回灌）。
+
+    基准日 2026-08-19 那一周的 ISO 周号是 W34，采购口径是 **W33** —— 2026 年
+    ISO 恒比采购口径大 1。ISO 周号不消失，降为对照信息与采购周号并列呈现，
+    使编号分歧一眼可见，不必再等专员拿自己的数来对。
+    """
+    assert report.period == "2026-W33"
+    assert report.iso_period == "2026-W34"
+    text = render_text(report)
+    assert "2026-W33" in text and "2026-W34" in text
 
 
 # ── 5.4/5.5 快照 ────────────────────────────────────────────────────────────
@@ -98,7 +107,8 @@ def test_期次为ISO周标签(report):
 def test_快照含指标值与口径假设与阈值与基准日期(report):
     path = save_snapshot(report)
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["period"] == "2026-W34"
+    assert data["period"] == "2026-W33"
+    assert data["iso_period"] == "2026-W34"
     assert data["base_date"] == BASE.isoformat()
     assert data["thresholds"]
     assert data["metrics"]
@@ -114,7 +124,7 @@ def test_依快照重渲染与原期一致(report):
 def test_快照落在reports目录下(report, tmp_path):
     path = save_snapshot(report)
     assert path.parent == tmp_path
-    assert path.name == "sc2_weekly_2026-W34.json"
+    assert path.name == "sc2_weekly_2026-W33.json"
 
 
 def test_口径变更后历史期不被追溯改写(report):
@@ -140,7 +150,7 @@ def test_快照不存在时读取报错而非静默返回空():
 # ── 5.6 生成物一律落 reports/ ───────────────────────────────────────────────
 
 def test_三类生成物路径均在reports下(tmp_path):
-    for p in (config.snapshot_path("2026-W34"), config.publish_state_path(),
+    for p in (config.snapshot_path("2026-W33"), config.publish_state_path(),
               config.audit_path()):
         assert p.parent == tmp_path, f"{p} 未落在 reports/ 下"
 
@@ -150,7 +160,7 @@ def test_reports目录被gitignore覆盖():
     import subprocess
 
     rel = ("4-数字员工/采购部/SC2-采购周报自动生成/reports/"
-           "sc2_weekly_2026-W34.json")
+           "sc2_weekly_2026-W33.json")
     repo_root = config.SCENE_ROOT.parent.parent.parent
     r = subprocess.run(["git", "check-ignore", "-v", rel],
                        cwd=repo_root, capture_output=True, text=True)

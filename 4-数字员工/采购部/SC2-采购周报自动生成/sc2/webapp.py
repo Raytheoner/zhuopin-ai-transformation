@@ -87,7 +87,8 @@ def create_app(*, base_date: date | None = None, mode: str = "mock",
     def _current_report():
         """快照优先：有当期快照就渲染快照，没有才真算一次。"""
         base = base_date or date.today()
-        period = build_windows(base).current.iso_label()
+        # 期次＝采购口径周序（D22），与 `build_report` 落快照时用的标签一致。
+        period = build_windows(base).current.label()
         try:
             return snapshot_to_report(load_snapshot(period))
         except FileNotFoundError:
@@ -156,6 +157,7 @@ _PAGE = """<!doctype html>
  pre{{white-space:pre-wrap}}
 </style>
 <h1>采购周报 {period}</h1>
+<p>期次口径：<b>{period}（采购口径周序）</b>｜ISO 周号对照：{iso_period}</p>
 <p class="warn">本页数字为 AI 自动汇总，<b>经人工「确认发布」后方可对外推送</b>（L3）。</p>
 <pre>{body}</pre>
 {notice}
@@ -175,5 +177,6 @@ def _render_page(report, *, error: str | None = None,
     else:
         notice = ""
     return _PAGE.format(period=html.escape(report.period),
+                        iso_period=html.escape(report.iso_period or "—"),
                         body=html.escape(render_text(report)),
                         prefix=config.ROUTE_PREFIX, notice=notice)

@@ -133,9 +133,17 @@ def test_确认人缺失且无网关身份时拒绝(client):
     assert r.status_code == 400
 
 
-def test_异常项在页面上被标出(client):
+def test_波动阈值与签认来源在页面上写明(client):
+    """🔴 阈值 ±400% 已由姚祖怡 2026-08-21 判例回件显式签认。
+
+    IATF：签认必须可追溯到人与时点——只翻一个"已确认"的布尔位而不写是谁签的，
+    日后说不清这个数是哪来的。同时他限定了用途「仅作工作量参考」，页面必须写明
+    它**不是异常告警、不触发任何自动推送**。
+    """
     html = client.get(f"{PREFIX}/").get_data(as_text=True)
-    assert "阈值未经确认" in html or "未经专员确认" in html
+    assert "400%" in html
+    assert "姚祖怡" in html and "2026-08-21" in html
+    assert "不触发任何自动推送" in html
 
 
 # ── 7.5 推送范围 ────────────────────────────────────────────────────────────

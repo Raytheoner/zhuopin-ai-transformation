@@ -14,7 +14,13 @@ from pathlib import Path
 from typing import Any
 
 from . import config
-from .metrics import DEFAULT_THRESHOLDS, compute_metrics, metric_groups
+from .metrics import (
+    ANOMALY_LABEL,
+    DEFAULT_THRESHOLDS,
+    THRESHOLDS_CONFIRMED_BY,
+    compute_metrics,
+    metric_groups,
+)
 from .models import FrozenDataset, Metric, MetricValue, WeeklyReport
 from .windows import WindowSet, build_windows
 
@@ -25,9 +31,17 @@ NO_BASE_TEXT = "无可比基准"
 
 def build_report(dataset: FrozenDataset, windows: WindowSet, *,
                  thresholds: dict[str, float] | None = None,
-                 thresholds_confirmed: bool = False,
+                 thresholds_confirmed: bool = True,
+                 thresholds_confirmed_by: str = THRESHOLDS_CONFIRMED_BY,
                  caliber_confirmed: bool = False) -> WeeklyReport:
-    """组装一期周报。"""
+    """组装一期周报。
+
+    🔴 `thresholds_confirmed` 缺省为 **True**（2026-08-22 起）——±400% 已由姚祖怡
+    2026-08-21 判例批改回件显式签认。**签认来源随 `thresholds_confirmed_by` 一并
+    落进快照**：只翻一个布尔位而不记谁签的，日后说不清这个数是哪来的。
+    调用方若传入自定义阈值而未同时给出签认来源，须自行把 `thresholds_confirmed`
+    置回 False —— 未经签认的阈值必须带"未经确认"标注（IATF 判据类）。
+    """
     th = dict(DEFAULT_THRESHOLDS)
     if thresholds:
         th.update(thresholds)
@@ -35,19 +49,21 @@ def build_report(dataset: FrozenDataset, windows: WindowSet, *,
                               thresholds_confirmed=thresholds_confirmed,
                               caliber_confirmed=caliber_confirmed)
     return WeeklyReport(
-        period=windows.current.iso_label(),
+        period=windows.current.label(),
+        iso_period=windows.current.iso_label(),
         base_date=windows.base or windows.current.start,
         metrics=metrics,
         window_text={
-            "current": windows.current.as_text(),
-            "previous": windows.previous.as_text(),
-            "month_ago": windows.month_ago.as_text(),
+            "current": windows.current.label_text(),
+            "previous": windows.previous.label_text(),
+            "month_ago": windows.month_ago.label_text(),
         },
         mode=dataset.mode,
         fetched_at=dataset.fetched_at,
         source_notes=dict(dataset.source_notes),
         thresholds=th,
         thresholds_confirmed=thresholds_confirmed,
+        thresholds_confirmed_by=thresholds_confirmed_by if thresholds_confirmed else "",
     )
 
 
@@ -96,6 +112,8 @@ def render_text(report: WeeklyReport) -> str:
     lines: list[str] = [
         f"# 采购周报 {report.period}",
         "",
+        f"- 期次口径：**{report.period}（采购口径周序）**"
+        + (f"｜ISO 周号对照：{report.iso_period}" if report.iso_period else ""),
         f"- 基准日期：{report.base_date.isoformat()}",
         f"- 本周：{report.window_text['current']}",
         f"- 上周：{report.window_text['previous']}",
@@ -106,8 +124,15 @@ def render_text(report: WeeklyReport) -> str:
         lines.append("- 数据源：")
         for k, v in report.source_notes.items():
             lines.append(f"  - {k}：{v}")
-    if not report.thresholds_confirmed:
-        lines.append("- ⚠️ 异常阈值**未经专员确认**（判据类，须显式签认后方可定版）")
+    if report.thresholds_confirmed:
+        lines.append(
+            f"- {ANOMALY_LABEL}阈值：周环比 ±"
+            f"{report.thresholds.get('wow_abs_pct', 0) * 100:.0f}%"
+            + (f"｜签认：{report.thresholds_confirmed_by}"
+               if report.thresholds_confirmed_by else "")
+            + "。🔴 **仅作工作量参考，不作异常告警，不触发任何自动推送**")
+    else:
+        lines.append("- ⚠️ 波动阈值**未经专员确认**（判据类，须显式签认后方可定版）")
     incomplete = _incomplete_week_note(report.base_date)
     if incomplete:
         lines.append(incomplete)
@@ -119,10 +144,12 @@ def render_text(report: WeeklyReport) -> str:
         lines.append("| 指标 | 本周 | 周环比 | 月同比 | 备注 |")
         lines.append("|---|---|---|---|---|")
         for m in items:
-            flag = "🔴 " if m.anomaly else ""
+            # 🔶 而非 🔴：这是工作量波动参考，不是异常告警（姚祖怡限定用途）。
+            flag = "🔶 " if m.anomaly else ""
             note = m.current.caveat or ""
-            if m.anomaly and m.threshold_unconfirmed:
-                note = (note + "；" if note else "") + "阈值未经确认"
+            if m.anomaly:
+                note = (note + "；" if note else "") + (
+                    "阈值未经确认" if m.threshold_unconfirmed else ANOMALY_LABEL)
             lines.append(
                 f"| {flag}{m.name} | {_fmt_value(m.current)} | "
                 f"{_fmt_delta(m.week_over_week)} | {_fmt_delta(m.month_over_month)} | "
@@ -145,6 +172,7 @@ def _value_from_dict(d: dict[str, Any]) -> MetricValue:
 def report_to_dict(report: WeeklyReport) -> dict[str, Any]:
     return {
         "period": report.period,
+        "iso_period": report.iso_period,
         "base_date": report.base_date.isoformat(),
         "mode": report.mode,
         "fetched_at": report.fetched_at,
@@ -152,6 +180,7 @@ def report_to_dict(report: WeeklyReport) -> dict[str, Any]:
         "source_notes": report.source_notes,
         "thresholds": report.thresholds,
         "thresholds_confirmed": report.thresholds_confirmed,
+        "thresholds_confirmed_by": report.thresholds_confirmed_by,
         "metrics": [
             {
                 "key": m.key, "name": m.name, "group": m.group,
@@ -170,6 +199,7 @@ def snapshot_to_report(data: dict[str, Any]) -> WeeklyReport:
     """快照 → 周报。**还原当期口径与阈值**，不套用当下的口径。"""
     return WeeklyReport(
         period=data["period"],
+        iso_period=data.get("iso_period", ""),
         base_date=date.fromisoformat(data["base_date"]),
         metrics=tuple(
             Metric(key=m["key"], name=m["name"], group=m["group"],
@@ -186,6 +216,7 @@ def snapshot_to_report(data: dict[str, Any]) -> WeeklyReport:
         source_notes=data.get("source_notes", {}),
         thresholds=data.get("thresholds", {}),
         thresholds_confirmed=data.get("thresholds_confirmed", False),
+        thresholds_confirmed_by=data.get("thresholds_confirmed_by", ""),
     )
 
 

@@ -57,6 +57,14 @@ class PurchaseOrder:
     unit_price: float = 0.0      # 含税单价，来自 ZpViewPurOrder.finallyPriceTC
     supplier_name: str = ""      # 供应商名称，来自 ZpViewPurOrder.supplyName
     buyer: str = ""              # 制单人（采购员），来自 ZpViewPurOrder.makeEmpName
+    # ── 以下一项为 SC2 判例回灌新增（2026-08-22，纯新增字段，带缺省值）────────
+    # 单据类型码，来自 ZpViewPurOrder.erpTypeCode（PO01/PO22/PO23 标准订单、
+    # PO14/PO16/PO17 全程委外、PO03 固定资产、PO20/PO21 费用采购）。采购口径的
+    # 「下单行数」不含全程委外，故调用方需要这一维度才能按其口径过滤。
+    # ⚠️ 缺省空串意味着「未知类型」，**调用方不得把空串当成"非委外"直接放行**——
+    # 那正是 2026-08-18 踩过的坑（旧缓存缺新字段 ⇒ 取到缺省值而报表看上去正常）。
+    # 缓存侧已由 schema 版本号封住（见 connector `_PO_CACHE_SCHEMA`）。
+    doc_type: str = ""
 
 
 @dataclass

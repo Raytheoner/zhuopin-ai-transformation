@@ -95,3 +95,58 @@ def test_zp_post_writes_lightweight_trace(tmp_path, monkeypatch):
     assert len(records) == 1
     assert records[0]["source"] == "zp_ERP"
     assert "ZpViewItemMaster" in records[0]["action"]
+
+
+# ── 单据类型与缓存 schema（SC2 判例回灌，2026-08-22）────────────────────────
+
+def test_doc_type_carried_from_erp_type_code(tmp_path, monkeypatch):
+    """采购口径的「下单行数」不含全程委外 ⇒ 调用方需要单据类型这一维度才能过滤。"""
+    conn = _make_conn(tmp_path)
+    canned = [{"erpNo": "PO1", "itemCode": "M1", "qty": 10, "rcvQtyTU": 0,
+               "makeDate": "2099-01-01", "supplyCode": "S1", "erpTypeCode": "PO14"}]
+    monkeypatch.setattr(conn, "_zp_post", lambda *a, **k: canned)
+    assert conn.get_purchase_orders(days=99999)[0].doc_type == "PO14"
+
+
+def test_stale_schema_cache_is_refetched(tmp_path, monkeypatch):
+    """🔴 这个 schema 版本号是为一次真实事故加的，测试守的就是那件事不再发生。
+
+    2026-08-18 给 `PurchaseOrder` 加了四个带缺省值的字段，旧缓存里没有这些键，
+    反序列化后静默取到缺省值——金额显示 0、采购员显示 0 人，**而报表看上去完全
+    正常**。本次新增的 `doc_type` 更危险：缺省空串会让「剔除全程委外」这条过滤
+    静默失效。故：缓存里的 schema 版本与当前不符 ⇒ 视为失效，重新下载。
+    """
+    conn = _make_conn(tmp_path)
+    cache_file = tmp_path / "po_cache.json"
+    cache_file.write_text(json.dumps({          # 旧版缓存：无 schema、无 doc_type
+        "days": 99999, "timestamp": 9e9,
+        "rows": [{"po_id": "STALE", "material_id": "M0", "qty_ordered": 1,
+                  "qty_received": 0, "expected_date": "2099-01-01",
+                  "supplier_confirmed_date": "2099-01-01", "supplier_id": "S0",
+                  "status": "in_transit"}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    fresh = [{"erpNo": "FRESH", "itemCode": "M1", "qty": 10, "rcvQtyTU": 0,
+              "makeDate": "2099-01-01", "supplyCode": "S1", "erpTypeCode": "PO01"}]
+    monkeypatch.setattr(conn, "_zp_post", lambda *a, **k: fresh)
+    pos = conn.get_purchase_orders(days=99999)
+    assert [p.po_id for p in pos] == ["FRESH"], "旧 schema 缓存被当成有效，字段会静默缺失"
+    assert json.loads(cache_file.read_text(encoding="utf-8"))["schema"] == \
+        erp_mod.ZpConnector._PO_CACHE_SCHEMA
+
+
+def test_current_schema_cache_is_reused(tmp_path, monkeypatch):
+    """版本相符时缓存照用——不能为了安全把缓存整个废掉。"""
+    conn = _make_conn(tmp_path)
+    (tmp_path / "po_cache.json").write_text(json.dumps({
+        "schema": erp_mod.ZpConnector._PO_CACHE_SCHEMA, "days": 99999, "timestamp": 9e9,
+        "rows": [{"po_id": "CACHED", "material_id": "M0", "qty_ordered": 1,
+                  "qty_received": 0, "expected_date": "2099-01-01",
+                  "supplier_confirmed_date": "2099-01-01", "supplier_id": "S0",
+                  "status": "in_transit", "doc_type": "PO01"}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    def _boom(*a, **k):
+        raise AssertionError("缓存有效时不应再打端点")
+    monkeypatch.setattr(conn, "_zp_post", _boom)
+    assert [p.po_id for p in conn.get_purchase_orders(days=99999)] == ["CACHED"]
