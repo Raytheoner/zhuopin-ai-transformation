@@ -281,7 +281,22 @@ dispatch 优先读取此标注直接定位；未标注的行仍回落旧的"收�
 
 ✅ **采购域一线标注层已确认在位 ＝ 解植雅 ＋ 汤易水**（Shao Peishen 2026-08-22 答定夺 2 选 (a)）。此前 `zhuopin-followup-letter` §8 记的「建议人选、是否已安排未确认」**至此解除**，写采购域判例包时**可以在信里明写请这两位先批量初标**，不再属空头承诺。
 
-⚠️ **PMC 人员的群抄送归属未确认**：`--department` 取的是「部门→群 chatid」映射，**PMC 是并入采购部群、还是另有自己的群，尚不清楚**；给 PMC 人员发信前问一次，不要直接填 `采购部` 了事。
+✅ **PMC 人员的群抄送 ＝ 并入采购部大群**（Shao Peishen 2026-08-22 拍板，此前的「未确认」至此解除）。
+
+🔴 **但落到命令上有一个反直觉的写法，写错会静默失败**：**给 PMC 的人发信，`--department` 要填 `采购部`，不能填 `PMC部`。**
+
+**为什么**：`--department` 的值不是「这个人写在名片上的部门」，而是**「部门→群 chatid」映射表的键**（`5-平台底座/wecom-aibot-service/aibot_service/department_group_chatid_mapping.yaml`）。该表**只有 4 个键**——
+
+| 映射表的键 | 群 chatid |
+|---|---|
+| 财务部 | `wrvDL_DAAAva1MWrKjLmuDWOu1BNxHaA` |
+| 质量部 | `wrvDL_DAAAiR1HJ_JFx1H-k-tjnriXEg` |
+| 采购部 | `wrvDL_DAAAH7IL6I7hsgszeyQvmyjw-Q` |
+| 跨部门 | `wrvDL_DAAAntxO_zDcRCmGHMcuhvBTGw` |
+
+**`PMC部` 不在表里** ⇒ 传它会命中 `resolve_group_cc_chatid` 的 `department_not_in_mapping` 分支，**fail-closed 跳过群抄送、不报错、只记一条 `followup_group_cc_skipped` 审计**。⇒ **信照样发给本人，群里却什么都没有，而命令行打印一切正常。** 这与 §6 那条「只信 stdout 会被骗」是同一个坑的第二个入口。
+
+📌 **销售部刻意无映射条目**（Paul 2026-07-15 拍板暂不启用），**不是漏配**；`跨部门` 是与财务/质量/采购**平级的第 4 个部门**，只收发给它自己的信，**不是「额外收全部部门」的广播对象**（此前一度按后者设计过、已撤销）。
 
 📌 **本表逐行转录自图片名录，Shao Peishen 2026-08-22 已逐行核对确认无误。**
 
