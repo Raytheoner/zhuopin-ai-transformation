@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>卓品智能 AI 转型 · 40 场景排期甘特图（2026-08-18 v6 两域顺延 S3 重排后）</title>
+<title>卓品智能 AI 转型 · 35 场景排期甘特图（2026-08-21 v7 质量域五场景下架后）</title>
 <style>
 :root{--bg:#ffffff;--surface:#faf9f5;--text:#2c2c2a;--muted:#5f5e5a;--hint:#888780;--border:rgba(0,0,0,.14);--borderd:rgba(0,0,0,.28);}
 @media (prefers-color-scheme: dark){:root{--bg:#262624;--surface:#2f2f2c;--text:#ece9e2;--muted:#b4b2a9;--hint:#888780;--border:rgba(255,255,255,.14);--borderd:rgba(255,255,255,.26);}}
@@ -27,11 +27,11 @@ h1{font-size:20px;font-weight:500;margin:0 0 4px;}
 </head>
 <body>
 <div class="wrap">
-<h1>卓品智能 AI 转型 · 40 个数字员工场景排期</h1>
-<p class="sub">2026年7月 → <b>2027年12月</b>（v6 延展至 Phase 1 收官月）｜ 与《实施计划（最新版）》§二权威排期一致 ｜ <b>🔴 2026-08-18 v6 结构级重排（重组循环第 7 例）：销售域 S1-S6 与工程研发域 R1-R5 共 11 个场景整域顺延入 S3（2027-07~12）；Q5 IATF 由 2027-01 提前至 2026-12；S1 目标场景数 14-16→11-13。全景总数仍 40（暂停≠注销）。</b> ⚠️ 2026-10~12 由六部门并行降为<b>四部门并行</b>（采购/运营/质量/财务），工程研发与销售在 Phase 1 前半段零上线。</p>
+<h1>卓品智能 AI 转型 · 35 个数字员工场景排期</h1>
+<p class="sub">2026年7月 → <b>2027年12月</b>（v6 延展至 Phase 1 收官月）｜ 与《实施计划（最新版）》§二权威排期一致 ｜ <b>🔴 2026-08-21 v7 结构级重排（重组循环第 8 例）：质量域 Q1 客诉分流／Q3 FMEA／Q5 IATF／Q7 IQC／Q8 SPC 五场景经质量部评审判定「我司当前阶段不适用」，Shao Peishen 拍板全部下架 ⇒ 质量 8→3（Q2／Q4／Q6）、全景总数 40→35、S1 目标场景数 11-13→9-11；v6 那次 Q5 提前随之失效。历史只靠 git 保留，复苏由 Shao Peishen 手动触发。</b> ⚠️ <b>这是本项目第一次真正减少场景总数</b>——与 v6「暂停≠注销」性质不同。｜ 前序 <b>2026-08-18 v6：销售域 S1-S6 与工程研发域 R1-R5 共 11 个场景整域顺延入 S3（2027-07~12）</b>；2026-10~12 由六部门并行降为<b>四部门并行</b>（采购/运营/质量/财务）。</p>
 <div class="gantt"><div id="g"></div></div>
 <div class="legend" id="legend"></div>
-<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，历次更新见全景规划 §0.2；<b>最近一次＝2026-08-18 v6</b>（月份轴 12→18 列；R1-R5 m4~m8→m13~m17；S1-S6 m5~m9→m13~m18；Q5 m8→m6）。</p>
+<p class="foot">维护：本图数据源 = 全景规划 §加速启动总览权威排期表。排期变更时同步更新。生成于 2026-06-11，历次更新见全景规划 §0.2；<b>最近一次＝2026-08-21 v7</b>（质量域条目 8→3：删 Q1 m7／Q5 m6／Q3 m11／Q7 m11／Q8 m12，标题与总数 40→35；<b>2027-05／06 两月质量域自此无任何条目</b>）；前序 2026-08-18 v6（月份轴 12→18 列；R1-R5 m4~m8→m13~m17；S1-S6 m5~m9→m13~m18；Q5 m8→m6，该条已随 Q5 下架失效）。</p>
 </div>
 <script>
 const months=['7','8','9','10','11','12','1','2','3','4','5','6','7','8','9','10','11','12'];
@@ -58,10 +58,9 @@ const data=[
 {name:'工程研发',color:'purple',items:[
 {code:'R1',name:'需求分析助手',m:13,tag:'v6顺延'},{code:'R2',name:'AUTOSAR配置',m:14,tag:'v6顺延'},{code:'R3',name:'代码审查',m:15,tag:'v6顺延'},
 {code:'R4',name:'测试用例生成',m:16,tag:'v6顺延'},{code:'R5',name:'技术文档生成',m:17,tag:'v6顺延'}]},
-{name:'质量',color:'coral',items:[
+{name:'质量（v7 下架 8→3）',color:'coral',items:[
 {code:'Q2',name:'8D不良分析与根因',m:4,tag:'旗舰①'},{code:'Q6',name:'项目立项审核门禁',m:4,tag:'旗舰②'},
-{code:'Q1',name:'客诉智能分流',m:7},{code:'Q5',name:'IATF·体系文档',m:6,tag:'v6提前'},{code:'Q4',name:'PPAP审核',m:10},
-{code:'Q3',name:'FMEA维护',m:11},{code:'Q7',name:'IQC来料检验',m:11,tag:'新'},{code:'Q8',name:'SPC异常预警',m:12,tag:'新'}]}
+{code:'Q4',name:'PPAP审核',m:10}]}
 ];
 const TAGC={'收割':'#185FA5','旗舰①':'#993C1D','旗舰②':'#993C1D','新':'#3B6D11','IoT':'#5F5E5A','提前':'#8A5A00','两期':'#185FA5','子功能':'#5F5E5A','暂缓':'#8E8E8E','v6顺延':'#7A3E9D','v6提前':'#8A5A00','v5顺延':'#8E8E8E'};
 const g=document.getElementById('g');
@@ -81,7 +80,7 @@ h+='<div class="bar" style="grid-column:'+(it.m+1)+'/'+(it.m+1+span)+';backgroun
 g.innerHTML=h;
 let lh='';data.forEach(d=>{lh+='<span class="lg"><span class="sw" style="background:'+COL[d.color][0]+';"></span>'+d.name+'</span>';});
 lh+='<span style="width:100%;height:0;"></span>';
-[['旗舰①②','质量域首发，价值×可行性双高'],['收割','supplychain 已验证，提前上线'],['提前','2026-07-03 财务重编号：采购/付款切片提前'],['新','本次新增 Q7 IQC / Q8 SPC'],['IoT','依赖硬件，未就绪则顺延']].forEach(t=>{lh+='<span class="lg"><span class="tag" style="background:'+(TAGC[t[0]]||TAGC['旗舰①'])+';">'+t[0]+'</span><span style="color:var(--hint);">'+t[1]+'</span></span>';});
+[['旗舰①②','质量域首发，价值×可行性双高'],['收割','supplychain 已验证，提前上线'],['提前','2026-07-03 财务重编号：采购/付款切片提前'],['新','v2.3 新增 SC10 / SC11（原 Q7 IQC / Q8 SPC 已于 v7 下架）'],['IoT','依赖硬件，未就绪则顺延']].forEach(t=>{lh+='<span class="lg"><span class="tag" style="background:'+(TAGC[t[0]]||TAGC['旗舰①'])+';">'+t[0]+'</span><span style="color:var(--hint);">'+t[1]+'</span></span>';});
 document.getElementById('legend').innerHTML=lh;
 </script>
 </body>

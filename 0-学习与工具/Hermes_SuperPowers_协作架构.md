@@ -420,7 +420,7 @@ Week 3-4：
 → 触发 Layer 2 Project Memory 规则（已写入：
   "当供应商评分下降时，通知质量部审查该供应商来料 FMEA"）
 
-→ 质量部 Hermes 加载上下文 + 执行 Q3 FMEA 复核
+→ 质量部 Hermes 加载上下文 + 执行 Q2 8D 根因复核〔🔴 2026-08-21 v7：原举例 Q3 FMEA 已下架〕
 
 → 质量部 Auto Memory 记录结果：
   "FMEA 复核发现 2 个新风险项，已推送给工程研发"
