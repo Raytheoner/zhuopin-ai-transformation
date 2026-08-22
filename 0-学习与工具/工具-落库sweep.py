@@ -361,6 +361,7 @@ queue-table-shared-parser-consolidation）：`_parse_section_two`/
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import re
 import subprocess
@@ -479,9 +480,63 @@ SCHEDULED_TASK_MIRROR_TIMEOUT_SECONDS = 60
 # 队列 #257（P3，先计数不告警）：每轮落库批次数记录，供后续攒样本定阈值。
 SESSION_BATCH_COUNT_LOG_REL = "reports/sweep-batch-landing-count.jsonl"
 
-# 队列 #198(c)：本轮 commit 若命中这些前缀下的路径，视为"涉常驻服务"，
-# 需部署脚本同步+重启对应计划任务才在生产生效（现状全靠人记得）。
-RESIDENT_SERVICE_PATH_PREFIXES = ("5-平台底座/wecom-aibot-service/",)
+# 队列 §四 #87 ⑶⑷（2026-08-22）：常驻服务告警判据。
+#
+# 🔴 本节整体取代了 #198(c) 的 `RESIDENT_SERVICE_PATH_PREFIXES`（单条路径
+# 前缀 startswith）——那条判据两个方向同时不准：**多报**（2026-08-22 14:52
+# 批次 `B-0822_17` 在服务目录下只改了一份 CLAUDE.md、零行代码，照样告警）
+# 与**漏报**（常驻服务运行时导入 `zhuopin_platform`，改底座却一声不吭）。
+# 是"退休并取代"而非"叠加过滤层"：前缀常量已删除、不保留兜底分支，判据
+# 只有一条实现路径，避免两套判据各自为政（同 #80 一期"切分器只留一份权威
+# 实现"的取法）。
+#
+# 判据＝"该路径是否属于常驻服务的**运行体集合**"，集合由三个来源合并：
+#   ① 该服务 `sync-to-server.ps1` 的 `-AppFiles` 显式部署清单（现读现算）
+#   ② 同脚本 `-LocalPlatformDir` 指向的平台底座（除其 tests/）
+#   ③ 计划任务的执行入口与注册脚本（见 `RESIDENT_SERVICE_ENTRYPOINT_GLOBS`）
+# 排除项（文档/tests/sync 脚本自身）**不写黑名单**——它们本就不在①②③任一
+# 集合内，靠白名单天然排除。黑名单会漏，白名单只会多报。
+RESIDENT_SERVICE_DIR_REL = "5-平台底座/wecom-aibot-service"
+RESIDENT_SERVICE_SYNC_SCRIPT_REL = f"{RESIDENT_SERVICE_DIR_REL}/sync-to-server.ps1"
+# 解析不出 `-LocalPlatformDir` 时的兜底底座路径（与 `_PLATFORM_PATH` 同源）。
+RESIDENT_SERVICE_PLATFORM_FALLBACK_REL = "5-平台底座/zhuopin_platform"
+# 底座内不参与运行时的子目录——`scp -r` 确实会把它推上去，但它不被服务导入。
+RESIDENT_SERVICE_PLATFORM_EXCLUDED_SUBDIRS = ("tests/",)
+#
+# 🔴 ③ 只能写成常量，没有任何仓库内文件可读——**计划任务的真实设置不在仓库
+# 里**（#199 的核心教训）。本组值取自 2026-08-22 本机 `Get-ScheduledTask`
+# 直读实测：`ZhuopinAibotDevListener`(Running)／`ZhuopinDecisionReminderDaily`
+# ／`ZhuopinFollowupDispatchDaily` 三个任务的 Action 均为 `wscript.exe` +
+# worktree `wecom-service-home` 下本服务目录内的 `run-*.vbs`。
+# **复核方式**（勿凭记忆改动本组值）：
+#   Get-ScheduledTask | ? TaskName -like 'Zhuopin*' | % { $_.Actions }
+# 该复核已列入月度环境体检 #98 核对项——这是本判据明知而接受的残余风险：
+# 任务 Action 改了而本常量没跟上，会重新出现漏报，且没有任何自动信号。
+#
+# ⚠️ 两类的**处置动作不同**，故分开（#199 已实证"改注册脚本源码 ≠ 改了在跑
+# 的任务"）：入口类改完下次触发即生效；注册脚本类必须重跑该脚本才生效，对它
+# 印"同步并重启"等于给出一个做了也没用的处置——比不发更糟。
+RESIDENT_SERVICE_ENTRYPOINT_GLOBS = ("run-*.vbs",)
+RESIDENT_SERVICE_REGISTRAR_GLOBS = ("register-*.ps1",)
+
+# 命中来源标签 → 告警正文里的处置措辞。键同时用作日志/正文的"命中原因"。
+RESIDENT_SERVICE_REMEDY_BY_SOURCE = {
+    "部署清单": "同步 ops/wecom-service-home 后重启 ZhuopinAibotDevListener 才在生产生效",
+    "平台底座": "同步 ops/wecom-service-home 后重启 ZhuopinAibotDevListener 才在生产生效",
+    "执行入口": "同步 ops/wecom-service-home 后**下次触发即生效**（无需重跑注册脚本）",
+    "任务注册脚本": "🔴 须**重跑该注册脚本**，仅同步重启不生效（#199）",
+    "保守判定": "部署清单未解析出，已按命中保守判定——请人工确认是否需要同步重启",
+}
+
+# `-AppFiles @( ... )` 可跨行（FI2 那份即在续行符后），故 DOTALL 到右括号。
+# `-LocalPlatformDir (Join-Path $REPO "5-平台底座\zhuopin_platform")`——脚本内
+# 写作反斜杠，解析后须统一转正斜杠再与 touched_paths 比对。
+# 🔴 本组正则一律用 r-string：`\z`/`\a`/`\f` 在普通字符串里的行为不一致，
+# 其中 `\a`/`\f` 是**合法转义、不报错、静默变成控制字符**（同族教训见
+# CLAUDE.md「heredoc 吃反斜杠」那条——真正咬人的是下游的静默转义）。
+_APP_FILES_RE = re.compile(r"-AppFiles\s*@\((.*?)\)", re.DOTALL)
+_LOCAL_PLATFORM_DIR_RE = re.compile(r"-LocalPlatformDir\s*\(\s*Join-Path\s+\$\w+\s+\"([^\"]+)\"")
+_PS_DOUBLE_QUOTED_RE = re.compile(r"\"([^\"]+)\"")
 
 # 队列 #236(2)：孤儿脏文件（不属于任何批次声明）状态持久化 + 告警阈值。
 # 与 sweep 每小时一轮对齐，约 3 轮仍孤儿才点名，避免"批次登记与实际改动
@@ -1174,26 +1229,135 @@ def _handle_fork_detected(repo_root: Path, log: list[str]) -> None:
     log.append(f"✓ 分叉告警已推送（连续第 {consecutive} 轮）。")
 
 
-def _touches_resident_service(paths: set[str]) -> bool:
-    return any(p.startswith(RESIDENT_SERVICE_PATH_PREFIXES) for p in paths)
+def _parse_resident_service_manifest(repo_root: Path) -> tuple[list[str], str, str | None]:
+    """读常驻服务 `sync-to-server.ps1`，取 `-AppFiles` 清单与 `-LocalPlatformDir`。
 
+    返回 `(app_files, platform_rel, parse_error)`。`parse_error` 非 None 即
+    表示"清单没取到"，调用方必须**从低取值**（按命中处理），不得静默当作
+    未命中——静默不报正是队列 §四 #87 ⑷ 那类漏报的成因，而漏报不产生任何
+    信号、会一直漏下去。
 
-def _announce_resident_service_deployment_hint(repo_root: Path, log: list[str]) -> None:
-    """队列 #198(c)：本轮 commit 命中常驻服务路径时，在日志与 webhook 附一句
-    部署提示——纯提示、不阻断、不改变本轮退出码（sweep 无权也不该去重启
-    服务）。成因＝"代码已提交但生产未生效"的失配长期全靠人记得（#126／
-    #193 同族），本提示只负责把这件事说出来。"""
-    hint = (
-        "⚠ 本批改动涉及常驻服务，需 sync-to-server.ps1 同步 ops/wecom-service-home "
-        "并重启 ZhuopinAibotDevListener 后才在生产生效"
+    两条解析契约（实测得来，勿凭直觉简化）：
+    ① **编码用 `utf-8-sig`**——6 份 sync 脚本 BOM 并不一致（实测 aibot 那份
+       无 BOM、FI2 那份有 BOM），用 `utf-8` 读有 BOM 的那份会在首行多出
+       `﻿` 而使正则错位；
+    ② `-AppFiles` 的路径**相对 `-LocalAppDir`，而它恒等于 `$PSScriptRoot`**
+       ⇒ 仓库相对路径 ＝ sync 脚本所在目录 + 条目。**不能认变量名**：SC8 那
+       份用的是 `$SC8` 而非 `$APP`（认 `$PSScriptRoot` 这个语义、不认拼写）。
+    """
+    script = repo_root / RESIDENT_SERVICE_SYNC_SCRIPT_REL
+    if not script.is_file():
+        return [], RESIDENT_SERVICE_PLATFORM_FALLBACK_REL, f"未找到 {RESIDENT_SERVICE_SYNC_SCRIPT_REL}"
+    try:
+        text = script.read_text(encoding="utf-8-sig")
+    except OSError as exc:  # noqa: BLE001 —— 读不到即从低取值，不吞成"未命中"
+        return [], RESIDENT_SERVICE_PLATFORM_FALLBACK_REL, f"读取 sync 脚本失败：{exc}"
+
+    platform_match = _LOCAL_PLATFORM_DIR_RE.search(text)
+    platform_rel = (
+        platform_match.group(1).replace("\\", "/").strip("/")
+        if platform_match
+        else RESIDENT_SERVICE_PLATFORM_FALLBACK_REL
     )
-    log.append(hint)
+
+    app_files_match = _APP_FILES_RE.search(text)
+    if app_files_match is None:
+        return [], platform_rel, "sync 脚本内未解析出 -AppFiles 清单"
+    entries = [
+        e.replace("\\", "/").strip("/")
+        for e in _PS_DOUBLE_QUOTED_RE.findall(app_files_match.group(1))
+    ]
+    entries = [e for e in entries if e]
+    if not entries:
+        return [], platform_rel, "-AppFiles 清单解析结果为空"
+    return entries, platform_rel, None
+
+
+def _resident_service_hit_source(
+    path: str, repo_root: Path, app_files: list[str], platform_rel: str,
+) -> str | None:
+    """判定单条路径属于常驻服务运行体的哪个来源；不属于则返回 None。"""
+    # ② 平台底座——常驻服务运行时导入它（队列 §四 #87 ⑷ 补的漏报面）。
+    platform_prefix = f"{platform_rel}/"
+    if path.startswith(platform_prefix):
+        tail = path[len(platform_prefix):]
+        if any(tail.startswith(sub) for sub in RESIDENT_SERVICE_PLATFORM_EXCLUDED_SUBDIRS):
+            return None
+        return "平台底座"
+
+    service_prefix = f"{RESIDENT_SERVICE_DIR_REL}/"
+    if not path.startswith(service_prefix):
+        return None
+    tail = path[len(service_prefix):]
+
+    # ③ 计划任务的执行入口与注册脚本——限该服务目录**一层内**（`/` not in tail），
+    # 两类处置动作不同，故分别标注。
+    if "/" not in tail:
+        if any(fnmatch.fnmatch(tail, g) for g in RESIDENT_SERVICE_ENTRYPOINT_GLOBS):
+            return "执行入口"
+        if any(fnmatch.fnmatch(tail, g) for g in RESIDENT_SERVICE_REGISTRAR_GLOBS):
+            return "任务注册脚本"
+
+    # ① `-AppFiles` 白名单：条目在仓库内是目录则前缀匹配、是文件则精确匹配
+    # （`ZhuopinDeploy.psm1` 对目录走 `scp -r`、对文件走 `scp`）。取不到实体
+    # （如本批正是删除该文件）时按精确匹配处理。
+    for entry in app_files:
+        entry_rel = f"{service_prefix}{entry}"
+        if (repo_root / entry_rel).is_dir():
+            if path.startswith(f"{entry_rel}/"):
+                return "部署清单"
+        elif path == entry_rel:
+            return "部署清单"
+    return None
+
+
+def _touches_resident_service(
+    paths: set[str], repo_root: Path,
+) -> list[tuple[str, str]]:
+    """队列 §四 #87 ⑶⑷：返回本批命中常驻服务运行体的 `(路径, 命中来源)`
+    清单，按路径排序（保证告警正文可复现）；无命中返回空列表。
+
+    🔴 由 `bool` 改为返回命中明细，是为了让告警正文能**回显命中了什么**——
+    2026-08-22 那次误报之所以要靠人反查批次内容才发现，正是因为告警自己
+    只印一句写死的话、不说命中原因，判据无法被现场证伪。
+    """
+    app_files, platform_rel, parse_error = _parse_resident_service_manifest(repo_root)
+    hits: list[tuple[str, str]] = []
+    for path in paths:
+        if parse_error is not None and path.startswith(f"{RESIDENT_SERVICE_DIR_REL}/"):
+            # 从低取值：清单没取到时，服务目录下任何路径一律按命中处理。
+            hits.append((path, "保守判定"))
+            continue
+        source = _resident_service_hit_source(path, repo_root, app_files, platform_rel)
+        if source is not None:
+            hits.append((path, source))
+    return sorted(hits)
+
+
+def _announce_resident_service_deployment_hint(
+    repo_root: Path, hits: list[tuple[str, str]], log: list[str],
+) -> None:
+    """队列 #198(c)（判据于 §四 #87 ⑶⑷ 重写）：本轮 commit 命中常驻服务
+    运行体时，在日志与 webhook 附部署提示——纯提示、不阻断、不改变本轮
+    退出码（sweep 无权也不该去重启服务）。成因＝"代码已提交但生产未生效"
+    的失配长期全靠人记得（#126／#193 同族），本提示只负责把这件事说出来。
+
+    正文**逐条回显命中路径与命中原因**，并按来源给出对应处置——入口类与
+    任务注册脚本类的处置动作不同，不得一律印"同步并重启"。
+    """
+    log.append("⚠ 本批改动涉及常驻服务运行体，需部署后才在生产生效：")
+    for path, source in hits:
+        log.append(f"    - {path}（命中：{source}）⇒ {RESIDENT_SERVICE_REMEDY_BY_SOURCE[source]}")
     webhook_url = _load_webhook_url(repo_root)
     if webhook_url is None:
         log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过部署提示推送（仅留痕日志）。")
         return
+    body = "🔧 落库sweep：本批改动涉及常驻服务运行体，需部署后才在生产生效：\n" + "\n".join(
+        f"- `{path}`（命中：{source}）\n  ⇒ {RESIDENT_SERVICE_REMEDY_BY_SOURCE[source]}"
+        for path, source in hits
+    )
     try:
-        _send_wecom_markdown(webhook_url, f"🔧 落库sweep：{hint}")
+        _send_wecom_markdown(webhook_url, body)
     except Exception as exc:  # noqa: BLE001 —— 提示推送失败不应影响本轮退出码
         log.append(f"⚠ 部署提示推送失败（不影响本轮退出码）：{exc}")
         return
@@ -2720,8 +2884,9 @@ def main() -> int:
         # #198(c)：批次落库之后，检查本轮实际 add 过的路径是否命中常驻服务——
         # 纯提示，不影响下方的正常返回。
         if touched_paths and not args.dry_run:
-            if _touches_resident_service(touched_paths):
-                _announce_resident_service_deployment_hint(repo_root, log)
+            resident_hits = _touches_resident_service(touched_paths, repo_root)
+            if resident_hits:
+                _announce_resident_service_deployment_hint(repo_root, resident_hits, log)
             # 队列 #229：发布收口第②关——命中已部署场景却未见部署留痕，纯
             # 提示，不影响下方的正常返回。
             missing_trace_hits = _find_missing_deployment_trace(touched_paths)

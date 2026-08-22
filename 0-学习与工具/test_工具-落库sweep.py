@@ -1635,6 +1635,19 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
         # .env 须先落进初始提交（随 init 一起 clean）——否则它作为未声明的
         # 脏文件会被"非 clean"门禁拦在批次处理之前，测试永远走不到本条要验的逻辑。
         (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
+        # 队列 §四 #87 ⑶⑷：判据改为读该服务 sync 脚本的 -AppFiles 清单后，
+        # 临时仓库必须把 sync 脚本一起造出来，否则走的是"清单未解析出"的
+        # 保守判定分支——那样这条 e2e 就只验到了兜底、验不到真判据。
+        sync_script = self.work / "5-平台底座" / "wecom-aibot-service" / "sync-to-server.ps1"
+        sync_script.parent.mkdir(parents=True)
+        sync_script.write_text(
+            "Sync-ZhuopinPlatformAndApp `\n"
+            '    -LocalPlatformDir (Join-Path $REPO "5-平台底座\\zhuopin_platform") `\n'
+            "    -LocalAppDir $APP `\n"
+            '    -AppFiles @("pyproject.toml", "aibot_service", "scripts") `\n'
+            '    -AppLabel "本服务"\n',
+            encoding="utf-8",
+        )
         self._init_and_push(rows="")
         service_file = self.work / "5-平台底座" / "wecom-aibot-service" / "aibot_service" / "foo.py"
         service_file.parent.mkdir(parents=True)
@@ -1649,8 +1662,38 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("涉及常驻服务", result.stdout)
         self.assertIn("ZhuopinAibotDevListener", result.stdout)
+        # 走的必须是真判据（部署清单），不是兜底分支
+        self.assertIn("命中：部署清单", result.stdout)
+        self.assertNotIn("保守判定", result.stdout)
         self.assertEqual(len(_CapturingWebhookHandler.received), 1)
-        self.assertIn("常驻服务", _CapturingWebhookHandler.received[0]["markdown"]["content"])
+        pushed = _CapturingWebhookHandler.received[0]["markdown"]["content"]
+        self.assertIn("常驻服务", pushed)
+        # 回显命中明细：收件人须能自行复核判据这次说得对不对
+        self.assertIn("aibot_service/foo.py", pushed)
+
+    def test_docs_only_batch_in_resident_service_dir_gets_no_hint(self):
+        """队列 §四 #87 ⑶ 的 e2e 复现：2026-08-22 14:52 那次误报——批次
+        `B-0822_17` 在服务目录下只改了一份 CLAUDE.md、零行代码，旧判据
+        （单条路径前缀 startswith）照样告警。"""
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
+        sync_script = self.work / "5-平台底座" / "wecom-aibot-service" / "sync-to-server.ps1"
+        sync_script.parent.mkdir(parents=True)
+        sync_script.write_text(
+            '    -AppFiles @("pyproject.toml", "aibot_service", "scripts") `\n', encoding="utf-8",
+        )
+        self._init_and_push(rows="")
+        doc = self.work / "5-平台底座" / "wecom-aibot-service" / "CLAUDE.md"
+        doc.write_text("# 只改文档\n", encoding="utf-8")
+
+        row = ("| B-TEST | `5-平台底座/wecom-aibot-service/CLAUDE.md`、"
+               "`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
+               "| `docs(test): 服务目录下只改文档` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("涉及常驻服务", result.stdout)
+        self.assertEqual(len(_CapturingWebhookHandler.received), 0)
 
     def test_batch_not_touching_resident_service_path_gets_no_hint(self):
         (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8")
@@ -1663,6 +1706,173 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("涉及常驻服务", result.stdout)
         self.assertEqual(len(_CapturingWebhookHandler.received), 0)
+
+
+class ResidentServiceJudgeUnitTests(unittest.TestCase):
+    """队列 §四 #87 ⑶⑷：常驻服务判据重写——纯函数级单测。
+
+    每条对应 `specs/sweep-resident-service-alert/spec.md` 的一个 Scenario。
+    🔴 **逐类锁死召回率**：⑶ 治多报、⑷ 治漏报，是同一判据的两面——只验
+    "该不报的不报"会让判据被压成"什么都不报"，故每一类真实命中都各有一
+    条正例把它钉住。
+    """
+
+    SERVICE = "5-平台底座/wecom-aibot-service"
+    PLATFORM = "5-平台底座/zhuopin_platform"
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="resident-judge-")
+        self.root = Path(self._tmp)
+        # 仿真最小仓库布局：sync 脚本 + AppFiles 里的目录/文件实体
+        # （目录 vs 文件决定前缀匹配还是精确匹配，故必须真建出来）。
+        svc = self.root / self.SERVICE
+        (svc / "aibot_service").mkdir(parents=True)
+        (svc / "scripts").mkdir()
+        (svc / "tests").mkdir()
+        (svc / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        (svc / "deploy-server.ps1").write_text("# deploy\n", encoding="utf-8")
+        (self.root / self.PLATFORM / "tests").mkdir(parents=True)
+        self._write_sync_script(
+            '-AppFiles @("pyproject.toml", "aibot_service", "scripts", "deploy-server.ps1")'
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _write_sync_script(self, app_files_line: str, *, bom: bool = False):
+        script = self.root / sweep.RESIDENT_SERVICE_SYNC_SCRIPT_REL
+        script.parent.mkdir(parents=True, exist_ok=True)
+        text = (
+            "$APP  = $PSScriptRoot\n"
+            "Sync-ZhuopinPlatformAndApp `\n"
+            '    -ServerBase "C:/wecom-aibot" `\n'
+            '    -LocalPlatformDir (Join-Path $REPO "5-平台底座\\zhuopin_platform") `\n'
+            "    -LocalAppDir $APP `\n"
+            f"    {app_files_line} `\n"
+            '    -AppLabel "本服务"\n'
+        )
+        script.write_text(text, encoding="utf-8-sig" if bom else "utf-8")
+
+    def _judge(self, *paths):
+        return sweep._touches_resident_service(set(paths), self.root)
+
+    def _sources(self, *paths):
+        return {src for _, src in self._judge(*paths)}
+
+    # —— ⑶ 多报面：以下四类都不该报 ——
+
+    def test_docs_only_change_is_not_a_hit(self):
+        """2026-08-22 14:52 误报的复现口径：批次 B-0822_17 在服务目录下
+        只改了一份 CLAUDE.md、零行代码，旧判据照样告警。"""
+        self.assertEqual(self._judge(f"{self.SERVICE}/CLAUDE.md"), [])
+
+    def test_service_tests_dir_is_not_a_hit(self):
+        self.assertEqual(self._judge(f"{self.SERVICE}/tests/test_dispatch.py"), [])
+
+    def test_sync_script_itself_is_not_a_hit(self):
+        self.assertEqual(self._judge(f"{self.SERVICE}/sync-to-server.ps1"), [])
+
+    def test_platform_tests_are_not_a_hit(self):
+        self.assertEqual(self._judge(f"{self.PLATFORM}/tests/test_audit.py"), [])
+
+    # —— 召回率：以下每一类真实命中都必须照报 ——
+
+    def test_app_files_directory_entry_hits_by_prefix(self):
+        hits = self._judge(f"{self.SERVICE}/aibot_service/dispatcher.py")
+        self.assertEqual(hits, [(f"{self.SERVICE}/aibot_service/dispatcher.py", "部署清单")])
+
+    def test_app_files_file_entry_hits_exactly(self):
+        self.assertEqual(self._sources(f"{self.SERVICE}/pyproject.toml"), {"部署清单"})
+
+    def test_platform_change_hits(self):
+        """队列 §四 #87 ⑷ 补的漏报面：常驻服务运行时导入平台底座，
+        旧判据只有一个服务目录前缀、改底座一声不吭。"""
+        self.assertEqual(
+            self._judge(f"{self.PLATFORM}/zhuopin_platform/audit/logger.py"),
+            [(f"{self.PLATFORM}/zhuopin_platform/audit/logger.py", "平台底座")],
+        )
+
+    def test_entrypoint_vbs_hits_with_its_own_remedy(self):
+        """`run-*.vbs` 是计划任务 Action 真身，却不在 -AppFiles 内——
+        只读 -AppFiles 会在这里新造一类漏报。"""
+        self.assertEqual(self._sources(f"{self.SERVICE}/run-hidden.vbs"), {"执行入口"})
+
+    def test_registrar_ps1_hits_with_a_different_remedy(self):
+        """#199：改注册脚本源码 ≠ 改了在跑的任务——处置是"重跑注册脚本"，
+        不是"同步并重启"，故须与入口类分开表述。"""
+        self.assertEqual(
+            self._sources(f"{self.SERVICE}/register-decision-reminder-task.ps1"),
+            {"任务注册脚本"},
+        )
+        self.assertNotEqual(
+            sweep.RESIDENT_SERVICE_REMEDY_BY_SOURCE["任务注册脚本"],
+            sweep.RESIDENT_SERVICE_REMEDY_BY_SOURCE["执行入口"],
+        )
+
+    # —— 混改与回显 ——
+
+    def test_mixed_change_hits_and_names_only_the_runtime_file(self):
+        hits = self._judge(
+            f"{self.SERVICE}/CLAUDE.md", f"{self.SERVICE}/aibot_service/dispatcher.py",
+        )
+        self.assertEqual(len(hits), 1)
+        self.assertNotIn("CLAUDE.md", hits[0][0])
+
+    def test_unrelated_path_is_not_a_hit(self):
+        self.assertEqual(self._judge("1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"), [])
+
+    # —— 解析契约与从低取值 ——
+
+    def test_manifest_parses_multiline_app_files_with_bom(self):
+        """实测 6 份 sync 脚本 BOM 并不一致，且 -AppFiles 可跨行。"""
+        self._write_sync_script(
+            '-AppFiles @(\n        "pyproject.toml",\n        "aibot_service"\n    )', bom=True,
+        )
+        app_files, platform_rel, err = sweep._parse_resident_service_manifest(self.root)
+        self.assertIsNone(err)
+        self.assertEqual(app_files, ["pyproject.toml", "aibot_service"])
+        self.assertEqual(platform_rel, self.PLATFORM)
+
+    def test_unparsable_manifest_falls_back_to_hit_not_to_silence(self):
+        """🔴 从低取值：清单取不到时一律按命中处理并说明——静默不报正是
+        ⑷ 那类漏报的成因，而漏报不产生任何信号。"""
+        self._write_sync_script("# -AppFiles 被改写成解析不出的形态")
+        _, _, err = sweep._parse_resident_service_manifest(self.root)
+        self.assertIsNotNone(err)
+        # 连本该被排除的文档也一律按命中——这是刻意的多报方向
+        self.assertEqual(self._sources(f"{self.SERVICE}/CLAUDE.md"), {"保守判定"})
+
+    def test_missing_sync_script_falls_back_to_hit(self):
+        (self.root / sweep.RESIDENT_SERVICE_SYNC_SCRIPT_REL).unlink()
+        self.assertEqual(self._sources(f"{self.SERVICE}/aibot_service/x.py"), {"保守判定"})
+
+    def test_platform_still_judged_when_manifest_unparsable(self):
+        """解析失败只影响服务目录那一支，底座那一支仍按正常判据走。"""
+        self._write_sync_script("# 无清单")
+        self.assertEqual(self._sources(f"{self.PLATFORM}/zhuopin_platform/a.py"), {"平台底座"})
+        self.assertEqual(self._judge(f"{self.PLATFORM}/tests/test_a.py"), [])
+
+    def test_does_not_suppress_the_deployment_trace_guard(self):
+        """本守卫与 #229"已部署场景缺部署留痕"是两条独立判据，各自命中、
+        互不抑制——两者提问不同（"是否触碰运行体" vs "有没有留痕行"），
+        合并会同时削弱两条，故刻意保持分离并在此钉死。"""
+        paths = {
+            f"{self.PLATFORM}/zhuopin_platform/audit/logger.py",
+            "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/engine.py",
+        }
+        self.assertTrue(sweep._touches_resident_service(paths, self.root))
+        self.assertTrue(sweep._find_missing_deployment_trace(paths))
+
+    # —— 退休守卫的反例护栏 ——
+
+    def test_retired_prefix_constant_is_gone(self):
+        """协议〇.9 措施 B：`RESIDENT_SERVICE_PATH_PREFIXES` 已整体退休。
+        断言的是**模块符号**不是源码文本——文件内注释里的历史沿革提及是
+        合法留痕，不该被误伤（同 #299 那条 AST 守卫"只扫函数体"的取法）。"""
+        self.assertFalse(
+            hasattr(sweep, "RESIDENT_SERVICE_PATH_PREFIXES"),
+            "前缀判据不得作为兜底被加回来——两套判据各自为政正是本次要根治的形态",
+        )
 
 
 class PartitionPendingRowsUnitTests(unittest.TestCase):
