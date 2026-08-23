@@ -119,6 +119,15 @@ editlock-section-append-and-followup-consistency-guard）：两项加固。
               内裸竖线"列为要抓的失效形态，本子命令口径与其一致，不引入
               一个 release 校验不认可的豁免（apply 阶段发现并修正，见该
               openspec 变更包 design.md）。
+              🔴 **「不接受预拼好的整行字符串」这一句于 2026-08-23 被复核后
+              维持**（队列 §一 #351 ⑵-b，Shao Peishen 拍板否决新增
+              `--row-md`）。**被否的提案本身是有道理的**：人以「行」为单位
+              思考、天然打竖线，而现接口要求手工拆成 N 个 `--cell`，这道
+              转换本身就是错误来源（6 次复发里至少 2 次由它造成）。**否决
+              的理由是代价更大**——`--row-md` 会新增第二条写入路径，而第二
+              条路径正是 #164／#225／#258 那一族缺陷的滋生地。**改走退而
+              求其次**：报错时直接给出一条修正后的完整命令行供复制，见
+              `_arity_failure_message`。
 
   release ⑥  队列 §一/§四 行"暂缓结论"与跟进信 README 发送状态的交叉
               一致性校验——命中"**当前结论段**含暂不发/暂缓/压着/不发字样
@@ -251,7 +260,7 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # 队列 #306：本脚本自身所在的 worktree 本地路径找 zhuopin_platform（而非
 # 经 REPO_ROOT——那按 git-common-dir 解析总是指向主工作区，见本文件顶部
@@ -1347,6 +1356,59 @@ def _cell_has_bare_pipe(cell: str) -> bool:
     return queue_table.has_bare_pipe(cell)
 
 
+def _shell_quote(value: str) -> str:
+    """把字段值包成一个可直接粘进命令行的双引号参数。只做最小必要转义
+    ——目标是"可复制"，不是"覆盖所有 shell 方言"。"""
+    escaped = value.replace(chr(92), chr(92) * 2).replace(chr(34), chr(92) + chr(34))
+    return chr(34) + escaped + chr(34)
+
+
+def _arity_failure_message(
+    section: str, number: str | None, cells: list[str], expected: int,
+) -> str:
+    """队列 §一 #351 ⑵-a：arity 失败时**顺带**扫一遍裸竖线，把两条诊断合并。
+
+    🔴 **这是本项目"守卫被自己前面那道检查遮蔽"的教科书案例**：`len(cells)
+    != expected` 的 arity 检查排在裸竖线检查之前且失败即 raise，而裸竖线最
+    高频的形态——漏写 `--cell` 分隔符、竖线连同下一列内容粘进上一个 cell
+    ——**必然同时使 cell 数变少 ⇒ arity 先失败 ⇒ 裸竖线检查永不执行**。
+    作者看到的诊断是"收到 N 个"，指向"数数"；真因是那根竖线。这就是
+    #164／#225／#258 装了守卫却仍在 2026-08-19 第 6 次复发的机制解释。
+    （#351 行内自带的证伪命令已跑，实测 `True`，断言成立。）
+
+    ⑵-b（新增 `--row-md` 直传整行 markdown）**已由 Shao Peishen 2026-08-23
+    拍板否决**，改走本函数这条"退而求其次"：报错时直接给出一条修正后的
+    完整命令行供复制。理由是第二条写入路径正是 #164／#225／#258 那一族缺陷
+    的滋生地，而模块 docstring L116「不接受预拼好的整行字符串」是刻意定的。
+    """
+    base = f"§{section} 需要 {expected} 个 --cell（不含编号列），收到 {len(cells)} 个"
+    piped = [i for i, cell in enumerate(cells, start=1) if _cell_has_bare_pipe(cell)]
+    if not piped:
+        return base  # 纯数数问题，不添噪音
+
+    shown = "、".join(f"第 {i} 个" for i in piped)
+    merged = (
+        f"{base}；且 {shown} --cell 内含裸竖线「|」"
+        f"——**极可能是漏写了 `--cell` 分隔符、把两列粘成了一列**"
+        f"（这是裸竖线最高频的形态，也是 arity 与裸竖线两条诊断此前互相遮蔽的原因）。"
+    )
+
+    # 尝试恢复原意：按裸竖线拆开重数。只在**恰好**等于预期列数时才给命令行
+    # ——宁可少给，不给一条错的。
+    recovered = [part.strip() for cell in cells for part in cell.split("|")]
+    recovered = [part for part in recovered if part]
+    if len(recovered) != expected:
+        return merged + " 按裸竖线拆分后仍不等于预期列数，无法可靠恢复原意，故不给修正命令行。"
+
+    parts = ["python 0-学习与工具/工具-共享文档编辑锁.py append-row", f"--section {section}"]
+    if number is not None:
+        parts.append(f"--number {number}")
+    parts.extend(f"--cell {_shell_quote(part)}" for part in recovered)
+    hint = ("按上述成因恢复出的完整命令行"
+            "（**请核对后再执行，工具不会自动跑它**）：")
+    return merged + chr(10) + "  " + hint + chr(10) + "  " + " ".join(parts)
+
+
 def _build_append_row_line(section: str, number: str | None, cells: list[str]) -> str:
     """按分区列序把结构化字段拼装成一条完整的 Markdown 表格行文本（不含
     首尾换行符）。校验失败抛 `AppendRowFailedError`，调用方据此不写入任何
@@ -1357,9 +1419,7 @@ def _build_append_row_line(section: str, number: str | None, cells: list[str]) -
         raise AppendRowFailedError(f"未知分区 {section!r}，仅支持 {sorted(SECTION_APPEND_CONTENT_COUNTS)}")
     expected = SECTION_APPEND_CONTENT_COUNTS[section]
     if len(cells) != expected:
-        raise AppendRowFailedError(
-            f"§{section} 需要 {expected} 个 --cell（不含编号列），收到 {len(cells)} 个"
-        )
+        raise AppendRowFailedError(_arity_failure_message(section, number, cells, expected))
     for i, cell in enumerate(cells, start=1):
         if _cell_has_bare_pipe(cell):
             preview = cell if len(cell) <= 60 else cell[:60] + "…"
@@ -1404,6 +1464,49 @@ def _last_table_line_end_offset(section_text: str) -> int | None:
     return last_end
 
 
+def _append_row_ownership_violation(args: argparse.Namespace) -> str | None:
+    """队列 §一 #351 ⑴：`append-row` 的锁归属校验。返回拒绝文案；放行返回 None。
+
+    🔴 **成因是一次真实事故，形态很值得记住**（2026-08-18，12 分钟内触发两次）：
+    `acquire` / `append-row` / `release` 被打包成一条命令、中间不查退出码——
+    `acquire` **已被正确拒绝**（锁在别人手上），而脚本照跑照写，**在他人持锁
+    期间写入两次**。`acquire` 与 `release` 两侧都校验归属，**唯独中间真正写盘
+    的这个不校验**；那道被绕过的门禁其实工作正常，只是没人拦住它后面那一步。
+
+    ⇒ 所以「只在 `--who` 与持锁人不符时拒绝」是不够的：**那次调用根本没有
+    `--who` 可比**。`--who` 缺失同样必须拒绝——工具无法证明调用方是持锁人，
+    就不能替它假定。
+
+    **边界（刻意不做的事）**：无有效锁时**不阻断**，只打印一行提示。协议〇.7
+    一贯是协作性质而非硬互斥，opener §〇.7 明文「不强制所有新行都必须走
+    `append-row`，直接在编辑器里手写整行仍是允许的」。把 `append-row` 变成
+    「必须先持锁」属**改变全项目口径**（CLAUDE.md §5 机制类门槛第①条），须
+    另走 openspec。**本项要修的是「锁归属不校验」，不是「无锁写入」。**
+    """
+    lock_path = _lock_path(
+        QUEUE_LOCK_ANCHOR if _is_queue_system_target(args.file) else args.file
+    )
+    existing = _read_lock(lock_path)
+    if existing is None or _age_minutes(existing) >= STALE_MINUTES:
+        # 无锁／已释放／已陈旧——陈旧锁等价于无锁，与 acquire 的既有接管口径一致。
+        print("ℹ 本次为无锁写入（目标当前无有效锁）——协议〇.7 允许，但改队列前"
+              "先 acquire 仍是既有纪律。")
+        return None
+    holder = existing.get("who", "未知")
+    who = getattr(args, "who", None) or ""
+    if who == holder:
+        return None
+    if not who:
+        return (f"目标当前被「{holder}」持锁（{existing.get('note', '') or '无备注'}），"
+                f"而本次 append-row 未传 --who，工具无法证明你就是持锁人 ⇒ 拒绝写入。"
+                f"若你就是持锁人，加 `--who {holder}` 重试；"
+                f"若不是，请勿在他人持锁期间写入（2026-08-18 真实事故：acquire 已被"
+                f"正确拒绝、脚本照跑照写，12 分钟内在他人锁下写入两次）。")
+    return (f"目标当前被「{holder}」持锁（{existing.get('note', '') or '无备注'}），"
+            f"与你传入的「{who}」不同 ⇒ 拒绝写入。"
+            f"若确认对方已异常退出，等其自然陈旧（{STALE_MINUTES} 分钟）后重试。")
+
+
 def cmd_append_row(args: argparse.Namespace) -> int:
     # 队列 #315 决策点3/5：队列系统模式下按 --domain 路由到对应物理文件
     # （§四恒定机制环境文件，见 `_resolve_append_target`）；显式 --file
@@ -1416,6 +1519,13 @@ def cmd_append_row(args: argparse.Namespace) -> int:
                   "见队列 #315 决策点3/5。")
         args = argparse.Namespace(**vars(args))
         args.file = resolved_target
+
+    # 队列 §一 #351 ⑴：锁归属校验——放在最前，锁不归你就什么都不做。
+    ownership_problem = _append_row_ownership_violation(args)
+    if ownership_problem:
+        print(f"✗ {ownership_problem}")
+        return 1
+
     target_path = _target_path(args.file)
     try:
         text = target_path.read_text(encoding="utf-8")
@@ -1436,6 +1546,24 @@ def cmd_append_row(args: argparse.Namespace) -> int:
     if len(parsed_cells) != expected_total:
         print(f"✗ 拼装结果列数为 {len(parsed_cells)}（应为 {expected_total}），拒绝写入——请核查字段内容。")
         return 1
+
+    # 队列 §一 #351 ⑶⑸：§二 专属的两条写入前校验——文件清单路径格式、
+    # 批次号前缀查重。两者都是"写入即拒绝"，取代此前"事后读 sweep 日志才
+    # 发现"（⑶）与"完全无人校验"（⑸）。
+    if args.section == "二":
+        queue_texts = {p: _read_target_text(p) for p in _iter_queue_paths()}
+        # 目标不在队列系统内（显式 --file 覆盖）时，至少把它自己算进来。
+        if args.file not in queue_texts:
+            queue_texts[args.file] = text
+        section_two_problems = _file_list_path_violations(parsed_cells, REPO_ROOT)
+        collision = _batch_prefix_collision(parsed_cells[0], queue_texts)
+        if collision:
+            section_two_problems.append(collision)
+        if section_two_problems:
+            print(f"✗ §二 写入被拒绝（{len(section_two_problems)} 项，未修改目标文件）：")
+            for problem in section_two_problems:
+                print(f"  - {problem}")
+            return 1
 
     bounds = _section_bounds(text, args.section)
     if bounds is None:
@@ -2069,25 +2197,31 @@ def _validate_release_structure(
                 )
                 continue  # 列数都不对，按列取值的后续校验没有意义
 
+            # 队列 §一 #351 ⑷：人的属性（性别代词）校验——三个分区一律适用
+            # （人名可能出现在 §一 任务行、§二 批次说明、§四 定夺项里）。
+            violations.extend(_gender_pronoun_violations(label, cells, line))
+
             if label == "二":
-                # 队列 #315（apply）：接受"本次正在校验的这份物理文件自身"
-                # 的路径/文件名，也接受旧指针路径/文件名（拆分前登记、或
-                # 泛指"队列文件"本身的历史批次行，不追溯改写正文）——
-                # `args.file` 在这里已是 `cmd_release` 按 `queue_table.
-                # iter_queue_paths()` 逐份传入的具体路径。
-                fragments = re.findall(r"`([^`]+)`", cells[1])
-                accepted_paths = {args.file, DEFAULT_TARGET}
-                declares_self = any(
-                    frag in accepted_paths
-                    or any(frag == Path(p).name or frag.endswith("/" + Path(p).name)
-                           for p in accepted_paths)
-                    for frag in fragments
-                )
-                if not declares_self:
-                    violations.append(
-                        f"§二 批次「{cells[0]}」文件清单未声明队列文件自身路径"
-                        f"（须含 `{args.file}` 或 `{DEFAULT_TARGET}`）：{preview}"
-                    )
+                # 🔴 **校验②「文件清单须含队列文件自身路径」已于 2026-08-23
+                # 退休**（协议〇.9 措施 B 一进一出，openspec 变更包
+                # `editlock-chokepoint-six-fixes`）。理由：② 是一个**代理
+                # 判据**——它真正想保证的是"你改了队列文件，队列文件就得进
+                # 某个批次、别掉在地上"，却只能表达成"每一条新批次行都必须
+                # 把队列文件写进自己的清单"。本次新增的 ⑹（`cmd_release`
+                # 里的 `_registration_completeness_violations`）直接度量那件
+                # 事本身：**全部脏文件都须被某个待处理 §二 批次覆盖**，覆盖面
+                # 严格更大。② 残余的额外严格性（拒绝"新批次行只列代码文件、
+                # 而队列文件已被另一条既有待处理批次覆盖"）拦的是一个不存在
+                # 的问题——那种情形下队列文件确实会被提交。
+                #
+                # ⚠️ **退休的代价如实记在这里**：② 没有逃生阀，⑹ 有
+                # （`登记豁免：`）⇒ 写了豁免的 session 同时也不再受 ② 约束。
+                # 这是一次实质放松；接受它的理由是 ⑹ 的逃生阀要求把理由写进
+                # 队列行（进 git、被值周巡检看得见），而 ② 的绝对性此前从未
+                # 被验证是必要的。
+                #
+                # 队列 §一 #351 ⑶⑸：接管这一位置的两条新校验。
+                violations.extend(_file_list_path_violations(cells, repo_root))
                 if _section_two_status_is_ambiguous(cells[3]):
                     violations.append(
                         f"§二 批次「{cells[0]}」状态列开头片段既不含"
@@ -2095,6 +2229,14 @@ def _validate_release_structure(
                         f"跳过并重复告警，见 #247）：{preview}"
                     )
                 if cells[0] not in old_batch_names:
+                    # 队列 §一 #351 ⑸：新增批次行的批次号前缀查重。
+                    # `exclude_self_once=True`——此刻该行已在文件里，须把它
+                    # 自己那一次出现扣掉再判重复。
+                    collision = _batch_prefix_collision(
+                        cells[0], {args.file: current_text}, exclude_self_once=True,
+                    )
+                    if collision:
+                        violations.append(f"{collision}：{preview}")
                     # ⑦ 队列 #308 子项 F1：新增批次行状态列不得以 ✅ 开头
                     # （既有批次合法转 ✅ 走上面 old_batch_names 判据放行）。
                     leading = _leading_status_segment(cells[3])
@@ -2293,6 +2435,470 @@ def _mechanism_wip_over_cap_violations(
     return []
 
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# 队列 §一 #351 ⑶⑷⑸⑹（openspec 变更包 editlock-chokepoint-six-fixes，
+# 2026-08-23）——`append-row`／`release` 这道咽喉上被发现的四处守卫缺位。
+# ⑴⑵ 落在下方 `cmd_append_row`／`_build_append_row_line` 里，就近实现。
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── ⑶ §二「文件清单」路径格式 ────────────────────────────────────────
+# 判据只认**形态**，不认存在性。实测（2026-08-23，两份队列文件全量）：
+# 形如路径的反引号片段 1371 个、格式违规 220 个（16.0%）；而若再加一条
+# 存在性校验，**98 个格式合法的片段会变成误报**（合法的范围性速记，如
+# `openspec/changes/.../{proposal,design,tasks}.md`、`X/tests/test_*.py`、
+# `0-学习与工具/skills源码/<name>/SKILL.md`，以及"当时存在、后来移走"的
+# 历史件）。7% 的误报会把逃生阀变成常规操作，而逃生阀一旦常规化，这道门禁
+# 就废了（同 #351 ⑷ 那条 10% 误报的教训）。
+#
+# 🔴 **与 sweep 的关系（别当成两边判据打架）**：`工具-落库sweep.py::
+# _resolve_batch_fragments` 的 docstring 明写它**刻意宽容**（后缀匹配、
+# 不要求仓库根相对完整路径）。本项收紧的是**写者**、不是读者，是 Postel
+# 原则的正用；且恰好消灭 sweep 那条宽容路径上的 `ambiguous` 失效形态
+# （#234(1)：根 `CLAUDE.md` 与场景目录下同名文件同时脏 ⇒ 片段命中两个
+# 候选 ⇒ 判歧义 ⇒ 连带跳过一个本已声明齐全的批次）。
+PATH_LIKE_EXTENSIONS = frozenset({
+    ".md", ".py", ".json", ".yaml", ".yml", ".txt", ".html", ".htm", ".ps1",
+    ".docx", ".xlsx", ".csv", ".jsonl", ".sh", ".bat", ".cfg", ".toml",
+    ".ini", ".js", ".ts", ".tsx", ".jsx", ".log", ".xml", ".sql", ".env",
+    ".gitignore", ".db", ".sqlite", ".pdf", ".png", ".svg",
+})
+# 预登记批次豁免 ⑶：`queue-claim-time-preregistration` 的 Requirement
+# 「预登记批次的内容与状态标识」明文允许其文件清单为"目录前缀或范围性
+# 描述"。两条 spec 各守一段生命周期——该行走到"收工时精确化"那一步会被
+# 重新触碰，届时不再是预登记态，⑶ 自然接管。
+
+
+def _fragment_is_path_like(fragment: str) -> bool:
+    """反引号片段是否"形如路径"——只认两种形态：以已知扩展名结尾，或以
+    `/` 结尾（目录前缀）。
+
+    🔴 **刻意不把"含斜杠"当作路径特征**：队列正文里 `采购/财务/质量`
+    这类并列写法极常见，按"含斜杠"判会把它们全部拖进来。判据宁可窄，
+    漏掉的形态由 sweep 孤儿告警兜住；判宽了则误报淹掉真报。
+    """
+    frag = fragment.strip()
+    if not frag:
+        return False
+    if frag.endswith("/"):
+        return True
+    return PurePosixPath(frag.replace("\\", "/")).suffix.lower() in PATH_LIKE_EXTENSIONS
+
+
+def _path_fragment_format_problem(fragment: str, repo_root: Path) -> str | None:
+    """形如路径的片段若不是"仓库根相对完整路径"，返回一句问题描述；合规
+    返回 `None`。
+
+    裸文件名这一支必须查存在性，且**只查这一支**：根目录的 `CLAUDE.md`／
+    `.gitignore` 的裸文件名**本身就是**合法的仓库根相对路径，一刀切拒绝
+    会把它们误伤；而 `工具-落库sweep.py`（真身在 `0-学习与工具/` 下）这类
+    速记正是要拦的对象。两者的唯一区别就是"根下有没有同名文件"。
+    """
+    frag = fragment.strip()
+    if re.match(r"^[A-Za-z]:[\\/]", frag) or frag.startswith("/") or frag.startswith("\\"):
+        return f"`{frag}` 是绝对路径，须改为仓库根相对路径"
+    if "\\" in frag:
+        return f"`{frag}` 用了反斜杠作分隔符，须改用正斜杠 `/`"
+    if frag.startswith("./") or frag.startswith("../"):
+        return f"`{frag}` 带 `./`／`../` 前缀，须改为从仓库根写起的完整路径"
+    if "/" not in frag:
+        if (repo_root / frag).exists():
+            return None  # 根目录文件的裸文件名即完整路径，放行
+        return (f"`{frag}` 是裸文件名且仓库根下无同名文件，须写仓库根相对完整路径"
+                f"（速记会让 sweep 退化到后缀匹配，同名文件并存时判歧义、连带跳过整个批次，见 #234(1)）")
+    return None
+
+
+def _file_list_path_violations(cells: list[str], repo_root: Path) -> list[str]:
+    """⑶：§二 一行的「文件清单」列（cells[1]）路径格式校验。预登记行豁免。"""
+    if len(cells) < 4:
+        return []
+    if _leading_status_segment(cells[3]).startswith(PREREGISTERED_STATUS_PREFIX):
+        return []
+    problems = []
+    for fragment in re.findall(r"`([^`]+)`", cells[1]):
+        if not _fragment_is_path_like(fragment):
+            continue
+        problem = _path_fragment_format_problem(fragment, repo_root)
+        if problem:
+            problems.append(f"§二 批次「{cells[0]}」文件清单路径格式违规：{problem}")
+    return problems
+
+
+# ── ⑸ §二 批次号前缀查重 ────────────────────────────────────────────
+# 实测（2026-08-23）：现存批次号前缀 174 个，**其中 27 个撞号（15.5%）**
+# ——立行时以为是"同族第三次"，实际是第 27 次。根因＝批次号由各方自行读
+# 高水位线 +1 自增，而 `append-row --section 二` 既不预留、也不校验重名
+# （§一／§四 走 `acquire --reserve` 的路径不同，§二 是裸奔的）。
+#
+# 🔴 **判据模糊处如实登记**：批次号第二段**并非恒为流水号**——实测两种
+# 写法并存（`B-0818_18_…` 的 18 是当日流水号，`B-0808_309_…` 的 309 是
+# 队列行号）。故本项**只判前缀字面重复，不解释第二段语义**；提示里给的
+# "建议序号"取同日已用的最大**纯数字**第二段 +1，并明写只是建议。
+# **不为这件事再造一套命名判据**——那正是本项目反复吃亏的形态。
+BATCH_NUMBER_PREFIX_RE = re.compile(r"^(B-\d{4}_[^_\s]+)")
+
+
+def _batch_number_prefix(batch_name: str) -> str | None:
+    match = BATCH_NUMBER_PREFIX_RE.match(batch_name.strip())
+    return match.group(1) if match else None
+
+
+def _all_section_two_batch_names(queue_texts: dict[str, str]) -> list[str]:
+    names = []
+    for text in queue_texts.values():
+        for _, cells in _table_data_rows(_split_live_sections(text).get("二", "")):
+            if cells and cells[0].strip():
+                names.append(cells[0].strip())
+    return names
+
+
+def _suggest_next_batch_serial(prefix: str, existing_names: list[str]) -> str | None:
+    """同日已用的最大纯数字第二段 +1。第二段非纯数字者不参与计算——它们
+    走的是"队列行号"那套写法，本函数不去猜。"""
+    day = prefix.split("_", 1)[0]
+    used = []
+    for name in existing_names:
+        other = _batch_number_prefix(name)
+        if not other or not other.startswith(day + "_"):
+            continue
+        tail = other.split("_", 1)[1]
+        if tail.isdigit():
+            used.append(int(tail))
+    return f"{day}_{max(used) + 1}" if used else None
+
+
+def _batch_prefix_collision(
+    batch_name: str, queue_texts: dict[str, str], *, exclude_self_once: bool = False,
+) -> str | None:
+    """⑸：返回一句拒绝说明；无冲突返回 `None`。
+
+    `exclude_self_once=True` 供 release 侧使用——那时待查的行**已经在文件
+    里了**，须把它自己那一次出现扣掉再判重复。
+    """
+    prefix = _batch_number_prefix(batch_name)
+    if prefix is None:
+        return None  # 不符前缀形态的批次名不受本项约束
+    existing = _all_section_two_batch_names(queue_texts)
+    conflicts = [n for n in existing if _batch_number_prefix(n) == prefix]
+    if exclude_self_once and batch_name.strip() in conflicts:
+        conflicts.remove(batch_name.strip())
+    if not conflicts:
+        return None
+    shown = "、".join(f"「{n}」" for n in conflicts[:3])
+    suggestion = _suggest_next_batch_serial(prefix, existing)
+    tail = (f"建议改用 `{suggestion}`（＝同日已用最大纯数字序号 +1，"
+            f"**只是建议**：批次号第二段实测既有流水号写法也有队列行号写法，"
+            f"你可自选任何不冲突的名字）" if suggestion
+            else "请自选一个不冲突的批次名")
+    return (f"§二 批次号前缀 `{prefix}` 已被占用：{shown}——"
+            f"撞号后无法再用编号唯一指代某个批次（实测现存 27 处同族撞号）。{tail}")
+
+
+# ── ⑷ 人的属性（性别代词）lint ───────────────────────────────────────
+# 🔴 **本常量的唯一权威来源是根 `CLAUDE.md` §1**（人员名录与性别）。
+# 名录变动一律先改那里，再改这里；`test_工具-共享文档编辑锁.py` 里有一条
+# 同步用例会从 §1 抽取全部带性别标注的姓名与本常量对表，**名录扩了而这里
+# 没跟，回归当场变红**。
+#
+# **刻意不在运行时解析 CLAUDE.md**：§1 是每周都在变的散文，措辞一变解析
+# 就抽不到人名，判据随即变成**恒真、零信息量，而没有任何东西会报错**。
+# 用一个失效不产生信号的实现，去做一条专为根治"错误不产生信号"而立的
+# 校验，是原地打转。
+PERSON_GENDER_ROSTER: dict[str, str] = {
+    # 部门 AI 专员
+    "姚祖怡": "男", "陈忱": "女", "唐燕萍": "女", "泓钦": "男", "陈承": "男",
+    # 一线标注层与决策代理
+    "朱映桦": "男", "解植雅": "男", "汤易水": "男", "孙涛": "男",
+    # 财务部（在册六人全部为女性，唐燕萍已在上方）
+    "李姣龙": "女", "钱婷": "女", "孙国庆": "女", "陶钰": "女", "朱云澜": "女",
+    # IT 汇总的全员企微名录中此前未收录者
+    "叶燕": "女", "齐奇": "女", "汤丽萍": "女",
+    "袁洋": "男", "刘伟": "男", "聂鑫": "男",
+    # 决策人本人（§1 中以「`邵培申` ＝ Shao Peishen 本人」形式记载，
+    # 无「（男）」标注，故同步用例走「§1 ⊆ 常量」方向，不要求相等）
+    "邵培申": "男",
+}
+GENDER_PRONOUN_WAIVER_MARKER = "性别豁免："
+# 窗口取 25 是**实测定标**的（2026-08-23 两份队列文件全量）：
+#   整行判据（#351 原文）65 行 ／ 40 字 19 行 ／ **25 字 18 行** ／ 15 字 13 行。
+# 40→25 只差 1 行、已到平台期；15 开始漏掉正常语序（"姚祖怡在 8 月 12 日的
+# 回件里说她…"）。
+#
+# 🔴 **为什么是"邻近窗口"而不是 #324 给校验⑥做的"首段收窄"**：⑥ 判的是
+# "这一格当前的结论是什么"，结论就在首段；本项判的是"这个代词在指谁"，
+# **指代关系是局部的、与段落位置无关**——写在第 7 段的"姚祖怡…她"同样是错
+# 的。整行判据必然失败的原因也在这里：§一 单行常达数千字、跨多个话题，
+# 一行里提到"唐燕萍"（在讲财务口径）、别处出现"他"（指 Shao Peishen），
+# 整行判据必然把它们配成一对。
+GENDER_PRONOUN_WINDOW = 25
+# "他"的非代词用法。`其他` 在队列里极高频，不排除会把真报淹掉（#351 ⑷
+# 行内已用红字点名这一条）。按长度降序遮蔽，避免 `其他人` 被 `其他` 先吃掉。
+NON_PRONOUN_TA_WORDS = (
+    "其他人", "他人", "其他", "其它", "他们", "他处", "他方", "他日", "他者",
+)
+
+
+def _mask_non_pronoun_ta(text: str) -> str:
+    """把非代词用法的「他」遮成同长度的占位符——遮蔽而非删除，位置偏移
+    才不会变，邻近窗口的距离计算才准。"""
+    masked = text
+    for word in NON_PRONOUN_TA_WORDS:
+        masked = masked.replace(word, "〇" * len(word))
+    return masked
+
+
+def _gender_pronoun_violations(label: str, cells: list[str], line: str) -> list[str]:
+    """⑷：行内人名与性别代词邻近矛盾即违规。行内写 `性别豁免：<理由>` 放行。
+
+    逃生阀是**常态配套、不是异常出口**：实测残余命中里绝大多数是**引用
+    规则条文本身**的行（`§一 #351`／`§四 #75` 的正文逐字写着"出现 `陈忱`／
+    `唐燕萍`（女）且出现独立的 `他`"），这类命中必然发生且必然合法。
+    """
+    if GENDER_PRONOUN_WAIVER_MARKER in line:
+        return []
+    scan = _mask_non_pronoun_ta(line)
+    row_id = cells[0].strip() if cells else "?"
+    violations = []
+    for name, gender in PERSON_GENDER_ROSTER.items():
+        wrong = "她" if gender == "男" else "他"
+        for match in re.finditer(re.escape(name), scan):
+            window = scan[match.end():match.end() + GENDER_PRONOUN_WINDOW]
+            idx = window.find(wrong)
+            if idx == -1:
+                continue
+            # 中间隔着异性名字 ⇒ 代词多半指那个人，属合法情形。判据复刻
+            # 2026-08-21 那次 244 处追改所用的脚本口径（"含姚祖怡、含她、
+            # 且同行不含陈忱／唐燕萍"）。
+            between = window[:idx]
+            if any(other in between for other in PERSON_GENDER_ROSTER
+                   if PERSON_GENDER_ROSTER[other] != gender):
+                continue
+            snippet = scan[max(0, match.start() - 12):match.end() + GENDER_PRONOUN_WINDOW]
+            violations.append(
+                f"§{label} {row_id} 行内「{name}」（{gender}）之后 {GENDER_PRONOUN_WINDOW} 字内"
+                f"出现「{wrong}」：…{snippet}…"
+                f"——人的属性一律以根 CLAUDE.md §1 名录为准，不得从名字推断；"
+                f"确属合法情形（同行多人／引用规则条文本身）请在本行内写"
+                f"「{GENDER_PRONOUN_WAIVER_MARKER}<理由>」放行。"
+            )
+            break  # 同一人名在同一行只报一次，不为一行刷屏
+    return violations
+
+
+# ── ⑹ release 登记完整性校验 ────────────────────────────────────────
+# 🔴 **判据刻意不是 #351 原文写的「本次持锁窗口内新增的脏文件」（快照差集）
+# ——取证证明那个判据抓不住它自己的立项实证。**
+#
+# `reports/sweep-commit.log` 实测：`OP-0822-E` 的六个孤儿文件在
+# **2026-08-22 12:20 UTC** 那轮 sweep 就已全部报为脏，而 E 于 **12:26:16
+# UTC** 才 acquire——**晚 6 分钟**。按差集口径它们在占锁那一刻已进基线，
+# release 时差集为空、照样放行，缺陷原样复发。
+#
+# ⇒ 判据改为「release 时**全部**脏文件都须被某个待处理 §二 批次覆盖」，
+# 这**不是新造判据**：它逐字等同 sweep 孤儿检测已在用的那一条，本项只是把
+# 它从"只进日志的事后告警"前移到"有阻断力、且 session 还活着"的时点——
+# 而这正是 #351 ⑹ 自己写下的设计意图（"sweep 的孤儿告警没有阻断力，
+# 而 release 是唯一一个 session 还活着、且必然会被调用的时点"）。
+# **原文的判据与它自己的设计意图不一致，此处以设计意图为准。**
+#
+# acquire 快照**保留但改变用途**：不再用于过滤，而用于**归因**。差集过滤
+# 是让机器替人做一个它做不了的判断（这脏文件是谁造的）并默默判成"不是
+# 你"；归因提示是把判断交还给人，同时把机器确实知道的那点信息（时间先后）
+# 如实给出。
+REGISTRATION_WAIVER_MARKER = "登记豁免："
+# 🔴 **落库 sweep 身份豁免——不是开后门，是判据对它本就不成立。**
+#
+# `工具-落库sweep.py` 的持锁身份（其 `LOCK_WHO`）。sweep 在一次持锁窗口内做的
+# 事是：`git add` 本批文件 → 把该批次行改成 `✅ 已完成` → release → commit。
+# ⇒ **release 那一刻工作区必然是脏的**（刚 add 的文件 ＋ 刚改的队列文件），
+# 而它刚把那条批次行标成完成 ⇒ 那条清单已不再是"待处理批次"⇒ ⑹ **必然判为
+# 未覆盖、必然拒绝**。
+#
+# **后果不是"多一条告警"，是全项目停摆**：`_strike_off_rows` 在 `finally` 里
+# 调 release 且**不看返回码**，被拒 ⇒ 锁保持占用 ⇒ 下一轮 sweep 的起跑探锁
+# （`_abort_if_edit_lock_held`）判定"有人正在编辑"直接跳过 ⇒ **此后每一轮都
+# 跳过，而 sweep 是唯一会 commit 队列改动的机制**。2026-08-23 本变更包
+# apply 时由 `test_四种状态形态端到端` 当场撞出，未进生产。
+#
+# **为什么豁免在道理上成立**：⑹ 问的是"你改完东西有没有登记，好让 sweep 来
+# 提交"；**而 sweep 就是那个来提交的人**。要求它先给自己登记一条批次，是让
+# 消费者去写自己的待办清单——判据的适用对象从来不包括它。
+#
+# 同族先例：`AIBOT_LOCK_WHO`（企微机器人收件登记豁免预留归属校验，队列 #333②）
+# ——同样是"让校验认得一条既有的、结构性的例外"，不是新开豁免。
+SWEEP_LOCK_WHO = "sweep-commit"
+
+
+def _is_inside_git_work_tree(repo_root: Path) -> bool:
+    """`repo_root` 是否位于一棵 git 工作树内。
+
+    🔴 **这条判断存在的意义，是把两种「取不到脏文件」区分开**——⑹ 对它们的
+    处置完全相反，混为一谈就必然错一边：
+      ⑴ **根本不在工作树内**（隔离测试的临时目录、非仓库副本）⇒ "脏文件"
+         这个概念不成立，⑹ **判据的适用前提不成立**，跳过是正确的，且会
+         打印一行明示；
+      ⑵ **在工作树内、但 `git status` 失败**（git 挂了／超时／索引锁）⇒
+         这是**该有答案却没拿到**，必须 fail-closed 拒绝 release。
+    把 ⑵ 也按"跳过"处理，就正是本项目反复吃亏的"工具静默回退"。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=str(repo_root), capture_output=True, text=True,
+            encoding="utf-8", timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def _local_git_status_paths(repo_root: Path) -> list[str] | None:
+    """本机 git 的工作区脏路径清单；取数失败返回 `None`（与"干净"区分开）。
+
+    🔴 **两个参数都不是可选优化**：
+    ⑴ `-c core.quotepath=false`——git 默认把非 ASCII 路径转义成八进制
+       （`"1-\\350\\275\\254\\345\\236\\213…"`）。**本项目全部路径都是中文**，
+       不加这个参数拿到的路径与 §二 清单里的字面**永远对不上**，而命令
+       退出码 0、输出看起来完全正常 ⇒ 典型的"工具静默回退"，且方向是
+       "所有文件都未被覆盖"这种整体性误报。
+    ⑵ `--untracked-files=all`——新建但未 add 的文件正是孤儿的主要形态。
+
+    🔴 **必须是本机 git，不得是沙箱 git**（§四 #98）：本机 `core.autocrlf`
+    来自 Windows system 级配置，沙箱 git 读不到，同一工作区两个 git 会给出
+    相反答案（967 份"已修改" vs 干净）。本工具由 CC 在本机执行，`subprocess`
+    起的就是本机 git，天然满足——**这行注释是写给下一位想把它挪到沙箱侧跑
+    的读者的。**
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "status",
+             "--porcelain=v1", "--untracked-files=all"],
+            cwd=str(repo_root), capture_output=True, text=True,
+            encoding="utf-8", timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    paths = []
+    for raw in result.stdout.splitlines():
+        if not raw.strip():
+            continue
+        rest = raw[3:]
+        if " -> " in rest:  # 重命名取新路径
+            rest = rest.split(" -> ", 1)[1]
+        rest = rest.strip().strip('"')
+        if rest:
+            paths.append(rest)
+    return paths
+
+
+def _pending_batch_fragments(queue_texts: dict[str, str]) -> list[str]:
+    """两份物理队列文件里**全部待处理** §二 批次行的文件清单片段。
+
+    "待处理"口径复用既有 `_leading_status_segment`（#248 锚定），涵盖
+    `待处理` 与 `在办（预登记，收工时精确化）` 两态——**不新造判据**。
+    已完成（开头片段含 ✅）的批次不会再被 sweep 取活，其清单不构成归属。
+    """
+    fragments = []
+    for text in queue_texts.values():
+        for _, cells in _table_data_rows(_split_live_sections(text).get("二", "")):
+            if len(cells) < 4:
+                continue
+            if "✅" in _leading_status_segment(cells[3]):
+                continue
+            fragments.extend(re.findall(r"`([^`]+)`", cells[1]))
+    return fragments
+
+
+def _dirty_path_is_covered(path: str, fragments: list[str]) -> bool:
+    """覆盖判定 —— 逐字复刻 `工具-落库sweep.py::_resolve_batch_fragments`
+    的后缀匹配口径（`p == f` 或 `p.endswith("/" + f)`）。
+
+    **刻意不实现 sweep 那套"一个片段命中多个候选即判歧义"**：sweep 需要它
+    是因为它要决定 `git add` 哪个文件（选错会 add 错东西）；本项只需回答
+    "这个脏文件有没有归属"，一个片段同时覆盖多个脏文件对该问题无害。
+    **能不抄的复杂度就不抄。**
+    """
+    return any(path == frag or path.endswith("/" + frag) for frag in fragments)
+
+
+def _registration_completeness_violations(
+    queue_texts: dict[str, str], lock_data: dict, repo_root: Path,
+    waiver_sources: list[str],
+) -> list[str]:
+    """⑹：release 时全部脏文件须被某个待处理 §二 批次覆盖，否则拒绝。"""
+    if lock_data.get("who") == SWEEP_LOCK_WHO:
+        # 见 SWEEP_LOCK_WHO 定义处的长注释：sweep 是"来提交的那个人"，
+        # 判据的适用对象不含它。仅豁免本项，不影响它仍须通过的其它校验。
+        return []
+
+    if not _is_inside_git_work_tree(repo_root):
+        print("ℹ 仓库根不在 git 工作树内，⑹ 登记完整性校验的适用前提不成立，"
+              "本次跳过（这不是回退——没有工作树就没有『脏文件』这回事）。")
+        return []
+
+    dirty_now = _local_git_status_paths(repo_root)
+    waiver = next(
+        (s for s in waiver_sources if REGISTRATION_WAIVER_MARKER in s), None
+    )
+
+    if dirty_now is None:
+        # fail-closed：本变更同批退休了校验②（协议〇.9 措施 B 一进一出），
+        # 取数失败若静默放行，这道咽喉上将什么都不剩。
+        if waiver is not None:
+            print(f"✓ 工作区状态取数失败，但检测到登记豁免声明，已放行：{waiver.strip()[:120]}")
+            return []
+        return [
+            "无法取得工作区脏文件状态（非 git 仓库／git 不可用／超时），"
+            "⑹ 登记完整性校验无法执行 ⇒ 拒绝 release（fail-closed，不静默放行）。"
+            f"确需放行请在本次 note 或本次触碰的队列行内写「{REGISTRATION_WAIVER_MARKER}<理由>」。"
+        ]
+
+    fragments = _pending_batch_fragments(queue_texts)
+    uncovered = [
+        p for p in dirty_now
+        if ".editlock" not in p and not _dirty_path_is_covered(p, fragments)
+    ]
+    if not uncovered:
+        return []
+
+    if waiver is not None:
+        print(f"✓ 检测到登记豁免声明，已放行 {len(uncovered)} 个未登记脏文件："
+              f"{waiver.strip()[:120]}")
+        return []
+
+    snapshot = lock_data.get("dirty_at_acquire")
+    if snapshot is None:
+        grouped = [("（无 acquire 快照，无法判定出现时刻）", uncovered)]
+    else:
+        before = set(snapshot)
+        grouped = [
+            ("本次持锁期间新出现", [p for p in uncovered if p not in before]),
+            ("acquire 之前就已经脏（可能来自并发 session）",
+             [p for p in uncovered if p in before]),
+        ]
+
+    lines = [
+        f"⑹ 登记完整性：{len(uncovered)} 个脏文件不属于任何待处理 §二 批次的文件清单"
+        f"——它们不会被 sweep 提交，会静默掉在地上（`OP-0822-E` 2026-08-22 实证："
+        f"acquire 的 note 写了「分三批登记」，那三条批次行从未出现在任何一个提交里）。"
+    ]
+    for title, paths in grouped:
+        if not paths:
+            continue
+        lines.append(f"  【{title}】")
+        lines.extend(f"    - {p}" for p in paths)
+    lines.append(
+        f"  两条出路：⑴ 为它们登记 §二 批次（`append-row --section 二`，"
+        f"文件清单写仓库根相对完整路径）；"
+        f"⑵ 确不该登记的，在本次 note 或本次触碰的队列行内写"
+        f"「{REGISTRATION_WAIVER_MARKER}<理由>」。"
+    )
+    return ["\n".join(lines)]
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -2443,10 +3049,18 @@ def _acquire_locked(
         {"who": args.who, "note": args.note or "", "at": held_since}
     ]
 
+    # 队列 §一 #351 ⑹：占锁瞬间记一份工作区脏文件清单。**它不再用于过滤**
+    # （原设想的"差集"判据已被取证推翻，见 `_registration_completeness_
+    # violations` 的红字），只用于 release 拒绝时的**归因**——把未覆盖路径
+    # 分成"本次持锁期间新出现"与"acquire 之前就已经脏"两组。取数失败不阻断
+    # 占锁（返回 None，release 侧按"无快照"处理，不臆断）。
+    dirty_at_acquire = _local_git_status_paths(REPO_ROOT)
+
     _atomic_write_json(
         lock_path, {
             "who": args.who, "note": args.note or "", "held_since": held_since,
             "history": new_history, "reserved": {}, "domains": {},
+            "dirty_at_acquire": dirty_at_acquire,
         }
     )
 
@@ -2541,6 +3155,11 @@ def _acquire_locked(
             lock_path, {
                 "who": args.who, "note": args.note or "", "held_since": held_since,
                 "history": new_history, "reserved": reserved_map, "domains": domains_map,
+                # 🔴 二次写锁必须把 ⑹ 的快照带上——漏了它，凡走 --reserve 的
+                # session 都会在 release 时退化到"无快照"分支（归因失效，但
+                # 校验本身仍生效）。这类"第二处写入忘了带上第一处刚加的字段"
+                # 是本文件已有前例的失效形态。
+                "dirty_at_acquire": dirty_at_acquire,
             }
         )
         nums = "；".join(
@@ -2620,6 +3239,13 @@ def cmd_release(args: argparse.Namespace) -> int:
                 )
         violations.extend(_validate_followup_reply_state_sync(
             queue_texts, REPO_ROOT, waiver_sources=waiver_sources,
+        ))
+        # 队列 §一 #351 ⑹：登记完整性。逃生阀取材面与 `转态豁免：` 完全一致
+        # （本次 note ＋ 本次触碰过的队列行，**不含队列全文**）——理由同上方
+        # 那段红字：豁免标记一旦写进这两份 1.9 MB 的文件任何一处，全文匹配
+        # 就等于把门禁永久关掉，且此后没有任何人会发现。
+        violations.extend(_registration_completeness_violations(
+            queue_texts, existing, REPO_ROOT, waiver_sources,
         ))
     elif args.file == FOLLOWUP_README_TARGET:
         # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
@@ -2753,6 +3379,14 @@ def main() -> int:
     p_append_row = sub.add_parser(
         "append-row",
         help="队列 #258：追加一行到指定分区，插入位置/列数/裸竖线由工具保证",
+    )
+    p_append_row.add_argument(
+        "--who", default="",
+        help="队列 §一 #351 ⑴：调用方身份，须与当前持锁人一致。目标存在**有效锁**"
+             "而本参数缺失或不符时拒绝写入（2026-08-18 真实事故：acquire 已被正确"
+             "拒绝、打包命令照跑照写，在他人持锁期间写入两次）。目标无有效锁时不"
+             "要求本参数，只打印一行无锁写入提示——协议〇.7 是协作性质，不因本项"
+             "变成硬互斥",
     )
     p_append_row.add_argument(
         "--section", required=True, choices=sorted(SECTION_APPEND_CONTENT_COUNTS),
