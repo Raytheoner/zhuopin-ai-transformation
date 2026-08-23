@@ -59,4 +59,4 @@
 
 - [x] 7.1 队列 §四 `#87` 追记：**「判据死锁」这个发现本身被实测推翻的经过**（比脚本更值得留），以及 ⑶ 已落地
 - [x] 7.2 派单件 `status:` 改 `已执行归档`；§二 批次登记
-- [ ] 7.3 `/opsx:archive auto-archive-substantive-complete -y`
+- [x] 7.3 `/opsx:archive auto-archive-substantive-complete -y`
