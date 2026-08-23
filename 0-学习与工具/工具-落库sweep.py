@@ -3054,7 +3054,14 @@ def _carrier_tracked_dirty(repo_root: Path, name: str) -> str | None:
     未跟踪／被 ignore 的内容**不在此判**——它们不该阻止 ff，且 git 自己会
     在「ff 会覆盖某个未跟踪文件」时拒绝（见 `_ff_carrier` 的注释）。
     """
-    result = _run_git(["status", "--porcelain=v1"],
+    # 🔴 **必须显式 `--untracked-files=no`**：`--porcelain=v1` 缺省**连未跟踪件
+    # 一起报**（`??` 行）。2026-08-24 首次实跑当场撞上——执行体里那个唯一的
+    # 未跟踪 wrapper `run-followup-dispatch-check.ps1` 把 ff 整个挡住了，而
+    # 本函数的文档字符串明写「未跟踪／被 ignore 的内容**不在此判**」。
+    # ⇒ **文档说的和命令做的是两回事，而两者都「看起来很确定」。** 同族＝
+    # 「判据看起来很确定但错了」。所幸失败方向是保守的（停手不 ff），
+    # 若判反了就会是「该停手时动了手」。
+    result = _run_git(["status", "--porcelain=v1", "--untracked-files=no"],
                       _carrier_worktree_path(repo_root, name), check=False)
     if result.returncode != 0:
         return f"status 查询失败：{result.stdout.strip()[:120]}"

@@ -3878,6 +3878,28 @@ class ResidentCarrierFfTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "dirty", result)
         self.assertEqual(_git(self.wt, "rev-parse", "HEAD").stdout.strip(), self.old_head)
 
+    def test_未跟踪件不算脏_不得挡住ff(self):
+        """🔴 反例锁死 2026-08-24 首次实跑撞到的真缺陷：`--porcelain=v1` 缺省
+        **连未跟踪件一起报**，而「脏」这一关判的是**已跟踪文件**。当时执行体里
+        那个唯一的未跟踪 wrapper 把 ff 整个挡住了——**文档字符串说的和命令做的
+        是两回事，而两者都「看起来很确定」。**"""
+        self._advance_master("5-平台底座/wecom-aibot-service/d.py")
+        (self.wt / "未跟踪件.ps1").write_text("我不该挡住 ff\n", encoding="utf-8")
+        result = sweep._ff_carrier(self.repo, self._carrier())
+        self.assertEqual(result["outcome"], "ffed", result)
+        self.assertTrue((self.wt / "未跟踪件.ps1").exists(), "ff 不该删掉未跟踪件")
+
+    def test_ignored件同样不算脏(self):
+        self._advance_master("5-平台底座/wecom-aibot-service/e.py")
+        (self.repo / ".gitignore").write_text("reports/\n", encoding="utf-8")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-qm", "add gitignore")
+        (self.wt / "reports").mkdir(exist_ok=True)
+        (self.wt / "reports" / "x.json").write_text("{}\n", encoding="utf-8")
+        result = sweep._ff_carrier(self.repo, self._carrier())
+        self.assertEqual(result["outcome"], "ffed", result)
+        self.assertTrue((self.wt / "reports" / "x.json").exists(), "ff 不该动 ignored 内容")
+
     def test_未注册或HEAD无效一律unknown(self):
         self.assertEqual(
             sweep._ff_carrier(self.repo, {"name": "x", "registered": False, "head": None})["outcome"],
