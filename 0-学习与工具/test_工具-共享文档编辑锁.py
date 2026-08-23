@@ -31,6 +31,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -1098,19 +1099,33 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
 
         self.assertNotEqual(self._release(who="A"), 0)
 
-    def test_new_batch_without_declaring_queue_file_itself_blocks_release(self):
+    def test_new_batch_without_declaring_queue_file_itself_no_longer_blocks(self):
+        """校验②「§二 新增批次行的文件清单须含队列文件自身路径」**已于
+        2026-08-23 退休**（协议〇.9 措施 B 一进一出，openspec 变更包
+        `editlock-chokepoint-six-fixes`）。本用例**是就地改判、不是删除**——
+        留一条会跑的用例，比一个消失的用例更能让下一位读者知道这里发生过
+        什么：② 曾经存在、为什么退、退了之后这条路径的行为是什么。
+
+        退休依据：② 是个**代理判据**（"每条新批次行都得把队列文件写进自己
+        的清单"），而同批新增的 ⑹ 直接度量它真正想保证的那件事——"全部脏
+        文件都须被某个待处理 §二 批次覆盖"，覆盖面严格更大。② 残余的额外
+        严格性（拒绝"新批次行只列代码文件、而队列文件已被另一条既有待处理
+        批次覆盖"）拦的是一个不存在的问题。
+
+        ⚠️ **代价如实记在这里**：② 没有逃生阀，⑹ 有（`登记豁免：`）⇒ 写了
+        豁免的 session 同时也不再受 ② 约束。这是一次实质放松。
+        """
         self.assertEqual(self._acquire(who="A"), 0)
         self._write_queue(section_two_rows=(
-            "| B-TEST | `某个文件.md` | `docs(test): 测试` | 待处理 |\n"
+            "| B-TEST | `docs/某个文件.md` | `docs(test): 测试` | 待处理 |\n"
         ))
 
-        result = self._release(who="A")
-        self.assertNotEqual(result, 0)
+        self.assertEqual(self._release(who="A"), 0)
 
     def test_new_batch_declaring_queue_file_itself_passes(self):
         self.assertEqual(self._acquire(who="A"), 0)
         self._write_queue(section_two_rows=(
-            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |\n"
+            "| B-TEST | `docs/某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |\n"
         ))
 
         self.assertEqual(self._release(who="A"), 0)
@@ -1483,7 +1498,7 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         "状态列模糊"、每轮跳过并重复告警——须在写入那一刻就拦下。"""
         self.assertEqual(self._acquire(who="A"), 0)
         self._write_queue(section_two_rows=(
-            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
+            "| B-TEST | `docs/某个文件.md`、`queue.md` | `docs(test): 测试` | "
             "本session直接commit+push |\n"
         ))
 
@@ -1493,7 +1508,7 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
     def test_new_batch_pending_status_passes(self):
         self.assertEqual(self._acquire(who="A"), 0)
         self._write_queue(section_two_rows=(
-            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |\n"
+            "| B-TEST | `docs/某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |\n"
         ))
 
         self.assertEqual(self._release(who="A"), 0)
@@ -1505,13 +1520,13 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         这一合法路径（与 F1 用例集的"真正新增"场景区分开，见
         `test_new_batch_status_starting_with_check_mark_blocks_release`）。"""
         self._write_queue(section_two_rows=(
-            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |\n"
+            "| B-TEST | `docs/某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |\n"
         ))
         self.assertEqual(self._acquire(who="A"), 0)
         text = self.target_path.read_text(encoding="utf-8")
         text = text.replace(
-            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |",
-            "| B-TEST | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
+            "| B-TEST | `docs/某个文件.md`、`queue.md` | `docs(test): 测试` | 待处理 |",
+            "| B-TEST | `docs/某个文件.md`、`queue.md` | `docs(test): 测试` | "
             "✅ 已完成（CC 直接提交，未走 sweep） |",
         )
         self.target_path.write_text(text, encoding="utf-8")
@@ -1533,7 +1548,7 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         """⑤只对本次持锁期间新增/修改的行生效——历史遗留的模糊状态行（如
         #247①所述、修复前留存的旧行）不因本次持锁而被追溯拦截。"""
         self._write_queue(section_two_rows=(
-            "| B-OLD | `某个文件.md`、`queue.md` | `docs(old): 历史遗留` | "
+            "| B-OLD | `docs/某个文件.md`、`queue.md` | `docs(old): 历史遗留` | "
             "本session直接commit+push |\n"
         ))
         self.assertEqual(self._acquire(who="A"), 0)
@@ -1612,7 +1627,7 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         已处理、内容石沉大海。"""
         self.assertEqual(self._acquire(who="A"), 0)
         self._write_queue(section_two_rows=(
-            "| B-NEW | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
+            "| B-NEW | `docs/某个文件.md`、`queue.md` | `docs(test): 测试` | "
             "✅ 已完成（新增批次直接写终态） |\n"
         ))
 
@@ -1640,7 +1655,7 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
     def test_section_two_check_mark_not_leading_blocks_release(self):
         self.assertEqual(self._acquire(who="A"), 0)
         self._write_queue(section_two_rows=(
-            "| B-NEW | `某个文件.md`、`queue.md` | `docs(test): 测试` | "
+            "| B-NEW | `docs/某个文件.md`、`queue.md` | `docs(test): 测试` | "
             "待处理。其中一步已 ✅ 完成 |\n"
         ))
 
@@ -2157,11 +2172,11 @@ class AppendRowTests(unittest.TestCase):
     def test_append_to_empty_section_two(self):
         result = self._append(
             "--section", "二",
-            "--cell", "B-测试批次", "--cell", "`文件.md`", "--cell", "说明", "--cell", "待处理",
+            "--cell", "B-测试批次", "--cell", "`docs/文件.md`", "--cell", "说明", "--cell", "待处理",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         text = self.target.read_text(encoding="utf-8")
-        self.assertIn("| B-测试批次 | `文件.md` | 说明 | 待处理 |", text)
+        self.assertIn("| B-测试批次 | `docs/文件.md` | 说明 | 待处理 |", text)
 
     def test_bare_pipe_rejected(self):
         before = self.target.read_text(encoding="utf-8")
@@ -3240,6 +3255,531 @@ class ClaudeProgressOpenItemTests(unittest.TestCase):
         system_target` 的既有教训）。"""
         self.assertTrue(self.module._is_claude_progress_target(str(self.target_path)))
         self.assertFalse(self.module._is_claude_progress_target("别的共享文件.md"))
+
+# ═══════════════════════════════════════════════════════════════════════
+# 队列 §一 #351 咽喉六修（openspec 变更包 `editlock-chokepoint-six-fixes`，
+# 2026-08-23）。每一项都配**反例单测**——判据说不该拦的，要有用例证明它
+# 真的不拦；否则只测了"拦得住"，等于没测误报。
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class AppendRowOwnershipTests(unittest.TestCase):
+    """⑴ `append-row` 锁归属校验。
+
+    成因（2026-08-18 真实事故，12 分钟内两次）：`acquire`／`append-row`／
+    `release` 打包成一条命令、中间不查退出码——`acquire` **已被正确拒绝**
+    （锁在别人手上），脚本照跑照写，在他人持锁期间写入两次。**那次调用
+    根本没有 `--who` 可比**，所以"只在 `--who` 不符时拒绝"拦不住它。
+    """
+
+    SECTION_TWO_HEADER = (
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        self.target = str(self.root / "假想队列.md")
+        (self.root / "假想队列.md").write_text(
+            "## 二、待 commit 批次\n\n" + self.SECTION_TWO_HEADER, encoding="utf-8",
+        )
+        self.lock_path = Path(self.target + ".editlock")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_lock(self, who: str, minutes_ago: float) -> None:
+        held_since = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        self.lock_path.write_text(
+            json.dumps({"who": who, "note": "在办", "held_since": held_since.isoformat()},
+                       ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def _append(self, *extra: str) -> subprocess.CompletedProcess:
+        return run("--file", self.target, "append-row", "--section", "二",
+                   "--cell", "B-0823_1_测试", "--cell", "`docs/x.md`",
+                   "--cell", "说明", "--cell", "待处理", *extra)
+
+    def test_other_holds_fresh_lock_and_no_who_refuses(self):
+        self._write_lock("A", minutes_ago=1)
+        result = self._append()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("未传 --who", result.stdout)
+        self.assertNotIn("B-0823_1_测试", Path(self.target).read_text(encoding="utf-8"))
+
+    def test_other_holds_fresh_lock_and_who_mismatch_refuses(self):
+        self._write_lock("A", minutes_ago=1)
+        result = self._append("--who", "B")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("与你传入的「B」不同", result.stdout)
+        self.assertNotIn("B-0823_1_测试", Path(self.target).read_text(encoding="utf-8"))
+
+    def test_who_matches_holder_writes(self):
+        self._write_lock("A", minutes_ago=1)
+        result = self._append("--who", "A")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("B-0823_1_测试", Path(self.target).read_text(encoding="utf-8"))
+
+    def test_stale_lock_equals_no_lock(self):
+        """反例：陈旧锁等价于无锁——与 `acquire` 的既有接管口径一致，
+        不因本项变成"陈旧锁也把人挡在门外"。"""
+        self._write_lock("A", minutes_ago=31)  # > STALE_MINUTES
+        result = self._append()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("无锁写入", result.stdout)
+
+    def test_no_lock_writes_with_notice_not_blocked(self):
+        """🔴 **本项刻意不阻断无锁写入**——协议〇.7 是协作性质，opener §〇.7
+        明文"手写整行仍是允许的"。把 `append-row` 变成"必须先持锁"属改变
+        全项目口径，须另走 openspec。**本项要修的是「锁归属不校验」，不是
+        「无锁写入」。**"""
+        result = self._append()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("无锁写入", result.stdout)
+
+
+class ArityBarePipeDiagnosticsTests(unittest.TestCase):
+    """⑵-a 裸竖线诊断被 arity 遮蔽。
+
+    #351 行内自带的证伪命令已跑，实测 `True`——`len(cells) != expected` 的
+    arity 检查确实排在裸竖线检查之前且失败即 raise，故裸竖线最高频的形态
+    （漏写 `--cell` 分隔符）**必然**先触发 arity、裸竖线检查永不执行。
+    """
+
+    def setUp(self):
+        self.m = _load_module()
+
+    def test_arity_failure_merges_bare_pipe_diagnosis_and_gives_command(self):
+        with self.assertRaises(self.m.AppendRowFailedError) as ctx:
+            self.m._build_append_row_line("二", None, ["B-x", "`a.md` | 说明文字", "待处理"])
+        msg = str(ctx.exception)
+        self.assertIn("收到 3 个", msg)                 # 原 arity 诊断仍在
+        self.assertIn("第 2 个 --cell 内含裸竖线", msg)   # 合并进来的第二条
+        self.assertIn("漏写了 `--cell` 分隔符", msg)      # 指向真因
+        self.assertIn("append-row --section 二", msg)    # 修正后的命令行
+        self.assertIn('--cell "说明文字"', msg)
+
+    def test_arity_failure_without_bare_pipe_stays_quiet(self):
+        """反例：纯数数问题不添噪音——不该让每一次列数写错都收到一段
+        关于裸竖线的长篇解释。"""
+        with self.assertRaises(self.m.AppendRowFailedError) as ctx:
+            self.m._build_append_row_line("二", None, ["a", "b"])
+        msg = str(ctx.exception)
+        self.assertIn("收到 2 个", msg)
+        self.assertNotIn("裸竖线", msg)
+
+    def test_unrecoverable_split_gives_no_command_line(self):
+        """反例：恢复后数量仍不符 ⇒ **不猜命令行**。宁可少给，不给一条错的
+        ——一条看起来可以直接复制、实则是错的命令行，比没有命令行更糟。"""
+        with self.assertRaises(self.m.AppendRowFailedError) as ctx:
+            self.m._build_append_row_line("二", None, ["a|b|c|d|e", "g"])
+        msg = str(ctx.exception)
+        self.assertIn("裸竖线", msg)
+        self.assertIn("无法可靠恢复原意", msg)
+        self.assertNotIn("append-row --section", msg)
+
+    def test_section_one_recovered_command_carries_number(self):
+        with self.assertRaises(self.m.AppendRowFailedError) as ctx:
+            self.m._build_append_row_line(
+                "一", "352", ["任务", "CC", "无", "无 | [S:open][D:机] 待领", "无", "2026-08-23"],
+            )
+        msg = str(ctx.exception)
+        self.assertIn("--number 352", msg)
+
+
+class FileListPathFormatTests(unittest.TestCase):
+    """⑶ §二「文件清单」路径格式。
+
+    判据只认**形态**、不认存在性（裸文件名那一支除外）。实测定标见变更包
+    design.md §1：加一条存在性校验会让 98 个合法的范围性速记变成误报。
+    """
+
+    def setUp(self):
+        self.m = _load_module()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        (self.root / "CLAUDE.md").write_text("根文件", encoding="utf-8")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _violations(self, file_list: str, status: str = "待处理"):
+        return self.m._file_list_path_violations(
+            ["B-TEST", file_list, "msg", status], self.root,
+        )
+
+    def test_bare_filename_not_at_repo_root_rejected(self):
+        self.assertTrue(self._violations("`工具-落库sweep.py`"))
+
+    def test_bare_filename_that_is_a_root_file_passes(self):
+        """反例：根目录文件的裸文件名**本身就是**合法的仓库根相对路径。
+        一刀切拒绝会误伤根 `CLAUDE.md`／`.gitignore`。"""
+        self.assertEqual(self._violations("`CLAUDE.md`"), [])
+
+    def test_absolute_path_rejected(self):
+        self.assertTrue(self._violations("`C:\\Users\\x\\SKILL.md`"))
+
+    def test_backslash_separator_rejected(self):
+        self.assertTrue(self._violations("`Claude\\Scheduled\\x\\SKILL.md`"))
+
+    def test_dot_prefix_rejected(self):
+        self.assertTrue(self._violations("`./0-学习与工具/x.md`"))
+
+    def test_wildcard_repo_relative_path_passes(self):
+        """反例：合法的范围性速记不做存在性校验。加了它，实测 98 个这类
+        片段会全部变成误报，而逃生阀一旦常规化，门禁就废了。"""
+        self.assertEqual(self._violations("`X/tests/test_*.py`"), [])
+        self.assertEqual(self._violations("`openspec/changes/x/{proposal,design}.md`"), [])
+
+    def test_non_path_fragments_untouched(self):
+        """反例：判据刻意**不把"含斜杠"当路径特征**——`采购/财务/质量` 这类
+        并列写法在队列里极常见，按"含斜杠"判会把它们全拖进来。"""
+        self.assertEqual(self._violations("`--force-mechanism-wip`"), [])
+        self.assertEqual(self._violations("`采购/财务/质量`"), [])
+        self.assertEqual(self._violations("`queue_table.iter_queue_paths()`"), [])
+
+    def test_preregistered_row_is_exempt(self):
+        """反例：预登记批次豁免——`queue-claim-time-preregistration` 明文允许
+        其文件清单为目录前缀或范围性描述。两条 spec 各守一段生命周期；该行
+        走到"收工时精确化"会被重新触碰，届时 ⑶ 自然接管。"""
+        status = self.m.PREREGISTERED_STATUS_PREFIX + "，收工时精确化）"
+        self.assertEqual(self._violations("`工具-落库sweep.py`", status=status), [])
+
+    def test_directory_prefix_form_is_path_like(self):
+        self.assertTrue(self.m._fragment_is_path_like("4-数字员工/采购部/"))
+        self.assertEqual(self._violations("`4-数字员工/采购部/`"), [])
+
+
+class GenderPronounLintTests(unittest.TestCase):
+    """⑷ 人的属性（性别代词）。
+
+    判据比 #351 原文（"同一行内同时出现"）**收窄**了——实测整行判据命中
+    65 行、25 字窗口 18 行，而残余的绝大多数是**引用规则条文本身**的行。
+    收窄依据与实测曲线见变更包 design.md §1。
+    """
+
+    def setUp(self):
+        self.m = _load_module()
+
+    def _v(self, line: str):
+        return self.m._gender_pronoun_violations("一", ["351", line], line)
+
+    def test_male_name_followed_by_she_violates(self):
+        self.assertTrue(self._v("姚祖怡今天回件了，她说答交口径要改"))
+
+    def test_female_name_followed_by_he_violates(self):
+        self.assertTrue(self._v("唐燕萍圈定了这条口径，他还补了一句"))
+
+    def test_qita_does_not_false_positive(self):
+        """🔴 **`其他` 在队列里极高频，不排除会把真报淹掉**（#351 ⑷ 行内
+        已用红字点名这一条）。"""
+        self.assertEqual(self._v("唐燕萍圈定了这条口径，其他几项待定"), [])
+        self.assertEqual(self._v("陈忱回件三点全答，其它两项并入"), [])
+        self.assertEqual(self._v("陈忱与他们约了微会"), [])
+
+    def test_multiple_people_in_one_row_is_legal(self):
+        """反例：姓名与代词之间隔着异性名字 ⇒ 代词指中间那个人，合法。
+        判据复刻 2026-08-21 那次 244 处追改所用的脚本口径。"""
+        self.assertEqual(self._v("姚祖怡和唐燕萍都回了件，她补了一条税务口径"), [])
+
+    def test_pronoun_beyond_window_not_flagged(self):
+        far = "姚祖怡" + "补充说明" * 12 + "她"
+        self.assertEqual(self._v(far), [])
+
+    def test_in_row_waiver_passes(self):
+        line = "姚祖怡这一行历史正文写作她（性别豁免：历史记录不追改）"
+        self.assertEqual(self._v(line), [])
+
+    def test_roster_stays_in_sync_with_root_claude_md(self):
+        """🔴 **名录再扩而常量没跟，这条用例会当场变红。**
+
+        方向是「§1 ⊆ 常量」而不是「＝」，刻意如此：真正要抓的失效形态是
+        *名录扩了而常量没跟*，用 ⊆ 即可抓住；要求相等则等于要求 `CLAUDE.md`
+        写成机器可解析的格式，那是对一份**人读的文件**提错要求（实测 §1 里
+        `邵培申` 写作「`邵培申` ＝ Shao Peishen 本人」，没有「（男）」标注）。
+
+        **为什么不在运行时解析 CLAUDE.md**：§1 是每周都在变的散文，措辞一变
+        解析就抽不到人名，判据随即变成**恒真、零信息量，而没有任何东西会
+        报错**——用一个失效不产生信号的实现，去做一条专为根治"错误不产生
+        信号"而立的校验，是原地打转。
+        """
+        claude_md = SCRIPT.resolve().parents[1] / "CLAUDE.md"
+        text = claude_md.read_text(encoding="utf-8")
+        start, end = text.index("## 1."), text.index("## 2.")
+        declared = {}
+        for match in re.finditer(r"([\u4e00-\u9fa5]{2,4})（(男|女)[^）]*）", text[start:end]):
+            declared.setdefault(match.group(1), set()).add(match.group(2))
+
+        self.assertGreaterEqual(
+            len(declared), 15,
+            "从 CLAUDE.md §1 只抽到极少的人名——多半是那一节的写法变了、"
+            "本用例的抽取正则已失效。**这时候它是恒真的，等于没有校验**，"
+            "请先修抽取，不要直接放宽断言。",
+        )
+        for name, genders in sorted(declared.items()):
+            self.assertIn(
+                name, self.m.PERSON_GENDER_ROSTER,
+                f"根 CLAUDE.md §1 里的「{name}」不在 PERSON_GENDER_ROSTER 里"
+                f"——名录扩了，常量没跟。",
+            )
+            self.assertEqual(
+                genders, {self.m.PERSON_GENDER_ROSTER[name]},
+                f"「{name}」在 CLAUDE.md §1 与常量里的性别不一致。",
+            )
+
+
+class BatchNumberCollisionTests(unittest.TestCase):
+    """⑸ §二 批次号前缀查重。
+
+    立行时以为是"同族第三次"，**实测现存 174 个前缀中 27 个撞号（15.5%）**。
+    """
+
+    HEADER = ("| 批次 | 文件清单 | 建议 message | 状态 |\n"
+              "|------|---------|--------------|------|\n")
+
+    def setUp(self):
+        self.m = _load_module()
+
+    def _texts(self, *rows: str) -> dict:
+        body = "## 二、待 commit 批次\n\n" + self.HEADER + "".join(rows)
+        return {"queue-mech.md": body}
+
+    def test_same_prefix_rejected(self):
+        texts = self._texts("| B-0823_5_别的事 | `a/b.md` | msg | 待处理 |\n")
+        problem = self.m._batch_prefix_collision("B-0823_5_我的事", texts)
+        self.assertIsNotNone(problem)
+        self.assertIn("B-0823_5_别的事", problem)
+
+    def test_suggestion_is_next_numeric_serial(self):
+        texts = self._texts(
+            "| B-0823_5_甲 | `a/b.md` | msg | 待处理 |\n"
+            "| B-0823_9_乙 | `a/b.md` | msg | ✅ 已处理 |\n"
+        )
+        problem = self.m._batch_prefix_collision("B-0823_5_丙", texts)
+        self.assertIn("B-0823_10", problem)
+
+    def test_cross_physical_file_collision_caught(self):
+        """批次号在两份物理队列文件间**共用同一命名空间**——2026-08-20 那两次
+        真实撞号里，`B-0820_11` 与 `B-0820_13` 各是两个不同 session 写的。"""
+        texts = {
+            "queue-mech.md": "## 二、待 commit 批次\n\n" + self.HEADER,
+            "queue-biz.md": ("## 二、待 commit 批次\n\n" + self.HEADER
+                             + "| B-0823_7_业务侧 | `a/b.md` | msg | 待处理 |\n"),
+        }
+        self.assertIsNotNone(self.m._batch_prefix_collision("B-0823_7_机制侧", texts))
+
+    def test_no_collision_passes(self):
+        texts = self._texts("| B-0823_5_别的事 | `a/b.md` | msg | 待处理 |\n")
+        self.assertIsNone(self.m._batch_prefix_collision("B-0823_6_我的事", texts))
+
+    def test_non_conforming_batch_name_not_constrained(self):
+        """反例：不符 `B-MMDD_<第二段>` 形态的批次名不受本项约束——**判据只判
+        前缀字面重复，不解释第二段语义**。实测两种写法并存（`B-0818_18_…`
+        的 18 是当日流水号，`B-0808_309_…` 的 309 是队列行号），不为这件事
+        再造一套命名判据。"""
+        texts = self._texts("| 临时批次 | `a/b.md` | msg | 待处理 |\n")
+        self.assertIsNone(self.m._batch_prefix_collision("临时批次", texts))
+
+
+class RegistrationCompletenessTests(unittest.TestCase):
+    """⑹ release 登记完整性校验（队列 §一 #351 ⑹）。
+
+    用**真实 git 仓库**（`git init` 到临时目录）跑，不用桩——本项的整个价值
+    就在于"机器亲眼看到工作区脏了"，用桩测等于把要验的那一段换掉了。同一
+    惯例见 `EditLockCrossWorktreeTests`（那里用真实 `git worktree add`）。
+
+    ━━━ 🔴 **本项判据与 #351 原文不同，理由必须留在这里** ━━━
+    #351 ⑹ 原文写的是「本次持锁窗口内**新增**的脏文件」（快照差集）。
+    **取证证明那个判据抓不住它自己的立项实证**：`reports/sweep-commit.log`
+    实测 `OP-0822-E` 的六个孤儿文件在 **2026-08-22 12:20 UTC** 那轮 sweep
+    就已全部报为脏，而 E 于 **12:26:16 UTC** 才 acquire——**晚 6 分钟**。
+    按差集口径它们在占锁那一刻已进基线，release 时差集为空、照样放行。
+    ⇒ 判据改为「release 时**全部**脏文件都须被某个待处理批次覆盖」，这不是
+    新造判据——它逐字等同 sweep 孤儿检测已在用的那一条，本项只是把它从
+    "只进日志的事后告警"前移到"有阻断力、且 session 还活着"的时点。
+    acquire 快照**保留但改用途**：只用于归因，见 `test_..._attribution`。
+    """
+
+    HEADER = ("| 批次 | 文件清单 | 建议 message | 状态 |\n"
+              "|------|---------|--------------|------|\n")
+
+    def setUp(self):
+        self.m = _load_module()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        for args in (["init", "-q"],
+                     ["config", "user.email", "t@example.com"],
+                     ["config", "user.name", "t"]):
+            subprocess.run(["git", *args], cwd=self.root, check=True,
+                           capture_output=True, text=True)
+        (self.root / "seed.txt").write_text("seed", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "seed"], cwd=self.root, check=True,
+                       capture_output=True)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _dirty(self, rel: str) -> None:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("脏内容", encoding="utf-8")
+
+    def _queue(self, *rows: str) -> dict:
+        return {"queue-mech.md": "## 二、待 commit 批次\n\n" + self.HEADER + "".join(rows)}
+
+    def _run(self, queue_texts, lock_data=None, waivers=None):
+        return self.m._registration_completeness_violations(
+            queue_texts, lock_data or {}, self.root, waivers or [],
+        )
+
+    # ── 主判据 ────────────────────────────────────────────────────
+    def test_uncovered_dirty_file_rejects(self):
+        self._dirty("1-转型规划/接力件.md")
+        violations = self._run(self._queue())
+        self.assertEqual(len(violations), 1)
+        self.assertIn("1-转型规划/接力件.md", violations[0])
+        self.assertIn("不属于任何待处理 §二 批次", violations[0])
+
+    def test_covered_dirty_file_passes(self):
+        self._dirty("1-转型规划/接力件.md")
+        rows = ("| B-1 | `1-转型规划/接力件.md` | msg | 待处理 |\n",)
+        self.assertEqual(self._run(self._queue(*rows)), [])
+
+    def test_done_batch_does_not_count_as_coverage(self):
+        """已完成批次不会再被 sweep 取活，其清单不构成归属——这正是
+        `OP-0822-E` 那种"以为登记过了"的第二种形态。"""
+        self._dirty("1-转型规划/接力件.md")
+        rows = ("| B-1 | `1-转型规划/接力件.md` | msg | ✅ 已处理 |\n",)
+        self.assertTrue(self._run(self._queue(*rows)))
+
+    def test_preregistered_batch_counts_as_coverage(self):
+        """反例：预登记批次属**待处理**态（涵盖在 `_leading_status_segment`
+        既有口径里），其目录前缀声明构成有效覆盖。"""
+        self._dirty("4-数字员工/采购部/SC8/x.py")
+        rows = (f"| B-1 | `4-数字员工/采购部/SC8/x.py` | msg | "
+                f"{self.m.PREREGISTERED_STATUS_PREFIX}，收工时精确化） |\n",)
+        self.assertEqual(self._run(self._queue(*rows)), [])
+
+    def test_suffix_matching_matches_sweep(self):
+        """覆盖判定逐字复刻 sweep 的后缀匹配（`p == f` 或 `p.endswith("/" + f)`）
+        ——**不新造判据**。"""
+        self._dirty("1-转型规划/接力件.md")
+        rows = ("| B-1 | `接力件.md` | msg | 待处理 |\n",)
+        self.assertEqual(self._run(self._queue(*rows)), [])
+
+    def test_editlock_sidecars_not_required_to_register(self):
+        """反例：锁自身的伴生文件不该被要求登记。**这一条是从 #322 学来的**
+        ——那次给编辑锁加"删不掉就改名"退路，改名凭空造出一种没人回头看的
+        文件形态（`*.editlock.mutex.stale`），被 sweep 判为孤儿、企微群连响
+        17.1 小时。"""
+        self._dirty("queue-mech.md.editlock")
+        self._dirty("queue-mech.md.editlock.snapshot")
+        self.assertEqual(self._run(self._queue()), [])
+
+    # ── 归因（acquire 快照的新用途） ──────────────────────────────
+    def test_attribution_splits_by_acquire_snapshot(self):
+        """并发场景（#351 边界一）：占锁前就已脏的文件**仍然被要求登记**，
+        但在提示里单独成组并注明"可能来自并发 session"。
+
+        🔴 **差集过滤是让机器替人做一个它做不了的判断**（这脏文件是谁造的），
+        并且默默判成"不是你"；归因提示是把判断交还给人，同时把机器确实知道
+        的那点信息（时间先后）如实给出。
+        """
+        self._dirty("并发方改的.md")            # 占锁前就脏（模拟另一 session）
+        snapshot = self.m._local_git_status_paths(self.root)
+        self._dirty("我改的.md")                 # 占锁后才脏
+        violations = self._run(self._queue(), lock_data={"dirty_at_acquire": snapshot})
+        self.assertEqual(len(violations), 1)
+        text = violations[0]
+        self.assertIn("本次持锁期间新出现", text)
+        self.assertIn("acquire 之前就已经脏（可能来自并发 session）", text)
+        self.assertLess(text.index("我改的.md"), text.index("并发方改的.md"))
+
+    def test_no_snapshot_does_not_guess(self):
+        """反例：锁记录里没有快照时**不臆断**归到哪一组——这类"没有数据就
+        默默按某个默认值处理"正是本项目反复吃亏的形态。"""
+        self._dirty("某文件.md")
+        violations = self._run(self._queue(), lock_data={})
+        self.assertIn("无法判定出现时刻", violations[0])
+
+    # ── fail-closed 与适用前提 ────────────────────────────────────
+    def test_not_a_work_tree_skips_with_notice(self):
+        """反例：**根本不在 git 工作树内** ⇒ "脏文件"这个概念不成立，判据的
+        适用前提不成立，跳过是正确的（且会打印一行明示）。它与"在工作树内
+        但取数失败"是两回事，后者必须 fail-closed，见下一条。"""
+        with tempfile.TemporaryDirectory() as plain:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                violations = self.m._registration_completeness_violations(
+                    self._queue(), {}, Path(plain), [],
+                )
+            self.assertEqual(violations, [])
+            self.assertIn("适用前提不成立", out.getvalue())
+
+    def test_status_failure_is_fail_closed(self):
+        """在工作树内、但 `git status` 拿不到答案 ⇒ **拒绝 release**，不静默
+        放行。本变更同批退休了校验②（一进一出），静默放行会让这道咽喉上
+        什么都不剩。"""
+        self._dirty("某文件.md")
+        with unittest.mock.patch.object(self.m, "_local_git_status_paths", return_value=None):
+            violations = self._run(self._queue())
+        self.assertEqual(len(violations), 1)
+        self.assertIn("fail-closed", violations[0])
+
+    # ── 身份豁免 ──────────────────────────────────────────────────
+    def test_sweep_identity_is_exempt(self):
+        """🔴 **这一条锁死的是 apply 期当场撞出的一次真实断链，不是假想。**
+
+        `工具-落库sweep.py` 在一次持锁窗口内做的事是：`git add` 本批文件 →
+        把该批次行改成 `✅ 已完成` → release → commit。⇒ **release 那一刻
+        工作区必然是脏的**，而它刚把那条批次行标成完成 ⇒ 那条清单已不再是
+        "待处理批次" ⇒ ⑹ **必然判为未覆盖、必然拒绝**。
+
+        **后果不是多一条告警，是全项目停摆**：`_strike_off_rows` 在 `finally`
+        里调 release 且**不看返回码**，被拒 ⇒ 锁保持占用 ⇒ 下一轮 sweep 起跑
+        探锁判定"有人正在编辑"直接跳过 ⇒ 此后每一轮都跳过，而 sweep 是唯一
+        会 commit 队列改动的机制。2026-08-23 由 `test_工具-落库sweep.py::
+        PendingCriteriaIntegrationTests::test_four_status_forms_processed_
+        correctly_end_to_end` 当场撞出，**未进生产**。
+
+        🔑 **教训值得写在这里**：本变更包自己的 239 条单测**全绿**，是跑
+        **邻居工具的测试套**才发现的——一道守卫的影响面不止于它自己那个文件。
+        """
+        self._dirty("1-转型规划/接力件.md")
+        self.assertTrue(self._run(self._queue()))          # 换个身份就该拦
+        self.assertEqual(                                   # sweep 身份放行
+            self._run(self._queue(), lock_data={"who": self.m.SWEEP_LOCK_WHO}), [],
+        )
+
+    # ── 逃生阀 ────────────────────────────────────────────────────
+    def test_waiver_in_note_passes(self):
+        self._dirty("某文件.md")
+        waivers = [f"{self.m.REGISTRATION_WAIVER_MARKER}临时取证脚本，不入库"]
+        self.assertEqual(self._run(self._queue(), waivers=waivers), [])
+
+    def test_waiver_also_covers_status_failure(self):
+        self._dirty("某文件.md")
+        waivers = [f"{self.m.REGISTRATION_WAIVER_MARKER}git 环境异常，已另行处置"]
+        with unittest.mock.patch.object(self.m, "_local_git_status_paths", return_value=None):
+            self.assertEqual(self._run(self._queue(), waivers=waivers), [])
+
+    def test_waiver_only_in_untouched_history_row_does_not_pass(self):
+        """🔴 取材面刻意**不含队列全文**：`登记豁免：` 一旦写进这两份 1.9 MB
+        的文件任何一处，全文匹配就等于把这道门禁**永久关掉，且此后没有任何
+        人会发现**。逃生阀必须一次一用，不能变成一个写一次就长期生效的开关。
+        （与既有 `转态豁免：` 同一收敛方向。）
+
+        本用例把豁免写进队列正文里一条**本次未触碰**的历史行，`waiver_sources`
+        为空 ⇒ 仍应拒绝。
+        """
+        self._dirty("某文件.md")
+        rows = (f"| B-旧 | `x/y.md` | msg | 待处理 "
+                f"{self.m.REGISTRATION_WAIVER_MARKER}历史行里的豁免 |\n",)
+        self.assertTrue(self._run(self._queue(*rows), waivers=[]))
+
 
 if __name__ == "__main__":
     unittest.main()
