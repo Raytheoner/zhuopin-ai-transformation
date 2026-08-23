@@ -599,6 +599,104 @@ STALE_CHANGE_ACK_STATE_REL = "reports/sweep-stale-change-ack.json"
 # 窗口的包维持现状（现有行为不变，向后兼容）。
 OBSERVATION_WINDOW_RE = re.compile(r"预期观察窗口[:：]\s*(\d+(?:\.\d+)?)\s*天")
 
+# ============================================================
+# 队列 §一 #338 子项 A（2026-08-23，OP-0823-G）：必载 `CLAUDE.md` 尺寸／
+# 批次跨度守卫 —— 第 4 类常驻状态告警
+# ============================================================
+# 共同命题（#338）：**必载载体的健康度此前没有任何机器守卫，全靠人事后
+# 发现。** 实测（2026-08-16 memory 体系审核）：根 `CLAUDE.md` 08-09 瘦身
+# 到 84,399 B 后 7 天回涨到 106,353 B（+26%），全程无人察觉。
+#
+# 🔴 **本守卫上线当天预计零告警**（2026-08-23 实测：根 56,002 B、场景最大
+# 40,867 B，均在阈值内；顶部段只有一个批次日期）。而「零告警」正是这类
+# 守卫最危险的状态 —— `OP-0819-F` 的第一句教训是「**一个告警机制建成 9 天、
+# 每天在跑，却从来没有真正发出过一条消息**」。故本守卫**每轮必须回显
+# 「当前值/阈值/差额」，零超限时也不省略**：那行日志是它每天唯一的存在
+# 证明，不是调试输出。
+#
+# 阈值为 2026-08-16 定的经验值，**首月只告警、不调参**（守 #257 先攒样本
+# 纪律）；实现方不得自行调参（#338 预授权①）。
+CLAUDE_MD_ROOT_REL = "CLAUDE.md"
+CLAUDE_MD_SCENE_GLOBS = ("4-数字员工/*/*/CLAUDE.md", "5-平台底座/*/CLAUDE.md")
+CLAUDE_MD_ROOT_BYTE_CAP = 90 * 1024      # 92,160
+CLAUDE_MD_SCENE_BYTE_CAP = 50 * 1024     # 51,200
+CLAUDE_MD_SIZE_STATE_REL = "reports/sweep-claude-md-size-state.json"
+CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS = 24
+# 顶部段解析**委托** lint 那份唯一权威实现，本文件不另写正则：同一个
+# 「顶部段条目」判据，lint 自己的模块注释记着裸正则数出 4 条、区间判据
+# 数出 2 条，而错的那个「看起来很确定」。再写第二套 = 再造一次同样的
+# 漂移，且两套的分歧不会有任何报错。
+CLAUDE_PROGRESS_LINT_REL = "0-学习与工具/工具-CLAUDE进度段lint.py"
+
+# ============================================================
+# 队列 §一 #338 子项 B（2026-08-23，OP-0823-G）：常驻执行体落后守卫 ——
+# 第 5 类常驻状态告警
+# ============================================================
+# 🔴 **为什么既有的 `_announce_resident_service_deployment_hint` 挡不住这
+# 件事**（2026-08-23 实测，数字是本守卫存在的全部理由）：
+#   git rev-list --count 33c5d18..master                     → 305
+#   同上 -- 5-平台底座/wecom-aibot-service zhuopin_platform   →   6
+# **305 个提交里只有 6 个触碰常驻服务运行体** ⇒ 那条事件型提示在四天里
+# 最多响过 6 次，**另外 299 个提交零信号**（其中 161 个触碰队列文件，正是
+# 这三个任务每天读的东西）。
+#
+# ⇒ 两条结论：**⑴ 事件型提示无法承担常驻状态的职责** —— 六句各自都对的
+# 「你该同步了」，加起来也不会变成一句「你现在欠了 305」；**⑵ 判据的覆盖
+# 面错了** —— 执行体是整个仓库的一份 checkout，它落后与否跟本批碰了哪个
+# 目录无关。故本守卫直接量这份 checkout 落后多少，与批次内容无关。
+#
+# 两者并存、互不取代（proposal 已论证）：事件型回答「这一批改动需不需要
+# 部署」，本守卫回答「此刻执行体欠了多少没对齐」。**本次不改动既有那条。**
+RESIDENT_CARRIER_LAG_STATE_REL = "reports/sweep-carrier-lag-state.json"
+RESIDENT_CARRIER_LAG_ALERT_INTERVAL_HOURS = 24
+WORKTREES_DIR_REL = ".claude/worktrees"
+# 🔴🔴 **解法改版（Shao Peishen 2026-08-23 补进 #338 行首，优先级高于原派单
+# 说明）：④ 必须是「持续同步」，不是「检测＋提醒＋人工对齐」。**
+#
+# 被推翻的是本文件作者当天给出的 (c) 档建议。推翻的理由一句话：
+# **检测＋提醒只是把触发人从「自己想起来」换成「被机器提醒」，对齐本身
+# 仍是一次性动作** ⇒ `#68` 的历史会原样重演——08-19 五项验收全过、四天后
+# 落后 305。**根因是「落后是持续过程，约 70 提交/天」，一次性动作治不了
+# 持续过程，无论触发人是谁。**
+#
+# ⇒ **分两级，因为 ff 与重启的风险完全不同**：
+#   ① **ff 每轮做** —— sweep 每小时已在 `_reconcile_with_origin_and_push`
+#      对齐 master，顺带把执行体 worktree 一并 `--ff-only` 对齐是同类低风险
+#      操作。
+#   ② **重启按需、不随 ff 每轮做** —— 只在本轮 ff **真的动了常驻服务代码
+#      路径**时才重启验活，判据**复用 `#87` ⑶⑷ 那套白名单
+#      （`_touches_resident_service`），刻意不另写一套**。
+#
+# 🔴 由此消掉了一个数：原方案里的「落后 ≥100 才告警」阈值**整条作废**。
+# 自动 ff 之后落后恒为 0，「落后多少算该管」这个问题不再需要一个阈值来
+# 回答——**这是本次改版的一个附带收益：一个没人写下来过的经验值，被一个
+# 结构性做法取消了，而不是被另一个经验值取代。**
+#
+# 告警的语义随之从「落后了」改为**「有例外」**：ahead>0 停手／ff 失败／
+# 已 ff 但需重启而自动重启关着。三者都是**人必须介入**的状态。
+
+# ⑵ 重启是有风险动作，**须可一键关闭**（#338 边界⑵）。缺省 **OFF**：
+# 首月只 ff、重启仍走人工确认，攒够样本再放开（同 #257 先攒样本纪律）。
+# 🔴 **读不到即视为 OFF**（fail-safe）：一个「重启生产服务」的开关，
+# 在配置缺失时必须是关的——这与 `_load_webhook_url` 取不到就跳过推送是
+# 同一条取舍，只是代价更高。
+CARRIER_AUTO_RESTART_ENV_KEY = "CARRIER_AUTO_RESTART_ENABLED"
+CARRIER_AUTO_RESTART_TRUE_VALUES = ("1", "true", "yes", "on")
+RESIDENT_CARRIER_REALIGN_SCRIPT_REL = "0-学习与工具/工具-执行体对齐重启.ps1"
+# 执行体名单**从计划任务反查**（Shao Peishen 2026-08-23 拍板 (a)），不硬
+# 编码、不靠仓库内白名单：新增一个指向 worktree 的常驻任务须被自动纳入，
+# 白名单本身就是一个新的人守点，而本包的立意是减少人守点。
+# ⚠️ 这不推翻 `RESIDENT_SERVICE_*` 那组常量注释里「计划任务的真实设置不在
+# 仓库里」（#199）那句：那组服务于「本批路径是否命中服务目录」这个**静态**
+# 判据，本组是**运行时反查**，两者并存，本次不改那组。
+_SCHEDULED_TASK_QUERY_PS = (
+    "$ErrorActionPreference='Stop'; "
+    "Get-ScheduledTask | ForEach-Object { $t = $_.TaskName; foreach ($a in $_.Actions) { "
+    "[pscustomobject]@{ Task = $t; Execute = [string]$a.Execute; "
+    "Arguments = [string]$a.Arguments } } } | ConvertTo-Json -Compress -Depth 3"
+)
+
+
 # 队列 #302：批量派活前状态核对——近期 commit 扫描窗口默认天数。
 STALE_ROW_LOOKBACK_DAYS = 14
 # 副判据在高频改动的文件（如本脚本自身）上天然命中大量 commit——真实
@@ -2613,6 +2711,536 @@ def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: li
     )
 
 
+# ============================================================
+# 队列 §一 #338 子项 A 实现（第 4 类常驻状态告警）
+# ============================================================
+
+def _claude_md_targets(repo_root: Path) -> list[tuple[str, int]]:
+    """返回受检的 `[(相对路径, 字节阈值)]`，按路径排序（正文可复现）。
+
+    🔴 **刻意排除 `.claude/worktrees/**` 下的副本**：那 13 份是历史版本的
+    尺寸，对它们告警既无意义又会天天响。两个 glob 本身够不到 worktree 目录
+    （它在 `.claude/` 下），这道排除是**显式防御**——万一将来 glob 被放宽，
+    这里会挡住，而不是静默多出 13 个告警对象。
+    """
+    targets: list[tuple[str, int]] = []
+    root = repo_root / CLAUDE_MD_ROOT_REL
+    if root.is_file():
+        targets.append((CLAUDE_MD_ROOT_REL, CLAUDE_MD_ROOT_BYTE_CAP))
+    seen: set[str] = set()
+    for pattern in CLAUDE_MD_SCENE_GLOBS:
+        for path in sorted(repo_root.glob(pattern)):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(repo_root).as_posix()
+            if rel.startswith(f"{WORKTREES_DIR_REL}/") or f"/{WORKTREES_DIR_REL}/" in rel:
+                continue
+            if rel in seen:
+                continue
+            seen.add(rel)
+            targets.append((rel, CLAUDE_MD_SCENE_BYTE_CAP))
+    return targets
+
+
+def _load_progress_lint(repo_root: Path):
+    """动态导入 `工具-CLAUDE进度段lint.py`（文件名含中文与连字符，不是合法
+    Python 标识符，只能走 `spec_from_file_location`）。
+
+    返回 `(module, None)` 或 `(None, 失败原因)`——**失败一律显式返回原因，
+    绝不吞成「顶部段合规」**（CLAUDE.md §5「工具静默回退」：当一个只读操作
+    返回了「太干净」的结果，先问它是不是根本没读到我以为的那个对象）。
+    """
+    script = repo_root / CLAUDE_PROGRESS_LINT_REL
+    if not script.is_file():
+        return None, f"未找到 {CLAUDE_PROGRESS_LINT_REL}"
+    module_name = "_sweep_claude_progress_lint"
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(module_name, script)
+        if spec is None or spec.loader is None:
+            return None, "spec_from_file_location 返回空"
+        module = importlib.util.module_from_spec(spec)
+        # 🔴 **必须先注册进 sys.modules 再 exec_module**，不是可选的洁癖：
+        # lint 模块里有 `@dataclass`，而 CPython 的 `dataclasses._is_type`
+        # 执行 `sys.modules.get(cls.__module__).__dict__` —— 这一句**没有
+        # 空值保护**。模块未注册时 `.get()` 返回 None，当场
+        # `AttributeError: 'NoneType' object has no attribute '__dict__'`。
+        # 实测于 Python 3.14.4（2026-08-23，本机）。
+        # ⚠️ 这一坑值得记住的地方在于**它是被本函数的「不静默放过」设计捞
+        # 出来的**：若当初把导入失败写成「视同未超限」，顶部段批次跨度这半
+        # 条判据会从上线第一天起就永久失效，而日志一切正常、无人会发现。
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(module_name, None)
+            raise
+    except Exception as exc:  # noqa: BLE001 —— 导入失败不应影响本轮退出码
+        return None, f"导入失败：{type(exc).__name__}: {exc}"
+    return module, None
+
+
+def _root_progress_batch_dates(repo_root: Path) -> tuple[list[str] | None, str | None]:
+    """返回根 `CLAUDE.md` 顶部进度段内出现的**批次日期**去重列表。
+
+    一条条目的批次日期 = 其正文里**第一个** `（YYYY-MM-DD` 形态的匹配
+    （条目自身的批次标注紧跟标题，后续日期是正文引用的其它时点）。
+    """
+    lint, reason = _load_progress_lint(repo_root)
+    if lint is None:
+        return None, reason
+    root = repo_root / CLAUDE_MD_ROOT_REL
+    try:
+        text = root.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, f"读取根 {CLAUDE_MD_ROOT_REL} 失败：{exc}"
+    try:
+        parsed = lint.parse_structure_a(text)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"顶部段解析失败：{type(exc).__name__}: {exc}"
+    if parsed is None:
+        return None, "顶部段未命中结构 A（缺 `> **当前进度**` 头行）"
+    dates: list[str] = []
+    for entry in parsed.entries:
+        match = lint.ENTRY_DATE_RE.search(entry.body)
+        if match is None:
+            continue
+        # ENTRY_DATE_RE 连左括号一起匹配（`[（(]20\d\d-\d\d-\d\d`），去掉首字符。
+        date = match.group(0)[1:]
+        if date not in dates:
+            dates.append(date)
+    return sorted(dates), None
+
+
+def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
+    """第 4 类常驻状态告警：必载 `CLAUDE.md` 尺寸/批次跨度超限。
+
+    🔴 **回显不是可选项**：本函数无论是否有超限项，都逐项打印「当前值/
+    阈值/差额」。理由见常量段注释——上线当天预计零告警，若连回显都没有，
+    这个守卫就与「建成 9 天从未发出过一条消息」那个反面教材无法区分。
+    """
+    breaches: dict[str, str] = {}
+    log.append("📏 必载 CLAUDE.md 巡检（每轮回显，零超限时亦不省略）：")
+    for rel, cap in _claude_md_targets(repo_root):
+        try:
+            size = (repo_root / rel).stat().st_size
+        except OSError as exc:
+            log.append(f"    ⚠ {rel}：尺寸未取到（{exc}）——**不据此判为合规**")
+            continue
+        if size > cap:
+            log.append(f"    🔴 {rel}：{size:,} B / 阈值 {cap:,} B（超出 {size - cap:,} B）")
+            breaches[rel] = f"尺寸 {size:,} B，超阈值 {cap:,} B 共 {size - cap:,} B"
+        else:
+            log.append(f"    · {rel}：{size:,} B / 阈值 {cap:,} B（尚余 {cap - size:,} B）")
+
+    dates, reason = _root_progress_batch_dates(repo_root)
+    if dates is None:
+        log.append(f"    ⚠ 顶部段批次跨度判据不可用：{reason}——**不据此判为合规**")
+    else:
+        shown = "、".join(dates) if dates else "无"
+        log.append(f"    · {CLAUDE_MD_ROOT_REL} 顶部段批次日期：{len(dates)} 个（{shown}）/ 阈值 1 个")
+        if len(dates) > 1:
+            note = f"顶部进度段跨 {len(dates)} 个批次日期（{shown}）"
+            prior = breaches.get(CLAUDE_MD_ROOT_REL)
+            breaches[CLAUDE_MD_ROOT_REL] = f"{prior}；{note}" if prior else note
+
+    def render_alert(keys):
+        lines = "\n".join(f"- `{key}`：{breaches[key]}" for key in sorted(keys))
+        return (
+            f"📏 落库sweep：{len(keys)} 份必载 `CLAUDE.md` 超限"
+            "（会话开场必载，越大越挤占每个新 session 的注意力预算）：\n"
+            f"{lines}\n"
+            "⇒ 处置：原文原样迁 `进度编年-CHANGELOG.md`，迁出前守 J1"
+            "（须先有承接载体：队列行号，或具名文件＋章节号）"
+        )
+
+    def render_resolved(keys):
+        lines = "\n".join(f"- `{key}`（已回落至阈值内）" for key in sorted(keys))
+        return f"✅ 落库sweep：{len(keys)} 份此前告警过的 `CLAUDE.md` 已回落：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "必载 CLAUDE.md 超限", CLAUDE_MD_SIZE_STATE_REL,
+        # 🔴 key = 文件相对路径，**刻意不含尺寸数值**：把会变的数放进 key，
+        # 每涨一个字节就是一个新 key、天天被当成新问题重新告警，且旧 key
+        # 会被判为「已解除」——常驻状态与事件的分界线就在这里。
+        set(breaches), CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS,
+        render_alert, render_resolved, log,
+    )
+
+
+# ============================================================
+# 队列 §一 #338 子项 B 实现（第 5 类常驻状态告警）
+# ============================================================
+
+def _normalize_path_text(text: str) -> str:
+    """路径文本归一：反斜杠转正斜杠 + 去尾斜杠。**不做大小写折叠**——
+    折叠后再切出来的 worktree 名会全变小写，与真实目录名不符。大小写
+    不敏感的比较由调用方对**副本**做，切名一律从原文切。"""
+    return text.replace("\\", "/").rstrip("/")
+
+
+def _query_scheduled_task_actions() -> tuple[list[dict] | None, str | None]:
+    """查本机计划任务的 Action 清单，返回 `([{task, execute, arguments}], None)`。
+
+    🔴 **查询失败一律返回 `(None, 原因)`，绝不返回空列表**——空列表的含义
+    是「查询成功且本机确实没有任何计划任务」，与「查不到」是两件事。把后者
+    冒充成前者，就会得出「零执行体、一切正常」这个看起来完全正常的错误
+    结论（同 CLAUDE.md §5「工具静默回退」那一族：**错误不产生任何信号**）。
+    """
+    last_reason = "未尝试任何 PowerShell 宿主"
+    for exe in ("powershell.exe", "pwsh"):
+        try:
+            result = subprocess.run(
+                [exe, "-NoProfile", "-NonInteractive", "-Command", _SCHEDULED_TASK_QUERY_PS],
+                capture_output=True, text=True, encoding="utf-8", timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            last_reason = f"{exe} 调用失败：{type(exc).__name__}: {exc}"
+            continue
+        if result.returncode != 0:
+            detail = (result.stderr or "").strip().splitlines()
+            last_reason = f"{exe} 退出码 {result.returncode}：{detail[0] if detail else '无 stderr'}"
+            continue
+        raw = (result.stdout or "").strip()
+        if not raw:
+            # 查询成功但本机零计划任务——这是合法的「成功且为空」。
+            return [], None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            last_reason = f"{exe} 输出非 JSON：{exc}"
+            continue
+        if isinstance(data, dict):
+            data = [data]
+        if not isinstance(data, list):
+            last_reason = f"{exe} 输出结构非预期：{type(data).__name__}"
+            continue
+        actions = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            actions.append({
+                "task": str(item.get("Task") or ""),
+                "execute": str(item.get("Execute") or ""),
+                "arguments": str(item.get("Arguments") or ""),
+            })
+        return actions, None
+    return None, last_reason
+
+
+def _registered_worktrees(repo_root: Path) -> list[dict]:
+    """解析 `git worktree list --porcelain` 为 `[{path, head}]`。
+
+    🔴 判 worktree 身份**只认注册项**，不看 `git -C <目录>` 的输出——#98
+    实测：对非注册目录跑 `git -C`，git 会静默向上找到主工作区的 `.git` 并
+    返回**主工作区**的状态（当时返回「分支=master／落后 0／脏 0」，照抄就
+    会把一个该清的空壳记成「干净、无需处理」）。
+    """
+    result = _run_git(["worktree", "list", "--porcelain"], repo_root, check=False)
+    entries: list[dict] = []
+    current: dict = {}
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            if current:
+                entries.append(current)
+            current = {"path": _normalize_path_text(line[len("worktree "):].strip()), "head": None}
+        elif line.startswith("HEAD ") and current:
+            current["head"] = line[len("HEAD "):].strip()
+    if current:
+        entries.append(current)
+    return entries
+
+
+def _master_ref(repo_root: Path) -> str | None:
+    """对齐目标 ref：优先本地 `master`（ff 的目标就是它），退 `origin/master`。"""
+    for ref in ("master", "origin/master"):
+        result = _run_git(["rev-parse", "--verify", "--quiet", ref], repo_root, check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return ref
+    return None
+
+
+def _rev_count(repo_root: Path, rev_range: str, pathspec: list[str]) -> int | None:
+    """`git rev-list --count <range> [-- <pathspec>]`；失败返回 None（不返回 0）。"""
+    args = ["rev-list", "--count", rev_range]
+    if pathspec:
+        args.extend(["--", *pathspec])
+    result = _run_git(args, repo_root, check=False)
+    if result.returncode != 0:
+        return None
+    text = result.stdout.strip()
+    return int(text) if text.isdigit() else None
+
+
+def _carrier_lag_counts(repo_root: Path, head: str | None) -> tuple[int | None, int | None]:
+    """返回 `(HEAD 落后总提交数, 其中触碰 CLAUDE.md 的提交数)`。
+
+    🔴 **用 git 提交计数，不用 mtime**（#338 预授权④，A9 教训）；也不用
+    `git log -L`／`blame`——队列行号随上方增删漂移，那两者会静默给出另一
+    行的历史。
+    """
+    if not head or set(head) == {"0"}:
+        return None, None
+    base = _master_ref(repo_root)
+    if base is None:
+        return None, None
+    rev_range = f"{head}..{base}"
+    return (
+        _rev_count(repo_root, rev_range, []),
+        _rev_count(repo_root, rev_range, [CLAUDE_MD_ROOT_REL]),
+    )
+
+
+def _resident_carriers(repo_root: Path) -> tuple[list[dict] | None, str | None]:
+    """从计划任务反查常驻执行体：Action 路径落在 `<repo>/.claude/worktrees/<name>/`
+    之下者，`<name>` 即执行体。返回 `([{name, tasks, registered, head}], None)`
+    或 `(None, 失败原因)`。"""
+    actions, reason = _query_scheduled_task_actions()
+    if actions is None:
+        return None, reason
+    registered = {entry["path"]: entry for entry in _registered_worktrees(repo_root)}
+    registered_lower = {path.lower(): entry for path, entry in registered.items()}
+    prefix = _normalize_path_text(str(repo_root / WORKTREES_DIR_REL)) + "/"
+    prefix_lower = prefix.lower()
+    carriers: dict[str, dict] = {}
+    for action in actions:
+        raw = _normalize_path_text(f"{action['execute']} {action['arguments']}")
+        index = raw.lower().find(prefix_lower)
+        if index == -1:
+            continue
+        tail = raw[index + len(prefix):]
+        name = tail.split("/", 1)[0].strip().strip('"').strip("'")
+        if not name:
+            continue
+        entry = registered_lower.get((prefix + name).lower())
+        carrier = carriers.setdefault(name, {
+            "name": name, "tasks": [], "registered": entry is not None,
+            "head": entry["head"] if entry else None,
+        })
+        if action["task"] and action["task"] not in carrier["tasks"]:
+            carrier["tasks"].append(action["task"])
+    return sorted(carriers.values(), key=lambda c: c["name"]), None
+
+
+def _carrier_auto_restart_enabled(repo_root: Path) -> bool:
+    """自动重启开关（#338 边界⑵：重启须可一键关闭）。
+
+    🔴 **读不到、读错、值不认识，一律返回 False**——这是「重启生产服务」
+    的开关，缺省必须是关的。
+    """
+    env_path = repo_root / ENV_REL
+    if not env_path.exists():
+        return False
+    prefix = CARRIER_AUTO_RESTART_ENV_KEY + "="
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    for line in lines:
+        line = line.strip()
+        if line.startswith(prefix):
+            value = line[len(prefix):].strip().strip('"').strip("'").lower()
+            return value in CARRIER_AUTO_RESTART_TRUE_VALUES
+    return False
+
+
+def _carrier_worktree_path(repo_root: Path, name: str) -> Path:
+    return repo_root / WORKTREES_DIR_REL / name
+
+
+def _carrier_tracked_dirty(repo_root: Path, name: str) -> str | None:
+    """执行体内**已跟踪文件**是否有未提交改动；有则返回首行摘要。
+
+    未跟踪／被 ignore 的内容**不在此判**——它们不该阻止 ff，且 git 自己会
+    在「ff 会覆盖某个未跟踪文件」时拒绝（见 `_ff_carrier` 的注释）。
+    """
+    result = _run_git(["status", "--porcelain=v1"],
+                      _carrier_worktree_path(repo_root, name), check=False)
+    if result.returncode != 0:
+        return f"status 查询失败：{result.stdout.strip()[:120]}"
+    first = result.stdout.strip().splitlines()
+    return first[0].strip() if first else None
+
+
+def _ff_carrier(repo_root: Path, carrier: dict) -> dict:
+    """把一个常驻执行体 worktree `--ff-only` 对齐到 master。
+
+    返回 `{outcome, detail, before, after, changed_paths}`，`outcome` ∈
+    `aligned`（本来就齐）／`ffed`（本轮 ff 了）／`ahead`（有本地提交，停手）／
+    `dirty`／`failed`／`unknown`。
+
+    🔴 **绝不强推**（#338 边界⑴）：`ahead > 0` 一律停手告警——执行体上有
+    本地提交意味着有人在那里直接改过东西，强 ff 会把它冲掉，而那正是
+    `#68` 反复强调的「不在生产载体上造出第三种代码状态」。
+
+    ⚠️ **不做每轮备份，这是刻意的**：`--ff-only` 若会覆盖某个未跟踪文件，
+    **git 自己就会拒绝并非零退出**（"untracked working tree files would be
+    overwritten by merge"），我们据此告警即可。每轮把 26 个 reports 文件复制
+    一遍既无必要、又会自己制造一堆需要清理的目录。#267 那次事故的动作是
+    `worktree remove`（真删），不是 ff——两者的风险不同，不该套同一套防护。
+    """
+    name = carrier["name"]
+    wt = _carrier_worktree_path(repo_root, name)
+    before = carrier.get("head")
+    if not carrier.get("registered") or not before or set(before) == {"0"}:
+        return {"outcome": "unknown", "detail": "不在注册项内或 HEAD 无效",
+                "before": before, "after": None, "changed_paths": []}
+    if not (wt / ".git").exists():
+        return {"outcome": "unknown", "detail": "目录内无 .git 条目",
+                "before": before, "after": None, "changed_paths": []}
+
+    base = _master_ref(repo_root)
+    if base is None:
+        return {"outcome": "unknown", "detail": "master/origin/master 均不可解",
+                "before": before, "after": None, "changed_paths": []}
+
+    ahead = _rev_count(repo_root, f"{base}..{before}", [])
+    if ahead is None:
+        return {"outcome": "unknown", "detail": "ahead 计数取不到",
+                "before": before, "after": None, "changed_paths": []}
+    if ahead > 0:
+        return {"outcome": "ahead", "detail": f"执行体领先 {ahead} 个提交，已停手不 ff",
+                "before": before, "after": None, "changed_paths": []}
+
+    behind = _rev_count(repo_root, f"{before}..{base}", [])
+    if behind is None:
+        return {"outcome": "unknown", "detail": "落后计数取不到",
+                "before": before, "after": None, "changed_paths": []}
+    if behind == 0:
+        return {"outcome": "aligned", "detail": "已对齐", "before": before,
+                "after": before, "changed_paths": []}
+
+    dirty = _carrier_tracked_dirty(repo_root, name)
+    if dirty:
+        return {"outcome": "dirty", "detail": f"已跟踪文件有未提交改动（{dirty}），已停手不 ff",
+                "before": before, "after": None, "changed_paths": []}
+
+    merged = _run_git(["merge", "--ff-only", base], wt, check=False)
+    if merged.returncode != 0:
+        head_line = (merged.stdout or "").strip().splitlines()
+        return {"outcome": "failed",
+                "detail": f"ff 失败：{head_line[0] if head_line else '无输出'}",
+                "before": before, "after": None, "changed_paths": []}
+
+    after = _run_git(["rev-parse", "HEAD"], wt, check=False).stdout.strip()
+    diff = _run_git(["diff", "--name-only", f"{before}..{after}"], repo_root, check=False)
+    changed = [p.strip() for p in diff.stdout.splitlines() if p.strip()]
+    return {"outcome": "ffed", "detail": f"已 ff {behind} 个提交",
+            "before": before, "after": after, "changed_paths": changed}
+
+
+def _restart_carrier(repo_root: Path, name: str) -> tuple[bool, str]:
+    """调 `工具-执行体对齐重启.ps1 -RestartOnly` 重启并验活。
+
+    🔴 **刻意不在本文件里再实现一遍那三个坑**（先杀父后杀子／验进程链
+    `CreationTime`／验心跳戳刷新）——#338 明写「勿另写一套」。人工执行与
+    机器执行走**同一个实现**，是这条纪律真正的兑现方式：两套实现迟早会
+    分叉，而分叉不会有任何报错。
+
+    🔴 退出码只认脚本自身 `exit` 的那个值（`subprocess` 直接拿到），
+    **不经管道、不经 `cmd /c`**——`%ERRORLEVEL%` 在 cmd 解析期就被展开，
+    读到的是命令还没跑时的值（OP-0819-F 实测读到 0、真值是 2）。
+    """
+    script = repo_root / RESIDENT_CARRIER_REALIGN_SCRIPT_REL
+    if not script.is_file():
+        return False, f"未找到 {RESIDENT_CARRIER_REALIGN_SCRIPT_REL}"
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-File", str(script), "-WorktreeName", name, "-RestartOnly"],
+            capture_output=True, text=True, encoding="utf-8", timeout=600,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"调用失败：{type(exc).__name__}: {exc}"
+    tail = [ln for ln in (result.stdout or "").splitlines() if ln.strip()][-1:]
+    detail = tail[0].strip() if tail else "无输出"
+    return result.returncode == 0, f"退出码 {result.returncode}：{detail}"
+
+
+def _sync_resident_carriers(repo_root: Path, log: list[str]) -> None:
+    """第 5 类：常驻执行体**持续同步**（ff 每轮做，重启按需）。
+
+    与本项目既有告警的关键差别：**本函数会动手**（`--ff-only`），不只是
+    报告。这是 #338 改版的核心——落后是持续过程，只有每轮都做的动作才治
+    得住它。
+
+    告警语义是**「有例外」**，不是「落后了」：ahead>0 停手／ff 失败／脏／
+    已 ff 但需重启而自动重启关着。**正常路径（ff 成功且无需重启）不产生
+    任何推送**，只在日志回显。
+    """
+    carriers, reason = _resident_carriers(repo_root)
+    if carriers is None:
+        # 🔴 三态里最要紧的一态：**未取到 ≠ 零执行体**。
+        log.append(f"⚠ 常驻执行体名单**未取到**（{reason}）——本轮不做任何 ff，也不产生「零落后」结论。")
+        return
+    if not carriers:
+        log.append("🚚 常驻执行体同步：计划任务查询成功，无任务指向 worktree（零执行体）。")
+        return
+
+    auto_restart = _carrier_auto_restart_enabled(repo_root)
+    log.append(f"🚚 常驻执行体持续同步（{len(carriers)} 个；自动重启开关＝"
+               f"{'ON' if auto_restart else 'OFF（缺省，重启走人工确认）'}）：")
+
+    exceptions: dict[str, str] = {}
+    for carrier in carriers:
+        name = carrier["name"]
+        tasks = "、".join(carrier["tasks"]) or "（无）"
+        result = _ff_carrier(repo_root, carrier)
+        outcome, detail = result["outcome"], result["detail"]
+
+        if outcome == "aligned":
+            log.append(f"    · {name}：已对齐（落后 0）／引用任务：{tasks}")
+            continue
+        if outcome in ("ahead", "dirty", "failed", "unknown"):
+            log.append(f"    🔴 {name}：{detail}／引用任务：{tasks}")
+            exceptions[name] = f"{detail}（引用任务：{tasks}）"
+            continue
+
+        # outcome == "ffed"
+        hits = _touches_resident_service(set(result["changed_paths"]), repo_root)
+        if not hits:
+            log.append(f"    · {name}：{detail}，未触碰常驻服务代码路径 ⇒ 无需重启"
+                       f"／引用任务：{tasks}")
+            continue
+
+        hit_text = "、".join(f"`{p}`（{src}）" for p, src in hits[:5])
+        if len(hits) > 5:
+            hit_text += f" 等 {len(hits)} 处"
+        if not auto_restart:
+            log.append(f"    🔴 {name}：{detail}，**触碰常驻服务代码路径 {len(hits)} 处，"
+                       f"需人工重启**（自动重启开关 OFF）／{hit_text}")
+            exceptions[name] = (f"{detail}，触碰常驻服务代码路径 {len(hits)} 处，"
+                                f"**代码已新、进程仍旧** ⇒ 需人工重启验活；{hit_text}")
+            continue
+
+        ok, restart_detail = _restart_carrier(repo_root, name)
+        if ok:
+            log.append(f"    ✓ {name}：{detail}，触碰 {len(hits)} 处 ⇒ 已自动重启并验活（{restart_detail}）")
+        else:
+            log.append(f"    🔴 {name}：{detail}，触碰 {len(hits)} 处 ⇒ **自动重启失败**（{restart_detail}）")
+            exceptions[name] = f"{detail}，自动重启失败（{restart_detail}）；{hit_text}"
+
+    def render_alert(keys):
+        lines = "\n".join(f"- `{key}`：{exceptions[key]}" for key in sorted(keys))
+        return (
+            f"🚚 落库sweep：{len(keys)} 个常驻执行体**同步有例外，需人介入**：\n{lines}\n"
+            f"⇒ 处置：`powershell -NoProfile -File "
+            f"\"{RESIDENT_CARRIER_REALIGN_SCRIPT_REL}\" -WorktreeName <名字> -RestartOnly`"
+            "（只重启验活；需要连 ff 一起做时去掉 `-RestartOnly`，先 `-DryRun` 干跑）"
+        )
+
+    def render_resolved(keys):
+        lines = "\n".join(f"- `{key}`（例外已消除，同步恢复正常）" for key in sorted(keys))
+        return f"✅ 落库sweep：{len(keys)} 个此前告警过的常驻执行体已恢复：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "常驻执行体同步例外", RESIDENT_CARRIER_LAG_STATE_REL,
+        # 🔴 key = worktree 名，**刻意不含任何会变的数值**（同子项 A 的理由）。
+        set(exceptions), RESIDENT_CARRIER_LAG_ALERT_INTERVAL_HOURS,
+        render_alert, render_resolved, log,
+    )
+
+
 def _edit_lock(repo_root: Path, action: str, extra: list[str] | None = None) -> subprocess.CompletedProcess:
     # 队列 #198(b)：`status` 子命令不接受 `--who`（无副作用查询，不需要
     # 身份）——传了会被 argparse 当"unrecognized arguments"直接拒绝（exit
@@ -2970,6 +3598,16 @@ def main() -> int:
             stale_changes = _find_stale_in_flight_changes(repo_root)
             if stale_changes:
                 _announce_stale_in_flight_changes(repo_root, stale_changes, log)
+
+            # 队列 §一 #338（2026-08-23，OP-0823-G）：第 4／第 5 类常驻状态
+            # 告警——必载载体健康度。与 #298 那两类同理，检测对象是仓库/本机
+            # 的整体状态，**与本轮是否有批次落库无关**，故不依赖 touched_paths。
+            # 🔴 两者都**每轮回显**，即使零超限/零落后：上线当天预计零告警，
+            # 而「建成 9 天从未发出过一条消息」是本项目已经吃过的亏。
+            _check_claude_md_carrier_size(repo_root, log)
+            # 🔴 本行会**动手 ff**，不只是报告——#338 改版：落后是持续过程，
+            # 只有每轮都做的动作才治得住它。重启按需、且缺省走人工确认。
+            _sync_resident_carriers(repo_root, log)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))

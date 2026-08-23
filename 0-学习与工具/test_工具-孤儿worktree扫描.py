@@ -188,5 +188,80 @@ class OrphanWorktreeScanTests(unittest.TestCase):
                          worktrees_after)
 
 
+# ============================================================
+# 队列 §一 #338 子项 B（OP-0823-G）：落后列（纯增列）
+# ============================================================
+
+class BehindColumnTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        base = Path(self._tmp.name)
+        self.main = base / "main"
+        _git(base, "init", "-q", "-b", "master", str(self.main))
+        _git(self.main, "config", "user.email", "t@t")
+        _git(self.main, "config", "user.name", "t")
+        (self.main / "CLAUDE.md").write_text("v1\n", encoding="utf-8")
+        _git(self.main, "add", "-A")
+        _git(self.main, "commit", "-qm", "base")
+        self.wt = base / "wt"
+        _git(self.main, "worktree", "add", "-q", "-b", "claude/behind", str(self.wt))
+        # master 再前进 3 个提交，其中 2 个触碰 CLAUDE.md
+        for i, touch_claude in enumerate([True, False, True]):
+            name = "CLAUDE.md" if touch_claude else f"other{i}.txt"
+            (self.main / name).write_text(f"v{i}\n", encoding="utf-8")
+            _git(self.main, "add", "-A")
+            _git(self.main, "commit", "-qm", f"c{i}")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_落后列给出两个数值(self):
+        findings = orphan_scan.scan(self.main)
+        aw = {Path(w["path"]).name: w for w in findings["all_worktrees"]}
+        self.assertEqual(aw["wt"]["behind"], 3)
+        self.assertEqual(aw["wt"]["behind_claude"], 2)
+        report = orphan_scan.format_report(findings)
+        self.assertIn("落后 3 个提交", report)
+        self.assertIn("触碰 CLAUDE.md 的 2 个", report)
+
+    def test_取不到时显示未取到而不是0(self):
+        """🔴 0 的含义是「已对齐」，与「查不出来」是两件事。把后者显示成
+        前者，一个该清的空壳就会长得跟一个健康的 worktree 一样。"""
+        label = orphan_scan._behind_label({"behind": None})
+        self.assertIn("未取到", label)
+        self.assertNotIn("落后 0", label)
+
+    def test_物理空壳不被算成已对齐(self):
+        counts = orphan_scan._behind_counts(
+            self.main, {"path": str(self.wt), "head": "0" * 40}, "master")
+        self.assertEqual(counts, (None, None))
+
+    def test_目录内无git条目即不取数(self):
+        """判 worktree 身份只认 `.git` 条目 ＋ 注册项，**不看 `git -C` 的
+        输出**——#98 实测：对非注册目录跑 `git -C`，git 会静默向上找到主
+        工作区的 `.git` 并返回主工作区的状态。"""
+        ghost = Path(self._tmp.name) / "ghost"
+        ghost.mkdir()
+        counts = orphan_scan._behind_counts(
+            self.main, {"path": str(ghost), "head": "a" * 40}, "master")
+        self.assertEqual(counts, (None, None))
+
+    def test_归桶结果不因新列改变(self):
+        """纯增列的硬约束：三个桶的归属逻辑零改动。"""
+        findings = orphan_scan.scan(self.main)
+        self.assertIn("orphan_worktrees", findings)
+        self.assertIn("dirty_but_merged_worktrees", findings)
+        self.assertIn("ignored_content_worktrees", findings)
+        # 本夹具没有 origin，`_ahead_count` 恒为 None ⇒ 三个桶都该是空的，
+        # 与本变更前完全一致（新列不参与归桶）。
+        self.assertEqual(findings["orphan_worktrees"], [])
+        self.assertEqual(findings["dirty_but_merged_worktrees"], [])
+        self.assertEqual(findings["ignored_content_worktrees"], [])
+
+    def test_边界披露原样保留(self):
+        report = orphan_scan.format_report(orphan_scan.scan(self.main))
+        self.assertIn("经工具走", report)
+
+
 if __name__ == "__main__":
     unittest.main()

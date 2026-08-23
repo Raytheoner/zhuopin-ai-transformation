@@ -88,6 +88,73 @@ def _ahead_count(repo_root: Path, ref: str) -> int | None:
         return None
 
 
+# ============================================================
+# 队列 §一 #338 子项 B（2026-08-23，OP-0823-G）：落后列
+# ============================================================
+# 报告新增一列「落后 master N 个提交（其中触碰 CLAUDE.md M 个）」。
+# **纯增列**：不改任何删除判定、不新增桶、不新增删除能力（#338 原文约束）。
+#
+# 立这一列的实测理由（memory 体系审核 2026-08-16 报告 F5）：13 份 worktree
+# 内的 `CLAUDE.md` 副本在 89,908–132,100 B 之间各版本并存 ⇒ **在陈旧
+# worktree 里开的 CC session，载入的是旧版规则，而它不会报任何错**。
+#
+# 🔴 落后一律用 **git 提交计数**，不用 mtime（#338 预授权④，A9 教训），
+# 也不用 `git log -L`／`blame`——队列行号随上方增删漂移，那两者会静默给出
+# 另一行的历史。
+CLAUDE_MD_REL = "CLAUDE.md"
+
+
+def _behind_base(repo_root: Path) -> str | None:
+    """落后的比较基准：优先本地 `master`（ff 对齐的目标就是它），退
+    `origin/master`。**返回值会被打进报告标题**——两个工具若用了不同基准，
+    数字会对不上，而对不上的数字没有标注就是又一个静默陷阱。"""
+    for ref in ("master", "origin/master"):
+        result = _run_git(["rev-parse", "--verify", "--quiet", ref], repo_root, check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return ref
+    return None
+
+
+def _behind_counts(repo_root: Path, wt: dict, base: str | None) -> tuple[int | None, int | None]:
+    """返回 `(HEAD 落后 base 的提交数, 其中触碰 CLAUDE.md 的提交数)`。
+
+    取不到时返回 `(None, None)`，调用方一律渲染成「未取到」——
+    🔴 **绝不渲染成 0**：0 的含义是「已对齐」，与「查不出来」是两件事，
+    把后者显示成前者，一个该清的空壳就会长得跟一个健康的 worktree 一样。
+
+    🔴 判 worktree 身份**只认两件事**：该目录内 `.git` 条目存在 ＋ 它在
+    `git worktree list --porcelain` 注册项内（本函数的入参就来自该注册项）。
+    **不看 `git -C <目录>` 的输出**——#98 实测：对非注册目录跑 `git -C`，
+    git 会静默向上找到主工作区的 `.git` 并返回**主工作区**的状态（当时返回
+    「分支=master／落后 0／脏 0」，照抄就会把一个该清的空壳记成「干净、
+    无需处理」）。
+    """
+    if base is None:
+        return None, None
+    head = wt.get("head")
+    if not head or set(head) == {"0"}:      # 物理空壳：HEAD 全零
+        return None, None
+    if not (Path(wt["path"]) / ".git").exists():
+        return None, None
+    rev_range = f"{head}..{base}"
+    counts = []
+    for pathspec in ([], ["--", CLAUDE_MD_REL]):
+        result = _run_git(["rev-list", "--count", rev_range, *pathspec], repo_root, check=False)
+        text = result.stdout.strip()
+        counts.append(int(text) if result.returncode == 0 and text.isdigit() else None)
+    return counts[0], counts[1]
+
+
+def _behind_label(wt: dict) -> str:
+    """渲染成报告里那一列。取不到一律写「未取到」，不写 0。"""
+    total = wt.get("behind")
+    if total is None:
+        return "落后未取到"
+    claude = wt.get("behind_claude")
+    claude_shown = "未取到" if claude is None else str(claude)
+    return f"落后 {total} 个提交（其中触碰 {CLAUDE_MD_REL} 的 {claude_shown} 个）"
+
+
 def _is_dirty(repo_root: Path, worktree_path: str) -> bool:
     result = _run_git(["status", "--porcelain=v1"], Path(worktree_path), check=False)
     return bool(result.stdout.strip()) if result.returncode == 0 else True  # 查不出时保守当"脏"
@@ -134,6 +201,13 @@ def scan(repo_root: Path) -> dict:
     worktrees = _parse_worktree_porcelain(porcelain)
     main_worktree = worktrees[0] if worktrees else None  # git 保证第一条恒为主工作区
 
+    # #338 子项 B：先给**每个**注册 worktree 算落后列。刻意放在归桶之前、
+    # 且遍历的是全部注册项——归桶只覆盖 ahead=0 的那些，而「载入了旧版规则」
+    # 这件事跟 ahead 是不是 0 毫无关系。
+    behind_base = _behind_base(repo_root)
+    for wt in worktrees[1:] if worktrees else []:
+        wt["behind"], wt["behind_claude"] = _behind_counts(repo_root, wt, behind_base)
+
     orphan_worktrees = []
     dirty_but_merged = []
     ignored_content_worktrees = []
@@ -173,6 +247,9 @@ def scan(repo_root: Path) -> dict:
         "dirty_but_merged_worktrees": dirty_but_merged,
         "ignored_content_worktrees": ignored_content_worktrees,
         "orphan_branches": orphan_branches,
+        # #338 子项 B：全部注册 worktree（不含主工作区）及其落后列。
+        "all_worktrees": worktrees[1:] if worktrees else [],
+        "behind_base": behind_base,
     }
 
 
@@ -184,7 +261,8 @@ def format_report(findings: dict) -> str:
     if not ow:
         lines.append("  （无）")
     for wt in ow:
-        lines.append(f"  - {wt['path']}（分支 {wt.get('branch') or wt.get('head')}）"
+        lines.append(f"  - {wt['path']}（分支 {wt.get('branch') or wt.get('head')}"
+                     f"｜{_behind_label(wt)}）"
                      f" → git worktree remove \"{wt['path']}\"")
 
     dm = findings["dirty_but_merged_worktrees"]
@@ -192,7 +270,8 @@ def format_report(findings: dict) -> str:
     if not dm:
         lines.append("  （无）")
     for wt in dm:
-        lines.append(f"  - {wt['path']}（分支 {wt.get('branch') or wt.get('head')}）——不建议直接删")
+        lines.append(f"  - {wt['path']}（分支 {wt.get('branch') or wt.get('head')}"
+                     f"｜{_behind_label(wt)}）——不建议直接删")
 
     ic = findings["ignored_content_worktrees"]
     lines.append(
@@ -204,7 +283,8 @@ def format_report(findings: dict) -> str:
     if not ic:
         lines.append("  （无）")
     for wt in ic:
-        lines.append(f"  - {wt['path']}（分支 {wt.get('branch') or wt.get('head')}）"
+        lines.append(f"  - {wt['path']}（分支 {wt.get('branch') or wt.get('head')}"
+                     f"｜{_behind_label(wt)}）"
                      "——不在 git 里、删除即永久丢失：")
         for p in wt["ignored_paths"]:
             lines.append(f"      · {p}")
@@ -215,6 +295,20 @@ def format_report(findings: dict) -> str:
         lines.append("  （无）")
     for b in ob:
         lines.append(f"  - {b['branch']} → git branch -d {b['branch']}")
+
+    # #338 子项 B：全部注册 worktree 的落后一览。①②③ 只覆盖 ahead=0 的
+    # 那些，而「在陈旧 worktree 里开的 session 载入旧版规则」与 ahead 无关，
+    # 故本节单列，**只报告、不产生任何清理建议**。
+    aw = findings.get("all_worktrees") or []
+    base = findings.get("behind_base") or "（基准未取到）"
+    lines.append(f"\n⑤ 全部注册 worktree 的落后一览（基准 {base}，只读不建议清理，"
+                 f"{len(aw)} 个）——在陈旧 worktree 里开的 session 载入的是旧版规则，"
+                 "且不会报任何错：")
+    if not aw:
+        lines.append("  （无）")
+    for wt in sorted(aw, key=lambda w: -(w.get("behind") if w.get("behind") is not None else -1)):
+        lines.append(f"  - {Path(wt['path']).name}（分支 {wt.get('branch') or wt.get('head')}）"
+                     f"｜{_behind_label(wt)}")
 
     if ow or ob:
         lines.append("\n建议：以上候选交 CC 逐条执行清理（本脚本本身不删任何东西）；"

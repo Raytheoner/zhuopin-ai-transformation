@@ -31,6 +31,7 @@ import collections
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -3665,6 +3666,421 @@ class OpsWebhookRoutingUnitTests(unittest.TestCase):
             f"应只剩常量定义一行，实际 {len(hits)} 行：{hits}",
         )
         self.assertIn("WECOM_WEBHOOK_ENV_KEY =", hits[0])
+
+
+# ============================================================
+# 队列 §一 #338（OP-0823-G）：第 4／第 5 类常驻状态告警
+# ============================================================
+
+class _StandingStateRecorder:
+    """替身：只记下每次传给 `_track_and_alert_standing_state` 的 key 集合。
+
+    用它而不是去读状态文件，是因为本组用例真正要锁的东西是**key 的构成**
+    ——key 里一旦混进会变的数值，「常驻状态」就退化成「事件」：每涨一个
+    字节就是一个新 key、天天当新问题重报，旧 key 还会被判成「已解除」。
+    """
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, repo_root, label, state_rel, current_keys,
+                 interval_hours, render_alert, render_resolved, log):
+        self.calls.append({
+            "label": label, "keys": set(current_keys),
+            "alert_text": render_alert(sorted(current_keys)) if current_keys else "",
+        })
+
+
+class ClaudeMdCarrierSizeTests(unittest.TestCase):
+    """子项 A：必载 CLAUDE.md 尺寸/批次跨度守卫。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
+        for rel in ("4-数字员工/财务部/FI2-三单匹配自动对账",
+                    "5-平台底座/wecom-aibot-service"):
+            d = self.repo / rel
+            d.mkdir(parents=True)
+            (d / "CLAUDE.md").write_text("场景\n", encoding="utf-8")
+        # worktree 副本：结构与真身一模一样，**必须被排除**。
+        wt = self.repo / ".claude/worktrees/some-wt/4-数字员工/财务部/FI2-三单匹配自动对账"
+        wt.mkdir(parents=True)
+        (wt / "CLAUDE.md").write_text("x" * 999_999, encoding="utf-8")
+        self.recorder = _StandingStateRecorder()
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_webhook = sweep._load_webhook_url
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._load_webhook_url = lambda repo_root: None
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._load_webhook_url = self._orig_webhook
+        self._tmp.cleanup()
+
+    def test_worktree_副本不参与判定(self):
+        rels = [rel for rel, _cap in sweep._claude_md_targets(self.repo)]
+        self.assertNotIn(True, [".claude/worktrees" in r for r in rels], rels)
+        self.assertEqual(len(rels), 3, rels)
+
+    def test_阈值按根与场景分档(self):
+        caps = dict(sweep._claude_md_targets(self.repo))
+        self.assertEqual(caps["CLAUDE.md"], sweep.CLAUDE_MD_ROOT_BYTE_CAP)
+        self.assertEqual(caps["5-平台底座/wecom-aibot-service/CLAUDE.md"],
+                         sweep.CLAUDE_MD_SCENE_BYTE_CAP)
+
+    def test_零超限时仍逐项回显(self):
+        """🔴 这条是本组最要紧的一条：上线当天预计零告警，若连回显都没有，
+        这个守卫就与 OP-0819-F 那个「建成 9 天从未发出过一条消息」的反面
+        教材在外观上完全无法区分。"""
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        text = "\n".join(log)
+        self.assertIn("CLAUDE.md：", text)
+        self.assertIn("阈值", text)
+        self.assertIn("尚余", text)
+        self.assertEqual(self.recorder.calls[-1]["keys"], set())
+
+    def test_超限被判出且正文含处置(self):
+        (self.repo / "CLAUDE.md").write_text("x" * (sweep.CLAUDE_MD_ROOT_BYTE_CAP + 1),
+                                             encoding="utf-8")
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        call = self.recorder.calls[-1]
+        self.assertEqual(call["keys"], {"CLAUDE.md"})
+        self.assertIn("CHANGELOG", call["alert_text"])
+
+    def test_key_不随尺寸变化(self):
+        """反例锁死：key 必须是文件路径本身，**不得含尺寸数值**。"""
+        seen = []
+        for extra in (1, 5000):
+            (self.repo / "CLAUDE.md").write_text(
+                "x" * (sweep.CLAUDE_MD_ROOT_BYTE_CAP + extra), encoding="utf-8")
+            log = []
+            sweep._check_claude_md_carrier_size(self.repo, log)
+            seen.append(self.recorder.calls[-1]["keys"])
+        self.assertEqual(seen[0], seen[1], "尺寸变了 key 不该变，否则每轮都是新问题")
+
+    def test_lint不可用时不判为合规(self):
+        """临时仓库里没有 lint 脚本 ⇒ 顶部段判据取不到。此时**必须显式说
+        不可用**，不得静默当作「未超限」——那正是 CLAUDE.md §5「工具静默
+        回退」记的那一族：错误不产生任何信号。"""
+        dates, reason = sweep._root_progress_batch_dates(self.repo)
+        self.assertIsNone(dates)
+        self.assertIn("工具-CLAUDE进度段lint.py", reason)
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        self.assertIn("不据此判为合规", "\n".join(log))
+
+    def test_批次日期取每条的第一个且去重(self):
+        """条目正文里会引用别的时点，批次日期只能取**紧跟标题的那一个**。"""
+        class _FakeEntry:
+            def __init__(self, body):
+                self.body = body
+
+        class _FakeParsed:
+            def __init__(self, entries):
+                self.entries = entries
+
+        class _FakeLint:
+            ENTRY_DATE_RE = re.compile(r"[（(]20\d\d-\d\d-\d\d")
+
+            @staticmethod
+            def parse_structure_a(text):
+                return _FakeParsed([
+                    _FakeEntry("**A 收口（2026-08-19，CC）**：见 (2026-07-01) 那次"),
+                    _FakeEntry("**B 收口（2026-08-19，CC）**：另一条同批"),
+                ])
+
+        orig = sweep._load_progress_lint
+        sweep._load_progress_lint = lambda repo_root: (_FakeLint, None)
+        try:
+            dates, reason = sweep._root_progress_batch_dates(self.repo)
+        finally:
+            sweep._load_progress_lint = orig
+        self.assertIsNone(reason)
+        self.assertEqual(dates, ["2026-08-19"], "同批两条只算一个批次日期")
+
+
+class ResidentCarrierFfTests(unittest.TestCase):
+    """`_ff_carrier` 的真刀真枪用例：真起 git 仓库 ＋ 真 worktree ＋ 真 ff。
+
+    这一组比下面那组 stub 用例更要紧——本包**会动手写生产载体**，而
+    「绝不强推」这条红线只能用真仓库证明。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        base = Path(self._tmp.name)
+        self.repo = base / "main"
+        _git(base, "init", "-q", "-b", "master", str(self.repo))
+        _git(self.repo, "config", "user.email", "t@t")
+        _git(self.repo, "config", "user.name", "t")
+        (self.repo / "CLAUDE.md").write_text("v0\n", encoding="utf-8")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-qm", "base")
+        self.wt = self.repo / ".claude" / "worktrees" / "carrier"
+        _git(self.repo, "worktree", "add", "-q", "-b", "ops/carrier", str(self.wt))
+        self.old_head = _git(self.wt, "rev-parse", "HEAD").stdout.strip()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _advance_master(self, *names):
+        for name in names:
+            path = self.repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("x\n", encoding="utf-8")
+            _git(self.repo, "add", "-A")
+            _git(self.repo, "commit", "-qm", f"add {name}")
+
+    def _carrier(self):
+        head = _git(self.wt, "rev-parse", "HEAD").stdout.strip()
+        return {"name": "carrier", "tasks": ["T"], "registered": True, "head": head}
+
+    def test_落后即自动ff并给出变更路径(self):
+        self._advance_master("5-平台底座/wecom-aibot-service/a.py", "1-转型规划/doc.md")
+        result = sweep._ff_carrier(self.repo, self._carrier())
+        self.assertEqual(result["outcome"], "ffed", result)
+        self.assertEqual(
+            _git(self.repo, "rev-list", "--count", "HEAD..master").stdout.strip(), "0")
+        self.assertEqual(
+            _git(self.wt, "rev-list", "--count", "HEAD..master").stdout.strip(), "0")
+        self.assertIn("5-平台底座/wecom-aibot-service/a.py", result["changed_paths"])
+        self.assertIn("1-转型规划/doc.md", result["changed_paths"])
+
+    def test_已对齐不做任何操作(self):
+        result = sweep._ff_carrier(self.repo, self._carrier())
+        self.assertEqual(result["outcome"], "aligned")
+        self.assertEqual(result["changed_paths"], [])
+
+    def test_ahead大于0时停手且不改写执行体(self):
+        """🔴 红线：执行体上有本地提交 ⇒ 停手告警，**绝不强推**。
+        断言不止看 outcome，还要看 worktree 的 HEAD 一个字节都没动——
+        「返回了正确的结论」和「没有动手」是两件事。"""
+        (self.wt / "local.txt").write_text("本地改动\n", encoding="utf-8")
+        _git(self.wt, "add", "-A")
+        _git(self.wt, "commit", "-qm", "执行体上的本地提交")
+        head_before = _git(self.wt, "rev-parse", "HEAD").stdout.strip()
+        self._advance_master("5-平台底座/wecom-aibot-service/b.py")
+
+        result = sweep._ff_carrier(self.repo, self._carrier())
+
+        self.assertEqual(result["outcome"], "ahead", result)
+        self.assertIn("停手", result["detail"])
+        self.assertEqual(_git(self.wt, "rev-parse", "HEAD").stdout.strip(), head_before,
+                         "ahead>0 时执行体 HEAD 必须一个字节都没动")
+
+    def test_已跟踪文件脏时停手(self):
+        self._advance_master("5-平台底座/wecom-aibot-service/c.py")
+        (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
+        result = sweep._ff_carrier(self.repo, self._carrier())
+        self.assertEqual(result["outcome"], "dirty", result)
+        self.assertEqual(_git(self.wt, "rev-parse", "HEAD").stdout.strip(), self.old_head)
+
+    def test_未注册或HEAD无效一律unknown(self):
+        self.assertEqual(
+            sweep._ff_carrier(self.repo, {"name": "x", "registered": False, "head": None})["outcome"],
+            "unknown")
+        self.assertEqual(
+            sweep._ff_carrier(self.repo, {"name": "x", "registered": True, "head": "0" * 40})["outcome"],
+            "unknown")
+
+
+class ResidentCarrierSyncTests(unittest.TestCase):
+    """`_sync_resident_carriers` 的分支语义（#338 改版：ff 每轮做、重启按需）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        self.recorder = _StandingStateRecorder()
+        self._saved = {
+            name: getattr(sweep, name) for name in (
+                "_track_and_alert_standing_state", "_load_webhook_url", "_resident_carriers",
+                "_ff_carrier", "_touches_resident_service", "_restart_carrier",
+                "_carrier_auto_restart_enabled",
+            )
+        }
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._load_webhook_url = lambda repo_root: None
+        sweep._carrier_auto_restart_enabled = lambda repo_root: False
+
+    def tearDown(self):
+        for name, value in self._saved.items():
+            setattr(sweep, name, value)
+        self._tmp.cleanup()
+
+    def _stub(self, *, carriers=None, reason=None, ff=None, hits=(), restart=(True, "ok")):
+        sweep._resident_carriers = lambda repo_root: (carriers, reason)
+        sweep._ff_carrier = lambda repo_root, carrier: ff
+        sweep._touches_resident_service = lambda paths, repo_root: list(hits)
+        sweep._restart_carrier = lambda repo_root, name: restart
+
+    @staticmethod
+    def _carrier():
+        return [{"name": "wecom-service-home", "tasks": ["T1", "T2"],
+                 "registered": True, "head": "a" * 40}]
+
+    def test_名单未取到时不ff也不走告警骨架(self):
+        """🔴 未取到 ≠ 零执行体；且此时**一律不许动手**。"""
+        touched = []
+        sweep._resident_carriers = lambda repo_root: (None, "模拟：查询失败")
+        sweep._ff_carrier = lambda repo_root, carrier: touched.append(carrier) or {}
+        log = []
+        sweep._sync_resident_carriers(self.repo, log)
+        text = "\n".join(log)
+        self.assertIn("未取到", text)
+        self.assertIn("不做任何 ff", text)
+        self.assertEqual(touched, [], "名单未取到时绝不能对任何 worktree 动手")
+        self.assertEqual(self.recorder.calls, [])
+
+    def test_查询成功零执行体与查询失败措辞可区分(self):
+        self._stub(carriers=[], ff=None)
+        log = []
+        sweep._sync_resident_carriers(self.repo, log)
+        text = "\n".join(log)
+        self.assertIn("零执行体", text)
+        self.assertNotIn("未取到", text)
+
+    def test_ff成功且未触碰服务路径时零推送(self):
+        """正常路径不产生任何告警——这是改版后与原方案最大的行为差别。"""
+        self._stub(carriers=self._carrier(),
+                   ff={"outcome": "ffed", "detail": "已 ff 12 个提交",
+                       "before": "a" * 40, "after": "b" * 40,
+                       "changed_paths": ["1-转型规划/x.md"]},
+                   hits=())
+        log = []
+        sweep._sync_resident_carriers(self.repo, log)
+        self.assertIn("无需重启", "\n".join(log))
+        self.assertEqual(self.recorder.calls[-1]["keys"], set())
+
+    def test_ff触碰服务路径而开关关闭时告警需人工重启(self):
+        self._stub(carriers=self._carrier(),
+                   ff={"outcome": "ffed", "detail": "已 ff 12 个提交",
+                       "before": "a" * 40, "after": "b" * 40,
+                       "changed_paths": ["5-平台底座/wecom-aibot-service/x.py"]},
+                   hits=[("5-平台底座/wecom-aibot-service/x.py", "部署清单")])
+        log = []
+        sweep._sync_resident_carriers(self.repo, log)
+        call = self.recorder.calls[-1]
+        self.assertEqual(call["keys"], {"wecom-service-home"})
+        self.assertIn("代码已新、进程仍旧", call["alert_text"])
+        self.assertIn("-RestartOnly", call["alert_text"])
+
+    def test_开关开启时委托脚本重启且成功后不告警(self):
+        sweep._carrier_auto_restart_enabled = lambda repo_root: True
+        called = []
+        self._stub(carriers=self._carrier(),
+                   ff={"outcome": "ffed", "detail": "已 ff 12 个提交",
+                       "before": "a" * 40, "after": "b" * 40,
+                       "changed_paths": ["5-平台底座/wecom-aibot-service/x.py"]},
+                   hits=[("5-平台底座/wecom-aibot-service/x.py", "部署清单")])
+        sweep._restart_carrier = lambda repo_root, name: called.append(name) or (True, "退出码 0：ok")
+        log = []
+        sweep._sync_resident_carriers(self.repo, log)
+        self.assertEqual(called, ["wecom-service-home"], "重启必须委托给那一个实现")
+        self.assertEqual(self.recorder.calls[-1]["keys"], set())
+        self.assertIn("已自动重启并验活", "\n".join(log))
+
+    def test_自动重启失败即告警(self):
+        sweep._carrier_auto_restart_enabled = lambda repo_root: True
+        self._stub(carriers=self._carrier(),
+                   ff={"outcome": "ffed", "detail": "已 ff 12 个提交",
+                       "before": "a" * 40, "after": "b" * 40,
+                       "changed_paths": ["5-平台底座/wecom-aibot-service/x.py"]},
+                   hits=[("5-平台底座/wecom-aibot-service/x.py", "部署清单")],
+                   restart=(False, "退出码 16：验活失败"))
+        log = []
+        sweep._sync_resident_carriers(self.repo, log)
+        call = self.recorder.calls[-1]
+        self.assertEqual(call["keys"], {"wecom-service-home"})
+        self.assertIn("自动重启失败", call["alert_text"])
+
+    def test_ahead与ff失败都进告警(self):
+        for outcome, detail in (("ahead", "执行体领先 2 个提交，已停手不 ff"),
+                                 ("failed", "ff 失败：untracked files would be overwritten"),
+                                 ("dirty", "已跟踪文件有未提交改动（ M x），已停手不 ff")):
+            with self.subTest(outcome=outcome):
+                self.recorder.calls.clear()
+                self._stub(carriers=self._carrier(),
+                           ff={"outcome": outcome, "detail": detail, "before": "a" * 40,
+                               "after": None, "changed_paths": []})
+                log = []
+                sweep._sync_resident_carriers(self.repo, log)
+                self.assertEqual(self.recorder.calls[-1]["keys"], {"wecom-service-home"})
+
+    def test_key不含任何会变的数值(self):
+        seen = []
+        for detail in ("执行体领先 2 个提交，已停手不 ff", "执行体领先 999 个提交，已停手不 ff"):
+            self._stub(carriers=self._carrier(),
+                       ff={"outcome": "ahead", "detail": detail, "before": "a" * 40,
+                           "after": None, "changed_paths": []})
+            log = []
+            sweep._sync_resident_carriers(self.repo, log)
+            seen.append(self.recorder.calls[-1]["keys"])
+        self.assertEqual(seen[0], seen[1])
+
+    def test_回显含开关状态且零例外时不省略(self):
+        self._stub(carriers=self._carrier(),
+                   ff={"outcome": "aligned", "detail": "已对齐", "before": "a" * 40,
+                       "after": "a" * 40, "changed_paths": []})
+        log = []
+        sweep._sync_resident_carriers(self.repo, log)
+        text = "\n".join(log)
+        self.assertIn("自动重启开关", text)
+        self.assertIn("OFF", text)
+        self.assertIn("已对齐", text)
+
+
+class CarrierAutoRestartSwitchTests(unittest.TestCase):
+    """开关缺省必须是 OFF——这是「重启生产服务」的开关（#338 边界⑵）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_env(self, text):
+        (self.repo / sweep.ENV_REL).write_text(text, encoding="utf-8")
+
+    def test_env不存在即关闭(self):
+        self.assertFalse(sweep._carrier_auto_restart_enabled(self.repo))
+
+    def test_键缺失即关闭(self):
+        self._write_env("WECOM_WEBHOOK_URL_OPS=https://example\n")
+        self.assertFalse(sweep._carrier_auto_restart_enabled(self.repo))
+
+    def test_取值不可识别即关闭(self):
+        self._write_env(f"{sweep.CARRIER_AUTO_RESTART_ENV_KEY}=maybe\n")
+        self.assertFalse(sweep._carrier_auto_restart_enabled(self.repo))
+
+    def test_显式打开才为真(self):
+        for value in ("1", "true", "TRUE", "yes", "on"):
+            with self.subTest(value=value):
+                self._write_env(f"{sweep.CARRIER_AUTO_RESTART_ENV_KEY}={value}\n")
+                self.assertTrue(sweep._carrier_auto_restart_enabled(self.repo))
+
+    def test_显式关闭为假(self):
+        for value in ("0", "false", "off", ""):
+            with self.subTest(value=value):
+                self._write_env(f"{sweep.CARRIER_AUTO_RESTART_ENV_KEY}={value}\n")
+                self.assertFalse(sweep._carrier_auto_restart_enabled(self.repo))
+
+
+class ResidentServiceHintUnchangedTests(unittest.TestCase):
+    """本包与既有事件型部署提示并存、互不取代（proposal 已论证）。"""
+
+    def test_既有事件型部署提示未被改动(self):
+        self.assertTrue(callable(sweep._announce_resident_service_deployment_hint))
+        self.assertTrue(callable(sweep._touches_resident_service))
+        self.assertEqual(sweep.RESIDENT_SERVICE_DIR_REL, "5-平台底座/wecom-aibot-service")
+
+    def test_落后阈值常量已随改版删除(self):
+        """改版把「落后多少算该管」这个没人写下来过的经验值**整条取消**了
+        ——自动 ff 之后落后恒为 0，问题不再需要一个阈值来回答。"""
+        self.assertFalse(hasattr(sweep, "RESIDENT_CARRIER_LAG_ALERT_THRESHOLD"))
 
 
 if __name__ == "__main__":
