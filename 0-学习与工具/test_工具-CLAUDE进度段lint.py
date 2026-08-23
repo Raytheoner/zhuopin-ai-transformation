@@ -524,6 +524,105 @@ class J7OpeningBudgetTests(_FixtureCase):
             self.assertNotIn("队列", rel)
 
 
+class J8SentinelTests(_FixtureCase):
+    """J8 · 哨兵存在性（OP-0823-C）。
+
+    A 档 5 条规则下沉后，根里各留一行哨兵——**哨兵成了新的单点失效，而它恰恰是
+    全篇最短、最像可有可无的那一行**；删掉它，被下沉的整块规则就此对所有新会话
+    消失，**且在本判据之前没有任何机制会报错**。
+    """
+
+    def _root_with(self, tail_lines: list[str]) -> None:
+        self._write_root(
+            _root_doc(["> **甲（2026-08-01，CC）**：正文。"]) + "\n".join(tail_lines) + "\n")
+
+    def _mkfile(self, rel: str, size: int = 2000) -> None:
+        path = self.repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("规" * size, encoding="utf-8")
+
+    def test_哨兵指向的文件被删则报违规(self):
+        """派单件 §四 ⑴：目标不存在 ⇒ 进 violations（不是 warnings）。"""
+        self._root_with(["🔴 **动 `x-子目录/` 之前，先读 `x-子目录/CLAUDE.md`** —— 细则在那里。"])
+        violations, _warnings, _parsed = self._lint()
+        hits = [v for v in violations if "【J8】" in v]
+        self.assertEqual(len(hits), 1, violations)
+        self.assertIn("x-子目录/CLAUDE.md", hits[0])
+        self.assertIn("对所有新会话不可见", hits[0])
+
+    def test_自指与家目录路径不进判定(self):
+        """🔴 防 §2.2 那条**永久误报**：`~/.claude/CLAUDE.md` 是家目录全局件、
+        不在仓库内，按仓库相对路径去 `exists()` 恒为假；`CLAUDE.md` 是自指、判它
+        恒真零信息量。**误报的代价不是噪音，是它会训练人忽略这条告警。**"""
+        self._root_with([
+            "开场读 ① 本 `CLAUDE.md`（当前进度）→ ② 接力件。",
+            "全局身份/偏好见 `~/.claude/CLAUDE.md`（不重复）。",
+            "写入 `CLAUDE.md` 顶部 Last Updated 时一律取本机本地日期。",
+            "另有绝对路径 `C:/别处/CLAUDE.md` 与相对上跳 `../外部/CLAUDE.md`，同样不判。",
+        ])
+        violations, warnings, _parsed = self._lint()
+        self.assertEqual([v for v in violations if "【J8】" in v], [])
+        self.assertEqual([w for w in warnings if "【J8】" in w], [])
+        _v, _w, total, _f, bare_n = self.module.check_sentinels(self.repo_root)
+        self.assertEqual((total, bare_n), (0, 0), "自指与仓库外路径一处都不该进判定")
+
+    def test_不含先读二字的哨兵同样被判(self):
+        """🔴 锁死 §2.1 那个漏报：#80 ⑻ 的规格原文挂在「先读」句式上，而真身三条里
+        L120（A5 外部对抗性评审纪律）写的是「细则与…演练**见** `…/CLAUDE.md`」
+        ⇒ 按字面实现只能命中 2/3，**静默漏掉的恰是最久才用一次的那条**。
+        本用例防止日后有人把排除法「优化」回匹配句式。"""
+        self._root_with(["外部对抗性评审纪律：细则与冷备架构师接手演练见 `a/b/CLAUDE.md`。"])
+        violations, _warnings, _parsed = self._lint()
+        hits = [v for v in violations if "【J8】" in v]
+        self.assertEqual(len(hits), 1, violations)
+        self.assertIn("a/b/CLAUDE.md", hits[0])
+
+    def test_目标文件被清空同样报违规(self):
+        """字节下限覆盖「被清空／只剩一行标题」这一种失效（Shao Peishen 2026-08-23
+        答 (a)）。**这不算内容级校验**——零同步负担。
+        ⚠️ 仍未覆盖：文件还在、其它内容也在，而被下沉的那一块被删掉 ⇒ J8 通过。"""
+        self._mkfile("z-子目录/CLAUDE.md", size=10)   # 30 字节 < 下限 200
+        self._root_with(["细则见 `z-子目录/CLAUDE.md`。"])
+        violations, _warnings, _parsed = self._lint()
+        hits = [v for v in violations if "【J8】" in v]
+        self.assertEqual(len(hits), 1, violations)
+        self.assertIn("疑似被清空", hits[0])
+        # 同一路径填够字节后即通过——证明报的是「空」不是「不存在」。
+        self._mkfile("z-子目录/CLAUDE.md", size=2000)
+        violations2, _w2, _p2 = self._lint()
+        self.assertEqual([v for v in violations2 if "【J8】" in v], [])
+
+    def test_裸路径哨兵只告警不阻断(self):
+        """反引号同样是人写的格式约定，只认它会漏掉「先读 x/CLAUDE.md」这种写法。
+        🔴 **但裸命中只进 warnings**（Shao Peishen 2026-08-23 答 (a)）：裸扫描可能
+        误命中散文，而误报会训练人忽略告警——反引号命中硬拦、裸命中只请人看一眼。"""
+        self._root_with(["动 q-子目录/ 之前，先读 q-子目录/CLAUDE.md，细则在那里。"])
+        violations, warnings, _parsed = self._lint()
+        self.assertEqual([v for v in violations if "【J8】" in v], [])
+        hits = [w for w in warnings if "【J8】" in w]
+        self.assertEqual(len(hits), 1, warnings)
+        self.assertIn("疑似未加反引号", hits[0])
+        self.assertIn("q-子目录/CLAUDE.md", hits[0])
+
+    def test_同一路径两处引用按出现次数各数一次(self):
+        """统计行的 N 按**出现次数**数、不按去重路径数（Shao Peishen 2026-08-23 答 (a)）：
+        被删掉的是**某一处引用**，按次数数才能让人发现「上周还是 3 处、今天怎么 2 处了」。"""
+        self._mkfile("p-子目录/CLAUDE.md")
+        self._root_with(["先读 `p-子目录/CLAUDE.md`。", "另见 `p-子目录/CLAUDE.md` 第二处。"])
+        _v, _w, total, faulted, _bare = self.module.check_sentinels(self.repo_root)
+        self.assertEqual((total, faulted), (2, 0))
+        self.assertIn("2 处哨兵，全部命中",
+                      self.module.sentinel_summary_line(self.repo_root, 200))
+
+    def test_统计行无论有无违规都回显(self):
+        """理由同 J7：只在超限时才打印，等于把「现在还剩几条」藏起来，**而哨兵这件事
+        的风险恰恰是「悄悄少了一条也没人知道」。**"""
+        self._root_with(["先读 `w-子目录/CLAUDE.md`。"])
+        line = self.module.sentinel_summary_line(self.repo_root, 200)
+        self.assertIn("🛡 哨兵存在性：1 处哨兵", line)
+        self.assertIn("缺失或被清空 1 处", line)
+
+
 class RealRepoSmokeTests(unittest.TestCase):
     """对真身跑一次——只断言「解析得出结构 A 且条目数可数出」，不断言具体
     数值（那会随每次收工而变，成为一条必然会红的脆弱断言）。"""
@@ -533,6 +632,15 @@ class RealRepoSmokeTests(unittest.TestCase):
         parsed = MODULE.parse_file(MODULE.ROOT_CLAUDE_REL, text)
         self.assertEqual(parsed.structure, "A-根文件型")
         self.assertGreaterEqual(len(parsed.entries), 1)
+
+    def test_当前master三条哨兵全部命中(self):
+        """正例：对真身跑一次 J8。**这里断言具体数值 3 是有意的**——与上一条不同，
+        哨兵数不随收工漂移，它只在有人删了一条（或按 A/B 档继续下沉）时变。
+        数字变了就该有人来改这一行**并说明为什么**，这正是本判据要的那个信号。"""
+        violations, _warnings, total, faulted, _bare = MODULE.check_sentinels(MODULE.REPO_ROOT)
+        self.assertEqual(faulted, 0, violations)
+        self.assertEqual(total, 3, "A 档下沉后根里应有且仅有三处哨兵："
+                                   "5-平台底座/、1-转型规划/0-全景路线图/、4-数字员工/")
 
 
 if __name__ == "__main__":

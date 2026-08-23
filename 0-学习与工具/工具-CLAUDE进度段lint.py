@@ -59,6 +59,24 @@
   （默认 120,000）告警。**这是唯一一条直接度量「新 session 开场要读多少字节」的判据**
   ——J1-J3/J5 管的是单个文件的形状，管不住三份加起来是多少。
 
+## 三期新增一条（J8，2026-08-23，OP-0823-C）
+
+- **J8 · 哨兵存在性**：A 档 5 条规则已于 2026-08-22（`OP0822F`）下沉进三份子目录
+  `CLAUDE.md`，根文件里各留**一行哨兵**。🔴 **下沉之后，哨兵成了新的单点失效，而它
+  恰恰是全篇最短、最像可有可无的那一行**——谁顺手整理格式时删掉它、或把目录改名／
+  移走子目录 `CLAUDE.md`，被下沉的整块规则就此对所有新会话彻底消失，**且没有任何
+  机制会报错**。同族＝「工具静默回退」「判据恒真、零信息量」：**错误不产生任何信号。**
+  故 J8 **进 violations**（不是 warnings），`--enforce` 下硬拦。
+
+🔴 **J8 刻意用排除法，不匹配「先读」句式**：队列 §四 #80 ⑻ 的规格原文写的是「每处
+形如『先读 `<目录>/CLAUDE.md`』的哨兵」，而 2026-08-23 实测三条哨兵里**只有两条含
+「先读」**——L120（A5 外部对抗性评审纪律）写的是「细则与冷备架构师接手演练**见**
+`1-转型规划/0-全景路线图/CLAUDE.md`」。按那句字面去写正则**只能命中 2/3，静默漏掉
+的恰是那条「2026-11 中旬前须提醒排 S1 收口外部评审」**——三条里最久才用一次、最经
+不起悄悄消失的一条。**句式是人写的、会变；「它是不是一个仓库内的子目录 CLAUDE.md
+路径」是结构性事实，不随措辞漂移。** 🔑 那句规格是下沉动作完成当天凭印象写的，写的
+人以为三条用了同一句式 ⇒ **凡把一条既有登记直接当规格实现，先与真身对一次。**
+
 🔴 **J6/J7 本期归 warnings、不进 violations**：切 `--enforce` 后 violations 会硬拦
 CI，而 J6 的三份存量接力件正超限 5-9 倍（R5 改版实际只改了一份），一并硬拦等于
 把 `--enforce` 这件事本身再推迟一轮。存量清理另派，见队列 §一。
@@ -136,6 +154,24 @@ OPENING_BUDGET_PARTS = (
 )
 OPENING_QUEUE_ENTRY = "0-学习与工具/工具-队列查询.py"
 OPENING_BUDGET_CAP_DEFAULT = 120_000
+
+# ── J8 · 哨兵存在性（2026-08-23，OP-0823-C；队列 §四 #80 ⑻） ──
+# 判据：根 `CLAUDE.md` 中每一处**指向仓库内某个子目录 `CLAUDE.md` 的引用**，其目标
+# 文件必须存在且非空。缺失即违规。取全部反引号包裹、以 `CLAUDE.md` 结尾的路径串，
+# **只排除「自指」与「仓库外」两类**（见 `_classify_sentinel_path`），不挂在任何句式上。
+SENTINEL_QUOTED_RE = re.compile(r"`([^`\n]*CLAUDE\.md)`")
+# 裸路径（无反引号）扫描：**反引号同样是人写的格式约定**——若日后有人写成
+# 「先读 4-数字员工/CLAUDE.md」，只认反引号的实现会静默漏掉，正是本判据要防的失效模式。
+# 🔴 **但只进 warnings**（Shao Peishen 2026-08-23 答 (a)）：裸扫描可能误命中散文，而
+# 误报的代价不是噪音，**是它会训练人忽略这条告警**（同 §四 #87 ⑶），而这条告警存在的
+# 全部意义正是在真出事那次把人拦住。⇒ 反引号命中硬拦、裸命中只请人看一眼。
+# 必须含 `/`：不含 `/` 的裸 `CLAUDE.md` 在散文里指的就是根文件自己（自指）。
+SENTINEL_BARE_RE = re.compile(
+    r"([0-9A-Za-z_~.\u4e00-\u9fff][^\s`\"'（）()【】、，。：；]*/CLAUDE\.md)")
+# 目标文件字节下限：覆盖「被清空／只剩一行标题」这一种失效（Shao Peishen 2026-08-23
+# 答 (a)）。**这不算内容级校验**——不需要在根里冗余存摘要、也不需要给每块打标记，
+# 零同步负担。现存三份分别是 1,710／2,598／4,030 B，离 200 B 有一个数量级余量。
+SENTINEL_MIN_BYTES_DEFAULT = 200
 
 # 结构 A 的四个锚点**一律取编辑锁那份定义**，本文件不另立——J4（release 侧）
 # 与 J2/J3（CI 侧）若各持一套正则，会出现「lint 说 7 条、release 说 6 条」
@@ -487,6 +523,127 @@ def check_opening_budget(repo_root: Path, cap: int) -> list[str]:
             f"管不住三份加起来是多少"]
 
 
+# ────────────────────────────── J8 · 哨兵存在性 ──────────────────────────────
+
+# 🔴 **三条明知的边界，不得当作已覆盖**：
+#   ⑴ **文件存在 ≠ 内容还在**：字节下限只挡住「被清空／只剩标题」；若文件还在、其它
+#      内容也在，**而被下沉的那一块被删掉**，J8 仍然通过。内容级校验本次刻意不做
+#      （要么在根里冗余存一份摘要、要么给每块打标记，两者都在造新的同步负担）。
+#      **该残余风险如实登记在队列 §四 #80，报告里不得写成「已覆盖」。**
+#   ⑵ **只查根 `CLAUDE.md`，不递归**：子目录 `CLAUDE.md` 里若也写了指向别处的哨兵，
+#      本判据不管。范围写死、写明。
+#   ⑶ **改名不报**：若有人把子目录连同哨兵一起改名（两处同步改），J8 通过——这是对的，
+#      它守的是「指针悬空」，不是「目录不许动」。
+
+
+def _classify_sentinel_path(raw: str) -> tuple[str, str]:
+    """把一个路径串分成三类，返回 (判定, 标准化路径)。
+
+    判定 ∈ {`judge` 纳入判定, `self` 自指, `external` 仓库外}。
+    """
+    norm = raw.strip().replace("\\", "/")
+    while norm.startswith("./"):
+        norm = norm[2:]
+    if norm in ("", "CLAUDE.md"):
+        # **自指**：根文件自己（「开场读 ① 本 `CLAUDE.md`」「写入 `CLAUDE.md` 顶部
+        # Last Updated」，2026-08-23 实测在第 66／101 行）。判它**恒真、零信息量**。
+        return "self", norm
+    if (norm.startswith("~") or norm.startswith("/")
+            or re.match(r"^[A-Za-z]:", norm) or ".." in norm.split("/")):
+        # **仓库外**：`~/.claude/CLAUDE.md`（家目录全局件，第 4 行）不是仓库相对路径，
+        # 按仓库相对去 `exists()` **恒为假 ⇒ 会造一条永远红的告警**。
+        # 🔴 这不是「多报一条无害」——**误报会训练人忽略这条告警**，而它存在的全部
+        # 意义正是在真出事那次把人拦住。本 lint 不负责仓库外的件。
+        return "external", norm
+    return "judge", norm
+
+
+def _sentinel_snippet(line: str, cap: int = 60) -> str:
+    """哨兵原文片段，供人一眼认出是哪一行（截断到约 cap 字符）。"""
+    body = re.sub(r"^>\s*", "", line.strip()).strip()
+    return body[:cap] + ("…" if len(body) > cap else "")
+
+
+def collect_sentinels(text: str) -> tuple[list[tuple[int, str, str]],
+                                          list[tuple[int, str, str]]]:
+    """切出根 `CLAUDE.md` 里的哨兵引用。
+
+    返回 (反引号命中, 裸路径命中)，元素均为 (行号, 标准化相对路径, 原文片段)。
+    两者都已剔除「自指」与「仓库外」。裸扫描前先把反引号跨度整体抹成空格，
+    **同一处不会被数两次**。
+    """
+    quoted: list[tuple[int, str, str]] = []
+    bare: list[tuple[int, str, str]] = []
+    for line_no, line in enumerate(text.split("\n"), 1):
+        snippet = _sentinel_snippet(line)
+        for m in SENTINEL_QUOTED_RE.finditer(line):
+            verdict, norm = _classify_sentinel_path(m.group(1))
+            if verdict == "judge":
+                quoted.append((line_no, norm, snippet))
+        masked = list(line)
+        for m in re.finditer(r"`[^`\n]*`", line):
+            for i in range(m.start(), m.end()):
+                masked[i] = " "
+        for m in SENTINEL_BARE_RE.finditer("".join(masked)):
+            verdict, norm = _classify_sentinel_path(m.group(1))
+            if verdict == "judge":
+                bare.append((line_no, norm, snippet))
+    return quoted, bare
+
+
+def _sentinel_fault(repo_root: Path, rel: str, min_bytes: int) -> str:
+    """返回失效原因（空串＝正常）。"""
+    target = repo_root / rel
+    if not target.is_file():
+        return "目标文件不存在"
+    size = target.stat().st_size
+    if size < min_bytes:
+        return f"目标文件仅 {size:,} 字节（下限 {min_bytes:,}），疑似被清空或只剩标题"
+    return ""
+
+
+def check_sentinels(repo_root: Path, min_bytes: int = SENTINEL_MIN_BYTES_DEFAULT
+                    ) -> tuple[list[str], list[str], int, int, int]:
+    """J8。返回 (violations, warnings, 判定处数, 失效处数, 裸路径疑似处数)。
+
+    **判定处数按「出现次数」数，不按去重后的路径数**（Shao Peishen 2026-08-23 答 (a)）：
+    被删掉的是**某一处引用**，按次数数才能让人发现「上周还是 3 处、今天怎么 2 处了」。
+    """
+    root = repo_root / ROOT_CLAUDE_REL
+    if not root.is_file():
+        return [], [], 0, 0, 0
+    quoted, bare = collect_sentinels(root.read_text(encoding="utf-8"))
+    violations: list[str] = []
+    warnings: list[str] = []
+    faulted = 0
+    for line_no, rel, snippet in quoted:
+        fault = _sentinel_fault(repo_root, rel, min_bytes)
+        if fault:
+            faulted += 1
+            violations.append(
+                f"【J8】行{line_no} 哨兵「{snippet}」→ `{rel}` {fault}。"
+                f"**该哨兵指向的规则块将对所有新会话不可见**——被下沉的整块规则就此消失，"
+                f"而在本判据之前没有任何机制会报错")
+    for line_no, rel, snippet in bare:
+        fault = _sentinel_fault(repo_root, rel, min_bytes)
+        if fault:
+            warnings.append(
+                f"【J8】行{line_no} 疑似未加反引号的哨兵「{snippet}」→ `{rel}` {fault}。"
+                f"裸路径只告警不阻断（可能误命中散文）——若它确是哨兵，请补上反引号，"
+                f"补后本判据即改为硬拦")
+    return violations, warnings, len(quoted), faulted, len(bare)
+
+
+def sentinel_summary_line(repo_root: Path, min_bytes: int) -> str:
+    """J8 统计行。**无论有无违规都回显**——理由同 J7 那条注释：只在超限时才打印，
+    等于把「现在还剩几条、都是哪几条」藏起来，**而哨兵这件事的风险恰恰是「悄悄少了
+    一条也没人知道」**，回显总数是唯一能让人发现数字变小了的信号。"""
+    _v, _w, total, faulted, bare_n = check_sentinels(repo_root, min_bytes)
+    verdict = "全部命中" if faulted == 0 else f"缺失或被清空 {faulted} 处"
+    tail = f"　｜　另有 {bare_n} 处疑似裸路径（见告警）" if bare_n else ""
+    return f"🛡 哨兵存在性：{total} 处哨兵，{verdict}{tail}"
+
+
 # ─────────────────────────────────── 驱动 ───────────────────────────────────
 
 def target_files(repo_root: Path, root_only: bool) -> list[str]:
@@ -503,7 +660,8 @@ def lint(repo_root: Path, *, root_only: bool = False,
          count_cap: int = ENTRY_COUNT_CAP_DEFAULT,
          length_cap: int = ENTRY_LENGTH_CAP_DEFAULT,
          handoff_byte_cap: int = HANDOFF_BYTE_CAP_DEFAULT,
-         budget_cap: int = OPENING_BUDGET_CAP_DEFAULT
+         budget_cap: int = OPENING_BUDGET_CAP_DEFAULT,
+         sentinel_min_bytes: int = SENTINEL_MIN_BYTES_DEFAULT
          ) -> tuple[list[str], list[str], list[ParsedFile]]:
     """返回 (违规说明列表, 告警列表, 逐文件解析结果)。
 
@@ -530,6 +688,11 @@ def lint(repo_root: Path, *, root_only: bool = False,
         for v in check_entry_length(parsed, length_cap):
             violations.append(f"[{rel}] {v}")
 
+    # J8 **不受 `--root-only` 影响**：它判的正是根 `CLAUDE.md` 自己。
+    sentinel_v, sentinel_w, *_ = check_sentinels(repo_root, sentinel_min_bytes)
+    violations.extend(f"[{ROOT_CLAUDE_REL}] {v}" for v in sentinel_v)
+    warnings.extend(sentinel_w)
+
     if not root_only:
         warnings.extend(check_handoff_cards(repo_root, handoff_byte_cap))
         warnings.extend(check_opening_budget(repo_root, budget_cap))
@@ -548,6 +711,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="J6 接力件定长交接卡字节上限（默认 8192＝8 KB）")
     ap.add_argument("--budget-cap", type=int, default=OPENING_BUDGET_CAP_DEFAULT,
                     help="J7 开场读入件字节合计上限（默认 120000）")
+    ap.add_argument("--sentinel-min-bytes", type=int, default=SENTINEL_MIN_BYTES_DEFAULT,
+                    help="J8 哨兵目标文件字节下限（默认 200，低于即判被清空）")
     ap.add_argument("--repo-root", default=None, help="覆盖仓库根（默认＝本 checkout）")
     args = ap.parse_args(argv)
 
@@ -556,6 +721,7 @@ def main(argv: list[str] | None = None) -> int:
         repo_root, root_only=args.root_only,
         count_cap=args.count_cap, length_cap=args.length_cap,
         handoff_byte_cap=args.handoff_byte_cap, budget_cap=args.budget_cap,
+        sentinel_min_bytes=args.sentinel_min_bytes,
     )
 
     if args.stats:
@@ -587,6 +753,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"📐 开场预算：{detail}　｜　合计 {total:,} B / 上限 {args.budget_cap:,} B"
               f"（{total / args.budget_cap * 100:.0f}%）"
               f"　｜　队列 {OPENING_QUEUE_ENTRY} ＝ 只读 CLI 按行号查，开场读入 ≈ 0 B")
+
+    print(sentinel_summary_line(repo_root, args.sentinel_min_bytes))
 
     # 二期工作量基线（派单件 §六硬要求：一期上线后必须给出这两个数）。
     over_count = [p for p in parsed_all if p.structure and len(p.entries) > args.count_cap]
