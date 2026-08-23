@@ -21,17 +21,27 @@
 ⇒ 本工具的价值**不是**「让本来归不了档的包能归档」（那件事一直在发生），而是
 **把一个做过 50 次、且机器分不出真假的手工判断机制化**。不要在别处把它写成「破死锁」。
 
-━━━ 当前实现范围（🔴 未完，等 Shao Peishen 定夺 4）━━━
+━━━ 🔴 本工具不执行归档 ━━━
 
-本文件目前**只实现判定与 `--dry-run` 清单，不含任何归档动作**。
-归档执行路径（勾 archive task → `openspec archive -y` → 交 sweep 提交）**尚未实现**，
-因为「判据用来驱动自动归档(a) 还是只驱动告警分类(b)」是待定夺项：
+**它只做判定，不调用 `openspec archive`、不勾任何 task、不移动任何目录。**
+范围由 Shao Peishen 2026-08-23 拍板取 (b)：判据只用来给落库 sweep 的滞留告警**分类**，
+归档动作仍由人做。判定结果分四类，各自措辞不同——「疑似遗忘归档」只留给真遗忘：
 
-    (a) 自动归档  —— 省手工往返，但 archive 是**不可逆目录移动**
-    (b) 只修告警  —— 零不可逆风险，但省不掉手工往返
+    complete（N/N）                     ⇒ 「只差归档这一步」（**最纯的真遗忘**，见 §3.1ter）
+    substantively-complete ＋ 无人留话   ⇒ 「只差归档这一步」（真遗忘，升级告警）
+    substantively-complete ＋ 有人留话   ⇒ 「作者已写明理由，但未用机器认得的入口」＋给出三条入口
+    incomplete                          ⇒ 「尚有 N 条真未完项」（它没完工，谈不上忘了归档）
+    no-tasks                            ⇒ 「判不了完工」（显式记名，不静默略过）
 
-**两个方案共用的恰好就是本文件的判定部分**，故先建这部分。定夺前**不得**为本模块接上
-执行路径，也**不得**由 `工具-落库sweep.py` 调用其执行分支。
+🔴 **第一类曾被漏掉，且它是最常见的那一种** —— 39/50 已归档包在归档时是 N/N。
+修复前 N/N 会落进 `incomplete` 被说成「尚有 0 条真未完项，它没完工」，自相矛盾
+且恰好把最该喊的那一类喊反了。判据的完整定义见 `is_substantively_complete`。
+
+权衡与取舍见 `1-转型规划/0-全景路线图/定夺件-【CC】自动归档范围-a自动归档vs-b只修告警-2026-08-23.md`。
+
+⚠️ **文件名保留 `工具-变更包自动归档.py` 不改**：它已被 commit、队列行、派单件以此名引用，
+改名会让那些指针失效（本项目已多次记过「指针指向已不存在的东西」这个形态）。
+**以本注释为准：本工具不归档。**
 """
 from __future__ import annotations
 
@@ -177,6 +187,26 @@ def classify_tasks(text: str, name: str = "") -> Verdict:
     return Verdict(name, SUBSTANTIVE, checked, unchecked, reason, unchecked_carry_notes=carry_notes)
 
 
+def is_substantively_complete(verdict: Verdict) -> bool:
+    """「实质完工」的完整定义（派单件 §3.1ter，2026-08-23 Shao Peishen 追问自洽性后补）。
+
+    **两条任一命中即成立**：
+
+        ⑴ 未勾项数 ＝ 0（N/N）
+        ⑵ 未勾项 ≥1 且全部是 archive 动作本身
+
+    🔴 **⑴ 极易被漏掉，而它恰恰是最常见的那一种。** 派单件 §3.1ter 把它论证为「治本
+    （新包不再把 archive 写进 tasks）生效之后才会出现」的未来问题——**但实测它现在就是
+    主流路径**：`openspec/changes/archive/` 下 50 个已归档包里 **39 个在归档时是 N/N**。
+    ⇒ 一个包在「勾完最后一条」到「跑完 archive」之间必然经过 N/N，这个窗口一旦超过
+    滞留阈值，它就是**最纯的真遗忘归档**（连一条未勾项都没有，除了归档没别的事可做）。
+
+    **本判据修复前的真实行为**：N/N 的包落进 `INCOMPLETE` 分支，被告警说成
+    「尚有 0 条真未完项 —— 它没完工」——**既自相矛盾，又恰好把最该喊的那一类喊反了。**
+    """
+    return verdict.status in (COMPLETE, SUBSTANTIVE)
+
+
 def scan_changes(changes_dir: Path) -> list[Verdict]:
     """扫描 `openspec/changes/*/tasks.md`，逐包判定。跳过 `archive/`（已归档的不再判）。"""
     verdicts: list[Verdict] = []
@@ -238,19 +268,86 @@ def assert_main_workspace(repo_root: Path, sweep=None) -> None:
         ) from exc
 
 
+# ── 告警分类（sweep 的滞留告警调这里）─────────────────────────────────────────
+#
+# 🔴 三类各自措辞，而不是「把误报的滤掉」。误报的对立面不是静默，是**说对话**：
+# 若只把「有人留了话」那几个包滤掉不报，人就再也看不到「作者留了话但没用机器入口」
+# 这件事——而那正是队列 §四 #87 查出的真根因，也正是下一次误报会重新长出来的地方。
+
+ALERT_FORGOTTEN = "forgotten"      # 实质完工 ＋ 无人留话 ⇒ 只差归档这一步（这才是真遗忘）
+ALERT_UNDECLARED = "undeclared"    # 实质完工 ＋ 有人留话 ⇒ 有理由，但没写在机器认得的地方
+ALERT_UNFINISHED = "unfinished"    # 尚有真未完项 ⇒ 它没完工，谈不上忘了归档
+
+# 三条现成降噪入口（队列 §四 #87 实测：机制早已具备，缺的是没人知道有这三个入口）。
+# 🔴 第 2 类的告警正文**必须**把它们逐条列出——告警若只说「你没声明」而不给声明方式，
+# 等于把同一个缺口原样留在那里。
+DECLARE_ENTRIES = (
+    "在 proposal/design/tasks 任一处写文本标记 `暂不归档`（作者对未来的永久声明）",
+    "在同上三处写 `预期观察窗口：N 天`（命中即报「🔭 观察中」、不计异常，超窗才升级）",
+    "跑 `工具-落库sweep.py --ack-stale-change <包名> --note <依据>`"
+    "（复核者对过去某一刻的确认，带 done/total 指纹，tasks 一有新勾选即自动失效）",
+)
+
+
+ALERT_UNJUDGEABLE = "unjudgeable"  # 无 tasks.md ⇒ 判不了完工，显式记名而不是猜
+
+
+def alert_class(verdict: Verdict) -> str:
+    """把判定结果映射成告警类别。
+
+    🔴 `COMPLETE`（N/N）**必须映射到 ALERT_FORGOTTEN，不能落进 UNFINISHED** ——
+    见 `is_substantively_complete` 文档：那是最纯的真遗忘归档，而修复前它会被说成
+    「尚有 0 条真未完项，它没完工」。派单件 §3.1ter。
+    """
+    if verdict.status == NO_TASKS:
+        return ALERT_UNJUDGEABLE
+    if verdict.status == COMPLETE:
+        return ALERT_FORGOTTEN
+    if verdict.status == SUBSTANTIVE:
+        return ALERT_UNDECLARED if verdict.unchecked_carry_notes else ALERT_FORGOTTEN
+    return ALERT_UNFINISHED
+
+
+def alert_phrase(verdict: Verdict, days_idle: float) -> str:
+    """一行措辞。逐条回显包名／结论／理由，使判据可被现场证伪（#87 教训）。"""
+    kind = alert_class(verdict)
+    head = f"`{verdict.name}`（{verdict.progress}，{days_idle:.1f} 天无改动）"
+    if kind == ALERT_FORGOTTEN:
+        why = (
+            "tasks 已全部勾完（N/N），除归档外无事可做"
+            if verdict.status == COMPLETE
+            else "未勾项只剩 archive 动作本身且无人留说明"
+        )
+        return f"⚠ {head} **只差归档这一步** —— {why}，疑似遗忘归档"
+    if kind == ALERT_UNDECLARED:
+        return (
+            f"📝 {head} **作者已写明理由，但未用机器认得的入口** —— "
+            f"未勾项只剩 archive 动作，且行内/子项有人留了话"
+        )
+    if kind == ALERT_UNJUDGEABLE:
+        return f"⚠️ {head} **判不了完工** —— 无 tasks.md，显式记名交人看"
+    n = sum(1 for ln in verdict.unchecked if not is_archive_action_line(ln))
+    return f"⬜ {head} **尚有 {n} 条真未完项** —— 它没完工，不属遗忘归档"
+
+
+def declare_entries_block(indent: str = "  ") -> str:
+    """第 2 类告警要附的三条出口。"""
+    return "\n".join(f"{indent}· {e}" for e in DECLARE_ENTRIES)
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 _LABEL = {
-    SUBSTANTIVE: "🟢 实质完工",
+    COMPLETE: "🟢 实质完工 · N/N（除归档外无事可做）",
+    SUBSTANTIVE: "🟢 实质完工 · 未勾项只剩 archive 本身",
     INCOMPLETE: "⬜ 未完工",
-    COMPLETE: "✅ 已无欠账",
     NO_TASKS: "⚠️ 判不了",
 }
 
 
 def render(verdicts: list[Verdict], verbose: bool = False) -> str:
     lines = ["变更包完工形态判定（判据：未勾项是否全部为 archive 动作本身）", ""]
-    for order in (SUBSTANTIVE, INCOMPLETE, COMPLETE, NO_TASKS):
+    for order in (COMPLETE, SUBSTANTIVE, INCOMPLETE, NO_TASKS):
         group = [v for v in verdicts if v.status == order]
         if not group:
             continue
@@ -261,36 +358,36 @@ def render(verdicts: list[Verdict], verbose: bool = False) -> str:
                 for ln in v.unchecked:
                     lines.append(f"      └ {ln}")
         lines.append("")
-    n_sub = sum(1 for v in verdicts if v.status == SUBSTANTIVE)
-    lines.append(f"合计 {len(verdicts)} 个在途包，其中判为「实质完工」{n_sub} 个。")
-    lines.append("🔴 本工具当前只做判定，不执行归档（等定夺 4：自动归档 vs 只修告警）。")
+    n_sub = sum(1 for v in verdicts if is_substantively_complete(v))
+    lines.append(f"合计 {len(verdicts)} 个在途包，其中判为「实质完工」{n_sub} 个"
+                 "（＝ N/N 或 未勾项全为 archive 本身，派单件 §3.1ter）。")
+    lines.append("🔴 本工具只判定、不归档。")
     return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="变更包「实质完工」判定（当前只支持 --dry-run）")
-    parser.add_argument("--dry-run", action="store_true", help="打印判定清单，不做任何改动（当前唯一支持的模式）")
+    parser = argparse.ArgumentParser(
+        description="变更包完工形态判定（只判定，不归档）"
+    )
+    parser.add_argument("--dry-run", action="store_true",
+                        help="保留兼容：本工具本就只判定不改动，加不加都一样")
     parser.add_argument("--repo-root", default=None, help="仅供单测覆盖主工作区断言，生产不要传")
     parser.add_argument("--verbose", action="store_true", help="所有分组都逐条回显未勾项")
     args = parser.parse_args(argv)
 
-    if not args.dry_run:
-        print(
-            "✗ 当前只实现了 --dry-run。归档执行路径尚未实现——"
-            "「判据驱动自动归档 还是 只驱动告警分类」待 Shao Peishen 定夺（OP-0823-F 定夺 4）。",
-            file=sys.stderr,
-        )
-        return 2
-
     sweep = _load_sweep()
     repo_root = Path(args.repo_root).resolve() if args.repo_root else Path(sweep.MAIN_WORKSPACE)
-    # --dry-run 是纯只读，主工作区断言在此**不阻断**、只提示：读到 worktree 副本的清单
-    # 也仍有参考价值，但必须让人知道读的是副本。真正的硬拒绝挂在执行路径上（尚未实现）。
+    # 本工具纯只读，故主工作区断言在 CLI 里**不阻断**、只提示：读到 worktree 副本的清单
+    # 仍有参考价值，但必须让人知道读的是副本（副本可能停在分支点——实测本变更包建造用的
+    # worktree 里就有 2 个主工作区根本不存在的空「幽灵包」目录）。
     try:
         assert_main_workspace(repo_root, sweep)
     except RefuseToRun as exc:
-        print(f"⚠️ {exc}\n   （--dry-run 只读，继续打印，但下列结果来自非主工作区，不得据以归档。）\n",
-              file=sys.stderr)
+        print(
+            f"⚠️ {exc}\n"
+            "   （本工具只读，继续打印，但下列结果来自非主工作区，不得据以判断。）\n",
+            file=sys.stderr,
+        )
 
     print(render(scan_changes(repo_root / "openspec" / "changes"), verbose=args.verbose))
     return 0

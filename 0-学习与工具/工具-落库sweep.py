@@ -362,6 +362,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import importlib.util
 import json
 import re
 import subprocess
@@ -2496,6 +2497,36 @@ def _find_stale_in_flight_changes(repo_root: Path) -> list[dict]:
     return hits
 
 
+def _load_change_classifier(log: list[str]):
+    """加载完工形态判定器（变更包 auto-archive-substantive-complete，OP-0823-F）。
+
+    🔴 **从低取值**：加载失败时返回 None，调用方退回原有单一措辞并把原因记进日志——
+    不静默、不抛异常、不中断 sweep 主流程。一条告警的措辞变精确是改进，为它把整轮
+    落库拖挂则是倒退。
+    """
+    path = Path(__file__).resolve().with_name("工具-变更包自动归档.py")
+    try:
+        spec = importlib.util.spec_from_file_location("_change_classifier", path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module  # dataclass 处理注解时会回查 sys.modules
+        spec.loader.exec_module(module)
+        return module
+    except Exception as exc:  # noqa: BLE001 —— 任何加载失败都只降级，不上抛
+        log.append(f"⚠ 完工形态判定器加载失败（{type(exc).__name__}: {exc}），本轮滞留告警退回原措辞")
+        return None
+
+
+def _classify_change_package(classifier, repo_root: Path, change_name: str):
+    """读该包 tasks.md 并判定；判定器不可用或读不到时返回 None（调用方退回原措辞）。"""
+    if classifier is None:
+        return None
+    tasks = repo_root / OPENSPEC_CHANGES_REL / change_name / "tasks.md"
+    try:
+        return classifier.classify_tasks(tasks.read_text(encoding="utf-8"), change_name)
+    except OSError:
+        return None
+
+
 def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: list[str]) -> None:
     """队列 #298 M2：日志逐条列出，webhook 每个包 24 小时内只推一次
     （同 M1/`_track_and_alert_orphan_paths` 的节流理由）。队列 #308 子项
@@ -2521,28 +2552,55 @@ def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: li
             f"窗口 {hit['observation_window_days']:.0f} 天），不计异常"
         )
 
+    # 变更包 auto-archive-substantive-complete（OP-0823-F）：分三类各自措辞。
+    # 判定器不可用时从低取值——退回原单一措辞并记明原因，不静默、不中断 sweep。
+    classifier = _load_change_classifier(log)
+    classes: dict[str, str] = {}
     for hit in escalate:
         window_note = (
             f"，超出其声明的观察窗口 {hit['observation_window_days']:.0f} 天"
             if hit["observation_window_days"] is not None else ""
         )
-        log.append(
-            f"⚠ 在途变更包 `{hit['change']}` 完成率 {hit['rate']:.0%}"
-            f"（{hit['done']}/{hit['total']}）但已 {hit['days_idle']:.1f} 天无改动{window_note}，"
-            "疑似遗忘归档"
-        )
+        verdict = _classify_change_package(classifier, repo_root, hit["change"])
+        if verdict is None:
+            log.append(
+                f"⚠ 在途变更包 `{hit['change']}` 完成率 {hit['rate']:.0%}"
+                f"（{hit['done']}/{hit['total']}）但已 {hit['days_idle']:.1f} 天无改动{window_note}，"
+                "疑似遗忘归档"
+            )
+            continue
+        classes[hit["change"]] = classifier.alert_class(verdict)
+        log.append(classifier.alert_phrase(verdict, hit["days_idle"]) + window_note)
 
     hits_by_change = {h["change"]: h for h in escalate}
 
     def render_alert(keys):
-        lines = [
-            f"- `{k}`（{hits_by_change[k]['rate']:.0%}，{hits_by_change[k]['days_idle']:.1f} 天无改动）"
-            for k in keys
-        ]
-        return (
-            f"📋 落库sweep：{len(keys)} 个在途 openspec 变更包高完成率但长期无改动，"
-            "疑似遗忘归档：\n" + "\n".join(lines)
-        )
+        # 逐条回显包名／结论／理由——只印一句写死的话、不说命中了什么，判据就无法被
+        # 现场证伪（队列 §四 #87 教训）。
+        # 🔴 判定器不可用时 `classes` 为空、且**不得**去取 classifier 的常量——
+        # 「一条告警措辞变精确」的改进不该有能力让整轮落库抛异常。
+        what_by_kind = {} if classifier is None else {
+            classifier.ALERT_FORGOTTEN: "只差归档这一步（未勾项只剩 archive 本身、无人留说明）",
+            classifier.ALERT_UNDECLARED: "作者已写明理由，但未用机器认得的入口",
+            classifier.ALERT_UNFINISHED: "尚有真未完项——它没完工，不属遗忘归档",
+        }
+        lines = []
+        for k in sorted(keys):
+            h = hits_by_change[k]
+            what = what_by_kind.get(classes.get(k), "高完成率但长期无改动，疑似遗忘归档")
+            lines.append(f"- `{k}`（{h['done']}/{h['total']}，{h['days_idle']:.1f} 天无改动）：{what}")
+        body = f"📋 落库sweep：{len(keys)} 个在途 openspec 变更包长期无改动：\n" + "\n".join(lines)
+        # 🔴 「作者已写明理由但没声明」这一类，正文必须给出声明方式——告警若只说
+        # 「你没声明」而不给出口，等于把同一个缺口原样留在那里（#87 的真根因）。
+        if classifier is not None and any(
+            classes.get(k) == classifier.ALERT_UNDECLARED for k in keys
+        ):
+            body += (
+                "\n\n📝 上列标注「未用机器认得的入口」的包，理由已写在 tasks 行内但机器读不到。"
+                "三条现成入口任选其一即可让它不再被误报：\n"
+                + classifier.declare_entries_block()
+            )
+        return body
 
     def render_resolved(keys):
         lines = "\n".join(f"- `{k}`（已归档或完成率/滞留天数不再满足条件）" for k in keys)

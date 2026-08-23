@@ -134,6 +134,53 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(v.checked, 1)
 
 
+class TestSubstantivelyComplete(unittest.TestCase):
+    """🔴 派单件 §3.1ter：「实质完工」的完整定义 —— 两条任一命中即成立。
+
+    **第一条（N/N）是本次补的，缺了它整个判据是自相矛盾的**：
+
+    - 派单件 §四 原本要「治本」（新包不再把 archive 写进 tasks）⇒ 治本一生效，新包完工即
+      N/N，永远不满足「未勾项全是 archive」⇒ **新包反而没人管了**；
+    - 而更要紧的是：**这个洞现在就在漏，与治本无关** —— 实测 `openspec/changes/archive/` 下
+      50 个已归档包里 **39 个在归档时是 N/N**。一个包从「勾完最后一条」到「跑完 archive」
+      之间必然经过 N/N，**它是最常见的形态，不是治本之后才会出现的未来问题**。
+    """
+
+    def test_条件一_NN包判为实质完工(self):
+        """§3.1ter 要求的第一条。修复前它落进 incomplete，被说成「尚有 0 条真未完项」。"""
+        v = M.classify_tasks("- [x] 1.1 ok\n" * 31, "nn-pkg")
+        self.assertEqual(v.status, M.COMPLETE)
+        self.assertTrue(M.is_substantively_complete(v))
+
+    def test_条件二_未勾项全为archive判为实质完工(self):
+        """§3.1ter 要求的第二条（存量 9 个包走这条）。"""
+        v = M.classify_tasks("- [x] a\n" * 30 + REAL_SWEEP_OPS + "\n", "sweep-ops")
+        self.assertEqual(v.status, M.SUBSTANTIVE)
+        self.assertTrue(M.is_substantively_complete(v))
+
+    def test_含一条非archive未勾项_不判实质完工(self):
+        """§3.1ter 要求的第三条：`queue-status-machine-field` 47/48 照旧不得放行。"""
+        v = M.classify_tasks("- [x] a\n" * 47 + REAL_REAL_UNDONE + "\n", "queue-status")
+        self.assertEqual(v.status, M.INCOMPLETE)
+        self.assertFalse(M.is_substantively_complete(v))
+
+    def test_NN包的告警措辞是只差归档而非尚有0条(self):
+        """🔴 修复前的真实输出是「尚有 0 条真未完项 —— 它没完工」，31/31 却说没完工。"""
+        v = M.classify_tasks("- [x] 1.1 ok\n" * 31, "nn-pkg")
+        self.assertEqual(M.alert_class(v), M.ALERT_FORGOTTEN)
+        phrase = M.alert_phrase(v, 4.2)
+        self.assertIn("只差归档这一步", phrase)
+        self.assertIn("N/N", phrase)
+        self.assertNotIn("尚有 0 条", phrase)
+        self.assertNotIn("它没完工", phrase)
+
+    def test_无tasks包不落进未完工类(self):
+        """`no-tasks` 曾与 incomplete 共用一条分支，同样会印出「尚有 0 条真未完项」。"""
+        v = M.classify_tasks("# tasks\n\n本包无 tasks。\n", "sc2-weekly-report-mvp")
+        self.assertEqual(M.alert_class(v), M.ALERT_UNJUDGEABLE)
+        self.assertNotIn("尚有 0 条", M.alert_phrase(v, 4.2))
+
+
 class TestCarriesHumanNote(unittest.TestCase):
     """L2：🔴 本文件最要紧的一组——「这行里有没有人留了话」。
 
@@ -188,6 +235,130 @@ class TestRefuseOutsideMainWorkspace(unittest.TestCase):
             self.assertIn("不可逆", str(exc))
         else:
             self.fail("应当抛 RefuseToRun")
+
+
+class TestSweepAlertWording(unittest.TestCase):
+    """L4：sweep 滞留告警的三类措辞（端到端，用 2026-08-23 那 4 个被报的包做夹具）。
+
+    🔴 本组的核心断言是**否定式的**：那一轮 4 报 3 误，故断言「疑似遗忘归档」这个措辞
+    对它们**一个都不成立**。正向断言（三类各自命中对的对象）是配套，不能替代它——
+    只验「新话说对了」而不验「旧话不再说」，旧措辞完全可能仍并存在同一封告警里。
+    """
+
+    #: 四个包的 tasks.md 关键内容（未勾项部分逐字取自生产真身）
+    FIXTURES = {
+        "sweep-startup-nonblocking": ("- [x] x\n" * 25) + REAL_SWEEP_STARTUP + "\n",
+        "editlock-hold-scope-and-wip-block": ("- [x] x\n" * 33) + REAL_EDITLOCK + "\n",
+        "sweep-ops-webhook-cutover": ("- [x] x\n" * 30) + REAL_SWEEP_OPS + "\n"
+                                     + "  - 🔴 **本轮不做，前置条件确实不满足**：3.3 与 5.2 均未闭合\n",
+        # 21/23：一条真未完项 ＋ 一条 archive
+        "open-pool-reminder-dual-file-and-staleness":
+            ("- [x] x\n" * 21) + REAL_OPEN_POOL + "\n- [ ] 5.3 `/opsx:archive`\n",
+    }
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "reports").mkdir(parents=True, exist_ok=True)
+        for name, body in self.FIXTURES.items():
+            d = self.repo / "openspec" / "changes" / name
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "tasks.md").write_text(body, encoding="utf-8")
+        self.sweep = _load_sweep_module()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run(self, names=None):
+        import unittest.mock as mock
+        names = names or list(self.FIXTURES)
+        hits = []
+        for n in names:
+            text = self.FIXTURES[n]
+            done = text.count("- [x]")
+            todo = text.count("- [ ]")
+            hits.append({"change": n, "done": done, "total": done + todo,
+                         "rate": done / (done + todo), "days_idle": 4.2,
+                         "observation_window_days": None})
+        log, sent = [], []
+        with mock.patch.object(self.sweep, "_load_webhook_url", return_value=None), \
+             mock.patch.object(self.sweep, "_track_and_alert_standing_state",
+                               side_effect=lambda *a, **k: sent.append(a)):
+            self.sweep._announce_stale_in_flight_changes(self.repo, hits, log)
+        return "\n".join(log), sent
+
+    def test_旧措辞对那四个包全部不再成立(self):
+        joined, _ = self._run()
+        self.assertNotIn("疑似遗忘归档", joined)
+
+    def test_三个实质完工包判为未用机器入口(self):
+        joined, _ = self._run()
+        for n in ("sweep-startup-nonblocking", "editlock-hold-scope-and-wip-block",
+                  "sweep-ops-webhook-cutover"):
+            with self.subTest(pkg=n):
+                self.assertRegex(joined, rf"`{n}`.*未用机器认得的入口")
+
+    def test_真未完项包不被称为遗忘归档(self):
+        joined, _ = self._run()
+        self.assertRegex(joined, r"`open-pool-reminder-dual-file-and-staleness`.*尚有 1 条真未完项")
+
+    def test_光秃归档行仍判为真遗忘并沿用原告警路径(self):
+        """反向对照：判据没有变成「一律不报」——无人留话时它照样喊。"""
+        self.FIXTURES = dict(self.FIXTURES)
+        self.FIXTURES["bare-pkg"] = ("- [x] x\n" * 9) + REAL_BARE_1.replace("[x]", "[ ]") + "\n"
+        d = self.repo / "openspec" / "changes" / "bare-pkg"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "tasks.md").write_text(self.FIXTURES["bare-pkg"], encoding="utf-8")
+        joined, _ = self._run(["bare-pkg"])
+        self.assertIn("只差归档这一步", joined)
+        self.assertIn("疑似遗忘归档", joined)
+
+    def test_NN包端到端走真遗忘路径(self):
+        """§3.1ter 的告警侧对照：一个 N/N 的在途包必须被喊「只差归档这一步」。"""
+        self.FIXTURES = dict(self.FIXTURES)
+        self.FIXTURES["nn-pkg"] = "- [x] x\n" * 31
+        d = self.repo / "openspec" / "changes" / "nn-pkg"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "tasks.md").write_text(self.FIXTURES["nn-pkg"], encoding="utf-8")
+        joined, _ = self._run(["nn-pkg"])
+        self.assertIn("只差归档这一步", joined)
+        self.assertNotIn("尚有 0 条真未完项", joined)
+
+    def test_告警正文含三条声明入口(self):
+        """🔴 告警若只说「你没声明」而不给出声明方式，等于把缺口原样留在那里。"""
+        _, sent = self._run()
+        self.assertTrue(sent, "应当调用过 _track_and_alert_standing_state")
+        render_alert = sent[0][5]
+        body = render_alert(sorted(self.FIXTURES))
+        for entry in ("暂不归档", "预期观察窗口", "--ack-stale-change"):
+            with self.subTest(entry=entry):
+                self.assertIn(entry, body)
+
+    def test_判定器不可用时退回原措辞且不中断(self):
+        """从低取值：加载失败只降级 + 记日志，不抛、不拖垮 sweep。"""
+        import unittest.mock as mock
+        with mock.patch.object(self.sweep, "_load_change_classifier", return_value=None):
+            joined, _ = self._run()
+        self.assertIn("疑似遗忘归档", joined)  # 退回原措辞
+        self.assertNotIn("未用机器认得的入口", joined)
+
+    def test_加载失败原因写进日志(self):
+        log = []
+        import unittest.mock as mock
+        with mock.patch.object(self.sweep.importlib.util, "spec_from_file_location",
+                               side_effect=RuntimeError("boom")):
+            self.assertIsNone(self.sweep._load_change_classifier(log))
+        self.assertRegex("\n".join(log), r"完工形态判定器加载失败.*boom")
+
+
+def _load_sweep_module():
+    spec = importlib.util.spec_from_file_location(
+        "_sweep_for_alert_test", SCRIPT.with_name("工具-落库sweep.py"))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 if __name__ == "__main__":
