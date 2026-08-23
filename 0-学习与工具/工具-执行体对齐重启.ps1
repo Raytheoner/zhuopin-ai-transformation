@@ -28,7 +28,7 @@
       3 固化备份    —— 未跟踪 ＋ ignored 全量复制到**仓库外**
       4 停服        —— 整条进程链，**先父后子**，复查零残留
       5 ff          —— `merge --ff-only`，校验落后归零
-      6 启动
+      6 启动        —— **只启「停服前在跑的」**，绝不计划外触发一次性日任务
       7 验重启      —— 比对进程链 CreationTime **真的变了**
       8 验活        —— 心跳时间戳**真的刷新**（不是看服务在不在）
       9 摘要
@@ -59,7 +59,8 @@
 .NOTES
     退出码（🔴 由本脚本自身 `exit` 给出，调用方读 `$LASTEXITCODE`）：
       0 全关通过 ／ 10 身份 ／ 11 不可 ff ／ 12 备份 ／ 13 停服残留
-      14 ff 失败 ／ 15 重启未生效 ／ 16 验活失败 ／ 20 参数或环境错误
+      14 ff 失败 ／ 15 重启未生效 ／ 16 验活失败 ／ 17 无可重启的常驻任务
+      20 参数或环境错误
 
     🔴 **绝不要**用 `cmd /c ... & echo %ERRORLEVEL%` 之类取本脚本的退出码：
     `%ERRORLEVEL%` 在 cmd **解析期**就被展开，读到的是命令还没跑时的值
@@ -207,6 +208,19 @@ try {
     Stop-WithCode 20 '执行体关联任务未取到，未做任何改动'
 }
 $tasks = @($tasks | Select-Object -Unique)
+# 🔴 **第 4 个坑（2026-08-24 首次实跑当场撞到，#68 未记）**：这三个关联任务
+# 里只有 `ZhuopinAibotDevListener` 是常驻的，另两个是**每日一次性任务**。
+# 初版把它们一并 `Start-ScheduledTask`，等于**在计划外把日任务跑了一遍**
+# ——本次实测它们没发出任何东西（`dispatch_batch_summary` 的 sent=0），
+# **但那是运气不是设计**：这一族脚本普遍是「报告上次以来的新增项并记下
+# 已见」，计划外跑一遍有可能**把新增项消耗掉却不通知任何人**。
+# ⇒ 判据：**只重启「停服前确实在跑」的任务**，其余显式跳过并说明。
+$runningBefore = @()
+foreach ($name in $tasks) {
+    try {
+        if ((Get-ScheduledTask -TaskName $name).State -eq 'Running') { $runningBefore += $name }
+    } catch { }
+}
 if ($tasks.Count -eq 0) {
     Write-Gate '前置' 'i' '未找到指向本执行体的计划任务——本次只做 ff，不涉停服/重启/验活'
 } else {
@@ -215,9 +229,9 @@ if ($tasks.Count -eq 0) {
 
 if ($DryRun) {
     $plan = if ($RestartOnly) {
-        "将执行：停 $($tasks.Count) 个任务并杀进程链 → 启动 → 验重启 → 验活（跳过 ff 三关）"
+        "将执行：停 $($tasks.Count) 个任务并杀进程链 → 只重启其中在跑的 $($runningBefore.Count) 个（$($runningBefore -join '、')）→ 验重启 → 验活（跳过 ff 三关）"
     } else {
-        "将执行：备份 → 停 $($tasks.Count) 个任务并杀进程链 → ff（$behindN 个提交）→ 启动 → 验重启 → 验活"
+        "将执行：备份 → 停 $($tasks.Count) 个任务并杀进程链 → ff（$behindN 个提交）→ 只重启其中在跑的 $($runningBefore.Count) 个（$($runningBefore -join '、')）→ 验重启 → 验活"
     }
     Write-Gate '干跑' 'i' $plan
     Stop-WithCode 0 '干跑结束，未做任何改动'
@@ -348,11 +362,19 @@ Write-Gate '5 ff' '✓' "已 ff 对齐（$behindN → 0）"
 # ─────────────────────── 第 6 关：启动 ───────────────────────
 $startAt = (Get-Date).ToUniversalTime()
 foreach ($name in $tasks) {
+    if ($runningBefore -notcontains $name) {
+        Write-Host ("      跳过启动：{0}（停服前未在运行；一次性任务不做计划外触发）" -f $name)
+        continue
+    }
     try { Start-ScheduledTask -TaskName $name -ErrorAction Stop } catch {
         Write-Host ("      启动失败：{0}：{1}" -f $name, $_)
     }
 }
-Write-Gate '6 启动' 'i' ("已发起启动 {0} 个任务（发起时刻 {1}Z）" -f $tasks.Count, $startAt.ToString('HH:mm:ss'))
+if ($runningBefore.Count -eq 0) {
+    Write-Gate '6 启动' '✗' '停服前没有任何关联任务处于运行状态——**没有可重启的常驻任务**；若本意是把一个已停的服务拉起来，那是「启动」不是「重启」，请人工确认后手动 Start-ScheduledTask'
+    Stop-WithCode 17 '无可重启的常驻任务，已停手（未计划外触发任何一次性任务）'
+}
+Write-Gate '6 启动' 'i' ("已发起启动 {0}/{1} 个任务（只重启停服前在跑的：{2}；发起时刻 {3}Z）" -f $runningBefore.Count, $tasks.Count, ($runningBefore -join '、'), $startAt.ToString('HH:mm:ss'))
 
 # ─────────────────────── 第 7 关：验重启 ───────────────────────
 # 🔴 **坑⑵**：不能只信"已重启"的打印，须比对进程链 CreationTime **真的变了**。
