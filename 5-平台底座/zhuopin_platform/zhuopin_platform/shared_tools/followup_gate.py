@@ -67,6 +67,33 @@ IN_FLIGHT_STATUS_PREFIXES: tuple[str, ...] = (
     "⏸ 暂缓",
 )
 
+# 🔴 「尚未发出」的三态（`OP-0823-D` 新增）——它是 `IN_FLIGHT_STATUS_PREFIXES`
+# 的真子集，但语义完全不同，**必须单独成一份**：
+#
+# 「在途」在本仓库一直混着两件事——「已经发出去、等着回」与「还没发出去」。
+# 判「回件该配哪封信」时只有前者算数：一封 `⏳ 待你审` 的草稿不可能收到回件。
+# 派单件 §3.1 只点名了 `⏳ 待你审`，此处一并纳入 `🆕 待发`（已批准、等轮巡
+# 投递）与 `⏸ 暂缓`（内容已审、主动不发）——**三者的共同事实是「专员那边
+# 还没看到这封信」**，把其中任何一个漏掉，都会让机器去配一封对方根本没
+# 收到的信。
+NOT_YET_SENT_STATUS_PREFIXES: tuple[str, ...] = (
+    "⏳ 待你审",
+    "🆕 待发",
+    "⏸ 暂缓",
+)
+
+# ---- 配对通道标识（`OP-0823-D`）。定义在此而不是 §五，是因为 §四 的
+# `UnsyncedLetter` 用它做字段默认值，而模块体是自上而下求值的。 ----
+PAIR_CHANNEL_STEM = "stem"                    # 文件名 stem 逐字相等（确定性最高）
+PAIR_CHANNEL_LATEST = "latest"                # 该收信人最新一封已发出的信（仅桥一用）
+PAIR_CHANNEL_REPLY_ARRIVED = "reply_arrived"  # 第九态单元格里的溯源回指（仅桥二用）
+
+# 未命中的三种原因（**都要能被区分**——处置级别不同：前两种 fail-loud
+# WARN，第三种是预期内常态、只能低噪，见 `PairingOutcome.is_expected_quiet`）
+PAIR_MISS_NO_DEPARTMENT = "no_department"         # 收信人解析不出
+PAIR_MISS_NO_DISPATCHED = "no_dispatched_letter"  # 该收信人一封已发出的信都没有
+PAIR_MISS_LATEST_CLOSED = "latest_closed"         # 🔴 最新一封已闭环 ＝ 闭环后的补充说明
+
 # 第九态（S4 桥一，队列 #366 M1）：回件**物理到达**、尚未拆件回灌。
 # 语义＝仍属在途、闸仍锁；它的价值是让「回件到了」这件事在权威源上立刻
 # 可见，而不必等人拆完件才在 README 上留下任何痕迹。
@@ -111,6 +138,25 @@ def is_reply_arrived_status(status_cell: str) -> bool:
     📨 开头，靠整串前缀区分，不得按 emoji 判。
     """
     return normalize_status(status_cell).startswith(REPLY_ARRIVED_STATUS)
+
+
+def is_not_yet_sent(status_cell: str) -> bool:
+    """该状态是否表示「这封信还没发到专员手里」（草稿／待投递／主动暂缓）。"""
+    normalized = normalize_status(status_cell)
+    return any(normalized.startswith(p) for p in NOT_YET_SENT_STATUS_PREFIXES)
+
+
+def is_dispatched(status_cell: str) -> bool:
+    """该信是否**已经发出去了**（＝专员那边看得到它）。
+
+    🔴 定义为 `not is_not_yet_sent`，而不是「命中某个已发前缀」——**未知
+    写法必须算已发出**。理由是两个方向的代价不对称：把一封已发出的信误判
+    为未发出，会让它在「最新一封」的排序里被跳过，于是回件被配到更早的
+    另一封信上，**错得悄无声息**；反过来把一封草稿误判为已发出，最坏结果
+    是配到一封没人收到的信，人拆件时一眼就能看出来。同 `classify_status`
+    对 `"unknown"` 的处理方向（保守 ＝ 闸仍锁），此处保守 ＝ 仍算在排序里。
+    """
+    return not is_not_yet_sent(status_cell)
 
 
 def classify_status(status_cell: str) -> str:
@@ -219,6 +265,25 @@ def extract_reply_source_stem(archive_filename: str) -> Optional[str]:
     return topic
 
 
+def reply_arrived_cites(status_cell: str, archive_filename: str) -> bool:
+    """该状态是否为第九态、且**溯源写的正是这份归档件**。
+
+    这是桥一 → 桥二之间那条**确定性回指**：桥一在回件到达那一刻完成配对
+    （那时才有"这条刚到的回件属于该收信人当前那封信"这个时间上下文），并把
+    归档文件名原样写进第九态单元格；桥二事后只是把它读回来。
+
+    🔴 **为什么桥二不能自己再跑一次通道②**：桥二在每次 `release` 时扫全部
+    历史入信行，**没有任何时间上下文**。一条 7 月的 `[S:done]` 入信行按
+    「该部门最新一封已发出的信」去配，会配到今天刚发出、根本还没人回的那
+    封信上，并把它自动闭环——**错得悄无声息，且会开错闸**。实测反例：
+    `财务部#14` 的回件与 `财务部#15` 的发出**同为 2026-08-23**，连按日期
+    加护栏都挡不住。⇒ 桥二只认两条**确定**通道：stem 逐字相等，与本函数。
+    """
+    if not is_reply_arrived_status(status_cell):
+        return False
+    return bool(archive_filename) and archive_filename in status_cell
+
+
 def normalize_letter_stem(stem: str) -> str:
     """剥掉专员回传时附加的 `-回复`／`-回件` 尾缀，得到可与原信 stem 逐字
     比对的形态。只剥一层，且只剥这两个确定尾缀。"""
@@ -280,6 +345,9 @@ class LetterRecord:
 class UnsyncedLetter:
     letter: LetterRecord
     intakes: tuple[IntakeRecord, ...]
+    # 本封是靠哪条确定通道配上的：`stem`（文件名逐字相等）／
+    # `reply_arrived`（第九态单元格里的溯源回指，由桥一在到达时写下）。
+    channel: str = PAIR_CHANNEL_STEM
 
     def describe(self) -> str:
         ids = " / ".join(f"§一 #{i.row_id}" for i in self.intakes)
@@ -297,28 +365,262 @@ def find_unsynced_letters(
 ) -> list[UnsyncedLetter]:
     """找出「回件已拆件、README 却还没转闭环态」的信。
 
-    配对只走 `reply_matches_letter`（归一化后 stem 逐字相等）——**匹配不上
-    就不配对，绝不猜**。因此：
+    配对走**两条确定通道**，两条都是「对上就是对上、对不上就不配」，
+    **绝不猜**（`OP-0823-D` 之前只有第一条）：
 
-    - 文本反馈类入信（文件名主题段恒为 `文本反馈`）**永远配不上任何信**，
-      本函数对它们零输出。这是设计取舍不是缺陷：一条纯文本回件无法确定地
-      指向哪一封信，硬配会造出比漏配更难发现的错误。
-    - README 行没有 `目标文件：` 标注（队列 #241 之前的历史行，实测 49 行
-      里只有 14 行有）同样配不上，零输出。
+    1. `reply_matches_letter` —— 归一化后 stem 逐字相等；
+    2. `reply_arrived_cites` —— 该信当前是第九态，且单元格里的溯源归档
+       文件名正是这一份。**这条把纯文字回件第一次纳入了覆盖面**：它们配不上
+       stem，README 行也多半没有 `目标文件：` 标注，此前永远漏在外面；现在
+       由桥一在到达那一刻把配对结论写进单元格，本函数读回来即可。
 
-    ⇒ **本判据只覆盖"能被确定配对"的那部分，覆盖率是它的已知边界。**
-      调用方 SHOULD 在文案里说明这一点，不得让读者以为"没报违规＝全同步"。
+    🔴 **本函数刻意不跑「该收信人最新一封已发出的信」那条通道**——理由见
+    `reply_arrived_cites` 的红字：本函数扫的是全部历史入信行，**没有时间
+    上下文**，按位置配会把今天刚发出、还没人回的信自动闭环。
+
+    ⇒ **已知边界**：桥一没跑成（服务停摆／锁忙三次用尽）的那些纯文字回件，
+      两条通道都对不上，本函数对它们零输出。调用方 SHOULD 在文案里说明这
+      一点，不得让读者以为"没报违规＝全同步"。
     """
-    letters = [ln for ln in letters if ln.target_filename]
     dismantled = [i for i in intakes if i.dismantled]
     results: list[UnsyncedLetter] = []
     for letter in letters:
         if is_closed_status(letter.status):
             continue
-        matched = tuple(
+        by_stem = tuple(
             i for i in dismantled
-            if reply_matches_letter(i.archived_filename, letter.target_filename or "")
+            if letter.target_filename
+            and reply_matches_letter(i.archived_filename, letter.target_filename)
         )
+        # `OP-0823-D` 第二条确定通道：桥一在回件到达那一刻写下的溯源回指。
+        # 它让**纯文字回件**第一次进入桥二的覆盖面——此前这类回件既配不上
+        # stem、README 行也多半没有 `目标文件：` 标注，于是永远漏在外面。
+        by_backlink = tuple(
+            i for i in dismantled
+            if i not in by_stem
+            and reply_arrived_cites(letter.status, i.archived_filename)
+        )
+        matched = by_stem + by_backlink
         if matched:
-            results.append(UnsyncedLetter(letter=letter, intakes=matched))
+            results.append(UnsyncedLetter(
+                letter=letter, intakes=matched,
+                channel=(PAIR_CHANNEL_STEM if by_stem else PAIR_CHANNEL_REPLY_ARRIVED),
+            ))
     return results
+
+
+# ---------------------------------------------------------------------------
+# 五、回件 ↔ 跟进信 两级配对（`OP-0823-D`，队列 #366）
+# ---------------------------------------------------------------------------
+#
+# ## 本节替代了什么
+#
+# 原判据只有一级：`reply_matches_letter`（stem 逐字相等），**配不上就不动**。
+# 该取舍的理由曾经成立（一条文本回件无法确定地指向哪封信），但后果是实测
+# 到的：凡专员用纯文字而不是回传 docx，README 那一格就永远靠人改，最久积压
+# 20 天以上。
+#
+# ## 为什么后备通道是「最新一封已发出的信」而不是「唯一在途的信」
+#
+# 🔴 **这一条是本节最该被记住的**：跟进闸的判据是「**该收信人最近一封是否
+# 已闭环**」——**只看最新一封**。若配对改用「所有未闭环的信恰好一封」，那
+# 是**第三种「在途」定义**，与闸不是同一把尺子 ⇒ 必然出现「配上了但闸没开」
+# 或反过来。
+#
+# 而且它在生产数据上**恒不成立**：2026-08-23 实测四位收信人各有 7／6／4／4
+# 封已发出未闭环的历史信（多为 2026-07-31 编号体系建立前，状态列从未维护），
+# 「恰好一封」一次都不会命中 ⇒ 按它实现，机制上线当天就是哑的。
+#
+# ⇒ 「所有未闭环」这个量**不作废、但换位置**：降级为
+# `unclosed_dispatched_by_department` 健康检查，只报数，不参与任何转态判定，
+# **不得阻塞配对**。
+
+@dataclass(frozen=True)
+class LetterRow:
+    """README「现有跟进信清单」的一行，带够做配对与排序的全部字段。
+
+    与上一节的 `LetterRecord` 并存而不合并：那个是桥二既有校验的入参形态
+    （只需编号／目标文件／状态），本节的配对还要用到收信人、日期与表内行序。
+    强行合并会改掉 `find_unsynced_letters` 的对外签名，而那个函数有两个
+    现役消费者与一条 CI 断言（`工具-队列结构lint.py` 盯着符号存在性）。
+    """
+
+    number: str
+    date: str
+    recipient: str
+    target_filename: Optional[str]
+    status: str
+    order: int  # 在表格里的物理次序，仅作排序末位决胜用
+
+    @property
+    def department(self) -> Optional[str]:
+        return recipient_department(self.recipient)
+
+
+def normalize_department(department: Optional[str]) -> str:
+    """部门名归一化：剥掉尾字「部」。
+
+    🔴 这不是洁癖，是一处真实的不对齐：`department_mapping.yaml` 里陈承那
+    一行的取值是 `IT`（不带「部」），而 README 收信人列写的是 `IT部 · 陈承`。
+    直接字符串比对会让 IT 域的回件**一封都配不上**，且不报任何错。
+    """
+    value = (department or "").strip()
+    return value[:-1] if value.endswith("部") and len(value) > 1 else value
+
+
+def recipient_department(recipient_cell: str) -> Optional[str]:
+    """从 README 收信人列取归一化后的部门名；取不到返回 None。
+
+    实测形态：`采购部 · 姚祖怡`／`采购部 · 姚祖怡（+团队）`／
+    `质量部 · 陈忱（可分担朱映桦）`／`采购部 · 姚祖怡（转汤易水第④项）`。
+    括注一律忽略——它标的是「谁可以分担」，不改变这封信是写给谁的。
+    """
+    if "·" not in (recipient_cell or ""):
+        return None
+    department = recipient_cell.split("·", 1)[0].strip()
+    normalized = normalize_department(department)
+    return normalized or None
+
+
+def _letter_sort_key(row: LetterRow) -> tuple:
+    """「最新」的排序键 ＝（日期, 编号序号, 表内行序）。
+
+    三个字段都需要，缺一不可：
+    - **日期**为主（ISO 形态 `2026-08-18`，字典序即时间序）；
+    - **编号**决胜同日多封（实测 `采购部#15`／`#16` 同为 2026-08-18）；
+    - **表内行序**兜底无编号行（`采购部（未发，不编号）`）与两者都相同的情形。
+
+    ⚠️ **不能只按表内行序**：实测 `采购部#4`（07-21）排在表格倒数第二行、
+    位于 `采购部#17`（08-20）之后——README 的物理行序不是时间序。
+    """
+    parsed = parse_letter_number(row.number)
+    return ((row.date or "").strip(), parsed[1] if parsed else -1, row.order)
+
+
+def latest_dispatched_letter(
+    rows: Iterable[LetterRow], department: Optional[str]
+) -> Optional[LetterRow]:
+    """该部门**最新一封已发出**的信；一封都没有则 None。
+
+    「已发出」＝ `is_dispatched`（排除 `⏳ 待你审`／`🆕 待发`／`⏸ 暂缓`）。
+    **与跟进闸同一把尺子**——闸判的也是「最近一封是否闭环」。
+    """
+    target = normalize_department(department)
+    if not target:
+        return None
+    candidates = [
+        r for r in rows
+        if r.department == target and is_dispatched(r.status)
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=_letter_sort_key)
+
+
+@dataclass(frozen=True)
+class PairingOutcome:
+    channel: str
+    letter: Optional[LetterRow]
+    detail: str
+
+    @property
+    def matched(self) -> bool:
+        """🔴 按**通道**判，不按 `letter is not None` 判。
+
+        `PAIR_MISS_LATEST_CLOSED` 也带着 `letter`（好让调用方能说出「是哪封
+        信已闭环」），但它是**未命中**。用 `letter is not None` 当命中判据，
+        会把「闭环后的补充说明」当成一次真配对去改 README——单测
+        `test_最新一封已闭环则不动README且只低噪` 当场抓到过这个形态。
+        """
+        return self.channel in (
+            PAIR_CHANNEL_STEM, PAIR_CHANNEL_LATEST, PAIR_CHANNEL_REPLY_ARRIVED,
+        )
+
+    @property
+    def is_expected_quiet(self) -> bool:
+        """本次未命中是否属**预期内常态**（⇒ 只记审计＋低噪，不得告警）。
+
+        闭环后专员再补一条说明是常规操作（派单件 §3.3）；把它按告警报出去，
+        等于每条补充说明制造一次假警报，而那正是「误报训练人忽略告警」。
+        """
+        return self.channel == PAIR_MISS_LATEST_CLOSED
+
+
+def pair_reply_to_letter(
+    *,
+    archive_filename: str,
+    department: Optional[str],
+    rows: Iterable[LetterRow],
+) -> PairingOutcome:
+    """一条回件该配哪封信——两级通道，第一级命中即止。
+
+    ① **stem 精确匹配**（确定性最高）：命中即配那封，**不进 ②**，也**不看
+       部门**——文件名逐字对上已经足够确定，且这样能逐字保住改造前的既有
+       行为，不制造净回归。
+    ② **后备**：该收信人**最新一封已发出的信**。不看文件名、不看正文，
+       **docx 与纯文字一视同仁**（派单件 §3.1）。
+
+    未命中的三种原因分开返回，因为它们的处置级别不同：`LATEST_CLOSED` 是
+    预期内常态（低噪），另两种是 fail-loud 的 WARN。
+    """
+    rows = list(rows)
+
+    for row in rows:
+        if row.target_filename and reply_matches_letter(
+            archive_filename, row.target_filename
+        ):
+            return PairingOutcome(
+                PAIR_CHANNEL_STEM, row,
+                f"通道①stem：归档件 `{archive_filename}` 与「{row.number}」的"
+                f"目标文件 `{row.target_filename}` 逐字相等。",
+            )
+
+    target = normalize_department(department)
+    if not target:
+        return PairingOutcome(
+            PAIR_MISS_NO_DEPARTMENT, None,
+            f"归档件 `{archive_filename}` 的收信人部门解析不出"
+            f"（传入 {department!r}）——未改 README。",
+        )
+
+    latest = latest_dispatched_letter(rows, target)
+    if latest is None:
+        return PairingOutcome(
+            PAIR_MISS_NO_DISPATCHED, None,
+            f"「{target}」在 README 中一封已发出的信都没有"
+            f"（草稿／待发／暂缓不算），归档件 `{archive_filename}` 未改 README。",
+        )
+    if is_closed_status(latest.status):
+        return PairingOutcome(
+            PAIR_MISS_LATEST_CLOSED, latest,
+            f"「{target}」最新一封已发出的信「{latest.number}」已闭环"
+            f"（{normalize_status(latest.status)[:24]}）——按 §3.3，闭环后到达的"
+            f"补充说明只落档、不改状态列、不重开在途。",
+        )
+    return PairingOutcome(
+        PAIR_CHANNEL_LATEST, latest,
+        f"通道②最新一封：「{target}」最新一封已发出且未闭环的信是"
+        f"「{latest.number}」（{latest.date}）。",
+    )
+
+
+def unclosed_dispatched_by_department(
+    rows: Iterable[LetterRow],
+) -> dict[str, list[LetterRow]]:
+    """§3.1bis 健康检查：各部门「已发出且未闭环」的信有几封。
+
+    🔴 **只报数。MUST NOT 参与任何转态判定，MUST NOT 阻塞配对。**
+    它在这里的唯一用途是让「某位专员名下堆了 7 封从未闭环的历史信」这件事
+    可见——那是账没维护好，不是回件配不上的理由。
+    """
+    grouped: dict[str, list[LetterRow]] = {}
+    for row in rows:
+        dept = row.department
+        if not dept or not is_dispatched(row.status):
+            continue
+        if is_closed_status(row.status):
+            continue
+        grouped.setdefault(dept, []).append(row)
+    for items in grouped.values():
+        items.sort(key=_letter_sort_key)
+    return grouped

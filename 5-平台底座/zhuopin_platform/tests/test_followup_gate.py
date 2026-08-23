@@ -163,3 +163,186 @@ class TestFindUnsyncedLetters:
             [self._intake("291", self.真实入信, True)],
             [fg.LetterRecord("财务部#3", None, "✅ 已推送 2026-07-13")],
         ) == []
+
+
+class TestDispatchedVsNotYetSent:
+    """`OP-0823-D`：「在途」一直混着两件事——已发出等回，与还没发出。"""
+
+    @pytest.mark.parametrize("status", ["⏳ 待你审", "🆕 待发", "⏸ 暂缓"])
+    def test_三种未发出态都不算已发出(self, status):
+        assert fg.is_not_yet_sent(status)
+        assert not fg.is_dispatched(status)
+
+    @pytest.mark.parametrize("status", [
+        "✅ 已推送 2026-08-18 07:23 UTC",
+        "✅ 已发（Paul 手动 2026-07-06，陈忱次日回）",
+        "📥 已回件并回灌（2026-08-21）",
+        "❌ 已作废 · 9 月重写",
+        f"{fg.REPLY_ARRIVED_STATUS} 2026-08-21T13:15:30Z",
+    ])
+    def test_其余一律算已发出(self, status):
+        assert fg.is_dispatched(status)
+
+    def test_没见过的写法算已发出而不是没发出(self):
+        """两个方向的代价不对称：误判成「没发出」会让它在排序里被跳过，
+        回件被配到更早的另一封信上，**错得悄无声息**。"""
+        assert fg.is_dispatched("🤔 说不清")
+
+
+class TestDepartmentNormalisation:
+    @pytest.mark.parametrize("raw,expected", [
+        ("采购部", "采购"), ("IT部", "IT"), ("IT", "IT"), ("财务部", "财务"),
+        ("", ""), (None, ""),
+    ])
+    def test_剥掉尾字部(self, raw, expected):
+        assert fg.normalize_department(raw) == expected
+
+    @pytest.mark.parametrize("cell,expected", [
+        ("采购部 · 姚祖怡", "采购"),
+        ("采购部 · 姚祖怡（+团队）", "采购"),
+        ("质量部 · 陈忱（可分担朱映桦）", "质量"),
+        ("采购部 · 姚祖怡（转汤易水第④项）", "采购"),
+        ("IT部 · 陈承（抄唐燕萍）", "IT"),
+    ])
+    def test_收信人列的四种真实括注形态都取得出部门(self, cell, expected):
+        assert fg.recipient_department(cell) == expected
+
+    def test_没有分隔符时取不出而不是瞎猜(self):
+        assert fg.recipient_department("姚祖怡") is None
+
+
+def _row(number, date, status, order, recipient="采购部 · 姚祖怡", target=None):
+    return fg.LetterRow(number=number, date=date, recipient=recipient,
+                        target_filename=target, status=status, order=order)
+
+
+class TestLatestDispatched:
+    def test_按日期取最新而不是按表内行序(self):
+        """实测：`采购部#4`（07-21）在真身 README 里排在 `#17`（08-20）之后。"""
+        rows = [
+            _row("采购部#17", "2026-08-20", "✅ 已推送", 0),
+            _row("采购部#4", "2026-07-21", "✅ 已推送", 1),
+        ]
+        assert fg.latest_dispatched_letter(rows, "采购部").number == "采购部#17"
+
+    def test_同日多封按编号决胜(self):
+        rows = [
+            _row("采购部#15", "2026-08-18", "✅ 已推送", 0),
+            _row("采购部#16", "2026-08-18", "✅ 已推送", 1),
+        ]
+        assert fg.latest_dispatched_letter(rows, "采购部").number == "采购部#16"
+
+    def test_跳过尚未发出的信(self):
+        rows = [
+            _row("采购部#17", "2026-08-20", "✅ 已推送", 0),
+            _row("采购部#18", "2026-08-22", "⏳ 待你审", 1),
+        ]
+        assert fg.latest_dispatched_letter(rows, "采购部").number == "采购部#17"
+
+    def test_部门不匹配的行不参与(self):
+        rows = [_row("财务部#1", "2026-08-20", "✅ 已推送", 0,
+                     recipient="财务部 · 唐燕萍")]
+        assert fg.latest_dispatched_letter(rows, "采购部") is None
+
+    def test_部门取不到时返回None不瞎配(self):
+        rows = [_row("采购部#17", "2026-08-20", "✅ 已推送", 0)]
+        assert fg.latest_dispatched_letter(rows, None) is None
+
+
+class TestPairReplyToLetter:
+    真实入信 = (
+        "采购部-YaoZuYi-回复-2026-08-21-采购部-姚祖怡-跟进-2026-08-20-"
+        "SC2采购周报口径判例批改-0d6acc8a6238e6155c6e91f874246213.docx"
+    )
+    真实目标 = "采购部-姚祖怡-跟进-2026-08-20-SC2采购周报口径判例批改.md"
+    文本反馈件 = "采购部-YaoZuYi-回复-2026-08-19-文本反馈-19662402efb7e15f1fe4993c9ea51772.md"
+
+    def test_stem优先于最新一封(self):
+        rows = [
+            _row("采购部#17", "2026-08-20", "✅ 已推送", 0, target=self.真实目标),
+            _row("采购部#18", "2026-08-22", "✅ 已推送", 1),
+        ]
+        out = fg.pair_reply_to_letter(
+            archive_filename=self.真实入信, department="采购部", rows=rows)
+        assert out.matched and out.channel == fg.PAIR_CHANNEL_STEM
+        assert out.letter.number == "采购部#17"
+
+    def test_纯文字回件走后备通道(self):
+        rows = [
+            _row("采购部#16", "2026-08-18", "✅ 已推送", 0),
+            _row("采购部#17", "2026-08-20", "✅ 已推送", 1),
+        ]
+        out = fg.pair_reply_to_letter(
+            archive_filename=self.文本反馈件, department="采购部", rows=rows)
+        assert out.matched and out.channel == fg.PAIR_CHANNEL_LATEST
+        assert out.letter.number == "采购部#17"
+
+    def test_最新一封已闭环即未命中且属预期内常态(self):
+        rows = [_row("采购部#17", "2026-08-20", "📥 已回件并回灌（2026-08-21）", 0)]
+        out = fg.pair_reply_to_letter(
+            archive_filename=self.文本反馈件, department="采购部", rows=rows)
+        assert not out.matched, "带着 letter 不等于命中——这一格曾把补充说明当成真配对"
+        assert out.channel == fg.PAIR_MISS_LATEST_CLOSED
+        assert out.is_expected_quiet, "闭环后的补充说明是常态，不得升级为告警"
+        assert out.letter.number == "采购部#17", "虽未命中，也要说得出是哪封已闭环"
+
+    def test_一封已发出的信都没有则fail_loud(self):
+        rows = [_row("采购部#18", "2026-08-22", "⏳ 待你审", 0)]
+        out = fg.pair_reply_to_letter(
+            archive_filename=self.文本反馈件, department="采购部", rows=rows)
+        assert not out.matched and out.channel == fg.PAIR_MISS_NO_DISPATCHED
+        assert not out.is_expected_quiet
+
+    def test_部门取不到则不猜(self):
+        rows = [_row("采购部#17", "2026-08-20", "✅ 已推送", 0)]
+        out = fg.pair_reply_to_letter(
+            archive_filename=self.文本反馈件, department=None, rows=rows)
+        assert not out.matched and out.channel == fg.PAIR_MISS_NO_DEPARTMENT
+
+    def test_历史未闭环堆积不阻塞配对(self):
+        """🔴 反例锁死已被推翻的方案 B（唯一在途）：生产数据上四位收信人各有
+        7／6／4／4 封已发出未闭环的历史信，按「恰好一封」实现会一次都不命中。"""
+        rows = [_row(f"采购部#{n}", f"2026-07-{10 + n:02d}", "✅ 已推送", n)
+                for n in range(1, 8)]
+        rows.append(_row("采购部#17", "2026-08-20", "✅ 已推送", 99))
+        out = fg.pair_reply_to_letter(
+            archive_filename=self.文本反馈件, department="采购部", rows=rows)
+        assert out.matched and out.letter.number == "采购部#17"
+
+
+class TestUnclosedHealthCheck:
+    def test_只报数且不含尚未发出的信(self):
+        rows = [
+            _row("采购部#1", "2026-07-11", "✅ 已推送", 0),
+            _row("采购部#2", "2026-07-12", "✅ 已发", 1),
+            _row("采购部#3", "2026-07-13", "📥 已回件并回灌", 2),
+            _row("采购部#4", "2026-08-22", "⏳ 待你审", 3),
+            _row("财务部#1", "2026-07-11", "✅ 已推送", 4, recipient="财务部 · 唐燕萍"),
+        ]
+        out = fg.unclosed_dispatched_by_department(rows)
+        assert [r.number for r in out["采购"]] == ["采购部#1", "采购部#2"]
+        assert [r.number for r in out["财务"]] == ["财务部#1"]
+
+
+class TestReplyArrivedBacklink:
+    归档件 = "财务部-tangyanping-回复-2026-08-10-文本反馈-7340bdb8.md"
+
+    def test_第九态且溯源逐字对上才认(self):
+        status = f"{fg.REPLY_ARRIVED_STATUS} 2026-08-10T02:00:00Z（入信归档 `{self.归档件}`）"
+        assert fg.reply_arrived_cites(status, self.归档件)
+
+    def test_溯源是另一份则不认(self):
+        status = f"{fg.REPLY_ARRIVED_STATUS} 2026-08-10T02:00:00Z（入信归档 `别的.docx`）"
+        assert not fg.reply_arrived_cites(status, self.归档件)
+
+    def test_不是第九态就不认(self):
+        assert not fg.reply_arrived_cites(f"✅ 已推送（{self.归档件}）", self.归档件)
+
+    def test_桥二靠回指把纯文字回件纳入覆盖面(self):
+        status = f"{fg.REPLY_ARRIVED_STATUS} 2026-08-10T02:00:00Z（入信归档 `{self.归档件}`）"
+        out = fg.find_unsynced_letters(
+            [fg.IntakeRecord("323", "q.md", self.归档件, True)],
+            [fg.LetterRecord("财务部#11", None, status)],
+        )
+        assert len(out) == 1
+        assert out[0].channel == fg.PAIR_CHANNEL_REPLY_ARRIVED

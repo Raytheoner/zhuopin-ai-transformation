@@ -1948,34 +1948,136 @@ def _followup_letter_records(readme_text: str) -> list:
     return records
 
 
-def _validate_followup_reply_state_sync(
-    queue_texts: dict[str, str], repo_root: Path, waiver_sources: list[str],
-) -> list[str]:
-    """S4 桥二（队列 #366 M4）：**拆件完成了，README 就必须转态。**
+def _followup_readme_rows_indexed(text: str) -> list[tuple[int, list[str], int]]:
+    """同 `_followup_readme_rows`，但返回**物理行号**而不是行文本——写回时
+    需要它。两者共用同一套表头/分隔行判定，此处不另立判据。"""
+    lines = text.splitlines()
+    header_idx = None
+    status_col_index = -1
+    for i, line in enumerate(lines):
+        if line.strip().startswith("|") and "发送状态" in line:
+            header_cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            for j, cell in enumerate(header_cells):
+                if cell.startswith("发送状态"):
+                    status_col_index = j
+                    break
+            header_idx = i
+            break
+    if header_idx is None or status_col_index < 0:
+        return []
+    rows: list[tuple[int, list[str], int]] = []
+    for i in range(header_idx + 2, len(lines)):
+        line = lines[i]
+        if not line.strip().startswith("|"):
+            break
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) <= status_col_index:
+            continue
+        rows.append((i, cells, status_col_index))
+    return rows
 
-    判据：队列 §一 存在一条指向某封信的入信行、其状态已 `[S:done]`（＝已
-    拆件回灌），而 README 该信所在行的发送状态仍非闭环四态之一 ⇒ 拒绝
-    release，并指名道姓告诉持锁人该改哪一行。
 
-    ## 为什么这道校验必须存在
+def _build_reply_closed_status(
+    previous_status: str, intake_ids: list[str], channel: str, today: str,
+) -> str:
+    """桥二写进状态列的新值。
 
-    **串行闸永远不会自己开。** 机器只写队列（回件到达时机器人自动追 §一
-    行、拆件回灌由人写队列行），**没有任何东西去改 README 那一格**——而闸
-    只读 README。中间那一步一直是人。2026-08-21 一天之内咬了两次：质量部#8
-    回灌全做完闸还锁着；采购部#17 回件 13:13 到、13:15 队列已追行而 README
-    未动。**本校验把「人记得」换成「不改就 release 不掉」。**
+    形态与桥一的第九态完全对齐：**新前缀在前、原状态原样接在后**。原状态
+    不删的理由同桥一——「这封信何时推送／回件何时到达」在这一格之外没有任何
+    副本，而覆盖式写入会把它弄丢。
 
-    ## 它的已知边界（**必须随违规文案一起说出去，不能让人以为零违规＝全同步**）
+    日期用**本机本地日期**（根 CLAUDE.md §5 写侧硬规则：写进文档的日期一律
+    本机当场取，不用 UTC 日期、不估算）。
+    """
+    ids = "／".join(f"§一 #{i}" for i in intake_ids)
+    return (
+        f"{FOLLOWUP_SERIAL_CLOSED_PREFIX} {today}"
+        f"（S4 桥二自动转态：{ids} 已 `[S:done]`，配对通道 `{channel}`；"
+        f"本次由机器代写，未经人工逐字确认——如与事实不符请当场改回并记因）"
+        f"　━━━　原状态 ━━━　{previous_status}"
+    )
 
-    配对只走 `followup_gate.reply_matches_letter`（归一化后 stem 逐字相等），
-    **配不上就不配，绝不猜**（派单件 §二 原文）。因此两类天然在覆盖面之外：
-    ⑴ 纯文本回件（归档文件名主题段恒为 `文本反馈`，无从指向哪一封信）；
-    ⑵ README 行未带队列 #241 的 `目标文件：` 标注（实测 49 行里只有 14 行有）。
+
+def _machine_write_followup_readme(new_text: str, who: str, note: str) -> str | None:
+    """占跟进信 README 的编辑锁做一次机器写入；成功返回 None，否则返回原因。
+
+    🔴 **为什么必须自己占一次锁**：桥二挂在**队列系统**目标的 release 上，
+    此刻持有的是队列那把锁，README 是另一个目标、另一把锁。不占就写，正是
+    协议〇.7 要禁的裸改——而且下一次有人 acquire README 时，#200 绕锁检测会
+    如实把它报成「被直接改写过」，等于我们自己制造了一条假警报。
+
+    锁被别人占用时**不抢、不等**：返回原因，由调用方转成一条 release 违规
+    （fail-loud）。桥二的价值是"人不必手写状态列"，不是"无论如何都要写成"。
+    """
+    lock_path = _lock_path(FOLLOWUP_README_TARGET)
+    try:
+        with _acquire_mutex(lock_path):
+            existing = _read_lock(lock_path)
+            if existing is not None and _age_minutes(existing) < STALE_MINUTES:
+                return (
+                    f"README 编辑锁被「{existing.get('who', '未知')}」占用中"
+                    f"（{existing.get('note', '')}，{_age_minutes(existing):.0f} 分钟前）"
+                )
+            now = _now()
+            held_since = now.isoformat()
+            history = _prune_history(_read_history(lock_path), now) + [
+                {"who": who, "note": note, "at": held_since}
+            ]
+            _atomic_write_json(lock_path, {
+                "who": who, "note": note, "held_since": held_since,
+                "history": history, "reserved": {}, "domains": {},
+                "dirty_at_acquire": None,
+            })
+            try:
+                path = _target_path(FOLLOWUP_README_TARGET)
+                path.write_text(new_text, encoding="utf-8")
+                # 写后回读（#197 纪律：不信"写成功了"）
+                if path.read_text(encoding="utf-8") != new_text:
+                    return "写后回读校验未通过（落盘内容与预期不符）"
+                # #200 基准同步：不更新它，下一次 acquire 会把这次合法写入
+                # 误报成"绕过锁直接改写"。
+                _write_lastknown(FOLLOWUP_README_TARGET, new_text)
+            finally:
+                _write_released_marker(
+                    lock_path, who, note, held_since, history=history,
+                )
+    except TimeoutError as exc:
+        return f"内部互斥等待超时：{exc}"
+    except OSError as exc:
+        return f"写入失败：{exc}"
+    return None
+
+
+def _auto_sync_followup_reply_state(
+    queue_texts: dict[str, str], repo_root: Path, waiver_sources: list[str], who: str,
+) -> tuple[list[str], list[str]]:
+    """S4 桥二（`OP-0823-D` 改判）：**拆件完成了，机器就把 README 转闭环态。**
+
+    ## 相对改判前的真正增量
+
+    改判前本函数只**校验**人有没有改（不改就 release 不掉）。现在改成
+    **由机器代写**：人只需把 §一 入信行的状态字段改成 `[S:done]`——那就是
+    「我回灌完了」这句声明本身——不必知道是哪封信，也不必手写状态列。
+
+    🔴 **声明动作没有新增语法**：`[S:done]` 本来就是拆件回灌完成的既有记法。
+    另造一个 `回灌完成：` 标记，等于让人多记一条规则去说一件他已经说过的事。
+
+    ## 写不成时仍然拦
+
+    README 锁被占、写盘失败 ⇒ 返回违规、拒绝 release（锁保持占用）。
+    **机器代写是为了省掉人的手工步骤，不是为了在失败时假装什么都没发生。**
 
     ## 逃生阀
 
-    本次持锁期间的改动里任一处写明 `转态豁免：〈理由〉` 即放行并打印留痕，
-    与既有 `串行豁免：` 完全同一范式（标记写在行里、零新增写盘路径）。
+    本次持锁改动里任一处写明 `转态豁免：〈理由〉` ⇒ 既不写也不拦，打印留痕。
+
+    ## 已知边界（**必须随文案一起说出去，不能让人以为零违规＝全同步**）
+
+    配对只走两条**确定**通道（见 `followup_gate.find_unsynced_letters`）：
+    stem 逐字相等，与桥一写下的第九态溯源回指。桥一没跑成的那些纯文字回件
+    两条都对不上 ⇒ 本函数对它们零输出，仍需人手工转态。
+
+    返回 `(violations, notes)`。
     """
     if followup_gate is None:
         # fail-loud：不静默跳过。真实环境里这条永远不该出现——CI 的
@@ -1983,13 +2085,13 @@ def _validate_followup_reply_state_sync(
         # 本次已扩到 followup_gate），它红了才轮得到这里。
         print("⚠ 未能加载 zhuopin_platform.shared_tools.followup_gate，"
               "S4 桥二（回灌⇒README 转态）本次未执行——请核实平台底座包完整性。")
-        return []
+        return [], []
 
     readme_path = repo_root / FOLLOWUP_README_TARGET
     try:
         readme_text = readme_path.read_text(encoding="utf-8")
     except OSError:
-        return []  # README 不在（隔离环境/新 clone）——判不出，不拦
+        return [], []  # README 不在（隔离环境/新 clone）——判不出，不拦
 
     intakes: list = []
     for queue_file, queue_text in queue_texts.items():
@@ -1998,7 +2100,7 @@ def _validate_followup_reply_state_sync(
         intakes, _followup_letter_records(readme_text)
     )
     if not unsynced:
-        return []
+        return [], []
 
     waiver = next(
         (s for s in waiver_sources if FOLLOWUP_STATE_SYNC_WAIVER_MARKER in s), None
@@ -2007,11 +2109,72 @@ def _validate_followup_reply_state_sync(
         preview = waiver.strip()
         if len(preview) > 120:
             preview = preview[:120] + "…"
-        print(f"✓ 检测到转态豁免声明，已放行 {len(unsynced)} 处未同步：{preview}")
-        return []
+        return [], [
+            f"✓ 检测到转态豁免声明，已放行 {len(unsynced)} 处未转态"
+            f"（机器本次不代写）：{preview}"
+        ]
 
-    return [
-        u.describe() + f"（改 {FOLLOWUP_README_TARGET}）" for u in unsynced
+    # —— 机器代写 ——
+    by_number = {u.letter.number: u for u in unsynced}
+    rows = _followup_readme_rows_indexed(readme_text)
+    lines = readme_text.splitlines()
+    # 🔴 本机本地日期，当场取（根 CLAUDE.md §5 写侧硬规则）
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    written: list[str] = []
+    violations: list[str] = []
+    for line_index, cells, status_col_index in rows:
+        number = cells[0] if cells else ""
+        target = by_number.get(number)
+        if target is None:
+            continue
+        previous = cells[status_col_index]
+        cells = list(cells)
+        cells[status_col_index] = _build_reply_closed_status(
+            previous,
+            [i.row_id for i in target.intakes],
+            target.channel,
+            today,
+        )
+        lines[line_index] = "| " + " | ".join(cells) + " |"
+        written.append(
+            f"「{number}」← {'／'.join('§一 #' + i.row_id for i in target.intakes)}"
+            f"（通道 {target.channel}）"
+        )
+        by_number.pop(number, None)
+
+    if by_number:
+        # 判出来了却在表里找不到那一行——**不静默**。两处解析用的是同一套
+        # 表头判定，走到这里说明有其它东西不对（如编号列重复），值得拦。
+        violations.append(
+            "S4 桥二：以下信判定为「已拆件但未转闭环」，却未能在 README 表格中"
+            f"定位到对应行，本次未自动转态：{'、'.join(by_number)}"
+            f"（改 {FOLLOWUP_README_TARGET}）"
+        )
+
+    if not written:
+        return violations, []
+
+    newline = "\n" if readme_text.endswith("\n") else ""
+    new_text = "\n".join(lines) + newline
+    failure = _machine_write_followup_readme(
+        new_text,
+        who="S4桥二自动转态",
+        note=f"回灌完成自动转闭环态：{'；'.join(written)}",
+    )
+    if failure is not None:
+        violations.append(
+            f"S4 桥二本次未能自动转态（{failure}）——以下信仍停在非闭环态："
+            f"{'；'.join(written)}。请稍后重试 release，或手工把它们改为闭环四态"
+            f"（{'／'.join(FOLLOWUP_SERIAL_CLOSED_PREFIXES)}），"
+            f"或在本次改动里写明「{FOLLOWUP_STATE_SYNC_WAIVER_MARKER}〈理由〉」"
+            f"（改 {FOLLOWUP_README_TARGET}）"
+        )
+        return violations, []
+
+    return violations, [
+        f"✓ S4 桥二已自动把 {len(written)} 封信转为"
+        f"「{FOLLOWUP_SERIAL_CLOSED_PREFIX}」并开闸：{'；'.join(written)}"
     ]
 
 
@@ -3237,9 +3400,18 @@ def cmd_release(args: argparse.Namespace) -> int:
                         snapshot_sections.get(label, ""), current_sections[label]
                     )
                 )
-        violations.extend(_validate_followup_reply_state_sync(
-            queue_texts, REPO_ROOT, waiver_sources=waiver_sources,
-        ))
+        # `OP-0823-D`：由「校验人有没有改」改为「机器代写」——人只需把 §一
+        # 入信行改成 `[S:done]`，README 那一格由本函数写。写不成仍然拦。
+        # ⚠️ 写入发生在其它校验项判定之后、release 决定之前：即便本次 release
+        # 因别的结构问题被拒，这次转态**已经落盘**。这是有意的——「拆件回灌
+        # 完成」是既成事实，不该因为同一次持锁里另有一处格式问题就退回去；
+        # 且重跑幂等（已闭环的信不会被再写一次）。
+        sync_violations, sync_notes = _auto_sync_followup_reply_state(
+            queue_texts, REPO_ROOT, waiver_sources, args.who or "未知",
+        )
+        violations.extend(sync_violations)
+        for note in sync_notes:
+            print(note)
         # 队列 §一 #351 ⑹：登记完整性。逃生阀取材面与 `转态豁免：` 完全一致
         # （本次 note ＋ 本次触碰过的队列行，**不含队列全文**）——理由同上方
         # 那段红字：豁免标记一旦写进这两份 1.9 MB 的文件任何一处，全文匹配
