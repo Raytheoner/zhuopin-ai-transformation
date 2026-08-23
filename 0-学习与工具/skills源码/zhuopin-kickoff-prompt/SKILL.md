@@ -41,6 +41,19 @@ description: 卓品智能AI转型项目·交接/转场开场prompt生成器。�
 
 1.1b 🔴 **编号硬规则（v1.9，Shao Peishen 2026-08-18 定；他原话「为便于引用每个 Prompt 都需要有编号，这个也说过好多次了」）**：**每个 opener 必须有一个稳定编号，格式 `OP-<MMDD>-<序号>`**（如 `OP-0818-G`，与 §二 批次名 `B-0818_nn` 同风格）。**编号必须出现在三处，缺一不可**：
    - **① fenced 代码块内的第一行**（🔴 **最要紧的一处**——他复制走的就是代码块，编号不在里面等于没有）：`【OP-0818-G】<一句话任务名>`，紧接其后才是 `【设置】` 行；
+     🔴🔴🔴 **v1.23 真解（2026-08-23）—— CC 端找到可编程接口 `set_session_title`，一次粘贴 100% 生效；Cowork 端仍无解，两端不统一** ━━━
+     ⚠️ **本条推翻 v1.22 的「CC 端做不到」，但只推翻 CC 那一半** —— v1.22 的五条否定路径里没有「MCP 可编程接口」这一条，**是 CC session 自己搜出来的**。
+     🔑 **⇒ 又一次同族错误：我用「`/rename` 不能作第一条消息」推出了「CC 端无解」，而没有再问一次「除了斜杠命令，有没有可编程接口」。** **否定一条路，不等于否定了那个方向。**
+     ━━━ **✅ CC 端定案（实测生效）** ━━━ 工具 ＝ `mcp__ccd_session_mgmt__set_session_title`，**`session_id` 传字面量 `"self"` 即改当前会话**。
+     **该工具是延迟加载（deferred），须先 `ToolSearch` 取 schema 才可调用。** 返回值会带出旧标题，**等于自带一次回读校验** —— 这正是「验证声明必须写出用什么核的」那条规则要的「手段」。
+     ⚠️ **`mcp__ccd_session_mgmt__get_session` 明确拒绝当前 session**（`Must not be the current session`），**故无法用它做二次独立验证**；证据链只有工具返回值一条，若要独立佐证需人在左栏目视。
+     **⇒ CC opener 模板新增一行（放在 `【设置】` 之后、「读 ①」之前）**：
+     `🔴 开工第一件事：把本会话名设为 <任务名>-OP<MMDD><序号>。工具＝ mcp__ccd_session_mgmt__set_session_title，session_id 传字面量 "self"；该工具延迟加载，须先 ToolSearch 取 schema。返回值带出旧标题，据此确认已生效。`
+     **首行仍保留 V5 格式作兜底**（工具调用万一失败，摘要器那条路还在）。
+     ━━━ **❌ Cowork 端：仍无解，两端不统一** ━━━ **两次不同搜法均零命中**：`select:mcp__ccd_session_mgmt__set_session_title,...` 与关键词 `+session mgmt title set self current`。
+     **且这不是搜索遗漏，是结构性差异**：CC 侧前缀 `ccd_session_mgmt`（Claude Code Desktop 专属 MCP），Cowork 侧挂的是 `session_info`，**两者不是同一个 server**，后者只有 `list_sessions`／`read_transcript` 两个只读方法。
+     ⇒ **Cowork 端沿用 V5 ＋ 摘要器概率；CC 端用工具、100% 确定。写 opener 时按端区分，不要写成统一方案。**
+     ━━━ **以下 v1.22 的五条否定路径仍然有效（除 CC 那一半已被本条推翻）** ━━━
      🔴🔴🔴 **v1.22 终局（2026-08-23）—— 能力边界已探尽：「一次粘贴」与「100% 带编号」在现有客户端下不可兼得，Shao Peishen 选守铁律** ━━━
      🛑 **本段是「防重复劳动」清单：五条路径已逐条实测否定，下一个读到本节的人不要再试一遍。**
      | 路径 | 结论 | 证据 |
