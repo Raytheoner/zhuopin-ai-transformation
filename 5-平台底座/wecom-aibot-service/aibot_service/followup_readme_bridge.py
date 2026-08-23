@@ -18,16 +18,35 @@ _validate_followup_reply_state_sync`）。
 
 ## 三条硬约束
 
-1. **匹配不上就不动 README**（派单件 §二 原文「匹配不上时不要猜」）。
-   配对只走 `followup_gate.reply_matches_letter`（归一化后 stem 逐字相等）。
-   纯文本反馈类回件天然配不上——**这是设计取舍，不是缺陷**：一条文本回件
-   无法确定地指向哪一封信，硬配会造出比漏配更难发现的错误。
-   未匹配时 **fail-loud**：记审计事件 ＋ 打印 WARN，不静默跳过。
+1. **配对走两级通道**（`OP-0823-D` 改判，队列 #366；原「匹配不上就不动」
+   已退休，理由见下节）。判据一份，落在 `followup_gate.pair_reply_to_letter`：
+   ① **stem 精确匹配**命中即止；② 未命中则配「该收信人**最新一封已发出**
+   的信」——不看文件名、不看正文，**docx 与纯文字一视同仁**。
+   两级都落空时 **fail-loud**：记审计事件 ＋ 打印 WARN，不静默跳过。
+   🔴 **例外**：「最新一封已闭环」这一种落空是**预期内常态**（闭环后的补充
+   说明必然走到它），只记审计 ＋ 低噪一行，**不得升级为需人处置的告警**。
 2. **必须走编辑锁**，不得直接写文件绕开协议〇.7。复用既有
    `SubprocessQueueEditLock`（与队列写入同一把协议实现，不分叉）。
 3. **`acquire` 拿不到锁必须重试**（指数退避，默认 3 次）；**放弃时必须
    打日志并告警**，不得静默。锁忙不是"没事发生"，是"这条回件的可见性这次
    丢了"。
+
+## 为什么「匹配不上就不动」这条原硬约束被退休了（它的理由曾经是对的）
+
+原文写的是：「一条文本回件无法确定地指向哪一封信，硬配会造出比漏配更难
+发现的错误」——**该判断在「靠内容猜」的前提下成立**。`OP-0823-D` 换掉的
+是前提，不是猜法：**不按内容配，按位置配**。位置的确定性来自本项目已有的
+硬约束「跟进信串行原则：同一收信人同时只能有一封在途」，而机器人在落档
+那一刻已知发件人企微 userid ⇒ 部门 ⇒ 收信人。
+
+**漏配的代价已被实测量化**：README 中 12 封信的状态列停在「✅ 已推送」，
+最久积压 20 天以上，且后果有两个——⑴ 串行闸误锁，该发的信发不出；
+⑵ **度量失真**，「未转态」与「回得慢」在数据上长得一模一样。
+**误配的代价则有限**：第九态是「回件已到，待拆件」、**闸仍锁**，人拆件时
+一眼就能看出配错了。
+
+⚠️ **仍然保留 stem 为第一优先**：它确定性最高，且**去掉它就是净回归**——
+今天能正常转态的 docx 回件，会反过来受制于「最新一封」的判断。
 
 ## 为什么不做「拿不到锁就暂存、下次补录」
 
@@ -48,7 +67,13 @@ from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools import followup_gate
 
 from .queue_edit_lock import QueueLockBusy
-from .readme_table import ReadmeTableError, iter_rows, extract_target_filename, write_status
+from .readme_table import (
+    ReadmeTableError,
+    column_index,
+    extract_target_filename,
+    iter_rows,
+    write_status,
+)
 
 # 🔴 必须是**仓库相对、正斜杠**的字面量：`工具-共享文档编辑锁.py::cmd_release`
 # 按 `args.file == FOLLOWUP_README_TARGET` 逐字比对来决定跑不跑 README 那套
@@ -66,6 +91,13 @@ ACTION_UNMATCHED = "unmatched"
 ACTION_ALREADY = "already_beyond"
 ACTION_LOCK_BUSY = "lock_busy"
 ACTION_NO_README = "no_readme"
+# `OP-0823-D`：未命中的三种原因分开记 action，**不再合并成一个 unmatched**
+# ——它们的处置级别不同，合并会让「预期内常态」和「真的出问题了」在审计
+# 里长得一模一样（本项目已记的「错误不产生信号」那一族的镜像形态：这次是
+# 「常态产生了错误的信号」）。
+ACTION_SUPPLEMENT = "supplement_after_closed"   # 最新一封已闭环 ⇒ 低噪，常态
+ACTION_NO_DISPATCHED = "no_dispatched_letter"   # 该收信人无已发出的信 ⇒ WARN
+ACTION_NO_DEPARTMENT = "no_department"          # 收信人解析不出 ⇒ WARN
 
 
 @dataclass
@@ -73,6 +105,10 @@ class BridgeResult:
     action: str
     letter_number: Optional[str] = None
     detail: str = ""
+    # 命中的是哪条通道（`stem` / `latest`），未命中为空串。派单件 §3.4
+    # 要求「审计事件须记录本次命中的是哪条规则」——日后复盘误配时，第一个
+    # 要问的就是「这条是逐字对上的，还是按位置推的」。
+    channel: str = ""
 
 
 def _utc_stamp(now: Optional[datetime] = None) -> str:
@@ -100,20 +136,85 @@ def build_reply_arrived_status(previous_status: str, archived_filename: str,
     )
 
 
-def _locate_letter(readme_text: str, archived_filename: str):
-    """按目标文件标注找到这封回件对应的 README 行；找不到返回 None。"""
-    for row in iter_rows(readme_text):
-        topic_cell = row.cells[3] if len(row.cells) > 3 else ""
-        target = extract_target_filename(topic_cell)
-        if not target:
-            continue
-        if followup_gate.reply_matches_letter(archived_filename, target):
-            return row
-    return None
+def _cell(row, index: int) -> str:
+    return row.cells[index] if 0 <= index < len(row.cells) else ""
+
+
+def _letter_rows(readme_text: str) -> tuple[list, dict]:
+    """README 表格 → (`followup_gate.LetterRow` 列表, {编号: RowLocation})。
+
+    列位置按表头字样定位（`readme_table.column_index`），不写死序号——该表
+    的列顺序不归本模块管，而写死序号的失效形态是「读到了另一列的内容，且
+    完全不报错」。定位不到则回落到实测的固定序号，并且**只在这种情况下**
+    回落，不静默把两条路径混用。
+    """
+    rows = iter_rows(readme_text)
+    header = rows[0].header_cells if rows else []
+    num_idx = column_index(header, "编号")
+    date_idx = column_index(header, "日期")
+    recipient_idx = column_index(header, "收信人")
+    topic_idx = column_index(header, "主要事项")
+    num_idx = 0 if num_idx is None else num_idx
+    date_idx = 1 if date_idx is None else date_idx
+    recipient_idx = 2 if recipient_idx is None else recipient_idx
+    topic_idx = 3 if topic_idx is None else topic_idx
+
+    letters = []
+    locations = {}
+    for order, row in enumerate(rows):
+        number = _cell(row, num_idx)
+        letters.append(followup_gate.LetterRow(
+            number=number,
+            date=_cell(row, date_idx),
+            recipient=_cell(row, recipient_idx),
+            target_filename=extract_target_filename(_cell(row, topic_idx)),
+            status=row.cells[row.status_col_index],
+            order=order,
+        ))
+        locations[number] = row
+    return letters, locations
+
+
+def _pair(readme_text: str, archived_filename: str, department: Optional[str]):
+    """跑一次两级配对，返回 (`PairingOutcome`, 命中行的 `RowLocation` 或 None)。"""
+    letters, locations = _letter_rows(readme_text)
+    outcome = followup_gate.pair_reply_to_letter(
+        archive_filename=archived_filename,
+        department=department,
+        rows=letters,
+    )
+    row = locations.get(outcome.letter.number) if outcome.letter else None
+    return outcome, row
+
+
+def _health_note(readme_text: str) -> str:
+    """§3.1bis 健康检查：各部门「已发出且未闭环」的信有几封。
+
+    🔴 只报数。它**不参与任何转态判定，也不阻塞配对**——这正是它被从配对
+    判据里挪出来的原因（见 `followup_gate` §五 的红字）。
+    """
+    try:
+        letters, _ = _letter_rows(readme_text)
+    except ReadmeTableError:
+        return ""
+    grouped = followup_gate.unclosed_dispatched_by_department(letters)
+    if not grouped:
+        return ""
+    parts = "、".join(
+        f"{dept} {len(items)} 封" for dept, items in sorted(grouped.items())
+    )
+    return f"README 健康检查：已发出未闭环 {parts}（只报数，不影响本次配对）"
 
 
 def _row_number(row) -> str:
     return row.cells[0] if row.cells else "?"
+
+
+_MISS_ACTION = {
+    followup_gate.PAIR_MISS_LATEST_CLOSED: ACTION_SUPPLEMENT,
+    followup_gate.PAIR_MISS_NO_DISPATCHED: ACTION_NO_DISPATCHED,
+    followup_gate.PAIR_MISS_NO_DEPARTMENT: ACTION_NO_DEPARTMENT,
+}
 
 
 def mark_reply_arrived(
@@ -122,6 +223,7 @@ def mark_reply_arrived(
     repo_root: Path,
     audit: AuditLogger,
     lock_factory: Callable[[], object],
+    department: Optional[str] = None,
     evaluator: str = "system",
     now: Optional[datetime] = None,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
@@ -131,6 +233,10 @@ def mark_reply_arrived(
     log: Callable[[str], None] = print,
 ) -> BridgeResult:
     """把 `archived_filename` 对应的那封信在 README 上标为第九态。
+
+    `department` ＝ 归档时已解析出的收信人部门（`intake.IntakeResult.department`）
+    ——通道②按它定位「该收信人最新一封已发出的信」。传 None 时通道②不可用，
+    只剩 stem 精确匹配（老行为），并在未命中时 fail-loud 说明原因。
 
     **本函数绝不向上抛**——它是归档主流程的旁路增强，任何失败都不得让一条
     已经成功归档的回件反过来算作处理失败（同 `sync_after_archive` 的既有
@@ -144,22 +250,22 @@ def mark_reply_arrived(
             ACTION_NO_README, detail=f"README 读取失败：{readme_path}（{exc}）"
         ), log=log)
 
+    health = _health_note(readme_text)
+
     try:
-        row = _locate_letter(readme_text, archived_filename)
+        outcome, row = _pair(readme_text, archived_filename, department)
     except ReadmeTableError as exc:
         return _record(audit, evaluator, BridgeResult(
             ACTION_NO_README, detail=f"README 表格解析失败：{exc}"
         ), log=log)
 
-    if row is None:
+    if row is None or not outcome.matched:
         return _record(audit, evaluator, BridgeResult(
-            ACTION_UNMATCHED,
-            detail=(
-                f"入信归档件 `{archived_filename}` 未能确定地对应 README 任何一行"
-                "（纯文本反馈、或该行未带队列 #241 的 `目标文件：` 标注）"
-                "——按「匹配不上时不要猜」未改 README，只追了队列行。"
-            ),
-        ), log=log)
+            _MISS_ACTION.get(outcome.channel, ACTION_UNMATCHED),
+            letter_number=outcome.letter.number if outcome.letter else None,
+            detail=outcome.detail,
+            channel=outcome.channel,
+        ), log=log, health=health)
 
     current_status = row.cells[row.status_col_index]
     if (followup_gate.is_closed_status(current_status)
@@ -187,11 +293,15 @@ def mark_reply_arrived(
             # 改过这一格（这正是编辑锁存在的理由）。用锁外读到的
             # `RowLocation` 直接写回，等于把别人的改动按行号覆盖掉。
             fresh_text = readme_path.read_text(encoding="utf-8")
-            fresh_row = _locate_letter(fresh_text, archived_filename)
-            if fresh_row is None:
+            fresh_outcome, fresh_row = _pair(fresh_text, archived_filename, department)
+            if fresh_row is None or not fresh_outcome.matched:
                 return _record(audit, evaluator, BridgeResult(
-                    ACTION_UNMATCHED,
-                    detail=f"持锁后重定位失败（README 在此期间被改动？）：{archived_filename}",
+                    _MISS_ACTION.get(fresh_outcome.channel, ACTION_UNMATCHED),
+                    letter_number=(fresh_outcome.letter.number
+                                   if fresh_outcome.letter else None),
+                    detail=f"持锁后重定位落空（README 在此期间被改动？）："
+                           f"{fresh_outcome.detail}",
+                    channel=fresh_outcome.channel,
                 ), log=log)
             fresh_status = fresh_row.cells[fresh_row.status_col_index]
             if (followup_gate.is_closed_status(fresh_status)
@@ -210,8 +320,9 @@ def mark_reply_arrived(
             return _record(audit, evaluator, BridgeResult(
                 ACTION_MARKED, letter_number=_row_number(fresh_row),
                 detail=f"README「{_row_number(fresh_row)}」已标为"
-                       f"「{followup_gate.REPLY_ARRIVED_STATUS}」。",
-            ), log=log)
+                       f"「{followup_gate.REPLY_ARRIVED_STATUS}」（{fresh_outcome.detail}）",
+                channel=fresh_outcome.channel,
+            ), log=log, health=health)
         finally:
             lock.release()
 
@@ -231,16 +342,31 @@ def mark_reply_arrived(
     return _record(audit, evaluator, result, log=log)
 
 
+# 🔴 分支 → 输出前缀。`ACTION_SUPPLEMENT` 刻意是「·」而不是「⚠」：
+# 闭环后的补充说明是**预期内常态**，把它按警告报出去，等于每条补充都制造
+# 一次假警报（派单件 §3.3 第 3 条点名要防的正是这个）。
+_LOG_PREFIX = {
+    ACTION_MARKED: "✓",
+    ACTION_ALREADY: "·",
+    ACTION_SUPPLEMENT: "·",
+    ACTION_UNMATCHED: "⚠",
+    ACTION_NO_DISPATCHED: "⚠",
+    ACTION_NO_DEPARTMENT: "⚠",
+    ACTION_LOCK_BUSY: "⚠",
+    ACTION_NO_README: "⚠",
+}
+
+
 def _record(audit: AuditLogger, evaluator: str, result: BridgeResult,
-            *, log: Callable[[str], None]) -> BridgeResult:
+            *, log: Callable[[str], None], health: str = "") -> BridgeResult:
     """统一留痕：审计事件 ＋ 一行可见输出。**每一条分支都经过这里**，
     包括"没做事"的那几条——静默跳过正是本模块要消灭的东西。"""
-    prefix = {
-        ACTION_MARKED: "✓", ACTION_ALREADY: "·",
-        ACTION_UNMATCHED: "⚠", ACTION_LOCK_BUSY: "⚠", ACTION_NO_README: "⚠",
-    }.get(result.action, "·")
+    prefix = _LOG_PREFIX.get(result.action, "·")
     try:
         log(f"{prefix} [跟进信README桥] {result.detail}")
+        if health:
+            # §3.1bis：健康检查只在这里露一行，**不改变任何返回值**。
+            log(f"· [跟进信README桥] {health}")
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -249,8 +375,13 @@ def _record(audit: AuditLogger, evaluator: str, result: BridgeResult,
             action=f"followup_readme_bridge_{result.action}",
             evaluator=evaluator,
             automation_level="L1",
-            decision={"letter_number": result.letter_number or ""},
-            data_sources={"detail": result.detail},
+            decision={
+                "letter_number": result.letter_number or "",
+                # 派单件 §3.4：日后复盘误配，第一个要问的就是「这条是逐字
+                # 对上的（stem），还是按位置推的（latest）」。
+                "channel": result.channel,
+            },
+            data_sources={"detail": result.detail, "health": health},
         ))
     except Exception:  # noqa: BLE001 —— 留痕失败不得反过来破坏"不抛"的契约
         pass

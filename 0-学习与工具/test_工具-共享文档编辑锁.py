@@ -2332,17 +2332,79 @@ class FollowupReplyStateSyncTests(unittest.TestCase):
 
     # -------------------------------------------------------------- 核心
 
-    def test_已拆件而README未转态时拒绝release(self):
-        """真实存量复现：财务部#11 的回件 2026-08-06 到、§一 #291 早已
-        `[S:done]`，README 状态列却停在「✅ 已推送」至 2026-08-21 未动。"""
+    def _readme_status(self, number="财务部#11"):
+        line = [l for l in self.readme_path.read_text(encoding="utf-8").splitlines()
+                if l.startswith(f"| {number} ")][0]
+        return line.rstrip("|").rsplit("|", 1)[-1].strip()
+
+    def test_已拆件时机器自动把README转闭环态(self):
+        """`OP-0823-D` 改判：由「校验人有没有改」改成「机器代写」。
+
+        真实存量复现：财务部#11 的回件 2026-08-06 到、§一 #291 早已
+        `[S:done]`，README 状态列却停在「✅ 已推送」至 2026-08-21 未动。
+        """
         self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
         self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
         self.assertEqual(self._acquire(who="A"), 0)
         code, out = self._stdout_of_release(who="A")
-        self.assertNotEqual(code, 0)
+        self.assertEqual(code, 0, f"机器代写成功就不该再拦人：{out}")
+        status = self._readme_status()
+        self.assertTrue(status.startswith(self.module.FOLLOWUP_SERIAL_CLOSED_PREFIX))
+        self.assertIn("§一 #291", status, "须写明依据哪条入信行")
+        self.assertIn("✅ 已推送 2026-08-06 01:30 UTC", status,
+                      "原状态不得被覆盖丢失——这一格没有别处的副本")
         self.assertIn("财务部#11", out)
-        self.assertIn("§一 #291", out)
-        self.assertIn("readme.md", out, "必须指名道姓告诉持锁人该改哪个文件")
+
+    def test_自动转态后闸对该收信人放行(self):
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+        import zhuopin_platform.shared_tools.followup_gate as fg
+        self.assertTrue(fg.is_closed_status(self._readme_status()),
+                        "「转态 → 闭环 → 开闸」必须一次走完，不分两步")
+
+    def test_重跑幂等不会把闭环态再写一层(self):
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+        once = self.readme_path.read_text(encoding="utf-8")
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+        self.assertEqual(self.readme_path.read_text(encoding="utf-8"), once)
+
+    def test_写入后同步lastknown基准免得下次acquire误报绕锁(self):
+        """#200 绕锁检测读的是 lastknown。机器合法写入却不更新它，下一次
+        acquire 就会把我们自己的写入报成「被绕过锁直接改写」——一条我们
+        亲手制造的假警报。"""
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module.cmd_acquire(argparse.Namespace(
+                file=self.module.FOLLOWUP_README_TARGET, who="B", note="",
+                reserve=None, section=None, reserve_multi=None, domain=None,
+            ))
+        self.assertNotIn("绕过协议", buf.getvalue())
+
+    def test_README锁被别人占用时不写也不装作没事(self):
+        """机器代写是为了省掉人的手工步骤，**不是为了在失败时静默**。"""
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self.module.cmd_acquire(argparse.Namespace(
+            file=self.module.FOLLOWUP_README_TARGET, who="别人", note="正在拆件",
+            reserve=None, section=None, reserve_multi=None, domain=None,
+        )), 0)
+        before = self.readme_path.read_text(encoding="utf-8")
+        code, out = self._stdout_of_release(who="A")
+        self.assertNotEqual(code, 0, "写不成必须拦，不得放行")
+        self.assertEqual(self.readme_path.read_text(encoding="utf-8"), before)
+        self.assertIn("别人", out, "须说清是被谁占着")
+        self.assertIn("财务部#11", out, "须指名道姓说是哪封信没转成")
 
     def test_README已转闭环态即放行(self):
         self._write_readme("📥 已回件并回灌（2026-08-07 拆件巡逻）")
@@ -2366,22 +2428,93 @@ class FollowupReplyStateSyncTests(unittest.TestCase):
         self.assertEqual(self._acquire(who="A"), 0)
         self.assertEqual(self._release(who="A"), 0)
 
-    def test_第九态不算闭环仍被拦(self):
+    def test_第九态不算闭环会被转成闭环态(self):
         self._write_readme("📨 回件已到，待拆件 2026-08-06T01:30:00Z（企微机器人自动标记）")
         self._write_queue(self._intake_row("291", "[S:done][D:业] ✅ 已拆件"))
         self.assertEqual(self._acquire(who="A"), 0)
-        self.assertNotEqual(self._release(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+        self.assertTrue(self._readme_status().startswith(
+            self.module.FOLLOWUP_SERIAL_CLOSED_PREFIX))
 
-    def test_文本反馈类入信永远配不上不会误拦(self):
-        text_feedback = "财务部-tangyanping-回复-2026-08-10-文本反馈-7340bdb81dd43aaaafcfa502e3f74e75.md"
-        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
-        self._write_queue(
-            f"| 323 | 企微反馈自动归档：tangyanping 发来文本反馈 | 财务专线 | "
-            f"`7-外部文档/财务部/{text_feedback}` | 核实 | [S:done][D:业] ✅ 已拆件 | "
+    # -------------------------------------------- `OP-0823-D` 第九态溯源回指
+
+    TEXT_FEEDBACK = (
+        "财务部-tangyanping-回复-2026-08-10-文本反馈-"
+        "7340bdb81dd43aaaafcfa502e3f74e75.md"
+    )
+
+    def _text_intake_row(self, row_id="323", status="[S:done][D:业] ✅ 已拆件"):
+        return (
+            f"| {row_id} | 企微反馈自动归档：tangyanping 发来文本反馈 | 财务专线 | "
+            f"`7-外部文档/财务部/{self.TEXT_FEEDBACK}` | 核实 | {status} | "
             f"队列 | 2026-08-10 |\n"
         )
+
+    def test_纯文字回件靠桥一写下的溯源回指被配上(self):
+        """`OP-0823-D` 的第二条确定通道——**纯文字回件第一次进入桥二覆盖面**。
+
+        它配不上 stem（主题段恒为「文本反馈」），README 行也没有 `目标文件：`
+        标注；能配上，全靠桥一在回件到达那一刻把归档文件名写进了第九态单元格。
+        """
+        self.readme_path.write_text(
+            "## 现有跟进信清单\n\n" + self.README_HEADER
+            + f"| 财务部#11 | 2026-08-05 | 财务部 · 唐燕萍 | FI2 面板复核 | 尽快 | "
+              f"📨 回件已到，待拆件 2026-08-10T02:00:00Z（企微机器人自动标记，"
+              f"入信归档 `{self.TEXT_FEEDBACK}`） ━━━ 原状态 ━━━ ✅ 已推送 |\n",
+            encoding="utf-8",
+        )
+        self._write_queue(self._text_intake_row())
+        self.assertEqual(self._acquire(who="A"), 0)
+        code, out = self._stdout_of_release(who="A")
+        self.assertEqual(code, 0)
+        self.assertTrue(self._readme_status().startswith(
+            self.module.FOLLOWUP_SERIAL_CLOSED_PREFIX))
+        self.assertIn("reply_arrived", self._readme_status(),
+                      "须写明是靠哪条通道配上的")
+
+    def test_溯源写的是另一份归档件时不认(self):
+        """回指必须**逐字**对上，不能只看「这一行是第九态」。"""
+        self.readme_path.write_text(
+            "## 现有跟进信清单\n\n" + self.README_HEADER
+            + "| 财务部#11 | 2026-08-05 | 财务部 · 唐燕萍 | FI2 面板复核 | 尽快 | "
+              "📨 回件已到，待拆件 2026-08-10T02:00:00Z（入信归档 `另一份完全无关的.docx`） |\n",
+            encoding="utf-8",
+        )
+        self._write_queue(self._text_intake_row())
         self.assertEqual(self._acquire(who="A"), 0)
         self.assertEqual(self._release(who="A"), 0)
+        self.assertTrue(self._readme_status().startswith("📨 回件已到"),
+                        "配不上就不动，绝不猜")
+
+    def test_桥二不得按最新一封去配纯文字回件(self):
+        """🔴 反例锁死：**桥二没有时间上下文**，绝不能跑桥一那条通道②。
+
+        场景取自 2026-08-23 真身：`财务部#14` 的回件与 `财务部#15` 的发出
+        同为一天。若桥二按「该部门最新一封已发出的信」去配，这条 7 月的
+        `[S:done]` 入信行会把今天刚发出、根本还没人回的 `财务部#15` 自动
+        闭环并开闸——**错得悄无声息**。
+        """
+        self.readme_path.write_text(
+            "## 现有跟进信清单\n\n" + self.README_HEADER
+            + "| 财务部#14 | 2026-08-22 | 财务部 · 唐燕萍 | 上一封 | 尽快 | "
+              "📥 已回件并回灌（2026-08-23） |\n"
+            + "| 财务部#15 | 2026-08-23 | 财务部 · 唐燕萍 | 今天刚发、还没人回 | 尽快 | "
+              "✅ 已推送 2026-08-23 08:26 UTC |\n",
+            encoding="utf-8",
+        )
+        self._write_queue(self._text_intake_row())
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+        self.assertEqual(self._readme_status("财务部#15"),
+                         "✅ 已推送 2026-08-23 08:26 UTC",
+                         "刚发出、还没人回的信绝不能被自动闭环")
+
+    def test_文本反馈类入信配不上时不误拦(self):
+        self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
+        self._write_queue(self._text_intake_row())
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+        self.assertEqual(self._readme_status(), "✅ 已推送 2026-08-06 01:30 UTC")
 
     def test_README行未带目标文件标注时判不出就不拦(self):
         self.readme_path.write_text(
@@ -2406,10 +2539,16 @@ class FollowupReplyStateSyncTests(unittest.TestCase):
         code, out = self._stdout_of_release(who="A")
         self.assertEqual(code, 0)
         self.assertIn("转态豁免", out, "放行必须留痕，不得静默")
+        self.assertEqual(self._readme_status(), "✅ 已推送 2026-08-06 01:30 UTC",
+                         "声明了豁免，机器就不该代写")
 
     def test_豁免只认本次持锁触碰过的行不认文件里的陈年旧字(self):
         """🔴 逃生阀必须一次一用。若按队列全文匹配，`转态豁免：` 写进这两份
-        1.9 MB 文件任何一处就等于把整道门禁永久关掉，且此后无人会发现。"""
+        1.9 MB 文件任何一处就等于把整道门禁永久关掉，且此后无人会发现。
+
+        改判后这条不变，只是**观测点换了**：从「是否拒绝 release」换成
+        「机器是否照常代写」——陈年旧字不该有能力叫停机器。
+        """
         self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
         self._write_queue(
             self._intake_row("291", "[S:done][D:业] ✅ 已拆件")
@@ -2418,7 +2557,10 @@ class FollowupReplyStateSyncTests(unittest.TestCase):
         )
         self.assertEqual(self._acquire(who="A"), 0)
         # 本次持锁期间**什么都没改** ⇒ 那句陈年豁免不该生效。
-        self.assertNotEqual(self._release(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+        self.assertTrue(self._readme_status().startswith(
+            self.module.FOLLOWUP_SERIAL_CLOSED_PREFIX),
+            "陈年豁免不得叫停机器代写")
 
     def test_持锁note里写转态豁免同样认(self):
         self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
@@ -2429,6 +2571,7 @@ class FollowupReplyStateSyncTests(unittest.TestCase):
             section=None, reserve_multi=None, domain=None,
         )), 0)
         self.assertEqual(self._release(who="A"), 0)
+        self.assertEqual(self._readme_status(), "✅ 已推送 2026-08-06 01:30 UTC")
 
     # ------------------------------------------------------ 双文件与降级
 
@@ -2443,7 +2586,10 @@ class FollowupReplyStateSyncTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertEqual(self._acquire(who="A"), 0)
-        self.assertNotEqual(self._release(who="A"), 0)
+        self.assertEqual(self._release(who="A"), 0)
+        self.assertTrue(self._readme_status().startswith(
+            self.module.FOLLOWUP_SERIAL_CLOSED_PREFIX),
+            "业务场景文件里的入信行同样要被看见——看不见就不会转态")
 
     def test_权威模块缺失时fail_loud而不是静默跳过(self):
         self._write_readme("✅ 已推送 2026-08-06 01:30 UTC")
@@ -2452,9 +2598,9 @@ class FollowupReplyStateSyncTests(unittest.TestCase):
         with unittest.mock.patch.object(self.module, "followup_gate", None):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                violations = self.module._validate_followup_reply_state_sync(
-                    queue_texts, self.repo_root, waiver_sources=[])
-        self.assertEqual(violations, [])
+                violations, notes = self.module._auto_sync_followup_reply_state(
+                    queue_texts, self.repo_root, [], "A")
+        self.assertEqual((violations, notes), ([], []))
         self.assertIn("未能加载", buf.getvalue(), "降级必须打印，不得无声无息")
 
 
