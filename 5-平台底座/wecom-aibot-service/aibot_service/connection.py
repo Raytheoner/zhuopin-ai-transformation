@@ -395,6 +395,13 @@ def build_connector(
                     repo_root=lock_repo_root,
                     audit=audit,
                     lock_factory=_make_followup_readme_lock,
+                    # 队列 #366 / `OP-0823-D`：通道②按收信人定位「最新一封
+                    # 已发出的信」，收信人由归档时已解析好的部门给出。
+                    # `matched=False`（fail-closed 落 `待分拣`）时这里传的是
+                    # `UNMATCHED_DEPARTMENT`，配对侧会据此走 fail-loud 分支，
+                    # **不猜**。
+                    department=(archive_result.department
+                                if archive_result.matched else None),
                     evaluator=evaluator,
                     alert_send=queue_edit_lock_alert_fallback_send,
                 )
