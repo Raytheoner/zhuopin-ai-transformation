@@ -12,7 +12,7 @@
 
 用法：
   SC8_DATA_SOURCE=real python scripts/run_baoguan_dashboard.py [--limit N]
-  （凭据从仓库根 .env 读入；--limit 小样本验证，不放量）
+  （凭据从最近的 .env 读入，布局无关——见 load_env()；--limit 小样本验证，不放量）
 """
 from __future__ import annotations
 
@@ -33,13 +33,37 @@ for _p in _HERE.parents:
         break
 from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
 ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
-REPO = Path(__file__).resolve().parents[4]
+
+
+def _find_env() -> Path | None:
+    """从本脚本向上逐级查找最近的 `.env`（布局无关，与同目录 `run_baoguan_web.py` 同一范式）。
+
+    🔴 **本函数取代原先的 `REPO = Path(__file__).resolve().parents[4]`（队列 #354）**——
+    那个写法把"仓库根在上面第几层"这个开发机事实写死在本文件里：`.51` 的部署布局是扁平的
+    `C:/baoguan/app/scripts/`，向上只有 3 层，`parents[4]` 直接 `IndexError: 4`，
+    **本 CLI 因此在 `.51` 上从未可用过**（没人报，因为没人从这条入口跑过；Web 入口
+    `run_baoguan_web.py` 用的正是本范式，故一直正常）。
+
+    命中位置：笔记本 monorepo → 仓库根 `.env`；`.51` 扁平布局 → `C:/baoguan/.env`。
+    凭据只在 `.env`，不入库、不打印。
+
+    ⚠️ **本范式自身的已知缺陷（不在本次修复范围，随 #354 收拢一并处理）**：从 worktree 内
+    运行时会先命中该 worktree 自己的 `.env` 副本而到不了主工作区，且**失败形态是静默用旧
+    凭据、不报错**。本次刻意只把本文件并入这个既有范式、不另发明第 N 种写法——收拢语义
+    （"向上找仓库根标记、再取其 .env"）须先过 design 审，见 `openspec/changes/env-anchor-collapse/`。
+    """
+    here = Path(__file__).resolve()
+    for d in (here.parent, *here.parents):
+        cand = d / ".env"
+        if cand.exists():
+            return cand
+    return None
 
 
 def load_env() -> None:
-    """把仓库根 .env 读入 os.environ（已存在的不覆盖）。凭据只在 .env，不入库。"""
-    env = REPO / ".env"
-    if not env.exists():
+    """把最近的 .env 读入 os.environ（已存在的不覆盖）。凭据只在 .env，不入库。"""
+    env = _find_env()
+    if not env:
         return
     for line in env.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
@@ -50,6 +74,16 @@ def load_env() -> None:
 
 
 def main() -> int:
+    # Windows GBK 控制台强制 UTF-8 输出，避免三色徽标 emoji 触发 UnicodeEncodeError
+    # （与同目录 `run_baoguan_web.py` 同一处置）。🔴 **这是 `.51` 上挡住本 CLI 的第二道坎**：
+    # 修掉 `parents[4]` 越界后真机复跑，取数三步全通（FO/BOM/SRM 都拿到了真实数据、
+    # 看板文件也已落盘），却在最后一行汇总 `print` 上炸 —— `'gbk' codec can't encode
+    # character '\U0001f534'`，退出码 1。**一个入口从未被跑过时，坏掉的往往不止一处；
+    # 修好第一处只会让你看见第二处。**
+    if sys.stdout.encoding and sys.stdout.encoding.lower() in ("gbk", "gb2312", "gb18030"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     ap = argparse.ArgumentParser(description="成品保供预警看板（真实数据）")
     ap.add_argument("--limit", type=int, default=None, help="只取前 N 条成品行（小样本验证）")
     args = ap.parse_args()
