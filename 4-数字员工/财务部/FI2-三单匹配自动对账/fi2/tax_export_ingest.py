@@ -21,6 +21,40 @@ tax_rate/tax_amount/inv_date）——`feed_source.py`/`parse_invoice`/`partition
     此前 65.8% 匹配率已证伪单纯文本匹配路子）。ap_no 已确定后，用该 AP 单下的行项目
     （`ItemCode` 即我方真实料号）按 (数量, 含税单价) 唯一匹配来赋值；命中 0 或 ≥2 行
     时不得猜测，标记未解析、留痕待人工核对（fail-loud，不静默丢弃也不静默猜错）。
+
+发票级幂等（2026-08-24 补，队列 #371）
+────────────────────────────────────
+**真实生产错误**：唐燕萍 2026-08-21 举证 `AP-2026070036·行10`／`R01F.0034` 面板显示
+数量 42,000／未税 145,320／税额 18,891.60，恰为真实发票（`26327000000742719331`）
+21,000／72,660／9,445.80 的 **2 倍**，面板据此报「数量金额不符」并 BLOCK 退回。
+
+**根因**：原去重只有**文件内容 SHA256** 一层（`_hash_file`→`discover_new_files`→
+`is_processed`）。同一张发票只要出现在两份**字节不同**的 xlsx 里（重导一次、导出
+区间重叠、另存一次都会改变字节），两份都会被摄取，`write_invoice_csv` 又是追加写
+⇒ 同一发票的行进 `invoice.csv` 两次，面板按 `(ap_no, item_code)` 聚合求和后翻倍。
+2026-08-24 在 `.51` 实测坐实：3409 行中 `(inv_no, ap_no, item_code)` 去重后仅 2703，
+上述目标发票在 `invoice.csv` 里正好 2 行且逐字段相同，而它在现存源文件里只有 1 行
+（另一份来自已被删除的文件）。
+
+**修法＝发票级幂等，「首个文件胜出」**：数电发票号码唯一标识一张发票，发票一经开出
+其明细不可变（要改只能红冲重开、换号）⇒ **某个 `inv_no` 已由某个文件贡献过，则此后
+任何**其它**文件里的同号发票行一律跳过**。
+
+  🔴 **判据只对「跨文件」成立，同一文件内不去重** —— 真实数据里同一张发票出现同
+  料品、同数量、同单价的多行是合法的（实测 `26942000000588188581` 单张发票 60 行、
+  其中一组签名重复 6 次，全部来自同一份源文件）。**按行内容去重会误删这些合法行**，
+  故本模块**不看行内容**，只看「这张发票是不是别的文件已经贡献过了」。
+
+  🔴 **零新增载体** —— 已摄取发票号集合**直接从 `invoice.csv` 现读**
+  （`load_ingested_invoice_nos`），不另立状态文件。理由同 `detect_source_silence`
+  复用 ledger：多一份状态就多一处会与真相分叉的地方；而 `invoice.csv` 本身就是
+  「哪些发票已经进来了」的唯一真相，重建它即自动重建这道闸，不会出现「CSV 已重建
+  但闸还记得旧发票、那批行再也回不来」的锁死态。
+
+  跳过的行**不进 `diagnostics`** —— 那是「未解析、需人工核对」的留痕，而跨文件重复
+  是预期内的正常现象（她的导出区间本就会重叠），混进去会淹没真正的失败信号，也会
+  被 `tax_export_scan` 的文件级失败判定误读。改为独立计数
+  （`duplicate_rows_skipped`／`duplicate_invoice_nos`）由调用方如实打印——**不静默**。
 """
 from __future__ import annotations
 
@@ -69,6 +103,10 @@ class IngestResult:
     diagnostics: list[IngestDiagnostic] = field(default_factory=list)
     files_processed: list[str] = field(default_factory=list)
     files_skipped: list[str] = field(default_factory=list)      # 已在已处理清单中，本次跳过
+    # 发票级幂等（队列 #371）：因该发票号已由**别的**文件贡献过而跳过的行。
+    # 刻意不进 `diagnostics`——那是「需人工核对」的留痕，跨文件重复属预期正常现象。
+    duplicate_rows_skipped: int = 0
+    duplicate_invoice_nos: list[str] = field(default_factory=list)
 
 
 # ── 已处理清单（内容哈希，design D4）───────────────────────────────────────
@@ -92,6 +130,28 @@ def save_ledger(ledger_path: Path | str, ledger: dict) -> None:
 
 def is_processed(ledger: dict, file_hash: str) -> bool:
     return file_hash in ledger
+
+
+# ── 发票级幂等闸（队列 #371）──────────────────────────────────────────────
+
+def load_ingested_invoice_nos(invoice_csv_path: Path | str) -> set[str]:
+    """读出 `invoice.csv` 里已有的全部 `inv_no`——即「哪些发票已经进来了」。
+
+    **零新增载体**（见模块 docstring）：不另立状态文件，`invoice.csv` 自己就是唯一
+    真相。文件不存在（首次摄取）返回空集合，**不报错**——「还没开始」不是异常。
+
+    ⚠️ 表头缺失/字段名不符时同样返回空集合而非抛错：本函数只是一道去重闸，读不到
+    就退化为「不去重」＝原有行为，绝不因为闸本身读不出而让整次摄取失败。
+    """
+    p = Path(invoice_csv_path)
+    if not p.exists():
+        return set()
+    with open(p, encoding="utf-8-sig", newline="") as f:
+        return {
+            str(row["inv_no"]).strip()
+            for row in csv.DictReader(f)
+            if row.get("inv_no")
+        }
 
 
 def mark_processed(ledger: dict, file_hash: str, filename: str, *, row_count: int, processed_at: str) -> None:
@@ -234,14 +294,32 @@ def discover_new_files(export_dir: Path | str, ledger: dict) -> list[tuple[Path,
     return out
 
 
-def ingest_directory(export_dir: Path | str, ledger_path: Path | str, connector, *, now: str) -> IngestResult:
+def ingest_directory(
+    export_dir: Path | str, ledger_path: Path | str, connector, *, now: str,
+    known_invoice_nos: set[str] | None = None,
+) -> IngestResult:
     """扫描目录 → 跳过已处理 → 解析 → ap_no/item_code 反查 → 产出结果（不落盘，见
     `write_invoice_csv`）。`now` 由调用方传入处理时间戳（ISO 字符串），保持本函数
     纯净可测（不读系统时钟）。
+
+    `known_invoice_nos`＝**此前批次**已摄取过的数电发票号码集合（队列 #371 发票级
+    幂等闸，调用方用 `load_ingested_invoice_nos(<out_dir>/invoice.csv)` 取）。命中者
+    其行一律跳过并计入 `duplicate_rows_skipped`。**本函数不修改传入的集合**（复制一份
+    用），调用方可安全复用。
+
+    ⚠️ **传 None 不等于关掉闸** —— 它只表示「没有历史包袱」，本次运行内**跨文件**的
+    重复照样会被挡（本次新处理的每份文件都会把自己贡献的发票号并进闸）。要让闸完全
+    生效必须传 `known_invoice_nos`，否则跨批次的重复（第二天的新文件含昨天的发票）
+    仍会漏过——**#371 那次翻倍正是跨批次形态**。
+
+    🔴 **闸只挡跨文件重复**：每份文件开始处理前先快照一次「已知发票号」，该文件自身
+    新贡献的发票号在**本文件处理完之后**才并入快照 —— 故同一文件内同号发票的多行
+    （真实数据里合法且常见）全部保留，不会被自己挡掉。
     """
     ledger = load_ledger(ledger_path)
     result = IngestResult()
     new_files = discover_new_files(export_dir, ledger)
+    known: set[str] = set(known_invoice_nos or ())
 
     all_files = sorted(Path(export_dir).glob("*.xlsx"))
     new_paths = {p for p, _ in new_files}
@@ -263,11 +341,23 @@ def ingest_directory(export_dir: Path | str, ledger_path: Path | str, connector,
             continue
 
         row_count = 0
+        # 本文件开始处理前的快照——闸只挡「别的文件已贡献过」，不挡本文件自身
+        # 同号发票的多行（真实数据里合法且常见，见模块 docstring）。
+        seen_before_this_file = set(known)
+        contributed_here: set[str] = set()
         for idx, raw in enumerate(raw_rows, start=2):
             digital_no = str(raw.get("数电发票号码") or "").strip()
             if not digital_no:
                 result.diagnostics.append(IngestDiagnostic(
                     file=path.name, row_index=idx, reason="digital_invoice_no_missing"))
+                continue
+
+            if digital_no in seen_before_this_file:
+                # 该发票已由别的文件（或此前批次）贡献过 —— 跳过，不重复计数。
+                # 刻意不进 diagnostics（见 IngestResult 字段注释），但如实计数。
+                result.duplicate_rows_skipped += 1
+                if digital_no not in result.duplicate_invoice_nos:
+                    result.duplicate_invoice_nos.append(digital_no)
                 continue
 
             if digital_no not in ap_no_cache:
@@ -306,7 +396,10 @@ def ingest_directory(export_dir: Path | str, ledger_path: Path | str, connector,
                 "inv_date": _parse_date(raw.get("开票日期")),
             })
             row_count += 1
+            contributed_here.add(digital_no)
 
+        # 本文件贡献的发票号在此刻才并入闸——保证同文件内多行不自挡（见 docstring）。
+        known |= contributed_here
         mark_processed(ledger, file_hash, path.name, row_count=row_count, processed_at=now)
         result.files_processed.append(path.name)
 
@@ -317,9 +410,19 @@ def ingest_directory(export_dir: Path | str, ledger_path: Path | str, connector,
 def write_invoice_csv(rows: list[dict], out_path: Path | str) -> None:
     """把已解析行写入 `invoice.csv`（既有 `invoice_sample_dir` 通道认识的字段格式）。
 
-    追加写入：若目标文件已存在（此前批次摄取过），保留旧行、追加新行——`ap_no`
-    反查具备幂等性（同一发票重复摄取会解出同一 ap_no），但本函数本身不做去重，
-    去重责任在「已处理清单」层（同一份源文件不会被摄取两次）。
+    追加写入：若目标文件已存在（此前批次摄取过），保留旧行、追加新行。
+
+    🔴 **本函数本身不做去重**（2026-08-24 队列 #371 更正此处口径）。去重现在有**两**
+    层，缺一层就会出现「面板数字翻倍」：
+
+      ① **文件层**（`.processed_exports.json`，内容 SHA256）——同一份**字节相同**的
+         源文件不会被摄取两次。
+      ② **发票层**（`ingest_directory(known_invoice_nos=...)`，队列 #371 新增）——
+         同一张**数电发票**不会由两份不同文件各贡献一次。
+
+    2026-08-24 之前只有 ①，而她的导出区间本就会重叠、重导一次即改变字节 ⇒ 同一发票
+    经两份文件各入库一次，本函数照单追加，面板聚合后翻倍。**调用方必须传
+    `known_invoice_nos`**，否则退化回只有 ① 的旧行为。
     """
     p = Path(out_path)
     p.parent.mkdir(parents=True, exist_ok=True)

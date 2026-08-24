@@ -55,6 +55,7 @@ from .tax_export_ingest import (
     IngestDiagnostic,
     IngestResult,
     ingest_directory,
+    load_ingested_invoice_nos,
     load_ledger,
     write_invoice_csv,
 )
@@ -233,8 +234,15 @@ def scan_once(
     **两类告警互斥、文件级失败优先**：既有新文件又同时判断源头断供在逻辑上不可能
     （有新文件即证明源头活着），故只在 `files_processed` 为空时才判源头断供。
     """
+    # 发票级幂等闸（队列 #371）：已入库发票号从 invoice.csv 现读，零新增载体。
+    # 🔴 定时扫描才是每日真正跑的那条路径——#371 那次翻倍就是从这里进的库，
+    # 只修手动 CLI 等于没修。
+    invoice_csv = Path(out_dir) / "invoice.csv"
     try:
-        result = ingest_directory(export_dir, ledger_path, connector, now=now)
+        result = ingest_directory(
+            export_dir, ledger_path, connector, now=now,
+            known_invoice_nos=load_ingested_invoice_nos(invoice_csv),
+        )
     except Exception as exc:  # noqa: BLE001 —— 扫描异常需如实告警，但不得吞掉，向上抛出
         alert_sent, alert_error = _try_alert(
             webhook_url, build_alert_message(export_dir=export_dir, scan_error=str(exc)), sender)
@@ -243,7 +251,7 @@ def scan_once(
         raise ScanFailedError(outcome) from exc
 
     if result.resolved_rows:
-        write_invoice_csv(result.resolved_rows, Path(out_dir) / "invoice.csv")
+        write_invoice_csv(result.resolved_rows, invoice_csv)
 
     failures = file_level_failures(result)
     outcome = ScanOutcome(result=result, file_level_failures=failures)

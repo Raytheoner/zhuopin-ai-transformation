@@ -66,7 +66,11 @@ def main() -> int:
                      help="已处理清单路径（默认 <out-dir>/.processed_exports.json）")
     args = ap.parse_args()
 
-    from fi2.tax_export_ingest import ingest_directory, write_invoice_csv
+    from fi2.tax_export_ingest import (
+        ingest_directory,
+        load_ingested_invoice_nos,
+        write_invoice_csv,
+    )
     from zhuopin_platform.audit.sinks import JsonlSink
     from zhuopin_platform.shared_tools.connector_audit import ConnectorAudit
     from zhuopin_platform.shared_tools.erp_connector import ZpConnector
@@ -80,14 +84,22 @@ def main() -> int:
     conn = ZpConnector.from_env(audit=trace)
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    result = ingest_directory(args.export_dir, ledger_path, conn, now=now)
+    # 发票级幂等闸（队列 #371）：已入库发票号直接从 invoice.csv 现读，零新增载体。
+    invoice_csv = out_dir / "invoice.csv"
+    result = ingest_directory(
+        args.export_dir, ledger_path, conn, now=now,
+        known_invoice_nos=load_ingested_invoice_nos(invoice_csv),
+    )
 
     if result.resolved_rows:
-        write_invoice_csv(result.resolved_rows, out_dir / "invoice.csv")
+        write_invoice_csv(result.resolved_rows, invoice_csv)
 
     print(f"新处理文件：{result.files_processed}")
     print(f"跳过（已处理过）：{result.files_skipped}")
     print(f"成功解析行数：{len(result.resolved_rows)}")
+    print(f"跳过重复发票行数：{result.duplicate_rows_skipped}"
+          f"（涉 {len(result.duplicate_invoice_nos)} 张发票，"
+          "该发票号已由此前文件贡献过——预期内，非故障）")
     print(f"未解析记录数：{len(result.diagnostics)}")
     for d in result.diagnostics:
         loc = f"{d.file}" + (f" 第{d.row_index}行" if d.row_index else "")

@@ -135,6 +135,11 @@ def main() -> int:
     print(f"新处理文件：{result.files_processed}")
     print(f"跳过（已处理过）：{result.files_skipped}")
     print(f"成功解析行数：{len(result.resolved_rows)}")
+    # 队列 #371：跨文件重复发票被闸掉的行数——预期内的正常现象（她的导出区间会重叠），
+    # 故不告警、不计非零退出码；但**必须打印**，否则又是一个「静默」。
+    print(f"跳过重复发票行数：{result.duplicate_rows_skipped}"
+          f"（涉 {len(result.duplicate_invoice_nos)} 张发票，"
+          "该发票号已由此前文件贡献过——预期内，非故障）")
     print(f"未解析记录数：{len(result.diagnostics)}")
     for d in result.diagnostics:
         loc = f"{d.file}" + (f" 第{d.row_index}行" if d.row_index else "")

@@ -364,3 +364,205 @@ def test_write_invoice_csv_appends_to_existing_file(tmp_path):
     with open(out_csv, encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     assert [r["inv_no"] for r in rows] == ["INV-1", "INV-2"]
+
+
+# ── 发票级幂等闸（队列 #371，2026-08-24）────────────────────────────────────
+#
+# 背景：唐燕萍 2026-08-21 举证面板发票数字整整翻倍。根因＝去重只有「文件内容 SHA256」
+# 一层，同一张发票出现在两份**字节不同**的 xlsx 里就会被摄取两次，`write_invoice_csv`
+# 追加写，面板按 (ap_no, item_code) 聚合求和后翻倍。下列用例锁死修复后的行为。
+
+
+def _dup_conn(digital_no, ap_no="AP-2026070036", item_code="R01F.0034",
+              qty=21000.0, taxed_price=3.9098):
+    return _FakeFullConnector(
+        invoice_rows={digital_no[-8:]: [{"DocNo": ap_no, "InvoiceNo": digital_no}]},
+        ap_lines_by_ap_no={ap_no: [{"ItemCode": item_code, "APQtyTU": qty,
+                                     "TaxPrice": taxed_price}]},
+    )
+
+
+def test_same_invoice_in_two_byte_different_files_is_ingested_only_once(tmp_path):
+    """🔴 #371 主用例：两份**字节不同**、但含同一张发票的 xlsx —— 摄取后行数不翻倍。
+
+    这正是真实事故的形态：她重导/另存了一次，两份文件内容哈希不同，旧闸放行两次。
+    断言用的是她举证的那张真实发票的真实数字（21000／72660／9445.8）。
+    """
+    from fi2.tax_export_ingest import _hash_file, load_ingested_invoice_nos
+
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    digital_no = "26327000000742719331"
+    inv_row = _row(digital_no=digital_no, qty=21000, unit_price=3.46,
+                   amount=72660.0, tax_rate="13%", tax_amount=9445.8)
+
+    _make_export_xlsx(export_dir / "a.xlsx", [inv_row])
+    _make_export_xlsx(export_dir / "b.xlsx", [inv_row], sheet_name="信息汇总表1")
+    # 两份文件的哈希确实不同——否则本用例测的不是它想测的东西（旧闸本就会挡住同哈希）
+    assert _hash_file(export_dir / "a.xlsx") != _hash_file(export_dir / "b.xlsx")
+
+    conn = _dup_conn(digital_no)
+    out_csv = tmp_path / "out" / "invoice.csv"
+    result = ingest_directory(export_dir, tmp_path / "ledger.json", conn,
+                              now="2026-08-24T00:00:00Z",
+                              known_invoice_nos=load_ingested_invoice_nos(out_csv))
+    write_invoice_csv(result.resolved_rows, out_csv)
+
+    assert sorted(result.files_processed) == ["a.xlsx", "b.xlsx"]
+    assert len(result.resolved_rows) == 1, "同一张发票被摄取了两次——#371 复发"
+    assert result.duplicate_rows_skipped == 1
+    assert result.duplicate_invoice_nos == [digital_no]
+
+    with open(out_csv, encoding="utf-8-sig") as f:
+        written = list(csv.DictReader(f))
+    assert len(written) == 1
+    assert float(written[0]["inv_qty"]) == 21000.0
+    assert float(written[0]["untaxed_amount"]) == 72660.0
+    assert float(written[0]["tax_amount"]) == 9445.8
+
+
+def test_duplicate_invoice_is_skipped_across_separate_runs(tmp_path):
+    """跨**批次**同样要挡住：第二天的新文件里含昨天已入库的发票。
+
+    真实链路就是这样——闸的状态来自 `invoice.csv` 自身，不是进程内变量。
+    """
+    from fi2.tax_export_ingest import load_ingested_invoice_nos
+
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    digital_no = "26327000000742719331"
+    inv_row = _row(digital_no=digital_no, qty=21000, unit_price=3.46,
+                   amount=72660.0, tax_rate="13%", tax_amount=9445.8)
+    _make_export_xlsx(export_dir / "day1.xlsx", [inv_row])
+
+    conn = _dup_conn(digital_no)
+    ledger_path = tmp_path / "ledger.json"
+    out_csv = tmp_path / "out" / "invoice.csv"
+
+    r1 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-24T00:00:00Z",
+                          known_invoice_nos=load_ingested_invoice_nos(out_csv))
+    write_invoice_csv(r1.resolved_rows, out_csv)
+    assert len(r1.resolved_rows) == 1
+
+    # 第二天：区间重叠的新导出文件，含同一张发票
+    _make_export_xlsx(export_dir / "day2.xlsx", [inv_row], sheet_name="信息汇总表1")
+    r2 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-25T00:00:00Z",
+                          known_invoice_nos=load_ingested_invoice_nos(out_csv))
+    write_invoice_csv(r2.resolved_rows, out_csv)
+
+    assert r2.files_processed == ["day2.xlsx"]
+    assert r2.resolved_rows == []
+    assert r2.duplicate_rows_skipped == 1
+    with open(out_csv, encoding="utf-8-sig") as f:
+        assert len(list(csv.DictReader(f))) == 1
+
+
+def test_repeated_identical_lines_within_ONE_file_are_all_kept(tmp_path):
+    """🔴 反例锁死：同一份文件里同一张发票的多行**合法重复**，一行都不许删。
+
+    真实数据实证（`.51`，2026-08-24）：`26942000000588188581` 单张发票 60 行，其中一组
+    (料品, 数量, 单价) 完全相同的签名重复 6 次，全部来自同一份源文件。**按行内容去重
+    会把这些合法行删掉** —— 故闸只看「这张发票是不是别的文件已经贡献过」，不看行内容。
+    """
+    from fi2.tax_export_ingest import load_ingested_invoice_nos
+
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    digital_no = "26942000000588188581"
+    same = _row(digital_no=digital_no, qty=100, unit_price=25.0, tax_rate="13%")
+    _make_export_xlsx(export_dir / "one.xlsx", [same, same, same])
+
+    conn = _dup_conn(digital_no, ap_no="AP-9", item_code="Y001",
+                     qty=100.0, taxed_price=28.25)
+    result = ingest_directory(export_dir, tmp_path / "ledger.json", conn,
+                              now="2026-08-24T00:00:00Z",
+                              known_invoice_nos=load_ingested_invoice_nos(tmp_path / "none.csv"))
+
+    assert len(result.resolved_rows) == 3, "同一文件内的合法重复行被误删——闸开得太宽"
+    assert result.duplicate_rows_skipped == 0
+
+
+def test_known_invoice_nos_none_still_dedups_within_one_run(tmp_path):
+    """⚠️ 不传 `known_invoice_nos` **不等于关掉闸**：本次运行内跨文件的重复照样挡住。
+
+    传 None 只表示「没有历史包袱」。锁死这一点是为了防止后来者误以为「不传就是旧行为」
+    而在别处依赖一个并不存在的开关；真正会漏的是**跨批次**（见下一个用例的对照）。
+    """
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    digital_no = "26327000000742719331"
+    inv_row = _row(digital_no=digital_no, qty=10, unit_price=100.0, tax_rate="13%")
+    _make_export_xlsx(export_dir / "a.xlsx", [inv_row])
+    _make_export_xlsx(export_dir / "b.xlsx", [inv_row], sheet_name="信息汇总表1")
+
+    conn = _dup_conn(digital_no, ap_no="AP-1", item_code="X001",
+                     qty=10.0, taxed_price=113.0)
+    result = ingest_directory(export_dir, tmp_path / "ledger.json", conn,
+                              now="2026-08-24T00:00:00Z")
+    assert len(result.resolved_rows) == 1
+    assert result.duplicate_rows_skipped == 1
+
+
+def test_known_invoice_nos_none_misses_cross_batch_duplicate(tmp_path):
+    """🔴 对照用例：不传 `known_invoice_nos` 时**跨批次**重复会漏过——#371 正是此形态。
+
+    这个用例是刻意留下的「反面锚点」：它证明调用方必须传闸状态，光靠进程内累积不够。
+    两个真实调用点（`scripts/ingest_tax_export.py`、`fi2/tax_export_scan.scan_once`）
+    都已传；若哪天有人去掉，本用例与上方跨批次用例会一起说明代价。
+    """
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    digital_no = "26327000000742719331"
+    inv_row = _row(digital_no=digital_no, qty=10, unit_price=100.0, tax_rate="13%")
+    _make_export_xlsx(export_dir / "day1.xlsx", [inv_row])
+
+    conn = _dup_conn(digital_no, ap_no="AP-1", item_code="X001",
+                     qty=10.0, taxed_price=113.0)
+    ledger_path = tmp_path / "ledger.json"
+    r1 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-24T00:00:00Z")
+    assert len(r1.resolved_rows) == 1
+
+    _make_export_xlsx(export_dir / "day2.xlsx", [inv_row], sheet_name="信息汇总表1")
+    r2 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-25T00:00:00Z")
+    assert len(r2.resolved_rows) == 1           # 漏过：新批次不知道昨天已入库
+    assert r2.duplicate_rows_skipped == 0
+
+
+def test_load_ingested_invoice_nos_reads_existing_csv(tmp_path):
+    from fi2.tax_export_ingest import load_ingested_invoice_nos
+
+    out_csv = tmp_path / "invoice.csv"
+    # 文件不存在＝首次摄取，返回空集合而非报错（「还没开始」不是异常）
+    assert load_ingested_invoice_nos(out_csv) == set()
+
+    write_invoice_csv([
+        {"inv_no": "INV-1", "ap_no": "AP-1", "item_code": "X", "unit": "个",
+         "unit_price": 1.0, "inv_qty": 1, "untaxed_amount": 1.0, "tax_rate": 0.13,
+         "tax_amount": 0.13, "inv_date": "2026-01-01"},
+        {"inv_no": "INV-2", "ap_no": "AP-1", "item_code": "Y", "unit": "个",
+         "unit_price": 2.0, "inv_qty": 1, "untaxed_amount": 2.0, "tax_rate": 0.13,
+         "tax_amount": 0.26, "inv_date": "2026-01-02"},
+    ], out_csv)
+    assert load_ingested_invoice_nos(out_csv) == {"INV-1", "INV-2"}
+
+
+def test_duplicate_skips_do_not_pollute_diagnostics(tmp_path):
+    """跨文件重复**不得**进 diagnostics —— 否则会被 `tax_export_scan` 的文件级失败
+    判定与「未解析需人工核对」两处误读，真正的失败信号会被重复量淹没。
+    """
+    from fi2.tax_export_ingest import load_ingested_invoice_nos
+
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    digital_no = "26327000000742719331"
+    inv_row = _row(digital_no=digital_no, qty=10, unit_price=100.0, tax_rate="13%")
+    _make_export_xlsx(export_dir / "a.xlsx", [inv_row])
+    _make_export_xlsx(export_dir / "b.xlsx", [inv_row], sheet_name="信息汇总表1")
+
+    conn = _dup_conn(digital_no, ap_no="AP-1", item_code="X001",
+                     qty=10.0, taxed_price=113.0)
+    result = ingest_directory(export_dir, tmp_path / "ledger.json", conn,
+                              now="2026-08-24T00:00:00Z",
+                              known_invoice_nos=load_ingested_invoice_nos(tmp_path / "none.csv"))
+    assert result.duplicate_rows_skipped == 1
+    assert result.diagnostics == []
