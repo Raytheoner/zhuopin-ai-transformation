@@ -74,3 +74,40 @@ def test_probe_gate_blank_template(real_a21_path):
 
 def _norm(s):
     return "" if s is None else str(s).strip()
+
+
+# ---- 模块四：项目目标三列表（档三 C06/C07 的取数侧，队列 #340③） ----
+
+def test_module4_objectives_parsed_from_blank_template(real_a21_path):
+    """空白模板：6 个固定标签全在册，且模板自带的「…」占位行不得被当成一条目标。"""
+    doc = ProposalParser(real_a21_path).parse()
+    rows = doc.tables["项目目标"]
+    labels = [r["目标类型"] for r in rows]
+    assert labels == ["硬件技术目标", "软件技术目标", "质量目标", "专利",
+                      "功能安全目标（如有）", "信息安全目标（如有）"]
+    assert "…" not in labels          # 省略号是填写骨架，不是数据行
+
+
+def test_module4_keeps_custom_rows_appended_after_the_fixed_labels(huafeng_path):
+    """🔴 华丰在 6 个固定标签之后追加了 3 行自定义「目标类型」，且都带实质内容。
+
+    若按"固定标签硬编码"取行，这 3 行会被**静默丢弃**——而且因为 C06/C07 只关心其中
+    两个固定标签，**连测试都不会发现**（判例素材 2026-08-18 §五）。本条即为此而设：
+    固定标签只用于定位、不用于过滤。
+    """
+    doc = ProposalParser(huafeng_path).parse()
+    labels = [r["目标类型"] for r in doc.tables["项目目标"]]
+    assert len(labels) == 9                      # 6 固定 + 3 自定义
+    assert "EPA认证" in labels
+    assert "后处理选型方案及后处理供应商选型" in labels
+    detail = next(r for r in doc.tables["项目目标"]
+                  if r["目标类型"] == "后处理选型方案及后处理供应商选型")["详细指标"]
+    assert detail                                # 自定义行的内容也须取到，不能只留标签
+
+
+def test_risk_table_now_carries_the_milestone_column(huafeng_path):
+    """C05 取数侧：风险表「所属里程碑」列（四份文件恒为第 4 列）。"""
+    doc = ProposalParser(huafeng_path).parse()
+    rows = doc.tables["风险"]
+    assert rows and all("所属里程碑" in r for r in rows)
+    assert [r["所属里程碑"] for r in rows] == ["项目立项"] * 3

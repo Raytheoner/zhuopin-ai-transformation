@@ -7,6 +7,14 @@ __pycache__/
 # 运行期产物（审计日志/报告本地化，不入库；含任意路径的 JSON 输出文件）
 reports/
 *.json
+# 🔴 但 data/rules/ 下的是**判定口径配置、不是运行期产物**，必须入库。
+# 成因（2026-08-25，队列 #340③）：新增 data/rules/cross_module_c05.json 时发现上面那条 `*.json`
+# 会把它一并吞掉——而 `registry.json` 早年是被 force-add 进来的，所以从没暴露这个洞。
+# 后果不是"报错"而是**静默判错**：文件缺失时 `cross_module.py::_c05_tables()` 退化为空表，
+# 华丰/邦奇的 C05 会从「通过」翻成「错误」，且本地永远复现不出来（本地文件在）。
+# 与 run_qd_b_web.py 那颗潜伏 10 天的引导雷同族：本地绿 ≠ 生产对。
+!data/rules/
+!data/rules/*.json
 
 # 黄金样本：真实立项数据脱敏自包含，绝不入库（含 OEM 报价附件）
 data/golden/*

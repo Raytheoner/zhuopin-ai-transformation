@@ -1,4 +1,5 @@
-"""C01–C10 跨模块一致性校验（openspec 变更包 qd-b-cross-module-check，档一＋档二）。
+"""C01–C10 跨模块一致性校验（变更包 qd-b-cross-module-check 档一＋档二
+＋ qd-b-cross-module-tier3 档三）。
 
 判据单一可信源＝工作汇总.xlsx「规则说明（开发）」§三 跨模块一致性校验规则（第 213–224 行），
 原文逐条落在 `CROSS_CHECKS` 的 `rule_text` / `deviation` 两列，代码不另立口径。
@@ -15,14 +16,21 @@
    但对等价条目同时标注该规则的判定结果，使两套口径的差异**在报告上可见**，
    不静默取一边。扣分仍只由 82 条规则决定，故并列呈现不产生二义性后果。
 
-未实现的 C05/C06/C07 判 PENDING 并各写**具体**阻塞原因——本变更包要修的正是
-"一句笼统文案把已核的说成没核"，换成另一句笼统的"扩容期补齐"只是把谎话换成含糊话。
+🔴 **档三（C05/C06/C07）已于 2026-08-25 落地**（队列 #340③，陈忱 2026-08-21 答齐 Q1–Q4）。
+三条**同样走 `cross_module_items`、同样不计入总分**——这一点与 2026-08-18 归档件里
+"C05/C06/C07 的阻断效力待口径裁定时一并落到规则侧"那句预期**不同**，是本次的显式改判：
+EQ17 的 C05 实测判「错误」（3 条风险里程碑对不上），而 EQ17 是评审委员会判**合格**的那一份，
+把它接进扣分即当场把合格项目打成不合格。⇒ 档三仍只作**呈现**，阻断与否留待陈忱另行裁定。
+论证见 `openspec/changes/qd-b-cross-module-tier3/design.md` 决策 4。
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 
-from ..models import ProposalDocument, RuleResult, Verdict
+from ..models import ExtractStatus, ProposalDocument, RuleResult, Verdict
 from .deterministic import (
     _cb_income_scale,
     _cb_total,
@@ -31,8 +39,12 @@ from .deterministic import (
     _personnel_total,
     _to_date,
 )
+from .vocab import is_as_not_filled, is_na_synonym
 
 IMPL_CLASS = "Cross"
+
+#: C05 两份表的落盘位置（陈忱 Q1 两条护栏的载体，与 registry.json 同目录便于他一并查看）。
+C05_TABLE_PATH = Path(__file__).resolve().parents[2] / "data" / "rules" / "cross_module_c05.json"
 
 #: §三 数值偏差类的容差（相对偏差 >10% → 警告）
 NUMERIC_TOLERANCE = 0.10
@@ -83,18 +95,10 @@ CROSS_CHECKS: tuple[CrossCheck, ...] = (
 
 _BY_ID = {c.check_id: c for c in CROSS_CHECKS}
 
-#: 档三三条的**具体**阻塞原因（不是"扩容期补齐"）——见 proposal.md「What Changes · 档三」。
-_BLOCKED_REASONS: dict[str, str] = {
-    "C05": "口径未定，暂不实现：风险表「所属里程碑」与模块九阶段名不是一套词汇体系"
-           "（样本实测填的是「需求确认与资料交付」「软硬件开发设计」，模块九是「立项评审」"
-           "「G1–G4质量阀」「结项评审」，严格相等与包含匹配均 0 命中）；"
-           "按 §三 字面实现会把评审报告判合格的样本判成阻断错误。待质量部裁定匹配口径（Q2）。",
-    "C06": "口径未定 ＋ 解析缺口，暂不实现：① ASIL「不适用」的写法在样本中出现 `/`、`无`、`A` 三种，"
-           "需先定同义词表（若把「无」当作 ≠NA，模块四填「不涉及」的样本会从合格翻成不合格，Q3）；"
-           "② 模块四「四、项目目标」当前完全未解析，需新增三列表解析。",
-    "C07": "解析缺口，暂不实现：判据本身无歧义（模块一勾选 ISO21434 → 模块四须有信息安全目标），"
-           "但模块四「四、项目目标」当前完全未解析，需与 C06 同批新增三列表解析。",
-}
+#: 档三落地后已无挂起项。**保留这个空表不是冗余**——`implemented_ids()`／`status_label()`／
+#: `summarize()` 三处的"已实现 vs 口径未定"分流都读它，日后若再有条目挂起，填这里即可，
+#: 不必改那三处逻辑；而清空它就是"三条已落地"这件事在代码里唯一的开关。
+_BLOCKED_REASONS: dict[str, str] = {}
 
 
 def check_meta(check_id: str) -> CrossCheck | None:
@@ -103,7 +107,7 @@ def check_meta(check_id: str) -> CrossCheck | None:
 
 
 def implemented_ids() -> set[str]:
-    """已实现判定逻辑的校验编号（C05/C06/C07 不在其中）。"""
+    """已实现判定逻辑的校验编号。档三落地后＝全部 10 条（`_BLOCKED_REASONS` 已空）。"""
     return {c.check_id for c in CROSS_CHECKS} - set(_BLOCKED_REASONS)
 
 
@@ -264,6 +268,240 @@ def _c04(doc, check, results_by_id) -> RuleResult:
     return _item(check, Verdict.PASS, evidence="一致：" + "；".join(matched) + note)
 
 
+# ---------- C05：风险「所属里程碑」↔ 模块九阶段（陈忱 2026-08-21 Q1） ----------
+
+@lru_cache(maxsize=1)
+def _c05_tables() -> tuple[frozenset[str], dict[str, tuple[str, ...]], bool]:
+    """读 `data/rules/cross_module_c05.json` → (豁免词集, 映射表, 是否已确认)。
+
+    表缺失时**返回空表而不是抛异常**：空表意味着豁免与白名单都不生效，C05 退化为
+    "严格相等 ＋ 包含匹配"，判得比口径更严 —— 宁可多报几条错误让人来看，也不要因为
+    读不到表就静默放行。⚠️ 反过来说，**这条兜底本身会让 EQ17 的 C05 结论变化**，
+    故读不到表时在证据里明写，不当作正常路径。
+    """
+    try:
+        raw = json.loads(C05_TABLE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return frozenset(), {}, False
+    exempt = frozenset(_norm_ms(w) for w in raw.get("贯穿性豁免词", {}).get("词表", []))
+    mapping = {
+        _norm_ms(k): tuple(v)
+        for k, v in raw.get("里程碑阶段映射表", {}).get("映射", {}).items()
+    }
+    confirmed = bool(raw.get("_已确认", False))
+    return exempt, mapping, confirmed
+
+
+def _norm_ms(s) -> str:
+    """里程碑/阶段名规范化：去空白与全角空格。**不做同义改写**——那是映射表的职责。"""
+    return str(s or "").replace("　", "").replace(" ", "").strip()
+
+
+def _fuzzy_candidate(value: str, stages: list[str]) -> str:
+    """2-gram 词重叠最高的阶段名（**仅用于把"相似度指向了谁"写进证据**，不作判定依据）。
+
+    🔴 这个函数的返回值**永远不能单独让一条 C05 通过** —— 陈忱对第 8 条判 ❌ 的正是
+    "`软硬件开发设计` 仅因共有「设计」二字被配到 `G1质量阀/概念设计`"这种自信的错映射。
+    保留它是为了让报告能说清"我看见了这个相似，但按白名单不予采信"，而不是假装没看见。
+    """
+    def grams(s: str) -> set[str]:
+        return {s[i:i + 2] for i in range(len(s) - 1)} if len(s) > 1 else {s}
+
+    v = grams(value)
+    best, best_score = "", 0.0
+    for st in stages:
+        g = grams(_norm_ms(st))
+        if not g or not v:
+            continue
+        sc = len(v & g) / len(v | g)
+        if sc > best_score:
+            best, best_score = st, sc
+    return best if best_score > 0 else ""
+
+
+def _match_one_milestone(raw_value: str, stages: list[str]) -> tuple[str, str]:
+    """单条风险的里程碑匹配 → (结论, 说明)。结论 ∈ {通过, 豁免, 漏填, 错误}。
+
+    判定次序与 `cross_module_c05.json::_判定次序` 逐条对应（那份 JSON 是给陈忱看的正本）。
+    """
+    exempt, mapping, _ = _c05_tables()
+    v = _norm_ms(raw_value)
+    if not v:
+        return "漏填", "「所属里程碑」为空"
+
+    # ⑴ 护栏一：非阶段值／贯穿性描述豁免（EQ17「全项目周期」＝他 ❌ 掉「错误」的那一条）
+    if v in exempt:
+        return "豁免", f"「{raw_value}」属贯穿性描述、非阶段值，按豁免词表不参与匹配"
+
+    norm_stages = {_norm_ms(s): s for s in stages}
+    if v in norm_stages:
+        return "通过", f"「{raw_value}」与阶段「{norm_stages[v]}」严格相等"
+
+    for ns, orig in norm_stages.items():
+        if v in ns or ns in v:
+            return "通过", f"「{raw_value}」与阶段「{orig}」互为子串"
+
+    # ⑵ 护栏二：白名单校验——只有映射表确认过的对应才算数
+    for target in mapping.get(v, ()):
+        nt = _norm_ms(target)
+        for ns, orig in norm_stages.items():
+            if nt == ns or nt in ns:
+                return "通过", f"「{raw_value}」经映射表确认对应阶段「{orig}」"
+        return "错误", (f"「{raw_value}」映射表指向「{target}」，但模块九未填该阶段"
+                        f"（已填：{'／'.join(stages)}）")
+
+    cand = _fuzzy_candidate(v, stages)
+    if cand:
+        return "错误", (f"「{raw_value}」在模块九已填阶段中不存在；字符相似度指向「{cand}」，"
+                        f"但映射表未确认此对应，按白名单校验不予采信")
+    return "错误", f"「{raw_value}」在模块九已填阶段中不存在（已填：{'／'.join(stages)}）"
+
+
+def _c05(doc, check, results_by_id) -> RuleResult:
+    """模块六风险「所属里程碑」必须在模块九已填阶段中存在；不存在 → 错误。
+
+    口径＝陈忱 2026-08-21 Q1：总口径选 (c) 模糊匹配，**但附两条强制护栏**——豁免词表
+    与里程碑-阶段映射表白名单。⇒ 实际落地形态是「(c)＋两条护栏」，**超出原信 (a)–(d) 选项集**，
+    两份表的内容仍待他确认（见 `cross_module_c05.json::_确认状态`）。
+    """
+    stages = [row["阶段"] for row in _stage_rows(doc) if _norm_ms(row.get("阶段"))]
+    risks = doc.table("风险")
+    _, _, confirmed = _c05_tables()
+    tail = "" if confirmed else "｜⚠ 判定用的豁免词表与里程碑-阶段映射表为按 Q1 反推的草拟版，待陈忱确认"
+
+    if not stages:
+        return _item(check, Verdict.PENDING,
+                     evidence="缺数，待人工核：模块九未解析到已填阶段，无从比对" + tail)
+    if not risks:
+        return _item(check, Verdict.NA,
+                     evidence="模块六无风险行，本条不适用" + tail)
+
+    verdicts = [(row, *_match_one_milestone(row.get("所属里程碑", ""), stages)) for row in risks]
+    bad = [(r, why) for r, res, why in verdicts if res == "错误"]
+    lack = [(r, why) for r, res, why in verdicts if res == "漏填"]
+    exempted = [(r, why) for r, res, why in verdicts if res == "豁免"]
+    ok = [r for r, res, _ in verdicts if res == "通过"]
+
+    def _label(row) -> str:
+        return f"风险{row.get('序号', '?')}(r{row.get('行号', '?')})"
+
+    parts = [f"{len(risks)} 条风险：通过 {len(ok)}"]
+    if exempted:
+        parts.append(f"豁免 {len(exempted)}")
+    if lack:
+        parts.append(f"漏填 {len(lack)}")
+    if bad:
+        parts.append(f"对不上 {len(bad)}")
+    head = "、".join(parts)
+    detail = "；".join(f"{_label(r)} {why}" for r, why in bad + lack + exempted)
+
+    if bad:
+        return _item(check, Verdict.FAIL, severity="错误",
+                     evidence=f"{head}——{detail}{tail}",
+                     suggestion="风险「所属里程碑」应填模块九已列出的阶段名；"
+                                "若确为贯穿全程的风险，请填「全项目周期」一类贯穿性描述")
+    if lack:
+        return _item(check, Verdict.FAIL, severity="错误",
+                     evidence=f"{head}——{detail}{tail}",
+                     suggestion="请补填风险的「所属里程碑」")
+    return _item(check, Verdict.PASS, evidence=f"{head}"
+                 + (f"——{detail}" if detail else "") + tail)
+
+
+# ---------- C06/C07：模块四目标存在性（陈忱 2026-08-21 Q2/Q3/Q4） ----------
+
+def _module4_goal(doc, label_prefix: str) -> tuple[str, str | None]:
+    """取模块四某类目标的「详细指标」→ (状态, 原值)。状态 ∈ {未解析, 无此行, 已取}。
+
+    🔴 **「未解析」与「没填」必须分开**（场景红线：解析未命中 ≠ 业务空）——前者转人工，
+    后者才是业务缺陷。C07 的华丰案例就是这一族被压平后判反的实例。
+    """
+    rows = doc.table("项目目标")
+    if not rows:
+        return "未解析", None
+    for row in rows:
+        if str(row.get("目标类型", "")).startswith(label_prefix):
+            return "已取", row.get("详细指标")
+    return "无此行", None
+
+
+def _goal_verdict(doc, check: CrossCheck, label_prefix: str, trigger_note: str) -> RuleResult:
+    state, detail = _module4_goal(doc, label_prefix)
+    if state == "未解析":
+        return _item(check, Verdict.MANUAL,
+                     evidence=f"转人工核：{trigger_note}，但模块四「四、项目目标」未解析到目标行，"
+                              f"无法判定是否已填「{label_prefix}」——解析未命中不等于业务未填，不冒判")
+    if state == "无此行":
+        return _item(check, Verdict.MANUAL,
+                     evidence=f"转人工核：{trigger_note}，但模块四目标表中未见「{label_prefix}」行"
+                              f"（该行属模板固定标签，缺失更像模板改版而非填报缺陷）")
+    if is_as_not_filled(detail):
+        shown = f"填「{str(detail).strip()}」" if str(detail or "").strip() else "为空"
+        return _item(check, Verdict.FAIL, severity="错误",
+                     evidence=f"{trigger_note}，但模块四「{label_prefix}」{shown}"
+                              f"——按陈忱 2026-08-21 Q3 选 (b)，该组写法视为没填",
+                     suggestion=f"请在模块四补填「{label_prefix}」的详细指标")
+    excerpt = str(detail).strip().replace("\n", " ")[:40]
+    return _item(check, Verdict.PASS,
+                 evidence=f"{trigger_note}，模块四「{label_prefix}」已填：{excerpt}…")
+
+
+def _c06(doc, check, results_by_id) -> RuleResult:
+    """模块一「功能安全目标ASIL」非 NA 时，模块四必须有「功能安全目标」；缺失 → 错误。
+
+    同义词集走 `vocab.ASIL_NA_SYNONYMS`（陈忱 Q2 封闭词表，与规则 12 同一份）。
+    🔴 **空单元格判「漏填」、不视同 NA**（Q2 后半句）——但"漏填"这件事的扣分归规则 12，
+    本条只能说"因此判不了"，转人工，不替他把空悄悄归成 NA 从而静默跳过整条校验。
+
+    **ISO 26262 红线**：本条只做「模块四是否存在功能安全目标」的存在性校验，
+    **不对安全内容本身作任何判定**，故自身不越 ASIL C/D 禁区；文档一旦出现 ASIL=C/D
+    仍按现行红线整体转功能安全工程师，本条不改变它。
+    """
+    fv = _info(doc, "功能安全目标ASIL")
+    if fv.status == ExtractStatus.NOT_FOUND:
+        return _item(check, Verdict.MANUAL,
+                     evidence="转人工核：模块一「功能安全目标ASIL」字段未解析到，"
+                              "无法判定本条是否适用（解析未命中 ≠ 业务未填）")
+    if not fv.is_present:
+        return _item(check, Verdict.MANUAL,
+                     evidence="转人工核：模块一 ASIL 为空——按陈忱 2026-08-21 Q2，"
+                              "空单元格判「漏填」而非视同 NA，故无从判定本条是否适用；"
+                              "该字段本身的扣分由规则 12 承担")
+    v = str(fv.value).strip()
+    if is_na_synonym(v):
+        return _item(check, Verdict.NA,
+                     evidence=f"模块一 ASIL＝「{v}」，按 Q2 封闭同义词表视同 NA，本条不适用")
+    return _goal_verdict(doc, check, "功能安全目标", f"模块一 ASIL＝「{v}」非 NA")
+
+
+def _c07(doc, check, results_by_id) -> RuleResult:
+    """模块一「适用法规」勾选 ISO21434 时，模块四必须有「信息安全目标」；缺失 → 错误。
+
+    🔴 **取数读不出勾选 → 转人工核**（陈忱 Q4 选 (b)，他并注明「这条和我们红线原则一致」）。
+    华丰实证：其第 8 行 `N8` 整格缺失，解析器按「True/False 后跟选项文本」成对扫描时
+    **ISO21434 这个选项直接从表里消失**——`checked_options` 返回的不是「没勾」而是
+    「这个选项不存在」，两件事被压成同一个结果。按字面实现会静默判「不适用」跳过，
+    而真相是根本没读出来（「工具静默回退」同族：返回值完全正常，结论却是反的）。
+    """
+    options = doc.checkboxes.get("适用法规/体系")
+    if not options:
+        return _item(check, Verdict.MANUAL,
+                     evidence="转人工核：模块一「适用法规/体系」勾选行未解析到任何选项，"
+                              "读不出 ISO21434 的勾选状态")
+    present = [(name, ck) for name, ck in options if "21434" in _norm_ms(name)]
+    if not present:
+        listed = "／".join(name for name, _ in options) or "（空）"
+        return _item(check, Verdict.MANUAL,
+                     evidence=f"转人工核：模块一适用法规选项表里**没有 ISO21434 这一项**"
+                              f"（实际读到：{listed}）——这是「读不出勾选状态」，"
+                              f"不是「未勾选」，按陈忱 2026-08-21 Q4 选 (b) 不作判定",
+                     suggestion="请核对该行复选格是否缺失或改用了非标准打勾方式（如手打「√」）")
+    if not any(ck for _, ck in present):
+        return _item(check, Verdict.NA,
+                     evidence="模块一未勾选 ISO21434，本条不适用")
+    return _goal_verdict(doc, check, "信息安全目标", "模块一已勾选 ISO21434")
+
+
 def _reuse(check: CrossCheck, results_by_id: dict[str, RuleResult]) -> RuleResult:
     """C09/C10：复用规则 59/60 已产出的判定，不重算同一公式（design 决策 2）。"""
     src = results_by_id.get(check.equivalent)
@@ -280,7 +518,8 @@ def _blocked(check: CrossCheck) -> RuleResult:
     return _item(check, Verdict.PENDING, evidence=_BLOCKED_REASONS[check.check_id])
 
 
-_IMPLS = {"C01": _c01, "C02": _c02, "C03": _c03, "C04": _c04, "C08": _c08}
+_IMPLS = {"C01": _c01, "C02": _c02, "C03": _c03, "C04": _c04, "C05": _c05,
+          "C06": _c06, "C07": _c07, "C08": _c08}
 
 
 def build_cross_module_items(
@@ -333,8 +572,11 @@ def summarize(items: list[RuleResult]) -> str:
     judged = [i for i in implemented if i.verdict != Verdict.PENDING]
     lacking = len(implemented) - len(judged)
 
+    # ⚠️ MANUAL 必须在册：档三落地后 C06/C07 的"读不出来→转人工"是常态结论，
+    # 漏掉它会让抬头的计数与下表条数对不上（华丰即 1 条 MANUAL）。
     counts = {v: sum(1 for i in judged if i.verdict == v)
-              for v in (Verdict.PASS, Verdict.WARN, Verdict.FAIL, Verdict.NA)}
+              for v in (Verdict.PASS, Verdict.WARN, Verdict.FAIL,
+                        Verdict.NA, Verdict.MANUAL)}
     tail = "、".join(f"{v.value} {n} 条" for v, n in counts.items() if n)
     body = f"C01–C10 共 {len(items)} 条，判定逻辑已实现 {len(implemented)} 条"
     if tail:

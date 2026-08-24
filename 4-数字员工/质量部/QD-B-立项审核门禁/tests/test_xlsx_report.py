@@ -38,9 +38,12 @@ class TestWithHuafeng:
         # §三 规则原文与偏差处理逐条在册（呈现层引用元数据，不复制文案）
         assert "人月数①" in ws.cell(row=4, column=3).value
         assert ws.cell(row=4, column=4).value == "偏差 > 10% → 警告"
-        # 未实现项写具体原因，不写"扩容期"
+        # 每条都写具体证据，不写"扩容期"一类笼统措辞（档三落地后 C05 已有真实判定）
         c05_reason = ws.cell(row=8, column=6).value
-        assert "所属里程碑" in c05_reason and "扩容期" not in c05_reason
+        assert "条风险" in c05_reason and "扩容期" not in c05_reason
+        # C07 华丰实证：读不出勾选 → 转人工，且证据说清是"表里没这一项"而非"没勾"
+        c07_reason = ws.cell(row=10, column=6).value
+        assert "没有 ISO21434 这一项" in c07_reason
 
     def test_detail_sheet_header_matches_template_columns(self, huafeng_path, tmp_path):
         wb = build_workbook(self._result(huafeng_path, tmp_path))

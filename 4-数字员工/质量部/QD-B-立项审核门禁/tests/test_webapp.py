@@ -110,7 +110,9 @@ class TestEvaluateWithHuafeng:
         # 也不再用一句"尚未实现"把已核过的 C01/C08/C09/C10 一并说成没核。
         assert "跨模块校验尚未实现" not in body
         assert "跨模块校验结果（C01–C10）" in body
-        assert "C05" in body and "所属里程碑" in body  # 未实现项写具体原因
+        # 档三落地后 C05–C07 也逐条带判定与证据（华丰：C07 因读不出勾选转人工）
+        assert "C05" in body and "C06" in body and "C07" in body
+        assert "没有 ISO21434 这一项" in body
         assert "转人工待办项" in body
 
     def test_report_page_陈忱反馈重排要素齐全(self, client, huafeng_path):
@@ -182,10 +184,14 @@ class TestCrossModuleThreeCarriersAgree:
 
         body, xlsx_rows, report = self._artifacts(client, huafeng_path, tmp_path)
         expected = {i.rule_id: status_label(i) for i in report.cross_module_items}
-        # 华丰实证：C04 逻辑已实现、只是这份文件缺结束日期 → "待人工核"；
-        # C05/C06/C07 是判定口径未定、逻辑确实没写 → "未实现"。两者不得混为一谈。
+        # 华丰实证（档三落地后）：C04 逻辑已实现、只是这份文件缺结束日期 → "待人工核"；
+        # C05 三条风险里程碑经映射表全部对上 → "通过"；C06 ASIL='/' 视同 NA → "不适用"；
+        # C07 因 N8 整格缺失读不出 ISO21434 勾选 → "转人工"（Q4 (b)，不得静默判不适用）。
         assert expected["C04"] == "待人工核"
-        assert expected["C05"] == expected["C06"] == expected["C07"] == "未实现"
+        assert expected["C05"] == "通过"
+        assert expected["C06"] == "不适用"
+        assert expected["C07"] == "转人工"
+        assert "未实现" not in expected.values()
         assert xlsx_rows == expected
         text = report.to_text()
         for check_id, label in expected.items():

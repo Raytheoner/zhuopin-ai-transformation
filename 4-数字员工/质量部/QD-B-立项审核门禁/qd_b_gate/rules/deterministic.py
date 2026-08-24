@@ -12,6 +12,7 @@ from typing import Callable
 
 from ..models import ExtractStatus, ProposalDocument, RuleResult, Verdict
 from .registry import Rule
+from .vocab import is_na_synonym
 
 # rule_id -> 判定函数
 _RULES: dict[str, Callable[[ProposalDocument, Rule], RuleResult]] = {}
@@ -127,12 +128,24 @@ def r11_end_date(doc, r):
 
 @rule(12)
 def r12_asil(doc, r):
-    """ASIL ∈ {A,B,C,D,不涉及}；'/'/'NA'/'不适用' 视为不涉及。"""
+    """ASIL ∈ {A,B,C,D} 或视同 NA 的六种写法；**空单元格判「漏填」，不视同 NA**。
+
+    同义词集不在此处字面枚举，一律走 `vocab.ASIL_NA_SYNONYMS`——它与 C06 是同一份表
+    （陈忱 2026-08-21 Q2 一次定死两处）。**在这里再抄一遍就等于把两处又拆开了**，
+    正是本次要修的那个毛病的复发形态。
+
+    🔴 **本次改动**：同义词集并入 `无`。此前不含它，于是 EQ17（评审委员会判**合格**）的
+    `ASIL=无` 在生产里一直被判「待改进」——这不是假想问题，是一条正在报警的误判。
+    ⚠️ 该修正**会改动 EQ17 的黄金基准得分**，故须先经《基准变更说明》签认，见
+    `docs/基准变更说明-规则12并入无-2026-08-25.md`。
+    """
     fv = _info(doc, "功能安全目标ASIL")
     if not fv.is_present:
-        return _result(r, Verdict.FAIL, evidence="未勾选 ASIL 等级或填写不涉及")
+        return _result(r, Verdict.FAIL,
+                       evidence="ASIL 未填写（空单元格按陈忱 2026-08-21 Q2 判「漏填」，不视同不适用）",
+                       suggestion="请填写 A/B/C/D；确无功能安全要求则填「不涉及」，不要留空")
     v = str(fv.value).strip()
-    if v in {"A", "B", "C", "D"} or v in {"/", "NA", "N/A", "不涉及", "不适用"}:
+    if v in {"A", "B", "C", "D"} or is_na_synonym(v):
         return _result(r, Verdict.PASS, evidence=f"已填写: {v}")
     return _result(r, Verdict.WARN, evidence=f"ASIL 取值非常规: {v!r}",
                    suggestion="应为 A/B/C/D 或不涉及")

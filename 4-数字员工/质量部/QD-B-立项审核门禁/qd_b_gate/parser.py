@@ -260,6 +260,7 @@ class ProposalParser:
         self._parse_personnel_table(doc, secs.get("一、项目信息"))
         self._parse_text_areas(doc, secs)
         self._parse_summary_signatures(doc, secs.get("十二、总结"))
+        self._parse_objectives_table(doc, secs.get("四、项目目标"))
         self._parse_risk_table(doc, secs.get("六、项目风险分析"))
         self._parse_resource_table(doc, secs.get("七、项目所需资源采购计划"))
         self._parse_cost_benefit_section(doc, secs.get("八、项目成本及收益分析"))
@@ -292,6 +293,44 @@ class ProposalParser:
             return ""
         return _norm(self.ws.cell(row=row, column=col).value)
 
+    # ---------- 模块四：项目目标（三列表） ----------
+    #: 模板自带的省略号占位行（"…"），是填写骨架不是数据行——按非空判会把它当成一条目标。
+    _OBJECTIVE_FILLERS = {"…", "...", "⋯", "……", "。。。"}
+
+    def _parse_objectives_table(self, doc: ProposalDocument, rng: tuple[int, int] | None):
+        """模块四「目标类型 / 详细指标 / 交付物」三列表 → `doc.tables["项目目标"]`。
+
+        🔴 **逐行取，固定标签只用于定位、不用于过滤**（判例素材 2026-08-18 §五 实测）：
+        模板自带 6 个固定标签（硬件/软件/质量/专利/功能安全/信息安全技术目标），但**华丰在其后
+        追加了 3 行自定义「目标类型」且都带实质内容**。若按固定标签硬编码取行，这 3 行会被
+        **静默丢弃**——而且因为 C06/C07 只关心其中两个固定标签，**测试也不会发现**。
+
+        行的终止靠章节范围 `rng`（下界＝模块五标题行）而非"遇空行止"：模块四内部出现空行
+        （邦奇 r40）时，"遇空行止"与"跳过空行"在四份样本上结果相同，但后者对模板内部多插
+        一个空行的情形更稳，且不会因此少读后面的自定义行。
+        """
+        if rng is None:
+            return
+        lo, hi = rng
+        coord = self.find_label("目标类型", (lo, hi))
+        if not coord:
+            doc.warnings.append("模块四目标表头（目标类型列）未命中——C06/C07 将转人工核，不冒判")
+            return
+        hr = coordinate_to_tuple(coord)[0]
+        cols = self._row_label_cols(hr, ["目标类型", "详细指标", "交付物"])
+        rows: list[dict] = []
+        for r in range(hr + 1, hi + 1):
+            label = self._cell_text(r, cols.get("目标类型"))
+            if not label or label in self._OBJECTIVE_FILLERS:
+                continue
+            rows.append({
+                "目标类型": label,
+                "详细指标": self._cell_text(r, cols.get("详细指标")),
+                "交付物": self._cell_text(r, cols.get("交付物")),
+                "行号": r,
+            })
+        doc.tables["项目目标"] = rows
+
     # ---------- 模块六：项目风险分析 ----------
     def _parse_risk_table(self, doc: ProposalDocument, rng: tuple[int, int] | None):
         if rng is None:
@@ -302,7 +341,7 @@ class ProposalParser:
             doc.warnings.append("模块六风险表头（风险系数列）未命中")
             return
         hr = coordinate_to_tuple(coord)[0]
-        cols = self._row_label_cols(hr, ["类别", "描述", "严重度", "发生频率",
+        cols = self._row_label_cols(hr, ["所属里程碑", "类别", "描述", "严重度", "发生频率",
                                          "风险系数", "风险等级", "应对措施"])
         rows: list[dict] = []
         for r in range(hr + 1, hi + 1):
@@ -310,6 +349,9 @@ class ProposalParser:
                 continue
             rows.append({
                 "序号": self.ws.cell(row=r, column=1).value,
+                # C05 取数：四份文件（空白模板/华丰/EQ17/邦奇）表头逐字一致，恒为第 4 列
+                "所属里程碑": self._cell_text(r, cols.get("所属里程碑")),
+                "行号": r,
                 "类别": self._cell_text(r, cols.get("类别")),
                 "描述": self._cell_text(r, cols.get("描述")),
                 "严重度": self._cell_text(r, cols.get("严重度")),

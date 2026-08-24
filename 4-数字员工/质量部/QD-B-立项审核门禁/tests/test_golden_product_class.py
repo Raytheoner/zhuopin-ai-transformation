@@ -112,19 +112,55 @@ class TestCrossModuleZeroScoreDrift:
     真值取自 `data/golden/manifest.md` 与场景 CLAUDE.md §7 冒烟记录。
     """
 
+    #: 🔴 **已签认**的黄金基准（＝`data/golden/manifest.md` 真值）。
+    #: 未经 Shao Peishen 签认不得改动本常量——它与 manifest 是同一份真值的两个副本，
+    #: 改了这里而没改 manifest（或反之）就等于黄金基准无声地移动了一半。
     GOLDEN = {"EQ17": ("合格", 98.80, []), "邦奇": ("不合格", 94.89, ["74"])}
 
+    #: 🔴 **待签认**的新基准：规则 12 同义词集并入「无」后 EQ17 的重跑值。
+    #: EQ17 的 `ASIL=无` 此前不在同义词集内、被判「待改进」扣 1.20 分——那是一条误判
+    #: （评审委员会判它合格），陈忱 2026-08-21 Q2 已裁定「无」视同 NA。修掉误判即得 100.00。
+    #: **签认前不得把它写进 GOLDEN 或 manifest**；签认后三处一起改并摘掉下面的 xfail 标记。
+    #: 依据件＝`docs/基准变更说明-规则12并入无-2026-08-25.md`（队列 #340③）。
+    PENDING_BASELINE = {"EQ17": 100.00}
+
     @pytest.mark.parametrize("name, path", [("EQ17", EQ17), ("邦奇", BANGQI)])
-    def test_tier_score_and_veto_unchanged_after_cross_module(self, name, path):
+    def test_tier_and_veto_unchanged_after_cross_module(self, name, path):
+        """档位与一票否决是硬断言——本次改动**不得**移动这两者。
+
+        得分单独一条断言（见下），因为它确实会因规则 12 修正而移动，须走签认闸。
+        """
         doc = ProposalParser(_need(path)).parse()
         results = run_all(doc)
         sr = score(results)
         rep = build_report(doc, results=results, score_result=sr, sample_id=name)
-        tier, total, veto = self.GOLDEN[name]
+        tier, _total, veto = self.GOLDEN[name]
         assert rep.verdict == tier
-        assert round(sr.total_score, 2) == total
         assert sr.veto_rules == veto
         assert len(results) == 82          # 跨模块条目未混入 82 条结果集
+
+    @pytest.mark.parametrize("name, path", [
+        pytest.param("EQ17", EQ17, marks=pytest.mark.xfail(strict=True, reason=(
+            "#340 档三：规则 12 同义词集并入「无」后 EQ17 得分 98.80 → 100.00。"
+            "黄金基准的移动须经 Shao Peishen 签认《基准变更说明》后，才更新 manifest 与 GOLDEN——"
+            "签认闸未开时本断言按旧基准必然失败，**这正是闸还锁着的信号**，"
+            "不得把 GOLDEN 改成新值来'修绿'它。strict=True：一旦 GOLDEN 已更新而本标记忘了摘，"
+            "XPASS 会立刻让本条转红，标记不会烂在这里。"))),
+        ("邦奇", BANGQI),
+    ])
+    def test_total_score_matches_the_signed_golden_baseline(self, name, path):
+        doc = ProposalParser(_need(path)).parse()
+        sr = score(run_all(doc))
+        assert round(sr.total_score, 2) == self.GOLDEN[name][1]
+
+    def test_pending_baseline_equals_what_the_engine_actually_produces_now(self):
+        """《基准变更说明》里给他签的那个"新值"，必须就是引擎当前的真实重跑值。
+
+        否则签认的是一个凭空写下的数——签完再发现对不上，比不签更糟。
+        """
+        doc = ProposalParser(_need(EQ17)).parse()
+        sr = score(run_all(doc))
+        assert round(sr.total_score, 2) == self.PENDING_BASELINE["EQ17"]
 
     @pytest.mark.parametrize("name, path", [("EQ17", EQ17), ("邦奇", BANGQI)])
     def test_cross_module_items_stay_out_of_every_scored_list(self, name, path):
