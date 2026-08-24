@@ -269,7 +269,10 @@ Shao Peishen 2026-08-20 答 (c)：签认有效、瑕疵留痕不重问，**改�
 
 | 项 | 结果 |
 |---|---|
-| SC8 全量 | **478 passed + 4 skipped**（纯净 master 基线 **456 + 4**，新增 22 条；🔴 基线是用 `git archive origin/master` 抽副本**实测重定**的，**不是照抄场景 `CLAUDE.md` 上一行的 448+4**） |
+| SC8 全量（**共享主工作区**，含 `data/golden/real_frozen/` 夹具） | **479 passed + 3 skipped**（同环境纯净 master 基线 **457 + 3**，**新增恰好 22 条**）|
+| SC8 全量（worktree，**无** `real_frozen` 夹具——它是 gitignore 件，worktree 里没有） | **478 passed + 4 skipped**（同环境纯净 master 基线 **456 + 4**，同样新增 22 条）|
+| 🔴 **真实**黄金基准 `test_golden_real.py` | **实跑并通过**（不是 skip）。⚠️ **这一条只在共享主工作区跑得到** —— worktree 里因缺 `real_frozen` 夹具而整组 skip，**那正是两处数字差 1 的全部原因**。⇒ 「黄金基准不漂移」这句话在本变更包里**同时有 mock 与真实两侧的实证**，不是只测了 mock。 |
+| 🔑 基线怎么定的 | 用 `git archive origin/master` 抽**纯净副本**实测重定，**不是照抄场景 `CLAUDE.md` 上一行的 448+4**。两个环境各自定基线、各自比对——**跨环境比数字会得出"凭空多一条/少一条"的假结论**。 |
 | mock 黄金基准 | **精确不漂移**——且这不是"测了没发现问题"：`sc8/pipeline.py`（`compute_forecasts`，黄金基准走的那条流水线）**不传新入参**，`estimate_material_arrivals` 因而**根本走不进新分支**。`git grep` 可复核全部调用点。 |
 | 平台底座 | 380 passed + 1 skipped |
 | 同仓其余场景 | SC1 53／SC2 146／SC7 41／FI1 33／FI2 179+9skip／QD-A 41／QD-B 114+27skip／O1 32／O2 20 —— 全绿 |
