@@ -41,13 +41,25 @@ ImportError: class queue_table: ...` 兜底桩隔离测试环境（#306 apply �
 入口脚本同款的 #300 式 sys.path 引导即可稳定 import，不必为一个零依赖
 模块在 CI 里多装一次平台底座包（`queue-structure-lint` job 目前不装）。
 
+第④项（队列 #352）：称呼判据——根 `CLAUDE.md` §1 称呼纪律「一律称
+`Shao Peishen`，不用 `Paul`」此前**纯属人守**，写反了只能靠人读到。本项
+把它挂到 CI 这条不可绕过的咽喉上（同根 `CLAUDE.md` §5 规则退休制的
+「机制化」一支）。🔴 **必须带 baseline**：判据上线时存量非零（2026-08-24
+实测 21 个活行、74 处命中），无 baseline 直接开门禁会让 CI 长期红，而一条
+长期红的门禁等于没有门禁（同队列 §四 #58「非阻断提示被连续 6 次越过后
+信息量为零」的另一面）。做法见下方 `_appellation_scan` 与
+`APPELLATION_BASELINE_PATH` 处的完整说明。
+
 用法：
   python 0-学习与工具/工具-队列结构lint.py
   # 退出码 0=通过；1=发现违规（详情打印到 stdout）
+  python 0-学习与工具/工具-队列结构lint.py --emit-baseline
+  # 把当前称呼判据命中集按 baseline 格式打到 stdout（不写盘，见下方说明）
 """
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -135,6 +147,230 @@ def _followup_restate_scan(text: str) -> tuple[list[str], int]:
     return live, historical
 
 
+# ---------------------------------------------------------------------------
+# 队列 #352：称呼判据（`Paul` → `Shao Peishen`），带 baseline
+# ---------------------------------------------------------------------------
+#
+# 根 `CLAUDE.md` §1：「一律称 `Shao Peishen`，不用 `Paul`」。成因是 `Paul`
+# 同时是 Windows 账户名、英文名与决策人代称，三重含义混用已多次致错。
+#
+# 🔴 **三条豁免，每一条都必须计数并打印，不得静默**——「静默豁免」正是本
+# 判据所属的这一族毛病本身（同 `_followup_restate_scan` 的既有原则）：
+#
+#   ⑴ **路径／账户名 `Paul Shao` 恒不算违规**。根 `CLAUDE.md` §1 明写
+#      「🔴 绝不替换路径里的 `Paul Shao`（改了路径即失效）」——本机用户
+#      目录就是 `C:\\Users\\Paul Shao\\`，计划任务的运行身份字面量也是
+#      `Paul Shao / S4U`。判据用**紧跟其后的 ` Shao`** 做否定前瞻，不去
+#      猜「这个位置像不像路径」。 ⚠️ **已知假阴性，如实登记**：真有人写
+#      「Paul Shao 拍板」时本判据不会报。这是**刻意选的方向**——本判据的
+#      代价不对称：漏报只是少拦一次，误报会把「绝不可改」的路径推给下一
+#      个人去改。2026-08-24 实测两份队列共 7 处 `Paul Shao`，全部落在路径
+#      或账户名里，无一是称呼用法。
+#
+#   ⑵ **§一 `[S:done]` 行恒不算违规**。根 `CLAUDE.md` §1：「历史记录不
+#      追改——队列已完成行/归档件/进度编年/既往报告与 openspec design 里
+#      的 `Paul` 指同一人，保持原样」。
+#
+#   ⑶ **行内写了 `称呼豁免：〈理由〉` 的行不算违规**。逃生阀，范式直接沿用
+#      队列 §四 #58 已验证过的 `WIP豁免：`：🔴 **理由的唯一真源是行内标记，
+#      不是命令行开关**——命令行参数是会话级的、随窗口关闭即消失，而这条
+#      逃生阀要治的恰恰是「越过之后没人知道为什么」；写在行里则进 git、被
+#      本 lint 与值周巡检都看得见、可 grep 计数。真实用例＝**队列 #352 行
+#      自己**：一条定义称呼判据的队列行必须引用它要拦的那个字面量，否则
+#      根本说不清自己在拦什么（同 #355「防回归判据的初版命中了我写在注释
+#      里解释这个反范式的那段话」，是同一个自指问题的第二次出现）。
+#
+# ⚠️ **扫描面只有 §一／§二／§四 的表格数据行，如实登记**：队列顶部的
+# 「协议〇」正文、各区标题与说明段都不在 `_table_data_rows` 的返回里，因此
+# 本判据管不到它们。这与本文件既有的列数／§二状态列／信状态复述三项判据
+# 是同一个扫描面——不为称呼判据单开一套解析，那会变成第二份关于「队列长
+# 什么样」的判据（同 `_table_data_rows` 自身 docstring 的既有原则）。
+#
+# **baseline 的判据是「计数棘轮」，不是「快照比对」**——每个行键记一个数，
+# 当前命中数 > baseline 数才算违规。刻意不记命中片段的哈希：那样一来，在
+# 一条已 baseline 的行里改动**离 `Paul` 很远的**正文也会让指纹失配、报出
+# 一个纯属噪音的违规，而修它最省事的办法就是重刷 baseline ⇒ 门禁自废。
+# ⚠️ **棘轮的已知盲区，如实登记**：同一行内「删掉一处 `Paul`、又新写一处」
+# 净变化为 0，不会被拦。接受它——那一行本就在 baseline 里、本就是历史行。
+#
+# 🔴 **刻意不提供 `--update-baseline` 式的一键重刷**。`--emit-baseline` 只
+# 把 JSON 打到 stdout，要落盘必须自己重定向、自己 commit、自己在 PR 里被
+# 人看见。一个能一键抹平的门禁，在第一次挡住人的那天就会被抹平。
+APPELLATION_BASELINE_PATH = Path(__file__).resolve().with_name("队列称呼判据-baseline.json")
+# 大小写敏感是判据的一部分：`PAUL_USERID`（企微 userid 常量）、`cc_to_paul`
+# （函数参数名）都是代码标识符、不是称呼，不该被本判据碰。
+_APPELLATION_RE = re.compile(r"(?<![A-Za-z])Paul(?![A-Za-z])(?![ \t]+Shao)")
+APPELLATION_EXEMPT_MARK = "称呼豁免："
+APPELLATION_SCOPE_SECTIONS = ("一", "二", "四")
+APPELLATION_HINT = (
+    "根 CLAUDE.md §1 称呼纪律：一律称 `Shao Peishen`，不用 `Paul`。"
+    f"确有必要保留字面量时，在本行内写 `{APPELLATION_EXEMPT_MARK}〈理由〉`"
+    "（理由进 git、可 grep、可被值周巡检看见）"
+)
+
+
+def _appellation_row_key(label: str, cells: list[str]) -> str:
+    """行键跨两份队列文件全局唯一，**刻意不含文件名**。
+
+    §一／§四 的编号由协议〇「编号高水位线」跨两份文件统一发号，故
+    `一#352` 在两份文件里只可能存在一处。不含文件名是为了让 #315 式
+    「行从一份队列挪到另一份」不产生假违规——挪走的那一侧会少一个键、
+    挪到的那一侧会多一个键，若键里带文件名，一次纯搬家就会同时报出
+    「baseline 漂移」和「新增违规」两条，而实际上一个字都没改。
+    """
+    return f"{label}#{cells[0].strip() if cells else '?'}"
+
+
+def _appellation_scan(text: str) -> dict[str, dict]:
+    """扫一份队列文件，返回 {行键: {...}}。
+
+    每条记录含：`count`（违规命中数）、`snippets`（命中片段，供人眼定位）、
+    `exempt`（豁免原因，`None` 表示不豁免）。豁免行 `count` 照常统计——
+    **必须能被数出来**，否则逃生阀被批量使用时没人看得见。
+    """
+    sections = editlock._split_live_sections(text)
+    found: dict[str, dict] = {}
+    for label in APPELLATION_SCOPE_SECTIONS:
+        for line, cells in editlock._table_data_rows(sections.get(label, "")):
+            matches = list(_APPELLATION_RE.finditer(line))
+            if not matches:
+                continue
+            exempt = None
+            if APPELLATION_EXEMPT_MARK in line:
+                exempt = "行内标记"
+            elif label == "一" and len(cells) > 5:
+                status_value, _, _ = editlock._parse_status_domain_fields(cells[5])
+                if status_value == "done":
+                    exempt = "[S:done] 历史行"
+            found[_appellation_row_key(label, cells)] = {
+                "count": len(matches),
+                "snippets": [
+                    line[max(0, m.start() - 12):m.end() + 12].strip()
+                    for m in matches[:3]
+                ],
+                "exempt": exempt,
+            }
+    return found
+
+
+def load_appellation_baseline(path: Path | None = None) -> tuple[dict[str, int], str | None]:
+    """读 baseline，返回 (命中数映射, 错误说明)。
+
+    🔴 **读不到就报错，不回退成空字典**。空字典会让每一行存量都变成违规
+    ——那当然也是红的，但红的原因会被读成「队列里突然多了 74 处称呼违规」，
+    而真相是「baseline 文件没找着」。同根 `CLAUDE.md` §5「工具静默回退」：
+    要让失败长得像失败。
+    """
+    target = path or APPELLATION_BASELINE_PATH
+    if not target.exists():
+        return {}, (
+            f"称呼判据 baseline 文件不存在：{target}"
+            "（本判据以 baseline 冻结存量、只拦新增，缺它则无法区分历史与新增，"
+            "见队列 #352）"
+        )
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+        raw = data["命中"]
+        return {str(k): int(v) for k, v in raw.items()}, None
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return {}, f"称呼判据 baseline 文件无法解析：{target}（{exc!r}）"
+
+
+def appellation_check(
+    repo_root: Path, baseline_path: Path | None = None
+) -> tuple[list[str], dict]:
+    """返回 (违规说明列表, 统计信息)。违规**计入** `lint()` 与退出码。
+
+    与 `followup_restate_warnings`（#366/S2 一期只告警）的分野在于本判据
+    有 baseline：存量已被冻结、当天即绿，硬拦不会拦住任何既有内容，只拦
+    此后新写的。没有 baseline 才需要先走告警期。
+    """
+    baseline, baseline_error = load_appellation_baseline(baseline_path)
+    stats = {
+        "exempt_rows": [],       # [(行键, 原因, 命中数)]
+        "drift": [],             # baseline 记了、如今命中数变少或归零的行键
+        "live_rows": 0,
+        "live_hits": 0,
+    }
+    if baseline_error:
+        return [baseline_error], stats
+
+    violations: list[str] = []
+    seen: set[str] = set()
+    for queue_path in QUEUE_PATHS_REL:
+        target = repo_root / queue_path
+        if not target.exists():
+            continue
+        for key, rec in _appellation_scan(target.read_text(encoding="utf-8")).items():
+            seen.add(key)
+            if rec["exempt"]:
+                stats["exempt_rows"].append((key, rec["exempt"], rec["count"]))
+                continue
+            stats["live_rows"] += 1
+            stats["live_hits"] += rec["count"]
+            frozen = baseline.get(key, 0)
+            if rec["count"] <= frozen:
+                if rec["count"] < frozen:
+                    stats["drift"].append(f"{key}（baseline {frozen} → 现 {rec['count']}）")
+                continue
+            violations.append(
+                f"[{queue_path}] §{key.replace('#', ' #')} 称呼违规："
+                f"本行 `Paul` 命中 {rec['count']} 处，baseline 冻结时为 {frozen} 处"
+                f"（新增 {rec['count'] - frozen} 处）；片段 "
+                + " ｜ ".join(f"「{s}」" for s in rec["snippets"])
+                + f"。{APPELLATION_HINT}"
+            )
+    for key, frozen in baseline.items():
+        if key not in seen and frozen:
+            stats["drift"].append(f"{key}（baseline {frozen} → 现 0／行已不在扫描面）")
+    return violations, stats
+
+
+def emit_appellation_baseline(repo_root: Path) -> str:
+    """按 baseline 文件格式生成当前命中集的 JSON 文本（**只返回，不写盘**）。
+
+    豁免行（路径形态由正则天然排除；`[S:done]` 与行内标记由 `exempt` 排除）
+    一律不入 baseline——它们本就永远不会被判违规，写进去只是死条目，而死
+    条目会让下一个读 baseline 的人以为那些行是被 baseline 放行的。
+    """
+    hits: dict[str, int] = {}
+    for queue_path in QUEUE_PATHS_REL:
+        target = repo_root / queue_path
+        if not target.exists():
+            continue
+        for key, rec in _appellation_scan(target.read_text(encoding="utf-8")).items():
+            if rec["exempt"]:
+                continue
+            hits[key] = rec["count"]
+
+    def _sort_key(item: tuple[str, int]) -> tuple[int, int, str]:
+        label, _, num = item[0].partition("#")
+        order = APPELLATION_SCOPE_SECTIONS.index(label) if label in APPELLATION_SCOPE_SECTIONS else 9
+        return (order, int(num) if num.isdigit() else 10**9, num)
+
+    return json.dumps(
+        {
+            "说明": (
+                "队列 #352 称呼判据 baseline：冻结判据上线当日的存量命中，只拦新增。"
+                "键＝`§区#行号`（跨两份队列文件全局唯一，刻意不含文件名，见 "
+                "`工具-队列结构lint.py::_appellation_row_key`）；值＝该行 `Paul` 命中数。"
+                "🔴 历史记录不追改——本文件的存在正是这条纪律的机器表达，不得为了让"
+                "数字好看而去改历史行的正文。"
+            ),
+            "重刷方式": (
+                "python 0-学习与工具/工具-队列结构lint.py --emit-baseline > "
+                "0-学习与工具/队列称呼判据-baseline.json"
+                "（刻意没有一键写盘开关：重刷必须经过一次显式重定向 + 一次 commit，"
+                "好让它在 diff 里被人看见）"
+            ),
+            "冻结日期": "2026-08-24",
+            "命中": dict(sorted(hits.items(), key=_sort_key)),
+        },
+        ensure_ascii=False,
+        indent=2,
+    ) + "\n"
+
+
 def lint(repo_root: Path) -> list[str]:
     """队列 #315：遍历两份物理队列文件（机制环境／业务场景），每份独立跑
     同一套校验，违规说明前缀标注来源文件，避免两份文件都出问题时混在
@@ -149,6 +385,11 @@ def lint(repo_root: Path) -> list[str]:
         violations.extend(
             f"[{queue_path}] {v}" for v in _lint_one_file(text)
         )
+    # 队列 #352：称呼判据自带 baseline（存量已冻结、当天即绿），故直接进
+    # 违规列表参与退出码——它与 #366/S2 那条只 warn 的判据不同，那条上线时
+    # 存量非零且没有 baseline，一期硬拦会挡住所有人的 push。
+    appellation, _ = appellation_check(repo_root)
+    violations.extend(appellation)
     return violations
 
 
@@ -257,11 +498,37 @@ def check_queue_table_importable(repo_root: Path) -> str | None:
             sys.path.remove(str(platform_dir))
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if "--emit-baseline" in args:
+        # 只打到 stdout，不写盘——落盘须显式重定向，见 `emit_appellation_baseline`。
+        sys.stdout.write(emit_appellation_baseline(REPO_ROOT))
+        return 0
+
     violations = lint(REPO_ROOT)
     import_error = check_queue_table_importable(REPO_ROOT)
     if import_error:
         violations.append(import_error)
+
+    # 队列 #352：称呼判据的三类豁免必须逐类打数出来。豁免本身不是问题，
+    # **数不出来的豁免才是**——`WIP豁免：` 那条逃生阀当初就写明「批量出现
+    # 即说明上限定错了，应回去重议而不是继续豁免」，前提是它数得出来。
+    _, appellation_stats = appellation_check(REPO_ROOT)
+    if appellation_stats["exempt_rows"]:
+        by_reason: dict[str, int] = {}
+        for _, reason, count in appellation_stats["exempt_rows"]:
+            by_reason[reason] = by_reason.get(reason, 0) + count
+        print(
+            "  称呼判据豁免："
+            + "；".join(f"{r} {n} 处" for r, n in sorted(by_reason.items()))
+            + f"（行内标记原文可 grep `{APPELLATION_EXEMPT_MARK}`，批量出现即须回队列 #352 重议判据）"
+        )
+    print(
+        f"  称呼判据 baseline：受管活行 {appellation_stats['live_rows']} 行／"
+        f"{appellation_stats['live_hits']} 处命中，均已冻结；"
+        f"漂移（命中变少或行已不在扫描面）{len(appellation_stats['drift'])} 处"
+        "——漂移不算违规，是可以收紧 baseline 的信号。"
+    )
 
     # 队列 #366 / S2 一期：先打印 warn 段，再打印硬判据结论——放在前面是
     # 因为退出码由硬判据决定，读者看到 `✓ 通过` 后就不会再往下看了。
@@ -278,7 +545,10 @@ def main() -> int:
 
     files_desc = "、".join(QUEUE_PATHS_REL)
     if not violations:
-        print(f"✓ {files_desc} 结构 lint 通过（列数／§二状态列格式／权威模块可 import）。")
+        print(
+            f"✓ {files_desc} 结构 lint 通过"
+            "（列数／§二状态列格式／权威模块可 import／称呼判据）。"
+        )
         return 0
 
     print(f"✗ {files_desc} 结构 lint 发现 {len(violations)} 处违规：")

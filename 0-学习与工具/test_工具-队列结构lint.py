@@ -315,5 +315,269 @@ class FollowupGateImportableCheckTests(unittest.TestCase):
         )
 
 
+class AppellationBaselineTests(unittest.TestCase):
+    """队列 #352：称呼判据 + baseline（`Paul` → `Shao Peishen`）。
+
+    两向都必须锁住，缺任一向这道门禁都是假的：
+      · baseline 内的存量命中**不报**（否则 CI 长期红 ⇒ 门禁自废）；
+      · baseline 外的新增命中**即报**（否则它只是个装饰）。
+    另加三类豁免与「baseline 读不到必须 fail-loud」。
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.target_path = self.repo_root / self.module.QUEUE_REL
+        self.target_path.parent.mkdir(parents=True, exist_ok=True)
+        self.module.QUEUE_PATHS_REL = [self.module.QUEUE_REL]
+        self.baseline_path = self.repo_root / "baseline.json"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_baseline(self, hits: dict) -> None:
+        self.baseline_path.write_text(
+            __import__("json").dumps({"命中": hits}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def _write(self, section_one_rows="", section_two_rows="", section_four_rows=""):
+        self.target_path.write_text(
+            HEADER + section_one_rows
+            + SECTION_TWO_HEADER + section_two_rows
+            + SECTION_THREE_HEADER
+            + SECTION_FOUR_HEADER + section_four_rows,
+            encoding="utf-8",
+        )
+
+    def _check(self):
+        return self.module.appellation_check(self.repo_root, self.baseline_path)
+
+    # ---- 两向：baseline 内不报 / baseline 外即报 ----------------------------
+
+    def test_baseline内命中不报(self):
+        self._write(section_one_rows=(
+            "| 150 | 历史任务 | CC | 指针 | 产出 | "
+            "[S:open][D:机] Paul 2026-07-24 拍板，Paul 另定一条 | 触碰区 | 2026-08-09 |\n"
+        ))
+        self._write_baseline({"一#150": 2})
+        violations, _ = self._check()
+        self.assertEqual(violations, [], "存量已冻结，不得报违规——否则 CI 长期红")
+
+    def test_baseline外新增行即报(self):
+        self._write(section_one_rows=(
+            "| 151 | 新任务 | CC | 指针 | 产出 | "
+            "[S:open][D:机] Paul 2026-08-24 拍板 | 触碰区 | 2026-08-24 |\n"
+        ))
+        self._write_baseline({"一#150": 2})
+        violations, _ = self._check()
+        self.assertEqual(len(violations), 1, violations)
+        self.assertIn("#151", violations[0])
+        self.assertIn("Shao Peishen", violations[0], "提示必须给出正确写法，不能只说「别写」")
+        self.assertIn(self.module.APPELLATION_EXEMPT_MARK, violations[0],
+                      "提示必须给出逃生阀，否则唯一出路是重刷 baseline")
+
+    def test_baseline内行再加一处即报(self):
+        """棘轮：已 baseline 的行也不能继续往里加——否则历史行会变成藏新
+        违规的安全屋。"""
+        self._write(section_one_rows=(
+            "| 150 | 历史任务 | CC | 指针 | 产出 | "
+            "[S:open][D:机] Paul 拍板，Paul 补充，Paul 又补一句 | 触碰区 | 2026-08-24 |\n"
+        ))
+        self._write_baseline({"一#150": 2})
+        violations, _ = self._check()
+        self.assertEqual(len(violations), 1, violations)
+        self.assertIn("新增 1 处", violations[0])
+
+    def test_行内命中变少只算漂移不算违规(self):
+        self._write(section_one_rows=(
+            "| 150 | 历史任务 | CC | 指针 | 产出 | "
+            "[S:open][D:机] Paul 拍板 | 触碰区 | 2026-08-24 |\n"
+        ))
+        self._write_baseline({"一#150": 5})
+        violations, stats = self._check()
+        self.assertEqual(violations, [])
+        self.assertEqual(len(stats["drift"]), 1, stats)
+
+    def test_行从一份队列挪到另一份不产生假违规(self):
+        """行键刻意不含文件名（`_appellation_row_key` docstring）：#315 式
+        拆分把行从机制环境挪到业务场景时，一个字都没改却报违规是不可接受
+        的——那种噪音的最省事修法就是重刷 baseline。"""
+        other = self.repo_root / "另一份队列.md"
+        other.write_text(
+            HEADER + "| 150 | 历史任务 | CC | 指针 | 产出 | "
+            "[S:open][D:机] Paul 拍板，Paul 另定 | 触碰区 | 2026-08-09 |\n"
+            + SECTION_TWO_HEADER + SECTION_THREE_HEADER + SECTION_FOUR_HEADER,
+            encoding="utf-8",
+        )
+        self._write()  # 原文件里这一行已被挪走
+        self.module.QUEUE_PATHS_REL = [self.module.QUEUE_REL, "另一份队列.md"]
+        self._write_baseline({"一#150": 2})
+        violations, _ = self._check()
+        self.assertEqual(violations, [], "纯搬家不得报违规")
+
+    # ---- 三类豁免 ---------------------------------------------------------
+
+    def test_路径与账户名里的PaulShao不报(self):
+        """根 CLAUDE.md §1：🔴 绝不替换路径里的 `Paul Shao`（改了路径即失效）。
+        本机用户目录与计划任务运行身份字面量都长这样。"""
+        self._write(section_one_rows=(
+            "| 151 | 取证 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 真身 `C:\\Users\\Paul Shao\\Claude\\Sc`；"
+            "`ZhuopinCommitSweep` 实为 `Paul Shao / S4U`；"
+            "bash 在 `Paul Shao` 的空格处截断 | 触碰区 | 2026-08-24 |\n"
+        ))
+        self._write_baseline({})
+        violations, _ = self._check()
+        self.assertEqual(violations, [], f"路径形态不得被判违规：{violations}")
+
+    def test_一区已完成行按历史记录不追改豁免但必须计数(self):
+        self._write(section_one_rows=(
+            "| 152 | 老任务 | CC | 指针 | 产出 | "
+            "[S:done][D:机] ✅ 已完成，Paul 2026-07-01 拍板 | 触碰区 | 2026-07-01 |\n"
+        ))
+        self._write_baseline({})
+        violations, stats = self._check()
+        self.assertEqual(violations, [], "已完成的历史行不得报违规")
+        self.assertEqual(
+            [(k, r) for k, r, _ in stats["exempt_rows"]], [("一#152", "[S:done] 历史行")],
+            "但必须计数——静默豁免正是本判据这一族毛病本身",
+        )
+
+    def test_行内称呼豁免标记生效且必须可计数(self):
+        """逃生阀，范式沿用 §四 #58 已验证过的 `WIP豁免：`：理由的唯一真源
+        是行内标记，不是命令行开关。真实用例＝队列 #352 行自己（定义判据的
+        行必须引用它要拦的字面量）。"""
+        self._write(section_one_rows=(
+            "| 352 | 称呼判据 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 称呼豁免：本行是判据定义行，须引用 `Paul` 字面量 "
+            "| 触碰区 | 2026-08-24 |\n"
+        ))
+        self._write_baseline({})
+        violations, stats = self._check()
+        self.assertEqual(violations, [])
+        self.assertEqual([(k, r) for k, r, _ in stats["exempt_rows"]],
+                         [("一#352", "行内标记")])
+
+    def test_代码标识符不被误伤(self):
+        """大小写敏感是判据的一部分：`PAUL_USERID` 是企微 userid 常量、
+        `cc_to_paul` 是函数参数名，两者都不是称呼。"""
+        self._write(section_one_rows=(
+            "| 153 | 机器人 | CC | 指针 | 产出 | "
+            "[S:open][D:机] `PAUL_USERID` 与 `cc_to_paul=False`，另有 `paulista` "
+            "| 触碰区 | 2026-08-24 |\n"
+        ))
+        self._write_baseline({})
+        self.assertEqual(self._check()[0], [])
+
+    # ---- 扫描面与 fail-loud ------------------------------------------------
+
+    def test_二区与四区同在扫描面内(self):
+        self._write(
+            section_two_rows="| B-0824_01 | `x.md` | docs: Paul 拍板 | ⏳ 待提交 |\n",
+            section_four_rows="| 99 | 某事项 | Paul | 无 |\n",
+        )
+        self._write_baseline({})
+        violations, _ = self._check()
+        self.assertEqual(len(violations), 2, violations)
+        self.assertTrue(any("二 #B-0824_01" in v for v in violations), violations)
+        self.assertTrue(any("四 #99" in v for v in violations), violations)
+
+    def test_baseline文件缺失必须fail_loud而不是当成空(self):
+        """空字典也会红，但红的原因会被读成「队列里突然多了几十处称呼违规」，
+        而真相是「baseline 没找着」——同 CLAUDE.md §5「工具静默回退」。"""
+        self._write()
+        violations, _ = self._check()
+        self.assertEqual(len(violations), 1, violations)
+        self.assertIn("baseline 文件不存在", violations[0])
+
+    def test_baseline文件损坏必须fail_loud(self):
+        self.baseline_path.write_text("{不是 JSON", encoding="utf-8")
+        self._write()
+        violations, _ = self._check()
+        self.assertEqual(len(violations), 1, violations)
+        self.assertIn("无法解析", violations[0])
+
+    def test_违规计入lint退出码(self):
+        """与 #366/S2 那条只 warn 的判据的分野：本判据有 baseline，存量已
+        冻结、当天即绿，硬拦不会拦住任何既有内容。"""
+        self._write(section_four_rows="| 99 | 某事项 | Paul | 无 |\n")
+        self.module.APPELLATION_BASELINE_PATH = self.baseline_path
+        self._write_baseline({})
+        self.assertTrue(
+            any("称呼违规" in v for v in self.module.lint(self.repo_root)),
+            "称呼违规必须进 `lint()` 的违规列表，否则退出码永远是 0",
+        )
+
+
+class AppellationEmitBaselineTests(unittest.TestCase):
+    """`--emit-baseline`：只产 JSON 文本，不写盘；豁免行不入 baseline。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.target_path = self.repo_root / self.module.QUEUE_REL
+        self.target_path.parent.mkdir(parents=True, exist_ok=True)
+        self.module.QUEUE_PATHS_REL = [self.module.QUEUE_REL]
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _emit(self, section_one_rows):
+        self.target_path.write_text(
+            HEADER + section_one_rows + SECTION_TWO_HEADER
+            + SECTION_THREE_HEADER + SECTION_FOUR_HEADER,
+            encoding="utf-8",
+        )
+        import json
+
+        return json.loads(self.module.emit_appellation_baseline(self.repo_root))
+
+    def test_只产文本不写盘(self):
+        real_baseline = self.module.APPELLATION_BASELINE_PATH
+        before = real_baseline.read_bytes() if real_baseline.exists() else None
+        self._emit("| 150 | 任务 | CC | 指针 | 产出 | [S:open][D:机] Paul 拍板 | 触碰区 | 2026-08-24 |\n")
+        after = real_baseline.read_bytes() if real_baseline.exists() else None
+        self.assertEqual(before, after, "`--emit-baseline` 不得改写 baseline 文件本身")
+
+    def test_豁免行不入baseline(self):
+        """写进去只会让读 baseline 的人误以为那些行是被 baseline 放行的。"""
+        data = self._emit(
+            "| 150 | 活行 | CC | 指针 | 产出 | [S:open][D:机] Paul 拍板 | 触碰区 | 2026-08-24 |\n"
+            "| 151 | 历史行 | CC | 指针 | 产出 | [S:done][D:机] ✅ Paul 拍板 | 触碰区 | 2026-07-01 |\n"
+            "| 152 | 判据定义行 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 称呼豁免：须引用 `Paul` 字面量 | 触碰区 | 2026-08-24 |\n"
+        )
+        self.assertEqual(data["命中"], {"一#150": 1}, data["命中"])
+
+
+class AppellationRealQueueTests(unittest.TestCase):
+    """回归护栏：真实生产队列 + 入库的 baseline 必须零违规。
+
+    这一条是「无 baseline 不得合入」这句要求的机器表达——baseline 若没随
+    代码一起入库、或与队列现状对不上，本用例立刻红。
+    """
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def test_real_queue_with_committed_baseline_is_clean(self):
+        self.module.QUEUE_PATHS_REL = [self.module.editlock.QUEUE_MECHANISM_PATH_REL,
+                                       self.module.editlock.QUEUE_BUSINESS_PATH_REL]
+        violations, stats = self.module.appellation_check(self.module.REPO_ROOT)
+        self.assertEqual(violations, [], f"真实队列不应有称呼违规：{violations}")
+        self.assertGreater(
+            stats["live_rows"], 0,
+            "受管活行为 0 说明扫描面塌了（如队列路径解错）——那时「零违规」是假的",
+        )
+
+    def test_committed_baseline_file_exists_and_parses(self):
+        hits, error = self.module.load_appellation_baseline()
+        self.assertIsNone(error, error)
+        self.assertGreater(len(hits), 0, "baseline 必须随代码入库，否则门禁开局即红")
+
+
 if __name__ == "__main__":
     unittest.main()

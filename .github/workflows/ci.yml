@@ -160,7 +160,12 @@ jobs:
       - run: openspec validate --all --strict
 
   queue-structure-lint:
-    name: "队列结构 lint（列数／裸竖线／§二状态列格式）"
+    # 队列 #352：本 job 新增「称呼判据」（`Paul` → `Shao Peishen`，根 CLAUDE.md §1）。
+    # 判据自带 baseline（`0-学习与工具/队列称呼判据-baseline.json`，随代码入库），
+    # 上线当日存量 21 行／74 处已全部冻结 ⇒ 首跑即绿，只拦此后新写的。
+    # 🔴 baseline 读不到即 fail-loud（不回退成空字典），否则「没找着文件」会被
+    # 读成「队列里突然多了几十处违规」。
+    name: "队列结构 lint（列数／裸竖线／§二状态列格式／称呼判据）"
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
