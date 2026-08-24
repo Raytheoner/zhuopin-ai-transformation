@@ -39,7 +39,17 @@
 #    schtasks /End /TN ZhuopinFollowupDispatchDaily
 #    schtasks /Delete /TN ZhuopinFollowupDispatchDaily /F
 # ================================================================
+param(
+    # 队列 #355（2026-08-24）：只重生成 wrapper，跳过 [3/3] 注销+重注册计划任务。
+    # 与 register-decision-reminder-task.ps1 同款开关（两份保持对称——本次要修的
+    # 缺陷正是「双胞胎脚本各自漂移」的产物）。不传时行为与历史完全一致。
+    [switch] $SkipTaskRegistration
+)
 $ErrorActionPreference = "Stop"
+
+# 孤立 CR 断言器（队列 #355）——与 register-decision-reminder-task.ps1 共用一份，
+# 不各自复制（复述即漂移）。找不到即 fail-loud，不静默跳过自检。
+. (Join-Path $PSScriptRoot "assert-no-orphan-cr.ps1")
 
 $REPO         = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\.claude\worktrees\wecom-service-home"
 # 队列 #315（2026-08-11 最小止血）：拆分后旧路径已是纯指针文件，改指
@@ -81,7 +91,14 @@ Write-Host "      python  : $pyExe" -ForegroundColor Green
 Write-Host "      运行身份: $currentUser" -ForegroundColor Green
 
 Write-Host "[2/3] 生成 run-followup-dispatch-check.ps1..." -ForegroundColor Yellow
-$wrapperContent = @"
+# 🔴 队列 #355（2026-08-24）：模板必须用**单引号** here-string（@' … '@）。
+# 本文件此前与 register-decision-reminder-task.ps1 用的是同一个双引号 here-string
+# 范式，只是**碰巧**没在注释里写反引号包裹的标识符，才躲过了那次事故——
+# 属于「靠运气没踩到」，不是安全。改成单引号 here-string 后零转义零插值，
+# 真实值由占位符 .Replace() 代入。**此后不得改回双引号 here-string。**
+# 本次改动对生成物是**字节等价**的（原模板里唯二的转义 `$env: / `$LASTEXITCODE
+# 现在写作字面量，输出一致），已由改后重生成 + 逐字节比对验证。
+$wrapperTemplate = @'
 # 每日跟进信自动发信启动包装（由 register-followup-dispatch-task.ps1
 # 生成，勿手改——重跑注册脚本会覆盖此文件）。绝对路径烘焙进来，不依赖
 # 计划任务触发时的运行时 PATH（同落库 sweep/decision_reminder 惯例）。
@@ -94,12 +111,27 @@ $wrapperContent = @"
 # （正是队列 #126 修复过的同类问题）。显式设置后，resolve_repo_root 会
 # 以这个路径为锚点动态解析出主工作区根，README/队列内容与审计落点都
 # 对齐到唯一权威位置。
-`$env:WECOM_AIBOT_QUEUE_PATH = "$MAIN_WORKSPACE_QUEUE"
-& "$pyExe" "$DISPATCH_SCRIPT"
-exit `$LASTEXITCODE
-"@
+$env:WECOM_AIBOT_QUEUE_PATH = "__MAIN_WORKSPACE_QUEUE__"
+& "__PY_EXE__" "__DISPATCH_SCRIPT__"
+exit $LASTEXITCODE
+'@
+# String.Replace 是**字面量**替换、不是正则——路径里的 `\` 与中文都不会被解释。
+$wrapperContent = $wrapperTemplate.Replace('__MAIN_WORKSPACE_QUEUE__', $MAIN_WORKSPACE_QUEUE)
+$wrapperContent = $wrapperContent.Replace('__PY_EXE__', $pyExe)
+$wrapperContent = $wrapperContent.Replace('__DISPATCH_SCRIPT__', $DISPATCH_SCRIPT)
+
+# 防回归（队列 #355）：写盘前查内存串、写盘后反查落盘文件，任一处有孤立 CR 即中止。
+Assert-NoOrphanCR -Text $wrapperContent -Label "run-followup-dispatch-check.ps1 模板（写盘前）"
 Set-Content -Path $WRAPPER -Value $wrapperContent -Encoding UTF8
-Write-Host "      已生成 $WRAPPER" -ForegroundColor Green
+Assert-NoOrphanCR -Path $WRAPPER -Label "已写盘的 run-followup-dispatch-check.ps1"
+Write-Host "      已生成 $WRAPPER（孤立 CR 自检通过）" -ForegroundColor Green
+
+if ($SkipTaskRegistration) {
+    Write-Host "[3/3] 已按 -SkipTaskRegistration 跳过计划任务注册（队列 #355）。" -ForegroundColor Yellow
+    Write-Host "      $TASK 的既有定义保持不变；本次只重生成了 wrapper。" -ForegroundColor DarkGray
+    Write-Host "`n完成（仅重生成 wrapper）。" -ForegroundColor Green
+    exit 0
+}
 
 Write-Host "[3/3] 注册计划任务 $TASK..." -ForegroundColor Yellow
 if (Get-ScheduledTask -TaskName $TASK -ErrorAction SilentlyContinue) {
