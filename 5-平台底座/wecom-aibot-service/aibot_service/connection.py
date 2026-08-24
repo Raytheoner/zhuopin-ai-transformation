@@ -95,6 +95,7 @@ def build_connector(
     pending_lock_path: Optional[Path] = None,
     disconnect_alert_fallback_send: Optional[Callable[[str], None]] = None,
     queue_edit_lock_alert_fallback_send: Optional[Callable[[str], None]] = None,
+    group_notify_alert_fallback_send: Optional[Callable[[str], None]] = None,
 ) -> AibotConnector:
     """构造已接好审计 + 归档分发的 `AibotConnector`；不建立实际连接（调用方
     另行 `await connector.connect()`）。凭据缺失时 `SecretsProvider` 抛
@@ -124,6 +125,14 @@ def build_connector(
     时用它发一条"进行中"提示。**必须是独立 webhook 通道，不能依赖同一条
     故障连接**——断连期间用 `connector.send_markdown` 发送必然失败（与
     `gap_alert.py` 2026-07-19 事故同一教训）。未传时功能整体关闭。
+
+    `group_notify_alert_fallback_send`（队列 #387，默认 None——不影响任何
+    既有测试/调用方）：归档回执因**部门群映射缺配**而跳过时用它发一条告警。
+    这一类跳过此前只写审计、不惊动任何人——IT 域的回执因此静默丢了整整
+    一个月（2026-07-22 补入部门映射起，到 08-24 有人在群里等回执才被发现）。
+    未传时只记审计、不发告警，行为与本次改动前一致。⚠️ **只对配置缺口类
+    跳过告警**（见 `group_notify.ALERTABLE_SKIP_REASONS`），`sender_unmatched`
+    不告警——那一类已有三处可见后果，再加告警只是噪音。
 
     `queue_edit_lock_alert_fallback_send`（队列 #333③，默认 None——不影响
     任何既有测试/调用方）：机器人 `release` 队列编辑锁被结构校验拒绝（锁
@@ -422,10 +431,15 @@ def build_connector(
         # 把本次追加推迟（queue_append_deferred=True，queue_row=None）——
         # 此时本地还没有行可同步，跳过 git 同步（等下一条消息到达时由
         # 上方 flush_pending_queue_appends 补录+同步）。
+        # 队列 #387 ⑸：`queue_append_skipped`（发送人是 Shao Peishen 本人，
+        # 刻意不建行）同样没有行可同步——但与 deferred 的处置不同：deferred
+        # 等下次补录，skipped 是**永不补录**。两者在这里都跳过 git 同步，但
+        # 各自的语义写在 `IntakeResult` 的两个独立字段上，不合并。
         if (
             archive_result is not None
             and repo_root is not None
             and not archive_result.queue_append_deferred
+            and not archive_result.queue_append_skipped
         ):
             try:
                 await sync_after_archive(
@@ -479,6 +493,14 @@ def build_connector(
                     chatid_mapping=group_chatid_mapping,
                     audit=audit,
                     evaluator=evaluator,
+                    # 队列 #387 ⑶：回执按**来源群**回，不按发送人所属部门
+                    # 回——这两个字段是入站帧本来就带着的（#279 已提取进
+                    # `InboundMessage`），此前一路传到这里却从未被消费。
+                    source_chatid=message.chatid,
+                    source_chattype=message.chattype,
+                    # 队列 #387：映射缺配不再静默跳过，复用同一条独立
+                    # webhook 告警通道（未配置时为 None，功能自动关闭）。
+                    alert_send=group_notify_alert_fallback_send,
                 )
             except Exception as exc:  # noqa: BLE001 —— 通报失败必须留痕，不得吞掉
                 audit.record(

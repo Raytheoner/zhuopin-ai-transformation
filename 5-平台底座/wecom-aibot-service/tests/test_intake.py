@@ -68,11 +68,22 @@ def test_archive_text_message_matched_department(tmp_path):
     assert "mapping_unmatched" not in actions
 
 
-def test_archive_matched_department_outside_four_domains_falls_back_to_paul_owner(tmp_path):
+def test_archive_it_department_row_is_owned_by_business_bus(tmp_path):
     """2026-07-22（队列 #70）：陈承（IT）命中 `department_mapping` 表（不再是
-    未命中/待分拣），但 IT 不是 Cowork 的四域专线之一，`DEPARTMENT_TO_QUEUE_OWNER`
-    没有对应项——队列行的领取方应落回默认值 Paul（与"完全未命中发送人"用的
-    同一个默认值），而不是报错或误标某个专线。"""
+    未命中/待分拣），但 IT 不是 Cowork 的四域专线之一。
+
+    🔴 **2026-08-24（队列 #387 ⑷）改判**：原实现让 IT 落回 `UNMATCHED_QUEUE_
+    OWNER`（"Paul"）——**与"完全未命中发送人"用同一个默认值**，读队列的人
+    因此分不出这一行到底是「归属明确、只是没配」还是「身份都没认出来」。
+    2026-08-24 可 Open 池提醒里 `#385`／`#386` 两条陈承来件正是这个形态。
+
+    本用例原名 `..._falls_back_to_paul_owner`，断言 `"| Paul |" in new_queue`
+    ——**它把那个回落钉成了期望行为**。改为断言 IT 有自己的 owner。
+
+    ⚠️ **"业务总线"不是新造的角色**：陈承两次来件实际都由业务总线拆件派发；
+    刻意不写 "IT专线"（`whitelist.py` 原文：「不臆造一个不存在的『IT专线』
+    角色」）。"完全未命中"的回落值仍是 Paul，见下一个用例。
+    """
     docs_root, queue_path, audit, connector, store = _setup(tmp_path)
     mapping = {**MAPPING, "陈承": "IT"}
     message = InboundMessage(sender="陈承", msgtype="text", text_content="AP/Query 已修复")
@@ -94,7 +105,8 @@ def test_archive_matched_department_outside_four_domains_falls_back_to_paul_owne
     assert result.archived_path.parent == docs_root / "IT"
 
     new_queue = queue_path.read_text(encoding="utf-8")
-    assert "| Paul |" in new_queue
+    assert "| 业务总线 |" in new_queue
+    assert "| Paul |" not in new_queue
 
 
 def test_archive_multiple_same_day_messages_do_not_overwrite(tmp_path):

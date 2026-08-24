@@ -8,18 +8,28 @@ from aibot_service.department_group_chatid_mapping import (
 )
 
 
-def test_default_mapping_file_declares_four_departments_all_captured():
+def test_default_mapping_file_declares_five_departments_all_captured():
     """队列 #279/#280：2026-08-06 真实测试消息采集确认财务部/质量部/采购部/
     跨部门四个真实 chatid（intake.py 归档审计事件里读出，非猜测/占位）——
     四个部门全部采集完毕。跨部门是与财务/质量/采购平级的独立第4个部门
     （Shao Peishen 2026-08-06 明确："跟其他部门的信件无关"，不是广播/cc
     全部门的特殊对象）。销售部与 department_group_mapping.yaml 同一拍板，
-    故意不建映射。"""
+    故意不建映射。
+
+    🔴 **2026-08-24（队列 #387 ⑵）新增第 5 个：`IT` ⇒ 运维部AI保障群。**
+    本用例原名 `..._four_departments_...`、原断言写死 4 个部门集合——它是
+    这次改动**唯一失败的既有用例**，且失败得完全正确：`IT` 缺席正是 #387
+    要修的缺陷之一，而这条断言恰恰把那个缺席钉成了"期望行为"。改断言，
+    不是放宽判据：集合仍然是**精确相等**，只是多了一个真实存在的键。
+
+    ⚠️ `销售部` 仍故意不建映射（Paul 2026-07-15 拍板），断言保留。
+    """
     mapping = load_department_group_chatid_mapping()
     assert DEFAULT_GROUP_CHATID_MAPPING_PATH.exists()
-    assert set(mapping) == {"财务部", "质量部", "采购部", "跨部门"}
+    assert set(mapping) == {"财务部", "质量部", "采购部", "跨部门", "IT"}
     assert "销售部" not in mapping
-    assert all(mapping.values())  # 四个部门均已采集，无空占位
+    assert "IT部" not in mapping  # 键名写错会静默跳过，与 #387 要修的缺陷同形
+    assert all(mapping.values())  # 五个部门均已采集，无空占位
 
 
 def test_load_from_custom_path_with_real_value(tmp_path):

@@ -201,6 +201,9 @@ def main() -> None:
         # 队列 #333③：release 队列编辑锁被拒绝时的告警，同样复用这条通道
         # （未配置 WECOM_WEBHOOK_URL 时为 None，功能自动关闭；仍会记审计）。
         queue_edit_lock_alert_fallback_send=fallback_send,
+        # 队列 #387：归档回执因部门群映射缺配而跳过时的告警，同样复用这条
+        # 通道（未配置 WECOM_WEBHOOK_URL 时为 None，功能自动关闭；仍记审计）。
+        group_notify_alert_fallback_send=fallback_send,
     )
 
     asyncio.run(

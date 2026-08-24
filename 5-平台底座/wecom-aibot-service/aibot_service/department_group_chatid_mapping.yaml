@@ -25,7 +25,28 @@
 # 质量/采购平级的独立第4个部门，只收发给它自己的跟进信，不是"额外收全部
 # 部门"的广播/cc 对象；此前一度按后者设计过、已撤销，仅登记本次以防
 # 未来又走回头路）。
+#
+# IT（2026-08-24 新增，队列 #387 ⑵）——对应「运维部AI保障群」。
+# 🔴 **键名是 `IT`，不是 `IT部`**：本表的键必须与 `department_mapping.yaml`
+# 的**值**逐字一致（那里写的是 `"2023458": IT`），消费方拿到的是归档时解析
+# 出的那个部门字符串，`IT部` 会命中"不在映射表"分支、静默跳过——与本行要
+# 修的缺陷是同一个形态。
+#
+# 该 chatid 由 Shao Peishen 2026-08-24 15:30:50 在运维部AI保障群发一条带
+# 标识的消息、经 intake.py 归档审计（#279 的 chatid/chattype 字段）真实
+# 采集，与 2026-08-06 采那四个群是同一套办法。
+#
+# ⚠️ **仍须首次真实发送时反查一次**：采集只证明「机器人收到了来自这个
+# chatid 的消息」，**不证明这个 chatid 就是运维部AI保障群**（若他同期在
+# 别的群也发过话就会混）。发第一条回执时对着群里看一眼即可。
+#
+# ⚠️ **本表不走 webhook**：Shao Peishen 当日另给过一个该群的 webhook URL，
+# 刻意**不**配进来——`#270`/`#279`/`#281` 已于 2026-08-06 把群 cc 从
+# webhook 整体迁到 chatid，理由是「webhook 单向，群成员的回复进不到任何
+# 地方」。陈承恰恰是最常在群里回话的那一位，配 webhook 等于让他的回复
+# 再次掉进黑洞。webhook 值留在队列 #387 行内备查，不进配置。
 财务部: "wrvDL_DAAAva1MWrKjLmuDWOu1BNxHaA"
 质量部: "wrvDL_DAAAiR1HJ_JFx1H-k-tjnriXEg"
 采购部: "wrvDL_DAAAH7IL6I7hsgszeyQvmyjw-Q"
 跨部门: "wrvDL_DAAAntxO_zDcRCmGHMcuhvBTGw"
+IT: "wrvDL_DAAARjP0BlFLup5e1Cv3vcCvMQ"

@@ -15,6 +15,7 @@ from typing import Optional
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
+from .constants import PAUL_USERID
 from .department_mapping import UNMATCHED_DEPARTMENT, resolve_department
 from .frame_parsing import InboundMessage
 from .queue_appender import append_pending_task, QueueEditLock
@@ -28,6 +29,15 @@ DEPARTMENT_TO_QUEUE_OWNER = {
     "财务部": "财务专线",
     "质量部": "质量专线",
     "销售部": "销售专线",
+    # IT（2026-08-24 补，队列 #387 ⑷）——陈承的来件此前落 `UNMATCHED_QUEUE_
+    # OWNER`（"Paul"），与"发送人根本没命中部门映射"共用同一个默认值，读队列
+    # 的人分不出这一行到底是"归属明确、只是没配"还是"身份都没认出来"。
+    #
+    # 🔴 **owner 取 "业务总线"，刻意不写 "IT专线"**：本项目没有 IT 专线这个
+    # 角色（`whitelist.py` 顶部原文：「不臆造一个不存在的『IT专线』角色」）。
+    # 陈承两次来件（`#385`/`#386`）实际都是由业务总线拆件派发的，"业务总线"
+    # 是队列里既有、且与事实相符的 owner 取值。
+    "IT": "业务总线",
 }
 UNMATCHED_QUEUE_OWNER = "Paul"
 
@@ -52,6 +62,11 @@ class IntakeResult:
     # （`connection.py::on_message`）据此跳过 `sync_after_archive`（没有行
     # 可同步），等下一条消息到达时由 `flush_pending_queue_appends` 补录。
     queue_append_deferred: bool = False
+    # 队列 #387 ⑸：本次**刻意不建**队列行（发送人是 Shao Peishen 本人）。
+    # 与 `queue_append_deferred` 是两件不同的事，不能复用同一个字段——
+    # deferred 的含义是「这一行还欠着，等下次补录」，skipped 的含义是
+    # 「这一行本就不该存在」。混用会让补录链路去补一条永远不该补的行。
+    queue_append_skipped: bool = False
 
 
 def _safe_filename_component(text: str, max_len: int = 60) -> str:
@@ -227,6 +242,43 @@ async def archive_inbound_message(
         expected_output="核实内容并按需处理；如需回灌口径按各域三步法走",
         date_str=date_str,
     )
+
+    # 🔴 队列 #387 ⑸（Shao Peishen 2026-08-24 拍板原话：「就按这个办：把对你
+    # 本人的入站消息直接不建队列行」）：**发送人是他本人时不建队列行。**
+    #
+    # 他是任务的发起方，不是「需要被拆件的外部来件」。此前他每在群里说一句
+    # 话就产生一条待领行——实测已积 15 条，其中 14 条由 2026-08-06／08-12
+    # 两班拆件巡逻逐条人工关闭（理由一律是「非业务反馈、系采集 chatid 的标注
+    # 测试短信、无需回灌」）。**代价不是留下一堆孤儿行，而是每一条都真实
+    # 消耗了一次拆件巡逻的人力去关掉一条注定无意义的行。**
+    #
+    # ⚠️ **归档本身保留**：文件照常落 `7-外部文档/`，留痕一条不丢；不建的
+    # 只是那条待领行。
+    #
+    # 🔴 **判据刻意与 `forwarding.py::should_forward` 同源**（那里已有一条
+    # 同语义判定，审计 reason 写作 `sender_is_paul`）——**不新造第二套「谁是
+    # 本人」的判定**，两处判据一旦分叉，就会出现「转发认得他、队列不认得他」
+    # 这类只在特定消息上才暴露的偏差。
+    if message.sender == PAUL_USERID:
+        audit.record(
+            AuditEvent(
+                scenario="wecom-aibot",
+                action="queue_append_skipped",
+                evaluator=evaluator,
+                automation_level="L1",
+                decision={"reason": "sender_is_paul", "owner": owner},
+                data_sources={"sender": sender_label, "queue_path": str(queue_path)},
+            )
+        )
+        return IntakeResult(
+            archived_path=target_path,
+            department=department,
+            matched=matched,
+            queue_row=None,
+            queue_append_kwargs=queue_append_kwargs,
+            queue_append_skipped=True,
+        )
+
     try:
         queue_row = append_pending_task(
             queue_path, audit=audit, lock=queue_lock, **queue_append_kwargs

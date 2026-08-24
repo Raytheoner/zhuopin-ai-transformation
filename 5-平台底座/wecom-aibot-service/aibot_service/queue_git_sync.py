@@ -75,6 +75,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Optional
 
 from zhuopin_platform.audit import AuditEvent, AuditLogger
+from zhuopin_platform.shared_tools.queue_table import iter_queue_paths
 
 from . import pending_jsonl
 from .queue_appender import append_pending_task
@@ -399,6 +400,55 @@ def _extract_append_kwargs_from_flat_record(record: dict) -> dict:
     return {k: v for k, v in record.items() if k not in ("recorded_at", "error")}
 
 
+def input_pointer_already_in_queue(
+    repo_root: Path, queue_path: Path, input_pointer: str
+) -> bool:
+    """队列 #387 ⑹：这条待补录记录对应的队列行，是不是**已经存在**了？
+
+    **为什么需要这道判据**：`queue_sync_degraded` 的根因通常是 `.git/index.lock`
+    被并发 git 进程占着（本机是常态——sweep/巡检/CC 会话随时在跑 git），而
+    **加锁失败发生在「行已写进磁盘文件」之后**。于是同一条来件会同时以两种
+    形态存在：磁盘队列里的一行 ＋ `pending_queue_appends.jsonl` 里的一条待
+    补录记录。这条 pending 若被 flush，就会**再追加一条同内容、不同编号的
+    行**。2026-08-24 15:30:53 真实发生过一次（对应行即 §一 `#389`），当时靠
+    人工 `grep` 发现并处置——本函数把那次人工核对固化成机器判据。
+
+    **判据 ＝ `input_pointer` 在任一份队列文件里出现过**。`input_pointer` 是
+    归档文件的仓库相对路径（含 msgid 消歧后缀，见 `intake._build_filename`），
+    **在本项目里对每一条来件唯一**，比按描述文本或编号匹配都稳。
+
+    🔴 **扫全部物理队列文件、不只扫 `queue_path`**（`iter_queue_paths()`，与
+    `open_pool_reminder.build_pool_items_from_repo` 同一入口）：`#315` 拆分成
+    两份之后，一条行可能被人工挪进另一份；只扫写入侧那一份，会把"已挪走的
+    行"误判为不存在，于是补出第二条——**这正是「一份拆成两份、下游只跟了
+    一份」那个家族的又一个入口**。
+
+    读取失败/文件不存在时按「没找到」处理并继续扫其余文件——**这一侧的
+    fail-open 是刻意的**：本函数只是一道去重网，读不到文件就退回改动前的
+    行为（照常补录），不能因为一个读不到的文件把整条补录链路卡死。
+    """
+    if not input_pointer:
+        return False
+    needle = input_pointer.strip().strip("`")
+    if not needle:
+        return False
+
+    candidates: list[Path] = []
+    for queue_rel in iter_queue_paths():
+        candidates.append(repo_root / queue_rel)
+    if queue_path not in candidates:
+        candidates.append(queue_path)
+
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if needle in text:
+            return True
+    return False
+
+
 def _route_pending_failure(
     *,
     is_lock_busy: bool,
@@ -658,6 +708,22 @@ async def flush_pending_git_sync_appends(
     remaining: list[dict] = []
     for record in records:
         append_kwargs = _extract_append_kwargs_from_flat_record(record)
+
+        # 队列 #387 ⑹：补录前先问一句「这一行是不是已经在了」。`queue_sync_
+        # degraded` 的常见根因（`.git/index.lock` 被并发 git 进程占着）发生在
+        # 行已落盘之后 ⇒ 磁盘上有行、pending 里也有记录，直接补录会产生第二
+        # 条同内容行。丢弃该记录并留痕，不再往下走。
+        if input_pointer_already_in_queue(
+            repo_root, queue_path, str(append_kwargs.get("input_pointer", ""))
+        ):
+            audit.record(AuditEvent(
+                scenario="wecom-aibot", action="queue_sync_pending_skipped_duplicate",
+                evaluator=evaluator, automation_level="L1",
+                decision={"recorded_at": record.get("recorded_at", ""), "reason": "row_already_present"},
+                data_sources={"input_pointer": append_kwargs.get("input_pointer", "")},
+            ))
+            continue
+
         outcome = await sync_after_archive(
             repo_root=repo_root,
             queue_path=queue_path,
