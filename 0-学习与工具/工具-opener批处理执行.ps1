@@ -1,4 +1,4 @@
-# 工具-opener批处理执行.ps1 —— 把《本周计划》A 节的 N 个 opener 塌缩成一次粘贴（v1，2026-08-24）
+# 工具-opener批处理执行.ps1 —— 把《本周计划》A 节的 N 个 opener 塌缩成一次粘贴（v1.1，2026-08-24：修 Tee-Object UTF-16 追加致哨兵误判）
 # 用法（在本机 PowerShell / Windows Terminal 里，一行）：
 #   powershell -ExecutionPolicy Bypass -File "0-学习与工具\工具-opener批处理执行.ps1" -Plan "1-转型规划\0-全景路线图\本周计划-2026-08-24.md" -FullAuto -Yes
 # 参数：
@@ -111,7 +111,11 @@ foreach ($op in $openers) {
     if ($FullAuto) { $claudeArgs += '--dangerously-skip-permissions' } else { $claudeArgs += @('--permission-mode', 'acceptEdits') }
     if ($Model) { $claudeArgs += @('--model', $Model) }
     ('[batch] ' + $op.Id + ' ' + $op.Title + ' | paste=' + $op.Paste + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Encoding utf8
-    Get-Content -Raw -Encoding UTF8 $tmp | & claude @claudeArgs 2>&1 | Tee-Object -FilePath $log -Append
+    # v1.1（2026-08-24）修复：原用 Tee-Object -Append 追加日志——Windows PowerShell 5.1 的 Tee-Object
+    # 无 -Encoding 参数、固定以 UTF-16LE 写入，追加进 UTF-8 文件后哨兵检测（按 UTF-8 读）必然失配，
+    # 首跑 A0 实际完工却被误判 NO-SENTINEL 停批。改用 Out-File -Encoding utf8（代价＝无控制台回显，
+    # 看护/人工一律读日志文件，这本就是既定接口）。
+    Get-Content -Raw -Encoding UTF8 $tmp | & claude @claudeArgs 2>&1 | Out-File -FilePath $log -Append -Encoding utf8
     $code = $LASTEXITCODE
     $t1 = Get-Date
     $tail = Get-Content $log -Encoding UTF8 -Tail 40
