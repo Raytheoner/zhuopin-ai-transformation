@@ -65,8 +65,11 @@ def test_materials_page_empty_state_still_200():
 def test_page_states_the_three_data_gaps_and_the_window_rule():
     """D7：取数缺口与口径差异一律写在页面上，否则打开会以为是 bug。"""
     body = _client(_snap()).get("/materials").get_data(as_text=True)
+    # 🔴 队列 #344（2026-08-24）：末项由「齐料日期口径正在与采购部确认中」改为
+    # 「齐料日期口径已确认并已修正」——判例包已全部签认、新口径已上线，旧文案留着
+    # 就是一条会误导使用者的过期提示（该尾巴由 #334 行内登记、本变更同车清掉）。
     for phrase in ("品牌", "责任人", "取数缺口", "缺料视图", "不是全量物料台账",
-                   "窗口之外", "累计口径", "齐料日期口径正在与采购部确认中"):
+                   "窗口之外", "累计口径", "齐料日期口径已确认并已修正"):
         assert phrase in body, phrase
 
 

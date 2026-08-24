@@ -26,7 +26,9 @@ from zhuopin_platform.shared_tools.models import ProductionPlan
 
 from . import config
 from .config import ForecastParams
-from .forecast import MaterialArrivals, estimate_material_arrivals
+from .forecast import (MaterialArrivals,
+                       _cumulative_confirmed_batches as _cumulative_confirmed_batches_impl,
+                       estimate_material_arrivals)
 from .models import SalesOrder
 from .period_match import PeriodMatchResult, match_period_cumulative_supply
 
@@ -443,40 +445,38 @@ def _component_names(bom: list) -> dict[str, str]:
     return {row.component_id: row.component_name for row in bom if row.component_id}
 
 
-def _cumulative_confirmed_batches(
-    commitments: list[tuple[date, float]], target_qty: float,
-) -> tuple[tuple[date, float], ...]:
-    """按确认日期升序累计 SRM 供应计划确认数量，直至覆盖 target_qty 为止（#18-a，
-    姚祖怡 07-28 判例回件："答交数量小于缺口数量，则继续显示下一个确认数量，直至
-    累计数量满足缺口数量为止"）。
+# 🔴 `_cumulative_confirmed_batches` 已于队列 #344（2026-08-24）下沉到 `sc8/forecast.py`，
+# 此处只做**再导出**——正文与文档串见那里。下沉的理由不是整理代码：改造前"上方齐料
+# 日期"与"下方 BOM 缺口清单"各按各的口径取值（前者取最早答交日、完全不看数量，后者
+# 按数量累计），正是姚祖怡"下面的清单对、上面的汇总数不对"那句话的根因。现在
+# `estimate_material_arrivals`（齐料日）／`_component_supply_status`（缺口清单）／
+# `material_board`（物料看板）**共用同一个函数对象**，口径不可能再漂移。
+# 保留本名字是为了让既有 `from .baoguan import _cumulative_confirmed_batches`
+# （`sc8/material_board.py` 与若干单测）零改动继续可用。
+_cumulative_confirmed_batches = _cumulative_confirmed_batches_impl
 
-    返回按顺序纳入的 (确认日期, 确认数量) 元组；每条记录的数量原样展示，不因
-    "凑够即止"而截断最后一条的数值（Yao 原话未要求截断，只要求"够了就不再往下加"）。
-    target_qty<=0 或无承诺记录 → 空元组。
 
-    队列 #296（v4）修正：`q==0` 是合法的"差异已确认、答复为0"记录（此前
-    `_extract_board_commitments` 会把它与"待答交"混淆一并丢弃，D2a 已根治
-    该源头 bug）——本函数**不得**再跳过 `q==0` 的记录（此前 `if q <= 0:
-    continue` 是同一个"「无」与「0」混为一谈"缺陷在下游的第二处落点，2026-08-07
-    真实数据核验时发现：R01D.0015 唯一的确认记录恰好是 `answerQty=0`，若继续
-    跳过会导致状态列正确显示"已答交"、但答交数量却错误显示"无"，重新引入
-    #296 要根治的同一矛盾）。`q==0` 记录累计贡献为 0（不推进 `total`），故不会
-    单独让循环提前 break，符合"0 不构成满足缺口"的直觉；仍保留对负数的防御
-    （实测数据从未出现，属数据异常，不应计入累计展示）。
+def _required_qty_for_kit(
+    gross: dict[str, float], inventory: dict | None,
+) -> dict[str, float]:
+    """逐料"齐料日累计目标数量"（队列 #344，design D2）。
+
+    净额开关 ON **且**调用方传了 inventory ⇒ 目标 ＝ **缺口数量**（`毛需求 − 现货可用`）；
+    否则 ⇒ **毛需求**。这与 `_component_supply_status` 里 `target_qty = gap_qty if
+    gap_qty is not None else need` 的取值逐字一致——**两处必须用同一个目标值**，否则
+    会出现"下面清单说 2027-01-20 就够了、上面齐料日却写 2027-05-20"这种新的自相矛盾，
+    而那正是本次要消灭的病，不能在修它的时候又造一个。
+
+    依据＝姚祖怡 2026-08-03 权威判定（#211 v2）："答交数量展示如第一个答交数量小于
+    **缺口数量**，则继续显示下一个答交数量，直至累计答交数量满足缺口数量为止"。
+
+    ⚠️ 这里刻意**不做**替代料等价合并（`_covered_by_stock` 会做）——与
+    `_component_supply_status` 的 `gap_qty` 保持同一口径优先于与 `_covered_by_stock`
+    对齐；被替代料现货救回来的子件随后由 `_drop_covered` 整个剔除，不受本函数影响。
     """
-    if target_qty <= 0 or not commitments:
-        return ()
-    ordered = sorted(commitments, key=lambda t: t[0])
-    out: list[tuple[date, float]] = []
-    total = 0.0
-    for d, q in ordered:
-        if q < 0:
-            continue   # 负数视为数据异常，不计入展示（真实数据从未出现，防御性保留）
-        out.append((d, q))
-        total += q
-        if total >= target_qty:
-            break
-    return tuple(out)
+    if not inventory or not config.net_inventory_enabled():
+        return dict(gross)
+    return {m: need - float(inventory.get(m, 0.0) or 0.0) for m, need in gross.items()}
 
 
 def _component_supply_status(
@@ -716,8 +716,15 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     # 单独处理。不改 forecast.py（其余调用方如 pipeline.py 暂不受影响，是本变更包范围外的
     # 已知后续风险——一旦真实替代料数据流入，需要同样处理，见 design.md）。
     main_bom = [row for row in bom if not row.is_substitute]
-    mat = estimate_material_arrivals(so.item_code, main_bom, srm_deliveries,
-                                     demand_date=effective_demand, params=p)
+    # 队列 #344：毛需求提到 estimate_material_arrivals **之前**算——齐料日改按"答交数量
+    # 累计到覆盖需求为止"取值后，到货估算本身就需要知道每个料要累计到多少。
+    # `_gross_need` 不依赖 mat（只吃 so+bom），提前算零副作用；无 BOM 时返回空字典。
+    gross = _gross_need(so, bom)
+    mat = estimate_material_arrivals(
+        so.item_code, main_bom, srm_deliveries,
+        demand_date=effective_demand, params=p,
+        material_commitments=material_commitments,
+        required_qty=_required_qty_for_kit(gross, inventory))
     had_bom = mat.has_bom
     full_arrivals = dict(mat.arrivals)   # 净额抵扣前快照，供 #14 需求日可齐套使用（见下）
     period_match = _period_match_for_so(so, bom, ship, material_commitments) if had_bom else {}
@@ -725,7 +732,8 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     substitute_groups = _substitute_groups(bom, so.item_code) if had_bom else {}
     # ③ 料品名称（功能批1）：料号→品名，纯展示，取自 BOM，不受净额/PO 开关影响。
     component_names = _component_names(bom) if had_bom else {}
-    gross = _gross_need(so, bom) if had_bom else {}
+    if not had_bom:
+        gross = {}
 
     # 现货净额（开关默认关；关时不改任何行为）；C-2 可齐套套数与净额同一入口（design.md D4）：
     # 开关 OFF 或无 inventory 时三者恒为 None，零漂移。

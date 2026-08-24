@@ -67,6 +67,32 @@ def test_compute_snapshot_structure(monkeypatch):
     assert snap.param_version
 
 
+def test_srm_date_without_batch_detail_keeps_legacy_date(monkeypatch):
+    """🔴 队列 #344 的取数边界，单独锁一条用例，别让它只活在文档里。
+
+    某子件在 `/purchase/answer` 有承诺日（`srm_deliveries`）、但在逐笔答交明细
+    （`load_material_commitments`，`receiveType==2` 按排程交货）里**没有记录** ⇒
+    **仍沿用那个承诺日**，四色不变。
+
+    #344 只改「有答交记录时怎么按数量取值」，**不改「什么算有答交」**——后者要动
+    `load_srm_deliveries` 这条驱动四色的既有管线，而 #211 v2 明写其筛选「范围仅限
+    本函数……未经授权不改判定逻辑」。该换源问题已另行登记待姚祖怡签认。
+    （实测换源只影响 2 行、四色计数不变——**影响面小并不构成"顺手改掉"的理由**，
+    正如影响面大也不构成"必须改"的理由。）
+    """
+    bom = _bom("GRN", "C2")
+    srm = [SrmDeliveryOrder(delivery_id="SRM-C2", demand_id="", supplier_id="",
+                            material_id="C2", qty_committed=0,
+                            committed_date="2026-08-01", status="confirmed")]
+    _patch_sources(monkeypatch, orders=_orders()[1:], bom=bom, srm=srm,
+                   material_commitments={})   # 逐笔明细里查无此料
+
+    snap = compute_snapshot(today=TODAY, status="2")
+    row = next(r for r in snap.rows if r["id"] == "GRN")
+    assert row["kit"] == "2026-08-01"      # 改造前是什么，现在还是什么
+    assert row["risk"] == "grn"
+
+
 def test_compute_snapshot_resolves_leaf_components_not_semi_finished(monkeypatch):
     """姚祖怡 07-26 V6 #9 根因修复：BOM 含半成品中间层时，components（驱动 SRM/
     库存/PO 在途查询范围）应解析为真正叶子件，不应把半成品自身当作待查子件——

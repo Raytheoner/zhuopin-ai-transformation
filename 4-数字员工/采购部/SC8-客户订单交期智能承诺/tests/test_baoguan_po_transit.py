@@ -331,9 +331,12 @@ def test_component_status_confirmed_batches_single_match():
     s = row.component_status[0]
     assert s.status == STATUS_TRANSIT_CONFIRMED
     assert s.confirmed_batches == ((date(2026, 7, 20), 3000.0),)
-    # 旧口径 confirmed_date（来自 /purchase/answer，本例故意设为错误的 08-20）仍保留在
-    # 字段里供内部参考，但前端渲染改为优先展示 confirmed_batches（见 componentStatusHtml）。
-    assert s.confirmed_date == date(2026, 8, 20)
+    # 🔴 队列 #344（2026-08-24）翻面：`confirmed_date` 取自 `mat.arrivals[m]`，而齐料日
+    # 链路已由"最早答交日期"改为"按答交数量累计到覆盖需求为止的那一笔"。故本例中它由那个
+    # **故意设错**的 `/purchase/answer` 日期 08-20，变成与 `confirmed_batches` 一致的 07-20。
+    # ⇒ 这条断言从"锁住旧口径的错值"翻面为"锁住上下两处口径一致"，正是 #344 的目的。
+    assert s.confirmed_date == date(2026, 7, 20)
+    assert s.confirmed_date == s.confirmed_batches[-1][0]
 
 
 def test_component_status_confirmed_batches_cumulative_multiple():

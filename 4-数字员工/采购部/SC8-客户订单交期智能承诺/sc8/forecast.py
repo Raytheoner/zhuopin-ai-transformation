@@ -38,12 +38,110 @@ class MaterialArrivals:
     has_bom:               bool = False           # 是否有 BOM 直接子件
 
 
+def _cumulative_confirmed_batches(
+    commitments: list[tuple[date, float]], target_qty: float,
+) -> tuple[tuple[date, float], ...]:
+    """按确认日期升序累计 SRM 供应计划确认数量，直至覆盖 target_qty 为止（#18-a，
+    姚祖怡 07-28 判例回件："答交数量小于缺口数量，则继续显示下一个确认数量，直至
+    累计数量满足缺口数量为止"）。
+
+    返回按顺序纳入的 (确认日期, 确认数量) 元组；每条记录的数量原样展示，不因
+    "凑够即止"而截断最后一条的数值（Yao 原话未要求截断，只要求"够了就不再往下加"）。
+    target_qty<=0 或无承诺记录 → 空元组。
+
+    队列 #296（v4）修正：`q==0` 是合法的"差异已确认、答复为0"记录（此前
+    `_extract_board_commitments` 会把它与"待答交"混淆一并丢弃，D2a 已根治
+    该源头 bug）——本函数**不得**再跳过 `q==0` 的记录（此前 `if q <= 0:
+    continue` 是同一个"「无」与「0」混为一谈"缺陷在下游的第二处落点，2026-08-07
+    真实数据核验时发现：R01D.0015 唯一的确认记录恰好是 `answerQty=0`，若继续
+    跳过会导致状态列正确显示"已答交"、但答交数量却错误显示"无"，重新引入
+    #296 要根治的同一矛盾）。`q==0` 记录累计贡献为 0（不推进 `total`），故不会
+    单独让循环提前 break，符合"0 不构成满足缺口"的直觉；仍保留对负数的防御
+    （实测数据从未出现，属数据异常，不应计入累计展示）。
+
+    🔴 **本函数由 `sc8/baoguan.py` 下沉至此（队列 #344，2026-08-24）**：改造前
+    "上方齐料日期"与"下方 BOM 缺口清单"各按各的口径取值（前者取最早答交日、
+    完全不看数量，后者按数量累计），正是姚祖怡"下面的清单对、上面的汇总数不对"
+    那句话的根因。下沉后 `estimate_material_arrivals`（齐料日）、
+    `baoguan._component_supply_status`（缺口清单）、`material_board`（物料看板）
+    **共用同一个函数对象**——口径此后不可能漂移，而不是"记得同步改三处"。
+    `baoguan.py` 保留再导出，既有 `from .baoguan import _cumulative_confirmed_batches`
+    的调用方与单测零改动。
+    """
+    if target_qty <= 0 or not commitments:
+        return ()
+    ordered = sorted(commitments, key=lambda t: t[0])
+    out: list[tuple[date, float]] = []
+    total = 0.0
+    for d, q in ordered:
+        if q < 0:
+            continue   # 负数视为数据异常，不计入展示（真实数据从未出现，防御性保留）
+        out.append((d, q))
+        total += q
+        if total >= target_qty:
+            break
+    return tuple(out)
+
+
+def _arrival_by_cumulative_qty(
+    commitments: list[tuple[date, float]], target_qty: float, *,
+    fallback: date, legacy_date: date | None,
+) -> tuple[date, bool]:
+    """单个子件的到货日（队列 #344 累计口径）。返回 `(到货日, 是否算已答交)`。
+
+    `fallback` ＝ 无答交启发式估算日（需求日 + no_feedback_lead_days）。
+    `legacy_date` ＝ 该料在 `srm_deliveries` 里的最早承诺日（可能为 None），**只在
+    `target_qty <= 0` 时用得上**——见下。
+
+    四种情形：
+      · **该料有逐笔记录、且累计覆盖需求** → 取覆盖发生的那一笔的日期，判**已答交**
+        （口径 ⑴⑵⑶）。
+      · **有逐笔记录但累计不覆盖（含全 0）** → 判**未答交**，取
+        `max(fallback, 最晚一笔正数答交日)`（口径 ⑷ ＋ design D3）。
+      · 🔴 **该料在逐笔明细里根本没有记录** → **原样沿用改造前口径**（`legacy_date`，
+        即 `/purchase/answer` ＋ 看板辅助算出的最早承诺日）。**见下方"为什么不判无答交"。**
+      · 无记录、也无 `legacy_date` → 判**未答交**，取 `fallback`（与改造前一致）。
+
+    🔴 **为什么"逐笔明细无记录"不判无答交（design D1，2026-08-24 真实数据当场改判）**：
+    `load_material_commitments` 只取 `receiveType==2`（按排程交货）、前瞻 180 天，而
+    `load_srm_deliveries` 走 `/purchase/answer` ＋ 看板辅助、窗口 60 天——**是两条取数
+    管线**。若把前者当作"有没有答交"的权威，等于把 #211 v2 的 `receiveType==2` 筛选
+    推广到四色判定上；而 **#211 v2 的原文明写「范围仅限本函数……不影响
+    `load_srm_deliveries`（驱动 kit_date/gap_days/四色风险判定的既有口径）——未经授权
+    不改判定逻辑」**。队列 #344 领的活是**答交数量匹配那一层**，不是换取数源。
+    ⇒ **本函数只在"该料确实有逐笔答交记录"时改变其取值方式**；换源与否是另一条独立
+    判据，已登记待姚祖怡签认，不在本变更包内擅动。
+
+    🔑 **一处必须如实记下的自我更正**：本条最初是拿"影响面"论证的（"106 个子件翻面、
+    看板会全红"）。**2026-08-24 真实数据把那个论证否掉了**——换源变体与已采纳口径
+    相比只差 **2 行**，四色计数**完全相同**（两者都是 105 红），因为这 106 个料本来
+    就不是各自成品行的瓶颈。⇒ **换源该不该做，只能用"谁授权的"来论证，不能用
+    "影响大不大"**：按影响面论证时，两个方向都能编出理由，而且都听着很有道理。
+
+    `target_qty <= 0`（现货已完全覆盖该料的毛需求）是一个**退化输入**：这类子件
+    随后会被 `baoguan._drop_covered` 整个剔出到货估算，其日期只用于 `#14 需求日
+    可齐套` 的净额抵扣前快照。此时按"需要累计多少"提问本身没有意义，故同样沿用
+    改造前口径，**不把它错判成"无答交"**——否则一个明明有货的料会在快照里被标成待催。
+    """
+    if target_qty <= 0 or not commitments:
+        return (legacy_date or fallback), legacy_date is not None
+    batches = _cumulative_confirmed_batches(commitments, target_qty)
+    if batches and sum(q for _, q in batches) >= target_qty:
+        return batches[-1][0], True
+    positives = [d for d, q in commitments if q > 0]
+    if positives:
+        return max(fallback, max(positives)), False
+    return fallback, False
+
+
 def estimate_material_arrivals(
     product_id: str,
     bom: list,                 # list[BomRow]（平台 models）
     srm_deliveries: list,      # list[SrmDeliveryOrder]（平台 models，含 committed_date）
     demand_date: date,         # 该成品需求日（无反馈启发式的基准日）
     params: ForecastParams | None = None,
+    material_commitments: dict[str, list[tuple[date, float]]] | None = None,
+    required_qty: dict[str, float] | None = None,
 ) -> MaterialArrivals:
     """按 BOM 全部叶子件（多层递归展开半成品）+ SRM 承诺交期估算各物料到货日（关键路径齐套）。
 
@@ -53,6 +151,37 @@ def estimate_material_arrivals(
     （level==1），半成品子件不继续分解，会被误当作"待供应商答交的物料"去查 SRM
     （半成品是自制件，从不会有供应商承诺记录）。改为复用 `kit_engine.explode_bom`
     无条件递归展开到叶子件；单层 BOM（无半成品）场景结果与改造前完全一致。
+
+    ── 答交数量累计口径（队列 #344，2026-08-24，姚祖怡判例批改 3 条 ✅ 全签认）──
+
+    `material_commitments`（{material_id: [(答交日期, 答交数量), ...]}，来源
+    `sources.load_material_commitments`）与 `required_qty`（{material_id: 累计目标
+    数量}）**两者同时给定**时，各子件到货日改按已签认的四条口径取值：
+
+      ⑴ 到货日 ＝ **按答交数量累计到覆盖该料需求为止的那一笔的日期**（判例 1：
+         `R01I.0622` 逐笔答交为 7 笔 qty=0 ＋ 2027-05-20 的 10000 ⇒ 取 2027-05-20，
+         而不是改造前采用的 2026-08-20 那笔 **数量为 0** 的记录）；
+      ⑵ 一笔即够则不再往后累（判例 2）；
+      ⑶ 不够则继续累计到够为止（判例 3：8000＋9000 覆盖 15000 ⇒ 取第二笔）；
+      ⑷ **有答交记录但数量为 0 ＝ 等同没有答交**，走无答交启发式，绝不把那个 0
+         数量的日期当到货日（姚祖怡 2026-08-19 文本回件答"对"）。
+
+    **累计到最后仍不覆盖需求时**（签认口径未覆盖的真空地带，design D3，🔴 我方
+    保守外推、待其事后以判例确认）：判为**无答交**（该料还得继续催，语义上是
+    "待催"而非"有确定承诺"，落到四色即被 `_classify` 剔除出"真延期"判定），
+    到货日取 `max(无答交启发式估算日, 该料最晚一笔正数答交日)`——取更晚与他自己
+    写的规则 3（"更晚的那一个是齐套日期"）同向；只取估算日会**再次低估**，而低估
+    正是本次要根治的病。⑷（全 0）是本规则的**特例而非例外**：全 0 时不存在正数
+    答交日，`max` 自然退化为纯估算日，逐字复现他签认的口径 ⑷。
+
+    🔴 **两参必须同时给定才走新分支**（design D4）：任一为 `None` ⇒ 逐字节回到
+    改造前的 `srm_index` 最早承诺日口径。直接后果是 `sc8/pipeline.py`（对客承诺
+    主流水线）与 `data/golden/` 全部 mock 黄金基准**结构性不受影响**——它们不传新
+    入参、根本走不进新代码，这比"跑了测试没发现漂移"硬。同时这也是
+    `compute_snapshot` 里 `material_commitments` 整体加载失败时的降级路径：数据源
+    挂掉退回旧口径，而不是让全场变"无答交"、把看板刷成一片红。**刻意不做
+    "只传 commitments 就按毛需求兜底"**——那是一次静默回退（返回值完全正常、结论
+    却是另一套口径），宁可不走新分支。
     """
     p = params or config.default_params()
 
@@ -71,14 +200,25 @@ def estimate_material_arrivals(
         if d.material_id not in srm_index or committed < srm_index[d.material_id]:
             srm_index[d.material_id] = committed
 
+    qty_cumulative = material_commitments is not None and required_qty is not None
+    fallback = demand_date + timedelta(days=p.no_feedback_lead_days)
+
     arrivals: dict[str, date] = {}
     no_feedback: list[str] = []
     for mid in components:
-        if mid in srm_index:
+        if qty_cumulative:
+            arrival, answered = _arrival_by_cumulative_qty(
+                material_commitments.get(mid) or [],
+                float(required_qty.get(mid, 0.0) or 0.0),
+                fallback=fallback, legacy_date=srm_index.get(mid))
+            arrivals[mid] = arrival
+            if not answered:
+                no_feedback.append(mid)
+        elif mid in srm_index:
             arrivals[mid] = srm_index[mid]
         else:
             # 无反馈启发式：需求日 + N 天（低置信兜底）
-            arrivals[mid] = demand_date + timedelta(days=p.no_feedback_lead_days)
+            arrivals[mid] = fallback
             no_feedback.append(mid)
 
     # 关键路径瓶颈物料 = 最晚到货
