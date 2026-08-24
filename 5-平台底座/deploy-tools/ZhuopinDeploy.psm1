@@ -106,6 +106,12 @@ function Register-ZhuopinScheduledTask {
       可执行文件绝对路径（不传裸命令名，见上）。
     .PARAMETER RestartCount
       失败重启次数，0=不设（默认 3，1 分钟间隔）。
+    .PARAMETER Trigger
+      触发器对象。**缺省 AtStartup**（长开服务），传入即用传入的那个（如 SC2 周报
+      每周五 20:00 的 `New-ScheduledTaskTrigger -Weekly -DaysOfWeek Friday -At 20:00`）。
+      🔴 **刻意做成可选参数而不是另写一个注册函数**：上面那四类坑（SYSTEM 只认机器级
+      PATH／电池／重启参数／防双实例）对定时任务同样成立，复制一份逻辑就等于把它们
+      重踩一遍——而那正是本模块存在的理由。**缺省值未变，既有调用方行为一行不改。**
     #>
     param(
         [Parameter(Mandatory)][string]$TaskName,
@@ -115,16 +121,21 @@ function Register-ZhuopinScheduledTask {
         [Parameter(Mandatory)][string]$Description,
         [int]$RestartCount = 3,
         [switch]$MultipleInstancesIgnoreNew,
-        [switch]$StartWhenAvailable
+        [switch]$StartWhenAvailable,
+        $Trigger = $null,
+        [int]$ExecutionTimeLimitHours = 0
     )
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false   # 重建以更新路径/设置
     }
     $action = New-ScheduledTaskAction -Execute $Execute -Argument $Argument -WorkingDirectory $WorkingDirectory
-    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $trigger = if ($null -ne $Trigger) { $Trigger } else { New-ScheduledTaskTrigger -AtStartup }
     $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    # ExecutionTimeLimit 0 ＝ 不限时（长开服务必须如此，否则会被计划任务掐掉）。
+    # 🔴 定时任务应传一个有限值：与 -MultipleInstancesIgnoreNew 合用时，一次挂死的
+    # 运行会把此后每一次触发都静默 IgnoreNew 掉 —— 表现为「任务还在、再也没跑过」。
     $settingsArgs = @{
-        ExecutionTimeLimit = (New-TimeSpan -Hours 0)
+        ExecutionTimeLimit = (New-TimeSpan -Hours $ExecutionTimeLimitHours)
         AllowStartIfOnBatteries = $true
     }
     if ($RestartCount -gt 0) {

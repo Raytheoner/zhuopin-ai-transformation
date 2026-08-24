@@ -1,15 +1,28 @@
-"""确认层 —— L3 人工确认门（spec: sc2-anomaly-review）。
+"""确认层 —— 发布签认记录（spec: sc2-anomaly-review）。
 
-🔴 **这道门是 SC2 保持 L3 的唯一结构性保证**。全景规划把 SC2 定为 L3（AI 生成、
-人确认后发布）；若周报能不经确认自行推送，它事实上就是 L4 全自动，与规划不符。
+🔴 ━━━ **本模块已由「推送闸门」降为「事后签认记录」（2026-08-25）** ━━━
 
-三条设计上刻意的「缺口封堵」：
-- **没有任何超时自动确认路径**——`confirm()` 强制要求确认人，本模块也不存在
-  auto/expire 类入口。放着不管的结果是「一直不发」，不是「自己发了」。
+**原设计**：这道门曾是 SC2 保持 L3 的唯一结构性保证——周报非经人工确认不得推送。
+
+**现状**：队列 §四 `#89` 已拍板（Shao Peishen 2026-08-22 答 `OP0822A` 定夺 1 选 (a)）
+**取消确认发布前置**，周五 20:00 自动生成并自动推群；连带定性亦已拍板：
+**「SC2 周报不属 IATF 需签认输出」**。⇒ 推送侧不再调用本模块做前置校验，
+原 `ensure_publishable()` / `UnconfirmedError` 已随之删除。
+
+⚠️ **删掉的是「闸」，不是「签认能力」**。`confirm()` 与页面上那个按钮都还在，
+它现在记录的是「**有人事后看过并签了字**」——仍写 `AuditLogger`、仍强制要求确认人。
+**若日后要把闸装回去**（拍板原话是「有必要以后再改」），落点只有一处：
+在 `notify.push()` 里恢复一次「该期是否已 CONFIRMED」的判断。故意让它只有一处，
+免得下次改回来时漏掉某条旁路。
+
+🔴 **可逆性有边界，此处留痕**：代码随时能改回去，**但按自动发布跑过的那几周，
+审计记录里就是没有人工签认，事后补不回来**。改回去只对未来生效。
+
+**仍然成立的两条设计封堵**（与闸无关，故不随之取消）：
 - **重新生成会把已确认退回待确认**——内容变了，先前那次签认就不再适用于新数字；
   否则等于拿旧签认给新内容背书（#228 那族教训的同构形态）。
 - **状态落盘而非只存内存**——一次重启不该把「已确认」抹掉，也不该让已推送的
-  再推一遍。
+  再推一遍（`mark_pushed` 现在是推送幂等的唯一依靠，比过去更要紧）。
 """
 from __future__ import annotations
 
@@ -26,10 +39,6 @@ from .models import WeeklyReport
 class PublishState(str, Enum):
     PENDING = "pending"          # 已生成，待人工确认
     CONFIRMED = "confirmed"      # 已确认，可推送
-
-
-class UnconfirmedError(RuntimeError):
-    """该期周报尚未确认，不得推送。"""
 
 
 @dataclass
@@ -143,15 +152,6 @@ def status_of(store: ReviewStore, period: str) -> PublishState:
     if entry is None:
         return PublishState.PENDING
     return PublishState(entry.state)
-
-
-def ensure_publishable(store: ReviewStore, period: str) -> None:
-    """推送前置检查。**未确认即上抛**——这是「未确认不得对外推送」的执行点。"""
-    entry = store.get(period)
-    if entry is None:
-        raise UnconfirmedError(f"{period} 期周报未登记，不得推送")
-    if entry.state != PublishState.CONFIRMED.value:
-        raise UnconfirmedError(f"{period} 期周报尚未人工确认，不得推送")
 
 
 def _audit_logger():

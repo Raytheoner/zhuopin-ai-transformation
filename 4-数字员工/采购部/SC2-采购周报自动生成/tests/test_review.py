@@ -1,7 +1,13 @@
 """确认层单测（spec: sc2-anomaly-review）。对应 tasks 6.1-6.5。
 
-这道门是 SC2 保持 **L3**（AI 生成、人确认后发布）而非 L4 全自动的唯一结构性保证。
-下面每条测试都在守它的一个缺口。
+🔴 **2026-08-25 起本层已由「推送闸门」降为「事后签认记录」**（队列 §四 `#89`，
+Shao Peishen 2026-08-22 答 `OP0822A` 定夺 1 选 (a)：取消确认发布前置、周五 20:00
+自动推群；连带定性「SC2 周报不属 IATF 需签认输出」亦已拍板）。
+
+⇒ 原 6.1「未确认不得推送」整组断言**已按拍板删除**，不是漏测；
+替代它的是 `test_delivery.py` 里那组「推送不再要求确认」与幂等断言。
+**仍然要守的是签认本身的质量**（确认人不得为空、异常须留痕、内容变了要退回、
+状态跨进程持久化）——这些与闸无关，故原样保留。
 """
 from __future__ import annotations
 
@@ -16,9 +22,7 @@ from sc2.report import build_report
 from sc2.review import (
     PublishState,
     ReviewStore,
-    UnconfirmedError,
     confirm,
-    ensure_publishable,
     status_of,
 )
 from sc2.sources import MockFeed
@@ -44,29 +48,29 @@ def store():
     return ReviewStore()
 
 
-# ── 6.1 未确认不得推送 ──────────────────────────────────────────────────────
+# ── 6.1 签认状态机（闸已取消，状态本身仍要正确）──────────────────────────────
 
 def test_生成后默认待确认(report, store):
     store.register(report)
     assert status_of(store, report.period) == PublishState.PENDING
 
 
-def test_未确认时推送前置检查拒绝(report, store):
-    store.register(report)
-    with pytest.raises(UnconfirmedError):
-        ensure_publishable(store, report.period)
-
-
-def test_确认后方可推送(report, store):
+def test_确认后转为已确认(report, store):
     store.register(report)
     confirm(store, report.period, confirmed_by="姚祖怡", snapshot_id="snap-1")
-    ensure_publishable(store, report.period)      # 不抛即通过
     assert status_of(store, report.period) == PublishState.CONFIRMED
 
 
-def test_未注册的期次不得推送(store):
-    with pytest.raises(UnconfirmedError):
-        ensure_publishable(store, "2026-W99")
+def test_推送闸门函数已按拍板删除():
+    """🔴 §四 #89 (a)：取消确认发布前置。
+
+    以「符号不存在」反证闸确已拆掉，而不是留了一条没人调用的旁路——
+    留着不调用的闸最危险：读代码的人会以为门还在。
+    """
+    import sc2.review as review
+
+    for gone in ("ensure_publishable", "UnconfirmedError"):
+        assert not hasattr(review, gone), f"{gone} 应随取消前置一并删除"
 
 
 # ── 6.2 超时不得自动确认 ────────────────────────────────────────────────────
@@ -106,7 +110,7 @@ def test_带异常仍可确认且异常列表被记录(report, store):
     store.register(anomalous)
     rec = confirm(store, anomalous.period, confirmed_by="姚祖怡", snapshot_id="s1")
     assert rec["anomalies"] == ["k1"]
-    ensure_publishable(store, anomalous.period)
+    assert status_of(store, anomalous.period) == PublishState.CONFIRMED
 
 
 def test_无异常正常确认(report, store):
@@ -175,8 +179,6 @@ def test_内容变了会把已确认退回待确认(report, store):
     confirm(store, report.period, confirmed_by="姚祖怡", snapshot_id="s1")
     store.register(_with_changed_metrics(report))
     assert status_of(store, report.period) == PublishState.PENDING
-    with pytest.raises(UnconfirmedError):
-        ensure_publishable(store, report.period)
 
 
 def test_同内容重复生成不反复要求确认(report, store):
@@ -185,7 +187,6 @@ def test_同内容重复生成不反复要求确认(report, store):
     confirm(store, report.period, confirmed_by="姚祖怡", snapshot_id="s1")
     store.register(report)
     assert status_of(store, report.period) == PublishState.CONFIRMED
-    ensure_publishable(store, report.period)
 
 
 def test_内容变了也会清掉已推送标记(report, store):
@@ -205,7 +206,6 @@ def test_确认状态落盘且重启后保持(report, store):
     confirm(store, report.period, confirmed_by="姚祖怡", snapshot_id="s1")
     fresh = ReviewStore()                       # 模拟服务重启：全新实例重新读盘
     assert status_of(fresh, report.period) == PublishState.CONFIRMED
-    ensure_publishable(fresh, report.period)
 
 
 def test_确认状态不仅存于进程内存(report, store):

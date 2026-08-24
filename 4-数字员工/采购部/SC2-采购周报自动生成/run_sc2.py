@@ -94,6 +94,58 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_autopush(args) -> int:
+    """周五 20:00 自动生成本周周报并推群（队列 §四 `#89`，Shao Peishen 2026-08-22 拍板 (a)）。
+
+    姚祖怡原话：「周五晚 8 点自动给出本周的，出来后挂到页面上，**同步推到群里**」。
+    ⇒ 三件事一次做完：**取数生成 → 落快照（页面即刻可见）→ 写 outbox（中继代发）**。
+
+    🔴 **不问确认**：确认发布前置已按拍板取消（见 `sc2/notify.py` 模块头）。
+    🔴 **幂等**：同一期重复跑不会发第二遍（`ReviewStore.mark_pushed`），
+    故计划任务重试、手工补跑都安全。
+
+    ⚠️ **基准日就是「今天」，即本周**——他要的是本周的。周五跑时本周只过了 5/7 天，
+    周报顶部会自动带上 O-7 那句「本周窗口尚未走完」的声明（`report._incomplete_week_note`）。
+    **那句声明不是噪音，正是让他不会把结构性偏低当成采购塌方**，不要因为「难看」去掉它。
+    """
+    from sc2 import notify, outbox
+    from sc2.report import build_report, render_text, save_snapshot
+    from sc2.review import ReviewStore
+    from sc2.sources import build_feed
+    from sc2.windows import build_windows
+
+    base = _base_date(args.base)
+    windows = build_windows(base)
+    feed = build_feed(args.mode)
+    if hasattr(feed, "max_status_materials"):
+        # 与 serve 同口径：不截断，否则在途类指标偏高（见 build_parser 注释）。
+        feed.max_status_materials = args.max_status_materials
+    report = build_report(feed.fetch(windows), windows)
+
+    store = ReviewStore()
+    store.register(report)
+    snapshot = save_snapshot(report)
+    print(f"[快照] {snapshot}")
+
+    if args.no_push:
+        print("[跳过推送] --no-push")
+        return 0
+
+    sent = notify.push(report.period, text=render_text(report), store=store)
+    if sent:
+        print(f"[已入 outbox] {report.period} → {outbox.outbox_path()}")
+    else:
+        print(f"[跳过] {report.period} 此前已推送过（幂等）")
+
+    # 🔴 积压必须被打出来。写进 outbox ≠ 群里已经看到——中继在笔记本上，
+    # 笔记本关机期间消息只是积压。不打这一行，就会重演 `#82`：
+    # 机制天天在跑、一条都没真发出去，而没有人察觉。
+    backlog = outbox.pending()
+    print(f"[outbox 积压] {backlog} 条待中继取走"
+          + ("" if backlog == 0 else " —— 若长期不降，说明笔记本侧中继没在跑"))
+    return 0
+
+
 def cmd_probe(args) -> int:
     """F14 参数名对照取证（design D20）。
 
@@ -141,6 +193,17 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--max-status-materials", type=int, default=None,
                    help="行级状态取数的料号上限（D17 缓解；0=不限，缺省 200）")
     r.set_defaults(func=cmd_report)
+
+    a = sub.add_parser("autopush", help="生成本周周报并推群（周五 20:00 计划任务调用）")
+    # 🔴 缺省 real：这条命令的唯一调用方是 `.51` 上的计划任务，跑 mock 等于每周
+    # 往群里发一份假数据。与 serve/report 缺省 mock 刻意不同——那两个是人手工跑的。
+    a.add_argument("--mode", choices=("mock", "real"), default="real")
+    a.add_argument("--base", help="基准日期 YYYY-MM-DD，缺省今天（＝本周）")
+    a.add_argument("--max-status-materials", type=int, default=0,
+                   help="行级状态取数的料号上限（0=不限，与 serve 同口径）")
+    a.add_argument("--no-push", action="store_true",
+                   help="只生成与落快照，不写 outbox（首次上线演练用）")
+    a.set_defaults(func=cmd_autopush)
 
     pr = sub.add_parser("probe", help="F14 端点参数名对照取证（需真实网络）")
     pr.set_defaults(func=cmd_probe)

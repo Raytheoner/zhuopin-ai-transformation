@@ -7,8 +7,8 @@ from datetime import date
 
 import pytest
 
-from sc2 import config, notify
-from sc2.review import PublishState, ReviewStore, UnconfirmedError, status_of
+from sc2 import config, notify, outbox
+from sc2.review import PublishState, ReviewStore, status_of
 from sc2.webapp import GATEWAY_IDENTITY_HEADER, create_app, default_identity_resolver
 
 BASE = date(2026, 8, 19)
@@ -158,22 +158,74 @@ def test_推送范围不含管理层():
         assert banned not in joined
 
 
-def test_未确认时推送被拒(client):
+def test_推送不再要求先确认发布(client):
+    """🔴 §四 #89 (a)：取消确认发布前置（Shao Peishen 2026-08-22 拍板）。
+
+    姚祖怡要的是「周五晚 8 点自动给出本周的……同步推到群里」，原来那道人工确认门
+    与之正面冲突。这里正是原 `test_未确认时推送被拒` 的**反向断言**：**未确认也发得出去**。
+    """
     period = client.get(f"{PREFIX}/api/report").get_json()["period"]
-    with pytest.raises(UnconfirmedError):
-        notify.push(period, text="正文", store=ReviewStore())
+    assert status_of(ReviewStore(), period) == PublishState.PENDING
+    assert notify.push(period, text="正文", store=ReviewStore()) is True
 
 
-def test_确认后推送一次且重复调用不再发(client, monkeypatch):
-    sent = []
-    monkeypatch.setattr(notify, "_send", lambda url, text: sent.append(text))
-    monkeypatch.setenv("SC2_WECOM_WEBHOOK_URL", "https://example.invalid/hook")
+def test_推送一次且重复调用不再发(client):
+    """幂等**没有**随确认门一并取消——它防的不是签认，是同一期发两遍。
+
+    ⚠️ 取消前置后幂等比过去更要紧：过去还有人工确认这一步天然限流，
+    现在到点即自动发，重跑/重启若不幂等就会连发。
+    """
     period = client.get(f"{PREFIX}/api/report").get_json()["period"]
-    client.post(f"{PREFIX}/api/confirm", json={"confirmed_by": "姚祖怡"})
     store = ReviewStore()
     assert notify.push(period, text="正文", store=store) is True
     assert notify.push(period, text="正文", store=store) is False
-    assert len(sent) == 1
+    assert outbox.pending() == 2, "一期写两条（群 + 私信），且只写一次"
+
+
+def test_推送走aibot_outbox而非webhook(client):
+    """🔴 队列 #282：不得新起 webhook，一律走智能机器人 chatid 通道。
+
+    理由不是洁癖——**webhook 单向，群成员的回复进不到任何地方**，而姚祖怡恰恰是
+    会在群里回话的那一位。以「推送层源码里不出现 webhook」反证通道没有走回头路。
+    """
+    import inspect
+
+    src = inspect.getsource(notify)
+    assert "webhook" not in src.lower().replace("outbox", "")
+
+    period = client.get(f"{PREFIX}/api/report").get_json()["period"]
+    notify.push(period, text="正文", store=ReviewStore())
+    recs = [json.loads(l) for l in
+            outbox.outbox_path().read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert [r["channel"] for r in recs] == ["aibot_group_chatid", "aibot_direct"]
+    assert recs[0]["department"] == "采购部"
+    assert recs[1]["to_userid"] == "YaoZuYi"
+
+
+def test_outbox不写死chatid只写部门名(client):
+    """chatid 的权威映射在 aibot 侧那张 yaml 里；在这里抄一份就立刻有了第二份真相。"""
+    import inspect
+
+    from sc2 import outbox as ob
+
+    assert "wrvDL_" not in inspect.getsource(ob), "不得把 chatid 抄进场景代码"
+
+
+def test_部门键拼错当场上抛而不是静默跳过(client):
+    """🔴 反直觉坑：中继侧「部门不在映射表」是 **fail-closed 静默跳过**——
+    不报错、日志一切正常、消息就是没发出去（同 `PMC部` 那次）。
+    故在入队这一侧就把它变成一次响亮的失败。"""
+    period = client.get(f"{PREFIX}/api/report").get_json()["period"]
+    with pytest.raises(outbox.UnknownDepartmentError):
+        outbox.enqueue(period=period, text="正文", department="PMC部")
+
+
+def test_积压条数可见(client):
+    """`#82` 那个形态的防线：机制天天在跑、一条都没真发出去，而没人察觉。"""
+    assert outbox.pending() == 0
+    period = client.get(f"{PREFIX}/api/report").get_json()["period"]
+    notify.push(period, text="正文", store=ReviewStore())
+    assert outbox.pending() == 2
 
 
 def test_扩大推送范围须显式变更而非运行时推断(monkeypatch):
@@ -213,10 +265,11 @@ def test_生成物均落reports目录(client, tmp_path):
 def test_页面表单确认可完成确认发布(client):
     """🔴 复现 2026-08-18 部署前发现的缺陷：页面「确认发布」按钮提交的是表单、
     不是 JSON，而原实现只认 JSON body 与网关身份 ⇒ 过渡期必然 400。
-    部署的全部意义就是让姚祖怡在页面上完成 L3 确认，故这一路必须真能走通。"""
+    ⚠️ 2026-08-25 取消推送前置后，这一路记录的是**事后复核签认**、不再是发布闸门，
+    但它仍是页面上唯一的人工动作，必须真能走通。"""
     r = client.post(f"{PREFIX}/api/confirm", data={"confirmed_by": "姚祖怡"})
     assert r.status_code == 200
-    assert "已由 姚祖怡 确认发布" in r.get_data(as_text=True)
+    assert "已由 姚祖怡 复核签认" in r.get_data(as_text=True)
 
 
 def test_页面表单未填确认人不得匿名放行(client):
@@ -248,6 +301,74 @@ def test_服务端缺省不截断行级状态取数():
     import run_sc2
     args = run_sc2.build_parser().parse_args(["serve"])
     assert args.max_status_materials == 0
+
+
+# ── 周五 20:00 自动生成并推群（§四 #89）────────────────────────────────────
+
+def test_autopush缺省真实模式():
+    """🔴 唯一调用方是 `.51` 上的计划任务；缺省 mock 等于每周往群里发一份假数据。
+
+    与 serve/report 缺省 mock 刻意不同——那两个是人手工跑的，跑错了当场就看见；
+    这条没有人在看，缺省值错了要到姚祖怡在群里看见假数字才会发现。
+    """
+    import run_sc2
+
+    assert run_sc2.build_parser().parse_args(["autopush"]).mode == "real"
+
+
+def test_autopush缺省不截断行级状态取数():
+    """与 serve 同口径：截断会让在途类指标偏高，而那正是要推给他看的数。"""
+    import run_sc2
+
+    assert run_sc2.build_parser().parse_args(["autopush"]).max_status_materials == 0
+
+
+def test_autopush端到端生成并入outbox(monkeypatch, tmp_path):
+    """mock 模式跑通全链：取数 → 落快照 → 写 outbox。"""
+    import run_sc2
+
+    assert run_sc2.main(["autopush", "--mode", "mock", "--base", "2026-08-19"]) == 0
+    snapshots = list(tmp_path.glob("sc2_weekly_*.json"))
+    assert snapshots, "未落快照，页面上就看不到本期"
+    assert outbox.pending() == 2
+
+
+def test_autopush重复跑不重复推送(monkeypatch):
+    """计划任务重试、手工补跑都可能让它跑第二遍——不得连发两份。"""
+    import run_sc2
+
+    run_sc2.main(["autopush", "--mode", "mock", "--base", "2026-08-19"])
+    run_sc2.main(["autopush", "--mode", "mock", "--base", "2026-08-19"])
+    assert outbox.pending() == 2, "同一期被推送了两次"
+
+
+def test_autopush的no_push只生成不推送(tmp_path):
+    """首次上线演练用：先确认生成的东西对，再放开推送。"""
+    import run_sc2
+
+    assert run_sc2.main(
+        ["autopush", "--mode", "mock", "--base", "2026-08-19", "--no-push"]) == 0
+    assert list(tmp_path.glob("sc2_weekly_*.json"))
+    assert outbox.pending() == 0
+
+
+def test_周五基准日会带上本周窗口未走完的声明():
+    """🔴 O-7：周五跑时本周只过了 5/7 天，而上周与上月同期都是完整 7 天
+    ⇒「量」类指标的环比会系统性偏低。**那不是业务波动**。
+
+    他要的就是「周五晚 8 点给出本周的」，所以这个偏差是设计上必然存在的；
+    唯一的补救是**每期都把话说在明处**。这条断言防的是有人日后嫌它难看而删掉。
+    """
+    from sc2.report import build_report, render_text
+    from sc2.sources import MockFeed
+    from sc2.windows import build_windows
+
+    friday = date(2026, 8, 21)
+    assert friday.weekday() == 4, "基准日必须真的是周五，否则这条测试什么也没测"
+    ws = build_windows(friday)
+    text = render_text(build_report(MockFeed().fetch(ws), ws))
+    assert "本周窗口尚未走完" in text
+    assert "5/7 天" in text
 
 
 def test_上限透传到取数层(monkeypatch):

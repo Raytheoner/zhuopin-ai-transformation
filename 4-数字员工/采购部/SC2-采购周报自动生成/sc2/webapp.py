@@ -18,7 +18,7 @@ from flask import Blueprint, Flask, jsonify, request
 from zhuopin_platform.shared_tools.access_log import install_flask_access_log
 from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
 
-from . import config
+from . import config, outbox
 from .report import (
     build_report,
     load_snapshot,
@@ -158,14 +158,32 @@ _PAGE = """<!doctype html>
 </style>
 <h1>采购周报 {period}</h1>
 <p>期次口径：<b>{period}（采购口径周序）</b>｜ISO 周号对照：{iso_period}</p>
-<p class="warn">本页数字为 AI 自动汇总，<b>经人工「确认发布」后方可对外推送</b>（L3）。</p>
+<p class="warn">本页数字为 AI 自动汇总。<b>每周五 20:00 自动生成并自动推送采购部群</b>
+（2026-08-22 拍板取消「确认发布」前置）。下方签认按钮仍可用，但它现在记录的是
+<b>事后复核</b>，不再是推送的前置条件。</p>
 <pre>{body}</pre>
 {notice}
+<p>{backlog}</p>
 <form method="post" action="{prefix}/api/confirm">
-  <label>确认人姓名：<input name="confirmed_by" required autocomplete="name"></label>
+  <label>复核人姓名：<input name="confirmed_by" required autocomplete="name"></label>
   <button type="submit">确认发布</button>
 </form>
 """
+
+
+def _backlog_text() -> str:
+    """outbox 积压提示。
+
+    🔴 **页面必须说出「还没真的发出去」**：写进 outbox 只代表交给了中继，真实送达
+    取决于笔记本侧中继是否在跑。不把积压摆到人眼前，就会重演 `#82` 那个形态——
+    机制天天在跑、一条都没发出去，而没有任何人察觉。
+    """
+    n = outbox.pending()
+    if n == 0:
+        return "推送出口：企微智能机器人（采购部群）｜<b>无积压</b>"
+    return (f'<span class="warn">推送出口：企微智能机器人（采购部群）｜'
+            f'<b>{n} 条待中继取走</b> —— 尚未真正送达；若长期不降，说明笔记本侧中继没在跑。'
+            f"</span>")
 
 
 def _render_page(report, *, error: str | None = None,
@@ -173,10 +191,11 @@ def _render_page(report, *, error: str | None = None,
     if error:
         notice = f'<p class="warn">{html.escape(error)}</p>'
     elif confirmed_by:
-        notice = f'<p class="ok">已由 {html.escape(confirmed_by)} 确认发布。</p>'
+        notice = f'<p class="ok">已由 {html.escape(confirmed_by)} 复核签认。</p>'
     else:
         notice = ""
     return _PAGE.format(period=html.escape(report.period),
                         iso_period=html.escape(report.iso_period or "—"),
                         body=html.escape(render_text(report)),
-                        prefix=config.ROUTE_PREFIX, notice=notice)
+                        prefix=config.ROUTE_PREFIX, notice=notice,
+                        backlog=_backlog_text())

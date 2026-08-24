@@ -60,6 +60,6 @@ def access_log_path() -> Path:
     return reports_dir() / "sc2_access.jsonl"
 
 
-def wecom_webhook() -> str:
-    """采购部群 webhook。凭据只进 `.env`，不进任何会被同步的 settings。"""
-    return os.environ.get("SC2_WECOM_WEBHOOK_URL", "").strip()
+# 🔴 `wecom_webhook()` 已于 2026-08-25 删除（队列 #282）：群通报一律走企微智能
+# 机器人 chatid 通道，不得新起 webhook —— **webhook 单向，群成员的回复进不到
+# 任何地方**，而姚祖怡正是会在群里回话的那一位。出口见 `sc2/outbox.py`。
