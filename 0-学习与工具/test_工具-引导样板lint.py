@@ -160,6 +160,154 @@ class 合规形态不得误报(unittest.TestCase):
             M.check_file("5-平台底座/zhuopin_platform/zhuopin_platform/bootstrap.py", text), [])
 
 
+# ── 判据二 · `.env` 凭据锚定（队列 #354，变更包 env-anchor-collapse tasks 3.4）────
+#
+# 🔴 同一条理由：一道从不报警的门禁与没有门禁等价。这里逐形态复现 A 家族与 B 家族的
+# **真实原文**，尤其那两条「结论对、理由碰巧成立」的变体——它们最像合规代码。
+
+# A 家族共同语义（9 份手抄副本的公因式，`run_baoguan_web.py` 是上游）
+ENV_FORM_A = '''\
+def _find_env() -> Path | None:
+    """从本脚本向上逐级查找最近的 `.env`（布局无关）。"""
+    here = Path(__file__).resolve()
+    for d in (here.parent, *here.parents):
+        cand = d / ".env"
+        if cand.exists():
+            return cand
+    return None
+'''
+
+# 内联无函数变体（`run_sc2.py`）
+ENV_FORM_INLINE = '''\
+def load_env() -> None:
+    here = Path(__file__).resolve()
+    for d in (here.parent, *here.parents):
+        cand = d / ".env"
+        if not cand.exists():
+            continue
+        for line in cand.read_text(encoding="utf-8-sig").splitlines():
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+        return
+'''
+
+# `os.path` 变体（`serve.py` 修复前原文）
+ENV_FORM_OSPATH = '''\
+def _find_env():
+    here = ROOT
+    while True:
+        cand = os.path.join(here, ".env")
+        if os.path.isfile(cand):
+            return cand
+        parent = os.path.dirname(here)
+        if parent == here:
+            return None
+        here = parent
+'''
+
+# 2026-08-25 才出生的第三变体（`compare_kit_date_*.py`）——**设计清单里没有它**，
+# 是这道门禁自己扫出来的。它带着一段看起来很有道理的注释，最难被人眼判违规。
+ENV_FORM_NEWEST = '''\
+def _find_dotenv() -> Path | None:
+    """自下而上找第一个真实存在的 `.env`（worktree 里没有，会一路走到主工作区）。"""
+    for p in _HERE.parents:
+        if (p / ".env").is_file():
+            return p / ".env"
+    return None
+'''
+
+# 收拢后的合规写法
+ENV_FORM_COLLAPSED = '''\
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env
+
+
+def load_env() -> None:
+    """从本脚本向上逐级查找最近的 `.env` —— 这句散文描述的正是被本门禁禁止的反范式，
+    它出现在 docstring 里，**不得**被判违规（tasks 3.2：区分缺陷本身与讲解它的散文）。
+    """
+    print(_resolve_and_load_env(__file__).describe())
+'''
+
+
+class 判据二_env凭据锚定(unittest.TestCase):
+    def test_A家族原文必须红(self):
+        self.assertTrue(M.check_env_anchor("4-数字员工/x/scripts/run_x.py", ENV_FORM_A))
+
+    def test_内联变体必须红(self):
+        self.assertTrue(M.check_env_anchor("4-数字员工/x/run_sc2.py", ENV_FORM_INLINE))
+
+    def test_ospath变体必须红(self):
+        self.assertTrue(M.check_env_anchor("1-转型规划/x/other.py", ENV_FORM_OSPATH))
+
+    def test_2026_08_25新出生的变体必须红(self):
+        """设计清单外的第三变体——门禁的价值恰恰在于它不依赖那份人工清单。"""
+        self.assertTrue(M.check_env_anchor("4-数字员工/x/scripts/compare_x.py",
+                                           ENV_FORM_NEWEST))
+
+    def test_收拢后写法为绿(self):
+        self.assertEqual(M.check_env_anchor("4-数字员工/x/scripts/run_x.py",
+                                            ENV_FORM_COLLAPSED), [])
+
+    def test_散文描述反范式不得误判(self):
+        """🔴 #355 与 #324 两次教训：裸子串判据会命中「讲解这个反范式的散文」。
+
+        收拢后的 9 个入口 docstring 全在逐字描述这个反范式；判据若锚在子串上，
+        它们会全部被点亮，然后这道门禁被习惯性忽略。
+        """
+        prose = (
+            '"""本模块讲解一个反范式：从脚本向上逐级找最近的 `.env`，\n'
+            '   写法形如 for d in here.parents: cand = d / ".env"。\n'
+            '   它从 linked worktree 跑时命中陈旧副本且不报错。"""\n'
+            "import os\n"
+        )
+        self.assertEqual(M.check_env_anchor("4-数字员工/x/doc.py", prose), [])
+
+    def test_注释里的反范式不得误判(self):
+        commented = (
+            '# 原写法：for d in (here.parent, *here.parents): cand = d / ".env"\n'
+            "# 已收拢，见 env_anchor.py\n"
+            "import os\n"
+        )
+        self.assertEqual(M.check_env_anchor("4-数字员工/x/y.py", commented), [])
+
+    def test_只有env字面量没有向上走_不判违规(self):
+        """读一个固定位置的 `.env` 不属本判据（那是 B 家族，另有收拢路径）。"""
+        text = 'for line in (ROOT / ".env").read_text().splitlines():\n    pass\n'
+        self.assertEqual(M.check_env_anchor("4-数字员工/x/y.py", text), [])
+
+    def test_只有向上走没有env_不判违规(self):
+        text = "for p in here.parents:\n    if (p / 'pyproject.toml').is_file():\n        break\n"
+        self.assertEqual(M.check_env_anchor("4-数字员工/x/y.py", text), [])
+
+    def test_语法错误文件不炸(self):
+        self.assertEqual(M.check_env_anchor("x/y.py", "def broken(:\n"), [])
+
+    def test_env_anchor自身豁免(self):
+        """收拢的目的地本身——不豁免则门禁自相矛盾。"""
+        self.assertEqual(
+            M.check_env_anchor(
+                "5-平台底座/zhuopin_platform/zhuopin_platform/env_anchor.py", ENV_FORM_A), [])
+
+    def test_变异验证夹具文件豁免(self):
+        """两份测试内含 A 家族原文作变异验证夹具；判据若不认它们，那两套测试是空转的。"""
+        for rel in ("5-平台底座/zhuopin_platform/tests/test_env_anchor.py",
+                    "1-转型规划/AI运营指挥中心/tests/test_serve_env_anchor_parity.py"):
+            self.assertEqual(M.check_env_anchor(rel, ENV_FORM_A), [], rel)
+
+    def test_serve自身豁免(self):
+        """唯一的生产例外（零三方依赖 ＋ `.51` 部署侧无平台底座），其等价性另有 parity 测试守。"""
+        self.assertEqual(
+            M.check_env_anchor("1-转型规划/AI运营指挥中心/serve.py", ENV_FORM_OSPATH), [])
+
+    def test_学习与工具族豁免(self):
+        self.assertEqual(M.check_env_anchor("0-学习与工具/发企微.py", ENV_FORM_A), [])
+
+    def test_每条豁免都写明了理由(self):
+        """豁免不写理由，下一个人只能猜，而猜的结果通常是再加一条。"""
+        for suffix, reason in M.ENV_ANCHOR_EXEMPT:
+            self.assertTrue(reason.strip(), f"{suffix} 的豁免没写理由")
+
+
 class 真实仓库现状(unittest.TestCase):
     def test_存量已清零(self):
         """收口判据：全库非 stub 形态命中数为 0（tasks 6.3）。"""
@@ -172,6 +320,18 @@ class 真实仓库现状(unittest.TestCase):
                 continue
             violations.extend(M.check_file(rel, text))
         self.assertEqual(violations, [], f"仍有非 stub 形态残留：{violations}")
+
+    def test_env锚定存量已清零(self):
+        """判据二的收口判据（tasks 3.5 切 `--enforce` 的前置条件之一）。"""
+        repo = M.REPO_ROOT
+        violations = []
+        for rel in M._tracked_py_files(repo):
+            try:
+                text = (repo / rel).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            violations.extend(M.check_env_anchor(rel, text))
+        self.assertEqual(violations, [], f"仍有「向上逐级找 .env」残留：{violations}")
 
 
 if __name__ == "__main__":

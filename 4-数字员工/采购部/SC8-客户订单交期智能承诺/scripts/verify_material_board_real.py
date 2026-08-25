@@ -38,20 +38,22 @@ ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
 SCENE = _HERE.parent.parent
 
 
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
+
+# 本脚本必需的凭据键（队列 #354 决策点 4 ＝ (c)）。本脚本一次全量取数约 15 分钟，
+# 凭据缺失若拖到调用端点时才炸，等于白等——故在入口一次判完。
+REQUIRED_ENV_KEYS = ("FO_API_BASE", "FORECAST_API_KEY", "U9C_API_BASE", "XKY_API_BASE")
+
+
 def load_env() -> None:
-    """从本脚本向上逐级找到最近的 `.env` 读入（布局无关）。凭据只在 .env，不入库、不打印。"""
-    for d in [_HERE.parent, *_HERE.parents]:
-        env = d / ".env"
-        if env.exists():
-            for line in env.read_text(encoding="utf-8-sig").splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
-            print(f"· .env 已读入：{env.parent.name}/.env（值不回显）")
-            return
-    print("✗ 未找到 .env", file=sys.stderr)
+    """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    🔴 **原实现是「向上逐级找最近的 `.env`」**——从 linked worktree 跑时命中 worktree 自己那
+    份陈旧副本、**且不报错**（#354 的病灶）。收拢后由 `--git-common-dir` 规范化到主工作区。
+    本脚本是收拢前 9 份里**唯一会打印命中路径**的一个，那个好习惯现在是全体入口的默认行为。
+    凭据只在 `.env`，不入库、不打印（`describe()` 只回报路径与键数，不含任何值）。
+    """
+    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
 
 
 def main() -> int:

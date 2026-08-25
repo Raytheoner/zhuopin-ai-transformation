@@ -21,7 +21,17 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-REPO = Path(__file__).resolve().parents[3]          # …/企业AI转型
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from zhuopin_platform.env_anchor import resolve_anchor_dir  # noqa: E402
+
+# 凭据锚点（队列 #354 收拢；实现见 `zhuopin_platform/env_anchor.py`）。
+# 🔴 **原实现是 `REPO = Path(__file__).resolve().parents[3]`（硬数四层）**，两副面孔都占：
+# 从 linked worktree 跑时算出的是**该 worktree 的根**（于是读到那份陈旧的 `.env`，不报错）；
+# 部署到浅路径时 `parents[3]` 直接 `IndexError`。收拢后由 `--git-common-dir` 规范化到主工作区。
+_ANCHOR_DIR, _ANCHOR_KIND = resolve_anchor_dir(__file__)
+if _ANCHOR_DIR is None:                             # 既非 monorepo 也非扁平部署布局
+    sys.exit("✗ 无法定位凭据锚点（既未找到 5-平台底座/zhuopin_platform 标记，也不在扁平部署根下）")
+REPO = _ANCHOR_DIR                                  # …/企业AI转型（monorepo）或 C:/<svc>（扁平）
 ENV_TEST = REPO / ".env.test"
 ENV_PROD = REPO / ".env"
 

@@ -29,25 +29,22 @@ from datetime import date  # noqa: E402
 from sc2 import config  # noqa: E402
 
 
-def load_env() -> None:
-    """把最近的 `.env` 读入 `os.environ`（已存在的不覆盖）。
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
 
-    与 SC8 `scripts/run_baoguan_web.py::load_env` 同一模式（向上逐级查找、纯标准库、
-    不新增依赖），使笔记本 monorepo 布局与 `.51` 扁平部署布局都能命中。
-    🔴 **凭据只在 `.env`，不入库、不打印**。
+#: 🔴 **刻意暂不声明必需键**（队列 #354 决策点 4 ＝ (c)）：本入口经周五自动推送定时任务触发，
+#: 多声明一个键就多一条「周报这周没出」的路径。待 `.51` 真机复验时按实测填（tasks 2.3.5）。
+REQUIRED_ENV_KEYS: tuple[str, ...] = ()
+
+
+def load_env() -> None:
+    """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    🔴 **原实现是「向上逐级找最近的 `.env`」的内联变体**（9 份手抄副本里唯一没有 `_find_env`
+    函数的那份，docstring 自陈抄 SC8）——从 linked worktree 跑时命中 worktree 自己那份陈旧
+    副本、**且不报错**。收拢后由 `--git-common-dir` 规范化到主工作区；扁平部署布局走部署根
+    锚点，两种布局仍都能命中。🔴 **凭据只在 `.env`，不入库、不打印**。
     """
-    here = Path(__file__).resolve()
-    for d in (here.parent, *here.parents):
-        cand = d / ".env"
-        if not cand.exists():
-            continue
-        for line in cand.read_text(encoding="utf-8-sig").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
-        return
+    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
 
 
 def _base_date(arg: str | None) -> date:

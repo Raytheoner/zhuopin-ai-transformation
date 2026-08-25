@@ -6,7 +6,7 @@
 
 ## 每个场景固定流程（第 1-7 步）
 
-  1. 进入 `4-数字员工/部门/场景名/`；`pip install -e .../5-平台底座/zhuopin_platform` **可选**（利于 IDE 自动补全/类型检查，**不再是** `pytest`/服务入口能否正确 import 的前提——`tests/conftest.py` 已内置路径引导，队列 #300，2026-08-08）；🔴 **新场景 scaffold 的引导代码不再靠「照抄既有场景」**：**唯一被允许的样板见 `5-平台底座/zhuopin_platform/zhuopin_platform/bootstrap.py` 模块 docstring**（5 行无分支 stub + `ensure_paths(__file__, <自身包根>[, strict=True])`；`tests/conftest.py` 一律带 `strict=True`，服务/CLI 入口不带）。**由 CI `bootstrap-stub-lint` 硬门禁强制**（`0-学习与工具/工具-引导样板lint.py`，非 stub 形态的内联引导即违规）——本条是指针，不是需要记住的规则
+  1. 进入 `4-数字员工/部门/场景名/`；`pip install -e .../5-平台底座/zhuopin_platform` **可选**（利于 IDE 自动补全/类型检查，**不再是** `pytest`/服务入口能否正确 import 的前提——`tests/conftest.py` 已内置路径引导，队列 #300，2026-08-08）；🔴 **新场景 scaffold 的引导代码不再靠「照抄既有场景」**：**唯一被允许的样板见 `5-平台底座/zhuopin_platform/zhuopin_platform/bootstrap.py` 模块 docstring**（5 行无分支 stub + `ensure_paths(__file__, <自身包根>[, strict=True])`；`tests/conftest.py` 一律带 `strict=True`，服务/CLI 入口不带）。**由 CI `bootstrap-stub-lint` 硬门禁强制**（`0-学习与工具/工具-引导样板lint.py`，非 stub 形态的内联引导即违规）——本条是指针，不是需要记住的规则。 🔴 **`.env` 凭据定位同理，且是另一半**（队列 #354，变更包 `env-anchor-collapse`）：**唯一被允许的写法＝一行 `from zhuopin_platform.env_anchor import load_env`**，见该模块 docstring；**不得再写「向上逐级找最近的 `.env`」**——那个写法从 linked worktree 跑时会命中该 worktree 自己的陈旧副本、**且不报错**（前两次同族事故漂的是状态文件，这次漂的是密钥）。由**同一个** lint 的第二条判据守（AST 锚定，不误伤讲解该反范式的散文）——本条同样是指针，不是需要记住的规则
   2. `openspec init`（首次）→ `/opsx:propose "场景描述"` → 生成 proposal + design + tasks
   3. **停下，Paul 审 design.md（技术决策拍板）**
   4. `/opsx:apply` → SuperPowers 先写测试再实现

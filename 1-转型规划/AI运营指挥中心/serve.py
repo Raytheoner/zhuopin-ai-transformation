@@ -55,16 +55,64 @@ def _log_access(method: str, path: str, status: int, source_ip: str) -> None:
         with open(ACCESS_LOG_PATH, "a", encoding="utf-8") as f:
             f.write(line)
 
-# ── .env 加载（同 run_baoguan_web.py 等范式，向上逐级找最近的 .env）──────────
+# ── .env 加载（凭据锚定，队列 #354）────────────────────────────────────────────
+#
+# 🔴 **本文件是 `env-anchor-collapse` 收拢范围内唯一的例外，且是刻意的**：本服务"零三方依赖"
+# 是既定设计原则（见文件顶部门禁说明），`.51` 上由 `deploy-server.ps1` 注册的计划任务直接跑
+# 裸 `python serve.py`，**其部署侧没有 venv、也没有 `pip install -e zhuopin_platform`**
+# ——同目录的 `simple_gate` 与 `access_log` 已因同一理由各自内联一份。若在此 `import
+# zhuopin_platform.env_anchor`，8092 命令中心会在 `.51` 上直接起不来，而**本地测起来永远是绿的**
+# （#345 的原话：「本地永远能找到仓库根标记，本地全绿与它毫无关系」）。
+#
+# 故本文件**内联同一套解析语义**（与 `zhuopin_platform/env_anchor.py` 逐条对应，改一处须改两处，
+# 已由 `工具-引导样板lint.py` 的豁免清单记名在案）：
+#   ① `ZP_ENV_FILE` 显式覆盖 → ② monorepo（marker ＋ `--git-common-dir` 规范化）→ ③ 扁平部署根。
+# 🔴 **修掉的实质缺陷**：原实现从 `ROOT` 向上找**最近的** `.env`，从 linked worktree 跑时命中
+# 该 worktree 自己的陈旧副本而到不了主工作区，**且不报错**——门禁口令因此可能是上一代的。
 _GATE_ENV_VAR = "ZP_GATE_PASSWORD"
+_ENV_FILE_OVERRIDE = "ZP_ENV_FILE"
+_MARKER_PARTS = ("5-平台底座", "zhuopin_platform")
+
+
+def _canonical_repo_root(naive_root: str) -> str:
+    """`--git-common-dir` 规范化到所有 linked worktree 共享的主工作区根。
+
+    git 不可用（`.51` 上没有 git）或不在任何工作树里时**不抛异常**，回落 `naive_root`。
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "-C", naive_root,
+             "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, encoding="utf-8", check=True, timeout=30,
+        )
+    except Exception:
+        return naive_root
+    common_dir = result.stdout.strip()
+    return os.path.dirname(common_dir) if common_dir else naive_root
 
 
 def _find_env() -> str | None:
+    override = (os.environ.get(_ENV_FILE_OVERRIDE) or "").strip()
+    if override:
+        # 显式声明的意图落空即报错——与「没找到任何 .env」不是一回事，不可混为静默。
+        if not os.path.isfile(override):
+            raise RuntimeError(
+                f"{_ENV_FILE_OVERRIDE}={override} 指向的文件不存在（凭据锚定，队列 #354）"
+            )
+        return override
+
     here = ROOT
     while True:
-        cand = os.path.join(here, ".env")
-        if os.path.isfile(cand):
-            return cand
+        if os.path.isdir(os.path.join(here, *_MARKER_PARTS)):        # ② monorepo
+            cand = os.path.join(_canonical_repo_root(here), ".env")
+            return cand if os.path.isfile(cand) else None
+        # ③ 扁平部署根：判据＝其下 `zhuopin_platform/pyproject.toml`。**不是**「有没有
+        # `zhuopin_platform` 子目录」——分发目录自己也含一个同名内层包目录，朴素判据会在那里
+        # 静默命中、把锚点少算一层，且返回一个存在的目录、不报错。
+        if os.path.isfile(os.path.join(here, "zhuopin_platform", "pyproject.toml")):
+            cand = os.path.join(here, ".env")
+            return cand if os.path.isfile(cand) else None
         parent = os.path.dirname(here)
         if parent == here:
             return None

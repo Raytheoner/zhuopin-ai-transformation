@@ -29,26 +29,22 @@ ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
 SCENE = Path(__file__).resolve().parent.parent
 
 
-def _find_env() -> Path | None:
-    """从本脚本向上逐级查找最近的 `.env`（布局无关，同 SC8 run_baoguan_web.py 范式）。"""
-    here = Path(__file__).resolve()
-    for d in (here.parent, *here.parents):
-        cand = d / ".env"
-        if cand.exists():
-            return cand
-    return None
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
+
+#: 🔴 **常驻服务刻意暂不声明必需键**（队列 #354 决策点 4 ＝ (c)），理由同 SC8
+#: `run_baoguan_web.py`：多声明一个键就多一条起不来的路径，本入口是 `.51` 常驻服务（8093）。
+#: 本清单待 `.51` 真机复验时按实测填（tasks 2.3.2 的 LAN 留步项）。
+REQUIRED_ENV_KEYS: tuple[str, ...] = ()
 
 
 def load_env() -> None:
-    env = _find_env()
-    if not env:
-        return
-    for line in env.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    🔴 **原实现是「向上逐级找最近的 `.env`」**——从 linked worktree 跑时命中 worktree 自己那
+    份陈旧副本、**且不报错**。收拢后由 `--git-common-dir` 规范化到主工作区；`.51` 扁平布局
+    （无 git、无 marker）走部署根锚点，行为与此前一致。凭据只在 `.env`，不入库、不打印。
+    """
+    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
 
 
 def main() -> int:

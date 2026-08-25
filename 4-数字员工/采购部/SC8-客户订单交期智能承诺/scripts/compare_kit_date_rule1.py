@@ -47,6 +47,11 @@ for _p in _HERE.parents:
 from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
 ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
 
+from zhuopin_platform.env_anchor import (  # noqa: E402
+    load_env as _resolve_and_load_env,
+    resolve_env_file as _resolve_env_file,
+)
+
 from sc8 import config, forecast  # noqa: E402
 from sc8.baoguan import (RISK_GAP, RISK_GREEN, RISK_RED, RISK_YELLOW,  # noqa: E402
                          build_dashboard)
@@ -59,23 +64,21 @@ ENV_KEY = "SC8_KIT_DATE_RULE1"
 
 
 def _find_dotenv() -> Path | None:
-    """自下而上找第一个真实存在的 `.env`（worktree 里没有，会一路走到主工作区）。"""
-    for p in _HERE.parents:
-        if (p / ".env").is_file():
-            return p / ".env"
-    return None
+    """【已收拢，保留为薄封装】返回本次运行该用的那份 `.env`（解析见 `env_anchor`，#354）。
+
+    🔴 原注释「worktree 里没有 `.env`，会一路走到主工作区」**依赖一个会变的事实**：一旦某个
+    worktree 里出现 `.env` 副本（2026-08-18 真实发生过、且陈旧两代），本写法立刻命中它、
+    且不报错。收拢后靠 `--git-common-dir` 规范化，与「那儿碰巧没有文件」无关。
+    """
+    return _resolve_env_file(__file__).path
 
 
 def _load_dotenv(path: Path | None) -> None:
-    """把 `.env` 读进 `os.environ`（不覆盖已设的键）——与服务进程同源凭据。"""
-    if path is None or not path.is_file():
-        return
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip())
+    """把 `.env` 读进 `os.environ`（不覆盖已设的键）——与服务进程同源凭据。
+
+    参数保留是为了不动 `main()` 的既有调用序列；实际解析与读取都在 `env_anchor` 里完成。
+    """
+    _resolve_and_load_env(__file__)
 
 
 def _dump_inputs(path: Path, orders, bom, srm, inventory, purchase_orders, commitments) -> None:

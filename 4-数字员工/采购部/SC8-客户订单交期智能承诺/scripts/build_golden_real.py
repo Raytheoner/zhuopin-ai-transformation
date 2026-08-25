@@ -33,25 +33,38 @@ from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
-# ── 路径与 .env 加载（连接器读 os.environ，无自动加载）──────────────────────────
-HERE = Path(__file__).resolve()
-SC8_DIR = HERE.parent.parent
-REPO = SC8_DIR.parent.parent.parent
-PLATFORM = REPO / "5-平台底座" / "zhuopin_platform"
-for p in (str(PLATFORM), str(SC8_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+# —— 平台底座路径引导（队列 #345 收拢；唯一被允许的样板，实现见
+# `5-平台底座/zhuopin_platform/zhuopin_platform/bootstrap.py`）。必须放在本文件任何
+# zhuopin_platform / 场景包 import 之前。下方五行只负责让 bootstrap 自身可被 import、
+# 不含任何判断分支；开发机 monorepo 与 `.51` 扁平部署两种布局的分歧由 ensure_paths 处理。
+# 🔴 本脚本此前自建 `sys.path`（`REPO = SC8_DIR.parent.parent.parent` 硬数三层），是 #345
+# 收拢时漏网的一处，随队列 #354 一并并入。——
+_HERE = Path(__file__).resolve()
+for _p in _HERE.parents:
+    if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
+        sys.path.insert(0, str(_p / "5-平台底座" / "zhuopin_platform"))
+        break
+from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
+ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
+
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
+
+HERE = _HERE
+SC8_DIR = _HERE.parent.parent
+
+# 本脚本必需的凭据键（队列 #354 决策点 4 ＝ (c)：判断从「文件在不在」移到「我要的键到手没有」）。
+# 缺任一即 fail-loud——本脚本产出的是黄金基准，凭据不全跑出来的基准比跑不出来更坏。
+REQUIRED_ENV_KEYS = ("FO_API_BASE", "FORECAST_API_KEY", "U9C_API_BASE", "XKY_API_BASE")
 
 
 def load_env() -> None:
-    env = REPO / ".env"
-    if not env.exists():
-        raise SystemExit(f"缺少 .env：{env}（凭据须先迁入，见 U9C/SRM 凭据迁入待办）")
-    for line in env.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip())
+    """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    🔴 **原实现是 `REPO / ".env"`，其中 `REPO` 硬数三层目录**——从 linked worktree 跑时
+    解出 worktree 自己那份陈旧副本，且**不报错**。收拢后由 `--git-common-dir` 规范化到主
+    工作区，worktree 与主工作区必然解出同一份。凭据只在 `.env`，不入库、不打印。
+    """
+    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
 
 
 def _asdict(obj) -> dict:

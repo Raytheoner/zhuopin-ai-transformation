@@ -31,6 +31,15 @@ import urllib.request
 from pathlib import Path
 
 _HERE = Path(__file__).resolve()
+for _p in _HERE.parents:
+    if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
+        sys.path.insert(0, str(_p / "5-平台底座" / "zhuopin_platform"))
+        break
+from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
+ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
+
+from zhuopin_platform.env_anchor import parse_env_file, resolve_env_file  # noqa: E402
+
 BOARD_URL = "http://192.168.100.51:8091"
 
 
@@ -48,12 +57,15 @@ def _gate_password() -> str:
     """
     if os.environ.get("ZP_GATE_PASSWORD"):
         return os.environ["ZP_GATE_PASSWORD"]
-    for p in _HERE.parents:
-        env = p / ".env"
-        if env.is_file():
-            for line in env.read_text(encoding="utf-8-sig").splitlines():
-                if line.startswith("ZP_GATE_PASSWORD="):
-                    return line.split("=", 1)[1].strip()
+    # 凭据锚定收拢（队列 #354）：原写法是「向上逐级找最近的 `.env`、逐行前缀匹配」，从
+    # linked worktree 跑时会命中该 worktree 的陈旧副本且不报错。改走唯一解析入口；
+    # 解析口径（首个 `=` 切分、去一层引号）也随之与其余 12 处一致——原先的
+    # `line.split("=", 1)[1]` 不去引号，`.env` 里若给这个键加了引号就会带着引号去撞登录页。
+    hit = resolve_env_file(__file__).path
+    if hit is not None:
+        password = parse_env_file(hit).get("ZP_GATE_PASSWORD")
+        if password:
+            return password
     raise RuntimeError(
         "未取到 ZP_GATE_PASSWORD —— 它只在 .51 的 C:\\baoguan\\.env 里，仓库根没有。"
         "请显式设环境变量再跑，不要让脚本带空口令去撞登录页。")
