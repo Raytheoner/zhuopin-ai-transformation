@@ -115,14 +115,14 @@ class TestCrossModuleZeroScoreDrift:
     #: 🔴 **已签认**的黄金基准（＝`data/golden/manifest.md` 真值）。
     #: 未经 Shao Peishen 签认不得改动本常量——它与 manifest 是同一份真值的两个副本，
     #: 改了这里而没改 manifest（或反之）就等于黄金基准无声地移动了一半。
-    GOLDEN = {"EQ17": ("合格", 98.80, []), "邦奇": ("不合格", 94.89, ["74"])}
-
-    #: 🔴 **待签认**的新基准：规则 12 同义词集并入「无」后 EQ17 的重跑值。
-    #: EQ17 的 `ASIL=无` 此前不在同义词集内、被判「待改进」扣 1.20 分——那是一条误判
-    #: （评审委员会判它合格），陈忱 2026-08-21 Q2 已裁定「无」视同 NA。修掉误判即得 100.00。
-    #: **签认前不得把它写进 GOLDEN 或 manifest**；签认后三处一起改并摘掉下面的 xfail 标记。
-    #: 依据件＝`docs/基准变更说明-规则12并入无-2026-08-25.md`（队列 #340③）。
-    PENDING_BASELINE = {"EQ17": 100.00}
+    #:
+    #: EQ17 `98.80 → 100.00`：Shao Peishen 2026-08-25 签认（队列 §四 #112 选 (a)，本行已销号），
+    #: 依据件＝`docs/基准变更说明-规则12并入无-2026-08-25.md`。EQ17 的 `ASIL=无` 此前不在
+    #: 规则 12 同义词集内、被判「待改进」扣 1.20 分——那是一条**误判**（评审委员会判它合格），
+    #: 陈忱 2026-08-21 Q2 裁定「无」视同 NA 后修掉。**不是口径放宽，档位仍为合格。**
+    #: 华丰 96.44／邦奇 94.89 与三份的档位、一票否决驱动规则 before/after 全不变（实测对照
+    #: `ac38bec` vs `734ee18` 两个 checkout，见队列 #340 本次回写段）。
+    GOLDEN = {"EQ17": ("合格", 100.00, []), "邦奇": ("不合格", 94.89, ["74"])}
 
     @pytest.mark.parametrize("name, path", [("EQ17", EQ17), ("邦奇", BANGQI)])
     def test_tier_and_veto_unchanged_after_cross_module(self, name, path):
@@ -139,28 +139,16 @@ class TestCrossModuleZeroScoreDrift:
         assert sr.veto_rules == veto
         assert len(results) == 82          # 跨模块条目未混入 82 条结果集
 
-    @pytest.mark.parametrize("name, path", [
-        pytest.param("EQ17", EQ17, marks=pytest.mark.xfail(strict=True, reason=(
-            "#340 档三：规则 12 同义词集并入「无」后 EQ17 得分 98.80 → 100.00。"
-            "黄金基准的移动须经 Shao Peishen 签认《基准变更说明》后，才更新 manifest 与 GOLDEN——"
-            "签认闸未开时本断言按旧基准必然失败，**这正是闸还锁着的信号**，"
-            "不得把 GOLDEN 改成新值来'修绿'它。strict=True：一旦 GOLDEN 已更新而本标记忘了摘，"
-            "XPASS 会立刻让本条转红，标记不会烂在这里。"))),
-        ("邦奇", BANGQI),
-    ])
+    @pytest.mark.parametrize("name, path", [("EQ17", EQ17), ("邦奇", BANGQI)])
     def test_total_score_matches_the_signed_golden_baseline(self, name, path):
+        """签认闸已开（Shao Peishen 2026-08-25，§四 #112）——EQ17 按新基准 100.00 硬断言。
+
+        闸未开期间本条曾挂 `xfail(strict=True)` 作为「闸还锁着」的可见信号；签认落地时
+        三处（manifest／`GOLDEN`／本标记）同批处置，标记已摘、不留在代码里。
+        """
         doc = ProposalParser(_need(path)).parse()
         sr = score(run_all(doc))
         assert round(sr.total_score, 2) == self.GOLDEN[name][1]
-
-    def test_pending_baseline_equals_what_the_engine_actually_produces_now(self):
-        """《基准变更说明》里给他签的那个"新值"，必须就是引擎当前的真实重跑值。
-
-        否则签认的是一个凭空写下的数——签完再发现对不上，比不签更糟。
-        """
-        doc = ProposalParser(_need(EQ17)).parse()
-        sr = score(run_all(doc))
-        assert round(sr.total_score, 2) == self.PENDING_BASELINE["EQ17"]
 
     @pytest.mark.parametrize("name, path", [("EQ17", EQ17), ("邦奇", BANGQI)])
     def test_cross_module_items_stay_out_of_every_scored_list(self, name, path):
