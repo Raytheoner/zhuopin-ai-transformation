@@ -31,29 +31,25 @@ for _p in _HERE.parents:
 from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
 ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
 
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
+
 _ROOT = Path(__file__).resolve().parent.parent
 
-
-def _find_env() -> Path | None:
-    """从本脚本向上逐级查找最近的 `.env`（同 `scripts/run_fi2_web.py` 既有范式）。"""
-    here = Path(__file__).resolve()
-    for d in (here.parent, *here.parents):
-        cand = d / ".env"
-        if cand.exists():
-            return cand
-    return None
+#: 本入口**没有**必需的凭据键（队列 #354 决策点 4 ＝ (c)：调用方声明自己要什么）。
+#: 摄取是纯本地 Excel → CSV，FI2 从 `.env` 读的全是有默认值的容差/开关（`FI2_*`）。
+#: 🔴 **空清单是一个经核查的结论，不是没填**——判据＝`fi2/` 全包 `environ.get()` 命中的
+#: 8 个键逐个看过，无一是无默认值的凭据。此后若新增真凭据依赖，请同步补进本清单。
+REQUIRED_ENV_KEYS: tuple[str, ...] = ()
 
 
 def load_env() -> None:
-    env = _find_env()
-    if not env:
-        return
-    for line in env.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    🔴 **原实现是「向上逐级找最近的 `.env`」**——从 linked worktree 跑时命中 worktree 自己
+    那份陈旧副本、**且不报错**。收拢后由 `--git-common-dir` 规范化到主工作区；`.51` 扁平
+    布局（无 git、无 marker）走部署根锚点，行为与此前一致。凭据只在 `.env`，不入库、不打印。
+    """
+    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
 
 
 def main() -> int:

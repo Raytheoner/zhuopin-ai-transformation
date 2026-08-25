@@ -30,8 +30,15 @@ MUST NOT 以「向上逐级查找最近的 `.env` 文件」作为任何一段的
 
 #### Scenario: `.51` 扁平部署
 
-- **WHEN** 调用方位于 `C:/<svc>/app/scripts/`，其任一祖先均不含 `5-平台底座/zhuopin_platform` 标记，而 `C:/<svc>/` 下存在 `zhuopin_platform` 子目录
+- **WHEN** 调用方位于 `C:/<svc>/app/scripts/`，其任一祖先均不含 `5-平台底座/zhuopin_platform` 标记，而 `C:/<svc>/zhuopin_platform/pyproject.toml` 存在
 - **THEN** SHALL 解出 `C:/<svc>/.env`
+
+#### Scenario: 扁平布局的锚点不得停在分发目录上
+
+- **WHEN** 调用方位于 `C:/<svc>/zhuopin_platform/scripts/`（平台底座自带脚本在扁平布局下的位置）
+- **THEN** SHALL 解出 `C:/<svc>/.env`，SHALL NOT 停在 `C:/<svc>/zhuopin_platform/`
+
+**理由（apply 期实测补入）**：判据若写成「其下有无 `zhuopin_platform` 子目录」，会被分发目录自身命中——`<dist>/zhuopin_platform/` 之下还有一层**同名的内层包目录**。那样锚点少算一层、返回一个**存在**的目录且不报错，正是本 spec 要消灭的失败形态。故判据取 `zhuopin_platform/pyproject.toml`（分发根的结构性标志），不取同名子目录。
 
 #### Scenario: 显式覆盖优先于一切
 
@@ -53,6 +60,13 @@ MUST NOT 以「向上逐级查找最近的 `.env` 文件」作为任何一段的
 
 - **WHEN** 环境中不存在可执行的 `git`
 - **THEN** SHALL 使用标记所在目录，且 SHALL NOT 因此失败或告警——这在 `.51` 上是常态，不是异常
+
+#### Scenario: 规范化结果必须自带一次校验
+
+- **WHEN** `--git-common-dir` 给出的仓库根**不含** `5-平台底座/zhuopin_platform` 标记（例如本仓库位于另一个外层 git 仓库内部——嵌套 clone，或有人在上层 `git init` 过）
+- **THEN** SHALL 回落到标记所在目录，SHALL NOT 采纳该规范化结果
+
+**理由（apply 期由单测夹具撞出，实测补入）**：本仓库中「git 仓库根」与「标记所在根」恰好重合，但那是巧合、不是契约。不加这一条，嵌套场景下解析会一路跑到本仓库外面去，而外层若恰好也有 `.env`，就是又一个「返回值正常、结论全错」。加上之后，linked worktree 场景（规范化结果含标记）照常采纳，#354 的修复不受影响。
 
 ### Requirement: 只回报路径，绝不回显键值
 
@@ -106,3 +120,21 @@ MUST NOT 以「向上逐级查找最近的 `.env` 文件」作为任何一段的
 
 - **WHEN** 存量违规尚未清零且未传 `--enforce`
 - **THEN** SHALL 打印告警并以退出码 0 结束——先确认清零、再关门，否则门禁上线第一天就是红的，只会被习惯性忽略
+
+#### Scenario: 豁免须记名并写明理由
+
+- **WHEN** 某文件因结构性原因无法调用收拢实现而被豁免
+- **THEN** 该豁免 SHALL 在门禁源码内以「路径 ＋ 理由」成对登记，SHALL NOT 只登记路径
+
+**理由**：豁免不写理由，下一个人只能猜，而猜的结果通常是再加一条；豁免一多，门禁就名存实亡。
+
+### Requirement: 无法调用收拢实现者须有等价性守卫
+
+若某入口因**结构性**原因（而非疏忽）无法 import 平台底座，从而必须内联一份等价实现，则该内联实现 SHALL 配备一组**逐布局对照**的等价性测试，对同一套夹具断言它与收拢实现给出相同答案。
+
+**理由（apply 期实测补入）**：`1-转型规划/AI运营指挥中心/serve.py` 是本变更包唯一的生产例外——「零三方依赖」是其既定设计原则，`.51` 上由计划任务跑裸 `python serve.py`，**部署侧既无 venv 也无 `pip install -e zhuopin_platform`**，import 平台底座会让 8092 命令中心在生产直接起不来，而本地测起来永远是绿的（同 `#345`：本地永远能找到仓库根标记）。**但例外若不受任何机制约束，就退化成第 10 种语义**——故以等价性测试代替 import 作为约束手段。
+
+#### Scenario: 内联实现与收拢实现给出同一答案
+
+- **WHEN** 对 monorepo、扁平部署、linked worktree、显式覆盖、无 `.env` 各布局分别求解
+- **THEN** 内联实现与收拢实现 SHALL 返回相同结果；任一布局不一致 SHALL 使测试失败

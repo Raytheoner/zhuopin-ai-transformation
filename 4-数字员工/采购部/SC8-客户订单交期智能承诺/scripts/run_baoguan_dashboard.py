@@ -35,42 +35,25 @@ from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
 ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
 
 
-def _find_env() -> Path | None:
-    """从本脚本向上逐级查找最近的 `.env`（布局无关，与同目录 `run_baoguan_web.py` 同一范式）。
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
 
-    🔴 **本函数取代原先的 `REPO = Path(__file__).resolve().parents[4]`（队列 #354）**——
-    那个写法把"仓库根在上面第几层"这个开发机事实写死在本文件里：`.51` 的部署布局是扁平的
-    `C:/baoguan/app/scripts/`，向上只有 3 层，`parents[4]` 直接 `IndexError: 4`，
-    **本 CLI 因此在 `.51` 上从未可用过**（没人报，因为没人从这条入口跑过；Web 入口
-    `run_baoguan_web.py` 用的正是本范式，故一直正常）。
-
-    命中位置：笔记本 monorepo → 仓库根 `.env`；`.51` 扁平布局 → `C:/baoguan/.env`。
-    凭据只在 `.env`，不入库、不打印。
-
-    ⚠️ **本范式自身的已知缺陷（不在本次修复范围，随 #354 收拢一并处理）**：从 worktree 内
-    运行时会先命中该 worktree 自己的 `.env` 副本而到不了主工作区，且**失败形态是静默用旧
-    凭据、不报错**。本次刻意只把本文件并入这个既有范式、不另发明第 N 种写法——收拢语义
-    （"向上找仓库根标记、再取其 .env"）须先过 design 审，见 `openspec/changes/env-anchor-collapse/`。
-    """
-    here = Path(__file__).resolve()
-    for d in (here.parent, *here.parents):
-        cand = d / ".env"
-        if cand.exists():
-            return cand
-    return None
+#: 本 CLI 必需的凭据键（队列 #354 决策点 4 ＝ (c)）。一次性 CLI，改错当场可见，
+#: 故与两个同族 CLI 一样显式声明——不像常驻服务那样要为「起不来」留余地。
+REQUIRED_ENV_KEYS = ("FO_API_BASE", "FORECAST_API_KEY", "U9C_API_BASE", "XKY_API_BASE")
 
 
 def load_env() -> None:
-    """把最近的 .env 读入 os.environ（已存在的不覆盖）。凭据只在 .env，不入库。"""
-    env = _find_env()
-    if not env:
-        return
-    for line in env.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    🔴 **本文件两副面孔都亲历过**：最早是 `REPO = Path(__file__).resolve().parents[4]`——
+    `.51` 扁平布局 `C:/baoguan/app/scripts/` 向上只有 3 层，`parents[4]` 直接 `IndexError: 4`，
+    **本 CLI 因此在 `.51` 上从未可用过**（没人报，因为没人从这条入口跑过）；2026-08-24 改并入
+    「向上找最近的 `.env`」后越界没了，**却换上了另一副面孔**：从 worktree 内跑会命中该
+    worktree 自己的陈旧副本、且不报错。本次收拢两副面孔一起挡掉——`--git-common-dir` 规范化
+    到主工作区，`.51` 扁平布局走部署根锚点（无 git 的退化路径已配单测）。
+    凭据只在 `.env`，不入库、不打印。
+    """
+    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
 
 
 def main() -> int:

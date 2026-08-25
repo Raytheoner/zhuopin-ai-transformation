@@ -36,30 +36,25 @@ ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
 SC8 = Path(__file__).resolve().parent.parent
 
 
-def _find_env() -> Path | None:
-    """从本脚本向上逐级查找最近的 `.env`（布局无关）。
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
 
-    笔记本(monorepo)命中仓库根 .env；长开服务器扁平布局(C:\\baoguan\\app\\scripts\\…)
-    命中 C:\\baoguan\\.env。凭据只在 .env，不入库。"""
-    here = Path(__file__).resolve()
-    for d in (here.parent, *here.parents):
-        cand = d / ".env"
-        if cand.exists():
-            return cand
-    return None
+#: 🔴 **常驻服务刻意暂不声明必需键**（队列 #354 决策点 4 ＝ (c)）。design 决策点 4 的 (b)
+#: 已论证过风险：「哪些入口本就靠服务环境/计划任务直接注入凭据」目前无人能列全，而本入口是
+#: `.51` 常驻服务，多声明一个键就多一条起不来的路径。**本清单待 `.51` 真机复验时按实测填**
+#: （tasks 2.3.1 的 LAN 留步项）——在那之前保持今天的行为不变，本变更包只改「读哪一份 `.env`」。
+REQUIRED_ENV_KEYS: tuple[str, ...] = ()
 
 
 def load_env() -> None:
-    """把最近的 .env 读入 os.environ（已存在的不覆盖）。凭据只在 .env，不入库。"""
-    env = _find_env()
-    if not env:
-        return
-    for line in env.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    🔴 **原实现是「向上逐级找最近的 `.env`」**——笔记本 monorepo 命中仓库根、`.51` 扁平布局
+    （`C:\\baoguan\\app\\scripts\\…`）命中 `C:\\baoguan\\.env`，这两条都对；**错的是从 linked
+    worktree 跑的那条**：先命中该 worktree 自己的 `.env` 副本而到不了主工作区，且**失败形态
+    是静默用旧凭据跑下去**。收拢后由 `--git-common-dir` 规范化到主工作区，扁平布局仍走部署根
+    锚点（`.51` 无 git，退化路径已配单测）。凭据只在 `.env`，不入库、不打印。
+    """
+    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
 
 
 def main() -> int:

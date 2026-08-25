@@ -49,29 +49,27 @@ for _p in _HERE.parents:
 from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
 ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
 
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
+
 _ROOT = Path(__file__).resolve().parent.parent
 
-
-def _find_env() -> Path | None:
-    """从本脚本向上逐级查找最近的 `.env`（同 `scripts/ingest_tax_export.py` 既有范式）。"""
-    here = Path(__file__).resolve()
-    for d in (here.parent, *here.parents):
-        cand = d / ".env"
-        if cand.exists():
-            return cand
-    return None
+#: 🔴 **本入口刻意不声明必需键**（队列 #354 决策点 4 ＝ (c)）——告警 webhook 未配置时
+#: **静默跳过、不阻断扫描本身**是本脚本模块 docstring 明写的既定语义（见「告警去向」段）。
+#: 把它列进 required 会把「今天没配告警」升级成「今天不扫描」，那是拿摄取去赌告警，
+#: **代价方向反了**。本变更包只改「读哪一份 `.env`」，不趁机改这条既定降级语义。
+REQUIRED_ENV_KEYS: tuple[str, ...] = ()
 
 
 def load_env() -> None:
-    env = _find_env()
-    if not env:
-        return
-    for line in env.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    🔴 **本文件是 #354 的原始举证点**：原实现「向上逐级找最近的 `.env`」，从 linked worktree
+    跑时先命中 `.claude/worktrees/<n>/.env` 而**永远到不了仓库根**——实测那份副本里的
+    `_OPS` 密钥已陈旧两代，**失败形态是「告警发到一个早已作废的地址、返回码没人看」而不是
+    报错**。收拢后由 `--git-common-dir` 规范化到主工作区，worktree 与主工作区必然同解。
+    命中路径经 `describe()` 打印进计划任务日志——本脚本每日跑，这一行就是它的凭据来源留痕。
+    """
+    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
 
 
 #: 本告警唯一的去向键——IT 运维部群 webhook（队列 #282 前提①，2026-08-07 已落 `.env`）。

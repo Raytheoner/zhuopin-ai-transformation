@@ -31,6 +31,11 @@ for _p in _HERE.parents:
 from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
 ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
 
+from zhuopin_platform.env_anchor import (  # noqa: E402
+    load_env as _resolve_and_load_env,
+    resolve_env_file as _resolve_env_file,
+)
+
 from sc8 import baoguan, config, forecast  # noqa: E402
 from sc8.baoguan import (RISK_GAP, RISK_GREEN, RISK_RED, RISK_YELLOW,  # noqa: E402
                          build_dashboard)
@@ -42,30 +47,27 @@ RISK_NAME = {RISK_RED: "🔴真延期", RISK_GAP: "🟠待催", RISK_YELLOW: "�
 
 
 def _find_dotenv() -> Path | None:
-    """自下而上找第一个真实存在的 `.env`。
+    """【已收拢，保留为薄封装】返回本次运行该用的那份 `.env`（解析见 `env_anchor`，#354）。
 
-    🔴 **不能只看"仓库根"**：本脚本通常在 worktree 里跑，而 `.env` 是 gitignore 件、
-    **只存在于共享主工作区**，worktree 里根本没有。若按"含 `5-平台底座/` 的那一层就是
-    仓库根"去取，会停在 worktree 根、拿到一个不存在的路径，然后**静默地什么都没加载**，
-    直到下游报一句"FO_API_BASE 未配置"才暴露（工具静默回退那一族）。
-    改为逐层向上找到**文件真的在**的那一层——worktree 布局下会一路走到主工作区。
+    🔴 **本函数原先的写法与它 docstring 里的推理，是一个「结论对、理由碰巧成立」的样本**，
+    值得原样记下来：原注释说「不能只看仓库根，因为 `.env` 是 gitignore 件、只存在于共享主
+    工作区，worktree 里根本没有；故逐层向上找**文件真的在**的那一层，worktree 下会一路走到
+    主工作区」。**这个推理今天成立，但它依赖的是一个会变的事实**——2026-08-24 实测全部 44 个
+    worktree 确实零 `.env` 副本，可 2026-08-18 的
+    `sc8-substitute-penetration-priority-0f8664` 里就躺过一份陈旧两代的副本。**一旦某个
+    worktree 里又出现 `.env`，本写法立刻命中它、且不报错**（#354 的病灶本身）。
+    收拢后由 `--git-common-dir` 规范化到主工作区——**不靠「那儿碰巧没有文件」，靠 git 知道
+    linked worktree 共享哪个仓库根**，这才与理由无关地成立。
     """
-    for p in _HERE.parents:
-        if (p / ".env").is_file():
-            return p / ".env"
-    return None
+    return _resolve_env_file(__file__).path
 
 
 def _load_dotenv(path: Path | None) -> None:
-    """把 `.env` 读进 `os.environ`（不覆盖已设的键）——与服务进程同源凭据。"""
-    if path is None or not path.is_file():
-        return
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip())
+    """把 `.env` 读进 `os.environ`（不覆盖已设的键）——与服务进程同源凭据。
+
+    参数保留是为了不动 `main()` 的既有调用序列；实际解析与读取都在 `env_anchor` 里完成。
+    """
+    _resolve_and_load_env(__file__)
 
 
 def _dump_inputs(path: Path, orders, bom, srm, inventory, purchase_orders, commitments) -> None:
