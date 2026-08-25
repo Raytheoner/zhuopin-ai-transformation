@@ -118,7 +118,9 @@ foreach ($op in $openers) {
     Get-Content -Raw -Encoding UTF8 $tmp | & claude @claudeArgs 2>&1 | Out-File -FilePath $log -Append -Encoding utf8
     $code = $LASTEXITCODE
     $t1 = Get-Date
-    $tail = Get-Content $log -Encoding UTF8 -Tail 40
+    # 哨兵扫全文（原为 -Tail 40）：2026-08-25 v2 实测 A22 日志 45 行、哨兵在第 2 行，
+    # 落在 -Tail 40 窗口外被误判 NO-SENTINEL 并误停整条泳道；v1 同缺陷，一并修。
+    $tail = Get-Content $log -Encoding UTF8
     $done = [bool]($tail | Where-Object { $_ -match '^OPENER_DONE\s*$' })
     $partial = [bool]($tail | Where-Object { $_ -match '^OPENER_PARTIAL' })
     $status = if ($code -eq 0 -and $done) { 'OK' } elseif ($code -eq 0 -and $partial) { 'PARTIAL' } elseif ($code -eq 0) { 'NO-SENTINEL' } else { 'FAIL(' + $code + ')' }

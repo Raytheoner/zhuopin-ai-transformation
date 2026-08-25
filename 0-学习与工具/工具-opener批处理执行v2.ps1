@@ -103,7 +103,9 @@ $laneBlock = {
         Get-Content -Raw -Encoding UTF8 $tmp | & claude @claudeArgs 2>&1 | Out-File -FilePath $log -Append -Encoding utf8
         $code = $LASTEXITCODE
         $t1 = Get-Date
-        $tail = Get-Content $log -Encoding UTF8 -Tail 40
+        # 哨兵扫全文（原为 -Tail 40）：2026-08-25 实测 A21/A25 的哨兵落在第 2 行，
+        # 只因日志短于 40 行才侥幸命中；日志一长即误判 NO-SENTINEL 并误停整条泳道。
+        $tail = Get-Content $log -Encoding UTF8
         $done = [bool]($tail | Where-Object { $_ -match '^OPENER_DONE\s*$' })
         $partial = [bool]($tail | Where-Object { $_ -match '^OPENER_PARTIAL' })
         $status = if ($code -eq 0 -and $done) { 'OK' } elseif ($code -eq 0 -and $partial) { 'PARTIAL' } elseif ($code -eq 0) { 'NO-SENTINEL' } else { 'FAIL(' + $code + ')' }
