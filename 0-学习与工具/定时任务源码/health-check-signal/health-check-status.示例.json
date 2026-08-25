@@ -1,0 +1,21 @@
+﻿{
+    "lastRunLocal":  "2026-08-25 09:55:17",
+    "lastRunIso":  "2026-08-25T09:55:17.7752360+08:00",
+    "durationSec":  16.2,
+    "ok":  true,
+    "fatal":  null,
+    "findingCount":  7,
+    "findings":  [
+                     "[3] CLAUDE.md 叠加超阈 depth=4 overlap=30% \\claude-howto\\vi\\CLAUDE.md",
+                     "[3] CLAUDE.md 叠加超阈 depth=3 overlap=35% \\SalesMarketing\\CLAUDE.md",
+                     "[3] CLAUDE.md 叠加超阈 depth=4 overlap=38% \\企业AI转型\\1-转型规划\\0-全景路线图\\CLAUDE.md",
+                     "[3] CLAUDE.md 叠加超阈 depth=4 overlap=33% \\企业AI转型\\5-平台底座\\CLAUDE.md",
+                     "[3] CLAUDE.md 叠加超阈 depth=4 overlap=44% \\行业研报\\_datasources\\last30days-skill-cn\\CLAUDE.md",
+                     "[4] 心跳告警钩子脚本不存在，本检查停摆将再次无人知晓",
+                     "[4] settings.json 未注册 SessionStart 心跳钩子"
+                 ],
+    "notes":  [
+                  "[2] 3 个非激活插件缓存版本（仅提示，勿手删）"
+              ],
+    "host":  "SPSTHINKPADWIN"
+}
