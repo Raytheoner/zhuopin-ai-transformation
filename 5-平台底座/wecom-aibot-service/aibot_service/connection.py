@@ -42,7 +42,7 @@ from .queue_git_sync import (
 )
 from .queue_lock_pending import flush_pending_queue_appends
 from .repo_paths import resolve_repo_root
-from .whitelist import is_whitelisted, NOT_ONBOARDED_REPLY
+from .whitelist import alert_whitelist_rejected, is_whitelisted, NOT_ONBOARDED_REPLY
 
 BOTID_KEY = "WECOM_AIBOT_BOTID"
 SECRET_KEY = "WECOM_AIBOT_SECRET"
@@ -108,6 +108,7 @@ def build_connector(
     media_max_attempts: int = DEFAULT_MEDIA_MAX_ATTEMPTS,
     media_timeout_seconds: float = DEFAULT_MEDIA_TIMEOUT_SECONDS,
     media_backoff_seconds: float = DEFAULT_MEDIA_BACKOFF_SECONDS,
+    whitelist_alert_fallback_send: Optional[Callable[[str], None]] = None,
 ) -> AibotConnector:
     """构造已接好审计 + 归档分发的 `AibotConnector`；不建立实际连接（调用方
     另行 `await connector.connect()`）。凭据缺失时 `SecretsProvider` 抛
@@ -159,6 +160,16 @@ def build_connector(
     `media_transfer.py`。⚠️ 默认值是保守工程默认，**不是已裁定的口径**
     ——「专员等多久算可接受」需 Shao Peishen 定。`media_timeout_seconds<=0`
     时不加本层超时，只依赖 SDK 自身的 5.0s ack 等待（排查用）。
+
+    `whitelist_alert_fallback_send`（队列 #380 ／ §四 #116 决策点 3，默认
+    None——不影响任何既有测试/调用方）：入站白名单外的发送人被 fail-closed
+    挡回（`whitelist_rejected`）时用它发一条告警。这一类拒绝此前**只写审计、
+    不惊动任何人**——`2025621`（解植雅，采购部）2026-07-20 被挡回的那一条
+    躺了 36 天无人知情，是写变更包时翻审计翻出来的。与 `#387` 的
+    `group_not_configured` 是同一族缺陷（*fail-closed 静默跳过、不报错、
+    上下游一切正常*），故复用同一条独立于机器人自身长连接的 webhook 通道。
+    未传时只记审计、不发告警，行为与本次改动前一致。🔴 **告警只报「谁在
+    何时被挡」，不含被拒消息正文**——见 `whitelist.alert_whitelist_rejected`。
     """
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
@@ -431,6 +442,17 @@ def build_connector(
                     decision={"sender": message.sender, "msgtype": message.msgtype},
                     data_sources={},
                 )
+            )
+            # 队列 #380 决策点 3：拒绝对我方可见。**放在审计 record 之后**——
+            # 审计是事实记录、告警是可见性旁路，次序决定了告警侧任何异常都
+            # 不可能让事实少写一条（`alert_whitelist_rejected` 内部另有一层
+            # 不向上抛的保护，两处是同一诉求的双保险）。
+            await alert_whitelist_rejected(
+                whitelist_alert_fallback_send,
+                audit,
+                evaluator,
+                message.sender,
+                message.msgtype,
             )
             return
 

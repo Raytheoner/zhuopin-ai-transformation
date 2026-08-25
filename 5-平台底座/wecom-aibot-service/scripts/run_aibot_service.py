@@ -289,6 +289,10 @@ def main() -> None:
         media_backoff_seconds=float(
             os.environ.get("WECOM_AIBOT_MEDIA_BACKOFF_SECONDS", DEFAULT_MEDIA_BACKOFF_SECONDS)
         ),
+        # 队列 #380 §四 #116 决策点 3：入站白名单外的发送人被挡回时的告警，
+        # 同样复用这条通道（未配置 WECOM_WEBHOOK_URL 时为 None，功能自动
+        # 关闭；仍记审计）。🔴 告警只报「谁在何时被挡」，不含消息正文。
+        whitelist_alert_fallback_send=fallback_send,
     )
 
     # 队列 #394：outbox 路径清单。**没有默认值，也不去猜** —— SC2 跑在 `.51`、
