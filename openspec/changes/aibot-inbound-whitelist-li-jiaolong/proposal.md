@@ -61,7 +61,19 @@ reports/wecom_aibot_audit.jsonl:204
 - 不改 `dispatch.py`（出站已闭合）、不改 `intake.py`（`DEPARTMENT_TO_QUEUE_OWNER` 已有 `财务部: 财务专线`，无需新增）
 - 无 `.51` 部署段（本服务 2026-08-13 已拍板永不部署 `.51`）
 
-## 🔴 待 Shao Peishen 拍板（design 审，无人值守不代拍）
+## ✅ 拍板结果（Shao Peishen 2026-08-25，队列 §四 `#116`「全按建议」）—— 下方原文保留不追改
+
+**⒈ 准入判据用哪条？** → **(乙) 出站即入站**。判据已入 spec，执行体＝单测两表求差；白名单本身仍显式枚举、不从 `dispatch.py` 推导（理由见 `design.md` 顶部）。
+
+**⒉ 解植雅（`2025621`，采购部）怎么处理？** → **(b) 一并补入**，白名单与 `department_mapping.yaml`（`采购部`）同批加。
+
+**⒊ 真实发送冒烟** → **仍未做，留人在场**。判据原样不变、不得放宽。
+
+⚠️ **`## Impact` 一节按拍板结果修正**：`Affected specs` 由「ADDED 一条」变为 **ADDED 四条需求**（多出的一条即 (乙) 判据本身）；`Affected code` 多出 `aibot_service/connection.py` 与 `scripts/run_aibot_service.py`（决策点 3 的告警接线）。
+
+---
+
+### 以下为拍板前原文（保留，不追改）
 
 **⒈ 准入判据用哪条？** 见 `design.md` 决策点 1 —— (甲) 逐人拍板（现状）／(乙) 「已在 `KNOWN_RECIPIENT_USERIDS` 内 ⇒ 自动入站可达」／(丙) 按名录部门整段开通。**本包默认不选，等你定**；若你只想放行李姣龙一人而不动判据，选 (甲) 即可，本包其余内容不变。
 

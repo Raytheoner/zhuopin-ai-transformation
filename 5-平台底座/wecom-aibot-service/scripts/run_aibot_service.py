@@ -204,6 +204,10 @@ def main() -> None:
         # 队列 #387：归档回执因部门群映射缺配而跳过时的告警，同样复用这条
         # 通道（未配置 WECOM_WEBHOOK_URL 时为 None，功能自动关闭；仍记审计）。
         group_notify_alert_fallback_send=fallback_send,
+        # 队列 #380 §四 #116 决策点 3：入站白名单外的发送人被挡回时的告警，
+        # 同样复用这条通道（未配置 WECOM_WEBHOOK_URL 时为 None，功能自动
+        # 关闭；仍记审计）。🔴 告警只报「谁在何时被挡」，不含消息正文。
+        whitelist_alert_fallback_send=fallback_send,
     )
 
     asyncio.run(
