@@ -17,10 +17,47 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
 from .constants import PAUL_USERID
 from .gates import assert_finalized, DeliveryNotFinalizedError
-from .readme_table import locate_row, write_status, RowLocation
+from .readme_table import (
+    MAIN_TABLE_SECTION,
+    NO_REPLY_NEEDED_STATUS,
+    SUPPLEMENT_REPLY_REQUIRED_COLUMN,
+    SUPPLEMENT_REPLY_REQUIRED_NO,
+    SUPPLEMENT_TABLE_SECTION,
+    column_index,
+    locate_row,
+    write_status,
+    RowLocation,
+)
 from .repo_paths import resolve_repo_root
 
 DELIVERED_STATUS_PREFIX = "✅ 已推送"
+
+
+def resolve_backfill_status(loc: RowLocation, section: str, timestamp: str) -> str:
+    """回填时该写哪个终态（队列 #399 决策点 5 答 (b)）。
+
+    - 主表：一律 `✅ 已推送 <时刻>`（既有语义，未改）。
+    - 补件表「需回复 ＝ 否」（通知型）：直接置 `✅ 无需回复` —— 它属闭环四态
+      之一，**发出即了结，不再需要任何后续人工转态**。
+    - 补件表「需回复 ＝ 是」（签认型）：置 `✅ 已推送 <时刻>`，等回件回灌后
+      由人转 `📥 已回件并回灌`。
+
+    🔴 读不到「需回复」列时按**签认型**处理（即仍需人来收尾）。两个方向代价
+    不对称：误判成通知型会把一封还在等签认的补件直接标成「已了结」，那个签认
+    从此在任何机器载体上都无迹可寻；误判成签认型最坏只是多一次人工转态。
+    """
+    if section != SUPPLEMENT_TABLE_SECTION:
+        return f"{DELIVERED_STATUS_PREFIX} {timestamp}"
+    reply_idx = column_index(loc.header_cells, SUPPLEMENT_REPLY_REQUIRED_COLUMN)
+    reply_value = (
+        loc.cells[reply_idx].strip()
+        if reply_idx is not None and reply_idx < len(loc.cells)
+        else ""
+    )
+    if reply_value == SUPPLEMENT_REPLY_REQUIRED_NO:
+        return NO_REPLY_NEEDED_STATUS
+    return f"{DELIVERED_STATUS_PREFIX} {timestamp}"
+
 
 _NON_FAST_FORWARD_MARKERS = (
     "non-fast-forward", "fetch first", "[rejected]", "Updates were rejected",
@@ -191,8 +228,16 @@ async def push_followup(
     cc_to_paul: bool = True,
     extra_attachments: Optional[list[Path]] = None,
     cc_group_chatid: Optional[str] = None,
+    section: str = MAIN_TABLE_SECTION,
 ) -> DeliveryResult:
     """定位 README 中一行跟进信、断言已定稿、推送、抄送 Paul、回填。
+
+    `section`（队列 #399）：目标表所属章节标题——主表或《补件登记》表。补件
+    走**完全相同**的门禁②与四链路，差别只有两处：① 回填终态按「需回复」列
+    分流（见 `resolve_backfill_status`）；② 审计 `decision.kind="supplement"`
+    （决策点 6 答 (b)：**并回正式 action 名，不另起前缀分裂时间线**——审计是
+    给事后复核「这个人收到过什么」用的，按「用什么脚本发的」分家会逼复核者
+    先懂实现细节）。
 
     `cc_to_paul`（Paul 拍板，出站跟进信固定抄送逻辑）：主推送成功后，额外把
     同一份 markdown 正文 + 全部附件私聊发一份给 `PAUL_USERID`，供其掌握
@@ -229,8 +274,10 @@ async def push_followup(
         BackfillWriteError: 已发送成功但 README 回填失败。
     """
     text = readme_path.read_text(encoding="utf-8")
-    loc = locate_row(text, match)
+    loc = locate_row(text, match, section)
     status_value = loc.cells[loc.status_col_index]
+    # 决策点 6(b)：补件与正式信共用同一套 action 名，靠本字段区分性质。
+    kind = "supplement" if section == SUPPLEMENT_TABLE_SECTION else "letter"
 
     # 队列 #294 修法⑴：门禁②按等值断言实现——一行若处于 `⏸ 暂缓`
     # （readme_table.PAUSED_STATUS，批准后又主动暂缓发送）同样在此被拒绝，
@@ -244,7 +291,7 @@ async def push_followup(
                 action="delivery_rejected",
                 evaluator=evaluator,
                 automation_level="L1",
-                decision={"reason": "not_finalized", "status_value": status_value},
+                decision={"reason": "not_finalized", "status_value": status_value, "kind": kind},
                 data_sources={"readme": str(readme_path)},
                 error=str(exc),
             )
@@ -288,7 +335,7 @@ async def push_followup(
                 evaluator=evaluator,
                 automation_level="L1",
                 decision={"sent": False, "backfilled": False, "chatid": chatid,
-                          "acks": acks, "media_ids": media_ids},
+                          "acks": acks, "media_ids": media_ids, "kind": kind},
                 data_sources={
                     "md": str(md_path),
                     "readme": str(readme_path),
@@ -310,7 +357,7 @@ async def push_followup(
             # 回执观测（`acks`），事后可复核"当时企微到底回了什么"，而不是只
             # 留下一个无从证伪的断言（队列 #326）。
             decision={"sent": True, "backfilled": False, "media_id": media_id,
-                      "media_ids": media_ids, "acks": acks},
+                      "media_ids": media_ids, "acks": acks, "kind": kind},
             data_sources={
                 "md": str(md_path),
                 "docx": str(docx_path) if docx_path else "",
@@ -337,7 +384,7 @@ async def push_followup(
                     evaluator=evaluator,
                     automation_level="L1",
                     decision={"sent": True, "recipient": PAUL_USERID, "cc_of": chatid,
-                              "acks": cc_acks},
+                              "acks": cc_acks, "kind": kind},
                     data_sources={"md": str(md_path)},
                 )
             )
@@ -348,7 +395,7 @@ async def push_followup(
                     action="followup_cc_failed",
                     evaluator=evaluator,
                     automation_level="L1",
-                    decision={"recipient": PAUL_USERID, "cc_of": chatid},
+                    decision={"recipient": PAUL_USERID, "cc_of": chatid, "kind": kind},
                     data_sources={"md": str(md_path)},
                     error=str(exc),
                 )
@@ -370,7 +417,7 @@ async def push_followup(
                     evaluator=evaluator,
                     automation_level="L1",
                     decision={"sent": True, "recipient": cc_group_chatid, "cc_of": chatid,
-                              "acks": group_acks},
+                              "acks": group_acks, "kind": kind},
                     data_sources={"md": str(md_path)},
                 )
             )
@@ -381,14 +428,14 @@ async def push_followup(
                     action="followup_group_cc_failed",
                     evaluator=evaluator,
                     automation_level="L1",
-                    decision={"recipient": cc_group_chatid, "cc_of": chatid},
+                    decision={"recipient": cc_group_chatid, "cc_of": chatid, "kind": kind},
                     data_sources={"md": str(md_path)},
                     error=str(exc),
                 )
             )
 
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    new_status = f"{DELIVERED_STATUS_PREFIX} {timestamp}"
+    new_status = resolve_backfill_status(loc, section, timestamp)
 
     try:
         new_text = write_status(text, loc, new_status)
@@ -400,7 +447,7 @@ async def push_followup(
                 action="followup_backfill_failed",
                 evaluator=evaluator,
                 automation_level="L1",
-                decision={"sent": True, "backfilled": False},
+                decision={"sent": True, "backfilled": False, "kind": kind},
                 data_sources={"readme": str(readme_path)},
                 error=str(exc),
             )
@@ -416,7 +463,7 @@ async def push_followup(
             action="followup_backfilled",
             evaluator=evaluator,
             automation_level="L1",
-            decision={"sent": True, "backfilled": True, "new_status": new_status},
+            decision={"sent": True, "backfilled": True, "new_status": new_status, "kind": kind},
             data_sources={"readme": str(readme_path)},
         )
     )
@@ -433,7 +480,7 @@ async def push_followup(
             action="followup_backfill_committed" if committed else "followup_backfill_commit_failed",
             evaluator=evaluator,
             automation_level="L1",
-            decision={"committed": committed},
+            decision={"committed": committed, "kind": kind},
             data_sources={"readme": str(readme_path)},
             error=commit_error,
         )

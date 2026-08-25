@@ -50,15 +50,25 @@ from zhuopin_platform.audit import AuditLogger  # noqa: E402
 from aibot_service.approval import (  # noqa: E402
     ApprovalCooldownError,
     DEFAULT_COOLDOWN_MINUTES,
+    SupplementReplyRequiredMissingError,
     approve_followup_letter,
 )
-from aibot_service.readme_table import DraftNotPendingReviewError  # noqa: E402
+from aibot_service.readme_table import (  # noqa: E402
+    MAIN_TABLE_SECTION,
+    ReadmeTableError,
+    SUPPLEMENT_TABLE_SECTION,
+    DraftNotPendingReviewError,
+)
 from aibot_service.repo_paths import (  # noqa: E402
     DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
     resolve_followup_approval_cooldown_state_path,
     resolve_repo_root,
 )
+
+
+# 队列 #399：`--table` 取值 → README 章节标题。
+_TABLE_SECTIONS = {"主表": MAIN_TABLE_SECTION, "补件": SUPPLEMENT_TABLE_SECTION}
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -87,9 +97,17 @@ def _run(args: argparse.Namespace) -> int:
             cooldown_state_path=cooldown_state_path,
             now=datetime.now(tz=timezone.utc),
             cooldown_minutes=args.cooldown_minutes,
+            section=_TABLE_SECTIONS[args.table],
         )
         print(f"[OK] 批准成功，README 已回填：{result.new_status}")
         return 0
+    except ReadmeTableError as exc:
+        # 章节标题匹配不到＝ fail-loud，不静默落到另一张表（队列 #399）。
+        print(f"[TABLE] 定位目标表失败（--table {args.table}）：{exc}")
+        return 4
+    except SupplementReplyRequiredMissingError as exc:
+        print(f"[REJECTED] {exc}")
+        return 5
     except DraftNotPendingReviewError as exc:
         print(f"[REJECTED] 批准被拒绝：{exc}")
         return 1
@@ -106,6 +124,14 @@ def main() -> None:
     parser.add_argument("--readme", required=True)
     parser.add_argument(
         "--match-topic", required=True, help='README「主要事项」列的唯一定位关键字'
+    )
+    parser.add_argument(
+        "--table", choices=("主表", "补件"), default="主表",
+        help=(
+            "队列 #399：目标表——`主表`＝《现有跟进信清单》，`补件`＝《补件登记》。"
+            "表格按章节标题定位，匹配不到即报错，MUST NOT 回退到「文件里第一个"
+            "含发送状态的表」。"
+        ),
     )
     parser.add_argument(
         "--quote", required=True, help="批准依据摘录（如 Shao Peishen 的放行原话），必填"

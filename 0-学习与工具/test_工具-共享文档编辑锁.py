@@ -1913,6 +1913,14 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
         "|--------|------|--------|---------|---------|---------|\n"
     )
 
+    # 队列 #399：真身 README 自本包起恒有两张表，release 校验断言两个章节
+    # 标题均在（决策点 3(b)）⇒ 本类 fixture **改判**（不是放宽）：此前只写
+    # 主表章节的写法，在新契约下本就是一份不合法的 README。
+    SUPPLEMENT_HEADER = (
+        "| 承接编号 | 日期 | 收信人 | 主要事项 | 需回复 | 发送状态 |\n"
+        "|---------|------|--------|---------|--------|---------|\n"
+    )
+
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.repo_root = Path(self._tmpdir.name)
@@ -1924,8 +1932,12 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
     def tearDown(self):
         self._tmpdir.cleanup()
 
-    def _write_readme(self, rows=""):
-        text = "## 现有跟进信清单\n\n" + self.HEADER + rows
+    def _write_readme(self, rows="", supplement_rows=""):
+        text = (
+            "## 现有跟进信清单\n\n" + self.HEADER + rows
+            + "\n## 补件登记（不占编号、不占串行闸）\n\n"
+            + self.SUPPLEMENT_HEADER + supplement_rows
+        )
         self.target_path.write_text(text, encoding="utf-8")
 
     def _acquire(self, who="A"):

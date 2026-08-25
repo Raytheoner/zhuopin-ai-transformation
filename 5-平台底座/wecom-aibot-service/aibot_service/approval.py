@@ -17,12 +17,27 @@ from zhuopin_platform.audit import AuditEvent, AuditLogger
 
 from .gates import FINALIZED_STATUS_MARKER
 from .readme_table import (
+    MAIN_TABLE_SECTION,
+    SUPPLEMENT_REPLY_REQUIRED_COLUMN,
+    SUPPLEMENT_TABLE_SECTION,
     DraftNotPendingReviewError,
     RowLocation,
     assert_draft_pending_review,
+    column_index,
     locate_row,
-    write_status,
+    strip_unnumbered_annotation,
+    write_cells,
 )
+
+
+class SupplementReplyRequiredMissingError(RuntimeError):
+    """批准被拒绝：补件行的「需回复」列为空（队列 #399 决策点 5(b)）。
+
+    补件分通知型与签认型两类，**这不是补件形态的属性、而是逐封的属性**
+    （2026-08-25 那封同时含「通知（不用回）」与「签认（必须回）」两半，
+    正是它逼出这条判据）。它决定发送成功后回填哪个终态，故起草时必填；
+    留空即无法判定终态，MUST NOT 猜。
+    """
 
 # design 审通过后 Shao Peishen 追加要求①：冷却窗口——拒绝在"首次观测到该
 # 行"后 N 分钟内批准，逼出一个独立、蓄意的等待动作，堵住"起草→release→
@@ -108,20 +123,28 @@ def approve_followup_letter(
     now: datetime,
     cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES,
     evaluator: str = "human",
+    section: str = MAIN_TABLE_SECTION,
 ) -> ApprovalResult:
     """定位 README 中一行跟进信、断言处于待审草稿态、过冷却窗口、批准转
     终态、留痕。
 
+    `section`（队列 #399）：目标表所属章节标题——主表或《补件登记》表。
+    🔴 **补件行复用与正式信完全相同的判据链**（草稿态断言／依据必填／冷却
+    窗口／审计留痕），一条都不放宽；补件多出的唯一一条是「需回复」列必填。
+    未能确定目标表时 `locate_row` 内部即抛错，MUST NOT 静默落到另一张表。
+
     Raises:
         ValueError: 未提供批准依据摘录。
+        ReadmeTableError: 章节标题匹配不到（fail-loud，不回退到第一个表）。
         DraftNotPendingReviewError: 目标行「发送状态」列非待审草稿标记。
+        SupplementReplyRequiredMissingError: 补件行「需回复」列为空。
         ApprovalCooldownError: 距首次观测该行未满冷却窗口。
     """
     if not quote or not quote.strip():
         raise ValueError("批准依据摘录（--quote）不得为空")
 
     text = readme_path.read_text(encoding="utf-8")
-    loc = locate_row(text, match)
+    loc = locate_row(text, match, section)
     status_value = loc.cells[loc.status_col_index]
 
     try:
@@ -140,6 +163,39 @@ def approve_followup_letter(
         )
         raise
 
+    # 队列 #399 决策点 5(b)：补件表专有判据——「需回复」列必填。放在冷却窗口
+    # **之前**：一行内容本身就不合法的补件不该先把冷却计时器跑起来，否则修好
+    # 内容后还得再等一轮。
+    if section == SUPPLEMENT_TABLE_SECTION:
+        reply_idx = column_index(loc.header_cells, SUPPLEMENT_REPLY_REQUIRED_COLUMN)
+        reply_value = (
+            loc.cells[reply_idx].strip()
+            if reply_idx is not None and reply_idx < len(loc.cells)
+            else ""
+        )
+        if not reply_value:
+            exc = SupplementReplyRequiredMissingError(
+                f"批准被拒绝：补件行「{SUPPLEMENT_REPLY_REQUIRED_COLUMN}」列为空——"
+                "它决定发送成功后回填哪个终态（否→`✅ 无需回复`／是→`✅ 已推送 <日期>`），"
+                "起草时必填，MUST NOT 由脚本猜测。"
+            )
+            audit.record(
+                AuditEvent(
+                    scenario="wecom-aibot",
+                    action="followup_approval_rejected",
+                    evaluator=evaluator,
+                    automation_level="L1",
+                    decision={
+                        "reason": "supplement_reply_required_missing",
+                        "kind": "supplement",
+                        "section": section,
+                    },
+                    data_sources={"readme": str(readme_path)},
+                    error=str(exc),
+                )
+            )
+            raise exc
+
     row_identity = _row_identity(loc)
     try:
         check_cooldown(cooldown_state_path, row_identity, now=now, cooldown_minutes=cooldown_minutes)
@@ -157,7 +213,30 @@ def approve_followup_letter(
         )
         raise
 
-    new_text = write_status(text, loc, FINALIZED_STATUS_MARKER)
+    # 🔴 队列 #400（并入本包）：状态列转终态 ＋ 编号列剥括注 **必须在同一次
+    # 写入内完成**。分两次写就多出一个「状态改了、括注没改」的中间态——而那
+    # 正是 #400 这个缺陷本身（`采购部#18` 一行两格自相矛盾：编号列自称
+    # 「待你审，暂不占号」，状态列已是 `🆕 待发`）。
+    #
+    # 补件表的首列叫「承接编号」不叫「编号」，`column_index` 取不到，
+    # `updates` 里天然只剩状态列一格——补件本就不占号、无括注可剥，
+    # 这不是特判，是列名不同带来的结构性结果。
+    updates: dict[int, str] = {loc.status_col_index: FINALIZED_STATUS_MARKER}
+    number_idx = column_index(loc.header_cells, "编号")
+    number_before = ""
+    number_after = ""
+    if (
+        number_idx is not None
+        and number_idx != loc.status_col_index
+        and number_idx < len(loc.cells)
+        and loc.header_cells[number_idx].strip().startswith("编号")
+    ):
+        number_before = loc.cells[number_idx]
+        number_after = strip_unnumbered_annotation(number_before)
+        if number_after != number_before:
+            updates[number_idx] = number_after
+
+    new_text = write_cells(text, loc, updates)
     readme_path.write_text(new_text, encoding="utf-8")
 
     audit.record(
@@ -170,6 +249,17 @@ def approve_followup_letter(
                 "quote": quote,
                 "row_match_topic": row_identity,
                 "new_status": FINALIZED_STATUS_MARKER,
+                "section": section,
+                # 决策点 6(b)：审计并回正式 action 名，补件靠 `kind` 区分，
+                # 不另起 action 前缀分裂时间线。
+                "kind": "supplement" if section == SUPPLEMENT_TABLE_SECTION else "letter",
+                # #400：把「这次到底剥没剥」写进审计——只写「已批准」而不写
+                # 编号列前后值，事后无从复核那一格有没有跟着变。
+                "number_annotation_stripped": bool(
+                    number_after and number_after != number_before
+                ),
+                "number_before": number_before,
+                "number_after": number_after or number_before,
             },
             data_sources={"readme": str(readme_path)},
         )

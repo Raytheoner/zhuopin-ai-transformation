@@ -69,6 +69,11 @@ from aibot_service.delivery import (  # noqa: E402
     DeliveryNotFinalizedError,
     BackfillWriteError,
 )
+from aibot_service.readme_table import (  # noqa: E402
+    MAIN_TABLE_SECTION,
+    ReadmeTableError,
+    SUPPLEMENT_TABLE_SECTION,
+)
 from aibot_service.department_group_chatid_mapping import (  # noqa: E402
     load_department_group_chatid_mapping,
     resolve_group_cc_chatid,
@@ -78,6 +83,10 @@ from aibot_service.repo_paths import (  # noqa: E402
     resolve_default_queue_anchor,
     resolve_repo_root,
 )
+
+
+# 队列 #399：`--table` 取值 → README 章节标题。
+_TABLE_SECTIONS = {"主表": MAIN_TABLE_SECTION, "补件": SUPPLEMENT_TABLE_SECTION}
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -139,11 +148,16 @@ async def _run(args: argparse.Namespace) -> int:
             match=lambda cells: any(match_topic in cell for cell in cells),
             audit=audit,
             cc_group_chatid=cc_group_chatid,
+            section=_TABLE_SECTIONS[args.table],
         )
         print(f"[OK] 推送成功，README 已回填：{result.new_status}")
         if result.media_ids:
             print(f"[OK] {len(result.media_ids)} 份附件已上传并发送，media_ids={result.media_ids}")
         return 0
+    except ReadmeTableError as exc:
+        # 章节标题匹配不到＝ fail-loud，不静默落到另一张表（队列 #399）。
+        print(f"[TABLE] 定位目标表失败（--table {args.table}）：{exc}")
+        return 4
     except DeliveryNotFinalizedError as exc:
         print(f"[REJECTED] 门禁②拒绝发送：{exc}")
         return 1
@@ -167,6 +181,14 @@ def main() -> None:
     parser.add_argument("--chatid", required=True)
     parser.add_argument(
         "--match-topic", required=True, help='README「主要事项」列的唯一定位关键字'
+    )
+    parser.add_argument(
+        "--table", choices=("主表", "补件"), default="主表",
+        help=(
+            "队列 #399：目标表——`主表`＝《现有跟进信清单》，`补件`＝《补件登记》。"
+            "表格按章节标题定位，匹配不到即报错，MUST NOT 回退到「文件里第一个"
+            "含发送状态的表」。"
+        ),
     )
     parser.add_argument(
         "--department",

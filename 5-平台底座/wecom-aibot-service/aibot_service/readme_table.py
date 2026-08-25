@@ -1,8 +1,19 @@
 """跟进信 README 的 markdown 表格读写（供 delivery.py 场景①、
 approval.py 场景③、dispatch.py 场景④共用）。
 
-只处理"现有跟进信清单"这一张表——按管道符 `|` 切分/拼接，不支持单元格内含
-转义 `|`（该 README 目前全是中文自然语言内容，无代码块/管道符，够用）。
+按管道符 `|` 切分/拼接，不支持单元格内含转义 `|`（该 README 目前全是中文
+自然语言内容，无代码块/管道符，够用）。
+
+🔴 **队列 #399（followup-supplement-channel，§四 #119 决策点 2 答 (b)）：
+表格定位由「文件里第一个含『发送状态』的表」改为「按所属 `##` 章节标题
+显式选表」。**
+
+改判前两份独立实现（本模块与 `工具-共享文档编辑锁.py::_followup_readme_
+rows`）同时依赖着一条**从未被任何人声明**的判据——目标表恰好排在文件里
+第一个。README 一旦多出第二张同构表（补件登记表即是），把它挪到主表之前
+**一次纯排版编辑**就能让两份实现同时把补件表读成主表，**且都不报错**。
+本模块因此改为：`section` 不传时**强制匹配主表章节标题**，匹配不到即
+`raise ReadmeTableError`，MUST NOT 回退到任何「取第一个表」的行为。
 """
 from __future__ import annotations
 
@@ -10,9 +21,33 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+from zhuopin_platform.shared_tools.followup_gate import (
+    UNNUMBERED_MARKERS,
+    parse_letter_number,
+)
+
 
 class ReadmeTableError(LookupError):
     pass
+
+
+# 队列 #399：两张表各有其名。匹配按「`##` 标题正文以此串起首」判定——README
+# 实际标题带括注（`## 补件登记（不占编号、不占串行闸，2026-08-24 立表）`），
+# 用前缀匹配既能容忍括注，又不会把两个名字互相误命中。
+MAIN_TABLE_SECTION = "现有跟进信清单"
+SUPPLEMENT_TABLE_SECTION = "补件登记"
+
+# 补件表专有列名（design 决策点 1(a)：首列刻意**不叫**「编号」——补件不占号）。
+SUPPLEMENT_CARRY_NUMBER_COLUMN = "承接编号"
+# 决策点 5(b)：「需回复」是补件表的**显式列**，不靠读散文判断。
+SUPPLEMENT_REPLY_REQUIRED_COLUMN = "需回复"
+SUPPLEMENT_REPLY_REQUIRED_YES = "是"
+SUPPLEMENT_REPLY_REQUIRED_NO = "否"
+
+# 决策点 5(b)：通知型（需回复＝否）补件发送成功即置终态，不再需要任何后续
+# 人工转态。该取值本就属 `followup_gate.CLOSED_STATUS_PREFIXES` 闭环四态之一，
+# 不新增状态词汇。
+NO_REPLY_NEEDED_STATUS = "✅ 无需回复"
 
 
 # design.md D1：两态语义草稿标记——起草唯一合法产物，转终态（gates.py 的
@@ -65,20 +100,62 @@ class RowLocation:
     header_cells: list[str]
 
 
-def iter_rows(text: str) -> list[RowLocation]:
-    """返回表格全部数据行（供批量扫描场景使用，如 dispatch.py 场景④逐行
-    判定是否可发送）——与 `locate_row` 共用同一套表头/分隔行判定逻辑，
-    区别只在"取第一个匹配"还是"取全部"。
+def _is_level_two_heading(line: str) -> bool:
+    """`## X` 是章节标题；`### X` 不是（它是节内小标题，如补件表下方逐封
+    正文的 `### 财务部 · 唐燕萍 ——…`）。`"### x".startswith("## ")` 为
+    False，判据天然把三级标题排除在外，无需额外条件。"""
+    return line.strip().startswith("## ")
 
-    表头行：任意以 `|` 开头且含"发送状态"字样的行。表头下一行是
+
+def section_span(lines: list[str], section: str) -> tuple[int, int]:
+    """返回 `section` 章节的行区间 `[start, end)`——从其 `##` 标题行的下一行
+    起，到**下一个 `##` 标题行**为止（末章节到文件尾）。
+
+    匹配不到 MUST 抛错，MUST NOT 回落到「全文」或「第一个表」（队列 #399：
+    静默回落正是本次要退休的那条判据的形态）。
+    """
+    start: Optional[int] = None
+    for i, line in enumerate(lines):
+        if not _is_level_two_heading(line):
+            continue
+        if start is None:
+            if line.strip()[3:].strip().startswith(section):
+                start = i + 1
+            continue
+        return start, i
+    if start is None:
+        raise ReadmeTableError(
+            f'跟进信 README 中未找到章节标题「## {section}…」——按队列 #399 '
+            "改判后表格一律按章节标题定位，此处 MUST NOT 回退到「取文件里第一个"
+            "含『发送状态』的表」。请检查 README 章节标题是否被改名或删除。"
+        )
+    return start, len(lines)
+
+
+def iter_rows(text: str, section: Optional[str] = None) -> list[RowLocation]:
+    """返回指定章节内那张表的全部数据行（供批量扫描场景使用，如 dispatch.py
+    场景④逐行判定是否可发送）——与 `locate_row` 共用同一套表头/分隔行判定
+    逻辑，区别只在"取第一个匹配"还是"取全部"。
+
+    `section`（队列 #399 决策点 2 答 (b)）：目标表所属 `##` 章节标题的起首
+    字样。**不传时取 `MAIN_TABLE_SECTION`（主表），而不是「文件里第一个
+    表」**——后者正是本次退休的隐式判据。章节找不到、或章节内没有含
+    「发送状态」列的表，一律 `raise ReadmeTableError`，MUST NOT 返回空列表
+    当作「这张表没有数据」（那会让调用方把"读错了对象"读成"今天没活"）。
+
+    表头行：章节区间内第一条以 `|` 开头且含"发送状态"字样的行。表头下一行是
     `|---|---|...` 分隔行，再往下直到第一条非 `|` 开头的行为止都是数据行。
     """
+    section = MAIN_TABLE_SECTION if section is None else section
     lines = text.splitlines()
+    span_start, span_end = section_span(lines, section)
+
     header_idx = None
     header_cells: list[str] = []
     status_col_index = -1
 
-    for i, line in enumerate(lines):
+    for i in range(span_start, span_end):
+        line = lines[i]
         if line.strip().startswith("|") and "发送状态" in line:
             header_cells = _split_row(line)
             for j, cell in enumerate(header_cells):
@@ -89,10 +166,12 @@ def iter_rows(text: str) -> list[RowLocation]:
             break
 
     if header_idx is None or status_col_index < 0:
-        raise ReadmeTableError('未找到含"发送状态"列的表格')
+        raise ReadmeTableError(
+            f'章节「## {section}…」内未找到含"发送状态"列的表格'
+        )
 
     rows: list[RowLocation] = []
-    for i in range(header_idx + 2, len(lines)):
+    for i in range(header_idx + 2, span_end):
         line = lines[i]
         if not line.strip().startswith("|"):
             break
@@ -110,9 +189,12 @@ def iter_rows(text: str) -> list[RowLocation]:
     return rows
 
 
-def locate_row(text: str, match: Callable[[list[str]], bool]) -> RowLocation:
-    """定位表格中"发送状态"列所在、且满足 `match(cells)` 的第一行。"""
-    for row in iter_rows(text):
+def locate_row(
+    text: str, match: Callable[[list[str]], bool], section: Optional[str] = None
+) -> RowLocation:
+    """定位指定章节那张表中"发送状态"列所在、且满足 `match(cells)` 的第一行。
+    `section` 语义同 `iter_rows`（不传＝主表，且匹配不到章节即抛错）。"""
+    for row in iter_rows(text, section):
         if match(row.cells):
             return row
     raise ReadmeTableError("未找到匹配的跟进信行")
@@ -120,9 +202,21 @@ def locate_row(text: str, match: Callable[[list[str]], bool]) -> RowLocation:
 
 def write_status(text: str, loc: RowLocation, new_status: str) -> str:
     """把 `loc` 定位到的行的状态列原子替换为 `new_status`，返回新文本。"""
+    return write_cells(text, loc, {loc.status_col_index: new_status})
+
+
+def write_cells(text: str, loc: RowLocation, updates: dict[int, str]) -> str:
+    """把 `loc` 定位到的行的**多个**单元格在**同一次写出**里一起替换。
+
+    🔴 队列 #400（并入 #399）：批准脚本转终态时须**同时**剥掉编号列的
+    「（待你审，暂不占号）」括注。分两次写就多出一个「状态改了、括注没改」
+    的中间态，**而那正是 #400 这个缺陷本身**——故本函数存在的意义不是省一次
+    IO，是让「两格必须一起变」这件事在类型上就无法被拆开。
+    """
     lines = text.splitlines()
     cells = loc.cells.copy()
-    cells[loc.status_col_index] = new_status
+    for idx, value in updates.items():
+        cells[idx] = value
     lines[loc.line_index] = _join_row(cells)
     newline = "\n" if text.endswith("\n") else ""
     return "\n".join(lines) + newline
@@ -171,6 +265,35 @@ def extract_target_filename(topic_cell: str) -> Optional[str]:
     历史行）。"""
     m = _TARGET_FILE_RE.search(topic_cell)
     return m.group(1) if m else None
+
+
+# 队列 #400（并入 #399）：编号列里「这封信还没真的发出、不占号」的括注。
+# 形态实测三种：`采购部#17` ／ `IT部#7（待发，暂不占号）` ／
+# `销售部（未发，不编号）`。半角括号一并容忍（README 现无此写法，但成本为零）。
+_NUMBER_ANNOTATION_RE = re.compile(r"（[^（）]*）|\([^()]*\)")
+
+
+def strip_unnumbered_annotation(number_cell: str) -> str:
+    """剥掉编号列中表示「未发／不占号」的括注，返回新值；无可剥者原样返回。
+
+    🔴 **只剥括注、不改编号数值**——占号推算（`_next_available_number`）是
+    读侧派生行为，写侧不该去动它（design §四）。
+
+    🔴 **无 `<部门>#<数字>` 的单元格一律不动**：`销售部（未发，不编号）` 这类
+    行的括注是该格**仅有的信息**，剥掉只会留下一个失去含义的 `销售部`。本
+    要求修的是「编号已存在、括注却还说没发」这一种自相矛盾，不是「清理所有
+    括注」。
+
+    幂等：剥完再喂一次不产生任何修改（无括注可命中）。
+    """
+    if parse_letter_number(number_cell) is None:
+        return number_cell
+
+    def _drop(m: "re.Match[str]") -> str:
+        inner = m.group(0)
+        return "" if any(marker in inner for marker in UNNUMBERED_MARKERS) else inner
+
+    return _NUMBER_ANNOTATION_RE.sub(_drop, number_cell).strip()
 
 
 def build_target_file_annotation(filename: str) -> str:

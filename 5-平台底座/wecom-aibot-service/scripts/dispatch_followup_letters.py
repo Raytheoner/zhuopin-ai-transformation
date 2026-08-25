@@ -55,7 +55,10 @@ from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.department_group_chatid_mapping import (  # noqa: E402
     load_department_group_chatid_mapping,
 )
-from aibot_service.dispatch import dispatch_followup_letters  # noqa: E402
+from aibot_service.dispatch import (  # noqa: E402
+    dispatch_followup_letters,
+    summarize_supplement_table,
+)
 from aibot_service.readme_table import iter_rows  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
     resolve_audit_path,
@@ -67,14 +70,18 @@ from aibot_service.repo_paths import (  # noqa: E402
 def _print_dry_run(readme_path: Path) -> int:
     from aibot_service.gates import FINALIZED_STATUS_MARKER
 
-    rows = iter_rows(readme_path.read_text(encoding="utf-8"))
+    text = readme_path.read_text(encoding="utf-8")
+    rows = iter_rows(text)
     candidates = [r for r in rows if r.cells[r.status_col_index].strip() == FINALIZED_STATUS_MARKER]
     if not candidates:
-        print("[dry-run] 无「🆕 待发」行，本轮不会发送任何消息。")
-        return 0
-    print(f"[dry-run] 发现 {len(candidates)} 行「🆕 待发」（实际是否发送还需过 🔒人工发送/临近截止判定）：")
-    for r in candidates:
-        print(f"  - {' / '.join(c for c in r.cells[:3] if c)}")
+        print("[dry-run] 主表无「🆕 待发」行，本轮不会发送任何消息。")
+    else:
+        print(f"[dry-run] 主表发现 {len(candidates)} 行「🆕 待发」（实际是否发送还需过 🔒人工发送/临近截止判定）：")
+        for r in candidates:
+            print(f"  - {' / '.join(c for c in r.cells[:3] if c)}")
+    # 🔴 队列 #399：补件表状态**无条件打印**——它在 `return` 之前、在 if/else
+    # 两个分支之外，正是为了让「主表没活所以整轮沉默」这件事再也不可能发生。
+    print(f"[dry-run] {summarize_supplement_table(text)}")
     return 0
 
 
@@ -141,7 +148,9 @@ async def _run(dry_run: bool) -> int:
     finally:
         connector.disconnect()
 
-    print(f"[OK] 本轮发送成功 {len(outcome.sent)} 行、失败 {len(outcome.failed)} 行、"
+    # 🔴 队列 #399：补件表状态每轮必打印（0 行也打）——与 --dry-run 分支同规。
+    print(f"[OK] {outcome.supplement_note}")
+    print(f"[OK] 本轮主表发送成功 {len(outcome.sent)} 行、失败 {len(outcome.failed)} 行、"
           f"跳过（🔒人工发送）{len(outcome.skipped_manual)} 行、"
           f"跳过（疑似漏标硬截止）{len(outcome.skipped_unmarked_deadline)} 行、"
           f"跳过（⏸ 暂缓）{len(outcome.skipped_paused)} 行")

@@ -1631,18 +1631,73 @@ def _diff_touched_rows(
     ]
 
 
-def _followup_readme_rows(text: str) -> list[tuple[str, list[str], int]]:
-    """跟进信 README「现有跟进信清单」表的数据行——(原始行文本, 单元格,
-    状态列索引) 三元组列表。判定逻辑与 `aibot_service.readme_table.iter_rows`
-    一致（本工具不 import aibot_service 包，独立实现一份，避免额外的跨包
-    耦合——两处各自维护成本极低，均为几行纯文本切分）：表头＝任意以 `|`
-    开头且含"发送状态"字样的行；其后跳过 `|---|...` 分隔行，直到第一条非
-    `|` 开头的行为止都是数据行。目标文件不存在/无此表时返回空列表。
+# 🔴 队列 #399（§四 #119 决策点 2 答 (b)）：本工具是本仓库**第二份**独立的
+# README 解析实现（`aibot_service.readme_table` 是第一份）。改判前两份**同时**
+# 依赖着一条谁都没写下来的判据——「文件里第一个以 `|` 开头且含『发送状态』的
+# 行就是主表表头」。它当时正确，**只因为补件表恰好排在主表后面**：把补件表
+# 挪到主表之前（一次纯排版编辑），两份会**同时**开始把补件表读成主表，**且
+# 都不报错**。本包退休的正是这条「无人知道自己在守」的人守。
+#
+# 🔴 **两份必须同批改**——只改一份，等于只修了一半，而修了的那一半会让人
+# 以为整件事已经修完了。此处与 `readme_table.py` 的章节名常量必须保持同值
+# （仍不 import aibot_service 包，独立实现的既有决定未变，见本函数原 docstring）。
+FOLLOWUP_MAIN_TABLE_SECTION = "现有跟进信清单"
+FOLLOWUP_SUPPLEMENT_TABLE_SECTION = "补件登记"
+
+
+class FollowupReadmeSectionError(LookupError):
+    """跟进信 README 按章节标题定位表格失败（队列 #399，fail-loud 专用）。"""
+
+
+def _followup_section_span(lines: list[str], section: str) -> tuple[int, int]:
+    """`section` 章节的行区间 `[start, end)`——`## 标题` 之后到下一个 `##` 为止。
+
+    匹配不到即抛错。`"### x".startswith("## ")` 为 False，故三级标题（补件表
+    下方逐封正文的 `### 财务部 · 唐燕萍 ——…`）天然不会被当成章节边界。
     """
+    start = None
+    for i, line in enumerate(lines):
+        if not line.strip().startswith("## "):
+            continue
+        if start is None:
+            if line.strip()[3:].strip().startswith(section):
+                start = i + 1
+            continue
+        return start, i
+    if start is None:
+        raise FollowupReadmeSectionError(
+            f"跟进信 README 中未找到章节标题「## {section}…」——队列 #399 改判后"
+            "表格一律按章节标题定位，MUST NOT 回退到「取文件里第一个含『发送状态』"
+            "的表」。请检查该章节标题是否被改名或删除。"
+        )
+    return start, len(lines)
+
+
+def _followup_readme_rows(
+    text: str, section: str | None = None
+) -> list[tuple[str, list[str], int]]:
+    """跟进信 README 指定章节那张表的数据行——(原始行文本, 单元格, 状态列
+    索引) 三元组列表。判定逻辑与 `aibot_service.readme_table.iter_rows`
+    一致（本工具不 import aibot_service 包，独立实现一份，避免额外的跨包
+    耦合——两处各自维护成本极低，均为几行纯文本切分）：表头＝**章节区间内**
+    第一条以 `|` 开头且含"发送状态"字样的行；其后跳过 `|---|...` 分隔行，
+    直到第一条非 `|` 开头的行为止都是数据行。
+
+    `section` 不传即 `FOLLOWUP_MAIN_TABLE_SECTION`（主表）。
+
+    🔴 **章节找不到、或章节内没有那张表，一律抛 `FollowupReadmeSectionError`**
+    ——原实现在这两种情形返回空列表，而空列表与「这张表真的一行都没有」在
+    调用方眼里逐字相同（同根 CLAUDE.md「工具静默回退」一族）。调用方若确需
+    容错，须**显式**捕获并出声，不得靠本函数替它安静下来。
+    """
+    section = FOLLOWUP_MAIN_TABLE_SECTION if section is None else section
     lines = text.splitlines()
+    span_start, span_end = _followup_section_span(lines, section)
+
     header_idx = None
     status_col_index = -1
-    for i, line in enumerate(lines):
+    for i in range(span_start, span_end):
+        line = lines[i]
         if line.strip().startswith("|") and "发送状态" in line:
             header_cells = [c.strip() for c in line.strip().strip("|").split("|")]
             for j, cell in enumerate(header_cells):
@@ -1652,10 +1707,12 @@ def _followup_readme_rows(text: str) -> list[tuple[str, list[str], int]]:
             header_idx = i
             break
     if header_idx is None or status_col_index < 0:
-        return []
+        raise FollowupReadmeSectionError(
+            f'章节「## {section}…」内未找到含"发送状态"列的表格'
+        )
 
     rows: list[tuple[str, list[str], int]] = []
-    for i in range(header_idx + 2, len(lines)):
+    for i in range(header_idx + 2, span_end):
         line = lines[i]
         if not line.strip().startswith("|"):
             break
@@ -1666,6 +1723,22 @@ def _followup_readme_rows(text: str) -> list[tuple[str, list[str], int]]:
     return rows
 
 
+def _followup_readme_rows_advisory(
+    text: str, section: str | None = None
+) -> list[tuple[str, list[str], int]]:
+    """`_followup_readme_rows` 的**出声降级**包装：供「读 README 只为交叉
+    参考、读不到不该阻断队列 release」的两个调用方使用。
+
+    🔴 它与原实现的静默空列表**不是同一件事**：这里失败会打印一条告警。
+    「不阻断」是有意的取舍，「不出声」不是。
+    """
+    try:
+        return _followup_readme_rows(text, section)
+    except FollowupReadmeSectionError as exc:
+        print(f"⚠ 跟进信 README 表格定位失败，本项交叉校验跳过（不阻断本次 release）：{exc}")
+        return []
+
+
 def _followup_row_identity(cells: list[str], status_col_index: int) -> tuple[str, ...]:
     """行身份＝除状态列外全部单元格——只要其余内容不变，状态列如何转换
     都指向同一行（与 `approval.py._row_identity` 同一判据，两处独立实现
@@ -1673,19 +1746,33 @@ def _followup_row_identity(cells: list[str], status_col_index: int) -> tuple[str
     return tuple(c for i, c in enumerate(cells) if i != status_col_index)
 
 
-def _followup_header_col_index(text: str, label: str) -> int:
-    """跟进信 README 清单表头按列名前缀定位列索引，未找到返回 -1（队列
-    #308 子项 G 复用 `_followup_readme_rows` 已确立的"按表头字样定位"手法，
-    独立于其固定返回的状态列索引，供收信人列定位复用，避免改动该函数
-    既有签名与其两个既有调用方）。"""
-    for line in text.splitlines():
+def _followup_header_col_index(text: str, label: str, section: str | None = None) -> int:
+    """跟进信 README 指定章节那张表的表头按列名前缀定位列索引，未找到该**列**
+    返回 -1（队列 #308 子项 G 复用 `_followup_readme_rows` 已确立的"按表头
+    字样定位"手法，独立于其固定返回的状态列索引，供收信人列定位复用）。
+
+    🔴 队列 #399（tasks 1.3）：本函数是**第三处**依赖同一条隐式文档顺序判据
+    的实现——原实现同样取「文件里第一个含『发送状态』的行」当表头。它与
+    `_followup_readme_rows` 同批显式化，否则两表次序一颠倒，行定位对了、列
+    定位却会落到另一张表的表头上。
+
+    「找不到该列」返回 -1（既有语义未变）；「找不到该章节／该表」抛
+    `FollowupReadmeSectionError`（fail-loud，与 `_followup_readme_rows` 同规）。
+    """
+    section = FOLLOWUP_MAIN_TABLE_SECTION if section is None else section
+    lines = text.splitlines()
+    span_start, span_end = _followup_section_span(lines, section)
+    for i in range(span_start, span_end):
+        line = lines[i]
         if line.strip().startswith("|") and "发送状态" in line:
             header_cells = [c.strip() for c in line.strip().strip("|").split("|")]
             for j, cell in enumerate(header_cells):
                 if cell.startswith(label):
                     return j
             return -1
-    return -1
+    raise FollowupReadmeSectionError(
+        f'章节「## {section}…」内未找到含"发送状态"列的表格'
+    )
 
 
 def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> list[str]:
@@ -1707,7 +1794,42 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
     两态语义检查已用的 `_followup_row_identity`，历史行不追溯。
     """
     violations: list[str] = []
-    old_rows = _followup_readme_rows(snapshot_text)
+
+    # 🔴 队列 #399 决策点 3 答 (a)+(b) 的 (b) 半：两张表的章节标题**都必须在**。
+    # 这一道挂在**咽喉**上——改 README 必持锁，绕不过去；(a) 那道单测只在 CI
+    # 跑到时才拦，而 CI 整体 run 目前长期 failure（§一 #398 ⑶），信号可能不
+    # 可见。两道各守一端，(c) sweep 常驻告警不做（三道守同一件事＝把告警做回
+    # 噪音）。
+    #
+    # 本检查须**先于**下方任何 `_followup_readme_rows` 调用——那些调用在章节
+    # 缺失时会抛 `FollowupReadmeSectionError`，而 release 该给的是一条讲清楚
+    # 缺了哪个标题的 violation，不是一段 traceback。
+    for _section in (FOLLOWUP_MAIN_TABLE_SECTION, FOLLOWUP_SUPPLEMENT_TABLE_SECTION):
+        try:
+            _followup_readme_rows(current_text, _section)
+        except FollowupReadmeSectionError as exc:
+            violations.append(
+                f"跟进信 README 章节／表格定位失败：{exc} "
+                f"⇒ 两表（《{FOLLOWUP_MAIN_TABLE_SECTION}》与"
+                f"《{FOLLOWUP_SUPPLEMENT_TABLE_SECTION}》）的章节标题必须同时在位，"
+                "这是队列 #399 用来替代「谁排在文件前面」那条隐式判据的守卫——"
+                "标题一旦缺失或改名，两份独立解析实现会同时开始读错表且都不报错。"
+            )
+    if violations:
+        return violations
+
+    try:
+        old_rows = _followup_readme_rows(snapshot_text)
+    except FollowupReadmeSectionError as exc:
+        # 快照是 acquire 那一刻同一个文件的副本；它读不出主表而当前文本读得出，
+        # 说明本次持锁窗口内**章节结构本身被改动过**。此时"哪些行是新增的"
+        # 无从判定 ⇒ 拒绝 release 并说清楚，MUST NOT 拿一个空的旧身份集合去
+        # 硬判（那会把全部既有行误判成本次新增）。
+        return [
+            f"跟进信 README 的 acquire 快照无法按章节定位主表：{exc} "
+            "⇒ 本次持锁窗口内章节结构被改动，两态语义与串行闸校验的比对基准已失效。"
+            "请先把章节标题恢复到 acquire 时的形态再 release。"
+        ]
     old_identities = {
         _followup_row_identity(cells, idx) for _, cells, idx in old_rows
     }
@@ -1833,7 +1955,7 @@ def _followup_status_by_filename(readme_text: str) -> dict[str, str]:
     `_followup_readme_rows` 既有惯例）。未标注目标文件的行不在映射内——本
     校验只认结构化引用（design.md 决策点3），判不出就不拦。"""
     mapping: dict[str, str] = {}
-    for _, cells, status_col_index in _followup_readme_rows(readme_text):
+    for _, cells, status_col_index in _followup_readme_rows_advisory(readme_text):
         topic_cell = cells[3] if len(cells) > 3 else ""
         m = FOLLOWUP_TARGET_FILE_RE.search(topic_cell)
         if not m:
@@ -1937,7 +2059,7 @@ def _followup_letter_records(readme_text: str) -> list:
     if followup_gate is None:
         return []
     records = []
-    for _, cells, status_col_index in _followup_readme_rows(readme_text):
+    for _, cells, status_col_index in _followup_readme_rows_advisory(readme_text):
         topic_cell = cells[3] if len(cells) > 3 else ""
         m = FOLLOWUP_TARGET_FILE_RE.search(topic_cell)
         records.append(followup_gate.LetterRecord(

@@ -42,11 +42,39 @@ from .department_group_chatid_mapping import resolve_group_cc_chatid
 from .gates import FINALIZED_STATUS_MARKER
 from .readme_table import (
     PAUSED_STATUS,
+    SUPPLEMENT_TABLE_SECTION,
+    ReadmeTableError,
     column_index,
     extract_target_filename,
     iter_rows,
     split_department_and_name,
 )
+
+
+def summarize_supplement_table(text: str) -> str:
+    """返回一行**必打印**的补件表状态摘要（队列 #399 决策点 4 的三案共同强制
+    项——它不进选项，选 (a)/(b)/(c) 哪一个都要有这一句）。
+
+    🔴 **为什么这一句是强制的**：#399 这个缺陷之所以能藏住整整一天，正是因为
+    班次对补件的**沉默**与「今天没活」在输出上**逐字相同**——`--dry-run` 打的
+    是「无「🆕 待发」行，本轮不会发送任何消息。」，而当时《补件登记》里恰恰
+    有一封在等着发。**一句「补件表 0 行待发」与一句「补件表 2 行待发（不走
+    本通道）」的区别，就是这个缺陷能不能被下一个人看见。**
+
+    故：**0 行也打印、`--dry-run` 也打印、本通道不负责发送它们也打印**。
+    补件表不存在时同样出声（说明「读不到」，而不是装作「没有」）。
+    """
+    try:
+        rows = iter_rows(text, SUPPLEMENT_TABLE_SECTION)
+    except ReadmeTableError as exc:
+        return f"[补件表] 读不到《{SUPPLEMENT_TABLE_SECTION}》表：{exc}"
+    pending = [r for r in rows if r.cells[r.status_col_index].strip() == FINALIZED_STATUS_MARKER]
+    return (
+        f"[补件表] 共 {len(rows)} 行，其中「{FINALIZED_STATUS_MARKER}」{len(pending)} 行"
+        f"——🔴 **本通道不自动发送补件**（决策点 4 答 (b)：补件按定义是「有件急事"
+        f"要立刻说」，交给次日班次等于用一个机制解掉另一个机制该有的时效）；"
+        f"发送走 `scripts/push_followup_letter.py --table 补件`。"
+    )
 
 # design.md D3（既有）：硬截止交付的跟进信显式标注，自动任务结构性跳过。
 MANUAL_ONLY_MARKER = "🔒人工发送"
@@ -90,6 +118,9 @@ class DispatchOutcome:
     skipped_manual: list[str] = field(default_factory=list)
     skipped_unmarked_deadline: list[str] = field(default_factory=list)
     skipped_paused: list[str] = field(default_factory=list)
+    # 队列 #399：补件表状态摘要——**恒有值**（含 0 行、含读不到补件表的情形）。
+    # 用非可选字段承载，正是为了让「本轮没提补件」在结构上无法发生。
+    supplement_note: str = ""
 
 
 def _extract_explicit_dates(text: str) -> list[date]:
@@ -185,6 +216,11 @@ async def dispatch_followup_letters(
     映射表（即便是空 dict）则按行 fail-closed 判定并留痕。"""
     outcome = DispatchOutcome()
     text = readme_path.read_text(encoding="utf-8")
+    # 🔴 队列 #399：补件表摘要在**任何提前返回之前**就算好——主表一行都没有
+    # 时同样要出声。摘要挂在 return 之后的那一版曾经就是这个缺陷的形态。
+    outcome.supplement_note = summarize_supplement_table(text)
+    # 主表：`iter_rows` 不传 section 即按章节标题强制匹配《现有跟进信清单》，
+    # 补件表结构性读不到 —— 「班次不发补件」靠的是这个，不是靠记得加过滤。
     rows = iter_rows(text)
     if not rows:
         return outcome
