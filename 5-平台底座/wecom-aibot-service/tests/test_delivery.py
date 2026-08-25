@@ -870,3 +870,203 @@ def test_cc_nonzero_errcode_does_not_undo_successful_main_push(tmp_path):
     assert "followup_cc_failed" in actions
     assert "followup_cc_delivered" not in actions
     assert "✅ 已推送" in readme_path.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# 回填：保留式 ＋ 闭环形态快照（队列 #353；openspec
+# `followup-closure-form-survives-backfill`，六决策点 2026-08-25 已签认）
+# ---------------------------------------------------------------------------
+
+from aibot_service.delivery import build_backfill_status  # noqa: E402
+from aibot_service.readme_table import iter_rows  # noqa: E402
+from aibot_service.followup_readme_bridge import build_reply_arrived_status  # noqa: E402
+from zhuopin_platform.shared_tools import followup_gate as fg  # noqa: E402
+
+_TS = "2026-08-25 07:00 UTC"
+_依据 = "正文三要素表明写「做什么＝不用做任何事」「什么时候交＝不用回」"
+_闭环 = fg.ClosureForm(form="✅ 无需回复", basis=_依据)
+
+
+def test_无标注时回填结果与本变更前逐字相同():
+    """🔴 兼容性硬要求：53 行历史行与全部未标注的新信走这条，**不多出空分隔符**。"""
+    assert build_backfill_status("🆕 待发", None, timestamp=_TS) == f"✅ 已推送 {_TS}"
+
+
+def test_有标注时首段直接写闭环态_决策点2a():
+    out = build_backfill_status("🆕 待发", _闭环, timestamp=_TS)
+    assert out.startswith(f"✅ 无需回复 {_TS}")
+    assert fg.classify_status(out) == "closed"      # ← 串行闸当场开
+
+
+def test_有标注时已推送这个事实不丢():
+    # 「这封信何时推送」在这一格之外没有任何副本（同桥一 docstring 的理由）。
+    out = build_backfill_status("🆕 待发", _闭环, timestamp=_TS)
+    assert f"✅ 已推送 {_TS}" in out
+
+
+def test_快照写进状态格且能被解析回来():
+    out = build_backfill_status("🆕 待发", _闭环, timestamp=_TS)
+    assert fg.CLOSURE_FORM_SNAPSHOT_LABEL in out
+    assert fg.parse_closure_form(out).form == _闭环
+
+
+def test_快照冻结_主要事项列此后怎么改都不影响已写入的状态格():
+    frozen = build_backfill_status("🆕 待发", _闭环, timestamp=_TS)
+    # 「主要事项」列被改成别的取值，不改变已经落在状态格里的那一份。
+    assert fg.parse_closure_form(frozen).form.form == "✅ 无需回复"
+    assert build_backfill_status("🆕 待发", _闭环, timestamp=_TS) == frozen
+
+
+def test_保留式_原状态有附加内容时不被整格覆盖():
+    """决策点 3：回填不再整格覆盖。
+
+    ⚠️ **如实登记的边界**：`push_followup` 这条路径上走不到这个分支——门禁②
+    （`gates.assert_finalized`）按等值断言，到回填时状态格必然恰为 `🆕 待发`。
+    ⇒ proposal「已知未闭合 2」写的「`⏸ 暂缓` 理由顺带被治好」**不成立**：
+    那条理由是在「人工把 `⏸ 暂缓` 改回 `🆕 待发`」那一步被抹掉的。本条只钉住
+    保留式本身的行为，不声称它在当前链路上生效。
+    """
+    out = build_backfill_status("⏸ 暂缓（理由：等前信闭环）", None, timestamp=_TS)
+    assert out.startswith(f"✅ 已推送 {_TS}")
+    assert "理由：等前信闭环" in out
+    assert fg.PREVIOUS_STATUS_LABEL in out
+
+
+def test_保留式沿用桥一的分段范式而不是新造一种():
+    out = build_backfill_status("⏸ 暂缓（理由：x）", None, timestamp=_TS)
+    bridge = build_reply_arrived_status("✅ 已推送 2026-08-18", "某归档件.docx")
+    # 桥一那条已在生产上跑着的分段，逐字就是这一串——回填沿用它，不新造。
+    段 = f"{fg.PRESERVED_SEGMENT_SEPARATOR}{fg.PREVIOUS_STATUS_LABEL} ━━━　"
+    assert 段 in out
+    assert 段 in bridge
+
+
+class Test快照兼容既有全部状态判据:
+    """🔴 spec 的 MUST：把「写了快照的状态格」喂给每一条既有判据，
+    断言结论与「未写快照的同一状态」一致（tasks 4.4 的反例单测）。"""
+
+    def setup_method(self):
+        # 决策点 2(a) 之下真实会写出来的那一格，与它「没有快照的同义版本」。
+        self.带快照 = build_backfill_status("🆕 待发", _闭环, timestamp=_TS)
+        self.无快照 = f"✅ 无需回复 {_TS}"
+
+    def test_classify_status一致(self):
+        assert fg.classify_status(self.带快照) == fg.classify_status(self.无快照) == "closed"
+
+    def test_is_closed_status一致(self):
+        assert fg.is_closed_status(self.带快照) is fg.is_closed_status(self.无快照) is True
+
+    def test_is_reply_arrived_status一致(self):
+        assert fg.is_reply_arrived_status(self.带快照) is fg.is_reply_arrived_status(self.无快照) is False
+
+    def test_is_dispatched一致(self):
+        assert fg.is_dispatched(self.带快照) is fg.is_dispatched(self.无快照) is True
+
+    def test_normalize_status首段一致(self):
+        assert fg.normalize_status(self.带快照).startswith("✅ 无需回复")
+
+    def test_number_status_mismatch一致(self):
+        for number in ("质量部#7", "质量部#9（待你审，暂不占号）"):
+            assert (fg.number_status_mismatch(number, self.带快照)
+                    is fg.number_status_mismatch(number, self.无快照))
+
+    def test_桥一第九态把整格原样接在后面_快照活到第九态(self):
+        新态 = build_reply_arrived_status(self.带快照, "质量部-陈忱-回复-2026-08-26-x.docx")
+        assert fg.is_reply_arrived_status(新态)
+        assert fg.CLOSURE_FORM_SNAPSHOT_LABEL in 新态      # ← 快照没丢
+        assert fg.parse_closure_form(新态).form == _闭环
+
+
+def test_未标注行喂给既有判据同样零漂移():
+    无标注 = build_backfill_status("🆕 待发", None, timestamp=_TS)
+    assert fg.classify_status(无标注) == "in_flight"
+    assert not fg.is_closed_status(无标注)
+    assert fg.parse_closure_form(无标注).form is None
+
+
+# ---- 端到端：整条 push_followup 路径上标注是否真的被读到、快照是否真的落格 ----
+
+_标注README = """\
+## 现有跟进信清单
+
+| 日期 | 收信人 | 主要事项 | 交期要点 | 发送状态（2026-07-06） |
+|------|--------|---------|---------|---------|
+| 2026-07-06 | 质量部 · 陈忱 | 8D 预填校准会议程 → 闭环形态：`✅ 无需回复`（依据：正文写明不用回） | 校准会 7 月内 | 🆕 待发 |
+| 2026-07-04 | 质量部 · 陈忱 | 产品类样本 | 尽量 7/15 前 | ✅ 已发 |
+"""
+
+_越界标注README = _标注README.replace("`✅ 无需回复`", "`✅ 大概不用回`")
+
+
+def test_端到端_起草时有标注则回填后闸开且快照落格(tmp_path):
+    readme_path, md_path, audit, connector, _ = _setup(tmp_path, _标注README)
+
+    result = asyncio.run(push_followup(
+        readme_path=readme_path, md_path=md_path, docx_path=None,
+        connector=connector, chatid="chat-1", match=_match_8d,
+        audit=audit, cc_to_paul=False,
+    ))
+
+    assert result.new_status.startswith("✅ 无需回复 ")
+    assert fg.is_closed_status(result.new_status)          # ← 串行闸当场开
+    assert fg.parse_closure_form(result.new_status).form.form == "✅ 无需回复"
+    assert "✅ 已推送" in result.new_status                 # ← 推送事实不丢
+    assert fg.CLOSURE_FORM_SNAPSHOT_LABEL in readme_path.read_text(encoding="utf-8")
+
+    backfilled = [r for r in audit.query_by(scenario="wecom-aibot")
+                  if r["action"] == "followup_backfilled"][0]
+    assert backfilled["decision"]["closure_form"] == "✅ 无需回复"
+
+
+def test_端到端_无标注则回填结果与本变更前逐字相同(tmp_path):
+    readme_path, md_path, audit, connector, _ = _setup(tmp_path)
+    result = asyncio.run(push_followup(
+        readme_path=readme_path, md_path=md_path, docx_path=None,
+        connector=connector, chatid="chat-1", match=_match_8d,
+        audit=audit, cc_to_paul=False,
+    ))
+    assert result.new_status.startswith("✅ 已推送 ")
+    assert fg.PRESERVED_SEGMENT_SEPARATOR not in result.new_status
+    assert fg.CLOSURE_FORM_SNAPSHOT_LABEL not in readme_path.read_text(encoding="utf-8")
+
+
+def test_端到端_越界标注fail_loud且按无标注处理(tmp_path):
+    """🔴 越界不静默：报进审计 ＋ 打印，同时闸仍锁（保守方向）。"""
+    readme_path, md_path, audit, connector, _ = _setup(tmp_path, _越界标注README)
+
+    result = asyncio.run(push_followup(
+        readme_path=readme_path, md_path=md_path, docx_path=None,
+        connector=connector, chatid="chat-1", match=_match_8d,
+        audit=audit, cc_to_paul=False,
+    ))
+
+    assert result.new_status.startswith("✅ 已推送 ")     # ← 按无标注处理
+    assert not fg.is_closed_status(result.new_status)     # ← 闸仍锁
+    rejected = [r for r in audit.query_by(scenario="wecom-aibot")
+                if r["action"] == "followup_closure_form_rejected"]
+    assert len(rejected) == 1
+    assert "不在闭环四态枚举内" in rejected[0]["error"]
+
+
+def test_端到端_发出后再往主要事项列补写标注对闸零效果(tmp_path):
+    """决策点 5(c) 的结构性防线：闸只读状态格快照，不回读「主要事项」列。"""
+    readme_path, md_path, audit, connector, _ = _setup(tmp_path)
+    asyncio.run(push_followup(
+        readme_path=readme_path, md_path=md_path, docx_path=None,
+        connector=connector, chatid="chat-1", match=_match_8d,
+        audit=audit, cc_to_paul=False,
+    ))
+
+    # 事后追认：往「主要事项」列补一条标注。
+    text = readme_path.read_text(encoding="utf-8")
+    text = text.replace(
+        "8D 预填校准会议程",
+        "8D 预填校准会议程 → 闭环形态：`✅ 无需回复`（依据：事后补的）",
+    )
+    readme_path.write_text(text, encoding="utf-8")
+
+    row = next(r for r in iter_rows(readme_path.read_text(encoding="utf-8"))
+               if "8D 预填校准会议程" in r.cells[2])
+    状态 = row.cells[row.status_col_index]
+    assert fg.parse_closure_form(状态).form is None       # ← 状态格里没有快照
+    assert not fg.is_closed_status(状态)                  # ← 闸仍锁

@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+from zhuopin_platform.shared_tools import followup_gate
+
 
 class ReadmeTableError(LookupError):
     pass
@@ -179,3 +181,81 @@ def build_target_file_annotation(filename: str) -> str:
     followup_readme_release`/`_validate_release_structure`（编辑锁工具的
     列数/身份校验）因此不受影响，无需同步修改。"""
     return f" → 目标文件：`{filename}`"
+
+
+# ---------------------------------------------------------------------------
+# 闭环形态标注（队列 #353；openspec `followup-closure-form-survives-backfill`）
+# ---------------------------------------------------------------------------
+#
+# 手法**逐字复刻**上面的 `build_target_file_annotation`（队列 #241，2026-08-04
+# 起在生产上跑着）：同列（「主要事项」）、只在既有单元格内追加文本、**不新增
+# 列** ⇒ 编辑锁的列数/身份校验（`_validate_release_structure`／
+# `_followup_readme_rows`）不受影响，无需同步修改。
+#
+# 🔴 **判据不在本模块**：取值枚举与合法性一律走
+# `zhuopin_platform.shared_tools.followup_gate`（模块文档明令「判据只此一份，
+# 不得在消费者侧另写」）。本模块只负责**写入格式**与**取一格文本去问它**。
+
+
+class ClosureFormAnnotationError(ValueError):
+    """写入侧 fail-loud：给的取值不在闭环四态枚举内，或依据文本不合法。"""
+
+
+def _format_closure_form(label: str, form: str, basis: str) -> str:
+    """标注与快照共用的唯一格式化实现——两者若各写一份，`parse_closure_form`
+    迟早只认得其中一份。"""
+    value = followup_gate.normalize_status(form)
+    if value not in followup_gate.CLOSED_STATUS_PREFIXES:
+        raise ClosureFormAnnotationError(
+            f"闭环形态取值「{form}」不在闭环四态枚举内"
+            f"（{'／'.join(followup_gate.CLOSED_STATUS_PREFIXES)}）"
+        )
+    text = (basis or "").strip()
+    if not text:
+        raise ClosureFormAnnotationError("闭环形态标注的依据文本不得为空（design 决策点 4(a)）")
+    if "）" in text or "`" in text:
+        raise ClosureFormAnnotationError(
+            "闭环形态标注的依据文本不得含全角右括号「）」或反引号——"
+            "两者都是本标注的语法边界，写进去会让解析在错误的位置截断"
+        )
+    return f"{label}：`{value}`（依据：{text}）"
+
+
+def build_closure_form_annotation(form: str, basis: str) -> str:
+    """起草新行时追加到「主要事项」列末尾的闭环形态标注。
+
+    形如 `` → 闭环形态：`✅ 无需回复`（依据：正文三要素表明写「不用回」）``。
+
+    🔴 **只在起草时写才有用**：闸采信的是**发出时快照**（见
+    `build_closure_form_snapshot`），信发出之后再补写本标注对闸零效果
+    （design 决策点 5(c)，防「事后追认」靠结构而非门禁）。
+    """
+    return " → " + _format_closure_form(
+        followup_gate.CLOSURE_FORM_MARKER, form, basis
+    )
+
+
+def build_closure_form_snapshot(form: str, basis: str) -> str:
+    """回填时写进「发送状态」格的那一段——**发出时快照**。
+
+    返回的是**不带分段符的裸段**，由调用方用
+    `followup_gate.PRESERVED_SEGMENT_SEPARATOR` 与其它段拼接
+    （`delivery.build_backfill_status` 是唯一调用方）——分段符只在拼接那一处
+    出现一次，本函数不各带一份。
+
+    快照是回填那一刻的值；此后「主要事项」列被如何修改都不改变它
+    （spec `followup-status-backfill-preservation`「快照冻结」）。
+    """
+    return _format_closure_form(
+        followup_gate.CLOSURE_FORM_SNAPSHOT_LABEL, form, basis
+    )
+
+
+def extract_closure_form(cell_text: str) -> "followup_gate.ClosureFormParse":
+    """从一格文本里取闭环形态标注/快照。薄封装，判据全在 `followup_gate`。
+
+    保留本入口是为了让「主要事项」列的两条标注（`目标文件：` 与
+    `闭环形态：`）在调用方看来来自同一个模块，与 `extract_target_filename`
+    对称；**不在此处复制任何取值清单或校验逻辑**。
+    """
+    return followup_gate.parse_closure_form(cell_text)

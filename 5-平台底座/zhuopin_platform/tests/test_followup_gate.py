@@ -346,3 +346,96 @@ class TestReplyArrivedBacklink:
         )
         assert len(out) == 1
         assert out[0].channel == fg.PAIR_CHANNEL_REPLY_ARRIVED
+
+
+# ---------------------------------------------------------------------------
+# 闭环形态标注（队列 #353；openspec `followup-closure-form-survives-backfill`）
+# ---------------------------------------------------------------------------
+
+# 逐字取自 README `质量部#7` 那一行「主要事项」列里起草人真写下的那句散文
+# 所表达的判定——本包做的正是把它归一化到机器认得的形态上。
+真实依据 = "正文三要素表明写「做什么＝不用做任何事」「什么时候交＝不用回」"
+合法标注 = f"… → 闭环形态：`✅ 无需回复`（依据：{真实依据}）"
+
+
+class TestParseClosureForm:
+    def test_合法标注解析出取值与依据(self):
+        parsed = fg.parse_closure_form(合法标注)
+        assert parsed.is_annotated
+        assert parsed.form.form == "✅ 无需回复"
+        assert parsed.form.basis == 真实依据
+        assert parsed.violation is None
+
+    def test_取值越界则报出来且按无标注处理(self):
+        parsed = fg.parse_closure_form("→ 闭环形态：`✅ 大概不用回`（依据：随便写的）")
+        assert not parsed.is_annotated          # ← 闸仍锁，保守方向
+        assert parsed.violation is not None
+        assert "不在闭环四态枚举内" in parsed.violation
+
+    def test_缺依据段则报出来且按无标注处理(self):
+        parsed = fg.parse_closure_form("→ 闭环形态：`✅ 无需回复`")
+        assert not parsed.is_annotated
+        assert "依据" in parsed.violation
+
+    def test_依据为空串同样报出来(self):
+        parsed = fg.parse_closure_form("→ 闭环形态：`✅ 无需回复`（依据：　）")
+        assert not parsed.is_annotated
+        assert "为空" in parsed.violation
+
+    def test_只有字样没有形态也报出来不静默(self):
+        # 「有人在这一格里提了闭环形态，但没按格式写」——这是要被看见的形态，
+        # 不是「什么都没发生」。
+        parsed = fg.parse_closure_form("这封信的闭环形态另行判断")
+        assert not parsed.is_annotated
+        assert parsed.violation is not None
+
+    def test_无标注既不报违规也不算标注(self):
+        parsed = fg.parse_closure_form("**C01–C10 已落地** → 目标文件：`x.md`")
+        assert not parsed.is_annotated
+        assert parsed.violation is None
+
+    @pytest.mark.parametrize("form", list(fg.CLOSED_STATUS_PREFIXES))
+    def test_枚举四态全部认得而不是退化成布尔(self, form):
+        # 🔴 实测语料里只有 `✅ 无需回复` 真被用过，枚举**刻意**仍写成四态：
+        # 写成布尔就等于在消费者侧悄悄复制了第二份口径（design 决策点 4(a)）。
+        parsed = fg.parse_closure_form(f"→ 闭环形态：`{form}`（依据：x）")
+        assert parsed.form.form == form
+
+    def test_粗体装饰不影响取值(self):
+        # 同 `normalize_status` 那一族教训：真实 README 写法带 markdown 强调。
+        parsed = fg.parse_closure_form("→ 闭环形态：`**✅ 无需回复**`（依据：x）")
+        assert parsed.form.form == "✅ 无需回复"
+
+    def test_同一个解析器也读得懂状态格里的快照(self):
+        # 标注与快照共用同一套语法，故只有一份解析实现——两份迟早只认得一份。
+        snapshot = (
+            f"✅ 无需回复 2026-08-25 07:00 UTC{fg.PRESERVED_SEGMENT_SEPARATOR}"
+            f"{fg.CLOSURE_FORM_SNAPSHOT_LABEL}：`✅ 无需回复`（依据：{真实依据}）"
+        )
+        parsed = fg.parse_closure_form(snapshot)
+        assert parsed.form.form == "✅ 无需回复"
+        assert parsed.form.basis == 真实依据
+
+
+class TestClosureFormRegressionGuard:
+    """🔴 兼容性护栏：**无标注的行行为与本变更前逐字相同**（spec 的 MUST）。
+
+    54 行历史行里 53 行无标注，这条不是"尽量"。
+    """
+
+    @pytest.mark.parametrize("status", [
+        "🆕 待发",
+        "⏳ 待你审",
+        "⏸ 暂缓",
+        "✅ 已推送 2026-08-18 06:53 UTC",
+        "📥 已回件并回灌（2026-08-21）",
+        "📨 回件已到，待拆件 2026-08-21T13:13:24Z",
+    ])
+    def test_未标注状态的分类判定一个字都没变(self, status):
+        assert fg.parse_closure_form(status).form is None
+        assert fg.parse_closure_form(status).violation is None
+        # 下面四条是本变更**没有**碰过的既有判据，此处只是把它们钉住。
+        assert fg.classify_status(status) in ("closed", "reply_arrived", "in_flight", "unknown")
+        assert fg.is_closed_status(status) == any(
+            fg.normalize_status(status).startswith(p) for p in fg.CLOSED_STATUS_PREFIXES
+        )

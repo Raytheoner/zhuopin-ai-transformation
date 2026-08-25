@@ -13,11 +13,19 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from zhuopin_platform.audit import AuditEvent, AuditLogger
+from zhuopin_platform.shared_tools import followup_gate
 from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
 from .constants import PAUL_USERID
-from .gates import assert_finalized, DeliveryNotFinalizedError
-from .readme_table import locate_row, write_status, RowLocation
+from .gates import assert_finalized, FINALIZED_STATUS_MARKER, DeliveryNotFinalizedError
+from .readme_table import (
+    build_closure_form_snapshot,
+    column_index,
+    extract_closure_form,
+    locate_row,
+    write_status,
+    RowLocation,
+)
 from .repo_paths import resolve_repo_root
 
 DELIVERED_STATUS_PREFIX = "✅ 已推送"
@@ -106,6 +114,89 @@ def _assert_ack_accepted(ack: object, *, what: str) -> dict:
             f"errmsg={evidence['errmsg']!r}——不回填 README、不计入 sent"
         )
     return evidence
+
+
+# ---------------------------------------------------------------------------
+# 回填：保留式 ＋ 闭环形态快照（队列 #353；openspec
+# `followup-closure-form-survives-backfill`，Shao Peishen 2026-08-25 签认六点）
+# ---------------------------------------------------------------------------
+#
+# ## 改掉的是什么
+#
+# 回填此前是**整格覆盖**（`write_status` 直接 `cells[i] = new_status`），于是
+# 起草时写在状态格里的任何东西，在发送那一刻一律消失。`质量部#7` 那格「两态
+# 并列」正是人手工补上的补丁，而那时机器已经抹过一次了。
+#
+# 现改为**保留式**，形态**逐字沿用 S4 桥一已在生产上跑着的范式**
+# （`followup_readme_bridge.build_reply_arrived_status`）：新前缀在最前（闭环
+# 判据一律按前缀比对），既有内容以 `　━━━　` 分段接在其后。**不新造第二种
+# 分段范式**——两个分隔字面量都从 `followup_gate` 取。
+#
+# ## 决策点 2(a)：标注合法 ⇒ 回填首段直接写闭环态
+#
+# Shao Peishen 2026-08-24 夜答、08-25 登记：**(a) 发出即闭环、串行闸当场开**，
+# 并一并签认护栏「只有标注在批准那一刻已存在时才生效」。⇒ 起草时判定为
+# `✅ 无需回复` 的信，回填后 `质量部#7 → #8` 那次的 `串行豁免：` 不再需要。
+# 🔴 **`✅ 已推送 <UTC>` 这个事实不丢**——它作为一个独立分段留在格内，因为
+# 「这封信是什么时候推送的」在这一格之外没有任何副本（同桥一 docstring 的
+# 理由）。
+#
+# ## 决策点 5(c)：快照即防线
+#
+# 快照是**回填那一刻**从「主要事项」列复制过来的。此后闸只读状态格，信发出
+# 之后再往「主要事项」补写标注 ⇒ 对闸零效果。**不新增任何拒绝写入的门禁。**
+#
+# ## 两条如实登记的边界（apply 中实测发现，未自行改判）
+#
+# 1. **「保留式」在 `push_followup` 这条路径上实际不可达**：门禁②
+#    （`gates.assert_finalized`）按**等值**断言，`status_value.strip()` 必须
+#    恰为 `🆕 待发` 才走得到回填 ⇒ 到回填时原状态格里**不可能**有附加内容。
+#    ⇒ proposal「已知未闭合 2」写的「决策点 3 签认后 `⏸ 暂缓` 的暂缓理由
+#    顺带被治好」**不成立**：那条理由是在「人工把 `⏸ 暂缓` 改回 `🆕 待发`」
+#    那一步被抹掉的，根本轮不到回填。保留式仍照实现（本函数是通用的、并配
+#    单测），但它在当前链路上是**空转**的。**不自行改判**——治它必须动
+#    `assert_finalized` 的等值断言（D8 红线）或 `approval.py`，两者都在本包
+#    design「不做的事」里。
+# 2. **护栏文字与结构实现之间有一个窗口**：签认文本是「标注在**批准**那一刻
+#    已存在」，而快照发生在**回填**那一刻 ⇒ 「批准 → 投递」之间补写的标注
+#    仍会被采信。在批准那一步写快照同样要放宽 `assert_finalized`（D8 红线），
+#    故本包不做，如实登记。
+
+
+def build_backfill_status(
+    previous_status: str,
+    closure: Optional[followup_gate.ClosureForm],
+    *,
+    timestamp: str,
+) -> str:
+    """算出回填后「发送状态」格的新值。纯函数、无副作用，便于直接单测。
+
+    - **无合法标注** ⇒ 返回 `✅ 已推送 <UTC>`，与本变更前**逐字相同**
+      （不多出空分隔符）——53 行历史行与全部未标注的新信走的都是这条。
+    - **有合法标注** ⇒ 首段写该闭环态（决策点 2(a)），其后依次接
+      **发出时快照** 与 `✅ 已推送 <UTC>` 事实段。
+    - `previous_status` 去掉装饰后不等于 `🆕 待发` 时，整段原状态以
+      `　━━━　原状态 ━━━　` 接在最后（保留式；见上文边界 1）。
+    """
+    delivered = f"{DELIVERED_STATUS_PREFIX} {timestamp}"
+    if closure is None:
+        parts = [delivered]
+    else:
+        parts = [
+            f"{closure.form} {timestamp}"
+            f"（企微机器人自动回填：起草时已判定本封**发出即闭环**，串行闸当场开"
+            f"——队列 #353 决策点 2(a)；闸采信的是下面那段**发出时快照**，"
+            f"发出后再改「主要事项」列的标注对闸零效果）",
+            build_closure_form_snapshot(closure.form, closure.basis),
+            delivered,
+        ]
+
+    kept = (previous_status or "").strip()
+    if kept and kept != FINALIZED_STATUS_MARKER:
+        # 与桥一／桥二逐字同形：`　━━━　原状态 ━━━　<原状态>`。
+        parts.append(f"{followup_gate.PREVIOUS_STATUS_LABEL} ━━━　{kept}")
+
+    return followup_gate.PRESERVED_SEGMENT_SEPARATOR.join(parts)
 
 
 @dataclass
@@ -388,7 +479,37 @@ async def push_followup(
             )
 
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    new_status = f"{DELIVERED_STATUS_PREFIX} {timestamp}"
+
+    # 队列 #353：从「主要事项」列取起草时写下的闭环形态标注，回填时按决策点
+    # 2(a) 直接写闭环态并把标注**快照**进状态格。取不到（历史行常态）时下面
+    # 算出来的 `new_status` 与本变更前逐字相同。
+    # 🔴 **越界/缺依据不静默**：`parse_closure_form` 返回 violation 时按无标注
+    # 处理（闸仍锁，保守方向），但把它记进审计——否则一条写错的标注会以
+    # 「什么都没发生」的形态消失，正是本包要治的那种静默。
+    topic_col = column_index(loc.header_cells, "主要事项")
+    topic_cell = (
+        loc.cells[topic_col]
+        if topic_col is not None and len(loc.cells) > topic_col else ""
+    )
+    closure_parse = extract_closure_form(topic_cell)
+    if closure_parse.violation:
+        audit.record(
+            AuditEvent(
+                scenario="wecom-aibot",
+                action="followup_closure_form_rejected",
+                evaluator=evaluator,
+                automation_level="L1",
+                decision={"reason": "invalid_closure_form_annotation",
+                          "treated_as": "unannotated"},
+                data_sources={"readme": str(readme_path)},
+                error=closure_parse.violation,
+            )
+        )
+        print(f"⚠ 闭环形态标注未生效：{closure_parse.violation}")
+
+    new_status = build_backfill_status(
+        status_value, closure_parse.form, timestamp=timestamp
+    )
 
     try:
         new_text = write_status(text, loc, new_status)
@@ -416,7 +537,10 @@ async def push_followup(
             action="followup_backfilled",
             evaluator=evaluator,
             automation_level="L1",
-            decision={"sent": True, "backfilled": True, "new_status": new_status},
+            decision={"sent": True, "backfilled": True, "new_status": new_status,
+                      # 队列 #353：快照写没写、写的是什么，进审计（IATF 可追溯）。
+                      "closure_form": closure_parse.form.form if closure_parse.form else None,
+                      "closure_form_basis": closure_parse.form.basis if closure_parse.form else None},
             data_sources={"readme": str(readme_path)},
         )
     )

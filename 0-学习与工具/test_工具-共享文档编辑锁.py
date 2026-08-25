@@ -3927,5 +3927,87 @@ class RegistrationCompletenessTests(unittest.TestCase):
         self.assertTrue(self._run(self._queue(*rows), waivers=[]))
 
 
+class 闭环形态快照兼容既有校验Tests(unittest.TestCase):
+    """队列 #353（openspec `followup-closure-form-survives-backfill`）tasks 4.4：
+
+    把「写了发出时快照的状态格」喂给编辑锁两处既有校验，断言结论与
+    「未写快照的同一状态」**一致**——快照是接在闭环前缀之后的分段文本，
+    既有判据一律按前缀比对，本不该受影响，但**这条是断言，不是推断**。
+    """
+
+    表头 = (
+        "| 编号 | 日期 | 收信人 | 主要事项 | 交期要点 | 发送状态 |\n"
+        "|---|---|---|---|---|---|\n"
+    )
+    带快照 = (
+        "✅ 无需回复 2026-08-25 07:00 UTC（企微机器人自动回填）"
+        "　━━━　闭环形态（发出时快照）：`✅ 无需回复`（依据：正文写明不用回）"
+        "　━━━　✅ 已推送 2026-08-25 07:00 UTC"
+    )
+    无快照 = "✅ 无需回复 2026-08-25 07:00 UTC"
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def _表(self, *状态):
+        rows = "".join(
+            f"| 质量部#{7 + i} | 2026-08-{18 + i} | 质量部 · 陈忱 | 第{i}封 | 尽快 | {s} |\n"
+            for i, s in enumerate(状态)
+        )
+        return self.表头 + rows
+
+    def test_闭环判定不因格内多出快照分段而改变(self):
+        self.assertTrue(self.module._followup_status_is_closed(self.带快照))
+        self.assertEqual(
+            self.module._followup_status_is_closed(self.带快照),
+            self.module._followup_status_is_closed(self.无快照),
+        )
+
+    def test_串行闸_前信带快照时新增下一封直接放行且不需串行豁免(self):
+        """🔴 这一条正面回答 `质量部#7 → #8` 那次的失败：当时只能编一条
+        `串行豁免：` 去绕闸，**等于拿逃生阀去绕它本来要拦的那件事**。"""
+        for 前信 in (self.带快照, self.无快照):
+            with self.subTest(前信=前信[:20]):
+                快照 = self._表(前信)
+                当前 = 快照 + (
+                    "| 质量部#8 | 2026-08-25 | 质量部 · 陈忱 | 判例批改表 | 三天 | ⏳ 待你审 |\n"
+                )
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    违规 = self.module._validate_followup_readme_release(当前, 快照)
+                self.assertEqual(违规, [])
+                # 放行**不是**靠逃生阀放行的——输出里不得出现豁免声明。
+                self.assertNotIn("检测到串行豁免声明", buf.getvalue())
+
+    def test_串行闸_前信在途时仍照旧拦下来_快照不削弱这道网(self):
+        在途 = "✅ 已推送 2026-08-18 06:53 UTC"
+        快照 = self._表(在途)
+        当前 = 快照 + "| 质量部#8 | 2026-08-25 | 质量部 · 陈忱 | 判例批改表 | 三天 | ⏳ 待你审 |\n"
+        违规 = self.module._validate_followup_readme_release(当前, 快照)
+        self.assertEqual(len(违规), 1)
+        self.assertIn("串行原则", 违规[0])
+
+    def test_两态语义拦截_带快照的闭环行是既有行不受影响(self):
+        """两态语义拦截只管**新增行写终态**；把带快照的闭环行整体新增进来
+        （极端情形），同样不该被误判成「新建即终态」。"""
+        违规 = self.module._validate_followup_readme_release(
+            self._表(self.带快照), self.表头
+        )
+        self.assertEqual(违规, [])
+
+    def test_发布收口gap检查_带快照的行不被误判为待发(self):
+        """`_followup_status_by_filename` 那一路按等值认 `🆕 待发`；带快照的
+        闭环行不得撞上它（否则「队列说暂缓、README 却仍可发」会误报）。"""
+        文本 = self.表头 + (
+            "| 质量部#7 | 2026-08-18 | 质量部 · 陈忱 | "
+            "通报信 → 目标文件：`质量部-陈忱-跟进-2026-08-18-x.md` | 不用回 | "
+            f"{self.带快照} |\n"
+        )
+        状态 = self.module._followup_status_by_filename(文本)
+        取到 = 状态.get("质量部-陈忱-跟进-2026-08-18-x.md")
+        self.assertIsNotNone(取到)
+        self.assertNotEqual(取到, self.module.FOLLOWUP_FINALIZED_STATUS)
+
+
 if __name__ == "__main__":
     unittest.main()

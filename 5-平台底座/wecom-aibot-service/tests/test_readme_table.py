@@ -153,3 +153,80 @@ def test_write_status_can_move_row_to_paused_and_back():
     resumed_text = write_status(paused_text, reparsed, "🆕 待发")
     reparsed_again = locate_row(resumed_text, lambda cells: "8D 预填校准会议程" in cells[2])
     assert reparsed_again.cells[4] == "🆕 待发"
+
+
+# ---------------------------------------------------------------------------
+# 闭环形态标注（队列 #353；openspec `followup-closure-form-survives-backfill`）
+# ---------------------------------------------------------------------------
+
+from aibot_service.readme_table import (  # noqa: E402
+    ClosureFormAnnotationError,
+    build_closure_form_annotation,
+    build_closure_form_snapshot,
+    extract_closure_form,
+)
+
+
+def test_闭环形态标注写完能被解析回来():
+    ann = build_closure_form_annotation("✅ 无需回复", "正文三要素表明写「不用回」")
+    parsed = extract_closure_form(f"某封信的主要事项{ann}")
+    assert parsed.form.form == "✅ 无需回复"
+    assert parsed.form.basis == "正文三要素表明写「不用回」"
+
+
+def test_越界取值在写入侧就被拒绝():
+    # 写入侧与解析侧同一条约束——判据都从 followup_gate 取，不各写一份。
+    with pytest.raises(ClosureFormAnnotationError):
+        build_closure_form_annotation("✅ 大概不用回", "随便写的")
+
+
+def test_空依据在写入侧就被拒绝():
+    with pytest.raises(ClosureFormAnnotationError):
+        build_closure_form_annotation("✅ 无需回复", "   ")
+
+
+def test_依据含右括号被拒绝以免解析在错误位置截断():
+    with pytest.raises(ClosureFormAnnotationError):
+        build_closure_form_annotation("✅ 无需回复", "见（附件）说明")
+
+
+def test_追加闭环形态标注后列数不变且能正常定位():
+    """🔴 队列 #241 已确立的手法：只在既有单元格内追加文本、不新增列 ⇒
+    编辑锁的列数/身份校验不受影响。本条是那句话的可执行版本。"""
+    before = iter_rows(SAMPLE)
+    row = next(r for r in before if "8D 预填校准会议程" in r.cells[2])
+    widths_before = [len(r.cells) for r in before]
+
+    lines = SAMPLE.splitlines()
+    cells = row.cells.copy()
+    cells[2] += build_closure_form_annotation("✅ 无需回复", "正文写明不用回")
+    lines[row.line_index] = "| " + " | ".join(cells) + " |"
+    after_text = "\n".join(lines) + "\n"
+
+    after = iter_rows(after_text)
+    assert [len(r.cells) for r in after] == widths_before
+    assert after[1].status_col_index == row.status_col_index
+    assert extract_closure_form(after[1].cells[2]).form.form == "✅ 无需回复"
+
+
+def test_目标文件标注与闭环形态标注可以并存互不干扰():
+    topic = (
+        "**C01–C10 已落地**"
+        + build_target_file_annotation("质量部-陈忱-跟进-2026-08-18-x.md")
+        + build_closure_form_annotation("✅ 无需回复", "正文写明不用回")
+    )
+    assert extract_target_filename(topic) == "质量部-陈忱-跟进-2026-08-18-x.md"
+    assert extract_closure_form(topic).form.form == "✅ 无需回复"
+
+
+def test_快照段不自带分段符由调用方拼接():
+    # 分段符只在拼接那一处出现一次——不新造第二种分段范式。
+    snap = build_closure_form_snapshot("✅ 无需回复", "正文写明不用回")
+    assert not snap.startswith("　")
+    assert snap.startswith("闭环形态（发出时快照）")
+
+
+def test_未标注的主要事项列返回无标注且不报违规():
+    parsed = extract_closure_form("**C01–C10 已落地并部署，先认一个错**")
+    assert parsed.form is None
+    assert parsed.violation is None

@@ -114,6 +114,11 @@ class GateReport:
     letter_status_kind: str           # closed / reply_arrived / in_flight / unknown
     letter_target_file: str | None
     next_number: str | None
+    # 队列 #353：闭环形态。**两份都显示**，因为它们回答的是两个不同的问题——
+    # `annotation` ＝「主要事项」列里起草人写的判定（可被事后改动）；
+    # `snapshot` ＝ 回填那一刻冻结进状态格的那一份，**闸只采信它**。
+    closure_form_annotation: str | None = None
+    closure_form_snapshot: str | None = None
     pending_intakes: list[IntakeRow] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -287,6 +292,38 @@ def build_report(recipient: str, readme_text: str) -> GateReport:
             "下表实际 `#N` 最大值推算，不受该括注影响。"
         )
 
+    # 队列 #353 / design 决策点 5(c) 的**必配缓解**：(c) 只让事后追认「对闸
+    # 无效」，**不阻止它被写下** ⇒ README 上仍可能出现一条「看起来像判定、
+    # 实际不起作用」的标注。不把这条不一致报出来，(c) 就是用一个静默失效
+    # 换掉了一个静默滥用。故此处一律显式报出，并声明**以快照为准**。
+    topic_cell = (
+        latest.cells[topic_col]
+        if topic_col is not None and len(latest.cells) > topic_col else ""
+    )
+    annotation = followup_gate.parse_closure_form(topic_cell)
+    snapshot = followup_gate.parse_closure_form(status)
+    closure_annotation = annotation.form.form if annotation.form else None
+    closure_snapshot = snapshot.form.form if snapshot.form else None
+
+    for parse, where in ((annotation, "「主要事项」列的标注"), (snapshot, "状态格里的发出时快照")):
+        if parse.violation:
+            warnings.append(f"🔴 {where}不合法：{parse.violation}")
+
+    if closure_snapshot and closure_annotation and closure_snapshot != closure_annotation:
+        warnings.append(
+            f"🔴 「主要事项」列的闭环形态标注（{closure_annotation}）与状态格里的"
+            f"**发出时快照**（{closure_snapshot}）不一致——**以快照为准**："
+            "闸只读发出那一刻冻结下来的那一份，发出之后改标注对闸零效果"
+            "（design 决策点 5(c)）。请核实是哪一边写错了。"
+        )
+    elif closure_annotation and not closure_snapshot and followup_gate.is_dispatched(status):
+        warnings.append(
+            f"⚠ 「主要事项」列写着闭环形态标注（{closure_annotation}），但这封信"
+            "**发出时状态格里没有快照** ⇒ 该标注对闸**零效果**（＝事后追认，"
+            "design 决策点 5(c) 的结构性防线）。要让它生效，只能在**下一封**"
+            "起草时就写好标注。"
+        )
+
     intakes = _collect_intake_rows(department, target_file)
     pending = [r for r in intakes if not r.dismantled]
     if not gate_open:
@@ -314,6 +351,8 @@ def build_report(recipient: str, readme_text: str) -> GateReport:
         letter_status_kind=kind,
         letter_target_file=target_file,
         next_number=_next_available_number(rows, number_col, department),
+        closure_form_annotation=closure_annotation,
+        closure_form_snapshot=closure_snapshot,
         pending_intakes=pending,
         warnings=warnings,
     )
@@ -348,6 +387,15 @@ def render_human(report: GateReport) -> str:
         "in_flight": "在途", "unknown": "状态写法未知（按在途处理）",
     }[report.letter_status_kind]
     lines.append(f"依据：{report.letter_number} · {status_brief} · {kind_label}")
+    # 队列 #353：闸判据的来源要看得见。**快照在前、标注在后**，因为闸只采信
+    # 快照——顺序本身就是口径的一部分（验收条件 1 的观测口径也在这里取数）。
+    if report.closure_form_snapshot or report.closure_form_annotation:
+        parts = []
+        if report.closure_form_snapshot:
+            parts.append(f"发出时快照 `{report.closure_form_snapshot}`（闸采信这一份）")
+        if report.closure_form_annotation:
+            parts.append(f"主要事项列标注 `{report.closure_form_annotation}`")
+        lines.append("闭环形态：" + "；".join(parts))
     if report.pending_intakes:
         ids = " / ".join(f"§一 #{r.number}" for r in report.pending_intakes)
         states = "、".join(sorted({f"[S:{r.status_field or '缺字段'}]" for r in report.pending_intakes}))

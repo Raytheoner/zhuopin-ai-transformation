@@ -624,3 +624,146 @@ def unclosed_dispatched_by_department(
     for items in grouped.values():
         items.sort(key=_letter_sort_key)
     return grouped
+
+
+# ---------------------------------------------------------------------------
+# 六、闭环形态标注（队列 #353；openspec `followup-closure-form-survives-backfill`）
+# ---------------------------------------------------------------------------
+#
+# ## 它补的是哪一格
+#
+# 「这封信要收到什么才算闭环」这条判断，起草人在写正文三要素那一刻就已经
+# 做出了——但此前**没有任何位置能装它**：状态格被七处等值比较钉成「只能是
+# 那一个字串」（`gates.assert_finalized` 是其中的 D8 红线），而「主要事项」
+# 列里那句话是**自由散文**，机器一个字也读不到。实测全表 54 行仅 `质量部#7`
+# 一行写过它，写完之后又被 `write_status` 的整格覆盖抹掉一次。
+#
+# ⇒ 本节把那句已经在写的话，收敛到**机器认得的形态**上：
+#     `→ 闭环形态：`✅ 无需回复`（依据：…）`
+# 落「主要事项」列内，与队列 #241 的 `目标文件：` 标注**同列、同手法、不新增
+# 列**（`readme_table.build_closure_form_annotation`）。
+#
+# ## 三条口径（design 决策点 4／2／5，Shao Peishen 2026-08-25 签认）
+#
+# 1. **取值限定枚举 ＋ 强制依据**（决策点 4(a)）：取值 MUST 是
+#    `CLOSED_STATUS_PREFIXES` 四者之一，且 MUST 附一段非空依据文本。越界或
+#    缺依据 ⇒ **fail-loud**（报出来）＋ 按「无标注」处理（保守方向＝闸仍锁）。
+#    🔴 **刻意不退化为布尔开关**：枚举实际只有 `✅ 无需回复` 一个取值真被用
+#    过，但写成布尔就等于在消费者侧悄悄复制了第二份口径——本模块模块文档
+#    明令「判据只此一份，不得在消费者侧另写」。
+# 2. **回填时直接写闭环态**（决策点 2(a)）：标注合法时 `delivery.py` 的回填
+#    首段写该闭环态而非 `✅ 已推送`，**发出即闭环、串行闸当场开**。
+# 3. **防「事后追认」靠结构，不新增门禁**（决策点 5(c)）：回填那一刻把标注
+#    **快照**进状态格；此后闸**只读状态格**，信发出之后再往「主要事项」列
+#    补写标注对闸零效果。⚠️ (c) 只让事后追认**对闸无效**，**不阻止它被写
+#    下** ⇒ 读侧（`工具-跟进闸查询.py`）MUST 在「标注 ≠ 快照」时明确报出
+#    不一致并声明以快照为准——不做这条，(c) 就是用一个静默失效换掉了一个
+#    静默滥用。
+#
+# ## 已知边界（如实登记）
+#
+# - 标注只对**新起草**的信生效；历史 53 行的闭环形态覆盖率**永久为 0%**
+#   （决策点 6(a)，不追改、不考古反推），**不表述为「逐步补齐」**。
+# - 「批准 → 投递」之间补写的标注仍会被快照采信。签认文本写的是「只有标注
+#   在**批准**那一刻已存在时才生效」，而结构上快照发生在**回填**那一刻 ⇒
+#   该窗口未被覆盖。**本模块不自行补一道门禁去堵它**（决策点 5(c) 明令不新增
+#   拒绝写入的门禁；且在批准那一步写快照必须放宽 `assert_finalized` 等值断言
+#   ＝ D8 红线），如实登记，交由总线另行裁决。
+
+CLOSURE_FORM_MARKER = "闭环形态"
+
+# 回填写进状态格的那一段的标签。与标注共用同一套语法（`标签：`取值`（依据：
+# …）`），故**同一个解析器**既能读「主要事项」列的标注，也能读状态格的快照。
+CLOSURE_FORM_SNAPSHOT_LABEL = f"{CLOSURE_FORM_MARKER}（发出时快照）"
+
+# 🔴 分段范式**只此一份**：S4 桥一 `build_reply_arrived_status` 与桥二
+# `_build_reply_closed_status` 已在生产上用着这两个字面量，回填侧沿用同一套，
+# **不新造第二种分段**（spec `followup-status-backfill-preservation` 的 MUST）。
+PRESERVED_SEGMENT_SEPARATOR = "　━━━　"
+PREVIOUS_STATUS_LABEL = "原状态"
+
+# 标注/快照的两级正则。**分两级是刻意的**：`_FULL` 命中即取值＋依据齐备；
+# 只命中 `_VALUE` 说明「写了取值但没写依据」——那是一种要**报出来**的形态，
+# 不是「没写标注」。若合成一条可选组的正则，两者会在结果里长得一模一样。
+#
+# ⚠️ 与 `_TARGET_FILE_RE` 同样对措辞宽容（`闭环形态` 与反引号之间允许任意
+# 非反引号字符），以便容忍历史行里 `闭环形态＝起草时即判定为 `…`` 这类写法；
+# 依据段则要求**成对全角括号且内部不含 `）`**——`build_closure_form_annotation`
+# 在写入侧对此做 fail-loud 校验，两侧同一条约束。
+_CLOSURE_FORM_VALUE_RE = re.compile(CLOSURE_FORM_MARKER + r"[^`\n]*`([^`\n]+)`")
+_CLOSURE_FORM_FULL_RE = re.compile(
+    CLOSURE_FORM_MARKER + r"[^`\n]*`([^`\n]+)`\s*（依据[：:]\s*([^）\n]*)）"
+)
+
+
+@dataclass(frozen=True)
+class ClosureForm:
+    """一条**合法**的闭环形态标注（取值已在枚举内、依据文本已非空）。"""
+
+    form: str
+    basis: str
+
+
+@dataclass(frozen=True)
+class ClosureFormParse:
+    """解析结果——三种互斥形态，调用方 MUST 能把它们区分开：
+
+    - `form is None and violation is None` ⇒ **无标注**（53 行历史行的常态，
+      行为与本变更前逐字相同）；
+    - `form is None and violation` ⇒ **有标注但不合法**，须 fail-loud 报出来，
+      同时**按无标注处理**（闸仍锁，保守方向）；
+    - `form is not None` ⇒ 合法标注。
+    """
+
+    form: Optional[ClosureForm] = None
+    violation: Optional[str] = None
+
+    @property
+    def is_annotated(self) -> bool:
+        return self.form is not None
+
+
+def parse_closure_form(cell_text: str) -> ClosureFormParse:
+    """从一格文本里解析闭环形态标注——**判据只此一份**。
+
+    同一个函数服务两个位置：「主要事项」列的**起草标注**、状态格里的
+    **发出时快照**（两者共用同一套语法，见 `CLOSURE_FORM_SNAPSHOT_LABEL`）。
+
+    🔴 **越界与缺依据都不静默**：返回 `violation` 供调用方原样打印，且
+    `form` 一律为 `None`（＝按无标注处理）。理由是两个方向代价不对称——把
+    一条写错的标注当成合法的，会**开错闸**（同一收信人手上出现两封在途信，
+    而串行原则是明令优先于一切触发点规则的那条）；反过来把合法标注当成
+    没写，最坏结果是起草人多写一条 `串行豁免：`，当场可见。
+    """
+    text = cell_text or ""
+    if CLOSURE_FORM_MARKER not in text:
+        return ClosureFormParse()
+
+    full = _CLOSURE_FORM_FULL_RE.search(text)
+    if full is not None:
+        value = normalize_status(full.group(1))
+        basis = full.group(2).strip()
+        if value not in CLOSED_STATUS_PREFIXES:
+            return ClosureFormParse(violation=(
+                f"闭环形态标注取值「{value}」不在闭环四态枚举内"
+                f"（{'／'.join(CLOSED_STATUS_PREFIXES)}）——已按**无标注**处理（闸仍锁）。"
+            ))
+        if not basis:
+            return ClosureFormParse(violation=(
+                f"闭环形态标注「{value}」的依据文本为空——依据是必填项"
+                "（design 决策点 4(a)），已按**无标注**处理（闸仍锁）。"
+            ))
+        return ClosureFormParse(form=ClosureForm(form=value, basis=basis))
+
+    loose = _CLOSURE_FORM_VALUE_RE.search(text)
+    if loose is not None:
+        return ClosureFormParse(violation=(
+            f"闭环形态标注「{normalize_status(loose.group(1))}」缺「（依据：…）」段"
+            "——依据是必填项（design 决策点 4(a)），已按**无标注**处理（闸仍锁）。"
+        ))
+
+    return ClosureFormParse(violation=(
+        f"单元格里出现了「{CLOSURE_FORM_MARKER}」字样，但解析不出"
+        f"「{CLOSURE_FORM_MARKER}：`〈闭环四态之一〉`（依据：…）」这个形态"
+        "——已按**无标注**处理（闸仍锁）。"
+    ))

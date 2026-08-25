@@ -239,6 +239,88 @@ class GateQueryTests(unittest.TestCase):
         names = self.module.all_recipients((self.root / README_REL).read_text(encoding="utf-8"))
         self.assertEqual(names, ["姚祖怡", "陈忱"])
 
+    # ------------------------------------------------- 闭环形态（队列 #353）
+
+    # 决策点 2(a) 之下，一封「起草时判定为 ✅ 无需回复」的信发出后状态格长这样。
+    快照态 = (
+        "✅ 无需回复 2026-08-25 07:00 UTC（企微机器人自动回填）"
+        "　━━━　闭环形态（发出时快照）：`✅ 无需回复`（依据：正文写明不用回）"
+        "　━━━　✅ 已推送 2026-08-25 07:00 UTC"
+    )
+    标注 = " → 闭环形态：`✅ 无需回复`（依据：正文写明不用回）"
+
+    def test_起草时即有标注_发出后闸开且不需要串行豁免(self):
+        """决策点 2(a) ＋ 5(c)：这一条正面回答 `质量部#7 → #8` 那次的失败。"""
+        self._write_readme(
+            _readme_row("质量部#7", "质量部 · 陈忱", "通报信" + self.标注, self.快照态)
+        )
+        report = self._report("陈忱")
+        self.assertTrue(report.gate_open)
+        self.assertEqual(report.closure_form_snapshot, "✅ 无需回复")
+        self.assertEqual(report.closure_form_annotation, "✅ 无需回复")
+        self.assertEqual(report.warnings, [])
+        human = self.module.render_human(report)
+        self.assertIn("闭环形态：", human)
+        self.assertIn("闸采信这一份", human)
+
+    def test_发出后补写标注_闸零效果且明确报出事后追认(self):
+        self._write_readme(
+            _readme_row("质量部#7", "质量部 · 陈忱", "通报信" + self.标注,
+                        "✅ 已推送 2026-08-18 06:53 UTC")
+        )
+        report = self._report("陈忱")
+        self.assertFalse(report.gate_open)                    # ← 闸仍锁
+        self.assertIsNone(report.closure_form_snapshot)
+        self.assertEqual(report.closure_form_annotation, "✅ 无需回复")
+        self.assertTrue(any("零效果" in w for w in report.warnings))
+
+    def test_标注与快照不一致时报出来并声明以快照为准(self):
+        """🔴 决策点 5(c) 的**必配缓解**：不做这条，(c) 就是用一个静默失效
+        换掉了一个静默滥用。"""
+        篡改标注 = " → 闭环形态：`❌ 已作废`（依据：事后改的）"
+        self._write_readme(
+            _readme_row("质量部#7", "质量部 · 陈忱", "通报信" + 篡改标注, self.快照态)
+        )
+        report = self._report("陈忱")
+        self.assertEqual(report.closure_form_snapshot, "✅ 无需回复")
+        self.assertEqual(report.closure_form_annotation, "❌ 已作废")
+        self.assertTrue(any("以快照为准" in w for w in report.warnings))
+        self.assertTrue(report.gate_open)                     # ← 判定按快照走
+
+    def test_越界标注被报出来且按无标注处理(self):
+        self._write_readme(
+            _readme_row("质量部#7", "质量部 · 陈忱",
+                        "通报信 → 闭环形态：`✅ 大概不用回`（依据：x）",
+                        "✅ 已推送 2026-08-18")
+        )
+        report = self._report("陈忱")
+        self.assertIsNone(report.closure_form_annotation)
+        self.assertFalse(report.gate_open)
+        self.assertTrue(any("不在闭环四态枚举内" in w for w in report.warnings))
+
+    def test_无标注的行输出与本变更前逐字相同(self):
+        """54 行历史行里 53 行无标注——这条是硬要求，不是"尽量"。"""
+        self._write_readme(
+            _readme_row("采购部#17", "采购部 · 姚祖怡", "x", "✅ 已推送 2026-08-20")
+        )
+        report = self._report("姚祖怡")
+        self.assertIsNone(report.closure_form_annotation)
+        self.assertIsNone(report.closure_form_snapshot)
+        self.assertEqual(report.warnings, [])
+        self.assertNotIn("闭环形态：", self.module.render_human(report))
+
+    def test_闭环形态两个新字段也进json(self):
+        self._write_readme(
+            _readme_row("质量部#7", "质量部 · 陈忱", "通报信" + self.标注, self.快照态)
+        )
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            self.module.main(["--to", "陈忱", "--json"])
+        import json
+        payload = json.loads(buf.getvalue())
+        self.assertEqual(payload[0]["closure_form_snapshot"], "✅ 无需回复")
+        self.assertEqual(payload[0]["closure_form_annotation"], "✅ 无需回复")
+
 
 if __name__ == "__main__":
     unittest.main()
