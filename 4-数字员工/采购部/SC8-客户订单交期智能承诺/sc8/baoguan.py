@@ -28,7 +28,8 @@ from . import config
 from .config import ForecastParams
 from .forecast import (MaterialArrivals,
                        _cumulative_confirmed_batches as _cumulative_confirmed_batches_impl,
-                       estimate_material_arrivals)
+                       estimate_material_arrivals,
+                       no_feedback_start_date)
 from .models import SalesOrder
 from .period_match import PeriodMatchResult, match_period_cumulative_supply
 
@@ -710,6 +711,13 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     ship = date.fromisoformat(so.required_date)
     effective_demand = max(ship, today)        # ← Paul 定的 max(需求日,今天) 基准
 
+    # 队列 #401：无答交启发式的**起算点**（姚祖怡签认的规则 1／规则 2）。开关 OFF 时
+    # 传 None ⇒ `estimate_material_arrivals` 逐字节沿用 `effective_demand` 起算，零漂移；
+    # ON 时由 `no_feedback_start_date` 单点决定走哪一支。判断只在这一处，不散落。
+    heuristic_base = (
+        no_feedback_start_date(ship, today, p) if config.kit_date_rule1_enabled() else None
+    )
+
     # C-1（sc8-baoguan-substitute-partial-kit）：estimate_material_arrivals/explode_bom
     # 不识别 is_substitute，若替代料行混入会被当成独立"待答交组件"查 SRM（幻影组件）。
     # 传入前剔除替代料行，齐料估算只看主料链路；替代料现货合计判齐在下方 _covered_by_stock
@@ -724,7 +732,8 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
         so.item_code, main_bom, srm_deliveries,
         demand_date=effective_demand, params=p,
         material_commitments=material_commitments,
-        required_qty=_required_qty_for_kit(gross, inventory))
+        required_qty=_required_qty_for_kit(gross, inventory),
+        heuristic_base_date=heuristic_base)
     had_bom = mat.has_bom
     full_arrivals = dict(mat.arrivals)   # 净额抵扣前快照，供 #14 需求日可齐套使用（见下）
     period_match = _period_match_for_so(so, bom, ship, material_commitments) if had_bom else {}

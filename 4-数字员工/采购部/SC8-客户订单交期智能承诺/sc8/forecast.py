@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -36,6 +37,67 @@ class MaterialArrivals:
     no_feedback_materials: list[str] = field(default_factory=list)  # 无 SRM 承诺交期的物料
     bottleneck_material:   str | None = None      # 关键路径瓶颈物料（最晚到货）
     has_bom:               bool = False           # 是否有 BOM 直接子件
+
+
+def _shift_months(anchor: date, months: int) -> date:
+    """自然月加减；目标月无该日时收敛到该月最后一天（1-31 推 1 个月 ⇒ 2-28/29）。
+
+    收敛而不是抛错：调用点全部是「某某日往前/往后 N 个自然月」这类业务口径，
+    2 月没有 31 号时业务上说的就是月末，不是一个错误输入。
+    """
+    idx = anchor.month - 1 + months
+    year = anchor.year + idx // 12
+    month = idx % 12 + 1
+    return date(year, month, min(anchor.day, calendar.monthrange(year, month)[1]))
+
+
+def ship_within_horizon(today: date, ship_date: date,
+                        params: ForecastParams | None = None) -> bool:
+    """出货日是否「在三个月内」—— 规则 1 与规则 2 的**唯一**分界判据。
+
+    读法（本次落定，姚祖怡原话只说了「三个月内／不在三个月内」这两个词）：
+      · 边界 ＝ `今天` 往后推 `rule1_horizon_months` 个**自然月**（月末收敛，见
+        `_shift_months`），**含边界当天**（`<=`）；
+      · **已过期的出货日（≤ 今天）恒判「在三个月内」** —— 它天然落在窗口里，
+        且现行代码对这 38 行的结论本就与规则 2 逐字一致（#344 实测）。
+
+    🔴 **为什么取「含边界」而不是「不含」**：两种读法只在边界当天那一批行上分歧，
+    而「在三个月内」⇒ 走规则 2 ⇒ 起算点更晚 ⇒ **结论更保守**。他签认的是规则文本、
+    不是这个边界的开闭；在他没说的地方，取偏保守那一侧，与 #344 design D3 同一原则。
+    ⚠️ 已登记待其以判例确认（随采购部#19 的对照表，队列 §一 #402）。
+    """
+    p = params or config.default_params()
+    return ship_date <= _shift_months(today, p.rule1_horizon_months)
+
+
+def no_feedback_start_date(ship_date: date, today: date,
+                           params: ForecastParams | None = None) -> date:
+    """无答交启发式的**起算点**（姚祖怡 2026-08-18 书面签认的规则 1／规则 2）。
+
+    返回值随后 `+ no_feedback_lead_days`（90）得到该子件的估算到货日。
+
+      · **规则 1**（出货日**不在**三个月内）→ 出货日往前推 `rule1_months_back` 个自然月，
+        取那个自然月的第 `rule1_start_day` 日（＝20 号）。他 08-18 原话确认的例子：
+        「出货日是 12 月 5 日，往前推 3 个月是 9 月，起算点就是 **9 月 20 日**」。
+      · **规则 2**（出货日**在**三个月内，含已过期）→ **原样保留现行口径** `max(出货日, 今天)`。
+
+    🔴 **规则 2 这一支本次刻意不动，尽管实测它只是「部分覆盖」**：出货日在未来但仍在三个
+    月内的那 24 行，现行是「出货日+90」而规则 2 逐字是「此时此刻+90」，现行更晚、偏保守。
+    §四 #111 拍板 (a) 的标的是**规则 1**；把规则 2 顺手一起改，就是在一次上线里塞进两个
+    自变量——那正是 #344 拒绝顺手改规则 1 时给出的理由，不能反过来自己犯。**已登记为独立
+    待办**（本变更包 design D2 ／ 队列 §一 #401 收工回写）。
+
+    ⚠️ **规则 1 的起算点允许早于今天，且刻意不向今天钳制**：出货日刚过三个月边界时，
+    「前推 3 个月的 20 日」可能落在今天之前（例：今天 08-25、出货 11-30 ⇒ 起算 08-20）。
+    钳到今天会让规则 1 在边界附近**静默退化成规则 2**，等于这条规则在最该生效的那批行上
+    不生效；而不钳制时 `起算+90 ≈ 出货日`，估算到货日仍在未来，不会产生「到货日在过去」
+    这种荒谬结论。
+    """
+    p = params or config.default_params()
+    if ship_within_horizon(today, ship_date, p):
+        return max(ship_date, today)
+    anchor = _shift_months(ship_date.replace(day=1), -p.rule1_months_back)
+    return date(anchor.year, anchor.month, p.rule1_start_day)
 
 
 def _cumulative_confirmed_batches(
@@ -142,6 +204,7 @@ def estimate_material_arrivals(
     params: ForecastParams | None = None,
     material_commitments: dict[str, list[tuple[date, float]]] | None = None,
     required_qty: dict[str, float] | None = None,
+    heuristic_base_date: date | None = None,
 ) -> MaterialArrivals:
     """按 BOM 全部叶子件（多层递归展开半成品）+ SRM 承诺交期估算各物料到货日（关键路径齐套）。
 
@@ -182,6 +245,16 @@ def estimate_material_arrivals(
     挂掉退回旧口径，而不是让全场变"无答交"、把看板刷成一片红。**刻意不做
     "只传 commitments 就按毛需求兜底"**——那是一次静默回退（返回值完全正常、结论
     却是另一套口径），宁可不走新分支。
+
+    ── 无答交起算点（规则 1，队列 #401，2026-08-25）──────────────────────────────
+
+    `heuristic_base_date` 给定时，无答交启发式改从**该日**起算（＝ `heuristic_base_date +
+    no_feedback_lead_days`），而不是 `demand_date + no_feedback_lead_days`。取值由
+    `no_feedback_start_date()` 单点决定，调用方只负责把结果传进来。
+
+    🔴 **缺省 `None` ⇒ 逐字节回到 `demand_date` 起算**（同 design D4 的做法）：
+    `sc8/pipeline.py`（对客承诺主流水线）与 `data/golden/` 全部 mock 黄金基准不传本参数、
+    **结构性走不进新分支**，零漂移不靠「跑了测试没发现」而靠调用图。
     """
     p = params or config.default_params()
 
@@ -201,7 +274,8 @@ def estimate_material_arrivals(
             srm_index[d.material_id] = committed
 
     qty_cumulative = material_commitments is not None and required_qty is not None
-    fallback = demand_date + timedelta(days=p.no_feedback_lead_days)
+    base = heuristic_base_date if heuristic_base_date is not None else demand_date
+    fallback = base + timedelta(days=p.no_feedback_lead_days)
 
     arrivals: dict[str, date] = {}
     no_feedback: list[str] = []

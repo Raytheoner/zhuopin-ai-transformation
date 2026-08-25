@@ -45,6 +45,25 @@ def net_inventory_enabled() -> bool:
     return os.environ.get("SC8_NET_INVENTORY", "off").strip().lower() in ("on", "1", "true", "yes")
 
 
+def kit_date_rule1_enabled() -> bool:
+    """无答交启发式起算点「规则 1」开关：`SC8_KIT_DATE_RULE1=on|off`（**默认 OFF**）。
+
+    判据来源＝姚祖怡 2026-08-18 书面签认的规则 1（出货日不在三个月内 ⇒ 无答交按
+    「出货日往前推 3 个月那个自然月的 20 日」起算、再推 `no_feedback_lead_days` 天），
+    排期由 Shao Peishen 2026-08-25 拍板 (a)（队列 §四 #111 ／ §一 #401）。
+
+    OFF = 现行为（起算点恒为 `max(出货日, 今天)`），**逐字节零漂移**——mock 全量回归、
+    `data/golden/` 黄金基准、`sc8/pipeline.py` 对客承诺主流水线一律不受本变更影响。
+    ON  = 起算点按 `forecast.no_feedback_start_date` 分支取值；对 2026-08-24 那份生产载荷
+    实测**43 行适用、齐料日一律前移 89~92 天（中位 91）**——红的会变少。
+
+    🔴 **与 `net_inventory_enabled` 同级：翻 ON 会改变保供四色，MUST 先由姚祖怡复核
+    「修复前后对照表」并签认后方可开启**（对照表随采购部#19 出，队列 §一 #402）。
+    判据本身他已签认，此处要他确认的是**这批真实行搬动的结果**，不是规则文本。
+    """
+    return os.environ.get("SC8_KIT_DATE_RULE1", "off").strip().lower() in ("on", "1", "true", "yes")
+
+
 def bom_max_depth() -> int:
     """真实 BOM 拉取递归深度：`SC8_BOM_MAX_DEPTH`（默认 5）。
 
@@ -224,6 +243,12 @@ OUTSOURCE_EXTRA_DAYS  = 10   # 委外加工成品：齐套日基础上 +N 天附
 LOGISTICS_DAYS        = 1    # 物流天数（默认国内快递）
 DEVIATION_ALERT_DAYS  = 3    # 偏差监控阈值：实际进展 vs 预测交付日，超 N 天告警/重算
 
+# ── 规则 1 起算点参数（姚祖怡 2026-08-18 书面签认，队列 §一 #401）──────────────
+# 只在 `kit_date_rule1_enabled()` 为 ON 时生效；OFF 时这三个值不参与任何计算。
+RULE1_HORIZON_MONTHS = 3     # 「出货日在三个月内」的自然月数 —— 规则1／规则2 的分界
+RULE1_MONTHS_BACK    = 3     # 规则1：出货日往前推 N 个自然月
+RULE1_START_DAY      = 20    # 规则1：落在那个自然月的第 N 日（他 08-18 确认＝自然月 20 号）
+
 
 @dataclass(frozen=True)
 class ForecastParams:
@@ -233,16 +258,33 @@ class ForecastParams:
     outsource_extra_days:  int = OUTSOURCE_EXTRA_DAYS
     logistics_days:        int = LOGISTICS_DAYS
     deviation_alert_days:  int = DEVIATION_ALERT_DAYS
+    rule1_horizon_months:  int = RULE1_HORIZON_MONTHS
+    rule1_months_back:     int = RULE1_MONTHS_BACK
+    rule1_start_day:       int = RULE1_START_DAY
+
+
+def active_param_version() -> str:
+    """当前生效的参数版本串（写入审计）。
+
+    🔴 规则 1 开关是**会改变数值结论**的启发式分支，故它开着时版本串必须自带标记——
+    否则同一个 `sc8-params-v1` 会对应两套不同的齐料日算法，审计记录再也无法还原
+    「当时是按哪一支算的」（IATF 可追溯性）。**刻意做成自动派生而不是「翻开关时记得
+    手动 bump 常量」**：后者是一个必然会被忘记的人工步骤。
+    """
+    return PARAM_VERSION + ("+rule1" if kit_date_rule1_enabled() else "")
 
 
 def default_params() -> ForecastParams:
     """取当前模块常量构造参数快照（测试可传入覆盖版做参数化验证）。"""
     return ForecastParams(
-        param_version=PARAM_VERSION,
+        param_version=active_param_version(),
         no_feedback_lead_days=NO_FEEDBACK_LEAD_DAYS,
         outsource_extra_days=OUTSOURCE_EXTRA_DAYS,
         logistics_days=LOGISTICS_DAYS,
         deviation_alert_days=DEVIATION_ALERT_DAYS,
+        rule1_horizon_months=RULE1_HORIZON_MONTHS,
+        rule1_months_back=RULE1_MONTHS_BACK,
+        rule1_start_day=RULE1_START_DAY,
     )
 
 
