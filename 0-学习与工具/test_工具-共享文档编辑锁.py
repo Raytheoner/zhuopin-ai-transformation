@@ -1079,6 +1079,45 @@ class QueueWriteRootFixTests(unittest.TestCase):
         self.assertIn("✅ 已完成", cells[5])
         self.assertEqual(cells[1], "既有任务", "其余格不得被动到")
 
+    def test_edit_row_changes_json_flips_status_prefix_without_argv(self):
+        """🔴 **翻转 `[S:xxx]` 前缀必须整格重写**（`--append` 只能加尾巴），
+        而真实队列行的状态格动辄数千字、密集使用反引号 ⇒ 只能走 JSON 入口。
+        本用例即 2026-08-26 回写 #414 时实测撞上的那个缺口。"""
+        payload = {
+            "set": {"状态": "[S:done][D:机] ✅ 已完成 —— 含 `路径/` 与 $(whoami)"},
+            "append": {"触碰区": "、`queue_table.py`"},
+        }
+        jf = self.root / "changes.json"
+        jf.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "500",
+                      "--changes-json", str(jf), "--append-sep", "")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        cells = self._cells("500")
+        self.assertEqual(len(cells), 8)
+        self.assertTrue(cells[5].startswith("[S:done]"))
+        self.assertIn("$(whoami)", cells[5], "正文不得经 shell 求值")
+        self.assertEqual(cells[6], "区域、`queue_table.py`")
+
+    def test_edit_row_result_still_subject_to_key_cell_sentinels(self):
+        """反例：改动后若状态格丢了机器字段，必须被拦下且**不写文件**。"""
+        jf = self.root / "bad.json"
+        jf.write_text(json.dumps({"set": {"状态": "已完成，但忘了机器字段"}},
+                                 ensure_ascii=False), encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "500",
+                      "--changes-json", str(jf))
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(self._cells("500")[5].startswith("[S:open]"),
+                        "拒绝时不得修改目标文件")
+
+    def test_edit_row_same_column_in_both_json_and_flag_fails_loud(self):
+        jf = self.root / "dup.json"
+        jf.write_text(json.dumps({"set": {"状态": "[S:done][D:机] x"}},
+                                 ensure_ascii=False), encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "500",
+                      "--changes-json", str(jf), "--set", "状态=[S:done][D:机] y")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("各出现一次", r.stdout)
+
     def test_edit_row_on_missing_number_fails_loud(self):
         r = self._run("edit-row", "--section", "一", "--number", "999",
                       "--set", "状态=[S:open][D:机] x")

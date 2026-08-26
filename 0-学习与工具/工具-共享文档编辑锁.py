@@ -1717,6 +1717,51 @@ def _locate_row(text: str, section: str, number: str) -> tuple[int, str, list[st
     return hits[0]
 
 
+def _load_changes_json(args: argparse.Namespace) -> dict[str, dict[str, str]] | None:
+    """读取 `edit-row --changes-json <文件>` / `--stdin-json` 的 JSON 载荷。
+
+    顶层形如 `{"set": {"列名": "值"}, "append": {"列名": "值"}}`，两个键都可选。
+    与 `append-row` 的 JSON 入口同一目的：**正文不进 argv**。
+    """
+    raw: str | None = None
+    origin = ""
+    if getattr(args, "stdin_json", False):
+        raw = sys.stdin.read()
+        origin = "标准输入"
+    elif getattr(args, "changes_json", None):
+        path = Path(args.changes_json)
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise AppendRowFailedError(f"读取 --changes-json 失败：{path}（{exc}）") from None
+        origin = str(path)
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise AppendRowFailedError(f"{origin} 不是合法 JSON：{exc}") from None
+    if not isinstance(payload, dict):
+        raise AppendRowFailedError(
+            f"{origin} 顶层须是对象，形如 "
+            '{"set": {"列名": "值"}, "append": {"列名": "值"}}'
+        )
+    unknown = sorted(set(payload) - {"set", "append"})
+    if unknown:
+        raise AppendRowFailedError(
+            f"{origin} 顶层只接受 \"set\" 与 \"append\" 两个键，收到多余的：{'、'.join(unknown)}"
+        )
+    out: dict[str, dict[str, str]] = {}
+    for key in ("set", "append"):
+        block = payload.get(key, {})
+        if not isinstance(block, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in block.items()
+        ):
+            raise AppendRowFailedError(f"{origin} 的 \"{key}\" 须是「列名→值」的字符串对象")
+        out[key] = dict(block)
+    return out
+
+
 def cmd_edit_row(args: argparse.Namespace) -> int:
     if _is_queue_system_target(args.file):
         resolved_target, used_default = _resolve_append_target(args.section, args.domain)
@@ -1741,6 +1786,22 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
     try:
         sets = _parse_set_tokens(list(args.set or []))
         appends = _parse_set_tokens(list(args.append or []))
+        # 队列 #414 修复面 A 用于 edit-row：改动值同样可以完全不进 argv。
+        # 🔴 **这不是可选的便利**——真实队列行的「状态」格动辄数千字、密集使用
+        # 反引号，而**翻转 `[S:blocked]` → `[S:done]` 这个前缀必须整格重写**
+        # （`--append` 只能加尾巴，改不了开头）。没有本入口，唯一的做法就是把
+        # 整格正文经 argv 传一遍——正是本行要根治的那件事。
+        # 本会话回写 #414 时实测撞上，当场补齐。
+        changes = _load_changes_json(args)
+        if changes is not None:
+            for key, mapping in (("set", sets), ("append", appends)):
+                for name, value in changes.get(key, {}).items():
+                    if name in mapping:
+                        raise AppendRowFailedError(
+                            f"列 {name!r} 在 --{key} 与 --changes-json 里各出现一次，"
+                            f"工具不替你决定以哪个为准"
+                        )
+                    mapping[name] = value
         overlap = sorted(set(sets) & set(appends))
         if overlap:
             raise AppendRowFailedError(
@@ -4125,6 +4186,17 @@ def main() -> int:
         "--append", action="append", default=[], metavar="列名=值",
         help="在该格**末尾追加**，可重复——回写队列最常用的形态"
              "（如 `--append 状态='✅ 已完成…'`），不必先读出原值再拼",
+    )
+    p_edit_row.add_argument(
+        "--changes-json", default=None, metavar="文件",
+        help="队列 #414 修复面 A：改动以 JSON 文件传入，正文不进 argv。顶层形如 "
+             '{"set": {"列名": "值"}, "append": {"列名": "值"}}。'
+             "🔴 翻转「状态」格的 [S:xxx] 前缀必须整格重写（--append 只能加尾巴），"
+             "而真实队列行的状态格动辄数千字且密集使用反引号——那种情形**只能**走本入口",
+    )
+    p_edit_row.add_argument(
+        "--stdin-json", action="store_true",
+        help="同 --changes-json，但从标准输入读 JSON",
     )
     p_edit_row.add_argument(
         "--append-sep", default=" ",
