@@ -167,6 +167,20 @@ $TASKS = @(
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $snapDir = Join-Path $BackupRoot "snapshot-$stamp"
 $treeBackup = Join-Path $BackupRoot "tree-$stamp"
+# 2026-08-26 窗口内修复（可重入性）：$stamp 每次调用都取当前时间，单独跑 -Phase S3 时
+#   $snapDir 会指向一个从未建过的目录，[09] 于是报「找不到 Listener 的 XML 备份」。
+#   S0 不在本次阶段列表里时，回落到 $BackupRoot 下已存在的最新 snapshot-*。
+if (($Phase -notcontains 'All') -and ($Phase -notcontains 'S0')) {
+    $prev = Get-ChildItem -LiteralPath $BackupRoot -Directory -Filter 'snapshot-*' -EA SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
+    if ($prev) {
+        $snapDir = $prev.FullName
+        $stampPrev = $prev.Name -replace '^snapshot-', ''
+        $tb = Join-Path $BackupRoot "tree-$stampPrev"
+        if (Test-Path -LiteralPath $tb) { $treeBackup = $tb }
+        Write-Host "  [快照] 本次未跑 S0，沿用已存在的快照：$snapDir" -ForegroundColor DarkCyan
+    }
+}
 $moveLog = Join-Path $BackupRoot "robocopy-move-$stamp.log"
 
 # ═══════════════════════════ S0 · 迁移前固证 ═══════════════════════════
@@ -214,8 +228,13 @@ if ($doS0) {
     Step "导出四个计划任务 XML 定义（回滚与 Listener 重注册的唯一依据）" {
         foreach ($t in $TASKS) {
             $out = Join-Path $snapDir "task-$t.xml"
-            & schtasks /Query /TN $t /XML ALL 2>&1 | Set-Content -Encoding Unicode $out
-            if (-not (Test-Path $out) -or (Get-Item $out).Length -eq 0) {
+            # 2026-08-26 窗口内修复：/TN <名字> 必须配 /XML ONE；原写 /XML ALL 会报
+            #   "Improper display format type specified"，而错误信息本身就是非 0 长度的文件，
+            #   刚好通过下面「存在且长度非 0」的校验 ==> 四份 XML 全是废的却一路绿灯，
+            #   Listener 的回滚依据从头到尾不存在（实测 174 字节 x4）。
+            & schtasks /Query /TN $t /XML ONE 2>&1 | Set-Content -Encoding Unicode $out
+            $head = if (Test-Path $out) { (Get-Content -LiteralPath $out -Encoding Unicode -TotalCount 1) } else { '' }
+            if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 500 -or ($head -notmatch '<\?xml')) {
                 Fail "导出计划任务 $t 的 XML 失败——没有它就无法回滚 Listener，不能继续。"
             }
         }
@@ -241,8 +260,13 @@ if ($doS0) {
     Step "整树**复制**一份到 $treeBackup（复制、不是移动——回滚靠它）" {
         New-Item -ItemType Directory -Force -Path $treeBackup | Out-Null
         # /COPY:DAT 而非 /COPYALL：后者要复制 SACL，需备份特权，未提权会成片 ERROR 5。
-        & robocopy $OldRoot $treeBackup /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /NFL /NDL `
-            /LOG:(Join-Path $BackupRoot "robocopy-backup-$stamp.log") | Out-Null
+        # 🔴 2026-08-26 窗口内修复：原写法 `/LOG:(Join-Path ...)` —— PowerShell 调用原生命令时
+        #    **不会**把括号表达式拼到 `/LOG:` 后面，而是拆成两个参数（空的 `/LOG:` ＋ 一个多余
+        #    的位置参数）⇒ robocopy 返回 16、零复制、**连日志都不写**（实测：备份目录建出来了
+        #    但是空的，且 $BackupRoot 下一个 .log 都没有）。日志路径必须先进变量再整体加引号。
+        #    S2 的 move 那处用的是 `/LOG:$moveLog`（变量形式），本来就是对的，不受影响。
+        $backupLog = Join-Path $BackupRoot "robocopy-backup-$stamp.log"
+        & robocopy $OldRoot $treeBackup /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /NFL /NDL "/LOG:$backupLog" | Out-Null
         $rc = $LASTEXITCODE
         if ($rc -ge 8) { Fail "整树备份 robocopy 返回 $rc（≥8 即有真实失败）——没有可用备份，不能继续。" }
         Say "      · robocopy 返回 $rc（≤7 为成功）" Green
@@ -346,7 +370,9 @@ if ($doS2) {
 
     Step "robocopy /MOVE 整树搬到 $NewRoot（🔴 用 /COPY:DAT 不用 /COPYALL——后者要 SACL，需备份特权，实测 0.1 秒退 16）" {
         New-Item -ItemType Directory -Force -Path (Split-Path $NewRoot -Parent) | Out-Null
-        & robocopy $OldRoot $NewRoot /MOVE /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /NFL /NDL /LOG:$moveLog | Out-Null
+        # 2026-08-26 同批加固：变量形式本来就对（当前 $BackupRoot 无空格），但补上引号，
+        # 免得将来有人传一个含空格的 -BackupRoot 时踩上一处同族的静默失败。
+        & robocopy $OldRoot $NewRoot /MOVE /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /NFL /NDL "/LOG:$moveLog" | Out-Null
         $rc = $LASTEXITCODE
         Say "      · robocopy 返回 $rc（≤7 为成功），日志 $moveLog" $(if ($rc -ge 8) { 'Red' } else { 'Green' })
         if ($rc -ge 8) { Fail "robocopy 返回 $rc（≥8 即有真实失败）。日志：$moveLog" }
@@ -419,15 +445,20 @@ if ($doS3) {
         $wtRoot = Join-Path $NewRoot ".claude\worktrees"
         if (-not (Test-Path -LiteralPath $wtRoot)) { return }
         $bad = New-Object System.Collections.Generic.List[string]
+        $ghost = New-Object System.Collections.Generic.List[string]
         foreach ($d in Get-ChildItem -LiteralPath $wtRoot -Directory) {
             if (-not (Test-Path -LiteralPath (Join-Path $d.FullName ".git"))) { continue }
             $common = (& git -C $d.FullName rev-parse --git-common-dir 2>&1) -join ''
-            if ($LASTEXITCODE -ne 0) { $bad.Add("$($d.Name)：git 不认（$common）") | Out-Null; continue }
+            if ($LASTEXITCODE -ne 0) { $ghost.Add("$($d.Name)：git 不认（$common）") | Out-Null; continue }
             $abs = (Resolve-Path -LiteralPath (Join-Path $d.FullName $common) -ErrorAction SilentlyContinue)
             $probe = if ($abs) { $abs.Path } else { $common }
-            if (-not $probe.StartsWith($NewRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            if (-not $probe.Replace('\','/').StartsWith($NewRoot.Replace('\','/'), [StringComparison]::OrdinalIgnoreCase)) {
                 $bad.Add("$($d.Name)：common-dir 仍指 $probe") | Out-Null
             }
+        }
+        if ($ghost.Count) {
+            $ghost | ForEach-Object { Say "        $_" DarkYellow }
+            Note "上列 $($ghost.Count) 个为孤儿幽灵 worktree（S0 已如实记录、repair 亦已排除）——不计入失败，清理另立队列行"
         }
         if ($bad.Count) {
             $bad | ForEach-Object { Say "        $_" Red }
@@ -503,12 +534,20 @@ if ($doS3) {
             Say ("      · {0,-30} 可装={1,-5} {2}" -f $e.Name, $e.Installable, $e.New) DarkGray
         }
         foreach ($e in $plan) { & python -m pip uninstall -y $e.Name | Out-Null }
-        foreach ($e in $plan) {
+        # 2026-08-26 窗口内修复：原实现按 dist-info 目录序安装，而各场景包的 pyproject
+        #   依赖底座包 zhuopin_platform；先全部 uninstall 后再按字母序装，装 fi1 时
+        #   zhuopin_platform 尚未装回 ==> pip 跑去 PyPI 找一个本地包，报
+        #   "No matching distribution found for zhuopin_platform" 而中止。
+        #   修法：底座包排最前，且安装一律 --no-deps（本次迁移只改路径、未动任何第三方
+        #   依赖，重装的唯一目的是让 editable 指针指向新路径）。
+        $baseFirst = @('zhuopin_platform', 'wecom_aibot_service')
+        $ordered = @($plan | Sort-Object @{ Expression = { $k = $baseFirst.IndexOf($_.Name); if ($k -lt 0) { 99 } else { $k } } }, Name)
+        foreach ($e in $ordered) {
             if (-not $e.Installable) {
                 Note "editable 包 $($e.Name) 的源目录在新路径下不存在（$($e.New)）——已卸载、未重装，须另行处置"
                 continue
             }
-            & python -m pip install -e $e.New --no-build-isolation 2>&1 | Select-Object -Last 2 | ForEach-Object { Say "        $_" DarkGray }
+            & python -m pip install -e $e.New --no-build-isolation --no-deps 2>&1 | Select-Object -Last 2 | ForEach-Object { Say "        $_" DarkGray }
             if ($LASTEXITCODE -ne 0) { Fail "pip install -e $($e.New) 失败（退出码 $LASTEXITCODE）。" }
         }
     }
@@ -553,9 +592,11 @@ print("BAD=" + ",".join(bad))
     }
 
     Step "⚠ ops/wecom-service-home worktree 须先同步到含改字 commit 的 master，再跑上一步 —— 若上一步报「未找到 …\scripts\*.py」或改字未生效，先做同步再重跑本阶段" {
-        $home = Join-Path $NewRoot ".claude\worktrees\wecom-service-home"
-        if (Test-Path -LiteralPath $home) {
-            $behind = (& git -C $home rev-list --count HEAD..master 2>&1) -join ''
+        # 2026-08-26 窗口内修复：$HOME 是 PowerShell 只读内置变量（变量名大小写不敏感），
+        #   赋值直接抛 "Cannot overwrite variable HOME"，把一步纯只读的检查变成整阶段中断。
+        $svcHome = Join-Path $NewRoot ".claude\worktrees\wecom-service-home"
+        if (Test-Path -LiteralPath $svcHome) {
+            $behind = (& git -C $svcHome rev-list --count HEAD..master 2>&1) -join ''
             Say "      · wecom-service-home 落后 master $behind 个提交" $(if ($behind -eq '0') { 'Green' } else { 'Yellow' })
             if ($behind -ne '0') { Note "ops/wecom-service-home 落后 master $behind 个提交——机器人跑的是旧代码，须同步后重启" }
         }
