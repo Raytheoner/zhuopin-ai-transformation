@@ -361,10 +361,12 @@ queue-table-shared-parser-consolidation）：`_parse_section_two`/
 from __future__ import annotations
 
 import argparse
+import ast
 import fnmatch
 import importlib.util
 import json
 import re
+import site
 import subprocess
 import sys
 import time
@@ -695,6 +697,56 @@ _SCHEDULED_TASK_QUERY_PS = (
     "[pscustomobject]@{ Task = $t; Execute = [string]$a.Execute; "
     "Arguments = [string]$a.Arguments } } } | ConvertTo-Json -Compress -Depth 3"
 )
+
+# ============================================================
+# 队列 §一 #410（2026-08-26，OP-0826-G）：editable 安装指向巡检 ——
+# **第 6 类**常驻状态告警
+# ============================================================
+# ⚠️ **编号与队列行不一致，是队列行写的时候第 5 类还没被占**：#410 行内写
+# 的是「新增第 5 类常驻告警」，但 `#338` 子项 B（常驻执行体持续同步）已经
+# 占了第 5 类。本类顺延为**第 6 类**，功能范围与 #410 所述完全一致，只是
+# 序号换了一个——收工报告已如实登记这处更正，不追改 #410 原文（守「历史
+# 记录不追改」）。
+#
+# **本判据要抓的是什么**：`pip install -e` 会在 site-packages 留下一个
+# `__editable___<dist>_<ver>_finder.py`，里面用字面量写死了「这个包名解析
+# 到磁盘哪个目录」。装的时候若身处 worktree（`.claude/worktrees/...`），
+# 这个目标就被永久钉在那份副本上——**主工作树后来的任何改动对它都无效，
+# 而 import 一切正常、测试一切绿**。#406 就是这么藏了至少数周，靠一次人工
+# 普查才被发现；没有本判据，下次照样发现不了。
+#
+# 🔴 **「零 import」是本判据的关键设计，不是省事。** 本模块自己
+# `from zhuopin_platform.shared_tools import queue_table`——判据若靠
+# `importlib.util.find_spec` 或直接 import 被检包来取路径，那么**恰好在底座
+# 包坏掉的那一刻，检查器自己也起不来，告警永远发不出**：检查器与被检对象
+# 共享失败模式，等于没有检查器。故本组函数只做两件事：`read_text` 与
+# `ast.parse`／`ast.literal_eval`。**`ast` 只解析、不执行**，finder 模块
+# 一行代码都不会跑，被检包更不会被导入 —— 包全坏了也照报。
+#
+# 🔴 **两条边界（#410 ③，必须与实现同处，改实现的人一定会读到）**：
+#   ⑴ **site-packages 是全机单例** ⇒ 本判据只能挂**本机常驻任务**（落库
+#      sweep 每小时那一轮）。**放 CI 无意义**——CI 容器里的 site-packages
+#      跟这台机器上的安装状态毫无关系，在那里跑永远是绿的。
+#   ⑵ 本判据只发现「**装的时候指错了**」，**不覆盖**「装对了但代码内容
+#      漂了」——后者要哈希比对目录内容，成本高一个量级，**不在本判据
+#      范围内，也不要顺手加进来**（加进来就得回答「跟谁比」，那是另一个
+#      设计问题）。
+#
+# ⚠️ 第三条边界（实现时补，#410 未写）：本判据看的是**跑本脚本的这个
+# 解释器**的 site-packages。本机若装了第二个 Python，那一套的 editable
+# 安装本判据看不到。这是有意的——sweep 由哪个解释器跑，它 import 的就是
+# 哪一套，判据与被检对象口径一致才有意义。
+EDITABLE_FINDER_GLOB = "__editable___*_finder.py"
+EDITABLE_INSTALL_STATE_REL = "reports/sweep-editable-install-state.json"
+EDITABLE_INSTALL_ALERT_INTERVAL_HOURS = 24
+# 三种异常形态的标签。**形态三（代码从未并入 master）刻意不单列**——本判据
+# 拿不到「这份代码在不在主线上」这个事实（那要问 git，不是问 site-packages），
+# 它只能看见「路径不存在」。硬造一个自己判不出来的分类，等于让下一个人
+# 相信了一个判据并不掌握的结论。**改为在告警正文里把两种可能一并摆出、
+# 并给出区分它们的那条命令**（见 `_render_editable_alert`）。
+EDITABLE_FORM_GHOST = "幽灵import"
+EDITABLE_FORM_BROKEN = "断链"
+EDITABLE_FORM_UNREADABLE = "判据不可用"
 
 
 # 队列 #302：批量派活前状态核对——近期 commit 扫描窗口默认天数。
@@ -3248,6 +3300,228 @@ def _sync_resident_carriers(repo_root: Path, log: list[str]) -> None:
     )
 
 
+# ============================================================
+# 队列 §一 #410 实现（第 6 类常驻状态告警：editable 安装指向）
+# ============================================================
+
+def _site_packages_dirs() -> tuple[list[Path], str | None]:
+    """返回本解释器的 site-packages 目录（去重、存在的）。
+
+    🔴 **一个都没找到时返回 `([], 原因)`，调用方据此报「判据不可用」**——
+    绝不让「没找到 site-packages」和「site-packages 里没有 editable 安装」
+    共用「空列表 + 无异常」这一种外观。后者是合规，前者是判据瞎了；两者
+    外观相同，则这个守卫哪天瞎掉都不会有人知道（CLAUDE.md §5「工具静默
+    回退」：**错误不产生任何信号**）。
+    """
+    candidates: list[str] = []
+    try:
+        candidates.extend(site.getsitepackages())
+    except Exception as exc:  # noqa: BLE001 —— 极少数嵌入式解释器无此函数
+        return [], f"site.getsitepackages() 失败：{type(exc).__name__}: {exc}"
+    try:
+        user_site = site.getusersitepackages()
+    except Exception:  # noqa: BLE001 —— 用户级 site 取不到不致命，系统级仍在
+        user_site = None
+    if isinstance(user_site, str):
+        candidates.append(user_site)
+
+    dirs: list[Path] = []
+    seen: set[str] = set()
+    for raw in candidates:
+        path = Path(raw)
+        if not path.is_dir():
+            continue
+        key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        dirs.append(path)
+    if not dirs:
+        return [], f"本解释器（{sys.executable}）名下无任何存在的 site-packages 目录"
+    return dirs, None
+
+
+def _parse_editable_finder(path: Path) -> tuple[dict[str, list[str]] | None, str | None]:
+    """纯文本解析一份 `__editable___*_finder.py`，取 `模块名 -> [目标路径]`。
+
+    🔴 **只 `ast.parse` + `ast.literal_eval`，不 exec、不 import**（理由见
+    常量段「零 import」那节）。`MAPPING` 的值是单个路径字符串，`NAMESPACES`
+    的值是路径列表，此处统一归一成 list。
+
+    解析失败一律返回 `(None, 原因)`——**不吞成「这份没问题」**。一份读不懂
+    的 finder 文件本身就是异常，调用方会把它升成 `判据不可用` 告警，而不是
+    在日志里悄悄跳过。
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, f"读取失败：{exc}"
+    try:
+        tree = ast.parse(text, filename=str(path))
+    except SyntaxError as exc:
+        return None, f"语法解析失败：{exc}"
+
+    targets: dict[str, list[str]] = {}
+    found_any = False
+    for node in tree.body:
+        # `MAPPING: dict[str, str] = {...}` 是 AnnAssign，`MAPPING = {...}`
+        # 是 Assign——setuptools 的模板目前写的是前者，但两种都收，免得
+        # 上游哪天去掉注解，本判据就静默什么都解析不到了。
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            name, value = node.target.id, node.value
+        elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            name, value = node.targets[0].id, node.value
+        else:
+            continue
+        if name not in ("MAPPING", "NAMESPACES") or value is None:
+            continue
+        try:
+            literal = ast.literal_eval(value)
+        except (ValueError, SyntaxError) as exc:
+            return None, f"`{name}` 不是字面量，无法纯文本取值：{exc}"
+        if not isinstance(literal, dict):
+            return None, f"`{name}` 不是 dict（实为 {type(literal).__name__}）"
+        found_any = True
+        for module, raw in literal.items():
+            items = raw if isinstance(raw, list) else [raw]
+            bucket = targets.setdefault(str(module), [])
+            for item in items:
+                if isinstance(item, str) and item not in bucket:
+                    bucket.append(item)
+    if not found_any:
+        return None, "文件内既无 `MAPPING` 也无 `NAMESPACES` 顶层赋值"
+    return targets, None
+
+
+def _classify_editable_target(target: str) -> tuple[str, str] | None:
+    """判一个目标路径的形态；健康返回 `None`。
+
+    形态一（幽灵 import）优先于形态二：一个**已被删掉的 worktree 副本**
+    两条都命中，而「它指向 worktree」才是根因，「路径没了」只是后果——
+    先报后果会把人引去修路径。
+    """
+    normalized = _normalize_path_text(target)
+    exists = Path(target).exists()
+    if f"/{WORKTREES_DIR_REL}/".lower() in f"{normalized}/".lower():
+        tail = "该副本目录仍在" if exists else "且该副本目录已被删除"
+        return EDITABLE_FORM_GHOST, f"指向 worktree 副本 `{normalized}`（{tail}）"
+    if not exists:
+        return EDITABLE_FORM_BROKEN, f"目标路径不存在：`{normalized}`"
+    return None
+
+
+def _render_editable_alert(details: dict[str, str], keys) -> str:
+    """告警正文。
+
+    🔴 **形态二的处置文案是本判据最要紧的一处措辞**（#410 ④）：「目标路径
+    不存在」有两个成因，处置**方向相反**——⑴ 这份代码根本没并入 master
+    （`unified_portal_gateway` 就是这一种），正确动作是决定它要不要进主线、
+    或先卸载；⑵ 目录被移走/改名，正确动作才是修路径重装。**把 ⑴ 写在前面
+    并给出区分二者的那条命令**，否则下一个人看见「路径不存在」会直接去
+    修路径——而那条路径压根就不该存在于主工作树。
+    """
+    lines = "\n".join(f"- `{key}`：{details[key]}" for key in sorted(keys))
+    return (
+        f"🧭 落库sweep：{len(list(keys))} 个 editable 安装指向异常"
+        "（`pip install -e` 把「包名→磁盘目录」钉死在了字面量里，"
+        "指错了 import 照样成功、测试照样绿）：\n"
+        f"{lines}\n"
+        "⇒ 处置分形态，**别按同一套改**：\n"
+        f"　• **{EDITABLE_FORM_GHOST}** —— 解析到的是 worktree 里的旧副本，"
+        "**主工作树的改动对它一律无效**；回主工作树重装：`pip install -e <包目录>`。\n"
+        f"　• **{EDITABLE_FORM_BROKEN}** —— 🔴 **先分清是哪一种，两种处置方向相反**：\n"
+        "　　⑴ **代码不在主线上**（不是路径坏了）：这份代码可能只活在某个未并入 "
+        "`master` 的分支里。判据＝在仓库内跑 `git log --all --oneline -1 -- <路径>` "
+        "有输出、而 `git ls-files <同一路径>` 无输出 ⇒ 属此种。**此时去修路径是白费力气**"
+        "——主工作树里本来就没有、也不该有这个目录；正确动作是决定这份代码要不要并入 "
+        "`master`（业务决策），在此之前先 `pip uninstall <包名>` 把「装了却用不了」这个矛盾态清掉。\n"
+        "　　⑵ **路径坏了**：目录被移走/改名/删除。判据＝上面两条命令都无输出，"
+        "或该路径本就在仓库之外。处置＝按新位置重装，或卸载。\n"
+        f"　• **{EDITABLE_FORM_UNREADABLE}** —— 这条不是「装错了」，是**本判据自己瞎了**"
+        "（finder 文件读不出/解析不出）；在修好之前，**不得把「没报别的」当成「没别的问题」**。\n"
+        "⇒ 边界两条：① site-packages 是**全机单例**，本判据只在本机常驻任务里有意义，"
+        "**放 CI 永远是绿的**；② 本判据只发现「装的时候指错了」，"
+        "**不覆盖「装对了但代码内容漂了」**。"
+    )
+
+
+def _render_editable_resolved(keys) -> str:
+    lines = "\n".join(f"- `{key}`（指向已回正）" for key in sorted(keys))
+    return f"✅ 落库sweep：{len(list(keys))} 个此前告警过的 editable 安装已回正：\n{lines}"
+
+
+def _check_editable_install_targets(repo_root: Path, log: list[str]) -> None:
+    """第 6 类常驻状态告警：editable 安装指向 worktree／断链。
+
+    🔴 **回显不是可选项**（同第 4 类）：本函数无论是否有异常，都逐条打印
+    「模块 ← 目标路径」。清场后本机预期**零告警**，而「零告警」正是这类
+    守卫最危险的状态——`OP-0819-F` 的第一句教训就是「一个告警机制建成
+    9 天、每天在跑，却从来没有真正发出过一条消息」。那几行回显是它每天
+    唯一的存在证明，不是调试输出。
+    """
+    details: dict[str, str] = {}
+    log.append("🧭 editable 安装指向巡检（每轮回显，零异常时亦不省略）：")
+
+    dirs, reason = _site_packages_dirs()
+    if reason is not None:
+        log.append(f"    ⚠ 取 site-packages 失败：{reason}——**不据此判为合规**")
+        details["site-packages"] = f"{EDITABLE_FORM_UNREADABLE} —— {reason}"
+        _track_and_alert_standing_state(
+            repo_root, "editable 安装指向异常", EDITABLE_INSTALL_STATE_REL,
+            set(details), EDITABLE_INSTALL_ALERT_INTERVAL_HOURS,
+            lambda keys: _render_editable_alert(details, keys),
+            _render_editable_resolved, log,
+        )
+        return
+
+    finders: list[Path] = []
+    for directory in dirs:
+        finders.extend(sorted(directory.glob(EDITABLE_FINDER_GLOB)))
+    log.append(f"    · site-packages {len(dirs)} 处，editable 分发 {len(finders)} 个")
+
+    module_count = 0
+    module_anomalies = 0
+    for finder in finders:
+        parsed, parse_error = _parse_editable_finder(finder)
+        if parsed is None:
+            log.append(f"    ⚠ {finder.name}：{parse_error}——**不据此判为合规**")
+            details[finder.name] = f"{EDITABLE_FORM_UNREADABLE} —— {parse_error}"
+            continue
+        for module in sorted(parsed):
+            module_count += 1
+            verdicts = [
+                verdict for verdict in
+                (_classify_editable_target(target) for target in parsed[module])
+                if verdict is not None
+            ]
+            if not verdicts:
+                shown = "、".join(f"`{_normalize_path_text(t)}`" for t in parsed[module])
+                log.append(f"    · {module} ← {shown}")
+                continue
+            for form, detail in verdicts:
+                log.append(f"    🔴 {module}：{form} —— {detail}")
+            # 🔴 key = 模块名，**刻意不含目标路径、不含版本号**（同第 4／第 5
+            # 类的理由）：路径与版本都会变，混进 key 就等于每变一次都是一个
+            # 新问题重报一遍，而旧 key 还会被判成「已解除」——常驻状态与
+            # 事件的分界线就在这里。
+            details[module] = "；".join(f"{form} —— {detail}" for form, detail in verdicts)
+            module_anomalies += 1
+
+    log.append(
+        f"    · 模块映射 {module_count} 条：正常 {module_count - module_anomalies} 条、"
+        f"指向异常 {module_anomalies} 条；另有解析失败的 finder "
+        f"{len(details) - module_anomalies} 个"
+    )
+
+    _track_and_alert_standing_state(
+        repo_root, "editable 安装指向异常", EDITABLE_INSTALL_STATE_REL,
+        set(details), EDITABLE_INSTALL_ALERT_INTERVAL_HOURS,
+        lambda keys: _render_editable_alert(details, keys),
+        _render_editable_resolved, log,
+    )
+
+
 def _edit_lock(repo_root: Path, action: str, extra: list[str] | None = None) -> subprocess.CompletedProcess:
     # 队列 #198(b)：`status` 子命令不接受 `--who`（无副作用查询，不需要
     # 身份）——传了会被 argparse 当"unrecognized arguments"直接拒绝（exit
@@ -3682,6 +3956,12 @@ def main() -> int:
             # 🔴 本行会**动手 ff**，不只是报告——#338 改版：落后是持续过程，
             # 只有每轮都做的动作才治得住它。重启按需、且缺省走人工确认。
             _sync_resident_carriers(repo_root, log)
+
+            # 队列 §一 #410（2026-08-26，OP-0826-G）：第 6 类常驻状态告警——
+            # editable 安装指向。同上两类，检测对象是**本机**状态、与本轮
+            # 是否有批次落库无关，故不依赖 touched_paths；**只读、只告警，
+            # 一个字节都不改任何安装**，首月不阻塞落库（不影响退出码）。
+            _check_editable_install_targets(repo_root, log)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))

@@ -4229,5 +4229,264 @@ class ResidentServiceHintUnchangedTests(unittest.TestCase):
         self.assertFalse(hasattr(sweep, "RESIDENT_CARRIER_LAG_ALERT_THRESHOLD"))
 
 
+# ============================================================
+# 队列 §一 #410：editable 安装指向巡检（第 6 类常驻状态告警）
+# ============================================================
+
+_FINDER_TEMPLATE = """from __future__ import annotations
+import sys
+from importlib.machinery import ModuleSpec, PathFinder
+
+MAPPING: dict[str, str] = {mapping!r}
+NAMESPACES: dict[str, list[str]] = {namespaces!r}
+PATH_PLACEHOLDER = '__editable__.x-0.1.0.finder' + ".__path_hook__"
+
+
+class _EditableFinder:  # MetaPathFinder
+    @classmethod
+    def find_spec(cls, fullname, path=None, target=None):
+        return None
+
+
+def install():
+    sys.meta_path.append(_EditableFinder)
+"""
+
+
+def _write_finder(directory, dist: str, mapping: dict, namespaces: dict | None = None):
+    """在 `directory` 造一份与 setuptools 真实产物同形的 finder 文件。"""
+    path = directory / f"__editable___{dist}_0_1_0_finder.py"
+    path.write_text(
+        _FINDER_TEMPLATE.format(mapping=mapping, namespaces=namespaces or {}),
+        encoding="utf-8",
+    )
+    return path
+
+
+class EditableInstallTargetTests(unittest.TestCase):
+    """#410：三种形态各一条用例 ＋ 「零 import」设计的反例锁死。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.repo = self.root / "repo"
+        (self.repo / "reports").mkdir(parents=True)
+        self.sp = self.root / "site-packages"
+        self.sp.mkdir()
+        # 主工作树里真实存在的包目录（健康态的对照组）
+        self.good = self.repo / "5-平台底座" / "zhuopin_platform" / "zhuopin_platform"
+        self.good.mkdir(parents=True)
+        self.recorder = _StandingStateRecorder()
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_dirs = sweep._site_packages_dirs
+        self._orig_webhook = sweep._load_webhook_url
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._site_packages_dirs = lambda: ([self.sp], None)
+        sweep._load_webhook_url = lambda repo_root: None
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._site_packages_dirs = self._orig_dirs
+        sweep._load_webhook_url = self._orig_webhook
+        self._tmp.cleanup()
+
+    def _run(self):
+        log = []
+        sweep._check_editable_install_targets(self.repo, log)
+        return "\n".join(log), self.recorder.calls[-1]
+
+    # ---------- 健康态 ----------
+
+    def test_指向主工作树时零告警但仍逐项回显(self):
+        """🔴 本组最要紧的一条：清场后本机预期零告警，若连回显都没有，这个
+        守卫就与 OP-0819-F 那个「建成 9 天、每天在跑、从来没发过一条消息」
+        的反面教材在外观上完全无法区分。"""
+        _write_finder(self.sp, "zhuopin_platform", {"zhuopin_platform": str(self.good)})
+        text, call = self._run()
+        self.assertEqual(call["keys"], set())
+        self.assertIn("zhuopin_platform ←", text)
+        self.assertIn("editable 分发 1 个", text)
+        self.assertIn("正常 1 条", text)
+
+    # ---------- 形态一：幽灵 import ----------
+
+    def test_形态一_指向worktree副本判为幽灵import(self):
+        ghost = self.repo / ".claude" / "worktrees" / "some-wt" / "5-平台底座" / "pkg"
+        ghost.mkdir(parents=True)
+        _write_finder(self.sp, "zhuopin_platform", {"zhuopin_platform": str(ghost)})
+        text, call = self._run()
+        self.assertEqual(call["keys"], {"zhuopin_platform"})
+        self.assertIn(sweep.EDITABLE_FORM_GHOST, text)
+        self.assertIn("主工作树的改动对它一律无效", call["alert_text"])
+
+    def test_形态一优先于形态二_已删除的worktree副本仍报幽灵import(self):
+        """一份**已被删掉**的 worktree 副本两条都命中。根因是「它指向
+        worktree」，「路径没了」只是后果——先报后果会把人引去修路径。"""
+        ghost = self.repo / ".claude" / "worktrees" / "gone-wt" / "pkg"
+        _write_finder(self.sp, "zhuopin_platform", {"zhuopin_platform": str(ghost)})
+        text, call = self._run()
+        self.assertIn(sweep.EDITABLE_FORM_GHOST, text)
+        self.assertNotIn(sweep.EDITABLE_FORM_BROKEN, text)
+        self.assertIn("已被删除", text)
+
+    def test_反斜杠路径同样命中worktree判据(self):
+        """真实 finder 文件里 Windows 路径是反斜杠。判据若只认正斜杠，本机
+        上永远不会命中形态一——而那正是本判据存在的头号理由。"""
+        raw = str(self.repo).replace("/", "\\") + "\\.claude\\worktrees\\wt\\pkg"
+        _write_finder(self.sp, "zhuopin_platform", {"zhuopin_platform": raw})
+        _text, call = self._run()
+        self.assertEqual(call["keys"], {"zhuopin_platform"})
+
+    # ---------- 形态二：断链 ----------
+
+    def test_形态二_目标路径不存在判为断链(self):
+        _write_finder(self.sp, "sc1_supplier_risk_screening",
+                      {"sc1_supplier_risk_screening": str(self.repo / "没有这个目录")})
+        text, call = self._run()
+        self.assertEqual(call["keys"], {"sc1_supplier_risk_screening"})
+        self.assertIn(sweep.EDITABLE_FORM_BROKEN, text)
+
+    def test_形态三_断链告警文案须先说代码不在主线上再说路径坏了(self):
+        """🔴 #410 ④ 的正面锁死：`unified_portal_gateway` 那一类（代码只活在
+        未并入 master 的分支里）会被判成「目标路径不存在」——这是对的，但
+        文案若只说「路径不存在」，下一个人会去修路径，而那条路径压根就不
+        该存在于主工作树。故正文必须①点明「代码不在主线上」这个可能，
+        ②给出区分二者的那条命令，③且把它排在「路径坏了」之前。"""
+        _write_finder(self.sp, "unified_portal_gateway",
+                      {"unified_portal_gateway": str(self.repo / "5-平台底座" / "unified-portal-gateway")})
+        _text, call = self._run()
+        alert = call["alert_text"]
+        self.assertIn("代码不在主线上", alert)
+        self.assertIn("git ls-files", alert)
+        self.assertIn("pip uninstall", alert)
+        self.assertLess(alert.index("代码不在主线上"), alert.index("路径坏了"),
+                        "「代码不在主线上」必须排在「路径坏了」之前，否则下一个人会去修路径")
+
+    # ---------- 形态四：判据自己瞎了 ----------
+
+    def test_finder解析失败不得吞成合规(self):
+        bad = self.sp / "__editable___broken_0_1_0_finder.py"
+        bad.write_text("MAPPING: dict[str, str] = {  # 少了右括号\n", encoding="utf-8")
+        text, call = self._run()
+        self.assertIn("不据此判为合规", text)
+        self.assertEqual(call["keys"], {bad.name})
+        self.assertIn(sweep.EDITABLE_FORM_UNREADABLE, call["alert_text"])
+
+    def test_没有MAPPING也没有NAMESPACES按解析失败处理(self):
+        """一份「读得懂但什么都没解析到」的 finder，与「解析到了、且都正常」
+        外观相同。后者是合规，前者是判据瞎了——不能共用同一种外观。"""
+        (self.sp / "__editable___empty_0_1_0_finder.py").write_text(
+            "X = 1\n", encoding="utf-8")
+        _text, call = self._run()
+        self.assertEqual(len(call["keys"]), 1)
+
+    def test_site_packages取不到时报判据不可用而非合规(self):
+        sweep._site_packages_dirs = lambda: ([], "本解释器名下无任何 site-packages")
+        text, call = self._run()
+        self.assertIn("不据此判为合规", text)
+        self.assertEqual(call["keys"], {"site-packages"})
+
+    # ---------- 设计锁死 ----------
+
+    def test_零import_finder文件一行都不执行(self):
+        """🔴 本判据的关键设计：**只 `ast.parse`，不 exec、不 import**。
+        理由是落库 sweep 自己 `from zhuopin_platform… import`——判据若靠
+        `find_spec`／import 被检包取路径，就会**恰好在底座包坏掉时检查器
+        自己也起不来，告警永远发不出**（检查器与被检对象共享失败模式）。
+
+        反例锁死：这份 finder 语法完全合法，但模块级第一行就 `raise`。
+        实现只要 exec 过它，本条当场炸；只解析则照常取到 MAPPING。
+        """
+        path = self.sp / "__editable___boom_0_1_0_finder.py"
+        path.write_text(
+            "raise RuntimeError('这一行绝不允许被执行')\n"
+            "MAPPING: dict[str, str] = {'boom': 'C:/nowhere'}\n"
+            "NAMESPACES: dict[str, list[str]] = {}\n",
+            encoding="utf-8",
+        )
+        parsed, reason = sweep._parse_editable_finder(path)
+        self.assertIsNone(reason)
+        self.assertEqual(parsed, {"boom": ["C:/nowhere"]})
+
+    def test_零import_被检包不存在也照样出结论(self):
+        """包全坏了也照报——这正是「读文本」相对「find_spec」的全部价值。"""
+        _write_finder(self.sp, "zhuopin_platform",
+                      {"zhuopin_platform": str(self.repo / "已经没有了")})
+        _text, call = self._run()
+        self.assertEqual(call["keys"], {"zhuopin_platform"})
+
+    def test_key不随目标路径与版本号变化(self):
+        """反例锁死：key 必须是模块名。路径/版本混进 key ⇒ 每变一次都是
+        一个新问题重报一遍，旧 key 还会被判成「已解除」——常驻状态就退化
+        成了事件。"""
+        seen = []
+        for stale in ("旧位置", "更旧的位置"):
+            for old in self.sp.glob("__editable__*"):
+                old.unlink()
+            _write_finder(self.sp, "zhuopin_platform",
+                          {"zhuopin_platform": str(self.repo / stale)})
+            _text, call = self._run()
+            seen.append(call["keys"])
+        self.assertEqual(seen[0], seen[1], "路径变了 key 不该变，否则每轮都是新问题")
+
+    def test_NAMESPACES条目同样受检(self):
+        """真实 finder 里 `zhuopin_platform` 的两个 cache 子包走的是
+        NAMESPACES 而非 MAPPING——只查 MAPPING 会漏掉它们。"""
+        _write_finder(
+            self.sp, "zhuopin_platform",
+            {"zhuopin_platform": str(self.good)},
+            {"zhuopin_platform.shared_tools.cache": [str(self.repo / "不存在的cache")]},
+        )
+        _text, call = self._run()
+        self.assertEqual(call["keys"], {"zhuopin_platform.shared_tools.cache"})
+
+    def test_边界两条写在告警正文里(self):
+        """#410 ③：全机单例（放 CI 无意义）／只管「装的时候指错了」，
+        这两条边界必须跟着告警走到读它的人眼前，不能只活在源码注释里。"""
+        _write_finder(self.sp, "x", {"x": str(self.repo / "无")})
+        _text, call = self._run()
+        self.assertIn("全机单例", call["alert_text"])
+        self.assertIn("CI", call["alert_text"])
+        self.assertIn("代码内容漂了", call["alert_text"])
+
+
+class EditableGuardWiringTests(unittest.TestCase):
+    """本判据必须真的被主流程调用——建成而没接线，与没建成外观相同。"""
+
+    def test_已接入主流程(self):
+        """建成而没接线，与没建成外观完全相同。"""
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("_check_editable_install_targets(repo_root, log)", source)
+
+    def test_本组函数零执行零导入(self):
+        """🔴 判据自身不得执行任何东西——不起子进程（不 pip、不 git）、
+        不 exec finder 文件、不 import 被检包。锁的是**执行构件**，不是
+        字符串：`pip install` 允许出现在告警文案里（那是给人的处置建议），
+        `subprocess.run` 不允许出现在代码里（那是真动手）。
+        """
+        source = SCRIPT.read_text(encoding="utf-8")
+        body = source[source.index("def _site_packages_dirs"):
+                      source.index("def _edit_lock(")]
+        # 🔴 走 AST 取**被调用的函数名**，不做子串匹配：`literal_eval` 里
+        # 就含 `eval(`，子串判据会把本判据赖以成立的那个调用判成违规——
+        # 一个把正解当违规的判据，比没有判据更坏。
+        tree = ast.parse(body)
+        called = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                called.add(ast.unparse(node.func))
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                self.fail(f"本判据内不得有 import 语句：{ast.unparse(node)}")
+        self.assertEqual(called & {"exec", "eval", "__import__",
+                                   "os.system", "os.popen"}, set())
+        for name in sorted(called):
+            self.assertFalse(
+                name.startswith(("subprocess.", "importlib.")),
+                f"本判据必须零执行零导入（不起子进程、不 import 被检包），却调用了 {name}")
+        # 正面：确实走的是纯文本解析这条路。
+        self.assertIn("ast.parse", called)
+        self.assertIn("ast.literal_eval", called)
+
+
 if __name__ == "__main__":
     unittest.main()
