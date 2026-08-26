@@ -24,7 +24,7 @@
 #  不建议 checkout），不会因核验失败而放行危险操作。
 # ================================================================
 $ErrorActionPreference = "Stop"
-$REPO = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型"
+$REPO = "C:\Dev\zhuopin-ai"
 
 Write-Host "`n== 主工作区安全同步 ==" -ForegroundColor Cyan
 Write-Host "   目录: $REPO`n"

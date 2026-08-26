@@ -58,7 +58,28 @@
 # ================================================================
 $ErrorActionPreference = "Stop"
 
-$REPO           = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型"
+# ── 提权自检守卫（队列 #412 · M1，2026-08-26）────────────────────────────
+#  为什么必须在这里、在动任何任务之前：
+#    S4U 计划任务的 Register / Unregister / Enable / Disable 一律需要
+#    SeTcbPrivilege（与任务属主是不是本人无关）。非提权跑本脚本，结果不是
+#    「任务被删掉了」（2026-08-25 影子任务实测已证伪：Unregister 直接被拒、
+#    任务原封不动），而是 **四个任务原封不动、仍指着旧路径**——迁移场景里
+#    旧路径此时已空 ⇒ 触发时静默失败：机器人不在线、sweep 空跑、GitHub 上
+#    不再有新提交，且无人被通知（07-16 停摆 24h49m 即同一形态）。
+#  ⇒ 守卫防的是「以为刷新了、其实一个都没刷新」，故必须 fail-loud 退出，
+#    不许留下一堆看起来「没报错」的旧配置。
+$__isAdmin = ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $__isAdmin) {
+    Write-Error ("本脚本要注册/修改 S4U 计划任务，需要管理员 PowerShell。" +
+        "当前会话非提权，已在改动任何任务之前退出——请在管理员 PowerShell 里重跑本脚本。")
+    exit 1
+}
+Write-Host "[守卫] 提权自检通过（管理员 PowerShell）。" -ForegroundColor DarkGray
+
+
+$REPO           = "C:\Dev\zhuopin-ai"
 $SWEEP_SCRIPT   = Join-Path $REPO "0-学习与工具\工具-落库sweep.py"
 $WRAPPER        = Join-Path $REPO "0-学习与工具\run-commit-sweep.ps1"
 $VBS_LAUNCHER   = Join-Path $REPO "0-学习与工具\run-commit-sweep-hidden.vbs"

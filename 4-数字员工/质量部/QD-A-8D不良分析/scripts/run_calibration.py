@@ -24,7 +24,7 @@ from qda_prefill.doc_reader import read
 from qda_prefill.field_extractor import extract_fields
 from qda_prefill.scrubber import TokenState, scrub_text
 
-ROOT = Path("C:/Users/Paul Shao/OneDrive/Projects/企业AI转型")
+ROOT = Path("C:/Dev/zhuopin-ai")
 LIB = ROOT / "7-外部文档/质量部/8D库"
 # 注：7-外部文档/质量部 2026-07 由质量专线重组，工作汇总.xlsx 移入「产品类立项申请书及评审报告」子夹
 GOLDEN_XLSX = ROOT / "7-外部文档/质量部/产品类立项申请书及评审报告/AI质量智能建设就绪工作汇总.xlsx"

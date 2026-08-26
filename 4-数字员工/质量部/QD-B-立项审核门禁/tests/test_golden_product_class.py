@@ -18,7 +18,7 @@ from qd_b_gate.models import Verdict
 from qd_b_gate.report import build_report
 from qd_b_gate.scoring import score
 
-PC_DIR = Path("C:/Users/Paul Shao/OneDrive/Projects/企业AI转型/7-外部文档/质量部/"
+PC_DIR = Path("C:/Dev/zhuopin-ai/7-外部文档/质量部/"
               "产品类立项申请书及评审报告")
 EQ17 = PC_DIR / "EQ17匹配VM发动机开发项目立项申请书（合格）.xlsx"
 BANGQI = PC_DIR / "邦奇新一代TCU合作开发项目立项申请书（不合格）.xlsx"

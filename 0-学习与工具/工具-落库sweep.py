@@ -415,7 +415,7 @@ else:
                 for c in protected.strip("|").split("|")
             ]
 
-MAIN_WORKSPACE = Path(r"C:\Users\Paul Shao\OneDrive\Projects\企业AI转型")
+MAIN_WORKSPACE = Path(r"C:\Dev\zhuopin-ai")
 # 队列 #315（apply，2026-08-11）：拆分后本路径转为纯指针文件，不再是权威
 # 内容承载——sweep 自身不再用它做任何读写，只在极少数"报告曾经的单一
 # 文件路径"式提示文案里可能出现，保留常量本身不删（避免破坏尚未清理的

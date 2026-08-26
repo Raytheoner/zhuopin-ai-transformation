@@ -63,14 +63,38 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
+# ── 提权自检守卫（队列 #412 · M1，2026-08-26）────────────────────────────
+#  为什么必须在这里、在动任何任务之前：
+#    S4U 计划任务的 Register / Unregister / Enable / Disable 一律需要
+#    SeTcbPrivilege（与任务属主是不是本人无关）。非提权跑本脚本，结果不是
+#    「任务被删掉了」（2026-08-25 影子任务实测已证伪：Unregister 直接被拒、
+#    任务原封不动），而是 **四个任务原封不动、仍指着旧路径**——迁移场景里
+#    旧路径此时已空 ⇒ 触发时静默失败：机器人不在线、sweep 空跑、GitHub 上
+#    不再有新提交，且无人被通知（07-16 停摆 24h49m 即同一形态）。
+#  ⇒ 守卫防的是「以为刷新了、其实一个都没刷新」，故必须 fail-loud 退出，
+#    不许留下一堆看起来「没报错」的旧配置。
+#  -SkipTaskRegistration 模式只重写 wrapper 文件、不碰任何计划任务，故豁免本守卫。
+if (-not $SkipTaskRegistration) {
+    $__isAdmin = ([Security.Principal.WindowsPrincipal] `
+        [Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $__isAdmin) {
+        Write-Error ("本脚本要注册/修改 S4U 计划任务，需要管理员 PowerShell。" +
+            "当前会话非提权，已在改动任何任务之前退出——请在管理员 PowerShell 里重跑本脚本。")
+        exit 1
+    }
+    Write-Host "[守卫] 提权自检通过（管理员 PowerShell）。" -ForegroundColor DarkGray
+}
+
+
 # 孤立 CR 断言器（队列 #355）——与 register-followup-dispatch-task.ps1 共用一份，
 # 不各自复制（复述即漂移）。找不到即 fail-loud，不静默跳过自检。
 . (Join-Path $PSScriptRoot "assert-no-orphan-cr.ps1")
 
-$REPO         = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\.claude\worktrees\wecom-service-home"
+$REPO         = "C:\Dev\zhuopin-ai\.claude\worktrees\wecom-service-home"
 # 队列 #315（2026-08-11 最小止血）：拆分后旧路径已是纯指针文件，改指
 # 向机制环境文件（含真实"## 一、任务看板"表格与合法编号高水位线声明）。
-$MAIN_WORKSPACE_QUEUE = "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\1-转型规划\0-全景路线图\跨桌任务队列-机制环境.md"
+$MAIN_WORKSPACE_QUEUE = "C:\Dev\zhuopin-ai\1-转型规划\0-全景路线图\跨桌任务队列-机制环境.md"
 $SERVICE_DIR  = Join-Path $REPO "5-平台底座\wecom-aibot-service"
 $CHECK_SCRIPT = Join-Path $SERVICE_DIR "scripts\decision_reminder_check.py"
 $WRAPPER      = Join-Path $SERVICE_DIR "run-decision-reminder-check.ps1"
