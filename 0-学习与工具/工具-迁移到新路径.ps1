@@ -656,7 +656,15 @@ print("BAD=" + ",".join(bad))
             if ($txt -notlike "*$OldRoot*") { Say "      · 无旧路径，跳过  $p" DarkGray; continue }
             $n = ([regex]::Matches($txt, [regex]::Escape($OldRoot))).Count
             Copy-Item $p (Join-Path $snapDir ("ext-" + (Split-Path (Split-Path $p -Parent) -Leaf) + "-" + (Split-Path $p -Leaf))) -Force
-            [System.IO.File]::WriteAllText($p, $txt.Replace($OldRoot, $NewRoot), [System.Text.Encoding]::UTF8)
+            # 🔴 2026-08-26 修复：`[System.Text.Encoding]::UTF8` 这个静态属性**默认带 BOM**，
+            #   会给原本无 BOM 的文件加上 EF BB BF。实测后果：两个 Claude 定时任务的 SKILL.md
+            #   被加 BOM 后，`\ufeff` 把 YAML frontmatter 的 `---` 顶到第 4 字节 ⇒ 应用报
+            #   「Task file not found or has unexpected format」⇒ Instructions 读不出来 ⇒
+            #   必填项为空 ⇒ Save 与 Run now 全灰，任务无法手动运行也无法改目录。
+            #   ~/.claude/CLAUDE.md 同样被波及。修法：读时判 BOM，写时原样保持。
+            $rawBytes = [System.IO.File]::ReadAllBytes($p)
+            $hadBom = ($rawBytes.Length -ge 3 -and $rawBytes[0] -eq 0xEF -and $rawBytes[1] -eq 0xBB -and $rawBytes[2] -eq 0xBF)
+            [System.IO.File]::WriteAllText($p, $txt.Replace($OldRoot, $NewRoot), (New-Object System.Text.UTF8Encoding($hadBom)))
             Say "      · 已改 $n 处  $p" Green
         }
     }
