@@ -3300,6 +3300,49 @@ def _now_utc_str() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _straggler_status(now: str) -> str:
+    """补销"遗留尾巴"批次时写入状态列的文案（队列 #328，2026-08-26 修）。
+
+    🔴 **本函数的产出必须无法再被 `_classify_section_two_rows` 判为待处理**
+    ——否则补销就不幂等：写完即再次满足触发条件，下一轮又补销一次，且因
+    文案里带当前时刻，每一轮都是一条 diff 恰 1 行的纯噪音 commit。
+
+    2026-08-26 实测事故：旧文案
+
+        `**✅ 已完成**（sweep 自动补销遗留尾巴 <时刻> UTC，未发现对应待落库改动）`
+
+    整句**不含任何句级分隔符**（`LEADING_SEGMENT_SEPARATORS` 里的
+    "。"／"——"／"━━━"），`_leading_status_segment()` 因此把整句都当作
+    "开头片段"；而句尾"未发现对应**待**落库改动"里的"待"字命中了
+    `_classify_section_two_rows` 的待处理判据 ⇒ 触发条件恒真、永不收敛。
+    量级：08-26 本地 15:00–20:52 不到 6 小时 33 个提交里，18 个是
+    `B-0825_A23_354env锚定收拢apply` 与 `B-0825_A26_340签认落地_EQ17基准100`
+    两行被反复重写（每轮各 1 条）＋ 随之被拖着重跑的文档台账。
+
+    修法两重保险（缺一都会在对方被后人改动时重新破功）：
+    ⑴ 紧跟完成标记落一个句级分隔符"。"，把开头片段收窄到 `✅ 已完成`；
+    ⑵ 说明文字里把"待落库"改写成不含"待"字的"未落库"。
+    时刻**保留**（落库溯源需要它）——修法⑴ 之后它已在开头片段之外，不
+    再参与判定，不构成非幂等的来源。
+
+    末尾的自检不是装饰：它把"文案与判据必须保持一致"这条隐性契约变成
+    改文案当场就会炸的显式失败，而不是等下一次上线后靠日志噪音发现。
+    往返回归见 `StragglerStatusIdempotenceTests`。
+    """
+    status = (
+        f"**✅ 已完成**。（sweep 自动补销遗留尾巴 {now} UTC，"
+        "未发现对应的未落库改动）"
+    )
+    probe = [{"batch_id": "_straggler_status_selfcheck", "status_cell": status}]
+    pending, ambiguous = _classify_section_two_rows(probe)
+    if pending or ambiguous:
+        raise SweepAbort(
+            "✗ 补销状态文案自身仍会被判为待处理/模糊，写下去必然每轮重写"
+            f"（队列 #328 的非幂等事故）——拒绝执行：{status!r}",
+        )
+    return status
+
+
 def _iter_queue_paths() -> list[str]:
     """队列 #315：遍历两份物理队列文件的仓库相对路径——机制环境／业务
     场景，替代拆分前"只有一份队列文件"的假设。"""
@@ -3528,6 +3571,25 @@ def main() -> int:
                     normal_rows.append((row, resolved))
                 elif not_dirty:
                     straggler_rows.append(row)
+                else:
+                    # 队列 #328②（2026-08-26）：resolved 与 not_dirty 同时为空
+                    # ⟺ 文件清单列里**一个反引号片段都没有**（进了 clean_rows
+                    # 就说明 ambiguous 为空，而每个片段必落入三者之一）。旧实现
+                    # 这里没有 else 分支，这类行既不落库也不补销、且**一行日志
+                    # 都不留**，就此永久隐身。
+                    # 实测：`B-0825_巡逻2_404_405陈忱回件拆件_质量部9转态` 登记
+                    # 时把路径写成了裸文本（未加反引号），"待处理"超 24 小时，
+                    # 期间每轮 sweep 都读到它、每轮都无声跳过。
+                    # ⚠ 这里**只报不动**：文件清单解析不出来就无从判断它是"内容
+                    # 早已落库、只差销行"还是"真有改动尚未提交"，自动补销会把
+                    # 后者连同真实待落库内容一起销掉。登记格式错误由人订正
+                    # （给片段补上反引号），sweep 的职责到"喊出来"为止。
+                    log.append(
+                        f"⚠ 批次 {row['batch_id']} 的文件清单列解析不出任何反引号"
+                        f"片段，既无法落库也不能安全补销，本轮跳过（登记格式错误："
+                        f"路径须用反引号标出，订正后下一轮自动生效）："
+                        f"[{queue_path}] {row['files_cell'][:120]}"
+                    )
 
             for row, resolved in normal_rows:
                 _process_normal_batch(repo_root, row, resolved, args.dry_run, log)
@@ -3540,7 +3602,10 @@ def main() -> int:
                     print(f"[dry-run] {note}")
                     log.append(f"[dry-run] {note}")
                 else:
-                    new_status = f"**✅ 已完成**（sweep 自动补销遗留尾巴 {_now_utc_str()}，未发现对应待落库改动）"
+                    # 队列 #328：文案与幂等自检统一收进 `_straggler_status()`，
+                    # 不在此处内联拼串——内联正是上一版把"待落库"写进状态、
+                    # 使补销每轮重触发的来路。
+                    new_status = _straggler_status(_now_utc_str())
                     _strike_off_rows(repo_root, straggler_rows, lambda r: new_status,
                                       f"sweep 补销尾巴 {ids}", dry_run=False)
                     _run_git(["add", "--", queue_path], repo_root)

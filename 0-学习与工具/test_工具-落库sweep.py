@@ -318,6 +318,112 @@ class StragglerTailTests(SweepTestBase):
         ).stdout.strip().splitlines()
         self.assertEqual(tail_commit_files, [sweep.QUEUE_MECHANISM_PATH_REL])
 
+    def test_second_sweep_run_produces_no_further_commits(self):
+        """队列 #328①（2026-08-26 事故回归）：补销必须幂等——第一轮补销之后，
+        第二轮读到同一行时它已不再满足待处理判据，不得再写一次、不得再产生
+        任何 commit。
+
+        修复前的实际行为：补销写入的状态列是
+        `**✅ 已完成**（… <时刻> UTC，未发现对应待落库改动）`，整句无句级
+        分隔符 ⇒ `_leading_status_segment` 取整句为开头片段 ⇒ 句中"未发现
+        对应**待**落库改动"的"待"字命中待处理判据 ⇒ 每轮重新补销一次，且
+        因文案含当前时刻，每轮都是一条 diff 恰 1 行的真实 commit（08-26 实测
+        不到 6 小时 33 个提交里 18 个由此而来）。
+
+        本用例断言的是"轮次之间零增量"这一可观测结果，而不是文案长什么样
+        ——文案将来怎么改都行，churn 归零这条不能破。"""
+        row = ("| B-STALE | `不存在的文件.md` "
+               "| `docs(test): 早已落库只是没销行` | 待 CC 取活 |\n")
+        self._init_and_push(rows=row)
+
+        first = _run_sweep(self.work)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        log_after_first = self._origin_log()
+        head_after_first = _git(self.origin, "rev-parse", "master").stdout.strip()
+        queue_after_first = self._queue_text()
+
+        second = _run_sweep(self.work)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+
+        self.assertEqual(self._origin_log(), log_after_first,
+                          "第二轮不应新增任何提交——补销写完即应不再满足触发条件")
+        self.assertEqual(_git(self.origin, "rev-parse", "master").stdout.strip(),
+                          head_after_first)
+        self.assertEqual(self._queue_text(), queue_after_first,
+                          "第二轮不应重写队列文件（时间戳漂移即为非幂等）")
+        # 工作区也不该被留下未提交的改动——"改了又没提交"同样是 churn。
+        dirty = [ln for ln in _git(self.work, "status", "--porcelain").stdout.splitlines()
+                 if ln[3:] == sweep.QUEUE_MECHANISM_PATH_REL]
+        self.assertEqual(dirty, [])
+
+
+class StragglerStatusIdempotenceTests(unittest.TestCase):
+    """队列 #328①：把"补销文案"与"待处理判据"之间那条隐性契约钉死在单测里。
+
+    `_straggler_status()` 自己也带同款自检（改文案当场抛 SweepAbort），这里
+    再从判据侧独立验一遍：两侧任意一方将来被改动，都会有一处红。"""
+
+    def test_written_status_is_not_reclassified_as_pending(self):
+        status = sweep._straggler_status("2026-08-26 13:17")
+        row = {"batch_id": "B-X", "status_cell": status,
+               "files_cell": "", "message_cell": "", "raw_line": "",
+               "queue_path": sweep.QUEUE_MECHANISM_PATH_REL}
+        pending, ambiguous = sweep._classify_section_two_rows([row])
+        self.assertEqual(pending, [], f"补销文案又被判为待处理：{status!r}")
+        self.assertEqual(ambiguous, [], f"补销文案被判为状态模糊：{status!r}")
+
+    def test_leading_segment_collapses_to_bare_done_marker(self):
+        # 判定只看开头片段——时刻与说明文字必须落在它之外，这样时刻才不会
+        # 成为"状态的一部分"（#328 非幂等的直接来路）。
+        # 尾部 `**` 属于加粗标记的收尾，`_leading_status_segment` 只剥前导
+        # 字符、不剥尾部，故留在片段内——不含"待"字，不影响判定。
+        leading = sweep._leading_status_segment(sweep._straggler_status("2026-08-26 13:17"))
+        self.assertEqual(leading, "✅ 已完成**")
+        self.assertNotIn("待", leading)
+        self.assertNotIn("13:17", leading, "时刻不得落进参与判定的开头片段")
+
+    def test_timestamp_is_still_recorded_for_traceability(self):
+        # 幂等不等于把溯源信息一并砍掉：时刻仍要留在状态列里，只是不参与判定。
+        self.assertIn("2026-08-26 13:17 UTC", sweep._straggler_status("2026-08-26 13:17"))
+
+    def test_old_incident_wording_would_be_rejected_by_the_selfcheck(self):
+        """反向锁：把事故版文案原样喂回判据，必须仍被判为待处理——证明本用例
+        组守的是真问题，而不是一组恒真断言。"""
+        incident = ("**✅ 已完成**（sweep 自动补销遗留尾巴 2026-08-26 13:17 UTC，"
+                    "未发现对应待落库改动）")
+        row = {"batch_id": "B-X", "status_cell": incident,
+               "files_cell": "", "message_cell": "", "raw_line": "",
+               "queue_path": sweep.QUEUE_MECHANISM_PATH_REL}
+        pending, _ = sweep._classify_section_two_rows([row])
+        self.assertEqual(len(pending), 1,
+                          "事故版文案若不再被判为待处理，说明判据侧变了，本组用例需重写")
+
+
+class UndeclaredFragmentRowTests(SweepTestBase):
+    """队列 #328②：文件清单列里一个反引号片段都没有的批次行，旧实现既不落库
+    也不补销，且**一行日志都不留**——`B-0825_巡逻2_404_405陈忱回件拆件_质量部
+    9转态` 因此"待处理"超 24 小时、期间每轮 sweep 都读到它并无声跳过。"""
+
+    def test_row_without_backtick_fragments_is_reported_not_silently_skipped(self):
+        row = ("| B-裸路径 | 1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md（登记方漏写反引号） "
+               "| `docs(test): 路径没加反引号` | 待处理（登记，待 sweep 落库） |\n")
+        self._init_and_push(rows=row)
+        before = self._origin_log()
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertIn("B-裸路径", log_text, "这类行必须被点名，不能静默跳过")
+        self.assertIn("反引号", log_text, "日志须说清订正办法（给路径补反引号）")
+
+        # 只报不动：行本身保持原状，不得被自动补销——文件清单解析不出来时
+        # 无从区分"早已落库只差销行"与"真有改动尚未提交"，误销会连同真实
+        # 待落库内容一起销掉。
+        self.assertIn("待处理（登记，待 sweep 落库）", self._queue_text())
+        self.assertNotIn("补销遗留尾巴", self._queue_text())
+        self.assertEqual(self._origin_log(), before, "本轮不应产生任何提交")
+
 
 class LateForwardCheckTests(SweepTestBase):
     """要求③"推送非快进"场景——2026-08-06 起（队列 #288，openspec 变更包
