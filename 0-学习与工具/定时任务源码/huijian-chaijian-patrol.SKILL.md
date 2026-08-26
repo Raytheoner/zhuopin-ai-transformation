@@ -1,4 +1,4 @@
-﻿---
+---
 name: huijian-chaijian-patrol
 description: Dispatch v0.5 回件拆件巡逻(live)：工作日双班扫队列"机器人归档"待领行，拿锁实拆回灌+销行+登§二批次，需Shao Peishen项自动登§四；发送/建造/新裁决永不进池。章程v2定长版(2026-08-24拍板(a))：判据全文留、成因降队列行号指针、报告≤8K/班
 ---
