@@ -15,6 +15,7 @@ from typing import Callable, Optional
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
+from .error_text import describe_exception
 from .constants import PAUL_USERID
 from .gates import assert_finalized, DeliveryNotFinalizedError
 from .readme_table import (
@@ -293,7 +294,7 @@ async def push_followup(
                 automation_level="L1",
                 decision={"reason": "not_finalized", "status_value": status_value, "kind": kind},
                 data_sources={"readme": str(readme_path)},
-                error=str(exc),
+                error=describe_exception(exc),
             )
         )
         raise
@@ -341,7 +342,7 @@ async def push_followup(
                     "readme": str(readme_path),
                     "attachments": [str(p) for p in attachments],
                 },
-                error=str(exc),
+                error=describe_exception(exc),
             )
         )
         raise
@@ -397,7 +398,7 @@ async def push_followup(
                     automation_level="L1",
                     decision={"recipient": PAUL_USERID, "cc_of": chatid, "kind": kind},
                     data_sources={"md": str(md_path)},
-                    error=str(exc),
+                    error=describe_exception(exc),
                 )
             )
 
@@ -430,7 +431,7 @@ async def push_followup(
                     automation_level="L1",
                     decision={"recipient": cc_group_chatid, "cc_of": chatid, "kind": kind},
                     data_sources={"md": str(md_path)},
-                    error=str(exc),
+                    error=describe_exception(exc),
                 )
             )
 
@@ -449,7 +450,7 @@ async def push_followup(
                 automation_level="L1",
                 decision={"sent": True, "backfilled": False, "kind": kind},
                 data_sources={"readme": str(readme_path)},
-                error=str(exc),
+                error=describe_exception(exc),
             )
         )
         raise BackfillWriteError(

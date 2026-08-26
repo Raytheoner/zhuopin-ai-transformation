@@ -14,16 +14,25 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import (
 )
 from zhuopin_platform.shared_tools.secrets import SecretsProvider
 
+from .error_text import describe_exception
 from .constants import PAUL_USERID
 from .department_group_chatid_mapping import load_department_group_chatid_mapping
 from .disconnect_inprogress_alert import DisconnectInProgressMonitor
 from .department_mapping import load_department_mapping
 from .followup_readme_bridge import LOCK_TARGET as FOLLOWUP_README_LOCK_TARGET
-from .followup_readme_bridge import mark_reply_arrived
+from .followup_readme_bridge import ACTION_SUPPLEMENT, mark_reply_arrived, resolve_letter_number
 from .forwarding import forward_inbound_to_paul
 from .frame_parsing import parse_inbound_frame
 from .group_notify import notify_department_group_via_chatid
 from .intake import archive_inbound_message
+from .media_transfer import (
+    DEFAULT_MEDIA_BACKOFF_SECONDS,
+    DEFAULT_MEDIA_MAX_ATTEMPTS,
+    DEFAULT_MEDIA_TIMEOUT_SECONDS,
+    MediaTransferError,
+    build_resend_notice,
+    with_media_retry,
+)
 from .queue_edit_lock import AIBOT_LOCK_WHO, SubprocessQueueEditLock
 from .queue_git_sync import (
     DEFAULT_BACKOFF_SECONDS,
@@ -96,6 +105,9 @@ def build_connector(
     disconnect_alert_fallback_send: Optional[Callable[[str], None]] = None,
     queue_edit_lock_alert_fallback_send: Optional[Callable[[str], None]] = None,
     group_notify_alert_fallback_send: Optional[Callable[[str], None]] = None,
+    media_max_attempts: int = DEFAULT_MEDIA_MAX_ATTEMPTS,
+    media_timeout_seconds: float = DEFAULT_MEDIA_TIMEOUT_SECONDS,
+    media_backoff_seconds: float = DEFAULT_MEDIA_BACKOFF_SECONDS,
 ) -> AibotConnector:
     """构造已接好审计 + 归档分发的 `AibotConnector`；不建立实际连接（调用方
     另行 `await connector.connect()`）。凭据缺失时 `SecretsProvider` 抛
@@ -141,6 +153,12 @@ def build_connector(
     迟不放"的可观测性空白（#333 真实事故：拒绝原因全程无人知道，锁卡满
     30 分钟才被陈旧接管）。未传时只记审计、不发告警，行为与本次改动前
     一致；`enable_queue_edit_lock=False` 时本参数不产生任何效果。
+
+    `media_max_attempts` / `media_timeout_seconds` / `media_backoff_seconds`
+    （队列 #416 ⑴）：media 下载/上传的重试次数与**可配**超时，见
+    `media_transfer.py`。⚠️ 默认值是保守工程默认，**不是已裁定的口径**
+    ——「专员等多久算可接受」需 Shao Peishen 定。`media_timeout_seconds<=0`
+    时不加本层超时，只依赖 SDK 自身的 5.0s ack 等待（排查用）。
     """
     bot_id = secrets.get(BOTID_KEY)
     secret = secrets.get(SECRET_KEY)
@@ -188,6 +206,67 @@ def build_connector(
 
     connector_holder: dict[str, AibotConnector] = {}
 
+    # ---- 队列 #416 ⑴：media 通道的重试/可配超时包装（下载 + 上传）----
+    async def _media_download(url: str, aes_key, stage: str):
+        return await with_media_retry(
+            lambda: connector_holder["connector"].download_file(url, aes_key),
+            stage=stage, audit=audit, evaluator=evaluator,
+            max_attempts=media_max_attempts,
+            timeout_seconds=media_timeout_seconds,
+            backoff_seconds=media_backoff_seconds,
+        )
+
+    async def _media_upload(raw_bytes: bytes, filename: str, stage: str):
+        return await with_media_retry(
+            lambda: connector_holder["connector"].upload_media(raw_bytes, filename),
+            stage=stage, audit=audit, evaluator=evaluator,
+            max_attempts=media_max_attempts,
+            timeout_seconds=media_timeout_seconds,
+            backoff_seconds=media_backoff_seconds,
+            context={"filename": filename, "bytes": str(len(raw_bytes))},
+        )
+
+    # 队列 #416 ⑸：归档落盘前的只读预配对（拿"回灌到哪一封信"的编号）。
+    # 只在启用编辑锁时可用——不是因为要锁，而是因为 `lock_repo_root` 正是
+    # 那一刻才解析出的仓库根（跟进信 README 就在它下面）；未启用时返回
+    # None，文件名落回老形态，不猜路径。
+    def _resolve_letter_number(archived_filename: str, department):
+        if lock_repo_root is None:
+            return None
+        return resolve_letter_number(
+            archived_filename=archived_filename,
+            repo_root=lock_repo_root,
+            department=department,
+        )
+
+    async def _notify_sender_to_resend(message, exc: Exception) -> None:
+        """media 耗尽重试 ⇒ **明确告知发件人重发**（队列 #416 ⑴，不静默）。
+
+        回给**来源会话**（群里发来的就回群里），与 #387 ⑶ 的回执路由同一
+        条纪律——回到别处等于没回。
+        """
+        target = message.chatid if message.chattype == "group" else message.sender
+        if not target:
+            return
+        try:
+            await connector_holder["connector"].send_markdown(
+                target, build_resend_notice(message.sender, exc)
+            )
+        except Exception as send_exc:  # noqa: BLE001 —— 提示本身失败也要留痕
+            audit.record(AuditEvent(
+                scenario="wecom-aibot", action="media_resend_notice_failed",
+                evaluator=evaluator, automation_level="L1",
+                decision={"target": target}, data_sources={"sender": message.sender},
+                error=describe_exception(send_exc),
+            ))
+            return
+        audit.record(AuditEvent(
+            scenario="wecom-aibot", action="media_resend_notice_sent",
+            evaluator=evaluator, automation_level="L1",
+            decision={"target": target, "stage": getattr(exc, "stage", "")},
+            data_sources={"sender": message.sender},
+        ))
+
     # 队列 #193：断连期间"进行中"提示——仅在传入 fallback 通道时才构造/接线
     # monitor（同 `enable_queue_edit_lock` 的特性开关模式）。**不能无条件
     # 构造**：`on_disconnected()` 内部 `asyncio.create_task` 要求当前有运行
@@ -229,11 +308,11 @@ def build_connector(
                 automation_level="L1",
                 decision={},
                 data_sources={},
-                error=str(err),
+                error=describe_exception(err),
             )
         )
         if _is_unrecoverable_error(err):
-            _audit_lifecycle(audit, evaluator, "fatal_disconnect_detected", error=str(err))
+            _audit_lifecycle(audit, evaluator, "fatal_disconnect_detected", error=describe_exception(err))
             if on_fatal_disconnect is not None:
                 on_fatal_disconnect()
 
@@ -282,7 +361,7 @@ def build_connector(
                         automation_level="L1",
                         decision={},
                         data_sources={},
-                        error=str(exc),
+                        error=describe_exception(exc),
                     )
                 )
 
@@ -322,7 +401,7 @@ def build_connector(
                         automation_level="L1",
                         decision={},
                         data_sources={},
-                        error=str(exc),
+                        error=describe_exception(exc),
                     )
                 )
 
@@ -340,7 +419,7 @@ def build_connector(
                         automation_level="L1",
                         decision={"sender": message.sender},
                         data_sources={},
-                        error=str(exc),
+                        error=describe_exception(exc),
                     )
                 )
             audit.record(
@@ -367,6 +446,8 @@ def build_connector(
                 evaluator=evaluator,
                 queue_lock=_make_queue_lock("归档追加"),
                 pending_lock_path=resolved_pending_lock_path,
+                letter_number_resolver=_resolve_letter_number,
+                media_download=_media_download,
             )
         except Exception as exc:  # noqa: BLE001 —— 归档失败必须留痕，不得吞掉
             audit.record(
@@ -377,9 +458,14 @@ def build_connector(
                     automation_level="L1",
                     decision={"msgtype": message.msgtype, "sender": message.sender},
                     data_sources={},
-                    error=str(exc),
+                    error=describe_exception(exc),
                 )
             )
+            # 队列 #416 ⑴：media 重试耗尽 ⇒ 这份附件**没有入档**，必须让
+            # 发件人知道要重发。🔴 只对 `MediaTransferError` 触发——别的
+            # 归档失败（如写盘损坏）重发一次也没用，那是我们的问题。
+            if isinstance(exc, MediaTransferError):
+                await _notify_sender_to_resend(message, exc)
 
         # 队列 #366 / S4 桥一：回件到达即在跟进信 README 打第九态
         # 「📨 回件已到，待拆件」。
@@ -393,13 +479,14 @@ def build_connector(
         #
         # 仅在启用编辑锁时执行——桥一的硬约束之一就是「必须走编辑锁，不得
         # 直接写文件绕开协议〇.7」，锁不可用时**宁可不标**，不裸写。
+        bridge_result = None
         if (
             archive_result is not None
             and lock_repo_root is not None
             and enable_queue_edit_lock
         ):
             try:
-                mark_reply_arrived(
+                bridge_result = mark_reply_arrived(
                     archived_filename=archive_result.archived_path.name,
                     repo_root=lock_repo_root,
                     audit=audit,
@@ -423,7 +510,7 @@ def build_connector(
                         automation_level="L1",
                         decision={},
                         data_sources={"sender": message.sender},
-                        error=str(exc),
+                        error=describe_exception(exc),
                     )
                 )
 
@@ -469,7 +556,7 @@ def build_connector(
                         automation_level="L1",
                         decision={},
                         data_sources={"sender": message.sender},
-                        error=str(exc),
+                        error=describe_exception(exc),
                     )
                 )
 
@@ -511,10 +598,24 @@ def build_connector(
                         automation_level="L1",
                         decision={"department": archive_result.department},
                         data_sources={"sender": message.sender},
-                        error=str(exc),
+                        error=describe_exception(exc),
                     )
                 )
 
+        # 队列 #416 ⑷：转发要带上「这是文档还是文字」「回的是哪一封信」。
+        # 编号取**桥一的结论优先**——它是真正往 README 上写字的那一方；
+        # 桥未跑/未命中时回落归档时预配对的那个值（`IntakeResult.letter_number`）。
+        # 两者本就同源（同一个 `_pair`），这里的优先级只为处理"两次之间
+        # README 被改过"这种少数情形。
+        letter_number = (
+            (bridge_result.letter_number if bridge_result is not None else None)
+            or (archive_result.letter_number if archive_result is not None else None)
+        )
+        # 🔴 `supplement_after_closed` ⇒ 只报位置、不下断言（见
+        # `forwarding.build_forward_description` 里那段红字与 #366 M6）。
+        is_supplement = (
+            bridge_result is not None and bridge_result.action == ACTION_SUPPLEMENT
+        )
         try:
             await forward_inbound_to_paul(
                 frame=frame,
@@ -522,6 +623,13 @@ def build_connector(
                 connector=connector_holder["connector"],
                 audit=audit,
                 evaluator=evaluator,
+                letter_number=letter_number,
+                archived_filename=(
+                    archive_result.archived_path.name if archive_result is not None else None
+                ),
+                is_supplement=is_supplement,
+                media_download=_media_download,
+                media_upload=_media_upload,
             )
         except Exception as exc:  # noqa: BLE001 —— 转发失败必须留痕，不得吞掉
             audit.record(
@@ -532,7 +640,7 @@ def build_connector(
                     automation_level="L1",
                     decision={"msgtype": message.msgtype, "sender": message.sender},
                     data_sources={},
-                    error=str(exc),
+                    error=describe_exception(exc),
                 )
             )
 

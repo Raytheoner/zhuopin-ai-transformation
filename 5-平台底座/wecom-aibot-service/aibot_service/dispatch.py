@@ -37,6 +37,7 @@ from typing import Optional
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
+from .error_text import describe_exception
 from .delivery import BackfillWriteError, DeliveryNotFinalizedError, push_followup
 from .department_group_chatid_mapping import resolve_group_cc_chatid
 from .gates import FINALIZED_STATUS_MARKER
@@ -338,7 +339,7 @@ async def dispatch_followup_letters(
             outcome.failed.append((preview, str(exc)))
         except Exception as exc:  # noqa: BLE001 —— 单行失败不得阻塞其余行
             outcome.failed.append((preview, str(exc)))
-            _record(audit, "dispatch_row_failed", evaluator, preview, error=str(exc))
+            _record(audit, "dispatch_row_failed", evaluator, preview, error=describe_exception(exc))
 
     _record(
         audit, "dispatch_batch_summary", evaluator, "",

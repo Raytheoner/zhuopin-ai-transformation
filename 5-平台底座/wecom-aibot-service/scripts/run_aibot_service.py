@@ -48,6 +48,11 @@ from zhuopin_platform.shared_tools.notifiers import wecom
 from zhuopin_platform.shared_tools.secrets import EnvSecretsProvider
 
 from aibot_service.connection import build_connector  # noqa: E402
+from aibot_service.media_transfer import (  # noqa: E402
+    DEFAULT_MEDIA_BACKOFF_SECONDS,
+    DEFAULT_MEDIA_MAX_ATTEMPTS,
+    DEFAULT_MEDIA_TIMEOUT_SECONDS,
+)
 from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp, send_gap_alert  # noqa: E402
 from aibot_service.liveness import read_liveness, run_liveness_heartbeat  # noqa: E402
@@ -204,6 +209,18 @@ def main() -> None:
         # 队列 #387：归档回执因部门群映射缺配而跳过时的告警，同样复用这条
         # 通道（未配置 WECOM_WEBHOOK_URL 时为 None，功能自动关闭；仍记审计）。
         group_notify_alert_fallback_send=fallback_send,
+        # 队列 #416 ⑴：media 下载/上传的重试与**可配**超时。三个环境变量都
+        # 留空时用 `media_transfer.py` 里的保守工程默认（3 次 / 20 秒 / 1 秒）。
+        # ⚠️ 默认值不是已裁定的口径——见那里的黄字。
+        media_max_attempts=int(
+            os.environ.get("WECOM_AIBOT_MEDIA_MAX_ATTEMPTS", DEFAULT_MEDIA_MAX_ATTEMPTS)
+        ),
+        media_timeout_seconds=float(
+            os.environ.get("WECOM_AIBOT_MEDIA_TIMEOUT_SECONDS", DEFAULT_MEDIA_TIMEOUT_SECONDS)
+        ),
+        media_backoff_seconds=float(
+            os.environ.get("WECOM_AIBOT_MEDIA_BACKOFF_SECONDS", DEFAULT_MEDIA_BACKOFF_SECONDS)
+        ),
     )
 
     asyncio.run(

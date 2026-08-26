@@ -45,8 +45,23 @@ from typing import Optional
 
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 
+from .forwarding import is_self_sender
+
 DEFAULT_WITHIN_DAYS = 7
 _ARCHIVE_FILENAME_RE = re.compile(r"^跨桌任务队列-归档-\d{6}\.md$")
+
+# 「这条 `archived` 已经有结论了」的三种事件——见 `find_unreconciled_archives`
+# 的队列 #416 ⑺ 段落。三者语义各不相同（追成了／补录成了／本就不该建），
+# 但对本模块**只有一个含义**：它不欠一行。
+PENDING_CLEARING_ACTIONS = (
+    "queue_appended",
+    "queue_append_pending_flushed",
+    # 队列 #416 ⑺（2026-08-26）：`intake.py` 对「Shao Peishen 本人入站」记的
+    # 事件。2026-08-24 已拍板「本人入站不建行（归档保留）」并为此**专门新增**
+    # 了这个字段，而哨兵这一侧**从未读过它** ⇒ 他每自己发一条消息，哨兵就
+    # 报一条永远修不掉的疑似漏行（2026-08-26 20:18 群内实例）。
+    "queue_append_skipped",
+)
 
 
 def find_unreconciled_archives(
@@ -96,13 +111,25 @@ def find_unreconciled_archives(
             if pending is not None:
                 unpaired_candidates.append(pending)
             pending = event
-        elif action in ("queue_appended", "queue_append_pending_flushed"):
+        elif action in PENDING_CLEARING_ACTIONS:
             pending = None
     if pending is not None:
         unpaired_candidates.append(pending)
 
     unreconciled: list[dict] = []
     for event in unpaired_candidates:
+        # 🔴 队列 #416 ⑺ 第二道（判据同源）：发送人是 Shao Peishen 本人时
+        # **一律不计入漏行**，判据取自 `forwarding.is_self_sender`——2026-08-24
+        # 拍板原文要求「判据与 `forwarding.should_forward` 同源」。
+        #
+        # 上面那条 `queue_append_skipped` 是**结构性**的（读 `intake` 记下的
+        # 结论），这一条是**语义性**的（自己认得他是谁）。两条都留着不是
+        # 冗余：只靠事件，`intake` 万一在记那条事件之前就抛了，本人入站又会
+        # 变成一条恒真告警；只靠发送人，则读不出 `intake` 后来可能新增的
+        # 其它"本就不该建行"情形。**一个永远红着的告警等于把整条哨兵训练
+        # 成噪音**——它比漏报更贵，因为它同时废掉了所有真报。
+        if is_self_sender((event.get("data_sources") or {}).get("sender")):
+            continue
         ts_raw = event.get("timestamp")
         if not ts_raw:
             continue

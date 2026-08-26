@@ -78,6 +78,7 @@ from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools.queue_table import iter_queue_paths
 
 from . import pending_jsonl
+from .error_text import describe_exception
 from .queue_appender import append_pending_task
 from .queue_edit_lock import QueueLockBusy
 from .repo_paths import resolve_repo_root
@@ -590,22 +591,22 @@ async def sync_after_archive(
     except Exception as exc:  # noqa: BLE001 —— git 子进程意外异常也不得向上抛
         audit.record(AuditEvent(
             scenario="wecom-aibot", action="queue_sync_degraded", evaluator=evaluator,
-            automation_level="L1", decision={"attempts": 0}, data_sources={}, error=str(exc),
+            automation_level="L1", decision={"attempts": 0}, data_sources={}, error=describe_exception(exc),
         ))
         written_to = _route_pending_failure(
             is_lock_busy=isinstance(exc, QueueLockBusy),
-            append_kwargs=append_kwargs, error=str(exc),
+            append_kwargs=append_kwargs, error=describe_exception(exc),
             pending_path=pending_path, lock_pending_path=lock_pending_path,
         )
         _mark_row_unsynced_safely(queue_path, already_appended_row)
         if connector is not None and recipient:
             await _send_degraded_alert(
                 connector, audit,
-                f"队列同步异常：{exc}{_location_hint(written_to, append_kwargs)}", recipient,
+                f"队列同步异常：{describe_exception(exc)}{_location_hint(written_to, append_kwargs)}", recipient,
                 fallback_send=fallback_send, evaluator=evaluator,
             )
         return GitSyncOutcome(
-            row=already_appended_row or "", pushed=False, attempts=0, last_error=str(exc),
+            row=already_appended_row or "", pushed=False, attempts=0, last_error=describe_exception(exc),
             pending_recorded_at=written_to,
         )
 

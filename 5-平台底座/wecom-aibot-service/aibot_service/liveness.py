@@ -24,6 +24,8 @@ from typing import Callable, Optional
 
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 
+from .error_text import describe_exception
+
 DEFAULT_LIVENESS_INTERVAL_SECONDS = 300  # 5 分钟
 
 
@@ -75,6 +77,6 @@ async def run_liveness_heartbeat(
                 audit.record(AuditEvent(
                     scenario="wecom-aibot", action="liveness_heartbeat_write_failed",
                     evaluator=evaluator, automation_level="L1",
-                    decision={}, data_sources={"path": str(path)}, error=str(exc),
+                    decision={}, data_sources={"path": str(path)}, error=describe_exception(exc),
                 ))
         await _sleep(interval_seconds)

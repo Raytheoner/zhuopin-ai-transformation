@@ -482,3 +482,93 @@ def test_run_reconciliation_sentinel_after_sweep_genuine_gap_still_flagged(tmp_p
 
     assert len(connector.calls) == 1
     assert "trulylost.docx" in connector.calls[0][1]
+
+
+# ── 队列 #416 ⑺：「Shao Peishen 本人入站」不得被报成漏行 ──────────────────
+#
+# 2026-08-24 已拍板「本人入站不建行（归档保留）」并为此**专门新增**了
+# `queue_append_skipped` 字段，而哨兵这一侧从未读过它 ⇒ 他每自己发一条
+# 消息，哨兵就报一条永远修不掉的疑似漏行。素材＝2026-08-26 20:18 群内实例
+# （审计 `2026-08-26T04:35:09Z`，归档件
+# `待分拣-ShaoPeiShen-回复-2026-08-26-文本反馈-565bedf4…`）。
+#
+# 🔴 这是「恒真判据、零信息量」族：一个永远红着的告警等于把整条哨兵训练
+# 成噪音——它比漏报更贵，因为它同时废掉了所有真报。
+
+from pathlib import PurePath  # noqa: E402
+
+from aibot_service.constants import PAUL_USERID  # noqa: E402
+from aibot_service.forwarding import should_forward  # noqa: E402
+from aibot_service.frame_parsing import InboundMessage  # noqa: E402
+from aibot_service.queue_reconcile_sentinel import (  # noqa: E402
+    PENDING_CLEARING_ACTIONS,
+)
+
+REAL_SELF_INBOUND = "待分拣-ShaoPeiShen-回复-2026-08-26-文本反馈-565bedf4ab8e3fc9ba186206ce0b7b4a.md"
+
+
+def _queue_append_skipped_event(ts: str, sender: str = PAUL_USERID) -> dict:
+    return {
+        "scenario": "wecom-aibot",
+        "action": "queue_append_skipped",
+        "timestamp": ts,
+        "decision": {"reason": "sender_is_paul", "owner": "Paul"},
+        "data_sources": {"sender": sender, "queue_path": r"C:\repo\queue.md"},
+    }
+
+
+def test_self_inbound_archive_is_not_reported_as_missing_row():
+    """2026-08-26 20:18 群内那条误报的直接复现——对旧实现必定变红。"""
+    now = datetime(2026, 8, 26, 12, 0, tzinfo=timezone.utc)
+    events = [
+        _archived_event("2026-08-26T04:35:09+00:00", REAL_SELF_INBOUND, sender=PAUL_USERID),
+        _queue_append_skipped_event("2026-08-26T04:35:09+00:00"),
+    ]
+    assert find_unreconciled_archives(events, now=now) == []
+
+
+def test_self_inbound_not_reported_even_if_skipped_event_is_missing():
+    """第二道（判据同源）：`intake` 万一在记那条事件之前就抛了，本人入站
+    也不得变回一条恒真告警——发送人这一条判据自己就认得他。"""
+    now = datetime(2026, 8, 26, 12, 0, tzinfo=timezone.utc)
+    events = [_archived_event("2026-08-26T04:35:09+00:00", REAL_SELF_INBOUND,
+                              sender=PAUL_USERID)]
+    assert find_unreconciled_archives(events, now=now) == []
+
+
+def test_real_missing_row_from_a_specialist_still_reported():
+    """🔴 护栏：⑺ 的修法**不得**顺手把真漏行也一起消音。"""
+    now = datetime(2026, 8, 26, 12, 0, tzinfo=timezone.utc)
+    events = [_archived_event("2026-08-26T04:35:09+00:00", "neverappeared.docx",
+                              sender="tangyanping")]
+    result = find_unreconciled_archives(events, now=now)
+    assert len(result) == 1
+
+
+def test_skipped_event_clears_pending_without_swallowing_the_next_archive():
+    """`queue_append_skipped` 只清掉它自己那一条，后面专员的真漏行照报。"""
+    now = datetime(2026, 8, 26, 12, 0, tzinfo=timezone.utc)
+    events = [
+        _archived_event("2026-08-26T04:35:09+00:00", REAL_SELF_INBOUND, sender=PAUL_USERID),
+        _queue_append_skipped_event("2026-08-26T04:35:09+00:00"),
+        _archived_event("2026-08-26T05:00:00+00:00", "lost.docx", sender="tangyanping"),
+    ]
+    result = find_unreconciled_archives(events, now=now)
+    assert [PurePath(e["decision"]["archived_path"]).name for e in result] == ["lost.docx"]
+
+
+def test_skipped_action_is_registered_in_the_clearing_set():
+    assert "queue_append_skipped" in PENDING_CLEARING_ACTIONS
+
+
+def test_sentinel_criterion_is_same_source_as_should_forward():
+    """拍板原文要求「判据与 `forwarding.should_forward` 同源」——两侧对同一个
+    发送人必须给出同一个结论，不是各写一份 `== PAUL_USERID`。"""
+    for sender, forwards in (("tangyanping", True), (PAUL_USERID, False)):
+        msg = InboundMessage(sender=sender, msgtype="text", text_content="x")
+        assert should_forward(msg) is forwards
+        events = [_archived_event("2026-08-26T04:35:09+00:00", "x.md", sender=sender)]
+        reported = bool(find_unreconciled_archives(
+            events, now=datetime(2026, 8, 26, 12, 0, tzinfo=timezone.utc)))
+        # 转发得出去的人 ⇒ 该建行 ⇒ 缺行要报；转发不出去的人 ⇒ 本就不建行 ⇒ 不报。
+        assert reported is forwards

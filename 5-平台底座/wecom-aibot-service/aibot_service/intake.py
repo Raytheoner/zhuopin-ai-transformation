@@ -10,12 +10,13 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
-from .constants import PAUL_USERID
+from .error_text import describe_exception
+from .forwarding import is_self_sender
 from .department_mapping import UNMATCHED_DEPARTMENT, resolve_department
 from .frame_parsing import InboundMessage
 from .queue_appender import append_pending_task, QueueEditLock
@@ -67,6 +68,11 @@ class IntakeResult:
     # deferred 的含义是「这一行还欠着，等下次补录」，skipped 的含义是
     # 「这一行本就不该存在」。混用会让补录链路去补一条永远不该补的行。
     queue_append_skipped: bool = False
+    # 队列 #416 ⑸：本次回件配到的跟进信编号（如 `财务部#15`），由调用方
+    # 注入的 `letter_number_resolver` 只读预配对得出；配不上/未注入为 None。
+    # 它同时被写进归档文件名，并被 `forwarding` 用于 ⑷ 的内容描述——**一次
+    # 解析、两处消费**，不让两边各查一遍再各自漂移。
+    letter_number: Optional[str] = None
 
 
 def _safe_filename_component(text: str, max_len: int = 60) -> str:
@@ -75,14 +81,23 @@ def _safe_filename_component(text: str, max_len: int = 60) -> str:
 
 
 def _build_filename(
-    department: str, sender: str, date_str: str, topic: str, ext: str, disambiguator: str
+    department: str, sender: str, date_str: str, topic: str, ext: str, disambiguator: str,
+    letter_number: Optional[str] = None,
 ) -> str:
     # 与既有跟进信 R4 命名律（主题-对象-日期-事项）对齐：部门-发送人-回复-日期-事项。
     # disambiguator（msgid 短后缀，缺失时用微秒级时间戳）防止同发送人同天多条
     # 消息互相覆盖文件——2026-07-13 真实联调发现原实现按日期粒度会静默覆盖。
+    #
+    # 队列 #416 ⑸：`letter_number`（如 `财务部#15`）给出时插在**日期之前**，
+    # 不追在末尾——末尾会被 `followup_gate._ARCHIVE_NAME_RE` 里贪婪的
+    # `<topic>` 吞掉，stem 逐字比对随即失效（那条正则已同步放开这一段）。
+    # 编号取**规范形态原样**（含部门前缀，与 README 编号列、审计
+    # `letter_number` 字段逐字相同），不另造一套短写法：两套写法迟早分叉。
+    number_segment = f"{_safe_filename_component(letter_number, 40)}-" if letter_number else ""
     return (
         f"{_safe_filename_component(department)}-{_safe_filename_component(sender)}-"
-        f"回复-{date_str}-{_safe_filename_component(topic)}-{disambiguator}{ext}"
+        f"回复-{number_segment}{date_str}-{_safe_filename_component(topic)}-"
+        f"{disambiguator}{ext}"
     )
 
 
@@ -133,7 +148,20 @@ async def archive_inbound_message(
     evaluator: str = "system",
     queue_lock: Optional[QueueEditLock] = None,
     pending_lock_path: Optional[Path] = None,
+    letter_number_resolver: Optional[Callable[[str, Optional[str]], Optional[str]]] = None,
+    media_download: Optional[Callable[[str, Optional[str], str], Awaitable[tuple]]] = None,
 ) -> IntakeResult:
+    """`letter_number_resolver`（队列 #416 ⑸，默认 None ＝ 老行为）：
+    `(拟用文件名, 部门或None) -> 编号或None` 的**只读**查询，用来在落盘前
+    拿到「这份回件回灌到哪一封信」。**以回调注入、不在本模块 import 桥模块**
+    ——门禁①（见文件头）保证的是本文件的代码路径只做那三类动作，一个只读
+    查询由调用方提供、在这里消费，那条结构性保证仍然成立；真要把跟进信
+    README 的解析搬进来，门禁① 就名存实亡了（同 `connection.py` 把
+    `mark_reply_arrived` 放在 `on_message` 而不是这里的理由）。
+
+    `media_download`（队列 #416 ⑴，默认 None ＝ 直接调 `connector.download_file`）：
+    `(url, aes_key, stage) -> (bytes, filename)` 的带重试/可配超时版下载。
+    """
     department = resolve_department(message.sender, department_mapping)
     matched = department != UNMATCHED_DEPARTMENT
     target_dir = external_docs_root / department
@@ -147,6 +175,7 @@ async def archive_inbound_message(
     disambiguator = message.msgid or now.strftime("%H%M%S%f")
 
     expected_size: Optional[int] = None
+    letter_number: Optional[str] = None
     if message.msgtype == "text":
         content = message.text_content or ""
         filename = _build_filename(
@@ -159,13 +188,35 @@ async def archive_inbound_message(
             raise RuntimeError("收到文件消息但未提供 connector，无法解密下载")
         if not message.file_url:
             raise ValueError("文件消息缺 file_url，无法下载")
-        raw_bytes, downloaded_name = await connector.download_file(
-            message.file_url, message.file_aes_key
-        )
+        # 队列 #416 ⑴：下载走带重试/可配超时的通道（未注入时退回裸调用，
+        # 保持向后兼容）。耗尽重试抛 `MediaTransferError`，由 `connection.py`
+        # 兜底并**请发件人重发**——🔴 不静默跳过。
+        if media_download is not None:
+            raw_bytes, downloaded_name = await media_download(
+                message.file_url, message.file_aes_key, "download_inbound"
+            )
+        else:
+            raw_bytes, downloaded_name = await connector.download_file(
+                message.file_url, message.file_aes_key
+            )
         source_name = message.file_name_hint or downloaded_name or "attachment"
         stem = Path(source_name).stem or "attachment"
         ext = Path(source_name).suffix or ""
-        filename = _build_filename(department, sender_label, date_str, stem, ext, disambiguator)
+        # 队列 #416 ⑸：先用**不含编号**的拟用文件名做只读预配对，拿到编号
+        # 后再拼最终文件名。两步都用同一个 stem/日期，配对结论因此与随后
+        # `mark_reply_arrived` 对**最终**文件名的配对一致（编号段被那条正则
+        # 单独识别，不进 `<topic>`）。任何一步拿不到编号，就落回老命名。
+        prospective = _build_filename(
+            department, sender_label, date_str, stem, ext, disambiguator
+        )
+        if letter_number_resolver is not None:
+            letter_number = letter_number_resolver(
+                prospective, department if matched else None
+            )
+        filename = _build_filename(
+            department, sender_label, date_str, stem, ext, disambiguator,
+            letter_number=letter_number,
+        )
         target_path = target_dir / filename
         target_path.write_bytes(raw_bytes)
         expected_size = len(raw_bytes)
@@ -183,7 +234,7 @@ async def archive_inbound_message(
                 automation_level="L1",
                 decision={"path": str(target_path)},
                 data_sources={"sender": sender_label, "department": department},
-                error=str(exc),
+                error=describe_exception(exc),
             )
         )
         raise
@@ -198,6 +249,8 @@ async def archive_inbound_message(
                 "department": department,
                 "matched": matched,
                 "archived_path": str(target_path),
+                # 队列 #416 ⑸：编号同时写进文件名与审计，两处一致。
+                "letter_number": letter_number or "",
             },
             # 队列 #279：chatid/chattype 随归档事件一并留痕——此前从未记录，
             # 群聊消息即便真实到达也查不出是哪个群发来的（队列 #270 卡在
@@ -259,7 +312,10 @@ async def archive_inbound_message(
     # 同语义判定，审计 reason 写作 `sender_is_paul`）——**不新造第二套「谁是
     # 本人」的判定**，两处判据一旦分叉，就会出现「转发认得他、队列不认得他」
     # 这类只在特定消息上才暴露的偏差。
-    if message.sender == PAUL_USERID:
+    # 队列 #416 ⑺：判据收敛到 `forwarding.is_self_sender` 这一处唯一实现
+    # ——原来这里是自己写的第二份 `== PAUL_USERID`，与转发侧「同源」只是
+    # 靠注释约定；第三处（对账哨兵）就是这么漏掉的。
+    if is_self_sender(message.sender):
         audit.record(
             AuditEvent(
                 scenario="wecom-aibot",
@@ -277,6 +333,7 @@ async def archive_inbound_message(
             queue_row=None,
             queue_append_kwargs=queue_append_kwargs,
             queue_append_skipped=True,
+            letter_number=letter_number,
         )
 
     try:
@@ -314,6 +371,7 @@ async def archive_inbound_message(
             queue_row=None,
             queue_append_kwargs=queue_append_kwargs,
             queue_append_deferred=True,
+            letter_number=letter_number,
         )
 
     audit.record(
@@ -333,4 +391,5 @@ async def archive_inbound_message(
         matched=matched,
         queue_row=queue_row,
         queue_append_kwargs=queue_append_kwargs,
+        letter_number=letter_number,
     )

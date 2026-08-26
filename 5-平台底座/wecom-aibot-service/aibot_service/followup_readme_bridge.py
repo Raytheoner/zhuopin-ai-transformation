@@ -217,6 +217,53 @@ _MISS_ACTION = {
 }
 
 
+def resolve_letter_number(
+    *,
+    archived_filename: str,
+    repo_root: Path,
+    department: Optional[str] = None,
+) -> Optional[str]:
+    """**只读**预配对：这份回件将回灌到哪一封信？返回编号（如 `财务部#15`）。
+
+    队列 #416 ⑸ 用它在**归档落盘之前**拿到编号，好把编号写进归档文件名
+    ——审计里那条 `followup_readme_bridge_*` 事件同一时刻就拿到了这个值，
+    「信息就在手边，只是没写进文件名」。
+
+    🔴 三条硬纪律：
+    ⑴ **只读、不持锁、不写盘**——它跑在归档主流程的关键路径上，任何写动作
+       都会把「读一下 README」升级成一次可能失败的事务。
+    ⑵ **绝不向上抛**——拿不到编号是「文件名少一段」，不是「归档失败」。
+       任何异常一律吞成 None，与 `mark_reply_arrived` 的不抛契约同源。
+    ⑶ **不猜**——`_pair` 未命中即 None，不打分、不取最相似的一个。
+
+    与随后 `mark_reply_arrived` 的配对**同源**（同一个 `_pair`）：两次调用
+    之间 README 若被改动，以 `mark_reply_arrived` 的结论为准——它才是往
+    README 上写字的那一方，文件名里的编号只是它的一份可读副本。
+    """
+    try:
+        readme_text = (repo_root / FOLLOWUP_README_REL).read_text(encoding="utf-8")
+        outcome, row = _pair(readme_text, archived_filename, department)
+    except Exception:  # noqa: BLE001 —— 见纪律⑵
+        return None
+    # 🔴 **不能只认 `outcome.matched`**：队列 #416 ⑸ 点名的那份 08-26 回件
+    # 走的正是 `supplement_after_closed`（最新一封已闭环 ⇒ 这是闭环后的补充
+    # 说明），它 `matched=False`、但 `outcome.letter` 是**确定定位到的那一行**
+    # ——审计里那条 `followup_readme_bridge_supplement_after_closed` 的
+    # `letter_number: 财务部#15` 就是从它来的。只认 matched 会让本条修复
+    # 恰好在它要修的那个真实案例上失效。
+    #
+    # 反过来，`no_dispatched_letter` / `no_department` 两条**根本没有 letter**
+    # ⇒ 仍然是 None，不猜。
+    if row is None or outcome.letter is None:
+        return None
+    number = _row_number(row).strip()
+    # 编号自身含 `-` 会破坏 `_ARCHIVE_NAME_RE` 的分段（见那里的红字）——
+    # 形态不合即当作没拿到，宁可少一段，不生成一个解析不回来的文件名。
+    if not number or "-" in number or "#" not in number:
+        return None
+    return number
+
+
 def mark_reply_arrived(
     *,
     archived_filename: str,

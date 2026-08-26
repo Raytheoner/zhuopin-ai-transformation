@@ -15,6 +15,7 @@ from typing import Callable
 
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 
+from .error_text import describe_exception
 from .gates import FINALIZED_STATUS_MARKER
 from .readme_table import (
     MAIN_TABLE_SECTION,
@@ -158,7 +159,7 @@ def approve_followup_letter(
                 automation_level="L1",
                 decision={"reason": "not_draft_pending_review", "status_value": status_value},
                 data_sources={"readme": str(readme_path)},
-                error=str(exc),
+                error=describe_exception(exc),
             )
         )
         raise
@@ -191,7 +192,7 @@ def approve_followup_letter(
                         "section": section,
                     },
                     data_sources={"readme": str(readme_path)},
-                    error=str(exc),
+                    error=describe_exception(exc),
                 )
             )
             raise exc
@@ -208,7 +209,7 @@ def approve_followup_letter(
                 automation_level="L1",
                 decision={"reason": "cooldown_not_elapsed", "row_identity": row_identity},
                 data_sources={"readme": str(readme_path)},
-                error=str(exc),
+                error=describe_exception(exc),
             )
         )
         raise

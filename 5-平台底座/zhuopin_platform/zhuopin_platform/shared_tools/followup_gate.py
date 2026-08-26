@@ -225,13 +225,22 @@ def number_status_mismatch(number_cell: str, status_cell: str) -> bool:
 # ---------------------------------------------------------------------------
 
 # `aibot_service.intake._build_filename` 产出的归档文件名形态：
-#   <部门>-<发送人>-回复-<YYYY-MM-DD>-<主题>-<disambiguator><ext>
+#   <部门>-<发送人>-回复-[跟进信编号-]<YYYY-MM-DD>-<主题>-<disambiguator><ext>
 # 其中 <主题> 对 text 类消息恒为字面量 "文本反馈"；对 file 类消息＝专员回传
 # 文件的 stem，实测即原信 docx 的 stem（如
 # `采购部-姚祖怡-跟进-2026-08-20-SC2采购周报口径判例批改`）。
+#
+# 🔴 `[跟进信编号-]` 是队列 #416 ⑸（2026-08-26）新增的**可选**段，形如
+# `财务部#15`——归档时就把「这份回件回灌到哪一封信」写进文件名，不必再去
+# 审计里翻。**放在日期之前、不放在末尾**：`<topic>` 是贪婪的 `.+`，尾部
+# 追加的任何东西都会被它吞进主题里，stem 逐字比对随即失效（那正是本项目
+# 反复记的「把自由文本交给会解析它的层」那一族）。日期段 `\d{4}-..` 与
+# 编号段 `[^-]+#\d+` 形态互斥，**老文件名（无编号）照样命中**，本改动对
+# 已归档的历史件零影响。
 _TEXT_FEEDBACK_TOPIC = "文本反馈"
 _ARCHIVE_NAME_RE = re.compile(
-    r"^(?P<dept>[^-]+)-(?P<sender>[^-]+)-回复-(?P<date>\d{4}-\d{2}-\d{2})-"
+    r"^(?P<dept>[^-]+)-(?P<sender>[^-]+)-回复-(?:(?P<letter>[^-]+#\d+)-)?"
+    r"(?P<date>\d{4}-\d{2}-\d{2})-"
     r"(?P<topic>.+)-(?P<disambiguator>[0-9a-zA-Z]{6,})$"
 )
 
@@ -263,6 +272,21 @@ def extract_reply_source_stem(archive_filename: str) -> Optional[str]:
     if not topic or topic == _TEXT_FEEDBACK_TOPIC:
         return None
     return topic
+
+
+def extract_letter_number(archive_filename: str) -> Optional[str]:
+    """从归档入信文件名里取出队列 #416 ⑸ 写入的跟进信编号（如 `财务部#15`）。
+
+    老文件名（该段是 2026-08-26 才加的）与不符合命名形态的文件名一律返回
+    None——**不猜**，与 `extract_reply_source_stem` 同一条纪律。
+    """
+    stem = archive_filename
+    for suffix in (".docx", ".md", ".xlsx", ".pdf", ".doc", ".txt", ".png", ".jpg"):
+        if stem.lower().endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    m = _ARCHIVE_NAME_RE.match(stem)
+    return m.group("letter") if m else None
 
 
 def reply_arrived_cites(status_cell: str, archive_filename: str) -> bool:
