@@ -112,3 +112,75 @@ def test_empty_supplier_is_not_shown_as_a_data_gap():
     assert "'无未交订单'" in body            # 供应商列空值的措辞
     # 品牌/责任人仍是取数缺口态，两者措辞必须不同
     assert FIELD_GAP in body
+
+
+# ── 子项 ⑺：全部列同屏可见、长字段自动换行上下对齐（姚祖怡 采购部#18 回件）────────
+
+def _mat_css(body: str) -> str:
+    """截出 `_MAT_CSS` 那段 <style>（页面上有三段 style，只认含 .mat-tbl 的那段）。"""
+    for block in body.split("<style>")[1:]:
+        css = block.split("</style>")[0]
+        if ".mat-tbl{" in css:
+            return css
+    raise AssertionError("页面里找不到物料看板表格的 style 段")
+
+
+def test_table_no_longer_forces_single_line_nor_scrolls_sideways():
+    """⑺ 的三条联动：nowrap 去掉、fixed 布局上、容器不再开横向滚动。
+
+    这三条缺一条都做不到「同屏」——nowrap 撑宽表格逼出滚动条；auto 布局按内容分列，
+    一个长供应商名就能把整表撑爆；`.mat-scroll` 的 `overflow-x:auto` 既留着滚动条，
+    又让计算后的 `overflow-y` 变 auto、使表头 sticky 黏在一个从不纵向滚动的容器上而失效。
+    """
+    css = _mat_css(_client(_snap()).get("/materials").get_data(as_text=True))
+    tbl = css.split(".mat-tbl{")[1].split("}")[0]
+    assert "white-space:nowrap" not in tbl
+    assert "table-layout:fixed" in tbl
+    scroll = css.split(".mat-scroll{")[1].split("}")[0]
+    assert "overflow-x" not in scroll
+    # 折行须真的开着，且长料号/长供应商名这类无空格串也要能断
+    td = css.split(".mat-tbl td{")[1].split("}")[0]
+    assert "white-space:normal" in td and "overflow-wrap:anywhere" in td
+    assert "vertical-align:top" in td          # 「上下对齐」的前提，误改成 middle 即失效
+
+
+def test_sticky_header_clears_the_sticky_nav_bar():
+    """表头 sticky 的 top 必须等于导航条高度，否则纵向翻页时表头钻到导航条底下看不见。"""
+    body = _client(_snap()).get("/materials").get_data(as_text=True)
+    css = _mat_css(body)
+    th = css.split(".mat-tbl th{")[1].split("}")[0]
+    assert "position:sticky" in th and "top:46px" in th
+    nav = webapp._NAV_CSS.split(".bg-nav{")[1].split("}")[0]
+    assert "height:46px" in nav                # 改导航条高度就要同步改上面的 top
+
+
+def test_column_widths_cover_every_column_exactly_once():
+    """列宽权重必须与 `head()` 的列数逐位对上，否则 colgroup 会整体错位一列。
+
+    head() ＝ 料号/品名/品牌/状态/未交订单数量（5）＋ 各月缺口（N）＋ 总缺口（1）
+    ＋ 答交数量/答交日期/供应商名称/责任人（4）。
+    """
+    import re
+    body = _client(_snap()).get("/materials").get_data(as_text=True)
+    assert "<colgroup>" in body                # 页面确实生成 colgroup（fixed 布局靠它分列）
+    head = re.search(r"var COLW_HEAD=\[([^\]]*)\]", body).group(1).split(",")
+    tail = re.search(r"COLW_TAIL=\[([^\]]*)\]", body).group(1).split(",")
+    assert len(head) == 5 and len(tail) == 4
+    assert "COLW_MONTH" in body and "COLW_TOT" in body
+
+
+def test_multi_value_columns_render_one_value_per_line():
+    """答交数量/答交日期逐值一行且禁折行——他的样例就是三个数量对三个日期横向对齐。"""
+    body = _client(_snap()).get("/materials").get_data(as_text=True)
+    assert "lines(ansQtyList(r),1),lines(ansDateList(r),1),lines(supList(r),0)" in body
+    css = _mat_css(body)
+    ln = css.split(".mat-ln{")[1].split("}")[0]
+    assert "line-height:1.6" in ln and "min-height:1.6em" in ln   # 行高写死才对得齐
+    assert ".mat-ln.nw{white-space:nowrap}" in css
+
+
+def test_excel_export_still_joins_multi_values_into_one_cell():
+    """导出格式本次不动：页面改逐值一行，Excel 仍是 '、' 连成单格（改了会打乱他的下游表）。"""
+    body = _client(_snap()).get("/materials").get_data(as_text=True)
+    assert "c.push(r.total,ansQty(r),ansDate(r),supText(r),r.owner);" in body
+    assert "l.join('、')" in body

@@ -340,15 +340,30 @@ setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全�
 
 # ── 物料看板页（队列 #334）────────────────────────────────────────────────────
 
+# 🔴 队列 #334 子项 ⑺（姚祖怡 采购部#18 回件新提，2026-08-26）：**全部列同屏可见**，
+# 长字段自动换行、上下对齐，不再左右滚动。本次只动呈现层，三条读数口径（三个月窗口／
+# 多家供应商全部并列／供应商取 ERP 实际下单供应商）他仍未签认（§四 #122），取数逻辑一字未改。
+#
+# 三处联动改动，缺一条都做不到「同屏」：
+#  ① `white-space:nowrap` → `normal`：nowrap 正是撑宽表格、逼出横向滚动条的那一条；
+#  ② `table-layout:fixed` ＋ 由 JS 按列权重生成 `<colgroup>`：默认的 auto 布局会按内容
+#     宽度分列（一个长供应商名就能把整表撑爆），fixed 才能保证「表宽恒等于容器宽」；
+#  ③ `.mat-scroll` 去掉 `overflow-x:auto`：留着它有两个坏处——横向滚动条正是他要去掉的
+#     东西，且 `overflow-x:auto` 会让计算后的 `overflow-y` 变成 auto、使容器成为滚动容器，
+#     表头的 `position:sticky` 于是黏在这个从不纵向滚动的容器上、等于失效。去掉之后
+#     sticky 改以视口为参照真正生效，`top:46px` 是给同样 sticky 的 `.bg-nav` 让位
+#     （`_NAV_CSS` 里 `.bg-nav{height:46px}`，两处须同步改）。
 _MAT_CSS = """<style>
-.mat-wrap{max-width:1500px;margin:0 auto}
+.mat-wrap{max-width:1760px;margin:0 auto}
 .mat-note{background:var(--surface2);border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.75}
 .mat-note b{color:var(--text)}
 .mat-note ol{margin:6px 0 0;padding-left:20px}
-.mat-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
-.mat-tbl{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
-.mat-tbl th{background:var(--surface2);padding:9px 11px;text-align:left;font-size:12px;color:var(--text2);position:sticky;top:0}
-.mat-tbl td{padding:8px 11px;border-top:1px solid var(--border);vertical-align:top}
+.mat-scroll{border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.mat-tbl{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+.mat-tbl th{background:var(--surface2);padding:9px 9px;text-align:left;font-size:12px;color:var(--text2);position:sticky;top:46px;z-index:2;white-space:normal;line-height:1.45}
+.mat-tbl thead th:first-child{border-top-left-radius:11px}
+.mat-tbl thead th:last-child{border-top-right-radius:11px}
+.mat-tbl td{padding:8px 9px;border-top:1px solid var(--border);vertical-align:top;white-space:normal;overflow-wrap:anywhere;line-height:1.6}
 .mat-tbl td.num{text-align:right;font-family:var(--mono)}
 .mat-tbl td.mono{font-family:var(--mono)}
 .mat-tbl tr:hover td{background:var(--surface2)}
@@ -356,7 +371,12 @@ _MAT_CSS = """<style>
 .mat-gapmark{color:var(--text3);font-style:normal}
 .mat-tag{font-size:11px;padding:1px 6px;border-radius:6px;background:var(--surface2);color:var(--text2);margin-left:6px}
 .mat-div{color:var(--gap);font-weight:600}
-.mat-multi{white-space:normal;max-width:220px}
+/* 多值列逐值一行：他给的样例就是「答交数量 100/300/500」与「答交日期 2026-9-20/10-20/11-20」
+   三行并列 ⇒ 同一批次的量与日期必须**横向对得上**。行高写死 1.6em 且不许折行，配合
+   td 的 vertical-align:top，第 i 行在两列里就落在同一条基线上；若放任折行，一列折成
+   两行就会把后面所有行整体错位一格，「上下对齐」当场失效。 */
+.mat-ln{line-height:1.6;min-height:1.6em}
+.mat-ln.nw{white-space:nowrap}
 </style>"""
 
 
@@ -383,14 +403,25 @@ function stText(r){
   if(r.st!=='divergent')return base;
   return base+'（'+(r.sts||[]).map(function(s){return ST_LABEL[s]||s;}).join(' / ')+'）';
 }
-function ansQty(r){return (r.cb&&r.cb.length)?r.cb.map(function(b){return fmt(b.q);}).join('、'):'无';}
-function ansDate(r){return (r.cb&&r.cb.length)?r.cb.map(function(b){return b.d;}).join('、'):'无';}
+// 多值列一律先取「值数组」，再分叉成两种呈现：页面逐值一行（上下对齐，子项 ⑺），
+// Excel 导出仍用 '、' 连成单格文本（导出格式本次不动，改了会打乱他既有的下游表格）。
+function ansQtyList(r){return (r.cb||[]).map(function(b){return fmt(b.q);});}
+function ansDateList(r){return (r.cb||[]).map(function(b){return b.d;});}
+function ansQty(r){var l=ansQtyList(r);return l.length?l.join('、'):'无';}
+function ansDate(r){var l=ansDateList(r);return l.length?l.join('、'):'无';}
+// 逐值一行渲染。`nw` = 不许折行（答交数量/日期用），保证两列第 i 行严格同高、横向对齐。
+function lines(arr,nw){
+  var cls='mat-ln'+(nw?' nw':'');
+  if(!arr||!arr.length)return '<div class="'+cls+'">无</div>';
+  return arr.map(function(x){return '<div class="'+cls+'">'+esc(x)+'</div>';}).join('');
+}
 // 🔴 供应商为空 ≠ 取数缺口：品牌/责任人是「全库没有这个字段」，而供应商为空是
 // 「这个料当前没有未交采购订单」——那是一个**准确的答案**，不是取不到数。
 // 生产实测 596 行里恰好 100 行为空，与状态列 no_transit(82)+confirmed_no_transit(18)
 // 逐个对上，坐实两者同义。把它显示成「取数缺口」会重蹈 #296 那族「『无』与『0』
 // 混为一谈」的老路，故单列措辞。
 function supText(r){return (r.sup&&r.sup.length)?r.sup.join('、'):'无未交订单';}
+function supList(r){return (r.sup&&r.sup.length)?r.sup.slice():['无未交订单'];}
 function view(){
   var q=state.q.trim().toLowerCase();
   var l=ROWS.filter(function(r){
@@ -424,9 +455,26 @@ function cells(r){
     fmt(r.tq)];
   (r.m||[]).forEach(function(v){c.push(fmt(v));});
   c.push('<span class="mat-tot">'+fmt(r.total)+'</span>');
-  c.push(esc(ansQty(r)),esc(ansDate(r)),esc(supText(r)),
+  // 答交数量／答交日期／供应商：逐值一行（子项 ⑺「上下对齐」），前两列禁折行以保证对齐
+  c.push(lines(ansQtyList(r),1),lines(ansDateList(r),1),lines(supList(r),0),
          '<span class="mat-gapmark">'+esc(r.owner)+'</span>');
   return c;
+}
+// 列宽权重（子项 ⑺）：table-layout:fixed 下由这份权重按比例分完 100%，表宽恒等于容器宽，
+// 任何一列的内容再长也只会在本列内折行、不会把表撑出屏幕。顺序须与 head() 逐位对应：
+// 料号／品名／品牌／状态／未交订单数量 ＋ 各月缺口 ＋ 总缺口 ＋ 答交数量／答交日期／供应商／责任人。
+// 权重按「该列最常见的内容在 1760px（.mat-wrap 上限）下不折行」定：品牌/责任人两列
+// 每行都是 7 字的取数缺口标记 `—（取数缺口）`，故不能压到最窄；屏幕再窄也只是这些列
+// 开始折行，横向滚动条不会回来。
+var COLW_HEAD=[9,12.5,7,9.5,6.5], COLW_MONTH=5.5, COLW_TOT=7, COLW_TAIL=[7,9,12.5,7];
+function colgroup(){
+  var w=COLW_HEAD.slice();
+  MONTHS.forEach(function(){w.push(COLW_MONTH);});
+  w.push(COLW_TOT);
+  w=w.concat(COLW_TAIL);
+  var sum=w.reduce(function(a,b){return a+b;},0);
+  return '<colgroup>'+w.map(function(x){
+    return '<col style="width:'+(Math.round(x/sum*10000)/100)+'%">';}).join('')+'</colgroup>';
 }
 var NUMCOL={};   // 右对齐的列下标（未交订单量/各月/合计）
 function render(){
@@ -436,7 +484,7 @@ function render(){
   var from=(state.page-1)*ps,page=l.slice(from,from+ps);
   var h=head();
   NUMCOL={};for(var i=4;i<5+MONTHS.length+1;i++)NUMCOL[i]=1;
-  var html='<table class="mat-tbl"><thead><tr>'
+  var html='<table class="mat-tbl">'+colgroup()+'<thead><tr>'
     +h.map(function(x){return '<th>'+esc(x)+'</th>';}).join('')+'</tr></thead><tbody>';
   if(!page.length){
     html+='<tr><td colspan="'+h.length+'" style="text-align:center;color:var(--text3);padding:24px">'
@@ -444,7 +492,9 @@ function render(){
   }
   page.forEach(function(r){
     html+='<tr>'+cells(r).map(function(c,i){
-      var cl=i===0?' class="mono"':(NUMCOL[i]?' class="num"':(i>=h.length-4?' class="mat-multi"':''));
+      // 折行与列宽已交给 table-layout:fixed ＋ colgroup，末四列不再需要 .mat-multi 那种
+      // max-width 硬限（它在 fixed 布局下会与 col 宽度打架），故只保留料号等宽字体与数字右对齐。
+      var cl=i===0?' class="mono"':(NUMCOL[i]?' class="num"':'');
       return '<td'+cl+'>'+c+'</td>';}).join('')+'</tr>';
   });
   html+='</tbody></table>';
