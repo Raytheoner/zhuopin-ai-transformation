@@ -1435,6 +1435,18 @@ def _build_append_row_line(section: str, number: str | None, cells: list[str]) -
         if number is not None:
             raise AppendRowFailedError(f"§{section} 不使用编号列，不应提供 --number")
         row_cells = cells
+
+    # 队列 #414 修复面 B：**所有写盘路径共用的那一套校验**，收口在这里。
+    # 上面几条（arity／裸竖线）保留不动——它们的诊断文案是 #351 专门打磨过的，
+    # 比通用校验更有指向性；本调用补的是它们看不见的第三种外形：**列位错置**
+    # （格数是对的，错的是内容与格位的对应关系，如状态格不以 [S: 开头、
+    # 「✅ 已完成」落进期望产出格）。
+    problems = queue_table.validate_row_cells(section, row_cells, source="write")
+    if problems:
+        raise AppendRowFailedError(
+            f"单元格校验未通过（{len(problems)} 项）：" + chr(10)
+            + chr(10).join(f"  - {p}" for p in problems)
+        )
     return "| " + " | ".join(row_cells) + " |"
 
 
@@ -1507,6 +1519,279 @@ def _append_row_ownership_violation(args: argparse.Namespace) -> str | None:
             f"若确认对方已异常退出，等其自然陈旧（{STALE_MINUTES} 分钟）后重试。")
 
 
+# ---------------------------------------------------------------------------
+# 队列 #414 修复面 A（正文不进 argv）与 C（按列名写入）的 CLI 层。
+#
+# A 的病灶不在人，在传输层：单元格文本经 **bash 命令行 argv** 传入，而本项目
+# 行文规范**要求大量使用反引号包路径与命令**。双引号包裹时 bash 把反引号当
+# **命令替换**执行——2026-08-25 一次把 25 行 `git worktree list` 输出注入进
+# 表格；08-26 一次把一个目录名当命令跑、报错并**把该单元格清空**。
+# ⇒ `--cells-json` / `--stdin-json` 让正文以 JSON 传入，argv 里不再出现正文，
+#   反引号、竖线、`$()`、引号一律失去特殊性，且不必要求调用方记住任何转义规则。
+#
+# C 的病灶是「调用方必须自己数 split 后的列下标」。A 与 B 都挡不住数错——
+# 2026-08-26 #412 实测：收工叙述被写进「触碰区」格、「✅ 已完成」被写进
+# 「期望产出」格，而状态列始终停在 [S:open]，**机器读状态列 ⇒ 一直认为
+# 任务没做完**，直到有人肉眼发现。
+# ⇒ `--set 列名=值` 与 `edit-row --append 列名=值`，内部按分区列序映射。
+# ---------------------------------------------------------------------------
+
+CELL_INPUT_FLAGS = ("--cell", "--set", "--cells-json", "--stdin-json")
+
+
+def _parse_set_tokens(tokens: list[str]) -> dict[str, str]:
+    """把 `列名=值` 形式的 `--set` token 解析成 dict。
+
+    只按**第一个**等号切分——值里可以自由包含等号（如 `--set 状态="a=b"`）。
+    列名侧不允许为空；重复列名 fail-loud（`build_row_cells` 亦会再拦一次
+    别名撞车的情形）。
+    """
+    values: dict[str, str] = {}
+    for token in tokens:
+        if "=" not in token:
+            raise AppendRowFailedError(
+                f"--set 需要 `列名=值` 形式，收到 {token!r}"
+                f"（若值里含等号无妨，只按第一个等号切分）"
+            )
+        name, _, value = token.partition("=")
+        name = name.strip()
+        if not name:
+            raise AppendRowFailedError(f"--set 的列名为空：{token!r}")
+        if name in values:
+            raise AppendRowFailedError(f"--set 重复指定了列 {name!r}")
+        values[name] = value
+    return values
+
+
+def _load_cells_json(args: argparse.Namespace) -> list[str] | dict[str, str] | None:
+    """读取 `--cells-json <文件>` 或 `--stdin-json` 的 JSON 载荷。
+
+    接受两种顶层形态，**都不经过 shell**：
+      - **数组** —— 按分区列序的内容格（不含编号列），等价于一串 `--cell`；
+      - **对象** —— `{"列名": "值"}`，等价于一串 `--set`（推荐，因为它
+        同时消灭了「数错下标」这一类，见修复面 C）。
+    """
+    raw: str | None = None
+    if getattr(args, "stdin_json", False):
+        raw = sys.stdin.read()
+        origin = "标准输入"
+    elif getattr(args, "cells_json", None):
+        path = Path(args.cells_json)
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise AppendRowFailedError(f"读取 --cells-json 失败：{path}（{exc}）") from None
+        origin = str(path)
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise AppendRowFailedError(f"{origin} 不是合法 JSON：{exc}") from None
+    if isinstance(payload, list):
+        if not all(isinstance(x, str) for x in payload):
+            raise AppendRowFailedError(f"{origin} 的数组元素必须全是字符串")
+        return list(payload)
+    if isinstance(payload, dict):
+        if not all(isinstance(k, str) and isinstance(v, str) for k, v in payload.items()):
+            raise AppendRowFailedError(f"{origin} 的对象键值必须全是字符串")
+        return dict(payload)
+    raise AppendRowFailedError(
+        f"{origin} 顶层须是数组（按列序的内容格）或对象（列名→值），"
+        f"收到 {type(payload).__name__}"
+    )
+
+
+def _resolve_append_cells(args: argparse.Namespace) -> list[str]:
+    """把四种入口（`--cell`／`--set`／`--cells-json`／`--stdin-json`）归一
+    成「按分区列序的内容格列表（不含编号列）」。
+
+    **四选一，多给即拒**——不做「以某个为准、其余忽略」的静默取舍：静默
+    取舍正是本行要消灭的那一族失效（内容落错位置而不报错）。
+    """
+    given = [
+        name for name, present in (
+            ("--cell", bool(args.cell)),
+            ("--set", bool(getattr(args, "set", None))),
+            ("--cells-json", bool(getattr(args, "cells_json", None))),
+            ("--stdin-json", bool(getattr(args, "stdin_json", False))),
+        ) if present
+    ]
+    if len(given) > 1:
+        raise AppendRowFailedError(
+            f"{'、'.join(given)} 只能用一个，收到 {len(given)} 个——"
+            f"工具不替你决定以哪个为准"
+        )
+    if not given:
+        raise AppendRowFailedError(
+            "未提供字段值。四选一："
+            "`--cell`（按列序，正文经 argv，反引号有被 bash 执行的风险）／"
+            "`--set 列名=值`（按列名，推荐）／"
+            "`--cells-json <文件>`／`--stdin-json`（正文完全不进 argv，最安全）"
+        )
+
+    payload = _load_cells_json(args)
+    if payload is None:
+        if args.cell:
+            return list(args.cell)
+        payload = _parse_set_tokens(list(args.set))
+
+    if isinstance(payload, list):
+        return payload
+    return _content_cells_from_named(args.section, payload, args.number)
+
+
+def _content_cells_from_named(
+    section: str, values: dict[str, str], number: str | None,
+) -> list[str]:
+    """按列名 dict 构造内容格列表（不含编号列）。
+
+    编号列由 `--number` 提供，**不接受在 `--set` 里再写一次**——两个来源
+    就会有两个真相，撞了之后必须有人裁决，而这正是「静默取舍」的入口。
+    """
+    names = queue_table.SECTION_COLUMN_NAMES.get(section)
+    if names is None:
+        raise AppendRowFailedError(f"未知分区 {section!r}")
+    numbered = section in ROW_NUMBER_SECTIONS
+    merged = dict(values)
+    if numbered:
+        for alias in ("#", "编号", "行号"):
+            if alias in merged:
+                raise AppendRowFailedError(
+                    f"编号列请用 `--number` 传，不要写在 --set/JSON 里（收到 {alias!r}）"
+                )
+        if number is None:
+            raise AppendRowFailedError(
+                f"§{section} 需要 --number（行编号，通常来自 acquire --reserve 的返回值）"
+            )
+        merged["#"] = number
+    try:
+        full = queue_table.build_row_cells(section, merged)
+    except queue_table.QueueCellError as exc:
+        raise AppendRowFailedError(str(exc)) from None
+    return full[1:] if numbered else full
+
+
+# ---------------------------------------------------------------------------
+# edit-row：按列名改**已存在**的行（修复面 C 的读改写侧）
+#
+# 存在的理由：此前改一行只有两条路——手工编辑器改（易改错格），或写 python
+# 插行/整文件重写（**完全绕过 append-row 的守卫**，正是 #414 认定的"真正的
+# 缺口"）。本子命令让"改某行某列"成为一条走守卫的正门路径。
+# ---------------------------------------------------------------------------
+
+
+def _locate_row(text: str, section: str, number: str) -> tuple[int, str, list[str]]:
+    """在 `text` 的指定分区内按行编号定位一行，返回（行下标, 原始行, 单元格）。
+
+    找不到 / 找到多条都 fail-loud——找到多条意味着队列本身已重号，静默改
+    第一条会把问题埋得更深。
+    """
+    bounds = _section_bounds(text, section)
+    if bounds is None:
+        raise AppendRowFailedError(f"目标文件不含 §{section} 分区标题")
+    start, end = bounds
+    lines = text.splitlines()
+    offset = 0
+    hits: list[tuple[int, str, list[str]]] = []
+    for idx, line in enumerate(lines):
+        line_start = offset
+        offset += len(line) + 1
+        if not (start <= line_start < end):
+            continue
+        cells = queue_table.split_row_cells(line)
+        if cells is None or not cells:
+            continue
+        if cells[0].strip() == str(number).strip():
+            hits.append((idx, line, cells))
+    if not hits:
+        raise AppendRowFailedError(
+            f"§{section} 内找不到编号为 {number!r} 的行"
+            f"（若该行行头曾断裂，先跑 `工具-队列结构lint.py` 看它是否被报为结构破损行）"
+        )
+    if len(hits) > 1:
+        raise AppendRowFailedError(
+            f"§{section} 内编号 {number!r} 命中 {len(hits)} 行——队列已重号，"
+            f"须人工裁决后再改，工具不替你选第一条"
+        )
+    return hits[0]
+
+
+def cmd_edit_row(args: argparse.Namespace) -> int:
+    if _is_queue_system_target(args.file):
+        resolved_target, used_default = _resolve_append_target(args.section, args.domain)
+        if used_default:
+            print(f"ℹ 未显式声明 --domain，按向后兼容默认值定位机制环境文件"
+                  f"（{resolved_target}）——建议此后显式传 --domain 机|业。")
+        args = argparse.Namespace(**vars(args))
+        args.file = resolved_target
+
+    ownership_problem = _append_row_ownership_violation(args)
+    if ownership_problem:
+        print(f"✗ {ownership_problem}")
+        return 1
+
+    target_path = _target_path(args.file)
+    try:
+        text = target_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"✗ 读取目标文件失败：{target_path}（{exc}）")
+        return 1
+
+    try:
+        sets = _parse_set_tokens(list(args.set or []))
+        appends = _parse_set_tokens(list(args.append or []))
+        overlap = sorted(set(sets) & set(appends))
+        if overlap:
+            raise AppendRowFailedError(
+                f"同一列既 --set 又 --append：{'、'.join(overlap)}——工具不替你决定顺序"
+            )
+        if not sets and not appends:
+            raise AppendRowFailedError("未提供改动。用 `--set 列名=值`（整格替换）"
+                                       "或 `--append 列名=值`（在该格末尾追加）")
+        idx, old_line, cells = _locate_row(text, args.section, args.number)
+
+        new_cells = list(cells)
+        for name, value in sets.items():
+            new_cells[queue_table.resolve_column_index(args.section, name)] = value
+        for name, value in appends.items():
+            col = queue_table.resolve_column_index(args.section, name)
+            existing = new_cells[col].rstrip()
+            sep = args.append_sep if existing else ""
+            new_cells[col] = existing + sep + value
+    except (AppendRowFailedError, queue_table.QueueCellError) as exc:
+        print(f"✗ {exc}")
+        return 1
+
+    # 修复面 B：写盘前复用同一套校验。此处口径是 "parsed"——单元格来自
+    # 已落库的行（`split_row_cells` 反引号感知切出），格内被反引号正当保护
+    # 的竖线是合法的（生产队列 §一 #324/#326 即如此）；改动值里的**新**竖线
+    # 由下面的显式写侧检查单独把关。
+    for name, value in {**sets, **appends}.items():
+        if queue_table.has_bare_pipe(value):
+            print(f"✗ 传入的「{name}」值含半角竖线（会撑列；改用全角「｜」或改写措辞）")
+            return 1
+    problems = queue_table.validate_row_cells(args.section, new_cells, source="parsed")
+    if problems:
+        print(f"✗ 改动后该行未通过单元格校验（{len(problems)} 项，未修改目标文件）：")
+        for problem in problems:
+            print(f"  - {problem}")
+        return 1
+
+    new_line = "| " + " | ".join(new_cells) + " |"
+    if new_line == old_line.strip():
+        print("ℹ 改动后与原行完全一致，未写入。")
+        return 0
+
+    lines = text.splitlines(keepends=True)
+    ending = "\n" if lines[idx].endswith("\n") else ""
+    lines[idx] = new_line + ending
+    target_path.write_text("".join(lines), encoding="utf-8")
+    touched = "、".join(sorted(set(sets) | set(appends)))
+    print(f"✓ 已改 §{args.section} #{args.number} 的「{touched}」格")
+    return 0
+
+
 def cmd_append_row(args: argparse.Namespace) -> int:
     # 队列 #315 决策点3/5：队列系统模式下按 --domain 路由到对应物理文件
     # （§四恒定机制环境文件，见 `_resolve_append_target`）；显式 --file
@@ -1533,8 +1818,13 @@ def cmd_append_row(args: argparse.Namespace) -> int:
         print(f"✗ 读取目标文件失败：{target_path}（{exc}）")
         return 1
 
+    # 队列 #414 修复面 A/C：四种入口归一成"按列序的内容格"。`--cell` 仍是
+    # 其中之一（向后兼容，既有调用方与既有单测不受影响），但 `--set` 与
+    # `--cells-json`/`--stdin-json` 才是本次要推的两条——前者消灭"数错下标"，
+    # 后者消灭"正文经 bash argv 被命令替换"。
     try:
-        new_line = _build_append_row_line(args.section, args.number, args.cell)
+        cells = _resolve_append_cells(args)
+        new_line = _build_append_row_line(args.section, args.number, cells)
     except AppendRowFailedError as exc:
         print(f"✗ {exc}")
         return 1
@@ -2300,6 +2590,67 @@ def _auto_sync_followup_reply_state(
     ]
 
 
+# 队列 #414 A3-2（源自 #416 ⑹）：release 的③预留归属校验对「自愈」没有出口。
+#
+# 🔴 **死锁形态（2026-08-26 实测发生）**：`acquire` 取快照那一刻某行是坏的
+# ——行头断裂（编号格被清空 / 行首竖线丢失）。快照按行解析，**坏行解析不出
+# 编号**，于是它不在 `old_numbers` 里。持锁期间把它修好之后，release 看到一
+# 个「快照里没有、现在有」的编号 ⇒ 判为**本次凭空冒出、未经 `--reserve` 预留
+# 的新行** ⇒ 拒绝释放。而此时 `acquire` 又被自己那把锁挡住 ⇒ **谁都动不了，
+# 只能等 30 分钟自动陈旧。**
+#
+# 🔑 **判据（比这条修法本身更值得记住）**：**一个只认「快照里有没有」的校验，
+# 会把「修好一行」和「凭空造一行」当成同一件事**——因为坏行在快照里本来就
+# 是不可见的。⇒ 凡以「解析结果」为基线的差分校验，都要问一句：**基线本身
+# 解析失败时，它把什么误判成了新增？**
+#
+# **选型（两条路都在派单件里，选了前者）**：
+#   ✅ **HEAD 存在性豁免**——该编号若已存在于 git HEAD 的同一分区，它就不是
+#      新行，本项不适用。**机器可判，不需要任何人记得做什么**，符合本项目
+#      「机制守优于人守」（CLAUDE.md §5 规则退休制）。
+#   ➕ **行内逃生阀 `预留豁免：<理由>`**——只覆盖 HEAD 也读不到的残余情形
+#      （破损在 HEAD 里就已存在）。完全复用 `WIP豁免：`/`串行豁免：` 既有
+#      范式：写在行内、随行留痕、可 grep 计数，不新增写盘路径。
+#
+# **刻意不做**：不豁免「组内重复」与「与归档号重复」两项——那两项抓的是真正
+# 的撞号，与本次死锁无关；只豁免③本身，同 #333② 既有先例的收窄口径。
+RESERVE_WAIVER_MARKER = "预留豁免："
+
+# 惰性缓存哨兵。**不能用 `None` 表示"尚未计算"**——`_head_row_numbers`
+# 拿 `None` 表达"读不到 HEAD 基线"这一有意义的结果，两者混用会让"读不到"
+# 每次都重新触发一遍 git 调用，更糟的是把两种状态在语义上合并成一种。
+_HEAD_NUMBERS_UNSET = object()
+
+
+def _head_row_numbers(repo_root: Path, target_rel: str, label: str) -> set[int] | None:
+    """读 git HEAD 里该队列文件同一分区的行编号集合。
+
+    取不到（不在 git 工作树内 / 文件尚未入库 / git 调用失败）一律返回
+    `None`，调用方按「无 HEAD 基线」处理——**不返回空集合**：空集合会被
+    当成「HEAD 里一个编号都没有」，从而把每一行都判成新增，那是静默回退到
+    一个看起来合理的错误答案（取证知识库 §二 同族）。
+    """
+    if not _is_inside_git_work_tree(repo_root):
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "show", f"HEAD:{target_rel}"],
+            cwd=repo_root, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    section_text = _split_live_sections(result.stdout).get(label, "")
+    if not section_text:
+        return None
+    return {
+        int(cells[0]) for _, cells in _table_data_rows(section_text)
+        if cells and cells[0].isdigit()
+    }
+
+
 def _validate_release_structure(
     args: argparse.Namespace, lock_data: dict, repo_root: Path,
 ) -> list[str]:
@@ -2451,6 +2802,10 @@ def _validate_release_structure(
         if not touched:
             continue
 
+        # 队列 #414 A3-2：本分区的 git HEAD 编号基线，惰性求值（只在真的
+        # 撞上③预留归属校验时才付一次 git 调用的代价）。
+        head_numbers: set[int] | None | object = _HEAD_NUMBERS_UNSET
+
         old_numbers: set[int] = set()
         current_number_counts: Counter = Counter()
         if label in ROW_NUMBER_SECTIONS:
@@ -2582,11 +2937,31 @@ def _validate_release_structure(
                             and lock_data.get("who") == AIBOT_LOCK_WHO
                             and cells[1].strip().startswith(AIBOT_INTAKE_TASK_PREFIX)
                         )
-                        if not is_aibot_intake_row:
+                        # 队列 #414 A3-2：自愈出口。坏行在快照里解析不出编号，
+                        # 修好它之后本项会把「修复」误判成「凭空新增」，而此时
+                        # acquire 又被自己的锁挡住 ⇒ 死锁到 30 分钟陈旧为止。
+                        # 判据见 `_head_row_numbers` 上方长注释。
+                        if head_numbers is _HEAD_NUMBERS_UNSET:
+                            head_numbers = _head_row_numbers(repo_root, args.file, label)
+                        is_repair_of_existing = (
+                            head_numbers is not None and number in head_numbers
+                        )
+                        has_reserve_waiver = any(
+                            RESERVE_WAIVER_MARKER in cell for cell in cells
+                        )
+                        if not (is_aibot_intake_row or is_repair_of_existing
+                                or has_reserve_waiver):
                             shown = "、".join(str(n) for n in sorted(reserved_here)) or "本次未预留任何编号"
                             violations.append(
                                 f"§{label} #{number} 不属于本次持锁期间 --reserve 预留的编号集合"
                                 f"（{shown}）：{preview}"
+                                + (f"　若这其实是在**修复一条已破损的既有行**，"
+                                   f"而它在 git HEAD 里也读不出编号，可在行内写"
+                                   f"「{RESERVE_WAIVER_MARKER}<理由>」放行并留痕。"
+                                   if head_numbers is not None else
+                                   f"　（本次读不到 git HEAD 基线，无法自动判断"
+                                   f"这是否为既有行的修复；确属修复可在行内写"
+                                   f"「{RESERVE_WAIVER_MARKER}<理由>」。）")
                             )
 
             if label == "一":
@@ -3697,6 +4072,26 @@ def main() -> int:
              "（任务/领取方/输入指针/期望产出/状态/触碰区/登记）、§二 4 个"
              "（批次/文件清单/建议 message/状态，首个即批次号）、§四 3 个（事项/等谁/截止）",
     )
+    # 队列 #414 修复面 A：正文不进 argv。
+    p_append_row.add_argument(
+        "--cells-json", default=None, metavar="文件",
+        help="队列 #414 修复面 A：单元格内容以 JSON **文件**传入，argv 里不再"
+             "出现正文——反引号、竖线、$()、引号一律失去特殊性，不必记任何转义"
+             "规则。顶层可以是数组（按列序的内容格，等价于一串 --cell）或对象"
+             "（列名→值，等价于一串 --set，推荐）",
+    )
+    p_append_row.add_argument(
+        "--stdin-json", action="store_true",
+        help="同 --cells-json，但从标准输入读 JSON（管道传入，正文同样不进 argv）",
+    )
+    # 队列 #414 修复面 C：按列名写入，调用方永远不必数下标。
+    p_append_row.add_argument(
+        "--set", action="append", default=[], metavar="列名=值",
+        help="队列 #414 修复面 C：按**列名**提供字段值，可重复。§一 列名＝"
+             "任务/领取方/输入（指针）/期望产出/状态/触碰区/登记；§二＝批次/"
+             "文件清单/建议 message/状态；§四＝事项/等谁/截止。编号列请用"
+             " --number，不要写进 --set。与 --cell/--cells-json/--stdin-json 四选一",
+    )
     p_append_row.add_argument(
         "--domain", choices=("机", "业"), default=None,
         help="队列 #315 决策点3/5：§一/§二 写入哪份物理队列文件（机制环境／"
@@ -3705,6 +4100,41 @@ def main() -> int:
              "`_resolve_append_target` 文档）",
     )
     p_append_row.set_defaults(func=cmd_append_row)
+
+    # 队列 #414 修复面 C：改**已存在**的行。此前只有两条路——手工编辑器改
+    # （易改错格）、或写 python 插行/整文件重写（**完全绕过 append-row 的
+    # 守卫**，正是 #414 认定的"真正的缺口：绕过入口，而非守卫缺失"）。
+    p_edit_row = sub.add_parser(
+        "edit-row",
+        help="队列 #414：按列名改一行已存在的行（走同一套守卫，替代裸手改/python 插行）",
+    )
+    p_edit_row.add_argument("--who", default="", help="同 append-row：须与当前持锁人一致")
+    p_edit_row.add_argument(
+        "--section", required=True, choices=sorted(SECTION_APPEND_CONTENT_COUNTS),
+        help="目标分区（§一/§二/§四）",
+    )
+    p_edit_row.add_argument(
+        "--number", required=True,
+        help="要改的行编号（§二 传批次号——该分区首列即批次号）",
+    )
+    p_edit_row.add_argument(
+        "--set", action="append", default=[], metavar="列名=值",
+        help="整格替换，可重复（列名同 append-row --set）",
+    )
+    p_edit_row.add_argument(
+        "--append", action="append", default=[], metavar="列名=值",
+        help="在该格**末尾追加**，可重复——回写队列最常用的形态"
+             "（如 `--append 状态='✅ 已完成…'`），不必先读出原值再拼",
+    )
+    p_edit_row.add_argument(
+        "--append-sep", default=" ",
+        help="--append 时原值与新值之间的分隔符（默认一个空格；原格为空时不插）",
+    )
+    p_edit_row.add_argument(
+        "--domain", choices=("机", "业"), default=None,
+        help="同 append-row：定位哪份物理队列文件",
+    )
+    p_edit_row.set_defaults(func=cmd_edit_row)
 
     args = parser.parse_args()
     return args.func(args)

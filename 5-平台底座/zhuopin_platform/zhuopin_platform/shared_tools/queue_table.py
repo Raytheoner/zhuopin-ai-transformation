@@ -244,3 +244,258 @@ def parse_section_rows(
             continue
         rows.append((line, cells, column_count_ok(section, cells)))
     return rows
+
+
+# ---------------------------------------------------------------------------
+# 队列 #414（2026-08-26）：按列名写入 ＋ 全入口共用的单元格校验
+#
+# 成因＝2026-08-25／26 两天内同一族事故 5 次，三种外形共一个共同点——
+# **内容落错结构位、且不报错**：
+#   ① 裸竖线撑列（内容变成列分隔符）
+#   ② 反引号被 bash 执行（内容变成命令）
+#   ③ 列位数错（内容落进相邻格；错到编号格时行头断裂，grep 与队列查询双双
+#      找不到该行）
+# ① 已有守卫（`has_bare_pipe`，`append-row` 会当场拒绝），但**只守住走正门
+# 的人**：直接改队列文件的路径（python 插行、整文件重写）完全绕过它。
+# ⇒ 本段做两件事：
+#   **B（绕过侧）** `validate_row_cells` —— 把校验抽成可被所有写盘路径复用
+#   的单一函数，凡写盘前一律调它，守卫不再依赖「调用方走了哪条路」。
+#   **C（列位侧）** `SECTION_COLUMN_NAMES` / `resolve_column_index` /
+#   `build_row_cells` —— 按列名定位，使调用方永远不必数下标。
+#   A（JSON 入口，正文不进 argv）在 `工具-共享文档编辑锁.py` 侧实现，
+#   因为它是 CLI 层的事。
+#
+# 🔑 判据（比这三条修法本身更要紧）：**一道已经存在且有效的守卫，会因为存在
+# 一条绕过它的常用路径而形同虚设**——同族＝「告警机制建成 9 天、每天在跑，
+# 却从来没有真正发出过一条消息」（OP-0819-F）。故 B 的落点不是「再加一道
+# 校验」，而是「把入口收敛到同一个函数上」。
+# ---------------------------------------------------------------------------
+
+# 各分区表头列名（按列序，含编号列）——与生产队列文件表头逐字一致。
+# 改表头须同步改这里；`header_mismatch` 供 lint 作机器守，不靠人记。
+SECTION_COLUMN_NAMES: dict[str, tuple[str, ...]] = {
+    "一": ("#", "任务", "领取方", "输入（指针）", "期望产出", "状态", "触碰区", "登记"),
+    "二": ("批次", "文件清单", "建议 message", "状态"),
+    "四": ("#", "事项", "等谁", "截止"),
+}
+
+# 列名别名——调用方手写列名时的常见等价写法。刻意只收**无歧义**的别名；
+# 同一别名在不同分区指向不同列（如「状态」在 §一 是第 6 列、§二 是第 4 列）
+# 由 `resolve_column_index` 按分区各自解析，不在此处消歧。
+_COLUMN_ALIASES: dict[str, str] = {
+    "输入指针": "输入（指针）",
+    "输入": "输入（指针）",
+    "编号": "#",
+    "行号": "#",
+    "产出": "期望产出",
+    "领取": "领取方",
+    "建议message": "建议 message",
+    "建议 commit message": "建议 message",
+    "message": "建议 message",
+}
+
+
+class QueueCellError(ValueError):
+    """单元格校验失败——写盘前抛出，调用方据此不写入任何内容。
+
+    同 `工具-共享文档编辑锁.py::AppendRowFailedError` 的 fail-loud 原则：
+    宁可让调用方明确知道，也不可写进一个可能已损坏的行。
+    """
+
+
+def resolve_column_index(section: str, name: str) -> int:
+    """把列名解析为该分区内的列下标（0 起，含编号列）。
+
+    🔴 这是 #414 修复面 C 的核心：**调用方永远不必数下标**。历史上第 3、4
+    次事故正是数错下标——把收工叙述写进触碰区格、把「✅ 已完成」写进期望
+    产出格而状态列始终停在 [S:open]，机器读状态列 ⇒ 一直认为任务没做完。
+
+    未知分区或未知列名一律 fail-loud（抛 `QueueCellError` 并列出该分区的
+    合法列名），不猜、不静默回退到某个下标——静默猜错正是本函数要消灭的
+    那个失效形态。
+    """
+    names = SECTION_COLUMN_NAMES.get(section)
+    if names is None:
+        raise QueueCellError(
+            f"未知分区 {section!r}，仅支持 {sorted(SECTION_COLUMN_NAMES)}"
+        )
+    key = name.strip()
+    canonical = _COLUMN_ALIASES.get(key, key)
+    try:
+        return names.index(canonical)
+    except ValueError:
+        raise QueueCellError(
+            f"§{section} 无列名 {name!r}；合法列名："
+            + "、".join(names)
+            + "（别名：" + "、".join(sorted(_COLUMN_ALIASES)) + "）"
+        ) from None
+
+
+def _numbered_section(section: str) -> bool:
+    """该分区首列是否为行编号列（§一/§四 是；§二 首列是批次号）。"""
+    return SECTION_COLUMN_NAMES.get(section, ("",))[0] == "#"
+
+
+# 🔴 **「按字样识别 shell 污染」已被实测否决，刻意不实现**（2026-08-26）。
+#
+# 队列 #414 行内建议 ⑶ 原文要求：「疑似被 shell 污染的痕迹（如整格为空、含
+# `Is a directory`／`command not found`、或含多行路径列表）即告警」。本次照此
+# 实现后**对当前生产队列实测，5 行全部误报**：
+#   - §一 #414 的「任务」格与「期望产出」格 —— 因为**它正是描述这个 bug 的
+#     那一行**，正文里写着 `Is a directory`；
+#   - §一 #98 的「状态」格 —— 正文合法地讨论 `Permission denied`；
+#   - §二 一条批次行的「文件清单」格 —— 同理。
+#
+# 🔑 判据：**这类判据把「格子里被污染成了报错文本」与「格子里在谈论报错文本」
+# 当成同一件事，而它们在字面上无法区分**——一个负责记录事故的载体，必然会
+# 大量引用事故的原文。判据越贴近事故原文，越必然打到记录事故的那一行。
+# ⇒ 只保留**结构性**信号（换行、关键格为空、列数、格位哨兵）：它们不依赖
+# 正文措辞，不会因为「有人在写关于它的文档」而误报。
+#
+# 这一条比它拦下的 bug 更值得记住：**误报会把调用方推去绕过守卫**，而绕过
+# 正是修复面 B 要消灭的东西——一道误报的守卫，比没有守卫更糟。
+
+
+def _preview(cell: str, limit: int = 60) -> str:
+    flat = cell.replace("\n", "⏎")
+    return flat if len(flat) <= limit else flat[:limit] + "…"
+
+
+def validate_row_cells(
+    section: str, cells: list[str], *, source: str = "write",
+) -> list[str]:
+    """**所有写盘路径共用的单元格校验**（#414 修复面 B）。返回问题清单；
+    空列表＝通过。不抛异常——由调用方决定 fail-loud 的措辞与出口。
+
+    `source` 区分两种调用场景，**只影响竖线一项**：
+      - `"write"`（默认，写侧）——待写入的字段值。竖线一律拒绝，**反引号
+        包裹不豁免**，沿用 `append-row` 既有语义不放宽。
+      - `"parsed"`（读侧）——已被 `split_row_cells` 切好的单元格。此时
+        **跳过竖线检查**：切列本身已是反引号感知的，格内残留的竖线是被
+        反引号正当保护的字面量（生产队列 §一 #324／#326 即如此，两行都
+        正好是 8 列）。🔴 读侧若照搬写侧口径，会把两条**结构完全正常**的
+        行报成违规——本参数就是为分开这两种口径而存在，不是可省的装饰。
+
+    覆盖的失效外形（成因见本段顶部）：
+      ① **裸竖线**（仅写侧）——内容变成列分隔符。
+      ② **跨行**——单元格不得含换行（2026-08-25 事故：25 行 `git worktree
+         list` 输出被注入进一个格）。这是「正文被 bash 执行过」留下的
+         **结构性**信号；按字样识别的那条已被实测否决，见上方长注释。
+      ③ **关键格哨兵**——不只查「格数对不对」，还查「内容像不像该落在这
+         一格」。第 ③ 类正是列位错置**唯一**会留下的痕迹：格数是对的，
+         错的是内容与格位的对应关系。
+    """
+    problems: list[str] = []
+    names = SECTION_COLUMN_NAMES.get(section)
+    if names is None:
+        return [f"未知分区 {section!r}，仅支持 {sorted(SECTION_COLUMN_NAMES)}"]
+    if source not in ("write", "parsed"):
+        raise QueueCellError(
+            f"未知 source={source!r}，仅接受 \"write\"／\"parsed\"（不静默按默认处理）"
+        )
+
+    expected = len(names)
+    if len(cells) != expected:
+        problems.append(
+            f"§{section} 列数为 {len(cells)}，应为 {expected}"
+            f"（列序：{'、'.join(names)}）"
+        )
+
+    for i, cell in enumerate(cells):
+        label = names[i] if i < expected else f"第 {i + 1} 列（超出列序）"
+        if source == "write" and has_bare_pipe(cell):
+            problems.append(
+                f"「{label}」格含半角竖线（会撑列；改用全角「｜」或改写措辞）："
+                + _preview(cell)
+            )
+        if "\n" in cell:
+            problems.append(
+                f"「{label}」格含换行——单元格不得跨行（历史事故：25 行命令输出"
+                f"被注入进一个格）：" + _preview(cell)
+            )
+
+    if len(cells) == expected:
+        problems.extend(_key_cell_problems(section, cells, names))
+    return problems
+
+
+def _key_cell_problems(
+    section: str, cells: list[str], names: tuple[str, ...],
+) -> list[str]:
+    """关键格哨兵（`validate_row_cells` 第 ③ 类）。列数已确认正确时才调用。"""
+    problems: list[str] = []
+    if _numbered_section(section):
+        number = cells[0].strip()
+        if not number.isdigit():
+            problems.append(
+                f"「#」格为 {number!r}，不是纯数字行编号——**行头断裂**，grep 与"
+                f"队列查询都将找不到该行（2026-08-26 实测形态之一）"
+            )
+    elif not cells[0].strip():
+        problems.append(f"「{names[0]}」格为空——该格是本行唯一标识，不得为空")
+
+    if section == "一":
+        status = cells[resolve_column_index("一", "状态")].strip()
+        if not status.startswith("[S:"):
+            problems.append(
+                "「状态」格未以 [S: 开头——§一 状态列须带机器可读字段（队列 #308）；"
+                "**列位错置最常见的落点就是这一格**：" + _preview(status)
+            )
+        product = cells[resolve_column_index("一", "期望产出")].strip()
+        if product.startswith("✅"):
+            problems.append(
+                "「期望产出」格以完成标记开头——极可能是把收工叙述写进了产出格、"
+                "而状态格仍停在 [S:open]（2026-08-26 #412 实测：机器读状态列，"
+                "于是一直认为该任务没做完）：" + _preview(product)
+            )
+    return problems
+
+
+def build_row_cells(section: str, values: dict[str, str]) -> list[str]:
+    """按列名构造一整行单元格（#414 修复面 C 的写侧入口）。
+
+    `values` 的键是列名（走 `resolve_column_index`，支持别名），值是该格
+    内容。**缺失的列一律 fail-loud，不填空串**——静默补空同样是「内容落错
+    结构位而不报错」的一种；调用方要留空必须显式传空串。
+    """
+    names = SECTION_COLUMN_NAMES.get(section)
+    if names is None:
+        raise QueueCellError(
+            f"未知分区 {section!r}，仅支持 {sorted(SECTION_COLUMN_NAMES)}"
+        )
+    cells: list[str | None] = [None] * len(names)
+    for name, value in values.items():
+        idx = resolve_column_index(section, name)
+        if cells[idx] is not None:
+            raise QueueCellError(
+                f"「{names[idx]}」列被赋值两次（{name!r} 与它的别名指向同一列）"
+            )
+        cells[idx] = value
+    missing = [names[i] for i, c in enumerate(cells) if c is None]
+    if missing:
+        raise QueueCellError(
+            f"§{section} 缺少这些列的值：{'、'.join(missing)}"
+            f"（要留空须显式传空串——工具不替你补，静默补空正是本次要消灭的失效形态）"
+        )
+    return [c for c in cells if c is not None]
+
+
+def header_mismatch(section: str, header_cells: list[str]) -> str | None:
+    """把「表头列名」与 `SECTION_COLUMN_NAMES` 对齐这件事变成机器守。
+
+    返回不一致的说明，一致返回 None。存在的理由：`SECTION_COLUMN_NAMES`
+    是按列名写入的唯一依据，一旦生产队列文件改了表头而这里没跟，
+    `--set 列名=值` 会**静默写进错误的列**——那正是 #414 修复面 C 要
+    消灭的失效形态，绝不能靠人记得同步。
+    """
+    names = SECTION_COLUMN_NAMES.get(section)
+    if names is None:
+        return None
+    actual = tuple(c.strip() for c in header_cells)
+    if actual != names:
+        return (
+            f"§{section} 表头与 queue_table.SECTION_COLUMN_NAMES 不一致——"
+            f"按列名写入会写进错误的列。文件表头：{'、'.join(actual)}；"
+            f"模块登记：{'、'.join(names)}"
+        )
+    return None

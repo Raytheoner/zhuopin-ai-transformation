@@ -579,5 +579,80 @@ class AppellationRealQueueTests(unittest.TestCase):
         self.assertGreater(len(hits), 0, "baseline 必须随代码入库，否则门禁开局即红")
 
 
+class BrokenRowHeadLintTests(unittest.TestCase):
+    """队列 #414 A3-1：lint 的两处**行头断裂**盲区。
+
+    🔴 **先记一条更正**：派单件写「`#414` 一度为 13 列而 lint 报通过，请复现
+    并修」——**该形态复现不出来**，见 `test_genuine_column_count_violation_was_
+    already_caught`：真正 13 列的行现有列数校验当场就报。原报告多半是用
+    `awk -F'|'` 数的，而 awk 不认反引号保护（生产队列 §一 #324／#326 即 awk
+    数出 12／9 列、实际都是正确的 8 列）。
+
+    真盲区是另外两种，共同点是**行根本进不了列数校验**——一行「坏到连解析器
+    都不认它是一行」的数据，会从所有按行校验里彻底消失，于是 lint 报「通过」。
+    **通过的意思是「我检查过的都没问题」，不是「没问题」。**
+    """
+
+    HEADER = ("| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+              "|---|---|---|---|---|---|---|---|\n")
+    GOOD = "| 500 | 任务 | 领 | 入 | 出 | [S:open][D:机] x | 区 | 2026-08-26 |\n"
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def _lint(self, rows: str) -> list[str]:
+        return self.module._lint_one_file("## 一、任务看板\n\n" + self.HEADER + rows)
+
+    def test_clean_rows_produce_no_violation(self):
+        self.assertEqual(self._lint(self.GOOD), [])
+
+    def test_emptied_number_cell_is_no_longer_silently_skipped(self):
+        """形态 C：编号格被清空。`_table_data_rows` 把「首格为空」当表头/分隔
+        行跳过 ⇒ 旧实现连列数校验都跑不到它，lint 报通过。"""
+        broken = "|  | 任务 | 领 | 入 | 出 | [S:open][D:机] x | 区 | 2026-08-26 |\n"
+        violations = self._lint(self.GOOD + broken)
+        self.assertEqual(len(violations), 1, violations)
+        self.assertIn("首格为空", violations[0])
+
+    def test_missing_leading_pipe_is_no_longer_silently_dropped(self):
+        """形态 D：行首竖线丢失。`split_row_cells` 返回 None ⇒ 整条被丢弃。"""
+        broken = "500 | 任务 | 领 | 入 | 出 | [S:open][D:机] x | 区 | 2026-08-26 |\n"
+        violations = self._lint(self.GOOD + broken)
+        self.assertEqual(len(violations), 1, violations)
+        self.assertIn("行首竖线丢失", violations[0])
+
+    def test_genuine_column_count_violation_was_already_caught(self):
+        """🔴 **对照用例 · 锁死那条更正**：真正 13 列的行，旧实现本就报得出来。
+        本用例存在的意义是防止后人再把「13 列漏报」当成待修缺陷重开一轮。"""
+        thirteen = "| 501 | a | b | c | d | e | f | g | h | i | j | k | l |\n"
+        violations = self._lint(self.GOOD + thirteen)
+        self.assertEqual(len(violations), 1, violations)
+        self.assertIn("列数为 13", violations[0])
+
+    def test_separator_row_is_not_mistaken_for_broken_head(self):
+        """判据收窄的证明：分隔行首格同样为空，但其余格全是 `-`，不得误报。"""
+        self.assertEqual(self._lint("|---|---|---|---|---|---|---|---|\n" + self.GOOD), [])
+
+    def test_prose_line_with_pipes_is_not_flagged(self):
+        """正文里偶然出现竖线（不以 `|` 结尾）不得命中形态 D。"""
+        prose = "判据见 `git grep -E 'a|b'` 这条命令，说明性文字而已\n"
+        self.assertEqual(self._lint(self.GOOD + prose), [])
+
+    def test_real_queue_files_have_no_broken_row_heads(self):
+        """回归护栏：当前生产队列两份文件对这两条新判据必须 0 命中——
+        判据是在真实数据上校准过的（0 误报），塌了要立刻知道。"""
+        for rel in self.module.QUEUE_PATHS_REL:
+            path = self.module.REPO_ROOT / rel
+            if not path.exists():
+                continue
+            text = path.read_text(encoding="utf-8")
+            sections = self.module.editlock._split_live_sections(text)
+            for label in ("一", "二", "四"):
+                self.assertEqual(
+                    self.module._broken_row_head_violations(sections.get(label, ""), label),
+                    [], f"{rel} §{label} 出现行头断裂",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

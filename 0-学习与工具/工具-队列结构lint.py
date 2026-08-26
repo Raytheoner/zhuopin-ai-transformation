@@ -413,11 +413,68 @@ def followup_restate_warnings(repo_root: Path) -> tuple[list[str], int]:
     return warnings, historical_total
 
 
+def _broken_row_head_violations(section_text: str, label: str) -> list[str]:
+    """队列 #414 A3：**行头断裂**——lint 此前的两处真实盲区。
+
+    🔴 **先更正一条派单件里的判断**：派单件写「`#414` 一度为 13 列，而本
+    lint 报通过，请复现并修」。**该形态实测复现不出来**——构造一条真正 13
+    列的 §一 行，现有列数校验**当场就报**（已配反例单测锁死）。真正让 lint
+    静默放行的是另外两种形态，它们的共同点是**行根本没能进入列数校验**：
+
+      **C · 编号格被清空** —— `_table_data_rows` 把「首格为空」当作表头/
+      分隔行跳过（`_TABLE_HEADER_FIRST_CELLS` 含空串）。于是编号被冲掉的
+      行**连列数校验都没机会跑**。这正是 2026-08-26 事故形态之一「列位错置
+      → 编号格 → 行头断裂，grep 与队列查询双双找不到该行」。
+
+      **D · 行首竖线丢失** —— `split_row_cells` 对不以 `|` 开头的行返回
+      `None`，该行被整条丢弃。
+
+    🔑 **元判据（比这两条修法更值得记住）**：**一行「坏到连解析器都不认它
+    是一行」的数据，会从所有按行校验的判据里彻底消失，于是 lint 报「通过」
+    ——通过的意思是「我检查过的都没问题」，不是「没问题」。** 同族＝「工具
+    静默回退」（取证知识库 §二）：坏消息让人追根因，而「太干净」的结果不会。
+
+    两条判据均已对当前生产队列实测：**0 误报**（判据刻意收窄——C 要求其余
+    格确有内容且不是分隔行；D 要求行尾是 `|` 且竖线 ≥3，才算「像一条被
+    截断的表格行」，纯正文里偶然出现的竖线不会命中）。
+    """
+    violations: list[str] = []
+    for line in section_text.splitlines():
+        stripped = line.strip()
+        cells = editlock.queue_table.split_row_cells(line)
+        preview = stripped if len(stripped) <= 80 else stripped[:80] + "…"
+
+        if cells is not None and cells and not cells[0].strip():
+            rest = "".join(cells[1:]).strip()
+            others = [c.strip() for c in cells[1:] if c.strip()]
+            is_separator = bool(others) and all(
+                set(c) <= {"-", ":", " "} for c in others
+            )
+            if rest and not is_separator:
+                violations.append(
+                    f"§{label} 行**首格为空**且其余格有内容——行头断裂，该行会被"
+                    f"当成表头/分隔行静默跳过，列数校验根本跑不到它，grep 与队列"
+                    f"查询也都找不到它（队列 #414 实测形态）：{preview}"
+                )
+            continue
+
+        if cells is None and stripped.endswith("|") and stripped.count("|") >= 3:
+            violations.append(
+                f"§{label} 行**行首竖线丢失**——该行不以 `|` 开头却以 `|` 结尾"
+                f"且含多个竖线，形似一条被截断的表格行；解析器会整条丢弃它，"
+                f"因而不进任何按行校验（队列 #414 实测形态）：{preview}"
+            )
+    return violations
+
+
 def _lint_one_file(text: str) -> list[str]:
     sections = editlock._split_live_sections(text)
     violations: list[str] = []
     for label, expected_cols in editlock.SECTION_COLUMN_COUNTS.items():
         section_text = sections.get(label, "")
+        # 队列 #414 A3：先扫"坏到进不了列数校验"的行——行头断裂的两种形态
+        # 会被解析器整条丢弃，不先单独扫一遍，下面的循环永远看不到它们。
+        violations.extend(_broken_row_head_violations(section_text, label))
         for line, cells in editlock._table_data_rows(section_text):
             preview = line.strip()
             if len(preview) > 80:

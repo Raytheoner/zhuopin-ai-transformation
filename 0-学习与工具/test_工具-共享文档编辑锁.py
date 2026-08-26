@@ -961,6 +961,186 @@ class StatusDomainFieldParsingTests(unittest.TestCase):
         self.assertIn("非静默降级", degraded[0])
 
 
+class QueueWriteRootFixTests(unittest.TestCase):
+    """队列 #414：队列写入根治——三条修复面各配反例。
+
+    每条用例都能对**旧实现**变红，这是派单件 A4 明确的验收条件：
+      - **A（正文不进 argv）**：`--cells-json`/`--stdin-json` 此前不存在，
+        含反引号/`$()` 的正文只能经 argv，由 bash 决定它是不是命令。
+      - **B（守卫覆盖所有入口）**：关键格哨兵此前完全没有——列位错置时
+        格数是对的，旧实现一路放行（#412 真实事故）。
+      - **C（按列名）**：`--set`/`edit-row` 此前不存在，调用方必须自己数
+        `split` 后的下标。
+    """
+
+    SECTION_ONE_HEADER = (
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+    )
+    EXISTING_ROW = (
+        "| 500 | 既有任务 | 待领（CC） | 指针 | 产出 | [S:open][D:机] 在办 | 区域 | 2026-08-26 |\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        self.target = self.root / "toy-queue.md"
+        self.target.write_text(
+            "# 玩具队列\n\n## 一、任务看板\n\n" + self.SECTION_ONE_HEADER + self.EXISTING_ROW +
+            "\n## 二、待 commit 批次\n\n| 批次 | 文件清单 | 建议 message | 状态 |\n|---|---|---|---|\n"
+            "\n## 四、需 Shao Peishen 的动作\n\n| # | 事项 | 等谁 | 截止 |\n|---|---|---|---|\n",
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _run(self, *args: str, stdin: str | None = None):
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "--file", str(self.target), *args],
+            capture_output=True, text=True, encoding="utf-8", input=stdin,
+        )
+
+    def _row(self, number: str) -> str | None:
+        for line in self.target.read_text(encoding="utf-8").splitlines():
+            if line.startswith(f"| {number} |"):
+                return line
+        return None
+
+    def _cells(self, number: str) -> list[str]:
+        return [c.strip() for c in (self._row(number) or "").strip().strip("|").split("|")]
+
+    # ---------- 修复面 A：正文不再经过 shell ----------
+
+    def test_cells_json_keeps_backticks_and_dollar_parens_verbatim(self):
+        """反引号与 `$()` 原样落地——这正是 2026-08-25/26 两次事故的字符。"""
+        payload = {
+            "任务": "修 `工具-共享文档编辑锁.py` 里的 $(whoami) 与 `git worktree list`",
+            "领取方": "待领（CC）", "输入（指针）": "`0-学习与工具/`", "期望产出": "产出",
+            "状态": "[S:open][D:机] 新立", "触碰区": "`queue_table.py`", "登记": "2026-08-26",
+        }
+        jf = self.root / "cells.json"
+        jf.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        r = self._run("append-row", "--section", "一", "--number", "501",
+                      "--cells-json", str(jf))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        cells = self._cells("501")
+        self.assertEqual(cells[1], payload["任务"])
+        self.assertIn("$(whoami)", cells[1])
+
+    def test_stdin_json_equivalent_to_cells_json(self):
+        payload = ["任务", "待领（CC）", "指针", "产出", "[S:open][D:机] x", "区", "2026-08-26"]
+        r = self._run("append-row", "--section", "一", "--number", "502", "--stdin-json",
+                      stdin=json.dumps(payload, ensure_ascii=False))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIsNotNone(self._row("502"))
+
+    def test_multiple_cell_inputs_rejected_rather_than_silently_picked(self):
+        r = self._run("append-row", "--section", "一", "--number", "503",
+                      "--cell", "x", "--set", "任务=y")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("只能用一个", r.stdout)
+
+    # ---------- 修复面 C：按列名，调用方永不数下标 ----------
+
+    def test_set_by_column_name_lands_in_right_columns_regardless_of_order(self):
+        r = self._run(
+            "append-row", "--section", "一", "--number", "504",
+            "--set", "触碰区=区域乙", "--set", "状态=[S:open][D:机] 由列名写入",
+            "--set", "任务=任务甲", "--set", "登记=2026-08-26",
+            "--set", "领取方=待领（CC）", "--set", "输入指针=指针丙",
+            "--set", "期望产出=产出丁",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        cells = self._cells("504")
+        self.assertEqual(len(cells), 8)
+        self.assertEqual(cells[1], "任务甲")
+        self.assertEqual(cells[6], "区域乙")
+        self.assertTrue(cells[5].startswith("[S:open]"))
+
+    def test_unknown_column_name_fails_loud_and_lists_legal_names(self):
+        r = self._run("append-row", "--section", "一", "--number", "505", "--set", "状況=x")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("合法列名", r.stdout)
+
+    def test_missing_column_is_not_silently_filled_with_blank(self):
+        r = self._run("append-row", "--section", "一", "--number", "506", "--set", "任务=只给一列")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("缺少这些列", r.stdout)
+        self.assertIsNone(self._row("506"))
+
+    def test_edit_row_append_touches_only_named_column(self):
+        r = self._run("edit-row", "--section", "一", "--number", "500",
+                      "--append", "状态=✅ 已完成（2026-08-26）")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        cells = self._cells("500")
+        self.assertEqual(len(cells), 8)
+        self.assertTrue(cells[5].startswith("[S:open][D:机] 在办"))
+        self.assertIn("✅ 已完成", cells[5])
+        self.assertEqual(cells[1], "既有任务", "其余格不得被动到")
+
+    def test_edit_row_on_missing_number_fails_loud(self):
+        r = self._run("edit-row", "--section", "一", "--number", "999",
+                      "--set", "状态=[S:open][D:机] x")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("找不到编号", r.stdout)
+
+    # ---------- 修复面 B：关键格哨兵（列位错置唯一会留下的痕迹） ----------
+
+    def test_status_cell_without_machine_field_is_rejected(self):
+        r = self._run("append-row", "--section", "一", "--number", "507",
+                      *self._positional("任务", "待领（CC）", "指针", "产出",
+                                        "在办但没有机器字段", "区", "2026-08-26"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIsNone(self._row("507"))
+
+    def test_done_marker_landing_in_product_column_is_rejected(self):
+        """#412 真实形态：「✅ 已完成…」被写进期望产出格，而状态列仍 [S:open]
+        ⇒ 机器读状态列，一直认为该任务没做完。旧实现完全放行。"""
+        r = self._run("append-row", "--section", "一", "--number", "508",
+                      *self._positional("任务", "待领（CC）", "指针",
+                                        "✅ 已完成（2026-08-26）",
+                                        "[S:open][D:机] 在办", "区", "2026-08-26"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("期望产出", r.stdout)
+        self.assertIsNone(self._row("508"))
+
+    def test_non_numeric_row_number_is_rejected_as_broken_head(self):
+        r = self._run("append-row", "--section", "一", "--number", "不是数字",
+                      *self._positional("任务", "待领（CC）", "指针", "产出",
+                                        "[S:open][D:机] x", "区", "2026-08-26"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("行头断裂", r.stdout)
+
+    def test_newline_inside_cell_is_rejected(self):
+        """2026-08-25 事故形态：25 行 `git worktree list` 输出被注入进一个格。"""
+        jf = self.root / "nl.json"
+        jf.write_text(json.dumps({
+            "任务": "worktree 列表\n第二行\n第三行", "领取方": "待领（CC）",
+            "输入（指针）": "指针", "期望产出": "产出", "状态": "[S:open][D:机] x",
+            "触碰区": "区", "登记": "2026-08-26"}, ensure_ascii=False), encoding="utf-8")
+        r = self._run("append-row", "--section", "一", "--number", "509",
+                      "--cells-json", str(jf))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("换行", r.stdout)
+        self.assertIsNone(self._row("509"))
+
+    def test_bare_pipe_still_rejected_on_write_side(self):
+        """既有语义不放宽：写侧竖线一律拒绝，反引号包裹亦不豁免。"""
+        r = self._run("append-row", "--section", "一", "--number", "510",
+                      *self._positional("任务|撑列", "待领（CC）", "指针", "产出",
+                                        "[S:open][D:机] x", "区", "2026-08-26"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIsNone(self._row("510"))
+
+    @staticmethod
+    def _positional(*cells: str) -> list[str]:
+        out: list[str] = []
+        for c in cells:
+            out.extend(["--cell", c])
+        return out
+
+
 class ReleaseStructuralValidationTests(unittest.TestCase):
     """队列 #225：release 时对跨桌任务队列.md 的四项结构校验。
 
@@ -1036,6 +1216,88 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
             force_mechanism_wip=force_mechanism_wip,
         )
         return self.module.cmd_release(ns)
+
+    # ---------------- 队列 #414 A3-2：release 对"自愈"的出口 ----------------
+    #
+    # 死锁形态（2026-08-26 实测）：acquire 取快照那一刻某行行头是断的，
+    # **快照解析不出它的编号**；持锁期间修好之后，release 看到一个"快照里
+    # 没有、现在有"的编号 ⇒ 判为凭空新增、未经 --reserve 预留 ⇒ 拒绝释放；
+    # 而此时 acquire 又被自己那把锁挡住 ⇒ 只能等 30 分钟自动陈旧。
+
+    _BROKEN_HEAD_ROW = "|  | 破损行 | CC | 指针 | 产出 | [S:open][D:机] 在办 | 区 | 2026-08-26 |\n"
+    _REPAIRED_ROW = "| 101 | 破损行 | CC | 指针 | 产出 | [S:open][D:机] 在办 | 区 | 2026-08-26 |\n"
+
+    def _git(self, *args: str):
+        return subprocess.run(["git", *args], cwd=self.repo_root,
+                              capture_output=True, text=True, encoding="utf-8")
+
+    def _make_git_repo_with_committed_queue(self, rows: str):
+        """把 repo_root 变成真 git 仓库，并把给定队列内容提交进 HEAD。"""
+        self._git("init", "-q")
+        self._git("config", "user.email", "t@example.com")
+        self._git("config", "user.name", "t")
+        self._write_queue(section_one_rows=rows)
+        self._git("add", "-A")
+        self._git("commit", "-qm", "baseline")
+
+    def test_repairing_broken_row_head_does_not_deadlock_release(self):
+        """#414 A3-2：修好一条行头断裂的**既有**行后，release 必须能放行。
+
+        反例价值：去掉 HEAD 存在性豁免时本用例变红（已实测——见同名判据在
+        `_head_row_numbers` 上方的长注释）。
+        """
+        self._make_git_repo_with_committed_queue(self._REPAIRED_ROW)
+        # 现场：#101 此刻行头断裂（编号格被清空）——快照将解析不出它
+        self._write_queue(section_one_rows=self._BROKEN_HEAD_ROW)
+        self.assertEqual(self._acquire(who="A"), 0)
+        # 持锁期间把它修好
+        self._write_queue(section_one_rows=self._REPAIRED_ROW)
+        self.assertEqual(
+            self._release(who="A"), 0,
+            "修复一条 HEAD 里本就存在的行，不应被当成『未预留的新增行』拒绝",
+        )
+
+    def test_genuinely_new_unreserved_row_still_blocked_in_git_repo(self):
+        """🔴 **配套反例：豁免不得把它本要守的东西一并放过。**
+
+        同样在 git 仓库里，但这次是一条 HEAD 里**根本不存在**的新编号且未
+        `--reserve` ⇒ 必须照旧拒绝。没有这一条，上面那个用例无法区分
+        "豁免生效"与"整项校验被我改废了"。
+        """
+        self._make_git_repo_with_committed_queue("")
+        self._write_queue(
+            section_one_rows="| 201 | 凭空新增 | CC | 指针 | 产出 | "
+                             "[S:open][D:机] 待领 | 区 | 2026-08-26 |\n")
+        self.assertEqual(self._acquire(who="A"), 0)
+        self.assertNotEqual(
+            self._release(who="A"), 0,
+            "HEAD 里不存在且未预留的新行，必须仍被③预留归属校验拒绝",
+        )
+
+    def test_reserve_waiver_marker_releases_when_head_unreadable(self):
+        """HEAD 也读不到时（破损在 HEAD 里就已存在／不在 git 工作树内），
+        行内逃生阀 `预留豁免：<理由>` 放行并留痕——完全复用 `WIP豁免：`
+        既有范式，不新增写盘路径。"""
+        self._write_queue(section_one_rows="")  # 非 git 仓库 ⇒ 读不到 HEAD 基线
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(
+            section_one_rows="| 202 | 修复破损行 | CC | 指针 | 产出 | "
+                             "[S:open][D:机] 预留豁免：修复 HEAD 里即已破损的行 | "
+                             "区 | 2026-08-26 |\n")
+        self.assertEqual(
+            self._release(who="A"), 0,
+            "行内写了 预留豁免：<理由> 应放行（并随行留痕，可 grep 计数）",
+        )
+
+    def test_reserve_waiver_absent_without_git_still_blocks(self):
+        """不在 git 工作树内、又没写逃生阀标记 ⇒ 仍拒绝（否则"读不到 HEAD"
+        就成了一个人人可用的静默后门）。"""
+        self._write_queue(section_one_rows="")
+        self.assertEqual(self._acquire(who="A"), 0)
+        self._write_queue(
+            section_one_rows="| 203 | 无标记新增 | CC | 指针 | 产出 | "
+                             "[S:open][D:机] 待领 | 区 | 2026-08-26 |\n")
+        self.assertNotEqual(self._release(who="A"), 0)
 
     def test_release_succeeds_with_no_changes(self):
         self._write_queue()
@@ -2137,12 +2399,12 @@ class AppendRowTests(unittest.TestCase):
         result = self._append(
             "--section", "一", "--number", "101",
             "--cell", "新任务", "--cell", "CC", "--cell", "无",
-            "--cell", "无", "--cell", "待领", "--cell", "无", "--cell", "2026-08-07",
+            "--cell", "无", "--cell", "[S:open][D:机] 待领", "--cell", "无", "--cell", "2026-08-07",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         text = self.target.read_text(encoding="utf-8")
         self.assertIn(
-            "| 101 | 新任务 | CC | 无 | 无 | 待领 | 无 | 2026-08-07 |", text,
+            "| 101 | 新任务 | CC | 无 | 无 | [S:open][D:机] 待领 | 无 | 2026-08-07 |", text,
         )
 
     def test_wrong_cell_count_rejected_without_writing(self):
@@ -2160,7 +2422,7 @@ class AppendRowTests(unittest.TestCase):
         result = self._append(
             "--section", "一", "--number", "101",
             "--cell", "新任务", "--cell", "CC", "--cell", "无",
-            "--cell", "无", "--cell", "待领", "--cell", "无", "--cell", "2026-08-07",
+            "--cell", "无", "--cell", "[S:open][D:机] 待领", "--cell", "无", "--cell", "2026-08-07",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         text = self.target.read_text(encoding="utf-8")
@@ -2225,7 +2487,7 @@ class AppendRowTests(unittest.TestCase):
         result = self._append(
             "--section", "一",
             "--cell", "新任务", "--cell", "CC", "--cell", "无",
-            "--cell", "无", "--cell", "待领", "--cell", "无", "--cell", "2026-08-07",
+            "--cell", "无", "--cell", "[S:open][D:机] 待领", "--cell", "无", "--cell", "2026-08-07",
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.target.read_text(encoding="utf-8"), before)
@@ -2236,7 +2498,7 @@ class AppendRowTests(unittest.TestCase):
         result = self._append(
             "--section", "一", "--number", "101",
             "--cell", "新任务", "--cell", "CC", "--cell", "无",
-            "--cell", "无", "--cell", "待领", "--cell", "无", "--cell", "2026-08-07",
+            "--cell", "无", "--cell", "[S:open][D:机] 待领", "--cell", "无", "--cell", "2026-08-07",
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.target.read_text(encoding="utf-8"), before)
@@ -3040,7 +3302,7 @@ class DualFileRoutingTests(unittest.TestCase):
         self._write(other)
         ns = argparse.Namespace(
             file="other.md", section="一", number="301",
-            cell=["旁路任务", "CC", "无", "无", "待领", "无", "2026-08-11"],
+            cell=["旁路任务", "CC", "无", "无", "[S:open][D:机] 待领", "无", "2026-08-11"],
             domain=None,
         )
         self.assertEqual(self.module.cmd_append_row(ns), 0)
