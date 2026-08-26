@@ -3329,8 +3329,10 @@ def _straggler_status(now: str) -> str:
     改文案当场就会炸的显式失败，而不是等下一次上线后靠日志噪音发现。
     往返回归见 `StragglerStatusIdempotenceTests`。
     """
+    # `now` 由 `_now_utc_str()` 提供，其格式已自带 " UTC" 后缀——此处不得再补
+    # 一个，否则写出 "… 14:15 UTC UTC …"（2026-08-26 首轮实测踩到）。
     status = (
-        f"**✅ 已完成**。（sweep 自动补销遗留尾巴 {now} UTC，"
+        f"**✅ 已完成**。（sweep 自动补销遗留尾巴 {now}，"
         "未发现对应的未落库改动）"
     )
     probe = [{"batch_id": "_straggler_status_selfcheck", "status_cell": status}]

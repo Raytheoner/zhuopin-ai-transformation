@@ -363,8 +363,13 @@ class StragglerStatusIdempotenceTests(unittest.TestCase):
     `_straggler_status()` 自己也带同款自检（改文案当场抛 SweepAbort），这里
     再从判据侧独立验一遍：两侧任意一方将来被改动，都会有一处红。"""
 
+    # `_straggler_status` 的入参就是 `_now_utc_str()` 的产出，格式自带 " UTC"
+    # 后缀——用例一律按这个真实形状喂，别喂裸时刻（首版喂裸时刻、模板又补了
+    # 一个 UTC，单测因此没能拦住线上写出的 "14:15 UTC UTC"）。
+    NOW = "2026-08-26 13:17 UTC"
+
     def test_written_status_is_not_reclassified_as_pending(self):
-        status = sweep._straggler_status("2026-08-26 13:17")
+        status = sweep._straggler_status(self.NOW)
         row = {"batch_id": "B-X", "status_cell": status,
                "files_cell": "", "message_cell": "", "raw_line": "",
                "queue_path": sweep.QUEUE_MECHANISM_PATH_REL}
@@ -377,14 +382,27 @@ class StragglerStatusIdempotenceTests(unittest.TestCase):
         # 成为"状态的一部分"（#328 非幂等的直接来路）。
         # 尾部 `**` 属于加粗标记的收尾，`_leading_status_segment` 只剥前导
         # 字符、不剥尾部，故留在片段内——不含"待"字，不影响判定。
-        leading = sweep._leading_status_segment(sweep._straggler_status("2026-08-26 13:17"))
+        leading = sweep._leading_status_segment(sweep._straggler_status(self.NOW))
         self.assertEqual(leading, "✅ 已完成**")
         self.assertNotIn("待", leading)
         self.assertNotIn("13:17", leading, "时刻不得落进参与判定的开头片段")
 
     def test_timestamp_is_still_recorded_for_traceability(self):
         # 幂等不等于把溯源信息一并砍掉：时刻仍要留在状态列里，只是不参与判定。
-        self.assertIn("2026-08-26 13:17 UTC", sweep._straggler_status("2026-08-26 13:17"))
+        status = sweep._straggler_status(self.NOW)
+        self.assertIn(self.NOW, status)
+        # 入参已自带 " UTC"，模板不得再补一个——2026-08-26 首轮实测写出过
+        # "… 14:15 UTC UTC …"。
+        self.assertEqual(status.count("UTC"), 1, status)
+
+    def test_status_matches_the_real_now_string_format(self):
+        """用真实 `_now_utc_str()` 而非硬编码串再走一遍——防的是两个函数各自
+        改格式、单测因为喂的是手写常量而察觉不到。"""
+        status = sweep._straggler_status(sweep._now_utc_str())
+        self.assertEqual(status.count("UTC"), 1, status)
+        pending, ambiguous = sweep._classify_section_two_rows(
+            [{"batch_id": "B-X", "status_cell": status}])
+        self.assertEqual((pending, ambiguous), ([], []))
 
     def test_old_incident_wording_would_be_rejected_by_the_selfcheck(self):
         """反向锁：把事故版文案原样喂回判据，必须仍被判为待处理——证明本用例
