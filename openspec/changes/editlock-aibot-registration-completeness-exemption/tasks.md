@@ -23,7 +23,8 @@
 
 ## 3. 验收与收尾
 
-- [x] 3.1 全量回归零漂移——`0-学习与工具` 全套 **748 passed ＋ 63 subtests passed，0 失败**（含邻居工具 `工具-落库sweep.py` 测试套；"跑邻居测试"这条是 2026-08-23 sweep 断链的教训）
+- [x] 3.1 全量回归零漂移——`0-学习与工具` 全套 **748 passed ＋ 63 subtests passed，0 失败**（含邻居工具 `工具-落库sweep.py` 测试套；"跑邻居测试"这条是 2026-08-23 sweep 断链的教训）。rebase 到新 master 后复跑 `test_工具-共享文档编辑锁.py` **272 passed**（新 master 含另一会话的 `followup_gate`／`queue_git_sync` 改动）。
+- [x] 3.1b ⚠️ **一次未复现的红，如实记在这里**：rebase 后跑 `test_工具-落库sweep.py` 曾出现 `SyncReorderTests::test_pure_behind_with_no_pending_batch_still_ff_merges` 失败 1 条。**已两路排除本次改动**：⑴ 单独跑该用例，换回 master 版编辑锁 **passed**、换回本次改动版**同样 passed**；⑵ 原样复跑整个文件 **232 passed，0 失败**。⇒ **判为环境性抖动**，最可能的干扰源是当时本机真有 sweep 在跑（锁历史显示 5／9／15 分钟前各有 `sweep-commit`），而该用例正是黑盒起一个 sweep 子进程 ＋ 本地 webhook server。**不改判据、不加重试掩盖**；若它再次出现，线索留在这里。
 - [x] 3.2 **真实场景验证（不只跑单测）**：把打过补丁的**真脚本**复制进一个真 git 仓库，用**真 CLI** 跑 `acquire --who 企微机器人` → 另一会话的脏文件先于 acquire 存在 → 追加一行「企微反馈自动归档：」→ `release`。**实验组 returncode=0**（输出：`ℹ 持锁者「企微机器人」自行提交自身改动，⑹ 登记完整性校验的适用前提对它不成立，已放行 2 个未登记脏文件`）；**对照组**同一套动作换成人类会话 **returncode=1**，拒绝文案与线上 #416 ⑶ 事故逐字一致（含「acquire 之前就已经脏（可能来自并发 session）」那一栏）。
 - [x] 3.3 只读自验：`status` 三态可用（当刻无锁）；`工具-队列结构lint.py` 对两份真实队列文件 **rc=0** 通过
 - [x] 3.4 🔴 **顺手核 #416 ⑹（行头断裂自愈死锁）本次是否被一并覆盖**——**结论：已覆盖，但不是被本变更包覆盖**，而是被 master 上既有的 **队列 #414 A3-2**（commit `f1ad578`，2026-08-26 15:20）覆盖：`_head_row_numbers` ＋ `is_repair_of_existing`（编号已存在于 HEAD 即豁免预留归属校验）＋ 行内 `预留豁免：` 逃生阀——**恰好就是 #416 ⑹ 行内建议的那两条**。已用真 CLI 真 git 仓库复核：HEAD 里是好行、现场是坏行、acquire 取到坏快照、持锁期间修好 → **release returncode=0**。⇒ **本包未扩范围去碰它，如实登记。**
