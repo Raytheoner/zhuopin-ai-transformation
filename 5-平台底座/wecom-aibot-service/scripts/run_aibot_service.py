@@ -8,6 +8,10 @@
   WECOM_AIBOT_AUDIT_PATH                   可选，默认 <repo_root>/5-平台底座/wecom-aibot-service/reports/wecom_aibot_audit.jsonl
   WECOM_AIBOT_REPO_ROOT                    可选，显式指定 git 同步/审计路径锚定的仓库根，
                                             绕开下方"以队列文件动态解析"的默认逻辑（队列 #126）
+  WECOM_AIBOT_OUTBOX_PATHS                 可选（队列 #394），outbox → aibot 中继要轮询的
+                                            JSONL 路径清单，`;` 或换行分隔、支持通配；
+                                            **未配置即中继关闭**（会打印并记审计，不静默）
+  WECOM_AIBOT_OUTBOX_POLL_SECONDS          可选（队列 #394），中继轮询间隔秒数，默认 300
 
 队列 #126：本服务常驻的 checkout（如 `ops/wecom-service-home` worktree）与
 `WECOM_AIBOT_QUEUE_PATH` 实际指向的 checkout（通常是主工作区）可能不是同一
@@ -43,7 +47,7 @@ for _p in _HERE.parents:
 from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
 ensure_paths(__file__, SERVICE_DIR)  # noqa: E402
 
-from zhuopin_platform.audit import AuditLogger
+from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools.notifiers import wecom
 from zhuopin_platform.shared_tools.secrets import EnvSecretsProvider
 
@@ -56,6 +60,14 @@ from aibot_service.media_transfer import (  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp, send_gap_alert  # noqa: E402
 from aibot_service.liveness import read_liveness, run_liveness_heartbeat  # noqa: E402
+from aibot_service.outbox_relay import (  # noqa: E402
+    DEFAULT_POLL_INTERVAL_SECONDS,
+    OUTBOX_PATHS_ENV,
+    POLL_INTERVAL_ENV,
+    RelayOutcome,
+    resolve_outbox_paths,
+    run_outbox_relay,
+)
 from aibot_service.queue_reconcile_sentinel import run_reconciliation_sentinel  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
     DEFAULT_QUEUE_RELATIVE_PATH,
@@ -75,6 +87,26 @@ class ConnectionAbandonedError(RuntimeError):
     退出、也就永远不会触发。"""
 
 
+def _audit_relay_lifecycle(audit: AuditLogger, action: str, decision: dict) -> None:
+    """中继启停留痕。**"关着"也要留痕**——见调用点那段红字。"""
+    audit.record(AuditEvent(
+        scenario="wecom-aibot", action=action, evaluator="system",
+        automation_level="L1", decision=decision, data_sources={},
+    ))
+
+
+def _print_relay_round(outcome: RelayOutcome) -> None:
+    """每轮结果打一行——**只在有事发生时打**，否则 5 分钟一行会把日志淹掉。
+
+    ⚠️ "本轮 0 条待发"刻意不打：它每天会打 288 次，且与"中继根本没起来"
+    在日志里长得一样——后者已由启动时那条独立的 `outbox_relay_disabled`
+    事件与打印行负责，不靠这里每轮复读。
+    """
+    if not (outcome.scanned or outcome.unreadable):
+        return
+    print(f"[outbox-relay] {outcome.summary()}", flush=True)
+
+
 async def _run_forever(
     connector,
     audit_path: Path,
@@ -83,6 +115,8 @@ async def _run_forever(
     fallback_send: Optional[Callable[[str], None]] = None,
     queue_path: Optional[Path] = None,
     liveness_path: Optional[Path] = None,
+    outbox_paths: Optional[list[Path]] = None,
+    outbox_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
 ) -> None:
     # 必须在 connect() 之前读——建连会写新的审计事件，建连后再读会读到刚写
     # 入的"连接成功"事件本身，间隔恒为 0，判断不出真实中断时长。
@@ -120,12 +154,46 @@ async def _run_forever(
         asyncio.create_task(run_liveness_heartbeat(liveness_path, audit=audit))
         if liveness_path is not None else None
     )
+
+    # 队列 #394：outbox → aibot 中继。**跑在这条已经建好的连接上**，不另起
+    # 连接——每 5 分钟新起一条会把单实例约束（同 BotID 多处长连接互相踢线）
+    # 重新变成每天 288 次的赌博，见 `outbox_relay.py` 模块 docstring。
+    #
+    # 🔴 未配置 `WECOM_AIBOT_OUTBOX_PATHS` 时中继关闭，但**必须留下"它关着"
+    # 的信号**：`#82` 那族事故的形态正是"机制天天在跑、一条没发出去、没人
+    # 察觉"，而"中继压根没启动"与"启动了但没消息"在日志里长得一模一样。
+    # 故两种情形各记一条可区分的审计事件、各打印一行。
+    relay_task = None
+    if outbox_paths:
+        _audit_relay_lifecycle(
+            audit, "outbox_relay_started",
+            {"paths": [str(p) for p in outbox_paths],
+             "interval_seconds": outbox_interval_seconds},
+        )
+        print(f"[outbox-relay] 已启动，每 {outbox_interval_seconds:g} 秒轮询 "
+              f"{len(outbox_paths)} 份 outbox：{'、'.join(str(p) for p in outbox_paths)}",
+              flush=True)
+        relay_task = asyncio.create_task(run_outbox_relay(
+            connector=connector, audit=audit, paths=outbox_paths,
+            interval_seconds=outbox_interval_seconds,
+            alert_send=fallback_send,
+            on_round=_print_relay_round,
+        ))
+    else:
+        _audit_relay_lifecycle(
+            audit, "outbox_relay_disabled", {"reason": f"{OUTBOX_PATHS_ENV} 未配置"}
+        )
+        print(f"[outbox-relay] 未配置 {OUTBOX_PATHS_ENV}，中继关闭 —— "
+              f"SC2/FI2 写进 outbox 的消息不会被代发。", flush=True)
+
     try:
         await fatal_event.wait()
         raise ConnectionAbandonedError("企微连接不可恢复（SDK重连预算耗尽），退出进程交部署层重启")
     finally:
         if heartbeat_task is not None:
             heartbeat_task.cancel()
+        if relay_task is not None:
+            relay_task.cancel()
 
 
 def main() -> None:
@@ -223,9 +291,21 @@ def main() -> None:
         ),
     )
 
+    # 队列 #394：outbox 路径清单。**没有默认值，也不去猜** —— SC2 跑在 `.51`、
+    # FI2 将来也跑在 `.51`，而本服务跑在笔记本上；两端之间那条文件通路长什么样
+    # （UNC 共享？映射盘符？）本机当前 off-LAN，未实测（`fi2-source-inversion`
+    # design 探测项 P6）。猜一个路径写进代码，只会得到一份"看起来配好了、其实
+    # 一直读不到"的配置——而读不到的表象恰恰是"没有待发消息"。故一律由 `.env`
+    # 显式给出，`os.pathsep`（Windows 上是 `;`）分隔，支持通配。
+    outbox_paths = resolve_outbox_paths(os.environ.get(OUTBOX_PATHS_ENV))
+    outbox_interval_seconds = float(
+        os.environ.get(POLL_INTERVAL_ENV, DEFAULT_POLL_INTERVAL_SECONDS)
+    )
+
     asyncio.run(
         _run_forever(
-            connector, audit_path, audit, fatal_event, fallback_send, queue_path, liveness_path
+            connector, audit_path, audit, fatal_event, fallback_send, queue_path, liveness_path,
+            outbox_paths, outbox_interval_seconds,
         )
     )
 
