@@ -140,6 +140,28 @@ def main() -> int:
     print(f"跳过重复发票行数：{result.duplicate_rows_skipped}"
           f"（涉 {len(result.duplicate_invoice_nos)} 张发票，"
           "该发票号已由此前文件贡献过——预期内，非故障）")
+
+    # 队列 #418：未解析行重试。🔴 定时扫描才是每日真正跑的那条路径——那 4 张假
+    # 「无发票支撑」就是从这里进的库，只在手动 CLI 打印等于没打印。
+    print(f"重试解开行数：{result.retried_rows_resolved}"
+          f"（涉 {len(result.retried_invoice_nos)} 张发票——此前批次曾报未解析，"
+          "本次 AP 单已可反查到；面板上这些发票此前显示为「无发票支撑」）")
+    for inv in result.retried_invoice_nos[:20]:
+        print(f"  ✅ 已补入 发票号={inv}")
+    if len(result.retried_invoice_nos) > 20:
+        print(f"  ...另有 {len(result.retried_invoice_nos) - 20} 张")
+    print(f"仍未解开、留待下次重试：{result.pending_unresolved} 行"
+          "（AP 单可能尚未立账——预期内，非故障）")
+    if result.unretryable_unresolved:
+        # 🔴 源文件已删/已改 ⇒ 这些发票永远进不来，面板会持续把对应 AP 单报为
+        # 「无发票支撑」。必须出声——沉默正是 #418 那批假报当初的潜伏方式。
+        # ⚠️ 「要不要为此发 webhook 告警／算不算文件级失败」属告警口径，本次不自定，
+        # 已登队列 #418 待业务总线定（现行为：如实打印，不改退出码、不新增告警触发）。
+        print(f"🔴 无法再重试：{result.unretryable_unresolved} 行 —— 源文件已不在盘上"
+              f"或内容已变更：{result.unretryable_files}。"
+              "这些发票将永远不会进入 invoice.csv，面板会持续把对应 AP 单报为"
+              "「无发票支撑」。须把原导出文件放回导出目录后重跑。", file=sys.stderr)
+
     print(f"未解析记录数：{len(result.diagnostics)}")
     for d in result.diagnostics:
         loc = f"{d.file}" + (f" 第{d.row_index}行" if d.row_index else "")

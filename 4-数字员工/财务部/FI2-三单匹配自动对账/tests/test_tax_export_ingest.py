@@ -9,10 +9,12 @@ import pytest
 
 from fi2.tax_export_ingest import (
     discover_new_files,
+    ensure_segments,
     ingest_directory,
     is_processed,
     load_ledger,
     mark_processed,
+    next_seq,
     parse_export_workbook,
     resolve_ap_no,
     resolve_item_code,
@@ -328,8 +330,13 @@ def test_ingest_directory_unresolved_rows_are_diagnosed_not_dropped_silently(tmp
     assert len(result.diagnostics) == 1
     assert result.diagnostics[0].reason == "ap_no_zero_match"
     assert result.diagnostics[0].digital_invoice_no == digital_no
-    # 文件仍应计入已处理（该发票已被诊断过，不会每次重跑都重新报告同一未解析行）
+    # 文件仍计入已处理（`discover_new_files` 此后跳过它）。
+    # ⚠️ 2026-08-26 队列 #418 更正此处的原有注释：当初写的是「该发票已被诊断过，不会
+    # 每次重跑都重新报告同一未解析行」——**那正是那 4 张假「无发票支撑」的成因**。
+    # 该行如今会被登记进 ledger 的 `unresolved` 并在后续每次运行重试，见本文件
+    # `test_unresolved_row_is_retried_once_the_ap_doc_finally_exists`。
     assert result.files_processed == ["one.xlsx"]
+    assert result.pending_unresolved == 1
 
 
 def test_ingest_directory_parse_error_file_produces_file_level_diagnostic(tmp_path):
@@ -566,3 +573,199 @@ def test_duplicate_skips_do_not_pollute_diagnostics(tmp_path):
                               known_invoice_nos=load_ingested_invoice_nos(tmp_path / "none.csv"))
     assert result.duplicate_rows_skipped == 1
     assert result.diagnostics == []
+
+
+# ── 未解析行必须可重试（队列 #418）────────────────────────────────────────
+#
+# 唐燕萍 2026-08-26 随机抽 10 张 AP 单，**4 张被面板报「无发票支撑」而发票实际存在**。
+# 她的四组对照里有两组的发票落在《…20260401-20260430》导出文件里、AP 单却是 8 月的。
+#
+# 这里复现的是**机制**，不是那四个真实单号（真实复现须连 U9C，见队列 #418 LAN 留步）：
+# 发票 4 月开出时摄取跑过一次 → 那时 AP 单还没立 → `ap_no_zero_match` → 该行只落一条
+# 打印即弃的诊断 → 而文件 SHA 已进 ledger ⇒ **此后永远跳过、永不重试** ⇒ 8 月 AP 单
+# 立了账，这张发票仍然不在 `invoice.csv` 里 ⇒ 面板报「无发票支撑」。
+#
+# 🔑 危险不在它报错，在它报的是一个看起来完全合理的结论——「发票还没到」在账上天天
+# 真实发生，没人会怀疑。**错误不产生任何信号。**
+
+class _LateApConnector(_FakeFullConnector):
+    """AP 单「过一阵子才立账」的假连接器——`arrive()` 之后才反查得到。"""
+
+    def __init__(self, digital_no, ap_no, ap_lines):
+        super().__init__(invoice_rows={}, ap_lines_by_ap_no={})
+        self._digital_no = digital_no
+        self._ap_no = ap_no
+        self._ap_lines = ap_lines
+
+    def arrive(self):
+        self._invoice_rows = {self._digital_no[-8:]:
+                              [{"DocNo": self._ap_no, "InvoiceNo": self._digital_no}]}
+        self._ap_lines_by_ap_no = {self._ap_no: self._ap_lines}
+
+
+_APRIL_FILE = "全量发票查询导出结果（20260401-20260430）.xlsx"
+
+
+def _late_ap_setup(tmp_path, digital_no="26322000003204358531", ap_no="AP-2026080137"):
+    """4 月那份导出文件 + 8 月才立账的 AP 单（她第 2/4 组对照的形状）。"""
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    _make_export_xlsx(export_dir / _APRIL_FILE,
+                      [_row(digital_no=digital_no, qty=10, unit_price=100.0, tax_rate="13%")])
+    conn = _LateApConnector(digital_no, ap_no,
+                            [{"ItemCode": "X001", "APQtyTU": 10.0, "TaxPrice": 113.0}])
+    return export_dir, conn, tmp_path / "ledger.json", digital_no, ap_no
+
+
+def test_unresolved_row_is_retried_once_the_ap_doc_finally_exists(tmp_path):
+    """#418 主诉复现 + 修复验证：AP 单晚于发票立账时，那张发票最终必须进得来。"""
+    export_dir, conn, ledger_path, digital_no, ap_no = _late_ap_setup(tmp_path)
+
+    # ① 4 月摄取：AP 单还没立 → 零命中
+    r1 = ingest_directory(export_dir, ledger_path, conn, now="2026-04-30T00:00:00Z")
+    assert r1.resolved_rows == []
+    assert [d.reason for d in r1.diagnostics] == ["ap_no_zero_match"]
+    assert r1.files_processed == [_APRIL_FILE]
+    assert r1.pending_unresolved == 1          # 已登记，留待重试——不是打印即弃
+
+    # ② 8 月：AP 单立了账。文件早已在 ledger 里，`discover_new_files` 依旧跳过它——
+    #    修复前故事到此为止，这张发票永远进不来。
+    conn.arrive()
+    r2 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-26T00:00:00Z",
+                          known_invoice_nos=set())
+    assert r2.files_processed == []            # 确实没有当成新文件
+    assert r2.files_skipped == [_APRIL_FILE]
+    assert r2.retried_rows_resolved == 1       # 而是被重试 pass 捞了回来
+    assert r2.retried_invoice_nos == [digital_no]
+    assert len(r2.resolved_rows) == 1
+    assert r2.resolved_rows[0]["ap_no"] == ap_no
+    assert r2.resolved_rows[0]["inv_no"] == digital_no
+    assert r2.pending_unresolved == 0
+    assert r2.unretryable_unresolved == 0
+
+    # ③ 已解开的行必须从重试队列里消掉，不能每天重查一次
+    entry = next(iter(load_ledger(ledger_path).values()))
+    assert entry["unresolved"] == []
+    r3 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-27T00:00:00Z")
+    assert r3.retried_rows_resolved == 0
+    assert r3.resolved_rows == []
+
+
+def test_retry_disabled_reproduces_the_418_defect(tmp_path):
+    """关掉重试即退回旧行为——把「修复前是什么样」也钉在测试里，防止悄悄退化。"""
+    export_dir, conn, ledger_path, _digital_no, _ap_no = _late_ap_setup(tmp_path)
+    ingest_directory(export_dir, ledger_path, conn, now="2026-04-30T00:00:00Z",
+                     retry_unresolved=False)
+    conn.arrive()
+    r2 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-26T00:00:00Z",
+                          retry_unresolved=False)
+    assert r2.resolved_rows == []              # ← 这就是她看到的那 4 张假「无发票支撑」
+    assert r2.retried_rows_resolved == 0
+
+
+def test_unresolved_rows_are_persisted_in_the_ledger_not_just_printed(tmp_path):
+    """根因之一：诊断此前只进 stdout。它必须落盘，否则重试无从谈起。"""
+    export_dir, conn, ledger_path, digital_no, _ = _late_ap_setup(tmp_path)
+    ingest_directory(export_dir, ledger_path, conn, now="2026-04-30T00:00:00Z")
+    entry = next(iter(load_ledger(ledger_path).values()))
+    assert len(entry["unresolved"]) == 1
+    assert entry["unresolved"][0]["digital_invoice_no"] == digital_no
+    assert entry["unresolved"][0]["reason"] == "ap_no_zero_match"
+    assert entry["unresolved"][0]["row_index"] == 2
+
+
+def test_blank_invoice_no_is_diagnosed_but_never_queued_for_retry(tmp_path):
+    """发票号本身为空永远不会自愈——不该占着重试队列每天重查一次。"""
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    _make_export_xlsx(export_dir / "one.xlsx", [_row(digital_no="")])
+    conn = _FakeFullConnector(invoice_rows={}, ap_lines_by_ap_no={})
+    ledger_path = tmp_path / "ledger.json"
+    r = ingest_directory(export_dir, ledger_path, conn, now="2026-08-26T00:00:00Z")
+    assert [d.reason for d in r.diagnostics] == ["digital_invoice_no_missing"]
+    assert r.pending_unresolved == 0
+    assert next(iter(load_ledger(ledger_path).values()))["unresolved"] == []
+
+
+def test_deleted_source_file_makes_rows_unretryable_and_says_so(tmp_path):
+    """🔴 源文件没了＝那些发票永远进不来。必须出声——沉默正是本缺陷当初的潜伏方式。"""
+    export_dir, conn, ledger_path, _digital_no, _ = _late_ap_setup(tmp_path)
+    ingest_directory(export_dir, ledger_path, conn, now="2026-04-30T00:00:00Z")
+
+    (export_dir / _APRIL_FILE).unlink()
+    conn.arrive()
+    r2 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-26T00:00:00Z")
+    assert r2.retried_rows_resolved == 0
+    assert r2.unretryable_unresolved == 1
+    assert r2.unretryable_files == [_APRIL_FILE]
+
+
+def test_changed_source_file_is_not_retried_by_filename(tmp_path):
+    """同名不同内容的文件不得拿来顶替重试——row_index 会指到别的行上去（不猜）。"""
+    export_dir, conn, ledger_path, digital_no, _ = _late_ap_setup(tmp_path)
+    ingest_directory(export_dir, ledger_path, conn, now="2026-04-30T00:00:00Z")
+
+    _make_export_xlsx(export_dir / _APRIL_FILE, [   # 同名、内容不同（前面多了一行）
+        _row(digital_no="26322000009999999999", qty=1, unit_price=1.0),
+        _row(digital_no=digital_no, qty=10, unit_price=100.0),
+    ])
+    conn.arrive()
+    r2 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-26T00:00:00Z")
+    assert r2.unretryable_unresolved == 1
+    assert r2.unretryable_files == [_APRIL_FILE]
+    # 但它作为「同名不同内容」的新文件仍会被正常摄取（既有 #295 行为不变）
+    assert r2.files_processed == [_APRIL_FILE]
+    assert [r["inv_no"] for r in r2.resolved_rows] == [digital_no]
+
+
+def test_retry_does_not_re_add_an_invoice_another_file_already_contributed(tmp_path):
+    """重试不得绕过发票级幂等闸（队列 #371）——否则修好一个错、放回另一个错。"""
+    export_dir, conn, ledger_path, digital_no, _ = _late_ap_setup(tmp_path)
+    ingest_directory(export_dir, ledger_path, conn, now="2026-04-30T00:00:00Z")
+    conn.arrive()
+    # 该发票此后已由别的文件进过库（invoice.csv 里已有）
+    r2 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-26T00:00:00Z",
+                          known_invoice_nos={digital_no})
+    assert r2.retried_rows_resolved == 0
+    assert r2.resolved_rows == []
+    assert r2.duplicate_rows_skipped == 1
+    assert next(iter(load_ledger(ledger_path).values()))["unresolved"] == []
+
+
+def test_retry_contribution_is_recorded_as_a_separate_segment(tmp_path):
+    """重试行追加在 CSV 尾部、与该文件最初那段并不相邻——ledger 必须如实记两段，
+    否则 `rebuild_invoice_csv` 的归属重建（闸②/闸③）会整体错位。"""
+    export_dir, conn, ledger_path, digital_no, _ = _late_ap_setup(tmp_path)
+    other = "26322000001111111111"
+    _make_export_xlsx(export_dir / _APRIL_FILE, [
+        _row(digital_no=other, qty=7, unit_price=50.0),
+        _row(digital_no=digital_no, qty=10, unit_price=100.0),
+    ])
+    conn._invoice_rows = {other[-8:]: [{"DocNo": "AP-OLD", "InvoiceNo": other}]}
+    conn._ap_lines_by_ap_no = {"AP-OLD": [{"ItemCode": "Y001", "APQtyTU": 7.0, "TaxPrice": 56.5}]}
+    r1 = ingest_directory(export_dir, ledger_path, conn, now="2026-04-30T00:00:00Z")
+    assert len(r1.resolved_rows) == 1 and r1.pending_unresolved == 1
+
+    conn.arrive()
+    r2 = ingest_directory(export_dir, ledger_path, conn, now="2026-08-26T00:00:00Z")
+    assert r2.retried_rows_resolved == 1
+
+    entry = next(iter(load_ledger(ledger_path).values()))
+    assert [s["row_count"] for s in entry["segments"]] == [1, 1]
+    assert entry["row_count"] == 2          # 闸①口径：row_count 恒为各段之和
+    assert entry["segments"][0]["seq"] < entry["segments"][1]["seq"]
+
+
+def test_ensure_segments_migrates_a_legacy_ledger_in_place():
+    """`.51` 上的现存 ledger 没有 `segments`——须按原 (processed_at, 文件名) 次序补齐。"""
+    ledger = {
+        "hB": {"file": "b.xlsx", "row_count": 5, "processed_at": "2026-08-02T00:00:00Z"},
+        "hA": {"file": "a.xlsx", "row_count": 3, "processed_at": "2026-08-01T00:00:00Z"},
+    }
+    ensure_segments(ledger)
+    assert ledger["hA"]["segments"] == [{"seq": 0, "row_count": 3}]   # 更早 → 更小 seq
+    assert ledger["hB"]["segments"] == [{"seq": 1, "row_count": 5}]
+    before = json.dumps(ledger, sort_keys=True)
+    ensure_segments(ledger)                  # 幂等
+    assert json.dumps(ledger, sort_keys=True) == before
+    assert next_seq(ledger) == 2

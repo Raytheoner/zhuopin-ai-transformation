@@ -136,3 +136,50 @@ def test_gate2_skips_files_no_longer_on_disk(tmp_path):
     blocks = [("gone.xlsx", [_row("INV-1")])]
     checked, skipped = rebuild.verify_against_sources(blocks, export_dir)
     assert (checked, skipped) == (0, 1)
+
+
+# ── 分段归属：一份文件可能贡献不止一段（队列 #418）────────────────────────
+
+def _seg_ledger(*entries):
+    """entries = (文件名, processed_at, [(seq, 行数), ...])"""
+    return {
+        f"hash-{i}": {
+            "file": f, "processed_at": t,
+            "row_count": sum(n for _s, n in segs),
+            "segments": [{"seq": s, "row_count": n} for s, n in segs],
+        }
+        for i, (f, t, segs) in enumerate(entries)
+    }
+
+
+def test_partition_follows_segment_seq_when_a_file_contributes_twice():
+    """队列 #418 重试 pass：某文件此前未解开的行后来才补进来，追加在 CSV 尾部，
+    与它最初那段并不相邻。按 `(processed_at, 文件名)` 的老模型会把归属整体错位。"""
+    rows = [_row("A"), _row("B"), _row("C"), _row("D")]
+    ledger = _seg_ledger(
+        ("first.xlsx", "2026-08-26T00:00:00Z", [(0, 2), (2, 1)]),   # 段0 + 重试段2
+        ("second.xlsx", "2026-08-02T00:00:00Z", [(1, 1)]),
+    )
+    blocks = rebuild.partition_by_ledger(rows, ledger)
+    assert [f for f, _seg in blocks] == ["first.xlsx", "second.xlsx", "first.xlsx"]
+    assert [r["inv_no"] for r in blocks[0][1]] == ["A", "B"]
+    assert [r["inv_no"] for r in blocks[1][1]] == ["C"]
+    assert [r["inv_no"] for r in blocks[2][1]] == ["D"]   # ← 重试段，落在尾部
+
+
+def test_partition_falls_back_to_legacy_order_without_segments():
+    """`.51` 上尚未被摄取器碰过的老 ledger 没有 `segments`——须与引入本字段前逐行等价。"""
+    rows = [_row("A"), _row("B"), _row("C")]
+    ledger = _ledger(("second.xlsx", 1, "2026-08-02T00:00:00Z"),
+                     ("first.xlsx", 2, "2026-08-01T00:00:00Z"))
+    blocks = rebuild.partition_by_ledger(rows, ledger)
+    assert [f for f, _seg in blocks] == ["first.xlsx", "second.xlsx"]
+    assert [r["inv_no"] for r in blocks[0][1]] == ["A", "B"]
+
+
+def test_gate1_still_counts_row_count_as_the_sum_of_segments():
+    """闸①口径不变：各条目 row_count 之和（＝各段之和）必须等于 CSV 行数。"""
+    rows = [_row("A"), _row("B")]
+    ledger = _seg_ledger(("first.xlsx", "2026-08-26T00:00:00Z", [(0, 2), (1, 5)]))
+    with pytest.raises(rebuild.RebuildAborted, match="闸①"):
+        rebuild.partition_by_ledger(rows, ledger)

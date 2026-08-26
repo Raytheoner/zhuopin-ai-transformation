@@ -16,6 +16,7 @@ v3 口径修正（2026-07-09）：核对对象改 AP 单 vs INV，PO/GR 保留�
 from __future__ import annotations
 
 import csv
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional as _Opt
 
@@ -182,14 +183,77 @@ def parse_grn(rows: list[dict]) -> list[GRNLine]:
     return out
 
 
-def parse_ap_lines(rows: list[dict]) -> list[APLine]:
-    """解析应付单明细行（v3 新增，design D10）。"""
+@dataclass
+class APNoPOLinkRow:
+    """一条「无 PO 关联」的应付明细行（队列 #390）——**留痕，不是丢弃**。
+
+    `po_no`／`line_no` 双空（或其一为空）的应付行在账上真实存在：费用类应付、无采购
+    订单的应付都是这个形态。它们进不了三单核对的数学（`(po_no, line_no)` 是 AP↔PO
+    的 join 键），但**绝不能静默跳过——静默丢弃就是无声漏单**。
+    """
+    index: int                  # 在传入 rows 里的 0-based 位置（与 raw_ap_rows 对齐用）
+    ap_no: str
+    item_code: str
+    reason: str                 # 恒为 "no_po_link"（预留将来细分）
+    raw: dict                   # 原始行，原样留存供人工核对
+
+
+def _no_po_link_fields(raw: dict) -> list[str]:
+    """→ `po_no`/`line_no` 中为空的那些字段名（都不空则返回空列表）。"""
+    return [f for f in ("po_no", "line_no")
+            if raw.get(f) is None or str(raw.get(f)).strip() == ""]
+
+
+def parse_ap_lines(rows: list[dict], *, no_po_link: str = "raise",
+                   diverted: list[APNoPOLinkRow] | None = None) -> list[APLine]:
+    """解析应付单明细行（v3 新增，design D10）。
+
+    `no_po_link`（队列 #390）——「无 PO 关联」行（`po_no`／`line_no` 有一个为空）怎么办：
+
+      · `"raise"`（默认，行为与本参数引入前逐字相同）：照旧 fail-loud 抛 `ValueError`。
+        🔴 **fail-loud 本身是对的，不要改成静默跳过**——见 `APNoPOLinkRow` 文档。
+      · `"divert"`：把这类行**分流**进 `diverted`（调用方必须提供该列表，否则抛错——
+        没地方留痕就等于静默丢弃，本函数不允许），其余行照常解析，批量加载得以跑完。
+
+    🔴 **`"divert"` 只解决「批量跑得完 ＋ 这类行留可查诊断」，不代表「费用类应付不进
+    三单核对」这条账务口径已定** —— 该口径归唐燕萍（队列 #390 三条选项 ⒜⒝⒞ 原样待
+    她拍板），故默认值刻意保持 `"raise"`，不默认生效。
+
+    其余任何校验失败（`ap_no`／`item_code` 为空、数值字段非法等）在两种模式下**一律
+    照旧 fail-loud**——那是真正的脏数据，不在本次分流范围内。
+    """
+    if no_po_link not in ("raise", "divert"):
+        raise ValueError(f"未知 no_po_link 模式: {no_po_link}（可选 'raise' / 'divert'）")
+    if no_po_link == "divert" and diverted is None:
+        raise ValueError(
+            "parse_ap_lines(no_po_link='divert') 必须提供 diverted 列表承接分流行——"
+            "无处留痕的分流等同静默漏单（队列 #390）"
+        )
+
     out: list[APLine] = []
-    for raw in rows:
+    for idx, raw in enumerate(rows):
+        if no_po_link == "divert":
+            missing = _no_po_link_fields(raw)
+            if missing:
+                diverted.append(APNoPOLinkRow(
+                    index=idx,
+                    ap_no=str(raw.get("ap_no") or ""),
+                    item_code=str(raw.get("item_code") or ""),
+                    reason="no_po_link",
+                    raw=dict(raw),
+                ))
+                continue
         try:
             r = _APLineRow.model_validate(raw)
         except Exception as e:
-            raise ValueError(f"FI2 应付单明细行校验失败: {e}") from None
+            # 队列 #390：原消息只有 pydantic 原文，不含单号/行位置——`AP-2026010125`
+            # 那次 640 单批量当场中止，日志里查不出是哪一张单打挂的。补上定位信息。
+            where = f"第 {idx + 1} 行（ap_no={raw.get('ap_no') or '?'}）"
+            hint = ""
+            if _no_po_link_fields(raw):
+                hint = ("；该行 po_no／line_no 为空＝「无 PO 关联」应付行（费用类应付在账上"
+                        "真实存在），批量加载可用 no_po_link='divert' 分流留痕，见队列 #390")
+            raise ValueError(f"FI2 应付单明细行校验失败: {where}: {e}{hint}") from None
         out.append(APLine(r.ap_no, r.po_no, r.line_no, r.item_code, r.qty, r.unit_price,
                            r.untaxed_amount, r.tax_amount, r.ap_date or ""))
     return out
@@ -308,13 +372,20 @@ class FeedSource:
             `load_invoice()` 维持现状 fail-loud（Attachment/OCR 未就绪，队列 #59），
             行为与本参数引入前完全一致。仅影响 `load_invoice()`，不影响
             `load_po_lines`/`load_grn`/`load_ap_lines`/`load_payment`。
+        ap_no_po_link: 「无 PO 关联」应付行的处理模式（队列 #390），透传给
+            `parse_ap_lines`：`"raise"`（默认，现状 fail-loud 不变）或 `"divert"`
+            （分流留痕，批量加载得以跑完）。`"divert"` 下分流行落
+            `self.ap_no_po_link_rows`，调用方须如实呈现——**不得静默**。
+            🔴 默认刻意不改：「费用类应付要不要进三单核对」是唐燕萍的账务口径
+            （队列 #390 ⒜⒝⒞ 待她拍板），本参数只解决「批量跑得完」，不替她选。
     """
 
     def __init__(self, data_source: str | None = None, *, mock_dir: Path | str | None = None,
                  csv_dir: Path | str | None = None, audit=None, cfg=_config,
                  u9c_connector=None, ap_doc_nos: list[str] | None = None,
                  ap_supplier_codes: list[str] | None = None,
-                 invoice_sample_dir: Path | str | None = None):
+                 invoice_sample_dir: Path | str | None = None,
+                 ap_no_po_link: str = "raise"):
         self.data_source = (data_source or cfg.DATA_SOURCE_DEFAULT).strip().lower()
         self.mock_dir = Path(mock_dir) if mock_dir else None
         self.csv_dir = Path(csv_dir) if csv_dir else None
@@ -324,7 +395,14 @@ class FeedSource:
         self.ap_doc_nos = list(ap_doc_nos) if ap_doc_nos else None
         self.ap_supplier_codes = list(ap_supplier_codes) if ap_supplier_codes else None
         self.invoice_sample_dir = Path(invoice_sample_dir) if invoice_sample_dir else None
+        self.ap_no_po_link = ap_no_po_link
+        # 队列 #390：`ap_no_po_link="divert"` 时被分流出来的「无 PO 关联」应付行。
+        # 由最近一次 `load_ap_lines()` 重填（不累积），调用方据此留痕/呈现。
+        self.ap_no_po_link_rows: list[APNoPOLinkRow] = []
         self._u9c_ap_rows_cache: list[dict] | None = None
+        # 被分流行在 `_u9c_ap_rows_cache` 里的下标——`raw_ap_rows()` 据此同步剔除，
+        # 保住它与 `load_ap_lines()` 结果「按位置一一对应」的既有契约（见该方法）。
+        self._u9c_ap_diverted_idx: set[int] = set()
 
     def _dir(self) -> Path:
         if self.data_source == "mock":
@@ -370,8 +448,17 @@ class FeedSource:
         list comprehension、`parse_ap_lines` 经同序 append，均不重排/不过滤），调用方
         （webapp.py）借此按位置配对还原真实 AP 行号，供"展开详情"展示用，不影响任何
         判定逻辑。非 u9c 源或尚未调用过 `load_ap_lines()`/`load_po_lines()`/`load_grn()`
-        （三者共享同一缓存）时返回空列表。"""
-        return list(self._u9c_ap_rows_cache) if self._u9c_ap_rows_cache else []
+        （三者共享同一缓存）时返回空列表。
+
+        队列 #390：`ap_no_po_link="divert"` 下被分流的「无 PO 关联」行会从这里**一并
+        剔除**——否则本方法与 `load_ap_lines()` 的长度就不再相等，`webapp` 的
+        `_u9c_ap_real_line_no` 会整批回落、全表 AP 行号显示悄悄退化。"""
+        if not self._u9c_ap_rows_cache:
+            return []
+        if not self._u9c_ap_diverted_idx:
+            return list(self._u9c_ap_rows_cache)
+        return [r for i, r in enumerate(self._u9c_ap_rows_cache)
+                if i not in self._u9c_ap_diverted_idx]
 
     def load_po_lines(self) -> list[POLine]:
         if self.data_source == "u9c":
@@ -396,11 +483,20 @@ class FeedSource:
         return parse_grn(_read_csv(self._dir() / "grn.csv"))
 
     def load_ap_lines(self) -> list[APLine]:
+        # 队列 #390：分流留痕列表每次重填，不跨调用累积（同一实例可能被调多次）。
+        self.ap_no_po_link_rows = []
+        self._u9c_ap_diverted_idx = set()
+        kwargs = ({"no_po_link": "divert", "diverted": self.ap_no_po_link_rows}
+                  if self.ap_no_po_link == "divert" else {"no_po_link": self.ap_no_po_link})
         if self.data_source == "u9c":
             if self.u9c_connector is None:
                 raise RealEndpointNotReadyError("load_ap_lines", self.cfg.U9C_FI_NOT_READY)
-            return parse_ap_lines([_map_u9c_ap_row(r) for r in self._fetch_u9c_ap_rows()])
-        return parse_ap_lines(_read_csv(self._dir() / "ap_lines.csv"))
+            lines = parse_ap_lines(
+                [_map_u9c_ap_row(r) for r in self._fetch_u9c_ap_rows()], **kwargs)
+            # `_map_u9c_ap_row` 是同序 list comprehension ⇒ 分流行的下标即原始行下标。
+            self._u9c_ap_diverted_idx = {d.index for d in self.ap_no_po_link_rows}
+            return lines
+        return parse_ap_lines(_read_csv(self._dir() / "ap_lines.csv"), **kwargs)
 
     def load_invoice(self) -> list[InvoiceLine]:
         if self.data_source == "u9c":

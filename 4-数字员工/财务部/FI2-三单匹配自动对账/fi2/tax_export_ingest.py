@@ -55,6 +55,53 @@ tax_rate/tax_amount/inv_date）——`feed_source.py`/`parse_invoice`/`partition
   是预期内的正常现象（她的导出区间本就会重叠），混进去会淹没真正的失败信号，也会
   被 `tax_export_scan` 的文件级失败判定误读。改为独立计数
   （`duplicate_rows_skipped`／`duplicate_invoice_nos`）由调用方如实打印——**不静默**。
+
+未解析行必须可重试（2026-08-26 补，队列 #418）
+──────────────────────────────────────────────
+**真实生产错误**：唐燕萍 2026-08-26 随机抽 10 张 AP 单复核，**4 张被面板报「无发票
+支撑」而发票实际存在**（她自带四组对照，见队列 #418）。
+
+**根因＝摄取期的「一次性判决」**：本模块此前对每一行只有一次机会 ——
+
+  ⑴ `resolve_ap_no` 零命中/歧义、或 `resolve_item_code` 对不上 ⇒ 该行**不进
+     `resolved_rows`**，只落一条 `IngestDiagnostic`；
+  ⑵ 而 `IngestDiagnostic` **只被 CLI 打印到 stdout，从不落盘**；
+  ⑶ 与此同时该文件的 SHA256 已被 `mark_processed` 写进 `.processed_exports.json`
+     ⇒ 此后 `discover_new_files` 永远跳过它，**那些行再也不会被重试**。
+
+  🔑 **为什么这必然发生，而不是偶发**：`resolve_ap_no` 反查的是 U9C 里**当时**存在的
+  AP 单。发票开出与应付单立账之间天然有时间差 —— **一张 4 月开出的发票，其 AP 单
+  可能 8 月才立**。摄取跑在两者之间，零命中就是必然结果，而不是数据脏。她那四组里
+  有两组的发票正落在《…20260401-20260430》导出文件里、AP 单却是 8 月的，形态吻合。
+
+  🔴 **这条缺陷的危险不在它报错，而在它报的是一个看起来完全合理的结论** ——
+  「无发票支撑（发票还没到）」在账上天天真实发生，因此没人会怀疑那批里混着假的。
+  **错误不产生任何信号。**
+
+**修法＝未解析行落进 ledger，每次运行先重试**：
+
+  ① **登记**：`ap_no_zero_match`／`ap_no_ambiguous`／`item_code_zero_match`／
+     `item_code_ambiguous` 四类未解析行，连同 `row_index`／`数电发票号码` 一并写进该
+     文件的 ledger 条目 `unresolved`（**只登记「U9C 侧状态变了就可能解开」的四类**；
+     `数电发票号码` 本身为空这类永不会自愈，仍只作诊断，不进重试队列）。
+  ② **重试**：每次 `ingest_directory` 先跑一遍重试 pass —— 对 ledger 里仍有
+     `unresolved`、且**源文件仍在盘上且 SHA256 与 ledger 键一致**的文件，重新解析并
+     只重跑那几行。解到了就并进 `resolved_rows` 并从 `unresolved` 移除；仍解不开就
+     原样留着，下次接着试。
+  ③ 🔴 **重试不了的必须出声**：源文件已被删除/已改动（SHA 不符）⇒ 那些行**永远
+     不可能再解开**，计入 `unretryable_unresolved`／`unretryable_files` 由调用方如实
+     打印。**不静默**——这正是本缺陷当初得以潜伏的方式。
+
+  **零新增载体**（同 #371 口径）：重试队列直接寄在既有 `.processed_exports.json` 的
+  条目里，不另立状态文件。
+
+  ⚠️ **与 `scripts/rebuild_invoice_csv.py` 闸①/闸② 的相互作用（必须一并改，否则会
+  把那把尺子弄坏）**：该脚本按「ledger 每份文件贡献一个**连续块**」把 `invoice.csv`
+  切回源文件。重试会让**同一份文件在 CSV 尾部再追加一段**，其贡献不再连续 ⇒ 旧的
+  「按 (processed_at, 文件名) 排序后按 row_count 累加」模型当场失真。故 ledger 条目
+  改为记 `segments`（`[{"seq": 递增序号, "row_count": n}, ...]`），`row_count` 仍是
+  各段之和（闸① 口径不变）；`partition_by_ledger` 改为按 `seq` 展平所有段。老 ledger
+  没有 `segments` 时按原 (processed_at, 文件名) 次序一次性补齐，行为等价。
 """
 from __future__ import annotations
 
@@ -107,6 +154,16 @@ class IngestResult:
     # 刻意不进 `diagnostics`——那是「需人工核对」的留痕，跨文件重复属预期正常现象。
     duplicate_rows_skipped: int = 0
     duplicate_invoice_nos: list[str] = field(default_factory=list)
+    # ── 未解析行重试（队列 #418）────────────────────────────────────────────
+    # 本次重试 pass 里终于解开的行（此前批次报「无发票支撑」的假报，就是它们）。
+    retried_rows_resolved: int = 0
+    retried_invoice_nos: list[str] = field(default_factory=list)
+    # 跑完后仍未解开、已留在 ledger 里等下次重试的行数（正常态，非故障）。
+    pending_unresolved: int = 0
+    # 🔴 源文件已不在盘上或已改动（SHA 与 ledger 键不符）⇒ 这些行**永远解不开了**。
+    # 必须由调用方如实打印——不静默（见模块 docstring ③）。
+    unretryable_unresolved: int = 0
+    unretryable_files: list[str] = field(default_factory=list)
 
 
 # ── 已处理清单（内容哈希，design D4）───────────────────────────────────────
@@ -154,8 +211,88 @@ def load_ingested_invoice_nos(invoice_csv_path: Path | str) -> set[str]:
         }
 
 
-def mark_processed(ledger: dict, file_hash: str, filename: str, *, row_count: int, processed_at: str) -> None:
-    ledger[file_hash] = {"file": filename, "row_count": row_count, "processed_at": processed_at}
+# ── 贡献分段与重试队列（队列 #418）────────────────────────────────────────
+#
+# 条目形状（`.processed_exports.json`，键＝源文件内容 SHA256）：
+#   {"file": "xxx.xlsx", "row_count": 12, "processed_at": "...",
+#    "segments":   [{"seq": 3, "row_count": 12}],          # 该文件贡献的各连续段
+#    "unresolved": [{"row_index": 5, "digital_invoice_no": "263...",
+#                    "reason": "ap_no_zero_match", "detail": ""}]}
+#
+# `row_count` 恒等于各 `segments[].row_count` 之和（`rebuild_invoice_csv` 闸① 口径
+# 不变）；`seq` 是**全 ledger 范围**的追加序号，等于该段在 `invoice.csv` 里的先后。
+
+# 只有这四类未解析原因值得重试——它们全都取决于 U9C 侧**当时**的状态（AP 单还没立、
+# 行项目还没改对），状态一变就可能自行解开。`digital_invoice_no_missing`（发票号本身
+# 为空）永远不会自愈，故不进重试队列，仍只作诊断。
+_RETRYABLE_REASONS = frozenset({
+    "ap_no_zero_match", "ap_no_ambiguous", "item_code_zero_match", "item_code_ambiguous",
+})
+
+
+def _entry_segments(entry: dict) -> list[dict]:
+    return entry.get("segments") or []
+
+
+def ensure_segments(ledger: dict) -> None:
+    """给老 ledger 条目一次性补齐 `segments`（队列 #418 引入本字段前写的条目）。
+
+    补齐次序＝`rebuild_invoice_csv.partition_by_ledger` 此前使用的
+    `(processed_at, file)` —— 即那些条目当初真实的追加次序，故补齐前后切分结果等价。
+    幂等：已有 `segments` 的条目不动。
+    """
+    legacy = sorted(
+        (kv for kv in ledger.items() if not _entry_segments(kv[1])),
+        key=lambda kv: (kv[1].get("processed_at", ""), kv[1].get("file", "")),
+    )
+    if not legacy:
+        return
+    # 已有 segments 的条目占掉的 seq 必须避开（混合态：一部分条目已迁移过）。
+    used = {s.get("seq", 0) for _h, v in ledger.items() for s in _entry_segments(v)}
+    seq = 0
+    for _h, entry in legacy:
+        while seq in used:
+            seq += 1
+        entry["segments"] = [{"seq": seq, "row_count": int(entry.get("row_count", 0))}]
+        used.add(seq)
+        seq += 1
+
+
+def next_seq(ledger: dict) -> int:
+    """下一个可用的全局追加序号。"""
+    seqs = [s.get("seq", -1) for _h, v in ledger.items() for s in _entry_segments(v)]
+    return max(seqs, default=-1) + 1
+
+
+def mark_processed(ledger: dict, file_hash: str, filename: str, *, row_count: int,
+                   processed_at: str, seq: int | None = None,
+                   unresolved: list[dict] | None = None) -> None:
+    """登记一份**新**文件的处理结果。
+
+    `seq`：本次贡献段在 `invoice.csv` 里的追加序号（`None` 时自动取 `next_seq`）。
+    `unresolved`：本次未解开、留待后续重试的行（队列 #418），空列表即「全部解开了」。
+    """
+    ledger[file_hash] = {
+        "file": filename,
+        "row_count": row_count,
+        "processed_at": processed_at,
+        "segments": [{"seq": next_seq(ledger) if seq is None else seq, "row_count": row_count}],
+        "unresolved": list(unresolved or ()),
+    }
+
+
+def append_segment(entry: dict, *, seq: int, row_count: int, processed_at: str) -> None:
+    """给**已处理过**的文件追加一段贡献（队列 #418 重试 pass 解开了它此前未解的行）。
+
+    `row_count` 同步累加，`rebuild_invoice_csv` 闸①（各条目 row_count 之和 == CSV
+    行数）因此仍然成立；而 `segments` 保住了「哪一段在 CSV 的哪个位置」，闸②/闸③
+    的归属重建不会因为一份文件贡献不连续而失真。
+    """
+    if row_count <= 0:
+        return
+    entry.setdefault("segments", []).append({"seq": seq, "row_count": row_count})
+    entry["row_count"] = int(entry.get("row_count", 0)) + row_count
+    entry["processed_at"] = processed_at
 
 
 # ── Excel 解析 ────────────────────────────────────────────────────────────
@@ -294,9 +431,171 @@ def discover_new_files(export_dir: Path | str, ledger: dict) -> list[tuple[Path,
     return out
 
 
+class _RowResolver:
+    """把「一行导出明细 → invoice.csv 行」的解析收成一处，供新文件与重试 pass 共用。
+
+    两条路径此前只在 `ingest_directory` 里存在一份（新文件），队列 #418 加重试 pass
+    后必须逐字同规则——抽出来是为了保证它们**不会分叉**，不是为了好看。
+    """
+
+    def __init__(self, connector, result: IngestResult):
+        self._connector = connector
+        self._result = result
+        # 同一张发票的多个明细行共享同一「数电发票号码」（真实样本已观察到单张发票
+        # 182 行的情形，见 sample_8/AP-2026050057）——按 digital_no 缓存 ap_no 反查结果，
+        # 避免对同一发票号重复发起真实网络请求（此前无缓存时曾在真实端点上耗时超 2 分钟）。
+        self._ap_no_cache: dict[str, tuple[Optional[str], str, str]] = {}
+        self._ap_lines_cache: dict[str, list[dict]] = {}
+
+    def resolve(self, file_name: str, idx: int, raw: dict) -> tuple[Optional[dict], Optional[dict]]:
+        """→ (已解析的 invoice.csv 行 或 None, 待重试登记项 或 None)。
+
+        诊断一律登记进 `result.diagnostics`（不静默）；其中属 `_RETRYABLE_REASONS`
+        的额外返回一个待重试登记项，由调用方写进 ledger。
+        """
+        digital_no = str(raw.get("数电发票号码") or "").strip()
+        if not digital_no:
+            self._result.diagnostics.append(IngestDiagnostic(
+                file=file_name, row_index=idx, reason="digital_invoice_no_missing"))
+            return None, None   # 发票号为空永不自愈，不进重试队列
+
+        if digital_no not in self._ap_no_cache:
+            self._ap_no_cache[digital_no] = resolve_ap_no(self._connector, digital_no)
+        ap_no, reason, detail = self._ap_no_cache[digital_no]
+        if ap_no is None:
+            return None, self._fail(file_name, idx, digital_no, reason, detail)
+
+        if ap_no not in self._ap_lines_cache:
+            self._ap_lines_cache[ap_no] = self._connector.get_ap_lines(ap_no)
+
+        qty = float(raw.get("数量") or 0)
+        unit_price = float(raw.get("单价") or 0)
+        tax_rate = _parse_tax_rate(raw.get("税率"))
+        item_code, i_reason, i_detail = resolve_item_code(
+            self._ap_lines_cache[ap_no], qty, unit_price, tax_rate)
+        if item_code is None:
+            return None, self._fail(file_name, idx, digital_no, i_reason, i_detail)
+
+        return {
+            "inv_no": digital_no,
+            "ap_no": ap_no,
+            "item_code": item_code,
+            "unit": str(raw.get("单位") or ""),
+            "unit_price": unit_price,
+            "inv_qty": qty,
+            "untaxed_amount": float(raw.get("金额") or 0),
+            "tax_rate": tax_rate,
+            "tax_amount": float(raw.get("税额") or 0),
+            "inv_date": _parse_date(raw.get("开票日期")),
+        }, None
+
+    def _fail(self, file_name: str, idx: int, digital_no: str, reason: str, detail: str) -> Optional[dict]:
+        self._result.diagnostics.append(IngestDiagnostic(
+            file=file_name, row_index=idx, digital_invoice_no=digital_no,
+            reason=reason, detail=detail))
+        if reason not in _RETRYABLE_REASONS:
+            return None
+        return {"row_index": idx, "digital_invoice_no": digital_no,
+                "reason": reason, "detail": detail}
+
+    def forget(self, digital_no: str) -> None:
+        """丢掉某发票号的 ap_no 反查缓存——重试 pass 跨 U9C 状态变化时必须重查。"""
+        self._ap_no_cache.pop(digital_no, None)
+
+
+def _retry_unresolved(
+    export_dir: Path, ledger: dict, resolver: _RowResolver, result: IngestResult,
+    known: set[str], now: str,
+) -> list[dict]:
+    """重试 pass（队列 #418）：把此前批次未解开、如今可能已能解开的行捞回来。
+
+    只碰「源文件仍在盘上、且内容 SHA256 与 ledger 键一致」的条目 —— 文件被删或被改
+    过就再也无从重试，如实计入 `unretryable_*`，**不静默**。
+
+    返回本次新解出的行（已按 `segments` 的 seq 次序排好，调用方按此序追加写盘）。
+    """
+    out: list[dict] = []
+    # `ap_no` 反查缓存里可能留着**本次运行早些时候**刚查出的结果，但重试针对的正是
+    # 「U9C 侧状态变了」的行 —— 每个发票号在本轮重试里先失效一次、只失效一次。
+    # 🔴 不能每行都 forget：真实数据里单张发票 182 行，那会退化成 182 次真实网络调用
+    # （无缓存时曾实测耗时超 2 分钟，见 `_RowResolver` 注释）。
+    refreshed: set[str] = set()
+    entries = sorted(
+        ((h, v) for h, v in ledger.items() if v.get("unresolved")),
+        key=lambda kv: min((s.get("seq", 0) for s in _entry_segments(kv[1])), default=0),
+    )
+    for file_hash, entry in entries:
+        pending = list(entry.get("unresolved") or ())
+        file_name = entry.get("file", "")
+        path = export_dir / file_name
+        if not file_name or not path.is_file() or _hash_file(path) != file_hash:
+            result.unretryable_unresolved += len(pending)
+            if file_name and file_name not in result.unretryable_files:
+                result.unretryable_files.append(file_name)
+            continue
+        try:
+            raw_rows = parse_export_workbook(path)
+        except ValueError as e:
+            result.diagnostics.append(IngestDiagnostic(
+                file=file_name, reason="parse_error", detail=str(e)))
+            result.unretryable_unresolved += len(pending)
+            if file_name not in result.unretryable_files:
+                result.unretryable_files.append(file_name)
+            continue
+
+        # `parse_export_workbook` 的行序稳定，且文件 SHA 已核对一致 ⇒ row_index 仍指向
+        # 同一行；再用 digital_invoice_no 二次校验，不一致即放弃该条（不猜）。
+        by_index = {idx: raw for idx, raw in enumerate(raw_rows, start=2)}
+        seen_before_this_file = set(known)
+        contributed_here: set[str] = set()
+        still_pending: list[dict] = []
+        resolved_here: list[dict] = []
+        for item in pending:
+            idx = item.get("row_index")
+            raw = by_index.get(idx)
+            digital_no = str(item.get("digital_invoice_no") or "")
+            if raw is None or str(raw.get("数电发票号码") or "").strip() != digital_no:
+                result.unretryable_unresolved += 1
+                if file_name not in result.unretryable_files:
+                    result.unretryable_files.append(file_name)
+                continue
+            if digital_no in seen_before_this_file:
+                # 这张发票此后已由别的文件贡献过了——本条自然消解，无须再试。
+                result.duplicate_rows_skipped += 1
+                if digital_no not in result.duplicate_invoice_nos:
+                    result.duplicate_invoice_nos.append(digital_no)
+                continue
+            if digital_no not in refreshed:
+                resolver.forget(digital_no)   # U9C 侧状态可能已变，缓存不能复用
+                refreshed.add(digital_no)
+            row, retry_item = resolver.resolve(file_name, idx, raw)
+            if row is None:
+                if retry_item is not None:
+                    still_pending.append(retry_item)
+                else:
+                    result.unretryable_unresolved += 1
+                    if file_name not in result.unretryable_files:
+                        result.unretryable_files.append(file_name)
+                continue
+            resolved_here.append(row)
+            contributed_here.add(digital_no)
+            result.retried_rows_resolved += 1
+            if digital_no not in result.retried_invoice_nos:
+                result.retried_invoice_nos.append(digital_no)
+
+        entry["unresolved"] = still_pending
+        result.pending_unresolved += len(still_pending)
+        if resolved_here:
+            append_segment(entry, seq=next_seq(ledger), row_count=len(resolved_here),
+                           processed_at=now)
+            out.extend(resolved_here)
+        known |= contributed_here
+    return out
+
+
 def ingest_directory(
     export_dir: Path | str, ledger_path: Path | str, connector, *, now: str,
-    known_invoice_nos: set[str] | None = None,
+    known_invoice_nos: set[str] | None = None, retry_unresolved: bool = True,
 ) -> IngestResult:
     """扫描目录 → 跳过已处理 → 解析 → ap_no/item_code 反查 → 产出结果（不落盘，见
     `write_invoice_csv`）。`now` 由调用方传入处理时间戳（ISO 字符串），保持本函数
@@ -315,23 +614,36 @@ def ingest_directory(
     🔴 **闸只挡跨文件重复**：每份文件开始处理前先快照一次「已知发票号」，该文件自身
     新贡献的发票号在**本文件处理完之后**才并入快照 —— 故同一文件内同号发票的多行
     （真实数据里合法且常见）全部保留，不会被自己挡掉。
-    """
-    ledger = load_ledger(ledger_path)
-    result = IngestResult()
-    new_files = discover_new_files(export_dir, ledger)
-    known: set[str] = set(known_invoice_nos or ())
 
-    all_files = sorted(Path(export_dir).glob("*.xlsx"))
+    `retry_unresolved`（队列 #418，默认开）：先跑一遍重试 pass，把此前批次因
+    `ap_no_zero_match` 等四类原因未解开、如今 U9C 侧已能解开的行捞回来（**「发票 4 月
+    开、AP 单 8 月立」是常态，不是脏数据**，见模块 docstring）。传 `False` 可关掉，
+    仅用于单测隔离新文件路径；生产调用不要关——关掉就退回「一次判决、永不复议」的
+    旧行为，也就是 #418 那批假「无发票支撑」的成因。
+
+    🔴 **`resolved_rows` 的次序即写盘次序**：重试段在前、新文件段在后，与 ledger 里
+    各 `segments[].seq` 严格一致。调用方必须按原序一次性 `write_invoice_csv`，否则
+    `rebuild_invoice_csv` 的归属重建会与实际错位。
+    """
+    export_dir = Path(export_dir)
+    ledger = load_ledger(ledger_path)
+    ensure_segments(ledger)     # 老 ledger 一次性补齐 segments（队列 #418）
+    result = IngestResult()
+    known: set[str] = set(known_invoice_nos or ())
+    resolver = _RowResolver(connector, result)
+
+    # ── ① 重试 pass：先捞回此前未解开的行（队列 #418）──────────────────────
+    if retry_unresolved:
+        result.resolved_rows.extend(
+            _retry_unresolved(export_dir, ledger, resolver, result, known, now))
+
+    # ── ② 常规 pass：处理新文件 ────────────────────────────────────────────
+    new_files = discover_new_files(export_dir, ledger)
+    all_files = sorted(export_dir.glob("*.xlsx"))
     new_paths = {p for p, _ in new_files}
     for p in all_files:
         if p not in new_paths:
             result.files_skipped.append(p.name)
-
-    ap_lines_cache: dict[str, list[dict]] = {}
-    # 同一张发票的多个明细行共享同一「数电发票号码」（真实样本已观察到单张发票
-    # 182 行的情形，见 sample_8/AP-2026050057）——按 digital_no 缓存 ap_no 反查结果，
-    # 避免对同一发票号重复发起真实网络请求（此前无缓存时曾在真实端点上耗时超 2 分钟）。
-    ap_no_cache: dict[str, tuple[Optional[str], str, str]] = {}
 
     for path, file_hash in new_files:
         try:
@@ -340,19 +652,15 @@ def ingest_directory(
             result.diagnostics.append(IngestDiagnostic(file=path.name, reason="parse_error", detail=str(e)))
             continue
 
-        row_count = 0
+        rows_here: list[dict] = []
+        unresolved_here: list[dict] = []
         # 本文件开始处理前的快照——闸只挡「别的文件已贡献过」，不挡本文件自身
         # 同号发票的多行（真实数据里合法且常见，见模块 docstring）。
         seen_before_this_file = set(known)
         contributed_here: set[str] = set()
         for idx, raw in enumerate(raw_rows, start=2):
             digital_no = str(raw.get("数电发票号码") or "").strip()
-            if not digital_no:
-                result.diagnostics.append(IngestDiagnostic(
-                    file=path.name, row_index=idx, reason="digital_invoice_no_missing"))
-                continue
-
-            if digital_no in seen_before_this_file:
+            if digital_no and digital_no in seen_before_this_file:
                 # 该发票已由别的文件（或此前批次）贡献过 —— 跳过，不重复计数。
                 # 刻意不进 diagnostics（见 IngestResult 字段注释），但如实计数。
                 result.duplicate_rows_skipped += 1
@@ -360,47 +668,20 @@ def ingest_directory(
                     result.duplicate_invoice_nos.append(digital_no)
                 continue
 
-            if digital_no not in ap_no_cache:
-                ap_no_cache[digital_no] = resolve_ap_no(connector, digital_no)
-            ap_no, reason, detail = ap_no_cache[digital_no]
-            if ap_no is None:
-                result.diagnostics.append(IngestDiagnostic(
-                    file=path.name, row_index=idx, digital_invoice_no=digital_no,
-                    reason=reason, detail=detail))
+            row, retry_item = resolver.resolve(path.name, idx, raw)
+            if row is None:
+                if retry_item is not None:
+                    unresolved_here.append(retry_item)
                 continue
-
-            if ap_no not in ap_lines_cache:
-                ap_lines_cache[ap_no] = connector.get_ap_lines(ap_no)
-
-            qty = float(raw.get("数量") or 0)
-            unit_price = float(raw.get("单价") or 0)
-            tax_rate = _parse_tax_rate(raw.get("税率"))
-            item_code, i_reason, i_detail = resolve_item_code(
-                ap_lines_cache[ap_no], qty, unit_price, tax_rate)
-            if item_code is None:
-                result.diagnostics.append(IngestDiagnostic(
-                    file=path.name, row_index=idx, digital_invoice_no=digital_no,
-                    reason=i_reason, detail=i_detail))
-                continue
-
-            result.resolved_rows.append({
-                "inv_no": digital_no,
-                "ap_no": ap_no,
-                "item_code": item_code,
-                "unit": str(raw.get("单位") or ""),
-                "unit_price": unit_price,
-                "inv_qty": qty,
-                "untaxed_amount": float(raw.get("金额") or 0),
-                "tax_rate": tax_rate,
-                "tax_amount": float(raw.get("税额") or 0),
-                "inv_date": _parse_date(raw.get("开票日期")),
-            })
-            row_count += 1
+            rows_here.append(row)
             contributed_here.add(digital_no)
 
         # 本文件贡献的发票号在此刻才并入闸——保证同文件内多行不自挡（见 docstring）。
         known |= contributed_here
-        mark_processed(ledger, file_hash, path.name, row_count=row_count, processed_at=now)
+        result.resolved_rows.extend(rows_here)
+        result.pending_unresolved += len(unresolved_here)
+        mark_processed(ledger, file_hash, path.name, row_count=len(rows_here),
+                       processed_at=now, unresolved=unresolved_here)
         result.files_processed.append(path.name)
 
     save_ledger(ledger_path, ledger)

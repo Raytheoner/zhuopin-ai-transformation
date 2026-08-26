@@ -87,6 +87,11 @@ def partition_by_ledger(rows: list[dict], ledger: dict) -> list[tuple[str, list[
     """把 CSV 行切回「每个源文件贡献了哪一段」（见模块 docstring）。
 
     闸 ①：ledger 的 `row_count` 之和必须精确等于 CSV 行数，否则中止。
+
+    ⚠️ **一份文件可能贡献不止一段**（队列 #418 未解析行重试：某文件此前未解开的行，
+    后续批次解开后会追加到 `invoice.csv` 尾部，与它最初那段并不相邻）。故次序以
+    ledger 条目的 `segments[].seq`（全局追加序号）为准；老 ledger 没有 `segments`
+    时按原 `(processed_at, 文件名)` 次序补齐，与本字段引入前逐行等价。
     """
     entries = sorted(ledger.items(), key=lambda kv: (kv[1].get("processed_at", ""),
                                                      kv[1].get("file", "")))
@@ -96,11 +101,25 @@ def partition_by_ledger(rows: list[dict], ledger: dict) -> list[tuple[str, list[
             f"闸①未过：ledger row_count 合计 {total} ≠ invoice.csv 行数 {len(rows)}。"
             "归属重建不成立（ledger 与 CSV 已分叉），已中止、未写任何文件。"
         )
+
+    # (seq, 文件名, 段行数) —— 老条目按 entries 次序补 seq，新条目用自己的 segments。
+    segments: list[tuple[int, str, int]] = []
+    fallback_seq = -len(entries)     # 保证补出来的 seq 全部排在真实 seq（≥0）之前
+    for _h, v in entries:
+        fname = v.get("file", "<unknown>")
+        segs = v.get("segments") or []
+        if segs:
+            for s in segs:
+                segments.append((int(s.get("seq", 0)), fname, int(s.get("row_count", 0))))
+        else:
+            segments.append((fallback_seq, fname, int(v.get("row_count", 0))))
+        fallback_seq += 1
+    segments.sort(key=lambda t: t[0])
+
     blocks: list[tuple[str, list[dict]]] = []
     cursor = 0
-    for _h, v in entries:
-        n = int(v.get("row_count", 0))
-        blocks.append((v.get("file", "<unknown>"), rows[cursor:cursor + n]))
+    for _seq, fname, n in segments:
+        blocks.append((fname, rows[cursor:cursor + n]))
         cursor += n
     return blocks
 

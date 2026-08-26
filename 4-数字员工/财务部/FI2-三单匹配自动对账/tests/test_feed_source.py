@@ -295,3 +295,142 @@ def test_orphan_invoice_partitioned_not_matched():
     linked, orphaned = partition_invoices(ap_lines, invoices)
     assert [i.inv_no for i in linked] == ["INV-1"]
     assert [i.inv_no for i in orphaned] == ["INV-2"]
+
+
+# ── 「无 PO 关联」应付行：一行不得打挂整批（队列 #390）────────────────────
+#
+# 实撞样本：2026-08-24 全量跑 `OP-0823-E` §375 时，`AP-2026010125` 全单只有 1 行、
+# 且 `SrcPONo`/`SrcPOLineNo` 双空 ⇒ `_APLineRow` 两个必填校验同时失败 ⇒ 整个 640 单
+# 的批量加载当场中止、零产出。
+#
+# 🔴 本组测试只锁「批量跑得完 ＋ 这类行留可查诊断」。**「费用类应付要不要进三单
+# 核对」是唐燕萍的账务口径**（队列 #390 ⒜⒝⒞ 待她拍板），故默认模式刻意仍是
+# fail-loud，下面第一个测试就是钉住这一点——不默认生效。
+
+def _ap_raw(ap_no="AP-1", po_no="PO-1", line_no="10", item_code="A001"):
+    return {"ap_no": ap_no, "po_no": po_no, "line_no": line_no, "item_code": item_code,
+            "qty": 10, "unit_price": 1.13, "untaxed_amount": 10.0, "tax_amount": 1.3}
+
+
+def test_no_po_link_row_still_fail_loud_by_default():
+    """🔴 默认口径不变：无 PO 关联行照旧 fail-loud，不静默跳过（静默丢弃＝无声漏单）。"""
+    rows = [_ap_raw(ap_no="AP-2026010125", po_no="", line_no="")]
+    with pytest.raises(ValueError):
+        parse_ap_lines(rows)
+    with pytest.raises(ValueError):
+        parse_ap_lines(rows, no_po_link="raise")
+
+
+def test_fail_loud_message_identifies_the_offending_ap_doc():
+    """原消息只有 pydantic 原文，640 单批量挂掉后日志里查不出是哪张单——须能定位。"""
+    with pytest.raises(ValueError) as ei:
+        parse_ap_lines([_ap_raw(), _ap_raw(ap_no="AP-2026010125", po_no="", line_no="")])
+    msg = str(ei.value)
+    assert "AP-2026010125" in msg
+    assert "第 2 行" in msg
+    assert "无 PO 关联" in msg      # 顺带指出可用 divert，别让下一个人重新查一遍
+
+
+def test_divert_lets_the_whole_batch_finish_and_keeps_the_row_traceable():
+    """#390 主诉：一行无 PO 关联不得让整批零产出；被分流的行必须留得下、查得到。"""
+    diverted = []
+    rows = [
+        _ap_raw(ap_no="AP-A", item_code="A001"),
+        _ap_raw(ap_no="AP-2026010125", po_no="", line_no="", item_code="FEE01"),
+        _ap_raw(ap_no="AP-B", item_code="B001"),
+    ]
+    lines = parse_ap_lines(rows, no_po_link="divert", diverted=diverted)
+
+    # 批量跑得完：其余行照常产出（此前是整批中止、零产出）
+    assert [a.ap_no for a in lines] == ["AP-A", "AP-B"]
+    # 留可查诊断：不是丢弃
+    assert len(diverted) == 1
+    assert diverted[0].ap_no == "AP-2026010125"
+    assert diverted[0].item_code == "FEE01"
+    assert diverted[0].reason == "no_po_link"
+    assert diverted[0].index == 1
+    assert diverted[0].raw["ap_no"] == "AP-2026010125"   # 原始行原样留存供人工核对
+
+
+def test_divert_covers_either_field_empty_not_only_both():
+    """实撞样本是双空，但单空（只有 SrcPOLineNo 缺）同样过不了必填校验，一并覆盖。"""
+    for po_no, line_no in (("", "10"), ("PO-1", ""), ("", "")):
+        diverted = []
+        lines = parse_ap_lines([_ap_raw(po_no=po_no, line_no=line_no)],
+                               no_po_link="divert", diverted=diverted)
+        assert lines == []
+        assert len(diverted) == 1
+
+
+def test_divert_does_not_swallow_real_dirty_data():
+    """🔴 分流只对「无 PO 关联」成立；其余脏数据在两种模式下一律照旧 fail-loud。"""
+    diverted = []
+    with pytest.raises(ValueError):     # 缺 ap_no
+        parse_ap_lines([_ap_raw(ap_no="")], no_po_link="divert", diverted=diverted)
+    with pytest.raises(ValueError):     # 缺 item_code
+        parse_ap_lines([_ap_raw(item_code="")], no_po_link="divert", diverted=diverted)
+    with pytest.raises(ValueError):     # qty 非法
+        bad = _ap_raw(); bad["qty"] = "abc"
+        parse_ap_lines([bad], no_po_link="divert", diverted=diverted)
+
+
+def test_divert_without_a_place_to_record_is_refused():
+    """无处留痕的分流＝静默漏单，本函数不允许——宁可抛错也不悄悄吞掉。"""
+    with pytest.raises(ValueError, match="diverted"):
+        parse_ap_lines([_ap_raw(po_no="", line_no="")], no_po_link="divert")
+
+
+def test_unknown_no_po_link_mode_is_refused():
+    with pytest.raises(ValueError, match="no_po_link"):
+        parse_ap_lines([_ap_raw()], no_po_link="skip")
+
+
+class _FakeU9cConnectorWithFeeLine(_FakeU9cConnector):
+    """批量模式返回值里混一行无 PO 关联的费用类应付（`AP-2026010125` 的形状）。"""
+
+    def get_ap_lines_by_supplier(self, supplier_code):
+        self.supplier_calls.append(supplier_code)
+        return [
+            *self._AP_ROWS_BY_DOC["AP-REAL-1"],
+            {"DocNo": "AP-2026010125", "SrcPONo": None, "SrcPOLineNo": None,
+             "ItemCode": "FEE.0001", "APQtyTU": 1.0, "TaxPrice": 1000.0,
+             "NonTaxAmtTC": 884.96, "TaxAmtTC": 115.04,
+             "SrcRcvNo": None, "SrcRcvLineNo": None},
+        ]
+
+
+def test_u9c_batch_mode_survives_fee_line_and_keeps_raw_rows_aligned():
+    """批量模式（`ap_supplier_codes`，design D16）端到端：一行费用类应付不再打挂整批。
+
+    ⚠️ 同时钉住 `raw_ap_rows()` 与 `load_ap_lines()` 的「按位置一一对应」既有契约——
+    被分流的行必须从 `raw_ap_rows()` 一并剔除，否则 webapp 的 `_u9c_ap_real_line_no`
+    会因长度不等整批回落，全表 AP 行号显示悄悄退化（一个不报错的错）。
+    """
+    conn = _FakeU9cConnectorWithFeeLine()
+    fs = FeedSource("u9c", u9c_connector=conn, ap_supplier_codes=["ZA0066"],
+                    ap_no_po_link="divert")
+    lines = fs.load_ap_lines()
+
+    assert [a.ap_no for a in lines] == ["AP-REAL-1", "AP-REAL-1"]
+    assert len(fs.ap_no_po_link_rows) == 1
+    assert fs.ap_no_po_link_rows[0].ap_no == "AP-2026010125"
+    assert fs.ap_no_po_link_rows[0].raw["item_code"] == "FEE.0001"
+    assert len(fs.raw_ap_rows()) == len(lines)
+    assert [r["DocNo"] for r in fs.raw_ap_rows()] == ["AP-REAL-1", "AP-REAL-1"]
+
+
+def test_u9c_batch_mode_default_still_fail_loud_on_fee_line():
+    """默认模式下这颗哑雷原样还在——口径未定前不默认生效（队列 #390）。"""
+    conn = _FakeU9cConnectorWithFeeLine()
+    fs = FeedSource("u9c", u9c_connector=conn, ap_supplier_codes=["ZA0066"])
+    with pytest.raises(ValueError, match="AP-2026010125"):
+        fs.load_ap_lines()
+
+
+def test_diverted_rows_do_not_accumulate_across_calls():
+    conn = _FakeU9cConnectorWithFeeLine()
+    fs = FeedSource("u9c", u9c_connector=conn, ap_supplier_codes=["ZA0066"],
+                    ap_no_po_link="divert")
+    fs.load_ap_lines()
+    fs.load_ap_lines()
+    assert len(fs.ap_no_po_link_rows) == 1

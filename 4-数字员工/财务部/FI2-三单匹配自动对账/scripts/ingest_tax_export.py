@@ -100,6 +100,26 @@ def main() -> int:
     print(f"跳过重复发票行数：{result.duplicate_rows_skipped}"
           f"（涉 {len(result.duplicate_invoice_nos)} 张发票，"
           "该发票号已由此前文件贡献过——预期内，非故障）")
+
+    # ── 未解析行重试（队列 #418）──────────────────────────────────────────
+    # 这三行是本次修复的可观测出口：面板此前报的假「无发票支撑」，就是第一行里的这些
+    # 发票；它们此前只在 stdout 一闪而过，从不落盘、也从不重试。
+    print(f"重试解开行数：{result.retried_rows_resolved}"
+          f"（涉 {len(result.retried_invoice_nos)} 张发票——此前批次曾报未解析，"
+          "本次 AP 单已可反查到；面板上这些发票此前显示为「无发票支撑」）")
+    for inv in result.retried_invoice_nos[:20]:
+        print(f"  ✅ 已补入 发票号={inv}")
+    if len(result.retried_invoice_nos) > 20:
+        print(f"  ...另有 {len(result.retried_invoice_nos) - 20} 张")
+    print(f"仍未解开、留待下次重试：{result.pending_unresolved} 行"
+          "（AP 单可能尚未立账——预期内，非故障）")
+    if result.unretryable_unresolved:
+        # 🔴 源文件已删/已改 ⇒ 这些行永远解不开了，必须出声（模块 docstring ③）。
+        print(f"🔴 无法再重试：{result.unretryable_unresolved} 行 —— 源文件已不在盘上"
+              f"或内容已变更：{result.unretryable_files}。"
+              "这些发票将永远不会进入 invoice.csv，面板会持续把对应 AP 单报为"
+              "「无发票支撑」。须把原导出文件放回 --export-dir 后重跑。")
+
     print(f"未解析记录数：{len(result.diagnostics)}")
     for d in result.diagnostics:
         loc = f"{d.file}" + (f" 第{d.row_index}行" if d.row_index else "")
