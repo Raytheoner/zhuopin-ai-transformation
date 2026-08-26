@@ -1313,6 +1313,25 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
             "HEAD 里不存在且未预留的新行，必须仍被③预留归属校验拒绝",
         )
 
+    def test_aibot_registration_exemption_does_not_cover_other_checks(self):
+        """🔴 **反例（队列 #416 ⑶ tasks 2.3）：⑹ 的身份豁免只作用于 ⑹。**
+
+        场景刻意做成"⑹ 本会放行、①会拦"：真 git 仓库 ＋ 工作区有未登记脏
+        文件（⑹ 的触发条件已满足，机器人身份下被豁免），同时机器人写下的
+        行**列数不对** ⇒ release 必须仍被拒。豁免一旦滑成"机器人整体免检"，
+        本用例变红。
+        """
+        self._make_git_repo_with_committed_queue("")
+        (self.repo_root / "别的会话正在改的方案件.md").write_text("脏", encoding="utf-8")
+        self.assertEqual(self._acquire(who=self.module.AIBOT_LOCK_WHO), 0)
+        self._write_queue(
+            section_one_rows=f"| 203 | {self.module.AIBOT_INTAKE_TASK_PREFIX}某回件 | "
+                             f"CC | 指针 | 产出 | [S:open][D:机] 待领 |\n")  # 6 列，应为 8
+        self.assertNotEqual(
+            self._release(who=self.module.AIBOT_LOCK_WHO), 0,
+            "①列数校验对机器人照常生效——⑹ 的豁免不得外溢成整体免检",
+        )
+
     def test_reserve_waiver_marker_releases_when_head_unreadable(self):
         """HEAD 也读不到时（破损在 HEAD 里就已存在／不在 git 工作树内），
         行内逃生阀 `预留豁免：<理由>` 放行并留痕——完全复用 `WIP豁免：`
@@ -4211,6 +4230,60 @@ class RegistrationCompletenessTests(unittest.TestCase):
         self.assertTrue(self._run(self._queue()))          # 换个身份就该拦
         self.assertEqual(                                   # sweep 身份放行
             self._run(self._queue(), lock_data={"who": self.m.SWEEP_LOCK_WHO}), [],
+        )
+
+    def test_aibot_identity_is_exempt_from_others_dirty_files(self):
+        """🔴 **队列 #416 ⑶ 的真实事故场景，逐字复刻。**
+
+        机器人持锁、只追加自己那一行收件登记，而工作区里**另有一个属于别的
+        会话的脏文件**（人在改方案件）⇒ 改前 ⑹ 当场判"未覆盖"、release 被拒
+        ⇒ 锁挂到 30 分钟自动陈旧才被接管，**期间任何人写不了队列**。全历史
+        5 次（08-24 三次、08-26 两次），每次都紧跟专员回件到达。
+
+        机器人**两条出路一条都走不了**：它从不登记 §二 批次（走
+        `append_task_and_sync_to_git` 自己 commit 自己 push），也无法判断别人
+        的脏文件该不该登记——那是别人的活。
+        """
+        self._dirty("1-转型规划/某个别的会话正在改的方案件.md")   # 别人造的脏
+        self._dirty("queue-mech.md")                              # 机器人自己写的
+        self.assertTrue(self._run(self._queue()),
+                        "普通会话在同一场景下必须仍被拦——否则下一条断言没有意义")
+        self.assertEqual(
+            self._run(self._queue(), lock_data={"who": self.m.AIBOT_LOCK_WHO}), [],
+            "机器人自己 commit 自己 push，⑹「你的脏文件没人管」这个前提对它不成立",
+        )
+
+    def test_human_session_still_blocked_by_uncovered_dirty_file(self):
+        """🔴 **反例（tasks 2.2）：没有它就无法区分"豁免生效"与"⑹ 被改废"。**
+
+        人类会话恰恰是 ⑹ 真正的适用对象——人改完东西要靠 sweep 提交。
+        """
+        self._dirty("1-转型规划/接力件.md")
+        violations = self._run(self._queue(), lock_data={"who": "Shao Peishen 的 CC"})
+        self.assertEqual(len(violations), 1)
+        self.assertIn("不属于任何待处理 §二 批次", violations[0])
+
+    def test_aibot_still_fail_closed_when_status_unavailable(self):
+        """🔴 **反例（tasks 2.4）：豁免不覆盖 fail-closed 那一支。**
+
+        校验**无法执行**（git 挂了／超时）与校验**不适用**是两回事，混为一谈
+        就正是本项目反复吃亏的"工具静默回退"。判据体现在**代码位置**上：身份
+        豁免写在 `dirty_now is None` 之后，不是函数开头。
+        """
+        self._dirty("某文件.md")
+        with unittest.mock.patch.object(self.m, "_local_git_status_paths", return_value=None):
+            violations = self._run(self._queue(),
+                                   lock_data={"who": self.m.AIBOT_LOCK_WHO})
+        self.assertEqual(len(violations), 1)
+        self.assertIn("fail-closed", violations[0])
+
+    def test_exemption_criterion_is_self_committing_not_being_a_bot(self):
+        """判据登记在 `SELF_COMMITTING_LOCK_HOLDERS` 上——"是否自行提交自身
+        改动"，不是"是不是机器人"。下一个自动化持锁者的挂靠点在这里；这条
+        断言存在的意义是：把常量删空或改名的人会看见它变红。"""
+        self.assertEqual(
+            tuple(self.m.SELF_COMMITTING_LOCK_HOLDERS),
+            (self.m.SWEEP_LOCK_WHO, self.m.AIBOT_LOCK_WHO),
         )
 
     # ── 逃生阀 ────────────────────────────────────────────────────

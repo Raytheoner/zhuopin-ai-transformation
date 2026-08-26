@@ -247,6 +247,15 @@ exemption`）：③预留归属校验此前未识别协议〇.10 ⑶ 早已定�
 各自按设计工作，问题出在组合上。修法：③新增豁免分支（见
 `AIBOT_LOCK_WHO`/`AIBOT_INTAKE_TASK_PREFIX` 定义处与 `_validate_release_
 structure` 文档），不是放宽校验，是让校验认得这条既有豁免。
+
+#416 ⑶（2026-08-26，openspec 变更包 `editlock-aibot-registration-
+completeness-exemption`，Shao Peishen 拍板取「窄修法·身份豁免」）：**与
+#333② 同一疏漏形态，第二次**——⑹ 登记完整性校验只豁免 `SWEEP_LOCK_WHO`、
+不豁免 `AIBOT_LOCK_WHO`，而它度量的是**整个仓库的脏文件**，于是机器人被
+**别的会话制造的脏文件**挡住，release 被拒、锁挂满 30 分钟才被陈旧接管
+（全历史 5 次，每次都紧跟专员回件到达）。修法：判据显性化为「自行提交自身
+改动的持锁者」并落成 `SELF_COMMITTING_LOCK_HOLDERS`，见该常量定义处的长
+注释——**其中也登记了更治本的"宽修法"候选，本次刻意不取。**
 """
 from __future__ import annotations
 
@@ -3450,6 +3459,55 @@ REGISTRATION_WAIVER_MARKER = "登记豁免："
 # ——同样是"让校验认得一条既有的、结构性的例外"，不是新开豁免。
 SWEEP_LOCK_WHO = "sweep-commit"
 
+# 🔴 **⑹ 的判据是「这个持锁者的改动，要不要靠别人来提交」——不是「它是不是
+# 机器人」。** 下一个自动化持锁者接入时，挂靠点在这里。
+#
+# 队列 #416 ⑶（2026-08-26，openspec 变更包 `editlock-aibot-registration-
+# completeness-exemption`，Shao Peishen 拍板取「窄修法·身份豁免」）：上面那段
+# 长注释为 sweep 写下的理由，**逐字对企微机器人同样成立**，只是当初没被识别
+# ——它走 `queue_git_sync.py::append_task_and_sync_to_git` **自己 commit 自己
+# push**（审计 `queue_sync_pushed`），失败另有降级路径（`queue_sync_degraded`
+# ＋ pending 补录 ＋ `_mark_row_unsynced_safely`）。⇒ ⑹「你的脏文件没人管」这
+# 个前提对它不成立。
+#
+# **事故形态**：⑹ 度量的是 `_local_git_status_paths(repo_root)`——**整个仓库
+# 的脏文件，不是持锁者自己碰过的文件**。于是机器人**被别的会话制造的脏文件
+# 挡住**，而它给出的两条出路（登记 §二 批次／写「登记豁免：」）机器一条都走
+# 不了 ⇒ release 被拒、锁挂到 30 分钟自动陈旧才被接管，期间**任何人写不了
+# 队列**。全历史 5 次（08-24 三次、08-26 两次），**每次都紧跟专员回件到达**；
+# 08-26 13:55 同一条链路工作区干净时**没有**被拒。真因由受控复现坐实（玩具
+# git 仓库：机器人持锁 ＋ 别的会话的脏文件 ⇒ 当场被拒；`who` 换成 sweep 则
+# 不触发），非相关性推断。
+#
+# ⚠️ **本次是止血，不是根治。宽修法候选在此登记，别让"止了血"变成"没人再
+# 想根治"**：本缺陷的深层形态是——**一个把「全局状态」当作「本次动作的责任
+# 范围」来度量的校验，必然在并发环境里错怪无辜者**。⑹ 想问的是"你改的东西
+# 有没有人管"，实现成的却是"仓库里还有没有没人管的东西"。**人类会话同样会
+# 被别人的脏文件挡住**，只是人看得懂拒绝文案、会去登记或写豁免，所以从没被
+# 记成缺陷。**宽修法**＝把 ⑹ 的度量范围从"仓库全部脏文件"收窄为"本次持锁者
+# 实际改动的文件"；本次不取的理由（design.md 决策点 2）：⑴ 改变**全部**持锁
+# 者的判定口径，属 CLAUDE.md §5 门槛①，须单独立项单独取证；⑵ `dirty_at_
+# acquire` 快照当初被明确记为"**不再用于过滤**、只用于归因"，其差集判据已被
+# 取证推翻（见 `RegistrationCompletenessTests` 类文档字符串），直接拿它做过滤
+# 等于重走一条已被推翻的路，**须先回答"当初为何被推翻"**；⑶ #416 ⑶ 正在出血。
+# Shao Peishen 2026-08-26 拍板：**本次不取宽修法，但不否决**。
+#
+# 🔴 **豁免边界（三条，缺一条就从"让校验认得例外"滑成"开后门"）**：
+# ⑴ **仅豁免 ⑹ 这一项**——列数、关键格、组内编号重复、归档号重复、称呼判据、
+#    §二 状态列格式等其余 release 校验对这些身份**照常生效**；
+# ⑵ **不豁免 `dirty_now is None` 的 fail-closed 分支**——校验**无法执行**与
+#    校验**不适用**是两回事，混为一谈就正是本项目反复吃亏的"工具静默回退"；
+# ⑶ 反例单测（人类会话 ＋ 未覆盖脏文件 → 仍拒绝）必须在，否则无法区分
+#    "豁免生效"与"⑹ 被改废"。
+#
+# ⚠️ **`SWEEP_LOCK_WHO` 在本元组里，但它在 `_registration_completeness_
+# violations` 里另有一支更早的返回**（抢在 fail-closed 之前），是 2026-08-23
+# 就存在的既有行为。#416 ⑶ **刻意没有把它并过来**——并过来等于收紧 sweep 的
+# 既有判定，属本变更包范围之外的对外行为改变。它留在元组里是因为**判据确实
+# 覆盖它**（这正是本次要显性化的那条判据的来源）；下一个自动化持锁者只需加进
+# 本元组，拿到的就是边界正确的那一版（⑵ 生效、fail-closed 保留）。
+SELF_COMMITTING_LOCK_HOLDERS = (SWEEP_LOCK_WHO, AIBOT_LOCK_WHO)
+
 
 def _is_inside_git_work_tree(repo_root: Path) -> bool:
     """`repo_root` 是否位于一棵 git 工作树内。
@@ -3553,6 +3611,13 @@ def _registration_completeness_violations(
     if lock_data.get("who") == SWEEP_LOCK_WHO:
         # 见 SWEEP_LOCK_WHO 定义处的长注释：sweep 是"来提交的那个人"，
         # 判据的适用对象不含它。仅豁免本项，不影响它仍须通过的其它校验。
+        #
+        # 🔴 **为什么这一支没有并进 `SELF_COMMITTING_LOCK_HOLDERS`（队列
+        # #416 ⑶ 刻意不动）**：它抢在下面的 `dirty_now is None` 之前返回，
+        # 于是 sweep 连"取数失败"那条 fail-closed 也一并豁免了。把它挪到下
+        # 面去，等于**收紧 sweep 的既有判定**——那是本变更包范围之外的一次
+        # 对外行为改变（且 sweep release 被拒的后果是全项目停摆，见上方长
+        # 注释），须单独立项、单独取证。**本次如实留在这里，不顺手扩范围。**
         return []
 
     if not _is_inside_git_work_tree(repo_root):
@@ -3583,6 +3648,17 @@ def _registration_completeness_violations(
         if ".editlock" not in p and not _dirty_path_is_covered(p, fragments)
     ]
     if not uncovered:
+        return []
+
+    if lock_data.get("who") in SELF_COMMITTING_LOCK_HOLDERS:
+        # 队列 #416 ⑶ 身份豁免——判据＝"自行提交自身改动的持锁者"，见
+        # `SELF_COMMITTING_LOCK_HOLDERS` 定义处。**位置是判据的一部分**：
+        # 它在 `dirty_now is None` 的 fail-closed **之后**，所以"取数失败"
+        # 对这些身份照样拒绝——校验**无法执行**与校验**不适用**是两回事。
+        # 下一个自动化持锁者接入时只需进那个常量，语义已经是对的。
+        print(f"ℹ 持锁者「{lock_data.get('who')}」自行提交自身改动，⑹ 登记完整性"
+              f"校验的适用前提对它不成立，已放行 {len(uncovered)} 个未登记脏文件"
+              f"（仅豁免本项；其余 release 校验照常生效）。")
         return []
 
     if waiver is not None:
