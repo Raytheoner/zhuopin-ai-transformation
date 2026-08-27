@@ -291,6 +291,173 @@ class Form1Tests(RepoFixture):
 
 
 # ============================================================
+# 形态 1 · 判据可关闭（`#422` 护栏失效，`OP-0827-G`）
+# ============================================================
+
+class Form1AckTests(RepoFixture):
+    """🔴 本类锁的是文件头判据 ⑶ 在形态 1 上的落点。
+
+    原缺陷：形态 1 按字样匹配，而补做方守「历史记录不追改」、只在行尾追加
+    结论 ⇒ **11 条逐条核实完，重跑一条没减少**。修法＝带内容指纹的确认。
+
+    🔴 **本类里最不能删的是 `test_new_lan_registration_reopens_the_ack` 与
+    `test_unacked_row_still_reported`**：一个「什么都不报」的判据比一个「永远
+    报 11 条」的判据更糟——后者只是被人忽略，前者会被人当成干净。
+    """
+
+    KEY_MECH_ONE = f"form1:{QUEUE_MECH_REL}#一354"
+
+    def _seg_row(self, row_id: str, *segments: str, registered: str = "2026-08-19") -> str:
+        status = "[S:partial] " + " ━━━ ".join(segments)
+        return (f"| {row_id} | 任务 | CC | 指针 | 产出 | {status} | 触碰区 "
+                f"| {registered} |\n")
+
+    def _write(self, *rows: str) -> None:
+        self._write_queue(QUEUE_MECH_REL, _queue_doc(list(rows)))
+        self._write_queue(QUEUE_BIZ_REL, _queue_doc([]))
+
+    def _scan(self) -> dict:
+        return unclosed_scan.scan_form1(self.main, date(2026, 8, 27))
+
+    def _ack(self, key: str, note: str = "逐条读队列原文核过，补做已落 commit") -> int:
+        return unclosed_scan.cmd_ack_form1(self.main, key, note, today=date(2026, 8, 27))
+
+    # ---------- 关得掉 ----------
+
+    def test_ack_silences_the_row(self):
+        self._write(self._seg_row("354", "**LAN 留步**：`.51` 真机复验未做"))
+        self.assertEqual(len(self._scan()["items"]), 1)
+
+        self.assertEqual(self._ack(self.KEY_MECH_ONE), 0)
+
+        result = self._scan()
+        self.assertEqual(result["items"], [], "已确认且指纹未变的行必须完全静默")
+        self.assertEqual([i["key"] for i in result["suppressed"]], [self.KEY_MECH_ONE])
+        self.assertEqual(result["suppressed"][0]["note"],
+                         "逐条读队列原文核过，补做已落 commit")
+
+    def test_unrelated_append_does_not_reopen(self):
+        """指纹只盖命中段——这一条决定它会不会退化成噪音。队列行一天被追加
+        三五段是常态，若整行入指纹，每追加一句无关的话就把已核实的重新捅红。"""
+        self._write(self._seg_row("354", "**LAN 留步**：`.51` 真机复验未做"))
+        self._ack(self.KEY_MECH_ONE)
+
+        self._write(self._seg_row(
+            "354",
+            "**LAN 留步**：`.51` 真机复验未做",
+            "📎 回归 300 passed，openspec validate 80/80（与留步无关的进展）"))
+        self.assertEqual(self._scan()["items"], [], "无关追加不得让已核实的条目重新告警")
+
+    # ---------- 🔴 关不成「什么都不报」 ----------
+
+    def test_new_lan_registration_reopens_the_ack(self):
+        """🔴 **本类最要紧的一条**：确认的语义是「我核过了这一行登记的每一处
+        留步」。行里**新登记一处**留步 ⇒ 那句话不再成立 ⇒ 必须自动重新告警。
+        没有这一条，一次 ack 就成了永久白名单，判据从「永远报 11 条」退化成
+        「永远报 0 条」——后者会被当成干净，更危险。"""
+        self._write(self._seg_row("354", "**LAN 留步**：`.51` 真机复验未做"))
+        self._ack(self.KEY_MECH_ONE)
+        self.assertEqual(self._scan()["items"], [])
+
+        self._write(self._seg_row(
+            "354",
+            "**LAN 留步**：`.51` 真机复验未做",
+            "⚠️ 另**回内网补做**一处：8093 冒烟"))
+        result = self._scan()
+        self.assertEqual([i["key"] for i in result["items"]], [self.KEY_MECH_ONE],
+                         "新登记一处留步必须让旧确认失效")
+        self.assertEqual(result["suppressed"], [])
+
+    def test_rewriting_an_acked_segment_reopens(self):
+        self._write(self._seg_row("354", "**LAN 留步**：`.51` 真机复验未做"))
+        self._ack(self.KEY_MECH_ONE)
+
+        self._write(self._seg_row("354", "**LAN 留步**：改口径了，要复验的是 8091"))
+        self.assertEqual([i["key"] for i in self._scan()["items"]], [self.KEY_MECH_ONE],
+                         "已核过的那一段被改写，确认必须失效")
+
+    def test_unacked_row_still_reported(self):
+        """🔴 只验「关得掉」等于没验：一条真没补做的行（样本＝`#334`，`.51`
+        未部署）必须照常命中，且不受别行的确认影响。"""
+        self._write(
+            self._seg_row("354", "**LAN 留步**：`.51` 真机复验未做"),
+            self._seg_row("334", "🔒 **LAN 留步**：`.51` 未部署，本班 off-LAN"),
+        )
+        self._ack(self.KEY_MECH_ONE)
+
+        result = self._scan()
+        self.assertEqual([i["row_id"] for i in result["items"]], ["334"])
+        self.assertEqual([i["row_id"] for i in result["suppressed"]], ["354"])
+
+    # ---------- 确认本身立不住时拒绝记录 ----------
+
+    def test_ack_requires_note(self):
+        self._write(self._seg_row("354", "**LAN 留步**：未做"))
+        self.assertEqual(unclosed_scan.cmd_ack_form1(self.main, self.KEY_MECH_ONE, "   "), 1)
+        self.assertFalse((self.main / unclosed_scan.FORM1_ACK_STATE_REL).exists(),
+                         "空确认不得落盘——它会伪装成已核")
+        self.assertEqual(len(self._scan()["items"]), 1)
+
+    def test_ack_refuses_unknown_key(self):
+        """一条确认不该指向一个不存在的命中——算不出指纹的确认永远不会失效。"""
+        self._write(self._seg_row("354", "**LAN 留步**：未做"))
+        self.assertEqual(self._ack(f"form1:{QUEUE_MECH_REL}#一999"), 1)
+        self.assertFalse((self.main / unclosed_scan.FORM1_ACK_STATE_REL).exists())
+
+    def test_ack_refused_when_criterion_unavailable(self):
+        """队列读不到时判据本身是瞎的，此刻记下的「零命中」毫无意义。"""
+        self.assertEqual(self._ack(self.KEY_MECH_ONE), 1)
+        self.assertFalse((self.main / unclosed_scan.FORM1_ACK_STATE_REL).exists())
+
+    def test_stale_ack_is_surfaced_not_silent(self):
+        """行归档／编号变之后，那条确认核的是一个已经不存在的东西——留着不说
+        话，下次读的人会以为「那一处已经被核过」。"""
+        self._write(self._seg_row("354", "**LAN 留步**：未做"))
+        self._ack(self.KEY_MECH_ONE)
+        self._write(self._seg_row("354", "已整段改写，本行不再有任何留步登记"))
+
+        result = self._scan()
+        self.assertEqual(result["items"], [])
+        self.assertEqual(result["stale_acks"], [self.KEY_MECH_ONE])
+
+    # ---------- 指纹与状态文件 ----------
+
+    def test_fingerprint_covers_hit_segments_only(self):
+        hit = ["**LAN 留步**：未做"]
+        self.assertEqual(unclosed_scan.form1_fingerprint(hit),
+                         unclosed_scan.form1_fingerprint(list(hit)))
+        self.assertNotEqual(unclosed_scan.form1_fingerprint(hit),
+                            unclosed_scan.form1_fingerprint(hit + ["**回内网补做**：另一处"]))
+        self.assertEqual(
+            unclosed_scan._hit_segments(["[S:partial] 无关段 ━━━ 有 **LAN 留步** 的段"],
+                                        unclosed_scan.LAN_MARKER_RE),
+            ["有 **LAN 留步** 的段"])
+
+    def test_ack_file_is_separate_from_scan_state(self):
+        """🔴 `STATE_REL` 每轮被整份重写；确认写进去会当轮即被冲掉。"""
+        self._write(self._seg_row("354", "**LAN 留步**：未做"))
+        self._ack(self.KEY_MECH_ONE)
+        rc = unclosed_scan.main(["--repo-root", str(self.main), "--skip-lan-probe",
+                                 "--state", str(self.state)])
+        self.assertEqual(rc, 0)
+        acks = json.loads((self.main / unclosed_scan.FORM1_ACK_STATE_REL)
+                          .read_text(encoding="utf-8"))
+        self.assertIn(self.KEY_MECH_ONE, acks)
+        self.assertEqual(self._scan()["items"], [])
+
+    def test_report_prints_the_command_that_closes_it(self):
+        """关掉一条告警的办法必须印在告警自己身上——否则它又是一条关不掉的
+        告警，只是这次关不掉的原因换成了「没人知道怎么关」。"""
+        self._write(self._seg_row("354", "**LAN 留步**：未做"))
+        findings = unclosed_scan.scan(self.main, lan=False, state_path=self.state,
+                                      today=date(2026, 8, 27))
+        report = unclosed_scan.format_report(findings)
+        self.assertIn("--ack-form1", report)
+        self.assertIn(self.KEY_MECH_ONE, report)
+        self.assertIn("--note", report)
+
+
+# ============================================================
 # 回 LAN 感知：三项判据 + 翻转
 # ============================================================
 

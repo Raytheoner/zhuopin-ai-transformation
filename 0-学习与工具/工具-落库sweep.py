@@ -3944,12 +3944,22 @@ def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
     lan = findings["lan"]
     lan_text = ("✅ on-LAN（三项齐备）" if lan and lan["on_lan"]
                 else "⛔ off-LAN（三项未齐）" if lan else "未探测")
+    # 🔴 抑制数与命中数同行打，不许只打命中数（`#422` 护栏失效，`OP-0827-G`）：
+    # 形态 1 现在可以被「已核实闭合」的指纹确认关掉，**一个只会变长、从不
+    # 回显的抑制清单，正是这套告警要防的「看起来干净」**。同第 4／第 6 类
+    # 「零命中也回显」的那条理由，只是这里回显的是被关掉的那一半。
+    suppressed = len(findings["form1"].get("suppressed", ()))
+    suppressed_text = f"（另 {suppressed} 处已核实闭合、指纹未变）" if suppressed else ""
     log.append(
-        f"    · 形态 1（LAN 留步登记）{len(findings['form1']['items'])} 处"
+        f"    · 形态 1（LAN 留步登记）{len(findings['form1']['items'])} 处{suppressed_text}"
         f"／形态 2（卡在未合入分支）{len(findings['form2']['items'])} 条"
         f"／形态 3（只是未 commit）{len(findings['form3']['items'])} 处"
         f"｜回 LAN 感知：{lan_text}"
     )
+    stale_acks = findings["form1"].get("stale_acks") or ()
+    if stale_acks:
+        log.append(f"    ⚠ 形态 1 有 {len(stale_acks)} 条已核实确认对不上任何现存行"
+                   f"（行归档／编号变／留步字样被整段改写）：{'、'.join(stale_acks)}")
     for form, label in (("form1", "形态 1"), ("form2", "形态 2"), ("form3", "形态 3")):
         if findings[form]["unavailable"]:
             log.append(f"    🔴 {label} 判据不可用（**不据此判为干净**）："

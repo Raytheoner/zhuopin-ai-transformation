@@ -45,6 +45,11 @@ patch 等价已上游。**用 ancestry 会造出一个永远红着的告警，�
 
 **⑶ 判据必须能被「已补做／已合入／已 commit」关掉。** 每一项发现都有一个
 稳定 key，落在状态文件里；key 消失即报一次「✅ 已解除」并从状态里删除。
+🔴 **形态 1 曾在这一条上失守整整一天，修法见 `scan_form1` 文档**：它读的是
+队列行，而队列行守「历史记录不追改」——补做方在行尾追加结论、原字样一个不
+动 ⇒ 命中永不消失。2026-08-27 `OP-0827-E` 逐条核实完 11 条后重跑，**一条都
+没减少**。现由 `--ack-form1`（带内容指纹的确认，同族＝
+`工具-落库sweep.py --ack-stale-change`）关闭，**报告每轮把那条命令原样打出来**。
 🔴 **key 里刻意不含任何会变的数字**（行数、提交数、字节数）——把会变的数
 放进 key，每变一次就是一个新 key、天天被当成新问题重报，旧 key 还会被误判
 为「已解除」（此判据抄自 `工具-落库sweep.py::_check_claude_md_carrier_size`
@@ -73,6 +78,8 @@ patch 等价已上游。**用 ancestry 会造出一个永远红着的告警，�
   python 0-学习与工具/工具-未闭合产出扫描.py --json           # 机器可读
   python 0-学习与工具/工具-未闭合产出扫描.py --enforce        # 有发现即非零退出
   python 0-学习与工具/工具-未闭合产出扫描.py --repo-root <p>  # 仅测试用
+  python 0-学习与工具/工具-未闭合产出扫描.py --ack-form1 <KEY> --note <依据>
+                                                              # 形态 1 已核实闭合
 
 退出码（🔴 不带 `--enforce` 时恒为 0，报告工具不该拦住调用它的那一轮）：
   0 = 干净（或未启用 enforce）
@@ -83,6 +90,7 @@ patch 等价已上游。**用 ancestry 会造出一个永远红着的告警，�
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -101,6 +109,24 @@ if _PLATFORM_PATH.is_dir() and str(_PLATFORM_PATH) not in sys.path:
 # ============================================================
 
 STATE_REL = "reports/unclosed-output-state.json"
+# 报告里回显「怎么关掉这条告警」时用的自身路径。取仓库相对写法，与
+# `工具-落库sweep.py::UNCLOSED_SCAN_SCRIPT_REL` 同一个字符串——两处不一致
+# 会让人复制到一条跑不通的命令。
+_SELF_REL = "0-学习与工具/工具-未闭合产出扫描.py"
+# 形态 1 的「已核实闭合」确认状态（`#422` 护栏失效修复，`OP-0827-G`）。
+# 🔴 **与 `STATE_REL` 必须是两份文件**：`STATE_REL` 每轮被整份重写（它记的是
+# 「上一轮报过谁」），确认记录写进去会当轮即被冲掉。形态、目录、gitignore
+# 归属与 `工具-落库sweep.py` 的 `reports/sweep-stale-change-ack.json` 一致
+# ——本机状态、不入库（`.gitignore` 的 `**/reports/`）。
+FORM1_ACK_STATE_REL = "reports/unclosed-output-form1-ack.json"
+# 队列行的「结论段」分隔符（队列 #324 已确立的既有约定，见
+# `工具-共享文档编辑锁.py::_leading_conclusion_segment`）。本文件只借它切段，
+# **不借它判「哪一段是当前结论」**——那条判据依赖「新内容一律追加在末尾」，
+# 而 2026-08-27 实测两种追加方向真的都有：`#422` 状态格是立行段在前、
+# 「✅ 接线完成」追在末尾；`#340` 状态格反过来，08-21 段在第 1 段、08-18 段
+# 在第 10 段、08-17 段在第 40 段，并用「以下为 …… 原登记」把更早的一段段
+# 往后压。**靠段序判闭合会在其中一半的行上静默判反。**
+CONCLUSION_SEGMENT_SEPARATOR = "━━━"
 
 # 形态 1 的标记词。**默认口径刻意收窄到 LAN 一族**：队列里「留步」二字有
 # 约 40 处用法（`发送留步`／`冒烟留步`／`整条留步`／`一律留步不发`…），
@@ -295,6 +321,58 @@ def _affirmative_hit(text: str, marker: re.Pattern[str]) -> re.Match[str] | None
     return None
 
 
+def _hit_segments(cells: list[str], marker: re.Pattern[str]) -> list[str]:
+    """本行里**真正登记了留步**的那些结论段（按 `━━━` 切，逐段判否定）。
+
+    逐段判而不是把整行拼起来判，有一个实测理由：否定前瞻只看命中点左侧 4 字，
+    拼行会让「上一格末尾的否定词」误伤「下一格开头的命中」——两格之间本来
+    隔着一整个单元格边界，语义上不相干。
+    """
+    segments: list[str] = []
+    for cell in cells:
+        for segment in cell.split(CONCLUSION_SEGMENT_SEPARATOR):
+            if _affirmative_hit(segment, marker) is not None:
+                segments.append(segment.strip())
+    return segments
+
+
+def form1_fingerprint(segments: list[str]) -> str:
+    """确认指纹 ＝ 该行**全部留步登记段**的内容哈希（`OP-0827-G`）。
+
+    🔴 **指纹刻意只盖命中段，不盖整行**，这一条决定了这个机制会不会退化成
+    噪音：队列行是只增不删的，一天之内被追加三五段是常态，指纹若盖整行，
+    每追加一句无关的话就把已核实的条目重新捅红一次——那正是本次要治的病
+    换个方向再犯一遍。
+
+    盖住命中段则语义正好是「**我核过了这一行里登记的每一处留步**」：
+    - 无关追加 ⇒ 指纹不变 ⇒ 保持静默；
+    - **新登记一处留步** ⇒ 多一个命中段 ⇒ 指纹变 ⇒ 自动重新告警；
+    - 改写了已核过的那一段 ⇒ 指纹变 ⇒ 自动重新告警。
+
+    ⚠️ **已知代价，如实写在这里**：闭合结论句本身通常也含「LAN 留步」四个字
+    （实测 `#340` 的「✅ 『LAN 留步』已补做完成」即是），所以它自己也是一个
+    命中段 ⇒ **正确顺序是「先把结论写进队列行，再 ack」**；顺序反了会在下一
+    轮因指纹变化重新报一次。这是 fail-loud 方向的代价，接受。
+    """
+    payload = "␞".join(segments)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _read_form1_acks(repo_root: Path) -> dict:
+    path = repo_root / FORM1_ACK_STATE_REL
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_form1_acks(repo_root: Path, acks: dict) -> None:
+    path = repo_root / FORM1_ACK_STATE_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(acks, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _excerpt(text: str, marker: re.Pattern[str], width: int = 60) -> str:
     match = marker.search(text)
     if match is None:
@@ -309,6 +387,35 @@ def scan_form1(repo_root: Path, today: date, wide: bool = False) -> dict:
     🔴 **两份逐份解析后合并，绝不拼接文本再解析一次**——`_split_sections`
     对同名分区只保留最后一个，拼接会静默丢掉第一份的整个 §一（同族坑已由
     `#312` 实测踩过一次并配了反例单测，见根 `CLAUDE.md` OP-0819-A ⑴）。
+
+    ━━━ 🔴 **判据 ⑶ 在本形态上的落点（`#422` 护栏失效，`OP-0827-G` 修）** ━━━
+    文件头判据 ⑶ 写着「判据必须能被『已补做／已合入／已 commit』关掉」。
+    形态 2／3 天然做到了（分支合了、改动 commit 了，下一轮就不再命中）；
+    **形态 1 做不到**——它读的是队列行，而队列行守「历史记录不追改」，补做
+    方的写法是**在行尾追加结论、原字样一个不动** ⇒ 命中永不消失。2026-08-27
+    实测：`OP-0827-E` 逐条核实完 11 条之后重跑，**一条都没减少**。
+
+    **修法是指纹确认，不是识别中文**（三条路子比过，理由写在这里以免后人重选）：
+
+    - **读行级 `[S:done]` 关掉** —— 不成立。`#340`／`#354` 整行仍是
+      `[S:partial]`（各自还有别的未完项），而它们的 LAN 那半步确已闭合；
+      用行级状态关，等于把「这一行做完了」和「这一行里的这半步做完了」
+      当成同一件事。
+    - **识别行内「已闭合／已补做」结论段** —— 本质是猜中文关键词。实测
+      `#340` 写「✅『LAN 留步』已补做完成」、`#334` 写「本行 LAN 留步经核
+      **仍成立**」，两句都含「LAN 留步」四字、只差一个措辞；而
+      `工具-落库sweep.py` 的 `OBSERVATION_WINDOW_RE` 一节已把「关键词猜
+      中文」明列为队列 #308 要根治的那一族，本文件不再造第二个。
+    - **指纹确认（本实现）** —— 与 `工具-落库sweep.py::cmd_ack_stale_change`
+      同族、**复用其形态而不是另造一套**：确认落在 `reports/` 下的 JSON、
+      带 `--note` 判定依据、带内容指纹，指纹一变自动失效恢复告警。它不是
+      白名单，是「我在 X 指纹下核过一次」。
+
+    ⚠️ **它不是「机制守」，如实说清楚**：ack 这一步仍要人去跑一条命令。它比
+    「在行内加个 `[LAN:closed]` 标记词」强的地方只有三点——① 确认带判定依据
+    且落在机器读得到的地方；② 指纹会自己失效，确认不会烂在那里；③ 报告每轮
+    把关闭它的那条命令原样打出来，**告警自己就是那份操作说明**。不夸大成
+    「已机制化」。
     """
     try:
         from zhuopin_platform.shared_tools import queue_table  # noqa: PLC0415
@@ -320,7 +427,9 @@ def scan_form1(repo_root: Path, today: date, wide: bool = False) -> dict:
         return {"items": [], "wide_items": [], "excluded_section_two": None,
                 "unavailable": f"取不到队列路径清单（{type(exc).__name__}: {exc}）"}
 
+    acks = _read_form1_acks(repo_root)
     items: list[dict] = []
+    suppressed: list[dict] = []
     wide_items: list[dict] = []
     excluded = 0
     missing: list[str] = []
@@ -343,16 +452,78 @@ def scan_form1(repo_root: Path, today: date, wide: bool = False) -> dict:
                     "queue": rel, "section": section, "row_id": cells[0],
                     "registered": registered, "age_days": age, "bucket": _bucket(age),
                 }
-                if _affirmative_hit(row_text, LAN_MARKER_RE) is not None:
-                    items.append({**record, "excerpt": _excerpt(row_text, LAN_MARKER_RE),
-                                  "key": f"form1:{rel}#{section}{cells[0]}"})
+                segments = _hit_segments(cells, LAN_MARKER_RE)
+                if segments:
+                    key = f"form1:{rel}#{section}{cells[0]}"
+                    fingerprint = form1_fingerprint(segments)
+                    hit = {**record, "excerpt": _excerpt(row_text, LAN_MARKER_RE),
+                           "key": key, "fingerprint": fingerprint,
+                           "hit_segments": len(segments)}
+                    ack = acks.get(key)
+                    if isinstance(ack, dict) and ack.get("fingerprint") == fingerprint:
+                        # 「已确认 ＋ 指纹未变」双条件才静默（同
+                        # `_find_stale_in_flight_changes` 的 D2 语义）。
+                        suppressed.append({**hit, "note": ack.get("note", ""),
+                                           "acked_at": ack.get("acked_at", "")})
+                    else:
+                        items.append(hit)
                 elif wide and WIDE_MARKER_RE.search(row_text):
                     wide_items.append({**record, "excerpt": _excerpt(row_text, WIDE_MARKER_RE)})
 
+    # 🔴 确认记录对不上任何现存行时要说出来，不静默留着：行可能已归档、
+    # 也可能编号变了；一条对不上的确认在文件里躺着，下次读的人会以为
+    # 「那一处已经被核过」——而它核的是一个已经不存在的东西。
+    live = {item["key"] for item in items} | {item["key"] for item in suppressed}
+    stale_acks = sorted(key for key in acks if key not in live)
+
     return {
         "items": items, "wide_items": wide_items, "excluded_section_two": excluded,
+        "suppressed": suppressed, "stale_acks": stale_acks,
         "unavailable": f"以下队列文件读不到：{'；'.join(missing)}" if missing else None,
     }
+
+
+def cmd_ack_form1(repo_root: Path, key: str, note: str, today: date | None = None) -> int:
+    """记一次「我核过了这一行登记的每一处 LAN 留步，它们确已闭合」。
+
+    与 `工具-落库sweep.py::cmd_ack_stale_change` 逐条对齐：`--note` 不得为空
+    （空确认等于没确认，还会伪装成已核）；算不出指纹就**拒绝记录**，不落一条
+    没有指纹的确认——那种确认永远不会失效，正是本机制要避免的白名单。
+    """
+    if not note.strip():
+        print("✗ --note 不能为空——须写明本次核的是什么、凭什么核的，"
+              "不得留空确认（同 `--ack-stale-change` 的既有强制惯例）。")
+        return 1
+    result = scan_form1(repo_root, today or date.today())
+    if result["unavailable"]:
+        print(f"✗ 形态 1 判据本轮不可用（{result['unavailable']}），"
+              "拒绝记录确认——算不出可信指纹。")
+        return 1
+    match = next((i for i in result["items"] if i["key"] == key), None)
+    already = next((i for i in result["suppressed"] if i["key"] == key), None)
+    if match is None and already is not None:
+        print(f"· 无需重复确认：{key} 当前指纹 {already['fingerprint']} 与已有确认一致，"
+              "本轮本就静默。")
+        return 0
+    if match is None:
+        print(f"✗ 当前形态 1 命中里没有 `{key}`，拒绝记录确认——"
+              "无法计算指纹，且一条确认不该指向一个不存在的命中。")
+        print("  现存命中：" + ("；".join(i["key"] for i in result["items"]) or "（无）"))
+        return 1
+    acks = _read_form1_acks(repo_root)
+    acks[key] = {
+        "fingerprint": match["fingerprint"],
+        "hit_segments": match["hit_segments"],
+        "acked_at": _now_utc_str(),
+        "note": note,
+    }
+    _write_form1_acks(repo_root, acks)
+    print(f"✓ 已记录确认：{key}（指纹 {match['fingerprint']}，"
+          f"覆盖 {match['hit_segments']} 个留步登记段）。")
+    print("  指纹未变期间本行不再进形态 1 清单；该行**新登记一处留步、"
+          "或改写了已核过的那一段**即自动失效、恢复告警。")
+    print(f"  确认落在 `{FORM1_ACK_STATE_REL}`（本机状态、不入库）。")
+    return 0
 
 
 # ============================================================
@@ -832,9 +1003,31 @@ def format_report(findings: dict) -> str:
     for item in sorted(form1["items"], key=lambda i: -(i["age_days"] or 0)):
         age = f"{item['age_days']} 天" if item["age_days"] is not None else "登记日未知"
         lines.append(f"  · §{item['section']} #{item['row_id']}（{item['queue'].split('/')[-1]}）"
-                     f"｜{item['bucket']}／{age}｜…{item['excerpt']}…")
+                     f"｜{item['bucket']}／{age}｜`{item['key']}`｜指纹 {item['fingerprint']}"
+                     f"｜…{item['excerpt']}…")
     if form1["items"]:
         lines.append("  ⇒ 怎么救：on-LAN 后按行内已写死的补法执行，做完回写该行并销号。")
+        # 🔴 这三行是判据 ⑶ 在形态 1 上的全部落点，**不得因为「报告太长」而删**：
+        # 关掉一条告警的办法必须印在告警自己身上，否则它就是一条关不掉的告警
+        # （`#422` 原缺陷：11 条逐条核实完，重跑一条没减少）。
+        lines.append("  ⇒ 🔴 **已核实其中某一处其实早已闭合**（补做方守「历史记录不追改」、"
+                     "原字样必然保留，所以它不会自己消失）：先把核实结论写进该队列行，"
+                     "再跑——")
+        lines.append(f"       python {_SELF_REL} --ack-form1 '<上面那个 key>' "
+                     "--note '<你核的是什么、凭什么核的>'")
+        lines.append("       指纹只盖该行的留步登记段：无关追加不重开；**新登记一处留步、"
+                     "或改写已核过的那一段，自动失效重新告警**。")
+    if form1.get("suppressed"):
+        # 不做成完全静默（`--ack-stale-change` 的 D2 是完全静默）。理由：一个
+        # 只会变长、从不回显的抑制清单，正是本工具要防的「看起来干净」。
+        # 只回显条数与 key，不回显详情——详情在 ack 文件里。
+        keys = "、".join(i["key"].split("#")[-1] for i in form1["suppressed"])
+        lines.append(f"  （另有 {len(form1['suppressed'])} 处**已核实闭合、指纹未变**，"
+                     f"本轮静默：{keys}；判定依据见 `{FORM1_ACK_STATE_REL}`）")
+    if form1.get("stale_acks"):
+        lines.append(f"  ⚠ {len(form1['stale_acks'])} 条确认记录已对不上任何现存行"
+                     f"（行归档／编号变／留步字样被整段改写）："
+                     + "、".join(form1["stale_acks"]))
     for item in form1.get("wide_items", []):
         lines.append(f"  （宽口径·仅提示）§{item['section']} #{item['row_id']}：…{item['excerpt']}…")
 
@@ -893,9 +1086,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--enforce", action="store_true", help="有发现即非零退出")
     parser.add_argument("--no-write-state", action="store_true", help="不落状态文件")
     parser.add_argument("--state", default=None, help="状态文件路径（仅测试用）")
+    parser.add_argument(
+        "--ack-form1", default=None, metavar="KEY",
+        help="记一次形态 1 的「已核实闭合」确认（key 取自报告行），"
+             "带指纹、可自动失效；须配 --note。不扫描、只记录。")
+    parser.add_argument(
+        "--note", default="",
+        help="--ack-form1 配套：本次核的是什么、凭什么核的，必填。")
     args = parser.parse_args(argv)
 
     repo_root = _resolve_repo_root(args.repo_root)
+    if args.ack_form1 is not None:
+        return cmd_ack_form1(repo_root, args.ack_form1, args.note)
     state_path = Path(args.state) if args.state else repo_root / STATE_REL
     findings = scan(repo_root, lan=not args.skip_lan_probe, wide=args.wide, state_path=state_path)
 

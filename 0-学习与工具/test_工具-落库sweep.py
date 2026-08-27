@@ -4572,12 +4572,13 @@ def _f3(name, *, tracked=1, untracked=0, insertions=10, is_main=False):
 
 
 def _findings(*, form1=(), form2=(), form3=(), lan_on=True, flip=None,
-              unavailable=None, resolved=()):
+              unavailable=None, resolved=(), suppressed=(), stale_acks=()):
     unavailable = unavailable or {}
     return {
         "base_ref": "origin/master", "today": "2026-08-27",
         "form1": {"items": list(form1), "excluded_section_two": 0,
-                  "unavailable": unavailable.get("form1"), "wide_items": []},
+                  "unavailable": unavailable.get("form1"), "wide_items": [],
+                  "suppressed": list(suppressed), "stale_acks": list(stale_acks)},
         "form2": {"items": list(form2), "unavailable": unavailable.get("form2")},
         "form3": {"items": list(form3), "unavailable": unavailable.get("form3")},
         "lan": None if lan_on is None else {"on_lan": lan_on, "probes": []},
@@ -4645,6 +4646,39 @@ class UnclosedOutputGuardTests(unittest.TestCase):
         self.assertIn("state_path", params)
 
     # ---------- 回显（存在证明） ----------
+
+    def test_被指纹确认抑制的条数与命中数同行回显(self):
+        """🔴 `OP-0827-G`：形态 1 现在可以被「已核实闭合」的指纹确认关掉。
+        **一个只会变长、从不回显的抑制清单，正是这套告警要防的「看起来
+        干净」**——所以抑制数必须和命中数打在同一行，不能只打命中数。
+        """
+        scanner = _FakeScanner(_findings(form1=[_f1("334")],
+                                         suppressed=[_f1("340"), _f1("354")]))
+        text, _ = self._run(scanner)
+        self.assertIn("形态 1（LAN 留步登记）1 处（另 2 处已核实闭合、指纹未变）", text)
+
+    def test_零抑制时不打抑制字样(self):
+        scanner = _FakeScanner(_findings(form1=[_f1("334")]))
+        text, _ = self._run(scanner)
+        self.assertIn("形态 1（LAN 留步登记）1 处／", text)
+        self.assertNotIn("已核实闭合", text)
+
+    def test_对不上现存行的确认记录要出声(self):
+        """行归档／编号变之后，那条确认核的是一个已经不存在的东西——留着
+        不说话，下次读的人会以为「那一处已经被核过」。"""
+        scanner = _FakeScanner(_findings(stale_acks=["form1:队列-机制环境.md#一999"]))
+        text, _ = self._run(scanner)
+        self.assertIn("对不上任何现存行", text)
+        self.assertIn("form1:队列-机制环境.md#一999", text)
+
+    def test_旧扫描器没有suppressed字段时不炸(self):
+        """接线读的是**上一版**扫描器时（未合入／回滚），缺字段不得让整轮
+        巡检抛异常——那会把第 7 类整个变成「判据不可用」。"""
+        findings = _findings(form1=[_f1("334")])
+        del findings["form1"]["suppressed"]
+        del findings["form1"]["stale_acks"]
+        text, _ = self._run(_FakeScanner(findings))
+        self.assertIn("形态 1（LAN 留步登记）1 处／", text)
 
     def test_零命中时仍逐项回显三形态计数与LAN态(self):
         """🔴 本组最要紧的一条：零命中是本判据的常态外观。若零命中时连回显
