@@ -75,6 +75,10 @@ def load_env() -> None:
 #: 本告警唯一的去向键——IT 运维部群 webhook（队列 #282 前提①，2026-08-07 已落 `.env`）。
 ALERT_WEBHOOK_ENV = "WECOM_WEBHOOK_URL_OPS"
 
+#: 未解析记录的 stdout 打印上限——超出部分只进 JSONL。真实数据上这批是 26,000 行
+#: 起步（队列 #418 ⑺），全量打印只会把这一整段淹掉，反而更看不见。
+_DIAG_PRINT_LIMIT = 50
+
 
 def resolve_alert_webhook(env) -> str | None:
     """取告警 webhook：**只认 `WECOM_WEBHOOK_URL_OPS`，不回退裸 `WECOM_WEBHOOK_URL`**。
@@ -97,6 +101,7 @@ def main() -> int:
                      help="源头断供阈值：连续多少个工作日无新文件即告警（默认 3）")
     args = ap.parse_args()
 
+    from fi2.tax_export_ingest import summarize_diagnostics, write_diagnostics_jsonl
     from fi2.tax_export_scan import SILENCE_WORKDAYS_DEFAULT, ScanFailedError, scan_once
     from zhuopin_platform.audit.sinks import JsonlSink
     from zhuopin_platform.shared_tools.connector_audit import ConnectorAudit
@@ -160,12 +165,23 @@ def main() -> int:
               "这些发票将永远不会进入 invoice.csv，面板会持续把对应 AP 单报为"
               "「无发票支撑」。须把原导出文件放回导出目录后重跑。", file=sys.stderr)
 
+    # ── 未解析记录：先汇总、再落盘、最后才截断打印（队列 #424「让丢行可见并可查」）──
+    # 🔴 原实现是「逐条 print，不落盘」。真实数据上这是 26,000 行起步（#418 ⑺），
+    # 而计划任务的 stdout 无人翻阅 ⇒ 等于这批丢行在生产上从不存在记录。
     print(f"未解析记录数：{len(result.diagnostics)}")
-    for d in result.diagnostics:
+    for reason, n_rows, n_inv in summarize_diagnostics(result):
+        print(f"  · {reason}：{n_rows} 行（涉 {n_inv} 张发票）")
+    diag_path = reports_dir / "fi2_ingest_diagnostics.jsonl"
+    n_written = write_diagnostics_jsonl(result, diag_path, now=now)
+    print(f"未解析记录已落盘（追加）：{n_written} 条 → {diag_path}"
+          "（可按 reason／发票号回查；不含金额与数量原始值）")
+    for d in result.diagnostics[:_DIAG_PRINT_LIMIT]:
         loc = f"{d.file}" + (f" 第{d.row_index}行" if d.row_index else "")
         print(f"  [{d.reason}] {loc}"
               + (f" 发票号={d.digital_invoice_no}" if d.digital_invoice_no else "")
               + (f" {d.detail}" if d.detail else ""))
+    if len(result.diagnostics) > _DIAG_PRINT_LIMIT:
+        print(f"  ...另有 {len(result.diagnostics) - _DIAG_PRINT_LIMIT} 条，见上面那份 JSONL")
 
     def _report_alert() -> None:
         if outcome.alert_sent:

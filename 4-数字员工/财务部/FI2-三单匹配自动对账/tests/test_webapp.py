@@ -6,6 +6,7 @@ import shutil
 import pytest
 
 import fi2.webapp as webapp_module
+from fi2.models import APLine, InvoiceLine
 from fi2.webapp import create_app
 from zhuopin_platform.shared_tools.erp_connector import ZpConnector
 
@@ -541,3 +542,115 @@ def test_csv_mode_reuses_mock_fixture_directory(client, tmp_path):
     body = r.get_data(as_text=True)
     assert "本次共 12 项料品" in body
     assert "kpi-pass" in body
+
+
+# ── 面板 KPI 的孤立发票口径（队列 #423）───────────────────────────────────
+#
+# 🔴 2026-08-27 `OP-0827-F` 在 `.51` 生产上实测到的那一幕：筛 `AP-2026080041` 一张单
+# → 面板显示「本次共 3390 项料品、BLOCK 3390」，而引擎**实际只判了 1 项**。
+# 3390 ＝ items 1 ＋ 当时 `invoice.csv` 的 3389 行（其中 `ap_no=AP-2026080041` 的行数
+# ＝ 0，故其余整池发票全部成为「孤立发票」）。差三个数量级。
+
+def _rep(*, total, needs_review, l3=0, l2=0):
+    return {"summary": {"total": total, "needs_review": needs_review,
+                        "l3_suggested_pass": l3, "l2_self_resolved": l2}}
+
+
+def _inv(ap_no, i=0):
+    return InvoiceLine(inv_no=f"INV{i}", ap_no=ap_no, item_code="X", unit="个",
+                        unit_price=1.0, inv_qty=1.0, untaxed_amount=1.0,
+                        tax_rate=0.13, tax_amount=0.13)
+
+
+def _ap(ap_no):
+    return APLine(ap_no=ap_no, po_no="PO-1", line_no="1", item_code="X",
+                   qty=1.0, unit_price=1.0, untaxed_amount=1.0, tax_amount=0.13)
+
+
+def test_kpi_default_mode_is_unchanged_and_is_the_only_switch():
+    """🔴 退化守卫：默认口径必须仍是现状。
+
+    `.51` 是「整包同步」部署（队列 #418 ⑻ 实测坐实）——合入 master 即等于早晚上生产，
+    「留步不部署」守不住；**唯一守得住的是这个默认值**。改它＝改唐燕萍每天看的数字，
+    须她显式签认（判据/口径类永不默认生效）。
+    """
+    assert webapp_module._KPI_ORPHAN_MODE == webapp_module._KPI_ORPHAN_COUNT_IN
+    assert webapp_module._INVOICE_SCOPE == webapp_module._INVOICE_SCOPE_ALL
+
+
+def test_kpi_unknown_mode_raises_rather_than_falls_back():
+    with pytest.raises(ValueError, match="未知的 KPI 孤立发票口径"):
+        webapp_module.kpi_counts(_rep(total=1, needs_review=1), [], mode="whatever")
+
+
+def test_kpi_reproduces_the_3390_blowup_under_current_mode():
+    """现状口径下，1 项真判定 ＋ 3389 行孤立发票 ⇒ 面板报「3390 项料品、BLOCK 3390」。
+
+    这条断言**锁的是缺陷本身**，不是期望行为：口径一旦经唐燕萍签认改掉，它就该跟着
+    改。留着是为了让「爆表 3390 是怎么算出来的」在代码里有一处算术闭合的证据。
+    """
+    orphaned = [_inv("AP-OTHER", i) for i in range(3389)]
+    kpi = webapp_module.kpi_counts(_rep(total=1, needs_review=1), orphaned,
+                                    mode=webapp_module._KPI_ORPHAN_COUNT_IN)
+    assert kpi["total_rows"] == 3390 and kpi["n_block"] == 3390
+    assert kpi["n_items"] == 1 and kpi["n_orphan"] == 3389
+    assert kpi["total_label"] == "项料品"
+
+
+def test_kpi_separate_mode_keeps_the_three_tiles_on_real_judgements_only():
+    """⒜：三档只反映引擎真判过的料品项，孤立发票另起一条如实提示（不隐藏）。"""
+    orphaned = [_inv("AP-OTHER", i) for i in range(3389)]
+    kpi = webapp_module.kpi_counts(_rep(total=1, needs_review=1), orphaned,
+                                    mode=webapp_module._KPI_ORPHAN_SEPARATE)
+    assert kpi["total_rows"] == 1 and kpi["n_block"] == 1 and kpi["n_orphan"] == 3389
+
+
+def test_kpi_labeled_mode_keeps_the_numbers_but_stops_calling_them_item_rows():
+    """⒝：数不变（仍计入），但文案不再谎称这 3390 个都是「料品」。"""
+    orphaned = [_inv("AP-OTHER", i) for i in range(3389)]
+    kpi = webapp_module.kpi_counts(_rep(total=1, needs_review=1), orphaned,
+                                    mode=webapp_module._KPI_ORPHAN_LABELED)
+    assert kpi["total_rows"] == 3390 and kpi["n_block"] == 3390
+    assert kpi["total_label"] == "行（含孤立发票）"
+
+
+@pytest.mark.parametrize("mode", ["separate", "labeled"])
+def test_kpi_render_surfaces_orphan_count_in_both_new_modes(mode):
+    """两档新口径都必须把孤立发票的数**显示出来**——分歧只在计不计入，不在藏不藏。"""
+    orphaned = [_inv("AP-OTHER", i) for i in range(3389)]
+    kpi = webapp_module.kpi_counts(_rep(total=1, needs_review=1), orphaned, mode=mode)
+    html_out = webapp_module._render_kpi(
+        kpi["total_rows"], kpi["n_pass"], kpi["n_l2"], kpi["n_block"],
+        n_orphan=kpi["n_orphan"], n_items=kpi["n_items"],
+        total_label=kpi["total_label"], mode=kpi["mode"])
+    assert "3389" in html_out and "孤立发票" in html_out
+
+
+def test_kpi_render_under_current_mode_is_byte_identical_to_v8():
+    """现状口径下渲染出的那段 HTML 必须与 v8 逐字一致（本次改动零展示副作用）。"""
+    out = webapp_module._render_kpi(12, 3, 1, 9)
+    assert "本次共 12 项料品，3 项自动通过，1 项微差消化，9 项BLOCK退回。" in out
+    assert "孤立发票" not in out
+
+
+def test_scope_invoice_rows_defaults_to_loading_everything():
+    ap_lines = [_ap("AP-1")]
+    rows = [_inv("AP-1", 0), _inv("AP-OTHER", 1)]
+    assert webapp_module.scope_invoice_rows(ap_lines, rows) == rows
+
+
+def test_scope_invoice_rows_ap_range_drops_out_of_scope_invoices():
+    """⒞：只装载落在本次 AP 范围内的发票行 —— 孤立发票自然回到「理论不应出现」的量级。
+
+    🔴 代价同时被这条断言钉住：**真·孤立发票也一起没了**（`AP-OTHER` 若是数据完整性
+    异常，⒞ 之后再也看不到它）。选 ⒞ 等于放弃这个信号，须唐燕萍确认。
+    """
+    ap_lines = [_ap("AP-1")]
+    rows = [_inv("AP-1", 0), _inv("AP-OTHER", 1)]
+    kept = webapp_module.scope_invoice_rows(ap_lines, rows, scope="ap_range")
+    assert [r.ap_no for r in kept] == ["AP-1"]
+
+
+def test_scope_invoice_rows_unknown_scope_raises():
+    with pytest.raises(ValueError, match="未知的发票装载范围"):
+        webapp_module.scope_invoice_rows([], [], scope="whatever")

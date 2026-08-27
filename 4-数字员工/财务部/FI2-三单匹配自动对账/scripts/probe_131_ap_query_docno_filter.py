@@ -67,6 +67,7 @@ def _summarize(rows: list[dict]) -> dict:
 
 def _repro_kpi(conn, invoice_dir: Path) -> None:
     """复现面板 KPI：`webapp._report_page` 的四个数是怎么算出来的。"""
+    import fi2.webapp as webapp
     from fi2.feed_source import FeedSource, partition_invoices
     from fi2.result_classify import classify_all
 
@@ -80,9 +81,11 @@ def _repro_kpi(conn, invoice_dir: Path) -> None:
     n_pass = sum(1 for it in items if it.status == "l3_suggested_pass")
     n_l2 = sum(1 for it in items if it.status == "l2_self_resolved")
     n_review = sum(1 for it in items if it.status == "needs_review")
-    # 下面两行**逐字**抄自 `webapp._report_page`（第 749-750 行），不是我重写的口径。
-    n_block = n_review + len(orphaned)
-    total_rows = len(items) + len(orphaned)
+    # 🔴 口径**不再在本文件重写一遍**（队列 #423 已把它收进 `webapp.kpi_counts` 单一入口）。
+    # 原实现是把 `_report_page` 那两行逐字抄过来——那在当时是对的（要证明「面板就是这么
+    # 算的」），但抄一份就多一处会漂移的口径；现在改成直接调它，复现与生产必然同源。
+    rep = {"summary": {"total": len(items), "needs_review": n_review,
+                        "l3_suggested_pass": n_pass, "l2_self_resolved": n_l2}}
 
     print(chr(10) + f"═══ ④ 原样复现那次冒烟的面板 KPI（docNo={SMOKE_DOC_NO}）═══")
     print(f"  发票目录            : {invoice_dir}")
@@ -91,12 +94,39 @@ def _repro_kpi(conn, invoice_dir: Path) -> None:
         print(f"      → {it.ap_no} / {it.item_code} / has_invoice={it.has_invoice}"
               f" / {it.classification} / {it.status}")
     print(f"  孤立发票行           : {len(orphaned)}  ← 挂载的 ap_no 不在本次 AP 范围内")
-    print("  ──面板 KPI（webapp._report_page 口径）──")
-    print(f"    本次共 {total_rows} 项料品   ＝ items {len(items)} ＋ 孤立发票 {len(orphaned)}")
-    print(f"    ✅ 自动通过 {n_pass}   ⚡ 微差消化 {n_l2}   🚫 BLOCK退回 {n_block}"
-          f"  ＝ needs_review {n_review} ＋ 孤立发票 {len(orphaned)}")
-    ok = (total_rows == 3390 and n_pass == 0 and n_l2 == 0 and n_block == 3390)
+
+    kpi = webapp.kpi_counts(rep, orphaned)      # 现行默认口径＝生产此刻的行为
+    print("  ──面板 KPI（webapp.kpi_counts 现行默认口径）──")
+    print(f"    本次共 {kpi['total_rows']} {kpi['total_label']}"
+          f"   ＝ items {len(items)} ＋ 孤立发票 {len(orphaned)}")
+    print(f"    ✅ 自动通过 {kpi['n_pass']}   ⚡ 微差消化 {kpi['n_l2']}"
+          f"   🚫 BLOCK退回 {kpi['n_block']}  ＝ needs_review {n_review} ＋ 孤立发票 {len(orphaned)}")
+    ok = (kpi["total_rows"] == 3390 and kpi["n_pass"] == 0
+          and kpi["n_l2"] == 0 and kpi["n_block"] == 3390)
     print(f"  ⇒ {'与 #131 记的 0/0/3390、共 3390 项**逐个数字一致** ⇒ 复现成功' if ok else '与 #131 记的数字不一致 —— 须解释差在哪，不得当作复现'}")
+
+    # ── 队列 #423：同一份真实数据下，三档口径分别显示成什么（供唐燕萍选）──────
+    print(chr(10) + "  ══ 队列 #423 各候选口径在这同一份真实数据上的显示值 ══")
+    for mode, tag in ((webapp._KPI_ORPHAN_COUNT_IN, "现状（2026-07-31 v8）"),
+                       (webapp._KPI_ORPHAN_SEPARATE, "⒜ 孤立发票移出 KPI，单列一条"),
+                       (webapp._KPI_ORPHAN_LABELED, "⒝ 仍计入，但文案如实、两部分分开显示")):
+        k = webapp.kpi_counts(rep, orphaned, mode=mode)
+        print(f"    · {tag}：本次共 {k['total_rows']} {k['total_label']}，"
+              f"BLOCK {k['n_block']}，另标注孤立发票 {k['n_orphan']} 行")
+    scoped = webapp.scope_invoice_rows(ap_lines, invoice_rows, scope="ap_range")
+    linked_c, orphaned_c = partition_invoices(ap_lines, scoped)
+    items_c = classify_all(ap_lines, linked_c)
+    rep_c = {"summary": {
+        "total": len(items_c),
+        "needs_review": sum(1 for it in items_c if it.status == "needs_review"),
+        "l3_suggested_pass": sum(1 for it in items_c if it.status == "l3_suggested_pass"),
+        "l2_self_resolved": sum(1 for it in items_c if it.status == "l2_self_resolved")}}
+    k = webapp.kpi_counts(rep_c, orphaned_c, mode=webapp._KPI_ORPHAN_COUNT_IN)
+    print(f"    · ⒞ 只装载落在本次 AP 范围内的发票：装载 {len(scoped)} 行"
+          f"（原 {len(invoice_rows)} 行），本次共 {k['total_rows']} {k['total_label']}，"
+          f"BLOCK {k['n_block']}，孤立发票 {k['n_orphan']} 行")
+    print("      ⚠️ ⒞ 的代价：真·孤立发票（数据完整性异常）此后与「不在本次范围内」"
+          "一起被滤掉，两者不再可区分。")
 
 
 def main() -> int:

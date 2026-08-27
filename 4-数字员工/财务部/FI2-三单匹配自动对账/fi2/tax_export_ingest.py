@@ -132,6 +132,39 @@ _INVOICE_CSV_FIELDS = [
 _QTY_REL_TOL = 1e-6
 _PRICE_REL_TOL = 1e-4
 
+# (未税金额, 税额) 反查口径下的**绝对**容差（元）。用绝对值而非相对值，是因为这两个
+# 数在税务导出与 U9C 两侧都已是「结算到分」的终值，真正的噪声只有分位进位，与金额
+# 大小无关；用相对容差反而会让大额行的容忍度大到失真。
+_AMOUNT_ABS_TOL = 0.01
+
+# 组合匹配（⒞）时允许参与求和的 AP 行数上限。超过即不尝试——组合数随行数指数增长，
+# 而真实数据里「发票按合计开票」拆的是个位数行，放大上限只会换来指数级耗时。
+_SUBSET_SUM_MAX_ROWS = 16
+
+# ── item_code 反查的匹配口径（队列 #424）───────────────────────────────────
+#
+# 🔴 **本行是唯一开关；口径未经唐燕萍签认前不得改动。**
+# 现值 `"qty_price"` ＝ 2026-08-07 上线至今一字未改的行为，本次修改**不默认生效**
+# （判据/口径类永不默认生效，CLAUDE.md §5 IATF 显式签认红线）。
+#
+# ⚠️ 为什么开关必须是一个模块级常量、而不是环境变量或表单选项：本项目 `.51` 的部署
+# 方式是「整包同步」（队列 #418 ⑻ 实测坐实），任何一次别的变更包部署都会把 master
+# 上的这份代码一并带上生产 ⇒ **「合入 master 但留步不生效」只能靠默认值本身守住**，
+# 不能靠「先别部署」。改这一行等于改生产口径，故它必须是一次显式的、可 grep 的提交。
+#
+# 各候选的语义与实测影响面见 `scripts/probe_424_itemcode_candidates.py` 的产出。
+_ITEM_MATCH_STRATEGY = "qty_price"
+
+#: 全部已实现的候选口径（`resolve_item_code(strategy=...)` 的合法取值）。
+#: 🔴 逐条对照队列 #424 的 ⒜⒝⒞ —— 命名刻意写全，不用 a/b/c，避免下游读到缩写还要回查。
+ITEM_MATCH_STRATEGIES: tuple[str, ...] = (
+    "qty_price",                    # 现状：(数量, 含税单价) 逐行唯一匹配
+    "amount",                       # ⒜：改用 (未税金额, 税额) 逐行唯一匹配
+    "qty_price_then_amount",        # ⒜ 的保守形态：现状优先，零命中再试金额
+    "qty_price_then_single_item",   # ⒝ 的可落地形态：现状优先，零命中且该 AP 单只有一个料号 ⇒ 取之
+    "qty_price_then_subset_sum",    # ⒞：现状优先，零命中再试「若干 AP 行数量合计 == 发票数量」
+)
+
 
 @dataclass
 class IngestDiagnostic:
@@ -388,35 +421,234 @@ def resolve_ap_no(connector, digital_invoice_no: str) -> tuple[Optional[str], st
 
 # ── item_code 反查（design D2）───────────────────────────────────────────
 
+def _f(v) -> Optional[float]:
+    """原始行字段 → float；`None`/空/非数一律返回 `None`（**不当 0 用**）。
+
+    🔴 缺字段与「值是 0」必须分开：把缺字段读成 0 会让一条根本没有金额的 AP 行去和
+    一张金额为 0 的发票行「匹配上」——一个不报错的错。
+    """
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _match_by_qty_price(
+    ap_rows: list[dict], *, qty: float, taxed_unit_price: float,
+    qty_rel_tol: float, price_rel_tol: float,
+) -> set[str]:
+    """现状口径：(数量, 含税单价) 逐行比，两者都落在相对容差内即算命中。"""
+    out: set[str] = set()
+    for row in ap_rows:
+        ap_qty = _f(row.get("APQtyTU"))
+        ap_price = _f(row.get("TaxPrice"))
+        item_code = row.get("ItemCode")
+        if ap_qty is None or ap_price is None or not item_code:
+            continue
+        qty_close = abs(ap_qty - qty) <= max(abs(qty), abs(ap_qty)) * qty_rel_tol + 1e-9
+        price_close = (abs(ap_price - taxed_unit_price)
+                       <= max(abs(taxed_unit_price), abs(ap_price)) * price_rel_tol + 1e-9)
+        if qty_close and price_close:
+            out.add(str(item_code))
+    return out
+
+
+def _match_by_amount(
+    ap_rows: list[dict], *, untaxed_amount: Optional[float], tax_amount: Optional[float],
+    abs_tol: float,
+) -> set[str]:
+    """⒜ 口径：(未税金额, 税额) 逐行比，绝对容差到分。
+
+    🔴 **对计量单位换算与「按包装件 vs 按容量」免疫** —— 队列 #424 实测的
+    `AP-2026080041` 密封胶正是此形态：数量差 310 倍（20 支 × 310ML ＝ 6200），
+    而未税 655.12／税额 85.16 两侧一分不差。
+
+    ⚠️ 但它**不免疫「发票按合计开票、AP 按行拆分」** —— 那一类里没有任何单独一行
+    AP 的金额等于发票行金额（`AP-2026080137` 气泡袋即是），本口径同样零命中。
+    发票或 AP 缺这两个字段时返回空集（不猜、不回落到别的键）。
+    """
+    if untaxed_amount is None or tax_amount is None:
+        return set()
+    out: set[str] = set()
+    for row in ap_rows:
+        ap_untaxed = _f(row.get("NonTaxAmtTC"))
+        ap_tax = _f(row.get("TaxAmtTC"))
+        item_code = row.get("ItemCode")
+        if ap_untaxed is None or ap_tax is None or not item_code:
+            continue
+        if (abs(ap_untaxed - untaxed_amount) <= abs_tol
+                and abs(ap_tax - tax_amount) <= abs_tol):
+            out.add(str(item_code))
+    return out
+
+
+def _single_item_code(ap_rows: list[dict]) -> set[str]:
+    """⒝ 的可落地形态：该 AP 单**通篇只有一个料号**时，这张发票只可能挂在它上面。
+
+    ⚠️ 这不是「AP 单级金额归集」的完整实现，而是它唯一能唯一确定 `item_code` 的那个
+    子情形。队列 #424 ⒝ 原文写的是「回落到 AP 单级归集（该发票整体 vs 该 AP 单全部行
+    的金额合计）」——**单级归集能判断「这张发票属不属于这张单」，却判断不出「属于哪一
+    行料品」**；而 `invoice.csv` 的每一行必须带一个 `item_code`。多料号单据下 ⒝ 无法
+    落地成一个行级答案，除非同时接受「把一张发票行拆成多行写入」（见
+    `_match_by_subset_sum`）。这一点在选 ⒝ 之前必须先说清。
+    """
+    codes = {str(r.get("ItemCode")) for r in ap_rows if r.get("ItemCode")}
+    return codes if len(codes) == 1 else set()
+
+
+def _match_by_subset_sum(
+    ap_rows: list[dict], *, qty: float, taxed_unit_price: float, price_rel_tol: float,
+) -> set[str]:
+    """⒞ 口径：允许「若干 AP 行的数量合计 == 发票行数量」（同一含税单价内）。
+
+    队列 #424 实测的 `AP-2026080137` 气泡袋即此形态：发票 6000 ＝ AP 的 1000 ＋ 5000，
+    发票 7000 ＝ 4000 ＋ 3000，**加起来分毫不差，但没有任何单独一行等于 6000/7000**。
+
+    🔴 **返回的可能是一个多元素集合** —— 6000 那一笔跨 `J02E.0024` 与 `R02E.0024`
+    两个料号。在现行输出契约（一行发票 → 一个 `item_code`）下，它会被上层如实判为
+    `item_code_ambiguous`，**而不是被随便挑一个**。要让 ⒞ 真正解开这一类，必须同时
+    接受「把一张发票行按 AP 行拆成多行写入 `invoice.csv`」——那是另一个口径决定，
+    不在本函数范围内。本函数只负责把「到底能不能凑出来」这件事量清楚。
+
+    先按含税单价分组，再在组内做子集和；组内行数超过 `_SUBSET_SUM_MAX_ROWS` 即放弃
+    该组（不静默地退化成部分搜索，直接不试）。
+    """
+    groups: dict[float, list[tuple[float, str]]] = {}
+    for row in ap_rows:
+        ap_qty = _f(row.get("APQtyTU"))
+        ap_price = _f(row.get("TaxPrice"))
+        item_code = row.get("ItemCode")
+        if ap_qty is None or ap_price is None or not item_code:
+            continue
+        if abs(ap_price - taxed_unit_price) > (
+                max(abs(taxed_unit_price), abs(ap_price)) * price_rel_tol + 1e-9):
+            continue
+        groups.setdefault(round(ap_price, 6), []).append((ap_qty, str(item_code)))
+
+    out: set[str] = set()
+    for rows in groups.values():
+        if len(rows) > _SUBSET_SUM_MAX_ROWS:
+            continue
+        n = len(rows)
+        for mask in range(1, 1 << n):
+            total = 0.0
+            for i in range(n):
+                if mask >> i & 1:
+                    total += rows[i][0]
+            if abs(total - qty) <= max(abs(qty), abs(total)) * _QTY_REL_TOL + 1e-9:
+                out |= {rows[i][1] for i in range(n) if mask >> i & 1}
+    return out
+
+
 def resolve_item_code(
     ap_lines_for_ap_no: list[dict], qty: float, untaxed_unit_price: float, tax_rate: float,
+    *,
+    untaxed_amount: Optional[float] = None, tax_amount: Optional[float] = None,
+    strategy: Optional[str] = None,
+    qty_rel_tol: Optional[float] = None, price_rel_tol: Optional[float] = None,
+    amount_abs_tol: Optional[float] = None,
 ) -> tuple[Optional[str], str, str]:
-    """用 (数量, 含税单价) 在已知 ap_no 的行项目中唯一匹配料品编码。
+    """在已知 ap_no 的行项目中唯一匹配料品编码。
 
     `ap_lines_for_ap_no`：该 ap_no 下 `AP/Query` 原始行列表（调用方按 ap_no 取好，
     本函数不发起网络调用，便于测试与复用同一 ap_no 下多张发票行共享一次拉取）。
 
     返回 (item_code_or_None, reason, detail)，reason 语义同 `resolve_ap_no`。
+
+    `strategy`（队列 #424，默认 `_ITEM_MATCH_STRATEGY` ＝ `"qty_price"` ＝ 现状）：
+    见 `ITEM_MATCH_STRATEGIES`。🔴 **口径待唐燕萍签认，默认值不得在签认前改动。**
+
+    `untaxed_amount`/`tax_amount`：`"amount"` 系口径必需（税务导出的「金额」「税额」
+    两列）。不传即该口径退化为零命中——**不猜、不由单价反推**（反推会把导出侧的
+    四舍五入误差放大成假匹配）。
+
+    三个容差参数留出显式入口，供 `scripts/probe_424_itemcode_candidates.py` 在真实
+    全量数据上量「放宽到什么程度分别能捞回多少」，**不供生产调用方随手传**。
     """
+    strategy = strategy or _ITEM_MATCH_STRATEGY
+    if strategy not in ITEM_MATCH_STRATEGIES:
+        raise ValueError(f"未知的 item_code 匹配口径：{strategy!r}；"
+                         f"合法值＝{list(ITEM_MATCH_STRATEGIES)}")
+    qty_rel_tol = _QTY_REL_TOL if qty_rel_tol is None else qty_rel_tol
+    price_rel_tol = _PRICE_REL_TOL if price_rel_tol is None else price_rel_tol
+    amount_abs_tol = _AMOUNT_ABS_TOL if amount_abs_tol is None else amount_abs_tol
     taxed_unit_price = untaxed_unit_price * (1 + tax_rate)
-    matched_codes: set[str] = set()
-    for row in ap_lines_for_ap_no:
-        ap_qty = row.get("APQtyTU")
-        ap_price = row.get("TaxPrice")
-        item_code = row.get("ItemCode")
-        if ap_qty is None or ap_price is None or not item_code:
-            continue
-        ap_qty = float(ap_qty)
-        ap_price = float(ap_price)
-        qty_close = abs(ap_qty - qty) <= max(abs(qty), abs(ap_qty)) * _QTY_REL_TOL + 1e-9
-        price_close = abs(ap_price - taxed_unit_price) <= max(abs(taxed_unit_price), abs(ap_price)) * _PRICE_REL_TOL + 1e-9
-        if qty_close and price_close:
-            matched_codes.add(str(item_code))
+
+    def _by_qty_price() -> set[str]:
+        return _match_by_qty_price(
+            ap_lines_for_ap_no, qty=qty, taxed_unit_price=taxed_unit_price,
+            qty_rel_tol=qty_rel_tol, price_rel_tol=price_rel_tol)
+
+    def _by_amount() -> set[str]:
+        return _match_by_amount(
+            ap_lines_for_ap_no, untaxed_amount=untaxed_amount,
+            tax_amount=tax_amount, abs_tol=amount_abs_tol)
+
+    if strategy == "qty_price":
+        matched_codes = _by_qty_price()
+    elif strategy == "amount":
+        matched_codes = _by_amount()
+    else:
+        # 🔴 「回落」一律只在**零命中**时发生，绝不在**歧义**时发生：现状口径已经找到
+        # 多个候选，说明这张发票行本身就分不清挂哪一行，换把尺子只会换一批候选、
+        # 不会让它变清楚——那种「换到能出一个答案为止」正是静默猜测。
+        matched_codes = _by_qty_price()
+        if not matched_codes:
+            if strategy == "qty_price_then_amount":
+                matched_codes = _by_amount()
+            elif strategy == "qty_price_then_single_item":
+                matched_codes = _single_item_code(ap_lines_for_ap_no)
+            elif strategy == "qty_price_then_subset_sum":
+                matched_codes = _match_by_subset_sum(
+                    ap_lines_for_ap_no, qty=qty, taxed_unit_price=taxed_unit_price,
+                    price_rel_tol=price_rel_tol)
+
     if not matched_codes:
         return None, "item_code_zero_match", ""
     if len(matched_codes) > 1:
         return None, "item_code_ambiguous", f"候选：{sorted(matched_codes)}"
     return next(iter(matched_codes)), "", ""
+
+
+def _join_detail(*parts: str) -> str:
+    return "；".join(p for p in parts if p)
+
+
+def _item_match_diagnosis(
+    ap_rows: list[dict], *, ap_no: str, qty: float, untaxed_unit_price: float,
+    tax_rate: float, untaxed_amount: Optional[float], tax_amount: Optional[float],
+) -> str:
+    """给一条挂不上料号的发票行加一段**可 grep 的身份**（队列 #424「让丢行可见并可查」）。
+
+    产出形如 `ap=AP-2026080041 ap行数=1 料号数=1 换口径可解=[amount,single_item]`。
+
+    🔴 三条边界，写的时候就定死，免得日后被当成「顺手放宽一下」的入口：
+      ⑴ **不含任何金额/数量的原始值** —— FI2 审计口径是金额不落盘（webapp 页脚已明写），
+         这条诊断会随 ledger 与诊断文件长期留存，不能成为金额的第二个出口。
+      ⑵ **不改变任何摄取结果** —— 它只描述「若换成别的口径会怎样」，当前口径该丢的
+         照丢。换口径要由唐燕萍签认，不由这条诊断代劳。
+      ⑶ 纯 CPU、零网络（AP 行已在调用方缓存里），组合搜索有 `_SUBSET_SUM_MAX_ROWS` 封顶。
+    """
+    taxed_unit_price = untaxed_unit_price * (1 + tax_rate)
+    codes = {str(r.get("ItemCode")) for r in ap_rows if r.get("ItemCode")}
+    solvable: list[str] = []
+    if len(_match_by_amount(ap_rows, untaxed_amount=untaxed_amount,
+                            tax_amount=tax_amount, abs_tol=_AMOUNT_ABS_TOL)) == 1:
+        solvable.append("amount")
+    if len(_single_item_code(ap_rows)) == 1:
+        solvable.append("single_item")
+    subset = _match_by_subset_sum(ap_rows, qty=qty, taxed_unit_price=taxed_unit_price,
+                                  price_rel_tol=_PRICE_REL_TOL)
+    if len(subset) == 1:
+        solvable.append("subset_sum")
+    elif len(subset) > 1:
+        # 凑得出来，但跨了多个料号 —— 现行「一行发票 → 一个 item_code」的输出契约下
+        # 它仍然无解，除非接受把发票行拆开写。**如实标成另一类，不混进「可解」。**
+        solvable.append(f"subset_sum_跨{len(subset)}料号")
+    return (f"ap={ap_no} ap行数={len(ap_rows)} 料号数={len(codes)} "
+            f"换口径可解={solvable or '无'}")
 
 
 # ── 编排 ──────────────────────────────────────────────────────────────────
@@ -471,9 +703,20 @@ class _RowResolver:
         qty = float(raw.get("数量") or 0)
         unit_price = float(raw.get("单价") or 0)
         tax_rate = _parse_tax_rate(raw.get("税率"))
+        untaxed_amount = _f(raw.get("金额"))
+        tax_amount = _f(raw.get("税额"))
+        ap_rows = self._ap_lines_cache[ap_no]
         item_code, i_reason, i_detail = resolve_item_code(
-            self._ap_lines_cache[ap_no], qty, unit_price, tax_rate)
+            ap_rows, qty, unit_price, tax_rate,
+            untaxed_amount=untaxed_amount, tax_amount=tax_amount)
         if item_code is None:
+            # 队列 #424「让丢行可见并可查」：光记一个 `item_code_zero_match` 无法回答
+            # 「这一行为什么挂不上、换把尺子挂不挂得上」，而那正是唯一能把这批丢行
+            # 分类的信息。诊断串里**只放形状、不放金额**（FI2 审计口径＝金额不落盘），
+            # 且**不改变任何摄取结果**——纯粹是给这条丢行加一个可 grep 的身份。
+            i_detail = _join_detail(i_detail, _item_match_diagnosis(
+                ap_rows, ap_no=ap_no, qty=qty, untaxed_unit_price=unit_price,
+                tax_rate=tax_rate, untaxed_amount=untaxed_amount, tax_amount=tax_amount))
             return None, self._fail(file_name, idx, digital_no, i_reason, i_detail)
 
         return {
@@ -686,6 +929,47 @@ def ingest_directory(
 
     save_ledger(ledger_path, ledger)
     return result
+
+
+def summarize_diagnostics(result: IngestResult) -> list[tuple[str, int, int]]:
+    """按 `reason` 汇总本次未解析记录 → `[(reason, 行数, 涉发票张数), ...]`（降序）。
+
+    逐条打印在真实数据上是 26,000 行起步（队列 #418 ⑺），**没人会读完，也就等于
+    没人在看** —— 汇总是让这批丢行第一次变成一个能被看一眼的数。
+    """
+    rows: dict[str, int] = {}
+    invs: dict[str, set[str]] = {}
+    for d in result.diagnostics:
+        rows[d.reason] = rows.get(d.reason, 0) + 1
+        if d.digital_invoice_no:
+            invs.setdefault(d.reason, set()).add(d.digital_invoice_no)
+    return sorted(
+        ((r, n, len(invs.get(r, ()))) for r, n in rows.items()),
+        key=lambda t: (-t[1], t[0]),
+    )
+
+
+def write_diagnostics_jsonl(result: IngestResult, path: Path | str, *, now: str) -> int:
+    """把本次未解析记录**落盘**成可 grep 的 JSONL，返回写入条数（队列 #424）。
+
+    🔴 **这正是 #418 根因链的第 ⑵ 环** —— 诊断此前只被 CLI 打印到 stdout、从不落盘，
+    于是「哪些发票行被丢掉了、为什么」这件事在生产上根本不存在记录；#418 的重试队列
+    解决了「还有没有下一次机会」，**没有**解决「已经丢掉的这批看不看得见」。本函数只
+    补后者：**追加写，不覆盖**，一行一条，供事后按 `reason`／发票号／AP 单号回查。
+
+    ⚠️ **不含金额与数量的原始值**（同 `_item_match_diagnosis` 边界⑴）：本文件长期留存，
+    不能成为财务金额的第二个出口；`detail` 里只有形状与「换口径可解与否」。
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as f:
+        for d in result.diagnostics:
+            f.write(json.dumps({
+                "ts": now, "file": d.file, "row_index": d.row_index,
+                "reason": d.reason, "digital_invoice_no": d.digital_invoice_no,
+                "detail": d.detail,
+            }, ensure_ascii=False) + "\n")
+    return len(result.diagnostics)
 
 
 def write_invoice_csv(rows: list[dict], out_path: Path | str) -> None:

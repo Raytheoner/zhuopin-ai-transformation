@@ -89,6 +89,47 @@ _INVOICE_SAMPLE_LABEL = "u9c+人工誊录小样"
 _TAX_EXPORT_DIR = _ROOT / "data" / "tax_export"
 _TAX_EXPORT_LABEL = "u9c+税务导出摄取"
 
+# ── 面板 KPI 里「孤立发票」的计数口径（队列 #423）──────────────────────────
+#
+# 🔴 **这两行是唯一开关；口径未经唐燕萍签认前不得改动**（判据/口径类永不默认生效，
+# CLAUDE.md §5 IATF 显式签认红线）。现值 ＝ 2026-07-31 v8 起一字未改的行为。
+#
+# 🔑 **为什么当时对、现在不对（写在这里，免得下一个人当成低级错误改掉）**：
+#   · 2026-07-31 v8 定这条口径时（commit `09d2ab0`，队列 #182/#183），`u9c` 模式的
+#     发票池 ＝ design D19 的**人工誊录 8 张小样**，而且是**为当时被核对的那几张 AP 单
+#     誊录的** ⇒ 孤立发票必然≈0。`partition_invoices` 的 docstring 至今写着「数据完整性
+#     异常，理论不应出现」—— 在那个前提下，把它当异常信号计进 BLOCK 完全合理。
+#   · 2026-08-07 发票源改道税务导出摄取（队列 #295/#82）后，发票池变成**全公司**
+#     （2026-08-27 实测 3,389 行／651 张 AP 单），而 AP 侧范围仍由人在表单里手填。
+#     两者一脱钩，「孤立发票」就从「异常信号」变成了「必然的绝大多数」。
+#   ⇒ **不是当时写错了，是它赖以成立的输入规模假设被换掉了，而公式没人回头看过。**
+#     实测：筛 `AP-2026080041` 一张单 → 面板显示「共 3390 项、BLOCK 3390」，
+#     而引擎实际只判了 **1** 项 —— 差三个数量级。
+#
+# 🔑 **可举一反三**：一个计数口径的正确性，往往不取决于它自己的逻辑，而取决于它当时
+# 那个输入的规模假设；输入换了源、涨了三个数量级而公式没动，它就会在毫无报错的情况下
+# 开始输出荒谬的数 —— 而且因为「BLOCK 数很大」看着像个坏消息，没人会怀疑这个数本身是假的。
+#
+# ⚠️ 开关必须是模块级常量而非环境变量/表单选项：`.51` 的部署方式是「整包同步」
+# （队列 #418 ⑻ 实测坐实），任何一次别的变更包部署都会把 master 上这份代码带上生产
+# ⇒ 「合入 master 但留步不生效」只能靠默认值本身守住。
+_KPI_ORPHAN_COUNT_IN = "count_in"     # 现状：孤立发票并进「项料品」总数与 BLOCK
+_KPI_ORPHAN_SEPARATE = "separate"     # 队列 #423 ⒜：移出 KPI 三档，单列一条独立提示
+_KPI_ORPHAN_LABELED = "labeled"       # 队列 #423 ⒝：仍计入，但文案改「本次涉及 N 行」并分开显示
+_KPI_ORPHAN_MODES: tuple[str, ...] = (
+    _KPI_ORPHAN_COUNT_IN, _KPI_ORPHAN_SEPARATE, _KPI_ORPHAN_LABELED)
+_KPI_ORPHAN_MODE = _KPI_ORPHAN_COUNT_IN
+
+# 队列 #423 ⒞（装载侧，与上面三档**不是一回事**）：⒜⒝ 改的是「怎么显示」，⒞ 改的是
+# 「装载多少」—— 只装载 `ap_no` 落在本次 AP 取数范围内的发票行，孤立发票自然回到
+# 「理论不应出现」的量级。🔴 它顺带解决「筛一张单却要装载全公司发票」，但**会改变孤立
+# 发票的语义**（不再能反映数据完整性异常：真·孤立发票与「不在本次范围内」被一起滤掉，
+# 两者从此不可区分），须与 ⒜⒝ 一并请唐燕萍确认，不得因为「看起来最干净」就先切。
+_INVOICE_SCOPE_ALL = "all"            # 现状：装载发票源里的全部行
+_INVOICE_SCOPE_AP_RANGE = "ap_range"  # ⒞：只装载 ap_no 落在本次 AP 范围内的行
+_INVOICE_SCOPES: tuple[str, ...] = (_INVOICE_SCOPE_ALL, _INVOICE_SCOPE_AP_RANGE)
+_INVOICE_SCOPE = _INVOICE_SCOPE_ALL
+
 
 def _resolve_invoice_sample() -> tuple[Path | None, str]:
     """u9c 模式发票源固定目录解析（队列 #82 第2层）：`_TAX_EXPORT_DIR` 存在
@@ -342,10 +383,28 @@ def _u9c_ap_real_line_no(ap_lines: list[APLine], raw_ap_rows: list[dict]) -> dic
     return out
 
 
+def scope_invoice_rows(ap_lines, invoice_rows, *, scope: str | None = None):
+    """队列 #423 ⒞：按 AP 取数范围裁掉「不在本次范围内」的发票行（默认不裁）。
+
+    🔴 **它与 `partition_invoices` 不是一回事，务必分清**：`partition_invoices` 判的是
+    「这张发票挂的 AP 单号在不在 AP 明细里」并把落空的标成**孤立发票**（一个异常信号）；
+    本函数是在那之前决定「这些发票行要不要进来」。⒞ 生效后，被裁掉的行**不再以任何
+    形式出现在面板上**——包括真正的数据完整性异常。这正是选 ⒞ 的代价，须唐燕萍确认。
+    """
+    scope = scope or _INVOICE_SCOPE
+    if scope not in _INVOICE_SCOPES:
+        raise ValueError(f"未知的发票装载范围：{scope!r}；合法值＝{list(_INVOICE_SCOPES)}")
+    if scope == _INVOICE_SCOPE_ALL:
+        return invoice_rows
+    ap_nos = {a.ap_no for a in ap_lines}
+    return [inv for inv in invoice_rows if inv.ap_no in ap_nos]
+
+
 def _run_with_detail(
     data_source: str, *, csv_dir: Path | None = None, evaluator: str = "", period: str = "",
     audit=None, u9c_connector=None, ap_doc_nos: list[str] | None = None,
     ap_supplier_codes: list[str] | None = None, invoice_sample_dir: Path | None = None,
+    invoice_scope: str | None = None,
 ):
     """与 `fi2.run.run()` 调用序列逐字相同（FeedSource→partition_invoices→classify_all→
     check_ap_po_price→build_report，均为既有未改动函数），额外把中间产出的原始明细行
@@ -364,6 +423,7 @@ def _run_with_detail(
     invoice_rows = fs.load_invoice()
     ap_real_line_no = _u9c_ap_real_line_no(ap_lines, fs.raw_ap_rows())
 
+    invoice_rows = scope_invoice_rows(ap_lines, invoice_rows, scope=invoice_scope)
     linked, orphaned = partition_invoices(ap_lines, invoice_rows)
     items = classify_all(ap_lines, linked)
     price_results = check_ap_po_price(ap_lines, po_lines)
@@ -712,14 +772,57 @@ def _render_table(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, pric
     )
 
 
-def _render_kpi(total_rows: int, n_pass: int, n_l2: int, n_block: int) -> str:
+def kpi_counts(rep: dict, orphaned, *, mode: str | None = None) -> dict:
+    """按当前口径算出面板 KPI 四个数（队列 #423）。
+
+    抽成纯函数是为了让「孤立发票怎么计」这件事**只有一处**、可单测、可 grep ——
+    它此前是 `_report_page` 里的两行裸算术，改口径要靠人记得同时改两处。
+
+    返回 `{"total_rows", "n_pass", "n_l2", "n_block", "n_orphan", "total_label"}`。
+    `n_orphan` 无论哪档都如实给出（**孤立发票的存在本身永远不隐藏**，三档的分歧只在
+    「要不要把它并进那三个数」）。
+    """
+    mode = mode or _KPI_ORPHAN_MODE
+    if mode not in _KPI_ORPHAN_MODES:
+        raise ValueError(f"未知的 KPI 孤立发票口径：{mode!r}；合法值＝{list(_KPI_ORPHAN_MODES)}")
+    n_orphan = len(orphaned)
+    n_items = rep["summary"]["total"]
+    n_review = rep["summary"]["needs_review"]
+    if mode == _KPI_ORPHAN_SEPARATE:
+        # ⒜：三档只反映引擎真判过的那些料品项，孤立发票另起一条提示。
+        total_rows, n_block, label = n_items, n_review, "项料品"
+    else:
+        # 现状 与 ⒝ 的**数**相同，分歧只在文案与是否分开显示（⒝ 不谎称它们是「料品」）。
+        total_rows, n_block = n_items + n_orphan, n_review + n_orphan
+        label = "项料品" if mode == _KPI_ORPHAN_COUNT_IN else "行（含孤立发票）"
+    return {
+        "total_rows": total_rows, "n_pass": rep["summary"]["l3_suggested_pass"],
+        "n_l2": rep["summary"]["l2_self_resolved"], "n_block": n_block,
+        "n_orphan": n_orphan, "n_items": n_items, "total_label": label, "mode": mode,
+    }
+
+
+def _render_kpi(total_rows: int, n_pass: int, n_l2: int, n_block: int, *,
+                 n_orphan: int = 0, n_items: int | None = None,
+                 total_label: str = "项料品", mode: str = _KPI_ORPHAN_COUNT_IN) -> str:
+    if mode == _KPI_ORPHAN_COUNT_IN or not n_orphan:
+        orphan_strip = ""
+    elif mode == _KPI_ORPHAN_SEPARATE:
+        orphan_strip = (
+            f'<div class="summary-line">另有 <b>{n_orphan}</b> 行孤立发票'
+            "（其 AP 单号不在本次核对范围内，未参与判定，不计入上面三档）。</div>")
+    else:
+        orphan_strip = (
+            f'<div class="summary-line">其中：引擎判定的料品项 <b>{n_items}</b> 项，'
+            f"孤立发票 <b>{n_orphan}</b> 行（AP 单号不在本次核对范围内，未参与四维判定）。</div>")
     return f"""
 <div class="kpis">
   <div class="kpi kpi-pass"><div class="kv">{n_pass}</div><div class="kl">✅ 自动通过</div></div>
   <div class="kpi kpi-l2"><div class="kv">{n_l2}</div><div class="kl">⚡ 微差消化</div></div>
   <div class="kpi kpi-block"><div class="kv">{n_block}</div><div class="kl">🚫 BLOCK退回</div></div>
 </div>
-<div class="summary-line">本次共 {total_rows} 项料品，{n_pass} 项自动通过，{n_l2} 项微差消化，{n_block} 项BLOCK退回。</div>
+<div class="summary-line">本次共 {total_rows} {total_label}，{n_pass} 项自动通过，{n_l2} 项微差消化，{n_block} 项BLOCK退回。</div>
+{orphan_strip}
 """
 
 
@@ -744,10 +847,9 @@ def _render_block_flow() -> str:
 def _report_page(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price_results,
                   ap_real_line_no: dict[int, str]) -> str:
     ds = rep["data_sources"]
-    n_pass = rep["summary"]["l3_suggested_pass"]
-    n_l2 = rep["summary"]["l2_self_resolved"]
-    n_block = rep["summary"]["needs_review"] + len(orphaned)
-    total_rows = rep["summary"]["total"] + len(orphaned)
+    # 队列 #423：孤立发票的计数口径收进 `kpi_counts` 单一入口（原为此处两行裸算术，
+    # 详见 `_KPI_ORPHAN_MODE` 上方的「为什么当时对、现在不对」）。
+    kpi = kpi_counts(rep, orphaned)
 
     _INVOICE_SOURCE_BANNERS = {
         _TAX_EXPORT_LABEL: (
@@ -774,7 +876,9 @@ def _report_page(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price
 {d19_banner}
 
 <div class="card">
-  {_render_kpi(total_rows, n_pass, n_l2, n_block)}
+  {_render_kpi(kpi["total_rows"], kpi["n_pass"], kpi["n_l2"], kpi["n_block"],
+                n_orphan=kpi["n_orphan"], n_items=kpi["n_items"],
+                total_label=kpi["total_label"], mode=kpi["mode"])}
 </div>
 
 <div class="disclaimer-183">⚠️ 本报告所有判定均为 AI 建议，不构成过账依据。自动通过/微差消化/BLOCK 退回均需财务确认后操作。</div>
