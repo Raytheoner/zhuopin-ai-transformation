@@ -71,14 +71,35 @@ def test_the_row_that_looks_most_like_a_false_positive_still_fires():
     它开头就是 `✅`、还写着「本项到此闭环」，**任何靠读事项列中文措辞去
     自动关闭的修法，第一个误杀的就是它**；而它挂着一个没人答的三选一。
     这条用例是这套修法「没有走上那条路」的证明。
+
+    🔴 **闭合之后本用例不删、改为两侧都钉（2026-08-28，`OP-0828-B` 续派）** ——
+    Shao Peishen 当日答 ⑴，`#103` 那个三选一已闭环、截止列已补 `✅`，本行**从此
+    不该再报**。但**「闭合前必须命中」这一半仍要留着**：它记录的是「靠读事项列
+    中文措辞自动关闭会误杀这一行」那个教训，删掉它等于把教训一起删了。
+    ⇒ 下面两个断言分别对应闭合前与闭合后，**任何一侧失守都算回归**。
     """
     acks = {}
     first = _eval()
     for key in ("§四#47", "§四#124"):
         hit = next(i for i in first.items if i.key == key)
         acks = record_ack(acks, key, fingerprint=hit.fingerprint, note="核过")
+
+    # ⓐ 闭合前（截止列无 ✅）：必须命中 —— 事项列开头那个 `✅ 已拍板并执行`
+    #    「本项到此闭环」是幌子，同一格里挂着一个没人答的三选一。
     result = _eval(acks=acks)
     assert "§四#103" in {i.key for i in result.items}
+
+    # ⓑ 闭合后（截止列补上 `✅`）：必须不再命中 —— 关掉它的正路是本项目既有的
+    #    「截止列带 ✅」约定本身，**不是**给它记一条 ack（那样 ack 会立刻变成
+    #    一条对不上现存行的陈旧确认，反倒制造噪音）。
+    closed = QUEUE.replace("| Shao Peishen | 2026-08-24 |",
+                           "| Shao Peishen | ✅ 已闭环 2026-08-28（答 ⑴） |")
+    assert closed != QUEUE
+    after = _eval(queue=closed, acks=acks)
+    assert "§四#103" not in {i.key for i in after.items}
+    assert "§四#103" not in {s.key for s in after.suppressed}, (
+        "闭合应当走截止列 ✅ 这条正路，而不是被 ack 压住"
+    )
 
 
 def test_ack_is_not_a_permanent_whitelist_fingerprint_change_reopens_it():
