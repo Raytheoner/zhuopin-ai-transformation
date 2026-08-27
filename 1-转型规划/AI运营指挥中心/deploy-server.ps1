@@ -42,9 +42,34 @@ $resolvedPython = (Get-Command $PythonExe -ErrorAction SilentlyContinue).Source
 if (-not $resolvedPython) { throw "找不到 Python 可执行文件：$PythonExe（装 3.11+ 并 Add to PATH，或直接传绝对路径）" }
 Write-Host "Python 解析为：$resolvedPython" -ForegroundColor DarkGray
 
+# 启动包装脚本 —— 2026-08-27（OP-0827-B，队列 #354 tasks 2.3.4）新增，理由必须写下来：
+#
+#   本服务是四个常驻服务里【唯一一个不带平台底座副本】的（“零三方依赖”是其既定设计），
+#   于是 C:\command-center\ 下没有 zhuopin_platform\pyproject.toml。收拢后的三段凭据锚定
+#   （队列 #354）②要 monorepo marker、③要那个 pyproject.toml，【这里一段都不命中】⇒
+#   _find_env() 返回 None，而 .env 就躺在 serve.py 旁边 ⇒ ZP_GATE_PASSWORD 读不到 ⇒
+#   门禁静默失效：服务照起、页面照 200、只有口令没了。
+#   （2026-08-27 在 .51 上真机实撞，重启前抓到，生产未受影响。）
+#
+#   解＝用三段锚定的【第①段】ZP_ENV_FILE 显式指名——它本就是为“这套布局天生不同”设计的，
+#   且指向的文件不存在时 fail-loud（不会退回静默）。这也是为什么要包一层 ps1：计划任务
+#   此前直接调 python.exe，没有地方设这个环境变量。
+Write-Host "生成 start-command-center.ps1（设 ZP_ENV_FILE 显式锚定 .env）..." -ForegroundColor Yellow
+$startPs1 = Join-Path $Base "start-command-center.ps1"
+$startContent = @"
+# Command center launcher (shared by scheduled task and manual start)
+# ZP_ENV_FILE: 见 deploy-server.ps1 内同名段落——本服务无平台底座副本，三段锚定不命中，
+# 必须显式指名，否则 ZP_GATE_PASSWORD 读不到、门禁静默失效。
+`$env:ZP_ENV_FILE = "$envFile"
+& "$resolvedPython" "$Base\serve.py" $Port
+"@
+Set-Content -Path $startPs1 -Value $startContent -Encoding UTF8
+Write-Host "      已生成" -ForegroundColor Green
+
 Write-Host "注册计划任务 $TaskName（端口 $Port，开机启动 + 失败重启，SYSTEM 账户不依赖交互式会话）..." -ForegroundColor Yellow
 Register-ZhuopinScheduledTask -TaskName $TaskName `
-    -Execute $resolvedPython -Argument "`"$Base\serve.py`" $Port" -WorkingDirectory $Base `
+    -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"" `
+    -WorkingDirectory $Base `
     -MultipleInstancesIgnoreNew -StartWhenAvailable `
     -Description "AI 运营指挥中心 Web 服务（端口 $Port）"
 

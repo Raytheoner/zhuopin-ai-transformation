@@ -119,8 +119,21 @@ def _find_env() -> str | None:
         here = parent
 
 
+#: 本次实际命中的 `.env`（`None` ＝ 三段锚定一段都没命中）。只记路径，**绝不记键值**。
+#: 🔴 **它存在的理由是一次真机实撞（2026-08-27，OP-0827-B，队列 #354 tasks 2.3.4）**：
+#: `.51` 上命令中心的部署根是 `C:\command-center\{serve.py,index.html,data}`，
+#: **没有 `zhuopin_platform` 目录**——因为「零三方依赖、不装平台底座」正是本服务的既定设计。
+#: 于是三段锚定②（monorepo marker）与③（`<root>/zhuopin_platform/pyproject.toml`）**一段都不命中**，
+#: `_find_env()` 返回 `None`，而 `C:\command-center\.env` 就躺在 `serve.py` 旁边。
+#: **后果是静默的**：服务照常起、页面照常 200，只有门禁没了。
+#: ⚠️ **那 8 条等价性测试拦不住它**——它们断言的是「serve.py 与 env_anchor 答案一致」，
+#: 而**两边都答 `None` 也叫一致**。一致 ≠ 正确。
+#: **生产侧的解**＝`start-command-center.ps1` 用第①段 `ZP_ENV_FILE` 显式锚定（指错文件即 fail-loud）。
+_ENV_FILE_RESOLVED = _find_env()
+
+
 def _load_env() -> None:
-    path = _find_env()
+    path = _ENV_FILE_RESOLVED
     if not path:
         return
     with open(path, encoding="utf-8-sig") as f:
@@ -348,5 +361,13 @@ if __name__ == "__main__":
     os.chdir(ROOT)
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print("AI 运营指挥中心 serving %s on 0.0.0.0:%d" % (ROOT, PORT), flush=True)
-    print(f"  访问口令门禁：{'已启用（ZP_GATE_PASSWORD 已配置）' if GATE_PASSWORD else '未启用（未配置 ZP_GATE_PASSWORD，仅限本地/测试）'}", flush=True)
+    # 🔴 把「读到了哪份 .env」一起打出来：门禁失效时最先要问的就是这一句
+    #    （2026-08-27 实撞：.env 就在 serve.py 旁边，而三段锚定一段都没命中）。**只打路径、不打键值。**
+    print(f"  凭据锚定：{_ENV_FILE_RESOLVED or '🔴 三段一段未命中（未读入任何 .env）'}", flush=True)
+    if GATE_PASSWORD:
+        print("  访问口令门禁：已启用（ZP_GATE_PASSWORD 已配置）", flush=True)
+    else:
+        print("  🔴 访问口令门禁：未启用 —— 本服务当前对 LAN 内任何人开放，无需口令。", flush=True)
+        print("     生产环境若看到这一行即为故障：查 ZP_ENV_FILE 是否已在 start-command-center.ps1 里设好。",
+              flush=True)
     httpd.serve_forever()

@@ -229,3 +229,74 @@ def test_mutation_old_serve_writing_would_pick_the_stale_copy(tmp_path):
     stale = old_find_env(str(app_wt))
     assert stale is not None
     assert Path(stale).resolve() == (wt / ".env").resolve(), "夹具没造出病灶，变异验证空转"
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  🔴 2026-08-27（OP-0827-B，队列 #354 tasks 2.3.4）——`.51` 真机实撞补的两条
+#
+#  上面那批用例全部通过、8 例全绿，却**漏掉了本服务在生产上的真实形状**：
+#  `C:\command-center\{serve.py, index.html, data}` —— **没有 zhuopin_platform 目录**，
+#  因为「零三方依赖、不装平台底座」正是本服务的既定设计（见本文件顶部）。
+#
+#  于是三段锚定②（monorepo marker）与③（`<root>/zhuopin_platform/pyproject.toml`）
+#  一段都不命中，`_find_env()` 返回 None，而 `.env` 就躺在 `serve.py` 旁边 ⇒
+#  `ZP_GATE_PASSWORD` 读不到 ⇒ **门禁静默失效：服务照起、页面照 200、只有口令没了。**
+#
+#  🔑 **为什么上面 8 条一条都没红**：它们断言的是「两份实现给出**同一个**答案」，
+#     而**两边都答 None 也叫一致**。**一致 ≠ 正确。**
+#     等价性测试守的是「两份副本不漂」，守不住「两份副本一起答错」——这是等价性
+#     这种测试形态的固有盲区，不是这批用例写得不好。
+#
+#  生产侧的解＝`start-command-center.ps1` 用第①段 `ZP_ENV_FILE` 显式指名
+#  （由 `deploy-server.ps1` 生成）。下面第二条就是把那个解钉住。
+# ════════════════════════════════════════════════════════════════════════════
+
+def _make_command_center_deploy(root: Path) -> None:
+    """`.51` 上命令中心的真实形状：只有 serve.py / index.html / data / .env。"""
+    (root / "data").mkdir(parents=True)
+    (root / "index.html").write_text("<html></html>", encoding="utf-8")
+    (root / ".env").write_text("ZP_GATE_PASSWORD=x\n", encoding="utf-8")
+
+
+def test_命令中心部署布局下三段锚定确实一段都不命中(tmp_path, monkeypatch):
+    """这条**故意断言 None**——它记录的是一个真实缺口，不是期望行为。
+
+    ⚠️ 若将来有人给三段锚定加了「取自己目录旁边那份 `.env`」之类的第四段，本条会红。
+    **那时不要直接把它改绿**：先回答「新加的那一段会不会把 `#354` 要消灭的
+    『取最近的 .env』重新引回来」，再决定是改实现还是改本条。
+    """
+    root = tmp_path / "command-center"
+    _make_command_center_deploy(root)
+    caller = root / "serve.py"
+    caller.write_text("", encoding="utf-8")
+
+    assert _serve_answer(root, monkeypatch, caller) is None
+    assert _platform_answer(caller) is None          # 两份实现同样答 None ⇒ 等价性测试拦不住
+    assert (root / ".env").is_file()                 # 而它就在那儿
+
+
+def test_命令中心部署布局下ZP_ENV_FILE能把它救回来(tmp_path, monkeypatch):
+    """钉住生产侧的解：`start-command-center.ps1` 设的那个环境变量。
+
+    它同时是**变异验证**——若有人把 `start-command-center.ps1` 里那行删掉、或让
+    `deploy-server.ps1` 退回直接调 `python.exe`，门禁就会静默失效，而本条说明了
+    为什么那一行不是可有可无的样板。
+    """
+    root = tmp_path / "command-center"
+    _make_command_center_deploy(root)
+    caller = root / "serve.py"
+    caller.write_text("", encoding="utf-8")
+
+    monkeypatch.setenv("ZP_ENV_FILE", str(root / ".env"))
+    assert _serve_answer(root, monkeypatch, caller) == (root / ".env").resolve()
+    assert _platform_answer(caller) == (root / ".env").resolve()
+
+
+def test_deploy脚本确实把ZP_ENV_FILE写进了启动包装(tmp_path):
+    """断言落在**生产脚本源码**上：`deploy-server.ps1` 必须生成 start-command-center.ps1
+    且其中设了 `ZP_ENV_FILE`，并且计划任务注册的是那个包装、不是裸 python.exe。"""
+    ps1 = (SCENE / "deploy-server.ps1").read_text(encoding="utf-8-sig")
+    assert "start-command-center.ps1" in ps1
+    assert "ZP_ENV_FILE" in ps1
+    assert '-Execute "powershell.exe"' in ps1
+    assert '-Execute $resolvedPython' not in ps1      # 旧的裸 python 注册方式不得复活
