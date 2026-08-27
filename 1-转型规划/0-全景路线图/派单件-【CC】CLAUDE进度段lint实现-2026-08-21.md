@@ -1,5 +1,5 @@
 ---
-status: 待执行
+status: 已执行归档
 title: "派单件 ·【CC】CLAUDE.md 进度段 lint 实现（J1-J5 机制化）"
 created: 2026-08-21
 执行环境: CC
@@ -7,6 +7,9 @@ created: 2026-08-21
 来源: Anti 报告 #7 建议 2 ＋ 队列 §四 #80
 关联: memory与上下文预算治理-审核与方案-2026-08-21.md §六（判据规格正本）
 ---
+
+> 🔴 **已执行完毕，勿再据此开工（2026-08-26 `OP-0826-J`，队列 §一 #396 九份普查改对）** —— **🔴 类别⑵：队列行已销号但仍在 live、尚未迁归档（#397 拦不住）**。判定依据：关联行 **§四 `#80`** 现读**仍命中在办件** `跨桌任务队列-机制环境.md`，事项列 `✅ ⑻ 至此销号 —— J8 哨兵存在性已实现并 ff 入 master（2026-08-23，CC，worktree sc2-caseback-fix-6eadad，分支 claude/op0823c-sentinel-lint-j8-5ceaf6，commit 48c69ee，OP-0823-C）`；落点 `0-学习与工具/工具-CLAUDE进度段lint.py`，CI job `claude-progress-lint` 已切 `--enforce`。
+> ⚠️ **本件的锚点在 §四、不在 §一** —— §一 与 §四 是两套独立编号（同 #397 design 判据②），任何按行号查的判据须先判分区归属，否则会拿 §一 #80 的状态去判本件。
 
 # 派单件 ·【CC】CLAUDE.md 进度段 lint 实现
 
