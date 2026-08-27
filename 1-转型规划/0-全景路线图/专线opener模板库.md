@@ -53,7 +53,7 @@ status: 生效
    🔑 **⇒ 补充三那条「每个 opener 第 3 行必须有 set_session_title」只对 CC 侧成立**；Cowork 侧的等价要求是「**开场词首行带编号**」。**把 CC 的做法抄给 Cowork 会写出一个不存在的工具调用。**
    **为什么改**：⑴ **`[CC]` 在 Code tab 里零信息量** —— 那个 tab 下每一条都是 CC，一个人人都有的前缀帮不了他区分；换成机器名 `[Win]` 才有分辨力，**且它为 Mac Studio 迁移（§一 #170）预留了 `[Mac]`**。⑵ **`OP-` 同理零信息量**，去掉后导航栏那一窄列能多显示几个字的主题短名 —— 而 session 名的唯一用途就是**给他一眼认出是哪条**。
    🔴 **一条必须守住的边界**：**只有 session 名用短形 `MMDD-X`；opener 标题行、队列行、§二 批次行、收工报告、CC transcript 目录一律仍用全称 `OP-MMDD-X`** —— 那是跨会话世界里的唯一身份，grep 要靠它对齐。**短形是给人眼的，全称是给机器的，两者不得互换。**
-   **Cowork 侧同理用 `[Win]`**（它也跑在这台机器上）；等 Mac 上线后若需再分 CC/Cowork，另议、不预先设计。
+   **Cowork 侧同样用 `[Win]` 这个形状**（它也跑在这台机器上），**但设定手段不同，见上一段红字**；等 Mac 上线后若需再分 CC/Cowork，另议、不预先设计。
 
 **取号规则**：`OP-` ＋ 月日（`MMDD`）＋ 当日流水（字母 `A/B/C…` 为主）。
 - 取号前**先 grep 当日已用**：`grep -rho "OP-MMDD-[A-Za-z0-9]*" 1-转型规划/0-全景路线图/*.md | sort -u`，取未用的下一个。
@@ -101,11 +101,12 @@ status: 生效
 ```
 [OP-MMDD-X]【CC】<主题短名>
 【设置】执行环境：CC ｜ …
-开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），标题：[Win] MMDD-X <主题短名>
+开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），标题：[Win]MMDD-X<主题短名>
 读 ① … → ② …
 ```
 
-⚠️ **已在跑的 session 可以补救**：对它说一句「**请调 `mcp__ccd_session_mgmt__set_session_title`（session_id 传字面量 `"self"`），标题：`[Win] MMDD-X <主题短名>`**」即可，不必重开。
+⚠️ **已在跑的 CC session 可以补救**：对它说一句「**请调 `mcp__ccd_session_mgmt__set_session_title`（session_id 传字面量 `"self"`），标题：`[Win]MMDD-X<主题短名>`**」即可，不必重开。
+🔴 **Cowork session 无此补救路径**（工具不存在）—— 它的名字在开场词首行落定的那一刻就定了，**事后只能由 Shao Peishen 手工改**。⇒ **Cowork 开场词首行写错编号的代价比 CC 高**，起草时更要看一眼。
 
 📌 **按规则退休制（根 `CLAUDE.md` §5）本条已远超阈值**（人守违反 3 次即须机制化或删除，本条一天 17 次）⇒ **须机制化，建议落点＝给 opener 集／波次计划文件加一条 lint：扫 `.md` 里的 opener 代码块，凡块内含 `【设置】` 而无 `set_session_title` 即告警。** 违反计数请登记进 §一 `#284`（阈值计数台账）。**在 lint 建成前，本条仍是人守，且已知它守不住。**
 
