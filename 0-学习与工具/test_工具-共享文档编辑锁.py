@@ -989,6 +989,15 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.module = _load_module()
         self.module.REPO_ROOT = self.repo_root
         self.module.DEFAULT_TARGET = "queue.md"
+        # 队列 #315：既有用例把 §一/§二/§三/§四 全部写在同一份 "queue.md"
+        # 里——本模块拆分后的"队列系统模式"会遍历机制/业务两份文件，这里
+        # 让机制文件复用既有单文件、业务文件指向一份本用例内不存在的路径
+        # （`_read_target_text` 对不存在的文件返回空串，不视为错误），使
+        # 大量既有单文件用例不必逐个改写即可继续验证原有行为；需要真实
+        # 验证双文件路由的用例另行覆盖这两个值。
+        self.module.QUEUE_MECHANISM_PATH_REL = "queue.md"
+        self.module.QUEUE_BUSINESS_PATH_REL = "queue-business.md"
+        self.module.QUEUE_LOCK_ANCHOR = "queue.md"
         self.target_path = self.repo_root / "queue.md"
 
     def tearDown(self):
@@ -2091,6 +2100,10 @@ class HoldConsistencyValidationTests(unittest.TestCase):
         self.module.REPO_ROOT = self.repo_root
         self.module.DEFAULT_TARGET = "queue.md"
         self.module.FOLLOWUP_README_TARGET = "readme.md"
+        # 队列 #315：见 ReleaseStructuralValidationTests.setUp 同款注释。
+        self.module.QUEUE_MECHANISM_PATH_REL = "queue.md"
+        self.module.QUEUE_BUSINESS_PATH_REL = "queue-business.md"
+        self.module.QUEUE_LOCK_ANCHOR = "queue.md"
         self.target_path = self.repo_root / "queue.md"
         self.readme_path = self.repo_root / "readme.md"
 
@@ -2251,6 +2264,306 @@ class HoldConsistencyValidationTests(unittest.TestCase):
         self.target_path.write_text(text, encoding="utf-8")
 
         self.assertEqual(self._release(who="A"), 0)
+
+
+class DualFileRoutingTests(unittest.TestCase):
+    """队列 #315（openspec 变更包 `queue-dual-file-split`）：队列系统双文件
+    路由——`_resolve_append_target`/`_iter_queue_paths`/`_resolve_queue_
+    path_for_domain`/幽灵副本检测（决策点3/4/5）。白盒方式：monkeypatch
+    REPO_ROOT/DEFAULT_TARGET/QUEUE_MECHANISM_PATH_REL/QUEUE_BUSINESS_
+    PATH_REL/QUEUE_LOCK_ANCHOR 指向本用例专属临时目录，与既有
+    ReleaseStructuralValidationTests 同一惯例。"""
+
+    SECTION_ONE_HEADER = (
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+    )
+    SECTION_TWO_HEADER = (
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.DEFAULT_TARGET = "queue.md"
+        self.module.QUEUE_MECHANISM_PATH_REL = "queue-mech.md"
+        self.module.QUEUE_BUSINESS_PATH_REL = "queue-biz.md"
+        self.module.QUEUE_LOCK_ANCHOR = "queue-mech.md"
+        self.mech_path = self.repo_root / "queue-mech.md"
+        self.biz_path = self.repo_root / "queue-biz.md"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write(self, path: Path, hwm_one=300, section_one_rows="", section_two_rows=""):
+        text = (
+            f"> **编号高水位线：§一 #{hwm_one} ｜ §四 #40**（说明）\n\n"
+            "## 一、任务看板\n\n" + self.SECTION_ONE_HEADER + section_one_rows +
+            "\n## 二、待 commit 批次（CC 取活销行）\n\n" + self.SECTION_TWO_HEADER + section_two_rows
+        )
+        path.write_text(text, encoding="utf-8")
+
+    # ---- _resolve_append_target ----
+
+    def test_resolve_append_target_section_one_domain_ji(self):
+        target, used_default = self.module._resolve_append_target("一", "机")
+        self.assertEqual(target, "queue-mech.md")
+        self.assertFalse(used_default)
+
+    def test_resolve_append_target_section_one_domain_ye(self):
+        target, used_default = self.module._resolve_append_target("一", "业")
+        self.assertEqual(target, "queue-biz.md")
+        self.assertFalse(used_default)
+
+    def test_resolve_append_target_no_domain_defaults_to_mechanism(self):
+        target, used_default = self.module._resolve_append_target("二", None)
+        self.assertEqual(target, "queue-mech.md")
+        self.assertTrue(used_default)
+
+    def test_resolve_append_target_section_four_ignores_domain(self):
+        target, used_default = self.module._resolve_append_target("四", "业")
+        self.assertEqual(target, "queue-mech.md")
+        self.assertFalse(used_default)
+
+    # ---- _resolve_queue_path_for_domain / _iter_queue_paths ----
+
+    def test_resolve_queue_path_for_domain_illegal_value_raises(self):
+        with self.assertRaises(ValueError):
+            self.module._resolve_queue_path_for_domain("其它")
+
+    def test_iter_queue_paths_returns_both(self):
+        self.assertEqual(
+            self.module._iter_queue_paths(), ["queue-mech.md", "queue-biz.md"],
+        )
+
+    # ---- cmd_append_row 端到端：域路由落到正确物理文件 ----
+
+    def test_append_row_domain_ye_lands_in_business_file(self):
+        self._write(self.mech_path)
+        self._write(self.biz_path)
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, section="一", number="301",
+            cell=["新业务任务", "CC", "无", "无", "[S:open][D:业] 待领", "无", "2026-08-11"],
+            domain="业",
+        )
+        self.assertEqual(self.module.cmd_append_row(ns), 0)
+        self.assertIn("新业务任务", self.biz_path.read_text(encoding="utf-8"))
+        self.assertNotIn("新业务任务", self.mech_path.read_text(encoding="utf-8"))
+
+    def test_append_row_no_domain_defaults_to_mechanism_file(self):
+        self._write(self.mech_path)
+        self._write(self.biz_path)
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, section="一", number="301",
+            cell=["未声明域任务", "CC", "无", "无", "[S:open][D:机] 待领", "无", "2026-08-11"],
+            domain=None,
+        )
+        self.assertEqual(self.module.cmd_append_row(ns), 0)
+        self.assertIn("未声明域任务", self.mech_path.read_text(encoding="utf-8"))
+        self.assertNotIn("未声明域任务", self.biz_path.read_text(encoding="utf-8"))
+
+    def test_append_row_section_two_business_batch(self):
+        self._write(self.mech_path)
+        self._write(self.biz_path)
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, section="二", number=None,
+            cell=["B-测试批次", "`queue-biz.md`", "说明", "待处理"],
+            domain="业",
+        )
+        self.assertEqual(self.module.cmd_append_row(ns), 0)
+        self.assertIn("B-测试批次", self.biz_path.read_text(encoding="utf-8"))
+        self.assertNotIn("B-测试批次", self.mech_path.read_text(encoding="utf-8"))
+
+    def test_append_row_explicit_file_override_bypasses_routing(self):
+        """显式 --file 覆盖（如跟进信 README 场景）不触发域路由，行为与
+        拆分前完全一致——这里用一个第三方文件验证不受 --domain 影响。"""
+        other = self.repo_root / "other.md"
+        self._write(other)
+        ns = argparse.Namespace(
+            file="other.md", section="一", number="301",
+            cell=["旁路任务", "CC", "无", "无", "待领", "无", "2026-08-11"],
+            domain=None,
+        )
+        self.assertEqual(self.module.cmd_append_row(ns), 0)
+        self.assertIn("旁路任务", other.read_text(encoding="utf-8"))
+
+    # ---- 跨文件编号碰撞检测（决策点2：单一编号空间） ----
+
+    def test_reserve_collision_detected_across_both_files(self):
+        """号已被业务文件占用时，即便机制文件本身干净，预留也须拒绝——
+        编号空间是单一的，不能只查目标文件自己。"""
+        self._write(self.mech_path, hwm_one=300)
+        self._write(
+            self.biz_path, hwm_one=300,
+            section_one_rows="| 301 | 已存在于业务文件 | CC | 无 | 无 | 待领 | 无 | 2026-08-10 |\n",
+        )
+        with self.assertRaises(self.module.ReserveFailedError):
+            self.module._reserve_ids(
+                "queue-mech.md", "一", 1,
+                extra_collision_texts=[self.biz_path.read_text(encoding="utf-8")],
+            )
+
+    def test_reserve_no_collision_when_number_unused_in_either_file(self):
+        self._write(self.mech_path, hwm_one=300)
+        self._write(self.biz_path, hwm_one=300)
+        result = self.module._reserve_ids(
+            "queue-mech.md", "一", 1,
+            extra_collision_texts=[self.biz_path.read_text(encoding="utf-8")],
+        )
+        self.assertEqual(result, [301])
+
+    # ---- acquire/release 队列系统模式：双文件快照与结构校验 ----
+
+    def test_acquire_release_queue_system_mode_validates_both_files(self):
+        self._write(self.mech_path, hwm_one=300)
+        self._write(self.biz_path, hwm_one=300)
+        ns_acquire = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who="A", note="",
+            reserve=None, section=None, reserve_multi=None, domain=None,
+        )
+        self.assertEqual(self.module.cmd_acquire(ns_acquire), 0)
+        ns_release = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who="A",
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+        )
+        self.assertEqual(self.module.cmd_release(ns_release), 0)
+        # release 后两份文件均应有各自的 lastknown 基准。
+        self.assertTrue(self.module._lastknown_path("queue-mech.md").exists())
+        self.assertTrue(self.module._lastknown_path("queue-biz.md").exists())
+
+    def test_release_reports_violations_from_either_file_with_path_prefix(self):
+        self._write(self.mech_path, hwm_one=300)
+        self._write(self.biz_path, hwm_one=300)
+        ns_acquire = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who="A", note="",
+            reserve=None, section=None, reserve_multi=None, domain=None,
+        )
+        self.assertEqual(self.module.cmd_acquire(ns_acquire), 0)
+        # 业务文件里加一行列数不对的行（触发①列数校验）。
+        text = self.biz_path.read_text(encoding="utf-8")
+        bad_row = "| 301 | 列数不对的行 | CC |\n"
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + bad_row, 1)
+        self.biz_path.write_text(text, encoding="utf-8")
+        ns_release = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who="A",
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+        )
+        self.assertNotEqual(self.module.cmd_release(ns_release), 0)
+
+    # ---- 幽灵副本检测（决策点5，队列 #315 子项⑥，2026-08-10 #321 真实事故）----
+
+    def test_detect_shadow_copy_returns_none_when_repo_root_equals_script_dir(self):
+        # 本用例 __file__ 就在 REPO_ROOT 下（白盒直接调用），samefile 应为
+        # True，不触发误报——这是最常见的"主工作区内运行"场景。
+        self.mech_path.write_text("内容\n", encoding="utf-8")
+        result = self.module._detect_shadow_copy("queue-mech.md")
+        self.assertIsNone(result)
+
+    # ---- 锁域分裂止血：绝对路径归一化判定（队列 #315 apply 中途追加，
+    # Shao Peishen 2026-08-11 现时风险提醒——企微机器人 SubprocessQueueEdit
+    # Lock 传绝对路径，字面量比较永不命中，双文件路由从不触发）----
+
+    def test_absolute_path_to_default_target_is_recognized_as_queue_system(self):
+        absolute = str(self.repo_root / "queue.md")
+        self.assertTrue(self.module._is_queue_system_target(absolute))
+
+    def test_absolute_path_to_mechanism_file_is_recognized_as_queue_system(self):
+        absolute = str(self.repo_root / "queue-mech.md")
+        self.assertTrue(self.module._is_queue_system_target(absolute))
+
+    def test_absolute_path_to_business_file_is_recognized_as_queue_system(self):
+        absolute = str(self.repo_root / "queue-biz.md")
+        self.assertTrue(self.module._is_queue_system_target(absolute))
+
+    def test_absolute_path_to_unrelated_file_is_not_queue_system(self):
+        absolute = str(self.repo_root / "跟进信README.md")
+        self.assertFalse(self.module._is_queue_system_target(absolute))
+
+    def test_acquire_with_absolute_path_to_old_pointer_file_routes_dual_file(self):
+        """真实复现：企微机器人常驻服务当前仍以 `DEFAULT_QUEUE_RELATIVE_
+        PATH`（旧指针文件相对路径）算出的绝对路径调用编辑锁 CLI——本用例
+        验证即便调用方传的是这个"迁移前"的绝对路径，`cmd_acquire` 仍应
+        正确识别为队列系统本体、双文件路由生效（锁锚定机制文件、两份内容
+        文件都被读到快照里），而不是把它当成一个无关的普通共享文件。"""
+        self._write(self.mech_path, hwm_one=300)
+        self._write(self.biz_path, hwm_one=300)
+        absolute_old_pointer = str(self.repo_root / "queue.md")
+        ns = argparse.Namespace(
+            file=absolute_old_pointer, who="A", note="",
+            reserve=None, section=None, reserve_multi=None, domain=None,
+        )
+        self.assertEqual(self.module.cmd_acquire(ns), 0)
+        lock_path = self.repo_root / "queue-mech.md.editlock"
+        self.assertTrue(lock_path.exists(), "锁应锚定在机制文件，而非旧指针文件")
+        ns_release = argparse.Namespace(
+            file=absolute_old_pointer, who="A",
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+        )
+        self.assertEqual(self.module.cmd_release(ns_release), 0)
+
+
+class ShadowCopyCrossWorktreeTests(unittest.TestCase):
+    """幽灵副本检测的真实跨 worktree 复现（队列 #315 子项⑥，直接承接
+    2026-08-10 #321 真实事故）——黑盒子进程方式，同 `EditLockCrossWorktree
+    Tests` 惯例：脚本复制进真实 git 仓库 + linked worktree，`REPO_ROOT` 按
+    `--git-common-dir` 恒定解析到主工作区，而 worktree 本地路径下若也存在
+    同名文件，即为幽灵副本风险场景。"""
+
+    MECH_REL = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列-机制环境.md"
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.main_root = Path(self._tmpdir.name) / "main"
+        self.main_root.mkdir()
+        self._git("init", "-q")
+        self._git("config", "user.email", "test@example.com")
+        self._git("config", "user.name", "Test")
+        script_dir = self.main_root / "0-学习与工具"
+        script_dir.mkdir()
+        (script_dir / "工具-共享文档编辑锁.py").write_text(
+            SCRIPT.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        # 与生产布局一致的嵌套路径——不 monkeypatch 常量，走脚本内建的
+        # 隔离环境兜底桩（本用例不复制 zhuopin_platform 包，与
+        # `EditLockCrossWorktreeTests` 同一取舍），验证兜底桩的路径常量
+        # 与真实值一致（本次已同步修过，见模块顶部隔离桩定义）。
+        (self.main_root / self.MECH_REL).parent.mkdir(parents=True)
+        (self.main_root / self.MECH_REL).write_text("主工作区权威内容\n", encoding="utf-8")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "init")
+        self.linked_root = Path(self._tmpdir.name) / "linked"
+        self._git("worktree", "add", "-q", str(self.linked_root), "-b", "linked-branch")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _git(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", *args], cwd=self.main_root, check=True,
+            capture_output=True, text=True,
+        )
+
+    def _tool(self, root: Path) -> Path:
+        return root / "0-学习与工具" / "工具-共享文档编辑锁.py"
+
+    def test_status_warns_when_linked_worktree_has_divergent_local_copy(self):
+        # linked worktree 本地也有一份同名文件（git checkout 出主工作区已
+        # 提交的版本）——先验证内容相同时不误报。
+        r_clean = run_at(self._tool(self.linked_root), "status")
+        self.assertNotIn("幽灵副本", r_clean.stdout)
+
+        # 复现 #321：linked worktree 里的本地副本被直接改写（通用 Edit
+        # 工具按 worktree 本地路径改的效果），与主工作区权威内容产生分歧
+        # ——而锁 CLI 恒定解析主工作区，两者是两个不同的物理文件。
+        (self.linked_root / self.MECH_REL).write_text(
+            "worktree 本地被直接改写的内容\n", encoding="utf-8",
+        )
+        r = run_at(self._tool(self.linked_root), "status")
+        self.assertIn("幽灵副本", r.stdout)
+        self.assertIn(str((self.main_root / self.MECH_REL).resolve()), r.stdout)
 
 
 if __name__ == "__main__":

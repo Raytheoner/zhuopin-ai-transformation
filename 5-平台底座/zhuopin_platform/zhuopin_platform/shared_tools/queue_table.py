@@ -50,7 +50,44 @@ SECTION_COLUMN_COUNTS: dict[str, int] = {"一": 8, "二": 4, "四": 4}
 # 队列 #313：队列文件自身相对仓库根的路径（POSIX 分隔符——`pathlib.Path`
 # 的 `/` 运算符在 Windows 上同样能正确解析正斜杠字符串，消费者按需
 # `REPO_ROOT / QUEUE_PATH_REL` 或直接当字符串使用均可）。
+# 队列 #315（apply，2026-08-11）：物理拆分为两份文件后，`QUEUE_PATH_REL`
+# 本身转为纯指针文件（不再是权威内容承载），保留路径不变、不删除，避免
+# 历史引用（归档件/CLAUDE.md/规划文档）404。真正的内容分别落在下面两份。
 QUEUE_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
+
+# 协议〇（十条协议正文）／§三（口径冻结标）／§四（需 Shao Peishen 的动作）／
+# 编号高水位线声明，均归属本文件——它们体量小、跨域适用（design.md 决策点1）。
+QUEUE_MECHANISM_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"
+# §一/§二 中 [D:业] 域的行落此文件；§二 批次的域判定＝物理文件位置本身，
+# 不新增字段（design.md 决策点3）。
+QUEUE_BUSINESS_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md"
+
+_DOMAIN_TO_PATH: dict[str, str] = {
+    "机": QUEUE_MECHANISM_PATH_REL,
+    "业": QUEUE_BUSINESS_PATH_REL,
+}
+
+
+def resolve_queue_path(domain: str) -> str:
+    """按域返回对应物理队列文件的仓库相对路径（队列 #315 决策点4）。
+
+    `domain` 仅接受 `"机"`／`"业"`；其它取值 fail-loud（抛异常），不静默
+    返回默认路径——与 #308 已确立的"非静默降级"原则一致，调用方传入非法
+    域值属编程错误，不是需要容错的运行时输入。
+    """
+    try:
+        return _DOMAIN_TO_PATH[domain]
+    except KeyError:
+        raise ValueError(
+            f"未知域值 {domain!r}，仅接受 \"机\"／\"业\"（不静默回退任一份文件）"
+        ) from None
+
+
+def iter_queue_paths() -> list[str]:
+    """返回两份物理队列文件的仓库相对路径，供需要"读取全部队列内容"的
+    消费者（sweep 起跑段扫描、台账生成、值周巡检等）遍历，替代此前假设
+    "只有一份队列文件"的遍历逻辑（队列 #315 决策点4）。"""
+    return [QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL]
 
 
 def has_bare_pipe(cell: str) -> bool:
