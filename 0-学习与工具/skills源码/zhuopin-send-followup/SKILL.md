@@ -79,7 +79,7 @@ description: 卓品智能AI转型项目·跟进信一句话发送器（v1.2）�
 用 `mcp__Windows-MCP__PowerShell` 执行（`timeout` 给到 180）：
 
 ```
-cd "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型"
+cd "C:\Dev\zhuopin-ai"
 $b="6-人才与组织\部门AI专员跟进"
 python "5-平台底座\wecom-aibot-service\scripts\push_followup_letter.py" `
   --readme "$b\README-跟进机制与命名约定.md" `
@@ -129,7 +129,7 @@ python "5-平台底座\wecom-aibot-service\scripts\push_followup_letter.py" `
 stdout 打印 `[OK] 推送成功` 只覆盖主收信人那一路。**读审计文件看全四条**：
 
 ```
-$p="C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\5-平台底座\wecom-aibot-service\reports\wecom_aibot_audit.jsonl"
+$p="C:\Dev\zhuopin-ai\5-平台底座\wecom-aibot-service\reports\wecom_aibot_audit.jsonl"
 Get-Content $p -Tail 10 | ForEach-Object { ($_|ConvertFrom-Json).action }
 ```
 

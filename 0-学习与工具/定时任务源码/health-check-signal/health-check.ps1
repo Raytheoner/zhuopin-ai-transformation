@@ -20,7 +20,17 @@
 #   ⑶ 检查项 [4] 反过来核这条信号链自身是否还在（钩子是否注册、
 #      计划任务电池闸/补跑是否被改回去）——守卫与信号互查，缺一即告警。
 
-$base = "C:\Users\Paul Shao"; $claude = "$base\.claude"; $projects = "$base\OneDrive\Projects"
+$base = "C:\Users\Paul Shao"; $claude = "$base\.claude"
+
+# $projectRoots = 「项目根的父目录」清单（它的每个子目录才是一个项目）。
+# 2026-08-28（OP-0828-F）由单值 $projects 改为多值：
+#   本仓库 zhuopin-ai 于 2026-08-26 由 $base\OneDrive\Projects\企业AI转型 迁至 C:\Dev\zhuopin-ai，
+#   而 OneDrive\Projects 下仍住着 claude-howto／supplychain／行业研报／SalesMarketing 等其余项目。
+#   ⇒ **不能简单把旧值换成 C:\Dev**——那会把本项目找回来、却把其余全部丢掉，
+#     且丢掉不产生任何信号（只是少列几行，然后照常写 Done）。这正是 08-26 迁移
+#     后本脚本已经踩上的坑：目标搬走了，而判据不知道目标搬走了。
+# 🔴 新增项目根父目录时，往这个数组里加一行即可；路径含空格，一律带引号。
+$projectRoots = @("$base\OneDrive\Projects", "C:\Dev")
 $statusPath = "$claude\health-check-status.json"
 $startedAt = Get-Date
 $findings = @()      # 需要人处理的发现（[!] 级）
@@ -33,9 +43,30 @@ $W="Yellow"; $OKC="Green"; $H="Cyan"
 try {
   Write-Host "`n===== Health Check $(Get-Date -Format 'yyyy-MM-dd HH:mm') =====`n" -ForegroundColor $H
 
+  # [0] Scan-root sanity（OP-0828-F 新增）——本脚本此前的失效形态是「扫描根搬走了、
+  #     它照常写 Done」。故先核每个根是否还在、其下是否真的数得到项目；
+  #     根不存在或根下零项目 ⇒ 记为 finding，而不是静默少列几行。
+  Write-Host "[0] Scan roots" -ForegroundColor $H
+  foreach ($pr in $projectRoots) {
+    if (-not (Test-Path -LiteralPath $pr)) {
+      Write-Host "  [!] scan root MISSING: $pr" -ForegroundColor $W
+      $findings += "[0] 扫描根不存在：$pr（是不是又搬家了？搬了就改 projectRoots）"
+      continue
+    }
+    $sub = @(Get-ChildItem -LiteralPath $pr -Directory -EA SilentlyContinue)
+    if ($sub.Count -eq 0) {
+      Write-Host "  [!] scan root EMPTY (0 project dirs): $pr" -ForegroundColor $W
+      $findings += "[0] 扫描根下零个项目目录：$pr"
+    } else {
+      Write-Host ("  [OK] {0}  ({1} project dirs)" -f $pr, $sub.Count) -ForegroundColor $OKC
+    }
+  }
+
   # [1] Duplicate skill names (user + project, excl cache/node_modules)
-  Write-Host "[1] Duplicate skills" -ForegroundColor $H
-  $roots = @("$claude\skills") + (Get-ChildItem $projects -Directory -EA SilentlyContinue | ForEach-Object { "$($_.FullName)\.claude\skills" })
+  Write-Host "`n[1] Duplicate skills" -ForegroundColor $H
+  $roots = @("$claude\skills") + ($projectRoots | Where-Object { Test-Path -LiteralPath $_ } |
+      ForEach-Object { Get-ChildItem -LiteralPath $_ -Directory -EA SilentlyContinue } |
+      ForEach-Object { "$($_.FullName)\.claude\skills" })
   $skills = foreach ($r in $roots) { if (Test-Path $r) {
       Get-ChildItem $r -Recurse -Filter SKILL.md -EA SilentlyContinue |
         Where-Object { $_.FullName -notmatch 'node_modules' } |
@@ -83,7 +114,8 @@ try {
   # 每多一个在办 worktree，同一处发现就被重复报一遍（2026-08-25 实测：2 个真实
   # 发现被 13 个 worktree 放大成 28 条）。重复告警等于没有告警，会把心跳横幅
   # 淹掉，属"信号被噪音吃掉"这一类失效，与本次要修的问题同族。
-  $cmds = Get-ChildItem $projects -Recurse -Filter CLAUDE.md -EA SilentlyContinue |
+  $cmds = $projectRoots | Where-Object { Test-Path -LiteralPath $_ } |
+    ForEach-Object { Get-ChildItem -LiteralPath $_ -Recurse -Filter CLAUDE.md -EA SilentlyContinue } |
     Where-Object { $_.FullName -notmatch 'node_modules' -and $_.FullName -notmatch '\\\.claude\\worktrees\\' }
   foreach ($f in $cmds) {
     $proj = Get-Content $f.FullName
@@ -92,11 +124,14 @@ try {
     $depth = ($cmds | Where-Object { $f.FullName -eq $_.FullName -or $f.FullName.StartsWith($_.Directory.FullName + '\') }).Count + 1
     $bad = ($ratio -ge 40 -or ($depth -ge 3 -and $ratio -ge 30))
     $mark = if ($bad) { "[!]" } else { "   " }
-    $rel = $f.FullName.Substring($projects.Length)
+    $rel = $f.FullName
+    foreach ($pr in $projectRoots) {
+      if ($rel.StartsWith($pr, [StringComparison]::OrdinalIgnoreCase)) { $rel = $rel.Substring($pr.Length); break } }
     if ($bad) { $findings += "[3] CLAUDE.md 叠加超阈 depth=$depth overlap=$ratio% $rel" }
     Write-Host ("  {0} depth={1} overlap={2,3}%  {3}" -f $mark, $depth, $ratio, $rel) -ForegroundColor $(if($bad){$W}else{$OKC})
   }
-  Write-Host "`n  Threshold: overlap>=40%, or depth>=3 AND overlap>=30% -> trim" -ForegroundColor DarkGray
+  Write-Host ("`n  Scanned {0} CLAUDE.md across {1} root(s)." -f @($cmds).Count, $projectRoots.Count) -ForegroundColor DarkGray
+  Write-Host "  Threshold: overlap>=40%, or depth>=3 AND overlap>=30% -> trim" -ForegroundColor DarkGray
 
   # [4] Self-signal integrity (队列 #398 ⑴) —— 守卫反过来核自己的信号链。
   #     没有这一项，本脚本修好之后仍然可能被"钩子被删/电池闸被改回去"
