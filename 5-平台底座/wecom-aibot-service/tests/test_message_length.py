@@ -47,15 +47,34 @@ def test_measure_counts_utf8_bytes_not_characters():
     assert len("中文") == 2
 
 
-def test_default_threshold_sits_between_the_two_measured_samples():
-    """🔴 阈值取值的两个硬边界，任何人调它都必须仍满足这两条。
+def test_default_threshold_is_the_measured_boundary_not_a_guess():
+    """🔴 阈值 ＝ 20,480 B，**实测钉死的边界**，不是估值也不是凑的整数。
 
-    - 必须 > 13,254（`质量部#8` 含 `【抄送】` 前缀的那一条，实测发得出去）
-      —— 否则今天正常的信会被无谓降级；
-    - 必须 < 24,597（`采购部#19` 正文，实测两次同一处失败）—— 否则守卫
-      形同虚设。
+    2026-08-28 二分实测（靶子全是 ShaoPeiShen 本人）：**20,480 B 发得出、
+    20,481 B 发不出**，服务端错误帧原文 `exceed max length 20480`。
+    判定用 `<=`，与服务端「> 20480 即拒」对齐。
+
+    ⚠️ 改这个数之前请重跑一次二分实测——**它现在是一个测量结果，不是一个
+    可以按感觉调的旋钮**。
     """
-    assert 13254 < DEFAULT_MARKDOWN_MAX_BYTES < 24597
+    assert DEFAULT_MARKDOWN_MAX_BYTES == 20480
+    # 两条历史样本仍必须落在正确的一侧（回归保护）：
+    assert 13254 <= DEFAULT_MARKDOWN_MAX_BYTES, "质量部#8 那种信不该被降级"
+    assert DEFAULT_MARKDOWN_MAX_BYTES < 24597, "采购部#19 那封必须被拦下"
+
+
+def test_boundary_is_counted_in_bytes_not_characters():
+    """按字节不按字符——由实测数据本身证死。
+
+    20,481 B 那条只有 **6,851 个字符**：若限额是「20,480 个字符」，它离限还差
+    三分之二、不可能被拒；它恰好在第 20,481 个**字节**上被拒。本用例把这个
+    区分钉在判据上——`measure()` 一旦改成数字符，下面两条立刻翻。
+    """
+    at_limit = "啊" * (DEFAULT_MARKDOWN_MAX_BYTES // 3)      # 6,826 字符 / 20,478 B
+    assert measure(at_limit) <= DEFAULT_MARKDOWN_MAX_BYTES
+    assert len(at_limit) < DEFAULT_MARKDOWN_MAX_BYTES // 2   # 字符数远小于字节上限
+    plan = plan_body(at_limit + "啊", cc_channels=[], attachment_names=["a.docx"])
+    assert plan.degraded is True, "多出的那个汉字使字节数越界，必须降级"
 
 
 def test_env_override_and_illegal_value_falls_back(monkeypatch):
