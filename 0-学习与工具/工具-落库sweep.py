@@ -749,6 +749,55 @@ EDITABLE_FORM_BROKEN = "断链"
 EDITABLE_FORM_UNREADABLE = "判据不可用"
 
 
+# ============================================================
+# 队列 §一 #422（2026-08-27，OP-0827-C）：未闭合产出扫描 —— **第 7 类**
+# 常驻状态告警
+# ============================================================
+# **接的是什么**：`0-学习与工具/工具-未闭合产出扫描.py`（`OP-0826-U` 建成、
+# 单测 30 项全绿）。它治的是 `#398` 第 ⑷ 处——「留步」登记只有产生方、没有
+# 承接方：没有任何机制会在条件满足时把它捞回来，也没有任何机制会在它躺得
+# 太久时出声。
+#
+# 🔴 **建成不等于生效，这一段就是那条界线。** `#422` 行内原话：在接上之前，
+# 它与「告警机制建成 9 天、每天在跑、一条没发出去、没人察觉」那个反面教材
+# （`#82`／`OP-0819-F`）**无法区分**。
+#
+# 🔴 **为什么载体是落库 sweep 每小时那一轮，不是值周巡检／拆件巡逻**
+# （`OP-0827-C` 要求「先比一次谁的节奏与三形态的产生节奏匹配」，结论如下）：
+#   ⑴ 形态 1／2／3 都是**随时产生**（任一 session 收工即可能新增一条），
+#      周级轮次最坏要压七天才看一眼；
+#   ⑵ **回 LAN 的 off→on 翻转是本机网络事件**，只有小时级轮询抓得住——
+#      而值周巡检与拆件巡逻是 Claude 定时会话，按其章程〇bis「定时触发的
+#      班次恒为非交互（无本机 PowerShell、无出网 shell）」**跑不了 LAN
+#      探针**，接在那里等于把本工具最独特的那半条判据直接关掉；
+#   ⑶ sweep 这一轮已有企微 webhook 与「出现→告警／消失→解除」骨架
+#      （`_track_and_alert_standing_state`），第 4／5／6 类同形复用，
+#      本类不新造通道。
+#
+# ⚠️ **本载体自带一个洞，如实记在这里、不假装没有**：sweep 自己停摆时，
+# 本判据一起哑（2026-08-26 21:17→08-27 07:xx 就真停过 10 小时）。这与
+# `#398` ⑴ 判过的「再建一个后台守卫只是把失效模式往外挪一层」是同一个洞，
+# **治它的是那条 SessionStart 会话横幅钩子**（`0-学习与工具/定时任务源码/
+# health-check-signal/`，因 `protected-paths.json` 受控、仍待 Shao Peishen
+# 人工安装）。**本次刻意不顺手替它做**——那是 `#398` ⑴ 的留步 1，不是本行
+# 范围，替它做等于把一个已登记的留步项悄悄换个地方藏起来。
+UNCLOSED_SCAN_SCRIPT_REL = "0-学习与工具/工具-未闭合产出扫描.py"
+UNCLOSED_OUTPUT_STATE_REL = "reports/sweep-unclosed-output-state.json"
+# 每轮覆盖写一份全文报告。**它是本类的承接载体**——在此之前首跑结果只能
+# 靠一份手写的 `.md` 承接（`未闭合产出扫描-首跑结果-2026-08-27.md`），
+# 而那份件自己写着「本件是快照，会过时」。
+UNCLOSED_REPORT_REL = "reports/unclosed-output-scan.md"
+UNCLOSED_OUTPUT_ALERT_INTERVAL_HOURS = 24
+# 企微 markdown 正文上限 4096 字节，而本类首轮存量就有 20 项（9＋7＋4）。
+# 超过这个数只列前 N 条并显式打出「另有 M 条未列出」——🔴 **绝不静默截断**：
+# 一条说自己完整、其实只说了一半的告警，比不发更坏（同 `#398` 族）。
+UNCLOSED_OUTPUT_ALERT_MAX_ITEMS = 10
+# 判据不可用的 key 前缀。**一形态一个 key，不按对象拆**——扫描器把不可用
+# 原因按形态汇成一句话返回（不是列表），拆回去要靠解析那句中文，那是给
+# 判据自己埋一个会静默错位的解析器。
+UNCLOSED_UNAVAILABLE_KEY_PREFIX = "unavail:"
+
+
 # 队列 #302：批量派活前状态核对——近期 commit 扫描窗口默认天数。
 STALE_ROW_LOOKBACK_DAYS = 14
 # 副判据在高频改动的文件（如本脚本自身）上天然命中大量 commit——真实
@@ -3712,6 +3761,221 @@ def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str],
     log.append(f"✓ 批次 {batch_id} 已本地提交（{sha}），等待本轮末尾统一对齐并推送。")
 
 
+def _load_unclosed_scan(repo_root: Path):
+    """动态导入 `工具-未闭合产出扫描.py`（文件名含中文与连字符，不是合法
+    Python 标识符，只能走 `spec_from_file_location`；同 `_load_progress_lint`）。
+
+    返回 `(module, None)` 或 `(None, 失败原因)`——**失败一律显式返回原因，
+    绝不吞成「没有未闭合产出」**。这条不是洁癖：本判据零命中是它上线后的
+    常态外观，若导入失败也长得像零命中，那它从第一天起就与「建成 9 天、
+    一条没发出去」那个反面教材无法区分。
+
+    🔴 **走进程内 import，不走子进程**：扫描器输出是大段中文，Windows 上
+    捕获子进程 stdout 正是 §四 `#126` 那个 `UnicodeDecodeError` 的入口
+    （`_run_git` 无 `errors=` 兜底，一个非 UTF-8 字节即抛）。进程内调用
+    不经过任何编解码环节，顺带绕开那一族问题。
+    """
+    script = repo_root / UNCLOSED_SCAN_SCRIPT_REL
+    if not script.is_file():
+        return None, f"未找到 {UNCLOSED_SCAN_SCRIPT_REL}"
+    module_name = "_sweep_unclosed_scan"
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(module_name, script)
+        if spec is None or spec.loader is None:
+            return None, "spec_from_file_location 返回空"
+        module = importlib.util.module_from_spec(spec)
+        # 先注册再 exec，理由与 `_load_progress_lint` 同（dataclass 会去
+        # `sys.modules` 取自己的模块字典，那一句没有空值保护）。
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(module_name, None)
+            raise
+    except Exception as exc:  # noqa: BLE001 —— 导入失败不应影响本轮退出码
+        return None, f"导入失败：{type(exc).__name__}: {exc}"
+    return module, None
+
+
+def _render_unclosed_alert(details: dict, keys) -> str:
+    # 判据不可用排在最前：它比「发现了 N 条」更严重——前者是「守卫自己
+    # 瞎了」，后者是「守卫看见了东西」（同扫描器 `--enforce` 退出码 2 与 1
+    # 刻意不合并成同一个码的那条理由）。
+    ordered = sorted(keys, key=lambda k: (not k.startswith(UNCLOSED_UNAVAILABLE_KEY_PREFIX), k))
+    shown = ordered[:UNCLOSED_OUTPUT_ALERT_MAX_ITEMS]
+    lines = "\n".join(f"- `{key}`：{details.get(key, '（详情未取到）')}" for key in shown)
+    tail = ""
+    if len(ordered) > len(shown):
+        tail = (f"\n- …另有 {len(ordered) - len(shown)} 条未列出"
+                "（**不是没有，是这条消息装不下**）")
+    return (
+        f"🧷 落库sweep：{len(ordered)} 项未闭合产出——做了一半、剩下半步"
+        f"**没有承接方**：\n{lines}{tail}\n"
+        "⇒ 处置：形态 1 回 LAN 后按队列行内已写死的补法执行并回写销号；"
+        "形态 2 先验一眼再 ff 合入 master；形态 3 先跑回归、绿则 commit"
+        "（🔴 一次 `git worktree remove` 就会让它永久消失）。\n"
+        f"⇒ 本轮全文见 `{UNCLOSED_REPORT_REL}`；重跑（只读）："
+        f"`python {UNCLOSED_SCAN_SCRIPT_REL}`"
+    )
+
+
+def _render_unclosed_resolved(keys) -> str:
+    ordered = sorted(keys)
+    shown = ordered[:UNCLOSED_OUTPUT_ALERT_MAX_ITEMS]
+    lines = "\n".join(f"- `{key}`" for key in shown)
+    tail = (f"\n- …另有 {len(ordered) - len(shown)} 条未列出"
+            if len(ordered) > len(shown) else "")
+    return (f"✅ 落库sweep：{len(ordered)} 项此前告警过的未闭合产出已闭合"
+            f"（已补做／已合入／已 commit）：\n{lines}{tail}")
+
+
+def _announce_lan_flip(repo_root: Path, findings: dict, log: list[str]) -> bool:
+    """回 LAN 的 `off→on` 翻转提醒。返回**本轮扫描器状态是否可以落盘**。
+
+    🔴 **翻转是事件，不是常驻状态**，故这里刻意**不走
+    `_track_and_alert_standing_state`**——那套的语义是「只要它还在就周期性
+    重报」，而翻转只发生一次，重报无从谈起、错过则永久消失。
+
+    🔴 **推送失败就返回 False、本轮不落状态**：下一轮 `previous` 仍是 off，
+    会重新算出同一次翻转并重试。若照常落盘，这次翻转就此消失，而现场只留
+    下一行「推送失败」——那正是本工具要治的那种「出了事但不产生信号」。
+    """
+    if findings["lan_flip"]["flip"] != "off→on":
+        return True
+    stalled = findings["form1"]["items"]
+    if not stalled:
+        # 翻转是真的，但没有任何 LAN 留步项在等它 ⇒ 没有行动含义，不发。
+        log.append("    · 本轮由 off 翻到 on，但当前零条 LAN 留步登记，不发提醒。")
+        return True
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append(f"    ⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，回 LAN 翻转提醒未推送——"
+                   "**本轮不落状态，下一轮重试**（翻转错过就没有第二次）。")
+        return False
+    ranked = sorted(stalled, key=lambda i: -(i["age_days"] or 0))[:UNCLOSED_OUTPUT_ALERT_MAX_ITEMS]
+    lines = "\n".join(
+        f"- §{item['section']} #{item['row_id']}（{item['queue'].split('/')[-1]}）"
+        f"｜{item['bucket']}" for item in ranked)
+    more = len(stalled) - len(ranked)
+    tail = f"\n- …另有 {more} 条未列出" if more > 0 else ""
+    try:
+        _send_wecom_markdown(
+            webhook_url,
+            f"🔔 落库sweep：本机**刚回到内网**（off→on，三项探针齐备），"
+            f"下列 {len(stalled)} 条 LAN 留步现在可以补做了：\n{lines}{tail}\n"
+            f"⇒ 补法写在各自队列行内；做完回写该行并销号。全文见 `{UNCLOSED_REPORT_REL}`。",
+        )
+        log.append("    ✓ 回 LAN 翻转提醒已推送。")
+        return True
+    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
+        log.append(f"    ⚠ 回 LAN 翻转提醒推送失败：{exc}——"
+                   "**本轮不落状态，下一轮重试**。")
+        return False
+
+
+def _unclosed_details(findings: dict) -> dict:
+    """把扫描器的三形态命中与「判据不可用」摊成 `{key: 一句话详情}`。
+
+    🔴 **详情里可以有数字，key 里不能有**（扫描器判据 ⑶）：key 全部取自
+    扫描器自己算的稳定 key（`form1:<文件>#<章><行号>` / `form2:<分支>` /
+    `form3:<worktree 名>`），行数、提交数、天数一律只进详情。
+    """
+    details: dict = {}
+    for item in findings["form1"]["items"]:
+        age = f"{item['age_days']} 天" if item["age_days"] is not None else "登记日未知"
+        details[item["key"]] = (f"形态 1 · LAN 留步｜§{item['section']} #{item['row_id']}"
+                                f"（{item['queue'].split('/')[-1]}）｜{item['bucket']}／{age}")
+    for item in findings["form2"]["items"]:
+        where = f"worktree `{item['worktree']}`" if item["worktree"] else "无 worktree"
+        head = "🔴 本地 master 已分叉｜" if item.get("is_local_master") and item.get("forked") else ""
+        details[item["key"]] = (f"形态 2 · 代码卡在未合入分支｜{head}"
+                                f"{item['unmerged']} 个真·未上游提交｜{where}")
+    for item in findings["form3"]["items"]:
+        tag = "（主工作区，救法＝人工 commit）" if item.get("is_main") else ""
+        details[item["key"]] = (f"形态 3 · 只是未 commit 的改动{tag}｜"
+                                f"{item['tracked_changes']} 个已跟踪＋{item['untracked']} 个未跟踪、"
+                                f"{item['insertions']} 行新增")
+    # 一形态一个 key（见常量段），详情带上原因全文。
+    for form, label in (("form1", "形态 1"), ("form2", "形态 2"), ("form3", "形态 3")):
+        reason = findings[form]["unavailable"]
+        if reason:
+            details[f"{UNCLOSED_UNAVAILABLE_KEY_PREFIX}{form}"] = (
+                f"🔴 {label} 判据不可用（**不据此判为干净**）：{reason}")
+    return details
+
+
+def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
+    """第 7 类常驻状态告警：未闭合产出（队列 §一 `#422`）。
+
+    🔴 **回显不是可选项**（同第 4／第 6 类）：无论有无命中都打三形态计数与
+    回 LAN 态。这几行是它每天唯一的存在证明——`#422` 行内那句「在接上之前，
+    它与『建成 9 天、一条没发出去、没人察觉』无法区分」，接上之后靠的就是
+    这里。
+    """
+    log.append("🧷 未闭合产出巡检（每轮回显，零命中时亦不省略）：")
+
+    def _alert(details: dict) -> None:
+        _track_and_alert_standing_state(
+            repo_root, "未闭合产出", UNCLOSED_OUTPUT_STATE_REL,
+            set(details), UNCLOSED_OUTPUT_ALERT_INTERVAL_HOURS,
+            lambda keys: _render_unclosed_alert(details, keys),
+            _render_unclosed_resolved, log,
+        )
+
+    module, reason = _load_unclosed_scan(repo_root)
+    if module is None:
+        log.append(f"    ⚠ 扫描器不可用：{reason}——**不据此判为干净**")
+        _alert({f"{UNCLOSED_UNAVAILABLE_KEY_PREFIX}scanner": f"扫描器本身起不来 —— {reason}"})
+        return
+
+    try:
+        findings = module.scan(repo_root, lan=True,
+                               state_path=repo_root / module.STATE_REL)
+    except Exception as exc:  # noqa: BLE001 —— 扫描失败不应影响本轮退出码
+        # 🔴 接住但**不吞**：整个扫描崩掉与「没有未闭合产出」外观完全相同，
+        # 故必须升格成一条告警（§四 `#126` 那条被后续日志顶走、没人发现的
+        # traceback 就是反面实例）。
+        log.append(f"    ⚠ 扫描过程异常：{type(exc).__name__}: {exc}——**不据此判为干净**")
+        _alert({f"{UNCLOSED_UNAVAILABLE_KEY_PREFIX}scan":
+                f"扫描过程抛异常 —— {type(exc).__name__}: {exc}"})
+        return
+
+    lan = findings["lan"]
+    lan_text = ("✅ on-LAN（三项齐备）" if lan and lan["on_lan"]
+                else "⛔ off-LAN（三项未齐）" if lan else "未探测")
+    log.append(
+        f"    · 形态 1（LAN 留步登记）{len(findings['form1']['items'])} 处"
+        f"／形态 2（卡在未合入分支）{len(findings['form2']['items'])} 条"
+        f"／形态 3（只是未 commit）{len(findings['form3']['items'])} 处"
+        f"｜回 LAN 感知：{lan_text}"
+    )
+    for form, label in (("form1", "形态 1"), ("form2", "形态 2"), ("form3", "形态 3")):
+        if findings[form]["unavailable"]:
+            log.append(f"    🔴 {label} 判据不可用（**不据此判为干净**）："
+                       f"{findings[form]['unavailable']}")
+
+    # 全文落一份定长文件（每轮覆盖）。**不逐行灌进 sweep 日志**：那是四十
+    # 行乘每小时一轮，会把日志里别的东西顶走——而「有用的东西被自己的输出
+    # 淹掉」正是 §四 `#126` 记的那个形态。
+    report_path = repo_root / UNCLOSED_REPORT_REL
+    try:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(module.format_report(findings) + "\n", encoding="utf-8")
+        log.append(f"    · 本轮全文已写 `{UNCLOSED_REPORT_REL}`")
+    except OSError as exc:
+        log.append(f"    ⚠ 全文写入 `{UNCLOSED_REPORT_REL}` 失败：{exc}（不影响告警）")
+
+    may_persist = _announce_lan_flip(repo_root, findings, log)
+    _alert(_unclosed_details(findings))
+
+    if may_persist:
+        try:
+            module.write_state(findings, repo_root / module.STATE_REL)
+        except OSError as exc:
+            log.append(f"    ⚠ 扫描器状态落盘失败：{exc}——下一轮会把同批命中当成新命中")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="只打印计划动作，不 add/commit/push/改队列")
@@ -3962,6 +4226,13 @@ def main() -> int:
             # 是否有批次落库无关，故不依赖 touched_paths；**只读、只告警，
             # 一个字节都不改任何安装**，首月不阻塞落库（不影响退出码）。
             _check_editable_install_targets(repo_root, log)
+
+            # 队列 §一 #422（2026-08-27，OP-0827-C）：第 7 类常驻状态
+            # 告警——未闭合产出（LAN 留步／卡在未合入分支／只是未 commit）。
+            # 同上三类，检测对象是仓库/本机整体状态，**与本轮是否有批次
+            # 落库无关**，故不依赖 touched_paths；**只读、只告警，一个
+            # 字节都不动任何分支与 worktree**，不影响本轮退出码。
+            _check_unclosed_outputs(repo_root, log)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))

@@ -29,6 +29,7 @@ from __future__ import annotations
 import ast
 import collections
 import importlib.util
+import inspect
 import json
 import os
 import re
@@ -98,6 +99,39 @@ def _run_sweep(work: Path, *extra: str) -> subprocess.CompletedProcess:
     )
 
 
+# 队列 §一 #422：第 7 类常驻告警（未闭合产出）会在每轮真跑里 import
+# `工具-未闭合产出扫描.py`。**夹具必须还原它**——否则每个 CLI 级用例的
+# 临时仓库里都缺这个文件，判据如实报「不可用」并推一条告警，把那些断言
+# 「本轮不该有 webhook 噪声」的用例全部染红。同 `**/reports/` 那条：
+# 夹具还原真实布局，才测得出真实行为。
+# 🔴 桩里**不跑 LAN 探针**：真探针要发 ping 与两次 HTTP，放进每个用例
+# 既慢又让单测依赖公司内网——那会把「测试绿」变成「今天在公司」。
+STUB_UNCLOSED_SCAN_SCRIPT = '''"""测试桩：未闭合产出扫描器（恒零命中、零网络）。"""
+STATE_REL = "reports/unclosed-output-state.json"
+
+
+def _empty():
+    return {"items": [], "unavailable": None}
+
+
+def scan(repo_root, *, lan=True, wide=False, state_path=None, today=None):
+    form1 = _empty()
+    form1.update({"excluded_section_two": 0, "wide_items": []})
+    return {"base_ref": "origin/master", "today": "2026-01-01", "form1": form1,
+            "form2": _empty(), "form3": _empty(), "lan": None,
+            "lan_flip": {"flip": None, "previous": None, "since": None},
+            "resolved": [], "state_path": str(state_path or ""), "unavailable": []}
+
+
+def format_report(findings):
+    return "# 测试桩：零命中"
+
+
+def write_state(findings, state_path):
+    pass
+'''
+
+
 class SweepTestBase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -138,6 +172,8 @@ class SweepTestBase(unittest.TestCase):
         shutil.copy(EDIT_LOCK_SOURCE, self.work / "0-学习与工具" / "工具-共享文档编辑锁.py")
         (self.work / "0-学习与工具" / "工具-文档台账生成.py").write_text(
             STUB_LEDGER_SCRIPT, encoding="utf-8")
+        (self.work / sweep.UNCLOSED_SCAN_SCRIPT_REL).write_text(
+            STUB_UNCLOSED_SCAN_SCRIPT, encoding="utf-8")
         (self.work / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
 
     def tearDown(self):
@@ -4486,6 +4522,302 @@ class EditableGuardWiringTests(unittest.TestCase):
         # 正面：确实走的是纯文本解析这条路。
         self.assertIn("ast.parse", called)
         self.assertIn("ast.literal_eval", called)
+
+
+class _FakeScanner:
+    """替身扫描器：只实现 `_check_unclosed_outputs` 真正依赖的那四个名字。
+
+    🔴 用替身而不是真扫描器，是因为本组要锁的是**接线这一层**——「扫到了
+    什么」由扫描器自己的 30 项单测负责，「扫到之后有没有真的发出去」只有
+    这里管。两层分开测，是为了让「接线断了」这件事有独立的失败信号。
+    """
+
+    STATE_REL = "reports/unclosed-output-state.json"
+
+    def __init__(self, findings, raises=None):
+        self._findings = findings
+        self._raises = raises
+        self.state_writes = []
+        self.reports = 0
+
+    def scan(self, repo_root, lan=True, state_path=None):
+        if self._raises is not None:
+            raise self._raises
+        return self._findings
+
+    def format_report(self, findings):
+        self.reports += 1
+        return "# 全文报告（替身）"
+
+    def write_state(self, findings, state_path):
+        self.state_writes.append(Path(state_path))
+
+
+def _f1(row_id, *, section="一", queue="队列-机制环境.md", age=5, bucket="3–6 天"):
+    return {"key": f"form1:{queue}#{section}{row_id}", "section": section, "row_id": row_id,
+            "queue": f"1-转型规划/0-全景路线图/{queue}", "age_days": age, "bucket": bucket,
+            "excerpt": "…"}
+
+
+def _f2(branch, *, unmerged=1, worktree=None, is_local_master=False, forked=False):
+    return {"key": f"form2:{branch}", "branch": branch, "unmerged": unmerged,
+            "worktree": worktree, "is_local_master": is_local_master, "forked": forked,
+            "behind": 3, "patch_equivalent": 0, "subjects": ["abc1234 feat: x"]}
+
+
+def _f3(name, *, tracked=1, untracked=0, insertions=10, is_main=False):
+    return {"key": f"form3:{name}", "worktree": f"C:/wt/{name}", "branch": "b",
+            "is_main": is_main, "tracked_changes": tracked, "untracked": untracked,
+            "insertions": insertions, "files": ["a.py"]}
+
+
+def _findings(*, form1=(), form2=(), form3=(), lan_on=True, flip=None,
+              unavailable=None, resolved=()):
+    unavailable = unavailable or {}
+    return {
+        "base_ref": "origin/master", "today": "2026-08-27",
+        "form1": {"items": list(form1), "excluded_section_two": 0,
+                  "unavailable": unavailable.get("form1"), "wide_items": []},
+        "form2": {"items": list(form2), "unavailable": unavailable.get("form2")},
+        "form3": {"items": list(form3), "unavailable": unavailable.get("form3")},
+        "lan": None if lan_on is None else {"on_lan": lan_on, "probes": []},
+        "lan_flip": {"flip": flip, "previous": None, "since": None},
+        "resolved": list(resolved), "state_path": "reports/unclosed-output-state.json",
+        "unavailable": [v for v in unavailable.values() if v],
+    }
+
+
+class UnclosedOutputGuardTests(unittest.TestCase):
+    """队列 §一 #422：未闭合产出扫描器**接线**（第 7 类常驻告警）。
+
+    🔴 本组的立意与 `EditableInstallTargetTests` 不同：那组测「判据对不对」，
+    本组测「判据到底有没有被调用、结果有没有真的走出去」。#422 行内原话——
+    在接上之前，扫描器「与『告警机制建成 9 天、每天在跑、一条没发出去、
+    没人察觉』那个反面教材无法区分」。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name) / "repo"
+        (self.repo / "reports").mkdir(parents=True)
+        self.recorder = _StandingStateRecorder()
+        self.sent = []
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_webhook = sweep._load_webhook_url
+        self._orig_send = sweep._send_wecom_markdown
+        self._orig_loader = sweep._load_unclosed_scan
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
+        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._load_webhook_url = self._orig_webhook
+        sweep._send_wecom_markdown = self._orig_send
+        sweep._load_unclosed_scan = self._orig_loader
+        self._tmp.cleanup()
+
+    def _run(self, scanner):
+        sweep._load_unclosed_scan = lambda repo_root: (scanner, None)
+        log = []
+        sweep._check_unclosed_outputs(self.repo, log)
+        return "\n".join(log), self.recorder.calls[-1]
+
+    # ---------- 接线本身 ----------
+
+    def test_已接入主流程(self):
+        """建成而没接线，与没建成外观完全相同——这一条就是 #422 的全部。"""
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("_check_unclosed_outputs(repo_root, log)", source)
+
+    def test_真实扫描器可被本函数导入且四个名字齐全(self):
+        """🔴 锁的是**接口契约**，不是行为：扫描器被改名／`scan` 换签名／
+        `STATE_REL` 被删，都会让接线在生产上静默退化成「判据不可用」。
+        这一条在改名的那一刻就红，而不是等到某天有人问「它怎么从来不响」。
+        """
+        repo_root = SCRIPT.parent.parent
+        module, reason = sweep._load_unclosed_scan(repo_root)
+        self.assertIsNone(reason, f"真实扫描器导入失败：{reason}")
+        for name in ("scan", "format_report", "write_state", "STATE_REL"):
+            self.assertTrue(hasattr(module, name), f"扫描器缺少 `{name}`")
+        params = inspect.signature(module.scan).parameters
+        self.assertIn("lan", params)
+        self.assertIn("state_path", params)
+
+    # ---------- 回显（存在证明） ----------
+
+    def test_零命中时仍逐项回显三形态计数与LAN态(self):
+        """🔴 本组最要紧的一条：零命中是本判据的常态外观。若零命中时连回显
+        都没有，它与「建成 9 天、从来没发过一条消息」在日志上无法区分。"""
+        scanner = _FakeScanner(_findings())
+        text, call = self._run(scanner)
+        self.assertEqual(call["keys"], set())
+        self.assertIn("形态 1（LAN 留步登记）0 处", text)
+        self.assertIn("形态 2（卡在未合入分支）0 条", text)
+        self.assertIn("形态 3（只是未 commit）0 处", text)
+        self.assertIn("on-LAN", text)
+
+    def test_全文每轮落一份定长文件(self):
+        scanner = _FakeScanner(_findings(form1=[_f1("334")]))
+        text, _ = self._run(scanner)
+        self.assertEqual(scanner.reports, 1)
+        self.assertIn(sweep.UNCLOSED_REPORT_REL, text)
+        self.assertTrue((self.repo / sweep.UNCLOSED_REPORT_REL).is_file())
+
+    # ---------- key 构成 ----------
+
+    def test_三形态命中各成一个key(self):
+        scanner = _FakeScanner(_findings(
+            form1=[_f1("334")], form2=[_f2("claude/x")], form3=[_f3("wt-a")]))
+        _, call = self._run(scanner)
+        self.assertEqual(call["keys"], {
+            "form1:队列-机制环境.md#一334", "form2:claude/x", "form3:wt-a"})
+
+    def test_key不随行数天数提交数变化(self):
+        """判据 ⑶：会变的数进了 key，常驻状态就退化成事件——每变一次都是
+        新问题重报一遍，旧 key 还会被判成「已解除」。"""
+        first = _FakeScanner(_findings(
+            form1=[_f1("334", age=5)], form2=[_f2("claude/x", unmerged=1)],
+            form3=[_f3("wt-a", insertions=10)]))
+        keys_first = self._run(first)[1]["keys"]
+        second = _FakeScanner(_findings(
+            form1=[_f1("334", age=99)], form2=[_f2("claude/x", unmerged=7)],
+            form3=[_f3("wt-a", insertions=9999)]))
+        keys_second = self._run(second)[1]["keys"]
+        self.assertEqual(keys_first, keys_second)
+
+    # ---------- 判据不可用：绝不吞成干净 ----------
+
+    def test_扫描器不存在时报判据不可用而非干净(self):
+        """真跑 `_load_unclosed_scan`（不打桩）：文件不在，必须变成一条
+        告警，而不是一个看起来很正常的零命中。"""
+        sweep._load_unclosed_scan = self._orig_loader
+        log = []
+        sweep._check_unclosed_outputs(self.repo, log)
+        text = "\n".join(log)
+        call = self.recorder.calls[-1]
+        self.assertEqual(call["keys"], {"unavail:scanner"})
+        self.assertIn("不据此判为干净", text)
+
+    def test_扫描过程抛异常不得吞成干净(self):
+        scanner = _FakeScanner(None, raises=RuntimeError("git 炸了"))
+        text, call = self._run(scanner)
+        self.assertEqual(call["keys"], {"unavail:scan"})
+        self.assertIn("不据此判为干净", text)
+        self.assertIn("git 炸了", call["alert_text"])
+
+    def test_单形态判据不可用与该形态的命中并存(self):
+        """形态 3 有 12 个 worktree 读不到 ≠ 形态 3 干净，也 ≠ 另外两形态
+        的命中作废——三者必须同时出现在同一轮里。"""
+        scanner = _FakeScanner(_findings(
+            form1=[_f1("334")], form3=[_f3("wt-a")],
+            unavailable={"form3": "`C:/wt/gone` 的 `git status` 失败"}))
+        text, call = self._run(scanner)
+        self.assertIn("unavail:form3", call["keys"])
+        self.assertIn("form3:wt-a", call["keys"])
+        self.assertIn("form1:队列-机制环境.md#一334", call["keys"])
+        self.assertIn("判据不可用", text)
+
+    def test_判据不可用排在告警正文最前(self):
+        """守卫自己瞎了，比守卫看见了东西更严重——同扫描器 `--enforce`
+        把退出码 2 与 1 刻意分开的那条理由。"""
+        scanner = _FakeScanner(_findings(
+            form1=[_f1("334")], unavailable={"form1": "队列文件读不到"}))
+        _, call = self._run(scanner)
+        body = call["alert_text"]
+        self.assertLess(body.index("unavail:form1"), body.index("form1:队列-机制环境.md#一334"))
+
+    # ---------- 告警正文 ----------
+
+    def test_超上限时显式说明另有N条未列出(self):
+        """🔴 绝不静默截断：一条说自己完整、其实只说了一半的告警，比不发
+        更坏。"""
+        many = [_f1(str(300 + i)) for i in range(sweep.UNCLOSED_OUTPUT_ALERT_MAX_ITEMS + 4)]
+        scanner = _FakeScanner(_findings(form1=many))
+        _, call = self._run(scanner)
+        self.assertIn("另有 4 条未列出", call["alert_text"])
+        self.assertIn(f"{len(many)} 项未闭合产出", call["alert_text"])
+
+    def test_告警正文含三形态各自的处置与重跑命令(self):
+        scanner = _FakeScanner(_findings(form3=[_f3("wt-a")]))
+        _, call = self._run(scanner)
+        body = call["alert_text"]
+        self.assertIn("worktree remove", body)
+        self.assertIn(sweep.UNCLOSED_SCAN_SCRIPT_REL, body)
+
+    def test_解除文案说清是被什么关掉的(self):
+        text = sweep._render_unclosed_resolved({"form3:wt-a"})
+        self.assertIn("已补做／已合入／已 commit", text)
+        self.assertIn("form3:wt-a", text)
+
+    # ---------- 回 LAN 翻转：事件，不是常驻状态 ----------
+
+    def test_off到on且有留步项才推送翻转提醒(self):
+        scanner = _FakeScanner(_findings(form1=[_f1("334")], flip="off→on"))
+        self._run(scanner)
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("刚回到内网", self.sent[0])
+        self.assertIn("#334", self.sent[0])
+
+    def test_无翻转不推送(self):
+        scanner = _FakeScanner(_findings(form1=[_f1("334")], flip=None))
+        self._run(scanner)
+        self.assertEqual(self.sent, [])
+
+    def test_on到off不推送(self):
+        scanner = _FakeScanner(_findings(form1=[_f1("334")], flip="on→off", lan_on=False))
+        self._run(scanner)
+        self.assertEqual(self.sent, [])
+
+    def test_翻转但零留步项时不推送且照常落状态(self):
+        """翻转是真的，但没有任何东西在等它 ⇒ 发出去只是噪音。"""
+        scanner = _FakeScanner(_findings(flip="off→on"))
+        text, _ = self._run(scanner)
+        self.assertEqual(self.sent, [])
+        self.assertEqual(len(scanner.state_writes), 1)
+        self.assertIn("零条 LAN 留步登记", text)
+
+    def test_翻转推送失败则本轮不落状态_下一轮重试(self):
+        """🔴 本组第二要紧的一条。翻转只发生一次，错过没有第二次；若推送
+        失败还照常落盘，这次翻转就永久消失，现场只留一行「推送失败」——
+        那正是本工具要治的那种「出了事但不产生信号」。"""
+        def boom(url, text):
+            raise RuntimeError("网络不通")
+        sweep._send_wecom_markdown = boom
+        scanner = _FakeScanner(_findings(form1=[_f1("334")], flip="off→on"))
+        text, _ = self._run(scanner)
+        self.assertEqual(scanner.state_writes, [])
+        self.assertIn("下一轮重试", text)
+
+    def test_无webhook时同样不落状态(self):
+        sweep._load_webhook_url = lambda repo_root: None
+        scanner = _FakeScanner(_findings(form1=[_f1("334")], flip="off→on"))
+        text, _ = self._run(scanner)
+        self.assertEqual(scanner.state_writes, [])
+        self.assertIn("下一轮重试", text)
+
+    def test_正常轮次落一次状态(self):
+        scanner = _FakeScanner(_findings(form1=[_f1("334")]))
+        self._run(scanner)
+        self.assertEqual(len(scanner.state_writes), 1)
+
+    # ---------- 只读红线 ----------
+
+    def test_本组函数不动任何分支与worktree(self):
+        """本类只读、只告警。锁的是**执行构件**：本组代码内不得起子进程
+        （那是 git／pip 真动手的唯一入口）。"""
+        source = SCRIPT.read_text(encoding="utf-8")
+        body = source[source.index("def _load_unclosed_scan"):
+                      source.index("def main() -> int:")]
+        tree = ast.parse(body)
+        called = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                called.add(ast.unparse(node.func))
+        for name in sorted(called):
+            self.assertFalse(
+                name.startswith("subprocess."),
+                f"第 7 类判据必须只读，却调用了 {name}")
 
 
 if __name__ == "__main__":
