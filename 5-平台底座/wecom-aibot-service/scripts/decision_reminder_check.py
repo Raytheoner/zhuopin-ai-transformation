@@ -35,12 +35,24 @@ patrol\\SKILL.md`），本脚本无法从仓库内触达，需 Cowork 侧改动�
 用法：
   python scripts/decision_reminder_check.py
   python scripts/decision_reminder_check.py --dry-run   # 只打印将发送的内容，不实际发送/不落状态文件
+  python scripts/decision_reminder_check.py --ack-item '§四#47' --note '…'   # 确认某项已闭环
+  python scripts/decision_reminder_check.py --list-acks                       # 看现有确认
+
+**`--ack-item`（`OP-0828-B`，判据关不掉的修法）**——判据只读截止列，而队列行守
+「历史记录不追改」⇒ 一行处置完了仍会被永远报下去（实测 `§四 #47` 已写
+「本行处置完毕」、截止列 `**已收口 2026-08-03**`，仍每轮命中）。本参数记一条
+带**判定依据**与**内容指纹**的确认，指纹只盖判据格（§四＝截止列／§一＝状态列），
+**该格一被改写即自动失效、恢复告警**——它不是永久白名单。详见
+`aibot_service.decision_reminder` 模块 docstring。**它仍要人跑一条命令，
+不是"机制守"，不夸大。**
 
 环境变量（同 `push_followup_letter.py`/`alert_webhook.py` 既有约定）：
   WECOM_AIBOT_QUEUE_PATH   可选，仓库根解析锚点，默认 <本 checkout 根>/
                            1-转型规划/0-全景路线图/跨桌任务队列.md
   WECOM_AIBOT_REPO_ROOT    可选，显式指定仓库根，绕开动态 git 解析
   WECOM_AIBOT_AUDIT_PATH   可选，直接指定审计文件路径
+  WECOM_AIBOT_DECISION_ACK_PATH  可选，指纹确认文件路径（默认服务目录下
+                           `reports/decision_reminder_ack.json`；便于只读验证时另指）
   WECOM_WEBHOOK_URL        可选，主通道（智能机器人私信）失败时的兜底群 webhook
 """
 from __future__ import annotations
@@ -77,9 +89,15 @@ from zhuopin_platform.shared_tools.secrets import EnvSecretsProvider  # noqa: E4
 from aibot_service.connection import BOTID_KEY, SECRET_KEY  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.decision_reminder import (  # noqa: E402
+    ACK_COMMAND_HINT,
+    DEFAULT_ACK_REL,
     DEFAULT_STATE_REL,
-    evaluate_candidates,
+    ackable_state,
+    evaluate,
     format_digest_message,
+    load_acks,
+    record_ack,
+    save_acks,
     send_decision_reminder,
 )
 from aibot_service.decision_reminder import load_state as load_decision_state  # noqa: E402
@@ -110,6 +128,93 @@ from aibot_service.repo_paths import (  # noqa: E402
 )
 
 QUEUE_REL = DEFAULT_QUEUE_RELATIVE_PATH
+
+
+def _resolve_ack_path(resolved_repo_root: Path) -> Path:
+    """指纹确认文件位置（`OP-0828-B`）。环境变量可覆盖，便于只读验证时另指。"""
+    override = os.environ.get("WECOM_AIBOT_DECISION_ACK_PATH")
+    if override:
+        return Path(override)
+    return resolved_repo_root / "5-平台底座" / "wecom-aibot-service" / DEFAULT_ACK_REL
+
+
+def _resolve_paths() -> tuple[Path, Path]:
+    """(仓库根, 队列文件)——`--ack-item`/`--list-acks` 与主流程共用同一套解析，
+    绝不各写一份（判据格取自哪一份队列，两条路径必须一致）。"""
+    queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT, QUEUE_REL)
+    resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
+    return resolved_repo_root, resolved_repo_root / QUEUE_REL
+
+
+def cmd_ack_item(key: str, note: str) -> int:
+    """记一次「我核过了，这一项确已闭环」。
+
+    与 `工具-未闭合产出扫描.py::cmd_ack_form1` 逐条对齐：`--note` 不得为空；
+    **算不出指纹就拒绝记录**——不落一条没有指纹的确认，那种确认永远不会
+    失效，正是本机制要避免的白名单。
+    """
+    resolved_repo_root, queue_path = _resolve_paths()
+    if not queue_path.exists():
+        print(f"[SKIP] 队列文件不存在：{queue_path}", file=sys.stderr)
+        return 1
+    queue_text = queue_path.read_text(encoding="utf-8")
+    ack_path = _resolve_ack_path(resolved_repo_root)
+    acks = load_acks(ack_path)
+
+    # 🔴 用 `ackable_state()`（把所有行都当见过的），**不是空状态、也不是生产
+    # 状态**：空状态会让一个截止日还在未来的行也能被 ack，那之后它到期时指纹
+    # 没变、永远不会响 ＝ 永久白名单；生产状态则会因"本轮不到期"把一条确实在
+    # 超期的行藏起来、算不出指纹。理由见 `ackable_state` docstring。
+    today = date.today()
+    result = evaluate(queue_text, today, ackable_state(queue_text, today), acks=acks)
+    match = next((i for i in result.items if i.key == key), None)
+    already = next((s for s in result.suppressed if s.key == key), None)
+    if match is None and already is not None:
+        print(f"· 无需重复确认：{key} 当前指纹 {already.fingerprint} 与已有确认一致，本轮本就静默。")
+        return 0
+    if match is None:
+        print(f"✗ 当前提醒候选里没有 `{key}`，拒绝记录确认——"
+              "无法计算指纹，且一条确认不该指向一个不存在的候选。")
+        print("  现存候选：" + ("；".join(i.key for i in result.items) or "（无）"))
+        return 1
+    try:
+        acks = record_ack(acks, key, fingerprint=match.fingerprint, note=note)
+    except ValueError as exc:
+        print(f"✗ {exc}")
+        return 1
+    save_acks(ack_path, acks)
+    print(f"✓ 已记录确认：{key}（判据格指纹 {match.fingerprint}）。")
+    print("  指纹未变期间本项不再提醒；**该行判据格一被改写**"
+          "（§四＝截止列／§一＝状态列）即自动失效、恢复告警。")
+    print(f"  确认落在 `{ack_path}`（本机状态、不入库）。")
+    print("  ⚠️ 它不替你去队列里补那个 ✅ —— 队列里这一行看起来仍是未闭合的。")
+    return 0
+
+
+def cmd_list_acks() -> int:
+    resolved_repo_root, queue_path = _resolve_paths()
+    ack_path = _resolve_ack_path(resolved_repo_root)
+    acks = load_acks(ack_path)
+    if not acks:
+        print(f"（无确认记录：{ack_path}）")
+        return 0
+    queue_text = queue_path.read_text(encoding="utf-8") if queue_path.exists() else ""
+    today = date.today()
+    result = (evaluate(queue_text, today, ackable_state(queue_text, today), acks=acks)
+              if queue_text else None)
+    live_suppressed = {s.key for s in result.suppressed} if result else set()
+    stale = set(result.stale_acks) if result else set()
+    print(f"确认记录 {len(acks)} 条（{ack_path}）：")
+    for key, entry in sorted(acks.items()):
+        if key in stale:
+            state = "⚠️ 对不上任何现存行"
+        elif key in live_suppressed:
+            state = "✅ 生效中（指纹未变）"
+        else:
+            state = "🔁 指纹已变或本轮非候选"
+        print(f"- {key}｜{state}｜指纹 {entry.get('fingerprint','?')}"
+              f"｜{entry.get('acked_at','?')}\n    依据：{entry.get('note','')}")
+    return 0
 
 
 async def _flush_pending_lock_appends_second_carrier(
@@ -194,9 +299,20 @@ async def _run(dry_run: bool) -> int:
     today = date.today()
 
     # ① 队列 #172：需 Shao Peishen 决策项/待领 opener 主动提醒。
+    #    `OP-0828-B`：叠加指纹确认——已核实闭环的项本轮静默，判据格一改即恢复。
     decision_state = load_decision_state(decision_state_path)
-    decision_items, new_decision_state = evaluate_candidates(queue_text, today, decision_state)
-    decision_message = format_digest_message(decision_items)
+    decision_acks = load_acks(_resolve_ack_path(resolved_repo_root))
+    decision_result = evaluate(queue_text, today, decision_state, acks=decision_acks)
+    decision_items = decision_result.items
+    new_decision_state = decision_result.state
+    decision_message = format_digest_message(
+        decision_items, decision_result.suppressed, decision_result.stale_acks,
+    )
+    # 🔴 抑制条数**每轮都打**，含 0 条：一个只会变长、从不回显的抑制清单
+    # 正是这套告警最该防的「看起来干净」。
+    print(f"[判据] 决策提醒命中 {len(decision_items)} 项；"
+          f"指纹确认压住 {len(decision_result.suppressed)} 项；"
+          f"对不上现存行的陈旧确认 {len(decision_result.stale_acks)} 条。")
 
     # ② 队列 #312：可 Open 池事件驱动提醒——判据与 ① 均读 #308 同一份
     # 机器字段，互不依赖，各自独立算、独立决定是否有内容要发。
@@ -292,7 +408,18 @@ async def _run(dry_run: bool) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description="需 Shao Peishen 决策项/待领 opener 主动提醒")
     parser.add_argument("--dry-run", action="store_true", help="只打印将发送的内容，不实际发送/不落状态文件")
+    parser.add_argument(
+        "--ack-item", default=None, metavar="KEY",
+        help="确认某一提醒项已闭环（如 '§四#47'），带内容指纹；判据格一改即自动失效。")
+    parser.add_argument(
+        "--note", default="",
+        help="--ack-item 配套：本次核的是什么、凭什么核的，必填。")
+    parser.add_argument("--list-acks", action="store_true", help="列出现有指纹确认及其生效状态")
     args = parser.parse_args()
+    if args.ack_item is not None:
+        sys.exit(cmd_ack_item(args.ack_item, args.note))
+    if args.list_acks:
+        sys.exit(cmd_list_acks())
     sys.exit(asyncio.run(_run(args.dry_run)))
 
 

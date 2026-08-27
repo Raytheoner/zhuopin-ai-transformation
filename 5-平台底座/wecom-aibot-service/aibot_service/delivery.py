@@ -18,6 +18,11 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 from .error_text import describe_exception
 from .constants import PAUL_USERID
 from .gates import assert_finalized, DeliveryNotFinalizedError
+from .message_length import (
+    CC_PREFIX,
+    OversizedMessageError,
+    plan_body,
+)
 from .readme_table import (
     MAIN_TABLE_SECTION,
     NO_REPLY_NEEDED_STATUS,
@@ -270,8 +275,16 @@ async def push_followup(
     附件上传失败会中断本次推送，同旧行为——附件是正文的一部分，不做"部分
     发送"的静默降级）。
 
+    **长度守卫与超限降级（队列 #416，`OP-0828-B`）**：正文在发出前先过
+    `message_length.plan_body`——按**每条实际要发出去的串**（私信是 `content`，
+    抄送两处是 `【抄送】`＋`content`，比原文长）算字节；任一条超限即整封降级
+    为「提要＋附件」，三条通道发同一份提要；超限且无附件、或提要本身仍超限
+    ⇒ 抛 `OversizedMessageError`，**一条都不发**（保住"干净失败、可安全重试"）。
+
     Raises:
         DeliveryNotFinalizedError: 门禁②拒绝（状态列非"🆕 待发"）。
+        OversizedMessageError: 正文超限且无法降级——**发出任何一条之前**抛出，
+            审计记 `followup_delivery_failed`（`sent:False／acks:[]`），README 不动。
         BackfillWriteError: 已发送成功但 README 回填失败。
     """
     text = readme_path.read_text(encoding="utf-8")
@@ -304,6 +317,31 @@ async def push_followup(
     media_ids: list[str] = []
     acks: list[dict] = []
 
+    # 队列 #416（`OP-0828-B`）：长度守卫与超限降级——**在发出任何一条之前**
+    # 一次性决定这一封发哪份正文，见 `message_length.plan_body` docstring。
+    #
+    # 🔴 两处边界，改这段前先读懂：
+    # ⑴ `cc_channels` 传的是**本次真的会抄送**的通道，条件与下方两个 `if`
+    #    逐字相同（不是「有没有传这个参数」）——抄送发的是 `【抄送】` ＋ 正文，
+    #    **比原文长**；只按原文算，会出现「私信成功、群里什么都没有」，外观
+    #    是发出去了（同族＝#270 那条 fail-closed 静默跳过）。
+    # ⑵ 附件清单按**真实存在**的算，与下方上传循环的 `attachment.exists()`
+    #    判据一致——降级正文里那句「完整内容在附件里」必须真的成立，
+    #    否则降级就成了静默丢内容。
+    # 🔴 这两个布尔量是**唯一判据**——下方两处抄送的 `if` 也用它们，绝不
+    # 各写一份条件：守卫算的通道集与真正发出去的通道集一旦漂开，就退回到
+    # 「只验了私信侧」那个最隐蔽的形态。
+    cc_paul_active = bool(cc_to_paul and chatid != PAUL_USERID)
+    cc_group_active = bool(cc_group_chatid and cc_group_chatid != chatid)
+    cc_channels: list[str] = []
+    if cc_paul_active:
+        cc_channels.append("抄送ShaoPeiShen")
+    if cc_group_active:
+        cc_channels.append("群抄送")
+    existing_attachments = [
+        p for p in attachments if p is not None and p.exists()
+    ]
+
     # 队列 #326：主推送与附件整段包在一个 try 里——此前主推送失败**在本模块内
     # 不留任何审计事件**（只有 `dispatch.py` 批处理侧记 `dispatch_row_failed`，
     # 而人工 CLI `push_followup_letter.py` 那条路径连这个都没有，异常直接冒到
@@ -312,10 +350,21 @@ async def push_followup(
     # 既不改变调用方看到的异常类型/传播行为，也不再让"发送失败"这件事只存在
     # 于某一条调用路径的记账里。
     try:
+        # 守卫放在 try 内、第一条 send 之前：超限时走的是与"发送失败"同一条
+        # 审计分支（`followup_delivery_failed`，`sent:False／acks:[]／
+        # media_ids:[]／backfilled:False`），README 保持 `🆕 待发`——**这正是
+        # #416 那条"失败必须是干净的、可安全重试"的性质，本次修复不得把它
+        # 改成半发**（已配单测钉死）。
+        plan = plan_body(
+            content,
+            cc_channels=cc_channels,
+            attachment_names=[p.name for p in existing_attachments],
+        )
+        body = plan.body
         acks.append(
             {"step": "markdown", "chatid": chatid,
              **_assert_ack_accepted(
-                 await connector.send_markdown(chatid, content), what="跟进信正文推送")}
+                 await connector.send_markdown(chatid, body), what="跟进信正文推送")}
         )
         for attachment in attachments:
             if attachment is None or not attachment.exists():
@@ -358,7 +407,8 @@ async def push_followup(
             # 回执观测（`acks`），事后可复核"当时企微到底回了什么"，而不是只
             # 留下一个无从证伪的断言（队列 #326）。
             decision={"sent": True, "backfilled": False, "media_id": media_id,
-                      "media_ids": media_ids, "acks": acks, "kind": kind},
+                      "media_ids": media_ids, "acks": acks, "kind": kind,
+                      **plan.audit_fields()},
             data_sources={
                 "md": str(md_path),
                 "docx": str(docx_path) if docx_path else "",
@@ -367,13 +417,13 @@ async def push_followup(
         )
     )
 
-    if cc_to_paul and chatid != PAUL_USERID:
+    if cc_paul_active:
         try:
             # 队列 #326：抄送同样观测回执码——非零即走下面既有的
             # `followup_cc_failed` 分支（抄送失败本就不影响主推送已成功的
             # 事实，此处只是让"抄送成功"这个断言也有回执作证）。
             cc_acks = [_assert_ack_accepted(
-                await connector.send_markdown(PAUL_USERID, f"【抄送】{content}"),
+                await connector.send_markdown(PAUL_USERID, f"{CC_PREFIX}{body}"),
                 what="抄送正文推送")]
             for mid in media_ids:
                 cc_acks.append(_assert_ack_accepted(
@@ -402,11 +452,11 @@ async def push_followup(
                 )
             )
 
-    if cc_group_chatid and cc_group_chatid != chatid:
+    if cc_group_active:
         try:
             # 队列 #326：同上，群抄送的回执码也观测、也进审计。
             group_acks = [_assert_ack_accepted(
-                await connector.send_markdown(cc_group_chatid, f"【抄送】{content}"),
+                await connector.send_markdown(cc_group_chatid, f"{CC_PREFIX}{body}"),
                 what="群抄送正文推送")]
             for mid in media_ids:
                 group_acks.append(_assert_ack_accepted(
