@@ -31,9 +31,13 @@ SCENE = Path(__file__).resolve().parent.parent
 
 from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
 
-#: 🔴 **常驻服务刻意暂不声明必需键**（队列 #354 决策点 4 ＝ (c)），理由同 SC8
-#: `run_baoguan_web.py`：多声明一个键就多一条起不来的路径，本入口是 `.51` 常驻服务（8093）。
-#: 本清单待 `.51` 真机复验时按实测填（tasks 2.3.2 的 LAN 留步项）。
+#: **已按 `.51` 实测核实，结论是「本入口确实一个凭据键都不需要」**（2026-08-27，OP-0827-B，
+#: tasks 2.3.2／2.3.6 的 LAN 留步项已销）。判据见 SC8 `run_baoguan_web.py` 同名常量上方。
+#:
+#: 🔴 **空元组在此是一个经核查的结论，不是「还没填」**——判据＝`qd_b_gate/` 全包 `os.environ`／
+#: `getenv` **零命中**（QD-B 只做本地立项书解析，不连任何外部系统）；`.51` 的 `C:\qd-b\.env`
+#: 实测只有一个 `ZP_GATE_PASSWORD`，而它按判据属「缺了走既定默认路径」不声明。
+#: 此后若本场景新增真凭据依赖，请同步补进本清单。
 REQUIRED_ENV_KEYS: tuple[str, ...] = ()
 
 

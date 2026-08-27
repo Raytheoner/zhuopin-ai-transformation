@@ -31,20 +31,38 @@ from sc2 import config  # noqa: E402
 
 from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
 
-#: 🔴 **刻意暂不声明必需键**（队列 #354 决策点 4 ＝ (c)）：本入口经周五自动推送定时任务触发，
-#: 多声明一个键就多一条「周报这周没出」的路径。待 `.51` 真机复验时按实测填（tasks 2.3.5）。
+#: **已按 `.51` 实测填实**（2026-08-27，OP-0827-B，tasks 2.3.5／2.3.6 的 LAN 留步项已销）。
+#: 判据见 SC8 `run_baoguan_web.py` 同名常量上方（缺了会抛异常的才声明；`ZP_GATE_PASSWORD`
+#: 缺失时门禁按设计自动跳过，属既定默认路径，不声明）。
+#:
+#: 🔴 **本入口是四个里唯一一个「服务入口兼 CLI」，故必需键与 `--mode` 绑定，不是一个定值**——
+#: `load_env()` 在 argparse **分发之前**跑（见 `main()`），若把 `U9C_*` 无条件声明成必需，
+#: `--mode mock` 就再也不能在没有凭据的机器上跑了，而 mock 模式存在的意义恰恰是免凭据。
+#: `.51` 两个计划任务（`start-sc2.ps1` ＝ `serve --mode real`、`autopush-sc2.ps1` ＝
+#: `autopush --mode real`）**都走 real**，所以生产侧一个都没漏声明。
 REQUIRED_ENV_KEYS: tuple[str, ...] = ()
 
+#: real 模式追加的必需键：`sc2/sources.py::build_real_feed` 用 `ZpConnector.from_env()`
+#: 取数，缺任一即抛 `ValueError`。六个键均经 `.51`（`C:/sc2/.env`）只读探测确认在位。
+REQUIRED_ENV_KEYS_REAL: tuple[str, ...] = REQUIRED_ENV_KEYS + (
+    "U9C_API_BASE", "U9C_USER_CODE", "U9C_ENT_CODE",
+    "U9C_ORG_CODE", "U9C_CLIENT_ID", "U9C_CLIENT_SECRET",
+)
 
-def load_env() -> None:
+
+def load_env(mode: str | None = None) -> None:
     """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    `mode` ＝ 本次子命令的 `--mode`（`probe` 没有这个参数 ⇒ `None`）。`"real"` 时用
+    `REQUIRED_ENV_KEYS_REAL`，其余用 `REQUIRED_ENV_KEYS`——理由见上方常量注释。
 
     🔴 **原实现是「向上逐级找最近的 `.env`」的内联变体**（9 份手抄副本里唯一没有 `_find_env`
     函数的那份，docstring 自陈抄 SC8）——从 linked worktree 跑时命中 worktree 自己那份陈旧
     副本、**且不报错**。收拢后由 `--git-common-dir` 规范化到主工作区；扁平部署布局走部署根
     锚点，两种布局仍都能命中。🔴 **凭据只在 `.env`，不入库、不打印**。
     """
-    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
+    required = REQUIRED_ENV_KEYS_REAL if mode == "real" else REQUIRED_ENV_KEYS
+    print(_resolve_and_load_env(__file__, required=required).describe())
 
 
 def _base_date(arg: str | None) -> date:
@@ -215,7 +233,7 @@ def main(argv=None) -> int:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     args = build_parser().parse_args(argv)
-    load_env()
+    load_env(getattr(args, "mode", None))
     return args.func(args)
 
 

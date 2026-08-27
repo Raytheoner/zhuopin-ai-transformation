@@ -38,11 +38,27 @@ SC8 = Path(__file__).resolve().parent.parent
 
 from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
 
-#: 🔴 **常驻服务刻意暂不声明必需键**（队列 #354 决策点 4 ＝ (c)）。design 决策点 4 的 (b)
-#: 已论证过风险：「哪些入口本就靠服务环境/计划任务直接注入凭据」目前无人能列全，而本入口是
-#: `.51` 常驻服务，多声明一个键就多一条起不来的路径。**本清单待 `.51` 真机复验时按实测填**
-#: （tasks 2.3.1 的 LAN 留步项）——在那之前保持今天的行为不变，本变更包只改「读哪一份 `.env`」。
-REQUIRED_ENV_KEYS: tuple[str, ...] = ()
+#: **已按 `.51` 实测填实**（2026-08-27，OP-0827-B，tasks 2.3.1／2.3.6 的 LAN 留步项已销）。
+#:
+#: 🔴 **判据（三处入口共用，写在这里一次）**：只声明「**缺了会抛异常、服务不可用**」的凭据键；
+#: 「**缺了走既定默认路径**」的键不声明。后者已实测两例、都不进本清单——
+#: ⑴ `ZP_GATE_PASSWORD` 缺失时底座 `simple_gate` **按设计自动跳过门禁**（其模块 docstring
+#:    明写「这样本地开发/既有测试套件无需为每个 create_app() 调用点显式关闭门禁」），且**开发机
+#:    根 `.env` 里本就没有这个键**——声明它等于把一条既定的本地开发路径判死；
+#: ⑵ `XKY_API_BASE` 在 `XkySrmConnector` 里有可用缺省值（`https://openapi.xiekeyun.com`）。
+#:    ⚠️ 同目录三个 CLI 脚本（`run_baoguan_dashboard.py` 等）确实声明了它——**本入口刻意不跟**，
+#:    因为那会让「删掉一个有缺省值的键」变成常驻服务起不来，属假 fail-fast。
+#:
+#: 下列 12 个键**逐个经 `.51`（`C:/baoguan/.env`，2026-08-27 只读探测键名）确认在位**，且本服务
+#: 由 `start-baoguan.ps1` 强制 `SC8_DATA_SOURCE=real` 拉起 ⇒ 三个连接器族全部落在生产路径上：
+#: `FO_*` 缺失时 `sc8/loaders.py` 抛 `RuntimeError`；`U9C_*` 六个缺失时 `ZpConnector.from_env()`
+#: 抛 `ValueError`；`XKY_*` 四个缺失时 `XkySrmConnector.from_env()` 抛 `ValueError`。
+REQUIRED_ENV_KEYS: tuple[str, ...] = (
+    "FO_API_BASE", "FORECAST_API_KEY",
+    "U9C_API_BASE", "U9C_USER_CODE", "U9C_ENT_CODE",
+    "U9C_ORG_CODE", "U9C_CLIENT_ID", "U9C_CLIENT_SECRET",
+    "XKY_APP_KEY", "XKY_APP_SECRET", "XKY_OWNER_COMPANY_CODE", "XKY_ERP_CODE",
+)
 
 
 def load_env() -> None:

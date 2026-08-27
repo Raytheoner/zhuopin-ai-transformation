@@ -30,9 +30,18 @@ SCENE = Path(__file__).resolve().parent.parent
 
 from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
 
-#: 🔴 **常驻服务刻意暂不声明必需键**（队列 #354 决策点 4 ＝ (c)），理由同 SC8
-#: `run_baoguan_web.py`。本清单待 `.51` 真机复验时按实测填（tasks 2.3.3 的 LAN 留步项）。
-REQUIRED_ENV_KEYS: tuple[str, ...] = ()
+#: **已按 `.51` 实测填实**（2026-08-27，OP-0827-B，tasks 2.3.3／2.3.6 的 LAN 留步项已销）。
+#: 判据见 SC8 `run_baoguan_web.py` 同名常量上方（缺了会抛异常的才声明）。
+#:
+#: 下列六个键经 `.51`（`C:/fi2/.env`）只读探测确认在位；缺任一即 `ZpConnector.from_env()`
+#: 抛 `ValueError`，而 `fi2/run.py` 与 `fi2/feed_source.py` 的 `u9c` 源全靠它取 PO／AP／GRN。
+#: ⚠️ **`.51` 上另有三个键刻意不进本清单**：`STOCK_API_BASE`／`STOCK_API_KEY`（`fi2/` 全包零
+#: 命中，是同机其它场景的）、`WECOM_WEBHOOK_URL_OPS`（属定时扫描 `scan_tax_export_scheduled.py`
+#: 的告警去向，**不是本 Web 服务的依赖**——把它声明在这里会让「webhook 没配」变成「看板起不来」）。
+REQUIRED_ENV_KEYS: tuple[str, ...] = (
+    "U9C_API_BASE", "U9C_USER_CODE", "U9C_ENT_CODE",
+    "U9C_ORG_CODE", "U9C_CLIENT_ID", "U9C_CLIENT_SECRET",
+)
 
 
 def load_env() -> None:
