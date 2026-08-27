@@ -3460,6 +3460,154 @@ class DualFileRoutingTests(unittest.TestCase):
         absolute = str(self.repo_root / "跟进信README.md")
         self.assertFalse(self.module._is_queue_system_target(absolute))
 
+    # ---- 队列 §一 #420：edit-row／append-row 不共锁（2026-08-28 修）----
+    #
+    # 🔴 **不变式（本组用例钉死的那一条）**：两份物理队列文件共用**同一把**
+    # 锁，锚点恒为 `QUEUE_LOCK_ANCHOR`（机制环境文件）。故「A 持锁时 B 以
+    # `--domain 业` 写业务场景文件」必须被拒——修复前它会通过，且只打印一行
+    # 「ℹ 本次为无锁写入」。
+    #
+    # **根因（实测得来，不是推演）**：`_is_queue_system_target` 对**相对**路径
+    # 走 `Path(file_arg).resolve()` —— `Path.resolve()` 按**进程 CWD** 解析，
+    # 而本项目全线用「仓库根相对路径」。于是 CWD ≠ REPO_ROOT 时（worktree
+    # 会话、`0-学习与工具/` 下直接跑、任何 `cd` 过的脚本）该判定静默返回
+    # False，锁锚点退化成「目标文件自己」：`--domain 机` 算出的恰是机制文件
+    # 自己的锁 ⇒ **碰巧仍是对的**；`--domain 业` 算出 `…-业务场景.md.editlock`
+    # ⇒ 那个文件**从来不存在** ⇒ 每次都走「无锁写入」分支。
+    # 🔑 与本波次同族：**判定「正常返回」了，只是它看的根本不是那把锁**——
+    # 错误不产生任何信号，而机制侧因为碰巧对，掩盖了业务侧一直失效。
+    #
+    # ⚠️ 本组用例本身即 CWD 独立性的证据：REPO_ROOT 被 monkeypatch 到临时
+    # 目录，而 pytest 的 CWD 是 `0-学习与工具/`，两者恒不相等。
+
+    def test_相对路径的机制文件也应判为队列系统本体(self):
+        """反例守卫：修复前此处为 False（`Path('queue-mech.md').resolve()`
+        解到 CWD 下），机制侧碰巧不出事只因锚点与目标同名。"""
+        self.assertTrue(self.module._is_queue_system_target("queue-mech.md"))
+
+    def test_相对路径的业务文件也应判为队列系统本体(self):
+        self.assertTrue(self.module._is_queue_system_target("queue-biz.md"))
+
+    def test_相对路径的无关文件仍不是队列系统本体(self):
+        """反例：修得过头会把任何相对路径都当队列系统——必须仍为 False。"""
+        self.assertFalse(self.module._is_queue_system_target("跟进信README.md"))
+
+    def _hold_shared_lock(self, who: str = "A", minutes_ago: float = 1.0) -> Path:
+        """在**锚点**（机制环境文件）上造一把新鲜锁，模拟他人持锁。"""
+        held_since = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        lock_path = self.repo_root / (self.module.QUEUE_LOCK_ANCHOR + ".editlock")
+        lock_path.write_text(
+            json.dumps({"who": who, "note": "在办", "held_since": held_since.isoformat()},
+                       ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return lock_path
+
+    def _edit_ns(self, domain: str, who: str | None = None) -> argparse.Namespace:
+        return argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, section="一", number="301",
+            domain=domain, who=who,
+            set=["状态=[S:done] 已办"], append=None, append_sep="；",
+            changes_json=None, stdin_json=False,
+        )
+
+    def _append_ns(self, domain: str, who: str | None = None) -> argparse.Namespace:
+        return argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, section="一", number="302",
+            domain=domain, who=who,
+            cell=["新行", "CC", "无", "无", "[S:open][D:业] 待领", "无", "2026-08-28"],
+        )
+
+    def _seed_both(self):
+        row = ("| 301 | 既有业务行 | CC | 无 | 无 | [S:open][D:业] 待领 | 无 | "
+               "2026-08-28 |" + chr(10))
+        self._write(self.mech_path, section_one_rows=row)
+        self._write(self.biz_path, section_one_rows=row)
+
+    def test_他人持共用锁时edit_row域业必须被拒(self):
+        """🔴 **本行的核心断言**：修复前返回 0 并写入成功（只打一行"无锁
+        写入"）；修复后必须拒绝。"""
+        self._seed_both()
+        self._hold_shared_lock("A")
+        before = self.biz_path.read_text(encoding="utf-8")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.module.cmd_edit_row(self._edit_ns("业"))
+        self.assertNotEqual(rc, 0, buf.getvalue())
+        self.assertIn("未传 --who", buf.getvalue())
+        self.assertEqual(self.biz_path.read_text(encoding="utf-8"), before)
+
+    def test_他人持共用锁时append_row域业必须被拒(self):
+        """#420 子项③：复核 `append-row --domain 业` 是否同病——实测同病。"""
+        self._seed_both()
+        self._hold_shared_lock("A")
+        before = self.biz_path.read_text(encoding="utf-8")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.module.cmd_append_row(self._append_ns("业"))
+        self.assertNotEqual(rc, 0, buf.getvalue())
+        self.assertIn("未传 --who", buf.getvalue())
+        self.assertEqual(self.biz_path.read_text(encoding="utf-8"), before)
+
+    def test_他人持共用锁时edit_row域机同样被拒(self):
+        """对照组：机制侧修复前后都该被拒（它此前是"碰巧对"，不是"对"）。"""
+        self._seed_both()
+        self._hold_shared_lock("A")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.module.cmd_edit_row(self._edit_ns("机"))
+        self.assertNotEqual(rc, 0, buf.getvalue())
+
+    def test_who与持锁人一致时域业照常写入(self):
+        """反例：不得修成"业务侧一律拦死"——持锁人本人必须写得进去。"""
+        self._seed_both()
+        self._hold_shared_lock("A")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.module.cmd_edit_row(self._edit_ns("业", who="A"))
+        self.assertEqual(rc, 0, buf.getvalue())
+        self.assertIn("[S:done] 已办", self.biz_path.read_text(encoding="utf-8"))
+        self.assertNotIn("[S:done] 已办", self.mech_path.read_text(encoding="utf-8"))
+
+    def test_陈旧锁下域业仍按无锁写入放行(self):
+        """反例：陈旧锁等价于无锁——与 acquire 接管口径一致，本次不改。"""
+        self._seed_both()
+        self._hold_shared_lock("A", minutes_ago=self.module.STALE_MINUTES + 1)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.module.cmd_edit_row(self._edit_ns("业"))
+        self.assertEqual(rc, 0, buf.getvalue())
+        self.assertIn("无锁写入", buf.getvalue())
+
+    def test_无锁时域业仍放行不变成硬互斥(self):
+        """反例：协议〇.7 是协作性质，本次**只修锁归属**，不把无锁写入改成
+        阻断——那属改变全项目口径，须另走 openspec。"""
+        self._seed_both()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.module.cmd_edit_row(self._edit_ns("业"))
+        self.assertEqual(rc, 0, buf.getvalue())
+        self.assertIn("无锁写入", buf.getvalue())
+
+    def test_业务场景文件不得产生第二把物理锁(self):
+        """不变式的另一面：全程只应存在锚点那一个 `.editlock`；一旦业务文件
+        旁出现同名锁文件，"共用一把锁"就已经名存实亡。"""
+        self._seed_both()
+        ns_acquire = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who="A", note="",
+            reserve=None, section=None, reserve_multi=None, domain=None,
+        )
+        self.assertEqual(self.module.cmd_acquire(ns_acquire), 0)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module.cmd_edit_row(self._edit_ns("业", who="A"))
+            self.module.cmd_append_row(self._append_ns("业", who="A"))
+        self.assertTrue((self.repo_root / "queue-mech.md.editlock").exists())
+        self.assertFalse(
+            (self.repo_root / "queue-biz.md.editlock").exists(),
+            "业务场景文件旁出现了第二把物理锁——「两份共用一把锁」已名存实亡",
+        )
+
     def test_acquire_with_absolute_path_to_old_pointer_file_routes_dual_file(self):
         """真实复现：企微机器人常驻服务当前仍以 `DEFAULT_QUEUE_RELATIVE_
         PATH`（旧指针文件相对路径）算出的绝对路径调用编辑锁 CLI——本用例

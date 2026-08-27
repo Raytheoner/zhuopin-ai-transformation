@@ -943,11 +943,29 @@ def _is_queue_system_target(file_arg: str) -> bool:
     文件三者的绝对路径逐一比较——命中任一个都判定为"面向队列系统本体"，
     不论调用方传来的是相对写法、绝对写法，还是（迁移期）仍指着旧指针文件
     这三种历史写法中的哪一种。文件尚不存在时 `Path.resolve()`
-    不要求存在，纯字符串层面归一化，不受"文件还没创建"影响。"""
+    不要求存在，纯字符串层面归一化，不受"文件还没创建"影响。
+
+    🔴 **队列 §一 #420（2026-08-28）——本判定的第二个静默失效口：相对路径
+    此前按进程 CWD 解析。** 原实现写的是 `Path(file_arg).resolve()`，而
+    `Path.resolve()` 对相对路径锚定**进程当前工作目录**；本项目全线却用
+    「仓库根相对路径」（`--file` 的 help 原文即如此，`_target_path()` 也一直
+    按 `REPO_ROOT / target` 解析）。⇒ **CWD ≠ REPO_ROOT 时**（linked worktree
+    会话、在 `0-学习与工具/` 下直接跑 pytest、任何 `cd` 过的脚本），传机制／
+    业务文件的相对路径一律判 False，双文件路由与锁锚定**一起失效**。
+    **它在机制侧碰巧不出事**——锚点 `QUEUE_LOCK_ANCHOR` 就是机制文件自己，
+    退化后算出的锁路径与正确答案恰好相同；**只在业务侧显形**（算出
+    `…-业务场景.md.editlock`，那个文件从来不存在 ⇒ 每次都走「无锁写入」），
+    故藏了很久，见 #420 行内实测取证。
+    🔑 **同族特征**：判定每次都「正常返回」，只是它看的根本不是那个对象——
+    错误不产生任何信号（CLAUDE.md §5「工具静默回退」同族第 N 例）。
+    **修法**：相对路径一律锚 `REPO_ROOT`，与 `_target_path()` 同一把尺子；
+    绝对路径行为完全不变。🔴 **不得改成「CWD 与 REPO_ROOT 两侧各试一遍」**
+    ——那会把任意目录下的同名文件也认成队列系统本体，比现状更坏。"""
     if file_arg == DEFAULT_TARGET:
         return True
     try:
-        resolved = Path(file_arg).resolve()
+        raw = Path(file_arg)
+        resolved = (raw if raw.is_absolute() else (REPO_ROOT / raw)).resolve()
     except OSError:
         return False
     for candidate in (DEFAULT_TARGET, QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL):
@@ -1485,7 +1503,9 @@ def _last_table_line_end_offset(section_text: str) -> int | None:
     return last_end
 
 
-def _append_row_ownership_violation(args: argparse.Namespace) -> str | None:
+def _append_row_ownership_violation(
+    args: argparse.Namespace, lock_anchor: str | None = None,
+) -> str | None:
     """队列 §一 #351 ⑴：`append-row` 的锁归属校验。返回拒绝文案；放行返回 None。
 
     🔴 **成因是一次真实事故，形态很值得记住**（2026-08-18，12 分钟内触发两次）：
@@ -1503,10 +1523,23 @@ def _append_row_ownership_violation(args: argparse.Namespace) -> str | None:
     `append-row`，直接在编辑器里手写整行仍是允许的」。把 `append-row` 变成
     「必须先持锁」属**改变全项目口径**（CLAUDE.md §5 机制类门槛第①条），须
     另走 openspec。**本项要修的是「锁归属不校验」，不是「无锁写入」。**
+
+    队列 §一 #420（2026-08-28）：新增 `lock_anchor` 形参——**调用方在改写
+    `args.file`（域路由）之前就把锚点算好并传进来**，本函数不再从改写后的
+    `args.file` 反推。理由是一条不变式：**两份物理队列文件共用同一把锁，
+    锚点恒为 `QUEUE_LOCK_ANCHOR`**；而 `args.file` 在 `cmd_edit_row`／
+    `cmd_append_row` 里已被域路由改写成"这次写哪份文件"，那是**写入目标**，
+    与**锁锚点**是两个不同的量。从写入目标反推锚点看起来永远对（因为
+    `_is_queue_system_target` 通常会把它认回来），可**一旦那个判定本身失
+    效，退化结果恰好就是"各锁各的"**——正是 #420 的现场。显式传参使不变式
+    不再依赖任何"能不能认回来"的判定。省略该参数时行为与旧版一致（供既有
+    直接调用方与单测沿用）。
     """
-    lock_path = _lock_path(
-        QUEUE_LOCK_ANCHOR if _is_queue_system_target(args.file) else args.file
-    )
+    if lock_anchor is None:
+        lock_anchor = (
+            QUEUE_LOCK_ANCHOR if _is_queue_system_target(args.file) else args.file
+        )
+    lock_path = _lock_path(lock_anchor)
     existing = _read_lock(lock_path)
     if existing is None or _age_minutes(existing) >= STALE_MINUTES:
         # 无锁／已释放／已陈旧——陈旧锁等价于无锁，与 acquire 的既有接管口径一致。
@@ -1772,7 +1805,12 @@ def _load_changes_json(args: argparse.Namespace) -> dict[str, dict[str, str]] | 
 
 
 def cmd_edit_row(args: argparse.Namespace) -> int:
+    # 队列 §一 #420：锁锚点在**域路由改写 args.file 之前**定死——两份物理
+    # 队列文件共用同一把锁，锚点恒为 QUEUE_LOCK_ANCHOR，与"这次写哪份文件"
+    # 无关。改写后再反推会在判定失效时静默退化成"各锁各的"（#420 现场）。
+    lock_anchor = args.file
     if _is_queue_system_target(args.file):
+        lock_anchor = QUEUE_LOCK_ANCHOR
         resolved_target, used_default = _resolve_append_target(args.section, args.domain)
         if used_default:
             print(f"ℹ 未显式声明 --domain，按向后兼容默认值定位机制环境文件"
@@ -1780,7 +1818,7 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
         args = argparse.Namespace(**vars(args))
         args.file = resolved_target
 
-    ownership_problem = _append_row_ownership_violation(args)
+    ownership_problem = _append_row_ownership_violation(args, lock_anchor)
     if ownership_problem:
         print(f"✗ {ownership_problem}")
         return 1
@@ -1866,7 +1904,11 @@ def cmd_append_row(args: argparse.Namespace) -> int:
     # 队列 #315 决策点3/5：队列系统模式下按 --domain 路由到对应物理文件
     # （§四恒定机制环境文件，见 `_resolve_append_target`）；显式 --file
     # 覆盖时（罕见，主要用于测试/特殊场景）原样使用，不做路由。
+    # 队列 §一 #420：锁锚点在域路由改写 args.file **之前**定死，理由同
+    # `cmd_edit_row`（两份文件共用一把锁，锚点与写入目标是两个量）。
+    lock_anchor = args.file
     if _is_queue_system_target(args.file):
+        lock_anchor = QUEUE_LOCK_ANCHOR
         resolved_target, used_default = _resolve_append_target(args.section, args.domain)
         if used_default:
             print(f"ℹ 未显式声明 --domain，按向后兼容默认值写入机制环境文件"
@@ -1876,7 +1918,7 @@ def cmd_append_row(args: argparse.Namespace) -> int:
         args.file = resolved_target
 
     # 队列 §一 #351 ⑴：锁归属校验——放在最前，锁不归你就什么都不做。
-    ownership_problem = _append_row_ownership_violation(args)
+    ownership_problem = _append_row_ownership_violation(args, lock_anchor)
     if ownership_problem:
         print(f"✗ {ownership_problem}")
         return 1
