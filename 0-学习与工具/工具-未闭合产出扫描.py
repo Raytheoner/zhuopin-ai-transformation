@@ -139,6 +139,23 @@ PROXY_HEADER_LOWER = "proxy-connection"
 HTTP_TIMEOUT_SECONDS = 6
 PING_TIMEOUT_MS = 1000
 
+# 落库 sweep 的计划任务名。形态 3 里「主工作区」那一条要用它的真实状态说话，
+# 🔴 **不是拿它当假设**：本文件初版在主工作区那条上写死了一句「sweep 停用
+# 期间它就是一堆没人收的产出」——**它根本没去查过 sweep 的状态**。2026-08-27
+# 实测反例：`State=Ready`／`LastRun 11:17:02`／`Result=0x0`，一直在跑，而当时
+# 3 个脏文件的 mtime 全部晚于那一轮 ⇒ 真因是「上一轮跑完之后才产生的正常
+# 时间差」。**危害是复合的**：读到那句话的人会跟着断言 sweep 没在跑，于是
+# 同一个未经验证的因果被下游当作事实转述一层。
+SWEEP_TASK_NAME = "ZhuopinCommitSweep"
+SWEEP_PROBE_TIMEOUT_SECONDS = 25
+# 🔴 计划任务的 `LastRunTime`／`NextRunTime` 与文件 mtime **都是本机本地时间**
+# （项目硬规则：mtime／`LastRunTime` 本地，审计 jsonl 与企微告警文案才是 UTC）
+# ⇒ 两者同基准可直接比，报告里一律显式标「本地」。
+LOCAL_TIME_FMT = "%Y-%m-%d %H:%M:%S"
+# 主工作区脏文件的 mtime 清单进 JSON 时的上限。**只截显示、不截判定**：
+# 「早于上一轮却仍未被收」是逐个文件算完再截的，不会因为截断而漏掉红旗。
+SWEEP_MTIME_LIST_CAP = 20
+
 
 # ============================================================
 # 基础设施
@@ -422,6 +439,36 @@ def scan_form2(repo_root: Path, base: str | None) -> dict:
 # 形态 3：产出只是 worktree 里未 commit 的改动
 # ============================================================
 
+def _status_path(line: str) -> str:
+    """从 `git status --porcelain` 一行里取出路径。
+
+    重命名行形如 `R  旧名 -> 新名`：要看的是**新名**那一侧（旧名已不在盘上，
+    对它 `stat` 只会得到一个「文件不存在」，把一条真改动记成无 mtime）。
+    """
+    path = line[3:]
+    if " -> " in path:
+        path = path.split(" -> ", 1)[1]
+    return path.strip().strip('"')
+
+
+def _collect_mtimes(root: Path, lines: list[str]) -> list[dict]:
+    """逐个脏文件取本地 mtime。**全部取、不截断**——截断的是显示，不是判定。
+
+    取不到（已删除／权限／路径异常）就如实记 `None`，🔴 **不回落成「现在」**：
+    回落会让一个删除掉的文件永远显得「刚改过」，正好把真漏收藏起来。
+    """
+    collected: list[dict] = []
+    for line in lines:
+        name = _status_path(line)
+        try:
+            stamp = datetime.fromtimestamp((root / name).stat().st_mtime)
+        except (OSError, ValueError):
+            collected.append({"name": name, "mtime": None})
+        else:
+            collected.append({"name": name, "mtime": stamp.strftime(LOCAL_TIME_FMT)})
+    return collected
+
+
 def scan_form3(repo_root: Path) -> dict:
     """扫每个 worktree 的未提交改动。
 
@@ -436,9 +483,12 @@ def scan_form3(repo_root: Path) -> dict:
     unreadable: list[str] = []
     # `git worktree list` 的第一条永远是主工作区。它与 linked worktree 的
     # 风险不同：主工作区不会被 `worktree remove` 清掉，它的未提交改动本该
-    # 由落库 sweep 每轮收走——**所以它只在 sweep 停用期间才是风险**，救法
-    # 也不同（人工 commit，而不是「先跑回归再合入」）。两者混在一起报，
-    # 读的人会对最要紧的那几行用错处置。
+    # 由落库 sweep 每轮收走，救法也不同（人工 commit，而不是「先跑回归再
+    # 合入」）。两者混在一起报，读的人会对最要紧的那几行用错处置。
+    # 🔴 **「它只在 sweep 停用期间才是风险」这句话本文件曾写死在这里，是错的**：
+    # sweep 在跑的时候主工作区照样会有脏文件——上一轮跑完之后新产生的改动就是。
+    # 判「时间差」还是「真漏收」要的是证据（`LastRunTime` 与各文件 mtime 并排
+    # 摆出来），不是一句断言，故此处只采集 mtime，结论留给 `format_report`。
     main_path = _parse_worktree_porcelain(listed.stdout)[0]["path"] if listed.stdout.strip() else None
     for entry in _parse_worktree_porcelain(listed.stdout):
         path = Path(entry["path"])
@@ -460,12 +510,15 @@ def scan_form3(repo_root: Path) -> dict:
             head = ln.split("\t")[0]
             if head.isdigit():
                 insertions += int(head)
+        is_main = entry["path"] == main_path
         items.append({
             "worktree": entry["path"], "branch": entry.get("branch"),
-            "is_main": entry["path"] == main_path,
+            "is_main": is_main,
             "tracked_changes": tracked, "untracked": untracked,
             "insertions": insertions,
             "files": [ln[3:] for ln in lines[:5]],
+            # mtime 只对主工作区采集——只有那一条的救法与 sweep 的轮次有关。
+            "file_times": _collect_mtimes(path, lines) if is_main else [],
             # 🔴 key 只用 worktree 名，不含行数——行数每改一次就变，含它即
             # 每次都是新问题（判据 ⑶）。
             "key": f"form3:{path.name}",
@@ -532,6 +585,83 @@ def probe_lan(host: str = LAN_HOST) -> dict:
     return {"on_lan": all(probe["ok"] for probe in probes), "probes": probes}
 
 
+# ============================================================
+# 落库 sweep 的真实状态（形态 3 · 主工作区那条的证据来源）
+# ============================================================
+
+_SWEEP_PS = (
+    "$ErrorActionPreference='Stop';"
+    "$t=Get-ScheduledTask -TaskName '__TASK__';"
+    "$i=Get-ScheduledTaskInfo -TaskName '__TASK__';"
+    "$o=[ordered]@{state=[string]$t.State;last_result=$i.LastTaskResult};"
+    "$o.last_run=$(if($i.LastRunTime){$i.LastRunTime.ToString('yyyy-MM-dd HH:mm:ss')});"
+    "$o.next_run=$(if($i.NextRunTime){$i.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss')});"
+    "[pscustomobject]$o|ConvertTo-Json -Compress"
+)
+
+# `State` 取这两个值才算「它在跑」。**其余一律不算**，且不猜：`Disabled` 是
+# 停用，取不到是取不到，两者在报告里必须能被分辨——把「取不到」写成「停用」
+# 就是本函数存在的那个原始缺陷换了个方向再犯一次。
+SWEEP_LIVE_STATES = ("Ready", "Running")
+
+
+def probe_sweep_task(task_name: str = SWEEP_TASK_NAME) -> dict:
+    """只读查一次落库 sweep 计划任务的 `State`／`LastRunTime`／`NextRunTime`。
+
+    🔴 **三态而非两态**：在跑／已停用／**取不到**。取不到（非 Windows、没有
+    这个任务、`powershell` 不在 PATH、超时）**绝不能被渲染成「停用」**——
+    「我查了，它是停的」与「我没查到」是两句完全不同的话，而前者会让读的人
+    去做一次并不需要的 `Enable-ScheduledTask`。
+    """
+    result: dict = {"task": task_name, "available": False, "state": None,
+                    "last_run": None, "next_run": None, "last_result": None,
+                    "detail": None}
+    try:
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             _SWEEP_PS.replace("__TASK__", task_name)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=SWEEP_PROBE_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        result["detail"] = "本机找不到 `powershell`（非 Windows 或不在 PATH）"
+        return result
+    except (OSError, subprocess.SubprocessError) as exc:
+        result["detail"] = f"调用失败：{type(exc).__name__}: {exc}"
+        return result
+
+    if completed.returncode != 0:
+        reason = (completed.stderr or completed.stdout).strip().splitlines()
+        result["detail"] = (f"`Get-ScheduledTask -TaskName {task_name}` 非零退出"
+                            f"（{reason[0][:160] if reason else '无输出'}）")
+        return result
+    try:
+        payload = json.loads(completed.stdout.strip() or "{}")
+    except json.JSONDecodeError:
+        result["detail"] = f"输出不是 JSON（前 120 字：{completed.stdout.strip()[:120]!r}）"
+        return result
+
+    result.update(available=True, state=payload.get("state"),
+                  last_run=payload.get("last_run"), next_run=payload.get("next_run"),
+                  last_result=payload.get("last_result"))
+    result["detail"] = (f"State={result['state']}｜LastRun={result['last_run']}"
+                        f"｜NextRun={result['next_run']}｜LastTaskResult={result['last_result']}")
+    return result
+
+
+def _sweep_is_live(sweep: dict | None) -> bool:
+    return bool(sweep and sweep.get("available") and sweep.get("state") in SWEEP_LIVE_STATES)
+
+
+def _parse_local(stamp: str | None) -> datetime | None:
+    if not stamp:
+        return None
+    try:
+        return datetime.strptime(stamp, LOCAL_TIME_FMT)
+    except ValueError:
+        return None
+
+
 def _load_state(path: Path) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -563,7 +693,10 @@ def track_lan_flip(state: dict, lan: dict | None) -> dict:
 # ============================================================
 
 def scan(repo_root: Path, *, lan: bool = True, wide: bool = False,
-         state_path: Path | None = None, today: date | None = None) -> dict:
+         state_path: Path | None = None, today: date | None = None,
+         sweep_probe: bool | None = None) -> dict:
+    """`sweep_probe=None` ＝ 跟随 `lan`：`--skip-lan-probe`（CI／离线／单测）
+    连同 sweep 任务查询一起跳过，两者都是「问外部环境」而非「读仓库」。"""
     # 🔴 日期取本机本地日（项目硬规则：写入/比对日期一律用本机，不用 UTC）。
     today = today or date.today()
     state_file = state_path or (repo_root / STATE_REL)
@@ -575,6 +708,12 @@ def scan(repo_root: Path, *, lan: bool = True, wide: bool = False,
     form3 = scan_form3(repo_root)
     lan_result = probe_lan() if lan else None
     flip = track_lan_flip(state, lan_result)
+    # 只在真有主工作区脏文件时才去查——没有那一条时，这次查询的结果不会被
+    # 用到，白花一次 `Get-ScheduledTask` 的时间。
+    want_sweep = lan if sweep_probe is None else sweep_probe
+    sweep = (probe_sweep_task()
+             if want_sweep and any(item.get("is_main") for item in form3["items"])
+             else None)
 
     current_keys = {item["key"] for group in (form1["items"], form2["items"], form3["items"])
                     for item in group}
@@ -583,7 +722,8 @@ def scan(repo_root: Path, *, lan: bool = True, wide: bool = False,
 
     return {
         "base_ref": base, "today": today.isoformat(), "form1": form1, "form2": form2,
-        "form3": form3, "lan": lan_result, "lan_flip": flip, "resolved": resolved,
+        "form3": form3, "lan": lan_result, "lan_flip": flip, "sweep_task": sweep,
+        "resolved": resolved,
         "state_path": str(state_file),
         "unavailable": [reason for reason in
                         (form1["unavailable"], form2["unavailable"], form3["unavailable"])
@@ -615,6 +755,54 @@ def write_state(findings: dict, state_path: Path) -> None:
         json.dumps({"alerted": fresh, "lan": lan_state}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _format_main_workspace_verdict(item: dict, sweep: dict | None) -> list[str]:
+    """主工作区那一条的结论。**有条件、且自带证据**——这一段的全部价值就在于
+    把 `LastRunTime` 与各文件 mtime 摆在一起，让人一眼分清「正常时间差」与
+    「真漏收」；只删掉「停用期间」四个字会让它退化成一句没有诊断力的话。
+    """
+    rows = item.get("file_times") or []
+    dirty = item["tracked_changes"] + item["untracked"]
+    out: list[str] = []
+
+    if not _sweep_is_live(sweep):
+        # 停用／取不到：保留原救法文案，但把「我凭什么这么说」一并写出来。
+        if sweep and sweep.get("available"):
+            basis = f"已实测其 `State={sweep.get('state')}`（LastRun `{sweep.get('last_run')}` 本地）"
+        elif sweep:
+            basis = (f"⚠️ **取不到任务状态，故本条无法断言 sweep 是否在跑**"
+                     f"（{sweep.get('detail')}）")
+        else:
+            basis = "⚠️ **本轮未查 sweep 状态**（`--skip-lan-probe`）——**不据此判断它在不在跑**"
+        out.append("      ⇒ 主工作区的改动本该由落库 sweep 每轮收走；**sweep 停用期间**"
+                   "它就是一堆没人收的产出，需人工 commit（不适用下面那条救法）。")
+        out.append(f"        {basis}")
+        return out
+
+    last_run = _parse_local(sweep.get("last_run"))
+    shown = rows[:SWEEP_MTIME_LIST_CAP]
+    stale = [r for r in rows if (mt := _parse_local(r["mtime"])) and last_run and mt < last_run]
+    unknown = [r for r in rows if r["mtime"] is None]
+
+    out.append(f"      ⇒ 主工作区 {dirty} 个改动未收；落库 sweep **在跑**"
+               f"（`State={sweep.get('state')}`｜上一轮 `{sweep.get('last_run')}` 本地"
+               f"｜`LastTaskResult={sweep.get('last_result')}`）。")
+    out.extend(f"        · `{r['name']}` mtime `{r['mtime'] or '取不到'}`（本地）" for r in shown)
+    if len(rows) > len(shown):
+        out.append(f"        · 另有 {len(rows) - len(shown)} 个未列出（判定已含它们）")
+    if stale:
+        out.append(f"      ⇒ 🔴 **其中 {len(stale)} 个文件 mtime 早于上一轮却仍未被收 —— "
+                   f"这不是时间差，是真漏收**（多半是没登记 §二 批次）："
+                   + "、".join(f"`{r['name']}`" for r in stale[:SWEEP_MTIME_LIST_CAP]))
+    if unknown:
+        out.append(f"      ⇒ ⚠️ {len(unknown)} 个文件取不到 mtime，**这几个既没被判成时间差、"
+                   f"也没被判成漏收**，须人工看一眼："
+                   + "、".join(f"`{r['name']}`" for r in unknown[:SWEEP_MTIME_LIST_CAP]))
+    if not stale and not unknown:
+        out.append(f"      ⇒ 全部晚于上一轮，**属正常时间差、不是漏收**；下一轮 "
+                   f"`{sweep.get('next_run') or '（取不到）'}`（本地）会收走。")
+    return out
 
 
 def format_report(findings: dict) -> str:
@@ -678,8 +866,7 @@ def format_report(findings: dict) -> str:
                      f"，共 {item['insertions']} 行新增")
         lines.extend(f"      {name}" for name in item["files"])
         if item.get("is_main"):
-            lines.append("      ⇒ 主工作区的改动本该由落库 sweep 每轮收走；**sweep 停用期间**"
-                         "它就是一堆没人收的产出，需人工 commit（不适用下面那条救法）。")
+            lines.extend(_format_main_workspace_verdict(item, findings.get("sweep_task")))
     if any(not item.get("is_main") for item in form3["items"]):
         lines.append("  ⇒ 怎么救（linked worktree）：先跑该改动所属子项目的回归，绿则 commit 到"
                      "本分支再合入；🔴 不得丢弃、不得替它改判。任何一次 worktree 清理都会让"
@@ -699,7 +886,8 @@ def format_report(findings: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="未闭合产出扫描（三形态 ＋ 回 LAN 感知），只读")
     parser.add_argument("--repo-root", default=None, help="仓库根（仅测试用）")
-    parser.add_argument("--skip-lan-probe", action="store_true", help="不跑网络探针（CI／离线）")
+    parser.add_argument("--skip-lan-probe", action="store_true",
+                        help="不问外部环境（LAN 三项探针 ＋ sweep 任务状态）（CI／离线）")
     parser.add_argument("--wide", action="store_true", help="附带泛「留步」二级提示")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     parser.add_argument("--enforce", action="store_true", help="有发现即非零退出")

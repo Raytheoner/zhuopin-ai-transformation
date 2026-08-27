@@ -459,5 +459,135 @@ class ExitCodeTests(RepoFixture):
                          "队列文件不存在 ⇒ 判据不可用 ⇒ 必须是 2")
 
 
+# ============================================================
+# 形态 3 · 主工作区那条的错误归因（2026-08-27，`OP-0827-E` D 类）
+#
+# 原缺陷：报告对主工作区写死一句「**sweep 停用期间**它就是一堆没人收的产出」，
+# **而它根本没去查过 sweep 的状态**。实测反例＝`State=Ready`、`LastRun 11:17:02`、
+# 3 个脏文件 mtime 全部晚于那一轮 ⇒ 真因是正常时间差。危害是复合的：下游读到
+# 那句话后跟着断言「Enable-ScheduledTask 还没跑」，同一个未经验证的因果被当作
+# 事实转述了一层。
+#
+# 🔴 本组锁死的是**两路都要在**：只把「停用期间」四个字删掉，这段话就退化成
+# 一句没有诊断力的话；它的价值恰恰在于把 mtime 与 LastRunTime 摆在一起。
+# ============================================================
+
+class SweepAttributionTests(RepoFixture):
+    """主工作区脏文件的归因：时间差 vs 真漏收 vs 不知道。"""
+
+    def _findings(self, sweep: dict | None, mtimes: list[dict]) -> dict:
+        return {
+            "today": "2026-08-27", "base_ref": "origin/master", "lan": None,
+            "lan_flip": {"flip": None}, "resolved": [], "unavailable": [],
+            "sweep_task": sweep,
+            "form1": {"items": [], "wide_items": [], "excluded_section_two": 0},
+            "form2": {"items": []},
+            "form3": {"items": [{
+                "worktree": str(self.main), "branch": "master", "is_main": True,
+                "tracked_changes": len(mtimes), "untracked": 0, "insertions": 49,
+                "files": [r["name"] for r in mtimes], "file_times": mtimes,
+                "key": "form3:main",
+            }]},
+        }
+
+    _LIVE = {"task": "ZhuopinCommitSweep", "available": True, "state": "Ready",
+             "last_run": "2026-08-27 11:17:02", "next_run": "2026-08-27 12:17:01",
+             "last_result": 0, "detail": "State=Ready｜…"}
+
+    def test_live_sweep_reads_as_time_gap_not_disabled(self):
+        """实测那一幕：三个文件全部晚于上一轮 ⇒ 正常时间差，不得说成停用。"""
+        report = unclosed_scan.format_report(self._findings(self._LIVE, [
+            {"name": "波次收口.md", "mtime": "2026-08-27 11:20:53"},
+            {"name": "a.md", "mtime": "2026-08-27 11:26:35"},
+            {"name": "b.md", "mtime": "2026-08-27 11:35:14"},
+        ]))
+        self.assertIn("正常时间差", report)
+        self.assertNotIn("sweep 停用期间", report,
+                         "sweep 在跑时把它说成停用，正是本组要防的那个错误归因")
+        self.assertIn("11:17:02", report, "上一轮时刻必须出现——结论要自带证据")
+        self.assertIn("11:20:53", report, "文件 mtime 必须与上一轮并排摆出")
+        self.assertIn("12:17:01", report, "下一轮时刻要写出来，读的人才知道等多久")
+
+    def test_file_older_than_last_run_is_flagged_as_real_miss(self):
+        """🔴 早于上一轮却还在 ⇒ 那才是真漏收，必须单独标红、不能混进时间差。"""
+        report = unclosed_scan.format_report(self._findings(self._LIVE, [
+            {"name": "漏收的.md", "mtime": "2026-08-27 09:02:00"},
+            {"name": "刚改的.md", "mtime": "2026-08-27 11:40:00"},
+        ]))
+        self.assertIn("真漏收", report)
+        self.assertIn("漏收的.md", report)
+        self.assertNotIn("全部晚于上一轮", report,
+                         "有一个早于上一轮就不能再说『全部晚于』")
+
+    def test_unknown_mtime_is_neither_gap_nor_miss(self):
+        """取不到 mtime 的既不算时间差也不算漏收——**不许回落成任一侧**。"""
+        report = unclosed_scan.format_report(self._findings(self._LIVE, [
+            {"name": "已删除.md", "mtime": None},
+        ]))
+        self.assertIn("取不到 mtime", report)
+        self.assertNotIn("正常时间差", report)
+        self.assertNotIn("真漏收", report)
+
+    def test_disabled_sweep_keeps_original_wording_with_measured_state(self):
+        """停用这一路保留原救法文案，但必须写出「我凭什么这么说」。"""
+        report = unclosed_scan.format_report(self._findings(
+            {"task": "ZhuopinCommitSweep", "available": True, "state": "Disabled",
+             "last_run": "2026-08-26 21:17:00", "next_run": None, "last_result": 267009,
+             "detail": "…"},
+            [{"name": "a.md", "mtime": "2026-08-27 11:20:00"}]))
+        self.assertIn("sweep 停用期间", report)
+        self.assertIn("State=Disabled", report, "断言停用必须附实测值")
+
+    def test_unavailable_sweep_is_not_asserted_to_be_disabled(self):
+        """🔴 「我查了，它是停的」与「我没查到」是两句话 —— 后者不得冒充前者。"""
+        report = unclosed_scan.format_report(self._findings(
+            {"task": "ZhuopinCommitSweep", "available": False, "state": None,
+             "last_run": None, "next_run": None, "last_result": None,
+             "detail": "本机找不到 `powershell`（非 Windows 或不在 PATH）"},
+            [{"name": "a.md", "mtime": "2026-08-27 11:20:00"}]))
+        self.assertIn("无法断言", report)
+        self.assertIn("powershell", report, "取不到的原因要写出来，否则没法排查")
+        self.assertNotIn("State=None", report, "不得把「取不到」渲染成一个状态值")
+
+    def test_skipped_probe_says_so_instead_of_guessing(self):
+        """`--skip-lan-probe` 时压根没查 ⇒ 也不得据此判断它在不在跑。"""
+        report = unclosed_scan.format_report(self._findings(None, [
+            {"name": "a.md", "mtime": "2026-08-27 11:20:00"}]))
+        self.assertIn("本轮未查 sweep 状态", report)
+
+    def test_probe_not_run_when_lan_probe_skipped(self):
+        """两者都是「问外部环境」：跳过 LAN 探针即一并跳过 sweep 查询。"""
+        (self.main / "脏.md").write_text("未提交\n", encoding="utf-8")
+        findings = unclosed_scan.scan(self.main, lan=False, state_path=self.state)
+        self.assertIsNone(findings["sweep_task"])
+
+    def test_probe_of_nonexistent_task_is_unavailable_not_a_state(self):
+        """真跑一次探针（不 mock）：任务不存在 ⇒ `available=False`、`state=None`。
+        非 Windows 上走的是 `FileNotFoundError` 那条，结论相同。"""
+        result = unclosed_scan.probe_sweep_task("ZhuopinCommitSweep_不存在_测试用")
+        self.assertFalse(result["available"])
+        self.assertIsNone(result["state"])
+        self.assertTrue(result["detail"], "取不到时必须留下原因，不能是空的")
+
+    def test_mtimes_collected_only_for_main_workspace(self):
+        """mtime 只对主工作区采集——只有那一条的救法与 sweep 的轮次有关。"""
+        wt = Path(self._tmp.name) / "wt-dirty"
+        _git(self.main, "worktree", "add", "-q", str(wt), "-b", "claude/wt-dirty")
+        (wt / "脏.md").write_text("linked worktree 的改动\n", encoding="utf-8")
+        (self.main / "脏.md").write_text("主工作区的改动\n", encoding="utf-8")
+        items = unclosed_scan.scan_form3(self.main)["items"]
+        main_item = next(i for i in items if i["is_main"])
+        linked = next(i for i in items if not i["is_main"])
+        self.assertTrue(main_item["file_times"])
+        self.assertTrue(main_item["file_times"][0]["mtime"])
+        self.assertEqual(linked["file_times"], [])
+
+    def test_rename_row_takes_the_new_path(self):
+        """`R  旧 -> 新`：要 stat 的是新名。取旧名只会得到一个「文件不存在」，
+        把一条真改动记成无 mtime。"""
+        self.assertEqual(unclosed_scan._status_path("R  旧名.md -> 新名.md"), "新名.md")
+        self.assertEqual(unclosed_scan._status_path("?? 未跟踪.md"), "未跟踪.md")
+
+
 if __name__ == "__main__":
     unittest.main()
