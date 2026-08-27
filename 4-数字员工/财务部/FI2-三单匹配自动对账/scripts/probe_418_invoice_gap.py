@@ -9,7 +9,6 @@
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -21,6 +20,17 @@ for _p in _HERE.parents:
 from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
 ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
 
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
+
+#: 本探针直接构造 `ZpConnector.from_env()`，六个 U9C 凭据键**缺一即不可用**。
+#: 判据＝`ZpConnector.from_env()` 自己那份 `keys` 清单逐字抄来（队列 #354 决策点 4 ＝ (c)：
+#: 调用方声明自己要什么）。原实现缺键时报的是连接器抛的 `ValueError`，收拢后由
+#: `MissingRequiredKeys` 在读 `.env` 那一步就报、并写明找过哪些路径。
+REQUIRED_ENV_KEYS: tuple[str, ...] = (
+    "U9C_API_BASE", "U9C_USER_CODE", "U9C_ENT_CODE",
+    "U9C_ORG_CODE", "U9C_CLIENT_ID", "U9C_CLIENT_SECRET",
+)
+
 # 她 2026-08-26 回件表 1 的四组对照（AP 单号 / 数电发票号码 / 该发票所在导出文件）
 EXHIBITS = [
     ("AP-2026080041", "26322000006465433531", "全量发票查询导出结果（20260801-20260817）"),
@@ -31,15 +41,13 @@ EXHIBITS = [
 
 
 def _load_env() -> None:
-    for d in (_HERE.parent, *_HERE.parents):
-        cand = d / ".env"
-        if cand.exists():
-            for line in cand.read_text(encoding="utf-8-sig").splitlines():
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
-            return
+    """读入本次运行该用的那份 `.env`（解析见 `zhuopin_platform.env_anchor`，队列 #354）。
+
+    🔴 **原实现是「向上逐级找最近的 `.env`」**——从 linked worktree 跑时命中 worktree 自己
+    那份陈旧副本、**且不报错**（本文件晚于 #354 design 的人工清单出生，是被门禁而非人扫出来的
+    第 16 处）。收拢后由 `--git-common-dir` 规范化到主工作区。凭据只在 `.env`，不打印、不入库。
+    """
+    print(_resolve_and_load_env(__file__, required=REQUIRED_ENV_KEYS).describe())
 
 
 def main() -> int:
