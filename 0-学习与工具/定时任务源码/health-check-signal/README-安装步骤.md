@@ -40,7 +40,7 @@ CC 尝试写入 `~/.claude/hooks/health-check-staleness.ps1` 时被 `pretooluse-
 
 ```powershell
 Copy-Item `
-  "C:\Users\Paul Shao\OneDrive\Projects\企业AI转型\0-学习与工具\定时任务源码\health-check-signal\health-check-staleness.ps1" `
+  "C:\Dev\zhuopin-ai\0-学习与工具\定时任务源码\health-check-signal\health-check-staleness.ps1" `
   "C:\Users\Paul Shao\.claude\hooks\health-check-staleness.ps1"
 ```
 
