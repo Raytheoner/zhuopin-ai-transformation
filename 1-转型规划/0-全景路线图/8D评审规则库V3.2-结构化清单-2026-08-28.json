@@ -1,0 +1,672 @@
+{
+  "source": {
+    "file": "质量部-ChenChen-回复-质量部#10-2026-08-28-8D报告AI评审规则库_统一规则体系-5e36f9ad8c3eb5dedd176117c4ed6c7a.xlsx",
+    "version": "V3.2",
+    "received": "2026-08-28 14:04 本地",
+    "from_": "质量部 陈忱",
+    "letter": "质量部#10 回件（额外交付物）"
+  },
+  "extracted_at": "2026-08-28",
+  "extracted_by": "CC OP-0828-V（openpyxl 逐格直读，非文本提取）",
+  "totals": {
+    "rules": 51,
+    "general": 30,
+    "manufacturing": 9,
+    "rnd": 12,
+    "redlines": 6,
+    "score_general": 77.0,
+    "score_manufacturing": 23.0,
+    "score_rnd": 23.0
+  },
+  "grade_bands": [
+    {
+      "grade": "A级（优秀）",
+      "band": "≥90分",
+      "conclusion": "8D报告质量高，逻辑完整，数据充分，场景特有维度覆盖全面",
+      "action": "可直接归档，建议作为标杆案例入库"
+    },
+    {
+      "grade": "B级（合格）",
+      "band": "75-89分",
+      "conclusion": "满足基本要求，通用规则无缺陷，场景特有规则部分可优化",
+      "action": "小修改后通过，反馈优化建议"
+    },
+    {
+      "grade": "C级（待修改）",
+      "band": "60-74分",
+      "conclusion": "存在明显缺陷，通用或场景关键信息缺失",
+      "action": "退回修改，明确修改清单与期限"
+    },
+    {
+      "grade": "D级（退回重写）",
+      "band": "<60分 或 触发红线",
+      "conclusion": "重大缺陷或触及红线项",
+      "action": "退回重写，必要时升级管理层/技术管理层"
+    }
+  ],
+  "rules": [
+    {
+      "rule_id": "D1-01",
+      "step": "D1",
+      "dimension": "团队成员信息",
+      "judge_method": "规则引擎",
+      "score": 1.0,
+      "scene": "通用",
+      "criteria": "列出团队成员姓名、部门/角色。判定：检查是否包含至少2个人名+角色描述。少于2人不得分。研发建议至少3人。",
+      "our_tier": "乙",
+      "our_note": "「人名」无法纯正则识别（中文人名无稳定形态）。建议改判：D1 段落含 ≥2 条『姓名／部门或角色』配对结构（表格 ≥2 行亦可）"
+    },
+    {
+      "rule_id": "D1-02",
+      "step": "D1",
+      "dimension": "跨职能代表性",
+      "judge_method": "关键词",
+      "score": 3.0,
+      "scene": "通用",
+      "criteria": "团队应覆盖跨职能。制造：质量/生产/工程/采购至少2个领域；研发：软件/硬件/测试/系统/质量至少3个领域。未满足不得分。",
+      "our_tier": "甲",
+      "our_note": "职能词表可枚举，阈值明确。⚠️ 与 D1-R1 判据逐字重复，见修改项 M9"
+    },
+    {
+      "rule_id": "D2-01",
+      "step": "D2",
+      "dimension": "What-问题对象",
+      "judge_method": "规则引擎",
+      "score": 1.0,
+      "scene": "通用",
+      "criteria": "明确问题涉及对象。制造：零件号/产品型号/工序；研发：ECU名称/软硬件版本。判定逻辑分场景检查对应关键词。缺失不得分。",
+      "our_tier": "甲",
+      "our_note": "关键词表可枚举。⚠️ 制造分支与 D2-M1 重叠，见 M9"
+    },
+    {
+      "rule_id": "D2-02",
+      "step": "D2",
+      "dimension": "Where-发生地点/环境",
+      "judge_method": "规则引擎",
+      "score": 1.0,
+      "scene": "通用",
+      "criteria": "明确问题发生位置。制造：产线/工位/工序/仓库/客户端；研发：台架/HIL/实车/道路测试/EMC。缺失不得分。",
+      "our_tier": "甲",
+      "our_note": "关键词表可枚举。⚠️ 制造分支与 D2-M2 重叠，见 M9"
+    },
+    {
+      "rule_id": "D2-03",
+      "step": "D2",
+      "dimension": "When-发生时间",
+      "judge_method": "规则引擎",
+      "score": 1.0,
+      "scene": "通用",
+      "criteria": "明确问题首发时间和影响时间段。判定：检查是否有日期格式或阶段描述（如'2026-07-15''DV阶段'）。",
+      "our_tier": "甲",
+      "our_note": "日期正则；QD-A `field_extractor` 已有同类日期抽取可复用"
+    },
+    {
+      "rule_id": "D2-04",
+      "step": "D2",
+      "dimension": "Who-涉及方",
+      "judge_method": "规则引擎",
+      "score": 1.0,
+      "scene": "通用",
+      "criteria": "明确涉及的客户、供应商、车型平台、项目代号或内部责任部门。",
+      "our_tier": "乙",
+      "our_note": "无阈值：列出几个算「明确」未定。另：客户名在我方链路里已被 scrubber 令牌化，须说明令牌化后此条如何判"
+    },
+    {
+      "rule_id": "D2-05",
+      "step": "D2",
+      "dimension": "How many-数据量化",
+      "judge_method": "规则引擎+语义",
+      "score": 3.0,
+      "scene": "通用",
+      "criteria": "问题需用数据量化。制造：不良数/批次；研发：复现率/故障次数/影响车辆数。纯文字描述无数据不得分。",
+      "our_tier": "乙",
+      "our_note": "「有无数据」用数字＋单位正则即可确定性判定，建议由『规则引擎+语义』降为『规则引擎』，省一次 LLM 调用"
+    },
+    {
+      "rule_id": "D2-06",
+      "step": "D2",
+      "dimension": "How-不良现象",
+      "judge_method": "LLM语义",
+      "score": 1.0,
+      "scene": "通用",
+      "criteria": "客观描述不良现象。制造：异响/漏装/尺寸超差；研发：故障码/信号丢失/采样跳变。避免'大概''可能'等主观词。",
+      "our_tier": "丙",
+      "our_note": "主观词（大概/可能）可关键词初筛，但「是否客观描述现象」须语义"
+    },
+    {
+      "rule_id": "D2-07",
+      "step": "D2",
+      "dimension": "客观数据支撑",
+      "judge_method": "关键词+语义",
+      "score": 1.0,
+      "scene": "通用",
+      "criteria": "以客观数据/事实为依据。制造：检测数据/照片/检验记录；研发：故障码/CAN log/示波器波形。纯主观描述扣1分。",
+      "our_tier": "丙",
+      "our_note": "证据类型词表可枚举，但「是否构成支撑」须语义"
+    },
+    {
+      "rule_id": "D2-08",
+      "step": "D2",
+      "dimension": "区分现象与原因",
+      "judge_method": "LLM语义",
+      "score": 1.0,
+      "scene": "通用",
+      "criteria": "明确区分'问题现象'与'初步原因猜测'。判定：AI判断是否混淆了'是什么'（现象）和'为什么'（原因），混淆不得分。",
+      "our_tier": "丙",
+      "our_note": "现象/原因是否混淆，纯语义"
+    },
+    {
+      "rule_id": "D3-01",
+      "step": "D3",
+      "dimension": "临时措施内容",
+      "judge_method": "LLM语义",
+      "score": 3.0,
+      "scene": "通用",
+      "criteria": "明确具体临时措施，非永久解决方案。制造：挑选/返工/暂停/加严检验；研发：版本回滚/功能屏蔽/临时参数/暂停发布。",
+      "our_tier": "丙",
+      "our_note": "「是否临时措施而非永久方案」须语义；正反词表可作强特征"
+    },
+    {
+      "rule_id": "D3-02",
+      "step": "D3",
+      "dimension": "遏制范围",
+      "judge_method": "关键词",
+      "score": 3.0,
+      "scene": "通用",
+      "criteria": "明确遏制覆盖范围。制造：在制品/在途/在库/客户端/原材料（至少2个）；研发：已发布/在研/在测/已装车/已OTA（至少2个）。",
+      "our_tier": "甲",
+      "our_note": "范围词表明确、阈值明确（至少 2 个）"
+    },
+    {
+      "rule_id": "D3-03",
+      "step": "D3",
+      "dimension": "责任人+完成日期",
+      "judge_method": "规则引擎",
+      "score": 1.0,
+      "scene": "通用",
+      "criteria": "临时措施需有负责人和完成时间。判定：检查是否包含人名+日期。缺失任一扣0.5分。",
+      "our_tier": "乙",
+      "our_note": "同 D1-01 的人名识别问题；日期部分可确定性判"
+    },
+    {
+      "rule_id": "D3-04",
+      "step": "D3",
+      "dimension": "遏制效果验证",
+      "judge_method": "LLM语义",
+      "score": 2.0,
+      "scene": "通用",
+      "criteria": "提供遏制措施有效性的证据。制造：'挑选后0不良''客户端无新增投诉'；研发：'回滚后故障消失''屏蔽后无新增投诉'。无验证不得分。",
+      "our_tier": "丙",
+      "our_note": "「是否提供了有效性证据」须语义"
+    },
+    {
+      "rule_id": "D3-05",
+      "step": "D3",
+      "dimension": "未与D5混淆",
+      "judge_method": "LLM语义",
+      "score": 4.0,
+      "scene": "通用",
+      "criteria": "D3为临时措施，D5为永久措施。制造：D3不可含'修改工艺''更新模具''设计变更'；研发：D3不可含'重构代码''修改架构''变更BOM'。混淆此项0分。",
+      "our_tier": "丙",
+      "our_note": "🔴 红线②的扣分对应项；须语义。禁用词表（修改模具/重构代码…）可作强特征但不足以定案"
+    },
+    {
+      "rule_id": "D4-01",
+      "step": "D4",
+      "dimension": "系统化分析工具",
+      "judge_method": "关键词",
+      "score": 4.0,
+      "scene": "通用",
+      "criteria": "使用5Why、鱼骨图、FTA、DOE等系统化工具。研发可增加：故障注入、代码走查、静态分析。未使用任何工具不得分。",
+      "our_tier": "甲",
+      "our_note": "工具名词表可枚举"
+    },
+    {
+      "rule_id": "D4-02",
+      "step": "D4",
+      "dimension": "5Why追问深度",
+      "judge_method": "规则引擎",
+      "score": 2.0,
+      "scene": "通用",
+      "criteria": "5Why分析至少追问3层以上。判定：统计'为什么''为何''WHY'等追问词出现次数，少于3次不得分。",
+      "our_tier": "甲",
+      "our_note": "计数「为什么/为何/WHY」≥3；QD-A 终档说明已含 5Why 链抽取，基本现成"
+    },
+    {
+      "rule_id": "D4-03",
+      "step": "D4",
+      "dimension": "根因到末端",
+      "judge_method": "LLM语义",
+      "score": 4.0,
+      "scene": "通用",
+      "criteria": "根因分析需到底层。制造：管理/技术原因（如'未设置防错''SOP未更新'）；研发：代码逻辑/设计缺陷/需求遗漏。表面原因不得分。",
+      "our_tier": "丙",
+      "our_note": "「是否到末端」纯语义。⚠️ 与 D4-M2／D4-R1／D4-R2 重叠，见 M9"
+    },
+    {
+      "rule_id": "D4-04",
+      "step": "D4",
+      "dimension": "发生原因与流出原因",
+      "judge_method": "LLM语义",
+      "score": 2.0,
+      "scene": "通用",
+      "criteria": "分别分析'为什么发生'和'为什么流出'。制造：制造端/检验端；研发：设计端/测试端。只分析一方面扣1分。",
+      "our_tier": "丙",
+      "our_note": "发生/流出两侧是否都分析，须语义"
+    },
+    {
+      "rule_id": "D4-05",
+      "step": "D4",
+      "dimension": "根因验证",
+      "judge_method": "LLM语义",
+      "score": 4.0,
+      "scene": "通用",
+      "criteria": "根因需经数据/试验/再现验证。研发可增加：代码走查/仿真/对比试验。未验证不得分。",
+      "our_tier": "丙",
+      "our_note": "🔴 红线⑤的扣分对应项；须语义。QD-A 已有 `root_cause_verified` 字段但档位为「需人工」"
+    },
+    {
+      "rule_id": "D4-06",
+      "step": "D4",
+      "dimension": "根因与问题逻辑关联",
+      "judge_method": "LLM语义",
+      "score": 2.0,
+      "scene": "通用",
+      "criteria": "根因必须与D2描述的问题直接关联。判定：AI判断D4根因是否能逻辑推导出D2的问题现象，无逻辑关联不得分。",
+      "our_tier": "丙",
+      "our_note": "D4 根因能否逻辑推出 D2 现象，纯语义、且是跨段推理，本库中最难的一条"
+    },
+    {
+      "rule_id": "D5-01",
+      "step": "D5",
+      "dimension": "与根因一一对应",
+      "judge_method": "LLM语义",
+      "score": 5.0,
+      "scene": "通用",
+      "criteria": "每条永久措施需对应D4的一条根因。判定：AI检查D5措施数量是否与D4根因数量匹配。不对应每条扣2分。",
+      "our_tier": "丙",
+      "our_note": "须语义；且「不对应每条扣2分」无封底，3 条不对应即 -6 分而本条满分 5 分，见 M14"
+    },
+    {
+      "rule_id": "D5-02",
+      "step": "D5",
+      "dimension": "措施具体可执行",
+      "judge_method": "LLM语义",
+      "score": 4.0,
+      "scene": "通用",
+      "criteria": "措施描述需具体。制造：'增加''修改''导入''替换'+具体对象；研发：代码修改点/算法调整/BOM变更。空泛描述扣2分。",
+      "our_tier": "丙",
+      "our_note": "「具体 vs 空泛」须语义。⚠️ 与 D5-R1／D5-R2 重叠，见 M9"
+    },
+    {
+      "rule_id": "D5-03",
+      "step": "D5",
+      "dimension": "验证方式与标准",
+      "judge_method": "LLM语义",
+      "score": 4.0,
+      "scene": "通用",
+      "criteria": "明确验证方法和验收标准。",
+      "our_tier": "丙",
+      "our_note": "🔴 判定逻辑「明确验证方法和验收标准」是同义反复，未给任何可执行判据 —— 见修改项 M10"
+    },
+    {
+      "rule_id": "D5-04",
+      "step": "D5",
+      "dimension": "责任人+计划日期",
+      "judge_method": "规则引擎",
+      "score": 2.0,
+      "scene": "通用",
+      "criteria": "每条措施需有负责人和计划完成日期。缺失任一扣1分。",
+      "our_tier": "乙",
+      "our_note": "同 D1-01 的人名识别问题"
+    },
+    {
+      "rule_id": "D6-01",
+      "step": "D6",
+      "dimension": "实施证据",
+      "judge_method": "规则引擎+语义",
+      "score": 4.0,
+      "scene": "通用",
+      "criteria": "提供措施实施的客观证据。制造：已完成/照片/记录；研发：代码已提交/变更单已批准/设计已更新。仅有计划无证据不得分。",
+      "our_tier": "丙",
+      "our_note": "「计划 vs 证据」须语义。⚠️ 与 D6-M1 重叠，见 M9"
+    },
+    {
+      "rule_id": "D6-02",
+      "step": "D6",
+      "dimension": "效果确认数据",
+      "judge_method": "规则引擎+语义",
+      "score": 5.0,
+      "scene": "通用",
+      "criteria": "用数据证明措施有效。",
+      "our_tier": "丙",
+      "our_note": "🔴 判定逻辑「用数据证明措施有效」是同义反复 —— 见修改项 M11"
+    },
+    {
+      "rule_id": "D7-01",
+      "step": "D7",
+      "dimension": "文件标准化更新",
+      "judge_method": "关键词",
+      "score": 2.0,
+      "scene": "通用",
+      "criteria": "更新相关标准文件。制造：SOP/作业指导书/检验标准；研发：设计规范/编码规范/需求文档。",
+      "our_tier": "乙",
+      "our_note": "关键词可枚举，但无阈值（提到即得分？还是须写明更新了哪一份？）见 M13。⚠️ 与 D7-M1 逐字重叠，见 M9"
+    },
+    {
+      "rule_id": "D7-02",
+      "step": "D7",
+      "dimension": "FMEA更新",
+      "judge_method": "关键词+规则",
+      "score": 2.0,
+      "scene": "通用",
+      "criteria": "更新FMEA，体现RPN降低或新增失效模式。制造：PFMEA；研发：DFMEA。IATF 16949/ASPICE要求。",
+      "our_tier": "丁",
+      "our_note": "🔴 与她 2026-08-25 亲笔签认的判例 1「FMEA 未挂接＝建议项·不扣分·不退回」直接冲突 —— 见修改项 M1，裁定前本轮不实现"
+    },
+    {
+      "rule_id": "D7-03",
+      "step": "D7",
+      "dimension": "横向展开",
+      "judge_method": "LLM语义",
+      "score": 4.0,
+      "scene": "通用",
+      "criteria": "同类问题横向展开。制造：同类产品/其他产线/其他供应商；研发：其他模块/平台/项目。无展开扣1分。",
+      "our_tier": "丙",
+      "our_note": "须语义；且「无展开扣1分」与本条 4 分不匹配（不展开只扣 1/4？），见 M15"
+    },
+    {
+      "rule_id": "D2-M1",
+      "step": "D2",
+      "dimension": "零件号/批次追溯",
+      "judge_method": "规则引擎",
+      "score": 1.0,
+      "scene": "制造",
+      "criteria": "明确零件号/P/N、批次号/Lot。判定：检查是否有'件号''料号''P/N''批次''Lot'等追溯标识。缺失不得分。",
+      "our_tier": "甲",
+      "our_note": "追溯标识词表明确。⚠️ 红线④取同一组字段，须与 M-前提 P2 一并设计"
+    },
+    {
+      "rule_id": "D2-M2",
+      "step": "D2",
+      "dimension": "产线/工位信息",
+      "judge_method": "规则引擎",
+      "score": 1.0,
+      "scene": "制造",
+      "criteria": "明确产线名称和工位编号。判定：检查是否包含'产线''工位''工序'等位置信息。",
+      "our_tier": "甲",
+      "our_note": "位置词表明确"
+    },
+    {
+      "rule_id": "D4-M1",
+      "step": "D4",
+      "dimension": "人/机/料/法/环/测排查",
+      "judge_method": "关键词",
+      "score": 4.0,
+      "scene": "制造",
+      "criteria": "鱼骨图需覆盖5M1E维度中至少4个。判定：检查是否提及'人/人员''机/设备''料/材料''法/方法''环/环境''测/测量'中至少4个维度。",
+      "our_tier": "甲",
+      "our_note": "5M1E 六维词表，阈值明确（≥4 维）"
+    },
+    {
+      "rule_id": "D4-M2",
+      "step": "D4",
+      "dimension": "根因到末端-制造深化",
+      "judge_method": "LLM语义",
+      "score": 3.0,
+      "scene": "制造",
+      "criteria": "根因不可停留在'操作失误''疏忽''不小心'等表面原因。末端根因特征：能直接对应一条可执行的预防措施（如'未设置防错''SOP未更新'）。",
+      "our_tier": "丙",
+      "our_note": "须语义。⚠️ 与 D4-03 判据同源（「不可停留在表面原因」＋同一组举例），见 M9"
+    },
+    {
+      "rule_id": "D5-M1",
+      "step": "D5",
+      "dimension": "制造验证标准量化",
+      "judge_method": "规则引擎+语义",
+      "score": 4.0,
+      "scene": "制造",
+      "criteria": "明确制造相关的量化验收标准。",
+      "our_tier": "丙",
+      "our_note": "🔴 判定逻辑「明确制造相关的量化验收标准」是同义反复 —— 见修改项 M12"
+    },
+    {
+      "rule_id": "D6-M1",
+      "step": "D6",
+      "dimension": "制造实施证据细化",
+      "judge_method": "规则引擎+语义",
+      "score": 4.0,
+      "scene": "制造",
+      "criteria": "提供制造实施的详细证据。如实施日期、现场照片、检验记录、首件确认记录等。仅有文字描述无证据不得分。",
+      "our_tier": "丙",
+      "our_note": "须语义。⚠️ 与 D6-01 判据同源（照片/记录/已完成），见 M9"
+    },
+    {
+      "rule_id": "D7-M1",
+      "step": "D7",
+      "dimension": "SOP/作业指导书更新",
+      "judge_method": "关键词",
+      "score": 2.0,
+      "scene": "制造",
+      "criteria": "更新相关标准作业文件。判定：检查是否提及'更新SOP''修订作业指导书''更新检验标准'等文件更新动作。",
+      "our_tier": "甲",
+      "our_note": "词表明确。⚠️ 与 D7-01 制造分支逐字重叠，见 M9"
+    },
+    {
+      "rule_id": "D7-M2",
+      "step": "D7",
+      "dimension": "控制计划(CP)更新",
+      "judge_method": "关键词+规则",
+      "score": 2.0,
+      "scene": "制造",
+      "criteria": "更新控制计划，增加防错/加严检验。判定：检查'控制计划''Control Plan''CP更新''防错''Poka-Yoke'等关键词。",
+      "our_tier": "甲",
+      "our_note": "CP/防错词表明确"
+    },
+    {
+      "rule_id": "D7-M3",
+      "step": "D7",
+      "dimension": "培训与宣贯",
+      "judge_method": "LLM语义",
+      "score": 2.0,
+      "scene": "制造",
+      "criteria": "对相关人员进行培训并记录。判定：检查是否描述'培训''宣贯''教育''考核'等人员能力提升动作。",
+      "our_tier": "乙",
+      "our_note": "建议由『LLM语义』降为『关键词』：判定逻辑本身给的就是词表（培训/宣贯/教育/考核），无须语义判断 —— 见 M17"
+    },
+    {
+      "rule_id": "D1-R1",
+      "step": "D1",
+      "dimension": "研发团队跨职能细化",
+      "judge_method": "关键词",
+      "score": 2.5,
+      "scene": "研发",
+      "criteria": "研发团队应覆盖软件/硬件/测试/系统/质量至少3个职能。判定：检查是否包含至少3个不同职能关键词。少于3个不得分。",
+      "our_tier": "甲",
+      "our_note": "词表与阈值明确。⚠️ 与 D1-02 研发分支逐字重复（研发场景同一事实计两次，共 5.5 分），见 M9"
+    },
+    {
+      "rule_id": "D2-R1",
+      "step": "D2",
+      "dimension": "软件版本与代码分支",
+      "judge_method": "规则引擎",
+      "score": 0.5,
+      "scene": "研发",
+      "criteria": "软件问题必须提供版本号和代码分支/基线。判定：检查'版本号''SW Version''分支''Branch''基线''Baseline'。软件问题缺失此项不得分。",
+      "our_tier": "甲",
+      "our_note": "版本/分支词表明确"
+    },
+    {
+      "rule_id": "D2-R2",
+      "step": "D2",
+      "dimension": "硬件版本与BOM",
+      "judge_method": "规则引擎",
+      "score": 0.5,
+      "scene": "研发",
+      "criteria": "硬件问题必须提供硬件版本和BOM。判定：检查'HW Version''BOM''原理图版本''PCB版本'。硬件问题缺失扣1分。",
+      "our_tier": "甲",
+      "our_note": "🔴 本条满分 0.5 分，判定逻辑却写「缺失扣1分」——扣分超过满分，算术不可执行，见 M5"
+    },
+    {
+      "rule_id": "D2-R3",
+      "step": "D2",
+      "dimension": "故障码/CAN log/测试数据",
+      "judge_method": "关键词+语义",
+      "score": 1.0,
+      "scene": "研发",
+      "criteria": "以故障码、CAN log、示波器波形、测试数据为依据。判定：检查'故障码''DTC''CAN log''示波器''波形''log文件'等关键词。",
+      "our_tier": "乙",
+      "our_note": "建议由『关键词+语义』降为『关键词』：判定逻辑给的全是可枚举词（DTC/CAN log/示波器/波形），见 M17"
+    },
+    {
+      "rule_id": "D4-R1",
+      "step": "D4",
+      "dimension": "软件根因到末端",
+      "judge_method": "LLM语义",
+      "score": 2.5,
+      "scene": "研发",
+      "criteria": "软件根因需到底层：代码逻辑/设计缺陷/需求遗漏/时序/资源竞争。非'代码bug''程序错误'等无法直接修改的表面描述。",
+      "our_tier": "丙",
+      "our_note": "须语义。⚠️ 与 D4-03 研发分支重叠，见 M9"
+    },
+    {
+      "rule_id": "D4-R2",
+      "step": "D4",
+      "dimension": "硬件根因到末端",
+      "judge_method": "LLM语义",
+      "score": 2.5,
+      "scene": "研发",
+      "criteria": "硬件根因需到底层：器件选型/电路设计/Layout/EMC/电源。非'硬件问题''电路故障'等无法直接变更的表面描述。",
+      "our_tier": "丙",
+      "our_note": "须语义。⚠️ 与 D4-03 研发分支重叠，见 M9"
+    },
+    {
+      "rule_id": "D4-R3",
+      "step": "D4",
+      "dimension": "需求追溯",
+      "judge_method": "LLM语义",
+      "score": 2.5,
+      "scene": "研发",
+      "criteria": "根因追溯到需求规格书/SOR/设计输入。判定：检查是否提及'需求规格''SOR''设计输入''功能规范'及根因与需求的关联。未追溯扣2分。",
+      "our_tier": "丙",
+      "our_note": "须语义；SOR/需求规格词表可作强特征"
+    },
+    {
+      "rule_id": "D5-R1",
+      "step": "D5",
+      "dimension": "软件措施具体可执行",
+      "judge_method": "LLM语义",
+      "score": 2.5,
+      "scene": "研发",
+      "criteria": "软件措施：代码修复/算法优化/架构调整/配置修改。判定：检查是否有具体代码修改点（如'修改ADC采样滤波算法''增加看门狗异常处理分支'）。",
+      "our_tier": "丙",
+      "our_note": "须语义。⚠️ 与 D5-02 研发分支重叠，见 M9"
+    },
+    {
+      "rule_id": "D5-R2",
+      "step": "D5",
+      "dimension": "硬件措施具体可执行",
+      "judge_method": "LLM语义",
+      "score": 1.0,
+      "scene": "研发",
+      "criteria": "硬件措施：BOM变更/Layout修改/器件替换。判定：检查是否有具体硬件变更描述（如'电源芯片更换为XX型号''增加TVS管''PCB第3层走线调整'）。",
+      "our_tier": "丙",
+      "our_note": "须语义。⚠️ 与 D5-02 研发分支重叠，见 M9"
+    },
+    {
+      "rule_id": "D6-R1",
+      "step": "D6",
+      "dimension": "回归测试",
+      "judge_method": "关键词+语义",
+      "score": 4.0,
+      "scene": "研发",
+      "criteria": "软件变更必须进行回归测试。判定：检查'回归测试''Regression Test''全量测试''自动化测试'及测试结果。未做回归测试不得分。",
+      "our_tier": "乙",
+      "our_note": "建议由『关键词+语义』降为『关键词』：回归测试/Regression/全量测试/自动化测试均可枚举，见 M17"
+    },
+    {
+      "rule_id": "D7-R1",
+      "step": "D7",
+      "dimension": "测试用例补充",
+      "judge_method": "关键词",
+      "score": 2.5,
+      "scene": "研发",
+      "criteria": "补充测试用例覆盖边界条件和异常场景。判定：检查'测试用例补充''边界条件''异常场景''故障注入测试'等关键词及用例数量。",
+      "our_tier": "甲",
+      "our_note": "词表明确"
+    },
+    {
+      "rule_id": "D7-R2",
+      "step": "D7",
+      "dimension": "静态分析/代码扫描",
+      "judge_method": "关键词",
+      "score": 1.0,
+      "scene": "研发",
+      "criteria": "补充静态分析规则或代码扫描策略。判定：检查'静态分析''代码扫描''Coverity''QAC''MISRA'等工具或规则补充。",
+      "our_tier": "甲",
+      "our_note": "工具名词表明确（Coverity/QAC/MISRA）"
+    }
+  ],
+  "redlines": [
+    {
+      "redline_no": 1,
+      "step": "D4",
+      "description": "根因未分析或分析未到底层",
+      "judge_method": "LLM语义",
+      "logic": "通用红线：AI判断D4是否包含有效的根因分析。若根因分析缺失、仅复述问题现象、或最终根因停留在'操作失误''疏忽''代码bug''硬件故障'等无法直接采取预防措施的表面原因，触发红线。末端根因标准：制造场景能对应具体工艺/管理措施；研发场景软件根因能对应具体代码修改点，硬件根因能对应具体设计变更/BOM变更。",
+      "our_tier": "丙",
+      "our_note": "🔴 一票否决 ＋ 纯语义 ＝ 本库最高风险组合。误判一次＝把一份合格 8D 退回重写。须按前提 P1 降级为『疑似触发·转人工裁决』"
+    },
+    {
+      "redline_no": 2,
+      "step": "D3/D5",
+      "description": "临时措施与永久措施混淆",
+      "judge_method": "LLM语义",
+      "logic": "通用红线：AI判断D3中是否混入永久性解决措施，或D5中无对应D4根因的永久措施。制造：D3只能是'挑选''返工''暂停''加严检验'等临时动作，不可含'修改模具''更新设计''变更工艺'；研发：D3只能是'回滚版本''屏蔽功能''临时参数''暂停发布'，不可含'重构代码''修改架构''变更BOM'。混淆即触发红线。",
+      "our_tier": "丙",
+      "our_note": "🔴 同上。与判例 3 同族，但只覆盖了 D3/D5 一种错位形态，D6 错贴那类未覆盖 —— 见修改项 M2"
+    },
+    {
+      "redline_no": 3,
+      "step": "D2",
+      "description": "问题描述无任何客观数据",
+      "judge_method": "规则引擎+语义",
+      "logic": "通用红线：D2的问题描述中完全无数字、无检测数据、无批次信息、无量化指标。",
+      "our_tier": "乙",
+      "our_note": "「完全无数字、无检测数据、无批次信息、无量化指标」全部可用正则确定性判定 ⇒ 建议由『规则引擎+语义』升为纯『规则引擎』，是 6 条红线里唯一可以脱离 LLM 的一条，见 M17"
+    },
+    {
+      "redline_no": 4,
+      "step": "D2",
+      "description": "关键追溯信息缺失",
+      "judge_method": "规则引擎",
+      "logic": "场景红线：制造场景缺失产品型号/零件号、批次号/Lot号、发生时间中任意两项；研发场景缺失ECU型号/软硬件版本、发生时间中任意两项（软件问题另需版本号/分支）。追溯信息缺失导致无法定位问题范围，触发红线。",
+      "our_tier": "甲",
+      "our_note": "判定确定性，但 🔴 假阳性风险全库最高：QD-A 实测总抽取命中率 37.9%，「解析未命中」被当成「真为空」即触发一票否决，见前提 P2"
+    },
+    {
+      "redline_no": 5,
+      "step": "D4",
+      "description": "根因未经验证",
+      "judge_method": "LLM语义",
+      "logic": "通用红线：D4提出根因后无任何验证过程。制造：无数据对比/再现试验/统计验证；研发：无代码走查/复现测试/仿真验证/对比试验。根因验证是8D核心要求，未验证即触发红线。",
+      "our_tier": "丙",
+      "our_note": "🔴 一票否决 ＋ 纯语义，同红线①"
+    },
+    {
+      "redline_no": 6,
+      "step": "D7",
+      "description": "预防措施未固化到流程资产",
+      "judge_method": "关键词",
+      "logic": "场景红线：制造场景D7完全未提及控制计划(CP)或FMEA更新；研发场景D7完全未提及FMEA更新、测试用例补充、设计规范/编码规范更新中任意一项。IATF 16949/ASPICE要求将纠正措施固化为流程资产，完全缺失即触发红线。",
+      "our_tier": "甲",
+      "our_note": "判定确定性，但 🔴 与判例 1 冲突：她 8/25 的理由正是「若定红线项，按现有样本 7/7 全被一票否决」，见修改项 M1"
+    }
+  ],
+  "tier_legend": {
+    "甲": "可直接编码（确定性，判据已足够具体）",
+    "乙": "可编码，但须补判据／建议改判定方式",
+    "丙": "语义类，须先定验收口径（见评估件 §三）",
+    "丁": "本轮不实现（与已签认口径冲突或取数不可得）"
+  }
+}
