@@ -421,7 +421,11 @@
       "PowerShell(git stash drop \"stash@{1}\")",
       "PowerShell(git stash drop \"stash@{0}\")",
       "Bash(python \"0-学习与工具/工具-共享文档编辑锁.py\" acquire --who \"CC-台面清理\" --note \"回填#101②③stash已清零+#165收尾核验更新\")",
-      "Bash(python \"0-学习与工具/工具-共享文档编辑锁.py\" release --who \"CC-台面清理\")"
+      "Bash(python \"0-学习与工具/工具-共享文档编辑锁.py\" release --who \"CC-台面清理\")",
+      "Bash(python \"0-学习与工具/工具-共享文档编辑锁.py\" status)",
+      "Bash(python \"0-学习与工具/工具-共享文档编辑锁.py\" edit-row --help)",
+      "Bash(python \"0-学习与工具/工具-共享文档编辑锁.py\" acquire --who \"OP-0828-C-checkup\" --reason \"月度环境体检8月场次收工：回写#98 + 登记§二批次\")",
+      "Bash(python \"0-学习与工具/工具-共享文档编辑锁.py\" acquire --help)"
     ]
   }
 }
