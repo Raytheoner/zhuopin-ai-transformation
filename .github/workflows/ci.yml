@@ -222,3 +222,31 @@ jobs:
         with:
           python-version: "3.14"
       - run: python 0-学习与工具/工具-密钥扫描lint.py
+
+  opener-block-lint:
+    # 队列 §一 #284（OP-0828-Y）：`专线opener模板库.md` §〇 补充三这条**人守**规则
+    # 2026-08-27 一天被违反 17 次，远超退休制阈值（3 次）；补充三之三 2026-08-28 又撞出
+    # 第二个形态（Task/Agent 子任务执行 `set_session_title` 时 `"self"` 解析到父 session，
+    # 调用成功、无报错）。本 job 就是「机制化」那一半的承接行——**规则只活在模板库正文里、
+    # 没有承接行**，正是本项目反复记过的失效形态。
+    #
+    # 🔴 `fetch-depth: 0` 是必需的，不是优化：判据 H3（该文件最后一次提交是否早于规则
+    # 生效日）要读 `git log`，浅克隆下整库都会落进 `history-unavailable` 桶。脚本对此
+    # **fail-loud**（显式打印该桶与文件名），不会静默把整库判成历史件——但那样这道门禁
+    # 也就等于没开。
+    #
+    # ⚠️ 刻意**不加** `--enforce`（退出码恒 0），与 `claude-progress-lint` 一期同理：
+    # 上线当日实测当前在用件仍有 30 处存量（形态① 16 ／ 形态② 14，其中 3 处正是模板库
+    # 自己的 CC 模板）。本件的边界明写「只做检测、不做自动修复、不改 opener 正本」，
+    # 故存量清零须另行派单。**切 `--enforce` 的前提＝存量清零**，否则门禁上线第一天
+    # 就是红的，只会被习惯性忽略（同 `bootstrap-stub-lint` 头部那段的判断）。
+    name: "opener 块 lint（缺 set_session_title ／ 有它但缺子任务例外句）"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python 0-学习与工具/工具-opener块lint.py
