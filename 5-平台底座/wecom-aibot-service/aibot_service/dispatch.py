@@ -336,9 +336,9 @@ async def dispatch_followup_letters(
             outcome.sent.append(preview)
         except (DeliveryNotFinalizedError, BackfillWriteError) as exc:
             # push_followup 内部已就这两类失败各自记过审计，此处只汇总批次结果
-            outcome.failed.append((preview, str(exc)))
+            outcome.failed.append((preview, describe_exception(exc)))
         except Exception as exc:  # noqa: BLE001 —— 单行失败不得阻塞其余行
-            outcome.failed.append((preview, str(exc)))
+            outcome.failed.append((preview, describe_exception(exc)))
             _record(audit, "dispatch_row_failed", evaluator, preview, error=describe_exception(exc))
 
     _record(

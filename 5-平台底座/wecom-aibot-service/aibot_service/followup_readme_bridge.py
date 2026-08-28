@@ -66,6 +66,7 @@ from typing import Callable, Optional
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools import followup_gate
 
+from .error_text import describe_exception
 from .queue_edit_lock import QueueLockBusy
 from .readme_table import (
     ReadmeTableError,
@@ -330,7 +331,7 @@ def mark_reply_arrived(
         try:
             lock.try_acquire()
         except QueueLockBusy as exc:
-            last_error = str(exc)
+            last_error = describe_exception(exc)
             if attempt < max_attempts:
                 sleep(backoff_seconds * (2 ** (attempt - 1)))
                 continue

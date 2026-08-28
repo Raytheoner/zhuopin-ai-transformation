@@ -448,8 +448,9 @@ async def relay_once(
         try:
             pending, corrupt = iter_pending(path)
         except OutboxReadError as exc:
-            outcome.unreadable.append((path, str(exc)))
-            _audit(audit, evaluator, "outbox_relay_scan_failed", {}, {"path": str(path)}, str(exc))
+            outcome.unreadable.append((path, describe_exception(exc)))
+            _audit(audit, evaluator, "outbox_relay_scan_failed", {}, {"path": str(path)},
+                   describe_exception(exc))
             # 🔴 读不到 ≠ 没有待发。这条告警不去重（它是"通路断了"，
             # 每轮都该响，直到有人管）。
             if alert_send is not None:
