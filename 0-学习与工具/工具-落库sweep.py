@@ -487,6 +487,49 @@ LOCAL_ONLY_AHEAD_KEY = "local-master:unpushed"         # 纯领先：补推失�
 # 超出显式打出「另有 N 条未列出」，🔴 绝不静默截断。
 LOCAL_ONLY_ALERT_MAX_ITEMS = 8
 
+# ------------------------------------------------------------
+# 队列 §一 #425 ⑶ 续（2026-08-28，`OP-0828-Z`）：**整轮早退盲区**
+# ------------------------------------------------------------
+# 上面那节论证了「本类必须排在收尾段之前」，并已照办。但 `OP-0828-Q` 实测
+# 出它**还剩一段够不到的路**：本类排在 `_check_preconditions`（分支不对／
+# 不是仓库根）与 `_abort_if_edit_lock_held`（队列编辑锁被占）**之后**——这
+# 两处任一 `raise`，整轮在本类之前就结束了，**这盏灯根本不会跑**。
+#
+# 🔑 判据一句：**这盏灯只在 sweep 跑顺的那些轮才亮，而 sweep 跑不顺恰恰
+# 是分叉最容易发生的时候** —— 告警被排在了它要监视的那个失败模式之后。
+#
+# 🔴 **为什么不把本类直接提到那两道检查之前**（这是最直觉的修法，已否）：
+#   ⑴ 本类要在 `_push_any_unpushed_commits` **之后**测，否则「本轮刚提交、
+#      马上就要推」的正常中间态会被报成告警（理由见上一节 ⑵）；而自动补推
+#      本身必须排在编辑锁探测之后（#198(b)：任何 git 写动作之前先探锁）。
+#      两条约束把本类夹死在现在这个位置，挪它等于拆掉其中一条。
+#   ⑵ 早退轮里的 ahead **本来就不该按常规告警**：那一轮 sweep 压根没机会
+#      推，报出来的是「它还没来得及做」，不是「它做了没成」。
+#
+# ⇒ 改法取「**把「本轮没巡检」这件事本身变成一条会说话的记录**」，两层：
+#   ① **每轮都落一条巡检痕迹**（本文件 `_mark_local_only_scan`）——
+#      `scanned` ／ `unavailable` ／ `skipped:<原因>` 三态写进
+#      `LOCAL_ONLY_SCAN_MARKER_REL`。🔴 **「本轮未巡检」与「已巡检且干净」
+#      从此在文件里长得不一样**，这是验收第三侧的落点。
+#   ② **连续早退到阈值就亮灯**（`LOCAL_ONLY_UNSCANNED_KEY`）——单轮早退是
+#      日常（编辑锁被占几分钟很常见），**连续多轮跑不到才是失明**。灯亮时
+#      正文带一次**只读补测**的 ahead/behind 结果，使这条告警不只是说「我
+#      没看」，还能说「我顺手看了一眼，是这个数」。
+#
+# 🔴 **两个状态文件必须分开，不许合成一个**：`_track_and_alert_standing_state`
+# 的语义是「不在本次 key 集合里的既有 key ＝ 已解除」。早退轮若把
+# `{unscanned}` 传进第 8 类那份状态，会把上一轮真实的 `local-master:unpushed`
+# 当场判成「✅ 已解除」——**测量停摆伪装成问题已解决**，正是本文件反复记的
+# 那一族，而且是最坏的一种。
+LOCAL_ONLY_SCAN_MARKER_REL = "reports/sweep-local-only-scan-marker.json"
+LOCAL_ONLY_UNSCANNED_STATE_REL = "reports/sweep-local-only-unscanned-state.json"
+LOCAL_ONLY_UNSCANNED_KEY = "local-master:unscanned"
+# 连续几轮早退才亮灯。sweep 每小时一轮 ⇒ 3 ＝ 约三小时看不见分叉。**不取 1**：
+# 编辑锁被占是正常并发，逐轮报会把这盏灯训成噪音，而噪音化正是本文件反复
+# 点名要防的那个失效方向（`#398` 前三处已有三个先例）。
+LOCAL_ONLY_UNSCANNED_ALERT_AFTER_ROUNDS = 3
+LOCAL_ONLY_UNSCANNED_ALERT_INTERVAL_HOURS = 6
+
 SECTION_TWO_HEADING = "## 二、"
 NEXT_SECTION_PREFIX = "## "
 
@@ -1088,6 +1131,132 @@ def _rebase_blocking_paths(repo_root: Path) -> tuple[list[str] | None, str | Non
     return blocking, None
 
 
+def _mark_local_only_scan(repo_root: Path, status: str, detail: str) -> dict:
+    """记下「第 8 类这一轮到底巡检了没有」，返回写入后的痕迹（供调用方用）。
+
+    🔴 **本函数存在的全部理由是让「本轮未巡检」与「已巡检且干净」在文件里
+    长得不一样**（`OP-0828-Z`，队列 §一 `#425` ⑶）。在它之前，一轮因分支不对
+    ／编辑锁被占而早退的 sweep，与一轮跑完且本地 master 干干净净的 sweep，
+    在第 8 类的状态文件上留下的痕迹**完全相同——都是「没有告警」**。
+
+    `status` 三取值，语义互不可替代：
+      - `scanned`     ＝ 真的量了（ahead/behind 都读到了）；
+      - `unavailable` ＝ 到了本类、但 fetch 或引用读不到（量了没量成）；
+      - `skipped`     ＝ **整轮在本类之前就结束了，压根没走到这里**。
+
+    **绝不抛异常**：它是一条留痕，不是判据；写不进去也不该让 sweep 变红
+    （同本文件「告警发不出去不应影响退出码」的既有口径）。
+    """
+    path = repo_root / LOCAL_ONLY_SCAN_MARKER_REL
+    marker = _read_json_state(path) or {}
+    now = datetime.now(timezone.utc).isoformat()
+    consecutive = int(marker.get("consecutive_skips") or 0)
+    consecutive = consecutive + 1 if status == "skipped" else 0
+    fresh = {
+        "last_round_utc": now,
+        "last_round_status": status,
+        "last_round_detail": detail,
+        # 🔴 `unavailable` 也算「走到了这一类」，故一并刷新 `last_reached_utc`
+        # ——它回答的是「这盏灯多久没被通电了」，不是「多久没测出结果」。
+        # 两者混为一谈会让一个天天 fetch 失败的环境显得「灯一直没跑」。
+        "last_reached_utc": now if status != "skipped" else marker.get("last_reached_utc"),
+        "consecutive_skips": consecutive,
+    }
+    try:
+        _write_json_state(path, fresh)
+    except OSError:
+        pass
+    return fresh
+
+
+def _peek_local_only_counts(repo_root: Path) -> str:
+    """早退轮里的**只读补测**：不 fetch、不写任何 git 状态，只读现有引用。
+
+    🔴 **如实标注它没 fetch**：`origin/master` 引用可能是上一轮留下的，故这
+    个数只能当线索、不能当判定——本函数的返回串里因此写死「未 fetch」四个
+    字。把一个没刷新过的比较结果说成实测，就是本文件反复记的那族错误里最
+    容易犯的一个。
+    """
+    ahead = _run_git(["rev-list", "--count", "origin/master..master"], repo_root, check=False)
+    behind = _run_git(["rev-list", "--count", "master..origin/master"], repo_root, check=False)
+    if (ahead.returncode != 0 or not ahead.stdout.strip().isdigit()
+            or behind.returncode != 0 or not behind.stdout.strip().isdigit()):
+        return "本轮补测也没读到（引用取不到）"
+    return (f"只读补测（**未 fetch**，`origin/master` 可能是上一轮的）："
+            f"本地独有 {ahead.stdout.strip()} 个／远端独有 {behind.stdout.strip()} 个")
+
+
+def _note_local_only_scan_skipped(repo_root: Path, reason: str, log: list[str],
+                                  dry_run: bool = False) -> None:
+    """整轮早退时补一条「本轮第 8 类未巡检」的痕迹，连续够数则亮灯。
+
+    调用点只有一个——`main()` 的两个 except 分支，且**只在本类当轮没跑过时
+    才调**（`main()` 用一个局部标志判断）。放在 except 里而不是逐个早退点，
+    是因为**所有**早退形态最终都收敛到那两个 handler：前置条件不满足、编辑
+    锁被占、分叉 `SweepAbort`、未预期异常——**一处覆盖全部**，不会有人此后
+    新加一条 `raise SweepAbort` 却忘了配一句留痕。
+
+    🔴 **本函数不 `raise`、也不改退出码**（`#425` 派单件红线②：告警发不出去
+    不应让 sweep 本身挂掉）。整段包在 try 里。
+    """
+    if dry_run:
+        return
+    try:
+        marker = _mark_local_only_scan(repo_root, "skipped", reason)
+        rounds = marker["consecutive_skips"]
+        log.append(f"🔀 本地 master ↔ origin/master 巡检：⚠ **本轮未巡检**"
+                   f"（{reason}）——**不据此判为已对齐**；已连续 {rounds} 轮未巡检。")
+        if rounds < LOCAL_ONLY_UNSCANNED_ALERT_AFTER_ROUNDS:
+            # 🔴 阈值未到就**什么都不调**：此处若拿空集合去调
+            # `_track_and_alert_standing_state`，会把上一次真实的「已连续
+            # 未巡检」告警判成「✅ 已解除」——而我们其实还在瞎着。
+            return
+        peek = _peek_local_only_counts(repo_root)
+        log.append(f"    · {peek}")
+
+        def render_alert(_keys):
+            return (
+                f"🔀 落库sweep：**第 8 类（本地 master 独有提交）已连续 {rounds} 轮没跑**"
+                f"——每轮都在它之前就整轮结束了。\n"
+                f"- 本轮早退原因：{reason}\n"
+                f"- {peek}\n"
+                "⇒ 后果：这段时间里「本地 master 分叉／纯领先」**不会有任何告警**，"
+                "而没有告警此前一直被读成「已对齐」。\n"
+                "⇒ 处置：先解掉早退原因（分支不对／队列编辑锁被占／未预期异常，"
+                "见 reports/sweep-commit.log 本轮末尾），巡检会自行恢复并自动解除本条。"
+            )
+
+        def render_resolved(_keys):
+            return "✅ 落库sweep：第 8 类巡检已恢复（本轮真的跑到了），此前的「连续未巡检」告警解除。"
+
+        _track_and_alert_standing_state(
+            repo_root, "第8类巡检停摆", LOCAL_ONLY_UNSCANNED_STATE_REL,
+            {LOCAL_ONLY_UNSCANNED_KEY}, LOCAL_ONLY_UNSCANNED_ALERT_INTERVAL_HOURS,
+            render_alert, render_resolved, log,
+        )
+    except Exception as exc:  # noqa: BLE001 —— 留痕失败不得掩盖原始早退原因
+        log.append(f"⚠ 第 8 类「本轮未巡检」留痕失败（不影响本轮退出码）：{exc}")
+
+
+def _clear_local_only_unscanned_alert(repo_root: Path, log: list[str]) -> None:
+    """本类真的跑到了 ⇒ 解除「连续未巡检」告警（传空集合即触发解除语义）。
+
+    🔴 **只在真的跑到时调**。它与 `_note_local_only_scan_skipped` 是同一个状态
+    文件的两侧，缺了这一侧，灯亮起来就再也灭不掉——一个关不掉的告警，本文件
+    判据 ⑶ 已把它列为必须避免的形态。"""
+    try:
+        _track_and_alert_standing_state(
+            repo_root, "第8类巡检停摆", LOCAL_ONLY_UNSCANNED_STATE_REL,
+            set(), LOCAL_ONLY_UNSCANNED_ALERT_INTERVAL_HOURS,
+            lambda _keys: "",
+            lambda _keys: "✅ 落库sweep：第 8 类巡检已恢复（本轮真的跑到了），"
+                          "此前的「连续未巡检」告警解除。",
+            log,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.append(f"⚠ 第 8 类巡检恢复通知失败（不影响本轮退出码）：{exc}")
+
+
 def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
     """第 8 类常驻状态告警：**本地 `master` 上存在只此一份的提交**（队列 §一 #425 ⑶）。
 
@@ -1116,6 +1285,8 @@ def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = F
     if not _fetch(repo_root, log, "本地master巡检"):
         log.append("    ⚠ 判据不可用：未能刷新 origin/master——**不据此判为已对齐**，"
                    "本轮保留既有告警状态不变（不发解除通知）。")
+        _mark_local_only_scan(repo_root, "unavailable", "fetch origin 失败")
+        _clear_local_only_unscanned_alert(repo_root, log)
         return
 
     ahead_raw = _run_git(["rev-list", "--count", "origin/master..master"], repo_root, check=False)
@@ -1124,6 +1295,8 @@ def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = F
             or behind_raw.returncode != 0 or not behind_raw.stdout.strip().isdigit()):
         log.append("    ⚠ 判据不可用：本地 `master` 或 `origin/master` 引用读不到——"
                    "**不据此判为已对齐**，本轮保留既有告警状态不变（不发解除通知）。")
+        _mark_local_only_scan(repo_root, "unavailable", "master／origin/master 引用读不到")
+        _clear_local_only_unscanned_alert(repo_root, log)
         return
 
     ahead = int(ahead_raw.stdout.strip())
@@ -1188,6 +1361,11 @@ def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = F
         set(details), LOCAL_ONLY_COMMIT_ALERT_INTERVAL_HOURS,
         render_alert, render_resolved, log,
     )
+    # 🔴 顺序写死：先落「本轮真的巡检过了」的痕迹，再解除「连续未巡检」告警。
+    # 反过来会出现「灯已解除、痕迹还写着 skipped」的半拍不一致窗口。
+    _mark_local_only_scan(repo_root, "scanned",
+                          f"本地独有 {ahead} 个／远端独有 {behind} 个")
+    _clear_local_only_unscanned_alert(repo_root, log)
 
 
 def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
@@ -4019,7 +4197,8 @@ def _render_unclosed_resolved(keys) -> str:
             f"（已补做／已合入／已 commit）：\n{lines}{tail}")
 
 
-def _announce_lan_flip(repo_root: Path, findings: dict, log: list[str]) -> bool:
+def _announce_lan_flip(repo_root: Path, findings: dict, log: list[str],
+                       module=None) -> bool:
     """回 LAN 的 `off→on` 翻转提醒。返回**本轮扫描器状态是否可以落盘**。
 
     🔴 **翻转是事件，不是常驻状态**，故这里刻意**不走
@@ -4043,16 +4222,29 @@ def _announce_lan_flip(repo_root: Path, findings: dict, log: list[str]) -> bool:
                    "**本轮不落状态，下一轮重试**（翻转错过就没有第二次）。")
         return False
     ranked = sorted(stalled, key=lambda i: -(i["age_days"] or 0))[:UNCLOSED_OUTPUT_ALERT_MAX_ITEMS]
+    # 🔴 每条必须自带「要补什么」（`OP-0828-Z`）：只给行号等于把人打发回一份
+    # 几万字的队列文件里自己找——而这条提醒的全部价值就是「在他回到内网的
+    # 那一刻，让他不必先做一次检索就能动手」。`bucket` 只说「躺了多久」，
+    # 说不出「躺的是什么」。
+    hint = getattr(module, "form1_todo_hint", None)
     lines = "\n".join(
         f"- §{item['section']} #{item['row_id']}（{item['queue'].split('/')[-1]}）"
-        f"｜{item['bucket']}" for item in ranked)
+        f"｜{item['bucket']}"
+        + (f"｜要补什么：{hint(item)}" if hint else "")
+        for item in ranked)
     more = len(stalled) - len(ranked)
     tail = f"\n- …另有 {more} 条未列出" if more > 0 else ""
+    lan = findings.get("lan") or {}
+    # 🔴 时刻两个基准一起给、且各自标明（项目硬规则：引用任何时刻前先答一句
+    # 这是 UTC 还是本地）。只给 UTC 会被读成本地，于是一条刚发的提醒看上去
+    # 像是 8 小时前发的、进而被当成积压的旧消息划掉。
+    when = (f"\n⏱ 本次探到 on 的时刻：{lan.get('observed_utc') or '（未记）'}"
+            f"（＝ {lan.get('observed_local') or '（未记）'} 本地）")
     try:
         _send_wecom_markdown(
             webhook_url,
             f"🔔 落库sweep：本机**刚回到内网**（off→on，三项探针齐备），"
-            f"下列 {len(stalled)} 条 LAN 留步现在可以补做了：\n{lines}{tail}\n"
+            f"下列 {len(stalled)} 条 LAN 留步现在可以补做了：\n{lines}{tail}{when}\n"
             f"⇒ 补法写在各自队列行内；做完回写该行并销号。全文见 `{UNCLOSED_REPORT_REL}`。",
         )
         log.append("    ✓ 回 LAN 翻转提醒已推送。")
@@ -4131,8 +4323,13 @@ def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
         return
 
     lan = findings["lan"]
-    lan_text = ("✅ on-LAN（三项齐备）" if lan and lan["on_lan"]
-                else "⛔ off-LAN（三项未齐）" if lan else "未探测")
+    # 🔴 三态各说各的话，**不许把「探针没跑起来」渲染成「off-LAN」**
+    # （`OP-0828-Z`）：那会让人拿一次探针故障当作「他还没回内网」的证据，
+    # 而下一轮探针恢复时又会被算成一次假翻转推一条提醒出去。措辞取扫描器的
+    # `lan_status_text()`，两处共用一份，不各写一版。
+    lan_text = (module.lan_status_text(lan) if hasattr(module, "lan_status_text")
+                else ("✅ on-LAN（三项齐备）" if lan and lan["on_lan"]
+                      else "⛔ off-LAN（三项未齐）" if lan else "未探测"))
     # 🔴 抑制数与命中数同行打，不许只打命中数（`#422` 护栏失效，`OP-0827-G`）：
     # 形态 1 现在可以被「已核实闭合」的指纹确认关掉，**一个只会变长、从不
     # 回显的抑制清单，正是这套告警要防的「看起来干净」**。同第 4／第 6 类
@@ -4165,7 +4362,7 @@ def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
     except OSError as exc:
         log.append(f"    ⚠ 全文写入 `{UNCLOSED_REPORT_REL}` 失败：{exc}（不影响告警）")
 
-    may_persist = _announce_lan_flip(repo_root, findings, log)
+    may_persist = _announce_lan_flip(repo_root, findings, log, module)
     _alert(_unclosed_details(findings))
 
     if may_persist:
@@ -4246,6 +4443,12 @@ def main() -> int:
     if not args.dry_run:
         _flush_log(repo_root, [start_line], dry_run=False)
 
+    # 队列 §一 #425 ⑶ 续（`OP-0828-Z`）：本轮第 8 类到底跑没跑到。
+    # 🔴 **必须在 try 之外声明**——`_check_preconditions` 抛在 try 的第二行，
+    # 若声明在 try 内，except 里读它会撞 `UnboundLocalError`，于是**修盲区的
+    # 代码自己变成新的盲区**（那正好是本条要治的那个形状再犯一次）。
+    local_only_scanned = False
+
     try:
         _heal_stale_index_lock(repo_root, log)
         _check_preconditions(repo_root, production=args.repo_root is None)
@@ -4262,6 +4465,7 @@ def main() -> int:
         # 出声的情形里恒静默。排在自动补推之后，则凡还剩的 ahead 都是补推没能
         # 解决的，不会误报「刚提交、马上要推」的正常中间态。本函数不 raise。
         _check_local_only_commits(repo_root, log, dry_run=args.dry_run)
+        local_only_scanned = True
         # ③ #192-A flush 锁忙推迟暂存 + #219 决策提醒第二载体 + #235/#188 定时
         #   任务真身↔镜像核对（均须在 sweep 自己取锁窗口之外，此处批次处理
         #   尚未开始，安全；#235/#188 的核对若检出差异会当场本地提交，须排在
@@ -4447,6 +4651,9 @@ def main() -> int:
 
     except SweepAbort as exc:
         log.append(str(exc))
+        if not local_only_scanned:
+            _note_local_only_scan_skipped(
+                repo_root, f"整轮早退（{str(exc).strip()[:120]}）", log, args.dry_run)
         if exc.is_fork and not args.dry_run:
             _handle_fork_detected(repo_root, log)
         _flush_remaining_log(repo_root, log, args.dry_run)
@@ -4463,6 +4670,9 @@ def main() -> int:
         tb_tail = traceback.format_exc().strip().splitlines()[-6:]
         log.append(f"✗ 未预期异常（{_now_utc_str()}）：{type(exc).__name__}: {exc}")
         log.extend(f"    {line}" for line in tb_tail)
+        if not local_only_scanned:
+            _note_local_only_scan_skipped(
+                repo_root, f"整轮早退（未预期异常 {type(exc).__name__}）", log, args.dry_run)
         if not args.dry_run:
             webhook_url = _load_webhook_url(repo_root)
             if webhook_url is None:

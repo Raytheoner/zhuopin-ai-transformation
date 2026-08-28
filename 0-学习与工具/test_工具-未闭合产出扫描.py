@@ -756,5 +756,91 @@ class SweepAttributionTests(RepoFixture):
         self.assertEqual(unclosed_scan._status_path("?? 未跟踪.md"), "未跟踪.md")
 
 
+class LanProbeTriStateTests(unittest.TestCase):
+    """🔴 队列 §一 `#422` 续（2026-08-28，`OP-0828-Z`）：**探针失败 ≠ off-LAN**。
+
+    本组锁的是一个**只会在回内网那一刻造成危害、平时完全看不出来**的缺陷：
+    `probe_lan` 原本两态，`ping` 没跑起来（找不到 `ping`／超时被杀）与「目标
+    不可达」都算 `on_lan=False`。于是一次探针故障会被 `write_state` 记成 off，
+    下一轮探针恢复即被 `track_lan_flip` 算成 `off→on` —— **在没有任何人回内网
+    的情况下推一条「你刚回到内网」**。这类误发两三次之后，那条提醒就再没人
+    看了，而它整个存在的理由就是「回内网那一刻真的找到人」。
+    """
+
+    def test_探针没跑起来时状态是unknown不是off(self):
+        probes = [{"probe": "ping", "ok": False, "error": True, "detail": "探针未能执行"},
+                  {"probe": "http", "ok": True, "error": False}]
+        orig_ping, orig_http = unclosed_scan._probe_ping, unclosed_scan._probe_http
+        unclosed_scan._probe_ping = lambda host: probes[0]
+        unclosed_scan._probe_http = lambda host, port, label: probes[1]
+        try:
+            lan = unclosed_scan.probe_lan("1.2.3.4")
+        finally:
+            unclosed_scan._probe_ping, unclosed_scan._probe_http = orig_ping, orig_http
+        self.assertEqual(lan["status"], "unknown")
+        self.assertIsNone(lan["on_lan"], "unknown 时 on_lan 必须是 None，不得是 False")
+        self.assertIn("observed_utc", lan)
+        self.assertIn("observed_local", lan)
+
+    def test_三态措辞两两不同(self):
+        """「它不通」与「我没测成」在报告里长得一样，就会有人拿探针故障当作
+        「他还没回内网」的证据。"""
+        texts = {unclosed_scan.lan_status_text({"status": s}) for s in ("on", "off", "unknown")}
+        self.assertEqual(len(texts), 3, texts)
+        self.assertIn("不据此判为 off-LAN", unclosed_scan.lan_status_text({"status": "unknown"}))
+
+    def test_off到on才算翻转_on到on不算(self):
+        """防抖那一半：`on→on` 不得重复推。"""
+        self.assertEqual(
+            unclosed_scan.track_lan_flip({"lan": {"on_lan": False}},
+                                         {"status": "on", "on_lan": True})["flip"], "off→on")
+        self.assertIsNone(
+            unclosed_scan.track_lan_flip({"lan": {"on_lan": True}},
+                                         {"status": "on", "on_lan": True})["flip"])
+
+    def test_unknown那一轮任何翻转都不算(self):
+        """🔴 两个方向都要挡：不只是防误报 `off→on`，`on→off` 同样不许由一次
+        测量失败推出来。"""
+        for previous in (True, False, None):
+            flip = unclosed_scan.track_lan_flip(
+                {"lan": {"on_lan": previous}}, {"status": "unknown", "on_lan": None})
+            self.assertIsNone(flip["flip"], previous)
+            self.assertEqual(flip["probe_status"], "unknown")
+            self.assertEqual(flip["previous"], previous,
+                             "unknown 不得把上一轮的结论抹掉")
+
+    def test_首轮没有历史时不把第一次看见on当翻转(self):
+        self.assertIsNone(unclosed_scan.track_lan_flip({}, {"status": "on", "on_lan": True})["flip"])
+
+    def test_unknown那一轮不覆盖状态文件里的onlan(self):
+        """本组最要紧的一条：**一次探针故障不得把上一轮真的测出来的结论擦掉**。
+
+        擦掉会让下一轮的 `previous` 变成 `None`，于是真正的 `off→on` 被判成
+        「首轮」而静默 —— 测量失败伪装成「什么都没发生」。
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state.json"
+            base = {"form1": {"items": []}, "form2": {"items": []}, "form3": {"items": []}}
+
+            unclosed_scan.write_state({**base, "lan": {"status": "off", "on_lan": False}}, state)
+            self.assertIs(json.loads(state.read_text(encoding="utf-8"))["lan"]["on_lan"], False)
+
+            unclosed_scan.write_state({**base, "lan": {"status": "unknown", "on_lan": None}}, state)
+            after = json.loads(state.read_text(encoding="utf-8"))["lan"]
+            self.assertIs(after["on_lan"], False, "unknown 不得覆盖上一轮的 off")
+            self.assertEqual(after["last_probe_status"], "unknown")
+
+            # 探针恢复、真的是 on ⇒ 这一次必须仍然算作 off→on。
+            flip = unclosed_scan.track_lan_flip(
+                json.loads(state.read_text(encoding="utf-8")), {"status": "on", "on_lan": True})
+            self.assertEqual(flip["flip"], "off→on",
+                             "中间夹了一轮 unknown 之后，真翻转仍必须被认出来")
+
+    def test_要补什么取行内原文摘录不做概括(self):
+        """概括就得猜中文，而本文件已两次把「猜中文关键词」判为要根治的那族。"""
+        self.assertIn("到期未部署", unclosed_scan.form1_todo_hint({"excerpt": "到期未部署"}))
+        self.assertIn("直接读该行", unclosed_scan.form1_todo_hint({"excerpt": ""}))
+
+
 if __name__ == "__main__":
     unittest.main()
