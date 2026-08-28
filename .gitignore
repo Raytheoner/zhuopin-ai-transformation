@@ -65,14 +65,3 @@ start-aibot-service-dev.ps1
 # register-decision-reminder-task.ps1 在注册时机械生成（写死本机账户的
 # 绝对路径），同 start-aibot-service-dev.ps1 一样本机专属、不同环境不通用
 run-decision-reminder-check.ps1
-
-# Claude Code 本机客户端本地设置（队列 #425／OP-0828-P）。
-# `.claude/settings.local.json` 是每台机器/每个 worktree 各自的权限允许清单，
-# 内含写死的本机绝对路径（`C:/Users/Paul Shao/...`），跨环境不通用。
-# 🔴 它此前被 git 跟踪，实测代价：占 sweep `_reconcile_with_origin_and_push`
-# 失败来源的 13/26（恰好一半、单一最大来源），并且是「6 个 worktree 带未提交
-# 改动」那个假象的**全部**内容——5 处脏的全是这同一个文件。
-# ⚠️ 只 `git rm --cached` 不写这一条，下一个 `git add -A` 会把它原样带回来
-# （修了症状、没关入口）。**同目录的 `.claude/settings.json` 是项目共享配置，
-# 仍然跟踪、不要一起忽略。**
-.claude/settings.local.json

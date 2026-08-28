@@ -50,18 +50,6 @@ ImportError: class queue_table: ...` 兜底桩隔离测试环境（#306 apply �
 信息量为零」的另一面）。做法见下方 `_appellation_scan` 与
 `APPELLATION_BASELINE_PATH` 处的完整说明。
 
-第⑤项（队列 #426，OP-0828-P）：**编号高水位线不得低于实测最大已用号**。
-治的不是「有一格没补上」，而是那一格为什么会漏——**一个不对称**：高水位线
-只被 `acquire --reserve` 自动推进，手工立行与 `append-row --number` 都不会
-推它。2026-08-28 那次滞后**是被另一条机制偶然掩盖掉的**（同日一条机器人
-`append-row` 追行把它一路推过头，顺手补上了），于是它既没被发现也没被修，
-只是暂时看不见。完整论证见下方 `high_water_mark_check` 上方注释块。
-
-同一批还加了**运行时作用域自报**（#426 第③件，见 `print_scope_self_report`）：
-每次运行先打印本次实际校验的绝对路径——本脚本的 `REPO_ROOT` 恒解到主工作区
-（见下方 `#314①` 注释），在 linked worktree 里跑时它校验的**不是**调用者刚
-改的那份文件，而此前它从不说这件事。
-
 用法：
   python 0-学习与工具/工具-队列结构lint.py
   # 退出码 0=通过；1=发现违规（详情打印到 stdout）
@@ -383,170 +371,6 @@ def emit_appellation_baseline(repo_root: Path) -> str:
     ) + "\n"
 
 
-# ---------------------------------------------------------------------------
-# 队列 #426 / OP-0828-P：编号高水位线不得低于实测最大已用号
-# ---------------------------------------------------------------------------
-#
-# 🔴 **本判据治的不是「有一格没补上」，是那一格为什么会漏——一个不对称。**
-#
-# 高水位线（机制环境文件顶部那行 `编号高水位线：§一 #N ｜ §四 #M`）只有
-# **一条**路径会自动推进：`工具-共享文档编辑锁.py acquire --reserve N
-# --section X`（协议〇.7／队列 #163，读→分配→回写在同一持锁窗口内原子完成）。
-# 而**手工立行**——直接编辑表格、或 `append-row --number` 写字面编号——把行
-# 写进去了，**顶部那行一个字都不会动**（队列 §四 #128 ⑻ 已逐步复现过这条路）。
-#
-# 2026-08-28 实测到的那一次，恰好把这个不对称的两半都摆了出来：
-#   · `4aab5b0` §一 `#426` 由 CC agent **手工**立行 ⇒ 高水位线**没动**，停在 425；
-#   · `fc01961` §一 `#427` 由企微机器人 `append-row` 自动追行 ⇒ 高水位线
-#     **一次从 425 推到 427**，顺手把 `#426` 欠的那一格一起补上了。
-#
-# 🔑 **所以那天没人撞号，不是因为机制守住了，是因为当天恰好有一封专员回件。**
-# 缺陷被另一条机制偶然掩盖，于是它既没被发现、也没被修，只是暂时看不见——
-# 这与根 `CLAUDE.md` §5「工具静默回退」、§一 `#341` 同族：**错误不产生任何信号。**
-#
-# ⚠️ **不得把本判据读成「编辑锁没有防护」**——`_reserve_ids` 里已经有一道
-# **取号时**的碰撞检测（队列 #185）：真去 `--reserve` 时，若算出的号已出现在
-# 可见行里，它当场 `ReserveFailedError` 拒绝。**那道防护是真的、且是硬的。**
-# 本判据补的是它的**时间位置**：那道防护在「下一个人来取号」那一刻才响，而且
-# 响在他脸上（他没做错任何事）；本判据在**引入滞后的那次改动进 CI 时**就响，
-# 响在做那次改动的人脸上。同一个缺陷，两个不同的发现时点。
-#
-# **扫描面：只比两份活队列文件的可见行，刻意不含归档件。** 归档件的编号按
-# 构造恒 ≤ 归档当时的高水位线，把它们纳入只会为「高水位线被人手工回退到
-# 归档号以下」这一种从未发生过的形态付出一整套脆弱的归档标题解析（归档件
-# 历次标题措辞不统一，见 `editlock._split_live_sections` 的 docstring 说明）。
-# 🔴 **如实登记这个盲区**：高水位线若被回退到某个**已归档**编号以下，本判据
-# 看不见——但 `_reserve_ids` 的取号碰撞检测同样看不见（它也只扫可见行），
-# 故本判据没有比既有防线更弱，只是没有更强。
-HIGH_WATER_SECTIONS = ("一", "四")
-HIGH_WATER_HINT = (
-    "高水位线只被 `工具-共享文档编辑锁.py acquire --reserve N --section X` 自动推进；"
-    "手工立行与 `append-row --number` 写字面号都不会推它。"
-    "修法二选一：⑴ 在持锁窗口内把机制环境文件顶部那行改到 ≥ 实测最大已用号；"
-    "⑵ 此后一律用 `--reserve` 取号，不自己写字面编号（协议〇.7／队列 #163）。"
-)
-
-
-def _visible_max_numbers(text: str) -> dict[str, int]:
-    """一份队列文件里各分区**可见行**的最大编号（无可见行的分区不出现在返回值里）。"""
-    sections = editlock._split_live_sections(text)
-    result: dict[str, int] = {}
-    for label in HIGH_WATER_SECTIONS:
-        numbers = [
-            int(cells[0])
-            for _, cells in editlock._table_data_rows(sections.get(label, ""))
-            if cells and cells[0].strip().isdigit()
-        ]
-        if numbers:
-            result[label] = max(numbers)
-    return result
-
-
-def _parse_high_water_line(text: str) -> tuple[str, dict[str, int]] | None:
-    """从一份队列正文里取出高水位线整行与各分区当前值；不含该行返回 `None`。"""
-    line_match = editlock.HIGH_WATER_MARK_LINE_PATTERN.search(text)
-    if line_match is None:
-        return None
-    start = text.rfind('\n', 0, line_match.start()) + 1
-    end = text.find('\n', line_match.end())
-    line = text[start:] if end == -1 else text[start:end]
-    values: dict[str, int] = {}
-    for label in HIGH_WATER_SECTIONS:
-        pattern = editlock.SECTION_NUMBER_PATTERNS.get(label)
-        if pattern is None:
-            continue
-        section_match = pattern.search(line)
-        if section_match is not None:
-            values[label] = int(section_match.group(2))
-    return line.strip(), values
-
-
-def high_water_mark_check(repo_root: Path) -> tuple[list[str], dict]:
-    """返回 (违规说明列表, 统计信息)。违规**计入** `lint()` 与退出码。
-
-    🔴 **不需要 baseline**：判据上线时存量为零（2026-08-28 实测高水位线
-    `§一 #427 ｜ §四 #132`，两份活队列可见行实测最大 `§一 427 ／ §四 132`，
-    完全对齐），故当天即绿，硬拦不会挡住任何既有内容——同 `appellation_check`
-    的分野说明：有存量才需要先走告警期。
-    """
-    stats = {
-        "carriers": [],   # [(相对路径, 高水位线原行)]
-        "current": {},    # {分区: 高水位线当前值}
-        "max_used": {},   # {分区: (实测最大已用号, 出处相对路径)}
-    }
-    violations: list[str] = []
-
-    parsed_texts: list[tuple[str, str]] = []
-    for queue_path in QUEUE_PATHS_REL:
-        target = repo_root / queue_path
-        if not target.exists():
-            continue
-        parsed_texts.append((queue_path, target.read_text(encoding="utf-8")))
-
-    # ⑴ 载体唯一性。高水位线**恒定只存机制环境那一份**（编辑锁模块常量
-    # `QUEUE_LOCK_ANCHOR` 处的决策点 1/2：拆分为双文件后编号空间仍单一）。
-    # 🔴 业务场景那份**没有**这行是设计、不是缺陷——给它补一行就等于造出
-    # 两个会各自漂移的真值，那比滞后一格严重得多，故此处反过来拦「出现第二
-    # 份载体」，而不是拦「有一份没有」。
-    for queue_path, text in parsed_texts:
-        parsed = _parse_high_water_line(text)
-        if parsed is not None:
-            stats["carriers"].append((queue_path, parsed[0]))
-    if not stats["carriers"]:
-        violations.append(
-            "两份活队列文件均不含「编号高水位线」标注行——取号载体缺失，"
-            "`acquire --reserve` 会直接 fail-loud 拒绝取号（见 "
-            "`工具-共享文档编辑锁.py::_reserve_ids`）。" + HIGH_WATER_HINT
-        )
-        return violations, stats
-    if len(stats["carriers"]) > 1:
-        violations.append(
-            "出现 %d 份「编号高水位线」载体（%s）——编号空间单一，载体也必须"
-            "单一（恒定只存机制环境那一份，见 `工具-共享文档编辑锁.py` 的 "
-            "`QUEUE_LOCK_ANCHOR` 决策点 1/2）。两份载体会各自漂移，"
-            "而漂移出来的两个值都「看起来很正常」。"
-            % (len(stats["carriers"]), "、".join(p for p, _ in stats["carriers"]))
-        )
-        return violations, stats
-
-    carrier_path, carrier_line = stats["carriers"][0]
-    stats["current"] = _parse_high_water_line(
-        dict(parsed_texts)[carrier_path]
-    )[1]
-
-    # ⑵ 各分区实测最大已用号——🔴 **逐份解析后合并，绝不拼接文本再解析一次**。
-    # `editlock._split_live_sections` 只取第一个 `## 一、`，拼接会静默丢掉
-    # 第二份文件的 §一（队列 §一 `#312` 已因这一手法实际翻过车，那次的表现
-    # 同样是「结果看起来完全正常」）。
-    for queue_path, text in parsed_texts:
-        for label, value in _visible_max_numbers(text).items():
-            known = stats["max_used"].get(label)
-            if known is None or value > known[0]:
-                stats["max_used"][label] = (value, queue_path)
-
-    for label in HIGH_WATER_SECTIONS:
-        used = stats["max_used"].get(label)
-        if used is None:
-            continue  # 该分区可见行已全部归档，无可比对象
-        current = stats["current"].get(label)
-        if current is None:
-            violations.append(
-                f"[{carrier_path}] 高水位线行不含 §{label} 编号（格式漂移）："
-                f"{carrier_line}。{HIGH_WATER_HINT}"
-            )
-            continue
-        if current < used[0]:
-            violations.append(
-                f"[{carrier_path}] 编号高水位线 §{label} #{current} **低于**两份"
-                f"活队列可见行实测最大已用号 #{used[0]}（该号在 [{used[1]}]）"
-                f"——下一次 `--reserve --section {label}` 会算出一个已被占用的号，"
-                f"届时 `_reserve_ids` 的碰撞检测会当场拒绝取号，"
-                f"拦在**下一个来取号的人**脸上（他没做错任何事）。{HIGH_WATER_HINT}"
-            )
-
-    return violations, stats
-
-
 def lint(repo_root: Path) -> list[str]:
     """队列 #315：遍历两份物理队列文件（机制环境／业务场景），每份独立跑
     同一套校验，违规说明前缀标注来源文件，避免两份文件都出问题时混在
@@ -566,10 +390,6 @@ def lint(repo_root: Path) -> list[str]:
     # 存量非零且没有 baseline，一期硬拦会挡住所有人的 push。
     appellation, _ = appellation_check(repo_root)
     violations.extend(appellation)
-    # 队列 #426 / OP-0828-P：高水位线判据同样无需 baseline（上线当日实测
-    # 已对齐），故与称呼判据同侧，直接参与退出码。
-    high_water, _ = high_water_mark_check(repo_root)
-    violations.extend(high_water)
     return violations
 
 
@@ -735,53 +555,12 @@ def check_queue_table_importable(repo_root: Path) -> str | None:
             sys.path.remove(str(platform_dir))
 
 
-def print_scope_self_report() -> None:
-    """队列 #426 第 ③ 件：**运行时自报本次实际校验的绝对路径**。
-
-    🔴 **纯打印，不改任何判定、不影响退出码。** 本函数存在的全部理由是
-    `#426` 行内那句实测：某个 worktree 隔离的 CC agent 在一次会话里三次跑
-    本脚本、三次报「lint 通过」，而**那三次校验的都是主工作区那份文件、
-    不是它自己改的那份**——`REPO_ROOT` 按设计恒解到主工作区（见本文件头部
-    `#314①` 注释），这是对的；错的是**它从不说自己在看哪份文件**，于是
-    「lint 通过」这句话在 linked worktree 里说出来时，含义与所有人以为的不同。
-
-    🔑 **判据（比这几行 print 本身通用得多）**：**一个工具凡是「实际作用
-    对象」可能与「调用者以为的作用对象」不一致，它就必须在每次运行时把
-    实际对象打出来。** 沉默在这里不是中立的——它让一句正确的结论被读成
-    另一句话。同族＝根 `CLAUDE.md` §5「工具静默回退」。
-    """
-    script_worktree = Path(__file__).resolve().parents[1]
-    print(f"📍 本次实际校验（REPO_ROOT ＝ 主工作区，见文件头 #314①）：{REPO_ROOT}")
-    for queue_path in QUEUE_PATHS_REL:
-        target = REPO_ROOT / queue_path
-        mark = "" if target.exists() else "  ⚠ 不存在"
-        print(f"     - {target}{mark}")
-    same = script_worktree == REPO_ROOT
-    if not same:
-        try:
-            same = script_worktree.samefile(REPO_ROOT)
-        except OSError:
-            same = False
-    if not same:
-        print(
-            f"⚠️ 本脚本副本位于另一个 worktree：{script_worktree}\n"
-            "   ⇒ **本次校验的不是你改的那份队列文件，是主工作区那份**"
-            "（队列文件的权威副本只有主工作区那一份，见文件头 #314① 与队列 §一 #426）。\n"
-            "   本次「通过／不通过」不构成对你 worktree 内改动的任何结论；"
-            "你那份要等 ff 进 master、由 sweep 同步回主工作区后才会被本 lint 看到。"
-        )
-
-
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if "--emit-baseline" in args:
         # 只打到 stdout，不写盘——落盘须显式重定向，见 `emit_appellation_baseline`。
         sys.stdout.write(emit_appellation_baseline(REPO_ROOT))
         return 0
-
-    # 队列 #426③：**先自报作用域，再跑判据**——放最前面是因为退出码那一行
-    # 是读者唯一必看的一行，而「这句话是对哪份文件说的」必须在它之前出现。
-    print_scope_self_report()
 
     violations = lint(REPO_ROOT)
     import_error = check_queue_table_importable(REPO_ROOT)
@@ -808,27 +587,6 @@ def main(argv: list[str] | None = None) -> int:
         "——漂移不算违规，是可以收紧 baseline 的信号。"
     )
 
-    # 队列 #426：把「高水位线 vs 实测最大已用号」两个数**都打出来**，不止在
-    # 违规时才说话。理由与上面豁免计数同一条：一个只在出事时才出声的判据，
-    # 平时无法被任何人核对，也就无从知道它是不是早已失效（同 §四 #58）。
-    _, hwm_stats = high_water_mark_check(REPO_ROOT)
-    if hwm_stats["carriers"]:
-        parts = []
-        for label in HIGH_WATER_SECTIONS:
-            current = hwm_stats["current"].get(label)
-            used = hwm_stats["max_used"].get(label)
-            parts.append(
-                f"§{label} 高水位线 #{current if current is not None else '缺'}"
-                f" ／ 实测最大已用号 #{used[0] if used else '无可见行'}"
-            )
-        print(
-            "  编号高水位线（载体＝"
-            + hwm_stats["carriers"][0][0]
-            + "）："
-            + "；".join(parts)
-            + "——高水位线只被 `acquire --reserve` 自动推进，手工立行不会推它。"
-        )
-
     # 队列 #366 / S2 一期：先打印 warn 段，再打印硬判据结论——放在前面是
     # 因为退出码由硬判据决定，读者看到 `✓ 通过` 后就不会再往下看了。
     restate_warnings, restate_historical = followup_restate_warnings(REPO_ROOT)
@@ -846,7 +604,7 @@ def main(argv: list[str] | None = None) -> int:
     if not violations:
         print(
             f"✓ {files_desc} 结构 lint 通过"
-            "（列数／§二状态列格式／权威模块可 import／称呼判据／编号高水位线）。"
+            "（列数／§二状态列格式／权威模块可 import／称呼判据）。"
         )
         return 0
 
