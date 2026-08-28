@@ -447,6 +447,46 @@ WECOM_WEBHOOK_ENV_KEY = "WECOM_WEBHOOK_URL_OPS"
 FORK_STATE_REL = "reports/sweep-fork-state.json"
 FORK_EXIT_CODE = 2  # 复用既有"需要人工介入"语义，不新造一套退出码
 
+# ============================================================
+# 队列 §一 #425 子项 ⑶（2026-08-28，OP-0828-G）：第 8 类常驻状态告警
+# —— 「本地 master 上存在只此一份的提交」
+# ============================================================
+# 🔴 **本类不是「分叉告警的第二份」。** 已有的 `_handle_fork_detected`
+# （#171）确实每轮都在响——`#425` 立行时写的「四个多小时长出 3 条、全程
+# 无任何信号」经本班实测**不成立**：那四小时里 sweep 连发了 5 条分叉告警
+# （`reports/sweep-commit.log` 18:18/19:17/20:17/21:17/22:17 UTC 五轮，
+# 每轮均以「✓ 分叉告警已推送」收尾，而该行只在 `_send_wecom_markdown`
+# 未抛异常时才写）。**本类补的是那条告警够不到的三处，不是重造它**：
+#
+#   ⑴ **触发位置**：分叉告警只生在 `_reconcile_with_origin_and_push` 的
+#      「ahead>0 且 behind>0」这一支里。**纯领先**（本地有提交、origin 没
+#      动，push 因网络/鉴权失败）根本走不到那一支——那时提交同样只存在于
+#      本机一处，却一条告警都没有。#425 记的两条后果（「只存在于本机一处」
+#      「主工作区跑滞后的代码」）在纯领先形态下**同样成立**。
+#   ⑵ **测量时机**：分叉告警在收尾段测，本类在**起跑段**测。起跑段测到的
+#      ahead 是**上一轮收工时留下的**——它已经被本轮起跑段的自动补推
+#      （`_push_any_unpushed_commits`）尝试过一次而没能解决，故**恒非瞬时
+#      态**，不会把「本轮刚提交、马上就要推」的正常中间状态误报出来。
+#   ⑶ **它自己不会被分叉关掉**。🔴 这一条是本类存在的最硬理由：
+#      `_reconcile_with_origin_and_push` 一旦判定分叉，就 `raise SweepAbort`
+#      ——排在它后面的**第 4／5／6／7 类常驻告警整轮都跑不到**。实测坐实：
+#      `sweep-claude-md-size-state.json`／`sweep-carrier-lag-state.json`／
+#      `sweep-editable-install-state.json`／`sweep-stale-change-state.json`
+#      mtime 全部冻在 2026-08-28 01:18（最后一轮未分叉），而 sweep 在
+#      02:17～06:17 又跑了五轮——**一次分叉会顺带让另外四类告警集体停摆，
+#      且这件事本身没有任何信号。** ⇒ 本类若跟着排在收尾段之后，就会在**唯
+#      一需要它出声的那种情形里恒静默**，等于没加。故写死在起跑段。
+LOCAL_ONLY_COMMIT_STATE_REL = "reports/sweep-local-only-commit-state.json"
+LOCAL_ONLY_COMMIT_ALERT_INTERVAL_HOURS = 24
+# 🔴 key **刻意不含提交数**——同 `#338`/`#422` 已踩过的那条：把会变的数放进
+# key，每多一个提交就是一个新 key、天天被当成新问题重新告警，旧 key 还会被
+# 判成「已解除」。本类只有两个稳定 key，取值即状态种类。
+LOCAL_ONLY_DIVERGED_KEY = "local-master:diverged"      # 双向都有独有提交（真分叉）
+LOCAL_ONLY_AHEAD_KEY = "local-master:unpushed"         # 纯领先：补推失败/未推
+# 正文里最多列几条提交与几个拦路脏文件（企微 markdown 正文上限 4096 B）。
+# 超出显式打出「另有 N 条未列出」，🔴 绝不静默截断。
+LOCAL_ONLY_ALERT_MAX_ITEMS = 8
+
 SECTION_TWO_HEADING = "## 二、"
 NEXT_SECTION_PREFIX = "## "
 
@@ -1016,6 +1056,140 @@ def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = 
     log.append(f"✓ 起跑补推 {ahead} 个此前未推送的本地提交。")
 
 
+def _rebase_blocking_paths(repo_root: Path) -> tuple[list[str] | None, str | None]:
+    """返回「会让 `git rebase` 直接拒跑」的**已跟踪**改动路径。
+
+    🔴 判据来自实测、不是推断：`reports/sweep-commit.log` 全量里
+    `_reconcile_with_origin_and_push` 的 rebase 失败共 26 次，其中 **13 次**
+    （恰好一半，且是单一最大来源）的 stderr 是
+    `error: cannot rebase: You have unstaged changes.`——**不是内容冲突**。
+    真正的拦路石是一个长期存在的孤儿脏文件（实测即 `.claude/settings.local.json`，
+    Shao Peishen 本机权限设置，Claude Code 每次授权都会改写它）。
+
+    ⚠️ 未跟踪文件（`??`）**不算**——`git rebase` 不因未跟踪文件拒跑，把它们
+    列进来会把读者引向清理错的东西。故只取「已跟踪且有改动」的两类：暂存区
+    有改动（首字符非空格）或工作区有改动（次字符非空格）。
+
+    读不到时返回 `(None, 原因)`，**不返回空列表**——空列表的含义是「确实没有
+    拦路石」，与「没读到」在下游会长得一模一样（同本文件反复记的那一族：
+    一个「太干净」的返回值，先问它是不是根本没读到那个对象）。
+    """
+    result = _run_git(["status", "--porcelain=v1"], repo_root, check=False)
+    if result.returncode != 0:
+        return None, f"`git status --porcelain=v1` 失败：{result.stderr.strip()[:160]}"
+    blocking: list[str] = []
+    for line in result.stdout.splitlines():
+        if len(line) < 4 or line.startswith("??"):
+            continue
+        index_flag, worktree_flag = line[0], line[1]
+        if index_flag == " " and worktree_flag == " ":
+            continue
+        blocking.append(line[3:].strip())
+    return blocking, None
+
+
+def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
+    """第 8 类常驻状态告警：**本地 `master` 上存在只此一份的提交**（队列 §一 #425 ⑶）。
+
+    位置写死在**起跑段**、排在 `_push_any_unpushed_commits` 之后——两条理由
+    都是硬的，改动顺序前请先读常量段 `LOCAL_ONLY_COMMIT_STATE_REL` 上方那节：
+    ① 排在自动补推之后，故凡还剩下的 ahead 都是**补推没能解决的**，不会把
+    「本轮刚提交、马上要推」的正常中间态误报；② 排在
+    `_reconcile_with_origin_and_push`（分叉时 `raise SweepAbort`）之前，
+    否则本判据会在**唯一需要它出声的那种情形里恒静默**。
+
+    🔴 **本函数只测量与告警，一个字节都不写 git**：不 push、不 pull、不 fetch
+    以外的任何网络写、不 rebase、不动任何分支或 worktree（首月只告警不自动
+    修，`#425` 派单件红线）。本函数也**永不 `raise`**——它是起跑段新增位点，
+    按 #328 通则「外部依赖不可用 ⇒ 记录后继续」，不得中止整轮。
+    """
+    if dry_run:
+        log.append("[dry-run] 将巡检本地 master 与 origin/master 的独有提交关系（本次不实际执行）。")
+        return
+
+    log.append("🔀 本地 master ↔ origin/master 巡检（每轮回显，零命中时亦不省略）：")
+
+    # 🔴 fetch 失败 / 引用读不到时**直接返回，不调用 `_track_and_alert_standing_state`**。
+    # 这不是可省的细节：该函数以「不在 current_keys 里的既有 key 即已解除」为
+    # 语义，若测量失败时传一个空集合进去，它会当场发出一条「✅ 已解除」——
+    # **测量停摆会伪装成问题已解决**，比不报更坏。返回即保留上一轮状态原样。
+    if not _fetch(repo_root, log, "本地master巡检"):
+        log.append("    ⚠ 判据不可用：未能刷新 origin/master——**不据此判为已对齐**，"
+                   "本轮保留既有告警状态不变（不发解除通知）。")
+        return
+
+    ahead_raw = _run_git(["rev-list", "--count", "origin/master..master"], repo_root, check=False)
+    behind_raw = _run_git(["rev-list", "--count", "master..origin/master"], repo_root, check=False)
+    if (ahead_raw.returncode != 0 or not ahead_raw.stdout.strip().isdigit()
+            or behind_raw.returncode != 0 or not behind_raw.stdout.strip().isdigit()):
+        log.append("    ⚠ 判据不可用：本地 `master` 或 `origin/master` 引用读不到——"
+                   "**不据此判为已对齐**，本轮保留既有告警状态不变（不发解除通知）。")
+        return
+
+    ahead = int(ahead_raw.stdout.strip())
+    behind = int(behind_raw.stdout.strip())
+
+    if ahead == 0:
+        shape = "已对齐" if behind == 0 else "纯落后（收尾段会 ff 追上，非风险）"
+    elif behind == 0:
+        shape = "🔴 纯领先：这些提交只存在于本机一处，GitHub 上看不出任何缺口"
+    else:
+        shape = "🔴 真分叉：双向都有独有提交，`git push` 会被拒"
+    log.append(f"    · 本地独有 {ahead} 个 ／ 远端独有 {behind} 个 ⇒ {shape}")
+
+    details: dict[str, str] = {}
+    # 🔴 处置话术随拦路石在不在而变，**不写一句永远成立的**。旧稿无条件写
+    # 「先清掉上面点名的脏文件」，而工作区干净时压根没点名任何文件 ⇒ 读者会去
+    # 找一个不存在的东西。同本文件反复记的那一族：**恒真的判据零信息量**，
+    # 恒真的处置建议比零信息量更坏，它会把人引向错的方向。
+    remedy = "⇒ 处置：等下一轮 sweep 自动 rebase＋ff push；连续多轮不消失再人工介入。"
+    if ahead > 0:
+        key = LOCAL_ONLY_DIVERGED_KEY if behind > 0 else LOCAL_ONLY_AHEAD_KEY
+        listed = _run_git(
+            ["log", "--format=%h %s", f"-{LOCAL_ONLY_ALERT_MAX_ITEMS}", "origin/master..master"],
+            repo_root, check=False,
+        )
+        subjects = [ln.strip() for ln in listed.stdout.splitlines() if ln.strip()]
+        parts = [f"本地独有 {ahead} 个提交，远端独有 {behind} 个"]
+        if subjects:
+            parts.append("；".join(subjects[:LOCAL_ONLY_ALERT_MAX_ITEMS]))
+            if ahead > len(subjects):
+                parts.append(f"另有 {ahead - len(subjects)} 条未列出")
+        blocking, blocking_err = _rebase_blocking_paths(repo_root)
+        if blocking_err is not None:
+            # 不猜：读不到就说读不到，不写成「无拦路石」。
+            parts.append(f"rebase 拦路石未取到（{blocking_err}）")
+        elif blocking:
+            shown = "、".join(f"`{p}`" for p in blocking[:LOCAL_ONLY_ALERT_MAX_ITEMS])
+            more = (f"，另有 {len(blocking) - LOCAL_ONLY_ALERT_MAX_ITEMS} 个未列出"
+                    if len(blocking) > LOCAL_ONLY_ALERT_MAX_ITEMS else "")
+            parts.append(f"⚠ 收尾段自动 rebase 会被这些已跟踪脏文件直接拒跑：{shown}{more}")
+            log.append(f"    ⚠ rebase 拦路石（已跟踪脏文件 {len(blocking)} 个）：{shown}{more}")
+            remedy = ("⇒ 处置：先清掉上面点名的脏文件（`git stash`／`git checkout --`／"
+                      "登记成 §二 批次），再由下一轮 sweep 自动 rebase＋ff push。")
+        details[key] = "｜".join(parts)
+
+    def render_alert(keys):
+        lines = "\n".join(f"- `{key}`：{details[key]}" for key in sorted(keys))
+        return (
+            "🔀 落库sweep：本地 `master` 上存在**只此一份**的提交，起跑段自动补推未能解决。\n"
+            f"{lines}\n"
+            "⇒ 后果两条，均无其它信号：① 这些提交只在本机，GitHub 上看不出缺口，"
+            "一次 `reset --hard origin/master` 即永久消失；② 主工作区跑的是滞后的代码。\n"
+            f"{remedy}🔴 不要 `git pull`、不要 `push -f`。"
+        )
+
+    def render_resolved(keys):
+        lines = "\n".join(f"- `{key}`（本地 master 已与 origin/master 对齐）" for key in sorted(keys))
+        return f"✅ 落库sweep：此前告警的本地 `master` 独有提交已解除：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "本地 master 独有提交", LOCAL_ONLY_COMMIT_STATE_REL,
+        set(details), LOCAL_ONLY_COMMIT_ALERT_INTERVAL_HOURS,
+        render_alert, render_resolved, log,
+    )
+
+
 def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
     """队列 #288（openspec 变更包 `sweep-ff-sync-batch-reorder`，2026-08-06）：
     批次已在本地提交、工作区已干净之后，统一对齐 `origin/master` 并推送
@@ -1099,9 +1273,24 @@ def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bo
         rebase = _run_git(["rebase", "origin/master"], repo_root, check=False)
         if rebase.returncode != 0:
             _run_git(["rebase", "--abort"], repo_root, check=False)
+            # 队列 §一 #425 ⑴（2026-08-28）：把**拦路石本身**写进消息。
+            # 实测全量 26 次 rebase 失败里 13 次（单一最大来源）根本不是内容
+            # 冲突，而是 `cannot rebase: You have unstaged changes.`——一个
+            # 本函数按设计就不会去动的孤儿脏文件（#238）挡住了它。旧文案只说
+            # 「需人工介入手动 rebase」，读者据此会去找冲突，而真正要做的只是
+            # 清掉一个文件。🔴 只加信息、不改行为：仍然 abort、仍然不强推、
+            # 仍然不替任何人清理那个文件。
+            blocking, blocking_err = _rebase_blocking_paths(repo_root)
+            if blocking_err is not None:
+                hint = f"（rebase 拦路石未取到：{blocking_err}）"
+            elif blocking:
+                hint = ("（🔴 拦路石很可能是这些**已跟踪的脏文件**，它们会让 rebase 直接拒跑、"
+                        "与内容冲突无关：" + "、".join(blocking[:LOCAL_ONLY_ALERT_MAX_ITEMS]) + "）")
+            else:
+                hint = "（工作区已跟踪文件干净 ⇒ 这是一次真实的内容冲突）"
             raise SweepAbort(
                 f"⚠ 本轮批次已本地提交，但与 origin/master 分叉且自动 rebase 失败"
-                f"（{rebase.stderr.strip()}）——已 git rebase --abort 回滚，本地提交完整保留、"
+                f"（{rebase.stderr.strip()}）{hint}——已 git rebase --abort 回滚，本地提交完整保留、"
                 "不丢失、不强推，需人工介入手动 rebase。",
                 exit_code=FORK_EXIT_CODE,
                 is_fork=True,
@@ -4065,6 +4254,14 @@ def main() -> int:
         _abort_if_edit_lock_held(repo_root, log)
         # ② #194 无条件补推未推送提交
         _push_any_unpushed_commits(repo_root, log, dry_run=args.dry_run)
+        # ②bis 队列 §一 #425 ⑶：第 8 类常驻状态告警——本地 master 独有提交。
+        # 🔴 **位置写死在这里，勿移到下方常驻告警族里**：`_reconcile_with_
+        # origin_and_push` 分叉时 `raise SweepAbort`，排在它之后的第 4/5/6/7
+        # 类整轮跑不到（实测：2026-08-28 02:17～06:17 五轮分叉期间，那四类的
+        # 状态文件 mtime 全部冻在 01:18）。本判据若排在那里，就会在唯一需要它
+        # 出声的情形里恒静默。排在自动补推之后，则凡还剩的 ahead 都是补推没能
+        # 解决的，不会误报「刚提交、马上要推」的正常中间态。本函数不 raise。
+        _check_local_only_commits(repo_root, log, dry_run=args.dry_run)
         # ③ #192-A flush 锁忙推迟暂存 + #219 决策提醒第二载体 + #235/#188 定时
         #   任务真身↔镜像核对（均须在 sweep 自己取锁窗口之外，此处批次处理
         #   尚未开始，安全；#235/#188 的核对若检出差异会当场本地提交，须排在

@@ -1145,17 +1145,56 @@ class ForkAlertTests(SweepTestBase):
         )
         self.assertIn("推送失败", result.stdout)
 
+    def _fork_alerts(self) -> list[str]:
+        """只挑出**分叉告警**那一类正文。
+
+        队列 §一 #425 ⑶（2026-08-28）：本族原先断言的是 webhook **总条数**，
+        那等于要求「全世界只有分叉告警一类消息」——第 8 类常驻告警上线后当场
+        变红两条。断言改为按类过滤：本族要证的一直是「分叉告警发了且恰好一条／
+        第二轮升级为连续第 2 轮」，与别的告警类存不存在无关。**这是把断言收窄
+        到它本来的意思，不是放宽。**
+        """
+        return [p["markdown"]["content"] for p in _CapturingWebhookHandler.received
+                if "🔱" in p["markdown"]["content"]]
+
     def test_fork_with_webhook_sends_alert_once(self):
         self._diverge()
         self._write_env_webhook()
         result = _run_sweep(self.work)
         self.assertEqual(result.returncode, sweep.FORK_EXIT_CODE, result.stdout + result.stderr)
         self.assertIn("分叉告警已推送", result.stdout)
-        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
-        payload = _CapturingWebhookHandler.received[0]
-        self.assertEqual(payload["msgtype"], "markdown")
-        self.assertIn("分叉", payload["markdown"]["content"])
-        self.assertIn("首次检测到", payload["markdown"]["content"])
+        forks = self._fork_alerts()
+        self.assertEqual(len(forks), 1, _CapturingWebhookHandler.received)
+        self.assertEqual(_CapturingWebhookHandler.received[0]["msgtype"], "markdown")
+        self.assertIn("分叉", forks[0])
+        self.assertIn("首次检测到", forks[0])
+
+    def test_分叉当轮第8类常驻告警与分叉告警并存且各说各的(self):
+        """🔴 队列 §一 #425 ⑶：两类告警在同一轮共存是**有意为之**，此处钉死。
+
+        它们不是同一条消息的两份：分叉告警（`#171`，收尾段）说的是「本轮 rebase
+        没解开、需人工介入」；第 8 类（起跑段）说的是「有提交只存在于本机一处，
+        且**拦路石是哪个文件**」。第 8 类带 24 小时节流，故持续分叉期间它每天最
+        多多出一条。**若哪天有人认为重复而删掉第 8 类，请先读它常量段那三条**
+        ——尤其第 ⑶ 条：分叉时收尾段 `SweepAbort`，排它后面的告警整轮跑不到。
+        """
+        self._diverge()
+        self._write_env_webhook()
+        _run_sweep(self.work)
+        contents = [p["markdown"]["content"] for p in _CapturingWebhookHandler.received]
+        forks = [c for c in contents if "🔱" in c]
+        local_only = [c for c in contents if "只此一份" in c]
+        self.assertEqual(len(forks), 1, contents)
+        self.assertEqual(len(local_only), 1, contents)
+        self.assertNotIn("只此一份", forks[0], "两类正文不得互相抄，各自说各自那一半")
+        # 本夹具工作区是干净的 ⇒ 没有拦路石可点名，处置话术必须相应变成
+        # 「等下一轮」，**不得写成让人去清一个不存在的文件**。
+        self.assertNotIn("拒跑", local_only[0], local_only[0])
+        self.assertIn("等下一轮", local_only[0], local_only[0])
+        self.assertNotIn("先清掉上面点名的脏文件", local_only[0], local_only[0])
+        # 而分叉告警那条只字未提「只存在于本机一处」这个后果——这正是第 8 类
+        # 补上的那一半。
+        self.assertIn("reset --hard", local_only[0])
 
     def test_consecutive_fork_runs_escalate_count_in_alert(self):
         self._diverge()
@@ -1163,9 +1202,14 @@ class ForkAlertTests(SweepTestBase):
         _run_sweep(self.work)
         result = _run_sweep(self.work)
         self.assertEqual(result.returncode, sweep.FORK_EXIT_CODE, result.stdout + result.stderr)
-        self.assertEqual(len(_CapturingWebhookHandler.received), 2)
-        second_payload = _CapturingWebhookHandler.received[1]
-        self.assertIn("连续第 2 轮", second_payload["markdown"]["content"])
+        forks = self._fork_alerts()
+        self.assertEqual(len(forks), 2, _CapturingWebhookHandler.received)
+        self.assertIn("连续第 2 轮", forks[1])
+        # 第 8 类带 24 小时节流 ⇒ 连续两轮分叉里它只该出现一次，不跟着逐轮刷屏。
+        self.assertEqual(
+            len([p for p in _CapturingWebhookHandler.received
+                 if "只此一份" in p["markdown"]["content"]]), 1,
+            "第 8 类必须被节流住，不得与分叉告警一起逐轮重复")
         state = json.loads((self.work / sweep.FORK_STATE_REL).read_text(encoding="utf-8"))
         self.assertEqual(state["consecutive"], 2)
 
@@ -3435,6 +3479,11 @@ STARTUP_SEGMENT_FUNCTIONS = (
     "_abort_if_edit_lock_held",
     "_push_any_unpushed_commits",
     "_fetch",
+    # 队列 §一 #425 ⑶（2026-08-28）：起跑段新增位点，**登记进来正是为了钉死
+    # 它 0 处 abort**——它是常驻告警，任何情形下都不得中止整轮。若日后有人
+    # 往里加 `raise SweepAbort`，本族测试会当场变红并要求写明理由。
+    "_check_local_only_commits",
+    "_rebase_blocking_paths",
 )
 
 # 冻结清单：起跑段每一处 `raise SweepAbort` 及其判定理由（队列 #328 通则）。
@@ -4852,6 +4901,344 @@ class UnclosedOutputGuardTests(unittest.TestCase):
             self.assertFalse(
                 name.startswith("subprocess."),
                 f"第 7 类判据必须只读，却调用了 {name}")
+
+
+class LocalOnlyCommitGuardTests(unittest.TestCase):
+    """队列 §一 #425 ⑶：第 8 类常驻告警——本地 `master` 上只此一份的提交。
+
+    🔴 **本组一律用真 git 仓库（bare origin ＋ 真 clone ＋ 真 fetch），不用桩。**
+    理由：本判据要证明的正是「造出分叉它会响、对齐之后它会闭嘴」，而 ahead/
+    behind 是 git 自己算的量——用桩测等于在测我自己写的那个假数。`#425` 派单件
+    的原话是「只验一侧等于没验」，本组两侧都用真仓库走一遍。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self._tmp.name)
+        self.origin = self.base / "origin.git"
+        _git(self.base, "init", "-q", "--bare", "-b", "master", str(self.origin))
+        self.repo = self.base / "main"
+        _git(self.base, "init", "-q", "-b", "master", str(self.repo))
+        _git(self.repo, "config", "user.email", "t@t")
+        _git(self.repo, "config", "user.name", "t")
+        (self.repo / "reports").mkdir()
+        (self.repo / "a.txt").write_text("v0\n", encoding="utf-8")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-qm", "base")
+        _git(self.repo, "remote", "add", "origin", str(self.origin))
+        _git(self.repo, "push", "-q", "-u", "origin", "master")
+        # 第二个 clone：用来把 origin 推进，制造「远端独有」那一侧。
+        self.other = self.base / "other"
+        _git(self.base, "clone", "-q", str(self.origin), str(self.other))
+        _git(self.other, "config", "user.email", "o@o")
+        _git(self.other, "config", "user.name", "o")
+
+        self.sent: list[str] = []
+        self._orig_webhook = sweep._load_webhook_url
+        self._orig_send = sweep._send_wecom_markdown
+        sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
+        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+
+    def tearDown(self):
+        sweep._load_webhook_url = self._orig_webhook
+        sweep._send_wecom_markdown = self._orig_send
+        self._tmp.cleanup()
+
+    # ---------- 夹具 ----------
+
+    def _commit_local(self, name="local.txt", body="本地\n"):
+        (self.repo / name).write_text(body, encoding="utf-8")
+        _git(self.repo, "add", "--", name)
+        _git(self.repo, "commit", "-qm", f"本地独有提交 {name}")
+
+    def _advance_origin(self, name="remote.txt"):
+        (self.other / name).write_text("远端\n", encoding="utf-8")
+        _git(self.other, "add", "-A")
+        _git(self.other, "commit", "-qm", f"远端提交 {name}")
+        _git(self.other, "push", "-q", "origin", "master")
+
+    def _run(self):
+        log: list[str] = []
+        sweep._check_local_only_commits(self.repo, log)
+        return "\n".join(log)
+
+    def _state(self) -> dict:
+        path = self.repo / sweep.LOCAL_ONLY_COMMIT_STATE_REL
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    # ---------- 两侧实测：造分叉 → 必告警 ----------
+
+    def test_造真分叉必告警(self):
+        self._commit_local()
+        self._advance_origin()
+        text = self._run()
+        self.assertIn("真分叉", text)
+        self.assertEqual(set(self._state()), {sweep.LOCAL_ONLY_DIVERGED_KEY})
+        self.assertEqual(len(self.sent), 1, f"应恰好发出一条告警：{self.sent}")
+        self.assertIn("只此一份", self.sent[0])
+        self.assertIn("不要 `git pull`", self.sent[0])
+
+    def test_纯领先也必告警_这正是既有分叉告警够不到的那一半(self):
+        """🔴 本组最要紧的一条。既有 `_handle_fork_detected` 只生在
+        `_reconcile_with_origin_and_push` 的「ahead>0 且 behind>0」那一支里；
+        **纯领先**（本地有提交、origin 没动、push 因网络/鉴权失败）走不到那一
+        支，一条告警都没有——而 `#425` 记的两条后果在这种形态下同样成立。
+        """
+        self._commit_local()
+        text = self._run()
+        self.assertIn("纯领先", text)
+        self.assertEqual(set(self._state()), {sweep.LOCAL_ONLY_AHEAD_KEY})
+        self.assertEqual(len(self.sent), 1)
+
+    # ---------- 两侧实测：对齐 → 必静默且自动解除 ----------
+
+    def test_对齐后必静默(self):
+        text = self._run()
+        self.assertIn("已对齐", text)
+        self.assertEqual(self._state(), {})
+        self.assertEqual(self.sent, [], "对齐状态不得发出任何消息")
+
+    def test_从告警到对齐会自动解除且不留需人手清的标记(self):
+        """`#425` 期望产出原文：「判据必须能被『已对齐』关掉」。"""
+        self._commit_local()
+        self._advance_origin()
+        self._run()
+        self.assertEqual(len(self.sent), 1)
+        # 真把它推上去（rebase + push），模拟人工/下一轮把分叉解掉。
+        _git(self.repo, "fetch", "-q", "origin", "master")
+        _git(self.repo, "rebase", "-q", "origin/master")
+        _git(self.repo, "push", "-q", "origin", "master")
+        text = self._run()
+        self.assertIn("已对齐", text)
+        self.assertEqual(self._state(), {}, "解除后状态文件必须为空——不留需人手清的残留")
+        self.assertEqual(len(self.sent), 2, self.sent)
+        self.assertIn("已解除", self.sent[1])
+
+    def test_纯落后不告警(self):
+        """远端独有不是风险（收尾段会 ff 追上）。判据不得恒真。"""
+        self._advance_origin()
+        text = self._run()
+        self.assertIn("纯落后", text)
+        self.assertEqual(self._state(), {})
+        self.assertEqual(self.sent, [])
+
+    # ---------- 反例：防修得过头 ----------
+
+    def test_key不随提交数变化(self):
+        """把会变的数放进 key，「常驻状态」就退化成「事件」：每多一个提交
+        就是一个新 key、当新问题重报，旧 key 还会被判成「已解除」。"""
+        self._commit_local("l1.txt")
+        self._advance_origin()
+        self._run()
+        first = set(self._state())
+        self._commit_local("l2.txt")
+        self._commit_local("l3.txt")
+        self._run()
+        self.assertEqual(first, set(self._state()), "提交数变了 key 不该变")
+        self.assertEqual(len(self.sent), 1, "24 小时节流内不得因提交数变化重报")
+
+    def test_fetch失败时绝不据陈旧引用发解除通知(self):
+        """🔴 本组第二要紧的一条，且**必须构造成「陈旧引用会给出相反结论」**。
+
+        `_track_and_alert_standing_state` 的语义是「不在 current_keys 里的既有
+        key ＝ 已解除」。fetch 失败后 `origin/master` 这个**本地引用仍然读得到**
+        （只是陈旧），若照常拿它算一遍，算出「已对齐」就会当场发一条
+        「✅ 已解除」——**测量停摆伪装成问题已解决**，比不报更坏。
+
+        ⚠️ 本用例第一版写错过：只把 remote URL 打断，而陈旧引用当时恰好仍显示
+        分叉 ⇒ 去掉早返回后测试**照样绿**（实测确认该变异存活）。故这一版显式
+        把陈旧引用 `update-ref` 到与 `master` 相等——**陈旧引用说「已对齐」、
+        真值是「本地独有 1 个提交」**，两个结论相反，早返回被删即当场变红。
+        判据同 `_push_any_unpushed_commits` docstring 那句「刻意不用可能陈旧的
+        origin/master 引用凑合算一下」。
+        """
+        self._commit_local()
+        self._run()
+        self.assertEqual(set(self._state()), {sweep.LOCAL_ONLY_AHEAD_KEY})
+        before = self._state()
+        # 让**陈旧引用**与 master 相等 ⇒ 据它计算必得「已对齐」（与真值相反）。
+        _git(self.repo, "update-ref", "refs/remotes/origin/master", "master")
+        _git(self.repo, "remote", "set-url", "origin", str(self.base / "不存在.git"))
+        text = self._run()
+        self.assertIn("不据此判为已对齐", text)
+        self.assertEqual(self._state(), before, "测量失败必须原样保留上一轮状态")
+        self.assertEqual(len(self.sent), 1, f"不得因测量失败追发任何消息：{self.sent}")
+        self.assertNotIn("已解除", "".join(self.sent))
+
+    def test_零命中时仍回显(self):
+        """上线当天预计零告警。若连回显都没有，本守卫与「建成 9 天从未发出
+        过一条消息」（OP-0819-F）在外观上完全无法区分。"""
+        text = self._run()
+        self.assertIn("每轮回显", text)
+        self.assertIn("本地独有 0 个", text)
+
+    # ---------- rebase 拦路石（⑴ 根因的可读化） ----------
+
+    def test_拦路石只算已跟踪脏文件_未跟踪不算(self):
+        """`git rebase` 不因未跟踪文件拒跑。把它们列进来会把读者引向清理错
+        的东西——而本条信息的全部价值就在于「告诉他到底该清哪一个」。"""
+        (self.repo / "untracked.txt").write_text("我未被跟踪\n", encoding="utf-8")
+        (self.repo / "a.txt").write_text("我被跟踪且脏了\n", encoding="utf-8")
+        blocking, err = sweep._rebase_blocking_paths(self.repo)
+        self.assertIsNone(err)
+        self.assertEqual(blocking, ["a.txt"], blocking)
+
+    def test_干净工作区拦路石为空列表而非None(self):
+        blocking, err = sweep._rebase_blocking_paths(self.repo)
+        self.assertIsNone(err)
+        self.assertEqual(blocking, [])
+
+    def test_读不到时返回None而不是空列表(self):
+        """空列表的含义是「确实没有拦路石」，与「没读到」在下游长得一模一样
+        ——同本文件反复记的那一族：一个「太干净」的返回值。"""
+        not_a_repo = self.base / "非仓库"
+        not_a_repo.mkdir()
+        blocking, err = sweep._rebase_blocking_paths(not_a_repo)
+        self.assertIsNone(blocking)
+        self.assertIsNotNone(err)
+
+    def test_告警正文点名拦路石_且处置话术随之改变(self):
+        self._commit_local()
+        self._advance_origin()
+        (self.repo / "a.txt").write_text("脏\n", encoding="utf-8")
+        self._run()
+        self.assertIn("a.txt", self.sent[0])
+        self.assertIn("拒跑", self.sent[0])
+        self.assertIn("先清掉上面点名的脏文件", self.sent[0])
+
+    def test_工作区干净时处置话术不得让人去清不存在的文件(self):
+        """🔴 反例，防「一句永远成立的处置建议」。恒真的判据零信息量，恒真的
+        处置建议比零信息量更坏——它会把人引向一个不存在的东西。"""
+        self._commit_local()
+        self._advance_origin()
+        self._run()
+        self.assertNotIn("先清掉上面点名的脏文件", self.sent[0], self.sent[0])
+        self.assertIn("等下一轮", self.sent[0], self.sent[0])
+
+    # ---------- 接线与红线 ----------
+
+    def test_已接入主流程(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("_check_local_only_commits(repo_root, log, dry_run=args.dry_run)", source)
+
+    def test_必须排在reconcile之前(self):
+        """🔴 本组最硬的一条结构性断言，也是本类存在的理由本身。
+
+        `_reconcile_with_origin_and_push` 判定分叉时 `raise SweepAbort` ⇒ 排在
+        它之后的第 4/5/6/7 类常驻告警整轮跑不到（实测：2026-08-28 02:17～06:17
+        五轮分叉期间，那四类的状态文件 mtime 全部冻在 01:18）。本判据若被挪到
+        那一族里，就会在**唯一需要它出声的那种情形里恒静默**，等于没加。
+        """
+        source = SCRIPT.read_text(encoding="utf-8")
+        main_body = source[source.index("def main() -> int:"):]
+        mine = main_body.index("_check_local_only_commits(repo_root, log")
+        reconcile = main_body.index("_reconcile_with_origin_and_push(repo_root, log")
+        self.assertLess(mine, reconcile,
+                        "第 8 类判据必须排在 _reconcile_with_origin_and_push 之前，"
+                        "否则分叉时它自己会被一起跳过")
+
+    def test_本类不做任何git写动作(self):
+        """首月只告警不自动修（`#425` 红线：绝不让它自动 push 或 pull）。
+        锁的是**执行构件**：本组函数体内除只读 git 查询外不得出现任何写动词。"""
+        source = SCRIPT.read_text(encoding="utf-8")
+        body = source[source.index("def _rebase_blocking_paths"):
+                      source.index("def _reconcile_with_origin_and_push")]
+        tree = ast.parse(body)
+        forbidden = {"push", "pull", "rebase", "reset", "merge", "commit",
+                     "checkout", "stash", "worktree", "branch"}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if ast.unparse(node.func) != "_run_git":
+                continue
+            args = node.args[0]
+            self.assertIsInstance(args, ast.List, "git 参数须为字面量列表，便于本守卫核验")
+            verb = args.elts[0].value
+            self.assertNotIn(
+                verb, forbidden,
+                f"第 8 类判据只读，却调用了 `git {verb}`——首月只告警不自动修")
+
+
+class LocalOnlyCommitCliWiringTests(SweepTestBase):
+    """CLI 级两侧实测：**证明它在真实 `main()` 流程里真的会响、也真的会闭嘴**。
+
+    🔴 与上面那组的分工不同，别合并：上面测「判据算得对不对」（直接调函数），
+    本组测「它到底有没有被调用、结果有没有真的走出去」。`#422` 行内那句话是本
+    组存在的全部理由——建成而没接线，与没建成**外观完全相同**。
+    """
+
+    def _log_text(self) -> str:
+        return (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+
+    def _state(self) -> dict:
+        path = self.work / sweep.LOCAL_ONLY_COMMIT_STATE_REL
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def _advance_origin(self, name="远端.txt"):
+        """从另一个 clone 把 origin 推进——制造起跑段自动补推**修不好**的那种
+        分叉（补推非快进即放弃，见 `_push_any_unpushed_commits`）。"""
+        other = Path(self._tmp.name) / "other"
+        if not other.exists():
+            _git(Path(self._tmp.name), "clone", "-q", str(self.origin), str(other))
+            _git(other, "config", "user.email", "o@o")
+            _git(other, "config", "user.name", "o")
+        (other / name).write_text("远端\n", encoding="utf-8")
+        _git(other, "add", "-A")
+        _git(other, "commit", "-qm", f"远端提交 {name}")
+        _git(other, "push", "-q", "origin", "master")
+
+    def _make_local_only_commit(self, name="本地独有.txt"):
+        (self.work / name).write_text("只此一份\n", encoding="utf-8")
+        self._commit_all(f"本地独有提交 {name}（未推送）")
+
+    def test_造分叉_整轮CLI跑下来必须报出来(self):
+        """两侧实测的「造分叉」那一侧，走完整 `main()`。"""
+        self._init_and_push(rows="")
+        self._make_local_only_commit()
+        self._advance_origin()
+
+        result = _run_sweep(self.work)
+        log = self._log_text()
+        self.assertIn("本地 master ↔ origin/master 巡检", log)
+        self.assertIn("真分叉", log)
+        # 未配 webhook 时走「仅留痕日志与状态文件」那条降级分支——它同样证明
+        # 判据已判出并**走到了告警阶段**，不是在半路被谁跳过了。
+        self.assertIn("本地 master 独有提交", log)
+        self.assertEqual(set(self._state()), {sweep.LOCAL_ONLY_DIVERGED_KEY}, log)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_对齐后_整轮CLI跑下来必须静默且状态清空(self):
+        """两侧实测的「对齐后」那一侧。第一轮报出来，收尾段 rebase＋push 把它
+        解掉，第二轮必须自动解除、状态文件清空——**不留需人手清的标记**。"""
+        self._init_and_push(rows="")
+        self._make_local_only_commit()
+        self._advance_origin()
+        _run_sweep(self.work)
+        self.assertEqual(set(self._state()), {sweep.LOCAL_ONLY_DIVERGED_KEY})
+
+        result = _run_sweep(self.work)
+        last_round = self._log_text().rsplit("=== sweep 运行", 1)[-1]
+        self.assertIn("已对齐", last_round)
+        self.assertIn("本地 master 独有提交解除通知：1 项", last_round)
+        self.assertEqual(self._state(), {}, "对齐后状态必须清空，不留需人手清的标记")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            _git(self.work, "rev-list", "--count", "origin/master..master").stdout.strip(),
+            "0", "第二轮之后本地不该再有独有提交")
+
+    def test_起跑段补推能解决的纯领先不得告警(self):
+        """🔴 判据不得恒真。本用例锁的正是**排在自动补推之后**这个位置：
+        本地有一个未推送提交、origin 没动 ⇒ 起跑段补推当场推上去 ⇒ 判据到手时
+        已经是 0，**不该报**。若哪天有人把本判据挪到补推之前，这条会当场变红。
+        """
+        self._init_and_push(rows="")
+        self._make_local_only_commit()
+        result = _run_sweep(self.work)
+        log = self._log_text()
+        self.assertIn("✓ 起跑补推 1 个此前未推送的本地提交。", log)
+        self.assertIn("本地独有 0 个", log)
+        self.assertEqual(self._state(), {}, "补推已解决的领先不该留下任何告警状态")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
