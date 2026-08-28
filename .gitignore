@@ -7,6 +7,13 @@
 .env.*
 !.env.example
 
+# 本机客户端私有件 —— 每台机器一份、每个 worktree 各显示一次，不属任何人的产出
+# （队列 §一 #425：它曾占 sweep reconcile 失败的 13/26，且是「6 个 worktree 带未提交改动」
+#  那个假象的全部内容；OP-0828-P 2026-08-28 已 git rm --cached）
+# 🔴 这一行必须在仓库里，不能只靠 ~/.config/git/ignore 的全局规则 ——
+#  全局规则只在这台机器上有效，别的机器/新 clone/CI 上一个 git add -A 就会把它重新带进库。
+.claude/settings.local.json
+
 # Python
 __pycache__/
 *.py[cod]
