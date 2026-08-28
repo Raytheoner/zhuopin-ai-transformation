@@ -5241,5 +5241,262 @@ class LocalOnlyCommitCliWiringTests(SweepTestBase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
+class _HintModule:
+    """替身扫描器模块：只提供推送正文要用到的那两个渲染函数。"""
+
+    @staticmethod
+    def form1_todo_hint(item):
+        return f"…{item.get('excerpt', '')}…"
+
+    @staticmethod
+    def lan_status_text(lan):
+        status = (lan or {}).get("status")
+        return {"on": "✅ on-LAN（三项齐备）", "off": "⛔ off-LAN（三项未齐）"}.get(
+            status, "⚠ 探针不可用（**不据此判为 off-LAN**）")
+
+
+class LanFlipPushTests(unittest.TestCase):
+    """队列 §一 `#422` 续（2026-08-28，`OP-0828-Z`）：**回 LAN 那一刻真的推出去**。
+
+    🔑 判据（Shao Peishen 2026-08-28 当日原话所指）：**一个「写下来了」的提醒，
+    如果没有一条会主动找到人的通道，它就等于没写。**
+    `LAN留步项捞出清单-2026-08-26.md` 躺了一个月无人扫，就是把提醒只写进文件
+    的下场。本组因此不测「扫得出来」（那是扫描器自己的单测），只测「翻转那一
+    刻有没有真的发出去、正文够不够他直接动手」。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "reports").mkdir()
+        self.sent: list[str] = []
+        self._orig_webhook = sweep._load_webhook_url
+        self._orig_send = sweep._send_wecom_markdown
+        sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
+        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+
+    def tearDown(self):
+        sweep._load_webhook_url = self._orig_webhook
+        sweep._send_wecom_markdown = self._orig_send
+        self._tmp.cleanup()
+
+    @staticmethod
+    def _findings_for(flip, *, status="on", items=(("398", "到期未部署"), ("334", "冒烟未做"))):
+        form1 = [{"key": f"form1:q#一{rid}", "section": "一", "row_id": rid,
+                  "queue": "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md",
+                  "age_days": 9, "bucket": "7 天以上", "excerpt": excerpt}
+                 for rid, excerpt in items]
+        return {
+            "form1": {"items": form1},
+            "lan": {"status": status, "on_lan": status == "on",
+                    "observed_utc": "2026-08-28T09:04:31Z",
+                    "observed_local": "2026-08-28 17:04:31", "probes": []},
+            "lan_flip": {"flip": flip, "previous": False, "since": None,
+                         "probe_status": status},
+        }
+
+    def _run(self, findings):
+        log: list[str] = []
+        ok = sweep._announce_lan_flip(self.repo, findings, log, _HintModule)
+        return ok, "\n".join(log)
+
+    def test_off到on翻转时正文含行号_要补什么_与两个基准的时刻(self):
+        ok, _log = self._run(self._findings_for("off→on"))
+        self.assertTrue(ok)
+        self.assertEqual(len(self.sent), 1, self.sent)
+        body = self.sent[0]
+        self.assertIn("#398", body)
+        self.assertIn("#334", body)
+        # 🔴 只给行号等于把他打发回一份几万字的队列文件里自己找。
+        self.assertIn("要补什么", body)
+        self.assertIn("到期未部署", body)
+        # 🔴 两个基准都要在，且各自标明——只给 UTC 会被读成本地，于是一条刚发
+        # 的提醒看上去像 8 小时前发的、被当成积压旧消息划掉。
+        self.assertIn("2026-08-28T09:04:31Z", body)
+        self.assertIn("2026-08-28 17:04:31", body)
+        self.assertIn("本地", body)
+
+    def test_on到on不重复推(self):
+        """防抖那一半。`track_lan_flip` 在 `on→on` 上给 `flip=None`，本用例锁的
+        是 sweep 这一侧**照着 flip 办事、不自己另判一次**。"""
+        ok, _log = self._run(self._findings_for(None))
+        self.assertTrue(ok)
+        self.assertEqual(self.sent, [])
+
+    def test_探针不可用那一轮不推(self):
+        ok, _log = self._run(self._findings_for(None, status="unknown"))
+        self.assertTrue(ok)
+        self.assertEqual(self.sent, [])
+
+    def test_零条留步时翻转也不推(self):
+        ok, _log = self._run(self._findings_for("off→on", items=()))
+        self.assertTrue(ok)
+        self.assertEqual(self.sent, [])
+
+    def test_推送失败必须不落状态_下一轮重试(self):
+        """🔴 翻转是**事件**：错过就没有第二次。推失败仍落状态 ＝ 这次翻转就此
+        消失，现场只留一行「推送失败」。"""
+        def _boom(url, text):
+            raise RuntimeError("网络炸了")
+
+        sweep._send_wecom_markdown = _boom
+        ok, log = self._run(self._findings_for("off→on"))
+        self.assertFalse(ok, "推送失败时必须返回 False，使本轮不落状态")
+        self.assertIn("下一轮重试", log)
+
+
+class LocalOnlyScanBlindSpotTests(unittest.TestCase):
+    """队列 §一 `#425` ⑶ 续（2026-08-28，`OP-0828-Z`）：**第 8 类的整轮早退盲区**。
+
+    🔑 判据：**这盏灯只在 sweep 跑顺的那些轮才亮，而 sweep 跑不顺恰恰是分叉
+    最容易发生的时候** —— 告警被排在了它要监视的那个失败模式之后。在本组之
+    前，一轮因分支不对／编辑锁被占而早退的 sweep，与一轮跑完且本地 master 干
+    干净净的 sweep，**在第 8 类留下的痕迹完全相同：都是「没有告警」**。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "reports").mkdir()
+        self.sent: list[str] = []
+        self._orig_webhook = sweep._load_webhook_url
+        self._orig_send = sweep._send_wecom_markdown
+        sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
+        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+
+    def tearDown(self):
+        sweep._load_webhook_url = self._orig_webhook
+        sweep._send_wecom_markdown = self._orig_send
+        self._tmp.cleanup()
+
+    def _marker(self) -> dict:
+        path = self.repo / sweep.LOCAL_ONLY_SCAN_MARKER_REL
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def _skip(self, reason="整轮早退（编辑锁被占）"):
+        log: list[str] = []
+        sweep._note_local_only_scan_skipped(self.repo, reason, log)
+        return "\n".join(log)
+
+    def test_一次早退就留下与干净不同的痕迹(self):
+        """验收第三侧：**「本轮未巡检」不得静默地表现成「干净」**。"""
+        log = self._skip()
+        marker = self._marker()
+        self.assertEqual(marker["last_round_status"], "skipped")
+        self.assertEqual(marker["consecutive_skips"], 1)
+        self.assertIn("本轮未巡检", log)
+        self.assertIn("不据此判为已对齐", log)
+        # 单轮早退是日常（编辑锁被占几分钟很常见），不该逐轮报。
+        self.assertEqual(self.sent, [], "单轮早退不该亮灯，否则这盏灯会被训成噪音")
+
+    def test_连续够阈值才亮灯_且正文说得出连续几轮(self):
+        for _ in range(sweep.LOCAL_ONLY_UNSCANNED_ALERT_AFTER_ROUNDS):
+            self._skip()
+        self.assertEqual(len(self.sent), 1, self.sent)
+        body = self.sent[0]
+        self.assertIn("第 8 类", body)
+        self.assertIn(f"连续 {sweep.LOCAL_ONLY_UNSCANNED_ALERT_AFTER_ROUNDS} 轮没跑", body)
+        self.assertIn("编辑锁被占", body)
+
+    def test_巡检恢复后自动解除_不留需人手清的标记(self):
+        for _ in range(sweep.LOCAL_ONLY_UNSCANNED_ALERT_AFTER_ROUNDS):
+            self._skip()
+        self.sent.clear()
+
+        log: list[str] = []
+        sweep._mark_local_only_scan(self.repo, "scanned", "本地独有 0 个／远端独有 0 个")
+        sweep._clear_local_only_unscanned_alert(self.repo, log)
+
+        marker = self._marker()
+        self.assertEqual(marker["last_round_status"], "scanned")
+        self.assertEqual(marker["consecutive_skips"], 0)
+        self.assertEqual(len(self.sent), 1, self.sent)
+        self.assertIn("巡检已恢复", self.sent[0])
+        state_path = self.repo / sweep.LOCAL_ONLY_UNSCANNED_STATE_REL
+        self.assertEqual(json.loads(state_path.read_text(encoding="utf-8")), {},
+                         "恢复后状态必须清空，不留需人手清的标记")
+
+    def test_两个状态文件必须分开_早退轮不得把第8类告警判成已解除(self):
+        """🔴 本组最要紧的一条。`_track_and_alert_standing_state` 的语义是「不在
+        本次 key 集合里的既有 key ＝ 已解除」。早退轮若共用第 8 类那份状态文件，
+        会把上一轮真实的 `local-master:unpushed` 当场判成「✅ 已解除」——
+        **测量停摆伪装成问题已解决**，是本文件反复记的那族里最坏的一种。
+        """
+        self.assertNotEqual(sweep.LOCAL_ONLY_COMMIT_STATE_REL,
+                            sweep.LOCAL_ONLY_UNSCANNED_STATE_REL)
+        commit_state = self.repo / sweep.LOCAL_ONLY_COMMIT_STATE_REL
+        commit_state.write_text(
+            json.dumps({sweep.LOCAL_ONLY_AHEAD_KEY: "2026-08-28T00:00:00+00:00"}),
+            encoding="utf-8")
+        for _ in range(sweep.LOCAL_ONLY_UNSCANNED_ALERT_AFTER_ROUNDS + 2):
+            self._skip()
+        self.assertEqual(set(json.loads(commit_state.read_text(encoding="utf-8"))),
+                         {sweep.LOCAL_ONLY_AHEAD_KEY},
+                         "早退轮一个字节都不许动第 8 类自己的状态文件")
+        # 🔴 判「有没有发出解除通知」只认解除消息本身的形状（`✅` 开头），
+        # 不做「正文含不含『解除』二字」的模糊匹配——告警正文里那句「巡检会
+        # 自行恢复并自动解除本条」是处置说明，与解除通知是两回事。用关键词
+        # 猜语义，正是本项目已判为要根治的那一族。
+        self.assertEqual([m for m in self.sent if m.startswith("✅")], [],
+                         "早退轮绝不许发出任何解除通知")
+
+    def test_留痕失败不得让整轮变红(self):
+        """`#425` 派单件红线②：告警发不出去不应让 sweep 本身挂掉。"""
+        def _boom(url, text):
+            raise RuntimeError("网络炸了")
+
+        sweep._send_wecom_markdown = _boom
+        log = ""
+        for _ in range(sweep.LOCAL_ONLY_UNSCANNED_ALERT_AFTER_ROUNDS):
+            log = self._skip()          # 不抛即通过
+        self.assertIn("本轮未巡检", log)
+
+    def test_dry_run不写任何痕迹(self):
+        log: list[str] = []
+        sweep._note_local_only_scan_skipped(self.repo, "整轮早退", log, dry_run=True)
+        self.assertEqual(self._marker(), {})
+        self.assertEqual(log, [])
+
+
+class LocalOnlyScanBlindSpotWiringTests(SweepTestBase):
+    """接线这一层单独测：**修盲区的代码自己不许留成新的盲区**。"""
+
+    def test_main里两个except分支都补了未巡检留痕(self):
+        source = Path(sweep.__file__).read_text(encoding="utf-8")
+        main_body = source.split("def main() -> int:", 1)[1]
+        self.assertEqual(main_body.count("_note_local_only_scan_skipped("), 2,
+                         "SweepAbort 与未预期异常两个 handler 都必须补留痕；"
+                         "少一个就是少覆盖一整族早退形态")
+        # 🔴 标志位必须声明在 try 之外：声明在 try 内则 `_check_preconditions`
+        # 抛在第二行时 except 读它会撞 UnboundLocalError。
+        flag = main_body.index("local_only_scanned = False")
+        try_at = main_body.index("\n    try:\n")
+        self.assertLess(flag, try_at,
+                        "local_only_scanned 必须在 try 之前声明，否则前置条件"
+                        "失败那一支会以 UnboundLocalError 收场")
+
+    def test_分支非master整轮早退时_痕迹必须写成未巡检(self):
+        """CLI 级真跑：`_check_preconditions` 在第 8 类**之前**抛，这正是
+        `OP-0828-Q` 实测出的那段够不到的路。"""
+        self._init_and_push(rows="")
+        _git(self.work, "checkout", "-q", "-b", "feature")
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0)
+        marker_path = self.work / sweep.LOCAL_ONLY_SCAN_MARKER_REL
+        self.assertTrue(marker_path.exists(), "早退轮必须留下痕迹，否则它与干净轮无法分辨")
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        self.assertEqual(marker["last_round_status"], "skipped")
+        self.assertIn("本轮未巡检", (self.work / sweep.LOG_REL).read_text(encoding="utf-8"))
+
+    def test_正常轮痕迹写成scanned_与早退轮可分辨(self):
+        """同一份文件、两种轮次，值必须不同——这就是「可区分痕迹」的定义。"""
+        self._init_and_push(rows="")
+        _run_sweep(self.work)
+        marker = json.loads(
+            (self.work / sweep.LOCAL_ONLY_SCAN_MARKER_REL).read_text(encoding="utf-8"))
+        self.assertEqual(marker["last_round_status"], "scanned")
+        self.assertEqual(marker["consecutive_skips"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

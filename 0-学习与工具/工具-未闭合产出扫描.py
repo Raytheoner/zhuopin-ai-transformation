@@ -712,10 +712,15 @@ def _probe_ping(host: str) -> dict:
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return {"probe": f"ping {host}", "ok": False,
-                "detail": f"调用失败：{type(exc).__name__}: {exc}"}
+        # 🔴 `error=True` ＝ **探针自己没跑起来**（找不到 `ping`、非 Windows、
+        # 超时被杀），**不是「目标不可达」**。两者外观都是「ok=False」，但
+        # 含义相反：前者是「我没测到」，后者是「我测了，它不通」。把前者
+        # 当成 off 会在下一轮探针恢复时凭空造出一次 `off→on` 翻转，进而推
+        # 一条谁也没回内网的提醒——同根 `CLAUDE.md` §5「工具静默回退」族。
+        return {"probe": f"ping {host}", "ok": False, "error": True,
+                "detail": f"探针未能执行：{type(exc).__name__}: {exc}（**不据此判为 off-LAN**）"}
     ok = "TTL=" in result.stdout.upper()
-    return {"probe": f"ping {host}", "ok": ok,
+    return {"probe": f"ping {host}", "ok": ok, "error": False,
             "detail": "收到带 TTL 的回复" if ok else "无带 TTL 的回复（视为不可达）"}
 
 
@@ -728,7 +733,13 @@ def _probe_http(host: str, port: int, label: str) -> dict:
     的实据。把异常一律翻译成「不可达」等于把证据扔了。
     """
     url = f"http://{host}:{port}/api/ping"
-    probe = {"probe": url, "ok": False, "status": None, "server": None, "proxy_header": None}
+    # 🔴 HTTP 这一侧**一律 `error=False`**，理由是硬的：连接被拒／超时／DNS
+    # 失败在本判据下**就是 off-LAN 的正当证据**（人不在厂内网时本来就该连
+    # 不上），把它算成「探针没跑起来」会让 off 永远测不出来，反过来把翻转
+    # 判据整条关掉。真正算「没跑起来」的只有 `ping` 那一侧的 OSError ——
+    # 那才是「本机连发起探测的能力都没有」。
+    probe = {"probe": url, "ok": False, "error": False,
+             "status": None, "server": None, "proxy_header": None}
     try:
         with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:  # noqa: S310
             status, headers = response.status, response.headers
@@ -750,10 +761,68 @@ def _probe_http(host: str, port: int, label: str) -> dict:
 
 def probe_lan(host: str = LAN_HOST) -> dict:
     """三项齐备才算 on-LAN。**任一项不过即 off**，不做「两项过了就算通」的
-    宽容——宽容一次，这个判据就退化成 08-25 那个会骗人的判据。"""
+    宽容——宽容一次，这个判据就退化成 08-25 那个会骗人的判据。
+
+    🔴 **返回三态，不是两态**（`OP-0828-Z`，`#422` 推送要求「探针本身失败时
+    不得当作 off」）：`status` ∈ `on`／`off`／`unknown`。
+
+    - `on`   ＝ 三项探针都真的跑了、且都过；
+    - `off`  ＝ 三项探针都真的跑了、至少一项没过（**这是有信息量的 off**）；
+    - `unknown` ＝ 至少一项**根本没跑起来**（`error=True`）。
+
+    为什么必须分出第三态：`unknown` 若被并入 `off`，则探针恢复的那一轮会
+    被算成一次 `off→on` 翻转，于是**在没有任何人回内网的情况下推一条「你
+    刚回到内网」**。这条提醒一旦误发过两三次，就再没人会认真看它——而它
+    整个存在的理由就是「回内网那一刻真的找到人」。
+
+    `on_lan` 字段保留（下游多处在读），但 **`unknown` 时取 `None` 而不是
+    `False`**：调用方拿到 `None` 会在 `if lan["on_lan"]` 处表现为「不是
+    on」，而在任何拿它与 `True`/`False` 比较的地方都表现为「与两者都不
+    相等」，恰好是我们要的语义。
+    """
     probes = [_probe_ping(host)]
     probes.extend(_probe_http(host, port, label) for port, label in LAN_SERVICES)
-    return {"on_lan": all(probe["ok"] for probe in probes), "probes": probes}
+    now = datetime.now(timezone.utc)
+    if any(probe.get("error") for probe in probes):
+        status, on_lan = "unknown", None
+    elif all(probe["ok"] for probe in probes):
+        status, on_lan = "on", True
+    else:
+        status, on_lan = "off", False
+    return {
+        "status": status, "on_lan": on_lan, "probes": probes,
+        # 🔴 两个基准都给，且都在字段名里写死是哪个——项目硬规则「引用任何
+        # 时刻前先答一句这是 UTC 还是本地」。推送正文两个一起打，读的人不必
+        # 自己换算，也不会把 UTC 读成本地时间而以为提醒晚了 8 小时。
+        "observed_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "observed_local": now.astimezone().strftime(LOCAL_TIME_FMT),
+    }
+
+
+def lan_status_text(lan: dict | None) -> str:
+    """三态各有各的措辞。🔴 **`unknown` 不许借用 off 的那句**——「它不通」和
+    「我没测成」在报告里长得一样，读的人就会拿一次探针故障当作「他还没回
+    内网」的证据。本函数是这三句话在全项目里唯一的一份，sweep 侧也调它，
+    免得两处各写一版、日后只改一处。"""
+    if lan is None:
+        return "未探测（`--skip-lan-probe`）"
+    status = lan.get("status") or ("on" if lan.get("on_lan") else "off")
+    if status == "on":
+        return "✅ on-LAN（三项齐备）"
+    if status == "off":
+        return "⛔ off-LAN（三项未齐）"
+    return "⚠ 探针不可用（**不据此判为 off-LAN**）"
+
+
+def form1_todo_hint(item: dict) -> str:
+    """形态 1 单条的「要补什么」一句话。
+
+    取的是队列行里那处留步字样周边的原文摘录（`excerpt`），**不做任何概括**
+    ——概括就得猜中文，而本文件已两次把「猜中文关键词」判为要根治的那一族。
+    原文摘录的好处是：它要么就是那句待办，要么至少让人一眼认出该去读哪一行。
+    """
+    excerpt = (item.get("excerpt") or "").strip()
+    return f"…{excerpt}…" if excerpt else "（行内未取到摘录，请直接读该行）"
 
 
 # ============================================================
@@ -848,15 +917,27 @@ def track_lan_flip(state: dict, lan: dict | None) -> dict:
     当天凭空发一条提醒，而什么都没发生。
     """
     previous = state.get("lan", {}).get("on_lan")
+    since = state.get("lan", {}).get("last_change_utc")
     if lan is None:
-        return {"flip": None, "previous": previous, "since": None}
+        return {"flip": None, "previous": previous, "since": None, "probe_status": "skipped"}
+
+    status = lan.get("status") or ("on" if lan.get("on_lan") else "off")
+    if status == "unknown":
+        # 🔴 探针没跑起来 ⇒ **本轮什么翻转都不算**，`previous` 原样保留（由
+        # `write_state` 负责不覆盖）。这一支是本函数最要紧的一行：它把
+        # 「我没测到」挡在「它变了」之外。**上一轮是 on 还是 off 都一样不算**
+        # ——不只是防误报 `off→on`，`on→off` 同样不许由一次测量失败推出来。
+        return {"flip": None, "previous": previous, "since": since,
+                "probe_status": "unknown"}
+
     flip = None
-    if previous is False and lan["on_lan"] is True:
+    if previous is False and status == "on":
         flip = "off→on"
-    elif previous is True and lan["on_lan"] is False:
+    elif previous is True and status == "off":
         flip = "on→off"
-    return {"flip": flip, "previous": previous,
-            "since": state.get("lan", {}).get("last_change_utc")}
+    # previous 为 None（首轮／历史里只有 unknown）时 flip 恒为 None——不把
+    # 「第一次看见 on」当成翻转，那会在装上的当天凭空发一条提醒。
+    return {"flip": flip, "previous": previous, "since": since, "probe_status": status}
 
 
 # ============================================================
@@ -915,12 +996,26 @@ def write_state(findings: dict, state_path: Path) -> None:
             fresh[key] = {"first_seen_utc": alerted.get(key, {}).get("first_seen_utc", now),
                           "last_seen_utc": now}
     lan_state = state.get("lan", {})
-    if findings["lan"] is not None:
-        changed = lan_state.get("on_lan") != findings["lan"]["on_lan"]
-        lan_state = {
-            "on_lan": findings["lan"]["on_lan"], "observed_utc": now,
-            "last_change_utc": now if changed else lan_state.get("last_change_utc"),
-        }
+    lan = findings["lan"]
+    if lan is not None:
+        status = lan.get("status") or ("on" if lan.get("on_lan") else "off")
+        if status == "unknown":
+            # 🔴 **不覆盖 `on_lan`**：状态文件里那个值是「上一次真的测出来的
+            # 结论」，一次测不成不该把它擦掉。擦掉会让下一轮的 `previous`
+            # 变成 `None`，于是真正的翻转被判成「首轮」而静默——**测量失败
+            # 伪装成「什么都没发生」**，正是本文件反复记的那一族。
+            # 只记「本轮没测成」这件事本身，供报告与告警说出「不据此判断」。
+            lan_state = {**lan_state, "last_probe_status": "unknown",
+                         "last_probe_utc": now,
+                         "unknown_since": lan_state.get("unknown_since") or now}
+        else:
+            changed = lan_state.get("on_lan") != lan["on_lan"]
+            lan_state = {
+                "on_lan": lan["on_lan"], "observed_utc": now,
+                "last_change_utc": now if changed else lan_state.get("last_change_utc"),
+                "last_probe_status": status, "last_probe_utc": now,
+                "unknown_since": None,
+            }
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(
         json.dumps({"alerted": fresh, "lan": lan_state}, ensure_ascii=False, indent=2),
@@ -985,14 +1080,19 @@ def format_report(findings: dict) -> str:
         lines.append("\n## 回 LAN 感知：本轮已跳过（`--skip-lan-probe`）")
     else:
         flip = findings["lan_flip"]["flip"]
-        head = "✅ on-LAN（三项齐备）" if lan["on_lan"] else "⛔ off-LAN（三项未齐）"
+        head = lan_status_text(lan)
         lines.append(f"\n## 回 LAN 感知：{head}")
+        lines.append(f"  探测时刻：{lan.get('observed_utc') or '（未记）'}"
+                     f" ／ {lan.get('observed_local') or '（未记）'} 本地")
         if flip == "off→on":
             lines.append("🔔 **本轮由 off 翻到 on —— 下面的 LAN 留步项现在可以补做了。**")
         elif flip == "on→off":
             lines.append("· 本轮由 on 翻到 off（记录在案，不是提醒）。")
+        elif findings["lan_flip"].get("probe_status") == "unknown":
+            lines.append("· 🔴 **本轮探针未能执行，翻转判定整轮不作数**——"
+                         "上一轮的 on/off 结论原样保留，**不据此判为 off-LAN**。")
         for probe in lan["probes"]:
-            mark = "✅" if probe["ok"] else "❌"
+            mark = "⚠" if probe.get("error") else ("✅" if probe["ok"] else "❌")
             lines.append(f"  {mark} `{probe['probe']}` —— {probe.get('detail', '')}")
 
     form1 = findings["form1"]
