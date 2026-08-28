@@ -450,15 +450,22 @@ class TestRunMockModeV8Panel:
         disclaimer_pos = body.index(disclaimer)
         assert kpi_pos < disclaimer_pos < table_pos
 
-    def test_mock_run_total_matches_fixture_plus_orphan(self, client):
-        """data/mock 五表固定含 11 个料品 + 1 条孤立发票，v8 主表把孤立发票并入同一张表
-        （规格 3.8），总行数=12，与 test_golden.py 的 11 items + 1 orphaned 口径一致。"""
+    def test_mock_run_total_matches_fixture_without_orphan(self, client):
+        """data/mock 五表固定含 11 个料品 + 1 条孤立发票。
+
+        🔴 **2026-08-28 随 ⒜ 切换而改**（原断言 12 项 / BLOCK 9）：⒜ 把孤立发票移出 KPI
+        三档 ⇒ 三档只反映引擎真判过的 11 个料品项，BLOCK 回落到纯 `needs_review` 的 8；
+        那 1 条孤立发票**不消失**，改由下方独立提示条如实显示（末两条断言锁死这一点——
+        「移出三档」绝不等于「藏起来」）。v8 主表仍把它并入同一张表（规格 3.8 未变）。
+        """
         r = client.post("/run", data={"data_source": "mock"})
         body = r.get_data(as_text=True)
-        assert "本次共 12 项料品" in body
+        assert "本次共 11 项料品" in body
         assert "2 项自动通过" in body
         assert "1 项微差消化" in body
-        assert "9 项BLOCK退回" in body  # 8 needs_review + 1 orphaned invoice 并入 BLOCK（规格 3.1）
+        assert "8 项BLOCK退回" in body  # ⒜：纯 needs_review，孤立发票不再并入
+        assert "孤立发票" in body
+        assert "另有 <b>1</b> 行孤立发票" in body
 
     def test_mock_run_shows_known_full_match_and_price_alert(self, client):
         """AP-1000/A001 数量金额税额与发票精确一致 → PO↔AP/AP↔发票均一致；
@@ -540,7 +547,8 @@ def test_csv_mode_reuses_mock_fixture_directory(client, tmp_path):
     r = client.post("/run", data={"data_source": "csv", "csv_dir": str(dst)})
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "本次共 12 项料品" in body
+    # 🔴 2026-08-28 随 ⒜ 切换：12 → 11（孤立发票移出三档，见上方 mock 用例的说明）。
+    assert "本次共 11 项料品" in body
     assert "kpi-pass" in body
 
 
@@ -567,14 +575,20 @@ def _ap(ap_no):
                    qty=1.0, unit_price=1.0, untaxed_amount=1.0, tax_amount=0.13)
 
 
-def test_kpi_default_mode_is_unchanged_and_is_the_only_switch():
-    """🔴 退化守卫：默认口径必须仍是现状。
+def test_kpi_default_mode_is_the_signed_off_one_and_is_the_only_switch():
+    """🔴 退化守卫：默认口径必须是**当前已批准的那一档**，不得被顺手改回或改走。
 
     `.51` 是「整包同步」部署（队列 #418 ⑻ 实测坐实）——合入 master 即等于早晚上生产，
-    「留步不部署」守不住；**唯一守得住的是这个默认值**。改它＝改唐燕萍每天看的数字，
-    须她显式签认（判据/口径类永不默认生效）。
+    「留步不部署」守不住；**唯一守得住的是这个默认值**。改它＝改唐燕萍每天看的数字。
+
+    🔴 **当前值 ＝ ⒜（`_KPI_ORPHAN_SEPARATE`），2026-08-28 切换**，依据＝Shao Peishen
+    当日拍板，**覆盖了原「须唐燕萍显式签认」的 IATF 红线；她本人尚未签认，签认待补**。
+    ⇒ 这条断言此后守的是「⒜ 不被无声改走」，**不是**「口径已走完正规签认」——两者别混。
+
+    ⚠️ 第二条断言是**另一件事、未被那次拍板覆盖**：`_INVOICE_SCOPE`（#423 ⒞，装载侧）
+    原样保留 `all`，仍待唐燕萍确认。⒜ 已切不构成对它的先例，**不要一起放开**。
     """
-    assert webapp_module._KPI_ORPHAN_MODE == webapp_module._KPI_ORPHAN_COUNT_IN
+    assert webapp_module._KPI_ORPHAN_MODE == webapp_module._KPI_ORPHAN_SEPARATE
     assert webapp_module._INVOICE_SCOPE == webapp_module._INVOICE_SCOPE_ALL
 
 
