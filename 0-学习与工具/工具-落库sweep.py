@@ -4372,6 +4372,133 @@ def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
             log.append(f"    ⚠ 扫描器状态落盘失败：{exc}——下一轮会把同批命中当成新命中")
 
 
+# ============================================================
+# 队列 §一 #433（2026-08-29，OP-0829-A）：**第 9 类**常驻状态告警 ——
+# 写入时刻哨兵零心跳
+# ============================================================
+#
+# 承接 openspec 变更包 `project-hooks-write-time-sentinels` 的**准入条件**：
+# 三个哨兵的全部配置都落在项目 `.claude` 配置件里，而 P0 探针（OP-0828-P）
+# 实测到一条「配置被静默忽略」的真实路径（`.claude.json` 里同一目录两条斜杠
+# 方向不同、结论相反的信任记录，命中 False 那条时配置被静默丢弃、不报错）。
+#
+# 🔑 一个「装了但不生效」的哨兵比没有哨兵更坏：它会让人以为这一类错误已经
+#    有人管了，从而把原来那条人守规则退休掉——而本包**确实退休了**一条人守
+#    （乱码哨兵的开工/收工扫目录）。**在「我确知它在岗」之前退休人守，等于
+#    把网撤了却以为网还在。** 这正是 OP-0819-F「建成 9 天、每天在跑，却
+#    从来没有真正发出过一条消息」的复发条件。
+#
+# 🔴 刻意不做的两件事（design 决策点 1 原文）：
+#   ⑴ **不新建后台守护进程去守哨兵**——那只是把「失败不产生信号」往外挪
+#      一层，那个守护自己停了照样没人知道（#398 ⑴）。故本类并入落库 sweep
+#      这个已经每轮都跑的常驻框架，不新增任何计划任务。
+#   ⑵ **心跳不按日期/会话分片**——分片会造出无限增长的文件形态（#322 那个
+#      连响 17.1 小时的 `.mutex.stale` 坑）。故心跳恒为单一定名文件。
+#
+# 🔴 告警必须能被「已恢复」自动关掉：本类走 `_track_and_alert_standing_state`
+#    的出现→告警／消失→解除骨架，心跳一恢复，下一轮自动推解除通知、无需
+#    人工清除（#398 ⑷ 那条硬要求）。
+HOOKS_HEARTBEAT_REL = "reports/hooks-heartbeat.json"
+HOOKS_HEARTBEAT_STATE_REL = "reports/sweep-hooks-heartbeat-state.json"
+# N 天零心跳即告警。取 3 天而不是 1 天：CC 并非每天开工，1 天会把「这两天没干活」
+# 误报成「哨兵掉线」；取 3 天仍远小于「建成 9 天没人发现」那次的暴露窗口。
+HOOKS_HEARTBEAT_STALE_DAYS = 3.0
+HOOKS_HEARTBEAT_ALERT_INTERVAL_HOURS = 24.0
+# 项目配置里出现这个片段即视为哨兵已注册（安装单第 1 步的产物）。
+SENTINEL_SCRIPT_MARK = "0-学习与工具/hooks/sentinel-"
+
+
+def _sentinel_hooks_registered(repo_root: Path) -> bool:
+    """项目配置里是否已注册哨兵钩子（只读，一个字节都不改）。
+
+    🔴 未注册时**不告警**——否则安装单执行之前，本类会从上线第一天起每天红
+    一次，而「永远红着的告警」等于没有告警。未注册这件事由安装单自己承接
+    （`0-学习与工具/hooks/README-安装步骤.md` 里明写待办），不在这里重复喊。
+    """
+    settings = repo_root / ".claude" / "settings.json"
+    try:
+        text = settings.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return SENTINEL_SCRIPT_MARK in text
+
+
+def _check_hooks_heartbeat(repo_root: Path, log: list[str]) -> None:
+    """第 9 类常驻状态告警：写入时刻哨兵零心跳／心跳文件损坏。
+
+    与第 4～7 类同形——检测对象是仓库/本机整体状态，**与本轮是否有批次落库
+    无关**，故不依赖 `touched_paths`；只读、只告警，不影响本轮退出码。
+    """
+    if not _sentinel_hooks_registered(repo_root):
+        log.append(
+            "🟡 写入时刻哨兵尚未注册进项目配置——本类**按设计不告警**"
+            "（未注册由安装单承接：`0-学习与工具/hooks/README-安装步骤.md`）。"
+        )
+        # 传空集合：万一此前告警过（例如注册被回退），这一步会把它自动解除。
+        _track_and_alert_standing_state(
+            repo_root, "哨兵心跳", HOOKS_HEARTBEAT_STATE_REL, set(),
+            HOOKS_HEARTBEAT_ALERT_INTERVAL_HOURS,
+            lambda keys: "", lambda keys: "✅ 落库sweep：哨兵心跳告警已解除（哨兵已不在注册状态）。",
+            log,
+        )
+        return
+
+    path = repo_root / HOOKS_HEARTBEAT_REL
+    keys: set[str] = set()
+    details: dict[str, str] = {}
+
+    if not path.exists():
+        key = "心跳文件不存在"
+        keys.add(key)
+        details[key] = f"`{HOOKS_HEARTBEAT_REL}` 不存在——哨兵已注册但一次都没跑过。"
+    else:
+        try:
+            hb = json.loads(path.read_text(encoding="utf-8"))
+            last_run = hb.get("lastRun")
+            stamp = datetime.fromisoformat(str(last_run))
+            if stamp.tzinfo is None:
+                stamp = stamp.astimezone()
+            age_days = (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds() / 86400
+            if age_days > HOOKS_HEARTBEAT_STALE_DAYS:
+                key = "零心跳"
+                keys.add(key)
+                details[key] = (
+                    f"最后一次心跳 `{last_run}`（本机时区），距今 {age_days:.1f} 天 "
+                    f"＞ 阈值 {HOOKS_HEARTBEAT_STALE_DAYS:.0f} 天。"
+                )
+            else:
+                log.append(
+                    f"✓ 写入时刻哨兵在岗：最后心跳 `{last_run}`（本机时区，非 UTC），"
+                    f"距今 {age_days:.1f} 天；累计运行 {hb.get('runs', {}).get('total', '?')} 次。"
+                )
+        except Exception as exc:  # noqa: BLE001 —— 🔴 检查本身必须出声，不得静默
+            key = "心跳文件损坏"
+            keys.add(key)
+            details[key] = (
+                f"`{HOOKS_HEARTBEAT_REL}` 存在但读不出可用的 `lastRun`：{exc}。"
+                "🔴 这一条**不能当成没有告警**——判据坏了和没有违规是两回事。"
+            )
+
+    def render_alert(alert_keys):
+        lines = "\n".join(f"- **{k}**：{details[k]}" for k in alert_keys)
+        return (
+            "🔴 落库sweep：**写入时刻哨兵可能已不在岗**（第 9 类常驻告警，队列 §一 #433）\n"
+            f"{lines}\n"
+            "排查顺序：① 项目配置里的挂接还在不在；② `.claude.json` 里本目录的信任记录"
+            "是否两条斜杠方向、且有一条为 False（配置会被**静默忽略**，不报错）；"
+            "③ 手工触发一次写入看心跳有没有更新。恢复后本告警下一轮自动解除。"
+        )
+
+    def render_resolved(resolved_keys):
+        lines = "\n".join(f"- {k}" for k in resolved_keys)
+        return f"✅ 落库sweep：哨兵心跳已恢复，以下告警自动解除：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "哨兵心跳", HOOKS_HEARTBEAT_STATE_REL, keys,
+        HOOKS_HEARTBEAT_ALERT_INTERVAL_HOURS, render_alert, render_resolved, log,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="只打印计划动作，不 add/commit/push/改队列")
@@ -4644,6 +4771,11 @@ def main() -> int:
             # 落库无关**，故不依赖 touched_paths；**只读、只告警，一个
             # 字节都不动任何分支与 worktree**，不影响本轮退出码。
             _check_unclosed_outputs(repo_root, log)
+
+            # 队列 §一 #433（2026-08-29，OP-0829-A）：第 9 类常驻状态告警——
+            # 写入时刻哨兵零心跳。同上四类，只读、只告警、不影响退出码；
+            # 🔴 它是那三个哨兵的**准入条件**，不是加分项——见函数上方长注。
+            _check_hooks_heartbeat(repo_root, log)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))
