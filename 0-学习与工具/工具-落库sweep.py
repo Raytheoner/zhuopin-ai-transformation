@@ -1069,6 +1069,11 @@ def _rebase_blocking_paths(repo_root: Path) -> tuple[list[str] | None, str | Non
     ✅ **2026-08-28（OP-0828-P）：那 13/26 的来源已从根上消掉** —— 该文件已
     `git rm --cached` 停止跟踪并写进 `.gitignore`，此后它只会是未跟踪状态（`??`），
     按上一段的判据**不再进入本函数的返回值**，也就不再让 rebase 拒跑。
+    ⚠️ **同一块石头还挡在另一条分支上，别以为只值 13 轮**：队列 §一 `#425` 由
+    `OP-0828-Q` 复核出，`_reconcile_with_origin_and_push` 判「纯落后」走
+    `git merge --ff-only` 时，它同样会以 `error: Your local changes to the
+    following files would be overwritten by merge` 挡下**另外 13 轮**
+    ⇒ **13 ＋ 13 ＝ 26 轮由这一个文件造成**，停止跟踪一次消完。
     🔴 **本函数不因此作废，反而更有用了**：它此前的返回值几乎恒被这一个文件占满，
     信号被噪音盖住；噪音消掉之后，它此后报出的每一条都是真的新拦路石。
     ⚠️ **上面那组 26／13 是历史实测数字，刻意不改** —— 它是这条修法的依据，
