@@ -14,6 +14,8 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().with_name("工具-队列结构lint.py")
 
+NL = "\n"  # 队列 #426 用例里的表格行拼接用；具名常量便于逐行对齐阅读
+
 
 def _load_module():
     spec = importlib.util.spec_from_file_location("_queue_lint_under_test", SCRIPT)
@@ -22,8 +24,13 @@ def _load_module():
     return module
 
 
+# 队列 #426：高水位线判据上线后，夹具这行必须**高于**下方各用例用到的最大
+# 行号（本文件用到 §一 500／501、§四 99），否则每个走 `lint()` 的用例都会
+# 附带撞上一条高水位线违规——那是夹具问题、不是判据问题。取一个明显高于全部
+# 夹具号的值，并留余量供此后新增用例；高水位线判据本身另有专门用例覆盖，
+# 见 `HighWaterMarkTests`。
 HEADER = (
-    "> **编号高水位线：§一 #200 ｜ §四 #40**（说明文字）\n\n"
+    "> **编号高水位线：§一 #900 ｜ §四 #900**（说明文字）\n\n"
     "## 一、任务看板\n\n"
     "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
     "|---|------|--------|-------------|----------|------|--------|------|\n"
@@ -189,6 +196,189 @@ SECTION_FOUR_HEADER = (
     "| # | 事项 | 等谁 | 截止 |\n"
     "|---|------|------|------|\n"
 )
+
+
+class HighWaterMarkTests(unittest.TestCase):
+    """队列 #426 / OP-0828-P：编号高水位线不得低于实测最大已用号。
+
+    🔴 **判据治的是一个不对称，不是某一格数字**：高水位线只被
+    `acquire --reserve` 自动推进，手工立行与 `append-row --number` 都不会推它。
+    2026-08-28 那次滞后**是被同日另一条机器人追行偶然掩盖掉的**——所以四个
+    方向都必须锁住，缺任一向这道判据都会在真实场景里失效：
+      · 对齐（含相等）**不报**——相等是正常终态，报了就是每天一条噪音；
+      · 低于实测最大已用号**即报**——这是判据本身；
+      · **跨两份文件合并**——§一 的可见行分散在机制环境／业务场景两份里，
+        只看载体那一份会漏掉「最大号在另一份」这种情形（同 §一 `#312` 翻过的车）；
+      · **载体唯一性**——业务场景那份没有高水位线行是设计；反过来，若它也长出
+        一行，那才是要拦的（两个会各自漂移的真值）。
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.mech_rel = "queue-mech.md"
+        self.biz_rel = "queue-biz.md"
+        self.module.QUEUE_PATHS_REL = [self.mech_rel, self.biz_rel]
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    # §一 的区标题与表头（不含高水位线行）——高水位线行由 `_body(hwm=...)`
+    # 单独拼上去，**不能**整块替换掉这段：`_split_live_sections` 认的是
+    # `## 一、`，替换掉它会让所有数据行连分区都进不去（本用例组第一版即因此
+    # 静默测了个空文件——正是本判据自己在防的那类「看起来很正常」）。
+    SECTION_ONE_HEADER = (
+        "## 一、任务看板" + NL + NL
+        + "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |" + NL
+        + "|---|------|--------|-------------|----------|------|--------|------|" + NL
+    )
+
+    def _body(self, section_one_rows="", section_four_rows="",
+              hwm="§一 #900 ｜ §四 #900"):
+        """`hwm=None` ＝ 这份文件不含高水位线行。
+
+        🔴 **业务场景那份默认应传 `hwm=None`**——它本来就没有这行（编号空间
+        单一、载体恒定只存机制环境那一份）。夹具若给它也配一行，每个用例都会
+        先撞上「载体不唯一」，把真正要测的东西盖住。
+        """
+        head = f"> **编号高水位线：{hwm}**（说明文字）" + NL + NL if hwm else ""
+        return (
+            head + self.SECTION_ONE_HEADER + section_one_rows
+            + SECTION_TWO_HEADER + SECTION_THREE_HEADER
+            + SECTION_FOUR_HEADER + section_four_rows
+        )
+
+    def _write(self, mech: str, biz: str | None = None) -> None:
+        (self.repo_root / self.mech_rel).write_text(mech, encoding="utf-8")
+        if biz is None:
+            biz = self._body(hwm=None)
+        (self.repo_root / self.biz_rel).write_text(biz, encoding="utf-8")
+
+    def _check(self):
+        return self.module.high_water_mark_check(self.repo_root)
+
+    @staticmethod
+    def _row(number: int) -> str:
+        return (f"| {number} | 任务 | CC | 指针 | 产出 | [S:open][D:机] 待领 | "
+                f"触碰区 | 2026-08-28 |" + NL)
+
+    @staticmethod
+    def _four_row(number: int) -> str:
+        return f"| {number} | 事项 | Shao Peishen | 无 |" + NL
+
+    # ---- 四向 ------------------------------------------------------------
+
+    def test_对齐时不报(self):
+        """相等是正常终态。判据若把相等也报了，它第一天就会变成噪音。"""
+        self._write(self._body(self._row(427), self._four_row(132),
+                               hwm="§一 #427 ｜ §四 #132"))
+        violations, stats = self._check()
+        self.assertEqual(violations, [])
+        self.assertEqual(stats["current"], {"一": 427, "四": 132})
+        self.assertEqual(stats["max_used"]["一"][0], 427)
+
+    def test_高水位线滞后即报(self):
+        """2026-08-28 那次的真实形态：`#426` 手工立行，高水位线停在 425。"""
+        self._write(self._body(self._row(426), self._four_row(132),
+                               hwm="§一 #425 ｜ §四 #132"))
+        violations, _ = self._check()
+        self.assertEqual(len(violations), 1, violations)
+        self.assertIn("§一 #425", violations[0])
+        self.assertIn("#426", violations[0])
+
+    def test_最大号在另一份文件里也要被算进来(self):
+        """🔴 反例锁死：`#312` 那次翻车正是「一份拆成两份、下游只跟了一份」。
+
+        高水位线只住在机制环境那一份，而 §一 的可见行分散在两份里——只解析
+        载体那一份，滞后就查不出来，且**结果看起来完全正常**。
+        """
+        self._write(self._body(self._row(400), hwm="§一 #425 ｜ §四 #132"),
+                    self._body(self._row(430), hwm=None))
+        violations, stats = self._check()
+        self.assertEqual(stats["max_used"]["一"], (430, self.biz_rel))
+        self.assertTrue(any("#430" in v for v in violations), violations)
+
+    def test_出现第二份高水位线载体即报(self):
+        """业务场景那份**没有**这行是设计；给它补一行才是缺陷（两个真值）。"""
+        self._write(self._body(self._row(100)), self._body(self._row(100)))
+        violations, stats = self._check()
+        self.assertEqual(len(stats["carriers"]), 2)
+        self.assertTrue(any("载体" in v for v in violations), violations)
+
+    # ---- 边界 ------------------------------------------------------------
+
+    def test_业务场景没有高水位线行不算违规(self):
+        self._write(self._body(self._row(100)),
+                    self._body(self._row(100), hwm=None))
+        violations, stats = self._check()
+        self.assertEqual(len(stats["carriers"]), 1)
+        self.assertEqual(violations, [])
+
+    def test_两份都没有高水位线行即报(self):
+        """取号载体缺失——`acquire --reserve` 会 fail-loud，本判据先一步说出来。"""
+        self._write(self._body(hwm=None), self._body(hwm=None))
+        violations, _ = self._check()
+        self.assertTrue(any("均不含" in v for v in violations), violations)
+
+    def test_分区无可见行时不比对(self):
+        """行全部归档后文件内看不到最大号——此时不比对，不是报「归零」。"""
+        self._write(self._body(hwm="§一 #427 ｜ §四 #132"))
+        violations, stats = self._check()
+        self.assertEqual(violations, [])
+        self.assertEqual(stats["max_used"], {})
+
+    def test_高水位线行缺分区编号即报格式漂移(self):
+        self._write(self._body(self._row(427), self._four_row(10),
+                               hwm="§一 #427"))
+        violations, _ = self._check()
+        self.assertTrue(any("格式漂移" in v for v in violations), violations)
+
+    def test_违规计入lint退出码(self):
+        """与称呼判据同侧：本判据上线时存量为零，无需 baseline，直接硬拦。"""
+        self._write(self._body(self._row(426), hwm="§一 #425 ｜ §四 #132"))
+        self.assertTrue(
+            any("高水位线" in v for v in self.module.lint(self.repo_root))
+        )
+
+
+class HighWaterMarkRealQueueTests(unittest.TestCase):
+    """回归护栏：真实生产两份队列此刻必须对齐（2026-08-28 实测 §一 427／427、
+    §四 132／132）。塌了要立刻知道——**这条判据的价值全在于它平时是绿的**。"""
+
+    def test_real_queue_high_water_mark_is_aligned(self):
+        module = _load_module()
+        violations, stats = module.high_water_mark_check(module.REPO_ROOT)
+        self.assertEqual(violations, [], f"真实队列高水位线不应有违规：{violations}")
+        self.assertEqual(len(stats["carriers"]), 1, stats["carriers"])
+
+
+class ScopeSelfReportTests(unittest.TestCase):
+    """队列 #426 第③件：运行时自报作用域。**纯打印**，不得影响判定与退出码。"""
+
+    def test_自报打印出每一份被校验文件的绝对路径(self):
+        import io
+        import contextlib
+
+        module = _load_module()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            module.print_scope_self_report()
+        out = buf.getvalue()
+        self.assertIn(str(module.REPO_ROOT), out)
+        for rel in module.QUEUE_PATHS_REL:
+            self.assertIn(str(module.REPO_ROOT / rel), out)
+
+    def test_自报不返回任何违规也不改判定(self):
+        """自报只是打印——`lint()` 的结果在调用它前后必须完全一致。"""
+        import io
+        import contextlib
+
+        module = _load_module()
+        before = module.lint(module.REPO_ROOT)
+        with contextlib.redirect_stdout(io.StringIO()):
+            module.print_scope_self_report()
+        self.assertEqual(module.lint(module.REPO_ROOT), before)
 
 
 class FollowupRestateWarnTests(unittest.TestCase):
