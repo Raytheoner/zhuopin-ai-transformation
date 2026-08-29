@@ -133,6 +133,27 @@ session 没有回合可用来执行）；sweep 只说"不属于任何批次声�
 `gap_alert` 的"狼来了"教训：过密提醒会被无视）；孤儿一旦被声明或消失
 即从状态里清除。
 
+批次文件清单覆盖校验——堵住"空壳提交"（队列 #136，Shao Peishen
+2026-08-29 裁定 (a)，2026-08-29）：跨 worktree 建造的批次会被 sweep 提前
+落库，且落下的提交里根本没有清单声明的那些文件。2026-08-29 OP-0829-A
+实测：`B-0829_5_OP0829A_哨兵建造apply与安装单` 清单含 8 条（5 个代码件
+＋安装单＋openspec tasks＋队列文件），登记时代码还在 worktree 分支上、
+主仓只有队列文件是脏的；旧实现见 `resolved` 非空即走正常批次分支，只
+`git add` 了队列这一个文件，却套着「feat(hooks/#433): 写入时刻哨兵
+apply……」的标题提交（`6557047`），并把该行销成"✅ 已完成"。**它不报错、
+不留异常、账面完全正常**，与"工具静默回退"同族——真正含代码的是后来
+ff 合入的 `e4c93f2`。修法见 `_manifest_coverage_gap()`：`resolved` 非空
+时，清单里那些"形状像仓库内路径、却对不到任何脏改动"的片段即判缺项，
+该批**整批**跳过并在日志里点名（本行状态不动、仍是待处理，代码合入
+master 后下一轮自动落库，跳过是无损的）。三条边界写死在实现里：
+⑴ **fail-open**——校验自身抛异常只留一条痕、按旧判据继续，绝不让这道
+新检查把整轮 sweep 拖死；⑵ **只拦"部分覆盖"**——`resolved` 为空那条路
+是既有的遗留尾巴补销（#328，本次明确不在 scope），它本来就不产生内容
+提交，不存在空壳问题；⑶ **片段须先过形状判据**（`_looks_like_declared_
+path()`）——§二 文件清单列里近一半反引号片段是正文强调而非路径（2026-
+08-29 实测 1544 个里 757 个，如 `master`／`#422`／`.51`／`git status`），
+不做形状过滤就等于把 sweep 关掉，反而重造 #238 修掉的批次积压。
+
 发布收口第②关：部署留痕检查（队列 #229，Shao Peishen 2026-08-03 拍板
 选 (a)，2026-08-05）：同族本周复发三次的"收口最后一段没人记得"——#204
 问题已解决但载体未更正／#221 代码未并 master 而生产已部署／#228 通知
@@ -2132,6 +2153,90 @@ def _explain_ambiguous_candidates(frag: str, dirty_paths: list[str]) -> list[str
     bug、白花一轮取证（见文件头部 #234 相关说明）。
     """
     return [d for d in dirty_paths if d == frag or d.endswith("/" + frag)]
+
+
+# 队列 #136 裁定 (a)：判断反引号片段"是不是一条声明要落库的仓库内路径"。
+# 末尾须是 `<非点非斜杠字符>.<扩展名>`——用于把 `.gitignore`/`.env`/`.md`/`.51`
+# 这类"正文里提到的扩展名或点开头短词"排除在外（它们的点号前没有词干），
+# 同时保留 `.claude/settings.local.json` 这类真实的点开头目录下的路径。
+_DECLARED_PATH_TAIL_RE = re.compile(r"[^/.\s]\.[A-Za-z0-9]{1,10}$")
+# 通配/花括号展开写法（`派单件-*.md`、`{a,b}.py`）无法对到唯一路径，本判据
+# 一律不认领——它们在 `_resolve_batch_files` 里本来也永远解析不出脏路径。
+_DECLARED_PATH_REJECT_CHARS = "*?{}"
+
+
+def _looks_like_declared_path(frag: str) -> bool:
+    """片段是否"看起来是本批次声明要落库的一条仓库内路径"（队列 #136）。
+
+    🔴 **为什么需要这道形状判据**：§二"文件清单"列不是纯路径列表，正文里
+    大量用反引号做普通强调——2026-08-29 实测现存 182 行共 1544 个反引号
+    片段里，**757 个（近一半）根本不是路径**：`master`／`origin/master`／
+    `#422`／`.51`／`采购部#20`／`--ff-only`／`git status`／`bfeb3e6`／
+    `**/reports/` 等。`_resolve_batch_files` 会把它们全部归进 `not_dirty`
+    （它们当然对不到任何脏路径），若覆盖校验直接拿 `not_dirty` 非空当作
+    "缺项"，几乎每一条写得详细的批次行都会被判缺项而永久跳过——那不是
+    收紧，那是把 sweep 关掉，等于用 #136 的修法重新造出 #238 修掉的
+    "批次跨天积压"。
+
+    ⚠️ **本判据是形状启发式，不是真值**，两个方向的失手都如实登记：
+    - 漏认（把真路径当散文）→ 该片段不参与覆盖校验，退化成校验前的旧
+      行为，不会造成新的破坏；
+    - 误认（把散文当真路径）→ 该批次被整批跳过并点名，人工把那对反引号
+      去掉即可下一轮自动落库。**实测残余误认面很小**：现存 344 个形状
+      合格的片段里，只有 `word/document.xml`、`登记豁免：.claude/
+      settings.local.json` 一类个位数写法可能命中，且它们本就是登记写法
+      不规范，与 #328② "路径须用反引号标出、订正后下一轮自动生效"
+      同族——**只报不动，人订正**，不是静默错杀。
+    """
+    if not frag or frag.startswith("~"):  # `~/.claude/CLAUDE.md`：仓库外引用
+        return False
+    if frag.endswith("/"):                # 目录写法，不是可 add 的单个文件
+        return False
+    if any(ch.isspace() for ch in frag):  # `git rev-list --count ...` 这类命令
+        return False
+    if any(ch in frag for ch in _DECLARED_PATH_REJECT_CHARS):
+        return False
+    return bool(_DECLARED_PATH_TAIL_RE.search(frag))
+
+
+def _manifest_coverage_gap(resolved: list[str], not_dirty: list[str]) -> list[str]:
+    """队列 #136（Shao Peishen 2026-08-29 裁定 (a)）：批次落库前的"文件清单
+    覆盖校验"——返回清单里**声明了、但这次提交根本装不进去**的路径；返回
+    空列表表示本批次可以照常落库。
+
+    🔴 **它防的是哪一类事故**（2026-08-29 OP-0829-A 实测，提交 6557047）：
+    本班在 worktree 建造，按纪律先登记 §二 `B-0829_5_OP0829A_哨兵建造apply
+    与安装单`，文件清单含 5 个代码件＋安装单＋openspec tasks＋队列文件共
+    8 条。sweep 于 23:18 UTC 抢先落库——而那一刻代码还在 worktree 的分支
+    上，主仓工作区**只有队列文件是脏的**。于是 `_resolve_batch_files` 给出
+    `resolved=[队列文件]`、`not_dirty=[其余 7 条]`，旧实现看见 `resolved`
+    非空就走正常批次分支，`git add` 了队列这一个文件，却套用清单那条
+    「feat(hooks/#433): 写入时刻哨兵 apply——H3 乱码＋H4 代词＋公共框架
+    （warn 上线）＋安装单」的提交标题提交掉，并把该行销成「✅ 已完成」。
+    **它不报错、不留异常、账面完全正常**——与"工具静默回退"同族：§二 说
+    这批已完成，git 历史里那个提交的标题也说它含哨兵代码，实际上一行代码
+    都没有；真正含代码的是后来 ff 合入的 e4c93f2。
+
+    **判据**（裁定原文）：清单里的路径须"在主仓工作区确有对应脏改动或已在
+    本次提交内"，缺项则该批**整批**跳过并出声。两句话在实现上是同一件事
+    ——`_status_paths` 走 `git status --porcelain=v1`，工作区改动与已 `git
+    add` 进索引的改动都会列出，`resolved` 即"这次提交装得进去"的全集。
+
+    **为什么只在 `resolved` 非空时才判缺项**（即只拦"部分覆盖"这一种）：
+    `resolved` 为空、`not_dirty` 非空的那条路径是既有的"遗留尾巴补销"
+    （队列 #328，本次明确不在 scope）——那是"内容早已落库、只差销行"的
+    正常形态，本来就不产生内容提交，不存在空壳提交问题。本次只把"能对上
+    一部分、就拿这一部分冒充整批"这条唯一会造出空壳提交的路径堵死，
+    不动 sweep 其它任何既有行为。
+
+    **整批跳过而不是提交能对上的那部分**：批次内容要求原子提交、不拆半
+    （同 `_partition_pending_rows_by_batch_isolation` 对歧义批次的既有取舍）。
+    跳过是无损的——本行状态列不动、仍是待处理，代码合入 master 后下一轮
+    自动落库。
+    """
+    if not resolved:
+        return []
+    return [frag for frag in not_dirty if _looks_like_declared_path(frag)]
 
 
 def _check_dirty_paths_against_pending_batches(
@@ -4645,6 +4750,34 @@ def main() -> int:
             normal_rows = []
             for row in clean_rows:
                 resolved, not_dirty, ambiguous = row_resolution[row["batch_id"]]
+                # 队列 #136 裁定 (a)：落库前的文件清单覆盖校验。**fail-open**
+                # ——校验自身出任何岔子都只留一条痕、按校验前的旧判据继续，
+                # 绝不让这道新加的检查把整轮 sweep 拖死（裁定原文的取向）。
+                try:
+                    missing = _manifest_coverage_gap(resolved, not_dirty)
+                except Exception as exc:
+                    missing = []
+                    log.append(
+                        f"⚠ 批次 {row['batch_id']} 的文件清单覆盖校验自身异常，"
+                        f"本轮按校验前的旧判据继续（fail-open，不因校验故障停摆）："
+                        f"{exc!r}"
+                    )
+                if missing:
+                    log.append(
+                        f"⚠ 批次 {row['batch_id']} 整批跳过——文件清单覆盖校验未过"
+                        f"（队列 #136 裁定 (a)）：清单声明的以下 {len(missing)} 条路径"
+                        f"在主仓工作区既无脏改动、也不会进本次提交，照旧落库只会产出"
+                        f"一个「标题说改了整批、实际只含 {len(resolved)} 个文件」的空壳"
+                        f"提交（2026-08-29 提交 6557047 即此形态）："
+                        f"{'、'.join(missing)}；本次能对上的只有：{'、'.join(resolved)}。"
+                        f"[{queue_path}] 本行状态不动、仍是待处理：代码若还在别的"
+                        f" worktree／分支上，合入 master 后下一轮自动落库；若被点名的"
+                        f"片段其实不是待落库路径（登记正文里的引用），把那对反引号"
+                        f"去掉即可。"
+                    )
+                    if args.dry_run:
+                        print(f"[dry-run] 批次 {row['batch_id']} 因文件清单覆盖校验未过整批跳过：{missing}")
+                    continue
                 if resolved:
                     normal_rows.append((row, resolved))
                 elif not_dirty:

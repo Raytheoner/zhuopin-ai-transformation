@@ -2143,6 +2143,224 @@ class PartitionPendingRowsUnitTests(unittest.TestCase):
         self.assertEqual(orphans, ["杂物1.md", "杂物2.md"])
 
 
+class ManifestCoverageUnitTests(unittest.TestCase):
+    """队列 #136 裁定 (a) 的两个纯函数——形状判据与覆盖校验，不经 git 流程。"""
+
+    def test_real_repo_paths_are_recognised(self):
+        for frag in [
+            "0-学习与工具/hooks/hooks-common.ps1",
+            "0-学习与工具/工具-落库sweep.py",
+            "openspec/changes/project-hooks-write-time-sentinels/tasks.md",
+            "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md",
+            "README-安装步骤.md",              # 省略前缀的通行写法
+            ".claude/settings.local.json",     # 点开头目录下的真实路径
+            "卓品智能AI转型实施计划（最新版）.md",  # 全角括号是真实文件名的一部分
+        ]:
+            with self.subTest(frag=frag):
+                self.assertTrue(sweep._looks_like_declared_path(frag))
+
+    def test_prose_backticks_are_not_mistaken_for_declared_paths(self):
+        """🔴 本用例是整个 #136 修法的安全带：§二 文件清单列近一半反引号
+        片段是正文强调而非路径（2026-08-29 实测 1544 个里 757 个）。下面每
+        一条都取自现存生产队列的真实写法——任何一条被误认成路径，对应的
+        批次行就会被覆盖校验永久拦住，等于把 sweep 关掉、重造 #238 修掉的
+        批次跨天积压。"""
+        for frag in [
+            "master", "origin/master", "#422", "采购部#20", ".51",
+            ".gitignore", ".env", ".md", ".docx", "--ff-only", "-DryRun",
+            "git status", "git rev-list --count origin/master..master",
+            "bfeb3e6", "main()", "[S:done]", "ZhuopinCommitSweep",
+            "claude/op0829a-hooks-sentinels",   # 分支名，不是路径
+            "**/reports/",                      # gitignore 规则
+            "4-数字员工/财务部/FI2-三单匹配自动对账/",  # 目录，非单个文件
+            "1-转型规划/0-全景路线图/派单件-*.md",       # 通配写法
+            "5-平台底座/.../{a,b}.py",                   # 花括号展开写法
+            "~/.claude/CLAUDE.md",                       # 仓库外引用
+        ]:
+            with self.subTest(frag=frag):
+                self.assertFalse(sweep._looks_like_declared_path(frag))
+
+    def test_gap_reported_only_for_partially_covered_batch(self):
+        # 部分覆盖 → 报缺项（且散文片段不计入）。
+        self.assertEqual(
+            sweep._manifest_coverage_gap(
+                ["队列.md"], ["hooks/a.ps1", "master", "#136", "**/reports/"],
+            ),
+            ["hooks/a.ps1"],
+        )
+        # 全覆盖 → 无缺项。
+        self.assertEqual(sweep._manifest_coverage_gap(["队列.md"], []), [])
+        # 只有散文片段对不上 → 不算缺项，批次照常落库。
+        self.assertEqual(sweep._manifest_coverage_gap(["队列.md"], ["master", ".51"]), [])
+        # resolved 为空＝既有的"遗留尾巴补销"路径（#328，本次不在 scope），
+        # 不产生内容提交、不存在空壳问题，本校验一律不插手。
+        self.assertEqual(sweep._manifest_coverage_gap([], ["hooks/a.ps1"]), [])
+
+
+class ManifestCoverageFailOpenSourceTests(unittest.TestCase):
+    """队列 #136 裁定原文的 fail-open 取向："校验自身异常不得让 sweep 整轮死"。
+
+    这条契约无法靠黑盒用例触发（`_manifest_coverage_gap` 是纯函数、正常输入
+    不抛），故按本文件既有的 `StartupAbortSiteInventoryTests` 同款做法从源码
+    结构上钉死：main() 里对它的调用必须包在带 `except Exception` 的 try 里。
+    将来有人把 try 摘掉，这里当场红。"""
+
+    def test_call_site_in_main_is_wrapped_in_except_exception(self):
+        tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+        main_fn = next(n for n in ast.walk(tree)
+                       if isinstance(n, ast.FunctionDef) and n.name == "main")
+
+        def _calls_gap(node) -> bool:
+            return any(
+                isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                and c.func.id == "_manifest_coverage_gap"
+                for c in ast.walk(node)
+            )
+
+        # 只认"调用就写在 try 正文这一层"的包裹——main() 整个函数体本身也在
+        # 一层兜底 `except Exception` 里（见 UnexpectedExceptionFallbackTests），
+        # 若按 ast.walk 深搜，那层兜底会一并命中，本用例就退化成"反正外面有
+        # 个大 try"，而 fail-open 要求的是**这一处**自己接住、接住后本轮继续
+        # 跑完其余批次，不是让异常一路冒到兜底把整轮结束掉。
+        guarded = [
+            t for t in ast.walk(main_fn)
+            if isinstance(t, ast.Try)
+            and any(isinstance(stmt, ast.Assign) and _calls_gap(stmt.value)
+                    for stmt in t.body)
+            and any(isinstance(h.type, ast.Name) and h.type.id == "Exception"
+                    for h in t.handlers)
+        ]
+        self.assertTrue(_calls_gap(main_fn), "main() 里应存在覆盖校验调用点")
+        self.assertEqual(len(guarded), 1,
+                          "覆盖校验的调用点必须就地包在一个 except Exception 的 try 里（fail-open）")
+
+
+class ManifestCoverageGateTests(SweepTestBase):
+    """队列 #136 裁定 (a) 端到端：跨 worktree 批次不得产出空壳提交。"""
+
+    # 6557047 型反例的复刻：清单声明"队列文件 + 3 个代码件"，但代码件此刻
+    # 还在别的 worktree 的分支上，主仓工作区只有队列文件是脏的。
+    CROSS_WORKTREE_ROW = (
+        "| B-跨树 | `0-全景路线图/跨桌任务队列-机制环境.md`（本批次行自身）；"
+        "`0-学习与工具/hooks/hooks-common.ps1`（新建）；"
+        "`0-学习与工具/hooks/sentinel-mojibake.ps1`（新建）；"
+        "`0-学习与工具/test_hooks-哨兵.py`（新建）。"
+        "🔴 **两个工作树**：代码落 worktree 自行 commit，收工时 `--ff-only` 合入 master "
+        "| `feat(hooks/#433): 写入时刻哨兵 apply——H3 乱码＋H4 代词＋公共框架＋安装单` "
+        "| 待 CC 取活 |\n"
+    )
+
+    def test_cross_worktree_batch_is_skipped_instead_of_producing_shell_commit(self):
+        """6557047 型反例：旧实现会 `git add` 队列这一个文件、套着"哨兵建造
+        apply"的标题提交掉并销行为"✅ 已完成"——不报错、不留异常、账面完全
+        正常，而提交里一行代码都没有。现在应整批跳过并出声。"""
+        self._init_and_push(rows="")
+        self._write_queue(self.CROSS_WORKTREE_ROW)
+        before = self._origin_log()
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        # ① 绝不产出空壳提交——本轮零新增提交（台账也不该被拖着重跑）。
+        self.assertEqual(self._origin_log(), before, "不得因这条批次产生任何提交")
+        self.assertNotIn("写入时刻哨兵 apply",
+                          _git(self.work, "log", "--oneline").stdout,
+                          "那条提交标题绝不该出现在历史里——它没有对应内容")
+
+        # ② 行不动、仍是待处理：代码合入 master 后下一轮自然落库。
+        queue_text = self._queue_text()
+        self.assertIn("待 CC 取活", queue_text)
+        self.assertNotIn("✅ 已完成", queue_text)
+        self.assertNotIn("补销遗留尾巴", queue_text, "不得被误当成遗留尾巴补销掉")
+
+        # ③ 出声：日志点名批次、点名缺的路径、说清处置办法。
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertIn("B-跨树", log_text)
+        self.assertIn("hooks-common.ps1", log_text)
+        self.assertIn("test_hooks-哨兵.py", log_text)
+        self.assertIn("整批跳过", log_text)
+        self.assertIn("#136", log_text)
+
+    def test_batch_lands_normally_once_the_missing_files_are_really_present(self):
+        """同一条批次行，等代码真的到了主仓工作区（仿真"worktree 已 ff 合入
+        /改动已在主仓"）就应照常落库——证明本次修法是"等齐了再落"，不是把
+        这类批次永久拦死。"""
+        self._init_and_push(rows="")
+        hooks = self.work / "0-学习与工具" / "hooks"
+        hooks.mkdir(parents=True)
+        (hooks / "hooks-common.ps1").write_text("# 公共框架\n", encoding="utf-8")
+        (hooks / "sentinel-mojibake.ps1").write_text("# H3\n", encoding="utf-8")
+        (self.work / "0-学习与工具" / "test_hooks-哨兵.py").write_text("# 端到端单测\n", encoding="utf-8")
+        self._write_queue(self.CROSS_WORKTREE_ROW)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue)
+        self.assertIn("sweep 自动落库", pushed_queue)
+        # 提交里四个文件一个不少——标题与内容这次是对得上的。
+        landed = _git(self.origin, "show", "--name-only", "--format=", "master~1").stdout
+        for expected in ["0-学习与工具/hooks/hooks-common.ps1",
+                         "0-学习与工具/hooks/sentinel-mojibake.ps1",
+                         "0-学习与工具/test_hooks-哨兵.py",
+                         sweep.QUEUE_MECHANISM_PATH_REL]:
+            self.assertIn(expected, landed)
+
+    def test_prose_backticks_in_files_cell_do_not_block_a_covered_batch(self):
+        """现存生产批次行的文件清单列里满是正文强调用的反引号（`master`／
+        `.51`／`git status`……）。它们对不到任何脏路径，但绝不能被当成"缺项"
+        ——否则几乎每条写得详细的批次都会被拦住。"""
+        self._init_and_push(rows="")
+        row = ("| B-散文 | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位）。"
+               "本批不动 `.51`；收工 `--ff-only` 合入 `master` 后 push；"
+               "心跳件命中 `**/reports/`，不入库；参见 `#422` 与 `采购部#20` "
+               "| `docs(test): 文件清单列含大量散文反引号` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue, "散文反引号不得把正常批次拦住")
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertNotIn("整批跳过", log_text)
+
+    def test_straggler_tail_path_is_untouched_by_the_new_gate(self):
+        """#328 的"遗留尾巴补销"（resolved 为空）明确不在本棒 scope：它本来
+        就不产生内容提交、不存在空壳问题，新校验一律不插手。"""
+        row = ("| B-STALE | `不存在的文件.md` "
+               "| `docs(test): 早已落库只是没销行` | 待 CC 取活 |\n")
+        self._init_and_push(rows=row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertIn("补销遗留尾巴", pushed_queue, "补销行为不应被本次修法改变")
+
+    def test_skipped_batch_does_not_block_an_unrelated_covered_batch(self):
+        """整批跳过只针对它自己——同轮里另一条声明齐全的批次照常落库
+        （沿用 #238 批次隔离的既有取舍，不因新校验退回"全局门"）。"""
+        self._init_and_push(rows="")
+        (self.work / "另一件.md").write_text("与跨树批次无关的内容\n", encoding="utf-8")
+        rows = self.CROSS_WORKTREE_ROW + (
+            "| B-齐全 | `另一件.md` | `docs(test): 声明齐全应照常落库` | 待 CC 取活 |\n"
+        )
+        self._write_queue(rows)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        queue_text = self._queue_text()
+        self.assertIn("待 CC 取活", queue_text, "B-跨树 应仍是待处理")
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertIn("B-齐全", pushed_queue)
+        landed = _git(self.origin, "show", "--name-only", "--format=", "master~1").stdout
+        self.assertIn("另一件.md", landed)
+        self.assertNotIn("hooks-common.ps1", landed)
+
+
 class OrphanFileAlertTests(SweepTestBase):
     """队列 #236(2)：孤儿脏文件持续超过阈值即主动告警——首次出现不告警、
     跨阈值告警一次、阈值窗口内不重复、窗口外再度提醒、脱离孤儿状态即清空。"""
