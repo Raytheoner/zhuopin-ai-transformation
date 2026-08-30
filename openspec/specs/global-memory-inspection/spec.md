@@ -1,3 +1,5 @@
+# global-memory-inspection Specification
+
 ## Purpose
 
 巡检本机仓库外的全局记忆文件（如 `~/.claude/CLAUDE.md`）与队列行状态字段，
@@ -5,7 +7,7 @@
 的半径——发现路径失真、版本快照、备份堆积、体积超限、状态字段与行内自陈
 不一致这类"零信号"失真，只报不改，交由人决定是否/如何订正。
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: 本机全局记忆 SHALL 每轮被巡检且零红时亦回显
 sweep 每轮 MUST 对配置的本机全局记忆文件（首项 `~/.claude/CLAUDE.md`）执行三判据巡检，并 MUST 逐项打印「当前值／阈值／差额」形态的回显；**零告警时 MUST NOT 省略回显**（同第 4 类常驻告警既有纪律：连回显都没有时，无法区分「没问题」与「没跑」）。
@@ -41,7 +43,7 @@ sweep 每轮 MUST 对配置的本机全局记忆文件（首项 `~/.claude/CLAUD
 
 #### Scenario: 备份数在阈值内
 - **WHEN** 备份 ≤ 3 个
-- **THEN** 回显个数与阈值，不告警（同 A2「零超限亦回显」）
+- **THEN** 回显个数与阈值，不告警（同尺寸阈值判据「零超限亦回显」）
 
 ### Requirement: 受检对象读不到 SHALL 告警且 SHALL NOT 中止整轮
 受检文件不存在或不可读时 MUST 作为一条告警上报（「受检对象自己不见了」亦属失真），MUST NOT 静默跳过，MUST NOT 让 sweep 整轮中止。
@@ -73,16 +75,3 @@ MUST NOT 自动改写任何行的状态字段。MUST NOT 改变 `_count_mechanis
 #### Scenario: WIP 阻断时
 - **WHEN** release 因机制类可动 WIP 超上限被阻断
 - **THEN** 阻断消息除现有两条出路外，附带当前改判候选清单，使分诊无需人另起一棒
-
-## MODIFIED Requirements
-
-### Requirement: root `CLAUDE.md` 尺寸阈值 SHALL 为只降不升的棘轮
-`CLAUDE_MD_ROOT_BYTE_CAP` MUST 取 48 KB（立包时实测 47,863 B）。每轮回显 MUST 在实测值低于阈值 1,024 B 以上时，提示「可将 cap 下调至 <实测值+512>」。调高阈值 MUST 在提交里显式说明理由，MUST NOT 为容纳新增内容而顺手调高。
-
-#### Scenario: 瘦身后阈值可收紧
-- **WHEN** `#381` 落地后 root 降至 42,000 B
-- **THEN** 回显提示「可将 cap 下调至 42,512」，下一次触碰时收紧
-
-#### Scenario: 有人让 root 变大
-- **WHEN** 某次改动使 root 超过 48 KB
-- **THEN** 当轮告警，要求同批 one-in-one-out 或显式说明理由调高

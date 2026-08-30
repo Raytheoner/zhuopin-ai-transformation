@@ -9,14 +9,14 @@ TBD - created by archiving change carrier-health-guard. Update Purpose after arc
 
 覆盖范围 SHALL 为：根 `CLAUDE.md`、`4-数字员工/**/CLAUDE.md`、`5-平台底座/*/CLAUDE.md`。
 
-阈值 SHALL 为：根文件 **90 KB**（92,160 字节）；场景与底座文件 **50 KB**（51,200 字节）。
+阈值 SHALL 为：根文件 **48 KB**（49,152 字节，只降不升的棘轮——见下一条 Requirement）；场景与底座文件 **50 KB**（51,200 字节）。
 
 量取对象 SHALL 是 sweep 自身 `repo_root` 下的文件真身；`.claude/worktrees/**` 下的副本 MUST NOT 被纳入——它们是历史版本，对其告警既无意义又会持续误报。
 
 尺寸 MUST 以字节计，MUST NOT 以字符数或行数替代。
 
 #### Scenario: 根文件超限
-- **WHEN** 根 `CLAUDE.md` 字节数 > 92,160
+- **WHEN** 根 `CLAUDE.md` 字节数 > 49,152
 - **THEN** 该文件被判为超限并进入告警集合
 
 #### Scenario: 场景文件超限
@@ -26,6 +26,19 @@ TBD - created by archiving change carrier-health-guard. Update Purpose after arc
 #### Scenario: worktree 副本不参与判定
 - **WHEN** `.claude/worktrees/<任一>/CLAUDE.md` 字节数超过任一阈值
 - **THEN** 该文件不进入告警集合，且不出现在回显中
+
+### Requirement: root `CLAUDE.md` 尺寸阈值 SHALL 为只降不升的棘轮
+根文件阈值（`CLAUDE_MD_ROOT_BYTE_CAP`）SHALL 只降不升——调高阈值 MUST 在提交里显式说明理由，MUST NOT 为容纳新增内容而顺手调高。该棘轮语义 MUST NOT 施用于场景与底座文件（后者阈值维持经验值，不随棘轮收紧）。
+
+每轮回显 SHALL 在根文件实测值低于阈值 1,024 字节以上时，额外提示「可将 cap 下调至 <实测值 + 512>」，使瘦身成果被机器记住而非依赖人记得目标值。
+
+#### Scenario: 瘦身后阈值可收紧
+- **WHEN** `#381` 落地后 root 降至 42,000 B（低于阈值超过 1,024 B）
+- **THEN** 回显提示「可将 cap 下调至 42,512」，下一次触碰时收紧
+
+#### Scenario: 有人让 root 变大
+- **WHEN** 某次改动使 root 超过 48 KB
+- **THEN** 当轮告警，要求同批 one-in-one-out 或显式说明理由调高
 
 ### Requirement: 根文件顶部进度段跨批次日期 SHALL 同为超限判据
 
