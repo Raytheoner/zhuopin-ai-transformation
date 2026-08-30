@@ -1,6 +1,6 @@
 # open-pool-assigned-field-and-opener-env-filter Proposal
 
-> **状态：🚨 紧急件（Shao Peishen 2026-08-30 08:4x 明示「这是紧急修复，请尽快推进」）。propose ＋ design 同轮出件，等他 design 审；审过即派 CC。**
+> **状态：🚨 紧急件。✅ design 审已过（Shao Peishen 2026-08-30 答「审过」，D1-D4 整体通过、无点名修改）⇒ 可派 CC，与在办的 `#435` 并行。**
 > **承载队列行**：§一 `#312`（可 Open 池），**不另立行、不占 WIP**。
 > **openspec 门槛核对**：命中第 ①条「**改变全项目口径**」（§一 状态列新增机器字段 `[A:…]`）＋ 第 ③条「改变既有模块对外语义」（池子与看板的输出集合变了）⇒ 必走 openspec 含 design 审。
 
