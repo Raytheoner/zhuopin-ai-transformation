@@ -4503,6 +4503,110 @@ class GlobalMemoryMissingTargetUnitTests(unittest.TestCase):
         self.assertNotIn("处版本快照", call["alert_text"])
 
 
+class GlobalMemoryBackupPileupUnitTests(unittest.TestCase):
+    """队列 §一 #435 子项 A4（2026-08-30 并入，proposal「A4 的来由」）：
+    备份堆积巡检——只读目录项/mtime，超阈值告警，绝不读取备份内容、
+    绝不删除。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        self.recorder = _StandingStateRecorder()
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_webhook = sweep._load_webhook_url
+        self._orig_targets = sweep.GLOBAL_MEMORY_TARGETS
+        self._orig_bak_cap = sweep.GLOBAL_MEMORY_BAK_CAP
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._load_webhook_url = lambda repo_root: None
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._load_webhook_url = self._orig_webhook
+        sweep.GLOBAL_MEMORY_TARGETS = self._orig_targets
+        sweep.GLOBAL_MEMORY_BAK_CAP = self._orig_bak_cap
+        self._tmp.cleanup()
+
+    def _make_target(self, name="CLAUDE.md", text="占位内容，无路径无版本号\n"):
+        target = self.repo / name
+        target.write_text(text, encoding="utf-8")
+        sweep.GLOBAL_MEMORY_TARGETS = (str(target),)
+        return target
+
+    def _touch_backup(self, target: Path, suffix: str, mtime_offset_seconds: float,
+                       content: bytes = b"\x00\x01binary-not-utf8\xff") -> Path:
+        bak = target.with_name(target.name + suffix)
+        bak.write_bytes(content)
+        ts = time.time() - mtime_offset_seconds
+        os.utime(bak, (ts, ts))
+        return bak
+
+    def test_备份数在阈值内只回显不告警(self):
+        target = self._make_target()
+        for i in range(3):
+            self._touch_backup(target, f".bak{i}", mtime_offset_seconds=i * 60)
+        log = []
+        sweep._check_global_memory_files(self.repo, log)
+        text = "\n".join(log)
+        self.assertIn("备份 3 个 / 阈值 3 个", text)
+        self.assertEqual(self.recorder.calls[-1]["keys"], set())
+
+    def test_超阈值告警并列最旧件名与日期(self):
+        target = self._make_target()
+        # 制造 4 个备份（超过默认阈值 3），mtime 依次更旧。
+        for i in range(4):
+            self._touch_backup(target, f".{i}.bak", mtime_offset_seconds=(4 - i) * 86400)
+        oldest = target.with_name(target.name + ".0.bak")
+        log = []
+        sweep._check_global_memory_files(self.repo, log)
+        text = "\n".join(log)
+        self.assertIn("备份 4 个 / 阈值 3 个", text)
+        self.assertIn(oldest.name, text)
+        call = self.recorder.calls[-1]
+        self.assertEqual(call["keys"], {str(target)})
+        self.assertIn("备份 4 个", call["alert_text"])
+        self.assertIn(oldest.name, call["alert_text"])
+
+    def test_从不读取备份文件内容(self):
+        """备份内容用无法解码为 UTF-8 文本的二进制垃圾——若判据不小心
+        尝试按文本读取，本用例会因异常直接失败；只统计目录项/mtime
+        则应正常通过。"""
+        target = self._make_target()
+        for i in range(4):
+            self._touch_backup(
+                target, f".{i}.bak", mtime_offset_seconds=i * 60,
+                content=os.urandom(64),
+            )
+        log = []
+        sweep._check_global_memory_files(self.repo, log)  # 不应抛异常
+        self.assertIn("备份 4 个", "\n".join(log))
+
+    def test_按目标自身文件名动态匹配不写死CLAUDE_md(self):
+        """`GLOBAL_MEMORY_TARGETS` 未来若增项、文件名不是 `CLAUDE.md`，
+        备份匹配须仍按该目标自己的文件名走，不误读其他目标的备份，
+        也不会因写死字面量而对非 CLAUDE.md 命名的目标零命中。"""
+        target = self._make_target(name="其他记忆文件.md")
+        for i in range(4):
+            self._touch_backup(target, f".{i}.bak", mtime_offset_seconds=i * 60)
+        log = []
+        sweep._check_global_memory_files(self.repo, log)
+        self.assertIn("备份 4 个", "\n".join(log))
+
+    def test_A4判据可独立关停(self):
+        target = self._make_target()
+        for i in range(4):
+            self._touch_backup(target, f".{i}.bak", mtime_offset_seconds=i * 60)
+        sweep.GLOBAL_MEMORY_CHECK_A4_BACKUP_ENABLED = False
+        try:
+            log = []
+            sweep._check_global_memory_files(self.repo, log)
+        finally:
+            sweep.GLOBAL_MEMORY_CHECK_A4_BACKUP_ENABLED = True
+        text = "\n".join(log)
+        self.assertIn("A4 备份堆积判据已关停", text)
+        self.assertNotIn("备份 4 个", text)
+        self.assertEqual(self.recorder.calls[-1]["keys"], set())
+
+
 class ResidentCarrierFfTests(unittest.TestCase):
     """`_ff_carrier` 的真刀真枪用例：真起 git 仓库 ＋ 真 worktree ＋ 真 ff。
 

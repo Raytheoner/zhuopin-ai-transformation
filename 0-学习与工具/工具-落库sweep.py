@@ -796,6 +796,18 @@ GLOBAL_MEMORY_ALERT_INTERVAL_HOURS = 24
 GLOBAL_MEMORY_CHECK_A1_PATHS_ENABLED = True
 GLOBAL_MEMORY_CHECK_A2_SIZE_ENABLED = True
 GLOBAL_MEMORY_CHECK_A3_VERSION_ENABLED = True
+GLOBAL_MEMORY_CHECK_A4_BACKUP_ENABLED = True
+
+# A4 备份堆积（2026-08-30 并入，proposal.md「A4 的来由」）：Shao Peishen
+# 问「那个 .bak 能不能删」才顺手一查，发现 `~/.claude` 下已攒多个备份且
+# 其中数个含同一份明文凭证——与 A1/A3 同属"没有人会主动去看"的零信号，
+# 顺着 A1-A3 已有的目录读取扩一项最省。**只报个数与最旧件名/日期，绝不
+# 读取备份内容**（本判据不需要、也不应该知道文件里写了什么——多看一眼
+# 明文凭证不会让风险变小）。命名模式用**目标文件自身的文件名**动态拼接
+# （`<basename>*.bak*`），不写死字面量 "CLAUDE.md"——现状只有一个受检
+# 对象、两者等价，但若未来 `GLOBAL_MEMORY_TARGETS` 增项，各自按自己的
+# 文件名匹配才不会互相脏读。
+GLOBAL_MEMORY_BAK_CAP = 3
 # 🔴 **CLI 级单测隔离入口**（2026-08-30，回归排查后补）：受检对象是
 # 绝对/`~` 路径，与 `repo_root` 无关——不像 `_check_claude_md_carrier_
 # size` 那样天然被"临时仓库"隔离。本文件另有 `_check_editable_install_
@@ -3648,6 +3660,19 @@ def _find_version_snapshots(text: str) -> list[tuple[int, str]]:
     return hits
 
 
+def _find_backup_files(target_path: Path) -> list[Path]:
+    """A4：`target_path` 同目录下形如 `<文件名>*.bak*` 的备份件，按
+    mtime 升序返回（`[0]` 即最旧）。只读目录项与 mtime，**绝不打开
+    文件读取内容**——本判据不需要知道备份里写了什么。
+    """
+    pattern = f"{target_path.name}*.bak*"
+    try:
+        matches = [p for p in target_path.parent.glob(pattern) if p.is_file()]
+    except OSError:
+        return []
+    return sorted(matches, key=lambda p: p.stat().st_mtime)
+
+
 def _check_global_memory_files(repo_root: Path, log: list[str]) -> None:
     """队列 §一 #435：本机全局记忆巡检——第 4 类常驻告警的姊妹检查，
     受检对象在仓库外（见常量段"为什么分设独立函数/独立状态文件"）。
@@ -3720,6 +3745,26 @@ def _check_global_memory_files(repo_root: Path, log: list[str]) -> None:
             else:
                 log.append(f"    · {target}：版本快照模式核过，零红")
 
+        # A4 备份堆积——只读目录项/mtime，绝不打开文件内容（见常量段）。
+        if not GLOBAL_MEMORY_CHECK_A4_BACKUP_ENABLED:
+            log.append(f"    ⏸ {target}：A4 备份堆积判据已关停（GLOBAL_MEMORY_CHECK_A4_BACKUP_ENABLED=False）")
+        else:
+            backups = _find_backup_files(path_obj)
+            bak_cap = GLOBAL_MEMORY_BAK_CAP
+            if len(backups) > bak_cap:
+                oldest = backups[0]
+                oldest_date = datetime.fromtimestamp(oldest.stat().st_mtime, tz=timezone.utc).date()
+                log.append(
+                    f"    🔴 {target}：备份 {len(backups)} 个 / 阈值 {bak_cap} 个"
+                    f"（超出 {len(backups) - bak_cap} 个，最旧 `{oldest.name}` {oldest_date}）"
+                )
+                findings.append(
+                    f"备份 {len(backups)} 个，超阈值 {bak_cap} 个，"
+                    f"最旧 `{oldest.name}`（{oldest_date}）"
+                )
+            else:
+                log.append(f"    · {target}：备份 {len(backups)} 个 / 阈值 {bak_cap} 个")
+
         if findings:
             breaches[target] = "；".join(findings)
 
@@ -3730,7 +3775,8 @@ def _check_global_memory_files(repo_root: Path, log: list[str]) -> None:
             "（仓库外，此前巡检半径覆盖不到，只报不改，见队列 §一 #435）：\n"
             f"{lines}\n"
             "⇒ 处置：路径失真按行号原文订正；版本快照按判据「存取法、不存"
-            "快照」整段删；一切改动均须他逐次授权，机器不代改。"
+            "快照」整段删；备份堆积由他自行决定删哪些（备份可能是有意保留"
+            "的还原点，机器无权处置）；一切改动均须他逐次授权，机器不代改。"
         )
 
     def render_resolved(keys):
