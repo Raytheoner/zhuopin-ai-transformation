@@ -48,6 +48,6 @@
 ## 4. 收口
 
 - [x] 4.1 值周巡检清单加一行「全局记忆巡检有红即当周处理，不跨周」（D6）——写入 `0-学习与工具/定时任务源码/weekly-status-update.SKILL.md` 步骤 2.D（未发现本机另有已安装副本需同步）
-- [ ] 4.2 §二 批次登记 ＋ commit+push（ff-only）
-- [ ] 4.3 队列行回写：状态列开头 ✅ ＋ 实测数字
-- [ ] 4.4 全部 [x] 后**当场** `/opsx:archive global-memory-inspection-and-root-ratchet -y`
+- [x] 4.2 §二 批次登记 ＋ commit+push（ff-only）——`B-0830_8_OP0830C_435六件同车收工`；分支 `claude/op0830c-global-memory-inspect-f68c79` 已 ff 合入 master 并 push（commit `442add0`），队列行编辑另由 sweep 自动落库（commit `ea52889`）
+- [x] 4.3 队列行回写：状态列开头 ✅ ＋ 实测数字——`edit-row` 整格重写 §一 #435 状态列，`[S:done]`，收工实测已附（见行内「✅ 收工实测」段）
+- [x] 4.4 全部 [x] 后**当场** `/opsx:archive global-memory-inspection-and-root-ratchet -y`——本次执行中
