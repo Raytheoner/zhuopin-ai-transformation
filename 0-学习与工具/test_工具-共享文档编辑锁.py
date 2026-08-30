@@ -4704,5 +4704,155 @@ class RegistrationCompletenessTests(unittest.TestCase):
         self.assertTrue(self._run(self._queue(*rows), waivers=[]))
 
 
+class OpenerGuardReleaseTests(unittest.TestCase):
+    """release 前的 opener 守卫（队列 §一 `#437`，`#284` 形态①的真根治）。
+
+    用**真实 git 仓库**跑，理由同 `RegistrationCompletenessTests`——本项的
+    整个价值就在于"机器亲眼看到工作区里刚写出来、还没 commit 的 .md"，用桩
+    测等于把要验的那一段换掉了。
+
+    fixture 文本（`SETTINGS_CC`/`SETTINGS_COWORK`/两条 `TITLE_LINE_*`）与
+    `test_工具-opener块lint.py` 逐字同源——两边测的是**同一份判据**
+    （`check_block`），fixture 不同源就测不出"改一处两处同步变化"这件事。
+    """
+
+    TITLE_LINE_NO_EXC = (
+        '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），'
+        "标题：[Win]0827B-LAN留步收尾-354与401"
+    )
+    TITLE_LINE_WITH_EXC = (
+        '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），'
+        "标题：[Win]0828O-423切a档与部署。🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行"
+        '——子任务没有自己的 session，"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。'
+    )
+    SETTINGS_CC = (
+        "【设置】执行环境：CC ｜ CC session：☑ 新开 ｜ worktree：☑ 新建独立 ｜ 分支：由你新建 "
+        "｜ 工作区：C:\\Dev\\zhuopin-ai ｜ 派出线：Cowork 环境总线 OP-0828-N"
+    )
+    SETTINGS_COWORK = "【设置】执行环境：**Cowork** ｜ 分支：master ｜ worktree：☐"
+
+    def setUp(self):
+        self.m = _load_module()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        for args in (["init", "-q"],
+                     ["config", "user.email", "t@example.com"],
+                     ["config", "user.name", "t"]):
+            subprocess.run(["git", *args], cwd=self.root, check=True,
+                           capture_output=True, text=True)
+        (self.root / "seed.txt").write_text("seed", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "seed"], cwd=self.root, check=True,
+                       capture_output=True)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_block(self, rel: str, *body_lines: str) -> None:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("```\n" + "\n".join(body_lines) + "\n```\n", encoding="utf-8")
+
+    def _run(self, waivers=None):
+        return self.m._opener_guard_violations(self.root, waivers or [])
+
+    # ── tasks 2.1：形态①，CC 块缺 title ──────────────────────────
+    def test_cc_block_missing_title_rejects(self):
+        self._write_block("派单件-x.md", self.SETTINGS_CC, "读队列 #999。")
+        violations = self._run()
+        self.assertEqual(len(violations), 1)
+        self.assertIn("F1", violations[0])
+        self.assertIn("派单件-x.md", violations[0])
+
+    # ── tasks 2.2：形态②，有 title 无例外句 ──────────────────────
+    def test_cc_block_title_without_exception_rejects(self):
+        self._write_block("派单件-y.md", self.SETTINGS_CC, self.TITLE_LINE_NO_EXC)
+        violations = self._run()
+        self.assertEqual(len(violations), 1)
+        self.assertIn("F2", violations[0])
+
+    # ── tasks 2.3：写对的放行 ────────────────────────────────────
+    def test_correct_cc_block_passes(self):
+        self._write_block("派单件-z.md", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC)
+        self.assertEqual(self._run(), [])
+
+    # ── tasks 2.4：🔴 反例，防误伤 Cowork（D4）───────────────────
+    def test_cowork_block_without_title_passes(self):
+        """本项不过则本线自己每次 release 都会被拦死——`set_session_title`
+        在 Cowork 侧根本不存在（补充一 2026-08-27 已实测）。"""
+        self._write_block("派单件-cowork.md", self.SETTINGS_COWORK, "读接力文件继续。")
+        self.assertEqual(self._run(), [])
+
+    # ── tasks 2.5：未声明环境不校验（宁可漏，不误伤）─────────────
+    def test_env_unlabeled_block_passes(self):
+        self._write_block("本周计划-x.md",
+                          "【设置】分支：master ｜ worktree：☐", "读队列继续。")
+        self.assertEqual(self._run(), [])
+
+    # ── tasks 2.6：逃生阀，note 与队列行两处各测一次 ─────────────
+    def test_waiver_in_note_passes(self):
+        self._write_block("派单件-w1.md", self.SETTINGS_CC, "读队列。")
+        waivers = [f"{self.m.OPENER_EXEMPT_MARK}临时手写，来不及补 title"]
+        self.assertEqual(self._run(waivers=waivers), [])
+
+    def test_waiver_in_touched_queue_row_passes(self):
+        """逃生阀取材面＝本次 note ＋ 本次触碰过的队列行——与 `登记豁免：`
+        同一收敛方向（不含队列全文，一次一用）。"""
+        self._write_block("派单件-w2.md", self.SETTINGS_CC, "读队列。")
+        waivers = [f"| 999 | 已知漏 title，{self.m.OPENER_EXEMPT_MARK}紧急止血 | ... |"]
+        self.assertEqual(self._run(waivers=waivers), [])
+
+    # ── tasks 2.7：🔴 零 opener 块时仍有回显 ──────────────────────
+    def test_echo_prints_even_when_zero_opener_blocks(self):
+        """连回显都没有时，无法区分「没问题」与「没跑」（队列 #284 第 18 次
+        违反的教训）。"""
+        (self.root / "普通文档.md").write_text("没有 opener 块的普通内容。\n",
+                                              encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            violations = self._run()
+        self.assertEqual(violations, [])
+        self.assertIn("已校验本次触碰的 1 个", out.getvalue())
+        self.assertIn("opener 块 0 个", out.getvalue())
+
+    def test_echo_wording_does_not_imply_full_coverage(self):
+        """🔴 D2：回显措辞不得暗示全覆盖——本守卫只覆盖走了队列锁流程的 opener。"""
+        (self.root / "x.md").write_text("普通内容\n", encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self._run()
+        self.assertNotIn("opener 已全部合规", out.getvalue())
+
+    # ── 非 .md 脏文件不进扫描面 ────────────────────────────────
+    def test_non_md_dirty_file_ignored(self):
+        (self.root / "脚本.py").write_text(self.SETTINGS_CC, encoding="utf-8")
+        self.assertEqual(self._run(), [])
+
+    # ── fail-closed 与适用前提（同 ⑹ 判据方向）───────────────────
+    def test_not_a_work_tree_skips_with_notice(self):
+        """反例：根本不在 git 工作树内 ⇒ 适用前提不成立，跳过（不是
+        fail-closed 拒绝）——同 `_is_inside_git_work_tree` 判据方向。"""
+        with tempfile.TemporaryDirectory() as plain:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                violations = self.m._opener_guard_violations(Path(plain), [])
+            self.assertEqual(violations, [])
+            self.assertIn("适用前提不成立", out.getvalue())
+
+    def test_status_failure_is_fail_closed(self):
+        """在工作树内、但 `git status` 取不到答案 ⇒ 拒绝，不静默放行。"""
+        self._write_block("某文件.md", self.SETTINGS_CC, "读队列。")
+        with unittest.mock.patch.object(self.m, "_local_git_status_paths", return_value=None):
+            violations = self._run()
+        self.assertEqual(len(violations), 1)
+        self.assertIn("fail-closed", violations[0])
+
+    def test_status_failure_with_waiver_passes(self):
+        self._write_block("某文件.md", self.SETTINGS_CC, "读队列。")
+        waivers = [f"{self.m.OPENER_EXEMPT_MARK}git 环境异常，已另行处置"]
+        with unittest.mock.patch.object(self.m, "_local_git_status_paths", return_value=None):
+            self.assertEqual(self._run(waivers=waivers), [])
+
+
 if __name__ == "__main__":
     unittest.main()

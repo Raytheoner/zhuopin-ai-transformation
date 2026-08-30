@@ -256,11 +256,30 @@ completeness-exemption`，Shao Peishen 拍板取「窄修法·身份豁免」）
 （全历史 5 次，每次都紧跟专员回件到达）。修法：判据显性化为「自行提交自身
 改动的持锁者」并落成 `SELF_COMMITTING_LOCK_HOLDERS`，见该常量定义处的长
 注释——**其中也登记了更治本的"宽修法"候选，本次刻意不取。**
+
+队列 §一 #437（2026-08-30，openspec 变更包 `editlock-release-opener-guard`，
+Shao Peishen 同日 design 审过、CC `OP-0830-G` 落地）：release 新增一道结构
+检查（与 ⑹ 并列，同一处 fail-closed 语义）——本次持锁期间触碰的 `.md` 若含
+opener 代码块，按块声明的执行环境分流校验：`执行环境：CC` 的块须有
+`set_session_title` 且含子任务例外句，不过即拒绝；`Cowork` 与未声明环境的
+块不校验该项（`set_session_title` 在 Cowork 侧不存在，2026-08-27 补充一已
+实测）。判据逐字复用 `工具-opener块lint.py::check_block`，不重写第二份——
+改判据须同改两处调用点，两处各留一句指针。**成因**：形态①②的 lint 早已
+建成并在扫，但它只扫 git **已跟踪**的 `.md`，而 opener 的高危时刻恰恰是
+「刚写出来、还没 commit、马上就要粘出去」那几分钟——2026-08-30 单日第 18
+次违反，没有一次是被 lint 报出来的。release 是派出前必经，本役当天已
+fail-closed 拦下两次。逃生阀 `opener豁免：<理由>`，取材面与 `登记豁免：`/
+`转态豁免：` 完全一致（本次 note ＋ 本次触碰过的队列行，不含队列全文）；
+不设 `--force` 开关（opener 漏 title 无正当紧急场景）。🔴 **覆盖边界必须
+如实声明**：本守卫只覆盖走了队列锁 acquire/release 流程的 opener——写完
+直接粘出去、从不经本工具的会话它看不到，`#284` 因此不销号，只改写为
+「形态① 已由咽喉守住（限已登记路径）」。
 """
 from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.util
 import json
 import os
 import re
@@ -3840,6 +3859,119 @@ def _registration_completeness_violations(
     return ["\n".join(lines)]
 
 
+# ── opener 守卫（队列 §一 #437，`#284` 形态①的真根治）─────────────────────
+# 🔴 判据正本只在 `工具-opener块lint.py`（D3，队列 #437）——本节只加载、
+# 不复制；改判据须同改两处调用点（lint 本体 ＋ 这里），并在两处各留一句
+# 指针。取不到就 fail-loud，不回退成本地简化版（与 `_load_status_bucket`
+# 同一惯例）。
+_OPENER_LINT_SCRIPT = REPO_ROOT / "0-学习与工具" / "工具-opener块lint.py"
+
+#: 逃生阀标记，与 `REGISTRATION_WAIVER_MARKER`／`MECHANISM_WIP_WAIVER_MARKER`
+#: 同形同语义（"我知道我在越过一条规则"）。🔴 刻意不提供 `--force` 开关
+#: （design D5）：opener 漏 title 没有任何正当紧急场景，写一行理由的成本
+#: 已经低于补一行 title 的成本，加开关只会让豁免变廉价。
+OPENER_EXEMPT_MARK = "opener豁免："
+
+
+def _load_opener_lint_module():
+    """动态加载 `工具-opener块lint.py`（文件名含连字符/中文，不能直接 import）。"""
+    spec = importlib.util.spec_from_file_location("_zp_opener_lint", _OPENER_LINT_SCRIPT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载 opener lint 判据正本：{_OPENER_LINT_SCRIPT}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _opener_guard_violations(
+    repo_root: Path, waiver_sources: list[str],
+) -> list[str]:
+    """release 前校验本次触碰的 `.md` 里的 opener 代码块（队列 §一 #437）。
+
+    触碰文件集合复用 ⑹ 那份脏文件列表（`_local_git_status_paths`），筛
+    `.md` 后交判据——**判据本身逐字复用** `工具-opener块lint.py::check_block`
+    （连同它内部已经做好的按环境分流：CC 块须有 `set_session_title` 且含
+    子任务例外句；Cowork／未声明环境的块不要求该项，因为那个工具在 Cowork
+    侧根本不存在，2026-08-27 补充一已实测），**不重写第二份**（design D3）
+    ——重写＝两处判据分叉，正是 `#312` 付过学费的形态。
+
+    🔴 **覆盖边界（D2，须如实声明，不得暗示全覆盖）**：本守卫只覆盖「走了
+    队列锁 acquire/release 流程」的 opener；一个会话若写完 opener 直接粘
+    出去、从不经本工具，本守卫看不到它——回显措辞必须是「已校验本次触碰的
+    N 个 .md」，不得写成「opener 已全部合规」。
+    """
+    if not _is_inside_git_work_tree(repo_root):
+        # 与 ⑹ 同一判据方向（`_is_inside_git_work_tree` 文档字符串）：根本
+        # 不在工作树内 ⇒ "脏文件"这个概念不成立，适用前提不成立，跳过是
+        # 正确的——不是回退，也不该走下面的 fail-closed。
+        print("ℹ opener 守卫：仓库根不在 git 工作树内，适用前提不成立，"
+              "本次跳过。")
+        return []
+
+    dirty_now = _local_git_status_paths(repo_root)
+    waiver = next((s for s in waiver_sources if OPENER_EXEMPT_MARK in s), None)
+
+    if dirty_now is None:
+        # fail-closed：在工作树内但取不到工作区状态，与 ⑹ 同一判据方向——
+        # 校验**无法执行**与校验**不适用**是两回事。
+        if waiver is not None:
+            print(f"✓ 工作区状态取数失败，但检测到 opener 豁免声明，已放行：{waiver.strip()[:120]}")
+            return []
+        return [
+            "无法取得工作区脏文件状态（非 git 仓库／git 不可用／超时），"
+            "opener 守卫无法执行 ⇒ 拒绝 release（fail-closed，不静默放行）。"
+            f"确需放行请在本次 note 或本次触碰的队列行内写「{OPENER_EXEMPT_MARK}<理由>」。"
+        ]
+
+    md_paths = sorted(p for p in dirty_now if p.endswith(".md"))
+    lint = _load_opener_lint_module()
+
+    opener_block_count = 0
+    problems: list[str] = []
+    for rel in md_paths:
+        try:
+            text = (repo_root / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        blocks = lint.iter_fenced_blocks(text)
+        candidates = [
+            b for b in blocks
+            if lint.settings_line(b) is not None or lint.SESSION_TITLE_RE.search(b.text)
+        ]
+        for block in candidates:
+            if lint.settings_line(block) is not None:
+                opener_block_count += 1
+            env = lint.block_env(block) or "环境未标"
+            for form, detail in lint.check_block(block):
+                problems.append(f"{rel}:{block.start_line}（{env}）[{form}] {detail}")
+
+    # 队列 #284 第 18 次违反的教训：连回显都没有时，无法区分「没问题」与
+    # 「没跑」——无论有无发现，本行都打印（design 实现细节）。
+    print(f"ℹ opener 守卫：已校验本次触碰的 {len(md_paths)} 个 `.md`，"
+          f"其中含 opener 块 {opener_block_count} 个"
+          "（只覆盖走了队列锁 acquire/release 流程的 opener，"
+          "非本流程直接粘出去的会话看不见，不代表全部覆盖）。")
+
+    if not problems:
+        return []
+
+    if waiver is not None:
+        print(f"✓ 检测到 opener 豁免声明，已放行 {len(problems)} 处：{waiver.strip()[:120]}")
+        return []
+
+    lines = [
+        f"opener 守卫：{len(problems)} 处未通过（判据正本＝"
+        "`工具-opener块lint.py::check_block`，release 侧只复用不重写）："
+    ]
+    lines.extend(f"  - {p}" for p in problems)
+    lines.append(
+        "  标准写法见 `1-转型规划/0-全景路线图/专线opener模板库.md` §〇 补充三"
+        "「标准写法」块（全文照抄）；确需放行请在本次 note 或本次触碰的队列行"
+        f"内写「{OPENER_EXEMPT_MARK}<理由>」（不提供 --force 开关，design D5）。"
+    )
+    return ["\n".join(lines)]
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -4197,6 +4329,9 @@ def cmd_release(args: argparse.Namespace) -> int:
         violations.extend(_registration_completeness_violations(
             queue_texts, existing, REPO_ROOT, waiver_sources,
         ))
+        # 队列 §一 #437：opener 守卫，与 ⑹ 并列同一处 fail-closed 语义
+        # （旁增一钩，不改 ⑹ 本体）。
+        violations.extend(_opener_guard_violations(REPO_ROOT, waiver_sources))
     elif args.file == FOLLOWUP_README_TARGET:
         # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
         # 拦截，与上面那套队列专属校验各自独立、互不干扰。
