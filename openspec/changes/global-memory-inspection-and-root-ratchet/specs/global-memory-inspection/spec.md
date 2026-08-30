@@ -25,6 +25,17 @@ sweep 每轮 MUST 对配置的本机全局记忆文件（首项 `~/.claude/CLAUD
 - **WHEN** 文中出现 `Claude Code：v2.1.x`
 - **THEN** 告警并给出判据一句：没有任何纪律以版本号为条件，写死只会静默变旧，要用时现取
 
+### Requirement: 备份堆积 SHALL 被告警
+巡检 MUST 统计受检文件同目录下的备份件（`CLAUDE.md*.bak*` 形态）个数与最旧件日期；超过 `GLOBAL_MEMORY_BAK_CAP`（默认 3）MUST 告警并列出个数、最旧件名与日期。MUST NOT 自动删除任何备份件。
+
+#### Scenario: 备份攒到超阈值
+- **WHEN** `~/.claude` 下有 5 个 `CLAUDE.md*.bak*`、最早 2026-06-24
+- **THEN** 告警「备份 5 个 / 阈值 3，最旧 CLAUDE.md.bak（2026-06-24）」，由人决定删哪些
+
+#### Scenario: 备份数在阈值内
+- **WHEN** 备份 ≤ 3 个
+- **THEN** 回显个数与阈值，不告警（同 A2「零超限亦回显」）
+
 ### Requirement: 受检对象读不到 SHALL 告警且 SHALL NOT 中止整轮
 受检文件不存在或不可读时 MUST 作为一条告警上报（「受检对象自己不见了」亦属失真），MUST NOT 静默跳过，MUST NOT 让 sweep 整轮中止。
 

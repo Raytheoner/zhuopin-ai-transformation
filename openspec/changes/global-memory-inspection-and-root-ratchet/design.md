@@ -52,7 +52,8 @@ sweep 日志新增两节（全局记忆巡检、棘轮提示）。值周清单�
 
 ## 实现细节（不需他点头）
 
-- 新常量：`GLOBAL_MEMORY_TARGETS`（默认 `["~/.claude/CLAUDE.md"]`）、`GLOBAL_MEMORY_BYTE_CAP`、`ROOT_RATCHET_SLACK_BYTES = 1024`、`ROOT_RATCHET_MARGIN_BYTES = 512`。
+- 新常量：`GLOBAL_MEMORY_TARGETS`（默认 `["~/.claude/CLAUDE.md"]`）、`GLOBAL_MEMORY_BYTE_CAP`、`GLOBAL_MEMORY_BAK_CAP = 3`、`ROOT_RATCHET_SLACK_BYTES = 1024`、`ROOT_RATCHET_MARGIN_BYTES = 512`。
+- **A4 只报不删**（同 D5）：备份件可能是某人有意保留的还原点，机器无权处置。
 - `CLAUDE_MD_ROOT_BYTE_CAP`：`90 * 1024` → `48 * 1024`，常量处注释写明棘轮语义与「只降不升」。
 - 告警去重复用 `CLAUDE_MD_SIZE_STATE_REL` 同一状态文件，新增独立键，24h 间隔沿用。
 - 版本快照正则须排除**路径里的版本段**（如 `Python314`、`nodejs`）与队列编号（`#422`），避免噪声。
