@@ -2140,6 +2140,48 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertIn("#202", out)
         self.assertNotIn("新增行 #201／#202 的状态列", out)  # 只点名缺的那条
 
+    def test_mechanism_wip_rejection_carries_reclassification_candidates(self):
+        """队列 §一 #435 子项 E（tasks.md 5.3）：主拒绝文案（"两条出路"那
+        条）须附带改判候选清单——既有行里若有命中外部阻塞措辞的
+        open/partial 行，须被列出，帮读者直接执行出路⑴。"""
+        self._write_queue(
+            section_one_rows=(
+                "| 150 | 既有机制行1 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-01 |\n"
+                "| 151 | 真实留步行 | CC | 指针 | 产出 | "
+                "[S:partial][D:机] 五处缺陷代码全部修完、四项需人在场的动作未做 | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_new_mechanism_row()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self._release(who="A", mechanism_wip_cap=2)
+        out = buf.getvalue()
+        self.assertIn("改判候选清单", out)
+        self.assertIn("#151", out)
+        self.assertIn("建议 `blocked`", out)
+
+    def test_mechanism_wip_escape_hatch_messages_omit_candidates(self):
+        """已选定走逃生阀的两个分支（差开关／差行内标记）不该被塞进一份
+        不相关的改判候选清单——那不是读者此刻要看的东西。"""
+        self._write_queue(
+            section_one_rows=(
+                "| 150 | 既有机制行1 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-01 |\n"
+                "| 151 | 真实留步行 | CC | 指针 | 产出 | "
+                "[S:partial][D:机] 五处缺陷代码全部修完、四项需人在场的动作未做 | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_new_mechanism_row()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self._release(who="A", mechanism_wip_cap=2, force_mechanism_wip=True)
+        self.assertNotIn("改判候选清单", buf.getvalue())
+
     def test_mechanism_wip_within_cap_no_warning(self):
         self._write_queue(hwm_one=200)
         self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
@@ -2217,6 +2259,207 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
         lock_data = json.loads((self.repo_root / "queue.md.editlock").read_text(encoding="utf-8"))
         self.assertEqual(lock_data.get("domains"), {"一": "机"})
+
+
+_RECLASS_SECTION_ONE_HEADER = (
+    "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+    "|---|------|--------|-------------|----------|------|--------|------|\n"
+)
+
+
+def _reclass_section(*rows: str) -> str:
+    return _RECLASS_SECTION_ONE_HEADER + "\n".join(rows) + "\n"
+
+
+class StatusReclassificationSuggestionUnitTests(unittest.TestCase):
+    """队列 §一 #435 子项 E：`_suggest_status_reclassification()` 纯函数
+    单测——只读文本、无副作用，不需要完整 release 夹具。"""
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def test_命中真实分诊原话_如387(self):
+        row = (
+            "| 387 | 归档回执路由 | CC | 指针 | 产出 | "
+            "[S:partial][D:机] 🟡 **五处缺陷代码全部修完、"
+            "四项需人在场的动作未做（2026-08-24）** | 触碰区 | 2026-08-24 |"
+        )
+        candidates = self.module._suggest_status_reclassification(_reclass_section(row))
+        self.assertEqual(len(candidates), 1)
+        row_id, status, suggested, excerpt = candidates[0]
+        self.assertEqual(row_id, "387")
+        self.assertEqual(status, "partial")
+        self.assertEqual(suggested, "blocked")
+        self.assertIn("需人在场", excerpt)
+
+    def test_常驻不销建议改判为timed(self):
+        row = (
+            "| 98 | 月度环境体检 | Cowork | 指针 | 产出 | "
+            "[S:open][D:机] ✅ **首期体检已执行"
+            "（2026-08-24；本行常驻不销，只滚动）** | 触碰区 | 2026-08-24 |"
+        )
+        candidates = self.module._suggest_status_reclassification(_reclass_section(row))
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0][2], "timed=")
+
+    def test_不命中96反例的短标题(self):
+        """`#96` 反例——防误伤：这类"两方各完成一半、都还有事可做"的
+        协作语言，不应被误判为外部阻塞。"""
+        row = (
+            "| 96 | .51部署标准清单 | Cowork/CC | 指针 | 产出 | "
+            "[S:partial][D:机] 🟡 **Cowork 半边完成、CC 半边待领"
+            "（2026-08-01，环境保障线）** | 触碰区 | 2026-08-01 |"
+        )
+        candidates = self.module._suggest_status_reclassification(_reclass_section(row))
+        self.assertEqual(candidates, [])
+
+    def test_非open或partial状态不入选(self):
+        for status in ("done", "blocked", "hold", "timed=2026-09-25"):
+            row = (
+                f"| 200 | 某行 | CC | 指针 | 产出 | "
+                f"[S:{status}][D:机] 硬阻塞于某事 | 触碰区 | 2026-08-01 |"
+            )
+            candidates = self.module._suggest_status_reclassification(_reclass_section(row))
+            self.assertEqual(candidates, [], f"status={status} 不应入选")
+
+    def test_每行只取第一个命中措辞不重复列出(self):
+        """同一行同时命中"需人在场"与"留步"两个措辞——只应产出一条
+        候选，不因命中多个措辞而重复列出同一行（人工分诊按行过目，
+        候选条数应等于待分诊行数，不是措辞命中次数）。"""
+        row = (
+            "| 387 | x | CC | 指针 | 产出 | "
+            "[S:partial][D:机] 四项需人在场的动作未做，仅剩最后一步留步 | "
+            "触碰区 | 2026-08-24 |"
+        )
+        candidates = self.module._suggest_status_reclassification(_reclass_section(row))
+        self.assertEqual(len(candidates), 1)
+
+    def test_只读不改变入参文本(self):
+        row = (
+            "| 387 | x | CC | 指针 | 产出 | "
+            "[S:partial][D:机] 四项需人在场的动作未做 | 触碰区 | 2026-08-24 |"
+        )
+        section = _reclass_section(row)
+        before = section
+        self.module._suggest_status_reclassification(section)
+        self.assertEqual(section, before, "design D5：只建议、不自动改，函数不得有副作用")
+
+
+class ReclassificationCandidateRenderingUnitTests(unittest.TestCase):
+    """`_render_reclassification_candidates()`：接在 WIP 阻断消息"两条
+    出路"之后的候选清单渲染（tasks.md 5.3）。"""
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def test_零候选返回空字符串(self):
+        """零候选时不占用阻断消息任何一行——消息已经够长。"""
+        self.assertEqual(self.module._render_reclassification_candidates([]), "")
+
+    def test_有候选时含行号现状态建议字段与命中原话(self):
+        text = self.module._render_reclassification_candidates(
+            [("380", "partial", "blocked", "真实冒烟仍未做")]
+        )
+        self.assertIn("#380", text)
+        self.assertIn("partial", text)
+        self.assertIn("blocked", text)
+        self.assertIn("真实冒烟仍未做", text)
+
+
+class RealSnapshotReclassificationRegressionTests(unittest.TestCase):
+    """队列 §一 #435 子项 E，tasks.md 5.6（**本子项唯一验收判据**）：
+    对 2026-08-30 改判前的真实队列快照跑，须列全当天人工分诊出的那
+    8 行（`#282`／`#413`／`#419`／`#398`／`#380`／`#387`／`#399`／`#98`）。
+    列不全就是漏报。
+
+    下列行文本逐字取自改判落地那次真实提交（`178979c`）的**父提交**
+    内容——`git log --oneline -S"[S:blocked][D:机] 🟢 **apply 已完成、
+    真实冒烟仍未做" -- 1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md`
+    定位到 `178979c` 后，用 `git diff 178979c^ 178979c -- <同路径>` 的
+    "-" 侧原样摘取（未改写用词，超长行只截到命中措辞之后一小段）。
+    """
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def test_列全当天人工分诊出的八行(self):
+        rows = [
+            "| 380 | 李姣龙接入企微机器人可达通道 | CC | 指针 | 产出 | "
+            "[S:partial][D:机] 🟢 **apply 已完成、真实冒烟仍未做"
+            "（2026-08-25，CC 无头批处理 A30）** —— 详见 §四 #116。"
+            "🔴 **两项留步，均非遗漏**： **①真实发送冒烟仍未做** | "
+            "触碰区 | 2026-08-22 |",
+            "| 387 | 归档回执对IT域静默丢失 | CC | 指针 | 产出 | "
+            "[S:partial][D:机] 🟡 **五处缺陷代码全部修完、"
+            "四项需人在场的动作未做（2026-08-24，CC）** | 触碰区 | 2026-08-24 |",
+            "| 398 | 机制自身失效批次 | CC | 指针 | 产出 | "
+            "[S:partial][D:机] 🟢 **三处根因全部定位并实测坐实，"
+            "可修的已修完；两处留步（守卫拦截／待拍板）"
+            "（CC-A28，2026-08-25）** | 触碰区 | 2026-08-24 |",
+            "| 399 | 补件登记与发送通道脱节 | CC | 指针 | 产出 | "
+            "[S:partial][D:机] ✅ **apply 已完成、单测已本地实跑取证；"
+            "仅剩 6.4 端到端真实发送留步（2026-08-25 15:12 本地）** | "
+            "触碰区 | 2026-08-24 |",
+            "| 413 | 通知通道二阶段窗口切换 | CC | 指针 | 产出 | "
+            "[S:partial][D:机] 🆕 **2026-08-26 立行**。"
+            "**硬阻塞于两条**：⑴ #412（M1）完成；"
+            "⑵ Shao Peishen 给出窗口日期。| 触碰区 | 2026-08-26 |",
+            "| 419 | 运维逃生通道第三道防线 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 🔴 **2026-08-26 立行，无默认项**："
+            "提出该项的 session 已收工、回合制无法自我唤醒，"
+            "两条前提均不成立，须他明确答复。 ━━━ 🟢 **2026-08-27 "
+            "`OP-0827-E`：本行的 LAN 留步已解除** | 触碰区 | 2026-08-26 |",
+            "| 282 | 通知通道过渡群广播全迁aibot | CC | 指针 | 产出 | "
+            "[S:partial][D:机] ⏸ **已押后，暂不派"
+            "（Shao Peishen 2026-08-08 选 (a)：先只推 #300，本行押后）** | "
+            "触碰区 | 2026-08-06 |",
+            "| 98 | 月度环境体检例行 | Cowork | 指针 | 产出 | "
+            "[S:open][D:机] ✅ **首期体检已执行"
+            "（2026-08-24，Cowork 环境总线；本行常驻不销，只滚动）** | "
+            "触碰区 | 2026-07-24 |",
+        ]
+        candidates = self.module._suggest_status_reclassification(_reclass_section(*rows))
+        got_ids = {row_id for row_id, *_ in candidates}
+        target_ids = {"282", "413", "419", "398", "380", "387", "399", "98"}
+        missing = target_ids - got_ids
+        self.assertEqual(
+            missing, set(),
+            f"漏报：{missing}——本子项唯一验收判据，列不全就是漏报",
+        )
+        # 附带核对建议字段方向：7 行建议 blocked，仅 #98（常驻不销）
+        # 建议 timed=。
+        by_id = {row_id: suggested for row_id, _status, suggested, _excerpt in candidates}
+        self.assertEqual(by_id["98"], "timed=")
+        for rid in target_ids - {"98"}:
+            self.assertEqual(by_id[rid], "blocked", f"#{rid} 应建议 blocked")
+
+    def test_已知限制_96的完整正文含一处过期提及会被列为候选(self):
+        """如实记录一个已知边界情形，供未来维护者查证时不必重新发现
+        一次：`#96` 的**短标题**不会误报（见上一测试类），但它 6,000+
+        字的完整正文里有一处**已解决的历史提及**"待 Shao Peishen"——
+        下方摘取的是该正文里真实存在、彼此间隔约 900 字的两段（用
+        "……" 标记省略的中段，未改写措辞本身）。本函数按行扫描全文、
+        不分辨"当前状态"与"历史叙事"，会把这处过期提及也列为候选。
+
+        **这不是需要修的缺陷**：D2/D7 同族取舍——宁可多列一条candidate
+        让人一眼跳过，也不可为消灭这类误报而收紧到可能漏掉真实案例
+        （#419 的真实触发同样落在正文靠后位置，见 design D2 的两向
+        如实登记原则）。"""
+        row = (
+            "| 96 | .51部署标准清单与工程手册 | Cowork/CC | 指针 | 产出 | "
+            "[S:partial][D:机] 🟡 **Cowork 半边完成、CC 半边待领"
+            "（2026-08-01，环境保障线）**：清单已落"
+            "`3-治理与合规/.51部署标准清单.md`（status=待发）。"
+            "……（中略约 900 字真实取证细节）……"
+            "**§十 两点待 Shao Peishen 定**"
+            "（本件放置位置＝治理件 vs 工程手册；"
+            "门禁强度＝自证型 vs 须贴冒烟原始输出）。"
+            "**✅ 清单已转「生效」（Shao Peishen 2026-08-01 拍板）**："
+            "frontmatter status: 待发→生效 | 触碰区 | 2026-08-01 |"
+        )
+        candidates = self.module._suggest_status_reclassification(_reclass_section(row))
+        self.assertEqual(len(candidates), 1, "如实记录已知的过度报告行为")
+        self.assertEqual(candidates[0][0], "96")
 
 
 class FollowupReadmeStructuralValidationTests(unittest.TestCase):

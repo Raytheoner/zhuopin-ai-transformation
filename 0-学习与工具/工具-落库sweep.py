@@ -386,6 +386,7 @@ import ast
 import fnmatch
 import importlib.util
 import json
+import os
 import re
 import site
 import subprocess
@@ -724,15 +725,139 @@ OBSERVATION_WINDOW_RE = re.compile(r"预期观察窗口[:：]\s*(\d+(?:\.\d+)?)\
 # 纪律）；实现方不得自行调参（#338 预授权①）。
 CLAUDE_MD_ROOT_REL = "CLAUDE.md"
 CLAUDE_MD_SCENE_GLOBS = ("4-数字员工/*/*/CLAUDE.md", "5-平台底座/*/CLAUDE.md")
-CLAUDE_MD_ROOT_BYTE_CAP = 90 * 1024      # 92,160
+# 队列 §一 #435（2026-08-30，OP-0830-C，design D3）：90 KB 起点从未真正
+# 逼近过任何一次瘦身，人设目标（≤30~40 KB）与机器阈值（90 KB）从不
+# 对话——`OP-0829-C`／`OP-0829-W` 各自独立地重新发现了同一次「够不到」。
+# 改棘轮＝只降不升：48 KB（立包时实测 47,863 B，仅留 1,289 B 余量，见
+# 下方 ROOT_RATCHET_SLACK_BYTES）——寻常一次小改就会顶到，当轮即被
+# 看见。真要加内容，须同批把别处压掉（one-in-one-out），或显式调高
+# 并在提交里说明理由，MUST NOT 为容纳新增内容顺手调高。
+CLAUDE_MD_ROOT_BYTE_CAP = 48 * 1024      # 49,152
 CLAUDE_MD_SCENE_BYTE_CAP = 50 * 1024     # 51,200
 CLAUDE_MD_SIZE_STATE_REL = "reports/sweep-claude-md-size-state.json"
 CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS = 24
+# 棘轮自我提示阈值（仅对 root 生效，scene 不适用——spec 的 MODIFIED
+# Requirement 只把棘轮语义赋给 root）：现值低于 cap 超过 SLACK 时，
+# 提示「可将 cap 下调至 现值+MARGIN」。取 1,024/512 是经验值，同 scene
+# 阈值先例先不调参。
+ROOT_RATCHET_SLACK_BYTES = 1024
+ROOT_RATCHET_MARGIN_BYTES = 512
 # 顶部段解析**委托** lint 那份唯一权威实现，本文件不另写正则：同一个
 # 「顶部段条目」判据，lint 自己的模块注释记着裸正则数出 4 条、区间判据
 # 数出 2 条，而错的那个「看起来很确定」。再写第二套 = 再造一次同样的
 # 漂移，且两套的分歧不会有任何报错。
 CLAUDE_PROGRESS_LINT_REL = "0-学习与工具/工具-CLAUDE进度段lint.py"
+
+# ============================================================
+# 队列 §一 #435（2026-08-30，OP-0830-C）：本机全局记忆巡检——受检对象
+# 在仓库外，与上面"子项 A"（root/scene，仓库内）刻意分设独立函数／
+# 独立受检对象列表／独立状态文件，实现见 `_check_global_memory_files`
+# ============================================================
+# 背景：全局 `~/.claude/CLAUDE.md`（每会话整份注入上下文）此前在所有
+# 机制的巡检半径之外——sweep/lint/七哨兵/两份队列全部只认仓库内文件。
+# `OP-0829-W` 手工零基审计一次查出四处失真（两处路径已假、一处版本
+# 快照、一段半径过宽且含明文凭证），共同形态是**零信号**：路径失真
+# 不报错，只让某个会话"找不到卓品仓库"；版本快照不报错，只被某个
+# 会话当成事实引用。详见 `1-转型规划/0-全景路线图/全局CLAUDE零基审计
+# 与修订稿-2026-08-29.md`。
+#
+# 🔴 **为什么不并进 `_check_claude_md_carrier_size`**：那个函数的两个
+# 判据（尺寸/批次跨度）对仓库内 root/scene 文件成立，但"路径存在性"
+# 与"版本快照"对它们没有意义（路径由 git 天然守住、版本号不出现在
+# 那两份文件里）；反过来 root/scene 也不需要"自己在不在"这道判据——
+# 它们就在 git checkout 里。硬并到一起会让两套完全不重叠的判据挤在
+# 一个函数里，分设更清楚，也满足 tasks.md「三判据各自可独立关停」。
+#
+# 🔴 **为什么不复用 `CLAUDE_MD_SIZE_STATE_REL`**（design.md 实现细节
+# 原文建议"复用同一状态文件，新增独立键"，本实现改用独立状态文件，
+# 理由如下）：`_track_and_alert_standing_state` 把"这次调用没传进来
+# 的旧 key"一律判为"已解除"并从状态文件删除（见其
+# `resolved = [key for key in state if key not in current_keys]`）。
+# 若本函数与 `_check_claude_md_carrier_size` 共用一份状态文件、各自
+# 只传自己的 key 子集，后调用的一方会把先调用的一方刚写入的 key 误判
+# 为"已解除"而删掉——两个独立判据域共享一个"当前活跃 key 全集"假设
+# 的状态骨架，会产生跨话题清除。改用独立状态文件是绕开这个假设冲突
+# 的最小改动，不改 `_track_and_alert_standing_state` 本身的契约（它被
+# M1/M2 等多处复用，零回归门槛下，改共享契约的风险面比多一个状态
+# 文件大得多）。
+GLOBAL_MEMORY_TARGETS = ("~/.claude/CLAUDE.md",)
+# 现值 9,382 B（2026-08-29/30 两次实测一致）。本机全局记忆文件规模应
+# 远小于项目级 CLAUDE.md（root 48 KB/scene 50 KB）——它按机器而非按
+# 项目绑定、且每个会话都整份注入上下文，理应更精简。16 KB 留约 7 KB
+# （现值的约 75%）冗余，首月只告警不调参（同既有 scene 阈值先例）；
+# 本值不随棘轮"只降不升"——proposal 未把它列为棘轮对象，只要求"同
+# root 的回显形态"（当前值/阈值/差额逐轮打印）。
+GLOBAL_MEMORY_BYTE_CAP = 16 * 1024        # 16,384
+GLOBAL_MEMORY_STATE_REL = "reports/sweep-global-memory-state.json"
+GLOBAL_MEMORY_ALERT_INTERVAL_HOURS = 24
+# tasks.md 1.3「三判据各自可独立关停」：每项判据一个开关常量，互不
+# 牵连——某一项判据若日后被证明噪声过大，改一个布尔值即可单独停用，
+# 不必动其余两项或整个函数。
+GLOBAL_MEMORY_CHECK_A1_PATHS_ENABLED = True
+GLOBAL_MEMORY_CHECK_A2_SIZE_ENABLED = True
+GLOBAL_MEMORY_CHECK_A3_VERSION_ENABLED = True
+# 🔴 **CLI 级单测隔离入口**（2026-08-30，回归排查后补）：受检对象是
+# 绝对/`~` 路径，与 `repo_root` 无关——不像 `_check_claude_md_carrier_
+# size` 那样天然被"临时仓库"隔离。本文件另有 `_check_editable_install_
+# targets`（#410）踩过同一类"machine-wide 单例资源"问题，那边靠
+# `_site_packages_dirs()` 间接层供**同进程**单测 monkeypatch；但本仓库
+# 测试套件里大量 CLI 级用例走**子进程**（`_run_sweep`），子进程不继承
+# 父进程对 `sweep.*` 模块属性的 monkeypatch（同文件另一处既有教训，见
+# `test_工具-落库sweep.py` 队列 #315 注释），因此需要一条能**跨进程边界**
+# 传递的隔离通道——环境变量是唯一选项。
+#
+# 实测坐实（2026-08-30，本次回归全量跑）：本机 `~/.claude/CLAUDE.md`
+# 当前确有一处真实失真（`rare-earth-research` 技能目录已不存在），
+# 若不隔离，任何配了真实 `.env` webhook 的 CLI 级用例都会额外收到一条
+# 本检查发出的告警，把该用例对"收到几次 webhook"的断言从 0/1 变成
+# 1/2——17 个既有用例因此转红，全部与本检查的逻辑正确性无关，纯属
+# "检查了一个测试不知道、也不该关心的真实机器文件"。
+#
+# 设为非 None 即**替换**默认目标列表（按 `os.pathsep` 分隔，允许空值＝
+# 显式不检查任何目标）；未设置时使用 `GLOBAL_MEMORY_TARGETS` 默认值。
+# `SweepTestBase` 用它指向一份测试夹具自建的**干净占位文件**（而非清空
+# 目标列表）——这样"三判据在 CLI 全流程里被真正跑过一遍"这件事本身
+# 仍受既有 CLI 级用例覆盖，只是不再牵动本机真实文件。
+GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE = "ZHUOPIN_SWEEP_GLOBAL_MEMORY_TARGETS"
+
+
+def _resolve_global_memory_targets() -> tuple[str, ...]:
+    override = os.environ.get(GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE)
+    if override is None:
+        return GLOBAL_MEMORY_TARGETS
+    return tuple(p for p in override.split(os.pathsep) if p)
+
+# A1 路径存在性——定界符（反引号/双引号，对应全局文件自身"路径加引号
+# 约定"段：散文用反引号、脚本/命令用双引号两种写法）包裹的片段整段取
+# （含空格——本机用户目录 `C:\Users\Paul Shao` 含空格，定界符本身解决
+# 了边界歧义）；裸写（无定界符）片段退化为"遇非路径字符即止"，可能
+# 漏认含空格的裸写路径——按 design D2「漏认只是退化、不制造新破坏」
+# 的取舍方向接受（2026-08-30 实测：真实全局文件里全部 `C:\` 提及均有
+# 定界符包裹，仅有的两处裸写 `~/...` 提及均不含空格，不受此退化影响）。
+# 🔴 裸写续接字符集刻意限制为 ASCII 路径字符、不含中文标点/空白——
+# 早期实现用 `\S+`（非空白即续）在真实文件"...存 ~/.claude/sounds/，
+# 迁移机器时随..."一行上把后续整段中文都吞了进去（中文字之间没有
+# 空格，`\S+` 不会在标点处停）；收窄字符集后才在该逗号处正确截断。
+_GLOBAL_MEMORY_QUOTED_SPAN_RE = re.compile(r"`([^`\n]+)`|\"([^\"\n]+)\"")
+_GLOBAL_MEMORY_BARE_PATH_RE = re.compile(r"(?:C:\\|~/)[A-Za-z0-9_.\-/\\]*")
+_GLOBAL_MEMORY_PATH_PREFIXES = ("C:\\", "~/")
+
+# A3 版本快照——proposal 原句"匹配版本号形态与已知模型代号词"取**且**
+# 不取**或**：2026-08-30 实测，若把"任意 `\d+\.\d+` 形状"单独当判据，
+# 会命中同一份文件"运行环境基线"段里 Python/Node/pwsh/git 的版本号
+# （如 `3.14.4`），而《全局CLAUDE零基审计与修订稿-2026-08-29.md》§二⑶
+# 明确记着"Python/Node 的绝对路径有判据价值，保留"——那些不是本判据
+# 要抓的东西，抓了就会让"零版本快照红"的验收预期落空。改为要求**同
+# 一行**内版本号形态与已知代号词共现：原始反例「Claude Code：v2.1.x
+# · Opus 4.x」两者本就同行，不受影响；2026-08-30 实测真实文件里没有
+# 任何一行同时命中两者，与验收预期一致。
+_GLOBAL_MEMORY_MODEL_CODENAME_WORDS = ("Claude Code", "Opus", "Sonnet", "Haiku", "Fable", "Claude")
+# 要求至少一个 `.数字或x` 分组（`{1,2}` 下限为 1）——纯整数（如队列号
+# `#422` 里的 `422`、路径段 `Python314` 里的 `314`）天然不落入此形状，
+# 不需要额外排除；前后 `(?<![\w.])`/`(?![\w.])` 边界防止匹配到更长
+# 字母数字串的一段（如任何形如 `word\d+\.\d+` 的粘连写法）。
+_GLOBAL_MEMORY_VERSION_SHAPE_RE = re.compile(r"(?<![\w.])v?\d+(?:\.(?:\d+|x)){1,2}(?![\w.])")
+
 
 # ============================================================
 # 队列 §一 #338 子项 B（2026-08-23，OP-0823-G）：常驻执行体落后守卫 ——
@@ -3405,6 +3530,17 @@ def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
             breaches[rel] = f"尺寸 {size:,} B，超阈值 {cap:,} B 共 {size - cap:,} B"
         else:
             log.append(f"    · {rel}：{size:,} B / 阈值 {cap:,} B（尚余 {cap - size:,} B）")
+            # 队列 §一 #435（design D3/D6）：棘轮自我提示——仅 root 适用
+            # （spec 的 MODIFIED Requirement 只把"只降不升"语义赋给
+            # root，scene 不在此列）。现值低于 cap 超过 SLACK 时提示
+            # 可下调到"现值+MARGIN"，使瘦身成果被机器记住，不必每次
+            # 都重新发现"够不到"。
+            if rel == CLAUDE_MD_ROOT_REL and (cap - size) > ROOT_RATCHET_SLACK_BYTES:
+                suggested = size + ROOT_RATCHET_MARGIN_BYTES
+                log.append(
+                    f"        💡 棘轮提示：现值低于阈值超过 {ROOT_RATCHET_SLACK_BYTES:,} B，"
+                    f"可将 cap 下调至 {suggested:,}"
+                )
 
     dates, reason = _root_progress_batch_dates(repo_root)
     if dates is None:
@@ -3437,6 +3573,173 @@ def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
         # 每涨一个字节就是一个新 key、天天被当成新问题重新告警，且旧 key
         # 会被判为「已解除」——常驻状态与事件的分界线就在这里。
         set(breaches), CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS,
+        render_alert, render_resolved, log,
+    )
+
+
+# ============================================================
+# 队列 §一 #435 实现：本机全局记忆巡检
+# ============================================================
+
+def _expand_global_memory_path(path_text: str) -> str:
+    """把 `~/`（或裸 `~`）展开为本机 `USERPROFILE`；`C:\\...` 等已是绝对
+    路径的原样返回。**只用于存在性核验**，告警文案仍用原文——spec 要求
+    「不存在即告警并附行号与原文片段」，不是展开后的路径。"""
+    if path_text == "~":
+        return os.environ.get("USERPROFILE") or os.path.expanduser("~")
+    if path_text.startswith("~/"):
+        home = (os.environ.get("USERPROFILE") or os.path.expanduser("~")).rstrip("\\/")
+        rest = path_text[2:].replace("/", "\\")
+        return f"{home}\\{rest}" if rest else home
+    return path_text
+
+
+def _extract_local_paths_from_line(line: str) -> list[str]:
+    """从一行文本抽出"形状像本机路径"的片段，原样返回（未展开 `~`）。
+
+    见常量段 A1 注释：定界符（反引号/双引号）包裹的片段整段取（含
+    空格）；裸写片段续接字符集收窄到路径字符，遇中文标点/空白即止。
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+    for m in _GLOBAL_MEMORY_QUOTED_SPAN_RE.finditer(line):
+        span = m.group(1) if m.group(1) is not None else m.group(2)
+        if span.startswith(_GLOBAL_MEMORY_PATH_PREFIXES) and span not in seen:
+            seen.add(span)
+            found.append(span)
+    # 裸写片段的抽取在"挖掉定界符span"后的残文上做，避免反引号/双引号
+    # 内部已被认领的 C:\/~/ 片段被裸写正则重复认领一遍。
+    residual = _GLOBAL_MEMORY_QUOTED_SPAN_RE.sub(" ", line)
+    for m in _GLOBAL_MEMORY_BARE_PATH_RE.finditer(residual):
+        span = m.group(0)
+        if span not in seen:
+            seen.add(span)
+            found.append(span)
+    return found
+
+
+def _find_stale_local_paths(text: str) -> list[tuple[int, str]]:
+    """A1：逐行抽取本机路径片段，返回 `Test-Path`/`os.path.exists` 为假的
+    `[(行号, 原文片段)]`（1-indexed 行号）。
+
+    🔴 误认（散文被当成路径）与漏认（含空格裸写未被抽出）两个方向的
+    取舍见常量段注释——本函数宁可误报，不可漏报（design D2）。
+    """
+    stale: list[tuple[int, str]] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        for frag in _extract_local_paths_from_line(line):
+            if not os.path.exists(_expand_global_memory_path(frag)):
+                stale.append((line_no, frag))
+    return stale
+
+
+def _find_version_snapshots(text: str) -> list[tuple[int, str]]:
+    """A3：仅当同一行内出现已知模型/工具代号词时，才在该行内找版本号
+    形态，返回 `[(行号, 命中原文)]`——原因见常量段注释（避免命中"运行
+    环境基线"段的 Python/Node/pwsh/git 版本号，那些是保留判据价值的
+    现值，不是会静默变旧的工具版本快照）。
+    """
+    hits: list[tuple[int, str]] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if not any(word in line for word in _GLOBAL_MEMORY_MODEL_CODENAME_WORDS):
+            continue
+        for m in _GLOBAL_MEMORY_VERSION_SHAPE_RE.finditer(line):
+            hits.append((line_no, m.group(0)))
+    return hits
+
+
+def _check_global_memory_files(repo_root: Path, log: list[str]) -> None:
+    """队列 §一 #435：本机全局记忆巡检——第 4 类常驻告警的姊妹检查，
+    受检对象在仓库外（见常量段"为什么分设独立函数/独立状态文件"）。
+
+    🔴 **回显不是可选项**（同 `_check_claude_md_carrier_size`）：三判据
+    每轮都打印当前值/阈值/差额，零红也不省略——这正是本包要消灭的
+    "建成后从未真正发出过一条消息"那类风险（`OP-0819-F`）。
+    """
+    breaches: dict[str, str] = {}
+    log.append(
+        "🧭 本机全局记忆巡检（每轮回显，零红时亦不省略；受检对象在仓库外，"
+        "半径论证见 openspec/changes/global-memory-inspection-and-root-ratchet/design.md D1）："
+    )
+    for target in _resolve_global_memory_targets():
+        resolved = _expand_global_memory_path(target)
+        path_obj = Path(resolved)
+        if not path_obj.is_file():
+            # design D4：受检对象自己不见了也是一种失真，MUST 告警且
+            # MUST NOT 中止整轮（同 #328「起跑段阻断整轮」反面教训）。
+            log.append(f"    ⚠ {target}：受检对象缺失（{resolved}）——不据此判为合规，本轮其余检查照跑")
+            breaches[target] = f"受检对象缺失：{resolved}"
+            continue
+        try:
+            size = path_obj.stat().st_size
+            text = path_obj.read_text(encoding="utf-8")
+        except OSError as exc:
+            log.append(f"    ⚠ {target}：读取失败（{exc}）——不据此判为合规")
+            breaches[target] = f"读取失败：{exc}"
+            continue
+
+        findings: list[str] = []
+        cap = GLOBAL_MEMORY_BYTE_CAP
+
+        # A2 尺寸阈值（同 root/scene 的回显形态；不随棘轮，见常量段）。
+        if not GLOBAL_MEMORY_CHECK_A2_SIZE_ENABLED:
+            log.append(f"    ⏸ {target}：A2 尺寸阈值判据已关停（GLOBAL_MEMORY_CHECK_A2_SIZE_ENABLED=False）")
+        elif size > cap:
+            log.append(f"    🔴 {target}：{size:,} B / 阈值 {cap:,} B（超出 {size - cap:,} B）")
+            findings.append(f"尺寸 {size:,} B，超阈值 {cap:,} B 共 {size - cap:,} B")
+        else:
+            log.append(f"    · {target}：{size:,} B / 阈值 {cap:,} B（尚余 {cap - size:,} B）")
+
+        # A1 路径存在性。
+        if not GLOBAL_MEMORY_CHECK_A1_PATHS_ENABLED:
+            log.append(f"    ⏸ {target}：A1 路径存在性判据已关停（GLOBAL_MEMORY_CHECK_A1_PATHS_ENABLED=False）")
+        else:
+            stale_paths = _find_stale_local_paths(text)
+            if stale_paths:
+                for line_no, frag in stale_paths:
+                    log.append(f"    🔴 {target} L{line_no}：路径不存在 `{frag}`")
+                findings.append(
+                    f"{len(stale_paths)} 处路径不存在：" +
+                    "；".join(f"L{n}『{f}』" for n, f in stale_paths)
+                )
+            else:
+                log.append(f"    · {target}：路径存在性核过，零红")
+
+        # A3 版本快照。
+        if not GLOBAL_MEMORY_CHECK_A3_VERSION_ENABLED:
+            log.append(f"    ⏸ {target}：A3 版本快照判据已关停（GLOBAL_MEMORY_CHECK_A3_VERSION_ENABLED=False）")
+        else:
+            version_hits = _find_version_snapshots(text)
+            if version_hits:
+                for line_no, frag in version_hits:
+                    log.append(f"    🔴 {target} L{line_no}：疑似版本快照 `{frag}`——存取法、不存快照")
+                findings.append(
+                    f"{len(version_hits)} 处版本快照：" +
+                    "；".join(f"L{n}『{f}』" for n, f in version_hits)
+                )
+            else:
+                log.append(f"    · {target}：版本快照模式核过，零红")
+
+        if findings:
+            breaches[target] = "；".join(findings)
+
+    def render_alert(keys):
+        lines = "\n".join(f"- `{key}`：{breaches[key]}" for key in sorted(keys))
+        return (
+            f"🧭 落库sweep：{len(keys)} 份本机全局记忆文件疑似失真"
+            "（仓库外，此前巡检半径覆盖不到，只报不改，见队列 §一 #435）：\n"
+            f"{lines}\n"
+            "⇒ 处置：路径失真按行号原文订正；版本快照按判据「存取法、不存"
+            "快照」整段删；一切改动均须他逐次授权，机器不代改。"
+        )
+
+    def render_resolved(keys):
+        lines = "\n".join(f"- `{key}`（已核过，此前问题已解除）" for key in sorted(keys))
+        return f"✅ 落库sweep：{len(keys)} 份此前告警过的本机全局记忆文件已回落：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "本机全局记忆巡检", GLOBAL_MEMORY_STATE_REL,
+        set(breaches), GLOBAL_MEMORY_ALERT_INTERVAL_HOURS,
         render_alert, render_resolved, log,
     )
 
@@ -4888,6 +5191,10 @@ def main() -> int:
             # 🔴 两者都**每轮回显**，即使零超限/零落后：上线当天预计零告警，
             # 而「建成 9 天从未发出过一条消息」是本项目已经吃过的亏。
             _check_claude_md_carrier_size(repo_root, log)
+            # 队列 §一 #435（2026-08-30，OP-0830-C）：本机全局记忆巡检——
+            # 受检对象在仓库外，与上一行刻意分设独立函数（见常量段）。
+            # 只读、只告警，一个字节都不改任何本机文件，不影响本轮退出码。
+            _check_global_memory_files(repo_root, log)
             # 🔴 本行会**动手 ff**，不只是报告——#338 改版：落后是持续过程，
             # 只有每轮都做的动作才治得住它。重启按需、且缺省走人工确认。
             _sync_resident_carriers(repo_root, log)

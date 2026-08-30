@@ -632,6 +632,94 @@ def _followup_status_is_closed(status_value: str) -> bool:
 # 出现，说明上限本身定错了，应回 §四 #58 重议上限，而不是继续加豁免。
 MECHANISM_WIP_WAIVER_MARKER = "WIP豁免："
 
+# ============================================================
+# 队列 §一 #435 子项 E（2026-08-30，OP-0830-C，design D7）：状态字段与
+# 行内自陈一致性检查——把「partial 被当作可动 WIP」的口径缺陷改判为
+# 「机器扫出候选、人一眼过目改判」。
+# ============================================================
+# 根因（proposal 原文）：2026-08-30 分诊实测，机制类可动 WIP 27 行里
+# 17 行（63%）是 `partial`，而 `partial` 的实际用法是"主体已做完、
+# 尾巴挂在外部条件上"——活干得越多、WIP 越高，是反向激励。闸早就留了
+# `blocked`／`timed=` 出口，缺的不是机制，是没人做分诊。
+#
+# 🔴 **每条措辞后附的行号是它的真实来源，不是编造的例句**——2026-08-30
+# 那次人工分诊的 8 行原话逐条核对而来（`git show 178979c` 可复现原文）：
+STALE_STATUS_PHRASES: tuple[tuple[str, str], ...] = (
+    # §一 #413："硬阻塞于两条：⑴ #412（M1）完成；⑵ Shao Peishen 给出窗口日期"
+    ("硬阻塞", "blocked"),
+    # §一 #282："已押后，暂不派（Shao Peishen 2026-08-08 选 (a)：……）"
+    ("已押后", "blocked"),
+    # §一 #413："⑵ Shao Peishen 给出窗口日期"一类——等待他本人一次具体动作
+    # 才能推进，而非等待某个客观条件自然成立。
+    ("待 Shao Peishen", "blocked"),
+    # §一 #398："两处留步（守卫拦截／待拍板）"
+    ("待拍板", "blocked"),
+    # §一 #387："四项需人在场的动作未做"
+    ("需人在场", "blocked"),
+    # §一 #380："apply 已完成、真实冒烟仍未做"；#399："仅剩 6.4 端到端
+    # 真实发送留步"——主体已完成，只剩一步须人在场才能验收/收尾。
+    ("留步", "blocked"),
+    # §一 #98："本行常驻不销，只滚动"——周期性巡检类行，语义上不存在
+    # "done"终点，改判方向是定期重触发（`timed=`），不是"blocked"。
+    ("常驻不销", "timed="),
+)
+# 🔴 可增不可删（tasks.md 5.1）——新增措辞须同样附一个真实来源行号；
+# 删除已收录的措辞需要证明它已不再对应任何真实分诊场景，门槛应高于
+# 新增一条。
+
+
+def _suggest_status_reclassification(section_one_text: str) -> list[tuple[str, str, str, str]]:
+    """队列 §一 #435 子项 E：扫 `open`/`partial` 行的状态列自陈，命中
+    `STALE_STATUS_PHRASES` 任一措辞即产出改判候选。
+
+    返回 `[(行号, 现状态, 建议字段, 命中原话片段)]`。**只建议、不自动
+    改**——状态字段是行所有者对自己工作的判断，机器越权翻转会制造比
+    超限更难查的问题（design D5/D7）。**不改变 `_count_mechanism_wip`
+    的计入口径**——本函数只读候选，不写任何行、不改变任何计数逻辑，
+    `partial` 里确有真可动者（如 `#96`"Cowork 半完成、CC 半待领"，不
+    命中本清单任一措辞，不受影响）。
+
+    🔴 **只取每行第一个命中的措辞**：候选清单是给人看的分诊起点，一行
+    多次列出并不会增加信息量，反而让"有几行待分诊"这件事变得要数
+    去重后的行数而非候选条数。
+    """
+    candidates: list[tuple[str, str, str, str]] = []
+    for _line, cells in _table_data_rows(section_one_text):
+        if len(cells) <= 5:
+            continue
+        row_id = cells[0].strip() if cells and cells[0] else "?"
+        status_value, _domain_value, rest = _parse_status_domain_fields(cells[5])
+        if status_value not in ("open", "partial"):
+            continue
+        for phrase, suggested in STALE_STATUS_PHRASES:
+            idx = rest.find(phrase)
+            if idx == -1:
+                continue
+            start = max(0, idx - 10)
+            end = idx + len(phrase) + 20
+            excerpt = rest[start:end].strip()
+            candidates.append((row_id, status_value, suggested, excerpt))
+            break
+    return candidates
+
+
+def _render_reclassification_candidates(candidates: list[tuple[str, str, str, str]]) -> str:
+    """把 `_suggest_status_reclassification()` 的结果渲染成一段可读文案，
+    接在 WIP 阻断消息现有"两条出路"之后（tasks.md 5.3）。零候选时返回
+    空字符串——不为"没有候选"这件事单独占一行，阻断消息已经够长。
+    """
+    if not candidates:
+        return ""
+    lines = "\n".join(
+        f"- `#{row_id}` 现 `{status}` → 建议 `{suggested}`，命中「{excerpt}」"
+        for row_id, status, suggested, excerpt in candidates
+    )
+    return (
+        "\n⇒ 改判候选清单（命中外部阻塞措辞，仅供参考、不代改；"
+        "根因与判据见队列 §一 #435 子项 E）：\n" + lines
+    )
+
+
 # ── 判据 J4（队列 §四 #80 / 派单件 OP-0821-C）：根 CLAUDE.md 顶部进度段
 #    新增条目时的未闭合项拦截。lint 侧的 J1/J2/J3 在
 #    `工具-CLAUDE进度段lint.py`；**J4 才是治本的那条**——J1/J2/J3 都是事后
@@ -3137,8 +3225,14 @@ def _validate_release_structure(
         for note in degraded:
             print(f"⚠ {note}")
         if wip_count > cap:
+            # 子项 E（队列 §一 #435）：阻断时顺带算一次改判候选清单——
+            # 与 `_count_mechanism_wip` 用同一份 §一 文本，只读、不改变
+            # 计入口径，超限判定本身不受影响（见 D7）。
+            reclass_candidates = _suggest_status_reclassification(new_sections.get("一", ""))
             violations.extend(
-                _mechanism_wip_over_cap_violations(args, new_mechanism_rows, wip_count, cap)
+                _mechanism_wip_over_cap_violations(
+                    args, new_mechanism_rows, wip_count, cap, reclass_candidates,
+                )
             )
 
     return violations
@@ -3147,6 +3241,7 @@ def _validate_release_structure(
 def _mechanism_wip_over_cap_violations(
     args: argparse.Namespace, new_mechanism_rows: list[tuple[str, str]],
     wip_count: int, cap: int,
+    reclass_candidates: list[tuple[str, str, str, str]] | None = None,
 ) -> list[str]:
     """⑨ 超限时的逃生阀判定与拒绝文案（队列 §四 #58 ⑶，design.md 决策点
     5/6）。逃生阀须**两个条件同时到位**才放行：① release 传入
@@ -3158,8 +3253,15 @@ def _mechanism_wip_over_cap_violations(
     独立的 WIP 增量，只在其中一条写理由会让后来的读者无从判断另一条凭什么
     立起来——而这条逃生阀存在的全部意义就是"越过之后有人知道为什么"。
 
+    `reclass_candidates`（队列 §一 #435 子项 E）：**只接在"两条出路"那条
+    主拒绝文案后面**——那是唯一一个"读者还不知道该怎么办"的分支；另两个
+    分支（差开关／差行内标记）读者已选定走逃生阀，此时插入一份不相关的
+    改判候选清单反而是噪声。默认 `None` 等价于空列表，兼容未传该参数的
+    旧调用方（尽管本文件内唯一调用方已改传）。
+
     返回 violation 列表（空列表＝放行）。
     """
+    reclass_candidates = reclass_candidates or []
     # 直接取属性、不用 getattr 兜底：argparse 恒会设置该字段，兜底只会在
     # 调用方漏传时静默按"未越过"处理（工具静默回退家族，本项目已踩过多次）。
     forced = args.force_mechanism_wip
@@ -3183,7 +3285,7 @@ def _mechanism_wip_over_cap_violations(
         f" `--force-mechanism-wip` 开关（两者缺一不可）。"
     )
     if not forced and missing_marker:
-        return [f"{head} {ways_out}"]
+        return [f"{head} {ways_out}{_render_reclassification_candidates(reclass_candidates)}"]
     if not forced:
         # 行内已写理由、只差开关：越过必须是一次显式选择，不能顺手。
         return [

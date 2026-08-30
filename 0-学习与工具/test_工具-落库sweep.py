@@ -176,7 +176,27 @@ class SweepTestBase(unittest.TestCase):
             STUB_UNCLOSED_SCAN_SCRIPT, encoding="utf-8")
         (self.work / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
 
+        # 队列 §一 #435（2026-08-30 回归排查后补）：第 4 类常驻告警新增
+        # 「本机全局记忆巡检」，受检对象是绝对/`~` 路径、与 `repo_root`
+        # 无关——本机 `~/.claude/CLAUDE.md` 现有一处真实失真（技能目录
+        # `rare-earth-research` 已不存在），若不隔离，每个配了真实 `.env`
+        # webhook 的 CLI 级用例都会额外收到一条本检查发出的告警，把
+        # 「收到几次 webhook」的断言从 0/1 变成 1/2（本次全量回归实测
+        # 17 个既有用例因此转红，均与各自被测逻辑无关）。用环境变量
+        # 指向此处新建的干净占位文件（而非清空目标列表）——三判据仍在
+        # 每个 CLI 级用例里被真正跑一遍，只是不再牵动本机真实文件；
+        # 子进程会继承这个环境变量，同 `_run_sweep` 的既有跨进程传递
+        # 方式（monkeypatch 模块属性对子进程无效，见文件头部 #315 注释）。
+        placeholder = self.work / "_test-global-memory-placeholder.md"
+        placeholder.write_text("占位内容，无路径无版本号，供隔离用\n", encoding="utf-8")
+        self._orig_global_memory_env = os.environ.get(sweep.GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE)
+        os.environ[sweep.GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE] = str(placeholder)
+
     def tearDown(self):
+        if self._orig_global_memory_env is None:
+            os.environ.pop(sweep.GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE, None)
+        else:
+            os.environ[sweep.GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE] = self._orig_global_memory_env
         self._tmp.cleanup()
 
     def _write_queue(self, rows: str) -> None:
@@ -4227,6 +4247,260 @@ class ClaudeMdCarrierSizeTests(unittest.TestCase):
             sweep._load_progress_lint = orig
         self.assertIsNone(reason)
         self.assertEqual(dates, ["2026-08-19"], "同批两条只算一个批次日期")
+
+
+class RootRatchetHintUnitTests(unittest.TestCase):
+    """队列 §一 #435（design D3/D6）：root 阈值只降不升，现值低于阈值
+    超过 SLACK 时提示可下调；超阈值时仍走既有超限告警路径；scene 不
+    获得棘轮语义（spec 的 MODIFIED Requirement 只赋予 root）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
+        self.recorder = _StandingStateRecorder()
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_webhook = sweep._load_webhook_url
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._load_webhook_url = lambda repo_root: None
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._load_webhook_url = self._orig_webhook
+        self._tmp.cleanup()
+
+    def _write_root(self, size: int) -> None:
+        (self.repo / "CLAUDE.md").write_text("x" * size, encoding="utf-8")
+
+    def test_低于阈值超过SLACK时出提示(self):
+        size = sweep.CLAUDE_MD_ROOT_BYTE_CAP - sweep.ROOT_RATCHET_SLACK_BYTES - 1
+        self._write_root(size)
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        text = "\n".join(log)
+        self.assertIn("棘轮提示", text)
+        self.assertIn(f"可将 cap 下调至 {size + sweep.ROOT_RATCHET_MARGIN_BYTES:,}", text)
+
+    def test_恰好等于SLACK时不出提示(self):
+        """边界：design 措辞是「超过」，取严格大于，不取大于等于。"""
+        size = sweep.CLAUDE_MD_ROOT_BYTE_CAP - sweep.ROOT_RATCHET_SLACK_BYTES
+        self._write_root(size)
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        self.assertNotIn("棘轮提示", "\n".join(log))
+
+    def test_超阈值时不出棘轮提示只出超限告警(self):
+        self._write_root(sweep.CLAUDE_MD_ROOT_BYTE_CAP + 1)
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        text = "\n".join(log)
+        self.assertNotIn("棘轮提示", text)
+        self.assertEqual(self.recorder.calls[-1]["keys"], {"CLAUDE.md"})
+
+    def test_scene文件不适用棘轮提示(self):
+        scene_dir = self.repo / "5-平台底座" / "示例场景"
+        scene_dir.mkdir(parents=True)
+        (scene_dir / "CLAUDE.md").write_text("场景\n", encoding="utf-8")
+        # root 故意贴在"恰好不触发"边界上（上面已单独验证过），这样
+        # "全程零提示"只可能因为 scene 被正确排除在棘轮语义之外，不与
+        # root 自身是否触发混在一起判断。
+        self._write_root(sweep.CLAUDE_MD_ROOT_BYTE_CAP - sweep.ROOT_RATCHET_SLACK_BYTES)
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        self.assertNotIn("棘轮提示", "\n".join(log))
+
+
+class GlobalMemoryPathExtractionUnitTests(unittest.TestCase):
+    """队列 §一 #435，A1：路径存在性——定界符抽取 + 存在性核验。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_真路径存在_不入告警(self):
+        real_dir = self.base / "真实目录"
+        real_dir.mkdir()
+        line = f"参见 `{real_dir}`"
+        self.assertEqual(sweep._find_stale_local_paths(line), [])
+
+    def test_真路径已迁走_报行号与原文(self):
+        missing = self.base / "已不在的目录"
+        text = f"第一行\n参见 `{missing}` 这里\n第三行"
+        hits = sweep._find_stale_local_paths(text)
+        self.assertEqual(hits, [(2, str(missing))])
+
+    def test_反引号内非路径内容不被抽取(self):
+        """`git status`／`master` 这类反引号强调不以 C:\\ 或 ~/ 开头，
+        不应被当成路径候选（否则每一处强调用语都要被误核一次）。"""
+        text = "命令示例 `git status` 与分支 `master` 都不是路径"
+        self.assertEqual(sweep._extract_local_paths_from_line(text), [])
+
+    def test_误认为路径的散文按设计产出一条假阳性(self):
+        """design D2 明确接受的方向：形状像路径但实际不存在时，如实报
+        一条假阳性——这不是 bug，是"宁可误报、不可漏报"的既定取舍。"""
+        text = "示例见 `C:\\这不是真路径\\占位`"
+        hits = sweep._find_stale_local_paths(text)
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0][1], "C:\\这不是真路径\\占位")
+
+    def test_波浪展开使用USERPROFILE(self):
+        fake_home = str(self.base)
+        orig = os.environ.get("USERPROFILE")
+        os.environ["USERPROFILE"] = fake_home
+        try:
+            self.assertEqual(
+                sweep._expand_global_memory_path("~/.claude"),
+                fake_home.rstrip("\\/") + "\\.claude",
+            )
+        finally:
+            if orig is None:
+                os.environ.pop("USERPROFILE", None)
+            else:
+                os.environ["USERPROFILE"] = orig
+
+    def test_含空格路径整段抽取且核验为存在(self):
+        spaced = self.base / "Paul Shao"
+        spaced.mkdir()
+        text = f"本机用户目录 `{spaced}` 含空格"
+        self.assertEqual(sweep._extract_local_paths_from_line(text), [str(spaced)])
+        self.assertEqual(sweep._find_stale_local_paths(text), [])
+
+    def test_含空格路径已迁走仍整段核验且不被截断(self):
+        spaced = self.base / "不存在 的名字"
+        text = f"参见 `{spaced}`"
+        hits = sweep._find_stale_local_paths(text)
+        # 若整段抽取被空格截断成 `self.base`（父目录，真实存在），本条会
+        # 得到空列表——本断言同时锁死"没有被错误截断"这件事。
+        self.assertEqual(hits, [(1, str(spaced))])
+
+    def test_裸写路径遇中文标点即止(self):
+        """回归锁：早期实现用 `\\S+` 续接裸写路径，会把该行后续中文
+        整段吞掉（中文字之间没有空格，`\\S+` 不会在标点处停）；改用
+        路径字符白名单后应在逗号处正确截断。"""
+        line = "音文件存 ~/.claude/sounds/，迁移机器时随 .claude/ 文件夹复制即可"
+        found = sweep._extract_local_paths_from_line(line)
+        self.assertEqual(found, ["~/.claude/sounds/"])
+
+    def test_双引号定界符同样被认领(self):
+        """脚本/命令场景用双引号而非反引号（全局文件"路径加引号约定"
+        段自身的写法）——定界符集合须同时覆盖两种。"""
+        real_dir = self.base / "真实目录2"
+        real_dir.mkdir()
+        line = f'& "{real_dir}\\setup.ps1"'
+        # 目标文件本身不存在（只建了目录），预期报一条假阳性——这里只
+        # 验证"双引号包裹的内容被正确整段抽出"，不验证存在性判定本身。
+        found = sweep._extract_local_paths_from_line(line)
+        self.assertEqual(found, [f"{real_dir}\\setup.ps1"])
+
+
+class GlobalMemoryVersionSnapshotUnitTests(unittest.TestCase):
+    """队列 §一 #435，A3：版本快照——仅当同一行出现已知模型/工具代号词
+    时才判定，理由见 `工具-落库sweep.py` 常量段注释。"""
+
+    def test_命中写死的工具版本(self):
+        text = "配置：Claude Code：v2.1.x · Opus 4.x"
+        hits = sweep._find_version_snapshots(text)
+        self.assertEqual([frag for _line, frag in hits], ["v2.1.x", "4.x"])
+
+    def test_不命中Python路径段(self):
+        text = (
+            "Claude Code 用到 "
+            "`C:\\Users\\Paul Shao\\AppData\\Local\\Programs\\Python\\Python314\\python.exe`"
+        )
+        self.assertEqual(sweep._find_version_snapshots(text), [])
+
+    def test_不命中nodejs(self):
+        text = "Claude Code 运行时用 nodejs，未标注版本号"
+        self.assertEqual(sweep._find_version_snapshots(text), [])
+
+    def test_不命中队列编号(self):
+        text = "Claude Code 相关根治见队列 #422"
+        self.assertEqual(sweep._find_version_snapshots(text), [])
+
+    def test_无代号词时纯版本号不命中(self):
+        """保护"运行环境基线"段落的 Python/Node/pwsh/git 版本号不被
+        误伤——那些不与任何模型/工具代号词同行，2026-08-30 实测真实
+        全局文件里没有一行同时命中两者。"""
+        text = "Python：3.14.4 @ `C:\\Users\\Paul Shao\\...\\python.exe`"
+        self.assertEqual(sweep._find_version_snapshots(text), [])
+
+
+class GlobalMemoryMissingTargetUnitTests(unittest.TestCase):
+    """队列 §一 #435，design D4：受检对象自己不存在时必须告警，且
+    MUST NOT 中止整轮——后一个受检对象要照常被检查。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        self.recorder = _StandingStateRecorder()
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_webhook = sweep._load_webhook_url
+        self._orig_targets = sweep.GLOBAL_MEMORY_TARGETS
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._load_webhook_url = lambda repo_root: None
+        # `_resolve_global_memory_targets()` 优先读环境变量——本组用例
+        # 通过模块属性 monkeypatch `GLOBAL_MEMORY_TARGETS` 来控场，须
+        # 确保该环境变量此刻未设置（不设置时 `_resolve_...` 回落到读
+        # 模块属性），否则测试进程里若恰好残留自另一用例的设置，本组
+        # monkeypatch 会被静默盖过而不生效。
+        self._orig_env = os.environ.pop(sweep.GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE, None)
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._load_webhook_url = self._orig_webhook
+        sweep.GLOBAL_MEMORY_TARGETS = self._orig_targets
+        if self._orig_env is not None:
+            os.environ[sweep.GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE] = self._orig_env
+        self._tmp.cleanup()
+
+    def test_受检对象缺失时告警且后一个目标照常核(self):
+        missing = self.repo / "不存在.md"
+        present = self.repo / "存在.md"
+        present.write_text("正常内容，无路径无版本号\n", encoding="utf-8")
+        sweep.GLOBAL_MEMORY_TARGETS = (str(missing), str(present))
+        log = []
+        sweep._check_global_memory_files(self.repo, log)
+        text = "\n".join(log)
+        self.assertIn("受检对象缺失", text)
+        self.assertIn(str(present), text)
+        call = self.recorder.calls[-1]
+        self.assertIn(str(missing), call["keys"])
+        self.assertNotIn(str(present), call["keys"], "第二个目标内容干净，不该进 breach")
+
+    def test_三判据各自可独立关停(self):
+        """tasks.md 1.3：三判据各自一个开关常量，关停一项不影响其余
+        两项照常工作。"""
+        target = self.repo / "全局记忆.md"
+        target.write_text(
+            "参见 `C:\\不存在的路径`\nClaude Code：v9.9.x\n" + "x" * (sweep.GLOBAL_MEMORY_BYTE_CAP + 10),
+            encoding="utf-8",
+        )
+        sweep.GLOBAL_MEMORY_TARGETS = (str(target),)
+        orig_a1 = sweep.GLOBAL_MEMORY_CHECK_A1_PATHS_ENABLED
+        orig_a3 = sweep.GLOBAL_MEMORY_CHECK_A3_VERSION_ENABLED
+        sweep.GLOBAL_MEMORY_CHECK_A1_PATHS_ENABLED = False
+        sweep.GLOBAL_MEMORY_CHECK_A3_VERSION_ENABLED = False
+        try:
+            log = []
+            sweep._check_global_memory_files(self.repo, log)
+            text = "\n".join(log)
+        finally:
+            sweep.GLOBAL_MEMORY_CHECK_A1_PATHS_ENABLED = orig_a1
+            sweep.GLOBAL_MEMORY_CHECK_A3_VERSION_ENABLED = orig_a3
+        self.assertIn("A1 路径存在性判据已关停", text)
+        self.assertIn("A3 版本快照判据已关停", text)
+        call = self.recorder.calls[-1]
+        # A2（尺寸）仍开着，超限内容仍应被判为 breach；A1/A3 已关停，
+        # 各自的"N 处……"发现文案不应出现在这条 breach 的详情里
+        # （注意不用裸词"版本快照"断言——那四个字也出现在正文固定
+        # 的处置说明句里，与本判据是否命中无关）。
+        self.assertIn(str(target), call["keys"])
+        self.assertIn("尺寸", call["alert_text"])
+        self.assertNotIn("处路径不存在", call["alert_text"])
+        self.assertNotIn("处版本快照", call["alert_text"])
 
 
 class ResidentCarrierFfTests(unittest.TestCase):
