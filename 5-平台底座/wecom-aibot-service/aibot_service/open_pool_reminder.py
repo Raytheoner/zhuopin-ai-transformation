@@ -57,6 +57,55 @@ _STATUS_FIELD_RE = re.compile(
 )
 _STATUS_LEADING_STRIP_CHARS = "* \t　"
 
+# 队列 #312（OP-0830-D，design D1）：assigned 机器字段——独立字段，不新增
+# `[S:...]` 枚举值。决定性理由是一条实测：`[S:open][D:机][A:已派出]` 经
+# 既有 `_parse_status_domain_fields`（本文件与编辑锁各自独立实现的同名
+# 函数）解析仍得 `('open','机')`——未知尾字段被天然忽略，零改动向后兼容。
+# 判据"行含 `[A:` 即排除"故意不解析取值：`已派出` 是当前唯一取值，但向
+# 前兼容未来扩展取值时不必再改这里的正则（同 spec "不解析取值" 要求）。
+_ASSIGNED_MARKER = "[A:"
+_DOMAIN_MARKER = "[D:"
+
+
+def _warn_if_assigned_before_domain(row_id: str, status_cell: str) -> None:
+    """顺序守卫（design D1 实测坐实）：`[A:...]` 出现在 `[D:...]` 之前时，
+    `_STATUS_FIELD_RE` 的 `(?:\\[D:(机|业)\\])?` 只在紧跟 `[S:...]` 之后
+    的位置尝试匹配——一旦该位置先出现的是 `[A:...]`，可选组直接匹配空、
+    域字段被静默解析为 `None`，且**不产生任何异常**：WIP 计数等下游消费
+    方会把该行当"域未知"悄悄跳过。本函数只负责发现并告警（非静默降级，
+    同本文件既有惯例），不修正、不拦截——字段顺序 `S→D→A` 是硬约束，
+    写反了必须被看见，不能靠人记得。"""
+    a_idx = status_cell.find(_ASSIGNED_MARKER)
+    d_idx = status_cell.find(_DOMAIN_MARKER)
+    if a_idx != -1 and d_idx != -1 and a_idx < d_idx:
+        warnings.warn(
+            f"§一 #{row_id} 状态字段顺序错误：[A:...] 出现在 [D:...] 之前，"
+            f"域字段将被静默解析为 None（队列 #312 design D1 实测坐实）。"
+            f"正确顺序须为 [S:...][D:...][A:...]",
+            RuntimeWarning, stacklevel=2,
+        )
+
+
+def _infer_row_environment(owner_cell: str) -> Optional[str]:
+    """从『领取方』列的自由文本判定该行的执行环境（CC／Cowork），供
+    `find_opener_path` 的环境过滤使用（队列 #312，design D3）。
+
+    **2026-08-30 对生产队列全部 `[S:open]` 行实测**：该列写法极不统一——
+    部分行干净地以 "CC"/"Cowork" 起首；部分把两者都提到（split-ownership，
+    如 "CC（A1）＋Cowork…（A2）"）；部分两者都不提（写人名或专线名，如
+    "Shao Peishen（线下让 IT 介入）"／"环境线（⑵ 对齐机制）＋全景/信件线
+    （⑶ 蓝图细化）"）。只在恰好命中其一时返回该值，两者都命中或都不命中
+    时返回 `None`——`find_opener_path` 对 `None` 一律不做环境过滤（放行，
+    不因为"不确定"就牺牲掉本就工作正常的既有匹配，见该函数 docstring）。
+    """
+    has_cc = "CC" in owner_cell
+    has_cowork = "Cowork" in owner_cell
+    if has_cc and not has_cowork:
+        return "CC"
+    if has_cowork and not has_cc:
+        return "Cowork"
+    return None
+
 # 队列 #302 同款教训：`#(\d+)` 按完整数字游程提取——`#220` 只会被提取为
 # 整数 220，不会被"#22 是否为其子串"这类朴素子串搜索误判命中（2026-08-07
 # 实测坐实：`git log --grep="#22"` 命中 29 条，因 `#22` 是 `#220`/`#221`/
@@ -119,6 +168,9 @@ class OpenPoolRow:
     row_id: str
     domain: Optional[str]  # "机" / "业" / None（域字段缺失时）
     summary: str
+    # 队列 #312（OP-0830-D）：领取方环境（"CC"/"Cowork"/None），供
+    # find_opener_path 环境过滤用，见 _infer_row_environment。
+    env: Optional[str] = None
 
 
 def parse_open_pool_rows(queue_text: str) -> list[OpenPoolRow]:
@@ -128,12 +180,17 @@ def parse_open_pool_rows(queue_text: str) -> list[OpenPoolRow]:
     `decision_reminder.parse_priority_pending_rows` 那样回退旧"待领"
     子串判据：队列 #308 落地后 `工具-队列结构lint.py` 已把"§一 新行必须
     带机器字段"升级为 CI 硬门禁，此处的"跳过"只是防御性兜底、不是常态
-    路径，不值得为它复刻一份已被正式退休的旧判据。"""
+    路径，不值得为它复刻一份已被正式退休的旧判据。
+
+    **队列 #312（OP-0830-D）**：状态列含 `[A:...]`（assigned，取值恒为
+    "已派出"，含"已派出未认领"与"在办"两态）的行不再进池——"一个值背
+    三种意思"是本次要修的根因，见 design.md D1/D2；字段顺序 `S→D→A` 写
+    反会被 `_warn_if_assigned_before_domain` 告警但不拦截。"""
     rows: list[OpenPoolRow] = []
     for cells in _parse_table_rows(queue_text, SECTION_ONE_HEADING):
         if len(cells) != SECTION_COLUMN_COUNTS["一"]:
             continue  # 列数不符（如裸竖线撑列）的行不纳入判定，交人工核查
-        row_id, task_cell, _owner, _input, _output, status_cell, _touch, _registered = cells
+        row_id, task_cell, owner_cell, _input, _output, status_cell, _touch, _registered = cells
         status_value, domain_value, _rest = _parse_status_domain_fields(status_cell)
         if status_value is None:
             warnings.warn(
@@ -141,10 +198,14 @@ def parse_open_pool_rows(queue_text: str) -> list[OpenPoolRow]:
                 RuntimeWarning, stacklevel=2,
             )
             continue
+        _warn_if_assigned_before_domain(row_id, status_cell)
         if status_value != "open":
             continue
+        if _ASSIGNED_MARKER in status_cell:
+            continue  # 队列 #312（OP-0830-D）：已派出/在办行不再进池，不解析取值
         summary = task_cell[:80] + ("…" if len(task_cell) > 80 else "")
-        rows.append(OpenPoolRow(row_id=row_id, domain=domain_value, summary=summary))
+        env = _infer_row_environment(owner_cell)
+        rows.append(OpenPoolRow(row_id=row_id, domain=domain_value, summary=summary, env=env))
     return rows
 
 
@@ -161,26 +222,95 @@ def discover_opener_files(repo_root: Path) -> list[Path]:
     return sorted(files)
 
 
-def _build_opener_index(opener_files: list[Path]) -> list[tuple[Path, set[int]]]:
-    """每份候选文件只读一次、提取一次行号引用集合——避免"每行都重新扫
-    全部文件"的 O(行数×文件数) 重复 I/O（候选文件现存约 40 份、合计约
-    570KB，行数常年个位数，重复读的代价虽不致命但没有必要）。单个文件
-    读取失败（如扫描瞬间被删除）跳过，不影响其余文件的索引。"""
-    index: list[tuple[Path, set[int]]] = []
+_SETUP_MARKER = "【设置】"
+# 观测到的写法既有纯文本 `执行环境：CC` 也有加粗 `执行环境：**Cowork**`
+# （见《本周计划-2026-07-27》），两种都要认。
+_ENV_VALUE_RE = re.compile(r"执行环境[：:]\s*\*{0,2}(CC|Cowork)\*{0,2}")
+
+
+def _parse_setup_line_env(setup_line: str) -> Optional[str]:
+    m = _ENV_VALUE_RE.search(setup_line)
+    return m.group(1) if m else None
+
+
+def _split_into_env_blocks(text: str) -> list[tuple[Optional[str], str]]:
+    """按『设置』标记切分文件为若干块，每块 = (该块声明的执行环境或
+    None, 该块文本)。
+
+    **为何要切块，不是整份文件只认一个环境（队列 #312，design D3）**：
+    2026-08-30 实测 `本周计划-*.md` 同一份文件内常并存多个『设置』块、
+    环境不一致（如《本周计划-2026-08-10》同时有 CC 与 Cowork 两类任务）
+    ——若只取整份文件里第一个『设置』行的环境，会把后面块里引用的行号
+    误配上前一个块的环境，制造新的假阴性/假阳性。
+
+    **单任务文件（只有一个『设置』标记）：导言并入唯一那个块**——2026-08-30
+    对 `开场prompt-【Cowork】构建环境接力-2026-08-29晚.md` 实测坐实：
+    该文件标题/来源等导言段本身就提到了 `#435`（"把 #435 派出去"），若把
+    导言拆成单独的 `None` 环境块，它会排在唯一真实块之前先被命中，
+    `find_opener_path` 见 `block_env=None` 就放行，`design D3` 要拦的
+    那次真实错配反而绕了过去——单任务文件里导言与正文本就是同一个任务，
+    并入没有多任务文件那种"继承别的任务环境"的风险。
+
+    **多任务文件（≥2 个『设置』标记）：导言单独成一块，环境记 `None`**，
+    不归并进第一个真实块——归并会让导言提到的行号继承第一个任务的
+    环境，是多任务文件特有的误配（与上一段单任务文件的结论刻意不同）。
+
+    全文没有任何『设置』标记的旧式文件，整份作为一块、环境记 `None`
+    （`find_opener_path` 对 `None` 不做环境排除，行为等同于本次改动
+    之前）。"""
+    positions = [m.start() for m in re.finditer(re.escape(_SETUP_MARKER), text)]
+    if not positions:
+        return [(None, text)]
+
+    def _line_env(pos: int) -> Optional[str]:
+        line_end = text.find("\n", pos)
+        setup_line = text[pos: len(text) if line_end == -1 else line_end]
+        return _parse_setup_line_env(setup_line)
+
+    if len(positions) == 1:
+        return [(_line_env(positions[0]), text)]
+
+    blocks: list[tuple[Optional[str], str]] = []
+    if positions[0] > 0:
+        blocks.append((None, text[:positions[0]]))
+    bounds = positions + [len(text)]
+    for i, start in enumerate(positions):
+        block_text = text[start:bounds[i + 1]]
+        blocks.append((_line_env(start), block_text))
+    return blocks
+
+
+def _build_opener_index(
+    opener_files: list[Path],
+) -> list[tuple[Path, list[tuple[Optional[str], set[int]]]]]:
+    """每份候选文件只读一次、按『设置』块切分并各自提取一次行号引用
+    集合——避免"每行都重新扫全部文件"的 O(行数×文件数) 重复 I/O（候选
+    文件现存约 40 份、合计约 570KB，行数常年个位数，重复读的代价虽不
+    致命但没有必要）。单个文件读取失败（如扫描瞬间被删除）跳过，不影响
+    其余文件的索引。"""
+    index: list[tuple[Path, list[tuple[Optional[str], set[int]]]]] = []
     for path in opener_files:
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
-        index.append((path, {int(n) for n in _ROW_NUMBER_RE.findall(text)}))
+        blocks = [
+            (env, {int(n) for n in _ROW_NUMBER_RE.findall(block_text)})
+            for env, block_text in _split_into_env_blocks(text)
+        ]
+        index.append((path, blocks))
     return index
 
 
-def find_opener_path(row_id: str, opener_index: list[tuple[Path, set[int]]]) -> Optional[Path]:
+def find_opener_path(
+    row_id: str,
+    row_env: Optional[str],
+    opener_index: list[tuple[Path, list[tuple[Optional[str], set[int]]]]],
+) -> Optional[Path]:
     """在 `opener_index`（`_build_opener_index` 的产出）里找第一个引用过
-    `#<row_id>` 的文件（按 `opener_index` 顺序，稳定返回同一份结果）。
-    `row_id` 非纯数字（本项目 §一 编号列既有惯例恒为纯数字）或未命中均
-    返回 None。
+    `#<row_id>` 且环境不冲突的块所在文件（按 `opener_index` 顺序，稳定
+    返回同一份结果）。`row_id` 非纯数字（本项目 §一 编号列既有惯例恒为
+    纯数字）或未命中均返回 None。
 
     **已知精度边界（如实登记，2026-08-10 对生产队列真实验证时实测坐实，
     非推演）**：本判据是"该文件是否提到过这个行号"，不是"该文件是否
@@ -193,12 +323,29 @@ def find_opener_path(row_id: str, opener_index: list[tuple[Path, set[int]]]) -> 
     命中一并滤掉（它们的引用同样不在标题行），属于本项目已反复验证过的
     "为了堵一个假阳性，牺牲更多真阳性"陷阱（同队列 #302 副判据"必然有
     误报"的取舍）。误报代价低（人点开链接发现文不对题，等同于"尚未出
-    opener"的体验，不会更差），故保留现状、如实标注，不为此新增复杂度。"""
+    opener"的体验，不会更差），故保留现状、如实标注，不为此新增复杂度。
+
+    **环境过滤（队列 #312，OP-0830-D，design D3——2026-08-30 真实撞过的
+    第二类精度边界，比上面这条更危险）**：08:31 推送曾把 `#435`
+    （领取方 CC）的 opener 指给《开场prompt-【Cowork】构建环境接力-
+    2026-08-29晚.md》——不是指向一个不存在的文件，是指向一个真的含
+    opener 块的错文件，照它复制会开成 Cowork 会话去做一件 CC 的活。
+    ⇒ 只在**两侧环境都已知且不相等**时才跳过该块（"确认过是错的"才不
+    给）：`row_env` 未知（领取方列写法不规范/split-ownership，见
+    `_infer_row_environment`）或候选块未声明环境时一律放行，不因为"不
+    确定"就牺牲掉本就工作正常的既有匹配——设计取舍"宁可不给，也不给
+    错的"针对的是**确认冲突**这一种情形，不是所有信息不全的情形，二者
+    代价不对称（漏给的代价是他多点一次队列行；给错的代价是开一个错
+    环境的会话去做活），这里只精确堵已验证过的那一处。"""
     if not row_id.isdigit():
         return None
     target = int(row_id)
-    for path, numbers in opener_index:
-        if target in numbers:
+    for path, blocks in opener_index:
+        for block_env, numbers in blocks:
+            if target not in numbers:
+                continue
+            if row_env is not None and block_env is not None and block_env != row_env:
+                continue
             return path
     return None
 
@@ -217,7 +364,8 @@ class OpenPoolItem:
 
 
 def _items_from_rows(
-    rows: list[OpenPoolRow], opener_index: list[tuple[Path, set[int]]],
+    rows: list[OpenPoolRow],
+    opener_index: list[tuple[Path, list[tuple[Optional[str], set[int]]]]],
     repo_root: Path, queue_rel: Optional[str],
 ) -> list[OpenPoolItem]:
     """把已解析出的可 Open 行配上 opener 路径与来源文件，组装成
@@ -226,7 +374,7 @@ def _items_from_rows(
     只在"读哪些文本"，不该在"怎么组装"上再分叉一次。"""
     items: list[OpenPoolItem] = []
     for row in rows:
-        opener = find_opener_path(row.row_id, opener_index)
+        opener = find_opener_path(row.row_id, row.env, opener_index)
         opener_rel: Optional[str] = None
         if opener is not None:
             try:
@@ -304,6 +452,67 @@ def build_pool_items_from_repo(repo_root: Path) -> list[OpenPoolItem]:
             continue
         items.extend(_items_from_rows(rows, opener_index, repo_root, queue_rel))
     return items
+
+
+# —— 队列 #312（OP-0830-D）：存量回填候选 ——————————————————————————
+
+_BACKFILL_MARKER = "🔄"
+
+
+@dataclass
+class AssignedBackfillCandidate:
+    """疑似"已派出/在办但仍是 `[S:open]` 且未打 `[A:...]`"的候选行
+    （design D4）。只出候选、不自动写——机器出、人一眼过目改，同
+    2026-08-30 上午那次 8 行分诊的做法。"""
+    row_id: str
+    domain: Optional[str]
+    summary: str
+
+
+def list_assigned_backfill_candidates(queue_text: str) -> list[AssignedBackfillCandidate]:
+    """扫描**单份**队列文本，列出疑似需要回填 `[A:已派出]` 的候选行。
+
+    **候选判据（design D4，形状判据，不猜自然语言）**：`[S:open]` 且未带
+    `[A:...]` 且正文以 🔄 起首 ⇒ 必是候选；此外由人补充，本函数不负责
+    穷举其余情形。
+
+    🔴 **不得反过来把本判据用作可 Open 池的排除条件**——2026-08-30 实测
+    22 个 `[S:open]` 行的正文首符号有 9 种（待领／**／🔄／🛑／🆕／🔴／
+    🟡／🔧／🔬），🔄 覆盖率仅 2/22，靠它排除等于没排除。本函数只用于
+    "生成候选清单供人过目"，`parse_open_pool_rows` 的池子判定不读它。"""
+    candidates: list[AssignedBackfillCandidate] = []
+    for cells in _parse_table_rows(queue_text, SECTION_ONE_HEADING):
+        if len(cells) != SECTION_COLUMN_COUNTS["一"]:
+            continue
+        row_id, task_cell, _owner, _input, _output, status_cell, _touch, _registered = cells
+        status_value, domain_value, rest = _parse_status_domain_fields(status_cell)
+        if status_value != "open":
+            continue
+        if _ASSIGNED_MARKER in status_cell:
+            continue  # 已打过 A 字段，不需要回填
+        if not rest.lstrip(_STATUS_LEADING_STRIP_CHARS).startswith(_BACKFILL_MARKER):
+            continue
+        summary = task_cell[:80] + ("…" if len(task_cell) > 80 else "")
+        candidates.append(AssignedBackfillCandidate(row_id=row_id, domain=domain_value, summary=summary))
+    return candidates
+
+
+def list_assigned_backfill_candidates_from_repo(repo_root: Path) -> list[AssignedBackfillCandidate]:
+    """同 `build_pool_items_from_repo`——覆盖**全部**物理队列文件，不是
+    只读其中一份（队列 #312 缺口一同款教训，不为新功能重犯同一个坑）。"""
+    candidates: list[AssignedBackfillCandidate] = []
+    for queue_rel in iter_queue_paths():
+        path = repo_root / queue_rel
+        try:
+            queue_text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            warnings.warn(
+                f"队列文件读取失败，回填候选清单已跳过该份：{queue_rel}：{exc}",
+                RuntimeWarning, stacklevel=2,
+            )
+            continue
+        candidates.extend(list_assigned_backfill_candidates(queue_text))
+    return candidates
 
 
 # 队列 #312 缺口二（2026-08-19 零时巡检查清，Shao Peishen 当日答定夺 1

@@ -19,6 +19,7 @@ from pathlib import Path
 from zhuopin_platform.audit import AuditLogger
 
 from aibot_service.open_pool_reminder import (
+    AssignedBackfillCandidate,
     OpenPoolItem,
     StaleCandidate,
     build_pool_items,
@@ -30,6 +31,8 @@ from aibot_service.open_pool_reminder import (
     find_opener_path,
     format_pool_reminder_message,
     format_stale_reminder_message,
+    list_assigned_backfill_candidates,
+    list_assigned_backfill_candidates_from_repo,
     load_state,
     new_known_state,
     new_stale_state,
@@ -112,33 +115,262 @@ def test_parse_open_pool_summary_is_task_cell_prefix():
 
 
 def test_find_opener_path_exact_match_hits():
-    index = [(Path("派单件-X.md"), {82, 315})]
-    assert find_opener_path("82", index) == Path("派单件-X.md")
+    index = [(Path("派单件-X.md"), [(None, {82, 315})])]
+    assert find_opener_path("82", None, index) == Path("派单件-X.md")
 
 
 def test_find_opener_path_substring_false_positive_avoided():
     """队列 #302 同款教训：正文含 `#220` 不应让 row_id="22" 被误判命中——
     `_ROW_NUMBER_RE` 按完整数字游程提取，220 != 22。"""
-    index = [(Path("本周计划-X.md"), {220, 221})]
-    assert find_opener_path("22", index) is None
+    index = [(Path("本周计划-X.md"), [(None, {220, 221})])]
+    assert find_opener_path("22", None, index) is None
 
 
 def test_find_opener_path_no_match_returns_none():
-    index = [(Path("派单件-X.md"), {1, 2, 3})]
-    assert find_opener_path("999", index) is None
+    index = [(Path("派单件-X.md"), [(None, {1, 2, 3})])]
+    assert find_opener_path("999", None, index) is None
 
 
 def test_find_opener_path_non_digit_row_id_returns_none():
-    index = [(Path("派单件-X.md"), {1, 2, 3})]
-    assert find_opener_path("205-A", index) is None
+    index = [(Path("派单件-X.md"), [(None, {1, 2, 3})])]
+    assert find_opener_path("205-A", None, index) is None
 
 
 def test_find_opener_path_returns_first_index_match():
     index = [
-        (Path("开场prompt-A.md"), {1}),
-        (Path("本周计划-B.md"), {1, 2}),
+        (Path("开场prompt-A.md"), [(None, {1})]),
+        (Path("本周计划-B.md"), [(None, {1, 2})]),
     ]
-    assert find_opener_path("1", index) == Path("开场prompt-A.md")
+    assert find_opener_path("1", None, index) == Path("开场prompt-A.md")
+
+
+# ── opener 环境过滤（队列 #312，OP-0830-D，design D3）────────────────────
+
+
+def test_find_opener_path_confirmed_env_mismatch_is_excluded():
+    """真实事故复现：`#435`（领取方 CC）不得被一个明确声明 Cowork 的候选块
+    命中——即便该块确实提到了 `#435`（顺带提及）。08:31 推送曾把 `#435`
+    的 opener 指给《开场prompt-【Cowork】构建环境接力-2026-08-29晚.md》，
+    照它复制会开成 Cowork 会话去做一件 CC 的活。"""
+    index = [(Path("开场prompt-【Cowork】构建环境接力-2026-08-29晚.md"), [("Cowork", {435})])]
+    assert find_opener_path("435", "CC", index) is None
+
+
+def test_find_opener_path_matching_env_is_given():
+    index = [(Path("派单件-【CC】全局记忆巡检与root棘轮-队列435-2026-08-29.md"), [("CC", {435})])]
+    assert find_opener_path("435", "CC", index) == Path(
+        "派单件-【CC】全局记忆巡检与root棘轮-队列435-2026-08-29.md"
+    )
+
+
+def test_find_opener_path_mismatch_skips_to_next_matching_candidate():
+    """两个候选都提到同一行号：环境冲突的块被跳过，继续找到环境相符的
+    那个——不是"第一个命中就返回"，是"第一个环境不冲突的命中才返回"。"""
+    index = [
+        (Path("开场prompt-【Cowork】构建环境接力-2026-08-29晚.md"), [("Cowork", {435})]),
+        (Path("派单件-【CC】队列435.md"), [("CC", {435})]),
+    ]
+    assert find_opener_path("435", "CC", index) == Path("派单件-【CC】队列435.md")
+
+
+def test_find_opener_path_unknown_row_env_does_not_filter():
+    """领取方环境未知（owner 列写法不规范/split-ownership）时不做环境
+    过滤——不确定不等于"确认冲突"，不因此牺牲既有匹配（design D3 取舍：
+    漏给的代价是他多点一次队列行，给错的代价是开一个错环境的会话去做
+    活，二者不对称，这里只精确堵已验证过的确认冲突）。"""
+    index = [(Path("开场prompt-【Cowork】构建环境接力-2026-08-29晚.md"), [("Cowork", {435})])]
+    assert find_opener_path("435", None, index) == Path(
+        "开场prompt-【Cowork】构建环境接力-2026-08-29晚.md"
+    )
+
+
+def test_find_opener_path_unlabeled_candidate_block_is_not_filtered():
+    """候选块没有『设置』声明环境（旧式文件/未遵守开场词纪律）时同样不
+    过滤——只在两侧都已知且冲突时才排除。"""
+    index = [(Path("旧式文件.md"), [(None, {435})])]
+    assert find_opener_path("435", "CC", index) == Path("旧式文件.md")
+
+
+def test_build_pool_items_real_cowork_file_not_used_as_cc_opener(tmp_path: Path):
+    """队列 #312 真实事故回归：用 `#435` 与《开场prompt-【Cowork】构建
+    环境接力-2026-08-29晚.md》这对真实数据做验证——CC 行不得被这份
+    Cowork 接力卡命中当作 opener（即便该文件确实提到了 #435）。"""
+    real_file = (
+        Path(__file__).resolve().parents[3]
+        / "1-转型规划" / "0-全景路线图"
+        / "开场prompt-【Cowork】构建环境接力-2026-08-29晚.md"
+    )
+    real_text = real_file.read_text(encoding="utf-8")
+    assert "#435" in real_text  # 前提断言：真实文件确实提到 #435（顺带提及）
+    assert "执行环境：Cowork" in real_text  # 前提断言：该文件确声明 Cowork
+
+    repo_root = _make_repo(tmp_path)
+    opener_dir = repo_root / "1-转型规划" / "0-全景路线图"
+    (opener_dir / real_file.name).write_text(real_text, encoding="utf-8")
+
+    queue_text = (
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+        "| 435 | 全局记忆巡检 | CC（写生产码、自行 commit+push、一任务一 worktree） "
+        "| 输入 | 产出 | [S:open][D:机] 待领 | — | 08-29 |\n"
+    )
+    items = {i.row_id: i for i in build_pool_items(queue_text, repo_root)}
+    assert items["435"].opener_path is None  # 宁可不给，也不给错的
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 队列 #312（OP-0830-D）· assigned 字段 [A:...] ＋ 领取方环境推断
+# ══════════════════════════════════════════════════════════════════════════
+
+_ASSIGNED_SAMPLE = """\
+## 一、任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 501 | 已派出仍标 open 不再进池 | CC（写生产码） | 输入 | 产出 | [S:open][D:机][A:已派出] 🔄 在办中 | — | 08-30 |
+| 502 | 顺序写反仍应被排除 | CC | 输入 | 产出 | [S:open][A:已派出][D:机] 🔄 在办中 | — | 08-30 |
+| 503 | 正常待领 | CC（写生产码） | 输入 | 产出 | [S:open][D:机] 待领 | — | 08-30 |
+
+## 二、占位
+"""
+
+
+def test_assigned_row_excluded_from_pool():
+    rows = {r.row_id for r in parse_open_pool_rows(_ASSIGNED_SAMPLE)}
+    assert "501" not in rows
+    assert "503" in rows
+
+
+def test_assigned_row_with_reversed_field_order_still_excluded():
+    """design D1：字段顺序写反虽然会让域字段被吃掉，但『行含 [A:』这条
+    排除判据不解析取值、不看位置——仍必须排除，不能因为顺序错了反而
+    漏排除。"""
+    rows = {r.row_id for r in parse_open_pool_rows(_ASSIGNED_SAMPLE)}
+    assert "502" not in rows
+
+
+def test_reversed_field_order_emits_runtime_warning():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        parse_open_pool_rows(_ASSIGNED_SAMPLE)
+    messages = [str(w.message) for w in caught if issubclass(w.category, RuntimeWarning)]
+    assert any("顺序错误" in m and "502" in m for m in messages)
+
+
+def test_correct_field_order_emits_no_order_warning():
+    only_good = (
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+        "| 501 | 正常顺序 | CC | 输入 | 产出 | [S:open][D:机][A:已派出] 🔄 在办 | — | 08-30 |\n"
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        parse_open_pool_rows(only_good)
+    assert not any("顺序错误" in str(w.message) for w in caught)
+
+
+def test_removing_assigned_field_returns_row_to_pool():
+    """spec Scenario「撤销派出」：`[A:...]` 被删除且仍为 `[S:open]` ⇒
+    该行重新进入池子。"""
+    with_a = (
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+        "| 501 | 撤销测试 | CC | 输入 | 产出 | [S:open][D:机][A:已派出] 🔄 在办 | — | 08-30 |\n"
+    )
+    without_a = with_a.replace("[A:已派出] ", "")
+    assert "501" not in {r.row_id for r in parse_open_pool_rows(with_a)}
+    assert "501" in {r.row_id for r in parse_open_pool_rows(without_a)}
+
+
+def test_row_env_inferred_from_owner_column():
+    """`_infer_row_environment` 的四种真实观测形态（2026-08-30 对生产队列
+    全部 `[S:open]` 行实测得出）：干净单值／split-ownership／两者都不提。"""
+    text = (
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+        "| 601 | CC 独占 | CC（写生产码） | 输入 | 产出 | [S:open][D:机] 待领 | — | 08-30 |\n"
+        "| 602 | Cowork 独占 | Cowork 质量专线 | 输入 | 产出 | [S:open][D:机] 待领 | — | 08-30 |\n"
+        "| 603 | 两者都提（split-ownership） | CC（A1）＋Cowork（A2） | 输入 | 产出 "
+        "| [S:open][D:机] 待领 | — | 08-30 |\n"
+        "| 604 | 两者都不提 | Shao Peishen | 输入 | 产出 | [S:open][D:机] 待领 | — | 08-30 |\n"
+    )
+    rows = {r.row_id: r for r in parse_open_pool_rows(text)}
+    assert rows["601"].env == "CC"
+    assert rows["602"].env == "Cowork"
+    assert rows["603"].env is None
+    assert rows["604"].env is None
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 队列 #312（OP-0830-D）· 存量回填候选（design D4）
+# ══════════════════════════════════════════════════════════════════════════
+
+_BACKFILL_SAMPLE = """\
+## 一、任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 701 | 在办未打 A，正文起首为 🔄 | 值周巡检 | 输入 | 产出 | [S:open][D:机] 🔄 **在办（示例）** | — | 08-30 |
+| 702 | 已打 A，不需要回填 | CC | 输入 | 产出 | [S:open][D:机][A:已派出] 🔄 在办 | — | 08-30 |
+| 703 | 待领，正文非 🔄 起首 | 待领 | 输入 | 产出 | [S:open][D:机] 待领 | — | 08-30 |
+| 704 | partial 不在本判据范围 | CC | 输入 | 产出 | [S:partial][D:机] 🔄 在办 | — | 08-30 |
+
+## 二、占位
+"""
+
+
+def test_backfill_candidate_open_row_with_marker_is_listed():
+    ids = {c.row_id for c in list_assigned_backfill_candidates(_BACKFILL_SAMPLE)}
+    assert ids == {"701"}
+
+
+def test_backfill_candidate_already_assigned_row_is_not_listed():
+    ids = {c.row_id for c in list_assigned_backfill_candidates(_BACKFILL_SAMPLE)}
+    assert "702" not in ids
+
+
+def test_backfill_candidate_without_marker_is_not_listed():
+    """design D4：🔄 只是"必是候选"的充分条件，不是"排除非候选"的
+    充要判据——本函数不会把没有该形状的行当成候选，也不代为穷举其余
+    真正在办但没写 🔄 的行（那些由人补充）。"""
+    ids = {c.row_id for c in list_assigned_backfill_candidates(_BACKFILL_SAMPLE)}
+    assert "703" not in ids
+
+
+def test_backfill_candidate_excludes_non_open_status():
+    ids = {c.row_id for c in list_assigned_backfill_candidates(_BACKFILL_SAMPLE)}
+    assert "704" not in ids
+
+
+def test_backfill_candidate_carries_domain_and_summary():
+    candidates = {c.row_id: c for c in list_assigned_backfill_candidates(_BACKFILL_SAMPLE)}
+    cand = candidates["701"]
+    assert isinstance(cand, AssignedBackfillCandidate)
+    assert cand.domain == "机"
+    assert cand.summary == "在办未打 A，正文起首为 🔄"
+
+
+def test_backfill_candidates_from_repo_scans_both_physical_files(tmp_path: Path):
+    """同 `build_pool_items_from_repo` 缺口一同款教训——不为新功能重犯
+    "只跟一份物理队列文件"的坑。"""
+    _write_dual_queue(tmp_path, _BACKFILL_SAMPLE, _BUSINESS_BACKFILL_SAMPLE)
+    ids = {c.row_id for c in list_assigned_backfill_candidates_from_repo(tmp_path)}
+    assert ids == {"701", "801"}
+
+
+_BUSINESS_BACKFILL_SAMPLE = """\
+## 一、任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 801 | 业务场景域同样应被扫到 | 待领 | 输入 | 产出 | [S:open][D:业] 🔄 **在办** | — | 08-30 |
+
+## 二、占位
+"""
 
 
 # ── discover_opener_files / build_pool_items（真实文件系统集成）───────────
