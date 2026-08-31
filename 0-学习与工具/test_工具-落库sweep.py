@@ -5169,6 +5169,296 @@ class EditableGuardWiringTests(unittest.TestCase):
         self.assertIn("ast.literal_eval", called)
 
 
+def _write_pth(directory, dist: str, body: str, version: str = "0.1.0"):
+    """造一份与 setuptools 真实产物同名的 `__editable__.<dist>-<ver>.pth`。"""
+    path = directory / f"__editable__.{dist}-{version}.pth"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+class EditablePthFormTests(unittest.TestCase):
+    """#410 补盲（2026-08-31，OP-0831-N-A1）：**纯路径 `.pth` 形态**。
+
+    `pip install -e --config-settings editable_mode=compat` 不产出任何
+    `*_finder.py`，只往 `.pth` 里写一行包目录绝对路径。原判据只扫 finder，
+    这一形态下「指向 worktree」会打出「分发 0 个／异常 0 条」——**与「本机
+    没装 editable」外观完全相同**。本组锁死这个洞不许再被填平成假绿。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.repo = self.root / "repo"
+        (self.repo / "reports").mkdir(parents=True)
+        self.sp = self.root / "site-packages"
+        self.sp.mkdir()
+        self.good = self.repo / "5-平台底座" / "zhuopin_platform"
+        self.good.mkdir(parents=True)
+        self.recorder = _StandingStateRecorder()
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_dirs = sweep._site_packages_dirs
+        self._orig_webhook = sweep._load_webhook_url
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._site_packages_dirs = lambda: ([self.sp], None)
+        sweep._load_webhook_url = lambda repo_root: None
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._site_packages_dirs = self._orig_dirs
+        sweep._load_webhook_url = self._orig_webhook
+        self._tmp.cleanup()
+
+    def _run(self):
+        log = []
+        sweep._check_editable_install_targets(self.repo, log)
+        return "\n".join(log), self.recorder.calls[-1]
+
+    # ---------- 纯路径形态：异常必须报出来 ----------
+
+    def test_纯路径pth指向worktree副本判为幽灵import(self):
+        """🔴 本组的头号用例：这是原判据整个看不见的那一形态。"""
+        ghost = self.repo / ".claude" / "worktrees" / "some-wt" / "pkg"
+        ghost.mkdir(parents=True)
+        _write_pth(self.sp, "zhuopin_platform", f"{ghost}\n")
+        text, call = self._run()
+        self.assertEqual(call["keys"], {"zhuopin_platform"})
+        self.assertIn(sweep.EDITABLE_FORM_GHOST, text)
+        self.assertIn("`.pth` 直挂", text)
+
+    def test_纯路径pth目标不存在判为断链(self):
+        _write_pth(self.sp, "sc1_supplier_risk_screening",
+                   str(self.repo / "没有这个目录") + "\n")
+        text, call = self._run()
+        self.assertEqual(call["keys"], {"sc1_supplier_risk_screening"})
+        self.assertIn(sweep.EDITABLE_FORM_BROKEN, text)
+
+    def test_纯路径pth指向主工作树时零告警但仍逐项回显(self):
+        _write_pth(self.sp, "zhuopin_platform", f"{self.good}\n")
+        text, call = self._run()
+        self.assertEqual(call["keys"], set())
+        self.assertIn("zhuopin_platform ←", text)
+        self.assertIn("`.pth` 直挂 1 条：正常 1 条", text)
+
+    def test_pth的key不含版本号(self):
+        """与 finder 那一路同一条纪律：版本混进 key ⇒ 每升一次版本都是一个
+        新问题重报一遍，旧 key 还会被判成「已解除」。"""
+        seen = []
+        for version in ("0.1.0", "0.2.0"):
+            for old in self.sp.glob("__editable__*"):
+                old.unlink()
+            _write_pth(self.sp, "zhuopin_platform",
+                       str(self.repo / "没有") + "\n", version=version)
+            _text, call = self._run()
+            seen.append(call["keys"])
+        self.assertEqual(seen[0], {"zhuopin_platform"})
+        self.assertEqual(seen[0], seen[1], "版本变了 key 不该变，否则每轮都是新问题")
+
+    # ---------- hook 形态：不重复报、也不漏报 ----------
+
+    def test_hook形态pth不重复计数也不误报(self):
+        """默认形态：`.pth` 只写一行 `import …finder; …install()`，真正的指向
+        在 finder 里。此时不得把它再算成一条「直挂」，更不得误判为异常。"""
+        _write_finder(self.sp, "zhuopin_platform", {"zhuopin_platform": str(self.good)})
+        _write_pth(self.sp, "zhuopin_platform",
+                   "import __editable___zhuopin_platform_0_1_0_finder; "
+                   "__editable___zhuopin_platform_0_1_0_finder.install()\n")
+        text, call = self._run()
+        self.assertEqual(call["keys"], set())
+        self.assertIn("由 finder 承载", text)
+        self.assertIn("`.pth` 直挂 0 条", text)
+
+    def test_hook形态引用的finder不存在必须报判据不可用(self):
+        """🔴 finder 被删、`.pth` 还挂着——本机 import 早已在炸，而 finder 那
+        一路「一个都没扫到」，若不查这一层，巡检会打出零异常。"""
+        _write_pth(self.sp, "zhuopin_platform",
+                   "import __editable___zhuopin_platform_0_1_0_finder; "
+                   "__editable___zhuopin_platform_0_1_0_finder.install()\n")
+        text, call = self._run()
+        self.assertIn("不据此判为合规", text)
+        self.assertEqual(call["keys"], {"zhuopin_platform"})
+        self.assertIn(sweep.EDITABLE_FORM_UNREADABLE, call["alert_text"])
+
+    def test_pth读得懂但空白按判据不可用处理(self):
+        _write_pth(self.sp, "empty_dist", "\n# 只有注释\n")
+        text, call = self._run()
+        self.assertIn("不据此判为合规", text)
+        self.assertEqual(call["keys"], {"empty_dist"})
+
+    # ---------- 外观可分辨 ----------
+
+    def test_零安装与零扫到必须外观可分(self):
+        """本判据自己反复强调的那条：「没扫到」不等于「没问题」。故 finder
+        数、`.pth` 数、判据不可用数三个数必须各自出现在回显里。"""
+        text, _call = self._run()
+        self.assertIn("editable 分发 0 个", text)
+        self.assertIn("`.pth` 0 份", text)
+        self.assertIn("判据不可用 0 项", text)
+
+    def test_同key的finder异常与pth异常合并而非互相覆盖(self):
+        """分发名与顶层模块同名是常态。两路都判出异常时后写的不得吃掉先写的
+        ——被吃掉的恰恰是一条真异常。"""
+        _write_finder(self.sp, "zhuopin_platform",
+                      {"zhuopin_platform": str(self.repo / "finder没了")})
+        _write_pth(self.sp, "zhuopin_platform", str(self.repo / "pth也没了") + "\n")
+        _text, call = self._run()
+        self.assertEqual(call["keys"], {"zhuopin_platform"})
+        self.assertIn("finder没了", call["alert_text"])
+        self.assertIn("pth也没了", call["alert_text"])
+
+    def test_零执行_pth一行都不跑(self):
+        """`.pth` 里的 `import` 行由 CPython `site.py` 真的执行。判据只做分类
+        取值，绝不执行——反例：这一行 import 的模块根本不存在。"""
+        path = _write_pth(self.sp, "boom", "import 这个模块绝对不存在_boom\n")
+        paths, hooks, error = sweep._parse_editable_pth(path)
+        self.assertIsNone(error)
+        self.assertEqual(paths, [])
+        self.assertEqual(hooks, ["这个模块绝对不存在_boom"])
+
+
+_SETUPTOOLS_OK = importlib.util.find_spec("setuptools") is not None
+
+_PROBE_PYPROJECT = """[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zhuopin-probe410"
+version = "0.1.0"
+
+[tool.setuptools]
+packages = ["zhuopin_probe410"]
+"""
+
+
+@unittest.skipUnless(_SETUPTOOLS_OK, "本机无 setuptools，无法产出真实 editable 安装")
+class EditableRealArtifactTests(unittest.TestCase):
+    """🔴 **真实产物验活**（#410 未闭合项，2026-08-31 OP-0831-N-A1 补）。
+
+    本组之外的所有 #410 用例喂的都是**手写的** finder／`.pth`——它们证明
+    「判据对我们以为的输入是对的」，不证明「判据对 setuptools 真正产出的
+    东西是对的」。`#410` 行内那句「该判据从未在真机上真的报出过一条」指的
+    就是这个缺口：上游模板一改，手写用例照样全绿，而判据在真机上会静默
+    什么都解析不到。
+
+    故本组**真的跑 `pip install -e`**，且：
+    ⑴ 🔴 一律 `--prefix <临时目录>`，**绝不碰本机 site-packages**；
+    ⑵ 装完真的 `import` 一次并打印 `__file__`，先证明「import 确实解析到了
+       worktree」这一形态成立，再证明判据抓得到它——否则这只是自说自话；
+    ⑶ 阳性、阴性各一例，漏报与误报两侧都锁。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.recorder = _StandingStateRecorder()
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_dirs = sweep._site_packages_dirs
+        self._orig_webhook = sweep._load_webhook_url
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._load_webhook_url = lambda repo_root: None
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._site_packages_dirs = self._orig_dirs
+        sweep._load_webhook_url = self._orig_webhook
+        self._tmp.cleanup()
+
+    def _make_pkg(self, root: Path) -> Path:
+        (root / "zhuopin_probe410").mkdir(parents=True)
+        (root / "zhuopin_probe410" / "__init__.py").write_text(
+            "MARK = 'probe410'\n", encoding="utf-8")
+        (root / "pyproject.toml").write_text(_PROBE_PYPROJECT, encoding="utf-8")
+        return root
+
+    def _pip_editable(self, src: Path, prefix: Path, mode: str | None = None) -> Path:
+        # `--no-index` 断网、`--no-build-isolation` 用本机 setuptools ⇒ 不依赖
+        # 外网，CI 与 off-LAN 都能跑。
+        cmd = [sys.executable, "-m", "pip", "install", "-e", str(src),
+               "--prefix", str(prefix), "--no-build-isolation", "--no-deps",
+               "--no-index", "--disable-pip-version-check", "-q"]
+        if mode is not None:
+            cmd += ["--config-settings", f"editable_mode={mode}"]
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
+        self.assertEqual(proc.returncode, 0,
+                         f"pip 未能产出真实 editable 安装：\n{proc.stdout}\n{proc.stderr}")
+        sites = [p for p in prefix.rglob("site-packages") if p.is_dir()]
+        self.assertTrue(sites, f"`--prefix {prefix}` 下未找到 site-packages")
+        return sites[0]
+
+    def _import_target(self, sp: Path) -> str:
+        """真的 import 一次，返回解析到的 `__file__`。
+
+        🔴 走 `site.addsitedir` 而不是 `PYTHONPATH`——editable 安装靠 `.pth`
+        挂钩，而 `PYTHONPATH` 目录**不处理 `.pth`**，用它只会得到「import
+        不到」这个假象，证不了任何事。
+        """
+        proc = subprocess.run(
+            [sys.executable, "-c",
+             f"import site; site.addsitedir(r'{sp}'); "
+             "import zhuopin_probe410 as m; print(m.__file__)"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(self.root))
+        self.assertEqual(proc.returncode, 0, f"真实 import 失败：\n{proc.stdout}\n{proc.stderr}")
+        return proc.stdout.strip()
+
+    def _run_guard(self, sp: Path):
+        sweep._site_packages_dirs = lambda: ([sp], None)
+        log = []
+        sweep._check_editable_install_targets(self.root / "repo", log)
+        return "\n".join(log), self.recorder.calls[-1]
+
+    def test_真实安装_import解析到worktree时判据抓得到(self):
+        src = self._make_pkg(self.root / ".claude" / "worktrees" / "some-wt" / "pkg")
+        sp = self._pip_editable(src, self.root / "prefix-pos")
+
+        imported = self._import_target(sp)
+        self.assertIn("/.claude/worktrees/", imported.replace("\\", "/"),
+                      "前置事实不成立：这次 import 并没有解析到 worktree")
+
+        text, call = self._run_guard(sp)
+        self.assertEqual(call["keys"], {"zhuopin_probe410"},
+                         f"真实产物上判据没报出来。日志：\n{text}")
+        self.assertIn(sweep.EDITABLE_FORM_GHOST, text)
+
+    def test_真实安装_compat模式无finder时判据同样抓得到(self):
+        """compat 模式只产 `.pth`、零 finder。补盲那一路的真实产物验活。"""
+        src = self._make_pkg(self.root / ".claude" / "worktrees" / "wt2" / "pkg")
+        sp = self._pip_editable(src, self.root / "prefix-compat", mode="compat")
+        self.assertEqual(sorted(sp.glob(sweep.EDITABLE_FINDER_GLOB)), [],
+                         "前提变了：compat 模式竟产出了 finder，本用例的立论需重核")
+
+        imported = self._import_target(sp)
+        self.assertIn("/.claude/worktrees/", imported.replace("\\", "/"))
+
+        text, call = self._run_guard(sp)
+        self.assertEqual(call["keys"], {"zhuopin_probe410"},
+                         f"compat 形态漏报——这正是补盲前的行为。日志：\n{text}")
+        self.assertIn(sweep.EDITABLE_FORM_GHOST, text)
+
+    def test_真实安装_指向正常目录时不误报(self):
+        src = self._make_pkg(self.root / "clean" / "pkg")
+        sp = self._pip_editable(src, self.root / "prefix-neg")
+
+        imported = self._import_target(sp)
+        self.assertNotIn("/.claude/worktrees/", imported.replace("\\", "/"))
+
+        text, call = self._run_guard(sp)
+        self.assertEqual(call["keys"], set(), f"正常安装被误报。日志：\n{text}")
+        self.assertIn("正常 1 条", text)
+
+    def test_真实finder能被纯文本解析(self):
+        """上游模板漂移的哨兵：setuptools 哪天不再把 `MAPPING` 写成字面量，
+        本条当场红——而不是等到真机上巡检静默解析不到任何东西。"""
+        src = self._make_pkg(self.root / "tpl" / "pkg")
+        sp = self._pip_editable(src, self.root / "prefix-tpl")
+        finders = sorted(sp.glob(sweep.EDITABLE_FINDER_GLOB))
+        self.assertEqual(len(finders), 1, f"真实产物形态变了：{sorted(p.name for p in sp.iterdir())}")
+        parsed, reason = sweep._parse_editable_finder(finders[0])
+        self.assertIsNone(reason)
+        self.assertIn("zhuopin_probe410", parsed)
+
+
 class _FakeScanner:
     """替身扫描器：只实现 `_check_unclosed_outputs` 真正依赖的那四个名字。
 

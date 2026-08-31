@@ -978,6 +978,21 @@ _SCHEDULED_TASK_QUERY_PS = (
 # 安装本判据看不到。这是有意的——sweep 由哪个解释器跑，它 import 的就是
 # 哪一套，判据与被检对象口径一致才有意义。
 EDITABLE_FINDER_GLOB = "__editable___*_finder.py"
+# 🔴 **第二种 editable 形态（2026-08-31 实测补，OP-0831-N-A1）：纯路径 `.pth`。**
+# `pip install -e` 并不总是产出 finder 模块——`--config-settings
+# editable_mode=compat` 走的是「往 `__editable__.<dist>-<ver>.pth` 里直接写一
+# 行磁盘路径」，**site-packages 里一个 `*_finder.py` 都不会有**。本机实测
+# （setuptools 81.0.0 / pip 26.1.2）两种形态都能产出，见下：
+#   · 默认       → `__editable___<dist>_<ver>_finder.py` ＋ 一行 `import …finder; …install()` 的 `.pth`
+#   · compat 模式 → 只有 `.pth`，内容就是包目录的绝对路径
+# **只扫 finder 时，compat 形态的「指向 worktree」会整个看不见**——巡检会打出
+# 「editable 分发 0 个／模块映射 0 条／异常 0 条」，与「本机压根没有 editable
+# 安装」外观完全相同。这正是本判据自己反复强调、却在自己身上漏掉的那件事：
+# **「没扫到」不等于「没问题」**（同 `_site_packages_dirs` 那条注释）。
+# 本机当前 9 个分发全是 finder 形态、无一 compat；即**这一条是补盲，不是修
+# 现网故障**——但 `#410` 的立项理由原话是「没有它下次照样发现不了」，而换个
+# 装法就照样发现不了。
+EDITABLE_PTH_GLOB = "__editable__*.pth"
 EDITABLE_INSTALL_STATE_REL = "reports/sweep-editable-install-state.json"
 EDITABLE_INSTALL_ALERT_INTERVAL_HOURS = 24
 # 三种异常形态的标签。**形态三（代码从未并入 master）刻意不单列**——本判据
@@ -4264,6 +4279,59 @@ def _parse_editable_finder(path: Path) -> tuple[dict[str, list[str]] | None, str
     return targets, None
 
 
+def _editable_pth_key(path: Path) -> str:
+    """从 `__editable__.<dist>-<ver>.pth` 切出告警 key。
+
+    🔴 **切掉版本号**——与 finder 那一路「key＝模块名、不含路径与版本」是同
+    一条纪律（见 `_check_editable_install_targets` 里那段注释）：版本混进 key
+    ⇒ 每升一次版本都是一个「新问题」重报一遍，旧 key 还会被判成「已解除」。
+    切不动就原样返回文件名——**宁可 key 丑，不可 key 每轮都变**。
+    """
+    name = path.name
+    if name.startswith("__editable__."):
+        name = name[len("__editable__."):]
+    if name.endswith(".pth"):
+        name = name[: -len(".pth")]
+    # `re.sub` 只做文本替换，不执行任何东西（本组「零执行零导入」纪律照旧）。
+    stripped = re.sub(r"-\d[^-]*$", "", name)
+    return stripped or name
+
+
+def _parse_editable_pth(path: Path) -> tuple[list[str], list[str], str | None]:
+    """读一份 `__editable__*.pth`，切成 `(纯路径行, import 行引用的模块名, 失败原因)`。
+
+    `.pth` 的语义由 CPython `site.py` 定义，本函数逐字照它：**空行与 `#` 开头
+    的行忽略；`import ` / `import\\t` 开头的行会被执行；其余非空行是要加进
+    `sys.path` 的目录**。此处只做分类与取值，**一行都不执行**（同 finder 那
+    一路的理由：判据不得与被检对象共享失败模式）。
+
+    读不出来一律返回 `(…, …, 原因)`，**不吞成「这份没问题」**。
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [], [], f"读取失败：{exc}"
+    paths: list[str] = []
+    hooks: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("import ") or line.startswith("import\t"):
+            # 形如 `import __editable___x_0_1_0_finder; __editable___x_0_1_0_finder.install()`
+            # ——真正的指向写在被 import 的那个 finder 模块里，由 finder 那一路
+            # 负责；此处只记下模块名，用来核对它到底在不在（见调用方）。
+            first = line.split(";", 1)[0]
+            module = first[len("import"):].strip()
+            if module:
+                hooks.append(module.split()[0])
+            continue
+        paths.append(line)
+    if not paths and not hooks:
+        return [], [], "文件内既无路径行也无 import 行"
+    return paths, hooks, None
+
+
 def _classify_editable_target(target: str) -> tuple[str, str] | None:
     """判一个目标路径的形态；健康返回 `None`。
 
@@ -4279,6 +4347,19 @@ def _classify_editable_target(target: str) -> tuple[str, str] | None:
     if not exists:
         return EDITABLE_FORM_BROKEN, f"目标路径不存在：`{normalized}`"
     return None
+
+
+def _merge_editable_detail(details: dict[str, str], key: str, detail: str) -> None:
+    """往 details 里塞一条，**同 key 合并而不是覆盖**。
+
+    finder 那一路的 key 是模块名、`.pth` 那一路的 key 是分发名，两者极少
+    但并非不可能撞上（分发名与顶层模块同名是常态，如 `zhuopin_platform`）。
+    直接赋值会让**后写的那条把先写的那条吃掉**——丢掉的恰恰是一条真异常。
+    """
+    if key in details and detail not in details[key]:
+        details[key] = f"{details[key]}；{detail}"
+    else:
+        details.setdefault(key, detail)
 
 
 def _render_editable_alert(details: dict[str, str], keys) -> str:
@@ -4346,10 +4427,16 @@ def _check_editable_install_targets(repo_root: Path, log: list[str]) -> None:
         return
 
     finders: list[Path] = []
+    pth_files: list[Path] = []
     for directory in dirs:
         finders.extend(sorted(directory.glob(EDITABLE_FINDER_GLOB)))
-    log.append(f"    · site-packages {len(dirs)} 处，editable 分发 {len(finders)} 个")
+        pth_files.extend(sorted(directory.glob(EDITABLE_PTH_GLOB)))
+    log.append(
+        f"    · site-packages {len(dirs)} 处，editable 分发 {len(finders)} 个"
+        f"（finder 形态）＋ `.pth` {len(pth_files)} 份"
+    )
 
+    unreadable = 0
     module_count = 0
     module_anomalies = 0
     for finder in finders:
@@ -4357,6 +4444,7 @@ def _check_editable_install_targets(repo_root: Path, log: list[str]) -> None:
         if parsed is None:
             log.append(f"    ⚠ {finder.name}：{parse_error}——**不据此判为合规**")
             details[finder.name] = f"{EDITABLE_FORM_UNREADABLE} —— {parse_error}"
+            unreadable += 1
             continue
         for module in sorted(parsed):
             module_count += 1
@@ -4380,9 +4468,57 @@ def _check_editable_install_targets(repo_root: Path, log: list[str]) -> None:
 
     log.append(
         f"    · 模块映射 {module_count} 条：正常 {module_count - module_anomalies} 条、"
-        f"指向异常 {module_anomalies} 条；另有解析失败的 finder "
-        f"{len(details) - module_anomalies} 个"
+        f"指向异常 {module_anomalies} 条"
     )
+
+    # ---------- 纯路径 `.pth` 形态（compat 模式，无 finder 模块） ----------
+    pth_count = 0
+    pth_anomalies = 0
+    for pth in pth_files:
+        key = _editable_pth_key(pth)
+        paths, hooks, pth_error = _parse_editable_pth(pth)
+        if pth_error is not None:
+            log.append(f"    ⚠ {pth.name}：{pth_error}——**不据此判为合规**")
+            _merge_editable_detail(details, key, f"{EDITABLE_FORM_UNREADABLE} —— {pth_error}")
+            unreadable += 1
+            continue
+        # hook 形态：真正的指向在被 import 的 finder 里，已由上一段查过。此处
+        # 只核对那个 finder 文件到底在不在——🔴 **finder 被删掉时，上一段会
+        # 「一个都没扫到、零异常」**，与「本机没装 editable」外观相同，而
+        # 这台机器上的 import 早已在报 ModuleNotFoundError 了。
+        missing = [name for name in hooks if not (pth.parent / f"{name}.py").is_file()]
+        if missing:
+            detail = f"{EDITABLE_FORM_UNREADABLE} —— `{pth.name}` 挂的 finder 模块不存在：" \
+                     + "、".join(f"`{name}.py`" for name in missing)
+            log.append(f"    ⚠ {detail}——**不据此判为合规**")
+            _merge_editable_detail(details, key, detail)
+            unreadable += 1
+            continue
+        if not paths:
+            log.append(f"    · {key} ← 由 finder 承载（`{pth.name}`）")
+            continue
+        pth_count += 1
+        verdicts = [
+            verdict for verdict in
+            (_classify_editable_target(target) for target in paths)
+            if verdict is not None
+        ]
+        if not verdicts:
+            shown = "、".join(f"`{_normalize_path_text(t)}`" for t in paths)
+            log.append(f"    · {key} ← {shown}（`.pth` 直挂）")
+            continue
+        for form, detail in verdicts:
+            log.append(f"    🔴 {key}：{form} —— {detail}（`.pth` 直挂）")
+        _merge_editable_detail(
+            details, key,
+            "；".join(f"{form} —— {detail}" for form, detail in verdicts))
+        pth_anomalies += 1
+
+    log.append(
+        f"    · `.pth` 直挂 {pth_count} 条：正常 {pth_count - pth_anomalies} 条、"
+        f"指向异常 {pth_anomalies} 条"
+    )
+    log.append(f"    · 判据不可用 {unreadable} 项（读不出/解析不出，**不计入合规**）")
 
     _track_and_alert_standing_state(
         repo_root, "editable 安装指向异常", EDITABLE_INSTALL_STATE_REL,
