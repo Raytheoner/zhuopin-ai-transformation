@@ -151,6 +151,141 @@ class QueueQueryTests(unittest.TestCase):
         self.assertIn("读取目标文件失败", result.stdout)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# 队列 #441：--digest 单文件模式（黑盒，--file 指向本用例专属临时文件）
+# ══════════════════════════════════════════════════════════════════════════
+
+DIGEST_FIXTURE = """## §一 任务看板 · 归档式标题（无顿号，模拟 #442 归档件标题写法）
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 500 | 这是一段刻意写得比默认宽度四十字更长的任务标题，用来验证截断与省略号是否正确附加在尾部 | CC | 无 | 无 | [S:open][D:机] 待领（P1） | 无 | 2026-08-01 |
+| 501 | 短标题 | CC | 无 | 无 | [S:done][D:业] ✅ 已完成 | 无 | 2026-08-01 |
+| 502 | 状态列没有机器字段的历史行 | CC | 无 | 无 | 待领，08-09 之前的老行没有 [S:...] 前缀 | 无 | 2026-07-01 |
+
+## 四、需 Shao Peishen 的动作（例外与拍板）
+
+| # | 事项 | 等谁 | 截止 |
+|---|------|------|------|
+| 500 | §四 也有编号 500，不得被 §一 digest 误收 | Shao Peishen | 不急 |
+"""
+
+
+class DigestModeTests(unittest.TestCase):
+    """队列 #441：--digest 单文件模式黑盒用例。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = Path(self._tmpdir.name) / "假想队列.md"
+        self.target.write_text(DIGEST_FIXTURE, encoding="utf-8")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_digest_finds_rows_under_non_standard_heading(self):
+        """核心架构验证（队列 #442 起因）：本夹具标题故意不写成 `## 一、`
+        （改用归档件常见的 `## §一 ... ·` 无顿号写法），结构性扫描应仍能
+        找到 §一 数据行——若退化为按 `## 一、` 标题切分，会像归档件
+        `跨桌任务队列-归档-202608.md` 那样静默得到零行（实测：该归档件
+        对 `^## ([一二三四])、` 正则只命中两处 `## 二、`，`## 一、` 零命中）。"""
+        result = run("--digest", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("500｜", result.stdout)
+        self.assertIn("501｜", result.stdout)
+        self.assertIn("502｜", result.stdout)
+
+    def test_digest_excludes_section_four_row_with_same_number(self):
+        """§四 同样有编号 500，§一 digest 不得把它当成 §一 的第 500 行
+        混进来——结构性扫描按列数（8 vs 4）天然分开，不需要额外过滤。"""
+        result = run("--digest", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("不得被 §一 digest 误收", result.stdout)
+
+    def test_digest_line_format_uses_fullwidth_separator(self):
+        result = run("--digest", "--file", str(self.target))
+        self.assertIn("501｜[S:done][D:业]｜短标题", result.stdout)
+
+    def test_digest_truncates_long_task_with_ellipsis_at_default_width(self):
+        result = run("--digest", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("…", result.stdout)
+        self.assertNotIn("是否正确附加在尾部", result.stdout)
+
+    def test_digest_short_task_has_no_trailing_ellipsis(self):
+        result = run("--digest", "--file", str(self.target))
+        lines = [l for l in result.stdout.splitlines() if l.startswith("501｜")]
+        self.assertEqual(len(lines), 1)
+        self.assertFalse(lines[0].endswith("…"))
+
+    def test_digest_width_flag_changes_truncation_point(self):
+        result = run("--digest", "--digest-width", "2", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("501｜[S:done][D:业]｜短标…", result.stdout)
+
+    def test_digest_width_must_be_positive(self):
+        result = run("--digest", "--digest-width", "0", "--file", str(self.target))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("正整数", result.stdout)
+
+    def test_digest_missing_machine_field_shown_as_placeholder_not_silent(self):
+        """#502 状态列没有 [S:...] 前缀（模拟 #308 落地前的老行，归档件里
+        大量存在）——须显式标 [S:?]，不得留空/跳过/伪造一个状态（同 #308
+        「非静默降级」既有原则）。"""
+        result = run("--digest", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("502｜[S:?]｜", result.stdout)
+        self.assertIn("1 行状态列未识别到", result.stdout)
+
+    def test_digest_rejects_section_four(self):
+        result = run("--digest", "--section", "四", "--file", str(self.target))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("仅支持 §一", result.stdout)
+
+    def test_digest_and_row_are_mutually_exclusive(self):
+        result = run("--row", "500", "--digest", "--file", str(self.target))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not allowed", result.stderr)
+
+    def test_neither_row_nor_digest_is_an_error(self):
+        result = run("--file", str(self.target))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required", result.stderr)
+
+    def test_digest_header_reports_source_file_and_row_count(self):
+        result = run("--digest", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("合计 3 行", result.stdout)
+        self.assertIn(str(self.target), result.stdout)
+
+    def test_concatenating_before_parsing_would_lose_seam_rows(self):
+        """反例锁定（队列 #441 实现红线：绝不拼接文本再解析一次）：本用例
+        直接构造"两份文件被拼接成一份"的场景——文件 A 末行若没有尾随换行
+        （工具生成的文件常见此形态），紧跟文件 B 首行会合并成一条物理行，
+        列数从 8 撞成 17，结构性过滤器按预期把它当噪声整行丢弃，两行
+        （#800/#801）双双消失，且不报错（正是"静默"两字的体现）。真正
+        实现绝不会撞上这个缝——它逐份读取解析后合并，见
+        DigestDualFileTests.test_dual_file_digest_survives_the_seam_that_
+        concatenation_would_corrupt 用相同两行内容证明这一点。"""
+        no_trailing_newline_part = (
+            "## §一 任务看板 · A\n\n"
+            "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+            "|---|------|--------|-------------|----------|------|--------|------|\n"
+            "| 800 | 文件A末行 | CC | 无 | 无 | [S:done][D:机] 已完成 | 无 | 2026-08-01 |"
+        )
+        next_part_starting_with_pipe = (
+            "| 801 | 文件B首行 | CC | 无 | 无 | [S:open][D:机] 待领 | 无 | 2026-08-01 |\n"
+        )
+        concatenated = no_trailing_newline_part + next_part_starting_with_pipe
+        target = Path(self._tmpdir.name) / "拼接撞缝.md"
+        target.write_text(concatenated, encoding="utf-8")
+
+        result = run("--digest", "--file", str(target))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("800｜", result.stdout)
+        self.assertNotIn("801｜", result.stdout)
+        self.assertIn("合计 0 行", result.stdout)
+
+
 MECH_FIXTURE = """## 一、任务看板
 
 | # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
@@ -230,6 +365,109 @@ class DualFileQueryTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(str(self.MECH_REL.name), result.stdout)
         self.assertIn(str(self.BIZ_REL.name), result.stdout)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 队列 #441：--digest 默认（不传 --file）双文件合并——真实 git 仓库黑盒
+# ══════════════════════════════════════════════════════════════════════════
+
+DIGEST_MECH_FIXTURE = """## §一 任务看板 · 机制环境（归档式标题）
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 700 | 机制文件的行 | CC | 无 | 无 | [S:open][D:机] 待领 | 无 | 2026-08-11 |
+| 800 | 文件A末行 | CC | 无 | 无 | [S:done][D:机] 已完成 | 无 | 2026-08-01 |
+
+## 二、待 commit 批次（CC 取活销行）
+
+| 批次 | 文件清单 | 说明 | 状态 |
+|------|---------|------|------|
+"""
+
+DIGEST_BIZ_FIXTURE = """## §一 任务看板 · 业务场景（归档式标题）
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 701 | 业务文件的行 | CC | 无 | 无 | [S:open][D:业] 待领 | 无 | 2026-08-11 |
+| 801 | 文件B首行 | CC | 无 | 无 | [S:open][D:业] 待领 | 无 | 2026-08-01 |
+
+## 二、待 commit 批次（CC 取活销行）
+
+| 批次 | 文件清单 | 说明 | 状态 |
+|------|---------|------|------|
+"""
+
+
+class DigestDualFileTests(unittest.TestCase):
+    """队列 #441：--digest 默认（不传 --file）双文件合并——同
+    DualFileQueryTests 的真实 git 仓库黑盒方式（子进程实际读取生产相对
+    路径，不依赖进程内 monkeypatch）。两份夹具刻意都用归档式标题
+    （`## §一 ... ·`，无顿号），一并验证结构性扫描对队列真身与归档件
+    一视同仁（队列 #442）。"""
+
+    MECH_REL = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列-机制环境.md"
+    BIZ_REL = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列-业务场景.md"
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        subprocess.run(["git", "init", "-q"], cwd=self.repo_root, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"],
+                        cwd=self.repo_root, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"],
+                        cwd=self.repo_root, check=True)
+        script_dir = self.repo_root / "0-学习与工具"
+        script_dir.mkdir()
+        (script_dir / "工具-队列查询.py").write_text(
+            SCRIPT.read_text(encoding="utf-8"), encoding="utf-8",
+        )
+        (self.repo_root / self.MECH_REL).parent.mkdir(parents=True)
+        (self.repo_root / self.MECH_REL).write_text(DIGEST_MECH_FIXTURE, encoding="utf-8")
+        (self.repo_root / self.BIZ_REL).write_text(DIGEST_BIZ_FIXTURE, encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=self.repo_root, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=self.repo_root, check=True)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _run_in_repo(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(self.repo_root / "0-学习与工具" / "工具-队列查询.py"), *args],
+            cwd=self.repo_root, capture_output=True, text=True, encoding="utf-8",
+        )
+
+    def test_digest_merges_rows_from_both_files_sorted_by_number(self):
+        result = self._run_in_repo("--digest")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lines = [l for l in result.stdout.splitlines() if "｜" in l and not l.startswith("【")]
+        ids = [l.split("｜")[0] for l in lines]
+        self.assertEqual(ids, ["700", "701", "800", "801"])
+
+    def test_digest_header_reports_per_file_counts(self):
+        result = self._run_in_repo("--digest")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("合计 4 行", result.stdout)
+        self.assertIn(str(self.MECH_REL.name), result.stdout)
+        self.assertIn(str(self.BIZ_REL.name), result.stdout)
+
+    def test_dual_file_digest_survives_the_seam_that_concatenation_would_corrupt(self):
+        """反例的另一半（配 DigestModeTests.test_concatenating_before_
+        parsing_would_lose_seam_rows）：#800（机制文件行）与 #801（业务
+        文件行）分别落在两份真实物理文件——真正实现走
+        queue_table.iter_queue_paths() 逐份读取解析后合并，两行都应完整
+        出现，不因"文件边界"互相影响；对照组已证明若拼接文本再解析，这
+        两行会一起消失。"""
+        result = self._run_in_repo("--digest")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("800｜[S:done][D:机]｜文件A末行", result.stdout)
+        self.assertIn("801｜[S:open][D:业]｜文件B首行", result.stdout)
+
+    def test_digest_with_explicit_file_only_queries_that_one_file(self):
+        result = self._run_in_repo("--digest", "--file", str(self.MECH_REL))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("合计 2 行", result.stdout)
+        self.assertNotIn("701｜", result.stdout)
+        self.assertNotIn("801｜", result.stdout)
 
 
 if __name__ == "__main__":

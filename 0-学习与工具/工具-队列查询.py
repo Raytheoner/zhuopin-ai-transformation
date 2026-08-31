@@ -25,12 +25,22 @@ CLAUDE.md §5"工具静默回退"）。#248 刚落地的 release 校验只治"�
 落地已大部分作废，不在 #306 权威化范围内，本文件按需继续本地实现。历史上
 的独立实现清单及其成因见队列 #306。
 
+队列 #441（2026-08-31）：新增 `--digest`——三份定时任务/skill 章程
+（weekly-status-update／zhuopin-queue-audit／huijian-chaijian-patrol）
+已在指挥调用这个参数做"扫全池不通读真身"，但参数当时并不存在，照做
+即撞 usage 错误。`--digest` 按目标分区标准列数＋首列纯数字做结构性
+逐行扫描（不依赖 `## 一、` 等标题写法），故队列真身与归档件（标题写法
+不统一，见队列 #442）用同一份实现即可通吃，不必区分两套解析路径。
+
 用法：
   python 0-学习与工具/工具-队列查询.py --row 258
   python 0-学习与工具/工具-队列查询.py --row 150 --section 一
   python 0-学习与工具/工具-队列查询.py --row B-0806_xxx --section 二
   python 0-学习与工具/工具-队列查询.py --row 51 --section 四
   python 0-学习与工具/工具-队列查询.py --row 258 --field all
+  python 0-学习与工具/工具-队列查询.py --digest
+  python 0-学习与工具/工具-队列查询.py --digest --digest-width 60
+  python 0-学习与工具/工具-队列查询.py --digest --file 1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md
 """
 from __future__ import annotations
 
@@ -59,6 +69,17 @@ else:
         # 队列 #315：拆分后两份物理文件路径，隔离桩同样须与权威实现保持一致。
         QUEUE_MECHANISM_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"
         QUEUE_BUSINESS_PATH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md"
+
+        @staticmethod
+        def iter_queue_paths() -> list[str]:
+            # 队列 #441：本文件 --row 与 --digest 两处均改为直接调用
+            # queue_table.iter_queue_paths()（不再各自硬编码 [机制, 业务]
+            # 列表字面量）——隔离桩须补上这个方法，否则任何未拷贝
+            # 5-平台底座/zhuopin_platform 的隔离环境（如本文件自身黑盒
+            # 单测的临时 git 仓库）会在双文件默认查询下撞
+            # AttributeError（实测：DualFileQueryTests 与新增
+            # DigestDualFileTests 均现场撞过这个错误）。
+            return [queue_table.QUEUE_MECHANISM_PATH_REL, queue_table.QUEUE_BUSINESS_PATH_REL]
 
         # 简化近似，非逐字节镜像——权威实现按 CommonMark 反引号游程规则
         # 配对（见 queue_table.py::_mask_backtick_spans，队列 #314 apply
@@ -145,6 +166,121 @@ STATUS_FIELD_RE = re.compile(
 )
 
 
+# 队列 #441（2026-08-31）：digest 模式常量——只支持 §一。§二 首列是
+# 批次号（非纯数字，结构性扫描天然不命中）；§四 无「任务」列也无
+# [S:...][D:...] 机器字段，digest 固定格式对不上，宁可显式拒绝（见
+# _run_digest）也不猜测输出错位内容。
+DIGEST_SECTION = "一"
+DIGEST_FIELD_SEP = "｜"  # 全角，避免与表格列分隔符半角 `|` 混淆
+DIGEST_MALFORMED_STATUS = "[S:?]"
+# 实测（队列 #441 验收）：企微反馈自动归档前缀（9 字，见 huijian-
+# chaijian-patrol.SKILL.md 判据）与多数任务标题在此宽度内可辨；对生产
+# 两份队列真身 103 行实测产出约 11 KB，见交接材料。
+DEFAULT_DIGEST_WIDTH = 40
+
+
+def _digest_rows(text: str, section: str) -> list[tuple[int, list[str]]]:
+    """结构性扫描整份文本，按该分区标准列数＋首列纯数字挑出数据行——不
+    依赖 `## 一、` 等标题写法。
+
+    队列 #442 起因：归档件标题写法不统一且部分用 `###`（"一、任务看板
+    （已完成行）"／"§一 任务看板 · 2026-08-03 ... 迁入"／"### §一 任务
+    看板 · 机制环境"三种并存），按标题正则切分在归档件上会静默得到零行
+    ——同 `工具-共享文档编辑锁.py::_archive_row_numbers` 早先踩过的坑，
+    此处复用其"按列数+首列形态分类比按标题正则更稳"结论。
+
+    对生产队列真身实测：本函数逐行结果与既有"先按 `## 一、` 标题切分再
+    取数据行"做法（`_find_rows`/`_table_data_rows`）完全一致（零差异，
+    见单测）——两套技法在真身上等价，在归档件上只有本函数正确，故 digest
+    统一走本函数，不为真身/归档件分别维护两套解析。"""
+    expected = queue_table.SECTION_COLUMN_COUNTS[section]
+    rows: list[tuple[int, list[str]]] = []
+    for line in text.splitlines():
+        cells = queue_table.split_row_cells(line)
+        if cells is None or len(cells) != expected:
+            continue
+        first = cells[0].strip()
+        if not first.isdigit():
+            continue
+        rows.append((int(first), cells))
+    return rows
+
+
+def _digest_status_field(status_cell: str) -> tuple[str, bool]:
+    """返回 (展示用机器字段文本, 是否为无法识别的兜底值)。复用 --row
+    模式同一条 STATUS_FIELD_RE，取原始匹配文本（非重新拼接），保证与
+    真身字节一致；未命中时返回 DIGEST_MALFORMED_STATUS 且第二项为
+    True——非静默降级，调用方据此计入行尾提示（同 #308「非静默降级」
+    既有原则）。"""
+    stripped = status_cell.lstrip(LEADING_STRIP_CHARS)
+    m = STATUS_FIELD_RE.match(stripped)
+    if m:
+        return m.group(0), False
+    return DIGEST_MALFORMED_STATUS, True
+
+
+def _run_digest(args: argparse.Namespace) -> int:
+    section = args.section or DIGEST_SECTION
+    if section != DIGEST_SECTION:
+        print(f"✗ --digest 目前仅支持 §{DIGEST_SECTION}"
+              f"（§{section} 无「任务」列或无 [S:...][D:...] 机器字段，"
+              "digest 固定格式对不上，不猜测输出——需要时改用 --row 逐行读）。")
+        return 1
+    if args.digest_width < 1:
+        print("✗ --digest-width 须为正整数。")
+        return 1
+
+    # 队列 #441 实现红线：走 queue_table.iter_queue_paths()、逐份读取
+    # 解析后合并，绝不拼接文本再解析一次——同 open_pool_reminder.py::
+    # build_pool_items_from_repo 既有先例（其反例单测 test_concatenating_
+    # texts_would_silently_drop_second_section_one 是本文件配套反例测试
+    # 的直接参照）。
+    query_paths = (
+        queue_table.iter_queue_paths()
+        if _is_queue_system_target(args.file) else [args.file]
+    )
+    per_file: list[tuple[str, list[tuple[int, list[str]]]]] = []
+    read_errors: list[str] = []
+    for query_path in query_paths:
+        target_path = (REPO_ROOT / query_path).resolve()
+        try:
+            text = target_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            if len(query_paths) == 1:
+                print(f"✗ 读取目标文件失败：{target_path}（{exc}）")
+                return 1
+            read_errors.append(f"{target_path}（{exc}）")
+            continue
+        per_file.append((query_path, _digest_rows(text, section)))
+
+    if read_errors:
+        for err in read_errors:
+            print(f"⚠ 读取失败（不影响已读到的文件，如实登记）：{err}")
+        if not per_file:
+            return 1
+
+    all_rows: list[tuple[int, list[str]]] = []
+    for _, rows in per_file:
+        all_rows.extend(rows)
+    all_rows.sort(key=lambda r: r[0])
+
+    counts_desc = "＋".join(f"{p}（{len(r)} 行）" for p, r in per_file)
+    print(f"【digest §{section} · 合计 {len(all_rows)} 行 ｜ {counts_desc}】")
+    malformed = 0
+    width = args.digest_width
+    status_index = SECTION_STATUS_INDEX[section]
+    for row_id, cells in all_rows:
+        field, is_malformed = _digest_status_field(cells[status_index])
+        malformed += is_malformed
+        task = cells[1].strip()
+        head = task[:width] + ("…" if len(task) > width else "")
+        print(f"{row_id}{DIGEST_FIELD_SEP}{field}{DIGEST_FIELD_SEP}{head}")
+    if malformed:
+        print(f"\n⚠ {malformed} 行状态列未识别到 [S:...] 机器字段（已标 "
+              f"{DIGEST_MALFORMED_STATUS}，可用 --row 展开核实）。")
+    return 0
+
+
 def _parse_status_domain_fields(status_cell: str) -> tuple[str | None, str | None, str]:
     """解析 §一 状态列开头的机器字段，返回 (状态取值或 None, 域取值或
     None, 字段之后的自然语言正文)。缺失/非法时返回 (None, None, 原文)。"""
@@ -215,27 +351,45 @@ def _find_rows(text: str, row_id: str, section: str | None) -> list[tuple[str, l
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="跨桌任务队列只读查询——默认返回状态列全文、不截断，"
-                     "头尾出现互斥关键词时打印冲突警告（队列 #268）",
+                     "头尾出现互斥关键词时打印冲突警告（队列 #268）；"
+                     "--digest 改为输出全池摘要（队列 #441）",
     )
-    parser.add_argument("--row", required=True, help="行号（§一/§四）或批次号（§二），如 258 / B-0806_xxx")
+    target_group = parser.add_mutually_exclusive_group(required=True)
+    target_group.add_argument("--row", help="行号（§一/§四）或批次号（§二），如 258 / B-0806_xxx")
+    target_group.add_argument(
+        "--digest", action="store_true",
+        help=f"输出 §{DIGEST_SECTION} 全部行摘要（编号{DIGEST_FIELD_SEP}"
+             f"[S:x][D:y]{DIGEST_FIELD_SEP}任务列首 N 字），扫全池用、"
+             "勿通读真身；与 --row 互斥（队列 #441）",
+    )
     parser.add_argument("--section", choices=sorted(SECTION_COLUMNS), default=None,
-                        help="限定查询分区；不给则在 §一/§二/§四 全部搜索，"
-                             "多个分区命中同一编号时须显式指定以消歧")
+                        help="限定查询分区；--row 模式不给则在 §一/§二/§四 全部搜索，"
+                             "多个分区命中同一编号时须显式指定以消歧；--digest 模式"
+                             f"仅接受默认值 §{DIGEST_SECTION}")
     parser.add_argument("--field", choices=("status", "all"), default="status",
-                        help="status=只打印状态列全文（默认）；all=打印整行全部列")
+                        help="status=只打印状态列全文（默认）；all=打印整行全部列"
+                             "（仅 --row 模式适用）")
+    parser.add_argument(
+        "--digest-width", type=int, default=DEFAULT_DIGEST_WIDTH,
+        help=f"--digest 模式下「任务」列截断字数（默认 {DEFAULT_DIGEST_WIDTH}）",
+    )
     parser.add_argument(
         "--file", default=DEFAULT_TARGET,
         help=f"目标文件（默认 {DEFAULT_TARGET}——队列 #315 起，这一默认值触发"
              "机制环境/业务场景两份物理文件的联合查询；显式传其它路径时只查"
-             "该文件，行为与拆分前一致）",
+             "该文件，行为与拆分前一致；--digest 同一套规则，显式传归档件"
+             "路径即可对归档件出 digest，队列 #442）",
     )
     args = parser.parse_args()
+
+    if args.digest:
+        return _run_digest(args)
 
     # 队列 #315：查询系统模式下遍历两份物理文件，聚合命中结果并标注来源
     # 文件——编号空间单一（决策点2），两份文件不会有同编号的两条不同数据
     # 行，但调用方仍需要知道命中落在哪一份，便于核对/后续编辑时定位。
     query_paths = (
-        [QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL]
+        queue_table.iter_queue_paths()
         if _is_queue_system_target(args.file) else [args.file]
     )
     hits: list[tuple[str, str, list[str]]] = []  # (来源文件, 分区标签, 单元格)
