@@ -1064,3 +1064,77 @@ def test_slice_latest_attempt_scopes_to_this_md_only(tmp_path):
     delivered = [r for r in attempt_1 if r["action"] == "followup_delivered"]
     assert len(delivered) == 1
     assert delivered[0]["data_sources"]["md"] == str(md_path_1)
+
+
+def test_slice_latest_attempt_without_repo_root_requires_literal_match(tmp_path):
+    """队列 #326 `OP-0831-V` 实证：不传 `repo_root` 时保留旧的精确字符串
+    匹配语义（向后兼容既有调用方）——发送时记的是绝对路径，核验时若换成
+    相对路径且不提供 `repo_root`，找不到就是找不到，不做任何猜测性归一化。
+    本用例与下面两条"传 repo_root 后两种写法都能对上"的用例合在一起看，
+    才能证明"归一化确实是 `repo_root` 参数打开的，不是巧合"。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    asyncio.run(push_followup(
+        readme_path=readme_path, md_path=md_path, docx_path=None,
+        connector=connector, chatid="chat-1", match=_match_8d,
+        audit=audit, cc_to_paul=False,
+    ))
+
+    records = audit.query_by(scenario="wecom-aibot")
+    relative_md_path = md_path.relative_to(tmp_path)
+
+    assert slice_latest_attempt(records, md_path=str(relative_md_path)) == []
+
+
+def test_slice_latest_attempt_matches_absolute_write_with_relative_query(tmp_path):
+    """队列 #326 `OP-0831-V` 生产实证的镜像场景：发送时（`_setup` 构造的
+    `md_path` 是 `tmp_path` 下的绝对路径）记的是绝对路径，事后传
+    `repo_root=tmp_path` 用**相对路径**核验——必须仍能对上，不能因为两次
+    调用的 `--md` 写法不同就报「从没跑过」（那与真的从没跑过是同一个
+    退出码，误判代价是把已发出的信当成没发、次日又发一遍）。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    asyncio.run(push_followup(
+        readme_path=readme_path, md_path=md_path, docx_path=None,
+        connector=connector, chatid="chat-1", match=_match_8d,
+        audit=audit, cc_to_paul=False,
+    ))
+
+    records = audit.query_by(scenario="wecom-aibot")
+    relative_md_path = md_path.relative_to(tmp_path)
+
+    attempt = slice_latest_attempt(records, md_path=str(relative_md_path), repo_root=tmp_path)
+
+    assert attempt
+    delivered = [r for r in attempt if r["action"] == "followup_delivered"]
+    assert len(delivered) == 1
+    assert delivered[0]["data_sources"]["md"] == str(md_path)
+
+
+def test_slice_latest_attempt_matches_relative_write_with_absolute_query(tmp_path, monkeypatch):
+    """队列 #326 `OP-0831-V` 生产实证的原始方向：`zhuopin-send-followup`
+    等惯用相对路径调用 `--md`（写侧记的是相对路径字面量），事后核验时
+    最自然的写法却是绝对路径——传 `repo_root` 后必须仍能对上。用
+    `monkeypatch.chdir` 模拟"调用方从仓库根发起、传相对路径"这一真实
+    习惯，而不是直接手搓一条相对路径字符串了事。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    relative_md_path = Path("letter.md")
+    assert (tmp_path / relative_md_path).resolve() == md_path.resolve()
+
+    asyncio.run(push_followup(
+        readme_path=readme_path, md_path=relative_md_path, docx_path=None,
+        connector=connector, chatid="chat-1", match=_match_8d,
+        audit=audit, cc_to_paul=False,
+    ))
+
+    records = audit.query_by(scenario="wecom-aibot")
+    written = [r for r in records if r["action"] == "followup_delivered"]
+    assert len(written) == 1
+    assert written[0]["data_sources"]["md"] == str(relative_md_path)  # 确认写侧真记的是相对路径
+
+    attempt = slice_latest_attempt(records, md_path=str(md_path), repo_root=tmp_path)
+
+    assert attempt
+    delivered = [r for r in attempt if r["action"] == "followup_delivered"]
+    assert len(delivered) == 1

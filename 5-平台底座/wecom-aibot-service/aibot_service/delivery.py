@@ -613,20 +613,61 @@ class CompletenessReport:
         return "、".join(STEP_LABELS[step] for step in self.missing)
 
 
-def slice_latest_attempt(records: list[dict], *, md_path: str) -> list[dict]:
+def _normalize_for_comparison(path_text: str, repo_root: Path | None) -> str:
+    """把路径字符串归一化为「仓库根相对路径＋正斜杠」，用于跨调用比较是否
+    指向同一份文件——不依赖磁盘上文件是否仍存在（`Path.resolve()` 默认
+    `strict=False`），只做字符串/分隔符层面的对齐。
+
+    队列 #326 `OP-0831-V` 实证：`push_followup` 写审计时原样存调用方传入的
+    `md_path`（可能是相对，也可能是绝对，取决于当次调用者的习惯），而
+    `slice_latest_attempt` 原实现用字符串 `==` 精确匹配——只要两次调用的
+    路径写法不是逐字节相同（最常见即"发送传相对、核验传绝对"），恒不相等，
+    与"这个 md 从没被推送过"在返回值上完全无法区分（同"缺了"与"没跑过"
+    长得一样的判据族）。
+
+    `repo_root=None`（未知仓库根）时原样返回，保留旧行为——仅字符串比较，
+    不因新增的归一化逻辑改变没有仓库根语境的既有调用方（如单测里直接
+    构造记录、两侧本就用同一字面量）的判定结果。归一化本身失败（如路径
+    确实不在仓库树内、或跨盘符）时也原样返回，不让"判断两个路径是否
+    相同"这件事本身抛错中断自检。
+    """
+    if repo_root is None:
+        return path_text
+    candidate = Path(path_text)
+    try:
+        if not candidate.is_absolute():
+            candidate = repo_root / candidate
+        return candidate.resolve().relative_to(repo_root.resolve()).as_posix()
+    except (ValueError, OSError):
+        return path_text.replace("\\", "/")
+
+
+def slice_latest_attempt(
+    records: list[dict], *, md_path: str, repo_root: Path | None = None,
+) -> list[dict]:
     """从全量审计记录（`audit.query_by(scenario="wecom-aibot")`，天然按落盘
     顺序＝时间顺序）里截出"最近一次"针对 `md_path` 的推送尝试切片。
 
-    锚点＝最后一条 `data_sources.md == md_path` 的 `followup_delivered`／
+    锚点＝最后一条 `data_sources.md == md_path`（按 `repo_root` 归一化后
+    比较，见 `_normalize_for_comparison`）的 `followup_delivered`／
     `followup_delivery_failed`；切片范围＝从锚点起（含）到下一条**任意**
     md 的主送事件之前（不含），或到记录末尾——`zhuopin-send-followup`
     §0 的串行原则决定了同一时刻只应有一次在途推送，故"下一条主送事件"
     天然是下一次尝试的边界，不需要更复杂的相关性判据（如自造 attempt id）。
     找不到锚点（这个 md 从未被推送过，或 audit 路径不对）返回空列表。
+
+    `repo_root` 应传调用方已解析好的仓库根（见 `push_followup_letter.py`
+    的 `resolved_repo_root`）——本函数不自行解析，避免与调用方各解一遍
+    可能解出两个不同仓库根（同队列 #126 缺陷②的教训）。不传时退化为原始
+    字符串精确匹配，向后兼容不依赖本参数的既有调用方。
     """
+    needle = _normalize_for_comparison(md_path, repo_root)
     anchor = None
     for i, r in enumerate(records):
-        if r.get("action") in STEP_ACTIONS["main"] and r.get("data_sources", {}).get("md") == md_path:
+        if r.get("action") not in STEP_ACTIONS["main"]:
+            continue
+        recorded = r.get("data_sources", {}).get("md")
+        if recorded is not None and _normalize_for_comparison(recorded, repo_root) == needle:
             anchor = i  # 同一 md 若被重试过多次，取最后一次
     if anchor is None:
         return []

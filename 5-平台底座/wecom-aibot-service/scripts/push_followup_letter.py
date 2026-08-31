@@ -100,15 +100,23 @@ _TABLE_SECTIONS = {"主表": MAIN_TABLE_SECTION, "补件": SUPPLEMENT_TABLE_SECT
 
 
 def _verify_completeness(
-    audit: AuditLogger, *, md_path: Path, expect_cc_paul: bool, expect_group_cc: bool,
+    audit: AuditLogger, *, md_path: Path, repo_root: Path,
+    expect_cc_paul: bool, expect_group_cc: bool,
 ) -> int:
     """队列 #326 新形态（`OP-0831-U`）：读已落盘的审计文件核四条链路是否
     齐全——与"这次是否成功发送过"是两件事，本函数只管"审计里有没有留下
     交代"。独立于本次调用是否被中断：无论是正常跑完后的自查（`_run` 成功
     路径也会调它），还是怀疑上一次调用被杀之后单独重跑 `--verify-only`，
-    走的都是这一份逻辑，不重复实现判据。"""
+    走的都是这一份逻辑，不重复实现判据。
+
+    队列 #326 `OP-0831-V` 实证：`--md` 在发送路径与核验路径可能各自习惯
+    传相对/绝对写法，`slice_latest_attempt` 原按字面量精确匹配，两次写法
+    不同即恒判"从没跑过"——与真的从没跑过是同一个退出码、同一句提示，
+    实测已致误判。这里把 `repo_root` 传下去做归一化比较（见 `delivery.
+    _normalize_for_comparison`），使 `--md` 无论传相对还是绝对都能对上
+    审计里记的那一条。"""
     records = audit.query_by(scenario="wecom-aibot")
-    attempt = slice_latest_attempt(records, md_path=str(md_path))
+    attempt = slice_latest_attempt(records, md_path=str(md_path), repo_root=repo_root)
     if not attempt:
         print(f"[INCOMPLETE] 审计里找不到「{md_path}」的任何推送记录——"
               "从没跑过，还是审计路径/参数不对，需人工确认")
@@ -173,7 +181,7 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.verify_only:
         return _verify_completeness(
-            audit, md_path=Path(args.md),
+            audit, md_path=Path(args.md), repo_root=resolved_repo_root,
             expect_cc_paul=expect_cc_paul, expect_group_cc=expect_group_cc,
         )
 
@@ -212,7 +220,7 @@ async def _run(args: argparse.Namespace) -> int:
         # 是不同的故障，但同样会造成"缺了却看起来正常"），在这里就能截住，
         # 不必等到下一次人工核验才发现。
         return _verify_completeness(
-            audit, md_path=Path(args.md),
+            audit, md_path=Path(args.md), repo_root=resolved_repo_root,
             expect_cc_paul=expect_cc_paul, expect_group_cc=expect_group_cc,
         )
     except ReadmeTableError as exc:
