@@ -281,11 +281,18 @@ async def push_followup(
     为「提要＋附件」，三条通道发同一份提要；超限且无附件、或提要本身仍超限
     ⇒ 抛 `OversizedMessageError`，**一条都不发**（保住"干净失败、可安全重试"）。
 
+    **执行顺序（队列 #326／`OP-0831-U`）**：主送 → **回填** → 抄送 ShaoPeiShen →
+    群抄送——回填被提到两处抄送之前，理由见下方回填代码块前的注释。这意味着
+    `BackfillWriteError` 一旦抛出，两处抄送**都不会被尝试**（函数在抄送之前
+    就已中止）；这是刻意的取舍，不是遗漏——回填失败本就是本函数定义里最
+    危险的状态（唯一防重发屏障没能落地），优先级高于"顺手多抄一份"。
+
     Raises:
         DeliveryNotFinalizedError: 门禁②拒绝（状态列非"🆕 待发"）。
         OversizedMessageError: 正文超限且无法降级——**发出任何一条之前**抛出，
             审计记 `followup_delivery_failed`（`sent:False／acks:[]`），README 不动。
-        BackfillWriteError: 已发送成功但 README 回填失败。
+        BackfillWriteError: 已发送成功但 README 回填写入失败——两处抄送不会
+            被尝试（见上）。
     """
     text = readme_path.read_text(encoding="utf-8")
     loc = locate_row(text, match, section)
@@ -417,6 +424,71 @@ async def push_followup(
         )
     )
 
+    # 队列 #326 新形态（`OP-0831-U`，2026-08-31）：回填提到两处抄送**之前**、
+    # 紧跟主送之后执行——此前的顺序是"主送→抄送 ShaoPeiShen→群抄送→回填"，
+    # 四步之间没有任何事务性可言：调用方进程若在中途被外部杀死（真实实例＝
+    # 采购部#21，Cowork 工具调用超时导致子进程随调用结束被杀），后面几步
+    # 连同它们各自的审计事件一起静默消失，而"缺了几步"与"从没跑过"在审计
+    # 文件里长得一模一样。回填是这条链路里**唯一**防重发的屏障——README
+    # 状态列不从 `🆕 待发` 改走，下一班 `ZhuopinFollowupDispatchDaily` 就会
+    # 把已经送达的这封信当成待发、再发一遍，专员收到两遍；两处抄送缺失
+    # 只是少一份知会，事后能补。**⇒ 让回填成为"进程随时可能被杀也无法
+    # 回退"的那一步，必须最先落地，抄送退居其后。**
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    new_status = resolve_backfill_status(loc, section, timestamp)
+
+    try:
+        new_text = write_status(text, loc, new_status)
+        readme_path.write_text(new_text, encoding="utf-8")
+    except OSError as exc:
+        audit.record(
+            AuditEvent(
+                scenario="wecom-aibot",
+                action="followup_backfill_failed",
+                evaluator=evaluator,
+                automation_level="L1",
+                decision={"sent": True, "backfilled": False, "kind": kind},
+                data_sources={"readme": str(readme_path)},
+                error=describe_exception(exc),
+            )
+        )
+        raise BackfillWriteError(
+            f"跟进信已推送成功，但 README 回填写入失败（{exc}）——"
+            "请人工核对状态列，避免下次误判为待发重复推送"
+        ) from exc
+
+    audit.record(
+        AuditEvent(
+            scenario="wecom-aibot",
+            action="followup_backfilled",
+            evaluator=evaluator,
+            automation_level="L1",
+            decision={"sent": True, "backfilled": True, "new_status": new_status, "kind": kind},
+            data_sources={"readme": str(readme_path)},
+        )
+    )
+
+    # 队列 #289：回填成功后自动落库，避免每发一封信就积一个孤儿脏文件。
+    # 提交/推送失败不影响本次推送已成功的事实（见 `_commit_readme_backfill`
+    # docstring），只记审计，不抛出、不影响返回值语义。
+    committed, commit_error = _commit_readme_backfill(
+        readme_path, description=f"回填「{loc.cells[0] if loc.cells else ''}」发送状态"
+    )
+    audit.record(
+        AuditEvent(
+            scenario="wecom-aibot",
+            action="followup_backfill_committed" if committed else "followup_backfill_commit_failed",
+            evaluator=evaluator,
+            automation_level="L1",
+            decision={"committed": committed, "kind": kind},
+            data_sources={"readme": str(readme_path)},
+            error=commit_error,
+        )
+    )
+
+    # 🔴 回填已经落地在前——此处往后若进程被杀，损失的至多是"少发一份
+    # 抄送/群通报"，不会再触发误判待发、下一班重发。cc_paul/cc_group 各自
+    # 独立 try/except，互不影响彼此、也不影响已经成立的主送+回填事实。
     if cc_paul_active:
         try:
             # 队列 #326：抄送同样观测回执码——非零即走下面既有的
@@ -485,59 +557,104 @@ async def push_followup(
                 )
             )
 
-    timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    new_status = resolve_backfill_status(loc, section, timestamp)
-
-    try:
-        new_text = write_status(text, loc, new_status)
-        readme_path.write_text(new_text, encoding="utf-8")
-    except OSError as exc:
-        audit.record(
-            AuditEvent(
-                scenario="wecom-aibot",
-                action="followup_backfill_failed",
-                evaluator=evaluator,
-                automation_level="L1",
-                decision={"sent": True, "backfilled": False, "kind": kind},
-                data_sources={"readme": str(readme_path)},
-                error=describe_exception(exc),
-            )
-        )
-        raise BackfillWriteError(
-            f"跟进信已推送成功，但 README 回填写入失败（{exc}）——"
-            "请人工核对状态列，避免下次误判为待发重复推送"
-        ) from exc
-
-    audit.record(
-        AuditEvent(
-            scenario="wecom-aibot",
-            action="followup_backfilled",
-            evaluator=evaluator,
-            automation_level="L1",
-            decision={"sent": True, "backfilled": True, "new_status": new_status, "kind": kind},
-            data_sources={"readme": str(readme_path)},
-        )
-    )
-
-    # 队列 #289：回填成功后自动落库，避免每发一封信就积一个孤儿脏文件。
-    # 提交/推送失败不影响本次推送已成功的事实（见 `_commit_readme_backfill`
-    # docstring），只记审计，不抛出、不影响返回值语义。
-    committed, commit_error = _commit_readme_backfill(
-        readme_path, description=f"回填「{loc.cells[0] if loc.cells else ''}」发送状态"
-    )
-    audit.record(
-        AuditEvent(
-            scenario="wecom-aibot",
-            action="followup_backfill_committed" if committed else "followup_backfill_commit_failed",
-            evaluator=evaluator,
-            automation_level="L1",
-            decision={"committed": committed, "kind": kind},
-            data_sources={"readme": str(readme_path)},
-            error=commit_error,
-        )
-    )
-
     return DeliveryResult(
         location=loc, media_id=media_id, new_status=new_status, media_ids=media_ids,
         backfill_committed=committed, backfill_commit_error=commit_error,
     )
+
+
+# ============================================================================
+# 队列 #326 新形态（`OP-0831-U`，2026-08-31）：发送完整性自检
+#
+# 审计只记「已完成的动作」，不记「本应发生而未发生」——调用方进程被外部
+# 杀死时，未及执行的步骤不会留下任何痕迹，"缺 N 条"与"从没跑过"在审计
+# 文件里长得一模一样。下面两个函数把这条判据变成可编程的检查：给定
+# "这次投递期望发生哪几步"（由调用方按 chatid/department 算出，与
+# `push_followup` 内部 `cc_paul_active`/`cc_group_active` 必须同一份判据）
+# 与"审计里实际留下了哪几步的记录"（成功、失败任一变体都算"有据可查"——
+# 失败本身就是一种交代，只有一条记录都没有才是真正的静默缺口），报告
+# 真正缺了什么。
+#
+# 🔴 刻意设计成**读已落盘的审计文件**、不依赖任何进程内状态——本函数族
+# 存在的理由就是"调用方进程可能已经不在了"，所以必须能在一次完全独立的
+# 后续调用里跑（见 `scripts/push_followup_letter.py --verify-only`），
+# 而不是只在 `push_followup` 自己正常返回时才顺手查一遍那种"进程都被杀了
+# 就跑不到"的自检——那种自检当然也做了（`_run` 成功路径同样会调它），
+# 但它只能覆盖"跑完了但某步审计没写上"这类罕见情形，覆盖不了本行真正
+# 在治的那种"跑到一半整个进程消失"。
+# ============================================================================
+
+# 每一步的 (成功 action, 失败 action)——出现任一个都算"有据可查"。
+STEP_ACTIONS: dict[str, tuple[str, str]] = {
+    "main": ("followup_delivered", "followup_delivery_failed"),
+    "backfill": ("followup_backfilled", "followup_backfill_failed"),
+    "cc_paul": ("followup_cc_delivered", "followup_cc_failed"),
+    "cc_group": ("followup_group_cc_delivered", "followup_group_cc_failed"),
+}
+
+STEP_LABELS: dict[str, str] = {
+    "main": "①私信+docx",
+    "backfill": "④回填README",
+    "cc_paul": "②抄送ShaoPeiShen",
+    "cc_group": "③部门群抄送",
+}
+
+
+@dataclass
+class CompletenessReport:
+    expected: list[str]
+    missing: list[str]
+
+    @property
+    def ok(self) -> bool:
+        return not self.missing
+
+    def describe_missing(self) -> str:
+        return "、".join(STEP_LABELS[step] for step in self.missing)
+
+
+def slice_latest_attempt(records: list[dict], *, md_path: str) -> list[dict]:
+    """从全量审计记录（`audit.query_by(scenario="wecom-aibot")`，天然按落盘
+    顺序＝时间顺序）里截出"最近一次"针对 `md_path` 的推送尝试切片。
+
+    锚点＝最后一条 `data_sources.md == md_path` 的 `followup_delivered`／
+    `followup_delivery_failed`；切片范围＝从锚点起（含）到下一条**任意**
+    md 的主送事件之前（不含），或到记录末尾——`zhuopin-send-followup`
+    §0 的串行原则决定了同一时刻只应有一次在途推送，故"下一条主送事件"
+    天然是下一次尝试的边界，不需要更复杂的相关性判据（如自造 attempt id）。
+    找不到锚点（这个 md 从未被推送过，或 audit 路径不对）返回空列表。
+    """
+    anchor = None
+    for i, r in enumerate(records):
+        if r.get("action") in STEP_ACTIONS["main"] and r.get("data_sources", {}).get("md") == md_path:
+            anchor = i  # 同一 md 若被重试过多次，取最后一次
+    if anchor is None:
+        return []
+    end = len(records)
+    for j in range(anchor + 1, len(records)):
+        if records[j].get("action") in STEP_ACTIONS["main"]:
+            end = j
+            break
+    return records[anchor:end]
+
+
+def check_delivery_completeness(
+    records: list[dict], *, expect_cc_paul: bool, expect_group_cc: bool,
+) -> CompletenessReport:
+    """`records` 须已是"这一次推送尝试"的审计切片（见 `slice_latest_attempt`）。
+
+    `main`／`backfill` 恒为期望项——门禁②拒绝的行根本不会走到主送这一步，
+    调用方不该对那种行跑本检查；`cc_paul`／`cc_group` 是否期望，由调用方
+    按当次参数算出（是否传了 `--department`、主送目标是不是恰好就是
+    ShaoPeiShen／该群本身），必须与 `push_followup` 内部
+    `cc_paul_active`／`cc_group_active` 同一份判据，否则会把"这次本就不
+    该抄"误报成"缺了"。
+    """
+    present = {r.get("action") for r in records}
+    expected = ["main", "backfill"]
+    if expect_cc_paul:
+        expected.append("cc_paul")
+    if expect_group_cc:
+        expected.append("cc_group")
+    missing = [step for step in expected if not (present & set(STEP_ACTIONS[step]))]
+    return CompletenessReport(expected=expected, missing=missing)

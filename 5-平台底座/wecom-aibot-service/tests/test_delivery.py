@@ -8,7 +8,13 @@ from zhuopin_platform.audit import AuditLogger
 from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
 from aibot_service.constants import PAUL_USERID
-from aibot_service.delivery import push_followup, BackfillWriteError, DeliveryAckError
+from aibot_service.delivery import (
+    push_followup,
+    BackfillWriteError,
+    DeliveryAckError,
+    check_delivery_completeness,
+    slice_latest_attempt,
+)
 from aibot_service.gates import DeliveryNotFinalizedError
 
 from fakes import fake_client_factory
@@ -870,3 +876,191 @@ def test_cc_nonzero_errcode_does_not_undo_successful_main_push(tmp_path):
     assert "followup_cc_failed" in actions
     assert "followup_cc_delivered" not in actions
     assert "✅ 已推送" in readme_path.read_text(encoding="utf-8")
+
+
+# ============================================================================
+# 队列 #326 新形态（`OP-0831-U`，2026-08-31）：四步无事务——中断即静默丢
+# 后续。实证：`采购部#21` 发送到"①私信+docx"后调用方进程被外部杀死（Cowork
+# 工具调用超时），②③④三步连同各自的审计事件一起消失，README 停在
+# `🆕 待发`，次日批处理差点重发。
+#
+# 本组用例验证两处修复：
+#   (乙) 回填提到两处抄送之前——进程随时可能被杀，回填必须最先落地；
+#   (丙) 完整性自检——审计只记"已完成"不记"本应发生而未发生"，缺口必须
+#        能被点名，而不是和"从没跑过"长得一样。
+#
+# "杀进程"在单测里用 `_SimulatedKill`（继承 `BaseException` 而非
+# `Exception`）模拟：delivery.py 里每一步的 `except Exception` 都不会捕获
+# 它，因此调用点之后的代码（包括那一步自己的 `except` 分支）**真的不会
+# 执行**——这与用普通 `RuntimeError` 模拟的"发送失败"是两回事：普通失败
+# 会被 `followup_cc_failed`/`followup_group_cc_failed` 记下来，本身是"有
+# 据可查"的，不是本组要构造的静默缺口。
+# ============================================================================
+
+
+class _SimulatedKill(BaseException):
+    """测试用：模拟外部杀掉调用方进程（如 Cowork 工具调用超时）。"""
+
+
+def test_backfill_survives_kill_during_cc_paul_step(tmp_path, monkeypatch):
+    """(乙) 回填已提到两处抄送之前——即便进程恰好在"抄送 ShaoPeiShen"这一步
+    被杀，README 也已经回填、审计里已经有 followup_backfilled，不会被下一班
+    误判为待发而重发；群抄送这一步则连尝试都没有机会开始。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    original_send_markdown = connector.send_markdown
+
+    async def killed_send_markdown(chatid, content):
+        if chatid == PAUL_USERID:
+            raise _SimulatedKill("模拟外部杀进程：调用方在这一步失去响应")
+        return await original_send_markdown(chatid, content)
+
+    monkeypatch.setattr(connector, "send_markdown", killed_send_markdown)
+
+    with pytest.raises(_SimulatedKill):
+        asyncio.run(
+            push_followup(
+                readme_path=readme_path, md_path=md_path, docx_path=None,
+                connector=connector, chatid="chat-1", match=_match_8d,
+                audit=audit, cc_group_chatid="group-procurement",
+            )
+        )
+
+    # 主送 + 回填已经落地——README 不再停留在「🆕 待发」，不会被下一班重发。
+    text = readme_path.read_text(encoding="utf-8")
+    assert "✅ 已推送" in text
+    assert "🆕 待发" not in text
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "followup_delivered" in actions
+    assert "followup_backfilled" in actions
+    # 被杀的那一步本身，以及排在它后面的群抄送，都没有留下任何记录——
+    # 连失败记录都没有，这才是"缺口"，不是"记录到失败"。
+    assert "followup_cc_delivered" not in actions
+    assert "followup_cc_failed" not in actions
+    assert "followup_group_cc_delivered" not in actions
+    assert "followup_group_cc_failed" not in actions
+
+
+def test_completeness_check_names_missing_step_when_group_cc_killed(tmp_path, monkeypatch):
+    """(丙) main/backfill/cc_paul 均已正常完成并留痕，进程恰好在群抄送这
+    一步被杀——完整性自检必须非零、且只点名「③部门群抄送」这一条，不
+    误伤已经齐全的其它三条（这是"点名缺哪一条"，不是笼统报错）。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    original_send_markdown = connector.send_markdown
+
+    async def killed_send_markdown(chatid, content):
+        if chatid == "group-procurement":
+            raise _SimulatedKill("模拟外部杀进程：调用方在群抄送这一步失去响应")
+        return await original_send_markdown(chatid, content)
+
+    monkeypatch.setattr(connector, "send_markdown", killed_send_markdown)
+
+    with pytest.raises(_SimulatedKill):
+        asyncio.run(
+            push_followup(
+                readme_path=readme_path, md_path=md_path, docx_path=None,
+                connector=connector, chatid="chat-1", match=_match_8d,
+                audit=audit, cc_group_chatid="group-procurement",
+            )
+        )
+
+    records = audit.query_by(scenario="wecom-aibot")
+    attempt = slice_latest_attempt(records, md_path=str(md_path))
+    report = check_delivery_completeness(attempt, expect_cc_paul=True, expect_group_cc=True)
+
+    assert report.ok is False
+    assert report.missing == ["cc_group"]
+    assert report.describe_missing() == "③部门群抄送"
+
+
+def test_completeness_check_ok_after_full_normal_run(tmp_path):
+    """验收③：正常全跑一次（无中断），四条链路（主送/回填/抄送
+    ShaoPeiShen/群抄送）在审计里应齐全，自检报告 ok。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path, md_path=md_path, docx_path=None,
+            connector=connector, chatid="chat-1", match=_match_8d,
+            audit=audit, cc_group_chatid="group-procurement",
+        )
+    )
+
+    records = audit.query_by(scenario="wecom-aibot")
+    attempt = slice_latest_attempt(records, md_path=str(md_path))
+    report = check_delivery_completeness(attempt, expect_cc_paul=True, expect_group_cc=True)
+
+    assert report.ok is True
+    assert report.missing == []
+    assert set(report.expected) == {"main", "backfill", "cc_paul", "cc_group"}
+
+
+def test_check_delivery_completeness_treats_recorded_failure_as_present_not_missing(
+    tmp_path, monkeypatch
+):
+    """失败也是"有据可查"——cc_paul 失败但被正常记录（followup_cc_failed），
+    不该被完整性自检当成"缺了"；这与"进程被杀、连记录都没有"是两种不同
+    的严重程度，必须能区分，否则自检会把每一次抄送失败都错报成本行要治
+    的那种静默缺口，制造新的告警噪音。"""
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+
+    original_send_markdown = connector.send_markdown
+
+    async def flaky_send_markdown(chatid, content):
+        if chatid == PAUL_USERID:
+            raise RuntimeError("模拟企微抄送失败（正常失败，不是进程被杀）")
+        return await original_send_markdown(chatid, content)
+
+    monkeypatch.setattr(connector, "send_markdown", flaky_send_markdown)
+
+    asyncio.run(
+        push_followup(
+            readme_path=readme_path, md_path=md_path, docx_path=None,
+            connector=connector, chatid="chat-1", match=_match_8d, audit=audit,
+        )
+    )
+
+    records = audit.query_by(scenario="wecom-aibot")
+    attempt = slice_latest_attempt(records, md_path=str(md_path))
+    report = check_delivery_completeness(attempt, expect_cc_paul=True, expect_group_cc=False)
+    assert report.ok is True
+
+
+def test_slice_latest_attempt_empty_when_no_match(tmp_path):
+    readme_path, md_path, audit, connector, store = _setup(tmp_path)
+    assert slice_latest_attempt([], md_path=str(md_path)) == []
+    assert slice_latest_attempt(
+        audit.query_by(scenario="wecom-aibot"), md_path=str(md_path)
+    ) == []
+
+
+def test_slice_latest_attempt_scopes_to_this_md_only(tmp_path):
+    """两封不同信先后发送——对 md_path_1 切片时不应包含 md_path_2 的任何
+    审计记录，边界须落在"下一条任意 md 的主送事件之前"。"""
+    readme_path, md_path_1, audit, connector, store = _setup(tmp_path)
+    md_path_2 = readme_path.parent / "letter2.md"
+    md_path_2.write_text("第二封信正文。", encoding="utf-8")
+    readme_path_2 = readme_path.parent / "README2.md"
+    readme_path_2.write_text(README_TEXT, encoding="utf-8")
+
+    asyncio.run(push_followup(
+        readme_path=readme_path, md_path=md_path_1, docx_path=None,
+        connector=connector, chatid="chat-1", match=_match_8d,
+        audit=audit, cc_to_paul=False,
+    ))
+    asyncio.run(push_followup(
+        readme_path=readme_path_2, md_path=md_path_2, docx_path=None,
+        connector=connector, chatid="chat-1", match=_match_8d,
+        audit=audit, cc_to_paul=False,
+    ))
+
+    records = audit.query_by(scenario="wecom-aibot")
+    attempt_1 = slice_latest_attempt(records, md_path=str(md_path_1))
+
+    assert attempt_1
+    assert not any(r.get("data_sources", {}).get("md") == str(md_path_2) for r in attempt_1)
+    delivered = [r for r in attempt_1 if r["action"] == "followup_delivered"]
+    assert len(delivered) == 1
+    assert delivered[0]["data_sources"]["md"] == str(md_path_1)
