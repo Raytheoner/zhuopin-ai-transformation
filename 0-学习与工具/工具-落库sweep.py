@@ -2121,6 +2121,39 @@ def _status_paths(repo_root: Path) -> list[str]:
     return paths
 
 
+def _find_section_heading(text: str, heading: str) -> int:
+    """找 `heading`（如 `"## 二、"`）**真正作为一行行首**出现的位置，而非
+    像 `str.find()` 那样把它当普通子串找第一次出现。
+
+    队列 #326 `OP-0831-W` 实证根因：naive `str.find(heading)` 在正文任何
+    早于真正标题的地方，只要**逐字**出现过这个标题串——哪怕是反引号内的
+    引用、对本函数自身判据的元讨论（本仓库队列文件里大量存在"讨论 `##
+    二、`这一标题该怎么匹配"之类的段落，逐字复现了它自己想描述的标题
+    文本）——就会误锁定那一处，把此后到下一个换行开头的`"## "`之间那一
+    小段不相关文本当成整个 §二/§一 来解析。实测：某行讨论"正则只命中
+    两处 `` `## 二、` ``、`` `## 一、` ``"时，反引号内的引用逐字重现了标题
+    文本，且物理位置早于真正的"## 二、待 commit 批次"标题，导致
+    `_parse_section_two` 连续多轮把 §二 解析成一段不相关的假章节——
+    `_classify_section_two_rows` 据此得到的 `pending`/`ambiguous` 双双为
+    空，与"这份文件真的没有待处理批次"在返回值上完全无法区分，本轮因此
+    把全部待落库脏文件误判为"孤儿"、静默空转（exit 0，看起来一切正常，
+    实则一个批次都没处理——同本文件一贯的"错误不产生任何信号"族）。
+
+    修法：只承认**前面紧跟一个换行符**（或位于文本开头）的匹配——真实的
+    Markdown 二级标题必然独占一行、前面必是换行或文件开头，而"引用/
+    讨论标题文本"的正文不会让那段文本恰好紧跟在换行符之后（它出现在
+    句子中间、反引号内），这一条最低成本的行首锚定即可把两者分开，不需要
+    引入完整的 Markdown 解析器。CRLF 下 `"\\n"` 前还有一个 `\\r`，不影响
+    本判据（只要求"\\n"紧跟标题之前，不关心"\\n"之前是什么）。
+    """
+    idx = text.find(heading)
+    while idx != -1:
+        if idx == 0 or text[idx - 1] == "\n":
+            return idx
+        idx = text.find(heading, idx + 1)
+    return -1
+
+
 def _parse_section_two(queue_text: str, queue_path: str) -> list[dict]:
     """解析队列 §二"待 commit 批次"表格，返回每行的原始文本+四列内容。
 
@@ -2136,8 +2169,11 @@ def _parse_section_two(queue_text: str, queue_path: str) -> list[dict]:
     队列 #315：每行附带 `queue_path`（本次解析的物理文件相对路径）——
     批次现分散在两份文件里，下游写回（`_strike_off_rows`/`_process_
     normal_batch`）需要知道该写去哪一份，不能再假设只有一份队列文件。
+
+    队列 #326 `OP-0831-W`：标题定位改走 `_find_section_heading`（行首
+    锚定），不再用裸 `str.find()`——见该函数文档描述的真实误判事故。
     """
-    start = queue_text.find(SECTION_TWO_HEADING)
+    start = _find_section_heading(queue_text, SECTION_TWO_HEADING)
     if start == -1:
         return []
     rest = queue_text[start + len(SECTION_TWO_HEADING):]
@@ -2440,8 +2476,15 @@ def _parse_section_one(queue_text: str) -> list[dict]:
     `_parse_section_two` 同一套简单表格解析取舍——命中不了整八列即静默
     跳过该行，不崩溃、不误判；行首行尾双检查刻意保持不变，见
     `_parse_section_two` 文档（队列 #314，仅切列算法本身升级为反引号
-    感知，不改变这一取舍）。"""
-    start = queue_text.find(SECTION_ONE_HEADING)
+    感知，不改变这一取舍）。
+
+    队列 #326 `OP-0831-W`：标题定位同 `_parse_section_two` 改走
+    `_find_section_heading`（行首锚定）——本函数与 `_parse_section_two`
+    共享同一个"标题文本可能被正文引用/讨论从而在真实标题之前出现"的
+    风险（`"## 一、"`/`"## 二、"` 均已在生产队列文件的元讨论段落里逐字
+    出现过，只是本次触发误判的是 §二），故同批修，不留"只修了撞见的
+    那一半"的缺口。"""
+    start = _find_section_heading(queue_text, SECTION_ONE_HEADING)
     if start == -1:
         return []
     rest = queue_text[start + len(SECTION_ONE_HEADING):]
