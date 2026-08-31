@@ -1050,6 +1050,24 @@ SECTION_ONE_HEADING = "## 一、"
 COMMIT_TYPE_PREFIX_RE = re.compile(r"^[A-Za-z]+\(")
 ROW_NUMBER_RE = re.compile(r"#(\d+)")
 
+# OP-0831-W：`_run_git` 此前无 `timeout=`，是全文件 46 处调用点唯一未加超时
+# 保护的 subprocess 调用（其余子进程调用——决策提醒/定时任务镜像核对/执行体
+# 重启——均各自带 timeout）。2026-08-31 实测三次手动触发疑似"跑不完"，
+# 比对 `reports/sweep-commit.log` 时间戳坐实：**同一批尝试里有的完整跑完
+# （~2-3 分钟）、有的在写完起跑行后再无任何日志就没了下文**——而 `main()`
+# 的 `log` 列表设计为全程只在收尾 `print("\n".join(log))` 一次性吐出（非
+# 逐行 flush 到 stdout），所以"零输出"在健康跑法里本就是全程常态，不能
+# 据此判断卡死；真正的风险点是起跑段两次 `git fetch`（`_push_any_unpushed_
+# commits`/`_check_local_only_commits` 各一次）与收尾段的 fetch/push——
+# 这几处是 `_run_git` 里仅有的网络调用，一旦连接停滞（DNS/凭据助手/连接
+# 握手），在没有 timeout 的旧实现下会无限等待，且因为前置阶段本就静默，
+# 外部观察者拿到的证据与"真卡死"完全一样。加超时后，卡住会在此值之内
+# 转成 `subprocess.TimeoutExpired`，冒泡到 `main()` 既有的通用 `except
+# Exception` 兜底（该分支本就是为子进程类异常设计，见其上方注释），变成
+# 一次有退出码、有日志的失败，而不是永远挂起——不改变任何在此时限内正常
+# 返回的调用的行为。
+GIT_SUBPROCESS_TIMEOUT_SECONDS = 90
+
 
 class SweepAbort(Exception):
     """安全门未过或运行中出现需要人工介入的异常，携带退出码与提示。
@@ -1072,7 +1090,7 @@ def _run_git(args: list[str], cwd: Path, check: bool = True) -> subprocess.Compl
     # 关闭过（未观察到该现象），但脚本自身不应依赖这一假设——每次调用显式带上。
     return subprocess.run(
         ["git", "-c", "core.quotepath=false", *args], cwd=cwd, capture_output=True,
-        text=True, encoding="utf-8", check=check,
+        text=True, encoding="utf-8", check=check, timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
     )
 
 
