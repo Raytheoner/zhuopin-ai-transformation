@@ -66,6 +66,7 @@ from typing import Callable, Optional
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools import followup_gate
 
+from . import patrol_signal
 from .queue_edit_lock import QueueLockBusy
 from .readme_table import (
     ReadmeTableError,
@@ -264,6 +265,24 @@ def resolve_letter_number(
     return number
 
 
+def _raise_patrol_signal(repo_root: Path, *, letter_number: str,
+                          archived_filename: str, now: Optional[datetime],
+                          log: Callable[[str], None]) -> None:
+    """队列 #382⑴：在标完第九态的同一把编辑锁内，顺带给拆件巡逻留一个
+    「有活」信号（见 `patrol_signal.py`）。`patrol_signal.raise_signal`
+    自身已对读写异常兜底，这里再包一层 `except`，确保信号文件出问题绝不
+    反过来打破本模块「绝不向上抛」的既有契约——一条回件成功标了第九态，
+    不能因为一个新加的旁路信号写失败就被上层误判为处理失败。
+    """
+    try:
+        patrol_signal.raise_signal(
+            repo_root, letter_number=letter_number,
+            archived_filename=archived_filename, now=now, log=log,
+        )
+    except Exception:  # noqa: BLE001 —— 见上方 docstring
+        pass
+
+
 def mark_reply_arrived(
     *,
     archived_filename: str,
@@ -363,6 +382,10 @@ def mark_reply_arrived(
                     build_reply_arrived_status(fresh_status, archived_filename, now),
                 ),
                 encoding="utf-8",
+            )
+            _raise_patrol_signal(
+                repo_root, letter_number=_row_number(fresh_row),
+                archived_filename=archived_filename, now=now, log=log,
             )
             return _record(audit, evaluator, BridgeResult(
                 ACTION_MARKED, letter_number=_row_number(fresh_row),

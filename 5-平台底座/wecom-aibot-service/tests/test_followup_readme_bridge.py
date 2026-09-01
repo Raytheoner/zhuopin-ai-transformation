@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from aibot_service import followup_readme_bridge as bridge
+from aibot_service import patrol_signal
 from aibot_service.queue_edit_lock import QueueLockBusy
 from zhuopin_platform.shared_tools import followup_gate as fg
 
@@ -401,3 +402,58 @@ class TestStatusCompositionExtra:
         # `args.file == FOLLOWUP_README_TARGET` 逐字比对 ⇒ 静默不跑。
         assert str(bridge.LOCK_TARGET) == bridge.FOLLOWUP_README_REL
         assert "\\" not in str(bridge.LOCK_TARGET)
+
+
+class TestPatrolSignal:
+    """队列 #382⑴：只有「真的标了第九态」（`ACTION_MARKED`）才该给拆件巡逻
+    留信号——其余分支（已闭环/未命中/锁忙/幂等重投）README 全都没变，不
+    该制造一次多余开班。"""
+
+    def test_真实标记会给巡逻留信号(self, repo):
+        write_readme(repo, "✅ 已推送 2026-08-20 12:20 UTC")
+        result, _ = run(repo)
+        assert result.action == bridge.ACTION_MARKED
+        snapshot = patrol_signal.read_signal(repo)
+        assert snapshot.present is True
+        assert snapshot.pending[0]["letter_number"] == "采购部#17"
+        assert snapshot.pending[0]["archived_filename"] == ARCHIVED
+        assert snapshot.pending[0]["at"] == "2026-08-21T13:15:30Z"
+
+    def test_幂等重投不重复留信号(self, repo):
+        write_readme(repo, "✅ 已推送 2026-08-20 12:20 UTC")
+        run(repo)
+        patrol_signal.clear_signal(repo)
+        result, _ = run(repo)
+        assert result.action == bridge.ACTION_ALREADY
+        assert patrol_signal.read_signal(repo).present is False, (
+            "第二次是 ACTION_ALREADY——README 没有任何变化，不该无中生有一个信号"
+        )
+
+    def test_补充说明不留信号(self, repo):
+        write_readme(repo, "📥 已回件并回灌（2026-08-21 拆件巡逻）")
+        result, _ = run(repo, filename=TEXT_FEEDBACK)
+        assert result.action == bridge.ACTION_SUPPLEMENT
+        assert patrol_signal.read_signal(repo).present is False
+
+    def test_未命中不留信号(self, repo):
+        write_rows(repo, [row("采购部#18", "2026-08-22", "⏳ 待你审")])
+        result, _ = run(repo, filename=TEXT_FEEDBACK)
+        assert result.action == bridge.ACTION_NO_DISPATCHED
+        assert patrol_signal.read_signal(repo).present is False
+
+    def test_锁忙放弃不留信号(self, repo):
+        write_readme(repo, "✅ 已推送 2026-08-20 12:20 UTC")
+        result, _ = run(repo, lock=FakeLock(busy_times=99))
+        assert result.action == bridge.ACTION_LOCK_BUSY
+        assert patrol_signal.read_signal(repo).present is False
+
+    def test_信号写入自身失败不影响标记结果(self, repo, monkeypatch):
+        """`patrol_signal.raise_signal` 出问题绝不能把一次已经成功的
+        README 标记反过来变成失败——见 `_raise_patrol_signal` docstring。"""
+        write_readme(repo, "✅ 已推送 2026-08-20 12:20 UTC")
+        monkeypatch.setattr(
+            patrol_signal, "raise_signal",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("信号模块挂了")),
+        )
+        result, _ = run(repo)
+        assert result.action == bridge.ACTION_MARKED, "旁路信号失败不得拖累主流程"

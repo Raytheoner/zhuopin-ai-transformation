@@ -68,6 +68,11 @@ FOLLOWUP_APPROVAL_COOLDOWN_STATE_RELATIVE_PATH = (
 OPEN_POOL_REMINDER_STATE_RELATIVE_PATH = (
     Path("5-平台底座") / "wecom-aibot-service" / "reports" / "open_pool_reminder_state.json"
 )
+# 队列 #382⑴：拆件巡逻事件驱动开班信号，与 audit/pending 系列文件同一套
+# repo_root 解析、同一目录（见 patrol_signal.py）。
+PATROL_SIGNAL_RELATIVE_PATH = (
+    Path("5-平台底座") / "wecom-aibot-service" / "reports" / "patrol_signal.json"
+)
 
 
 def resolve_default_queue_anchor(
@@ -183,3 +188,9 @@ def resolve_open_pool_reminder_state_path(repo_root: Path) -> Path:
     """队列 #312：可 Open 池指纹状态文件的统一落点，与 `resolve_audit_path`
     同一套 `repo_root`。"""
     return repo_root / OPEN_POOL_REMINDER_STATE_RELATIVE_PATH
+
+
+def resolve_patrol_signal_path(repo_root: Path) -> Path:
+    """队列 #382⑴：拆件巡逻事件驱动开班信号文件的统一落点，与
+    `resolve_audit_path` 同一套 `repo_root`。"""
+    return repo_root / PATROL_SIGNAL_RELATIVE_PATH
