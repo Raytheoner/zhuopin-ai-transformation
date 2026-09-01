@@ -458,6 +458,168 @@ class Form1AckTests(RepoFixture):
 
 
 # ============================================================
+# 形态 1 · 假阳性两道过滤（`OP-0901-B`，2026-09-01）
+#
+# 2026-09-01 08:16 sweep 推「8 条 LAN 留步现在可以补做了」，逐行核对状态
+# 字段与行内改判记载后，8 条里零条有效。本类锁死两道过滤：`[S:done]` 行
+# 直接排除、命中格内含否认表述的行降级为「需人读一遍」——且锁死判据 ⑵
+# 「同一格」这个范围取舍本身（太窄漏 `#394`、太宽误伤 `#312`）。
+# ============================================================
+
+class Form1FalsePositiveFilterTests(RepoFixture):
+    KEY = f"form1:{QUEUE_MECH_REL}#一500"
+
+    def _full_row(self, row_id: str, *, task: str = "任务", status: str,
+                  touch: str = "触碰区", registered: str = "2026-08-19") -> str:
+        """比 `Form1Tests._row` 多控一格——用来把 LAN marker 与候选否认词
+        分别放进指定的格，测「同一格」这个范围取舍本身。"""
+        return (f"| {row_id} | {task} | CC | 指针 | 产出 | {status} | {touch} "
+                f"| {registered} |\n")
+
+    def _write(self, *rows: str) -> None:
+        self._write_queue(QUEUE_MECH_REL, _queue_doc(list(rows)))
+        self._write_queue(QUEUE_BIZ_REL, _queue_doc([]))
+
+    def _scan(self) -> dict:
+        return unclosed_scan.scan_form1(self.main, date(2026, 8, 27))
+
+    # ---------- 过滤 ⑴：[S:done] ----------
+
+    def test_done_row_excluded_from_items(self):
+        """样本＝ `#401`：整行已 `[S:done]`，天然含它的 LAN 半步。"""
+        self._write(self._full_row(
+            "500", status="[S:done][D:业] 🟡 代码已交付 —— 剩三步 LAN 留步（对照表／黄金基准／部署）"))
+        result = self._scan()
+        self.assertEqual(result["items"], [], "已 [S:done] 的行不得再列入可补做清单")
+        self.assertEqual(result["needs_review"], [])
+        self.assertEqual([i["row_id"] for i in result["done_excluded"]], ["500"])
+
+    def test_done_check_is_status_column_only_not_wide_match(self):
+        """`[S:done]` 必须是**状态列**的机器字段，不是随便哪格出现这四个字——
+        换到别的格（如「任务」列文字里恰好含这个词）不该被当成整行已做完。"""
+        self._write(self._full_row(
+            "500", task="任务列碰巧写到 [S:done] 这个词，但那是在描述别的东西",
+            status="[S:partial] **LAN 留步**：未做"))
+        result = self._scan()
+        self.assertEqual(result["done_excluded"], [], "非状态列出现该字样不得误判整行已做完")
+        self.assertEqual([i["row_id"] for i in result["items"]], ["500"])
+
+    # ---------- 过滤 ⑵：命中格内否认表述 → 降级 ----------
+
+    def test_denial_phrase_same_segment_downgrades(self):
+        """样本＝ `#354`：否认表述与 LAN marker 同段。"""
+        self._write(self._full_row(
+            "500", status="[S:timed=2026-09-03] ⇒ 回内网这件事已无增量，"
+                          "**不要再把它当 LAN 留步捞出来派单**。"))
+        result = self._scan()
+        self.assertEqual(result["items"], [])
+        self.assertEqual([i["row_id"] for i in result["needs_review"]], ["500"])
+
+    def test_denial_phrase_different_segment_same_cell_still_downgrades(self):
+        """🔴 样本＝ `#394`：LAN 声明与「已收口」结论分属**同一格的不同段**
+        （新证据分批追加，顺序不可控）——范围收窄到「同一段」会漏掉这一类，
+        这正是本条要锁住的下限。"""
+        self._write(self._full_row(
+            "500", status="[S:partial] ⑴ L1 **LAN 留步**：路径未配置，中继关着 ━━━ "
+                          "🟢 首条真实送达已发生，已收口，仅销号判据待他自身确认"))
+        result = self._scan()
+        self.assertEqual(result["items"], [],
+                         "同一格内的否认表述即便隔着一个 ━━━ 分段也必须生效")
+        self.assertEqual([i["row_id"] for i in result["needs_review"]], ["500"])
+
+    def test_denial_phrase_in_unrelated_cell_does_not_downgrade(self):
+        """🔴 样本＝ `#312`：LAN marker 落在「任务」格（描述 lan-closeout-skill
+        设计范围的元讨论），否认表述出现在**别的、无关的**格——范围放宽到
+        「整行」会误伤这一类，这正是本条要锁住的上限。"""
+        self._write(self._full_row(
+            "500",
+            task="延展子项「我已回Lan」承接既有缺口「**LAN 留步**无承接方」",
+            status="[S:blocked] 另一件不相干的事——看板半（A7a）本行未核实是否已收口"))
+        result = self._scan()
+        self.assertEqual([i["row_id"] for i in result["items"]], ["500"],
+                         "否认表述落在与 LAN 半步无关的另一格，不得据此降级")
+        self.assertEqual(result["needs_review"], [])
+
+    def test_negated_denial_phrase_does_not_downgrade(self):
+        """同族反例（同 `test_negated_mention_not_reported`）：否认表述本身
+        被否定时不算数。"""
+        self._write(self._full_row(
+            "500", status="[S:partial] **LAN 留步**：未做 ━━━ 并非已解除，仍需人工核实"))
+        result = self._scan()
+        self.assertEqual([i["row_id"] for i in result["items"]], ["500"],
+                         "「并非已解除」是对『已解除』的否定，不得触发降级")
+        self.assertEqual(result["needs_review"], [])
+
+    # ---------- 与既有 ack 机制的交互 ----------
+
+    def test_needs_review_row_can_still_be_acked(self):
+        """降级不是终点——人读一遍确认后，走既有 `--ack-form1` 同一条路径
+        转为完全静默，不是另开一套「needs_review 专属确认」。"""
+        self._write(self._full_row(
+            "500", status="[S:partial] **LAN 留步**：未做 ━━━ 早已闭合，本轮属扫描器形态 1 误报"))
+        self.assertEqual([i["row_id"] for i in self._scan()["needs_review"]], ["500"])
+
+        rc = unclosed_scan.cmd_ack_form1(self.main, self.KEY, "逐条读过，确认早已闭合",
+                                         today=date(2026, 8, 27))
+        self.assertEqual(rc, 0)
+        result = self._scan()
+        self.assertEqual(result["items"], [])
+        self.assertEqual(result["needs_review"], [])
+        self.assertEqual([i["row_id"] for i in result["suppressed"]], ["500"])
+
+    def test_done_excluded_key_not_reported_as_stale_ack(self):
+        """行先被人工确认，后来整行转 `[S:done]`——旧确认不该被报成
+        「对不上任何现存行」（行还在，只是换了一个更强的信号关掉它）。"""
+        self._write(self._full_row(
+            "500", status="[S:partial] **LAN 留步**：未做"))
+        unclosed_scan.cmd_ack_form1(self.main, self.KEY, "已核实", today=date(2026, 8, 27))
+
+        self._write(self._full_row(
+            "500", status="[S:done][D:机] 全部完成，含此前的 LAN 留步"))
+        result = self._scan()
+        self.assertEqual(result["stale_acks"], [],
+                         "行仍在（只是转成 done_excluded），旧确认不算对不上现存行")
+
+    def test_needs_review_key_not_reported_as_stale_ack(self):
+        """同理：行从「已确认闭合」被改写成新内容后降级为 needs_review——
+        旧确认因指纹不符而失效是预期行为，但不该额外被报成「对不上任何
+        现存行」（`test_new_lan_registration_reopens_the_ack` 的姊妹场景）。"""
+        self._write(self._full_row(
+            "500", status="[S:partial] **LAN 留步**：未做"))
+        unclosed_scan.cmd_ack_form1(self.main, self.KEY, "已核实", today=date(2026, 8, 27))
+
+        self._write(self._full_row(
+            "500", status="[S:partial] **LAN 留步**：改口径了，要复验的是 8091 "
+                          "━━━ 早已闭合，本轮属扫描器形态 1 误报"))
+        result = self._scan()
+        self.assertEqual([i["row_id"] for i in result["needs_review"]], ["500"])
+        self.assertEqual(result["stale_acks"], [])
+
+    # ---------- 今日实况回归（8 条里的三个代表样本，OP-0901-A 实证）----------
+
+    def test_todays_incident_representative_sample(self):
+        """8 条推送里的三个代表样本一次性回归：`#401`（done）／`#354`（denial）
+        ／`#312`（残留，元讨论）。过滤后可补做清单只剩 `#312` 一条——与
+        `1-转型规划/0-全景路线图/进度编年-CHANGELOG.md` OP-0901-B 回写的
+        「8→1」结论一致。"""
+        self._write(
+            self._full_row(
+                "401", status="[S:done][D:业] 🟡 代码已交付、判据未生效 —— 剩三步 LAN 留步"),
+            self._full_row(
+                "354", status="[S:timed=2026-09-03] ⇒ 回内网这件事已无增量，"
+                              "**不要再把它当 LAN 留步捞出来派单**。"),
+            self._full_row(
+                "312",
+                task="延展子项「我已回Lan」承接既有缺口「**LAN 留步**无承接方」",
+                status="[S:blocked] 另一件不相干的事——本行未核实是否已收口"),
+        )
+        result = self._scan()
+        self.assertEqual([i["row_id"] for i in result["items"]], ["312"])
+        self.assertEqual([i["row_id"] for i in result["needs_review"]], ["354"])
+        self.assertEqual([i["row_id"] for i in result["done_excluded"]], ["401"])
+
+
+# ============================================================
 # 回 LAN 感知：三项判据 + 翻转
 # ============================================================
 

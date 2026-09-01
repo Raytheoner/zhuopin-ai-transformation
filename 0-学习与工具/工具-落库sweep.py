@@ -4727,9 +4727,14 @@ def _announce_lan_flip(repo_root: Path, findings: dict, log: list[str],
     if findings["lan_flip"]["flip"] != "off→on":
         return True
     stalled = findings["form1"]["items"]
+    # 🔴 `needs_review`（`OP-0901-B`）绝不进这条推送——它的存在理由正是
+    # 2026-09-01 08:16 那次「8 条零有效」事故：命中格内已有否认表述的行,
+    # 机器不能替人拍板「已闭合」，更不能拍板「可以补做」，只能留给人读。
+    needs_review_count = len(findings["form1"].get("needs_review", ()))
     if not stalled:
         # 翻转是真的，但没有任何 LAN 留步项在等它 ⇒ 没有行动含义，不发。
-        log.append("    · 本轮由 off 翻到 on，但当前零条 LAN 留步登记，不发提醒。")
+        note = f"（另 {needs_review_count} 条降级需人读一遍，未计入、未推送）" if needs_review_count else ""
+        log.append(f"    · 本轮由 off 翻到 on，但当前零条 LAN 留步登记{note}，不发提醒。")
         return True
     webhook_url = _load_webhook_url(repo_root)
     if webhook_url is None:
@@ -4755,11 +4760,16 @@ def _announce_lan_flip(repo_root: Path, findings: dict, log: list[str],
     # 像是 8 小时前发的、进而被当成积压的旧消息划掉。
     when = (f"\n⏱ 本次探到 on 的时刻：{lan.get('observed_utc') or '（未记）'}"
             f"（＝ {lan.get('observed_local') or '（未记）'} 本地）")
+    # 🔴 只作一句 FYI，不列清单、不催办——列了清单就是把「需人读一遍」的
+    # 行又变相当成待办派下去，正是本次要治的那个病换个位置复发。
+    review_note = (f"\n📎 另有 {needs_review_count} 条命中格内含否认表述、"
+                   f"降级为『需人读一遍』，未列入上表（不确定是否已闭合，"
+                   f"见 `{UNCLOSED_REPORT_REL}`）。" if needs_review_count else "")
     try:
         _send_wecom_markdown(
             webhook_url,
             f"🔔 落库sweep：本机**刚回到内网**（off→on，三项探针齐备），"
-            f"下列 {len(stalled)} 条 LAN 留步现在可以补做了：\n{lines}{tail}{when}\n"
+            f"下列 {len(stalled)} 条 LAN 留步现在可以补做了：\n{lines}{tail}{when}{review_note}\n"
             f"⇒ 补法写在各自队列行内；做完回写该行并销号。全文见 `{UNCLOSED_REPORT_REL}`。",
         )
         log.append("    ✓ 回 LAN 翻转提醒已推送。")
@@ -4850,7 +4860,19 @@ def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
     # 回显的抑制清单，正是这套告警要防的「看起来干净」**。同第 4／第 6 类
     # 「零命中也回显」的那条理由，只是这里回显的是被关掉的那一半。
     suppressed = len(findings["form1"].get("suppressed", ()))
-    suppressed_text = f"（另 {suppressed} 处已核实闭合、指纹未变）" if suppressed else ""
+    # 🔴 `needs_review`／`done_excluded`（`OP-0901-B` 两道假阳性过滤）与
+    # `suppressed` 同行打、同一条「不许只打命中数」的理由——两个都是「被
+    # 挪出可补做清单」的桶，挪去哪里必须可见，不能只见命中数变少。
+    needs_review = len(findings["form1"].get("needs_review", ()))
+    done_excluded = len(findings["form1"].get("done_excluded", ()))
+    extra_bits = []
+    if suppressed:
+        extra_bits.append(f"另 {suppressed} 处已核实闭合、指纹未变")
+    if needs_review:
+        extra_bits.append(f"另 {needs_review} 处含否认表述降级需人读一遍")
+    if done_excluded:
+        extra_bits.append(f"另 {done_excluded} 处按 [S:done] 排除")
+    suppressed_text = f"（{'；'.join(extra_bits)}）" if extra_bits else ""
     log.append(
         f"    · 形态 1（LAN 留步登记）{len(findings['form1']['items'])} 处{suppressed_text}"
         f"／形态 2（卡在未合入分支）{len(findings['form2']['items'])} 条"

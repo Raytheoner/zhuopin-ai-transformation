@@ -5217,13 +5217,15 @@ def _f3(name, *, tracked=1, untracked=0, insertions=10, is_main=False):
 
 
 def _findings(*, form1=(), form2=(), form3=(), lan_on=True, flip=None,
-              unavailable=None, resolved=(), suppressed=(), stale_acks=()):
+              unavailable=None, resolved=(), suppressed=(), stale_acks=(),
+              needs_review=(), done_excluded=()):
     unavailable = unavailable or {}
     return {
         "base_ref": "origin/master", "today": "2026-08-27",
         "form1": {"items": list(form1), "excluded_section_two": 0,
                   "unavailable": unavailable.get("form1"), "wide_items": [],
-                  "suppressed": list(suppressed), "stale_acks": list(stale_acks)},
+                  "suppressed": list(suppressed), "stale_acks": list(stale_acks),
+                  "needs_review": list(needs_review), "done_excluded": list(done_excluded)},
         "form2": {"items": list(form2), "unavailable": unavailable.get("form2")},
         "form3": {"items": list(form3), "unavailable": unavailable.get("form3")},
         "lan": None if lan_on is None else {"on_lan": lan_on, "probes": []},
@@ -5308,6 +5310,23 @@ class UnclosedOutputGuardTests(unittest.TestCase):
         self.assertIn("形态 1（LAN 留步登记）1 处／", text)
         self.assertNotIn("已核实闭合", text)
 
+    def test_needs_review与done_excluded同行回显(self):
+        """`OP-0901-B`：两道假阳性过滤挪走的行，同 `suppressed` 一样必须
+        与命中数同行可见，理由完全同源——挪去哪里不能只见命中数变少。"""
+        scanner = _FakeScanner(_findings(
+            form1=[_f1("312")], needs_review=[_f1("354"), _f1("340")],
+            done_excluded=[_f1("401")]))
+        text, _ = self._run(scanner)
+        self.assertIn("形态 1（LAN 留步登记）1 处", text)
+        self.assertIn("另 2 处含否认表述降级需人读一遍", text)
+        self.assertIn("另 1 处按 [S:done] 排除", text)
+
+    def test_needs_review为空时不打该字样(self):
+        scanner = _FakeScanner(_findings(form1=[_f1("334")]))
+        text, _ = self._run(scanner)
+        self.assertNotIn("需人读一遍", text)
+        self.assertNotIn("[S:done] 排除", text)
+
     def test_对不上现存行的确认记录要出声(self):
         """行归档／编号变之后，那条确认核的是一个已经不存在的东西——留着
         不说话，下次读的人会以为「那一处已经被核过」。"""
@@ -5318,10 +5337,13 @@ class UnclosedOutputGuardTests(unittest.TestCase):
 
     def test_旧扫描器没有suppressed字段时不炸(self):
         """接线读的是**上一版**扫描器时（未合入／回滚），缺字段不得让整轮
-        巡检抛异常——那会把第 7 类整个变成「判据不可用」。"""
+        巡检抛异常——那会把第 7 类整个变成「判据不可用」。同覆盖 `OP-0901-B`
+        新增的 `needs_review`／`done_excluded` 两个字段。"""
         findings = _findings(form1=[_f1("334")])
         del findings["form1"]["suppressed"]
         del findings["form1"]["stale_acks"]
+        del findings["form1"]["needs_review"]
+        del findings["form1"]["done_excluded"]
         text, _ = self._run(_FakeScanner(findings))
         self.assertIn("形态 1（LAN 留步登记）1 处／", text)
 
@@ -5455,6 +5477,36 @@ class UnclosedOutputGuardTests(unittest.TestCase):
         self.assertEqual(self.sent, [])
         self.assertEqual(len(scanner.state_writes), 1)
         self.assertIn("零条 LAN 留步登记", text)
+
+    def test_零留步项但有needs_review时日志说明未推送而非当作全干净(self):
+        """`OP-0901-B`：`items` 为空不等于当轮真的什么都没有——若还有
+        `needs_review`，日志须说清「有，但降级未计入」，不能跟「真的零条」
+        长得一模一样。"""
+        scanner = _FakeScanner(_findings(flip="off→on", needs_review=[_f1("354")]))
+        text, _ = self._run(scanner)
+        self.assertEqual(self.sent, [], "needs_review 不得触发推送")
+        self.assertIn("1 条降级需人读一遍", text)
+        self.assertIn("未计入、未推送", text)
+
+    def test_needs_review不进推送清单只作FYI一句(self):
+        """`OP-0901-B` 核心回归：`items` 非空时推送正常发出，`needs_review`
+        只作一句 FYI 附在同一条消息末尾——不得单独列清单、不得被当作
+        「可以补做」的一部分。"""
+        scanner = _FakeScanner(_findings(
+            form1=[_f1("312")], needs_review=[_f1("354"), _f1("340")], flip="off→on"))
+        self._run(scanner)
+        self.assertEqual(len(self.sent), 1)
+        body = self.sent[0]
+        self.assertIn("1 条 LAN 留步现在可以补做了", body, "只有 items 计入可补做条数")
+        self.assertIn("#312", body)
+        self.assertNotIn("#354", body, "needs_review 的具体行不得混进可补做清单")
+        self.assertNotIn("#340", body)
+        self.assertIn("另有 2 条命中格内含否认表述", body)
+
+    def test_needs_review为空时推送正文不带FYI句(self):
+        scanner = _FakeScanner(_findings(form1=[_f1("334")], flip="off→on"))
+        self._run(scanner)
+        self.assertNotIn("含否认表述", self.sent[0])
 
     def test_翻转推送失败则本轮不落状态_下一轮重试(self):
         """🔴 本组第二要紧的一条。翻转只发生一次，错过没有第二次；若推送

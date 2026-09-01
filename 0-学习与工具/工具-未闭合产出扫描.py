@@ -144,6 +144,46 @@ WIDE_MARKER_RE = re.compile(r"留步")
 NEGATION_WORDS = ("不是", "非", "不算", "不属", "并非")
 NEGATION_LOOKBEHIND = 4
 
+# 形态 1 假阳性两道过滤（`OP-0901-B`，2026-09-01，队列 §一 `#422` 缺口的
+# 第三面）。背景：2026-09-01 08:16 sweep 探到 off→on，推「8 条 LAN 留步
+# 现在可以补做了」（`#312`／`#334`／`#340`／`#354`／`#394`／`#401`／`#418`／
+# `#422`），逐行核对状态字段与行内后续改判记载，**8 条里零条有效**——形态
+# 1 当时只认「LAN 留步」字样，既不读状态字段、也不读行内后续的改判记载。
+#
+# 🔴 两道过滤只有 ⑴ 是**沉默排除**（有全项目共用的机器可读字段撑腰，不是
+# 猜出来的），⑵ 只做**降级**、不做沉默排除：
+#   ⑴ **状态字段已 `[S:done]`** —— 整行都做完了，天然含它的 LAN 半步。
+#   ⑵ **命中格内还含否认表述** —— 该格已有别的地方明写「这半步不用再当
+#      LAN 留步捞出来」一类的话，但机器不能就此判定为「已核实闭合」（同
+#      `#422` 判据 ⑶ 的既有教训：识别「已闭合」结论段本质是猜中文——
+#      `#340`「已补做完成」与 `#334`「仍成立」两句字面结构几乎相同、语义
+#      相反）——故只降级为 `needs_review`（需人读一遍），不当作已核实闭合、
+#      也不直接踢出清单。
+#
+# ⚠️ **判据 ⑵ 的范围取舍——「同一格」，不是「同一段」也不是「整行」**（见
+# `_row_has_denial_signal`）：段级会漏掉 `#394` 这类真实样本——它的 LAN
+# 声明与后续「已收口」结论分属同一状态格里的**不同段**（新证据分批追加、
+# 顺序不可控，同判据 ⑶ 文档里「两种追加方向都有」的既有教训）；行级会
+# 误伤 `#312` 这类样本——它的 LAN marker 落在「任务」格（描述
+# lan-closeout-skill 本身的设计范围，是元讨论、不是真登记），跨列去别的
+# 格里找否认表述只会撞上与本条 LAN 半步毫无关系的收尾句。
+#
+# 已知残留（如实登记，非本次两道过滤的能力范围）：`#312`（元讨论）、`#422`
+# （判据方向与推送时机相反——见其行内「要先真的离开内网」）——两者均不落
+# `[S:done]`，命中格内也没有否认表述，两道过滤后仍会留在 `items`；处置走
+# 同一套 `--ack-form1`（人读一遍、带指纹确认），不是再猜一版关键词。
+DENIAL_MARKER_RE = re.compile(
+    r"不要再.{0,6}当.{0,4}LAN\s*留步.{0,10}捞出来"
+    r"|已自行解除"
+    r"|已补做完成"
+    r"|早已闭合"
+    r"|形态\s*1\s*误报"
+    r"|不再成立"
+    r"|已收口"
+    r"|已解除"
+    r"|无需任何补做"
+)
+
 # 形态 1 分档（天）。阈值不是拍的：7 天＝`#312` 陈化催办已在用的那个数，
 # 两处用同一个数，免得同一件事在两份报告里给出两种「算不算久」。
 AGE_BUCKETS = ((7, "≥7 天"), (3, "3–6 天"))
@@ -336,6 +376,31 @@ def _hit_segments(cells: list[str], marker: re.Pattern[str]) -> list[str]:
     return segments
 
 
+def _hit_cell_indices(cells: list[str], marker: re.Pattern[str]) -> set[int]:
+    """命中 `marker` 的格下标集合——`_hit_segments` 的姊妹函数，只是返回
+    位置而不是文本，供 `_row_has_denial_signal` 判「否认表述是否落在
+    LAN 半步自己的那一格」用。"""
+    indices: set[int] = set()
+    for ci, cell in enumerate(cells):
+        for segment in cell.split(CONCLUSION_SEGMENT_SEPARATOR):
+            if _affirmative_hit(segment, marker) is not None:
+                indices.add(ci)
+                break
+    return indices
+
+
+def _row_has_denial_signal(cells: list[str]) -> bool:
+    """命中 LAN 标记的格里，是否**同一格**内还含未被否定的否认表述。
+
+    范围取「同一格」而非「同一段」或「整行」，取舍见文件头
+    `DENIAL_MARKER_RE` 判据 ⑵ 的注释——段级会漏 `#394`（声明与结论分属
+    同一格的不同段），行级会误伤 `#312`（LAN marker 落在与否认表述完全
+    无关的另一格）。
+    """
+    return any(_affirmative_hit(cells[ci], DENIAL_MARKER_RE) is not None
+              for ci in _hit_cell_indices(cells, LAN_MARKER_RE))
+
+
 def form1_fingerprint(segments: list[str]) -> str:
     """确认指纹 ＝ 该行**全部留步登记段**的内容哈希（`OP-0827-G`）。
 
@@ -430,6 +495,8 @@ def scan_form1(repo_root: Path, today: date, wide: bool = False) -> dict:
     acks = _read_form1_acks(repo_root)
     items: list[dict] = []
     suppressed: list[dict] = []
+    needs_review: list[dict] = []
+    done_excluded: list[dict] = []
     wide_items: list[dict] = []
     excluded = 0
     missing: list[str] = []
@@ -453,32 +520,54 @@ def scan_form1(repo_root: Path, today: date, wide: bool = False) -> dict:
                     "registered": registered, "age_days": age, "bucket": _bucket(age),
                 }
                 segments = _hit_segments(cells, LAN_MARKER_RE)
-                if segments:
-                    key = f"form1:{rel}#{section}{cells[0]}"
-                    fingerprint = form1_fingerprint(segments)
-                    hit = {**record, "excerpt": _excerpt(row_text, LAN_MARKER_RE),
-                           "key": key, "fingerprint": fingerprint,
-                           "hit_segments": len(segments)}
-                    ack = acks.get(key)
-                    if isinstance(ack, dict) and ack.get("fingerprint") == fingerprint:
-                        # 「已确认 ＋ 指纹未变」双条件才静默（同
-                        # `_find_stale_in_flight_changes` 的 D2 语义）。
-                        suppressed.append({**hit, "note": ack.get("note", ""),
-                                           "acked_at": ack.get("acked_at", "")})
-                    else:
-                        items.append(hit)
-                elif wide and WIDE_MARKER_RE.search(row_text):
-                    wide_items.append({**record, "excerpt": _excerpt(row_text, WIDE_MARKER_RE)})
+                if not segments:
+                    if wide and WIDE_MARKER_RE.search(row_text):
+                        wide_items.append({**record, "excerpt": _excerpt(row_text, WIDE_MARKER_RE)})
+                    continue
+
+                key = f"form1:{rel}#{section}{cells[0]}"
+                # 过滤 ⑴：状态字段已 `[S:done]`——整行都做完了，天然含它的
+                # LAN 半步，落 `done_excluded`（可见、可数，不静默丢）。
+                # §四 无状态列，天然不适用本条。
+                status_cell = cells[5] if section == "一" else ""
+                if status_cell.startswith("[S:done]"):
+                    done_excluded.append({**record, "key": key,
+                                          "excerpt": _excerpt(row_text, LAN_MARKER_RE)})
+                    continue
+
+                fingerprint = form1_fingerprint(segments)
+                hit = {**record, "excerpt": _excerpt(row_text, LAN_MARKER_RE),
+                       "key": key, "fingerprint": fingerprint,
+                       "hit_segments": len(segments)}
+                ack = acks.get(key)
+                if isinstance(ack, dict) and ack.get("fingerprint") == fingerprint:
+                    # 「已确认 ＋ 指纹未变」双条件才静默（同
+                    # `_find_stale_in_flight_changes` 的 D2 语义）。
+                    suppressed.append({**hit, "note": ack.get("note", ""),
+                                       "acked_at": ack.get("acked_at", "")})
+                    continue
+
+                # 过滤 ⑵：命中格里若还含未被否定的否认表述，降级为
+                # `needs_review`（需人读一遍），不当作已核实闭合。
+                if _row_has_denial_signal(cells):
+                    needs_review.append(hit)
+                else:
+                    items.append(hit)
 
     # 🔴 确认记录对不上任何现存行时要说出来，不静默留着：行可能已归档、
     # 也可能编号变了；一条对不上的确认在文件里躺着，下次读的人会以为
-    # 「那一处已经被核过」——而它核的是一个已经不存在的东西。
-    live = {item["key"] for item in items} | {item["key"] for item in suppressed}
+    # 「那一处已经被核过」——而它核的是一个已经不存在的东西。`needs_review`
+    # 与 `done_excluded` 的 key 一并算作「活的」——它们只是换了个桶，不是
+    # 行消失了，不该把对应确认判成对不上任何现存行。
+    live = ({item["key"] for item in items} | {item["key"] for item in suppressed}
+            | {item["key"] for item in needs_review}
+            | {item["key"] for item in done_excluded})
     stale_acks = sorted(key for key in acks if key not in live)
 
     return {
         "items": items, "wide_items": wide_items, "excluded_section_two": excluded,
-        "suppressed": suppressed, "stale_acks": stale_acks,
+        "suppressed": suppressed, "needs_review": needs_review,
+        "done_excluded": done_excluded, "stale_acks": stale_acks,
         "unavailable": f"以下队列文件读不到：{'；'.join(missing)}" if missing else None,
     }
 
@@ -499,7 +588,11 @@ def cmd_ack_form1(repo_root: Path, key: str, note: str, today: date | None = Non
         print(f"✗ 形态 1 判据本轮不可用（{result['unavailable']}），"
               "拒绝记录确认——算不出可信指纹。")
         return 1
-    match = next((i for i in result["items"] if i["key"] == key), None)
+    # 🔴 `needs_review`（`OP-0901-B` 降级桶）与 `items` 同等可确认——降级
+    # 不是终点，人读一遍之后走的是同一条 `--ack-form1` 路径，不另开一套
+    # 「needs_review 专属确认」。
+    candidates = result["items"] + result["needs_review"]
+    match = next((i for i in candidates if i["key"] == key), None)
     already = next((i for i in result["suppressed"] if i["key"] == key), None)
     if match is None and already is not None:
         print(f"· 无需重复确认：{key} 当前指纹 {already['fingerprint']} 与已有确认一致，"
@@ -508,7 +601,7 @@ def cmd_ack_form1(repo_root: Path, key: str, note: str, today: date | None = Non
     if match is None:
         print(f"✗ 当前形态 1 命中里没有 `{key}`，拒绝记录确认——"
               "无法计算指纹，且一条确认不该指向一个不存在的命中。")
-        print("  现存命中：" + ("；".join(i["key"] for i in result["items"]) or "（无）"))
+        print("  现存命中：" + ("；".join(i["key"] for i in candidates) or "（无）"))
         return 1
     acks = _read_form1_acks(repo_root)
     acks[key] = {
@@ -967,7 +1060,12 @@ def scan(repo_root: Path, *, lan: bool = True, wide: bool = False,
              if want_sweep and any(item.get("is_main") for item in form3["items"])
              else None)
 
-    current_keys = {item["key"] for group in (form1["items"], form2["items"], form3["items"])
+    # 🔴 `form1["needs_review"]` 一并算进「当前」：它只是从「可直接补做」
+    # 降级为「需人读一遍」，行本身仍在——不算进去会被下一轮误判成「✅ 已
+    # 解除」，而它其实一次也没被人读过。`done_excluded`（真按 `[S:done]`
+    # 关掉）不算，那些行确已闭合，判「已解除」正确。
+    current_keys = {item["key"] for group in
+                    (form1["items"], form1["needs_review"], form2["items"], form3["items"])
                     for item in group}
     previous_keys = set(state.get("alerted", {}))
     resolved = sorted(previous_keys - current_keys)
@@ -991,7 +1089,10 @@ def write_state(findings: dict, state_path: Path) -> None:
     alerted = state.get("alerted", {})
     fresh: dict[str, dict] = {}
     for group in ("form1", "form2", "form3"):
-        for item in findings[group]["items"]:
+        tracked = list(findings[group]["items"])
+        if group == "form1":
+            tracked += findings[group].get("needs_review", [])  # 同 `scan()` 的 current_keys 口径
+        for item in tracked:
             key = item["key"]
             fresh[key] = {"first_seen_utc": alerted.get(key, {}).get("first_seen_utc", now),
                           "last_seen_utc": now}
@@ -1128,6 +1229,20 @@ def format_report(findings: dict) -> str:
         lines.append(f"  ⚠ {len(form1['stale_acks'])} 条确认记录已对不上任何现存行"
                      f"（行归档／编号变／留步字样被整段改写）："
                      + "、".join(form1["stale_acks"]))
+    if form1.get("needs_review"):
+        lines.append(f"\n## 形态 1 · 需人读一遍（`OP-0901-B`，命中格内含否认表述，"
+                     f"机器不据此判为已闭合）：{len(form1['needs_review'])} 处")
+        for item in sorted(form1["needs_review"], key=lambda i: -(i["age_days"] or 0)):
+            age = f"{item['age_days']} 天" if item["age_days"] is not None else "登记日未知"
+            lines.append(f"  · §{item['section']} #{item['row_id']}（{item['queue'].split('/')[-1]}）"
+                         f"｜{item['bucket']}／{age}｜`{item['key']}`｜…{item['excerpt']}…")
+        lines.append("  ⇒ 未列入「现在可以补做了」清单——读一遍确认后，闭合的用 "
+                     f"`python {_SELF_REL} --ack-form1 '<key>' --note '<核的是什么>'` 记录；"
+                     "确未闭合的照常按行内补法执行。")
+    if form1.get("done_excluded"):
+        lines.append(f"\n## 形态 1 · 已按 `[S:done]` 排除（`OP-0901-B`）：{len(form1['done_excluded'])} 处")
+        for item in form1["done_excluded"]:
+            lines.append(f"  · §{item['section']} #{item['row_id']}（{item['queue'].split('/')[-1]}）")
     for item in form1.get("wide_items", []):
         lines.append(f"  （宽口径·仅提示）§{item['section']} #{item['row_id']}：…{item['excerpt']}…")
 
