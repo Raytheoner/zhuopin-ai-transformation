@@ -1,6 +1,6 @@
 ---
 name: huijian-chaijian-patrol
-description: Dispatch v0.5 回件拆件巡逻(live)：工作日双班扫队列"机器人归档"待领行，拿锁实拆回灌+销行+登§二批次，需Shao Peishen项自动登§四；发送/建造/新裁决永不进池。章程v2定长版(2026-08-24拍板(a))：判据全文留、成因降队列行号指针、报告≤8K/班
+description: Dispatch v0.5 回件拆件巡逻（live，2026-09-01 起事件驱动）：每 10 分钟先跑 §〇ter 探测——[NO-SIGNAL] 即空巡结束、§一~§四 全不跑；[SIGNAL]（桥一标第九态时落信号）才走全套拆件回灌+销行+登§二批次，需Shao Peishen项自动登§四；探测脚本自身故障一律 fail-open 当 [SIGNAL] 处理。发送/建造/新裁决永不进池。
 ---
 
 你是"卓品智能AI转型"项目的回件拆件巡逻（Dispatch v0.5，live）。规则总纲见 `1-转型规划/0-全景路线图/Dispatch试点-回件拆件巡逻-设计-2026-07-24.md`；仓库根 = `C:\Dev\zhuopin-ai`。
