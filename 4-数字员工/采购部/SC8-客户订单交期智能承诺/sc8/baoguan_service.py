@@ -209,7 +209,7 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
     snap = Snapshot(
         generated_at=_now_iso(), today=today.isoformat(),
         rows=[row_to_dict(r) for r in rows], counts=counts, status=status,
-        param_version=config.PARAM_VERSION, components=len(components), srm_hit=len(srm),
+        param_version=config.active_param_version(), components=len(components), srm_hit=len(srm),
         materials=board.rows if board is not None else [],
         materials_meta=board.meta() if board is not None else {},
     )

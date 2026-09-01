@@ -10,6 +10,7 @@ from datetime import date
 from zhuopin_platform.shared_tools.models import BomRow, SrmDeliveryOrder
 
 from sc8 import baoguan_service as bs
+from sc8 import config
 from sc8.baoguan_service import Snapshot, SnapshotStore, compute_snapshot
 from sc8.models import SalesOrder
 
@@ -65,6 +66,31 @@ def test_compute_snapshot_structure(monkeypatch):
     assert red["so"] == "FO-1" and red["risk"] == "red"
     assert snap.components == 2 and snap.srm_hit == 2
     assert snap.param_version
+
+
+def test_compute_snapshot_param_version_tracks_kit_date_rule1_toggle(monkeypatch):
+    """队列 #445：曾误读模块常量 config.PARAM_VERSION（恒为 sc8-params-v1），翻开关后
+    展示层 param_version 不带 +rule1 后缀，与 config.active_param_version() docstring
+    明写的可追溯性设计意图矛盾（同一版本串对应两套不同算法，审计无法还原按哪支算的）。
+    """
+    bom = _bom("RED", "C1") + _bom("GRN", "C2")
+    srm = [SrmDeliveryOrder(delivery_id="SRM-C1", demand_id="", supplier_id="",
+                            material_id="C1", qty_committed=0,
+                            committed_date="2026-11-30", status="confirmed"),
+           SrmDeliveryOrder(delivery_id="SRM-C2", demand_id="", supplier_id="",
+                            material_id="C2", qty_committed=0,
+                            committed_date="2026-08-01", status="confirmed")]
+
+    monkeypatch.setenv("SC8_KIT_DATE_RULE1", "off")
+    _patch_sources(monkeypatch, orders=_orders(), bom=bom, srm=srm)
+    snap_off = compute_snapshot(today=TODAY, status="2")
+    assert snap_off.param_version == config.PARAM_VERSION
+    assert not snap_off.param_version.endswith("+rule1")
+
+    monkeypatch.setenv("SC8_KIT_DATE_RULE1", "on")
+    _patch_sources(monkeypatch, orders=_orders(), bom=bom, srm=srm)
+    snap_on = compute_snapshot(today=TODAY, status="2")
+    assert snap_on.param_version == config.PARAM_VERSION + "+rule1"
 
 
 def test_srm_date_without_batch_detail_keeps_legacy_date(monkeypatch):
