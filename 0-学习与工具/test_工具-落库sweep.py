@@ -5321,6 +5321,115 @@ class EditableGuardWiringTests(unittest.TestCase):
         self.assertIn("ast.literal_eval", called)
 
 
+class EditableGuardOutboundAlertTests(unittest.TestCase):
+    """🔴 #410 收口那条：**本判据从建成起从未在真机上真的报出过一条**。
+
+    真机零告警本身是对的（`OP-0902-A` 泳道 C 只读取证：finder 9 个、模块
+    映射 12 条、指向异常 0 条，12 条全部指向主工作树）——但「真机不报」
+    与「报不出来」外观完全相同，这正是 `#82`／`OP-0819-F` 那一族的形状。
+
+    `EditableInstallTargetTests` 十四条**全部**把 `_track_and_alert_standing_state`
+    换成了 `_StandingStateRecorder` 替身，锁的是「交给发送层的 key 集合与
+    正文」；发送层往后（状态文件落盘、节流、真的调 `_send_wecom_markdown`）
+    在本判据这条链路上**一次都没被走通过**。本组不换替身、只在最外沿把
+    `_send_wecom_markdown` 换成收集器，把那段没人走过的路走一遍。
+
+    与 `StandingStateAlertLifecycleUnitTests` 不重复：那组验的是骨架自身
+    （渲染函数是 `lambda: "ALERT"`），验不出本判据接进去之后**是不是真能
+    把自己的正文送到发送口**——接错常量、传错 key、渲染函数抛异常，
+    那组一条都测不出来。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.repo = self.root / "repo"
+        (self.repo / "reports").mkdir(parents=True)
+        self.sp = self.root / "site-packages"
+        self.sp.mkdir()
+        self.good = self.repo / "5-平台底座" / "zhuopin_platform" / "zhuopin_platform"
+        self.good.mkdir(parents=True)
+        self.sent: list[str] = []
+        # 🔴 刻意**不**替换 `_track_and_alert_standing_state`——本组要走的
+        # 就是它。只把最外沿的真发送口换掉，webhook 用不可解析的
+        # `.invalid` 域名兜底（即便替身失效也发不出去）。
+        self._orig_dirs = sweep._site_packages_dirs
+        self._orig_webhook = sweep._load_webhook_url
+        self._orig_send = sweep._send_wecom_markdown
+        sweep._site_packages_dirs = lambda: ([self.sp], None)
+        sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
+        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+
+    def tearDown(self):
+        sweep._site_packages_dirs = self._orig_dirs
+        sweep._load_webhook_url = self._orig_webhook
+        sweep._send_wecom_markdown = self._orig_send
+        self._tmp.cleanup()
+
+    def _run(self):
+        log = []
+        sweep._check_editable_install_targets(self.repo, log)
+        return "\n".join(log)
+
+    def test_异常真的走到发送口并落状态文件(self):
+        """出现异常 ⇒ 真发出一条、状态文件真记下这个 key。"""
+        ghost = self.repo / ".claude" / "worktrees" / "wt" / "zhuopin_platform"
+        ghost.mkdir(parents=True)
+        _write_finder(self.sp, "zhuopin_platform", {"zhuopin_platform": str(ghost)})
+
+        text = self._run()
+
+        self.assertEqual(len(self.sent), 1, f"异常未走到发送口；日志：\n{text}")
+        self.assertIn("zhuopin_platform", self.sent[0])
+        self.assertIn(sweep.EDITABLE_FORM_GHOST, self.sent[0])
+        self.assertIn("告警已推送", text)
+        state = json.loads(
+            (self.repo / sweep.EDITABLE_INSTALL_STATE_REL).read_text(encoding="utf-8"))
+        self.assertEqual(set(state), {"zhuopin_platform"})
+
+    def test_零异常时一条都不发但回显仍在(self):
+        """健康态**不得**发消息——一个天天发「一切正常」的告警会被静音，
+        而回显必须还在（那是它每天唯一的存在证明）。"""
+        _write_finder(self.sp, "zhuopin_platform", {"zhuopin_platform": str(self.good)})
+        text = self._run()
+        self.assertEqual(self.sent, [])
+        self.assertIn("zhuopin_platform ←", text)
+
+    def test_节流窗口内不重发(self):
+        _write_finder(self.sp, "x", {"x": str(self.repo / "无此目录")})
+        self._run()
+        self.assertEqual(len(self.sent), 1)
+        self._run()  # 立刻再跑一轮，仍在 realert 窗口内
+        self.assertEqual(len(self.sent), 1, "节流失效：同一常驻异常被重复推送")
+
+    def test_异常消失后真的发出解除通知(self):
+        """🔴 有「报出来」还不够，还要有「报解除」——只会亮不会灭的灯，
+        下一轮就会被当成背景噪音。"""
+        finder = _write_finder(self.sp, "zhuopin_platform",
+                               {"zhuopin_platform": str(self.repo / "无此目录")})
+        self._run()
+        self.assertEqual(len(self.sent), 1)
+
+        finder.unlink()
+        _write_finder(self.sp, "zhuopin_platform", {"zhuopin_platform": str(self.good)})
+        text = self._run()
+
+        self.assertEqual(len(self.sent), 2, f"异常消失后未发解除通知；日志：\n{text}")
+        self.assertIn("已回正", self.sent[1])
+        self.assertIn("zhuopin_platform", self.sent[1])
+        state = json.loads(
+            (self.repo / sweep.EDITABLE_INSTALL_STATE_REL).read_text(encoding="utf-8"))
+        self.assertEqual(state, {})
+
+    def test_判据自己瞎了时同样发得出去(self):
+        """`site-packages` 取不到 ⇒ 「判据不可用」这一路也必须真能送出。
+        这条路平时最不可能被走到，也最不可能有人发现它送不出去。"""
+        sweep._site_packages_dirs = lambda: ([], "本解释器名下无任何存在的 site-packages 目录")
+        self._run()
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn(sweep.EDITABLE_FORM_UNREADABLE, self.sent[0])
+
+
 class _FakeScanner:
     """替身扫描器：只实现 `_check_unclosed_outputs` 真正依赖的那四个名字。
 
