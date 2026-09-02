@@ -5036,6 +5036,171 @@ def _check_hooks_heartbeat(repo_root: Path, log: list[str]) -> None:
     )
 
 
+# ============================================================
+# 队列 §一 #382⑵（2026-09-02，OP-0902-D）：第 10 类常驻状态告警——
+# 跟进信待发信盘点 + 交叉红标（原巡逻章程 `huijian-chaijian-patrol.
+# SKILL.md` §一.3「待发信盘点」判据下放）
+# ============================================================
+#
+# 🔴 **为什么载体改为 sweep 每小时这一轮，不是巡逻班次**（同 `#422`/
+# `#433` 两类落地时已用过的判据：先比一次谁的节奏与"新增发生"的节奏
+# 匹配）：跟进信状态列与队列行**随时**可能被任一 session 改写（批准
+# 脚本转态、拆件巡逻回灌、Shao Peishen 手工暂缓），而巡逻是工作日
+# 8:00-20:00 每整点、且 2026-09-01 起改成事件驱动（无信号即空巡、§一~§四
+# 全不跑，见章程 §〇ter）——待发信盘点这一步**并不依赖"回件信号"这个
+# 触发条件**（一封信被批准/暂缓与有没有回件无关），继续挂在巡逻的事件
+# 驱动开关下会让它的检测频率意外滑向"只在有回件时才顺带查一次"。sweep
+# 这一轮已有 webhook 与"出现→告警／消失→解除"骨架
+# （`_track_and_alert_standing_state`，第 4/6/7/9 类同形复用），本类
+# 不新造通道，只读、只告警、**不改 README、不发送任何跟进信、不碰
+# `.51`**——与"对外发送"三个字划清界限：这里发的是运维侧企微群告警，
+# 不是跟进信本身。
+#
+# 🔴 **sweep 刻意不在自身进程内 `import aibot_service`/`zhuopin_platform`**
+# （文件头部"零依赖"原则，同 `#192-A`/`#219` 两处既有先例：多 worktree
+# 共享同一份全局 editable install，进程内 import 有被静默劫持到别的
+# checkout 的风险）——README 状态判据（`followup_gate`/`readme_table`
+# 两份权威实现）改走独立脚本 `FOLLOWUP_README_DIGEST_SCRIPT_REL`
+# （`--digest --json`）子进程调用，本函数只解析其 JSON stdout，不在
+# sweep 自身进程加载风险共享包。
+#
+# 🔴 **判据只此一份**：三态计数与"是否待发"均直接取自
+# `工具-跟进信README查询.py` 的 `not_yet_sent_prefix` 字段（该字段本身
+# 又直接复用 `followup_gate.NOT_YET_SENT_STATUS_PREFIXES`），本函数不
+# 重新发明一套字符串匹配规则。
+FOLLOWUP_README_DIGEST_SCRIPT_REL = "0-学习与工具/工具-跟进信README查询.py"
+FOLLOWUP_DIGEST_UNAVAILABLE_STATE_REL = "reports/sweep-followup-digest-unavailable-state.json"
+FOLLOWUP_PAUSE_MISMATCH_STATE_REL = "reports/sweep-followup-pause-mismatch-state.json"
+FOLLOWUP_PENDING_ALERT_INTERVAL_HOURS = 24.0
+# 交叉红标判据原文（巡逻章程 §一.3，#150/#294 真实误发后加）：队列行称
+# 某信"暂缓/压着"，而 README 仍是「🆕 待发」——机制每日 09:30 批处理
+# 只认状态列字面值，会照发。只需检查 🆕 待发 这一态：⏳/⏸ 两态本就已被
+# 门禁结构性排除在可发送范围外，不构成"会被误发"的风险。
+FOLLOWUP_PAUSE_KEYWORDS = ("暂缓", "压着")
+
+
+def _run_followup_readme_digest_json(repo_root: Path) -> tuple[dict | None, str | None]:
+    """子进程调用 `工具-跟进信README查询.py --digest --json`，返回
+    (解析后的 dict, None) 或 (None, 失败原因)——不在本进程 import 该脚本
+    依赖的 `aibot_service`/`zhuopin_platform`（见本节头部长注）。"""
+    script = repo_root / FOLLOWUP_README_DIGEST_SCRIPT_REL
+    if not script.exists():
+        return None, f"未找到 {FOLLOWUP_README_DIGEST_SCRIPT_REL}"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "--digest", "--json"],
+            cwd=repo_root, capture_output=True, text=True, encoding="utf-8", timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"子进程调用异常：{type(exc).__name__}: {exc}"
+    if result.returncode != 0:
+        return None, (result.stderr or result.stdout).strip()[:500]
+    try:
+        return json.loads(result.stdout), None
+    except json.JSONDecodeError as exc:
+        return None, f"digest 输出不是合法 JSON：{exc}"
+
+
+def _followup_queue_mentions_pause(repo_root: Path, identifiers: set[str]) -> bool:
+    """队列 §一 是否有行同时提到 `identifiers` 之一（信编号或收信人姓名）
+    与"暂缓"/"压着"字样——按**同一行**共现判定（`task_cell`+`status_cell`
+    合并检查），不做跨行/全文邻近搜索，避免把无关行的"暂缓"字样错配到
+    本信上。已知边界：只扫 §一，不扫 §四——§一"任务看板"是这类措辞的
+    主要出现处，本次未做 §四 覆盖（sweep 当前无现成的 §四 结构化解析，
+    新增会超出本次触碰区），如实登记不假装全覆盖。"""
+    for queue_path in _iter_queue_paths():
+        text = _read_queue(repo_root, queue_path)
+        for row in _parse_section_one(text):
+            combined = row["task_cell"] + row["status_cell"]
+            if not any(k in combined for k in FOLLOWUP_PAUSE_KEYWORDS):
+                continue
+            if any(ident in combined for ident in identifiers):
+                return True
+    return False
+
+
+def _check_followup_pending_inventory(repo_root: Path, log: list[str]) -> None:
+    """第 10 类常驻状态告警：跟进信待发信盘点 + 交叉红标（队列 §一
+    #382⑵，巡逻章程 §一.3 原判据下放）。
+
+    🔴 **回显不是可选项**（同第 4/6/7/9 类）：无论三态是否为零、交叉
+    红标是否命中，每轮都打一行——零命中不省略。
+    """
+    log.append("✉️ 跟进信待发信盘点（每轮回显，零命中时亦不省略）：")
+
+    digest, reason = _run_followup_readme_digest_json(repo_root)
+    if digest is None:
+        log.append(f"    ⚠ README digest 不可用：{reason}——**不据此判为零积压**")
+        _track_and_alert_standing_state(
+            repo_root, "跟进信待发信盘点", FOLLOWUP_DIGEST_UNAVAILABLE_STATE_REL,
+            {"digest_unavailable"}, FOLLOWUP_PENDING_ALERT_INTERVAL_HOURS,
+            lambda keys: (
+                f"🔴 落库sweep：跟进信 README digest 连续不可用（{reason}）——"
+                "待发信盘点与交叉红标本轮已失效，须人工核查 "
+                f"`{FOLLOWUP_README_DIGEST_SCRIPT_REL}` 是否可正常运行。"
+            ),
+            lambda keys: "✅ 落库sweep：跟进信 README digest 已恢复可用，待发信盘点恢复。",
+            log,
+        )
+        return
+
+    rows = digest.get("rows", [])
+    by_state: dict[str, list[dict]] = {p: [] for p in ("⏳ 待你审", "🆕 待发", "⏸ 暂缓")}
+    for row in rows:
+        prefix = row.get("not_yet_sent_prefix")
+        if prefix in by_state:
+            by_state[prefix].append(row)
+
+    log.append(
+        "    · " + "／".join(f"{p}×{len(items)}" for p, items in by_state.items())
+        + f"（主表合计 {digest.get('total_rows', len(rows))} 行）"
+    )
+    malformed = digest.get("malformed_status_rows", 0)
+    if malformed:
+        log.append(f"    ⚠ {malformed} 行状态列未识别到已知前缀（digest 兜底展示，建议人工核实）")
+
+    flagged: dict[str, dict] = {}
+    for row in by_state["🆕 待发"]:
+        # 🔴 队列行提及某人时惯用裸姓名（如"姚祖怡"），不是 README 收信人列
+        # 的完整"部门 · 姓名"格式（如"采购部 · 姚祖怡"）——只用 `recipient`
+        # 会让"姚祖怡那封信先暂缓"这类真实写法结构性漏检，必须同时纳入
+        # digest 已拆好的 `name` 字段。
+        identifiers = {row["number"]}
+        if row.get("recipient"):
+            identifiers.add(row["recipient"])
+        if row.get("name"):
+            identifiers.add(row["name"])
+        if _followup_queue_mentions_pause(repo_root, identifiers):
+            flagged[row["number"]] = row
+
+    if flagged:
+        log.append(
+            f"    🔴 交叉红标 {len(flagged)} 条（队列称暂缓/压着，README 仍「🆕 待发」）："
+            + "、".join(flagged)
+        )
+    else:
+        log.append("    · 交叉红标：0 条")
+
+    def render_alert(keys):
+        lines = "\n".join(f"- {k}（{flagged[k].get('recipient', '?')}）" for k in keys)
+        return (
+            f"🔴 落库sweep：{len(keys)} 封跟进信队列称暂缓/压着，README 仍是「🆕 待发」"
+            f"（次日 09:30 批处理会照发）：\n{lines}\n"
+            "请人工核实后把 README 状态列改为「⏸ 暂缓」，或在队列行更正措辞——两者选其一，"
+            "机制每日只认 README 状态列字面值。"
+        )
+
+    def render_resolved(keys):
+        lines = "\n".join(f"- {k}" for k in keys)
+        return f"✅ 落库sweep：{len(keys)} 条此前的跟进信暂缓交叉红标已解除：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "跟进信暂缓交叉红标", FOLLOWUP_PAUSE_MISMATCH_STATE_REL,
+        set(flagged), FOLLOWUP_PENDING_ALERT_INTERVAL_HOURS,
+        render_alert, render_resolved, log,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="只打印计划动作，不 add/commit/push/改队列")
@@ -5345,6 +5510,12 @@ def main() -> int:
             # 写入时刻哨兵零心跳。同上四类，只读、只告警、不影响退出码；
             # 🔴 它是那三个哨兵的**准入条件**，不是加分项——见函数上方长注。
             _check_hooks_heartbeat(repo_root, log)
+
+            # 队列 §一 #382⑵（2026-09-02，OP-0902-D）：第 10 类常驻状态
+            # 告警——跟进信待发信盘点 + 交叉红标（原巡逻章程 §一.3 下放）。
+            # 同上五类，检测对象是仓库整体状态、与本轮是否有批次落库无关；
+            # 只读、只告警、不改 README、不发送任何跟进信、不影响退出码。
+            _check_followup_pending_inventory(repo_root, log)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))

@@ -132,6 +132,27 @@ def write_state(findings, state_path):
 '''
 
 
+# 队列 §一 #382⑵：第 10 类常驻告警（跟进信待发信盘点）子进程调用
+# `工具-跟进信README查询.py --digest --json`。**夹具必须还原它**——同上方
+# 第 7 类那条注释一模一样的道理：临时仓库里缺这个文件，判据如实报「不
+# 可用」并推一条告警，把断言"本轮不该有 webhook 噪声"的用例全部染红
+# （本次落地时全量回归实测复现：19 个既有 CLI 级用例因此转红，均与各自
+# 被测逻辑无关——与 #435 那条"新增第 4 类子检查漏配隔离，17 个用例转红"
+# 同一形态，第三次撞见同一类缺口）。桩恒返回零行合法 JSON，不读取任何
+# 真实文件、不 import `aibot_service`/`zhuopin_platform`。
+STUB_FOLLOWUP_README_DIGEST_SCRIPT = '''"""测试桩：跟进信 README digest（恒零行、零依赖）。"""
+import json
+
+print(json.dumps({
+    "readme": "6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md",
+    "section": "现有跟进信清单",
+    "total_rows": 0,
+    "malformed_status_rows": 0,
+    "rows": [],
+}))
+'''
+
+
 class SweepTestBase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -174,6 +195,8 @@ class SweepTestBase(unittest.TestCase):
             STUB_LEDGER_SCRIPT, encoding="utf-8")
         (self.work / sweep.UNCLOSED_SCAN_SCRIPT_REL).write_text(
             STUB_UNCLOSED_SCAN_SCRIPT, encoding="utf-8")
+        (self.work / sweep.FOLLOWUP_README_DIGEST_SCRIPT_REL).write_text(
+            STUB_FOLLOWUP_README_DIGEST_SCRIPT, encoding="utf-8")
         (self.work / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
 
         # 队列 §一 #435（2026-08-30 回归排查后补）：第 4 类常驻告警新增
@@ -5536,10 +5559,20 @@ class UnclosedOutputGuardTests(unittest.TestCase):
 
     def test_本组函数不动任何分支与worktree(self):
         """本类只读、只告警。锁的是**执行构件**：本组代码内不得起子进程
-        （那是 git／pip 真动手的唯一入口）。"""
+        （那是 git／pip 真动手的唯一入口）。
+
+        🔴 队列 §一 #382⑵（第 10 类）落地后收窄切片终点：原终点
+        `"def main() -> int:"` 隐含"从 `_load_unclosed_scan` 到 `main()`
+        之间全是第 7 类"的假设，第 10 类新增后该假设不再成立——第 10 类
+        的 README digest 判据**合法**调用 `subprocess.run`（转发给同目录
+        另一个纯只读脚本 `工具-跟进信README查询.py`，不碰 git/pip，见
+        `_run_followup_readme_digest_json` 文档），与本条要拦的"第 7 类
+        本不该有能力真动手"不是同一件事。终点改锚定到下一个检查函数
+        `_check_hooks_heartbeat` 的定义处——精确复刻本测试的原始意图
+        （只切第 7 类自己的代码），而非扩大切片去容纳新代码。"""
         source = SCRIPT.read_text(encoding="utf-8")
         body = source[source.index("def _load_unclosed_scan"):
-                      source.index("def main() -> int:")]
+                      source.index("def _check_hooks_heartbeat")]
         tree = ast.parse(body)
         called = set()
         for node in ast.walk(tree):
@@ -5549,6 +5582,198 @@ class UnclosedOutputGuardTests(unittest.TestCase):
             self.assertFalse(
                 name.startswith("subprocess."),
                 f"第 7 类判据必须只读，却调用了 {name}")
+
+
+class FollowupPendingInventoryTests(unittest.TestCase):
+    """队列 §一 #382⑵：跟进信待发信盘点 + 交叉红标（第 10 类常驻告警，
+    原巡逻章程 `huijian-chaijian-patrol.SKILL.md` §一.3 判据下放）。
+
+    本组只测**接线与告警骨架**（三态计数回显、digest 不可用时的非静默
+    降级、交叉红标 key 构成），不重新验证 `followup_gate`/`readme_table`
+    的状态判据本身——那两份权威实现已在 `zhuopin_platform`/
+    `wecom-aibot-service` 各自的测试里覆盖，`工具-跟进信README查询.py`
+    的截断安全/三态识别已在 `test_工具-跟进信README查询.py` 覆盖，同
+    `UnclosedOutputGuardTests` 与其扫描器测试之间既有的分工。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "reports").mkdir(parents=True)
+        for rel in (sweep.QUEUE_MECHANISM_PATH_REL, sweep.QUEUE_BUSINESS_PATH_REL):
+            (self.repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / rel).write_text("", encoding="utf-8")
+        self.recorder = _StandingStateRecorder()
+        self.sent = []
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_webhook = sweep._load_webhook_url
+        self._orig_send = sweep._send_wecom_markdown
+        self._orig_digest = sweep._run_followup_readme_digest_json
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
+        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._load_webhook_url = self._orig_webhook
+        sweep._send_wecom_markdown = self._orig_send
+        sweep._run_followup_readme_digest_json = self._orig_digest
+        self._tmp.cleanup()
+
+    @staticmethod
+    def _row(number, recipient="采购部 · 姚祖怡", prefix=None):
+        department, name = (recipient.split(" · ", 1) if " · " in recipient else (None, None))
+        return {
+            "number": number, "recipient": recipient, "department": department, "name": name,
+            "status_kind": "in_flight" if prefix else "closed",
+            "not_yet_sent_prefix": prefix,
+            "status_digest": prefix or "📥 已回件并回灌",
+            "status_malformed": False, "delivery_digest": "尽快",
+        }
+
+    def _set_digest(self, rows, malformed=0):
+        sweep._run_followup_readme_digest_json = lambda repo_root: (
+            {"total_rows": len(rows), "malformed_status_rows": malformed, "rows": rows}, None,
+        )
+
+    def _write_queue(self, rel, task_status_rows):
+        """`task_status_rows`：`[(任务列文本, 状态列文本), ...]`。"""
+        lines = [
+            "## 一、任务看板\n\n",
+            "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n",
+            "|---|---|---|---|---|---|---|---|\n",
+        ]
+        for i, (task, status) in enumerate(task_status_rows, start=1):
+            lines.append(f"| {i} | {task} | Cowork | - | - | {status} | - | 2026-09-02 |\n")
+        (self.repo / rel).write_text("".join(lines), encoding="utf-8")
+
+    def _run(self):
+        log = []
+        sweep._check_followup_pending_inventory(self.repo, log)
+        return "\n".join(log), (self.recorder.calls[-1] if self.recorder.calls else None)
+
+    # ---------------------------------------------------------------- 接线
+
+    def test_已接入主流程(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("_check_followup_pending_inventory(repo_root, log)", source)
+
+    def test_真实digest脚本调用契约齐全(self):
+        """锁**接口契约**（同 `test_真实扫描器可被本函数导入且四个名字
+        齐全`的立意）：字段被改名/脚本 CLI 被改动，会在这里当场变红，
+        而不是等某天有人问"待发信盘点怎么从来不响"。对**真实仓库根**跑，
+        不断言具体行数（那会随生产 README 变化）。"""
+        real_repo_root = SCRIPT.parent.parent
+        digest, reason = sweep._run_followup_readme_digest_json(real_repo_root)
+        self.assertIsNone(reason, f"真实 digest 脚本调用失败：{reason}")
+        for key in ("total_rows", "malformed_status_rows", "rows"):
+            self.assertIn(key, digest)
+        if digest["rows"]:
+            for key in ("number", "recipient", "status_kind", "not_yet_sent_prefix", "status_digest"):
+                self.assertIn(key, digest["rows"][0])
+
+    # ---------------------------------------------------------- 三态计数回显
+
+    def test_零命中时仍逐项回显三态计数(self):
+        """同第 4/6/7/9 类既有原则：零命中是常态外观，不得省略回显。"""
+        self._set_digest([self._row("采购部#1", prefix=None)])
+        text, _ = self._run()
+        self.assertIn("⏳ 待你审×0", text)
+        self.assertIn("🆕 待发×0", text)
+        self.assertIn("⏸ 暂缓×0", text)
+        self.assertIn("交叉红标：0 条", text)
+
+    def test_三态分别计数不互相污染(self):
+        self._set_digest([
+            self._row("采购部#1", prefix="⏳ 待你审"),
+            self._row("采购部#2", prefix="🆕 待发"),
+            self._row("采购部#3", prefix="🆕 待发"),
+            self._row("采购部#4", prefix="⏸ 暂缓"),
+            self._row("采购部#5", prefix=None),
+        ])
+        text, _ = self._run()
+        self.assertIn("⏳ 待你审×1", text)
+        self.assertIn("🆕 待发×2", text)
+        self.assertIn("⏸ 暂缓×1", text)
+        self.assertIn("合计 5 行", text)
+
+    def test_未识别前缀行数回显(self):
+        self._set_digest([self._row("采购部#1", prefix=None)], malformed=2)
+        text, _ = self._run()
+        self.assertIn("2 行状态列未识别到已知前缀", text)
+
+    # -------------------------------------------------------- digest 不可用
+
+    def test_digest不可用时告警且不判为零积压(self):
+        sweep._run_followup_readme_digest_json = lambda repo_root: (None, "脚本崩了")
+        text, _ = self._run()
+        self.assertIn("不据此判为零积压", text)
+        self.assertEqual(self.recorder.calls[-1]["keys"], {"digest_unavailable"})
+
+    def test_digest恢复后自动解除(self):
+        sweep._run_followup_readme_digest_json = lambda repo_root: (None, "脚本崩了")
+        self._run()
+        self._set_digest([self._row("采购部#1", prefix=None)])
+        self._run()
+        # 第二次调用时 current_keys 传空集合——`_StandingStateRecorder`
+        # 只记最后一次调用，空集合即代表"本轮无需告警"（含解除信号）。
+        self.assertEqual(self.recorder.calls[-1]["keys"], set())
+
+    # -------------------------------------------------------------- 交叉红标
+
+    def test_队列称暂缓而README仍待发时命中红标(self):
+        self._set_digest([self._row("采购部#19", "采购部 · 姚祖怡", prefix="🆕 待发")])
+        self._write_queue(sweep.QUEUE_MECHANISM_PATH_REL,
+                           [("采购部#19 那封信先暂缓，等他回上一封", "[S:open] 待办")])
+        text, call = self._run()
+        self.assertIn("交叉红标 1 条", text)
+        self.assertEqual(call["keys"], {"采购部#19"})
+
+    def test_队列提到压着字样同样命中(self):
+        self._set_digest([self._row("采购部#19", "采购部 · 姚祖怡", prefix="🆕 待发")])
+        self._write_queue(sweep.QUEUE_MECHANISM_PATH_REL,
+                           [("采购部#19 先压着别发", "[S:open] 待办")])
+        text, _ = self._run()
+        self.assertIn("交叉红标 1 条", text)
+
+    def test_队列无暂缓字样则不标红(self):
+        self._set_digest([self._row("采购部#19", "采购部 · 姚祖怡", prefix="🆕 待发")])
+        self._write_queue(sweep.QUEUE_MECHANISM_PATH_REL,
+                           [("采购部#19 那封信没什么特别的", "[S:open] 待办")])
+        text, _ = self._run()
+        self.assertIn("交叉红标：0 条", text)
+
+    def test_暂缓字样命中但无编号或收信人引用则不标红(self):
+        """同一行只是恰好含"暂缓"二字，但压根没提这封信——不得误标。"""
+        self._set_digest([self._row("采购部#19", "采购部 · 姚祖怡", prefix="🆕 待发")])
+        self._write_queue(sweep.QUEUE_MECHANISM_PATH_REL,
+                           [("质量部#5 那封信暂缓", "[S:open] 待办")])
+        text, _ = self._run()
+        self.assertIn("交叉红标：0 条", text)
+
+    def test_只检查待发态不检查已闭环或已推送行(self):
+        """⏳/⏸ 两态本就已被门禁结构性排除在可发送范围外，🆕 待发才是
+        唯一有"会被误发"风险的态；closed/in_flight（已推送等）不参与
+        交叉红标检查。"""
+        self._set_digest([self._row("采购部#7", "采购部 · 姚祖怡", prefix=None)])
+        self._write_queue(sweep.QUEUE_MECHANISM_PATH_REL,
+                           [("采购部#7 暂缓处理", "[S:open] 待办")])
+        text, _ = self._run()
+        self.assertIn("交叉红标：0 条", text)
+
+    def test_按收信人姓名同样能命中(self):
+        self._set_digest([self._row("采购部#19", "采购部 · 姚祖怡", prefix="🆕 待发")])
+        self._write_queue(sweep.QUEUE_MECHANISM_PATH_REL,
+                           [("姚祖怡那封信先暂缓", "[S:open] 待办")])
+        text, _ = self._run()
+        self.assertIn("交叉红标 1 条", text)
+
+    def test_两份队列文件均被扫描(self):
+        self._set_digest([self._row("采购部#19", "采购部 · 姚祖怡", prefix="🆕 待发")])
+        self._write_queue(sweep.QUEUE_BUSINESS_PATH_REL,
+                           [("采购部#19 暂缓", "[S:open] 待办")])
+        text, _ = self._run()
+        self.assertIn("交叉红标 1 条", text)
 
 
 class LocalOnlyCommitGuardTests(unittest.TestCase):
