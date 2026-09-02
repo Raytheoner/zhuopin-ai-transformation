@@ -23,7 +23,9 @@
 
 ## D2 · 🔴 三条规则 vs 现有实现：逐条实测对位（opener 指定用实测、不用推断）
 
-**探针**：`probe_three_rules.py`（只读、零网络、不改任何代码，落仓库外）。
+**取证件（tracked，可复跑）**：`4-数字员工/采购部/SC8-客户订单交期智能承诺/docs/queue_118_三条规则实测对位-2026-09-02.md`
+——含方法、全部参数、逐条结果与复跑路径。🔴 刻意落 tracked 的 `docs/`、不落 gitignored `reports/`（`#267` 的教训是审计件随 worktree 删除而永久丢失）。
+**探针**：一次性网格探针，只读、零网络、不改任何代码，落仓库外并已随收工删除；其方法与参数已全部写进上述取证件，可据以重建。
 **参数**：`today = 2026-09-02`（`Get-Date -Format 'yyyy-MM-dd'` 现取）；`NO_FEEDBACK_LEAD_DAYS = 90`；
 `rule1_horizon_months=3 / rule1_months_back=3 / rule1_start_day=20`；三个月边界（含边界）＝ `2026-12-02`。
 **方法**：出货日网格 `today−60 … today+400` 逐日，把探针自行实现的逐字规则与 `forecast.no_feedback_start_date()` 逐点比对。
