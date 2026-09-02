@@ -47,4 +47,4 @@
 - [x] 8.1 队列 §一 #414 行回写（状态、产出路径、两条更正、晋档结果）——**用本变更包新增的 `edit-row --changes-json` 写的真实队列，一次写对、lint 通过、release 一次放行**，晋**档3**达成
 - [x] 8.1a 🔴 **回写过程本身又验证了一次守卫**：首次提交被自己的写侧竖线校验当场拒绝（追加正文里写了 `awk -F` 加半角竖线的命令示例）——**又一次「在解释这个 bug 的那一行正文里再犯一次」**，与 #414 第 5 次事故同形，只是这次**被机制拦住了**，没有落库
 - [x] 8.2 §二 批次登记——`B-0826_12_414A组队列写入根治收工回写`
-- [ ] 8.3 `/opsx:archive` 归档本变更包
+- [x] 8.3 `/opsx:archive` 归档本变更包 —— 2026-09-02 归档为 `2026-09-02-queue-write-root-fix-414`（新增 8 条 requirement，0 修改/0 删除），spec 已合并入 `editlock-queue-number-reservation`／`editlock-section-append-guard`／`queue-table-shared-parser` 三份主 spec
