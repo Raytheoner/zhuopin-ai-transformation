@@ -12,8 +12,8 @@
 ## 2. skill 本体
 
 - [x] 2.1 ✅ 定稿 `0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md`（2026-09-02 `OP-0902-C`，v2.0 重写：`OP-0902-B` 出件的 v1.0「三模式并存」框架已作废；v2.0 改为「两个 workflow 怎么选」二行对照表，opener 正文四句约定新增 ⏭️ 转出处置、5.6 看门狗轮询指令，D6 收工汇总新增「本批转出 N 项」一行。沿革详见同目录 `CHANGELOG.md`）【Cowork】
-- [ ] 2.2 🔴 **CC 做不到，需回 Cowork 执行** —— `save_skill` 安装引用式指针，触发词按 1.1 裁定。`save_skill` 是 Cowork/claude.ai 会话侧专属动作，CC 工具清单里没有对应能力（`OP-0902-B` 已确认同一结论）；SKILL.md v2.0 已就绪，可随时安装。【Cowork】
-- [ ] 2.3 🔴 **依赖 2.2，CC 做不到** —— 指针回读验证（安装后即出现在会话可用 skill 清单，名称与 description 触发词逐字核对）【Cowork】
+- [x] 2.2 ✅ **已安装（2026-09-02，Cowork `OP-0902-A`）** —— `save_skill` 装引用式指针 `zhuopin-lane-watch`（`skill_01GsmGMFZdgiXknSA3FKeqch`），骨架沿 `zhuopin-lane-clearpool` 既有引用式装载器：**不承载规则正文**，只指向 `0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md`（执行编排正本）与 `openspec/changes/lane-watch-mode/design.md`（上位判据正本），并留四条「不读正本也必须记住的红线」＋「读不到就停下、不要凭印象跑一整批」。**理由同 clearpool/kickoff-prompt v2.0：save_skill 要求整份 passthrough，长文复述必然静默漂移；此后规则只改仓库文件，本指针永不需要同步。**【Cowork】
+- [x] 2.3 ✅ **指针回读验证通过（2026-09-02）** —— 安装后 `zhuopin-lane-watch` 即出现在会话可用 skill 清单；description 触发词逐字核对：主触发「开启泳道看护」✅、别名「offlan清池」「off-LAN 清池」「周末清池」✅（5.2 承接清池触发词）、四档语义（🟢/🟡/⏭️/🔴）与 D1 一致 ✅、与 `zhuopin-lan-closeout` 的分工句 ✅。【Cowork】
 
 ## 3. 停/续状态机（本包唯一的新建代码）
 
@@ -57,7 +57,7 @@
   - ⚠️ **与本包 D3 的关系**：D3 管「单项失败只停该泳道、其余继续」；本项管「**无心跳**」——那是失联不是失败，**分不清它是在跑长回归还是真挂了**，故一律暂停等人。两条不冲突，分别覆盖「跑失败」与「不吭声」。
   - 📌 clearpool `#382` 行内已留一条相关判据：**预计等待超过 10 分钟的，等待期内要再写一行「仍在等 X，预计还要 N 分钟」**，否则 10 分钟判读线在长回归面前会常态性失效。**已落**（SKILL.md v2.0 步骤 4 心跳约定已写明此提示行的写法与成因）。
   - 「波次跑完自动推进下一波」是 Cowork 侧编排语义（沿用批处理脚本既有的串行/并行调度，不新增代码），未新建独立实现，与清池既有做法一致。
-- [ ] 5.7 **队列 `#312` 子项回写 ＋ `lane-clearpool-skill` 包归档**（承接 clearpool 3.3）【Cowork/CC】
+- [x] 5.7 ✅ **两项均已完成，2026-09-02 `OP-0902-A` 逐项核实后勾（非采信自述）**：⑴ **包归档**——`openspec/changes/archive/2026-09-02-lane-clearpool-skill/` 实测在，且 `tasks.md` 顶部已按「不得只标归档不写去向」写明退休去向（「本包 skill 已由 `zhuopin-lane-watch` 吸收退休（架构收敛，见 `lane-watch-mode/design.md`「架构收敛：三个 workflow → 两个」节）」）；⑵ **队列 `#312` 子项回写**——`OP-0902-C` 已做，证据＝§二 `B-0902_13_OP0902C_452架构收敛重派完成` 文件清单明列「§一 `#312` offlan清池子项回写退休说明」。⚠️ **另如实记一处（非本包范围）**：`#312` 现为 `[S:blocked]`，卡在「他打开看板读『可 Open 池』的 N 与行号、与 22 条比对」，其**预期观察窗口 3 天至 2026-09-02 今日到期**——剩余唯一动作在 Shao Peishen 手上，本包不处置。【Cowork/CC】
   - 🔴 归档时须在包内写明「**本包 skill 已由 `lane-watch-mode` 吸收退休，剩余项已于 2026-09-02 转承接，见该包 tasks 5bis**」，**不得只标归档不写去向**。
   - **进度（2026-09-02 `OP-0902-C`）**：`lane-clearpool-skill` 的 `tasks.md`（4 项标 🔁 转承接）与 `proposal.md`（退休说明尾注，写明成因与去向）**已完成**；队列 `#312`「offlan清池」子项回写**因编辑锁被 Cowork-业务总线-OP0902 占用（§四 #150／B-0902_3 批次）未能即时完成**，将在锁释放后本会话内补做，或如仍未完成则在收工回写 `#452` 时如实登记待补，不冒充已完成；`openspec archive` 归档命令视 Cowork/CC 分工与本会话工具可用性执行。
 
