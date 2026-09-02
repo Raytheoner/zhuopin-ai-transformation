@@ -23,3 +23,28 @@
 
 - 受影响：派发口径（全项目）；新增 capability `lane-clearpool`；
 - 不受影响：队列协议〇全部纪律（选件、认领、锁、批次照旧机器走）；硬边界十条原样继承。
+
+---
+
+## 🔴 退休说明（2026-09-02，`OP-0902-C`，随本包归档一并写下——不得只标归档不写去向）
+
+**本包 skill 已由 `lane-watch-mode`（`zhuopin-lane-watch`）吸收退休。** 剩余 4 项未完成任务
+（tasks 2.1/2.2/2.3/3.3）已于 2026-09-02 转承接，见 `openspec/changes/lane-watch-mode/tasks.md`
+§5bis 逐项对照表。
+
+**成因**：Shao Peishen 2026-09-02 当日指出——「【offlan清池】这个我想改一下范围，我做这个
+动作 100% 也在 loop 的，所以需要我决策不用绕过」。本包（与 `zhuopin-lane-clearpool` 自身
+description）都把设计前提写成「人不在」，但清池是他手动说「offlan清池」触发的，触发那一刻
+他必然在场；真前提是「触发后他可以走开」。前提一改，清池与看护的差别只剩网络范围——而那
+是机器跑一次探针（`工具-泳道看护状态机.py lan-status`）就能判定的，不需要两个触发词。
+
+**去向**：`zhuopin-lane-watch` skill（`0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md`）
+承接本包全部职能——D1 白名单、触碰区排波、看护件落档、心跳看护逐项迁入；触发词「offlan清池」
+保留为该 skill 的别名，不强制改口。**唯一不迁的是「遇决策绕开不入批」**——它正是错误前提
+（「清池＝人不在」）的产物，被新 D1 四档判据表（含新增 ⏭️「不做，转出」档）取代。
+
+**队列回写**：队列 §一 `#312`「offlan清池」子项已于本次追记退休说明，指向本节。
+
+完整架构收敛论证见 `openspec/changes/lane-watch-mode/design.md`「架构收敛：三个 workflow →
+两个」节；本 skill 正文（`SKILL.md`）按「历史记录不追改」原样保留，作为 `zhuopin-lane-watch`
+执行步骤的判据引用来源。

@@ -1,10 +1,12 @@
 ---
-status: 生效（2026-08-29 Shao Peishen design 审通过，原话「审核通过」）
+status: 🔴 已退休（2026-09-02，`OP-0902-C`，随 `lane-watch-mode` 架构收敛被 `zhuopin-lane-watch` 吸收；design 曾于 2026-08-29 由 Shao Peishen 审通过，原话「审核通过」，历史记录不追改）
 name: zhuopin-lane-clearpool
-description: 卓品智能AI转型项目·off-LAN 一句话清池。当 Shao Peishen 说"offlan清池""off-LAN 清池""周末清池"时使用：扫两份队列真身出 off-LAN 候选，按白名单选件、按触碰区排波次，落档看护件后经批处理工具起无头 CC 泳道，心跳+企微四类事件推送，收工汇总推他。全程零确认（连"开启泳道"口令也不需要），业务建造与一切对外发送永不自动入批。
+description: 🔴 已退休，指向 zhuopin-lane-watch——「offlan清池」现为该 skill 的别名触发词，效果等价（先跑 LAN 探针自动判 on/off-LAN 定候选范围，替代本 skill 原来「人不在／零确认」的单一前提）。本文件保留作历史参照与 zhuopin-lane-watch 步骤 1-2 的判据引用来源，不再独立触发。原描述（历史存档，按「历史记录不追改」保留）：卓品智能AI转型项目·off-LAN 一句话清池。当 Shao Peishen 说"offlan清池""off-LAN 清池""周末清池"时使用：扫两份队列真身出 off-LAN 候选，按白名单选件、按触碰区排波次，落档看护件后经批处理工具起无头 CC 泳道，心跳+企微四类事件推送，收工汇总推他。全程零确认（连"开启泳道"口令也不需要），业务建造与一切对外发送永不自动入批。
 ---
 
-# 卓品 · off-LAN 一句话清池（规则正本 v1.0）
+> 🔴 **本 skill 已于 2026-09-02 退休，被 `zhuopin-lane-watch` 吸收**——成因：清池「人不在」的设计前提写错了（清池是 Shao Peishen 手动触发的，触发那一刻他必然在场），前提一改，清池与看护的差别只剩网络范围，而那是机器跑一次探针就知道的，不需要两个触发词。**现在该说「开启泳道看护」（或沿用旧口令「offlan清池」，二者同指同一个 skill）**。下文正文按「历史记录不追改」原样保留，作为 `zhuopin-lane-watch` 执行步骤 1-2（扫池／排波）的判据引用来源；`lane-clearpool-skill` openspec 变更包的 4 项未完成任务已转承接，见 `openspec/changes/lane-watch-mode/tasks.md` §5bis。完整成因见 `zhuopin-lane-watch/CHANGELOG.md` 2026-09-02 节。
+
+# 卓品 · off-LAN 一句话清池（规则正本 v1.0，历史存档）
 
 > **权威判据正本＝`openspec/changes/lane-clearpool-skill/`（归档后＝对应 specs）**：D1 白名单、D2 链条、D3 护栏在彼，不在此复述细节——本文件是执行编排，与 design 冲突时以 design/spec 为准。
 

@@ -1,4 +1,9 @@
-## ADDED Requirements
+# lane-clearpool Specification
+
+## Purpose
+off-LAN 场景下把「多任务派发」的人工动作（选件、排波、盯泳道、汇总）压缩为一句触发词全自动执行，同时用白名单与硬边界护栏保证业务建造与对外发送永不被自动误派。🔴 2026-09-02 起本能力已并入 `lane-watch-mode`（`zhuopin-lane-watch` 承接，见该包 design.md「架构收敛」节），本 skill 独立触发入口已退休，此规格作历史记录保留。
+
+## Requirements
 
 ### Requirement: 清池 SHALL 只按白名单选件，宁漏勿滥
 清池链条 MUST 仅将同时满足 design D1 四条的队列行纳入自动批：域为机（或业务域行内自陈本地可测且 off-LAN 可做）、状态可动或有可引用直令/裁定去除 🛑、行内含明确修法方向或既有裁定、未命中硬排除清单（`.51`/真实库写动作、对外发送、他线在办、定时触发、规划文档、需 Cowork 专属工具）。

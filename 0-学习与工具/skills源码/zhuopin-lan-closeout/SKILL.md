@@ -1,7 +1,7 @@
 ---
-status: 生效（2026-08-29 Shao Peishen design 审通过，原话「审核通过」，D2 串行纪律未放宽）
+status: 生效（2026-08-29 Shao Peishen design 审通过，原话「审核通过」，D2 串行纪律未放宽；2026-09-02 `OP-0902-C` 随 lane-watch-mode 架构收敛补充边界指向，正本红线段未动）
 name: zhuopin-lan-closeout
-description: 卓品智能AI转型项目·回 LAN 一句话收口。当 Shao Peishen 说"我已回Lan""回LAN了""已回内网"时使用：先探针实证在网，再汇集三源 LAN 留步清单，白名单选件、.51 项全串行逐项冒烟回滚，无头 CC 泳道收口，心跳+企微推送，收工汇总。对外发送与人工门禁永不代办。
+description: 卓品智能AI转型项目·回 LAN 一句话收口。当 Shao Peishen 说"我已回Lan""回LAN了""已回内网"时使用：先探针实证在网，再汇集三源 LAN 留步清单，白名单选件、.51 项全串行逐项冒烟回滚，无头 CC 泳道收口，心跳+企微推送，收工汇总。对外发送与人工门禁永不代办。🔴 边界（2026-09-02 补）：本 skill 专管 `.51` 部署与 LAN 留步；其余一切可领活（含 off-LAN 候选，原 zhuopin-lane-clearpool 覆盖范围）走 zhuopin-lane-watch（触发词"开启泳道看护"或别名"offlan清池"）——该包遇到 `.51` 类动作会自动转出到本 skill，不会自行执行。
 ---
 
 # 卓品 · 回 LAN 一句话收口（规则正本 v1.0）

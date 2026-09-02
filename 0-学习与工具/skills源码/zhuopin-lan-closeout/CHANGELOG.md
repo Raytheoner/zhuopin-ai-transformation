@@ -2,6 +2,16 @@
 
 > `SKILL.md` §版本约定：正文只留当前版，历史沿革写本文件。
 
+## 2026-09-02（`OP-0902-C`，边界指向补充）
+
+- **背景**：`lane-watch-mode` 架构收敛——`zhuopin-lane-clearpool` 退休，其职能被
+  `zhuopin-lane-watch` 吸收；D1 新增 ⏭️「不做，转出」档，`.51` 部署及任何触碰生产
+  服务的动作，`zhuopin-lane-watch` 命中即转出到本 skill，本身不执行。
+- **改动**：仅 `SKILL.md` frontmatter 的 `description`／`status` 补一句边界指向
+  （"本 skill 专管 `.51` 部署与 LAN 留步，其余走 zhuopin-lane-watch"）。
+- **不改动**：D1 白名单／D2 串行纪律／D3 护栏正本红线段一字未动（5.5 约束）；
+  触发词、探针机制、四步纪律（快照→部署→冒烟→回滚）均未变。
+
 ## 2026-09-01（`OP-0901-B`）
 
 - **背景**：2026-09-01 08:16 sweep 探到 off→on，向运维群推「8 条 LAN 留步现在可以补做了」
