@@ -1,0 +1,22 @@
+[project]
+name = "fi6-anomaly-detect"
+version = "0.1.0"
+description = "FI6 异常交易实时检测（骨架）— 金额突增/频率异常/关联方三类模式 + 可疑交易案例库 + 月度内控分析"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座可编辑安装为**可选**步骤；`pytest` 与服务入口不依赖它（路径引导见 tests/conftest.py）。
+dependencies = [
+    "zhuopin_platform",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fi6_anomaly_detect*"]

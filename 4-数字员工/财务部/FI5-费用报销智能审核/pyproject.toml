@@ -1,0 +1,24 @@
+[project]
+name = "fi5-expense-audit"
+version = "0.1.0"
+description = "FI5 费用报销智能审核（骨架）— 报销政策规则引擎 + 预算余额门禁 + 异常报销风险分级 + 部门费用分析"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装为**可选**步骤（仅利于 IDE 补全）：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+# `pytest` 与服务入口不依赖它——路径引导见 tests/conftest.py 顶部 stub（队列 #300/#345）。
+dependencies = [
+    "zhuopin_platform",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fi5_expense_audit*"]

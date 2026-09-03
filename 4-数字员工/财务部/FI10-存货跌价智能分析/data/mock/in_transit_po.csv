@@ -1,0 +1,3 @@
+po_no,material_id,qty_ordered,qty_received,unit_price,eta
+PO-0201,MAT-001,2000,500,37.90,2026-09-25
+PO-0202,MAT-003,1000,0,12.60,2026-10-10

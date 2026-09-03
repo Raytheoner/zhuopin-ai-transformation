@@ -1,0 +1,21 @@
+[project]
+name = "fi9-rd-cost"
+version = "0.1.0"
+description = "FI9 研发费用归集与高新认定助手（骨架）— 资本化/费用化规则引擎 + 研发费用辅助账 + 加计扣除备查资料包"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+dependencies = [
+    "zhuopin_platform",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fi9_rd_cost*"]

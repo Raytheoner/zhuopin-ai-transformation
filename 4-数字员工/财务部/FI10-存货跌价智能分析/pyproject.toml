@@ -1,0 +1,21 @@
+[project]
+name = "fi10-inventory-writedown"
+version = "0.1.0"
+description = "FI10 存货跌价智能分析（骨架）— NRV vs Cost 跌价测试 + 库龄/项目终止预警 + 跌价准备计提建议 + what-if"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+dependencies = [
+    "zhuopin_platform",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fi10_inventory_writedown*"]

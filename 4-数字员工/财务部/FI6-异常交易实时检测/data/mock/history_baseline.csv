@@ -1,0 +1,4 @@
+party_id,account,direction,sample_months,mean_amount,median_amount,stddev_amount,mean_monthly_count
+SUP-001,应付账款-材料,AP,12,125000.00,124000.00,9000.00,2.5
+SUP-002,应付账款-材料,AP,12,150000.00,148000.00,20000.00,1.8
+CUS-001,应收账款-整车,AR,12,910000.00,905000.00,48000.00,1.2

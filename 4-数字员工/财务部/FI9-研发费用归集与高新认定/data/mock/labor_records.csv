@@ -1,0 +1,3 @@
+project_id,employee_id,period,hours,source,rate
+RD-2026-001,EMP-001,2026-08,152.0,synthetic,
+RD-2026-002,EMP-002,2026-08,88.0,synthetic,

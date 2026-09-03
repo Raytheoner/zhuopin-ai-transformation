@@ -1,0 +1,3 @@
+material_id,product_id,qty_per_unit,active
+MAT-001,FIN-001,2.0,True
+MAT-003,FIN-009,1.0,False
