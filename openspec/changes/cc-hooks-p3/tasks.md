@@ -20,38 +20,39 @@
 - [x] 0a.5 确认 release 侧 `_opener_guard_violations` 零改动即感知新判据（读码确认其 `for form, detail in lint.check_block(block)` 无形态白名单）
 - [ ] 0a.6 §一 `#381` 状态列回写 ⓖ 完成情况（随 §7 收口一并做）
 
-## 1. ⓐ SessionStart 会话开场上下文
+## 1. ⓐ SessionStart 会话开场上下文（✅ 建造+单测完成，⏳ 交付待人工注册）
 
-- [ ] 1.1 写 `0-学习与工具/hooks/hooks-sessionstart-context.ps1`
-- [ ] 1.2 双标时刻 + `git fsck --connectivity-only` 摘要 + ahead/behind 计数
-- [ ] 1.3 队列待领行摘要（§一 `[S:open]` 非 🛑 前 5 条）
-- [ ] 1.4 fail-open + `reports/hooks-audit.jsonl` 留痕（含正常与异常路径）
-- [ ] 1.5 单测：spec 全部 Scenario（含 git 不可用、队列不可读两条反例）
-- [ ] 1.6 交付：`.claude/settings.json` 的 `SessionStart` 挂接片段 + 验活命令
+- [x] 1.1 写 `0-学习与工具/hooks/hooks-sessionstart-context.ps1`
+- [x] 1.2 双标时刻 + `git fsck --connectivity-only` 摘要 + ahead/behind 计数
+- [x] 1.3 队列待领行摘要（§一 `[S:open]` 非 🛑 前 5 条）
+- [x] 1.4 fail-open + `reports/hooks-audit.jsonl` 留痕（含正常与异常路径）
+- [x] 1.5 单测：spec 全部 Scenario + 反例（7 条，`test_hooks-p3.py::TestSessionStartContext`）——过程中钉死一处真实 bug（单元素数组在 `Set-StrictMode` 下被管道展平为标量，`.Count` 抛异常；已用哈希表包裹返回值根治）
+- [ ] 1.6 交付：`.claude/settings.json` 的 `SessionStart` 挂接片段 + 验活命令（随 §7 收口一并整理）
 
-## 2. ⓒ PreToolUse 编辑锁门禁
+## 2. ⓒ PreToolUse 编辑锁门禁（✅ 建造+单测完成，⏳ 交付待人工注册）
 
-- [ ] 2.1 写 `0-学习与工具/hooks/hooks-pretooluse-editlock-guard.ps1`
-- [ ] 2.2 受保护清单五份文件路径判定（含相对/绝对路径归一化）
-- [ ] 2.3 有效锁检查（复用 `STALE_MINUTES` 语义，不做身份匹配）
-- [ ] 2.4 fail-open + 审计留痕
-- [ ] 2.5 单测：spec 全部 Scenario（无锁拦截、陈旧锁视为无效、有效锁放行、非受保护文件放行、锁文件损坏时放行四类）
-- [ ] 2.6 交付：`.claude/settings.json` 的 `PreToolUse` 挂接片段（matcher `Edit|Write|MultiEdit`）+ 验活命令
+- [x] 2.1 写 `0-学习与工具/hooks/hooks-pretooluse-editlock-guard.ps1`
+- [x] 2.2 受保护清单五份文件路径判定（含相对/绝对路径归一化）
+- [x] 2.3 有效锁检查（复用 `STALE_MINUTES` 语义，不做身份匹配；含 `released` 标记正确判无效）
+- [x] 2.4 fail-open + 审计留痕
+- [x] 2.5 单测：spec 全部 Scenario + 反例（11 条，`test_hooks-p3.py::TestPreToolUseEditlockGuard`）——过程中钉死第二处真实 bug（`Set-StrictMode` 下对**零属性**对象取 `.PSObject.Properties.Name`/`.Count` 均抛异常，`@()` 包一层不能修复；已在 `hooks-common.ps1` 新增 `Get-JsonPropertyNames`（`ForEach-Object` 投影，零成员时零次迭代不触发该路径）根治，ⓐⓒ 均已改用）
+- [ ] 2.6 交付：`.claude/settings.json` 的 `PreToolUse` 挂接片段（matcher `Edit|Write|MultiEdit`）+ 验活命令（随 §7 收口一并整理）
 
-## 3. ⓔ acquire 路由提示
+## 3. ⓔ acquire 路由提示（✅ 已完成）
 
-- [ ] 3.1 在 `工具-共享文档编辑锁.py` 新增关键词→规则文件映射表常量（design 决策点 4）
-- [ ] 3.2 在 `_acquire_locked`（含 `--reserve` 分支与非 reserve 分支）占锁成功回显后追加路由提示打印
-- [ ] 3.3 单测：spec 全部 Scenario + 既有 `test_工具-共享文档编辑锁.py` 全量回归零漂移
-- [ ] 3.4 交付：验活命令（`acquire --note "起草跟进信" ...` 实跑一次贴输出）
+- [x] 3.1 在 `工具-共享文档编辑锁.py` 新增关键词→规则文件映射表常量（design 决策点 4；建造期修正："文档与全景治理.md"一行去掉目录路径关键词，改纯内容关键词，避免队列文件自我指向）
+- [x] 3.2 在 `_acquire_locked`（含 `--reserve` 分支与非 reserve 分支，插入点在两分支共同的前置代码段）占锁成功回显后追加路由提示打印
+- [x] 3.3 单测：spec 全部 Scenario + 既有 `test_工具-共享文档编辑锁.py` 全量回归 315 passed（不含 1 项已知无关失效，见下）零漂移
+- [x] 3.4 交付：验活命令已实跑（`acquire --note "起草IT部#7跟进信"` 等 6 组黑盒 + 1 组白盒，见单测）
+- 📌 顺带发现（已 `spawn_task` 登记独立任务 `task_b89c303f`，不在本包修）：`GenderPronounLintTests::test_roster_stays_in_sync_with_root_claude_md` 因 P1/P2 瘦身把名录声明迁出根 `CLAUDE.md` 而失效，与本包无关
 
-## 4. ⓕ sweep rules 尺寸巡检
+## 4. ⓕ sweep rules 尺寸巡检（✅ 已完成）
 
-- [ ] 4.1 `CLAUDE_MD_ROOT_BYTE_CAP` 48KB → 12KB
-- [ ] 4.2 `_claude_md_targets` 新增 `.claude/rules/*.md` glob，阈值 8KB
-- [ ] 4.3 新增 rules 合计 30KB 判据（`.claude/rules/__total__` 告警 key）
-- [ ] 4.4 单测：spec 全部 Scenario + 既有 `test_工具-落库sweep.py` 全量回归零漂移
-- [ ] 4.5 交付：验活命令（`python 0-学习与工具/工具-落库sweep.py --dry-run` 或等效只读调用，贴当轮回显）
+- [x] 4.1 `CLAUDE_MD_ROOT_BYTE_CAP` 48KB → 12KB
+- [x] 4.2 `_claude_md_targets` 新增 `.claude/rules/*.md` glob，阈值 8KB
+- [x] 4.3 新增 rules 合计 30KB 判据（`.claude/rules/__total__` 告警 key，独立记账、可与单份同时触发）
+- [x] 4.4 单测：spec 全部 Scenario + 既有 `ClaudeMdCarrierSizeTests` 7 例零漂移 + 新增 `ClaudeMdRulesCoverageTests` 9 例
+- [x] 4.5 交付：验活命令已实跑——直接对**真实项目根目录**调用 `_check_claude_md_carrier_size`（只读，不经完整 sweep 的 git 操作），实测：根 9,703 B/12,288 B、rules 五份均 <8,192 B、合计 21,165 B/30,720 B，零超限，回显完整贴在收工报告
 
 ## 5. ⓑ UserPromptSubmit 常驻五条
 

@@ -732,8 +732,23 @@ CLAUDE_MD_SCENE_GLOBS = ("4-数字员工/*/*/CLAUDE.md", "5-平台底座/*/CLAUD
 # 下方 ROOT_RATCHET_SLACK_BYTES）——寻常一次小改就会顶到，当轮即被
 # 看见。真要加内容，须同批把别处压掉（one-in-one-out），或显式调高
 # 并在提交里说明理由，MUST NOT 为容纳新增内容顺手调高。
-CLAUDE_MD_ROOT_BYTE_CAP = 48 * 1024      # 49,152
+# 队列 §一 #381⑸ⓕ（2026-09-04，openspec 变更包 cc-hooks-p3）：根瘦身
+# P2 已落地（.claude/rules/ 五份拆分＋根路由表），现网实测根文件
+# 9,703 B——阈值随之从 48 KB 收紧到 12 KB（同一棘轮，只降不升）。
+CLAUDE_MD_ROOT_BYTE_CAP = 12 * 1024      # 12,288
 CLAUDE_MD_SCENE_BYTE_CAP = 50 * 1024     # 51,200
+#: `.claude/rules/*.md` 单份阈值（队列 #381⑸ⓕ）——与 root/scene 共用同一套
+#: "尺寸挤占开场注意力预算"判据，但 rules 只在**触碰对应路径的那一刻**注入
+#: （CC 侧），不是每次开场必载，故阈值独立于 root/scene、不共享棘轮语义。
+CLAUDE_MD_RULES_GLOB = ".claude/rules/*.md"
+CLAUDE_MD_RULES_BYTE_CAP = 8 * 1024      # 8,192
+#: `.claude/rules/` 目录合计阈值（队列 #381⑸ⓕ）——单份达标不代表总量可控，
+#: 见 `根CLAUDE.md彻底瘦身-方案-2026-09-03.md` §二 H2 的"合计 ≤30 KB"设计。
+CLAUDE_MD_RULES_TOTAL_BYTE_CAP = 30 * 1024  # 30,720
+#: 合计超限的告警 key——固定字面量而非某个文件路径，与"key 不含会变数值"的
+#: 既有原则（见下方 `_check_claude_md_carrier_size`）同构：会变的是"总和"这个
+#: 派生值，key 本身必须是稳定标识。
+CLAUDE_MD_RULES_TOTAL_KEY = ".claude/rules/__total__"
 CLAUDE_MD_SIZE_STATE_REL = "reports/sweep-claude-md-size-state.json"
 CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS = 24
 # 棘轮自我提示阈值（仅对 root 生效，scene 不适用——spec 的 MODIFIED
@@ -3510,6 +3525,17 @@ def _claude_md_targets(repo_root: Path) -> list[tuple[str, int]]:
                 continue
             seen.add(rel)
             targets.append((rel, CLAUDE_MD_SCENE_BYTE_CAP))
+    # 队列 §一 #381⑸ⓕ：`.claude/rules/*.md` 单份阈值——非递归 glob（`*` 不跨
+    # 目录），结构上够不到 `.claude/worktrees/**/.claude/rules/`，与 root 一样
+    # 不需要 WORKTREES_DIR_REL 排除这道防御。
+    for path in sorted(repo_root.glob(CLAUDE_MD_RULES_GLOB)):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(repo_root).as_posix()
+        if rel in seen:
+            continue
+        seen.add(rel)
+        targets.append((rel, CLAUDE_MD_RULES_BYTE_CAP))
     return targets
 
 
@@ -3591,13 +3617,19 @@ def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
     这个守卫就与「建成 9 天从未发出过一条消息」那个反面教材无法区分。
     """
     breaches: dict[str, str] = {}
+    rules_total = 0
+    rules_total_ok = True
     log.append("📏 必载 CLAUDE.md 巡检（每轮回显，零超限时亦不省略）：")
     for rel, cap in _claude_md_targets(repo_root):
         try:
             size = (repo_root / rel).stat().st_size
         except OSError as exc:
             log.append(f"    ⚠ {rel}：尺寸未取到（{exc}）——**不据此判为合规**")
+            if rel.startswith(".claude/rules/"):
+                rules_total_ok = False
             continue
+        if rel.startswith(".claude/rules/"):
+            rules_total += size
         if size > cap:
             log.append(f"    🔴 {rel}：{size:,} B / 阈值 {cap:,} B（超出 {size - cap:,} B）")
             breaches[rel] = f"尺寸 {size:,} B，超阈值 {cap:,} B 共 {size - cap:,} B"
@@ -3614,6 +3646,26 @@ def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
                     f"        💡 棘轮提示：现值低于阈值超过 {ROOT_RATCHET_SLACK_BYTES:,} B，"
                     f"可将 cap 下调至 {suggested:,}"
                 )
+
+    # 队列 §一 #381⑸ⓕ：`.claude/rules/` 合计字节数——单份达标不代表总量可控，
+    # 与单份超限各自独立判定、互不覆盖（同一文件可能只触发合计、不触发单份，
+    # 或两者同时触发，`breaches` 的 key 各自不同，`set(breaches)` 天然并存）。
+    if rules_total_ok:
+        if rules_total > CLAUDE_MD_RULES_TOTAL_BYTE_CAP:
+            over = rules_total - CLAUDE_MD_RULES_TOTAL_BYTE_CAP
+            log.append(
+                f"    🔴 {CLAUDE_MD_RULES_TOTAL_KEY}：{rules_total:,} B / "
+                f"阈值 {CLAUDE_MD_RULES_TOTAL_BYTE_CAP:,} B（超出 {over:,} B）"
+            )
+            breaches[CLAUDE_MD_RULES_TOTAL_KEY] = (
+                f"合计 {rules_total:,} B，超阈值 {CLAUDE_MD_RULES_TOTAL_BYTE_CAP:,} B 共 {over:,} B"
+            )
+        else:
+            remain = CLAUDE_MD_RULES_TOTAL_BYTE_CAP - rules_total
+            log.append(
+                f"    · {CLAUDE_MD_RULES_TOTAL_KEY}：{rules_total:,} B / "
+                f"阈值 {CLAUDE_MD_RULES_TOTAL_BYTE_CAP:,} B（尚余 {remain:,} B）"
+            )
 
     dates, reason = _root_progress_batch_dates(repo_root)
     if dates is None:

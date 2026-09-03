@@ -4272,6 +4272,113 @@ class ClaudeMdCarrierSizeTests(unittest.TestCase):
         self.assertEqual(dates, ["2026-08-19"], "同批两条只算一个批次日期")
 
 
+class ClaudeMdRulesCoverageTests(unittest.TestCase):
+    """ⓕ `.claude/rules/*.md` 尺寸巡检（队列 §一 #381⑸ⓕ，openspec 变更包 cc-hooks-p3）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
+        (self.repo / ".claude/rules").mkdir(parents=True)
+        self.recorder = _StandingStateRecorder()
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_webhook = sweep._load_webhook_url
+        sweep._track_and_alert_standing_state = self.recorder
+        sweep._load_webhook_url = lambda repo_root: None
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._load_webhook_url = self._orig_webhook
+        self._tmp.cleanup()
+
+    def _write_rule(self, name: str, size: int) -> None:
+        (self.repo / ".claude/rules" / name).write_text("x" * size, encoding="utf-8")
+
+    def test_root阈值已收紧到12KB(self):
+        self.assertEqual(sweep.CLAUDE_MD_ROOT_BYTE_CAP, 12 * 1024)
+
+    def test_rules文件纳入受检目标且阈值8KB(self):
+        self._write_rule("甲.md", 100)
+        caps = dict(sweep._claude_md_targets(self.repo))
+        self.assertEqual(caps[".claude/rules/甲.md"], sweep.CLAUDE_MD_RULES_BYTE_CAP)
+
+    def test_rules单份超限被判出(self):
+        self._write_rule("甲.md", sweep.CLAUDE_MD_RULES_BYTE_CAP + 1)
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        call = self.recorder.calls[-1]
+        self.assertIn(".claude/rules/甲.md", call["keys"])
+
+    def test_rules单份未超但合计超限(self):
+        """五份各 7KB（均 <8KB 单份阈值），合计 35KB（>30KB 总阈值）——
+        单份判据抓不到、必须靠独立的合计判据抓到（design 分工）。"""
+        per_file = 7 * 1024
+        for i in range(5):
+            self._write_rule(f"文件{i}.md", per_file)
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        call = self.recorder.calls[-1]
+        self.assertEqual(call["keys"], {sweep.CLAUDE_MD_RULES_TOTAL_KEY})
+        text = "\n".join(log)
+        self.assertIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, text)
+
+    def test_合计与单份可同时超限_各自独立记账(self):
+        self._write_rule("超份.md", sweep.CLAUDE_MD_RULES_BYTE_CAP + 100)
+        for i in range(4):
+            self._write_rule(f"文件{i}.md", 7 * 1024)
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        call = self.recorder.calls[-1]
+        self.assertIn(".claude/rules/超份.md", call["keys"])
+        self.assertIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, call["keys"])
+        self.assertEqual(len(call["keys"]), 2)
+
+    def test_全部合规时零告警且仍回显合计(self):
+        for i in range(3):
+            self._write_rule(f"文件{i}.md", 2 * 1024)
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        self.assertEqual(self.recorder.calls[-1]["keys"], set())
+        self.assertIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, "\n".join(log))
+
+    def test_现网实测值不触发任何rules告警(self):
+        """回归锚点：现网 5 份文件合计 21,165 B（2026-09-04 实测），单份均 <8KB。
+        本用例用该实测值构造夹具，确认新判据对现网真实状态零告警——这也是
+        ⓕ 能把根阈值直接收到 12KB 而不当场告警的前提（root 现网 9,703 B）。"""
+        sizes = {"两桌同步与取证.md": 5528, "场景建造与合规.md": 3895,
+                 "文档与全景治理.md": 3521, "跟进信与专员.md": 3952, "队列与落库.md": 4269}
+        for name, size in sizes.items():
+            self._write_rule(name, size)
+        (self.repo / "CLAUDE.md").write_text("x" * 9703, encoding="utf-8")
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)
+        self.assertEqual(self.recorder.calls[-1]["keys"], set(),
+                         "现网实测值不应触发任何超限——若此用例变红，说明阈值或现网尺寸已漂移")
+
+    def test_目录不存在时不报错(self):
+        import shutil
+        shutil.rmtree(self.repo / ".claude/rules")
+        log = []
+        sweep._check_claude_md_carrier_size(self.repo, log)  # 不应抛异常
+        self.assertEqual(self.recorder.calls[-1]["keys"], set())
+
+    def test_合计回落后自动解除(self):
+        """常驻状态骨架既有语义（`_track_and_alert_standing_state`）：keys 从
+        非空变回空即视为解除——本用例确认合计判据同样接入了这条既有骨架，
+        不是自己另起一套通知路径。"""
+        for i in range(5):
+            self._write_rule(f"文件{i}.md", 7 * 1024)
+        log1 = []
+        sweep._check_claude_md_carrier_size(self.repo, log1)
+        self.assertIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, self.recorder.calls[-1]["keys"])
+
+        for i in range(5):
+            (self.repo / ".claude/rules" / f"文件{i}.md").write_text("x" * 100, encoding="utf-8")
+        log2 = []
+        sweep._check_claude_md_carrier_size(self.repo, log2)
+        self.assertNotIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, self.recorder.calls[-1]["keys"])
+
+
 class RootRatchetHintUnitTests(unittest.TestCase):
     """队列 §一 #435（design D3/D6）：root 阈值只降不升，现值低于阈值
     超过 SLACK 时提示可下调；超阈值时仍走既有超限告警路径；scene 不
