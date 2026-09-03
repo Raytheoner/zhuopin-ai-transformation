@@ -26,6 +26,7 @@ import pytest
 HOOKS_DIR = Path(__file__).resolve().parent / "hooks"
 COMMON = HOOKS_DIR / "hooks-common.ps1"
 SESSIONSTART = HOOKS_DIR / "hooks-sessionstart-context.ps1"
+EDITLOCK_GUARD = HOOKS_DIR / "hooks-pretooluse-editlock-guard.ps1"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 pytestmark = pytest.mark.skipif(
@@ -174,3 +175,127 @@ class TestSessionStartContext:
         lines = audit_lines(git_repo)
         assert len(lines) == 2
         assert {l["sessionId"] for l in lines} == {"a", "b"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⓒ PreToolUse 编辑锁门禁（hooks-pretooluse-editlock-guard.ps1）
+# ─────────────────────────────────────────────────────────────────────────────
+
+QUEUE_MECH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"
+QUEUE_BIZ_REL = "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md"
+RELAY_CARD_REL = "1-转型规划/0-全景路线图/session接力-Phase1收口.md"
+
+
+def pretooluse_payload(repo_root: Path, rel_target: str, tool: str = "Edit") -> dict:
+    return {
+        "session_id": "test-session",
+        "cwd": str(repo_root),
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool,
+        "tool_input": {"file_path": str(repo_root / rel_target)},
+    }
+
+
+def write_lock(repo_root: Path, anchor_rel: str, *, minutes_ago: float = 1.0,
+               released: bool = False, who: str = "CC-test", corrupt: bool = False) -> Path:
+    from datetime import datetime, timedelta, timezone
+    lock_path = repo_root / (anchor_rel + ".editlock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    if corrupt:
+        lock_path.write_text("{not valid json", encoding="utf-8")
+        return lock_path
+    held_since = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat()
+    payload = {"who": who, "note": "test", "held_since": held_since, "history": []}
+    if released:
+        payload["released"] = True
+    lock_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return lock_path
+
+
+def touch(repo_root: Path, rel: str, content: str = "占位\n") -> None:
+    p = repo_root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if not p.exists():
+        p.write_text(content, encoding="utf-8")
+
+
+class TestPreToolUseEditlockGuard:
+    def test_脚本文件存在(self):
+        assert EDITLOCK_GUARD.is_file()
+
+    def test_非受保护文件放行(self, repo: Path):
+        rc, out, err = run_hook(
+            EDITLOCK_GUARD, pretooluse_payload(repo, "4-数字员工/某场景/CLAUDE.md"), repo)
+        assert rc == 0, err
+
+    def test_无锁时拦截机制环境队列(self, repo: Path):
+        touch(repo, QUEUE_MECH_REL)
+        rc, out, err = run_hook(EDITLOCK_GUARD, pretooluse_payload(repo, QUEUE_MECH_REL), repo)
+        assert rc == 2
+        assert "acquire" in err
+        lines = audit_lines(repo)
+        assert lines[-1]["verdict"] == "violation"
+
+    def test_有效锁放行(self, repo: Path):
+        touch(repo, QUEUE_MECH_REL)
+        write_lock(repo, QUEUE_MECH_REL, minutes_ago=1.0)
+        rc, out, err = run_hook(EDITLOCK_GUARD, pretooluse_payload(repo, QUEUE_MECH_REL), repo)
+        assert rc == 0, err
+        assert audit_lines(repo)[-1]["verdict"] == "pass"
+
+    def test_业务场景队列共用机制环境锚点的锁(self, repo: Path):
+        """`QUEUE_LOCK_ANCHOR` 恒为机制环境文件——业务场景队列的锁文件不是它自己的
+        `.editlock`，而是机制环境文件那一份（同 `工具-共享文档编辑锁.py` 既有语义）。"""
+        touch(repo, QUEUE_BIZ_REL)
+        write_lock(repo, QUEUE_MECH_REL, minutes_ago=1.0)  # 锁写在锚点，不是业务场景自己
+        rc, out, err = run_hook(EDITLOCK_GUARD, pretooluse_payload(repo, QUEUE_BIZ_REL), repo)
+        assert rc == 0, err
+
+    def test_陈旧锁视为无效(self, repo: Path):
+        touch(repo, QUEUE_MECH_REL)
+        write_lock(repo, QUEUE_MECH_REL, minutes_ago=45.0)  # 超过 30 分钟阈值
+        rc, out, err = run_hook(EDITLOCK_GUARD, pretooluse_payload(repo, QUEUE_MECH_REL), repo)
+        assert rc == 2
+        assert "陈旧" in err
+
+    def test_已release的锁视为无效(self, repo: Path):
+        """release 是"改写为 released 标记、不删除文件"——held_since 仍在有效期内
+        但已释放，必须仍判为无锁（同 `_read_lock` 既有语义）。"""
+        touch(repo, QUEUE_MECH_REL)
+        write_lock(repo, QUEUE_MECH_REL, minutes_ago=1.0, released=True)
+        rc, out, err = run_hook(EDITLOCK_GUARD, pretooluse_payload(repo, QUEUE_MECH_REL), repo)
+        assert rc == 2
+        assert "release" in err
+
+    def test_锁文件损坏视为无效_不崩溃(self, repo: Path):
+        touch(repo, QUEUE_MECH_REL)
+        write_lock(repo, QUEUE_MECH_REL, corrupt=True)
+        rc, out, err = run_hook(EDITLOCK_GUARD, pretooluse_payload(repo, QUEUE_MECH_REL), repo)
+        assert rc == 2
+        assert "解析失败" in err
+
+    def test_接力卡使用独立于队列锚点的锁(self, repo: Path):
+        """接力卡不属于 `_is_queue_system_target`，各自持锁——机制环境的锁对它无效。"""
+        touch(repo, RELAY_CARD_REL)
+        write_lock(repo, QUEUE_MECH_REL, minutes_ago=1.0)  # 只给队列锚点上锁，不给接力卡
+        rc, out, err = run_hook(EDITLOCK_GUARD, pretooluse_payload(repo, RELAY_CARD_REL), repo)
+        assert rc == 2, "队列锚点的锁不应覆盖接力卡"
+
+        write_lock(repo, RELAY_CARD_REL, minutes_ago=1.0)  # 给接力卡自己上锁
+        rc2, out2, err2 = run_hook(EDITLOCK_GUARD, pretooluse_payload(repo, RELAY_CARD_REL), repo)
+        assert rc2 == 0, err2
+
+    def test_非Edit类工具不受约束(self, repo: Path):
+        touch(repo, QUEUE_MECH_REL)
+        rc, out, err = run_hook(
+            EDITLOCK_GUARD, pretooluse_payload(repo, QUEUE_MECH_REL, tool="Bash"), repo)
+        assert rc == 0, err
+
+    def test_缺file_path时fail_open(self, repo: Path):
+        payload = {
+            "session_id": "s", "cwd": str(repo), "hook_event_name": "PreToolUse",
+            "tool_name": "Edit", "tool_input": {},
+        }
+        rc, out, err = run_hook(EDITLOCK_GUARD, payload, repo)
+        assert rc == 0, err
+        assert audit_lines(repo)[-1]["verdict"] == "undetermined"

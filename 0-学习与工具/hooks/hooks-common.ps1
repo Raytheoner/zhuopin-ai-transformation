@@ -478,6 +478,28 @@ function Add-SentinelAuditRecord {
 # 统一收口
 # ─────────────────────────────────────────────────────────────────────────────
 
+function Get-JsonPropertyNames {
+    <#
+      安全返回一个（可能来自 `ConvertFrom-Json` 的）对象的属性名数组，空对象返回空数组。
+
+      🔴 **为什么不能直接写 `@($obj.PSObject.Properties.Name)`（P3 hooks 单测钉死的坑，
+      2026-09-04 ⓒ 建造时实测）**：`Set-StrictMode -Version Latest` 下，当
+      `.PSObject.Properties`（`PSMemberInfoIntegratingCollection`）**恰好零个成员**时，
+      连它自己的 `.Count` 都会抛 `"The property 'Count' cannot be found on this
+      object"`——`@()` 外包一层**不能**修复，因为异常发生在 `.Name`/`.Count` 这两个
+      属性访问本身，而不是外层的数组展开语义。唯一验证有效的做法是走
+      `ForEach-Object` 逐项投影：**零成员时管道天然零次迭代、零次属性访问，
+      不会触发该访问路径**。此函数是本项目里做这件事的唯一实现，MUST NOT
+      在别处重新手写 `.PSObject.Properties.Name`（那正是这次事故的成因——`hooks-
+      common.ps1` 既有 `ConvertTo-SentinelPayload` 等处的写法同样不耐零属性输入，
+      只是 H3/H4 的真实调用场景里 `tool_input` 从未为空才没有显形）。
+    #>
+    param($InputObject)
+    if ($null -eq $InputObject) { return @() }
+    return @($InputObject.PSObject.Properties | ForEach-Object { $_.Name })
+}
+
+
 function Add-HooksAuditLine {
     <#
       P3 hooks 族（队列 §一 #381⑸）共用的第三种留痕形态：`reports/hooks-audit.jsonl`，

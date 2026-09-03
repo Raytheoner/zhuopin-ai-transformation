@@ -103,7 +103,7 @@ try {
     if ($stdinRaw -and $stdinRaw.Trim()) {
         try {
             $stdinJson = $stdinRaw | ConvertFrom-Json
-            if ($stdinJson.PSObject.Properties.Name -contains 'session_id') {
+            if ((Get-JsonPropertyNames $stdinJson) -contains 'session_id') {
                 $sessionId = [string]$stdinJson.session_id
             }
         } catch { }
