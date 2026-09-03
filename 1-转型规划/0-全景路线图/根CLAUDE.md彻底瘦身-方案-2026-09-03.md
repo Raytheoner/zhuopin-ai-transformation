@@ -122,5 +122,7 @@ legal / sales / small-business / finance / human-resources / marketing / custome
 
 **效果估计修正**：目标态不变（根 ≤8 KB）；Cowork 典型 session 开场读入 ＝ 根 8 KB ＋ 常驻五条 ＋ 显式 Read 的 1–2 份规则（3–6 KB）≈ 12–15 KB，与原估一致。
 
+**P2 回归实测（2026-09-04 00:04 本地，CC 会话 `P2回归-OP0903I`，取件＝jsonl 直读）**：开场只载根 9,638 B、`.claude/rules/` 零注入；Read `4-数字员工/CLAUDE.md` 后恰好注入 `场景建造与合规.md`＋`两桌同步与取证.md`，与预期一致、无多无缺；路由表 5 个文件名与目录逐一比对零差异。**P2 通过。** 附观察：`两桌同步与取证.md` 的 paths 覆盖广（近全局），路由表按行触发词与 glob 广度非一一对应，属设计内。
+
 ## 六、下一步 P1（无语义改动）交付形态
 不直接覆盖根 `CLAUDE.md`。产出三件供他过目后再换：① `CLAUDE.md` 新版草稿；② **逐条映射表**（原条目 → 新版落点 → CHANGELOG 附录落点），每行可 grep；③ 尺寸对比。换版那一步走 §二 批次由 sweep 落库。
