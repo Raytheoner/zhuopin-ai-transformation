@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
+from datetime import date
 from typing import Any
 
 from .errors import CriterionContractError, CriterionNotSignedOffError
@@ -38,6 +40,39 @@ def _require_text(field_name: str, value: Any, *, context: str) -> str:
     return text
 
 
+# 签认日期的形状：严格 `YYYY-MM-DD`，且必须是真实存在的一天。
+# 🔴 为什么日期要单独校一道（Shao Peishen 2026-09-03 拍板 G-1）：
+# 占位词黑名单只拦「填不出来就随手糊一个词」，拦不住 `signed_on="2026-13-45"`。
+# 而 `Signoff` 的全部价值是「可被第三方翻出来核对」——一个不存在的日期与一个占位词
+# 是同一类问题：都让这条记录**核不动**。故两道并列，缺一道即漏。
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _require_iso_date(field_name: str, value: str, *, context: str) -> str:
+    """日期必须是 ``YYYY-MM-DD`` 且真实存在，否则构造期即抛。
+
+    两步都不能省：
+      ⑴ 正则定死书写形态 —— ``date.fromisoformat`` 从 3.11 起也认 ``20260903``
+         这类紧凑写法，只靠它会放过一批「看着不像日期的日期」；
+      ⑵ ``date.fromisoformat`` 定死日期本身存在 —— 正则拦不住 ``2026-13-45``。
+    """
+    text = value.strip()
+    if not _ISO_DATE_RE.fullmatch(text):
+        raise CriterionContractError(
+            f"{context}：{field_name}={value!r} 不是 YYYY-MM-DD 形态的日期。"
+            f"签认日期要能被第三方拿去对落档凭据，形态必须唯一（如 2026-10-11）。"
+        )
+    try:
+        date.fromisoformat(text)
+    except ValueError as exc:
+        raise CriterionContractError(
+            f"{context}：{field_name}={value!r} 形态对但这一天并不存在（{exc}）。"
+            f"核不动的日期与占位词是同一类问题——填不出真实日期，"
+            f"就说明这条判据还没签认，让它留在未签认状态即可。"
+        ) from exc
+    return text
+
+
 @dataclass(frozen=True)
 class Signoff:
     """一次判据签认的落档记录。四个字段**全部必填、无默认值**。
@@ -46,7 +81,7 @@ class Signoff:
     ——与 FI6 `CaseRecord.confirmed_by`、FI9 `AuxLedgerRow.disclaimer` 同一条纪律。
 
     :param signed_by:    签认人**实名**（真人姓名，不是「财务部」这类部门名——IATF 要可归责到人）
-    :param signed_on:    签认日期（``YYYY-MM-DD``）
+    :param signed_on:    签认日期（``YYYY-MM-DD``，**校验形态且须是真实存在的一天**）
     :param evidence:     落档凭据（文件路径 / 文号 / 会议纪要编号，须可被第三方翻出来核对）
     :param rule_version: 本次签认后生效的规则版本号
     """
@@ -60,6 +95,8 @@ class Signoff:
         ctx = "签认记录"
         for name in ("signed_by", "signed_on", "evidence", "rule_version"):
             _require_text(name, getattr(self, name), context=ctx)
+        # 🔴 日期再过一道形态校验（G-1）：占位词黑名单拦不住 `2026-13-45`。
+        _require_iso_date("signed_on", self.signed_on, context=ctx)
 
 
 @dataclass(frozen=True)

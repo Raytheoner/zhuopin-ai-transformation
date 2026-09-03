@@ -13,6 +13,7 @@ import inspect
 
 import pytest
 
+from zhuopin_platform.criteria_signoff import models as _models
 from zhuopin_platform.criteria_signoff import (
     UNSIGNED_VERSION_TAG,
     CriteriaRegistry,
@@ -177,6 +178,48 @@ def test_signoff_rejects_placeholder_signer(bad: str):
         Signoff(signed_by=bad, signed_on="2026-10-11", evidence="某文件.md", rule_version="v1")
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "2026-13-45",   # 形态对、这一天不存在（月 13、日 45）
+        "2026-02-30",   # 形态对、2 月没有 30 号
+        "2026/09/03",   # 分隔符不对
+        "20260903",     # 紧凑写法（🔴 date.fromisoformat 从 3.11 起认它，只靠它会漏）
+        "2026-9-3",     # 未补零，形态不唯一
+        "03-09-2026",   # 日月年颠倒
+        "2026-09-03T00:00:00",  # 带时间
+        "2026年9月3日",  # 中文写法
+    ],
+)
+def test_signoff_rejects_malformed_date(bad: str):
+    """🔴 G-1（Shao Peishen 2026-09-03 拍板）：`signed_on` 必须是真实存在的 ``YYYY-MM-DD``。
+
+    占位词黑名单拦的是「填不出来就糊个词」，拦不住 `2026-13-45` ——
+    但一个不存在的日期与一个占位词是同一类问题：都让这条签认**核不动**。
+    """
+    with pytest.raises(CriterionContractError):
+        Signoff(signed_by="某某某", signed_on=bad, evidence="某文件.md", rule_version="v1")
+
+
+@pytest.mark.parametrize("good", ["2026-10-11", "2024-02-29", "2026-01-01", "2026-12-31"])
+def test_signoff_accepts_real_iso_dates(good: str):
+    """正例：合法日期（含闰日）照过，校验不误伤。"""
+    assert Signoff(
+        signed_by="某某某", signed_on=good, evidence="某文件.md", rule_version="v1"
+    ).signed_on == good
+
+
+def test_date_check_is_additional_not_a_replacement_for_the_blacklist():
+    """🔴 两道防线并列、互不替代：占位词那道仍在（`signed_on="待定"` 照拒）。
+
+    这条守的是「加了日期校验就顺手把黑名单拆了」这种改法——
+    G-1 的原文是「占位词黑名单原样保留、另补格式校验」。
+    """
+    with pytest.raises(CriterionContractError) as ei:
+        Signoff(signed_by="某某某", signed_on="待定", evidence="某文件.md", rule_version="v1")
+    assert "占位词" in str(ei.value), "占位词那道防线被日期校验顶替了，两道应并列"
+
+
 def test_criterion_is_frozen(unsigned_criterion: Criterion):
     """判据不可变——没有 `c.raw_value = 0.9` 这条就地赋值的路。"""
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -316,6 +359,25 @@ def test_guard_is_load_bearing():
         # 复刻 `test_reading_unsigned_criterion_raises` 的断言；守卫关掉 ⇒ 它必须报 DID NOT RAISE
         with pytest.raises(CriterionNotSignedOffError):
             _ = guard_off.value
+
+
+def test_date_check_is_load_bearing(monkeypatch: pytest.MonkeyPatch):
+    """🔴 证明 G-1 的日期校验**在承重**，不是摆设（照 D2.4 既有做法，把证明常驻进套件）。
+
+    做法：把 `_require_iso_date` 换成 no-op（模拟「有人嫌它碍事顺手拆了」），
+    再复刻 `test_signoff_rejects_malformed_date` 的断言——它必须报 DID NOT RAISE。
+    若它反而通过，说明那批反例根本不是靠这道校验成立的。
+    """
+    monkeypatch.setattr(_models, "_require_iso_date", lambda *a, **k: None)
+
+    # 校验拆掉后，非法日期静默构造成功
+    assert Signoff(
+        signed_by="某某某", signed_on="2026-13-45", evidence="某文件.md", rule_version="v1"
+    ).signed_on == "2026-13-45"
+
+    with pytest.raises(pytest.fail.Exception):
+        with pytest.raises(CriterionContractError):
+            Signoff(signed_by="某某某", signed_on="2026-13-45", evidence="某文件.md", rule_version="v1")
 
 
 def test_guard_off_also_breaks_the_registry_path():

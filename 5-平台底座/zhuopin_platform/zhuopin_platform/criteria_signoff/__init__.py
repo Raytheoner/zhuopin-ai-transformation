@@ -25,10 +25,14 @@ rule-of-three 已触发（**5 > 3**）：FI5／FI6／FI8／FI9／FI10 五个财�
   · **权限缺口**（FI8 银行余额取数授权，须 CFO 办公室）、**存在性未核实**（FI9 工时系统）、
     **前置未满足**（FI10 芯片价格 API，队列 `#475`）—— 三者机械形状虽像判据，
     但**各只出现 1 次，rule-of-three 未触发**，且五个场景包明确要求「三处缺口性质各不相同、
-    分别立牌不合并」。本泳道判**不收**，列为 design 定夺项 ②，由 Shao Peishen 裁；
+    分别立牌不合并」。✅ **Shao Peishen 2026-09-03 拍板 G-2 ＝ (a) 不收**，三条原样留在各自场景包；
   · L2 默认侧（``needs_manual_review=True``）、``disclaimer`` 必填、``confirmed_by`` 无默认
-    —— 虽 5/5 命中，但属**模型层**纪律、不属判据签认，出圈不收（design 定夺项 ③）；
-  · 与 `AuditLogger` 的联动 —— 五份本地实现都没有，本模块不凭空加（design 定夺项 ④）。
+    —— 虽 5/5 命中，但属**模型层**纪律、不属判据签认，出圈不收。
+    ✅ **G-4 ＝ (b) 另立队列行 `#476`、不排期**（触发条件＝至少两个财务引擎落地，🛑 未满足前不得认领）；
+  · 与 `AuditLogger` 的联动 —— 五份本地实现都没有，本模块不凭空加。
+    ✅ **G-5 ＝ (a) 不接**，保本模块**零内部依赖**；改**反向依赖**：由各场景引擎在
+    ``record(AuditEvent)`` 时把当时的 ``RULE_VERSION`` 写进 ``decision``
+    —— **审计日志指向判据版本，不是判据模块去写日志**（实施归 A4，见 `tasks.md` 4.7）。
 
 ## 用法
 
@@ -53,8 +57,11 @@ rule-of-three 已触发（**5 > 3**）：FI5／FI6／FI8／FI9／FI10 五个财�
                 rule_version="fi5-signed-2026-10-11"),
     )
 
-🔴 **状态**：档 0，openspec 变更包 `criteria-signoff-platform` **design 审未过**。
-五个场景包的迁移是 A4 段的事，本段不改任何场景包。
+✅ **状态**：openspec 变更包 `criteria-signoff-platform` **design 审已于 2026-09-03 通过**
+（Shao Peishen 逐条拍板 `G-1`…`G-7`，见看护批 `B-0903_50` §一与 `design.md` §定夺项）。
+🔴 五个场景包的迁移是 **A4 段**的事，本模块所在的收口段**不改任何场景包**；
+A4 须把 FI10 的 ``SLOW_MOVING_CRITERIA`` 一并登记进注册表（`G-3`，`tasks.md` 4.1a），
+迁移前后未签认判据数恒为 **18**。
 """
 
 from .errors import (
