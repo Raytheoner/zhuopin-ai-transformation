@@ -1,17 +1,20 @@
 """FI6 骨架冒烟测试。
 
-不测业务逻辑（检测器未实现，design 审未过）。守四件事：
+不测业务逻辑（检测器未实现，design 审未过）。守五件事：
   ⑴ 路径引导可用；
-  ⑵ 🔴 四项未签认判据没被人悄悄填上默认数；
+  ⑵ 🔴 四项未签认判据没被人悄悄签掉（2026-09-03 起由底座注册表承接，行为不变）；
   ⑶ 🔴 `PartyProfile` 上没有被人加出一个"是否关联方"的布尔字段
      —— 关联口径尚未定义，多出这个字段就等于口径被默默造了出来；
-  ⑷ L2 默认侧（需人工）与案例库判例的实名要求。
+  ⑷ L2 默认侧（需人工）与案例库判例的实名要求；
+  ⑸ 🔴 G-5 反向依赖：写审计的 `decision` 恒带当时生效的 `RULE_VERSION`。
 """
 from __future__ import annotations
 
 import dataclasses
 
 import pytest
+
+from zhuopin_platform.criteria_signoff import CriterionNotSignedOffError
 
 from fi6_anomaly_detect import config, models
 
@@ -21,28 +24,51 @@ def test_platform_bootstrap_importable():
     from zhuopin_platform.audit import AuditLogger  # noqa: F401
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "AMOUNT_SURGE_CRITERIA",
-        "FREQUENCY_ANOMALY_CRITERIA",
-        "RELATED_PARTY_CRITERIA",
-        "L2_ESCALATION_CRITERIA",
-    ],
+# 本场景的四项待签认判据（顺序即注册表声明顺序）。
+CRITERIA_KEYS = (
+    "AMOUNT_SURGE_CRITERIA",
+    "FREQUENCY_ANOMALY_CRITERIA",
+    "RELATED_PARTY_CRITERIA",
+    "L2_ESCALATION_CRITERIA",
 )
-def test_unsigned_criteria_stay_none(name):
-    """🔴 四项判据须财务侧签认，未签认前一律 None。
+
+
+def test_criteria_registry_declares_exactly_these():
+    """🔴 四项判据一条不多、一条不少地登记在注册表里（少一条即从此无人守）。"""
+    assert config.CRITERIA.keys() == CRITERIA_KEYS
+
+
+@pytest.mark.parametrize("key", CRITERIA_KEYS)
+def test_criteria_registry_all_unsigned(key):
+    """🔴 四项判据须财务侧签认，未签认前**读了就炸**。
 
     异常检测最容易被「先随便设个 3 倍标准差」蒙混过去——那个数一旦落地就会静默决定
     谁被推给财务主管、谁被放过，且永远不会报错。
     """
-    assert getattr(config, name) is None, (
-        f"{name} 已被填值，但本场景判据尚无财务侧签认记录"
+    assert config.CRITERIA.is_signed(key) is False, (
+        f"{key} 已被签认，但本场景尚无财务侧签认落档"
     )
+    with pytest.raises(CriterionNotSignedOffError):
+        config.CRITERIA.value_of(key)
 
 
-def test_rule_version_marked_unsigned():
+def test_rule_version_consistent_with_signoff_state():
+    """版本号须自陈「未签认」；本用例同时守 `config.py` 里那行导入期校验别被删掉。"""
+    config.CRITERIA.assert_rule_version(config.RULE_VERSION)
     assert "unsigned" in config.RULE_VERSION
+
+
+def test_audit_decision_carries_rule_version():
+    """🔴 G-5 反向依赖：审计日志指向判据版本，不是判据模块去写日志。"""
+    from zhuopin_platform.audit import AuditEvent
+
+    event = AuditEvent(
+        scenario="FI6", action="anomaly_detect", evaluator="示例财务主管",
+        automation_level="L2",
+        decision=config.audit_decision(txn_id="TX-0001", patterns=[]),
+    )
+    assert event.decision["rule_version"] == config.RULE_VERSION
+    assert "unsigned" in event.decision["rule_version"]
 
 
 def test_party_profile_has_no_related_flag():
@@ -55,7 +81,7 @@ def test_party_profile_has_no_related_flag():
     forbidden = {"is_related", "is_related_party", "related", "related_party"}
     assert not (field_names & forbidden), (
         f"PartyProfile 出现关联方标志字段 {field_names & forbidden}，"
-        f"但 config.RELATED_PARTY_CRITERIA 仍为 None"
+        f"但 RELATED_PARTY_CRITERIA 在注册表里仍未签认"
     )
 
 

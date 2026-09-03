@@ -16,6 +16,7 @@
 
 - 新建场景工程 `4-数字员工/财务部/FI5-费用报销智能审核/`（已建，`pytest` 8 passed）：`pyproject.toml` ＋ `fi5_expense_audit/{__init__,config,models}.py` ＋ `tests/{conftest,test_scaffold}.py` ＋ `data/mock/` 三张合成 CSV。路径引导用 `bootstrap.ensure_paths` 唯一样板（`tests/conftest.py` 带 `strict=True`），未内联任何自研引导。
 - **`config.py` 把四项未签认判据落成 `None`、并由一条 CI 用例守住**（`test_unsigned_criteria_stay_none`）。这是本包在骨架之外唯一带"行为"的东西，理由见下节。
+  📌 **2026-09-03 迁移后现状**（`OP-0903-D3`）：四项改由平台底座 `zhuopin_platform.criteria_signoff` 的注册表承接，用例改名为 `test_criteria_registry_all_unsigned`；**行为一处未变**（未签认 ⇒ 值恒空、读取即抛、无 `default` 旁路）。上句保留为骨架期原文。
 - **四个待实现引擎的模型契约定形**（`models.py`）：`ExpenseClaim` / `ExpenseLine` / `BudgetBalance` / `AuditFinding`，其中 `AuditFinding.needs_manual_review` **默认 `True`**——放行才是须被判据显式证成的那一侧。
 
 ### New Capabilities（design 审后才落 specs/）
@@ -38,7 +39,7 @@
 | **超预算拦截阈值** | 无成文口径。是"超 0 即拦"还是"留缓冲带"、跨科目能否调剂，均未定 | `config.L2_BUDGET_BLOCK_PCT`（现 `None`） |
 | **异常风险分级边界** | 无成文口径。"频繁"是几次／几天，"关联交易"如何识别（供应商主数据比对？亲属关系？），完全未定义 | `config.RISK_GRADE_BOUNDARIES`（现 `None`） |
 
-🔴 **四项一律不给默认值**，`config.py` 全部落成 `None`，并由 `test_unsigned_criteria_stay_none` 守住。理由与本项目其他"静默回退"事故同族：一个看起来合理的默认数**不会报错、不产生任何信号**，却已经在替财务部做判断了；填上去之后没有任何机制会发现它是编的。这条用例把"不产生信号"变成一条红。
+🔴 **四项一律不给默认值**，`config.py` 全部落成 `None`，并由 `test_unsigned_criteria_stay_none` 守住（📌 2026-09-03 起改由底座注册表承接，用例改名 `test_criteria_registry_all_unsigned`，行为不变）。理由与本项目其他"静默回退"事故同族：一个看起来合理的默认数**不会报错、不产生任何信号**，却已经在替财务部做判断了；填上去之后没有任何机制会发现它是编的。这条用例把"不产生信号"变成一条红。
 
 **2. 由谁显性化？**
 🔴 **持有人与 backup 尚未指定，本包不代指定**——需财务侧实名认领后登记进《跨场景前置数据与知识库任务总表》§一.2 知识资产台账（该表**现无 FI5 行**，见下「前置判据源缺口」）。

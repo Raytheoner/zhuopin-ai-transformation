@@ -3,21 +3,29 @@
 > 🔴 **A3 段（OP-0903-C3）做 §1 §2 的建造与起草，止于 design 审。**
 > ✅ **design 审已于 2026-09-03 由 Shao Peishen 逐条通过**（`G-1`…`G-7`，见看护批 `B-0903_50` §一）⇒ §3 已闭合、§4 解除阻塞。
 > 🔴 **收口段（OP-0903-D2）做 §3 的落档与 `G-1` 的代码补强，不做 §4**（改五个场景包 ＝ A4 段，归 D3 泳道）。
+> ✅ **§4（A4 段五场景迁移）已于 2026-09-03 由 `OP-0903-D3` 做完**（同批 `B-0903_50` A3 段）⇒ **本包最大的风险已消解**：底座与五份手抄的并存态**已结束**，五个场景现引用底座唯一一份。
 
 > ## 🔴 归档状态：**不归档** ｜ **预期观察窗口：14 天**（供 `工具-落库sweep.py` / `工具-变更包自动归档.py` 读取）
 >
-> **判定依据**：按「完工即归档纪律」，`tasks` 全 `[x]` 才归档。当前 §4（A4 段五场景迁移）与 §5（收口）**全部未做**，
-> 本段（OP-0903-D2）按 opener 硬边界**明令不做 §4** ⇒ **不归档**。
+> **判定依据**：按「完工即归档纪律」，`tasks` 全 `[x]` 才归档。§1–§4 现已全部完成，**§5（收口）四条全未做** ⇒ **不归档**。
+>
+> 🔴 **§5 为什么由 `OP-0903-D3` 如实留步、而不是顺手做掉**（2026-09-03）：
+> · `5.1` 要同改根 `CLAUDE.md` §4 与 `5-平台底座/CLAUDE.md` —— **两处都不在 D3 泳道 opener 列明的触碰区内**
+>   （该 opener 的触碰区 ＝ 五个财务场景包 ／ `openspec/` ／ `master` ／队列 §一 `#470`–`#474`）。看护批 `B-0903_50` 的
+>   合入豁免明写「**范围一旦超出各 opener 所列即须停**」⇒ 留步登记，不越界。
+> · `5.3` 要财务侧 Champion（唐燕萍线）确认存档 —— **三闸全锁**（硬边界 6），不得起草或发送任何跟进信。
+> · `5.2` 台账登记与 `5.4` 归档均在 `5.1`／`5.3` 之后，一并顺延。
 >
 > 🔴 **为什么用「预期观察窗口」而不是那个永久 defer 文本标记**（`工具-落库sweep.py` 的 `STALE_CHANGE_DEFER_MARKER`，
 > 此处**刻意不写出它的字面值** —— 写出来就会被 sweep 当成真声明命中，把本包永久静音）：那一档是**作者对未来的永久声明**，
 > 会让 sweep 此后再也不提这个包；
-> 而本包缺的 §4 是**马上就要做的一段**（`G-6 = (a)` 已批准 A4 开工，归同批 `B-0903_50` 的 A3 段 / D3 泳道）。
-> 它**应该**被反复提起直到做完 —— 用会到期升级的那一档，等于给这段并存态留了一个会自己响的闹钟。
+> 而本包缺的 §5 是**马上就要做的一段**（只差一个有权改 `CLAUDE.md` 的泳道 ＋ 一次闸开）。
+> 它**应该**被反复提起直到做完 —— 用会到期升级的那一档，等于给这段留了一个会自己响的闹钟。
 >
-> **窗口为什么取 14 天**：A4 含 `EE-3`（FI9 带出 OEM 项目标识、接 `data_isolation_layer`），几乎必然命中 openspec 门槛②
-> ⇒ **A4 会中途再停一次等 Shao Peishen 审**。14 天留出这一次往返；若 14 天后仍未归档，说明那次往返卡住了，
-> 该被升级成「疑似遗忘归档」提出来 —— 这正是本包最大风险（design §风险「只增不减」：底座与五份手抄并存）该被盯住的方式。
+> **窗口为什么仍取 14 天**（原因已换，数字不变，故此处记明以免下次读不懂）：
+> 原定 14 天是给 A4 的 `EE-3` 停审留一次往返 —— **那次往返已发生**（`OP-0903-D3` 起草 `fi9-rd-cost-mvp/design.md` 后已 `pause`，待裁）。
+> 现在这 14 天改为留给 §5 的两个前提：一次跨触碰区的 `CLAUDE.md` 同改派单 ＋ 一次唐燕萍闸开。
+> 若 14 天后仍未归档，说明这两件里至少一件卡住了，该被升级成「疑似遗忘归档」提出来。
 
 ## 1. 底座模块建造（A3，✅ 已完成）
 
@@ -52,10 +60,10 @@
 - [x] 3.3 **裁决落档（OP-0903-D2）**：`design.md` §定夺项改写为已裁决形态（逐条记裁决原文＋拍板人＋日期），D1.2／风险段的过期表述同步校正（17 → 18、「审未过」措辞）
 - [x] 3.4 🔴 **本包不再重开任何一条**；任一条若需改动，须重新走一次 design 审，不得就地改判
 
-## 4. A4 段：五场景迁移（✅ **已获批开工**（`G-6`），🔴 **本泳道 OP-0903-D2 不做**，归 D3 泳道）
+## 4. A4 段：五场景迁移（✅ **已完成** —— `OP-0903-D3` / 看护批 `B-0903_50` A3 段，2026-09-03）
 
-- [ ] 4.1 FI5/FI6/FI8/FI9/FI10 各自 `config.py` 改为 `CriteriaRegistry` 声明，删除 **18** 条裸 `None` 常量
-- [ ] 4.1a 🔴 **`G-3` 落地：FI10 `SLOW_MOVING_CRITERIA` 必须登记进 FI10 的注册表**（Shao Peishen 2026-09-03 拍板 `G-3 = (a)`）。逐字形态如下，`owner` 与 `question` **不得改写**：
+- [x] 4.1 FI5/FI6/FI8/FI9/FI10 各自 `config.py` 改为 `CriteriaRegistry` 声明，删除 **18** 条裸 `None` 常量（各包另在模块级调 `CRITERIA.assert_rule_version(RULE_VERSION)`，**导入期**即双向校验）
+- [x] 4.1a 🔴 **`G-3` 落地：FI10 `SLOW_MOVING_CRITERIA` 必须登记进 FI10 的注册表**（Shao Peishen 2026-09-03 拍板 `G-3 = (a)`）。逐字形态如下，`owner` 与 `question` **不得改写**：
 
       Criterion(
           key="SLOW_MOVING_CRITERIA",
@@ -74,21 +82,22 @@
 
   🔴 **它仍是未签认判据，`raw_value` 恒 `None`** —— 本条是「登记进注册表」，**不是给它填值**。任何人在此填值即触发 4.3 的迁移失败。
   🔴 连带删除 FI10 侧的裸常量 `SLOW_MOVING_CRITERIA = None`；`L9_SOURCE_ABSENT` 那段说明文字**保留**（它记的是 `#474`／EE-4 的来龙去脉，注册表的 `note` 不替代它）。
-- [ ] 4.1b 连带改 FI10 用例 `test_l9_slow_moving_source_absent`：断言从「常量是 `None`」改为「注册表里该 key **未签认**且读 `.value` 必抛」（原两条 `L9_SOURCE_ABSENT` 文本断言保留）
-- [ ] 4.2 删除 5 份 `test_unsigned_criteria_stay_none` ＋ 5 份 `test_rule_version_marked_unsigned`，改由底座注册表承接
-- [ ] 4.3 🔴 **验收硬条件（防"顺手补数"）**：迁移前后**未签认判据数量必须相等**（**18 条进、18 条出**）。任一条在迁移中被填上值，即视为迁移失败、退回
+- [x] 4.1b 连带改 FI10 用例 `test_l9_slow_moving_source_absent`：断言从「常量是 `None`」改为「注册表里该 key **未签认**且读 `.value` 必抛」（原两条 `L9_SOURCE_ABSENT` 文本断言保留）⇒ 已改名为 `test_l9_slow_moving_registered_but_unsigned`；另立 `L9_OWNERSHIP_RULED` 常量记 `EE-4` 改判（原文保留记成因、新常量记结论，两者并存）
+- [x] 4.2 删除 5 份 `test_unsigned_criteria_stay_none` ＋ 5 份 `test_rule_version_marked_unsigned`，改由底座注册表承接 ⇒ 各包改为 `test_criteria_registry_declares_exactly_these` ／ `test_criteria_registry_all_unsigned`（断言**未签认且读取必抛**，比原「常量是 `None`」更硬）／ `test_rule_version_consistent_with_signoff_state`
+- [x] 4.3 ✅ **实测通过：18 条进、18 条出**（FI5 4 ／ FI6 4 ／ FI8 3 ／ FI9 3 ／ FI10 4，逐条 `is_signed()` 为假、`raw_value is None`、`signed_keys()` 全空）。🔴 **验收硬条件（防"顺手补数"）**：迁移前后**未签认判据数量必须相等**（**18 条进、18 条出**）。任一条在迁移中被填上值，即视为迁移失败、退回
   🔴 **该数已由 17 改为 18**（Shao Peishen 2026-09-03 拍板 `G-3 = (a)`，`SLOW_MOVING_CRITERIA` 归进注册表所致，见 4.1a）。**不改这个数，A4 会按「迁移失败」被自己的验收条件退回。**
-- [ ] 4.4 🔴 **验收硬条件（防"只增不减"）**：迁移后五个场景包内**不得残留任何本地判据 `None` 常量**——底座与手抄并存比现状更差
-- [ ] 4.5 三类非判据缺口（FI8 `BANK_BALANCE_ACCESS` / FI9 `TIMESHEET_SYSTEM_EXISTS` / FI10 `CHIP_PRICE_API`）⇒ ✅ 已裁 `G-2 = (a)` **不收进底座**：三条**原样留在各自场景包内，一律不动、不得顺手并入注册表**。
+- [x] 4.4 ✅ **实测通过：零残留**（`ast` 扫五个包全部 `.py` 的模块级 `X = None`，命中仅 3 处且全是 `G-2` 三类缺口：FI8 `BANK_BALANCE_ACCESS` ／ FI9 `TIMESHEET_SYSTEM_EXISTS` ／ FI10 `CHIP_PRICE_API`）。🔴 **验收硬条件（防"只增不减"）**：迁移后五个场景包内**不得残留任何本地判据 `None` 常量**——底座与手抄并存比现状更差
+- [x] 4.5 ✅ **三条原样未动，且各新增一条「不得并入注册表」用例**（`test_bank_balance_access_is_not_a_criterion` ／ `test_timesheet_existence_is_not_a_criterion` ／ `test_chip_price_api_is_not_a_criterion`）。三类非判据缺口（FI8 `BANK_BALANCE_ACCESS` / FI9 `TIMESHEET_SYSTEM_EXISTS` / FI10 `CHIP_PRICE_API`）⇒ ✅ 已裁 `G-2 = (a)` **不收进底座**：三条**原样留在各自场景包内，一律不动、不得顺手并入注册表**。
   🔴 它们与判据的机械形状虽像，但解除路径各不相同（授权 / 核实 / 等前置 vs 签认）；「合并成一个 `None`」的做法已被明确否决。
   📌 FI9 `TIMESHEET_SYSTEM_EXISTS` 的核实已按 `G-7 = (a)` 独立立行 ⇒ 队列 §一 `#477`（本包不认领）
-- [ ] 4.6 五场景单测全绿（迁移前基线 53 passed），底座全量回归零回归（收口后基线 **466 passed / 1 skipped**），`openspec validate --all --strict` 全绿
-- [ ] 4.7 🔴 **`G-5` 落地：反向依赖（Shao Peishen 2026-09-03 拍板 `G-5 = (a)` 不接 `AuditLogger`，改反向依赖）**
+- [x] 4.6 ✅ 五场景单测全绿 **71 passed**（FI5 10 ／ FI6 12 ／ FI8 16 ／ FI9 17 ／ FI10 16；迁移前基线 53）；底座全量回归 **466 passed / 1 skipped**（**零回归**）；`openspec validate --all --strict` ⇒ **155 passed / 0 failed**（含本批 16 个新建主 spec；🔴 只认「0 failed」，不拿旧计数当预期值）
+- [x] 4.7 🔴 **`G-5` 落地：反向依赖（Shao Peishen 2026-09-03 拍板 `G-5 = (a)` 不接 `AuditLogger`，改反向依赖）**
   - **不做什么**：`criteria_signoff` **不得 import `zhuopin_platform.audit`**、不得新增任何写日志的钩子或字段 —— 底座零依赖是它可被任意场景安全引用的前提（design D3）
   - **做什么**：由**五个场景各自的引擎**在调 `AuditLogger.record(AuditEvent(...))` 时，把**当时生效的** `RULE_VERSION` 写进 `AuditEvent.decision`（如 `decision={..., "rule_version": RULE_VERSION}`），成本约一行
   - **依赖方向**：**审计日志指向判据版本**，不是判据模块去写审计日志
   - **为什么够**：`RULE_VERSION` 在全部判据签认完成前自带 `unsigned` 标记（`assert_rule_version()` 双向校验），故每条 AI 决策的日志天然记着「用的哪版口径、当时签完没有」，IATF「AI 辅助决策可追溯」诉求即被满足
-  - **验收**：底座侧净变化为零（`grep -r "audit" criteria_signoff/` 在可执行代码里 0 命中）；引擎侧至少一条用例断言 `decision` 内含 `rule_version`
+  - **验收** ⇒ ✅ **两项均实测通过**：`grep -r "audit" criteria_signoff/` **0 命中**（底座侧净变化为零）；五个场景各落一个 `config.audit_decision(**fields)`（四行，恒带 `RULE_VERSION`）＋ 各一条 `test_audit_decision_carries_rule_version` 拿真的 `AuditEvent` 断言 `decision["rule_version"]`
+  - 📌 **为什么刻意五份各留一份、不收进底座**：收进去就等于底座反向知道了场景与 `audit`，而 `G-5 = (a)` 否掉的正是那条依赖。四行的重复是这条依赖方向的代价，划算
 
 ## 5. 收口（**待 4 完成**）
 

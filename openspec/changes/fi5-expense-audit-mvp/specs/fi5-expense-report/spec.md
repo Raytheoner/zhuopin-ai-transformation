@@ -1,3 +1,8 @@
+## Purpose
+
+出部门级费用分析报告，并守住 FI5 的 L2 门禁：AI 只出初审建议与风险标记，结案权在财务经理。
+本能力同时承载 FI5 的全链审计留痕（IATF 16949 可追溯）。
+
 ## ADDED Requirements
 
 ### Requirement: L2 门禁——AI 不自动结案

@@ -1,3 +1,8 @@
+## Purpose
+
+从 U9C 项目成本模块按（项目 × 期间 × 成本类型）采集材料、人工、制造费用，保留来源单据引用以支撑审计追溯。
+🔴 工时系统的存在性、维护方与取数能力三问皆未核实，在此之前人工费用归集须 fail-loud，不得以任何分摊估算代替。
+
 ## ADDED Requirements
 
 ### Requirement: 项目成本采集
@@ -29,6 +34,10 @@
 #### Scenario: 骨架期只允许合成工时
 - **WHEN** 在 mock 模式下构造工时记录
 - **THEN** 其 `source` 为 `"synthetic"`，`rate` 为空（单价口径属判据，未签认）
+
+#### Scenario: 存在性缺口不得并入判据注册表
+- **WHEN** 有人把 `TIMESHEET_SYSTEM_EXISTS` 登记进 `CriteriaRegistry`
+- **THEN** 该做法被拒绝——它靠**去核实一次**（已独立立行队列 `#477`）解除，不靠财务侧签认解除；并成一条会把"该找谁去解它"一起糊掉
 
 ### Requirement: 发票号 join 须先实测字面一致性
 

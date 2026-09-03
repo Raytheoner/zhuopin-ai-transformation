@@ -1,18 +1,23 @@
 """FI10 骨架冒烟测试。
 
-不测跌价逻辑（引擎未实现，design 审未过）。守六件事：
+不测跌价逻辑（引擎未实现，design 审未过）。守七件事：
   ⑴ 路径引导可用；
-  ⑵ 🔴 芯片价格 API 前置未满足 —— 且 `chip_price_drop` 类预警在此之前不得产生；
-  ⑶ 🔴 L9 呆滞口径无源可取 —— SC7 那份口径尚未落地，本场景不得自行定义；
-  ⑷ 🔴 三项未签认判据保持为空；
+  ⑵ 🔴 芯片价格 API 前置未满足 —— 且 `chip_price_drop` 类预警在此之前不得产生，
+     该缺口**未被并进判据注册表**（`G-2 = (a)`：靠上游前置落地解除、不靠签认解除）；
+  ⑶ 🔴 L9 呆滞口径 —— `EE-4` 已裁「FI10 先定、SC7 后对齐」，口径**归属**定了，
+     但判据本身仍未签认（`G-3` 已把它登记进注册表，**登记 ≠ 填值**）；
+  ⑷ 🔴 四项未签认判据保持未签认（2026-09-03 起由底座注册表承接，行为不变）；
   ⑸ 🔴 OEM 隔离：`OemProjectPhase.oem_customer` 必填、无默认值；
-  ⑹ 计提建议 `disclaimer` 必填、`confirmed_by` 空即不得入账。
+  ⑹ 计提建议 `disclaimer` 必填、`confirmed_by` 空即不得入账；
+  ⑺ 🔴 G-5 反向依赖：写审计的 `decision` 恒带当时生效的 `RULE_VERSION`。
 """
 from __future__ import annotations
 
 import dataclasses
 
 import pytest
+
+from zhuopin_platform.criteria_signoff import CriterionNotSignedOffError
 
 from fi10_inventory_writedown import config, models
 
@@ -48,24 +53,79 @@ def test_chip_price_alert_type_not_producible_yet():
     assert "停下登记" in config.CHIP_PRICE_API_BLOCKED
 
 
-def test_l9_slow_moving_source_absent():
-    """🔴 L9「同口径」当前无源可取 —— SC7 的呆滞口径尚未落地。
+def test_l9_slow_moving_registered_but_unsigned():
+    """🔴 L9 呆滞口径：`G-3` 已把它**登记进注册表**，但它**仍未签认**。
 
-    `#474` 要求「从 SC7 取、不得另立一套」，但 SC7 工程实体里没有那份口径
-    （②期深化 2027-01，业务口径待姚祖怡确认）。⇒ 本场景**不得自行定义**呆滞口径。
+    两件事必须同时成立，缺一即错：
+      · 登记了 —— 否则这条判据从此不在任何查缺视野里（`require_all_signed` 看不到它）；
+      · 仍未签认 —— `EE-4`「FI10 先定、SC7 后对齐」定的是**口径归属**，不是口径本身。
+        「先定」被读成「现在就填」是本条最可能的误读，故此处读一次、必须炸。
+
+    原两条 `L9_SOURCE_ABSENT` 文本断言保留：它记的是 `#474`／`EE-4` 的来龙去脉
+    ——「这条判据为什么一度无源可取、又是被哪条裁决改变了性质」。
     """
-    assert config.SLOW_MOVING_CRITERIA is None
+    assert "SLOW_MOVING_CRITERIA" in config.CRITERIA
+    assert config.CRITERIA.is_signed("SLOW_MOVING_CRITERIA") is False
+    with pytest.raises(CriterionNotSignedOffError):
+        config.CRITERIA.value_of("SLOW_MOVING_CRITERIA")
     assert "尚未落地" in config.L9_SOURCE_ABSENT
     assert "另立一套" in config.L9_SOURCE_ABSENT
+    # `EE-4` 的改判须与上段原文并存 —— 只留结论会丢掉成因，只留原文会留下已被推翻的结论。
+    assert "EE-4" in config.L9_OWNERSHIP_RULED
+    assert "口径归属" in config.L9_OWNERSHIP_RULED
 
 
-@pytest.mark.parametrize(
-    "name",
-    ["NRV_ESTIMATION_BASIS", "AGING_ALERT_THRESHOLD", "TERMINATED_PROJECT_ALERT_CRITERIA"],
+# 本场景的四项待签认判据（顺序即注册表声明顺序；第四项由 `G-3` 归入）。
+CRITERIA_KEYS = (
+    "NRV_ESTIMATION_BASIS",
+    "AGING_ALERT_THRESHOLD",
+    "TERMINATED_PROJECT_ALERT_CRITERIA",
+    "SLOW_MOVING_CRITERIA",
 )
-def test_unsigned_criteria_stay_none(name):
-    """🔴 三项判据须财务侧签认，未签认前一律 None。"""
-    assert getattr(config, name) is None
+
+
+def test_criteria_registry_declares_exactly_these():
+    """🔴 四项判据一条不多、一条不少 —— 「多一条」几乎必然是 `CHIP_PRICE_API` 被并了进来。"""
+    assert config.CRITERIA.keys() == CRITERIA_KEYS
+
+
+@pytest.mark.parametrize("key", CRITERIA_KEYS)
+def test_criteria_registry_all_unsigned(key):
+    """🔴 四项判据须财务侧签认，未签认前**读了就炸**。"""
+    assert config.CRITERIA.is_signed(key) is False
+    with pytest.raises(CriterionNotSignedOffError):
+        config.CRITERIA.value_of(key)
+
+
+def test_rule_version_consistent_with_signoff_state():
+    """版本号须自陈「未签认」；本用例同时守 `config.py` 里那行导入期校验别被删掉。"""
+    config.CRITERIA.assert_rule_version(config.RULE_VERSION)
+    assert "unsigned" in config.RULE_VERSION
+
+
+def test_chip_price_api_is_not_a_criterion():
+    """🔴 `G-2 = (a)`：前置未满足**不得**被并进判据注册表。
+
+    它靠**上游 `#475` 落地**解除，判据靠签认解除；且它的标的本身尚待判定
+    （「供货 API」与「市场价格 API」是否同一项未定）——一条连标的都没定的东西
+    被登记成「待财务侧签认的判据」，会把它派给一个根本解不了它的人。
+    """
+    assert "CHIP_PRICE_API" not in config.CRITERIA
+    assert "不并入" in config.CHIP_PRICE_API_BLOCKED
+
+
+def test_audit_decision_carries_rule_version():
+    """🔴 G-5 反向依赖：审计日志指向判据版本，不是判据模块去写日志。"""
+    from zhuopin_platform.audit import AuditEvent
+
+    event = AuditEvent(
+        scenario="FI10", action="writedown_test", evaluator="示例供应链经理",
+        automation_level="L2",
+        decision=config.audit_decision(material_id="MAT-001", writedown_amount=None),
+        oem_context="占位客户A",
+    )
+    assert event.decision["rule_version"] == config.RULE_VERSION
+    assert "unsigned" in event.decision["rule_version"]
 
 
 def test_oem_customer_is_required():

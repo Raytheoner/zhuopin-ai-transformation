@@ -1,18 +1,27 @@
+## Purpose
+
+实时比对每笔应付/应收交易与其历史模式基线，跑金额突增、频率异常、关联方交易三类检测。
+🔴 三类的判定口径与升级门限均须财务侧签认——异常检测最容易被「先随便设个 3 倍标准差」蒙混过去，而那个数一旦落地就静默决定谁被推送、谁被放过。
+
 ## ADDED Requirements
 
 ### Requirement: 未签认判据不得默认生效
 
-系统 SHALL 把三类异常的判定口径与升级门限维护在配置层，且在财务侧实名签认前**一律为空值**。检测器读到空判据时 MUST fail-loud，MUST NOT 回退到任何内置默认（含"3 倍标准差"这类通用统计经验值）。
+系统 SHALL 把三类异常的判定口径与升级门限登记在平台判据签认注册表（`zhuopin_platform.criteria_signoff.CriteriaRegistry`，本场景声明于 `fi6_anomaly_detect/config.py`），且在财务侧实名签认前**一律未签认**。检测器读取未签认判据时 MUST 抛 `CriterionNotSignedOffError`，MUST NOT 回退到任何内置默认（含"3 倍标准差"这类通用统计经验值），读值路径 MUST NOT 提供 `default` 参数或任何等价旁路。
 
 > 异常检测最容易被「先随便设个 3 倍标准差」蒙混过去——那个数一旦落地就静默决定谁被推给财务主管、谁被放过，且永远不会报错。
 
 #### Scenario: 判据未签认时检测器拒绝判定
-- **WHEN** `AMOUNT_SURGE_CRITERIA` / `FREQUENCY_ANOMALY_CRITERIA` / `RELATED_PARTY_CRITERIA` 任一为空
+- **WHEN** 读取 `AMOUNT_SURGE_CRITERIA` / `FREQUENCY_ANOMALY_CRITERIA` / `RELATED_PARTY_CRITERIA` 任一
 - **THEN** 对应检测器抛出显式异常并指明缺哪一项、须谁签认，**不返回任何判定结论**
 
-#### Scenario: CI 守住空值
-- **WHEN** 任何人把未签认判据填成实数而无签认落档
-- **THEN** `test_unsigned_criteria_stay_none` 失败，CI 变红
+#### Scenario: CI 守住未签认状态
+- **WHEN** 任何人把未签认判据签成实数而无签认落档
+- **THEN** `test_criteria_registry_all_unsigned` 失败，CI 变红
+
+#### Scenario: 版本号与签认状态不得互相撒谎
+- **WHEN** 尚有判据未签认而 `RULE_VERSION` 不自陈 `unsigned`，或判据已全部签认而版本号仍带 `unsigned`
+- **THEN** 配置模块在**导入期**即抛
 
 ### Requirement: 关联方口径未定义前不得引入关联标志字段
 

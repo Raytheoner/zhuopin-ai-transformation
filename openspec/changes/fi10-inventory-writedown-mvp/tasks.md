@@ -1,5 +1,7 @@
 > 🔴 **本包未过 design 审**（🟡 `openspec_design_review`）。§1 已勾选项是本泳道在 🟢 范围内实做的骨架；**§2 起一律不得开工**。
 > 🔴 **本包是五个财务场景里唯一一个「有一部分被明确判为前置未满足、就地停下」的**：芯片降价超阈值预警**不实现**（`#475`）。
+> 📌 **2026-09-03 `OP-0903-D3`（A4 段）**：本包已跑 `/opsx:sync`（delta specs 并入 `openspec/specs/`），并把判据签认迁移到平台底座 `criteria_signoff`——见 §1a。
+> 🔴 **`sync` 不是 `apply`**：`sync` 写的是主 specs，`apply` 才是实现 tasks 待办。**design 审仍未过，§2 起照旧不得开工。**
 
 ## 1. 工程骨架（🟢，本泳道已完成）
 
@@ -18,13 +20,32 @@
 - [x] 1.13 `pytest tests/ -q` 全绿（11 passed）
 - [x] 1.14 `git check-ignore -v` 实测四类自动生成物均被忽略
 
+## 1a. 判据签认迁移 ＋ specs sync（A4 段 · `OP-0903-D3` / 看护批 `B-0903_50`，2026-09-03 已完成）
+
+> 本节是 `criteria-signoff-platform` 变更包 §4「A4 段：五场景迁移」在本包这一侧的落点。
+> 🔴 **迁移未改变任何行为**：未签认判据的值仍恒为空、读取仍抛、仍无 `default` 旁路；变的只是这条纪律**写在哪**（五份手抄 → 底座一份）。
+
+- [x] 1a.1 `config.py` 的裸 `None` 判据常量改为 `zhuopin_platform.criteria_signoff.CriteriaRegistry` 声明（`CRITERIA`），并在模块级调 `CRITERIA.assert_rule_version(RULE_VERSION)`（**导入期**即双向校验版本号与签认状态）
+- [x] 1a.2 删 `test_unsigned_criteria_stay_none` ＋ `test_rule_version_marked_unsigned`（`criteria-signoff-platform` tasks 4.2），改为 `test_criteria_registry_declares_exactly_these` ／ `test_criteria_registry_all_unsigned` ／ `test_rule_version_consistent_with_signoff_state`
+  🔴 **§1 里对旧用例名的引用是历史记录，不追改**；现行用例名以本行为准
+- [x] 1a.3 🔴 **`G-5` 反向依赖落地**（Shao Peishen 2026-09-03 拍板 `G-5 = (a)` 不接 `AuditLogger`）：本包新增 `config.audit_decision(**fields)`，构造写审计的 `decision` 时**恒带当时生效的 `RULE_VERSION`**；用例 `test_audit_decision_carries_rule_version` 拿真的 `AuditEvent` 断言。**依赖方向 ＝ 审计日志指向判据版本，不是判据模块去写日志**；底座侧净变化为零（`grep -r "audit" criteria_signoff/` 可执行代码 **0 命中**，已实测）
+- [x] 1a.4 `/opsx:sync` 跑过 —— 本包 delta specs 已并入 `openspec/specs/`（🔴 **`sync` 不是 `apply`**：`apply` ＝ 实现 tasks 待办，本包 §2 起仍不得开工）
+- [x] 1a.5 迁移清点：本包 **4** 条判据（含 `G-3` 归入的第四条），迁移前后均**未签认**
+- [x] 1a.6 🔴 **`G-3 = (a)` 落地：`SLOW_MOVING_CRITERIA` 已登记进注册表**，`owner`／`question` 逐字取自 `criteria-signoff-platform` tasks 4.1a、未改写；连带删除裸常量 `SLOW_MOVING_CRITERIA = None`。🔴 **登记 ≠ 填值** —— 它仍未签认、读取仍抛
+- [x] 1a.7 🔴 **`EE-4` 落地**（Shao Peishen 2026-09-03 裁 (a) **FI10 先定、SC7 后对齐**）：
+  - `L9_SOURCE_ABSENT` **原文保留**（记 `#474` 的来龙去脉），另立 `L9_OWNERSHIP_RULED` 记改判——只留结论会丢成因，只留原文会留下已被推翻的结论
+  - ⚠️ **「先定」不等于现在就填**：被定下的只是**口径归属**；判据本身仍未签认。该点已写进 `fi10-nrv-writedown-engine` spec 的「登记不等于填值」场景与队列 `#474` 行
+  - 原用例 `test_l9_slow_moving_source_absent` 改为 `test_l9_slow_moving_registered_but_unsigned`（两条 `L9_SOURCE_ABSENT` 文本断言保留，`criteria-signoff-platform` tasks 4.1b）
+- [x] 1a.8 🔴 **`G-2 = (a)`：`CHIP_PRICE_API` 原样留在本包、未并入注册表**（**前置未满足**，靠上游 `#475` 落地解除）。新增 `test_chip_price_api_is_not_a_criterion` 守住这个"没有"
+- [x] 1a.9 校正一处已被 `EE-3` 推翻的表述：骨架期写的「五个财务场景里**唯一**触及 OEM 隔离的一个」不再成立（`FI9` 亦触及）。`config.OEM_ISOLATION_REQUIRED` 与 `fi10-inventory-intake` spec 两处均已改，**本场景自身的隔离要求不变**
+
 ## 2. 🔴 design 收口（未全部关闭不得进 §3）
 
 - [ ] 2.1 收口-1（**最要紧，口径归属**）：`SC7` 呆滞口径尚未落地 ⇒ L9「同口径」无源可取。等 SC7 落地，还是 FI10 先定、SC7 后对齐？**属 🟡，须 Shao Peishen 拍。本泳道不代判、不代联络姚祖怡**
 - [ ] 2.2 收口-2（**须先于选型**）：「芯片供货 API」与「芯片市场价格 API」是否同一项——**判定前不得开始选型，否则可能选错标的**（`#475`）。属规划文档口径 ⇒ 全景路线图线处置，**本泳道不代判**
 - [ ] 2.3 收口-3：三项判据由**财务 ＋ 供应链联席**主笔实名签认（NRV／库龄门限／项目终止口径）。**分开问会得到两套口径，那正是 L9 要避免的** ⚠️ 需唐燕萍确认者 ⇒ 串行闸在途 —— 🔴 **状态勿在此复述**（会过时），现取 `python 0-学习与工具/工具-跟进闸查询.py --to 唐燕萍`，登记「待闸开后并进下一封」，**不得单起一封信**
 - [ ] 2.4 收口-4：🔴 OEM 隔离落地形态（PLM 如何按客户路由、跨库如何抛错、边界画在哪层）。**本场景是五个财务场景里唯一触及 OEM 隔离的，不可套用其余四个"财务数据不隔离"的结论**
-- [ ] 2.5 收口-5：**跨五场景** `criteria_signoff` 是否提升进平台底座（rule-of-three 已触发）
+- [x] 2.5 收口-5：**跨五场景** `criteria_signoff` 是否提升进平台底座（rule-of-three 已触发）⇒ ✅ **已裁并已落地**（Shao Peishen 2026-09-03 拍板 `EE-1 = (a)` 收进底座）：平台底座 `zhuopin_platform.criteria_signoff` 已建成并合入 master（变更包 `criteria-signoff-platform`）；本包已于 A4 段迁移完毕，见 §1a。**本条不再需要收口。**
 - [ ] 2.6 判据持有人 ＋ backup 实名指定（🔴 须跨财务与供应链两侧；呆滞口径持有人按 SC7 记载是姚祖怡，**本泳道不代指派**），登记进前置总表 §一.2（该表**现无 FI10 行**）
 
 ## 3. inventory-intake 数据采集（design 审后，先测后实现）

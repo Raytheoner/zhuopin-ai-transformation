@@ -1,3 +1,8 @@
+## Purpose
+
+采集 U9C 库存账龄、在途采购与 BOM 用量，并按 OEM 客户路由访问 OEM 项目生命周期（APQP/EOP）数据。
+🔴 OEM 项目数据属专属数据，须经隔离层按客户路由、禁跨库；在途量口径与 O2 齐套引擎对齐，不另立一套。
+
 ## ADDED Requirements
 
 ### Requirement: 存货与在途数据采集
@@ -26,7 +31,7 @@
 
 OEM 项目计划（APQP/EOP 生命周期）属 OEM 专属数据。系统 SHALL 经 `zhuopin_platform.data_isolation_layer.OEMRouter` 按客户路由访问，跨库访问 MUST 抛 `CrossOEMAccessError`。比亚迪/上汽/理想的项目数据严格隔离、不得交叉（根 `CLAUDE.md` §7-3）。
 
-> 本场景是五个财务场景里**唯一**触及 OEM 隔离的一个，不可套用其余四个"财务数据不隔离"的结论。
+> 不可套用"财务数据不隔离"的结论。本场景骨架期曾写"五个财务场景里**唯一**触及 OEM 隔离的一个"——该句已被 2026-09-03 裁决 `EE-3` 推翻：`FI9` 研发费用归集按项目走、OEM 项目几乎必然出现，故 `FI9` **亦会**带出 OEM 项目标识（其接法另走 design 审）。本要求本身不因此改变，改变的只是"唯一"二字。
 
 #### Scenario: 客户归属必填
 - **WHEN** 构造一条 `OemProjectPhase`

@@ -1,18 +1,27 @@
+## Purpose
+
+按会计准则 ＋ 企业会计政策把研发成本判为资本化或费用化，并分别按准则口径与高新口径计算研发费用占比。
+🔴 判错的代价与其余财务场景不同：编出来的判据不会报错，但会写进报给政府的申报材料里。
+
 ## ADDED Requirements
 
 ### Requirement: 未签认判据不得默认生效
 
-系统 SHALL 把资本化/费用化判据、高新认定政策库、研发费用占比口径维护在配置层，签认前**一律为空值**，引擎读到空判据时 MUST fail-loud，MUST NOT 回退到任何准则条文的通用解读或"行业惯例"。
+系统 SHALL 把资本化/费用化判据、高新认定政策库、研发费用占比口径登记在平台判据签认注册表（`zhuopin_platform.criteria_signoff.CriteriaRegistry`，本场景声明于 `fi9_rd_cost/config.py`），签认前**一律未签认**，引擎读取未签认判据时 MUST 抛 `CriterionNotSignedOffError`，MUST NOT 回退到任何准则条文的通用解读或"行业惯例"，读值路径 MUST NOT 提供 `default` 参数或任何等价旁路。
 
 > 本场景判错的代价与其余财务场景不同：编出来的判据不会报错，但会写进报给政府的申报材料里。
 
 #### Scenario: 判据未签认时引擎拒绝判定
-- **WHEN** `CAPITALIZATION_CRITERIA` 为空
+- **WHEN** 读取 `CAPITALIZATION_CRITERIA`
 - **THEN** 抛出显式异常并指明缺哪一项、须谁签认，**不返回任何判定**
 
-#### Scenario: CI 守住空值
-- **WHEN** 任何人把未签认判据填成实值而无签认落档
-- **THEN** `test_unsigned_criteria_stay_none` 失败
+#### Scenario: CI 守住未签认状态
+- **WHEN** 任何人把未签认判据签成实值而无签认落档
+- **THEN** `test_criteria_registry_all_unsigned` 失败
+
+#### Scenario: 版本号与签认状态不得互相撒谎
+- **WHEN** 尚有判据未签认而 `RULE_VERSION` 不自陈 `unsigned`，或判据已全部签认而版本号仍带 `unsigned`
+- **THEN** 配置模块在**导入期**即抛
 
 ### Requirement: 准则口径与高新口径不得混用
 
