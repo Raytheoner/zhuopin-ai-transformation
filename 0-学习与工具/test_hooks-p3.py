@@ -27,6 +27,7 @@ HOOKS_DIR = Path(__file__).resolve().parent / "hooks"
 COMMON = HOOKS_DIR / "hooks-common.ps1"
 SESSIONSTART = HOOKS_DIR / "hooks-sessionstart-context.ps1"
 EDITLOCK_GUARD = HOOKS_DIR / "hooks-pretooluse-editlock-guard.ps1"
+STANDING_FIVE = HOOKS_DIR / "hooks-userpromptsubmit-standing-five.ps1"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 pytestmark = pytest.mark.skipif(
@@ -299,3 +300,106 @@ class TestPreToolUseEditlockGuard:
         rc, out, err = run_hook(EDITLOCK_GUARD, payload, repo)
         assert rc == 0, err
         assert audit_lines(repo)[-1]["verdict"] == "undetermined"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⓑ UserPromptSubmit 常驻五条（hooks-userpromptsubmit-standing-five.ps1）
+# ─────────────────────────────────────────────────────────────────────────────
+
+def write_root_claude_md(repo_root: Path, items: dict[int, str]) -> None:
+    """构造一份带 `<!-- UPS5:n -->` 锚点的最小根 CLAUDE.md 夹具。
+
+    `items`：`{锚点编号: 该行正文}`，编号可以不连续/不从 1 开始/重复出现同一编号
+    （多次调用同一 key 需在调用方自行拼多行），用于覆盖"缺失/重复"两类异常路径。
+    """
+    lines = ["# CLAUDE.md（测试夹具）", ""]
+    for idx, body in items.items():
+        lines.append(f"- {body}<!-- UPS5:{idx} -->")
+    (repo_root / "CLAUDE.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def get_context(out: dict) -> str:
+    return out.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
+class TestUserPromptSubmitStandingFive:
+    def test_脚本文件存在(self):
+        assert STANDING_FIVE.is_file()
+
+    def test_五条齐全时全部出现且各自截断在预算内(self, repo: Path):
+        write_root_claude_md(repo, {
+            1: "称呼一律「Shao Peishen」，不用「Paul」",
+            2: "禁从名字推断性别；正本之外称「该专员／其／对方」",
+            3: "决策清单须带 (a)/(b) 选项标签、写清代价、标默认项",
+            4: "可粘贴 prompt 必标粘贴端 `▶ 粘贴端：Cowork／CC`",
+            5: "默认项须先问：谁执行？代价是停滞还是错误继续？",
+        })
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "⚠" not in ctx
+        for kw in ("称呼一律", "禁从名字推断性别", "决策清单须带", "可粘贴 prompt", "默认项须先问"):
+            assert kw in ctx, f"缺 {kw}：{ctx}"
+        body_bytes = len(ctx[len("📌 常驻五条："):].encode("utf-8"))
+        assert body_bytes <= 300
+        assert audit_lines(repo)[-1]["verdict"] == "pass"
+
+    def test_长文本各条仍全部出现不因总预算被整条挤掉(self, repo: Path):
+        """🔴 回归锁：曾经的实现"各截 80B 再整体截 300B"会让第 5 条整条从尾部消失——
+        改为按实得条数均分预算后，5 条都必须在，只是每条更短。"""
+        long_text = "这是一段刻意写得很长的正文用来测试截断行为是否会让后面的条目整条消失不见" * 2
+        write_root_claude_md(repo, {i: f"第{i}条：{long_text}" for i in range(1, 6)})
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        for i in range(1, 6):
+            assert f"第{i}条" in ctx, f"第{i}条从输出中消失了：{ctx}"
+
+    def test_锚点缺失时可见不静默(self, repo: Path):
+        write_root_claude_md(repo, {1: "只有第一条", 2: "只有第二条", 3: "只有第三条"})
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "预期 5" in ctx and "实得 3" in ctx
+        assert "只有第一条" in ctx  # 找到的仍要展示，不因为不全就整体隐藏
+        assert audit_lines(repo)[-1]["verdict"] == "undetermined"
+
+    def test_锚点重复时报告不静默选一个(self, repo: Path):
+        lines = [
+            "# CLAUDE.md（测试夹具）", "",
+            "- 第一次出现<!-- UPS5:2 -->",
+            "- 第二次出现同编号<!-- UPS5:2 -->",
+            "- 三<!-- UPS5:3 -->", "- 四<!-- UPS5:4 -->",
+            "- 五<!-- UPS5:5 -->", "- 一<!-- UPS5:1 -->",
+        ]
+        (repo / "CLAUDE.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "重复编号" in ctx and "2" in ctx
+
+    def test_根CLAUDE_md不存在时fail_open(self, repo: Path):
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "不可用" in ctx
+        assert audit_lines(repo)[-1]["verdict"] == "error"
+
+    def test_stdin为空仍能工作(self, repo: Path):
+        write_root_claude_md(repo, {i: f"第{i}条" for i in range(1, 6)})
+        proc = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(STANDING_FIVE)],
+            input=b"",
+            capture_output=True,
+            env={**os.environ, "ZHUOPIN_SENTINEL_REPO_ROOT": str(repo)},
+            cwd=str(repo),
+        )
+        assert proc.returncode == 0
+
+    def test_真实根CLAUDE_md五条齐全零漂移(self):
+        """对**真实**根 `CLAUDE.md`（本 worktree 已按 ⓑ 建造插好五处锚点）跑一次——
+        既是回归锁，也是"锚点真的插对了地方"的生产前验活。"""
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, REPO_ROOT)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "⚠" not in ctx, f"真实根 CLAUDE.md 的锚点数量或格式有异常：{ctx}"
