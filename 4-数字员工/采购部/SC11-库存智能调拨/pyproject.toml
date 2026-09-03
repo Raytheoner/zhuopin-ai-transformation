@@ -1,0 +1,25 @@
+[project]
+name = "sc11-inventory-transfer"
+version = "0.1.0"
+description = "SC11 库存智能调拨数字员工 — 骨架期（前置窗口 2027-02 未到，只落四条调拨原则建模与 PMC 确认门禁），import 底座 kit_engine/models/audit"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座以可编辑方式安装（可选，仅利于 IDE 补全；pytest/入口靠 conftest 引导）：
+#   pip install -e ../../../5-平台底座/zhuopin_platform
+dependencies = [
+    "zhuopin_platform",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sc11_transfer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
