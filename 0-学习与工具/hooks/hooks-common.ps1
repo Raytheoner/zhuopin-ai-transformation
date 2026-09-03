@@ -478,6 +478,45 @@ function Add-SentinelAuditRecord {
 # 统一收口
 # ─────────────────────────────────────────────────────────────────────────────
 
+function Add-HooksAuditLine {
+    <#
+      P3 hooks 族（队列 §一 #381⑸）共用的第三种留痕形态：`reports/hooks-audit.jsonl`，
+      追加写、一次触发一行，不覆盖。
+
+      🔴 为什么不复用 `Write-SentinelHeartbeat`（单文件覆盖写）或 `Add-SentinelAuditRecord`
+      （TSV，仓外 `~/.claude/`）：P3 hooks 的验活判据是"贴一行审计进收工报告"——需要看到
+      **这一次**触发留下的记录；覆盖写的心跳文件只留得住"最近一次"，会丢掉验活证据。
+      同理不落仓外：仓外文件不随分支/PR 走，验活证据需要能随收工报告一起被引用与核对。
+    #>
+    param(
+        [string]$RepoRoot,
+        [string]$Hook,           # 钩子名，如 "sessionstart-context"
+        [string]$Verdict,        # pass / violation / undetermined / error
+        [string]$Tool = '',
+        [string]$SessionId = '',
+        [string]$Detail = ''
+    )
+    try {
+        $dir = Join-Path $RepoRoot 'reports'
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $path = Join-Path $dir 'hooks-audit.jsonl'
+        $obj = [ordered]@{
+            ts        = (Get-SentinelTimestamp)
+            tsBasis   = (Get-SentinelTimestampBasis)
+            hook      = $Hook
+            verdict   = $Verdict
+            tool      = $Tool
+            sessionId = $SessionId
+            detail    = $Detail
+        }
+        $line = $obj | ConvertTo-Json -Depth 4 -Compress
+        Add-Content -LiteralPath $path -Value $line -Encoding UTF8
+    } catch {
+        # 审计自己写不了也不能打断宿主钩子——fail-open 是本框架第一原则，这里同样适用。
+    }
+}
+
+
 function Complete-Sentinel {
     <#
       所有哨兵的唯一出口。负责：写心跳 → （命中时）写 audit → 按模式决定退出码。
