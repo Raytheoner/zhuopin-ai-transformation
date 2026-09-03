@@ -1,0 +1,4 @@
+material_id,material_name,batch_no,qty,unit_cost,aging_days,warehouse,as_of_date
+MAT-001,示例芯片 A,B2025-11,1200,38.50,296,原料库,2026-09-03
+MAT-002,示例电容 B,B2026-05,8000,0.42,121,原料库,2026-09-03
+MAT-003,示例连接器 C,B2024-09,300,12.80,719,原料库,2026-09-03

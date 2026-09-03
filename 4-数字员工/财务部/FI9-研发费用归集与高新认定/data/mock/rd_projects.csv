@@ -1,0 +1,4 @@
+project_id,project_name,start_date,end_date,status,is_high_tech_scope
+RD-2026-001,示例 ECU 平台预研,2026-01-05,,在研,
+RD-2026-002,示例控制器软件迭代,2026-03-01,,在研,
+RD-2025-014,示例已结项课题,2025-04-01,2026-02-28,结项,

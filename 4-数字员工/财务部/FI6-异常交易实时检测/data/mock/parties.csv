@@ -1,0 +1,4 @@
+party_id,party_name,party_type,unified_social_code,registered_address
+SUP-001,示例供应商甲,供应商,91000000MA0000001X,示例市示例区示例路1号
+SUP-002,示例供应商乙,供应商,91000000MA0000003X,示例市示例区示例路2号
+CUS-001,示例客户乙,客户,91000000MA0000002X,示例市示例区示例路3号

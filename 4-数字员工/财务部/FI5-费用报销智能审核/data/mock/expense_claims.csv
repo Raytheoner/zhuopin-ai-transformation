@@ -1,0 +1,3 @@
+claim_id,claimant,department,period,claim_type,total_amount,submitted_at
+EXP-2026-09-0001,示例申请人A,供应链,2026-09,差旅,2860.00,2026-09-02
+EXP-2026-09-0002,示例申请人B,质量,2026-09,招待,1280.00,2026-09-02
