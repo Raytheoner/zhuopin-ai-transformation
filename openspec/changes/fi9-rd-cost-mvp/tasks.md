@@ -43,9 +43,9 @@
 - [ ] 2.3 收口-3：对外门禁的**流程侧**规矩（谁审、审什么、留什么痕）——数据侧已锁
 - [ ] 2.4 收口-4（🔴 易漏）：研发项目是否会带出 **OEM 项目标识**？
   - ✅ **「会不会」已裁**：Shao Peishen 2026-09-03 答 `EE-3` ＝ (a) —— **会，按接 `data_isolation_layer` 设计**。原话理由：研发费用归集按项目走，OEM 项目几乎必然出现；**这一条错了是合规问题，宁可多接**。
-  - ⏳ **「怎么接」待裁**：接法命中根 `CLAUDE.md` openspec 门槛②（涉鉴权与数据可见性）⇒ 须走 design 审。`design.md`（**局部件**，只覆盖本条）已由 `OP-0903-D3` 于 2026-09-03 起草，含 5 条定夺项，🔴 **一条都未默认生效**，泳道已 `pause --action-key openspec_design_review`。
-  - 🔴 **其中 §定夺项 ② 是本包排期的真卡点**：高新认定辅助账天然跨全部 OEM（政府申报要全公司口径），与隔离规范 §3.1 的 fail-closed 正面相撞。**② 裁定前 MUST NOT 实现任何跨项目汇总** ⇒ §4.5 与 §5 全部卡在这一条上。
-  - 🔴 连带：无论 §定夺项 ① 裁成哪条，都须回写《OEM 数据隔离规范》§2 三分法表（现对"研发费用金额"这类数据是**空的**）——规范修订须经 Shao Peishen 批准。
+  - ✅ **「怎么接」已裁并已实现为可复用隔离层组件**（看护批 `B-0903_70`，泳道 `fi9-oem`，2026-09-03）：`design.md`（局部件，只覆盖本条）§定夺项五条已由 Shao Peishen 逐条裁定（①(c)分层／②(c)立豁免款+三道锁／③(b)允许归集禁汇总／④(a)研发侧认定财务侧使用／⑤(a)不卡），隔离层接线落地在 `fi9_rd_cost/oem_isolation.py`（`resolve_project_source`／`partition_by_ownership`／`cross_oem_filing_gate`，含开关默认 OFF 与三道锁），单测见 `tests/test_oem_isolation.py`。
+  - ⚠️ **本条仍不勾选**：上述是「隔离层怎么接」这一段的接线组件，**尚未实际接入任何真实取数/归集引擎**——`tasks.md` §3-§5（cost-collection/capitalization-rules/aux-ledger-and-filing）design 审未全部通过，仍不得开工；`oem_isolation.py` 是为它们预先建好的可复用组件，真正"接上"要等那三个 capability 建造时调用它。
+  - 🔴 连带：§定夺项 ①②⑤ 对《OEM 数据隔离规范》的连带回写已起草为**待批文本**（`openspec/changes/fi9-rd-cost-mvp/oem-isolation-spec-amendment-draft.md`），因触碰区与 `oem-chroma-ownership-rejudge`（§一 `#466`）在办改动重叠，暂不入规范本体，待其收口后并成一次修订派单，须 Shao Peishen 批准。
 - [ ] 2.5 收口-5：加计扣除备查资料包的载体与版本策略（入库＝申报材料进 git 历史；不入库＝无版本可追溯、与 IATF 冲突），并据结论核实 `.gitignore` 覆盖
 - [x] 2.6 收口-6：**跨五场景** `criteria_signoff` 是否提升进平台底座（rule-of-three 已触发）⇒ ✅ **已裁并已落地**（Shao Peishen 2026-09-03 拍板 `EE-1 = (a)` 收进底座）：平台底座 `zhuopin_platform.criteria_signoff` 已建成并合入 master（变更包 `criteria-signoff-platform`）；本包已于 A4 段迁移完毕，见 §1a。**本条不再需要收口。**
 - [ ] 2.7 判据持有人 ＋ backup 实名指定（🔴 须含研发侧），登记进前置总表 §一.2（该表**现无 FI9 行**）

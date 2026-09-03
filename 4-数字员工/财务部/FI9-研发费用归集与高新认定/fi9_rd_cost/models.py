@@ -17,11 +17,30 @@
 原计划的『发票号字面 join』假设，改用后 8 位＋客户端 suffix 校验，8/8 真实样本唯一命中」。
 ⇒ 本场景凡涉发票号对碰须**先做一次字面一致性实测**（位数／前导零／空格／全半角／代码
 前缀），**不得直接沿用 FI2 的后 8 位方案**（两套来源不同，FI2 只证明了"不能想当然"）。
+
+🔴 **`RdProject.oem_customer` 的三态**（`EE-3`，Shao Peishen 2026-09-03 裁 design.md
+§定夺项 ①③④，`openspec/changes/fi9-rd-cost-mvp/design.md` E2.1）：
+  · `None`（**默认**）—— 未判，还没人认定这个项目属谁；允许归集明细，**禁止进任何
+    汇总与对外产物**（③=(b)），并须出现在「因归属未判被排除的项目」清单的显要位置。
+  · `REGISTERED_OEMS`（`zhuopin_platform.data_isolation_layer`）内的注册名，如
+    `"比亚迪"` —— 归属须**随研发侧项目主数据来，财务侧只读不判**（④=(a)），🔴
+    **绝不得从 `project_id`/`project_name` 的命名规则推导**（推错不报错，一错就是
+    把 A 客户的费用记到 B 客户名下）。
+  · `NON_OEM_PROJECT`（本模块显式哨兵常量）—— 明确非 OEM（平台预研/内部工装/通用
+    技术储备）。🔴 **不许写成 `None`**：那会与「未判」共用同一表示，让「这个项目
+    不涉客户数据」和「压根没人看过这个项目」变成同一件事。
+  实现见 `fi9_rd_cost/oem_isolation.py`；该形态**不是判据**（数据字段的形状，非须
+  签认的口径），故不进 `config.CRITERIA` 注册表。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
+
+#: `RdProject.oem_customer` 的显式哨兵——「明确非 OEM」，与「未判」（`None`）严格区分。
+#: 取值本身不必是自然语言（不对外展示），但须与任何真实 OEM 注册名（见
+#: `zhuopin_platform.data_isolation_layer.REGISTERED_OEMS`）不冲突。
+NON_OEM_PROJECT = "__NON_OEM_PROJECT__"
 
 
 @dataclass
@@ -33,6 +52,9 @@ class RdProject:
     end_date: str = ""
     status: str = ""              # 立项 | 在研 | 结项 | 终止
     is_high_tech_scope: Optional[bool] = None   # 🔴 是否纳入高新口径，须按签认政策库判定，不预设
+    oem_customer: Optional[str] = None
+    # 🔴 OEM 归属，三态见模块 docstring：None=未判(默认) | 注册 OEM 名 | NON_OEM_PROJECT。
+    # 只读字段——本类与本模块均不提供任何从 project_id/project_name 推导它的函数。
 
 
 @dataclass

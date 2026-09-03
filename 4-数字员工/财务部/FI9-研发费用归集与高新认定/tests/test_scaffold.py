@@ -88,17 +88,17 @@ def test_timesheet_existence_is_not_a_criterion():
     assert "#477" in config.TIMESHEET_SYSTEM_UNVERIFIED
 
 
-def test_oem_project_scope_pending_design_is_stated():
-    """🔴 EE-3：本场景**会**带出 OEM 项目标识，接法待 design 审，状态须留在代码里。
+def test_oem_isolation_decision_is_stated():
+    """🔴 EE-3：本场景**会**带出 OEM 项目标识，五条定夺项已裁，状态须留在代码里。
 
     留这条的理由与 FI9 其余「本项目内不存在」注记同族，但方向相反：那些防的是
     「后来者假设某东西存在」，这条防的是**后来者假设本场景不涉 OEM 隔离**
     ——五个财务场景里另四个确实不涉，顺手归并是最省事、也最容易犯的一步。
     """
-    text = config.OEM_PROJECT_SCOPE_PENDING_DESIGN
+    text = config.OEM_ISOLATION_DECISION
     assert "EE-3" in text
     assert "data_isolation_layer" in text
-    assert "待 Shao Peishen 裁" in text
+    assert "已裁" in text
 
 
 def test_external_filing_gate_stated():

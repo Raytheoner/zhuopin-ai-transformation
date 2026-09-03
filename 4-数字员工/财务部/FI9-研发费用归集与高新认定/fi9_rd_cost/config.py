@@ -74,19 +74,46 @@ TIMESHEET_SYSTEM_UNVERIFIED = (
     "核实动作已独立立行为队列 §一 `#477`。"
 )
 
-# ── 🔴 EE-3：本场景会带出 OEM 项目标识（接法待 design 审，未通过前不实现）──
-OEM_PROJECT_SCOPE_PENDING_DESIGN = (
+# ── 🔴 EE-3：本场景带出 OEM 项目标识，接法五条定夺项已裁（隔离层接线见 oem_isolation.py）──
+OEM_ISOLATION_DECISION = (
     "🔴 **Shao Peishen 2026-09-03 裁决 `EE-3` ＝ (a)**：本场景**会**带出 OEM 项目标识，"
     "**按接 `zhuopin_platform.data_isolation_layer` 设计**。原话理由：研发费用归集按项目走，"
     "OEM 项目几乎必然出现；**这一条错了是合规问题，宁可多接**。"
     "⇒ 接法须守根 `CLAUDE.md` §7 红线 3（OEM 数据按客户路由、禁跨库）与 "
     "`5-平台底座/CLAUDE.md` 的隔离边界。"
-    "⏳ **接法命中 openspec 门槛②（涉鉴权与数据可见性）⇒ 须走 design 审**："
-    "`openspec/changes/fi9-rd-cost-mvp/design.md` 已于 2026-09-03 起草，**待 Shao Peishen 裁**，"
-    "未通过前本包**不实现**任何隔离层接线、不新增任何带 OEM 归属的字段。"
-    "🔴 **本常量不是「实现」，是防止后来者按 FI5/FI6/FI8 的「财务数据不隔离」结论"
-    "顺手把本场景也归进去** —— 那个结论对本场景不成立。"
+    "✅ **接法命中 openspec 门槛②（涉鉴权与数据可见性），已走 design 审**："
+    "`openspec/changes/fi9-rd-cost-mvp/design.md` §定夺项五条已于 2026-09-03 由 Shao Peishen "
+    "逐条裁定（①(c)分层／②(c)立豁免款+三道锁／③(b)允许归集禁汇总／④(a)研发侧认定"
+    "财务侧使用／⑤(a)不卡），隔离层接线落地在 `fi9_rd_cost/oem_isolation.py`。"
+    "🔴 **本常量记录的是「已裁决」这件事本身，不是防后来者假设「未裁」——"
+    "它防的是后来者按 FI5/FI6/FI8 的「财务数据不隔离」结论顺手把本场景也归进去** —— "
+    "那个结论对本场景不成立，即便五条已裁，本场景仍是 OEM 隔离场景。"
+    "⚠️ **`tasks.md` §3 起（cost-collection/capitalization-rules/aux-ledger-and-filing 三个 "
+    "capability 的业务引擎）仍未开工**——五条定夺项只解决了「隔离层怎么接」，不代表 "
+    "§2 其余六条收口项（2.1/2.2/2.3/2.5/2.7/2.8）已完成。"
 )
+
+
+def cross_oem_aggregation_enabled() -> bool:
+    """②(c) 高新认定辅助账跨 OEM 汇总开关：`FI9_CROSS_OEM_AGGREGATION=on|off`（**默认 OFF**）。
+
+    判据来源＝ design.md §定夺项 ②，Shao Peishen 2026-09-03 裁 (c)（立法定申报豁免款 ＋
+    三道锁：限用途／限流向／限留痕与人工闸，见 `EXTERNAL_FILING_GATE`）。
+
+    🔴 **翻开条件 ＝ ② 的豁免款已正式立进《OEM 数据隔离规范》**
+    （`3-治理与合规/OEM数据隔离规范.md` §2/§3；待批文本见变更包内
+    `oem-isolation-spec-amendment-draft.md`，因触碰区与 `oem-chroma-ownership-rejudge`
+    在办改动重叠，规范修订须等其收口后并批，且须 Shao Peishen 本人批准）。
+
+    **裁决已下 ≠ 规范已立**：`②` 的三道锁已由本人裁定，但那是"批准一种做法"，不等于
+    "这种做法已经写进 IATF 正式规范"——代码若先于规范落地，在"单一可信源"审核标准下
+    站不住（同族先例：`SC8_KIT_DATE_RULE1`，判据已签认但仍须姚祖怡复核对照表签认
+    才可翻开，是"两次门槛"而非"判据签一次就地生效"）。
+
+    OFF = `oem_isolation.cross_oem_filing_gate()` 一律 fail-loud（不静默返回空结果）；
+    ON 之后仍须过三道锁的必填字段校验，并非"翻开即放行"。
+    """
+    return os.environ.get("FI9_CROSS_OEM_AGGREGATION", "off").strip().lower() in ("on", "1", "true", "yes")
 
 # ── 🔴 对外材料红线 ──
 EXTERNAL_FILING_GATE = (
