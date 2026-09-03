@@ -4854,5 +4854,75 @@ class OpenerGuardReleaseTests(unittest.TestCase):
             self.assertEqual(self._run(waivers=waivers), [])
 
 
+class AcquireRoutingHintTests(unittest.TestCase):
+    """ⓔ acquire 触碰区路由提示（队列 §一 #381⑸ⓔ，openspec 变更包 cc-hooks-p3）。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = str(Path(self._tmpdir.name) / "假想队列.md")
+        self.lock_path = Path(self.target + ".editlock")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_note含跟进信关键词命中对应规则文件(self):
+        result = run("--file", self.target, "acquire", "--who", "A", "--note", "起草IT部#7跟进信")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("命中根 §4 路由表 → 先读 `.claude/rules/跟进信与专员.md`", result.stdout)
+
+    def test_note含openspec关键词命中场景建造规则(self):
+        result = run("--file", self.target, "acquire", "--who", "A", "--note", "走openspec propose")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("场景建造与合规.md", result.stdout)
+
+    def test_note含取证关键词命中两桌同步规则(self):
+        result = run("--file", self.target, "acquire", "--who", "A", "--note", "查企微推送与fsck")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("两桌同步与取证.md", result.stdout)
+
+    def test_同时命中多条规则各打印一次且不重复(self):
+        result = run("--file", self.target, "acquire", "--who", "A",
+                     "--note", "跟进信起草，顺带走openspec")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("命中根 §4 路由表"), 2)
+        self.assertIn("跟进信与专员.md", result.stdout)
+        self.assertIn("场景建造与合规.md", result.stdout)
+
+    def test_note不含任何关键词时不打印路由提示(self):
+        result = run("--file", self.target, "acquire", "--who", "A", "--note", "纯粹改个错别字")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("命中根 §4 路由表", result.stdout)
+
+    def test_file路径本身含关键词也能命中(self):
+        subdir = Path(self._tmpdir.name) / "6-人才与组织" / "部门AI专员跟进"
+        subdir.mkdir(parents=True, exist_ok=True)
+        target = str(subdir / "README-跟进机制与命名约定.md")
+        result = run("--file", target, "acquire", "--who", "A", "--note", "改一个错别字")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("跟进信与专员.md", result.stdout)
+
+    def test_默认队列目标路径本身不含任何路由关键词(self):
+        """design.md 决策点4：队列本身的编辑不提示"去读队列与落库.md"（调用者已在这条路径上）。
+
+        🔴 白盒验证、不经 `acquire` 子进程——真跑 `acquire` 不传 `--file` 会打在**真实**
+        项目队列锁上，与本 session 自己正在使用的锁互相干扰，此处不采用黑盒方式。
+        """
+        m = _load_module()
+        self.assertEqual(m._routing_hint_targets(m.DEFAULT_TARGET, "常规队列登记"), [])
+
+    def test_既有回归_不含关键词的acquire输出逐字节不变(self):
+        """新增逻辑对无命中输入必须零输出差异——不改变既有字段顺序与既有文本。"""
+        result = run("--file", self.target, "acquire", "--who", "A", "--note", "无关键词的备注")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("✓ 已占锁：A", result.stdout)
+        self.assertIn("📍 权威物理路径", result.stdout)
+
+    def test_routing_hint_targets白盒_大小写与去重(self):
+        m = _load_module()
+        hits = m._routing_hint_targets("无关路径.md", "跟进信 跟进信 专员")
+        self.assertEqual(hits, [".claude/rules/跟进信与专员.md"])
+        self.assertEqual(m._routing_hint_targets("无关路径.md", "不含任何关键词"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

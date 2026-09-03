@@ -4040,6 +4040,53 @@ def _parse_reserve_multi(tokens: list[str]) -> list[tuple[str, int]]:
     return requests
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ⓔ acquire 触碰区路由提示（队列 §一 #381⑸ⓔ，openspec 变更包 cc-hooks-p3）
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Cowork 侧不加载带 paths 的 `.claude/rules/*.md`（P0 实测坐实，见
+# `根CLAUDE.md彻底瘦身-方案-2026-09-03.md` §五）——只能靠根 CLAUDE.md §4 路由表
+# 显式 Read 同一份规则文件。本表逐行对应该路由表，不另拟判据；改路由表须同改
+# 本表，两处刻意保持"同一份判据、两处引用"而非各自维护。
+
+#: `(规则文件相对路径, 触发关键词元组)`，命中任一关键词即提示；顺序即路由表顺序。
+ROUTING_HINT_TABLE: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (".claude/rules/跟进信与专员.md",
+     ("6-人才与组织", "7-外部文档", "跟进信", "专员")),
+    (".claude/rules/场景建造与合规.md",
+     ("4-数字员工", "5-平台底座", "openspec", ".51", "OEM", "ASIL")),
+    (".claude/rules/文档与全景治理.md",
+     # 🔴 刻意不含目录路径本身（如 "1-转型规划/0-全景路线图"）——两份队列真身与
+     # 接力卡也物理落在这个目录下，用目录做关键词会让"改队列"本身触发一条与
+     # 队列无关的路由提示，偏离 design.md 决策点4"默认队列编辑不自我指向"的原意；
+     # 只用内容关键词，逐字对应根 CLAUDE.md §4 该行原文。
+     ("全景规划", "实施计划", "排期变更", "重组循环", "文档命名归档", "台账")),
+    (".claude/rules/两桌同步与取证.md",
+     ("git", "fsck", "乱码", "时间戳", "取证", "企微")),
+)
+
+
+def _routing_hint_targets(file_arg: str, note: str) -> list[str]:
+    """按 `--file`（解析后绝对路径）与 `--note` 原文对 `ROUTING_HINT_TABLE` 做子串
+    匹配，返回命中的规则文件列表（保序、去重）。命中 0 条返回空列表——沉默是
+    合法结果，不是"判定失败"（design.md 决策点4：默认队列编辑不触发自我指向）。
+    """
+    haystack_parts = [note or "", file_arg or ""]
+    try:
+        raw = Path(file_arg)
+        resolved = raw if raw.is_absolute() else (REPO_ROOT / raw)
+        haystack_parts.append(str(resolved.resolve()))
+    except OSError:
+        pass
+    haystack = "\n".join(haystack_parts)
+
+    hits: list[str] = []
+    for rule_file, keywords in ROUTING_HINT_TABLE:
+        if rule_file not in hits and any(kw in haystack for kw in keywords):
+            hits.append(rule_file)
+    return hits
+
+
 def cmd_acquire(args: argparse.Namespace) -> int:
     # 队列 #163/#185：--reserve/--section 与 --reserve-multi 二选一，先做
     # 参数校验，校验失败时连锁文件都不碰（不制造"锁占了、但没预留成功"的
@@ -4182,6 +4229,9 @@ def _acquire_locked(
     # 一个诱因——两个不同的相对路径字符串"看起来都合理"）。
     for content_target in content_targets:
         print(f"📍 权威物理路径：{_target_path(content_target)}")
+
+    for hint in _routing_hint_targets(args.file, args.note):
+        print(f"📖 命中根 §4 路由表 → 先读 `{hint}`（Cowork 侧规则按需 Read 的机器提示）")
 
     if recent_others:
         others_desc = "、".join(
