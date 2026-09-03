@@ -54,23 +54,23 @@
 - [x] 4.4 单测：spec 全部 Scenario + 既有 `ClaudeMdCarrierSizeTests` 7 例零漂移 + 新增 `ClaudeMdRulesCoverageTests` 9 例
 - [x] 4.5 交付：验活命令已实跑——直接对**真实项目根目录**调用 `_check_claude_md_carrier_size`（只读，不经完整 sweep 的 git 操作），实测：根 9,703 B/12,288 B、rules 五份均 <8,192 B、合计 21,165 B/30,720 B，零超限，回显完整贴在收工报告
 
-## 5. ⓑ UserPromptSubmit 常驻五条
+## 5. ⓑ UserPromptSubmit 常驻五条（✅ 建造+单测完成，⏳ 交付待人工注册）
 
-- [ ] 5.1 根 `CLAUDE.md` 五处目标行追加 `<!-- UPS5:1 -->` … `<!-- UPS5:5 -->` 锚点（零语义改动）
-- [ ] 5.2 写 `0-学习与工具/hooks/hooks-userpromptsubmit-standing-five.ps1`
-- [ ] 5.3 锚点提取 + 数量断言（≠5 时可见不静默）+ 截断规则
-- [ ] 5.4 fail-open + 审计留痕
-- [ ] 5.5 单测：spec 全部 Scenario（锚点齐全、缺失、重复、截断、读取失败五类）
-- [ ] 5.6 交付：`.claude/settings.json` 的 `UserPromptSubmit` 挂接片段 + 验活命令
+- [x] 5.1 根 `CLAUDE.md` 五处目标行追加 `<!-- UPS5:1 -->` … `<!-- UPS5:5 -->` 锚点（零语义改动；根文件 9,703→9,778 B）
+- [x] 5.2 写 `0-学习与工具/hooks/hooks-userpromptsubmit-standing-five.ps1`
+- [x] 5.3 锚点提取 + 数量断言（≠5 时可见不静默）+ 截断规则
+- [x] 5.4 fail-open + 审计留痕
+- [x] 5.5 单测：spec 全部 Scenario（锚点齐全、缺失、重复、截断、读取失败五类，`test_hooks-p3.py::TestUserPromptSubmitStandingFive` 8 条）——过程中钉死第三处真实缺陷：单条 80B 硬顶＋总量 300B 硬顶两次独立截断会让超预算部分从**尾部**丢失（5 条各顶格必超 300B，等价于末位条目整条消失）；改为按实得条数把总预算均分、与 80B 硬顶取较小值，已用长文本用例钉死
+- [ ] 5.6 交付：`.claude/settings.json` 的 `UserPromptSubmit` 挂接片段 + 验活命令（随 §7 收口一并整理）
 
-## 6. ⓓ Stop 需你定夺格式检查
+## 6. ⓓ Stop 需你定夺格式检查（✅ 建造+单测完成，⏳ 交付待人工注册）
 
-- [ ] 6.1 写 `0-学习与工具/hooks/hooks-stop-decision-check.ps1`
-- [ ] 6.2 transcript 末条 assistant 文本提取（jsonl 解析，版本探测/解析失败 fail-loud 进审计但仍 fail-open 放行）
-- [ ] 6.3 「需你定夺」字样 + 选项标签判据；`stop_hook_active` 防循环
-- [ ] 6.4 fail-open + 审计留痕
-- [ ] 6.5 单测：spec 全部 Scenario（缺标签拦截、格式完整放行、无小节放行、"本次无需你决策"放行、`stop_hook_active` 放行、transcript 不可读五类）
-- [ ] 6.6 交付：`.claude/settings.json` 的 `Stop` 挂接片段 + 验活命令
+- [x] 6.1 写 `0-学习与工具/hooks/hooks-stop-decision-check.ps1`
+- [x] 6.2 transcript 末条 assistant 文本提取（jsonl 解析，版本探测/解析失败 fail-loud 进心跳但仍 fail-open 放行；解析口径同模板库 §〇.15 既有约定）
+- [x] 6.3 「需你定夺／需你决策」字样（负向后顾排除"本次无需你决策"类合法否定句）＋ 选项标签判据；`stop_hook_active` 防循环
+- [x] 6.4 fail-open + 审计留痕
+- [x] 6.5 单测：spec 全部 Scenario + 反例（`test_hooks-p3.py::TestStopDecisionCheck` 11 条，含只看最后一条 assistant／解析失败行容错／多文本块拼接三类额外覆盖）
+- [ ] 6.6 交付：`.claude/settings.json` 的 `Stop` 挂接片段 + 验活命令（随 §7 收口一并整理）
 
 ## 7. 收口（本 session 内可完成的部分）
 

@@ -28,6 +28,7 @@ COMMON = HOOKS_DIR / "hooks-common.ps1"
 SESSIONSTART = HOOKS_DIR / "hooks-sessionstart-context.ps1"
 EDITLOCK_GUARD = HOOKS_DIR / "hooks-pretooluse-editlock-guard.ps1"
 STANDING_FIVE = HOOKS_DIR / "hooks-userpromptsubmit-standing-five.ps1"
+STOP_DECISION_CHECK = HOOKS_DIR / "hooks-stop-decision-check.ps1"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 pytestmark = pytest.mark.skipif(
@@ -403,3 +404,107 @@ class TestUserPromptSubmitStandingFive:
         assert rc == 0, err
         ctx = get_context(out)
         assert "⚠" not in ctx, f"真实根 CLAUDE.md 的锚点数量或格式有异常：{ctx}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⓓ Stop 需你定夺格式检查（hooks-stop-decision-check.ps1）
+# ─────────────────────────────────────────────────────────────────────────────
+
+def write_transcript(repo_root: Path, *assistant_texts: str, name: str = "transcript.jsonl") -> Path:
+    """构造一份最小 transcript jsonl：每个入参各生成一条 `type=assistant` 记录，
+    穿插一条 `type=user` 噪音记录验证"只看 assistant"这一判据。"""
+    p = repo_root / name
+    lines = []
+    for text in assistant_texts:
+        lines.append(json.dumps({"type": "user", "message": {"role": "user",
+                     "content": [{"type": "text", "text": "（用户消息，不应被读取）"}]}}, ensure_ascii=False))
+        lines.append(json.dumps({"type": "assistant", "message": {"role": "assistant",
+                     "content": [{"type": "text", "text": text}]}}, ensure_ascii=False))
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return p
+
+
+def stop_payload(transcript_path: Path, *, stop_hook_active: bool = False) -> dict:
+    return {
+        "session_id": "test-session",
+        "hook_event_name": "Stop",
+        "transcript_path": str(transcript_path),
+        "stop_hook_active": stop_hook_active,
+    }
+
+
+class TestStopDecisionCheck:
+    def test_脚本文件存在(self):
+        assert STOP_DECISION_CHECK.is_file()
+
+    def test_缺选项标签时拦截(self, repo: Path):
+        t = write_transcript(repo, "已处理完毕。", "## 需你定夺\n这里要不要继续？")
+        rc, out, err = run_hook(STOP_DECISION_CHECK, stop_payload(t), repo)
+        assert rc == 2
+        assert "选项标签" in err
+        assert audit_lines(repo)[-1]["verdict"] == "violation"
+
+    def test_只看最后一条assistant消息(self, repo: Path):
+        """第一条含缺格式的"需你定夺"，但那不是最后一条——应该被忽略，只看最后一条。"""
+        t = write_transcript(repo, "## 需你定夺\n第一条缺标签", "第二条已完整答复，无需再决策。")
+        rc, out, err = run_hook(STOP_DECISION_CHECK, stop_payload(t), repo)
+        assert rc == 0, err
+
+    def test_含选项标签时放行(self, repo: Path):
+        t = write_transcript(repo, "## 需你定夺\n(a) 方案甲，默认 (b) 方案乙")
+        rc, out, err = run_hook(STOP_DECISION_CHECK, stop_payload(t), repo)
+        assert rc == 0, err
+        assert audit_lines(repo)[-1]["verdict"] == "pass"
+
+    def test_完全无决策小节时放行(self, repo: Path):
+        t = write_transcript(repo, "这次的改动已经完成，测试全部通过。")
+        rc, out, err = run_hook(STOP_DECISION_CHECK, stop_payload(t), repo)
+        assert rc == 0, err
+
+    def test_本次无需你决策的否定句放行(self, repo: Path):
+        """🔴 关键反例：CLAUDE.md §5 允许的合法终态"本次无需你决策"本身含
+        "需你决策"四个字的子串，若判据不排除这个否定前缀会误拦合法回复。"""
+        t = write_transcript(repo, "状态更新完毕，本次无需你决策。")
+        rc, out, err = run_hook(STOP_DECISION_CHECK, stop_payload(t), repo)
+        assert rc == 0, err
+
+    def test_stop_hook_active时防循环直接放行(self, repo: Path):
+        t = write_transcript(repo, "## 需你定夺\n缺标签的坏格式")
+        rc, out, err = run_hook(STOP_DECISION_CHECK, stop_payload(t, stop_hook_active=True), repo)
+        assert rc == 0, err
+        assert "stop_hook_active" in audit_lines(repo)[-1]["detail"]
+
+    def test_transcript文件不存在时fail_open(self, repo: Path):
+        rc, out, err = run_hook(
+            STOP_DECISION_CHECK, stop_payload(repo / "不存在.jsonl"), repo)
+        assert rc == 0, err
+        assert audit_lines(repo)[-1]["verdict"] == "error"
+
+    def test_transcript含解析失败行仍能找到最后一条有效消息(self, repo: Path):
+        t = repo / "transcript.jsonl"
+        lines = [
+            "这不是合法JSON、模拟版本漂移",
+            json.dumps({"type": "assistant", "message": {"role": "assistant",
+                       "content": [{"type": "text", "text": "## 需你定夺\n(a) 好 (b) 不好"}]}},
+                       ensure_ascii=False),
+        ]
+        t.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        rc, out, err = run_hook(STOP_DECISION_CHECK, stop_payload(t), repo)
+        assert rc == 0, err
+
+    def test_需你决策措辞同样被识别(self, repo: Path):
+        t = write_transcript(repo, "需你决策：继续还是停止？(a) 继续 (b) 停止")
+        rc, out, err = run_hook(STOP_DECISION_CHECK, stop_payload(t), repo)
+        assert rc == 0, err
+
+    def test_多个文本块拼接后判定(self, repo: Path):
+        """真实 transcript 里一条 assistant 消息的 content 可能是多个 text 块——
+        判据须拼接全部块，不能只看第一块。"""
+        p = repo / "transcript.jsonl"
+        entry = {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "## 需你定夺\n"},
+            {"type": "text", "text": "(a) 选项甲 (b) 选项乙"},
+        ]}}
+        p.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+        rc, out, err = run_hook(STOP_DECISION_CHECK, stop_payload(p), repo)
+        assert rc == 0, err
