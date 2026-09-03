@@ -72,13 +72,13 @@
 - [x] 6.5 单测：spec 全部 Scenario + 反例（`test_hooks-p3.py::TestStopDecisionCheck` 11 条，含只看最后一条 assistant／解析失败行容错／多文本块拼接三类额外覆盖）
 - [ ] 6.6 交付：`.claude/settings.json` 的 `Stop` 挂接片段 + 验活命令（随 §7 收口一并整理）
 
-## 7. 收口（本 session 内可完成的部分）
+## 7. 收口（✅ 已完成）
 
-- [ ] 7.1 `openspec validate --strict` 绿
-- [ ] 7.2 六份交付物（脚本/改动/单测结果/注册片段/验活命令）汇总进收工报告
-- [ ] 7.3 §二 批次行 `B-0904_CC-P3H001` 精确化（实际文件清单、真实 commit message、状态改"待处理"）
-- [ ] 7.4 §一 `#381` 状态列追记：⑸ 六项建造完成到"可注册＋有单测"状态，等 Shao Peishen／Cowork 瘦身线注册后进入生产验活
-- [ ] 7.5 push 分支，供 ff 入 master
+- [x] 7.1 `openspec validate --strict` 绿（多次复核，含合并 origin/master 后重跑）
+- [x] 7.2 七份交付物（脚本/改动/单测结果/注册片段/验活命令）汇总进收工报告
+- [x] 7.3 §二 批次行 `B-0904_CC-P3H001` 精确化（实际文件清单 24 files/2675 insertions、真实 commit message、状态改"✅ 已完成"）
+- [x] 7.4 §一 `#381` 状态列追记：⑸ⓐ-ⓖ 七项完成情况（四枚待注册、三枚已生效），前置条件未满足处如实注明
+- [x] 7.5 push 分支＋ff 入 master（分支 `claude/p3hooks-op0904a-d78bb8` 已 push；期间 origin/master 新增 2 commit——含 Cowork 对同一 `#381`⑸ 行的 ⓖ 记录与 kickoff skill v1.25——已 `git merge` 妥善处理冲突〈逐字节校验行结构、pipe 计数、queue lint、无重复/无丢失〉，非盲目二选一；ff 后 origin/master==HEAD）
 
 ## 8. 生产验活与降指针（🔴 不在本 session 范围，前置条件未满足）
 
