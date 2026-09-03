@@ -4361,41 +4361,53 @@ class GenderPronounLintTests(unittest.TestCase):
         line = "姚祖怡这一行历史正文写作她（性别豁免：历史记录不追改）"
         self.assertEqual(self._v(line), [])
 
-    def test_roster_stays_in_sync_with_root_claude_md(self):
+    def test_roster_stays_in_sync_with_authoritative_roster_file(self):
         """🔴 **名录再扩而常量没跟，这条用例会当场变红。**
 
-        方向是「§1 ⊆ 常量」而不是「＝」，刻意如此：真正要抓的失效形态是
-        *名录扩了而常量没跟*，用 ⊆ 即可抓住；要求相等则等于要求 `CLAUDE.md`
-        写成机器可解析的格式，那是对一份**人读的文件**提错要求（实测 §1 里
-        `邵培申` 写作「`邵培申` ＝ Shao Peishen 本人」，没有「（男）」标注）。
+        方向是「正本§一 ⊆ 常量」而不是「＝」，刻意如此：真正要抓的失效形态
+        是*名录扩了而常量没跟*，用 ⊆ 即可抓住；要求相等则等于要求正本文件
+        写成机器可解析的格式，那是对一份**人读的文件**提错要求（实测正本
+        §一里 `邵培申` 写作「`邵培申` ＝ Shao Peishen 本人」，没有「（男）」
+        标注）。
 
-        **为什么不在运行时解析 CLAUDE.md**：§1 是每周都在变的散文，措辞一变
-        解析就抽不到人名，判据随即变成**恒真、零信息量，而没有任何东西会
-        报错**——用一个失效不产生信号的实现，去做一条专为根治"错误不产生
-        信号"而立的校验，是原地打转。
+        **数据源 ＝ `6-人才与组织/人员名录-称谓与性别-正本.md` §一**（原文
+        原样迁自根 `CLAUDE.md` §1，2026-08-28，OP-0828-Q，队列 #433 A2，
+        CHANGELOG 附录 G-5；迁移时已用同一条正则对迁前／迁后两侧取
+        name→gender 差集核过，缺失 0、新增 0）。本用例一度仍指向根
+        `CLAUDE.md` §1：瘦身后 §1 只剩指针、不再含名录正文，抽取正则从此
+        只抓到 0 个人名——不是判据被绕开，恰恰是下面的数量下限断言按设计
+        抓住了它、当场把"抓不到"变成硬失败，只是这次失败在提示"数据源
+        指针没跟着迁移改"，不是在提示"名录与常量真的漂移了"。这里把数据
+        源指针改到位，判据设计本身不变。
+
+        **为什么不在运行时解析正本文件**：§一是会随人事变动而改的散文，
+        措辞一变解析就抽不到人名，判据随即变成**恒真、零信息量，而没有
+        任何东西会报错**——用一个失效不产生信号的实现，去做一条专为
+        根治"错误不产生信号"而立的校验，是原地打转。
         """
-        claude_md = SCRIPT.resolve().parents[1] / "CLAUDE.md"
-        text = claude_md.read_text(encoding="utf-8")
-        start, end = text.index("## 1."), text.index("## 2.")
+        roster_md = (SCRIPT.resolve().parents[1] / "6-人才与组织"
+                     / "人员名录-称谓与性别-正本.md")
+        text = roster_md.read_text(encoding="utf-8")
+        start, end = text.index("## 一、"), text.index("## 二、")
         declared = {}
         for match in re.finditer(r"([\u4e00-\u9fa5]{2,4})（(男|女)[^）]*）", text[start:end]):
             declared.setdefault(match.group(1), set()).add(match.group(2))
 
         self.assertGreaterEqual(
             len(declared), 15,
-            "从 CLAUDE.md §1 只抽到极少的人名——多半是那一节的写法变了、"
+            "从正本 §一只抽到极少的人名——多半是那一节的写法变了、"
             "本用例的抽取正则已失效。**这时候它是恒真的，等于没有校验**，"
             "请先修抽取，不要直接放宽断言。",
         )
         for name, genders in sorted(declared.items()):
             self.assertIn(
                 name, self.m.PERSON_GENDER_ROSTER,
-                f"根 CLAUDE.md §1 里的「{name}」不在 PERSON_GENDER_ROSTER 里"
+                f"正本 §一里的「{name}」不在 PERSON_GENDER_ROSTER 里"
                 f"——名录扩了，常量没跟。",
             )
             self.assertEqual(
                 genders, {self.m.PERSON_GENDER_ROSTER[name]},
-                f"「{name}」在 CLAUDE.md §1 与常量里的性别不一致。",
+                f"「{name}」在正本 §一与常量里的性别不一致。",
             )
 
 
