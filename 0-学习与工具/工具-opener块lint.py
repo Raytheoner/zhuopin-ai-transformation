@@ -1,18 +1,24 @@
-"""opener 代码块 lint —— 一次收两个失效形态（队列 §一 `#284`，OP-0828-Y）。
+"""opener 代码块 lint —— 一次收五个失效形态（队列 §一 `#284`／`#381`⑸ⓖ，OP-0828-Y／OP-0904-A）。
 
 本脚本是**规则退休制**（根 `CLAUDE.md` §5）欠下的对价：`专线opener模板库.md` §〇
 补充三那条人守规则 **2026-08-27 一天被违反 17 次**，远超「人守违反 3 次即须机制化或
 删除」的阈值；补充三之三又在 2026-08-28 撞出第二个形态。退休制要求二选一——机制化，
 或删除。**本脚本就是「机制化」那一半。**
 
-## 两个形态（判据正本＝`1-转型规划/0-全景路线图/专线opener模板库.md` §〇 补充三／补充三之三）
+**2026-09-04 扩三形态（队列 §一 `#381`⑸ⓖ，Shao Peishen 原话「每天碰到几十次，必须
+就地解决且根治」）**：判据正本自此改为 `专线opener模板库.md` §〇.00（唯一可照抄骨架）。
+
+## 五个形态（判据正本＝`1-转型规划/0-全景路线图/专线opener模板库.md` §〇.00／补充三／补充三之三）
 
 | | 守什么 | 生效日 | 成因 |
 |---|---|---|---|
 | 形态① | **CC 侧** opener 块含 `【设置】` 而**无** `set_session_title` | 2026-08-26（补充一） | session 名丢编号，2026-08-27 一天欠 17 次 |
 | 形态② | 块内**有** `set_session_title` 而**无**子任务例外句 | 2026-08-28（补充三之三） | Task/Agent 子任务执行它时 `"self"` 解析到**父** session，把调度它的那条会话改名；**调用成功、无报错** |
+| 形态③ | **CC 侧**块有 `set_session_title` 调用，但标题值不匹配 `[Win]MMDDX-<短名>` | 2026-09-04（§〇.00） | 标题格式三次改定才终稿（模板库 §〇.0 补充），旧格式/漏填占位符不会报错 |
+| 形态④ | `【设置】` 行六字段（`执行环境｜分支｜worktree｜工作区｜session｜派出线`）缺失或顺序错 | 2026-09-04（§〇.00） | §〇.1 曾把六字段错写成「标准四字段」，字段顺序漂移无任何一层会报错 |
+| 形态⑤ | opener 块**首行**不匹配 `[OP-MMDD-X]【CC／Cowork】<短名≤12字>` | 2026-09-04（§〇.00） | 编号是跨会话世界唯一身份，首行缺编号时收工报告/队列回写/CC transcript 目录无法对齐 |
 
-形态②与「工具静默回退」同族：它没错，只是解析到了另一个对象 —— 没有任何一层会报错，
+形态②③与「工具静默回退」同族：它没错，只是解析到了另一个对象 —— 没有任何一层会报错，
 故只能靠结构检测拦，靠人读输出拦不住。
 
 ## 🔴 形态①**只对 CC 侧成立**——这是与 `#284` 需求原文的一处刻意收窄（实测依据）
@@ -92,8 +98,16 @@ H3 判不了 ⇒ 按「当前在用」保守计入，并在报告里显式打印
     python 0-学习与工具/工具-opener块lint.py             # 告警模式（退出码恒 0）
     python 0-学习与工具/工具-opener块lint.py --enforce    # 阻断模式（当前在用件有违规即 1）
     python 0-学习与工具/工具-opener块lint.py --show-historical   # 连历史件命中一起列明细
+    python 0-学习与工具/工具-opener块lint.py --file <路径>       # 单文件自检模式（见下）
 
 **`--enforce` 只对「当前在用件」阻断**；历史件恒不阻断（「历史记录不追改」）。
+
+**`--file <路径>` 单文件自检模式（2026-09-04 新增，队列 §一 `#381`⑸ⓖ）**：供任何 session
+在把 opener 块粘进聊天交付前，先写进一份临时 `.md`、跑本模式自检。与主扫描路径的三处区别：
+① **不跑 git、不判「当前在用 vs 历史」**——自检对象通常是尚未提交甚至未跟踪的草稿，套用
+H1-H3 三层判据没有意义，全部命中一律按「当前」处理；② **不受 `--enforce` 支配**——自检的
+存在意义就是「过不了就别发」，故有命中恒以退出码 1 收尾，干净则 0；③ **只读一份文件**，
+不跑 `git ls-files`，可在非 git 目录、未跟踪文件上使用。
 """
 from __future__ import annotations
 
@@ -107,11 +121,24 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# ── 两条规则各自的生效日（H3 的时间边界）──────────────────────────────────────
+# ── 各条规则各自的生效日（H3 的时间边界）──────────────────────────────────────
 #: 形态① ＝ 模板库 §〇「补充一」第 2 条（Shao Peishen 2026-08-26 定）。
 RULE_EFFECTIVE_FORM1 = date(2026, 8, 26)
 #: 形态② ＝ 模板库 §〇「补充三之三」（2026-08-28 实撞后当日定）。
 RULE_EFFECTIVE_FORM2 = date(2026, 8, 28)
+#: 形态③④⑤ ＝ 模板库 §〇.00（队列 §一 #381⑸ⓖ，2026-09-04 追加）。
+RULE_EFFECTIVE_FORM3 = date(2026, 9, 4)
+RULE_EFFECTIVE_FORM4 = date(2026, 9, 4)
+RULE_EFFECTIVE_FORM5 = date(2026, 9, 4)
+
+#: 各形态代码 → 生效日，`classify_carrier` 按此查表（替代此前的二选一分支）。
+RULE_EFFECTIVE_BY_FORM = {
+    "F1": RULE_EFFECTIVE_FORM1,
+    "F2": RULE_EFFECTIVE_FORM2,
+    "F3": RULE_EFFECTIVE_FORM3,
+    "F4": RULE_EFFECTIVE_FORM4,
+    "F5": RULE_EFFECTIVE_FORM5,
+}
 
 #: R3 生命周期的归档物理落点（目录段，非文件名关键词）。
 ARCHIVE_DIR_SEGMENT = "z-已执行归档"
@@ -134,6 +161,40 @@ ENV_RE = re.compile(r"执行环境\s*[:：]\s*\**\s*(Cowork|CC)", re.IGNORECASE)
 #: （#225 列数校验／#258 release 校验两天内各拦下一次），它拦不住写错，但拦得住压根没写。
 SUBTASK_TOKEN_RE = re.compile(r"子任务|Task/Agent|Task／Agent")
 EXCEPTION_TOKEN_RE = re.compile(r"例外|跳过本行")
+
+#: 形态③：标题值须为 `[Win]MMDDX-<短名>`（真实日期数字，不是字面占位符 `MMDDX`）。
+#: 🔴 `\d{4}` 要求四个真数字——照抄骨架却漏填占位符时，`MMDDX` 五个字母不会命中，
+#: 这正是本判据要抓的形态（漏填与格式错都表现为「没有匹配」，无需区分）。
+TITLE_VALUE_RE = re.compile(r"\[Win\]\d{4}[A-Za-z]+-\S")
+
+#: 形态④：`【设置】` 六字段固定顺序（§〇.00，2026-09-02 `OP-0902-X` 勘误后终稿）。
+#: 🔴 用子串定位＋位置比大小判序，不做完整解析——同 F2 的弱校验哲学：判不了「值对不对」，
+#: 判「字段在不在、序对不对」已能拦住 §〇.1 曾把它错写成「标准四字段」这一族漂移。
+SETTINGS_FIELD_ORDER = ("执行环境", "分支", "worktree", "工作区", "session", "派出线")
+
+#: 形态⑤：opener 块首行 `[OP-MMDD-X]【CC／Cowork】<短名，≤12字>`。
+FIRST_LINE_RE = re.compile(r"^\[OP-\d{4}-[A-Za-z]+\]【(CC|Cowork)】(.{1,12})$")
+
+
+def _settings_field_order_problems(line: str) -> tuple[list[str], list[str]]:
+    """返回 `(缺失字段列表, 顺序颠倒的相邻字段对列表)`。
+
+    判据：六个字段标签逐个在 `line` 内 `str.find`；缺失即记入第一项；
+    对**找到的**字段按标签出现位置两两比较相邻对，位置颠倒即记入第二项
+    （形如 `"worktree→分支"` 表示 `worktree` 出现在 `分支` 之前，与骨架顺序相反）。
+    """
+    positions: dict[str, int] = {}
+    for field in SETTINGS_FIELD_ORDER:
+        idx = line.find(field)
+        if idx != -1:
+            positions[field] = idx
+    missing = [f for f in SETTINGS_FIELD_ORDER if f not in positions]
+    found_in_order = [f for f in SETTINGS_FIELD_ORDER if f in positions]
+    out_of_order = [
+        f"{a}→{b}" for a, b in zip(found_in_order, found_in_order[1:])
+        if positions[a] > positions[b]
+    ]
+    return missing, out_of_order
 
 _LEDGER_SCRIPT = REPO_ROOT / "0-学习与工具" / "工具-文档台账生成.py"
 
@@ -221,13 +282,14 @@ def block_env(block: Block) -> str | None:
 
 
 def check_block(block: Block) -> list[tuple[str, str]]:
-    """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1", "F2"}。"""
+    """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F5"}。"""
     problems: list[tuple[str, str]] = []
     is_opener = settings_line(block) is not None
     has_title_call = bool(SESSION_TITLE_RE.search(block.text))
+    env = block_env(block)
 
     # 形态① —— 只对 CC 侧 opener 块成立（Cowork 与未标环境结构性排除，见 docstring）
-    if is_opener and not has_title_call and block_env(block) == "CC":
+    if is_opener and not has_title_call and env == "CC":
         problems.append((
             "F1",
             "CC opener 块缺 `set_session_title` 那一行 ⇒ session 名会丢编号"
@@ -245,6 +307,44 @@ def check_block(block: Block) -> list[tuple[str, str]]:
                 '`"self"` 会解析到父 session、把调度它的那条会话改名（调用成功、无报错）'
                 "（模板库 §〇 补充三之三）",
             ))
+
+    # 形态③ —— CC 侧且真调用了 set_session_title 时，标题值须匹配 [Win]MMDDX-<短名>
+    #（is_opener 未作为门槛：裸标准写法块同样受本形态约束，同 F2 既有先例）
+    if has_title_call and env == "CC" and not TITLE_VALUE_RE.search(block.text):
+        problems.append((
+            "F3",
+            "块内 `set_session_title` 的标题值未匹配 `[Win]MMDDX-<短名>`"
+            "（骨架占位符 `MMDDX` 须替换为真实四位日期＋字母，未替换或格式错均命中；"
+            "模板库 §〇.00）",
+        ))
+
+    # 形态④ —— 【设置】六字段缺失或顺序错（仅 opener 块适用，Cowork 同受约束）
+    if is_opener:
+        settings_text = settings_line(block) or ""
+        missing, out_of_order = _settings_field_order_problems(settings_text)
+        if missing or out_of_order:
+            parts = []
+            if missing:
+                parts.append(f"缺字段 {'、'.join(missing)}")
+            if out_of_order:
+                parts.append(f"顺序颠倒 {'、'.join(out_of_order)}")
+            problems.append((
+                "F4",
+                f"`【设置】` 六字段（{'｜'.join(SETTINGS_FIELD_ORDER)}）{'；'.join(parts)}"
+                "（模板库 §〇.00；§〇.1 曾把六字段错写成「标准四字段」，此前无任何一层会报错）",
+            ))
+
+    # 形态⑤ —— opener 块首行须为 [OP-MMDD-X]【CC／Cowork】<短名，≤12字>
+    if is_opener:
+        first_line = block.lines[0].strip() if block.lines else ""
+        if not FIRST_LINE_RE.match(first_line):
+            problems.append((
+                "F5",
+                "opener 块首行未匹配 `[OP-MMDD-X]【CC／Cowork】<短名，≤12字>`"
+                "（编号是跨会话世界唯一身份，缺它收工报告/队列回写/CC transcript 目录"
+                "无法对齐；模板库 §〇.00）",
+            ))
+
     return problems
 
 
@@ -280,7 +380,7 @@ def classify_carrier(rel_path: str, status_raw: str, form: str,
         return "historical", f"H2 状态头归桶 = {status_raw}"
     if last_commit is None:
         return "unknown-history", "H3 判不了：git 历史取不到（浅克隆或未跟踪）"
-    cutoff = RULE_EFFECTIVE_FORM1 if form == "F1" else RULE_EFFECTIVE_FORM2
+    cutoff = RULE_EFFECTIVE_BY_FORM[form]
     if last_commit < cutoff:
         return "historical", f"H3 最后提交 {last_commit.isoformat()} 早于规则生效日 {cutoff.isoformat()}"
     return "current", f"三层均不命中（最后提交 {last_commit.isoformat()}）"
@@ -350,19 +450,58 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
     return findings, stats
 
 
+def scan_single_file(path: Path) -> list[Finding]:
+    """`--file` 单文件自检：不跑 git、不分「当前在用 vs 历史」，全部按「当前」处理。
+
+    自检对象通常是尚未提交甚至未跟踪的草稿（供发出前自查），套用 H1-H3 三层判据
+    没有意义——那三层问的是「规则生效后这份件有没有被人再动过」，对一份从未提交过
+    的临时件天然无法回答，也不该回答（不是「历史记录」，谈不上「不追改」）。
+    """
+    text = path.read_text(encoding="utf-8")
+    findings: list[Finding] = []
+    for block in iter_fenced_blocks(text):
+        if settings_line(block) is None and not SESSION_TITLE_RE.search(block.text):
+            continue
+        env = block_env(block)
+        for form, detail in check_block(block):
+            findings.append(Finding(str(path), block.start_line, form, detail,
+                                    "current", "--file 自检模式：不判历史", env))
+    return findings
+
+
 FORM_TITLE = {
     "F1": "形态① · CC opener 块缺 set_session_title（规则生效日 2026-08-26）",
     "F2": "形态② · 有 set_session_title 缺子任务例外句（规则生效日 2026-08-28）",
+    "F3": "形态③ · 标题值不匹配 [Win]MMDDX-<短名>（规则生效日 2026-09-04）",
+    "F4": "形态④ · 【设置】六字段缺失或顺序错（规则生效日 2026-09-04）",
+    "F5": "形态⑤ · 首行不匹配 [OP-MMDD-X]【CC／Cowork】<短名≤12字>（规则生效日 2026-09-04）",
 }
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="opener 代码块 lint（队列 #284，两个失效形态一处守）")
+    ap = argparse.ArgumentParser(description="opener 代码块 lint（队列 #284／#381⑸ⓖ，五个失效形态一处守）")
     ap.add_argument("--enforce", action="store_true",
                     help="当前在用件有违规即以退出码 1 阻断（默认只告警、退出码 0）")
     ap.add_argument("--show-historical", action="store_true",
                     help="连历史件命中一起列明细（默认只给计数，因其按「历史记录不追改」不该修）")
+    ap.add_argument("--file", metavar="路径", type=Path, default=None,
+                    help="单文件自检模式：只查这一份文件，不跑 git、不分当前/历史，"
+                         "有命中恒退出码 1（不受 --enforce 支配）")
     args = ap.parse_args(argv)
+
+    if args.file is not None:
+        if not args.file.is_file():
+            print(f"✗ --file 指向的路径不存在或不是文件：{args.file}")
+            return 1
+        findings = scan_single_file(args.file)
+        if not findings:
+            print(f"✓ {args.file}：opener 块自检零违规。")
+            return 0
+        print(f"✗ {args.file}：opener 块自检命中 {len(findings)} 处：")
+        for f in findings:
+            print(f"  - {f.render()}")
+        print("\n标准写法见 `1-转型规划/0-全景路线图/专线opener模板库.md` §〇.00（唯一可照抄骨架）。")
+        return 1
 
     files = _tracked_md_files()
     findings, stats = scan(files)
