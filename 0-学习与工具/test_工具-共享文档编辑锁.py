@@ -4716,6 +4716,23 @@ class RegistrationCompletenessTests(unittest.TestCase):
         self.assertTrue(self._run(self._queue(*rows), waivers=[]))
 
 
+OPENER_LINT_TEST_SCRIPT = Path(__file__).resolve().with_name("test_工具-opener块lint.py")
+
+
+def _load_opener_lint_fixtures():
+    """白盒 import `test_工具-opener块lint.py`，只取其共享 opener 块 fixture 常量
+    （`SETTINGS_CC`/`SETTINGS_COWORK`/`TITLE_LINE_*`），不重抄一份——理由见
+    `OpenerGuardReleaseTests` 类文档字符串。"""
+    spec = importlib.util.spec_from_file_location(
+        "_opener_lint_test_fixtures_under_test", OPENER_LINT_TEST_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_OPENER_FIXTURES = _load_opener_lint_fixtures()
+
+
 class OpenerGuardReleaseTests(unittest.TestCase):
     """release 前的 opener 守卫（队列 §一 `#437`，`#284` 形态①的真根治）。
 
@@ -4723,25 +4740,20 @@ class OpenerGuardReleaseTests(unittest.TestCase):
     整个价值就在于"机器亲眼看到工作区里刚写出来、还没 commit 的 .md"，用桩
     测等于把要验的那一段换掉了。
 
-    fixture 文本（`SETTINGS_CC`/`SETTINGS_COWORK`/两条 `TITLE_LINE_*`）与
-    `test_工具-opener块lint.py` 逐字同源——两边测的是**同一份判据**
-    （`check_block`），fixture 不同源就测不出"改一处两处同步变化"这件事。
+    fixture（`SETTINGS_CC`/`SETTINGS_COWORK`/`TITLE_LINE_*`）直接从
+    `test_工具-opener块lint.py` 导入，不另抄一份——两边测的是**同一份判据**
+    （`check_block`），各自维护一份文本必然不同源漂移：2026-09-04 当天已
+    第三次撞上这族问题（`SETTINGS_CC` 字段顺序错、`SETTINGS_COWORK` 字段
+    残缺，且两者都没配过形态⑤要求的合规首行）。单一来源是唯一解，不是
+    "抄得更认真一点"。
     """
 
-    TITLE_LINE_NO_EXC = (
-        '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），'
-        "标题：[Win]0827B-LAN留步收尾-354与401"
-    )
-    TITLE_LINE_WITH_EXC = (
-        '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），'
-        "标题：[Win]0828O-423切a档与部署。🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行"
-        '——子任务没有自己的 session，"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。'
-    )
-    SETTINGS_CC = (
-        "【设置】执行环境：CC ｜ CC session：☑ 新开 ｜ worktree：☑ 新建独立 ｜ 分支：由你新建 "
-        "｜ 工作区：C:\\Dev\\zhuopin-ai ｜ 派出线：Cowork 环境总线 OP-0828-N"
-    )
-    SETTINGS_COWORK = "【设置】执行环境：**Cowork** ｜ 分支：master ｜ worktree：☐"
+    TITLE_LINE_NO_EXC = _OPENER_FIXTURES.TITLE_LINE_NO_EXC
+    TITLE_LINE_WITH_EXC = _OPENER_FIXTURES.TITLE_LINE_WITH_EXC
+    TITLE_LINE_CC = _OPENER_FIXTURES.TITLE_LINE_CC
+    TITLE_LINE_COWORK = _OPENER_FIXTURES.TITLE_LINE_COWORK
+    SETTINGS_CC = _OPENER_FIXTURES.SETTINGS_CC
+    SETTINGS_COWORK = _OPENER_FIXTURES.SETTINGS_COWORK
 
     def setUp(self):
         self.m = _load_module()
@@ -4785,21 +4797,32 @@ class OpenerGuardReleaseTests(unittest.TestCase):
 
     # ── tasks 2.3：写对的放行 ────────────────────────────────────
     def test_correct_cc_block_passes(self):
-        self._write_block("派单件-z.md", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC)
+        self._write_block("派单件-z.md", self.TITLE_LINE_CC, self.SETTINGS_CC,
+                          self.TITLE_LINE_WITH_EXC)
         self.assertEqual(self._run(), [])
 
     # ── tasks 2.4：🔴 反例，防误伤 Cowork（D4）───────────────────
     def test_cowork_block_without_title_passes(self):
         """本项不过则本线自己每次 release 都会被拦死——`set_session_title`
         在 Cowork 侧根本不存在（补充一 2026-08-27 已实测）。"""
-        self._write_block("派单件-cowork.md", self.SETTINGS_COWORK, "读接力文件继续。")
+        self._write_block("派单件-cowork.md", self.TITLE_LINE_COWORK, self.SETTINGS_COWORK,
+                          "读接力文件继续。")
         self.assertEqual(self._run(), [])
 
     # ── tasks 2.5：未声明环境不校验（宁可漏，不误伤）─────────────
     def test_env_unlabeled_block_passes(self):
+        """与 `test_工具-opener块lint.py::形态一_缺set_session_title
+        .test_执行环境未标_不猜_不判形态一` 同一份真实原文（`本周计划-2026-08-03.md`
+        形态）。🔴 "环境未标不猜、不误伤 CC 专属项（F1）"与"六字段不全该报（F4）"
+        是两件独立的事，2026-09-04 形态四生效后不能再用一句 `assertEqual(..., [])`
+        把两者混在一起——那样会让本文件比对面那份"更宽松"，读的人会误以为这条
+        真实历史形态在新判据下依然全干净。"""
         self._write_block("本周计划-x.md",
                           "【设置】分支：master ｜ worktree：☐", "读队列继续。")
-        self.assertEqual(self._run(), [])
+        violations = self._run()
+        self.assertEqual(len(violations), 1)
+        self.assertNotIn("F1", violations[0])
+        self.assertIn("F4", violations[0])
 
     # ── tasks 2.6：逃生阀，note 与队列行两处各测一次 ─────────────
     def test_waiver_in_note_passes(self):
