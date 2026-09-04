@@ -2,7 +2,7 @@
 title: "P3 hooks（ⓐⓒⓑⓓ）· 人工安装单"
 created: 2026-09-04
 来源: 队列 §一 `#381` 子项⑸（规格正本）；建造 session `P3hooks-OP0904A`；openspec 变更包 `cc-hooks-p3`
-状态: ⏳ 待 Shao Peishen／Cowork 瘦身线人工执行（AI 工具被 PreToolUse 守卫按设计拦住，非技术障碍）
+状态: ✅ 已安装（Cowork 瘦身线代注册 2026-09-04 07:10 本地，§二 B-0904_A7）＋ 四条验收全过（CC `[Win]0904B-P3hooks验收`，sessionId 118d8172，07:12–07:18 本地，审计四行在 `reports/hooks-audit.jsonl`）
 预计耗时: 3 分钟（改一个 JSON ＋ 跑四条核验命令）
 ---
 

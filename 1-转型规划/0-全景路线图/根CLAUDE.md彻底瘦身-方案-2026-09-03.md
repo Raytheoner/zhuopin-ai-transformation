@@ -124,5 +124,8 @@ legal / sales / small-business / finance / human-resources / marketing / custome
 
 **P2 回归实测（2026-09-04 00:04 本地，CC 会话 `P2回归-OP0903I`，取件＝jsonl 直读）**：开场只载根 9,638 B、`.claude/rules/` 零注入；Read `4-数字员工/CLAUDE.md` 后恰好注入 `场景建造与合规.md`＋`两桌同步与取证.md`，与预期一致、无多无缺；路由表 5 个文件名与目录逐一比对零差异。**P2 通过。** 附观察：`两桌同步与取证.md` 的 paths 覆盖广（近全局），路由表按行触发词与 glob 广度非一一对应，属设计内。
 
+**P3 落地（2026-09-04）**：CC `OP-0904-A` 建 ⓐ–ⓖ 七件（78 单测）＋ openspec `cc-hooks-p3`；Cowork 代注册 `.claude/settings.json`（CC 被 protected-paths 拦）；CC `OP-0904-B` 四条验收全过（ⓐ 横幅＋审计／ⓑ 常驻五条命中 5／ⓒ 无锁 Edit 被拦 exit 2／ⓓ 缺 (a)(b) 被 Stop 拦）。ⓔ acquire 路由提示、ⓕ sweep rules 尺寸巡检（根阈值 12 KB）、ⓖ opener lint 五形态＋`--file` 已生产生效。**降指针（先验活后降）**：根／rules 对应条目加「🛡 机器守（CC）」标记，Cowork 侧文本保留——hooks 只在 CC 生效是已知边界。连带修了三处既有红测（名录测试改指正本／opener 夹具单源／sweep 夹具依赖），全量 370 绿。
+**一处事故（登记，待查根因）**：主仓未提交的队列行（§二 B-0904_A7 与 #398 两条附注，07:10–07:2x 登记）在 07:56–08:30 多个 CC 会话 pull/ff 对齐主仓期间丢失，未进任何提交、无 stash；A7 已重登。判据提醒：**主仓里未被 sweep 取走的队列行 ＝ 裸露状态**，任何「pull 对齐」都可能弃改；短期对策＝批次登记后确认 sweep 已取活再让 CC 并行合入。
+
 ## 六、下一步 P1（无语义改动）交付形态
 不直接覆盖根 `CLAUDE.md`。产出三件供他过目后再换：① `CLAUDE.md` 新版草稿；② **逐条映射表**（原条目 → 新版落点 → CHANGELOG 附录落点），每行可 grep；③ 尺寸对比。换版那一步走 §二 批次由 sweep 落库。
