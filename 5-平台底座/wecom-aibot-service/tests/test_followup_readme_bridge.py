@@ -94,8 +94,15 @@ def row(number: str, date: str, status: str, *, recipient: str = "采购部 · �
     return f"| {number} | {date} | {recipient} | {topic} | 尽快 | {status} |"
 
 
+def _noop_dispatch(repo_root, **kwargs):
+    """测试默认桩：绝不真的起无头 CC 子进程——起活机制本身的行为由
+    `test_patrol_dispatch.py` 单独覆盖；这里只需要「被调用与否／调用参数」
+    可观察，不需要真的 `Popen`。"""
+    return None
+
+
 def run(repo_root, *, filename=ARCHIVED, lock=None, audit=None, logs=None,
-        department="采购部", **kwargs):
+        department="采购部", dispatch_patrol=None, **kwargs):
     lock = lock or FakeLock()
     return bridge.mark_reply_arrived(
         archived_filename=filename,
@@ -106,6 +113,7 @@ def run(repo_root, *, filename=ARCHIVED, lock=None, audit=None, logs=None,
         now=NOW,
         sleep=lambda _s: None,
         log=(logs.append if logs is not None else (lambda _m: None)),
+        dispatch_patrol=dispatch_patrol if dispatch_patrol is not None else _noop_dispatch,
         **kwargs,
     ), lock
 
@@ -457,3 +465,47 @@ class TestPatrolSignal:
         )
         result, _ = run(repo)
         assert result.action == bridge.ACTION_MARKED, "旁路信号失败不得拖累主流程"
+
+
+class TestPatrolDispatch:
+    """队列 #382⑴bis：真实标记第九态的同一次调用须直接尝试起无头 CC 拆件
+    （零轮询）。这里只验「调没调、传了什么参数」——起活机制本身（并发守卫/
+    fail-open/`Popen` 调用）由 `test_patrol_dispatch.py` 单独覆盖，不在此
+    重复；本文件的默认桩 `_noop_dispatch` 绝不真的起子进程。"""
+
+    def test_真实标记会尝试起无头CC拆件(self, repo):
+        write_readme(repo, "✅ 已推送 2026-08-20 12:20 UTC")
+        calls = []
+
+        def spy(repo_root, **kwargs):
+            calls.append({"repo_root": repo_root, **kwargs})
+
+        result, _ = run(repo, dispatch_patrol=spy)
+        assert result.action == bridge.ACTION_MARKED
+        assert len(calls) == 1, "只应起一次，不得重复"
+        assert calls[0]["repo_root"] == repo
+        assert calls[0]["now"] == NOW
+        assert calls[0]["evaluator"] == "system"
+
+    def test_非标记分支不尝试起无头CC(self, repo):
+        """已闭环/未命中/锁忙——README 都没变，不该无中生有起一个无头 CC。"""
+        write_rows(repo, [row("采购部#18", "2026-08-22", "⏳ 待你审")])
+        calls = []
+
+        def spy(repo_root, **kwargs):
+            calls.append(1)
+
+        result, _ = run(repo, filename=TEXT_FEEDBACK, dispatch_patrol=spy)
+        assert result.action == bridge.ACTION_NO_DISPATCHED
+        assert calls == []
+
+    def test_起活自身抛异常不影响标记结果(self, repo):
+        """起活是旁路增强，绝不能让一次已经成功的 README 标记反过来算失败
+        ——同信号写入失败的既有契约（见 `_raise_patrol_signal` docstring）。"""
+        write_readme(repo, "✅ 已推送 2026-08-20 12:20 UTC")
+
+        def boom(repo_root, **kwargs):
+            raise RuntimeError("起活模块挂了")
+
+        result, _ = run(repo, dispatch_patrol=boom)
+        assert result.action == bridge.ACTION_MARKED
