@@ -32,6 +32,18 @@ CLAUDE.md §5"工具静默回退"）。#248 刚落地的 release 校验只治"�
 逐行扫描（不依赖 `## 一、` 等标题写法），故队列真身与归档件（标题写法
 不统一，见队列 #442）用同一份实现即可通吃，不必区分两套解析路径。
 
+队列 §一 #381⑸ⓗ1（2026-09-04，K3 口径正本＝
+`1-转型规划/0-全景路线图/跨桌任务队列瘦身-方案-2026-09-04.md` §二）：新增
+`--grep <关键词>`——`--digest` 已能"扫全池不通读真身"，但核对"这次改动
+会不会撞到别人正在碰的触碰区"这个高频动作，此前仍要靠对队列文件裸
+grep/Read，一次命中就把 50-78 KB 的单行原文灌进上下文（实测见上述方案
+文档 §一）。`--grep` 在 `--digest` 的结构性扫描基础上按"任务"列／
+"触碰区"列关键词过滤（不区分大小写、两列命中都算数，理由：本项目
+关键词多为混排中英文/编号如"OP-0904"，大小写不一致是常见笔误而非有意
+区分），联合两份真身逐份解析后合并、`--file` 可指归档件——与 `--digest`
+同一套目标解析路径，不另起一套；仍只输出摘要行，命中了再 `--row`
+展开，读入量从 ≥50 KB 降到 <2 KB。
+
 用法：
   python 0-学习与工具/工具-队列查询.py --row 258
   python 0-学习与工具/工具-队列查询.py --row 150 --section 一
@@ -41,6 +53,8 @@ CLAUDE.md §5"工具静默回退"）。#248 刚落地的 release 校验只治"�
   python 0-学习与工具/工具-队列查询.py --digest
   python 0-学习与工具/工具-队列查询.py --digest --digest-width 60
   python 0-学习与工具/工具-队列查询.py --digest --file 1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md
+  python 0-学习与工具/工具-队列查询.py --digest --grep 触碰区
+  python 0-学习与工具/工具-队列查询.py --digest --grep OP-0904 --file 1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md
 """
 from __future__ import annotations
 
@@ -219,6 +233,13 @@ def _digest_status_field(status_cell: str) -> tuple[str, bool]:
     return DIGEST_MALFORMED_STATUS, True
 
 
+#: ⓗ1：§一 8 列中「任务」「触碰区」的索引——与 SECTION_COLUMNS["一"] 同一
+#: 口径（本地维护一份展示用常量，同文件顶部既有惯例，见 SECTION_COLUMNS
+#: 定义处的说明）。
+_GREP_TASK_INDEX = 1
+_GREP_TOUCH_ZONE_INDEX = 6
+
+
 def _run_digest(args: argparse.Namespace) -> int:
     section = args.section or DIGEST_SECTION
     if section != DIGEST_SECTION:
@@ -228,6 +249,10 @@ def _run_digest(args: argparse.Namespace) -> int:
         return 1
     if args.digest_width < 1:
         print("✗ --digest-width 须为正整数。")
+        return 1
+    if args.grep is not None and not args.grep.strip():
+        print("✗ --grep 关键词不得为空白（空关键词会命中全部行，等于没过滤，"
+              "不静默当作『不过滤』处理）。")
         return 1
 
     # 队列 #441 实现红线：走 queue_table.iter_queue_paths()、逐份读取
@@ -265,16 +290,39 @@ def _run_digest(args: argparse.Namespace) -> int:
     all_rows.sort(key=lambda r: r[0])
 
     counts_desc = "＋".join(f"{p}（{len(r)} 行）" for p, r in per_file)
-    print(f"【digest §{section} · 合计 {len(all_rows)} 行 ｜ {counts_desc}】")
+
+    # ⓗ1：任务列／触碰区列关键词过滤，不区分大小写——两列命中都算数
+    # （见模块顶部 docstring 的理由）。过滤发生在 digest_width 截断之前，
+    # 对全量单元格文本匹配，不会漏掉落在截断点之后的命中。
+    needle = args.grep.casefold() if args.grep else None
+    if needle is not None:
+        shown_rows = [
+            (row_id, cells) for row_id, cells in all_rows
+            if needle in cells[_GREP_TASK_INDEX].casefold()
+            or needle in cells[_GREP_TOUCH_ZONE_INDEX].casefold()
+        ]
+        print(f"【digest §{section} · 关键词「{args.grep}」命中 {len(shown_rows)}／"
+              f"{len(all_rows)} 行（任务列／触碰区列，不区分大小写）｜ {counts_desc}】")
+    else:
+        shown_rows = all_rows
+        print(f"【digest §{section} · 合计 {len(all_rows)} 行 ｜ {counts_desc}】")
+
     malformed = 0
     width = args.digest_width
     status_index = SECTION_STATUS_INDEX[section]
-    for row_id, cells in all_rows:
+    for row_id, cells in shown_rows:
         field, is_malformed = _digest_status_field(cells[status_index])
         malformed += is_malformed
-        task = cells[1].strip()
+        task = cells[_GREP_TASK_INDEX].strip()
         head = task[:width] + ("…" if len(task) > width else "")
-        print(f"{row_id}{DIGEST_FIELD_SEP}{field}{DIGEST_FIELD_SEP}{head}")
+        line = f"{row_id}{DIGEST_FIELD_SEP}{field}{DIGEST_FIELD_SEP}{head}"
+        if needle is not None and needle not in task.casefold():
+            # 命中只落在触碰区列——任务列摘要看不出命中理由，附一段触碰区
+            # 摘要，避免读者对着摘要行找不到关键词在哪。
+            touch = cells[_GREP_TOUCH_ZONE_INDEX].strip()
+            touch_head = touch[:width] + ("…" if len(touch) > width else "")
+            line += f"{DIGEST_FIELD_SEP}（命中触碰区：{touch_head}）"
+        print(line)
     if malformed:
         print(f"\n⚠ {malformed} 行状态列未识别到 [S:...] 机器字段（已标 "
               f"{DIGEST_MALFORMED_STATUS}，可用 --row 展开核实）。")
@@ -374,6 +422,13 @@ def main() -> int:
         help=f"--digest 模式下「任务」列截断字数（默认 {DEFAULT_DIGEST_WIDTH}）",
     )
     parser.add_argument(
+        "--grep", default=None, metavar="关键词",
+        help="须配合 --digest：按「任务」列／「触碰区」列关键词过滤（不区分"
+             "大小写，两列命中都算数），联合两份真身逐份解析后合并、--file "
+             "可指归档件；扫池/核触碰区改用本参数，勿对队列真身裸 grep/Read"
+             "（K3 口径，队列 §一 #381⑸ⓗ1）",
+    )
+    parser.add_argument(
         "--file", default=DEFAULT_TARGET,
         help=f"目标文件（默认 {DEFAULT_TARGET}——队列 #315 起，这一默认值触发"
              "机制环境/业务场景两份物理文件的联合查询；显式传其它路径时只查"
@@ -384,6 +439,10 @@ def main() -> int:
 
     if args.digest:
         return _run_digest(args)
+    if args.grep is not None:
+        print("✗ --grep 须配合 --digest 使用（当前是 --row 模式）——"
+              "在摘要基础上按关键词过滤，不是对单行结果做过滤。")
+        return 1
 
     # 队列 #315：查询系统模式下遍历两份物理文件，聚合命中结果并标注来源
     # 文件——编号空间单一（决策点2），两份文件不会有同编号的两条不同数据

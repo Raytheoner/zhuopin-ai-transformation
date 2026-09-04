@@ -2241,6 +2241,181 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertNotIn("机制类可动 WIP", buf.getvalue())
 
+    # ---- 队列 §一 #381⑸ⓗ3：⑪ 行长上限（§一 状态列／§四 事项列 >4 KB）----
+
+    @staticmethod
+    def _long_status_cell(prefix="[S:open][D:业] 待领｜历史填充：", filler_chars=1500):
+        """构造一个必超 `ROW_LENGTH_CAP_BYTES`（4096 B）的单元格文本——中文
+        字符 UTF-8 三字节，1500 个即 4500 B，另加前缀更宽裕，不精确卡边界。"""
+        return prefix + ("填" * filler_chars)
+
+    def _freeze_module_now(self, year, month, day):
+        """把 `self.module.datetime` 换成"冻住 `.now()`"的真 `datetime` 子类
+        （而非替换成不相关的桩类）——模块内 `_now()` 另有 `datetime.now
+        (timezone.utc)` 带参调用（写锁时间戳），桩类若不接受/兼容该签名与
+        返回类型会连带打坏无关路径（本用例最初版本即如此撞坏，改为子类后
+        `isoformat()`/时区等原生行为全部继承，只有 `.now()` 本身被冻结）。"""
+        real_datetime = datetime
+
+        class _Frozen(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                base = real_datetime(year, month, day)
+                return base.replace(tzinfo=tz) if tz is not None else base
+
+        self.module.datetime = _Frozen
+
+    def test_row_length_within_cap_no_warning(self):
+        self._write_queue(
+            section_one_rows=(
+                "| 150 | 既有行 | CC | 指针 | 产出 | [S:open][D:业] 待领 | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "| 150 | 既有行 | CC | 指针 | 产出 | [S:open][D:业] 待领 | 触碰区 | 2026-08-01 |",
+            "| 150 | 既有行 | CC | 指针 | 产出 | [S:partial][D:业] 在办中 | 触碰区 | 2026-08-01 |",
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        self.assertEqual(result, 0)
+        self.assertNotIn("上限", buf.getvalue())
+
+    def test_row_length_over_cap_warns_before_cutoff_does_not_block(self):
+        """判据落地当天（2026-09-04）早于阻断日期 2026-09-11——超限只告警、
+        不拒绝 release（打印行号与字节，见 K2/K3 口径正本）。"""
+        long_status = self._long_status_cell()
+        self._write_queue(
+            section_one_rows=(
+                f"| 150 | 既有行 | CC | 指针 | 产出 | {long_status} | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_status, long_status + "（追加一段）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        out = buf.getvalue()
+        self.assertEqual(result, 0, "阻断日期前应仅告警、不拒绝 release")
+        self.assertIn("§一 #150", out)
+        self.assertIn("上限", out)
+        self.assertIn("仅告警不阻断", out)
+
+    def test_row_length_over_cap_blocks_after_cutoff(self):
+        """阻断日期（2026-09-11）当天或之后——超限拒绝 release，锁保持占用。"""
+        long_status = self._long_status_cell()
+        self._write_queue(
+            section_one_rows=(
+                f"| 150 | 既有行 | CC | 指针 | 产出 | {long_status} | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_status, long_status + "（追加一段）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 11)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        out = buf.getvalue()
+        self.assertNotEqual(result, 0, "阻断日期起超限须拒绝 release")
+        self.assertIn("§一 #150", out)
+        self.assertIn("上限", out)
+        self.assertIsNotNone(
+            self.module._read_lock(self.module._lock_path(self.module.QUEUE_LOCK_ANCHOR)),
+            "拒绝不等于释放，锁应保持占用",
+        )
+
+    def test_row_length_waiver_marker_allows_release_after_cutoff(self):
+        """行内 `行长豁免：<理由>` ⇒ 阻断日期起仍放行，理由随行落盘。"""
+        long_status = self._long_status_cell(
+            prefix="[S:open][D:业] 待领｜行长豁免：K2 搬迁排期中，本周先保留｜历史填充：",
+        )
+        self._write_queue(
+            section_one_rows=(
+                f"| 150 | 既有行 | CC | 指针 | 产出 | {long_status} | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_status, long_status + "（追加一段）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 11)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        out = buf.getvalue()
+        self.assertEqual(result, 0, "逃生阀齐备应放行")
+        self.assertIn("已放行", out)
+        self.assertIn(
+            "行长豁免：K2 搬迁排期中",
+            self.target_path.read_text(encoding="utf-8"),
+        )
+
+    def test_row_length_section_four_topic_column_checked(self):
+        """§四「事项」列（非「状态」列）同样受本判据管辖。"""
+        long_topic = "既有事项｜" + ("填" * 1500)
+        self._write_queue(
+            section_four_rows=f"| 50 | {long_topic} | CC | 2026-08-01 |\n",
+            hwm_four=60,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_topic, long_topic + "（追加一段）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        out = buf.getvalue()
+        self.assertEqual(result, 0, "阻断日期前应仅告警")
+        self.assertIn("§四 #50", out)
+        self.assertIn("事项列", out)
+
+    def test_row_length_untouched_historical_row_not_blocked_after_cutoff(self):
+        """只对本次持锁期间 touched 的行生效——存量超限但本次未碰的行，
+        阻断日期起也不应挡住 release（同⑨ WIP 上限"不能把来关行的 session
+        也挡在门外"的教训同构）。"""
+        long_status = self._long_status_cell()
+        self._write_queue(
+            section_one_rows=(
+                f"| 150 | 既有超限行 | CC | 指针 | 产出 | {long_status} | 触碰区 | 2026-08-01 |\n"
+                "| 151 | 另一既有行 | CC | 指针 | 产出 | [S:open][D:业] 待领 | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        # 本次只编辑 #151，不碰 #150（存量超限行）。
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "| 151 | 另一既有行 | CC | 指针 | 产出 | [S:open][D:业] 待领 | 触碰区 | 2026-08-01 |",
+            "| 151 | 另一既有行 | CC | 指针 | 产出 | [S:partial][D:业] 在办中 | 触碰区 | 2026-08-01 |",
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 11)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        self.assertEqual(result, 0, "未 touched 的存量超限行不应挡住本次 release")
+        self.assertNotIn("上限", buf.getvalue())
+
     # ---- 队列 #308 决策点 2（--domain 用法校验）----------------------------
 
     def test_domain_without_section_one_in_request_rejected(self):

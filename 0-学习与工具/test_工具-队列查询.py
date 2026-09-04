@@ -286,6 +286,103 @@ class DigestModeTests(unittest.TestCase):
         self.assertIn("合计 0 行", result.stdout)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# 队列 §一 #381⑸ⓗ1：--grep 单文件模式（黑盒，--file 指向本用例专属临时文件）
+# ══════════════════════════════════════════════════════════════════════════
+
+GREP_FIXTURE = """## 一、任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 600 | 任务列直接含编辑锁三个字 | CC | 无 | 无 | [S:open][D:机] 待领 | 无 | 2026-09-01 |
+| 601 | 任务列不含关键词 | CC | 无 | 无 | [S:open][D:机] 待领 | `工具-共享文档编辑锁.py` | 2026-09-01 |
+| 602 | 两列都不含关键词 | CC | 无 | 无 | [S:open][D:机] 待领 | 无关触碰区 | 2026-09-01 |
+| 603 | 任务列含大小写混排OP-0904编号 | CC | 无 | 无 | [S:open][D:机] 待领 | 无 | 2026-09-01 |
+
+## 四、需 Shao Peishen 的动作（例外与拍板）
+
+| # | 事项 | 等谁 | 截止 |
+|---|------|------|------|
+| 600 | §四也含编辑锁字样，不应混入 §一 digest --grep 结果 | Shao Peishen | 不急 |
+"""
+
+
+class GrepModeTests(unittest.TestCase):
+    """队列 §一 #381⑸ⓗ1：`--digest --grep` 单文件模式黑盒用例。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = Path(self._tmpdir.name) / "假想队列.md"
+        self.target.write_text(GREP_FIXTURE, encoding="utf-8")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_grep_matches_task_column(self):
+        result = run("--digest", "--grep", "编辑锁", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("600｜", result.stdout)
+
+    def test_grep_matches_touch_zone_column_with_annotation(self):
+        """#601 关键词只落在触碰区列——摘要行须附「命中触碰区」提示，
+        否则读者对着截断后的任务列摘要找不到命中理由。"""
+        result = run("--digest", "--grep", "编辑锁", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        line601 = next(l for l in result.stdout.splitlines() if l.startswith("601｜"))
+        self.assertIn("命中触碰区", line601)
+        self.assertIn("工具-共享文档编辑锁.py", line601)
+
+    def test_grep_task_column_hit_has_no_touch_zone_annotation(self):
+        """#600 关键词已在任务列摘要里可见——不应附加多余的触碰区提示。"""
+        result = run("--digest", "--grep", "编辑锁", "--file", str(self.target))
+        line600 = next(l for l in result.stdout.splitlines() if l.startswith("600｜"))
+        self.assertNotIn("命中触碰区", line600)
+
+    def test_grep_excludes_rows_matching_neither_column(self):
+        result = run("--digest", "--grep", "编辑锁", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("602｜", result.stdout)
+
+    def test_grep_is_case_insensitive(self):
+        """本项目关键词常混排中英文/编号（如 `OP-0904`），大小写不一致是
+        常见笔误而非有意区分——见模块 docstring ⓗ1 段。"""
+        result = run("--digest", "--grep", "op-0904", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("603｜", result.stdout)
+
+    def test_grep_excludes_section_four_row_with_same_number(self):
+        """§四 #600 事项列同样含「编辑锁」——digest 本身即锁定只扫 §一
+        （既有边界），--grep 不应绕开这个边界误收 §四 行。"""
+        result = run("--digest", "--grep", "编辑锁", "--file", str(self.target))
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("不应混入", result.stdout)
+
+    def test_grep_zero_hits_reports_zero_of_total_not_error(self):
+        result = run("--digest", "--grep", "这个关键词绝对不会命中任何一行XYZ",
+                      "--file", str(self.target))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("命中 0／4 行", result.stdout)
+
+    def test_grep_header_reports_keyword_and_hit_over_total_count(self):
+        result = run("--digest", "--grep", "编辑锁", "--file", str(self.target))
+        self.assertIn("关键词「编辑锁」命中 2／4 行", result.stdout)
+
+    def test_grep_without_digest_is_rejected_not_silently_ignored(self):
+        """`--grep` 是「在 --digest 摘要基础上过滤」，不是独立模式——配合
+        `--row` 传入时必须报错，不能悄悄忽略掉这个参数。"""
+        result = run("--row", "600", "--grep", "编辑锁", "--file", str(self.target))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--digest", result.stdout)
+
+    def test_grep_rejects_blank_keyword(self):
+        """空白关键词会让 `needle in cell` 恒真、命中全部行——等于没过滤，
+        必须拒绝而非静默当成「不过滤」处理（同 #268「工具静默回退」既有
+        戒律）。"""
+        result = run("--digest", "--grep", "   ", "--file", str(self.target))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("不得为空白", result.stdout)
+
+
 MECH_FIXTURE = """## 一、任务看板
 
 | # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
@@ -468,6 +565,17 @@ class DigestDualFileTests(unittest.TestCase):
         self.assertIn("合计 2 行", result.stdout)
         self.assertNotIn("701｜", result.stdout)
         self.assertNotIn("801｜", result.stdout)
+
+    def test_grep_merges_hits_from_both_files(self):
+        """队列 §一 #381⑸ⓗ1：`--grep` 须「联合两份真身」——不显式传
+        `--file` 时，过滤发生在两份文件逐份解析合并之后的 `all_rows` 上，
+        四行（分别落在机制/业务两份物理文件）都含「文件」二字，应全部
+        命中。"""
+        result = self._run_in_repo("--digest", "--grep", "文件")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for row_id in ("700", "701", "800", "801"):
+            self.assertIn(f"{row_id}｜", result.stdout)
+        self.assertIn("命中 4／4 行", result.stdout)
 
 
 if __name__ == "__main__":

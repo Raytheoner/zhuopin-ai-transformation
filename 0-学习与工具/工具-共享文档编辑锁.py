@@ -2870,6 +2870,58 @@ def _head_row_numbers(repo_root: Path, target_rel: str, label: str) -> set[int] 
     }
 
 
+# ── ⑪ 行长上限（队列 §一 #381⑸ⓗ3，2026-09-04）────────────────────────
+# 口径正本＝`跨桌任务队列瘦身-方案-2026-09-04.md` §二 K2/K3；细则同步
+# `.claude/rules/队列与落库.md`。阻断日期用 `YYYY-MM-DD` 字符串字典序
+# 比较（本机本地日期，release 时当场取，不估算——根 CLAUDE.md §5 写侧
+# 硬规则），到点自动从"只告警"切到"阻断"，不需要再改一次代码。
+ROW_LENGTH_CAP_BYTES = 4096
+ROW_LENGTH_BLOCK_FROM = "2026-09-11"
+ROW_LENGTH_WAIVER_MARKER = "行长豁免："
+# §一 取状态列（cells[5]）、§四 取事项列（cells[1]）——与
+# `工具-队列查询.py::SECTION_STATUS_INDEX` 同一口径（该文件展示用，
+# 本文件门禁用，两处独立实现、值须保持同步）。
+_ROW_LENGTH_CHECK_INDEX = {"一": 5, "四": 1}
+
+
+def _row_length_warnings_and_violations(
+    label: str, cells: list[str],
+) -> tuple[list[str], list[str]]:
+    """⑪ 单格 >4 KB 判定。返回 `(warnings, violations)`：warnings 只打印
+    不拒绝 release（含"已放行"告知与阻断日期前的告警两种），violations
+    进入调用方的拒绝列表。§一/§四 以外的分区、或该分区列数不足以取到
+    目标列时，两个列表均为空（不适用，不是"通过"）。
+    """
+    index = _ROW_LENGTH_CHECK_INDEX.get(label)
+    if index is None or index >= len(cells):
+        return [], []
+    cell = cells[index]
+    size = len(cell.encode("utf-8"))
+    if size <= ROW_LENGTH_CAP_BYTES:
+        return [], []
+
+    row_id = cells[0] if cells else "?"
+    col_label = "状态" if label == "一" else "事项"
+
+    waiver_at = cell.find(ROW_LENGTH_WAIVER_MARKER)
+    if waiver_at != -1 and cell[waiver_at + len(ROW_LENGTH_WAIVER_MARKER):].strip():
+        return [
+            f"✓ §{label} #{row_id} {col_label}列 {size} B（超 {ROW_LENGTH_CAP_BYTES} B"
+            f" 上限），检测到「{ROW_LENGTH_WAIVER_MARKER}」逃生阀，已放行。"
+        ], []
+
+    msg = (
+        f"§{label} #{row_id} {col_label}列 {size} B，超 {ROW_LENGTH_CAP_BYTES} B 上限"
+        f"（K2 口径：历史回写段迁 `1-转型规划/0-全景路线图/队列行日志/"
+        f"#{row_id}.md`，行内留首段＋末段＋指针；确需暂留可写"
+        f"「{ROW_LENGTH_WAIVER_MARKER}<理由>」）。"
+    )
+    today = datetime.now().strftime("%Y-%m-%d")
+    if today >= ROW_LENGTH_BLOCK_FROM:
+        return [], [msg]
+    return [f"⚠ {msg}（{today} < {ROW_LENGTH_BLOCK_FROM}，本周仅告警不阻断）"], []
+
+
 def _validate_release_structure(
     args: argparse.Namespace, lock_data: dict, repo_root: Path,
 ) -> list[str]:
@@ -2999,6 +3051,19 @@ def _validate_release_structure(
       互不影响判定。**只判"有没有"，判不了"对不对"**：覆盖"根本没想过
       怎么证伪"（2/3），防不住"想过但用了错的证据"（1/3，见 #221），不得
       表述为质量保证。
+    ⑪行长上限（仅 §一/§四，队列 §一 #381⑸ⓗ3，K2/K3 口径正本＝
+      `1-转型规划/0-全景路线图/跨桌任务队列瘦身-方案-2026-09-04.md` §二）：
+      §一 状态列／§四 事项列单格 >4 KB（UTF-8 字节）即命中——这两列长期被
+      当"状态列日志"使用（每次回写只追加、从不删旧段），实测最长单格
+      78 KB（≈3 万 tokens），一次 `--row` 展开就把整段历史灌进上下文。
+      🔴 **2026-09-11 前只告警（打印行号与字节，不阻断 release），此后
+      阻断**：判据落地时存量已有大量超限行尚未按 K2 口径搬迁（历史回写段
+      迁 `队列行日志/#N.md`），若立即阻断，任何 touch 到这些行的 release
+      都会被挡死——而"搬迁历史段"本身也要经过 release 这道咽喉，会把解法
+      锁死（同⑨ WIP 上限"不能把来关行的 session 也挡在门外"同构）。只对
+      本次持锁期间 touched 的行生效（同本函数其余各项，历史超限行不
+      追溯）。逃生阀：单元格内写明 `行长豁免：<理由>`（理由非空才生效，
+      两种模式下都放行，只打印一行"已放行"告知）。
     """
     violations: list[str] = []
     current_text = _read_target_text(args.file)
@@ -3059,6 +3124,14 @@ def _validate_release_structure(
             # 队列 §一 #351 ⑷：人的属性（性别代词）校验——三个分区一律适用
             # （人名可能出现在 §一 任务行、§二 批次说明、§四 定夺项里）。
             violations.extend(_gender_pronoun_violations(label, cells, line))
+
+            # ⑪ 行长上限（仅 §一/§四，队列 §一 #381⑸ⓗ3）。
+            _row_length_warnings, _row_length_violations = _row_length_warnings_and_violations(
+                label, cells,
+            )
+            for _msg in _row_length_warnings:
+                print(_msg)
+            violations.extend(_row_length_violations)
 
             if label == "二":
                 # 🔴 **校验②「文件清单须含队列文件自身路径」已于 2026-08-23
