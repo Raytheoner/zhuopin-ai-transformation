@@ -2884,6 +2884,32 @@ ROW_LENGTH_WAIVER_MARKER = "行长豁免："
 _ROW_LENGTH_CHECK_INDEX = {"一": 5, "四": 1}
 
 
+def _has_genuine_row_length_waiver(cell: str) -> bool:
+    """判定单元格内是否含**真实**逃生阀调用，而非仅仅在描述判据本身时
+    提到了这个标记——本判据的规格文本自身（如 #381 状态列）多处以
+    「`行长豁免：<理由>`」的反引号代码引用形式说明这个标记的写法，若不
+    排除，会把"正在解释这条规则"误判成"正在援引这条规则"（2026-09-04
+    #381 真实撞见：该行状态列两处提及本标记，均是文档式说明、后随字面
+    占位符 `<理由>`，并非有意放行）。**判据**：占位符写法在本项目里
+    恒以尖括号包裹（`<理由>`/`<关键词>`/`<N>` 等，全篇一致），真实理由
+    不会以 `<` 起首——故只要求"标记之后的非空白文本不以 `<` 开头"，不
+    需要排除反引号/引号上下文（同 `_leading_status_segment` 系一贯的
+    "只判最小充分特征"取向，不做更复杂的引用上下文解析）。多处出现时
+    只要**任一**处满足即算数——一次持锁改动混杂"引用说明"与"真实豁免"
+    两处标记是可能的（如本函数的真实调用方 #381 本身：既有描述判据的
+    历史段，也可能在同一持锁窗口内新增一段真实豁免）。
+    """
+    start = 0
+    while True:
+        idx = cell.find(ROW_LENGTH_WAIVER_MARKER, start)
+        if idx == -1:
+            return False
+        reason = cell[idx + len(ROW_LENGTH_WAIVER_MARKER):].lstrip()
+        if reason and not reason.startswith("<"):
+            return True
+        start = idx + len(ROW_LENGTH_WAIVER_MARKER)
+
+
 def _row_length_warnings_and_violations(
     label: str, cells: list[str],
 ) -> tuple[list[str], list[str]]:
@@ -2903,8 +2929,7 @@ def _row_length_warnings_and_violations(
     row_id = cells[0] if cells else "?"
     col_label = "状态" if label == "一" else "事项"
 
-    waiver_at = cell.find(ROW_LENGTH_WAIVER_MARKER)
-    if waiver_at != -1 and cell[waiver_at + len(ROW_LENGTH_WAIVER_MARKER):].strip():
+    if _has_genuine_row_length_waiver(cell):
         return [
             f"✓ §{label} #{row_id} {col_label}列 {size} B（超 {ROW_LENGTH_CAP_BYTES} B"
             f" 上限），检测到「{ROW_LENGTH_WAIVER_MARKER}」逃生阀，已放行。"

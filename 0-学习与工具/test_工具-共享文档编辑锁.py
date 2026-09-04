@@ -2387,6 +2387,64 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertIn("§四 #50", out)
         self.assertIn("事项列", out)
 
+    def test_row_length_marker_mention_in_spec_prose_is_not_a_real_waiver(self):
+        """真实回归（2026-09-04，#381 本行自己撞见）：状态列里以反引号代码引用
+        形式**说明**逃生阀写法（如 `行长豁免：<理由>`，占位符字面是 `<理由>`）
+        不应被当成真实豁免——那是"正在解释规则"，不是"正在援引规则"。阻断
+        日期起，只提及占位符的行仍应被正常拦截（而非因误判豁免而放行）。"""
+        long_status = self._long_status_cell(
+            prefix="[S:open][D:业] 待领｜逃生阀写法说明：行长豁免：<理由>｜历史填充：",
+        )
+        self._write_queue(
+            section_one_rows=(
+                f"| 150 | 既有行 | CC | 指针 | 产出 | {long_status} | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_status, long_status + "（追加一段）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 11)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        out = buf.getvalue()
+        self.assertNotEqual(result, 0, "占位符提及不构成真实豁免，阻断日期起应仍被拦")
+        self.assertNotIn("已放行", out)
+        self.assertIn("上限", out)
+
+    def test_row_length_real_waiver_still_works_alongside_placeholder_mention(self):
+        """同一单元格内混杂"文档式提及占位符"与"真实豁免"两种写法时，真实
+        豁免仍应生效（`_has_genuine_row_length_waiver` 逐处扫描、任一处满足
+        即算数，不因先遇到占位符提及就提前判定为无豁免）。"""
+        long_status = self._long_status_cell(
+            prefix=(
+                "[S:open][D:业] 待领｜逃生阀写法说明：行长豁免：<理由>｜"
+                "行长豁免：K2 搬迁排期中，本周先保留｜历史填充："
+            ),
+        )
+        self._write_queue(
+            section_one_rows=(
+                f"| 150 | 既有行 | CC | 指针 | 产出 | {long_status} | 触碰区 | 2026-08-01 |\n"
+            ),
+            hwm_one=200,
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_status, long_status + "（追加一段）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 11)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        self.assertEqual(result, 0, "混杂占位符提及时，真实豁免仍应生效")
+        self.assertIn("已放行", buf.getvalue())
+
     def test_row_length_untouched_historical_row_not_blocked_after_cutoff(self):
         """只对本次持锁期间 touched 的行生效——存量超限但本次未碰的行，
         阻断日期起也不应挡住 release（同⑨ WIP 上限"不能把来关行的 session
