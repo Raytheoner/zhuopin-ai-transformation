@@ -42,7 +42,7 @@
 - [x] 5.1 `test_工具-共享文档编辑锁.py` 全量：340 passed, 8 subtests passed
 - [x] 5.2 `test_工具-落库sweep.py` 全量：382 passed, 51 subtests passed
 - [x] 5.3 openspec propose 出件（本次同批，`openspec change validate batch-registration-precheck --strict` 通过）；不强制 design 审逐点拍板（已由 B1 方案批准，见 proposal.md 头部说明）
-- [ ] 5.4 commit + `merge-base --is-ancestor` 核对可快进 + `git push origin HEAD:master`
-- [ ] 5.5 队列 §二 批次登记 ＋ #381 ⑸ⓘ 回填
-- [ ] 5.6 触发一次 sweep（或等待自动轮次），核 `reports/sweep-commit.log` 末几行确认真落库
-- [ ] 5.7 `/opsx:archive batch-registration-precheck -y`
+- [x] 5.4 commit + `merge-base --is-ancestor` 核对可快进 + `git push origin HEAD:master`（commit `0d500e1`，ff-only 核过安全）
+- [x] 5.5 队列 §二 批次登记（`B-0904_I`，先「待处理」态 append-row+release、再单独 acquire 一次 edit-row 改终态 ✅——遵循「新批次不能一步写✅」判据）＋ #381 ⑸ⓘ 回填
+- [ ] 5.6 触发一次 sweep（或等待自动轮次），核 `reports/sweep-commit.log` 末几行确认真落库——**未做**：main 仓当时另有其它 session 在办的未提交改动（OEM Chroma 归属重判、跟进机制正文重构），手动跑 sweep 会一并处理它们的批次，风险不可控，故留给自动轮次（约 27 分钟一轮），由值周巡检或下一位接手者核实
+- [ ] 5.7 `/opsx:archive batch-registration-precheck -y`（前置 5.6 未完成，暂不归档）
