@@ -46,6 +46,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().with_name("工具-落库sweep.py")
 EDIT_LOCK_SOURCE = Path(__file__).resolve().with_name("工具-共享文档编辑锁.py")
+OPENER_LINT_SOURCE = Path(__file__).resolve().with_name("工具-opener块lint.py")
 
 _spec = importlib.util.spec_from_file_location("commit_sweep", SCRIPT)
 sweep = importlib.util.module_from_spec(_spec)
@@ -184,13 +185,34 @@ class SweepTestBase(unittest.TestCase):
         # *.editlock.lastknown）合并为一条 `*.editlock*`（同时覆盖
         # .mutex.stale 及未来派生物），测试夹具同步收窄，避免与真实项目
         # .gitignore 内容漂移。
+        # 本次新增（回归排查坐实）：真实项目 .gitignore 本就含
+        # `__pycache__/`，但夹具此前一直缺这一条——此前从未暴露是因为
+        # `工具-opener块lint.py` 一直不在夹具里，动态 import 它必然先于
+        # 写字节码缓存就因 FileNotFoundError 崩溃；本次补齐该文件后，
+        # `_load_opener_lint_module()` 首次在夹具里真正 import 成功，
+        # Python 随之在 `0-学习与工具/__pycache__/` 落一份 `.pyc`——与
+        # `**/reports/` 那条同一形态：只要真实项目本有的 .gitignore 规则
+        # 没在夹具里还原，一旦某条此前从未走通的路径首次走通，就会冒出一个
+        # "无人声明的孤儿脏文件"，误伤断言孤儿清单精确内容的用例
+        # （`ExactMatchEndToEndTests::test_correctly_declared_file_not_
+        # flagged_ambiguous_by_duplicate_basename` 本次回归实测命中）。
         (self.work / ".gitignore").write_text(
-            "**/reports/\n*.editlock*\n",
+            "**/reports/\n*.editlock*\n__pycache__/\n",
             encoding="utf-8",
         )
 
         (self.work / "0-学习与工具").mkdir(parents=True)
         shutil.copy(EDIT_LOCK_SOURCE, self.work / "0-学习与工具" / "工具-共享文档编辑锁.py")
+        # 队列 #437：release 新增 opener 守卫，会动态加载
+        # `工具-opener块lint.py`（判据正本，明确"取不到就 fail-loud，不回退
+        # 成本地简化版"，故此处复制真实文件而非像下面两个第三方脚本那样
+        # 写桩）。与 #435／#382⑵ 同一形态第三次撞见：编辑锁脚本新增一个
+        # 动态 import 依赖时，本夹具必须同步还原，否则临时仓库里缺这个
+        # 文件，release 会因 `FileNotFoundError` 崩溃退出、返回码非零—— 且
+        # `_strike_off_rows` 此前不检查 release 返回码，崩溃会被悄悄当作
+        # "已释放"处理，锁其实仍占用，只在同一轮处理第二个批次时才会现出
+        # "编辑锁占用中"的症状（单批次用例测不出来）。
+        shutil.copy(OPENER_LINT_SOURCE, self.work / "0-学习与工具" / "工具-opener块lint.py")
         (self.work / "0-学习与工具" / "工具-文档台账生成.py").write_text(
             STUB_LEDGER_SCRIPT, encoding="utf-8")
         (self.work / sweep.UNCLOSED_SCAN_SCRIPT_REL).write_text(
