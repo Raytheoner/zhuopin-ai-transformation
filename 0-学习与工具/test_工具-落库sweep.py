@@ -6500,5 +6500,314 @@ class LocalOnlyScanBlindSpotWiringTests(SweepTestBase):
         self.assertEqual(marker["consecutive_skips"], 0)
 
 
+class ImmediateQueueChangeCommitTests(SweepTestBase):
+    """队列 #398（ⓘ2，2026-09-04）：编辑锁 acquire/release 自带、落在一份
+    当前完全没有任何待处理 §二 行的队列文件里的改动，须在批次处理之前
+    单独落库一次，不能悬空等某一轮批次清单碰巧覆盖到同一份文件才被顺路
+    带上。判据是"这份文件当前有没有待处理行"而非字面"文件清单是否声明
+    这个路径"——见 `sweep._commit_uncovered_queue_changes` docstring 对
+    `BatchIsolationIntegrationTests` 那条既有反例的说明。
+    """
+
+    def test_文件当前无任何待处理行时_孤儿改动单独提交(self):
+        self._init_and_push(rows="")
+        # 模拟编辑锁 acquire/release 流程自带的一次队列文件改动——§二 无
+        # 任何待处理行，这处改动与本轮批次处理彻底无关。
+        queue_path = self.work / sweep.QUEUE_MECHANISM_PATH_REL
+        queue_path.write_text(
+            queue_path.read_text(encoding="utf-8").replace("占位", "锁流程自带的登记改动", 1),
+            encoding="utf-8",
+        )
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        origin_log = self._origin_log()
+        self.assertIn(sweep.QUEUE_IMMEDIATE_COMMIT_MESSAGE, origin_log,
+                      f"未看到独立落库提交，origin 日志：{origin_log}")
+        pushed_queue = _git(self.origin, "show",
+                             "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertIn("锁流程自带的登记改动", pushed_queue)
+
+    def test_文件仍有待处理行时_不抢先单独提交(self):
+        """🔴 反例，回归守卫：`BatchIsolationIntegrationTests::
+        test_all_batches_blocked_logs_no_batch_processable_without_crashing`
+        实测过——一份队列文件里只要还有待处理行（哪怕最终因歧义暂缓、本轮
+        不落库），这处脏改动就是"正在评估的登记内容"，ⓘ2 不该抢在下方
+        批次处理主流程之前把它提交掉，否则会破坏"暂缓的批次必须原样保持
+        待处理"这一既有设计。"""
+        self._init_and_push(rows="")
+        row = (
+            "| B-Q2 | `1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md` "
+            "| `docs(test): 批次自身声明队列文件` | 待 CC 取活 |\n"
+        )
+        queue_path = self.work / sweep.QUEUE_MECHANISM_PATH_REL
+        queue_path.write_text(
+            QUEUE_HEADER_ONLY.format(rows=row).replace("占位", "批次自己声明覆盖的改动", 1),
+            encoding="utf-8", newline="",
+        )
+        _git(self.work, "add", "-A")
+        _git(self.work, "commit", "-q", "-m", "登记批次 B-Q2（声明覆盖队列文件自身）")
+        _git(self.work, "push", "-q", "origin", "master")
+
+        # 编辑锁流程再追加一处改动——B-Q2 仍是待处理行，这份文件当前不是
+        # "零待处理行"状态，ⓘ2 不该为它单独起一个提交。
+        queue_path.write_text(
+            queue_path.read_text(encoding="utf-8").replace(
+                "批次自己声明覆盖的改动", "批次自己声明覆盖的改动＋追加一行", 1),
+            encoding="utf-8",
+        )
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        origin_log = self._origin_log()
+        self.assertNotIn(sweep.QUEUE_IMMEDIATE_COMMIT_MESSAGE, origin_log, origin_log)
+        self.assertIn("docs(test): 批次自身声明队列文件", origin_log, origin_log)
+
+
+class ReconcileAutostashTests(unittest.TestCase):
+    """队列 #398（ⓘ3，2026-09-04）：`_reconcile_with_origin_and_push` 的
+    autostash——不在批次清单内的脏文件挡路时自动挪开、rebase（+push）后
+    挪回；在批次清单内的脏文件绝不被挪走；pop 冲突时保留现场并告警。
+
+    🔴 与 `LocalOnlyCommitGuardTests` 同一取向：本组用真 git 仓库（bare
+    origin ＋ 真 clone ＋ 真 rebase/stash），不用桩——本判据要证明的正是
+    "真实 git 操作在这三种局面下的真实行为"，桩会把这件事测没。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self._tmp.name)
+        self.origin = self.base / "origin.git"
+        _git(self.base, "init", "-q", "--bare", "-b", "master", str(self.origin))
+        self.repo = self.base / "main"
+        _git(self.base, "init", "-q", "-b", "master", str(self.repo))
+        _git(self.repo, "config", "user.email", "t@t")
+        _git(self.repo, "config", "user.name", "t")
+        (self.repo / "a.txt").write_text("v0\n", encoding="utf-8")
+        (self.repo / "shared.txt").write_text("line1\nline2\nline3\n", encoding="utf-8")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-qm", "base")
+        _git(self.repo, "remote", "add", "origin", str(self.origin))
+        _git(self.repo, "push", "-q", "-u", "origin", "master")
+        self.other = self.base / "other"
+        _git(self.base, "clone", "-q", str(self.origin), str(self.other))
+        _git(self.other, "config", "user.email", "o@o")
+        _git(self.other, "config", "user.name", "o")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _commit_local(self, name="local.txt"):
+        (self.repo / name).write_text("本地\n", encoding="utf-8")
+        _git(self.repo, "add", "--", name)
+        _git(self.repo, "commit", "-qm", f"本地提交 {name}")
+
+    def _advance_origin(self, name="remote.txt", content="远端\n"):
+        (self.other / name).write_text(content, encoding="utf-8")
+        _git(self.other, "add", "-A")
+        _git(self.other, "commit", "-qm", f"远端提交 {name}")
+        _git(self.other, "push", "-q", "origin", "master")
+
+    def test_不在批次清单内的脏文件自动stash并在rebase后回填(self):
+        self._commit_local()
+        self._advance_origin()
+        # a.txt 是已跟踪文件、工作区改动未提交——正常情况下会挡住 git
+        # rebase（`error: cannot rebase: You have unstaged changes.`）。
+        (self.repo / "a.txt").write_text("本地未提交的手工改动\n", encoding="utf-8")
+
+        log: list[str] = []
+        sweep._reconcile_with_origin_and_push(self.repo, log, dry_run=False, batch_files=set())
+        text = "\n".join(log)
+
+        self.assertIn("autostash 已收纳", text, text)
+        self.assertIn("git rebase 自动对齐", text, text)
+        self.assertIn("autostash 已回填", text, text)
+
+        # 挪回后，未提交的改动应原样还在工作区。
+        self.assertEqual((self.repo / "a.txt").read_text(encoding="utf-8"), "本地未提交的手工改动\n")
+
+        # stash 已被 pop 干净，不留尾巴。
+        stash_list = _git(self.repo, "stash", "list").stdout.strip()
+        self.assertEqual(stash_list, "", stash_list)
+
+        # 真的推送成功了（本地 HEAD 与 origin master 一致）。
+        origin_master = _git(self.origin, "rev-parse", "master").stdout.strip()
+        local_head = _git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        self.assertEqual(origin_master, local_head)
+
+    def test_批次清单内的脏文件不被stash_仍按既有逻辑报错(self):
+        self._commit_local()
+        self._advance_origin()
+        # a.txt 声明在本轮批次清单内——即便当前仍显示脏（正常情形下批次
+        # 提交应已清空它，这里刻意构造"提交未完全覆盖"的异常态来验证
+        # 反例：这类文件不该被 stash 挪走）。
+        (self.repo / "a.txt").write_text("批次声明内的未提交改动\n", encoding="utf-8")
+
+        log: list[str] = []
+        with self.assertRaises(sweep.SweepAbort) as ctx:
+            sweep._reconcile_with_origin_and_push(
+                self.repo, log, dry_run=False, batch_files={"a.txt"},
+            )
+        text = "\n".join(log)
+        self.assertIn("不参与 autostash", text, text)
+        self.assertIn("a.txt", text, text)
+        self.assertNotIn("autostash 已收纳", text, text)
+        # 没有任何东西被 stash。
+        stash_list = _git(self.repo, "stash", "list").stdout.strip()
+        self.assertEqual(stash_list, "", stash_list)
+        # 仍然是既有的 rebase 失败告警（含拦路石提示），不静默吞掉。
+        self.assertIn("自动 rebase 失败", str(ctx.exception))
+        self.assertIn("a.txt", str(ctx.exception))
+
+    def test_pop冲突时保留现场并告警_不静默吞掉(self):
+        self._commit_local()
+        # 远端与本地对同一份已跟踪文件的同一行做出不同修改——rebase 本身
+        # 因为不牵涉这份文件而顺利完成，但 stash pop 回填时会真实冲突。
+        self._advance_origin("noop.txt", "占位\n")
+        _git(self.other, "config", "user.email", "o@o")
+        (self.other / "shared.txt").write_text("line1\nOTHER-EDIT\nline3\n", encoding="utf-8")
+        _git(self.other, "add", "-A")
+        _git(self.other, "commit", "-qm", "远端修改 shared.txt")
+        _git(self.other, "push", "-q", "origin", "master")
+
+        # 本地未提交改动同一行——会被 autostash 挪走。
+        (self.repo / "shared.txt").write_text("line1\nLOCAL-EDIT\nline3\n", encoding="utf-8")
+
+        log: list[str] = []
+        with self.assertRaises(sweep.SweepAbort) as ctx:
+            sweep._reconcile_with_origin_and_push(self.repo, log, dry_run=False, batch_files=set())
+        text = "\n".join(log)
+        self.assertIn("autostash 已收纳", text, text)
+        self.assertIn("git rebase 自动对齐", text, text)  # rebase 本身成功
+        self.assertIn("pop", str(ctx.exception))
+        self.assertIn("冲突", str(ctx.exception))
+
+        # stash 未被 drop——仍在列表里，保留现场供人工处理，不静默吞掉。
+        stash_list = _git(self.repo, "stash", "list").stdout.strip()
+        self.assertNotEqual(stash_list, "", "pop 冲突时 stash 不应被 drop")
+
+        # push 排在 pop 之前，已经成功推送到 origin。
+        origin_master = _git(self.origin, "rev-parse", "master").stdout.strip()
+        local_head = _git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        self.assertEqual(origin_master, local_head)
+
+
+class LogRotationTests(unittest.TestCase):
+    """队列 #398（ⓘ4，2026-09-04）：`reports/sweep-commit.log` 与
+    `reports/hooks-audit.jsonl` 按周轮转，只保留最近 4 周。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmp.name)
+        (self.repo_root / "reports").mkdir()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_sweep日志按轮次块轮转_只留最近4周(self):
+        now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+        blocks = [
+            "=== sweep 运行 2026-06-01 09:00 UTC ===\n旧一轮内容A\n",
+            "=== sweep 运行 2026-08-01 09:00 UTC ===\n旧一轮内容B\n",
+            "=== sweep 运行 2026-09-01 09:00 UTC ===\n最近一轮内容C\n",
+            "=== sweep 运行 2026-09-04 11:00 UTC ===\n最近一轮内容D\n",
+        ]
+        (self.repo_root / sweep.LOG_REL).write_text(
+            "\n\n".join(blocks) + "\n\n", encoding="utf-8")
+
+        log: list[str] = []
+        sweep._rotate_sweep_commit_log(self.repo_root, log, now=now)
+
+        remaining = (self.repo_root / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertNotIn("旧一轮内容A", remaining)
+        self.assertNotIn("旧一轮内容B", remaining)
+        self.assertIn("最近一轮内容C", remaining)
+        self.assertIn("最近一轮内容D", remaining)
+        self.assertTrue(any("日志轮转" in line for line in log), log)
+
+    def test_sweep日志全部在窗口内时不改动也不留噪音日志(self):
+        now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+        content = "=== sweep 运行 2026-09-03 09:00 UTC ===\n本轮内容\n\n"
+        (self.repo_root / sweep.LOG_REL).write_text(content, encoding="utf-8")
+
+        log: list[str] = []
+        sweep._rotate_sweep_commit_log(self.repo_root, log, now=now)
+
+        self.assertEqual((self.repo_root / sweep.LOG_REL).read_text(encoding="utf-8"), content)
+        self.assertEqual(log, [])
+
+    def test_sweep日志认不出时刻的历史区块保守保留(self):
+        now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+        content = ("旧格式遗留、没有轮次头\n\n"
+                   "=== sweep 运行 2026-09-03 09:00 UTC ===\n本轮内容\n\n")
+        (self.repo_root / sweep.LOG_REL).write_text(content, encoding="utf-8")
+
+        log: list[str] = []
+        sweep._rotate_sweep_commit_log(self.repo_root, log, now=now)
+        remaining = (self.repo_root / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertIn("旧格式遗留、没有轮次头", remaining)
+
+    def test_hooks审计日志按ts字段轮转_只留最近4周(self):
+        now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+        lines = [
+            json.dumps({"ts": "2026-06-01T09:00:00.000+08:00", "hook": "old-a"}, ensure_ascii=False),
+            json.dumps({"ts": "2026-08-01T09:00:00.000+08:00", "hook": "old-b"}, ensure_ascii=False),
+            json.dumps({"ts": "2026-09-01T09:00:00.000+08:00", "hook": "recent-c"}, ensure_ascii=False),
+            json.dumps({"ts": "2026-09-04T11:00:00.000+08:00", "hook": "recent-d"}, ensure_ascii=False),
+        ]
+        (self.repo_root / sweep.HOOKS_AUDIT_REL).write_text(
+            "\n".join(lines) + "\n", encoding="utf-8")
+
+        log: list[str] = []
+        sweep._rotate_hooks_audit_log(self.repo_root, log, now=now)
+
+        remaining_lines = (self.repo_root / sweep.HOOKS_AUDIT_REL).read_text(
+            encoding="utf-8").splitlines()
+        hooks_seen = {json.loads(ln)["hook"] for ln in remaining_lines if ln.strip()}
+        self.assertEqual(hooks_seen, {"recent-c", "recent-d"})
+
+    def test_hooks审计日志单行解析失败时保守保留(self):
+        now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+        lines = [
+            "不是合法JSON的一行",
+            json.dumps({"hook": "缺ts字段"}, ensure_ascii=False),
+            json.dumps({"ts": "2026-06-01T09:00:00.000+08:00", "hook": "old"}, ensure_ascii=False),
+        ]
+        (self.repo_root / sweep.HOOKS_AUDIT_REL).write_text(
+            "\n".join(lines) + "\n", encoding="utf-8")
+
+        log: list[str] = []
+        sweep._rotate_hooks_audit_log(self.repo_root, log, now=now)
+        remaining = (self.repo_root / sweep.HOOKS_AUDIT_REL).read_text(encoding="utf-8")
+        self.assertIn("不是合法JSON的一行", remaining)
+        self.assertIn("缺ts字段", remaining)
+        self.assertNotIn('"old"', remaining)
+
+    def test_文件不存在时静默跳过(self):
+        log: list[str] = []
+        sweep._rotate_sweep_commit_log(self.repo_root, log, now=datetime.now(timezone.utc))
+        sweep._rotate_hooks_audit_log(self.repo_root, log, now=datetime.now(timezone.utc))
+        self.assertEqual(log, [])
+
+    def test_统一入口调用两个轮转函数且单个异常不影响另一个(self):
+        (self.repo_root / sweep.LOG_REL).write_text(
+            "=== sweep 运行 2026-09-03 09:00 UTC ===\n内容\n\n", encoding="utf-8")
+
+        original = sweep._rotate_hooks_audit_log
+
+        def boom(repo_root, log, **kwargs):
+            raise RuntimeError("故意炸")
+
+        sweep._rotate_hooks_audit_log = boom
+        try:
+            log: list[str] = []
+            sweep._rotate_weekly_logs(self.repo_root, log)  # 不应抛出
+            self.assertTrue(any("轮转异常" in line for line in log), log)
+        finally:
+            sweep._rotate_hooks_audit_log = original
+
+
 if __name__ == "__main__":
     unittest.main()

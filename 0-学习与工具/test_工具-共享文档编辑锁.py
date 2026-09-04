@@ -2978,13 +2978,23 @@ class AppendRowTests(unittest.TestCase):
         self.assertNotIn("| 51 |", section_one_text)
 
     def test_append_to_empty_section_two(self):
+        # 队列 ⓘ1（2026-09-04）：本用例只验证"空 §二 分区插入机制"本身，
+        # 文件清单不是本用例焦点——`docs/文件.md` 这个占位路径从未真实
+        # 存在过。新增的 git 落地性预检会对真实 REPO_ROOT（本用例走
+        # 黑盒子进程，`--file` 是自定义临时文件，但 REPO_ROOT 解析与
+        # `--file` 无关、恒定指向真实主仓，见 `_resolve_repo_root`）核验
+        # 该片段是否落在脏集/未跟踪/最近 3 个 commit 内——用一个真实占位
+        # 路径必然测不稳（依赖主仓当下的实时 git 状态）。改用范围性速记
+        # `X/tests/test_*.py`（含通配符）——`_file_list_git_state_
+        # violations` 与既有 `_file_list_path_violations` 同一豁免口径，
+        # 对这类片段一律不做存在性核验，因此不依赖主仓实时状态、稳定可测。
         result = self._append(
             "--section", "二",
-            "--cell", "B-测试批次", "--cell", "`docs/文件.md`", "--cell", "说明", "--cell", "待处理",
+            "--cell", "B-测试批次", "--cell", "`X/tests/test_*.py`", "--cell", "说明", "--cell", "待处理",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         text = self.target.read_text(encoding="utf-8")
-        self.assertIn("| B-测试批次 | `docs/文件.md` | 说明 | 待处理 |", text)
+        self.assertIn("| B-测试批次 | `X/tests/test_*.py` | 说明 | 待处理 |", text)
 
     def test_bare_pipe_rejected(self):
         before = self.target.read_text(encoding="utf-8")
@@ -4400,8 +4410,13 @@ class AppendRowOwnershipTests(unittest.TestCase):
         )
 
     def _append(self, *extra: str) -> subprocess.CompletedProcess:
+        # 队列 ⓘ1（2026-09-04）：本类只测锁归属校验，不测文件清单内容——
+        # 用范围性速记 `X/tests/test_*.py`（含通配符）而非占位真实路径，
+        # 理由同 `AppendRowTests.test_append_to_empty_section_two` 上方
+        # 注释：新增的 git 落地性预检不对这类片段做存在性核验，测试结果
+        # 不随主仓当下的实时 git 状态漂移。
         return run("--file", self.target, "append-row", "--section", "二",
-                   "--cell", "B-0823_1_测试", "--cell", "`docs/x.md`",
+                   "--cell", "B-0823_1_测试", "--cell", "`X/tests/test_*.py`",
                    "--cell", "说明", "--cell", "待处理", *extra)
 
     def test_other_holds_fresh_lock_and_no_who_refuses(self):
@@ -4552,6 +4567,208 @@ class FileListPathFormatTests(unittest.TestCase):
     def test_directory_prefix_form_is_path_like(self):
         self.assertTrue(self.m._fragment_is_path_like("4-数字员工/采购部/"))
         self.assertEqual(self._violations("`4-数字员工/采购部/`"), [])
+
+
+class FileListGitStateViolationTests(unittest.TestCase):
+    """ⓘ1（2026-09-04）：§二「文件清单」git 落地性预检
+    ——`_file_list_git_state_violations`。
+
+    成因：sweep 每轮约 13 个批次被跳过，根因是登记时「文件清单」写了不是
+    真实存在、这一批确实改过的路径——非路径的文字说明、"同名 docx"/"同上"
+    这类偷懒速记、或路径写错；sweep 校验不过就静默跳过，登记方长期零反馈
+    （2026-09-04 甚至因此引发一次主仓分叉事故）。本判据在既有 ⑶
+    `_file_list_path_violations`（只管格式）之外新增一层：反引号串还须
+    命中主仓当前 git 状态（脏集∪未跟踪∪最近 3 个 commit）之一。
+
+    白盒方式：真实临时 git 仓库 + `_load_module()` 独立模块实例，
+    monkeypatch `REPO_ROOT` 指向该仓库——与既有 `ReleaseStructuralValidation
+    Tests._make_git_repo_with_committed_queue` 同一惯例，不依赖也不影响
+    真实主仓的实时 git 状态。
+    """
+
+    def setUp(self):
+        self.m = _load_module()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        self.m.REPO_ROOT = self.root
+        self._git("init", "-q")
+        self._git("config", "user.email", "t@example.com")
+        self._git("config", "user.name", "t")
+        # 基线提交——没有它 `git log -3` 在空仓库上会失败，⑵ 会整体
+        # fail-open 跳过，届时"应拒绝"的用例会假绿。
+        (self.root / "README.md").write_text("baseline", encoding="utf-8")
+        self._git("add", "-A")
+        self._git("commit", "-qm", "baseline")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _git(self, *args: str):
+        return subprocess.run(["git", *args], cwd=self.root,
+                              capture_output=True, text=True, encoding="utf-8")
+
+    def _violations(self, file_list: str, status: str = "待处理"):
+        return self.m._file_list_git_state_violations(
+            ["B-TEST", file_list, "msg", status], self.root,
+        )
+
+    # ---------------- 情形①：合格——真实路径命中三种 git 状态之一 ----------------
+
+    def test_modified_tracked_file_in_dirty_set_passes(self):
+        """脏集：已跟踪文件被本地修改、尚未提交。"""
+        (self.root / "已跟踪.py").write_text("v1", encoding="utf-8")
+        self._git("add", "-A")
+        self._git("commit", "-qm", "track it")
+        (self.root / "已跟踪.py").write_text("v2", encoding="utf-8")
+        self.assertEqual(self._violations("`已跟踪.py`"), [])
+
+    def test_untracked_new_file_passes(self):
+        """未跟踪：新建但从未 `git add` 过的文件。"""
+        (self.root / "新文件.md").write_text("x", encoding="utf-8")
+        self.assertEqual(self._violations("`新文件.md`"), [])
+
+    def test_untracked_nested_path_passes(self):
+        """未跟踪、且写成含斜杠的嵌套仓库相对路径。"""
+        (self.root / "sub").mkdir()
+        (self.root / "sub" / "nested.py").write_text("x", encoding="utf-8")
+        self.assertEqual(self._violations("`sub/nested.py`"), [])
+
+    def test_recently_committed_file_passes(self):
+        """最近 3 个 commit 内：文件已提交、当前工作区已干净。"""
+        (self.root / "近期提交.py").write_text("x", encoding="utf-8")
+        self._git("add", "-A")
+        self._git("commit", "-qm", "add recent file")
+        self.assertEqual(self._violations("`近期提交.py`"), [])
+
+    # ---------------- 情形②：路径不存在 ----------------
+
+    def test_nonexistent_path_rejected(self):
+        """反引号串是路径形态（有扩展名、带目录），但磁盘上根本没有这个
+        文件，也不在任何 git 状态里——须拒绝。"""
+        violations = self._violations("`4-数字员工/不存在的场景/不存在的文件.py`")
+        self.assertTrue(violations)
+        self.assertIn("未在主仓 git 状态里找到对应实体", violations[0])
+
+    # ---------------- 情形③：非路径反引号文本（自然语言描述） ----------------
+
+    def test_natural_language_description_rejected(self):
+        """反引号里是一段自然语言描述，既不含斜杠也不含扩展名，仓库根下
+        也没有同名文件——不是 `_looks_like_non_file_bare_token` 认得的
+        flag／代码引用形态，须拒绝。"""
+        violations = self._violations("`本次仅完成口径确认，无产出文件`")
+        self.assertTrue(violations)
+        self.assertIn("不是合格的仓库根相对路径", violations[0])
+
+    # ---------------- 情形④：速记（同名/同上） ----------------
+
+    def test_shorthand_same_as_above_rejected(self):
+        violations = self._violations("`同上`")
+        self.assertTrue(violations)
+        self.assertIn("速记引用", violations[0])
+
+    def test_shorthand_same_name_docx_rejected(self):
+        violations = self._violations("`同名 docx`")
+        self.assertTrue(violations)
+        self.assertIn("速记引用", violations[0])
+
+    # ---------------- 既有豁免口径不因新判据而失效 ----------------
+
+    def test_preregistered_row_is_exempt(self):
+        status = self.m.PREREGISTERED_STATUS_PREFIX + "，收工时精确化）"
+        self.assertEqual(self._violations("`不存在的文件.py`", status=status), [])
+
+    def test_wildcard_and_directory_prefix_still_exempt_from_existence_check(self):
+        """反例：⑶ 已用真实数字（98 个）证明"范围性速记加存在性校验＝大量
+        误报"——本项新增的 ⑵ 存在性核验不得把这条已验证的豁免收窄回去。"""
+        self.assertEqual(self._violations("`X/tests/test_*.py`"), [])
+        self.assertEqual(self._violations("`openspec/changes/x/{proposal,design}.md`"), [])
+        self.assertEqual(self._violations("`4-数字员工/采购部/`"), [])
+
+    def test_non_path_bare_tokens_still_exempt(self):
+        """反例：flag／代码引用／范列举式非路径文本——⑶ 既有豁免面原样保留。"""
+        self.assertEqual(self._violations("`--force-mechanism-wip`"), [])
+        self.assertEqual(self._violations("`queue_table.iter_queue_paths()`"), [])
+        self.assertEqual(self._violations("`采购/财务/质量`"), [])
+
+    def test_git_state_unavailable_skips_existence_check_but_keeps_shape_check(self):
+        """`repo_root` 不在 git 工作树内（⑵ 拿不到基线）时 fail-open——只
+        跳过⑵存在性核验，⑴/ⓐ 的格式与速记判据依然生效，不因此连带失效。"""
+        non_git_dir = Path(tempfile.mkdtemp())
+        try:
+            # ⑴ 依然生效：绝对路径这一形态格式违规。
+            self.assertTrue(self.m._file_list_git_state_violations(
+                ["B-TEST", "`C:\\x\\y.md`", "msg", "待处理"], non_git_dir,
+            ))
+            # ⑵ 静默跳过：形态合法但"存不存在"这一步无从核验，不误伤。
+            self.assertEqual(self.m._file_list_git_state_violations(
+                ["B-TEST", "`4-数字员工/x/y.py`", "msg", "待处理"], non_git_dir,
+            ), [])
+        finally:
+            non_git_dir.rmdir()
+
+    # ---------------- append-row／edit-row 集成生效（真正接线，非只是函数存在） ----------------
+
+    SECTION_TWO_HEADER = (
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+    )
+
+    def _write_queue(self, path: Path, section_two_rows: str = "") -> None:
+        path.write_text(
+            "## 二、待 commit 批次（CC 取活销行）\n\n" +
+            self.SECTION_TWO_HEADER + section_two_rows,
+            encoding="utf-8",
+        )
+
+    def test_append_row_rejects_shorthand_file_list(self):
+        target = self.root / "test-queue.md"
+        self._write_queue(target)
+        ns = argparse.Namespace(
+            file=str(target), section="二", number=None,
+            cell=["B-集成测试", "`同上`", "说明", "待处理"], domain=None,
+        )
+        self.assertEqual(self.m.cmd_append_row(ns), 1)
+        self.assertNotIn("B-集成测试", target.read_text(encoding="utf-8"))
+
+    def test_append_row_accepts_real_untracked_file(self):
+        target = self.root / "test-queue.md"
+        self._write_queue(target)
+        (self.root / "真实新文件.py").write_text("x", encoding="utf-8")
+        ns = argparse.Namespace(
+            file=str(target), section="二", number=None,
+            cell=["B-集成测试2", "`真实新文件.py`", "说明", "待处理"], domain=None,
+        )
+        self.assertEqual(self.m.cmd_append_row(ns), 0)
+        self.assertIn("B-集成测试2", target.read_text(encoding="utf-8"))
+
+    def test_edit_row_rejects_nonexistent_path_written_into_file_list(self):
+        target = self.root / "test-queue.md"
+        self._write_queue(
+            target, "| B-既有批次 | `真实新文件.py` | 说明 | 待处理 |\n",
+        )
+        (self.root / "真实新文件.py").write_text("x", encoding="utf-8")
+        ns = argparse.Namespace(
+            file=str(target), section="二", number="B-既有批次",
+            set=["文件清单=`压根不存在的路径/x.py`"], append=[],
+            changes_json=None, stdin_json=False, append_sep="、", domain=None,
+        )
+        self.assertEqual(self.m.cmd_edit_row(ns), 1)
+        self.assertIn("`真实新文件.py`", target.read_text(encoding="utf-8"),
+                       "未通过预检时不得改动目标文件")
+
+    def test_edit_row_accepts_valid_edit(self):
+        target = self.root / "test-queue.md"
+        self._write_queue(
+            target, "| B-既有批次 | `真实新文件.py` | 说明 | 待处理 |\n",
+        )
+        (self.root / "真实新文件.py").write_text("x", encoding="utf-8")
+        ns = argparse.Namespace(
+            file=str(target), section="二", number="B-既有批次",
+            set=["状态=✅ 已处理"], append=[],
+            changes_json=None, stdin_json=False, append_sep="、", domain=None,
+        )
+        self.assertEqual(self.m.cmd_edit_row(ns), 0)
+        self.assertIn("✅ 已处理", target.read_text(encoding="utf-8"))
 
 
 class GenderPronounLintTests(unittest.TestCase):

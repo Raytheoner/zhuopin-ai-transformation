@@ -1993,6 +1993,20 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
             print(f"  - {problem}")
         return 1
 
+    # ⓘ1（2026-09-04）：§二 编辑同样过一遍「文件清单」git 落地性预检——
+    # 与 `cmd_append_row` 同一判据、同一豁免口径（见 `_file_list_git_state_
+    # violations` 上方长注释），针对**改动后的最终整行**（`new_cells`）
+    # 校验，不论本次改动的是不是「文件清单」这一格本身：即便只改了状态列，
+    # 若那一刻的文件清单已经不再站得住（如速记未清理、路径写错），也不该
+    # 被放行改成看似"已确认"的状态。
+    if args.section == "二":
+        section_two_problems = _file_list_git_state_violations(new_cells, REPO_ROOT)
+        if section_two_problems:
+            print(f"✗ §二 改动被拒绝（{len(section_two_problems)} 项，未修改目标文件）：")
+            for problem in section_two_problems:
+                print(f"  - {problem}")
+            return 1
+
     new_line = "| " + " | ".join(new_cells) + " |"
     if new_line == old_line.strip():
         print("ℹ 改动后与原行完全一致，未写入。")
@@ -2056,15 +2070,16 @@ def cmd_append_row(args: argparse.Namespace) -> int:
         print(f"✗ 拼装结果列数为 {len(parsed_cells)}（应为 {expected_total}），拒绝写入——请核查字段内容。")
         return 1
 
-    # 队列 §一 #351 ⑶⑸：§二 专属的两条写入前校验——文件清单路径格式、
-    # 批次号前缀查重。两者都是"写入即拒绝"，取代此前"事后读 sweep 日志才
-    # 发现"（⑶）与"完全无人校验"（⑸）。
+    # 队列 §一 #351 ⑶⑸／ⓘ1：§二 专属的写入前校验——文件清单路径格式、
+    # 文件清单 git 落地性、批次号前缀查重。三者都是"写入即拒绝"，取代此前
+    # "事后读 sweep 日志才发现"（⑶）／"完全无人校验"（⑸／ⓘ1）。
     if args.section == "二":
         queue_texts = {p: _read_target_text(p) for p in _iter_queue_paths()}
         # 目标不在队列系统内（显式 --file 覆盖）时，至少把它自己算进来。
         if args.file not in queue_texts:
             queue_texts[args.file] = text
         section_two_problems = _file_list_path_violations(parsed_cells, REPO_ROOT)
+        section_two_problems.extend(_file_list_git_state_violations(parsed_cells, REPO_ROOT))
         collision = _batch_prefix_collision(parsed_cells[0], queue_texts)
         if collision:
             section_two_problems.append(collision)
@@ -3513,6 +3528,168 @@ def _file_list_path_violations(cells: list[str], repo_root: Path) -> list[str]:
         problem = _path_fragment_format_problem(fragment, repo_root)
         if problem:
             problems.append(f"§二 批次「{cells[0]}」文件清单路径格式违规：{problem}")
+    return problems
+
+
+# ── ⓘ1 §二「文件清单」git 落地性预检（append-row/edit-row 写入前，
+#    2026-09-04）─────────────────────────────────────────────────────
+# 成因：sweep 每轮约 13 个批次被跳过，根因是登记时「文件清单」写了不是
+# 真实存在、这一批确实改过的路径——非路径的文字说明、"同名 docx"/"同上"
+# 这类偷懒速记、或路径写错；sweep 校验不过就静默跳过，登记方长期零反馈
+# （2026-09-04 甚至因此引发一次主仓分叉事故）。⑶ `_file_list_path_
+# violations` 只管"形如路径的片段"格式对不对，且刻意放过不含斜杠/扩展名
+# 的片段（`_fragment_is_path_like` 的窄判据，专为不误伤正文里"采购/财务/
+# 质量"这类并列枚举、`--force-mechanism-wip` 这类 flag、`queue_table.
+# iter_queue_paths()` 这类代码引用而设——`FileListPathFormatTests` 已
+# 用真实数字（98 个范围性速记）证明"加存在性校验会大面积误报"）。本项
+# 不推翻那条既有豁免，而是在其之外新增两条**互不冲突**的判据：
+#   ⓐ 速记关键词——`同上`／`同名`——无视是否"形如路径"，一律拒绝。
+#     这两个词在"文件清单"列里出现，语义上只可能是"照抄上一批"/"跟另一
+#     份同名"这类懒写法，不存在"这其实是段合法非路径描述"的歧义，故不
+#     需要过 `_fragment_is_path_like` 那道窄门槛就能安全拦截。
+#   ⓑ git 落地性——通过 ⑶ 既有格式判据（含"形如路径"门槛与既有豁免：
+#     目录前缀、通配符/花括号展开）之后，还须命中**主仓**（`repo_root`，
+#     调用方传入，本函数不重新定位——生产路径传的是模块级 `REPO_ROOT`，
+#     其定位逻辑见 `_resolve_repo_root()`：`git rev-parse --git-common-
+#     dir` 在任一 worktree 里跑都解到同一个共享 `.git` 目录，其父目录即
+#     主工作区根，与 worktree 自身无关）当前 git 状态——脏集∪未跟踪∪
+#     最近 3 个 commit 触碰过的路径——三者之一，否则拒绝。裸文件名"仓库
+#     根下确有同名文件"（⑶ 既有判据）只证明**这份文件存在**，证不了
+#     **这一批真的碰过它**，⑵ 是在其上再加一层。
+# git 状态整体取不到（不在工作树内、或 git 调用失败）时 ⑵ 静默跳过、
+# 只保留 ⑴/ⓐ 的结果——**fail-open 仅限"完全拿不到基线"这一种情形**，
+# 与 `_registration_completeness_violations`（release 时）的 fail-closed
+# 取向刻意不同：那里"完整性"这个概念本身缺了基线就不成立，必须拒绝；
+# 这里哪怕拿不到 git 基线，格式判据依然有效、依然值得独立执行，不应该
+# 因为 ⑵ 拿不到数就连 ⑴/ⓐ 也一并放弃（这也是白盒测试可以在非 git 临时
+# 目录里安全复用既有 `_file_list_path_violations` 测试惯例、⑵ 自动
+# 静默跳过、不误伤既有用例的原因）。
+_SHORTHAND_REFERENCE_RE = re.compile(r"同上|同名")
+_FRAGMENT_WILDCARD_RE = re.compile(r"[*{}]")
+
+
+def _looks_like_non_file_bare_token(fragment: str) -> bool:
+    """不含「/」的裸片段里，形如 CLI flag（`--xxx`）或代码引用
+    （`a.b()`/`a::b`）的形态——不当路径判存在性。
+
+    只覆盖 `FileListPathFormatTests::test_non_path_fragments_untouched`
+    已点名保护的两种真实形态，不新造更宽的豁免面（宽了就重犯"98 个范围性
+    速记变误报"那次的错）。
+    """
+    frag = fragment.strip()
+    return frag.startswith("-") or "(" in frag or ")" in frag or "::" in frag
+
+
+def _git_known_relative_paths(repo_root: Path) -> set[str] | None:
+    """主仓当前脏集∪未跟踪文件∪最近 3 个 commit 触碰过的路径，合并成一个
+    仓库根相对路径集合，供 ⑵ 存在性核验用。
+
+    `repo_root` 不在 git 工作树内、或任一环节的 git 调用失败，整体返回
+    `None`（与"确认过、真是空集"区分开），调用方按"拿不到基线就跳过⑵"
+    处置——白盒单测里 `REPO_ROOT` 常被 monkeypatch 成普通临时目录（非 git
+    仓库），此时本函数自然返回 `None`，⑵ 静默跳过，不误伤那些用例。
+    """
+    if not _is_inside_git_work_tree(repo_root):
+        return None
+    dirty = _local_git_status_paths(repo_root)
+    if dirty is None:
+        return None
+    recent = _recent_commit_touched_paths(repo_root, count=3)
+    if recent is None:
+        return None
+    return set(dirty) | set(recent)
+
+
+def _recent_commit_touched_paths(repo_root: Path, count: int = 3) -> list[str] | None:
+    """最近 `count` 个 commit 触碰过的文件路径（跨提交去重与否不重要，
+    调用方只做集合并入）。取数失败返回 `None`，与"确认过、真是空"区分开。
+
+    参数选取比照 `_local_git_status_paths`：同样要 `-c core.quotepath=
+    false`，否则中文路径被转义成八进制、与「文件清单」里的中文字面永远
+    对不上（同一个"工具静默回退"陷阱，见 `_local_git_status_paths`
+    文档）。`--pretty=format:` 只留文件名行，不混入 commit 元信息。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "log", f"-{count}",
+             "--name-only", "--pretty=format:"],
+            cwd=str(repo_root), capture_output=True, text=True,
+            encoding="utf-8", timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    paths = []
+    for raw in result.stdout.splitlines():
+        rest = raw.strip().strip('"')
+        if rest:
+            paths.append(rest)
+    return paths
+
+
+def _file_list_git_state_violations(cells: list[str], repo_root: Path) -> list[str]:
+    """ⓘ1：§二 一行「文件清单」列（cells[1]）的 git 落地性预检——
+    append-row/edit-row 写入前调用，取代"写入即放行、sweep 事后才发现清单
+    造假"的零反馈现状。预登记行豁免（与⑶同一豁免口径）。见本函数上方的
+    模块级长注释了解判据全貌与 fail-open 边界。
+    """
+    if len(cells) < 4:
+        return []
+    if _leading_status_segment(cells[3]).startswith(PREREGISTERED_STATUS_PREFIX):
+        return []
+
+    fragments = [f.strip() for f in re.findall(r"`([^`]+)`", cells[1]) if f.strip()]
+    if not fragments:
+        return []
+
+    problems: list[str] = []
+    checkable: list[str] = []  # 过了 ⑴/ⓐ、还需 ⑵ git 落地性核验的片段
+    for fragment in fragments:
+        if _SHORTHAND_REFERENCE_RE.search(fragment):
+            problems.append(
+                f"§二 批次「{cells[0]}」文件清单反引号串 `{fragment}` 是"
+                f"「同上」/「同名」类速记引用，须写出完整仓库相对路径"
+                f"（速记会让 sweep 匹配失败、批次静默被跳过）"
+            )
+            continue
+        if "/" not in fragment:
+            if _looks_like_non_file_bare_token(fragment):
+                continue  # flag／代码引用，不当路径判（同⑶豁免口径）
+            shape_problem = _path_fragment_format_problem(fragment, repo_root)
+            if shape_problem:
+                problems.append(
+                    f"§二 批次「{cells[0]}」文件清单反引号串 `{fragment}` "
+                    f"不是合格的仓库根相对路径：{shape_problem}"
+                )
+                continue
+            checkable.append(fragment)  # 根目录裸文件名，磁盘上存在，还需 ⑵ 核验"这批真碰过它"
+        else:
+            shape_problem = _path_fragment_format_problem(fragment, repo_root)
+            if shape_problem:
+                problems.append(
+                    f"§二 批次「{cells[0]}」文件清单反引号串 `{fragment}` "
+                    f"不是合格的仓库根相对路径：{shape_problem}"
+                )
+                continue
+            if fragment.endswith("/"):
+                continue  # 目录前缀速记，不判存在性（同⑶豁免口径）
+            if not _fragment_is_path_like(fragment):
+                continue  # 范列举式非路径文本（如"采购/财务/质量"），沿用⑶既有豁免
+            if _FRAGMENT_WILDCARD_RE.search(fragment):
+                continue  # 通配符／花括号展开等范围性速记，不判存在性（同⑶豁免口径）
+            checkable.append(fragment)
+
+    if checkable:
+        known_paths = _git_known_relative_paths(repo_root)
+        if known_paths is not None:
+            for fragment in checkable:
+                if fragment not in known_paths:
+                    problems.append(
+                        f"§二 批次「{cells[0]}」文件清单反引号串 `{fragment}` "
+                        f"未在主仓 git 状态里找到对应实体（既不在当前脏集／未跟踪，"
+                        f"也不在最近 3 个 commit 内，无法确认这批真的改动过它）"
+                    )
     return problems
 
 

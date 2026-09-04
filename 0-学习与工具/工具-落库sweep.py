@@ -395,7 +395,7 @@ import time
 import traceback
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # 队列 #306：本脚本自身所在的 worktree 本地路径找 zhuopin_platform（同
@@ -457,6 +457,15 @@ EDIT_LOCK_SCRIPT_REL = "0-学习与工具/工具-共享文档编辑锁.py"
 LOG_REL = "reports/sweep-commit.log"
 LOCK_WHO = "sweep-commit"
 STALE_INDEX_LOCK_MINUTES = 10
+
+# 队列 #398（ⓘ4，2026-09-04）：sweep 自身留痕（`reports/sweep-commit.log`）
+# 与 P3 hooks 族共用留痕（`reports/hooks-audit.jsonl`，写手在
+# `0-学习与工具/hooks/hooks-common.ps1::Add-HooksAuditLine`，sweep 只负责
+# 轮转、不负责写）——两份都是"只追加、从不清理"的文件，长期跑下去体积
+# 无界增长。按"周"轮转、只保留最近 4 周，见 `_rotate_sweep_commit_log`／
+# `_rotate_hooks_audit_log`。
+HOOKS_AUDIT_REL = "reports/hooks-audit.jsonl"
+LOG_ROTATION_KEEP_WEEKS = 4
 
 # 队列 #171：分叉静默停摆告警。
 ENV_REL = ".env"
@@ -1559,7 +1568,12 @@ def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = F
     _clear_local_only_unscanned_alert(repo_root, log)
 
 
-def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
+def _reconcile_with_origin_and_push(
+    repo_root: Path,
+    log: list[str],
+    dry_run: bool = False,
+    batch_files: set[str] | frozenset[str] | None = None,
+) -> None:
     """队列 #288（openspec 变更包 `sweep-ff-sync-batch-reorder`，2026-08-06）：
     批次已在本地提交、工作区已干净之后，统一对齐 `origin/master` 并推送
     一次——取代原先排在批次处理**之前**的 `_sync_master_if_behind_origin`
@@ -1588,9 +1602,27 @@ def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bo
     失败（非分叉，如网络/权限）以 exit_code=2（既有"本地提交不会被撤销，
     需人工核查"语义）收尾。对齐/推送成功时清空任何陈旧的分叉连续计数
     （`_reset_fork_state`）——即便本轮压根没有分叉过，调用也是幂等的。
+
+    队列 #398（ⓘ3，2026-09-04）：**autostash 不在批次清单内的脏文件**。
+    `merge --ff-only`／`rebase` 对"已跟踪且有改动"的脏文件极敏感——`git
+    status --porcelain` 干净是它们的隐含前提，实测 26 次 rebase 失败里
+    13 次单纯是一个孤儿脏文件（如 `.claude/settings.local.json`）挡路，
+    今天已发生一次靠人工 `git stash -u`/`--autostash` 手动救场。只在真的
+    要 merge/rebase 时（`behind > 0`）才探测并 stash——纯领先只 push、不
+    涉及工作树对齐，不需要 stash。`batch_files` 由调用方传入"本轮正在/
+    刚处理完的 §二 批次文件清单并集"（main() 传 `touched_paths`）：清单内
+    的脏文件**绝不 stash**（正常情形下应已被 `_process_normal_batch` 提交
+    干净，若此刻仍显示脏，说明批次提交没有完全覆盖，需人工核查——`git
+    rebase`/`merge` 若因它们失败，按既有逻辑照常报错，不吞）；清单外的脏
+    文件按路径 `git stash push -u -- <files>` 精确收纳（不整体 `git stash
+    -u`，避免连清单内文件也被一并挪走），merge/rebase（+ 如有 push）成功
+    后统一 `git stash pop` 回填，见 `_pop_reconcile_autostash`。
     """
     if dry_run:
-        log.append("[dry-run] 将 fetch 并按需 ff-only 合并/rebase，随后统一 push 一次（本次不实际执行）。")
+        log.append(
+            "[dry-run] 将 fetch 并按需 ff-only 合并/rebase（不在批次清单内的脏文件"
+            "视需要 autostash），随后统一 push 一次（本次不实际执行）。"
+        )
         return
 
     # 队列 #328（2026-08-17）：收尾段 fetch 失败同样不再中止整轮。此前由
@@ -1627,14 +1659,61 @@ def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bo
     ahead = int(ahead_raw) if ahead_raw.isdigit() else 0
     behind = int(behind_raw) if behind_raw.isdigit() else 0
 
+    # 队列 #398（ⓘ3）：只在真要 merge/rebase（`behind > 0`）时才探测/stash——
+    # 纯领先（`behind == 0`）直接走到函数末尾的 push，不涉及工作树对齐。
+    stashed_paths: list[str] = []
+    stash_created = False
+    if behind > 0:
+        blocking, blocking_err = _rebase_blocking_paths(repo_root)
+        if blocking_err is not None:
+            log.append(
+                f"⚠ autostash 前置探测失败，本轮不 stash（{blocking_err}）——"
+                "脏文件如挡路仍会在下方 merge/rebase 失败时按既有逻辑报出。"
+            )
+        elif blocking:
+            batch_set = set(batch_files) if batch_files else set()
+            to_stash = [p for p in blocking if p not in batch_set]
+            kept_in_batch = [p for p in blocking if p in batch_set]
+            if kept_in_batch:
+                log.append(
+                    "⚠ 以下脏文件仍在本轮批次清单声明范围内，不参与 autostash"
+                    "（正常情形下批次提交应已把它们清空，若此刻仍显示脏说明提交"
+                    "未完全覆盖，需人工核查；不 stash 是为了不误挪即将/应已被提交"
+                    "的对象）：" + "、".join(kept_in_batch[:LOCAL_ONLY_ALERT_MAX_ITEMS])
+                )
+            if to_stash:
+                stash_result = _run_git(
+                    ["stash", "push", "-u", "-m", f"sweep-autostash {_now_utc_str()}", "--", *to_stash],
+                    repo_root, check=False,
+                )
+                if stash_result.returncode != 0:
+                    log.append(
+                        "⚠ autostash 失败，本轮按未 stash 状态继续（脏文件如挡路仍会在"
+                        f"下方 merge/rebase 失败时按既有逻辑报出）：{stash_result.stderr.strip()[:200]}"
+                    )
+                else:
+                    stashed_paths = to_stash
+                    stash_created = True
+                    log.append(
+                        f"✓ autostash 已收纳 {len(to_stash)} 个不在本轮批次清单内的脏文件："
+                        + "、".join(to_stash[:LOCAL_ONLY_ALERT_MAX_ITEMS])
+                    )
+
+    stash_pending_hint = (
+        f"（本轮已 autostash {len(stashed_paths)} 个脏文件、尚未 pop 回，"
+        "涉及文件：" + "、".join(stashed_paths[:LOCAL_ONLY_ALERT_MAX_ITEMS]) + "；"
+        "需人工核查后手动 git stash pop 或按需处理）"
+    ) if stash_created else ""
+
     if ahead == 0 and behind > 0:
         merge = _run_git(["merge", "--ff-only", "origin/master"], repo_root, check=False)
         if merge.returncode != 0:
             raise SweepAbort(
                 f"⚠ 本地 master 落后 origin/master 但 --ff-only 合并失败"
-                f"（{merge.stderr.strip()}）——跳过本轮，不强推、不 rebase。",
+                f"（{merge.stderr.strip()}）——跳过本轮，不强推、不 rebase。{stash_pending_hint}",
             )
         log.append(f"✓ 本地 master 落后 origin/master，已 git merge --ff-only 同步至 {origin_head[:7]}。")
+        _pop_reconcile_autostash(repo_root, log, stashed_paths)
         _reset_fork_state(repo_root, log)
         return
 
@@ -1660,7 +1739,7 @@ def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bo
             raise SweepAbort(
                 f"⚠ 本轮批次已本地提交，但与 origin/master 分叉且自动 rebase 失败"
                 f"（{rebase.stderr.strip()}）{hint}——已 git rebase --abort 回滚，本地提交完整保留、"
-                "不丢失、不强推，需人工介入手动 rebase。",
+                f"不丢失、不强推，需人工介入手动 rebase。{stash_pending_hint}",
                 exit_code=FORK_EXIT_CODE,
                 is_fork=True,
             )
@@ -1670,11 +1749,49 @@ def _reconcile_with_origin_and_push(repo_root: Path, log: list[str], dry_run: bo
     if push.returncode != 0:
         raise SweepAbort(
             f"✗ 本轮已提交但推送失败：{push.stderr.strip()}——"
-            "本地提交不会被撤销，需人工核查后手动 push，本轮就此停止。",
+            f"本地提交不会被撤销，需人工核查后手动 push，本轮就此停止。{stash_pending_hint}",
             exit_code=2,
         )
     log.append("✓ 本轮全部提交已统一推送。")
+    _pop_reconcile_autostash(repo_root, log, stashed_paths)
     _reset_fork_state(repo_root, log)
+
+
+def _pop_reconcile_autostash(repo_root: Path, log: list[str], stashed_paths: list[str]) -> None:
+    """队列 #398（ⓘ3，2026-09-04）：`_reconcile_with_origin_and_push` 的
+    autostash 收尾——merge/rebase（含随后可能的 push）成功后，把本轮阶段
+    暂存的、不在批次清单内的脏文件 pop 回工作区。
+
+    🔴 pop 冲突时**保留现场、不自动 drop stash、不自动解冲突**——这正是
+    `git stash pop` 本身在 apply 失败时的默认行为（失败不会连带 drop 那
+    条 stash），这里不越俎代庖去强行清场；只是不能让冲突静默吞掉，故改走
+    既有 `SweepAbort` 告警通道喊出来，复用同一套退出码/日志语义（此前
+    push 失败已是 exit_code=2「本地提交不会被撤销，需人工核查」的同一
+    形态，此处只是把"提交"换成"暂存改动"）。
+
+    🔴 **定义位置写死在 `_reconcile_with_origin_and_push` 之后**：本文件
+    `LocalOnlyCommitGuardTests::test_本类不做任何git写动作` 对
+    `"def _rebase_blocking_paths"` 到 `"def _reconcile_with_origin_and_push"`
+    这一段源码文本做 AST 扫描，断言其中任何 `_run_git` 调用都不得是写
+    动词（含 `stash`）——那一段是"第 8 类判据"（本地独有提交检测族）的
+    只读边界，与本函数无关。本函数含 `git stash pop`，若定义在那段文本
+    范围内会被误判违反该边界，必须排在 `_reconcile_with_origin_and_push`
+    定义之后。"""
+    if not stashed_paths:
+        return
+    pop_result = _run_git(["stash", "pop"], repo_root, check=False)
+    if pop_result.returncode != 0:
+        raise SweepAbort(
+            "⚠ 本轮 merge/rebase（含 push）均已成功，但 autostash 回填"
+            f"（git stash pop）时发生冲突（{pop_result.stderr.strip()[:200]}）——"
+            "stash 已保留、不自动 drop、不自动解冲突，需人工核查工作区并手动 "
+            "git stash pop（涉及文件：" + "、".join(stashed_paths[:LOCAL_ONLY_ALERT_MAX_ITEMS]) + "）。",
+            exit_code=2,
+        )
+    log.append(
+        f"✓ autostash 已回填（{len(stashed_paths)} 个文件）："
+        + "、".join(stashed_paths[:LOCAL_ONLY_ALERT_MAX_ITEMS])
+    )
 
 
 def _flush_pending_lock_appends(repo_root: Path, log: list[str]) -> None:
@@ -2479,6 +2596,84 @@ def _check_dirty_paths_against_pending_batches(
                 break
         results.append((path, matched_batch))
     return results
+
+
+# 队列 #398（ⓘ2，2026-09-04）：编辑锁 acquire/release 本身会直接改两份队列
+# md 文件（登记新行、改状态），提交信息固定不变——见 `_commit_uncovered_
+# queue_changes`。
+QUEUE_IMMEDIATE_COMMIT_MESSAGE = "docs(队列): 锁流程自带改动即刻落库"
+
+
+def _commit_uncovered_queue_changes(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
+    """队列 #398（ⓘ2，2026-09-04）：批次处理之前，先把"锁流程自带、这份
+    队列文件本身当前完全没有任何待处理 §二 行"这一形态的脏改动单独落库
+    一次——即真正意义上"与本轮任何批次处理都不相干"的孤儿改动。
+
+    🔴 **防的是哪一类事故**：编辑锁 `acquire`/`release` 流程本身就会直接改
+    两份队列 md 文件（登记新行、改状态）——这些改动**不必然**被任何"§二
+    待 commit 批次"的文件清单覆盖到。此前 sweep 只在处理 §二 批次时才
+    `git add` 批次清单里声明的文件，若锁流程自带的改动（例如给一条早已
+    ✅ 完成的行追加一句附注）落在一份**当前没有任何待处理行**的队列文件
+    里，就没有任何正常流程会去碰它，只能一直悬空，直到某一轮批次清单
+    碰巧覆盖到同一份文件才被"顺路"带上（甚至被套用一个与它无关的提交
+    标题，同 `_manifest_coverage_gap` docstring 记的 6557047 型事故同一
+    根因族）——2026-09-04 队列 #398 附带证据实测因此丢过一次附注行。
+
+    🔴 **为什么判据是"这份文件有没有待处理行"、而不是字面"这处改动是否被
+    某批次文件清单声明覆盖"**：`BatchIsolationIntegrationTests::
+    test_all_batches_blocked_logs_no_batch_processable_without_crashing`
+    实测坐实——一份队列文件里如果**恰好还有**待处理 §二 行（哪怕这一行
+    最终被判定歧义/清单缺项而暂缓、本轮不落库），那处脏改动本身就是"本轮
+    正在评估的登记内容"，理应交给下方批次处理主流程按其既有逻辑决定
+    （暂缓的批次**必须**原样保持"待处理"、不能被误提交，这是比"尽快落库"
+    优先级更高的既有设计）。只有当整份文件**压根没有任何待处理行**时，
+    才能确定这处脏改动与本轮批次处理彻底无关，此时提前单独提交才是安全
+    的——这也天然覆盖了"批次清单里从未、也不会声明队列文件自身路径"这
+    个更常见的子情形（`_resolve_batch_files` 的清单片段几乎总是内容文件、
+    不是队列文件本身）。
+
+    做法：对每份脏改动的队列文件，用 `_parse_section_two`+
+    `_classify_section_two_rows`（与下方主流程解析 §二 同一套逻辑，不
+    另起一套）判断其待处理行是否为空；为空即单独 `git add` + `git commit`，
+    提交信息固定为 `QUEUE_IMMEDIATE_COMMIT_MESSAGE`，随后再照常进入批次
+    处理主流程——本函数不动其它任何脏路径，管辖范围严格限定在两份队列
+    文件本身。
+
+    🔴 **提交信息不带 Co-Authored-By 尾注**：sweep 自身其它自动提交（如
+    `_process_normal_batch` 的补销尾巴提交、`_rerun_ledger` 的台账重跑
+    提交）均无此尾注——那是"人工请 Claude 协作产出"的语义标记，与"机制
+    自动落库"是两回事，本函数跟随 sweep 自身既有惯例，不新起一套。
+    """
+    queue_paths = _iter_queue_paths()
+    dirty_paths = _status_paths(repo_root)
+    dirty_queue_paths = [p for p in queue_paths if p in dirty_paths]
+    if not dirty_queue_paths:
+        return
+
+    uncovered = []
+    for path in dirty_queue_paths:
+        rows = _parse_section_two(_read_queue(repo_root, path), path)
+        pending_rows, _ambiguous_status_rows = _classify_section_two_rows(rows)
+        if pending_rows:
+            continue  # 本文件里还有待处理行，交给下方主流程按既有逻辑决定
+        uncovered.append(path)
+    if not uncovered:
+        return
+
+    if dry_run:
+        log.append(
+            f"[dry-run] 队列文件改动所在文件当前无任何待处理 §二 行、与本轮"
+            f"批次处理无关，将单独提交（本次不实际执行）：{uncovered}"
+        )
+        return
+
+    _run_git(["add", "--", *uncovered], repo_root)
+    _run_git(["commit", "-m", QUEUE_IMMEDIATE_COMMIT_MESSAGE], repo_root)
+    sha = _run_git(["rev-parse", "--short", "HEAD"], repo_root).stdout.strip()
+    log.append(
+        f"✓ 队列文件改动所在文件当前无任何待处理 §二 行、与本轮批次处理无关，"
+        f"已单独提交（{sha}）：{uncovered}"
+    )
 
 
 # ============================================================
@@ -5356,6 +5551,16 @@ def main() -> int:
             _flush_pending_lock_appends(repo_root, log)
             _run_decision_reminder_second_carrier(repo_root, log)
             _run_scheduled_task_mirror_sync(repo_root, log)
+            # ⓘ4（队列 #398，2026-09-04）：留痕文件按周轮转，只保留最近 4 周
+            # ——本地纯文件操作，不依赖网络/git 状态，排在这一批"起跑段
+            # 子进程"之后、批次处理之前均可，此处与既有三项归并同一批。
+            _rotate_weekly_logs(repo_root, log)
+        # ⓘ2（队列 #398，2026-09-04）：批次处理之前，先把"编辑锁 acquire/
+        # release 自带、但不在任何 §二 待处理批次文件清单覆盖范围内"的两份
+        # 队列文件改动单独落库一次——防止这类改动因不落在任何批次清单里而
+        # 一直悬空未提交（今天已因此丢过一次附注行，见 #398 附带证据）。做完
+        # 这一步再照常进入下方批次处理主流程；dry-run 不做真实提交，仅留痕。
+        _commit_uncovered_queue_changes(repo_root, log, dry_run=args.dry_run)
         # ④ 队列 #288（2026-08-06 起）：不再在批次处理之前尝试同步/分叉早检
         # ——`_sync_master_if_behind_origin` 的 `git merge --ff-only` 要求工作区
         # 干净，而"§二 待 commit 批次的存在本身就意味着工作区必然脏"是 sweep
@@ -5497,7 +5702,10 @@ def main() -> int:
         # docstring；对齐失败（含 rebase 冲突/推送失败）会抛出 SweepAbort，
         # 由外层 except 统一处理，下面的部署提示不会执行（只在真正推送
         # 成功后才提示，语义与此前一致）。
-        _reconcile_with_origin_and_push(repo_root, log, dry_run=args.dry_run)
+        # ⓘ3（队列 #398）：传入本轮"正在处理／刚处理完尚未清空"的 §二 批次
+        # 文件清单并集（`touched_paths`，两份队列文件累加），供 autostash
+        # 判断哪些脏文件不能被挪走——见该函数 docstring。
+        _reconcile_with_origin_and_push(repo_root, log, dry_run=args.dry_run, batch_files=touched_paths)
 
         # #198(c)：批次落库之后，检查本轮实际 add 过的路径是否命中常驻服务——
         # 纯提示，不影响下方的正常返回。
@@ -5637,6 +5845,130 @@ def _rerun_ledger(repo_root: Path, log: list[str]) -> None:
     _run_git(["add", "--", LEDGER_OUTPUT_REL], repo_root)
     _run_git(["commit", "-m", "docs(队列): 收工重跑文档台账（sweep 自动）"], repo_root)
     log.append("✓ 台账已重跑并本地提交，等待本轮末尾统一对齐并推送。")
+
+
+# ============================================================
+# 队列 #398（ⓘ4，2026-09-04）：留痕文件按周轮转，只保留最近 4 周
+# ============================================================
+_SWEEP_LOG_ROUND_HEADER_RE = re.compile(
+    r"^=== sweep 运行 (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC ===$"
+)
+
+
+def _rotate_sweep_commit_log(repo_root: Path, log: list[str], *, now: datetime | None = None) -> None:
+    """`reports/sweep-commit.log`（`LOG_REL`）按"轮次记录块"轮转——每块以
+    `_now_utc_str()` 生成的 `=== sweep 运行 YYYY-MM-DD HH:MM UTC ===` 起始、
+    空行收尾（见 `_flush_log`/`_flush_remaining_log` 的写法），只保留区块
+    起始时刻落在最近 `LOG_ROTATION_KEEP_WEEKS` 周（自然周，以调用时刻回溯
+    对应天数为界，不是"本周一到今天"这种日历周）内的记录，其余整块丢弃。
+
+    🔴 **按轮次块切、不按行数/字节数硬切**：sweep 每轮的日志块内部语义
+    连续（同一轮的多条判据输出），按大小砍会把一轮劈成两半、留下读不懂
+    上下文的残片；按块切天然对齐"轮"这个真实的时间粒度。
+
+    🔴 **认不出时刻的历史区块保守保留、不删**——格式变更前的历史遗留，
+    与 `_check_dirty_paths_against_pending_batches` 等处"读不到就不猜"
+    同一取向：宁可让文件多留几行旧内容，也不误删读不懂时间戳的记录。
+
+    `now` 仅供测试注入固定参照时刻；生产调用不传，落到 `datetime.now
+    (timezone.utc)`。本函数只在真有内容被丢弃时才写日志行，避免每轮都
+    产出一条"本轮无需轮转"的纯噪音。
+    """
+    log_path = repo_root / LOG_REL
+    if not log_path.is_file():
+        return
+    text = log_path.read_text(encoding="utf-8")
+    if not text.strip():
+        return
+
+    reference_now = now if now is not None else datetime.now(timezone.utc)
+    cutoff_dt = reference_now - timedelta(weeks=LOG_ROTATION_KEEP_WEEKS)
+
+    blocks = re.split(r"\n\n+", text.strip("\n"))
+    kept_blocks: list[str] = []
+    dropped = 0
+    for block in blocks:
+        if not block.strip():
+            continue
+        first_line = block.splitlines()[0].strip()
+        match = _SWEEP_LOG_ROUND_HEADER_RE.match(first_line)
+        if match is None:
+            kept_blocks.append(block)
+            continue
+        block_dt = datetime.strptime(
+            f"{match.group(1)} {match.group(2)}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=timezone.utc)
+        if block_dt >= cutoff_dt:
+            kept_blocks.append(block)
+        else:
+            dropped += 1
+
+    if dropped == 0:
+        return
+    new_text = ("\n\n".join(kept_blocks) + "\n\n") if kept_blocks else ""
+    log_path.write_text(new_text, encoding="utf-8")
+    log.append(
+        f"✓ 日志轮转：{LOG_REL} 丢弃 {dropped} 个超过 {LOG_ROTATION_KEEP_WEEKS} 周的轮次记录块，"
+        f"保留 {len(kept_blocks)} 个。"
+    )
+
+
+def _rotate_hooks_audit_log(repo_root: Path, log: list[str], *, now: datetime | None = None) -> None:
+    """`reports/hooks-audit.jsonl`（`HOOKS_AUDIT_REL`）按行轮转——每行一个
+    JSON 对象，写手是 `0-学习与工具/hooks/hooks-common.ps1::Add-HooksAuditLine`
+    （sweep 本身不写这份文件，只负责轮转），`ts` 字段为本机时区 ISO 8601
+    （`Get-SentinelTimestamp`，形如 `2026-08-29T09:04:31.123+08:00`）。只
+    保留 `ts` 落在最近 `LOG_ROTATION_KEEP_WEEKS` 周内的行，其余丢弃。
+
+    🔴 单行解析失败（非法 JSON／缺 `ts`／时间戳解析不出）**保守保留，不当
+    "过期"误删**——与 `_rotate_sweep_commit_log` 对"认不出时刻的历史区块"
+    同一取向：宁可多留几行，不误删读不懂的记录。
+    """
+    audit_path = repo_root / HOOKS_AUDIT_REL
+    if not audit_path.is_file():
+        return
+    lines = [ln for ln in audit_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    if not lines:
+        return
+
+    reference_now = now if now is not None else datetime.now(timezone.utc)
+    cutoff_dt = reference_now - timedelta(weeks=LOG_ROTATION_KEEP_WEEKS)
+
+    kept_lines: list[str] = []
+    dropped = 0
+    for line in lines:
+        try:
+            obj = json.loads(line)
+            ts = datetime.fromisoformat(str(obj["ts"]))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+        except Exception:
+            kept_lines.append(line)
+            continue
+        if ts.astimezone(timezone.utc) >= cutoff_dt:
+            kept_lines.append(line)
+        else:
+            dropped += 1
+
+    if dropped == 0:
+        return
+    new_text = ("\n".join(kept_lines) + "\n") if kept_lines else ""
+    audit_path.write_text(new_text, encoding="utf-8")
+    log.append(
+        f"✓ 日志轮转：{HOOKS_AUDIT_REL} 丢弃 {dropped} 条超过 {LOG_ROTATION_KEEP_WEEKS} 周的审计行，"
+        f"保留 {len(kept_lines)} 条。"
+    )
+
+
+def _rotate_weekly_logs(repo_root: Path, log: list[str]) -> None:
+    """ⓘ4 统一入口——sweep 每轮真跑（非 dry-run）时调用一次，依次轮转两份
+    只追加、从不自行清理的留痕文件。任一份轮转异常均不得影响主流程（同
+    本文件"检查类失败 fail-open"一贯纪律），单独 try/except 隔离。"""
+    for rotate_fn in (_rotate_sweep_commit_log, _rotate_hooks_audit_log):
+        try:
+            rotate_fn(repo_root, log)
+        except Exception as exc:  # noqa: BLE001 —— 轮转失败不应影响 sweep 主流程
+            log.append(f"⚠ {rotate_fn.__name__} 轮转异常（不影响本轮主流程）：{type(exc).__name__}: {exc}")
 
 
 def _flush_log(repo_root: Path, log: list[str], dry_run: bool) -> None:
