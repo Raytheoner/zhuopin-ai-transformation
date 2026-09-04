@@ -35,13 +35,19 @@
 - [x] 3.7 手动冒烟：对真实仓库路径跑 12 组 stdin JSON（Read×3／Grep×3／Bash×6），全部符合预期，审计行落在主仓 `reports/hooks-audit.jsonl`（`Get-SentinelRepoRoot` 按 `--git-common-dir` 解析，worktree 会话审计与主仓共享，同既有三枚 P3 钩子行为一致，已用 `git check-ignore -v` 确认该路径不产生 git 可见变更）
 - [ ] 3.8 交付：`.claude/settings.json` `PreToolUse` 第二条目（matcher `Read|Grep|Bash`）注册片段 + 验活命令（随收口一并整理，见收工报告）
 
-## 4. 收口
+## 4. 收口（✅ 已完成）
 
-- [x] 4.1 `openspec validate --strict` 绿
+- [x] 4.1 `openspec validate --strict` 绿（含 §2a 修复后复核）
 - [x] 4.2 三处交付物（代码改动/单测结果/注册片段/验活命令）汇总进收工报告
-- [ ] 4.3 §二 批次行登记（本次实际文件清单与 commit message）
-- [ ] 4.4 §一 `#381` 子项⑸ⓗ 状态列回填三项完成情况，ⓗ2 注册前置条件如实注明
-- [ ] 4.5 push 分支
+- [x] 4.3 §二 批次行登记 `B-0904_D_OP0904C_队列读写机器守三件`（实际文件清单与 commit message，补记后续修复/文档提交号）
+- [x] 4.4 §一 `#381` 子项⑸ⓗ 状态列回填三项完成情况，ⓗ2 注册前置条件如实注明
+- [x] 4.5 push 分支（`claude/op0904c-queue-guards-8aa724`，HEAD `7939471`）
+
+## 2a. 建造期回归修复（✅ 已完成，非计划内、现场发现）
+
+- [x] 2a.1 `_has_genuine_row_length_waiver`：⑪ 逃生阀初版裸子串匹配在回填 `#381` 自身状态列时误判"文档式提及占位符"为真实豁免（该行规格正本以反引号引用形式说明 `行长豁免：<理由>` 语法），改为排除以 `<` 起首的占位符文本，任一处非占位符文本即算真实豁免
+- [x] 2a.2 补两条回归单测（占位符提及不放行／占位符与真实豁免并存时后者仍生效），324 passed 全量回归零漂移
+- [x] 2a.3 design.md 决策点 4、spec `editlock-row-length-cap` 补相应 Scenario
 
 ## 5. 生产验活与降指针（🔴 不在本 session 范围，前置条件未满足）
 
