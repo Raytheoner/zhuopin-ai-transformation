@@ -73,6 +73,21 @@ OPEN_POOL_REMINDER_STATE_RELATIVE_PATH = (
 PATROL_SIGNAL_RELATIVE_PATH = (
     Path("5-平台底座") / "wecom-aibot-service" / "reports" / "patrol_signal.json"
 )
+# 队列 #382⑴bis：桥一落信号后直接起无头 CC 拆件（零轮询）——并发守卫锁
+# 文件与输出日志目录，与 audit/pending 系列文件同一套 repo_root 解析、
+# 同一目录（见 patrol_dispatch.py）。
+PATROL_DISPATCH_LOCK_RELATIVE_PATH = (
+    Path("5-平台底座") / "wecom-aibot-service" / "reports" / "patrol_dispatch.lock.json"
+)
+PATROL_DISPATCH_LOG_DIR_RELATIVE_PATH = (
+    Path("5-平台底座") / "wecom-aibot-service" / "reports" / "patrol-headless-logs"
+)
+# 拆件巡逻章程正本——已由 #382⑴bis 从仓库外 `C:\Users\Paul Shao\Claude\
+# Scheduled\huijian-chaijian-patrol\SKILL.md` 原文照搬迁入仓库（无头 CC
+# 读不到仓库外路径，见 patrol_dispatch.py 文首取舍 1）。
+PATROL_CHARTER_RELATIVE_PATH = (
+    Path("0-学习与工具") / "skills源码" / "huijian-chaijian-patrol" / "SKILL.md"
+)
 
 
 def resolve_default_queue_anchor(
@@ -194,3 +209,21 @@ def resolve_patrol_signal_path(repo_root: Path) -> Path:
     """队列 #382⑴：拆件巡逻事件驱动开班信号文件的统一落点，与
     `resolve_audit_path` 同一套 `repo_root`。"""
     return repo_root / PATROL_SIGNAL_RELATIVE_PATH
+
+
+def resolve_patrol_dispatch_lock_path(repo_root: Path) -> Path:
+    """队列 #382⑴bis：无头 CC 并发守卫锁文件的统一落点，与
+    `resolve_audit_path` 同一套 `repo_root`。"""
+    return repo_root / PATROL_DISPATCH_LOCK_RELATIVE_PATH
+
+
+def resolve_patrol_dispatch_log_dir(repo_root: Path) -> Path:
+    """队列 #382⑴bis：事件驱动起活的无头 CC 输出日志目录，与
+    `resolve_audit_path` 同一套 `repo_root`。"""
+    return repo_root / PATROL_DISPATCH_LOG_DIR_RELATIVE_PATH
+
+
+def resolve_patrol_charter_path(repo_root: Path) -> Path:
+    """队列 #382⑴bis：拆件巡逻章程正本（已迁入仓库，原文照搬）的统一
+    落点，与 `resolve_audit_path` 同一套 `repo_root`。"""
+    return repo_root / PATROL_CHARTER_RELATIVE_PATH

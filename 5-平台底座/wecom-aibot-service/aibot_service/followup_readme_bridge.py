@@ -66,7 +66,7 @@ from typing import Callable, Optional
 from zhuopin_platform.audit import AuditEvent, AuditLogger
 from zhuopin_platform.shared_tools import followup_gate
 
-from . import patrol_signal
+from . import patrol_dispatch, patrol_signal
 from .queue_edit_lock import QueueLockBusy
 from .readme_table import (
     ReadmeTableError,
@@ -267,18 +267,34 @@ def resolve_letter_number(
 
 def _raise_patrol_signal(repo_root: Path, *, letter_number: str,
                           archived_filename: str, now: Optional[datetime],
-                          log: Callable[[str], None]) -> None:
+                          log: Callable[[str], None],
+                          audit: Optional[AuditLogger] = None,
+                          evaluator: str = "system",
+                          dispatch_patrol: Callable[..., object] = (
+                              patrol_dispatch.dispatch_headless_patrol
+                          )) -> None:
     """队列 #382⑴：在标完第九态的同一把编辑锁内，顺带给拆件巡逻留一个
-    「有活」信号（见 `patrol_signal.py`）。`patrol_signal.raise_signal`
-    自身已对读写异常兜底，这里再包一层 `except`，确保信号文件出问题绝不
-    反过来打破本模块「绝不向上抛」的既有契约——一条回件成功标了第九态，
-    不能因为一个新加的旁路信号写失败就被上层误判为处理失败。
+    「有活」信号（见 `patrol_signal.py`）；队列 #382⑴bis：**同一次调用**
+    再直接起一个无头 CC 去把它拆掉（见 `patrol_dispatch.py`），不再等任何
+    定时轮询。`patrol_signal.raise_signal` 与 `patrol_dispatch.
+    dispatch_headless_patrol` 自身均已对各自的读写/起活异常兜底，这里各自
+    再包一层 `except`，确保两者中任一个出问题都绝不反过来打破本模块
+    「绝不向上抛」的既有契约——一条回件成功标了第九态，不能因为旁路的
+    信号写入或起活失败就被上层误判为处理失败。
+
+    两次调用故意分成两个独立 `try`：即便信号没写成功，仍值得尝试起一次
+    活——文件里可能还留着更早失败重试后积压的旧信号，一并给它一次被处理
+    的机会（起活代价近乎零：真没信号时无头 CC 一探测就收工）。
     """
     try:
         patrol_signal.raise_signal(
             repo_root, letter_number=letter_number,
             archived_filename=archived_filename, now=now, log=log,
         )
+    except Exception:  # noqa: BLE001 —— 见上方 docstring
+        pass
+    try:
+        dispatch_patrol(repo_root, now=now, audit=audit, evaluator=evaluator, log=log)
     except Exception:  # noqa: BLE001 —— 见上方 docstring
         pass
 
@@ -297,6 +313,7 @@ def mark_reply_arrived(
     sleep: Callable[[float], None] = time.sleep,
     alert_send: Optional[Callable[[str], None]] = None,
     log: Callable[[str], None] = print,
+    dispatch_patrol: Callable[..., object] = patrol_dispatch.dispatch_headless_patrol,
 ) -> BridgeResult:
     """把 `archived_filename` 对应的那封信在 README 上标为第九态。
 
@@ -386,6 +403,7 @@ def mark_reply_arrived(
             _raise_patrol_signal(
                 repo_root, letter_number=_row_number(fresh_row),
                 archived_filename=archived_filename, now=now, log=log,
+                audit=audit, evaluator=evaluator, dispatch_patrol=dispatch_patrol,
             )
             return _record(audit, evaluator, BridgeResult(
                 ACTION_MARKED, letter_number=_row_number(fresh_row),
