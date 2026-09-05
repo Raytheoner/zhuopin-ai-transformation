@@ -1,5 +1,25 @@
 # editlock-write-guard-hardening Design
 
+> ## ✅ design 审已过 —— Shao Peishen 2026-09-05 现场逐条拍板
+>
+> **本节只补记拍板事实，供后人查证；下方五个决策点的论证正文一字未改。**
+>
+> | 决策点 | 拍板结论 | 与本文推荐的关系 |
+> |---|---|---|
+> | ① 反引号奇偶算法 | **按推荐 (a)** ——复用 `_mask_backtick_spans` 的游程扫描算法、语义取反，新写一个显式返回「是否存在未闭合游程」的函数；docstring 须显式对比 `_mask_backtick_spans`「未闭合视为普通文本」这一相反选择 | 与推荐一致 |
+> | ② 奇偶不合法时 | **拒绝写入**；且**本次不预置逃生阀**（`--allow-unbalanced-backtick`），等 apply 期取证（1.x 全量扫描）真发现「故意孤立反引号」的合法用法再补 | 与推荐 (a) 一致，并采纳本文 propose 期立场「先不加逃生阀」 |
+> | ③ 列数回读不符时 | **单纯拒绝写入**，报出实际列数与预期列数；**不做** (b) 的「自动给出建议命令行」（留作真实命中后再评估的增量，本次不做） | 与推荐 (a) 一致 |
+> | ④ `--repair` 是否需行内留痕 | **需要**——改动值须写明 `修复说明：<理由>`（约定格式同既有 `日期豁免：`／`WIP豁免：` 范式），不满足前缀不生效 | 🔴 **与本文推荐 (b) 相反**——本文倾向「不额外要求理由前缀，靠 `edit-row` 既有操作留痕承载」，他拍的是 (a)。实现按拍板走 |
+> | ⑤ `--repair` 是否开放给 `append-row` | **不开放，只在 `edit-row`** | 与推荐一致 |
+>
+> **apply 期两处如实登记（不改上述决策，只补事实）**：
+> - **决策点② 的前提已被取证坐实**：apply 期对两份现网队列全量扫描（349 条表格行）——**「故意孤立反引号」零命中**，故「先不加逃生阀」的判断成立。⚠️ 但**归档件与 git 历史里另有 8 行含未闭合游程**（`跨桌任务队列-归档-202608.md` 7 行、`-202609.md` 1 行），经逐条定性**均非「故意孤立」**：5 行是 §二「建议 message」格开头一个反引号包裹整段 commit message 而**漏了闭合**，3 行是同行前面反引号数为奇数造成**配对级联错位**后剩下的孤立闭合侧。两类都是本包要拦的形态，不是要豁免的用法。归档件不是 `edit-row`／`append-row` 的写入目标，本次不追改。
+> - **决策点③⑤ 的实现补齐了一处 design 未覆盖的空缺**：`--repair` 要修的真实形态（`#337`／`#422`／`#454`）全都是**少了一列**（「列数为 7，应为 8」），而 `--set 列名=值` 只能替换**已存在**的格 ⇒ 缺失列的下标越界，即便跳过了「旧行列数须先合法」，② 回读仍恒为 7 ⇒ **`--repair` 会是一个永远不可能成功的开关**。故实现时 `--repair` 先把单元格补白到该分区预期列数（补空串、**只补短不裁长**），使调用方能用 `--set` 显式填回缺失列。这**不是放宽校验**：补出的空格子仍须过 ①②与关键格哨兵。已知代价（补白一律补在末尾，而被吞掉的分隔符未必在末尾 ⇒ 中间塌陷时列位错位，须调用方逐列核对）已写进 `cmd_edit_row` 内长注释与单测。
+>
+> ---
+>
+> <details><summary>（以下为 design 审前的原始起草正文，保留不改）</summary>
+
 > **本件供 Shao Peishen design 审。** 五个决策点，每个都写清**选项之间的实际差异**与代价；**②③④⑤ 须他拍板**，① 已有推荐并说明依据。
 > **审完之后**：把结论回填队列 §一 `#455` 行，再交 CC apply。**design 审未过，本包不得 apply。**
 > 本文只起草，不代拍板——三处缺陷的具体校验实现细节（判据阈值、拒绝还是告警、是否留痕）都是判断题，止于把选项摆清楚。
@@ -88,3 +108,20 @@ Shao Peishen 2026-09-02 当场给出的元判据（源自 `#312` 当日实证：
 1. **新函数命名与位置**：`queue_table.py` 内新增（暂拟 `has_unbalanced_backtick_run(text: str) -> bool`，最终命名 apply 期定，语义须在 docstring 里显式对比 `_mask_backtick_spans` 的"未闭合视为普通文本"这一相反选择，避免未来有人把两者搞混）。
 2. **回读校验必须用 `queue_table.split_row_cells`，不得用裸 `str.split("|")`**——这正是 `append-row` 现有实现的问题所在（约 L2067），本次一并替换，不是只加新函数不改旧调用点。
 3. **`--repair` 的实现落点**：`cmd_edit_row` 里"写入前最终校验：拼装结果按 `|` 切分列数应等于分区预期总列数"这一步（对应 `validate_row_cells` 之外新增的、②的回读检查）**始终执行、不受 `--repair` 影响**；`--repair` 只跳过 `_locate_row`/`validate_row_cells` 对**旧行**（`cells`，改动前）列数合法性的检查这一处。
+
+</details>
+
+---
+
+## apply 期落地清单（2026-09-05，`OP-0905-P`，分支 `claude/op0905n-editrow-guard-455`）
+
+| 判据 | 落点 | 备注 |
+|---|---|---|
+| ① 反引号游程闭合 | `queue_table.has_unbalanced_backtick_run`（＋私有 `_first_unbalanced_backtick_run` 供诊断定位）；`cmd_edit_row` 对改动值逐个校验、`_build_append_row_line` 对每个 `--cell` 校验 | 与 `_mask_backtick_spans` 共用游程扫描规则、语义取反，docstring 已按 ① 显式对比 |
+| ② 回读列数 | `cmd_edit_row` 拼出 `new_line` 之后、写盘之前；`cmd_append_row` 原 L2067 裸 `str.split("|")` 已换成 `queue_table.split_row_cells` | 两处均报出实际／预期列数，不给建议命令行（③ 拍板 (a)） |
+| ③ `--repair` | `cmd_edit_row` 专属；只滤掉 `validate_row_cells` 的「旧行列数」那一条 problem（前缀按 `queue_table` 的构造原样重建，有单测钉住耦合）＋ 缺列时补白 | `cmd_append_row` 显式拒绝并指向 `edit-row --repair`（⑤） |
+| ④ 行内留痕 | `REPAIR_REASON_MARKER = "修复说明："` ＋ `_has_genuine_repair_reason`，判据与 `_has_genuine_row_length_waiver` 逐字同源（理由不得以 `<` 起首） | 「前缀」的准确读法＝**理由的前缀，不是整格的前缀**——若要求整格以 `修复说明：` 开头，会与关键格哨兵「§一『状态』格须以 `[S:` 开头」直接互斥，`--repair` 将永远修不了状态格 |
+
+**被本包功能性替代的既有校验**：`cmd_edit_row`／`_build_append_row_line` 内对 `queue_table.has_bare_pipe(value)` 的朴素前置拒绝已移除（函数本身保留，`_arity_failure_message` 仍用它做**成因诊断**，那不是准入判据）。`_build_append_row_line` 里 `validate_row_cells` 的 `source` 由 `"write"` 改为 `"parsed"`——该参数**只影响竖线一项**，竖线已改由 ①② 共同把关；`validate_row_cells` 本身签名与语义未改。
+
+**行为反转的既有单测（proposal 明写的 BREAKING，非回归）**：`test_backtick_wrapped_pipe_also_rejected` → `test_backtick_wrapped_pipe_now_accepted`。其成立前提「本项目表格解析对反引号无感知」早在队列 #314 就已失效，写侧一直没跟上。

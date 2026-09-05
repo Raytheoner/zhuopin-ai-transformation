@@ -196,6 +196,75 @@ def _mask_backtick_spans(s: str) -> str:
     return "".join(out)
 
 
+# 队列 #455（2026-09-05 apply）：写侧反引号奇偶判据——与上面 `_mask_backtick_spans`
+# **共用同一套游程扫描算法、语义刻意取反**。
+#
+# 为什么必须是"同一套算法的取反"，而不是另起一套（design 决策点①，Shao Peishen
+# 2026-09-05 按推荐拍板）：本包的立项前提是"写侧比读侧解析弱一档"。若写侧改用
+# "反引号字符总数是否为偶数"这种简化判据，就会制造一个**方向相反的**弱一档
+# ——写侧比读侧更严格，拒绝读侧认为完全合法的内容。这不是纸面风险：apply 期
+# 1.2 全量取证在生产队列 `跨桌任务队列-机制环境.md` §一 #414 行实测到**恰好
+# 一行**反引号总数为奇数（83 个）却游程全闭合的真实内容——该行用 CommonMark
+# 标准的双反引号游程 `` `` ` `` `` 包裹"内容本身是一个反引号"这件事（正文在
+# 讲 bash 把反引号当命令替换执行）。简单奇偶计数会把这一行判为非法。
+def _first_unbalanced_backtick_run(text: str) -> tuple[int, int] | None:
+    """返回首个找不到同长度闭合游程的开启游程 `(起始下标, 游程长度)`；
+    全部闭合返回 `None`。供 `has_unbalanced_backtick_run` 与调用方的诊断
+    文案共用——报错要能指出**哪一处**反引号没闭合，只回一个 bool 不够。"""
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] != "`":
+            i += 1
+            continue
+        j = i
+        while j < n and text[j] == "`":
+            j += 1
+        run_len = j - i
+        k = j
+        close_end = -1
+        while k < n:
+            if text[k] != "`":
+                k += 1
+                continue
+            k2 = k
+            while k2 < n and text[k2] == "`":
+                k2 += 1
+            if k2 - k == run_len:
+                close_end = k2
+                break
+            k = k2
+        if close_end == -1:
+            return i, run_len
+        i = close_end
+    return None
+
+
+def has_unbalanced_backtick_run(text: str) -> bool:
+    """判定 `text` 中是否存在**找不到同长度闭合游程**的反引号开启游程
+    （CommonMark code span 的游程开合规则，同 `_mask_backtick_spans`）。
+
+    🔴 **与 `_mask_backtick_spans` 语义刻意相反，两者不可混用**：
+      - `_mask_backtick_spans`（**读侧**，队列 #314）——扫到未闭合游程时
+        **把它当普通文本吞掉**、照原样输出后继续切列。那是刻意的宽容：
+        读侧要面对的是**已经落库**的历史内容，Markdown 渲染器对落单反引号
+        本来就按字面量处理，读侧若在此处报错就没法解析历史行了。
+      - `has_unbalanced_backtick_run`（**写侧**，队列 #455）——扫到同一个
+        形态就返回 `True`，调用方据此**拒绝写入**。写侧面对的是**尚未落库**
+        的新值，此刻拒绝的代价只是让调用方改一次措辞；放行的代价是
+        `#454`（2026-09-02）那次真实事故：分诊器给出的引文片段恰好在一个
+        反引号处被截断，写进队列后该行的反引号配对全线错位，后续切列把
+        真正的列分隔符也保护掉，整行塌列且**当场无人察觉**。
+      🔑 一句话：**同一个形态，读侧宽容是对的，写侧宽容是错的**——因为
+      读侧改不了既成事实，写侧还来得及不让它发生。
+
+    实现委托 `_first_unbalanced_backtick_run`，与 `_mask_backtick_spans`
+    共用游程扫描规则；**刻意不用"反引号总数是否为偶数"这种简化判据**，
+    理由与实测反例见本函数上方长注释。
+    """
+    return _first_unbalanced_backtick_run(text) is not None
+
+
 def split_row_cells(line: str) -> list[str] | None:
     """反引号感知切列——把一行 Markdown 表格文本切分为单元格列表；反引号
     跨度内的竖线 `|` 不被当作列分隔符（跨度识别按 CommonMark 反引号游程

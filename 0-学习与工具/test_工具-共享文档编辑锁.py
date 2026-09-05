@@ -52,6 +52,16 @@ def _load_module():
     return module
 
 
+def _queue_table():
+    """取权威解析模块（队列 #455 用例要按读侧口径回读落盘结果）。
+
+    经被测模块自身取，而不是本文件另写一份 `sys.path` 引导——被测模块顶部
+    已有 worktree 路径引导（队列 #300），从它身上取到的必然是**本 worktree**
+    那一份，不会静默拿到别的 worktree 经 `pip install -e` 顶替进去的版本。
+    """
+    return _load_module().queue_table
+
+
 def run(*args: str) -> subprocess.CompletedProcess:
     return run_at(SCRIPT, *args)
 
@@ -1165,12 +1175,16 @@ class QueueWriteRootFixTests(unittest.TestCase):
         self.assertIsNone(self._row("509"))
 
     def test_bare_pipe_still_rejected_on_write_side(self):
-        """既有语义不放宽：写侧竖线一律拒绝，反引号包裹亦不豁免。"""
+        """**跨度外**的真裸竖线仍一律拒绝——队列 #455 只放宽了"合法闭合
+        反引号跨度内的竖线"那一半，这一半不放松（原用例名与断言保留，
+        只更新 docstring：#455 之后拒绝它的是 ② 回读列数校验，不再是
+        `has_bare_pipe`，见 `WriteGuardHardeningTests`）。"""
         r = self._run("append-row", "--section", "一", "--number", "510",
                       *self._positional("任务|撑列", "待领（CC）", "指针", "产出",
                                         "[S:open][D:机] x", "区", "2026-08-26"))
         self.assertEqual(r.returncode, 1)
         self.assertIsNone(self._row("510"))
+        self.assertIn("回读列数", r.stdout)
 
     @staticmethod
     def _positional(*cells: str) -> list[str]:
@@ -3005,17 +3019,34 @@ class AppendRowTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.target.read_text(encoding="utf-8"), before)
 
-    def test_backtick_wrapped_pipe_also_rejected(self):
-        """apply 阶段修正（design.md 有记录）：反引号不豁免裸竖线检测——
-        本项目表格解析对反引号无感知，豁免会制造"写入时放行、release ①
-        校验又拒绝"的自相矛盾状态。"""
-        before = self.target.read_text(encoding="utf-8")
+    def test_backtick_wrapped_pipe_now_accepted(self):
+        """🔴 **本用例于队列 #455（2026-09-05）整体反转，是 proposal 明写的
+        BREAKING 行为修正，不是回归。**
+
+        原用例名 `test_backtick_wrapped_pipe_also_rejected`，断言"反引号不
+        豁免裸竖线检测"，其成立前提是 #258 apply 期写下的那句——**「本项目
+        表格解析对反引号无感知」**。该前提已于队列 #314 失效：读侧
+        `queue_table.split_row_cells` 自那时起按 CommonMark 游程规则识别
+        跨度、跨度内竖线不算列分隔符（同文件
+        `test_pipe_inside_backtick_no_longer_causes_column_mismatch` 即
+        #314 当时同步反转的 release 侧对应用例）。写侧却一直没跟上，于是
+        "写入时放行、release 又拒绝"的自相矛盾状态早已不存在，真正存在的是
+        **反过来的矛盾：读侧放行、写侧拒绝** —— `#324` 就是被它锁死的
+        （行内 4 处合法反引号包裹竖线 ⇒ 状态字段整格重写被拒 ⇒ 写定即锁死）。
+
+        #455 让写侧口径追上读侧：合法闭合跨度内的竖线**放行**。真正会撑列
+        的跨度外裸竖线仍被拒，见 `test_bare_pipe_rejected`。
+        """
         result = self._append(
             "--section", "四", "--number", "51",
             "--cell", "`A|B`", "--cell", "Shao Peishen", "--cell", "不急",
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        text = self.target.read_text(encoding="utf-8")
+        self.assertIn("| 51 | `A|B` | Shao Peishen | 不急 |", text)
+        # 落盘后按读侧回读，仍是 4 列——写侧与读侧口径一致。
+        row = next(l for l in text.splitlines() if l.startswith("| 51 |"))
+        self.assertEqual(len(_queue_table().split_row_cells(row)), 4)
 
     def test_number_provided_for_section_two_rejected(self):
         before = self.target.read_text(encoding="utf-8")
@@ -4455,6 +4486,388 @@ class AppendRowOwnershipTests(unittest.TestCase):
         result = self._append()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("无锁写入", result.stdout)
+
+
+class WriteGuardHardeningTests(unittest.TestCase):
+    """队列 #455（openspec 变更包 `editlock-write-guard-hardening`，
+    Shao Peishen 2026-09-05 design 审逐条拍板）：写侧三缺陷合并处置。
+
+    覆盖三条新判据的正例反例：① 新值反引号游程须闭合（不闭合即拒）；
+    ② 拼装结果按读侧同款切列回读列数（不符即拒）；③ `edit-row --repair`
+    只跳过"旧行列数须先合法"这一项，且须带 `修复说明：` 行内留痕，
+    `append-row` 不接受该参数。
+
+    🔴 **非恒真自证**见 `test_reverse_*` 三个用例：关掉/还原旧逻辑后，
+    同一批输入必须由"拒绝"变回"放行"（或反之），证明结论确实来自本包
+    新增的判据，而不是别处早已存在的某道检查顺手拦下的。
+    """
+
+    SECTION_ONE_HEADER = (
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+    )
+    # 正常 8 列行。
+    GOOD_ROW = (
+        "| 600 | 既有任务 | 待领（CC） | 指针 | 产出 | [S:open][D:机] 在办 | 区域 | 2026-09-05 |\n"
+    )
+    # `#324` 历史场景夹具：行内合法存在反引号包裹的竖线，整行仍是 8 列。
+    # 这一行在 #455 之前会让 `edit-row` 的 `has_bare_pipe` 前置检查对任何
+    # 含同类内容的**新值**报错，导致状态字段整格重写被拒、写定即锁死。
+    BACKTICK_PIPE_ROW = (
+        "| 601 | 引用 `a | b` 的任务 | 待领（CC） | 指针 | 产出 "
+        "| [S:open][D:机] 在办 | 区域 | 2026-09-05 |\n"
+    )
+    # `#454` 历史场景夹具：**已塌列**的行（只有 7 列，缺「登记」列）——
+    # 成因是写入的引文片段恰好在一个反引号处被截断，反引号配对全线错位，
+    # 真正的列分隔符被当成受保护字符吞掉。#455 之前 `edit-row` 对它拒绝
+    # 一切操作（含 `--append`），当次只能持锁状态下用脚本改文件绕过。
+    COLLAPSED_ROW = (
+        "| 602 | 塌列的历史行 | 待领（CC） | 指针 | 产出 "
+        "| [S:blocked][D:机] 引文被截断：`工具-队列查询.py --row N | 区域 |\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        self.target = self.root / "toy-queue.md"
+        self.target.write_text(
+            "# 玩具队列\n\n## 一、任务看板\n\n"
+            + self.SECTION_ONE_HEADER + self.GOOD_ROW
+            + self.BACKTICK_PIPE_ROW + self.COLLAPSED_ROW
+            + "\n## 二、待 commit 批次\n\n| 批次 | 文件清单 | 建议 message | 状态 |\n|---|---|---|---|\n"
+            "\n## 四、需 Shao Peishen 的动作\n\n| # | 事项 | 等谁 | 截止 |\n|---|---|---|---|\n",
+            encoding="utf-8",
+        )
+        self.qt = _queue_table()
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _run(self, *args: str):
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "--file", str(self.target), *args],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+
+    def _row(self, number: str) -> str | None:
+        for line in self.target.read_text(encoding="utf-8").splitlines():
+            if line.startswith(f"| {number} |"):
+                return line
+        return None
+
+    def _cells(self, number: str) -> list[str]:
+        return self.qt.split_row_cells(self._row(number) or "|") or []
+
+    # ---------- 夹具自证：两条历史夹具确实是它们声称的形态 ----------
+
+    def test_fixtures_are_what_they_claim(self):
+        """先证夹具本身没写歪——否则后面所有断言都可能在测一个假场景。"""
+        self.assertEqual(len(self._cells("601")), 8, "#324 夹具须是合法 8 列")
+        self.assertIn("|", self._cells("601")[1], "#324 夹具的竖线须真的落在格内")
+        self.assertEqual(len(self._cells("602")), 7, "#454 夹具须是已塌列的 7 列")
+
+    # ---------- ① 反引号游程奇偶（tasks 3.1 / 3.2 / 3.3） ----------
+
+    def test_31_unbalanced_backtick_in_new_value_rejected_without_writing(self):
+        """3.1：新值含未闭合反引号游程 ⇒ 拒绝写入，且**不落盘**。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "600",
+                      "--set", "状态=[S:done][D:机] 见 `工具-队列查询.py")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("未闭合的反引号游程", r.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before,
+                         "拒绝时不得修改目标文件")
+
+    def test_31b_append_row_unbalanced_backtick_rejected(self):
+        """3.1 的 append-row 侧：同一判据装在两个入口上，不是只装一半。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("append-row", "--section", "一", "--number", "610",
+                      "--set", "任务=见 `工具-队列查询.py", "--set", "领取方=待领（CC）",
+                      "--set", "输入指针=指针", "--set", "期望产出=产出",
+                      "--set", "状态=[S:open][D:机] x", "--set", "触碰区=区",
+                      "--set", "登记=2026-09-05")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("未闭合的反引号游程", r.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_32_closed_backtick_span_containing_pipe_is_accepted(self):
+        """3.2（#324 历史场景回归夹具）：反引号闭合、跨度内含竖线 ⇒ **放行**。
+
+        这正是 #455 之前被 `has_bare_pipe` 一律拒绝、导致 #324 状态字段
+        写定即锁死的那种值。"""
+        r = self._run("edit-row", "--section", "一", "--number", "601",
+                      "--set", "状态=[S:done][D:机] ✅ 已完成，判据见 `a | b` 一节")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        cells = self._cells("601")
+        self.assertEqual(len(cells), 8, "放行后仍须是合法 8 列")
+        self.assertIn("`a | b`", cells[5])
+
+    def test_32b_locked_row_status_prefix_can_now_be_flipped(self):
+        """3.2 的真正要害（#324 的伤害形态）：**含合法反引号竖线的行，其
+        `[S:]` 前缀此前无法翻转**——`--append` 只能加尾巴，整格重写又被
+        写侧竖线守卫拒绝，于是状态被锁死。本用例证明锁已解开。"""
+        self.assertTrue(self._cells("601")[5].startswith("[S:open]"))
+        r = self._run("edit-row", "--section", "一", "--number", "601",
+                      "--set", "状态=[S:done][D:机] 已完成（原行含 `a | b`，前缀可翻转了）")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(self._cells("601")[5].startswith("[S:done]"))
+
+    def test_33_odd_backtick_count_but_balanced_runs_is_accepted(self):
+        """3.3 **非恒真自证**：反引号**总数为奇数**但游程全闭合 ⇒ 放行，
+        证明实现没有偷懒用"总数奇偶"这个简化判据（design 决策点① 的 (b)）。
+
+        取材＝生产队列 §一 #414 行的真实写法（apply 期 1.2 全量取证实测到
+        的唯一一条奇数行）：用 CommonMark 双反引号游程包裹"内容本身是一个
+        反引号"这件事。下面这个值共 5 个反引号——奇数，但两个双游程各自
+        闭合、中间夹一个字面反引号，完全合法。"""
+        value = "[S:done][D:机] bash 把 `` ` `` 当命令替换执行"
+        self.assertEqual(value.count("`") % 2, 1, "夹具须真的是奇数个反引号")
+        self.assertFalse(self.qt.has_unbalanced_backtick_run(value),
+                         "游程配对下它应是合法的——若这里为 True，说明实现退化成了总数奇偶")
+        r = self._run("edit-row", "--section", "一", "--number", "600",
+                      "--set", f"状态={value}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("`` ` ``", self._cells("600")[5])
+
+    # ---------- ② 回读列数（tasks 3.4 / 3.5） ----------
+
+    def test_34_readback_column_mismatch_rejected_without_writing(self):
+        """3.4：拼装结果回读列数不符 ⇒ 拒绝写入，不落盘。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "600",
+                      "--set", "触碰区=区域甲|区域乙")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("回读列数", r.stdout)
+        self.assertIn("应为 8", r.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_35_append_row_with_legal_backtick_pipe_reads_back_correctly(self):
+        """3.5：`append-row` 新增行含合法反引号跨度内竖线 ⇒ 回读列数吻合、
+        放行——证明 L2067 的裸 `str.split("|")` 确已换成反引号感知切列。"""
+        r = self._run("append-row", "--section", "一", "--number", "611",
+                      "--set", "任务=引用 `x | y` 的新任务", "--set", "领取方=待领（CC）",
+                      "--set", "输入指针=指针", "--set", "期望产出=产出",
+                      "--set", "状态=[S:open][D:机] 待领", "--set", "触碰区=区",
+                      "--set", "登记=2026-09-05")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(len(self._cells("611")), 8)
+        self.assertIn("`x | y`", self._cells("611")[1])
+
+    # ---------- ③ --repair（tasks 3.6 / 3.7 / 3.8 / 3.9） ----------
+
+    REPAIR_FIX = ("[S:done][D:机] 修复说明：该行引文被截断致塌列，本次补回闭合反引号与登记列")
+
+    def test_36_collapsed_row_rejected_without_repair(self):
+        """3.6：未传 `--repair`，已塌列行的任何操作（含 `--append`）⇒ 拒绝。
+        默认路径不变，维持"不假装能安全编辑一个已经不知道结构的行"。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "602",
+                      "--append", "状态=（追加一句）")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("列数为 7", r.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_37_repair_with_reason_restores_row(self):
+        """3.7：传 `--repair` 且改动后合法 ⇒ 写入成功，行列数恢复。
+
+        🔴 塌列行是**少了一列**（7/8），故修复必须把缺失的「登记」列显式
+        写回——`--repair` 会先把单元格补白到预期列数，使这一列可被 `--set`
+        寻址；不补白的话该下标越界，`--repair` 将是一个永远不可能成功的
+        开关（apply 期跑本用例当场撞出，见 `cmd_edit_row` 内长注释）。"""
+        r = self._run("edit-row", "--section", "一", "--number", "602",
+                      "--set", f"状态={self.REPAIR_FIX}",
+                      "--set", "触碰区=区域", "--set", "登记=2026-09-05", "--repair")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        cells = self._cells("602")
+        self.assertEqual(len(cells), 8, "修复后须恢复为合法 8 列")
+        self.assertIn("修复说明：", cells[5], "④ 留痕须真的随行落盘、进 git")
+        self.assertEqual(cells[7], "2026-09-05", "补白出的列须由调用方显式填回")
+
+    def test_37b_repair_padding_does_not_bypass_key_cell_sentinels(self):
+        """3.7 反例：补白**不是**放宽校验——补出来的空格子仍要过关键格
+        哨兵。只补白、不把「状态」格填成合法机器字段 ⇒ 仍拒绝。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "602",
+                      "--set", "状态=修复说明：只写了理由，丢了 [S:] 机器字段",
+                      "--set", "触碰区=区域", "--set", "登记=2026-09-05", "--repair")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("状态", r.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_37c_repair_leaves_over_long_rows_to_human_judgement(self):
+        """3.7 边界：`--repair` **只补短、不裁长**——删列＝丢内容，且无从
+        知道该并回哪一格。列数多于预期时如实拒绝，不猜。"""
+        text = self.target.read_text(encoding="utf-8")
+        self.target.write_text(text.replace(
+            "| 600 | 既有任务 |", "| 600 | 多出一列 | 既有任务 |"), encoding="utf-8")
+        self.assertEqual(len(self._cells("600")), 9)
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "600",
+                      "--set", "状态=[S:done][D:机] 修复说明：试图裁掉多出的列",
+                      "--repair")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_38a_repair_does_not_relax_backtick_parity(self):
+        """3.8：传 `--repair` 但新值未过 ① 奇偶校验 ⇒ 仍拒绝。
+        `--repair` 能且只能把一行从不合法改成合法，不能引入新的不合法。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "602",
+                      "--set", "状态=[S:done][D:机] 修复说明：补回 `未闭合的引用",
+                      "--set", "触碰区=区域", "--repair")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("未闭合的反引号游程", r.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_38b_repair_does_not_relax_readback_column_count(self):
+        """3.8 另一半：传 `--repair`，但修复动作**自己又引入了一处撑列**
+        （新值里带跨度外裸竖线）⇒ 回读列数仍不符 ⇒ 仍拒绝。
+
+        证明 `--repair` 能且只能把一行从不合法改成合法，不能在修复过程中
+        引入新的不合法——② 对它一项不放宽。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "602",
+                      "--set", f"状态={self.REPAIR_FIX}",
+                      "--set", "触碰区=区域甲|区域乙",
+                      "--set", "登记=2026-09-05", "--repair")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("回读列数", r.stdout)
+        self.assertIn("--repair", r.stdout, "拒绝文案须说明 --repair 不放宽本项")
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_39_append_row_rejects_repair_and_points_to_edit_row(self):
+        """3.9（design 决策点⑤）：`append-row --repair` ⇒ 明确拒绝，
+        且**带去向**（指向 `edit-row --repair`），不是 argparse 的
+        "unrecognized arguments"。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("append-row", "--section", "四", "--number", "52",
+                      "--set", "事项=x", "--set", "等谁=Shao Peishen",
+                      "--set", "截止=不急", "--repair")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("不接受 `--repair`", r.stdout)
+        self.assertIn("edit-row", r.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    # ---------- ④ 行内留痕（design 决策点④，Shao Peishen 拍板 (a)） ----------
+
+    def test_repair_without_reason_marker_is_inert(self):
+        """④：`--repair` 不带 `修复说明：` ⇒ 视为未传，塌列行照旧拒绝。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "602",
+                      "--set", "状态=[S:done][D:机] 修好了", "--set", "触碰区=区域",
+                      "--repair")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("未生效", r.stdout)
+        self.assertIn("修复说明：", r.stdout, "拒绝文案须给出正确写法")
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_repair_reason_placeholder_does_not_count(self):
+        """④ 反例：只是在**描述**这条规则（写了字面占位符 `<理由>`）不算
+        真实留痕——判据与 `_has_genuine_row_length_waiver` 逐字同源。"""
+        r = self._run("edit-row", "--section", "一", "--number", "602",
+                      "--set", "状态=[S:done][D:机] 修复说明：<理由>",
+                      "--set", "触碰区=区域", "--repair")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("未生效", r.stdout)
+
+    def test_repair_without_reason_is_rejected_even_on_a_healthy_row(self):
+        """④ 读法钉死：`--repair` 缺留痕 ⇒ **整次调用被拒**，而不是"静默当
+        没传、继续按默认路径写入"。
+
+        两种读法只在"目标行本来就合法"这一种情形上有差异（本用例），取严的
+        代价仅是多一条提示、不可能丢数据；取松则会让塌列行上的调用方收到
+        「列数为 7，应为 8」这条答非所问的报错。理由见 `cmd_edit_row` 内注释。"""
+        before = self.target.read_text(encoding="utf-8")
+        r = self._run("edit-row", "--section", "一", "--number", "600",
+                      "--set", "状态=[S:done][D:机] 合法行，但没写修复说明", "--repair")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("未生效", r.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before,
+                         "取严读法：拒绝时不得写入")
+
+    def test_repair_flag_is_inert_on_healthy_rows(self):
+        """`--repair` 对本来就合法的行不改变任何结果（只跳过一项前置检查，
+        不是"跳过校验"的总开关）——含理由时正常写入，其余判据照跑。"""
+        r = self._run("edit-row", "--section", "一", "--number", "600",
+                      "--set", "状态=[S:done][D:机] 修复说明：顺手复核，本行本就合法",
+                      "--repair")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(len(self._cells("600")), 8)
+
+    # ---------- 3.10 反向用例：非恒真自证 ----------
+
+    def test_reverse_31_passes_once_the_new_parity_judge_is_disabled(self):
+        """3.10-a：把 ① 判据 mock 成恒 False（＝本包实现前的状态），3.1 的
+        同一输入必须由"拒绝"变成"放行"——证明拒绝确实来自新增判据本身，
+        不是别处早已存在的某道检查顺手拦下的。
+
+        （② 不会替 ① 兜底：未闭合游程被读侧当普通文本处理，回读列数不变，
+        所以关掉 ① 之后这条真的会落盘——这正是 ① 存在的理由。）"""
+        m = _load_module()
+        bad_value = "[S:done][D:机] 见 `工具-队列查询.py"
+        ns = argparse.Namespace(
+            file=str(self.target), section="一", number="600", who="",
+            set=[f"状态={bad_value}"], append=[], changes_json=None,
+            stdin_json=False, append_sep=" ", domain=None, repair=False,
+        )
+        with unittest.mock.patch.object(
+            m.queue_table, "has_unbalanced_backtick_run", lambda _t: False
+        ):
+            rc = m.cmd_edit_row(ns)
+        self.assertEqual(rc, 0, "关掉 ① 之后旧行为＝放行；若这里非 0，说明本用例"
+                                "测的不是 ①，断言不成立")
+        self.assertIn("`工具-队列查询.py", self._cells("600")[5])
+
+    def test_reverse_35_old_naive_split_gives_a_different_verdict(self):
+        """3.10-b：② 那一处替换（裸 `str.split("|")` → `split_row_cells`）
+        的行为差异，在 #324 夹具上直接比给出来。
+
+        旧实现会把合法跨度内的竖线数成额外的列 ⇒ 9 列 ≠ 8 ⇒ 拒绝一条完全
+        正常的行；新实现回读得 8 列 ⇒ 放行。**两者在同一输入上结论相反**，
+        故 `test_35_...` 的放行确实来自这次替换。"""
+        line = "| 611 | 引用 `x | y` 的新任务 | 待领（CC） | 指针 | 产出 | [S:open][D:机] 待领 | 区 | 2026-09-05 |"
+        naive = [c.strip() for c in line.strip("|").split("|")]
+        new = self.qt.split_row_cells(line)
+        self.assertEqual(len(new), 8, "新实现（反引号感知）应回读为 8 列")
+        self.assertNotEqual(len(naive), 8, "旧实现（裸 split）应把它数错")
+        self.assertEqual(len(naive), 9)
+
+    def test_reverse_34_bare_pipe_now_rejected_by_readback_not_has_bare_pipe(self):
+        """3.10-c：证明 `has_bare_pipe` 前置检查**确已移除**，且 3.4 的拒绝
+        来自 ② 而非它——把 `has_bare_pipe` 换成"一被调用就炸"，3.4 的同一
+        输入仍须被正常拒绝（走到 ② 并返回 1，而不是抛异常）。
+
+        若旧的前置检查还在，这里会抛 `AssertionError: has_bare_pipe 不该
+        再被写侧准入路径调用`，用例变红。"""
+        m = _load_module()
+
+        def _boom(_cell):
+            raise AssertionError("has_bare_pipe 不该再被写侧准入路径调用")
+
+        ns = argparse.Namespace(
+            file=str(self.target), section="一", number="600", who="",
+            set=["触碰区=区域甲|区域乙"], append=[], changes_json=None,
+            stdin_json=False, append_sep=" ", domain=None, repair=False,
+        )
+        before = self.target.read_text(encoding="utf-8")
+        with unittest.mock.patch.object(m.queue_table, "has_bare_pipe", _boom):
+            rc = m.cmd_edit_row(ns)
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_repair_filter_stays_pinned_to_queue_table_message(self):
+        """`--repair` 靠"重建 `validate_row_cells` 的列数 problem 前缀"来
+        精确滤掉那一条。本用例把这层耦合钉住：`queue_table` 那侧改了文案而
+        编辑锁没跟 ⇒ 这里变红，而不是静默退化成"什么都没滤掉"（--repair
+        失效）或"滤掉了别的项"（放行了不该放行的）。"""
+        problems = self.qt.validate_row_cells("一", ["x"] * 7, source="parsed")
+        expected_total = self.qt.SECTION_COLUMN_COUNTS["一"]
+        prefix = f"§一 列数为 7，应为 {expected_total}"
+        self.assertTrue(
+            any(p.startswith(prefix) for p in problems),
+            f"queue_table 的列数 problem 文案已变，编辑锁 --repair 的滤除前缀须同步："
+            f"期望以 {prefix!r} 开头，实得 {problems!r}",
+        )
 
 
 class ArityBarePipeDiagnosticsTests(unittest.TestCase):
