@@ -17,11 +17,38 @@
 不支持 # 标题与表格，正文上限约 4096 字符。
 """
 import json
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent  # 0-学习与工具/ 的上一级 = 项目根
+
+def _resolve_repo_root() -> Path:
+    """定位主工作区根目录（`git rev-parse --git-common-dir`，逐字复用
+    `工具-共享文档编辑锁.py::_resolve_repo_root` 同一判据，不重写第二份）。
+
+    🔴 2026-09-05 实撞修复：本文件曾用 `Path(__file__).resolve().parent.parent`
+    按脚本自身路径推算——`工具-泳道看护状态机.py` 的 `pause` 在隔离 worktree
+    内跑时，会从该 worktree 本地的 `0-学习与工具/发企微.py` 副本加载本模块，
+    `__file__` 于是解到 worktree 根而非主工作区根；`.env` 已被 `.gitignore`、
+    只存在于主工作区，worktree 根下找不到 ⇒ `load_webhook()` 直接 `sys.exit`，
+    被调用方 `_notify_best_effort` 的 `except SystemExit` 吞掉、静默降级为
+    「仅落状态」——凡从 CC worktree 里发起的 pause「等你」企微通知全部悄悄
+    丢失，Shao Peishen 收不到提醒。跑不了 git（非仓库/未装 git）时退回按脚本
+    自身路径推算，保底不崩。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True, text=True, check=True,
+        )
+        return Path(result.stdout.strip()).parent
+    except (subprocess.CalledProcessError, OSError, FileNotFoundError):
+        return Path(__file__).resolve().parent.parent
+
+
+REPO_ROOT = _resolve_repo_root()  # 恒指主工作区根，不论从哪个 worktree 加载本模块
 DEFAULT_MSG = REPO_ROOT / "1-转型规划" / "企微推送正文-今日同步.md"
 
 
