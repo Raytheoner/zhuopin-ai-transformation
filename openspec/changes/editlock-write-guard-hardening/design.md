@@ -1,4 +1,4 @@
-# editrow-write-guard-triad Design
+# editlock-write-guard-hardening Design
 
 > **本件供 Shao Peishen design 审。** 五个决策点，每个都写清**选项之间的实际差异**与代价；**②③④⑤ 须他拍板**，① 已有推荐并说明依据。
 > **审完之后**：把结论回填队列 §一 `#455` 行，再交 CC apply。**design 审未过，本包不得 apply。**
