@@ -1,4 +1,4 @@
-# editrow-write-guard-triad Tasks
+# editlock-write-guard-hardening Tasks
 
 > 🔴 **本文件在 design 审通过前不得开工。** 0.x 是前置闸，逐条过完才进 1.x。
 > 执行环境：**CC**（写生产码、跑测试、自行 commit+push，一任务一 worktree）。
@@ -51,4 +51,4 @@
 - [ ] 5.1 队列 §一 `#455` 行回填：实现结论、1.x 取证要点、3.x 覆盖情况、是否已用 `--repair` 修复历史遗留行
 - [ ] 5.2 `#324`／`#454` 行内各追加一段指针，说明本包已处置对应缺陷（不改历史正文，只追加新段落）
 - [ ] 5.3 §二 批次登记，触发一次 sweep，并看一眼 `reports/sweep-commit.log` 末几行确认真落库（协议〇.8："触发不等于一定会落库"）
-- [ ] 5.4 `/opsx:archive editrow-write-guard-triad -y`（完工即归档；若本次不归档，理由须写进机器认得的三处入口之一）
+- [ ] 5.4 `/opsx:archive editlock-write-guard-hardening -y`（完工即归档；若本次不归档，理由须写进机器认得的三处入口之一）

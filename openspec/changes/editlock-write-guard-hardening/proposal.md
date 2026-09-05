@@ -1,4 +1,4 @@
-# editrow-write-guard-triad Proposal
+# editlock-write-guard-hardening Proposal
 
 > **状态：propose 出件，等 design 审。** 本包**不得** apply，直到 Shao Peishen 完成 design 审。
 > **来源**：队列 §一 **#455**（2026-09-02 立行，Cowork `OP-0902-A`，Shao Peishen 当日答「合并处置」）——「三处缺陷合并为一件处置，它们是同一个根因的三面：写侧校验比读侧解析弱一档」。本包是 **#455 的 design 重发**：同名泳道上一批（`op0905g-editrow-guard-455`）建了 worktree 但零提交，本次在新 worktree（`editrow-guard-455-retry`）内实做，务必真实写出并 commit。
@@ -44,7 +44,7 @@ Shao Peishen 2026-09-02 给出的元判据（升级于本行既有那条「判�
 
 ### New Capabilities
 
-- `editrow-write-guard-triad`：`edit-row`/`append-row` 写入前对新值做反引号奇偶校验，拼装结果对最终整行做读侧同款回读列数校验（不符拒绝写入），并为已塌列的历史行提供 `--repair` 逃生入口（仅跳过旧行合法性前置检查，其余判据不放宽）。
+- `editlock-write-guard-hardening`：`edit-row`/`append-row` 写入前对新值做反引号奇偶校验，拼装结果对最终整行做读侧同款回读列数校验（不符拒绝写入），并为已塌列的历史行提供 `--repair` 逃生入口（仅跳过旧行合法性前置检查，其余判据不放宽）。
 
 ### Modified Capabilities
 
