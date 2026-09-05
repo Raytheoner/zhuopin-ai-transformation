@@ -1,4 +1,4 @@
-# queue-row-block-source-field Proposal
+# queue-row-blocker-field Proposal
 
 ## Why
 
@@ -28,7 +28,7 @@
 
 ### New Capabilities
 
-- `queue-row-block-source-field`：跨桌任务队列 §一 行"阻塞源"结构化字段的语法、五态取值集合、`[B:split]` 拆行语义、与可动 WIP 计数／改判建议器的消费契约、存量回填范围与向后兼容降级规则。
+- `queue-row-blocker-field`：跨桌任务队列 §一 行"阻塞源"结构化字段的语法、五态取值集合、`[B:split]` 拆行语义、与可动 WIP 计数／改判建议器的消费契约、存量回填范围与向后兼容降级规则。
 
 ### Modified Capabilities（信息性说明，暂不落 spec delta）
 
@@ -52,7 +52,7 @@
 
 ## Impact（影响面）
 
-- **受影响 specs**：新增 `queue-row-block-source-field`；逻辑上关联但暂不落 delta 的 `queue-row-status-field`／`editlock-mechanism-wip-guard`（见上「Modified Capabilities」说明）。
+- **受影响 specs**：新增 `queue-row-blocker-field`；逻辑上关联但暂不落 delta 的 `queue-row-status-field`／`editlock-mechanism-wip-guard`（见上「Modified Capabilities」说明）。
 - **受影响代码**（`[B:]` 字段解析与消费，5 处独立实现——本项目历史上刻意不跨文件 import 状态字段解析逻辑，避免多 worktree 共享 editable install 的静默劫持风险，`0-学习与工具/工具-共享文档编辑锁.py` 行 502 注释已说明此设计取舍，本变更沿用同一惯例、不借本次顺带做跨文件收拢）：
   - `0-学习与工具/工具-共享文档编辑锁.py`（`STATUS_FIELD_RE`／`_parse_status_domain_fields`／`STALE_STATUS_PHRASES`／`_suggest_status_reclassification`／`_count_mechanism_wip`，权威实现）
   - `0-学习与工具/工具-落库sweep.py`（独立实现，需同步）

@@ -56,6 +56,6 @@
 
 ## 8. 收工
 
-- [ ] 8.1 `openspec change validate queue-row-block-source-field --strict` 跑绿（本 session 交付前必须完成的最低门槛）。
+- [ ] 8.1 `openspec change validate queue-row-blocker-field --strict` 跑绿（本 session 交付前必须完成的最低门槛）。
 - [ ] 8.2 `pause --action-key openspec_design_review --waiting-for "design 草案已出，等你审"`（本 session 收工动作，不进入实现）。
-- [ ] 8.3 design 审通过、tasks 全部 [x] 后当场 `/opsx:archive queue-row-block-source-field -y`（沿用场景建造与合规规则"完工即归档"纪律，不得跨 1 个 session 悬置）。
+- [ ] 8.3 design 审通过、tasks 全部 [x] 后当场 `/opsx:archive queue-row-blocker-field -y`（沿用场景建造与合规规则"完工即归档"纪律，不得跨 1 个 session 悬置）。
