@@ -174,6 +174,33 @@ def test_queue_appender_single_file_deployment_is_unaffected(tmp_path: Path):
     assert text.count("编号高水位线") == 1
 
 
+# ── ②bis 常驻服务入口：锚点 ≠ 写入目标（源码断言）──────────────────────
+
+
+def test_run_aibot_service_derives_write_target_from_constant_not_anchor():
+    """🔴 常驻监听入口 MUST 把"仓库根锚点"与"写入目标"分开算。
+
+    `WECOM_AIBOT_QUEUE_PATH` 在其余全部入口的文件头里都写着"**可选，仓库根解析
+    锚点**"；只有 `run_aibot_service` 历史上把它同时当成了写入目标（拆分前只有
+    一份队列文件，两者恰好重合）。而常驻监听 `ZhuopinAibotDevListener` 的启动
+    脚本 `start-aibot-service-dev.ps1` 把该变量钉在**机制环境文件**上——沿用
+    旧写法则 `#341` 的写入目标切换在生产上**完全不生效且不报错**。
+
+    这条判据故意读源码而非跑 `main()`：`main()` 会建 WS 长连接、读 `.env`，
+    在隔离单测环境里跑不起来；而本判据要钉的恰恰是一行**赋值语句的来源**。
+    """
+    source = (
+        Path(__file__).resolve().parents[1] / "scripts" / "run_aibot_service.py"
+    ).read_text(encoding="utf-8")
+
+    # 写入目标必须由仓库根 + 常量拼出
+    assert "queue_path = resolved_repo_root / DEFAULT_QUEUE_RELATIVE_PATH" in source
+    # 🔴 不得回到"锚点即写入目标"的旧写法
+    assert "queue_path = resolve_default_queue_anchor(" not in source
+    # 锚点本身仍走环境变量解析（#126／#269 语义不得被顺手改掉）
+    assert "queue_anchor = resolve_default_queue_anchor(" in source
+
+
 # ── ③ 变异验证：证明 ② 不是空转 ─────────────────────────────────────────
 
 
