@@ -1002,6 +1002,21 @@ _SCHEDULED_TASK_QUERY_PS = (
 # 安装本判据看不到。这是有意的——sweep 由哪个解释器跑，它 import 的就是
 # 哪一套，判据与被检对象口径一致才有意义。
 EDITABLE_FINDER_GLOB = "__editable___*_finder.py"
+# 🔴 **第二种 editable 形态（2026-08-31 实测补，OP-0831-N-A1）：纯路径 `.pth`。**
+# `pip install -e` 并不总是产出 finder 模块——`--config-settings
+# editable_mode=compat` 走的是「往 `__editable__.<dist>-<ver>.pth` 里直接写一
+# 行磁盘路径」，**site-packages 里一个 `*_finder.py` 都不会有**。本机实测
+# （setuptools 81.0.0 / pip 26.1.2）两种形态都能产出，见下：
+#   · 默认       → `__editable___<dist>_<ver>_finder.py` ＋ 一行 `import …finder; …install()` 的 `.pth`
+#   · compat 模式 → 只有 `.pth`，内容就是包目录的绝对路径
+# **只扫 finder 时，compat 形态的「指向 worktree」会整个看不见**——巡检会打出
+# 「editable 分发 0 个／模块映射 0 条／异常 0 条」，与「本机压根没有 editable
+# 安装」外观完全相同。这正是本判据自己反复强调、却在自己身上漏掉的那件事：
+# **「没扫到」不等于「没问题」**（同 `_site_packages_dirs` 那条注释）。
+# 本机当前 9 个分发全是 finder 形态、无一 compat；即**这一条是补盲，不是修
+# 现网故障**——但 `#410` 的立项理由原话是「没有它下次照样发现不了」，而换个
+# 装法就照样发现不了。
+EDITABLE_PTH_GLOB = "__editable__*.pth"
 EDITABLE_INSTALL_STATE_REL = "reports/sweep-editable-install-state.json"
 EDITABLE_INSTALL_ALERT_INTERVAL_HOURS = 24
 # 三种异常形态的标签。**形态三（代码从未并入 master）刻意不单列**——本判据
@@ -4572,6 +4587,59 @@ def _parse_editable_finder(path: Path) -> tuple[dict[str, list[str]] | None, str
     return targets, None
 
 
+def _editable_pth_key(path: Path) -> str:
+    """从 `__editable__.<dist>-<ver>.pth` 切出告警 key。
+
+    🔴 **切掉版本号**——与 finder 那一路「key＝模块名、不含路径与版本」是同
+    一条纪律（见 `_check_editable_install_targets` 里那段注释）：版本混进 key
+    ⇒ 每升一次版本都是一个「新问题」重报一遍，旧 key 还会被判成「已解除」。
+    切不动就原样返回文件名——**宁可 key 丑，不可 key 每轮都变**。
+    """
+    name = path.name
+    if name.startswith("__editable__."):
+        name = name[len("__editable__."):]
+    if name.endswith(".pth"):
+        name = name[: -len(".pth")]
+    # `re.sub` 只做文本替换，不执行任何东西（本组「零执行零导入」纪律照旧）。
+    stripped = re.sub(r"-\d[^-]*$", "", name)
+    return stripped or name
+
+
+def _parse_editable_pth(path: Path) -> tuple[list[str], list[str], str | None]:
+    """读一份 `__editable__*.pth`，切成 `(纯路径行, import 行引用的模块名, 失败原因)`。
+
+    `.pth` 的语义由 CPython `site.py` 定义，本函数逐字照它：**空行与 `#` 开头
+    的行忽略；`import ` / `import\\t` 开头的行会被执行；其余非空行是要加进
+    `sys.path` 的目录**。此处只做分类与取值，**一行都不执行**（同 finder 那
+    一路的理由：判据不得与被检对象共享失败模式）。
+
+    读不出来一律返回 `(…, …, 原因)`，**不吞成「这份没问题」**。
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [], [], f"读取失败：{exc}"
+    paths: list[str] = []
+    hooks: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("import ") or line.startswith("import\t"):
+            # 形如 `import __editable___x_0_1_0_finder; __editable___x_0_1_0_finder.install()`
+            # ——真正的指向写在被 import 的那个 finder 模块里，由 finder 那一路
+            # 负责；此处只记下模块名，用来核对它到底在不在（见调用方）。
+            first = line.split(";", 1)[0]
+            module = first[len("import"):].strip()
+            if module:
+                hooks.append(module.split()[0])
+            continue
+        paths.append(line)
+    if not paths and not hooks:
+        return [], [], "文件内既无路径行也无 import 行"
+    return paths, hooks, None
+
+
 def _classify_editable_target(target: str) -> tuple[str, str] | None:
     """判一个目标路径的形态；健康返回 `None`。
 
@@ -4587,6 +4655,19 @@ def _classify_editable_target(target: str) -> tuple[str, str] | None:
     if not exists:
         return EDITABLE_FORM_BROKEN, f"目标路径不存在：`{normalized}`"
     return None
+
+
+def _merge_editable_detail(details: dict[str, str], key: str, detail: str) -> None:
+    """往 details 里塞一条，**同 key 合并而不是覆盖**。
+
+    finder 那一路的 key 是模块名、`.pth` 那一路的 key 是分发名，两者极少
+    但并非不可能撞上（分发名与顶层模块同名是常态，如 `zhuopin_platform`）。
+    直接赋值会让**后写的那条把先写的那条吃掉**——丢掉的恰恰是一条真异常。
+    """
+    if key in details and detail not in details[key]:
+        details[key] = f"{details[key]}；{detail}"
+    else:
+        details.setdefault(key, detail)
 
 
 def _render_editable_alert(details: dict[str, str], keys) -> str:
@@ -4654,10 +4735,16 @@ def _check_editable_install_targets(repo_root: Path, log: list[str]) -> None:
         return
 
     finders: list[Path] = []
+    pth_files: list[Path] = []
     for directory in dirs:
         finders.extend(sorted(directory.glob(EDITABLE_FINDER_GLOB)))
-    log.append(f"    · site-packages {len(dirs)} 处，editable 分发 {len(finders)} 个")
+        pth_files.extend(sorted(directory.glob(EDITABLE_PTH_GLOB)))
+    log.append(
+        f"    · site-packages {len(dirs)} 处，editable 分发 {len(finders)} 个"
+        f"（finder 形态）＋ `.pth` {len(pth_files)} 份"
+    )
 
+    unreadable = 0
     module_count = 0
     module_anomalies = 0
     for finder in finders:
@@ -4665,6 +4752,7 @@ def _check_editable_install_targets(repo_root: Path, log: list[str]) -> None:
         if parsed is None:
             log.append(f"    ⚠ {finder.name}：{parse_error}——**不据此判为合规**")
             details[finder.name] = f"{EDITABLE_FORM_UNREADABLE} —— {parse_error}"
+            unreadable += 1
             continue
         for module in sorted(parsed):
             module_count += 1
@@ -4688,9 +4776,57 @@ def _check_editable_install_targets(repo_root: Path, log: list[str]) -> None:
 
     log.append(
         f"    · 模块映射 {module_count} 条：正常 {module_count - module_anomalies} 条、"
-        f"指向异常 {module_anomalies} 条；另有解析失败的 finder "
-        f"{len(details) - module_anomalies} 个"
+        f"指向异常 {module_anomalies} 条"
     )
+
+    # ---------- 纯路径 `.pth` 形态（compat 模式，无 finder 模块） ----------
+    pth_count = 0
+    pth_anomalies = 0
+    for pth in pth_files:
+        key = _editable_pth_key(pth)
+        paths, hooks, pth_error = _parse_editable_pth(pth)
+        if pth_error is not None:
+            log.append(f"    ⚠ {pth.name}：{pth_error}——**不据此判为合规**")
+            _merge_editable_detail(details, key, f"{EDITABLE_FORM_UNREADABLE} —— {pth_error}")
+            unreadable += 1
+            continue
+        # hook 形态：真正的指向在被 import 的 finder 里，已由上一段查过。此处
+        # 只核对那个 finder 文件到底在不在——🔴 **finder 被删掉时，上一段会
+        # 「一个都没扫到、零异常」**，与「本机没装 editable」外观相同，而
+        # 这台机器上的 import 早已在报 ModuleNotFoundError 了。
+        missing = [name for name in hooks if not (pth.parent / f"{name}.py").is_file()]
+        if missing:
+            detail = f"{EDITABLE_FORM_UNREADABLE} —— `{pth.name}` 挂的 finder 模块不存在：" \
+                     + "、".join(f"`{name}.py`" for name in missing)
+            log.append(f"    ⚠ {detail}——**不据此判为合规**")
+            _merge_editable_detail(details, key, detail)
+            unreadable += 1
+            continue
+        if not paths:
+            log.append(f"    · {key} ← 由 finder 承载（`{pth.name}`）")
+            continue
+        pth_count += 1
+        verdicts = [
+            verdict for verdict in
+            (_classify_editable_target(target) for target in paths)
+            if verdict is not None
+        ]
+        if not verdicts:
+            shown = "、".join(f"`{_normalize_path_text(t)}`" for t in paths)
+            log.append(f"    · {key} ← {shown}（`.pth` 直挂）")
+            continue
+        for form, detail in verdicts:
+            log.append(f"    🔴 {key}：{form} —— {detail}（`.pth` 直挂）")
+        _merge_editable_detail(
+            details, key,
+            "；".join(f"{form} —— {detail}" for form, detail in verdicts))
+        pth_anomalies += 1
+
+    log.append(
+        f"    · `.pth` 直挂 {pth_count} 条：正常 {pth_count - pth_anomalies} 条、"
+        f"指向异常 {pth_anomalies} 条"
+    )
+    log.append(f"    · 判据不可用 {unreadable} 项（读不出/解析不出，**不计入合规**）")
 
     _track_and_alert_standing_state(
         repo_root, "editable 安装指向异常", EDITABLE_INSTALL_STATE_REL,
@@ -5448,6 +5584,130 @@ def _check_followup_pending_inventory(repo_root: Path, log: list[str]) -> None:
     )
 
 
+# ============================================================
+# 队列 §一 #382⑵（2026-09-05，OP-0905-I）：第 11 类常驻状态告警——
+# 跟进信起草缺口检测（原巡逻章程 `huijian-chaijian-patrol.SKILL.md`
+# §一.4「起草缺口检测」判据下放）
+# ============================================================
+#
+# 🔴 **与第 10 类（一.3 待发信盘点）同一批理由，不重复展开**：检测对象
+# （近 N 天场景 commit vs README 已起草行）随时可能变化，不依赖巡逻的
+# 事件驱动开关（一次场景 commit 与"有没有回件"无关）；sweep 这一轮已有
+# webhook 与"出现→告警／消失→解除"骨架，本类不新造通道。
+#
+# 🔴 **仍是子进程调用、不进程内 import `aibot_service`**（同第 10 类
+# 头部"零依赖"长注，本类不重复）——权威判据留在
+# `aibot_service.draft_gap_detection`，本函数只解析其 `--json` 出口。
+#
+# 🔴 **delta 语义靠 key 天然获得，不另写去重逻辑**：`_track_and_alert_
+# standing_state` 本身就是"出现即告警、消失即解除、同 key 在
+# `realert_interval_hours` 内不重复提醒"——一个缺口只要连续多轮都存在，
+# 同一个 key 天然只会在首次出现与解除时各响一次，中间的每小时轮次
+# 不会把它重报成"新增"。
+#
+# 🔴 **key 必须包含 commit_sha**：同一 (收信人, 场景) 若又产生一次新的
+# 更早提交（理论上不会变得更早，但版本升级/場景改名等边界不排除
+# key 组成漂移），带上 commit_sha 可避免"同一收信人换了个 commit 却被
+# 判成同一个已在告警中的旧缺口而被拖入 24 小时静默窗"。
+DRAFT_GAP_CHECK_SCRIPT_REL = "5-平台底座/wecom-aibot-service/scripts/draft_gap_check.py"
+DRAFT_GAP_WINDOW_DAYS = 14
+DRAFT_GAP_UNAVAILABLE_STATE_REL = "reports/sweep-draft-gap-unavailable-state.json"
+DRAFT_GAP_STATE_REL = "reports/sweep-draft-gap-state.json"
+DRAFT_GAP_ALERT_INTERVAL_HOURS = 24.0
+
+
+def _run_draft_gap_check_json(repo_root: Path) -> tuple[dict | None, str | None]:
+    """子进程调用 `draft_gap_check.py --window-days N --json`，返回
+    (解析后的 dict, None) 或 (None, 失败原因)。不在本进程 import
+    `aibot_service`（见本节头部长注）。"""
+    script = repo_root / DRAFT_GAP_CHECK_SCRIPT_REL
+    if not script.exists():
+        return None, f"未找到 {DRAFT_GAP_CHECK_SCRIPT_REL}"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "--window-days", str(DRAFT_GAP_WINDOW_DAYS), "--json"],
+            cwd=repo_root, capture_output=True, text=True, encoding="utf-8", timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"子进程调用异常：{type(exc).__name__}: {exc}"
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return None, f"输出不是合法 JSON：{exc}"
+    if result.returncode != 0:
+        # 🔴 `--json` 分支下 README 不存在也走 stdout JSON（见脚本内注释：
+        # 不与非 `--json` 分支共用 stderr+exit(1) 路径），故此处优先取
+        # payload 里的 error 字段；解析不出再退回 returncode 本身。
+        return None, str(payload.get("error", f"退出码 {result.returncode}")) if isinstance(payload, dict) else f"退出码 {result.returncode}"
+    if not isinstance(payload, dict) or "gaps" not in payload:
+        return None, "输出 JSON 缺少 `gaps` 字段"
+    return payload, None
+
+
+def _draft_gap_key(gap: dict) -> str:
+    """缺口告警 key：`收信人|场景前缀|commit_sha` ——见本节头部长注。"""
+    return f"{gap.get('recipient', '?')}|{gap.get('scenario_prefix', '?')}|{gap.get('commit_sha', '?')}"
+
+
+def _check_draft_gap_inventory(repo_root: Path, log: list[str]) -> None:
+    """第 11 类常驻状态告警：跟进信起草缺口检测（队列 §一 #382⑵，巡逻
+    章程 §一.4 原判据下放）。
+
+    🔴 **回显不是可选项**（同第 4/6/7/9/10 类）：无论缺口是否为零，
+    每轮都打一行——零命中不省略。
+    """
+    log.append(f"📝 跟进信起草缺口检测（近 {DRAFT_GAP_WINDOW_DAYS} 天，每轮回显，零命中亦不省略）：")
+
+    payload, reason = _run_draft_gap_check_json(repo_root)
+    if payload is None:
+        log.append(f"    ⚠ 起草缺口检测不可用：{reason}——**不据此判为零缺口**")
+        _track_and_alert_standing_state(
+            repo_root, "跟进信起草缺口检测", DRAFT_GAP_UNAVAILABLE_STATE_REL,
+            {"draft_gap_check_unavailable"}, DRAFT_GAP_ALERT_INTERVAL_HOURS,
+            lambda keys: (
+                f"🔴 落库sweep：跟进信起草缺口检测连续不可用（{reason}）——"
+                f"须人工核查 `{DRAFT_GAP_CHECK_SCRIPT_REL}` 是否可正常运行。"
+            ),
+            lambda keys: "✅ 落库sweep：跟进信起草缺口检测已恢复可用。",
+            log,
+        )
+        return
+
+    gaps = payload.get("gaps", [])
+    if not gaps:
+        log.append("    · 无缺口")
+    else:
+        for gap in gaps:
+            log.append(
+                f"    🔴 {gap.get('recipient', '?')}｜场景 {gap.get('scenario_prefix', '?')}｜"
+                f"最早改动 {gap.get('event_date', '?')}｜commit {str(gap.get('commit_sha', '?'))[:8]}"
+            )
+
+    keys = {_draft_gap_key(gap) for gap in gaps}
+    by_key = {_draft_gap_key(gap): gap for gap in gaps}
+
+    def render_alert(alert_keys):
+        lines = "\n".join(
+            f"- {by_key[k].get('recipient', '?')}｜场景 {by_key[k].get('scenario_prefix', '?')}｜"
+            f"最早改动 {by_key[k].get('event_date', '?')}｜commit {str(by_key[k].get('commit_sha', '?'))[:8]}"
+            for k in alert_keys if k in by_key
+        )
+        return (
+            f"🔴 落库sweep：{len(alert_keys)} 处疑似「该起草而没起草」（近 "
+            f"{DRAFT_GAP_WINDOW_DAYS} 天已部署场景 vs 已起草跟进信）：\n{lines}\n"
+            "起草属对外动作，本告警只提醒、不代为起草——报出缺口不等于就地起草。"
+        )
+
+    def render_resolved(resolved_keys):
+        lines = "\n".join(f"- {k}" for k in resolved_keys)
+        return f"✅ 落库sweep：以下跟进信起草缺口已解除（已起草或已出窗口）：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "跟进信起草缺口检测", DRAFT_GAP_STATE_REL, keys,
+        DRAFT_GAP_ALERT_INTERVAL_HOURS, render_alert, render_resolved, log,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="只打印计划动作，不 add/commit/push/改队列")
@@ -5776,6 +6036,12 @@ def main() -> int:
             # 同上五类，检测对象是仓库整体状态、与本轮是否有批次落库无关；
             # 只读、只告警、不改 README、不发送任何跟进信、不影响退出码。
             _check_followup_pending_inventory(repo_root, log)
+
+            # 队列 §一 #382⑵（2026-09-05，OP-0905-I）：第 11 类常驻状态
+            # 告警——跟进信起草缺口检测（原巡逻章程 §一.4 下放）。同上
+            # 六类，检测对象是仓库整体状态、与本轮是否有批次落库无关；
+            # 只读、只告警、不代为起草、不影响退出码。
+            _check_draft_gap_inventory(repo_root, log)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))
