@@ -1,4 +1,4 @@
-"""opener 代码块 lint —— 一次收五个失效形态（队列 §一 `#284`／`#381`⑸ⓖ，OP-0828-Y／OP-0904-A）。
+"""opener 代码块 lint —— 一次收六个失效形态（队列 §一 `#284`／`#381`⑸ⓖ／`#487`，OP-0828-Y／OP-0904-A／OP-0905-C）。
 
 本脚本是**规则退休制**（根 `CLAUDE.md` §5）欠下的对价：`专线opener模板库.md` §〇
 补充三那条人守规则 **2026-08-27 一天被违反 17 次**，远超「人守违反 3 次即须机制化或
@@ -9,7 +9,7 @@
 就地解决且根治」）**：判据正本自此改为 `1-转型规划/0-全景路线图/opener骨架.md`（唯一可照抄骨架；
 2026-09-04 A2 由模板库 §〇.00 拆出独立成件，模板库 §〇 此后只留判据，§〇.00 仅存一句指针）。
 
-## 五个形态（判据正本＝`1-转型规划/0-全景路线图/opener骨架.md`；判据说明＝`专线opener模板库.md` §〇.0／§〇.00）
+## 六个形态（判据正本＝`1-转型规划/0-全景路线图/opener骨架.md`；判据说明＝`专线opener模板库.md` §〇.0／§〇.00）
 
 | | 守什么 | 生效日 | 成因 |
 |---|---|---|---|
@@ -18,9 +18,31 @@
 | 形态③ | **CC 侧**块有 `set_session_title` 调用，但标题值不匹配 `[Win]MMDDX-<短名>` | 2026-09-04（骨架件） | 标题格式三次改定才终稿（模板库 §〇.0），旧格式/漏填占位符不会报错 |
 | 形态④ | `【设置】` 行六字段（`执行环境｜分支｜worktree｜工作区｜session｜派出线`）缺失或顺序错 | 2026-09-04（骨架件） | §〇.1 曾把六字段错写成「标准四字段」，字段顺序漂移无任何一层会报错 |
 | 形态⑤ | opener 块**首行**不匹配 `[OP-MMDD-X]【CC／Cowork】<短名≤12字>` | 2026-09-04（骨架件） | 编号是跨会话世界唯一身份，首行缺编号时收工报告/队列回写/CC transcript 目录无法对齐 |
+| 形态⑥ | **看护者用 Task/Agent 派发的子任务泳道 opener**（文件含 `## 三bis` 看护opener 小节、块出现在该节之前）**含** `set_session_title` 调用 | 2026-09-05（队列 §一 `#487`） | 形态②的「子任务例外句」是文本层面的自我约束，2026-08-28／2026-09-05 两次实撞证明**子 agent 不一定会照做**——判据升级为源头不放：这类块本就不该出现这一行 |
 
 形态②③与「工具静默回退」同族：它没错，只是解析到了另一个对象 —— 没有任何一层会报错，
 故只能靠结构检测拦，靠人读输出拦不住。
+
+## 🔴 形态⑥ 与形态②的关系——「文本例外句」被证明不可靠，改为「源头不放」（2026-09-05）
+
+形态②（子任务例外句）解决的是「块里已经有 `set_session_title`，那就必须带一句『你若是子任务
+就跳过』」——但这句例外句能不能被子 agent **真的执行到**，是另一回事：2026-08-28 与
+2026-09-05 各实撞一次，**两次例外句文本都完整合规**（形态②不报警），子 agent 仍然把
+`set_session_title("self")` 执行了，"self" 解析到父 session、把看护者的标题顶掉。
+
+Shao Peishen 2026-09-05 现场拍板 (甲)：**看护者用 Task/Agent 派发的泳道 opener 正文里，
+从源头就不放这一行**——子任务从未被单独粘贴进独立 CC 会话，天生不需要也不该设自己的
+session 标题；只有真正会被粘贴进一个新 CC 会话的 opener（§三bis 看护者自己的开场词，
+或不用看护者模式、直接单条粘贴/无头派发的 §三 lane opener）才需要它。
+
+**判据（结构锚，不猜语义）**：文件内出现 `## 三bis` 标题 ⇒ 该文件采用「CC 看护者单粘贴、
+Task/Agent 内部扇出」模式；出现在该标题**之前**的围栏块（即 §三 各 `### A<N>` 泳道 opener）
+一律不该含 `set_session_title`——含了就是形态⑥。`## 三bis` 标题**之后**的块（看护者自己的
+开场词）不受形态⑥约束，仍按形态①②③走原判据（它才是真正被粘贴进新 CC 会话的那一份）。
+
+🔴 **没有 `## 三bis` 小节的文件（如单泳道无头派发批次）不受形态⑥约束**——那类文件里每条
+`### A<N>` opener 都会被 headless 执行器当独立 `claude -p` 会话拉起，是真正的顶层会话，
+仍然需要 `set_session_title`，形态①②③原判据照常生效。
 
 ## 🔴 形态①**只对 CC 侧成立**——这是与 `#284` 需求原文的一处刻意收窄（实测依据）
 
@@ -131,6 +153,8 @@ RULE_EFFECTIVE_FORM2 = date(2026, 8, 28)
 RULE_EFFECTIVE_FORM3 = date(2026, 9, 4)
 RULE_EFFECTIVE_FORM4 = date(2026, 9, 4)
 RULE_EFFECTIVE_FORM5 = date(2026, 9, 4)
+#: 形态⑥ ＝ 队列 §一 `#487`（Shao Peishen 2026-09-05 现场拍板 (甲)）。
+RULE_EFFECTIVE_FORM6 = date(2026, 9, 5)
 
 #: 各形态代码 → 生效日，`classify_carrier` 按此查表（替代此前的二选一分支）。
 RULE_EFFECTIVE_BY_FORM = {
@@ -139,6 +163,7 @@ RULE_EFFECTIVE_BY_FORM = {
     "F3": RULE_EFFECTIVE_FORM3,
     "F4": RULE_EFFECTIVE_FORM4,
     "F5": RULE_EFFECTIVE_FORM5,
+    "F6": RULE_EFFECTIVE_FORM6,
 }
 
 #: R3 生命周期的归档物理落点（目录段，非文件名关键词）。
@@ -175,6 +200,31 @@ SETTINGS_FIELD_ORDER = ("执行环境", "分支", "worktree", "工作区", "sess
 
 #: 形态⑤：opener 块首行 `[OP-MMDD-X]【CC／Cowork】<短名，≤12字>`。
 FIRST_LINE_RE = re.compile(r"^\[OP-\d{4}-[A-Za-z]+\]【(CC|Cowork)】(.{1,12})$")
+
+#: 形态⑥：标志「本文件采用 CC 看护者单粘贴、Task/Agent 内部扇出子任务」模式的小节标题。
+#: 出现在该标题**之前**的围栏块＝ §三 各 `### A<N>` 泳道 opener（会被当子任务 prompt 用，
+#: 不该含 `set_session_title`）；之后的块＝看护者自己的开场词（真正的顶层会话，仍需要它）。
+WATCHER_SECTION_RE = re.compile(r"^##\s*三bis\b", re.MULTILINE)
+
+
+def _watcher_section_line(text: str) -> int | None:
+    """返回文件内 `## 三bis` 看护 opener 小节标题所在行号（1-based）；未出现则 `None`。"""
+    for i, line in enumerate(text.splitlines(), start=1):
+        if re.match(r"^##\s*三bis\b", line):
+            return i
+    return None
+
+
+def _is_subtask_lane_block(block: "Block", watcher_line: int | None) -> bool:
+    """该块是否为「看护者用 Task/Agent 派发的子任务泳道 opener」（形态⑥的适用范围）。
+
+    判据只看结构位置，不猜语义：文件含 `## 三bis` 小节 ＋ 该块出现在其之前。
+    没有 `## 三bis` 小节的文件（如单泳道无头派发批次，每条 opener 都是真正的顶层
+    `claude -p` 会话）一律返回 `False`，不受形态⑥约束。
+    """
+    if watcher_line is None:
+        return False
+    return block.start_line < watcher_line
 
 
 def _settings_field_order_problems(line: str) -> tuple[list[str], list[str]]:
@@ -282,19 +332,35 @@ def block_env(block: Block) -> str | None:
     return None
 
 
-def check_block(block: Block) -> list[tuple[str, str]]:
-    """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F5"}。"""
+def check_block(block: Block, *, is_subtask_lane: bool = False) -> list[tuple[str, str]]:
+    """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F6"}。
+
+    `is_subtask_lane`：该块是否为「看护者用 Task/Agent 派发的子任务泳道 opener」
+    （见 `_is_subtask_lane_block`）。默认 `False`——不传时行为与形态⑥引入前完全一致，
+    调用方（`scan`/`scan_single_file`）按文件结构算好后再传入。
+    """
     problems: list[tuple[str, str]] = []
     is_opener = settings_line(block) is not None
     has_title_call = bool(SESSION_TITLE_RE.search(block.text))
     env = block_env(block)
 
-    # 形态① —— 只对 CC 侧 opener 块成立（Cowork 与未标环境结构性排除，见 docstring）
-    if is_opener and not has_title_call and env == "CC":
+    # 形态① —— 只对 CC 侧 opener 块成立（Cowork 与未标环境结构性排除，见 docstring）；
+    # 子任务泳道 opener 结构性排除在外——它本就不该有这一行，缺失不是问题（形态⑥的镜像）。
+    if is_opener and not has_title_call and env == "CC" and not is_subtask_lane:
         problems.append((
             "F1",
             "CC opener 块缺 `set_session_title` 那一行 ⇒ session 名会丢编号"
             "（模板库 §〇 补充一第 2 条／补充三；标题行以 `[…]` 开头不会自动变成 session 名）",
+        ))
+
+    # 形态⑥ —— 子任务泳道 opener 不该含 set_session_title（源头不放，见模块 docstring）：
+    # 形态②的文本例外句被 2026-08-28／2026-09-05 两次实撞证明子 agent 不一定照做。
+    if is_subtask_lane and has_title_call:
+        problems.append((
+            "F6",
+            "子任务泳道 opener（看护者用 Task/Agent 派发）不应包含 `set_session_title` 调用——"
+            '`"self"` 会解析到父 session、把看护者的标题顶掉（2026-08-28／2026-09-05 两次实撞，'
+            "例外句文本不可靠，改为源头不放；队列 §一 `#487`）",
         ))
 
     # 形态② —— 只要块里出现了 set_session_title，就必须带子任务例外句
@@ -433,6 +499,7 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
             continue
         stats["files"] += 1
         status_raw = status_bucket(parse_frontmatter(text).get("status", ""))
+        watcher_line = _watcher_section_line(text)
 
         for block in candidates:
             env = block_env(block)
@@ -442,7 +509,8 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
             if SESSION_TITLE_RE.search(block.text):
                 stats["title_blocks"] += 1
 
-            for form, detail in check_block(block):
+            is_subtask = _is_subtask_lane_block(block, watcher_line)
+            for form, detail in check_block(block, is_subtask_lane=is_subtask):
                 if rel not in commit_cache:
                     commit_cache[rel] = _last_commit_date(rel)
                 bucket, reason = classify_carrier(rel, status_raw, form, commit_cache[rel])
@@ -460,11 +528,13 @@ def scan_single_file(path: Path) -> list[Finding]:
     """
     text = path.read_text(encoding="utf-8")
     findings: list[Finding] = []
+    watcher_line = _watcher_section_line(text)
     for block in iter_fenced_blocks(text):
         if settings_line(block) is None and not SESSION_TITLE_RE.search(block.text):
             continue
         env = block_env(block)
-        for form, detail in check_block(block):
+        is_subtask = _is_subtask_lane_block(block, watcher_line)
+        for form, detail in check_block(block, is_subtask_lane=is_subtask):
             findings.append(Finding(str(path), block.start_line, form, detail,
                                     "current", "--file 自检模式：不判历史", env))
     return findings
@@ -476,11 +546,12 @@ FORM_TITLE = {
     "F3": "形态③ · 标题值不匹配 [Win]MMDDX-<短名>（规则生效日 2026-09-04）",
     "F4": "形态④ · 【设置】六字段缺失或顺序错（规则生效日 2026-09-04）",
     "F5": "形态⑤ · 首行不匹配 [OP-MMDD-X]【CC／Cowork】<短名≤12字>（规则生效日 2026-09-04）",
+    "F6": "形态⑥ · 子任务泳道 opener 含 set_session_title（规则生效日 2026-09-05）",
 }
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="opener 代码块 lint（队列 #284／#381⑸ⓖ，五个失效形态一处守）")
+    ap = argparse.ArgumentParser(description="opener 代码块 lint（队列 #284／#381⑸ⓖ／#487，六个失效形态一处守）")
     ap.add_argument("--enforce", action="store_true",
                     help="当前在用件有违规即以退出码 1 阻断（默认只告警、退出码 0）")
     ap.add_argument("--show-historical", action="store_true",
@@ -528,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
         for rel in sorted({f.rel for f in unk}):
             print(f"  - {rel}")
 
-    for form in ("F1", "F2"):
+    for form in ("F1", "F2", "F6"):
         sel = [f for f in cur if f.form == form]
         if not sel:
             continue
@@ -538,7 +609,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if hist:
         print(f"\n── 历史件命中 {len(hist)} 处（F1 {sum(1 for f in hist if f.form == 'F1')} ／ "
-              f"F2 {sum(1 for f in hist if f.form == 'F2')}）：**按「历史记录不追改」不修、不阻断** ──")
+              f"F2 {sum(1 for f in hist if f.form == 'F2')} ／ "
+              f"F6 {sum(1 for f in hist if f.form == 'F6')}）：**按「历史记录不追改」不修、不阻断** ──")
         if args.show_historical:
             for f in hist:
                 print(f"  - {f.render()}")

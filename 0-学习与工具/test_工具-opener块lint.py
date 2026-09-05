@@ -396,5 +396,104 @@ class file自检模式_scan_single_file(unittest.TestCase):
             self.assertEqual(M.scan_single_file(p), [])
 
 
+class 形态六_子任务泳道opener含session标题(unittest.TestCase):
+    """⑥ 看护者用 Task/Agent 派发的子任务泳道 opener 含 `set_session_title` ⇒ 告警
+    （队列 §一 `#487`，2026-08-28／2026-09-05 两次实撞后 Shao Peishen 拍板 (甲)：
+    源头不放，不再指望文本例外句被子 agent 真正遵守）。"""
+
+    #: 截自 B-0905_B 真实结构：§三 一条 `### A1` 泳道 opener（正确写法，无 title）＋
+    #: `## 三bis` 看护者自己的开场词（正确写法，含 title＋例外句）。
+    _WATCHER_FILE_CLEAN = "\n".join([
+        "### A1 · 示例泳道",
+        "",
+        "粘贴端：CC ｜ 泳道：示例泳道",
+        "",
+        _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：建造到底，不设 session 标题。"),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
+        "",
+        _md("[OP-0905-C]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    #: 同结构，但 `### A1` 泳道 opener 里**错误地**保留了 `set_session_title`。
+    _WATCHER_FILE_LANE_HAS_TITLE = "\n".join([
+        "### A1 · 示例泳道",
+        "",
+        "粘贴端：CC ｜ 泳道：示例泳道",
+        "",
+        _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC, "做什么：建造到底。"),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
+        "",
+        _md("[OP-0905-C]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    def test_泳道opener正确写法_无title_不报任何形态(self):
+        """🔴 验收条款「两侧都能关掉」：§三 泳道 opener 不放 title 是**正确写法**，
+        既不该命中形态①（旧判据的镜像），也不该命中形态⑥。"""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "draft.md"
+            p.write_text(self._WATCHER_FILE_CLEAN, encoding="utf-8")
+            self.assertEqual(M.scan_single_file(p), [])
+
+    def test_泳道opener错误保留title_命中形态六(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "draft.md"
+            p.write_text(self._WATCHER_FILE_LANE_HAS_TITLE, encoding="utf-8")
+            findings = M.scan_single_file(p)
+            forms = {f.form for f in findings}
+            self.assertIn("F6", forms)
+            # 看护者自己那个块（§三bis 之后）写法完全合规，不该被错误牵连出任何命中。
+            watcher_line = M._watcher_section_line(self._WATCHER_FILE_LANE_HAS_TITLE)
+            self.assertFalse(any(f.line >= watcher_line for f in findings))
+
+    def test_看护者自己的开场词不受形态六约束_仍要求title(self):
+        """`## 三bis` 之后的块＝看护者真正会被粘贴进新 CC 会话的那一份，
+        原形态①②③判据照常生效——缺 title 仍应报 F1，不因为「同文件含三bis」被误伤。"""
+        md_no_title = "\n".join([
+            "### A1 · 示例泳道",
+            "",
+            "粘贴端：CC ｜ 泳道：示例泳道",
+            "",
+            _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：建造到底，不设 session 标题。"),
+            "",
+            "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
+            "",
+            _md("[OP-0905-C]【CC】看护示例", SETTINGS_CC, "读队列 #487 恢复上下文，按看护件执行。"),
+        ])
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "draft.md"
+            p.write_text(md_no_title, encoding="utf-8")
+            findings = M.scan_single_file(p)
+            self.assertTrue(any(f.form == "F1" for f in findings))
+
+    def test_无三bis小节的文件_泳道opener仍按原判据要求title(self):
+        """无头单泳道派发批次（如 B-0904_J）没有看护者、`### A<N>` 就是真正的顶层
+        `claude -p` 会话——形态⑥判据不适用，缺 title 仍是形态①。"""
+        md = "\n".join([
+            "### A1 · 存量批次排查",
+            "",
+            "粘贴端：CC ｜ 泳道：queue-skip13",
+            "",
+            _md(SETTINGS_CC, "做什么：排查登记。"),
+        ])
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "draft.md"
+            p.write_text(md, encoding="utf-8")
+            findings = M.scan_single_file(p)
+            self.assertTrue(any(f.form == "F1" for f in findings))
+            self.assertFalse(any(f.form == "F6" for f in findings))
+
+    def test_watcher_section_line与is_subtask_lane_helper(self):
+        text = self._WATCHER_FILE_CLEAN
+        line = M._watcher_section_line(text)
+        self.assertIsNotNone(line)
+        blocks = M.iter_fenced_blocks(text)
+        self.assertEqual(len(blocks), 2)
+        self.assertTrue(M._is_subtask_lane_block(blocks[0], line))
+        self.assertFalse(M._is_subtask_lane_block(blocks[1], line))
+        self.assertFalse(M._is_subtask_lane_block(blocks[0], None))
+
+
 if __name__ == "__main__":
     unittest.main()

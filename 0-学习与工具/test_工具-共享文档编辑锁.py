@@ -5313,6 +5313,35 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         (self.root / "脚本.py").write_text(self.SETTINGS_CC, encoding="utf-8")
         self.assertEqual(self._run(), [])
 
+    # ── 形态⑥（队列 §一 #487，(甲)）：看护者 Task/Agent 派发的子任务泳道
+    #     opener 不该有 set_session_title——本守卫与 lint CLI 逐字复用同一判据，
+    #     此处只验证「有没有正确传上下文」，不重复 lint 自身的单测。────────
+    def test_watcher_pattern_lane_without_title_passes(self):
+        """`## 三bis` 之前的块（§三 泳道 opener）不放 title 是正确写法，
+        不该被形态①误伤（同 lint 模块 `_is_subtask_lane_block` 判据）。"""
+        path = self.root / "看护件-x.md"
+        path.write_text("\n".join([
+            "### A1 · 示例泳道", "", "粘贴端：CC ｜ 泳道：示例泳道", "",
+            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, "做什么：建造到底。", "```", "",
+            "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+            "```", "[OP-0905-C]【CC】看护示例", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, "```",
+        ]), encoding="utf-8")
+        self.assertEqual(self._run(), [])
+
+    def test_watcher_pattern_lane_with_title_rejects_f6(self):
+        """同一结构，但 §三 泳道 opener 错误保留了 title ⇒ 应命中 F6，
+        而不是被旧判据放行或误判成别的形态。"""
+        path = self.root / "看护件-y.md"
+        path.write_text("\n".join([
+            "### A1 · 示例泳道", "", "粘贴端：CC ｜ 泳道：示例泳道", "",
+            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, "```", "",
+            "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+            "```", "[OP-0905-C]【CC】看护示例", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, "```",
+        ]), encoding="utf-8")
+        violations = self._run()
+        self.assertEqual(len(violations), 1)
+        self.assertIn("F6", violations[0])
+
     # ── fail-closed 与适用前提（同 ⑹ 判据方向）───────────────────
     def test_not_a_work_tree_skips_with_notice(self):
         """反例：根本不在 git 工作树内 ⇒ 适用前提不成立，跳过（不是

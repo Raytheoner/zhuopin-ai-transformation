@@ -4215,11 +4215,15 @@ def _opener_guard_violations(
             b for b in blocks
             if lint.settings_line(b) is not None or lint.SESSION_TITLE_RE.search(b.text)
         ]
+        # 队列 #487（(甲)）：看护者用 Task/Agent 派发的子任务泳道 opener 不该有
+        # set_session_title——判据同样逐字复用 lint 模块，不重写第二份（同 D3）。
+        watcher_line = lint._watcher_section_line(text)
         for block in candidates:
             if lint.settings_line(block) is not None:
                 opener_block_count += 1
             env = lint.block_env(block) or "环境未标"
-            for form, detail in lint.check_block(block):
+            is_subtask = lint._is_subtask_lane_block(block, watcher_line)
+            for form, detail in lint.check_block(block, is_subtask_lane=is_subtask):
                 problems.append(f"{rel}:{block.start_line}（{env}）[{form}] {detail}")
 
     # 队列 #284 第 18 次违反的教训：连回显都没有时，无法区分「没问题」与
