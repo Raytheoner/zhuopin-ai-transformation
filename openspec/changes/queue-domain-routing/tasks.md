@@ -40,8 +40,19 @@
       text` 只读 `queue_path` 那一份 ⇒ 切换前若干天写在机制环境文件里的行会被逐条误判为
       "归档成功但队列没有对应行"，产生一批假阳性私信（同 `#99`／`#312` 缺口一形态）。
       改为按 `iter_queue_paths()` 逐份读后合并（**不拼接后只解析一次**）。
+- [x] 1.2d 🔴 **本次最要紧的一处，起草与前三处补漏都没看见**：`scripts/run_aibot_service.py`
+      把 `WECOM_AIBOT_QUEUE_PATH`（该变量在其余**全部**入口的文件头里都写着"可选，
+      **仓库根解析锚点**"）同时当成了写入目标；而常驻监听 `ZhuopinAibotDevListener`
+      的启动脚本 `start-aibot-service-dev.ps1` 把它**钉在机制环境文件上**（其注释说明
+      的目的是 `#126` 的"锚到主工作区、别锚到 worktree 自己的副本"，与"写哪份"无关）。
+      ⇒ 沿用旧写法，1.1 的常量切换在生产上**完全不生效、且不报任何错**——常量改了、
+      行为一点没变。已改为：锚点仍走环境变量（`#126`／`#269` 语义一字不动），
+      **写入目标 ＝ `resolved_repo_root / DEFAULT_QUEUE_RELATIVE_PATH`**；配源码断言
+      单测 `test_run_aibot_service_derives_write_target_from_constant_not_anchor`
+      钉死不得回退。**`start-aibot-service-dev.ps1` 一字未改**（它现在只提供锚点，
+      语义正确）。
 - [x] 1.3 `wecom-aibot-service` 既有 mock 单测套件全绿复核（隔离环境，不触真实企微端点）：
-      基线 **758 passed / 1 skipped** → 改后 **767 passed / 1 skipped**（+9 新增），零回归。
+      基线 **758 passed / 1 skipped** → 改后 **768 passed / 1 skipped**（+10 新增），零回归。
 - [x] 1.4 单测：`tests/test_queue_appender_domain_routing.py::test_queue_appender_targets_
       business_file`（反例：钉住"不得写回机制环境文件"，与 `#336` 形态对称的回归护栏），
       配套 `test_mechanism_relative_path_constant_is_the_mechanism_file` 钉住读侧常量不被
@@ -75,9 +86,17 @@
 
 ## 4. 回归与收口
 
-- [x] 4.1 三处单测：`wecom-aibot-service` **767 passed / 1 skipped**（基线 758／1）；
+- [x] 4.1 三处单测：`wecom-aibot-service` **768 passed / 1 skipped**（基线 758／1）；
       `5-平台底座/zhuopin_platform` **466 passed / 1 skipped**（未触碰，零漂移）；
-      `0-学习与工具` 全绿复核（本次未触碰该目录任何文件）。
+      `0-学习与工具` **1403 passed ＋ 109 subtests / 4 failed**（本次未改该目录任何文件）——
+      逐条判定：**3 条与本次无关的存量红**（`test_工具-引导样板lint::test_env锚定存量已清零`
+      指向 `4-数字员工/采购部/SC7-库存优化建议/scripts/leadtime_median.py:107`；
+      `test_工具-CLAUDE进度段lint` 两条读的是根 `CLAUDE.md`，本次未触碰）；
+      **1 条是本次自己撞出来的、已修**——`test_工具-队列结构lint::test_real_production_
+      queue_file_passes`：#341 行状态字段初写为 `[S:wip]`，而 `wip` 不在合法枚举
+      （done/open/partial/hold/blocked/timed=）内 ⇒ 改为 `[S:blocked]` 后该文件
+      **61 passed 全绿**。🔑 值得留：这条红是"真实生产队列"用例抓到的，**不是任何
+      mock 用例**——写队列的判据只有对着真身跑才会响。
       ⚠️ CI 整体 run 长期 failure（§一 `#398` ⑶）⇒ 红绿信号一律本地实跑取证，不以 CI 绿为准。
 - [x] 4.2 `grep -rn "实现差异" openspec/specs/queue-dual-file-topology openspec/specs/
       editlock-dual-queue-routing` 命中 **0 处**。

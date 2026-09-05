@@ -208,11 +208,29 @@ def main() -> None:
     # 队列 #315（2026-08-11 最小止血）：此前此处独立硬编码字面量指向旧
     # 单文件（拆分后已是不含表格的纯指针文件），与 `repo_paths.py` 里
     # `DEFAULT_QUEUE_RELATIVE_PATH` 各自维护一份、彼此漂移——改直接复用
-    # 该常量（已改指机制环境文件），单一可信源。
-    queue_path = resolve_default_queue_anchor(
+    # 该常量，单一可信源。
+    #
+    # 🔴 队列 #341（2026-09-05）：**锚点与写入目标在此处分开算，不再是同一个值。**
+    # `WECOM_AIBOT_QUEUE_PATH` 在其余**全部**入口（`decision_reminder_check`／
+    # `dispatch_followup_letters`／`flush_pending_lock_appends`／
+    # `push_followup_letter`／`approve_followup_letter`／`annual_holiday_reminder`）
+    # 的文件头里都写着同一句话——「**可选，仓库根解析锚点**」；只有本入口历史上
+    # 把它同时当成了"机器人往哪份文件写"。拆分前只有一份队列文件，两者恰好重合，
+    # 这个混用一直没有后果。
+    #
+    # 实测（2026-09-05）：常驻监听 `ZhuopinAibotDevListener` 的启动脚本
+    # `start-aibot-service-dev.ps1` 把该环境变量钉在**机制环境文件**上（其注释
+    # 说明的目的是 #126 的"锚到主工作区、别锚到 worktree 自己的副本"，与"写哪份"
+    # 无关）。若此处继续沿用旧写法，`#341` 决策点 2 的写入目标切换在生产上
+    # **完全不生效、且不报任何错**——常量改了、行为一点没变，是本项目反复点名的
+    # "改了个看起来对的地方、真实路径根本不经过它"形态。
+    # ⇒ 锚点仍走环境变量（#126／#269 的既有语义一字不动），**写入目标改由
+    # `DEFAULT_QUEUE_RELATIVE_PATH` 相对解析出的仓库根拼出**，不再取锚点本身。
+    queue_anchor = resolve_default_queue_anchor(
         NAIVE_REPO_ROOT, DEFAULT_QUEUE_RELATIVE_PATH
     )
-    resolved_repo_root = resolve_repo_root(queue_path, fallback=NAIVE_REPO_ROOT)
+    resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
+    queue_path = resolved_repo_root / DEFAULT_QUEUE_RELATIVE_PATH
 
     external_docs_root = Path(
         os.environ.get("WECOM_AIBOT_EXTERNAL_DOCS_ROOT", resolved_repo_root / "7-外部文档")
