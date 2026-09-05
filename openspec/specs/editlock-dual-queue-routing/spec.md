@@ -7,13 +7,13 @@
 ## Requirements
 
 ### Requirement: acquire/append-row 按域路由
-`acquire`（当目标为默认队列文件时）与 `append-row --section 一|二` SHALL 要求调用方显式声明 `--domain 机|业`，据此路由到 `queue_table.resolve_queue_path()` 解析出的对应物理文件；未声明域且未显式 `--file` 覆盖目标时，MUST 拒绝执行，不静默选择任一份文件。
+`acquire`（当目标为默认队列文件时）与 `append-row --section 一|二` SHOULD 要求调用方显式声明 `--domain 机|业`，据此路由到 `queue_table.resolve_queue_path()` 解析出的对应物理文件；未声明域且未显式 `--file` 覆盖目标时，SHALL 默认解析到机制环境文件，并 MUST 向调用方回显"本次使用了默认值"这一信号（不得完全静默）。`--section 四` 恒定路由到机制环境文件，不受本 Requirement 约束（该分区体量小、不纳入域字段范围，沿用 `queue-authoritative-path-resolution` 既有 Non-Goals）。
 
-> ⚠️ **归档时如实登记的实现差异（2026-08-17，随 `queue-dual-file-split` 归档）**：本 Requirement 的「未声明域时拒绝执行」在 apply 阶段**未按字面实现**——实际按 design 决策点 3 的「迁移期妥协」落为**未声明域时默认解析到机制环境文件**，见该变更包 `tasks.md` 2.4／3.7。**本条描述的是目标态，当前实现尚未达成**；2026-08-17 归档时的实测佐证即 §一 #336（`[D:业]` 却位于机制环境文件，系机器人 `queue_appender` 统一落机制环境文件所致）。补齐属 `tasks.md` 3.7 明列的独立后续。
+> 📌 **来源**：`queue-dual-file-split` design 决策点 3 原定"未声明域时 MUST 拒绝执行"，apply 阶段实测放宽为本条描述的默认值行为（2026-08-17 归档时的实测佐证即 §一 `#336`）；`queue-domain-routing`（2026-09-05，Shao Peishen 拍板采纳决策点 1 默认项）复核后收编为目标态，移除此前那条"归档时如实登记的目标态/现状分叉"临时标注。若未来改为真拒绝，需先完成调用点普查与迁移（见该变更包 design.md 决策点 1 备选项），届时本 Requirement 需另行修订。
 
-#### Scenario: 未声明域时拒绝
+#### Scenario: 未声明域时默认解析到机制环境文件
 - **WHEN** 调用 `acquire` 且既未传 `--domain` 也未传 `--file`
-- **THEN** 命令以非 0 退出码失败，提示须显式声明 `--domain 机` 或 `--domain 业`
+- **THEN** 锁与后续读写操作作用于机制环境文件，命令输出中包含一行提示说明"使用了默认值，建议显式指定 `--domain 机|业`"，不静默隐藏这一事实
 
 #### Scenario: 声明域后正确路由
 - **WHEN** 调用 `acquire --domain 机`
@@ -41,11 +41,19 @@
 - **WHEN** 当前 worktree 本地不存在同相对路径文件，或存在但内容与权威文件完全一致
 - **THEN** 不触发影子副本警告
 
-### Requirement: 锁粒度——每份队列文件各持一把独立锁
-编辑锁 SHALL 按目标文件派生锁文件路径（`<目标文件名>.editlock`），使两份队列文件各持一把互相独立的锁；两份文件的写入方 SHALL 可并行持锁，不因另一份文件被占用而阻塞。
+### Requirement: 锁粒度——两份队列文件共用一把协作锁，锚点恒为机制环境文件
+编辑锁 SHALL 对"队列系统目标"（即 `acquire`/`release`/`status`/`append-row` 在未显式 `--file` 覆盖时的正常队列操作）统一把锁锚点解析为机制环境文件，不论调用方声明的 `--domain` 是"机"还是"业"；两份物理队列文件的写入方 SHALL 串行化持锁，MUST NOT 各自独立加锁并发写入。`--file` 显式覆盖为其它共享文件（如跟进信 README）时，锁粒度仍按目标文件独立派生，不受本 Requirement 约束。
 
-> 📌 **来源**：`queue-dual-file-split` design.md 决策点 7 原列为待验证项（design 推荐倾向独立锁），2026-08-17 归档时经复核拍板采用独立锁——`_lock_path()` 逐文件派生已是既成实现，快照与互斥体均在其上再派生，同样逐文件独立。**遗留**：跨文件高水位线同步的完整语义仍未实现（高水位线只维护在机制环境文件），属 `tasks.md` 3.7 明列的独立后续。
+> 📌 **来源**：`queue-dual-file-split` design 决策点 7 当年对"两份文件各自独立锁"提出唯一顾虑——"改高水位线时业务场景文件的写入者感知不到"；apply 阶段（早于 2026-08-17 归档）已选择共享锁作为规避该竞态的保守方案（`QUEUE_LOCK_ANCHOR = QUEUE_MECHANISM_PATH_REL`），2026-08-28 队列 `#420` 止血时进一步把这一不变式显式写入代码注释。**归档时 tasks.md 6.5 的复核结论"独立锁已是既成实现"是一处分析遗漏**（只核对了 `_lock_path()` 通用派生函数本身，未追踪 `cmd_acquire`/`cmd_release`/`cmd_status`/`_append_row_ownership_violation` 四处调用点对"队列系统目标"的锚点覆盖逻辑）；`queue-domain-routing`（2026-09-05，Shao Peishen 拍板采纳决策点 3 默认项）复核代码后更正本 Requirement 与实际行为一致。**这不是重新拍板锁粒度，是订正一处此前未被登记的 spec/实现分叉**，详见该变更包 design.md 决策点 3。
 
-#### Scenario: 两份队列文件的锁互不阻塞
-- **WHEN** 一方已持有机制环境文件的锁，另一方对业务场景文件发起 `acquire`
-- **THEN** 后者成功获得锁，不被前者阻塞，且两把锁的状态互相独立
+#### Scenario: 两份队列文件的写入方互相阻塞
+- **WHEN** 一方已持有队列系统的协作锁（无论其 `--domain` 是"机"还是"业"），另一方对队列系统本体（机制环境或业务场景文件）发起 `acquire`
+- **THEN** 后者返回"占用中"，不得成功获得锁，直至前者 `release` 或锁陈旧超时
+
+#### Scenario: 高水位线读写天然串行
+- **WHEN** 两个身份先后对 `--section 一|四` 发起 `--reserve` 请求（域不论相同或不同）
+- **THEN** 由于二者共用同一把锁，高水位线的"读→分配→回写"临界区不会被并发进入，不产生跨文件竞态，无需额外的跨文件同步/广播机制
+
+#### Scenario: 显式 `--file` 覆盖为其它共享文件时锁粒度不受影响
+- **WHEN** 调用方对非队列系统目标（如跟进信 README）显式传 `--file`
+- **THEN** 锁按该目标文件自身派生路径，与队列系统的共享锁互不影响，行为与本次改动前完全一致

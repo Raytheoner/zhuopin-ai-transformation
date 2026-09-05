@@ -38,14 +38,31 @@ QUEUE_PATH_ANCHOR_ENV = "WECOM_AIBOT_QUEUE_PATH"
 # `intake.py` 只接 QueueLockBusy，接不住该异常，上抛后被 `connection.py`
 # 的通用兜底捕获——消息仍正常归档进 7-外部文档，但**队列行不会生成**，
 # 而拆件巡逻只认队列行，等同于这条回件在调度视野里从未发生（同 #286
-# 「队列行真实丢失」的形态）。改指向机制环境文件（拆分后仍是含完整
-# "## 一、任务看板" 与合法编号高水位线声明行的真实内容文件）——机器人
-# 写入的行会落在机制环境文件而非按内容应属的业务/机制域精确路由，这是
-# 与 `工具-共享文档编辑锁.py::_resolve_append_target` 未声明域时默认落
-# 机制环境文件完全一致的"迁移期妥协"（决策点3），并非本次新发明的口径。
-# 完整的按 [D:机/业] 域路由与跨文件高水位线同步，留给下一轮独立实现
-# （队列 #315 tasks.md 3.7，本次只做止血、不做完整迁移）。
-DEFAULT_QUEUE_RELATIVE_PATH = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列-机制环境.md"
+# 「队列行真实丢失」的形态）。当时改指向机制环境文件，是与
+# `工具-共享文档编辑锁.py::_resolve_append_target` 未声明域时默认落机制
+# 环境文件一致的"迁移期妥协"（#315 design 决策点 3），非目标态。
+#
+# 🔴 队列 #341（2026-09-05，openspec 变更包 `queue-domain-routing` 决策点 2，
+# Shao Peishen 拍板采纳默认项）：**改回指向业务场景文件**——机器人的产出
+# 场景（专员反馈归档 → 登记队列行）恒定归属业务域，`queue-dual-file-split`
+# design 决策点 4 项 6 早已采纳"机器人 100% 盲写业务场景队列"，只是被上述
+# 止血覆盖了 25 天。2026-09-05 实测复核：当时那个阻塞条件（"业务场景文件
+# 刚拆分完、是否已具备合法表格标题存疑"）已不成立，业务场景文件 §一 现有
+# 完整表格与 44 行数据。
+#
+# 🔴 **本常量只承担两件事：①机器人新行的写入目标；②仓库根解析的锚点。**
+# **它不是"§四／协议〇／编号高水位线在哪"的答案**——那三样按章节归属
+# Requirement 恒在机制环境文件，见下方 `QUEUE_MECHANISM_RELATIVE_PATH`。
+# 每日决策提醒（`scripts/decision_reminder_check.py`）读的是 §四，必须用
+# 机制环境那个常量：本常量一旦被它误用，那条链路会读到一份**没有 §四** 的
+# 文件，结果是"零条待决策"——与"今天真的没有待决策"在输出上逐字相同，
+# 属本项目反复点名的"只读命令结果太干净"失效形态。
+DEFAULT_QUEUE_RELATIVE_PATH = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列-业务场景.md"
+# 队列 #341：机制环境物理队列文件——协议〇正文／§三口径冻结标／§四"需
+# Shao Peishen 的动作"／编号高水位线声明行的权威载体（章节归属 Requirement，
+# 见 `queue-dual-file-topology` spec）。读这四样的消费者一律用本常量，
+# **不得**用 `DEFAULT_QUEUE_RELATIVE_PATH`。
+QUEUE_MECHANISM_RELATIVE_PATH = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列-机制环境.md"
 AUDIT_RELATIVE_PATH = Path("5-平台底座") / "wecom-aibot-service" / "reports" / "wecom_aibot_audit.jsonl"
 # 队列 #192-C：此前 `run_aibot_service.py` 用 `SERVICE_DIR / "reports"`
 # （机器人常驻 checkout 自身）硬编码这两个 pending 暂存文件落点，与

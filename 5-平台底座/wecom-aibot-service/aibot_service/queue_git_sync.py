@@ -79,7 +79,7 @@ from zhuopin_platform.shared_tools.queue_table import iter_queue_paths
 
 from . import pending_jsonl
 from .error_text import describe_exception
-from .queue_appender import append_pending_task
+from .queue_appender import append_pending_task, resolve_high_water_mark_path
 from .queue_edit_lock import QueueLockBusy
 from .repo_paths import resolve_repo_root
 
@@ -156,9 +156,18 @@ def _diff_exceeds_expected(
     return insertions > max_insertions or deletions > max_deletions
 
 
-def _commit(repo_root: Path, relative_path: str, row: str) -> str:
-    """git add + commit。返回空串=成功，否则错误信息。"""
-    add = _run_git(repo_root, "add", relative_path)
+def _commit(repo_root: Path, relative_paths: list[str], row: str) -> str:
+    """git add + commit。返回空串=成功，否则错误信息。
+
+    队列 #341（变更包 `queue-domain-routing` 决策点 2）：`relative_paths`
+    通常是两个——新行落进的**业务场景文件**，与被推进了"编号高水位线"标注
+    行的**机制环境文件**。🔴 **两者必须进同一个 commit**：只提交前者会让
+    高水位线的推进永远停在工作区、推不出去，下一个 checkout／下一次清扫
+    读到的仍是旧值 ⇒ 撞号从"本地已避免"退回"跨 checkout 仍会发生"，正是
+    本决策点要消灭的失效形态。两份是同一份文件时（历史部署／单测）列表
+    只有一个元素，行为与本次改动前逐字一致。
+    """
+    add = _run_git(repo_root, "add", *relative_paths)
     if add.returncode != 0:
         return add.stderr.strip()
     commit = _run_git(
@@ -232,6 +241,21 @@ def append_task_and_sync_to_git(
     """
     resolved_repo_root = resolve_repo_root(queue_path, fallback=repo_root, env=env)
     relative_path = _relative_to_repo(resolved_repo_root, queue_path)
+    # 队列 #341：取号来源文件（默认＝同目录的机制环境文件）与写入目标不是
+    # 同一份时，本次追加会同时改动两份文件——两份必须一起进 commit，见
+    # `_commit` docstring。解析口径直接复用 `queue_appender`，不另写一份。
+    hwm_path = resolve_high_water_mark_path(queue_path)
+    commit_paths = [relative_path]
+    hwm_relative_path: Optional[str] = None
+    if hwm_path != queue_path:
+        try:
+            hwm_relative_path = _relative_to_repo(resolved_repo_root, hwm_path)
+        except ValueError:
+            # 高水位线来源文件不在本仓库工作树内（异常部署）——只提交队列
+            # 文件本身，与本次改动前行为一致，不因此整条链路失败。
+            hwm_relative_path = None
+        if hwm_relative_path is not None and hwm_relative_path != relative_path:
+            commit_paths.append(hwm_relative_path)
     row = ""
     last_error = ""
     attempt = 0
@@ -257,7 +281,7 @@ def append_task_and_sync_to_git(
         # 残留的任何陈旧"⏳未同步"标记（不局限于本次追加的这一行）。
         _clear_unsynced_markers(queue_path)
 
-        err = _commit(resolved_repo_root, relative_path, row)
+        err = _commit(resolved_repo_root, commit_paths, row)
         if err:
             last_error = err
             break
@@ -281,7 +305,18 @@ def append_task_and_sync_to_git(
         # 存在与本次追加无关的外来未提交内容（如协议〇.7/〇.8 允许的
         # "人类已 release 编辑锁但内容尚未提交"合法状态），此时绝不能继续
         # 执行销毁性 reset/checkout（队列 #287 真实事故的根因）。
-        if _diff_exceeds_expected(resolved_repo_root, relative_path):
+        # 队列 #341：高水位线来源文件同批进 commit ⇒ 同一条护栏也必须覆盖
+        # 它，否则"人类在机制环境文件里未提交的编辑被一并卷进来"这条路径
+        # 会绕过护栏。本次追加对它的预期改动只有高水位线那一行（插入 1／
+        # 删除 1），比队列文件本身更紧。
+        if _diff_exceeds_expected(resolved_repo_root, relative_path) or (
+            hwm_relative_path is not None
+            and hwm_relative_path != relative_path
+            and _diff_exceeds_expected(
+                resolved_repo_root, hwm_relative_path,
+                max_insertions=1, max_deletions=1,
+            )
+        ):
             guard_triggered = True
             last_error = (
                 "护栏拦截（foreign_dirty_content_detected）：磁盘上存在与本次"
@@ -296,7 +331,7 @@ def append_task_and_sync_to_git(
         # 护栏是这条"设计要求"此前从未被真正校验过的补强）。
         _run_git(resolved_repo_root, "fetch", remote)
         _run_git(resolved_repo_root, "reset", "--mixed", f"{remote}/{branch}")
-        _run_git(resolved_repo_root, "checkout", "--", relative_path)
+        _run_git(resolved_repo_root, "checkout", "--", *commit_paths)
         _sleep(backoff_seconds)
 
     if guard_triggered:
