@@ -19,13 +19,22 @@ scripts/draft_gap_check.py`，把输出并入报告"。本脚本只负责把"调
 用法：
   python scripts/draft_gap_check.py
   python scripts/draft_gap_check.py --window-days 14
+  python scripts/draft_gap_check.py --window-days 14 --json
 
 环境变量（同 push_followup_letter.py/decision_reminder_check.py 既有约定）：
   WECOM_AIBOT_REPO_ROOT   可选，显式指定仓库根，绕开动态 git 解析
+
+队列 §一 #382⑵（2026-09-05，OP-0905-I）后续：`--json` 是给
+`0-学习与工具/工具-落库sweep.py` 第 11 类常驻告警（原巡逻章程 §一.4
+「起草缺口检测」下放）子进程调用用的结构化出口——同 `工具-跟进信
+README查询.py --digest --json` 已验证过的范式（sweep 刻意不在自身
+进程内 import `aibot_service`，见该文件里那段"零依赖"长注）。默认
+文本输出（供人读、供巡逻章程未摘除前继续调用）**行为不变、一字未改**。
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import date
 from pathlib import Path
@@ -50,6 +59,14 @@ FOLLOWUP_README_RELATIVE_PATH = (
 def main() -> None:
     parser = argparse.ArgumentParser(description="跟进信「该起草而没起草」缺口盘点（纯检测，不发送通知）")
     parser.add_argument("--window-days", type=int, default=DEFAULT_WINDOW_DAYS)
+    parser.add_argument(
+        "--json", action="store_true",
+        help="输出结构化 JSON（{window_days, gaps:[{recipient,scenario_prefix,"
+             "event_date,commit_sha}]}）供 sweep 子进程解析，取代人读文本；"
+             "README 不存在时输出 {\"error\": \"...\"} 到 stdout、退出码仍为 1，"
+             "不与非 --json 分支共用 stderr+exit(1) 那条路径（子进程调用方按"
+             "退出码/JSON 解析失败即视为不可用，不解析 stderr 文案）。",
+    )
     args = parser.parse_args()
 
     queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT)
@@ -57,13 +74,32 @@ def main() -> None:
     readme_path = repo_root / FOLLOWUP_README_RELATIVE_PATH
 
     if not readme_path.exists():
-        print(f"[SKIP] 跟进信 README 不存在：{readme_path}", file=sys.stderr)
+        if args.json:
+            print(json.dumps({"error": f"跟进信 README 不存在：{readme_path}"}, ensure_ascii=False))
+        else:
+            print(f"[SKIP] 跟进信 README 不存在：{readme_path}", file=sys.stderr)
         sys.exit(1)
 
     today = date.today()
     events = find_recent_scenario_commits(repo_root, today, args.window_days)
     readme_text = readme_path.read_text(encoding="utf-8")
     gaps = find_missing_drafts(readme_text, events, today)
+
+    if args.json:
+        payload = {
+            "window_days": args.window_days,
+            "gaps": [
+                {
+                    "recipient": gap.recipient,
+                    "scenario_prefix": gap.scenario_prefix,
+                    "event_date": gap.event_date.isoformat(),
+                    "commit_sha": gap.commit_sha,
+                }
+                for gap in gaps
+            ],
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+        return
 
     print(build_gap_report(gaps, args.window_days))
 
