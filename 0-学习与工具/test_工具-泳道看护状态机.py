@@ -594,6 +594,164 @@ class LaneWatchStateMachineTests(unittest.TestCase):
         code, _out = self._run_cli(["resume", "--lane", "从未存在过", "--answer", "x"])
         self.assertEqual(code, 1)
 
+    # ---------------- record-lock-hit（P4，index.lock 撞击计数） ----------------
+
+    def test_record_lock_hit_appears_in_count(self):
+        self.module.record_lock_hit(batch="B1", wave=1, lane="A")
+        self.module.record_lock_hit(batch="B1", wave=1, lane="B")
+        self.assertEqual(self.module.count_lock_hits(batch="B1"), 2)
+
+    def test_count_lock_hits_filters_by_batch(self):
+        self.module.record_lock_hit(batch="B1", wave=1, lane="A")
+        self.module.record_lock_hit(batch="B2", wave=1, lane="A")
+        self.assertEqual(self.module.count_lock_hits(batch="B1"), 1)
+        self.assertEqual(self.module.count_lock_hits(batch="B2"), 1)
+        self.assertEqual(self.module.count_lock_hits(), 2)  # 不传 batch＝全量
+
+    def test_format_lock_hit_line_zero_and_nonzero(self):
+        self.assertEqual(self.module.format_lock_hit_line(0), "本批 index.lock 撞击 0 次")
+        self.assertEqual(self.module.format_lock_hit_line(3), "本批 index.lock 撞击 3 次")
+
+    def test_cli_record_lock_hit_then_summary_reports_count(self):
+        code, out = self._run_cli([
+            "record-lock-hit", "--batch", "B1", "--wave", "1", "--lane", "A",
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("已记录", out)
+
+        code, out = self._run_cli(["summary", "--batch", "B1"])
+        self.assertEqual(code, 0)
+        self.assertIn("本批 index.lock 撞击 1 次", out)
+
+    def test_summary_reports_zero_lock_hits_when_none_recorded(self):
+        code, out = self._run_cli(["summary", "--batch", "B1"])
+        self.assertEqual(code, 0)
+        self.assertIn("本批 index.lock 撞击 0 次", out)
+
+
+class LaneParsingDryRunTests(unittest.TestCase):
+    """§三 泳道解析（P2，构建环境瘦身第三轮方案；队列 §一 `#487`）—— 3 行精简版
+    与旧长版本同样能被正确识别；解析器只依赖 `### A<N>` 标题 ＋ 【设置】行两个锚点。
+    """
+
+    def setUp(self):
+        self.module = _load()
+
+    # 3 行精简版：首行 ＋【设置】＋读行——不含"做什么"/"不做什么"。
+    THREE_LINE_LANE_A = (
+        "### A1 · 示例一\n\n"
+        "```\n"
+        "[OP-0905-Z]【CC】示例一\n"
+        "【设置】执行环境：CC ｜ 分支：master ｜ worktree：☑（demo1-wt）｜ "
+        "工作区：无 ｜ session：新开 ｜ 派出线：环境总线\n"
+        "读 ① 队列 §一 #100（`--row 100 --field all`）→ ② CLAUDE.md 恢复上下文，"
+        "按下述执行。本件为 A 类，无需再问澄清，直接开工。\n"
+        "```\n\n"
+    )
+    THREE_LINE_LANE_B = (
+        "### A2 · 示例二\n\n"
+        "```\n"
+        "[OP-0905-Y]【CC】示例二\n"
+        "【设置】执行环境：CC ｜ 分支：master ｜ worktree：☑（demo2-wt）｜ "
+        "工作区：无 ｜ session：新开 ｜ 派出线：环境总线\n"
+        "读 ① 队列 §一 #101（`--row 101 --field all`）→ ② CLAUDE.md 恢复上下文，"
+        "按下述执行。本件为 A 类，无需再问澄清，直接开工。\n"
+        "```\n\n"
+    )
+    GUARDIAN_BLOCK = (
+        "## 三bis、看护opener（单次粘贴）\n\n"
+        "```\n"
+        "[OP-0905-X]【CC】看护示例批\n"
+        "【设置】执行环境：CC ｜ 分支：master ｜ worktree：☐ ｜ 工作区：无 ｜ "
+        "session：新开 ｜ 派出线：环境总线\n"
+        "```\n"
+    )
+
+    def test_three_line_format_both_lanes_recognized(self):
+        text = "## 三、泳道 opener\n\n" + self.THREE_LINE_LANE_A + self.THREE_LINE_LANE_B
+        lanes = self.module.parse_section_three_lanes(text)
+        self.assertEqual(len(lanes), 2)
+        self.assertTrue(all(l["recognized"] for l in lanes))
+        self.assertEqual([l["lane"] for l in lanes], ["A1", "A2"])
+
+    def test_guardian_section_three_bis_block_not_counted_as_lane(self):
+        text = ("## 三、泳道 opener\n\n" + self.THREE_LINE_LANE_A + self.THREE_LINE_LANE_B
+                + self.GUARDIAN_BLOCK)
+        lanes = self.module.parse_section_three_lanes(text)
+        self.assertEqual(len(lanes), 2)  # §三bis 的块不该被算成第三条泳道
+
+    def test_legacy_long_format_with_do_dont_sections_still_recognized(self):
+        # 旧长版本（含"做什么"/"不做什么"多行）——证明解析器不依赖行数，向后兼容。
+        legacy = (
+            "### A1 · 示例\n\n"
+            "```\n"
+            "[OP-0905-Z]【CC】示例\n"
+            "【设置】执行环境：CC ｜ 分支：master ｜ worktree：☑ ｜ 工作区：无 ｜ "
+            "session：新开 ｜ 派出线：环境总线\n"
+            "开工第一件事：调 xxx\n"
+            "读 ① 派单件 → ② CLAUDE.md 恢复上下文，按下述执行。本件为 A 类。\n\n"
+            "做什么：\n1. 第一步\n2. 第二步\n\n"
+            "不做什么：\n- 不做的事\n"
+            "```\n"
+        )
+        lanes = self.module.parse_section_three_lanes(legacy)
+        self.assertEqual(len(lanes), 1)
+        self.assertTrue(lanes[0]["recognized"])
+
+    def test_lane_missing_settings_line_reported_unrecognized(self):
+        broken = (
+            "### A1 · 缺设置行\n\n"
+            "```\n"
+            "[OP-0905-Z]【CC】缺设置行\n"
+            "读 ① 派单件 → ② CLAUDE.md\n"
+            "```\n"
+        )
+        lanes = self.module.parse_section_three_lanes(broken)
+        self.assertEqual(len(lanes), 1)
+        self.assertFalse(lanes[0]["recognized"])
+        self.assertIn("【设置】", lanes[0]["reason"])
+
+    def test_lane_heading_without_fence_block_reported_unrecognized(self):
+        broken = "### A1 · 没有代码块\n\n只有一段散文，没有围栏块。\n"
+        lanes = self.module.parse_section_three_lanes(broken)
+        self.assertEqual(len(lanes), 1)
+        self.assertFalse(lanes[0]["recognized"])
+
+    def test_no_lane_headings_returns_empty_list(self):
+        self.assertEqual(self.module.parse_section_three_lanes("没有任何 ### A 标题的正文"), [])
+
+    def test_cli_dry_run_reports_recognized_count(self):
+        text = "## 三、泳道 opener\n\n" + self.THREE_LINE_LANE_A + self.THREE_LINE_LANE_B
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", delete=False, encoding="utf-8",
+        ) as f:
+            f.write(text)
+            path = f.name
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = self.module.main(["dry-run", "--file", path])
+            self.assertEqual(code, 0)
+            self.assertIn("§三 解出泳道 2／2 条", buf.getvalue())
+        finally:
+            os.unlink(path)
+
+    def test_cli_dry_run_returns_exit_1_when_any_lane_unrecognized(self):
+        broken = "### A1 · 缺设置行\n\n```\n[OP-0905-Z]【CC】缺设置行\n读 ①\n```\n"
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", delete=False, encoding="utf-8",
+        ) as f:
+            f.write(broken)
+            path = f.name
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = self.module.main(["dry-run", "--file", path])
+            self.assertEqual(code, 1)
+            self.assertIn("✗ A1", buf.getvalue())
+        finally:
+            os.unlink(path)
+
 
 if __name__ == "__main__":
     unittest.main()

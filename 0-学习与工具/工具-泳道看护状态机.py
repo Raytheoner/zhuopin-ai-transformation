@@ -39,6 +39,21 @@ markdown 行锁会引入与本场景无关的校验开销与耦合。本文件�
 若按 `Path(__file__)` 各算各的路径会写进 N 份互相看不见的文件——同队列
 #321 幽灵副本事故的成因。
 
+## §三 泳道解析／dry-run（构建环境瘦身第三轮方案-2026-09-05 P2；队列 §一 `#487`）
+
+看护件 §三 每条泳道原先内嵌完整 opener（含「做什么」「不做什么」，可达 9-16
+行），P2 把它精简为 3 行——首行 `[OP-…]【…】<短名>` ＋ `【设置】` ＋ 一行读指针，
+「做什么／不做什么」改写进队列行正文。`dry-run` 子命令验证这个精简不会破坏
+既有的"数一批有几条泳道"能力：解析器**只依赖两个锚点**——`### A<N>` 标题
+＋ 其后围栏代码块内首行非空文本 ＋ 一行 `【设置】` 开头——不依赖代码块的行数、
+不要求出现"做什么"字样，3 行版与旧的长版本同样能被正确数出。
+
+## P4 · index.lock 撞击计数（同方案 P4；队列 §一 `#487`）
+
+七条泳道并行 + sweep + 总线各自 commit 时会撞 `.git/index.lock`。`record-lock-hit`
+供任一撞锁的泳道留痕一次；`summary` 现取汇总，报「本批 index.lock 撞击 N 次」，
+不再靠人工回忆有没有撞过。
+
 ## 用法
 
     python 0-学习与工具/工具-泳道看护状态机.py criteria
@@ -68,6 +83,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -352,6 +368,67 @@ def lan_status(*, prober: Optional[Callable[[], dict]] = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# §三 泳道解析（P2）：只认两个锚点，不认行数、不认"做什么"字样
+# ---------------------------------------------------------------------------
+
+#: `### A1`／`### A12` 这类泳道标题（模块文档「§三 泳道解析」节）。
+LANE_HEADING_RE = re.compile(r"^###\s+(A\d+)\b", re.MULTILINE)
+#: 围栏代码块（```…```），非贪婪匹配到最近的闭合围栏。
+_FENCE_BLOCK_RE = re.compile(r"```[^\n]*\n(.*?)\n```", re.DOTALL)
+_SETTINGS_LINE_RE = re.compile(r"^【设置】")
+
+
+def parse_section_three_lanes(text: str) -> list[dict]:
+    """§三 每条 `### A<N>` 泳道解析为一条记录，只依赖两个锚点：
+
+    1. 该标题后最近一个围栏代码块的**首行**非空（骨架首行 `[OP-…]【…】<短名>`，
+       本函数不强校验具体格式，那是 `工具-opener块lint.py` 的职责，本函数只
+       判"识别得出来"这一件事）；
+    2. 该代码块内存在至少一行以 `【设置】` 开头。
+
+    **不**依赖代码块行数、**不**要求出现"做什么"/"不做什么"字样——3 行精简版
+    与旧的长版本（含做什么/不做什么小节）同样能被正确识别，这正是 P2 的验收点。
+
+    返回顺序＝文中出现顺序；每条含 `lane`／`recognized`／`title_line`／
+    `settings_line`／（未识别时）`reason`。找不到任何 `### A<N>` 标题时返回
+    空列表（由调用方决定这是"§三没有泳道"还是"格式已漂移到解析器认不出"）。
+    """
+    lanes: list[dict] = []
+    headings = list(LANE_HEADING_RE.finditer(text))
+    for i, m in enumerate(headings):
+        lane_id = m.group(1)
+        start = m.end()
+        end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
+        segment = text[start:end]
+        fence_match = _FENCE_BLOCK_RE.search(segment)
+        if fence_match is None:
+            lanes.append({
+                "lane": lane_id, "recognized": False,
+                "reason": "标题后未找到围栏代码块", "title_line": None, "settings_line": None,
+            })
+            continue
+        block_lines = fence_match.group(1).splitlines()
+        title_line = block_lines[0].strip() if block_lines else ""
+        settings_line = next((ln for ln in block_lines if _SETTINGS_LINE_RE.match(ln.strip())), None)
+        if not title_line:
+            lanes.append({
+                "lane": lane_id, "recognized": False, "reason": "代码块首行为空",
+                "title_line": title_line, "settings_line": settings_line,
+            })
+        elif settings_line is None:
+            lanes.append({
+                "lane": lane_id, "recognized": False, "reason": "代码块内无 `【设置】` 行",
+                "title_line": title_line, "settings_line": settings_line,
+            })
+        else:
+            lanes.append({
+                "lane": lane_id, "recognized": True, "reason": "",
+                "title_line": title_line, "settings_line": settings_line,
+            })
+    return lanes
+
+
+# ---------------------------------------------------------------------------
 # 核心动作：pause / transfer-out / resume / check-timeout / check-heartbeat / summary
 # ---------------------------------------------------------------------------
 
@@ -589,6 +666,39 @@ def check_heartbeat(
     }
 
 
+def record_lock_hit(*, batch: str, wave: int, lane: str) -> dict:
+    """P4（构建环境瘦身第三轮方案；队列 §一 `#487`）：泳道撞 `.git/index.lock`
+    时记一次——只做计数留痕，不做任何自动重试/退避（退避策略＝opener 生成器
+    默认写入的「错峰 ≥90 秒」口径文本，属另一层，本函数不越界代管）。"""
+    now = _now()
+
+    def _mutate(data: dict) -> None:
+        lanes = data["lanes"]
+        lane_state = lanes.setdefault(lane, {"status": "running", "history": []})
+        lane_state.setdefault("lock_hits", []).append({
+            "batch": batch, "wave": wave, "recorded_at": _iso(now),
+        })
+
+    data = _with_state(_mutate)
+    return data["lanes"][lane]
+
+
+def count_lock_hits(*, batch: Optional[str] = None) -> int:
+    """D6 邻接产出：本批撞 `.git/index.lock` 共几次——现取，不靠人工回忆。"""
+    data = _read_state()
+    total = 0
+    for lane_state in data.get("lanes", {}).values():
+        for hit in lane_state.get("lock_hits", []):
+            if batch and hit.get("batch") != batch:
+                continue
+            total += 1
+    return total
+
+
+def format_lock_hit_line(count: int) -> str:
+    return f"本批 index.lock 撞击 {count} 次"
+
+
 def _format_wait_duration(paused_at: Optional[str], answered_at: Optional[str]) -> str:
     if not paused_at:
         return "未知"
@@ -786,9 +896,36 @@ def _cmd_summary(args: argparse.Namespace) -> int:
     print(format_summary_line(rows))
     transfer_rows = build_transfer_summary(batch=args.batch)
     print(format_transfer_line(transfer_rows))
+    lock_hits = count_lock_hits(batch=args.batch)
+    print(format_lock_hit_line(lock_hits))
     if args.json:
-        print(json.dumps({"stops": rows, "transfers": transfer_rows}, ensure_ascii=False))
+        print(json.dumps(
+            {"stops": rows, "transfers": transfer_rows, "lock_hits": lock_hits},
+            ensure_ascii=False,
+        ))
     return 0
+
+
+def _cmd_record_lock_hit(args: argparse.Namespace) -> int:
+    state = record_lock_hit(batch=args.batch, wave=args.wave, lane=args.lane)
+    total = len(state.get("lock_hits", []))
+    print(f"已记录：泳道 `{args.lane}` 本批第 {total} 次撞 index.lock。")
+    if args.json:
+        print(json.dumps(state, ensure_ascii=False))
+    return 0
+
+
+def _cmd_dry_run(args: argparse.Namespace) -> int:
+    text = Path(args.file).read_text(encoding="utf-8")
+    lanes = parse_section_three_lanes(text)
+    recognized = [l for l in lanes if l["recognized"]]
+    print(f"§三 解出泳道 {len(recognized)}／{len(lanes)} 条")
+    for lane in lanes:
+        if not lane["recognized"]:
+            print(f"  ✗ {lane['lane']}：{lane['reason']}")
+    if args.json:
+        print(json.dumps(lanes, ensure_ascii=False, indent=2))
+    return 0 if lanes and len(recognized) == len(lanes) else 1
 
 
 def _cmd_show(args: argparse.Namespace) -> int:
@@ -877,6 +1014,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("--lane", default=None)
     p_show.add_argument("--json", action="store_true")
     p_show.set_defaults(func=_cmd_show)
+
+    p_lock = sub.add_parser("record-lock-hit", help="P4：泳道撞 .git/index.lock 记一次，供 summary 现取汇总")
+    p_lock.add_argument("--batch", required=True)
+    p_lock.add_argument("--wave", type=int, required=True)
+    p_lock.add_argument("--lane", required=True)
+    p_lock.add_argument("--json", action="store_true")
+    p_lock.set_defaults(func=_cmd_record_lock_hit)
+
+    p_dry = sub.add_parser("dry-run", help="P2：对看护件 §三 跑一遍泳道解析，报解出条数与未识别原因")
+    p_dry.add_argument("--file", required=True, help="看护件仓库根相对或绝对路径")
+    p_dry.add_argument("--json", action="store_true")
+    p_dry.set_defaults(func=_cmd_dry_run)
 
     return p
 

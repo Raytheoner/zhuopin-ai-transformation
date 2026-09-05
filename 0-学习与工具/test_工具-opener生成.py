@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -31,6 +32,23 @@ def _load_module():
 
 
 M = _load_module()
+
+#: P7① 撞号查重（`_check_op_id_not_reused`）扫的是 `M.REPO_ROOT / 1-转型规划`。
+#: 除 `UsedSuffixDedupTests` 外，本文件其余用例的关注点与撞号无关，不该受真实
+#: 仓库当日已出现过哪些编号影响（那会让测试结果随仓库内容漂移）——`setUpModule`
+#: 把 `M.REPO_ROOT` 钉死到一个空临时目录，等价于"当日零已用编号"。
+_MODULE_TMP_ROOT: tempfile.TemporaryDirectory | None = None
+
+
+def setUpModule():
+    global _MODULE_TMP_ROOT
+    _MODULE_TMP_ROOT = tempfile.TemporaryDirectory()
+    M.REPO_ROOT = Path(_MODULE_TMP_ROOT.name)
+
+
+def tearDownModule():
+    if _MODULE_TMP_ROOT is not None:
+        _MODULE_TMP_ROOT.cleanup()
 
 #: 一组完整合法的 CC 侧参数——各条反例均从这份基线上单独破坏一个字段。
 VALID_CC_KWARGS = dict(
@@ -214,6 +232,151 @@ class ValidationEdgeCaseTests(unittest.TestCase):
         kwargs["input_pointer"] = r"C:\Dev\zhuopin-ai\1-转型规划\0-全景路线图\示例派单件.md"
         with self.assertRaises(M.OpenerGenError):
             M.generate_opener(**kwargs)
+
+
+class UsedSuffixDedupTests(unittest.TestCase):
+    """P7①（构建环境瘦身第三轮方案 P7；队列 §一 `#487`）—— 当日撞号即拒，
+    报下一个空号；三条覆盖计划原文明写的验收点：撞号拒／空号放行／短形
+    `MMDDX` 也算已用。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        (self.root / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
+        self._orig_repo_root = M.REPO_ROOT
+        M.REPO_ROOT = self.root
+
+    def tearDown(self):
+        M.REPO_ROOT = self._orig_repo_root
+        self._tmp.cleanup()
+
+    def _write(self, name: str, content: str) -> None:
+        (self.root / "1-转型规划" / "0-全景路线图" / name).write_text(content, encoding="utf-8")
+
+    def test_full_form_collision_rejected_with_next_free_suffix(self):
+        self._write("看护件.md", "已用编号 OP-0905-A 出现在正文里。")
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["op_id"] = "OP-0905-A"
+        with self.assertRaises(M.OpenerGenError) as ctx:
+            M.generate_opener(**kwargs)
+        self.assertIn("撞号", str(ctx.exception))
+        self.assertIn("OP-0905-B", str(ctx.exception))  # A 已用，下一个空号是 B
+
+    def test_unused_op_id_passes(self):
+        self._write("看护件.md", "已用编号 OP-0905-A 出现在正文里。")
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["op_id"] = "OP-0905-Z"  # Z 全天未用
+        M.generate_opener(**kwargs)  # 不应抛错
+
+    def test_short_form_session_title_also_counts_as_used(self):
+        # 短形只认 `[Win]MMDDX-` 锚点（骨架「短形只用于 session 名」），全文没有
+        # 任何 `OP-0905-C` 全称，仅有一行短形 session 标题——同样必须命中撞号。
+        self._write("看护件.md", "标题：[Win]0905C-看护批次。正文其余无编号字样。")
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["op_id"] = "OP-0905-C"
+        with self.assertRaises(M.OpenerGenError) as ctx:
+            M.generate_opener(**kwargs)
+        self.assertIn("撞号", str(ctx.exception))
+
+    def test_bare_digits_without_win_anchor_do_not_count_as_short_form(self):
+        # 骨架明写「短形 MMDDX 只用于 session 名」——裸数字巧合（无 `[Win]` 锚点）
+        # 不该被误判为已用，否则正文任何提到日期的地方都会造成假撞号。
+        self._write("看护件.md", "0905D 只是正文里的一个巧合数字串，不是 session 标题。")
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["op_id"] = "OP-0905-D"
+        M.generate_opener(**kwargs)  # 不应抛错
+
+    def test_different_date_same_suffix_does_not_collide(self):
+        self._write("看护件.md", "OP-0904-A 是昨天的编号。")
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["op_id"] = "OP-0905-A"  # 今天的 A，昨天的 A 不冲突
+        M.generate_opener(**kwargs)  # 不应抛错
+
+    def test_next_free_suffix_skips_multiple_used_letters(self):
+        used = {"A", "B", "C"}
+        self.assertEqual(M._next_free_suffix(used), "D")
+
+
+class VariantSubtaskLaneTests(unittest.TestCase):
+    """P4（同方案 P4）—— `variant="subtask_lane"` 不放 set_session_title 行，
+    且无条件追加并行上限/错峰、push 不 ff 两条默认口径。"""
+
+    def setUp(self):
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["variant"] = "subtask_lane"
+        kwargs["op_id"] = "OP-0905-VS"  # 骨架首行/标题正则只认字母后缀，不能用 V1
+        self.out = M.generate_opener(**kwargs)
+
+    def test_no_session_title_line(self):
+        self.assertNotIn("set_session_title", self.out)
+
+    def test_default_parallel_and_push_notes_present(self):
+        self.assertIn(M.SUBTASK_PARALLEL_NOTE, self.out)
+        self.assertIn(M.SUBTASK_PUSH_NOTE, self.out)
+
+    def test_passes_lint_as_subtask_lane_form6_not_triggered(self):
+        lint = M._load_lint_module()
+        blocks = lint.iter_fenced_blocks(self.out)
+        self.assertEqual(len(blocks), 1)
+        problems = lint.check_block(blocks[0], is_subtask_lane=True)
+        self.assertEqual(problems, [])
+
+    def test_would_fail_form1_if_lint_run_without_subtask_flag(self):
+        # 反向用例：证明"不报 F1"确实来自 `is_subtask_lane=True`，不是巧合。
+        lint = M._load_lint_module()
+        blocks = lint.iter_fenced_blocks(self.out)
+        problems = lint.check_block(blocks[0], is_subtask_lane=False)
+        codes = [p[0] for p in problems]
+        self.assertIn("F1", codes)
+
+    def test_cowork_env_rejects_subtask_lane_variant(self):
+        kwargs = dict(VALID_COWORK_KWARGS)
+        kwargs["variant"] = "subtask_lane"
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**kwargs)
+
+
+class VariantGuardianTests(unittest.TestCase):
+    """P4 —— `variant="guardian"`（§三bis 看护者开场词）含 set_session_title，
+    首行为「看护<短名>」，同样追加 P4 默认口径（讲给看护者听）。"""
+
+    def setUp(self):
+        self.kwargs = dict(
+            op_id="OP-0905-VG", env="CC", variant="guardian", short_name="示例批",
+            branch="master（看护者本身不建分支，不改代码）",
+            worktree="☐（看护者不建，各子泳道自建）",
+            workspace="无", session="新开", line="环境总线",
+            input_pointer="1-转型规划/0-全景路线图/看护件-示例.md", task_class="A",
+        )
+        self.out = M.generate_opener(**self.kwargs)
+
+    def test_first_line_is_guardian_label(self):
+        first_line = self.out.splitlines()[1]
+        self.assertEqual(first_line, "[OP-0905-VG]【CC】看护示例批")
+
+    def test_has_session_title_with_guardian_label(self):
+        self.assertIn("set_session_title", self.out)
+        self.assertIn("[Win]0905VG-看护示例批", self.out)
+
+    def test_default_note_present(self):
+        self.assertIn(M.GUARDIAN_PARALLEL_NOTE, self.out)
+
+    def test_passes_lint_check_block(self):
+        lint = M._load_lint_module()
+        blocks = lint.iter_fenced_blocks(self.out)
+        self.assertEqual(lint.check_block(blocks[0]), [])
+
+    def test_short_name_plus_guardian_prefix_over_12_chars_raises(self):
+        kwargs = dict(self.kwargs)
+        kwargs["short_name"] = "一二三四五六七八九十一"  # 11 字 + "看护" 2 字 = 13
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**kwargs)
+
+    def test_guardian_branch_not_forced_into_slug_template(self):
+        # 分支字段须原样透传（固定字面量），不会被套上标准变体的
+        # "从 master 起 claude/opMMDDx-<slug>" 拼装模板。
+        self.assertIn("master（看护者本身不建分支，不改代码）", self.out)
+        self.assertNotIn("从 master 起 `claude/", self.out)
 
 
 if __name__ == "__main__":
