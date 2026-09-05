@@ -412,6 +412,14 @@ class _FlakyPath:
     def write_text(self, content, encoding="utf-8"):
         return self._real.write_text(content, encoding=encoding)
 
+    @property
+    def parent(self):
+        """队列 #341：`resolve_high_water_mark_path` 要按同目录找机制环境
+        文件——替身必须转发这一属性，否则它只是"替身没写全"而不是被测
+        行为变了（本目录下没有那份文件，解析仍回落 `queue_path` 自身，
+        本组用例的语义一字未变）。"""
+        return self._real.parent
+
     def __str__(self):
         return str(self._real)
 

@@ -119,6 +119,7 @@ from aibot_service.queue_edit_lock import AIBOT_LOCK_WHO, SubprocessQueueEditLoc
 from aibot_service.queue_lock_pending import flush_pending_queue_appends  # noqa: E402
 from aibot_service.repo_paths import (  # noqa: E402
     DEFAULT_QUEUE_RELATIVE_PATH,
+    QUEUE_MECHANISM_RELATIVE_PATH,
     resolve_audit_path,
     resolve_default_queue_anchor,
     resolve_open_pool_reminder_state_path,
@@ -127,7 +128,16 @@ from aibot_service.repo_paths import (  # noqa: E402
     resolve_repo_root,
 )
 
-QUEUE_REL = DEFAULT_QUEUE_RELATIVE_PATH
+# 🔴 队列 #341（2026-09-05）：本脚本的判据读的是 **§四「需 Shao Peishen 的
+# 动作」**，而 §四 按章节归属 Requirement **只存在于机制环境文件**——故这里
+# 必须钉死 `QUEUE_MECHANISM_RELATIVE_PATH`，**不能**跟着
+# `DEFAULT_QUEUE_RELATIVE_PATH`（#341 已把它改指业务场景文件，那是机器人
+# 新行的写入目标，与"§四 在哪"是两个不同的问题）。跟错的后果不是报错，是
+# 每天 08:30 稳定输出"决策提醒命中 0 项"——与"今天真的没有待决策"逐字相同。
+QUEUE_REL = QUEUE_MECHANISM_RELATIVE_PATH
+# 补录（`flush_pending_queue_appends`）是**写**新行，其目标与机器人主链路
+# 一致＝业务场景文件；与上面那个"读 §四"的常量刻意分开，不合并。
+QUEUE_APPEND_TARGET_REL = DEFAULT_QUEUE_RELATIVE_PATH
 
 
 def _resolve_ack_path(resolved_repo_root: Path) -> Path:
@@ -291,8 +301,11 @@ async def _run(dry_run: bool) -> int:
     # 队列 #192-A 第二道载体：dry-run 不做真实动作（会真实 commit/push），
     # 与主载体 sweep 的 dry-run 处理方式一致。
     if not dry_run:
+        # 队列 #341：补录是写侧 ⇒ 目标是业务场景文件，不是上面那个读 §四 的
+        # `queue_path`（机制环境文件）。
         await _flush_pending_lock_appends_second_carrier(
-            resolved_repo_root, queue_path, audit, fallback_send,
+            resolved_repo_root, resolved_repo_root / QUEUE_APPEND_TARGET_REL,
+            audit, fallback_send,
         )
 
     queue_text = queue_path.read_text(encoding="utf-8")

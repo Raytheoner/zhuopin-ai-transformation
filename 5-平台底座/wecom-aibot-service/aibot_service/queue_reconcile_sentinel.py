@@ -44,6 +44,7 @@ from pathlib import Path, PurePath
 from typing import Optional
 
 from zhuopin_platform.audit import AuditEvent, AuditLogger
+from zhuopin_platform.shared_tools.queue_table import iter_queue_paths
 
 from .forwarding import is_self_sender
 
@@ -159,9 +160,23 @@ def _collect_reconciliation_text(queue_path: Path) -> str:
     #99：07-24 16:40 CST 重连时确已产生过一次这类假阳性私信）。归档件内容
     是已完成行的历史存档、写定后不会再变，一并纳入子串匹配不会引入新的
     误判风险；不做时间窗口过滤（`within_days` 只管审计事件本身的新鲜度，
-    归档件是否被扫描与其无关）、不递归子目录、只认严格匹配命名律的文件。"""
-    parts = [queue_path.read_text(encoding="utf-8") if queue_path.exists() else ""]
+    归档件是否被扫描与其无关）、不递归子目录、只认严格匹配命名律的文件。
+
+    🔴 队列 #341（2026-09-05）：**两份物理队列文件都要读，不只 `queue_path`
+    那一份。** #341 把机器人的写入目标从机制环境文件改回业务场景文件，而
+    切换之前若干天里写下的行仍留在机制环境文件里——哨兵若只扫写入目标那
+    一份，那些行会被逐条误判为"归档成功但队列里没有对应行"，产生一批假
+    阳性私信（形态与 #99 那次"行搬了家就报漏行"完全一致）。这也是 #312
+    缺口一"一份拆成两份、下游只跟一份"家族的又一个入口，修法同源：
+    按 `iter_queue_paths()` 逐份读、合并，**不拼接后只解析一次**。"""
     directory = queue_path.parent
+    seen: set[Path] = set()
+    parts: list[str] = []
+    for candidate in [queue_path, *(directory / PurePath(rel).name for rel in iter_queue_paths())]:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        parts.append(candidate.read_text(encoding="utf-8") if candidate.exists() else "")
     if directory.exists():
         for path in sorted(directory.glob("跨桌任务队列-归档-*.md")):
             if _ARCHIVE_FILENAME_RE.match(path.name):
