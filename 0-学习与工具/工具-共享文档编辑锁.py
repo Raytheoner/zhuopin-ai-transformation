@@ -274,6 +274,55 @@ fail-closed 拦下两次。逃生阀 `opener豁免：<理由>`，取材面与 `�
 如实声明**：本守卫只覆盖走了队列锁 acquire/release 流程的 opener——写完
 直接粘出去、从不经本工具的会话它看不到，`#284` 因此不销号，只改写为
 「形态① 已由咽喉守住（限已登记路径）」。
+
+队列 §一 #455（2026-09-05，openspec 变更包 `editlock-write-guard-hardening`，
+Shao Peishen 同日 design 审逐条拍板五个决策点）：**写侧三缺陷合并处置**。
+根因一句话——**写侧校验比读侧解析弱一档**：读侧 `queue_table.split_row_cells`
+按 CommonMark 反引号游程规则识别跨度、跨度内竖线不算列分隔符，写侧却
+只有一个"含竖线就拒"的朴素子串扫描，且从不对**真正要落盘的那个字符串**
+回读一次。三条判据同车上岗（`cmd_edit_row`／`cmd_append_row` 两个入口都装）：
+
+  ① 反引号  新写入的值须**游程闭合**——存在找不到同长度闭合游程的开启
+    奇偶      游程即拒绝写入。判据＝`queue_table.has_unbalanced_backtick_
+              run`，与读侧 `_mask_backtick_spans` **共用同一套游程扫描
+              算法、语义刻意取反**（读侧把未闭合游程当普通文本吞掉以宽容
+              历史内容，写侧发现即报错）。刻意**不用**"反引号总数是否为
+              偶数"这种简化判据：apply 期全量取证在生产队列 §一 #414 行
+              实测到反引号总数为奇数（83 个）却游程全闭合的真实合法内容
+              （双反引号游程包裹"内容本身是一个反引号"），简单奇偶会误判。
+              🔴 **本项取代了 `cmd_edit_row`／`_build_append_row_line` 里对
+              `queue_table.has_bare_pipe(value)` 的朴素拒绝**（上文 #258 段
+              「字段值含任何竖线一律拒绝写入」那一句自此只作沿革保留、不再
+              是现行行为，历史记录不追改）：那一半是 `#324` 的误锁源头——
+              #324 行内合法存在 4 处反引号包裹的竖线，读侧认为完全安全，
+              写侧一律拒绝 ⇒ 该行状态字段整格重写被拒、**写定即锁死**，而
+              `--append` 改不了 `[S:]` 前缀，锁死后无法翻转状态。
+              **不放松的那一半仍不放松**：跨度外的真裸竖线必然被 ② 拒。
+  ② 回读    拼装出最终整行、**写文件之前**，用读侧同一个函数
+    列数      `split_row_cells(new_line)` 回读切列，列数不等于该分区预期
+              列数即拒绝写入（不落盘＝无需回滚）。**此前所有校验验的都是
+              `new_cells` 这个构造上不可能出错的中间量**（Python 列表长度
+              恒等于旧行列数），"写侧以为几列"与"读侧实际解析成几列"是两个
+              从未比对过的量——`#454`（2026-09-02）正是从这个缝里漏过去的：
+              分诊器给出的引文片段恰好在一个反引号处被截断，写进队列后反引号
+              配对全线错位，整行塌列且当场无人察觉。`append-row` 侧原有的
+              裸 `new_line.strip("|").split("|")` 一并替换为 `split_row_cells`，
+              与读侧、与 `edit-row` 口径统一。决策点③ 拍板 (a)＝**单纯拒绝**
+              并报出实际/预期列数，不做"按裸竖线拆分给出建议命令行"。
+  ③ --repair  已塌列历史行的逃生入口，**只在 `edit-row` 上开放**（决策点⑤：
+              `append-row` 每次从零拼装新行，不存在"旧行已塌列"这个前提，
+              传入即显式拒绝并指向 `edit-row --repair`）。它**只跳过**「旧行
+              列数须先合法」这一项前置检查——治的是 `#454` 的"行一旦被写坏，
+              唯一能修复它的入口把自己也关上了"（当次只能持锁状态下用脚本
+              改文件绕过）；① ② 对本次改动**一项不放宽**，`--repair` 能且
+              只能把一行从不合法改成合法。**须与行内留痕同时到位**：改动值里
+              还须写明 `修复说明：<理由>`（决策点④，Shao Peishen 拍板，
+              **与 design.md 原推荐相反**），缺理由即视为未传本开关，范式
+              与 `WIP豁免：`／`日期豁免：`／`进度豁免：` 完全一致。
+              🔴 逃生阀**刻意未预置**：决策点② 拍板"反引号奇偶不合法即拒绝，
+              本次不加 `--allow-unbalanced-backtick`"，依据是 apply 期全量
+              取证（两份队列 349 条表格行）**零命中**"故意写孤立反引号"的
+              合法用法；真出现再补，不预先假设需要。
 """
 from __future__ import annotations
 
@@ -1486,6 +1535,16 @@ def _cell_has_bare_pipe(cell: str) -> bool:
     队列 #306：实现委托 `queue_table.has_bare_pipe`（权威模块，口径一致），
     本函数保留作薄封装——docstring 记录的历史成因对本文件的读者仍有价值，
     不因委托而删除。
+
+    🔴 **队列 #455（2026-09-05）起，本函数不再承担"能不能写入"的判定**。
+    上面那段"反引号不豁免"的 apply 阶段修正已被 #455 反转——它成立的前提是
+    「本项目现有表格解析对反引号无感知」，而队列 #314 起读侧
+    `queue_table.split_row_cells` 已经是反引号感知的，前提不再成立，写侧
+    继续拒绝就成了 `#324` 的误锁源头。**上文这段历史论证原样保留、不追改**，
+    但现行判据是 #455 的 ①（游程闭合）＋ ②（回读列数），见模块文件头 #455 段。
+    本函数**现存唯一用途＝`_arity_failure_message` 的诊断**：arity 失败时
+    顺带指出"你可能是漏写了 `--cell` 分隔符、把两列粘成了一列"——那是一条
+    **成因提示**，不是准入判据，与 #455 不冲突（#351 打磨过的文案，保留）。
     """
     return queue_table.has_bare_pipe(cell)
 
@@ -1554,12 +1613,23 @@ def _build_append_row_line(section: str, number: str | None, cells: list[str]) -
     expected = SECTION_APPEND_CONTENT_COUNTS[section]
     if len(cells) != expected:
         raise AppendRowFailedError(_arity_failure_message(section, number, cells, expected))
+    # 队列 #455 ①（2026-09-05）：**朴素裸竖线拒绝已被反引号奇偶校验取代**。
+    # 旧实现在这里对每个 `--cell` 跑 `_cell_has_bare_pipe`，一律拒绝含竖线的
+    # 值、反引号包裹亦不豁免——那一半是 `#324` 的误锁源头（读侧
+    # `split_row_cells` 认为完全合法的"反引号跨度内竖线"，写侧照样拒绝）。
+    # 替代它的是两道更准的判据：本处的 ①（新值反引号游程须闭合）＋
+    # `cmd_append_row` 写盘前的 ②（拼装结果按读侧同款切列回读列数）。
+    # **不放松的那一半仍不放松**：真正会撑列的裸竖线（不在反引号跨度内）
+    # 必然使 ② 回读列数对不上 ⇒ 照样拒绝。判据升级的完整论证见 proposal
+    # 「本次替代哪一项既有校验」。
     for i, cell in enumerate(cells, start=1):
-        if _cell_has_bare_pipe(cell):
+        if queue_table.has_unbalanced_backtick_run(cell):
             preview = cell if len(cell) <= 60 else cell[:60] + "…"
             raise AppendRowFailedError(
-                f"第 {i} 个 --cell 含竖线「|」（不论是否被反引号包裹均拒绝，"
-                f"改用全角「｜」或改写措辞）：{preview}"
+                f"第 {i} 个 --cell 含**未闭合的反引号游程**（找不到同长度的闭合"
+                f"反引号）——写入后该行的反引号配对会全线错位、把真正的列分隔符"
+                f"也保护掉，整行塌列且当场无人察觉（`#454` 2026-09-02 真实事故）。"
+                f"请补上闭合反引号，或去掉这个落单的反引号：{preview}"
             )
     if section in ROW_NUMBER_SECTIONS:
         if number is None:
@@ -1575,7 +1645,17 @@ def _build_append_row_line(section: str, number: str | None, cells: list[str]) -
     # 比通用校验更有指向性；本调用补的是它们看不见的第三种外形：**列位错置**
     # （格数是对的，错的是内容与格位的对应关系，如状态格不以 [S: 开头、
     # 「✅ 已完成」落进期望产出格）。
-    problems = queue_table.validate_row_cells(section, row_cells, source="write")
+    #
+    # 队列 #455（2026-09-05）：`source` 由 `"write"` 改为 `"parsed"`。
+    # 🔴 **这不是把写侧当读侧用，而是"裸竖线该由谁把关"这件事换了承担者**：
+    # `source` 参数**只影响竖线一项**（`validate_row_cells` docstring 明写），
+    # 而竖线在本函数里已改由上方 ① 的反引号奇偶校验 ＋ `cmd_append_row`
+    # 写盘前 ② 的回读列数校验共同把关，二者合起来严格强于朴素子串扫描
+    # （合法跨度内的竖线放行、真会撑列的竖线仍拒），故这里不能再叠一层
+    # `"write"` 口径的一律拒绝——叠上去就等于 `#324` 的误锁原样搬到
+    # append-row 侧。**`validate_row_cells` 本身未被修改**（签名、返回值
+    # 语义、两种 source 的含义全部不动），改的只是本调用点传哪个值。
+    problems = queue_table.validate_row_cells(section, row_cells, source="parsed")
     if problems:
         raise AppendRowFailedError(
             f"单元格校验未通过（{len(problems)} 项）：" + chr(10)
@@ -1911,6 +1991,48 @@ def _load_changes_json(args: argparse.Namespace) -> dict[str, dict[str, str]] | 
     return out
 
 
+# 队列 #455 ④（Shao Peishen 2026-09-05 拍板，**与 design.md 的推荐相反**）：
+# `--repair` 需要行内留痕。design.md 决策点④ 原本推荐 (b)「不额外要求理由
+# 前缀，靠 git commit 承载」，理由是"`--repair` 改的内容本身就是修复过程、
+# 天然自证"；他拍的是 (a)——**要求前缀**。拍板结论照录在 design.md 文首，
+# 本处只实现，不复述论证。
+#
+# 格式完全复用既有 `WIP豁免：`／`日期豁免：`／`预留豁免：` 范式：标记连同
+# 理由写在**改动值正文里**（随行进 git、可 grep 计数、值周巡检看得见），
+# 不新增写盘路径、不新增留痕载体。
+#
+# 🔴 **"前缀"的准确读法＝理由的前缀，不是整格的前缀**：`修复说明：` 必须
+# 出现在**某一个改动值之内**、其后跟真实理由，而不要求某个格子以它开头。
+# 若按"整格必须以 `修复说明：` 开头"实现，会与 `validate_row_cells` 的关键格
+# 哨兵**直接互斥**——§一「状态」格被强制要求以 `[S:` 开头，两条前缀不可能
+# 同时成立，`--repair` 将永远无法修复状态格。既有三个 waiver 标记
+# （`_has_genuine_row_length_waiver` 等）也一律是"含"而非"以之开头"，本处
+# 与它们保持同一读法。
+REPAIR_REASON_MARKER = "修复说明："
+
+
+def _has_genuine_repair_reason(values: list[str]) -> bool:
+    """判定本次 `--repair` 的改动值里是否含**真实**修复说明，而非仅仅在
+    描述这条规则本身时提到了这个标记。
+
+    判据与 `_has_genuine_row_length_waiver` 逐字同源：占位符写法在本项目里
+    恒以尖括号包裹（`<理由>`），真实理由不会以 `<` 起首——故只要求"标记之后
+    的非空白文本不以 `<` 开头"。多个改动值时**任一**满足即算数（一次
+    `--repair` 通常只有一格承载理由，其余格是被顺带修复的结构）。
+    """
+    for value in values:
+        start = 0
+        while True:
+            idx = value.find(REPAIR_REASON_MARKER, start)
+            if idx == -1:
+                break
+            reason = value[idx + len(REPAIR_REASON_MARKER):].lstrip()
+            if reason and not reason.startswith("<"):
+                return True
+            start = idx + len(REPAIR_REASON_MARKER)
+    return False
+
+
 def cmd_edit_row(args: argparse.Namespace) -> int:
     # 队列 §一 #420：锁锚点在**域路由改写 args.file 之前**定死——两份物理
     # 队列文件共用同一把锁，锚点恒为 QUEUE_LOCK_ANCHOR，与"这次写哪份文件"
@@ -1967,6 +2089,32 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
         idx, old_line, cells = _locate_row(text, args.section, args.number)
 
         new_cells = list(cells)
+
+        # ── 队列 #455 ③ 补白（apply 期实测补齐，2026-09-05）───────────────
+        # 🔴 **不补白，`--repair` 就是一个永远不可能成功的开关**——这是 apply
+        # 期跑 tasks 3.7 当场撞出来的：`--repair` 要修的真实形态（`#337`／
+        # `#422`／`#454` 全都是「列数为 7，应为 8」）是**少了一列**，而
+        # `--set 列名=值` 只能替换**已存在**的格；对缺列行，缺失列的下标
+        # （如「登记」＝7）直接越界，连 IndexError 都不是受控失败。于是即便
+        # 跳过了"旧行列数须先合法"这一项，② 回读仍恒为 7 ⇒ 必拒。
+        # ⇒ `--repair` 时先把单元格列表补到该分区预期列数（补空串），使
+        # 调用方能用 `--set` 显式填回每一个缺失列。这不是放宽校验：补出来的
+        # 空格子仍要过 ①②，还要过关键格哨兵（§一「状态」格必须以 `[S:` 开头、
+        # 「#」格必须是纯数字），填不对照样拒。
+        #
+        # ⚠️ **已知代价，如实写明**：补白一律补在**末尾**，而被吞掉的那个列
+        # 分隔符未必在末尾——若原行是"中间某处塌陷"，补白后既有内容与列位的
+        # 对应关系是错位的。工具**无从知道**分隔符原本在哪（那正是信息已经
+        # 丢失的部分），故不猜：调用方须自己核对每一格、用 `--set` 逐列显式
+        # 写回。这也是 ④ 要求 `修复说明：` 留痕的实质理由之一——修复动作本身
+        # 带人工判断，得留下判断依据。
+        # 🔴 **只补短、不裁长**：列数**多于**预期时不做任何删减（删列＝丢内容，
+        # 且同样无从知道该并回哪一格），交 ② 拒绝并由人工裁决。
+        if getattr(args, "repair", False):
+            expected_total = queue_table.SECTION_COLUMN_COUNTS[args.section]
+            if len(new_cells) < expected_total:
+                new_cells.extend([""] * (expected_total - len(new_cells)))
+
         for name, value in sets.items():
             new_cells[queue_table.resolve_column_index(args.section, name)] = value
         for name, value in appends.items():
@@ -1978,15 +2126,73 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
         print(f"✗ {exc}")
         return 1
 
+    changed_values = {**sets, **appends}
+
+    # ── 队列 #455 ④（Shao Peishen 2026-09-05 拍板 (a)）：`--repair` 须行内留痕 ──
+    # 拍板原话"不满足前缀不生效"。**本实现取的是更严的那一读法：直接拒绝
+    # 整次调用**，而不是"静默把 `--repair` 当没传、继续按默认路径走"。
+    # 🔑 取严的理由（差别只在"目标行本来就合法"这一种情形）：
+    #   - 取严 ⇒ 代价是多一条错误提示，告诉调用方该补什么；**不可能造成
+    #     任何数据损失**。
+    #   - 取松 ⇒ 塌列行上的调用方会收到"列数为 7，应为 8"这条**答非所问**的
+    #     报错（他明明已经声明了要修它），得自己反推出"哦是理由没写"。
+    # 即：两种读法只在无害的一侧有差异，而在有害的一侧取严明显更好。
+    # 同族取向＝本文件一贯的"拒绝要带去向"（见 `cmd_append_row` 拒 `--repair`）。
+    # ⚠️ 与 `--force-mechanism-wip` 的既有范式**刻意不同**（那个是"没超限就
+    # 不拒"），差别的根据是：那个开关的作用面是 release 的一项全局计数，
+    # 本开关的作用面是"我明确知道我要动一行坏行"这个声明。
+    #
+    # 放在所有 `--repair` 相关放宽**之前**：理由没写就不放宽，
+    # 不给"先放宽、再补理由"的中间态。
+    if getattr(args, "repair", False) and not _has_genuine_repair_reason(
+        list(changed_values.values())
+    ):
+        print(f"✗ `--repair` 未生效：改动值里没有 `{REPAIR_REASON_MARKER}<理由>` 留痕。")
+        print("  `--repair` 会放宽「旧行列数须先合法」这一项前置检查，"
+              "故须在本次改动值里写明为什么要修（同 `WIP豁免：`／`日期豁免：` 范式，"
+              "理由随行进 git、值周巡检可见）。")
+        print(f"  例：`--set 状态=\"[S:done][D:机] {REPAIR_REASON_MARKER}该行 2026-09-02 "
+              f"被截断的引文写坏成 7 列，本次补回触碰区列\"`")
+        return 1
+
+    # 队列 #455 ①（2026-09-05）：改动值的反引号游程须闭合。
+    # 🔴 **本检查取代了此前对 `queue_table.has_bare_pipe(value)` 的朴素拒绝**
+    # （旧代码就在本处，原文："传入的「X」值含半角竖线（会撑列…）"）。
+    # 那一步是 `#324` 的误锁源头：#324 行内合法存在 4 处反引号包裹的竖线
+    # （引用朴素切列函数的代码片段），读侧 `split_row_cells` 认为完全安全，
+    # 写侧却一律拒绝 ⇒ 该行**状态字段整格重写被拒、写定即锁死**，而
+    # `--append` 只能加尾巴、改不了 `[S:]` 前缀，锁死后无法翻转状态。
+    # 替代它的是 ①（本处，新值游程须闭合）＋ ②（下方，拼装结果读侧同款回读
+    # 列数）：合法跨度内的竖线放行，真会撑列的裸竖线仍被 ② 拒绝。
+    # 🔴 **`--repair` 不放宽本项**（design 决策点③/⑤ 明写：`--repair` 只跳过
+    # 「旧行列数须先合法」，不放宽对本次改动结果的任何校验）。
+    for name, value in changed_values.items():
+        if queue_table.has_unbalanced_backtick_run(value):
+            print(f"✗ 传入的「{name}」值含**未闭合的反引号游程**（找不到同长度的闭合反引号），"
+                  f"拒绝写入，未修改目标文件。")
+            print("  写入后该行的反引号配对会全线错位，把真正的列分隔符也保护掉，"
+                  "整行塌列且当场无人察觉（`#454` 2026-09-02 真实事故：分诊器给出的"
+                  "引文片段恰好在一个反引号处被截断）。")
+            print("  请补上闭合反引号，或去掉这个落单的反引号。")
+            return 1
+
     # 修复面 B：写盘前复用同一套校验。此处口径是 "parsed"——单元格来自
     # 已落库的行（`split_row_cells` 反引号感知切出），格内被反引号正当保护
     # 的竖线是合法的（生产队列 §一 #324/#326 即如此）；改动值里的**新**竖线
-    # 由下面的显式写侧检查单独把关。
-    for name, value in {**sets, **appends}.items():
-        if queue_table.has_bare_pipe(value):
-            print(f"✗ 传入的「{name}」值含半角竖线（会撑列；改用全角「｜」或改写措辞）")
-            return 1
+    # 由上方 ① 与下方 ② 两项共同把关。
     problems = queue_table.validate_row_cells(args.section, new_cells, source="parsed")
+    # 队列 #455 ③（Shao Peishen 2026-09-05 拍板：只跳过这一项，不多不少）：
+    # `--repair` **仅**滤掉"旧行列数不合法"这一条 problem。`new_cells` 是从
+    # `_locate_row` 切出的旧行单元格上做替换得来的，长度恒等于旧行列数 ⇒
+    # 这条 problem 报的就是"旧行已塌列"这件事，正是 `#454` 里"行一旦被写坏，
+    # 唯一能修复它的入口把自己也关上了"的那把锁。
+    # 🔑 判据串按 `queue_table.validate_row_cells` 的构造原样重建（不是模糊
+    # 匹配"列数"二字），且有单测钉住这个前缀——`queue_table` 那侧改了文案而
+    # 这里没跟，单测会红，不会静默退化成"什么都没滤掉"或"滤掉了别的项"。
+    if getattr(args, "repair", False):
+        expected_total = queue_table.SECTION_COLUMN_COUNTS[args.section]
+        stale_arity = f"§{args.section} 列数为 {len(new_cells)}，应为 {expected_total}"
+        problems = [p for p in problems if not p.startswith(stale_arity)]
     if problems:
         print(f"✗ 改动后该行未通过单元格校验（{len(problems)} 项，未修改目标文件）：")
         for problem in problems:
@@ -2008,6 +2214,32 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
             return 1
 
     new_line = "| " + " | ".join(new_cells) + " |"
+
+    # ── 队列 #455 ②（2026-09-05）：写盘前对**最终要落盘的那个字符串**回读 ──
+    # 🔴 这是本包三条里唯一的 defense-in-depth：上面所有校验验的都是
+    # `new_cells` 这个 Python 列表——一个**构造上不可能出错的中间量**
+    # （长度恒等于旧行列数，替换元素不会改变它）。真正会落盘的是拼接出来的
+    # `new_line`，而它会被读侧按 `|` 重新切开。**"写侧以为几列"与"读侧实际
+    # 解析成几列"是两个量，此前从未比对过**——`#454` 就是从这个缝里漏过去的。
+    # 用读侧同一个函数 `split_row_cells` 回读，把两个量强制变成同一个。
+    # 🔴 **`--repair` 对本项完全不放宽**（design 决策点③⑤）：`--repair` 能且
+    # 只能把一行从"不合法"改成"合法"，不能在此过程中引入新的不合法。
+    # 决策点③ 已定 (a)——**单纯拒绝并报出实际/预期列数**，不做 (b) 的
+    # "按裸竖线拆分给出建议命令行"（留作真实命中几次后再评估的增量）。
+    readback = queue_table.split_row_cells(new_line)
+    expected_total = queue_table.SECTION_COLUMN_COUNTS[args.section]
+    if readback is None or len(readback) != expected_total:
+        actual = "无法按表格行解析" if readback is None else str(len(readback))
+        print(f"✗ 改动后整行回读列数为 {actual}（应为 {expected_total}），"
+              f"拒绝写入，未修改目标文件。")
+        print("  按读侧 `queue_table.split_row_cells`（反引号感知）回读得出——"
+              "最常见成因是某个改动值里有**不在反引号跨度内**的裸竖线，被当成了"
+              "列分隔符；改用全角「｜」或把它包进闭合的反引号跨度内。")
+        if getattr(args, "repair", False):
+            print("  （已传 `--repair`：它只跳过「旧行列数须先合法」这一项前置检查，"
+                  "不放宽本项——修完仍须是合法的一行。）")
+        return 1
+
     if new_line == old_line.strip():
         print("ℹ 改动后与原行完全一致，未写入。")
         return 0
@@ -2022,6 +2254,21 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
 
 
 def cmd_append_row(args: argparse.Namespace) -> int:
+    # 队列 #455 ⑤（Shao Peishen 2026-09-05 拍板）：`--repair` **只在 edit-row
+    # 上开放，append-row 明确拒绝**。依据（design 决策点⑤）：`append-row` 每次
+    # 都从零拼装一个新行、过 ①② 两项校验后才落盘，**不存在**"这一行已经在
+    # 文件里、已经塌列、想改又改不了"这个前提——`--repair` 要解决的鸡生蛋
+    # 问题只属于 `edit-row`。
+    # 🔴 刻意做成**显式拒绝并说明去向**，而不是让 argparse 报 "unrecognized
+    # arguments"：后者只告诉调用方"没这个参数"，前者告诉他"该用哪个命令"。
+    if getattr(args, "repair", False):
+        print("✗ `append-row` 不接受 `--repair`——该参数只在 `edit-row` 上开放。")
+        print("  理由：`--repair` 解决的是「已在文件里的行已塌列、改不动」这个"
+              "鸡生蛋问题，而 append-row 是新增一行，不存在旧行。"
+              "若你要修的是一条已存在的塌列行，请改用 "
+              "`edit-row --section <分区> --number <编号> --repair`。")
+        return 1
+
     # 队列 #315 决策点3/5：队列系统模式下按 --domain 路由到对应物理文件
     # （§四恒定机制环境文件，见 `_resolve_append_target`）；显式 --file
     # 覆盖时（罕见，主要用于测试/特殊场景）原样使用，不做路由。
@@ -2062,12 +2309,23 @@ def cmd_append_row(args: argparse.Namespace) -> int:
         print(f"✗ {exc}")
         return 1
 
-    # 写入前最终校验：拼装结果按 | 切分列数应等于分区预期总列数（含编号列，
-    # 若有）——与既有 `_validate_release_structure` ①校验同一把尺子。
-    parsed_cells = [c.strip() for c in new_line.strip("|").split("|")]
+    # 队列 #455 ②（2026-09-05）：写入前最终回读校验——拼装结果按**读侧同一个
+    # 函数** `queue_table.split_row_cells` 切列，列数应等于分区预期总列数
+    # （含编号列，若有）。与既有 `_validate_release_structure` ①校验同一把尺子。
+    #
+    # 🔴 **本行此前是裸 `new_line.strip("|").split("|")`**——非反引号感知，
+    # 与读侧口径不一致，会把"合法反引号跨度内的竖线"数成额外的列，在
+    # append-row 侧重犯 `#324` 同类误判。改用 `split_row_cells` 后，写侧
+    # "我以为会落成几列"与读侧"实际会被解析成几列"变成同一个量——这正是
+    # 本包立项前提「写侧比读侧解析弱一档」在 append-row 侧的那一档。
+    parsed_cells = queue_table.split_row_cells(new_line)
     expected_total = SECTION_COLUMN_COUNTS[args.section]
-    if len(parsed_cells) != expected_total:
-        print(f"✗ 拼装结果列数为 {len(parsed_cells)}（应为 {expected_total}），拒绝写入——请核查字段内容。")
+    if parsed_cells is None or len(parsed_cells) != expected_total:
+        actual = "无法按表格行解析" if parsed_cells is None else str(len(parsed_cells))
+        print(f"✗ 拼装结果回读列数为 {actual}（应为 {expected_total}），拒绝写入，未修改目标文件。")
+        print("  按读侧 `queue_table.split_row_cells`（反引号感知）回读得出——"
+              "最常见成因是某个字段里有**不在反引号跨度内**的裸竖线，被当成了列分隔符；"
+              "改用全角「｜」或把它包进闭合的反引号跨度内。")
         return 1
 
     # 队列 §一 #351 ⑶⑸／ⓘ1：§二 专属的写入前校验——文件清单路径格式、
@@ -4846,6 +5104,17 @@ def main() -> int:
              "时向后兼容默认落机制环境文件（迁移期妥协，见函数"
              "`_resolve_append_target` 文档）",
     )
+    # 队列 #455 ⑤（Shao Peishen 2026-09-05 拍板：`--repair` 不开放给 append-row）。
+    # 🔴 **刻意登记这个参数，只为了能显式拒绝它**：不登记的话 argparse 会报
+    # "unrecognized arguments: --repair"——那只告诉调用方"没这个参数"，而
+    # 调用方真正需要知道的是"这件事该用 edit-row --repair 做"。同本文件一贯的
+    # fail-loud 取向（拒绝要带去向，不只带否定）。
+    p_append_row.add_argument(
+        "--repair", action="store_true",
+        help="不适用于 append-row，传入即拒绝并指向 `edit-row --repair`。"
+             "理由：--repair 解决的是「已在文件里的行已塌列、改不动」这个鸡生蛋"
+             "问题，而 append-row 每次都从零拼装一个新行、不存在旧行",
+    )
     p_append_row.set_defaults(func=cmd_append_row)
 
     # 队列 #414 修复面 C：改**已存在**的行。此前只有两条路——手工编辑器改
@@ -4891,6 +5160,19 @@ def main() -> int:
     p_edit_row.add_argument(
         "--domain", choices=("机", "业"), default=None,
         help="同 append-row：定位哪份物理队列文件",
+    )
+    p_edit_row.add_argument(
+        "--repair", action="store_true",
+        help="队列 #455 ③（2026-09-05）：修复**已塌列**的历史行。默认路径下"
+             "`edit-row` 对列数≠分区预期列数的行拒绝一切操作（含 --append），"
+             "于是「行一旦被写坏，唯一能修复它的入口把自己也关上了」（#454 实证："
+             "当次只能持锁状态下用脚本改文件绕过）。本开关**只跳过「旧行列数须先"
+             "合法」这一项前置检查**——本次改动值仍须过反引号奇偶校验，拼装结果"
+             "仍须过回读列数校验，二者一项不放宽。"
+             f"**须与行内留痕同时到位**：改动值里还须写明「{REPAIR_REASON_MARKER}<理由>」，"
+             "缺理由即视为未传本开关（Shao Peishen 2026-09-05 拍板，同 "
+             "`WIP豁免：`／`日期豁免：` 范式）。"
+             "⚠️ `append-row` 不接受本参数（新增行不存在「旧行已塌列」这个前提）",
     )
     p_edit_row.set_defaults(func=cmd_edit_row)
 
