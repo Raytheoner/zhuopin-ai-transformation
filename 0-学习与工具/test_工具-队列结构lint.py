@@ -289,6 +289,258 @@ class FollowupRestateWarnTests(unittest.TestCase):
         )
 
 
+class PackageProgressWarnTests(unittest.TestCase):
+    """队列 #456：队列禁止复述 openspec 包进度（一期只 warn，不进 `lint()`）。
+
+    2026-09-02 Cowork `OP-0902-A` 立行，Shao Peishen 当日答 ②(a)；2026-09-05
+    design 审批准（Cowork 业务总线 `OP-0905-C` 现场当场答复）。proposal.md
+    （commit `dc24cb3`）已实测证明「包名↔进度词紧凑窗口」判据判不出可靠形态
+    ——两条真实致错行 `#452`（28 字）／`#439`（664 字）不可能被同一窗口兼顾。
+    ⇒ design 审批准降级为**低精度零漏报形态**：不做距离/形态匹配，只要行内
+    出现某 openspec 包名即告警。本类用例分两组：⑴ 锁住"提到即告警、不做
+    distance/pointer 排除"这个刻意选择（防止后人反射性地把它"修"成形态 C）；
+    ⑵ 复现 `#439`／`#452` 两个历史致错实例的等价构造场景（真实原文未保留，
+    来源＝队列 `#456` 行内成因描述与 `proposal.md` 取证 3）。
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.target_path = self.repo_root / self.module.QUEUE_REL
+        self.target_path.parent.mkdir(parents=True, exist_ok=True)
+        self.module.QUEUE_PATHS_REL = [self.module.QUEUE_REL]
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write(self, section_one_rows="", section_two_rows="", section_four_rows=""):
+        self.target_path.write_text(
+            HEADER + section_one_rows
+            + SECTION_TWO_HEADER + section_two_rows
+            + SECTION_THREE_HEADER
+            + SECTION_FOUR_HEADER + section_four_rows,
+            encoding="utf-8",
+        )
+
+    def _warn(self, names):
+        return self.module.package_progress_warnings(self.repo_root, names)
+
+    # ---- 基本两向：提到包名即告警 / 未提到不告警 ----------------------------
+
+    def test_四区提到包名即告警(self):
+        self._write(section_four_rows=(
+            "| 65 | tasks 2.1 未执行，等 lane-watch-mode 交回 | Shao Peishen | 无 |\n"
+        ))
+        warnings, historical, exempt = self._warn(["lane-watch-mode"])
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("lane-watch-mode", warnings[0])
+        self.assertIn("tasks.md", warnings[0], "提示必须指向唯一权威源")
+        self.assertEqual(historical, 0)
+        self.assertEqual(exempt, 0)
+
+    def test_一区未完成行提到包名即告警(self):
+        self._write(section_one_rows=(
+            "| 361 | 承接行 | 采购专线 | `x.md` | 产出 | "
+            "[S:open][D:业] 涉及 fi2-source-inversion 包的开放点 | 队列 | 2026-08-21 |\n"
+        ))
+        warnings, _, _ = self._warn(["fi2-source-inversion"])
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("#361", warnings[0])
+
+    def test_未提到任何包名不告警(self):
+        self._write(section_one_rows=(
+            "| 361 | 承接行 | 采购专线 | `x.md` | 产出 | "
+            "[S:open][D:业] 与本判据词表无关的正文 | 队列 | 2026-08-21 |\n"
+        ))
+        warnings, _, _ = self._warn(["fi2-source-inversion", "lane-watch-mode"])
+        self.assertEqual(warnings, [])
+
+    def test_已写tasks指针的行仍被提示(self):
+        """🔴 刻意行为，不是遗漏：design 审批准的是「提到即提示」这一最简单
+        形态（等价 proposal 取证 4 形态 A/B），不做「本行是否已写 tasks.md
+        指针」的排除（那是形态 C 的做法）——本用例锁住这个刻意的取舍，防止
+        后人反射性地"优化"成形态 C，那会让 `#439` 那类无指针散文复述重新
+        判不出来（proposal 已实测证明二者不可兼得）。"""
+        self._write(section_one_rows=(
+            "| 500 | 合规检查 | CC | 无 | 产出 | "
+            "[S:open][D:机] fi2-source-inversion 见包内 tasks.md 3.2 | 队列 | 2026-09-05 |\n"
+        ))
+        warnings, _, _ = self._warn(["fi2-source-inversion"])
+        self.assertEqual(len(warnings), 1, warnings)
+
+    # ---- 扫描面：同 `_followup_restate_scan` 口径 --------------------------
+
+    def test_二区历史批次行不入扫描面(self):
+        self._write(section_two_rows=(
+            "| B-0905_01 | `x.md` | docs: 涉及 lane-watch-mode 包收口 | ✅ 已提交 |\n"
+        ))
+        warnings, historical, exempt = self._warn(["lane-watch-mode"])
+        self.assertEqual(warnings, [], "§二 批次行天然是历史记录，不在扫描范围")
+        self.assertEqual(historical, 0)
+        self.assertEqual(exempt, 0)
+
+    def test_一区已完成行豁免但必须计数(self):
+        self._write(section_one_rows=(
+            "| 150 | 历史任务 | CC | 指针 | 产出 | "
+            "[S:done][D:机] ✅ 已完成，当时涉及 lane-watch-mode 包 | 队列 | 2026-08-03 |\n"
+        ))
+        warnings, historical, exempt = self._warn(["lane-watch-mode"])
+        self.assertEqual(warnings, [], "已完成的历史行不得报违规")
+        self.assertEqual(historical, 1, "但必须计数——静默豁免正是本判据要治的毛病")
+        self.assertEqual(exempt, 0)
+
+    # ---- 逃生阀：`包进度豁免：` 行内标记 ------------------------------------
+
+    def test_行内豁免标记生效且必须可计数(self):
+        """已知第一个真实豁免用例＝队列 `#456` 行自己：一条定义本判据的队列
+        行必然要引用包名并谈进度，否则说不清自己在拦什么（同 `#355` 自指
+        问题的又一次出现）。"""
+        self._write(section_one_rows=(
+            "| 456 | 判据定义行 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 包进度豁免：本行是判据定义行，须引用包名 "
+            "queue-lint-restate-package-progress | 队列 | 2026-09-02 |\n"
+        ))
+        warnings, historical, exempt = self._warn(["queue-lint-restate-package-progress"])
+        self.assertEqual(warnings, [], "豁免行不得报违规")
+        self.assertEqual(exempt, 1, "但必须计数——同 `_appellation_scan` 既有原则")
+        self.assertEqual(historical, 0)
+
+    # ---- 长包名不被短包名子串「窃取」（tasks 4.3 场景）----------------------
+
+    def test_长包名不被短包名子串窃取(self):
+        self._write(section_one_rows=(
+            "| 92 | FI 域收口 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 涉及 fi2-recon-report 包的开放点 | 队列 | 2026-08-30 |\n"
+        ))
+        warnings, _, _ = self._warn(["fi2-recon-mvp", "fi2-recon-report"])
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("fi2-recon-report", warnings[0])
+        self.assertNotIn("fi2-recon-mvp", warnings[0],
+                          "行内只出现 fi2-recon-report，fi2-recon-mvp 不应被子串窃取带出")
+
+    def test_两个包名各自独立命中不互相污染(self):
+        self._write(section_one_rows=(
+            "| 93 | FI 域收口 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 同时涉及 fi2-recon-mvp 与 fi2-recon-report 两包 | 队列 | 2026-08-30 |\n"
+        ))
+        warnings, _, _ = self._warn(["fi2-recon-mvp", "fi2-recon-report"])
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("fi2-recon-mvp", warnings[0])
+        self.assertIn("fi2-recon-report", warnings[0])
+
+    # ---- `#439`／`#452` 历史致错实例回归（等价构造场景） --------------------
+
+    def test_452式近距离复述仍被抓到(self):
+        """回归 `#452`（成因⑵）：包名与进度词相距 28 字的紧凑复述——proposal
+        取证 3 实测该距离＝28 字。等价构造场景，真实原文未保留，来源＝队列
+        `#456` 行内「成因＝同一天内致错两次」段落原文。"""
+        row = (
+            "| 452 | 泳道看护 | Shao Peishen | 无 | 产出 | "
+            "[S:open][D:业] SKILL.md 须按新四档重写，等 lane-watch-mode 包交回 "
+            "| 队列 | 2026-09-02 |\n"
+        )
+        self._write(section_one_rows=row)
+        warnings, _, _ = self._warn(["lane-watch-mode"])
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("#452", warnings[0])
+        self.assertIn("lane-watch-mode", warnings[0])
+
+    def test_439式远距离散文复述仍被抓到(self):
+        """回归 `#439`（成因⑴）：包名与进度词相距 664 字、一整段散文陈述过期
+        状态——proposal 取证 3 实测该距离＝664 字，并已证明「兼顾 `#452` 与
+        `#439` 二者的紧凑窗口不存在」。本判据刻意不做距离/形态匹配，只要
+        包名在行内出现即告警，因而天然覆盖这一散文形态（等价构造场景，
+        真实原文未保留，来源同上）。"""
+        filler = "，".join(f"第{i}项历史开放点回顾" for i in range(1, 40))
+        row = (
+            f"| 439 | R1 口径点台账 | Shao Peishen | 无 | 产出 | "
+            f"[S:open][D:业] {filler}——综上，三个开放点重列为未收敛，"
+            "涉及 r1-tiaokou-account 包 | 队列 | 2026-09-02 |\n"
+        )
+        self.assertGreater(len(filler), 200, "填充散文须足够长以还原真实的远距离场景")
+        self._write(section_one_rows=row)
+        warnings, _, _ = self._warn(["r1-tiaokou-account"])
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("#439", warnings[0])
+
+    # ---- 不进 lint() / 不影响退出码 ----------------------------------------
+
+    def test_告警不影响lint退出码(self):
+        self._write(section_four_rows="| 65 | 涉及 lane-watch-mode 包的事项 | Shao Peishen | 无 |\n")
+        self.assertEqual(
+            self.module.lint(self.repo_root), [],
+            "一期只 warn——不得进 `lint()` 的违规列表，否则等于直接硬拦",
+        )
+
+
+class PackageProgressEnumerateTests(unittest.TestCase):
+    """`_enumerate_openspec_packages`：词表实时枚举 ＋ fail-loud。"""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_枚举活跃包与归档包(self):
+        changes = self.repo_root / "openspec" / "changes"
+        (changes / "foo-pkg").mkdir(parents=True)
+        (changes / "archive" / "bar-pkg").mkdir(parents=True)
+        (changes / "not-a-dir.md").write_text("", encoding="utf-8")
+        names = self.module._enumerate_openspec_packages(self.repo_root)
+        self.assertEqual(set(names), {"foo-pkg", "bar-pkg"})
+        self.assertNotIn("archive", names)
+        self.assertNotIn("not-a-dir.md", names)
+
+    def test_长短排序(self):
+        changes = self.repo_root / "openspec" / "changes"
+        (changes / "a").mkdir(parents=True)
+        (changes / "aaa").mkdir(parents=True)
+        names = self.module._enumerate_openspec_packages(self.repo_root)
+        self.assertEqual(names, ["aaa", "a"])
+
+    def test_词表不可达fail_loud(self):
+        """🔴 读不到 `openspec/changes` 必须抛异常，不得回退成空词表——空
+        词表会让本判据悄悄失效而不报错（`CLAUDE.md` §5「工具静默回退」）。"""
+        with self.assertRaises(FileNotFoundError) as ctx:
+            self.module._enumerate_openspec_packages(self.repo_root)
+        self.assertIn("openspec", str(ctx.exception))
+
+    def test_真实仓库词表非空(self):
+        names = self.module._enumerate_openspec_packages(self.module.REPO_ROOT)
+        self.assertGreater(len(names), 0, "真实仓库 openspec/changes 词表不应为空")
+        self.assertNotIn("archive", names)
+
+
+class PackageProgressRealQueueTests(unittest.TestCase):
+    """回归护栏：真实生产队列上实跑不崩、扫描面不塌陷。
+
+    🔴 本判据无 baseline，`tasks.md` §1.4 的历史实测值（形态 A/B/C ＝
+    53/50/25 行）取自 2026-09-02 语料，此后两份队列持续演进——逐字比对
+    历史精确值必然随时间漂移，**不是本用例要守住的东西**；真正要守住的
+    是「扫描面没有塌陷」（词表非空、跑得通、不抛未预期异常）。"""
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def test_real_queue_scan_runs_without_crashing(self):
+        self.module.QUEUE_PATHS_REL = [
+            self.module.editlock.QUEUE_MECHANISM_PATH_REL,
+            self.module.editlock.QUEUE_BUSINESS_PATH_REL,
+        ]
+        names = self.module._enumerate_openspec_packages(self.module.REPO_ROOT)
+        self.assertGreater(len(names), 0, "词表为空说明枚举塌了（如 openspec/changes 路径解错）")
+        warnings, historical, exempt = self.module.package_progress_warnings(
+            self.module.REPO_ROOT, names
+        )
+        self.assertIsInstance(warnings, list)
+        self.assertGreaterEqual(historical, 0)
+        self.assertGreaterEqual(exempt, 0)
+
+
 class FollowupGateImportableCheckTests(unittest.TestCase):
     """队列 #366 / S4：`followup_gate` 可 import 断言（#313 范式的扩用）。
 

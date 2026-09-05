@@ -148,6 +148,153 @@ def _followup_restate_scan(text: str) -> tuple[list[str], int]:
 
 
 # ---------------------------------------------------------------------------
+# 队列 #456：队列禁止复述 openspec 包进度（一期 --warn，同 #366/S2 同构）
+# ---------------------------------------------------------------------------
+#
+# 判据一句（2026-09-02 Cowork `OP-0902-A` 立行，Shao Peishen 当日答 ②(a)；
+# 2026-09-05 design 审批准，Cowork 业务总线 `OP-0905-C` 现场当场答复，见队列
+# `#456` 行内）：**一个 openspec 包的进度，唯一权威是包内 `tasks.md`；队列行
+# 里的进度描述一律是会过时的快照，只能当指针、不能当判据。**
+#
+# 成因＝同一天（2026-09-02）内致错两次（`#439`／`#452`，同族＝根 `CLAUDE.md`
+# 顶部 OP-0819-A ⑴「一份拆成两份，下游只跟了一份，且跟的都是过期那一份」）。
+# 同族先例（本条是它的粒度扩展）：§四 `#85` 答 (b) 确立「信状态唯一权威＝跟进
+# 信 README 发送状态列」，已落成上方 `_followup_restate_scan`。
+#
+# 🔴 **本判据的可判形态已由 `openspec/changes/queue-lint-restate-package-
+# progress/proposal.md`（commit `dc24cb3`）实测证明「紧凑精确形态判不出来」**：
+# 两条真实致错行的「包名↔最近进度词」最小距离——`#452` ＝ 28 字、`#439` ＝
+# 664 字——不可能被同一窗口兼顾；窗口标定 0/8/20/40/80/160 字命中
+# 0/1/5/9/17/28 行，是平滑斜坡、无拐点（对照信状态判据 8/8 字「恰好命中且
+# 仅命中」5 处）。⇒ 按 design 审批准的兜底方案**降级为低精度零漏报形态**：
+# **不做距离/形态匹配，凡队列行提到某 openspec 包名（含 `archive/` 下已归档
+# 包）即告警，提示去读该包 `tasks.md`**——宁可多提示（历史实测约 53 处活行，
+# 是信状态判据 5 处的 10 倍，**已知代价**）也不可漏报。这天然覆盖 `#439` 那种
+# 「一整段散文陈述过期状态、包名与进度词相距 664 字」的形态——因为本判据根本
+# 不看包名与进度词的距离，只看包名是否出现在行内。
+#
+# 🔴 **已知覆盖率缺口，如实登记（proposal「已知未闭合」①）**：本判据能覆盖的
+# 是「行里点了包名」这一形态；它**覆盖不了**「一行完全没提包名、却在陈述另一
+# 个已被拆分走的包的过期状态」这种更间接的复述——那种形态本判据管不到。
+_PACKAGE_PROGRESS_DIR_REL = "openspec/changes"
+PACKAGE_PROGRESS_SCOPE_SECTIONS = ("一", "四")  # 同 FOLLOWUP_RESTATE_SCOPE_SECTIONS 口径
+PACKAGE_PROGRESS_EXEMPT_MARK = "包进度豁免："
+PACKAGE_PROGRESS_HINT = (
+    "队列不得复述 openspec 包进度（它会过时，唯一权威是包内 tasks.md）。"
+    f"核对该包 tasks.md 后再引用，或确有必要时在本行写 `{PACKAGE_PROGRESS_EXEMPT_MARK}〈理由〉`"
+)
+
+
+def _enumerate_openspec_packages(repo_root: Path) -> list[str]:
+    """实时枚举 openspec 包名词表：`openspec/changes/` 与其 `archive/` 子目录下
+    的一级目录名（跳过 `archive` 自身与非目录项）。
+
+    🔴 **词表不可达即 fail-loud（抛异常），不回退成空词表**——空词表会让本
+    判据「悄悄失效」而不报错，是 `CLAUDE.md` §5「工具静默回退」的教科书形态；
+    读不到目录，说明仓库根标记或调用方 `repo_root` 传错了，应该让调用方当场
+    看见异常，而不是拿着一个「什么包都没有、自然什么都不报」的空结果继续跑。
+
+    不写死清单——写死即第二份「有哪些包」的权威源，必漂移（proposal「What
+    Changes」③，同信状态判据不为自己另开一套解析的既有原则）。
+    """
+    changes_dir = repo_root / _PACKAGE_PROGRESS_DIR_REL
+    if not changes_dir.is_dir():
+        raise FileNotFoundError(
+            f"未找到 {changes_dir}——队列复述包进度判据的词表来源缺失，无法枚举"
+            "包名（见队列 #456：词表不可达须 fail-loud，不得回退成空词表）"
+        )
+    names: set[str] = set()
+    for entry in changes_dir.iterdir():
+        if entry.is_dir() and entry.name != "archive":
+            names.add(entry.name)
+    archive_dir = changes_dir / "archive"
+    if archive_dir.is_dir():
+        for entry in archive_dir.iterdir():
+            if entry.is_dir():
+                names.add(entry.name)
+    # 长→短排序只影响命中列表的展示顺序（真正防止长包名被短包名子串「窃取」
+    # 的是下方 `_package_name_pattern` 的连字符感知边界，见 tasks 4.3 场景：
+    # `fi2-recon-mvp` 与 `fi2-recon-report` 共享前缀 `fi2-recon-`）。
+    return sorted(names, key=len, reverse=True)
+
+
+def _package_name_pattern(name: str) -> re.Pattern[str]:
+    """连字符感知的词边界：前后都不是字母/数字/连字符才算真正命中整个包名，
+    防止 `fi2-recon` 被误判命中出现在 `fi2-recon-report` 里的场合（tasks 4.3）
+    ——`fi2-recon` 后面紧跟的 `-` 会让边界失败，不会被判定为命中。"""
+    return re.compile(rf"(?<![A-Za-z0-9\-]){re.escape(name)}(?![A-Za-z0-9\-])")
+
+
+def _package_progress_scan(
+    text: str, package_names: list[str]
+) -> tuple[list[str], int, int]:
+    """返回 (活行违规说明列表, 历史行命中数, 行内豁免命中数)。
+
+    扫描面同 `_followup_restate_scan`：§一 非 `[S:done]` 行 ＋ §四 全部行；
+    §一 `[S:done]` 行只统计不告警（历史记录不追改）；§二 批次行不入扫描面。
+
+    豁免（`PACKAGE_PROGRESS_EXEMPT_MARK` 行内标记）**必须计数**——静默豁免
+    正是本判据这一族毛病本身（同 `_appellation_scan` 既有原则）。已知第一个
+    真实豁免用例＝队列 `#456` 行自己：一条定义本判据的队列行必然要引用包名
+    并谈进度，否则说不清自己在拦什么（同 `#355` 自指问题的又一次出现）。
+    """
+    sections = editlock._split_live_sections(text)
+    live: list[str] = []
+    historical = 0
+    exempt = 0
+    for label in PACKAGE_PROGRESS_SCOPE_SECTIONS:
+        for line, cells in editlock._table_data_rows(sections.get(label, "")):
+            matched = [name for name in package_names if _package_name_pattern(name).search(line)]
+            if not matched:
+                continue
+            if PACKAGE_PROGRESS_EXEMPT_MARK in line:
+                exempt += 1
+                continue
+            if label == "一" and len(cells) > 5:
+                status_value, _, _ = editlock._parse_status_domain_fields(cells[5])
+                if status_value == "done":
+                    historical += 1
+                    continue
+            row_id = cells[0] if cells else "?"
+            names_desc = "、".join(f"`{n}`" for n in matched[:3])
+            live.append(
+                f"§{label} #{row_id} 提到 openspec 包 {names_desc}——{PACKAGE_PROGRESS_HINT}"
+            )
+    return live, historical, exempt
+
+
+def package_progress_warnings(
+    repo_root: Path, package_names: list[str] | None = None
+) -> tuple[list[str], int, int]:
+    """队列 #456 一期：只 warn、不计入 `lint()` 的违规、不影响退出码（与
+    `followup_restate_warnings` 完全同构，见该函数 docstring 的一期理由）。
+
+    `package_names` 允许调用方（测试）直接传入词表跳过目录枚举；`main()`
+    走真实枚举 `_enumerate_openspec_packages`，读不到即让异常照原样往上抛
+    （fail-loud，不在此处吞掉）。
+    """
+    names = (
+        package_names
+        if package_names is not None
+        else _enumerate_openspec_packages(repo_root)
+    )
+    warnings: list[str] = []
+    historical_total = 0
+    exempt_total = 0
+    for queue_path in QUEUE_PATHS_REL:
+        target = repo_root / queue_path
+        if not target.exists():
+            continue
+        live, historical, exempt = _package_progress_scan(
+            target.read_text(encoding="utf-8"), names
+        )
+        warnings.extend(f"[{queue_path}] {w}" for w in live)
+        historical_total += historical
+        exempt_total += exempt
+    return warnings, historical_total, exempt_total
+
+
+# ---------------------------------------------------------------------------
 # 队列 #352：称呼判据（`Paul` → `Shao Peishen`），带 baseline
 # ---------------------------------------------------------------------------
 #
@@ -597,6 +744,31 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"  二期基线：活行 {len(restate_warnings)} 处；"
         f"另有 {restate_historical} 处落在 §一 `[S:done]` 历史行，"
+        "按「历史记录不追改」豁免、不计入（§二 批次行不在扫描范围）。"
+    )
+
+    # 队列 #456（design 审 2026-09-05 批准）：包进度复述判据，一期同样只
+    # 告警、不计入退出码。词表枚举失败让异常照原样往上抛（fail-loud），
+    # 不在此处吞掉——见 `_enumerate_openspec_packages` docstring。
+    package_names = _enumerate_openspec_packages(REPO_ROOT)
+    package_warnings, package_historical, package_exempt = package_progress_warnings(
+        REPO_ROOT, package_names
+    )
+    if package_warnings:
+        print(
+            f"⚠ 队列复述 openspec 包进度（一期只告警，不计入退出码，"
+            f"低精度零漏报形态）：{len(package_warnings)} 处活行"
+        )
+        for w in package_warnings:
+            print(f"  - {w}")
+    if package_exempt:
+        print(
+            f"  队列复述包进度豁免：{package_exempt} 处"
+            f"（行内标记原文可 grep `{PACKAGE_PROGRESS_EXEMPT_MARK}`）"
+        )
+    print(
+        f"  包进度判据基线：活行 {len(package_warnings)} 处；"
+        f"另有 {package_historical} 处落在 §一 `[S:done]` 历史行，"
         "按「历史记录不追改」豁免、不计入（§二 批次行不在扫描范围）。"
     )
 
