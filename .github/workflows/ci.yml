@@ -192,6 +192,33 @@ jobs:
       # 了带判断分支的内联引导——那正是它该拦下的事。
       - run: python 0-学习与工具/工具-引导样板lint.py --enforce
 
+  scene-intent-gate-lint:
+    name: "新场景包 intent.md 前置闸 lint（缺 intent 或未确认即违规）"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      # 队列 §一 #436 ⑶① / OP-0906-S：Shao Peishen 2026-09-06 拍板 ③(a)「新场景
+      # propose 前置＝场景目录 intent.md（status: 已确认）」，口径正本＝
+      # `.claude/rules/场景建造与合规.md` §二。
+      #
+      # 🔴 拍板原文写的是「闸落 openspec validate」，实测做不到、故改走 CI lint：
+      # `openspec/config.yaml` 的 `rules.proposal` 只是喂给起草方的提示文本，
+      # validate 不读它——本仓库 8 份 proposal.md 都缺 config.yaml 点名 MANDATORY 的
+      # 「知识资产三问」节，而 `openspec validate --all --strict` 仍报
+      # `169 passed, 0 failed`（2026-09-06 实测）；`openspec validate --help` /
+      # `openspec --help` 全表也无任何自定义规则或插件挂载点。**提示句不是闸，
+      # lint 才是**，config.yaml 那条新提示句只负责让两桌起草时看得见。
+      #
+      # 直接上 `--enforce`（同 bootstrap-stub-lint，不走 claude-progress-lint 一期
+      # 的告警过渡）：上线前已按「先确认清零、再关门」实跑一轮，58 个在办变更包
+      # 里存量违规真实为 0——15 个场景类包全部落进三层豁免（深化类永久 7 ／存量
+      # 8 包至 2026-10-31），4 个机制类包因「正文引用了场景目录但包身份不属该场景」
+      # 被正确摘出。首次运行即为绿；它变红只可能是有人新起了一个没做 grill 的场景包。
+      - run: python 0-学习与工具/工具-场景包intent闸lint.py --enforce
+
   claude-progress-lint:
     name: "CLAUDE.md 进度段 lint（J1 承接载体／J2 条目数／J3 单条长度／J5 场景级）"
     runs-on: windows-latest
