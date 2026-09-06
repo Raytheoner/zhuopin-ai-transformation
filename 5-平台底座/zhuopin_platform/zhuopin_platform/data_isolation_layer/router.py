@@ -14,6 +14,18 @@ class CrossOEMAccessError(PermissionError):
 ISOLATION_SCENARIO = "DATA_ISOLATION"
 ACTION_CROSS_OEM_DENIED = "cross_oem_access_denied"
 
+# 平台默认审计落盘路径（D2=(a) 收紧，Shao Peishen 2026-09-02 裁决）——
+# 与 README 快速校验示例、其余场景注入 AuditLogger 时使用的路径同构（相对 CWD，已 .gitignore）。
+DEFAULT_AUDIT_LOG_PATH = "reports/audit_log.jsonl"
+
+
+def _default_audit_logger() -> AuditLogger:
+    """构造平台默认审计器。
+
+    未显式注入 `audit` 的调用方不再"静默不留痕"——OEMRouter 内建这一份默认 logger。
+    """
+    return AuditLogger.jsonl(DEFAULT_AUDIT_LOG_PATH)
+
 
 # 注册在案的 OEM 客户 → 独立 Collection 名（小写、规范化）
 REGISTERED_OEMS: dict[str, str] = {
@@ -46,20 +58,42 @@ class OEMRouter:
     def __init__(self, registered: dict[str, str] | None = None,
                  audit: AuditLogger | None = None):
         self.registered = registered or dict(REGISTERED_OEMS)
-        self._audit = audit
+        # D2=(a) 收紧：审计不再是可选项。未显式注入时内建平台默认 AuditLogger；
+        # 默认构造本身失败（极罕见，如路径不可解析）时 `_audit` 仍可能为 None，
+        # 由 `_record_denied` 在拒绝前兜底 fail-closed（不放行、不静默）。
+        if audit is not None:
+            self._audit = audit
+        else:
+            try:
+                self._audit = _default_audit_logger()
+            except Exception:
+                self._audit = None
 
     def _record_denied(self, oem: str, collection: str, reason: str) -> None:
-        """跨 OEM 访问被拒前写审计（违规企图留痕，B5 / OEM隔离规范 §3.2）。"""
+        """跨 OEM 访问被拒前写审计（违规企图留痕，OEM隔离规范 §3.2）。
+
+        审计通道（默认或注入）不可用时 fail-closed：MUST NOT 静默放行或静默抛错——
+        本方法必抛 `CrossOEMAccessError`，使拒绝这一后果本身不依赖审计通道是否健康。
+        """
         if self._audit is None:
-            return
-        self._audit.record(AuditEvent(
-            scenario=ISOLATION_SCENARIO,
-            action=ACTION_CROSS_OEM_DENIED,
-            evaluator="",
-            automation_level="L3",
-            decision={"oem": oem, "collection": collection, "reason": reason},
-            oem_context=oem,
-        ))
+            raise CrossOEMAccessError(
+                f"审计通道不可用（无可用 AuditLogger），OEM 隔离拒绝改判 fail-closed："
+                f"{oem!r} 访问 {collection!r} 已拒绝，且无法留痕。"
+            )
+        try:
+            self._audit.record(AuditEvent(
+                scenario=ISOLATION_SCENARIO,
+                action=ACTION_CROSS_OEM_DENIED,
+                evaluator="",
+                automation_level="L3",
+                decision={"oem": oem, "collection": collection, "reason": reason},
+                oem_context=oem,
+            ))
+        except Exception as exc:
+            raise CrossOEMAccessError(
+                f"审计写入失败（{exc!r}），OEM 隔离拒绝改判 fail-closed："
+                f"{oem!r} 访问 {collection!r} 已拒绝，且无法留痕。"
+            ) from exc
 
     def resolve(self, oem: str) -> str:
         """返回该 OEM 的专属 Collection；未注册客户拒绝。"""

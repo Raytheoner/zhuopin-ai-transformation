@@ -35,7 +35,10 @@ def test_isolation_allows_own_and_general():
     assert r.guard(oem="上汽", collection="kb_supplier").allowed  # 通用库放行
 
 
-def test_isolation_blocks_cross_oem():
+def test_isolation_blocks_cross_oem(monkeypatch, tmp_path):
+    # D2=(a) 收紧后默认构造会落盘平台默认审计（reports/audit_log.jsonl）；
+    # chdir 到 tmp_path 避免冒烟测试在仓库工作目录留下运行期产物。
+    monkeypatch.chdir(tmp_path)
     r = OEMRouter()
     with pytest.raises(CrossOEMAccessError):
         r.guard(oem="比亚迪", collection="oem_saic")   # 跨客户，拒绝
