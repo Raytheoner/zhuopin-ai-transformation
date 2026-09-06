@@ -2435,8 +2435,46 @@ def _classify_section_two_rows(rows: list[dict]) -> tuple[list[dict], list[dict]
 
 
 def _extract_commit_message(message_cell: str) -> str:
-    match = re.search(r"`([^`]+)`", message_cell)
-    return match.group(1) if match else message_cell.strip()
+    """把 §二「建议 message」单元格解析成一条完整的提交信息。
+
+    队列 #398 ⑹（变更包 `sweep-commit-message-extraction`，2026-09-06）——
+    **旧实现取"第一个反引号跨度"当整条信息，会静默截断**：
+
+        re.search(r"`([^`]+)`", cell)      # ← 旧写法
+
+    于是 message 正文里只要先出现一段行内代码（路径／文件名／commit 号——本项目
+    几乎必然会写），提交信息就被截到那一小段。**失败形态是"成功"**：`git commit`
+    返回 0、sweep 零告警、批次照常销行标 ✅，唯一受害者是 git log 的可追溯性
+    （IATF 16949），而那正是没人会当场去看的地方。实测事故＝批次 `B-0906_SC7env`
+    的信息落成字面量 `.env`（master 上的 commit `1d234dd`）；存量至少 11 条同指纹。
+
+    **现语义＝整格即信息，只剥去一层"完全包裹"的反引号**，任何输入下都不丢字：
+
+    1. 整格 trim 后**恰好**是一个完全包裹的跨度（首尾为反引号且全格反引号总数
+       恰为 2）⇒ 剥去该层；
+    2. 其余一律返回整格 trim 后的原文，内部反引号保留为**字面量**。
+
+    🔴 规则 1 里 ``count("`") == 2`` 这一条不能省：只判首尾会把 ```a` 和 `b```
+    误剥成 ``a` 和 `b``。
+
+    🔑 **判据取自实测、不是推演**：扫 2026-08-01 以来队列文件 745 个 commit 的历史
+    版本，去重得 357 个 message 格——无反引号 335（94%，旧实现靠 `else` 分支碰巧
+    走对）／完全包裹 15（4%）／反引号在正文中间 7（2%，必被截断）／**"跨度+尾注"
+    0 条**。最后那个 0 是本修法能成立的前提：若历史上存在 ```信息` ← 一句尾注``
+    的写法，"整格即信息"会把尾注也提交进去；实测它一条都不存在。
+
+    ⚠️ **不要与 `_resolve_batch_files()` 合并**：那边解析的是「文件清单」列，语义是
+    "逐段取出多个路径"，与本函数的"整格即一条信息"正好相反——共享实现会诱导后来者
+    把逻辑也合并掉（同 `env_anchor` 与 `bootstrap` 刻意不共享常量的先例）。
+
+    返回空串表示"没有可用的提交信息"，由调用方 fail-loud（见 `_process_normal_batch`）——
+    **本函数不编造兜底信息**：那会造出一条"看起来正常但不含任何信息"的 commit，
+    正是本变更要根除的失败形态。
+    """
+    text = message_cell.strip()
+    if text.count("`") == 2 and text.startswith("`") and text.endswith("`"):
+        text = text[1:-1].strip()
+    return text
 
 
 def _resolve_batch_files(files_cell: str, dirty_paths: list[str]) -> tuple[list[str], list[str], list[str]]:
@@ -6236,6 +6274,24 @@ def main() -> int:
                     )
 
             for row, resolved in normal_rows:
+                # 队列 #398 ⑹ 决策点 2(a)（变更包 sweep-commit-message-extraction）：
+                # 提交信息为空 ⇒ **fail-loud，本批次跳过**，不销行、不提交。
+                # 刻意不回退到"docs(队列): 批次 <id> 落库"这类兜底文案——那会造出
+                # 一条"看起来正常但不含任何信息"的 commit，而那正是本变更要根除的
+                # 失败形态，不能亲手再造一个。行留在待处理态，下一轮仍会被捞起，
+                # 人把 message 补上即自愈。
+                # 与上方"文件清单解析不出片段"同一处置形态（只报不动）与同一位置
+                # （`continue`，不进 touched_paths），保证**不影响同轮其它批次**。
+                if not _extract_commit_message(row["message_cell"]):
+                    note = (
+                        f"⚠ 批次 {row['batch_id']} 的提交信息为空，本轮跳过、状态保持待处理"
+                        f"（不以空信息或自动兜底文案落库；补上「建议 message」后下一轮自动生效）："
+                        f"[{queue_path}]"
+                    )
+                    log.append(note)
+                    if args.dry_run:
+                        print(f"[dry-run] {note}")
+                    continue
                 _process_normal_batch(repo_root, row, resolved, args.dry_run, log)
                 touched_paths.update(resolved)
 

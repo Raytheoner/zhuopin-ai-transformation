@@ -666,6 +666,143 @@ class IndexLockSelfHealTests(SweepTestBase):
         self.assertTrue(lock_file.exists(), "新鲜锁不应被清除——可能是真实并发 git 进程")
 
 
+# ── 队列 #398 ⑹：提交信息提取（变更包 sweep-commit-message-extraction） ──────────
+#
+# 病灶：旧实现 `re.search(r"`([^`]+)`", cell)` 取**第一个反引号跨度**当整条提交
+# 信息，于是 message 正文里只要先出现一段行内代码（路径/文件名/commit 号——本项目
+# 几乎必然会写），提交信息就被静默截断到那一小段。失败形态是"成功"：git commit
+# 返回 0、sweep 零告警、批次照常销行标 ✅，唯一受害者是 git log 的可追溯性。
+#
+# 设计依据是实测而非推演：扫 2026-08-01 以来队列文件 745 个 commit 的历史版本，
+# 去重得 357 个 message 格，形态分布＝无反引号 335（94%）／整格完全包裹 15（4%）／
+# 反引号在正文中间 7（2%，必被截断）／"跨度+尾注" **0 条**。最后那个 0 是本修法
+# 能成立的关键——若历史上存在"`信息` ← 一句尾注"的写法，"整格即信息"会把尾注也
+# 提交进去；实测它一条都不存在。
+class ExtractCommitMessageTests(unittest.TestCase):
+    """`_extract_commit_message` 纯函数级单测——本函数此前**零测试覆盖**。"""
+
+    def test_fully_wrapped_cell_is_unwrapped(self):
+        """形态 A（历史 15 条）：整格恰好被一对反引号包住 ⇒ 剥去该层。"""
+        self.assertEqual(
+            sweep._extract_commit_message("`docs(队列): 只有一个跨度的规范写法`"),
+            "docs(队列): 只有一个跨度的规范写法",
+        )
+
+    def test_fully_wrapped_cell_tolerates_surrounding_whitespace(self):
+        self.assertEqual(
+            sweep._extract_commit_message("   ` docs(队列): 两侧留白 `   "),
+            "docs(队列): 两侧留白",
+        )
+
+    def test_cell_without_backticks_is_taken_verbatim(self):
+        """形态"无反引号"（历史 335 条，占 94%）：整格即信息，行为与修法前一致。"""
+        cell = "docs(队列): 收工重跑文档台账（sweep 自动）"
+        self.assertEqual(sweep._extract_commit_message(cell), cell)
+
+    def test_backtick_span_in_the_middle_is_not_truncated(self):
+        """形态 C（历史 7 条）：反引号出现在正文中间——旧实现必截断，新实现不得丢字。"""
+        cell = "docs(队列#354): 判据二 `.env` 锚定存量清零回写 —— SC7 收拢进 `env_anchor.load_env`"
+        got = sweep._extract_commit_message(cell)
+        self.assertNotEqual(got, ".env", "回归 #398 ⑹：不得再截成第一个反引号跨度")
+        self.assertEqual(got, cell, "形态 C 应整格原文返回，反引号保留为字面量")
+
+    def test_real_incident_b0906_sc7env_regression(self):
+        """本次真实事故回归夹具：`B-0906_SC7env` 的原始 message 格。
+
+        实测落成的 commit `1d234dd` 的信息就是字面量 `.env` 五个字符（master 上可核）。
+        本用例钉死"再不会被截成 .env"，并断言首尾两端都还在。
+        """
+        cell = (
+            "docs(队列#354): 判据二 `.env` 锚定存量清零回写 —— SC7 `leadtime_median.py` "
+            "最后 1 处「向上逐级找 .env」已收拢进 `env_anchor.load_env`（建造本体在分支 "
+            "`claude/happy-thompson-017679`，commit `ae3b428`，已 push、未 ff 进 master ⇒ "
+            "🟡 档待 Shao Peishen）；`test_env锚定存量已清零` 转绿，"
+            "`工具-引导样板lint.py --enforce` 全库退出码 0，SC7 单测 63 passed 零回归"
+        )
+        got = sweep._extract_commit_message(cell)
+        self.assertNotEqual(got, ".env")
+        self.assertTrue(got.startswith("docs(队列#354)"), got[:40])
+        self.assertTrue(got.endswith("零回归"), got[-40:])
+        self.assertEqual(got, cell)
+
+    def test_first_and_last_are_backticks_but_more_inside(self):
+        """首尾恰好都是反引号、内部还有更多——不得误剥。
+
+        这一条是 `count("`") == 2` 判据存在的唯一理由：只判首尾会把
+        `` `a` 和 `b` `` 误剥成 ``a` 和 `b``。
+        """
+        cell = "`a` 和 `b`"
+        self.assertEqual(sweep._extract_commit_message(cell), cell)
+
+    def test_multiple_inline_spans_all_survive(self):
+        cell = "fix(工具): 改了 `x.py` 与 `y.py` 两处"
+        got = sweep._extract_commit_message(cell)
+        for frag in ("fix(工具)", "`x.py`", "`y.py`", "两处"):
+            self.assertIn(frag, got)
+
+    def test_empty_cell_yields_empty(self):
+        for cell in ("", "   ", "``", "  ``  "):
+            with self.subTest(cell=cell):
+                self.assertEqual(sweep._extract_commit_message(cell), "",
+                                 "空信息须能被上层识别为空并 fail-loud，不得编造兜底信息")
+
+
+class EmptyCommitMessageEndToEndTests(SweepTestBase):
+    """队列 #398 ⑹ 决策点 2(a)：提交信息为空 ⇒ fail-loud 跳过，且**不阻断同轮其它批次**。
+
+    单批次用例证明不了"不阻断"——必须同一轮里既有空信息批次、又有合法批次，
+    才能看出前者是被单独留下还是把整轮拖垮（同 `#398` ⑸「release 返回码不检查」
+    只在一轮 2+ 批次时才现症状的教训）。
+    """
+
+    def test_empty_message_row_skipped_while_sibling_batch_still_lands(self):
+        self._init_and_push(rows="")
+        (self.work / "空信息批次的文件.md").write_text("待落库内容\n", encoding="utf-8")
+        rows = (
+            "| B-空信息 | `空信息批次的文件.md` |  | 待 CC 取活 |\n"
+            "| B-合法 | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
+            "| `docs(test): 合法批次照常落库` | 待 CC 取活 |\n"
+        )
+        self._write_queue(rows)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        queue_text = self._queue_text()
+        self.assertIn("| B-空信息 |", queue_text)
+        self.assertIn("待 CC 取活", queue_text,
+                      "空信息批次必须保持待处理态——不销行、不落库")
+
+        pushed = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertIn("B-合法", pushed)
+        self.assertIn("✅ 已完成", pushed, "同轮合法批次必须照常落库，不被空信息批次牵连")
+
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertIn("B-空信息", log_text)
+        self.assertIn("提交信息为空", log_text, "必须喊出来，不得无声跳过")
+
+        # 空信息批次声明的文件仍是脏的（没被提交），且没有任何 commit 使用空信息。
+        self.assertTrue((self.work / "空信息批次的文件.md").exists())
+        self.assertNotIn("B-空信息", _git(self.origin, "log", "--format=%s").stdout)
+
+
+class ExtractCommitMessageNonRegressionTests(unittest.TestCase):
+    """守住"两列的反引号语义相反、不得合并实现"这条边界（design 决策点 3 / Non-Goals）。
+
+    `_resolve_batch_files` 对**文件清单**列的反引号是"逐段取多个路径"，
+    `_extract_commit_message` 对 **message** 列的反引号是"整格即信息"——
+    两者对"反引号意味着什么"的答案相反，共享代码会诱导后来者把逻辑也合并掉
+    （同 `env_anchor` 与 `bootstrap` 刻意不共享常量的先例）。
+    """
+
+    def test_file_list_column_still_parsed_fragment_by_fragment(self):
+        files_cell = "`a/b.md`（说明） ＋ `c/d.md`"
+        dirty = ["a/b.md", "c/d.md", "e/f.md"]
+        resolved, *_ = sweep._resolve_batch_files(files_cell, dirty)
+        self.assertEqual(sorted(resolved), ["a/b.md", "c/d.md"],
+                         "文件清单列必须仍按逐段提取，不得被 message 列的语义污染")
+
+
 class ClassifySectionTwoRowsUnitTests(unittest.TestCase):
     """`_classify_section_two_rows` 纯函数级单测——2026-07-28 判据修复的核心回归点。
 
