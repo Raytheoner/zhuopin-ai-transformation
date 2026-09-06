@@ -19,7 +19,7 @@
   - 🔴 **目录下不得建子目录**（D8）——`!` 例外不递归，子目录内 `.jsonl` 会被**静默忽略**。
 - [x] 1.3 台账读写模块（含 append-only 审计：谁改的／何时／依据哪封回件）【CC】
   - ✅ `OP-0906-Z`（2026-09-06）：`5-平台底座/zhuopin_platform/zhuopin_platform/coverage_point_ledger/`（`models`／`store`／`aggregate`／`overdue`／`lint`／`errors`）。审计三问落 `by`／`recorded_on`＋`fact_date` 并存／`evidence`＋`letters`，**不另建审计文件**（台账自己就是审计轨）。`LedgerStore` **没有** `update()`／`delete()`／`set_status()` —— append-only 不是纪律，是没有那个函数。测试 `tests/test_coverage_point_ledger_store.py`。
-  - ⚠️ **如实登记一处 schema 内部不一致，本轮未替它做决定**：SCHEMA §二 表写 `carrier`「≥1（建点或转态行）」，但同节最小示例的两条 `转态` 行都没有 `carrier`。本模块取「两类行都不在写入期强制」，理由 ⑴ 强制会让 tasks 6.3 的质量型指标「承接载体缺失数量」**结构性恒为 0**、⑵ 强制会逼 §2 回溯拆点编一个载体才写得进去。⇒ 载体缺失走度量（`Snapshot.missing_carrier`）。**请在两包合审时与 SCHEMA §二 一并定死。**
+  - ✅ **`carrier` 口径已定死（Shao Peishen 2026-09-06 经 `OP-0906-X` 拍板 (a)）**：`carrier` ≥1 **仅对 `建点` 行**生效，`转态` 行可空、写入期不强制。SCHEMA §二 字段表已同步改齐、`models.py` 首部留痕已由「待合审」改为「已定死」。理由 ⑴ 强制会让 tasks §6.3 的质量型指标「承接载体缺失数量」**结构性恒为 0**、⑵ 强制会逼 §2 回溯拆点**编造**载体（与「历史记录不追改」相抵）。⇒ 载体缺失走度量（`Snapshot.missing_carrier`）。**本条不再进两包合审**；合审剩余项只有 SCHEMA §四「`id` 与 `criteria_signoff` 同名」那条。
 - [x] 1.4 🔴 **断言测试：跨域聚合只读、不产生任何合并落盘产物（含缓存）**（D3）【CC】
   - ✅ `tests/test_coverage_point_ledger_aggregate.py::test_D3_跨域聚合只读不落盘_含缓存`：五个域各有点的 tmp 台账上跑 `aggregate()`，期间堵死 `builtins.open`／`io.open`（Path.open 走的是后者，不是前者）／`write_text`／`write_bytes`／`touch`／`mkdir`，并对台账目录树与一个**空的当前工作目录**各做调用前后 sha256 指纹比对；同时断言确实覆盖了 5/5 个域（否则「什么都没干」也能通过）。另有反向对照组 `test_守卫本身有效_写盘会被抓到` 与 `test_D3_Snapshot无任何落盘方法`。
 - [x] 1.5 🔴 **断言测试：`已签认` 状态只能由真实回件驱动，不存在任何「超期自动签认」路径**（D5）【CC】
