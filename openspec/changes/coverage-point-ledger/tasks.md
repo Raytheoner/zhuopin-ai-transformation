@@ -17,11 +17,16 @@
   - 🔴 **ID 前缀隐含域，不另设 `域` 字段**（D2）——少一个字段就少一处可能与文件名不一致的副本。
 - [ ] 1.2 建**五份域文件骨架**（`采购域`／`财务域`／`质量域`／`销售域`／`IT域`）平铺于 `6-人才与组织/部门AI专员跟进/口径点台账/`，空文件入版本控制【Cowork】
   - 🔴 **目录下不得建子目录**（D8）——`!` 例外不递归，子目录内 `.jsonl` 会被**静默忽略**。
-- [ ] 1.3 台账读写模块（含 append-only 审计：谁改的／何时／依据哪封回件）【CC】
-- [ ] 1.4 🔴 **断言测试：跨域聚合只读、不产生任何合并落盘产物（含缓存）**（D3）【CC】
-- [ ] 1.5 🔴 **断言测试：`已签认` 状态只能由真实回件驱动，不存在任何「超期自动签认」路径**（D5）【CC】
+- [x] 1.3 台账读写模块（含 append-only 审计：谁改的／何时／依据哪封回件）【CC】
+  - ✅ `OP-0906-Z`（2026-09-06）：`5-平台底座/zhuopin_platform/zhuopin_platform/coverage_point_ledger/`（`models`／`store`／`aggregate`／`overdue`／`lint`／`errors`）。审计三问落 `by`／`recorded_on`＋`fact_date` 并存／`evidence`＋`letters`，**不另建审计文件**（台账自己就是审计轨）。`LedgerStore` **没有** `update()`／`delete()`／`set_status()` —— append-only 不是纪律，是没有那个函数。测试 `tests/test_coverage_point_ledger_store.py`。
+  - ⚠️ **如实登记一处 schema 内部不一致，本轮未替它做决定**：SCHEMA §二 表写 `carrier`「≥1（建点或转态行）」，但同节最小示例的两条 `转态` 行都没有 `carrier`。本模块取「两类行都不在写入期强制」，理由 ⑴ 强制会让 tasks 6.3 的质量型指标「承接载体缺失数量」**结构性恒为 0**、⑵ 强制会逼 §2 回溯拆点编一个载体才写得进去。⇒ 载体缺失走度量（`Snapshot.missing_carrier`）。**请在两包合审时与 SCHEMA §二 一并定死。**
+- [x] 1.4 🔴 **断言测试：跨域聚合只读、不产生任何合并落盘产物（含缓存）**（D3）【CC】
+  - ✅ `tests/test_coverage_point_ledger_aggregate.py::test_D3_跨域聚合只读不落盘_含缓存`：五个域各有点的 tmp 台账上跑 `aggregate()`，期间堵死 `builtins.open`／`io.open`（Path.open 走的是后者，不是前者）／`write_text`／`write_bytes`／`touch`／`mkdir`，并对台账目录树与一个**空的当前工作目录**各做调用前后 sha256 指纹比对；同时断言确实覆盖了 5/5 个域（否则「什么都没干」也能通过）。另有反向对照组 `test_守卫本身有效_写盘会被抓到` 与 `test_D3_Snapshot无任何落盘方法`。
+- [x] 1.5 🔴 **断言测试：`已签认` 状态只能由真实回件驱动，不存在任何「超期自动签认」路径**（D5）【CC】
   - 成因：判据/口径/阈值类**永不默认生效**是 IATF 显式签认红线。proposal 已写明「这条须在 tasks 里落成断言测试，不能只写在文档里」——**本项就是那条落点**。
-- [ ] 1.6 🔴 **lint 断言：台账目录下不得出现子目录**（D8）【CC】
+  - ✅ `tests/test_coverage_point_ledger_signoff.py`，一条「路径不存在」从三面同时打：**构造面** `test_D5_已签认无回件则连对象都造不出来`（无 `evidence` 的 `已签认` 在 `LedgerEvent` 构造期即抛，连对象都造不出来）；**行为面** `test_D5_超期扫描只出催办草稿_不改状态不加行`（超期 1000 天的点扫完仍是 `在途`，台账指纹逐字节不变）；**入口面** `test_D5_全包只有一处写台账内容的代码`（AST 扫全包，写内容的代码有且只有 `store.py::_append_line`）。另有正向对照组（带落档回件的 `已签认` 必须写得进去）、`判据类` 不得配 `default_after_h`、`overdue.py` 不得 import `LedgerStore`。
+- [x] 1.6 🔴 **lint 断言：台账目录下不得出现子目录**（D8）【CC】
+  - ✅ `tests/test_coverage_point_ledger_lint.py::test_D8_台账目录出现子目录即lint失败`：干净目录先过（防「本来就红」）→ 建子目录后 fatal 且报告点出「`!` 例外不递归、其中 `.jsonl` 并未入库」→ `assert_clean()` 抛。空子目录同样违规（违规发生在建目录那一刻）。CLI 闸 `python -m zhuopin_platform.coverage_point_ledger.lint <目录>` 违规退出码 1。**真台账目录实跑通过**（只读）：`✅ …/口径点台账：目录布局合规（无子目录、五份域文件平铺）`，exit=0。
 
 ## 2. 回溯拆点（先已标注样本、后补拆，守红线）
 
