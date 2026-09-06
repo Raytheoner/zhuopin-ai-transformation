@@ -39,6 +39,25 @@
   唯一真正被粘贴进独立 CC 会话的一份），分支字段是固定字面量（看护者本身不建
   分支），正文追加同一条 P4 默认口径（这次是讲给看护者听，指导它怎么起子任务）。
 
+## `--do` / `--dont` 的静默丢弃守卫（队列 §一 `#487` 子项／`OP-0906-M`，2026-09-06）
+
+2026-09-06 实撞：`--env Cowork --dont "<三条硬约束>"` **既不生效也不报错**——不是工具
+bug，是当时【Cowork】骨架本身只有「做什么／收工」两段。判据：**一个参数被接受却不
+生效，比它被拒绝更危险。**
+
+Shao Peishen 2026-09-06 裁 **(c) 甲＋精简版乙**，两个洞分别用两种手法堵：
+
+- **Cowork ⇒ 让它生效（方案甲）**：骨架【Cowork】节补「不做什么」段、本工具 Cowork
+  分支拼 `dont_block`、`工具-opener块lint.py` 形态⑦机器守。**Cowork 不再被本守卫拦。**
+- **`--variant guardian` ⇒ fail-loud（精简版乙）**：§三bis 看护者开场词是固定形态
+  （四行 ＋ P4 扇出口径），正文既不拼 `--do` 也不拼 `--dont`，且**不该**为它补段
+  （看护者的任务正本在看护件全文里）。这个洞补段补不掉，只能报错退出（退出码 1），
+  并在报错信息里给出该走哪条承接路径。
+
+`BODY_PARAM_SUPPORT` 白名单登记每个「环境×变体」真的会拼进成品的正文参数；
+🔴 **白名单而非黑名单**——黑名单忘登记 ⇒ 回到静默丢弃（fail-open，看不见），
+白名单忘登记 ⇒ 该组合所有可选正文参数一律被拒（fail-closed，噪音大但当场看得见）。
+
 ## 用法
 
     python 0-学习与工具/工具-opener生成.py --env CC \\
@@ -70,6 +89,44 @@ SUBTASK_EXCEPTION = (
     "🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行——子任务没有自己的 session，"
     '"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。'
 )
+
+#: 「环境×变体」→ 该组合的成品**真的会拼进去**的可选正文参数（队列 §一 `#487` 子项／
+#: `OP-0906-M`，Shao Peishen 2026-09-06 裁 (c) 甲＋精简版乙）。不在名单里的参数一旦
+#: 传入即 **fail-loud 报错退出**，不静默丢弃。
+#:
+#: 🔴 **为什么是白名单而不是黑名单**：黑名单要求「每加一个变体就记得去登记它不支持什么」，
+#: 忘了登记 ⇒ 回到静默丢弃（fail-open，看不见）。白名单忘了登记 ⇒ 该组合所有可选正文参数
+#: 一律被拒（fail-closed，噪音大但当场看得见），下一个人两分钟就能补上。
+#: **判据：一个参数被接受却不生效，比它被拒绝更危险。**
+#:
+#: 🔴 **本表登记的是「拼装函数的事实」，不是「骨架应该长什么样」**——改了
+#: `generate_opener` 的任一 `body_lines` 分支，必须同步改这里，否则表本身就成了第二份
+#: 会漂移的判据。当前事实（2026-09-06 逐行核过 `generate_opener`，含本批方案甲改动）：
+#:   - CC/standard、CC/subtask_lane：拼 do_block ＋ dont_block ⇒ 两个都支持；
+#:   - Cowork/standard：方案甲 2026-09-06 补段后同样拼 do_block ＋ dont_block ⇒ 两个都支持
+#:     （🔴 **此前只拼 do_block，是本行实撞的那个洞；甲已让 `--dont` 生效，故本守卫
+#:     对 Cowork 自动失效——不要再在这里拦 Cowork，会与甲互相打架**）；
+#:   - CC/guardian：§三bis 看护者开场词固定四行 ＋ P4 口径，**do/dont 都不拼**，且不该补段
+#:     （看护者的任务正本在看护件全文里）⇒ 唯一仍需 fail-loud 的组合。
+BODY_PARAM_SUPPORT = {
+    ("CC", "standard"): {"do_items", "dont_items"},
+    ("CC", "subtask_lane"): {"do_items", "dont_items"},
+    ("CC", "guardian"): set(),
+    ("Cowork", "standard"): {"do_items", "dont_items"},
+}
+
+#: 参数名 → CLI 旗标，用于报错信息里直接点名调用方敲的那个旗标。
+_BODY_PARAM_FLAG = {"do_items": "--do", "dont_items": "--dont"}
+
+#: 各组合被拒时给的**替代承接建议**——只报错不给出路会让调用方改去写更糟的形态
+#: （把硬约束塞进 `--do` 的某一条尾巴，读者当成待办而不是禁令）。
+_BODY_PARAM_ALTERNATIVE = {
+    ("CC", "guardian"): (
+        "§三bis 看护者开场词是固定形态（四行 ＋ P4 扇出口径），正文不拼 `做什么／不做什么` "
+        "——看护者的任务正本在**看护件全文**里，`--input-pointer` 已指向它。"
+        "要给看护者加约束请改看护件，不要走本工具的正文参数。"
+    ),
+}
 
 VALID_ENVS = ("CC", "Cowork")
 VALID_TASK_CLASSES = ("A", "B")
@@ -268,6 +325,41 @@ def _validate_spec(spec: OpenerSpec) -> None:
         )
 
 
+def _reject_silently_dropped_body_params(kwargs: dict, spec: OpenerSpec) -> None:
+    """调用方传了「这个环境×变体根本不会拼进成品」的正文参数 ⇒ 报错退出（fail-loud）。
+
+    🔴 **本函数解决的不是「参数写错了」，而是「参数写对了却没生效」**：
+    2026-09-06 实撞——`--env Cowork --dont "<三条硬约束>"` 被静默丢弃，不报错、
+    不出现在成品里，起草者以为约束传达到了（当次靠那三条本来也写在接力卡里侥幸兜住，
+    属侥幸不属机制）。同族＝`acquire --domain` 漏传是「静默少算」而不是被拦下。
+
+    🔴 **Cowork 已由方案甲让 `--dont` 真的生效，不由本函数拦**（两者同落会互相打架）；
+    本函数落地后只剩 `--variant guardian` 一个洞在守——那个洞补段补不掉。
+
+    🔴 **判「传没传」只看 `kwargs`，不看 `spec`**：`OpenerSpec.__init__` 会把
+    `do_items`／`dont_items` 的 `None` 兜成 `["…"]` 占位，读 `spec` 分不出
+    「没传」与「传了空」——判据必须站在兜底之前。
+    """
+    supported = BODY_PARAM_SUPPORT.get((spec.env, spec.variant))
+    if supported is None:
+        # 白名单没登记这个组合 ⇒ fail-closed（宁可全拒也不静默丢），见常量表注释。
+        supported = set()
+    passed = {k for k in _BODY_PARAM_FLAG if kwargs.get(k)}
+    dropped = sorted(passed - supported, key=lambda k: _BODY_PARAM_FLAG[k])
+    if not dropped:
+        return
+    flags = "、".join(f"`{_BODY_PARAM_FLAG[k]}`" for k in dropped)
+    alt = _BODY_PARAM_ALTERNATIVE.get(
+        (spec.env, spec.variant),
+        "该组合的成品形态不含这些段，请改用 `--input-pointer` 指向的派单件承接。",
+    )
+    raise OpenerGenError(
+        f"{flags} 传入了内容，但 env={spec.env}／variant={spec.variant} 的成品**不会包含**"
+        f"它们——若不报错就会被静默丢弃（参数被接受却不生效，比被拒绝更危险；"
+        f"2026-09-06 实撞一次，队列 §一 `#487` 子项／`OP-0906-M`）。{alt}"
+    )
+
+
 def _title_call_line(op_id: str, short_name: str) -> str:
     mmdd, suffix = _mmdd_and_suffix(op_id)
     return (
@@ -331,6 +423,10 @@ def generate_opener(**kwargs) -> str:
     known = set(_OPENER_SPEC_FIELDS)
     spec = OpenerSpec(**{k: v for k, v in kwargs.items() if k in known})
     _validate_spec(spec)
+    # 🔴 顺序刻意：先 `_validate_spec` 定下合法的 env／variant，本条判据才有意义；
+    # 放在 `_check_op_id_not_reused` 之前——撞号查重要扫全树 `.md`（秒级），
+    # 而「参数会被丢掉」是纯本地判断，没理由让调用方先等一次全树扫描才被告知。
+    _reject_silently_dropped_body_params(kwargs, spec)
     _check_op_id_not_reused(spec)  # P7①：当日撞号即拒，见模块文档
 
     do_block = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(spec.do_items))
@@ -393,6 +489,13 @@ def generate_opener(**kwargs) -> str:
                 "",
                 "做什么：",
                 do_block,
+                "",
+                # 🔴 2026-09-06 补（队列 §一 `#487` 子项／`OP-0906-I`）：此前 Cowork 分支
+                # 不拼「不做什么」段，`--dont` 传进来被**静默丢弃**——不报错、不出现在
+                # 成品里，起草者以为约束传达到了（2026-09-06 实撞一次）。骨架
+                # 【Cowork】节已同步补段，`工具-opener块lint.py` 形态⑦机器守。
+                "不做什么：",
+                dont_block,
                 "",
                 "收工：产出登记 §二 待 commit 批次（走 `0-学习与工具/工具-共享文档编辑锁.py`，"
                 "勿裸改、勿自行 commit），由落库 sweep 取活。",

@@ -1,4 +1,4 @@
-"""opener 代码块 lint —— 一次收六个失效形态（队列 §一 `#284`／`#381`⑸ⓖ／`#487`，OP-0828-Y／OP-0904-A／OP-0905-C）。
+"""opener 代码块 lint —— 一次收七个失效形态（队列 §一 `#284`／`#381`⑸ⓖ／`#487`，OP-0828-Y／OP-0904-A／OP-0905-C／OP-0906-I）。
 
 本脚本是**规则退休制**（根 `CLAUDE.md` §5）欠下的对价：`专线opener模板库.md` §〇
 补充三那条人守规则 **2026-08-27 一天被违反 17 次**，远超「人守违反 3 次即须机制化或
@@ -9,7 +9,7 @@
 就地解决且根治」）**：判据正本自此改为 `1-转型规划/0-全景路线图/opener骨架.md`（唯一可照抄骨架；
 2026-09-04 A2 由模板库 §〇.00 拆出独立成件，模板库 §〇 此后只留判据，§〇.00 仅存一句指针）。
 
-## 六个形态（判据正本＝`1-转型规划/0-全景路线图/opener骨架.md`；判据说明＝`专线opener模板库.md` §〇.0／§〇.00）
+## 七个形态（判据正本＝`1-转型规划/0-全景路线图/opener骨架.md`；判据说明＝`专线opener模板库.md` §〇.0／§〇.00）
 
 | | 守什么 | 生效日 | 成因 |
 |---|---|---|---|
@@ -19,6 +19,7 @@
 | 形态④ | `【设置】` 行六字段（`执行环境｜分支｜worktree｜工作区｜session｜派出线`）缺失或顺序错 | 2026-09-04（骨架件） | §〇.1 曾把六字段错写成「标准四字段」，字段顺序漂移无任何一层会报错 |
 | 形态⑤ | opener 块**首行**不匹配 `[OP-MMDD-X]【CC／Cowork】<短名≤12字>` | 2026-09-04（骨架件） | 编号是跨会话世界唯一身份，首行缺编号时收工报告/队列回写/CC transcript 目录无法对齐 |
 | 形态⑥ | **看护者用 Task/Agent 派发的子任务泳道 opener**（文件含 `## 三bis` 看护opener 小节、块出现在该节之前）**含** `set_session_title` 调用 | 2026-09-05（队列 §一 `#487`） | 形态②的「子任务例外句」是文本层面的自我约束，2026-08-28／2026-09-05 两次实撞证明**子 agent 不一定会照做**——判据升级为源头不放：这类块本就不该出现这一行 |
+| 形态⑦ | opener 块有 `做什么：` 段标题独立行、却**无** `不做什么：` 段标题独立行 | 2026-09-06（队列 §一 `#487` 子项／`OP-0906-I`） | 【Cowork】骨架此前根本没有「不做什么」段，`工具-opener生成.py --env Cowork --dont "…"` 传进来的硬约束被**静默丢弃**（不报错、不出现在成品里，起草者以为传达到了；2026-09-06 实撞一次）——同族＝「参数被接受却不生效，比被拒绝更危险」 |
 
 形态②③与「工具静默回退」同族：它没错，只是解析到了另一个对象 —— 没有任何一层会报错，
 故只能靠结构检测拦，靠人读输出拦不住。
@@ -155,6 +156,8 @@ RULE_EFFECTIVE_FORM4 = date(2026, 9, 4)
 RULE_EFFECTIVE_FORM5 = date(2026, 9, 4)
 #: 形态⑥ ＝ 队列 §一 `#487`（Shao Peishen 2026-09-05 现场拍板 (甲)）。
 RULE_EFFECTIVE_FORM6 = date(2026, 9, 5)
+#: 形态⑦ ＝ 队列 §一 `#487` 子项（`OP-0906-I`，2026-09-06「`--dont` 静默丢弃」实撞后定）。
+RULE_EFFECTIVE_FORM7 = date(2026, 9, 6)
 
 #: 各形态代码 → 生效日，`classify_carrier` 按此查表（替代此前的二选一分支）。
 RULE_EFFECTIVE_BY_FORM = {
@@ -164,6 +167,7 @@ RULE_EFFECTIVE_BY_FORM = {
     "F4": RULE_EFFECTIVE_FORM4,
     "F5": RULE_EFFECTIVE_FORM5,
     "F6": RULE_EFFECTIVE_FORM6,
+    "F7": RULE_EFFECTIVE_FORM7,
 }
 
 #: R3 生命周期的归档物理落点（目录段，非文件名关键词）。
@@ -205,6 +209,17 @@ FIRST_LINE_RE = re.compile(r"^\[OP-\d{4}-[A-Za-z]+\]【(CC|Cowork)】(.{1,12})$"
 #: 出现在该标题**之前**的围栏块＝ §三 各 `### A<N>` 泳道 opener（会被当子任务 prompt 用，
 #: 不该含 `set_session_title`）；之后的块＝看护者自己的开场词（真正的顶层会话，仍需要它）。
 WATCHER_SECTION_RE = re.compile(r"^##\s*三bis\b", re.MULTILINE)
+
+#: 形态⑦：「做什么：」／「不做什么：」两个**段标题独立行**（队列 §一 `#487` 子项／`OP-0906-I`）。
+#: 🔴 **必须行锚、且必须要求行尾无正文**——两条理由，都不是风格选择：
+#:   ① 子串 `"做什么："` 天然出现在 `"不做什么："` 里面，裸 `in` 判据会把「已经写了
+#:      不做什么段」误判成「写了做什么段」；行锚 `^` 让 `不做什么：` 那一行不命中 `DO`。
+#:   ② 库里大量 opener 正文把「做什么：建造到底。」写成**一整行的散文**（非段标题），
+#:      不要求行尾为空就会把这些块也拖进形态⑦——它们本来就没有分段结构，补一个
+#:      「不做什么：」空段毫无意义。**判据只管「已经采用了分段写法的块」。**
+#: 加粗星号允许（`**做什么：**`），与 `SETTINGS_LINE_RE` 同款容忍。
+DO_SECTION_RE = re.compile(r"^\s*\*{0,2}做什么\*{0,2}\s*[：:]\s*\*{0,2}\s*$")
+DONT_SECTION_RE = re.compile(r"^\s*\*{0,2}不做什么\*{0,2}\s*[：:]\s*\*{0,2}\s*$")
 
 
 def _watcher_section_line(text: str) -> int | None:
@@ -412,6 +427,21 @@ def check_block(block: Block, *, is_subtask_lane: bool = False) -> list[tuple[st
                 "无法对齐；模板库 §〇.00）",
             ))
 
+    # 形态⑦ —— 块有「做什么：」段却无「不做什么：」段（队列 §一 `#487` 子项／`OP-0906-I`）：
+    # 【Cowork】骨架此前压根没有这一段，`工具-opener生成.py --env Cowork --dont "…"`
+    # 传进来的硬约束被静默丢弃（不报错、不出现在成品里）。判据对 CC／Cowork 一视同仁，
+    # 不做环境分流——CC 侧现存 28 个分段写法的块全部已带「不做什么」，零回归。
+    if is_opener:
+        has_do = any(DO_SECTION_RE.match(ln) for ln in block.lines)
+        has_dont = any(DONT_SECTION_RE.match(ln) for ln in block.lines)
+        if has_do and not has_dont:
+            problems.append((
+                "F7",
+                "opener 块有「做什么：」段却无「不做什么：」段 ⇒ 硬约束无处可写，"
+                "`工具-opener生成.py --dont` 传进来会被静默丢弃（参数被接受却不生效，"
+                "比被拒绝更危险；2026-09-06 实撞一次，队列 §一 `#487` 子项）",
+            ))
+
     return problems
 
 
@@ -547,6 +577,7 @@ FORM_TITLE = {
     "F4": "形态④ · 【设置】六字段缺失或顺序错（规则生效日 2026-09-04）",
     "F5": "形态⑤ · 首行不匹配 [OP-MMDD-X]【CC／Cowork】<短名≤12字>（规则生效日 2026-09-04）",
     "F6": "形态⑥ · 子任务泳道 opener 含 set_session_title（规则生效日 2026-09-05）",
+    "F7": "形态⑦ · 有「做什么：」段却缺「不做什么：」段（规则生效日 2026-09-06）",
 }
 
 
@@ -599,7 +630,7 @@ def main(argv: list[str] | None = None) -> int:
         for rel in sorted({f.rel for f in unk}):
             print(f"  - {rel}")
 
-    for form in ("F1", "F2", "F6"):
+    for form in ("F1", "F2", "F6", "F7"):
         sel = [f for f in cur if f.form == form]
         if not sel:
             continue
@@ -610,7 +641,8 @@ def main(argv: list[str] | None = None) -> int:
     if hist:
         print(f"\n── 历史件命中 {len(hist)} 处（F1 {sum(1 for f in hist if f.form == 'F1')} ／ "
               f"F2 {sum(1 for f in hist if f.form == 'F2')} ／ "
-              f"F6 {sum(1 for f in hist if f.form == 'F6')}）：**按「历史记录不追改」不修、不阻断** ──")
+              f"F6 {sum(1 for f in hist if f.form == 'F6')} ／ "
+              f"F7 {sum(1 for f in hist if f.form == 'F7')}）：**按「历史记录不追改」不修、不阻断** ──")
         if args.show_historical:
             for f in hist:
                 print(f"  - {f.render()}")
