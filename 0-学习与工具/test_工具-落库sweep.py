@@ -7383,5 +7383,244 @@ class LogRotationTests(unittest.TestCase):
             sweep._rotate_hooks_audit_log = original
 
 
+# ============================================================
+# 队列 §一 #454（2026-09-06，OP-0906-N）：第 12 类常驻状态告警
+# ============================================================
+
+_TRIAGE_SECTION_ONE_HEADER = (
+    "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+    "|---|------|--------|-------------|----------|------|--------|------|\n"
+)
+
+
+def _triage_queue_text(section_one_rows: str, section_four_rows: str = "") -> str:
+    text = (
+        "---\ntitle: 测试队列\n---\n\n# 测试队列\n\n"
+        "## 一、任务看板\n\n" + _TRIAGE_SECTION_ONE_HEADER + section_one_rows + "\n"
+        "## 二、待 commit 批次\n\n"
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n|------|---------|--------------|------|\n\n"
+    )
+    if section_four_rows:
+        text += ("## 四、决策台账\n\n| # | 事项 | 等谁 | 截止 |\n|---|------|------|------|\n"
+                 + section_four_rows + "\n")
+    return text
+
+
+class StatusTriageResidentRoundTests(unittest.TestCase):
+    """第 12 类常驻状态告警：状态分诊候选 ＋ 决策台账缺口（队列 §一 #454）。
+
+    🔴 **本类第一条用例就是派单件第 2 步点名的那个场景**：候选存在、但当前
+    没有任何 session 被 WIP 拦下。那正是 2026-09-06 的实况（机制类可动 WIP
+    21／22 未超限 ⇒ release ⑨ 不触发 ⇒ 分诊器一次都不会被调用），也正是这个
+    变更包存在的理由——**分诊器的输出从来没有被一个有权限改判的人看到过。**
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmp.name)
+        (self.repo_root / "1-转型规划" / "0-全景路线图").mkdir(parents=True, exist_ok=True)
+        (self.repo_root / "0-学习与工具").mkdir(parents=True, exist_ok=True)
+        # 真的把编辑锁脚本拷进夹具——第 12 类走**子进程 CLI**取候选（design D5），
+        # 打桩一个假脚本只会验证"我写的桩返回了我写的值"。
+        shutil.copy(EDIT_LOCK_SOURCE, self.repo_root / sweep.EDITLOCK_SCRIPT_REL)
+        self._write(sweep.QUEUE_MECHANISM_PATH_REL, _triage_queue_text(""))
+        self._write(sweep.QUEUE_BUSINESS_PATH_REL, _triage_queue_text(""))
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write(self, rel: str, text: str) -> None:
+        path = self.repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def _run(self) -> list[str]:
+        log: list[str] = []
+        sweep._check_status_triage_and_ledger(self.repo_root, log)
+        return log
+
+    def test_wip未超限时候选仍被产出并进入渲染(self):
+        """**派单件第 2 步点名的场景。** 机制类可动 WIP 远低于上限（本夹具里
+        根本没有 WIP 概念参与），候选照样被产出、分档、回显——因为本类的触发
+        条件是"每小时到点了"，不是"有人被拦下了"。"""
+        self._write(sweep.QUEUE_MECHANISM_PATH_REL, _triage_queue_text(
+            "| 455 | 某行 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 是否 ff 进 master 待 Shao Peishen 拍板，未合入前不归档 "
+            "| 触碰区 | 2026-09-05 |\n",
+            "| 1 | 复核 #455 | Shao Peishen | 2026-09-10 |\n"))
+        log = self._run()
+        joined = "\n".join(log)
+        self.assertIn("强档 1 条", joined)
+        self.assertIn("#455", joined)
+
+    def test_业务场景队列的候选被覆盖_原本结构性不可达(self):
+        """🔴 `_count_mechanism_wip` 只数 `[D:机]` 行 ⇒ 业务队列可动 WIP 恒为 0、
+        恒 < cap ⇒ 旧接线下该队列的候选**结构上永远看不到**，且该失效不产生
+        任何信号。本用例钉住：新接线下业务域候选照常出现，且标明来源队列。"""
+        self._write(sweep.QUEUE_BUSINESS_PATH_REL, _triage_queue_text(
+            "| 418 | 某行 | CC | 指针 | 产出 | "
+            "[S:open][D:业] 余下部署与全量重跑留步待批 | 触碰区 | 2026-08-26 |\n"))
+        joined = "\n".join(self._run())
+        self.assertIn("#418", joined)
+        self.assertIn("跨桌任务队列-业务场景.md", joined)
+
+    def test_弱档只回显不推送_且降档条数每轮可见(self):
+        """否定词表一旦写宽，"被降掉的越来越多"是唯一能看见它失效的信号——
+        故降档条数必须每轮回显，且被降档的行仍逐条列出（词表只降档、不剔除）。"""
+        self._write(sweep.QUEUE_BUSINESS_PATH_REL, _triage_queue_text(
+            "| 470 | 某行 | CC | 指针 | 产出 | "
+            "[S:open][D:业] 上一条留步的 ⑤ 已由 Shao Peishen 当日答 G-6 = (a) 批准，"
+            "五条定夺项全部依赖解除 | 触碰区 | 2026-09-03 |\n"))
+        joined = "\n".join(self._run())
+        self.assertIn("弱档 #470", joined)
+        self.assertIn("降档因：依赖解除", joined)
+        self.assertIn("强档 0 条／弱档 1 条", joined)
+        # 弱档不进推送 ⇒ 状态文件里不该有它的 key
+        state = json.loads((self.repo_root / sweep.STATUS_TRIAGE_STATE_REL).read_text(encoding="utf-8"))
+        self.assertEqual(state, {})
+
+    def test_零候选时回显行仍出现(self):
+        joined = "\n".join(self._run())
+        self.assertIn("状态分诊候选常驻扫描", joined)
+        self.assertIn("强档 0 条／弱档 0 条", joined)
+
+    def test_判据不可用时告警_绝不判为零候选(self):
+        """同第 10 类 `FOLLOWUP_DIGEST_UNAVAILABLE_STATE_REL` 同形：**报"判据
+        不可用"，不报"零候选"**。这两句话在日志里长得很像，后果差一个量级。"""
+        (self.repo_root / sweep.EDITLOCK_SCRIPT_REL).unlink()
+        joined = "\n".join(self._run())
+        self.assertIn("分诊判据不可用", joined)
+        self.assertIn("不据此判为零候选", joined)
+        # 🔴 "强档 0 条／弱档 0 条"与真的零候选逐字相同，后果却差一个量级——
+        # 判据全不可用时这行**根本不该出现**（apply 期实测撞出、就地修）。
+        self.assertNotIn("强档 0 条", joined)
+        self.assertIn("未取到任何一份队列的候选", joined)
+        self.assertIn("本轮跳过", joined)
+
+    def test_一份队列不可用不吃掉另一份_计数行自带覆盖面(self):
+        """一份队列一次超时不得静默把另一份的候选也抹成零（本项目「工具静默
+        回退」一族）；且计数行必须点名"本轮只扫了几份"，否则读者无从分辨
+        "真的只有 1 条"与"另一份根本没读到"。"""
+        self._write(sweep.QUEUE_MECHANISM_PATH_REL, _triage_queue_text(
+            "| 455 | 某行 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 待 Shao Peishen 拍板 | 触碰区 | 2026-09-05 |\n"))
+        (self.repo_root / sweep.QUEUE_BUSINESS_PATH_REL).unlink()
+        original = sweep._run_triage_candidates_json
+
+        def fail_business(repo_root, queue_path):
+            if queue_path == sweep.QUEUE_BUSINESS_PATH_REL:
+                return None, "构造的子进程失败"
+            return original(repo_root, queue_path)
+
+        sweep._run_triage_candidates_json = fail_business
+        try:
+            joined = "\n".join(self._run())
+        finally:
+            sweep._run_triage_candidates_json = original
+        self.assertIn("#455", joined)                 # 成功那份照常出候选
+        self.assertIn("分诊判据不可用", joined)        # 失败那份如实告警
+        self.assertIn("已扫 1／2 份队列", joined)      # 计数行自带覆盖面
+
+    def test_命中片段反引号成对(self):
+        """告警正文会被人复制粘贴回队列行——一个未闭合的反引号跨度会吞掉行尾
+        列分隔符，把 8 列的行写塌成 7 列（`#337`／`#422` 真实事故）。"""
+        self._write(sweep.QUEUE_MECHANISM_PATH_REL, _triage_queue_text(
+            "| 903 | 某行 | CC | 指针 | 产出 | [S:open][D:机] "
+            + "填" * 55 + "`未闭合 待 Shao Peishen 拍板" + "尾" * 80
+            + " | 触碰区 | 2026-09-01 |\n"))
+        for line in self._run():
+            self.assertEqual(line.count("`") % 2, 0, line)
+
+    def test_台账缺口被检出并给出可粘贴命令_但不写队列(self):
+        """D4=(a)：只检测＋告警＋给可粘贴的 `append-row` 草稿命令。
+        **绝不自动写 §四**——精度 3/8 下自动写等于把假阳性灌进台账，且那会给
+        sweep 新开一条机器写队列正文的路径（`#326`／`#322` 同族）。"""
+        before_m = (self.repo_root / sweep.QUEUE_MECHANISM_PATH_REL).read_bytes()
+        self._write(sweep.QUEUE_MECHANISM_PATH_REL, _triage_queue_text(
+            "| 337 | 某行 | CC | 指针 | 产出 | "
+            "[S:blocked][D:机] 判据类，待 Shao Peishen 裁 | 触碰区 | 2026-08-20 |\n",
+            "| 1 | 无关事项 | 孙涛 | 2026-09-10 |\n"))
+        after_write = (self.repo_root / sweep.QUEUE_MECHANISM_PATH_REL).read_bytes()
+        joined = "\n".join(self._run())
+        self.assertIn("缺口 1 行", joined)
+        self.assertIn("#337", joined)
+        # 队列逐字节不变（本轮只有本用例自己那次 _write 改过它）
+        self.assertEqual(
+            (self.repo_root / sweep.QUEUE_MECHANISM_PATH_REL).read_bytes(), after_write)
+        self.assertNotEqual(after_write, before_m)  # 确认夹具确实写过，断言不是空转
+        # 草稿命令两步都给全：先取号、再 append-row
+        draft = sweep._render_ledger_append_draft(
+            {"queue": sweep.QUEUE_MECHANISM_PATH_REL, "row_id": "337",
+             "status": "blocked", "excerpt": "判据类，待 Shao Peishen 裁"})
+        self.assertIn("--reserve 1 --section 四", draft)
+        self.assertIn("append-row", draft)
+        self.assertIn("--section 四", draft)
+
+    def test_blocked行的台账缺口被检出_扫描面独立于分诊器(self):
+        """16 条自陈行里 13 条是 `blocked`——沿用分诊器的 open/partial 限制会让
+        ⑵ 一开始就漏掉 81%。本用例钉住 `blocked` 行既**不**进改判候选、**却**
+        进台账缺口：两半扫描面刻意不同，不是疏漏。"""
+        self._write(sweep.QUEUE_MECHANISM_PATH_REL, _triage_queue_text(
+            "| 341 | 某行 | CC | 指针 | 产出 | "
+            "[S:blocked][D:机] 合并决策待 Shao Peishen | 触碰区 | 2026-09-05 |\n"))
+        joined = "\n".join(self._run())
+        self.assertIn("强档 0 条／弱档 0 条", joined)   # 分诊器看不到它
+        self.assertIn("缺口 #341", joined)              # 台账缺口看得到它
+
+    def test_台账已结案行提及即算已覆盖(self):
+        """含已结案行（design D7）：一条已拍板的 §四 行正是"他已看见并答过"的
+        证据。只认未结案行会让那些行对应的 §一 行被反复报为缺口。"""
+        self._write(sweep.QUEUE_MECHANISM_PATH_REL, _triage_queue_text(
+            "| 96 | 某行 | CC | 指针 | 产出 | "
+            "[S:blocked][D:机] 待 Shao Peishen 给窗口 | 触碰区 | 2026-08-01 |\n",
+            "| 1 | 已拍板：#96 的窗口已定 ✅ 2026-08-20 结案 | Shao Peishen | 已结 |\n"))
+        joined = "\n".join(self._run())
+        self.assertIn("缺口 0 行", joined)
+
+    def test_业务域缺口的跨文件登记须点明(self):
+        """业务场景队列不存在 §四 分区（实测：只有 `## 一、`／`## 二、`）⇒ 其
+        自陈行只能跨文件登记进机制队列 §四，草稿命令必须点明这一点并请人确认
+        归属——机器不替人做归属决定。"""
+        draft = sweep._render_ledger_append_draft(
+            {"queue": sweep.QUEUE_BUSINESS_PATH_REL, "row_id": "394",
+             "status": "partial", "excerpt": "待 Shao Peishen 追认"})
+        self.assertIn("跨文件登记", draft)
+        self.assertIn("请先确认归属", draft)
+
+    def test_两份队列行号重叠时报错而非静默匹配(self):
+        """design D7 已知边界：`#N` 是纯数字匹配，两份队列共用同一套行号空间。
+        2026-09-06 实测交集为空集，**但这是现状而非不变量**。
+        🔴 **静默匹配的后果是"缺口凭空消失"，而缺口消失长得跟"已经登记好了"
+        一模一样**——故必须报错。"""
+        row = ("| 500 | 某行 | CC | 指针 | 产出 | "
+               "[S:open][D:{d}] 待 Shao Peishen 拍板 | 触碰区 | 2026-09-01 |\n")
+        self._write(sweep.QUEUE_MECHANISM_PATH_REL, _triage_queue_text(row.format(d="机")))
+        self._write(sweep.QUEUE_BUSINESS_PATH_REL, _triage_queue_text(row.format(d="业")))
+        joined = "\n".join(self._run())
+        self.assertIn("行号空间出现重叠", joined)
+        self.assertIn("拒绝", joined)
+        self.assertNotIn("缺口 0 行", joined)
+
+    def test_告警key含命中措辞_同一行换措辞视为新候选(self):
+        """同第 11 类「key 必须包含 commit_sha」的同款理由：不含措辞时，同一行
+        改写后命中另一条措辞会被拖进旧 key 的 24 小时静默窗。"""
+        k1 = sweep._triage_candidate_key(
+            sweep.QUEUE_MECHANISM_PATH_REL, {"row_id": "455", "phrase": "待 Shao Peishen"})
+        k2 = sweep._triage_candidate_key(
+            sweep.QUEUE_MECHANISM_PATH_REL, {"row_id": "455", "phrase": "留步"})
+        self.assertNotEqual(k1, k2)
+        self.assertIn("455", k1)
+
+    def test_本类不影响主流程退出码_异常被捕获(self):
+        """接进 `main()` 时须与第 4/6/7/9/10/11 类同形：只读、只告警、异常不
+        影响本轮退出码。本用例用源码结构断言（跑真实 main 需完整 git 夹具）。"""
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("_check_status_triage_and_ledger(repo_root, log)", source)
+        # 排在第 11 类之后（tasks 3.3）
+        self.assertGreater(
+            source.index("_check_status_triage_and_ledger(repo_root, log)"),
+            source.index("_check_draft_gap_inventory(repo_root, log)"))
+
+
 if __name__ == "__main__":
     unittest.main()

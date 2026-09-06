@@ -5708,6 +5708,325 @@ def _check_draft_gap_inventory(repo_root: Path, log: list[str]) -> None:
     )
 
 
+# ============================================================
+# 队列 §一 #454（2026-09-06，OP-0906-N，变更包 status-triage-resident-round）：
+# 第 12 类常驻状态告警——状态分诊候选 ＋ 决策台账缺口
+# ============================================================
+#
+# 🔑 **本类修的是一个闭环死锁，不是"没人干活"。** 分诊器
+# `工具-共享文档编辑锁.py::_suggest_status_reclassification` 2026-08-30 已建、
+# 单测齐全、且确实接在生产路径上（release 校验 ⑨ 内），但它**只在
+# `wip_count > cap` 时才被调用**，输出附在 release 拒绝消息里 ⇒ 候选只对那个
+# 正好被拦下的 session 显示，而被拦的 session **无权改他人的行**（`#422` 先例）。
+# **分诊器的输出从来没有被一个有权限改判的人看到过。**
+#
+# 2026-09-06 实测把这句话升格为事实，并多找出一条更硬的缺口：
+#   · 机制类可动 WIP 21/22 ⇒ release ⑨ 此刻根本不触发、分诊器一次都不会被调用；
+#   · 🔴 `_count_mechanism_wip` 只数 `[D:机]` 行 ⇒ **业务场景队列可动 WIP 恒为 0**
+#     ⇒ 该队列的候选**结构上永远不可达**，且该失效不产生任何信号。
+#
+# 🔴 **为什么载体是 sweep 每小时这一轮**（同第 10/11 类落地时的判据：先比一次
+# 谁的节奏与"新增发生"的节奏匹配）：候选随任一 session 改写状态列而产生，与
+# "本轮有没有批次落库"无关；sweep 已有 webhook 与"出现→告警／消失→解除"骨架
+# （`_track_and_alert_standing_state`，第 4/6/7/9/10/11 类同形复用），**本类不
+# 新造通道、不新建独立定时轮次**（`#366`「两套判据各自轮询」教训，派单件明令）。
+#
+# 🔴 **同批退休 release ⑨ 的候选接线**（one-in-one-out，Shao Peishen 2026-09-06
+# 答 D3=(a)）——见 `工具-共享文档编辑锁.py` 该处长注。退的是接线不是判据。
+#
+# 🔴 **仍是子进程调用、不进程内 import 编辑锁模块**（本文件头部"零依赖"原则，
+# 同第 10/11 类）：子进程调用同时天然隔离了"读队列真身时误触锁"这一风险——
+# `triage-candidates` 子命令连锁文件都不看一眼。
+#
+# 🔴 **判据只此一份**：`STALE_STATUS_PHRASES`／否定词表／分档全部由编辑锁模块
+# 算好、随 JSON 的 `tier` 字段送出，**本文件只按 `tier` 分桶渲染，不重新发明
+# 一套字符串匹配**（design D5）。
+#
+# 🔴 **⑵ 只检测、只告警、给可粘贴命令，绝不自动写 §四**（Shao Peishen
+# 2026-09-06 答 D4=(a)）：精度实测 3/8，(b) 会把假阳性写进台账；且 (b) 等于给
+# sweep 新开一条**机器写队列正文**的路径，与 `#326`（投递链路绕开编辑锁直接写
+# README）／`#322`（编辑锁"删不掉就改名"造出无人回看的文件形态、企微群连响
+# 17.1 小时）两次事故同族。**拿一条不可逆的写盘路径去换一次人工点击，不划算。**
+EDITLOCK_SCRIPT_REL = "0-学习与工具/工具-共享文档编辑锁.py"
+STATUS_TRIAGE_UNAVAILABLE_STATE_REL = "reports/sweep-status-triage-unavailable-state.json"
+STATUS_TRIAGE_STATE_REL = "reports/sweep-status-triage-state.json"
+DECISION_LEDGER_GAP_STATE_REL = "reports/sweep-decision-ledger-gap-state.json"
+STATUS_TRIAGE_ALERT_INTERVAL_HOURS = 24.0
+SECTION_FOUR_HEADING = "## 四、"
+# §四 正文里出现的 `#N` 即视为"该行已被台账覆盖"（design D7）。
+SECTION_FOUR_ROW_REF_RE = re.compile(r"#(\d+)")
+
+
+def _run_triage_candidates_json(repo_root: Path, queue_path: str) -> tuple[dict | None, str | None]:
+    """子进程调用 `工具-共享文档编辑锁.py triage-candidates --queue X --json`，
+    返回 (payload, None) 或 (None, 失败原因)。不在本进程 import 编辑锁模块
+    （见本节头部长注）。"""
+    script = repo_root / EDITLOCK_SCRIPT_REL
+    if not script.exists():
+        return None, f"未找到 {EDITLOCK_SCRIPT_REL}"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "triage-candidates", "--queue", queue_path, "--json"],
+            cwd=repo_root, capture_output=True, text=True, encoding="utf-8", timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"子进程调用异常：{type(exc).__name__}: {exc}"
+    if result.returncode != 0:
+        return None, (result.stderr or result.stdout).strip()[:500]
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return None, f"输出不是合法 JSON：{exc}"
+    if not isinstance(payload, dict) or "candidates" not in payload:
+        return None, "输出 JSON 缺少 `candidates` 字段"
+    return payload, None
+
+
+def _collect_triage_payloads(repo_root: Path) -> tuple[dict[str, dict], list[str]]:
+    """两份队列各调一次，返回 (队列路径→payload, 失败原因列表)。
+
+    🔴 **一份失败不吃掉另一份**：两份队列各自独立取，失败的那份进 `failures`
+    并触发"判据不可用"告警，成功的那份照常出候选——否则业务队列一次超时会
+    静默把机制队列的候选也一并抹成零（本项目「工具静默回退」一族）。"""
+    payloads: dict[str, dict] = {}
+    failures: list[str] = []
+    for queue_path in _iter_queue_paths():
+        payload, reason = _run_triage_candidates_json(repo_root, queue_path)
+        if payload is None:
+            failures.append(f"{queue_path}：{reason}")
+        else:
+            payloads[queue_path] = payload
+    return payloads, failures
+
+
+def _triage_candidate_key(queue_path: str, cand: dict) -> str:
+    """告警节流 key ＝ `队列|行号|命中措辞`（design D6）。
+
+    🔴 **必须含 `phrase`**：同一行换一条命中措辞时应视为新候选，否则会被拖进
+    旧 key 的 24 小时静默窗（同第 11 类「key 必须包含 commit_sha」的同款理由）。
+    """
+    return f"{Path(queue_path).name}|{cand.get('row_id', '?')}|{cand.get('phrase', '?')}"
+
+
+def _section_four_covered_rows(repo_root: Path) -> set[str]:
+    """§四 全表正文里被 `#N` 提及过的行号集合（design D7）。
+
+    🔴 **含已结案行**：一条已拍板的 §四 行正是"他已经看见并答过了"的证据，
+    恰是 ⑵ 要找的东西的反面。只认未结案行会让 93 行里那些已结案行对应的
+    §一 行被反复报为"缺口"，制造与假阳性同款的噪音。
+
+    🔴 **业务场景队列没有 §四 分区**（2026-09-06 实测：该文件只有 `## 一、`／
+    `## 二、`）——故覆盖面只从机制环境队列取，业务域自陈行的登记按既有域路由
+    口径落机制队列 §四（`append-row --section 四` 本身也恒定写机制文件）。
+    """
+    text = _read_queue(repo_root, QUEUE_MECHANISM_PATH_REL)
+    start = _find_section_heading(text, SECTION_FOUR_HEADING)
+    if start == -1:
+        return set()
+    rest = text[start + len(SECTION_FOUR_HEADING):]
+    next_heading = rest.find("\n" + NEXT_SECTION_PREFIX)
+    section = rest if next_heading == -1 else rest[:next_heading]
+    return set(SECTION_FOUR_ROW_REF_RE.findall(section))
+
+
+def _render_ledger_append_draft(gap: dict) -> str:
+    """渲染一条可直接粘贴的 §四 登记草稿命令（D4=(a) 的落地形态）。
+
+    🔴 **两步都给全**：§四 行号必须先 `acquire --reserve 1 --section 四` 取号，
+    只给 `append-row` 那一半等于让人自己去想第一步——而"自己想的那一步"正是
+    协议〇里最常被跳过的一步。
+    """
+    cross = (
+        "（🔴 跨文件登记：本行来自业务场景队列，而该文件无 §四 分区；"
+        "按域路由口径登记进机制环境队列 §四，**请先确认归属再执行**）"
+        if gap["queue"] == QUEUE_BUSINESS_PATH_REL else ""
+    )
+    return (
+        f"# §一 #{gap['row_id']}（{Path(gap['queue']).name}，现 {gap['status']}）{cross}\n"
+        f"python {EDITLOCK_SCRIPT_REL} acquire --who <你的会话标识> --reserve 1 --section 四\n"
+        f"python {EDITLOCK_SCRIPT_REL} append-row --who <同上> --section 四 --number <上一步返回的号> \\\n"
+        f"  --set '事项=<照 §一 #{gap['row_id']} 自陈补一句：{gap['excerpt'][:40]}…>' \\\n"
+        f"  --set '等谁=Shao Peishen' --set '截止=<你定>'\n"
+        f"python {EDITLOCK_SCRIPT_REL} release --who <同上>"
+    )
+
+
+def _check_status_triage_candidates(repo_root: Path, log: list[str],
+                                    payloads: dict[str, dict], failures: list[str]) -> None:
+    """第 12 类常驻状态告警之 ⑴：状态分诊候选常驻扫描。
+
+    🔴 **回显不是可选项**（同第 4/6/7/9/10/11 类）：无论候选是否为零，每轮都
+    打一行——零命中不省略。**降档条数每轮回显**（spec 明列）：否定词表一旦
+    写宽，"被降掉的越来越多"是唯一能看见它失效的信号。
+    """
+    log.append("🧭 状态分诊候选常驻扫描（两份队列 §一，每轮回显，零命中亦不省略）：")
+
+    if failures:
+        for detail in failures:
+            log.append(f"    ⚠ 分诊判据不可用：{detail}——**不据此判为零候选**")
+        _track_and_alert_standing_state(
+            repo_root, "状态分诊判据可用性", STATUS_TRIAGE_UNAVAILABLE_STATE_REL,
+            {"triage_candidates_unavailable"}, STATUS_TRIAGE_ALERT_INTERVAL_HOURS,
+            lambda keys: (
+                f"🔴 落库sweep：状态分诊候选出口连续不可用（{'；'.join(failures)}）——"
+                "本轮改判候选与决策台账缺口检测已失效，须人工核查 "
+                f"`{EDITLOCK_SCRIPT_REL} triage-candidates --json` 是否可正常运行。"
+            ),
+            lambda keys: "✅ 落库sweep：状态分诊候选出口已恢复可用。",
+            log,
+        )
+    else:
+        _track_and_alert_standing_state(
+            repo_root, "状态分诊判据可用性", STATUS_TRIAGE_UNAVAILABLE_STATE_REL,
+            set(), STATUS_TRIAGE_ALERT_INTERVAL_HOURS,
+            lambda keys: "", lambda keys: "✅ 落库sweep：状态分诊候选出口已恢复可用。", log,
+        )
+
+    strong: dict[str, dict] = {}
+    weak_count = 0
+    for queue_path, payload in payloads.items():
+        for note in payload.get("criteria_drift", []):
+            log.append(f"    ⚠ {Path(queue_path).name} 判据漂移：{note}")
+        for cand in payload.get("candidates", []):
+            cand = dict(cand, queue=queue_path)
+            if cand.get("tier") == "strong":
+                strong[_triage_candidate_key(queue_path, cand)] = cand
+            else:
+                weak_count += 1
+                log.append(
+                    f"    · 弱档 #{cand['row_id']}（{Path(queue_path).name}，现 {cand['status']}）"
+                    f"命中「{cand['phrase']}」，降档因：{'／'.join(cand.get('downgrade_reasons') or ['—'])}"
+                )
+    # 🔴 **计数行必须自带覆盖面**：判据对某份队列不可用时，"强档 0 条／弱档 0 条"
+    # 与真的零候选在日志里逐字相同，而两者后果差一个量级（一个是"没事"，另一个是
+    # "本轮什么都没看"）。⇒ 全不可用时**根本不打这行**，部分不可用时点名缺的是哪份。
+    if not payloads:
+        log.append("    · 本轮**未取到任何一份队列的候选**（判据全不可用）——不出计数，"
+                   "**不得据此判为零候选**")
+    else:
+        scope = (f"（已扫 {len(payloads)}／{len(_iter_queue_paths())} 份队列，"
+                 f"缺 {len(failures)} 份）" if failures else "")
+        log.append(f"    · 强档 {len(strong)} 条／弱档 {weak_count} 条"
+                   f"（弱档只回显、不推送）{scope}")
+    for key, cand in strong.items():
+        log.append(f"    🔴 强档 #{cand['row_id']}（{Path(cand['queue']).name}，现 {cand['status']}）"
+                   f"命中「{cand['phrase']}」：{cand['excerpt']}")
+
+    def render_alert(keys):
+        lines = "\n".join(
+            f"- `#{strong[k]['row_id']}`（{Path(strong[k]['queue']).name}，现 `{strong[k]['status']}`）"
+            f"命中「{strong[k]['phrase']}」：{strong[k]['excerpt']}"
+            for k in keys if k in strong
+        )
+        return (
+            f"🧭 落库sweep：{len(keys)} 条队列行的状态自陈**请复核是否该改判**"
+            f"（命中外部阻塞措辞，建议方向 `blocked`／`timed=`）：\n{lines}\n"
+            "改判权在该行的领取方与总线，本告警只报候选、不代改、不预设结论；"
+            "命中片段原样附上，请先确认那句话说的是本行自己、还是在引用别人的阻塞状态。"
+        )
+
+    def render_resolved(keys):
+        lines = "\n".join(f"- {k}" for k in keys)
+        return f"✅ 落库sweep：以下状态分诊候选已解除（已改判或措辞已改写）：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "状态分诊候选", STATUS_TRIAGE_STATE_REL, set(strong),
+        STATUS_TRIAGE_ALERT_INTERVAL_HOURS, render_alert, render_resolved, log,
+    )
+
+
+def _check_decision_ledger_gaps(repo_root: Path, log: list[str], payloads: dict[str, dict]) -> None:
+    """第 12 类常驻状态告警之 ⑵：决策台账缺口检测。
+
+    治的病是**「他看不见」**，不是「台账行数不够」——§一 行内自陈"在等 Shao
+    Peishen 一次动作"的行，「会话末罗列决策项」只管单次会话、§四 只收登记过的，
+    **两处都不覆盖**。🔑 **WIP 满不是拥堵，是决策队列溢出到了任务队列里。**
+
+    🔴 **扫描面独立于分诊器**（design 已知边界 2）：覆盖 `blocked`——2026-09-06
+    实测 16 条自陈行里 13 条是 `blocked`，它们确实在等他，只是无处可改判；沿用
+    分诊器的 open/partial 限制会一开始就漏掉 81%。
+
+    🔴 **只检测、只告警、给可粘贴命令，绝不写 §四**（D4=(a)）。
+    """
+    log.append("🗂 决策台账缺口检测（§一 自陈待他一次动作 vs §四 覆盖，每轮回显）：")
+
+    # tasks 4.3 / design D7 已知边界：`#N` 是纯数字匹配，两份队列共用同一套行号
+    # 空间。2026-09-06 实测交集为空集，**但这是现状而非不变量**——一旦重叠，
+    # 跨文件匹配会把 A 队列的 §四 覆盖误算到 B 队列的同号行上。
+    # 🔴 **报错而非静默匹配**：静默匹配的后果是"缺口凭空消失"，而缺口消失恰好
+    # 长得跟"这件事已经登记好了"一模一样。
+    ids_by_queue = {
+        queue_path: {str(r) for r in payload.get("row_ids", [])}
+        for queue_path, payload in payloads.items()
+    }
+    queues = list(ids_by_queue)
+    overlap: set[str] = set()
+    for i, qa in enumerate(queues):
+        for qb in queues[i + 1:]:
+            overlap |= ids_by_queue[qa] & ids_by_queue[qb]
+    if overlap:
+        log.append(
+            f"    🔴 两份队列 §一 行号空间出现重叠（{len(overlap)} 个："
+            f"{'、'.join(sorted(overlap)[:10])}）——`#N` 匹配已不可靠，本轮**拒绝**"
+            "输出台账缺口（不静默按重叠后的结果匹配）。请先消除行号重叠。"
+        )
+        return
+
+    covered = _section_four_covered_rows(repo_root)
+    gaps: dict[str, dict] = {}
+    awaiting_total = 0
+    for queue_path, payload in payloads.items():
+        for row in payload.get("awaiting_rows", []):
+            awaiting_total += 1
+            if row["row_id"] in covered:
+                continue
+            gaps[f"{Path(queue_path).name}|{row['row_id']}"] = dict(row, queue=queue_path)
+
+    log.append(
+        f"    · 自陈待他一次动作 {awaiting_total} 行；§四 已覆盖 {awaiting_total - len(gaps)} 行；"
+        f"**缺口 {len(gaps)} 行**（§四 全表含已结案行均算覆盖）"
+    )
+    for key, gap in gaps.items():
+        log.append(f"    🔴 缺口 #{gap['row_id']}（{Path(gap['queue']).name}，现 {gap['status']}）"
+                   f"命中「{gap['phrase']}」：{gap['excerpt']}")
+
+    def render_alert(keys):
+        blocks = "\n\n".join(
+            f"- `#{gaps[k]['row_id']}`（{Path(gaps[k]['queue']).name}，现 `{gaps[k]['status']}`）"
+            f"自陈「{gaps[k]['phrase']}」：{gaps[k]['excerpt']}\n"
+            f"```\n{_render_ledger_append_draft(gaps[k])}\n```"
+            for k in keys if k in gaps
+        )
+        return (
+            f"🗂 落库sweep：{len(keys)} 条 §一 行自陈在等 Shao Peishen 一次动作，"
+            "但 §四 决策台账里没有对应行——**决策队列溢出到了任务队列里**。\n\n"
+            f"{blocks}\n\n"
+            "🔴 本告警**不代写 §四**（Shao Peishen 2026-09-06 答 D4=(a)）：够不够格"
+            "占一行台账、截止定在哪天，只有人能判。上面是可直接粘贴的登记命令草稿，"
+            "请复核后执行；若判定不该进台账，请改写该行的状态自陈措辞。"
+        )
+
+    def render_resolved(keys):
+        lines = "\n".join(f"- {k}" for k in keys)
+        return f"✅ 落库sweep：以下决策台账缺口已解除（已登记 §四 或自陈措辞已改写）：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "决策台账缺口", DECISION_LEDGER_GAP_STATE_REL, set(gaps),
+        STATUS_TRIAGE_ALERT_INTERVAL_HOURS, render_alert, render_resolved, log,
+    )
+
+
+def _check_status_triage_and_ledger(repo_root: Path, log: list[str]) -> None:
+    """第 12 类常驻状态告警的入口：两半共用同一次子进程取数（design：⑴ 的
+    产出就是 ⑵ 的输入，两半共用同一个常驻轮次的调用点）。"""
+    payloads, failures = _collect_triage_payloads(repo_root)
+    _check_status_triage_candidates(repo_root, log, payloads, failures)
+    if payloads:
+        _check_decision_ledger_gaps(repo_root, log, payloads)
+    else:
+        log.append("🗂 决策台账缺口检测：分诊出口全部不可用，本轮跳过——**不据此判为零缺口**。")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="只打印计划动作，不 add/commit/push/改队列")
@@ -6042,6 +6361,13 @@ def main() -> int:
             # 六类，检测对象是仓库整体状态、与本轮是否有批次落库无关；
             # 只读、只告警、不代为起草、不影响退出码。
             _check_draft_gap_inventory(repo_root, log)
+
+            # 队列 §一 #454（2026-09-06，OP-0906-N）：第 12 类常驻状态告警——
+            # 状态分诊候选 ＋ 决策台账缺口。同上七类，检测对象是两份队列的
+            # 整体状态、与本轮是否有批次落库无关；🔴 **只读、只告警、
+            # 不向任何队列写入一个字节、不 acquire 任何锁、不影响退出码**
+            # （Shao Peishen 2026-09-06 答 D4=(a)），排在第 11 类之后。
+            _check_status_triage_and_ledger(repo_root, log)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))

@@ -2154,10 +2154,18 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.assertIn("#202", out)
         self.assertNotIn("新增行 #201／#202 的状态列", out)  # 只点名缺的那条
 
-    def test_mechanism_wip_rejection_carries_reclassification_candidates(self):
-        """队列 §一 #435 子项 E（tasks.md 5.3）：主拒绝文案（"两条出路"那
-        条）须附带改判候选清单——既有行里若有命中外部阻塞措辞的
-        open/partial 行，须被列出，帮读者直接执行出路⑴。"""
+    def test_mechanism_wip_rejection_no_longer_carries_candidates_but_keeps_ways_out(self):
+        """🔴 队列 §一 #454（2026-09-06，OP-0906-N，Shao Peishen 答 D3=(a)）：
+        **本用例已由"须附带候选清单"翻转为"不得再附带"**（tasks 5.3）。
+
+        原判据（`#435` 子项 E）让主拒绝文案附上改判候选清单，帮被拦的 session
+        执行出路⑴。2026-09-06 实测证明那条路走不通：**被拦的 session 无权改他人
+        的行**（`#422` 先例），它对候选唯一能做的动作是给自己标 🛑 排队——那不是
+        分诊，那是排队。候选改由 `工具-落库sweep.py` 第 12 类常驻轮次推给有权
+        改判的人（one-in-one-out）。
+
+        **翻转的只有候选清单这一段**：WIP 计数与"两条出路"必须原样还在——那才是
+        "读者此刻该怎么办"的答案，退候选接线不等于把拒绝文案退成不可行动的。"""
         self._write_queue(
             section_one_rows=(
                 "| 150 | 既有机制行1 | CC | 指针 | 产出 | [S:open][D:机] 待领 | 触碰区 | 2026-08-01 |\n"
@@ -2173,9 +2181,23 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             self._release(who="A", mechanism_wip_cap=2)
         out = buf.getvalue()
-        self.assertIn("改判候选清单", out)
-        self.assertIn("#151", out)
-        self.assertIn("建议 `blocked`", out)
+        self.assertNotIn("改判候选清单", out)
+        self.assertNotIn("#151", out)
+        self.assertIn("两条出路", out)
+        self.assertIn("3／2", out)  # WIP 计数仍在
+
+    def test_reclassification_helpers_survive_the_retirement(self):
+        """退的是**接线**、不是判据（spec「两函数 MUST 原样保留在该模块」）：
+        `_suggest_status_reclassification()`／`_render_reclassification_candidates()`
+        与 `STALE_STATUS_PHRASES` 必须仍在——sweep 侧的第 12 类正是靠它们取候选，
+        判据的权威实现全项目只此一份。"""
+        m = _load_module()
+        self.assertTrue(callable(m._suggest_status_reclassification))
+        self.assertTrue(callable(m._render_reclassification_candidates))
+        self.assertTrue(m.STALE_STATUS_PHRASES)
+        # 渲染侧的格式仍可用（它是那份格式的活文档，不是死代码）
+        self.assertIn("改判候选清单",
+                      m._render_reclassification_candidates([("151", "partial", "blocked", "片段")]))
 
     def test_mechanism_wip_escape_hatch_messages_omit_candidates(self):
         """已选定走逃生阀的两个分支（差开关／差行内标记）不该被塞进一份
@@ -6048,6 +6070,269 @@ class AcquireRoutingHintTests(unittest.TestCase):
         hits = m._routing_hint_targets("无关路径.md", "跟进信 跟进信 专员")
         self.assertEqual(hits, [".claude/rules/跟进信与专员.md"])
         self.assertEqual(m._routing_hint_targets("无关路径.md", "不含任何关键词"), [])
+
+
+# ============================================================
+# 队列 §一 #454（2026-09-06，OP-0906-N，变更包 status-triage-resident-round）
+# ============================================================
+
+# 🔴 **下列夹具行的状态列原文，全部来自 2026-09-06 对两份队列真身的实测**
+# （design §1.2 精度实测那张表），不是编造的例句——本包 tasks 1.2 的回测
+# 阻断项就是"这 8 条逐条比对"，夹具一旦改成编造例句，回测就失去意义。
+_REAL_ROW_455 = (
+    "| 455 | edit-row 写侧守卫 | CC | 指针 | 产出 | "
+    "[S:open][D:机] 停在合并决策点：泳道 `455-apply` 已 pause，"
+    "是否 ff 进 master 待 Shao Peishen 拍板，未合入前不归档。 | 触碰区 | 2026-09-05 |"
+)
+_REAL_ROW_394 = (
+    "| 394 | 企微群路由 | CC | 指针 | 产出 | "
+    "[S:partial][D:业] O-10 有结论且比原设想强一档，待 Shao Peishen 追认：原设想"
+    "「合建一份、按场景字段分流」，实现下来发现分流根本不需要 | 触碰区 | 2026-08-25 |"
+)
+_REAL_ROW_418 = (
+    "| 418 | 齐套分析修复 | CC | 指针 | 产出 | "
+    "[S:open][D:业] 代码已修、根因已用真实数据坐实；余下部署与全量重跑留步待批"
+    "（2026-08-26 CC OP-0826-K，commit 已合入 master） | 触碰区 | 2026-08-26 |"
+)
+_REAL_ROW_340 = (
+    "| 340 | C05 表核对 | CC | 指针 | 产出 | "
+    "[S:partial][D:业] 本行 2026-08-27 OP-0827-E 自身已明确结论「LAN 留步早已闭合，"
+    "本轮属扫描器形态1误报」，剩余三项均与 LAN 无关 | 触碰区 | 2026-08-27 |"
+)
+_REAL_ROW_470 = (
+    "| 470 | 判据链 A3 段 | CC | 指针 | 产出 | "
+    "[S:open][D:业] 看护批 B-0903_50 泳道 criteria-chain A3 段 —— 上一条留步的 ⑤"
+    "「A4 段是否与本包同批批准」已由 Shao Peishen 当日答 G-6 = (a) 批准，"
+    "五条定夺项全部依赖解除 | 触碰区 | 2026-09-03 |"
+)
+_REAL_ROW_462 = (
+    "| 462 | 规划倒逼开工扫描器 | CC | 指针 | 产出 | "
+    "[S:open][D:机] #454 命中的是它并入审核里那句「#422 现卡在待 Shao Peishen "
+    "人工安装」）。同族＝ #460 日核假阳性——都是判据只看字面、不看这句话在说谁 "
+    "| 触碰区 | 2026-09-02 |"
+)
+
+
+class TriageCandidateTierUnitTests(unittest.TestCase):
+    """队列 §一 #454 / design D2：强弱两档分档与否定词表。
+
+    🔴 **本类就是 tasks 1.2 那条回测阻断项本身**：2026-09-06 实测 8 条候选里
+    只有 3 条是真的（3/8 ＝ 37.5%），5 条假阳性分两个亚型——亚型 A「不看这句话
+    在说谁」、亚型 B「不看时态」。判据不能把这 5 条原样推进企微群（§四 #73 已
+    实测「采购内部工作群累计收到 58 条机制告警，其中一条正文是一段 Python
+    traceback」），故必须有降档；而降档一旦写宽，真阳性会被一并吞掉——**两个
+    方向都要被守住，这也是本类分成"降档"与"保档"两组用例的原因。**
+    """
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def _tiers(self, *rows: str) -> dict[str, dict]:
+        candidates, drift = self.module._collect_triage_candidates(_reclass_section(*rows))
+        self.assertEqual(drift, [], "判据漂移：本函数与权威判定走出的行集不一致")
+        return {c["row_id"]: c for c in candidates}
+
+    def test_回测阻断项_亚型B四条全部降弱档(self):
+        """亚型 B「不看时态」：命中的全是「那个留步**已经**闭合／解除／被批准」
+        这类否定或完成时的句子。四条真实行（`#340`／`#470`／`#471`／`#472`，
+        后三条同源同文）须全部降至弱档。**达不到即词表不合格、不得 apply。**"""
+        got = self._tiers(_REAL_ROW_340, _REAL_ROW_470)
+        for row_id in ("340", "470"):
+            self.assertEqual(got[row_id]["tier"], "weak", f"#{row_id} 应降弱档：{got[row_id]}")
+            self.assertTrue(got[row_id]["downgrade_reasons"], f"#{row_id} 须写明降档因")
+        self.assertIn("已闭合", got["340"]["downgrade_reasons"])
+        self.assertIn("已由 Shao Peishen", got["470"]["downgrade_reasons"])
+
+    def test_回测阻断项_三条真阳性全部保持强档(self):
+        """`#455`／`#394`／`#418` 是逐条读原文核对过的真阳性——否定词表写宽时
+        它们会被误降，本用例是那个方向的守卫。"""
+        got = self._tiers(_REAL_ROW_455, _REAL_ROW_394, _REAL_ROW_418)
+        for row_id in ("455", "394", "418"):
+            self.assertEqual(got[row_id]["tier"], "strong", f"#{row_id} 应保持强档：{got[row_id]}")
+            self.assertEqual(got[row_id]["downgrade_reasons"], [])
+
+    def test_亚型A本包不试图机器解决_但仍被如实登记为候选(self):
+        """亚型 A「不看这句话在说谁」（`#462`：命中的是本行引用**别人**阻塞
+        状态的说明文字）——判断主语需句法级理解，字符串判据做不到，design D2
+        已如实登记为残留边界。本用例只钉住"它仍会作为候选被产出、且命中片段
+        被原样附上"，**不断言它被正确判成假阳性**：那是本包没有解决的问题，
+        用例不该假装它解决了。"""
+        got = self._tiers(_REAL_ROW_462)
+        self.assertIn("462", got)
+        self.assertIn("#422", got["462"]["excerpt"], "命中片段须原样附上，读者据此看出这是引文")
+
+    def test_降档因逐条可见_不只给一个布尔(self):
+        """"因为哪个词被降的"必须随告警一起可见——否则词表写宽时无从复盘。"""
+        got = self._tiers(_REAL_ROW_340)
+        self.assertEqual(sorted(got["340"]["downgrade_reasons"]), ["已闭合", "误报"])
+
+    def test_blocked_行降弱档_已自陈受阻无处再改判(self):
+        """design 已知边界 2：`blocked` 行确实在等他，但已自陈受阻、改判无处
+        可改 ⇒ 不进强档。（分诊器本身只扫 open/partial，本断言是双保险。）"""
+        row = (
+            "| 900 | 某行 | CC | 指针 | 产出 | "
+            "[S:blocked][D:机] 硬阻塞于待 Shao Peishen 给窗口 | 触碰区 | 2026-09-01 |"
+        )
+        self.assertEqual(self._tiers(row), {})
+
+    def test_否定词表每条都附真实来源行号(self):
+        """同 `STALE_STATUS_PHRASES` 上方那条纪律：可增不可删、新增须附真实
+        来源。空来源＝编造的例句，是这类词表失效的第一步。"""
+        for phrase, source in self.module.TRIAGE_NEGATION_PHRASES:
+            self.assertTrue(phrase.strip(), "措辞不得为空")
+            self.assertRegex(source, r"^#\d+$", f"「{phrase}」缺真实来源行号")
+
+
+class TriageExcerptBacktickGuardTests(unittest.TestCase):
+    """design D6：命中片段的反引号奇偶守卫。
+
+    🔴 **成因是一次真实事故**：分诊器现行的 `idx-10 / idx+len+20` 窄窗在
+    `#337`／`#422` 两行恰好把一个反引号截在中间 ⇒ 整格反引号变奇数 ⇒ 未闭合
+    跨度吞掉行尾列分隔符，两行由 8 列塌为 7 列；而 `edit-row` 对**已塌列的行**
+    拒绝一切操作 ⇒ **行一旦被写坏，唯一能修它的入口就把自己关上了。**
+    告警正文本身不写回文件，但它会被人复制粘贴回队列行——故守在输出侧。
+    """
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def test_偶数反引号原样保留(self):
+        self.assertEqual(self.module._balance_backticks("跑 `git status` 看"), "跑 `git status` 看")
+
+    def test_奇数反引号整体去掉_宁可丢格式不可丢列(self):
+        self.assertEqual(self.module._balance_backticks("截断在 `git sta"), "截断在 git sta")
+
+    def test_候选片段永不含奇数反引号(self):
+        row = (
+            "| 901 | 某行 | CC | 指针 | 产出 | "
+            "[S:open][D:机] " + "填" * 55 + "`未闭合跨度 待 Shao Peishen 拍板" + "尾" * 80
+            + " | 触碰区 | 2026-09-01 |"
+        )
+        candidates, _drift = self.module._collect_triage_candidates(_reclass_section(row))
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["excerpt"].count("`") % 2, 0, candidates[0]["excerpt"])
+
+    def test_上下文宽度足够读者判断主语(self):
+        """窗口宽度不是装饰——亚型 A 的唯一兜底手段就是"把片段附够长，让读者
+        一眼看出这是不是一句引文"。窗口太窄，这条兜底就失效。"""
+        left = "前" * 80
+        row = (
+            "| 902 | 某行 | CC | 指针 | 产出 | "
+            f"[S:open][D:机] {left}待拍板{'后' * 80} | 触碰区 | 2026-09-01 |"
+        )
+        candidates, _drift = self.module._collect_triage_candidates(_reclass_section(row))
+        excerpt = candidates[0]["excerpt"]
+        self.assertGreaterEqual(excerpt.count("前"), self.module.TRIAGE_EXCERPT_CONTEXT_CHARS)
+        self.assertGreaterEqual(excerpt.count("后"), self.module.TRIAGE_EXCERPT_CONTEXT_CHARS)
+
+
+class AwaitingDecisionScanTests(unittest.TestCase):
+    """⑵ 的扫描面：**刻意与分诊器不同**（design 已知边界 2）。
+
+    2026-09-06 实测 16 条「自陈在等他一次动作」的行里 **13 条状态已是
+    `blocked`**——它们确实在等他，只是无处可改判。沿用分诊器的 open/partial
+    限制会让 ⑵ 一开始就漏掉 81%。**两半扫描面不同不是疏漏，是设计。**
+    """
+
+    def setUp(self):
+        self.module = _load_module()
+
+    def _ids(self, *rows: str) -> list[str]:
+        return [r["row_id"] for r in
+                self.module._collect_awaiting_decision_rows(_reclass_section(*rows))]
+
+    def test_覆盖blocked行_分诊器看不到的那13条(self):
+        row = (
+            "| 337 | 某行 | CC | 指针 | 产出 | "
+            "[S:blocked][D:机] 判据类，待 Shao Peishen 裁 | 触碰区 | 2026-08-20 |"
+        )
+        self.assertEqual(self._ids(row), ["337"])
+
+    def test_done行不进扫描面(self):
+        row = (
+            "| 338 | 某行 | CC | 指针 | 产出 | "
+            "[S:done][D:机] 曾待 Shao Peishen 拍板，已答 | 触碰区 | 2026-08-20 |"
+        )
+        self.assertEqual(self._ids(row), [])
+
+    def test_timed行不进扫描面(self):
+        row = (
+            "| 339 | 常驻巡检 | CC | 指针 | 产出 | "
+            "[S:timed=周][D:机] 本行常驻不销，需人在场 | 触碰区 | 2026-08-20 |"
+        )
+        self.assertEqual(self._ids(row), [])
+
+    def test_open与partial同样收(self):
+        self.assertEqual(sorted(self._ids(_REAL_ROW_455, _REAL_ROW_394)), ["394", "455"])
+
+
+class TriageCandidatesCliTests(unittest.TestCase):
+    """`triage-candidates` 子命令：**纯只读**（tasks 2.3）。
+
+    三条断言合起来是同一句话：这个出口**不占锁、不写盘、不改一个字节**。
+    它每小时被 sweep 调一次、读的是两份队列真身——任何一次写盘都直接落在
+    `#326`／`#322` 那一族事故上。
+    """
+
+    def setUp(self):
+        self.module = _load_module()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.queue_rel = "queue.md"
+        (self.root / self.queue_rel).write_text(
+            "## 一、任务看板\n\n" + _reclass_section(_REAL_ROW_455, _REAL_ROW_340)
+            + "\n## 四、决策台账\n\n| # | 事项 | 等谁 | 截止 |\n|---|---|---|---|\n"
+            "| 1 | 复核 #455 | Shao Peishen | 2026-09-10 |\n",
+            encoding="utf-8")
+        self._orig_root = self.module.REPO_ROOT
+        self.module.REPO_ROOT = self.root
+
+    def tearDown(self):
+        self.module.REPO_ROOT = self._orig_root
+        self._tmp.cleanup()
+
+    def _run(self, as_json: bool):
+        ns = argparse.Namespace(queue=self.queue_rel, json=as_json)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.module.cmd_triage_candidates(ns)
+        self.assertEqual(rc, 0)
+        return buf.getvalue()
+
+    def test_json出口含分档与自陈行(self):
+        payload = json.loads(self._run(as_json=True))
+        by_id = {c["row_id"]: c for c in payload["candidates"]}
+        self.assertEqual(by_id["455"]["tier"], "strong")
+        self.assertEqual(by_id["340"]["tier"], "weak")
+        self.assertEqual(payload["has_section_four"], True)
+        self.assertEqual([r["row_id"] for r in payload["awaiting_rows"]], ["455"])
+        self.assertEqual(payload["row_ids"], ["455", "340"])
+        self.assertEqual(payload["criteria_drift"], [])
+
+    def test_不acquire任何锁_运行后无锁文件(self):
+        self._run(as_json=True)
+        leftovers = [p.name for p in self.root.iterdir() if ".editlock" in p.name]
+        self.assertEqual(leftovers, [], f"只读出口不得留下锁文件：{leftovers}")
+
+    def test_运行后目标文件逐字节不变(self):
+        before = (self.root / self.queue_rel).read_bytes()
+        self._run(as_json=True)
+        self._run(as_json=False)
+        self.assertEqual((self.root / self.queue_rel).read_bytes(), before)
+
+    def test_目标文件缺失时不崩_如实报queue_exists为假(self):
+        ns = argparse.Namespace(queue="不存在的队列.md", json=True)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(self.module.cmd_triage_candidates(ns), 0)
+        payload = json.loads(buf.getvalue())
+        self.assertFalse(payload["queue_exists"])
+        self.assertEqual(payload["candidates"], [])
+
+    def test_人读出口标出强弱档(self):
+        out = self._run(as_json=False)
+        self.assertIn("强档 1／弱档 1", out)
+        self.assertIn("降档：已闭合", out)
 
 
 if __name__ == "__main__":

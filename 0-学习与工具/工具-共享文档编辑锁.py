@@ -773,8 +773,15 @@ def _suggest_status_reclassification(section_one_text: str) -> list[tuple[str, s
 
 def _render_reclassification_candidates(candidates: list[tuple[str, str, str, str]]) -> str:
     """把 `_suggest_status_reclassification()` 的结果渲染成一段可读文案，
-    接在 WIP 阻断消息现有"两条出路"之后（tasks.md 5.3）。零候选时返回
+    原接在 WIP 阻断消息"两条出路"之后（tasks.md 5.3）。零候选时返回
     空字符串——不为"没有候选"这件事单独占一行，阻断消息已经够长。
+
+    🔴 **队列 §一 #454（2026-09-06，OP-0906-N）：本函数已无生产调用方**——
+    release 校验 ⑨ 的候选接线已退休（Shao Peishen 答 D3=(a)）。**刻意保留、
+    不得当死代码删**（变更包 spec「两函数 MUST 原样保留在该模块」）：退的是
+    接线不是判据，它与 `_suggest_status_reclassification()` 是同一份权威判据
+    的一读一渲，删掉渲染侧会让将来任何一次「把候选重新拼进某段文案」的需求
+    去重新发明一遍格式。既有单测同样保留，是这份格式的活文档。
     """
     if not candidates:
         return ""
@@ -786,6 +793,254 @@ def _render_reclassification_candidates(candidates: list[tuple[str, str, str, st
         "\n⇒ 改判候选清单（命中外部阻塞措辞，仅供参考、不代改；"
         "根因与判据见队列 §一 #435 子项 E）：\n" + lines
     )
+
+
+# ============================================================
+# 队列 §一 #454（2026-09-06，OP-0906-N，变更包 status-triage-resident-round）
+# 状态分诊常态化——只读候选出口 `triage-candidates`
+# ============================================================
+#
+# 🔑 **本节要修的是一个闭环死锁**：`_suggest_status_reclassification()`
+# 2026-08-30 就已建成且接在生产路径上（release 校验 ⑨ 内），但它**只在
+# `wip_count > cap` 时才被调用**，输出附在 release 拒绝消息里 ⇒ ⑴ 候选只对
+# 那个正好被拦下的 session 显示；⑵ 而被拦的 session **无权改他人的行**
+# （`#422` 先例「本班无权替他人关行」），它能做的只有给自己标 🛑 排队。
+# **分诊器的输出从来没有被一个有权限改判的人看到过。**
+#
+# 🔴 **更硬的一条（2026-09-06 实测新发现）**：触发条件 `_count_mechanism_wip`
+# 只数 `[D:机]` 行 ⇒ **业务场景队列的可动 WIP 恒为 0、恒 < cap**，该队列的
+# 改判候选**不是"偶尔看不到"，是结构上永远看不到**，且该失效不产生任何
+# 信号（根 CLAUDE.md §5「工具静默回退／错误不产生信号」同族）。
+#
+# **改法**：本节只加一个**只读出口**（不 acquire 任何锁、不写任何文件），
+# 由 `工具-落库sweep.py` 第 12 类常驻轮次每小时子进程调用一次；同批
+# **退休 release 校验 ⑨ 内的候选接线**（one-in-one-out，Shao Peishen
+# 2026-09-06 答 D3=(a)）——留着它等于同一份判据在两个轮次上各跑一遍，
+# 正是 `#366`「两套判据各自轮询」的教训。
+#
+# 🔴 **判据只此一份**：`STALE_STATUS_PHRASES` 与
+# `_suggest_status_reclassification()` **一个字不改**（spec MUST NOT），
+# sweep 侧**不复制第二套**——分档结果由本模块算好、随 JSON 一并送出，
+# sweep 只按 `tier` 字段分桶渲染。
+
+# 🔴 **否定词表（design D2）：只做降档、不做剔除。**
+# 成因＝ 2026-09-06 精度实测 **3/8**（8 条候选里 5 条假阳性），其中 4 条属
+# 「亚型 B ＝ 不看时态」——命中的全是「那个留步**已经**闭合／解除／被批准」
+# 这类否定或完成时的句子。把 8 条原样推进企微群 ＝ 每轮 5 条噪音，而
+# §四 #73 已实测「采购内部工作群累计收到 58 条机制告警，其中一条正文是一段
+# Python traceback」。**同一个坑不踩第二次。**
+#
+# 🔴 **每条附的行号是它的真实来源，不是编造的例句**（同 `STALE_STATUS_PHRASES`
+# 的既有纪律）——2026-09-06 对两份队列真身逐条核对而来：
+TRIAGE_NEGATION_PHRASES: tuple[tuple[str, str], ...] = (
+    # §一 业务 #340："LAN 留步早已闭合，本轮属扫描器形态1误报"
+    ("已闭合", "#340"),
+    # §一 业务 #470/#471/#472："……已由 Shao Peishen 当日答 `G-6 = (a)` 批准……依赖解除"
+    ("已解除", "#470"),
+    ("依赖解除", "#470"),
+    # §一 业务 #340："属扫描器形态1误报"；机制 #462："属误命中"
+    ("误报", "#340"),
+    ("假阳性", "#462"),
+    ("误命中", "#462"),
+    # §一 业务 #470/#471/#472："已由 Shao Peishen 当日答 `G-6 = (a)` 批准"
+    ("已由 Shao Peishen", "#470"),
+    ("已答", "#470"),
+    ("已批准", "#470"),
+)
+# 🔴 可增不可删（同 `STALE_STATUS_PHRASES` 上方那条）：新增措辞须同样附一个
+# 真实来源行号；删除已收录的措辞需要证明它已不再对应任何真实降档场景。
+# 🔴 **词表只降档、不剔除**——被降档的行仍在日志里逐条列出，且"本轮降了
+# 几条"这件事每轮回显；否则词表一旦写宽，失效不产生信号。
+
+# design D6：命中片段的上下文长度。**不是 60 字硬截断**——分诊器现行的
+# `idx-10 / idx+len+20` 窄窗在 `#337`／`#422` 两行恰好把一个反引号截在中间，
+# 导致整格反引号变奇数、行由 8 列塌为 7 列（`#454` 行内已实测记录）。
+# 本出口取前后各 60 字，并在输出前做反引号奇偶守卫（见 `_balance_backticks`）。
+TRIAGE_EXCERPT_CONTEXT_CHARS = 60
+
+# ⑵ 决策台账缺口检测的扫描面（design 已知边界 2）：**刻意与分诊器不同**。
+# 分诊器只扫 `open`/`partial`，而 2026-09-06 实测 16 条「自陈在等他一次动作」
+# 的行里 **13 条状态已是 `blocked`** —— 它们确实在等他，只是无处可改判。
+# ⇒ 台账缺口的扫描面必须独立：只排除 `done` 与 `timed=`，其余全收。
+AWAITING_DECISION_PHRASES: tuple[str, ...] = ("待 Shao Peishen", "待拍板", "需人在场")
+AWAITING_EXCLUDED_STATUSES: tuple[str, ...] = ("done",)
+
+
+def _balance_backticks(text: str) -> str:
+    """design D6：保证输出片段里的反引号成对。
+
+    奇数个反引号即**整体去掉全部反引号**，不做"向外扩展至成对"——扩展会让
+    片段长度不可预期，而本函数的输出会被人复制粘贴回队列行，一个未闭合的
+    反引号跨度会吞掉行尾列分隔符、把 8 列的行写塌成 7 列（`#454` 本行 2026-09-02
+    的真实事故：`#337`／`#422` 两行由此塌列，且 `edit-row` 对已塌列的行拒绝
+    一切操作，唯一能修它的入口把自己关上了）。
+
+    🔴 **宁可丢格式，不可丢列**。
+    """
+    if text.count("`") % 2 == 0:
+        return text
+    return text.replace("`", "")
+
+
+def _triage_excerpt(rest: str, idx: int, phrase: str) -> str:
+    """取命中措辞前后各 `TRIAGE_EXCERPT_CONTEXT_CHARS` 字的上下文，并做反引号
+    奇偶守卫。上下文长度不是装饰——design D2 明确不试图机器解决「亚型 A ＝
+    不看这句话在说谁」（判断主语需句法级理解，字符串判据做不到），改用两条
+    替代手段兜住，其一就是**告警正文原样附上足够长的命中片段，让读者一眼
+    看出这是不是一句引文**。窗口太窄，这条兜底就失效。
+    """
+    start = max(0, idx - TRIAGE_EXCERPT_CONTEXT_CHARS)
+    end = idx + len(phrase) + TRIAGE_EXCERPT_CONTEXT_CHARS
+    return _balance_backticks(rest[start:end].strip())
+
+
+def _triage_negations_in(window: str) -> list[str]:
+    """返回片段里命中的否定词（用于降档）。返回**列表而非布尔**——"因为哪个
+    词被降的"必须随告警一起可见，否则词表写宽时无从复盘。"""
+    return [phrase for phrase, _src in TRIAGE_NEGATION_PHRASES if phrase in window]
+
+
+def _collect_triage_candidates(section_one_text: str) -> tuple[list[dict], list[str]]:
+    """把 `_suggest_status_reclassification()` 的候选补全为带上下文与档位的
+    结构化记录，返回 `(候选列表, 判据漂移说明列表)`。
+
+    🔴 **不新写一套解析**（tasks 2.2）：候选集合的**权威判定仍是
+    `_suggest_status_reclassification()`**，本函数只对它已经认定的行重新
+    定位命中措辞、取更宽的上下文、算档位。若本函数按同一份
+    `STALE_STATUS_PHRASES` 走出的行集与它不一致，**如实记进 `drift` 返回并
+    以权威判定为准**——不静默取其一（本项目「工具静默回退」一族纪律）。
+
+    档位（design D2）：
+      - **强档** ＝ 命中措辞、且窗口内无否定词、且状态非 `blocked`；
+      - **弱档** ＝ 其余（被否定词降档，或状态已是 `blocked`）。
+    """
+    authoritative = {
+        row_id: (status, suggested)
+        for row_id, status, suggested, _excerpt in _suggest_status_reclassification(section_one_text)
+    }
+    candidates: list[dict] = []
+    drift: list[str] = []
+    seen: set[str] = set()
+    for _line, cells in _table_data_rows(section_one_text):
+        if len(cells) <= 5:
+            continue
+        row_id = cells[0].strip() if cells and cells[0] else "?"
+        status_value, _domain_value, rest = _parse_status_domain_fields(cells[5])
+        if status_value not in ("open", "partial"):
+            continue
+        for phrase, suggested in STALE_STATUS_PHRASES:
+            idx = rest.find(phrase)
+            if idx == -1:
+                continue
+            if row_id not in authoritative:
+                drift.append(
+                    f"#{row_id} 本函数命中「{phrase}」但权威判定未收录——按权威判定跳过，请核实两处判据是否已分裂"
+                )
+                break
+            seen.add(row_id)
+            excerpt = _triage_excerpt(rest, idx, phrase)
+            negations = _triage_negations_in(excerpt)
+            tier = "strong" if not negations and status_value != "blocked" else "weak"
+            reasons = list(negations)
+            if status_value == "blocked":
+                reasons.append("状态已是 blocked")
+            candidates.append({
+                "row_id": row_id,
+                "status": status_value,
+                "suggested": suggested,
+                "phrase": phrase,
+                "excerpt": excerpt,
+                "tier": tier,
+                "downgrade_reasons": reasons,
+            })
+            break
+    for row_id in authoritative:
+        if row_id not in seen:
+            drift.append(
+                f"#{row_id} 权威判定收录但本函数未复现命中——本行按权威判定仍算候选，"
+                "但缺上下文与档位，请核实两处判据是否已分裂"
+            )
+    return candidates, drift
+
+
+def _collect_awaiting_decision_rows(section_one_text: str) -> list[dict]:
+    """⑵ 的扫描面：§一 里状态自陈「在等 Shao Peishen 一次动作」且非 `done`／
+    `timed=` 的行。**刻意不复用分诊器的 open/partial 限制**（见
+    `AWAITING_EXCLUDED_STATUSES` 上方长注）——2026-09-06 实测 16 条中 13 条
+    是 `blocked`，沿用分诊器扫描面会让 ⑵ 一开始就漏掉 81%。
+
+    本函数只产出"谁在等他"，**不判断它有没有进 §四**——§四 覆盖判定由
+    `工具-落库sweep.py` 侧做（它才是持有两份队列全局视野的一侧），本模块
+    不为此新增第二处 §四 解析。
+    """
+    rows: list[dict] = []
+    for _line, cells in _table_data_rows(section_one_text):
+        if len(cells) <= 5:
+            continue
+        row_id = cells[0].strip() if cells and cells[0] else "?"
+        status_value, _domain_value, rest = _parse_status_domain_fields(cells[5])
+        if status_value is None:
+            continue
+        if status_value in AWAITING_EXCLUDED_STATUSES or status_value.startswith("timed"):
+            continue
+        for phrase in AWAITING_DECISION_PHRASES:
+            idx = rest.find(phrase)
+            if idx == -1:
+                continue
+            rows.append({
+                "row_id": row_id,
+                "status": status_value,
+                "phrase": phrase,
+                "excerpt": _triage_excerpt(rest, idx, phrase),
+                "task": _balance_backticks(cells[1].strip()[:120]) if len(cells) > 1 else "",
+            })
+            break
+    return rows
+
+
+def cmd_triage_candidates(args: argparse.Namespace) -> int:
+    """`triage-candidates` 子命令：**纯只读**——不 acquire 任何锁、不写任何
+    文件、不改任何一行（spec「运行后队列零改动」）。供 `工具-落库sweep.py`
+    第 12 类常驻轮次子进程调用。
+
+    🔴 **为什么是子进程 CLI、不是 sweep 进程内 import**（design D5）：
+    `工具-落库sweep.py` 头部「零依赖」原则；且子进程调用天然隔离了"读队列
+    真身时误触锁"这一风险——本子命令连锁文件都不看一眼。
+    """
+    queue_rel = args.queue
+    text = _read_target_text(queue_rel)
+    sections = _split_live_sections(text)
+    section_one = sections.get("一", "")
+    candidates, drift = _collect_triage_candidates(section_one)
+    payload = {
+        "queue": queue_rel,
+        "queue_exists": bool(text),
+        "section_one_row_count": len(_table_data_rows(section_one)),
+        "row_ids": [
+            cells[0].strip() for _line, cells in _table_data_rows(section_one)
+            if cells and cells[0].strip().isdigit()
+        ],
+        "has_section_four": "四" in sections,
+        "candidates": candidates,
+        "awaiting_rows": _collect_awaiting_decision_rows(section_one),
+        "criteria_drift": drift,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
+    print(f"队列：{queue_rel}（§一 {payload['section_one_row_count']} 行）")
+    strong = [c for c in candidates if c["tier"] == "strong"]
+    weak = [c for c in candidates if c["tier"] == "weak"]
+    print(f"改判候选 {len(candidates)} 条：强档 {len(strong)}／弱档 {len(weak)}")
+    for c in candidates:
+        mark = "🔴" if c["tier"] == "strong" else "·"
+        why = f"（降档：{'／'.join(c['downgrade_reasons'])}）" if c["downgrade_reasons"] else ""
+        print(f"  {mark} #{c['row_id']} 现 {c['status']} → 建议复核 {c['suggested']}{why}")
+        print(f"      命中「{c['phrase']}」：{c['excerpt']}")
+    print(f"自陈待他一次动作的行 {len(payload['awaiting_rows'])} 条（§四 覆盖判定在 sweep 侧）")
+    for note in drift:
+        print(f"⚠ 判据漂移：{note}")
+    return 0
 
 
 # ── 判据 J4（队列 §四 #80 / 派单件 OP-0821-C）：根 CLAUDE.md 顶部进度段
@@ -3698,14 +3953,19 @@ def _validate_release_structure(
         for note in degraded:
             print(f"⚠ {note}")
         if wip_count > cap:
-            # 子项 E（队列 §一 #435）：阻断时顺带算一次改判候选清单——
-            # 与 `_count_mechanism_wip` 用同一份 §一 文本，只读、不改变
-            # 计入口径，超限判定本身不受影响（见 D7）。
-            reclass_candidates = _suggest_status_reclassification(new_sections.get("一", ""))
+            # 🔴 队列 §一 #454（2026-09-06，OP-0906-N，Shao Peishen 答 D3=(a)）：
+            # **改判候选接线已在此退休**（one-in-one-out）。原实现在这里顺带算
+            # 一次候选清单并拼进拒绝文案，但它的读者恰恰是**唯一改不动那些候选
+            # 行的那个人**——被拦的 session 无权改他人的行，能做的只有给自己标
+            # 🛑 排队（`#439`／`#440`／`#447`／`#448`／`#452` 五行全是这么来的）。
+            # 候选改由 `工具-落库sweep.py` 第 12 类常驻轮次每小时读一次
+            # `triage-candidates --json`、推给有权改判的人。留着这条接线等于同
+            # 一份判据在两个轮次上各跑一遍（`#366`「两套判据各自轮询」教训）。
+            # **退的是接线，不是判据**：`_suggest_status_reclassification()`／
+            # `_render_reclassification_candidates()`／`STALE_STATUS_PHRASES`
+            # 原样留在本模块，既有单测保留。
             violations.extend(
-                _mechanism_wip_over_cap_violations(
-                    args, new_mechanism_rows, wip_count, cap, reclass_candidates,
-                )
+                _mechanism_wip_over_cap_violations(args, new_mechanism_rows, wip_count, cap)
             )
 
     return violations
@@ -3714,7 +3974,6 @@ def _validate_release_structure(
 def _mechanism_wip_over_cap_violations(
     args: argparse.Namespace, new_mechanism_rows: list[tuple[str, str]],
     wip_count: int, cap: int,
-    reclass_candidates: list[tuple[str, str, str, str]] | None = None,
 ) -> list[str]:
     """⑨ 超限时的逃生阀判定与拒绝文案（队列 §四 #58 ⑶，design.md 决策点
     5/6）。逃生阀须**两个条件同时到位**才放行：① release 传入
@@ -3726,15 +3985,14 @@ def _mechanism_wip_over_cap_violations(
     独立的 WIP 增量，只在其中一条写理由会让后来的读者无从判断另一条凭什么
     立起来——而这条逃生阀存在的全部意义就是"越过之后有人知道为什么"。
 
-    `reclass_candidates`（队列 §一 #435 子项 E）：**只接在"两条出路"那条
-    主拒绝文案后面**——那是唯一一个"读者还不知道该怎么办"的分支；另两个
-    分支（差开关／差行内标记）读者已选定走逃生阀，此时插入一份不相关的
-    改判候选清单反而是噪声。默认 `None` 等价于空列表，兼容未传该参数的
-    旧调用方（尽管本文件内唯一调用方已改传）。
+    🔴 **队列 §一 #454（2026-09-06，OP-0906-N）：`reclass_candidates` 形参已
+    随 release ⑨ 候选接线一并退休**（Shao Peishen 答 D3=(a)，one-in-one-out）。
+    此处的拒绝文案不再携带改判候选清单——候选改由 `工具-落库sweep.py` 第 12 类
+    常驻轮次推给**有权改判的人**，理由见调用处长注。**本函数其余判定逐字不变**：
+    WIP 计数、逃生阀两条件、三个分支的措辞都与退休前一致。
 
     返回 violation 列表（空列表＝放行）。
     """
-    reclass_candidates = reclass_candidates or []
     # 直接取属性、不用 getattr 兜底：argparse 恒会设置该字段，兜底只会在
     # 调用方漏传时静默按"未越过"处理（工具静默回退家族，本项目已踩过多次）。
     forced = args.force_mechanism_wip
@@ -3758,7 +4016,7 @@ def _mechanism_wip_over_cap_violations(
         f" `--force-mechanism-wip` 开关（两者缺一不可）。"
     )
     if not forced and missing_marker:
-        return [f"{head} {ways_out}{_render_reclassification_candidates(reclass_candidates)}"]
+        return [f"{head} {ways_out}"]
     if not forced:
         # 行内已写理由、只差开关：越过必须是一次显式选择，不能顺手。
         return [
@@ -5153,6 +5411,24 @@ def main() -> int:
 
     p_status = sub.add_parser("status", help="查看锁状态，无副作用")
     p_status.set_defaults(func=cmd_status)
+
+    p_triage = sub.add_parser(
+        "triage-candidates",
+        help="队列 §一 #454：只读列出状态改判候选与「自陈待他一次动作」的行，"
+             "供 工具-落库sweep.py 第 12 类常驻轮次子进程调用。**不占锁、不写盘。**",
+    )
+    p_triage.add_argument(
+        "--queue", default=QUEUE_MECHANISM_PATH_REL,
+        help="要扫的队列文件（仓库根相对路径）。两份队列各自单独调用一次——"
+             f"默认 {QUEUE_MECHANISM_PATH_REL}；业务场景队列传 {QUEUE_BUSINESS_PATH_REL}。"
+             "**刻意不做一次扫两份**：调用方需要知道每条候选来自哪份文件，"
+             "合并输出会让来源变成一个额外字段而不是天然的调用边界",
+    )
+    p_triage.add_argument(
+        "--json", action="store_true",
+        help="输出机读 JSON（sweep 侧走这条）；缺省为人读文本",
+    )
+    p_triage.set_defaults(func=cmd_triage_candidates)
 
     p_append_row = sub.add_parser(
         "append-row",
