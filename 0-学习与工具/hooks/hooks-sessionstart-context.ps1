@@ -1,7 +1,9 @@
 <#
 .SYNOPSIS
   SessionStart 钩子（队列 §一 #381⑸ⓐ，openspec 变更包 cc-hooks-p3）：会话开场注入
-  本机双标时刻、仓库连通性、与 origin/master 的双向提交计数、本线待领队列行摘要。
+  本机双标时刻、仓库连通性、与 origin/master 的双向提交计数、本线待领队列行摘要，
+  以及（队列 §一 #486，2026-09-06 加）Claude 桌面端包版本错位提示——**仅在有错位或
+  探针读数不完整时多打一行**，正常态不加行。
 
 .DESCRIPTION
   判据正本＝队列 §一 #381⑸ⓐ 原文。**刻意独立于 `#398` 心跳钩子**（本会话内实测坐实
@@ -159,7 +161,32 @@ try {
             ($queueRows -join "`n  ")
     }
 
-    $msg = @($timeLine, $fsckLine, $aheadBehindLine, $queueBlock) -join "`n"
+    # ── Claude 包版本错位探针（队列 §一 #486，只读）────────────────────────
+    # 🔴 只在**有错位或读数不完整**时多打一行；一切正常时**不加任何行**（正常态加噪音，
+    #    等于把横幅训练成背景音）。判据与根因全在
+    #    `0-学习与工具/工具-Claude包版本探针.ps1` 头部，本处不复述、不重实现。
+    # 🔴 探针自身炸了也不许拖累本钩子：它退出码恒 0，且这里再包一层 try。
+    # ⏱ 实测成本约 3s（Get-AppxPackage ~1.7s ＋ Win32_Service ~1.4s ＋ 目录列举 ~0.06s）；
+    #    本钩子既有的 `git fsck` 在本仓库实测已 ~18s，探针不是这里的瓶颈。真要关掉，
+    #    置环境变量 `ZHUOPIN_SKIP_CLAUDE_PROBE=1`。
+    $probeLine = ''
+    if (-not $env:ZHUOPIN_SKIP_CLAUDE_PROBE) {
+        try {
+            $probePath = Join-Path (Split-Path -Parent $PSScriptRoot) '工具-Claude包版本探针.ps1'
+            if (Test-Path -LiteralPath $probePath) {
+                $probeOut = & $probePath -BannerLine
+                if ($probeOut) { $probeLine = (@($probeOut) -join ' ').Trim() }
+            } else {
+                $probeLine = "📦 Claude 包版本探针脚本缺失：$probePath"
+            }
+        } catch {
+            $probeLine = "📦 Claude 包版本探针调用失败：$($_.Exception.Message)"
+        }
+    }
+
+    $parts = @($timeLine, $fsckLine, $aheadBehindLine, $queueBlock)
+    if ($probeLine) { $parts += $probeLine }
+    $msg = $parts -join "`n"
     Write-HookMessage $msg
 
     $verdict = if ($fsckOk) { 'pass' } else { 'violation' }
