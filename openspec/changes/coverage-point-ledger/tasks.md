@@ -12,10 +12,10 @@
 
 ## 1. 台账建表
 
-- [ ] 1.1 定 schema（8 字段，见 proposal「What Changes」表），**格式 ＝ JSONL**（D7）【Cowork】
+- [x] 1.1 定 schema（8 字段，见 proposal「What Changes」表），**格式 ＝ JSONL**（D7）【Cowork】 —— ✅ 2026-09-06 `OP-0906-W`：`6-人才与组织/部门AI专员跟进/口径点台账/SCHEMA.md`（每行＝一次事件 append-only、`fact_date`／`recorded_on` 并存落 spec 第四条；`id` 两形态，与 `criteria_signoff` 同名一条留 §四 待两包合审）
   - 🔴 `id` 形如 `FI2-D19-03`（场景-判例批次-序号），**不随队列行增删漂移** —— 这正是它优于 `§一 #N` 的地方。
   - 🔴 **ID 前缀隐含域，不另设 `域` 字段**（D2）——少一个字段就少一处可能与文件名不一致的副本。
-- [ ] 1.2 建**五份域文件骨架**（`采购域`／`财务域`／`质量域`／`销售域`／`IT域`）平铺于 `6-人才与组织/部门AI专员跟进/口径点台账/`，空文件入版本控制【Cowork】
+- [x] 1.2 建**五份域文件骨架**（`采购域`／`财务域`／`质量域`／`销售域`／`IT域`）平铺于 `6-人才与组织/部门AI专员跟进/口径点台账/`，空文件入版本控制【Cowork】 —— ✅ 2026-09-06 `OP-0906-W`：五个 0 字节 `.jsonl` 平铺；`git check-ignore`（无 `-v`）五条退出码 1＝全部不被忽略，`git status -uall` 可见；对照组 `口径点台账/子目录/深层.jsonl` 仍命中 `.gitignore:32`
   - 🔴 **目录下不得建子目录**（D8）——`!` 例外不递归，子目录内 `.jsonl` 会被**静默忽略**。
 - [x] 1.3 台账读写模块（含 append-only 审计：谁改的／何时／依据哪封回件）【CC】
   - ✅ `OP-0906-Z`（2026-09-06）：`5-平台底座/zhuopin_platform/zhuopin_platform/coverage_point_ledger/`（`models`／`store`／`aggregate`／`overdue`／`lint`／`errors`）。审计三问落 `by`／`recorded_on`＋`fact_date` 并存／`evidence`＋`letters`，**不另建审计文件**（台账自己就是审计轨）。`LedgerStore` **没有** `update()`／`delete()`／`set_status()` —— append-only 不是纪律，是没有那个函数。测试 `tests/test_coverage_point_ledger_store.py`。
