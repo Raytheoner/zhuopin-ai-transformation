@@ -3079,6 +3079,205 @@ class AppendRowTests(unittest.TestCase):
         self.assertEqual(self.target.read_text(encoding="utf-8"), before)
 
 
+class FollowupReadmeRowLengthGuardTests(unittest.TestCase):
+    """`followup-readme-phase2` D3：跟进信 README 行长判据——「发送状态」
+    列复用队列 `ROW_LENGTH_CAP_BYTES`（4 KB），「主要事项」列另立
+    `README_TOPIC_CAP_BYTES`（600 B）。fixture 手法与
+    `FollowupReadmeStructuralValidationTests` 一致（白盒 monkeypatch），
+    冻结当前日期的手法复刻队列 ⑪ 测试的 `_freeze_module_now`。
+
+    🔴 每个用例只改动**一个既有行**、且不新增行——避免触发两态语义／串行闸
+    校验（那两项校验各自已有独立测试类覆盖），使行长判据能被单独观测。
+    """
+
+    HEADER = (
+        "| 编号 | 日期 | 收信人 | 主要事项 | 交期要点 | 发送状态（2026-07-06） |\n"
+        "|--------|------|--------|---------|---------|---------|\n"
+    )
+    SUPPLEMENT_HEADER = (
+        "| 承接编号 | 日期 | 收信人 | 主要事项 | 需回复 | 发送状态 |\n"
+        "|---------|------|--------|---------|--------|---------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.FOLLOWUP_README_TARGET = "README.md"
+        self.target_path = self.repo_root / "README.md"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_readme(self, rows=""):
+        text = (
+            "## 现有跟进信清单\n\n" + self.HEADER + rows
+            + "\n## 补件登记（不占编号、不占串行闸）\n\n" + self.SUPPLEMENT_HEADER
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+    def _acquire(self, who="A"):
+        ns = argparse.Namespace(
+            file=self.module.FOLLOWUP_README_TARGET, who=who, note="",
+            reserve=None, section=None, reserve_multi=None, domain=None,
+        )
+        return self.module.cmd_acquire(ns)
+
+    def _release(self, who=""):
+        ns = argparse.Namespace(
+            file=self.module.FOLLOWUP_README_TARGET, who=who,
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
+        )
+        return self.module.cmd_release(ns)
+
+    def _freeze_module_now(self, year, month, day):
+        real_datetime = datetime
+
+        class _Frozen(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                base = real_datetime(year, month, day)
+                return base.replace(tzinfo=tz) if tz is not None else base
+
+        self.module.datetime = _Frozen
+
+    @staticmethod
+    def _long_status(filler_chars=1500):
+        """中文字符 UTF-8 三字节，1500 个即 4500 B，必超 `ROW_LENGTH_CAP_
+        BYTES`（4096 B）。"""
+        return "⏳ 待你审｜历史填充：" + ("填" * filler_chars)
+
+    @staticmethod
+    def _long_topic(filler_chars=250):
+        """250 个中文字符 ≈ 750 B，必超 `README_TOPIC_CAP_BYTES`（600 B）。"""
+        return "事项：" + ("填" * filler_chars)
+
+    def test_within_both_caps_no_warning(self):
+        self._write_readme(
+            "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 短事项 | 不急 | ⏳ 待你审 |\n"
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace("短事项", "短事项（已确认）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        self.assertEqual(result, 0)
+        self.assertNotIn("上限", buf.getvalue())
+
+    def test_status_over_cap_warns_before_cutoff_does_not_block(self):
+        """判据落地当天（2026-09-06）早于阻断日期 2026-09-13——超限只告警、
+        不拒绝 release。"""
+        long_status = self._long_status()
+        self._write_readme(
+            f"| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 短事项 | 不急 | {long_status} |\n"
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_status, long_status + "（追加一段）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 6)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        out = buf.getvalue()
+        self.assertEqual(result, 0, "阻断日期前应仅告警、不拒绝 release")
+        self.assertIn("采购部#11", out)
+        self.assertIn("发送状态列", out)
+        self.assertIn("上限", out)
+        self.assertIn("仅告警不阻断", out)
+
+    def test_status_over_cap_blocks_after_cutoff(self):
+        """阻断日期（2026-09-13）当天或之后——超限拒绝 release，锁保持占用。"""
+        long_status = self._long_status()
+        self._write_readme(
+            f"| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 短事项 | 不急 | {long_status} |\n"
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_status, long_status + "（追加一段）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 13)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        out = buf.getvalue()
+        self.assertNotEqual(result, 0, "阻断日期起超限须拒绝 release")
+        self.assertIn("发送状态列", out)
+        self.assertIsNotNone(
+            self.module._read_lock(self.module._lock_path(self.module.FOLLOWUP_README_TARGET)),
+            "拒绝不等于释放，锁应保持占用",
+        )
+
+    def test_topic_over_cap_blocks_after_cutoff(self):
+        """「主要事项」列另立 600 B 独立阈值——与「发送状态」列判据互不影响，
+        单独触发时也能被拦。"""
+        long_topic = self._long_topic()
+        self._write_readme(
+            f"| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | {long_topic} | 不急 | ⏳ 待你审 |\n"
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_topic, long_topic + "（追加说明）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 13)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        out = buf.getvalue()
+        self.assertNotEqual(result, 0, "阻断日期起超限须拒绝 release")
+        self.assertIn("主要事项列", out)
+
+    def test_waiver_marker_allows_release_after_cutoff(self):
+        """行内 `行长豁免：<理由>` ⇒ 阻断日期起仍放行（任一超限列命中即放行
+        该列，逃生阀是逐列独立判定，写在任一单元格内均可被扫到——本例写在
+        发送状态列自身）。"""
+        long_status = "⏳ 待你审｜行长豁免：K2 搬迁排期中，本周先保留｜历史填充：" + ("填" * 1500)
+        self._write_readme(
+            f"| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 短事项 | 不急 | {long_status} |\n"
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(long_status, long_status + "（追加一段）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 13)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        out = buf.getvalue()
+        self.assertEqual(result, 0, "逃生阀齐备应放行")
+        self.assertIn("已放行", out)
+
+    def test_untouched_historical_row_not_blocked_after_cutoff(self):
+        """只对本次持锁期间 touched 的行生效——存量超限但本次未碰的行，
+        阻断日期起也不应挡住 release。"""
+        long_status = self._long_status()
+        self._write_readme(
+            f"| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 短事项 | 不急 | {long_status} |\n"
+            "| 财务部#5 | 2026-08-06 | 财务部 · 唐燕萍 | 另一事项 | 不急 | ⏳ 待你审 |\n"
+        )
+        self.assertEqual(self._acquire(who="A"), 0)
+        # 本次只编辑财务部#5，不碰采购部#11（存量超限行）。
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace("另一事项", "另一事项（已更新）")
+        self.target_path.write_text(text, encoding="utf-8")
+
+        self._freeze_module_now(2026, 9, 13)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        self.assertEqual(result, 0, "未 touched 的存量超限行不应挡住本次 release")
+        self.assertNotIn("上限", buf.getvalue())
+
+
 class FollowupReplyStateSyncTests(unittest.TestCase):
     """队列 #366 / S4 桥二：回灌完成（§一 入信行 `[S:done]`）⇒ README 必须
     转闭环态，否则拒绝 release。

@@ -3220,6 +3220,89 @@ def _row_length_warnings_and_violations(
     return [f"⚠ {msg}（{today} < {ROW_LENGTH_BLOCK_FROM}，本周仅告警不阻断）"], []
 
 
+# ── 跟进信 README 行长判据（`followup-readme-phase2` D3，2026-09-06）───
+# 口径正本＝派单件「二期续棒」小节 D3-1/2/3（Shao Peishen 经环境总线拍板）
+# ＋ `openspec/changes/followup-readme-phase2/design.md` D3。README 不是
+# 「一／四」分区表（是单一 flat 表），`_ROW_LENGTH_CHECK_INDEX` 那套按
+# label 映射列索引的手法不适用，故本处另写一个结构并列、判据同源（同一
+# `ROW_LENGTH_CAP_BYTES` 常量、同一逃生阀标记、同一字符串字典序日期比较）
+# 的独立检查函数，不去改 `_ROW_LENGTH_CHECK_INDEX` 本身。
+#
+# 「发送状态」列直接复用队列 `ROW_LENGTH_CAP_BYTES`（4 KB）——D3-1 拍板
+# 明确不为 README 另开一个数值；「主要事项」列另立 600 B 独立常量，与队列
+# 4 KB 阈值不同源、不合并。阻断日期 `2026-09-13`（本能力 2026-09-06 上线，
+# 满一周）与队列⑪当初的 `2026-09-11` 是两个独立日期，不共用同一常量。
+README_TOPIC_CAP_BYTES = 600
+README_ROW_LENGTH_BLOCK_FROM = "2026-09-13"
+README_ROW_LOG_DIR = "6-人才与组织/部门AI专员跟进/跟进信行日志"
+
+
+def _readme_touched_rows(
+    old_text: str, new_text: str,
+) -> list[tuple[str, list[str], int]]:
+    """跟进信 README 主表本次持锁期间新增/改动的行——判定手法与队列
+    `_diff_touched_rows` 一致（原文逐字命中旧文本即视为未改动），套用到
+    `_followup_readme_rows` 的行元组（含状态列索引）。章节定位失败时返回
+    空列表——那种情形已由 `_validate_followup_readme_release` 报过结构性
+    违规，本项不重复报错（见调用方：仅在两态语义/串行闸校验无违规时才
+    调用本函数）。
+    """
+    try:
+        old_rows = _followup_readme_rows(old_text)
+        new_rows = _followup_readme_rows(new_text)
+    except FollowupReadmeSectionError:
+        return []
+    old_lines = {line for line, _, _ in old_rows}
+    return [(line, cells, idx) for line, cells, idx in new_rows if line not in old_lines]
+
+
+def _readme_row_length_warnings_and_violations(
+    cells: list[str], status_col_index: int, topic_col_index: int | None,
+) -> tuple[list[str], list[str]]:
+    """跟进信 README 行长判据：「发送状态」列复用 `ROW_LENGTH_CAP_BYTES`
+    （4 KB）；「主要事项」列另立 `README_TOPIC_CAP_BYTES`（600 B）。逃生阀
+    与阻断日历判定复用队列⑪已验证的手法（`_has_genuine_row_length_waiver`／
+    字符串字典序日期比较），消息文案与外置目标目录换成 README 专属的
+    `跟进信行日志/`。只对本次持锁期间触碰的行生效（历史行不追溯，同⑪）。
+    """
+    warnings: list[str] = []
+    violations: list[str] = []
+    row_id = cells[0] if cells else "?"
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    checks: list[tuple[str, int | None, int]] = [("发送状态", status_col_index, ROW_LENGTH_CAP_BYTES)]
+    if topic_col_index is not None:
+        checks.append(("主要事项", topic_col_index, README_TOPIC_CAP_BYTES))
+
+    for col_label, idx, cap in checks:
+        if idx is None or idx >= len(cells):
+            continue
+        cell = cells[idx]
+        size = len(cell.encode("utf-8"))
+        if size <= cap:
+            continue
+
+        if _has_genuine_row_length_waiver(cell):
+            warnings.append(
+                f"✓ README {row_id} {col_label}列 {size} B（超 {cap} B 上限），"
+                f"检测到「{ROW_LENGTH_WAIVER_MARKER}」逃生阀，已放行。"
+            )
+            continue
+
+        msg = (
+            f"README {row_id} {col_label}列 {size} B，超 {cap} B 上限"
+            f"（D3 外置口径：历史内容迁 `{README_ROW_LOG_DIR}/{row_id}.md`，"
+            f"行内留首段＋末段＋指针；确需暂留可写"
+            f"「{ROW_LENGTH_WAIVER_MARKER}<理由>」）。"
+        )
+        if today >= README_ROW_LENGTH_BLOCK_FROM:
+            violations.append(msg)
+        else:
+            warnings.append(f"⚠ {msg}（{today} < {README_ROW_LENGTH_BLOCK_FROM}，本周仅告警不阻断）")
+
+    return warnings, violations
+
+
 def _validate_release_structure(
     args: argparse.Namespace, lock_data: dict, repo_root: Path,
 ) -> list[str]:
@@ -4924,7 +5007,28 @@ def cmd_release(args: argparse.Namespace) -> int:
     elif args.file == FOLLOWUP_README_TARGET:
         # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
         # 拦截，与上面那套队列专属校验各自独立、互不干扰。
-        violations = _validate_followup_readme_release(_read_target_text(args.file), _read_snapshot(args.file))
+        _readme_current_text = _read_target_text(args.file)
+        _readme_snapshot_text = _read_snapshot(args.file)
+        violations = _validate_followup_readme_release(_readme_current_text, _readme_snapshot_text)
+        # D3（`followup-readme-phase2`）：行长判据——仅在两态语义/串行闸校验
+        # 无违规时才跑（章节结构本身有问题时，行长判据这里的列定位也无意义，
+        # 上面那道违规已经把话讲清楚了，不重复堆错误）。
+        if not violations:
+            try:
+                _topic_col = _followup_header_col_index(_readme_current_text, "主要事项")
+            except FollowupReadmeSectionError:
+                _topic_col = None
+            else:
+                _topic_col = _topic_col if _topic_col >= 0 else None
+            for _line, _cells, _status_idx in _readme_touched_rows(
+                _readme_snapshot_text, _readme_current_text,
+            ):
+                _rl_warnings, _rl_violations = _readme_row_length_warnings_and_violations(
+                    _cells, _status_idx, _topic_col,
+                )
+                for _msg in _rl_warnings:
+                    print(_msg)
+                violations.extend(_rl_violations)
     elif _is_claude_progress_target(args.file):
         # 判据 J4（队列 §四 #80）：根 CLAUDE.md 顶部进度段新增条目时的未闭合
         # 项拦截，同样是一张与队列表格无关的独立判据，见

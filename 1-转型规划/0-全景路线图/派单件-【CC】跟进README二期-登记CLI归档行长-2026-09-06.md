@@ -69,3 +69,43 @@ status: 待执行
 
 - 主表≤60KB 这条验收——件②后已到 144.1 KB，件③外置 25 行 `主要事项`（累计约 60KB 超限部分）后估算可落到目标区间内，实现时请实测确认，不要只凭估算判完工。
 - 队列 §一 `#490` 到时回写销号；rules/SKILL 改句建议文本移交 Cowork 落字后，本轮"跟进 README 二期"方可视为整体完工。
+
+---
+
+# 件③④完工（2026-09-06，OP-0906-D）
+
+## 件③行长口径与外置：已完成
+
+- **D3-1 阈值挂载**（环境总线拍板，非本次自定）：「发送状态」列复用队列 `ROW_LENGTH_CAP_BYTES`（4 KB），不另开数值；「主要事项」列另立 `README_TOPIC_CAP_BYTES`（600 B）独立常量。`工具-共享文档编辑锁.py` 新增 `_readme_row_length_warnings_and_violations`／`_readme_touched_rows` 两个函数（不改 `_ROW_LENGTH_CHECK_INDEX` 本体，README 是单一 flat 表、不适用该 label 映射手法），阻断日期 **2026-09-13**（与队列⑪的 `2026-09-11` 各自独立）。
+- **D3-2 摘要算法**：首句（按「。／！／？／换行」切分）或前 200 字＋指针，不做语义压缩；拼接后仍超 600 B 时从截断文本尾部继续收缩直至满足，保证摘要本身不再触发同一判据。见 `0-学习与工具/工具-跟进信README行长外置.py::build_topic_summary`。
+- **D3-3 行日志目录与格式**：`6-人才与组织/部门AI专员跟进/跟进信行日志/<编号>.md`（如 `采购部#19.md`），frontmatter 四字段（`title`/`created`/`status`/`用途`）＋「外置前原文」小节，原文原样、可 grep；一行两列都超限时（真实撞见 `财务部#16`）写入同一文件的两个小节。
+- **真实迁移已对生产 README 执行**（`--who CC-OP0906D`）：26 项外置（25 行「主要事项」摘要化 + `财务部#16`「发送状态」压缩），主表 **144.1 KB → 76.8 KB**（78,615 B，实测非估算）；`0-学习与工具/部门AI专员跟进/跟进信行日志/` 新增 25 个日志文件，写后回读逐字核对通过。
+- **🔴 真实执行中发现并修复的一处设计缺口（design.md 撰写时未预见）**：压缩「主要事项」列会改变 `_followup_row_identity`（该函数取"除状态列外全部单元格"为行身份）——跟进信串行原则闸（队列 #308 子项 G）因此把这类**纯历史内容压缩**误判成"新起草的跟进信"：只要该行不是其收信人当前最新一封、且真正最新一封仍未闭环，闸就拒绝 release。真实撞见 4 行（`采购部#12`／`IT部#8`／`质量部#10`／`质量部#12`）。**修法**：外置工具新增 `_find_serial_gate_conflicts`／`_resolve_serial_gate_conflicts`，复用串行闸自身已有的逃生阀 `串行豁免：`（不新造第二套判据），写在「交期要点」列（不污染「主要事项」摘要本身），最终再跑一次**官方**`_validate_followup_readme_release` 复核兜底。已补 4 条单测（`SerialGateConflictResolutionTests`）覆盖该场景与"豁免只落在交期要点列、不进摘要"两点。
+- 单测：`test_工具-跟进信README行长外置.py`（28 条）＋ `工具-共享文档编辑锁.py` 新增 `FollowupReadmeRowLengthGuardTests`（6 条，覆盖告警/阻断/豁免/未触碰行不追溯四态）。
+- **验收结果**：主表 ≤60KB 这条**未完全达标**（实测 76.8 KB，非估算的 60 KB 区间）——25 行摘要化后的节省量小于派单件原估算，如实登记、不强行凑数；已满足的硬指标是「各列均在阈值内」（实测 0 行超限）与「12 读取方零回归」（见下）。
+
+## 件④门禁与规则：已完成
+
+- `hooks-pretooluse-queue-read-guard.ps1`：`$script:ProtectedExactRel` 追加 README 主表路径；`$script:ProtectedArchiveDirRel`/`$script:ProtectedArchiveNameRegex` 改造为 `$script:ProtectedArchivePatterns`（目录＋正则配对数组，README 归档件与队列归档件不同目录，故不共用同一目录变量，design.md D4 续棒补充已预判此点）；`Test-BashHitsProtectedTarget` 同步支持双正则。机制工具白名单加入四个（登记／归档／查询／本次新增的行长外置）。指引消息按目标文件名是否含"README"分流到 README 专属提示文案（指向登记 CLI／查询工具），不再套用队列的指引文案。
+- 真实验证：对生产 README 发起 Read 请求实测拦截（退出码 2），`reports/hooks-audit.jsonl` 留下对应 `violation` 审计行（`2026-09-06T12:28:35.039+08:00`）。
+- `test_hooks-pretooluse-queue-read-guard.py` 新增 11 条用例（README 主表/归档件的 Read／Grep／Bash 三通道拦截 + 四个机制工具白名单放行），全量 36 条通过。
+
+## 改句建议（Cowork 落字，本包不自改）
+
+以下三处建议措辞改动，均是"D1/D4 落地后，既有规则/SKILL 文本仍在暗示要整份 Read README"的残留点：
+
+1. **`.claude/rules/跟进信与专员.md` §二 首条**（现文：`归集 6-人才与组织/部门AI专员跟进/，命名 部门-姓名-跟进-YYYY-MM-DD-主要事项.md，每封含做什么／怎么做／什么时候交，发一封在 README 清单追加一行；编号 部门#N…`）
+   - 建议改为：`……发一封用 `python 0-学习与工具/工具-跟进信README登记.py append` 登记（不手工 Edit 主表；编号由 CLI 按部门计数器自动取，未发出不占号）；判状态只用 `工具-跟进信README查询.py --digest` 或 `工具-跟进闸查询.py --to <收信人>`，不 Read 主表全文（K3 同族门禁，followup-readme-phase2 D4）。`
+
+2. **`zhuopin-followup-letter` SKILL.md §1「读取上下文」第 2 条**（现文：`6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md 清单与既往信件（含发送状态——闸一要用，且勿重复起草已发主题）`）
+   - 建议改为：`用 `工具-跟进信README查询.py --digest`（扫全表待发/闭环概况）与 `工具-跟进闸查询.py --to <收信人>`（判该收信人闸开/闸锁）核对既往信件与发送状态，不 Read/Grep README 主表全文——主表已受读侧禁通读门禁保护（followup-readme-phase2 D4），直接 Read 会被拦截。`
+   - 同 SKILL §5「落位与登记」第 4 步（`README 清单追加一行`）建议同步注明"经 `工具-跟进信README登记.py append` 登记，不手工 Edit"。
+
+3. **`zhuopin-send-followup` SKILL.md §1「认信」**（现文：`到 6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md 定位行`）
+   - 建议改为：`用 `工具-跟进信README查询.py --digest --json` 按编号/收信人定位行（或既有 `push_followup_letter.py`/`approve_followup_letter.py` 脚本内部读取，那是代码级 I/O、不受本门禁约束，无需改）——本 skill 自身以 Cowork 身份直接 Read/Grep 主表全文会被 CC 侧门禁拦下（Cowork 侧目前仍人守，但同一份文本两桌共用，先按更严格的一侧改）。`
+
+**未纳入建议范围（刻意）**：`push_followup_letter.py`／`approve_followup_letter.py`／`ZhuopinFollowupDispatchDaily` 等脚本内部对 README 的读取是**代码级文件 I/O**，不经过 Claude 的 Read/Grep/Bash 工具调用，不受本门禁约束，本次不建议改动。
+
+## 队列回写
+
+- §一 `#490`：本行收工后回写「跟进 README 二期"件③④已完工，见 OP-0906-D」，附本文件路径指针。

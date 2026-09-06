@@ -26,26 +26,27 @@
 
 ## 3. 行长口径与外置（D3，`followup-readme-row-length-guard`）
 
-- [ ] 3.1 实现 `发送状态` >5KB 外置到 `跟进信行日志/<部门#N>.md`（原文原样，行内留首段＋末段＋指针），复用队列 K2 外置手法。
-- [ ] 3.2 实现 `主要事项` >600B 压缩为摘要、原文写入同一行日志文件。
-- [ ] 3.3 对现存 12 行 >5KB 的历史行执行一次性外置迁移。
-- [ ] 3.4 `工具-共享文档编辑锁.py` release 校验族对 README 加同款行长判据：复用队列行长校验⑪代码路径，扩展保护目标；先接入告警模式。
-- [ ] 3.5 实现逃生阀 `行长豁免：` 标注识别，标注行不被阻断。
-- [ ] 3.6 单测：>5KB/>600B 触发外置、告警模式不阻断、豁免标注不阻断——覆盖 `followup-readme-row-length-guard` spec 全部 Scenario（阻断模式的单测先写好、暂标注为「满一周后启用」，与队列⑪先例的两阶段上线节奏一致）。
+- [x] 3.1 实现 `发送状态` 超阈值外置到 `跟进信行日志/<编号>.md`（原文原样，行内留首段＋末段＋指针），复用队列 K2 外置手法。**阈值口径续棒补充（环境总线拍板，2026-09-06）**：复用队列 `ROW_LENGTH_CAP_BYTES`（4 KB），非派单件原文的 5 KB。
+- [x] 3.2 实现 `主要事项` >600B 压缩为摘要、原文写入同一行日志文件。摘要算法＝首句或前 200 字＋指针（确定性截断，不做语义压缩，同批拍板）。
+- [x] 3.3 对现存 25 行 `主要事项` >600B（含 1 行 `发送状态` >4KB）的历史行执行一次性外置迁移——**已对生产 README 真实执行**（`--who CC-OP0906D`），主表 144.1KB → 76.8KB。
+- [x] 3.4 `工具-共享文档编辑锁.py` release 校验族对 README 加同款行长判据：新增 `_readme_row_length_warnings_and_violations`／`_readme_touched_rows`（README 是单一 flat 表，不复用 `_ROW_LENGTH_CHECK_INDEX` 的 label 映射手法，另写结构并列、判据同源的独立函数）；阻断日期 `2026-09-13`（能力 2026-09-06 上线，满一周，与队列⑪的 `2026-09-11` 独立）。
+- [x] 3.5 实现逃生阀 `行长豁免：` 标注识别，标注行不被阻断——直接复用 `_has_genuine_row_length_waiver`/`ROW_LENGTH_WAIVER_MARKER`（同一份判据，不新造）。
+- [x] 3.6 单测：`FollowupReadmeRowLengthGuardTests`（6 条，`test_工具-共享文档编辑锁.py`）覆盖告警/阻断/豁免/未触碰行不追溯；`test_工具-跟进信README行长外置.py`（28 条）覆盖摘要算法/压缩算法/计划判定/真实迁移/幂等/串行闸冲突消解。
+- **🔴 真实执行中发现的设计缺口（design.md 未预见，已修复并补测）**：压缩「主要事项」列会改变 `_followup_row_identity`，可能触发跟进信串行原则闸误判"纯历史压缩"为"新起草跟进信"（真实撞见 4 行）。修法：外置工具内新增 `_find_serial_gate_conflicts`／`_resolve_serial_gate_conflicts`，复用既有 `串行豁免：` 逃生阀写在「交期要点」列，最终用官方 `_validate_followup_readme_release` 复核兜底。详见派单件"件③④完工"节。
 
 ## 4. 门禁（D4，`followup-readme-read-guard`）
 
-- [ ] 4.1 `hooks-pretooluse-queue-read-guard.ps1`：`$script:ProtectedExactPaths` 追加 README 主表精确路径。
-- [ ] 4.2 同一 hook：`$script:ProtectedArchiveNameRegex` 同款正则形式追加 `README-归档-.+\.md` 匹配。
-- [ ] 4.3 机制工具白名单加入登记 CLI（`工具-跟进信README登记.py`）与 `工具-跟进信README查询.py`。
-- [ ] 4.4 单测：`test_hooks-pretooluse-queue-read-guard.py` 补 README 主表/归档件命中拦截、机制工具白名单放行两类用例。
-- [ ] 4.5 真实验证：一次尝试 Read README 主表被拦截，确认 `reports/hooks-audit.jsonl` 留痕。
-- [ ] 4.6 产出 rules/SKILL 改句建议文本（`.claude/rules/跟进信与专员.md`、`zhuopin-followup-letter`／`zhuopin-send-followup` SKILL）交 Cowork，本包不自改这两类载体正文。
+- [x] 4.1 `hooks-pretooluse-queue-read-guard.ps1`：`$script:ProtectedExactRel` 追加 README 主表精确路径。
+- [x] 4.2 同一 hook：归档件保护改造为 `$script:ProtectedArchivePatterns`（目录＋正则配对数组），追加 README 目录 + `README-归档-.+\.md` 一对（与队列那对目录不同，不共用同一目录变量）。
+- [x] 4.3 机制工具白名单加入登记 CLI（`工具-跟进信README登记.py`）、`工具-跟进信README归档.py`、`工具-跟进信README查询.py`、`工具-跟进信README行长外置.py`（件③新增，一并加入）。
+- [x] 4.4 单测：`test_hooks-pretooluse-queue-read-guard.py` 新增 11 条用例（README 主表/归档件的 Read／Grep／Bash 三通道拦截 + 四个机制工具白名单放行），全量 36 条通过。
+- [x] 4.5 真实验证：对生产 README 发起 Read 请求实测拦截（退出码 2），`reports/hooks-audit.jsonl` 留下对应 `violation` 审计行（`2026-09-06T12:28:35.039+08:00`）。
+- [x] 4.6 产出 rules/SKILL 改句建议文本（`.claude/rules/跟进信与专员.md`、`zhuopin-followup-letter`／`zhuopin-send-followup` SKILL）——已写入派单件"改句建议"小节，交 Cowork 落字，本包未自改这两类载体正文。
 
 ## 5. 收尾
 
-- [ ] 5.1 跑全量：`test_工具-跟进闸查询.py`／`test_工具-跟进信README查询.py`／`test_工具-共享文档编辑锁.py`／`test_hooks-pretooluse-queue-read-guard.py`／aibot 相关单测，零回归。
-- [ ] 5.2 核对验收条款：主表 ≤60KB；`工具-跟进闸查询.py --to 唐燕萍`／`README查询 --digest` 输出与改前基线一致；不改表头/列序；不动 `.51`；不发企微。
-- [ ] 5.3 `openspec validate followup-readme-phase2 --strict` 通过。
-- [ ] 5.4 队列 §一 `#490` 回写销号（产出路径、测试结果、rules/SKILL 改句建议文本已移交 Cowork）。
-- [ ] 5.5 commit + `git push origin HEAD:master`（先 `merge-base --is-ancestor` 核可快进）；登记 §二 批次（清单只写真实脏改动路径）。
+- [x] 5.1 跑全量：`test_工具-跟进闸查询.py`／`test_工具-跟进信README查询.py`／`test_工具-共享文档编辑锁.py`／`test_hooks-pretooluse-queue-read-guard.py`／`test_工具-跟进信README行长外置.py`／aibot 相关单测——见收工报告，零回归。
+- [x] 5.2 核对验收条款：主表 **未达 ≤60KB**（实测 76.8 KB，如实登记，非估算数字——25 行摘要化的实际节省量小于原估算）；`工具-跟进闸查询.py --to 唐燕萍`／`README查询 --digest` 输出与改前基线一致（改前基线已存 `reports/baseline-op0906d/`）；未改表头/列序；未动 `.51`；未发企微。
+- [x] 5.3 `openspec validate followup-readme-phase2 --strict` 通过。
+- [ ] 5.4 队列 §一 `#490` 回写销号（本次续棒完工后回写，见派单件"队列回写"小节）。
+- [ ] 5.5 commit + `git push origin HEAD:master`（先 `merge-base --is-ancestor` 核可快进）；登记 §二 批次——**README 主表与新增行日志文件已随 `B-0906D_readme行长外置` 批次登记**（主仓共享文件，由 sweep 或本 session 收尾时处理，非本 worktree 分支提交范围）；本 worktree 分支自身的代码/spec/openspec 改动另行 commit+push。

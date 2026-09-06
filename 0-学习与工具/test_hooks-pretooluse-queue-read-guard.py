@@ -29,6 +29,8 @@ QUEUE_MECH_REL = "1-转型规划/0-全景路线图/跨桌任务队列-机制环�
 QUEUE_BIZ_REL = "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md"
 QUEUE_ARCHIVE_REL = "1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md"
 QUEUE_DIR_REL = "1-转型规划/0-全景路线图"
+README_REL = "6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md"
+README_ARCHIVE_REL = "6-人才与组织/部门AI专员跟进/README-归档-202609.md"
 
 
 def run_hook(payload: dict, repo_root: Path) -> tuple[int, str, str]:
@@ -132,6 +134,26 @@ class TestReadTarget:
         assert rc == 0, err
         assert audit_lines(repo)[-1]["verdict"] == "undetermined"
 
+    # ---- followup-readme-phase2 D4：README 主表/归档件纳入保护目标 ----
+
+    def test_命中README主表即拒绝(self, repo: Path):
+        rc, out, err = run_hook(read_payload(repo, README_REL), repo)
+        assert rc == 2
+        assert "README登记" in err or "README查询" in err
+        assert audit_lines(repo)[-1]["verdict"] == "violation"
+
+    def test_命中README归档件即拒绝(self, repo: Path):
+        rc, out, err = run_hook(read_payload(repo, README_ARCHIVE_REL), repo)
+        assert rc == 2
+        assert audit_lines(repo)[-1]["verdict"] == "violation"
+
+    def test_README同目录下不匹配归档命名规则的文件放行(self, repo: Path):
+        rc, out, err = run_hook(
+            read_payload(repo, "6-人才与组织/部门AI专员跟进/专员协作说明-新版需求确认怎么配合-2026-07-25.md"),
+            repo,
+        )
+        assert rc == 0, err
+
 
 class TestGrepTarget:
     def test_path命中机制环境真身即拒绝(self, repo: Path):
@@ -148,6 +170,10 @@ class TestGrepTarget:
         rc, out, err = run_hook(grep_payload(repo, None), repo)
         assert rc == 0, err
         assert audit_lines(repo)[-1]["verdict"] == "undetermined"
+
+    def test_path命中README主表即拒绝(self, repo: Path):
+        rc, out, err = run_hook(grep_payload(repo, README_REL), repo)
+        assert rc == 2
 
 
 class TestBashTarget:
@@ -219,6 +245,50 @@ class TestBashTarget:
     def test_白名单_队列结构lint工具调用放行(self, repo: Path):
         rc, out, err = run_hook(
             bash_payload(repo, "python 0-学习与工具/工具-队列结构lint.py"), repo)
+        assert rc == 0, err
+
+    # ---- followup-readme-phase2 D4：README 主表/归档件纳入保护目标 ----
+
+    def test_Bash直击README主表即拒绝(self, repo: Path):
+        rc, out, err = run_hook(
+            bash_payload(repo, f'cat "{README_REL}"'), repo)
+        assert rc == 2
+        assert audit_lines(repo)[-1]["verdict"] == "violation"
+
+    def test_Bash直击README归档件即拒绝(self, repo: Path):
+        rc, out, err = run_hook(
+            bash_payload(repo, f'cat "{README_ARCHIVE_REL}"'), repo)
+        assert rc == 2
+
+    def test_白名单_README登记工具调用放行(self, repo: Path):
+        command = (
+            f'python 0-学习与工具/工具-跟进信README登记.py append --who CC '
+            f"--cell x --cell x --cell x --cell x --cell x"
+        )
+        rc, out, err = run_hook(bash_payload(repo, command), repo)
+        assert rc == 0, err
+
+    def test_白名单_README归档工具调用放行(self, repo: Path):
+        rc, out, err = run_hook(
+            bash_payload(repo, "python 0-学习与工具/工具-跟进信README归档.py --dry-run"),
+            repo,
+        )
+        assert rc == 0, err
+
+    def test_白名单_README查询工具调用放行(self, repo: Path):
+        """`工具-跟进信README查询.py` 原已存在但从未入过白名单（D4 决策点
+        4-1 明确点名的缺口）——它自己读 README 曾会被本钩子拦下。"""
+        rc, out, err = run_hook(
+            bash_payload(repo, "python 0-学习与工具/工具-跟进信README查询.py --digest"),
+            repo,
+        )
+        assert rc == 0, err
+
+    def test_白名单_README行长外置工具调用放行(self, repo: Path):
+        rc, out, err = run_hook(
+            bash_payload(repo, "python 0-学习与工具/工具-跟进信README行长外置.py --dry-run"),
+            repo,
+        )
         assert rc == 0, err
 
     def test_缺command字段fail_open且标undetermined(self, repo: Path):
