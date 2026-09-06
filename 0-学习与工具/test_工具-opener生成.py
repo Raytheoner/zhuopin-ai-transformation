@@ -379,5 +379,132 @@ class VariantGuardianTests(unittest.TestCase):
         self.assertNotIn("从 master 起 `claude/", self.out)
 
 
+class CoworkDontItemsTests(unittest.TestCase):
+    """`--dont` 在 `--env Cowork` 下的去向（队列 §一 `#487` 子项／`OP-0906-I`，方案(甲)）。
+
+    🔴 **修前形态**：Cowork 分支的 `body_lines` 压根不拼「不做什么」段，`--dont`
+    传进来**既不出现在成品里、也不报错**——起草者以为硬约束传达到了（2026-09-06
+    实撞一次，三条约束靠接力卡侥幸兜住）。判据：**一个参数被接受却不生效，
+    比它被拒绝更危险。**
+    """
+
+    def test_cowork_dont_items_出现在成品里(self):
+        out = M.generate_opener(**{**VALID_COWORK_KWARGS,
+                                   "dont_items": ["不动销售域", "不催任何专员"]})
+        self.assertIn("不做什么：", out)
+        self.assertIn("- 不动销售域", out)
+        self.assertIn("- 不催任何专员", out)
+
+    def test_cowork_不做什么段排在收工段之前(self):
+        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
+        self.assertLess(out.index("不做什么："), out.index("收工：产出登记 §二"))
+        self.assertLess(out.index("做什么："), out.index("不做什么："))
+
+    def test_cowork_未传dont时仍出段占位_不违反形态七(self):
+        """未传 `--dont` ⇒ `OpenerSpec` 默认 `["…"]`，段仍在（占位），
+        故形态⑦（有做什么段必须配不做什么段）恒不命中。"""
+        out = M.generate_opener(**VALID_COWORK_KWARGS)
+        self.assertIn("不做什么：", out)
+        lint = M._load_lint_module()
+        blocks = lint.iter_fenced_blocks(out)
+        self.assertEqual(lint.check_block(blocks[0]), [])
+
+    def test_cowork_带dont的成品仍过lint零违规(self):
+        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
+        lint = M._load_lint_module()
+        blocks = lint.iter_fenced_blocks(out)
+        self.assertEqual(lint.check_block(blocks[0]), [])
+
+
+class SilentlyDroppedBodyParamTests(unittest.TestCase):
+    """`--do`／`--dont` 传给「不会拼它们」的环境×变体组合 ⇒ fail-loud 报错退出
+    （队列 §一 `#487` 子项／`OP-0906-M`，**精简版(乙)**）。
+
+    🔴 **本类只守 `--variant guardian` 一个组合**：Cowork 那个洞由方案(甲) 补段
+    让 `--dont` 真的生效（见 `CoworkDontItemsTests`），**不由本守卫拦**——两者
+    同落会互相打架（Shao Peishen 2026-09-06 裁 (c)：Cowork 走补段、guardian 走
+    fail-loud）。guardian 的洞补段补不掉：§三bis 看护者开场词是固定形态，
+    看护者的任务正本在看护件全文里。
+    """
+
+    #: guardian 变体夹具（模块级没有共享的，同 VariantGuardianTests 自建一份）。
+    GUARDIAN_KWARGS = dict(
+        op_id="OP-0905-VG", env="CC", variant="guardian", short_name="示例批",
+        branch="master（看护者本身不建分支，不改代码）",
+        worktree="☐（看护者不建，各子泳道自建）",
+        workspace="无", session="新开", line="环境总线",
+        input_pointer="1-转型规划/0-全景路线图/看护件-示例.md", task_class="A",
+    )
+
+    def test_guardian_传do或dont均报错(self):
+        """§三bis 看护者开场词正文既不拼 do 也不拼 dont——同族静默丢弃，一并守。"""
+        for key, flag in (("do_items", "--do"), ("dont_items", "--dont")):
+            with self.subTest(key=key):
+                with self.assertRaises(M.OpenerGenError) as cm:
+                    M.generate_opener(**{**self.GUARDIAN_KWARGS, key: ["随便一条"]})
+                msg = str(cm.exception)
+                self.assertIn(flag, msg)
+                # 只报错不给出路 ⇒ 调用方会把约束塞进另一个参数的尾巴，形态更糟。
+                self.assertIn("看护件", msg)
+
+    def test_guardian_不传两者_照常出件(self):
+        """🔴 回归防线：守卫只认「显式传了内容」，`OpenerSpec` 的 `["…"]` 兜底
+        不算传——否则每一次正常的看护者出件都会被自己的守卫拦死。"""
+        M.generate_opener(**self.GUARDIAN_KWARGS)
+
+    def test_guardian_传空列表不算传(self):
+        M.generate_opener(**{**self.GUARDIAN_KWARGS, "dont_items": [], "do_items": []})
+
+    def test_cowork_传dont_不再被守卫拦(self):
+        """🔴 与方案(甲) 的接缝：Cowork+dont 必须**正常出件**，且约束真的进成品。
+        本条钉死「不要把乙对 --env Cowork 的拦截一并落地」这个交付约束。"""
+        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
+        self.assertIn("- 不动销售域", out)
+        self.assertEqual(
+            M.BODY_PARAM_SUPPORT[("Cowork", "standard")], {"do_items", "dont_items"})
+
+    def test_cc_standard_两个都传_照常出件(self):
+        out = M.generate_opener(**{**VALID_CC_KWARGS,
+                                   "do_items": ["建造"], "dont_items": ["不动产线"]})
+        self.assertIn("1. 建造", out)
+        self.assertIn("- 不动产线", out)
+
+    def test_cc_subtask_lane_两个都传_照常出件(self):
+        out = M.generate_opener(**{**VALID_CC_KWARGS, "variant": "subtask_lane",
+                                   "do_items": ["建造"], "dont_items": ["不动产线"]})
+        self.assertIn("- 不动产线", out)
+
+    def test_cli层_guardian带dont_退出码1且写stderr(self):
+        """端到端：CLI 是实际被人敲的那一层，退出码与 stderr 都要对。"""
+        import io as _io
+        import contextlib
+        argv = [
+            "--op-id", "OP-1231-Z", "--env", "CC", "--variant", "guardian",
+            "--short-name", "示例批",
+            "--branch", "master（看护者本身不建分支，不改代码）",
+            "--worktree", "☐（看护者不建，各子泳道自建）",
+            "--workspace", "无", "--session", "新开", "--line", "环境总线",
+            "--input-pointer", "1-转型规划/0-全景路线图/看护件-示例.md", "--task-class", "A",
+            "--dont", "不动销售域",
+        ]
+        err = _io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = M.main(argv)
+        self.assertEqual(code, 1)
+        self.assertIn("--dont", err.getvalue())
+
+    def test_白名单未登记的组合_fail_closed(self):
+        """🔴 白名单哲学的验收：假想一个未登记的组合，守卫应**全拒**（fail-closed），
+        而不是回落成「什么都放行」（fail-open ＝ 回到静默丢弃）。"""
+        saved = dict(M.BODY_PARAM_SUPPORT)
+        try:
+            M.BODY_PARAM_SUPPORT.pop(("CC", "standard"))
+            with self.assertRaises(M.OpenerGenError):
+                M.generate_opener(**{**VALID_CC_KWARGS, "do_items": ["建造"]})
+        finally:
+            M.BODY_PARAM_SUPPORT.clear()
+            M.BODY_PARAM_SUPPORT.update(saved)
+
+
 if __name__ == "__main__":
     unittest.main()

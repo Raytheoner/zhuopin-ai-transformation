@@ -495,5 +495,105 @@ class 形态六_子任务泳道opener含session标题(unittest.TestCase):
         self.assertFalse(M._is_subtask_lane_block(blocks[0], None))
 
 
+class 形态七_有做什么段却缺不做什么段(unittest.TestCase):
+    """⑦ opener 块有「做什么：」段标题独立行却无「不做什么：」段标题独立行 ⇒ 告警
+    （队列 §一 `#487` 子项／`OP-0906-I`，2026-09-06 实撞「`--dont` 静默丢弃」后定）。
+
+    🔴 成因不是「少写一段」这种美观问题：【Cowork】骨架此前根本没有这一段，
+    `工具-opener生成.py --env Cowork --dont "…"` 传进来的硬约束**既不出现在成品里、
+    也不报错**——参数被接受却不生效，比被拒绝更危险。
+    """
+
+    def test_反例_Cowork骨架修前形态_命中F7(self):
+        """`opener骨架.md`【Cowork】骨架 2026-09-06 修前原文：只有做什么／收工两段。"""
+        md = _md(
+            TITLE_LINE_COWORK,
+            SETTINGS_COWORK,
+            "读 ① `1-转型规划/0-全景路线图/示例件.md` → ② `CLAUDE.md` 恢复上下文。本件为 A 类。",
+            "",
+            "做什么：",
+            "1. 拆件回灌。",
+            "",
+            "收工：产出登记 §二 待 commit 批次，由落库 sweep 取活。",
+        )
+        self.assertIn("F7", _forms(md))
+
+    def test_正例_补上不做什么段后告警消失(self):
+        """🔴 验收条款「两侧都能关掉」：补段之后 F7 必须自动消失。"""
+        md = _md(
+            TITLE_LINE_COWORK,
+            SETTINGS_COWORK,
+            "读 ① `1-转型规划/0-全景路线图/示例件.md` → ② `CLAUDE.md` 恢复上下文。本件为 A 类。",
+            "",
+            "做什么：",
+            "1. 拆件回灌。",
+            "",
+            "不做什么：",
+            "- 不动销售域。",
+            "",
+            "收工：产出登记 §二 待 commit 批次，由落库 sweep 取活。",
+        )
+        self.assertNotIn("F7", _forms(md))
+
+    def test_CC侧同受约束_不做环境分流(self):
+        """判据对 CC／Cowork 一视同仁——CC 骨架本来就有这一段，只是此前从未被机器守过。"""
+        md = _md(
+            TITLE_LINE_CC,
+            SETTINGS_CC,
+            TITLE_LINE_WITH_EXC,
+            "读 ① `1-转型规划/0-全景路线图/示例件.md` → ② `CLAUDE.md` 恢复上下文。本件为 A 类。",
+            "",
+            "做什么：",
+            "1. 建造到底。",
+        )
+        self.assertIn("F7", _forms(md))
+
+    def test_无分段结构的裸块不受约束(self):
+        """🔴 假阳性防线：库里大量 opener 把「做什么：建造到底。」写成一整行散文
+        （非段标题）——那类块没有分段结构，补一个空的「不做什么：」段毫无意义。
+        判据要求段标题**独占一行且行尾无正文**，故这类块结构性排除。"""
+        md = _md(
+            TITLE_LINE_COWORK,
+            SETTINGS_COWORK,
+            "做什么：拆件回灌，收工登记 §二。",
+        )
+        self.assertNotIn("F7", _forms(md))
+
+    def test_不做什么这一行不得被误判成做什么段(self):
+        """🔴 子串陷阱：`"做什么："` 天然是 `"不做什么："` 的子串。若判据用裸 `in`，
+        一个**只有**「不做什么：」段的块会被误判成「有做什么段」而命中 F7。"""
+        md = _md(
+            TITLE_LINE_COWORK,
+            SETTINGS_COWORK,
+            "读 ① `1-转型规划/0-全景路线图/示例件.md` → ② `CLAUDE.md` 恢复上下文。本件为 A 类。",
+            "",
+            "不做什么：",
+            "- 不动销售域。",
+        )
+        self.assertNotIn("F7", _forms(md))
+        self.assertFalse(M.DO_SECTION_RE.match("不做什么："))
+        self.assertTrue(M.DONT_SECTION_RE.match("不做什么："))
+        self.assertTrue(M.DO_SECTION_RE.match("做什么："))
+
+    def test_加粗写法同样认得(self):
+        md = _md(
+            TITLE_LINE_COWORK,
+            SETTINGS_COWORK,
+            "",
+            "**做什么：**",
+            "1. 拆件回灌。",
+        )
+        self.assertIn("F7", _forms(md))
+
+    def test_非opener块不受形态七约束(self):
+        """无 `【设置】` 行 ⇒ 不是 opener 块，形态⑦不适用（同 F4/F5 既有边界）。"""
+        md = _md("做什么：", "1. 随手记的清单，不是 opener。")
+        self.assertNotIn("F7", _forms(md))
+
+    def test_生效日为20260906(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F7"], date(2026, 9, 6))
+        self.assertIn("F7", M.FORM_TITLE)
+
+
 if __name__ == "__main__":
     unittest.main()
