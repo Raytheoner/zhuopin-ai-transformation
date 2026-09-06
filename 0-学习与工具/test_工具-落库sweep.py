@@ -1370,6 +1370,117 @@ class EditLockProbeIntegrationTests(SweepTestBase):
         self.assertIn("待 CC 取活", self._queue_text(), "队列不应被改动，连 git add 都不应发生")
 
 
+class EditLockHolderUnitTests(unittest.TestCase):
+    """队列 #398 ⑺：`_edit_lock_holder` 纯函数级判据——从 status 三态输出里
+    取持有者。它存在的理由是"锁被别人占着"与"锁还在本轮自己名下"在旧实现
+    里长得完全一样（都只是 acquire 返回非零），必须能分开。"""
+
+    def test_holder_line_is_extracted(self):
+        stdout = "占用方：sweep-commit\n备注　：sweep 落库 B-X\n已持锁：0 分钟（有效）\n"
+        self.assertEqual(sweep._edit_lock_holder(stdout), "sweep-commit")
+
+    def test_other_holder_is_not_confused_with_self(self):
+        stdout = "占用方：Cowork-财务专线（改队列）\n备注：\n已持锁：3 分钟（有效）\n"
+        self.assertEqual(sweep._edit_lock_holder(stdout), "Cowork-财务专线（改队列）")
+        self.assertNotEqual(sweep._edit_lock_holder(stdout), sweep.LOCK_WHO)
+
+    def test_no_lock_output_has_no_holder(self):
+        self.assertIsNone(sweep._edit_lock_holder("（无锁，可直接编辑）\n"))
+
+
+class EditLockSelfCollisionTests(SweepTestBase):
+    """队列 #398 ⑺（2026-09-06）：**sweep 自己撞自己的锁**。
+
+    形态（`reports/sweep-commit.log` 2026-09-06 21:17／22:17 两次／23:17 四轮
+    逐字相同）：`_strike_off_rows` 为批次 X 取锁 → 写队列 → `finally` 调
+    release **被拒绝或崩溃**（编辑锁按设计"结构校验不过则锁保持占用"）→
+    旧实现不看 release 结果，下一个批次照常 acquire，被**自己**持有的锁挡
+    住 → `SweepAbort` 整轮早退，而早退路径同样走不到 release ⇒ 锁一直卡到
+    30 分钟自陈旧，其间所有会话写队列被拒，§二 按"每轮一个批次"龟速消化。
+
+    夹具复现手法：删掉临时仓库里的 `工具-opener块lint.py`——编辑锁 release
+    的 opener 守卫会动态加载它，缺文件即崩溃、返回码非零、锁原样留着，正是
+    生产上那把锁没释放掉的同一后果（本文件 setUp 里那段注释早已写下这条
+    因果链，只是此前没有用例把它钉住）。
+    """
+
+    def _two_batches(self) -> str:
+        (self.work / "0-学习与工具" / "甲.md").write_text("甲\n", encoding="utf-8")
+        (self.work / "0-学习与工具" / "乙.md").write_text("乙\n", encoding="utf-8")
+        return (
+            "| B-甲 | `0-学习与工具/甲.md` | `docs(test): 甲批次` | 待 CC 取活 |\n"
+            "| B-乙 | `0-学习与工具/乙.md` | `docs(test): 乙批次` | 待 CC 取活 |\n"
+        )
+
+    def _lock_status(self) -> str:
+        return subprocess.run(
+            [sys.executable, str(self.work / "0-学习与工具" / "工具-共享文档编辑锁.py"),
+             "--file", sweep.QUEUE_MECHANISM_PATH_REL, "status"],
+            cwd=self.work, capture_output=True, text=True, encoding="utf-8",
+        ).stdout
+
+    def test_two_batches_land_in_one_round_and_lock_is_released_at_end(self):
+        """派单件 §二.3 ⑴（release 正常时）：一轮内两个批次都落库并转 ✅，
+        且轮末锁处于释放态——修法不得把"正常路径也少释放一次"带进来。"""
+        self._init_and_push(rows="")
+        self._write_queue(self._two_batches())
+
+        result = _run_sweep(self.work)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        pushed = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertNotIn("待 CC 取活", pushed, "两个批次都应在同一轮内被销行")
+        self.assertEqual(pushed.count("sweep 自动落库"), 2, pushed)
+        self.assertIn("（无锁", self._lock_status(), "轮末锁必须已释放")
+
+    def test_failing_release_no_longer_early_exits_the_whole_round(self):
+        """派单件 §二.3 ⑴（release 被拒/崩溃时）＝本条修的那个 bug 本体：
+        第一个批次 release 未生效、锁留在 `sweep-commit` 名下时，第二个批次
+        必须**复用同一把锁**继续落库，而不是被自己挡住、整轮早退。
+
+        修法前本用例必红：`origin` 只会多出一个批次提交，日志末两行正是生产
+        上那两行「✓ 批次 … 已本地提交」＋「⚠ 编辑锁占用中，跳过本轮：✗ 占用
+        中：sweep-commit…」。"""
+        self._init_and_push(rows="")
+        self._write_queue(self._two_batches())
+        # release 的 opener 守卫（队列 #437）动态加载这个判据正本，缺文件即
+        # fail-loud 崩溃 ⇒ release 返回码非零、锁原样留着。
+        (self.work / "0-学习与工具" / "工具-opener块lint.py").unlink()
+
+        result = _run_sweep(self.work)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("编辑锁占用中，跳过本轮", result.stdout,
+                          "自己的锁不得再被当成'别人占着'而整轮早退")
+        self.assertIn("编辑锁仍在本轮自己", result.stdout, "复用自己的锁必须出声，不许静默")
+        self.assertIn("release 未生效", result.stdout, "release 没释放成必须留痕，静默正是它卡四轮没人发现的原因")
+        pushed = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertNotIn("待 CC 取活", pushed, "两个批次都应在同一轮内落库，不再每轮只落一个")
+        self.assertEqual(pushed.count("sweep 自动落库"), 2, pushed)
+        # 告警必须进日志文件本身——`print` 只到 stdout，计划任务下等于没留痕。
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertIn("release 未生效", log_text)
+
+    def test_exception_after_acquire_still_releases_the_lock(self):
+        """派单件 §二.3 ⑵：取锁之后任意异常 ⇒ 锁仍被释放（`finally` 不得被
+        本次修法绕过），异常本身照常上抛、不被吞。"""
+        self._init_and_push(rows="")
+        rows = ("| B-甲 | `0-学习与工具/甲.md` | `docs(test): 甲批次` | 待 CC 取活 |\n")
+        (self.work / "0-学习与工具" / "甲.md").write_text("甲\n", encoding="utf-8")
+        self._write_queue(rows)
+        parsed = sweep._parse_section_two(self._queue_text(), sweep.QUEUE_MECHANISM_PATH_REL)
+        pending, _ = sweep._classify_section_two_rows(parsed)
+        self.assertEqual(len(pending), 1)
+
+        def _boom(row):
+            raise RuntimeError("模拟销行途中崩溃")
+
+        with self.assertRaises(RuntimeError):
+            sweep._strike_off_rows(self.work, pending, _boom, "sweep 落库 B-甲", dry_run=False)
+
+        self.assertIn("（无锁", self._lock_status(), "异常早退路径也不得带锁退出")
+
+
 class UnpushedCommitBackfillTests(SweepTestBase):
     """队列 #194：起跑段无条件补推未推送提交，不绑定"§二 有无待处理批次"。"""
 

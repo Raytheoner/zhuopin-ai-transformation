@@ -4858,6 +4858,34 @@ def _edit_lock_is_actively_held(status_stdout: str) -> bool:
     return "（有效）" in status_stdout
 
 
+def _edit_lock_holder(status_stdout: str) -> str | None:
+    """从 `status` 的 stdout 里取出当前持有者（`占用方：<who>` 那一行）；
+    无锁/解析不出返回 None。队列 #398 ⑺ 用它区分"锁被别人占着"与"锁还在
+    本轮自己名下"——这两件事在旧实现里长得完全一样（都只是 acquire 返回
+    非零），于是后者被当成前者处理、整轮早退。"""
+    for line in status_stdout.splitlines():
+        if line.startswith("占用方："):
+            return line[len("占用方："):].strip()
+    return None
+
+
+def _edit_lock_held_by_self(repo_root: Path) -> bool:
+    """队列 #398 ⑺：本轮自己（`LOCK_WHO`）是否正**有效**持有队列编辑锁。
+
+    🔴 **走到批次处理时锁还在自己名下，只可能是本轮刚才没释放成的那一把**：
+    上一轮遗留的有效锁会在起跑段被 `_abort_if_edit_lock_held` 拦掉、整轮
+    根本进不来；陈旧锁不算"有效"（`_edit_lock_is_actively_held` 判据）。
+    故这里判出"是自己"即可推出"是本轮的"，不需要另记一份进程内状态。
+
+    🔴 **判据取自 `status` 的实际状态、不取 release 的返回码**：release 被
+    结构校验拒绝（返回码 1、锁按设计保持占用）与 release 自身崩溃（返回码
+    非零、锁同样还在）在"锁到底还在不在"这件事上后果相同，看状态一次说清，
+    不必按失败方式分叉。"""
+    result = _edit_lock(repo_root, "status")
+    return (_edit_lock_is_actively_held(result.stdout)
+            and _edit_lock_holder(result.stdout) == LOCK_WHO)
+
+
 def _abort_if_edit_lock_held(repo_root: Path, log: list[str]) -> None:
     """队列 #198(b)：起跑段编辑锁前置探测，须排在 `_check_preconditions`
     之后、任何 git 写动作之前——占用中直接跳过本轮、一个 git 动作都不做。
@@ -4962,6 +4990,7 @@ def _write_queue(repo_root: Path, queue_path: str, text: str) -> None:
 
 def _strike_off_rows(
     repo_root: Path, rows: list[dict], new_status_fn, lock_note: str, dry_run: bool,
+    log: list[str] | None = None,
 ) -> bool:
     """对给定行批量替换状态列并写回队列文件；调用方负责 add/commit。返回是否真的改了内容。
 
@@ -4983,9 +5012,21 @@ def _strike_off_rows(
         )
     queue_path = next(iter(queue_paths))
 
-    lock = _edit_lock(repo_root, "acquire", ["--note", lock_note])
-    if lock.returncode != 0:
-        raise SweepAbort(f"⚠ 编辑锁占用中，跳过本轮：{lock.stdout.strip()}")
+    note = log.append if log is not None else print
+    # 队列 #398 ⑺（2026-09-06 修）：acquire 之前先看这把锁是不是本轮自己刚才
+    # 没释放成的那一把。`release` 被结构校验拒绝时**锁按设计保持占用**（见
+    # `工具-共享文档编辑锁.py::cmd_release` 的 violations 分支），旧实现下一个
+    # 批次照常 acquire、被自己挡住 ⇒ 抛 SweepAbort 整轮早退，而早退路径同样
+    # 走不到 release ⇒ 锁一直卡到 30 分钟自陈旧，其间所有会话写队列被拒。
+    # 实测 2026-09-06 21:17／22:17（两次）／23:17 四轮同一形态：每轮只落一个
+    # 批次就早退，§二 待落库批次按"每轮一个"龟速消化。
+    if _edit_lock_held_by_self(repo_root):
+        note(f"⚠ 编辑锁仍在本轮自己（{LOCK_WHO}）名下——上一次 release 未生效，"
+             f"本次复用同一把锁继续，不 acquire、不抢占：{lock_note}")
+    else:
+        lock = _edit_lock(repo_root, "acquire", ["--note", lock_note])
+        if lock.returncode != 0:
+            raise SweepAbort(f"⚠ 编辑锁占用中，跳过本轮：{lock.stdout.strip()}")
     try:
         text = _read_queue(repo_root, queue_path)
         for row in rows:
@@ -4999,7 +5040,16 @@ def _strike_off_rows(
         _write_queue(repo_root, queue_path, text)
         return True
     finally:
-        _edit_lock(repo_root, "release")
+        # 🔴 release 无论如何都要走一次（含 try 内抛异常的早退路径），且
+        # **未生效时必须出声**——静默正是 #398 ⑺ 卡了四轮没人发现的原因。
+        # 但**不 raise**：release 被拒的含义是"队列结构待人修正"，不是 sweep
+        # 自己出错，抬成整轮失败会连带把已落库批次的对齐推送一起拖掉，正是
+        # 本条要治的那个形态。锁保持占用 ⇒ 同轮后续批次走上面的复用分支。
+        released = _edit_lock(repo_root, "release")
+        if released.returncode != 0:
+            detail = " ".join((released.stdout + released.stderr).split())[:600]
+            note("⚠ 编辑锁 release 未生效，锁仍被本轮持有（同轮后续批次复用同一把；"
+                 f"整轮结束仍未释放则下一轮起跑探测跳过，直至 30 分钟自陈旧）：{detail}")
 
 
 def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str], dry_run: bool, log: list[str]) -> None:
@@ -5017,7 +5067,8 @@ def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str],
     _run_git(["add", "--", *resolved_files], repo_root)
 
     new_status = f"**✅ 已完成**（sweep 自动落库 {_now_utc_str()}）"
-    _strike_off_rows(repo_root, [row], lambda r: new_status, f"sweep 落库 {batch_id}", dry_run=False)
+    _strike_off_rows(repo_root, [row], lambda r: new_status,
+                     f"sweep 落库 {batch_id}", dry_run=False, log=log)
     _run_git(["add", "--", row["queue_path"]], repo_root)
 
     message = _extract_commit_message(row["message_cell"])
@@ -6251,7 +6302,7 @@ def main() -> int:
                     # 使补销每轮重触发的来路。
                     new_status = _straggler_status(_now_utc_str())
                     _strike_off_rows(repo_root, straggler_rows, lambda r: new_status,
-                                      f"sweep 补销尾巴 {ids}", dry_run=False)
+                                      f"sweep 补销尾巴 {ids}", dry_run=False, log=log)
                     _run_git(["add", "--", queue_path], repo_root)
                     _run_git(["commit", "-m", f"docs(队列): sweep 补销遗留尾巴批次 {ids}"], repo_root)
                     log.append(note)  # 队列 #288：只本地提交，不在此处单独推送
