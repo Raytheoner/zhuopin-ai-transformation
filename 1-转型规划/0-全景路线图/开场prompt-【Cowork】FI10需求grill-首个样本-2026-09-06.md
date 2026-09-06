@@ -10,7 +10,7 @@ status: 待你在 Cowork 里起
 # 开场 prompt ·【Cowork】FI10 需求 grill（存量 8 包补 grill 之一，首个）
 
 > 为什么先 FI10：8 个 09-03 无头泳道落包的新场景里，FI10 已勾 24 条任务、未勾 26 条里 2.1–2.6 全是「口径归属／判据签认／持有人实名」——需求点最集中、收口最近。grill 产出即 design 审材料：会话末当场审 `fi10-inventory-writedown-mvp/design.md`（现无此文件）。
-> 🔴 前置：skill `zhuopin-requirement-grill` 源码 2026-09-06 已改（产出定名 `intent.md`），**开会话前先在 Settings 重装一次**；否则 skill 仍按旧名产出。
+> ✅ 前置已清：skill `zhuopin-requirement-grill` 已安装版是**引用式指针**（只指向源码 `0-学习与工具/skills源码/zhuopin-需求grill/SKILL.md`），源码 2026-09-06 已改（产出定名 `intent.md`）即刻生效，**不需要重装**（21:5x 核过安装版正文＝指针，`/sessions…/.claude/skills/zhuopin-requirement-grill/SKILL.md` 3,167 B）。
 
 ▶ 首次派出：[OP-0906-V]
 

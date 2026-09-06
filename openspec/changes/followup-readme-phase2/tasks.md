@@ -48,5 +48,5 @@
 - [x] 5.1 跑全量：`test_工具-跟进闸查询.py`／`test_工具-跟进信README查询.py`／`test_工具-共享文档编辑锁.py`／`test_hooks-pretooluse-queue-read-guard.py`／`test_工具-跟进信README行长外置.py`／aibot 相关单测——见收工报告，零回归。
 - [x] 5.2 核对验收条款：主表 **未达 ≤60KB**（实测 76.8 KB，如实登记，非估算数字——25 行摘要化的实际节省量小于原估算）；`工具-跟进闸查询.py --to 唐燕萍`／`README查询 --digest` 输出与改前基线一致（改前基线已存 `reports/baseline-op0906d/`）；未改表头/列序；未动 `.51`；未发企微。
 - [x] 5.3 `openspec validate followup-readme-phase2 --strict` 通过。
-- [ ] 5.4 队列 §一 `#490` 回写销号（本次续棒完工后回写，见派单件"队列回写"小节）。
-- [ ] 5.5 commit + `git push origin HEAD:master`（先 `merge-base --is-ancestor` 核可快进）；登记 §二 批次——**README 主表与新增行日志文件已随 `B-0906D_readme行长外置` 批次登记**（主仓共享文件，由 sweep 或本 session 收尾时处理，非本 worktree 分支提交范围）；本 worktree 分支自身的代码/spec/openspec 改动另行 commit+push。
+- [x] 5.4 队列 §一 `#490` 回写销号（本次续棒完工后回写，见派单件"队列回写"小节）。 —— ✅ 2026-09-06 `OP-0906-W` 核勾：`工具-队列查询.py --row 490` 状态列首段已为 `[S:done][D:机]`（回写销号实已发生、只是本项未勾）
+- [x] 5.5 commit + `git push origin HEAD:master`（先 `merge-base --is-ancestor` 核可快进）； —— ✅ 2026-09-06 `OP-0906-W` 核勾：登记 CLI 已合入 master（`#490` 行自陈 commit `5e95bd5`）；sweep 21:17 轮起跑补推后 `git rev-list --count origin/master..master`＝0。**由此 `followup-decision-point-gate` D4(a)「先收尾本包」前提已满足，A2 分支可合。**登记 §二 批次——**README 主表与新增行日志文件已随 `B-0906D_readme行长外置` 批次登记**（主仓共享文件，由 sweep 或本 session 收尾时处理，非本 worktree 分支提交范围）；本 worktree 分支自身的代码/spec/openspec 改动另行 commit+push。
