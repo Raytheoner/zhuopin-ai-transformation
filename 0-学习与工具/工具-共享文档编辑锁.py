@@ -323,6 +323,43 @@ Shao Peishen 同日 design 审逐条拍板五个决策点）：**写侧三缺陷
               本次不加 `--allow-unbalanced-backtick`"，依据是 apply 期全量
               取证（两份队列 349 条表格行）**零命中**"故意写孤立反引号"的
               合法用法；真出现再补，不预先假设需要。
+
+队列 §一 #480（2026-09-06，openspec 变更包 `editlock-credential-shape-guard`，
+Shao Peishen 同日 design 审当场拍板五个决策点，原话「A5按建议走」）：
+**写入侧「凭据形状即拒」闸**，派生自 §四 `#118` ⑶。
+
+  成因（比实现更重要）——**队列文件的本职就是「把对话原样留痕」，而原样
+  留痕与凭据隔离天然冲突**：2026-08-24 记录「IT 对应的群＝运维部AI保障群」
+  时，一条真实且当时仍然有效的企微 webhook（连 `key=` 参数）被逐字粘进
+  §一 `#351` 行内并进了 git 历史。**这不是谁不小心，是载体属性**——要留痕的
+  那个动作，和要隔离的那个内容，是同一次粘贴 ⇒ 只能靠机制拦，不能靠人记。
+  此前唯一防线是 CI `凭据扫描`，它有两条已实证的硬边界：**事后**（凭据要先
+  进版本库才可能被看见，而 `#118` 的 git 历史已裁定不清洗）＋ **红了两个多月
+  没人看**。
+
+  判据来源——**复用 `工具-密钥扫描lint.py`，不重写第二份**（`_load_credential_
+  lint_module()` 同 `_load_opener_lint_module()` 惯例）。范围取**结构化四条
+  ＋ 通用启发式 `GENERIC_ASSIGNMENT_RE`**（决策点① ＝ (b)；lint 对 `.md` 只用
+  第一族，本闸比它宽一族的理由见 `_credential_shape_violations` 文档字符串：
+  作用对象与失败代价都不同，且两族判据对全部已跟踪 `.md` 实测命中均为 0）。
+  取不到判据正本即 fail-loud，不回退成本地简化版、不静默放行。
+
+  另外三点拍板：**② 硬拒、不设逃生阀**（取严可逆、取松不可逆——凭据进历史
+  只剩轮换）；**③ 回显命中串前 8 字符 ＋ 截断标记**，🔴 **刻意不与 lint 的
+  24 字符对齐**（两者输出落点的传播面不同，见 `CREDENTIAL_HIT_PREFIX_LEN`
+  处长注，后人请勿当作漂移去"统一"）；**⑤ 只校验本次新值、不校验改动后整行**
+  （校验整行会把含凭据形状的历史行锁死，正是 `#324`／`#454` 的形态）。
+  **④ 作用面不含 `acquire`／`release --note`**：note 落进 `*.editlock`，已实测
+  被 `.gitignore:69:*.editlock*` 覆盖、不进 git；note 被回显后若再被粘进队列行，
+  那一次粘贴走的仍是本闸 ⇒ 覆盖是闭合的，不是留了个洞。
+
+  🔴 **覆盖边界（须如实措辞，不得暗示全覆盖）**：本闸只覆盖走 `edit-row`／
+  `append-row` **正门**的写入。编辑器直接改文件、脚本整文件重写这类绕过正门的
+  写法它看不见 ⇒ 回显与汇报只能写「已校验本次经正门写入的 N 个值」，**不得**
+  写成「队列已不可能进凭据」。全仓事后兜底仍归 CI `凭据扫描`——两道闸分工
+  互补（本闸管"别让新的进来"，CI 管"已经在里面的有没有"），**谁也不退休谁**。
+  另：形状判据的本质是形状，拦不住"把 key 拆成四段中文描述"这类改写，也拦
+  不住形状不在规则内的新型凭据——新增外部凭据类型须回 lint 本体补规则。
 """
 from __future__ import annotations
 
@@ -2086,6 +2123,176 @@ def _load_cells_json(args: argparse.Namespace) -> list[str] | dict[str, str] | N
     )
 
 
+# ---------------------------------------------------------------------------
+# 凭据形状守卫（队列 §一 #480，派生自 §四 `#118` ⑶）
+#
+# 🔴 判据正本只在 `工具-密钥扫描lint.py`——本节只**加载**它，不在本文件里
+# 复制任何凭据形状正则的字面量（同 `_load_opener_lint_module()` 的 D3 惯例）。
+# 两处判据分叉正是 `#312` 已付过学费的形态：补一处、漏一处，两边都以为对方
+# 守着。取不到判据正本就 **fail-loud**，不回退成"本地简化判据"、更不静默放行。
+# ---------------------------------------------------------------------------
+_CREDENTIAL_LINT_SCRIPT = REPO_ROOT / "0-学习与工具" / "工具-密钥扫描lint.py"
+
+#: 拒绝文案回显命中串的前缀位数上限（design 决策点③，Shao Peishen 2026-09-06
+#: 拍板 (b)＝前 8 字符 ＋ 截断标记）。
+#: 🔴 **刻意不与 `工具-密钥扫描lint.py` 的 `m.group(0)[:24]` 对齐——后人请勿
+#: 当作漂移去"顺手统一"**：两者输出落点的传播面不同。lint 的输出落在 CI 日志，
+#: 复述的是**本就已经进了 git** 的内容；本闸的输出落在操作者终端 scrollback，
+#: 而拒绝的目的恰恰是让这串东西**不要被传播**（终端里的东西最可能被再粘一次）。
+#: 24 字符对一个 32-40 位 hex key 会暴露过半；8 字符对四条结构化规则都只暴露
+#: 公共前缀（`qyapi.we`／`AKIA`＋4／`sk-ant-`＋1／`-----BEG`），不含密钥主体。
+CREDENTIAL_HIT_PREFIX_LEN = 8
+
+#: 拒绝文案里那条固定的出路（spec 强制：拒绝必须带去向，不能只说"拒绝"）。
+CREDENTIAL_WAY_OUT = "凭据请落 `.env`，队列只写指针"
+
+
+def _load_credential_lint_module():
+    """动态加载 `工具-密钥扫描lint.py`（文件名含中文/连字符，不能直接 import）。
+
+    逐字仿照 `_load_opener_lint_module()`：判据正本恒在 lint 本体，本文件只读
+    引用其 `CREDENTIAL_PATTERNS`／`GENERIC_ASSIGNMENT_RE`／`_looks_like_real_secret`。
+    """
+    spec = importlib.util.spec_from_file_location(
+        "_zp_credential_lint", _CREDENTIAL_LINT_SCRIPT
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载凭据形状判据正本：{_CREDENTIAL_LINT_SCRIPT}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _credential_hit_excerpt(hit: str) -> str:
+    """把命中串截成不泄露主体的短前缀，并**始终**标明已截断。
+
+    🔴 无论命中串多短都只回显前缀、都带截断标记——"短到不用截"这个判断本身
+    就是一个会随判据扩充而失效的假设，不给它存在的机会。
+    """
+    return f"{hit[:CREDENTIAL_HIT_PREFIX_LEN]}…（已截断，不回显完整值）"
+
+
+def _credential_shape_violations(named_values: dict[str, str]) -> list[str]:
+    """对**本次新写入的每一个单元格值**跑凭据形状判据（队列 §一 #480）。
+
+    返回可读违规文案列表（**列名 ＋ 规则名 ＋ 截断前缀**三元信息）；空列表＝通过。
+
+    判据范围＝**结构化四条 ＋ 通用启发式**（design 决策点① ＝ (b)，Shao Peishen
+    2026-09-06 拍板）。**为什么本闸比 lint 对 `.md` 的既有口径更宽一族**：lint
+    排除 `.md` 的原文理由是"文档大量以叙述句提及变量名，与真实赋值在文本形状上
+    无法用正则可靠区分"，而那条理由在写入侧不成立——⑴ 作用对象不同：lint 扫的是
+    整份文档全文，本闸只看这一次写入的那几个格；⑵ 失败代价不对称：lint 假阳性
+    ⇒ CI 全红、阻塞所有人、且是事后发现，本闸假阳性 ⇒ 这一次写入被拒、当场看到
+    文案、改写重试；而漏网的代价两边一样（不可逆地进 git 历史）；⑶ 实测：对全部
+    已跟踪 `.md` 各跑两遍，两族判据**命中均为 0**（propose 期 1465 份／apply 期
+    1473 份，两次同结论）。
+    ⚠️ 如实写明边界：「今天零命中」只支持「今天不误伤」，**不支持**「永远不误伤」。
+    日后真出现合法误伤，正确动作是回到 design 决策点①／②，**不是当场删判据**。
+
+    🔴 **校验对象只是本次新值，不是改动后的整行**（design 决策点⑤ ＝ (a)）：
+    对整行校验会把**已经含凭据形状的历史行彻底锁死**——连"把它改写成
+    `<REDACTED>`"这个修复动作本身都会被拒，正是 `#324`／`#454` 付过学费、
+    `#455` 不得不专造 `--repair` 的那个形态。历史行里已存在的凭据形状由 CI
+    `凭据扫描`（全文、事后）兜住，两道闸分工互补：本闸管"别让新的进来"，
+    CI 管"已经在里面的有没有"。
+    """
+    lint = _load_credential_lint_module()
+    problems: list[str] = []
+    for column, value in named_values.items():
+        if not isinstance(value, str) or not value:
+            continue
+        for label, pattern in lint.CREDENTIAL_PATTERNS:
+            match = pattern.search(value)
+            if match:
+                problems.append(
+                    f"「{column}」格命中凭据形状规则「{label}」"
+                    f"（{_credential_hit_excerpt(match.group(0))}）"
+                )
+        # 通用启发式：`*SECRET`/`*_KEY`/`*TOKEN`/`*PASSWORD` ＝ 带匹配引号的
+        # 字符串字面量。三重过滤（占位符右值／纯大写标识符右值／长度<8）逐字
+        # 复用 lint 的 `_looks_like_real_secret`，不在本文件重写——这正是
+        # 「环境变量 `XKY_APP_KEY=<value>`」这类叙述写法不会被误伤的原因。
+        for match in lint.GENERIC_ASSIGNMENT_RE.finditer(value):
+            var_name, raw_value = match.group("name"), match.group("value")
+            if lint._looks_like_real_secret(var_name, raw_value):
+                problems.append(
+                    f"「{column}」格命中凭据形状规则「通用凭据赋值 {var_name}=…」"
+                    f"（{_credential_hit_excerpt(match.group(0))}）"
+                )
+    return problems
+
+
+def _print_credential_lint_unavailable(where: str, exc: BaseException) -> None:
+    """判据正本不可加载时的 fail-loud 文案（tasks 2.6）。
+
+    🔴 **不得只抛 traceback**：那只告诉调用方"崩了"，不告诉他崩在哪、怎么修。
+    本文案必须点名判据正本的**文件路径**与**修复方向**。
+    """
+    print(f"✗ {where} 被拒绝：凭据形状判据正本无法加载，"
+          f"本次写入不执行（fail-closed，不静默放行）。")
+    print(f"  判据正本路径：{_CREDENTIAL_LINT_SCRIPT}")
+    print(f"  失败原因：{type(exc).__name__}: {exc}")
+    print("  修复方向：确认该文件存在、未被改名/移动、且本身语法可执行"
+          "（`python 0-学习与工具/工具-密钥扫描lint.py` 能跑起来即可）；"
+          "修好之前 `edit-row`／`append-row` 一律拒绝写入——"
+          "这是刻意选的（fail-closed 优于静默放行，见 `#480` proposal 残余风险 3）。")
+
+
+def _print_credential_rejection(where: str, problems: list[str]) -> None:
+    """命中凭据形状后的拒绝文案（tasks 2.5）——**必须带出路**。"""
+    print(f"✗ {where} 被拒绝（凭据形状，{len(problems)} 处，未修改目标文件）：")
+    for problem in problems:
+        print(f"  - {problem}")
+    print(f"  🔴 {CREDENTIAL_WAY_OUT}——队列文件的本职是「把对话原样留痕」，"
+          "而原样留痕与凭据隔离天然冲突（§四 `#118`：不是谁不小心，是载体属性）。"
+          "队列会进 git 历史，而**历史已裁定不清洗**，写进去就只剩「轮换」"
+          "这一条昂贵且须 Shao Peishen 本人操作的补救路径。")
+    print("  替代写法（照抄即可）：把 URL/key 本体落 `.env`，队列这一格只写指针——"
+          "`见 `.env` 的 `WECOM_WEBHOOK_URL_OPS``；"
+          "确需在队列里指认一条**已失效**的旧凭据，写 `<REDACTED-见§四#118>` ＋ 行号指针"
+          "（`#118` 当次的实际处置即此范式）。")
+    print("  本闸**不提供豁免开关**（design 决策点② ＝ (a)，Shao Peishen 2026-09-06 "
+          "拍板）：取严的代价可逆（日后真需要可以加），取松的代价不可逆"
+          "（豁免用错一次，凭据已进历史）。")
+
+
+def _named_append_values(section: str, cells: list[str]) -> dict[str, str]:
+    """把 `append-row` 归一后的内容格列表配上列名，供守卫点名到「哪一格」。
+
+    `cells` 不含编号列（`_resolve_append_cells` 的契约），故有编号列的分区要
+    跳过列名表的第一项。列名表取不到、或格数多于列名数时**不静默丢格**——
+    多出来的按 `第N格` 兜底，宁可名字丑也不能有值绕过校验。
+    """
+    names = queue_table.SECTION_COLUMN_NAMES.get(section)
+    if names is None:
+        column_names: list[str] = []
+    else:
+        column_names = list(names[1:] if section in ROW_NUMBER_SECTIONS else names)
+    return {
+        (column_names[i] if i < len(column_names) else f"第{i + 1}格"): value
+        for i, value in enumerate(cells)
+    }
+
+
+def _credential_guard_rejects(where: str, named_values: dict[str, str]) -> bool:
+    """跑一次凭据形状守卫；返回 True ＝ 应当拒绝本次写入（调用方 `return 1`）。
+
+    🔴 **覆盖边界，如实措辞、不得写成全覆盖**：本闸只覆盖走 `edit-row`／
+    `append-row` **正门**的写入。编辑器直接改文件、脚本整文件重写这类绕过
+    正门的写法本闸看不见 ⇒ 任何回显与汇报只能说「已校验本次经正门写入的 N
+    个值」，**不得**说「队列已不可能进凭据」。
+    """
+    try:
+        problems = _credential_shape_violations(named_values)
+    except Exception as exc:  # noqa: BLE001 —— fail-closed：任何失败都不放行
+        _print_credential_lint_unavailable(where, exc)
+        return True
+    if problems:
+        _print_credential_rejection(where, problems)
+        return True
+    return False
+
+
 def _resolve_append_cells(args: argparse.Namespace) -> list[str]:
     """把四种入口（`--cell`／`--set`／`--cells-json`／`--stdin-json`）归一
     成「按分区列序的内容格列表（不含编号列）」。
@@ -2383,6 +2590,15 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
 
     changed_values = {**sets, **appends}
 
+    # ── 队列 #480（凭据形状即拒，Shao Peishen 2026-09-06 design 审拍板五点）──
+    # 挂在 `changed_values` 归一之后（本次新值全部到齐的最早时点）、`--repair`
+    # 留痕检查之前——凭据形状是比"理由写没写"更硬的一条，先拦。
+    # 🔴 校验对象只是 `changed_values`（本次新值），**不是**改动后的整行
+    # （决策点⑤＝(a)）：否则含凭据形状的历史行会被彻底锁死，连把它改写成
+    # `<REDACTED>` 都做不到——`#324`／`#454` 已付过这笔学费。
+    if _credential_guard_rejects("edit-row 写入", changed_values):
+        return 1
+
     # ── 队列 #455 ④（Shao Peishen 2026-09-05 拍板 (a)）：`--repair` 须行内留痕 ──
     # 拍板原话"不满足前缀不生效"。**本实现取的是更严的那一读法：直接拒绝
     # 整次调用**，而不是"静默把 `--repair` 当没传、继续按默认路径走"。
@@ -2562,6 +2778,16 @@ def cmd_append_row(args: argparse.Namespace) -> int:
         new_line = _build_append_row_line(args.section, args.number, cells)
     except AppendRowFailedError as exc:
         print(f"✗ {exc}")
+        return 1
+
+    # ── 队列 #480（凭据形状即拒）：与 `cmd_edit_row` **同一判据、两个入口** ──
+    # 🔴 装两处不是重复：只装一处等于留一扇后门——`append-row` 恰恰是"把对话
+    # 原样粘进新行"这个动作的正门，`#118` 那次真实泄漏走的就是新增行这条路。
+    # 挂在四种入口（`--cell`／`--set`／`--cells-json`／`--stdin-json`）经
+    # `_resolve_append_cells` 归一之后，故四条路径一次覆盖，不逐个入口打补丁。
+    if _credential_guard_rejects(
+        "append-row 写入", _named_append_values(args.section, cells)
+    ):
         return 1
 
     # 队列 #455 ②（2026-09-05）：写入前最终回读校验——拼装结果按**读侧同一个

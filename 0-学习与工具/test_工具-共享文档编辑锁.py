@@ -36,6 +36,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 import unittest.mock
 from datetime import datetime, timedelta, timezone
@@ -5089,6 +5090,328 @@ class WriteGuardHardeningTests(unittest.TestCase):
             f"queue_table 的列数 problem 文案已变，编辑锁 --repair 的滤除前缀须同步："
             f"期望以 {prefix!r} 开头，实得 {problems!r}",
         )
+
+
+class CredentialShapeGuardTests(unittest.TestCase):
+    """队列 #480（openspec 变更包 `editlock-credential-shape-guard`，
+    Shao Peishen 2026-09-06 design 审当场拍板五点）：写入侧「凭据形状即拒」闸。
+
+    覆盖：反例（四条结构化规则 ＋ 通用启发式，两个入口各一）／正例（正常
+    队列文本、叙述性占位符写法）／拒绝文案含出路且不回显完整值／④⑤ 两条
+    边界（`--note` 不被拦、含凭据形状的历史行改其它列不被误拒）／fail-loud。
+
+    🔴 **非恒真自证**见 `test_38_*`：把判据加载器 mock 成"零条规则"（＝本包
+    实现前的状态），3.1 的同一输入必须由**拒绝变放行并真的落盘**——证明拒绝
+    确实来自本包新增判据，而不是别处早已存在的某道检查顺手拦下。
+
+    ⚠️ **本文件里的假凭据一律用拼接构造、不写成字面量**：`工具-密钥扫描lint.py`
+    的四条结构化 `CREDENTIAL_PATTERNS` 对**测试文件同样生效**（它只对通用
+    启发式那一族跳过测试文件），写成字面量会让 CI `凭据扫描` job 当场变红。
+    """
+
+    # ---------- 形状合规的固定假串（非任何真实凭据，拼接以避开 CI 自扫） ----------
+    FAKE_WEBHOOK = (
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
+        + "0000dead-beef-0000-1111-222233334444"
+    )
+    FAKE_AWS = "AKIA" + "TESTONLYFAKE0000"
+    FAKE_PRIVATE_KEY_HEADER = "-----BEGIN " + "RSA " + "PRIVATE KEY-----"
+    FAKE_ANTHROPIC = "sk-ant-" + "TESTONLYFAKE0000000000000"
+    # 通用启发式反例：变量名含 SECRET，右值是带匹配引号的字面量、非占位符、
+    # 非纯大写标识符、长度 ≥8 —— 四道过滤全部越过。
+    FAKE_GENERIC = 'WECOM_WEBHOOK_SECRET = "' + "fakeSecret1234567890" + '"'
+
+    SECTION_ONE_HEADER = (
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+    )
+    GOOD_ROW = (
+        "| 700 | 既有任务 | 待领（CC） | 指针 | 产出 | [S:open][D:机] 在办 | 区域 | 2026-09-06 |\n"
+    )
+    # ⑤ 边界夹具：**历史行的某一格已经含凭据形状**（`#351` 的真实形态）。
+    # 本闸只校验本次新值 ⇒ 改这一行的**其它列**不得被误拒，把该列改写成
+    # `<REDACTED>` 也不得被拒——否则唯一能修复它的入口把自己也关上了
+    # （`#324`／`#454` 的形态，`#455` 为此不得不专造 `--repair`）。
+    LEGACY_ROW_WITH_CREDENTIAL = (
+        "| 701 | 历史行：IT 群 webhook "
+        + FAKE_WEBHOOK
+        + " | 待领（CC） | 指针 | 产出 | [S:open][D:机] 在办 | 区域 | 2026-08-24 |\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        self.target = self.root / "toy-queue.md"
+        self.target.write_text(
+            "# 玩具队列\n\n## 一、任务看板\n\n"
+            + self.SECTION_ONE_HEADER + self.GOOD_ROW + self.LEGACY_ROW_WITH_CREDENTIAL
+            + "\n## 二、待 commit 批次\n\n| 批次 | 文件清单 | 建议 message | 状态 |\n|---|---|---|---|\n"
+            "\n## 四、需 Shao Peishen 的动作\n\n| # | 事项 | 等谁 | 截止 |\n|---|---|---|---|\n",
+            encoding="utf-8",
+        )
+        self.qt = _queue_table()
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _run(self, *args: str):
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "--file", str(self.target), *args],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+
+    def _row(self, number: str) -> str | None:
+        for line in self.target.read_text(encoding="utf-8").splitlines():
+            if line.startswith(f"| {number} |"):
+                return line
+        return None
+
+    def _cells(self, number: str) -> list[str]:
+        return self.qt.split_row_cells(self._row(number) or "|") or []
+
+    def _append_args(self, number: str, **overrides: str) -> list[str]:
+        cells = {
+            "任务": "占位任务", "领取方": "待领（CC）", "输入指针": "指针",
+            "期望产出": "产出", "状态": "[S:open][D:机] 待领", "触碰区": "区",
+            "登记": "2026-09-06",
+        }
+        cells.update(overrides)
+        args = ["append-row", "--section", "一", "--number", number]
+        for name, value in cells.items():
+            args += ["--set", f"{name}={value}"]
+        return args
+
+    # ---------- 夹具自证 ----------
+
+    def test_fixtures_are_what_they_claim(self):
+        """先证假串真的命中判据、且历史行夹具确实是 8 列——否则后面所有
+        断言都可能在测一个假场景（同 `#455` 的夹具自证惯例）。"""
+        m = _load_module()
+        lint = m._load_credential_lint_module()
+        labels = {label for label, pat in lint.CREDENTIAL_PATTERNS
+                  if pat.search(self.FAKE_WEBHOOK)}
+        self.assertEqual(labels, {"企微 webhook 真实 key 参数"})
+        self.assertEqual(len(self._cells("701")), 8, "⑤ 边界夹具须是合法 8 列")
+        self.assertIn("qyapi.weixin.qq.com", self._cells("701")[1])
+
+    # ---------- 3.1 / 3.2 反例：两个入口各一 ----------
+
+    def test_31_edit_row_rejects_credential_shape_without_writing(self):
+        """3.1：`edit-row --set` 写入形状合规的假 key ⇒ 返回 1、点名规则、
+        **目标文件字节不变**。"""
+        before = self.target.read_bytes()
+        r = self._run("edit-row", "--section", "一", "--number", "700",
+                      "--set", f"状态=[S:done][D:机] 群机器人 {self.FAKE_WEBHOOK}")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("企微 webhook 真实 key 参数", r.stdout)
+        self.assertIn("「状态」格", r.stdout)
+        self.assertEqual(self.target.read_bytes(), before, "拒绝时不得修改目标文件")
+
+    def test_32_append_row_rejects_credential_shape_without_writing(self):
+        """3.2：同一假串走 `append-row` ⇒ 同上。**与 3.1 成对存在**，证明
+        判据装在**两个**入口上，不是只装了一半。"""
+        before = self.target.read_bytes()
+        r = self._run(*self._append_args(
+            "710", 任务=f"记录群 webhook {self.FAKE_WEBHOOK}"))
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("企微 webhook 真实 key 参数", r.stdout)
+        self.assertIn("「任务」格", r.stdout)
+        self.assertEqual(self.target.read_bytes(), before)
+
+    # ---------- 3.3 其余三条结构化规则各一条，各自点名到正确的规则 ----------
+
+    def test_33_each_structured_rule_is_named_individually(self):
+        """3.3：AWS／私钥头／`sk-ant-` 三条各测一次，拒绝文案须点名**那一条**
+        规则名，而不是笼统一句"命中凭据"。"""
+        cases = [
+            (self.FAKE_AWS, "AWS Access Key"),
+            (self.FAKE_PRIVATE_KEY_HEADER, "私钥文件头"),
+            (self.FAKE_ANTHROPIC, "Anthropic API Key"),
+        ]
+        for payload, label in cases:
+            with self.subTest(rule=label):
+                before = self.target.read_bytes()
+                r = self._run("edit-row", "--section", "一", "--number", "700",
+                              "--set", f"触碰区={payload}")
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn(label, r.stdout)
+                self.assertEqual(self.target.read_bytes(), before)
+
+    def test_33b_generic_assignment_rule_is_named(self):
+        """决策点① ＝ (b) 的那一族：通用启发式命中也须点名到变量名。
+
+        🔴 **本用例是 (a)/(b) 之别的唯一钉子**——若日后有人把范围偷偷改回
+        (a)（只取结构化四条），这里会立刻变红，而不是静默留出漏网面。"""
+        before = self.target.read_bytes()
+        r = self._run("edit-row", "--section", "一", "--number", "700",
+                      "--set", f"触碰区=配置片段：{self.FAKE_GENERIC}")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("WECOM_WEBHOOK_SECRET", r.stdout)
+        self.assertEqual(self.target.read_bytes(), before)
+
+    # ---------- 3.4 / 3.5 正例 ----------
+
+    def test_34_normal_queue_text_is_unaffected(self):
+        """3.4 正例：正常队列文本（中文叙述／反引号包路径／`[S:]` 状态串／
+        `.env` 指针写法）⇒ 返回 0、正常落盘。"""
+        value = ("[S:done][D:机] ✅ 已完成，推送地址见 `.env` 的 "
+                 "`WECOM_WEBHOOK_URL_OPS`，判据见 `工具-密钥扫描lint.py`")
+        r = self._run("edit-row", "--section", "一", "--number", "700",
+                      "--set", f"状态={value}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(len(self._cells("700")), 8)
+        self.assertIn("WECOM_WEBHOOK_URL_OPS", self._cells("700")[5])
+
+    def test_35_placeholder_prose_is_not_a_false_positive(self):
+        """3.5 正例：「环境变量 `XKY_APP_KEY=<value>`」这类叙述 ＋ 占位符写法
+        ⇒ 放行。钉住 lint 的 `PLACEHOLDER_VALUE_RE`／标识符／长度三重过滤
+        确实在起作用——这正是 lint 排除 `.md` 时担心的那种句子。"""
+        for value in (
+            "环境变量 `XKY_APP_KEY=<value>` 由运维配置",
+            'API_TOKEN = "TODO"',
+            '_GATE_ENV_VAR = "ZP_GATE_PASSWORD"',
+        ):
+            with self.subTest(value=value):
+                r = self._run("edit-row", "--section", "一", "--number", "700",
+                              "--set", f"触碰区={value}")
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    # ---------- 3.6 / 3.7 拒绝文案 ----------
+
+    def test_36_rejection_message_carries_a_way_out(self):
+        """3.6：拒绝文案必须给出路，不是只有一句"拒绝"。"""
+        r = self._run("edit-row", "--section", "一", "--number", "700",
+                      "--set", f"状态={self.FAKE_WEBHOOK}")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(".env", r.stdout)
+        self.assertIn("指针", r.stdout)
+        self.assertIn("WECOM_WEBHOOK_URL_OPS", r.stdout, "须给出可照抄的替代写法")
+
+    def test_37_rejection_message_does_not_echo_the_full_hit(self):
+        """3.7：拒绝文案**不得**回显完整命中串（决策点③ ＝ 前 8 字符 ＋ 截断
+        标记）——拒绝的目的正是让这串东西不被传播，而终端 scrollback 恰恰
+        最容易被再粘一次。"""
+        m = _load_module()
+        r = self._run("edit-row", "--section", "一", "--number", "700",
+                      "--set", f"状态={self.FAKE_WEBHOOK}")
+        self.assertEqual(r.returncode, 1)
+        self.assertNotIn(self.FAKE_WEBHOOK, r.stdout, "完整命中串不得出现在文案里")
+        self.assertNotIn("0000dead-beef", r.stdout, "key 主体不得出现在文案里")
+        self.assertIn("已截断", r.stdout)
+        self.assertEqual(m.CREDENTIAL_HIT_PREFIX_LEN, 8,
+                         "决策点③ ＝ (b) 前 8 字符；改这个数须回 design 决策点，"
+                         "🔴 尤其不得为了「与 lint 的 24 字符对齐」而改")
+
+    # ---------- 3.8 非恒真自证 ----------
+
+    def test_38_zero_rule_stub_turns_rejection_back_into_a_write(self):
+        """3.8：把 `_load_credential_lint_module` mock 成返回"零条规则"的桩
+        （＝本包实现前的状态）⇒ 3.1 的同一输入由**拒绝变放行并真的落盘**。
+
+        证明两件事：⑴ 拒绝确实来自本包新增判据，不是别处早已存在的某道检查
+        顺手拦下；⑵ 编辑锁内**不存在第二份复制的判据**（若复制了，桩换不掉它，
+        这里仍会被拒，用例变红）。"""
+        m = _load_module()
+        empty_lint = types.SimpleNamespace(
+            CREDENTIAL_PATTERNS=[],
+            GENERIC_ASSIGNMENT_RE=re.compile(r"(?!x)x"),  # 恒不匹配
+            _looks_like_real_secret=lambda _n, _v: False,
+        )
+        ns = argparse.Namespace(
+            file=str(self.target), section="一", number="700", who="",
+            set=[f"状态=[S:done][D:机] {self.FAKE_WEBHOOK}"], append=[],
+            changes_json=None, stdin_json=False, append_sep=" ",
+            domain=None, repair=False,
+        )
+        with unittest.mock.patch.object(
+            m, "_load_credential_lint_module", lambda: empty_lint
+        ):
+            rc = m.cmd_edit_row(ns)
+        self.assertEqual(rc, 0, "关掉判据之后旧行为＝放行；若这里非 0，说明本用例"
+                                "测的不是本包新增的那道闸，断言不成立")
+        self.assertIn("qyapi.weixin.qq.com", self._cells("700")[5],
+                      "关掉判据后同一输入须真的落盘")
+
+    # ---------- 3.9 fail-loud ----------
+
+    def test_39_unloadable_criteria_fails_loud_not_silent_pass(self):
+        """3.9：判据正本不可加载 ⇒ 报错退出、文案点名**文件路径与修复方向**，
+        **不静默放行**、也不只抛一个未加工的 traceback。"""
+        m = _load_module()
+
+        def _boom():
+            raise RuntimeError("模拟：判据正本被改名")
+
+        ns = argparse.Namespace(
+            file=str(self.target), section="一", number="700", who="",
+            set=["状态=[S:done][D:机] 完全正常的值"], append=[],
+            changes_json=None, stdin_json=False, append_sep=" ",
+            domain=None, repair=False,
+        )
+        before = self.target.read_bytes()
+        buf = io.StringIO()
+        with unittest.mock.patch.object(m, "_load_credential_lint_module", _boom), \
+                contextlib.redirect_stdout(buf):
+            rc = m.cmd_edit_row(ns)
+        out = buf.getvalue()
+        self.assertEqual(rc, 1, "fail-closed：判据不可用时不得放行")
+        self.assertIn("工具-密钥扫描lint.py", out, "须点名判据正本文件路径")
+        self.assertIn("修复方向", out)
+        self.assertEqual(self.target.read_bytes(), before)
+
+    # ---------- 决策点 ④⑤ 的边界 ----------
+
+    def test_boundary_04_note_channel_is_not_guarded(self):
+        """④ ＝ (a) 的边界：作用面**不含** `acquire --note`（锁文件被
+        `.gitignore:69:*.editlock*` 覆盖、不进 git）。
+
+        ⚠️ 这不是"note 是安全的"——note 被回显后若再被粘进队列行，**那一次
+        粘贴走的仍是本闸**（见下方 3.1/3.2），覆盖是闭合的，不是留了个洞。"""
+        r = self._run("acquire", "--who", "tester", "--note",
+                      f"待记录：群机器人 {self.FAKE_WEBHOOK}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        lock = json.loads(Path(str(self.target) + ".editlock").read_text(encoding="utf-8"))
+        self.assertIn("qyapi.weixin.qq.com", lock["note"], "note 通道确未被本闸拦截")
+
+    def test_boundary_05_legacy_row_other_columns_still_editable(self):
+        """⑤ ＝ (a) 的边界之一：**历史行的某一格已含凭据形状**时，改该行的
+        **其它列**不得被误拒——校验对象只是本次新值，不是改动后的整行。"""
+        r = self._run("edit-row", "--section", "一", "--number", "701",
+                      "--set", "状态=[S:done][D:机] ✅ 已闭环")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(self._cells("701")[5].startswith("[S:done]"))
+
+    def test_boundary_05b_legacy_credential_can_be_redacted(self):
+        """⑤ 的要害（`#324`／`#454` 的伤害形态）：把含凭据形状的那一格**改写
+        成 `<REDACTED>` 指针**这个修复动作本身必须被放行。
+
+        若按 (b) 校验改动后整行，这一步会被拒 ⇒ 唯一能修复它的入口把自己
+        也关上了，那正是 `#455` 不得不专造 `--repair` 的那口井。"""
+        r = self._run("edit-row", "--section", "一", "--number", "701",
+                      "--set", "任务=历史行：IT 群 webhook `<REDACTED-见§四#118>`")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("REDACTED", self._cells("701")[1])
+        self.assertNotIn("qyapi.weixin.qq.com", self._cells("701")[1])
+
+    # ---------- 判据正本唯一 ----------
+
+    def test_no_credential_regex_literal_is_copied_into_editlock(self):
+        """spec「判据正本唯一，复用不重写」的机器守：编辑锁源码里**不得**
+        出现任何凭据形状正则的字面量。
+
+        判据取自 lint 本体的 `CREDENTIAL_PATTERNS`／`GENERIC_ASSIGNMENT_RE`
+        的 `.pattern` 字符串——lint 那侧改了正则，这里自动跟着比对新的那个，
+        不需要在本文件维护第二份"禁止出现的字符串"清单。"""
+        m = _load_module()
+        lint = m._load_credential_lint_module()
+        source = SCRIPT.read_text(encoding="utf-8")
+        patterns = [p.pattern for _label, p in lint.CREDENTIAL_PATTERNS]
+        patterns.append(lint.GENERIC_ASSIGNMENT_RE.pattern)
+        for pat in patterns:
+            with self.subTest(pattern=pat[:40]):
+                self.assertNotIn(pat, source,
+                                 "判据正本恒在 `工具-密钥扫描lint.py`，编辑锁只加载不复制"
+                                 "——两处判据分叉正是 `#312` 付过学费的形态")
 
 
 class ArityBarePipeDiagnosticsTests(unittest.TestCase):
