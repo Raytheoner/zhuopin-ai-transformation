@@ -15,6 +15,7 @@ import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().with_name("工具-泳道看护状态机.py")
 
@@ -156,6 +157,107 @@ class LaneWatchStateMachineTests(unittest.TestCase):
             waiting_for="是否合入 master", notify_fn=None,
         )
         self.assertEqual(state["status"], "paused")
+
+    # ---------------- 队列 #492：默认推送目标改运维群 ----------------
+
+    def test_load_ops_webhook_url_reads_ops_key_not_default_prefix(self):
+        # 判据 ⑵：两键互为前缀（WECOM_WEBHOOK_URL 是 WECOM_WEBHOOK_URL_OPS
+        # 的真前缀），匹配须带 `=`，不得读混。
+        (self.root / ".env").write_text(
+            "WECOM_WEBHOOK_URL=https://example.invalid/default\n"
+            "WECOM_WEBHOOK_URL_OPS=https://example.invalid/ops\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self.module._load_ops_webhook_url(), "https://example.invalid/ops")
+
+    def test_load_ops_webhook_url_none_when_only_default_key_present(self):
+        (self.root / ".env").write_text(
+            "WECOM_WEBHOOK_URL=https://example.invalid/default\n", encoding="utf-8",
+        )
+        self.assertIsNone(self.module._load_ops_webhook_url())
+
+    def test_pause_default_sender_targets_ops_not_default_group(self):
+        """默认目标＝OPS（队列 #492 ⑴）：真实 `_load_wecom_sender()`（未注入
+        `notify_fn`）在 `.env` 只配置 OPS 键时，把请求发到 OPS webhook——
+        走完整既有路径（`_load_wecom_sender` → `发企微.py::send_markdown`
+        → `urlopen`），只在最底层拦截网络，不出网、不猜中间实现。"""
+        (self.root / ".env").write_text(
+            "WECOM_WEBHOOK_URL_OPS=https://example.invalid/ops\n", encoding="utf-8",
+        )
+        captured = {}
+
+        class _FakeResp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"errcode": 0}'
+
+        def _fake_urlopen(req, timeout=10):
+            captured["url"] = req.full_url
+            return _FakeResp()
+
+        with mock.patch("urllib.request.urlopen", _fake_urlopen):
+            self.module.pause_lane(
+                batch="B1", wave=1, lane="A", action_key="merge_to_master",
+                waiting_for="是否合入 master", notify_fn=None,
+            )
+        self.assertEqual(captured.get("url"), "https://example.invalid/ops")
+        on_disk = self.module._read_state()
+        self.assertEqual(on_disk["lanes"]["A"].get("notify_failures", []), [])
+
+    def test_pause_ops_unconfigured_fails_closed_never_falls_back_and_marks_state(self):
+        """OPS 不可用时不回落默认群且已标记（队列 #492 ⑶）：`.env` 里默认
+        群键**确实配置了**（诱因还在），但 OPS 键缺失——断言从未发生任何
+        网络请求（含发去默认群），只落 `notify_failures` 标记，状态照常
+        写入、异常不外传。"""
+        (self.root / ".env").write_text(
+            "WECOM_WEBHOOK_URL=https://example.invalid/default\n", encoding="utf-8",
+        )
+
+        def _unexpected_urlopen(*_args, **_kwargs):
+            raise AssertionError("不应发生任何网络请求——OPS 未配置时必须 fail-closed，不回落默认群")
+
+        with mock.patch("urllib.request.urlopen", _unexpected_urlopen):
+            state = self.module.pause_lane(
+                batch="B1", wave=1, lane="A", action_key="merge_to_master",
+                waiting_for="是否合入 master", notify_fn=None,
+            )
+
+        self.assertEqual(state["status"], "paused")
+        on_disk = self.module._read_state()
+        failures = on_disk["lanes"]["A"].get("notify_failures", [])
+        self.assertEqual(len(failures), 1)
+        self.assertIn(self.module.LANE_WATCH_WEBHOOK_ENV_KEY, failures[0]["reason"])
+        self.assertEqual(self.module.count_notify_failures(), 1)
+
+    def test_notify_send_exception_marks_failure_without_propagating(self):
+        # OPS 已配置但发送本身异常：同样标记、不外传、不影响状态落盘。
+        (self.root / ".env").write_text(
+            "WECOM_WEBHOOK_URL_OPS=https://example.invalid/ops\n", encoding="utf-8",
+        )
+
+        def _boom_urlopen(*_args, **_kwargs):
+            raise OSError("网络挂了")
+
+        with mock.patch("urllib.request.urlopen", _boom_urlopen):
+            state = self.module.pause_lane(
+                batch="B1", wave=1, lane="A", action_key="merge_to_master",
+                waiting_for="是否合入 master", notify_fn=None,
+            )
+        self.assertEqual(state["status"], "paused")
+        on_disk = self.module._read_state()
+        self.assertEqual(len(on_disk["lanes"]["A"].get("notify_failures", [])), 1)
+
+    def test_summary_reports_notify_failure_count(self):
+        self.module._mark_notify_failure(lane="A", reason="测试标记")
+        rows = self.module.build_summary()
+        line = self.module.format_notify_failure_line(self.module.count_notify_failures())
+        self.assertIn("1 次", line)
+        self.assertEqual(rows, [])  # 不影响既有 D6 停顿汇总
 
     # ---------------- transfer-out（⏭️ D1 第四档，3.5） ----------------
 
