@@ -99,12 +99,15 @@ description: 卓品智能AI转型项目·泳道看护模式（2026-09-02 架构�
 
 **成因（2026-09-02 首跑实撞，不是假设）**：`pause`／`check-heartbeat` 的推送走 `_load_wecom_sender()`，它复用 `发企微.py::send_markdown(load_webhook())`，**目标写死为 `.env` 的默认 `WECOM_WEBHOOK_URL` ＝「跨部门AI建设群」（17 人，含各部门专员）**，**没有任何目标选择能力**。首跑泳道 C 的一条决策提示因此发进了那个群——内容是 `.pth`／`site-packages`／`change_criteria` 一类内部技术细节，**专员不该看到，也无法撤回**。
 
-🔑 **Shao Peishen 2026-09-02 当场定：泳道决策提示只发他个人。** 在「发个人」通道接进状态机之前（已登记队列 `#452`，属 CC 改码）：
+🔑 **口径两版，以 2026-09-06 版为准**：~~2026-09-02 当场定「泳道决策提示只发他个人」~~ ⇒ 🔴 **2026-09-06 Shao Peishen 改定：「那就简单点，改发运维群」** —— 目标由「个人（aibot 单聊）」改为 **`.env` 的 `WECOM_WEBHOOK_URL_OPS`（IT 运维群）**。**改的理由是成本**：个人通道要接 aibot 单聊那条链路（另一套机制、另一套失败面），而运维群只换一个环境变量键名；群里只有他与 IT 陈承，**专员看不到**，本节事故要防的正是这一条。**旧版原文保留、不追改。**
+
+**接线落地之前**（承接行＝**§一 `#492`**，属 CC 改码；原先只挂在 `#452` 母行正文里、没有自己的行，2026-09-06 已拎出独立成行）：
 
 - **opener 里给泳道的 `pause` 指令必须带 `--no-notify`**（步骤 3 已内置）；
 - **Cowork 侧自己跑 `check-heartbeat`／`pause` 同样必须带 `--no-notify`**；
 - **决策提示改为在 Cowork 会话内以「需你定夺」格式端给他**，本来就只认 Cowork 侧答复（D5／tasks §8.1），推送本非必需；
-- 🔴 **`.env` 现有两个 webhook（默认群、`_OPS` 运维群），都不是个人通道**——发个人需走 aibot 单聊（`push_followup_letter.py --chatid`），是另一套链路，**不得在此临时拼接**。
+- 🔴 **接线时有一个已知坑**：`WECOM_WEBHOOK_URL` 是 `WECOM_WEBHOOK_URL_OPS` 的**真前缀**。`发企微.py::load_webhook()` 用的是带 `=` 的 `startswith("WECOM_WEBHOOK_URL=")`，所以它没踩到；**新增读 OPS 的分支若写成不带 `=` 的前缀匹配，会把两个键读混、又发回默认大群**。该坑已在 `test_工具-落库sweep.py` 记过一次（对应 `工具-落库sweep.py` 的 `WECOM_WEBHOOK_ENV_KEY = "WECOM_WEBHOOK_URL_OPS"`），**勿再踩**。
+- 🔴 **fail-closed**：OPS webhook 未配置或发送失败时，**不得回落默认群**（回落＝本节要防的事故原样复活），改为不发 ＋ 在 `reports/lane-watch-state.json` 标记，由看门狗与收工汇总报出来。
 
 ⚠️ **泳道 B 第一段当时自己识别出了这个冲突并主动加了 `--no-notify`，泳道 C 没有** —— 差别在于**我写 A1/A2/A3 三条 opener 时没写这条约束，只在 A4 里补了**。⇒ **靠泳道自己发现属侥幸，本节即把它变成硬规则。**
 
