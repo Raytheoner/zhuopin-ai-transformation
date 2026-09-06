@@ -302,10 +302,49 @@ def _format_wait_notice(
     return "\n".join(lines)
 
 
+# 队列 `#492`（`#284` 计数⑨两次真实事故）：泳道决策提示默认目标必须固定
+# 为运维逃生通道，不是「多一个参数可以发运维群」——本模块内该键名只此一份，
+# 其余位置一律从本常量派生，不留字面量副本（同 `工具-落库sweep.py::
+# WECOM_WEBHOOK_ENV_KEY` 同一取向，两个常量刻意不同名，避免误改一处以为
+# 改了两处）。
+LANE_WATCH_WEBHOOK_ENV_KEY = "WECOM_WEBHOOK_URL_OPS"
+
+
+class _OpsWebhookUnavailable(RuntimeError):
+    """运维群 webhook 未在 `.env` 配置——fail-closed，调用方绝不回落默认
+    业务群（队列 #492 ⑶：那正是本次要修的事故）。本模块内部使用，不外传。"""
+
+
+def _load_ops_webhook_url() -> Optional[str]:
+    """读 `REPO_ROOT/.env` 中 `LANE_WATCH_WEBHOOK_ENV_KEY` 常量所指的键。
+    与 `工具-落库sweep.py::_load_webhook_url` 同一读法与判据：按 `<键名>=`
+    精确前缀匹配，未命中返回 `None`。
+
+    🔴 匹配须带 `=`——`WECOM_WEBHOOK_URL` 是 `WECOM_WEBHOOK_URL_OPS` 的真
+    前缀，不带 `=` 的前缀匹配会把两键读混、把提示又发回业务群（该坑
+    `test_工具-落库sweep.py` 已记过一次）。未配置时返回 `None`，调用方
+    fail-closed，不回落默认群。
+    """
+    env_path = REPO_ROOT / ".env"
+    if not env_path.exists():
+        return None
+    prefix = LANE_WATCH_WEBHOOK_ENV_KEY + "="
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith(prefix):
+            url = line[len(prefix):].strip().strip('"').strip("'")
+            if url:
+                return url
+    return None
+
+
 def _load_wecom_sender() -> Optional[Callable[[str], None]]:
-    """按文件路径加载 `发企微.py`，返回 `content -> None` 的发送函数；找不到
-    脚本时返回 `None`（调用方降级为仅落状态，同清池「未上线则降级仅心跳」
-    既例）。"""
+    """按文件路径加载 `发企微.py`，**只复用其 `send_markdown` 网络发送
+    逻辑**——目标 URL 固定取自 `_load_ops_webhook_url()`（运维群），**不
+    调用其 `load_webhook()`**，那读的是默认业务群裸键 `WECOM_WEBHOOK_URL`，
+    2026-09-02／09-06 两次事故正是打到那个群。找不到脚本时返回 `None`
+    （调用方降级为仅落状态，同清池「未上线则降级仅心跳」既例）。
+    """
     script = _TOOLS_DIR / "发企微.py"
     if not script.exists():
         return None
@@ -315,28 +354,50 @@ def _load_wecom_sender() -> Optional[Callable[[str], None]]:
     spec.loader.exec_module(module)
 
     def _send(content: str) -> None:
-        module.send_markdown(module.load_webhook(), content)
+        url = _load_ops_webhook_url()
+        if url is None:
+            raise _OpsWebhookUnavailable(f"`.env` 未配置 {LANE_WATCH_WEBHOOK_ENV_KEY}")
+        module.send_markdown(url, content)
 
     return _send
 
 
-def _notify_best_effort(message: str, notify_fn: Optional[Callable[[str], None]]) -> None:
+def _mark_notify_failure(*, lane: str, reason: str) -> None:
+    """队列 #492 ⑶：企微通知失败或 OPS 未配置时的落档标记——绝不回落
+    默认群，只记「本次没发出去」，由 `check-heartbeat`（看门狗）与
+    `summary`（收工汇总）现取报出，不靠人工回忆。"""
+    now = _now()
+
+    def _mutate(data: dict) -> None:
+        lanes = data["lanes"]
+        lane_state = lanes.setdefault(lane, {"status": "running", "history": []})
+        lane_state.setdefault("notify_failures", []).append({"at": _iso(now), "reason": reason})
+
+    _with_state(_mutate)
+
+
+def _notify_best_effort(
+    message: str, notify_fn: Optional[Callable[[str], None]], *, lane: str,
+) -> None:
     """通知失败绝不能拖垮状态落档——状态文件写入是本函数调用前就已完成的
-    临界操作，这里只做尽力而为的推送。"""
+    临界操作，这里只做尽力而为的推送。队列 #492 ⑶：任何失败（含 OPS 未
+    配置）一律落 `notify_failures` 标记，不回落默认群。"""
     fn = notify_fn if notify_fn is not None else _load_wecom_sender()
     if fn is None:
-        print(
-            "⚠ 未找到 发企微.py，等人通知降级为仅落状态（同清池"
-            "「未上线则降级仅心跳」既例）。",
-            file=sys.stderr,
-        )
+        reason = "未找到 发企微.py，通知降级为仅落状态"
+        print(f"⚠ {reason}（同清池「未上线则降级仅心跳」既例）。", file=sys.stderr)
+        _mark_notify_failure(lane=lane, reason=reason)
         return
     try:
         fn(message)
     except SystemExit as exc:
-        print(f"⚠ 企微推送未完成（{exc}），已降级为仅落状态；状态文件已如实写入不受影响。", file=sys.stderr)
+        reason = f"企微推送未完成（{exc}）"
+        print(f"⚠ {reason}，已降级为仅落状态；fail-closed，不回落默认群。", file=sys.stderr)
+        _mark_notify_failure(lane=lane, reason=reason)
     except Exception as exc:  # noqa: BLE001 —— 通知是尽力而为，任何异常都不得向上传播
-        print(f"⚠ 企微推送异常（{exc}），已降级为仅落状态。", file=sys.stderr)
+        reason = f"企微推送异常（{exc}）"
+        print(f"⚠ {reason}，已降级为仅落状态；fail-closed，不回落默认群。", file=sys.stderr)
+        _mark_notify_failure(lane=lane, reason=reason)
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +543,7 @@ def pause_lane(
         batch=batch, lane=lane, wave=wave, tier=cls.tier, action_label=cls.label,
         waiting_for=waiting_for, options=options or [], covered=cls.covered,
     )
-    _notify_best_effort(message, notify_fn)
+    _notify_best_effort(message, notify_fn, lane=lane)
     return data["lanes"][lane]
 
 
@@ -531,7 +592,7 @@ def transfer_out_lane(
     message = _format_transfer_notice(
         batch=batch, wave=wave, lane=lane, action_label=cls.label, note=note,
     )
-    _notify_best_effort(message, notify_fn)
+    _notify_best_effort(message, notify_fn, lane=lane)
     return data["lanes"][lane]
 
 
@@ -657,7 +718,7 @@ def check_heartbeat(
                 "分不清是在跑长回归还是真挂了，已暂停后续波，等你判断。",
                 "> 请回到 Cowork 会话回一个字母（本期仅认 Cowork 侧答复，D5/§8.1）。",
             ])
-            _notify_best_effort(message, notify_fn)
+            _notify_best_effort(message, notify_fn, lane=lane)
 
     return {
         "lane": lane, "heartbeat_file": heartbeat_file, "stale": stale,
@@ -697,6 +758,23 @@ def count_lock_hits(*, batch: Optional[str] = None) -> int:
 
 def format_lock_hit_line(count: int) -> str:
     return f"本批 index.lock 撞击 {count} 次"
+
+
+def count_notify_failures() -> int:
+    """队列 #492 ⑶「由收工汇总报出」的读出口：企微通知失败（含 OPS 未配置）
+    次数——现取，不靠人工回忆。不按 `batch` 过滤（同 `notify_failures`
+    append-only、不挂 batch 归属的设计，见 design.md 决策点 2）。"""
+    data = _read_state()
+    total = 0
+    for lane_state in data.get("lanes", {}).values():
+        total += len(lane_state.get("notify_failures", []))
+    return total
+
+
+def format_notify_failure_line(count: int) -> str:
+    if count == 0:
+        return "本批企微通知失败 0 次"
+    return f"⚠ 本批企微通知失败 {count} 次（已标记 notify_failures，未回落默认群，需人工核实 OPS 配置/网络）"
 
 
 def _format_wait_duration(paused_at: Optional[str], answered_at: Optional[str]) -> str:
@@ -898,9 +976,14 @@ def _cmd_summary(args: argparse.Namespace) -> int:
     print(format_transfer_line(transfer_rows))
     lock_hits = count_lock_hits(batch=args.batch)
     print(format_lock_hit_line(lock_hits))
+    notify_failures = count_notify_failures()
+    print(format_notify_failure_line(notify_failures))
     if args.json:
         print(json.dumps(
-            {"stops": rows, "transfers": transfer_rows, "lock_hits": lock_hits},
+            {
+                "stops": rows, "transfers": transfer_rows, "lock_hits": lock_hits,
+                "notify_failures": notify_failures,
+            },
             ensure_ascii=False,
         ))
     return 0
