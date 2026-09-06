@@ -1,0 +1,219 @@
+diff --git a/0-学习与工具/test_工具-opener生成.py b/0-学习与工具/test_工具-opener生成.py
+index 78e8227..d0dcf71 100644
+--- a/0-学习与工具/test_工具-opener生成.py
++++ b/0-学习与工具/test_工具-opener生成.py
+@@ -379,5 +379,91 @@ class VariantGuardianTests(unittest.TestCase):
+         self.assertNotIn("从 master 起 `claude/", self.out)
+ 
+ 
++class SilentlyDroppedBodyParamTests(unittest.TestCase):
++    """`--do`／`--dont` 传给「不会拼它们」的环境×变体组合 ⇒ fail-loud 报错退出
++    （队列 §一 `#487` 子项／`OP-0906-I`，方案(乙)）。
++
++    🔴 修前形态：`--env Cowork --dont "…"` 静默丢弃——不报错、不出现在成品里。
++    """
++
++    def test_cowork_传dont_报错退出(self):
++        with self.assertRaises(M.OpenerGenError) as cm:
++            M.generate_opener(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
++        msg = str(cm.exception)
++        self.assertIn("--dont", msg)
++        self.assertIn("Cowork", msg)
++        # 只报错不给出路 ⇒ 调用方会把硬约束塞进 --do 的尾巴，形态更糟。
++        self.assertIn("派单件", msg)
++
++    def test_cowork_只传do_照常出件(self):
++        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "do_items": ["拆件回灌"]})
++        self.assertIn("1. 拆件回灌", out)
++
++    def test_cowork_不传dont_不受影响(self):
++        """🔴 回归防线：守卫只认「显式传了内容」，`OpenerSpec` 的 `["…"]` 兜底
++        不算传——否则每一次正常的 Cowork 出件都会被自己的守卫拦死。"""
++        M.generate_opener(**VALID_COWORK_KWARGS)
++
++    def test_cowork_传空列表不算传(self):
++        M.generate_opener(**{**VALID_COWORK_KWARGS, "dont_items": []})
++
++    #: guardian 变体夹具（模块级没有共享的，同 VariantGuardianTests 自建一份）。
++    GUARDIAN_KWARGS = dict(
++        op_id="OP-0905-VG", env="CC", variant="guardian", short_name="示例批",
++        branch="master（看护者本身不建分支，不改代码）",
++        worktree="☐（看护者不建，各子泳道自建）",
++        workspace="无", session="新开", line="环境总线",
++        input_pointer="1-转型规划/0-全景路线图/看护件-示例.md", task_class="A",
++    )
++
++    def test_guardian_传do或dont均报错(self):
++        """§三bis 看护者开场词正文既不拼 do 也不拼 dont——同族静默丢弃，一并守。"""
++        for key, flag in (("do_items", "--do"), ("dont_items", "--dont")):
++            with self.subTest(key=key):
++                with self.assertRaises(M.OpenerGenError) as cm:
++                    M.generate_opener(**{**self.GUARDIAN_KWARGS, key: ["随便一条"]})
++                self.assertIn(flag, str(cm.exception))
++
++    def test_cc_standard_两个都传_照常出件(self):
++        out = M.generate_opener(**{**VALID_CC_KWARGS,
++                                   "do_items": ["建造"], "dont_items": ["不动产线"]})
++        self.assertIn("1. 建造", out)
++        self.assertIn("- 不动产线", out)
++
++    def test_cc_subtask_lane_两个都传_照常出件(self):
++        out = M.generate_opener(**{**VALID_CC_KWARGS, "variant": "subtask_lane",
++                                   "do_items": ["建造"], "dont_items": ["不动产线"]})
++        self.assertIn("- 不动产线", out)
++
++    def test_cli层_cowork带dont_退出码1且写stderr(self):
++        """端到端：CLI 是实际被人敲的那一层，退出码与 stderr 都要对。"""
++        import io as _io
++        import contextlib
++        argv = [
++            "--op-id", "OP-1231-Z", "--env", "Cowork", "--short-name", "示例二",
++            "--branch", "master", "--worktree", "☐（不建，只产改 `.md`）",
++            "--workspace", "无", "--session", "新开", "--line", "环境总线",
++            "--input-pointer", "1-转型规划/0-全景路线图/示例件.md", "--task-class", "A",
++            "--do", "拆件回灌", "--dont", "不动销售域",
++        ]
++        err = _io.StringIO()
++        with contextlib.redirect_stderr(err):
++            code = M.main(argv)
++        self.assertEqual(code, 1)
++        self.assertIn("--dont", err.getvalue())
++
++    def test_白名单未登记的组合_fail_closed(self):
++        """🔴 白名单哲学的验收：假想一个未登记的组合，守卫应**全拒**（fail-closed），
++        而不是回落成「什么都放行」（fail-open ＝ 回到静默丢弃）。"""
++        saved = dict(M.BODY_PARAM_SUPPORT)
++        try:
++            M.BODY_PARAM_SUPPORT.pop(("CC", "standard"))
++            with self.assertRaises(M.OpenerGenError):
++                M.generate_opener(**{**VALID_CC_KWARGS, "do_items": ["建造"]})
++        finally:
++            M.BODY_PARAM_SUPPORT.clear()
++            M.BODY_PARAM_SUPPORT.update(saved)
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/0-学习与工具/工具-opener生成.py b/0-学习与工具/工具-opener生成.py
+index 0262cb8..8789d55 100644
+--- a/0-学习与工具/工具-opener生成.py
++++ b/0-学习与工具/工具-opener生成.py
+@@ -39,6 +39,20 @@
+   唯一真正被粘贴进独立 CC 会话的一份），分支字段是固定字面量（看护者本身不建
+   分支），正文追加同一条 P4 默认口径（这次是讲给看护者听，指导它怎么起子任务）。
+ 
++## `--do` / `--dont` 的静默丢弃守卫（队列 §一 `#487` 子项／`OP-0906-I`，2026-09-06）
++
++`--dont` 传给 `--env Cowork` 时**此前既不生效也不报错**——不是工具 bug，是
++`opener骨架.md` 的【Cowork】骨架本身只有「做什么／收工」两段（【CC】骨架才有
++「不做什么」）。后果是静默的：派 Cowork 活时把硬约束写进 `--dont`，它不报错、
++不出现在成品里，起草者以为传达到了（2026-09-06 实撞一次，三条约束靠接力卡侥幸兜住）。
++`--variant guardian` 同族——它的正文既不拼 `--do` 也不拼 `--dont`。
++
++本工具改为 **fail-loud**：`BODY_PARAM_SUPPORT` 白名单登记每个「环境×变体」真的会拼进
++成品的正文参数，传了名单外的参数即报错退出（退出码 1），并在报错信息里给出该走哪条
++承接路径。**本方案刻意不改格式正本**（骨架该不该给 Cowork 补「不做什么」段＝方案(甲)，
++须 Shao Peishen 拍板）；它只把「静默」变成「显式」，不解决「Cowork opener 无处写硬约束」
++这个能力缺口。
++
+ ## 用法
+ 
+     python 0-学习与工具/工具-opener生成.py --env CC \\
+@@ -71,6 +85,47 @@ SUBTASK_EXCEPTION = (
+     '"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。'
+ )
+ 
++#: 「环境×变体」→ 该组合的成品**真的会拼进去**的可选正文参数（队列 §一 `#487` 子项／
++#: `OP-0906-I`）。不在名单里的参数一旦传入即 **fail-loud 报错退出**，不静默丢弃。
++#:
++#: 🔴 **为什么是白名单而不是黑名单**：黑名单要求「每加一个变体就记得去登记它不支持什么」，
++#: 忘了登记 ⇒ 回到静默丢弃（fail-open，看不见）。白名单忘了登记 ⇒ 该变体所有可选正文参数
++#: 一律被拒（fail-closed，噪音大但当场看得见），下一个人两分钟就能补上。
++#: **判据：一个参数被接受却不生效，比它被拒绝更危险。**
++#:
++#: 🔴 **本表登记的是「拼装函数的事实」，不是「骨架应该长什么样」**——改了
++#: `generate_opener` 的任一 body_lines 分支，必须同步改这里，否则表本身就成了第二份
++#: 会漂移的判据。当前事实（2026-09-06 逐行核过 `generate_opener`）：
++#:   - CC/standard、CC/subtask_lane：拼 do_block ＋ dont_block ⇒ 两个都支持；
++#:   - CC/guardian：§三bis 看护者开场词固定四行 ＋ P4 口径，**do/dont 都不拼**；
++#:   - Cowork/standard：骨架【Cowork】节只有「做什么／收工」两段，**只拼 do_block**。
++BODY_PARAM_SUPPORT = {
++    ("CC", "standard"): {"do_items", "dont_items"},
++    ("CC", "subtask_lane"): {"do_items", "dont_items"},
++    ("CC", "guardian"): set(),
++    ("Cowork", "standard"): {"do_items"},
++}
++
++#: 参数名 → CLI 旗标，用于报错信息里直接点名调用方敲的那个旗标。
++_BODY_PARAM_FLAG = {"do_items": "--do", "dont_items": "--dont"}
++
++#: 各组合被拒时给的**替代承接建议**——只报错不给出路会让调用方改去写更糟的形态
++#: （把硬约束塞进 `--do` 的某一条尾巴，读者当成待办而不是禁令）。
++_BODY_PARAM_ALTERNATIVE = {
++    ("Cowork", "standard"): (
++        "【Cowork】骨架（`1-转型规划/0-全景路线图/opener骨架.md`）只有「做什么／收工」两段，"
++        "没有「不做什么」段可放。硬约束请写进**派单件正文**或**队列行的「不做什么」栏**，"
++        "并在 `--input-pointer` 指向的那份件里写清；若认为骨架本身该补这一段，"
++        "那是改格式正本，须走队列 §一 `#487` 子项的 (甲) 方案、由 Shao Peishen 拍板，"
++        "不在本工具内绕过。"
++    ),
++    ("CC", "guardian"): (
++        "§三bis 看护者开场词是固定形态（四行 ＋ P4 扇出口径），正文不拼 `做什么／不做什么` "
++        "——看护者的任务正本在**看护件全文**里，`--input-pointer` 已指向它。"
++        "要给看护者加约束请改看护件，不要走本工具的正文参数。"
++    ),
++}
++
+ VALID_ENVS = ("CC", "Cowork")
+ VALID_TASK_CLASSES = ("A", "B")
+ #: 三种骨架变体（模块文档「variant」节）；`subtask_lane`／`guardian` 只对 CC 有意义。
+@@ -268,6 +323,38 @@ def _validate_spec(spec: OpenerSpec) -> None:
+         )
+ 
+ 
++def _reject_silently_dropped_body_params(kwargs: dict, spec: OpenerSpec) -> None:
++    """调用方传了「这个环境×变体根本不会拼进成品」的正文参数 ⇒ 报错退出（fail-loud）。
++
++    🔴 **本函数解决的不是「参数写错了」，而是「参数写对了却没生效」**：
++    2026-09-06 实撞——`--env Cowork --dont "<三条硬约束>"` 被静默丢弃，不报错、
++    不出现在成品里，起草者以为约束传达到了（当次靠那三条本来也写在接力卡里侥幸兜住，
++    属侥幸不属机制）。同族＝`acquire --domain` 漏传是「静默少算」而不是被拦下。
++
++    🔴 **判「传没传」只看 `kwargs`，不看 `spec`**：`OpenerSpec.__init__` 会把
++    `do_items`／`dont_items` 的 `None` 兜成 `["…"]` 占位，读 `spec` 分不出
++    「没传」与「传了空」——判据必须站在兜底之前。
++    """
++    supported = BODY_PARAM_SUPPORT.get((spec.env, spec.variant))
++    if supported is None:
++        # 白名单没登记这个组合 ⇒ fail-closed（宁可全拒也不静默丢），见常量表注释。
++        supported = set()
++    passed = {k for k in _BODY_PARAM_FLAG if kwargs.get(k)}
++    dropped = sorted(passed - supported, key=lambda k: _BODY_PARAM_FLAG[k])
++    if not dropped:
++        return
++    flags = "、".join(f"`{_BODY_PARAM_FLAG[k]}`" for k in dropped)
++    alt = _BODY_PARAM_ALTERNATIVE.get(
++        (spec.env, spec.variant),
++        "该组合的成品形态不含这些段，请改用 `--input-pointer` 指向的派单件承接。",
++    )
++    raise OpenerGenError(
++        f"{flags} 传入了内容，但 env={spec.env}／variant={spec.variant} 的成品**不会包含**"
++        f"它们——若不报错就会被静默丢弃（参数被接受却不生效，比被拒绝更危险；"
++        f"2026-09-06 实撞一次，队列 §一 `#487` 子项／`OP-0906-I`）。{alt}"
++    )
++
++
+ def _title_call_line(op_id: str, short_name: str) -> str:
+     mmdd, suffix = _mmdd_and_suffix(op_id)
+     return (
+@@ -331,6 +418,10 @@ def generate_opener(**kwargs) -> str:
+     known = set(_OPENER_SPEC_FIELDS)
+     spec = OpenerSpec(**{k: v for k, v in kwargs.items() if k in known})
+     _validate_spec(spec)
++    # 🔴 顺序刻意：先 `_validate_spec` 定下合法的 env／variant，本条判据才有意义；
++    # 放在 `_check_op_id_not_reused` 之前——撞号查重要扫全树 `.md`（秒级），
++    # 而「参数会被丢掉」是纯本地判断，没理由让调用方先等一次全树扫描才被告知。
++    _reject_silently_dropped_body_params(kwargs, spec)
+     _check_op_id_not_reused(spec)  # P7①：当日撞号即拒，见模块文档
+ 
+     do_block = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(spec.do_items))

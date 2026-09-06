@@ -1,0 +1,2 @@
+# .patch 保持 LF 原样——CRLF 化会让 `git apply` 认不出上下文（core.autocrlf=true，本仓无全局 .gitattributes）。
+*.patch -text
