@@ -33,3 +33,16 @@ rules:
       规则；`git check-ignore` 实测不命中 ⇒ 它被 `git status` 恒报为未跟踪、被 sweep 判为孤儿脏文件，
       企微群连响 17.1 小时，且因每个 session 每把锁都会再生而永不消失。**注意它与 one-in-one-out 的分工**：
       那条问"你删了哪个守卫"，本条问"你新造了哪种文件"——#322 当时两条都没被问到，所以两条都要在。
+    - >-
+      MANDATORY（仅约束**新场景**变更包——即新建 `4-数字员工/<部门>/<场景>/` 下数字员工场景的包，
+      不约束机制/环境类包，也不约束已建成场景的深化包）：propose 之前该场景目录必须已有 `intent.md`
+      且其 frontmatter 为 `status: 已确认`（三节固定：§一 M2 自查事实／§二 已定＝design Decisions／
+      §三 待专员＝判例包待办，每条带口径点 ID 占位）。产出方式＝先跑 skill `zhuopin-requirement-grill`
+      做需求 grill，`status` 由 Shao Peishen 确认后写。来源：Shao Peishen 2026-09-06 拍板 ③(a)
+      （队列 §一 #436 ⑶①），口径正本＝`.claude/rules/场景建造与合规.md` §二。
+      🔴 **本条只是提示句、不是闸**：openspec 1.7.0 的 validate 不读 config.yaml 的 rules
+      （实测：本仓库 8 份 proposal.md 缺上面那条「知识资产三问」MANDATORY 节，
+      `openspec validate --all --strict` 仍报 169 passed／0 failed），CLI 也无自定义规则挂载点。
+      真正拦得住的是 CI job `scene-intent-gate-lint`
+      ＝`python 0-学习与工具/工具-场景包intent闸lint.py --enforce`；存量 8 包豁免至 2026-10-31，
+      深化类场景永久不适用（名单与判据全在该脚本 docstring）。
