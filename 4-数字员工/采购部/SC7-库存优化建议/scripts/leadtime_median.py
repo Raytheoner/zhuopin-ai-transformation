@@ -69,6 +69,17 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+# —— 平台底座路径引导（队列 #345 收拢；唯一被允许的样板见 bootstrap.py 模块 docstring）——
+_HERE = Path(__file__).resolve()
+for _p in _HERE.parents:
+    if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
+        sys.path.insert(0, str(_p / "5-平台底座" / "zhuopin_platform"))
+        break
+from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
+ensure_paths(__file__, _HERE.parent.parent)  # noqa: E402
+
+from zhuopin_platform.env_anchor import load_env as _resolve_and_load_env  # noqa: E402
+
 # ── 端点常量（与 `zhuopin_platform.shared_tools.erp_connector.connector` 同源）──
 _PURCHASE_PATH = "/zp/api/Purchase/Query"
 _GR_PATH = "/zp/api/GR/Query"
@@ -101,20 +112,21 @@ _DEFAULT_MIN_SAMPLES = 5
 # ══════════════════════════════════════════════════════════════════
 
 def _load_env() -> dict[str, str]:
-    """读仓库根 `.env`（不覆盖已存在的进程环境变量）。"""
-    env: dict[str, str] = {}
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        f = parent / ".env"
-        if f.exists():
-            text = f.read_text(encoding="utf-8")
-            for m in re.finditer(r"^([A-Z0-9_]+)\s*=\s*(.*)$", text, re.M):
-                env[m.group(1)] = m.group(2).strip()
-            break
-    for k in ("STOCK_API_BASE", "STOCK_API_KEY"):
-        if os.environ.get(k):
-            env[k] = os.environ[k]
-    return env
+    """【已收拢，保留为薄封装】读入本次运行该用的那份 `.env`（解析见 `env_anchor`，队列 #354）。
+
+    🔴 原写法从本文件**向上逐级找最近的 `.env`**：从 linked worktree 里跑时会先命中
+    `.claude/worktrees/<name>/.env`——该副本 2026-08-18 实测已**陈旧两代**，而命中错的那份
+    **不报错**（fail-silent）。收拢后靠 `--git-common-dir` 规范化到主工作区根，与「那儿碰巧
+    有没有一个 `.env`」无关。
+
+    语义保持不变：**进程环境变量优先于 `.env`**（`load_env()` 是 `setdefault`，已存在的不
+    覆盖）；缺键仍由 `ErpReader` 按本域文案 fail-loud，故此处不传 `required=`、不提前抛。
+
+    🔴 返回值里的**值一律取自 `os.environ`**，`EnvLoadResult` 只用来拿键**名**——它刻意
+    不持有任何键值（见 `env_anchor` 模块 docstring 的硬约束）。
+    """
+    result = _resolve_and_load_env(__file__)
+    return {k: os.environ[k] for k in result.present_keys if os.environ.get(k)}
 
 
 class ErpReader:
