@@ -70,6 +70,9 @@ class RegistryCliTestBase(unittest.TestCase):
         self._lock_calls: list[tuple[str, str]] = []
         self._release_should_succeed = True
         self.module._run_lock = self._fake_run_lock
+        # 绝大多数既有 append 用例不关心 `决策点:` 闸，给它们一封形态合法的
+        # 默认信件；专测该闸的用例自己传 `letter_path=`。
+        self.default_letter = self._write_letter()
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -80,6 +83,25 @@ class RegistryCliTestBase(unittest.TestCase):
             return self._release_should_succeed
         return True
 
+    def _write_letter(self, decision="1 项（试用反馈）", name="信件.md",
+                      frontmatter=True, extra_fields=""):
+        """写一封夹具信，返回相对 `REPO_ROOT` 的路径（CLI 的 `--letter-path`
+        取值形态）。`decision=None` ⇒ 整行不写；`decision=""` ⇒ 写空值。"""
+        rel = f"6-人才与组织/部门AI专员跟进/{name}"
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if frontmatter:
+            lines = ['title: "夹具信"', "status: 待你审", "created: 2026-09-06"]
+            if decision is not None:
+                lines.append(f"决策点: {decision}")
+            if extra_fields:
+                lines.append(extra_fields)
+            body = "---\n" + "\n".join(lines) + "\n---\n\n正文。\n"
+        else:
+            body = "# 没有 frontmatter 的信\n\n决策点: 3 项（正文里的不算）\n"
+        path.write_text(body, encoding="utf-8")
+        return rel
+
     def _write_readme(self, rows: str):
         (self.root / README_REL).write_text(MAIN_HEADER + rows, encoding="utf-8")
 
@@ -87,6 +109,9 @@ class RegistryCliTestBase(unittest.TestCase):
         return (self.root / README_REL).read_text(encoding="utf-8")
 
     def _run(self, func, **kwargs):
+        # `append` 新增必填 `--letter-path`（`决策点:` 前置闸）。不关心该闸的
+        # 用例默认拿到一封形态合法的夹具信，专测该闸的用例显式传 `letter_path`。
+        kwargs.setdefault("letter_path", self.default_letter)
         args = _FakeArgs(**kwargs)
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
@@ -209,6 +234,120 @@ class AppendTests(RegistryCliTestBase):
         self.assertIn("采购部#6", self._readme_text())
 
 
+class DecisionPointGateTests(RegistryCliTestBase):
+    """`append` 的 `决策点:` 前置闸（队列 §一 `#436` ⑶「2026-09-06 派出」(i)）。
+
+    口径来源：`design审前置-口径点台账三开放点收敛-2026-09-01.md` §2.3 P1–P4。
+    形态判据复用 `工具-跟进信frontmatter校验.py::RE_DECISION`（前缀锚定），
+    本文件**不另写一份正则**——否则两处判据会各自漂移，正是该字段当初消亡
+    的同族病因。
+    """
+
+    def _append(self, letter_path):
+        self._write_readme(
+            _row("采购部#5", "采购部 · 姚祖怡", "旧信", "尽快", "📥 已回件并回灌（2026-08-01）")
+        )
+        return self._run(
+            self.module.cmd_append, who="t", department="采购部",
+            recipient_cell="采购部 · 姚祖怡", date="2026-09-06",
+            topic="新事项", deadline_note="无", letter_path=letter_path,
+        )
+
+    # —— 任务书要求的三例 ——
+
+    def test_缺决策点字段即拒登记且不取锁不写入(self):
+        letter = self._write_letter(decision=None, name="缺字段.md")
+        code, _out, err = self._append(letter)
+        self.assertEqual(code, 1)
+        self.assertIn("决策点", err)
+        self.assertIn("1bis", err)  # 拒绝文案必须给出路
+        self.assertNotIn("采购部#6", self._readme_text())
+        self.assertEqual(self._lock_calls, [])
+
+    def test_零项通报信放行(self):
+        letter = self._write_letter(
+            decision="0 项（结果通报＋请验收，无需其决策）", name="通报.md")
+        code, out, _err = self._append(letter)
+        self.assertEqual(code, 0)
+        self.assertIn("[OK]", out)
+        self.assertIn("采购部#6", self._readme_text())
+
+    def test_三项决策点放行(self):
+        letter = self._write_letter(
+            decision="3 项（关闭触发 / 关闭权限 / 部分关闭审计）", name="三点.md")
+        code, out, _err = self._append(letter)
+        self.assertEqual(code, 0)
+        self.assertIn("[OK]", out)
+        # 成功路径也回显守到的取值——这条闸自己不能是「不产生任何信号」的。
+        self.assertIn("决策点=3 项（关闭触发 / 关闭权限 / 部分关闭审计）", out)
+
+    # —— 其余拒绝形态 ——
+
+    def test_决策点为空即拒登记(self):
+        letter = self._write_letter(decision="", name="空值.md")
+        code, _out, err = self._append(letter)
+        self.assertEqual(code, 1)
+        self.assertIn("为空", err)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_形态不合判据即拒登记(self):
+        letter = self._write_letter(decision="唯一 1 项", name="形态错.md")
+        code, _out, err = self._append(letter)
+        self.assertEqual(code, 1)
+        self.assertIn("形态不合判据", err)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_信件不存在即拒登记(self):
+        code, _out, err = self._append("6-人才与组织/部门AI专员跟进/不存在的信.md")
+        self.assertEqual(code, 1)
+        self.assertIn("读不到待登记信件", err)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_无frontmatter即拒登记_正文里的决策点不算数(self):
+        letter = self._write_letter(frontmatter=False, name="无fm.md")
+        code, _out, err = self._append(letter)
+        self.assertEqual(code, 1)
+        self.assertIn("frontmatter", err)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_括号内容不校验(self):
+        # S3 刻意只做前缀锚定：`IT部#5` 的真实取值带括号外后缀，必须放行。
+        letter = self._write_letter(
+            decision="2 项（FO 预测订单接口能否补行级状态字段 / PO 采购订单接口能否补行级关闭状态字段），"
+                     "或告知已有的替代查询方式",
+            name="括号外后缀.md",
+        )
+        code, _out, _err = self._append(letter)
+        self.assertEqual(code, 0)
+
+    def test_dry_run同样过闸_缺字段即拒(self):
+        letter = self._write_letter(decision=None, name="dryrun缺字段.md")
+        self._write_readme(
+            _row("采购部#5", "采购部 · 姚祖怡", "旧信", "尽快", "📥 已回件并回灌（2026-08-01）")
+        )
+        code, _out, err = self._run(
+            self.module.cmd_append, who="t", department="采购部",
+            recipient_cell="采购部 · 姚祖怡", date="2026-09-06",
+            topic="新事项", deadline_note="无", letter_path=letter, dry_run=True,
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("决策点", err)
+
+    def test_绝对路径同样可用(self):
+        rel = self._write_letter(decision="1 项（试用反馈）", name="绝对路径.md")
+        code, _out, _err = self._append(str(self.root / rel))
+        self.assertEqual(code, 0)
+
+    def test_闸不改set_status行为(self):
+        # 本闸只挂 append；`set-status` 不需要也不接受信件路径参数。
+        self._write_readme(_row("采购部#19", "采购部 · 姚祖怡", "事项", "无", "⏳ 待你审"))
+        code, out, _err = self._run(
+            self.module.cmd_set_status, who="t", number="采购部#19", status="🆕 待发",
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("[OK]", out)
+
+
 class SetStatusTests(RegistryCliTestBase):
     def test_合法状态值写入成功(self):
         self._write_readme(_row("采购部#19", "采购部 · 姚祖怡", "事项", "无", "⏳ 待你审"))
@@ -310,6 +449,19 @@ class MainCliTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             with redirect_stderr(io.StringIO()):
                 self.module.main(["append", "--who", "t"])
+
+    def test_append缺letter_path报argparse错误(self):
+        """`--letter-path` 是必填而不是「给了才查」——可省略即可绕过，
+        等于把该字段当初静默消亡的病因原样重造一遍。"""
+        err = io.StringIO()
+        with self.assertRaises(SystemExit):
+            with redirect_stderr(err):
+                self.module.main([
+                    "append", "--who", "t", "--department", "采购部",
+                    "--recipient-cell", "采购部 · 姚祖怡", "--date", "2026-09-06",
+                    "--topic", "x", "--deadline-note", "y",
+                ])
+        self.assertIn("--letter-path", err.getvalue())
 
     def test_未知子命令报错(self):
         with self.assertRaises(SystemExit):

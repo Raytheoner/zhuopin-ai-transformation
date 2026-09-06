@@ -21,12 +21,38 @@
   ——同一件事只应有一份算法，本工具不重算。
 - 编辑锁：以子进程调用 `工具-共享文档编辑锁.py acquire/release`，把它当
   作真实外部依赖使用，不深入其内部实现细节（同人工调用方式一致）。
+- 信件 frontmatter 解析与 `决策点:` 形态判据：importlib 复用
+  `工具-跟进信frontmatter校验.py`（`parse_frontmatter`／`RE_DECISION`）——
+  **不新造第二份 frontmatter 解析器，更不自持一份独立的 `决策点:` 正则**。
+  该模块的 S3 判据刻意只做前缀锚定（`^\\d+\\s*项`）而非全串锚定，理由（全串
+  锚定会误杀 `IT部#5` 的真实取值「2 项（FO…／PO…），或告知已有的替代查询
+  方式」，而一条把真实合法语料判成违规的判据第一次跑就会被人加豁免绕开）
+  写在它自己的 docstring S3 节里；本 CLI 复用它即自动继承该理由，不各锚各的。
+
+## `append` 的 `决策点:` 前置校验（队列 §一 `#436` ⑶「2026-09-06 派出」(i)）
+
+`append` 要求 `--letter-path` 指向本次待登记的信件 `.md`，登记前读其 frontmatter：
+`决策点:` **缺失／为空／取值形态不合判据**者一律拒登记（退出码 1），拒绝文案给
+出路（按 skill `zhuopin-followup-letter` v3.8 §5 步骤 1bis 写）。
+
+**为什么 `--letter-path` 是必填而不是「给了才查」**：该字段 2026-08-11 起 27 封
+无一封写、覆盖率 70%→0%，根因不是人忘了写，而是**漏写不产生任何信号**
+（见 `工具-跟进信frontmatter校验.py` docstring 三处失血表 ⑴）。一个「不传路径
+即绕过」的闸，等于把同一个静默失效原样重造一遍。
+
+**口径来源**：`1-转型规划/0-全景路线图/design审前置-口径点台账三开放点收敛-2026-09-01.md`
+§2.3 拆点判据 P1–P4 —— P1（一个点＝一个能被单独批复的待定判断，判别式「专员
+只答这一条能否成立」）／P2（判例行是点的证据不是点本身，实测约 3:1）／P3（边界
+的现成载体＝字段括号内以 `/` 分隔的每一项）／P4（点的类型决定能否默认生效，
+判据类永不默认生效）。🔴 **本 CLI 只守「写没写」与「形态对不对」，不判点数对
+不对**——拆点是起草侧按 P1 做的专家判断，机器守不了，硬判会逼出假数据。
 
 ## 用法
 
     python 0-学习与工具/工具-跟进信README登记.py append \\
         --who "CC-OP0906A" --department 采购部 --recipient-cell "采购部 · 姚祖怡" \\
-        --date 2026-09-06 --topic "…" --deadline-note "…"
+        --date 2026-09-06 --topic "…" --deadline-note "…" \\
+        --letter-path "6-人才与组织/部门AI专员跟进/采购部-姚祖怡-跟进-2026-09-06-….md"
 
     python 0-学习与工具/工具-跟进信README登记.py set-status \\
         --who "CC-OP0906A" --number 采购部#19 --status "📥 已回件并回灌（…）"
@@ -60,6 +86,16 @@ gate_query = importlib.util.module_from_spec(_gate_query_spec)
 sys.modules[_gate_query_spec.name] = gate_query
 _gate_query_spec.loader.exec_module(gate_query)
 
+# 信件 frontmatter 解析＋`决策点:` 形态判据的唯一来源（见模块 docstring
+# 「复用而非重造」）——同目录既定的 importlib 手法。
+_LETTER_FM_SCRIPT = _TOOLS_DIR / "工具-跟进信frontmatter校验.py"
+_letter_fm_spec = importlib.util.spec_from_file_location(
+    "_followup_registry_letterfm_reuse", _LETTER_FM_SCRIPT
+)
+letter_fm = importlib.util.module_from_spec(_letter_fm_spec)
+sys.modules[_letter_fm_spec.name] = letter_fm
+_letter_fm_spec.loader.exec_module(letter_fm)
+
 REPO_ROOT: Path = editlock.REPO_ROOT
 README_REL = gate_query.README_REL
 
@@ -89,6 +125,15 @@ DRAFT_STATUS = "⏳ 待你审"
 TOPIC_MAX_BYTES = 600
 DEADLINE_NOTE_MAX_BYTES = 400
 UNNUMBERED_ANNOTATION = "（待你审，暂不占号）"
+
+DECISION_FIELD = "决策点"
+# 拒绝文案统一的「出路」尾句——四种拒绝形态共用一份，措辞只有一处可改。
+DECISION_HINT = (
+    "出路：按 skill `zhuopin-followup-letter` v3.8 §5 步骤 1bis 在信件 frontmatter "
+    "写一行 `决策点: N 项（a / b / c）`，按 P1 判别式拆点（专员只答这一条、"
+    "完全不答其他条，这一条能否成立 ⇒ 能即独立一点）；B 类通报信写 "
+    "`决策点: 0 项（结果通报＋请验收，无需其决策）`。"
+)
 
 # 归档件命名（`followup-readme-archive` 能力，2.3 落地后生效；本文件先兼容
 # 「归档件尚不存在」的现状，`glob` 命中 0 个文件属正常）。
@@ -244,6 +289,52 @@ def _assert_gate_open(recipient_cell: str, text: str) -> None:
         )
 
 
+def _assert_decision_points(letter_path: str) -> str:
+    """`append` 前置：信件 frontmatter 必须带非空且形态合判据的 `决策点:`。
+
+    命中即抛 `RegistryError`（退出码 1，未取锁、未写入）。返回读到的取值，
+    供调用方回显——**让「守住了什么」在成功路径上也可见**，否则这条闸自己
+    就成了下一个「不产生任何信号」的机制。
+
+    四种拒绝形态（都给同一句出路，见 `DECISION_HINT`）：
+      ⑴ 文件不存在／读不动；⑵ 非 frontmatter 开头；⑶ 字段缺失或为空；
+      ⑷ 取值形态不合 `letter_fm.RE_DECISION`（前缀锚定 `^\\d+\\s*项`）。
+    """
+    raw = Path(letter_path)
+    path = raw if raw.is_absolute() else REPO_ROOT / raw
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RegistryError(
+            f"读不到待登记信件「{letter_path}」（{exc.__class__.__name__}）——"
+            "`--letter-path` 须指向本次要登记的那封信的 `.md`（仓库根相对路径或"
+            f"绝对路径均可）。{DECISION_HINT}"
+        ) from exc
+
+    parsed = letter_fm.parse_frontmatter(text)
+    if parsed is None:
+        raise RegistryError(
+            f"信件「{letter_path}」不以 frontmatter（首行 `---`）开头，无法读取 "
+            f"`{DECISION_FIELD}:`——拒绝登记。{DECISION_HINT}"
+        )
+    fields, _order = parsed
+    value = fields.get(DECISION_FIELD, "").strip()
+    if not value:
+        missing = "缺" if DECISION_FIELD not in fields else "为空"
+        raise RegistryError(
+            f"信件「{letter_path}」frontmatter {missing} `{DECISION_FIELD}:` 字段——"
+            f"拒绝登记。{DECISION_HINT}"
+        )
+    if not letter_fm.RE_DECISION.match(value):
+        raise RegistryError(
+            f"信件「{letter_path}」的 `{DECISION_FIELD}: {value}` 形态不合判据——"
+            "取值须以「数字＋项」开头（如 `0 项（…）`／`3 项（a / b / c）`）；"
+            "括号内怎么写不校验（判据只做前缀锚定，理由见 "
+            f"`工具-跟进信frontmatter校验.py` S3）。{DECISION_HINT}"
+        )
+    return value
+
+
 def _catches_registry_errors(func):
     """`RegistryError`／`LockAcquireFailedError` 统一在这里落成「打印 + 退出码
     1」——`cmd_append`／`cmd_set_status` 本身可被直接调用（单测既定手法），
@@ -266,6 +357,8 @@ def _catches_registry_errors(func):
 @_catches_registry_errors
 def cmd_append(args: argparse.Namespace) -> int:
     _assert_field_lengths(args.topic, args.deadline_note)
+    # 纯输入校验，排在读 README 之前——拒绝时连主表都不必读。
+    decision_value = _assert_decision_points(args.letter_path)
 
     text = _readme_path().read_text(encoding="utf-8")
     _assert_gate_open(args.recipient_cell, text)
@@ -285,7 +378,7 @@ def cmd_append(args: argparse.Namespace) -> int:
 
     print(
         f"[PLAN] append：{number_cell} ｜ {args.date} ｜ {args.recipient_cell} ｜"
-        f" 状态={DRAFT_STATUS}"
+        f" 状态={DRAFT_STATUS} ｜ {DECISION_FIELD}={decision_value}"
     )
     if args.dry_run:
         print("[DRY-RUN] 未取锁、未写入。")
@@ -423,6 +516,11 @@ def main(argv: list[str] | None = None) -> int:
     p_append.add_argument("--date", required=True, help="YYYY-MM-DD")
     p_append.add_argument("--topic", required=True, help="主要事项（≤600 B）")
     p_append.add_argument("--deadline-note", required=True, help="交期要点（≤400 B）")
+    p_append.add_argument(
+        "--letter-path", required=True,
+        help="本次待登记信件的 .md（仓库根相对或绝对路径）；其 frontmatter 必须"
+             "带非空 `决策点:`，缺则拒登记",
+    )
     p_append.add_argument("--dry-run", action="store_true")
     p_append.set_defaults(func=cmd_append)
 
