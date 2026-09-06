@@ -153,6 +153,30 @@ class FollowupReadmeDigestTests(unittest.TestCase):
         self.assertEqual(data["total_rows"], 2)
         self.assertEqual(len(data["rows"]), 2)
 
+    def test_file参数指向归档件时读取归档件而非主表(self):
+        """`followup-readme-phase2` D2 任务 2.5：归档件章节标题/表头与主表
+        一致，同一套解析逻辑读取，供人工核对历史用。"""
+        self._write_readme(_row("采购部#22", "采购部 · 姚祖怡", "尽快", "🆕 待发"))
+        archive_rel = "6-人才与组织/部门AI专员跟进/README-归档-202609.md"
+        (self.root / archive_rel).write_text(
+            README_HEADER + _row("采购部#1", "采购部 · 姚祖怡", "尽快", "❌ 已作废"),
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.module.main(["--digest", "--file", archive_rel])
+        self.assertEqual(code, 0)
+        self.assertIn("采购部#1", buf.getvalue())
+        self.assertNotIn("采购部#22", buf.getvalue())
+
+    def test_file参数省略时默认读主表行为不变(self):
+        self._write_readme(_row("采购部#22", "采购部 · 姚祖怡", "尽快", "🆕 待发"))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.module.main(["--digest"])
+        self.assertEqual(code, 0)
+        self.assertIn("采购部#22", buf.getvalue())
+
     def test_README表损坏退出码1(self):
         (self.root / README_REL).write_text("这份文件里没有任何跟进信表格\n", encoding="utf-8")
         buf = io.StringIO()

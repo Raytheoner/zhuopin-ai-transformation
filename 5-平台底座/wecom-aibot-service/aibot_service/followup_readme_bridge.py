@@ -69,12 +69,19 @@ from zhuopin_platform.shared_tools import followup_gate
 from . import patrol_dispatch, patrol_signal
 from .queue_edit_lock import QueueLockBusy
 from .readme_table import (
+    MAIN_TABLE_SECTION,
     ReadmeTableError,
     column_index,
     extract_target_filename,
     iter_rows,
     write_status,
 )
+
+# `followup-readme-phase2` D2：归档件命名形态（`followup-readme-archive`
+# 能力，2.3 落地后生效）——归档件表头/列序/章节标题与主表一致，故沿用同一
+# 套 `iter_rows` 解析，不新造第二份。归档件尚不存在时 glob 天然返回空，
+# 下方 `_stem_match_in_archives` 恒返回 None，不是特殊分支。
+_ARCHIVE_GLOB = "README-归档-*.md"
 
 # 🔴 必须是**仓库相对、正斜杠**的字面量：`工具-共享文档编辑锁.py::cmd_release`
 # 按 `args.file == FOLLOWUP_README_TARGET` 逐字比对来决定跑不跑 README 那套
@@ -99,6 +106,10 @@ ACTION_NO_README = "no_readme"
 ACTION_SUPPLEMENT = "supplement_after_closed"   # 最新一封已闭环 ⇒ 低噪，常态
 ACTION_NO_DISPATCHED = "no_dispatched_letter"   # 该收信人无已发出的信 ⇒ WARN
 ACTION_NO_DEPARTMENT = "no_department"          # 收信人解析不出 ⇒ WARN
+# `followup-readme-phase2` D2：回件 stem 命中一封已归档的旧信 ⇒ 低噪、常态
+# ——同 `ACTION_SUPPLEMENT` 一样不写 README、不告警，只是触发路径不同
+# （那条是"该部门当前最新信已闭环"，这条是"命中的是一封已归档的旧信"）。
+ACTION_ARCHIVED_SUPPLEMENT = "supplement_for_archived"
 
 
 @dataclass
@@ -141,15 +152,17 @@ def _cell(row, index: int) -> str:
     return row.cells[index] if 0 <= index < len(row.cells) else ""
 
 
-def _letter_rows(readme_text: str) -> tuple[list, dict]:
-    """README 表格 → (`followup_gate.LetterRow` 列表, {编号: RowLocation})。
+def _rows_to_letters(rows: list) -> tuple[list, dict]:
+    """一批已解析的 `RowLocation` → (`followup_gate.LetterRow` 列表,
+    {编号: RowLocation})——`_letter_rows`（活表）与
+    `_stem_match_in_archives`（归档件）共用同一段列定位/装配逻辑，避免
+    两份实现各自维护一套列序假设。
 
     列位置按表头字样定位（`readme_table.column_index`），不写死序号——该表
     的列顺序不归本模块管，而写死序号的失效形态是「读到了另一列的内容，且
     完全不报错」。定位不到则回落到实测的固定序号，并且**只在这种情况下**
     回落，不静默把两条路径混用。
     """
-    rows = iter_rows(readme_text)
     header = rows[0].header_cells if rows else []
     num_idx = column_index(header, "编号")
     date_idx = column_index(header, "日期")
@@ -176,9 +189,68 @@ def _letter_rows(readme_text: str) -> tuple[list, dict]:
     return letters, locations
 
 
-def _pair(readme_text: str, archived_filename: str, department: Optional[str]):
-    """跑一次两级配对，返回 (`PairingOutcome`, 命中行的 `RowLocation` 或 None)。"""
+def _letter_rows(readme_text: str) -> tuple[list, dict]:
+    """README 活表 → (`followup_gate.LetterRow` 列表, {编号: RowLocation})。"""
+    return _rows_to_letters(iter_rows(readme_text))
+
+
+def _stem_match_in_archives(repo_root: Path, archived_filename: str):
+    """`followup-readme-phase2` D2：活表 stem 未命中时，在落回通道②「最新
+    一封」之前，先查归档件是否有 stem 命中。命中即返回那封信的
+    `followup_gate.LetterRow`（不返回 `RowLocation`——它已不在活表，没有
+    可写的位置）；未命中（含归档件尚不存在）返回 `None`。
+
+    🔴 只读、不抛——同 `resolve_letter_number` 的既有契约（本函数是它与
+    `mark_reply_arrived` 共用的前置查找，任何解析异常都不该把"查一下归档"
+    升级成一次可能失败的事务）。逐份归档件独立 try/except，单份损坏不影响
+    其余归档件被查到。
+    """
+    readme_dir = (repo_root / FOLLOWUP_README_REL).parent
+    if not readme_dir.is_dir():
+        return None
+    for archive_path in sorted(readme_dir.glob(_ARCHIVE_GLOB)):
+        try:
+            text = archive_path.read_text(encoding="utf-8")
+            rows = iter_rows(text, MAIN_TABLE_SECTION)
+        except (OSError, ReadmeTableError):
+            continue
+        letters, _locations = _rows_to_letters(rows)
+        for letter in letters:
+            if letter.target_filename and followup_gate.reply_matches_letter(
+                archived_filename, letter.target_filename
+            ):
+                return letter
+    return None
+
+
+def _pair(readme_text: str, archived_filename: str, department: Optional[str],
+          repo_root: Optional[Path] = None):
+    """跑一次配对，返回 (`PairingOutcome`, 命中行的 `RowLocation` 或 None)。
+
+    顺序（`followup-readme-phase2` D2 新增第 0 级，`repo_root` 传入时生效）：
+    ⓪ 归档件 stem 命中 → 视为「回件命中一封已归档的旧信」，不写 README、
+       不落入通道②；① 活表 stem 精确匹配；② 该收信人最新一封已发出的信。
+    ⓪ 必须排在②之前——否则一条回给旧信的回件会被通道②误配给该部门**当前**
+    最新一封活信（详见 `followup_gate.PAIR_MISS_ARCHIVED_STEM` 处的红字）。
+    """
     letters, locations = _letter_rows(readme_text)
+    stem_hit_live = any(
+        letter.target_filename
+        and followup_gate.reply_matches_letter(archived_filename, letter.target_filename)
+        for letter in letters
+    )
+    if not stem_hit_live and repo_root is not None:
+        archived_letter = _stem_match_in_archives(repo_root, archived_filename)
+        if archived_letter is not None:
+            outcome = followup_gate.PairingOutcome(
+                channel=followup_gate.PAIR_MISS_ARCHIVED_STEM,
+                letter=archived_letter,
+                detail=(
+                    f"归档件 stem 命中「{archived_letter.number}」——该信已归档"
+                    "（必然已闭环），回件视为闭环后的补充说明，不改 README。"
+                ),
+            )
+            return outcome, None
     outcome = followup_gate.pair_reply_to_letter(
         archive_filename=archived_filename,
         department=department,
@@ -215,6 +287,7 @@ _MISS_ACTION = {
     followup_gate.PAIR_MISS_LATEST_CLOSED: ACTION_SUPPLEMENT,
     followup_gate.PAIR_MISS_NO_DISPATCHED: ACTION_NO_DISPATCHED,
     followup_gate.PAIR_MISS_NO_DEPARTMENT: ACTION_NO_DEPARTMENT,
+    followup_gate.PAIR_MISS_ARCHIVED_STEM: ACTION_ARCHIVED_SUPPLEMENT,
 }
 
 
@@ -243,7 +316,7 @@ def resolve_letter_number(
     """
     try:
         readme_text = (repo_root / FOLLOWUP_README_REL).read_text(encoding="utf-8")
-        outcome, row = _pair(readme_text, archived_filename, department)
+        outcome, row = _pair(readme_text, archived_filename, department, repo_root=repo_root)
     except Exception:  # noqa: BLE001 —— 见纪律⑵
         return None
     # 🔴 **不能只认 `outcome.matched`**：队列 #416 ⑸ 点名的那份 08-26 回件
@@ -255,9 +328,15 @@ def resolve_letter_number(
     #
     # 反过来，`no_dispatched_letter` / `no_department` 两条**根本没有 letter**
     # ⇒ 仍然是 None，不猜。
-    if row is None or outcome.letter is None:
+    #
+    # 🔴 **不能再用 `row is None` 作为判据的一部分**（`followup-readme-
+    # phase2` D2）：归档件 stem 命中时 `outcome.letter` 确定非空，但该信已
+    # 不在活表、`row` 恒为 None——若仍按旧判据在此处返回 None，等于让归档件
+    # 命中的编号又消失在文件名里，白做了 D2 那道查找。判据统一改为只看
+    # `outcome.letter`。
+    if outcome.letter is None:
         return None
-    number = _row_number(row).strip()
+    number = outcome.letter.number.strip()
     # 编号自身含 `-` 会破坏 `_ARCHIVE_NAME_RE` 的分段（见那里的红字）——
     # 形态不合即当作没拿到，宁可少一段，不生成一个解析不回来的文件名。
     if not number or "-" in number or "#" not in number:
@@ -336,7 +415,7 @@ def mark_reply_arrived(
     health = _health_note(readme_text)
 
     try:
-        outcome, row = _pair(readme_text, archived_filename, department)
+        outcome, row = _pair(readme_text, archived_filename, department, repo_root=repo_root)
     except ReadmeTableError as exc:
         return _record(audit, evaluator, BridgeResult(
             ACTION_NO_README, detail=f"README 表格解析失败：{exc}"
@@ -376,7 +455,9 @@ def mark_reply_arrived(
             # 改过这一格（这正是编辑锁存在的理由）。用锁外读到的
             # `RowLocation` 直接写回，等于把别人的改动按行号覆盖掉。
             fresh_text = readme_path.read_text(encoding="utf-8")
-            fresh_outcome, fresh_row = _pair(fresh_text, archived_filename, department)
+            fresh_outcome, fresh_row = _pair(
+                fresh_text, archived_filename, department, repo_root=repo_root
+            )
             if fresh_row is None or not fresh_outcome.matched:
                 return _record(audit, evaluator, BridgeResult(
                     _MISS_ACTION.get(fresh_outcome.channel, ACTION_UNMATCHED),
@@ -437,6 +518,7 @@ _LOG_PREFIX = {
     ACTION_MARKED: "✓",
     ACTION_ALREADY: "·",
     ACTION_SUPPLEMENT: "·",
+    ACTION_ARCHIVED_SUPPLEMENT: "·",
     ACTION_UNMATCHED: "⚠",
     ACTION_NO_DISPATCHED: "⚠",
     ACTION_NO_DEPARTMENT: "⚠",

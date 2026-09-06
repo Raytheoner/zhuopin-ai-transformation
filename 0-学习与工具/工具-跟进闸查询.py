@@ -136,16 +136,85 @@ def _readme_rows(readme_text: str):
     return rows
 
 
+_ARCHIVE_GLOB = "README-归档-*.md"
+
+
+def _archived_max_number(department: str) -> int:
+    """`followup-readme-phase2` D2：扫全部归档件，取该部门出现过的最大
+    `#N`。2026-09-06 归档能力落地前实测坐实的风险——若某部门在主表里只剩
+    低编号在途信（其历史高编号信已全部归档），`_next_available_number`
+    若只看主表会把「下一个可用号」算低，与一个刚被迁走的归档编号撞上，
+    直接违反「归档编号不复用」。归档件尚不存在（`glob` 命中 0 个文件）时
+    天然返回 0，不是特殊分支。逐份归档件独立 try/except，单份解析失败不
+    影响其余归档件被扫到（同 `resolve_letter_number` 的既有容错惯例）。
+    """
+    readme_dir = (REPO_ROOT / README_REL).parent
+    if not readme_dir.is_dir():
+        return 0
+    highest = 0
+    for archive_path in readme_dir.glob(_ARCHIVE_GLOB):
+        try:
+            text = archive_path.read_text(encoding="utf-8")
+            rows = iter_rows(text)
+        except (OSError, ReadmeTableError):
+            continue
+        num_idx = column_index(rows[0].header_cells, "编号") if rows else None
+        if num_idx is None:
+            continue
+        for row in rows:
+            if len(row.cells) <= num_idx:
+                continue
+            parsed = followup_gate.parse_letter_number(row.cells[num_idx])
+            if parsed and parsed[0] == department:
+                highest = max(highest, parsed[1])
+    return highest
+
+
+def _archived_recipients() -> dict[str, str]:
+    """`followup-readme-phase2` D2（2026-09-06 归档实施后实测坐实的缺口）：
+    扫全部归档件，返回 {姓名: 部门}——供 `build_report`/`all_recipients` 在
+    主表已无该收信人任何行时（其全部历史信均已归档，如首个真实归档批次
+    里的「销售部 · 泓钦」）仍能确认「历史上确有此人，只是信已全部归档」，
+    而不是把「查不到」误判为「这个名字压根不存在」。
+    """
+    readme_dir = (REPO_ROOT / README_REL).parent
+    result: dict[str, str] = {}
+    if not readme_dir.is_dir():
+        return result
+    for archive_path in sorted(readme_dir.glob(_ARCHIVE_GLOB)):
+        try:
+            text = archive_path.read_text(encoding="utf-8")
+            rows = iter_rows(text)
+        except (OSError, ReadmeTableError):
+            continue
+        header = rows[0].header_cells if rows else []
+        col = column_index(header, "收信人")
+        if col is None:
+            continue
+        for row in rows:
+            if len(row.cells) <= col:
+                continue
+            dept, name = split_department_and_name(row.cells[col])
+            if name and name not in result:
+                result[name] = dept
+    return result
+
+
 def _next_available_number(rows, number_col: int, department: str | None) -> str | None:
-    """该部门下一个可用号 ＝ 表中该部门已出现的最大 `#N` ＋ 1。
+    """该部门下一个可用号 ＝ max(表中该部门已出现的最大 `#N`, 全部归档件中
+    该部门已出现的最大 `#N`) ＋ 1。
 
     ⚠️ 只看**下表**，不读 README 顶部那段自由文本的「当前各部门下一个可用
     号」——那一段实测已连续失真四次（2026-08-10／08-12／08-18／08-21），
     正是本工具存在的理由之一。
+
+    🔴 **必须同时看归档件**（`followup-readme-phase2` D2 补丁，2026-09-06）：
+    某部门若已无新信、其主表在途信恰好都是低编号，而历史高编号信已归档，
+    只看主表会把编号往回算，与刚归档的编号撞上。
     """
     if not department:
         return None
-    highest = 0
+    highest = _archived_max_number(department)
     for row in rows:
         parsed = followup_gate.parse_letter_number(row.cells[number_col])
         if parsed and parsed[0] == department:
@@ -255,6 +324,24 @@ def build_report(recipient: str, readme_text: str) -> GateReport:
         if name == recipient:
             latest, department = row, dept
     if latest is None:
+        # `followup-readme-phase2` D2：主表查不到不等于这个人不存在——他的
+        # 全部历史信可能已被归档（如首个真实归档批次里的「销售部 · 泓钦」，
+        # 其唯一一封信 2026-09-06 因终态+超30天被迁走）。查不到即报「不存在」
+        # 会把「历史信已了结」误判成「压根没这个人」。
+        archived_department = _archived_recipients().get(recipient)
+        if archived_department is not None:
+            return GateReport(
+                recipient=recipient,
+                department=archived_department,
+                gate_open=True,
+                letter_number="（无在途，历史信件均已归档）",
+                letter_status="（该收信人历史信件均已归档，当前无在途信）",
+                letter_status_kind="closed",
+                letter_target_file=None,
+                next_number=_next_available_number(rows, number_col, archived_department),
+                pending_intakes=[],
+                warnings=[],
+            )
         known = sorted({
             n for r in rows
             for _, n in [split_department_and_name(r.cells[recipient_col])] if n
@@ -320,7 +407,12 @@ def build_report(recipient: str, readme_text: str) -> GateReport:
 
 
 def all_recipients(readme_text: str) -> list[str]:
-    """README 清单里出现过的全部收信人，按首次出现顺序去重。"""
+    """主表 ＋ 归档件里出现过的全部收信人，按首次出现顺序去重（主表在前）。
+
+    `followup-readme-phase2` D2：归档实施后，某收信人的全部历史信可能已
+    全部迁出主表——若只看主表，`--all` 会把他从值周巡检的名单里悄悄漏掉，
+    与「归档动作不改变活行读取方结果」的既定承诺冲突。
+    """
     rows = _readme_rows(readme_text)
     recipient_col = column_index(rows[0].header_cells, "收信人")
     if recipient_col is None:
@@ -329,6 +421,9 @@ def all_recipients(readme_text: str) -> list[str]:
     for row in rows:
         _, name = split_department_and_name(row.cells[recipient_col])
         if name and name not in seen:
+            seen.append(name)
+    for name in _archived_recipients():
+        if name not in seen:
             seen.append(name)
     return seen
 

@@ -122,6 +122,50 @@ class GateQueryTests(unittest.TestCase):
             self.assertEqual(self.module.main(["--to", "查无此人"]), 2)
         self.assertIn("姚祖怡", buf.getvalue())
 
+    def test_主表无该收信人但归档件有其历史信时闸开且不报错(self):
+        """`followup-readme-phase2` D2（2026-09-06 归档实施后实测坐实）：
+        某收信人的全部历史信被归档、主表已无其任何行时，MUST NOT 被当成
+        「这个人不存在」——须视为「无在途、闸开」，同真实生产案例
+        「销售部 · 泓钦」（其唯一一封信因终态+超30天被迁走）。"""
+        self._write_readme(
+            _readme_row("采购部#17", "采购部 · 姚祖怡", "在途", "⏳ 待你审")
+        )
+        archive_rel = "6-人才与组织/部门AI专员跟进/README-归档-202609.md"
+        (self.root / archive_rel).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / archive_rel).write_text(
+            README_HEADER
+            + _readme_row("销售部（未发，不编号）", "销售部 · 泓钦", "旧事项", "❌ 已作废"),
+            encoding="utf-8",
+        )
+        report = self._report("泓钦")
+        self.assertTrue(report.gate_open)
+        self.assertEqual(report.department, "销售部")
+        self.assertEqual(report.letter_status_kind, "closed")
+        self.assertEqual(report.next_number, "销售部#1")
+        self.assertEqual(report.pending_intakes, [])
+
+    def test_主表与归档件均无该收信人时仍报不存在(self):
+        self._write_readme(_readme_row("采购部#17", "采购部 · 姚祖怡", "x", "✅ 已推送"))
+        with self.assertRaises(self.module.GateQueryError):
+            self._report("查无此人")
+
+    def test_all须包含全部历史信已归档的收信人(self):
+        self._write_readme(
+            _readme_row("采购部#17", "采购部 · 姚祖怡", "在途", "⏳ 待你审")
+        )
+        archive_rel = "6-人才与组织/部门AI专员跟进/README-归档-202609.md"
+        (self.root / archive_rel).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / archive_rel).write_text(
+            README_HEADER
+            + _readme_row("销售部（未发，不编号）", "销售部 · 泓钦", "旧事项", "❌ 已作废"),
+            encoding="utf-8",
+        )
+        recipients = self.module.all_recipients(
+            (self.root / README_REL).read_text(encoding="utf-8")
+        )
+        self.assertIn("泓钦", recipients)
+        self.assertIn("姚祖怡", recipients)
+
     def test_README表损坏退出码2(self):
         (self.root / README_REL).write_text("这份文件里没有任何表格\n", encoding="utf-8")
         buf = io.StringIO()
@@ -154,6 +198,21 @@ class GateQueryTests(unittest.TestCase):
             + _readme_row("采购部#17", "采购部 · 姚祖怡", "y", "📥 已回件并回灌")
         )
         self.assertEqual(self._report("姚祖怡").next_number, "采购部#18")
+
+    def test_下一个可用号须同时看归档件不因主表回退而撞号(self):
+        """`followup-readme-phase2` D2 补丁（2026-09-06 实测坐实）：某部门
+        历史高编号信已归档、主表仅剩低编号在途信时，取号不得往回算。"""
+        self._write_readme(
+            _readme_row("采购部#5", "采购部 · 姚祖怡", "在途", "⏳ 待你审")
+        )
+        archive_rel = "6-人才与组织/部门AI专员跟进/README-归档-202609.md"
+        (self.root / archive_rel).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / archive_rel).write_text(
+            README_HEADER
+            + _readme_row("采购部#11", "采购部 · 姚祖怡", "旧", "❌ 已作废"),
+            encoding="utf-8",
+        )
+        self.assertEqual(self._report("姚祖怡").next_number, "采购部#12")
 
     def test_未知状态写法按在途保守处理且必须告警(self):
         self._write_readme(_readme_row("采购部#17", "采购部 · 姚祖怡", "x", "🤔 说不清"))

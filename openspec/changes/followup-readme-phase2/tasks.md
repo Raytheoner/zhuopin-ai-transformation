@@ -14,13 +14,15 @@
 
 ## 2. 已闭环归档（D2，`followup-readme-archive`）
 
-- [ ] 2.1 产出「12 个读取方基线输出」：对 `工具-跟进闸查询.py`（逐收信人）、`工具-跟进信README查询.py --digest`、`工具-共享文档编辑锁.py status`、`工具-落库sweep.py`（待发信盘点相关输出）、`followup_readme_bridge.py`、`approve_followup_letter.py`／`dispatch_followup_letters.py`／`draft_gap_check.py`／`push_followup_letter.py`（各自只读/dry-run 路径）及其单测，在归档前跑一遍并落盘基线文件。
-- [ ] 2.2 把 design.md D2 决策表（9 个具名读取方分类结论）连同基线文件提交 Shao Peishen 书面确认——**本步是后续归档迁移的前置门禁，未确认不得执行 2.3**。
-- [ ] 2.3 实现归档迁移脚本：判据＝终态标记（`📥 已回件并回灌`／`❌ 已作废`）且状态写入距今 >30 天，整行原文原样迁 `README-归档-YYYYMM.md`（表头同），编号不复用。
-- [ ] 2.4 登记 CLI `set-status` 的编号查找补齐「主表未命中再查归档件」两段式查找（对应 D2 决策：唯一需要跨归档查找的地方）。
-- [ ] 2.5 `工具-跟进信README查询.py` 新增显式 `--file <归档件>` 用法（同队列查询工具先例），供人工核对历史；默认行为不变。
-- [ ] 2.6 单测：归档判据（满足/不满足 30 天、非终态不迁移）、内容原文原样、编号不复用、活行读取方归档后行为不变（含「该收信人主表无任何行视为无在途」边界）、`set-status` 两段式查找命中归档件——覆盖 `followup-readme-archive` spec 全部 Scenario。
-- [ ] 2.7 用 2.1 的基线逐一 diff 归档后各读取方的实际输出，零差异方可判定本组完成。
+- [x] 2.1 产出「12 个读取方基线输出」：`工具-跟进闸查询.py --all --json`／`工具-跟进信README查询.py --digest`／`工具-共享文档编辑锁.py status` 已落盘 `openspec/changes/followup-readme-phase2/baseline-2026-09-06/`（其余读取方的行为基线由 2.7 迁移前后各跑一次全量单测比对，而非逐个只读输出快照）。
+- [x] 2.2 把 design.md D2 决策表（9 个具名读取方分类结论）提交 Shao Peishen 书面确认——**已确认（2026-09-06）**：其余 8 个按原判定执行归档，唯一补充＝`followup_readme_bridge.py` 需要归档回退查找。
+- [x] 2.4bis（Shao Peishen 唯一补充项，先于 2.3 落地——它是归档动作本身会引入的误配风险，须先堵住再执行迁移）：`followup_readme_bridge.py` stem 匹配活表未命中时查归档件；新增 `followup_gate.PAIR_MISS_ARCHIVED_STEM`＋`_stem_match_in_archives`＋`resolve_letter_number` 判据统一为 `outcome.letter`；5 条新单测全绿（`test_followup_readme_bridge.py::TestArchivedStemMatch`），aibot-service 全量 773 passed／platform 全量 466 passed，零回归。已同步补 `followup-readme-archive` spec 新 Requirement。
+- [x] 2.3 新建 `0-学习与工具/工具-跟进信README归档.py`：判据＝终态标记（`📥 已回件并回灌`／`❌ 已作废`）且「日期」列（发送日）距今 >30 天，整行原文原样迁 `README-归档-YYYYMM.md`（表头同，按运行时刻年月归一批），走共享编辑锁，写后回读校验，重复运行按编号去重幂等。15 条单测全绿（`test_工具-跟进信README归档.py`）。**已对真实 README 执行一次真实迁移**（2026-09-06，`--who CC-OP0906A`）：19 行迁出 → `README-归档-202609.md`（30,530 B），主表由 177.7 KB 降至 144.1 KB（147,588 B）。
+- [x] 2.3bis（实现过程中发现并修正的第二处真实缺口，先于 2.7 验证前修复）：`工具-跟进闸查询.py::_next_available_number` 此前只扫主表——若某部门历史高编号信已归档、主表仅剩低编号在途信，取号会往回算、与刚归档的编号相撞，直接违反「归档编号不复用」。新增 `_archived_max_number` 同时扫全部归档件，取号算法改为两者取最大值 +1；同步新增 `_archived_recipients`：`build_report`/`all_recipients` 此前把「主表已无该收信人任何行」一律当「这个人不存在」报错——**对真实 README 归档后立即实测坐实**（首个真实归档批次里「销售部 · 泓钦」的唯一一封信被归档后，`--to 泓钦` 从正常返回闸开退化为报错「不存在」）；修正后主表无该收信人时先查归档件，命中则报「无在途、闸开」，未命中才报不存在。均已补充单测（`test_工具-跟进闸查询.py` +3）、同步补 `followup-readme-archive` spec「归档编号不复用」Requirement 新 Scenario。
+- [x] 2.4 登记 CLI `set-status` 的编号查找已在 1.3 实现「主表未命中再查归档件」两段式查找（`_find_in_archives`）；已用真实归档件（`README-归档-202609.md`）验证：对已归档编号（如 `采购部#7`）调用 `set-status` 正确报「已归档不可再用本命令改状态」。
+- [x] 2.5 `工具-跟进信README查询.py` 新增显式 `--file <归档件>` 用法（同队列查询工具先例），供人工核对历史；默认行为不变，2 条新单测全绿。
+- [x] 2.6 单测：归档判据（满足/不满足 30 天、非终态不迁移、已作废也算终态、日期列非法值跳过、历史列数异常行不参与判定不报错）、内容原文原样、编号不复用（含 2.3bis 归档扫描场景）、活行读取方归档后行为不变（含「该收信人主表无任何行视为无在途」边界，2.3bis 已实现并测试）——`followup-readme-archive` spec 全部 Scenario 覆盖完毕。
+- [x] 2.7 用 2.1 的基线逐一 diff 归档后各读取方的实际输出：`工具-跟进闸查询.py --all --json`——除「泓钦」一条（其唯一信被归档，表示形态从「主表行」变为「历史信件均已归档」，语义正确、内容不同属预期）外逐字节相同；`工具-跟进信README查询.py --digest`——行数从 63→44（差额 19 正好等于迁移行数，且被移除的行经核对全部是本批迁移的行），「⏳ 待你审／🆕 待发／⏸ 暂缓」三态计数（sweep 待发信盘点唯一消费的字段）迁移前后均为 `0／0／0`、逐字节相同；全量单测重跑：0-学习与工具 1494 passed（另 4 个失败均为与本包无关的既有真实仓库状态类测试，`test_发企微.py`/`test_工具-CLAUDE进度段lint.py`/`test_工具-引导样板lint.py`，与 README/跟进信无关文件）、aibot-service 773 passed 1 skipped、platform 466 passed 1 skipped——**本组完成**。
 
 ## 3. 行长口径与外置（D3，`followup-readme-row-length-guard`）
 

@@ -263,6 +263,97 @@ class TestSupplementAfterClosed:
         assert fg.is_closed_status(status_of(path, "采购部#17")), "不得重开在途"
 
 
+def write_archive(repo_root: Path, name: str, rows: list[str]) -> Path:
+    """`followup-readme-phase2` D2：写一份归档件（表头/章节标题与主表一致，
+    `_stem_match_in_archives` 按同一套 `iter_rows` 解析）。"""
+    path = repo_root / bridge.FOLLOWUP_README_REL
+    path = path.parent / f"README-归档-{name}.md"
+    path.write_text(README_HEADER + "".join(
+        r if r.endswith("\n") else r + "\n" for r in rows
+    ), encoding="utf-8")
+    return path
+
+
+class TestArchivedStemMatch:
+    """`followup-readme-phase2` D2（2026-09-06，Shao Peishen 对 9 读取方分类
+    的唯一补充项）：活表 stem 未命中时，通道②「最新一封」之前先查归档件，
+    命中即视为「回件命中一封已归档的旧信」——不写 README、不告警、不误配
+    给该部门当前最新一封活信。"""
+
+    def test_归档件stem命中不写README且低噪(self, repo):
+        # 活表只剩该部门一封全新的信（无 target_filename），若没有 D2 的
+        # 归档回退，回件会被通道②误配给它。
+        path = write_rows(repo, [
+            row("采购部#22", "2026-09-06", "✅ 已推送 2026-09-06 08:00 UTC"),
+        ])
+        write_archive(repo, "202608", [
+            row("采购部#17", "2026-08-20", "📥 已回件并回灌（2026-08-21 拆件巡逻）",
+                target=LETTER_FILE),
+        ])
+        before = path.read_text(encoding="utf-8")
+        audit, logs, alerts = FakeAudit(), [], []
+        result, lock = run(repo, filename=ARCHIVED, audit=audit, logs=logs,
+                           alert_send=alerts.append)
+        assert result.action == bridge.ACTION_ARCHIVED_SUPPLEMENT
+        assert result.letter_number == "采购部#17"
+        assert result.channel == fg.PAIR_MISS_ARCHIVED_STEM
+        assert path.read_text(encoding="utf-8") == before, "README 必须一字未动"
+        assert lock.attempts == 0, "不改就不该去抢锁"
+        assert not alerts, "命中归档旧信是预期内常态，不得告警"
+        assert logs and logs[0].startswith("·")
+        assert audit.actions()[0] == "followup_readme_bridge_supplement_for_archived"
+        assert fg.REPLY_ARRIVED_STATUS not in status_of(path, "采购部#22"), (
+            "不得把这条回件误配给该部门当前最新一封活信"
+        )
+
+    def test_归档件stem未命中时正常落回通道二(self, repo):
+        write_archive(repo, "202608", [
+            row("采购部#5", "2026-08-01", "❌ 已作废", target="别的信.md"),
+        ])
+        path = write_rows(repo, [
+            row("采购部#17", "2026-08-20", "✅ 已推送 2026-08-20 12:20 UTC"),
+        ])
+        result, _ = run(repo, filename=TEXT_FEEDBACK)
+        assert result.action == bridge.ACTION_MARKED
+        assert result.channel == fg.PAIR_CHANNEL_LATEST
+        assert fg.REPLY_ARRIVED_STATUS in status_of(path, "采购部#17")
+
+    def test_活表stem命中时不查归档直接止步(self, repo):
+        """① 活表 stem 优先于 ⓪ 归档查找——命中活表就不该再去扫归档件。"""
+        path = write_rows(repo, [
+            row("采购部#17", "2026-08-20", "✅ 已推送 2026-08-20 12:20 UTC",
+                target=LETTER_FILE),
+        ])
+        write_archive(repo, "202608", [
+            row("采购部#3", "2026-07-01", "❌ 已作废", target=LETTER_FILE),
+        ])
+        result, _ = run(repo, filename=ARCHIVED)
+        assert result.action == bridge.ACTION_MARKED
+        assert result.letter_number == "采购部#17"
+        assert result.channel == fg.PAIR_CHANNEL_STEM
+
+    def test_没有归档件时行为与改造前一致(self, repo):
+        path = write_rows(repo, [
+            row("采购部#17", "2026-08-20", "✅ 已推送 2026-08-20 12:20 UTC"),
+        ])
+        result, _ = run(repo, filename=TEXT_FEEDBACK)
+        assert result.action == bridge.ACTION_MARKED
+        assert result.channel == fg.PAIR_CHANNEL_LATEST
+
+    def test_resolve_letter_number对归档命中返回编号(self, repo):
+        write_rows(repo, [
+            row("采购部#22", "2026-09-06", "✅ 已推送 2026-09-06 08:00 UTC"),
+        ])
+        write_archive(repo, "202608", [
+            row("采购部#17", "2026-08-20", "📥 已回件并回灌（2026-08-21 拆件巡逻）",
+                target=LETTER_FILE),
+        ])
+        number = bridge.resolve_letter_number(
+            archived_filename=ARCHIVED, repo_root=repo, department="采购部",
+        )
+        assert number == "采购部#17"
+
+
 class TestNoMatch:
     def test_该收信人无任何已发出的信时WARN且不动(self, repo):
         path = write_rows(repo, [

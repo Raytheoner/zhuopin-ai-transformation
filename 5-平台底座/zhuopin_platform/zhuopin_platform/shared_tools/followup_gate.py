@@ -94,6 +94,19 @@ PAIR_MISS_NO_DEPARTMENT = "no_department"         # 收信人解析不出
 PAIR_MISS_NO_DISPATCHED = "no_dispatched_letter"  # 该收信人一封已发出的信都没有
 PAIR_MISS_LATEST_CLOSED = "latest_closed"         # 🔴 最新一封已闭环 ＝ 闭环后的补充说明
 
+# `followup-readme-phase2` D2（2026-09-06，Shao Peishen 对 9 读取方分类的
+# 唯一补充项）：README 二期把已闭环 >30 天的行迁出主表进归档件后，stem
+# 精确匹配必须**先查活表、活表未命中再查归档件**——否则一条回给「某封
+# 已归档旧信」的回件，会在主表里找不到它（target_filename 随行一起被
+# 迁走），进而被通道②误配给该部门**当前**最新一封活信，是一种「误配」
+# 而非「漏配」，且发生在归档动作本身，不发生在任何人的操作里。
+# 归档件 stem 命中后 SHALL 归为本类：**不写任何 README 单元格**（该行
+# 已不在活表，没有可写的位置），只低噪记一笔——语义上与
+# `PAIR_MISS_LATEST_CLOSED`（闭环后补充说明）同族：信已经了结，回件只是
+# 迟到的备注，不应升级为需人处置的告警。判据只此一份，供
+# `followup_readme_bridge.py` 唯一消费方复用，不重复实现。
+PAIR_MISS_ARCHIVED_STEM = "archived_stem"
+
 # 第九态（S4 桥一，队列 #366 M1）：回件**物理到达**、尚未拆件回灌。
 # 语义＝仍属在途、闸仍锁；它的价值是让「回件到了」这件事在权威源上立刻
 # 可见，而不必等人拆完件才在 README 上留下任何痕迹。
@@ -566,8 +579,12 @@ class PairingOutcome:
 
         闭环后专员再补一条说明是常规操作（派单件 §3.3）；把它按告警报出去，
         等于每条补充说明制造一次假警报，而那正是「误报训练人忽略告警」。
+
+        `PAIR_MISS_ARCHIVED_STEM`（`followup-readme-phase2` D2）同归此类：
+        回件命中一封已归档（必然已闭环）的旧信，与「闭环后补充说明」是
+        同一件事的两种触发路径，处置级别相同。
         """
-        return self.channel == PAIR_MISS_LATEST_CLOSED
+        return self.channel in (PAIR_MISS_LATEST_CLOSED, PAIR_MISS_ARCHIVED_STEM)
 
 
 def pair_reply_to_letter(

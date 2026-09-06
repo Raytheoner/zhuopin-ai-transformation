@@ -228,7 +228,8 @@ def _run_digest(args: argparse.Namespace) -> int:
         print("✗ --digest-width 须为正整数。")
         return 1
 
-    readme_path = REPO_ROOT / README_REL
+    readme_rel = args.file or README_REL
+    readme_path = REPO_ROOT / readme_rel
     try:
         text = readme_path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -245,7 +246,7 @@ def _run_digest(args: argparse.Namespace) -> int:
 
     if args.json:
         print(json.dumps({
-            "readme": README_REL,
+            "readme": readme_rel,
             "section": MAIN_TABLE_SECTION,
             "total_rows": len(rows),
             "malformed_status_rows": malformed,
@@ -286,6 +287,13 @@ def main(argv: list[str] | None = None) -> int:
         "--digest-width", type=int, default=DEFAULT_DIGEST_WIDTH,
         help=f"「交期要点」列与未识别状态前缀兜底的截断宽度（默认 {DEFAULT_DIGEST_WIDTH}）；"
              "已识别的状态前缀本身永不受此宽度截断。",
+    )
+    parser.add_argument(
+        "--file", default=None,
+        help=f"目标文件相对仓库根路径（默认 {README_REL}）；`followup-readme-phase2` "
+             "归档能力落地后，可指向某份 `README-归档-YYYYMM.md` 归档件人工核对历史"
+             "（同队列 `工具-队列查询.py --file` 既有用法）。归档件章节标题/表头与"
+             "主表一致，按同一套解析逻辑读取，行为逐字相同。",
     )
     args = parser.parse_args(argv)
     return _run_digest(args)
