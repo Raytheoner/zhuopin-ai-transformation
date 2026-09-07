@@ -272,13 +272,26 @@ def _assert_gate_open(recipient_cell: str, text: str) -> None:
     2026-09-06 实测发现补入：编辑锁 release 时的「跟进信串行原则」结构校验
     只在写入之后拦截，会留下「文件已改、release 被拒、锁未释放」的中间态；
     把同一判据前移到写入前可避免这种情形。"""
-    _, name = split_department_and_name(recipient_cell)
-    if not name:
-        return  # 收信人姓名解析不出，交由既有 release 校验与人工判断兜底
+    identity = followup_gate.recipient_identity(recipient_cell)
+    if identity is None:
+        # 🔴 **出声但不阻断**（design D2）：本检查是 append 的**前置便利**检查，
+        # 真正的咽喉在 release 后置校验（那一侧解析失败会记 violation、阻断）。
+        # 「『不阻断』是有意的取舍，『不出声』不是」——原实现是 `return` 一个
+        # 字都不说，于是一格写坏的收信人会让这道前置闸整条静默失效。
+        print(
+            f"⚠ 收信人「{recipient_cell}」解析不出身份（形态须为「<部门> · <姓名>」，"
+            "后括号注记会被剥除、不参与匹配）——append 前置串行闸本次跳过，"
+            "不阻断；release 后置校验仍会拦。"
+        )
+        return
+    name = identity[1]
     try:
         report = gate_query.build_report(name, text)
-    except gate_query.GateQueryError:
-        return  # 该收信人此前无任何行——视为闸开，无在途信可挡
+    except gate_query.GateQueryError as exc:
+        # 同上：该收信人此前无任何行 ⇒ 视为闸开（无在途信可挡），但把「为什么
+        # 没查到」说出来，否则一次 README 表头改名会让这道闸整条静默失效。
+        print(f"⚠ append 前置串行闸未取到「{name}」的闸状态（{exc}）——按闸开放行，不阻断。")
+        return
     if not report.gate_open:
         raise RegistryError(
             f"收信人「{name}」当前闸锁——最新一封「{report.letter_number}」"

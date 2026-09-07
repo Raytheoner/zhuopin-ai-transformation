@@ -665,3 +665,335 @@ def unclosed_dispatched_by_department(
     for items in grouped.values():
         items.sort(key=_letter_sort_key)
     return grouped
+
+
+# ---------------------------------------------------------------------------
+# 六、收信人身份归一化（`#482` ⑴⑵ ／ 变更包 followup-serial-gate-hardening D1/D2）
+# ---------------------------------------------------------------------------
+#
+# ## 它修的是什么
+#
+# 串行闸「这一行是不是写给同一个人的」此前**在四处各写了一份**（编辑锁
+# release 整格逐字比对／行长外置工具复刻该实现／闸查询与登记器各自只取
+# 姓名），四份判据互不一致。代价是实测过的（`#124`）：
+#
+# - **误拦**：`质量部#10` 的收信人写 `质量部 · 陈忱`、前一封写
+#   `质量部 · 陈忱（可请朱映桦先初标）`，整格逐字比对判成两个人 ⇒ 前一封
+#   找不到 ⇒ 闸「本来就是开的」这件事没被看见，只好编一条 `串行豁免：`。
+# - 🔴 **误放**（更重要）：反过来多写／少写一个后括号注记，串行原则被**静默
+#   绕过、零告警**。`#124` 行内那句判据值得记：**「本次是误拦所以被看见了；
+#   误放不会有人看见」** ⇒ 往严的一边统一。
+#
+# ## 🔴 「往严」的适用范围必须写死，否则会被误用
+#
+# - ✅ **适用**：本该是同一个人、却因写法差异被判成两个人 ⇒ 该合并。
+# - 🔴 **不适用**：本是两个人、却被判成同一个人。它表面上也「更严」，但那是
+#   **错误的严** —— 它制造误拦，而误拦会把一封合规的信永久染成豁免行。
+#
+# ⇒ 身份键取**二元组**（归一化部门, 姓名），**不是**只取姓名：跨部门同名
+# 不得合并。现网五个部门各只有一位在册收信人，所以今天不会命中；但
+# `_collect_intake_rows` 的注释里已经埋着同一族路标，**同一个坑不该修一半**。
+
+RecipientIdentity = tuple  # (归一化部门: str, 姓名: str)，两段均非空
+
+# 姓名段括注的两种开括号（全角在前——README 实测全部用全角）。
+_RECIPIENT_ANNOTATION_OPENERS = ("（", "(")
+
+
+def recipient_identity(recipient_cell: str) -> Optional[RecipientIdentity]:
+    """从 README 收信人列取 `(归一化部门, 姓名)`；解析不出返回 `None`。
+
+    归一化规则（design D2，四条，多一条少一条都不行）：
+
+    | | 动作 |
+    |---|---|
+    | 分隔 | 以**第一个** `·` 切分为「部门段」「姓名段」 |
+    | 装饰 | 两段均剥 markdown 强调星号与首尾空白／全角空格（`_DECORATION_CHARS`） |
+    | 姓名段括注 | 🔴 **MUST 剥除**：自**第一个**全角 `（` 或半角 `(` 起到段末全部丢弃 |
+    | 部门段 | 只跑 `normalize_department`（剥尾字「部」）；**MUST NOT** 特殊处理括注 |
+
+    🔴 **部门段括注刻意不剥**：现网无此写法，一旦出现应当被报出来（解析失败
+    ⇒ 出声），而不是被静默剥掉——那正是本模块反复记的「工具静默回退」一族。
+
+    ⚠️ **如实登记一个新增的静默误判面**：`（可分担朱映桦）`／`（转汤易水第④项）`／
+    `（可请朱映桦先初标）` 三种实测括注里**都出现了另一个真实人名**。剥掉后行仍
+    归属 `·` 之后那个人——这是既有口径（括注标的是「谁可以分担」，不改变这封信
+    是写给谁的）。**但它意味着：若哪天有人用括注表达「本封改由朱映桦回复」，
+    机器会把它算成陈忱的信、且不报错。** ⇒ 配套硬口径已写进 README 串行原则段：
+    **变更收信人 MUST 改 `·` 之后的那个名字，MUST NOT 用括注表达。**
+    """
+    cell = recipient_cell or ""
+    if "·" not in cell:
+        return None
+    department_raw, _, name_raw = cell.partition("·")
+    department = normalize_department(
+        department_raw.replace("*", "").strip(_DECORATION_CHARS)
+    )
+    name = name_raw.replace("*", "").strip(_DECORATION_CHARS)
+    cuts = [i for i in (name.find(o) for o in _RECIPIENT_ANNOTATION_OPENERS) if i != -1]
+    if cuts:
+        name = name[: min(cuts)]
+    name = name.strip(_DECORATION_CHARS)
+    if not department or not name:
+        return None
+    return (department, name)
+
+
+def recipient_department_raw(recipient_cell: str) -> Optional[str]:
+    """收信人列里**未归一化**的部门段原文（`IT部`／`质量部`），解析不出返回
+    `None`。
+
+    🔴 **为什么必须与 `recipient_identity()[0]` 并存**：归一化（剥尾字「部」）
+    只为**比对**服务；一旦拿归一化值去做别的事就会当场出错，实测两处——
+    ⑴ `_next_available_number` 按 `<部门>#<数字>` 推算占号，喂 `质量` 会一封
+    都匹配不上、把「下一个可用号」算成 `质量#1`；⑵ `dispatch.py` 按
+    `<部门>-<姓名>-跟进-<日期>` 定位待发 `.md`，喂 `采购` 会一份都找不到。
+    **两处都不报错，只是给出一个干净的错答案。**
+    """
+    cell = recipient_cell or ""
+    if "·" not in cell:
+        return None
+    department = cell.partition("·")[0].replace("*", "").strip(_DECORATION_CHARS)
+    name = recipient_identity(cell)
+    return department if (department and name is not None) else None
+
+
+def same_recipient(a: str, b: str) -> bool:
+    """两个收信人单元格是否指向同一个人。
+
+    🔴 **任一侧解析不出即 `False`——两个解析不出来的收信人不是同一个人。**
+    若让 `None == None` 成立，一次表格损坏会把整张表压成「同一个人」，闸会对
+    全表逐行乱锁，**且看起来像是在正常工作**。调用方 MUST 另行把「解析不出」
+    这件事本身出声报出来（release 侧记 violation，append 侧打印告警）。
+    """
+    ia = recipient_identity(a)
+    if ia is None:
+        return False
+    return ia == recipient_identity(b)
+
+
+def format_recipient_identity(identity: Optional[RecipientIdentity]) -> str:
+    """身份键的人读形态，供拒绝文案指名用。"""
+    return "（解析不出）" if identity is None else f"{identity[0]} · {identity[1]}"
+
+
+def latest_letter_for_recipient(
+    rows: Iterable["LetterRow"],
+    identity: Optional[RecipientIdentity],
+    dispatched_only: bool = False,
+) -> Optional["LetterRow"]:
+    """该收信人的「最近一封」——**与 `latest_dispatched_letter` 共用
+    `_letter_sort_key` 这唯一一把尺子**（design D3，拍板 (a)）。
+
+    🔴 **为什么必须换掉「表内最后一行」**：`_letter_sort_key` 的 docstring 里
+    早就写着「⚠️ 不能只按表内行序」并给了实测反例（`采购部#4` 07-21 排在
+    `采购部#17` 08-20 之后），而闸侧用的正是那个 docstring 说了不该用的东西。
+    2026-09-07 实测两把尺子**正对陈忱给出相反答案**：物理行序取到 `质量部#12`
+    （已闭环 ⇒ 闸开），日期排序键取到 `质量部#13`（`✅ 已推送` ⇒ 闸锁）。
+
+    `dispatched_only=False`（默认）＝ 串行闸口径：草稿／待发／暂缓的前一封
+    **同样挡闸**（既有行为，实测三条单测在守）。`True` ＝ 回件配对口径，等同
+    `latest_dispatched_letter`。**两个口径共用一把排序键、只差一个过滤器**，
+    这正是本函数存在的意义。
+    """
+    if identity is None:
+        return None
+    candidates = [
+        r for r in rows
+        if recipient_identity(r.recipient) == identity
+        and (not dispatched_only or is_dispatched(r.status))
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=_letter_sort_key)
+
+
+def letter_row_identity(number_cell: str) -> Optional[str]:
+    """README 行的**主键身份** ＝ 编号列归一化取值 `<部门>#<数字>`（design
+    D5 拍板 (a)）；无 `<部门>#<数字>` 的行返回 `None`，调用方 MUST 回落到
+    旧的「全单元格」身份**并出声说明走的是回落路径**。
+
+    🔴 **为什么换主键**：原身份 ＝「除状态列外全部单元格」，于是**改了任一
+    非状态列 ⇒ 被判成新增行 ⇒ 撞串行闸**。`工具-跟进信README行长外置.py`
+    压缩「主要事项」列时首个撞上，并因此自动写豁免绕过（现网 5 行、随每次
+    外置单调增长）；手工改日期／改交期要点／修错别字全都会撞同一条。编号是
+    README 的天然主键（`parse_letter_number` 已在生产解析它、`_next_available_number`
+    已按它推算占号、归档件已按它保证「编号不复用」）。
+
+    🔴 **代价如实登记**：两态语义检查（新增行不得直接写终态 `🆕 待发`）的判据
+    面随之改变——改动**已有编号**行的状态将不再被「身份不在快照里」拦住。
+    缓解 ＝ 调用方须**同时**看身份与状态迁移（快照中该编号的状态既不是
+    `⏳ 待你审`、也不是 `🆕 待发` 本身 ⇒ 拒），见
+    `工具-共享文档编辑锁.py::_validate_followup_readme_release`。
+    """
+    parsed = parse_letter_number(number_cell or "")
+    if parsed is None:
+        return None
+    return f"{parsed[0]}#{parsed[1]}"
+
+
+# ---------------------------------------------------------------------------
+# 七、`❌ 已作废` 防滥用判据（`#482` ⑶ ／ design D4）
+# ---------------------------------------------------------------------------
+#
+# `❌ 已作废` 属闭环四态（`#90` 已追认、即时生效、不回退），但它同时是一条
+# **「不想等回件就把前信标作废、闸即打开」的可滥用捷径**——其余三态都要求
+# 外部事实先发生（回件到了／对方确认了／起草时即判定无需回复），只有它可以
+# 由起草人**单方面、零成本**写下。
+#
+# ⇒ 本节按**转态前状态**分档，对「已发出却被改成作废」这一类要求三条判据。
+# 🔴 判据源取 acquire 快照，**不读 git**（同 `followup-closure-evidence-gate`
+# D2 已确立：回灌与转态在同一未提交窗口内，git 判据恒为假）。
+
+VOID_STATUS_PREFIX = "❌ 已作废"
+
+# 逃生阀：与 `串行豁免：` 完全同一范式（标记写在行里、零新增写盘路径）。
+# 🔴 **本判据不为它设自动到期**——那需要一个承接方，而本包没有为它建承接方。
+VOID_WAIVER_MARKER = "作废豁免："
+
+VOID_RISK_LOW = "low"
+VOID_RISK_HIGH = "high"
+
+# R1 门槛：理由剥净装饰与标点后的实义字符数下限。
+#
+# 🔴 **取 8 不是拍脑袋**：归档件里那唯一一行真实作废的理由是
+# 「`❌ 已作废 · 9 月重写`（2026-08-04，队列 #137，Shao Peishen 选 (a) 线下当面
+# 说）——信中三件事已全部随销售域推迟失效……」，远超门槛；而一句「已作废」
+# 「不需要了」在门槛之下。单测 T9 用该行真实文本做正例断言。
+VOID_REASON_MIN_CHARS = 8
+
+# R2 黑名单。🔴 **它防手滑、不防蓄意**——想绕过换个措辞即可，成本近乎为零。
+# 单独存在意义不大，但与 R3 同在时它免费：把「顺手写一句实话」的那一类当场
+# 拦下并给出提示，而那一类恰恰是最可能发生的（`#90` 描述的正是「不想等回件」
+# 这个念头本身）。
+VOID_REASON_BLACKLIST = (
+    "为了开闸", "为开闸", "开闸", "解闸", "打开串行闸",
+    "绕过串行", "不想等回件", "不等回件", "腾闸", "让闸开",
+)
+
+# R3 可核凭据的两种形态。**MUST NOT 校验存在性以外的语义**（本判据不判
+# 「这个行号说的对不对」）。
+#
+# 🔴 **R3 才是有约束力的那一条**：它要求作废理由指向一个仓库里查得到的东西。
+# 伪造一句措辞不留痕迹；伪造一个队列行号会在值周巡检对账（skill
+# `zhuopin-queue-audit`）时被查出来。同本项目 IATF 可追溯纪律——**不是让机器
+# 判断动机，是让动机留下可查的痕迹。**
+_VOID_EVIDENCE_QUEUE_RE = re.compile(r"(?:§\s*[一四]\s*)?#\s*\d+")
+_VOID_EVIDENCE_DECISION_RE = re.compile(r"Shao\s+Peishen.{0,40}?\d{4}-\d{2}-\d{2}")
+_VOID_EVIDENCE_DECISION_RE_REV = re.compile(r"\d{4}-\d{2}-\d{2}.{0,40}?Shao\s+Peishen")
+
+# 计 R1 实义字符时要剔除的标点／装饰（不剔除中日韩文字与数字字母）。
+_VOID_REASON_TRIM_CHARS = frozenset(
+    "（）()【】[]「」『』《》〈〉·—–-━、，,。.：:；;！!？?　 \t\r\n"
+    "*`\"'“”‘’|｜/\\~…"
+)
+
+
+def classify_void_risk(prior_status: Optional[str], is_new_row: bool) -> str:
+    """`❌ 已作废` 的风险分档（design D4）。
+
+    - **新增行**直接写 `❌ 已作废` ⇒ 🔴 **高**。它没有「前状态」，但它同样能
+      开闸 ⇒ 从严。
+    - 前状态属 `NOT_YET_SENT_STATUS_PREFIXES`（`⏳ 待你审`／`🆕 待发`／`⏸ 暂缓`）
+      ⇒ **低**。一封还没发出去的信被作废，不改变任何人手上的在途状态。
+    - 其余（＝已发出：`✅ 已推送`／`✅ 已发`／`📨 回件已到，待拆件`／未知写法）
+      ⇒ 🔴 **高**。**未知写法算高档**，同 `is_dispatched` 的保守方向。
+
+    「快照里本来就是 `❌ 已作废`」这一档**不由本函数表达**——那是「未变更」，
+    调用方在调本函数之前就该跳过（不回溯既有行，同「历史行不追溯」惯例）。
+    """
+    if is_new_row:
+        return VOID_RISK_HIGH
+    if prior_status is not None and is_not_yet_sent(prior_status):
+        return VOID_RISK_LOW
+    return VOID_RISK_HIGH
+
+
+def void_reason_text(status_cell: str) -> str:
+    """从 `❌ 已作废 …` 状态单元格里取出理由正文（去掉前缀本身）。"""
+    normalized = normalize_status(status_cell)
+    if not normalized.startswith(VOID_STATUS_PREFIX):
+        return ""
+    return normalized[len(VOID_STATUS_PREFIX):]
+
+
+def _void_reason_substantive_length(reason: str) -> int:
+    return sum(1 for ch in reason if ch not in _VOID_REASON_TRIM_CHARS)
+
+
+def void_reason_has_evidence(reason: str) -> bool:
+    """R3：理由里是否含至少一个**可核引用**（队列行引用，或
+    `Shao Peishen <ISO 日期>` 同现）。只判形态存在性，不判语义。"""
+    if _VOID_EVIDENCE_QUEUE_RE.search(reason):
+        return True
+    return bool(
+        _VOID_EVIDENCE_DECISION_RE.search(reason)
+        or _VOID_EVIDENCE_DECISION_RE_REV.search(reason)
+    )
+
+
+def validate_void_reason(status_cell: str, risk: str) -> list:
+    """校验一格 `❌ 已作废` 的理由，返回**人读的拒绝理由列表**（空 ＝ 通过）。
+
+    🔴 **拒绝文案 MUST 指名命中的是 R1／R2／R3 的哪一条、以及命中的黑名单词
+    是哪一个** —— 一条说不清自己拦了什么的拒绝，会被下一个人当成工具坏了。
+
+    低风险档只跑 R1；高风险档 R1 ＋ R2 ＋ R3 全跑（三条各自独立报、不短路
+    ——一次把话说完，别让人改一条再撞一条）。
+    """
+    reason = void_reason_text(status_cell)
+    problems = []
+
+    length = _void_reason_substantive_length(reason)
+    if length < VOID_REASON_MIN_CHARS:
+        problems.append(
+            f"R1 未写明理由：「{VOID_STATUS_PREFIX}」之后剥净标点后只剩 {length} 个"
+            f"实义字符（门槛 {VOID_REASON_MIN_CHARS}）。作废是闭环四态里唯一可由"
+            "起草人单方面写下的一态，理由必须写在状态列里、随行进 git。"
+        )
+
+    if risk != VOID_RISK_HIGH:
+        return problems
+
+    hit = next((w for w in VOID_REASON_BLACKLIST if w in reason), None)
+    if hit is not None:
+        problems.append(
+            f"R2 命中开闸措辞黑名单：理由里出现「{hit}」。作废的理由不能是"
+            "「为了让串行闸打开」——那正是本判据要拦的那件事（队列 §四 #90）。"
+        )
+
+    if not void_reason_has_evidence(reason):
+        problems.append(
+            "R3 缺可核凭据：理由里须至少含一处仓库内查得到的引用——队列行引用"
+            "（如 `§一 #137`／`队列 #137`）或 `Shao Peishen <YYYY-MM-DD>` 同现之一。"
+            "本判据只看形态在不在、不判这个行号说得对不对；它的作用是让动机留下"
+            "可核痕迹（值周巡检对账时查得出来）。"
+        )
+    return problems
+
+
+def _marker_reason(cells: Iterable[str], marker: str) -> Optional[str]:
+    for cell in cells:
+        idx = cell.find(marker)
+        if idx != -1:
+            return cell[idx + len(marker):].strip(_DECORATION_CHARS)
+    return None
+
+
+def void_waiver_reason(cells: Iterable[str]) -> Optional[str]:
+    """行内 `作废豁免：〈理由〉` 逃生阀的理由文本；未写标记返回 `None`，
+    **写了标记但理由为空返回空串**（调用方 MUST 拒绝——一个只有标记没有理由
+    的豁免，读者无从判断它是不是真豁免）。"""
+    return _marker_reason(cells, VOID_WAIVER_MARKER)
+
+
+def serial_waiver_reason(cells: Iterable[str]) -> Optional[str]:
+    """行内 `串行豁免：〈理由〉` 的理由文本；未写标记返回 `None`，写了标记
+    但理由为空返回空串。
+
+    判据自 design D5「两案共同要求 2」起**收窄**：原实现是「任一单元格含标记
+    即放行」，现收窄为「标记后 MUST 跟非空理由」。**不做语义判断**（那会重演
+    R2 的局限），只拦「有标记没理由」这一种——而那正是 `#124` 那句「后续读者
+    据 README 扫豁免会误判串行原则被跳过」说的事。
+    """
+    return _marker_reason(cells, SERIAL_WAIVER_MARKER)

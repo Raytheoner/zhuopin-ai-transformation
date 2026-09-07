@@ -680,8 +680,19 @@ def check_queue_table_importable(repo_root: Path) -> str | None:
         # 本断言存在的唯一目的就是让它红。
         gate = importlib.import_module("zhuopin_platform.shared_tools.followup_gate")
         missing = [
-            name for name in ("CLOSED_STATUS_PREFIXES", "is_closed_status",
-                              "find_unsynced_letters", "reply_matches_letter")
+            name for name in (
+                "CLOSED_STATUS_PREFIXES", "is_closed_status",
+                "find_unsynced_letters", "reply_matches_letter",
+                # 变更包 `followup-serial-gate-hardening`（`#482`，2026-09-07）：
+                # 串行闸的收信人身份、行主键与 `❌ 已作废` 防滥用判据全部收归
+                # 本模块。🔴 它们一旦缺失，编辑锁会**回落到本文件内的兜底实现**
+                # （`_FollowupGateFallback`）——那是一条静默降级路径，本断言存在
+                # 的唯一目的就是让它红。**既有符号一个都不改名。**
+                "recipient_identity", "same_recipient", "recipient_department_raw",
+                "latest_letter_for_recipient", "letter_row_identity",
+                "classify_void_risk", "validate_void_reason",
+                "void_waiver_reason", "serial_waiver_reason",
+            )
             if not hasattr(gate, name)
         ]
         if missing:

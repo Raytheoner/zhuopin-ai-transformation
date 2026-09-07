@@ -291,11 +291,20 @@ class SerialGateConflictResolutionTests(RunIntegrationTests):
     """2026-09-06 对生产 README 真实执行时撞见的真实缺口：压缩「主要事项」
     列改变了 `_followup_row_identity`，若该行不是其收信人当前最新一封、
     且真正最新一封仍未闭环，跟进信串行原则闸会把这次**纯历史内容压缩**
-    误判成"新起草的跟进信"而拒绝 release。复用 `RunIntegrationTests` 的
-    全部 fixture（同一个类体系，只加这一组场景）。
+    误判成"新起草的跟进信"而拒绝 release。
+
+    🔴 **本类自变更包 `followup-serial-gate-hardening`（D5 拍板 (a)）起整体
+    改判**（＝ design D7 的 T10）：行身份改用**编号列主键**后，压缩「主要事项」
+    列**根本不再改变行身份**，于是
+    ① 串行闸不再误判、② 本工具不再自动写 `串行豁免：`（那条自动写盘路径连同
+    它复刻的判据一起退休）。改判前本类断言的是「自动追加豁免并成功 release」
+    ——那是**当时唯一可行的绕法**，不是想要的行为：现网因此已积 5 行豁免且
+    **随每次外置单调增长**，而每一行在机器眼里都是一个无条件开闸口令。
+
+    复用 `RunIntegrationTests` 的全部 fixture（同一个类体系，只加这一组场景）。
     """
 
-    def test_压缩历史行触发串行闸误判时自动追加豁免并成功release(self):
+    def test_压缩历史行不再被判成新增行且不产生任何豁免(self):
         long_topic = "事项：" + ("填" * 250)
         # 采购部 · 姚祖怡：#1 是较早一封（未闭环）、#2 是真正最新一封
         # （同样未闭环）——压缩 #1 的主要事项会让 #1"看起来像新增行"，
@@ -317,13 +326,20 @@ class SerialGateConflictResolutionTests(RunIntegrationTests):
         code, out, _err = self._run(who="t")
         self.assertEqual(code, 0, out)
         self.assertIn("[OK]", out)
-        self.assertIn("串行", out)
 
         new_text = self._readme_text()
-        self.assertIn(
-            f"{self.module.editlock.FOLLOWUP_SERIAL_WAIVER_MARKER}"
-            f"{self.module.SERIAL_WAIVER_REASON}",
-            new_text,
+        # 🔴 T10：产物中 `串行豁免：` 计数 MUST 为 0，且 release 通过。
+        self.assertEqual(
+            new_text.count(self.module.editlock.FOLLOWUP_SERIAL_WAIVER_MARKER), 0,
+            "行长外置不得再产生任何串行豁免（design D5 停产）",
+        )
+        self.assertFalse(
+            hasattr(self.module, "SERIAL_WAIVER_REASON"),
+            "`SERIAL_WAIVER_REASON` 常量与其自动写入路径已退休，不得复活",
+        )
+        self.assertFalse(
+            hasattr(self.module, "_find_serial_gate_conflicts"),
+            "复刻实现 `_find_serial_gate_conflicts` 已退休（`#482` 四处分叉之一）",
         )
         self.assertIn("首封事项", new_text, "未涉及的行不应被本机制动到")
         self.assertIn("最新事项", new_text, "未涉及的行不应被本机制动到")
