@@ -112,7 +112,8 @@
 
 - [x] 9.1 `.claude/rules/队列与落库.md` 增一行指针（判定正本／registry／第 13 类／"只出草案不写队列"／取证件已退休）【CC】
 - [x] 9.2 全量测试绿 ＋ 零回归【CC】
-  - `test_工具-规划倒逼扫描器.py` ＝ 57 passed / 59 subtests；`test_工具-落库sweep.py` 全量回归见收工报告。
+  - `test_工具-规划倒逼扫描器.py` ＝ 57 passed / 59 subtests；相邻工具（队列结构 lint／场景包 intent 闸／队列查询）＝ 178 passed；`test_工具-落库sweep.py` 全量回归见收工报告。
+  - 🔴 **首跑抓到一条真回归，已修**：`ScheduledTaskMirrorSyncTests::test_credential_blocked_alerts_without_local_changes` 断言本轮恰好 1 条企微推送，实收 2 条——夹具的合成仓库里没有扫描器脚本，第 13 类每轮判「判据不可用」**多推一条告警**。修法照 `#435`／`#382⑵`／`#437` 的既有形态（**同一形态第四次**）：夹具补一个恒返回「零未承接」的桩 `STUB_PLAN_BACKPRESSURE_SCRIPT`。**不改判据去迁就测试**——「判据不可用要出声」这条本身是对的，缺的是夹具里的那个文件。已用 `git show HEAD~1:` 还原旧 sweep 复跑该用例（1 passed）坐实是本次引入、非既存。
 - [ ] 9.3 `#462` 队列行回写 ＋ §二 批次登记【CC】
   - ⏳ **本 apply 泳道按派单件红线③不碰主仓工作区、不写队列**，交看护者收口。
 - [ ] 9.4 tasks 全 [x] 后当场 `/opsx:archive plan-backpressure-scanner -y`【CC】

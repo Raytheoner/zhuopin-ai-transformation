@@ -169,6 +169,23 @@ import json
 print(json.dumps({"window_days": 14, "gaps": []}))
 '''
 
+# 队列 §一 #462（2026-09-07，OP-0907-AH）：第 13 类常驻告警——规划倒逼。
+# 🔴 **同 #435／#382⑵／#437 的第四次同形态**：sweep 新增一个子进程依赖时，本夹具
+# 必须同步还原一个桩，否则临时仓库里缺这个脚本 ⇒ 第 13 类每轮判为「判据不可用」
+# 并**多推一条企微告警**，把所有精确断言 webhook 条数的用例一起打挂
+# （本次回归实测命中 `ScheduledTaskMirrorSyncTests::
+# test_credential_blocked_alerts_without_local_changes`：期望 1 条、实收 2 条）。
+# 桩恒返回「零未承接」——第 13 类自身的行为由
+# `test_工具-规划倒逼扫描器.py::SweepClass13` 直接对函数断言，不在本夹具里测。
+STUB_PLAN_BACKPRESSURE_SCRIPT = '''"""测试桩：规划倒逼扫描器（恒零未承接、零依赖）。"""
+import json
+
+print(json.dumps({"scope": "测试桩", "total": 0,
+                  "counts": {"三处皆无": 0, "疑似已承接·待人确认": 0, "已承接": 0},
+                  "unaccepted": [], "suspected": [], "accepted": [],
+                  "queue_row_drafts": []}, ensure_ascii=False))
+'''
+
 
 class SweepTestBase(unittest.TestCase):
     def setUp(self):
@@ -238,6 +255,8 @@ class SweepTestBase(unittest.TestCase):
         (self.work / sweep.DRAFT_GAP_CHECK_SCRIPT_REL).parent.mkdir(parents=True, exist_ok=True)
         (self.work / sweep.DRAFT_GAP_CHECK_SCRIPT_REL).write_text(
             STUB_DRAFT_GAP_CHECK_SCRIPT, encoding="utf-8")
+        (self.work / sweep.PLAN_BACKPRESSURE_SCRIPT_REL).write_text(
+            STUB_PLAN_BACKPRESSURE_SCRIPT, encoding="utf-8")
         (self.work / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
 
         # 队列 §一 #435（2026-08-30 回归排查后补）：第 4 类常驻告警新增
