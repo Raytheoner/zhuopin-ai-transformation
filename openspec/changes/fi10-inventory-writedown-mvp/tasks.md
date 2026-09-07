@@ -66,11 +66,15 @@
 > 🔴 **前置风险（D1 的直接前置，须开工方知悉）**：U9C 库存通道与 PLM 取数通道**两条都未核实、且都无主**（同 `#477` 判词第五次适用），已登 `design.md` Open Questions **B-1** 待总线派发。⇒ `real` 模式一律 fail-loud、**不得回退 mock**（3.1 必测）。
 > 📌 3.3／3.4 的隔离接法照 **D5**（`OEMRouter.resolve()`，guard 调在取数入口）与 **D11**（物料归属＝客户集合，多值按最严；两个哨兵不得合并）。
 
-- [ ] 3.1 写测试：真实源通道未核实时 fail-loud
-- [ ] 3.2 写测试：在途量 ＝ 已订 − 已收（与 `kit_engine` 口径一致）
-- [ ] 3.3 🔴 写测试：OEM 跨库访问抛 `CrossOEMAccessError`（**须实测，不得只写文档**）
-- [ ] 3.4 实现采集层，OEM 侧走 `OEMRouter`
-- [ ] 3.5 单测全绿
+> ✅ **2026-09-07 §3 已实做完毕**（`OP-0907-S`，队列 `#474`；先测后实现，实证：先落 `tests/test_intake.py`、跑出 `ImportError` 红，再落 `fi10_inventory_writedown/intake.py`）。产出 ＝ `4-数字员工/财务部/FI10-存货跌价智能分析/fi10_inventory_writedown/intake.py` ＋ `tests/test_intake.py`（新增 31 条）＋ `config.PLM_PROJECT_CHANNEL_NOT_READY`（新增，B-1 第二条通道的 fail-loud 正本文案）＋ `tests/conftest.py` 两个夹具。**场景 47 passed**（骨架 16 ＋ 采集层 31），**平台底座 528 passed / 1 skipped 零回归**，`openspec validate` 通过。
+> 🔴 **§4／§5 仍未开工，本次一字未动**；元测试 `test_intake_layer_reads_no_criteria`／`test_intake_produces_no_writedown_or_alert` 钉死采集层不读判据、不旁路产出跌价结果与预警。
+
+- [x] 3.1 写测试：真实源通道未核实时 fail-loud —— 4 条用例：抛 `ChannelNotVerifiedError`；🔴 **在读任何夹具之前就抛**（把 `_read_csv` 换成"被调用即失败"仍须抛，否则「fail-loud」与「先读了 mock 再报错」会被混为一谈）；文案取 `config` 正本非改写；未知模式（拼错 `real`）不兜底成 mock
+- [x] 3.2 写测试：在途量 ＝ 已订 − 已收（与 `kit_engine` 口径一致）—— 🔴 **不是重抄一遍公式**：把同一批单据喂给 `kit_engine.calc_shortage`（库存与安全库存置 0），反解它眼里的在途量做交叉核对；两边各写一遍公式则一起写错也照样通过
+- [x] 3.3 🔴 写测试：OEM 跨库访问抛 `CrossOEMAccessError`（**须实测**）—— `read_phase_as()` 以某客户身份读另一客户项目即抛 ＋ 平台侧留痕断言（`decision.reason == "跨客户专属库访问"`）；未注册／拼写变体客户名在取数入口 fail-closed ＋ 留痕
+- [x] 3.4 实现采集层，OEM 侧走 `OEMRouter` —— `D5-1` guard 只调在 `collect()` 取数入口一处；`D5-2` 归属校验用 `resolve()`；⚠️ `read_phase_as()`／`isolated_view()` **用 `guard()`，与 `D5-2` 不矛盾**：那里的第二根轴是真的（**视图属主 ≠ 数据属主**），已写进模块 docstring。`D11` 三态 ＋ 两个哨兵不合并 ＋ 多值按最严（含「一个料同时挂已判与未判项目 ⇒ 整体算未判」）；`D5-3` `audit_oem_context()` 字典序去重逗号连接，空集填通用料哨兵而非空串
+- [x] 3.5 单测全绿 —— 47 passed；另做**一次性变异实测**（同 FI9 D2.4 的两层做法之第一层，证明守卫不是碰巧通过）：拆掉跨库 guard／合并两个哨兵／real 静默回退 mock／在途量算成已订量／归属未判静默放行，**五处变异逐一被用例逮住**（1/2/3/2/3 failed），脚本用完即弃、不入库
+- [x] 3.6 🆕 **apply 期一处判断，须知悉**：新增 `intake.MOCK_OEM_REGISTRY`（三个占位客户）。成因 ＝ 两条硬要求在 mock 模式下相撞 —— spec 场景「夹具不得含真实客户名」要求占位名，而 `D5` 要求归属校验必过 `OEMRouter.resolve()`，占位名在平台 `REGISTERED_OEMS` 里必然未注册、一 resolve 就被拒。**另两条路都更坏**：把占位名塞进平台注册表 ＝ 在生产注册表里凭空多出两个"客户"；mock 模式绕开 router ＝ `D5`／`3.3` 在唯一能真跑的模式里失去覆盖。🔴 **它不是口径**（不是待签认的业务口径，是夹具的注册形态），故不进注册表；用例守「与平台注册表零交集」＋「real 模式的 router 只用平台注册表」
 
 ## 4. nrv-writedown-engine 跌价测试引擎（design 审后，先测后实现）
 

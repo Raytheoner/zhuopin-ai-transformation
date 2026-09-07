@@ -127,3 +127,10 @@ OEM_ISOLATION_REQUIRED = (
 U9C_INVENTORY_NOT_READY = (
     "U9C 库存模块（账龄/在途采购）取数通道未核实。real 模式一律 fail-loud，不得回退 mock。"
 )
+PLM_PROJECT_CHANNEL_NOT_READY = (
+    "PLM OEM 项目生命周期（APQP/EOP）取数通道未核实。real 模式一律 fail-loud，不得回退 mock。"
+    "🔴 **与上条 U9C 通道并列、都无主**（design Open Questions **B-1**，2026-09-06 design 审"
+    "记为 `D1` 的直接前置，待总线派发）：与 `#477`（FI9 工时系统）是**同一条判词的第五次适用**"
+    "——「跨域基础设施只活在一个 config 常量的字符串里，而那个场景排在 2027 年」。"
+    "⚠️ 现在核实 ≈ 问两个人；等开工才发现没有 ⇒ `D1` 选定的采集层设计要重做。"
+)

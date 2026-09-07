@@ -1,4 +1,4 @@
-"""FI10 测试夹具（骨架期）。"""
+"""FI10 测试夹具（骨架期 ＋ §3 采集层）。"""
 from __future__ import annotations
 
 import sys
@@ -56,6 +56,29 @@ def simple_bom_usage() -> list[BomUsage]:
         BomUsage("MAT-001", "FIN-001", 2.0, True),
         BomUsage("MAT-003", "FIN-009", 1.0, False),   # 机型已停产
     ]
+
+
+@pytest.fixture
+def mock_router():
+    """§3 采集层用的 OEM router —— 注册表 ＝ **mock 占位客户**，不含任何真实 OEM 名。
+
+    🔴 夹具用占位客户名是 spec 的硬要求（「夹具不得含真实客户名」），而占位名在平台
+    `REGISTERED_OEMS` 里必然未注册；两者只能靠「mock 模式换一份注册表」同时满足，
+    详见 `intake.MOCK_OEM_REGISTRY` 的 docstring。
+    """
+    from fi10_inventory_writedown import intake
+
+    return intake.build_router(intake.MODE_MOCK)
+
+
+@pytest.fixture
+def mock_fixture_copy(tmp_path, mock_dir) -> Path:
+    """`data/mock/` 的可改写副本 —— 需要造「归属未判」等异常源数据的用例改它，不动真夹具。"""
+    import shutil
+
+    dest = tmp_path / "mock"
+    shutil.copytree(mock_dir, dest)
+    return dest
 
 
 @pytest.fixture
