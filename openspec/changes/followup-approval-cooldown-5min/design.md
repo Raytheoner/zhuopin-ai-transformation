@@ -1,6 +1,6 @@
 # followup-approval-cooldown-5min Design
 
-> **design 审：⏳ 待 Shao Peishen 审。** 审过后在本行回填「✅ 已过 —— Shao Peishen YYYY-MM-DD」，`tasks.md` 方可开工。
+> **design 审：✅ 已过 —— Shao Peishen 2026-09-07**（合审材料 §8 答 (a)：D1–D4 全部通过，冷却窗口 10→5 分钟；材料＝`1-转型规划/0-全景路线图/合审材料-八包design与三项决策-2026-09-07.md`）。`tasks.md` 可开工。
 > 本包只改一个常量，但它是**判据阈值**，故决策点须逐条写明、不省略。
 
 ## Context
