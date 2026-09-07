@@ -153,7 +153,31 @@ _SUBSET_SUM_MAX_ROWS = 16
 # 不能靠「先别部署」。改这一行等于改生产口径，故它必须是一次显式的、可 grep 的提交。
 #
 # 各候选的语义与实测影响面见 `scripts/probe_424_itemcode_candidates.py` 的产出。
-_ITEM_MATCH_STRATEGY = "qty_price"
+# ✅ **签认依据：唐燕萍 2026-09-04 在 `财务部#16` 回件判例表 B 逐行勾选，判例 5／6／7
+# 三条全部勾 ✅**（2026-09-07 zipfile 直读 docx 复核：控件层 `w14:checked val="1"` 计 8
+# 与字符层 `☒` 计 8 两路一致 ⇒ 8 行全部作答；取证件
+# `6-人才与组织/部门AI专员跟进/财务部16回件勾选误判-取证与更正-2026-09-07.md`，队列 §一 #424）。
+# ⇒ 上方那句「口径未经唐燕萍签认前不得改动」的前置条件**已于 2026-09-04 满足**。
+#   · 判例 5 ＝ 计量单位／包装换算（`AP-2026080041` 密封胶 发票 20 支 vs AP 6200）→ `amount`
+#   · 判例 6 ＝ 该 AP 单通篇只有一个料号                                        → `single_item`
+#   · 判例 7 ＝ 同一料号多行按合计开票（`AP-2026080137` 气泡袋 7000＝4000＋3000）→ `subset_sum`
+# 三条她**全部**认可 ⇒ 默认值不是三选一，而是**三者依次回落**（实测可覆盖被挡掉的
+# 1,813 行里的 645 行、并让 206/221 张「今天报无发票支撑」的 AP 单重新有发票，
+# 见 `docs/queue_423_424_口径候选与影响面-2026-08-28.md` §2.5）。
+# 🔴 回落次序 ＝ ⒜ 金额 → ⒝ 单料号 → ⒞ 组合求和，与该文 §2.5「形态分布」互斥切分所用的
+# 优先级逐字一致 —— 换次序会换掉每一档的行数，那张表就不再描述本代码。
+_ITEM_MATCH_STRATEGY = "qty_price_then_amount_then_single_item_then_subset_sum"
+
+# ── 判例 8（表 C）：一张发票行拆成多条写进 invoice.csv ──────────────────────
+# ✅ **签认依据：唐燕萍 2026-09-04 判例 8 勾 ✅**，并书面补了一条算法约束：
+# 「拆行后两条的未税金额与税额**分别相加须与原发票行一致**，分摊产生的**尾差并入
+# 已有的最后一条记录**（不单独成一条）」。
+# 触发条件极窄：`_match_by_subset_sum` 找到**唯一**一个凑法、而该凑法**跨了多个料号**
+# （＝`AP-2026080137` 气泡袋 6000 ＝ `J02E.0024` 1000 ＋ `R02E.0024` 5000 那一类）。
+# 🔴 **凑法不唯一时一律不拆**——那说明这张发票行本身就分不清怎么摊，拆＝替她猜。
+# 单独一个常量而不是塞进 strategy 串：它是**另一个**口径决定（改的是输出契约「一行发票
+# → 一个 item_code」，不是换把匹配的尺子），须能被单独 grep、单独回滚。
+_ALLOW_INVOICE_ROW_SPLIT = True
 
 #: 全部已实现的候选口径（`resolve_item_code(strategy=...)` 的合法取值）。
 #: 🔴 逐条对照队列 #424 的 ⒜⒝⒞ —— 命名刻意写全，不用 a/b/c，避免下游读到缩写还要回查。
@@ -163,6 +187,8 @@ ITEM_MATCH_STRATEGIES: tuple[str, ...] = (
     "qty_price_then_amount",        # ⒜ 的保守形态：现状优先，零命中再试金额
     "qty_price_then_single_item",   # ⒝ 的可落地形态：现状优先，零命中且该 AP 单只有一个料号 ⇒ 取之
     "qty_price_then_subset_sum",    # ⒞：现状优先，零命中再试「若干 AP 行数量合计 == 发票数量」
+    # ✅ 唐燕萍 2026-09-04 判例 5/6/7 全勾 ✅ 后的生效档：⒜⒝⒞ 依次回落（见 `_ITEM_MATCH_STRATEGY`）
+    "qty_price_then_amount_then_single_item_then_subset_sum",
 )
 
 
@@ -492,25 +518,29 @@ def _single_item_code(ap_rows: list[dict]) -> set[str]:
     的金额合计）」——**单级归集能判断「这张发票属不属于这张单」，却判断不出「属于哪一
     行料品」**；而 `invoice.csv` 的每一行必须带一个 `item_code`。多料号单据下 ⒝ 无法
     落地成一个行级答案，除非同时接受「把一张发票行拆成多行写入」（见
-    `_match_by_subset_sum`）。这一点在选 ⒝ 之前必须先说清。
+    `_subset_sum_split_plan`）。这一点在选 ⒝ 之前必须先说清。
     """
     codes = {str(r.get("ItemCode")) for r in ap_rows if r.get("ItemCode")}
     return codes if len(codes) == 1 else set()
 
 
-def _match_by_subset_sum(
+def _subset_sum_plans(
     ap_rows: list[dict], *, qty: float, taxed_unit_price: float, price_rel_tol: float,
-) -> set[str]:
-    """⒞ 口径：允许「若干 AP 行的数量合计 == 发票行数量」（同一含税单价内）。
+) -> list[dict[str, float]]:
+    """⒞ 口径的底层枚举：列出所有「若干 AP 行的数量合计 == 发票行数量」的凑法。
+
+    每份凑法 ＝ `{料号: 该料号在这份凑法里的数量合计}`。判例 7（同料号多行合计开票）
+    的凑法只有一个键；判例 8（跨料号）的凑法有多个键。
 
     队列 #424 实测的 `AP-2026080137` 气泡袋即此形态：发票 6000 ＝ AP 的 1000 ＋ 5000，
     发票 7000 ＝ 4000 ＋ 3000，**加起来分毫不差，但没有任何单独一行等于 6000/7000**。
 
-    🔴 **返回的可能是一个多元素集合** —— 6000 那一笔跨 `J02E.0024` 与 `R02E.0024`
-    两个料号。在现行输出契约（一行发票 → 一个 `item_code`）下，它会被上层如实判为
-    `item_code_ambiguous`，**而不是被随便挑一个**。要让 ⒞ 真正解开这一类，必须同时
-    接受「把一张发票行按 AP 行拆成多行写入 `invoice.csv`」——那是另一个口径决定，
-    不在本函数范围内。本函数只负责把「到底能不能凑出来」这件事量清楚。
+    🔴 **一份凑法可能跨多个料号** —— 6000 那一笔跨 `J02E.0024` 与 `R02E.0024`。在
+    「一行发票 → 一个 `item_code`」的输出契约下（`_match_by_subset_sum`），它只能被
+    上层如实判为 `item_code_ambiguous`，**而不是被随便挑一个**；要真正解开这一类，
+    须接受「把一张发票行按 AP 行拆成多行写入 `invoice.csv`」＝ 判例 8（唐燕萍
+    2026-09-04 勾 ✅），走 `_subset_sum_split_plan()`。本函数只负责把「到底能不能凑
+    出来、怎么凑」这件事量清楚，不替上层决定拆不拆。
 
     先按含税单价分组，再在组内做子集和；组内行数超过 `_SUBSET_SUM_MAX_ROWS` 即放弃
     该组（不静默地退化成部分搜索，直接不试）。
@@ -527,7 +557,7 @@ def _match_by_subset_sum(
             continue
         groups.setdefault(round(ap_price, 6), []).append((ap_qty, str(item_code)))
 
-    out: set[str] = set()
+    plans: list[dict[str, float]] = []
     for rows in groups.values():
         if len(rows) > _SUBSET_SUM_MAX_ROWS:
             continue
@@ -538,8 +568,63 @@ def _match_by_subset_sum(
                 if mask >> i & 1:
                     total += rows[i][0]
             if abs(total - qty) <= max(abs(qty), abs(total)) * _QTY_REL_TOL + 1e-9:
-                out |= {rows[i][1] for i in range(n) if mask >> i & 1}
+                plan: dict[str, float] = {}
+                for i in range(n):
+                    if mask >> i & 1:
+                        plan[rows[i][1]] = plan.get(rows[i][1], 0.0) + rows[i][0]
+                plans.append(plan)
+    return plans
+
+
+def _dedup_plans(plans: list[dict[str, float]]) -> list[dict[str, float]]:
+    """按「料号 → 数量」的内容去重。
+
+    同一份摊法可能由不同的 mask 走出来（如同料号两行 4000＋3000 与……在本数据里
+    不会，但组内出现等量行时会），那是**同一个答案**、不是歧义；反之内容不同的两份
+    摊法就是真歧义，判例 8 明令此时不拆。
+    """
+    seen: dict[tuple, dict[str, float]] = {}
+    for plan in plans:
+        key = tuple(sorted((k, round(v, 6)) for k, v in plan.items()))
+        seen.setdefault(key, plan)
+    return list(seen.values())
+
+
+def _match_by_subset_sum(
+    ap_rows: list[dict], *, qty: float, taxed_unit_price: float, price_rel_tol: float,
+) -> set[str]:
+    """⒞ 口径落到「一行发票 → 一个 item_code」输出契约上的形态：所有可行凑法涉及的
+    料号并集。并集多于一个 ⇒ 上层如实判 `item_code_ambiguous`，**不挑一个**。
+
+    要真正解开那一类，须走判例 8 的拆行路径（`_subset_sum_split_plan`）。
+    """
+    out: set[str] = set()
+    for plan in _subset_sum_plans(ap_rows, qty=qty, taxed_unit_price=taxed_unit_price,
+                                   price_rel_tol=price_rel_tol):
+        out |= set(plan)
     return out
+
+
+def _subset_sum_split_plan(
+    ap_rows: list[dict], *, qty: float, taxed_unit_price: float, price_rel_tol: float,
+) -> Optional[list[tuple[str, float]]]:
+    """判例 8：唯一凑法且跨多个料号 ⇒ 返回 `[(料号, 数量), ...]`；否则 `None`。
+
+    🔴 三条边界（判例 8 的原文约束，写死在这里）：
+      ⑴ **凑法必须唯一**（内容去重后恰好 1 份）——多于 1 份即真歧义，不拆、不猜。
+      ⑵ **只在跨多个料号时才拆**：单料号的凑法由 ⒞ 正常解出一个 `item_code`，
+         走原路径即可，拆它只会平白多出一行。
+      ⑶ 返回次序 **按料号升序固定**——「尾差并入最后一条」要求「最后一条」是确定的，
+         靠字典/集合的偶然次序会让同一张发票在两次运行里摊出不同的分。
+    """
+    plans = _dedup_plans(_subset_sum_plans(
+        ap_rows, qty=qty, taxed_unit_price=taxed_unit_price, price_rel_tol=price_rel_tol))
+    if len(plans) != 1:
+        return None
+    plan = plans[0]
+    if len(plan) < 2:
+        return None
+    return [(code, plan[code]) for code in sorted(plan)]
 
 
 def resolve_item_code(
@@ -604,12 +689,106 @@ def resolve_item_code(
                 matched_codes = _match_by_subset_sum(
                     ap_lines_for_ap_no, qty=qty, taxed_unit_price=taxed_unit_price,
                     price_rel_tol=price_rel_tol)
+            elif strategy == "qty_price_then_amount_then_single_item_then_subset_sum":
+                # 判例 5 → 6 → 7 依次回落（唐燕萍 2026-09-04 三条全勾 ✅）。
+                # 🔴 每一步同样**只在零命中时**才走下一把尺子——歧义一律止步，
+                # 与上面单档回落的判据逐字相同，不因为串起来了就放松。
+                for _step in (
+                    _by_amount,
+                    lambda: _single_item_code(ap_lines_for_ap_no),
+                    lambda: _match_by_subset_sum(
+                        ap_lines_for_ap_no, qty=qty, taxed_unit_price=taxed_unit_price,
+                        price_rel_tol=price_rel_tol),
+                ):
+                    matched_codes = _step()
+                    if matched_codes:
+                        break
 
     if not matched_codes:
         return None, "item_code_zero_match", ""
     if len(matched_codes) > 1:
         return None, "item_code_ambiguous", f"候选：{sorted(matched_codes)}"
     return next(iter(matched_codes)), "", ""
+
+
+def resolve_item_code_split(
+    ap_lines_for_ap_no: list[dict], qty: float, untaxed_unit_price: float, tax_rate: float,
+    *,
+    untaxed_amount: Optional[float] = None, tax_amount: Optional[float] = None,
+    strategy: Optional[str] = None,
+    qty_rel_tol: Optional[float] = None, price_rel_tol: Optional[float] = None,
+    amount_abs_tol: Optional[float] = None,
+) -> Optional[list[tuple[str, float]]]:
+    """判例 8：这张发票行该不该拆、拆成哪几条 → `[(料号, 数量), ...]`，不该拆则 `None`。
+
+    唐燕萍 2026-09-04 判例 8 勾 ✅。触发条件刻意收得极窄，逐条都是「不猜」的具体形态：
+
+      ⑴ `_ALLOW_INVOICE_ROW_SPLIT` 为真（单独的可 grep 开关，见其定义处）；
+      ⑵ 当前口径的回落链**确实会走到组合求和**这一步——否则拆行就成了绕过口径的后门；
+      ⑶ 组合求和**之前**的每一把尺子都是**零命中**。🔴 只要前面任何一步给出了候选
+         （无论解出一个还是判为歧义），本函数一律返回 `None`：**「前面已经分不清」和
+         「前面根本没有答案」是两件事，只有后者才轮得到拆行**；
+      ⑷ 凑法唯一、且跨多个料号（`_subset_sum_split_plan` 内的另两条边界）。
+
+    金额怎么摊不在本函数——那是 `split_row_amounts()` 的事，本函数只答「拆不拆、按什么
+    数量拆」。
+    """
+    if not _ALLOW_INVOICE_ROW_SPLIT:
+        return None
+    strategy = strategy or _ITEM_MATCH_STRATEGY
+    if strategy not in ("qty_price_then_subset_sum",
+                        "qty_price_then_amount_then_single_item_then_subset_sum"):
+        return None
+    qty_rel_tol = _QTY_REL_TOL if qty_rel_tol is None else qty_rel_tol
+    price_rel_tol = _PRICE_REL_TOL if price_rel_tol is None else price_rel_tol
+    amount_abs_tol = _AMOUNT_ABS_TOL if amount_abs_tol is None else amount_abs_tol
+    taxed_unit_price = untaxed_unit_price * (1 + tax_rate)
+
+    if _match_by_qty_price(ap_lines_for_ap_no, qty=qty, taxed_unit_price=taxed_unit_price,
+                            qty_rel_tol=qty_rel_tol, price_rel_tol=price_rel_tol):
+        return None
+    if strategy == "qty_price_then_amount_then_single_item_then_subset_sum":
+        if _match_by_amount(ap_lines_for_ap_no, untaxed_amount=untaxed_amount,
+                             tax_amount=tax_amount, abs_tol=amount_abs_tol):
+            return None
+        if _single_item_code(ap_lines_for_ap_no):
+            return None
+    return _subset_sum_split_plan(
+        ap_lines_for_ap_no, qty=qty, taxed_unit_price=taxed_unit_price,
+        price_rel_tol=price_rel_tol)
+
+
+def split_row_amounts(
+    allocation: list[tuple[str, float]], untaxed_amount: float, tax_amount: float,
+) -> list[tuple[str, float, float, float]]:
+    """按数量把未税金额与税额摊到各料号 → `[(料号, 数量, 未税金额, 税额), ...]`。
+
+    🔴 **唐燕萍 2026-09-04 书面补的算法约束，逐字落在这里**：
+    「拆行后两条的未税金额与税额**分别相加须与原发票行一致**，分摊产生的**尾差并入
+    已有的最后一条记录**（不单独成一条）」。
+
+    ⇒ 实现：前 n-1 条按数量占比四舍五入到分；**最后一条 ＝ 原值减去前面各条之和**——
+    不是「再算一次比例再修尾差」，而是直接用减法，这样「相加等于原值」是构造出来的
+    恒等式、不依赖任何容差。`allocation` 的次序由 `_subset_sum_split_plan()` 按料号升序
+    定死，故「最后一条」在两次运行里是同一条。
+    """
+    total_qty = sum(q for _, q in allocation)
+    if not allocation or total_qty <= 0:
+        raise ValueError(f"拆行分摊的数量合计必须为正：{allocation!r}")
+    out: list[tuple[str, float, float, float]] = []
+    acc_untaxed = 0.0
+    acc_tax = 0.0
+    for code, q in allocation[:-1]:
+        u = round(untaxed_amount * q / total_qty, 2)
+        t = round(tax_amount * q / total_qty, 2)
+        acc_untaxed += u
+        acc_tax += t
+        out.append((code, q, u, t))
+    last_code, last_qty = allocation[-1]
+    out.append((last_code, last_qty,
+                round(untaxed_amount - acc_untaxed, 2),
+                round(tax_amount - acc_tax, 2)))
+    return out
 
 
 def _join_detail(*parts: str) -> str:
@@ -679,8 +858,12 @@ class _RowResolver:
         self._ap_no_cache: dict[str, tuple[Optional[str], str, str]] = {}
         self._ap_lines_cache: dict[str, list[dict]] = {}
 
-    def resolve(self, file_name: str, idx: int, raw: dict) -> tuple[Optional[dict], Optional[dict]]:
-        """→ (已解析的 invoice.csv 行 或 None, 待重试登记项 或 None)。
+    def resolve(self, file_name: str, idx: int, raw: dict
+                 ) -> tuple[Optional[list[dict]], Optional[dict]]:
+        """→ (已解析的 invoice.csv 行**列表** 或 None, 待重试登记项 或 None)。
+
+        🔴 **返回列表而不是单行**：判例 8（唐燕萍 2026-09-04 勾 ✅）允许一张发票行按
+        AP 行拆成多条写进 `invoice.csv`。绝大多数行仍是一条，列表长度为 1。
 
         诊断一律登记进 `result.diagnostics`（不静默）；其中属 `_RETRYABLE_REASONS`
         的额外返回一个待重试登记项，由调用方写进 ledger。
@@ -709,7 +892,27 @@ class _RowResolver:
         item_code, i_reason, i_detail = resolve_item_code(
             ap_rows, qty, unit_price, tax_rate,
             untaxed_amount=untaxed_amount, tax_amount=tax_amount)
+        base = {
+            "inv_no": digital_no,
+            "ap_no": ap_no,
+            "unit": str(raw.get("单位") or ""),
+            "unit_price": unit_price,
+            "tax_rate": tax_rate,
+            "inv_date": _parse_date(raw.get("开票日期")),
+        }
         if item_code is None:
+            # 判例 8（唐燕萍 2026-09-04 勾 ✅）：挂不上**一个**料号，未必挂不上**几个**——
+            # 「发票按合计开票、AP 按料号拆行」那一类的正解就是把这一行拆开写。
+            # 触发条件极窄（见 `resolve_item_code_split` 的四条边界），不满足即照旧丢。
+            allocation = resolve_item_code_split(
+                ap_rows, qty, unit_price, tax_rate,
+                untaxed_amount=untaxed_amount, tax_amount=tax_amount)
+            if allocation is not None:
+                parts = split_row_amounts(
+                    allocation, float(raw.get("金额") or 0), float(raw.get("税额") or 0))
+                return [dict(base, item_code=code, inv_qty=q,
+                              untaxed_amount=u, tax_amount=t)
+                        for code, q, u, t in parts], None
             # 队列 #424「让丢行可见并可查」：光记一个 `item_code_zero_match` 无法回答
             # 「这一行为什么挂不上、换把尺子挂不挂得上」，而那正是唯一能把这批丢行
             # 分类的信息。诊断串里**只放形状、不放金额**（FI2 审计口径＝金额不落盘），
@@ -719,18 +922,9 @@ class _RowResolver:
                 tax_rate=tax_rate, untaxed_amount=untaxed_amount, tax_amount=tax_amount))
             return None, self._fail(file_name, idx, digital_no, i_reason, i_detail)
 
-        return {
-            "inv_no": digital_no,
-            "ap_no": ap_no,
-            "item_code": item_code,
-            "unit": str(raw.get("单位") or ""),
-            "unit_price": unit_price,
-            "inv_qty": qty,
-            "untaxed_amount": float(raw.get("金额") or 0),
-            "tax_rate": tax_rate,
-            "tax_amount": float(raw.get("税额") or 0),
-            "inv_date": _parse_date(raw.get("开票日期")),
-        }, None
+        return [dict(base, item_code=item_code, inv_qty=qty,
+                      untaxed_amount=float(raw.get("金额") or 0),
+                      tax_amount=float(raw.get("税额") or 0))], None
 
     def _fail(self, file_name: str, idx: int, digital_no: str, reason: str, detail: str) -> Optional[dict]:
         self._result.diagnostics.append(IngestDiagnostic(
@@ -811,8 +1005,8 @@ def _retry_unresolved(
             if digital_no not in refreshed:
                 resolver.forget(digital_no)   # U9C 侧状态可能已变，缓存不能复用
                 refreshed.add(digital_no)
-            row, retry_item = resolver.resolve(file_name, idx, raw)
-            if row is None:
+            rows, retry_item = resolver.resolve(file_name, idx, raw)
+            if rows is None:
                 if retry_item is not None:
                     still_pending.append(retry_item)
                 else:
@@ -820,9 +1014,9 @@ def _retry_unresolved(
                     if file_name not in result.unretryable_files:
                         result.unretryable_files.append(file_name)
                 continue
-            resolved_here.append(row)
+            resolved_here.extend(rows)          # 判例 8 拆行 ⇒ 一条导出行可能产出多行
             contributed_here.add(digital_no)
-            result.retried_rows_resolved += 1
+            result.retried_rows_resolved += len(rows)
             if digital_no not in result.retried_invoice_nos:
                 result.retried_invoice_nos.append(digital_no)
 
@@ -911,12 +1105,12 @@ def ingest_directory(
                     result.duplicate_invoice_nos.append(digital_no)
                 continue
 
-            row, retry_item = resolver.resolve(path.name, idx, raw)
-            if row is None:
+            rows, retry_item = resolver.resolve(path.name, idx, raw)
+            if rows is None:
                 if retry_item is not None:
                     unresolved_here.append(retry_item)
                 continue
-            rows_here.append(row)
+            rows_here.extend(rows)              # 判例 8 拆行 ⇒ 一条导出行可能产出多行
             contributed_here.add(digital_no)
 
         # 本文件贡献的发票号在此刻才并入闸——保证同文件内多行不自挡（见 docstring）。

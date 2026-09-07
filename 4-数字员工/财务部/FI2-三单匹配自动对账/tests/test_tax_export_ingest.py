@@ -241,12 +241,20 @@ def test_resolve_item_code_unique_match():
 
 def test_resolve_item_code_zero_match_when_qty_not_in_ap_lines():
     """真实场景：发票把 AP 的多笔批次合并成一行（33+67=100），单笔 qty=100 在 AP
-    明细中找不到匹配——必须如实标记未解析，不得猜测归到最接近的一行。"""
+    明细中找不到匹配——**按 `qty_price` 这把尺子**必须如实标记未解析，不得猜测归到
+    最接近的一行。
+
+    🔴 **2026-09-07 起本条显式钉在 `strategy="qty_price"` 上**：唐燕萍 2026-09-04
+    判例 7（同料号多行按合计开票）勾 ✅ ⇒ 这一形态在**新默认口径**下是**该被解开的**
+    （见 `test_case_merged_batch_is_now_solved_by_default_after_signoff`），不再是
+    「必须报未解析」。本条守的是那把老尺子本身没被悄悄放松，两条不冲突。"""
     ap_lines = [
         {"ItemCode": "R02E.0217", "APQtyTU": 33.0, "TaxPrice": 28.6},
         {"ItemCode": "R02E.0217", "APQtyTU": 67.0, "TaxPrice": 28.6},
     ]
-    item_code, reason, detail = resolve_item_code(ap_lines, qty=100.0, untaxed_unit_price=25.3097345132743, tax_rate=0.13)
+    item_code, reason, detail = resolve_item_code(
+        ap_lines, qty=100.0, untaxed_unit_price=25.3097345132743, tax_rate=0.13,
+        strategy="qty_price")
     assert item_code is None
     assert reason == "item_code_zero_match"
 
@@ -806,14 +814,24 @@ _CASE_BUBBLE_INV_7000 = dict(qty=7000.0, untaxed_unit_price=0.300885, tax_rate=0
                               untaxed_amount=2106.19, tax_amount=273.81)
 
 
-def test_default_item_match_strategy_is_unchanged_and_is_the_only_switch():
-    """🔴 退化守卫：默认口径必须仍是现状 `qty_price`。
+def test_default_item_match_strategy_is_the_signed_off_one_and_is_the_only_switch():
+    """🔴 退化守卫：默认口径必须是**唐燕萍已签认的那一档**，不得被顺手改回或改走。
+
+    🔴 **当前值 ＝ ⒜⒝⒞ 依次回落**，依据＝唐燕萍 2026-09-04 在 `财务部#16` 判例表 B
+    对判例 5／6／7 **三条全部勾 ✅**（docx 控件层 `w14:checked val="1"` 与字符层 `☒`
+    两路复核一致，取证件见队列 §一 #424）。她认可的是三条**全部**，故默认值是回落链
+    而不是三选一。
 
     本项目 `.51` 的部署方式是「整包同步」（队列 #418 ⑻ 实测坐实）——合入 master 即
     等于早晚上生产，「留步不部署」守不住。**唯一守得住的是这个默认值**，故它值得一条
     单独的断言，而不是靠人记得别改。
     """
-    assert tei._ITEM_MATCH_STRATEGY == "qty_price"
+    assert tei._ITEM_MATCH_STRATEGY ==         "qty_price_then_amount_then_single_item_then_subset_sum"
+    assert tei._ALLOW_INVOICE_ROW_SPLIT is True
+    # 三档单独回落的常量必须仍在（回滚路径依赖它们，派单件明写不得顺手删）
+    for legacy in ("qty_price", "amount", "qty_price_then_amount",
+                    "qty_price_then_single_item", "qty_price_then_subset_sum"):
+        assert legacy in tei.ITEM_MATCH_STRATEGIES
 
 
 def test_unknown_item_match_strategy_raises_rather_than_falls_back():
@@ -822,10 +840,55 @@ def test_unknown_item_match_strategy_raises_rather_than_falls_back():
         resolve_item_code(_CASE_SEALANT_AP_ROWS, strategy="whatever", **_CASE_SEALANT_INV)
 
 
-def test_case_sealant_current_strategy_drops_the_row():
-    """① 现状口径挡掉密封胶那一行——这就是唐燕萍那张发票「有票却报无票」的来路。"""
-    code, reason, _ = resolve_item_code(_CASE_SEALANT_AP_ROWS, **_CASE_SEALANT_INV)
+def test_case_sealant_old_qty_price_strategy_drops_the_row():
+    """① **老** `qty_price` 口径挡掉密封胶那一行——这就是唐燕萍那张发票「有票却报无票」
+    的来路。判例 5 签认后它已被新默认解开，见下一条。"""
+    code, reason, _ = resolve_item_code(
+        _CASE_SEALANT_AP_ROWS, strategy="qty_price", **_CASE_SEALANT_INV)
     assert code is None and reason == "item_code_zero_match"
+
+
+def test_case_sealant_is_solved_by_the_signed_off_default():
+    """🔴 判例 5（唐燕萍 2026-09-04 勾 ✅）端到端：她原始举证的密封胶那一行，
+    在**默认口径**下必须被唯一解出——不是「传个参数就能解」，是**不传参数就解**。
+
+    🔴 **本用例在旧默认值（`qty_price`）下必须变红**：那时它零命中、`code is None`。
+    """
+    code, reason, _ = resolve_item_code(_CASE_SEALANT_AP_ROWS, **_CASE_SEALANT_INV)
+    assert code == "R02D.0001" and reason == ""
+
+
+def test_case_bubble_7000_is_solved_by_the_signed_off_default():
+    """🔴 判例 7（勾 ✅）端到端：`AP-2026080137` 气泡袋 7000 ＝ 4000 ＋ 3000（同料号
+    两行），在**默认口径**下唯一解出。旧默认值下零命中 ⇒ 本用例会变红。"""
+    code, reason, _ = resolve_item_code(_CASE_BUBBLE_AP_ROWS, **_CASE_BUBBLE_INV_7000)
+    assert code == "R02E.0016" and reason == ""
+
+
+def test_case_merged_batch_is_now_solved_by_default_after_signoff():
+    """判例 7 的另一形态（本文件早先那条 33 ＋ 67 ＝ 100）在新默认口径下可解。"""
+    ap_lines = [
+        {"ItemCode": "R02E.0217", "APQtyTU": 33.0, "TaxPrice": 28.6},
+        {"ItemCode": "R02E.0217", "APQtyTU": 67.0, "TaxPrice": 28.6},
+    ]
+    code, reason, _ = resolve_item_code(
+        ap_lines, qty=100.0, untaxed_unit_price=25.3097345132743, tax_rate=0.13)
+    assert code == "R02E.0217" and reason == ""
+
+
+def test_single_item_fallback_fires_before_subset_sum_in_the_default_chain():
+    """回落次序必须是 ⒜ 金额 → ⒝ 单料号 → ⒞ 组合求和。
+
+    构造：单料号单据，金额对不上（⒜ 零命中）、⒝ 能解 ⇒ 若次序被改成先 ⒞，
+    这张单的 4000＋3000 组合会先出手，答案虽同名但来路不同；此处用「⒞ 凑不出来、
+    只有 ⒝ 能解」把次序本身钉住。
+    """
+    ap_rows = [{"ItemCode": "ONLY.1", "APQtyTU": 6200.0, "TaxPrice": 0.1194,
+                 "NonTaxAmtTC": 655.12, "TaxAmtTC": 85.16}]
+    inv = dict(qty=20.0, untaxed_unit_price=32.756, tax_rate=0.13,
+                untaxed_amount=1.11, tax_amount=2.22)   # 金额刻意对不上 ⇒ ⒜ 零命中
+    code, reason, _ = resolve_item_code(ap_rows, **inv)
+    assert code == "ONLY.1" and reason == ""
 
 
 def test_case_sealant_loosening_tolerance_does_not_help():
@@ -835,7 +898,8 @@ def test_case_sealant_loosening_tolerance_does_not_help():
     ⇒ 「把容差调大一点」这条看起来最省事的路，在这一类上是无效的。
     """
     code, reason, _ = resolve_item_code(
-        _CASE_SEALANT_AP_ROWS, qty_rel_tol=0.1, price_rel_tol=0.1, **_CASE_SEALANT_INV)
+        _CASE_SEALANT_AP_ROWS, strategy="qty_price",
+        qty_rel_tol=0.1, price_rel_tol=0.1, **_CASE_SEALANT_INV)
     assert code is None and reason == "item_code_zero_match"
 
 
@@ -952,8 +1016,57 @@ def test_item_match_diagnosis_marks_multi_code_subset_sum_separately():
     assert "subset_sum_跨2料号" in detail
 
 
+#: 四把尺子全都解不开的一行（新默认口径下仍该被如实丢掉并留痕）：
+#: 两个料号 ⇒ ⒝ 不适用；数量/单价对不上 ⇒ 现状零命中；金额对不上 ⇒ ⒜ 零命中；
+#: 任何子集和都凑不出 77 ⇒ ⒞ 零命中。
+_CASE_UNSOLVABLE_AP_ROWS = [
+    {"ItemCode": "Z01.0001", "APQtyTU": 10.0, "TaxPrice": 5.0,
+     "NonTaxAmtTC": 44.25, "TaxAmtTC": 5.75},
+    {"ItemCode": "Z01.0002", "APQtyTU": 20.0, "TaxPrice": 7.0,
+     "NonTaxAmtTC": 123.89, "TaxAmtTC": 16.11},
+]
+
+
 def test_dropped_rows_carry_diagnosis_through_ingest(tmp_path):
-    """端到端：一行挂不上料号的发票，其诊断必须带上可分类的身份并进重试队列。"""
+    """端到端：一行**四把尺子全都挂不上**料号的发票，其诊断必须带上可分类的身份并进
+    重试队列。
+
+    🔴 **2026-09-07 改用 `_CASE_UNSOLVABLE_AP_ROWS`**：本条原先借密封胶那一行当素材，
+    而判例 5 签认后那一行**已经该被解开**（见
+    `test_case_sealant_is_solved_by_the_signed_off_default`）。继续拿它当「丢行」的
+    样本，就会在口径修好之后仍然断言它被丢掉 —— 那是用测试把缺陷钉住。
+    本条要守的是「真正解不开的行不被静默吞掉」，故换一个真正解不开的素材。
+    """
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    _make_export_xlsx(export_dir / "a.xlsx", [
+        _row(digital_no="26322000006465433531", qty=77, unit_price=3.5,
+             amount=269.5, tax_amount=35.04),
+    ])
+
+    class _Conn:
+        def get_ap_lines_by_invoice_no(self, suffix):
+            return [{"InvoiceNo": "26322000006465433531", "DocNo": "AP-2026080041"}]
+
+        def get_ap_lines(self, ap_no):
+            return list(_CASE_UNSOLVABLE_AP_ROWS)
+
+    result = ingest_directory(export_dir, tmp_path / "l.json", _Conn(),
+                              now="2026-08-28T00:00:00Z")
+    assert result.resolved_rows == []
+    assert len(result.diagnostics) == 1
+    d = result.diagnostics[0]
+    assert d.reason == "item_code_zero_match"
+    assert "ap=AP-2026080041" in d.detail and "换口径可解=" in d.detail
+
+
+def test_signed_off_default_recovers_the_sealant_row_end_to_end(tmp_path):
+    """🔴 判例 5 的**端到端**兑现：唐燕萍原始举证的那张密封胶发票，摄取后必须真的
+    出现在 `invoice.csv` 行里、挂上 `R02D.0001` —— 而不是只在单函数层面能解。
+
+    🔴 **本用例在旧默认值下必须变红**：那时 `resolved_rows == []`、诊断报
+    `item_code_zero_match`，正是她看到的「有票却报无票」。
+    """
     export_dir = tmp_path / "exports"
     export_dir.mkdir()
     _make_export_xlsx(export_dir / "a.xlsx", [
@@ -969,12 +1082,12 @@ def test_dropped_rows_carry_diagnosis_through_ingest(tmp_path):
             return list(_CASE_SEALANT_AP_ROWS)
 
     result = ingest_directory(export_dir, tmp_path / "l.json", _Conn(),
-                              now="2026-08-28T00:00:00Z")
-    assert result.resolved_rows == []
-    assert len(result.diagnostics) == 1
-    d = result.diagnostics[0]
-    assert d.reason == "item_code_zero_match"
-    assert "ap=AP-2026080041" in d.detail and "换口径可解=" in d.detail
+                              now="2026-09-07T00:00:00Z")
+    assert result.diagnostics == []
+    assert len(result.resolved_rows) == 1
+    row = result.resolved_rows[0]
+    assert row["ap_no"] == "AP-2026080041" and row["item_code"] == "R02D.0001"
+    assert row["inv_qty"] == 20 and row["untaxed_amount"] == 655.12
 
 
 def test_summarize_and_write_diagnostics_jsonl(tmp_path):
@@ -997,3 +1110,149 @@ def test_summarize_and_write_diagnostics_jsonl(tmp_path):
     assert len(lines) == 6
     rec = json.loads(lines[2])
     assert rec["reason"] == "item_code_zero_match" and rec["detail"] == "ap=AP-1"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 判例 8（表 C）：一张发票行拆成多条 —— 唐燕萍 2026-09-04 勾 ✅ ＋ 算法约束
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_case_bubble_6000_is_split_across_two_item_codes_by_default():
+    """🔴 判例 8 端到端（函数层）：`AP-2026080137` 气泡袋 6000 ＝ `J02E.0024` 1000 ＋
+    `R02E.0024` 5000，跨两个料号 ⇒ **拆成两条**，而不是报歧义丢掉。
+
+    🔴 **本用例在旧实现下必须变红**：那时 `resolve_item_code` 判 `item_code_ambiguous`、
+    没有任何拆行路径，`resolve_item_code_split` 这个函数根本不存在。
+    """
+    alloc = tei.resolve_item_code_split(
+        _CASE_BUBBLE_AP_ROWS, _CASE_BUBBLE_INV_6000["qty"],
+        _CASE_BUBBLE_INV_6000["untaxed_unit_price"], _CASE_BUBBLE_INV_6000["tax_rate"],
+        untaxed_amount=_CASE_BUBBLE_INV_6000["untaxed_amount"],
+        tax_amount=_CASE_BUBBLE_INV_6000["tax_amount"])
+    assert alloc == [("J02E.0024", 1000.0), ("R02E.0024", 5000.0)]
+
+
+def test_case_bubble_6000_split_amounts_reproduce_the_real_ap_lines_to_the_cent():
+    """🔴 她的算法约束逐字兑现，且**摊出来的数与真实 AP 行分毫不差**。
+
+    约束原文：「拆行后两条的未税金额与税额**分别相加须与原发票行一致**，分摊产生的
+    **尾差并入已有的最后一条记录**（不单独成一条）。」
+
+    本条的分量在于：按数量占比摊出来的 (176.99 / 23.01) 与 (884.96 / 115.04)，
+    **正是 `_CASE_BUBBLE_AP_ROWS` 里那两行 AP 的真实 `NonTaxAmtTC`/`TaxAmtTC`**
+    —— 不是我方自洽即可的算术，而是与账上真实数据对得上。
+    """
+    parts = tei.split_row_amounts(
+        [("J02E.0024", 1000.0), ("R02E.0024", 5000.0)],
+        _CASE_BUBBLE_INV_6000["untaxed_amount"], _CASE_BUBBLE_INV_6000["tax_amount"])
+    assert parts == [("J02E.0024", 1000.0, 176.99, 23.01),
+                     ("R02E.0024", 5000.0, 884.96, 115.04)]
+    ap_by_code = {r["ItemCode"]: r for r in _CASE_BUBBLE_AP_ROWS if r["APQtyTU"] in (1000.0, 5000.0)}
+    for code, _q, u, t in parts:
+        assert u == ap_by_code[code]["NonTaxAmtTC"]
+        assert t == ap_by_code[code]["TaxAmtTC"]
+    # 相加必须等于原发票行（她的硬约束）
+    assert round(sum(u for *_x, u, _t in parts), 2) == _CASE_BUBBLE_INV_6000["untaxed_amount"]
+    assert round(sum(t for *_x, _u, t in parts), 2) == _CASE_BUBBLE_INV_6000["tax_amount"]
+
+
+def test_split_residual_goes_into_the_last_record_not_a_new_one():
+    """🔴 尾差处理：三等分 100.00 会摊出 33.33×3 ＝ 99.99，**差的那 1 分并入最后一条**，
+    不单起一条记录。条数恒等于料号数。"""
+    parts = tei.split_row_amounts(
+        [("A", 1.0), ("B", 1.0), ("C", 1.0)], 100.00, 13.00)
+    assert len(parts) == 3                       # 不因尾差多出一条
+    assert parts[0][2] == parts[1][2] == 33.33
+    assert parts[2][2] == 33.34                  # 尾差并入最后一条
+    assert round(sum(u for *_x, u, _t in parts), 2) == 100.00
+    assert round(sum(t for *_x, _u, t in parts), 2) == 13.00
+
+
+def test_split_order_is_deterministic_so_last_record_is_well_defined():
+    """「并入最后一条」要求「最后一条」是确定的：分配次序按料号升序固定，
+    与 AP 行在入参里的先后无关。"""
+    reversed_rows = list(reversed(_CASE_BUBBLE_AP_ROWS))
+    alloc = tei.resolve_item_code_split(
+        reversed_rows, _CASE_BUBBLE_INV_6000["qty"],
+        _CASE_BUBBLE_INV_6000["untaxed_unit_price"], _CASE_BUBBLE_INV_6000["tax_rate"],
+        untaxed_amount=_CASE_BUBBLE_INV_6000["untaxed_amount"],
+        tax_amount=_CASE_BUBBLE_INV_6000["tax_amount"])
+    assert alloc == [("J02E.0024", 1000.0), ("R02E.0024", 5000.0)]
+
+
+def test_no_split_when_a_single_item_code_already_solves_it():
+    """判例 7 那一类（同料号多行合计开票）由 ⒞ 正常解出一个料号 ⇒ **不拆**。"""
+    assert tei.resolve_item_code_split(
+        _CASE_BUBBLE_AP_ROWS, _CASE_BUBBLE_INV_7000["qty"],
+        _CASE_BUBBLE_INV_7000["untaxed_unit_price"], _CASE_BUBBLE_INV_7000["tax_rate"],
+        untaxed_amount=_CASE_BUBBLE_INV_7000["untaxed_amount"],
+        tax_amount=_CASE_BUBBLE_INV_7000["tax_amount"]) is None
+
+
+def test_no_split_when_an_earlier_ruler_already_had_candidates():
+    """🔴 「前面已经分不清」和「前面根本没有答案」是两件事——只有后者才轮得到拆行。
+
+    构造：`qty_price` 已给出两个候选（真歧义）⇒ 即便组合求和能凑出别的摊法，
+    也一律不拆。否则拆行就成了绕过「歧义不猜」那条红线的后门。
+    """
+    ap_rows = [
+        {"ItemCode": "A1", "APQtyTU": 10.0, "TaxPrice": 1.13,
+         "NonTaxAmtTC": 10.0, "TaxAmtTC": 1.3},
+        {"ItemCode": "A2", "APQtyTU": 10.0, "TaxPrice": 1.13,
+         "NonTaxAmtTC": 99.0, "TaxAmtTC": 9.9},
+    ]
+    assert tei.resolve_item_code_split(
+        ap_rows, 10.0, 1.0, 0.13, untaxed_amount=99.0, tax_amount=9.9) is None
+
+
+def test_no_split_when_the_subset_sum_plan_is_not_unique():
+    """凑法不唯一 ⇒ 不拆。两份不同的摊法都能凑出 100，替她挑一份就是猜。"""
+    ap_rows = [
+        {"ItemCode": "B1", "APQtyTU": 100.0, "TaxPrice": 2.0},
+        {"ItemCode": "B2", "APQtyTU": 40.0, "TaxPrice": 2.0},
+        {"ItemCode": "B3", "APQtyTU": 60.0, "TaxPrice": 2.0},
+    ]
+    assert tei.resolve_item_code_split(
+        ap_rows, 100.0, 2.0 / 1.13, 0.13, untaxed_amount=1.0, tax_amount=1.0) is None
+
+
+def test_split_can_be_turned_off_by_its_own_switch(monkeypatch):
+    """判例 8 是**另一个**口径决定，须能单独回滚——关掉开关即回到「报歧义、不拆」。"""
+    monkeypatch.setattr(tei, "_ALLOW_INVOICE_ROW_SPLIT", False)
+    assert tei.resolve_item_code_split(
+        _CASE_BUBBLE_AP_ROWS, _CASE_BUBBLE_INV_6000["qty"],
+        _CASE_BUBBLE_INV_6000["untaxed_unit_price"], _CASE_BUBBLE_INV_6000["tax_rate"],
+        untaxed_amount=_CASE_BUBBLE_INV_6000["untaxed_amount"],
+        tax_amount=_CASE_BUBBLE_INV_6000["tax_amount"]) is None
+
+
+def test_split_writes_two_invoice_rows_end_to_end(tmp_path):
+    """🔴 判例 8 端到端（摄取层）：一条导出行 → `invoice.csv` **两行**，同一张发票号，
+    金额相加等于原行。
+
+    🔴 **本用例在旧实现下必须变红**：旧 `_RowResolver.resolve()` 返回单行、
+    `resolved_rows` 长度恒为 1，且这一行当时压根没被解开（判歧义丢掉）。
+    """
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    _make_export_xlsx(export_dir / "a.xlsx", [
+        _row(digital_no="26322000006465433532", qty=6000, unit_price=0.176991,
+             amount=1061.95, tax_amount=138.05),
+    ])
+
+    class _Conn:
+        def get_ap_lines_by_invoice_no(self, suffix):
+            return [{"InvoiceNo": "26322000006465433532", "DocNo": "AP-2026080137"}]
+
+        def get_ap_lines(self, ap_no):
+            return list(_CASE_BUBBLE_AP_ROWS)
+
+    result = ingest_directory(export_dir, tmp_path / "l.json", _Conn(),
+                              now="2026-09-07T00:00:00Z")
+    assert result.diagnostics == []
+    assert len(result.resolved_rows) == 2
+    assert {r["item_code"] for r in result.resolved_rows} == {"J02E.0024", "R02E.0024"}
+    assert {r["inv_no"] for r in result.resolved_rows} == {"26322000006465433532"}
+    assert {r["ap_no"] for r in result.resolved_rows} == {"AP-2026080137"}
+    assert round(sum(r["untaxed_amount"] for r in result.resolved_rows), 2) == 1061.95
+    assert round(sum(r["tax_amount"] for r in result.resolved_rows), 2) == 138.05
+    assert sum(r["inv_qty"] for r in result.resolved_rows) == 6000

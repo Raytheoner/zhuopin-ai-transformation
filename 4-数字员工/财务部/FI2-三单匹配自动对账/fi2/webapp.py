@@ -125,6 +125,25 @@ _KPI_ORPHAN_LABELED = "labeled"       # 队列 #423 ⒝：仍计入，但文案�
 _KPI_ORPHAN_MODES: tuple[str, ...] = (
     _KPI_ORPHAN_COUNT_IN, _KPI_ORPHAN_SEPARATE, _KPI_ORPHAN_LABELED)
 _KPI_ORPHAN_MODE = _KPI_ORPHAN_SEPARATE   # 2026-08-28 由 COUNT_IN 切至 ⒜，依据见上方签认状态段
+# 🔴 **2026-09-07 复核：本行维持 `SEPARATE` 不动，理由写在这里，免得下一个人以为漏改了。**
+# 唐燕萍 2026-09-04 对判例 1（＝⒜ `SEPARATE`）与判例 2（＝⒝ `LABELED`）都勾了 ❌，
+# 表面看「⒜ 该被改掉」。但那两条问的是**在 `_INVOICE_SCOPE=all` 那个前提下、面板上
+# 3,389 行孤立发票该怎么显示**；她真正选的是判例 3（切 `ap_range`）。切了 ⒞ 之后：
+#   · `partition_invoices` 按 `inv.ap_no in ap_nos` 切分，而 `ap_range` 恰好只留下
+#     `ap_no ∈ ap_nos` 的行 ⇒ **`orphaned` 恒为空集**（不是「变少」，是恒空）。
+#   · `n_orphan ≡ 0` ⇒ `kpi_counts()` 三档分支的**四个数完全相同**、`_render_kpi()` 的
+#     提示条三档都为空串 ⇒ **本行在签认后的生产配置下几乎没有可观测行为**。
+#     ⚠️ 唯一残留差异：⒝ 的 `total_label` 仍写「行（含孤立发票）」——`n_orphan=0` 时那句
+#     本身就不准确，而那恰恰是她对判例 2 判 ❌ 的地方；⒜ 与 `COUNT_IN` 的标签都是
+#     「项料品」。**不要把这写成「三档全等」** —— 全等的是数，不是文案。
+# ⇒ 改它既不兑现她的 ❌、也不违反它，只会让回滚到 `all` 时的行为悄悄换一档。
+#   故：**保留三档常量与分派不删**（派单件 §四明写不得顺手删），默认值定在与 ⒞ 自洽的
+#   `SEPARATE`——⒞ 的前提是「孤立发票回到理论不应出现的量级、不参与四维判定」，
+#   `SEPARATE`（移出 KPI 三档、不并进 BLOCK）正是这句话的计数形态；`COUNT_IN` 会把它们
+#   并回 BLOCK，与「不参与判定」自相矛盾。
+# 🔑 判据：她否掉的是判例 1/2 的**显示口径**，不是否掉「孤立发票要留得住」这件事本身——
+#   「留得住」由未匹配发票池（`_render_invoice_pool`）承接，不由 KPI 档位承接。
+# 用例 `test_kpi_orphan_mode_is_observationally_inert_under_ap_range_scope` 钉死本段推理。
 
 # 队列 #423 ⒞（装载侧，与上面三档**不是一回事**）：⒜⒝ 改的是「怎么显示」，⒞ 改的是
 # 「装载多少」—— 只装载 `ap_no` 落在本次 AP 取数范围内的发票行，孤立发票自然回到
@@ -133,10 +152,26 @@ _KPI_ORPHAN_MODE = _KPI_ORPHAN_SEPARATE   # 2026-08-28 由 COUNT_IN 切至 ⒜�
 # 两者从此不可区分），**不得因为「看起来最干净」就先切**。
 # 🔴 **本条红线未被 2026-08-28 那次拍板覆盖**：那次只切了 ⒜（显示侧），`_INVOICE_SCOPE`
 # 原样保留 `all`，仍待唐燕萍确认后方可改动。⒜ 已切不构成对本条的先例。
-_INVOICE_SCOPE_ALL = "all"            # 现状：装载发票源里的全部行
-_INVOICE_SCOPE_AP_RANGE = "ap_range"  # ⒞：只装载 ap_no 落在本次 AP 范围内的行
+_INVOICE_SCOPE_ALL = "all"            # 曾经的默认：装载发票源里的全部行
+_INVOICE_SCOPE_AP_RANGE = "ap_range"  # ⒞：只让 ap_no 落在本次 AP 范围内的行参与判定
 _INVOICE_SCOPES: tuple[str, ...] = (_INVOICE_SCOPE_ALL, _INVOICE_SCOPE_AP_RANGE)
-_INVOICE_SCOPE = _INVOICE_SCOPE_ALL
+
+# ✅ **签认依据：唐燕萍 2026-09-04 在 `财务部#16` 回件判例表 A 逐行勾选，判例 3 勾 ✅**
+# （判例 1 ❌／判例 2 ❌／判例 3 ✅／判例 4 ❌；2026-09-07 zipfile 直读 docx 复核：
+# `w14:checked w14:val="1"` 计 8、字符层 `☒` 计 8，控件层与字符层两路一致 ⇒ 8 行全部作答。
+# 取证件 `6-人才与组织/部门AI专员跟进/财务部16回件勾选误判-取证与更正-2026-09-07.md`，
+# 队列 §一 #423）。⇒ 上方那句「仍待唐燕萍确认后方可改动」的前置条件**已于 2026-09-04
+# 满足**，本行由 `_INVOICE_SCOPE_ALL` 改为 `_INVOICE_SCOPE_AP_RANGE`。
+#
+# 🔴 **她要的不是「丢掉」，而是「不在三单核对明细表里露面、但仍然留得住查得到」**——
+# 判例 4 她勾 ❌ 并写明：「保留判例 4 的功能但不用展现孤立发票在面板上，**不要把孤立
+# 发票过滤掉**，而是留在未匹配成功的发票池，即红框的孤立发票不需要体现在三单核对明细表
+# 中，但这些孤立发票**有可能只是目前业务尚未立账，待立账时才需要用到**。」
+# ⇒ 本档的过滤只作用于**参与判定与明细表**的那一批；被排除的发票行由
+# `split_invoice_rows_by_scope()` 原样交给「未匹配成功的发票池」，**装载环节不丢弃、
+# 不少落一行**。做错了她下个月立账时会找不到发票 —— 用例
+# `test_ap_range_scope_keeps_excluded_rows_retrievable_in_the_pool` 钉死这一条。
+_INVOICE_SCOPE = _INVOICE_SCOPE_AP_RANGE
 
 
 def _resolve_invoice_sample() -> tuple[Path | None, str]:
@@ -391,21 +426,43 @@ def _u9c_ap_real_line_no(ap_lines: list[APLine], raw_ap_rows: list[dict]) -> dic
     return out
 
 
-def scope_invoice_rows(ap_lines, invoice_rows, *, scope: str | None = None):
-    """队列 #423 ⒞：按 AP 取数范围裁掉「不在本次范围内」的发票行（默认不裁）。
+def split_invoice_rows_by_scope(ap_lines, invoice_rows, *, scope: str | None = None):
+    """队列 #423 ⒞：按 AP 取数范围把发票行切成 **(参与判定的, 落进未匹配发票池的)** 两组。
 
     🔴 **它与 `partition_invoices` 不是一回事，务必分清**：`partition_invoices` 判的是
     「这张发票挂的 AP 单号在不在 AP 明细里」并把落空的标成**孤立发票**（一个异常信号）；
-    本函数是在那之前决定「这些发票行要不要进来」。⒞ 生效后，被裁掉的行**不再以任何
-    形式出现在面板上**——包括真正的数据完整性异常。这正是选 ⒞ 的代价，须唐燕萍确认。
+    本函数是在那之前决定「这些发票行要不要进判定」。
+
+    🔴 **本函数一行都不丢** —— 这是唐燕萍 2026-09-04 判例 4 勾 ❌ 时写死的边界：
+    「**不要把孤立发票过滤掉**，而是留在未匹配成功的发票池……有可能只是目前业务尚未
+    立账，待立账时才需要用到」。⇒ 返回值的两段**并集恒等于入参 `invoice_rows`**
+    （同一批对象、无副本、无去重），第二段由 `_render_invoice_pool()` 渲染成可检索的
+    发票池。**MUST NOT 在装载环节丢弃或不落盘** —— 做错了她下个月立账时会找不到发票。
+
+    ⚠️ 顺带记一条 ⒞ 的真实代价（不是缺陷，是选它就得接受的）：`ap_range` 之后
+    `partition_invoices` 的 `orphaned` **恒为空集**，「真·孤立发票（数据完整性异常）」
+    与「不在本次范围内（正常未立账）」两类从此在判定侧不可区分；两者一起落进发票池，
+    池内按 `_invoice_pool_reason()` 各自标注来路，**在池里仍分得清**。
     """
     scope = scope or _INVOICE_SCOPE
     if scope not in _INVOICE_SCOPES:
         raise ValueError(f"未知的发票装载范围：{scope!r}；合法值＝{list(_INVOICE_SCOPES)}")
     if scope == _INVOICE_SCOPE_ALL:
-        return invoice_rows
+        return list(invoice_rows), []
     ap_nos = {a.ap_no for a in ap_lines}
-    return [inv for inv in invoice_rows if inv.ap_no in ap_nos]
+    in_scope = [inv for inv in invoice_rows if inv.ap_no in ap_nos]
+    out_of_scope = [inv for inv in invoice_rows if inv.ap_no not in ap_nos]
+    return in_scope, out_of_scope
+
+
+def scope_invoice_rows(ap_lines, invoice_rows, *, scope: str | None = None):
+    """`split_invoice_rows_by_scope()` 的第一段（＝参与判定的那一批）。
+
+    保留本函数只为不打断既有调用方与用例；**新代码一律用
+    `split_invoice_rows_by_scope()`** —— 只取第一段而丢掉第二段，正是判例 4 明令禁止的
+    那个做法。
+    """
+    return split_invoice_rows_by_scope(ap_lines, invoice_rows, scope=scope)[0]
 
 
 def _run_with_detail(
@@ -431,8 +488,15 @@ def _run_with_detail(
     invoice_rows = fs.load_invoice()
     ap_real_line_no = _u9c_ap_real_line_no(ap_lines, fs.raw_ap_rows())
 
-    invoice_rows = scope_invoice_rows(ap_lines, invoice_rows, scope=invoice_scope)
+    # 队列 #423 判例 3＋判例 4（唐燕萍 2026-09-04 签认）：⒞ 只裁「参与判定的那一批」，
+    # 被裁掉的行**原样进未匹配发票池**，不丢。
+    invoice_rows, out_of_scope = split_invoice_rows_by_scope(
+        ap_lines, invoice_rows, scope=invoice_scope)
     linked, orphaned = partition_invoices(ap_lines, invoice_rows)
+    # 判例 4 ❌「红框的孤立发票不需要体现在三单核对明细表中……而是留在未匹配成功的
+    # 发票池」——两类合流进池，各带各的来路标注（`ap_range` 下 `orphaned` 恒空，
+    # 这一支只在回滚到 `all` 时才有内容）。
+    invoice_pool = [(inv, "out_of_scope") for inv in out_of_scope] +                    [(inv, "orphaned") for inv in orphaned]
     items = classify_all(ap_lines, linked)
     price_results = check_ap_po_price(ap_lines, po_lines)
 
@@ -448,7 +512,8 @@ def _run_with_detail(
         data_sources={"po": fs.data_source, "ap": fs.data_source, "invoice": invoice_source_label},
         evaluator=evaluator, period=period, audit=audit,
     )
-    return rep, po_lines, ap_lines, linked, orphaned, price_results, ap_real_line_no
+    return (rep, po_lines, ap_lines, linked, orphaned, price_results, ap_real_line_no,
+            invoice_pool)
 
 
 # ────────────────────────────── v8 行视图构建（纯展示层聚合，不改判定）──────────────────────────────
@@ -734,43 +799,12 @@ def _render_table(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, pric
         rows_html.append(detail)
         idx += 1
 
-    for inv in orphaned:
-        item_pseudo = {
-            "ap_no": "（无AP）", "item_code": inv.item_code, "has_invoice": False,
-            "classification": "孤立发票", "status": "needs_review",
-            "price_check_failed": False, "price_diff_pct": None,
-            "qty_diff_pct": None, "untaxed_amount_diff_pct": None, "tax_amount_diff_pct": None,
-        }
-        css_cls, row_cls, status_label = _STATUS_META["needs_review"]
-        reason = html.escape(f"孤立发票：{inv.inv_no} 挂载 ap_no={inv.ap_no} 找不到对应 AP 单")
-        rows_html.append(f"""
-<tr class="{row_cls}">
-  <td><button class="expander" id="caret-{idx}" onclick="toggleRow({idx})">▶</button> {idx + 1}</td>
-  <td>（无AP）</td>
-  <td>{html.escape(inv.item_code)}</td>
-  <td><span class="na">— 缺PO</span></td>
-  <td><span class="na">— 无法核对（孤立发票）</span></td>
-  <td>{_STUB}</td>
-  <td>{_STUB}</td>
-  <td>{_STUB}</td>
-  <td><span class="status-badge {css_cls}">{status_label}</span></td>
-  <td><button class="op-btn" onclick="toggleReason({idx})">📋 退回原因</button>
-      <div class="reason-pop" id="reason-{idx}">{reason}</div></td>
-</tr>
-<tr class="row-detail" id="detail-{idx}" style="display:none">
-  <td colspan="10">
-    <div class="doc-cards">{_doc_card_po(None)}{_doc_card_ap([], ap_real_line_no)}{_doc_card_inv([inv])}</div>
-    <div class="check-blocks">
-      <div class="check-block"><h5>① 四维匹配</h5>无法核对（孤立发票，找不到对应AP单/PO单）</div>
-      <div class="check-block"><h5>② OCR 字段校验（8字段）</h5>{_STUB}</div>
-      <div class="check-block"><h5>③ 税率合规</h5>{_STUB}</div>
-      <div class="check-block"><h5>④ 重复发票检测</h5>{_STUB}</div>
-      <div class="check-block"><h5>⑤ PO 变更检测</h5>{_STUB_POCHANGE}</div>
-      <div class="check-block"><h5>⑥ 行级映射</h5>无PO无AP，孤立发票</div>
-    </div>
-  </td>
-</tr>""")
-        idx += 1
+    # 🔴 队列 #423 判例 4（唐燕萍 2026-09-04 勾 ❌）：「**红框的孤立发票不需要体现在
+    # 三单核对明细表中**……而是留在未匹配成功的发票池」。⇒ 此处原有的「把每条孤立发票
+    # 也铺成一行明细」整段移除，孤立发票改由 `_render_invoice_pool()` 承接。
+    # ⚠️ **这条与 `_INVOICE_SCOPE` 档位无关**：她否的是「孤立发票出现在明细表里」这件事
+    # 本身，不是「在某个档位下才不该出现」⇒ 回滚到 `all` 时同样不得回到旧行为。
+    # `orphaned` 仍由调用方原样传入并计入 KPI（`kpi_counts`），只是不再渲染成明细行。
 
     return (
         '<div class="table-scroll"><table class="v8">'
@@ -778,6 +812,90 @@ def _render_table(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, pric
         '<th>AP↔发票</th><th>税率合规</th><th>重复检测</th><th>OCR</th><th>判定/状态</th><th>操作</th></tr></thead>'
         f'<tbody>{"".join(rows_html)}</tbody></table></div>'
     )
+
+
+_POOL_REASON_LABEL = {
+    "out_of_scope": "不在本次 AP 取数范围内（多为尚未立账，待立账时可在此检索取用）",
+    "orphaned": "孤立发票：所挂 ap_no 在本次 AP 明细里找不到（数据完整性异常）",
+}
+
+
+def _invoice_pool_reason(kind: str) -> str:
+    """池内每一行的来路标注。两类**在池里必须仍分得清**（见
+    `split_invoice_rows_by_scope` docstring 末段）——「尚未立账」是正常业务，
+    「孤立发票」是异常信号，混成一句话等于把后者藏进前者。"""
+    return _POOL_REASON_LABEL.get(kind, kind)
+
+
+def _render_invoice_pool(invoice_pool) -> str:
+    """未匹配成功的发票池（队列 #423 判例 4，唐燕萍 2026-09-04 原话落地）。
+
+    > 「不要把孤立发票过滤掉，而是留在未匹配成功的发票池，即红框的孤立发票不需要体现在
+    > 三单核对明细表中，但这些孤立发票有可能只是目前业务尚未立账，**待立账时才需要用到**。」
+
+    ⇒ 本区块的职责只有一个：**让这些行留得住、查得到**。故 ⑴ 默认收起（不干扰她看
+    明细表）、⑵ 全量渲染不截断（截断＝她要找的那一行可能恰好不在前 N 条里）、
+    ⑶ 带一个纯前端过滤框（无外部依赖，按发票号／AP 单号／料品编码即时筛）。
+
+    `invoice_pool` ＝ `[(InvoiceLine, kind), ...]`，`kind` ∈ `out_of_scope`／`orphaned`。
+    """
+    if not invoice_pool:
+        return ""
+    n_out = sum(1 for _, k in invoice_pool if k == "out_of_scope")
+    n_orphan = sum(1 for _, k in invoice_pool if k == "orphaned")
+    bits = []
+    if n_out:
+        bits.append(f"{n_out} 行尚未立账/不在本次范围")
+    if n_orphan:
+        bits.append(f"{n_orphan} 行孤立发票")
+    rows = []
+    for inv, kind in invoice_pool:
+        rows.append(
+            f'<tr data-k="{html.escape((inv.inv_no + " " + inv.ap_no + " " + inv.item_code).lower())}">'
+            f"<td>{html.escape(inv.inv_no)}</td><td>{html.escape(inv.ap_no)}</td>"
+            f"<td>{html.escape(inv.item_code)}</td><td>{html.escape(inv.unit or '')}</td>"
+            f"<td class=\"num\">{inv.inv_qty:,.3f}</td>"
+            f"<td class=\"num\">{_money(inv.untaxed_amount)}</td>"
+            f"<td class=\"num\">{_money(inv.tax_amount)}</td>"
+            f"<td>{html.escape(inv.inv_date or '')}</td>"
+            f"<td>{html.escape(_invoice_pool_reason(kind))}</td></tr>")
+    return f"""
+<div class="card">
+  <details>
+    <summary style="cursor:pointer;font-size:14px;font-weight:600">
+      🗂️ 未匹配成功的发票池 — 共 <b>{len(invoice_pool)}</b> 行（{'，'.join(bits)}）· 点击展开检索
+    </summary>
+    <div class="note" style="margin:8px 0">
+      这些发票行 <b>未参与本次三单核对判定</b>，也不出现在上面的明细表里，但<b>一行未丢</b>、
+      原样留存在此可检索 —— 其中「尚未立账」的那些，待立账后再跑一次即会自动进入判定。
+    </div>
+    <input id="poolq" type="search" placeholder="按发票号 / AP单号 / 料品编码 筛选…"
+           oninput="filterPool(this.value)"
+           style="width:100%;max-width:420px;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:8px">
+    <div id="poolcount" class="note" style="margin-bottom:6px"></div>
+    <div class="table-scroll" style="max-height:420px;overflow-y:auto">
+      <table class="v8"><thead><tr>
+        <th>发票号</th><th>AP单号</th><th>料品编码</th><th>单位</th><th>数量</th>
+        <th>未税金额</th><th>税额</th><th>开票日期</th><th>未参与判定的原因</th>
+      </tr></thead><tbody id="poolbody">{''.join(rows)}</tbody></table>
+    </div>
+  </details>
+</div>
+<script>
+function filterPool(q){{
+  var kw = (q || "").trim().toLowerCase();
+  var rows = document.querySelectorAll("#poolbody tr");
+  var shown = 0;
+  for (var i = 0; i < rows.length; i++) {{
+    var hit = !kw || rows[i].getAttribute("data-k").indexOf(kw) >= 0;
+    rows[i].style.display = hit ? "" : "none";
+    if (hit) shown++;
+  }}
+  document.getElementById("poolcount").textContent =
+    kw ? ("筛出 " + shown + " / " + rows.length + " 行") : "";
+}}
+</script>
+"""
 
 
 def kpi_counts(rep: dict, orphaned, *, mode: str | None = None) -> dict:
@@ -853,7 +971,7 @@ def _render_block_flow() -> str:
 
 
 def _report_page(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price_results,
-                  ap_real_line_no: dict[int, str]) -> str:
+                  ap_real_line_no: dict[int, str], invoice_pool=None) -> str:
     ds = rep["data_sources"]
     # 队列 #423：孤立发票的计数口径收进 `kpi_counts` 单一入口（原为此处两行裸算术，
     # 详见 `_KPI_ORPHAN_MODE` 上方的「为什么当时对、现在不对」）。
@@ -900,6 +1018,8 @@ def _report_page(rep: dict, po_lines, ap_lines, linked_invoices, orphaned, price
   <h3 style="margin:0 0 8px;font-size:14px">📋 三单核对明细表 — 点击行号展开/收起详情</h3>
   {_render_table(rep, po_lines, ap_lines, linked_invoices, orphaned, price_results, ap_real_line_no)}
 </div>
+
+{_render_invoice_pool(invoice_pool or [])}
 
 {_render_block_flow()}
 
@@ -983,7 +1103,8 @@ def create_app(*, reports_dir: Path) -> Flask:
 
         audit = AuditLogger.jsonl(audit_path)
         try:
-            rep, po_lines, ap_lines, linked, orphaned, price_results, ap_real_line_no = _run_with_detail(
+            (rep, po_lines, ap_lines, linked, orphaned, price_results, ap_real_line_no,
+             invoice_pool) = _run_with_detail(
                 data_source, csv_dir=csv_dir, evaluator=evaluator, period=period,
                 audit=audit, u9c_connector=u9c_connector,
                 ap_doc_nos=ap_doc_nos, ap_supplier_codes=ap_supplier_codes,
@@ -996,7 +1117,8 @@ def create_app(*, reports_dir: Path) -> Flask:
             ), 500
 
         return Response(
-            _report_page(rep, po_lines, ap_lines, linked, orphaned, price_results, ap_real_line_no),
+            _report_page(rep, po_lines, ap_lines, linked, orphaned, price_results,
+                          ap_real_line_no, invoice_pool),
             mimetype="text/html",
         )
 

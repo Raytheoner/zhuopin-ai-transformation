@@ -453,19 +453,21 @@ class TestRunMockModeV8Panel:
     def test_mock_run_total_matches_fixture_without_orphan(self, client):
         """data/mock 五表固定含 11 个料品 + 1 条孤立发票。
 
-        🔴 **2026-08-28 随 ⒜ 切换而改**（原断言 12 项 / BLOCK 9）：⒜ 把孤立发票移出 KPI
-        三档 ⇒ 三档只反映引擎真判过的 11 个料品项，BLOCK 回落到纯 `needs_review` 的 8；
-        那 1 条孤立发票**不消失**，改由下方独立提示条如实显示（末两条断言锁死这一点——
-        「移出三档」绝不等于「藏起来」）。v8 主表仍把它并入同一张表（规格 3.8 未变）。
+        🔴 **2026-09-07 随 ⒞ 切换而再改**：`ap_range` 之后 INV-9/AP-9999 在装载侧即被
+        移出「参与判定」的那一批 ⇒ `orphaned` 恒空、KPI 提示条不再出现。三档仍是引擎
+        真判过的 11 个料品项、BLOCK 仍是纯 `needs_review` 的 8（这两个数与 ⒜ 时相同）。
+        🔴 **那 1 条发票依然不消失**——改由未匹配发票池承接，末两条断言锁死这一点：
+        「移出判定」绝不等于「丢掉」（判例 4 唐燕萍勾 ❌ 的正是「过滤掉」这个做法）。
         """
         r = client.post("/run", data={"data_source": "mock"})
         body = r.get_data(as_text=True)
         assert "本次共 11 项料品" in body
         assert "2 项自动通过" in body
         assert "1 项微差消化" in body
-        assert "8 项BLOCK退回" in body  # ⒜：纯 needs_review，孤立发票不再并入
-        assert "孤立发票" in body
-        assert "另有 <b>1</b> 行孤立发票" in body
+        assert "8 项BLOCK退回" in body  # 孤立发票不并入
+        assert "另有 <b>1</b> 行孤立发票" not in body   # ⒞ 下 orphaned 恒空，提示条消失
+        assert "未匹配成功的发票池" in body            # 但它留得住
+        assert "INV-9" in body                        # 且查得到
 
     def test_mock_run_shows_known_full_match_and_price_alert(self, client):
         """AP-1000/A001 数量金额税额与发票精确一致 → PO↔AP/AP↔发票均一致；
@@ -476,14 +478,23 @@ class TestRunMockModeV8Panel:
         assert "AP-8000" in body
         assert "单价+6.00%（超差）" in body
 
-    def test_mock_run_shows_orphaned_invoice_as_main_table_row(self, client):
-        """invoice.csv 里 INV-9 挂载 AP-9999，AP 明细行不存在该单号 → 孤立发票并入主表一行
-        （规格 3.8：不再单列一个区），判定强制 BLOCK退回。"""
+    def test_mock_run_moves_orphaned_invoice_out_of_main_table_into_the_pool(self, client):
+        """🔴 判例 4（唐燕萍 2026-09-04 勾 ❌）：孤立发票**不再**是主表的一行。
+
+        她的原话：「红框的孤立发票**不需要体现在三单核对明细表中**，但这些孤立发票有
+        可能只是目前业务尚未立账，待立账时才需要用到。」⇒ INV-9/AP-9999 仍必须在页面上
+        找得到，但落点从主表挪到未匹配发票池，且**不再顶着「（无AP）」那行伪明细**。
+
+        🔴 **本用例在旧实现下必须变红**：旧 `_render_table` 对每条孤立发票铺一行
+        `（无AP）` 伪明细，`assert "（无AP）" not in body` 立刻失败。
+        """
         r = client.post("/run", data={"data_source": "mock"})
         body = r.get_data(as_text=True)
-        assert "INV-9" in body
-        assert "AP-9999" in body
-        assert "（无AP）" in body
+        assert "INV-9" in body and "AP-9999" in body      # 留得住、查得到
+        assert "（无AP）" not in body                      # 但不再是明细表里的一行
+        assert "未匹配成功的发票池" in body
+        pool_pos = body.index("未匹配成功的发票池")
+        assert body.index("INV-9") > pool_pos             # 落点确实在池里，不在上方主表
         assert "① 完全匹配" not in body  # 旧六段式区块标题不应再出现
         assert "⑥ 孤立发票" not in body
 
@@ -581,15 +592,18 @@ def test_kpi_default_mode_is_the_signed_off_one_and_is_the_only_switch():
     `.51` 是「整包同步」部署（队列 #418 ⑻ 实测坐实）——合入 master 即等于早晚上生产，
     「留步不部署」守不住；**唯一守得住的是这个默认值**。改它＝改唐燕萍每天看的数字。
 
-    🔴 **当前值 ＝ ⒜（`_KPI_ORPHAN_SEPARATE`），2026-08-28 切换**，依据＝Shao Peishen
-    当日拍板，**覆盖了原「须唐燕萍显式签认」的 IATF 红线；她本人尚未签认，签认待补**。
-    ⇒ 这条断言此后守的是「⒜ 不被无声改走」，**不是**「口径已走完正规签认」——两者别混。
+    🔴 **`_INVOICE_SCOPE` ＝ ⒞（`_INVOICE_SCOPE_AP_RANGE`），2026-09-07 切换**，依据
+    ＝唐燕萍 2026-09-04 在 `财务部#16` 判例表 A **判例 3 勾 ✅**（判例 1/2/4 均 ❌），
+    docx 控件层与字符层两路复核一致。⇒ 这一条此后守的是**已走完正规签认的口径**，
+    与 2026-08-28 那次「拍板覆盖签认」的性质不同。
 
-    ⚠️ 第二条断言是**另一件事、未被那次拍板覆盖**：`_INVOICE_SCOPE`（#423 ⒞，装载侧）
-    原样保留 `all`，仍待唐燕萍确认。⒜ 已切不构成对它的先例，**不要一起放开**。
+    ⚠️ `_KPI_ORPHAN_MODE` 维持 ⒜ 不动：切 ⒞ 后 `orphaned` 恒为空集，三档输出逐字段
+    相同 ⇒ 它在生产配置下**没有可观测行为**（见
+    `test_kpi_orphan_mode_is_observationally_inert_under_ap_range_scope`）。
+    保留三档常量与分派是派单件明写的要求，不得顺手删。
     """
     assert webapp_module._KPI_ORPHAN_MODE == webapp_module._KPI_ORPHAN_SEPARATE
-    assert webapp_module._INVOICE_SCOPE == webapp_module._INVOICE_SCOPE_ALL
+    assert webapp_module._INVOICE_SCOPE == webapp_module._INVOICE_SCOPE_AP_RANGE
 
 
 def test_kpi_unknown_mode_raises_rather_than_falls_back():
@@ -647,17 +661,114 @@ def test_kpi_render_under_current_mode_is_byte_identical_to_v8():
     assert "孤立发票" not in out
 
 
-def test_scope_invoice_rows_defaults_to_loading_everything():
+def test_scope_invoice_rows_default_is_now_ap_range_per_signoff():
+    """默认档已随唐燕萍判例 3 签认切到 ⒞ —— 不在本次 AP 范围内的行不再参与判定。
+
+    🔴 本条只管「参与判定的是哪一批」；**被排除的行去哪了**由
+    `test_ap_range_scope_keeps_excluded_rows_retrievable_in_the_pool` 管，
+    两条必须同时绿——单看这一条会误以为那些行被丢了。
+    """
     ap_lines = [_ap("AP-1")]
     rows = [_inv("AP-1", 0), _inv("AP-OTHER", 1)]
-    assert webapp_module.scope_invoice_rows(ap_lines, rows) == rows
+    assert [r.ap_no for r in webapp_module.scope_invoice_rows(ap_lines, rows)] == ["AP-1"]
+
+
+def test_scope_all_still_loads_everything_when_explicitly_asked():
+    """回滚档 `all` 的行为原样保留（回滚 SOP 依赖它）。"""
+    ap_lines = [_ap("AP-1")]
+    rows = [_inv("AP-1", 0), _inv("AP-OTHER", 1)]
+    assert webapp_module.scope_invoice_rows(ap_lines, rows, scope="all") == rows
+
+
+def test_ap_range_scope_keeps_excluded_rows_retrievable_in_the_pool():
+    """🔴 判例 4（唐燕萍 2026-09-04 勾 ❌）的核心约束：**排除 ≠ 丢掉**。
+
+    她的原话：「**不要把孤立发票过滤掉**，而是留在未匹配成功的发票池……有可能只是
+    目前业务尚未立账，**待立账时才需要用到**。」
+
+    ⇒ 两段的并集必须**恒等于**入参（同一批对象、不少一行、不去重）。做错了她下个月
+    立账时会找不到发票 —— 这条是整个 #423 里唯一「错了会让她丢数据」的断言。
+
+    🔴 **本用例在旧默认值（`scope="all"`）下必须变红**：那时 `out_of_scope` 恒为空、
+    第二段拿不到那 3,389 行，断言 `[r.ap_no for r in out] == ["AP-OTHER"]` 立刻失败。
+    """
+    ap_lines = [_ap("AP-1")]
+    rows = [_inv("AP-1", 0), _inv("AP-OTHER", 1), _inv("AP-OTHER", 2)]
+    kept, out = webapp_module.split_invoice_rows_by_scope(ap_lines, rows)
+    assert [r.ap_no for r in kept] == ["AP-1"]
+    assert [r.ap_no for r in out] == ["AP-OTHER", "AP-OTHER"]
+    assert len(kept) + len(out) == len(rows)
+    assert {id(r) for r in kept} | {id(r) for r in out} == {id(r) for r in rows}
+
+
+def test_invoice_pool_renders_every_excluded_row_and_is_searchable():
+    """发票池必须**全量**渲染（不截断）并带检索入口——她要找的那一行可能在任何位置。"""
+    pool = [(_inv("AP-OTHER", i), "out_of_scope") for i in range(120)]
+    pool.append((_inv("AP-9999", 999), "orphaned"))
+    out = webapp_module._render_invoice_pool(pool)
+    assert "未匹配成功的发票池" in out
+    assert "共 <b>121</b> 行" in out
+    for i in (0, 60, 119):
+        assert f"INV{i}" in out          # 首/中/尾都在，没有「只渲染前 N 条」
+    assert "INV999" in out
+    assert 'id="poolq"' in out and "filterPool" in out      # 可检索
+    assert "尚未立账" in out and "数据完整性异常" in out      # 两类来路在池里仍分得清
+
+
+def test_invoice_pool_is_empty_string_when_nothing_excluded():
+    """没有被排除的行时不渲染空区块——不给她一个永远空着的抽屉。"""
+    assert webapp_module._render_invoice_pool([]) == ""
+
+
+def test_kpi_orphan_mode_is_observationally_inert_under_ap_range_scope():
+    """🔴 钉死「为什么 `_KPI_ORPHAN_MODE` 维持 ⒜ 而不是跟着判例 1 的 ❌ 改掉」。
+
+    `ap_range` 只留下 `ap_no ∈ ap_nos` 的行，而 `partition_invoices` 恰好按同一个谓词
+    切分 ⇒ `orphaned` **恒为空集**（不是「变少」，是恒空）⇒ 三档 `kpi_counts` 的
+    **四个数与提示条完全相同**。
+
+    ⚠️ 唯一残留差异是 ⒝ 的文案标签仍写「行（含孤立发票）」——`n_orphan＝0` 时那句
+    本身就不准确，而**那正是唐燕萍对判例 2 判 ❌ 的地方**。默认档 ⒜ 的标签是「项料品」，
+    与 ⒞ 自洽。⇒ 断言按「数相同、⒝ 的标签不同且不该被选」如实写，**不含糊成
+    「三档全等」**。
+    """
+    ap_lines = [_ap("AP-1")]
+    rows = [_inv("AP-1", 0), _inv("AP-OTHER", 1)]
+    kept, _ = webapp_module.split_invoice_rows_by_scope(ap_lines, rows)
+    _, orphaned = webapp_module.partition_invoices(ap_lines, kept)
+    assert orphaned == []
+    rep = _rep(total=1, needs_review=1)
+    outs = {m: webapp_module.kpi_counts(rep, orphaned, mode=m)
+            for m in webapp_module._KPI_ORPHAN_MODES}
+    numeric = ("total_rows", "n_pass", "n_l2", "n_block", "n_orphan", "n_items")
+    base = outs[webapp_module._KPI_ORPHAN_SEPARATE]
+    for mode, kpi in outs.items():
+        assert {k: kpi[k] for k in numeric} == {k: base[k] for k in numeric}, mode
+        # 独立提示条：三档在 n_orphan=0 时都不出现（`_render_kpi` 的 `not n_orphan` 分支）
+        rendered = webapp_module._render_kpi(
+            kpi["total_rows"], kpi["n_pass"], kpi["n_l2"], kpi["n_block"],
+            n_orphan=kpi["n_orphan"], n_items=kpi["n_items"],
+            total_label=kpi["total_label"], mode=kpi["mode"])
+        assert "另有" not in rendered and "其中孤立发票" not in rendered, mode
+    # 生效档（⒜）与 `COUNT_IN` 的文案里连「孤立发票」四个字都不出现；⒝ 会出现，
+    # 因为它的 `total_label` 恒带这四个字 —— n_orphan=0 时那是句假话，正是判例 2 被 ❌ 的点。
+    for mode in (webapp_module._KPI_ORPHAN_SEPARATE, webapp_module._KPI_ORPHAN_COUNT_IN):
+        kpi = outs[mode]
+        assert "孤立发票" not in webapp_module._render_kpi(
+            kpi["total_rows"], kpi["n_pass"], kpi["n_l2"], kpi["n_block"],
+            n_orphan=kpi["n_orphan"], n_items=kpi["n_items"],
+            total_label=kpi["total_label"], mode=kpi["mode"]), mode
+    assert base["total_label"] == outs[webapp_module._KPI_ORPHAN_COUNT_IN]["total_label"]         == "项料品"
+    assert outs[webapp_module._KPI_ORPHAN_LABELED]["total_label"] == "行（含孤立发票）"
 
 
 def test_scope_invoice_rows_ap_range_drops_out_of_scope_invoices():
     """⒞：只装载落在本次 AP 范围内的发票行 —— 孤立发票自然回到「理论不应出现」的量级。
 
-    🔴 代价同时被这条断言钉住：**真·孤立发票也一起没了**（`AP-OTHER` 若是数据完整性
-    异常，⒞ 之后再也看不到它）。选 ⒞ 等于放弃这个信号，须唐燕萍确认。
+    🔴 代价同时被这条断言钉住：**真·孤立发票在判定侧也一起没了**（`AP-OTHER` 若是
+    数据完整性异常，⒞ 之后不再进明细表）。唐燕萍 2026-09-04 判例 3 勾 ✅ 接受了这个
+    代价；她同时用判例 4 ❌ 要求这些行**留在发票池里查得到**，那一半由
+    `test_ap_range_scope_keeps_excluded_rows_retrievable_in_the_pool` 守。
     """
     ap_lines = [_ap("AP-1")]
     rows = [_inv("AP-1", 0), _inv("AP-OTHER", 1)]
