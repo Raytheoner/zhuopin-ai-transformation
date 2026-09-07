@@ -11,7 +11,7 @@
 |--------|------|------|
 | `audit/` | IATF 可追溯审计：`AuditLogger`+`AuditEvent`，JSONL 先行 / 9月 ClickHouse 汇聚（同接口切换） | ✅ 真骨架，对接它、勿重建 |
 | `data_isolation_layer/` | OEM 隔离：`OEMRouter` 按客户路由、跨库抛 `CrossOEMAccessError` | ✅ 路由可用；RAG 待接 Chroma |
-| `shared_tools/` | 连接器 / 通知器 / doc_parser 等共享件 | ✅ 已收割：连接器（zp/SRM/CSV）、`notifiers/`（企微 `wecom.send_markdown` + L2 `Notifier`）、`crm_notifier`；doc_parser 待质量旗舰落地 |
+| `shared_tools/` | 连接器 / 通知器 / doc_parser 等共享件 | ✅ 已收割：连接器（zp/SRM/CSV）、`notifiers/`（企微 `wecom.send_markdown` + L2 `Notifier`）、`crm_notifier`；**`doc_parser/` 已落地（2026-09-07，队列 `#481`）＝ 全项目 docx 勾选/取文判据正本**，纯 stdlib、零新增依赖 |
 | `agents/` | 跨部门智能体逻辑 | 🔧 骨架 |
 
 > **OEM 隔离边界**：只针对**研发/OEM 技术数据**（R 系列、知识库），**不针对采购的 SRM/ERP/CRM 供应商数据**。采购连接器不强加 OEM 路由；平台层把 `data_isolation_layer` 接口预留给后续研发/知识库场景即可。

@@ -1,6 +1,16 @@
 """文档读取器 — docx/pdf → DocumentSections。
 
-接口与未来平台 shared_tools/doc_parser.py 同构（rule-of-three触发时零改平移）。
+🔴 **docx 取文已改走平台底座唯一入口**
+`zhuopin_platform.shared_tools.doc_parser.extract_text_lines()`（队列 `#481`，
+design 决策点① 拍板 2026-09-07）。本文件不再自带第二份 docx 读取实现。
+
+**为什么必须改**（`#481` 1.5 实测，两份真实回件）：原实现用 python-docx 的
+`doc.paragraphs`，那是**高层文本视图**——看不见表格单元格、也看不见内容控件
+里的 run。`采购部` 08-26 回件取到 3872 字（XML 真相 5216，**丢 26%**）、
+`质量部#11` 取到 543 字（XML 真相 1897，**丢 71%**），且两份的勾选字符计数
+都被读成 0 或严重偏低。这不是"少几个符号"，是 D1–D8 分段的输入本身残缺。
+
+pdf/pptx 两条路径与本次无关，一字未改。
 """
 from __future__ import annotations
 
@@ -92,14 +102,15 @@ def _pptx_shape_text(shape) -> list[str]:
 
 
 def _read_docx(path: Path) -> DocumentSections:
-    try:
-        from docx import Document  # type: ignore
-    except ImportError as e:
-        raise ImportError("需要 python-docx：pip install python-docx") from e
+    """docx 取文 —— 委托平台底座统一件，本函数不含第二份解析实现。
 
-    doc = Document(str(path))
-    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-    full_text = "\n".join(paragraphs)
+    读不了（非法 zip／缺 `word/document.xml`）时统一件抛 `DocxReadError`，
+    **本函数刻意不接**：让它一路抛到调用方去。把读取失败降级成"空文档"正是
+    队列 `#133` ⑴ 那条事故的形状。
+    """
+    from zhuopin_platform.shared_tools.doc_parser import extract_text_lines
+
+    full_text = "\n".join(extract_text_lines(path))
     return _parse_sections(full_text, str(path))
 
 
