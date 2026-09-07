@@ -18,7 +18,8 @@
 | 2 | `__init__.py` 里那句「9月迁移 ClickHouseSink —— append-only + 3年保留」是**计划**，`ClickHouseSink.write()` 与 `read_all()` 两个方法体**都只有 `raise NotImplementedError`** | 读 `sinks.py` 末段 |
 | 3 | 走 `audit` 基础设施的构造点共 **42 处**（`AuditLogger` **26** ＋ `ConnectorAudit` **16**，均已排除测试文件），分布在 FI1／FI2／QD-B／SC1／SC2／SC7／SC8／`wecom-aibot-service` | `grep -rn "AuditLogger(\|AuditLogger.jsonl(" / "ConnectorAudit("` 去测试后计数 |
 | 4 | 落点文件名各写各的，**同一目录下审计、访问痕迹、运行时状态三族混居且命名不可区分**：`fi2_audit.jsonl`／`fi2_access_trace.jsonl`／`fi2_http_requests.jsonl`／`pending_queue_appends.jsonl` 都在 `reports/` 下 | 全库 `*.jsonl` 字面量去重 |
-| 5 | 本机主工作区最大的两份：`wecom_aibot_audit.jsonl` **2.58 MB／5,170 行**、`reports/hooks-audit.jsonl` **1.77 MB／5,727 行** | PowerShell 实测 2026-09-07 14:0x 本地 |
+| 5 | 主工作区 `.jsonl` 共 **18 份**，超 100 KB 的只有 **3 份**；最大两份 ＝ `wecom_aibot_audit.jsonl` **2,704,451 B（2.58 MB）／5,170 行**（静态，mtime 停在 14:04:30）、`reports/hooks-audit.jsonl` **1,959,699 B（1.87 MB）／6,041 行**（**仍在写**） | 全库 `find -printf '%s'` ＋ PowerShell 复测，2026-09-07 15:23 本地 |
+| 5-bis | 🔴 **`hooks-audit.jsonl` 在本 session 期间实测涨了**：14:08 ＝ 1,858,355 B／5,727 行 → 15:23 ＝ 1,959,699 B／6,041 行 ⇒ **75 分钟 ＋101,344 B／＋314 行 ≈ 251 行·小时⁻¹、81 KB·小时⁻¹**。⚠️ **这是上界不是稳态**——当时本机有约 40 个并发 worktree 会话在跑，属峰值负载，**定阈值时不得直接当常态速率用** | 同一文件三次独立测量（PowerShell → `find` → PowerShell），时刻均为本地 |
 | 6 | 仓库里**已经存在一次手工归档的遗迹**：`5-平台底座/wecom-aibot-service/reports/wecom_aibot_audit-split-archive-2026-07-28.jsonl`（25.4 KB／41 行） | 同上 |
 | 7 | 🔴 那次归档**重算了哈希链**——CHANGELOG 原文：「历史两份按 timestamp 归并为一份（677 行，原件另存 `-split-archive-2026-07-28` 保留不删），**hash 防篡改链按合并后顺序重新计算**，`verify_chain()` 核验通过」 | `1-转型规划/0-全景路线图/进度编年-CHANGELOG.md` 第 43 行 |
 | 8 | 仓库里**已经存在一处按时间删审计行的实现**：`0-学习与工具/工具-落库sweep.py::_rotate_hooks_audit_log` 丢弃 `reports/hooks-audit.jsonl` 中 `ts` 早于 `LOG_ROTATION_KEEP_WEEKS = 4` 周的行 | 读 `工具-落库sweep.py:6560-6605` |
