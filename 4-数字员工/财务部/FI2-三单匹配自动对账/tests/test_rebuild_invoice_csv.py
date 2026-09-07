@@ -183,3 +183,43 @@ def test_gate1_still_counts_row_count_as_the_sum_of_segments():
     ledger = _seg_ledger(("first.xlsx", "2026-08-26T00:00:00Z", [(0, 2), (1, 5)]))
     with pytest.raises(rebuild.RebuildAborted, match="闸①"):
         rebuild.partition_by_ledger(rows, ledger)
+
+
+# ── 判例 8 拆行与本脚本的交互（2026-09-07，队列 #424）────────────────────────
+
+def test_split_rows_sharing_one_invoice_no_all_survive_dedup():
+    """🔴 判例 8（唐燕萍 2026-09-04 勾 ✅）引入了一个**新不变量**：同一张发票号在
+    `invoice.csv` 里可以合法地占**多行**（一张发票行按 AP 料号拆开写）。
+
+    本脚本的闸③按发票号去重 —— 必须确认它去的是「**跨文件**的重复」，而不会把同一个
+    文件里拆出来的那几行当成重复删掉。删错了，被删的是唐燕萍账上真实的发票金额，
+    而且是静默删（闸③只在「数字不一致」时才报警，同号同文件根本走不到那个分支）。
+
+    实测的真实形态：`AP-2026080137` 气泡袋 6000 ＝ `J02E.0024` 1000 ＋ `R02E.0024` 5000。
+    """
+    split_a = _row("INV-6000", ap_no="AP-2026080137", item_code="J02E.0024",
+                    qty=1000, untaxed=176.99, tax=23.01)
+    split_b = _row("INV-6000", ap_no="AP-2026080137", item_code="R02E.0024",
+                    qty=5000, untaxed=884.96, tax=115.04)
+    rows = [split_a, split_b, _row("INV-OTHER")]
+    ledger = _ledger(("a.xlsx", 3, "2026-09-07T00:00:00Z"))
+    kept, dropped = rebuild.dedup_by_invoice(rebuild.partition_by_ledger(rows, ledger))
+    assert dropped == []                       # 一行都不该被去掉
+    assert len(kept) == 3
+    assert [r["item_code"] for r in kept if r["inv_no"] == "INV-6000"] \
+        == ["J02E.0024", "R02E.0024"]
+    # 金额相加仍等于原发票行（她的算法约束在重建后依然成立）
+    tot = sum(float(r["untaxed_amount"]) for r in kept if r["inv_no"] == "INV-6000")
+    assert round(tot, 2) == 1061.95
+
+
+def test_split_rows_repeated_by_a_later_file_are_still_deduped():
+    """反面：同一批拆行若**由另一个文件**再贡献一次，仍应按原口径去重（跨文件重复）。"""
+    a1 = _row("INV-6000", item_code="J02E.0024", qty=1000, untaxed=176.99, tax=23.01)
+    a2 = _row("INV-6000", item_code="R02E.0024", qty=5000, untaxed=884.96, tax=115.04)
+    rows = [a1, a2, dict(a1), dict(a2)]
+    ledger = _ledger(("a.xlsx", 2, "2026-09-07T00:00:00Z"),
+                     ("b.xlsx", 2, "2026-09-07T01:00:00Z"))
+    kept, dropped = rebuild.dedup_by_invoice(rebuild.partition_by_ledger(rows, ledger))
+    assert len(kept) == 2 and len(dropped) == 2
+    assert {f for f, _r in dropped} == {"b.xlsx"}
