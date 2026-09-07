@@ -7782,5 +7782,389 @@ class StatusTriageResidentRoundTests(unittest.TestCase):
             source.index("_check_draft_gap_inventory(repo_root, log)"))
 
 
+# ============================================================
+# 队列 §一 #479（openspec `sweep-manifest-scoped-stage`，design 审 2026-09-07 过）
+# ⑴ 提交范围收紧 ＋ ⑵ 关键路径 fail-loud 守卫
+# ============================================================
+
+
+class ScopedCommitUnitTests(unittest.TestCase):
+    """`_commit_scoped()` 本体：**一律用真 git 仓库，不用桩**。
+
+    理由同 `LocalOnlyCommitGuardTests`：本函数要证明的正是「pathspec 到底把
+    什么挡在了提交之外」，而那是 git 自己算的量——用桩测等于在测我自己写的
+    那个假数。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name) / "repo"
+        self.repo.mkdir()
+        _git(self.repo, "init", "-q", "-b", "master", ".")
+        _git(self.repo, "config", "user.email", "t@t")
+        _git(self.repo, "config", "user.name", "t")
+        # 刻意用含中文与空格的路径：真实仓库路径几乎全是中文，且 `-z` 与
+        # 按行切的差别只在这类路径上才暴露（见 `_git_names_z` docstring）。
+        (self.repo / "1-转型规划").mkdir()
+        self.declared = "1-转型规划/声明 件.md"
+        (self.repo / self.declared).write_text("v0\n", encoding="utf-8")
+        (self.repo / "无关.md").write_text("v0\n", encoding="utf-8")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-qm", "base")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _committed_names(self, ref="HEAD") -> set[str]:
+        out = _git(self.repo, "show", "--name-only", "--format=", "-z", ref).stdout
+        return {n for n in out.split("\0") if n}
+
+    # ---------- 4.1 反例（`#479` 期望产出明列） ----------
+
+    def test_清单外的已暂存文件不得被带进该批提交(self):
+        (self.repo / self.declared).write_text("v1\n", encoding="utf-8")
+        (self.repo / "无关.md").write_text("孤儿被别的会话暂存了\n", encoding="utf-8")
+        _git(self.repo, "add", "--", self.declared)
+        _git(self.repo, "add", "--", "无关.md")
+
+        log: list[str] = []
+        sha = sweep._commit_scoped(
+            self.repo, "docs(test): 只带清单内", [self.declared], log, label="测试批次")
+
+        self.assertIsNotNone(sha)
+        self.assertEqual(self._committed_names(), {self.declared})
+        # 决策点③ ⒝：点名告警但照常落库——不是静默交给孤儿告警。
+        self.assertTrue(any("无关.md" in line and "未被带入本提交" in line for line in log), log)
+        # 孤儿仍留在 index（未被替别人 unstage，正是决策点① ⒝ 被否的那条边界）。
+        self.assertIn("无关.md", _git(self.repo, "diff", "--cached", "--name-only").stdout)
+
+    # ---------- 4.2 正例 ----------
+
+    def test_清单内路径全部进入提交且只有它们(self):
+        second = "1-转型规划/第二件.md"
+        (self.repo / second).write_text("新增\n", encoding="utf-8")
+        (self.repo / self.declared).write_text("v1\n", encoding="utf-8")
+        (self.repo / "无关.md").write_text("脏但未暂存\n", encoding="utf-8")
+        _git(self.repo, "add", "--", self.declared, second)
+
+        log: list[str] = []
+        sha = sweep._commit_scoped(
+            self.repo, "docs(test): 两件", [self.declared, second], log, label="测试批次")
+
+        self.assertIsNotNone(sha)
+        self.assertEqual(self._committed_names(), {self.declared, second})
+
+    # ---------- 4.3 非恒真自证 ----------
+
+    def test_非恒真自证_旁路收紧逻辑后同一输入由未带入变回带入(self):
+        """🔴 **本用例是"拦截确实来自 pathspec"的唯一证据。**
+
+        没有它，「已收紧」与「碰巧这一轮没人暂存过东西」在断言上外观完全相同
+        ——正是本项目反复付学费的那个形态（建成而没接线，与没建成外观相同）。
+        构造：同一份夹具跑两次，一次走 `_commit_scoped`，一次走收紧之前那句
+        裸 `git commit -m`，断言两侧结论相反。
+        """
+        def _make_dirty():
+            (self.repo / self.declared).write_text("v-新\n", encoding="utf-8")
+            (self.repo / "无关.md").write_text("孤儿\n", encoding="utf-8")
+            _git(self.repo, "add", "--", self.declared)
+            _git(self.repo, "add", "--", "无关.md")
+
+        # 侧一：收紧后的实现——孤儿不进提交。
+        _make_dirty()
+        sweep._commit_scoped(self.repo, "docs(test): 收紧侧", [self.declared], [],
+                             label="测试批次")
+        scoped_names = self._committed_names()
+
+        # 侧二：把收紧逻辑旁路掉，逐字还原收紧前那一句裸 commit。
+        _git(self.repo, "reset", "-q", "--hard", "HEAD~1")
+        _make_dirty()
+        sweep._run_git(["commit", "-m", "docs(test): 收紧前那一句"], self.repo)
+        bare_names = self._committed_names()
+
+        self.assertEqual(scoped_names, {self.declared}, "收紧侧：只应含清单内路径")
+        self.assertIn("无关.md", bare_names,
+                      "旁路侧：裸 commit 必须把孤儿带进来——带不进来说明本用例"
+                      "根本没构造出病灶，那么上面那条绿也就什么都没证明")
+        self.assertNotEqual(scoped_names, bare_names)
+
+    # ---------- 4.4 空提交／无改动路径的边角 ----------
+
+    def test_清单路径无改动时不产生提交且不抛异常(self):
+        """`git commit -- <无改动路径>` 会以 `nothing to commit` 退出码 1 报错
+        （2026-09-07 实测，git 2.53.0.windows.2），而 `_run_git` 默认
+        `check=True` 会把它抬成未捕获异常——那就把"没东西可提交"这件正常事
+        变成了整轮崩溃。"""
+        head_before = _git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        log: list[str] = []
+        sha = sweep._commit_scoped(
+            self.repo, "docs(test): 空", [self.declared], log, label="测试批次")
+        self.assertIsNone(sha)
+        self.assertEqual(_git(self.repo, "rev-parse", "HEAD").stdout.strip(), head_before)
+        self.assertTrue(any("无内容可提交" in line for line in log), log)
+
+    def test_清单含不存在路径时不因pathspec不匹配而崩(self):
+        """实测：`git commit -- <不匹配任何文件的 pathspec>` 直接报
+        `pathspec did not match` 退出码 1，**哪怕同一条命令里还有别的路径确有
+        改动**。`_commit_scoped` 用算出来的 `expected` 当 pathspec 绕开这一条。"""
+        (self.repo / self.declared).write_text("v1\n", encoding="utf-8")
+        _git(self.repo, "add", "--", self.declared)
+        log: list[str] = []
+        sha = sweep._commit_scoped(
+            self.repo, "docs(test): 混合", [self.declared, "根本不存在的件.md"],
+            log, label="测试批次")
+        self.assertIsNotNone(sha)
+        self.assertEqual(self._committed_names(), {self.declared})
+
+    def test_目录pathspec与删除文件均被正确纳入(self):
+        (self.repo / "1-转型规划" / "子件.md").write_text("新增\n", encoding="utf-8")
+        (self.repo / self.declared).unlink()
+        _git(self.repo, "add", "--", "1-转型规划")
+        log: list[str] = []
+        sha = sweep._commit_scoped(
+            self.repo, "docs(test): 目录", ["1-转型规划"], log, label="测试批次")
+        self.assertIsNotNone(sha)
+        self.assertEqual(self._committed_names(), {"1-转型规划/子件.md", self.declared})
+
+    # ---------- 4.5 提交后校验的两侧 ----------
+
+    def test_提交后校验一致时静默(self):
+        (self.repo / self.declared).write_text("v1\n", encoding="utf-8")
+        _git(self.repo, "add", "--", self.declared)
+        log: list[str] = []
+        sweep._commit_scoped(self.repo, "docs(test): 一致", [self.declared], log,
+                             label="测试批次")
+        self.assertFalse([line for line in log if "提交后校验不一致" in line], log)
+
+    def test_提交后校验不一致时点名告警且不回滚(self):
+        """把"取预期集合"那一次的返回值做手脚，制造预期与实际不一致——证明
+        校验真的在比对，而不是恒真通过。"""
+        (self.repo / self.declared).write_text("v1\n", encoding="utf-8")
+        _git(self.repo, "add", "--", self.declared)
+
+        real = sweep._git_names_z
+        calls: list[list[str]] = []
+
+        def fake(repo_root, args):
+            calls.append(args)
+            out = real(repo_root, args)
+            # 🔴 **只污染"实际集合"那一次（第 3 次＝`git show`），不能污染
+            # 第 1 次（预期集合）**：预期集合同时充当 commit 的 pathspec
+            # （`_commit_scoped` 实现要点⑵），往里塞一个不存在的路径会让
+            # `git commit` 直接报 `pathspec did not match` 退出码 1 而崩
+            # ——那测的就成了 pathspec 校验，不是提交后校验。
+            if args[0] == "show":
+                return [*out, "凭空多出来的件.md"]
+            return out
+
+        sweep._git_names_z = fake
+        try:
+            log: list[str] = []
+            sha = sweep._commit_scoped(
+                self.repo, "docs(test): 不一致", [self.declared], log, label="测试批次")
+        finally:
+            sweep._git_names_z = real
+
+        self.assertIsNotNone(sha, "决策点④ ⒝：不一致只告警，提交照常产生、不回滚")
+        self.assertTrue(any("提交后校验不一致" in line for line in log), log)
+        self.assertTrue(any("凭空多出来的件.md" in line for line in log), log)
+
+
+class CriticalGitWritePathGuardTests(unittest.TestCase):
+    """队列 §一 #479 ⑵：关键路径 fail-loud 的**形状守卫**（决策点⑥ ⒜）。
+
+    逐字仿照 `LocalOnlyCommitGuardTests::test_本类不做任何git写动作` 的
+    「源码切片 ＋ `ast.parse`／`ast.walk`」范式：零新造机制、零运行时开销、
+    随全量测试自动跑。⒝（独立 CI lint job）被否的实测理由是 §四 `#118`——
+    **CI job 红了两个多月没人看**。
+
+    🔴 **本组守卫的三类已知不覆盖形态（交付措辞不得越过这条线）**：
+    ⒈ **挪窝逃逸** —— 把关键逻辑挪进一个清单外的小函数、再在那里宽捕获。
+       AST 断言锁的是"清单内函数体里有没有宽 except"，管不到逻辑搬家。
+    ⒉ **窄而同样吞掉真问题** —— `except OSError`／`except
+       subprocess.CalledProcessError` 这类窄捕获同样能把一次没做成的 push
+       静默掉，本组一律放行。
+    ⒊ **捕获之外的静默** —— `if result.returncode != 0: return` 这种不走异常
+       的早退，本组完全看不见。
+    ⇒ 因此本组只支持说「**清单内函数不会出现宽捕获**」，**不得**说成
+       「关键路径此后不会被静默吞掉」。
+    """
+
+    WRITE_VERBS = frozenset({"commit", "push", "rebase", "merge", "reset"})
+
+    @staticmethod
+    def _function_nodes() -> dict:
+        tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+        return {node.name: node for node in tree.body
+                if isinstance(node, ast.FunctionDef)}
+
+    @staticmethod
+    def _broad_handlers(node) -> list:
+        found = []
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.ExceptHandler):
+                continue
+            if sub.type is None:
+                found.append("裸 except")
+            elif ast.unparse(sub.type) in {"Exception", "BaseException"}:
+                found.append(f"except {ast.unparse(sub.type)}")
+        return found
+
+    def test_清单里的函数名都真实存在(self):
+        """漏改函数名时守卫会静默退化成"零个函数被检查"——那就是恒绿。"""
+        functions = self._function_nodes()
+        for name in sweep.CRITICAL_GIT_WRITE_FUNCTIONS:
+            self.assertIn(name, functions, f"清单里的 `{name}` 已不存在，清单须同步更新")
+        self.assertGreaterEqual(len(sweep.CRITICAL_GIT_WRITE_FUNCTIONS), 6)
+
+    def test_清单内函数体内不得出现宽捕获(self):
+        functions = self._function_nodes()
+        for name in sweep.CRITICAL_GIT_WRITE_FUNCTIONS:
+            with self.subTest(function=name):
+                broad = self._broad_handlers(functions[name])
+                self.assertEqual(
+                    broad, [],
+                    f"`{name}` 会自己写 git 历史，函数体内却出现了宽捕获 {broad}——"
+                    "`#126` 点出的真风险原话：sweep 说自己跑完了、实际某一步没做")
+
+    def test_反向检查_写git历史的函数漏进清单即报出(self):
+        """清单漏项要自己暴露，不靠人记（决策点⑤ ⒜ 的配套）。"""
+        functions = self._function_nodes()
+        writers = set()
+        for name, node in functions.items():
+            for sub in ast.walk(node):
+                if not isinstance(sub, ast.Call):
+                    continue
+                if ast.unparse(sub.func) != "_run_git" or not sub.args:
+                    continue
+                first = sub.args[0]
+                if not isinstance(first, ast.List) or not first.elts:
+                    continue
+                if getattr(first.elts[0], "value", None) in self.WRITE_VERBS:
+                    writers.add(name)
+        missing = sorted(writers
+                         - set(sweep.CRITICAL_GIT_WRITE_FUNCTIONS)
+                         - set(sweep.CRITICAL_GIT_WRITE_EXEMPT_FUNCTIONS))
+        self.assertEqual(
+            missing, [],
+            "以下函数会写 git 历史却既不在 CRITICAL_GIT_WRITE_FUNCTIONS 里、"
+            f"也没写豁免理由：{missing}")
+        self.assertTrue(writers, "反向检查一个写动词函数都没扫到，说明扫描器本身失效")
+
+    def test_豁免名单每一项都写了理由且函数真实存在(self):
+        functions = self._function_nodes()
+        for name, reason in sweep.CRITICAL_GIT_WRITE_EXEMPT_FUNCTIONS.items():
+            with self.subTest(function=name):
+                self.assertIn(name, functions)
+                self.assertGreaterEqual(
+                    len(reason), 15,
+                    f"`{name}` 的豁免理由太短——写不出理由的，说明它就该进清单")
+
+    def test_五处自动提交全部走了收紧后的入口(self):
+        """决策点② ⒝：作用面＝全部 5 处，不是只修主路径。判据用 AST 数残余的
+        裸 `_run_git(["commit", ...])`，不数字符串出现次数。"""
+        tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+        bare = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or ast.unparse(node.func) != "_run_git":
+                continue
+            if not node.args or not isinstance(node.args[0], ast.List):
+                continue
+            elts = node.args[0].elts
+            if elts and getattr(elts[0], "value", None) == "commit":
+                literals = [getattr(e, "value", None) for e in elts]
+                # 收紧后唯一允许的形态＝带 `--` pathspec 段（`_commit_scoped`
+                # 自己那一句）。裸的一律报出。
+                if "--" not in literals:
+                    bare.append(ast.unparse(node)[:80])
+        self.assertEqual(bare, [], f"仍有裸 `git commit`（＝提交整个 index）：{bare}")
+        scoped_calls = sum(
+            1 for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and ast.unparse(node.func) == "_commit_scoped")
+        self.assertGreaterEqual(scoped_calls, 5,
+                                "5 处 sweep 自动提交应全部走 _commit_scoped")
+
+
+class StepFingerprintTests(SweepTestBase):
+    """队列 §一 #479 ⑵：步骤指纹——兜底告警要说得出"崩在哪一步"。
+
+    🔴 **CLI 级，不只是函数级**：`_mark_step` 单独可测没有意义，要证的是它
+    真的在 `main()` 里被接线、且真的走进了兜底告警的文案——建成而没接线，
+    与没建成外观完全相同。
+    """
+
+    def test_接线断言_每个关键步骤前都有mark_step(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        for anchor, step in [
+            ("_abort_if_edit_lock_held(repo_root, log)", "编辑锁前置探测"),
+            ("_push_any_unpushed_commits(repo_root, log, dry_run=args.dry_run)",
+             "补推未推送提交"),
+            ("_commit_uncovered_queue_changes(repo_root, log, dry_run=args.dry_run)",
+             "队列未覆盖改动单独落库"),
+            ("_reconcile_with_origin_and_push(repo_root, log, dry_run=args.dry_run",
+             "与 origin 对齐并推送"),
+        ]:
+            with self.subTest(step=step):
+                idx = source.index(anchor)
+                self.assertIn(step, source[max(0, idx - 400):idx],
+                              f"`{anchor[:44]}` 之前没有对应的 _mark_step（{step}）")
+
+    def test_两个兜底分支的文案都读了当前步骤(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("（早退于步骤：{_current_step()}）", source)
+        self.assertIn("于步骤「{_current_step()}」", source)
+        self.assertIn("遇到未预期异常（步骤：{_current_step()}）", source,
+                      "企微文案也要点名步骤——只改日志等于只有翻日志的人看得见")
+
+    def test_步骤指纹在同一进程内跑两次不会继承残值(self):
+        sweep._mark_step("上一轮的残值")
+        self.assertEqual(sweep._current_step(), "上一轮的残值")
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('_mark_step("起跑前置检查")\n    try:', source,
+                      "main() 进 try 之前必须把步骤指纹归零，否则告警会点错步骤名")
+
+    def test_CLI级真跑一轮后步骤指纹不影响正常退出码(self):
+        self._init_and_push(rows="")
+        row = ("| B-STEP | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
+               "| `docs(test): 步骤指纹` | 待 CC 取活 |\n")
+        self._write_queue(row)
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("已本地提交",
+                      (self.work / sweep.LOG_REL).read_text(encoding="utf-8"))
+
+
+class ScopedCommitCliWiringTests(SweepTestBase):
+    """CLI 级：**证明收紧在真实 `main()` 流程里真的生效**。与上面的单元级分工
+    不同，别合并——上面测"pathspec 挡不挡得住"，本组测"它到底有没有被接进
+    批次落库那条路"。"""
+
+    def test_端到端_别的会话暂存的孤儿不进批次提交(self):
+        self._init_and_push(rows="")
+        row = ("| B-SCOPE | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
+               "| `docs(test): 范围收紧端到端` | 待 CC 取活 |\n")
+        self._write_queue(row)
+        # 仿真"别的会话把自己的文件 add 进了共享 index"——`OP-0827-A` 实撞形态。
+        orphan = self.work / "别的会话的件.md"
+        orphan.write_text("不属于任何批次声明\n", encoding="utf-8")
+        _git(self.work, "add", "--", "别的会话的件.md")
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        batch_commit = _git(self.origin, "log", "--format=%H",
+                            "--grep", "范围收紧端到端").stdout.strip()
+        self.assertTrue(batch_commit, "批次应已落库并推送\n" + self._origin_log())
+        names = _git(self.origin, "show", "--name-only", "--format=", "-z",
+                     batch_commit).stdout
+        self.assertNotIn("别的会话的件.md", names,
+                         "清单外的已暂存文件被带进了批次提交——正是本包要治的病")
+        self.assertIn(sweep.QUEUE_MECHANISM_PATH_REL, names)
+        # 孤儿仍留在工作区（未被替人 unstage），且日志点名了它。
+        self.assertTrue(orphan.exists())
+        self.assertIn("未被带入本提交",
+                      (self.work / sweep.LOG_REL).read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

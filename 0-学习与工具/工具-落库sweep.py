@@ -11,6 +11,13 @@ git 历史才救回，见协议〇.7 背景）。
 五条硬要求（Paul 2026-07-24）与本脚本对应实现：
 ① 只 `git add` 各批次行列出的文件，绝不 `git add -A`——见 _resolve_batch_files()，
    仅对已在批次"文件清单"列中以反引号标出的路径做 add，其余任何脏文件一律不碰。
+   🔴 **2026-09-07（队列 §一 #479，openspec `sweep-manifest-scoped-stage`）起，
+   add 与 commit 现已同为清单范围**——此前五处 `git commit` 全是裸提交（＝提交
+   整个 index，index 是工作区级共享状态），于是本条只挡住了 stage、挡不住提交：
+   `OP-0827-A` 实撞中被"登记豁免"放行的两份文件照样被三个批次的提交连带带走，
+   release 打 ✓、sweep 也打 ✓，两边都报成功而结果是错的。现五处提交统一走
+   `_commit_scoped()`（pathspec commit ＋ 清单外已暂存内容点名告警 ＋ 提交后
+   `git show --name-only` 校验），见该函数 docstring。
 ② 改队列销行前 acquire 编辑锁、改完 release；销行标记与批次文件同一 commit——
    见 _process_batch()：git add 批次文件 → 加锁改队列 → 一次 commit 两者一起进。
 ③ 主工作区非 master / 非 clean / 推送非快进时跳过本轮并告警，不强推——见
@@ -1133,6 +1140,180 @@ def _run_git(args: list[str], cwd: Path, check: bool = True) -> subprocess.Compl
     )
 
 
+# ============================================================
+# 队列 §一 #479（openspec `sweep-manifest-scoped-stage`，design 审 2026-09-07 过）：
+# 提交范围收紧 —— `git add` 一直是按清单的，`git commit` 此前不是
+# ============================================================
+# 病灶（propose 期 `git commit --dry-run --short` 两侧对照受控复现，apply 期
+# 2026-09-07 在 git 2.53.0.windows.2 上重跑确认）：全文 6 处 `git add` 全部带
+# `--` pathspec，5 处 `git commit` 全部是裸 `git commit -m <msg>`。裸 commit ＝
+# **提交整个 index**，而 index 是工作区级共享状态 ⇒ **stage 是按清单的、commit
+# 不是；决定提交内容的是后者。** 这就是 `OP-0827-A` 里「登记豁免」放行的两份
+# 文件仍被三个批次提交连带带走的机制：release 打 ✓、sweep 也打 ✓，两边都报成功
+# 而结果是错的。
+#
+# 修法＝决策点① ⒜（Shao Peishen 2026-09-07 合审 §1，答「全部按起草方推荐」）：
+# 给 commit 补上 pathspec，与 add 对齐。⚠️ **如实标注 ⒜ 自带的那条代价**：
+# `git commit -- <paths>` 隐含 `--only` 语义 ⇒ 提交的是**工作树当前值**，不是
+# add 那一刻的 index 快照（实验 2 实测：add 后被改写的内容会以改写后的值进提交，
+# 且提交后工作树转干净）。窗口＝add 与 commit 之间那一次 `_strike_off_rows`，
+# 秒级；缓解＝下面的提交后校验（决策点④ ⒝），它证明不了"没夹带"，只能在夹带
+# 发生时喊出来——真正的拦截来自 pathspec 本身，两者分工不同，不可互相替代。
+GIT_SCOPED_COMMIT_DECISION_NOTE = (
+    "决策点① ⒜（pathspec commit）＋② ⒝（全部 5 处）＋③ ⒝（点名告警但照常落库）"
+    "＋④ ⒝（提交后校验，不一致即告警、不 abort）"
+)
+
+
+def _git_names_z(repo_root: Path, args: list[str]) -> list[str]:
+    """跑一条输出 NUL 分隔文件名的只读 git 命令，返回顺序去重后的路径列表。
+
+    🔴 **必须带 `-z`，不能按行切**：`_run_git` 已经带了 `core.quotepath=false`，
+    但那只关掉非 ASCII 的八进制转义，**不关掉对含空格/引号/换行路径的加引号**。
+    本仓库路径大量含中文与空格（`1-转型规划/0-全景路线图/…`），按行切会在这类
+    路径上静默失真——正是"只读命令结果太干净先怀疑没读到对象"那一族。`-z`
+    永不加引号（2026-09-07 实测：`'中文 目录/文件.txt\\x00'`）。
+    """
+    seen: dict[str, None] = {}
+    for name in _run_git(args, repo_root).stdout.split("\0"):
+        if name:
+            seen.setdefault(name, None)
+    return list(seen)
+
+
+def _commit_scoped(
+    repo_root: Path, message: str, paths: list[str], log: list[str], *, label: str,
+) -> str | None:
+    """把 `paths` 声明的范围（且**仅**该范围）提交成一个本地 commit。
+
+    返回新 commit 的 short sha；本轮没有任何内容可提交时返回 `None`（**不是
+    异常**：调用方据此决定要不要写"已提交"那句话——否则日志会说谎）。
+
+    五处 sweep 自动提交统一走本函数（决策点② ⒝）。只收一处等于知道另外四处
+    有病还留着：`_rerun_ledger` 那句 `docs(队列): 收工重跑文档台账（sweep 自动）`
+    夹带别人的收工内容时**比批次标题更难被事后发现**（它看起来天经地义）。
+
+    实现要点（每条都对应一次 apply 期实测，不是推断）：
+
+    ⑴ **预期集合用 `git diff HEAD --name-only -z -- <paths>` 取，不用
+       `--cached`**。`--only` 提交的是"工作树 vs HEAD"的差异，而 `--cached`
+       是"index vs HEAD"：清单内路径若只改了工作树没 add，`--cached` 看不见
+       它、`git commit -- <path>` 却照样会带走（实验 8 实测）。用 `--cached`
+       算预期集合，会让提交后校验在这种情形下误报"多出"。
+
+    ⑵ **commit 的 pathspec 用算出来的 `expected`，不用调用方传进来的
+       `paths`**。理由是实验 5／9：`git commit -- <不匹配任何文件的 pathspec>`
+       直接报 `pathspec did not match` 退出码 1，**哪怕同一条命令里还有别的
+       路径确实有改动**。用 `expected` 当 pathspec，每一项都必然既已知于 git
+       又确有差异，绕开这个边角；顺带让"预期集合"与"实际传给 git 的范围"
+       **逐字同源**，不存在两套计算跑偏的可能。
+
+    ⑶ **空提交沿用既有"本轮无内容可提交"语义，不新造分支**（tasks 2.3）。
+       `git commit -- <无改动路径>` 会以 `nothing to commit` 退出码 1 报错
+       （实验 3），而 `_run_git` 默认 `check=True` 会把它抬成未捕获异常
+       ——那就把"没东西可提交"这件正常事变成了整轮崩溃。
+
+    ⑷ **清单外的已暂存内容点名告警但照常落库**（决策点③ ⒝）。⒜（静默交给
+       既有孤儿告警）被否的理由：孤儿告警的判据是"脏路径未被任何待处理批次
+       声明"，看的是 status；本条看的是 index，**两道机制判据来源不同**，
+       静默依赖等于把"承接是否闭合"留成假设。本包要治的病恰恰是"失败无声"，
+       修好了结果却仍然无声＝只治了一半。
+
+    ⑸ **提交后校验不一致时只告警、不 abort**（决策点④ ⒝）。提交已经产生，
+       abort 撤不回它，只会让本轮后续的对齐与推送不做 ⇒ "错误的提交留在本地、
+       且没推上去"，比告警更难收拾，且会连带把已正确落库的其它批次的推送一起
+       拖掉——正是 `#398` ⑺ 要治的形态。
+    """
+    expected = _git_names_z(
+        repo_root, ["diff", "HEAD", "--name-only", "-z", "--", *paths])
+    if not expected:
+        log.append(
+            f"{label}：清单路径与 HEAD 无差异，本轮无内容可提交，不产生新 commit。")
+        return None
+
+    expected_set = set(expected)
+    staged_all = _git_names_z(repo_root, ["diff", "--cached", "--name-only", "-z"])
+    outside = sorted(set(staged_all) - expected_set)
+    if outside:
+        log.append(
+            f"⚠ {label}：以下路径已在 index 里、但不属于本次清单，"
+            f"**未被带入本提交**（仍留在工作区，请确认是不是自己忘了 commit）：{outside}")
+
+    _run_git(["commit", "-m", message, "--", *expected], repo_root)
+    sha = _run_git(["rev-parse", "--short", "HEAD"], repo_root).stdout.strip()
+
+    actual_set = set(_git_names_z(
+        repo_root, ["show", "--name-only", "--format=", "-z", sha]))
+    if actual_set != expected_set:
+        log.append(
+            f"⚠ {label}：提交后校验不一致（commit {sha}）——多出 "
+            f"{sorted(actual_set - expected_set)}；缺少 {sorted(expected_set - actual_set)}。"
+            "提交已产生、不回滚（决策点④ ⒝ 原话：abort 撤不回它），须人工核对。")
+    return sha
+
+
+# 决策点⑤ ⒜（Shao Peishen 2026-09-07 合审）：关键路径清单。
+# 🔑 **判据一句话＝「会自己写 git 历史的函数，函数体内不许宽捕获」**
+# （`except Exception` / `except BaseException`）。取 ⒜（窄）不取 ⒝（宽）的
+# 理由：`main()` **必须**有宽兜底（`#198(a)` 的整个价值就在于此），
+# `_run_scheduled_task_mirror_sync` 的 3 个宽 except 罩的是子进程调用与 webhook
+# 推送、不罩它的 add/commit——两者都不满足上面那句话的前提，塞进来只能靠开例外
+# 维持，而**靠例外维持的判据就不是判据**。
+# 🔴 **新增任何会 `git commit`／`git push`／`git rebase`／`git merge`／`git reset`
+# 的函数，必须同时加进本清单**；漏加会被 `test_工具-落库sweep.py` 的反向检查
+# （`CriticalGitWritePathGuardTests`）当场报出，不靠人记。
+CRITICAL_GIT_WRITE_FUNCTIONS = (
+    "_commit_scoped",
+    "_process_normal_batch",
+    "_commit_uncovered_queue_changes",
+    "_rerun_ledger",
+    "_reconcile_with_origin_and_push",
+    "_push_any_unpushed_commits",
+    "_pop_reconcile_autostash",
+    # 🔑 **`_ff_carrier` 是反向检查第一次真跑就自己报出来的漏项**（2026-09-07
+    # apply 期实测），不是起草时想到的——它 `git merge --ff-only` 常驻执行体
+    # worktree，完全满足「会自己写 git 历史」这句判据，只是 design 决策点⑤
+    # 列举 4＋2 个函数时按"直接 commit/push"的直觉扫了一遍、漏了 merge 这一支。
+    # 这正是决策点⑤ ⒜ 配反向检查的全部理由：**让清单漏项自己暴露，不靠人记。**
+    "_ff_carrier",
+)
+
+# 反向检查的豁免名单：确实调用了 git 写动词、但按上面那句判据**不该**进清单的
+# 函数。🔴 每加一项都必须写清「它为什么不满足『会自己写 git 历史』这句话的前提」
+# ——写不出理由的，说明它就该进清单。
+CRITICAL_GIT_WRITE_EXEMPT_FUNCTIONS = {
+    "main": "整轮兜底本身（#198(a)）：它的宽 except 正是判据基础设施，拆掉就退回"
+            "「跑了但崩了」与「压根没启动」外观相同的老形态",
+    "_run_scheduled_task_mirror_sync": "3 个宽 except 罩的是子进程调用与 webhook 推送，"
+                                       "都不罩它的 add/commit（design 分诊表实测，"
+                                       "apply 期重扫复核）",
+    "_heal_stale_index_lock": "只删陈旧 .git/index.lock，不产生任何提交/推送",
+}
+
+# ============================================================
+# 队列 §一 #479 ⑵（同上包）：步骤指纹 —— 兜底告警要说得出"崩在哪一步"
+# ============================================================
+# `#126` 点出的真风险原话：「下一次同样的抛落在 `_reconcile_with_origin_and_push`
+# 这类关键路径上而仍被宽 except 接住 ⇒ sweep 说自己跑完了、实际某一步没做」。
+# 关键路径今天零宽 except（design 决策点⑤ 表格实测），所以 ⑵ 的落点是**回归守卫
+# ＋兜底告警点名**，不是修一个正在出血的 bug——如实标注，不粉饰。
+_SWEEP_CURRENT_STEP = "起跑（尚未进入任何具名步骤）"
+
+
+def _mark_step(name: str) -> None:
+    """标记 sweep 当前进行到哪一步。`main()` 每进入一个关键步骤调一次。
+
+    模块级单值而非参数透传：兜底 except 在 `main()` 最外层，透传要穿过十几层
+    调用签名；而本值的唯一读者就是那两个 except 分支，写者只有 `main()`。
+    """
+    global _SWEEP_CURRENT_STEP
+    _SWEEP_CURRENT_STEP = name
+
+
+def _current_step() -> str:
+    return _SWEEP_CURRENT_STEP
+
+
 def _resolve_repo_root(override: str | None) -> Path:
     if override is not None:
         return Path(override).resolve()
@@ -1934,11 +2115,14 @@ def _run_scheduled_task_mirror_sync(repo_root: Path, log: list[str]) -> None:
     ).stdout.strip()
     if changed:
         _run_git(["add", "--", SCHEDULED_TASK_MIRROR_DIR_REL], repo_root)
-        _run_git(
-            ["commit", "-m", "docs(定时任务镜像): sweep 自动核对并更正真身↔镜像差异"],
-            repo_root,
-        )
-        log.append("✓ 定时任务真身↔镜像核对：检出差异并已自动更正+本地提交，等待本轮末尾统一对齐并推送。")
+        # 队列 #479 决策点② ⒝：本处 commit 补 pathspec，与上一行的 add 对齐
+        # （此前是裸 commit ＝ 提交整个 index，会把别人暂存的东西按本条固定
+        # 标题一起带走，且该标题看起来天经地义、事后极难发现）。
+        if _commit_scoped(
+            repo_root, "docs(定时任务镜像): sweep 自动核对并更正真身↔镜像差异",
+            [SCHEDULED_TASK_MIRROR_DIR_REL], log, label="定时任务镜像核对提交",
+        ):
+            log.append("✓ 定时任务真身↔镜像核对：检出差异并已自动更正+本地提交，等待本轮末尾统一对齐并推送。")
         webhook_url = _load_webhook_url(repo_root)
         if webhook_url is None:
             log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过定时任务镜像差异告警推送（仅留痕日志）。")
@@ -2683,8 +2867,12 @@ def _commit_uncovered_queue_changes(repo_root: Path, log: list[str], dry_run: bo
         return
 
     _run_git(["add", "--", *uncovered], repo_root)
-    _run_git(["commit", "-m", QUEUE_IMMEDIATE_COMMIT_MESSAGE], repo_root)
-    sha = _run_git(["rev-parse", "--short", "HEAD"], repo_root).stdout.strip()
+    # 队列 #479 决策点② ⒝：commit 补 pathspec，与上一行 add 对齐。
+    sha = _commit_scoped(
+        repo_root, QUEUE_IMMEDIATE_COMMIT_MESSAGE, uncovered, log,
+        label="队列未覆盖改动单独提交")
+    if sha is None:
+        return
     log.append(
         f"✓ 队列文件改动所在文件当前无任何待处理 §二 行、与本轮批次处理无关，"
         f"已单独提交（{sha}）：{uncovered}"
@@ -5166,8 +5354,17 @@ def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str],
     _run_git(["add", "--", row["queue_path"]], repo_root)
 
     message = _extract_commit_message(row["message_cell"])
-    _run_git(["commit", "-m", message], repo_root)
-    sha = _run_git(["rev-parse", "--short", "HEAD"], repo_root).stdout.strip()
+    # 队列 #479（`OP-0827-A` 实撞的就是这一处）：commit 补 pathspec。预期集合
+    # ＝上面两处 add 的并集，**逐字同源、不另起一套计算**——另算一套就等于给
+    # 自己造了第二个可能跑偏的地方。
+    sha = _commit_scoped(
+        repo_root, message, [*resolved_files, row["queue_path"]], log,
+        label=f"批次 {batch_id} 落库提交")
+    if sha is None:
+        log.append(
+            f"⚠ 批次 {batch_id}：清单路径与 HEAD 无差异，本轮未产生提交——"
+            "销行标记可能已在上一轮写入而内容早已落库，请人工核对该行状态。")
+        return
     log.append(f"✓ 批次 {batch_id} 已本地提交（{sha}），等待本轮末尾统一对齐并推送。")
 
 
@@ -6249,13 +6446,18 @@ def main() -> int:
     # 代码自己变成新的盲区**（那正好是本条要治的那个形状再犯一次）。
     local_only_scanned = False
 
+    # 队列 #479 ⑵：步骤指纹归零——同一进程内跑第二次 main()（单测常见）时
+    # 不得继承上一次的残值，否则告警会点错步骤名。
+    _mark_step("起跑前置检查")
     try:
         _heal_stale_index_lock(repo_root, log)
         _check_preconditions(repo_root, production=args.repo_root is None)
         # 队列 #192/#194/#198/#219/#235 起跑段写死顺序（勿自行调整，详见各函数 docstring）：
         # ① #198(b) 编辑锁前置探测（任何 git 写动作之前）
+        _mark_step("编辑锁前置探测")
         _abort_if_edit_lock_held(repo_root, log)
         # ② #194 无条件补推未推送提交
+        _mark_step("补推未推送提交")
         _push_any_unpushed_commits(repo_root, log, dry_run=args.dry_run)
         # ②bis 队列 §一 #425 ⑶：第 8 类常驻状态告警——本地 master 独有提交。
         # 🔴 **位置写死在这里，勿移到下方常驻告警族里**：`_reconcile_with_
@@ -6264,6 +6466,7 @@ def main() -> int:
         # 状态文件 mtime 全部冻在 01:18）。本判据若排在那里，就会在唯一需要它
         # 出声的情形里恒静默。排在自动补推之后，则凡还剩的 ahead 都是补推没能
         # 解决的，不会误报「刚提交、马上要推」的正常中间态。本函数不 raise。
+        _mark_step("本地独有提交扫描（第 8 类）")
         _check_local_only_commits(repo_root, log, dry_run=args.dry_run)
         local_only_scanned = True
         # ③ #192-A flush 锁忙推迟暂存 + #219 决策提醒第二载体 + #235/#188 定时
@@ -6271,6 +6474,7 @@ def main() -> int:
         #   尚未开始，安全；#235/#188 的核对若检出差异会当场本地提交，须排在
         #   下方 dirty_paths 捕获之前，使更正后的镜像文件不留作孤儿脏文件）；
         #   dry-run 不做真实动作，避免副作用。
+        _mark_step("起跑段子进程（锁 flush／决策提醒／镜像核对／日志轮转）")
         if not args.dry_run:
             _flush_pending_lock_appends(repo_root, log)
             _run_decision_reminder_second_carrier(repo_root, log)
@@ -6284,6 +6488,7 @@ def main() -> int:
         # 队列文件改动单独落库一次——防止这类改动因不落在任何批次清单里而
         # 一直悬空未提交（今天已因此丢过一次附注行，见 #398 附带证据）。做完
         # 这一步再照常进入下方批次处理主流程；dry-run 不做真实提交，仅留痕。
+        _mark_step("队列未覆盖改动单独落库")
         _commit_uncovered_queue_changes(repo_root, log, dry_run=args.dry_run)
         # ④ 队列 #288（2026-08-06 起）：不再在批次处理之前尝试同步/分叉早检
         # ——`_sync_master_if_behind_origin` 的 `git merge --ff-only` 要求工作区
@@ -6381,6 +6586,7 @@ def main() -> int:
                     )
 
             for row, resolved in normal_rows:
+                _mark_step(f"批次落库 {row['batch_id']}（{queue_path}）")
                 _process_normal_batch(repo_root, row, resolved, args.dry_run, log)
                 touched_paths.update(resolved)
 
@@ -6395,11 +6601,16 @@ def main() -> int:
                     # 不在此处内联拼串——内联正是上一版把"待落库"写进状态、
                     # 使补销每轮重触发的来路。
                     new_status = _straggler_status(_now_utc_str())
+                    _mark_step(f"补销遗留尾巴批次 {ids}")
                     _strike_off_rows(repo_root, straggler_rows, lambda r: new_status,
                                       f"sweep 补销尾巴 {ids}", dry_run=False, log=log)
                     _run_git(["add", "--", queue_path], repo_root)
-                    _run_git(["commit", "-m", f"docs(队列): sweep 补销遗留尾巴批次 {ids}"], repo_root)
-                    log.append(note)  # 队列 #288：只本地提交，不在此处单独推送
+                    # 队列 #479 决策点② ⒝：commit 补 pathspec，与上一行 add 对齐。
+                    if _commit_scoped(
+                        repo_root, f"docs(队列): sweep 补销遗留尾巴批次 {ids}",
+                        [queue_path], log, label=f"补销尾巴提交 {ids}",
+                    ):
+                        log.append(note)  # 队列 #288：只本地提交，不在此处单独推送
 
             all_normal_rows.extend(normal_rows)
             all_straggler_ids.extend(r["batch_id"] for r in straggler_rows)
@@ -6416,6 +6627,7 @@ def main() -> int:
             # 落库时才有意义，dry-run 不产生持久化副作用。
             landed_batch_ids = [r["batch_id"] for r, _ in all_normal_rows] + all_straggler_ids
             _record_batch_landing_count(repo_root, landed_batch_ids)
+            _mark_step("台账重跑并提交")
             _rerun_ledger(repo_root, log)
         elif not processed_any and all_pending_rows:
             log.append("本轮无批次可落库（全部暂缓或声明片段当前均无对应脏改动）。")
@@ -6429,6 +6641,7 @@ def main() -> int:
         # ⓘ3（队列 #398）：传入本轮"正在处理／刚处理完尚未清空"的 §二 批次
         # 文件清单并集（`touched_paths`，两份队列文件累加），供 autostash
         # 判断哪些脏文件不能被挪走——见该函数 docstring。
+        _mark_step("与 origin 对齐并推送")
         _reconcile_with_origin_and_push(repo_root, log, dry_run=args.dry_run, batch_files=touched_paths)
 
         # #198(c)：批次落库之后，检查本轮实际 add 过的路径是否命中常驻服务——
@@ -6468,6 +6681,11 @@ def main() -> int:
             # 的整体状态，**与本轮是否有批次落库无关**，故不依赖 touched_paths。
             # 🔴 两者都**每轮回显**，即使零超限/零落后：上线当天预计零告警，
             # 而「建成 9 天从未发出过一条消息」是本项目已经吃过的亏。
+            # 队列 #479 ⑵：常驻状态告警族整体作为一个步骤标记——族内各类
+            # 彼此独立、任一类抛异常都由 main() 兜底接住，对处置动作而言
+            # 「崩在告警族」与「崩在哪一类」是同一个动作（本轮告警不可信、
+            # 批次已落库），不必逐类拆。
+            _mark_step("常驻状态告警族")
             _check_claude_md_carrier_size(repo_root, log)
             # 队列 §一 #435（2026-08-30，OP-0830-C）：本机全局记忆巡检——
             # 受检对象在仓库外，与上一行刻意分设独立函数（见常量段）。
@@ -6519,7 +6737,10 @@ def main() -> int:
         return 0
 
     except SweepAbort as exc:
+        # 队列 #479 ⑵：点名当前步骤——早退日志此前只有原因、没有位置，
+        # 「哪一步没做」得靠人对着代码顺序反推。
         log.append(str(exc))
+        log.append(f"    （早退于步骤：{_current_step()}）")
         if not local_only_scanned:
             _note_local_only_scan_skipped(
                 repo_root, f"整轮早退（{str(exc).strip()[:120]}）", log, args.dry_run)
@@ -6537,7 +6758,9 @@ def main() -> int:
         # 含义："任务根本没启动"；"跑了但崩了"改为走这里，有日志+告警+
         # 独立退出码，判据恢复单义（见 #198(a) 验收物）。
         tb_tail = traceback.format_exc().strip().splitlines()[-6:]
-        log.append(f"✗ 未预期异常（{_now_utc_str()}）：{type(exc).__name__}: {exc}")
+        log.append(
+            f"✗ 未预期异常（{_now_utc_str()}）于步骤「{_current_step()}」："
+            f"{type(exc).__name__}: {exc}")
         log.extend(f"    {line}" for line in tb_tail)
         if not local_only_scanned:
             _note_local_only_scan_skipped(
@@ -6550,7 +6773,8 @@ def main() -> int:
                 try:
                     _send_wecom_markdown(
                         webhook_url,
-                        f"🔱 落库sweep 遇到未预期异常：{type(exc).__name__}: {exc}\n"
+                        f"🔱 落库sweep 遇到未预期异常（步骤：{_current_step()}）："
+                        f"{type(exc).__name__}: {exc}\n"
                         "详见 reports/sweep-commit.log。",
                     )
                     log.append("✓ 未预期异常告警已推送。")
@@ -6580,8 +6804,14 @@ def _rerun_ledger(repo_root: Path, log: list[str]) -> None:
         log.append("台账重跑：内容无变化，不产生新 commit。")
         return
     _run_git(["add", "--", LEDGER_OUTPUT_REL], repo_root)
-    _run_git(["commit", "-m", "docs(队列): 收工重跑文档台账（sweep 自动）"], repo_root)
-    log.append("✓ 台账已重跑并本地提交，等待本轮末尾统一对齐并推送。")
+    # 队列 #479 决策点② ⒝：commit 补 pathspec，与上一行 add 对齐。本处的固定
+    # 标题「收工重跑文档台账（sweep 自动）」正是 design 里点名的那类——看起来
+    # 天经地义，夹带别人的收工内容时最难被事后发现。
+    if _commit_scoped(
+        repo_root, "docs(队列): 收工重跑文档台账（sweep 自动）",
+        [LEDGER_OUTPUT_REL], log, label="台账重跑提交",
+    ):
+        log.append("✓ 台账已重跑并本地提交，等待本轮末尾统一对齐并推送。")
 
 
 # ============================================================
