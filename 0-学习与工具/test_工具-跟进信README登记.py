@@ -42,6 +42,10 @@ def _row(number, recipient, topic, note, status, date="2026-08-20"):
 class _FakeArgs:
     def __init__(self, **kwargs):
         self.dry_run = False
+        # `set-status` 的 `--fact-date`（`#447` ⑵）——argparse 恒会设它，故此处
+        # 也恒设，让 `cmd_set_status` 可以直接 `args.fact_date` 取（用
+        # `getattr(..., None)` 兜底等于给「漏传」留一条静默通道）。
+        self.fact_date = None
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -364,6 +368,7 @@ class SetStatusTests(RegistryCliTestBase):
         code, _out, _err = self._run(
             self.module.cmd_set_status, who="t", number="采购部#19",
             status="✅ 已推送 2026-09-06 08:00 UTC（机器人）",
+            fact_date="2026-09-06",
         )
         self.assertEqual(code, 0)
 
@@ -467,6 +472,293 @@ class MainCliTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             with redirect_stderr(io.StringIO()):
                 self.module.main(["not-a-command"])
+
+
+# ---------------------------------------------------------------------------
+# 队列 §一 `#447`：O1／O2／O3 ＋ ⑵ 事实日／补记日
+# （Shao Peishen 2026-09-07 答合审材料 §10 (a)）
+# ---------------------------------------------------------------------------
+
+
+class LegacyDecisionFieldTests(RegistryCliTestBase):
+    """O3：`开放点计数:`／`开放点:` 停写，`决策点:` 为唯一正本。"""
+
+    def _append(self, letter_path):
+        self._write_readme(
+            _row("采购部#5", "采购部 · 姚祖怡", "旧信", "尽快", "📥 已回件并回灌（2026-08-01）")
+        )
+        return self._run(
+            self.module.cmd_append, who="t", department="采购部",
+            recipient_cell="采购部 · 姚祖怡", date="2026-09-07",
+            topic="新事项", deadline_note="无", letter_path=letter_path,
+        )
+
+    def test_仍带开放点计数即拒登记(self):
+        letter = self._write_letter(
+            name="带旧字段.md", extra_fields="开放点计数: 本封要你定 4 件事（…）"
+        )
+        code, _out, err = self._append(letter)
+        self.assertEqual(code, 1)
+        self.assertIn("开放点计数", err)
+        self.assertIn("停写", err)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_仍带开放点即拒登记(self):
+        letter = self._write_letter(name="带旧字段2.md", extra_fields="开放点: 3 项（a / b / c）")
+        code, _out, err = self._append(letter)
+        self.assertEqual(code, 1)
+        self.assertIn("开放点", err)
+
+    def test_只写决策点放行(self):
+        code, _out, _err = self._append(self.default_letter)
+        self.assertEqual(code, 0)
+
+
+class RecipientCellTests(RegistryCliTestBase):
+    """O2：`收信人` ＝ `部门 · 姓名`，姓名以人员名录正本为准。"""
+
+    def _append(self, recipient_cell, department="采购部"):
+        self._write_readme(
+            _row("采购部#5", "采购部 · 姚祖怡", "旧信", "尽快", "📥 已回件并回灌（2026-08-01）")
+        )
+        return self._run(
+            self.module.cmd_append, who="t", department=department,
+            recipient_cell=recipient_cell, date="2026-09-07",
+            topic="新事项", deadline_note="无",
+        )
+
+    def test_缺分隔符即拒登记(self):
+        code, _out, err = self._append("采购部姚祖怡")
+        self.assertEqual(code, 1)
+        self.assertIn("分隔符", err)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_姓名不在名录正本即拒登记(self):
+        code, _out, err = self._append("采购部 · 张三")
+        self.assertEqual(code, 1)
+        self.assertIn("不在人员名录正本", err)
+        self.assertIn("不许现编", err)
+
+    def test_部门与department不一致即拒登记(self):
+        """不一致会把号取到另一个部门的序列里，而写完不报错。"""
+        code, _out, err = self._append("质量部 · 陈忱", department="采购部")
+        self.assertEqual(code, 1)
+        self.assertIn("不一致", err)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_在册姓名放行(self):
+        code, _out, _err = self._append("采购部 · 姚祖怡")
+        self.assertEqual(code, 0)
+
+    def test_名录取数异常时报错而不是把每个人都判成不在册(self):
+        """🔑「只读结果太干净先怀疑没读到对象」——名录只剩几个人时，照常判定
+        会把每个真实收信人都判成「不在册」，且错得非常自信。"""
+        self.module.editlock.PERSON_GENDER_ROSTER = {"姚祖怡": "男"}
+        code, _out, err = self._append("采购部 · 姚祖怡")
+        self.assertEqual(code, 1)
+        self.assertIn("名录取数异常", err)
+
+    def test_名录实测覆盖当前主表四位收信人(self):
+        """守住「本闸对既有语料零误杀」这句话本身——名录一旦漏掉其中任何一位，
+        下一封信就登记不进去。"""
+        roster = self.module._roster_names()
+        for name in ("姚祖怡", "陈忱", "唐燕萍", "陈承", "泓钦"):
+            self.assertIn(name, roster)
+
+
+class StatusClosedSetTests(RegistryCliTestBase):
+    """O1：`--status` 取值闭集＝判据版八态 ＋ 第九态。"""
+
+    def _set(self, status, **kw):
+        self._write_readme(_row("采购部#19", "采购部 · 姚祖怡", "事项", "无", "⏳ 待你审"))
+        return self._run(
+            self.module.cmd_set_status, who="t", number="采购部#19", status=status, **kw
+        )
+
+    def test_八态逐个放行(self):
+        for prefix in self.module.CANONICAL_EIGHT_STATUS_PREFIXES:
+            with self.subTest(prefix=prefix):
+                needs_fact = any(
+                    prefix.startswith(p) for p in self.module.FACT_DATE_REQUIRED_PREFIXES
+                )
+                kw = {"fact_date": "2026-09-01"} if needs_fact else {}
+                code, _out, err = self._set(f"{prefix}（备注）", **kw)
+                self.assertEqual(code, 0, err)
+
+    def test_第九态放行(self):
+        code, _out, err = self._set(
+            self.module.followup_gate.REPLY_ARRIVED_STATUS, fact_date="2026-09-01"
+        )
+        self.assertEqual(code, 0, err)
+
+    def test_已退役的已发写法被拒且文案点名它认得但已退役(self):
+        """`✅ 已发` 仍在 `followup_gate.IN_FLIGHT_STATUS_PREFIXES` 里（历史行
+        要能被读懂），但 O1 收敛后不许再写——两件事必须分开。"""
+        before_kind = self.module.followup_gate.classify_status("✅ 已发（2026-07-09）")
+        self.assertNotEqual(before_kind, "unknown")  # 前提：闸仍认得它
+        code, _out, err = self._set("✅ 已发（2026-07-09）")
+        self.assertEqual(code, 1)
+        self.assertIn("闭集", err)
+        self.assertIn("已退役", err)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_完全乱写被拒(self):
+        code, _out, err = self._set("乱写一个状态")
+        self.assertEqual(code, 1)
+        self.assertIn("也不认得", err)
+
+
+class FactDateTests(RegistryCliTestBase):
+    """⑵：事实日／补记日两字段，事实日不得被补记顶替、不得被后续补记覆盖。"""
+
+    TODAY = "2026-09-07"
+
+    def setUp(self):
+        super().setUp()
+        self.module._today = lambda: self.TODAY
+
+    def _set(self, status, number="采购部#19", **kw):
+        return self._run(
+            self.module.cmd_set_status, who="t", number=number, status=status, **kw
+        )
+
+    def _row_with(self, status):
+        self._write_readme(_row("采购部#19", "采购部 · 姚祖怡", "事项", "无", status))
+
+    def test_回件转态缺事实日即拒且不取锁不写入(self):
+        self._row_with("⏳ 待你审")
+        before = self._readme_text()
+        code, _out, err = self._set("📥 已回件并回灌（拆件巡逻）")
+        self.assertEqual(code, 1)
+        self.assertIn("--fact-date", err)
+        self.assertIn("不得拿今天顶替", err)
+        self.assertEqual(self._readme_text(), before)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_未发三态不要求事实日(self):
+        self._row_with("⏳ 待你审")
+        code, _out, err = self._set("🆕 待发")
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("事实日", self._readme_text())
+
+    def test_事实日与补记日一并写入规范尾标(self):
+        self._row_with("⏳ 待你审")
+        code, out, err = self._set("📥 已回件并回灌（拆件巡逻）", fact_date="2026-08-10")
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"〔事实日 2026-08-10 ／ 补记日 {self.TODAY}〕", self._readme_text())
+        self.assertIn("补记滞后 28 天", out)
+
+    def test_补记滞后过大时出声(self):
+        """🔴 这行字就是 2026-08-23 那次批量补转态当时没有的那个信号。"""
+        self._row_with("⏳ 待你审")
+        _code, out, _err = self._set("📥 已回件并回灌", fact_date="2026-08-11")
+        self.assertIn("[NOTE]", out)
+        self.assertIn("属迟到补记", out)
+
+    def test_事实日未知可写且不被补记日顶替(self):
+        self._row_with("⏳ 待你审")
+        code, out, err = self._set("📥 已回件并回灌", fact_date=self.module.FACT_DATE_UNKNOWN)
+        self.assertEqual(code, 0, err)
+        cell = self._readme_text()
+        self.assertIn(f"〔事实日 事实日未知 ／ 补记日 {self.TODAY}〕", cell)
+        self.assertNotIn(f"事实日 {self.TODAY}", cell)  # 没被今天顶替
+        self.assertIn("单列", out)
+
+    def test_事实日未知字面量与点级台账同一份常量(self):
+        from zhuopin_platform.coverage_point_ledger.models import FACT_DATE_UNKNOWN
+        self.assertIs(self.module.FACT_DATE_UNKNOWN, FACT_DATE_UNKNOWN)
+
+    def test_事实日形态不合即拒(self):
+        self._row_with("⏳ 待你审")
+        code, _out, err = self._set("📥 已回件并回灌", fact_date="2026-02-30")
+        self.assertEqual(code, 1)
+        self.assertIn("并不存在", err)
+
+    def test_事实日不得晚于本机当天(self):
+        self._row_with("⏳ 待你审")
+        code, _out, err = self._set("📥 已回件并回灌", fact_date="2026-09-08")
+        self.assertEqual(code, 1)
+        self.assertIn("不会发生在未来", err)
+
+    def test_同一状态下已有事实日不得被后续补记覆盖(self):
+        """design §5.3 第三条 Requirement；成因＝12 封信的真实回件日被销毁。"""
+        self._row_with("📥 已回件并回灌 〔事实日 2026-08-10 ／ 补记日 2026-08-23〕")
+        before = self._readme_text()
+        code, _out, err = self._set("📥 已回件并回灌（再登记一次）", fact_date=self.TODAY)
+        self.assertEqual(code, 1)
+        self.assertIn("拒绝覆盖", err)
+        self.assertIn("2026-08-10", err)
+        self.assertEqual(self._readme_text(), before)
+        self.assertEqual(self._lock_calls, [])
+
+    def test_换状态即换事实不算覆盖(self):
+        """🔴 事实日是「当前这个状态」的属性：回件到达日与我方确认闭环日本就
+        是两个日期，转态时要求沿用旧值反而是把回件日当成确认日。"""
+        self._row_with("📥 已回件并回灌 〔事实日 2026-08-10 ／ 补记日 2026-08-23〕")
+        code, _out, err = self._set("📨 已确认闭环（我方已回复确认）", fact_date=self.TODAY)
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"〔事实日 {self.TODAY} ／ 补记日 {self.TODAY}〕", self._readme_text())
+
+    def test_转到不承载事实日的状态时旧尾标原样带过(self):
+        """不因一次不相干的转态把已记下的事实日冲掉——连同它原来的补记日。"""
+        self._row_with("📥 已回件并回灌 〔事实日 2026-08-10 ／ 补记日 2026-08-23〕")
+        code, _out, err = self._set("❌ 已作废（口径已变，不再需要回件）")
+        self.assertEqual(code, 0, err)
+        self.assertIn("〔事实日 2026-08-10 ／ 补记日 2026-08-23〕", self._readme_text())
+
+    def test_显式写事实日更正标记才允许改写(self):
+        self._row_with("📥 已回件并回灌 〔事实日 2026-08-10 ／ 补记日 2026-08-23〕")
+        code, _out, err = self._set(
+            "📥 已回件并回灌（事实日更正：原记 2026-08-10，依据企微原始时间戳）",
+            fact_date="2026-08-09",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("〔事实日 2026-08-09 ／ 补记日", self._readme_text())
+        self.assertIn("事实日更正：原记 2026-08-10", self._readme_text())
+
+    def test_事实日未知升级为具体日期属找回信息不受覆盖闸约束(self):
+        self._row_with("📥 已回件并回灌 〔事实日 事实日未知 ／ 补记日 2026-08-23〕")
+        code, _out, err = self._set("📥 已回件并回灌", fact_date="2026-08-10")
+        self.assertEqual(code, 0, err)
+        self.assertIn("〔事实日 2026-08-10 ／ 补记日", self._readme_text())
+
+    def test_尾标不叠加两枚(self):
+        self._row_with("📥 已回件并回灌 〔事实日 2026-08-10 ／ 补记日 2026-08-23〕")
+        self._set("📨 已确认闭环")
+        self.assertEqual(self._readme_text().count("〔事实日"), 1)
+
+    def test_dry_run打印计划但不写入(self):
+        self._row_with("⏳ 待你审")
+        before = self._readme_text()
+        code, out, _err = self._set(
+            "📥 已回件并回灌", fact_date="2026-08-10", dry_run=True
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("事实日 2026-08-10 ／ 补记日", out)
+        self.assertEqual(self._readme_text(), before)
+        self.assertEqual(self._lock_calls, [])
+
+
+class FactMarkParseTests(unittest.TestCase):
+    """尾标解析：「没标注」与「标了不知道」必须分得开。"""
+
+    def setUp(self):
+        self.module = _load()
+
+    def test_无尾标返回None而不是事实日未知(self):
+        self.assertIsNone(self.module._parse_fact_mark("📥 已回件并回灌（2026-08-24）"))
+
+    def test_事实日未知返回字面量(self):
+        parsed = self.module._parse_fact_mark(
+            "📥 已回件并回灌 〔事实日 事实日未知 ／ 补记日 2026-09-07〕"
+        )
+        self.assertEqual(parsed, (self.module.FACT_DATE_UNKNOWN, "2026-09-07"))
+
+    def test_具体日期返回两个值(self):
+        parsed = self.module._parse_fact_mark(
+            "📥 已回件并回灌（拆件巡逻）〔事实日 2026-08-10 ／ 补记日 2026-08-23〕"
+        )
+        self.assertEqual(parsed, ("2026-08-10", "2026-08-23"))
 
 
 if __name__ == "__main__":
