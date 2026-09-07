@@ -595,5 +595,130 @@ class 形态七_有做什么段却缺不做什么段(unittest.TestCase):
         self.assertIn("F7", M.FORM_TITLE)
 
 
+class 格式正本自身被判成违规(unittest.TestCase):
+    """队列 §一 `#493`：判据把**自己的格式正本** `opener骨架.md` 判成 8 处违规。
+
+    2026-09-06 15:53 UTC 主仓实跑坐实（`OP-0906-AA`）：只要骨架件处于脏改动中，
+    release 侧 opener 守卫就拿 `check_block` 去判它，它自己的占位符（`MMDDX`／
+    `[OP-MMDD-X]`）当场命中 ⇒ release 被拒、锁保持占用，这正是 `#398` ⑺「sweep
+    自撞锁」当天四轮的触发源。
+
+    🔴 **本类的验收哲学是「换判据，不是关掉」**——所以每一条「正本内不报 FN」的
+    用例，都配一条「正本漂了就报 CN」的用例；只写前一半 ＝ 把守卫关掉了事，那正是
+    `#493` 期望产出明确禁止的。
+    """
+
+    #: 骨架件里那三个真实占位符块的最小复刻（截自 `opener骨架.md` §【CC】骨架）。
+    CANON_FIRST_LINE = "[OP-MMDD-X]【CC】<短名，≤12字>"
+    CANON_SETTINGS = (
+        "【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ "
+        "worktree：☑（<worktree名>，新 worktree，收工自删）｜ 工作区：无 ｜ session：新开 ｜ "
+        "派出线：<线名 OP-MMDD-X>"
+    )
+    CANON_TITLE_LINE = TITLE_LINE_PLACEHOLDER_NOT_FILLED
+
+    def _canon(self, *body_lines: str) -> Path:
+        """把内容写进一份**路径为格式正本**的临时件（判据是路径，不是文件名）。"""
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        p = Path(d.name) / M.SKELETON_CANON_REL
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_md(*body_lines), encoding="utf-8")
+        return p
+
+    # ── 判据识别 ────────────────────────────────────────────────
+    def test_is_format_canon认相对路径与绝对路径(self):
+        self.assertTrue(M.is_format_canon(M.SKELETON_CANON_REL))
+        self.assertTrue(M.is_format_canon(M.SKELETON_CANON_REL.replace("/", "\\")))
+        self.assertTrue(M.is_format_canon("C:/x/" + M.SKELETON_CANON_REL))
+
+    def test_is_format_canon不做basename匹配(self):
+        """🔴 归档目录里另有同名历史副本，basename 匹配会把它们一并静默排除。"""
+        self.assertFalse(M.is_format_canon("z-已执行归档/opener骨架.md"))
+        self.assertFalse(M.is_format_canon("opener骨架.md"))
+
+    # ── 真身回归：仓库里那份格式正本必须零违规 ────────────────
+    def test_仓库真身的格式正本零违规(self):
+        """🔴 用**仓库里那份真文件**跑，不用夹具——`#493` 要根治的就是它。
+        它一旦再被判成违规，release 又会被自己的格式正本卡住。"""
+        canon = M.REPO_ROOT / M.SKELETON_CANON_REL
+        self.assertTrue(canon.is_file(), f"格式正本不在了：{canon}")
+        self.assertEqual([f.render() for f in M.scan_single_file(canon)], [])
+
+    # ── 形态①②③⑤ 在正本内换判据（不是关掉，见下方 C 系用例）──
+    def test_正本内不报形态三与形态五(self):
+        p = self._canon(self.CANON_FIRST_LINE, self.CANON_SETTINGS, self.CANON_TITLE_LINE,
+                        "做什么：", "1. …", "不做什么：", "- …")
+        self.assertEqual([f.form for f in M.scan_single_file(p)], [])
+
+    def test_同样内容在普通件里照报形态三与形态五(self):
+        """🔴 排除不得外溢：换个路径，同一段文本必须照样命中 F3/F5——否则
+        「照抄骨架却漏填占位符」这个形态③本来要抓的东西就被一起放掉了。"""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "派单件-x.md"
+            p.write_text(_md(self.CANON_FIRST_LINE, self.CANON_SETTINGS,
+                             self.CANON_TITLE_LINE), encoding="utf-8")
+            forms = {f.form for f in M.scan_single_file(p)}
+            self.assertIn("F3", forms)
+            self.assertIn("F5", forms)
+
+    def test_正本内不报形态一(self):
+        """【CC · 子任务泳道】骨架**刻意不放** `set_session_title`（源头不放，
+        `#487`(甲)），正本里这个块不该被形态①点亮。"""
+        p = self._canon(self.CANON_FIRST_LINE, self.CANON_SETTINGS, "读队列 §一 `#N`。")
+        # 只断言 F1 不再出现：这份只含一个泳道块的夹具**同时**会命中 C1/C2
+        # （正本里再没有别的块教 title 与例外句了），而那正是「换判据」的另一半、
+        # 由本类下方两条用例各自钉死 —— 此处不把两件事搅在一个断言里。
+        self.assertNotIn("F1", {f.form for f in M.scan_single_file(p)})
+
+    # ── 与占位符无关的形态④⑦ 在正本内**照常生效** ────────────
+    def test_正本内形态四照常生效(self):
+        p = self._canon(self.CANON_FIRST_LINE, "【设置】执行环境：CC ｜ worktree：☑ ｜ 分支：master",
+                        self.CANON_TITLE_LINE)
+        self.assertIn("F4", {f.form for f in M.scan_single_file(p)})
+
+    def test_正本内形态七照常生效(self):
+        p = self._canon(self.CANON_FIRST_LINE, self.CANON_SETTINGS, self.CANON_TITLE_LINE,
+                        "做什么：", "1. …")
+        self.assertIn("F7", {f.form for f in M.scan_single_file(p)})
+
+    # ── 换上去的那半：正本漂了就发信号 ────────────────────────
+    def test_正本首行占位符漂了报C5(self):
+        p = self._canon("[OP-0907-Z]【CC】随手写的", self.CANON_SETTINGS, self.CANON_TITLE_LINE)
+        self.assertIn("C5", {f.form for f in M.scan_single_file(p)})
+
+    def test_正本标题占位符漂了报C3(self):
+        drifted = self.CANON_TITLE_LINE.replace("[Win]MMDDX-<短名>", "[Win]0907V-随手写的")
+        p = self._canon(self.CANON_FIRST_LINE, self.CANON_SETTINGS, drifted)
+        self.assertIn("C3", {f.form for f in M.scan_single_file(p)})
+
+    def test_正本不再教set_session_title报C1(self):
+        """正本若不再包含任何带 title 的【CC】块，此后每个照抄者都会漏写那一行——
+        而形态①只在成品上一个一个报，报不到源头。"""
+        p = self._canon(self.CANON_FIRST_LINE, self.CANON_SETTINGS, "读队列 §一 `#N`。")
+        self.assertIn("C1", {f.form for f in M.scan_single_file(p)})
+
+    def test_正本不再教子任务例外句报C2(self):
+        no_exc = TITLE_LINE_NO_EXC.replace("[Win]0827B-LAN留步收尾-354与401", "[Win]MMDDX-<短名>")
+        p = self._canon(self.CANON_FIRST_LINE, self.CANON_SETTINGS, no_exc)
+        self.assertIn("C2", {f.form for f in M.scan_single_file(p)})
+
+    def test_正本自检不外溢到普通件(self):
+        """C1/C2 是**正本专属**的文件级判据——普通派单件不含 title 是常态
+        （子任务泳道 opener 就该不含），不得被 C1/C2 点亮。"""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件-x.md"
+            p.write_text(_md(TITLE_LINE_CC, SETTINGS_CC, "读队列 §一 `#N`。"),
+                         encoding="utf-8")
+            forms = {f.form for f in M.scan_single_file(p)}
+            self.assertNotIn("C1", forms)
+            self.assertNotIn("C2", forms)
+
+    def test_生效日与标题表齐备(self):
+        for code in ("C1", "C2", "C3", "C5"):
+            self.assertEqual(M.RULE_EFFECTIVE_BY_FORM[code], date(2026, 9, 7))
+            self.assertIn(code, M.FORM_TITLE)
+
+
 if __name__ == "__main__":
     unittest.main()

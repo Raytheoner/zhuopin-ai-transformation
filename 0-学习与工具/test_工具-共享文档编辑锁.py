@@ -6318,6 +6318,117 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         self.assertEqual(len(violations), 1)
         self.assertIn("fail-closed", violations[0])
 
+    # ── 队列 §一 #493 ⑴：格式正本的占位符不是违规 ────────────────
+    def test_format_canon_placeholders_do_not_block_release(self):
+        """🔴 `#493` 立项形态：`opener骨架.md` 一脏，release 就被**它自己的
+        格式正本**判成 8 处违规、锁保持占用（2026-09-06 15:53 UTC 主仓实跑
+        坐实，`#398` ⑺「sweep 自撞锁」当天四轮的触发源）。
+
+        判据正本在 lint 本体（`is_format_canon`／`check_canon_file`），此处
+        只验 release 侧把上下文传对了——不重复 lint 自身那 13 条单测。"""
+        self._write_block(self.m._load_opener_lint_module().SKELETON_CANON_REL,
+                          "[OP-MMDD-X]【CC】<短名，≤12字>", self.SETTINGS_CC,
+                          '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title'
+                          '（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。'
+                          "🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行。")
+        self.assertEqual(self._run(), [])
+
+    def test_format_canon_drift_still_blocks(self):
+        """🔴 **换判据，不是关掉**：正本的占位符自己漂了，照样拦。"""
+        self._write_block(self.m._load_opener_lint_module().SKELETON_CANON_REL,
+                          "[OP-0907-Z]【CC】随手写的", self.SETTINGS_CC,
+                          '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title'
+                          '（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。'
+                          "🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行。")
+        violations = self._run()
+        self.assertEqual(len(violations), 1)
+        self.assertIn("C5", violations[0])
+
+    # ── 队列 §一 #493 ⑵：归属分流（无人值守持有者的出路）─────────
+    #     🔴 判据＝「违规落不落在本次持锁者触碰过的文件里」，不是「持锁者是谁」
+    #     ——按身份开豁免就是 `SELF_COMMITTING_LOCK_HOLDERS` 那条路，而人类会话
+    #     同样修不了别人的文件（`#493` 原文：「对人类会话是硬拦截」）。
+    def _lock(self, *dirty_at_acquire: str) -> dict:
+        return {"who": "某会话", "dirty_at_acquire": list(dirty_at_acquire)}
+
+    def test_violation_in_others_file_downgrades_to_warning(self):
+        """acquire 之前就已经脏、且不在本次 §二 清单里 ⇒ 降级为告警、放行。
+
+        2026-09-07 06:0x 实撞原形：被拦下的是**另一条会话正在写的**看护件
+        （`看护件-泳道看护批B-0907_E-2026-09-07.md:61` 缺 `[OP-MMDD-X]` 前缀，
+        **判得对**），而持锁者是 sweep——它既没造成、也管不了那处违规，只能把
+        锁扣到 30 分钟陈旧，期间全员写队列被拒。"""
+        self._write_block("看护件-他线在办.md", self.SETTINGS_CC, "读队列。")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            violations = self.m._opener_guard_violations(
+                self.root, [], self._lock("看护件-他线在办.md"), {})
+        self.assertEqual(violations, [])
+        # 🔴 降级 ≠ 静默：那一处仍须**逐条打印**并说明由谁承接。
+        self.assertIn("看护件-他线在办.md", out.getvalue())
+        self.assertIn("不落在本次持锁者触碰过的文件里", out.getvalue())
+        self.assertIn("这不是关掉守卫", out.getvalue())
+
+    def test_violation_in_own_new_file_still_blocks(self):
+        """持锁期间新出现的（不在 acquire 快照里）＝ 本次持锁者弄脏的 ⇒ 照旧拒绝。
+        这才是 `#437` 要守的那一半：自己刚写坏的 opener 马上要粘出去。"""
+        self._write_block("派单件-本次新写.md", self.SETTINGS_CC, "读队列。")
+        violations = self.m._opener_guard_violations(
+            self.root, [], self._lock("别的文件.md"), {})
+        self.assertEqual(len(violations), 1)
+        self.assertIn("F1", violations[0])
+
+    def test_preexisting_but_registered_in_own_batch_still_blocks(self):
+        """🔴 **反例，堵规避口**：「先写坏 opener、再 acquire」会让它落进
+        acquire 快照、看着像别人的。但脏文件要不被 ⑹ 拦死就必须登进 §二，
+        一登进来就重新归本人管 ⇒ 照旧拒绝。两道守卫互锁。"""
+        self._write_block("派单件-先写后锁.md", self.SETTINGS_CC, "读队列。")
+        queue_texts = {"queue-mech.md": "\n".join([
+            "## 二、待 commit 批次", "",
+            "| 批次 | 文件清单 | 建议 message | 状态 |",
+            "|------|---------|--------------|------|",
+            "| B-0907_V | `派单件-先写后锁.md` | docs(x) | 待处理 |",
+            "",
+        ])}
+        violations = self.m._opener_guard_violations(
+            self.root, [], self._lock("派单件-先写后锁.md"), queue_texts)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("F1", violations[0])
+
+    def test_no_acquire_snapshot_blocks_everything(self):
+        """🔴 **判不了归属 ≠ 判定不归我**（同 ⑹ 的 fail-closed 方向）：没有
+        acquire 快照时一律判「归我」，行为与本项引入前逐字一致。"""
+        self._write_block("派单件-无快照.md", self.SETTINGS_CC, "读队列。")
+        violations = self.m._opener_guard_violations(
+            self.root, [], {"who": "某会话"}, {})
+        self.assertEqual(len(violations), 1)
+        self.assertIn("F1", violations[0])
+
+    def test_others_violation_printed_even_when_own_also_blocks(self):
+        """本次自己也有一处被拦时，别人那处**照样打印**——否则「本次被拦了」
+        会把别人那几处一起变成静默。"""
+        self._write_block("派单件-本次新写.md", self.SETTINGS_CC, "读队列。")
+        self._write_block("看护件-他线在办.md", self.SETTINGS_CC, "读队列。")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            violations = self.m._opener_guard_violations(
+                self.root, [], self._lock("看护件-他线在办.md"), {})
+        self.assertEqual(len(violations), 1)
+        self.assertIn("派单件-本次新写.md", violations[0])
+        self.assertNotIn("看护件-他线在办.md", violations[0])
+        self.assertIn("看护件-他线在办.md", out.getvalue())
+
+    def test_waiver_does_not_silence_others_bucket(self):
+        """逃生阀放行的是**本人那一组**；别人那组本来就不阻断，但仍须打印。"""
+        self._write_block("看护件-他线在办.md", self.SETTINGS_CC, "读队列。")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            violations = self.m._opener_guard_violations(
+                self.root, [f"{self.m.OPENER_EXEMPT_MARK}理由"],
+                self._lock("看护件-他线在办.md"), {})
+        self.assertEqual(violations, [])
+        self.assertIn("看护件-他线在办.md", out.getvalue())
+
     def test_status_failure_with_waiver_passes(self):
         self._write_block("某文件.md", self.SETTINGS_CC, "读队列。")
         waivers = [f"{self.m.OPENER_EXEMPT_MARK}git 环境异常，已另行处置"]

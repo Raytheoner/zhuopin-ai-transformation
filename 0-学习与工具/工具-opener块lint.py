@@ -108,6 +108,35 @@ H3 判不了 ⇒ 按「当前在用」保守计入，并在报告里显式打印
   按「历史不追改」永远不该被修）；**本件不同——当前在用件里的命中是真该修的**，尤其模板库
   那三处。冻结它们等于把最该修的三处永久隐身。
 
+## 🔴 格式正本 `opener骨架.md` 自身：形态①②③⑤ 换判据（队列 §一 `#493`，2026-09-07）
+
+**立项形态＝判据把自己的格式正本判成违规**（2026-09-06 15:53 UTC 主仓实跑坐实，
+`OP-0906-AA`）：骨架件一旦处于脏改动中，release 侧 opener 守卫就拿 `check_block` 去判
+它，它自己的占位符（`MMDDX`／`[OP-MMDD-X]`）当场命中 8 处 ⇒ release 被拒、锁保持占用。
+**这就是 `#398` ⑺「sweep 自撞锁」当天四轮的触发源**；且它**间歇性**——只在骨架件脏着
+时发作，这正是它此前没被定位到的原因。同族＝「恒真判据」「守卫自己瞎了」那一族。
+
+**处置不是关掉，是换判据**（`#493` 期望产出原文：不得靠把守卫关掉了事）：
+
+| 在正本内 | 处置 | 换成什么 |
+|---|---|---|
+| 形态①②③⑤（**占位符敏感**：问的都是「占位符填对了没有」） | 不判 | `check_canon_file` 的 `C1`/`C2` ＋ `check_block` 的 `C3`/`C5` |
+| 形态④⑥⑦（与占位符无关） | **照常生效** | —— |
+
+**⇒ 修好后它在什么情况下发信号（四条，全部有单测钉死）**：
+
+- `C1` —— 正本里再没有任何一个带 `set_session_title` 的【CC】块 ⇒ 它不再教形态①，
+  此后每个照抄者都会漏写那一行（而形态①只在成品上一个一个报，报不到源头）；
+- `C2` —— 正本里再没有任何一句子任务例外句 ⇒ 它不再教形态②；
+- `C3` —— 正本的标题占位符不再是 `[Win]MMDDX-…`（被填成了某个具体值，或写法漂了）；
+- `C5` —— 正本的首行占位符不再是 `[OP-MMDD-X]【CC／Cowork】…`；
+- 外加形态④⑥⑦ 照常：六字段顺序坏了／子任务泳道块混进 title／有「做什么」缺「不做什么」。
+
+🔴 **排除是按路径判的，且刻意不做 basename 匹配**（`is_format_canon`）——归档目录里另有
+同名历史副本，basename 匹配会把它们一并静默排除。🔴 **排除不外溢**：同一段占位符文本换
+一个路径（任何普通派单件／看护件）照样命中 F3/F5 ——「照抄骨架却漏填占位符」正是形态③
+建来要抓的东西，把它一起放掉就等于白建。
+
 ## 退休了什么（协议〇.9 措施 B · one-in-one-out）
 
 退休的是**人守规则**，不是既有守卫代码：`专线opener模板库.md` §〇 补充三「起草期自检：
@@ -158,6 +187,8 @@ RULE_EFFECTIVE_FORM5 = date(2026, 9, 4)
 RULE_EFFECTIVE_FORM6 = date(2026, 9, 5)
 #: 形态⑦ ＝ 队列 §一 `#487` 子项（`OP-0906-I`，2026-09-06「`--dont` 静默丢弃」实撞后定）。
 RULE_EFFECTIVE_FORM7 = date(2026, 9, 6)
+#: 正本自检 C1/C2/C3/C5 ＝ 队列 §一 `#493`（2026-09-07，形态①②③⑤ 在格式正本内的换判据版）。
+RULE_EFFECTIVE_CANON = date(2026, 9, 7)
 
 #: 各形态代码 → 生效日，`classify_carrier` 按此查表（替代此前的二选一分支）。
 RULE_EFFECTIVE_BY_FORM = {
@@ -168,6 +199,10 @@ RULE_EFFECTIVE_BY_FORM = {
     "F5": RULE_EFFECTIVE_FORM5,
     "F6": RULE_EFFECTIVE_FORM6,
     "F7": RULE_EFFECTIVE_FORM7,
+    "C1": RULE_EFFECTIVE_CANON,
+    "C2": RULE_EFFECTIVE_CANON,
+    "C3": RULE_EFFECTIVE_CANON,
+    "C5": RULE_EFFECTIVE_CANON,
 }
 
 #: R3 生命周期的归档物理落点（目录段，非文件名关键词）。
@@ -220,6 +255,89 @@ WATCHER_SECTION_RE = re.compile(r"^##\s*三bis\b", re.MULTILINE)
 #: 加粗星号允许（`**做什么：**`），与 `SETTINGS_LINE_RE` 同款容忍。
 DO_SECTION_RE = re.compile(r"^\s*\*{0,2}做什么\*{0,2}\s*[：:]\s*\*{0,2}\s*$")
 DONT_SECTION_RE = re.compile(r"^\s*\*{0,2}不做什么\*{0,2}\s*[：:]\s*\*{0,2}\s*$")
+
+# ── 格式正本自身的结构性排除（队列 §一 `#493`，2026-09-07）────────────────────
+#: 🔴 **判据把自己的格式正本判成违规** —— 2026-09-06 15:53 UTC 主仓实跑坐实
+#: （`OP-0906-AA`）：只要本件处于脏改动中，release 侧 opener 守卫就拿 `check_block`
+#: 去判它，它自己的占位符（`MMDDX`／`[OP-MMDD-X]`）当场命中 8 处，于是 release 被拒、
+#: 锁保持占用 —— 这正是 `#398` ⑺「sweep 自撞锁」当天四轮的触发源。
+#:
+#: 🔴 **这不是豁免清单，是判据本身不覆盖**（同 `执行环境：Cowork` 那条收窄的性质）：
+#: 本件不是一份 opener，它是**「opener 长什么样」的定义**。拿「成品该长什么样」去判
+#: 「定义本身」，是把判据套用在它自己的来源上 —— 同族＝模块 docstring 里那句「本脚本
+#: 与其单测都是 `.py`，天然不在扫描面内，不需要靠豁免躲开」：`.py` 白拿到的这层豁免，
+#: `.md` 的格式正本拿不到，得显式给。
+#:
+#: 🔴 **给的是「换判据」，不是「关掉」**（队列 `#493` 期望产出原文：不得靠把守卫关掉
+#: 了事）：形态①②③⑤ 在本件内换成下方 `check_canon_file` ／ `C3`/`C5` 四条**正本自检**
+#: （见 `CANON_*` 常量与 `check_canon_file` 文档字符串），形态④⑥⑦ 与占位符无关、**照常
+#: 生效**。⇒ 修好后它仍在下列情况下发信号：正本的占位符本身漂了、正本不再教
+#: `set_session_title`、正本不再教子任务例外句、正本的六字段/不做什么段写坏了。
+SKELETON_CANON_REL = "1-转型规划/0-全景路线图/opener骨架.md"
+
+#: 在格式正本内被「换成正本自检」而非「关掉」的四个形态。
+#: 🔴 判据：**该形态问的是「占位符填对了没有」** ⇒ 对定义占位符的那份件无意义。
+#: F4（六字段顺序）／F6（子任务泳道不放 title）／F7（不做什么段）与占位符无关，
+#: **不在此列、在正本内照常生效**（实测：这三条在正本上本来就零命中）。
+CANON_SWAPPED_FORMS = frozenset({"F1", "F2", "F3", "F5"})
+
+#: 正本自检 C5：正本里 opener 块首行必须仍是**占位符原形** `[OP-MMDD-X]【CC／Cowork】…`。
+#: 它漂了 ⇒ 所有照抄者的首行都会跟着漂，而 F5 只在成品上报、报不到源头。
+CANON_FIRST_LINE_RE = re.compile(r"^\[OP-MMDD-X\]【(?:CC|Cowork)】.+$")
+
+#: 正本自检 C3：正本里 `set_session_title` 的标题值必须仍是占位符原形 `[Win]MMDDX-…`。
+CANON_TITLE_VALUE_RE = re.compile(r"\[Win\]MMDDX-\S")
+
+
+def is_format_canon(rel_path: str | Path) -> bool:
+    """该路径是否为 opener 格式正本 `opener骨架.md`。
+
+    后缀匹配口径逐字沿用 `工具-共享文档编辑锁.py::_dirty_path_is_covered`
+    （`p == f` 或 `p.endswith("/" + f)`）——`--file` 自检模式传进来的是绝对路径，
+    release 侧传进来的是仓库根相对路径，两种都要认。
+    🔴 **不做 basename 匹配**：`opener骨架.md` 这个名字在归档目录里另有历史副本，
+    basename 匹配会把那些副本也一并静默排除。
+    """
+    norm = str(rel_path).replace("\\", "/")
+    return norm == SKELETON_CANON_REL or norm.endswith("/" + SKELETON_CANON_REL)
+
+
+def check_canon_file(text: str) -> list[tuple[str, str]]:
+    """格式正本的**文件级**自检（队列 §一 `#493`）：它还是不是一份合格的正本。
+
+    这两条是「换判据」的另一半 —— 形态①②在正本内被关掉之后，**谁来保证正本还在教
+    这两件事**？答案就是这里：正本若哪天不再包含任何一个带 `set_session_title` 的
+    【CC】块（C1）、或不再包含任何一句子任务例外句（C2），此后每一个照抄它的人都会
+    漏写这两行，而 F1/F2 只能在成品上一个一个报、报不到源头。
+    """
+    problems: list[tuple[str, str]] = []
+    blocks = iter_fenced_blocks(text)
+    candidates = [b for b in blocks
+                  if settings_line(b) is not None or SESSION_TITLE_RE.search(b.text)]
+
+    teaches_title = any(
+        SESSION_TITLE_RE.search(b.text) and block_env(b) == "CC" for b in candidates)
+    if not teaches_title:
+        problems.append((
+            "C1",
+            f"格式正本 `{SKELETON_CANON_REL}` 里已找不到任何一个带 `set_session_title` 的"
+            "【CC】opener 块 ⇒ 正本不再教形态①，此后每个照抄者都会漏写那一行"
+            "（队列 §一 `#493`；形态①在正本内已换成本条）",
+        ))
+
+    teaches_exception = any(
+        SESSION_TITLE_RE.search(b.text)
+        and SUBTASK_TOKEN_RE.search(b.text) and EXCEPTION_TOKEN_RE.search(b.text)
+        for b in candidates)
+    if not teaches_exception:
+        problems.append((
+            "C2",
+            f"格式正本 `{SKELETON_CANON_REL}` 里已找不到任何一句子任务例外句"
+            "（`子任务/Task/Agent` ＋ `例外/跳过本行` 同现于同一个带 title 的块）"
+            "⇒ 正本不再教形态②（队列 §一 `#493`；形态②在正本内已换成本条）",
+        ))
+
+    return problems
 
 
 def _watcher_section_line(text: str) -> int | None:
@@ -347,21 +465,48 @@ def block_env(block: Block) -> str | None:
     return None
 
 
-def check_block(block: Block, *, is_subtask_lane: bool = False) -> list[tuple[str, str]]:
-    """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F6"}。
+def check_block(block: Block, *, is_subtask_lane: bool = False,
+                is_format_canon_file: bool = False) -> list[tuple[str, str]]:
+    """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F7", "C3", "C5"}。
 
     `is_subtask_lane`：该块是否为「看护者用 Task/Agent 派发的子任务泳道 opener」
     （见 `_is_subtask_lane_block`）。默认 `False`——不传时行为与形态⑥引入前完全一致，
     调用方（`scan`/`scan_single_file`）按文件结构算好后再传入。
+
+    `is_format_canon_file`：该块是否位于 opener **格式正本** `opener骨架.md`（队列
+    §一 `#493`）。默认 `False`——不传时行为与本项引入前完全一致。为 `True` 时形态
+    ①②③⑤ 换成正本自检 `C3`/`C5`（＋文件级 `check_canon_file` 的 `C1`/`C2`），形态
+    ④⑥⑦ 照常生效。**不是关掉，是换成对这份件成立的那条判据**，见 `SKELETON_CANON_REL`。
     """
     problems: list[tuple[str, str]] = []
     is_opener = settings_line(block) is not None
     has_title_call = bool(SESSION_TITLE_RE.search(block.text))
     env = block_env(block)
 
+    if is_format_canon_file:
+        # 正本自检 C5：首行仍须是占位符原形（F5 的源头版）。
+        if is_opener:
+            first_line = block.lines[0].strip() if block.lines else ""
+            if not CANON_FIRST_LINE_RE.match(first_line):
+                problems.append((
+                    "C5",
+                    f"格式正本块首行未匹配占位符原形 `[OP-MMDD-X]【CC／Cowork】…`"
+                    f"（实为 `{first_line[:60]}`）⇒ 照抄者的首行会跟着漂，而形态⑤"
+                    "只在成品上报、报不到源头（队列 §一 `#493`）",
+                ))
+        # 正本自检 C3：标题值仍须是占位符原形（F3 的源头版）。
+        if has_title_call and not CANON_TITLE_VALUE_RE.search(block.text):
+            problems.append((
+                "C3",
+                "格式正本块内 `set_session_title` 的标题值未匹配占位符原形 "
+                "`[Win]MMDDX-<短名>` ⇒ 照抄者的标题会跟着漂，而形态③只在成品上报、"
+                "报不到源头（队列 §一 `#493`）",
+            ))
+
     # 形态① —— 只对 CC 侧 opener 块成立（Cowork 与未标环境结构性排除，见 docstring）；
     # 子任务泳道 opener 结构性排除在外——它本就不该有这一行，缺失不是问题（形态⑥的镜像）。
-    if is_opener and not has_title_call and env == "CC" and not is_subtask_lane:
+    if (is_opener and not has_title_call and env == "CC" and not is_subtask_lane
+            and not is_format_canon_file):
         problems.append((
             "F1",
             "CC opener 块缺 `set_session_title` 那一行 ⇒ session 名会丢编号"
@@ -379,7 +524,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False) -> list[tuple[st
         ))
 
     # 形态② —— 只要块里出现了 set_session_title，就必须带子任务例外句
-    if has_title_call:
+    if has_title_call and not is_format_canon_file:
         has_exception = bool(SUBTASK_TOKEN_RE.search(block.text)
                              and EXCEPTION_TOKEN_RE.search(block.text))
         if not has_exception:
@@ -392,7 +537,8 @@ def check_block(block: Block, *, is_subtask_lane: bool = False) -> list[tuple[st
 
     # 形态③ —— CC 侧且真调用了 set_session_title 时，标题值须匹配 [Win]MMDDX-<短名>
     #（is_opener 未作为门槛：裸标准写法块同样受本形态约束，同 F2 既有先例）
-    if has_title_call and env == "CC" and not TITLE_VALUE_RE.search(block.text):
+    if (has_title_call and env == "CC" and not is_format_canon_file
+            and not TITLE_VALUE_RE.search(block.text)):
         problems.append((
             "F3",
             "块内 `set_session_title` 的标题值未匹配 `[Win]MMDDX-<短名>`"
@@ -417,7 +563,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False) -> list[tuple[st
             ))
 
     # 形态⑤ —— opener 块首行须为 [OP-MMDD-X]【CC／Cowork】<短名，≤12字>
-    if is_opener:
+    if is_opener and not is_format_canon_file:
         first_line = block.lines[0].strip() if block.lines else ""
         if not FIRST_LINE_RE.match(first_line):
             problems.append((
@@ -530,6 +676,16 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
         stats["files"] += 1
         status_raw = status_bucket(parse_frontmatter(text).get("status", ""))
         watcher_line = _watcher_section_line(text)
+        canon = is_format_canon(rel)
+
+        # 队列 §一 `#493`：格式正本的文件级自检（C1/C2）——形态①②在正本内被
+        # 换掉之后，由这两条保证「正本还在教这两件事」。**换判据，不是关掉。**
+        if canon:
+            for form, detail in check_canon_file(text):
+                if rel not in commit_cache:
+                    commit_cache[rel] = _last_commit_date(rel)
+                bucket, reason = classify_carrier(rel, status_raw, form, commit_cache[rel])
+                findings.append(Finding(rel, 1, form, detail, bucket, reason, None))
 
         for block in candidates:
             env = block_env(block)
@@ -540,7 +696,8 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
                 stats["title_blocks"] += 1
 
             is_subtask = _is_subtask_lane_block(block, watcher_line)
-            for form, detail in check_block(block, is_subtask_lane=is_subtask):
+            for form, detail in check_block(block, is_subtask_lane=is_subtask,
+                                            is_format_canon_file=canon):
                 if rel not in commit_cache:
                     commit_cache[rel] = _last_commit_date(rel)
                 bucket, reason = classify_carrier(rel, status_raw, form, commit_cache[rel])
@@ -559,12 +716,18 @@ def scan_single_file(path: Path) -> list[Finding]:
     text = path.read_text(encoding="utf-8")
     findings: list[Finding] = []
     watcher_line = _watcher_section_line(text)
+    canon = is_format_canon(path)
+    if canon:
+        for form, detail in check_canon_file(text):
+            findings.append(Finding(str(path), 1, form, detail,
+                                    "current", "--file 自检模式：不判历史", None))
     for block in iter_fenced_blocks(text):
         if settings_line(block) is None and not SESSION_TITLE_RE.search(block.text):
             continue
         env = block_env(block)
         is_subtask = _is_subtask_lane_block(block, watcher_line)
-        for form, detail in check_block(block, is_subtask_lane=is_subtask):
+        for form, detail in check_block(block, is_subtask_lane=is_subtask,
+                                        is_format_canon_file=canon):
             findings.append(Finding(str(path), block.start_line, form, detail,
                                     "current", "--file 自检模式：不判历史", env))
     return findings
@@ -578,6 +741,10 @@ FORM_TITLE = {
     "F5": "形态⑤ · 首行不匹配 [OP-MMDD-X]【CC／Cowork】<短名≤12字>（规则生效日 2026-09-04）",
     "F6": "形态⑥ · 子任务泳道 opener 含 set_session_title（规则生效日 2026-09-05）",
     "F7": "形态⑦ · 有「做什么：」段却缺「不做什么：」段（规则生效日 2026-09-06）",
+    "C1": "正本自检C1 · 格式正本不再教 set_session_title（队列 #493，2026-09-07）",
+    "C2": "正本自检C2 · 格式正本不再教子任务例外句（队列 #493，2026-09-07）",
+    "C3": "正本自检C3 · 格式正本标题占位符 [Win]MMDDX- 漂了（队列 #493，2026-09-07）",
+    "C5": "正本自检C5 · 格式正本首行占位符 [OP-MMDD-X] 漂了（队列 #493，2026-09-07）",
 }
 
 
@@ -630,7 +797,7 @@ def main(argv: list[str] | None = None) -> int:
         for rel in sorted({f.rel for f in unk}):
             print(f"  - {rel}")
 
-    for form in ("F1", "F2", "F6", "F7"):
+    for form in ("F1", "F2", "F6", "F7", "C1", "C2", "C3", "C5"):
         sel = [f for f in cur if f.form == form]
         if not sel:
             continue

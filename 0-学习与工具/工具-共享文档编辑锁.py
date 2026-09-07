@@ -4966,7 +4966,16 @@ def _registration_completeness_violations(
 # 不复制；改判据须同改两处调用点（lint 本体 ＋ 这里），并在两处各留一句
 # 指针。取不到就 fail-loud，不回退成本地简化版（与 `_load_status_bucket`
 # 同一惯例）。
-_OPENER_LINT_SCRIPT = REPO_ROOT / "0-学习与工具" / "工具-opener块lint.py"
+# 🔴 **取本脚本的同目录兄弟，不取 `REPO_ROOT / …`（队列 §一 `#493` 顺带修）**：
+# `REPO_ROOT` 是 `_resolve_repo_root()` 解出的**主工作区**（那是共享锁的正确落点，
+# 见其文档字符串），于是任一 linked worktree 里跑本脚本时，加载到的判据是**主
+# checkout 那一份**——版本与本文件对不上。形态＝「同一变更包的两个文件被从两个
+# 不同的 checkout 各取一份」：本次实撞就是本文件已调 `lint.is_format_canon`、
+# 主 checkout 的 lint 还没有它 ⇒ `AttributeError`，且在 worktree 里**根本无法
+# 测**自己刚改的判据。两个文件恒在同一 commit 里同进同出，就该同 checkout 取。
+# ⚠️ 只改判据的取处，**不动 `REPO_ROOT` 本身**（锁文件、脏文件面仍按主工作区算，
+# 那是「所有 worktree 共享同一把锁」的前提，动了就散了）。
+_OPENER_LINT_SCRIPT = Path(__file__).resolve().parent / "工具-opener块lint.py"
 
 #: 逃生阀标记，与 `REGISTRATION_WAIVER_MARKER`／`MECHANISM_WIP_WAIVER_MARKER`
 #: 同形同语义（"我知道我在越过一条规则"）。🔴 刻意不提供 `--force` 开关
@@ -4985,10 +4994,39 @@ def _load_opener_lint_module():
     return module
 
 
+def _opener_attribution(
+    rel: str, dirty_at_acquire: list[str] | None, fragments: list[str],
+) -> bool:
+    """该脏 `.md` 是否**归本次持锁者**（队列 §一 `#493`，2026-09-07）。
+
+    🔴 **为什么要有这条判据**：`release` 校验不过就「保持占用、逼持有者原地修正后
+    重试」，这条设计的**前提是持有者有能力修正**。2026-09-07 06:0x 实撞证明前提不总
+    成立——被拦下的那处违规写在**另一条会话正在写的**看护件里（`看护件-泳道看护批
+    B-0907_E-2026-09-07.md:61` 缺 `[OP-MMDD-X]` 前缀，判得对），而当时的持锁者是
+    **sweep**（无人值守）：它既没造成、也管不了那处违规，只能把锁留到 30 分钟陈旧，
+    期间全员写队列被拒。⇒ **一道守卫不得让人为自己没碰过的东西负责。**
+
+    归属 ＝ 下面两条任一命中：
+      ⑴ **持锁期间新出现**（不在 acquire 快照里）——是本次持锁者弄脏的；
+      ⑵ **落在本次待处理 §二 批次的文件清单里**（`_dirty_path_is_covered`，与 ⑹
+         逐字同一口径）——本次持锁者已声明「这是我的产出」。
+    🔴 **⑵ 不是多余的**：只有 ⑴ 会开一个真实的规避口子——「先写坏 opener、再
+    acquire」，那样它在快照里、判成不归我 ⇒ 只告警。补上 ⑵ 之后这个口子闭合：脏
+    文件想不被 ⑹ 拦死就必须登进 §二，一登进来就重新归本人管。两道守卫互锁。
+
+    🔴 **没有 acquire 快照时一律判「归我」**（保守）——判不了归属与「判定不归我」
+    是两回事，混为一谈就是本项目反复吃亏的「工具静默回退」。
+    """
+    if dirty_at_acquire is None:
+        return True
+    return rel not in set(dirty_at_acquire) or _dirty_path_is_covered(rel, fragments)
+
+
 def _opener_guard_violations(
     repo_root: Path, waiver_sources: list[str],
+    lock_data: dict | None = None, queue_texts: dict[str, str] | None = None,
 ) -> list[str]:
-    """release 前校验本次触碰的 `.md` 里的 opener 代码块（队列 §一 #437）。
+    """release 前校验本次触碰的 `.md` 里的 opener 代码块（队列 §一 #437／#493）。
 
     触碰文件集合复用 ⑹ 那份脏文件列表（`_local_git_status_paths`），筛
     `.md` 后交判据——**判据本身逐字复用** `工具-opener块lint.py::check_block`
@@ -5001,6 +5039,16 @@ def _opener_guard_violations(
     队列锁 acquire/release 流程」的 opener；一个会话若写完 opener 直接粘
     出去、从不经本工具，本守卫看不到它——回显措辞必须是「已校验本次触碰的
     N 个 .md」，不得写成「opener 已全部合规」。
+
+    🔴 **归属分流（队列 §一 `#493`，2026-09-07 加）**：`lock_data`／`queue_texts`
+    传进来时，命中按 `_opener_attribution` 分两组——**归本次持锁者的照旧拒绝**
+    （这才是 `#437` 要守的那一半：自己刚写坏的 opener 马上要粘出去）；**不归本
+    次持锁者的降级为告警、放行**（转成「谁碰谁修」的提示，不再把整把锁扣在一个
+    修不了它的人手里）。两参数缺省 `None` ⇒ 行为与本项引入前**逐字一致**（全部
+    判归本人、照旧拒绝），既有单测与既有调用点不受影响。
+
+    🔴 **降级不是关掉守卫、更不是 `--force`**（`#493` 期望产出明写不得如此）：
+    违规**一条不少地打印出来**并点名归属方，只是不再拿它扣一把不相干的锁。
     """
     if not _is_inside_git_work_tree(repo_root):
         # 与 ⑹ 同一判据方向（`_is_inside_git_work_tree` 文档字符串）：根本
@@ -5028,8 +5076,12 @@ def _opener_guard_violations(
     md_paths = sorted(p for p in dirty_now if p.endswith(".md"))
     lint = _load_opener_lint_module()
 
+    dirty_at_acquire = (lock_data or {}).get("dirty_at_acquire")
+    fragments = _pending_batch_fragments(queue_texts or {})
+
     opener_block_count = 0
-    problems: list[str] = []
+    mine: list[str] = []
+    others: list[str] = []
     for rel in md_paths:
         try:
             text = (repo_root / rel).read_text(encoding="utf-8")
@@ -5043,13 +5095,21 @@ def _opener_guard_violations(
         # 队列 #487（(甲)）：看护者用 Task/Agent 派发的子任务泳道 opener 不该有
         # set_session_title——判据同样逐字复用 lint 模块，不重写第二份（同 D3）。
         watcher_line = lint._watcher_section_line(text)
+        # 队列 #493：格式正本 `opener骨架.md` 的占位符不是违规——判据在 lint 本体
+        # （`is_format_canon` ／ `check_canon_file`），此处同样只调用、不重写（D3）。
+        canon = lint.is_format_canon(rel)
+        sink = mine if _opener_attribution(rel, dirty_at_acquire, fragments) else others
+        if canon:
+            for form, detail in lint.check_canon_file(text):
+                sink.append(f"{rel}（格式正本自检）[{form}] {detail}")
         for block in candidates:
             if lint.settings_line(block) is not None:
                 opener_block_count += 1
             env = lint.block_env(block) or "环境未标"
             is_subtask = lint._is_subtask_lane_block(block, watcher_line)
-            for form, detail in lint.check_block(block, is_subtask_lane=is_subtask):
-                problems.append(f"{rel}:{block.start_line}（{env}）[{form}] {detail}")
+            for form, detail in lint.check_block(
+                    block, is_subtask_lane=is_subtask, is_format_canon_file=canon):
+                sink.append(f"{rel}:{block.start_line}（{env}）[{form}] {detail}")
 
     # 队列 #284 第 18 次违反的教训：连回显都没有时，无法区分「没问题」与
     # 「没跑」——无论有无发现，本行都打印（design 实现细节）。
@@ -5058,21 +5118,35 @@ def _opener_guard_violations(
           "（只覆盖走了队列锁 acquire/release 流程的 opener，"
           "非本流程直接粘出去的会话看不见，不代表全部覆盖）。")
 
-    if not problems:
+    # 队列 #493：不归本次持锁者的命中一条不少地打印出来，但不拿它扣锁——
+    # 🔴 **打印在 `waiver` 与 `not mine` 两条早退之前**，否则「本次没被拦」
+    # 会连带把别人那几处一起变成静默，那正是本项要根治的反面。
+    if others:
+        print(f"⚠ opener 守卫：另有 {len(others)} 处命中**不落在本次持锁者触碰过的"
+              "文件里**（既不在 acquire 之后新出现，也不在本次 §二 批次清单内）⇒ "
+              "降级为告警、不阻断本次 release（队列 §一 `#493`：release 被拒会"
+              "「保持占用逼持有者原地修正」，而持有者修不了别人的文件，无人值守"
+              "持锁者更会把锁扣到 30 分钟陈旧、期间全员写队列被拒）。"
+              "**这不是关掉守卫**：下列每一处仍由「谁碰谁修」承接，其所属会话"
+              "自己 release 时会被照常拦下：")
+        for p in others:
+            print(f"  - {p}")
+
+    if not mine:
         return []
 
     if waiver is not None:
-        print(f"✓ 检测到 opener 豁免声明，已放行 {len(problems)} 处：{waiver.strip()[:120]}")
+        print(f"✓ 检测到 opener 豁免声明，已放行 {len(mine)} 处：{waiver.strip()[:120]}")
         return []
 
     lines = [
-        f"opener 守卫：{len(problems)} 处未通过（判据正本＝"
+        f"opener 守卫：{len(mine)} 处未通过（判据正本＝"
         "`工具-opener块lint.py::check_block`，release 侧只复用不重写）："
     ]
-    lines.extend(f"  - {p}" for p in problems)
+    lines.extend(f"  - {p}" for p in mine)
     lines.append(
-        "  标准写法见 `1-转型规划/0-全景路线图/专线opener模板库.md` §〇 补充三"
-        "「标准写法」块（全文照抄）；确需放行请在本次 note 或本次触碰的队列行"
+        "  标准写法见 `1-转型规划/0-全景路线图/opener骨架.md`（格式唯一可照抄物）；"
+        "确需放行请在本次 note 或本次触碰的队列行"
         f"内写「{OPENER_EXEMPT_MARK}<理由>」（不提供 --force 开关，design D5）。"
     )
     return ["\n".join(lines)]
@@ -5487,7 +5561,12 @@ def cmd_release(args: argparse.Namespace) -> int:
         ))
         # 队列 §一 #437：opener 守卫，与 ⑹ 并列同一处 fail-closed 语义
         # （旁增一钩，不改 ⑹ 本体）。
-        violations.extend(_opener_guard_violations(REPO_ROOT, waiver_sources))
+        # 队列 §一 #493：多传 `existing`（拿 `dirty_at_acquire` 快照）与
+        # `queue_texts`（拿本次 §二 批次文件清单）——守卫据此把命中分成
+        # 「归本次持锁者」（照旧拒绝）与「不归本次持锁者」（降级为告警）。
+        violations.extend(_opener_guard_violations(
+            REPO_ROOT, waiver_sources, existing, queue_texts,
+        ))
     elif args.file == FOLLOWUP_README_TARGET:
         # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
         # 拦截，与上面那套队列专属校验各自独立、互不干扰。
