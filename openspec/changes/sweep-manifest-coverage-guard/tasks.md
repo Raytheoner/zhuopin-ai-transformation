@@ -2,34 +2,43 @@
 
 > 🔴 **本包零代码改动、无 apply 阶段**——建造侧已于 2026-08-29 落地并 ff 入 master（commit `38f3898`）。本文件只有「转写核对」与「收口」两段。
 > 🔴 **design 审通过前不得开工 1.x 之后的任何一步。** 0.x 是前置闸。
+> ✅ **design 审已过 —— Shao Peishen 2026-09-07**（合审材料 §6，答 (a)＝全部决策点按起草方推荐）。闸已开。
 > 执行环境：**CC**（纯库内文档，不触碰 `.51`／企微机器人／定时任务）。
+> **执行记录**：CC `OP-0907-Z`（2026-09-07，分支 `claude/op0907f-openspec-483`，rebase 到 master `2c03a66` 后施工）。逐条销账见本包 `转写对照表.md`。
 
 ## 0. 前置闸（design 审后、动手前）
 
-- [ ] 0.1 确认 design 决策点 **5**（口头人守例外撤不撤）与 **6**（跳过要不要接企微）的拍板结果已白纸黑字回填队列 §四 `#136`，不凭记忆
-  - [ ] 0.1.1 若 5 答 (a)：**本包不执行撤回**，只在 §四 `#136` 登记一行「待总线另行派单落地（触碰区＝根 `CLAUDE.md` §3／`.claude/rules/队列与落库.md`）」
-  - [ ] 0.1.2 若 6 答 (b)：**本包不扩范围**，spec 里「出声形态限于日志」那条 Requirement 保持原样，另开变更包时以 MODIFIED 改写
-- [ ] 0.2 复核 `openspec/changes/sweep-startup-nonblocking` 与 `sweep-ops-webhook-cutover` 两个在途包与本包**无 spec 重叠**（design「触碰区核对」里标为「写作时只读核对、未加锁」的那项，在此销账）
+- [x] 0.1 确认 design 决策点 **5**（口头人守例外撤不撤）与 **6**（跳过要不要接企微）的拍板结果已白纸黑字回填队列 §四 `#136`，不凭记忆
+  - 📌 **实际取证路径**：拍板结论的白纸黑字载体 ＝ `1-转型规划/0-全景路线图/合审材料-八包design与三项决策-2026-09-07.md` §6（他答 (a)），并已由队列 §一 `#483` 行状态段记明「design 审已过（合审 §6）」。🔴 **§四 `#136` 行本身的回填属 §3.1，本泳道未做**（见 §3 说明），故本条按「结论已有权威载体、不凭记忆」销账，**不冒充 §四 已回填**。
+  - [x] 0.1.1 5 答 **(a)**：**本包不执行撤回**。⇒ 须在 §四 `#136` 登记一行「待总线另行派单落地（触碰区＝根 `CLAUDE.md` §3／`.claude/rules/队列与落库.md`）」——**该登记动作已随 §3.1 一并挂起，登记稿见 §3 说明**
+  - [x] 0.1.2 6 答 **(a)**（非 (b)）：⇒ 本包不扩范围，spec 里「出声形态限于日志」那条 Requirement **保持原样**，未作任何改写
+- [x] 0.2 复核 `openspec/changes/sweep-startup-nonblocking` 与 `sweep-ops-webhook-cutover` 两个在途包与本包**无 spec 重叠**（design「触碰区核对」里标为「写作时只读核对、未加锁」的那项，在此销账）
+  - 实测手段 ＝ `ls openspec/changes/<包>/specs/`：前者 ＝ `sweep-startup-resilience`／`sweep-sync-reconciliation`，后者 ＝ `sweep-alert-audience-routing`，与本包新建的独立 capability **零重叠**。明细见 `转写对照表.md` §四。
 
 ## 1. 转写核对（🔴 事后补包的核心工序：证明 spec 没写超过代码）
 
-- [ ] 1.1 白盒重读 `0-学习与工具/工具-落库sweep.py` 的 `_DECLARED_PATH_TAIL_RE`／`_DECLARED_PATH_REJECT_CHARS`／`_looks_like_declared_path()`／`_manifest_coverage_gap()` 与 `main()` 内的调用点，确认 spec 六条 Requirement 与实现逐条对得上
-- [ ] 1.2 🔴 **逐条销账：spec 里每一条 SHALL/MUST 必须指得出一处代码或一条测试断言背书。** 对照表附进本包（新建 `转写对照表.md`），逐行写「Requirement → 代码位置／测试用例名」
-  - [ ] 1.2.1 **凡指不出背书的条目，删掉，不留在 spec 里**——事后补包最大的失真形态就是「spec 写的比代码实际做的多」（`retroactive-mechanism-specs` 已确立的转写纪律）
-  - [ ] 1.2.2 反向也要过一遍：**代码里有、spec 里漏掉的行为**如实补记（补进 spec 或在对照表里写明「有意不写入 spec，理由＝…」）
-- [ ] 1.3 跑一次 `python -m pytest "0-学习与工具/test_工具-落库sweep.py" -k "ManifestCoverage"`，确认 proposal §Impact 列出的 6 个用例**全绿且确实存在**（用例名若已漂移，以实测名为准更新 proposal，不留错引用）
-- [ ] 1.4 🔴 **现网复核形状判据的实测数字**：proposal 与 design 里引用的「182 行／1544 个片段／757 个非路径／344 个形状合格」是 2026-08-29 的快照。**重跑一次取现值**，若已显著漂移，在对照表里注明「原数字＝2026-08-29 快照，现值＝…」，**原文不追改**（历史记录不追改口径）
+- [x] 1.1 白盒重读 `0-学习与工具/工具-落库sweep.py` 的 `_DECLARED_PATH_TAIL_RE`（`:2500`）／`_DECLARED_PATH_REJECT_CHARS`（`:2503`）／`_looks_like_declared_path()`（`:2506`）／`_manifest_coverage_gap()`（`:2540`）与 `main()` 内的调用点（`:6241`），确认 spec 六条 Requirement 与实现逐条对得上
+- [x] 1.2 🔴 **逐条销账**：对照表已落 `openspec/changes/sweep-manifest-coverage-guard/转写对照表.md`，逐行写「Requirement → 代码位置／测试用例名」
+  - [x] 1.2.1 **凡指不出背书的条目删掉** —— 逐条过后**无一条需删**。三条「表述类」子项（R3-限定／R5-S2／R6-S2）的背书形态 ＝ **源码反向证据**（约束的是「不得声称拥有某能力」，真值由代码里没有那段东西给出），已在对照表 §一「背书形态说明 A」写明其**不由任何用例守住**这一缺口。
+  - [x] 1.2.2 反向核对已做，5 条如实登记（dry-run stdout 行／返回值顺序／日志分隔符／空串分支／形状判据只有一个消费点），各注明「有意不写入 spec，理由＝…」；另登记 **缺口 ①**：R5 日志五项里 `queue_path` 与「处置办法」未被断言逐字覆盖，**只登记不修**（本包零代码零测试改动）
+- [x] 1.3 跑 `python -m pytest "0-学习与工具/test_工具-落库sweep.py" -k "ManifestCoverage" -v` —— **9 passed / 30 subtests passed / 421 deselected，189.58s**。proposal §Impact 列的 **6 个用例全部存在、名称无漂移、全绿**（另有 3 条同族用例未列入 proposal 清单，已在对照表补记）⇒ **proposal 无错引用需更正**
+- [x] 1.4 🔴 **现网复核形状判据的实测数字** —— 已重跑取现值，原文**不追改**，结果与判读落 `转写对照表.md` §三：§二 行数 182→**184**、整行反引号片段 1544→**1528**、非路径 757→**679（44.4%）**、唯一片段中形状合格 344→**527**。
+  - 🔴 **额外发现（如实登记）**：原快照三个数字**彼此对不上**（`757 + 344 = 1101 ≠ 1544`）——「1544／757」是整行片段口径、「344」是唯一片段口径，原文未标明。对照表已把两种口径分列。
+  - ✅ **定性结论未被时间推翻**：仍有约四成四的反引号片段不是路径 ⇒ design 决策点 3「形状判据是前提、不是优化」成立。
+  - ⚠️ **一条观察项**：形状合格片段近乎翻倍 ⇒ proposal 残余风险 ① 里「344 个中误认面为个位数」的**基数已变**，误认面须重估；**本包不重估**，交 §四 `#136` 的误报计数承接。
 
 ## 2. 验证
 
-- [ ] 2.1 `openspec validate sweep-manifest-coverage-guard --strict` 通过
-- [ ] 2.2 `openspec validate --all --strict` 复核**不引入新失败**（与本包 propose 前的基线对比，不是「全绿」——基线本身可能已有失败）
-- [ ] 2.3 本包零代码改动，**无需跑全量回归**（同 `retroactive-mechanism-specs` 2.2 的既有判法）；1.3 那次针对性跑已足够
+- [x] 2.1 `openspec validate sweep-manifest-coverage-guard --strict` ⇒ `Change 'sweep-manifest-coverage-guard' is valid`
+- [x] 2.2 `openspec validate --all --strict` ⇒ **173 passed / 0 failed**。基线（本包 propose 当次）＝ 172 passed / 0 failed；差额 +1 item ＝ 期间合入 master 的 `followup-approval-cooldown-5min`（commit `d0d5f04`）。**零新增失败** ✅
+- [x] 2.3 本包零代码改动，**未跑全量回归**；1.3 那次针对性跑已足够（同 `retroactive-mechanism-specs` 2.2 既有判法）。另附跑 `工具-场景包intent闸lint.py --enforce` ⇒ 退出码 0、无违规
 
 ## 3. 收口
 
-- [ ] 3.1 队列 §四 `#136` 回填：变更包路径、design 审结论（决策点 5/6）、转写对照表要点、**并按该行原文「补完即整体销号」的约定处置该行状态**
-- [ ] 3.2 队列 §一 `#483` ⑴ 回填并标已完成（⑵ 另见 `fi2-invoice-level-idempotency` 包；**两子项都完才销 `#483` 整行**）
-- [ ] 3.3 §二 批次登记 ＋ 触发一次 sweep，**看一眼 `reports/sweep-commit.log` 末几行确认真落库**（协议〇.8 已记：触发不等于一定会落库）
-  - [ ] 3.3.1 🔴 **登记时别把本包文件路径写成会被自己拦住的形态**——本包若在 worktree 建造并自行 commit 合入，那些路径 MUST NOT 再用反引号写进文件清单（spec「覆盖范围须被如实声明」那条 Requirement 的登记侧口径，**本批就是它的第一个自测**）
-- [ ] 3.4 `/opsx:archive sweep-manifest-coverage-guard -y`
+> 🔴 **本节 3.1–3.3 三项本泳道未做，原因写死于此**：本泳道为 worktree 隔离的 CC 泳道，看护者（批 `B-0907_Y`）下的硬口径为「**只 push 自己那条分支，不碰主仓工作区、不 ff master、不在主仓 commit**」。两份队列真身与 §二 批次登记均在主仓工作区，`§四 #136` 亦属他人触碰区（关他人队列行 ＝ 🟡 档）。⇒ **三项按既有「队列回写待补」机制挂起，登记稿已随本分支落 `1-转型规划/0-全景路线图/队列回写待补/B-0907_Z-*.json`**，待总线在 ff 合入 master 后回灌。
+
+- [ ] 3.1 队列 §四 `#136` 回填：变更包路径、design 审结论（决策点 5 ＝ (a) 撤回口头例外 · **须总线另行派单落地**；6 ＝ (a) 只留痕不接企微）、转写对照表要点、**并按该行原文「补完即整体销号」的约定处置该行状态** —— **登记稿已备（`队列回写待补/B-0907_Z-136.json`），待总线回灌**
+- [ ] 3.2 队列 §一 `#483` ⑴ 回填并标已完成（⑵ 另见 `fi2-invoice-level-idempotency` 包；**两子项都完才销 `#483` 整行**）—— **登记稿已备（`队列回写待补/B-0907_Z-483.json`），待总线回灌**
+- [ ] 3.3 §二 批次登记 ＋ 触发一次 sweep，**看一眼 `reports/sweep-commit.log` 末几行确认真落库** —— **登记稿已备（`队列回写待补/B-0907_Z-sec2-待ff合入master后再登.json`）**
+  - [x] 3.3.1 🔴 **登记时别把本包文件路径写成会被自己拦住的形态** —— **本批就是这条 Requirement 的第一个自测，已按其口径写**：本包文件在本 worktree 分支自行 commit，主仓工作区对它们**没有脏改动** ⇒ 若用反引号写进 §二 文件清单，`_manifest_coverage_gap()` 会**正确地**判缺项并整批跳过。故 §二 登记稿的文件清单**不含本包路径的反引号形态**，状态列写明「跨 worktree 建造批次，解除 ＝ 该分支 ff 合入 master 后下一轮自动落库」（同 `B-0907_S` 既例）
+- [x] 3.4 `openspec archive sweep-manifest-coverage-guard -y` —— 已在本分支执行（详见收工报告）。🔴 **archive ≠ 合入 master**：本包 spec 此刻只存在于分支 `claude/op0907f-openspec-483`，**ff 属 🟡 档，本泳道不自行合**

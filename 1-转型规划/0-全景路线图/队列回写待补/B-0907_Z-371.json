@@ -1,0 +1,5 @@
+{
+ "append": {
+  "状态": "━━━ 📎 **spec 载体已补齐（指针行）**（CC `OP-0907-Z`，2026-09-07，批 `B-0907_Z`，分支 `claude/op0907f-openspec-483`，由看护批 `B-0907_Y` 派出；本泳道按看护者硬口径「不碰主仓工作区」未自行写队列，本段为「队列回写待补」挂起稿，须总线在 ff 合入 master 后回灌）：本行 2026-08-24 的修法（发票级幂等闸 —— `load_ingested_invoice_nos` ＋ `known_invoice_nos` ＋ 两处「本文件处理前先快照」逻辑）此前只活在代码与 docstring 里，现已补成事后 openspec 变更包 `openspec/changes/archive/2026-09-07-fi2-invoice-level-idempotency/`，spec delta 并入 `openspec/specs/fi2-tax-export-ingest/spec.md`（ADDED 六条 ＋ MODIFIED 一条作用域限定）。**design 审已过（Shao Peishen 2026-09-07，合审材料 §7 (a)）**。⇒ `fi2-source-inversion` 的硬前置 **F3** 自此有可追溯的 spec 载体可引。🔴 **本行功能侧早已收口，本次不改判、不改状态前缀**，只加此指针。🔴 **该 spec 此刻只在分支 `claude/op0907f-openspec-483` 上，ff 属 🟡 档、待总线派发**。"
+ }
+}
