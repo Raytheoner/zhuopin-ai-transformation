@@ -33,4 +33,14 @@
 
 ## 6. 收口
 - [x] 6.1 `openspec validate oem-audit-fail-closed --strict` 须绿——已验证通过【CC】
-- [ ] 6.2 push 分支，登记队列 §二，等待业务总线过目（🔴 不合入 master，本包不做该动作）
+- [x] 6.2 push 分支，登记队列 §二，等待业务总线过目（🔴 本包自身不做合入动作）——已完成；**合入由另一泳道执行**：`OP-0906-E` 2026-09-06 14:1x 把 `claude/op0906c-oem-audit-fail-closed-aa7199`（原 commit `7211db3`）rebase 后 ff 入 master，新 commit **`4b9c2a0`**，`git merge-base --is-ancestor 4b9c2a0 master` ⇒ 已并入（业务总线 `OP-0906-B` 独立实证）。上句「不合入 master」自此过时，Shao Peishen 2026-09-06 答 (a) 放行【CC】
+
+## 7. 独立复验与收口余项（`OP-0907-T` 2026-09-07 14:05 CST，队列 §一 `#466` 派生）
+
+- [x] 7.1 **实现在 master 已生效**：`git show --stat 4b9c2a0` 命中 `router.py`／`test_oem_isolation_audit.py`／`test_smoke.py` ＋ 本包四件；master 树上 `router.py` 现文为 `DEFAULT_AUDIT_LOG_PATH` ＋ `_default_audit_logger()` ＋ `_record_denied` fail-closed 版【CC】
+- [x] 7.2 **单测回归复跑（亲验，非转抄）**：`5-平台底座/zhuopin_platform` 全量 `pytest tests/ -q` ⇒ **528 passed / 1 skipped**（较 `OP-0906-C` 自陈的 467 增长 61，系其后其它泳道新增用例，非本包影响）；`tests/test_oem_isolation_audit.py` ＋ `tests/test_smoke.py` ⇒ **9 passed**；FI9 消费方 `tests/test_oem_isolation.py` ⇒ **21 passed**【CC】
+- [x] 7.3 **`openspec validate oem-audit-fail-closed --strict` 复跑绿**（输出 `Change 'oem-audit-fail-closed' is valid`）【CC】
+- [x] 7.4 **调用点清单复核（重跑穷举 grep，非抽样）**：`grep -rn "OEMRouter(" --include="*.py"` 全仓 **16 处**，与 §2 逐条对齐、无新增生产调用点 —— 1 处类文档字符串示例（`router.py:53`）＋ 15 处测试（FI9 8 处、平台 `test_oem_isolation_audit.py` 5 处、`test_smoke.py` 2 处）；`import` 面另有 FI10 `tests/test_scaffold.py:28` 仅导入不实例化（§2.7 原表述「三处均为文档字符串/注释提及」对该行不精确，**结论不变**：FI10 无实例化）。**全仓无任何生产代码构造 `OEMRouter`**，QD-B OEM 路由红线仍未接线【CC】
+- [x] 7.5 **运行期产物不污染仓库**：`test_smoke.py::test_isolation_blocks_cross_oem` 已 `monkeypatch.chdir(tmp_path)`；`**/reports/`（根 `.gitignore:41`）＋ `reports/audit_log.jsonl`（平台 `.gitignore:16`）双重忽略；全仓 `find -name audit_log.jsonl` 零命中，`git status` 无 `reports` 相关条目【CC】
+- [ ] 7.6 🟡 **主 spec 未同步（本次新发现，须先定归属再动手）**：`openspec/specs/platform-oem-isolation/spec.md` L9／L15-17 仍是**旧文** ——「无 audit 注入时仅抛错（**向后兼容**）」＋ Scenario「无 audit 注入时仅抛错」。该 Scenario 现已与实现**直接相反**（默认构造现会经默认 logger 留痕，默认 logger 不可用时 fail-closed 拒绝）。⚠️ 队列 `#466` 状态格「文本侧冲突已于 2026-09-02 收口」只在**变更包 delta 内**成立，主 spec 尚未落。🔴 **注意 archive 次序**：`oem-chroma-ownership-rejudge` 与本包**各持同一 Requirement 的 MODIFIED**，本包版本是其超集（多一段 fail-closed 义务范围限定）⇒ 必须 **先 archive `oem-chroma-ownership-rejudge`、后 archive 本包**，反序会把已收紧的文本回退。归属与执行时机待业务总线派发【CC】
+- [ ] 7.7 🟡 **`3-治理与合规/OEM数据隔离规范.md` §5 映射表 §3.2 行现状改判**（`#466` 剩余项②，队列已注明「归业务总线另批」）：现文 `⚠️ **部分实现**`，按本次复验应改判 `✅ 已实现`。改动属「改口径判据」⇒ 停等 Shao Peishen 一个字母，**本会话不动该文件**；拟改文本已随 `OP-0907-T` 复命件交出【CC】
