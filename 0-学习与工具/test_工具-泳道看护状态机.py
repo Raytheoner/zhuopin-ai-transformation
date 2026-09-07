@@ -731,6 +731,196 @@ class LaneWatchStateMachineTests(unittest.TestCase):
         self.assertIn("本批 index.lock 撞击 0 次", out)
 
 
+
+    # ---------------- ⏭️ 档条件放行（#478，变更包 lane-watch-deploy-extension） ----------------
+    #
+    # 🔴 全部用例一律注入探针替身、状态文件指向临时夹具——**不连 `.51`、不发任何
+    # 真实请求**（同本文件既有的 notify stub 纪律）。
+
+    @staticmethod
+    def _prober(status: str):
+        return lambda: {"status": status, "checked": ["ping", "erp", "srm"]}
+
+    def _transferred(self, *, lane="A", batch="B-0907", action_key="deploy_51", note=""):
+        """先转出一项——放行的前置 ⑵ 要求转出必须先发生。"""
+        return self.module.transfer_out_lane(
+            batch=batch, wave=1, lane=lane, action_key=action_key, note=note,
+            notify_fn=_StubNotifier(),
+        )
+
+    def _authorize(self, *, lane="A", batch="B-0907", item="项一", text="我在，授权部署这一项",
+                   status="on"):
+        return self.module.authorize_deploy(
+            batch=batch, wave=1, lane=lane, action_key="deploy_51", item=item,
+            authorized_text=text, prober=self._prober(status),
+        )
+
+    def test_deploy_authorize_rejects_when_lan_off(self):
+        self._transferred()
+        with self.assertRaises(self.module.DeployAuthorizationRejected) as ctx:
+            self._authorize(status="off")
+        self.assertIn("前置 ⑴", str(ctx.exception))
+        state = self.module._read_state()
+        self.assertNotIn("deploy_authorizations", state["lanes"]["A"])
+
+    def test_deploy_authorize_rejects_when_lan_unknown(self):
+        """探针本身没跑起来（第三态）与 off 同等处理，不做「大概在网」的宽容。"""
+        self._transferred()
+        with self.assertRaises(self.module.DeployAuthorizationRejected):
+            self._authorize(status="unknown")
+        self.assertNotIn("deploy_authorizations", self.module._read_state()["lanes"]["A"])
+
+    def test_deploy_authorize_rejects_when_not_transferred_out(self):
+        """转出记录是该项存在过的证据，缺它则留痕链断裂。"""
+        with self.assertRaises(self.module.DeployAuthorizationRejected) as ctx:
+            self._authorize()
+        self.assertIn("前置 ⑵", str(ctx.exception))
+
+    def test_deploy_authorize_rejects_when_transfer_belongs_to_other_batch(self):
+        self._transferred(batch="别的批次")
+        with self.assertRaises(self.module.DeployAuthorizationRejected) as ctx:
+            self._authorize(batch="B-0907")
+        self.assertIn("前置 ⑵", str(ctx.exception))
+
+    def test_deploy_authorize_rejects_when_authorized_text_empty(self):
+        self._transferred()
+        with self.assertRaises(self.module.DeployAuthorizationRejected) as ctx:
+            self._authorize(text="   ")
+        self.assertIn("前置 ⑶", str(ctx.exception))
+
+    def test_deploy_authorize_rejects_non_transfer_action(self):
+        with self.assertRaises(ValueError):
+            self.module.authorize_deploy(
+                batch="B", wave=1, lane="A", action_key="merge_to_master", item="x",
+                authorized_text="ok", prober=self._prober("on"),
+            )
+
+    def test_deploy_authorize_records_authorization_with_raw_probe_value(self):
+        """三项全过时放行并落一条留痕，含探针**原值**——事后要核的是「当时到底 on 没 on」。"""
+        self._transferred(note="把 QD-B 推上去")
+        result = self._authorize(item="QD-B 服务", text="我在环，授权这一项")
+        self.assertEqual(result["index"], 0)
+        auth = result["authorization"]
+        self.assertEqual(auth["item"], "QD-B 服务")
+        self.assertEqual(auth["authorized_text"], "我在环，授权这一项")
+        self.assertEqual(auth["lan_probe"], {"status": "on", "effective": "on"})
+        self.assertEqual(auth["transfer_index"], 0)
+        stored = self.module._read_state()["lanes"]["A"]["deploy_authorizations"]
+        self.assertEqual(len(stored), 1)
+
+    def test_deploy_authorize_output_points_at_source_of_truth_only(self):
+        """放行只给指针：路径 ＋ 小节 ＋ 条目，不含被指向方的任何一步内容。"""
+        self._transferred()
+        pointer = self._authorize()["pointer"]
+        self.assertIn(self.module.DEPLOY_DISCIPLINE_POINTER_FILE, pointer)
+        self.assertIn(self.module.DEPLOY_DISCIPLINE_POINTER_SECTION, pointer)
+        self.assertIn("现读", pointer)
+
+    def test_classify_deploy_51_stays_transfer_with_and_without_authorization(self):
+        """🔴 决策点 1(a) 的机器钉死：授权改变的是能否执行，不是它属于哪一档。"""
+        self.assertEqual(self.module.classify("deploy_51").tier, self.module.TIER_TRANSFER)
+        self._transferred()
+        self._authorize()
+        self.assertEqual(self.module.classify("deploy_51").tier, self.module.TIER_TRANSFER)
+
+    def test_second_item_does_not_reuse_first_authorization(self):
+        """逐项粒度：一次授权绑定一条转出记录，第二项须自己先转出、自己再取授权。"""
+        self._transferred(note="项一")
+        self._authorize(item="项一")
+        with self.assertRaises(self.module.DeployAuthorizationRejected) as ctx:
+            self._authorize(item="项二")
+        self.assertIn("前置 ⑵", str(ctx.exception))
+        # 第二项自己转出之后才拿得到自己的授权，且绑定的是另一条转出记录
+        self._transferred(note="项二")
+        second = self._authorize(item="项二")
+        self.assertEqual(second["index"], 1)
+        self.assertEqual(second["authorization"]["transfer_index"], 1)
+
+    def test_deploy_record_rejects_unknown_authorization_index(self):
+        self._transferred()
+        self._authorize()
+        with self.assertRaises(ValueError):
+            self.module.record_deploy_attempt(
+                lane="A", authorization_index=7, outcome="done",
+            )
+
+    def test_deploy_record_rejects_unknown_outcome(self):
+        self._transferred()
+        self._authorize()
+        with self.assertRaises(ValueError):
+            self.module.record_deploy_attempt(
+                lane="A", authorization_index=0, outcome="半成功",
+            )
+
+    def test_deploy_record_appends_attempt_with_evidence_pointer(self):
+        self._transferred()
+        self._authorize(item="项一")
+        res = self.module.record_deploy_attempt(
+            lane="A", authorization_index=0, outcome="rolled_back",
+            evidence_ref="reports/xxx-证据.md",
+        )
+        att = res["attempt"]
+        self.assertEqual(att["outcome"], "rolled_back")
+        self.assertEqual(att["evidence_ref"], "reports/xxx-证据.md")
+        self.assertEqual(att["item"], "项一")
+        self.assertEqual(att["batch"], "B-0907")
+
+    def test_summary_reports_deploy_authorizations_and_outcomes(self):
+        """D6 现取：授权 N 次 ＋ 执行结果分类计数，🔴 会话不得自算。"""
+        self.assertEqual(self.module.count_deploy_authorizations(), 0)
+        self._transferred(note="项一")
+        self._authorize(item="项一")
+        self.module.record_deploy_attempt(lane="A", authorization_index=0, outcome="done")
+        self.assertEqual(self.module.count_deploy_authorizations(batch="B-0907"), 1)
+        self.assertEqual(self.module.count_deploy_authorizations(batch="别的批次"), 0)
+        counts = self.module.build_deploy_attempt_summary(batch="B-0907")
+        self.assertEqual(counts["done"], 1)
+        line = self.module.format_deploy_line(1, counts)
+        self.assertIn("授权放行 1 次", line)
+        self.assertIn("done=1", line)
+
+    def test_format_deploy_line_zero_case(self):
+        self.assertEqual(
+            self.module.format_deploy_line(0, {k: 0 for k in self.module.DEPLOY_OUTCOMES}),
+            "本批 ⏭️ 档授权放行 0 次",
+        )
+
+    def test_cli_deploy_authorize_rejected_returns_exit_1(self):
+        """任一前置不过 ⇒ 非零退出，且输出里不得出现任何可被当作「放行」理解的结果。"""
+        self._transferred()
+        with mock.patch.object(self.module, "_load_lan_prober", lambda: self._prober("off")):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = self.module.main([
+                    "deploy-authorize", "--batch", "B-0907", "--wave", "1", "--lane", "A",
+                    "--action-key", "deploy_51", "--item", "项一",
+                    "--authorized-text", "我在，授权",
+                ])
+        self.assertEqual(code, 1)
+        out = buf.getvalue()
+        self.assertIn("拒绝放行", out)
+        self.assertNotIn("已放行", out)
+
+    def test_cli_deploy_authorize_then_summary(self):
+        self._transferred(note="项一")
+        with mock.patch.object(self.module, "_load_lan_prober", lambda: self._prober("on")):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = self.module.main([
+                    "deploy-authorize", "--batch", "B-0907", "--wave", "1", "--lane", "A",
+                    "--action-key", "deploy_51", "--item", "项一",
+                    "--authorized-text", "我在环，授权这一项",
+                ])
+        self.assertEqual(code, 0)
+        out = buf.getvalue()
+        self.assertIn("已放行", out)
+        self.assertIn(self.module.DEPLOY_DISCIPLINE_POINTER_FILE, out)
+        buf2 = io.StringIO()
+        with redirect_stdout(buf2):
+            self.assertEqual(self.module.main(["summary", "--batch", "B-0907"]), 0)
+        self.assertIn("授权放行 1 次", buf2.getvalue())
+
+
 class LaneParsingDryRunTests(unittest.TestCase):
     """§三 泳道解析（P2，构建环境瘦身第三轮方案；队列 §一 `#487`）—— 3 行精简版
     与旧长版本同样能被正确识别；解析器只依赖 `### A<N>` 标题 ＋ 【设置】行两个锚点。
