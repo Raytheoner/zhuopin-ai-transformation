@@ -4999,6 +4999,55 @@ class ResidentCarrierFfTests(unittest.TestCase):
             sweep._ff_carrier(self.repo, {"name": "x", "registered": True, "head": "0" * 40})["outcome"],
             "unknown")
 
+    # —— 队列 §一 #436 ⑵（OP-0907-U）：停手告警必须带落后幅度 ——
+    #
+    # 实证背景：现网这条告警连发 249 轮（49 轮 ahead ＋ 200 轮 dirty）、每轮
+    # 只说「已停手不 ff」，而同期 `ops/wecom-service-home` 欠账回到 165。
+    # **没有这四个用例，
+    # 「幅度」随时会被下一次重构当成冗余措辞删掉**——它在功能上确实什么
+    # 都不改变，只改变读者知不知道自己欠了多少。
+
+    def test_dirty停手时正文必须带落后幅度(self):
+        self._advance_master("5-平台底座/wecom-aibot-service/f.py", "1-转型规划/x.md")
+        (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
+        detail = sweep._ff_carrier(self.repo, self._carrier())["detail"]
+        self.assertIn("已停手不 ff", detail)
+        self.assertIn("落后 2 个提交", detail)
+        self.assertIn("UTC", detail, "时刻必须显式标基准")
+        self.assertIn("滞后", detail)
+
+    def test_ahead停手时正文同样带落后幅度(self):
+        """`ahead` 分支在改动前**根本没算过 behind**——它是最容易被漏掉的一支。"""
+        (self.wt / "local.txt").write_text("本地改动\n", encoding="utf-8")
+        _git(self.wt, "add", "-A")
+        _git(self.wt, "commit", "-qm", "执行体上的本地提交")
+        self._advance_master("5-平台底座/wecom-aibot-service/g.py")
+        detail = sweep._ff_carrier(self.repo, self._carrier())["detail"]
+        self.assertIn("执行体领先 1 个提交", detail)
+        self.assertIn("落后 1 个提交", detail)
+
+    def test_命中常驻服务的路径数走既有白名单(self):
+        """三个提交里只有一个碰服务目录 ⇒ 只该数出 1 条命中路径，
+        **不得把「落后几个提交」与「命中几条路径」混为一个数**。"""
+        self._advance_master("5-平台底座/wecom-aibot-service/h.py",
+                             "1-转型规划/a.md", "1-转型规划/b.md")
+        (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
+        detail = sweep._ff_carrier(self.repo, self._carrier())["detail"]
+        self.assertIn("落后 3 个提交", detail)
+        self.assertIn("1 条路径命中常驻服务运行体", detail)
+
+    def test_幅度取不到时说未取到而不是落后0(self):
+        """🔴 「落后 0」与「落后幅度未取到」是**相反**的结论，而前者恰好
+        是最让人放心的那一个 —— 同 `_rev_count` 失败返回 None 而非 0。"""
+        saved = sweep._rev_count
+        try:
+            sweep._rev_count = lambda repo_root, rev_range, pathspec: None
+            note = sweep._carrier_drift_note(self.repo, self.old_head, "master")
+        finally:
+            sweep._rev_count = saved
+        self.assertIn("未取到", note)
+        self.assertNotIn("落后 0", note)
+
 
 class ResidentCarrierSyncTests(unittest.TestCase):
     """`_sync_resident_carriers` 的分支语义（#338 改版：ff 每轮做、重启按需）。"""

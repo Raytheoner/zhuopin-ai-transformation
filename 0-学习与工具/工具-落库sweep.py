@@ -4236,6 +4236,92 @@ def _carrier_lag_counts(repo_root: Path, head: str | None) -> tuple[int | None, 
     )
 
 
+# ============================================================
+# 队列 §一 #436 ⑵（2026-09-07，OP-0907-U）：停手告警里补「落后幅度」
+# ============================================================
+# 🔴 **本段只补数字，不改任何一条停手判据、不改任何动作。** ff 与重启验活
+# 是 #436 ⑵ 的另半边，本泳道刻意不碰（⏭️ 转出）。
+#
+# **为什么非补不可**（2026-09-07 实测，数字是本段存在的全部理由）：第 5 类的
+# ff 自 2026-08-27 17:17 UTC 那一轮之后**再没成功过一次**——`reports/
+# sweep-commit.log` 里此后是 49 轮「执行体领先 1 个提交」＋ 200 轮「已跟踪
+# 文件有未提交改动（M …run-followup-dispatch-check.ps1）」，共 **249 轮连续
+# 停手**，而这 249 句正文里**没有一个数字说明欠了多少**。
+# **249 句都是对的，加起来仍然不会变成一句「你现在欠了 165」**——165 正是
+# 当天实测值（`git rev-list --count ops/wecom-service-home..master`）。
+#
+# ⚠️ **不要把 165 读成「10 天的累积」**：执行体 HEAD 是一个 2026-09-04 的
+# master 提交，说明那天有人**手工**把它 ff 过一次（告警正文末尾那条
+# `工具-执行体对齐重启.ps1` 处置命令即出口）。**这反而是最硬的一条佐证**：
+# 手工 ff 当时能成，证明 git 自己并不拒绝这次 ff，挡住它的是本文件的脏检查
+# 本身。三天后欠账又回到 165（≈57 提交/天）——**靠人记得去跑一次命令，治
+# 不住一个每天涨 57 的存量**，而人要想知道该不该跑，首先得知道欠了多少。
+#
+# 这与 #338 自己在上方注释里写下的那条教训**同源**（原话：「六句各自都对的
+# 『你该同步了』，加起来也不会变成一句『你现在欠了 305』」）：#338 把这条
+# 教训用在了「事件型提示 → 常驻状态告警」那一跳上，却让自己新建的这个常驻
+# 告警**在停手分支上重新只报事件、不报存量**。#338 消掉「落后 ≥100 才告警」
+# 那个阈值时的论证是「自动 ff 之后落后恒为 0」——该论证只在 ff 真的每轮发生
+# 时成立；**停手分支恰恰是它不成立的那一支，而落后幅度也恰恰是在那一支才有
+# 人需要知道**。
+#
+# ⇒ 判据不变、动作不变，**只让告警把它已经算出来（`dirty`／`failed` 分支
+# 手里本来就有 `behind`）却随手丢掉的那个数说出来**。三个数：
+#   ⑴ **落后多少个提交** —— 存量本身；
+#   ⑵ **其中多少条路径命中常驻服务运行体** —— 判「这些欠账里有多少真的影响
+#      生产」，**复用 `_touches_resident_service` 那套白名单，刻意不另写一套**
+#      （同 #338 对重启判据的取舍）；
+#   ⑶ **执行体停在哪个时刻的 master、滞后多少天** —— 存量的时间维度；取执行体
+#      HEAD 那个提交的 committer date，**转成 UTC 并显式标基准**（本项目
+#      「引用任何时刻先判 UTC 还是本地并标基准」纪律）。
+#
+# 🔴 **取不到就说取不到，绝不填 0**（同 `_rev_count` 失败返回 None 而非 0 的
+# 取舍）：「落后 0」与「落后幅度未取到」在读者那里是**相反**的结论，而前者
+# 恰好是最容易让人放心的那一个。
+
+
+def _carrier_drift_note(repo_root: Path, head: str, base: str,
+                        behind: int | None = None) -> str:
+    """渲染一句「落后幅度」，供停手类告警正文与日志共用。
+
+    `behind` 允许由调用方传入已算好的值（`dirty`／`failed` 分支手里就有），
+    避免为同一个数再跑一次 `rev-list`；不传则现算。
+
+    **全程只读**：信息只来自 `rev-list`／`diff --name-only`／`log -1`，本函数
+    不碰任何工作区、不移动任何引用。
+    """
+    if behind is None:
+        behind = _rev_count(repo_root, f"{head}..{base}", [])
+    if behind is None:
+        parts = ["落后幅度**未取到**（`rev-list` 失败）"]
+    elif behind == 0:
+        parts = ["落后 0"]
+    else:
+        parts = [f"**落后 {behind} 个提交**"]
+        diff = _run_git(["diff", "--name-only", f"{head}..{base}"], repo_root, check=False)
+        if diff.returncode != 0:
+            parts.append("其中命中常驻服务运行体的路径数**未取到**（`diff` 失败）")
+        else:
+            paths = {ln.strip() for ln in diff.stdout.splitlines() if ln.strip()}
+            parts.append(f"其中 {len(_touches_resident_service(paths, repo_root))} "
+                         "条路径命中常驻服务运行体")
+
+    stamp = _run_git(["log", "-1", "--format=%cI", head], repo_root, check=False)
+    stamp_text = stamp.stdout.strip() if stamp.returncode == 0 else ""
+    if not stamp_text:
+        parts.append("执行体停在哪个时刻的 master **未取到**（`log -1` 失败）")
+        return "；".join(parts)
+    try:
+        stopped = datetime.fromisoformat(stamp_text).astimezone(timezone.utc)
+    except ValueError:
+        parts.append(f"执行体 HEAD 提交时间**无法解析**（原样：{stamp_text}）")
+        return "；".join(parts)
+    lag_days = (datetime.now(timezone.utc) - stopped).total_seconds() / 86400
+    parts.append(f"执行体停在 {stopped:%Y-%m-%d %H:%M} UTC 的 master，"
+                 f"已滞后 {lag_days:.1f} 天")
+    return "；".join(parts)
+
+
 def _resident_carriers(repo_root: Path) -> tuple[list[dict] | None, str | None]:
     """从计划任务反查常驻执行体：Action 路径落在 `<repo>/.claude/worktrees/<name>/`
     之下者，`<name>` 即执行体。返回 `([{name, tasks, registered, head}], None)`
@@ -4350,8 +4436,13 @@ def _ff_carrier(repo_root: Path, carrier: dict) -> dict:
     if ahead is None:
         return {"outcome": "unknown", "detail": "ahead 计数取不到",
                 "before": before, "after": None, "changed_paths": []}
+    # #436 ⑵：停手类结论一律带上落后幅度——判据与动作都不变，只是不再把
+    # 「欠了多少」这个数算完就丢。`ahead` 分支不复用下方的 `behind`（它在
+    # 那一支还没算），由 `_carrier_drift_note` 现算。
     if ahead > 0:
-        return {"outcome": "ahead", "detail": f"执行体领先 {ahead} 个提交，已停手不 ff",
+        return {"outcome": "ahead",
+                "detail": f"执行体领先 {ahead} 个提交，已停手不 ff"
+                          f"；{_carrier_drift_note(repo_root, before, base)}",
                 "before": before, "after": None, "changed_paths": []}
 
     behind = _rev_count(repo_root, f"{before}..{base}", [])
@@ -4364,14 +4455,17 @@ def _ff_carrier(repo_root: Path, carrier: dict) -> dict:
 
     dirty = _carrier_tracked_dirty(repo_root, name)
     if dirty:
-        return {"outcome": "dirty", "detail": f"已跟踪文件有未提交改动（{dirty}），已停手不 ff",
+        return {"outcome": "dirty",
+                "detail": f"已跟踪文件有未提交改动（{dirty}），已停手不 ff"
+                          f"；{_carrier_drift_note(repo_root, before, base, behind)}",
                 "before": before, "after": None, "changed_paths": []}
 
     merged = _run_git(["merge", "--ff-only", base], wt, check=False)
     if merged.returncode != 0:
         head_line = (merged.stdout or "").strip().splitlines()
         return {"outcome": "failed",
-                "detail": f"ff 失败：{head_line[0] if head_line else '无输出'}",
+                "detail": f"ff 失败：{head_line[0] if head_line else '无输出'}"
+                          f"；{_carrier_drift_note(repo_root, before, base, behind)}",
                 "before": before, "after": None, "changed_paths": []}
 
     after = _run_git(["rev-parse", "HEAD"], wt, check=False).stdout.strip()
