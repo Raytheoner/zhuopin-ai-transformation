@@ -135,9 +135,9 @@
   整体外置至 `1-转型规划/0-全景路线图/队列行日志/#480.md`（原文一字未改，md5 `1a9252e1`；
   同文件另附本次 apply 收工回写全文），行内只留首段＋指针＋末段 ⇒ **7.8 KB → 3.5 KB**，
   行内写明 `行长豁免：`。`release` 全部结构门禁通过（opener 守卫已校验本次触碰的 3 个 `.md`）
-- [ ] 5.2 §四 `#118` 行内追加一句「⑶ 的人守面已由机器接管」指针 —— **只追加、不改历史正文**；⚠️ `#118` 属他人触碰区，按「决策路由」不就地改，随 5.1 一并登记待总线派发
+- [x] 5.2 §四 `#118` 行内追加一句「⑶ 的人守面已由机器接管」指针 —— 2026-09-06 由 Cowork 业务总线（`Cowork-业务总线-0906G后续`）走编辑锁 `edit-row --append` 补齐，只追加、未改历史正文
 - [x] 5.3 §二 批次登记 —— 已 `append-row --section 二` 写入
   `B-0906_O_OP0906O_凭据形状即拒闸apply回写`（文件清单＝机制队列 ＋ `队列行日志/#480.md`，
   状态「待处理」，由 `ZhuopinCommitSweep` 自动取活）。⚠️ **sweep 落库与 `reports/sweep-commit.log`
   核对不由本泳道当场完成**（sweep 是定时任务，本次未触发、也不该由建造泳道手动催）
-- [ ] 5.4 `/opsx:archive editlock-credential-shape-guard -y` —— 合入 master 之前不归档
+- [x] 5.4 归档 —— 2026-09-06 由 Cowork 业务总线执行（本沙箱无 `openspec` CLI，手工复刻 `/opsx:archive` 步骤5/6：`git mv` 到 `openspec/changes/archive/2026-09-06-editlock-credential-shape-guard/`；因无该能力的 capability 之前不存在主 spec，delta 即初版，已按既有主 spec 惯例写出 `openspec/specs/editlock-credential-shape-guard/spec.md`）。Shao Peishen 2026-09-06 现场答"(a) 现在归档"
