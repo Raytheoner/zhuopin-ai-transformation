@@ -1,6 +1,8 @@
 # editlock-waiver-time-scoped Design
 
-> 状态：**design 待审（🟡）**，出件即停。派单件 §三 的 D1–D4 为写死项，起草方不得改向；本文只把它们落到实现面，并把**真开放点**提到「决策点」节交 Shao Peishen 一字母。
+> 状态：✅ **2026-09-07 Shao Peishen 拍板 `1a／2b／3a`，已 apply**（`OP-0907-AM`）。
+> ① 批准 D1–D4 一次 apply；② 窗口内逃生 ＝ 给 `release` 加 `--waiver`；③ `到期` 缺省 ＝ 当日有效。
+> **下方保留出件当时的原文，不追改**；apply 记录见 tasks.md。
 
 ## 一、现状取证（只读，非推断）
 

@@ -47,6 +47,13 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().with_name("工具-落库sweep.py")
 EDIT_LOCK_SOURCE = Path(__file__).resolve().with_name("工具-共享文档编辑锁.py")
 OPENER_LINT_SOURCE = Path(__file__).resolve().with_name("工具-opener块lint.py")
+# 队列 §一 #416 ⑶ D4：升格用例要真跑 `append-row`，而编辑锁在无平台包时会
+# 回落到内建隔离桩（该桩缺写侧反引号校验与列名表）——见
+# `OrphanSectionFourEscalationTests.setUp` 的红字。
+CREDENTIAL_LINT_SOURCE = Path(__file__).resolve().with_name("工具-密钥扫描lint.py")
+PLATFORM_PACKAGE_SOURCE = (
+    Path(__file__).resolve().parents[1] / "5-平台底座" / "zhuopin_platform" / "zhuopin_platform"
+)
 
 _spec = importlib.util.spec_from_file_location("commit_sweep", SCRIPT)
 sweep = importlib.util.module_from_spec(_spec)
@@ -8183,6 +8190,198 @@ class ScopedCommitCliWiringTests(SweepTestBase):
         self.assertTrue(orphan.exists())
         self.assertIn("未被带入本提交",
                       (self.work / sweep.LOG_REL).read_text(encoding="utf-8"))
+
+
+class OrphanSectionFourEscalationTests(SweepTestBase):
+    """队列 §一 #416 ⑶ D4（变更包 `editlock-waiver-time-scoped`，Shao Peishen
+    2026-09-07 答 1a）：孤儿存续 ≥6 小时 ⇒ 自动升格为 §四 一行交人处置。
+
+    🔴 **本类跑真实 sweep 子进程 ＋ 真实编辑锁 CLI，不用桩**：升格这件事的
+    全部价值在于"它真的写进了 §四"——用桩测等于把要验的那一段换掉了。同
+    `OrphanFileAlertTests` 惯例。
+
+    **立项实证**：2026-09-07 16:21 一轮 sweep 报 21 个孤儿、来自 ≥5 个会话、
+    **最老 18 小时**，企微推送一路在响、无一自登——推送没有承接面，响过就
+    过去了，没有任何东西记得"这件事还没人管"。
+    """
+
+    # 🔴 夹具必须带「编号高水位线」标注行——`acquire --reserve` 缺它即
+    # `ReserveFailedError`（真实队列文件本就有这一行）。同 `SweepTestBase`
+    # 里 `.gitignore` 那几条的道理：夹具还原真实布局，才测得出真实行为。
+    QUEUE_WITH_SECTION_FOUR = (
+        "---\ntitle: 测试队列\n---\n\n# 测试队列\n\n"
+        "> 编号高水位线：§一 #1 ｜ §四 #1\n\n"
+        "## 一、任务看板\n\n| # | 任务 | 状态 |\n|---|------|------|\n| 1 | 占位 | 待领 |\n\n"
+        "## 二、待 commit 批次\n\n"
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+        "{rows}"
+        "\n## 三、口径冻结标\n\n（无）\n"
+        "\n## 四、决策台账\n\n| # | 事项 | 等谁 | 截止 |\n|---|------|------|------|\n"
+        "| 1 | 占位事项 | Shao Peishen | 无 |\n"
+    )
+
+    def setUp(self):
+        super().setUp()
+        # 🔴 **本类必须还原平台底座包，否则测的是夹具缺件、不是本次改动。**
+        # 编辑锁在 `5-平台底座/zhuopin_platform` 不存在时回落到内建隔离桩，
+        # 而那个桩缺 `has_unbalanced_backtick_run`（写侧反引号校验，队列
+        # #455）与 `SECTION_COLUMN_NAMES` ⇒ `append-row` 当场 AttributeError。
+        # 同 `SweepTestBase` 复制 `工具-opener块lint.py` 的既有惯例：**夹具
+        # 还原真实布局，才测得出真实行为**；两个 `__init__.py` 都是纯文档
+        # 字符串、不拉任何依赖，复制代价可忽略。
+        # ⚠️ **隔离桩与权威模块的这处漂移是既存缺口**（master 上就有，与本
+        # 变更无关）：任何**没有平台包**的 checkout 跑 `append-row` 都会崩，
+        # 生产不撞是因为生产恒有那个包。已登记待派，本包不顺手扩范围去修。
+        src = PLATFORM_PACKAGE_SOURCE
+        dst = self.work / "5-平台底座" / "zhuopin_platform" / "zhuopin_platform"
+        (dst / "shared_tools").mkdir(parents=True)
+        shutil.copy(src / "__init__.py", dst / "__init__.py")
+        for name in ("__init__.py", "queue_table.py", "followup_gate.py"):
+            shutil.copy(src / "shared_tools" / name, dst / "shared_tools" / name)
+        # 写入侧凭据形状判据的正本（`工具-密钥扫描lint.py`）——同 opener lint
+        # 那条：**取不到就 fail-closed 拒绝写入**，夹具不还原就测不到真实行为。
+        shutil.copy(CREDENTIAL_LINT_SOURCE, self.work / "0-学习与工具" / CREDENTIAL_LINT_SOURCE.name)
+
+    def _write_queue(self, rows: str) -> None:
+        (self.work / sweep.QUEUE_MECHANISM_PATH_REL).write_text(
+            self.QUEUE_WITH_SECTION_FOUR.format(rows=rows), encoding="utf-8", newline="")
+
+    def _write_orphan_state(self, entries: dict) -> None:
+        path = self.work / sweep.ORPHAN_STATE_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+
+    def _read_orphan_state(self) -> dict:
+        return json.loads((self.work / sweep.ORPHAN_STATE_REL).read_text(encoding="utf-8"))
+
+    def _iso(self, hours_ago: float) -> str:
+        return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+
+    def _seed_aged_orphan(self, rel: str, hours_ago: float) -> None:
+        (self.work / rel).write_text("没人认领的孤儿\n", encoding="utf-8")
+        self._write_orphan_state({rel: {"first_seen": self._iso(hours_ago), "last_alerted": None}})
+
+    def test_orphan_past_escalation_threshold_lands_in_section_four(self):
+        self._init_and_push(rows="")
+        self._seed_aged_orphan("杂物.md", sweep.ORPHAN_SECTION_FOUR_HOURS + 1)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        queue = self._queue_text()
+        section_four = queue.split("## 四、")[1]
+        self.assertIn("杂物.md", section_four)
+        self.assertIn("孤儿升格", section_four)
+        self.assertIn("Shao Peishen", section_four)
+        # 两个选项 ＋ 明写无默认（见 `_escalate_long_lived_orphans_to_section_four`）
+        self.assertIn("(a) 代登", section_four)
+        self.assertIn("(b) 丢弃", section_four)
+        self.assertIn("本项无默认", section_four)
+        # 证据：首见时间与存续时长，缺了它人无从判断该不该代登
+        self.assertIn("已孤儿", section_four)
+        self.assertIn("首见", section_four)
+
+    def test_orphan_below_threshold_not_escalated(self):
+        self._init_and_push(rows="")
+        self._seed_aged_orphan("杂物.md", sweep.ORPHAN_SECTION_FOUR_HOURS - 1)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("孤儿升格：已登 §四", result.stdout)
+        self.assertNotIn("杂物.md", self._queue_text().split("## 四、")[1])
+
+    def test_same_day_dedup_one_row_only(self):
+        """当日同文件去重——sweep 约 27 分钟一轮，不去重会把 §四 刷成噪音。"""
+        self._init_and_push(rows="")
+        self._seed_aged_orphan("杂物.md", sweep.ORPHAN_SECTION_FOUR_HOURS + 1)
+
+        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        first = self._queue_text().split("## 四、")[1].count("孤儿升格")
+        self.assertEqual(first, 1)
+        self.assertIn(sweep.ORPHAN_SECTION_FOUR_LOGGED_KEY, self._read_orphan_state()["杂物.md"])
+
+        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        self.assertEqual(self._queue_text().split("## 四、")[1].count("孤儿升格"), 1)
+
+    def test_cross_day_orphan_is_escalated_again(self):
+        """🔴 **跨天仍是孤儿则再登一行**——它确实是新的一天里仍然没人管。
+        「登过一次即永久静默」是 #147 `gap_alert` 教训的另一面。"""
+        self._init_and_push(rows="")
+        self._seed_aged_orphan("杂物.md", sweep.ORPHAN_SECTION_FOUR_HOURS + 1)
+        self.assertEqual(_run_sweep(self.work).returncode, 0)
+
+        # 把去重日期改成昨天 ＝ 模拟跨天
+        state = self._read_orphan_state()
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        state["杂物.md"][sweep.ORPHAN_SECTION_FOUR_LOGGED_KEY] = yesterday
+        self._write_orphan_state(state)
+
+        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        self.assertEqual(self._queue_text().split("## 四、")[1].count("孤儿升格"), 2)
+
+    def test_escalation_does_not_commit_or_declare_the_orphan(self):
+        """🔴 **反例：升格只把事交给人，不替人决定。** 孤儿文件在升格之后
+        仍然是那个未提交的孤儿——既没被 `git add`，也没被代写成 §二 声明。"""
+        self._init_and_push(rows="")
+        self._seed_aged_orphan("杂物.md", sweep.ORPHAN_SECTION_FOUR_HOURS + 1)
+
+        self.assertEqual(_run_sweep(self.work).returncode, 0)
+
+        status = _git(self.work, "status", "--porcelain").stdout
+        self.assertIn("杂物.md", status, "孤儿文件本身不该被提交掉")
+        self.assertNotIn("杂物.md", self._queue_text().split("## 二、")[1].split("## 三、")[0],
+                         "不得代为生成 §二 批次声明")
+
+    def test_dry_run_does_not_write_queue(self):
+        self._init_and_push(rows="")
+        self._seed_aged_orphan("杂物.md", sweep.ORPHAN_SECTION_FOUR_HOURS + 1)
+        before = self._queue_text()
+
+        result = _run_sweep(self.work, "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[dry-run] 本应升格 §四", result.stdout)
+        self.assertEqual(self._queue_text(), before)
+
+    def test_echo_prints_even_when_nothing_to_escalate(self):
+        """零命中每轮回显——同第 4/6/7/9/10/11 类：一个从来不出声的机制，
+        没有人能判断它是「没问题」还是「没跑」。"""
+        self._init_and_push(rows="")
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("孤儿升格 §四 扫描", result.stdout)
+        self.assertIn("本轮待升格 0 个", result.stdout)
+
+    def test_escalation_failure_does_not_change_exit_code(self):
+        """🔴 反例：升格失败只留一行日志——告警这件事不该把落库那件正事
+        拖死（同既有孤儿告警惯例）。本用例把 §四 分区整个拿掉，`append-row`
+        必然被拒。"""
+        self._init_and_push(rows="")
+        (self.work / sweep.QUEUE_MECHANISM_PATH_REL).write_text(
+            QUEUE_HEADER_ONLY.format(rows=""), encoding="utf-8", newline="")
+        self._commit_all("去掉 §四 分区")
+        self._seed_aged_orphan("杂物.md", sweep.ORPHAN_SECTION_FOUR_HOURS + 1)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("孤儿升格", result.stdout)
+
+    def test_reserved_number_is_parsed_never_guessed(self):
+        """🔴 解析不出预留号就跳过本轮，**绝不回退成"读高水位线 +1 自己算"**
+        ——那正是协议〇.7 要消灭的猜号，猜错会撞上别人刚预留的行。"""
+        self.assertEqual(
+            sweep._parse_reserved_section_four_number("📍 已为你预留：§四 #168"), "168")
+        self.assertIsNone(
+            sweep._parse_reserved_section_four_number("✓ 已占锁：某人（无预留）"))
+
+    def test_threshold_constant_is_independent_of_alert_threshold(self):
+        """判据锚定：升格阈值与企微告警阈值是**两个**常量。把它们并成一个的
+        人会看见这条变红——两者受众不同（推送打给还在场的人，§四 打给总线
+        的排期）。"""
+        self.assertNotEqual(
+            sweep.ORPHAN_SECTION_FOUR_HOURS, sweep.ORPHAN_ALERT_THRESHOLD_HOURS)
+        self.assertGreater(
+            sweep.ORPHAN_SECTION_FOUR_HOURS, sweep.ORPHAN_ALERT_THRESHOLD_HOURS)
 
 
 if __name__ == "__main__":

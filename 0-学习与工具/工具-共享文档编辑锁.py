@@ -5192,11 +5192,180 @@ def _dirty_path_is_covered(path: str, fragments: list[str]) -> bool:
     return any(path == frag or path.endswith("/" + frag) for frag in fragments)
 
 
+# ── ⑹ 逃生阀的时间维收窄与结构化（队列 §一 #416 ⑶ 根治，openspec 变更包
+#    `editlock-waiver-time-scoped`，Shao Peishen 2026-09-07 答 1a/2b/3a）──────
+#
+# 🔴 **「一次一用」只能用时间维判据，不能用空间维判据。** 旧口径的取材面是
+# 「本次 note ＋ **本次触碰过的队列行整行文本**」——想表达的是"一次一用"，
+# 用的却是空间维（这段文字在不在我这次碰过的范围里）。而**只要那段文字落了
+# 盘，它就会被后来的、与它无关的持锁窗口反复取到**：`#382` 的任务列里至今
+# 躺着一句 2026-09 之前写下的 `登记豁免：…`，此后任何一次碰了那一行的持锁
+# 都会把它当成本次的豁免。
+#
+# 新取材面 ＝ **本持锁窗口的 `acquire` note ＋ 本次 `release --waiver`**。两者
+# 都随锁（或随进程）生灭，不落盘到任何会被再次读到的地方：`release` 没有
+# `--note`，note 只在 `acquire` 写入 ⇒ 一把锁上它只能被写一次。
+#
+# ⚠️ **只收窄 ⑹ 这一项。** 同一个 `waiver_sources` 列表还喂着 `转态豁免：`
+# （`_auto_sync_followup_reply_state`）与 `opener豁免：`（`_opener_guard_
+# violations`）。图省事把那个列表整体收窄，会**顺手改掉另外两道门禁的对外
+# 语义**，而它们既没立项、也没取证、更没有单测覆盖这次变化。
+#
+# 🔴 **泛豁免必须拒，不能"没解析出路径就退回旧的全放行"**：立项实证＝
+# 2026-09-07 16:21 一轮 sweep 报 21 个孤儿、来自 ≥5 个会话、最老 18 小时、
+# **无一自登**；每一次 release 上「他线脏文件由其作者线自登」这句话都成立，
+# 每一次之后都没有兑现。
+REGISTRATION_WAIVER_CLAUSE_SEPARATORS = "；;、"
+#: 与 `登记豁免：` 同级、可能紧随其后出现的其它逃生阀标记——用于切出本条
+#: 豁免的正文边界（一段 note 里可以同时写 `登记豁免：` 与 `opener豁免：`）。
+#: 🔴 **取的是常量而不是字面量**：谁改了那些常量，这里跟着变，不会悄悄漏。
+_OTHER_WAIVER_MARKERS = (
+    "opener豁免：", "转态豁免：", "串行豁免：", "WIP豁免：",
+    "进度豁免：", "预留豁免：", "行长豁免：", "性别豁免：", "日期豁免：",
+)
+#: `到期 MM-DD` 缺省口径（Shao Peishen 2026-09-07 答 3a）＝**当日有效**。
+#: 理由：D1 之后豁免本就随锁而灭（锁最长 30 分钟自动陈旧），到期字段主要是
+#: 留痕与可读性；缺省成"当日"与"随锁而灭"同向，读者不必去想"1 天从几点算
+#: 起"。写了到期就按写的算，写了已过去的日期即失效。
+REGISTRATION_WAIVER_DEFAULT_DUE_IS_TODAY = True
+
+
+def _parse_registration_waiver_clauses(source: str) -> list[dict]:
+    """把一段文本里的全部 `登记豁免：` 条目解析成结构化清单。
+
+    单条形态（与 `.claude/rules/队列与落库.md` 2026-09-07 止血口径逐字一致）：
+        `登记豁免：<路径>[；<路径>…]（作者 <OP 号>，到期 MM-DD）`
+
+    返回每条 `{"paths": [...], "author": str|None, "due": date|None,
+    "due_raw": str|None, "raw": str}`；`paths` 只是**候选**，有效性由
+    `_valid_waiver_paths` 判（本函数不碰文件系统，纯文本解析，便于单测）。
+
+    三条解析口径，都是为了"不要为格式差异拒掉一次合法豁免"：
+      ⑴ 路径分隔符同时接受 `；`／`;`／`、`——三者在本仓库既有正文里都真实
+         出现过；
+      ⑵ 反引号包裹与否都接受（止血口径示例里两种写法都有过）；
+      ⑶ 条目正文在**第一个左括号**处截断——括号后面无论是 `（作者 …，到期
+         …）` 还是随手写的一句说明，都是注解不是路径。
+    """
+    clauses: list[dict] = []
+    start = 0
+    while True:
+        idx = source.find(REGISTRATION_WAIVER_MARKER, start)
+        if idx == -1:
+            break
+        body_start = idx + len(REGISTRATION_WAIVER_MARKER)
+        # 本条的正文一直延伸到下一个 `登记豁免：`／其它逃生阀标记／文本结尾。
+        ends = [source.find(REGISTRATION_WAIVER_MARKER, body_start)]
+        ends.extend(source.find(mark, body_start) for mark in _OTHER_WAIVER_MARKERS)
+        candidates = [e for e in ends if e != -1]
+        body_end = min(candidates) if candidates else len(source)
+        body = source[body_start:body_end]
+        start = body_end if body_end > body_start else body_start
+
+        head, _, tail = body.partition("（")
+        if not _:  # 没有全角括号时再试半角
+            head, _, tail = body.partition("(")
+        annotation = tail
+
+        paths = []
+        for piece in re.split(f"[{REGISTRATION_WAIVER_CLAUSE_SEPARATORS}]", head):
+            piece = piece.strip().strip("`").strip()
+            # 收尾标点（中英文句号／逗号）不算路径的一部分。
+            piece = piece.rstrip("。.,，")
+            if piece:
+                paths.append(piece)
+
+        author_match = re.search(r"作者\s*([^，,）)]+)", annotation)
+        due_match = re.search(r"到期\s*(\d{1,2})\s*-\s*(\d{1,2})", annotation)
+        due = None
+        due_raw = None
+        if due_match:
+            due_raw = f"{int(due_match.group(1)):02d}-{int(due_match.group(2)):02d}"
+            due = _resolve_waiver_due_date(int(due_match.group(1)), int(due_match.group(2)))
+        clauses.append({
+            "paths": paths,
+            "author": author_match.group(1).strip() if author_match else None,
+            "due": due,
+            "due_raw": due_raw,
+            "raw": (REGISTRATION_WAIVER_MARKER + body).strip(),
+        })
+    return clauses
+
+
+def _resolve_waiver_due_date(month: int, day: int, today=None):
+    """`MM-DD` 补年份 —— 早于今天 180 天以上者解为**次年**。
+
+    🔴 **本机本地日期，不是 UTC**（`_now()` 返回 UTC，这里刻意不用它）：
+    队列行与 note 里的 `MM-DD` 是人按本机 `Get-Date` 写下的，用 UTC 去比
+    会在每天 16:00–24:00 那一段整整差一天。
+
+    跨年是这条判据存在的唯一理由：12-31 写下的豁免在 01-02 读到时，若一律
+    按"当前年"解就成了"11 个月前已过期"；反过来 01-02 写的豁免在 12-31 读
+    到也不该被解成明年。180 天是两个方向都够用的分界。
+    """
+    from datetime import date as _date, timedelta as _timedelta
+    today = today or _date.today()
+    try:
+        candidate = _date(today.year, month, day)
+    except ValueError:  # 2-30 之类的非法日期
+        return None
+    if (today - candidate) > _timedelta(days=180):
+        try:
+            candidate = _date(today.year + 1, month, day)
+        except ValueError:
+            return None
+    return candidate
+
+
+def _valid_waiver_paths(
+    clauses: list[dict], repo_root: Path, dirty_now: list[str] | None,
+    today=None,
+) -> tuple[set[str], list[str]]:
+    """从解析结果里挑出**有效**路径，并返回一份供拒绝／放行文案用的说明。
+
+    **有效 ＝ 在仓库工作树内存在，或出现在本次脏文件集合中。** 后半句不是
+    冗余：**被删除的脏文件在磁盘上恰恰不存在**，只按"文件存在"判会把一次
+    合法的删除豁免拒掉。`dirty_now is None`（取数失败的 fail-closed 分支）
+    时只按"存在"判——那一刻没有脏文件集合可比，但一条点名了真实文件的豁免
+    仍然是一条可判定的豁免。
+
+    到期已过的条目整条失效（等同没写），并在说明里点出来——**默默忽略一条
+    过期豁免，和默默放行一条泛豁免同样坏**：写的人看不出差别。
+    """
+    from datetime import date as _date
+    today = today or _date.today()
+    dirty_set = set(dirty_now or [])
+    valid: set[str] = set()
+    notes: list[str] = []
+    for clause in clauses:
+        if clause["due"] is not None and clause["due"] < today:
+            notes.append(
+                f"⏱ 一条豁免已过期（到期 {clause['due_raw']}，今天 {today.isoformat()}），"
+                f"整条不生效：{clause['raw'][:80]}…"
+            )
+            continue
+        for path in clause["paths"]:
+            if path in dirty_set or (repo_root / path).exists():
+                valid.add(path)
+            else:
+                notes.append(f"✗ 豁免里点名的「{path}」既不在工作树内、也不在本次脏文件集合中，不生效。")
+    return valid, notes
+
+
 def _registration_completeness_violations(
     queue_texts: dict[str, str], lock_data: dict, repo_root: Path,
-    waiver_sources: list[str],
+    acquire_note: str,
 ) -> list[str]:
-    """⑹：release 时全部脏文件须被某个待处理 §二 批次覆盖，否则拒绝。"""
+    """⑹：release 时全部脏文件须被某个待处理 §二 批次覆盖，否则拒绝。
+
+    🔴 **第四个形参是 `acquire_note: str`，不是 `waiver_sources: list[str]`
+    ——这是判据的一部分，不是签名风格。** 传一个列表进来，就总有人往列表里
+    多塞一个来源（队列行、上次 note、随手读到的一段文本），而 `#416` ⑶ 的
+    整个病灶就是"取材面多了一个会落盘的来源"。收成一个字符串之后，**想加
+    来源必须改签名**，改签名的人会看见这段注释。
+    （`release --waiver` 那一路在调用点与 note 拼接后传入——它同样随进程
+    生灭、不落盘，见 `cmd_release`。）
+    """
     if lock_data.get("who") == SWEEP_LOCK_WHO:
         # 见 SWEEP_LOCK_WHO 定义处的长注释：sweep 是"来提交的那个人"，
         # 判据的适用对象不含它。仅豁免本项，不影响它仍须通过的其它校验。
@@ -5215,20 +5384,37 @@ def _registration_completeness_violations(
         return []
 
     dirty_now = _local_git_status_paths(repo_root)
-    waiver = next(
-        (s for s in waiver_sources if REGISTRATION_WAIVER_MARKER in s), None
-    )
+    # D1：取材面 ＝ 本持锁窗口的 acquire note（＋本次 `release --waiver`，由
+    # 调用点拼进来）。队列行文本一律不再是豁免来源——见本文件 D1 长注释。
+    clauses = _parse_registration_waiver_clauses(acquire_note or "")
+    saw_marker = bool(clauses)
+    waived_paths, waiver_notes = _valid_waiver_paths(clauses, repo_root, dirty_now)
+    for note_line in waiver_notes:
+        print(note_line)
 
     if dirty_now is None:
         # fail-closed：本变更同批退休了校验②（协议〇.9 措施 B 一进一出），
         # 取数失败若静默放行，这道咽喉上将什么都不剩。
-        if waiver is not None:
-            print(f"✓ 工作区状态取数失败，但检测到登记豁免声明，已放行：{waiver.strip()[:120]}")
+        #
+        # 🔴 **豁免在这里仍然适用，但适用的是"点名了真实文件的豁免"**——
+        # 此刻没有脏文件集合可比，有效性只按"工作树内存在"判（见
+        # `_valid_waiver_paths`）。**泛豁免在这里同样被拒**：取数失败叠加
+        # 一句谁也没点名的豁免，正是最该停下的组合。
+        if waived_paths:
+            print(f"✓ 工作区状态取数失败，但检测到点名 {len(waived_paths)} 个文件的登记豁免，"
+                  f"已放行：{'、'.join(sorted(waived_paths))}")
             return []
         return [
             "无法取得工作区脏文件状态（非 git 仓库／git 不可用／超时），"
             "⑹ 登记完整性校验无法执行 ⇒ 拒绝 release（fail-closed，不静默放行）。"
-            f"确需放行请在本次 note 或本次触碰的队列行内写「{REGISTRATION_WAIVER_MARKER}<理由>」。"
+            + (
+                f"本次 note 里检测到「{REGISTRATION_WAIVER_MARKER}」标记，"
+                f"但它没有点名任何有效路径 ⇒ 按无豁免处理。"
+                if saw_marker else ""
+            )
+            + f"确需放行请在本次 acquire 的 note 里逐个点名："
+              f"「{REGISTRATION_WAIVER_MARKER}<仓库根相对路径>；<路径>…"
+              f"（作者 <OP 号>，到期 MM-DD）」，或用 `release --waiver '<同格式>'`。"
         ]
 
     fragments = _pending_batch_fragments(queue_texts)
@@ -5250,9 +5436,15 @@ def _registration_completeness_violations(
               f"（仅豁免本项；其余 release 校验照常生效）。")
         return []
 
-    if waiver is not None:
-        print(f"✓ 检测到登记豁免声明，已放行 {len(uncovered)} 个未登记脏文件："
-              f"{waiver.strip()[:120]}")
+    # D2：**只放行被点名的文件**，其余照常阻断。旧实现在这里一命中标记就
+    # `return []`——点名了 19 个、放行了 16 个它也不看（2026-09-07 `OP-0907-AM`
+    # 本人持锁时实测到的输出，那三个数字对不上正是本次要修的形态）。
+    released = [p for p in uncovered if p in waived_paths]
+    uncovered = [p for p in uncovered if p not in waived_paths]
+    if released:
+        print(f"✓ 登记豁免点名放行 {len(released)} 个未登记脏文件："
+              f"{'、'.join(released)}")
+    if not uncovered:
         return []
 
     snapshot = lock_data.get("dirty_at_acquire")
@@ -5271,6 +5463,18 @@ def _registration_completeness_violations(
         f"——它们不会被 sweep 提交，会静默掉在地上（`OP-0822-E` 2026-08-22 实证："
         f"acquire 的 note 写了「分三批登记」，那三条批次行从未出现在任何一个提交里）。"
     ]
+    if released:
+        lines.append(f"  （本次豁免已点名放行 {len(released)} 个，"
+                     f"下列 {len(uncovered)} 个**未被点名**。）")
+    elif saw_marker:
+        # D3：泛豁免的拒绝文案必须与"压根没写豁免"可区分。不可区分的后果
+        # 是——写豁免的人以为工具没读到他那句话，于是把它写得更宽。
+        lines.append(
+            f"  🔴 本次 note 里检测到「{REGISTRATION_WAIVER_MARKER}」标记，"
+            f"但它**没有点名任何有效路径** ⇒ 按无豁免处理。"
+            f"「他线脏文件由其作者线自登」这类泛豁免自 2026-09-07 起不再放行"
+            f"（实证：一轮 sweep 21 个孤儿、≥5 个会话、最老 18 小时、无一自登）。"
+        )
     for title, paths in grouped:
         if not paths:
             continue
@@ -5279,8 +5483,10 @@ def _registration_completeness_violations(
     lines.append(
         f"  两条出路：⑴ 为它们登记 §二 批次（`append-row --section 二`，"
         f"文件清单写仓库根相对完整路径）；"
-        f"⑵ 确不该登记的，在本次 note 或本次触碰的队列行内写"
-        f"「{REGISTRATION_WAIVER_MARKER}<理由>」。"
+        f"⑵ 确不该登记的，**逐个点名**豁免——写进本次 acquire 的 note，或"
+        f"本次 `release --waiver '…'`："
+        f"「{REGISTRATION_WAIVER_MARKER}<仓库根相对路径>；<路径>…"
+        f"（作者 <OP 号>，到期 MM-DD）」。"
     )
     return ["\n".join(lines)]
 
@@ -5876,12 +6082,21 @@ def cmd_release(args: argparse.Namespace) -> int:
         violations.extend(sync_violations)
         for note in sync_notes:
             print(note)
-        # 队列 §一 #351 ⑹：登记完整性。逃生阀取材面与 `转态豁免：` 完全一致
-        # （本次 note ＋ 本次触碰过的队列行，**不含队列全文**）——理由同上方
-        # 那段红字：豁免标记一旦写进这两份 1.9 MB 的文件任何一处，全文匹配
-        # 就等于把门禁永久关掉，且此后没有任何人会发现。
+        # 队列 §一 #351 ⑹：登记完整性。
+        # 🔴 **它的取材面自 2026-09-07 起与上面那两项不再一致**（队列 §一
+        # `#416` ⑶，变更包 `editlock-waiver-time-scoped`）：⑹ 只认**本持锁
+        # 窗口的 acquire note ＋ 本次 `release --waiver`**，队列行文本一律
+        # 不算。理由是「一次一用」只能用时间维判据——`转态豁免：` 那条注释
+        # 说的"不含队列全文"仍是空间维，而**只要豁免落了盘（哪怕只落在一条
+        # 队列行里），它就会被后来的、与它无关的持锁窗口反复取到**：`#382`
+        # 的任务列里至今躺着一句旧的 `登记豁免：`。
+        # ⚠️ 故这里**刻意不传 `waiver_sources`**；想给 ⑹ 加来源必须改它的
+        # 签名（第四个形参是 `acquire_note: str`，不是列表）。
+        registration_waiver_scope = "\n".join(
+            s for s in (existing.get("note", "") or "", getattr(args, "waiver", "") or "") if s
+        )
         violations.extend(_registration_completeness_violations(
-            queue_texts, existing, REPO_ROOT, waiver_sources,
+            queue_texts, existing, REPO_ROOT, registration_waiver_scope,
         ))
         # 队列 §一 #437：opener 守卫，与 ⑹ 并列同一处 fail-closed 语义
         # （旁增一钩，不改 ⑹ 本体）。
@@ -5949,6 +6164,16 @@ def cmd_release(args: argparse.Namespace) -> int:
         released_history.append(
             {"who": existing.get("who", ""), "note": note, "at": _now().isoformat()}
         )
+    # 队列 §一 #416 ⑶：`release --waiver` 的原文同样落进 history 留痕——它
+    # 不进 git（本次放行的理由本就不该长期生效），但下一次 acquire 的回显
+    # 会把它打出来，于是"刚才谁在这把锁上放行过什么"仍然看得见。**与
+    # `进度豁免：` 同一惯例，不新起一套。**
+    if getattr(args, "waiver", ""):
+        released_history.append({
+            "who": existing.get("who", ""),
+            "note": f"release --waiver：{args.waiver.strip()}",
+            "at": _now().isoformat(),
+        })
 
     _write_released_marker(
         lock_path, existing.get("who", ""), existing.get("note", ""),
@@ -6021,6 +6246,18 @@ def main() -> int:
 
     p_release = sub.add_parser("release", help="编辑完立刻释放")
     p_release.add_argument("--who", default="", help="可选：校验释放的是自己占的锁")
+    p_release.add_argument(
+        "--waiver", default="",
+        help="队列 §一 #416 ⑶（Shao Peishen 2026-09-07 答决策 2＝(b)）：本次"
+             "release 的登记豁免，格式同 note 内写法——"
+             "「登记豁免：<仓库根相对路径>；<路径>…（作者 <OP 号>，到期 MM-DD）」。"
+             "🔴 **它存在的理由是 D1 收窄之后留下的那个缺口**：豁免只认本持锁"
+             "窗口的 acquire note，而 note 在窗口内改不了（本子命令没有 --note），"
+             "于是持锁中途才发现要豁免的会话（典型：另一个并发会话此刻弄脏了"
+             "文件）无处可写。本参数**随进程生灭、一个字不落盘**，比 note 更"
+             "严格的时间维；理由同 `进度豁免：` 惯例落进锁 history 留痕。"
+             "泛豁免（不点名任何有效路径）在这里同样被拒",
+    )
     p_release.add_argument(
         "--mechanism-wip-cap", type=int, default=MECHANISM_WIP_CAP_DEFAULT,
         help=f"队列 #308 决策点 6：机制类可动 WIP 上限（默认 {MECHANISM_WIP_CAP_DEFAULT}，"

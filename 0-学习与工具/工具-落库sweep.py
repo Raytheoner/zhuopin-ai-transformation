@@ -667,6 +667,18 @@ _PS_DOUBLE_QUOTED_RE = re.compile(r"\"([^\"]+)\"")
 # 之间几分钟时间差"这类偶发情形被误报（#147 gap_alert 的"狼来了"教训）。
 ORPHAN_STATE_REL = "reports/sweep-orphan-state.json"
 ORPHAN_ALERT_THRESHOLD_HOURS = 3
+# 队列 §一 #416 ⑶ D4（变更包 `editlock-waiver-time-scoped`，Shao Peishen
+# 2026-09-07 答 1a）：孤儿存续超过本阈值即**升格为 §四 一行**交人处置。
+#
+# 🔴 **刻意独立于 `ORPHAN_ALERT_THRESHOLD_HOURS`，不复用同一个常量**：两者
+# 受众不同——企微推送打给**还在场的人**（他自己还来得及登记）；§四 一行打给
+# **总线的排期**（人已经不在场了）。用同一个阈值等于假设这两件事总该同时
+# 发生，而 2026-09-07 的实测恰恰相反：21 个孤儿、来自 ≥5 个会话、最老 18
+# 小时，企微推送一路在响，**没有一个人在场**。
+ORPHAN_SECTION_FOUR_HOURS = 6
+#: 升格状态字段名（写在既有孤儿状态条目上，**不新建文件名形态**——见
+#: `editlock-waiver-time-scoped` proposal 的 .gitignore 覆盖节）。
+ORPHAN_SECTION_FOUR_LOGGED_KEY = "section_four_logged_on"
 
 # 队列 #229：发布收口第②关——已部署场景白名单（初版宁窄勿宽）。
 # key＝场景目录前缀，value＝该场景的部署留痕文件——本批 touched_paths 命中
@@ -3262,6 +3274,138 @@ def _track_and_alert_orphan_paths(
         log.append(f"⚠ 孤儿脏文件告警推送失败（不影响本轮退出码）：{exc}")
         return
     log.append("✓ 孤儿脏文件告警已推送。")
+
+
+def _escalate_long_lived_orphans_to_section_four(
+    repo_root: Path, log: list[str], dry_run: bool = False,
+) -> None:
+    """队列 §一 #416 ⑶ D4：孤儿存续 ≥ `ORPHAN_SECTION_FOUR_HOURS` 小时 ⇒ 自动
+    在 §四 追一行，把它交给人处置（当日同文件去重）。
+
+    🔴 **为什么要在企微告警之外再加一条通路**：企微推送**没有承接面**——它
+    响过就过去了，没有任何东西记得"这件事还没人管"。2026-09-07 16:21 实测：
+    21 个孤儿、来自 ≥5 个会话、**最老 18 小时**，推送一路在响、无一自登，
+    最后靠环境总线偶然看见 sweep 日志才人工代登 15 件。§四 是本项目唯一一个
+    "写进去就有人排期"的地方。
+
+    🔴 **三件刻意不做的事**（做了就从"升格给人"滑成"替人决定"）：
+      ⑴ 不对孤儿文件做任何 `git add`／`commit`——它们是谁的、该不该入库，
+         机器判不了；
+      ⑵ 不代为生成 §二 批次声明；
+      ⑶ **不标默认项**。不答的代价确实只是"孤儿继续躺着"，但**执行者取决于
+         答案本身**：选代登由值周执行，选丢弃由作者线执行。机器猜不出是
+         哪一条，猜错就等于替人决定了别人文件的去留。
+
+    **失败不改本轮退出码**，只留一行日志——同既有孤儿告警惯例：告警这件事
+    不该把落库那件正事拖死。
+
+    🔴 **只加这一个函数 ＋ 一处调用**（`#479` sweep-manifest 同碰本文件，
+    派单件 §一 的并行约束）：本函数**自己读**孤儿状态文件（`first_seen` 本来
+    就在里面），**不改** `_track_and_alert_orphan_paths` 的签名与返回值。
+    """
+    state = _read_orphan_state(repo_root)
+    now = datetime.now(timezone.utc)
+    today = datetime.now().strftime("%Y-%m-%d")  # 本机本地日期，与队列行写法同源
+
+    due: list[tuple[str, float, str]] = []
+    for path, entry in state.items():
+        first_seen_raw = entry.get("first_seen")
+        if not first_seen_raw:
+            continue
+        try:
+            first_seen = datetime.fromisoformat(first_seen_raw)
+        except ValueError:
+            continue
+        age_hours = (now - first_seen).total_seconds() / 3600
+        if age_hours < ORPHAN_SECTION_FOUR_HOURS:
+            continue
+        # 当日同文件去重：同一天内最多升格一次；**跨天仍是孤儿则再登一行**
+        # ——它确实是新的一天里仍然没人管，静默下去就成了"登过一次即永久
+        # 静默"，那是 #147 `gap_alert` 教训的另一面。
+        if entry.get(ORPHAN_SECTION_FOUR_LOGGED_KEY) == today:
+            continue
+        due.append((path, age_hours, first_seen.strftime("%Y-%m-%dT%H:%M:%SZ")))
+
+    log.append(
+        f"🧭 孤儿升格 §四 扫描（阈值 {ORPHAN_SECTION_FOUR_HOURS} 小时，当日去重）："
+        f"本轮待升格 {len(due)} 个"
+    )
+    if not due:
+        return
+
+    due.sort(key=lambda item: -item[1])
+    shown = due[:10]
+    listed = "；".join(f"`{p}`（已孤儿 {age:.1f} 小时，首见 {seen}）" for p, age, seen in shown)
+    if len(due) > len(shown):
+        listed += f"；…等共 {len(due)} 个"
+    matter = (
+        f"🧭 **落库 sweep 孤儿升格（{today}）**：{len(due)} 个脏文件持续 ≥ "
+        f"{ORPHAN_SECTION_FOUR_HOURS} 小时不属于任何待处理 §二 批次声明，"
+        f"不会被 sweep 提交、会静默掉在地上：{listed}。"
+        f"**请选**：(a) 代登 §二 批次入库（先核 `git diff --numstat` 再登）；"
+        f"(b) 丢弃——由作者线自行处置，本行销号。"
+        f"🔴 **本项无默认**：选 (a) 由值周执行、选 (b) 由作者线执行，"
+        f"执行者取决于答案本身，机器不替人决定别人文件的去留。"
+    )
+
+    if dry_run:
+        log.append(f"[dry-run] 本应升格 §四 一行（{len(due)} 个孤儿），本次不写。")
+        return
+
+    try:
+        acquired = _edit_lock(repo_root, "acquire", [
+            "--note", f"孤儿升格 §四（{len(due)} 个，阈值 {ORPHAN_SECTION_FOUR_HOURS}h）",
+            "--reserve", "1", "--section", "四",
+        ])
+        if acquired.returncode != 0:
+            detail = " ".join((acquired.stdout + acquired.stderr).split())[:300]
+            log.append(f"⚠ 孤儿升格：编辑锁 acquire 未成功，本轮跳过（不影响退出码）：{detail}")
+            return
+        number = _parse_reserved_section_four_number(acquired.stdout)
+        if number is None:
+            log.append("⚠ 孤儿升格：acquire 成功但未能从输出解析出 §四 预留号，本轮跳过"
+                       "（不猜号——猜错会撞上别人的行）。")
+            _edit_lock(repo_root, "release")
+            return
+        # 🔴 用位置式 `--cell`、不用 `--set`：`--set` 走
+        # `queue_table.SECTION_COLUMN_NAMES`，而编辑锁在**取不到平台底座包**
+        # 时会回落到内建兜底桩，那个桩只有 `SECTION_COLUMN_COUNTS`、没有
+        # `SECTION_COLUMN_NAMES` ⇒ `--set` 在隔离环境里当场 AttributeError。
+        # 本函数是**无人值守**路径（sweep 每 27 分钟自跑一轮），不能依赖一条
+        # 在部分环境下必然崩的入口。§四 列序 ＝ 事项／等谁／截止。
+        # ⚠️ 这条兜底桩缺字段本身是既存缺口（与本变更无关），已登记待派。
+        appended = _edit_lock(repo_root, "append-row", [
+            "--section", "四", "--number", number,
+            "--cell", matter,
+            "--cell", "Shao Peishen",
+            "--cell", f"{today}（当日升格，越早裁定越少孤儿）",
+        ])
+        if appended.returncode != 0:
+            detail = " ".join((appended.stdout + appended.stderr).split())[:300]
+            log.append(f"⚠ 孤儿升格：§四 追行被拒，本轮跳过（不影响退出码）：{detail}")
+        else:
+            log.append(f"✓ 孤儿升格：已登 §四 #{number}（{len(due)} 个孤儿，等 Shao Peishen 一字母）。")
+            for path, _age, _seen in due:
+                state[path][ORPHAN_SECTION_FOUR_LOGGED_KEY] = today
+            _write_orphan_state(repo_root, state)
+    except Exception as exc:  # noqa: BLE001 —— 升格失败不应影响本轮退出码
+        log.append(f"⚠ 孤儿升格自身异常，本轮跳过（不影响退出码）：{type(exc).__name__}: {exc}")
+    finally:
+        released = _edit_lock(repo_root, "release")
+        if released.returncode != 0:
+            detail = " ".join((released.stdout + released.stderr).split())[:300]
+            log.append(f"⚠ 孤儿升格：release 未生效（锁保持占用，下一轮会接管）：{detail}")
+
+
+def _parse_reserved_section_four_number(acquire_stdout: str) -> str | None:
+    """从 `acquire --reserve 1 --section 四` 的 stdout 里取回预留号。
+
+    对应输出行形如 `📍 已为你预留：§四 #168`。🔴 **解析不出就返回 None、
+    由调用方跳过本轮，绝不回退成"读高水位线 +1 自己算"**——那正是协议〇.7
+    要消灭的那种猜号，猜错会直接撞上别人刚预留的行。
+    """
+    match = re.search(r"已为你预留：.*?§四\s*#(\d+)", acquire_stdout)
+    return match.group(1) if match else None
 
 
 def _find_missing_deployment_trace(touched_paths: set[str]) -> list[str]:
@@ -7011,6 +7155,17 @@ def main() -> int:
             # （design D5 ＝ (b)，Shao Peishen 2026-09-07 合审），排在第 12 类之后。
             _check_plan_backpressure(repo_root, log)
             plan_backpressure_scanned = True
+
+        # 队列 §一 #416 ⑶ D4（2026-09-07，OP-0907-AM）：孤儿升格 §四。
+        # 🔴 **位置是判据的一部分**：排在本轮全部 git 操作（批次提交、台账
+        # 重跑、`_reconcile_with_origin_and_push`）**之后**——它会 acquire
+        # 编辑锁并把队列文件改脏，放在推送之前会与 autostash 抢同一批文件。
+        # 它写下的那一行由**下一轮**的 `_commit_uncovered_queue_changes`
+        # （ⓘ2）按既有口径落库，本函数自己不 commit 任何东西。
+        # 🔴 dry-run 也调（函数内部只打印不写）——**零命中每轮回显**，与第
+        # 4/6/7/9/10/11 类同一惯例：一个从来不出声的机制，没有人能判断它是
+        # 「没问题」还是「没跑」。
+        _escalate_long_lived_orphans_to_section_four(repo_root, log, dry_run=args.dry_run)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))

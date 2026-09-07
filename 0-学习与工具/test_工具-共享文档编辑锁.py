@@ -5931,9 +5931,15 @@ class RegistrationCompletenessTests(unittest.TestCase):
     def _queue(self, *rows: str) -> dict:
         return {"queue-mech.md": "## 二、待 commit 批次\n\n" + self.HEADER + "".join(rows)}
 
-    def _run(self, queue_texts, lock_data=None, waivers=None):
+    def _run(self, queue_texts, lock_data=None, note=""):
+        """🔴 第四个实参自 2026-09-07（队列 #416 ⑶）起是**一个字符串**——本
+        持锁窗口的 acquire note（＋本次 `release --waiver`，由生产调用点拼
+        接）。**它曾经是一个 `waiver_sources: list[str]`**，里面还塞着"本次
+        触碰过的队列行"，而那正是 `#416` ⑶ 的病灶：豁免一旦落盘就会被后来
+        的、与它无关的持锁窗口捡到。签名收成字符串之后，想再加来源必须改
+        签名——改签名的人会看见这条注释。"""
         return self.m._registration_completeness_violations(
-            queue_texts, lock_data or {}, self.root, waivers or [],
+            queue_texts, lock_data or {}, self.root, note,
         )
 
     # ── 主判据 ────────────────────────────────────────────────────
@@ -6109,31 +6115,166 @@ class RegistrationCompletenessTests(unittest.TestCase):
             (self.m.SWEEP_LOCK_WHO, self.m.AIBOT_LOCK_WHO),
         )
 
-    # ── 逃生阀 ────────────────────────────────────────────────────
-    def test_waiver_in_note_passes(self):
+    # ── 逃生阀（2026-09-07 时间维收窄，队列 #416 ⑶）─────────────────
+    #
+    # 🔴 **这一组用例的共同判据：豁免必须「一次一用」，而一次一用只能用
+    # 时间维判据。** 旧口径的取材面是"本次 note ＋ 本次触碰过的队列行"，
+    # 想表达一次一用，用的却是空间维（这段文字在不在我碰过的范围里）；而
+    # 只要那段文字**落了盘**，它就会被后来的、与它无关的持锁窗口反复取到。
+    def _waiver(self, body: str) -> str:
+        return f"{self.m.REGISTRATION_WAIVER_MARKER}{body}"
+
+    def test_named_waiver_in_note_passes(self):
+        """点名了本次真实脏文件的豁免 ⇒ 放行。"""
         self._dirty("某文件.md")
-        waivers = [f"{self.m.REGISTRATION_WAIVER_MARKER}临时取证脚本，不入库"]
-        self.assertEqual(self._run(self._queue(), waivers=waivers), [])
+        note = self._waiver("某文件.md（作者 OP-测试，到期 12-31）")
+        self.assertEqual(self._run(self._queue(), note=note), [])
 
-    def test_waiver_also_covers_status_failure(self):
-        self._dirty("某文件.md")
-        waivers = [f"{self.m.REGISTRATION_WAIVER_MARKER}git 环境异常，已另行处置"]
-        with unittest.mock.patch.object(self.m, "_local_git_status_paths", return_value=None):
-            self.assertEqual(self._run(self._queue(), waivers=waivers), [])
-
-    def test_waiver_only_in_untouched_history_row_does_not_pass(self):
-        """🔴 取材面刻意**不含队列全文**：`登记豁免：` 一旦写进这两份 1.9 MB
-        的文件任何一处，全文匹配就等于把这道门禁**永久关掉，且此后没有任何
-        人会发现**。逃生阀必须一次一用，不能变成一个写一次就长期生效的开关。
-        （与既有 `转态豁免：` 同一收敛方向。）
-
-        本用例把豁免写进队列正文里一条**本次未触碰**的历史行，`waiver_sources`
-        为空 ⇒ 仍应拒绝。
+    def test_blanket_waiver_is_rejected(self):
+        """🔴 **本变更包的立项事由。** 一句「他线脏文件由其作者线自登」此前
+        把 `uncovered` 里全部未登记脏文件当场放行——不论它们是谁的、有几个、
+        是不是真的会有人去登。2026-09-07 16:21 一轮 sweep 实测：21 个孤儿、
+        来自 ≥5 个会话、最老 18 小时、**无一自登**。
         """
         self._dirty("某文件.md")
-        rows = (f"| B-旧 | `x/y.md` | msg | 待处理 "
-                f"{self.m.REGISTRATION_WAIVER_MARKER}历史行里的豁免 |\n",)
-        self.assertTrue(self._run(self._queue(*rows), waivers=[]))
+        violations = self._run(self._queue(), note=self._waiver("他线脏文件由其作者线自登"))
+        self.assertEqual(len(violations), 1)
+        self.assertIn("没有点名任何有效路径", violations[0])
+
+    def test_blanket_waiver_message_differs_from_no_waiver(self):
+        """泛豁免与"压根没写豁免"的拒绝文案必须可区分——不可区分的后果是
+        写豁免的人以为工具没读到他那句话，于是把它写得更宽。"""
+        self._dirty("某文件.md")
+        blanket = self._run(self._queue(), note=self._waiver("他线脏文件由其作者线自登"))[0]
+        silent = self._run(self._queue(), note="本次只改队列行")[0]
+        self.assertIn(self.m.REGISTRATION_WAIVER_MARKER, blanket)
+        self.assertNotIn("没有点名任何有效路径", silent)
+        self.assertNotEqual(blanket, silent)
+
+    def test_named_waiver_releases_only_named_files(self):
+        """D2：**只放行点名件**。旧实现一命中标记就 `return []`——2026-09-07
+        `OP-0907-AM` 本人持锁时实测输出「点名 19 个 / 放行 16 个」，那三个
+        数字对不上它也不看。"""
+        self._dirty("甲.md")
+        self._dirty("乙.md")
+        violations = self._run(self._queue(), note=self._waiver("甲.md（作者 OP-测试，到期 12-31）"))
+        self.assertEqual(len(violations), 1)
+        self.assertIn("乙.md", violations[0])
+        self.assertNotIn("- 甲.md", violations[0])
+        self.assertIn("已点名放行 1 个", violations[0])
+
+    def test_stale_inline_waiver_in_touched_row_no_longer_passes(self):
+        """🔴 **用 `#382` 任务列那句真实残留做用例**（队列 #416 ⑶ 派单件指名）。
+
+        原文至今躺在 `#382` 的任务列里，且它**点了名、格式也不难看**——正因
+        为如此，旧口径下任何一次碰了那一行的持锁都会把它当成本次的豁免，把
+        当刻工作区里任何未登记脏文件一并放行。本用例把它原样放进一条**本次
+        触碰过**的队列行，note 里不写豁免 ⇒ 应仍然拒绝。
+
+        ⚠️ **这条用例本身证明不了收窄，如实记在这里**：它直接调校验函数，而
+        "本次触碰过的队列行"是**调用点**拼进 `waiver_sources` 的，白盒走不到
+        那一步（反向对照实测：本条在 master 版上同样是绿的）。真正的证明是
+        `ReleaseWaiverCliTests::test_stale_waiver_in_touched_queue_row_no_
+        longer_passes_end_to_end`——那条走真 CLI 完整时间线，在 master 版上
+        放行、在本版上拒绝。本条留着的价值是**让读者一眼看见那句残留长什么
+        样**。
+        """
+        residue = (
+            "登记豁免：`.claude/settings.local.json`"
+            "（并发 session 遗留的本机个人配置，不属本线改动、不入库，留待其属主处置）"
+        )
+        self._dirty("某文件.md")
+        rows = (f"| B-旧 | `x/y.md` | msg | 待处理 {residue} |\n",)
+        violations = self._run(self._queue(*rows), note="")
+        self.assertEqual(len(violations), 1)
+        self.assertIn("某文件.md", violations[0])
+        # 队列行里的残留连"检测到标记"都不该触发——它压根不在取材面里。
+        self.assertNotIn("没有点名任何有效路径", violations[0])
+
+    def test_expired_waiver_does_not_pass(self):
+        """到期已过 ⇒ 整条失效，等同没写。"""
+        from datetime import date, timedelta
+        yesterday = date.today() - timedelta(days=1)
+        self._dirty("某文件.md")
+        note = self._waiver(
+            f"某文件.md（作者 OP-测试，到期 {yesterday.month:02d}-{yesterday.day:02d}）")
+        self.assertTrue(self._run(self._queue(), note=note))
+
+    def test_unexpired_waiver_passes(self):
+        from datetime import date, timedelta
+        tomorrow = date.today() + timedelta(days=1)
+        self._dirty("某文件.md")
+        note = self._waiver(
+            f"某文件.md（作者 OP-测试，到期 {tomorrow.month:02d}-{tomorrow.day:02d}）")
+        self.assertEqual(self._run(self._queue(), note=note), [])
+
+    def test_waiver_without_due_defaults_to_today(self):
+        """决策 3＝(a)：缺 `到期` ⇒ 当日有效（不是永久有效、也不是失效）。"""
+        self._dirty("某文件.md")
+        self.assertEqual(self._run(self._queue(), note=self._waiver("某文件.md")), [])
+
+    def test_due_year_inference_survives_year_boundary(self):
+        """跨年：12-31 写下的豁免在 01-02 读到，不该被解成"11 个月前已过期"。"""
+        from datetime import date
+        self.assertEqual(
+            self.m._resolve_waiver_due_date(12, 31, today=date(2027, 1, 2)),
+            date(2027, 12, 31),
+        )
+        self.assertEqual(
+            self.m._resolve_waiver_due_date(1, 2, today=date(2026, 12, 31)),
+            date(2027, 1, 2),
+        )
+
+    def test_waiver_separator_and_backtick_variants(self):
+        """不为格式差异拒掉一次合法豁免：`；`／`;`／`、` 与反引号都接受。"""
+        for sep in ("；", ";", "、"):
+            with self.subTest(sep=sep):
+                self._dirty("甲.md")
+                self._dirty("乙.md")
+                note = self._waiver(f"`甲.md`{sep}乙.md（作者 OP-测试，到期 12-31）")
+                self.assertEqual(self._run(self._queue(), note=note), [])
+
+    def test_waiver_naming_nonexistent_path_is_not_valid(self):
+        """点名了一个既不在工作树、也不在本次脏文件集合里的路径 ⇒ 不算有效，
+        整条按泛豁免拒。"""
+        self._dirty("某文件.md")
+        note = self._waiver("根本不存在的/文件.md（作者 OP-测试，到期 12-31）")
+        violations = self._run(self._queue(), note=note)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("没有点名任何有效路径", violations[0])
+
+    def test_named_waiver_also_covers_status_failure(self):
+        """取数失败时豁免仍适用，但适用的是"点名了真实文件"的豁免。"""
+        self._dirty("某文件.md")
+        note = self._waiver("某文件.md（作者 OP-测试，到期 12-31）")
+        with unittest.mock.patch.object(self.m, "_local_git_status_paths", return_value=None):
+            self.assertEqual(self._run(self._queue(), note=note), [])
+
+    def test_blanket_waiver_still_rejected_on_status_failure(self):
+        """🔴 取数失败 ＋ 一句谁也没点名的豁免 ＝ 最该停下的组合。"""
+        self._dirty("某文件.md")
+        with unittest.mock.patch.object(self.m, "_local_git_status_paths", return_value=None):
+            violations = self._run(self._queue(), note=self._waiver("他线脏文件由其作者线自登"))
+        self.assertEqual(len(violations), 1)
+        self.assertIn("fail-closed", violations[0])
+
+    def test_deleted_dirty_file_can_be_named(self):
+        """有效路径 ＝ 工作树内存在**或**出现在本次脏文件集合中。后半句不是
+        冗余：被删除的脏文件在磁盘上恰恰不存在，只按"存在"判会把一次合法的
+        删除豁免拒掉。"""
+        seed = self.root / "seed.txt"
+        seed.unlink()
+        note = self._waiver("seed.txt（作者 OP-测试，到期 12-31）")
+        self.assertEqual(self._run(self._queue(), note=note), [])
+
+    def test_registration_waiver_scope_excludes_touched_rows(self):
+        """判据锚定：⑹ 的第四个形参是**一个字符串**（本次 note），不是
+        `waiver_sources` 列表。把它改回列表的人会看见这条变红——而"取材面
+        多了一个会落盘的来源"正是 `#416` ⑶ 的整个病灶。"""
+        import inspect
+        params = list(inspect.signature(
+            self.m._registration_completeness_violations).parameters)
+        self.assertEqual(params[3], "acquire_note")
 
 
 OPENER_LINT_TEST_SCRIPT = Path(__file__).resolve().with_name("test_工具-opener块lint.py")
@@ -6151,6 +6292,153 @@ def _load_opener_lint_fixtures():
 
 
 _OPENER_FIXTURES = _load_opener_lint_fixtures()
+
+
+class ReleaseWaiverCliTests(unittest.TestCase):
+    """`release --waiver` 的真 CLI ＋ 真 git 仓库端到端（队列 §一 #416 ⑶，
+    Shao Peishen 2026-09-07 答决策 2＝(b)）。
+
+    🔴 **为什么必须有真 CLI 用例、白盒调函数不够**：本参数存在的**唯一**
+    理由，是 D1 收窄之后留下的那个缺口——豁免只认本持锁窗口的 acquire
+    note，而 note 在窗口内改不了。这个缺口只在"真的先 acquire、中途工作区
+    变脏、再 release"这条时间线上才成立；直接调校验函数是看不见它的。
+
+    同 `ShadowCopyCrossWorktreeTests` 惯例：脚本复制进真实 git 仓库，黑盒
+    子进程跑，不 monkeypatch 任何常量。
+    """
+
+    MECH_REL = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列-机制环境.md"
+    QUEUE_BODY = (
+        "## 二、待 commit 批次\n\n"
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name) / "repo"
+        self.root.mkdir()
+        self._git("init", "-q")
+        self._git("config", "user.email", "t@example.com")
+        self._git("config", "user.name", "t")
+        (self.root / "0-学习与工具").mkdir()
+        self.tool = self.root / "0-学习与工具" / "工具-共享文档编辑锁.py"
+        self.tool.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+        # opener 守卫（#437）从**同目录兄弟**加载判据正本，取不到即 fail-loud
+        # （#493 刻意不回退成本地简化版）。真 CLI 用例必须把它一起带上，
+        # 否则测的是"环境缺件"而不是本次改动。
+        opener_lint = SCRIPT.with_name("工具-opener块lint.py")
+        (self.root / "0-学习与工具" / opener_lint.name).write_text(
+            opener_lint.read_text(encoding="utf-8"), encoding="utf-8")
+        # 加载 opener lint 会产生 `__pycache__/*.pyc`——生产仓库的
+        # `.gitignore` 覆盖它，玩具仓库不带就会被 ⑹ 判成一个"孤儿脏文件"，
+        # 测出来的是环境差异而不是本次改动。
+        (self.root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+        (self.root / self.MECH_REL).parent.mkdir(parents=True)
+        (self.root / self.MECH_REL).write_text(self.QUEUE_BODY, encoding="utf-8")
+        self._git("add", "-A")
+        self._git("commit", "-qm", "init")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _git(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=self.root, check=True,
+                              capture_output=True, text=True)
+
+    def _acquire(self, note: str = "本次只改队列行") -> subprocess.CompletedProcess:
+        return run_at(self.tool, "acquire", "--who", "OP-测试", "--note", note)
+
+    def _release(self, *extra: str) -> subprocess.CompletedProcess:
+        return run_at(self.tool, "release", "--who", "OP-测试", *extra)
+
+    def test_mid_window_dirty_file_can_be_waived_at_release(self):
+        """**本参数的立项场景**：acquire 时工作区干净，持锁中途另一个并发
+        会话弄脏了一个文件 —— note 里不可能事先写上它。"""
+        acq = self._acquire()
+        self.assertEqual(acq.returncode, 0, acq.stdout + acq.stderr)
+        (self.root / "别人的在办件.md").write_text("并发会话的改动", encoding="utf-8")
+
+        blocked = self._release()
+        self.assertEqual(blocked.returncode, 1)
+        self.assertIn("别人的在办件.md", blocked.stdout + blocked.stderr)
+
+        ok = self._release("--waiver", "登记豁免：别人的在办件.md（作者 OP-他线，到期 12-31）")
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+        self.assertIn("点名放行", ok.stdout)
+
+    def test_blanket_waiver_on_cli_is_rejected(self):
+        """🔴 反例：`--waiver` 不是一个"想放行就放行"的开关——泛豁免在这条
+        路上同样被拒，否则它就成了给 D3 开的后门。"""
+        self.assertEqual(self._acquire().returncode, 0)
+        (self.root / "别人的在办件.md").write_text("并发会话的改动", encoding="utf-8")
+        r = self._release("--waiver", "登记豁免：他线脏文件由其作者线自登")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("没有点名任何有效路径", r.stdout + r.stderr)
+
+    def test_waiver_only_releases_named_file(self):
+        """反例：`--waiver` 点名一个，另一个仍拦。"""
+        self.assertEqual(self._acquire().returncode, 0)
+        (self.root / "甲.md").write_text("x", encoding="utf-8")
+        (self.root / "乙.md").write_text("y", encoding="utf-8")
+        r = self._release("--waiver", "登记豁免：甲.md（作者 OP-测试，到期 12-31）")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("乙.md", r.stdout + r.stderr)
+
+    def test_waiver_is_recorded_in_lock_history(self):
+        """留痕：放行理由落进锁 history，下一次 acquire 的回显会打出来——
+        同 `进度豁免：` 既有惯例，不新起一套。**放行了什么、凭什么放行，
+        必须有人能在事后看见。**"""
+        self.assertEqual(self._acquire().returncode, 0)
+        (self.root / "别人的在办件.md").write_text("并发会话的改动", encoding="utf-8")
+        waiver = "登记豁免：别人的在办件.md（作者 OP-他线，到期 12-31）"
+        self.assertEqual(self._release("--waiver", waiver).returncode, 0)
+
+        lock_file = (self.root / self.MECH_REL).with_suffix(".md.editlock")
+        history = json.loads(lock_file.read_text(encoding="utf-8"))["history"]
+        self.assertTrue(any("release --waiver" in e.get("note", "") for e in history))
+
+    def test_stale_waiver_in_touched_queue_row_no_longer_passes_end_to_end(self):
+        """🔴 **`#416` ⑶ 的真正证明，必须走真 CLI。**
+
+        白盒那条同名用例（`RegistrationCompletenessTests::test_stale_inline_
+        waiver_in_touched_row_no_longer_passes`）**证明不了收窄**——它直接调
+        校验函数，而"本次触碰过的队列行"是**调用点**拼进去的，白盒根本走不到
+        那一步（反向对照实测：它在 master 版上同样是绿的）。**如实记在这里，
+        不让一条自我感觉良好的用例冒充证据。**
+
+        本用例走完整时间线：acquire → 在队列行里写下一句点了名的旧豁免 →
+        另有一个它**没**点名的脏文件 → release。旧口径下那句行内豁免会被
+        当成本次的豁免、把该脏文件一并放行；新口径下取材面只有 note ⇒ 拒绝。
+        （反向对照：本条在 master 版上是绿的通过态，在本版上必须拒绝。）
+        """
+        self.assertEqual(self._acquire(note="本次不写任何豁免").returncode, 0)
+        queue = self.root / self.MECH_REL
+        queue.write_text(
+            queue.read_text(encoding="utf-8")
+            + "| B-旧 | `x/y.md` | msg | 待处理 "
+              "登记豁免：`别的文件.md`（历史残留，不属本线改动，不入库） |\n",
+            encoding="utf-8")
+        (self.root / "没被点名的脏文件.md").write_text("并发会话的改动", encoding="utf-8")
+
+        r = self._release()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("没被点名的脏文件.md", r.stdout + r.stderr)
+
+    def test_waiver_does_not_leak_into_next_hold_window(self):
+        """🔴 **本变更包的核心断言：一次一用。** 上一把锁上用过的 `--waiver`
+        对下一把锁**不生效**——它随进程消失，不落盘到任何会被再次读到的
+        地方。若哪天有人把它写进 note 之外的持久位置，这条会变红。"""
+        self.assertEqual(self._acquire().returncode, 0)
+        (self.root / "别人的在办件.md").write_text("并发会话的改动", encoding="utf-8")
+        waiver = "登记豁免：别人的在办件.md（作者 OP-他线，到期 12-31）"
+        self.assertEqual(self._release("--waiver", waiver).returncode, 0)
+
+        # 第二把锁：同样的脏文件还在，但这次不带 --waiver ⇒ 必须被拦。
+        self.assertEqual(self._acquire().returncode, 0)
+        again = self._release()
+        self.assertEqual(again.returncode, 1)
+        self.assertIn("别人的在办件.md", again.stdout + again.stderr)
 
 
 class OpenerGuardReleaseTests(unittest.TestCase):
@@ -6251,8 +6539,15 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         self.assertEqual(self._run(waivers=waivers), [])
 
     def test_waiver_in_touched_queue_row_passes(self):
-        """逃生阀取材面＝本次 note ＋ 本次触碰过的队列行——与 `登记豁免：`
-        同一收敛方向（不含队列全文，一次一用）。"""
+        """opener 豁免的取材面 ＝ 本次 note ＋ 本次触碰过的队列行（不含队列
+        全文）。
+
+        🔴 **同时是「只收窄 ⑹ 一项」的反例锚点**（队列 #416 ⑶，2026-09-07）：
+        `登记豁免：` 的取材面已被收窄成"只有本次 note"，而**本项一个字没
+        动**。三项此前共用同一个 `waiver_sources` 列表，图省事把那个列表
+        整体收窄，就会顺手改掉这道门禁的对外语义——而它既没立项、也没取证。
+        这条用例存在的意义：那样做的人会看见它变红。
+        """
         self._write_block("派单件-w2.md", self.SETTINGS_CC, "读队列。")
         waivers = [f"| 999 | 已知漏 title，{self.m.OPENER_EXEMPT_MARK}紧急止血 | ... |"]
         self.assertEqual(self._run(waivers=waivers), [])
