@@ -24,6 +24,8 @@
 | `aggregate.py` | 跨域聚合 `aggregate()` → `Snapshot`；**只读、只在内存** | §1.4（D3） |
 | `overdue.py`   | 超期扫描 `scan_overdue()`；**只出催办草稿，不改状态** | §1.5（D5） |
 | `lint.py`      | 目录 lint `lint_ledger_dir()`；**不得有子目录** | §1.6（D8） |
+| `letters.py`   | 信 ↔ 点 的连接面 `points_for_letter()`；**只读**，回件侧与发送侧共用一份判据 | §2bis（2b.2／2b.3） |
+| `cli.py`       | 命令行入口（`transition`／`points-by-letter`）；写只经 `LedgerStore.append_many` | §2bis（2b.1） |
 
 ## 三条硬约束（各有一个断言测试盯着，不是只写在这里）
 
@@ -89,6 +91,12 @@ from .errors import (
     LedgerReadError,
     LedgerWriteRejected,
 )
+from .letters import (
+    NON_PROJECTION_REPORT_LINE,
+    normalize_letter_ref,
+    points_for_letter,
+    require_letter_ref,
+)
 from .lint import LintFinding, LintReport, assert_clean, lint_ledger_dir
 from .models import (
     EVIDENCE_REQUIRED_STATUSES,
@@ -118,6 +126,11 @@ __all__ = [
     "aggregate",
     "Snapshot",
     "Point",
+    # 信 ↔ 点（只读，回件侧与发送侧共用）
+    "points_for_letter",
+    "normalize_letter_ref",
+    "require_letter_ref",
+    "NON_PROJECTION_REPORT_LINE",
     # 超期（只出草稿）
     "scan_overdue",
     "OverdueDraft",

@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -18,6 +18,7 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 from .error_text import describe_exception
 from .constants import PAUL_USERID
 from .gates import assert_finalized, DeliveryNotFinalizedError
+from .ledger_writeback import record_letter_sent
 from .message_length import (
     CC_PREFIX,
     OversizedMessageError,
@@ -556,6 +557,54 @@ async def push_followup(
                     error=describe_exception(exc),
                 )
             )
+
+    # —— 口径点台账回写（`coverage-point-ledger` tasks §2bis 2b.3）——
+    # 位置刻意放在最后：主送、回填、两处抄送都已尘埃落定，此刻"这封信已经发出去了"
+    # 是既成事实，台账记的正是这个事实。判据与跳过规则见 `ledger_writeback.py`。
+    #
+    # 🔴 与 `cc_to_paul`／`cc_group` 完全相同的隔离模式：**失败只记审计、不抛**。
+    # 台账没写上可以事后补（`cli.py transition` 就是那条补的路）；把一次成功的发送
+    # 报成失败、让下一班当作"待发"重发，才是不可挽回的。
+    try:
+        writeback = record_letter_sent(
+            readme_path=readme_path,
+            md_path=md_path,
+            header_cells=loc.header_cells,
+            cells=loc.cells,
+            by=evaluator,
+            sent_on=datetime.now(timezone(timedelta(hours=8))).date().isoformat(),
+        )
+        audit.record(
+            AuditEvent(
+                scenario="wecom-aibot",
+                action="followup_ledger_writeback",
+                evaluator=evaluator,
+                automation_level="L1",
+                decision={
+                    "letter": writeback.letter,
+                    "matched": writeback.matched,
+                    "transitioned": writeback.transitioned,
+                    "skipped": writeback.skipped,
+                    # 🔑 "不投影任何点"也要留痕：否则它与"回写这一步压根没跑"
+                    # 在审计里长得一模一样——正是本次补的那个洞的形状。
+                    "non_projection": writeback.is_non_projection,
+                    "kind": kind,
+                },
+                data_sources={"md": str(md_path), "readme": str(readme_path)},
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 —— 台账回写失败不影响主推送已成功
+        audit.record(
+            AuditEvent(
+                scenario="wecom-aibot",
+                action="followup_ledger_writeback_failed",
+                evaluator=evaluator,
+                automation_level="L1",
+                decision={"kind": kind},
+                data_sources={"md": str(md_path), "readme": str(readme_path)},
+                error=describe_exception(exc),
+            )
+        )
 
     return DeliveryResult(
         location=loc, media_id=media_id, new_status=new_status, media_ids=media_ids,
