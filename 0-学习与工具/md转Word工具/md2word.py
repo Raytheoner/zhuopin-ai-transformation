@@ -82,20 +82,23 @@ def add_checkbox(p, checked=False, size=10.5):
     r.append(t); content.append(r); sdt.append(content)
     p._p.append(sdt)
 
-def read_checkboxes(docx_path):
-    """读取 docx 内所有 w14:checkbox 控件的勾选状态（按文档顺序），供验证/回灌解析用。
-    返回 [{"checked": bool, "context": 所在段落/单元格文字}]。"""
-    doc=Document(docx_path); out=[]
-    for sdt in doc.element.body.iter(qn('w:sdt')):
-        cb=sdt.find('.//'+qn('w14:checkbox'))
-        if cb is None: continue
-        ce=cb.find(qn('w14:checked'))
-        checked = ce is not None and ce.get(qn('w14:val'))=='1'
-        p=sdt.getparent()
-        while p is not None and p.tag!=qn('w:p'): p=p.getparent()
-        context = ''.join(tt.text or '' for tt in p.iter(qn('w:t'))) if p is not None else ''
-        out.append({"checked":checked, "context":context})
-    return out
+# 🔴 read_checkboxes() 已于 2026-09-07 删除（队列 #481，design 决策点⑤ (a)，
+# Shao Peishen 审过）。**本文件只管写、不管读。**
+#
+# 为什么删而不是留着：它只认 `doc.element.body` 里的 `w:sdt` 控件，对
+# `质量部#11` 那种"专员直接在正文敲 22 个 ☑、零控件"的真实回件返回「勾 0」
+# ——一个看起来可以直接用、实际只覆盖三分之一形态的入口。生产调用点实测为 0，
+# 留着它唯一的作用就是让下一个人再踩一次同样的坑（`#446` 已实证：仓库里有一个
+# 正确工具，不等于人会去用正确的那个）。
+#
+# 读 docx 勾选请一律用平台底座唯一入口：
+#     from zhuopin_platform.shared_tools.doc_parser import read_checkboxes
+# 它一次覆盖勾选控件／段落内勾／表格格内勾三种形态，并把「读取失败」「无载体」
+# 「有载体零勾」三态分开表示（`if not reading:` 会直接抛 TypeError）。
+#
+# ⚠️ `md2word.py` 本身**保持零平台依赖**——它是 `0-学习与工具/` 下的独立 CLI，
+# docstring 写着「依赖：pip install python-docx」，不得因此变成必须装平台包才能跑。
+# 需要 import 平台包的是**测试**（`test_md2word.py` 用统一件验收写侧输出），不是本文件。
 
 INLINE=re.compile(r'(\*\*.+?\*\*|`.+?`|\[\[.+?\]\]|\[[ xX]\]|[☐☑☒])')
 def add_runs(p, text, size=10.5, color=None, base_bold=False):

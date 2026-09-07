@@ -1,14 +1,36 @@
 # -*- coding: utf-8 -*-
 """md2word 真复选框（w14:checkbox）单测。
 覆盖：段落/列表/表格单元格三处出现位置 × ☐/[ ]/[x] 三种写法 × 勾选状态读回。
+
+🔴 **写侧验收改用平台底座统一件**（队列 `#481`，design 决策点⑤ (a)）：
+`md2word.read_checkboxes()` 已删除，`TestTableCellCheckbox` 三个用例改调
+`zhuopin_platform.shared_tools.doc_parser.read_checkboxes()` 验收 md2word
+**写出来的** docx。⚠️ 是**测试**要 import 平台包，`md2word.py` 本身仍保持
+零平台依赖（独立 CLI，只需 python-docx）。
 """
 import os, sys, tempfile
+from pathlib import Path
+
 import pytest
 from docx import Document
 from docx.oxml.ns import qn
 
-sys.path.insert(0, os.path.dirname(__file__))
-import md2word as mw
+# —— 平台底座路径引导（队列 #345 收拢；唯一被允许的样板，实现见
+# `5-平台底座/zhuopin_platform/zhuopin_platform/bootstrap.py`）。必须放在本文件任何
+# zhuopin_platform / 场景包 import 之前。下方五行只负责让 bootstrap 自身可被 import、
+# 不含任何判断分支；开发机 monorepo 与 `.51` 扁平部署两种布局的分歧由 ensure_paths 处理。——
+_HERE = Path(__file__).resolve()
+for _p in _HERE.parents:
+    if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
+        sys.path.insert(0, str(_p / "5-平台底座" / "zhuopin_platform"))
+        break
+from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
+ensure_paths(__file__, _HERE.parent, strict=True)  # noqa: E402
+
+import md2word as mw  # noqa: E402
+from zhuopin_platform.shared_tools.doc_parser import (  # noqa: E402
+    ReadingStatus, read_checkboxes,
+)
 
 
 def _build(md_text, tmp_path, name="case.md"):
@@ -95,11 +117,13 @@ class TestTableCellCheckbox:
 
     def test_cell_checkbox_count_and_context(self, tmp_path):
         out = _build(self.MD, str(tmp_path))
-        doc = Document(out)
-        results = mw.read_checkboxes(out)
+        reading = read_checkboxes(out)
         # 2 行 × 2 个判定列 = 4 个复选框
-        assert len(results) == 4
-        assert [r["checked"] for r in results] == [False, False, False, True]
+        assert reading.status is ReadingStatus.HAS_CARRIERS
+        assert reading.control_total == 4
+        assert [c.checked for c in reading.control_carriers] == [False, False, False, True]
+        # 写侧只该写出真控件，不该同时留下裸字符
+        assert reading.char_total == 0
 
     def test_cell_with_only_checkbox_has_no_leftover_text(self, tmp_path):
         out = _build(self.MD, str(tmp_path))
@@ -113,10 +137,14 @@ class TestTableCellCheckbox:
 
     def test_read_checkboxes_context_matches_row(self, tmp_path):
         out = _build(self.MD, str(tmp_path))
-        results = mw.read_checkboxes(out)
-        # 第4个复选框（行2 的 ❌错 列）context 应落在含"口径应按在途量计"同一单元格文字里
-        # （同一单元格段落，含勾选符本身与其余文字）
-        assert results[3]["checked"] is True
+        reading = read_checkboxes(out)
+        # 第4个复选框（行2 的 ❌错 列）是被勾上的那个
+        assert reading.control_carriers[3].checked is True
+        # 🔴 行上下文才是"勾的是哪一项"的答案——控件独占一格时 context 只剩一个
+        # 孤零零的 ☒，队列 #446 point ⑶「9 格实际勾了 3 个被读成全空」就出在这里
+        row = reading.control_carriers[3].row_context
+        assert "料号B提前期3天" in row
+        assert "口径应按在途量计" in row
 
 
 class TestRegressionExistingFeatures:

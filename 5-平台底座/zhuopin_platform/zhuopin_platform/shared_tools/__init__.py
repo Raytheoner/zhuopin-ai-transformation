@@ -12,8 +12,16 @@
   - crm_notifier         : CRM 延期通报草稿（D3：Protocol 解耦，不依赖 DelayCase）
   - notifiers            : 企微推送 + L2 门禁派发器（推客户须人工确认 + 审计留痕）
 
+  - doc_parser           : **docx 解析判据正本**（2026-09-07 落地，队列 #481）——勾选读取
+                           三态入口 `read_checkboxes()`（控件 ＋ 段落内勾 ＋ 表格格内勾一次
+                           覆盖，「读取失败／无载体／有 N 勾 M」不可用 falsy 混同）、四类回件
+                           形态信号 `analyze_docx()`（判据自 #446 迁入）、取文 `extract_text()`
+                           （覆盖表格与内容控件）。纯 stdlib，零新增第三方依赖。
+                           ⚠️ 尚未覆盖 SC4 合同 PDF 取文与 `ContractDocument` 装配——那是另一
+                           份工作，本件落地不等于「平台 doc_parser 全量交付」。
+
 待建（按 Phase 1 解依赖进度）：
-  - doc_parser           : 统一文档解析（SC4 合同 / Q4 PPAP / R1 需求 / R5 文档）
+  - doc_parser 的 PDF/PPT 侧（SC4 合同 / Q4 PPAP / R1 需求 / R5 文档）
   - external_apis        : 芯片 EOL/供货、物流、市场情报（待 8 月选型）
 
 注：审计统一接 zhuopin_platform.audit；OEM 隔离接口预留在 data_isolation_layer，
