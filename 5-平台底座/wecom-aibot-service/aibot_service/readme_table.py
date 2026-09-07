@@ -235,20 +235,50 @@ def split_department_and_name(recipient_cell: str) -> tuple[Optional[str], Optio
     """"质量部 · 陈忱（可分担朱映桦）" -> ("质量部", "陈忱")。取不到则返回
     (None, None)，调用方据此判失败，不臆造。原属 dispatch.py，队列 #245
     需要同一套解析（README 已起草行 vs 发布收口场景按收信人交叉比对），
-    迁到本共享模块，dispatch.py 改为调用本函数。"""
-    if "·" not in recipient_cell:
+    迁到本共享模块，dispatch.py 改为调用本函数。
+
+    🔴 **变更包 `followup-serial-gate-hardening`（`#482` ⑴）起，本函数改为
+    `followup_gate.recipient_identity` 的薄封装**——它此前是同一条判据的
+    第三份独立实现（部门段不归一化，`IT部` 原样），与闸侧的
+    `recipient_department`（只有部门、剥尾字「部」）互不一致。判据只此一份。
+
+    🔴 **部门段仍返回原文（`质量部`），不返回归一化值**——归一化只为比对
+    服务。`dispatch.py` 拿它按 `<部门>-<姓名>-跟进-<日期>` 定位待发 `.md`，
+    喂归一化后的 `采购` 会一份都找不到**且不报错**。判据统一 ≠ 取值统一。
+
+    符号名与返回语义均保留不动（`dispatch.py`／`draft_gap_detection.py`／
+    `工具-跟进信README查询.py` 三个现役消费方按名取值）。
+    """
+    gate = _followup_gate()
+    identity = gate.recipient_identity(recipient_cell)
+    if identity is None:
         return None, None
-    department, _, rest = recipient_cell.partition("·")
-    department = department.strip()
-    name = rest.strip()
-    for cut in ("（", "("):
-        idx = name.find(cut)
-        if idx != -1:
-            name = name[:idx]
-    name = name.strip()
-    if not department or not name:
-        return None, None
-    return department, name
+    return gate.recipient_department_raw(recipient_cell), identity[1]
+
+
+def _followup_gate():
+    """取权威判据模块。#300 式 `sys.path` 引导（本包与平台底座同仓、无第三方
+    依赖），失败即抛——**不静默回落到本地复刻**，那正是 `#482` 在修的毛病。"""
+    global _FOLLOWUP_GATE
+    if _FOLLOWUP_GATE is None:
+        try:
+            from zhuopin_platform.shared_tools import followup_gate
+        except ImportError:  # pragma: no cover - 引导路径
+            import sys as _sys
+            from pathlib import Path as _Path
+            _here = _Path(__file__).resolve()
+            for _p in _here.parents:
+                _candidate = _p / "5-平台底座" / "zhuopin_platform"
+                if _candidate.is_dir():
+                    if str(_candidate) not in _sys.path:
+                        _sys.path.insert(0, str(_candidate))
+                    break
+            from zhuopin_platform.shared_tools import followup_gate
+        _FOLLOWUP_GATE = followup_gate
+    return _FOLLOWUP_GATE
+
+
+_FOLLOWUP_GATE = None
 
 
 # 队列 #241 修法⑴：README 行携带目标文件名，dispatch 直接读、不再仅凭

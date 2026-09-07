@@ -279,100 +279,51 @@ def _format_plan_line(action: ExternalizeAction) -> str:
     return f"  {action.row_number}｜{action.column}列 {action.size} B → {_log_path(action.row_number).relative_to(REPO_ROOT)}"
 
 
-SERIAL_WAIVER_REASON = "D3 行长外置压缩摘要，非新起草跟进信"
+# ============================================================
+# D5（变更包 `followup-serial-gate-hardening`，队列 §一 `#482` ④）：
+# **本工具不再自动写串行豁免**——那一段已连同它复刻的判据一起退休。
+# ============================================================
+#
+# ## 它曾经是什么
+#
+# 本工具压缩「主要事项」列会改变行身份（旧判据 ＝「除状态列外全部单元格」）
+# ⇒ 串行闸把这类**纯历史内容压缩**误判成「新起草的跟进信」⇒ 拒绝 release
+# ⇒ 于是本工具自动往「交期要点」列写一条
+# `串行豁免：D3 行长外置压缩摘要，非新起草跟进信` 绕过去。
+#
+# ## 为什么必须退休而不是改文案
+#
+# 🔴 **它是一条被机器踩出来的路，不是一次人的疏忽**：现网已 5 行，且随每次
+# 外置**单调增长**。文案再怎么写，它在机器眼里仍是一个**无条件开闸口令**。
+# 「改文案 ＝ 把一个机器问题伪装成一个可读性问题」（design D6(c) 明确否掉）。
+#
+# ## 根治在别处，本工具只是不再制造
+#
+# 行身份自 design D5 拍板 (a) 起改用**编号列主键**
+# （`followup_gate.letter_row_identity` ／
+# `工具-共享文档编辑锁.py::_followup_row_identity`）——压缩「主要事项」列
+# 不再改变行身份，本工具**根本不会再撞上串行闸**，也就不需要任何豁免。
+# 一并退休的还有 `_find_serial_gate_conflicts`：它是那份有缺陷判据的第 4 处
+# 复刻（`#482` 实测四处分叉之一），复刻本身就是本包要消灭的形态。
+#
+# 🔴 **兜底不退**：写入后仍跑一次**官方**校验函数
+# `_validate_followup_readme_release`。它若报违规，一律**原样上抛**——
+# 不再「自动消解」。本工具从不写终态状态值，理论上不会命中；真命中了说明
+# 编号主键这条前提在某处不成立（如无编号行），那正是要让人看见的东西。
 
 
-def _find_serial_gate_conflicts(snapshot_text: str, current_text: str) -> list[str]:
-    """复刻跟进信串行原则闸（队列 #308 子项 G，
-    `_validate_followup_readme_release`）的检测逻辑本身、直接返回需要
-    豁免的行编号列表——**不解析它产出的违规文案**：文案是给人读的自由
-    文本，可能内嵌全角冒号等标点（真实撞见：`长事项："` 这类前缀会让朴素
-    的按冒号切分取错子串），从文案反解行编号是脆弱的。判据源必须与
-    `_validate_followup_readme_release` 逐字一致（直接调用其内部同一批
-    私有函数，不重新誊写一份逻辑），否则本工具"以为已解决"而 release 时
-    判据不认，或反过来。"""
-    old_rows = editlock._followup_readme_rows(snapshot_text)
-    old_identities = {
-        editlock._followup_row_identity(cells, idx) for _, cells, idx in old_rows
-    }
-    recipient_col_index = editlock._followup_header_col_index(current_text, "收信人")
-    if recipient_col_index < 0:
-        return []
-    current_rows = editlock._followup_readme_rows(current_text)
-    conflicts: list[str] = []
-    for idx, (_line, cells, status_col_index) in enumerate(current_rows):
-        identity = editlock._followup_row_identity(cells, status_col_index)
-        if identity in old_identities:
-            continue  # 既有行的状态转换不受本项约束
-        if len(cells) <= recipient_col_index:
-            continue
-        recipient = cells[recipient_col_index]
-        prior_status = None
-        for j in range(idx - 1, -1, -1):
-            prior_cells = current_rows[j][1]
-            if len(prior_cells) <= recipient_col_index:
-                continue
-            if prior_cells[recipient_col_index] == recipient:
-                prior_status = prior_cells[current_rows[j][2]]
-                break
-        if prior_status is None:
-            continue  # 该收信人历史上首次出现，不受串行原则约束
-        if editlock._followup_status_is_closed(prior_status):
-            continue  # 前一封已闭环
-        if any(editlock.FOLLOWUP_SERIAL_WAIVER_MARKER in c for c in cells):
-            continue  # 已带真实豁免（如既有豁免或本函数上一轮已写入）
-        conflicts.append(cells[0] if cells else "?")
-    return conflicts
+def _assert_no_serial_gate_violation(snapshot_text: str, current_text: str) -> None:
+    """外置写入后跑一次官方校验，有违规即原样上抛。
 
-
-def _resolve_serial_gate_conflicts(snapshot_text: str, current_text: str) -> tuple[str, list[str]]:
-    """本工具压缩「主要事项」列会改变 `_followup_row_identity`（该函数取
-    「除状态列外全部单元格」为行身份）——跟进信串行原则闸因此可能把这类
-    **纯历史内容压缩**误判成"新起草的跟进信"：只要该行不是其收信人当前
-    最新一封、且该收信人真正最新一封仍未闭环，闸就会拒绝 release。
-
-    这是 D3 外置动作与既有串行闸机制的一处真实交互缺口（design.md 撰写
-    时未预见）——2026-09-06 对生产 README 真实执行时实测撞见（`采购部#12`／
-    `IT部#8`／`质量部#10`／`质量部#12` 四行）。修法：复用串行闸自身已有的
-    逃生阀 `串行豁免：`（不新造第二套判据），写在「交期要点」列（不动
-    「主要事项」摘要本身的格式，D3-2 的摘要契约不受影响）。收尾再跑一次
-    **官方**校验函数兜底——若本函数的复刻逻辑与官方判据出现漂移，或写入
-    触发了其它类别的违规（理论上不会发生，本工具从不写终态状态值），一律
-    原样上抛，不静默吞掉。"""
-    waived_rows: list[str] = []
-    text = current_text
-    for _ in range(50):  # 防御性上限，真实候选行数远小于此
-        conflicts = _find_serial_gate_conflicts(snapshot_text, text)
-        if not conflicts:
-            break
-        rows = iter_rows(text)
-        header = rows[0].header_cells if rows else []
-        delivery_idx = column_index(header, "交期要点")
-        if delivery_idx is None:
-            raise ExternalizeError('README 表头缺「交期要点」列，无法写入串行豁免标注')
-        for row in rows:
-            if row.cells[0] not in conflicts or row.cells[0] in waived_rows:
-                continue
-            if len(row.cells) <= delivery_idx:
-                continue
-            new_delivery = (
-                row.cells[delivery_idx].rstrip()
-                + f"｜{editlock.FOLLOWUP_SERIAL_WAIVER_MARKER}{SERIAL_WAIVER_REASON}"
-            )
-            text = write_cells(text, row, {delivery_idx: new_delivery})
-            waived_rows.append(row.cells[0])
-            rows = iter_rows(text)  # 写入后位置已变，下一行前重新定位
-    else:
-        raise ExternalizeError("串行原则违规处理超过防御性上限，判据可能有误，请人工排查。")
-
-    violations = editlock._validate_followup_readme_release(text, snapshot_text)
+    与退休前的差别只有一条、但那是全部：**不再自动写豁免把违规消掉**。
+    """
+    violations = editlock._validate_followup_readme_release(current_text, snapshot_text)
     if violations:
         raise ExternalizeError(
-            "串行原则误判已尝试消解，但官方校验函数复核仍有违规残留——"
-            "可能是本函数的复刻逻辑与官方判据出现漂移，或外置写入引入了"
-            "其它类别的问题，已停止自动处理，请人工排查：\n" + "\n".join(violations)
+            "行长外置后官方 release 校验报出违规，已停止自动处理，请人工排查——"
+            "🔴 本工具自 design D5 起**不再自动写 `串行豁免：`**（那条路是机器"
+            "踩出来的、且单调增长，见本文件上方注释）：\n" + "\n".join(violations)
         )
-    return text, waived_rows
 
 
 def run(args: argparse.Namespace, today: datetime.date | None = None) -> int:
@@ -434,18 +385,11 @@ def run(args: argparse.Namespace, today: datetime.date | None = None) -> int:
         row_by_number = {r.cells[0]: r for r in rows if r.cells}
 
     try:
-        new_text, waived_rows = _resolve_serial_gate_conflicts(fresh_text, new_text)
+        _assert_no_serial_gate_violation(fresh_text, new_text)
     except ExternalizeError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         _run_lock(target_rel, "release", args.who)
         return 1
-    if waived_rows:
-        print(
-            f"⚠ 外置压缩改变了 {len(waived_rows)} 行的身份，触发跟进信串行原则闸"
-            f"误判（历史内容压缩≠新起草）——已在「交期要点」列追加"
-            f"「{editlock.FOLLOWUP_SERIAL_WAIVER_MARKER}{SERIAL_WAIVER_REASON}」："
-            f"{'、'.join(waived_rows)}"
-        )
 
     target_path.write_text(new_text, encoding="utf-8")
     _write_log_sections(fresh_candidates, today_str)

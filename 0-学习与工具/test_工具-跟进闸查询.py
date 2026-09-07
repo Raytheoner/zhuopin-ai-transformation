@@ -100,13 +100,44 @@ class GateQueryTests(unittest.TestCase):
         self.assertFalse(report.gate_open)
         self.assertEqual(report.letter_number, "采购部#17")
 
-    def test_最近一封按表格顺序取而不是按日期(self):
-        # README 串行原则段的既定口径：日期列存在补记情形，顺序才是权威。
+    def test_最近一封按日期排序键取而不是按表格顺序(self):
+        """🔴 **本用例自变更包 `followup-serial-gate-hardening` D3 拍板 (a)
+        起改判**（Shao Peishen 2026-09-07 合审 §5）。
+
+        改判前它断言的是「表格顺序才是权威」——而
+        `followup_gate._letter_sort_key` 的 docstring 里早就写着
+        「⚠️ 不能只按表内行序」并给了实测反例（`采购部#4` 07-21 排在
+        `采购部#17` 08-20 之后）。**闸侧用的正是那个 docstring 说了不该用的
+        东西**，且 2026-09-07 实测两把尺子正对陈忱给出相反答案。
+
+        现口径 ＝ 日期 → 编号序号 → 表内行序，与回件配对侧
+        （`latest_dispatched_letter`）**同一把尺子**。"""
         self._write_readme(
             _readme_row("采购部#17", "采购部 · 姚祖怡", "新信", "✅ 已推送")
             + "| 采购部#18 | 2026-07-01 | 采购部 · 姚祖怡 | 补记的旧信 | 尽快 | 📥 已回件并回灌 |\n"
         )
-        self.assertEqual(self._report("姚祖怡").letter_number, "采购部#18")
+        # `_readme_row` 给 #17 的日期晚于 #18 手写的 2026-07-01 ⇒ 最近一封是 #17。
+        self.assertEqual(self._report("姚祖怡").letter_number, "采购部#17")
+
+    def test_同日多封按编号序号决胜(self):
+        """排序键第二段的实测支撑（`采购部#15`／`#16` 同为 2026-08-18）。"""
+        same_day = "2026-08-18"
+        self._write_readme(
+            f"| 采购部#16 | {same_day} | 采购部 · 姚祖怡 | 后编号 | 尽快 | ✅ 已推送 |\n"
+            f"| 采购部#15 | {same_day} | 采购部 · 姚祖怡 | 先编号 | 尽快 | 📥 已回件并回灌 |\n"
+        )
+        self.assertEqual(self._report("姚祖怡").letter_number, "采购部#16")
+
+    def test_收信人后括号注记不参与匹配(self):
+        """`#482` ⑵：同一收信人写法差异（多写／少写后括号注记）不得改变闸判定。"""
+        self._write_readme(
+            _readme_row("质量部#9", "质量部 · 陈忱（可请朱映桦先初标）", "旧信",
+                        "📥 已回件并回灌 2026-08-25")
+            + "| 质量部#10 | 2026-08-26 | 质量部 · 陈忱 | 新信 | 尽快 | ✅ 已推送 2026-08-26 |\n"
+        )
+        report = self._report("陈忱")
+        self.assertEqual(report.letter_number, "质量部#10")
+        self.assertFalse(report.gate_open)
 
     def test_闸锁不是错误退出码仍为0(self):
         self._write_readme(

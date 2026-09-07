@@ -716,6 +716,208 @@ def _followup_status_is_closed(status_value: str) -> bool:
         return followup_gate.is_closed_status(status_value)
     normalized = status_value.replace("*", "").strip("*　 \t")
     return any(normalized.startswith(p) for p in FOLLOWUP_SERIAL_CLOSED_PREFIXES)
+
+
+# ============================================================
+# 串行闸判据的**取用口**（变更包 followup-serial-gate-hardening，`#482`）
+# ============================================================
+# 🔴 **判据只此一份**：权威实现在
+# `zhuopin_platform.shared_tools.followup_gate` 第六／七节。本文件既不重写、
+# 也不复刻——`#482` 实测过的四处分叉（本文件整格逐字比对／行长外置工具复刻
+# 本文件／闸查询与登记器各自只取姓名）正是这么来的。
+#
+# 隔离环境（测试把本脚本复制到无平台包的临时目录）用下面的 `_FollowupGateFallback`
+# 兜底。🔴 **回落实现与权威实现由同一份单测双跑**（`test_工具-共享文档编辑锁.py::
+# FollowupSerialGateIdentityTests` 把 `module.followup_gate` 置 None 再跑一遍全部
+# 用例），否则回落分支会静默漂移——那正是本包在修的那一族毛病。
+
+
+class _FollowupGateFallback:
+    """无平台包时的兜底判据。**逐条对应权威实现，不得各写各的。**"""
+
+    CLOSED_STATUS_PREFIXES = ("📥 已回件并回灌", "✅ 无需回复", "📨 已确认闭环", "❌ 已作废")
+    NOT_YET_SENT_STATUS_PREFIXES = ("⏳ 待你审", "🆕 待发", "⏸ 暂缓")
+    SERIAL_WAIVER_MARKER = "串行豁免："
+    VOID_STATUS_PREFIX = "❌ 已作废"
+    VOID_WAIVER_MARKER = "作废豁免："
+    VOID_RISK_LOW = "low"
+    VOID_RISK_HIGH = "high"
+    VOID_REASON_MIN_CHARS = 8
+    VOID_REASON_BLACKLIST = (
+        "为了开闸", "为开闸", "开闸", "解闸", "打开串行闸",
+        "绕过串行", "不想等回件", "不等回件", "腾闸", "让闸开",
+    )
+    _DECORATION_CHARS = "*　 \t"
+    _ANNOTATION_OPENERS = ("（", "(")
+    _NUMBER_RE = re.compile(r"(?P<dept>[一-鿿A-Za-z]+部)#(?P<n>\d+)")
+    _EVIDENCE_QUEUE_RE = re.compile(r"(?:§\s*[一四]\s*)?#\s*\d+")
+    _EVIDENCE_DECISION_RE = re.compile(r"Shao\s+Peishen.{0,40}?\d{4}-\d{2}-\d{2}")
+    _EVIDENCE_DECISION_RE_REV = re.compile(r"\d{4}-\d{2}-\d{2}.{0,40}?Shao\s+Peishen")
+    _REASON_TRIM_CHARS = frozenset(
+        "（）()【】[]「」『』《》〈〉·—–-━、，,。.：:；;！!？?　 \t\r\n"
+        "*`\"'“”‘’|｜/\\~…"
+    )
+
+    def normalize_status(self, cell):
+        return cell.replace("*", "").strip(self._DECORATION_CHARS)
+
+    def is_closed_status(self, cell):
+        n = self.normalize_status(cell)
+        return any(n.startswith(p) for p in self.CLOSED_STATUS_PREFIXES)
+
+    def is_not_yet_sent(self, cell):
+        n = self.normalize_status(cell)
+        return any(n.startswith(p) for p in self.NOT_YET_SENT_STATUS_PREFIXES)
+
+    def normalize_department(self, department):
+        v = (department or "").strip()
+        return v[:-1] if v.endswith("部") and len(v) > 1 else v
+
+    def recipient_identity(self, cell):
+        cell = cell or ""
+        if "·" not in cell:
+            return None
+        dept_raw, _, name_raw = cell.partition("·")
+        dept = self.normalize_department(
+            dept_raw.replace("*", "").strip(self._DECORATION_CHARS))
+        name = name_raw.replace("*", "").strip(self._DECORATION_CHARS)
+        cuts = [i for i in (name.find(o) for o in self._ANNOTATION_OPENERS) if i != -1]
+        if cuts:
+            name = name[: min(cuts)]
+        name = name.strip(self._DECORATION_CHARS)
+        if not dept or not name:
+            return None
+        return (dept, name)
+
+    def same_recipient(self, a, b):
+        ia = self.recipient_identity(a)
+        return ia is not None and ia == self.recipient_identity(b)
+
+    def format_recipient_identity(self, identity):
+        return "（解析不出）" if identity is None else f"{identity[0]} · {identity[1]}"
+
+    def parse_letter_number(self, cell):
+        m = self._NUMBER_RE.search(cell or "")
+        return (m.group("dept"), int(m.group("n"))) if m else None
+
+    def letter_row_identity(self, cell):
+        parsed = self.parse_letter_number(cell)
+        return None if parsed is None else f"{parsed[0]}#{parsed[1]}"
+
+    def classify_void_risk(self, prior_status, is_new_row):
+        if is_new_row:
+            return self.VOID_RISK_HIGH
+        if prior_status is not None and self.is_not_yet_sent(prior_status):
+            return self.VOID_RISK_LOW
+        return self.VOID_RISK_HIGH
+
+    def void_reason_text(self, cell):
+        n = self.normalize_status(cell)
+        if not n.startswith(self.VOID_STATUS_PREFIX):
+            return ""
+        return n[len(self.VOID_STATUS_PREFIX):]
+
+    def void_reason_has_evidence(self, reason):
+        if self._EVIDENCE_QUEUE_RE.search(reason):
+            return True
+        return bool(self._EVIDENCE_DECISION_RE.search(reason)
+                    or self._EVIDENCE_DECISION_RE_REV.search(reason))
+
+    def validate_void_reason(self, cell, risk):
+        reason = self.void_reason_text(cell)
+        problems = []
+        length = sum(1 for ch in reason if ch not in self._REASON_TRIM_CHARS)
+        if length < self.VOID_REASON_MIN_CHARS:
+            problems.append(
+                f"R1 未写明理由：「{self.VOID_STATUS_PREFIX}」之后剥净标点后只剩 "
+                f"{length} 个实义字符（门槛 {self.VOID_REASON_MIN_CHARS}）。"
+            )
+        if risk != self.VOID_RISK_HIGH:
+            return problems
+        hit = next((w for w in self.VOID_REASON_BLACKLIST if w in reason), None)
+        if hit is not None:
+            problems.append(f"R2 命中开闸措辞黑名单：理由里出现「{hit}」。")
+        if not self.void_reason_has_evidence(reason):
+            problems.append(
+                "R3 缺可核凭据：理由里须至少含一处仓库内查得到的引用"
+                "（队列行引用，或 `Shao Peishen <YYYY-MM-DD>` 同现）。")
+        return problems
+
+    def _marker_reason(self, cells, marker):
+        for cell in cells:
+            idx = cell.find(marker)
+            if idx != -1:
+                return cell[idx + len(marker):].strip(self._DECORATION_CHARS)
+        return None
+
+    def void_waiver_reason(self, cells):
+        return self._marker_reason(cells, self.VOID_WAIVER_MARKER)
+
+    def serial_waiver_reason(self, cells):
+        return self._marker_reason(cells, self.SERIAL_WAIVER_MARKER)
+
+
+_FOLLOWUP_GATE_FALLBACK = _FollowupGateFallback()
+
+
+def _gate():
+    """串行闸判据的取用口——有平台包用权威实现，没有用兜底。
+
+    🔴 写成函数而不是模块级常量，是为了让单测能把 `followup_gate` 置 None
+    后**用同一批用例把回落分支再跑一遍**（design 1.5）。
+    """
+    return followup_gate if followup_gate is not None else _FOLLOWUP_GATE_FALLBACK
+
+
+class _FollowupRowMeta:
+    """给「最近一封」排序用的一行元数据（编号／日期／收信人／状态／表内行序）。
+
+    字段名与 `followup_gate.LetterRow` 对齐，故可直接喂给权威排序实现。
+
+    🔴 **刻意不用 `@dataclasses.dataclass`**：本脚本被单测按文件路径
+    `importlib` 加载且**不注册进 `sys.modules`**，而 dataclass 装饰器要回查
+    `sys.modules[cls.__module__].__dict__` 解注解，于是在被测环境里当场
+    `AttributeError`——实测撞过一次。普通类零依赖，不会有这个问题。
+    """
+
+    __slots__ = ("number", "date", "recipient", "status", "order")
+
+    def __init__(self, number, date, recipient, status, order):
+        self.number = number
+        self.date = date
+        self.recipient = recipient
+        self.status = status
+        self.order = order
+
+
+def _followup_letter_sort_key(row: "_FollowupRowMeta"):
+    """「最近一封」的排序键 ＝（日期, 编号序号, 表内行序），与
+    `followup_gate._letter_sort_key` 同一把尺子（design D3 拍板 (a)）。
+
+    ⚠️ **不能只按表内行序**：2026-09-07 实测两把尺子正对陈忱给出相反答案
+    （物理行序取到已闭环的 `质量部#12` ⇒ 闸开；日期排序键取到 `✅ 已推送` 的
+    `质量部#13` ⇒ 闸锁）。README 的物理行序不是时间序。
+    """
+    parsed = _gate().parse_letter_number(row.number) if followup_gate is None \
+        else followup_gate.parse_letter_number(row.number)
+    return ((row.date or "").strip(), parsed[1] if parsed else -1, row.order)
+
+
+def _followup_latest_row_for_recipient(rows, identity, exclude_order=None):
+    """该收信人「最近一封」——共用 `_followup_letter_sort_key`。
+
+    `exclude_order` 用来把「正在被校验的这一行」自己排除在外。草稿／待发／
+    暂缓的前一封**同样挡闸**（既有行为，三条单测在守），故不做 dispatched 过滤。
+    """
+    gate = _gate()
+    candidates = [
+        r for r in rows
+        if r.order != exclude_order and gate.recipient_identity(r.recipient) == identity
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=_followup_letter_sort_key)
+
 # 队列 §四 #58 ⑶（2026-08-17，openspec 变更包 editlock-hold-scope-and-wip-
 # block，design.md 决策点 5，Shao Peishen 当日选默认 (c)）：⑨ 由非阻断提示
 # 改为阻断后配套的逃生阀标记——完全复用 `串行豁免：` 既有范式（标记写在行
@@ -3002,10 +3204,35 @@ def _followup_readme_rows_advisory(
         return []
 
 
-def _followup_row_identity(cells: list[str], status_col_index: int) -> tuple[str, ...]:
-    """行身份＝除状态列外全部单元格——只要其余内容不变，状态列如何转换
-    都指向同一行（与 `approval.py._row_identity` 同一判据，两处独立实现
-    但语义必须一致，否则"既有行合法转终态"会被这里误判为"新增行"）。"""
+def _followup_row_identity(
+    cells: list[str],
+    status_col_index: int,
+    number_col_index: int | None = None,
+    fallback_notes: list[str] | None = None,
+) -> tuple[str, ...]:
+    """行身份 ＝ **编号列主键**（design D5 拍板 (a)，`#482` ④）。
+
+    🔴 **换主键修的是什么**：原身份 ＝「除状态列外全部单元格」，于是**改了任一
+    非状态列 ⇒ 被判成新增行 ⇒ 撞串行闸**。`工具-跟进信README行长外置.py` 压缩
+    「主要事项」列时首个撞上，并因此**自动写豁免绕过**（现网 5 行、随每次外置
+    单调增长）；手工改日期／改交期要点／修错别字全都会撞同一条。编号是 README
+    的天然主键（占号推算、归档「编号不复用」都已按它）。
+
+    🔴 **代价与缓解**：改动**已有编号**行的状态不再被「身份不在快照里」拦住，
+    故 `_validate_followup_readme_release` 的两态语义检查改为**同时**看身份与
+    状态迁移（快照中该编号的状态既不是 `⏳ 待你审`、也不是 `🆕 待发` 本身 ⇒ 拒）。
+
+    `number_col_index` 未传、或该行无 `<部门>#<数字>`（实测：归档件
+    `销售部（未发，不编号）`）时**回落到既有的「全单元格」身份**，并把该行
+    的编号列原文追进 `fallback_notes` 供调用方**出声**——回落本身不是错误，
+    但它静默发生就是（同本文件「工具静默回退」一族）。
+    """
+    if number_col_index is not None and 0 <= number_col_index < len(cells):
+        row_id = _gate().letter_row_identity(cells[number_col_index])
+        if row_id is not None:
+            return ("#", row_id)
+        if fallback_notes is not None:
+            fallback_notes.append(cells[number_col_index])
     return tuple(c for i, c in enumerate(cells) if i != status_col_index)
 
 
@@ -3093,67 +3320,164 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
             "⇒ 本次持锁窗口内章节结构被改动，两态语义与串行闸校验的比对基准已失效。"
             "请先把章节标题恢复到 acquire 时的形态再 release。"
         ]
-    old_identities = {
-        _followup_row_identity(cells, idx) for _, cells, idx in old_rows
-    }
+    gate = _gate()
+    number_col_index = _followup_header_col_index(current_text, "编号")
+    recipient_col_index = _followup_header_col_index(current_text, "收信人")
+    number_col = number_col_index if number_col_index >= 0 else None
+    identity_fallbacks: list[str] = []
 
-    for line, cells, status_col_index in _followup_readme_rows(current_text):
+    def _identity(cells: list[str], status_col_index: int) -> tuple[str, ...]:
+        return _followup_row_identity(
+            cells, status_col_index, number_col, identity_fallbacks
+        )
+
+    # 快照身份 → 快照状态（两态语义与作废判据都要用「转态前是什么」）。
+    old_status_by_identity: dict[tuple[str, ...], str] = {}
+    for _, cells, idx in old_rows:
+        old_status_by_identity[_identity(cells, idx)] = cells[idx]
+
+    current_rows = _followup_readme_rows(current_text)
+
+    def _preview(text_value: str, width: int = 80) -> str:
+        s = text_value.strip()
+        return s[:width] + "…" if len(s) > width else s
+
+    # ---- 两态语义：新建即终态 ＋（D5(a) 配套）既有编号行被直接改写成终态 ----
+    for line, cells, status_col_index in current_rows:
         status_value = cells[status_col_index]
         if status_value != FOLLOWUP_FINALIZED_STATUS:
             continue
-        identity = _followup_row_identity(cells, status_col_index)
-        if identity not in old_identities:
-            preview = line.strip()
-            if len(preview) > 80:
-                preview = preview[:80] + "…"
+        identity = _identity(cells, status_col_index)
+        if identity not in old_status_by_identity:
             violations.append(
                 f"新增行状态列直接写终态「{FOLLOWUP_FINALIZED_STATUS}」，违反两态语义"
                 f"（起草只能写「{FOLLOWUP_DRAFT_STATUS}」，转终态须经独立的 "
-                f"approve_followup_letter.py）：{preview}"
+                f"approve_followup_letter.py）：{_preview(line)}"
             )
+            continue
+        prior = gate.normalize_status(old_status_by_identity[identity])
+        if prior.startswith(FOLLOWUP_DRAFT_STATUS) or prior.startswith(FOLLOWUP_FINALIZED_STATUS):
+            continue  # ⏳ 待你审 → 🆕 待发 是批准脚本的合法产物；未变更同样放行
+        violations.append(
+            f"既有行状态被直接改写成终态「{FOLLOWUP_FINALIZED_STATUS}」，而它转态前是"
+            f"「{_preview(prior, 40)}」——两态语义只允许从「{FOLLOWUP_DRAFT_STATUS}」"
+            f"经 approve_followup_letter.py 转终态。（行身份自 design D5(a) 起改用"
+            f"编号列主键，这条检查即该改动的配套缓解，缺了它这一面会静默失守）："
+            f"{_preview(line)}"
+        )
 
-    recipient_col_index = _followup_header_col_index(current_text, "收信人")
+    # ---- `❌ 已作废` 防滥用判据（`#482` ⑶ ／ design D4）----------------------
+    for line, cells, status_col_index in current_rows:
+        status_value = cells[status_col_index]
+        if not gate.normalize_status(status_value).startswith(gate.VOID_STATUS_PREFIX):
+            continue
+        identity = _identity(cells, status_col_index)
+        prior_status = old_status_by_identity.get(identity)
+        is_new_row = prior_status is None
+        if prior_status is not None and gate.normalize_status(
+            prior_status
+        ).startswith(gate.VOID_STATUS_PREFIX):
+            continue  # 快照里本来就是作废 ＝ 未变更，不回溯既有行
+        waiver = gate.void_waiver_reason(cells)
+        if waiver is not None:
+            if waiver:
+                print(
+                    f"✓ 检测到作废豁免声明，已放行：{_preview(waiver, 80)}"
+                    f"（{gate.VOID_WAIVER_MARKER}本判据不为它设自动到期——"
+                    "本包没有为它建承接方，这一点如实登记在 design D4）"
+                )
+                continue
+            violations.append(
+                f"「{gate.VOID_WAIVER_MARKER}」写了标记却没跟理由——一个只有标记没有"
+                f"理由的豁免，读者无从判断它是不是真豁免：{_preview(line)}"
+            )
+            continue
+        risk = gate.classify_void_risk(prior_status, is_new_row)
+        problems = gate.validate_void_reason(status_value, risk)
+        if not problems:
+            continue
+        head = (
+            f"跟进信「{gate.VOID_STATUS_PREFIX}」防滥用判据"
+            f"（{'新增行' if is_new_row else '转态前＝' + _preview(gate.normalize_status(prior_status), 24)}"
+            f"，风险档 {risk}）："
+        )
+        for problem in problems:
+            violations.append(f"{head}{problem} 该行：{_preview(line)}")
+
+    # ---- 串行原则闸（`#482` ⑴⑵ ／ design D1/D2/D3）------------------------
     if recipient_col_index >= 0:
-        current_rows = _followup_readme_rows(current_text)
+        date_col_index = _followup_header_col_index(current_text, "日期")
+        metas = [
+            _FollowupRowMeta(
+                number=(cells[number_col] if number_col is not None
+                        and number_col < len(cells) else ""),
+                date=(cells[date_col_index] if 0 <= date_col_index < len(cells) else ""),
+                recipient=(cells[recipient_col_index]
+                           if recipient_col_index < len(cells) else ""),
+                status=cells[status_col_index],
+                order=idx,
+            )
+            for idx, (_l, cells, status_col_index) in enumerate(current_rows)
+        ]
+        by_order = {m.order: m for m in metas}
+
         for idx, (line, cells, status_col_index) in enumerate(current_rows):
-            identity = _followup_row_identity(cells, status_col_index)
-            if identity in old_identities:
+            identity = _identity(cells, status_col_index)
+            if identity in old_status_by_identity:
                 continue  # 既有行的状态转换不受本项约束
             if len(cells) <= recipient_col_index:
                 continue
             recipient = cells[recipient_col_index]
-            prior_status = None
-            prior_preview = None
-            for j in range(idx - 1, -1, -1):
-                prior_cells = current_rows[j][1]
-                if len(prior_cells) <= recipient_col_index:
-                    continue
-                if prior_cells[recipient_col_index] == recipient:
-                    prior_status = prior_cells[current_rows[j][2]]
-                    prior_preview = current_rows[j][0].strip()
-                    if len(prior_preview) > 80:
-                        prior_preview = prior_preview[:80] + "…"
-                    break
-            if prior_status is None:
-                continue  # 该收信人历史上首次出现，不受串行原则约束
-            if _followup_status_is_closed(prior_status):
-                continue  # 前一封已闭环（闭环四态，队列 #366 / S4）
-            waiver_cell = next((c for c in cells if FOLLOWUP_SERIAL_WAIVER_MARKER in c), None)
-            if waiver_cell is not None:
-                waiver_text = waiver_cell.strip()
-                if len(waiver_text) > 80:
-                    waiver_text = waiver_text[:80] + "…"
-                print(f"✓ 检测到串行豁免声明，已放行：{waiver_text}")
+            recipient_identity = gate.recipient_identity(recipient)
+            if recipient_identity is None:
+                # 🔴 出声侧：解析失败 MUST 记一条 violation 并指名该行。
+                # 「两个解析不出来的收信人不是同一个人」——若让 None==None 成立，
+                # 一次表格损坏会把整张表压成同一个人，闸会对全表逐行乱锁，
+                # **且看起来像是在正常工作**。
+                violations.append(
+                    f"跟进信串行原则：新增行的收信人「{recipient}」解析不出身份"
+                    f"（形态须为「<部门> · <姓名>」，后括号注记会被剥除、不参与匹配）"
+                    f"——本次不据此放行也不据此配对，请先把该格写成合规形态："
+                    f"{_preview(line)}"
+                )
                 continue
-            preview = line.strip()
-            if len(preview) > 80:
-                preview = preview[:80] + "…"
-            violations.append(
-                f"跟进信串行原则：新增行收信人「{recipient}」前一封（{prior_preview}）"
-                f"发送状态为「{prior_status}」尚未闭环，请先据实把它改为闭环四态"
-                f"之一（{'／'.join(FOLLOWUP_SERIAL_CLOSED_PREFIXES)}），或在本行内写明"
-                f"「{FOLLOWUP_SERIAL_WAIVER_MARKER}〈理由〉」：{preview}"
+            prior_meta = _followup_latest_row_for_recipient(
+                metas, recipient_identity, exclude_order=idx
             )
+            if prior_meta is None:
+                continue  # 该收信人历史上首次出现，不受串行原则约束
+            if _followup_status_is_closed(prior_meta.status):
+                continue  # 前一封已闭环（闭环四态，队列 #366 / S4）
+            serial_waiver = gate.serial_waiver_reason(cells)
+            if serial_waiver is not None:
+                if serial_waiver:
+                    print(f"✓ 检测到串行豁免声明，已放行：{_preview(serial_waiver)}")
+                    continue
+                violations.append(
+                    f"「{FOLLOWUP_SERIAL_WAIVER_MARKER}」写了标记却没跟理由——判据自"
+                    "design D5 起收窄为「标记后 MUST 跟非空理由」（不做语义判断，"
+                    f"只拦这一种）：{_preview(line)}"
+                )
+                continue
+            prior_line = by_order[prior_meta.order]
+            violations.append(
+                f"跟进信串行原则：新增行收信人「{gate.format_recipient_identity(recipient_identity)}」"
+                f"的最近一封「{prior_meta.number or '（无编号）'}」"
+                f"（{prior_meta.date}，{_preview(gate.normalize_status(prior_meta.status), 40)}）"
+                f"尚未闭环，请先据实把它改为闭环四态之一"
+                f"（{'／'.join(FOLLOWUP_SERIAL_CLOSED_PREFIXES)}），或在本行内写明"
+                f"「{FOLLOWUP_SERIAL_WAIVER_MARKER}〈理由〉」：{_preview(line)}"
+            )
+
+    if identity_fallbacks:
+        # 回落本身不是错误（`销售部（未发，不编号）` 这类行确实没有编号主键），
+        # 但它静默发生就是。
+        print(
+            "⚠ 跟进信 README 行身份回落到「全单元格」判据（编号列取不到"
+            f"`<部门>#<数字>`）：{'、'.join(sorted(set(identity_fallbacks)))[:200]}"
+            "——这些行改动任一非状态列都会被判成新增行，与 design D5(a) 的"
+            "编号主键不同档，如实报出来。"
+        )
 
     return violations
 

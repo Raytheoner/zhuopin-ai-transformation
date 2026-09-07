@@ -194,9 +194,14 @@ def _archived_recipients() -> dict[str, str]:
         for row in rows:
             if len(row.cells) <= col:
                 continue
-            dept, name = split_department_and_name(row.cells[col])
-            if name and name not in result:
-                result[name] = dept
+            identity = followup_gate.recipient_identity(row.cells[col])
+            if identity and identity[1] not in result:
+                # 🔴 存**原文**部门段：本 dict 的取值下游要喂
+                # `_next_available_number`（按 `<部门>#<数字>` 匹配），归一化值
+                # 会一封都匹配不上、把「下一个可用号」算成 `质量#1`。
+                result[identity[1]] = followup_gate.recipient_department_raw(
+                    row.cells[col]
+                )
     return result
 
 
@@ -315,14 +320,49 @@ def build_report(recipient: str, readme_text: str) -> GateReport:
     if number_col is None or recipient_col is None:
         raise GateQueryError("README 表头缺「编号」或「收信人」列")
 
-    # 「最近一封」＝表格顺序上该收信人的最后一行（架构设计与 README 串行
-    # 原则段的既定口径：按表格顺序，非日期——日期列存在补记情形）。
+    # 🔴 **「最近一封」＝ 日期 → 编号序号 → 表内行序**（变更包
+    # `followup-serial-gate-hardening` D3 拍板 (a)，2026-09-07）。
+    #
+    # 改造前这里取的是「表格顺序上该收信人的最后一行」，而
+    # `followup_gate._letter_sort_key` 的 docstring 早就写着「⚠️ 不能只按表内
+    # 行序」并给了实测反例（`采购部#4` 07-21 排在 `采购部#17` 08-20 之后）——
+    # **闸侧用的正是那个 docstring 说了不该用的东西**。2026-09-07 实测两把
+    # 尺子正对陈忱给出相反答案：物理行序取到已闭环的 `质量部#12`（闸开），
+    # 日期排序键取到 `✅ 已推送` 的 `质量部#13`（闸锁）。判据只此一把。
+    #
+    # 收信人匹配同批改为 `recipient_identity` 二元组（部门 ＋ 姓名，后括号
+    # 注记剥除、不参与匹配）——只取姓名会让跨部门同名被合并成一个人。
+    date_col = column_index(header, "日期")
+    metas = []
+    for order, row in enumerate(rows):
+        identity = followup_gate.recipient_identity(row.cells[recipient_col])
+        if identity is None:
+            continue
+        metas.append((identity, followup_gate.LetterRow(
+            number=row.cells[number_col],
+            date=(row.cells[date_col] if date_col is not None
+                  and len(row.cells) > date_col else ""),
+            recipient=row.cells[recipient_col],
+            target_filename=None,
+            status=row.cells[row.status_col_index],
+            order=order,
+        ), row))
+    wanted = [m for m in metas if m[0][1] == recipient]
     latest = None
     department = None
-    for row in rows:
-        dept, name = split_department_and_name(row.cells[recipient_col])
-        if name == recipient:
-            latest, department = row, dept
+    if wanted:
+        identity = wanted[0][0]
+        newest = followup_gate.latest_letter_for_recipient(
+            [m[1] for m in wanted], identity
+        )
+        latest = next(r for i, m, r in wanted if m.order == newest.order)
+        # 🔴 **原文**部门段（`质量部`），不是身份键里的归一化值（`质量`）：
+        # 它下游要喂 `_next_available_number`（按 `<部门>#<数字>` 匹配占号）与
+        # `_department_dir_aliases`（按 `7-外部文档/<部门>/` 找入信归档目录），
+        # 两处喂归一化值都会给出一个**干净的错答案**、且都不报错。
+        department = followup_gate.recipient_department_raw(
+            latest.cells[recipient_col]
+        )
     if latest is None:
         # `followup-readme-phase2` D2：主表查不到不等于这个人不存在——他的
         # 全部历史信可能已被归档（如首个真实归档批次里的「销售部 · 泓钦」，
@@ -343,8 +383,8 @@ def build_report(recipient: str, readme_text: str) -> GateReport:
                 warnings=[],
             )
         known = sorted({
-            n for r in rows
-            for _, n in [split_department_and_name(r.cells[recipient_col])] if n
+            i[1] for r in rows
+            for i in [followup_gate.recipient_identity(r.cells[recipient_col])] if i
         })
         raise GateQueryError(
             f"收信人「{recipient}」在 README 清单里不存在。已知收信人：{'、'.join(known)}"
@@ -419,9 +459,9 @@ def all_recipients(readme_text: str) -> list[str]:
         raise GateQueryError("README 表头缺「收信人」列")
     seen: list[str] = []
     for row in rows:
-        _, name = split_department_and_name(row.cells[recipient_col])
-        if name and name not in seen:
-            seen.append(name)
+        identity = followup_gate.recipient_identity(row.cells[recipient_col])
+        if identity and identity[1] not in seen:
+            seen.append(identity[1])
     for name in _archived_recipients():
         if name not in seen:
             seen.append(name)

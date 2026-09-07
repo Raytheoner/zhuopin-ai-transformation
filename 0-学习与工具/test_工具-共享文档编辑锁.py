@@ -53,6 +53,19 @@ def _load_module():
     return module
 
 
+def _load_gate_query():
+    """白盒 import `工具-跟进闸查询.py`（供 T6 两端同判用例比对 append 前置）。"""
+    path = SCRIPT.parent / "工具-跟进闸查询.py"
+    spec = importlib.util.spec_from_file_location("_gate_query_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    # 🔴 必须先注册进 `sys.modules` 再 exec：该模块体内有 `@dataclass`，而
+    # dataclass 装饰器会回查 `sys.modules[cls.__module__].__dict__` 解注解，
+    # 不注册就当场 AttributeError（实测撞过）。
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _queue_table():
     """取权威解析模块（队列 #455 用例要按读侧口径回读落盘结果）。
 
@@ -6767,6 +6780,371 @@ class TriageCandidatesCliTests(unittest.TestCase):
         out = self._run(as_json=False)
         self.assertIn("强档 1／弱档 1", out)
         self.assertIn("降档：已闭合", out)
+
+
+
+class FollowupSerialGateIdentityTests(unittest.TestCase):
+    """变更包 `followup-serial-gate-hardening` D7：串行闸的**双向**回归用例。
+
+    🔴 **取材于 2026-09-07 对生产 README 真身的实测行，不构造理想样本**——
+    `#124` 的整个成因就是「误放不会有人看见」，用构造样本写这两条测试等于
+    放弃了唯一一次把真实误放钉进断言的机会。
+
+    白盒方式同 `FollowupReadmeStructuralValidationTests`：monkeypatch
+    REPO_ROOT/FOLLOWUP_README_TARGET 指向本用例专属临时目录。
+    """
+
+    HEADER = (
+        "| 编号 | 日期 | 收信人 | 主要事项 | 交期要点 | 发送状态（2026-07-06） |\n"
+        "|--------|------|--------|---------|---------|---------|\n"
+    )
+    SUPPLEMENT_HEADER = (
+        "| 承接编号 | 日期 | 收信人 | 主要事项 | 需回复 | 发送状态 |\n"
+        "|---------|------|--------|---------|--------|---------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.FOLLOWUP_README_TARGET = "README.md"
+        self.target_path = self.repo_root / "README.md"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_readme(self, rows=""):
+        text = (
+            "## 现有跟进信清单\n\n" + self.HEADER + rows
+            + "\n## 补件登记（不占编号、不占串行闸）\n\n" + self.SUPPLEMENT_HEADER
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+    def _acquire(self, who="A"):
+        ns = argparse.Namespace(
+            file=self.module.FOLLOWUP_README_TARGET, who=who, note="",
+            reserve=None, section=None, reserve_multi=None, domain=None,
+        )
+        return self.module.cmd_acquire(ns)
+
+    def _release(self, who="A"):
+        ns = argparse.Namespace(
+            file=self.module.FOLLOWUP_README_TARGET, who=who,
+            mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=False,
+        )
+        return self.module.cmd_release(ns)
+
+    def _violations(self, prior_rows, current_rows):
+        """直接跑权威校验函数——比整条 acquire/release 更能指名违规文案。"""
+        def _wrap(rows):
+            return (
+                "## 现有跟进信清单\n\n" + self.HEADER + rows
+                + "\n## 补件登记（不占编号、不占串行闸）\n\n" + self.SUPPLEMENT_HEADER
+            )
+        return self.module._validate_followup_readme_release(
+            _wrap(current_rows), _wrap(prior_rows)
+        )
+
+    # ---- T1：🔴 误放（本包核心，取材 `质量部#7` 实况） -------------------
+
+    def test_T1_误放_新增行多写后括号注记不得绕过串行闸(self):
+        """表内已有 `质量部 · 陈忱`（`✅ 已推送`，在途）；新增一行收信人写
+        `质量部 · 陈忱（可分担朱映桦）`。
+
+        🔴 改造前这条必然失败（整格逐字比对判成两个人 ⇒ 现状**静默放行**）
+        ——这条测试的价值就在这里。"""
+        prior = (
+            "| 质量部#7 | 2026-08-13 | 质量部 · 陈忱 | 前一封事项 | 不用回 | "
+            "✅ 已推送 2026-08-13 06:00 UTC |\n"
+        )
+        new_row = (
+            "| 质量部#8 | 2026-08-20 | 质量部 · 陈忱（可分担朱映桦） | 新事项 | "
+            "不卡时间 | ⏳ 待你审 |\n"
+        )
+        violations = self._violations(prior, prior + new_row)
+        self.assertTrue(violations, "多写一个后括号注记不得让串行原则被静默绕过")
+        self.assertTrue(
+            any("质量部#7" in v for v in violations),
+            f"拒绝文案 MUST 指名前一封的编号，实得：{violations}",
+        )
+
+    # ---- T2：⚠ 误拦（取材 `质量部#10` 实况） ----------------------------
+
+    def test_T2_误拦_前一封已闭环时少写注记不需要任何豁免(self):
+        """表内已有 `质量部 · 陈忱（可请朱映桦先初标）`（`📥 已回件并回灌`，
+        闭环）；新增一行写 `质量部 · 陈忱` ⇒ MUST 放行，且**不需要任何豁免
+        标记**（`质量部#10` 那条名不副实的豁免正是这么来的）。"""
+        prior = (
+            "| 质量部#9 | 2026-08-25 | 质量部 · 陈忱（可请朱映桦先初标） | 前一封 | "
+            "不卡时间 | 📥 已回件并回灌（2026-08-25，拆件巡逻第二班） |\n"
+        )
+        new_row = (
+            "| 质量部#10 | 2026-08-26 | 质量部 · 陈忱 | 新事项 | 不卡时间 | ⏳ 待你审 |\n"
+        )
+        self.assertEqual(self._violations(prior, prior + new_row), [])
+
+    # ---- T3：反向镜像（少写注记，取材 `采购部#21` 实况） -----------------
+
+    def test_T3_误放镜像_新增行少写后括号注记同样不得绕过(self):
+        prior = (
+            "| 采购部#20 | 2026-08-31 | 采购部 · 姚祖怡（采购域 AI 专员） | 前一封 | "
+            "不卡时间 | ✅ 已推送 2026-08-31 02:00 UTC |\n"
+        )
+        new_row = (
+            "| 采购部#21 | 2026-09-05 | 采购部 · 姚祖怡 | 新事项 | 不卡时间 | ⏳ 待你审 |\n"
+        )
+        violations = self._violations(prior, prior + new_row)
+        self.assertTrue(violations, "多写与少写必须同判（T1 的镜像）")
+        self.assertTrue(any("采购部#20" in v for v in violations), violations)
+
+    # ---- T4／T5：身份解析失败与跨部门同名 -------------------------------
+
+    def test_T4_收信人解析失败不判为同一人且出声(self):
+        """两行收信人列均无 `·` ⇒ MUST NOT 判为同一人；MUST 出声（记 violation
+        并指名该行）。🔴 两个解析不出来的收信人不是同一个人。"""
+        prior = (
+            "| 销售部#1 | 2026-08-01 | 销售部 | 前一封 | 不急 | ✅ 已推送 2026-08-01 |\n"
+        )
+        new_row = "| 销售部#2 | 2026-08-05 | 销售部 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        violations = self._violations(prior, prior + new_row)
+        self.assertTrue(
+            any("解析" in v for v in violations),
+            f"解析失败必须出声、不得静默放行，实得：{violations}",
+        )
+
+    def test_T5_跨部门同名不合并(self):
+        """`质量部 · 张三` 与 `采购部 · 张三` 是两个人（D1 二元组）——把它们
+        判成同一人是**错误的严**：制造误拦，而误拦会把合规的信永久染成豁免行。"""
+        prior = (
+            "| 质量部#20 | 2026-08-01 | 质量部 · 张三 | 前一封 | 不急 | ✅ 已推送 2026-08-01 |\n"
+        )
+        new_row = "| 采购部#30 | 2026-08-05 | 采购部 · 张三 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        self.assertEqual(self._violations(prior, prior + new_row), [])
+
+    # ---- T6：两端同判（append 前置 vs release 后置） ---------------------
+
+    def test_T6_append前置与release后置对同一形态给出同一结论(self):
+        """`工具-跟进信README登记.py` 的 append 前置（走 `gate_query.build_report`）
+        与编辑锁 release 后置 MUST 给出同一结论。🔴 改造前二者相反：append 侧
+        只取姓名 ⇒ 判锁；release 侧整格逐字 ⇒ 判开。"""
+        gate_query = _load_gate_query()
+        rows = (
+            "| 质量部#7 | 2026-08-13 | 质量部 · 陈忱 | 前一封事项 | 不用回 | "
+            "✅ 已推送 2026-08-13 06:00 UTC |\n"
+        )
+        new_row = (
+            "| 质量部#8 | 2026-08-20 | 质量部 · 陈忱（可分担朱映桦） | 新事项 | "
+            "不卡时间 | ⏳ 待你审 |\n"
+        )
+        readme_text = (
+            "## 现有跟进信清单\n\n" + self.HEADER + rows
+            + "\n## 补件登记（不占编号、不占串行闸）\n\n" + self.SUPPLEMENT_HEADER
+        )
+        append_blocks = not gate_query.build_report("陈忱", readme_text).gate_open
+        release_blocks = bool(self._violations(rows, rows + new_row))
+        self.assertEqual(
+            append_blocks, release_blocks,
+            f"append 前置判 {append_blocks}、release 后置判 {release_blocks}——两端必须同判",
+        )
+        self.assertTrue(append_blocks, "前一封在途，两端都应判锁")
+
+    # ---- T7／T8／T9：`❌ 已作废` 防滥用（design D4） ---------------------
+
+    def test_T7_已发出的信改作废且理由为开闸措辞时被拒并指名判据(self):
+        prior = (
+            "| 采购部#40 | 2026-08-01 | 采购部 · 姚祖怡 | 事项 | 不急 | "
+            "✅ 已推送 2026-08-01 06:00 UTC |\n"
+        )
+        voided = (
+            "| 采购部#40 | 2026-08-01 | 采购部 · 姚祖怡 | 事项 | 不急 | "
+            "❌ 已作废（为了开闸，先把这封作废） |\n"
+        )
+        violations = self._violations(prior, voided)
+        self.assertTrue(violations)
+        self.assertTrue(any("R2" in v for v in violations), violations)
+
+    def test_T8_已发出的信改作废且理由过短无凭据时被拒(self):
+        prior = (
+            "| 采购部#40 | 2026-08-01 | 采购部 · 姚祖怡 | 事项 | 不急 | "
+            "✅ 已推送 2026-08-01 06:00 UTC |\n"
+        )
+        voided = (
+            "| 采购部#40 | 2026-08-01 | 采购部 · 姚祖怡 | 事项 | 不急 | "
+            "❌ 已作废（不需要了） |\n"
+        )
+        violations = self._violations(prior, voided)
+        self.assertTrue(violations)
+        self.assertTrue(any("R1" in v for v in violations), violations)
+        self.assertTrue(any("R3" in v for v in violations), violations)
+
+    def test_T9_正例_归档件里那行真实作废理由不被拦死(self):
+        """🔴 取归档件里那行**真实**作废的理由文本——防止判据把合法作废拦死。"""
+        prior = (
+            "| 销售部（未发，不编号） | 2026-07-28 | 销售部 · 泓钦 | 事项 | 首周 | "
+            "⏳ 待你审 |\n"
+        )
+        voided = (
+            "| 销售部（未发，不编号） | 2026-07-28 | 销售部 · 泓钦 | 事项 | 首周 | "
+            "❌ 已作废 · 9 月重写（2026-08-04，队列 #137，Shao Peishen 选 (a) 线下当面说）"
+            "——信中三件事已全部随销售域推迟失效 |\n"
+        )
+        self.assertEqual(self._violations(prior, voided), [])
+
+    def test_T9b_作废豁免逃生阀放行_但空理由拒绝(self):
+        prior = (
+            "| 采购部#40 | 2026-08-01 | 采购部 · 姚祖怡 | 事项 | 不急 | "
+            "✅ 已推送 2026-08-01 06:00 UTC |\n"
+        )
+        waived = (
+            "| 采购部#40 | 2026-08-01 | 采购部 · 姚祖怡 | 事项｜作废豁免：线下已当面确认，"
+            "口径另立队列行承接 | 不急 | ❌ 已作废（不需要了） |\n"
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(self._violations(prior, waived), [])
+        self.assertIn("作废豁免", buf.getvalue())
+
+        empty_waiver = (
+            "| 采购部#40 | 2026-08-01 | 采购部 · 姚祖怡 | 事项｜作废豁免： | 不急 | "
+            "❌ 已作废（不需要了） |\n"
+        )
+        self.assertTrue(self._violations(prior, empty_waiver))
+
+    # ---- D5(a)：行身份改用编号列主键 ------------------------------------
+
+    def test_D5a_改主要事项列不再被判成新增行(self):
+        """行长外置压缩「主要事项」列 ⇒ 改造前身份改变 ⇒ 被误判成新增行 ⇒
+        撞串行闸 ⇒ 工具自动写豁免绕过（现网 5 行、单调增长）。改用编号列
+        主键后，这一整类误报一次消掉。"""
+        prior = (
+            "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | 事项一 | 不急 | "
+            "✅ 已推送 2026-08-09 06:00 UTC |\n"
+            "| 采购部#13 | 2026-08-12 | 采购部 · 姚祖怡 | 很长很长的原始摘要 | 不急 | "
+            "📥 已回件并回灌 2026-08-14 |\n"
+        )
+        # 🔴 被压缩的是**第二行**：它前面还有一封 `采购部#12` 在途——改造前
+        # 这一改会让 `采购部#13` 被判成新增行、撞上 `#12` 未闭环这条闸，于是
+        # 工具自动写一条豁免绕过（现网 5 行就是这么来的）。
+        compressed = prior.replace("很长很长的原始摘要", "压缩后摘要（行日志：#13）")
+        self.assertEqual(self._violations(prior, compressed), [])
+
+    def test_D5a_编号行状态被改成终态仍被两态语义拦住(self):
+        """🔴 D5(a) 的代价缓解：改主键后「身份不在快照里」不再能拦住
+        「把一个已发出行的状态直接改成 `🆕 待发`」，故两态语义检查改为
+        **同时**看身份与状态迁移。"""
+        prior = (
+            "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | 事项 | 不急 | "
+            "✅ 已推送 2026-08-09 06:00 UTC |\n"
+        )
+        tampered = prior.replace("✅ 已推送 2026-08-09 06:00 UTC", "🆕 待发")
+        violations = self._violations(prior, tampered)
+        self.assertTrue(violations, "已发出行被直接改写成终态，MUST 拒绝")
+
+    def test_D5a_无编号行回落到全单元格身份并出声(self):
+        """无 `<部门>#<数字>` 的行（实测：归档件 `销售部（未发，不编号）`）
+        回落到既有「全单元格」身份，并**出声**说明走的是回落路径。"""
+        prior = ""
+        new_row = (
+            "| 销售部（未发，不编号） | 2026-08-01 | 销售部 · 泓钦 | 事项 | 首周 | "
+            "🆕 待发 |\n"
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            violations = self._violations(prior, new_row)
+        self.assertTrue(violations, "新增行直接写终态仍应被两态语义拦住")
+        self.assertIn("回落", buf.getvalue())
+
+    def test_串行豁免收窄_有标记没理由不再放行(self):
+        """design D5「两案共同要求 2」：`串行豁免：` 收窄为「标记后 MUST 跟
+        非空理由」。不做语义判断，只拦「有标记没理由」这一种。"""
+        prior = (
+            "| 采购部#11 | 2026-08-05 | 采购部 · 姚祖怡 | 事项 | 不急 | 🆕 待发 |\n"
+        )
+        empty = prior + (
+            "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | 新事项，串行豁免： | 不急 | "
+            "⏳ 待你审 |\n"
+        )
+        self.assertTrue(self._violations(prior, empty))
+        filled = prior + (
+            "| 采购部#12 | 2026-08-09 | 采购部 · 姚祖怡 | 新事项，串行豁免：业务方要求两条并行跟进 | "
+            "不急 | ⏳ 待你审 |\n"
+        )
+        self.assertEqual(self._violations(prior, filled), [])
+
+
+
+
+class FollowupSerialGateIdentityFallbackTests(FollowupSerialGateIdentityTests):
+    """design 1.5：**同一份用例**在「无平台包」的隔离环境上再跑一遍。
+
+    🔴 **为什么必须双跑而不是各写一份断言**：编辑锁在无平台包时会回落到
+    本文件内的 `_FollowupGateFallback`。回落分支若与权威实现漂移，漂移
+    **不会有任何报错**——闸会按一份没人在看的判据继续工作，而那正是 `#482`
+    在修的那一族毛病（四处各写一份、四份互不一致、零告警）。
+
+    实现手法 ＝ 继承上面那个类，`setUp` 里把 `module.followup_gate` 置 None。
+    编辑锁侧的取用口 `_gate()` 写成函数而不是模块级常量，正是为了让这一步
+    成立。
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.module.followup_gate = None
+        self.assertIsNone(self.module.followup_gate)
+
+    def test_T6_append前置与release后置对同一形态给出同一结论(self):
+        """跳过：T6 要跑 `工具-跟进闸查询.py`，那一侧本就**硬依赖**平台包
+        （顶部是无兜底的 `from zhuopin_platform...import followup_gate`），
+        隔离环境根本到不了这条路径。如实说明，不静默跳过。"""
+        self.skipTest("闸查询侧硬依赖平台包，无回落分支可测——非遗漏，见 docstring")
+
+    def test_回落实现与权威实现对同一批收信人写法给出同一身份(self):
+        """逐条比对两份实现的输出，把「漂移」这件事本身钉进断言。"""
+        import importlib
+
+        sys.path.insert(0, str(SCRIPT.parent.parent / "5-平台底座" / "zhuopin_platform"))
+        authority = importlib.import_module("zhuopin_platform.shared_tools.followup_gate")
+        fallback = self.module._FOLLOWUP_GATE_FALLBACK
+        samples = [
+            "质量部 · 陈忱",
+            "质量部 · 陈忱（可分担朱映桦）",
+            "采购部 · 姚祖怡（+团队）",
+            "采购部 · 姚祖怡（转汤易水第④项）",
+            "IT部 · 陈承（抄唐燕萍）",
+            "财务部 · 唐燕萍（财务总监 / 财务域 AI 专员）",
+            "**质量部 · 陈忱**",
+            "销售部",
+            "· 陈忱",
+            "质量部 · ",
+            "",
+        ]
+        for cell in samples:
+            with self.subTest(cell=cell):
+                self.assertEqual(
+                    fallback.recipient_identity(cell),
+                    authority.recipient_identity(cell),
+                )
+        numbers = ["采购部#17", "IT部#7（待发，暂不占号）", "销售部（未发，不编号）", ""]
+        for cell in numbers:
+            with self.subTest(cell=cell):
+                self.assertEqual(
+                    fallback.letter_row_identity(cell),
+                    authority.letter_row_identity(cell),
+                )
+        voids = [
+            "❌ 已作废（为了开闸，先把这封作废）",
+            "❌ 已作废（不需要了）",
+            "❌ 已作废 · 9 月重写（2026-08-04，队列 #137，Shao Peishen 选 (a)）",
+        ]
+        for cell in voids:
+            for risk in ("low", "high"):
+                with self.subTest(cell=cell, risk=risk):
+                    self.assertEqual(
+                        bool(fallback.validate_void_reason(cell, risk)),
+                        bool(authority.validate_void_reason(cell, risk)),
+                    )
 
 
 if __name__ == "__main__":
