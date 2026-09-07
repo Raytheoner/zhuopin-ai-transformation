@@ -1,0 +1,6 @@
+{
+ "批次": "B-0907_Z",
+ "文件清单": "（🔴 **本批刻意不用反引号写路径**，见状态列说明）openspec/changes/sweep-manifest-coverage-guard/ 全包（含新增 转写对照表.md）／openspec/changes/fi2-invoice-level-idempotency/ 全包（含新增 转写对照表.md）／两包 archive 后落 openspec/changes/archive/2026-09-07-*／openspec/specs/sweep-manifest-coverage-guard/spec.md（新建）／openspec/specs/fi2-tax-export-ingest/spec.md（MODIFIED 合并）／1-转型规划/0-全景路线图/队列回写待补/B-0907_Z-*.json（5 份）",
+ "建议 message": "docs(openspec/#483): 两个事后补包 apply 收口——转写对照表逐条销账 ＋ archive（design 审已过，OP-0907-Z）",
+ "状态": "待 —— 🔴 **跨 worktree 建造批次，且本行是 `sweep-manifest-coverage-guard` 那条「覆盖范围须被如实声明」Requirement 的第一个自测**：本批内容已在分支 `claude/op0907f-openspec-483` 上 commit 并 push origin，主仓工作区**对这些文件没有脏改动** ⇒ 若把它们用反引号写进本列，覆盖校验会**正确地**判缺项并整批跳过。故本列**按该 spec 的登记侧口径改用无反引号的纯文本列出**，不制造一个注定被自己拦住的批次。**本批不由 sweep 落库，解除路径 ＝ 该分支 ff 合入 master**（🟡 档，本泳道不自行合，待总线派发）；ff 后本行即可直接销为已完成，无须再等一轮 sweep。 ━━━ 实证：`openspec validate --all --strict` ＝ 173 passed / 0 failed（基线 172/0，零新增失败）；`工具-场景包intent闸lint.py --enforce` 退出码 0；sweep 侧 9 passed / 30 subtests；FI2 侧 6+1+2 passed ＋ rebuild 14 passed。"
+}
