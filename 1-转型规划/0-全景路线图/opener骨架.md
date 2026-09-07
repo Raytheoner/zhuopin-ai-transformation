@@ -9,13 +9,14 @@ status: 生效
 
 🔴 **本件是格式的唯一可照抄物。** 模板库 §〇 全是「为什么」、不是「长什么样」，读它重建格式必然漂。
 🔴 **六字段，一个都不能少，顺序固定**：`执行环境 ｜ 分支 ｜ worktree ｜ 工作区 ｜ session ｜ 派出线`
+🔴 **「派出线」＝线名＋派出会话 OP 号（有批次再加「批 B-…」）**，如 `Cowork 环境总线 OP-0906-W（批 B-0907_Q）`——追溯认 OP 号，不认 `[Win]` 标题（标题可改、OP 号才是全库唯一身份）；新会话自己的名字不写进 opener（它开工自设）。（Shao Peishen 2026-09-07 答 ① 选 (a)）
 🔴 **代码块正上方必写一行状态标记**（见文末三式）；标题里 `CC`／`Cowork` 只能表示执行环境、且用 `【】`。
 
 ## 【CC】骨架
 
 ```
 [OP-MMDD-X]【CC】<短名，≤12字>
-【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，新 worktree，收工自删）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名>
+【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，新 worktree，收工自删）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
 开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行——子任务没有自己的 session，"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。
 读 ① `<派单件或首要输入的完整仓库根相对路径>` → ② `CLAUDE.md` §<相关节> 恢复上下文，按<派单件/下述>执行。本件为 <A 类（口径已定、判据已写死），无需再问澄清，直接开工 ／ B 类，开工前问我 2-3 个澄清>。
 
@@ -38,7 +39,7 @@ opener 只负责「你是谁、去哪读」。看护件目标 ≤10 KB。
 
 ```
 [OP-MMDD-X]【CC】<短名，≤12字>
-【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，新 worktree，收工自删）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名>
+【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，新 worktree，收工自删）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
 读 ① 队列 §一 `#N`（`python 0-学习与工具/工具-队列查询.py --row N --field all`，做什么/不做什么/收工全在该行）→ ② `CLAUDE.md` 恢复上下文，按该行执行。本件为 A 类，直接开工。
 ```
 
@@ -54,7 +55,7 @@ opener 只负责「你是谁、去哪读」。看护件目标 ≤10 KB。
 
 ```
 [OP-MMDD-X]【CC】看护<批次名>
-【设置】执行环境：CC ｜ 分支：master（看护者本身不建分支，不改代码）｜ worktree：☐（看护者不建，各子泳道自建）｜ 工作区：无 ｜ session：新开 ｜ 派出线：<线名>
+【设置】执行环境：CC ｜ 分支：master（看护者本身不建分支，不改代码）｜ worktree：☐（看护者不建，各子泳道自建）｜ 工作区：无 ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
 开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），标题：[Win]MMDDX-看护<批次名>。🔴 你是本批唯一真正被粘贴进独立 CC 会话的一份，本条对你适用，正常执行即可，标题设定后不要再被子任务顶掉。
 读 `<看护件完整仓库根相对路径>` 全文＋ CLAUDE.md 恢复上下文。
 
@@ -77,7 +78,7 @@ opener 只负责「你是谁、去哪读」。看护件目标 ≤10 KB。
 
 ```
 [OP-MMDD-X]【Cowork】<短名，≤12字>
-【设置】执行环境：Cowork ｜ 分支：master ｜ worktree：☐（不建，只产改 `.md`）｜ 工作区：无 ｜ session：新开 ｜ 派出线：<线名>
+【设置】执行环境：Cowork ｜ 分支：master ｜ worktree：☐（不建，只产改 `.md`）｜ 工作区：无 ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
 读 ① `<完整仓库根相对路径>` → ② `CLAUDE.md` 恢复上下文，按<该件/下述>执行。本件为 <A/B> 类。
 
 做什么：
