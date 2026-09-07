@@ -6172,6 +6172,274 @@ def _check_status_triage_and_ledger(repo_root: Path, log: list[str]) -> None:
         log.append("🗂 决策台账缺口检测：分诊出口全部不可用，本轮跳过——**不据此判为零缺口**。")
 
 
+# ============================================================
+# 第 13 类常驻状态告警——规划倒逼（规划里有、执行侧三处皆无的场景）
+# ============================================================
+#
+# 队列 §一 `#462`（2026-09-02 立，Shao Peishen 当日答 (a)）／openspec 包
+# `plan-backpressure-scanner`（design 审 2026-09-07 合审通过）。
+#
+# 🔑 **本类补的是「规划 → 队列」这一棒**：此前**全部**常驻机制（可 Open 池／拆件
+# 巡逻／值周巡检／泳道看护，以及本文件第 1~12 类）都只扫队列 §一 —— **规划里有、
+# 但没人立行的场景对它们完全不可见，且不产生任何信号**。它不报错、不超时、没人
+# 抱怨，只会在排期月到了以后才被发现从来没人接。2026-09-07 实测：13 个场景处于
+# 该状态，而修好判据之前的旧脚本只报得出 2 个（漏报率 85%）。
+#
+# 🔴 **子进程调用、不进程内 import**（同第 10/11/12 类，本文件头部"零依赖"原则）：
+# 判定模块要读 registry／全景规划／`4-数字员工` 目录树，进程内 import 会把这条
+# 对仓库布局的依赖搬进 sweep 自己。
+#
+# 🔴 **只读、只告警、一个字节都不写队列**（design D5 ＝ (b)，Shao Peishen 2026-09-07
+# 合审）：`#462` 硬要求"产出队列行"，但机器自动向 §一 追加业务场景行同时撞三条现行
+# 边界（协议〇.10 并入审核／`#463` 环境保障线边界／他的域级暂缓明令）。拍板结果是
+# **出草案、由人一条命令落库**，草案随 JSON 一并送出，本文件只渲染、不执行。
+#
+# 🔴 **域级暂缓场景移出推送、保留在清单**：他 2026-09-02 明令研发与销售域"根本不立"，
+# 13 个未承接里 8 个落在这两域。每轮推一次他已明令不立的东西，本类会被当噪音，
+# 连同真信号一起被无视。⇒ 推送口径用 `--json` 里的 `suspended` 字段过滤。
+#
+# 🔴 **第一版就带「本轮是否真的跑到了」的留痕**（第 8 类的既有事故形态：整轮早退时
+# 状态文件上的痕迹与"没有告警"完全相同）——`_mark_plan_backpressure_scan` 三态，
+# 与 `_mark_local_only_scan` 同形。**不等出事再补。**
+PLAN_BACKPRESSURE_SCRIPT_REL = "0-学习与工具/工具-规划倒逼扫描器.py"
+PLAN_BACKPRESSURE_STATE_REL = "reports/sweep-plan-backpressure-state.json"
+PLAN_BACKPRESSURE_SEEN_STATE_REL = "reports/sweep-plan-backpressure-seen.json"
+PLAN_BACKPRESSURE_SUSPENDED_STATE_REL = "reports/sweep-plan-backpressure-suspended.json"
+PLAN_BACKPRESSURE_COUNTS_STATE_REL = "reports/sweep-plan-backpressure-counts.json"
+PLAN_BACKPRESSURE_SCAN_MARKER_REL = "reports/sweep-plan-backpressure-scan-marker.json"
+PLAN_BACKPRESSURE_UNSCANNED_STATE_REL = "reports/sweep-plan-backpressure-unscanned.json"
+PLAN_BACKPRESSURE_UNAVAILABLE_STATE_REL = "reports/sweep-plan-backpressure-unavailable.json"
+PLAN_BACKPRESSURE_ALERT_INTERVAL_HOURS = 24.0
+# 陈化催办阈值：集合非空且已持续 N 天即催一次（N 取 7，与 `#312` 缺口二同值，
+# 不另立一套节奏）。
+PLAN_BACKPRESSURE_STALE_DAYS = 7
+# 域级暂缓的复核周期：暂缓本身也会过期，30 天问一次"这条暂缓是否仍成立"。
+PLAN_BACKPRESSURE_SUSPENDED_REVIEW_DAYS = 30
+PLAN_BACKPRESSURE_UNSCANNED_KEY = "plan-backpressure-unscanned"
+PLAN_BACKPRESSURE_UNSCANNED_ALERT_AFTER_ROUNDS = 6
+PLAN_BACKPRESSURE_UNAVAILABLE_KEY = "plan-backpressure-unavailable"
+
+
+def _run_plan_backpressure_json(repo_root: Path) -> tuple[dict | None, str | None]:
+    """子进程调 `工具-规划倒逼扫描器.py --json`，返回 (payload, None) 或 (None, 原因)。"""
+    script = repo_root / PLAN_BACKPRESSURE_SCRIPT_REL
+    if not script.exists():
+        return None, f"未找到 {PLAN_BACKPRESSURE_SCRIPT_REL}"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "--json"],
+            cwd=repo_root, capture_output=True, text=True, encoding="utf-8", timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"子进程调用异常：{type(exc).__name__}: {exc}"
+    if result.returncode != 0:
+        return None, (result.stderr or result.stdout).strip()[:500]
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return None, f"输出不是合法 JSON：{exc}"
+    if not isinstance(payload, dict) or "unaccepted" not in payload:
+        return None, "输出 JSON 缺少 `unaccepted` 字段"
+    return payload, None
+
+
+def _mark_plan_backpressure_scan(repo_root: Path, status: str, detail: str) -> dict:
+    """记下第 13 类这一轮到底巡检了没有（`scanned` / `unavailable` / `skipped`）。
+
+    🔴 与 `_mark_local_only_scan` 同形、同理由：**让「本轮未巡检」与「已巡检且
+    无告警」在文件里长得不一样**。第 8 类当年吃过的亏，本类第一版就带上。
+    **绝不抛异常**——它是一条留痕，不是判据。
+    """
+    path = repo_root / PLAN_BACKPRESSURE_SCAN_MARKER_REL
+    marker = _read_json_state(path) or {}
+    now = datetime.now(timezone.utc).isoformat()
+    consecutive = int(marker.get("consecutive_skips") or 0)
+    consecutive = consecutive + 1 if status == "skipped" else 0
+    fresh = {
+        "last_round_utc": now,
+        "last_round_status": status,
+        "last_round_detail": detail,
+        "last_reached_utc": now if status != "skipped" else marker.get("last_reached_utc"),
+        "consecutive_skips": consecutive,
+    }
+    try:
+        _write_json_state(path, fresh)
+    except OSError:
+        pass
+    return fresh
+
+
+def _note_plan_backpressure_skipped(repo_root: Path, reason: str, log: list[str],
+                                    dry_run: bool = False) -> None:
+    """整轮早退时补一条「本轮第 13 类未巡检」的痕迹，连续够数则亮灯。"""
+    if dry_run:
+        return
+    try:
+        marker = _mark_plan_backpressure_scan(repo_root, "skipped", reason)
+        rounds = marker["consecutive_skips"]
+        log.append(f"🧭 规划倒逼巡检：⚠ **本轮未巡检**（{reason}）"
+                   f"——**不据此判为零未承接**；已连续 {rounds} 轮未巡检。")
+        if rounds < PLAN_BACKPRESSURE_UNSCANNED_ALERT_AFTER_ROUNDS:
+            # 🔴 阈值未到就什么都不调——拿空集合去调 `_track_and_alert_standing_state`
+            # 会把上一次真实的「连续未巡检」告警判成「✅ 已解除」，而我们其实还瞎着。
+            return
+        _track_and_alert_standing_state(
+            repo_root, "第13类巡检停摆", PLAN_BACKPRESSURE_UNSCANNED_STATE_REL,
+            {PLAN_BACKPRESSURE_UNSCANNED_KEY}, PLAN_BACKPRESSURE_ALERT_INTERVAL_HOURS,
+            lambda _keys: (
+                f"🧭 落库sweep：**第 13 类（规划倒逼）已连续 {rounds} 轮没跑**"
+                f"——每轮都在它之前就整轮结束了。\n"
+                f"- 本轮早退原因：{reason}\n"
+                "⇒ 后果：这段时间里「规划里有、执行侧三处皆无」**不会有任何告警**，"
+                "而没有告警此前一直被读成「都有人接」。\n"
+                "⇒ 处置：先解掉早退原因（见 reports/sweep-commit.log 本轮末尾），"
+                "巡检会自行恢复并自动解除本条。"),
+            lambda _keys: "✅ 落库sweep：第 13 类巡检已恢复（本轮真的跑到了），"
+                          "此前的「连续未巡检」告警解除。",
+            log,
+        )
+    except Exception as exc:  # noqa: BLE001 —— 留痕失败不得掩盖原始早退原因
+        log.append(f"⚠ 第 13 类「本轮未巡检」留痕失败（不影响本轮退出码）：{exc}")
+
+
+def _plan_backpressure_first_seen(repo_root: Path, codes: set[str]) -> dict[str, str]:
+    """维护「这个场景码是哪天第一次被报为三处皆无」的台账，供陈化催办用。
+
+    🔴 **消失即清除**：一个已被立行的场景若日后再次消失，应当按新问题重新计时，
+    而不是继承一个几个月前的 `first_seen`（那会让它一出现就"已陈化 90 天"）。
+    """
+    path = repo_root / PLAN_BACKPRESSURE_SEEN_STATE_REL
+    state = _read_json_state(path) or {}
+    now = datetime.now(timezone.utc).isoformat()
+    fresh = {c: state.get(c, now) for c in codes}
+    try:
+        _write_json_state(path, fresh)
+    except OSError:
+        pass
+    return fresh
+
+
+def _plan_backpressure_stale_codes(first_seen: dict[str, str]) -> list[tuple[str, int]]:
+    now = datetime.now(timezone.utc)
+    out: list[tuple[str, int]] = []
+    for code, seen in first_seen.items():
+        try:
+            days = (now - datetime.fromisoformat(seen)).days
+        except ValueError:
+            continue
+        if days >= PLAN_BACKPRESSURE_STALE_DAYS:
+            out.append((code, days))
+    return sorted(out)
+
+
+def _render_plan_backpressure_alert(payload: dict, codes: list[str]) -> str:
+    detail = {d["code"]: d for d in payload.get("unaccepted", [])}
+    lines = ["🧭 落库sweep：**规划里有、执行侧三处皆无**（队列无承接行／`4-数字员工` "
+             "无工程／openspec 无包）——新增或首次报出以下场景："]
+    for code in sorted(codes):
+        d = detail.get(code, {})
+        lines.append(f"- **{code}** {d.get('title', '')}（权威排期 {d.get('planned_month', '?')}"
+                     f"／{d.get('domain', '?')}域）")
+        lines.append(f"    前置：{d.get('prereq', '前置总表无此场景行')[:120]}")
+    drafts = [d for d in payload.get("queue_row_drafts", []) if d["code"] in set(codes)]
+    if drafts:
+        lines.append(f"⇒ 已生成 {len(drafts)} 条队列行**草案**（含拟写的任务／领取方／"
+                     "输入／期望产出四格），跑一次下面这条命令取全文：")
+        lines.append(f"    `python {PLAN_BACKPRESSURE_SCRIPT_REL} --json`")
+        lines.append("🔴 **落库前必须由人做一次协议〇.10 并入审核**——机器不判"
+                     "「这件事能不能并进某条已有行」，扫描器只出草案、不写队列。")
+    lines.append(payload.get("scope", ""))
+    return "\n".join(lines)
+
+
+def _check_plan_backpressure(repo_root: Path, log: list[str]) -> None:
+    """第 13 类入口。只读、只告警、不写任何队列、不影响本轮退出码。"""
+    payload, reason = _run_plan_backpressure_json(repo_root)
+    if payload is None:
+        _mark_plan_backpressure_scan(repo_root, "unavailable", reason or "")
+        log.append(f"🧭 规划倒逼巡检：⚠ **判据不可用**（{reason}）"
+                   "——**不据此判为零未承接**。")
+        _track_and_alert_standing_state(
+            repo_root, "规划倒逼判据不可用", PLAN_BACKPRESSURE_UNAVAILABLE_STATE_REL,
+            {PLAN_BACKPRESSURE_UNAVAILABLE_KEY},
+            PLAN_BACKPRESSURE_ALERT_INTERVAL_HOURS,
+            lambda _keys: ("🧭 落库sweep：第 13 类**判据不可用**，本轮没有量到任何数——"
+                           f"{reason}\n⇒ 这不等于"
+                           "「规划与执行已对齐」，只等于「这一轮什么也没量」。"),
+            lambda _keys: "✅ 落库sweep：第 13 类判据已恢复可用。",
+            log,
+        )
+        return
+
+    _mark_plan_backpressure_scan(repo_root, "scanned", "")
+    _track_and_alert_standing_state(
+        repo_root, "规划倒逼判据不可用", PLAN_BACKPRESSURE_UNAVAILABLE_STATE_REL,
+        set(), PLAN_BACKPRESSURE_ALERT_INTERVAL_HOURS,
+        lambda _keys: "", lambda _keys: "✅ 落库sweep：第 13 类判据已恢复可用。", log)
+
+    unaccepted = payload.get("unaccepted", [])
+    # 🔴 `suspended` 移出推送、保留在清单与日志——他已明令不立的那几个不该每轮响一次。
+    pushable = {d["code"] for d in unaccepted if not d.get("suspended")}
+    suspended = {d["code"] for d in unaccepted if d.get("suspended")}
+    counts = payload.get("counts", {})
+    log.append(
+        f"🧭 规划倒逼巡检：三处皆无 {len(unaccepted)}（其中域级暂缓 {len(suspended)}"
+        f"、进推送 {len(pushable)}）｜疑似已承接·待人确认 "
+        f"{counts.get('疑似已承接·待人确认', '?')}｜已承接 {counts.get('已承接', '?')}")
+    if suspended:
+        log.append(f"    · 暂缓（留清单、不推送）：{'、'.join(sorted(suspended))}")
+
+    first_seen = _plan_backpressure_first_seen(repo_root, pushable)
+
+    _track_and_alert_standing_state(
+        repo_root, "规划倒逼未承接", PLAN_BACKPRESSURE_STATE_REL, pushable,
+        PLAN_BACKPRESSURE_ALERT_INTERVAL_HOURS,
+        lambda keys: _render_plan_backpressure_alert(payload, list(keys)),
+        lambda keys: ("✅ 落库sweep：以下场景已在三处之一出现承接，规划倒逼告警解除——"
+                      + "、".join(sorted(keys))),
+        log,
+    )
+
+    stale = _plan_backpressure_stale_codes(first_seen)
+    if stale:
+        log.append("    · 陈化催办："
+                   + "；".join(f"{c} 已 {d} 天无人承接" for c, d in stale))
+
+    # 🔴 **暂缓本身也会过期**：`suspended` 是他明令的一份副本，他哪天说"销售域可以
+    # 排了"而 registry 没改，这几个场景就继续静默。⇒ 按 30 天周期问一次"这条暂缓
+    # 已持续 N 天，是否仍成立"——复用同一个出现→告警／消失→解除骨架，只是把再提醒
+    # 间隔拉到 30 天，**不另造一套节奏**。
+    _track_and_alert_standing_state(
+        repo_root, "域级暂缓复核", PLAN_BACKPRESSURE_SUSPENDED_STATE_REL, suspended,
+        PLAN_BACKPRESSURE_SUSPENDED_REVIEW_DAYS * 24.0,
+        lambda keys: ("⏸ 落库sweep：以下场景因**域级暂缓**被移出常规推送，"
+                      f"距上次复核已满 {PLAN_BACKPRESSURE_SUSPENDED_REVIEW_DAYS} 天——"
+                      "**这条暂缓是否仍成立？**\n"
+                      + "\n".join(f"- {c}" for c in sorted(keys))
+                      + "\n⇒ 若已解除，改 registry 的 `suspended` 字段"
+                        f"（{PLAN_BACKPRESSURE_SCRIPT_REL} 同目录的 registry），"
+                        "它们会自动回到常规推送。"),
+        lambda keys: ("✅ 落库sweep：以下场景的域级暂缓已解除或已被承接——"
+                      + "、".join(sorted(keys))),
+        log,
+    )
+
+    # 🔴 误报与负例**分开计**（spec `plan-backpressure-output`）：
+    #   · 负例 ＝「报了未承接、而人决定不立行」——今天可机器识别的那部分就是域级暂缓；
+    #   · 误报 ＝「报了未承接、而实际三处之一有真实承接」，只能由人在复核时认定。
+    # **合计会让判据被错误地收紧**（负例不是判据错，是他不想立），故两个计数分列、
+    # 且**本文件没有任何一条按计数自动收紧判据的路径**。
+    try:
+        _write_json_state(repo_root / PLAN_BACKPRESSURE_COUNTS_STATE_REL, {
+            "negatives_域级暂缓": sorted(suspended),
+            "false_positives_人工认定": [],
+            "note": "负例 MUST NOT 触发任何自动的判据收紧；满 5 条负例才回头收紧判据"
+                    "（同 #454 口径），那是人的动作，不是本文件的。",
+        })
+    except OSError:
+        pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="只打印计划动作，不 add/commit/push/改队列")
@@ -6248,6 +6516,10 @@ def main() -> int:
     # 若声明在 try 内，except 里读它会撞 `UnboundLocalError`，于是**修盲区的
     # 代码自己变成新的盲区**（那正好是本条要治的那个形状再犯一次）。
     local_only_scanned = False
+    # 队列 §一 #462（OP-0907-AH）：第 13 类的同款标志。🔴 **同样必须在 try 之外
+    # 声明**——理由与上一行逐字相同（except 里读 try 内声明的名字会撞
+    # UnboundLocalError，于是修盲区的代码自己变成新的盲区）。
+    plan_backpressure_scanned = False
 
     try:
         _heal_stale_index_lock(repo_root, log)
@@ -6514,6 +6786,14 @@ def main() -> int:
             # （Shao Peishen 2026-09-06 答 D4=(a)），排在第 11 类之后。
             _check_status_triage_and_ledger(repo_root, log)
 
+            # 队列 §一 #462（2026-09-07，OP-0907-AH）：第 13 类常驻状态告警——
+            # 规划倒逼（规划里有、执行侧三处皆无的场景）。同上八类，检测对象是
+            # 仓库整体结构、与本轮是否有批次落库无关；🔴 **只读、只告警、
+            # 一个字节都不写任何队列、不 acquire 任何锁、不影响退出码**
+            # （design D5 ＝ (b)，Shao Peishen 2026-09-07 合审），排在第 12 类之后。
+            _check_plan_backpressure(repo_root, log)
+            plan_backpressure_scanned = True
+
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))
         return 0
@@ -6522,6 +6802,9 @@ def main() -> int:
         log.append(str(exc))
         if not local_only_scanned:
             _note_local_only_scan_skipped(
+                repo_root, f"整轮早退（{str(exc).strip()[:120]}）", log, args.dry_run)
+        if not plan_backpressure_scanned:
+            _note_plan_backpressure_skipped(
                 repo_root, f"整轮早退（{str(exc).strip()[:120]}）", log, args.dry_run)
         if exc.is_fork and not args.dry_run:
             _handle_fork_detected(repo_root, log)
@@ -6541,6 +6824,9 @@ def main() -> int:
         log.extend(f"    {line}" for line in tb_tail)
         if not local_only_scanned:
             _note_local_only_scan_skipped(
+                repo_root, f"整轮早退（未预期异常 {type(exc).__name__}）", log, args.dry_run)
+        if not plan_backpressure_scanned:
+            _note_plan_backpressure_skipped(
                 repo_root, f"整轮早退（未预期异常 {type(exc).__name__}）", log, args.dry_run)
         if not args.dry_run:
             webhook_url = _load_webhook_url(repo_root)

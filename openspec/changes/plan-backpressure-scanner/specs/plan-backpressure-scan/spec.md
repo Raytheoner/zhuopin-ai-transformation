@@ -64,6 +64,11 @@
 - **WHEN** 判定 `FI1` 是否有变更包，而 `openspec/changes` 中存在 `fi10-inventory-writedown-mvp`
 - **THEN** SHALL 不命中；而存在 `fi1-warehouse-reconcile` 时 SHALL 命中
 
+#### Scenario: 归档包的日期前缀先被剥除
+- **WHEN** 判定某场景是否有变更包，而候选包为归档包（包名以 `YYYY-MM-DD-` 开头，如 `2026-07-02-o2-kit-shortage-alert`）
+- **THEN** SHALL 先剥除该日期前缀再取首段（得 `o2`），MUST NOT 以日期段（`2026`）作为比对首段
+- **且** 若不剥除，`openspec/changes/archive` 这一处检查将对所有场景恒不命中——该情形 SHALL 被一条断言测试排除
+
 ### Requirement: 同名冲突的排除只降级不剔除
 命中别名但同格内同时命中该场景 `excludes` 词的结果 SHALL 被降级为「疑似已承接·待人确认」单列一档，MUST NOT 被静默剔除出清单。
 

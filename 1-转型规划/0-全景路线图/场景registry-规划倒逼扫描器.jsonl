@@ -1,0 +1,50 @@
+// 场景 registry —— 「规划倒逼开工」扫描器的机读正本（openspec 包 plan-backpressure-scanner，队列 §一 #462）
+// 🔴 本文件不是排期正本。唯一权威 ＝ 全景规划 §加速启动总览「唯一权威排期表」；同步方向单一（排期表 → 本文件），禁止反向回写。
+// 机器守 ＝ python 0-学习与工具/工具-规划倒逼扫描器.py --lint-registry（CI 硬失败）。排期表改了而这里没跟 ⇒ CI 报错。
+// 字段：code / domain / title / planned_month（仅展示、不进任何判据）/ aliases / excludes / suspended。
+// excludes 每条 ＝ {"phrase": 排除词, "source": 真实来源队列行号 #N ＋ 一句为什么}，source 缺 #N 即被 load_registry 拒绝（tasks 3.1）。
+// 🔴 excludes 命中**只降级不剔除**：场景降入「疑似已承接·待人确认」一档，不从清单消失（宁可多报——漏报 ＝ 回到完全不可见，误报 ＝ 有人花两分钟看一眼）。
+// ⚠️ 已知但**今日队列零命中、故不入表**的命名空间对撞（保持宁可多报，等真出现再补，每补一条须带行号）：
+//    · Q4 ← 2027-Q4／2026-Q4 季度写法（前置总表与全景规划混用；队列 §一 实测 0 命中，2026-09-07）
+//    · S1/S2/S3 ← Phase 1 阶段编号「筑基期／扩面期／深化期」（队列 §一「筑基期」实测 0 命中，2026-09-07；S1 唯一实证是 #259，已入表）
+// retired ＝ 已下架且不得重新分配的编号，留行只为不制造永久差集，不参与任何承接判定。
+{"code": "SC1", "domain": "采购", "title": "供应商风险初筛", "planned_month": "2026-07", "aliases": ["SC1"], "excludes": [], "suspended": ""}
+{"code": "SC2", "domain": "采购", "title": "采购周报自动生成", "planned_month": "2026-08", "aliases": ["SC2"], "excludes": [], "suspended": ""}
+{"code": "SC4", "domain": "采购", "title": "合同条款自动提取与审核", "planned_month": "2026-10", "aliases": ["SC4"], "excludes": [], "suspended": ""}
+{"code": "SC7", "domain": "采购", "title": "库存优化建议（两期制，并入原 SC5 采购建议/遴选）", "planned_month": "2026-09／2027-01", "aliases": ["SC7"], "excludes": [], "suspended": ""}
+{"code": "SC8", "domain": "采购", "title": "客户订单交期智能承诺", "planned_month": "2026-07", "aliases": ["SC8"], "excludes": [], "suspended": ""}
+{"code": "SC10", "domain": "采购", "title": "BOM 评审及公司物料库数据管控", "planned_month": "2027-03", "aliases": ["SC10"], "excludes": [], "suspended": ""}
+{"code": "SC11", "domain": "采购", "title": "库存智能调拨系统", "planned_month": "2027-04", "aliases": ["SC11"], "excludes": [], "suspended": ""}
+{"code": "O1", "domain": "运营", "title": "生产排程智能优化", "planned_month": "2026-09", "aliases": ["O1"], "excludes": [], "suspended": ""}
+{"code": "O2", "domain": "运营", "title": "物料齐套预警", "planned_month": "2026-09", "aliases": ["O2"], "excludes": [], "suspended": ""}
+{"code": "O3", "domain": "运营", "title": "物流异常检测与追踪", "planned_month": "2026-12", "aliases": ["O3"], "excludes": [], "suspended": ""}
+{"code": "O4", "domain": "运营", "title": "设备预测性维护", "planned_month": "2027-01", "aliases": ["O4"], "excludes": [], "suspended": ""}
+{"code": "R1", "domain": "工程研发", "title": "软件需求分析助手", "planned_month": "2027-07", "aliases": ["R1", "需求分析助手"], "excludes": [{"phrase": "Champion 门禁", "source": "#202（§四#35 静默期满恢复载体，「R1 Champion 门禁推迟至 2026-09-30」——这里的 R1 指工程研发 AI Champion，不是 R1 场景）"}, {"phrase": "口径点台账", "source": "#439（「R1 · 口径点台账（需求管理 intent 层）」——需求侧改进项 R1，与工程研发域 R1 场景字面完全相同）"}], "suspended": "研发域暂缓·Shao Peishen 2026-09-02 明令「研发和销售域场景依然暂缓等我通知再排序」（来源 #463，2026-09-02）"}
+{"code": "R2", "domain": "工程研发", "title": "AUTOSAR 配置助手", "planned_month": "2027-08", "aliases": ["R2", "AUTOSAR"], "excludes": [], "suspended": "研发域暂缓·Shao Peishen 2026-09-02 明令（来源 #463，2026-09-02）"}
+{"code": "R3", "domain": "工程研发", "title": "代码审查加速器", "planned_month": "2027-09", "aliases": ["R3", "代码审查加速"], "excludes": [{"phrase": "followup_readme_bridge", "source": "#416／#447（需求侧改进项 R3 ＝ followup_readme_bridge，与工程研发域 R3 场景字面完全相同）"}], "suspended": "研发域暂缓·Shao Peishen 2026-09-02 明令（来源 #463，2026-09-02）"}
+{"code": "R4", "domain": "工程研发", "title": "测试用例智能生成", "planned_month": "2027-10", "aliases": ["R4", "测试用例智能生成"], "excludes": [{"phrase": "纪律 eval 套件", "source": "#440（「R4 · 纪律 eval 套件（一期 3 条）」——需求侧改进项 R4）"}], "suspended": "研发域暂缓·Shao Peishen 2026-09-02 明令（来源 #463，2026-09-02）"}
+{"code": "R5", "domain": "工程研发", "title": "技术文档智能生成助手", "planned_month": "2027-11", "aliases": ["R5", "技术文档智能生成"], "excludes": [{"phrase": "场景级 R5", "source": "#337（「场景级 R5——SC8／FI2 各建同目录 CHANGELOG.md」——根 CLAUDE.md 瘦身机制的 R5，不是场景）"}, {"phrase": "R5 门禁", "source": "#391（「R5 门禁在真实数据上几乎从不触发」——FI2 对账规则编号 R5）"}, {"phrase": "R5 分母", "source": "#399／#373（跟进信《补件登记》里的稿次 R5）"}], "suspended": "研发域暂缓·Shao Peishen 2026-09-02 明令（来源 #463，2026-09-02）"}
+{"code": "Q2", "domain": "质量", "title": "8D 报告 AI 自动判定（旗舰①）", "planned_month": "2026-10", "aliases": ["Q2", "QD-A", "8D"], "excludes": [], "suspended": ""}
+{"code": "Q4", "domain": "质量", "title": "PPAP 文档自动审核助手", "planned_month": "2027-04", "aliases": ["Q4", "PPAP"], "excludes": [], "suspended": ""}
+{"code": "Q6", "domain": "质量", "title": "项目立项审核门禁助手（旗舰②，已交付＝QD-B）", "planned_month": "2026-10", "aliases": ["Q6", "QD-B", "立项门禁", "立项审核门禁"], "excludes": [], "suspended": ""}
+{"code": "FI1", "domain": "财务", "title": "供应链自动仓库对账（条件复启暂缓）", "planned_month": "暂缓（2026-07-06 财务域 v2）", "aliases": ["FI1"], "excludes": [], "suspended": ""}
+{"code": "FI2", "domain": "财务", "title": "三单匹配自动对账", "planned_month": "2026-09", "aliases": ["FI2"], "excludes": [], "suspended": ""}
+{"code": "FI3", "domain": "财务", "title": "付款申请自动校验", "planned_month": "2026-11", "aliases": ["FI3"], "excludes": [], "suspended": ""}
+{"code": "FI4", "domain": "财务", "title": "智能月结加速", "planned_month": "2027-Q1", "aliases": ["FI4"], "excludes": [], "suspended": ""}
+{"code": "FI5", "domain": "财务", "title": "费用报销智能审核", "planned_month": "2027-02", "aliases": ["FI5"], "excludes": [], "suspended": ""}
+{"code": "FI6", "domain": "财务", "title": "异常交易实时检测", "planned_month": "2027-04", "aliases": ["FI6"], "excludes": [], "suspended": ""}
+{"code": "FI7", "domain": "财务", "title": "预算执行监控", "planned_month": "2027-05", "aliases": ["FI7"], "excludes": [], "suspended": ""}
+{"code": "FI8", "domain": "财务", "title": "现金流预测与智能预警", "planned_month": "2027-05", "aliases": ["FI8"], "excludes": [], "suspended": ""}
+{"code": "FI9", "domain": "财务", "title": "研发费用归集与高新认定助手", "planned_month": "2027-06", "aliases": ["FI9"], "excludes": [], "suspended": ""}
+{"code": "FI10", "domain": "财务", "title": "存货跌价智能分析", "planned_month": "2027-06", "aliases": ["FI10"], "excludes": [], "suspended": ""}
+{"code": "S1", "domain": "销售", "title": "客户跟进与销售日报自动化", "planned_month": "2027-07", "aliases": ["S1", "客户跟进", "销售日报"], "excludes": [{"phrase": "收口外部对抗性评审", "source": "#259（「⏰ S1 收口外部对抗性评审 ＋ 冷备架构师接手演练」——这里的 S1 是 Phase 1 筑基期阶段编号，根 CLAUDE.md 第一句即在用这套编号）"}], "suspended": "销售域暂缓·Shao Peishen 2026-09-02 明令「研发和销售域场景依然暂缓等我通知再排序」（来源 #463，2026-09-02）"}
+{"code": "S2", "domain": "销售", "title": "客户拜访与技术交流智能助手", "planned_month": "2027-08", "aliases": ["S2", "拜访助手", "客户拜访"], "excludes": [], "suspended": "销售域暂缓·Shao Peishen 2026-09-02 明令（来源 #463，2026-09-02）"}
+{"code": "S3", "domain": "销售", "title": "RFQ 响应加速", "planned_month": "2027-09", "aliases": ["S3", "RFQ"], "excludes": [], "suspended": "销售域暂缓·Shao Peishen 2026-09-02 明令（来源 #463，2026-09-02）"}
+{"code": "S4", "domain": "销售", "title": "客户技术支持文档生成", "planned_month": "2027-10", "aliases": ["S4", "客户技术支持文档"], "excludes": [], "suspended": "销售域暂缓·Shao Peishen 2026-09-02 明令（来源 #463，2026-09-02）"}
+{"code": "S5", "domain": "销售", "title": "竞品动态智能监控", "planned_month": "2027-11", "aliases": ["S5", "竞品监控", "竞品动态"], "excludes": [], "suspended": "销售域暂缓·Shao Peishen 2026-09-02 明令（来源 #463，2026-09-02）"}
+{"code": "S6", "domain": "销售", "title": "销售预测与商机管理", "planned_month": "2027-12", "aliases": ["S6", "销售预测"], "excludes": [], "suspended": "销售域暂缓·Shao Peishen 2026-09-02 明令（来源 #463，2026-09-02）"}
+{"code": "Q1", "domain": "", "title": "客诉智能分类与自动分流（2026-08-21 v7 下架）", "planned_month": "", "aliases": [], "excludes": [], "suspended": "", "retired": true}
+{"code": "Q3", "domain": "", "title": "FMEA 智能维护助手（2026-08-21 v7 下架）", "planned_month": "", "aliases": [], "excludes": [], "suspended": "", "retired": true}
+{"code": "Q5", "domain": "", "title": "IATF 审核准备助手（2026-08-21 v7 下架）", "planned_month": "", "aliases": [], "excludes": [], "suspended": "", "retired": true}
+{"code": "Q7", "domain": "", "title": "IQC 来料检验智能判定（2026-08-21 v7 下架）", "planned_month": "", "aliases": [], "excludes": [], "suspended": "", "retired": true}
+{"code": "Q8", "domain": "", "title": "SPC 制程异常预警（2026-08-21 v7 下架）", "planned_month": "", "aliases": [], "excludes": [], "suspended": "", "retired": true}
