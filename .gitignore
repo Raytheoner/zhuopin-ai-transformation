@@ -37,6 +37,15 @@ venv/
 # 🔴 例外不递归（design D8）：该目录下不得建子目录，子目录内 .jsonl 仍会被静默忽略。
 !6-人才与组织/部门AI专员跟进/口径点台账/*.jsonl
 
+# 队列 #462 / openspec 包 plan-backpressure-scanner（apply，2026-09-07 OP-0907-AH）：
+# 场景 registry 是 35 个场景的机读正本（人工维护、无业务数据），spec `plan-scenario-registry`
+# 写死「SHALL 纳入版本控制、MUST NOT 落在任何被 .gitignore 覆盖的路径下」。
+# 🔴 本条是 apply 期 `git check-ignore` 实测补的，不是起草时预见到的：propose ⑤ 只测了
+# reports/ 状态文件，没测 registry 自身，而 `**/*.jsonl` 会把它一并吞掉——**一个不入库的
+# 「正本」与一个不存在的正本，在别人 clone 出来的仓库里长得完全一样**。
+# 🔴 例外只放行这一个文件（不放行整目录），且必须位于上面 **/*.jsonl 之后（git 后序优先）。
+!1-转型规划/0-全景路线图/场景registry-规划倒逼扫描器.jsonl
+
 # 场景 reports/ 目录（运行时生成，不入库）
 **/reports/
 
