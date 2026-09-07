@@ -192,6 +192,31 @@ jobs:
       # 了带判断分支的内联引导——那正是它该拦下的事。
       - run: python 0-学习与工具/工具-引导样板lint.py --enforce
 
+  lane-discipline-copy-lint:
+    name: "泳道纪律复制 lint（看护侧出现收口纪律副本即违规）"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      # 队列 §一 #478 期望产出 ③ / 变更包 lane-watch-deploy-extension 决策点 6⑴(a)：
+      # `.51` 部署那套执行纪律只长在 zhuopin-lan-closeout 一侧。#478 把「他在环且
+      # on-LAN 时可同 session 续做」这条时序放宽落地时，钉死的核心约束是「指向而非
+      # 复制」——而没有这道 job，「别抄」就只是又一条人守，本项目已反复证明人守在这
+      # 类形态上无效（#312 读侧双文件解析、#345 35 份路径引导手抄、跟进信状态两处
+      # 载体，三次同形）。
+      #
+      # 🔴 判据词由脚本**运行时从收口正本提取**，脚本内不写死词表——用一份手抄去守
+      # 「不许手抄」自相矛盾；抽不到词一律 fail-closed 退出 2（抽不到词 ⇒ 检查恒过
+      # ⇒ 守卫静默失效，那是本项目最熟悉的失败形态）。
+      #
+      # 直接上硬门禁、不走告警过渡（同 bootstrap-stub-lint 的「先确认清零、再关门」）：
+      # 上线前已实跑校准——12 个受守护载体存量违规真实为 0（正例全绿），并人为注入一段
+      # 照抄文本确认被拦下（负例，退出码 1）。它变红只可能是有人真的把那套纪律抄进了
+      # 看护侧。
+      - run: python 0-学习与工具/工具-泳道纪律复制lint.py
+
   scene-intent-gate-lint:
     name: "新场景包 intent.md 前置闸 lint（缺 intent 或未确认即违规）"
     runs-on: windows-latest

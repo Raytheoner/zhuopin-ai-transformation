@@ -64,6 +64,8 @@ markdown 行锁会引入与本场景无关的校验开销与耦合。本文件�
         --option 方案一 --option 方案二
     python 0-学习与工具/工具-泳道看护状态机.py transfer-out --batch 2026-09-02-看护批A \\
         --wave 2 --lane A --action-key deploy_51 --note "需部署到 .51"
+    python 0-学习与工具/工具-泳道看护状态机.py deploy-authorize --batch 2026-09-07-看护批B         --wave 2 --lane A --action-key deploy_51 --item "<被授权的那一项>"         --authorized-text "<他的授权原文，逐字>"
+    python 0-学习与工具/工具-泳道看护状态机.py deploy-record --lane A         --authorization-index 0 --outcome done --evidence-ref reports/xxx.md
     python 0-学习与工具/工具-泳道看护状态机.py resume --lane A --answer "方案一"
     python 0-学习与工具/工具-泳道看护状态机.py check-timeout
     python 0-学习与工具/工具-泳道看护状态机.py check-heartbeat --batch 2026-09-02-看护批A \\
@@ -74,7 +76,9 @@ markdown 行锁会引入与本场景无关的校验开销与耦合。本文件�
 退出码：`classify`/`criteria`/`lan-status`/`check-timeout`/`check-heartbeat`/
 `summary`/`show` 恒 0（只读/判定类，不代表业务失败）；`pause` 对 🟢/⏭️ 动作
 或参数有误返回 1；`transfer-out` 对非 ⏭️ 动作返回 1；`resume` 对不在 paused
-态的泳道返回 1。全部时间戳为**真 UTC**（`datetime.now(timezone.utc)`，格式
+态的泳道返回 1；`deploy-authorize` 三项前置任一不过返回 1（🔴 拒绝时不输出任何
+可被当作"放行"理解的结果），`deploy-record` 挂不到真实授权记录时返回 1。
+全部时间戳为**真 UTC**（`datetime.now(timezone.utc)`，格式
 `YYYY-MM-DDTHH:MM:SSZ`），非本地时间。
 """
 from __future__ import annotations
@@ -139,9 +143,33 @@ YELLOW_ACTIONS = {
 # 2026-09-02 架构收敛新增第四档：`.51` 部署原列 🟡（design 初稿一处真矛盾，
 # 见 design.md「为什么 `.51` 部署要单独设一档」）。本包不碰生产面，命中即
 # 停下标注去向、不执行，且**不进 pause/resume 问答循环**（见 transfer_out_lane）。
+#
+# 🔴 2026-09-07 语义扩展（变更包 `lane-watch-deploy-extension`，队列 §一 `#478`，
+# design 审 2026-09-07 已过）：**分类不变**——`classify("deploy_51")` 恒返回 ⏭️，
+# 有无授权都一样（决策点 1(a)：四档的判据轴是"可逆性"，而放行解的是"执行时序"，
+# 两者不同轴，把时序塞进分类轴会让 D1 表不再是一根干净的轴）。转出仍先发生、
+# `transfer_out_lane` 语义一字不改；转出**之后**新增一条**可选**的条件放行路径
+# ＝ `authorize_deploy()` / `deploy-authorize` 子命令，须三项前置全过（LAN 探针
+# 实测 on ／ 该项已有转出记录且尚未被别的授权绑定 ／ Shao Peishen 就该项的非空
+# 授权原文）。
+#
+# 🔴 **本文件不实现、不复述被指向方的任何一步执行纪律**：放行只打印指向
+# `zhuopin-lan-closeout` 规则正本的指针（见 DEPLOY_DISCIPLINE_POINTER_*），
+# 由执行方现读那一份照做。理由＝该纪律只长在收口里，在此复制一份护栏，
+# 而复制的护栏必然漂移（design 决策点 2(a)；反例守卫见
+# `0-学习与工具/工具-泳道纪律复制lint.py`）。
 TRANSFER_ACTIONS = {
     "deploy_51": "`.51` 部署及任何触碰生产服务的动作",
 }
+
+#: 被指向方（纪律唯一正本）的指针三件——**只锚文件 ＋ 小节标题 ＋ 条目序号，
+#: 不锚行号**（行号会漂，标题相对稳；design 决策点 2(a) 的代价段已如实登记）。
+DEPLOY_DISCIPLINE_POINTER_FILE = "0-学习与工具/skills源码/zhuopin-lan-closeout/SKILL.md"
+DEPLOY_DISCIPLINE_POINTER_SECTION = "执行步骤"
+DEPLOY_DISCIPLINE_POINTER_ITEM = "第 4 项"
+
+#: 放行后允许登记的执行结果分类（design §二 `deploy_attempts.outcome`）。
+DEPLOY_OUTCOMES = ("done", "rolled_back", "stopped")
 
 RED_ACTIONS = {
     "external_send": "对外发送（跟进信／企微群／专员）",
@@ -596,6 +624,224 @@ def transfer_out_lane(
     return data["lanes"][lane]
 
 
+# ---------------------------------------------------------------------------
+# ⏭️ 档条件放行（变更包 `lane-watch-deploy-extension`；队列 §一 `#478`）
+#
+# 🔴 本节只做三件事：查前置、落留痕、打印**指针**。执行纪律本身归被指向方
+# （`zhuopin-lan-closeout` 规则正本）所有，本节一步都不实现、一句都不复述。
+# ---------------------------------------------------------------------------
+
+class DeployAuthorizationRejected(RuntimeError):
+    """三项前置任一不过——拒绝放行（CLI 侧转成非零退出码）。
+
+    🔴 刻意用一个**独立**异常类型，不复用 `ValueError`：`ValueError` 在本文件
+    里已被 `pause`/`transfer-out`/`resume` 的参数校验占用，混用会让「前置不过」
+    和「参数写错」在调用侧长得一样，而这两件事的后果完全不同。"""
+
+
+def deploy_discipline_pointer() -> str:
+    """放行时给执行方的**唯一**一句话：去哪读、读完照做。
+
+    🔴 返回值里没有、也不允许有被指向方的任何一步内容——本函数的存在就是为了
+    让「指针与内容的距离恒为一次 Read」，从而消除漂移的物理可能（design 决策点
+    2(a)）。"""
+    return (
+        f"🔴 MUST 现读 `{DEPLOY_DISCIPLINE_POINTER_FILE}`"
+        f"「{DEPLOY_DISCIPLINE_POINTER_SECTION}」{DEPLOY_DISCIPLINE_POINTER_ITEM}，"
+        "并照该正本办；本命令只给指针，不复述其任何一条。"
+    )
+
+
+def _find_unbound_transfer(lane_state: dict, *, batch: str, action_key: str) -> Optional[int]:
+    """返回该泳道下**尚未被任何授权绑定**的首条同批次同动作转出记录的下标。
+
+    「尚未被绑定」＝没有任何 `deploy_authorizations` 条目的 `transfer_index`
+    指向它——逐项粒度就靠这一条实现，不靠时间窗（时间窗是假的安全感：他 30
+    分钟前授权、现在人已经离开，时间窗照样放行，design 决策点 4(a)）。"""
+    bound = {
+        a.get("transfer_index")
+        for a in lane_state.get("deploy_authorizations", [])
+        if a.get("transfer_index") is not None
+    }
+    for i, tr in enumerate(lane_state.get("transfers", [])):
+        if tr.get("action_key") != action_key or tr.get("batch") != batch:
+            continue
+        if i in bound:
+            continue
+        return i
+    return None
+
+
+def authorize_deploy(
+    *, batch: str, wave: int, lane: str, action_key: str, item: str,
+    authorized_text: str, prober: Optional[Callable[[], dict]] = None,
+) -> dict:
+    """⏭️ 档条件放行：三项前置全过才放行，并落一条 append-only 授权留痕。
+
+    三项前置（队列 `#478` 行内四条 MUST 的可机器核部分）：
+
+    ⑴ **当次 LAN 探针实测为 on**——复用既有 `lan_status()`，不新写探针；
+       `unknown`（探针本身没跑起来）与 `off` 同等处理，不做「大概在网」的宽容。
+    ⑵ **该泳道该项已有转出记录，且该条尚未被此前任何一次授权绑定**——转出
+       仍然先发生，授权不取代它；「尚未被绑定」这一半即**逐项粒度**的机器形态
+       （N 条转出最多换 N 次授权，第二项拿不到第一项的授权，故不需要、也不设
+       撤销机制，design 决策点 4(a)）。
+    ⑶ **授权原文非空**——它同时是「他此刻在环」的唯一代理证据（决策点 5(a)：
+       没有任何探针能观测一个人在不在，一条新鲜授权记录就是有人在环回答了
+       这件事的证据本身）。
+
+    🔴 **实现限制，如实登记**：本函数是一道**记录闸**，保证「没有授权记录就拒绝
+    放行且非零退出」，**不是**对绕过行为的物理阻断——它拦不住一个会话不跑本命令
+    直接去连 `.51`。真正的兜底在被指向方的纪律里，那条防线归它管。
+
+    检查次序刻意是 ⑶→⑵→⑴：前两项是本地判断、零副作用，LAN 探针要发真实网络
+    请求，放在最后可避免「参数一看就不合格却先去 ping 一遍内网」。
+    """
+    cls = classify(action_key)
+    if cls.tier != TIER_TRANSFER:
+        raise ValueError(
+            f"{action_key}（{cls.tier} {cls.label}）不是 ⏭️ 转出档动作，不接受 deploy-authorize。"
+        )
+    if not item or not item.strip():
+        raise ValueError("`--item` 不可为空——授权是逐项的，没有项标识就没有粒度。")
+
+    # 前置 ⑶：授权原文非空
+    if not authorized_text or not authorized_text.strip():
+        raise DeployAuthorizationRejected(
+            "前置 ⑶ 不过：授权原文为空。放行须有 Shao Peishen 就**该项**给出的一次明确授权，"
+            "且授权原文须逐字留痕（授权不能只活在会话记忆里）。"
+        )
+
+    # 前置 ⑵ 的候选查找（真正的绑定在下面的 mutate 里加锁重做一次，避免并发下
+    # 两条泳道抢同一条转出记录）
+    state = _read_state()
+    lane_state_ro = state.get("lanes", {}).get(lane)
+    if lane_state_ro is None or not lane_state_ro.get("transfers"):
+        raise DeployAuthorizationRejected(
+            f"前置 ⑵ 不过：泳道 `{lane}` 没有任何转出记录。转出记录是该项存在过的证据，"
+            "缺它则留痕链断裂——请先跑 `transfer-out`。"
+        )
+    if _find_unbound_transfer(lane_state_ro, batch=batch, action_key=action_key) is None:
+        raise DeployAuthorizationRejected(
+            f"前置 ⑵ 不过：泳道 `{lane}` 在批次 `{batch}` 下没有**尚未被授权绑定**的 "
+            f"`{action_key}` 转出记录。一次授权只对应一项，第二项须先自己转出、再自己拿授权。"
+        )
+
+    # 前置 ⑴：LAN 探针（放最后，见 docstring）
+    lan = lan_status(prober=prober)
+    if lan.get("effective") != "on":
+        raise DeployAuthorizationRejected(
+            f"前置 ⑴ 不过：LAN 探针实测 status={lan.get('status')!r} → "
+            f"effective={lan.get('effective')!r}。探测不确定与 off 同等处理，"
+            "不做「大概在网」的宽容。"
+        )
+
+    now = _now()
+    recorded: dict = {}
+
+    def _mutate(data: dict) -> None:
+        lane_state = data["lanes"].get(lane)
+        if lane_state is None:
+            raise DeployAuthorizationRejected(f"前置 ⑵ 不过：泳道 `{lane}` 不存在。")
+        idx = _find_unbound_transfer(lane_state, batch=batch, action_key=action_key)
+        if idx is None:
+            raise DeployAuthorizationRejected(
+                f"前置 ⑵ 不过：泳道 `{lane}` 已无未绑定的 `{action_key}` 转出记录"
+                "（并发抢占或重复授权）。"
+            )
+        entry = {
+            "batch": batch, "wave": wave, "action_key": action_key,
+            "action_label": cls.label, "item": item.strip(),
+            "transfer_index": idx,
+            "authorized_text": authorized_text.strip(),
+            "authorized_at": _iso(now),
+            "lan_probe": {"status": lan.get("status"), "effective": lan.get("effective")},
+        }
+        lane_state.setdefault("deploy_authorizations", []).append(entry)
+        recorded["index"] = len(lane_state["deploy_authorizations"]) - 1
+        recorded["authorization"] = entry
+
+    data = _with_state(_mutate)
+    return {
+        "lane": lane,
+        "index": recorded["index"],
+        "authorization": recorded["authorization"],
+        "pointer": deploy_discipline_pointer(),
+        "lane_state": data["lanes"][lane],
+    }
+
+
+def record_deploy_attempt(
+    *, lane: str, authorization_index: int, outcome: str, evidence_ref: str = "",
+    started_at: Optional[str] = None, finished_at: Optional[str] = None,
+) -> dict:
+    """放行后登记一条执行结果（append-only，同 `transfers`／`lock_hits` 形状）。
+
+    🔴 `evidence_ref` **只存指针**——证据本身由被指向方的纪律产出并落在它自己
+    的落点上，本函数不复制其内容、也不校验其形态（那是被指向方的事，本包一旦
+    去校验就等于把它的产出形态接管过来了）。"""
+    if outcome not in DEPLOY_OUTCOMES:
+        raise ValueError(f"outcome 只接受 {'/'.join(DEPLOY_OUTCOMES)}，收到 {outcome!r}。")
+    now = _now()
+    captured: dict = {}
+
+    def _mutate(data: dict) -> None:
+        lane_state = data["lanes"].get(lane)
+        auths = (lane_state or {}).get("deploy_authorizations", [])
+        if not auths or not (0 <= authorization_index < len(auths)):
+            raise ValueError(
+                f"泳道 `{lane}` 没有下标为 {authorization_index} 的授权记录——"
+                "执行结果必须挂在一条真实存在的授权上，否则留痕链断裂。"
+            )
+        entry = {
+            "authorization_index": authorization_index,
+            "batch": auths[authorization_index].get("batch"),
+            "item": auths[authorization_index].get("item"),
+            "started_at": started_at or _iso(now),
+            "finished_at": finished_at or _iso(now),
+            "outcome": outcome,
+            "evidence_ref": evidence_ref,
+        }
+        lane_state.setdefault("deploy_attempts", []).append(entry)
+        captured["attempt"] = entry
+
+    data = _with_state(_mutate)
+    return {"lane": lane, "attempt": captured["attempt"], "lane_state": data["lanes"][lane]}
+
+
+def count_deploy_authorizations(*, batch: Optional[str] = None) -> int:
+    """D6 邻接产出：本批授权放行共几次——现取，🔴 会话不得自算。"""
+    data = _read_state()
+    total = 0
+    for lane_state in data.get("lanes", {}).values():
+        for a in lane_state.get("deploy_authorizations", []):
+            if batch and a.get("batch") != batch:
+                continue
+            total += 1
+    return total
+
+
+def build_deploy_attempt_summary(*, batch: Optional[str] = None) -> dict:
+    """本批放行后的执行结果按分类计数（`done`/`rolled_back`/`stopped`）——同样现取。"""
+    data = _read_state()
+    counts = {k: 0 for k in DEPLOY_OUTCOMES}
+    for lane_state in data.get("lanes", {}).values():
+        for att in lane_state.get("deploy_attempts", []):
+            if batch and att.get("batch") != batch:
+                continue
+            if att.get("outcome") in counts:
+                counts[att["outcome"]] += 1
+    return counts
+
+
+def format_deploy_line(auth_count: int, outcome_counts: dict) -> str:
+    total = sum(outcome_counts.values())
+    if auth_count == 0 and total == 0:
+        return "本批 ⏭️ 档授权放行 0 次"
+    detail = "／".join(f"{k}={outcome_counts.get(k, 0)}" for k in DEPLOY_OUTCOMES)
+    return f"本批 ⏭️ 档授权放行 {auth_count} 次｜执行 {total} 项（{detail}）"
+
+
 def resume_lane(*, lane: str, answer: str) -> dict:
     """记录答复、解除暂停（3.3）。只接受当前确为 paused 态的泳道——防止对
     未暂停/已续过的泳道重复 resume 把历史记录写乱。"""
@@ -909,6 +1155,54 @@ def _cmd_transfer_out(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_deploy_authorize(args: argparse.Namespace) -> int:
+    """⏭️ 档条件放行（`#478`）。放行输出**只有指针**，没有任何一步内容。"""
+    try:
+        result = authorize_deploy(
+            batch=args.batch, wave=args.wave, lane=args.lane, action_key=args.action_key,
+            item=args.item, authorized_text=args.authorized_text,
+        )
+    except DeployAuthorizationRejected as exc:
+        print(f"✗ 拒绝放行：{exc}")
+        return 1
+    except ValueError as exc:
+        print(f"✗ {exc}")
+        return 1
+    auth = result["authorization"]
+    print(
+        f"✅ 已放行：泳道 `{args.lane}` 的「{auth['item']}」"
+        f"（授权记录 #{result['index']}，绑定转出记录 #{auth['transfer_index']}，"
+        f"LAN 探针 status={auth['lan_probe']['status']}）。"
+    )
+    print(result["pointer"])
+    print(
+        "🔴 逐项粒度：本次授权只管这一项；同批其余项须各自先转出、再各自取得授权。"
+    )
+    if args.json:
+        print(json.dumps(result["authorization"], ensure_ascii=False))
+    return 0
+
+
+def _cmd_deploy_record(args: argparse.Namespace) -> int:
+    """登记一条放行后的执行结果；`--evidence-ref` 只记指针，不内联证据。"""
+    try:
+        result = record_deploy_attempt(
+            lane=args.lane, authorization_index=args.authorization_index,
+            outcome=args.outcome, evidence_ref=args.evidence_ref,
+        )
+    except ValueError as exc:
+        print(f"✗ {exc}")
+        return 1
+    att = result["attempt"]
+    print(
+        f"已登记：泳道 `{args.lane}`「{att['item']}」结果＝{att['outcome']}"
+        f"（挂在授权 #{att['authorization_index']}）。"
+    )
+    if args.json:
+        print(json.dumps(att, ensure_ascii=False))
+    return 0
+
+
 def _cmd_pause(args: argparse.Namespace) -> int:
     notify_fn = (lambda _msg: None) if args.no_notify else None
     try:
@@ -978,11 +1272,16 @@ def _cmd_summary(args: argparse.Namespace) -> int:
     print(format_lock_hit_line(lock_hits))
     notify_failures = count_notify_failures()
     print(format_notify_failure_line(notify_failures))
+    deploy_auths = count_deploy_authorizations(batch=args.batch)
+    deploy_outcomes = build_deploy_attempt_summary(batch=args.batch)
+    print(format_deploy_line(deploy_auths, deploy_outcomes))
     if args.json:
         print(json.dumps(
             {
                 "stops": rows, "transfers": transfer_rows, "lock_hits": lock_hits,
                 "notify_failures": notify_failures,
+                "deploy_authorizations": deploy_auths,
+                "deploy_outcomes": deploy_outcomes,
             },
             ensure_ascii=False,
         ))
@@ -1067,6 +1366,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_transfer.add_argument("--no-notify", action="store_true", help="跳过企微推送（联调/测试用）")
     p_transfer.add_argument("--json", action="store_true")
     p_transfer.set_defaults(func=_cmd_transfer_out)
+
+    p_deploy = sub.add_parser(
+        "deploy-authorize",
+        help="⏭️ 档条件放行（#478）：三项前置全过才放行，输出只给 zhuopin-lan-closeout 正本的指针",
+    )
+    p_deploy.add_argument("--batch", required=True)
+    p_deploy.add_argument("--wave", type=int, required=True)
+    p_deploy.add_argument("--lane", required=True)
+    p_deploy.add_argument("--action-key", required=True)
+    p_deploy.add_argument("--item", required=True, help="被授权的**那一项**的标识，须与其转出记录对得上")
+    p_deploy.add_argument("--authorized-text", required=True, help="Shao Peishen 的授权原文，逐字")
+    p_deploy.add_argument("--json", action="store_true")
+    p_deploy.set_defaults(func=_cmd_deploy_authorize)
+
+    p_deploy_rec = sub.add_parser(
+        "deploy-record", help="登记一条放行后的执行结果（挂在某条授权记录上；证据只记指针）",
+    )
+    p_deploy_rec.add_argument("--lane", required=True)
+    p_deploy_rec.add_argument("--authorization-index", type=int, required=True)
+    p_deploy_rec.add_argument("--outcome", required=True, choices=list(DEPLOY_OUTCOMES))
+    p_deploy_rec.add_argument("--evidence-ref", default="", help="证据落点的仓库根相对路径（只记指针）")
+    p_deploy_rec.add_argument("--json", action="store_true")
+    p_deploy_rec.set_defaults(func=_cmd_deploy_record)
 
     p_resume = sub.add_parser("resume", help="记录 Shao Peishen 的答复，解除该泳道暂停")
     p_resume.add_argument("--lane", required=True)
