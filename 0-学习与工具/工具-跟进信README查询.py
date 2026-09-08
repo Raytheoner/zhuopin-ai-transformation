@@ -34,11 +34,52 @@ MAIN_TABLE_SECTION`。**不覆盖「补件登记」表**：该表首列语义不
 同一份 digest。需要补件表数据的调用方应另行处理，不应假设本工具
 覆盖了它。
 
+## 整格原文只读模式 `--row`（队列 §一 #501⑴，2026-09-08）
+
+`--digest` 解决的是「扫全表不通读真身」，它按设计**必然**只给每格的首段；
+`--digest-width` 也救不了状态列——已识别前缀之后的延续文本走的是
+`STATUS_CONTINUATION_WIDTH` 这个**独立常量**，`--digest-width` 对它无效
+（`#501` 立行前实测传 3000 无变化，见该行成因段）。
+
+于是出现了一个**读侧取证链的断口**：README 有读侧禁通读钩子
+（`hooks-pretooluse-queue-read-guard.ps1`，立法理由见 openspec
+`followup-readme-phase2` D4）挡住 `Read`/`Grep`/`cat`，唯一写入口
+`工具-跟进信README登记.py set-status` 又是**整格替换**——想改写一格长状态，
+改写者手里没有任何合法途径看到那一格的全文。`#501` 的原始形态就是这个断口
+的一次真实命中：`质量部#7` 的状态格里嵌着一句在机器眼里仍有效的
+`串行豁免：` 口令，上一棒看护者**当场停手未改**，判据是「看不见全文就改
+＝用重建文本覆盖一段从未看过的叙述」。
+
+`--row <编号>` 补的正是这一格：**单行、逐字、零截断**地输出该行各格原文，
+并对每格附字符数／UTF-8 字节数／sha256（供改写前后逐字对照留档）。
+
+🔴 **它刻意不是「放宽 `--digest-width`」，也不是「开一个通读后门」**：
+一次只出**一行**，且**必须**给出确切编号——读侧禁通读的立法目的（一次
+`Read` 就把 178 KB 主表灌进上下文）因此不被绕过，被放开的只有「改写者看得见
+自己要改的那一格」这一件事。
+
+🔴 **行匹配判据与 `set-status` 的关系**：`set-status` 的匹配是「编号格字面
+相等 **或** `parse_letter_number` 解析值相等，取第一个命中」。本模式**不复刻**
+那条判据（复刻即多一份会漂移的实现，正是 `#482` 在修的毛病），而是走一条
+**更严**的路：先做字面相等匹配，无命中才回落解析值相等，且**任一趟命中多行
+即报错**（`set-status` 会静默取第一行）。字面相等是两侧必然一致的子集 ⇒
+输出里显式回印「编号格字面值」，改写者把该字面值原样喂给 `set-status
+--number`，走的就是两侧逐字相同的那条分支。
+
+⚠️ **「逐字」的确切边界**：markdown 表格按 `|` 切分，`readme_table._split_row`
+会 `strip()` 掉每格与管道符之间的空白——本模式输出的是**该 strip 之后**的格
+内容。这不是有损：写侧 `_join_row` 回写时同样按 `| ` + ` | ` 拼装，故
+「读出来的格 → 原样喂回 set-status」是逐字往返的。格**内部**的任何空白、
+换行转义、装饰星号一律不动（不走 `normalize_status`）。
+
 ## 用法
 
     python 0-学习与工具/工具-跟进信README查询.py --digest
     python 0-学习与工具/工具-跟进信README查询.py --digest --digest-width 30
     python 0-学习与工具/工具-跟进信README查询.py --digest --json
+    python 0-学习与工具/工具-跟进信README查询.py --row 质量部#7
+    python 0-学习与工具/工具-跟进信README查询.py --row 质量部#7 --field 发送状态
+    python 0-学习与工具/工具-跟进信README查询.py --row 质量部#7 --json
 
 `--json` 供 sweep 等下游程序消费（队列 #382⑵：待发信盘点下放 sweep 的
 delta 告警）；人读格式与 `--json` 共用同一份行数据，不是两套逻辑
@@ -47,6 +88,7 @@ delta 告警）；人读格式与 `--json` 共用同一份行数据，不是两�
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -223,6 +265,161 @@ def build_digest_rows(readme_text: str, width: int = DEFAULT_DIGEST_WIDTH) -> li
     return result
 
 
+# ---------------------------------------------------------------------------
+# 整格原文只读模式（`--row`，队列 §一 #501⑴）
+# ---------------------------------------------------------------------------
+
+# `--field` 的「全部列」取值。刻意用英文字面量而非"全部"——它是命令行 token，
+# 与列名（一律中文）不可能撞车，同队列 `工具-队列查询.py --field all` 既有约定。
+RAW_FIELD_ALL = "all"
+
+# sha256 全长 64 位十六进制，人读输出里取前 16 位即可区分改写前后（碰撞概率
+# 与本用途完全不相干）；`--json` 里给全长，供机器逐字对照。
+RAW_HUMAN_HASH_PREFIX = 16
+
+
+class RawRowNotFound(LookupError):
+    """`--row` 给的编号在主表里定位不到，或定位到多行（歧义）。
+
+    与 `ReadmeTableError`（表结构坏了）分开成两类：前者是"你给的编号不对"，
+    后者是"这份文件不再是那张表了"，两者的处置完全不同——混成一类会让
+    调用方把"编号打错"当成"README 被人改坏了"。
+    """
+
+
+def _cell_fingerprint(value: str) -> dict:
+    """一格原文的可核指纹。字符数与字节数分列——CJK 一字三字节，只给其中
+    一个数字会让「改写前后长度对得上吗」这个核对动作在两种口径间打滑。"""
+    raw = value.encode("utf-8")
+    return {
+        "chars": len(value),
+        "bytes": len(raw),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+    }
+
+
+def build_raw_row(readme_text: str, number: str, section: str = MAIN_TABLE_SECTION) -> dict:
+    """按编号取**单行**各格原文，零截断。
+
+    匹配两趟（判据见模块 docstring「行匹配判据与 `set-status` 的关系」）：
+    ⑴ 编号格**字面相等**；⑵ 无命中才回落 `parse_letter_number` **解析值相等**。
+    任一趟命中多行 ⇒ `raise RawRowNotFound`，**MUST NOT 静默取第一行**——
+    改写者据本函数的输出去改一格，取错行的代价是把改写写到别人那行上。
+    """
+    rows = iter_rows(readme_text, section=section)
+    if not rows:
+        raise RawRowNotFound(f"「{section}」表内无数据行，无法定位编号「{number}」")
+    header = rows[0].header_cells
+    number_col = column_index(header, "编号")
+    if number_col is None:
+        raise ReadmeTableError(
+            f"「{section}」表头缺少「编号」列——表结构可能已变，本工具需要同步更新列名。"
+        )
+
+    def _cell_of(row, col):
+        return row.cells[col] if len(row.cells) > col else ""
+
+    literal = [r for r in rows if _cell_of(r, number_col) == number]
+    matched, how = (literal, "字面相等") if literal else ([], "")
+    if not matched:
+        target_parsed = followup_gate.parse_letter_number(number)
+        if target_parsed is not None:
+            matched = [
+                r for r in rows
+                if followup_gate.parse_letter_number(_cell_of(r, number_col)) == target_parsed
+            ]
+            how = "编号解析值相等"
+
+    if not matched:
+        raise RawRowNotFound(
+            f"编号「{number}」在「{section}」主表中定位不到。"
+            "（本模式只读主表活行；已归档的行请用 `--file` 指向对应 "
+            "`README-归档-YYYYMM.md` 再查。）"
+        )
+    if len(matched) > 1:
+        literals = "、".join(f"`{_cell_of(r, number_col)}`" for r in matched)
+        raise RawRowNotFound(
+            f"编号「{number}」按「{how}」命中 {len(matched)} 行（{literals}）——歧义，"
+            "本模式拒绝猜哪一行。请改传上列某个**编号格字面值**（字面相等只会命中一行）。"
+        )
+
+    row = matched[0]
+    cells = []
+    for i, col_name in enumerate(header):
+        value = _cell_of(row, i)
+        cells.append({
+            "column": col_name,
+            "index": i,
+            "is_status_column": i == row.status_col_index,
+            "value": value,
+            **_cell_fingerprint(value),
+        })
+    return {
+        "section": section,
+        "queried_number": number,
+        # 🔴 回印字面值：改写者把**这一个**值喂给 `set-status --number`，
+        # 走的是两侧逐字相同的字面相等分支（模块 docstring 已述）。
+        "number_cell_literal": _cell_of(row, number_col),
+        "matched_by": how,
+        # markdown 文件里的 0-based 行号（与 `RowLocation.line_index` 同一口径）；
+        # +1 即编辑器行号。给出它是为了让"我读的和我改的是同一行"可被第三方复核。
+        "line_index": row.line_index,
+        "status_column_index": row.status_col_index,
+        "cells": cells,
+    }
+
+
+def _select_raw_cells(raw_row: dict, field: str) -> list[dict]:
+    """`--field` 选列：`all` 全出；否则按**列名含该子串**选（同 `column_index`
+    既有的包含匹配口径——表头实际写作「发送状态（2026-07-06）」，要求全等
+    会逼调用方去抄那个括注）。选不中即抛，不静默返回空。"""
+    if field == RAW_FIELD_ALL:
+        return raw_row["cells"]
+    hits = [c for c in raw_row["cells"] if field in c["column"]]
+    if not hits:
+        names = "、".join(c["column"] for c in raw_row["cells"])
+        raise RawRowNotFound(f"列名不含「{field}」的列——本表列为：{names}")
+    return hits
+
+
+def _run_raw_row(args: argparse.Namespace) -> int:
+    readme_rel = args.file or README_REL
+    readme_path = REPO_ROOT / readme_rel
+    try:
+        text = readme_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"✗ 读取 README 失败：{readme_path}（{exc}）")
+        return 1
+
+    try:
+        raw_row = build_raw_row(text, args.row)
+        cells = _select_raw_cells(raw_row, args.field)
+    except (ReadmeTableError, RawRowNotFound) as exc:
+        print(f"✗ {exc}")
+        return 1
+
+    if args.json:
+        payload = dict(raw_row)
+        payload["readme"] = readme_rel
+        payload["field"] = args.field
+        payload["cells"] = cells
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"【整格原文 · {raw_row['section']} · {raw_row['number_cell_literal']}】")
+    print(f"文件：{readme_rel} ｜ markdown 行号 {raw_row['line_index'] + 1} "
+          f"｜ 匹配方式：{raw_row['matched_by']} ｜ 选列：{args.field}")
+    print("🔴 逐字原文、零截断；改写请用 "
+          f"`工具-跟进信README登记.py set-status --number {raw_row['number_cell_literal']}`"
+          "（整格替换）。")
+    for c in cells:
+        marker = "（发送状态列）" if c["is_status_column"] else ""
+        print(f"\n──── [{c['index']}] {c['column']}{marker} ｜ {c['chars']} 字 ／ "
+              f"{c['bytes']} 字节 ／ sha256:{c['sha256'][:RAW_HUMAN_HASH_PREFIX]} ────")
+        print(c["value"])
+    return 0
+
+
 def _run_digest(args: argparse.Namespace) -> int:
     if args.digest_width < 1:
         print("✗ --digest-width 须为正整数。")
@@ -273,16 +470,30 @@ def _run_digest(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="跟进信 README 只读 digest——结构性扫描「现有跟进信清单」"
+        description="跟进信 README 只读查询：`--digest` 结构性扫描「现有跟进信清单」"
                      "主表，供待发信盘点/交叉红标等下游程序或人工快速核查用，"
-                     "不必读全文（队列 §一 #382⑵）。",
+                     "不必读全文（队列 §一 #382⑵）；`--row <编号>` 单行整格原文、"
+                     "逐字零截断，供改写长状态格前取证（队列 §一 #501⑴）。",
     )
     parser.add_argument(
-        "--digest", action="store_true", required=True,
-        help="输出主表全部行 digest（编号｜收信人｜发送状态首段｜交期要点首段）；"
-             "当前唯一支持的模式，显式要求传入以留出未来扩展空间。",
+        "--digest", action="store_true",
+        help="输出主表全部行 digest（编号｜收信人｜发送状态首段｜交期要点首段）。"
+             "与 `--row` 二选一，必传其一。",
+    )
+    parser.add_argument(
+        "--row", default=None, metavar="编号",
+        help="整格原文只读模式（#501⑴）：按编号取**单行**各格原文，逐字、零截断，"
+             "每格附字符数／字节数／sha256。改写长状态格前的取证入口——"
+             "读侧禁通读钩子挡住直读、`set-status` 又是整格替换时，这是唯一"
+             "能看见全文的合法途径。与 `--digest` 二选一。",
     )
     parser.add_argument("--json", action="store_true", help="机器消费用；与人读格式共用同一份数据")
+    parser.add_argument(
+        "--field", default=RAW_FIELD_ALL, metavar="列名",
+        help=f"仅 `--row` 模式生效：选列（默认 `{RAW_FIELD_ALL}` ＝全部列）。"
+             "按列名**含该子串**匹配（表头实际写作「发送状态（2026-07-06）」，"
+             "传 `发送状态` 即可）；选不中即报错，不静默返回空。",
+    )
     parser.add_argument(
         "--digest-width", type=int, default=DEFAULT_DIGEST_WIDTH,
         help=f"「交期要点」列与未识别状态前缀兜底的截断宽度（默认 {DEFAULT_DIGEST_WIDTH}）；"
@@ -296,6 +507,16 @@ def main(argv: list[str] | None = None) -> int:
              "主表一致，按同一套解析逻辑读取，行为逐字相同。",
     )
     args = parser.parse_args(argv)
+    # 🔴 两模式互斥且必传其一——不设默认模式：`--row` 是「看一格」，`--digest`
+    # 是「扫全表」，猜错方向的代价一边是白跑、另一边是把 45 行灌进上下文。
+    if args.digest and args.row is not None:
+        print("✗ `--digest` 与 `--row` 互斥，一次只能选一个模式。")
+        return 1
+    if not args.digest and args.row is None:
+        print("✗ 须指定模式：`--digest`（扫全表 digest）或 `--row <编号>`（单行整格原文）。")
+        return 1
+    if args.row is not None:
+        return _run_raw_row(args)
     return _run_digest(args)
 
 

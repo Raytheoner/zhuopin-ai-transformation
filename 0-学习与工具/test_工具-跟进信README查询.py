@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import json
@@ -196,6 +197,192 @@ class FollowupReadmeDigestTests(unittest.TestCase):
         self._write_readme("")
         rows = self._rows()
         self.assertEqual(rows, [])
+
+
+class FollowupReadmeRawRowTests(unittest.TestCase):
+    """`--row` 整格原文只读模式（队列 §一 #501⑴）。
+
+    本类的核心是一对**正反用例**：同一个超长状态格，`--row` 必须逐字还原
+    （正），`--digest` 即便把 `--digest-width` 开到 3000 也仍然截断（反）。
+    反用例不是"演示 digest 不好用"——它是 `#501` 立行的那条成因本身
+    （`--digest-width` 对状态列无效，实测传 3000 无变化），把它钉成回归，
+    以后谁想"放宽宽度就够了"会当场看到这条测试。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.module = _load()
+        self.module.REPO_ROOT = self.root
+        (self.root / README_REL).parent.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_readme(self, rows: str):
+        (self.root / README_REL).write_text(README_HEADER + rows, encoding="utf-8")
+
+    def _text(self):
+        return (self.root / README_REL).read_text(encoding="utf-8")
+
+    @staticmethod
+    def _long_status():
+        """一格远超任何 digest 宽度的真实形态状态：闭环前缀 ＋ 长叙述，且
+        叙述里嵌着一句被**引用**的 `串行豁免：` 口令——`质量部#7` 的形态。"""
+        return (
+            "✅ **无需回复**（起草时即判定，发出即闭环、不占串行闸）"
+            + "　补充说明" * 300
+            + "　须走 `串行豁免：前信为无需回复形态` 逃生阀。"
+        )
+
+    # ------------------------------------------------- 正：整格原文零截断
+
+    def test_row模式逐字还原长状态格(self):
+        status = self._long_status()
+        self._write_readme(_row("质量部#7", "质量部 · 陈忱", "尽快", status))
+        raw = self.module.build_raw_row(self._text(), "质量部#7")
+        cell = next(c for c in raw["cells"] if c["is_status_column"])
+        self.assertEqual(cell["value"], status)
+        self.assertNotIn("…", cell["value"])
+        self.assertEqual(cell["chars"], len(status))
+        self.assertEqual(cell["bytes"], len(status.encode("utf-8")))
+        self.assertEqual(cell["sha256"], hashlib.sha256(status.encode("utf-8")).hexdigest())
+
+    def test_row模式CLI人读输出含状态格全文(self):
+        status = self._long_status()
+        self._write_readme(_row("质量部#7", "质量部 · 陈忱", "尽快", status))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.module.main(["--row", "质量部#7", "--field", "发送状态"])
+        self.assertEqual(code, 0)
+        out = buf.getvalue()
+        self.assertIn(status, out)
+        # 只出这一列——其它列的内容不得随之泄进上下文（一次只出一行一列，
+        # 正是"不开通读后门"这条约束的可测形态）。
+        self.assertNotIn("质量部 · 陈忱", out.split("──── [")[-1])
+
+    # ------------------------------------------------- 反：digest 仍然截断
+
+    def test_digest对同一长状态格仍截断且digest_width无效(self):
+        status = self._long_status()
+        self._write_readme(_row("质量部#7", "质量部 · 陈忱", "尽快", status))
+        text = self._text()
+        default_digest = self.module.build_digest_rows(text)[0]["status_digest"]
+        wide_digest = self.module.build_digest_rows(text, width=3000)[0]["status_digest"]
+        # ⑴ 截断确实发生（远短于原文）；⑵ 把宽度开到 3000 一个字都没多——
+        # 状态列延续文本走的是 STATUS_CONTINUATION_WIDTH 这个独立常量。
+        self.assertLess(len(default_digest), len(status))
+        self.assertEqual(default_digest, wide_digest)
+        self.assertNotIn("串行豁免", default_digest)
+
+    # ------------------------------------------------- 匹配判据
+
+    def test_字面相等优先于编号解析值相等(self):
+        self._write_readme(
+            _row("质量部#7（待你审，暂不占号）", "质量部 · 陈忱", "尽快", "⏳ 待你审")
+            + _row("质量部#7", "质量部 · 陈忱", "尽快", "✅ 无需回复")
+        )
+        raw = self.module.build_raw_row(self._text(), "质量部#7")
+        self.assertEqual(raw["matched_by"], "字面相等")
+        self.assertEqual(raw["number_cell_literal"], "质量部#7")
+        status = next(c for c in raw["cells"] if c["is_status_column"])
+        self.assertEqual(status["value"], "✅ 无需回复")
+
+    def test_无字面命中时回落解析值相等(self):
+        self._write_readme(_row("质量部#7（待你审，暂不占号）", "质量部 · 陈忱", "尽快", "⏳ 待你审"))
+        raw = self.module.build_raw_row(self._text(), "质量部#7")
+        self.assertEqual(raw["matched_by"], "编号解析值相等")
+        self.assertEqual(raw["number_cell_literal"], "质量部#7（待你审，暂不占号）")
+
+    def test_解析值命中多行时报歧义不静默取第一行(self):
+        """`set-status` 在同样的输入下会静默取第一行；本模式据以取证，取错行
+        的代价是把改写落到别人那行上，故收窄为报错。"""
+        self._write_readme(
+            _row("质量部#7（待你审，暂不占号）", "质量部 · 陈忱", "尽快", "⏳ 待你审")
+            + _row("质量部#7（未发）", "质量部 · 陈忱", "尽快", "🆕 待发")
+        )
+        with self.assertRaises(self.module.RawRowNotFound) as ctx:
+            self.module.build_raw_row(self._text(), "质量部#7")
+        msg = str(ctx.exception)
+        self.assertIn("歧义", msg)
+        self.assertIn("质量部#7（未发）", msg)
+
+    def test_编号不存在退出码1(self):
+        self._write_readme(_row("质量部#7", "质量部 · 陈忱", "尽快", "✅ 无需回复"))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.module.main(["--row", "质量部#99"])
+        self.assertEqual(code, 1)
+        self.assertIn("✗", buf.getvalue())
+
+    # ------------------------------------------------- 选列
+
+    def test_field按列名子串匹配表头括注(self):
+        self._write_readme(_row("质量部#7", "质量部 · 陈忱", "尽快", "✅ 无需回复"))
+        raw = self.module.build_raw_row(self._text(), "质量部#7")
+        cells = self.module._select_raw_cells(raw, "发送状态")
+        self.assertEqual(len(cells), 1)
+        self.assertTrue(cells[0]["column"].startswith("发送状态"))
+
+    def test_field选不中即报错不静默返回空(self):
+        self._write_readme(_row("质量部#7", "质量部 · 陈忱", "尽快", "✅ 无需回复"))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.module.main(["--row", "质量部#7", "--field", "并不存在的列"])
+        self.assertEqual(code, 1)
+        self.assertIn("✗", buf.getvalue())
+
+    def test_field默认all出全部列(self):
+        self._write_readme(_row("质量部#7", "质量部 · 陈忱", "尽快", "✅ 无需回复"))
+        raw = self.module.build_raw_row(self._text(), "质量部#7")
+        self.assertEqual(len(self.module._select_raw_cells(raw, self.module.RAW_FIELD_ALL)), 6)
+
+    # ------------------------------------------------- JSON / CLI 形态
+
+    def test_json模式给全长sha256与行号(self):
+        status = self._long_status()
+        self._write_readme(_row("质量部#7", "质量部 · 陈忱", "尽快", status))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.module.main(["--row", "质量部#7", "--json"])
+        self.assertEqual(code, 0)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["number_cell_literal"], "质量部#7")
+        self.assertEqual(data["readme"], README_REL)
+        cell = next(c for c in data["cells"] if c["is_status_column"])
+        self.assertEqual(cell["value"], status)
+        self.assertEqual(len(cell["sha256"]), 64)
+        # markdown 行号：表头 2 行 + 章节标题 2 行 ⇒ 第一条数据行 line_index=4
+        self.assertEqual(data["line_index"], 4)
+
+    def test_row与digest互斥且必传其一(self):
+        self._write_readme(_row("质量部#7", "质量部 · 陈忱", "尽快", "✅ 无需回复"))
+        for argv in (["--row", "质量部#7", "--digest"], []):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = self.module.main(argv)
+            self.assertEqual(code, 1, f"argv={argv}")
+            self.assertIn("✗", buf.getvalue())
+
+    def test_row模式支持file指向归档件(self):
+        self._write_readme(_row("质量部#9", "质量部 · 陈忱", "尽快", "🆕 待发"))
+        archive_rel = "6-人才与组织/部门AI专员跟进/README-归档-202609.md"
+        (self.root / archive_rel).write_text(
+            README_HEADER + _row("质量部#7", "质量部 · 陈忱", "尽快", "❌ 已作废（归档件里的那一行）"),
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.module.main(["--row", "质量部#7", "--file", archive_rel])
+        self.assertEqual(code, 0)
+        self.assertIn("归档件里的那一行", buf.getvalue())
+
+    def test_表结构坏了退出码1(self):
+        (self.root / README_REL).write_text("这份文件里没有任何跟进信表格\n", encoding="utf-8")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.module.main(["--row", "质量部#7"])
+        self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":
