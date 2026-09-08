@@ -76,7 +76,10 @@ def create_app(*, base_date: date | None = None, mode: str = "mock",
         重算时执行**，页面请求一律走快照——把一次两分钟的取数挂在 HTTP 请求上，
         用户会以为服务挂了。
         """
-        base = base_date or date.today()
+        # 🔴 `base_date is None` ＝「跟着今天走」，**每次请求现取**（队列 §一 `#506`）。
+        # 长开服务的装配方 `run_sc2._serve_base_date` 必须传 None 才能走到这一支；
+        # 它一旦在启动时求值一次并传进来，本行就永远走不到，页面被冻在启动日那一期。
+        base = base_date if base_date is not None else date.today()
         windows = build_windows(base)
         report = build_report(
             build_feed(mode, max_status_materials).fetch(windows), windows)
@@ -86,7 +89,10 @@ def create_app(*, base_date: date | None = None, mode: str = "mock",
 
     def _current_report():
         """快照优先：有当期快照就渲染快照，没有才真算一次。"""
-        base = base_date or date.today()
+        # 🔴 `base_date is None` ＝「跟着今天走」，**每次请求现取**（队列 §一 `#506`）。
+        # 长开服务的装配方 `run_sc2._serve_base_date` 必须传 None 才能走到这一支；
+        # 它一旦在启动时求值一次并传进来，本行就永远走不到，页面被冻在启动日那一期。
+        base = base_date if base_date is not None else date.today()
         # 期次＝采购口径周序（D22），与 `build_report` 落快照时用的标签一致。
         period = build_windows(base).current.label()
         try:
