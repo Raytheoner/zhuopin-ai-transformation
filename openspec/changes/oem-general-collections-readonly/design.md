@@ -1,0 +1,84 @@
+# oem-general-collections-readonly Design
+
+> **合规口径本身已裁决，本包不再走口径审**：**D5=(a)** 由 **Shao Peishen 本人** 2026-09-02 在 `oem-chroma-ownership-rejudge` design 审内定夺（`compliance_redline_change`，孙涛不可代）。本文档只记录**实现层面**的技术决策——它们未逐条经裁决人拍板，但均不改变 D5 已定的对外语义（"校验入口建成前通用库只读，已有内容不受影响，禁止新写入"）。
+> 🟡 **本文档止步于起草**：openspec design 审属 🟡 档，本泳道不自审自过。第 6 节列出**须审查方拍板**的两项。
+
+## 决策 1：闸建在哪一层——`OEMRouter`（L1），不等 `rag.retrieve()`（L2）
+
+**选项**：
+- (a) 建在 L1 `OEMRouter`，与既有 `guard()` 同层。
+- (b) 等 L2 唯一入口 `rag.retrieve()` 建成时一并内嵌。
+
+**✅ 采纳 (a)**。理由：
+1. **L2 到期日是 2027-05**（`#374` D3=(a) 重算值，消费方＝R1）。选 (b) 等于让一条 2026-09-02 已生效的裁决空转 8 个月，而裁决文本没有任何"延后生效"的措辞。
+2. **L1 是当前唯一存在的隔离判定点**。`GENERAL_COLLECTIONS` 这个集合本身就定义在 `router.py`，闸建在别处会造成"集合定义在这里、准入判定在那里"的分叉。
+3. **不冲突**：L2 建成后 `rag.retrieve()` 内嵌 guard 的既定架构不变——它内嵌的正是 L1 的判定，本包只是把 L1 的判定从"只有读"补成"读写各一"。
+
+**代价（已知且接受）**：`guard_write()` 目前**没有生产调用方**（全仓零写入路径，见 `tasks.md` §2）。这不是缺陷而是本包的前提——闸建在第一个写入函数被写出来之前，成本为零；建在之后就要回头改调用点。
+
+## 决策 2：新异常类，且**不**继承 `CrossOEMAccessError`
+
+**选项**：
+- (a) 复用 `CrossOEMAccessError`。
+- (b) 新建 `GeneralCollectionReadOnlyError`，继承 `CrossOEMAccessError`。
+- (c) 新建 `GeneralCollectionReadOnlyError`，与 `CrossOEMAccessError` 并列继承 `PermissionError`。
+
+**✅ 采纳 (c)**。理由：
+1. **语义不同**：只读闸拒绝的原因**不是**"你拿错了客户上下文"，而是"整条写入通道尚未开放"——任何上下文（含完全合法的本客户上下文）一样被拒。用同一个类会让日志与审计里两类完全不同的违规企图混成一堆。
+2. **(b) 是一条隐性绕过路径**：既有调用方广泛写 `except CrossOEMAccessError`；若只读闸继承它，那些 `except` 会**顺手吞掉本闸**，而本闸的全部价值就在于不可绕过。
+3. **处置动作不同**：跨 OEM 拒绝的处置是"调用方修正上下文"，只读闸的处置是"去建校验入口 / 停止写入"，两者的下游处理不该被迫走同一分支。
+4. 二者仍同为 `PermissionError` 子类 ⇒ 想统一兜底的调用方写 `except PermissionError` 即可，不损失便利性。
+
+**同步动作**：`GeneralCollectionReadOnlyError` 进 `data_isolation_layer.__all__`，使调用方不必深入 `router` 子模块取类。
+
+## 决策 3：spec delta 用 ADDED 新 Requirement，不 MODIFIED 既有 D5 条
+
+**背景**：D5 的政策文本已存在于 `oem-chroma-ownership-rejudge` 的 **ADDED** Requirement「通用知识库 SHALL 由写入侧校验把关，校验入口未建成前只读」——但该包**尚未 archive**，该 Requirement 因此**还不在主 spec 里**。
+
+**选项**：
+- (a) MODIFIED 那条 Requirement，把实现层义务并进去。
+- (b) ADDED 一条**新的、名字不同的** Requirement，只写实现层的强制行为。
+
+**✅ 采纳 (b)**。理由：
+1. **(a) 会把本包塞进一条已知的 archive 次序链**。现存硬约束：**须先 archive `oem-chroma-ownership-rejudge`、后 `oem-audit-fail-closed`**（两包各持「跨 OEM 访问拒绝前写审计」的 MODIFIED，后者为超集，反序会用过渡版盖掉定稿版）。若本包也 MODIFIED D5 那条，链就从两节变三节，且新增一条"必须晚于 rejudge"的隐性约束——多一条只能靠人记住的次序，就是多一次反序事故。**(b) 下本包与任何既有 Requirement 不同名，archive 次序对它无所谓。**
+2. **(a) 在 CLI 层也更脆**：MODIFIED 的目标 Requirement 当前不在主 spec 中，其正确性依赖 rejudge 先落地；ADDED 无此依赖。
+3. **两条 Requirement 分工清晰**：rejudge 那条写**政策**（写入必经三项校验；入口未建成前只读），本包这条写**强制点**（这条政策在代码里由谁、以什么 API、以什么错误、以什么留痕来执行）。政策与强制点分列，是本 spec 既有的写法（如「唯一入口不可绕过」与「跨 OEM 拒绝前写审计」本就是两条）。
+
+**代价**：主 spec 里最终会有两条相邻的通用库条款。已在本包 Requirement 正文首句显式指回政策条，避免读者误以为二者重复。
+
+## 决策 4：fail-closed 与作用范围——只覆盖**写入**拒绝路径，读取侧一字不动
+
+1. **审计通道故障时仍以拒绝告终**：`guard_write()` 的通用库分支复用 `#466` 建成的 `_record_denied` 通道（`_audit is None` 或 `record()` 抛异常 ⇒ 必抛异常、绝不静默放行）。仅把 action 名与异常类换掉，**未复制第二套 fail-closed 逻辑**——这是刻意的：两条通道若各写一份，日后只修其中一份就会产生静默分叉。
+2. **不覆盖允许路径**：写入本客户专属库属允许路径，`_record_denied` 根本不会被调用，审计故障不改变其结果。此边界逐字沿用 `oem-audit-fail-closed` design 决策 3，未扩大。
+3. 🔴 **读取侧一字不动**。`oem-chroma-ownership-rejudge` spec L55 有一句「读取侧对通用 collection 的无条件放行 SHALL 仅在写入侧校验生效的前提下成立」——字面读可推出"校验未生效 ⇒ 读取侧的无条件放行也不成立 ⇒ 应一并收紧读取"。**本包不这么做**，理由三条：
+   - D5 裁决文本明写「**已有内容不受影响**」，收紧读取侧会直接影响已有内容的可读性，与裁决相反；
+   - 只读闸生效后通用库**不再有新内容进入**，剩余风险仅限闸生效前已写入的存量——而按 `tasks.md` §2 的穷举，**全仓从未存在过写入通用库的代码**，故存量风险面为空；
+   - 收紧读取侧属**新的口径变更**（🟡 `change_criteria`），须裁决人拍板，不是实现层可自决的事。
+   ⇒ 作为回归护栏，本包单测包含 `test_read_side_unchanged_general_collections_still_pass`，把"读取侧未被改动"钉成机器守。**该句的最终处置列为第 6 节定夺项①。**
+
+## 决策 5：不留运行期开关、不留可注入 validator
+
+**选项**：
+- (a) 加模块常量 `GENERAL_COLLECTIONS_WRITABLE = False`，`guard_write()` 据此判定。
+- (b) 允许注入 `write_validator`，未注入则拒绝。
+- (c) 无开关、无钩子：`guard_write()` 对通用库无条件拒绝；解闸＝改写该分支。
+
+**✅ 采纳 (c)**。理由：
+1. **(b) 直接造出绕过路径**——任何调用方注入一个恒真的空校验器即可放行，而 §2.3 三项校验（含**质量 Champion 签字**）根本不是一个进程内对象能承担的义务。闸的全部价值是不可绕过，给钩子等于自废。
+2. **(a) 只是一行的绕过**：把 `False` 改成 `True` 就放开了，而那一刻**校验入口并不存在** ⇒ 写入变成完全无校验，比现状更糟（现状至少还没有写入函数）。开关的存在本身就暗示"可以只翻一个标志位"。
+3. **(c) 强制解闸者写出真实调用**：要解闸就必须改写 `guard_write()` 的分支，把 deny 换成对真校验入口的调用——那一刻他必须先有那个入口，且这次改动必进 code review。
+4. **可发现性靠注释而非开关**：`GENERAL_COLLECTIONS` 上方写明唯一解闸条件与"为何不给开关"，`guard_write()` docstring 指回 D5 与规范 §2.3。
+
+**配套机器守**：单测 `test_no_runtime_switch_or_validator_hook_exists` 断言模块里不存在 `*WRITABLE*` / `*ALLOW_WRITE*` / `*WRITE_ENABLED*` 名字、`OEMRouter` 无 `write_validator` 属性。若日后有人加回开关，他必须**先来删掉这条断言**——从而在 review 里显形。
+
+## 6. 定夺项（🟡 停等，本泳道不自决）
+
+① **`oem-chroma-ownership-rejudge` spec L55「读取侧无条件放行仅在写入侧校验生效的前提下成立」如何处置？**
+- (a)【推荐】**维持现状，读取侧不动**，理由＝决策 4 三条（裁决明写"已有内容不受影响"；只读闸生效后无新内容进入，且全仓从未有过写入通用库的代码 ⇒ 存量风险面为空；收紧读取属新口径变更）。代价：spec 里留着一句字面上未被满足的条件句，下一个读到它的人可能再问一次——已由本包 design 与单测护栏各留一处指针，成本是"再解释一次"。
+- (b) 一并收紧读取侧（通用库读取也要求已注册 OEM 上下文）。代价：影响通用库既有内容的可读性，与 D5「已有内容不受影响」正面冲突，且属合规红线口径变更（🔴，须 Shao Peishen 本人），不是本包能承接的范围。
+
+② **本包与 `#466`／`#374` 的 archive 次序是否真的解耦？**
+- (a)【推荐】**是**，本包 ADDED 的 Requirement 与任何既有条款不同名 ⇒ 可在三包次序链之外**独立** archive，无先后要求（见决策 3）。请审查方复核该判断。代价：若判断有误而先行 archive，主 spec 会多出一条指向尚未落地政策条的引用（可修复，非覆盖丢失）。
+- (b) 保守起见仍排在 `oem-chroma-ownership-rejudge` 之后 archive。代价：多一条要靠人记的次序约束，与决策 3 的初衷相反。
+
+🔴 **本包 archive 与合入 master 均不由本泳道执行**（🟡 档）。

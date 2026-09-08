@@ -11,8 +11,20 @@ class CrossOEMAccessError(PermissionError):
     """检测到跨 OEM 数据访问企图时抛出（合规红线，必须审计）。"""
 
 
+class GeneralCollectionReadOnlyError(PermissionError):
+    """写入通用知识库被只读闸拒绝时抛出（合规红线，必须审计）。
+
+    刻意**不**继承 `CrossOEMAccessError`：本错误不是"跨客户访问"，而是
+    "写入侧校验入口尚未建成 ⇒ 通用库置为只读"（D5=(a)，Shao Peishen 2026-09-02）。
+    两者的处置动作也不同——前者是调用方拿错了客户上下文，后者是整条写入通道
+    尚未开放，任何客户上下文都一样被拒。把两者合并成一个异常类会让调用方
+    `except CrossOEMAccessError` 顺手吞掉只读闸，是一条隐性绕过路径。
+    """
+
+
 ISOLATION_SCENARIO = "DATA_ISOLATION"
 ACTION_CROSS_OEM_DENIED = "cross_oem_access_denied"
+ACTION_GENERAL_WRITE_DENIED = "general_collection_write_denied"
 
 # 平台默认审计落盘路径（D2=(a) 收紧，Shao Peishen 2026-09-02 裁决）——
 # 与 README 快速校验示例、其余场景注入 AuditLogger 时使用的路径同构（相对 CWD，已 .gitignore）。
@@ -36,6 +48,16 @@ REGISTERED_OEMS: dict[str, str] = {
 # 通用（非客户专属）知识库，可被所有场景读取：供应商库/质量案例/财务规则等
 GENERAL_COLLECTIONS = {"kb_supplier", "kb_quality_cases", "kb_finance_rules"}
 
+# 🔴 通用库写入侧只读闸（D5=(a)，Shao Peishen 2026-09-02 本人裁决）——
+# 隔离规范 §2.3 要求通用库写入必经三项校验（无 OEM 信息校验 / 脱敏＋质量 Champion
+# 签字 / 写入写 audit）。该校验入口**至今未建成**，故通用库整体置为只读：
+# 已有内容不受影响，禁止任何新写入（含"离线校准/评测语料不进生产检索路径"这类理由）。
+#
+# 🔑 解闸条件（唯一）：先建成 §2.3 三项校验的写入入口，且该入口本身走独立 openspec
+# 变更包评审。本闸刻意**不留**任何运行期开关、环境变量或可注入的 validator 钩子——
+# 那些都会变成"注入一个空校验器即可放行"的绕过路径。解闸＝改写下面的
+# `OEMRouter.guard_write`，把 deny 换成对真校验入口的调用，必经 code review。
+
 
 @dataclass
 class IsolationDecision:
@@ -53,6 +75,9 @@ class OEMRouter:
         router = OEMRouter()
         col = router.resolve(oem="比亚迪")          # -> "oem_byd"
         router.guard(oem="比亚迪", collection="oem_saic")  # 抛 CrossOEMAccessError
+        router.guard(oem="比亚迪", collection="kb_supplier")        # 读：放行
+        router.guard_write(oem="比亚迪", collection="kb_supplier")  # 写：抛
+                                                    # GeneralCollectionReadOnlyError
     """
 
     def __init__(self, registered: dict[str, str] | None = None,
@@ -69,28 +94,33 @@ class OEMRouter:
             except Exception:
                 self._audit = None
 
-    def _record_denied(self, oem: str, collection: str, reason: str) -> None:
-        """跨 OEM 访问被拒前写审计（违规企图留痕，OEM隔离规范 §3.2）。
+    def _record_denied(self, oem: str, collection: str, reason: str,
+                       action: str = ACTION_CROSS_OEM_DENIED,
+                       error_cls: type[PermissionError] = CrossOEMAccessError) -> None:
+        """访问/写入被拒前写审计（违规企图留痕，OEM隔离规范 §3.2）。
 
         审计通道（默认或注入）不可用时 fail-closed：MUST NOT 静默放行或静默抛错——
-        本方法必抛 `CrossOEMAccessError`，使拒绝这一后果本身不依赖审计通道是否健康。
+        本方法必抛 `error_cls`，使拒绝这一后果本身不依赖审计通道是否健康。
+
+        `action`/`error_cls` 默认值＝跨 OEM 拒绝路径（`#466` D2=(a) 既有语义，不变）；
+        通用库只读闸（`#491` D5=(a)）复用同一条 fail-closed 通道，只换审计动作名与异常类。
         """
         if self._audit is None:
-            raise CrossOEMAccessError(
+            raise error_cls(
                 f"审计通道不可用（无可用 AuditLogger），OEM 隔离拒绝改判 fail-closed："
                 f"{oem!r} 访问 {collection!r} 已拒绝，且无法留痕。"
             )
         try:
             self._audit.record(AuditEvent(
                 scenario=ISOLATION_SCENARIO,
-                action=ACTION_CROSS_OEM_DENIED,
+                action=action,
                 evaluator="",
                 automation_level="L3",
                 decision={"oem": oem, "collection": collection, "reason": reason},
                 oem_context=oem,
             ))
         except Exception as exc:
-            raise CrossOEMAccessError(
+            raise error_cls(
                 f"审计写入失败（{exc!r}），OEM 隔离拒绝改判 fail-closed："
                 f"{oem!r} 访问 {collection!r} 已拒绝，且无法留痕。"
             ) from exc
@@ -120,6 +150,36 @@ class OEMRouter:
         raise CrossOEMAccessError(
             f"OEM 上下文 {oem!r}（={own}）试图访问 {collection!r} —— 跨客户访问被拒绝。"
         )
+
+    def guard_write(self, oem: str, collection: str) -> IsolationDecision:
+        """校验「指定 OEM 上下文」是否有权**写入**「目标 collection」。
+
+        与只读的 `guard()` 分离：读写两侧的判定规则本就不同——通用库
+        **读可写不可**（隔离规范 §2.3 「写入侧控制是这一层的全部安全性所在」）。
+
+        允许：① 与自身 OEM 完全匹配的专属库（写入规则与读取同）。
+        拒绝：② 任何通用知识库 —— 只读闸（D5=(a)，见 `GENERAL_COLLECTIONS` 上方注释），
+                 抛 `GeneralCollectionReadOnlyError`，拒绝前写 audit；
+              ③ 任何其它 OEM 的专属库 —— 跨客户污染，抛 `CrossOEMAccessError`（复用
+                 `guard()` 的既有判定与留痕，本方法不另立一套跨客户规则）。
+
+        ⚠️ 本闸只挡**新写入**，对通用库既有内容无任何影响（D5 裁决文本明写）。
+        """
+        if collection in GENERAL_COLLECTIONS:
+            # 只读闸先于 OEM 上下文判定：无论上下文是否注册、是哪一家，一律拒绝——
+            # 未建成校验入口时"谁都不能写"，不存在某个上下文可豁免的情形。
+            self._record_denied(
+                oem, collection, "通用库写入侧校验入口未建成，通用库只读（D5=(a)）",
+                action=ACTION_GENERAL_WRITE_DENIED,
+                error_cls=GeneralCollectionReadOnlyError,
+            )
+            raise GeneralCollectionReadOnlyError(
+                f"通用知识库 {collection!r} 当前为只读：写入侧「无 OEM 信息」校验入口尚未建成"
+                f"（OEM数据隔离规范 §2.3 ／ D5=(a) Shao Peishen 2026-09-02）。"
+                f"已有内容不受影响，禁止新写入；离线校准/评测语料同样不得以"
+                f"「不进生产检索路径」为由绕过本闸。"
+            )
+        return self.guard(oem=oem, collection=collection)
 
     @staticmethod
     def _normalize(oem: str) -> str:
