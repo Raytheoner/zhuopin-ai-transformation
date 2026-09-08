@@ -4549,23 +4549,12 @@ def _rev_count(repo_root: Path, rev_range: str, pathspec: list[str]) -> int | No
     return int(text) if text.isdigit() else None
 
 
-def _carrier_lag_counts(repo_root: Path, head: str | None) -> tuple[int | None, int | None]:
-    """返回 `(HEAD 落后总提交数, 其中触碰 CLAUDE.md 的提交数)`。
-
-    🔴 **用 git 提交计数，不用 mtime**（#338 预授权④，A9 教训）；也不用
-    `git log -L`／`blame`——队列行号随上方增删漂移，那两者会静默给出另一
-    行的历史。
-    """
-    if not head or set(head) == {"0"}:
-        return None, None
-    base = _master_ref(repo_root)
-    if base is None:
-        return None, None
-    rev_range = f"{head}..{base}"
-    return (
-        _rev_count(repo_root, rev_range, []),
-        _rev_count(repo_root, rev_range, [CLAUDE_MD_ROOT_REL]),
-    )
+# 📌 `_carrier_lag_counts`（`#338` 遗留）已于 2026-09-08 随 `#500` 删除：它返回
+# 「落后总数 ＋ 其中触碰 CLAUDE.md 的数」，是当年「落后 ≥100 才告警」那个阈值
+# 方案的配件；阈值方案作废后**全仓零调用者**（`grep -rn "_carrier_lag_counts"
+# --include=*.py --include=*.ps1 --include=*.md` 实测：除定义处外仅命中队列行
+# 与 CHANGELOG 的历史叙述）。死代码留着的唯一效果是让读者以为落后幅度另有
+# 一条口径——真正在用的是 `_carrier_drift_note`。
 
 
 # ============================================================
@@ -4711,8 +4700,45 @@ def _carrier_worktree_path(repo_root: Path, name: str) -> Path:
     return repo_root / WORKTREES_DIR_REL / name
 
 
-def _carrier_tracked_dirty(repo_root: Path, name: str) -> str | None:
-    """执行体内**已跟踪文件**是否有未提交改动；有则返回首行摘要。
+# ============================================================
+# 队列 §一 #500（`#436`⑵ 派生，Shao Peishen 2026-09-07 答 3(a) 放行）：
+# 脏检查由「任一已跟踪文件脏即停手」放宽为「与待入提交路径相交才停手」
+# ============================================================
+# 🔑 **成因＝一条比 git 本身更严的自造判据，把机制自己卡死了**（`#500` 行内
+# 实证，`OP-0907-U` 实测 ＋ `OP-0907-R` 独立复核逐条吻合）：常驻执行体
+# `ops/wecom-service-home` 的 ff 自 2026-08-27 17:17 UTC 起连续 **249 轮**停手
+# （49 轮 `ahead 1` ＋ 200 轮 `dirty`），落后 master **165** 个提交；唯一卡住它
+# 的脏文件是 `5-平台底座/wecom-aibot-service/run-followup-dispatch-check.ps1`，
+# 而该文件的差异 **100% 是外观的**（工作副本带 UTF-8 BOM ＋ 15 个 CRLF，
+# committed 无 BOM／0 CRLF，规范化后正文逐字节相同），**且 165 个待入提交里
+# 碰它的有 0 个 ⇒ git 自己完全允许这次 ff**。
+#
+# **那 165 个提交与那一个脏文件之间没有任何交集，而旧判据把它们当成一件事。**
+# 旧判据的保守方向本身没错（错的方向是「该停手时动了手」），错的是**粒度**：
+# 它判的是「有没有脏」，而 ff 真正会踩到的是「脏的那些路径**是不是**这次要
+# 写进来的那些路径」。前者恒真于一个长期跑着的生产载体，后者才是风险本身。
+#
+# ⇒ 判据改为**路径相交**：
+#   ⑴ 脏文件集合 ∩ 待入提交（`<carrier>..master`）touch 到的路径 ≠ ∅ ⇒ **仍停手**
+#      （风险原样保留：ff 会覆盖正在被人改的那几个文件）；
+#   ⑵ 相交为空 ⇒ **照常 ff**，脏文件转成**告警**随 `ffed` 一起报出去——
+#      不阻断，但也**绝不静默**（脏在生产载体上仍是要人处置的事，只是不该由
+#      它扣住 165 个提交）；
+#   ⑶ **待入清单取不到（`diff` 失败）⇒ 保守停手**——「取不到」与「零相交」
+#      外观都是「空集合」，而结论相反；同 `_rev_count` 失败返回 None 而非 0。
+#
+# 🔴 **不是关掉检查、也没有加任何 `--force`**（`#500` 期望产出⑷ ＋ `#493` 同一
+# 纪律：守卫拦错人时改判据，不是关守卫）。git 自身那道防线一个字节没动——
+# `--ff-only` 若真会覆盖某个改动，git 仍会拒绝，落到 `failed` 分支。**本改动
+# 只是不再抢在 git 前面替它拒绝一次它自己并不拒绝的合并。**
+
+
+def _carrier_dirty_paths(repo_root: Path, name: str) -> tuple[set[str] | None, str]:
+    """执行体内**已跟踪文件**的未提交改动路径集合 ＋ 一句人读摘要。
+
+    返回 `(路径集合, 摘要)`；`status` 查询失败返回 `(None, 失败原因)`——
+    🔴 **`None` 与 `set()` 是相反的结论**（判据不可用 vs 干净），调用方必须
+    分开处理，不得用真值判断把两者合并。
 
     未跟踪／被 ignore 的内容**不在此判**——它们不该阻止 ff，且 git 自己会
     在「ff 会覆盖某个未跟踪文件」时拒绝（见 `_ff_carrier` 的注释）。
@@ -4724,20 +4750,75 @@ def _carrier_tracked_dirty(repo_root: Path, name: str) -> str | None:
     # ⇒ **文档说的和命令做的是两回事，而两者都「看起来很确定」。** 同族＝
     # 「判据看起来很确定但错了」。所幸失败方向是保守的（停手不 ff），
     # 若判反了就会是「该停手时动了手」。
-    result = _run_git(["status", "--porcelain=v1", "--untracked-files=no"],
+    #
+    # 🔴 **改判为「路径相交」后必须换 `-z`**：本函数的路径要拿去和
+    # `git diff --name-only` 的路径**逐字符比对**，而 `--porcelain=v1` 的非 `-z`
+    # 形态会给含空格／引号／换行的路径加引号（`_run_git` 的 `core.quotepath=false`
+    # 只关掉非 ASCII 的八进制转义，**不关这一层**，见 `_git_names_z` 注释）。
+    # 一旦一侧带引号一侧不带，交集恒为空 ⇒ **判据静默失效、永远放行**，而本仓库
+    # 路径大量含中文与空格。这正是「只读命令结果太干净先怀疑没读到对象」那一族。
+    result = _run_git(["status", "--porcelain=v1", "--untracked-files=no", "-z"],
                       _carrier_worktree_path(repo_root, name), check=False)
     if result.returncode != 0:
-        return f"status 查询失败：{result.stdout.strip()[:120]}"
-    first = result.stdout.strip().splitlines()
-    return first[0].strip() if first else None
+        return None, f"status 查询失败：{result.stdout.strip()[:120]}"
+
+    # `-z` 记录形态：`XY <路径>\0`；重命名／复制（`R`／`C`）额外多一个
+    # `<原路径>\0` 字段。**两侧路径都算脏**——ff 若碰到其中任一个都有风险。
+    fields = [f for f in result.stdout.split("\0")]
+    paths: set[str] = set()
+    summary_bits: list[str] = []
+    index = 0
+    while index < len(fields):
+        entry = fields[index]
+        index += 1
+        if not entry.strip():
+            continue
+        # `XY` 恒为 2 字符、紧跟一个空格；按定长切，**不得 `split()`**——
+        # 路径里的空格会被切没（本仓库路径含空格）。
+        code = entry[:2]
+        path = entry[3:] if len(entry) > 3 else ""
+        if not path:
+            continue
+        paths.add(path)
+        summary_bits.append(f"{code.strip()} {path}")
+        if code and code[0] in ("R", "C"):
+            if index < len(fields) and fields[index]:
+                paths.add(fields[index])
+                index += 1
+
+    if not paths:
+        return set(), ""
+    summary = summary_bits[0] if summary_bits else ""
+    if len(paths) > 1:
+        summary += f" 等 {len(paths)} 个"
+    return paths, summary
+
+
+def _carrier_pending_paths(repo_root: Path, head: str, base: str) -> set[str] | None:
+    """待入提交（`head..base`）会 touch 到的路径集合；`diff` 失败返回 `None`。
+
+    🔴 **`--no-renames`**：缺省的重命名检测会把「删 A ＋ 增 B」合并成一条只
+    报 B 的记录，于是 A 从待入清单里消失——而 ff 照样会删掉工作区的 A。
+    关掉检测让两侧都出现，方向是保守的（清单更大 ⇒ 更容易停手）。
+    🔴 **`-z`**：理由同 `_carrier_dirty_paths`，两侧必须用同一种路径形态。
+    """
+    result = _run_git(["diff", "--name-only", "--no-renames", "-z", f"{head}..{base}"],
+                      repo_root, check=False)
+    if result.returncode != 0:
+        return None
+    return {p for p in result.stdout.split("\0") if p}
 
 
 def _ff_carrier(repo_root: Path, carrier: dict) -> dict:
     """把一个常驻执行体 worktree `--ff-only` 对齐到 master。
 
-    返回 `{outcome, detail, before, after, changed_paths}`，`outcome` ∈
+    返回 `{outcome, detail, before, after, changed_paths, dirty_note}`，`outcome` ∈
     `aligned`（本来就齐）／`ffed`（本轮 ff 了）／`ahead`（有本地提交，停手）／
     `dirty`／`failed`／`unknown`。
+
+    `dirty_note`（#500）＝**「脏了但没挡住 ff」那一句告警**，仅 `ffed` 分支
+    可能非空；停手类分支恒为 `None`（它们的话已经在 `detail` 里）。调用方据此
+    在正常路径上仍把脏说出来——**不阻断 ≠ 不吭声**。
 
     🔴 **绝不强推**（#338 边界⑴）：`ahead > 0` 一律停手告警——执行体上有
     本地提交意味着有人在那里直接改过东西，强 ff 会把它冲掉，而那正是
@@ -4754,20 +4835,20 @@ def _ff_carrier(repo_root: Path, carrier: dict) -> dict:
     before = carrier.get("head")
     if not carrier.get("registered") or not before or set(before) == {"0"}:
         return {"outcome": "unknown", "detail": "不在注册项内或 HEAD 无效",
-                "before": before, "after": None, "changed_paths": []}
+                "before": before, "after": None, "changed_paths": [], "dirty_note": None}
     if not (wt / ".git").exists():
         return {"outcome": "unknown", "detail": "目录内无 .git 条目",
-                "before": before, "after": None, "changed_paths": []}
+                "before": before, "after": None, "changed_paths": [], "dirty_note": None}
 
     base = _master_ref(repo_root)
     if base is None:
         return {"outcome": "unknown", "detail": "master/origin/master 均不可解",
-                "before": before, "after": None, "changed_paths": []}
+                "before": before, "after": None, "changed_paths": [], "dirty_note": None}
 
     ahead = _rev_count(repo_root, f"{base}..{before}", [])
     if ahead is None:
         return {"outcome": "unknown", "detail": "ahead 计数取不到",
-                "before": before, "after": None, "changed_paths": []}
+                "before": before, "after": None, "changed_paths": [], "dirty_note": None}
     # #436 ⑵：停手类结论一律带上落后幅度——判据与动作都不变，只是不再把
     # 「欠了多少」这个数算完就丢。`ahead` 分支不复用下方的 `behind`（它在
     # 那一支还没算），由 `_carrier_drift_note` 现算。
@@ -4775,22 +4856,47 @@ def _ff_carrier(repo_root: Path, carrier: dict) -> dict:
         return {"outcome": "ahead",
                 "detail": f"执行体领先 {ahead} 个提交，已停手不 ff"
                           f"；{_carrier_drift_note(repo_root, before, base)}",
-                "before": before, "after": None, "changed_paths": []}
+                "before": before, "after": None, "changed_paths": [], "dirty_note": None}
 
     behind = _rev_count(repo_root, f"{before}..{base}", [])
     if behind is None:
         return {"outcome": "unknown", "detail": "落后计数取不到",
-                "before": before, "after": None, "changed_paths": []}
+                "before": before, "after": None, "changed_paths": [], "dirty_note": None}
     if behind == 0:
         return {"outcome": "aligned", "detail": "已对齐", "before": before,
-                "after": before, "changed_paths": []}
+                "after": before, "changed_paths": [], "dirty_note": None}
 
-    dirty = _carrier_tracked_dirty(repo_root, name)
-    if dirty:
+    # —— #500：脏检查放宽为「与待入提交路径相交才停手」（判据全文见上方注释段）——
+    dirty_note: str | None = None
+    dirty_paths, dirty_summary = _carrier_dirty_paths(repo_root, name)
+    if dirty_paths is None:
+        # 判据不可用（`status` 都跑不通）⇒ 保守停手。**这一支比「脏」还严重**，
+        # 措辞必须与「确实脏了」区分开，否则读者会去找一个并不存在的脏文件。
         return {"outcome": "dirty",
-                "detail": f"已跟踪文件有未提交改动（{dirty}），已停手不 ff"
+                "detail": f"脏检查**不可用**（{dirty_summary}），已保守停手不 ff"
                           f"；{_carrier_drift_note(repo_root, before, base, behind)}",
-                "before": before, "after": None, "changed_paths": []}
+                "before": before, "after": None, "changed_paths": [], "dirty_note": None}
+    if dirty_paths:
+        pending = _carrier_pending_paths(repo_root, before, base)
+        if pending is None:
+            return {"outcome": "dirty",
+                    "detail": f"已跟踪文件有未提交改动（{dirty_summary}），且**待入提交清单未取到**"
+                              f"（`diff` 失败）⇒ 无法判相交，已保守停手不 ff"
+                              f"；{_carrier_drift_note(repo_root, before, base, behind)}",
+                    "before": before, "after": None, "changed_paths": [], "dirty_note": None}
+        overlap = sorted(dirty_paths & pending)
+        if overlap:
+            shown = "、".join(f"`{p}`" for p in overlap[:3])
+            if len(overlap) > 3:
+                shown += f" 等 {len(overlap)} 处"
+            return {"outcome": "dirty",
+                    "detail": f"已跟踪文件的未提交改动与待入提交**路径相交**（{shown}），"
+                              f"ff 会覆盖它们 ⇒ 已停手不 ff"
+                              f"；{_carrier_drift_note(repo_root, before, base, behind)}",
+                    "before": before, "after": None, "changed_paths": [], "dirty_note": None}
+        dirty_note = (f"执行体内有 {len(dirty_paths)} 个已跟踪文件未提交（{dirty_summary}），"
+                      f"但与本次待入的 {len(pending)} 条路径**零相交** ⇒ 未阻断 ff，"
+                      f"转为告警：脏改动仍需人处置（改动本身不会被 ff 动到）")
 
     merged = _run_git(["merge", "--ff-only", base], wt, check=False)
     if merged.returncode != 0:
@@ -4798,13 +4904,14 @@ def _ff_carrier(repo_root: Path, carrier: dict) -> dict:
         return {"outcome": "failed",
                 "detail": f"ff 失败：{head_line[0] if head_line else '无输出'}"
                           f"；{_carrier_drift_note(repo_root, before, base, behind)}",
-                "before": before, "after": None, "changed_paths": []}
+                "before": before, "after": None, "changed_paths": [], "dirty_note": None}
 
     after = _run_git(["rev-parse", "HEAD"], wt, check=False).stdout.strip()
     diff = _run_git(["diff", "--name-only", f"{before}..{after}"], repo_root, check=False)
     changed = [p.strip() for p in diff.stdout.splitlines() if p.strip()]
     return {"outcome": "ffed", "detail": f"已 ff {behind} 个提交",
-            "before": before, "after": after, "changed_paths": changed}
+            "before": before, "after": after, "changed_paths": changed,
+            "dirty_note": dirty_note}
 
 
 def _restart_carrier(repo_root: Path, name: str) -> tuple[bool, str]:
@@ -4875,28 +4982,41 @@ def _sync_resident_carriers(repo_root: Path, log: list[str]) -> None:
             continue
 
         # outcome == "ffed"
+        # #500：脏但与待入提交零相交 ⇒ ff 照做，**脏本身仍进告警**——
+        # 「不阻断」与「不吭声」是两件事，放宽判据不等于把这个信号丢掉。
+        # 它与「需人工重启」彼此独立，两者同时成立时并列写进同一条 exception，
+        # **不得互相覆盖**（`exceptions` 是 dict，后写会顶掉先写）。
+        dirty_note = result.get("dirty_note")
+        if dirty_note:
+            log.append(f"    ⚠ {name}：{dirty_note}")
+
         hits = _touches_resident_service(set(result["changed_paths"]), repo_root)
         if not hits:
             log.append(f"    · {name}：{detail}，未触碰常驻服务代码路径 ⇒ 无需重启"
                        f"／引用任务：{tasks}")
+            if dirty_note:
+                exceptions[name] = f"{detail}；{dirty_note}（引用任务：{tasks}）"
             continue
 
         hit_text = "、".join(f"`{p}`（{src}）" for p, src in hits[:5])
         if len(hits) > 5:
             hit_text += f" 等 {len(hits)} 处"
+        dirty_tail = f"；{dirty_note}" if dirty_note else ""
         if not auto_restart:
             log.append(f"    🔴 {name}：{detail}，**触碰常驻服务代码路径 {len(hits)} 处，"
                        f"需人工重启**（自动重启开关 OFF）／{hit_text}")
             exceptions[name] = (f"{detail}，触碰常驻服务代码路径 {len(hits)} 处，"
-                                f"**代码已新、进程仍旧** ⇒ 需人工重启验活；{hit_text}")
+                                f"**代码已新、进程仍旧** ⇒ 需人工重启验活；{hit_text}{dirty_tail}")
             continue
 
         ok, restart_detail = _restart_carrier(repo_root, name)
         if ok:
             log.append(f"    ✓ {name}：{detail}，触碰 {len(hits)} 处 ⇒ 已自动重启并验活（{restart_detail}）")
+            if dirty_note:
+                exceptions[name] = f"{detail}，触碰 {len(hits)} 处已自动重启并验活{dirty_tail}"
         else:
             log.append(f"    🔴 {name}：{detail}，触碰 {len(hits)} 处 ⇒ **自动重启失败**（{restart_detail}）")
-            exceptions[name] = f"{detail}，自动重启失败（{restart_detail}）；{hit_text}"
+            exceptions[name] = f"{detail}，自动重启失败（{restart_detail}）；{hit_text}{dirty_tail}"
 
     def render_alert(keys):
         lines = "\n".join(f"- `{key}`：{exceptions[key]}" for key in sorted(keys))
