@@ -850,6 +850,44 @@ class 判据正本识别改为声明式(unittest.TestCase):
         self.assertIn("C0", M.FORM_TITLE)
 
 
+class 骨架三bis样例照抄后不得撞F2(unittest.TestCase):
+    """队列 §一 `#489` 步骤 3（Shao Peishen 2026-09-08 答 1a）：骨架 §三bis 的看护者
+    开场词样例句原本含「子任务」而**无**「例外/跳过本行」⇒ **照抄它的看护件必撞 F2**，
+    作者随手写一个 `opener豁免：`，而「豁免用滥则守卫失效」正是 `#489` 要根治的事。
+
+    🔴 **它在骨架内不报、只在照抄者身上报**——骨架是判据正本，F2 已被换成 C2（文件级
+    「还教不教例外句」，别的块教了就过），所以这个洞在正本自检里天然看不见。
+    同族＝「同一内容两份、只有一份有机器守」（`#503`）：生成器
+    `--variant guardian` 早已输出该句，骨架样例却没有，两份分叉且无人发现。
+    """
+
+    def _sample_block(self):
+        text = (M.REPO_ROOT / M.SKELETON_CANON_REL).read_text(encoding="utf-8")
+        lines = text.splitlines()
+        hdr = next(i for i, l in enumerate(lines, 1) if l.startswith("## §三bis"))
+        return next(b for b in M.iter_fenced_blocks(text) if b.start_line > hdr)
+
+    def test_样例块自带子任务例外句(self):
+        """判据用 lint 自己那两个 token 正则，不另写一套字面量匹配。"""
+        t = self._sample_block().text
+        self.assertTrue(M.SUBTASK_TOKEN_RE.search(t), "样例块已不含「子任务」类 token")
+        self.assertTrue(M.EXCEPTION_TOKEN_RE.search(t),
+                        "样例块含「子任务」却不含「例外/跳过本行」⇒ 照抄者必撞 F2")
+
+    def test_照抄进看护件不报F2(self):
+        """端到端：把样例块原样抄进一份看护件（标题按骨架要求不带 §）⇒ 不得出现 F2。
+
+        F3/F5 仍会命中且**那是对的**——占位符没替换正是形态③要抓的（`#493`
+        「排除不外溢」），本用例只钉死 F2。
+        """
+        block = self._sample_block()
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件-照抄骨架三bis.md"
+            p.write_text("## 三bis · 看护opener\n\n```\n" + block.text + "\n```\n",
+                         encoding="utf-8")
+            self.assertNotIn("F2", {f.form for f in M.scan_single_file(p)})
+
+
 class 明细分组不得漏掉形态(unittest.TestCase):
     """2026-09-08 本会话实测发现的第三处缺陷（`#489` 顺带修）：`main()` 里的明细
     分组循环写死了一份形态清单，**漏了 F3/F4/F5** ⇒ 这三个形态的命中**计入
