@@ -7442,5 +7442,220 @@ class FollowupSerialGateIdentityFallbackTests(FollowupSerialGateIdentityTests):
                     )
 
 
+class AppendRowHighWaterMarkTests(unittest.TestCase):
+    """队列 §一 #505（openspec 变更包 `editlock-append-row-highwater-writeback`）：
+    `append-row --number N` 写入新编号后同步推进编号高水位线。
+
+    **病灶**：该计数器此前只有 `_reserve_ids` 一个写入方，`append-row --number`
+    同样让新编号落盘却不推线、且返回 0 ⇒ 线滞后于文件，**下一个人**的
+    `--reserve` 才被整体拒绝（2026-09-07／2026-09-08 两天四次实证）。
+
+    白盒方式：monkeypatch REPO_ROOT/DEFAULT_TARGET/QUEUE_MECHANISM_PATH_REL/
+    QUEUE_BUSINESS_PATH_REL/QUEUE_LOCK_ANCHOR 指向本用例专属临时目录，与既有
+    `DualFileRoutingTests` 同一惯例——本项只在「队列系统目标」下生效（D4），
+    子进程 + 临时 `--file` 那条黑盒路子恰好落在不生效的那一侧，测不到。
+    """
+
+    SECTION_ONE_HEADER = (
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+    )
+    SECTION_TWO_HEADER = (
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+    )
+    SECTION_FOUR_HEADER = (
+        "| # | 事项 | 等谁 | 截止 |\n"
+        "|---|------|------|------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.DEFAULT_TARGET = "queue.md"
+        self.module.QUEUE_MECHANISM_PATH_REL = "queue-mech.md"
+        self.module.QUEUE_BUSINESS_PATH_REL = "queue-biz.md"
+        self.module.QUEUE_LOCK_ANCHOR = "queue-mech.md"
+        self.mech_path = self.repo_root / "queue-mech.md"
+        self.biz_path = self.repo_root / "queue-biz.md"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    # ---- 夹具 ----
+
+    def _write(self, path: Path, hwm_one=300, hwm_four=40, *, hwm_line=None,
+               section_one_rows="", section_four_rows=""):
+        """`hwm_line=None` ⇒ 写一条正常声明行；传字符串则原样使用（供缺失／
+        格式漂移两个反例用，传 `""` 即整行不存在）。"""
+        head = (
+            f"> **编号高水位线：§一 #{hwm_one} ｜ §四 #{hwm_four}**（说明）\n\n"
+            if hwm_line is None else hwm_line
+        )
+        path.write_text(
+            head
+            + "## 一、任务看板\n\n" + self.SECTION_ONE_HEADER + section_one_rows
+            + "\n## 二、待 commit 批次（CC 取活销行）\n\n" + self.SECTION_TWO_HEADER
+            + "\n## 四、需 Shao Peishen 定夺\n\n" + self.SECTION_FOUR_HEADER
+            + section_four_rows,
+            encoding="utf-8",
+        )
+
+    def _hwm(self, section: str, path: Path | None = None) -> int:
+        text = (path or self.mech_path).read_text(encoding="utf-8")
+        match = self.module.SECTION_NUMBER_PATTERNS[section].search(text)
+        self.assertIsNotNone(match, f"目标文件里读不到 §{section} 高水位线")
+        return int(match.group(2))
+
+    def _four_ns(self, number: str, *, file=None, task="定夺事项"):
+        return argparse.Namespace(
+            file=file if file is not None else self.module.DEFAULT_TARGET,
+            section="四", number=number,
+            cell=[task, "Shao Peishen", "2026-09-11"],
+            domain=None,
+        )
+
+    def _one_ns(self, number: str, *, domain=None, file=None, task="新任务"):
+        return argparse.Namespace(
+            file=file if file is not None else self.module.DEFAULT_TARGET,
+            section="一", number=number,
+            cell=[task, "CC", "无", "无", "[S:open][D:机] 待领", "无", "2026-09-08"],
+            domain=domain,
+        )
+
+    # ---- 组⑴：写入后线跟上（派单件明写的第一组） ----
+
+    def test_append_row_number_advances_high_water_mark(self):
+        self._write(self.mech_path, hwm_four=173)
+        self._write(self.biz_path, hwm_four=173)
+
+        self.assertEqual(self.module.cmd_append_row(self._four_ns("174")), 0)
+
+        self.assertEqual(self._hwm("四"), 174)
+        self.assertIn("定夺事项", self.mech_path.read_text(encoding="utf-8"))
+
+    # ---- 组⑵：紧接的预留取到不撞的号（派单件明写的第二组） ----
+
+    def test_reserve_right_after_append_row_gets_next_free_number(self):
+        """本用例即 2026-09-08 那次事故的受控复现：修前 `--reserve` 会算出
+        174、撞上刚落盘的可见行、整体拒绝并回滚 ⇒ 该分区对全线取不到号。"""
+        self._write(self.mech_path, hwm_four=173)
+        self._write(self.biz_path, hwm_four=173)
+        self.assertEqual(self.module.cmd_append_row(self._four_ns("174")), 0)
+
+        reserved = self.module._reserve_ids("queue-mech.md", "四", 1)
+
+        self.assertEqual(reserved, [175])
+        self.assertEqual(self._hwm("四"), 175)
+
+    # ---- D3：单调，不回退、幂等 ----
+
+    def test_number_below_high_water_mark_does_not_regress_it(self):
+        """补写一个此前预留未用的空洞号（协议〇.8 明文允许）——线不回退、
+        命令照常成功。严格赋值会把线往回拉，等于亲手制造一次滞后。"""
+        self._write(self.mech_path, hwm_one=507)
+        self._write(self.biz_path, hwm_one=507)
+
+        self.assertEqual(self.module.cmd_append_row(self._one_ns("505")), 0)
+
+        self.assertEqual(self._hwm("一"), 507)
+        self.assertIn("新任务", self.mech_path.read_text(encoding="utf-8"))
+
+    def test_repeated_append_of_same_number_does_not_drift(self):
+        self._write(self.mech_path, hwm_four=173)
+        self._write(self.biz_path, hwm_four=173)
+
+        self.assertEqual(self.module.cmd_append_row(self._four_ns("174")), 0)
+        after_first = self._hwm("四")
+        self.assertEqual(self.module.cmd_append_row(self._four_ns("174")), 0)
+
+        self.assertEqual(self._hwm("四"), after_first)
+
+    # ---- D2：推线失败 ⇒ 拒绝写行，零残留 ----
+
+    def test_missing_high_water_mark_line_rejects_and_writes_nothing(self):
+        self._write(self.mech_path, hwm_line="")
+        self._write(self.biz_path, hwm_line="")
+        before = self.mech_path.read_text(encoding="utf-8")
+
+        rc = self.module.cmd_append_row(self._four_ns("174"))
+
+        self.assertEqual(rc, 1)
+        # 🔴 不只看返回码：表格行必须**一个字都没写进去**——先推线后写行的
+        # 全部意义就在这里（失败只留一个空洞号，不留「行已写、线未推」）。
+        self.assertEqual(self.mech_path.read_text(encoding="utf-8"), before)
+
+    def test_malformed_section_number_rejects_and_writes_nothing(self):
+        drifted = "> **编号高水位线：§一 #300 ｜ §四 格式已变**（说明）\n\n"
+        self._write(self.mech_path, hwm_line=drifted)
+        self._write(self.biz_path, hwm_line=drifted)
+        before = self.mech_path.read_text(encoding="utf-8")
+
+        rc = self.module.cmd_append_row(self._four_ns("174"))
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.mech_path.read_text(encoding="utf-8"), before)
+
+    # ---- D4：非队列系统目标不适用 ----
+
+    def test_explicit_file_override_never_touches_high_water_mark(self):
+        """显式 `--file` 覆盖到队列系统之外的文件——即便那份文件**恰好也有**
+        一条高水位线声明行，本项也不动它、更不因此报错（口径与 `acquire` 侧
+        既有做法同源）。"""
+        other = self.repo_root / "other.md"
+        self._write(other, hwm_one=300)
+
+        rc = self.module.cmd_append_row(self._one_ns("301", file="other.md", task="旁路任务"))
+
+        self.assertEqual(rc, 0)
+        text = other.read_text(encoding="utf-8")
+        self.assertIn("旁路任务", text)
+        self.assertEqual(self._hwm("一", path=other), 300)
+
+    # ---- 三个量各归各位：写入目标／锁锚点／计数器目标 ----
+
+    def test_domain_ye_row_lands_in_business_file_but_hwm_advances_in_mechanism(self):
+        self._write(self.mech_path, hwm_one=300)
+        # 业务场景文件本身**不含**高水位线声明行——断言本项不会在那边造一条。
+        self._write(self.biz_path, hwm_line="")
+
+        rc = self.module.cmd_append_row(self._one_ns("301", domain="业", task="业务任务"))
+
+        self.assertEqual(rc, 0)
+        biz_text = self.biz_path.read_text(encoding="utf-8")
+        self.assertIn("业务任务", biz_text)
+        self.assertNotIn("编号高水位线", biz_text)
+        self.assertEqual(self._hwm("一"), 301)
+        self.assertNotIn("业务任务", self.mech_path.read_text(encoding="utf-8"))
+
+    def test_section_two_has_no_number_column_and_never_touches_hwm(self):
+        self._write(self.mech_path, hwm_one=300, hwm_four=40)
+        self._write(self.biz_path, hwm_one=300, hwm_four=40)
+
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, section="二", number=None,
+            cell=["B-测试批次", "`queue-biz.md`", "说明", "待处理"],
+            domain="业",
+        )
+        self.assertEqual(self.module.cmd_append_row(ns), 0)
+
+        self.assertEqual(self._hwm("一"), 300)
+        self.assertEqual(self._hwm("四"), 40)
+
+    # ---- `_reserve_ids` 侧行为不变（抽出共用回写路径后的回归闸） ----
+
+    def test_reserve_still_advances_and_still_fails_loud_on_missing_line(self):
+        self._write(self.mech_path, hwm_one=300)
+        self.assertEqual(self.module._reserve_ids("queue-mech.md", "一", 2), [301, 302])
+        self.assertEqual(self._hwm("一"), 302)
+
+        self._write(self.mech_path, hwm_line="")
+        with self.assertRaises(self.module.ReserveFailedError) as ctx:
+            self.module._reserve_ids("queue-mech.md", "一", 1)
+        self.assertIn("拒绝预留", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

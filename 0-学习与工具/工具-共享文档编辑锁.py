@@ -80,6 +80,16 @@
 "扫描可见最大值"这类会撞已归档编号的替代路径），逼调用方先核实文件真实
 状态再重试。
 
+队列 §一 #505（2026-09-08，变更包 `editlock-append-row-highwater-writeback`）：
+上面那条竞态防护把"高水位线滞后"归因为绕锁直写，**实证还有第二条成因，且它
+完全合规**——`append-row --number N` 同样能让一个新编号落盘，而它**此前不回写
+高水位线**、命令照样返回 0；两个写入编号的入口对同一计数器行为不一致，且错的
+那一半不报错，代价由**下一个人**支付（他的 `--reserve` 被整体拒绝，该分区对全线
+取不到号）。2026-09-07 与 2026-09-08 两天四次实证（走的全是 release ③ 的行内
+`预留豁免：` 这条合法通路）。现已改为：`append-row --number` 写行**之前**先走
+`_advance_high_water_mark` 单调推线（与 `--reserve` 同一条路径），推线失败即拒绝
+写入、不留半成品；`--file` 覆盖到队列系统之外的目标时不适用。
+
 锁本地存在于文件系统（gitignore，不入库、不需要 git commit 才生效）。
 REPO_ROOT 按 `git rev-parse --git-common-dir` 定位——所有 git worktree
 共享同一个 `.git`，故不论从主工作区还是任一 `.claude/worktrees/<name>/`
@@ -1874,6 +1884,121 @@ class ReserveFailedError(RuntimeError):
     """
 
 
+class HighWaterMarkFailedError(RuntimeError):
+    """编号高水位线定位／回写失败——声明行缺失、分区号格式漂移，或目标文件
+    读写失败。
+
+    队列 §一 #505（变更包 `editlock-append-row-highwater-writeback`，2026-09-08）：
+    高水位线此前**只有一个写入方** `_reserve_ids`，而 `append-row --number N`
+    同样能让一个新编号落盘、却不推线且照样返回 0 ⇒ 线滞后于文件，**下一个人**
+    的 `--reserve` 才被整体拒绝。本异常是抽出共用回写路径后两个入口共同的失败
+    信号；调用方各自包装成自己的拒绝文案（`_reserve_ids` ⇒ `ReserveFailedError`
+    并回滚整个 acquire；`cmd_append_row` ⇒ 非零返回码且不写表格行），但**都不许
+    静默跳过**——静默跳过正是本包要消灭的那个状态。
+    """
+
+
+def _locate_high_water_mark_section(
+    text: str, section: str, path: Path, *, reject_phrase: str,
+) -> tuple[int, int, str, re.Match]:
+    """在 `text` 里定位「编号高水位线」声明行，并取出 §{section} 的编号片段。
+
+    返回 `(行起始偏移, 行结束偏移, 整行文本, 分区号 match)`——三个偏移量与
+    match 一起，足以让调用方就地替换分区片段而不动该行其余内容（那一行还
+    承载着历次「当场订正」的实证注释，见机制环境队列文件第 12 行）。
+
+    `reject_phrase` 只影响错误文案（`拒绝预留`／`拒绝写入`），不影响判定——
+    两个入口的失败原因相同，说给调用方听的话不同。
+    """
+    if section not in SECTION_NUMBER_PATTERNS:
+        raise HighWaterMarkFailedError(
+            f"未知分区 {section!r}，仅支持 {sorted(SECTION_NUMBER_PATTERNS)}"
+        )
+    line_match = HIGH_WATER_MARK_LINE_PATTERN.search(text)
+    if line_match is None:
+        raise HighWaterMarkFailedError(
+            f"目标文件不含「编号高水位线」标注行，{reject_phrase}：{path}"
+        )
+    line_start = text.rfind("\n", 0, line_match.start()) + 1
+    line_end = text.find("\n", line_match.end())
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+
+    section_match = SECTION_NUMBER_PATTERNS[section].search(line)
+    if section_match is None:
+        raise HighWaterMarkFailedError(
+            f"高水位线行不含 §{section} 编号（格式漂移），{reject_phrase}：{line!r}"
+        )
+    return line_start, line_end, line, section_match
+
+
+def _advance_high_water_mark(
+    target: str, section: str, new_value: int, *, reject_phrase: str,
+    text: str | None = None,
+) -> int:
+    """把 `target` 里 §{section} 的编号高水位线**单调**推进到不低于
+    `new_value`，返回推进后的值。两个写入编号的入口——`acquire --reserve`
+    与 `append-row --number N`——共用本函数，使同一个计数器只有一套行为
+    （队列 §一 #505 / D1）。
+
+    🔑 **为何单调（D3）**：`new_value <= 当前值` 是**合法且常见**的——预留了
+    303／304 只用了 303（协议〇.8：编号永不复用，留空洞即可）、补写一个此前
+    预留未用的空洞号、重写一条已存在的行。严格赋值会把线**往回拉**，等于亲
+    手制造一次「线滞后于文件」，与本函数的目的正好相反。`new_value <= 当前值`
+    时**不写盘**（幂等；同一行重试／脚本重入不使线漂移，也不为一次无变化的
+    写入制造 git 脏文件）。
+
+    🔑 **为何调用方必须先推线、再写行（D2）**：推线与写表格行是**两次独立
+    写盘**（且可能落在两份不同的物理文件上，见下条），必然存在一种失败会留下
+    不一致；选次序就是选**哪一种不一致可以接受**。先推线 ⇒ 失败残留为「线已
+    推、行未写」＝ 一个空洞号，协议〇.8 明文允许；先写行 ⇒ 失败残留为「行已
+    写、线未推」＝ 计数器滞后，正是 `#505`／`#200`／`#233` 的病灶。
+
+    🔑 **为何计数器目标是第三个量**：高水位线声明**恒定只存机制环境文件**
+    （`cmd_acquire` 既有口径），而 `cmd_append_row` 的**写入目标**会被
+    `--domain` 域路由改写、**锁锚点**又恒为 `QUEUE_LOCK_ANCHOR`——三者是三个
+    独立的量。调用方必须在域路由改写 `args.file` **之前**把计数器目标定死，
+    与队列 §一 #420 为「锁锚点」踩过的是同一个坑；写错会把线写进业务场景
+    文件，而那份文件里根本没有声明行。
+
+    🔑 **为何「要不要推线」的判定留在调用方（D4）**：非队列系统目标（显式
+    `--file` 覆盖）不适用本项——但该判定**不能塞进本函数**：`_reserve_ids`
+    恰恰要在非队列系统的临时目标上照常回写、并在声明行缺失时照常 fail-loud
+    （既有单测即以临时文件跑 `--reserve`，断言「拒绝预留」）。两个调用方的
+    适用面不同，判据各留各处；本函数只负责「推得对不对」，不负责「该不该推」。
+
+    失败一律抛 `HighWaterMarkFailedError`，绝不静默略过——理由见该异常。
+    """
+    path = _target_path(target)
+    if text is None:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise HighWaterMarkFailedError(
+                f"读取目标文件失败，{reject_phrase}：{path}（{exc}）"
+            ) from exc
+
+    line_start, line_end, line, section_match = _locate_high_water_mark_section(
+        text, section, path, reject_phrase=reject_phrase,
+    )
+    current = int(section_match.group(2))
+    if new_value <= current:
+        return current
+
+    new_line = (
+        line[:section_match.start(2)] + str(new_value) + line[section_match.end(2):]
+    )
+    new_text = text[:line_start] + new_line + text[line_end:]
+    try:
+        path.write_text(new_text, encoding="utf-8")
+    except OSError as exc:
+        raise HighWaterMarkFailedError(
+            f"回写高水位线失败，{reject_phrase}：{path}（{exc}）"
+        ) from exc
+    return new_value
+
+
 def _reserve_ids(
     target: str, section: str, count: int, *, extra_collision_texts: list[str] | None = None,
 ) -> list[int]:
@@ -1902,21 +2027,17 @@ def _reserve_ids(
     except OSError as exc:
         raise ReserveFailedError(f"读取目标文件失败，拒绝预留：{path}（{exc}）") from exc
 
-    line_match = HIGH_WATER_MARK_LINE_PATTERN.search(text)
-    if line_match is None:
-        raise ReserveFailedError(f"目标文件不含「编号高水位线」标注行，拒绝预留：{path}")
-
-    line_start = text.rfind("\n", 0, line_match.start()) + 1
-    line_end = text.find("\n", line_match.end())
-    if line_end == -1:
-        line_end = len(text)
-    line = text[line_start:line_end]
-
-    section_match = SECTION_NUMBER_PATTERNS[section].search(line)
-    if section_match is None:
-        raise ReserveFailedError(
-            f"高水位线行不含 §{section} 编号（格式漂移），拒绝预留：{line!r}"
+    # 队列 §一 #505（D1）：定位与回写两步已抽成 `_locate_high_water_mark_section`
+    # ／`_advance_high_water_mark`，与 `append-row --number N` **共用同一条路径**
+    # ——本函数此前是这个计数器的唯一写入方，而 `append-row` 同样能让新编号落盘
+    # 却不推线（且返回 0），两个入口对同一计数器行为不一致。抽出后判定与文案
+    # 一字不变（`reject_phrase="拒绝预留"` 即原文案），只是不再各写一份。
+    try:
+        _, _, _, section_match = _locate_high_water_mark_section(
+            text, section, path, reject_phrase="拒绝预留",
         )
+    except HighWaterMarkFailedError as exc:
+        raise ReserveFailedError(str(exc)) from exc
 
     current = int(section_match.group(2))
     reserved = list(range(current + 1, current + 1 + count))
@@ -1947,12 +2068,15 @@ def _reserve_ids(
             "编辑锁的直接写入，见队列 #200/#233）。请先核实文件真实状态后再重试。"
         )
 
-    new_value = reserved[-1]
-    new_line = (
-        line[:section_match.start(2)] + str(new_value) + line[section_match.end(2):]
-    )
-    new_text = text[:line_start] + new_line + text[line_end:]
-    path.write_text(new_text, encoding="utf-8")
+    # 预留侧 `reserved[-1]` 恒大于 `current`，故 `_advance_high_water_mark` 的
+    # 单调 `max()` 对它是恒等变换——本函数行为不变。传入已读到的 `text`，避免
+    # 在同一持锁窗口内重复读盘（读的也仍是这一次判定所依据的那份内容）。
+    try:
+        _advance_high_water_mark(
+            target, section, reserved[-1], reject_phrase="拒绝预留", text=text,
+        )
+    except HighWaterMarkFailedError as exc:
+        raise ReserveFailedError(str(exc)) from exc
     return reserved
 
 
@@ -2947,8 +3071,18 @@ def cmd_append_row(args: argparse.Namespace) -> int:
     # 覆盖时（罕见，主要用于测试/特殊场景）原样使用，不做路由。
     # 队列 §一 #420：锁锚点在域路由改写 args.file **之前**定死，理由同
     # `cmd_edit_row`（两份文件共用一把锁，锚点与写入目标是两个量）。
+    # 队列 §一 #505（D1/D4）：**计数器目标是第三个量**——写入目标被域路由改写、
+    # 锁锚点恒为 `QUEUE_LOCK_ANCHOR`、高水位线声明恒定只存机制环境文件（与
+    # `cmd_acquire` 的 `hwm_source` 同一口径）。三者各算各的，且都要在域路由
+    # 改写 `args.file` **之前**定死，理由同 #420（从改写后的写入目标反推看起来
+    # 永远对，一旦那个判定本身失效，退化结果恰好就是错的那个）。
+    # 非队列系统目标（显式 `--file` 覆盖）⇒ `hwm_target = None` ＝ 不推线、也不
+    # 报错（D4）：那类目标本就没有高水位线声明行，一律推线会让全部以临时文件
+    # 为目标的既有调用当场失败——那不是发现缺陷，是制造回归。
+    is_queue_system = _is_queue_system_target(args.file)
+    hwm_target = QUEUE_MECHANISM_PATH_REL if is_queue_system else None
     lock_anchor = args.file
-    if _is_queue_system_target(args.file):
+    if is_queue_system:
         lock_anchor = QUEUE_LOCK_ANCHOR
         resolved_target, used_default = _resolve_append_target(args.section, args.domain)
         if used_default:
@@ -3030,23 +3164,81 @@ def cmd_append_row(args: argparse.Namespace) -> int:
                 print(f"  - {problem}")
             return 1
 
-    bounds = _section_bounds(text, args.section)
-    if bounds is None:
-        print(f"✗ 目标文件不含 §{args.section} 分区标题，拒绝写入。")
-        return 1
-    start, end = bounds
-    section_text = text[start:end]
-    last_end = _last_table_line_end_offset(section_text)
-    if last_end is None:
-        print(f"✗ §{args.section} 分区内未找到任何表格行（含表头），拒绝写入——分区结构异常需人工核实。")
+    def _compose(current_text: str) -> str | None:
+        """把 `new_line` 插到 §{section} 表格末尾，返回整份新正文；结构不可解析
+        时打印拒绝文案并返回 None。
+
+        队列 §一 #505：抽成函数是因为**必须能算两次**——推线可能刚刚改写了
+        同一份物理文件（见下方调用处），插入位置得基于推线之后的内容重算。"""
+        bounds = _section_bounds(current_text, args.section)
+        if bounds is None:
+            print(f"✗ 目标文件不含 §{args.section} 分区标题，拒绝写入。")
+            return None
+        start, end = bounds
+        section_text = current_text[start:end]
+        last_end = _last_table_line_end_offset(section_text)
+        if last_end is None:
+            print(f"✗ §{args.section} 分区内未找到任何表格行（含表头），拒绝写入——分区结构异常需人工核实。")
+            return None
+        insert_at = start + last_end
+        prefix = current_text[:insert_at]
+        suffix = current_text[insert_at:]
+        if not prefix.endswith("\n"):
+            prefix += "\n"
+        return prefix + new_line + "\n" + suffix
+
+    # 先在**推线之前**把分区结构问题挡掉——这两项是纯判定、无副作用，放在推线
+    # 之后只会白留一个空洞号。
+    if _compose(text) is None:
         return 1
 
-    insert_at = start + last_end
-    prefix = text[:insert_at]
-    suffix = text[insert_at:]
-    if not prefix.endswith("\n"):
-        prefix += "\n"
-    new_text = prefix + new_line + "\n" + suffix
+    # ── 队列 §一 #505（D1＋D2＋D4）：写行**之前**先把编号高水位线推上去 ──
+    # 病灶：这个计数器此前只有 `_reserve_ids` 一个写入方，而本命令同样能让一个
+    # 新编号落盘、却不推线且照样返回 0 ⇒ 线滞后于文件，**下一个人**的
+    # `--reserve` 算出的号必然撞已存在的可见行、被整体拒绝，该分区对全线取不到
+    # 新号（2026-09-07 与 2026-09-08 两天四次实证）。
+    # 🔴 **次序不是实现细节，是判据**：推线与写行是两次独立写盘、且落在两份可能
+    # 不同的物理文件上，必然有一种失败会留下不一致；先推线 ⇒ 残留「线已推、行
+    # 未写」＝ 一个空洞号，协议〇.8 明文允许；先写行 ⇒ 残留「行已写、线未推」
+    # ＝ 计数器滞后，正是本项要消灭的那个状态。故推线失败 ⇒ 拒绝、不写行，与
+    # 本命令其余各处校验「未修改目标文件」的既有语义一致。
+    # §二 无编号列（`args.number` 恒为 None，`_build_append_row_line` 已拒绝
+    # 带号）⇒ 不接线；`args.number` 非纯数字时同样不接线（拼装侧已有校验，此处
+    # 不重复判定）。
+    advanced = False
+    if (
+        hwm_target is not None
+        and args.section in SECTION_NUMBER_PATTERNS
+        and args.number is not None
+        and str(args.number).isdigit()
+    ):
+        try:
+            _advance_high_water_mark(
+                hwm_target, args.section, int(args.number), reject_phrase="拒绝写入",
+            )
+        except HighWaterMarkFailedError as exc:
+            print(f"✗ {exc}")
+            print("  高水位线未能推进 ⇒ 本次拒绝写入，未修改目标文件（先推线、后写行："
+                  "失败只留一个空洞号，不留「行已写、线未推」的半成品，见队列 §一 #505）。")
+            return 1
+        advanced = True
+
+    # 🔴 **推线之后必须重读再重算**（apply 当日实测踩中，不是推演）：§四 与
+    # §一「机」域下，**写入目标与计数器目标恰是同一份物理文件**——若沿用推线
+    # **之前**读到的 `text` 拼出的整份正文写盘，这一次写盘会把刚推上去的线
+    # 原样盖回去，行落盘、线没动，与修之前一模一样且照样返回 0。症状与本包
+    # 要治的病灶完全同形，只是成因换成了「同一函数内两次全文覆写、后一次基于
+    # 陈旧快照」。
+    if advanced:
+        try:
+            text = target_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"✗ 推进高水位线后重读目标文件失败：{target_path}（{exc}）——"
+                  "本次不写行（此时线已推进，留下一个空洞号，协议〇.8 允许）。")
+            return 1
+    new_text = _compose(text)
+    if new_text is None:
+        return 1
 
     target_path.write_text(new_text, encoding="utf-8")
     print(f"✓ 已追加一行到 §{args.section}：{new_line}")
@@ -4404,6 +4596,17 @@ def _validate_release_structure(
                         archive_numbers = _archive_row_numbers(repo_root)
                     if number in archive_numbers.get(label, set()):
                         violations.append(f"§{label} #{number} 与已归档行编号重复：{preview}")
+                    # 🔴 队列 §一 #505（2026-09-08）——**本项与「高水位线同步
+                    # 推进」是两个量，谁也不能代替谁，本包一个字没动本项**：
+                    # 本项（③）守的是**取号纪律**（「该走 `--reserve` 你走没走」），
+                    # `_advance_high_water_mark` 守的是**状态一致性**（计数器有没有
+                    # 落后于文件）。本项有三个既有豁免口（机器人收件登记／修复既有
+                    # 破损行／行内 `预留豁免：`），**每一个都是一条让编号落盘而线不
+                    # 动的合法通路**——2026-09-07 与 2026-09-08 两天四次实证走的全是
+                    # 第三个（行内 `预留豁免：`）。⇒ 本项拦得住「不该发生的写入」，
+                    # 拦不住「计数器滞后」；`#505` 补的正是它守不到的那一半。
+                    # **后来者注意**：不要因为「`append-row` 现在会自己推线了」就退掉
+                    # 本项——那样绕锁直写与未预留写入会一起变成无声通过。
                     reserved_here = set(reserved_map.get(label, []))
                     if number not in reserved_here:
                         # 队列 #333②：企微机器人收件登记路径豁免——见函数
@@ -6315,7 +6518,11 @@ def main() -> int:
     p_append_row.add_argument(
         "--number", default=None,
         help="§一/§四 必填：行编号（字符串形式，通常来自 acquire --reserve 的返回值）；"
-             "§二 不使用，不应提供",
+             "§二 不使用，不应提供。队列 §一 #505（2026-09-08）：本参数带来一个**新号**"
+             "时，工具会在写行**之前**把该分区的编号高水位线同步推到不低于它"
+             "（单调、不回退、幂等），与 `acquire --reserve` 走同一条回写路径——"
+             "此前只有 `--reserve` 会推线，走本参数写入则线不动且照样返回 0，"
+             "下一个人的 `--reserve` 才被整体拒绝。推线失败即拒绝写入、不写行",
     )
     p_append_row.add_argument(
         "--cell", action="append", default=[],
