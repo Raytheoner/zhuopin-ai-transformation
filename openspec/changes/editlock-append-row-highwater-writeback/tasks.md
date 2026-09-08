@@ -9,12 +9,12 @@
 - [x] 0.5 `.gitignore` 覆盖：本变更不新增任何自动生成文件形态，写明为何不适用 —— 见 proposal.md 同名节。
 - [x] 0.6 **apply 前置已核，结论写在此处**：`#482` 串行闸 apply（`origin/claude/op0907aj-serial-gate-482-apply`）**未 ff 入 master**（`git merge-base --is-ancestor … master` ⇒ exit=1）。同触碰 `工具-共享文档编辑锁.py` 与其单测，但**源码侧零重叠**（实测 grep 高水位/`_reserve_ids`/`cmd_append_row` 零命中）；单测文件尾部追加存在文本级冲突风险。⇒ 本包停在 propose+design 是**双重**的（门槛① ＋ 前置未解），apply 须排在 `#482` ff 之后。
 - [x] 0.7 propose ＋ design ＋ spec delta 出件，`openspec validate --strict` 绿。
-- [ ] 0.8 ⏳ **待 Shao Peishen 对 D1–D4 给字母答复**（design 审 🟡）。推荐组合 ＝ `1a／2a／3a／4a`。
+- [x] 0.8 ✅ **design 审已过（2026-09-08，Shao Peishen 答 `1a／2a／3a／4a／5a`，即全部按起草方推荐）**：**D1(a)** 自愈型 —— `append-row --number N` 写入后同步推线，不堵 `--number`；**D2(a)** 先推线后写行 —— 失败零残留；**D3(a)** 单调 `max(当前值, N)` —— 不回退、幂等；**D4(a)** 只对队列系统目标生效 —— 非队列目标沿用今日行为。另 **5(a)**＝先 ff `#482` 串行闸 apply 入 master、本包 apply 排其后。🔴 apply 泳道开工第一步 ＝ rebase 到 master 后在本 `design.md` 顶部回填「design 审：✅ 已过 —— Shao Peishen 2026-09-08」，再按 §1／§2 施工（沿用 `#482` 同一范式）。
 - [ ] 0.9 ⏳ **待办·apply 阶段取证**：确定 2026-09-07 与 2026-09-08 两次实际走的是 release ③ 的哪一个豁免口（机器人收件登记／`is_repair_of_existing`／`预留豁免：`／`--file` 覆盖）。**本包不臆断**；该结论决定 D1 (a) 是否足以覆盖全部路径，若发现第四条通路须在 apply 前追加 spec delta。
 
 ## 1. 实现 · 编辑锁侧（D1–D4，`0-学习与工具/工具-共享文档编辑锁.py`）
 
-> ⛔ 以下全部**未开工**，须 0.8 与 `#482` ff 两个前置同时解除后方可执行。
+> ⛔ 以下全部**未开工**。0.8 已于 2026-09-08 解除（他答 `1a2a3a4a`）；**剩余唯一前置 ＝ `#482` ff 入 master**（他答 `5a` 定序：`#482` 在前）。`#482` 自身 design 审已过、apply 已完成于 `origin/claude/op0907aj-serial-gate-482-apply` ＠ `261f747`，其行内明写「ff 仍 🟡」⇒ 仍待一个字母。
 
 - [ ] 1.1 抽出 `_advance_high_water_mark(target, section, new_value) -> int | None`：复用 `_reserve_ids` 的「定位声明行 → 取分区号 → 就地替换分区片段 → `write_text`」三步；**不复用**其碰撞前置校验（那是分配前的合法性判定，`append-row` 侧会把「补写空洞号」误拒 —— 判据见 design.md §一.2）。
 - [ ] 1.2 D3：`new = max(current, new_value)`；`new == current` 时**不写盘、不报错**，直接返回 `current`（幂等，且避免为一次无变化的写入触发 git 脏文件）。
