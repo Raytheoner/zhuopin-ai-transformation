@@ -1035,6 +1035,14 @@ EDITABLE_FINDER_GLOB = "__editable___*_finder.py"
 # 本机当前 9 个分发全是 finder 形态、无一 compat；即**这一条是补盲，不是修
 # 现网故障**——但 `#410` 的立项理由原话是「没有它下次照样发现不了」，而换个
 # 装法就照样发现不了。
+#
+# 📌 **立行来源＝队列 §一 `#459`**（2026-09-02 立；实现随 `2635cd5` 于 2026-09-05
+# 合入 master，openspec 包 `editable-pth-blindspot-guard` 随 merge `fc4e4ca` 合入）。
+# 上面那行 `OP-0831-N-A1` 与 `#410` 是**这段注释与代码最初被写出来时的出处**
+# （分支 `claude/queue-410-editable-probe` 的 `330218c`），照 `tasks.md` 2.4
+# 的字面要求在此补注本次立行来源，**不追改上面那行历史署名**（守「历史记录
+# 不追改」：已发生事实的原文不改，当下生效的指针才改）。补注于 2026-09-08
+# `OP-0908-O`，据队列 §一 `#459` 收口缺口 ②。
 EDITABLE_PTH_GLOB = "__editable__*.pth"
 EDITABLE_INSTALL_STATE_REL = "reports/sweep-editable-install-state.json"
 EDITABLE_INSTALL_ALERT_INTERVAL_HOURS = 24
