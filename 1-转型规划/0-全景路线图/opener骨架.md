@@ -2,6 +2,7 @@
 title: "opener 骨架（唯一可照抄物）"
 created: 2026-09-04
 status: 生效
+opener正本: 骨架
 用途: 出 opener／交接 prompt／要粘进 CC 的指令块，先 Read 本件、复制替换占位符。格式唯一来源，不凭记忆、不凭 skill 重建；判据见 `专线opener模板库.md` §〇。
 ---
 

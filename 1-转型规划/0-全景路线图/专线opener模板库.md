@@ -2,6 +2,7 @@
 title: "专线 opener 模板库（Shao Peishen 复制即用,不依赖总线现给）"
 created: 2026-07-23
 status: 生效
+opener正本: 模板库
 用途: 把高频 session 开场词固化为填空模板。Shao Peishen 从本库复制、填〔变量〕即发；机器人追行模板升级后（见队列 #88 二期预留）,队列行将直接内嵌成品 opener,连本库都不用翻。
 配套: opener骨架.md(唯一可照抄物)｜ 跨桌任务队列.md 协议〇.5(固定结论制)｜ 构建自动化workflow设计-2026-07-21.md
 瘦身: 2026-09-04 A2 —— §〇 去 provenance 改判据版，骨架另立 `opener骨架.md`，迁出原文＝进度编年-CHANGELOG.md 附录 J

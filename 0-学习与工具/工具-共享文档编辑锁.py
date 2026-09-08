@@ -5828,20 +5828,26 @@ def _opener_guard_violations(
         # 队列 #487（(甲)）：看护者用 Task/Agent 派发的子任务泳道 opener 不该有
         # set_session_title——判据同样逐字复用 lint 模块，不重写第二份（同 D3）。
         watcher_line = lint._watcher_section_line(text)
-        # 队列 #493：格式正本 `opener骨架.md` 的占位符不是违规——判据在 lint 本体
-        # （`is_format_canon` ／ `check_canon_file`），此处同样只调用、不重写（D3）。
-        canon = lint.is_format_canon(rel)
+        # 队列 #493／#489 ⑴：判据正本（骨架／模板库）自己的占位符不是违规——判据
+        # 在 lint 本体（`canon_role` ／ `check_canon_claim` ／ `check_canon_file`），
+        # 此处同样**只调用、不重写**（D3：重写＝两处判据分叉，`#312` 付过学费）。
+        # 🔴 `#489` ⑴ 起识别方式由「路径名单」改为「件自己 frontmatter 声明角色」，
+        # 本侧因此自动覆盖到 `专线opener模板库.md`——**此前它不在名单里，恒报 13 处，
+        # 每次触碰都被迫写一次 `opener豁免：`，而豁免用滥则守卫失效。**
+        role = lint.canon_role(text)
         sink = mine if _opener_attribution(rel, dirty_at_acquire, fragments) else others
-        if canon:
-            for form, detail in lint.check_canon_file(text):
-                sink.append(f"{rel}（格式正本自检）[{form}] {detail}")
+        for form, detail in lint.check_canon_claim(text):
+            sink.append(f"{rel}（正本角色声明自检）[{form}] {detail}")
+        if role is not None:
+            for form, detail in lint.check_canon_file(text, role):
+                sink.append(f"{rel}（{role}自检）[{form}] {detail}")
         for block in candidates:
             if lint.settings_line(block) is not None:
                 opener_block_count += 1
             env = lint.block_env(block) or "环境未标"
             is_subtask = lint._is_subtask_lane_block(block, watcher_line)
             for form, detail in lint.check_block(
-                    block, is_subtask_lane=is_subtask, is_format_canon_file=canon):
+                    block, is_subtask_lane=is_subtask, canon_role=role):
                 sink.append(f"{rel}:{block.start_line}（{env}）[{form}] {detail}")
 
     # 队列 #284 第 18 次违反的教训：连回显都没有时，无法区分「没问题」与

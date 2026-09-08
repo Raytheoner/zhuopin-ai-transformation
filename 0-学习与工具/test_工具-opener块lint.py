@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import tempfile
 import unittest
 from datetime import date
@@ -617,13 +618,37 @@ class 格式正本自身被判成违规(unittest.TestCase):
     )
     CANON_TITLE_LINE = TITLE_LINE_PLACEHOLDER_NOT_FILLED
 
+    #: 陪衬块：一个**中性**的 Cowork opener 块，只为把 opener 块数顶到 `C0` 的
+    #: 门槛（≥2）——正本按定义是多份范例的集合，见 `#489` ⑴ 防外溢条。
+    #: 🔴 **必须中性**：不含 `set_session_title`、不含例外句 ⇒ 对 C1/C2 的判定
+    #: （「有没有**任何一个**块在教这两件事」）零影响，各条用例的断言不被它篡改；
+    #: 首行与六字段都用占位符原形 ⇒ 自身不触发 C5/F4/F7。
+    CANON_FILLER_BLOCK = (
+        "[OP-MMDD-X]【Cowork】<短名，≤12字>\n"
+        "【设置】执行环境：Cowork ｜ 分支：master ｜ worktree：☐ ｜ 工作区：无 ｜ "
+        "session：新开 ｜ 派出线：<线名 OP-MMDD-X>\n"
+        "读 CLAUDE.md。"
+    )
+
     def _canon(self, *body_lines: str) -> Path:
-        """把内容写进一份**路径为格式正本**的临时件（判据是路径，不是文件名）。"""
+        """把内容写进一份**自称格式正本**的临时件。
+
+        🔴 **判据 2026-09-08（`#489` ⑴）起改为件自己的 frontmatter 声明**
+        （`opener正本: 骨架`），不再是路径——原因是按路径就得维护一张文件名清单，
+        而 `#489` 期望产出明写「不得写死文件名清单」（`opener骨架.md` 在清单里、
+        `专线opener模板库.md` 不在，后者因此恒报 13 处）。
+        路径仍按正本落，用来同时守住 `is_format_canon` 那条「不做 basename 匹配」
+        的旧结论；但**生效的判据是 frontmatter**。
+        """
         d = tempfile.TemporaryDirectory()
         self.addCleanup(d.cleanup)
         p = Path(d.name) / M.SKELETON_CANON_REL
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(_md(*body_lines), encoding="utf-8")
+        p.write_text(
+            "---\ntitle: \"骨架夹具\"\nstatus: 生效\n"
+            f"{M.CANON_ROLE_KEY}: {M.CANON_ROLE_SKELETON}\n---\n\n"
+            + _md(*body_lines) + "\n" + _md(self.CANON_FILLER_BLOCK),
+            encoding="utf-8")
         return p
 
     # ── 判据识别 ────────────────────────────────────────────────
@@ -718,6 +743,175 @@ class 格式正本自身被判成违规(unittest.TestCase):
         for code in ("C1", "C2", "C3", "C5"):
             self.assertEqual(M.RULE_EFFECTIVE_BY_FORM[code], date(2026, 9, 7))
             self.assertIn(code, M.FORM_TITLE)
+
+
+class 判据正本识别改为声明式(unittest.TestCase):
+    """队列 §一 `#489` ⑴：把「哪些件是判据正本」从**写死路径**改为**件自己声明**。
+
+    立项形态：`#493` 只把 `opener骨架.md` 一条路径挖了出去，`专线opener模板库.md`
+    不在名单里 ⇒ 它的 5 个填空模板恒报 13 处（F3×3 ＋ F4×5 ＋ F5×5），
+    **每次触碰这两份文件都被迫写一次 `opener豁免：`，而豁免用滥则守卫失效**。
+    按路径续加第二条、第三条，就是在建那份 `#489` 期望产出明令禁止的文件名清单。
+
+    🔴 **本类同样守「换判据、不是关掉」**：每条「声明后不报 FN」都配一条
+    「声明立不住 / 正本漂了就报 CN」。
+    """
+
+    FILLER = 格式正本自身被判成违规.CANON_FILLER_BLOCK
+
+    def _write(self, body: str, role: str | None, name: str = "件-x.md") -> Path:
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        p = Path(d.name) / name
+        head = "---\ntitle: \"夹具\"\nstatus: 生效\n"
+        if role is not None:
+            head += f"{M.CANON_ROLE_KEY}: {role}\n"
+        p.write_text(head + "---\n\n" + body, encoding="utf-8")
+        return p
+
+    # ── 仓库真身回归：两份判据正本都必须零违规 ────────────────
+    def test_仓库真身的模板库零违规(self):
+        """🔴 用**仓库里那份真文件**跑——`#489` ⑴ 要根治的就是它那 13 处。"""
+        lib = M.REPO_ROOT / "1-转型规划/0-全景路线图/专线opener模板库.md"
+        self.assertTrue(lib.is_file(), f"模板库不在了：{lib}")
+        self.assertEqual([f.render() for f in M.scan_single_file(lib)], [])
+
+    def test_两份真身都自带角色声明(self):
+        """判据既然改成声明式，两份正本就必须真的声明了——否则本项白改。"""
+        for rel, role in (
+            (M.SKELETON_CANON_REL, M.CANON_ROLE_SKELETON),
+            ("1-转型规划/0-全景路线图/专线opener模板库.md", M.CANON_ROLE_LIBRARY),
+        ):
+            text = (M.REPO_ROOT / rel).read_text(encoding="utf-8")
+            self.assertEqual(M.canon_role(text), role, rel)
+
+    # ── 模板库角色：换掉版式三条（F3/F4/F5）────────────────────
+    def test_模板库角色内不报形态三四五(self):
+        """模板库的块是**「说什么」的内容草稿**，不是「长什么样」的版式范例
+        （根 `CLAUDE.md` §3：出 opener 一律照抄骨架、**不凭模板库重建**）。
+        拿版式判据判内容草稿，与 `#493` 修掉的「拿成品判据判定义本身」同一类型错误。"""
+        body = _md("【设置】执行环境：**CC** ｜ 分支：master ｜ worktree：☐",
+                   "开工第一件事：调 set_session_title，标题：[Win]MMDDX-〔主题短名〕。"
+                   "🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行。",
+                   "读队列 §二 取批次。") + "\n" + _md(self.FILLER)
+        forms = {f.form for f in M.scan_single_file(self._write(body, M.CANON_ROLE_LIBRARY))}
+        for code in ("F3", "F4", "F5"):
+            self.assertNotIn(code, forms)
+
+    def test_模板库角色内形态一形态二照常生效(self):
+        """🔴 F1/F2 **刻意不换**：它俩问的是「这份模板还教不教 `set_session_title`
+        与子任务例外句」——那正是 2026-08-27 一天 17 次违反的源头，是模板库最该
+        守住的东西。把它俩也一起放掉，等于把最该报的那一处永久隐身。"""
+        body = _md("【设置】执行环境：**CC** ｜ 分支：master ｜ worktree：☐",
+                   "读队列 §二 取批次。") + "\n" + _md(self.FILLER)
+        forms = {f.form for f in M.scan_single_file(self._write(body, M.CANON_ROLE_LIBRARY))}
+        self.assertIn("F1", forms)
+
+    def test_模板库不再教例外句报C2(self):
+        """换上去的那半：模板库丢了例外句照样发信号（比骨架丢了更直接——
+        骨架还有人逐字读，模板库是照单抓药）。"""
+        body = _md("【设置】执行环境：**CC** ｜ 分支：master ｜ worktree：☐",
+                   "开工第一件事：调 set_session_title，标题：[Win]MMDDX-〔主题短名〕。",
+                   "读队列 §二 取批次。") + "\n" + _md(self.FILLER)
+        forms = {f.form for f in M.scan_single_file(self._write(body, M.CANON_ROLE_LIBRARY))}
+        self.assertIn("C2", forms)
+
+    # ── C0 防外溢：声明不是免死金牌 ────────────────────────────
+    def test_单块件声明角色不予承认并报C0(self):
+        """🔴 防「随手加一行 frontmatter 就能躲开 F3/F4/F5」：正本/模板库按定义是
+        多份范例的集合，一份成品 opener 只有 1 块 ⇒ 声明不成立、按普通件全判。"""
+        body = _md("[OP-MMDD-X]【CC】某个活",
+                   SETTINGS_CC,
+                   TITLE_LINE_PLACEHOLDER_NOT_FILLED)
+        forms = {f.form for f in M.scan_single_file(
+            self._write(body, M.CANON_ROLE_LIBRARY, "派单件-x.md"))}
+        self.assertIn("C0", forms)
+        self.assertIn("F3", forms)     # 声明什么也没换来
+
+    def test_角色值写错不予承认并报C0(self):
+        """写错一个字就静默变成「以为豁免了其实没有」——同族＝参数被接受却不生效。"""
+        body = _md("【设置】执行环境：**CC** ｜ 分支：master ｜ worktree：☐",
+                   TITLE_LINE_PLACEHOLDER_NOT_FILLED) + "\n" + _md(self.FILLER)
+        forms = {f.form for f in M.scan_single_file(self._write(body, "模版库"))}
+        self.assertIn("C0", forms)
+        self.assertIn("F3", forms)
+
+    def test_未声明的普通件一切照旧(self):
+        """判据面来自被判对象的声明 ⇒ 没声明的件行为与本项引入前逐字一致。"""
+        body = _md("[OP-MMDD-X]【CC】某个活", SETTINGS_CC,
+                   TITLE_LINE_PLACEHOLDER_NOT_FILLED)
+        forms = {f.form for f in M.scan_single_file(self._write(body, None))}
+        self.assertNotIn("C0", forms)
+        self.assertIn("F3", forms)
+        self.assertIn("F5", forms)
+
+    def test_生效日与标题表齐备(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["C0"], date(2026, 9, 8))
+        self.assertIn("C0", M.FORM_TITLE)
+
+
+class 明细分组不得漏掉形态(unittest.TestCase):
+    """2026-09-08 本会话实测发现的第三处缺陷（`#489` 顺带修）：`main()` 里的明细
+    分组循环写死了一份形态清单，**漏了 F3/F4/F5** ⇒ 这三个形态的命中**计入
+    「N 处待修【阻断】」却一行明细都不打印**。
+
+    实证：全量 `--enforce` 报「49 处待修」，而输出里逐条数得出来的只有 36 条，
+    差的 13 条正是模板库那批 F3/F4/F5——`#489` ⑵ 记的「验收命令拿不到结论」有本条一份。
+    同族＝模块开头那句「连回显都没有时，无法区分『没问题』与『没跑』」的变体：
+    **回显有，但少了一截，而少的那截不会报错。**
+    根因是「同一份形态清单存在两处、只有一处会被新增形态改到」⇒ 已取消第二处。
+    """
+
+    def test_每个形态都有标题条目(self):
+        """🔴 判据表与标题表必须同域——少一条，那个形态的明细就会静默消失。"""
+        self.assertEqual(set(M.RULE_EFFECTIVE_BY_FORM), set(M.FORM_TITLE))
+
+    def test_明细条数与待修数一致(self):
+        """端到端：`--enforce` 声称的「N 处待修」必须与逐条打印出来的明细条数相等。"""
+        import io as _io
+        import contextlib as _ctx
+        buf = _io.StringIO()
+        with _ctx.redirect_stdout(buf):
+            M.main(["--enforce"])
+        out = buf.getvalue()
+        claimed = re.search(r"当前在用件 (\d+) 处待修", out)
+        self.assertIsNotNone(claimed, out[-400:])
+        printed = len(re.findall(r"^  - .*\[[FC]\d\] ", out, re.MULTILINE))
+        self.assertEqual(int(claimed.group(1)), printed,
+                         "声称的待修数与实际打印的明细条数不一致——又漏形态了")
+
+
+class 全量取提交日期批量化(unittest.TestCase):
+    """队列 §一 `#489` ⑵：全量 `--enforce` 的墙钟从「逐文件 git log」降到「一次全历史」。
+
+    立项实证：`--enforce` 起于 22:05、至 07:24 进程消失、输出文件始终 0 字节。
+    本会话逐段计时定位到**两件事，不是一件**：
+      ① 89% 墙钟耗在 `_last_commit_date` 逐文件调用（1613 个文件实测 1057.3s，
+         均值 1.32s；纯解析只要 19.4s）；
+      ② **0 字节不等于挂死**——此前全部输出攒到最后一次性打印，`> out.txt`
+         期间那个文件本来就是 0 字节，「跑得慢」与「卡死了」在观测上同形。
+    """
+
+    def test_批量与逐文件口径一致(self):
+        """🔴 换实现必须先证明等价——本项在全库 1613 个 `.md` 上逐个比对过
+        （不一致 0、批量取不到 0）；单测取前 40 个做常驻回归。"""
+        files = M._tracked_md_files()[:40]
+        batch = M._last_commit_dates_batch(files)
+        if not batch:
+            self.skipTest("批量取数不可用（非 git 仓库／git 不可用）")
+        for rel in files:
+            if rel in batch:
+                self.assertEqual(batch[rel], M._last_commit_date(rel), rel)
+
+    def test_批量取不到时不静默当成没有历史(self):
+        """🔴 fail-safe 方向：取不到返回空字典 ⇒ 调用方逐个回落到 `_last_commit_date`，
+        **不是**把全库打成 `unknown-history` 然后全部按「当前在用」阻断。"""
+        self.assertEqual(M._last_commit_dates_batch([]), {})
+
+    def test_单次git调用有超时上限(self):
+        """一个卡住的 git 调用不许把整轮全量拖死。"""
+        self.assertIsInstance(M.GIT_TIMEOUT_SECONDS, int)
+        self.assertGreater(M.GIT_TIMEOUT_SECONDS, 0)
 
 
 if __name__ == "__main__":

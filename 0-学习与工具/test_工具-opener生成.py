@@ -506,5 +506,131 @@ class SilentlyDroppedBodyParamTests(unittest.TestCase):
             M.BODY_PARAM_SUPPORT.update(saved)
 
 
+class 引用版变体(unittest.TestCase):
+    """队列 §一 `#489` 步骤 5（Shao Peishen 2026-09-08 答 1a）：`--variant reference`。
+
+    立项理由＝**规则退休制**：`#284` 那条「聊天里给他的开场词一律引用版、禁手抄」
+    是**人守**，2026-09-08 已计到第三犯 ⇒ 退休制要求二选一（机制化或删除）。
+    本变体是「机制化」那一半——手抄四行会漏 `【设置】` 某一字段或写错标题占位符，
+    拼装 ＋ `check_block` 自检不会漏。
+    """
+
+    BASE = dict(
+        op_id="OP-0908-Z", env="CC", short_name="引用版试跑", branch="ref-demo",
+        worktree="☑（demo-wt，新 worktree，收工自删）", workspace="无",
+        session="新开", line="环境总线 OP-0907-AL", task_class="A",
+        input_pointer="1-转型规划/0-全景路线图/示例派单件.md",
+        variant="reference",
+    )
+
+    #: 🔴 golden 对照：逐字钉死四行形态。改动它必须是**有意改格式**，
+    #: 不能是「顺手动了拼装逻辑、golden 跟着改一下让测试变绿」。
+    GOLDEN_CC = (
+        "```\n"
+        "[OP-0908-Z]【CC】引用版试跑\n"
+        "【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/op0908z-ref-demo`）"
+        " ｜ worktree：☑（demo-wt，新 worktree，收工自删） ｜ 工作区：无 ｜ "
+        "session：新开 ｜ 派出线：环境总线 OP-0907-AL\n"
+        "开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "
+        '"self"），标题：[Win]0908Z-引用版试跑。' + M.SUBTASK_EXCEPTION + "\n"
+        "读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `CLAUDE.md` 恢复上下文，"
+        "按该件执行。本件为 A 类。\n"
+        "```"
+    )
+
+    GOLDEN_COWORK = (
+        "```\n"
+        "[OP-0908-Y]【Cowork】引用版Cowork\n"
+        "【设置】执行环境：Cowork ｜ 分支：master ｜ worktree：☐（不建，只产改 `.md`）"
+        " ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线\n"
+        "读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `CLAUDE.md` 恢复上下文，"
+        "按该件执行。本件为 B 类。\n"
+        "```"
+    )
+
+    def _gen(self, **over):
+        return M.generate_opener(**{**self.BASE, **over})
+
+    def test_golden_CC四行(self):
+        self.assertEqual(self._gen(), self.GOLDEN_CC)
+
+    def test_golden_Cowork三行_无title调用(self):
+        """🔴 Cowork 侧**不放** `set_session_title`：那个工具在 Cowork 桌根本不存在
+        （2026-08-27 补充一实测），放了就是教人写一个不存在的调用。"""
+        out = self._gen(op_id="OP-0908-Y", env="Cowork", short_name="引用版Cowork",
+                        branch="master", worktree="☐（不建，只产改 `.md`）",
+                        line="环境总线", task_class="B")
+        self.assertEqual(out, self.GOLDEN_COWORK)
+        self.assertNotIn("set_session_title", out)
+
+    def test_引用版自身过lint(self):
+        """产出必须自己先过自己定的门——`generate_opener` 内已跑 `check_block`，
+        这里再从外部独立跑一次，防止内部自检哪天被绕过。"""
+        lint = M._load_lint_module()
+        for out in (self._gen(),
+                    self._gen(op_id="OP-0908-Y", env="Cowork", short_name="引用版Cowork",
+                              branch="master", worktree="☐（不建）", line="L",
+                              task_class="B")):
+            block = lint.iter_fenced_blocks(out)[0]
+            self.assertEqual(lint.check_block(block), [])
+
+    def test_正文段一个都不拼(self):
+        """引用版只出四行——正文在派单件里。多一段就等于把 >500 字又搬回聊天。"""
+        out = self._gen()
+        self.assertNotIn("做什么：", out)
+        self.assertNotIn("不做什么：", out)
+        self.assertEqual(len(out.strip().splitlines()), 6)   # 上下围栏 ＋ 四行
+
+    # ── fail-loud 四条（`_resolve_input_pointer`）────────────────
+    def _cli(self, argv) -> tuple[int, str]:
+        import contextlib
+        import io as _io
+        err = _io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(_io.StringIO()):
+            code = M.main(argv)
+        return code, err.getvalue()
+
+    _CLI_COMMON = [
+        "--env", "CC", "--short-name", "试", "--branch", "d",
+        "--worktree", "☑（x）", "--workspace", "无", "--session", "新开",
+        "--line", "L", "--task-class", "A",
+    ]
+
+    def test_do和dont传入即fail_loud(self):
+        """🔴 正文参数在本变体下不会被拼进成品 ⇒ 必须报错，不许静默丢弃。"""
+        for flag in ("--do", "--dont"):
+            with self.subTest(flag=flag):
+                with self.assertRaises(M.OpenerGenError):
+                    self._gen(**{"do_items" if flag == "--do" else "dont_items": ["某事"]})
+
+    def test_缺ref_file报错(self):
+        code, err = self._cli(["--variant", "reference", "--op-id", "OP-0908-W"]
+                              + self._CLI_COMMON)
+        self.assertEqual(code, 1)
+        self.assertIn("--ref-file", err)
+
+    def test_非reference传ref_file报错(self):
+        """🔴 参数被接受却不生效，比被拒绝更危险（`#487` 子项付过的学费）。"""
+        code, err = self._cli(["--variant", "standard", "--op-id", "OP-0908-V",
+                               "--ref-file", "a/b.md", "--do", "x", "--dont", "y"]
+                              + self._CLI_COMMON)
+        self.assertEqual(code, 1)
+        self.assertIn("--ref-file", err)
+
+    def test_ref_file与input_pointer冲突报错(self):
+        code, err = self._cli(["--variant", "reference", "--op-id", "OP-0908-U",
+                               "--ref-file", "a/b.md", "--input-pointer", "c/d.md"]
+                              + self._CLI_COMMON)
+        self.assertEqual(code, 1)
+        self.assertIn("不得给出不同的值", err)
+
+    def test_非reference缺input_pointer仍报错(self):
+        """原 argparse `required=True` 的等价物——改成解析后校验不得把这条漏掉。"""
+        code, err = self._cli(["--variant", "standard", "--op-id", "OP-0908-T",
+                               "--do", "x", "--dont", "y"] + self._CLI_COMMON)
+        self.assertEqual(code, 1)
+        self.assertIn("--input-pointer", err)
+
+
 if __name__ == "__main__":
     unittest.main()

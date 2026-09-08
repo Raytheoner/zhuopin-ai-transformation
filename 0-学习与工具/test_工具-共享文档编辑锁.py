@@ -6626,15 +6626,37 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         self.assertEqual(len(violations), 1)
         self.assertIn("fail-closed", violations[0])
 
-    # ── 队列 §一 #493 ⑴：格式正本的占位符不是违规 ────────────────
+    # ── 队列 §一 #493 ⑴／#489 ⑴：判据正本自己的占位符不是违规 ────
+    #: 中性陪衬块：只为把 opener 块数顶到 `C0` 门槛（≥2，见 `#489` ⑴ 防外溢条）。
+    #: 不含 title、不含例外句 ⇒ 对 C1/C2 零影响；首行与六字段皆占位符原形 ⇒ 自身不报。
+    CANON_FILLER = (
+        "[OP-MMDD-X]【Cowork】<短名，≤12字>\n"
+        "【设置】执行环境：Cowork ｜ 分支：master ｜ worktree：☐ ｜ 工作区：无 ｜ "
+        "session：新开 ｜ 派出线：<线名 OP-MMDD-X>\n"
+        "读 CLAUDE.md。"
+    )
+
+    def _write_canon(self, rel: str, role: str, *body_lines: str) -> None:
+        """写一份**自称判据正本**的件（`#489` ⑴ 起判据是 frontmatter 声明，不是路径）。"""
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lint = self.m._load_opener_lint_module()
+        path.write_text(
+            "---\ntitle: \"夹具\"\nstatus: 生效\n"
+            f"{lint.CANON_ROLE_KEY}: {role}\n---\n\n"
+            + "```\n" + "\n".join(body_lines) + "\n```\n\n"
+            + "```\n" + self.CANON_FILLER + "\n```\n",
+            encoding="utf-8")
+
     def test_format_canon_placeholders_do_not_block_release(self):
         """🔴 `#493` 立项形态：`opener骨架.md` 一脏，release 就被**它自己的
         格式正本**判成 8 处违规、锁保持占用（2026-09-06 15:53 UTC 主仓实跑
         坐实，`#398` ⑺「sweep 自撞锁」当天四轮的触发源）。
 
-        判据正本在 lint 本体（`is_format_canon`／`check_canon_file`），此处
-        只验 release 侧把上下文传对了——不重复 lint 自身那 13 条单测。"""
-        self._write_block(self.m._load_opener_lint_module().SKELETON_CANON_REL,
+        判据正本在 lint 本体（`canon_role`／`check_canon_file`），此处
+        只验 release 侧把上下文传对了——不重复 lint 自身那些单测。"""
+        lint = self.m._load_opener_lint_module()
+        self._write_canon(lint.SKELETON_CANON_REL, lint.CANON_ROLE_SKELETON,
                           "[OP-MMDD-X]【CC】<短名，≤12字>", self.SETTINGS_CC,
                           '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title'
                           '（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。'
@@ -6643,7 +6665,8 @@ class OpenerGuardReleaseTests(unittest.TestCase):
 
     def test_format_canon_drift_still_blocks(self):
         """🔴 **换判据，不是关掉**：正本的占位符自己漂了，照样拦。"""
-        self._write_block(self.m._load_opener_lint_module().SKELETON_CANON_REL,
+        lint = self.m._load_opener_lint_module()
+        self._write_canon(lint.SKELETON_CANON_REL, lint.CANON_ROLE_SKELETON,
                           "[OP-0907-Z]【CC】随手写的", self.SETTINGS_CC,
                           '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title'
                           '（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。'
@@ -6651,6 +6674,41 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         violations = self._run()
         self.assertEqual(len(violations), 1)
         self.assertIn("C5", violations[0])
+
+    # ── 队列 §一 #489 ⑴：模板库同样被覆盖（此前不在名单里，恒报 13 处）──
+    def test_template_library_role_does_not_block_release(self):
+        """🔴 `#489` ⑴ 立项形态：`专线opener模板库.md` **不在 `#493` 那份路径名单里**
+        ⇒ release 侧对它恒报 13 处，每次触碰都被迫写一次 `opener豁免：`；
+        **豁免用滥则守卫失效**。改成声明式判据后本侧自动覆盖到它。"""
+        lint = self.m._load_opener_lint_module()
+        self._write_canon("1-转型规划/0-全景路线图/专线opener模板库.md",
+                          lint.CANON_ROLE_LIBRARY,
+                          "【设置】执行环境：**CC** ｜ 分支：master ｜ worktree：☐",
+                          "开工第一件事：调 set_session_title，标题：[Win]MMDDX-〔主题短名〕。"
+                          "🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行。",
+                          "读队列 §二 取批次。")
+        self.assertEqual(self._run(), [])
+
+    def test_fake_canon_claim_still_blocks(self):
+        """🔴 防外溢：普通派单件贴一行 `opener正本:` 想躲开 F3/F5 ⇒ `C0` 点名、
+        且原形态照报，声明什么也换不来。"""
+        lint = self.m._load_opener_lint_module()
+        path = self.root / "派单件-冒充.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "---\ntitle: \"冒充\"\nstatus: 生效\n"
+            f"{lint.CANON_ROLE_KEY}: {lint.CANON_ROLE_LIBRARY}\n---\n\n"
+            + "```\n" + "\n".join([
+                "[OP-MMDD-X]【CC】某个活", self.SETTINGS_CC,
+                '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title'
+                '（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。'
+                "🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行。",
+            ]) + "\n```\n",
+            encoding="utf-8")
+        violations = self._run()
+        self.assertEqual(len(violations), 1)
+        self.assertIn("C0", violations[0])
+        self.assertIn("F3", violations[0])
 
     # ── 队列 §一 #493 ⑵：归属分流（无人值守持有者的出路）─────────
     #     🔴 判据＝「违规落不落在本次持锁者触碰过的文件里」，不是「持锁者是谁」

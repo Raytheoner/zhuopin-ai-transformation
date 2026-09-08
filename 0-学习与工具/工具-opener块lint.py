@@ -174,6 +174,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+#: `工具-文档台账生成.py::parse_frontmatter` 的惰性缓存（`_frontmatter_of` 用）。
+#: 🔴 缓存的是**解析器函数**、不是解析结果——每份件的 frontmatter 仍逐份现读。
+_FRONTMATTER_PARSER = None
+
 # ── 各条规则各自的生效日（H3 的时间边界）──────────────────────────────────────
 #: 形态① ＝ 模板库 §〇「补充一」第 2 条（Shao Peishen 2026-08-26 定）。
 RULE_EFFECTIVE_FORM1 = date(2026, 8, 26)
@@ -189,6 +193,8 @@ RULE_EFFECTIVE_FORM6 = date(2026, 9, 5)
 RULE_EFFECTIVE_FORM7 = date(2026, 9, 6)
 #: 正本自检 C1/C2/C3/C5 ＝ 队列 §一 `#493`（2026-09-07，形态①②③⑤ 在格式正本内的换判据版）。
 RULE_EFFECTIVE_CANON = date(2026, 9, 7)
+#: 正本角色声明自检 C0 ＝ 队列 §一 `#489` ⑴（2026-09-08，路径名单改自声明式判据时的防外溢条）。
+RULE_EFFECTIVE_CANON_CLAIM = date(2026, 9, 8)
 
 #: 各形态代码 → 生效日，`classify_carrier` 按此查表（替代此前的二选一分支）。
 RULE_EFFECTIVE_BY_FORM = {
@@ -199,6 +205,7 @@ RULE_EFFECTIVE_BY_FORM = {
     "F5": RULE_EFFECTIVE_FORM5,
     "F6": RULE_EFFECTIVE_FORM6,
     "F7": RULE_EFFECTIVE_FORM7,
+    "C0": RULE_EFFECTIVE_CANON_CLAIM,
     "C1": RULE_EFFECTIVE_CANON,
     "C2": RULE_EFFECTIVE_CANON,
     "C3": RULE_EFFECTIVE_CANON,
@@ -275,11 +282,59 @@ DONT_SECTION_RE = re.compile(r"^\s*\*{0,2}不做什么\*{0,2}\s*[：:]\s*\*{0,2}
 #: `set_session_title`、正本不再教子任务例外句、正本的六字段/不做什么段写坏了。
 SKELETON_CANON_REL = "1-转型规划/0-全景路线图/opener骨架.md"
 
-#: 在格式正本内被「换成正本自检」而非「关掉」的四个形态。
+# ── 队列 §一 `#489` ⑴：判据正本的识别从「写死路径」改为「件自己声明角色」 ─────────
+#
+# 🔴 **为什么必须改**（`#489` 期望产出原文：**不得写死文件名清单**）：`#493` 只把
+# `opener骨架.md` 一条路径挖了出去，`专线opener模板库.md` 没在名单里 ⇒ 它的 5 个填空
+# 模板恒报 13 处（F3×3 ＋ F4×5 ＋ F5×5），每次触碰都被迫写一次 `opener豁免：`，
+# **豁免用滥则守卫失效**。而按路径续加第二条、第三条，就是在建那份被明令禁止的清单。
+#
+# 🔴 **判据换成什么**：件在 frontmatter 里**自己声明**它是 opener 的定义物
+# （`opener正本: 骨架` / `opener正本: 模板库`），而不是由 lint 侧维护一张名单。
+# 这与「执行环境：Cowork ⇒ 结构性排除」同性质——**判据本身不覆盖**，判据面来自被判
+# 对象自己的声明，不是来自判据方的例外表。
+#
+# 🔴 **声明不是免死金牌，是换一套义务**（同 `#493`「换判据、不是关掉」）：
+#   - 声明后只让掉**占位符/版式敏感**的那几条（见 `CANON_SWAPPED_FORMS_*`）；
+#   - 同时**换上** `C0`/`C1`/`C2`/`C3`/`C5` 正本自检——正本若不再教
+#     `set_session_title`、不再教子任务例外句、占位符被填成具体值，照样报；
+#   - `F6`（子任务泳道不放 title）／`F7`（不做什么段）**任何角色都照常生效**。
+#
+# 🔴 **防外溢：`C0` 把「随手加一行 frontmatter 就能躲开」这条路堵上**——正本/模板库
+# 按定义是**多份范例的集合**（骨架 4 块、模板库 5 块），而一份成品 opener 件只有 1 块。
+# 故声明了角色却只有 <2 个 opener 块 ⇒ **声明不成立、按普通件照判**，并报 `C0`。
+# 这不是万无一失（照抄两块再加声明仍可绕），但它把「顺手绕开」变成「明知故犯的
+# 三处改动」，且改动全部落在 diff 里可见——与本项目既有 `豁免：` 标记同一执行层级。
+CANON_ROLE_KEY = "opener正本"
+CANON_ROLE_SKELETON = "骨架"      # 格式唯一可照抄物 = `opener骨架.md`
+CANON_ROLE_LIBRARY = "模板库"     # 填空模板集 = `专线opener模板库.md`
+VALID_CANON_ROLES = (CANON_ROLE_SKELETON, CANON_ROLE_LIBRARY)
+
+#: 声明角色所需的最少 opener 块数（`C0` 的阈值，见上）。
+CANON_MIN_BLOCKS = 2
+
+#: 在**格式正本（骨架）**内被「换成正本自检」而非「关掉」的四个形态。
 #: 🔴 判据：**该形态问的是「占位符填对了没有」** ⇒ 对定义占位符的那份件无意义。
-#: F4（六字段顺序）／F6（子任务泳道不放 title）／F7（不做什么段）与占位符无关，
-#: **不在此列、在正本内照常生效**（实测：这三条在正本上本来就零命中）。
+#: F4（六字段顺序）／F6／F7 与占位符无关，**不在此列、在骨架内照常生效**
+#: （实测：这三条在骨架上本来就零命中）。
 CANON_SWAPPED_FORMS = frozenset({"F1", "F2", "F3", "F5"})
+
+#: 在**模板库**内被换掉的形态：F3（标题占位符）／F4（六字段）／F5（首行编号）。
+#: 🔴 **与骨架不同的那一条是 F4，理由不是「模板库更宽松」，而是它压根不是格式来源**：
+#: 根 `CLAUDE.md` §3 白纸黑字——「先 Read `opener骨架.md` 逐字套用……**不凭模板库
+#: 重建**（模板库 §〇 是判据、不是格式）」。模板库的块是**「说什么」的内容草稿**，
+#: 不是「长什么样」的版式范例；拿版式判据（F3/F4/F5）判内容草稿，与 `#493` 修掉的
+#: 「拿成品判据判定义本身」是同一个类型错误。
+#: 🔴 **F1/F2 反而在模板库内照常生效、刻意不换**：它俩问的是「这份模板还教不教
+#: `set_session_title` 与子任务例外句」——那正是 2026-08-27 一天 17 次违反的源头，
+#: 是模板库最该守住的东西（实测：模板库三个 CC 模板当前全部带这两样，零命中）。
+CANON_SWAPPED_FORMS_LIBRARY = frozenset({"F3", "F4", "F5"})
+
+#: 角色 → 该角色内被换掉的形态集合。
+CANON_SWAPPED_BY_ROLE = {
+    CANON_ROLE_SKELETON: CANON_SWAPPED_FORMS,
+    CANON_ROLE_LIBRARY: CANON_SWAPPED_FORMS_LIBRARY,
+}
 
 #: 正本自检 C5：正本里 opener 块首行必须仍是**占位符原形** `[OP-MMDD-X]【CC／Cowork】…`。
 #: 它漂了 ⇒ 所有照抄者的首行都会跟着漂，而 F5 只在成品上报、报不到源头。
@@ -289,28 +344,133 @@ CANON_FIRST_LINE_RE = re.compile(r"^\[OP-MMDD-X\]【(?:CC|Cowork)】.+$")
 CANON_TITLE_VALUE_RE = re.compile(r"\[Win\]MMDDX-\S")
 
 
-def is_format_canon(rel_path: str | Path) -> bool:
-    """该路径是否为 opener 格式正本 `opener骨架.md`。
+#: 兜底路径专用：只在 frontmatter 块内认**本键这一行**。见 `_declared_role_raw`。
+CANON_ROLE_LINE_RE = re.compile(
+    r"^\s*" + re.escape(CANON_ROLE_KEY) + r"\s*[:：]\s*(.+?)\s*$", re.MULTILINE)
 
-    后缀匹配口径逐字沿用 `工具-共享文档编辑锁.py::_dirty_path_is_covered`
-    （`p == f` 或 `p.endswith("/" + f)`）——`--file` 自检模式传进来的是绝对路径，
-    release 侧传进来的是仓库根相对路径，两种都要认。
-    🔴 **不做 basename 匹配**：`opener骨架.md` 这个名字在归档目录里另有历史副本，
-    basename 匹配会把那些副本也一并静默排除。
+
+def _declared_role_raw(text: str) -> str:
+    """取 frontmatter 里 `opener正本` 的**原始值**（未做合法性判定）。
+
+    🔴 **两条路径，主路径复用权威解析器**：正常情况下走
+    `工具-文档台账生成.py::parse_frontmatter`（与 H2 状态归桶同一份实现，不自造第二份）。
+
+    🔴 **兜底路径只在权威解析器加载不上时启用，且只认本键一行**（`#489` ⑵ 同批修）：
+    release 侧 opener 守卫此前**不依赖**台账脚本，改成声明式判据后凭空多出一条硬依赖
+    ——实测 6 个 CLI 用例（最小临时仓库里没有台账脚本）当场以 `FileNotFoundError`
+    **崩掉整个 release**。「判据多了一条依赖」不该把 release 从「拒绝」变成「崩溃」。
+    🔴 **这不是那条被禁止的「回退成本地简化版」**：被禁的是 `status_bucket` 那种
+    **判断**（六枚举＋同义词表，两处各自实现必然漂移）；这里读的是**我们自己新定义的
+    一个字面量键**，值域就 `VALID_CANON_ROLES` 两个词，没有可漂移的判断成分。
+    🔴 **兜底也不静默**：走了兜底就往 stderr 说一句（每进程只说一次），
+    不让「判据换了个实现」这件事无声发生。
+    """
+    global _FRONTMATTER_PARSER
+    if _FRONTMATTER_PARSER is None:
+        try:
+            _FRONTMATTER_PARSER = _load_status_bucket()[1]
+        except Exception as exc:                      # noqa: BLE001 —— 见下方说明
+            _FRONTMATTER_PARSER = _fallback_frontmatter_parser
+            print(f"ℹ opener-lint：权威 frontmatter 解析器加载不上（{exc.__class__.__name__}），"
+                  f"本进程改用只认 `{CANON_ROLE_KEY}` 一行的最小解析（队列 §一 `#489` ⑴）。",
+                  file=sys.stderr, flush=True)
+    return (_FRONTMATTER_PARSER(text).get(CANON_ROLE_KEY) or "").strip()
+
+
+def _fallback_frontmatter_parser(text: str) -> dict[str, str]:
+    """兜底解析：只在开头的 `---` 块内找 `opener正本:` 那一行，别的键一概不认。"""
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}
+    m = CANON_ROLE_LINE_RE.search(text[3:end])
+    return {CANON_ROLE_KEY: m.group(1).strip().strip('"')} if m else {}
+
+
+def declared_canon_role(text: str) -> str | None:
+    """件在 frontmatter 里**自己声明**的 opener 正本角色；未声明或值非法返回 `None`。
+
+    队列 §一 `#489` ⑴：这是「不得写死文件名清单」的落点——判据面由被判对象自己声明，
+    lint 侧不维护名单。值必须是 `VALID_CANON_ROLES` 之一（写错 ⇒ 当作没声明，
+    由 `check_canon_claim` 的 `C0` 报出来，**不静默当成已豁免**）。
+    """
+    raw = _declared_role_raw(text)
+    return raw if raw in VALID_CANON_ROLES else None
+
+
+def _opener_block_count(text: str) -> int:
+    return sum(1 for b in iter_fenced_blocks(text) if settings_line(b) is not None)
+
+
+def canon_role(text: str) -> str | None:
+    """**生效**角色 ＝ 声明了合法角色 **且** 过了 `C0` 块数门槛；否则 `None`（照普通件判）。
+
+    🔴 **fail-closed**：声明不成立时不是「宽进」而是「按普通件全判」——想靠加一行
+    frontmatter 绕开 F3/F4/F5 的，什么也拿不到，还多一条 `C0` 告警。
+    """
+    role = declared_canon_role(text)
+    if role is None:
+        return None
+    return role if _opener_block_count(text) >= CANON_MIN_BLOCKS else None
+
+
+def check_canon_claim(text: str) -> list[tuple[str, str]]:
+    """`C0`：角色声明本身立不立得住（队列 §一 `#489` ⑴ 防外溢条）。
+
+    两种命中：① 声明了 `{key}` 但值不在 `{roles}` 里（typo ⇒ 本以为豁免了、其实没有，
+    属「参数被接受却不生效」同族）；② 值合法但 opener 块数 < `{n}` ⇒ 这是一份成品件
+    冒充正本，声明不予承认。
+    """
+    fm_raw = _declared_role_raw(text)
+    if not fm_raw:
+        return []
+    if fm_raw not in VALID_CANON_ROLES:
+        return [(
+            "C0",
+            f"frontmatter `{CANON_ROLE_KEY}: {fm_raw[:40]}` 不是合法角色"
+            f"（只接受 {'／'.join(VALID_CANON_ROLES)}）⇒ **本次声明不生效、按普通件全判**。"
+            "写错一个字就静默变成「以为豁免了其实没有」，同族＝参数被接受却不生效"
+            "（队列 §一 `#489` ⑴）",
+        )]
+    n = _opener_block_count(text)
+    if n < CANON_MIN_BLOCKS:
+        return [(
+            "C0",
+            f"本件声明 `{CANON_ROLE_KEY}: {fm_raw}`，但只有 {n} 个 opener 块"
+            f"（< {CANON_MIN_BLOCKS}）⇒ **声明不予承认、按普通件全判**。正本/模板库按定义是"
+            "多份范例的集合；单块件＝成品 opener，不得靠加一行 frontmatter 绕开 F3/F4/F5"
+            "（队列 §一 `#489` ⑴ 防外溢条）",
+        )]
+    return []
+
+
+def is_format_canon(rel_path: str | Path) -> bool:
+    """（保留兼容）该**路径**是否为格式正本 `opener骨架.md`。
+
+    🔴 **判据主线已不走本函数**（队列 §一 `#489` ⑴ 起改为 `canon_role(text)` 的声明式
+    判据，理由见 `CANON_ROLE_KEY` 上方大段注释）。本函数留着只为两件事：① 既有单测
+    与外部调用点不因改判据而炸；② `#493` 那条「不做 basename 匹配」的实测结论仍然
+    成立、值得留证——归档目录里另有同名历史副本，basename 匹配会把它们一并静默排除。
     """
     norm = str(rel_path).replace("\\", "/")
     return norm == SKELETON_CANON_REL or norm.endswith("/" + SKELETON_CANON_REL)
 
 
-def check_canon_file(text: str) -> list[tuple[str, str]]:
-    """格式正本的**文件级**自检（队列 §一 `#493`）：它还是不是一份合格的正本。
+def check_canon_file(text: str, role: str | None = None) -> list[tuple[str, str]]:
+    """正本/模板库的**文件级**自检（队列 §一 `#493`；`#489` ⑴ 起按角色分流）。
 
-    这两条是「换判据」的另一半 —— 形态①②在正本内被关掉之后，**谁来保证正本还在教
+    这两条是「换判据」的另一半 —— 形态①②在骨架内被换掉之后，**谁来保证正本还在教
     这两件事**？答案就是这里：正本若哪天不再包含任何一个带 `set_session_title` 的
     【CC】块（C1）、或不再包含任何一句子任务例外句（C2），此后每一个照抄它的人都会
     漏写这两行，而 F1/F2 只能在成品上一个一个报、报不到源头。
+
+    `role` 缺省 `None` ⇒ 沿用 `#489` 之前的口径（按骨架判），既有调用点行为不变。
+    模板库角色同样跑这两条：它是 Shao Peishen 选模板的入口，**丢了这两样比骨架丢了
+    更直接**（骨架还有人逐字读，模板库是照单抓药）。
     """
     problems: list[tuple[str, str]] = []
+    label = SKELETON_CANON_REL if role != CANON_ROLE_LIBRARY else "opener 模板库"
     blocks = iter_fenced_blocks(text)
     candidates = [b for b in blocks
                   if settings_line(b) is not None or SESSION_TITLE_RE.search(b.text)]
@@ -320,7 +480,7 @@ def check_canon_file(text: str) -> list[tuple[str, str]]:
     if not teaches_title:
         problems.append((
             "C1",
-            f"格式正本 `{SKELETON_CANON_REL}` 里已找不到任何一个带 `set_session_title` 的"
+            f"格式正本 `{label}` 里已找不到任何一个带 `set_session_title` 的"
             "【CC】opener 块 ⇒ 正本不再教形态①，此后每个照抄者都会漏写那一行"
             "（队列 §一 `#493`；形态①在正本内已换成本条）",
         ))
@@ -332,7 +492,7 @@ def check_canon_file(text: str) -> list[tuple[str, str]]:
     if not teaches_exception:
         problems.append((
             "C2",
-            f"格式正本 `{SKELETON_CANON_REL}` 里已找不到任何一句子任务例外句"
+            f"格式正本 `{label}` 里已找不到任何一句子任务例外句"
             "（`子任务/Task/Agent` ＋ `例外/跳过本行` 同现于同一个带 title 的块）"
             "⇒ 正本不再教形态②（队列 §一 `#493`；形态②在正本内已换成本条）",
         ))
@@ -466,7 +626,8 @@ def block_env(block: Block) -> str | None:
 
 
 def check_block(block: Block, *, is_subtask_lane: bool = False,
-                is_format_canon_file: bool = False) -> list[tuple[str, str]]:
+                is_format_canon_file: bool = False,
+                canon_role: str | None = None) -> list[tuple[str, str]]:
     """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F7", "C3", "C5"}。
 
     `is_subtask_lane`：该块是否为「看护者用 Task/Agent 派发的子任务泳道 opener」
@@ -483,9 +644,18 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
     has_title_call = bool(SESSION_TITLE_RE.search(block.text))
     env = block_env(block)
 
-    if is_format_canon_file:
+    # 队列 §一 `#489` ⑴：角色优先；`canon_role` 未传时回落到旧布尔参数（＝骨架角色），
+    # 两个既有调用点与既有单测行为逐字不变。
+    role = canon_role if canon_role is not None else (
+        CANON_ROLE_SKELETON if is_format_canon_file else None)
+    swapped = CANON_SWAPPED_BY_ROLE.get(role, frozenset())
+
+    if role is not None:
         # 正本自检 C5：首行仍须是占位符原形（F5 的源头版）。
-        if is_opener:
+        # 🔴 **只对骨架角色成立**：模板库的块本来就不带首行编号（它不是版式来源，
+        # 见 `CANON_SWAPPED_FORMS_LIBRARY`），对它要求「首行须是占位符原形」等于
+        # 换个马甲把 F5 又装回去。
+        if is_opener and role == CANON_ROLE_SKELETON:
             first_line = block.lines[0].strip() if block.lines else ""
             if not CANON_FIRST_LINE_RE.match(first_line):
                 problems.append((
@@ -506,7 +676,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
     # 形态① —— 只对 CC 侧 opener 块成立（Cowork 与未标环境结构性排除，见 docstring）；
     # 子任务泳道 opener 结构性排除在外——它本就不该有这一行，缺失不是问题（形态⑥的镜像）。
     if (is_opener and not has_title_call and env == "CC" and not is_subtask_lane
-            and not is_format_canon_file):
+            and "F1" not in swapped):
         problems.append((
             "F1",
             "CC opener 块缺 `set_session_title` 那一行 ⇒ session 名会丢编号"
@@ -524,7 +694,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
         ))
 
     # 形态② —— 只要块里出现了 set_session_title，就必须带子任务例外句
-    if has_title_call and not is_format_canon_file:
+    if has_title_call and "F2" not in swapped:
         has_exception = bool(SUBTASK_TOKEN_RE.search(block.text)
                              and EXCEPTION_TOKEN_RE.search(block.text))
         if not has_exception:
@@ -537,7 +707,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
 
     # 形态③ —— CC 侧且真调用了 set_session_title 时，标题值须匹配 [Win]MMDDX-<短名>
     #（is_opener 未作为门槛：裸标准写法块同样受本形态约束，同 F2 既有先例）
-    if (has_title_call and env == "CC" and not is_format_canon_file
+    if (has_title_call and env == "CC" and "F3" not in swapped
             and not TITLE_VALUE_RE.search(block.text)):
         problems.append((
             "F3",
@@ -547,7 +717,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
         ))
 
     # 形态④ —— 【设置】六字段缺失或顺序错（仅 opener 块适用，Cowork 同受约束）
-    if is_opener:
+    if is_opener and "F4" not in swapped:
         settings_text = settings_line(block) or ""
         missing, out_of_order = _settings_field_order_problems(settings_text)
         if missing or out_of_order:
@@ -563,7 +733,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
             ))
 
     # 形态⑤ —— opener 块首行须为 [OP-MMDD-X]【CC／Cowork】<短名，≤12字>
-    if is_opener and not is_format_canon_file:
+    if is_opener and "F5" not in swapped:
         first_line = block.lines[0].strip() if block.lines else ""
         if not FIRST_LINE_RE.match(first_line):
             problems.append((
@@ -599,8 +769,11 @@ def _last_commit_date(rel_path: str) -> date | None:
         out = subprocess.run(
             ["git", "-c", "core.quotepath=false", "log", "-1", "--format=%cI", "--", rel_path],
             cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=True,
+            timeout=GIT_TIMEOUT_SECONDS,
         ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
+    except (OSError, subprocess.SubprocessError):
+        # `SubprocessError` 覆盖 `CalledProcessError` 与 `TimeoutExpired`（`#489` ⑵：
+        # 单个 git 卡死不许拖垮全量）。
         return None
     if not out:
         return None
@@ -631,6 +804,60 @@ def classify_carrier(rel_path: str, status_raw: str, form: str,
 
 # ── 扫描 ────────────────────────────────────────────────────────────────────
 
+#: 单次 git 子进程的墙钟上限（秒）。队列 §一 `#489` ⑵：**一个卡住的 git 调用
+#: 不许把整轮全量拖死**——超时即当作「取不到」，该文件落 `unknown-history` 桶
+#: （保守按「当前在用」计入并显式打印），不静默当成很早、也不中断全量。
+GIT_TIMEOUT_SECONDS = 60
+
+
+def _last_commit_dates_batch(rel_paths: list[str]) -> dict[str, date | None]:
+    """一次 `git log` 走完全历史，取每个路径**最后一次提交**的日期。
+
+    队列 §一 `#489` ⑵ 的主修：原实现对每个有命中的文件各跑一次
+    `git log -1 --format=%cI -- <path>`，**每次都要走一遍历史**——本仓库实测
+    115 个命中文件耗时 **151.8s（均值 1.32s/文件）**，而纯解析只要 19.4s，
+    即 89% 的墙钟耗在这一处；文件再多就是线性恶化（`#489` 立行时记录的
+    「22:05 起跑、07:24 进程消失、输出 0 字节」即此形态叠加缓冲导致）。
+
+    改成**一次全历史 `--name-only` 扫描**：`git log` 默认 newest-first，
+    故某路径**首次出现**的那个提交就是它最后一次被改动 ⇒ 同一遍历史拿到全部
+    1613 个路径的日期。实测 **2.76s**（3001 个提交），且与逐文件口径
+    **1613/1613 逐个比对完全一致**（校验脚本见 `#489` 收工汇总）。
+
+    🔴 `--no-renames`：`git log -1 -- <path>` 不开 `--follow` 时同样不跟改名，
+    两侧口径必须一致，否则会对改过名的件给出更早的日期、把它误判成历史件。
+    🔴 取不到（git 不可用／超时／非仓库）返回**空字典**，调用方逐个回落到
+    `_last_commit_date`——**不静默当成「都没有历史」**，那会把全库打成
+    `unknown-history` 并全部按「当前在用」阻断。
+    """
+    if not rel_paths:
+        return {}
+    try:
+        out = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "log", "--format=%x00%cI",
+             "--name-only", "--no-renames"],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+            check=True, timeout=GIT_TIMEOUT_SECONDS,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    wanted = set(rel_paths)
+    result: dict[str, date | None] = {}
+    current: date | None = None
+    for line in out.splitlines():
+        if line.startswith("\x00"):
+            try:
+                current = date.fromisoformat(line[1:11])
+            except ValueError:
+                current = None
+            continue
+        rel = line.strip()
+        # 首次出现 ＝ 最新一次提交（newest-first），后续更早的提交不覆盖。
+        if rel and current is not None and rel in wanted and rel not in result:
+            result[rel] = current
+    return result
+
+
 def _tracked_md_files() -> list[str]:
     # `-c core.quotepath=false`：git 默认把中文路径八进制转义，本项目路径几乎全是中文
     # （同 `工具-引导样板lint.py` / `工具-密钥扫描lint.py`）。
@@ -653,14 +880,36 @@ class Finding:
         return f"{self.rel}:{self.line}（{env}）[{self.form}] {self.detail}　← {self.reason}"
 
 
+def _progress(msg: str) -> None:
+    """进度写 **stderr** 并立刻 flush（队列 §一 `#489` ⑵）。
+
+    🔴 **为什么非要有这一行**：`#489` 立行时的实证是「起跑 22:05、07:24 进程消失，
+    输出文件始终 0 字节」——**0 字节不等于挂死**，本工具此前把全部输出攒到最后一次
+    性打印，`> out.txt` 期间那个文件本来就会是 0 字节。没有进度输出时，
+    「跑得慢」与「卡死了」在观测上完全同形，只能靠猜。
+    🔴 走 stderr 不走 stdout：`> out.txt` 只重定向 stdout，进度不会污染结果文件，
+    同时在终端里仍看得见。
+    """
+    print(msg, file=sys.stderr, flush=True)
+
+
 def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
     status_bucket, parse_frontmatter = _load_status_bucket()
     findings: list[Finding] = []
     stats = {"files": 0, "opener_blocks": 0, "cc": 0, "cowork": 0, "env_unknown": 0,
              "title_blocks": 0}
-    commit_cache: dict[str, date | None] = {}
 
-    for rel in files:
+    # 队列 §一 `#489` ⑵：一次全历史取完所有 last-commit-date（实测 2.76s），
+    # 取代此前「每个有命中的文件各跑一次 `git log -1`」（实测 1613 个文件 1057.3s）。
+    # 🔴 批量取不到时 `commit_cache` 为空 ⇒ 下面 `_emit` 逐个回落到 `_last_commit_date`，
+    # 行为与本项引入前逐字一致，**不是静默降级成「没有历史」**。
+    _progress(f"[opener-lint] 取 {len(files)} 个 .md 的最后提交日期（一次全历史扫描）…")
+    commit_cache: dict[str, date | None] = dict(_last_commit_dates_batch(files))
+    _progress(f"[opener-lint] 已取到 {len(commit_cache)} 个；开始逐文件解析…")
+
+    for idx, rel in enumerate(files, start=1):
+        if idx % 200 == 0:
+            _progress(f"[opener-lint] …{idx}/{len(files)}，累计命中 {len(findings)} 处")
         try:
             text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -676,16 +925,25 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
         stats["files"] += 1
         status_raw = status_bucket(parse_frontmatter(text).get("status", ""))
         watcher_line = _watcher_section_line(text)
-        canon = is_format_canon(rel)
+        # 队列 §一 `#489` ⑴：角色来自件自己的 frontmatter 声明，不是 lint 侧名单。
+        role = canon_role(text)
 
-        # 队列 §一 `#493`：格式正本的文件级自检（C1/C2）——形态①②在正本内被
-        # 换掉之后，由这两条保证「正本还在教这两件事」。**换判据，不是关掉。**
-        if canon:
-            for form, detail in check_canon_file(text):
-                if rel not in commit_cache:
-                    commit_cache[rel] = _last_commit_date(rel)
-                bucket, reason = classify_carrier(rel, status_raw, form, commit_cache[rel])
-                findings.append(Finding(rel, 1, form, detail, bucket, reason, None))
+        def _emit(line_no, form, detail, env):
+            if rel not in commit_cache:
+                commit_cache[rel] = _last_commit_date(rel)
+            bucket, reason = classify_carrier(rel, status_raw, form, commit_cache[rel])
+            findings.append(Finding(rel, line_no, form, detail, bucket, reason, env))
+
+        # 队列 §一 `#489` ⑴：`C0` —— 角色声明本身立不立得住（防「加一行 frontmatter
+        # 就能躲开 F3/F4/F5」）。🔴 声明不成立时 `role` 已是 `None`，下面照普通件全判。
+        for form, detail in check_canon_claim(text):
+            _emit(1, form, detail, None)
+
+        # 队列 §一 `#493`：正本/模板库的文件级自检（C1/C2）——形态①②在骨架内被
+        # 换掉之后，由这两条保证「它还在教这两件事」。**换判据，不是关掉。**
+        if role is not None:
+            for form, detail in check_canon_file(text, role):
+                _emit(1, form, detail, None)
 
         for block in candidates:
             env = block_env(block)
@@ -697,12 +955,8 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
 
             is_subtask = _is_subtask_lane_block(block, watcher_line)
             for form, detail in check_block(block, is_subtask_lane=is_subtask,
-                                            is_format_canon_file=canon):
-                if rel not in commit_cache:
-                    commit_cache[rel] = _last_commit_date(rel)
-                bucket, reason = classify_carrier(rel, status_raw, form, commit_cache[rel])
-                findings.append(
-                    Finding(rel, block.start_line, form, detail, bucket, reason, env))
+                                            canon_role=role):
+                _emit(block.start_line, form, detail, env)
     return findings, stats
 
 
@@ -716,9 +970,14 @@ def scan_single_file(path: Path) -> list[Finding]:
     text = path.read_text(encoding="utf-8")
     findings: list[Finding] = []
     watcher_line = _watcher_section_line(text)
-    canon = is_format_canon(path)
-    if canon:
-        for form, detail in check_canon_file(text):
+    # 队列 §一 `#489` ⑴：与主扫描同一条声明式判据（`canon_role`），不按路径。
+    # ⇒ 把骨架/模板库复制到任意临时路径做 `--file` 自检，结论与在库内一致。
+    role = canon_role(text)
+    for form, detail in check_canon_claim(text):
+        findings.append(Finding(str(path), 1, form, detail,
+                                "current", "--file 自检模式：不判历史", None))
+    if role is not None:
+        for form, detail in check_canon_file(text, role):
             findings.append(Finding(str(path), 1, form, detail,
                                     "current", "--file 自检模式：不判历史", None))
     for block in iter_fenced_blocks(text):
@@ -727,7 +986,7 @@ def scan_single_file(path: Path) -> list[Finding]:
         env = block_env(block)
         is_subtask = _is_subtask_lane_block(block, watcher_line)
         for form, detail in check_block(block, is_subtask_lane=is_subtask,
-                                        is_format_canon_file=canon):
+                                        canon_role=role):
             findings.append(Finding(str(path), block.start_line, form, detail,
                                     "current", "--file 自检模式：不判历史", env))
     return findings
@@ -741,6 +1000,7 @@ FORM_TITLE = {
     "F5": "形态⑤ · 首行不匹配 [OP-MMDD-X]【CC／Cowork】<短名≤12字>（规则生效日 2026-09-04）",
     "F6": "形态⑥ · 子任务泳道 opener 含 set_session_title（规则生效日 2026-09-05）",
     "F7": "形态⑦ · 有「做什么：」段却缺「不做什么：」段（规则生效日 2026-09-06）",
+    "C0": "正本自检C0 · opener正本 角色声明不成立（队列 #489，2026-09-08）",
     "C1": "正本自检C1 · 格式正本不再教 set_session_title（队列 #493，2026-09-07）",
     "C2": "正本自检C2 · 格式正本不再教子任务例外句（队列 #493，2026-09-07）",
     "C3": "正本自检C3 · 格式正本标题占位符 [Win]MMDDX- 漂了（队列 #493，2026-09-07）",
@@ -797,12 +1057,28 @@ def main(argv: list[str] | None = None) -> int:
         for rel in sorted({f.rel for f in unk}):
             print(f"  - {rel}")
 
-    for form in ("F1", "F2", "F6", "F7", "C1", "C2", "C3", "C5"):
+    # 🔴 **明细分组直接遍历 `FORM_TITLE`，不再手维护第二份形态清单**（队列 §一 `#489`
+    # 顺带修，2026-09-08 实测发现）：此处原本写死 `("F1","F2","F6","F7","C1","C2","C3","C5")`
+    # ——**漏了 F3/F4/F5**。后果是这三个形态的命中**计入「N 处待修【阻断】」却一行明细
+    # 都不打印**：`--enforce` 说「36 处待修」，人照着输出去找，只找得到其中一部分，
+    # 剩下的凭空消失。`#489` ⑵ 记的「验收命令拿不到结论」有本条的一份。
+    # 同族＝本文件开头那句「连回显都没有时，无法区分『没问题』与『没跑』」——
+    # 这里是它的变体：**回显有，但少了一截，而少的那截不会报错**。
+    # ⇒ 根因是「同一份形态清单存在两处、只有一处会被新增形态改到」，故直接取消第二处。
+    for form in FORM_TITLE:
         sel = [f for f in cur if f.form == form]
         if not sel:
             continue
         print(f"\n── 当前在用件 · {FORM_TITLE[form]}，{len(sel)} 处 ──")
         for f in sel:
+            print(f"  - {f.render()}")
+
+    # 兜底：形态代码没登记进 `FORM_TITLE` 时也必须打印，不许静默吞掉。
+    leftover = [f for f in cur if f.form not in FORM_TITLE]
+    if leftover:
+        print(f"\n── 当前在用件 · 未登记标题的形态，{len(leftover)} 处"
+              "（`FORM_TITLE` 缺条目，请补；此处兜底打印，不静默吞）──")
+        for f in leftover:
             print(f"  - {f.render()}")
 
     if hist:

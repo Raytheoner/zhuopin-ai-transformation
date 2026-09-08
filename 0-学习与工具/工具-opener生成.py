@@ -113,10 +113,24 @@ BODY_PARAM_SUPPORT = {
     ("CC", "subtask_lane"): {"do_items", "dont_items"},
     ("CC", "guardian"): set(),
     ("Cowork", "standard"): {"do_items", "dont_items"},
+    # 队列 §一 `#489` 步骤 5：引用版正文**在派单件里**，本变体不拼任何正文段 ⇒
+    # `--do`／`--dont` 传进来一律 fail-loud（同 guardian 的处置，理由见下方替代建议）。
+    ("CC", "reference"): set(),
+    ("Cowork", "reference"): set(),
 }
 
 #: 参数名 → CLI 旗标，用于报错信息里直接点名调用方敲的那个旗标。
 _BODY_PARAM_FLAG = {"do_items": "--do", "dont_items": "--dont"}
+
+#: `reference` 变体被拒时的替代承接建议（CC／Cowork 同文）。
+_REFERENCE_ALTERNATIVE_TEXT = (
+    "引用版（`--variant reference`）只出四行：标题行 ＋ `【设置】` 六字段 ＋ "
+    "`set_session_title` 行（Cowork 无此行）＋ 一句「读 <派单件> 全文」。"
+    "**正文（做什么／不做什么）在派单件里，不在开场词里**——这正是引用版存在的理由："
+    "把 >500 字的正文从聊天里挪进可版本化、可 lint、可回溯的文件。"
+    "要加做什么／不做什么请写进 `--ref-file` 指向的那份派单件；"
+    "确需把正文写进开场词请改用 `--variant standard`。"
+)
 
 #: 各组合被拒时给的**替代承接建议**——只报错不给出路会让调用方改去写更糟的形态
 #: （把硬约束塞进 `--do` 的某一条尾巴，读者当成待办而不是禁令）。
@@ -126,12 +140,19 @@ _BODY_PARAM_ALTERNATIVE = {
         "——看护者的任务正本在**看护件全文**里，`--input-pointer` 已指向它。"
         "要给看护者加约束请改看护件，不要走本工具的正文参数。"
     ),
+    ("CC", "reference"): _REFERENCE_ALTERNATIVE_TEXT,
+    ("Cowork", "reference"): _REFERENCE_ALTERNATIVE_TEXT,
 }
 
 VALID_ENVS = ("CC", "Cowork")
 VALID_TASK_CLASSES = ("A", "B")
-#: 三种骨架变体（模块文档「variant」节）；`subtask_lane`／`guardian` 只对 CC 有意义。
-VALID_VARIANTS = ("standard", "subtask_lane", "guardian")
+#: 四种骨架变体（模块文档「variant」节）；`subtask_lane`／`guardian` 只对 CC 有意义，
+#: `reference`（队列 §一 `#489` 步骤 5／`#284` 退休制阈值触发）CC 与 Cowork 皆可。
+VALID_VARIANTS = ("standard", "subtask_lane", "guardian", "reference")
+
+#: `reference` 变体：CC 与 Cowork 都成立（引用版就是「正文在派单件里」的那种形态，
+#: 两桌都要用），故不受 `_validate_spec` 里「非 standard 只对 CC 有意义」那条约束。
+ENV_AGNOSTIC_VARIANTS = frozenset({"standard", "reference"})
 
 #: 队列 #461 明文列出的十个必填字段；任一缺失即报错退出、不出件。
 REQUIRED_FIELDS = (
@@ -285,7 +306,7 @@ def _validate_spec(spec: OpenerSpec) -> None:
         raise OpenerGenError(f"执行环境须为 CC 或 Cowork，收到：{spec.env!r}")
     if spec.variant not in VALID_VARIANTS:
         raise OpenerGenError(f"variant 须为 {VALID_VARIANTS} 之一，收到：{spec.variant!r}")
-    if spec.variant != "standard" and spec.env != "CC":
+    if spec.variant not in ENV_AGNOSTIC_VARIANTS and spec.env != "CC":
         raise OpenerGenError(
             f"variant={spec.variant!r} 只对 CC 有意义（骨架【CC · 子任务泳道】／§三bis "
             f"均无 Cowork 对应形态），收到 env={spec.env!r}"
@@ -432,7 +453,25 @@ def generate_opener(**kwargs) -> str:
     do_block = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(spec.do_items))
     dont_block = "\n".join(f"- {item}" for item in spec.dont_items)
 
-    if spec.variant == "guardian":
+    if spec.variant == "reference":
+        # 队列 §一 `#489` 步骤 5（Shao Peishen 2026-09-08 答 1a，`#284` 退休制阈值
+        # 触发，并入 `#461` 生成器）：**引用版**——只出四行，正文在派单件里。
+        # 🔴 为什么要它：`#284` 那条「聊天里给他的开场词一律引用版、禁手抄」是**人守**，
+        # 2026-09-08 已计到第三犯 ⇒ 退休制要求二选一（机制化或删除）。本变体就是
+        # 「机制化」那一半：手抄四行容易漏 `【设置】` 某一字段或写错标题占位符，
+        # 而拼装＋`check_block` 自检不会漏。
+        body_lines = [f"[{spec.op_id}]【{spec.env}】{spec.short_name}", _settings_line(spec)]
+        if spec.env == "CC":
+            # 🔴 Cowork 侧不放这一行：`set_session_title` 在 Cowork 桌根本不存在
+            # （2026-08-27 补充一实测），放了就是教人写一个不存在的工具调用。
+            body_lines.append(
+                spec.title_call_override if spec.title_call_override is not None
+                else _title_call_line(spec.op_id, spec.short_name))
+        section = f" §{spec.claude_section}" if spec.claude_section else ""
+        body_lines.append(
+            f"读 `{spec.input_pointer}` 全文＋ `CLAUDE.md`{section} 恢复上下文，"
+            f"按该件执行。本件为 {spec.task_class} 类。")
+    elif spec.variant == "guardian":
         title_line = f"[{spec.op_id}]【{spec.env}】看护{spec.short_name}"
         title_call = spec.title_call_override if spec.title_call_override is not None \
             else _title_call_line_guardian(spec.op_id, spec.short_name)
@@ -531,7 +570,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--workspace", required=True, help="工作区情形（§〇.1 四种填法之一或「无」）")
     ap.add_argument("--session", required=True, help="骨架固定为「新开」")
     ap.add_argument("--line", required=True, help="派出线名")
-    ap.add_argument("--input-pointer", required=True, help="首要输入的仓库根相对路径")
+    # 🔴 `--input-pointer` 由 argparse 必填改为**解析后校验**（队列 §一 `#489` 步骤 5）：
+    # `--variant reference` 用 `--ref-file` 提供同一个指针，两个旗标都必填会逼调用方
+    # 把同一条路径敲两遍——**同一事实两处来源，迟早对不上**。缺失仍然 fail-loud，
+    # 只是报错点从 argparse 移到 `_resolve_input_pointer`，措辞更具体。
+    ap.add_argument("--input-pointer", default=None, help="首要输入的仓库根相对路径"
+                                                         "（`--variant reference` 请改用 --ref-file）")
+    ap.add_argument("--ref-file", default=None,
+                    help="引用版专用：派单件的仓库根相对路径（`--variant reference` 必填）")
     ap.add_argument("--task-class", required=True, choices=VALID_TASK_CLASSES, help="A 或 B 类")
     ap.add_argument("--claude-section", default="", help="CLAUDE.md 相关节号（可选）")
     ap.add_argument("--do", dest="do_items", action="append", default=None, help="做什么条目，可重复")
@@ -541,9 +587,47 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _resolve_input_pointer(args) -> str:
+    """定下 `input_pointer` 的唯一来源，并对两个旗标的误用 fail-loud（`#489` 步骤 5）。
+
+    四条判据，每条都宁可报错也不猜：
+      ① `reference` 缺 `--ref-file` ⇒ 报错（引用版的全部意义就是指向那份件）；
+      ② `reference` 同时给了 `--input-pointer` 且**与 `--ref-file` 不一致** ⇒ 报错
+         （同一事实两处来源、且已经对不上，猜哪个都是错）；一致则放行，不为难调用方；
+      ③ 非 `reference` 却给了 `--ref-file` ⇒ 报错（参数被接受却不生效＝静默丢弃同族，
+         正是 `#487` 子项付过学费的形态）；
+      ④ 非 `reference` 缺 `--input-pointer` ⇒ 报错（原 argparse `required=True` 的等价物）。
+    """
+    if args.variant == "reference":
+        if not args.ref_file:
+            raise OpenerGenError(
+                "`--variant reference` 必须给 `--ref-file <派单件仓库根相对路径>`"
+                "——引用版四行里那句「读 <派单件> 全文」就是它的正文，缺了它这份开场词"
+                "什么也没说（队列 §一 `#489` 步骤 5）。")
+        if args.input_pointer and args.input_pointer != args.ref_file:
+            raise OpenerGenError(
+                "`--variant reference` 下 `--input-pointer` 与 `--ref-file` 同指一份件，"
+                f"两者不得给出不同的值：--input-pointer={args.input_pointer!r} "
+                f"vs --ref-file={args.ref_file!r}。只给 `--ref-file` 即可。")
+        return args.ref_file
+    if args.ref_file:
+        raise OpenerGenError(
+            f"`--ref-file` 只对 `--variant reference` 生效，当前 variant={args.variant!r} "
+            "⇒ 它会被静默丢弃，故在此拒绝（参数被接受却不生效，比被拒绝更危险；"
+            "队列 §一 `#487` 子项）。要指定输入请用 `--input-pointer`。")
+    if not args.input_pointer:
+        raise OpenerGenError("缺必填参数 `--input-pointer`（首要输入的仓库根相对路径）。")
+    return args.input_pointer
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = _build_arg_parser()
     args = ap.parse_args(argv)
+    try:
+        args.input_pointer = _resolve_input_pointer(args)
+    except OpenerGenError as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return 1
     kwargs = {
         "op_id": args.op_id, "env": args.env, "short_name": args.short_name,
         "branch": args.branch, "worktree": args.worktree, "workspace": args.workspace,
