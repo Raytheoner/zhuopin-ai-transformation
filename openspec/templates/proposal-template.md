@@ -1,6 +1,6 @@
 # [变更包名] Proposal（项目标准模板 · 2026-07-04 起强制）
 
-> 用法：/opsx:propose 生成 proposal 后，对照本模板补齐两个强制段（§知识资产三问、§验收与晋档条件）再交 Paul 审。缺任一段视为 proposal 不完整，不进 design 审。模板依据：全景规划 §1.4 成熟度纪律（2026-07-04，Paul 批准）+ Antigravity 评审整改项 4。
+> 用法：/opsx:propose 生成 proposal 后，对照本模板补齐两个强制段（§知识资产三问、§验收与晋档条件）再交 Shao Peishen 审。缺任一段视为 proposal 不完整，不进 design 审。模板依据：全景规划 §1.4 成熟度纪律（2026-07-04，Shao Peishen 批准）+ Antigravity 评审整改项 4。
 
 ## Why（为什么做）
 
