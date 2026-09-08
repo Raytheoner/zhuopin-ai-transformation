@@ -74,8 +74,8 @@
 - [x] 6.1 `openspec validate oem-general-collections-readonly --strict` 须绿【CC】
 - [x] 6.2 push 泳道分支 `claude/op0908e-general-readonly`【CC】
 - [ ] 6.3 🟡 **合入 master 不由本泳道执行**（`merge_to_master`），交看护者/sweep 串行收尾【待派发】
-- [ ] 6.4 🟡 **design 审两项定夺**（`design.md` §6：读取侧那句怎么处置 ／ 本包 archive 次序是否真解耦）【待派发】
-- [ ] 6.5 🔴 **本包不做任何 archive 动作**。已知硬约束：`oem-chroma-ownership-rejudge` 须早于 `oem-audit-fail-closed`（反序会用过渡版盖掉定稿版）；本包 ADDED 的 Requirement 与二者不同名，按 design 决策 3 判定**不进该次序链**——该判定本身列为 6.4 的定夺项②，请审查方复核后再 archive【待派发】
+- [x] 6.4 ✅ **design 审两项定夺已裁决并落档**（**Shao Peishen 2026-09-08 答 `1a` ＝ 两项都按起草方推荐处置**）：**①** `oem-chroma-ownership-rejudge` spec L55 那句 ⇒ **(a) 维持现状、读取侧一字不动**（判据三条：D5 裁决文本明写「已有内容不受影响」；只读闸生效后通用库不再有新内容进入；全仓从未存在过写入通用库的代码 ⇒ 存量风险面为空。护栏单测 `test_read_side_unchanged_general_collections_still_pass` 已在）。**②** 本包 archive 次序 ⇒ **(a) 与 `#374`／`#466` 那条次序链真解耦、可独立 archive**（判据：那条链的成因是两包共持同一 Requirement `跨 OEM 访问拒绝前写审计` 的 `## MODIFIED`；本包 delta 是 `## ADDED` 的新 Requirement `通用库只读闸 SHALL 在路由层以独立写入入口强制执行`，**与之不同名** ⇒ 无同名覆盖风险。2026-09-08 现取复核三个变更包的 spec delta 标题实证）。⇒ 结论＋判据＋裁决人与日期已写入 `design.md` §6，**原候选与代价一字未删、保留供追溯**；同步更新该文档顶部「止步于起草」横幅。落档泳道 `OP-0908-L`（分支 `op0908l-work`）【CC】
+- [ ] 6.5 🔴 **本包不做任何 archive 动作**（本项仍未闭合：archive 动作本身尚未发生，且不由本泳道执行）。已知硬约束：`oem-chroma-ownership-rejudge` 须早于 `oem-audit-fail-closed`（反序会用过渡版盖掉定稿版）；本包 ADDED 的 Requirement 与二者不同名，按 design 决策 3 判定**不进该次序链**——✅ **该判定已由审查方复核通过（Shao Peishen 2026-09-08 答 `1a`，见 6.4 项②）**，⇒ **本包 archive 无前置次序要求**；但 archive 的执行仍归看护者／sweep，本泳道不代办【待派发】
 
 ## 7. 已知失真（同域、非本包的活，不顺手改）
 
