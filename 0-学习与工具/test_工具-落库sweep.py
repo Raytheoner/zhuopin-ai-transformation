@@ -4988,12 +4988,18 @@ class ResidentCarrierFfTests(unittest.TestCase):
         self.assertEqual(_git(self.wt, "rev-parse", "HEAD").stdout.strip(), head_before,
                          "ahead>0 时执行体 HEAD 必须一个字节都没动")
 
-    def test_已跟踪文件脏时停手(self):
-        self._advance_master("5-平台底座/wecom-aibot-service/c.py")
+    def test_脏且与待入提交相交时停手(self):
+        """#500 改判后这一支的判据是**相交**：待入提交里有 `CLAUDE.md`，
+        而工作区脏的正是它 ⇒ ff 会覆盖它 ⇒ 仍停手，且 HEAD 一个字节不动。"""
+        self._advance_master("5-平台底座/wecom-aibot-service/c.py", "CLAUDE.md")
         (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
         result = sweep._ff_carrier(self.repo, self._carrier())
         self.assertEqual(result["outcome"], "dirty", result)
+        self.assertIn("路径相交", result["detail"])
+        self.assertIn("CLAUDE.md", result["detail"], "必须点名相交的是哪个文件")
         self.assertEqual(_git(self.wt, "rev-parse", "HEAD").stdout.strip(), self.old_head)
+        self.assertEqual((self.wt / "CLAUDE.md").read_text(encoding="utf-8"), "被改脏了\n",
+                         "停手时脏内容必须原样留着")
 
     def test_未跟踪件不算脏_不得挡住ff(self):
         """🔴 反例锁死 2026-08-24 首次实跑撞到的真缺陷：`--porcelain=v1` 缺省
@@ -5034,7 +5040,9 @@ class ResidentCarrierFfTests(unittest.TestCase):
     # 都不改变，只改变读者知不知道自己欠了多少。
 
     def test_dirty停手时正文必须带落后幅度(self):
-        self._advance_master("5-平台底座/wecom-aibot-service/f.py", "1-转型规划/x.md")
+        # #500 后要落到 `dirty` 分支，脏文件必须**与待入提交相交**——
+        # 故待入的两个提交里有一个碰 `CLAUDE.md`。
+        self._advance_master("CLAUDE.md", "1-转型规划/x.md")
         (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
         detail = sweep._ff_carrier(self.repo, self._carrier())["detail"]
         self.assertIn("已停手不 ff", detail)
@@ -5056,7 +5064,7 @@ class ResidentCarrierFfTests(unittest.TestCase):
         """三个提交里只有一个碰服务目录 ⇒ 只该数出 1 条命中路径，
         **不得把「落后几个提交」与「命中几条路径」混为一个数**。"""
         self._advance_master("5-平台底座/wecom-aibot-service/h.py",
-                             "1-转型规划/a.md", "1-转型规划/b.md")
+                             "1-转型规划/a.md", "CLAUDE.md")
         (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
         detail = sweep._ff_carrier(self.repo, self._carrier())["detail"]
         self.assertIn("落后 3 个提交", detail)
@@ -5073,6 +5081,136 @@ class ResidentCarrierFfTests(unittest.TestCase):
             sweep._rev_count = saved
         self.assertIn("未取到", note)
         self.assertNotIn("落后 0", note)
+
+    # —— 队列 §一 #500（OP-0908-N）：脏检查放宽为「与待入提交路径相交才停手」 ——
+    #
+    # 实证背景（`#500` 行内，OP-0907-U 实测 ＋ OP-0907-R 独立复核）：现网
+    # `ops/wecom-service-home` 连续 249 轮停手、落后 165 个提交，唯一卡住它的
+    # 脏文件是 `run-followup-dispatch-check.ps1`，而**那 165 个待入提交里碰它
+    # 的有 0 个** —— git 自己完全允许这次 ff，挡住它的是本文件的自造判据。
+    # 下面三个用例分别锁死放宽后的三态；**第一个是这次改动的全部意义所在**。
+
+    def _ff_worktree_to_master(self):
+        """把执行体先对齐到 master（用真 git，不经被测函数）。"""
+        _git(self.wt, "merge", "--ff-only", "master")
+
+    def test_脏但与待入提交零相交时照常ff且脏改动毫发无损(self):
+        """🔴 本用例＝ #500 的全部理由：**脏在别处，不该扣住 165 个提交。**
+
+        受控复现现网形态：脏的是 `run-followup-dispatch-check.ps1`，待入的
+        提交一个都没碰它 ⇒ 必须照常 ff，且那份脏改动一个字节不动。
+        """
+        ps1 = "5-平台底座/wecom-aibot-service/run-followup-dispatch-check.ps1"
+        self._advance_master(ps1)
+        self._ff_worktree_to_master()
+        # 用 `write_bytes` 逐字节写：现网那份差异是 BOM ＋ CRLF，而文本模式
+        # 会在 Windows 上把 `\n` 再翻成 `\r\n`，断言就不再是「毫发无损」了。
+        blob = "﻿带 BOM 的本地副本\r\n".encode("utf-8")
+        (self.wt / ps1).write_bytes(blob)
+        self._advance_master("1-转型规划/p.md", "1-转型规划/q.md")
+
+        result = sweep._ff_carrier(self.repo, self._carrier())
+
+        self.assertEqual(result["outcome"], "ffed", result)
+        self.assertEqual(_git(self.wt, "rev-list", "--count", "HEAD..master").stdout.strip(), "0",
+                         "零相交时必须真的 ff 到位，不是只返回一个乐观的 outcome")
+        self.assertEqual((self.wt / ps1).read_bytes(), blob,
+                         "ff 不该动到那份与待入提交无关的脏改动（逐字节比）")
+        self.assertIsNotNone(result["dirty_note"], "🔴 不阻断 ≠ 不吭声：脏必须转成告警")
+        self.assertIn("零相交", result["dirty_note"])
+
+    def test_待入清单取不到时保守停手(self):
+        """🔴 「取不到」与「零相交」外观都是空集合，结论却相反 ——
+        同 `_rev_count` 失败返回 None 而非 0。取不到就停手。"""
+        self._advance_master("1-转型规划/r.md")
+        (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
+        saved = sweep._carrier_pending_paths
+        try:
+            sweep._carrier_pending_paths = lambda repo_root, head, base: None
+            result = sweep._ff_carrier(self.repo, self._carrier())
+        finally:
+            sweep._carrier_pending_paths = saved
+        self.assertEqual(result["outcome"], "dirty", result)
+        self.assertIn("未取到", result["detail"])
+        self.assertIn("停手", result["detail"])
+        self.assertEqual(_git(self.wt, "rev-parse", "HEAD").stdout.strip(), self.old_head,
+                         "判不了相交时必须一个字节都不动")
+
+    def test_脏检查本身不可用时保守停手且措辞与真脏可区分(self):
+        """`status` 跑不通 ⇒ 判据瞎了，比「确实脏了」更严重；措辞若混同，
+        读者会去找一个并不存在的脏文件。"""
+        self._advance_master("1-转型规划/s.md")
+        saved = sweep._carrier_dirty_paths
+        try:
+            sweep._carrier_dirty_paths = lambda repo_root, name: (None, "status 查询失败：模拟")
+            result = sweep._ff_carrier(self.repo, self._carrier())
+        finally:
+            sweep._carrier_dirty_paths = saved
+        self.assertEqual(result["outcome"], "dirty", result)
+        self.assertIn("不可用", result["detail"])
+        self.assertNotIn("未提交改动", result["detail"])
+        self.assertEqual(_git(self.wt, "rev-parse", "HEAD").stdout.strip(), self.old_head)
+
+    def test_含空格与中文的路径相交仍判得出来(self):
+        """🔴 `-z` 回归锁：非 `-z` 形态下 git 会给含空格的路径加引号，
+        而 `core.quotepath=false` **不关这一层**。一侧带引号一侧不带 ⇒
+        交集恒为空 ⇒ 判据静默失效、永远放行。本仓库路径大量含中文与空格。"""
+        tricky = "1-转型规划/含 空格 的 文件.md"
+        self._advance_master(tricky)
+        self._ff_worktree_to_master()
+        (self.wt / tricky).write_text("本地改了\n", encoding="utf-8")
+        # 🔴 不能复用 `_advance_master(tricky)`：它每次都写同样的 `x\n`，
+        # 第二次对该文件**零变化**，待入清单里根本不会出现它——那样这个用例
+        # 就会在「判据其实失效」的情况下也照样绿。内容必须真的变。
+        (self.repo / tricky).write_text("master 又改了\n", encoding="utf-8")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-qm", "master 改了含空格路径的文件")
+
+        result = sweep._ff_carrier(self.repo, self._carrier())
+
+        self.assertEqual(result["outcome"], "dirty", result)
+        self.assertIn("路径相交", result["detail"])
+
+    def test_重命名的两侧路径都算脏(self):
+        """`status --porcelain -z` 的 `R` 记录多带一个「原路径」字段。
+        **两侧都得进脏集合**——ff 会同时动到删掉的那个名字和新增的那个名字，
+        只认一侧就会漏判一半。本用例同时也是那条记录格式的哨兵：格式若变，
+        它先炸，而不是让判据静默漏掉一半路径。"""
+        self._advance_master("1-转型规划/旧名.md")
+        self._ff_worktree_to_master()
+        _git(self.wt, "mv", "1-转型规划/旧名.md", "1-转型规划/新名.md")
+
+        paths, summary = sweep._carrier_dirty_paths(self.repo, "carrier")
+
+        self.assertIsNotNone(paths)
+        self.assertIn("1-转型规划/旧名.md", paths, "重命名的原路径必须算脏")
+        self.assertIn("1-转型规划/新名.md", paths, "重命名的新路径必须算脏")
+        self.assertTrue(summary, "摘要不得为空")
+
+    def test_干净与判据不可用外观必须可分(self):
+        """🔴 `set()`（干净）与 `None`（`status` 都跑不通）是**相反**的结论；
+        用真值判断把两者合并，会让「判据瞎了」长成「一切正常」的样子。"""
+        clean_paths, clean_summary = sweep._carrier_dirty_paths(self.repo, "carrier")
+        self.assertEqual(clean_paths, set())
+        self.assertEqual(clean_summary, "")
+
+        saved = sweep._run_git
+        try:
+            sweep._run_git = lambda args, cwd, check=True: subprocess.CompletedProcess(
+                args, 128, stdout="fatal: 模拟：not a git repository", stderr="")
+            broken_paths, broken_summary = sweep._carrier_dirty_paths(self.repo, "carrier")
+        finally:
+            sweep._run_git = saved
+        self.assertIsNone(broken_paths, "status 跑不通时必须是 None，不是空集合")
+        self.assertIn("失败", broken_summary)
+
+    def test_放宽判据不得靠关掉检查或加force实现(self):
+        """#500 期望产出⑷ 的机器守：改判据可以，**关守卫不行**。
+        git 自身那道防线必须原样在（`--ff-only`），且全函数不得出现强推开关。"""
+        source = inspect.getsource(sweep._ff_carrier)
+        self.assertIn('"--ff-only"', source, "ff 必须仍是 --ff-only")
+        for banned in ("--force", "-f\"", "reset --hard", "checkout --force"):
+            self.assertNotIn(banned, source, f"_ff_carrier 里不得出现 {banned}")
 
 
 class ResidentCarrierSyncTests(unittest.TestCase):
@@ -5141,6 +5279,38 @@ class ResidentCarrierSyncTests(unittest.TestCase):
         sweep._sync_resident_carriers(self.repo, log)
         self.assertIn("无需重启", "\n".join(log))
         self.assertEqual(self.recorder.calls[-1]["keys"], set())
+
+    def test_ff成功但带dirty_note时仍要告警(self):
+        """#500：脏零相交时 ff 照做，**但脏本身不许被吞掉**——
+        它落在「正常路径」上，正是最容易被静默的一支。"""
+        self._stub(carriers=self._carrier(),
+                   ff={"outcome": "ffed", "detail": "已 ff 165 个提交",
+                       "before": "a" * 40, "after": "b" * 40,
+                       "changed_paths": ["1-转型规划/x.md"],
+                       "dirty_note": "执行体内有 1 个已跟踪文件未提交（ M run-followup-dispatch-check.ps1），"
+                                     "但与本次待入的 40 条路径**零相交** ⇒ 未阻断 ff，转为告警"},
+                   hits=())
+        log = []
+        sweep._sync_resident_carriers(self.repo, log)
+        call = self.recorder.calls[-1]
+        self.assertEqual(call["keys"], {"wecom-service-home"})
+        self.assertIn("零相交", call["alert_text"])
+        self.assertIn("已 ff 165 个提交", call["alert_text"], "告警要同时说清 ff 确实做了")
+
+    def test_dirty_note与需人工重启并列不得互相顶掉(self):
+        """两件独立的事同时成立时，`exceptions` 是 dict、后写会覆盖先写——
+        本用例锁死两句话都在。"""
+        self._stub(carriers=self._carrier(),
+                   ff={"outcome": "ffed", "detail": "已 ff 165 个提交",
+                       "before": "a" * 40, "after": "b" * 40,
+                       "changed_paths": ["5-平台底座/wecom-aibot-service/x.py"],
+                       "dirty_note": "…零相交 ⇒ 未阻断 ff，转为告警"},
+                   hits=[("5-平台底座/wecom-aibot-service/x.py", "部署清单")])
+        log = []
+        sweep._sync_resident_carriers(self.repo, log)
+        alert = self.recorder.calls[-1]["alert_text"]
+        self.assertIn("代码已新、进程仍旧", alert)
+        self.assertIn("零相交", alert)
 
     def test_ff触碰服务路径而开关关闭时告警需人工重启(self):
         self._stub(carriers=self._carrier(),
