@@ -3,7 +3,7 @@ title: "开场 prompt ·【Cowork】业务总线接棒（OP-0908-A）"
 created: 2026-09-08
 status: 待粘贴
 派出线: Cowork 环境总线 OP-0907-AL
-来源: Shao Peishen 2026-09-08 答 1a（新起业务总线接收投档＋启动构建循环）；标准工作周 v2 见 `Paul标准工作周.md` §七
+来源: Shao Peishen 2026-09-08 答 1a（新起业务总线接收投档＋启动构建循环）；标准工作周 v2 见 `Peishen标准工作周.md` §七
 ---
 
 # 开场 prompt ·【Cowork】业务总线接棒
