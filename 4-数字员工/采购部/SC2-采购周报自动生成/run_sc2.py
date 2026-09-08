@@ -66,14 +66,47 @@ def load_env(mode: str | None = None) -> None:
 
 
 def _base_date(arg: str | None) -> date:
+    """一次性子命令（report／autopush／probe）的基准日：缺省＝**调用那一刻**的今天。
+
+    🔴 **长开服务不能用这个**——见 `_serve_base_date`。这些子命令每次都是新起进程、
+    跑完就退，「调用那一刻」与「今天」等价；`serve` 不是。
+    """
     return date.fromisoformat(arg) if arg else date.today()
 
 
-def cmd_serve(args) -> int:
+def _serve_base_date(arg: str | None) -> date | None:
+    """长开服务的基准日：**缺省返回 `None`，不在这里求值「今天」**。
+
+    🔴 这一行是队列 §一 `#506` 的修复点。原实现走 `_base_date(args.base)`，于是
+    `serve` 在**进程启动那一刻**把 `date.today()` 求值一次、冻进 app 对象；`.51` 上
+    `Sc2WebServer` 是 AtStartup 常驻（实测 PID 9168 连续存活 12 天），页面与
+    `/api/refresh` 此后一直渲染启动日那一期——2026-09-08 当天问到的是 `2026-W34`，
+    而采购口径本周是 `2026-W36`。
+
+    返回 `None` 才能让 `webapp.create_app` 里那条「每次请求现取今天」的活路真正走到；
+    显式传了 `--base` 时照旧固定，那是复现某一期用的开关（判例回灌／对数／历史重算）。
+
+    **它当时不产生任何信号**：页面 200、重算 200、进程不崩、两套周号各自自洽——所有
+    健康判据都恒真，因为它们问的都不是「这是哪一周」。故本形态由 `tests/
+    test_serve_base_date.py` 的跨日正面判据钉住，不能指望健康检查。
+    """
+    return date.fromisoformat(arg) if arg else None
+
+
+def _build_serve_app(args):
+    """组装 serve 子命令的 app。
+
+    抽出来是为了让单测能拿到**与 `cmd_serve` 完全同一条装配路径**产出的 app 对象、
+    再对它跨日发两次请求——缺陷就在这条装配线上，只测 `create_app` 本身测不到。
+    """
     from sc2.webapp import create_app
 
-    app = create_app(base_date=_base_date(args.base), mode=args.mode,
-                     max_status_materials=args.max_status_materials)
+    return create_app(base_date=_serve_base_date(args.base), mode=args.mode,
+                      max_status_materials=args.max_status_materials)
+
+
+def cmd_serve(args) -> int:
+    app = _build_serve_app(args)
     # 绑定 0.0.0.0 供 LAN 访问；对外暴露由共享口令门禁把守（ZP_GATE_PASSWORD）。
     #
     # 🔴 长开服务走 waitress，不用 Flask 开发服务器（同 QD-B/SC8 惯例）：`app.run()`
