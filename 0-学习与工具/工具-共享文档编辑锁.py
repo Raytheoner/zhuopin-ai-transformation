@@ -3085,11 +3085,23 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
     # ⓘ1（2026-09-04）：§二 编辑同样过一遍「文件清单」git 落地性预检——
     # 与 `cmd_append_row` 同一判据、同一豁免口径（见 `_file_list_git_state_
     # violations` 上方长注释），针对**改动后的最终整行**（`new_cells`）
-    # 校验，不论本次改动的是不是「文件清单」这一格本身：即便只改了状态列，
-    # 若那一刻的文件清单已经不再站得住（如速记未清理、路径写错），也不该
-    # 被放行改成看似"已确认"的状态。
+    # 校验，不论本次改动的是不是「文件清单」这一格本身。
+    #
+    # 🔴 **但 edit-row 侧按归属分档，不再一律硬阻断**（队列 §一 `#533`／
+    # §四 `188`，`OP-0909-AA` 2026-09-09 补）。此前这里是无条件 `return 1`，
+    # 原理由是"清单站不住时不该被放行改成看似已确认的状态"——这条理由本身
+    # 没错，错在它**没有留出路**：`#533` 实撞的死锁是「守卫 A（称呼 lint）
+    # 的逃生阀（行内写 `称呼豁免：`）被守卫 B（本项）锁住」，B 恒拒 ⇒ 该行
+    # 连销号、连补豁免都做不到，两条 lint 在 master 上永久红着。
+    # 🔑 判据与 ⓘ2／ⓘ3／`_opener_attribution` 同源：**一道守卫不得让人为
+    # 自己没碰过的东西负责**。故与下方 ⓘ2 完全同一分档：
+    #   · 「文件清单」在本次 `--set`／`--append` 里 ⇒ 硬阻断（是你这次写的）；
+    #   · 不在 ⇒ 只打 ⚠ 告警放行（存量，本次没碰它）。
+    # 🔴 **告警不是降级成静默**：它照旧打印、照旧点名，只是不阻断。
+    # 🔴 `cmd_append_row` **不分档**——新行整行都是本次写的，照旧硬阻断。
     if args.section == "二":
-        section_two_problems = _file_list_git_state_violations(new_cells, REPO_ROOT)
+        git_state_problems = _file_list_git_state_violations(new_cells, REPO_ROOT)
+        section_two_problems: list[str] = []
         # ── ⓘ2（队列 §一 #513，2026-09-09）：裸路径守卫，**按归属分档** ──
         # 「文件清单」在本次改动值里 ⇒ 硬阻断（是这次写进去的）；不在 ⇒ 只告警
         # 放行（存量：2026-09-09 实测 §二 待处理 34 行里 28 行零反引号片段，
@@ -3101,10 +3113,15 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
             queue_table.resolve_column_index("二", name) == 1
             for name in changed_values
         )
-        if bare_problems and file_list_touched:
+        deferred_warnings: list[str] = []
+        if file_list_touched:
+            section_two_problems.extend(git_state_problems)
             section_two_problems.extend(bare_problems)
-        elif bare_problems:
-            for problem in bare_problems:
+        else:
+            deferred_warnings.extend(git_state_problems)
+            deferred_warnings.extend(bare_problems)
+        if deferred_warnings:
+            for problem in deferred_warnings:
                 print(f"⚠ {problem}")
             print("  （本次未改动「文件清单」格，按存量处理：只告警、不阻断。"
                   "该格由其登记方按 `#443` 清扫回改。）")
@@ -5041,9 +5058,35 @@ def _file_list_path_violations(cells: list[str], repo_root: Path) -> list[str]:
 #     其定位逻辑见 `_resolve_repo_root()`：`git rev-parse --git-common-
 #     dir` 在任一 worktree 里跑都解到同一个共享 `.git` 目录，其父目录即
 #     主工作区根，与 worktree 自身无关）当前 git 状态——脏集∪未跟踪∪
-#     最近 3 个 commit 触碰过的路径——三者之一，否则拒绝。裸文件名"仓库
-#     根下确有同名文件"（⑶ 既有判据）只证明**这份文件存在**，证不了
-#     **这一批真的碰过它**，⑵ 是在其上再加一层。
+#     **该批登记日之后（含前一天余量）全部 ref 上的 commit** 触碰过的
+#     路径——三者之一，否则拒绝。裸文件名"仓库根下确有同名文件"（⑶ 既有
+#     判据）只证明**这份文件存在**，证不了**这一批真的碰过它**，⑵ 是在
+#     其上再加一层。
+#
+# 🔴 **窗口口径 2026-09-09 由「最近 3 个 commit」改为「按登记日的时间窗」**
+# （队列 §一 `#533`／§四 `188`，`OP-0909-AA`）。旧口径按 commit **条数**
+# 取窗，一次批收工的 merge 潮（实测 7 次 merge）就能把窗口整个冲掉 ⇒
+# **越是正常落库的行越先被锁死**，且该行此后**永久不可编辑**（连销号、连
+# 补 `称呼豁免：` 都做不到）。实撞后果不是不便而是**死锁**：称呼 lint
+# （守卫 A）的逃生阀是行内写 `称呼豁免：`，而写这个逃生阀恰恰要过
+# `edit-row`（守卫 B），B 恒拒 ⇒ 两行挂红且无合法出路，master 上
+# `test_工具-队列结构lint.py` 两条测试双双红着。
+# 新口径两条，都以**路径证据**取窗、不再用固定条数：
+#   · 批次号 `B-MMDD_…` 可解出登记日 ⇒ `git log --all --since=<登记日
+#     -1 天>`。批次越老窗口越宽，merge 潮再多也冲不掉它——这是本项要害。
+#     多减一天是时区余量：批次日期是人按本机 `Get-Date` 写的，而 commit
+#     日期可能落在写下批次号之前的那个傍晚。
+#   · 批次号解不出日期（非 `B-MMDD_` 形态，如白盒单测的 `B-TEST`）⇒
+#     退回**全历史** `git log --all`（即 `#533` 期望产出里说的「按
+#     `git log --all -S<路径>` 取证」那一支）。它比时间窗弱（只证"这个
+#     路径在历史里真实存在过"，证不了"这一批碰过它"），但**永远不会再
+#     构成死锁**，且对本判据要拦的主要形态（路径写错、纯文字说明、速记）
+#     照样有效。代价是主仓全历史扫描约 5 秒（3274 commits 实测），只在
+#     非常规批次号上付出。
+# 🔴 **窗口放宽不等于守卫放宽**：真正给出"合法出路"的是 `cmd_edit_row`
+# 侧的**归属分档**（本次未写「文件清单」格 ⇒ 告警而非阻断），见该处注释。
+# 两者缺一不可——只放宽窗口，写坏清单的人仍会在别处撞上；只分档不改窗口，
+# `append-row` 侧照旧会把正常批次误拦。
 # git 状态整体取不到（不在工作树内、或 git 调用失败）时 ⑵ 静默跳过、
 # 只保留 ⑴/ⓐ 的结果——**fail-open 仅限"完全拿不到基线"这一种情形**，
 # 与 `_registration_completeness_violations`（release 时）的 fail-closed
@@ -5068,9 +5111,52 @@ def _looks_like_non_file_bare_token(fragment: str) -> bool:
     return frag.startswith("-") or "(" in frag or ")" in frag or "::" in frag
 
 
-def _git_known_relative_paths(repo_root: Path) -> set[str] | None:
-    """主仓当前脏集∪未跟踪文件∪最近 3 个 commit 触碰过的路径，合并成一个
-    仓库根相对路径集合，供 ⑵ 存在性核验用。
+#: 时间窗左端相对登记日再往前推的余量（天）。理由见 ⓘ1 长注释「时区余量」。
+BATCH_WINDOW_BACKOFF_DAYS = 1
+
+
+def _resolve_batch_registration_date(batch_name: str, today=None):
+    """从 §二 批次号 `B-MMDD_…` 解出**登记日**；解不出返回 `None`。
+
+    🔴 **年份靠推断、且方向与 `_resolve_waiver_due_date` 相反**：批次号里
+    只有 `MMDD`。豁免到期日是**未来**的日期（12-31 写下、01-02 读到 ⇒ 解为
+    次年）；登记日是**过去**的日期（12-31 登记、01-02 读到 ⇒ 解为**去年**）。
+    两者用同一个 180 天分界、镜像方向，不共用函数——共用一个函数就必然要在
+    里面加个方向开关，那种"一个函数两种语义"正是本项目反复吃亏的形态。
+
+    🔴 **本机本地日期，不是 UTC**（同 `_resolve_waiver_due_date`）：批次号
+    是人按本机 `Get-Date` 写下的，用 UTC 去比会在每天 16:00–24:00 差一天。
+    """
+    from datetime import date as _date, timedelta as _timedelta
+    prefix = _batch_number_prefix(batch_name)
+    if not prefix:
+        return None
+    match = re.match(r"^B-(\d{2})(\d{2})_", prefix + "_")
+    if not match:
+        return None
+    month, day = int(match.group(1)), int(match.group(2))
+    today = today or _date.today()
+    try:
+        candidate = _date(today.year, month, day)
+    except ValueError:  # 2-30 之类的非法日期
+        return None
+    if (candidate - today) > _timedelta(days=180):
+        try:
+            candidate = _date(today.year - 1, month, day)
+        except ValueError:
+            return None
+    return candidate
+
+
+def _git_known_relative_paths(repo_root: Path, since_date=None) -> set[str] | None:
+    """主仓当前脏集∪未跟踪文件∪**时间窗内全部 ref 上的 commit** 触碰过的
+    路径，合并成一个仓库根相对路径集合，供 ⑵ 存在性核验用。
+
+    `since_date`（`datetime.date`）＝ 该批次的登记日；本函数自行再往前退
+    `BATCH_WINDOW_BACKOFF_DAYS` 天作时区余量。传 `None` ⇒ 不设下界、扫全
+    历史（批次号解不出日期时的退路，见 ⓘ1 长注释）。
+
+    🔴 **绝不再按 commit 条数取窗**——那正是 `#533` 死锁的成因。
 
     `repo_root` 不在 git 工作树内、或任一环节的 git 调用失败，整体返回
     `None`（与"确认过、真是空集"区分开），调用方按"拿不到基线就跳过⑵"
@@ -5082,27 +5168,37 @@ def _git_known_relative_paths(repo_root: Path) -> set[str] | None:
     dirty = _local_git_status_paths(repo_root)
     if dirty is None:
         return None
-    recent = _recent_commit_touched_paths(repo_root, count=3)
-    if recent is None:
+    touched = _commit_touched_paths_since(repo_root, since_date)
+    if touched is None:
         return None
-    return set(dirty) | set(recent)
+    return set(dirty) | set(touched)
 
 
-def _recent_commit_touched_paths(repo_root: Path, count: int = 3) -> list[str] | None:
-    """最近 `count` 个 commit 触碰过的文件路径（跨提交去重与否不重要，
-    调用方只做集合并入）。取数失败返回 `None`，与"确认过、真是空"区分开。
+def _commit_touched_paths_since(repo_root: Path, since_date=None) -> list[str] | None:
+    """`since_date`（含前推余量）之后、**全部 ref**（`--all`）上的 commit
+    触碰过的文件路径。`since_date is None` ⇒ 不设下界，扫全历史。
+
+    取数失败返回 `None`，与"确认过、真是空"区分开。
 
     参数选取比照 `_local_git_status_paths`：同样要 `-c core.quotepath=
     false`，否则中文路径被转义成八进制、与「文件清单」里的中文字面永远
     对不上（同一个"工具静默回退"陷阱，见 `_local_git_status_paths`
     文档）。`--pretty=format:` 只留文件名行，不混入 commit 元信息。
+
+    🔴 **`--all` 不是可有可无**：merge 提交自身在 `git log --name-only`
+    下不产出任何文件名行，被并进来的**原始 commit** 才产出——只有沿全部
+    ref 走才看得见它们，也才解释得了"批收工 merge 潮之后文件仍算被碰过"。
     """
+    from datetime import timedelta as _timedelta
+    args = ["git", "-c", "core.quotepath=false", "log", "--all"]
+    if since_date is not None:
+        window_start = since_date - _timedelta(days=BATCH_WINDOW_BACKOFF_DAYS)
+        args.append(f"--since={window_start.isoformat()} 00:00")
+    args += ["--name-only", "--pretty=format:"]
     try:
         result = subprocess.run(
-            ["git", "-c", "core.quotepath=false", "log", f"-{count}",
-             "--name-only", "--pretty=format:"],
-            cwd=str(repo_root), capture_output=True, text=True,
-            encoding="utf-8", timeout=60,
+            args, cwd=str(repo_root), capture_output=True, text=True,
+            encoding="utf-8", timeout=180,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -5169,14 +5265,19 @@ def _file_list_git_state_violations(cells: list[str], repo_root: Path) -> list[s
             checkable.append(fragment)
 
     if checkable:
-        known_paths = _git_known_relative_paths(repo_root)
+        since_date = _resolve_batch_registration_date(cells[0])
+        window_desc = (
+            f"也不在登记日 {since_date.isoformat()} 前后至今的任何 commit 内"
+            if since_date is not None else "也不在全部 ref 的整个提交历史内"
+        )
+        known_paths = _git_known_relative_paths(repo_root, since_date)
         if known_paths is not None:
             for fragment in checkable:
                 if fragment not in known_paths:
                     problems.append(
                         f"§二 批次「{cells[0]}」文件清单反引号串 `{fragment}` "
                         f"未在主仓 git 状态里找到对应实体（既不在当前脏集／未跟踪，"
-                        f"也不在最近 3 个 commit 内，无法确认这批真的改动过它）"
+                        f"{window_desc}，无法确认这批真的改动过它）"
                     )
     return problems
 
