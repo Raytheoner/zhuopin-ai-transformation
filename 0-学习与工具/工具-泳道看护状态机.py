@@ -1453,9 +1453,10 @@ def _cmd_check_timeout(args: argparse.Namespace) -> int:
 
 
 def _cmd_check_heartbeat(args: argparse.Namespace) -> int:
+    notify_fn = (lambda _msg: None) if args.no_notify else None
     result = check_heartbeat(
         batch=args.batch, wave=args.wave, lane=args.lane, heartbeat_file=args.heartbeat_file,
-        stale_minutes=args.stale_minutes,
+        stale_minutes=args.stale_minutes, notify_fn=notify_fn,
     )
     if result.get("skipped_reason") in ("lane_done", "lane_stopped"):
         # 🔴「只读命令结果太干净先怀疑没读到对象」——「健康运行中」与「早跑完了」
@@ -1632,6 +1633,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_hb.add_argument("--lane", required=True)
     p_hb.add_argument("--heartbeat-file", required=True, help="相对仓库根路径，如 reports/lane-heartbeat/OP-xxxx.md")
     p_hb.add_argument("--stale-minutes", type=float, default=HEARTBEAT_STALE_MINUTES_DEFAULT)
+    p_hb.add_argument("--no-notify", action="store_true", help="跳过企微推送（联调/测试用）")
     p_hb.add_argument("--json", action="store_true")
     p_hb.set_defaults(func=_cmd_check_heartbeat)
 

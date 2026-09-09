@@ -905,6 +905,42 @@ class LaneWatchStateMachineTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("本批停 1 次", out)
 
+    def test_cli_check_heartbeat_no_notify_flag_gates_real_sender(self):
+        """`check-heartbeat --no-notify` 接线（`#504` 随棒补丁，`OP-0909-P`）。
+
+        🔴 按派单件 §四 红线走 **(甲) 桩验证**，**不真跑默认路径**——默认路径
+        的行为就是真推 17 人的「跨部门AI建设群」且不可撤回（2026-09-02 事故
+        成因）。故把 `_load_wecom_sender`（`notify_fn is None` 时
+        `_notify_best_effort` 的唯一回落点，见本体 425 行）换成计数桩：断言的
+        是「有没有去取那个真实发送器」，网络、`发企微.py`、webhook 一概不进入。
+        """
+        calls: list[int] = []
+
+        def _spy_loader():
+            calls.append(1)
+            return lambda _content: None
+
+        # ⑴ 不带 --no-notify：默认仍取真实发送器（本棒只接线，未改默认行为）
+        with mock.patch.object(self.module, "_load_wecom_sender", _spy_loader):
+            code, out = self._run_cli([
+                "check-heartbeat", "--batch", "B1", "--wave", "1", "--lane", "HB-DEFAULT",
+                "--heartbeat-file", "reports/lane-heartbeat/不存在.md",
+            ])
+        self.assertEqual(code, 0)
+        self.assertIn("🐕", out)
+        self.assertEqual(len(calls), 1, "默认路径应恰好取一次真实发送器")
+
+        # ⑵ 带 --no-notify：注入空 notify_fn ⇒ 真实发送器零调用（且 argparse 不再 exit 2）
+        calls.clear()
+        with mock.patch.object(self.module, "_load_wecom_sender", _spy_loader):
+            code, out = self._run_cli([
+                "check-heartbeat", "--batch", "B1", "--wave", "1", "--lane", "HB-QUIET",
+                "--heartbeat-file", "reports/lane-heartbeat/不存在.md", "--no-notify",
+            ])
+        self.assertEqual(code, 0)
+        self.assertIn("🐕", out)
+        self.assertEqual(calls, [], "--no-notify 时真实发送器必须零调用")
+
     def test_cli_heartbeat_write_then_check_then_done_then_summary(self):
         """CLI 冒烟全链：写心跳 → 看门狗判健康 → `--done` 标终态 → 看门狗豁免
         → summary 报出终态泳道。🔴 三种输出必须互不相同（决策点 5(a)）。"""
