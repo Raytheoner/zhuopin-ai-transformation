@@ -632,5 +632,189 @@ class 引用版变体(unittest.TestCase):
         self.assertIn("--input-pointer", err)
 
 
+class 子任务泳道占位段(unittest.TestCase):
+    """队列 §一 `#487` 追记⑴（2026-09-09 apply）——`--variant subtask_lane` 未传
+    `--do`／`--dont` 时**不得**硬塞「做什么：1. …／不做什么：- …」两段占位。
+
+    🔴 **判据来源是骨架，不是本工具**：`opener骨架.md`【CC · 子任务泳道】节明写
+    「本变体正文恒为三行，不多写一行」——做什么／不做什么／收工一律写进**队列行**。
+    🔴 **与既有子项同源而镜像**：既有子项是「一个参数被接受却不生效」（`--dont` 在
+    `--env Cowork` 下静默丢弃），这一处是「**一个参数没传却仍产出内容**」；根因同为
+    生成器与格式正本各自演进、其间此前无机器守。
+    """
+
+    @staticmethod
+    def _gen(**over):
+        kw = {k: v for k, v in VALID_CC_KWARGS.items()
+              if k not in ("do_items", "dont_items")}
+        kw.update({"variant": "subtask_lane", "op_id": "OP-1231-A"})
+        kw.update(over)
+        return M.generate_opener(**kw)
+
+    def test_未传do_dont时不出正文两段(self):
+        out = self._gen()
+        self.assertNotIn("做什么：", out)      # 「不做什么：」含「做什么：」，一并覆盖
+        self.assertNotIn("1. …", out)
+        self.assertNotIn("- …", out)
+
+    def test_未传时正文恰为三行加两条P4口径(self):
+        body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
+        self.assertEqual(len(body), 5, f"实为 {len(body)} 行：{body}")
+        self.assertEqual(body[-2:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_PUSH_NOTE])
+
+    def test_传了do_dont仍照拼_不误伤显式调用(self):
+        """`BODY_PARAM_SUPPORT` 登记本组合两个都支持——调用方明确要写就不拦。"""
+        out = self._gen(do_items=["建造"], dont_items=["不动产线"])
+        self.assertIn("做什么：", out)
+        self.assertIn("1. 建造", out)
+        self.assertIn("不做什么：", out)
+        self.assertIn("- 不动产线", out)
+
+    def test_半填即fail_loud_不出半成品(self):
+        """反向用例：**只传 `--do`** ⇒ `不做什么` 段会留着 `- …` 未替换。
+        此时不该「照出件」——生成器自检复用 `check_block`，形态⑧ 当场把它拦下，
+        调用方看到的是报错而不是一份看着正常、其实没填完的 opener。
+        🔑 这条同时证明**闸真的接在生成器上**（不是只在全库扫描时才生效）。"""
+        with self.assertRaises(M.OpenerGenError) as cm:
+            self._gen(do_items=["建造"])
+        msg = str(cm.exception)
+        self.assertIn("F8", msg)
+        self.assertIn("未替换的正文占位条目", msg)
+
+    def test_标准变体不受本条影响(self):
+        """收窄证明：本改动只动 subtask_lane 分支，standard 的占位段是明示设计。"""
+        kw = {k: v for k, v in VALID_CC_KWARGS.items()
+              if k not in ("do_items", "dont_items")}
+        out = M.generate_opener(**{**kw, "op_id": "OP-1231-B"})
+        self.assertIn("做什么：", out)
+        self.assertIn("1. …", out)
+
+
+class 分支slug前缀重复(unittest.TestCase):
+    """队列 §一 `#487` 追记⑵（2026-09-09 apply）——`--branch` 传含 OP 短号的全名
+    会拼出 `claude/op1231c-op0909b-docx-481`。
+
+    🔴 **这条原本不是 bug 是用法**，但 `--help` 只写「短横线 slug」、没写「勿含 OP
+    短号」，按直觉传全名必踩，且成品是一个**看起来正常的分支名、不报错**——
+    与本行既有子项同族（**错得无声**）。故按 fail-loud 显式化。
+    """
+
+    @staticmethod
+    def _gen(branch, op_id="OP-1231-C"):
+        return M.generate_opener(**{**VALID_CC_KWARGS, "op_id": op_id, "branch": branch})
+
+    def test_含op短号的slug被拒(self):
+        with self.assertRaises(M.OpenerGenError) as cm:
+            self._gen("op0909b-docx-481")
+        msg = str(cm.exception)
+        self.assertIn("--branch", msg)
+        self.assertIn("op0909b-docx-481", msg)
+        self.assertIn("docx-481", msg)          # 报错须给出「应传什么」
+
+    def test_报错信息给出拼坏后的分支名(self):
+        with self.assertRaises(M.OpenerGenError) as cm:
+            self._gen("op0909b-docx-481")
+        self.assertIn("claude/op1231c-op0909b-docx-481", str(cm.exception))
+
+    def test_无字母后缀的短号同样被拒(self):
+        with self.assertRaises(M.OpenerGenError):
+            self._gen("op0909-docx", op_id="OP-1231-D")
+
+    def test_正常slug不误伤(self):
+        """`\\d{4}` 要四个真数字 ⇒ 这些真实 slug 一个都不该被拦。"""
+        for slug in ("opener-gen", "ops-fix", "op-0909-x", "dont-guard-487",
+                     "openspec-apply"):
+            with self.subTest(slug=slug):
+                self._gen(slug, op_id="OP-1231-E")   # 不抛即通过
+
+    def test_guardian变体不受约束(self):
+        """guardian 的分支字段是骨架 §三bis 固定字面量，不是 slug。"""
+        M.generate_opener(**{
+            **VALID_CC_KWARGS, "op_id": "OP-1231-F", "variant": "guardian",
+            "short_name": "示例批", "branch": "master（看护者本身不建分支，不改代码）",
+            "worktree": "☐（看护者不建，各子泳道自建）",
+            "do_items": None, "dont_items": None,
+        })
+
+    def test_help文本写明勿含op短号(self):
+        help_text = M._build_arg_parser().format_help()
+        self.assertIn("勿再含", help_text)
+        self.assertIn("opNNNN", help_text)
+
+
+class 骨架与生成器契约(unittest.TestCase):
+    """🔑 **本类就是队列 §一 `#487` 判据里那道闸**：此前**格式正本与生成器之间没有
+    机器守**，全靠人每次肉眼比对——两处口径各自演进，2026-09-06（`--dont` 静默丢弃）
+    与 2026-09-09（子任务泳道硬塞占位）已各出一例，不建闸必有第三例。
+
+    🔴 **闸的做法是「从正本现读，不在测试里抄第二份」**：本类的期望值全部现读
+    `opener骨架.md`【CC · 子任务泳道】那一节；正本改了而生成器没跟（或反过来），
+    本类当场红。测试里若把骨架内容硬抄一遍，就又造出了第三份会漂的判据。
+    """
+
+    SECTION_HEADING = "## 【CC · 子任务泳道】骨架"
+
+    @classmethod
+    def setUpClass(cls):
+        text = M.SKELETON_FILE.read_text(encoding="utf-8")
+        start = text.index(cls.SECTION_HEADING)
+        nxt = text.index("\n## ", start + 1)
+        cls.section = text[start:nxt]
+        lint = M._load_lint_module()
+        blocks = lint.iter_fenced_blocks(cls.section)
+        assert len(blocks) == 1, f"该节应恰有 1 个围栏块，实为 {len(blocks)}"
+        cls.canon_lines = [ln for ln in blocks[0].lines if ln.strip()]
+        kw = {k: v for k, v in VALID_CC_KWARGS.items()
+              if k not in ("do_items", "dont_items")}
+        kw.update({"variant": "subtask_lane", "op_id": "OP-1231-G"})
+        out = M.generate_opener(**kw)
+        cls.gen_lines = [ln for ln in out.splitlines()
+                         if ln.strip() and not ln.startswith("```")]
+
+    def test_正本仍写着恒为三行那条硬规则(self):
+        """规则本身被删/改写 ⇒ 本用例红，逼人看一眼，而不是让闸静默失效。"""
+        self.assertIn("正文恒为三行，不多写一行", self.section)
+        self.assertIn("做什么／不做什么／收工", self.section)
+
+    def test_行数与正本一致(self):
+        self.assertEqual(len(self.gen_lines), len(self.canon_lines),
+                         f"正本 {len(self.canon_lines)} 行 ／ 生成器 "
+                         f"{len(self.gen_lines)} 行：\n正本={self.canon_lines}\n"
+                         f"生成器={self.gen_lines}")
+
+    def test_正本与生成器都不含做什么段(self):
+        for label, lines in (("正本", self.canon_lines), ("生成器", self.gen_lines)):
+            with self.subTest(来源=label):
+                self.assertFalse([ln for ln in lines if "做什么：" in ln],
+                                 f"{label} 出现了「做什么／不做什么」段")
+
+    def test_P4两条口径逐字取自正本(self):
+        """正本尾两行必须与生成器常量**逐字**相同——改一处不改另一处即红。"""
+        self.assertEqual(self.canon_lines[-2], M.SUBTASK_PARALLEL_NOTE)
+        self.assertEqual(self.canon_lines[-1], M.SUBTASK_PUSH_NOTE)
+
+    def test_前三行形状与正本对齐(self):
+        """占位符不同、结构必须同：首行编号形态、`【设置】` 六字段、`读 ①` 起手。"""
+        canon_head, gen_head = self.canon_lines[:3], self.gen_lines[:3]
+        self.assertTrue(canon_head[0].startswith("[OP-MMDD-X]【CC】"))
+        self.assertTrue(gen_head[0].startswith("[OP-1231-G]【CC】"))
+        for label, line in (("正本", canon_head[2]), ("生成器", gen_head[2])):
+            with self.subTest(来源=label):
+                self.assertTrue(line.startswith("读 ① "), line[:20])
+                self.assertIn("恢复上下文", line)
+        lint = M._load_lint_module()
+        for label, line in (("正本", canon_head[1]), ("生成器", gen_head[1])):
+            with self.subTest(来源=label):
+                self.assertEqual(
+                    [f for f in lint.SETTINGS_FIELD_ORDER if f in line],
+                    list(lint.SETTINGS_FIELD_ORDER), f"{label} 的六字段不全或错序")
+
+    def test_生成器产物过lint零违规(self):
+        lint = M._load_lint_module()
+        fenced = "\n".join(["```"] + self.gen_lines + ["```"])
+        blocks = lint.iter_fenced_blocks(fenced)
+        self.assertEqual(lint.check_block(blocks[0], is_subtask_lane=True), [])
+
+
 if __name__ == "__main__":
     unittest.main()

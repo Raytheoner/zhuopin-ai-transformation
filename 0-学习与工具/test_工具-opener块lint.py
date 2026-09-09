@@ -952,5 +952,124 @@ class 全量取提交日期批量化(unittest.TestCase):
         self.assertGreater(M.GIT_TIMEOUT_SECONDS, 0)
 
 
+class 形态八_子任务泳道块含未替换占位条目(unittest.TestCase):
+    """⑧ 子任务泳道 opener 块里仍有 `1. …／- …` 这类**未替换的正文占位条目** ⇒ 告警
+    （队列 §一 `#487` 追记⑴，2026-09-09 apply／`OP-0909-X`）。
+
+    🔑 **它是形态⑦的镜像**：⑦ ＝「一个参数被接受却不生效」（`--dont` 静默丢弃），
+    ⑧ ＝「**一个参数没传却仍产出内容**」（`工具-opener生成.py --variant subtask_lane`
+    未传 `--do`／`--dont` 时仍硬塞两段占位）。两者根因同一条：**格式正本
+    `opener骨架.md` 与生成器之间此前没有机器守**，全靠人每次肉眼比对。
+    """
+
+    _LANE_WITH_PLACEHOLDER = "\n".join([
+        "### A1 · 示例泳道",
+        "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#487` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            "",
+            "做什么：",
+            "1. …",
+            "",
+            "不做什么：",
+            "- …"),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
+        "",
+        _md("[OP-0909-X]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    _LANE_THREE_LINE = "\n".join([
+        "### A1 · 示例泳道",
+        "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#487` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。"),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
+        "",
+        _md("[OP-0909-X]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    _LANE_FILLED = "\n".join([
+        "### A1 · 示例泳道",
+        "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#487` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            "",
+            "做什么：",
+            "1. 落地两处缺陷 ＋ 一道闸。",
+            "",
+            "不做什么：",
+            "- 不碰 `#522`。"),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
+        "",
+        _md("[OP-0909-X]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    @staticmethod
+    def _scan(text: str) -> set[str]:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件.md"
+            p.write_text(text, encoding="utf-8")
+            return {f.form for f in M.scan_single_file(p)}
+
+    def test_反例_泳道块留占位条目_命中F8(self):
+        """本批看护件 §三 的真实现场形态：生成器产物直接落进看护件，两段占位没填。"""
+        self.assertIn("F8", self._scan(self._LANE_WITH_PLACEHOLDER))
+
+    def test_正例_骨架三行写法_不命中任何形态(self):
+        """🔴 验收条款「两侧都能关掉」：按骨架写成三行 ⇒ F8 必须消失，
+        且不得因此触发形态①（子任务泳道不放 title 是正确写法）。"""
+        self.assertEqual(self._scan(self._LANE_THREE_LINE), set())
+
+    def test_正例_两段都填了真内容_不命中(self):
+        """占位符被替换成真内容 ⇒ 判据管的是「没填」，不是「有没有这两段」。"""
+        self.assertNotIn("F8", self._scan(self._LANE_FILLED))
+
+    def test_非子任务泳道块不受约束(self):
+        """🔴 收窄的正面实证（`FORM8_SCOPE_NOTE`）：没有 `## 三bis` 小节的普通派单件，
+        其【Cowork】块留占位段是 2026-09-06 `OP-0906-M` 的明示设计，本形态不判。"""
+        md = _md(TITLE_LINE_COWORK, SETTINGS_COWORK,
+                 "做什么：", "1. …", "", "不做什么：", "- …")
+        self.assertNotIn("F8", _forms(md))
+
+    def test_占位符后面写了真内容的行不误伤(self):
+        """整行锚定：`1. …（细节见队列行）` 已经是填过的内容，不该命中。"""
+        block = _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：", "1. …（细节见队列行 `#487`）")
+        forms = {f for f, _ in M.check_block(_only_block(block), is_subtask_lane=True)}
+        self.assertNotIn("F8", forms)
+
+    def test_半角三点与多种列表记号皆认(self):
+        """骨架写全角 `…`，人手抄常写半角 `...`；列表记号三种写法都见过。"""
+        for item in ("1. …", "2、…", "3) …", "- …", "* …", "+ ..."):
+            with self.subTest(item=item):
+                self.assertTrue(M.PLACEHOLDER_ITEM_RE.match(item), item)
+
+    def test_有真内容的条目不得命中占位判据(self):
+        """反向用例：证明上一条的「命中」来自省略号本身，不是列表记号。"""
+        for item in ("1. 落地两处缺陷", "- 不碰 `#522`", "* 收工只 push 本泳道分支"):
+            with self.subTest(item=item):
+                self.assertIsNone(M.PLACEHOLDER_ITEM_RE.match(item), item)
+
+    def test_明细里报出条数与首条原文(self):
+        block = _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：", "1. …", "不做什么：", "- …")
+        detail = dict(M.check_block(_only_block(block), is_subtask_lane=True))["F8"]
+        self.assertIn("2 条", detail)
+        self.assertIn("1. …", detail)
+
+    def test_生效日与明细分组均已登记(self):
+        """同 F7 的登记验收：漏登生效日 ⇒ H3 判不了历史件；漏登 `FORM_TITLE` ⇒
+        `--enforce` 报了数却不打印明细（队列 §一 `#489` 2026-09-08 实撞过一次）。"""
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F8"], date(2026, 9, 9))
+        self.assertIn("F8", M.FORM_TITLE)
+
+    def test_格式正本自身不命中F8(self):
+        """骨架的 `## §三bis` 标题带 `§`、锚不上 `WATCHER_SECTION_RE` ⇒ 其块一律不是
+        子任务泳道块，F8 天然不覆盖它——与 F6 同一条既有性质，此处钉死防回归。"""
+        self.assertNotIn(
+            "F8", {f.form for f in M.scan_single_file(M.REPO_ROOT / M.SKELETON_CANON_REL)})
+
+
 if __name__ == "__main__":
     unittest.main()
