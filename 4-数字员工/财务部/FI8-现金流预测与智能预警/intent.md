@@ -1,5 +1,7 @@
 ---
-status: 待确认
+status: 已确认
+确认人: Shao Peishen
+确认日期: 2026-09-08
 场景: FI8
 scenario_name: 现金流预测与智能预警
 grill会话: OP-0907-M
@@ -12,7 +14,8 @@ grill日期: 2026-09-07
 
 > 产出自 skill `zhuopin-requirement-grill`（M1 设计树与前沿／M2 找事实是本方的活／M3 前沿为空才算完）。
 > **存量补 grill 第二个样本**（2026-09-03 无头泳道落包的 8 个新场景包之一，次序 FI10 → **FI8** → FI6 → FI5 → FI9 → SC10 → SC11 → SC4）。
-> 🔴 **本件是 `/opsx:propose` 的前置**：`status: 已确认` 才可 propose（rules/场景建造与合规 §二）。**待 Shao Peishen 确认后改 `已确认`。**
+> 🔴 **本件是 `/opsx:propose` 的前置**：`status: 已确认` 才可 propose（rules/场景建造与合规 §二）。✅ **Shao Peishen 于本会话末确认（答 `1a`），同批 design 审已过 —— 2026-09-08。**
+> ⏱ **日期基准（跨午夜，非笔误）**：三轮问答在 **2026-09-07**，确认与 design 审落在 **2026-09-08 00:42 CST（＝ 2026-09-07 16:42 UTC）**。
 > **三轮问完前沿**：第 1 轮 8 问、第 2 轮 6 问、第 3 轮 3 问，共 **17 问**，Shao Peishen 2026-09-07 当场逐条答毕，前沿为空。
 > **日期取证**：`date` 实测沙箱本地时 `2026-09-07 10:04 CST`，与会话 env 声明的 2026-09-07 互证；🔴 未经本机 PowerShell `Get-Date` 复核（Cowork 侧 bash ＝ Linux 沙箱），如实记。
 

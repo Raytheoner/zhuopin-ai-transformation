@@ -1,7 +1,12 @@
 # fi8-cashflow-forecast-mvp Design
 
-> **design 审：⏳ 待审 —— 送审于 2026-09-07（grill 会话 `OP-0907-M` 会话末）**
+> **design 审：✅ 已过 —— Shao Peishen 2026-09-08**（grill 会话 `OP-0907-M` 会话末当场审，答 `1a`；D1–D17 ＋ 本方 6 处连带判定全部通过，无挂起条）
 >
+> ⏱ **日期基准说明（跨午夜，非笔误）**：grill 三轮 17 问在 **2026-09-07**，他的审过答复落在跨午夜后的 **2026-09-08 00:42 CST（＝ 2026-09-07 16:42 UTC）**。两处日期不同系本会话跨日所致，`date` 实测取自本会话；🔴 未经本机 PowerShell `Get-Date` 复核（Cowork 侧 bash ＝ Linux 沙箱），如实记。
+>
+> **审过同批确认的 6 处连带判定**（不在他那 17 答之内，由本方从其答案推导）：① D1 的 spec 连带改 `changes/` 下 delta 再 re-sync、不另起变更包；② `RULE_VERSION` 不升版；③ `tasks 2.3` 只关一半；④ 注册表 3→4 条而 `tasks 1a.5` 的「3 条」是历史记录不追改；⑤ D9 新增「名义层须标『名义，非预测』并有用例守」这一类守护；⑥ 6 处「须 CFO 办公室」措辞按两条路径切开重写（apply 阶段）。
+>
+
 > 🔴 **本件是整包 design 审件**（同 `fi10-inventory-writedown-mvp/design.md`，区别于 `fi9-rd-cost-mvp/design.md` 那份只覆盖 `EE-3` 的局部件）。它覆盖 `tasks.md` §2 的全部收口项：`2.1`／`2.2`／`2.3`／`2.4`／`2.6`／`2.7`（`2.5` 已于 2026-09-03 由 `EE-1` 关闭）。
 > **来源**：需求 grill 会话 `OP-0907-M`（Cowork，2026-09-07），受访者 Shao Peishen 本人，**三轮 17 问全部当场答定、无一项靠默认项沉默生效**。收敛产出 ＝ `4-数字员工/财务部/FI8-现金流预测与智能预警/intent.md`。
 > **Decisions ＝ intent.md §二**；**Open Questions ＝ intent.md §三（待专员）＋ §四（待派发）**。两处不各写一遍，本件是它们在 openspec 侧的落点。
