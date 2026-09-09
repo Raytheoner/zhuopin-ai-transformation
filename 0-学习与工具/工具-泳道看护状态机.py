@@ -39,6 +39,15 @@ markdown 行锁会引入与本场景无关的校验开销与耦合。本文件�
 若按 `Path(__file__)` 各算各的路径会写进 N 份互相看不见的文件——同队列
 #321 幽灵副本事故的成因。
 
+🔴 **心跳件同理，且此前正是这么错的**（队列 §一 `#504`，openspec
+`lane-watch-heartbeat-visibility`）：状态文件一开始就锚了 `REPO_ROOT`，但心跳
+**写侧根本没有工具入口**——泳道按 opener 散文里的相对路径 `reports/
+lane-heartbeat/<泳道>.md` 由自己的 CWD 解析，`reports/` 又被 `.gitignore`
+排除、从不随分支流转 ⇒ v2.0 把默认起法改成 `isolation: worktree` 之后，写侧
+落在各自 worktree、读侧仍在主工作区，看门狗把**每条健康泳道**都判成失联。
+修法＝本文件的 `heartbeat` 子命令（`write_heartbeat` / `resolve_heartbeat_path`）
+把写侧收进同一个 `REPO_ROOT` 常量、同一处表达式。
+
 ## §三 泳道解析／dry-run（构建环境瘦身第三轮方案-2026-09-05 P2；队列 §一 `#487`）
 
 看护件 §三 每条泳道原先内嵌完整 opener（含「做什么」「不做什么」，可达 9-16
@@ -70,11 +79,14 @@ markdown 行锁会引入与本场景无关的校验开销与耦合。本文件�
     python 0-学习与工具/工具-泳道看护状态机.py check-timeout
     python 0-学习与工具/工具-泳道看护状态机.py check-heartbeat --batch 2026-09-02-看护批A \\
         --wave 2 --lane A --heartbeat-file reports/lane-heartbeat/OP-xxxx.md
+    python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane A --text "已开工"
+    python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane A --done \\
+        --text "产出落点：openspec/changes/xxx/"
     python 0-学习与工具/工具-泳道看护状态机.py summary --batch 2026-09-02-看护批A
     python 0-学习与工具/工具-泳道看护状态机.py show
 
 退出码：`classify`/`criteria`/`lan-status`/`check-timeout`/`check-heartbeat`/
-`summary`/`show` 恒 0（只读/判定类，不代表业务失败）；`pause` 对 🟢/⏭️ 动作
+`heartbeat`/`summary`/`show` 恒 0（只读/判定/留痕类，不代表业务失败）；`pause` 对 🟢/⏭️ 动作
 或参数有误返回 1；`transfer-out` 对非 ⏭️ 动作返回 1；`resume` 对不在 paused
 态的泳道返回 1；`deploy-authorize` 三项前置任一不过返回 1（🔴 拒绝时不输出任何
 可被当作"放行"理解的结果），`deploy-record` 挂不到真实授权记录时返回 1。
@@ -904,6 +916,124 @@ def check_timeouts(*, hours: float = DEFAULT_TIMEOUT_HOURS) -> list:
 
 HEARTBEAT_STALE_MINUTES_DEFAULT = 30.0
 
+# ---------------------------------------------------------------------------
+# 心跳读写同锚（openspec `lane-watch-heartbeat-visibility`，队列 §一 `#504`）
+#
+# 缺陷原形态：写侧**根本没有工具入口**——泳道靠 opener 散文里的相对路径
+# `reports/lane-heartbeat/<泳道>.md`，由泳道**自己的 CWD** 解析；而
+# `check_heartbeat` 从 `REPO_ROOT`（恒＝主工作区）解析。v2.0 架构收敛把默认
+# 起法改成 `isolation: worktree` 之后，两侧就落在了不同目录 ⇒ 看门狗读不到
+# 任何一条泳道的心跳、把每条健康泳道都判成失联。
+#
+# 🔴 修法是**写侧复用同一个 `REPO_ROOT` 常量、同一处表达式**，不是去改
+# `工具-共享文档编辑锁.py::_resolve_repo_root()`——它今天的行为是对的（实测
+# 在 linked worktree 内解出主 checkout），改它会同时打断编辑锁。
+# 🔴 也不是「读不到就去各 worktree 搜一遍取最新那份」：实测同名心跳件同时
+# 存在于三个 worktree，「最新那份」在重试场景下 ≠「当前这条泳道那份」——
+# **误报只是吵，读错副本是把真失联判成健康**。
+# ---------------------------------------------------------------------------
+
+HEARTBEAT_DIR_REL = "reports/lane-heartbeat"
+
+# 泳道终态。既有 running/paused/resumed 三值语义一律不变；`done` 由
+# `write_heartbeat(done=True)`（CLI `heartbeat --done`）**唯一写入**。
+STATUS_DONE = "done"
+
+# 收工哨兵——**本包不新造格式**。`DONE ｜ <产出落点>` 是 `zhuopin-lane-watch`
+# SKILL.md 步骤 4 已运行的既有约定，`STOPPED ｜ <停在哪一步、为什么>` 是看护件
+# 0828 批沿用至今的既有约定；本包只是第一次让机器去读它们。
+# 行首通常带本机时刻前缀（`HH:MM:SS ｜ DONE ｜ …`），故哨兵允许出现在行首或
+# 任一个 `｜` 之后。
+_HEARTBEAT_SENTINEL_RE = re.compile(r"(?:^|｜)\s*(DONE|STOPPED)\s*｜")
+_SENTINEL_SKIP_REASON = {"DONE": "lane_done", "STOPPED": "lane_stopped"}
+
+SKIP_REASON_LABELS = {
+    "lane_done": "已完工（DONE）",
+    "lane_stopped": "已自停等人（STOPPED）",
+    "already_paused": "已在 paused 态",
+}
+
+
+def heartbeat_rel_path(lane: str) -> str:
+    """泳道心跳的仓库根**相对**路径——写侧与读侧共用的唯一构造处。
+
+    🔴 路径从此是工具实现细节，**不再是每份 opener／看护件／SKILL 都要复述
+    一遍的口径**（同 `criteria` 判据现取而非手抄的手法）。
+    """
+    return f"{HEARTBEAT_DIR_REL}/{lane}.md"
+
+
+def resolve_heartbeat_path(heartbeat_file: str) -> Path:
+    """🔴 心跳路径解析的**唯一表达式**：读写两侧都必须经这里。
+
+    守卫＝单测断言「写侧解出的绝对路径 == 读侧解出的绝对路径」。
+    🔴 MUST NOT 调 `os.getcwd()`、MUST NOT 自行 `git rev-parse`、
+    MUST NOT 提供 `--repo-root` 之类的覆盖参数——那三条都会重新把锚交回给
+    被锚的人。
+    """
+    return REPO_ROOT / heartbeat_file
+
+
+def _read_last_sentinel(path: Path) -> Optional[str]:
+    """读心跳文件**最后一个非空行**，命中收工哨兵则返回 `DONE`/`STOPPED`。
+
+    🔴 只读推断，不冒充权威——本函数与其调用方**不写任何状态**。
+    """
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    for line in reversed(raw.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        m = _HEARTBEAT_SENTINEL_RE.search(line)
+        return m.group(1) if m else None
+    return None
+
+
+def write_heartbeat(
+    *, lane: str, text: str, done: bool = False, batch: Optional[str] = None,
+) -> dict:
+    """🆕 心跳写侧入口（`#504` 期望产出 ①）。
+
+    路径由本函数按 `REPO_ROOT` 解析（`resolve_heartbeat_path`），泳道不再自己
+    拼路径 ⇒ 漂移的物理可能性被消除，不是「两边都记得改」。目录不存在自建；
+    追加写；行首带**本机时刻**（沿既有 `HH:MM:SS ｜ …` 约定，给人看的那一半
+    不变）。
+
+    `done=True` 时额外把泳道状态置终态 `done`（权威源），并在心跳行里写下
+    `DONE ｜` 哨兵（回落源）——两者同批落，避免只有一半可读。
+    """
+    rel = heartbeat_rel_path(lane)
+    path = resolve_heartbeat_path(rel)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # 行首本机时刻：心跳的可读性契约是给人看的，沿用既有 HH:MM:SS 形态；
+    # 状态文件里的 done_at 仍走 `_iso(_now())`＝真 UTC（本模块时间纪律）。
+    stamp = datetime.now().strftime("%H:%M:%S")
+    line = f"{stamp} ｜ DONE ｜ {text}" if done else f"{stamp} ｜ {text}"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+
+    result = {"lane": lane, "heartbeat_file": rel, "path": str(path),
+              "line": line, "done": done}
+    if not done:
+        return result
+
+    now = _now()
+
+    def _mutate(data: dict) -> None:
+        lane_state = data["lanes"].setdefault(lane, {"status": "running", "history": []})
+        lane_state["status"] = STATUS_DONE
+        lane_state["done_at"] = _iso(now)
+        lane_state["done_note"] = text
+        if batch:
+            lane_state["batch"] = batch
+
+    _with_state(_mutate)
+    result["done_at"] = _iso(now)
+    return result
+
 
 def check_heartbeat(
     *, batch: str, wave: int, lane: str, heartbeat_file: str,
@@ -918,8 +1048,19 @@ def check_heartbeat(
 
     已在 paused 态的泳道（正等他答 D1 决策点）不重复触发——那种「没心跳」
     是预期状态（他还没回），不是失联。
+
+    🆕 **终态豁免**（`#504` 半 ⑵）：已进入终态的泳道不判失联。判定**双源＋
+    优先级写死**——⑴ 权威源＝状态记录 `status == "done"`（由 `--done` 唯一
+    写入）；⑵ 仅当状态非 `done` 时，才回落读心跳文件末行的收工哨兵
+    （`DONE ｜` / `STOPPED ｜`），且该推断**不回写状态记录**（只读派生，不冒充
+    权威）。`STOPPED` 与 `DONE` 同等豁免（Shao Peishen 2026-09-08 明答 §五 1(a)）
+    ——看门狗要答的是「还有没有信号」，而 `STOPPED` 恰恰**是一个明确的信号**，
+    它已经说清在等什么；同因同果于既有的「`paused` 不重复触发」。
+    🔴 豁免时 MUST NOT 落 `pause`、MUST NOT 推通知；且返回 `skipped_reason`
+    使其**与「健康运行中」可区分**——两种状态下下一步动作完全不同（等 vs 收工）。
+    🔴 30 分钟阈值不变：本函数改的是「什么算失联」的覆盖范围，不是数值。
     """
-    path = REPO_ROOT / heartbeat_file
+    path = resolve_heartbeat_path(heartbeat_file)
     age_minutes = None
     if path.exists():
         age_minutes = (time.time() - path.stat().st_mtime) / 60.0
@@ -928,6 +1069,29 @@ def check_heartbeat(
         f"心跳文件不存在：{heartbeat_file}" if age_minutes is None
         else f"最后心跳 {age_minutes:.0f} 分钟前（{heartbeat_file}）"
     )
+
+    # ---- 终态豁免：先判，且全程只读 ----
+    lane_status = _read_state().get("lanes", {}).get(lane, {}).get("status")
+    skip_reason = None
+    if lane_status == STATUS_DONE:
+        skip_reason = "lane_done"
+        skip_source = "状态记录"
+    else:
+        sentinel = _read_last_sentinel(path) if path.exists() else None
+        if sentinel:
+            skip_reason = _SENTINEL_SKIP_REASON[sentinel]
+            skip_source = "心跳末行哨兵"
+    if skip_reason:
+        return {
+            "lane": lane, "heartbeat_file": heartbeat_file, "stale": False,
+            "age_minutes": None if age_minutes is None else round(age_minutes, 1),
+            "already_paused": False,
+            "detail": (
+                f"泳道已终态：{SKIP_REASON_LABELS[skip_reason]}"
+                f"（判定来源：{skip_source}）——本次不判失联"
+            ),
+            "skipped_reason": skip_reason,
+        }
 
     already_paused = False
     now = _now()
@@ -970,6 +1134,7 @@ def check_heartbeat(
         "lane": lane, "heartbeat_file": heartbeat_file, "stale": stale,
         "age_minutes": None if age_minutes is None else round(age_minutes, 1),
         "already_paused": already_paused, "detail": detail,
+        "skipped_reason": "already_paused" if already_paused else None,
     }
 
 
@@ -1066,6 +1231,46 @@ def format_summary_line(rows: list) -> str:
         return "本批停 0 次"
     parts = [f"{r['lane']}／{r['tier']}／{r['action']}／{r['answer']}／{r['waited']}" for r in rows]
     return f"本批停 {len(rows)} 次｜逐次：" + "；".join(parts)
+
+
+def build_done_summary(*, batch: Optional[str] = None) -> list:
+    """D6 邻接产出：本批有哪些泳道已进终态——现取，不靠人工回忆（同
+    `count_lock_hits` 手法）。
+
+    🔑 **终态是要被汇总报出来的，不是要被消失的**——这正是「泳道注销」那条
+    候选被否掉的理由（design 决策点 3(d)）：删掉之后 D6「本批停 N 次」那一列
+    会缺项。
+
+    🔴 为什么只报**终态**、不单独报「豁免次数」：哨兵回落分支按 spec 明文
+    **不得回写状态记录**（只读推断），故经哨兵豁免的那一半在状态文件里没有
+    留痕；若强行单独计数，得到的会是一个**只统计到一半的数字**——那比不报
+    更容易误导。终态泳道数是状态文件里唯一有权威留痕的口径。
+    """
+    data = _read_state()
+    rows = []
+    for lane, lane_state in data.get("lanes", {}).items():
+        if lane_state.get("status") != STATUS_DONE:
+            continue
+        if batch and lane_state.get("batch") not in (None, batch):
+            continue
+        rows.append({
+            "lane": lane,
+            "done_at": lane_state.get("done_at"),
+            "note": lane_state.get("done_note") or "",
+        })
+    return rows
+
+
+def format_done_line(rows: list) -> str:
+    if not rows:
+        return "本批终态泳道 0 条"
+    parts = []
+    for r in rows:
+        part = r["lane"]
+        if r["note"]:
+            part += f"／{r['note']}"
+        parts.append(part)
+    return f"本批终态泳道 {len(rows)} 条（看门狗对其豁免）｜逐条：" + "；".join(parts)
 
 
 def build_transfer_summary(*, batch: Optional[str] = None) -> list:
@@ -1252,7 +1457,11 @@ def _cmd_check_heartbeat(args: argparse.Namespace) -> int:
         batch=args.batch, wave=args.wave, lane=args.lane, heartbeat_file=args.heartbeat_file,
         stale_minutes=args.stale_minutes,
     )
-    if not result["stale"]:
+    if result.get("skipped_reason") in ("lane_done", "lane_stopped"):
+        # 🔴「只读命令结果太干净先怀疑没读到对象」——「健康运行中」与「早跑完了」
+        # 若打印得一模一样，看护者就分不清该等还是该收工。故分支可区分。
+        print(f"🏁 泳道 `{args.lane}` {result['detail']}")
+    elif not result["stale"]:
         print(f"✓ 泳道 `{args.lane}` 心跳正常（{result['detail']}）。")
     elif result["already_paused"]:
         print(f"⏸ 泳道 `{args.lane}` 已在 paused 态，看门狗不重复触发（{result['detail']}）。")
@@ -1263,11 +1472,26 @@ def _cmd_check_heartbeat(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_heartbeat(args: argparse.Namespace) -> int:
+    result = write_heartbeat(
+        lane=args.lane, text=args.text, done=args.done, batch=args.batch,
+    )
+    if args.done:
+        print(f"🏁 泳道 `{args.lane}` 已标终态（DONE）：{result['path']}")
+    else:
+        print(f"💓 泳道 `{args.lane}` 心跳已写入：{result['path']}")
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
 def _cmd_summary(args: argparse.Namespace) -> int:
     rows = build_summary(batch=args.batch)
     print(format_summary_line(rows))
     transfer_rows = build_transfer_summary(batch=args.batch)
     print(format_transfer_line(transfer_rows))
+    done_rows = build_done_summary(batch=args.batch)
+    print(format_done_line(done_rows))
     lock_hits = count_lock_hits(batch=args.batch)
     print(format_lock_hit_line(lock_hits))
     notify_failures = count_notify_failures()
@@ -1279,6 +1503,7 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         print(json.dumps(
             {
                 "stops": rows, "transfers": transfer_rows, "lock_hits": lock_hits,
+                "done_lanes": done_rows,
                 "notify_failures": notify_failures,
                 "deploy_authorizations": deploy_auths,
                 "deploy_outcomes": deploy_outcomes,
@@ -1409,6 +1634,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_hb.add_argument("--stale-minutes", type=float, default=HEARTBEAT_STALE_MINUTES_DEFAULT)
     p_hb.add_argument("--json", action="store_true")
     p_hb.set_defaults(func=_cmd_check_heartbeat)
+
+    # 🆕 写侧入口（`#504`）：路径由工具按 REPO_ROOT 解析，泳道不再自己拼。
+    # 🔴 刻意**不提供** `--heartbeat-file` / `--repo-root`——那两个参数中的任何
+    # 一个都会把锚的解析权重新交回给被锚的人，即本缺陷的成因本身。
+    p_beat = sub.add_parser(
+        "heartbeat",
+        help="心跳写侧入口：按 REPO_ROOT 解析路径追加一行（--done 同时标终态）",
+    )
+    p_beat.add_argument("--lane", required=True, help="泳道标识，决定心跳文件名")
+    p_beat.add_argument("--text", required=True, help="一句话：在做什么／产出落点")
+    p_beat.add_argument("--done", action="store_true", help="收工：写 DONE 哨兵并把泳道置终态")
+    p_beat.add_argument("--batch", default=None, help="可选，供 summary 按批过滤终态泳道")
+    p_beat.add_argument("--json", action="store_true")
+    p_beat.set_defaults(func=_cmd_heartbeat)
 
     p_summary = sub.add_parser("summary", help="D6：本批停 N 次｜逐次…一行 ＋ 本批转出 N 项一行")
     p_summary.add_argument("--batch", default=None)
