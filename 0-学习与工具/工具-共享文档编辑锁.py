@@ -1448,6 +1448,67 @@ def _parse_status_domain_fields(status_cell: str) -> tuple[str | None, str | Non
     return status_value, domain_value, rest
 
 
+#: §一「状态」列的列位（`queue_table.SECTION_COLUMN_NAMES["一"]` 第 6 列）。
+#: 本文件既有代码一律裸写 `cells[5]`，此处给它一个名字**只在新增守卫里用**，
+#: 不顺手改既有调用点——那是一次与本变更无关的全文件改动。
+SECTION_ONE_STATUS_COL = 5
+#: 会进入协议〇.9 措施 C 机制类 WIP 计数的状态取值（与 `_count_mechanism_wip`
+#: 的排除口径互为反面：done／blocked／timed= 结构性不计数）。**写侧 `[D:]`
+#: 守卫只管这三个**，理由见 `_section_one_domain_field_violations`。
+MOVABLE_STATUS_VALUES = ("open", "partial", "hold")
+
+
+def _section_one_domain_field_violations(cells: list[str]) -> list[str]:
+    """ⓘ3：§一 一行的「状态」列必须同时写出 `[S:x]` **与** `[D:机|业]`
+    （队列 §一 `#523`，2026-09-09，写侧守卫）。
+
+    🔴 **这是"容忍读、严格写"的写侧那一半，不是推翻"`[D:]` 可缺"这条判据。**
+    读侧（`_parse_status_domain_fields`／`_count_mechanism_wip`／任何解析
+    digest 输出的正则）**必须继续容忍 `[D:]` 缺失**——`#523` 立行当天就是因为
+    值周方自写正则 `\\[S:…\\]\\[D:…\\]` 不容忍缺失而静默丢掉 9 行、得出
+    "`--digest` 漏 9 行"这个错误结论。两件事方向相反、互不冲突：**读侧宽容
+    是为了别丢行，写侧严格是为了别再产生这种行**（Postel 原则的正用，同
+    ⑶ 与 sweep 那一对的关系）。
+
+    适用面只有**经本 CLI 写入**这条路。机器人自动追行（`queue_appender.py`）
+    不走 CLI、且判不了域归属，**本次刻意不改它**（本棒不触碰企微机器人服务），
+    它产生的缺域行由 `_count_mechanism_wip` 的降级日志兜住、由人事后补齐。
+
+    缺 `[S:]` 的行**不在本项范围内**：那由既有 CI 硬门禁
+    `工具-队列结构lint.py` 与 `_validate_release_structure` 的关键格哨兵管，
+    在这里再报一次只会让同一件事有两个说法。
+
+    🔴 **只管可动状态（open／partial／hold），done／blocked／timed= 一律放行**
+    ——判据面与危害面对齐，不多守一寸（apply 期实测收窄，见下）：
+      · `#523` 的危害**只**是"可动行不计入 WIP ⇒ 计数算少"，而 done／blocked／
+        `timed=` 本就被 `_count_mechanism_wip` 结构性排除，缺不缺 `[D:]` 对
+        计数**没有任何影响**——`#523` 自己的实证就是这句话：那 9 行缺域行
+        "没出事纯属巧合，因为恰好全是 `[S:done]`"。
+      · 反过来会**新造一个阻断**：存量缺域行（机器人自动追行）想销号，就得
+        先替机器人编一个它当初判不出的域——把一条"补齐元数据"的建议变成了
+        "关行"的前置条件。
+      · 实撞（本棒 apply 期）：不收窄时 `DualFileRoutingTests` 三条用例当场
+        转红（它们把 §一 #301 写成 `[S:done] …`，测的是**双文件路由**、与域
+        字段无关）。🔴 **不改它们的断言、不跳用例**——改的是本判据：它们红
+        得对，是守卫多守了一寸。
+    """
+    if len(cells) <= SECTION_ONE_STATUS_COL:
+        return []
+    status_cell = cells[SECTION_ONE_STATUS_COL]
+    status_value, domain_value, _rest = _parse_status_domain_fields(status_cell)
+    if status_value is None or domain_value is not None:
+        return []
+    if status_value not in MOVABLE_STATUS_VALUES:
+        return []
+    row_id = cells[0].strip() if cells and cells[0].strip() else "?"
+    return [
+        f"§一 #{row_id} 状态列写了 `[S:{status_value}]` 但**缺 `[D:机|业]` 域字段**——"
+        f"域字段缺失的可动行不计入协议〇.9 措施 C 的机制类 WIP，"
+        f"**WIP 算少 ＝ 该拦的没拦、超限行照立**（队列 #523）。"
+        f"请写成 `[S:{status_value}][D:机]` 或 `[S:{status_value}][D:业]`。"
+    ]
+
+
 def _count_mechanism_wip(section_one_text: str) -> tuple[int, list[str]]:
     """协议〇.9 措施 C：机制类可动 WIP 计数（队列 #308 决策点 6）。统计
     满足以下全部条件的 §一 行：域字段为「机」；状态字段取值属于
@@ -1458,6 +1519,22 @@ def _count_mechanism_wip(section_one_text: str) -> tuple[int, list[str]]:
     返回 (计数, 降级日志列表)——状态字段缺失/非法的行不计入计数，且不静默
     跳过：每一行都产出一条降级日志交调用方按需打印（design.md 决策点 1
     "非静默降级"）。
+
+    🔴 **`[D:]` 缺失是第二条降级路径，2026-09-09 由队列 §一 `#523` 补上**：
+    `[S:x][D:y]` **不是恒定形态、`[D:]` 可缺**（`5-平台底座/wecom-aibot-
+    service/aibot_service/queue_appender.py` 的自动追行恒写 `[S:open]` 而不
+    写域字段——机器人判不了机制/业务归属，这是设计如此）。改前这类行走
+    `domain_value != "机"` 那一支被**静默跳过**，与"这行确实是业务域"完全
+    不可区分 ⇒ **可动行不计入 WIP ＝ 计数算少 ＝ 该拦的没拦**（WIP 超限是
+    阻断性的，算少直接让超限行照立）。
+    实证（`#523`，`--digest` 现取）：§一 134 行中 9 行只有 `[S:x]` 没有
+    `[D:x]`，且 9 行全是"企微反馈自动归档"形态；**当时没出事纯属巧合**——
+    9 行恰好全是 `[S:done]`，而 WIP 只计 open/partial/hold。
+
+    ⚠️ **只告警、不改计数**：这些行的真实域**未知**，把它们一律计成"机"是
+    另一种猜（且会把业务行算进机制上限）。故本函数照旧不计，但**每一条可动
+    的缺域行都产出一条降级日志**，让"算少"这件事从不可见变成可见——与上面
+    那条"状态字段缺失/非法"完全同一范式。
     """
     count = 0
     degraded: list[str] = []
@@ -1468,6 +1545,15 @@ def _count_mechanism_wip(section_one_text: str) -> tuple[int, list[str]]:
         status_value, domain_value, rest = _parse_status_domain_fields(cells[5])
         if status_value is None:
             degraded.append(f"§一 #{row_id} 状态字段缺失/非法，已跳过 WIP 计数（非静默降级）")
+            continue
+        if domain_value is None and status_value in MOVABLE_STATUS_VALUES:
+            # 只对**可动**状态告警：done/blocked/timed 本就不进计数，为它们
+            # 刷屏会让这条告警变成噪声，噪声化的告警等于没有（`#143` 教训）。
+            degraded.append(
+                f"§一 #{row_id} 状态为 [S:{status_value}]（可动）但**缺 [D:机|业] 域字段**，"
+                f"已跳过 WIP 计数 ⇒ 本次机制类 WIP 可能算少（非静默降级，队列 #523）。"
+                f"请用 `edit-row --section 一 --number {row_id} --set 状态=\"[S:{status_value}][D:机|业] …\"` 补齐。"
+            )
             continue
         if domain_value != "机":
             continue
@@ -3004,11 +3090,47 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
     # 被放行改成看似"已确认"的状态。
     if args.section == "二":
         section_two_problems = _file_list_git_state_violations(new_cells, REPO_ROOT)
+        # ── ⓘ2（队列 §一 #513，2026-09-09）：裸路径守卫，**按归属分档** ──
+        # 「文件清单」在本次改动值里 ⇒ 硬阻断（是这次写进去的）；不在 ⇒ 只告警
+        # 放行（存量：2026-09-09 实测 §二 待处理 34 行里 28 行零反引号片段，
+        # 一律硬拦会把"给存量批次销状态"这个动作整个堵死，而销状态的人并没有
+        # 写坏那一格）。判据与 `_opener_attribution` 同源，见 ⓘ2 长注释。
+        # 🔴 **告警不是降级成静默**：它照旧打印、照旧点名，只是不阻断。
+        bare_problems = _file_list_bare_path_violations(new_cells)
+        file_list_touched = any(
+            queue_table.resolve_column_index("二", name) == 1
+            for name in changed_values
+        )
+        if bare_problems and file_list_touched:
+            section_two_problems.extend(bare_problems)
+        elif bare_problems:
+            for problem in bare_problems:
+                print(f"⚠ {problem}")
+            print("  （本次未改动「文件清单」格，按存量处理：只告警、不阻断。"
+                  "该格由其登记方按 `#443` 清扫回改。）")
         if section_two_problems:
             print(f"✗ §二 改动被拒绝（{len(section_two_problems)} 项，未修改目标文件）：")
             for problem in section_two_problems:
                 print(f"  - {problem}")
             return 1
+
+    # ── ⓘ3（队列 §一 #523，2026-09-09）：§一 状态列 `[D:]` 守卫，同样分档 ──
+    # 「状态」在本次改动值里 ⇒ 硬阻断；不在 ⇒ 告警放行（存量缺域行多为机器人
+    # 自动追行，改它触碰区列的人不该为那一格负责）。
+    if args.section == "一":
+        domain_problems = _section_one_domain_field_violations(new_cells)
+        status_touched = any(
+            queue_table.resolve_column_index("一", name) == SECTION_ONE_STATUS_COL
+            for name in changed_values
+        )
+        if domain_problems and status_touched:
+            print(f"✗ §一 改动被拒绝（{len(domain_problems)} 项，未修改目标文件）：")
+            for problem in domain_problems:
+                print(f"  - {problem}")
+            return 1
+        for problem in domain_problems:
+            print(f"⚠ {problem}")
+            print("  （本次未改动「状态」格，按存量处理：只告警、不阻断。）")
 
     new_line = "| " + " | ".join(new_cells) + " |"
 
@@ -3155,12 +3277,26 @@ def cmd_append_row(args: argparse.Namespace) -> int:
             queue_texts[args.file] = text
         section_two_problems = _file_list_path_violations(parsed_cells, REPO_ROOT)
         section_two_problems.extend(_file_list_git_state_violations(parsed_cells, REPO_ROOT))
+        # ⓘ2（队列 §一 #513，2026-09-09）：裸路径即拒。append-row 整行都是本次
+        # 写的，无"存量降级"一档（对照 `cmd_edit_row` 的分档，理由见 ⓘ2 长注释）。
+        section_two_problems.extend(_file_list_bare_path_violations(parsed_cells))
         collision = _batch_prefix_collision(parsed_cells[0], queue_texts)
         if collision:
             section_two_problems.append(collision)
         if section_two_problems:
             print(f"✗ §二 写入被拒绝（{len(section_two_problems)} 项，未修改目标文件）：")
             for problem in section_two_problems:
+                print(f"  - {problem}")
+            return 1
+
+    # ⓘ3（队列 §一 #523，2026-09-09）：§一 新行的状态列须同时写出 `[S:]` 与
+    # `[D:]`。挂在与 §二 同一处（回读切列之后、写盘之前），判据见
+    # `_section_one_domain_field_violations`。
+    if args.section == "一":
+        domain_problems = _section_one_domain_field_violations(parsed_cells)
+        if domain_problems:
+            print(f"✗ §一 写入被拒绝（{len(domain_problems)} 项，未修改目标文件）：")
+            for problem in domain_problems:
                 print(f"  - {problem}")
             return 1
 
@@ -5045,6 +5181,93 @@ def _file_list_git_state_violations(cells: list[str], repo_root: Path) -> list[s
     return problems
 
 
+# ── ⓘ2 §二「文件清单」**裸路径**写侧守卫（队列 §一 #513，2026-09-09）──────
+#
+# 🔴 **病灶不是告警、是静默**：`_pending_batch_fragments`（本文件、release ⑹
+# 侧）与 `工具-落库sweep.py::_resolve_batch_fragments`（sweep 侧取活）**都只
+# 提取反引号内的串**（两处各自独立实现，见各自注释）。文件清单若写成裸路径，
+# 两处一致地提取到 **0 个片段** ⇒ sweep 取不到该批任何文件 ⇒ **整批静默不入库**，
+# 而 release ⑹ 只在恰好跑到时才拦得住（写批次那一刻不拦、sweep 那一轮不报）。
+#
+# 🔑 **真因是反引号，与井号无关**（`#513` 三条实证推翻了流行解释）：
+#   ⒜ `1-转型规划/0-全景路线图/队列行日志/` 磁盘 141 件、`git ls-files` 亦
+#      141 件 ⇒ 含 `#` 的路径一直入库正常；
+#   ⒝ 同形态对照——`队列行日志/#489.md`（带反引号）当日入库，
+#      `队列行日志/#506.md`（裸路径）未跟踪；
+#   ⒞ 两侧提取代码同源，都是 `re.findall(r"`([^`]+)`", …)`。
+#
+# **判据只认"会不会被 sweep 取到"这一件事**，故：
+#   ⓐ 只认**以已知扩展名收尾**的裸串。刻意**不认** `_fragment_is_path_like`
+#     的另一支（以 `/` 收尾的目录前缀）——目录前缀即便写进反引号，sweep 的
+#     后缀匹配（`p == f` 或 `p.endswith("/" + f)`）也永远匹配不到任何脏文件
+#     （脏路径是文件、不以 `/` 收尾），**把它包进反引号并不会改变任何结果**，
+#     拦它纯属噪声。而正文里 `reports/ 目录`／`**/reports/ 规则` 这类叙述极
+#     常见（存量 `B-0902_47` 行即如此），按"含 `/` 收尾"判会当场误伤。
+#   ⓑ 反引号跨度整段剔除后再扫——只看**没被保护**的那部分。
+#   ⓒ 预登记行豁免，与 ⑶／ⓘ1 同一豁免口径（其清单本就允许是范围性描述）。
+#
+# 🔴 **本项只建写侧守卫，不回改存量**（`#513` 明写，回改归 `#443` 清扫）。
+# 实测（2026-09-09，两份队列真身，手段＝本文件 `_table_data_rows` ＋
+# `_leading_status_segment` 现取）：§二 待处理 34 行中 **28 行**文件清单零
+# 反引号片段。故 `cmd_edit_row` 侧**按"本次是否真的写了这一格"分档**：
+#   · 「文件清单」在本次 `--set`／`--append` 里 ⇒ 硬阻断（是你这次写进去的）；
+#   · 不在 ⇒ 只打 ⚠ 告警放行（存量，本次没碰它，不该由你负责）。
+# 判据与 `_opener_attribution` 同源：**一道守卫不得让人为自己没碰过的东西
+# 负责**。`cmd_append_row` 无此分档——新行整行都是本次写的。
+_BACKTICK_SPAN_RE = re.compile(r"`[^`]*`")
+#: 裸串切分符：空白 ＋ 中英文列举分隔 ＋ 各类括号引号。刻意**不含** `/`（那是
+#: 路径分隔符）与 `.`（扩展名靠它）。
+_BARE_TOKEN_SPLIT_RE = re.compile(
+    r"[\s；;、，,｜|（）()【】\[\]「」『』《》〈〉<>\"'“”‘’]+"
+)
+#: 收尾标点不算路径的一部分（与 `_parse_registration_waiver_clauses` 同族口径）。
+_BARE_TOKEN_TRIM_CHARS = "。.,，、；;：:！!？?…"
+
+
+def _bare_path_like_tokens(file_list_cell: str) -> list[str]:
+    """「文件清单」格里**没有被反引号保护**、却以已知扩展名收尾的串。
+
+    返回保序去重后的清单；空清单 ＝ 这一格里没有 sweep 取不到的裸路径。
+    判据窄化的理由见上方模块级长注释 ⓐ。
+    """
+    residue = _BACKTICK_SPAN_RE.sub(" ", file_list_cell)
+    found: list[str] = []
+    seen: set[str] = set()
+    for raw in _BARE_TOKEN_SPLIT_RE.split(residue):
+        token = raw.strip().strip(_BARE_TOKEN_TRIM_CHARS).strip()
+        if not token or token in seen:
+            continue
+        if PurePosixPath(token.replace("\\", "/")).suffix.lower() in PATH_LIKE_EXTENSIONS:
+            seen.add(token)
+            found.append(token)
+    return found
+
+
+def _file_list_bare_path_violations(cells: list[str]) -> list[str]:
+    """ⓘ2：§二 一行「文件清单」列（cells[1]）的裸路径守卫。预登记行豁免。
+
+    **不碰文件系统、不调 git**——它回答的是"sweep 能不能看见这些串"，
+    与这些路径存不存在无关（存在性由 ⑶／ⓘ1 另行把关）。故可在任意临时目录
+    里单测，且与 ⓘ1 的 fail-open 边界互不影响。
+    """
+    if len(cells) < 4:
+        return []
+    if _leading_status_segment(cells[3]).startswith(PREREGISTERED_STATUS_PREFIX):
+        return []
+    bare = _bare_path_like_tokens(cells[1])
+    if not bare:
+        return []
+    listed = "、".join(f"「{t}」" for t in bare[:8])
+    more = f"（另有 {len(bare) - 8} 个未列出）" if len(bare) > 8 else ""
+    return [
+        f"§二 批次「{cells[0]}」文件清单里有 {len(bare)} 个**未用反引号包裹**的路径："
+        f"{listed}{more}——`工具-落库sweep.py::_resolve_batch_fragments` 与本文件 "
+        f"release ⑹ 的 `_pending_batch_fragments` **都只提取反引号内的串**，"
+        f"裸写等于 sweep 一个文件都取不到、**整批静默不入库**（`#513`：2026-09-09 "
+        f"`队列行日志/#506.md` 即因此未被跟踪）。请把每个路径写成 `` `路径` `` 形态。"
+    ]
+
+
 # ── ⑸ §二 批次号前缀查重 ────────────────────────────────────────────
 # 实测（2026-08-23）：现存批次号前缀 174 个，**其中 27 个撞号（15.5%）**
 # ——立行时以为是"同族第三次"，实际是第 27 次。根因＝批次号由各方自行读
@@ -5433,6 +5656,60 @@ _OTHER_WAIVER_MARKERS = (
 REGISTRATION_WAIVER_DEFAULT_DUE_IS_TODAY = True
 
 
+#: 括注定界符（全角／半角各一对）。只认这两对——中括号与书名号在真实路径
+#: 里出现过（`队列行日志/#N.md` 一族没有，但 `openspec/changes/{a,b}.md`
+#: 这类花括号速记有），把它们也当括注会误伤。
+_WAIVER_ANNOTATION_BRACKETS = {"（": "）", "(": ")"}
+
+
+def _split_parenthetical_annotations(body: str) -> tuple[str, str]:
+    """把一段豁免正文拆成 `(去掉全部括注后的正文, 全部括注原文拼接)`。
+
+    存在的理由见 `_parse_registration_waiver_clauses` docstring ⑶ 段：旧口径
+    「在第一个左括号处截断」会把第二个之后的路径**静默丢掉**。
+
+    实现取舍（都写在这里，免得下一位当 bug 修）：
+      · **括注原文连同括号一起保留**在第二个返回值里——`作者 X，到期 MM-DD`
+        的既有解析正则用 `）`／`)` 当右边界（`[^，,）)]+`），去掉括号会让相邻
+        两段括注粘连、把下一段的开头吃进 `作者` 里。
+      · **不处理同类括号嵌套**（遇到的第一个闭括号即结束本段）：真实语料里
+        `（作者 …（代 …）…）` 这种写法没有出现过，为它加一层深度计数只会让
+        "哪里算结束"变得更难被读者预测。嵌套只会让括注切多段，不会漏路径。
+      · **括号未闭合时退回旧口径**——从那个左括号起、直到正文结束全算括注。
+        这是保守侧：宁可少认一个路径并由 `_valid_waiver_paths` 显式告警，
+        也不要把半句话当路径去匹配。
+    """
+    kept: list[str] = []
+    annotations: list[str] = []
+    current: list[str] = []
+    closer: str | None = None
+    for ch in body:
+        if closer is None:
+            if ch in _WAIVER_ANNOTATION_BRACKETS:
+                closer = _WAIVER_ANNOTATION_BRACKETS[ch]
+                current = [ch]
+            else:
+                kept.append(ch)
+        else:
+            current.append(ch)
+            if ch == closer:
+                annotations.append("".join(current))
+                current = []
+                closer = None
+    if closer is not None:  # 未闭合：整段算括注（保守侧，见 docstring）
+        annotations.append("".join(current))
+    return "".join(kept), "".join(annotations)
+
+
+def _waiver_candidate_looks_like_path(candidate: str) -> bool:
+    """候选串"形如路径"——**只用于写告警文案，不参与生效与否的判定**。
+
+    复用 ⑶ 既有的 `_fragment_is_path_like`（扩展名／目录前缀两种形态），
+    不另造一套判据：同一个仓库里"什么算路径"只该有一个答案。
+    """
+    return _fragment_is_path_like(candidate)
+
+
 def _parse_registration_waiver_clauses(source: str) -> list[dict]:
     """把一段文本里的全部 `登记豁免：` 条目解析成结构化清单。
 
@@ -5447,8 +5724,26 @@ def _parse_registration_waiver_clauses(source: str) -> list[dict]:
       ⑴ 路径分隔符同时接受 `；`／`;`／`、`——三者在本仓库既有正文里都真实
          出现过；
       ⑵ 反引号包裹与否都接受（止血口径示例里两种写法都有过）；
-      ⑶ 条目正文在**第一个左括号**处截断——括号后面无论是 `（作者 …，到期
-         …）` 还是随手写的一句说明，都是注解不是路径。
+      ⑶ **括注整段剔除、不参与路径匹配**（队列 §一 `#513`／`#523` 同批，
+         2026-09-09 改）。
+
+    🔴 **⑶ 是本次改掉的那一条，改前是「在第一个左括号处截断」。**
+    截断口径在"一条豁免只点名一个路径、且括注只在末尾"时看起来永远对，
+    多路径各带括注时**静默丢掉第二个之后的全部路径**——两次独立实证：
+      ⒜ 泳道 `519-scanner-test`：`登记豁免：a.md（本批新建）；b.md（同批）
+         （作者 …，到期 …）` ⇒ 只解析出 `a.md`，`b.md` 连一句告警都没有；
+      ⒝ 看护者 `OP-0909-Q` 避开括号后改撞另一头：最后一个 `；` 之后的说明
+         性文字被当成路径去匹配，回显 `✗ 豁免里点名的「…」既不在工作树内、
+         也不在本次脏文件集合中，不生效`。
+    ⇒ 与 `#513`（裸路径 ⇒ sweep 取不到 ⇒ 整批静默不入库）**同族**：登记的
+    豁免看起来生效、实则没覆盖到。现口径 ＝ 把全部 `（…）`／`(…)` 括注段
+    整体摘出来只喂给 `作者`／`到期` 的解析，剩下的正文才按分隔符切路径。
+
+    ⚠️ **形态只用来写文案、不用来做判定**（避免修一个静默降级又造一个）：
+    候选是不是"形如路径"只影响 `_valid_waiver_paths` 那句告警怎么写；
+    某个候选是否生效，判据仍然只有"在工作树内存在，或在本次脏文件集合中"。
+    否则一个扩展名不在 `PATH_LIKE_EXTENSIONS` 里的真实文件（`.vbs`／
+    `.dc.html` 一类）会被形态判据静默拒掉——那是新造一条同族缺陷。
     """
     clauses: list[dict] = []
     start = 0
@@ -5465,10 +5760,7 @@ def _parse_registration_waiver_clauses(source: str) -> list[dict]:
         body = source[body_start:body_end]
         start = body_end if body_end > body_start else body_start
 
-        head, _, tail = body.partition("（")
-        if not _:  # 没有全角括号时再试半角
-            head, _, tail = body.partition("(")
-        annotation = tail
+        head, annotation = _split_parenthetical_annotations(body)
 
         paths = []
         for piece in re.split(f"[{REGISTRATION_WAIVER_CLAUSE_SEPARATORS}]", head):
@@ -5534,6 +5826,15 @@ def _valid_waiver_paths(
 
     到期已过的条目整条失效（等同没写），并在说明里点出来——**默默忽略一条
     过期豁免，和默默放行一条泛豁免同样坏**：写的人看不出差别。
+
+    🔴 **失效候选必须显式告警、并说清是哪一类失效**（队列 §一 `#513`／`#523`
+    同批新增，2026-09-09）：候选串分两类，文案不同、判定相同——
+      · **形如路径但没找到** ⇒ 多半是路径写错／已被提交掉，提示去核；
+      · **压根不形如路径** ⇒ 多半是括注残留或一句说明性文字被当成了路径
+        （`OP-0909-Q` 实撞形态），提示"它没有被当作豁免生效"。
+    再加一条**整条级**的汇总告警：一条豁免解析出了候选、却一个都没生效时，
+    单看逐条 `✗` 仍可能被读成"少放行了一个"，实际是**这条豁免整条等于没写**
+    ——这正是 `#513` 那族"看起来生效、实则没覆盖到"的失效形态。
     """
     from datetime import date as _date
     today = today or _date.today()
@@ -5547,11 +5848,26 @@ def _valid_waiver_paths(
                 f"整条不生效：{clause['raw'][:80]}…"
             )
             continue
+        clause_valid = 0
         for path in clause["paths"]:
             if path in dirty_set or (repo_root / path).exists():
                 valid.add(path)
+                clause_valid += 1
+            elif _waiver_candidate_looks_like_path(path):
+                notes.append(
+                    f"✗ 豁免里点名的「{path}」既不在工作树内、也不在本次脏文件集合中，不生效。"
+                )
             else:
-                notes.append(f"✗ 豁免里点名的「{path}」既不在工作树内、也不在本次脏文件集合中，不生效。")
+                notes.append(
+                    f"✗ 豁免里的「{path}」不形如路径（无已知扩展名、也不是以 `/` 收尾的目录前缀），"
+                    f"**未被当作豁免生效**——多半是括注残留或一句说明性文字落进了路径位。"
+                    f"路径请写仓库根相对完整路径，说明请写进 `（…）` 括注里。"
+                )
+        if clause["paths"] and clause_valid == 0:
+            notes.append(
+                f"🔴 这一条豁免解析出 {len(clause['paths'])} 个候选、**0 个生效** ⇒ 整条等同没写："
+                f"{clause['raw'][:80]}…"
+            )
     return valid, notes
 
 
