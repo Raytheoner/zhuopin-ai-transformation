@@ -716,12 +716,51 @@ class SweepClass13(unittest.TestCase):
     def test_暂缓复核周期为30天(self):
         self.assertEqual(self.sweep.PLAN_BACKPRESSURE_SUSPENDED_REVIEW_DAYS, 30)
 
+    # 🔴 队列 §一 `#519`：以下两条**自造 payload**，不拿实仓活数据。
+    #
+    # 原写法是 `M.to_payload(M.classify(REPO_ROOT))` ＋ 断言正文含「并入审核」。而那句
+    # 文案挂在 `_render_plan_backpressure_alert` 的 `if drafts:` 分支上，`drafts` 只由
+    # 「非暂缓的三处皆无」场景产生 ⇒ **该断言实测的是「当日仓库里恰好还有几个未承接
+    # 场景」，不是渲染逻辑**。2026-09-07 上线时可推送 5 ⇒ 分支进得去、绿；2026-09-08
+    # `OP-0907-AL` 做完协议〇.10 并入审核、落 §一 `#508`–`#512` 后可推送 0 ⇒ 分支进不
+    # 去、必红。**主指标 5→0 正是包 tasks 8.5 写的「主指标目标恒 0」**——即工具越成功，
+    # 用例越红。⇒ 改为自造 payload（仍走真实 `to_payload`，只换输入），使被测对象回到
+    # 渲染分支本身；**一个断言都没弱化、没跳过、没删用例**（`rules/两桌同步与取证.md`）。
+    #
+    # 本类的定位是「只依赖 sweep 的公开行为（常量 ＋ 三个函数）」（见本类章节头），与
+    # 包 tasks 8.1「四个已知误判形态各有一条在真实数据上跑的断言」互不冲突——那四条在
+    # `Real*` 系列，不在这里。
+
+    def _synthetic_payload(self, code: str, suspended: str = "") -> dict:
+        verdicts = [M.ScenarioVerdict(
+            scenario=M.Scenario(code, "采购", f"{code} 自造场景·仅供渲染用例",
+                                "2026-12", (code,), (), suspended),
+            prereq_row=None)]
+        payload = M.to_payload(verdicts)
+        # 前提自检：自造件必须真的落进「三处皆无」，否则本组用例测的是空气。
+        self.assertEqual([d["code"] for d in payload["unaccepted"]], [code])
+        return payload
+
     def test_告警正文含范围声明与并入审核提醒(self):
-        payload = M.to_payload(M.classify(REPO_ROOT))
+        payload = self._synthetic_payload("ZZ9")
         codes = [d["code"] for d in payload["unaccepted"] if not d["suspended"]]
+        self.assertEqual(codes, ["ZZ9"])
+        self.assertTrue(payload["queue_row_drafts"],
+                        "非暂缓的三处皆无场景必出草案，否则本用例前提不成立")
         text = self.sweep._render_plan_backpressure_alert(payload, codes)
         self.assertIn("不构成排期建议", text)
         self.assertIn("并入审核", text)
+
+    def test_无草案时正文仍含范围声明但不提并入审核(self):
+        # 🔴 反向对照组（本文件 docstring：凡守卫类断言都配一条"把守卫拆掉后它必须失
+        # 败"的对照）。上一条若退化成恒真，这一条会立刻红。
+        # 它同时钉住**目标态**（主指标恒 0／整批暂缓）下的正文形态——2026-09-08 起实仓
+        # 就在这个态上，此前无任何用例覆盖它，才让上一条被当日数据牵着走。
+        payload = self._synthetic_payload("ZZ8", suspended="采购域整域暂缓·仅供用例")
+        self.assertEqual(payload["queue_row_drafts"], [])
+        text = self.sweep._render_plan_backpressure_alert(payload, ["ZZ8"])
+        self.assertIn("不构成排期建议", text)
+        self.assertNotIn("并入审核", text)
 
     def test_负例不触发任何自动的判据收紧(self):
         # 🔴 spec：负例 MUST NOT 触发任何自动的判据收紧。判据落在"sweep 里没有任何
