@@ -169,7 +169,13 @@ def test_append_pending_task_inserts_after_last_row(tmp_path):
 def test_append_pending_task_emits_machine_status_field(tmp_path):
     """队列 #308（2026-08-09）：新增 §一 行状态列须以机器字段开头，否则
     会被 工具-队列结构lint.py 的 CI 硬门禁拦下；自动追加行状态恒为
-    `[S:open]`（域字段留空，机器人不判定机制/业务归属）。"""
+    `[S:open]`。
+
+    🔴 域字段：本夹具的 `queue.md` 不在两份正式队列文件之列 ⇒ 判不出域、
+    回落"不写 `[D:]`"（队列 `#532`，见 `queue_appender.resolve_row_domain`）。
+    #308 当年那句"域字段留空——机器人不判定机制/业务归属"**已被 `#532` 订正**：
+    写两份正式队列文件时域是查表查得出的，覆盖用例在
+    `test_queue_appender_domain_routing.py` ④ 组。"""
     text = (
         "## 一、任务看板\n\n"
         "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
@@ -419,6 +425,13 @@ class _FlakyPath:
         行为变了（本目录下没有那份文件，解析仍回落 `queue_path` 自身，
         本组用例的语义一字未变）。"""
         return self._real.parent
+
+    @property
+    def name(self):
+        """队列 #532：`resolve_row_domain` 按**文件名**查域——同 `parent`
+        一样只是把替身补全（本组夹具叫 `queue.md`，不在两份正式队列文件之
+        列 ⇒ 判不出域、回落"不写 `[D:]`"，与本组用例要测的竞态无关）。"""
+        return self._real.name
 
     def __str__(self):
         return str(self._real)
