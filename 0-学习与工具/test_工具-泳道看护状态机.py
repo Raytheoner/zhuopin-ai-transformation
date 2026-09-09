@@ -13,7 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -482,6 +482,249 @@ class LaneWatchStateMachineTests(unittest.TestCase):
         self.assertEqual(rows[0]["tier"], self.module.TIER_WATCHDOG)
         self.assertEqual(rows[0]["answer"], "仍在等")
 
+    # ---- 心跳读写同锚 ＋ 终态豁免（队列 §一 `#504`，openspec
+    #      `lane-watch-heartbeat-visibility`；tasks §3） ----
+
+    def test_heartbeat_written_in_worktree_cwd_is_read_from_main_checkout(self):
+        """态一（tasks 3.1）：worktree 内写、主 checkout 读得到。
+
+        模拟手法＝把进程 CWD 切到一个**冒充 linked worktree** 的临时目录，
+        再调写侧入口；随后把 CWD 切回来（＝看护者从主工作区跑看门狗）读。
+        缺陷未修时写侧会按 CWD 落到那个假 worktree 里，读侧读不到。
+        """
+        fake_worktree = self.root / ".claude" / "worktrees" / "agent-xxx"
+        fake_worktree.mkdir(parents=True)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(fake_worktree)
+            self.module.write_heartbeat(lane="504-heartbeat-vis", text="已开工")
+        finally:
+            os.chdir(original_cwd)
+
+        # 写侧没有在 CWD 下留任何东西——路径不由调用方工作目录决定。
+        self.assertFalse((fake_worktree / "reports").exists())
+
+        result = self.module.check_heartbeat(
+            batch="B1", wave=1, lane="504-heartbeat-vis",
+            heartbeat_file=self.module.heartbeat_rel_path("504-heartbeat-vis"),
+            notify_fn=_StubNotifier(),
+        )
+        self.assertFalse(result["stale"])
+        self.assertIsNone(result["skipped_reason"])
+        # 未落 pause、未改状态。
+        self.assertEqual(self.module._read_state().get("lanes", {}), {})
+
+    def test_heartbeat_write_side_and_read_side_resolve_same_absolute_path(self):
+        """tasks 3.3：写侧解出的绝对路径 == 读侧解出的绝对路径（两侧同锚断言）。
+
+        🔴 本断言是「MUST 复用模块级 REPO_ROOT」那条的机器守——只要有人给
+        写侧加回 `os.getcwd()`／`git rev-parse`／`--repo-root`，本例即红。
+        """
+        lane = "504-heartbeat-vis"
+        rel = self.module.heartbeat_rel_path(lane)
+        write_side = self.module.write_heartbeat(lane=lane, text="里程碑一")["path"]
+        read_side = self.module.resolve_heartbeat_path(rel)
+        self.assertEqual(Path(write_side), read_side)
+        self.assertEqual(read_side.parent.parent.parent, self.module.REPO_ROOT)
+
+        # 换一个 CWD 再解一次，两次必须相等（锚恒定，不随调用方漂移）。
+        other = self.root / "另一个工作目录"
+        other.mkdir()
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(other)
+            self.assertEqual(self.module.resolve_heartbeat_path(rel), read_side)
+            self.assertEqual(
+                Path(self.module.write_heartbeat(lane=lane, text="里程碑二")["path"]),
+                read_side,
+            )
+        finally:
+            os.chdir(original_cwd)
+
+    def test_check_heartbeat_exempts_done_lane_by_state_record(self):
+        """态二·权威源（tasks 3.2）：`--done` 置终态后，陈旧心跳不判失联。"""
+        lane = "504-heartbeat-vis"
+        self.module.write_heartbeat(lane=lane, text="产出落点：openspec/…", done=True)
+        hb = self.module.resolve_heartbeat_path(self.module.heartbeat_rel_path(lane))
+        old = time.time() - 120 * 60  # 2 小时前，远超 30 分钟阈值
+        os.utime(hb, (old, old))
+
+        state = self.module._read_state()["lanes"][lane]
+        self.assertEqual(state["status"], self.module.STATUS_DONE)
+        self.assertTrue(state["done_at"])
+        self.assertIn("openspec", state["done_note"])
+
+        notifier = _StubNotifier()
+        result = self.module.check_heartbeat(
+            batch="B1", wave=1, lane=lane,
+            heartbeat_file=self.module.heartbeat_rel_path(lane),
+            notify_fn=notifier,
+        )
+        self.assertFalse(result["stale"])
+        self.assertEqual(result["skipped_reason"], "lane_done")
+        self.assertEqual(notifier.messages, [])          # 🔴 未推通知
+        after = self.module._read_state()["lanes"][lane]
+        self.assertEqual(after["status"], self.module.STATUS_DONE)  # 🔴 未落 pause
+
+    def test_check_heartbeat_exempts_legacy_lane_by_trailing_sentinel(self):
+        """态二·回落源（tasks 3.2）：存量泳道只在心跳末行写了 `DONE ｜`。
+
+        🔴 并断言该推断**不回写状态记录**——只读派生，不冒充权威。
+        """
+        hb_dir = self.root / "reports" / "lane-heartbeat"
+        hb_dir.mkdir(parents=True)
+        hb = hb_dir / "旧泳道.md"
+        hb.write_text(
+            "09:00:00 ｜ 已开工\n10:30:00 ｜ 里程碑一\n11:20:00 ｜ DONE ｜ 产出落点：xxx.md\n",
+            encoding="utf-8",
+        )
+        old = time.time() - 90 * 60
+        os.utime(hb, (old, old))
+
+        notifier = _StubNotifier()
+        result = self.module.check_heartbeat(
+            batch="B1", wave=1, lane="旧泳道",
+            heartbeat_file="reports/lane-heartbeat/旧泳道.md",
+            notify_fn=notifier,
+        )
+        self.assertFalse(result["stale"])
+        self.assertEqual(result["skipped_reason"], "lane_done")
+        self.assertEqual(notifier.messages, [])
+        # 🔴 哨兵是只读推断：状态文件里不得因此凭空长出这条泳道。
+        self.assertEqual(self.module._read_state().get("lanes", {}), {})
+
+    def test_check_heartbeat_exempts_stopped_sentinel_with_own_reason(self):
+        """tasks 3.4 · 决策点 4(a)（Shao Peishen 2026-09-08 明答「算有信号」）：
+        `STOPPED ｜` 与 `DONE ｜` 同等豁免，但 `skipped_reason` 分别可辨。"""
+        hb_dir = self.root / "reports" / "lane-heartbeat"
+        hb_dir.mkdir(parents=True)
+        hb = hb_dir / "自停泳道.md"
+        hb.write_text(
+            "09:00:00 ｜ 已开工\n10:00:00 ｜ STOPPED ｜ 停在 design 审，等他答字母\n",
+            encoding="utf-8",
+        )
+        old = time.time() - 90 * 60
+        os.utime(hb, (old, old))
+
+        notifier = _StubNotifier()
+        result = self.module.check_heartbeat(
+            batch="B1", wave=1, lane="自停泳道",
+            heartbeat_file="reports/lane-heartbeat/自停泳道.md",
+            notify_fn=notifier,
+        )
+        self.assertFalse(result["stale"])
+        self.assertEqual(result["skipped_reason"], "lane_stopped")
+        self.assertEqual(notifier.messages, [])
+        self.assertEqual(self.module._read_state().get("lanes", {}), {})
+
+    def test_check_heartbeat_state_done_outranks_stale_sentinel_free_file(self):
+        """决策点 3(a) 优先级：状态记录为权威——文件里没有哨兵也照样豁免。"""
+        lane = "无哨兵但已终态"
+        hb_dir = self.root / "reports" / "lane-heartbeat"
+        hb_dir.mkdir(parents=True)
+        hb = hb_dir / f"{lane}.md"
+        hb.write_text("09:00:00 ｜ 已开工\n", encoding="utf-8")
+        os.utime(hb, (time.time() - 90 * 60,) * 2)
+
+        def _mutate(data):
+            data["lanes"].setdefault(lane, {"status": "running", "history": []})
+            data["lanes"][lane]["status"] = self.module.STATUS_DONE
+
+        self.module._with_state(_mutate)
+        result = self.module.check_heartbeat(
+            batch="B1", wave=1, lane=lane,
+            heartbeat_file=self.module.heartbeat_rel_path(lane),
+            notify_fn=_StubNotifier(),
+        )
+        self.assertEqual(result["skipped_reason"], "lane_done")
+
+    def test_check_heartbeat_terminal_exempt_is_distinguishable_from_healthy(self):
+        """tasks 3.5 · 决策点 5(a)：终态豁免与健康运行的返回必须可区分。
+
+        🔴 CLAUDE.md 常驻纪律——「只读命令结果太干净先怀疑没读到对象」。
+        两种状态下下一步动作完全不同（等 vs 收工），压成同一个输出就是在
+        制造下一个误判。
+        """
+        healthy = self.module.write_heartbeat(lane="健康泳道", text="仍在跑长回归")
+        self.assertTrue(healthy["path"])
+        healthy_result = self.module.check_heartbeat(
+            batch="B1", wave=1, lane="健康泳道",
+            heartbeat_file=self.module.heartbeat_rel_path("健康泳道"),
+            notify_fn=_StubNotifier(),
+        )
+        self.module.write_heartbeat(lane="完工泳道", text="产出落点：xxx", done=True)
+        done_result = self.module.check_heartbeat(
+            batch="B1", wave=1, lane="完工泳道",
+            heartbeat_file=self.module.heartbeat_rel_path("完工泳道"),
+            notify_fn=_StubNotifier(),
+        )
+
+        self.assertFalse(healthy_result["stale"])
+        self.assertFalse(done_result["stale"])
+        self.assertIsNone(healthy_result["skipped_reason"])
+        self.assertEqual(done_result["skipped_reason"], "lane_done")
+        self.assertNotEqual(healthy_result["detail"], done_result["detail"])
+
+    def test_check_heartbeat_already_paused_carries_skip_reason(self):
+        """既有 `already_paused` 分支同步给出 `skipped_reason`，口径一致。"""
+        self.module.pause_lane(
+            batch="B1", wave=1, lane="A", action_key="merge_to_master",
+            waiting_for="是否合入 master", notify_fn=_StubNotifier(),
+        )
+        result = self.module.check_heartbeat(
+            batch="B1", wave=1, lane="A",
+            heartbeat_file="reports/lane-heartbeat/不存在.md",
+            notify_fn=_StubNotifier(),
+        )
+        self.assertTrue(result["already_paused"])
+        self.assertEqual(result["skipped_reason"], "already_paused")
+
+    def test_write_heartbeat_appends_and_creates_dir(self):
+        """目录不存在自建；追加写（不覆盖）；行首带本机时刻。"""
+        lane = "追加泳道"
+        self.assertFalse((self.root / "reports" / "lane-heartbeat").exists())
+        self.module.write_heartbeat(lane=lane, text="已开工")
+        self.module.write_heartbeat(lane=lane, text="仍在等全量回归，预计还要 20 分钟")
+        text = self.module.resolve_heartbeat_path(
+            self.module.heartbeat_rel_path(lane)).read_text(encoding="utf-8")
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        self.assertEqual(len(lines), 2)
+        self.assertIn("已开工", lines[0])
+        self.assertIn("仍在等全量回归", lines[1])
+        self.assertRegex(lines[0], r"^\d{2}:\d{2}:\d{2} ｜ ")
+
+    def test_heartbeat_cli_has_no_repo_root_override(self):
+        """🔴 design §二：写侧 MUST NOT 提供 `--repo-root` 之类的覆盖参数——
+        任何这类参数都会把锚的解析权重新交回给被锚的人，即本缺陷的成因本身。"""
+        buf, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(buf), redirect_stderr(err):
+            with self.assertRaises(SystemExit):
+                self.module.main([
+                    "heartbeat", "--lane", "A", "--text", "x",
+                    "--repo-root", str(self.root),
+                ])
+        self.assertIn("--repo-root", err.getvalue())
+        # 同理不接受 --heartbeat-file（路径由工具算，不由调用方给）。
+        buf, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(buf), redirect_stderr(err):
+            with self.assertRaises(SystemExit):
+                self.module.main([
+                    "heartbeat", "--lane", "A", "--text", "x",
+                    "--heartbeat-file", "reports/lane-heartbeat/A.md",
+                ])
+        self.assertIn("--heartbeat-file", err.getvalue())
+
+    def test_done_lane_appears_in_summary(self):
+        """tasks 2.4：`summary` 接入终态（同 `count_lock_hits` 现取手法）。"""
+        self.module.write_heartbeat(
+            lane="完工泳道", text="产出落点：openspec/…", done=True, batch="B1")
+        rows = self.module.build_done_summary(batch="B1")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["lane"], "完工泳道")
+        line = self.module.format_done_line(rows)
+        self.assertIn("本批终态泳道 1 条", line)
+        self.assertEqual(self.module.format_done_line([]), "本批终态泳道 0 条")
+
     # ---------------- summary（D6） ----------------
 
     def test_summary_empty(self):
@@ -661,6 +904,48 @@ class LaneWatchStateMachineTests(unittest.TestCase):
         code, out = self._run_cli(["summary", "--batch", "B1"])
         self.assertEqual(code, 0)
         self.assertIn("本批停 1 次", out)
+
+    def test_cli_heartbeat_write_then_check_then_done_then_summary(self):
+        """CLI 冒烟全链：写心跳 → 看门狗判健康 → `--done` 标终态 → 看门狗豁免
+        → summary 报出终态泳道。🔴 三种输出必须互不相同（决策点 5(a)）。"""
+        lane = "504-heartbeat-vis"
+        rel = self.module.heartbeat_rel_path(lane)
+
+        code, out = self._run_cli(["heartbeat", "--lane", lane, "--text", "已开工"])
+        self.assertEqual(code, 0)
+        self.assertIn("💓", out)
+
+        code, healthy_out = self._run_cli([
+            "check-heartbeat", "--batch", "B1", "--wave", "1", "--lane", lane,
+            "--heartbeat-file", rel,
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("✓", healthy_out)
+
+        code, out = self._run_cli([
+            "heartbeat", "--lane", lane, "--done", "--batch", "B1",
+            "--text", "产出落点：openspec/changes/lane-watch-heartbeat-visibility/",
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("🏁", out)
+
+        # 把心跳戳推老，证明豁免不是"因为还新鲜"。
+        hb = self.module.resolve_heartbeat_path(rel)
+        os.utime(hb, (time.time() - 90 * 60,) * 2)
+
+        code, done_out = self._run_cli([
+            "check-heartbeat", "--batch", "B1", "--wave", "1", "--lane", lane,
+            "--heartbeat-file", rel,
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("🏁", done_out)
+        self.assertNotIn("🐕", done_out)
+        self.assertNotEqual(healthy_out, done_out)
+
+        code, out = self._run_cli(["summary", "--batch", "B1"])
+        self.assertEqual(code, 0)
+        self.assertIn("本批停 0 次", out)          # 🔴 未因终态而落 pause
+        self.assertIn("本批终态泳道 1 条", out)
 
     def test_cli_lan_status_effective_off_on_unknown_probe(self):
         self.module._load_lan_prober = lambda: (lambda: {"status": "unknown", "on_lan": None})
