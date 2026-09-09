@@ -5741,6 +5741,252 @@ class FileListGitStateViolationTests(unittest.TestCase):
         self.assertIn("✅ 已处理", target.read_text(encoding="utf-8"))
 
 
+class BatchRegistrationDateTests(unittest.TestCase):
+    """`#533`／`OP-0909-AA` ⑴ 之一：批次号 `B-MMDD_…` 解登记日。
+
+    🔴 **方向与 `_resolve_waiver_due_date` 相反**：豁免到期日往未来解，
+    登记日往过去解。两条各自钉死，改错一处这里当场红。
+    """
+
+    def setUp(self):
+        self.m = _load_module()
+
+    def _d(self, batch: str, today):
+        return self.m._resolve_batch_registration_date(batch, today=today)
+
+    def test_same_year_batch(self):
+        from datetime import date
+        self.assertEqual(self._d("B-0908_BN_称呼口径收窄", date(2026, 9, 9)),
+                         date(2026, 9, 8))
+
+    def test_cross_year_batch_resolves_to_previous_year(self):
+        """12-31 登记、01-02 读到 ⇒ **去年**的 12-31，不是 11 个月后的未来。"""
+        from datetime import date
+        self.assertEqual(self._d("B-1231_年末批", date(2027, 1, 2)),
+                         date(2026, 12, 31))
+
+    def test_early_year_batch_read_at_year_end_stays_current_year(self):
+        """反方向：01-02 登记、同年 12-31 读到 ⇒ 仍是**今年**的 01-02。"""
+        from datetime import date
+        self.assertEqual(self._d("B-0102_年初批", date(2026, 12, 31)),
+                         date(2026, 1, 2))
+
+    def test_non_conforming_batch_number_returns_none(self):
+        from datetime import date
+        self.assertIsNone(self._d("B-TEST", date(2026, 9, 9)))
+        self.assertIsNone(self._d("随手写的批次名", date(2026, 9, 9)))
+
+    def test_impossible_calendar_date_returns_none(self):
+        from datetime import date
+        self.assertIsNone(self._d("B-0230_不存在的日期", date(2026, 9, 9)))
+
+
+class FileListGitStateWindowTests(unittest.TestCase):
+    """`#533`／`OP-0909-AA` ⑴：ⓘ1 的校验窗口由「最近 3 个 commit」改为
+    「按登记日的时间窗（`--all --since=<登记日-1天>`）」，批次号解不出日期
+    时退回全历史。
+
+    🔴 **本类钉的是一个已发生的死锁，不是预防性建设**：旧口径按 commit
+    **条数**取窗，一次批收工的 merge 潮（实测 7 次）就把窗口冲掉，该行此后
+    永久不可编辑 —— 连补称呼 lint 的逃生阀 `称呼豁免：` 都做不到。
+    """
+
+    def setUp(self):
+        self.m = _load_module()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        self.m.REPO_ROOT = self.root
+        self._git("init", "-q")
+        self._git("config", "user.email", "t@example.com")
+        self._git("config", "user.name", "t")
+        self._commit("README.md", "baseline", days_ago=60)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _git(self, *args: str, days_ago: int | None = None):
+        env = dict(os.environ)
+        if days_ago is not None:
+            from datetime import datetime as _dt, timedelta as _td
+            stamp = (_dt.now() - _td(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S")
+            env["GIT_AUTHOR_DATE"] = stamp
+            env["GIT_COMMITTER_DATE"] = stamp
+        return subprocess.run(["git", *args], cwd=self.root, env=env,
+                              capture_output=True, text=True, encoding="utf-8")
+
+    def _commit(self, rel: str, content: str, days_ago: int = 0):
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        self._git("add", "-A")
+        self._git("commit", "-qm", f"add {rel}", days_ago=days_ago)
+
+    def _today_batch(self) -> str:
+        from datetime import date as _date
+        return "B-" + _date.today().strftime("%m%d") + "_窗口回归"
+
+    def _violations(self, file_list: str, batch: str):
+        return self.m._file_list_git_state_violations(
+            [batch, file_list, "msg", "待处理"], self.root,
+        )
+
+    def test_committed_file_survives_a_merge_flood(self):
+        """🔑 **本项要害用例**：文件当日已落库，随后同日又有 10 个 commit
+        把它挤出「最近 3 个 commit」——旧口径此刻恒拒、该行永久锁死；新口径
+        按登记日取窗，照旧放行。"""
+        self._commit("0-学习与工具/已落库.py", "x", days_ago=0)
+        for i in range(10):
+            self._commit(f"噪声{i}.md", str(i), days_ago=0)
+
+        recent_three = self._git("log", "-3", "--name-only", "--pretty=format:").stdout
+        self.assertNotIn("已落库.py", recent_three,
+                         "前提失效：该文件仍在最近 3 个 commit 内，本用例就证不了任何事")
+        self.assertEqual(self._violations("`0-学习与工具/已落库.py`", self._today_batch()), [])
+
+    def test_file_committed_before_registration_window_still_rejected(self):
+        """反例：窗口放宽不等于守卫失效——登记日之前很久就提交、此后再没
+        碰过的路径，仍拒（"这一批真的碰过它"这层强度原样保留）。
+        它的合法出路在 `cmd_edit_row` 的归属分档，不在放宽本判据。"""
+        self._commit("老文件.py", "x", days_ago=30)
+        violations = self._violations("`老文件.py`", self._today_batch())
+        self.assertTrue(violations)
+        self.assertIn("未在主仓 git 状态里找到对应实体", violations[0])
+        self.assertIn("登记日", violations[0], "拒绝文案须说清用的是哪个窗口")
+
+    def test_unparsable_batch_number_falls_back_to_full_history(self):
+        """批次号解不出日期 ⇒ 退回全历史取证（`#533` 期望产出里的
+        `git log --all` 那一支）：30 天前的提交照样认得出。"""
+        self._commit("老文件.py", "x", days_ago=30)
+        self.assertEqual(self._violations("`老文件.py`", "B-TEST"), [])
+
+    def test_full_history_fallback_still_rejects_nonexistent_path(self):
+        """退路不是"什么都放行"：从未存在过的路径，全历史里也找不到。"""
+        violations = self._violations("`4-数字员工/不存在/x.py`", "B-TEST")
+        self.assertTrue(violations)
+        self.assertIn("整个提交历史", violations[0])
+
+    def test_dirty_file_passes_regardless_of_window(self):
+        """脏集这一支不受窗口影响（本次正在改的文件，尚未提交）。"""
+        (self.root / "正在改.py").write_text("x", encoding="utf-8")
+        self.assertEqual(self._violations("`正在改.py`", self._today_batch()), [])
+
+    def test_window_query_uses_all_refs(self):
+        """`--all`：落在**非当前分支**上的提交也算证据——批收工的 merge 潮
+        之后，原始 commit 往往只在泳道分支上可达。"""
+        self._git("checkout", "-q", "-b", "泳道分支")
+        self._commit("0-学习与工具/泳道产物.py", "x", days_ago=0)
+        self._git("checkout", "-q", "-")
+        self.assertFalse((self.root / "0-学习与工具" / "泳道产物.py").exists(),
+                         "前提：切回后该文件已不在工作区，只能靠 --all 才看得见")
+        self.assertEqual(self._violations("`0-学习与工具/泳道产物.py`", self._today_batch()), [])
+
+
+class EditRowFileListAttributionTierTests(unittest.TestCase):
+    """`#533`／`OP-0909-AA` ⑵⑶：ⓘ1 在 `edit-row` 侧按**归属**分档。
+
+    🔑 死锁的真正解在这里，不在窗口：守卫 A（称呼 lint）的逃生阀是行内写
+    `称呼豁免：`，而写它要过守卫 B（本项）。B 若对"本次根本没碰文件清单
+    那一格"的人也硬拒，这一行就**没有任何合法出路**。判据与 ⓘ2／ⓘ3／
+    `_opener_attribution` 同源：**一道守卫不得让人为自己没碰过的东西负责**。
+    """
+
+    SECTION_TWO_HEADER = (
+        "| 批次 | 文件清单 | 建议 message | 状态 |\n"
+        "|------|---------|--------------|------|\n"
+    )
+    BATCH = "B-0901_存量批次"
+    #: 真实存在过、但早已落出登记日窗口的路径——正是 `#533` 实撞的那种形态。
+    STALE_FILE_LIST = "`0-学习与工具/定时任务源码/已落库件.md`"
+
+    def setUp(self):
+        self.m = _load_module()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        self.m.REPO_ROOT = self.root
+        self._git("init", "-q")
+        self._git("config", "user.email", "t@example.com")
+        self._git("config", "user.name", "t")
+        self._commit("README.md", "baseline", days_ago=90)
+        self._commit("0-学习与工具/定时任务源码/已落库件.md", "x", days_ago=60)
+        self.target = self.root / "test-queue.md"
+        self.target.write_text(
+            "## 二、待 commit 批次（CC 取活销行）\n\n" + self.SECTION_TWO_HEADER +
+            f"| {self.BATCH} | {self.STALE_FILE_LIST} | 说明 | 待处理 |\n",
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _git(self, *args: str, days_ago: int | None = None):
+        env = dict(os.environ)
+        if days_ago is not None:
+            from datetime import datetime as _dt, timedelta as _td
+            stamp = (_dt.now() - _td(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S")
+            env["GIT_AUTHOR_DATE"] = stamp
+            env["GIT_COMMITTER_DATE"] = stamp
+        return subprocess.run(["git", *args], cwd=self.root, env=env,
+                              capture_output=True, text=True, encoding="utf-8")
+
+    def _commit(self, rel: str, content: str, days_ago: int = 0):
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        self._git("add", "-A")
+        self._git("commit", "-qm", f"add {rel}", days_ago=days_ago)
+
+    def _edit(self, set_=None, append=None):
+        ns = argparse.Namespace(
+            file=str(self.target), section="二", number=self.BATCH,
+            set=list(set_ or []), append=list(append or []),
+            changes_json=None, stdin_json=False, append_sep="、", domain=None,
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.m.cmd_edit_row(ns)
+        return rc, buf.getvalue()
+
+    def test_precondition_the_row_really_fails_the_git_state_check(self):
+        """前提钉子：这一行的文件清单**确实**过不了 ⓘ1。前提若失效（比如
+        窗口被改宽到覆盖 60 天前），下面三条用例就什么都证不了。"""
+        cells = [self.BATCH, self.STALE_FILE_LIST, "说明", "待处理"]
+        self.assertTrue(self.m._file_list_git_state_violations(cells, self.root))
+
+    def test_status_only_edit_passes_with_warning(self):
+        """⑶ 之一：落出窗口的已落库行**仍可改状态**——告警、放行、真的写盘。"""
+        rc, out = self._edit(set_=["状态=✅ 已完成"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("⚠", out)
+        self.assertIn("未在主仓 git 状态里找到对应实体", out,
+                      "🔴 告警不是降级成静默：照旧打印、照旧点名")
+        self.assertIn("本次未改动「文件清单」格", out)
+        self.assertIn("✅ 已完成", self.target.read_text(encoding="utf-8"))
+
+    def test_appellation_waiver_can_be_appended(self):
+        """⑶ 之二：**可补 `称呼豁免：`** —— 这正是 `#533` 死锁里被锁住的
+        那个动作（称呼 lint 的唯一逃生阀）。"""
+        waiver = "称呼豁免：已落库批次的历史记录，按「已发生事实的原文不追改」保留"
+        rc, out = self._edit(append=[f"状态={waiver}"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn(waiver, self.target.read_text(encoding="utf-8"))
+
+    def test_writing_file_list_cell_still_hard_blocks(self):
+        """⑶ 之三：**写「文件清单」格时仍硬阻断**——分档不是把守卫关掉。"""
+        before = self.target.read_text(encoding="utf-8")
+        rc, out = self._edit(set_=["文件清单=`压根不存在的路径/x.py`"])
+        self.assertEqual(rc, 1)
+        self.assertIn("§二 改动被拒绝", out)
+        self.assertEqual(before, self.target.read_text(encoding="utf-8"),
+                         "未通过预检时不得改动目标文件")
+
+    def test_rewriting_the_same_stale_value_still_blocks(self):
+        """分档判的是"**你这次有没有写这一格**"，不是"值有没有变"——原样
+        重写同一个站不住的清单，照旧拒。"""
+        rc, out = self._edit(set_=[f"文件清单={self.STALE_FILE_LIST}"])
+        self.assertEqual(rc, 1)
+        self.assertIn("§二 改动被拒绝", out)
+
+
 class GenderPronounLintTests(unittest.TestCase):
     """⑷ 人的属性（性别代词）。
 
