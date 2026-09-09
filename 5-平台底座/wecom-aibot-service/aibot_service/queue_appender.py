@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from zhuopin_platform.audit import AuditEvent, AuditLogger
-from zhuopin_platform.shared_tools.queue_table import QUEUE_MECHANISM_PATH_REL
+from zhuopin_platform.shared_tools.queue_table import (
+    QUEUE_BUSINESS_PATH_REL,
+    QUEUE_MECHANISM_PATH_REL,
+)
 
 TABLE_HEADER_MARKER = "## 一、任务看板"
 
@@ -20,6 +23,22 @@ TABLE_HEADER_MARKER = "## 一、任务看板"
 # 脱钩 —— **撞号**（直接违反"单一编号空间"Requirement，且撞号后果比域错位
 # 严重得多：下游按编号索引，"改了 A 行、B 行也跟着变"极难定位）。
 HIGH_WATER_MARK_SOURCE_FILENAME = Path(QUEUE_MECHANISM_PATH_REL).name
+
+# 队列 #532（承接 §一 `#523` 未做的机器人写入侧，2026-09-09）：新行状态列的
+# `[D:机|业]` 域字段。
+#
+# 🔴 **域不是"机器人判不出的语义"，是它自己刚刚做过的一个决定。** 本文件
+# 2026-09-05 起（`#341`）已经按域路由：`queue_path` 写哪份物理文件本身就
+# **是**域归属——`queue-dual-file-topology` spec 的"章节归属"Requirement 把
+# 「§一/§二 中 `[D:业]` 域的行落业务场景文件」写死，`queue_table.
+# resolve_queue_path()` 的 `_DOMAIN_TO_PATH` 是同一张映射的正向。故写入目标
+# 文件名 → 域值是**查表**，不是推断。#308 当年那句"机器人无法判定机制/业务
+# 归属"写于 2026-08-09 单文件时代，被 `#341` 的双文件路由作废了，本次一并
+# 订正（旧注释原文见 `append_pending_task` 内的落点注释）。
+_FILENAME_TO_ROW_DOMAIN: dict[str, str] = {
+    Path(QUEUE_MECHANISM_PATH_REL).name: "机",
+    Path(QUEUE_BUSINESS_PATH_REL).name: "业",
+}
 
 _ROW_ID_RE = re.compile(r"^\|\s*(\d+)\s*\|")
 _SECTION_HEADING_RE = re.compile(r"^##\s")
@@ -147,6 +166,36 @@ def resolve_high_water_mark_path(
     return candidate
 
 
+def resolve_row_domain(queue_path: Path) -> Optional[str]:
+    """由**新行写入的那份物理队列文件**推出 `[D:]` 域值（队列 `#532`）。
+
+    返回 `"机"`／`"业"`，或 `None`＝文件名不在两份正式队列文件之列。
+
+    🔴 **判据是文件名而不是路径全等**：两份队列文件的目录随 checkout／
+    worktree／`.51` 部署而变（`repo_paths` 的整套锚点解析就是为此存在），
+    文件名是这套拓扑里唯一稳定的那一维——`HIGH_WATER_MARK_SOURCE_FILENAME`
+    已按同一理由取 `.name`，本处不另起第二套判法。
+
+    🔴 **无法判定时返回 `None` 而不是抛异常，也不猜一个默认域**——与
+    `queue_table.resolve_queue_path()` 的 fail-loud 方向刻意相反，因为两者的
+    输入性质不同：那边的入参是调用方**自己写死的域字面量**（传错＝编程
+    错误）；这边的入参是一个**运行期解析出来的文件路径**，历史单文件部署
+    形态（`WECOM_AIBOT_QUEUE_PATH` 直指一份自定义文件）与全部既有单测夹具
+    （`tmp_path/queue.md`）都会落到这一支。在这里抛异常＝**让一条本来能进
+    队列的反馈整条丢失**，代价远大于"少一个元数据字段"。回落不静默：
+    `append_pending_task` 会记一条 `queue_row_domain_unresolved` 审计事件
+    （同 `queue_high_water_mark_parse_failed` 的处理方式）。
+    """
+    return _FILENAME_TO_ROW_DOMAIN.get(queue_path.name)
+
+
+def _build_status_cell(domain: Optional[str]) -> str:
+    """拼 §一 状态列的机器字段前缀 ＋ 正文（队列 #308 语法：`[S:x][D:y]` 紧邻、
+    其间无空格，见 `工具-共享文档编辑锁.py` 的 `STATUS_FIELD_RE`）。"""
+    domain_field = f"[D:{domain}]" if domain is not None else ""
+    return f"[S:open]{domain_field} 待领"
+
+
 def _next_task_id(
     lines: list[str],
     start: int,
@@ -223,7 +272,10 @@ def append_pending_task(
     `queue_high_water_mark_parse_failed` 审计事件（回落行为不变，仍按"仅取
     §一 可见最大号+1"计算，只是把这一异常状态留痕，便于日后排查而不是静默
     发生，见队列 #99）。不提供 `audit` 时（如既有测试/未接线调用方）该步骤
-    整体跳过，行为与未加此参数前完全一致。
+    整体跳过，行为与未加此参数前完全一致。队列 `#532` 起另有一条同样形态的
+    留痕：`queue_path` 的文件名不是两份正式队列文件之一（历史单文件部署／
+    单测夹具）时判不出 `[D:]` 域，回落"不写域字段"并记一条
+    `queue_row_domain_unresolved`。
 
     `lock` 可选（队列 #168）——提供时，在下方整个读改写重试循环**外层**先
     `lock.try_acquire()`（占用中由 lock 自身抛出异常，本函数不捕获、原样
@@ -270,6 +322,9 @@ def append_pending_task(
         lock.try_acquire()
     hwm_path = resolve_high_water_mark_path(queue_path, high_water_mark_path)
     hwm_is_separate = hwm_path != queue_path
+    # 队列 #532：域只取决于写入目标，与本轮读到的文件内容无关 ⇒ 在重试循环
+    # 外算一次即可，循环内每轮重算只会把同一个查表结果算 N 遍。
+    row_domain = resolve_row_domain(queue_path)
     try:
         for _ in range(max_retries):
             text = queue_path.read_text(encoding="utf-8")
@@ -300,13 +355,22 @@ def append_pending_task(
             )
             # 队列 #308（2026-08-09）：§一 新行状态列须以机器字段开头（CI
             # lint 硬门禁，见 工具-队列结构lint.py），自动追加行状态恒为
-            # "open"；域字段留空——机器人无法判定机制/业务归属，交人工事后
-            # 补（`[D:...]` 缺省不影响解析，只是不计入协议〇.9 措施 C 的
-            # WIP 计数）。
+            # "open"。
+            #
+            # 队列 #532（2026-09-09）订正 #308 当年那半句「域字段留空——机器人
+            # 无法判定机制/业务归属，交人工事后补」：那句写于单文件时代，
+            # `#341`（2026-09-05）给写入侧接上按域路由后就已作废——`queue_path`
+            # 写的是哪份物理文件，本身就是域归属，查 `_FILENAME_TO_ROW_DOMAIN`
+            # 即可，不是推断。留空的实际代价：缺域的**可动**行不计入协议〇.9
+            # 措施 C 的机制类 WIP ⇒ **WIP 算少 ＝ 该拦的没拦、超限行照立**，与
+            # `_count_mechanism_wip` 的降级日志说的是同一件事。人工写侧已由
+            # `工具-共享文档编辑锁.py` 的 `_section_one_domain_field_violations`
+            # 挡住（`#523`／`OP-0909-W`），但那条守卫**只管走 CLI 的写**，机器人
+            # 走的是本函数——所以缺域行会由本路径持续产生，堵这一头即本行。
             row = (
                 f"| {task_id} | {_normalize_row_field(description)} | "
                 f"{_normalize_row_field(owner)} | {_normalize_row_field(input_pointer)} | "
-                f"{_normalize_row_field(expected_output)} | [S:open] 待领 | "
+                f"{_normalize_row_field(expected_output)} | {_build_status_cell(row_domain)} | "
                 f"{_normalize_row_field(touch_zone)} | {date_str} |"
             )
             _assert_row_column_count(row, task_id=task_id)
@@ -335,6 +399,20 @@ def append_pending_task(
                     data_sources={
                         "queue_path": str(queue_path),
                         "high_water_mark_path": str(hwm_path),
+                    },
+                ))
+            # 队列 #532：写入目标不是两份正式队列文件之一 ⇒ 判不出域，回落
+            # 「不写 `[D:]`」（＝本次改动前的行为，无新增失败模式），但**不
+            # 静默**——与上面那条 `queue_high_water_mark_parse_failed` 同一处理
+            # 方式：留痕说明"这一行为什么缺域"，免得日后又要从缺域行反推成因。
+            if audit is not None and row_domain is None:
+                audit.record(AuditEvent(
+                    scenario="wecom-aibot", action="queue_row_domain_unresolved",
+                    evaluator="system", automation_level="L1",
+                    decision={"fallback": "no_domain_field", "task_id": task_id},
+                    data_sources={
+                        "queue_path": str(queue_path),
+                        "queue_filename": queue_path.name,
                     },
                 ))
             # 🔴 次序不可对调：先推进来源文件的高水位线，再写新行。前者成功
