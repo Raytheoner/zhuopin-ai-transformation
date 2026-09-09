@@ -302,3 +302,31 @@ jobs:
         with:
           python-version: "3.14"
       - run: python 0-学习与工具/工具-opener块lint.py
+
+  evidence-echo-lint:
+    # 队列 §一 #530：给 `.claude/rules/两桌同步与取证.md` §三 那两条新取证纪律加机器守
+    # （Shao Peishen 2026-09-09 就地答 `1a`／`2a` 立）。两族一处守——
+    # 判据一＝取证件写「✅ 已修／转绿」却没留下命令＋回显；
+    # 判据二＝对着一个守 ≥2 族判据的门禁工具判绿，却只核了其中一族。
+    #
+    # ⚠️ 实证（本 job 的存在理由，不是预防性设计）：`CI长期红-逐job根因取证-2026-09-06.md`
+    # 把 `引导样板lint::test_存量已清零` 记为 2026-09-06「本日转绿·已修」，实测转绿只
+    # 维持 3 小时 28 分，此后一直红着**挂了 3 天无人能证伪**——原记录只有结论、没有回显，
+    # 谁读它都无法当场证伪。单测里用那行**真实历史原文**回放，本脚本两族齐报。
+    #
+    # 🔴 直接上 `--enforce`（同 bootstrap-stub-lint／scene-intent-gate-lint 的
+    # 「先确认清零、再关门」）：上线前已对全部受守取证件实跑，存量违规真实为 0
+    # （见 `0-学习与工具/取证件回显lint-baseline.json` 的 `冻结时实测`），首跑即绿。
+    # baseline 仍随代码入库——它是棘轮机制本身，不是存量记录。
+    #
+    # 🔴 清单自洽失败一律 fail-closed（退出码 2）：`门禁判据族清单.json` 与各工具
+    # docstring 对不上时当场红，绝不「清单读不到就当零条清单静默放行」——那正是
+    # 根 CLAUDE.md §5「工具静默回退」记的那类失效。
+    name: "取证件判绿回显 lint（✅已修/转绿 缺命令回显 ／ 多族门禁只核一族）"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python 0-学习与工具/工具-取证件回显lint.py --enforce
