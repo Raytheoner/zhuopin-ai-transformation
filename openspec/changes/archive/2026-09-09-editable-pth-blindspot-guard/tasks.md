@@ -57,10 +57,12 @@
 
 ## 5. 收口
 
-- [ ] 5.1 队列 §一 `#459` 行回填：实现结论、1.2 现网重测结果、3.x 覆盖情况、与 `#454` 的最终串行顺序
+- [x] 5.1 队列 §一 `#459` 行回填：实现结论、1.2 现网重测结果、3.x 覆盖情况、与 `#454` 的最终串行顺序
 - [ ] 5.2 §二 批次登记 ＋ 触发一次 sweep，并看一眼 `reports/sweep-commit.log` 末几行确认真落库
-- [ ] 5.3 `/opsx:archive editable-pth-blindspot-guard -y`（完工即归档；若本次不归档，理由须写进机器认得的三处入口之一）
+  - 🔶 **前半已闭合、后半待常驻 sweep 出回显（2026-09-09 `OP-0909-U`）**：登记面已由 release ⑹ 校验通过（详见附录二 5.2）；**「确认真落库」缺 `reports/sweep-commit.log` 的真实回显，故本条不勾**——按 rules/两桌同步与取证 §三「缺回显即不得写 ✅」。本泳道不手动触发 sweep（派单件禁碰定时任务／企微机器人）。
+- [x] 5.3 `/opsx:archive editable-pth-blindspot-guard -y`（完工即归档；若本次不归档，理由须写进机器认得的三处入口之一）
 - [ ] 5.4 分支 `claude/queue-410-editable-probe` 在本包内容确认已合入 `master` 后可删除（登记但不在本任务内执行，防止 design 审未过时被误删）
+  - 🟡 **前置已证实、动作未执行（2026-09-09 `OP-0909-U`）**：删分支与并入主干均属 🟡 档，本泳道只做到可执行态，等 Shao Peishen 一个字母。取证见下方附录二。
 
 ---
 
@@ -79,9 +81,39 @@
 - **4.2（状态文件 key 集合）**：本轮产生的 key 集合＝空；现网 `reports/sweep-editable-install-state.json` 原文＝`{}`。**两者一致 ⇒ 新增的 `.pth` 扫描路径没有引入任何新 key**（它只在异常时写 key，而本机零异常）。
 - **1.2 基线复测**：setuptools 81.0.0 / pip 26.1.2，与 `330218c` 记录同版本 ⇒ 产物格式未漂移，3.15 不触发。
 
-**仍开着的 5.x**：5.1（队列 `#459` 行回填）与 5.2（§二 批次登记）由看护者／总线在收工时按队列纪律做，本泳道只出回写件、不自行写队列真身；5.3 归档、5.4 删分支同理，均待总线派发。
+**仍开着的 5.x**：5.1（队列 `#459` 行回填）与 5.2（§二 批次登记）由看护者／总线在收工时按队列纪律做，本泳道只出回写件、不自行写队列真身；5.3 归档、5.4 删分支同理，均待总线派发。 ⏭️ **已由 `OP-0909-U` 于 2026-09-09 承接，见下方附录二。**
 
 **勾选依据（谁核的、用什么核的）**——🔑 本节存在的理由＝「只有动作没有手段的验证声明 ＝ 没有验证」：
 - **本次（`OP-0908-O`）亲自核过的**：0.3（`git show -s --oneline 330218c` ⇒ 可读，标题 `feat(sweep): #410 editable 判据补 .pth 纯路径形态盲区 ＋ 真实产物真机验活`）；3.1–3.14（`grep -c "def test_<名>"` 逐条实测，**14 条各命中 1 次、零缺项零重名**）；3.16（全量 `pytest test_工具-落库sweep.py` 本轮实跑，结果见收工报告）；4.1／4.2／1.2（上面的只读实跑）；2.4（本次亲手补的）。
 - **沿用 `OP-0906-H` 只读核验 ＋ `OP-0906-G` 看护者复核的结论、本次未重复取证的**：1.1／1.3／2.1／2.2／2.3。其手段已写在队列 §一 `#459` 行内（`git show 2635cd5`／`git merge-base --is-ancestor`／`git grep -c`／`git cat-file -t`／`git merge-tree --write-tree` 等），本次不复述、也不冒充是自己核的。
 - 0.4（建 worktree）＝流程动作，由当时的实现泳道完成，无独立取证物。
+
+---
+
+## 附录二 · 5.x 收口（2026-09-09，CC `OP-0909-U`，泳道 `459-sweep-pth`，派出线 Cowork 业务总线 `OP-0908-V` 批 `B-0909_六泳道机制批`）
+
+> 本附录只登记「谁在什么时候用什么手段核的」。日期取自本机 `Get-Date -Format 'yyyy-MM-dd HH:mm:ss K'` ⇒ `2026-09-09 17:30:24 +08:00`（本地，UTC+8）。
+
+**5.1 队列 §一 `#459` 行回填 —— 已做。** 手段＝`python "0-学习与工具/工具-队列查询.py" --row 459 --section 一 --field status` 先复核四要素是否已在位，再用 `工具-共享文档编辑锁.py edit-row --section 一 --number 459 --domain 机 --changes-json <文件>` 整格重写（`--changes-json` 而非 `--append`：行内密集使用反引号，正文不进 argv）。四要素逐条落点：
+- **实现结论**＝行内 `OP-0906-H`／`OP-0906-G` 段「功能层逐条对上、零功能缺口，八项全中」；
+- **1.2 现网重测**＝行内「setuptools 81.0.0／pip 26.1.2，与 `330218c` 记录同版本 ⇒ 3.15 不触发（前置不成立，非漏做）」；
+- **3.x 覆盖**＝行内「tasks 3.1–3.14 共 14 条单测逐条落成、命名逐字一致」＋ 本附录下方本棒的独立复核；
+- **与 `#454` 的最终串行顺序**＝行内「`#459` 先合、D5 推荐①未被遵循、`#454` 至今 `[S:blocked]`、残余成本＝读一次 diff」。
+- 本棒新追一段收口段（写入后用 `--row 459` 回读确认落地；整格 4090 B，未超 `ROW_LENGTH_CAP_BYTES` 4096 B，故本次不触发 K2 外置）。
+
+**5.2 §二 批次登记 —— 已做，但结论是「不新开批次」。** 手段＝`工具-共享文档编辑锁.py release` 的第 ⑹ 项登记完整性校验实跑。**本棒在主 checkout 侧的唯一改动就是 `1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md` 本身**，而它已在 §二 `B-0909_529超时按默认执行立行` 的文件清单内、该批状态仍为「待」（手段＝`工具-队列查询.py --row B-0909_529超时按默认执行立行 --section 二 --field all`）⇒ 按 §四.3「同一文件不被两条待批次同时认领」**不重复登记**（同日先例：`CC-OP-0909-T` 的 `#520` 泳道同样处置）。release 实跑只报出 1 个孤儿 `1-转型规划/0-全景路线图/session接力-Phase1收口.md`（他线在跑、acquire 前即脏），已按 §一 507 口径点名豁免并写进锁 history。
+- 🔴 **本棒未手动触发 sweep**：派单件明写不碰定时任务／企微机器人，且跑 sweep 会写真 `reports/` 并可能推企微。落库交常驻 `ZhuopinCommitSweep`（约 27 分钟一轮）从 §二 取活。**「已落库」这句话本棒不说**——本棒能证明的只是「已正确登记且不会掉在地上」（release ⑹ 校验通过即此证据），落库的实证须由下一轮 `reports/sweep-commit.log` 给出。
+- **本泳道分支上的两项产出（openspec 包归档 ＋ 本文件勾选回填）不进主仓工作区、不由 sweep 提交**，随分支走。
+
+**5.3 归档 —— 已做，但只在分支上。** 手段＝先 `openspec validate editable-pth-blindspot-guard --strict` ⇒ `Change 'editable-pth-blindspot-guard' is valid`，再 `openspec archive editable-pth-blindspot-guard -y`（CLI `openspec --version` ⇒ `1.7.0`）。实跑回显：`Task status: 27/33 tasks`、`Warning: 6 incomplete task(s) found. Continuing due to --yes flag.`、`editable-pth-blindspot-guard: create`、`Totals: + 4, ~ 0, - 0, → 0`、`archived as '2026-09-09-editable-pth-blindspot-guard'`。产物＝本目录 ＋ 主 spec `openspec/specs/editable-pth-blindspot-guard/spec.md`（4 条 Requirement）。
+- 🔴 **如实标边界**：归档只发生在泳道分支 `claude/op0909u-459-sweep-pth` 上，**并入主干前它对 master 不生效**；并入主干属 🟡 档，本泳道不执行。
+- ⚠️ 归档时 6 条 task 仍未勾，且**故意不勾**：`0.1`（未按字面执行、已如实留痕）、`3.15`（前置不成立、⏭️ 不触发）、`5.4`（🟡 待拍板）三处是有意留白，勾上就等于把「没做／不该做／等人拍板」谎报成「做了」。
+- ⚠️ 新建的主 spec `## Purpose` 是 CLI 生成的 `TBD - created by archiving change …` 占位串；同目录既有归档 spec（如 `openspec/specs/sweep-manifest-coverage-guard/spec.md`）**全都留着同一句占位**，属仓库现存通例，本棒不单独破例改一处。
+
+**5.4 删分支 `claude/queue-410-editable-probe` —— 前置已证实、动作未执行（🟡）。** 该 task 的前置是「本包内容确认已合入 `master`」，本棒把它拆成**祖先关系**与**内容等价**两问，分别取证：
+- **祖先关系＝否**：`git merge-base --is-ancestor 330218c master` ⇒ 非祖先；`git log --oneline master..claude/queue-410-editable-probe` ⇒ 两条（`330218c` 实现、`3d3c756` 队列 1 行改状态）。即该分支从未被并入，实现是以 `2635cd5` 另路进的 master。
+- **内容等价＝是（这才是 5.4 真正要问的）**：把 `330218c` 对两个文件的 **diff 新增行**逐行去 master 现文件里找原文命中（判据：去首尾空白后长度 >12、非纯注释行的有效新增行必须原文出现）——`0-学习与工具/工具-落库sweep.py` **85/85**、`0-学习与工具/test_工具-落库sweep.py` **226/226**，**零缺失**。配套点名核验：14 个测试函数名 `grep -c "def <名>("` 在 master 侧**各命中 1 次、零缺项**；`EDITABLE_PTH_GLOB`／`_parse_editable_pth`／`_editable_pth_key`／`_merge_editable_detail` 四个新符号在 master 侧命中数 `2／2／2／4`，均 >0。
+- **分支的另一 commit `3d3c756`** 只改队列文件 1 行（`git show --stat 3d3c756` ⇒ 1 file changed, 1 insertion(+), 1 deletion(-)），该行早被后续队列演进覆盖，无回收价值。
+- ⇒ **结论：删该分支（本地＋origin，`git ls-remote --heads origin` 确认远程同名分支存在于 `3d3c756`）不会丢失任何仍有价值的内容。** 🔴 但删分支与并入主干均属 🟡 档，**本泳道不执行**，等 Shao Peishen 一个字母。
+
+**本附录的勾选依据（谁核的、用什么核的）**：5.1／5.2／5.3／5.4 四项的手段已逐条写在上面各段内，无一条只有动作没有手段。本棒**未**重跑 `pytest`——5.x 是收口段，不触碰实现与断言，测试面沿用 `OP-0908-O` 的实跑记录（见附录一），本棒不冒充是自己跑的。
