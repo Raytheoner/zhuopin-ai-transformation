@@ -7715,5 +7715,489 @@ class AppendRowHighWaterMarkTests(unittest.TestCase):
         self.assertIn("拒绝预留", str(ctx.exception))
 
 
+# ══════════════════════════════════════════════════════════════════════
+# 队列 §一 #513 ＋ #523（2026-09-09，OP-0909-W）——写侧同族三缺陷
+#
+# 三条合并成一棒改的理由（协议〇.10 并入优先）：全在同一份文件的**写侧**，
+# 且共享同一个失效形态——**登记的东西看起来生效、实则没被任何消费方取到**：
+#   ⑴ #513 文件清单写裸路径 ⇒ sweep 与 release ⑹ 都只提取反引号内的串 ⇒
+#      整批静默不入库；
+#   ⑵ #523 §一 状态列缺 `[D:]` ⇒ 可动行不计入 WIP ⇒ 计数算少、该拦的没拦；
+#   ⑶ `release --waiver` 括注截断／尾随说明 ⇒ 豁免点名的路径被静默丢掉。
+# ══════════════════════════════════════════════════════════════════════
+
+
+class FileListBarePathGuardTests(unittest.TestCase):
+    """⑴ `#513`：§二「文件清单」裸路径写侧守卫（`_file_list_bare_path_
+    violations`）。
+
+    白盒：判据不碰文件系统、不调 git（它回答的只是"sweep 能不能看见这些
+    串"），故无需 git 夹具。
+    """
+
+    def setUp(self):
+        self.m = _load_module()
+
+    def _violations(self, file_list: str, status: str = "待处理"):
+        return self.m._file_list_bare_path_violations(
+            ["B-TEST", file_list, "msg", status]
+        )
+
+    # ---- 正向：裸路径必须被拦 ----
+
+    def test_bare_path_rejected(self):
+        """#513 的真实形态：`队列行日志/#506.md` 写成裸路径 ⇒ 未被跟踪。"""
+        problems = self._violations(
+            "1-转型规划/0-全景路线图/队列行日志/#506.md"
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("未用反引号包裹", problems[0])
+        self.assertIn("#506.md", problems[0])
+
+    def test_multiple_bare_paths_all_named(self):
+        problems = self._violations(
+            "0-学习与工具/工具-共享文档编辑锁.py；0-学习与工具/test_工具-共享文档编辑锁.py"
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("工具-共享文档编辑锁.py", problems[0])
+        self.assertIn("test_工具-共享文档编辑锁.py", problems[0])
+        self.assertIn("2 个", problems[0])
+
+    def test_bare_path_with_parenthetical_annotation_still_caught(self):
+        """真实存量写法：路径后紧跟 `（新建）` 一类括注，中间无空白。"""
+        self.assertTrue(self._violations(
+            "1-转型规划/0-全景路线图/修法建议-2026-09-04.md（新建，只读诊断）"
+        ))
+
+    def test_mixed_cell_flags_only_the_unprotected_one(self):
+        """半数带反引号这种最危险的形态：带的那半会入库、裸的那半静默掉地上。"""
+        problems = self._violations(
+            "`0-学习与工具/工具-共享文档编辑锁.py`；0-学习与工具/漏网.py"
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("漏网.py", problems[0])
+        self.assertNotIn("工具-共享文档编辑锁.py", problems[0])
+
+    # ---- 反向：不得误报 ----
+
+    def test_backticked_paths_pass(self):
+        self.assertEqual(self._violations(
+            "`1-转型规划/0-全景路线图/队列行日志/#506.md`"
+        ), [])
+
+    def test_prose_without_any_path_passes(self):
+        """存量真实行 `B-0903_80`：本批只改队列文件，没有独立产出件。"""
+        self.assertEqual(self._violations(
+            "（本批只改队列文件，由锁流程自带；无独立产出件）"
+        ), [])
+
+    def test_directory_prefix_in_prose_not_flagged(self):
+        """🔴 判据刻意**不认**以 `/` 收尾的目录前缀（对照 `_fragment_is_
+        path_like` 的另一支）：`reports/` 这类串即便写进反引号，sweep 的
+        后缀匹配也永远匹配不到任何脏文件（脏路径是文件、不以 `/` 收尾），
+        拦它不改变任何结果、纯属噪声；而正文里"落 reports/ 目录"这种叙述
+        极常见（存量 `B-0902_47` 行即如此），按含 `/` 收尾判会当场误伤。"""
+        self.assertEqual(self._violations(
+            "🔴 本批零可落库文件，如实登记：两个产出均落 reports/ 目录，"
+            "而 .gitignore:35 的 **/reports/ 规则把该目录整体排除"
+        ), [])
+
+    def test_preregistered_row_is_exempt(self):
+        """与 ⑶／ⓘ1 同一豁免口径：预登记行的清单本就允许是范围性描述。"""
+        status = self.m.PREREGISTERED_STATUS_PREFIX + "，收工时精确化）"
+        self.assertEqual(self._violations(
+            "1-转型规划/0-全景路线图/队列行日志/#506.md", status=status
+        ), [])
+
+    def test_short_row_not_crashing(self):
+        self.assertEqual(self.m._file_list_bare_path_violations(["B-TEST"]), [])
+
+    # ---- 与消费侧对齐：本守卫拦的正是 sweep 取不到的那一类 ----
+
+    def test_guard_fires_exactly_when_fragment_extraction_yields_nothing(self):
+        """🔑 判据与消费侧同源的证明：被拦的那一格，`_pending_batch_
+        fragments`（release ⑹ 侧，与 sweep `_resolve_batch_fragments` 同源）
+        提取到 0 个片段；改成反引号后提取到 2 个。"""
+        bare = "0-学习与工具/a.py；0-学习与工具/b.py"
+        quoted = "`0-学习与工具/a.py`；`0-学习与工具/b.py`"
+        section_two = (
+            "| 批次 | 文件清单 | 说明 | 状态 |\n"
+            "|---|---|---|---|\n"
+            "| B-X | %s | m | 待处理 |\n"
+        )
+        self.assertEqual(
+            self.m._pending_batch_fragments({"q": "## 二、批次\n\n" + section_two % bare}),
+            [],
+        )
+        self.assertTrue(self._violations(bare))
+        self.assertEqual(
+            len(self.m._pending_batch_fragments(
+                {"q": "## 二、批次\n\n" + section_two % quoted}
+            )),
+            2,
+        )
+        self.assertEqual(self._violations(quoted), [])
+
+
+class SectionOneDomainFieldGuardTests(unittest.TestCase):
+    """⑵ `#523`：§一 状态列 `[D:机|业]` 写侧守卫 ＋ WIP 计数的非静默降级。
+
+    🔴 **读侧宽容与写侧严格是两件事、方向相反且都要有用例钉住**：`#523`
+    立行当天的错误结论（"`--digest` 漏 9 行"）正来自值周方自写正则
+    `\\[S:…\\]\\[D:…\\]` **不容忍** `[D:]` 缺失。故本类既测"写侧拒"，也测
+    "读侧仍解析得出、不丢行"。
+    """
+
+    def setUp(self):
+        self.m = _load_module()
+
+    def _row(self, status_cell: str, row_id: str = "901"):
+        return [row_id, "任务", "CC", "指针", "产出", status_cell, "触碰区", "2026-09-09"]
+
+    # ---- 正向：缺 [D:] 必须被拦 ----
+
+    def test_missing_domain_field_rejected(self):
+        problems = self.m._section_one_domain_field_violations(
+            self._row("[S:open] 待领（机器人写入形态）")
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("缺 `[D:机|业]`", problems[0])
+        self.assertIn("#901", problems[0])
+
+    def test_missing_domain_field_rejected_for_every_movable_status(self):
+        for value in ("open", "partial", "hold"):
+            with self.subTest(value=value):
+                self.assertTrue(self.m._section_one_domain_field_violations(
+                    self._row(f"[S:{value}] 正文")
+                ))
+
+    # ---- 反向：不得误报 ----
+
+    def test_domain_field_present_passes(self):
+        for domain in ("机", "业"):
+            with self.subTest(domain=domain):
+                self.assertEqual(self.m._section_one_domain_field_violations(
+                    self._row(f"[S:open][D:{domain}] 待领")
+                ), [])
+
+    def test_non_movable_status_without_domain_passes(self):
+        """🔴 **判据面与危害面对齐的那道闸**（apply 期实测收窄）：done／
+        blocked／`timed=` 本就被 `_count_mechanism_wip` 结构性排除，缺不缺
+        `[D:]` 对 WIP 计数没有任何影响——`#523` 自己的实证就是这句话（那 9 行
+        缺域行"没出事纯属巧合，因为恰好全是 `[S:done]`"）。守到这里等于把
+        "补齐元数据"变成"关行"的前置条件，还会让存量缺域行连销号都做不了。
+        实撞：不收窄时 `DualFileRoutingTests` 三条**测双文件路由**的用例当场
+        转红——它们红得对，改的是判据、不是断言。"""
+        for value in ("done", "blocked", "timed=2026-09-30"):
+            with self.subTest(value=value):
+                self.assertEqual(self.m._section_one_domain_field_violations(
+                    self._row(f"[S:{value}] 正文")
+                ), [])
+
+    def test_guarded_statuses_are_exactly_the_counted_ones(self):
+        """守卫面与计数面同一个常量，改一处必然同改另一处。"""
+        self.assertEqual(self.m.MOVABLE_STATUS_VALUES, ("open", "partial", "hold"))
+
+    def test_status_field_absent_is_not_this_guards_business(self):
+        """缺 `[S:]` 由既有 CI 硬门禁 `工具-队列结构lint.py` 与关键格哨兵
+        管——同一件事有两个说法比没有说法更坏。"""
+        self.assertEqual(self.m._section_one_domain_field_violations(
+            self._row("待领（完全没有机器字段）")
+        ), [])
+
+    def test_short_row_not_crashing(self):
+        self.assertEqual(self.m._section_one_domain_field_violations(["901", "任务"]), [])
+
+    # ---- 读侧仍须宽容（反向闸，防止把写侧严格误推广到读侧）----
+
+    def test_read_side_still_tolerates_missing_domain(self):
+        status, domain, rest = self.m._parse_status_domain_fields("[S:open] 待领")
+        self.assertEqual(status, "open")
+        self.assertIsNone(domain)
+        self.assertEqual(rest, " 待领")
+
+    # ---- WIP 计数：非静默降级 ----
+
+    SECTION_ONE = (
+        "| # | 任务 | 领取方 | 输入 | 产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| 901 | 甲 | - | - | - | [S:open][D:机] 待领 | - | 2026-09-09 |\n"
+        "| 902 | 乙 | - | - | - | [S:open] 待领（缺 D） | - | 2026-09-09 |\n"
+        "| 903 | 丙 | - | - | - | [S:done] 已完（缺 D） | - | 2026-09-09 |\n"
+    )
+
+    def test_movable_domainless_row_produces_degraded_log(self):
+        count, degraded = self.m._count_mechanism_wip(self.SECTION_ONE)
+        self.assertEqual(count, 1)  # 计数不变：真实域未知，不猜
+        self.assertTrue(any("#902" in d and "缺 [D:机|业]" in d for d in degraded),
+                        degraded)
+
+    def test_done_domainless_row_stays_silent(self):
+        """噪声控制：done/blocked/timed 本就不进计数，为它们刷屏会让这条
+        告警噪声化——噪声化的告警等于没有（`#143` 教训）。"""
+        _count, degraded = self.m._count_mechanism_wip(self.SECTION_ONE)
+        self.assertFalse(any("#903" in d for d in degraded), degraded)
+
+
+class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
+    """⑶ `release --waiver`／acquire note 的 `登记豁免：` 路径解析。
+
+    改前口径 ＝「在第一个左括号处截断」，两次独立实证各撞一头：
+      ⒜ 泳道 `519-scanner-test`：多个路径各带括注 ⇒ 只有第一个生效，其余
+         **静默丢失**；
+      ⒝ 看护者 `OP-0909-Q`：避开括号后，最后一个 `；` 之后的说明性文字被
+         当成路径去匹配。
+    """
+
+    def setUp(self):
+        self.m = _load_module()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _touch(self, rel: str):
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x", encoding="utf-8")
+        return rel
+
+    # ---- ⒜ 多路径各带括注 ----
+
+    def test_every_path_survives_its_own_annotation(self):
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：a/b/c.md（本批新建）；d/e/f.md（同批）"
+            "（作者 OP-0909-W，到期 09-09）"
+        )
+        self.assertEqual(len(clauses), 1)
+        self.assertEqual(clauses[0]["paths"], ["a/b/c.md", "d/e/f.md"])
+
+    def test_author_and_due_still_parsed_after_annotation_stripping(self):
+        """反向闸：括注改成"整段剔除"之后，`作者`／`到期` 仍须解析得出——
+        否则修好一条就打坏另一条。"""
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：a/b/c.md（本批新建）；d/e/f.md（作者 OP-0909-W，到期 12-31）"
+        )
+        self.assertEqual(clauses[0]["author"], "OP-0909-W")
+        self.assertEqual(clauses[0]["due_raw"], "12-31")
+
+    def test_half_width_parentheses_also_stripped(self):
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：a/b/c.md(new);d/e/f.md(same)(作者 OP-X,到期 09-09)"
+        )
+        self.assertEqual(clauses[0]["paths"], ["a/b/c.md", "d/e/f.md"])
+        self.assertEqual(clauses[0]["author"], "OP-X")
+
+    def test_unclosed_paren_falls_back_to_truncation(self):
+        """保守侧：括号没闭合时从左括号起全算括注——宁可少认一个路径并显式
+        告警，也不要把半句话当路径去匹配。"""
+        head, annotation = self.m._split_parenthetical_annotations(
+            "a/b/c.md（作者 OP-X，到期 09-09"
+        )
+        self.assertEqual(head.strip(), "a/b/c.md")
+        self.assertIn("作者 OP-X", annotation)
+
+    def test_multiple_waiver_clauses_still_separated(self):
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：a/b.md（甲）登记豁免：c/d.md（乙）"
+        )
+        self.assertEqual([c["paths"] for c in clauses], [["a/b.md"], ["c/d.md"]])
+
+    # ---- ⒝ 尾随说明性文字：显式告警，不静默降级 ----
+
+    def test_trailing_prose_reported_as_non_path(self):
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：a/b.md；他线脏文件由其作者线自登（作者 OP-X，到期 09-09）"
+        )
+        self._touch("a/b.md")
+        valid, notes = self.m._valid_waiver_paths(clauses, self.root, ["a/b.md"])
+        self.assertEqual(valid, {"a/b.md"})
+        self.assertTrue(any("不形如路径" in n and "他线脏文件" in n for n in notes), notes)
+
+    def test_zero_valid_candidates_gets_clause_level_summary(self):
+        """🔴 逐条 `✗` 仍可能被读成"少放行了一个"——整条 0 生效必须单独说
+        出来，那才是 `#513` 那族"看起来生效、实则没覆盖到"的形态。"""
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：不存在/的/路径.md（作者 OP-X，到期 09-09）"
+        )
+        valid, notes = self.m._valid_waiver_paths(clauses, self.root, [])
+        self.assertEqual(valid, set())
+        self.assertTrue(any("0 个生效" in n for n in notes), notes)
+
+    def test_all_valid_clause_gets_no_summary_warning(self):
+        self._touch("a/b.md")
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：a/b.md（作者 OP-X，到期 09-09）"
+        )
+        valid, notes = self.m._valid_waiver_paths(clauses, self.root, ["a/b.md"])
+        self.assertEqual(valid, {"a/b.md"})
+        self.assertEqual(notes, [])
+
+    # ---- 形态只写文案、不做判定（防止修一个静默降级又造一个）----
+
+    def test_real_file_with_unrecognised_extension_still_valid(self):
+        """🔴 无回归闸：`PATH_LIKE_EXTENSIONS` 里没有 `.vbs`，但工作树里真有
+        这份文件 ⇒ 必须照常生效。若把"形如路径"升格成生效判据，这类文件会
+        被静默拒掉——那是把一条同族缺陷从 ⑶ 搬到 ⑵。"""
+        self._touch("0-学习与工具/run-commit-sweep-hidden.vbs")
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：0-学习与工具/run-commit-sweep-hidden.vbs（作者 OP-X，到期 09-09）"
+        )
+        valid, notes = self.m._valid_waiver_paths(clauses, self.root, [])
+        self.assertEqual(valid, {"0-学习与工具/run-commit-sweep-hidden.vbs"})
+        self.assertEqual(notes, [])
+
+    def test_deleted_dirty_file_still_valid(self):
+        """既有口径不得被本次改动动到：被删除的脏文件在磁盘上恰恰不存在，
+        只按"文件存在"判会把一次合法的删除豁免拒掉。"""
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：已删/的/件.md（作者 OP-X，到期 09-09）"
+        )
+        valid, _notes = self.m._valid_waiver_paths(clauses, self.root, ["已删/的/件.md"])
+        self.assertEqual(valid, {"已删/的/件.md"})
+
+    def test_missing_path_shaped_candidate_keeps_original_wording(self):
+        clauses = self.m._parse_registration_waiver_clauses(
+            "登记豁免：不存在/的/路径.md（作者 OP-X，到期 09-09）"
+        )
+        _valid, notes = self.m._valid_waiver_paths(clauses, self.root, [])
+        self.assertTrue(any("既不在工作树内" in n for n in notes), notes)
+
+
+class WriteSideGuardCliTests(unittest.TestCase):
+    """⑴＋⑵ 的端到端闸：`append-row` 硬拒、`edit-row` 按归属分档。
+
+    黑盒方式：`--file` 指向本用例专属临时文件（同 `AppendRowTests` 惯例），
+    不触碰真实队列锁／REPO_ROOT。
+    """
+
+    FIXTURE = (
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+        "| 100 | 存量缺域行 | CC | 无 | 无 | [S:open] 待领 | 无 | 2026-09-09 |\n"
+        "\n## 二、待 commit 批次（CC 取活销行）\n\n"
+        "| 批次 | 文件清单 | 说明 | 状态 |\n"
+        "|------|---------|------|------|\n"
+        "| B-存量 | 0-学习与工具/存量裸路径.py | 说明 | 待处理 |\n"
+        "\n## 四、需 Shao Peishen 的动作（例外与拍板）\n\n"
+        "| # | 事项 | 等谁 | 截止 |\n"
+        "|---|------|------|------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = Path(self._tmpdir.name) / "假想队列.md"
+        self.target.write_text(self.FIXTURE, encoding="utf-8")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _run(self, *args: str) -> subprocess.CompletedProcess:
+        return run("--file", str(self.target), *args)
+
+    # ---- ⑴ append-row ----
+
+    def test_append_row_rejects_bare_path_without_writing(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._run(
+            "append-row", "--section", "二",
+            "--cell", "B-新批次", "--cell", "0-学习与工具/工具-共享文档编辑锁.py",
+            "--cell", "说明", "--cell", "待处理",
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("未用反引号包裹", result.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_append_row_accepts_range_shorthand_in_backticks(self):
+        """正向对照：同一条命令把清单改成反引号包裹的范围性速记即通过
+        （速记不做存在性核验，故不依赖主仓实时 git 状态，可稳定复现）。"""
+        result = self._run(
+            "append-row", "--section", "二",
+            "--cell", "B-新批次", "--cell", "`X/tests/test_*.py`",
+            "--cell", "说明", "--cell", "待处理",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("| B-新批次 | `X/tests/test_*.py` | 说明 | 待处理 |",
+                      self.target.read_text(encoding="utf-8"))
+
+    # ---- ⑵ append-row ----
+
+    def test_append_row_rejects_section_one_row_without_domain_field(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._run(
+            "append-row", "--section", "一", "--number", "101",
+            "--cell", "新任务", "--cell", "CC", "--cell", "无", "--cell", "无",
+            "--cell", "[S:open] 待领", "--cell", "无", "--cell", "2026-09-09",
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("缺 `[D:机|业]`", result.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_append_row_accepts_section_one_row_with_domain_field(self):
+        result = self._run(
+            "append-row", "--section", "一", "--number", "101",
+            "--cell", "新任务", "--cell", "CC", "--cell", "无", "--cell", "无",
+            "--cell", "[S:open][D:机] 待领", "--cell", "无", "--cell", "2026-09-09",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("| 101 | 新任务 |", self.target.read_text(encoding="utf-8"))
+
+    # ---- 存量分档：本次没碰那一格就不该由你负责 ----
+
+    def test_edit_row_only_warns_when_legacy_file_list_untouched(self):
+        """🔴 存量降级用例（`#513` 明写"只建写侧守卫、不回改存量"）：
+        2026-09-09 实测 §二 待处理 34 行里 28 行零反引号片段——一律硬拦会把
+        "给存量批次销状态"这个动作整个堵死，而销状态的人并没有写坏那一格。"""
+        result = self._run(
+            "edit-row", "--section", "二", "--number", "B-存量",
+            "--set", "状态=✅ 已完成",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("未用反引号包裹", result.stdout)   # 告警照打、照点名
+        self.assertIn("只告警、不阻断", result.stdout)
+        self.assertIn("| B-存量 | 0-学习与工具/存量裸路径.py | 说明 | ✅ 已完成 |",
+                      self.target.read_text(encoding="utf-8"))
+
+    def test_edit_row_blocks_when_file_list_itself_is_written(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._run(
+            "edit-row", "--section", "二", "--number", "B-存量",
+            "--set", "文件清单=0-学习与工具/又一个裸路径.py",
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("未用反引号包裹", result.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_edit_row_only_warns_when_legacy_status_cell_untouched(self):
+        result = self._run(
+            "edit-row", "--section", "一", "--number", "100",
+            "--set", "触碰区=新触碰区",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("缺 `[D:机|业]`", result.stdout)
+        self.assertIn("只告警、不阻断", result.stdout)
+        self.assertIn("| 新触碰区 |", self.target.read_text(encoding="utf-8"))
+
+    def test_edit_row_blocks_when_status_cell_itself_is_written(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._run(
+            "edit-row", "--section", "一", "--number", "100",
+            "--set", "状态=[S:partial] 在办",
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("缺 `[D:机|业]`", result.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+
+    def test_edit_row_status_rewrite_with_domain_field_passes(self):
+        result = self._run(
+            "edit-row", "--section", "一", "--number", "100",
+            "--set", "状态=[S:partial][D:机] 在办",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[S:partial][D:机] 在办", self.target.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
