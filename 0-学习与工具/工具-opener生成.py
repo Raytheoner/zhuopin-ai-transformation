@@ -35,6 +35,14 @@
 - `subtask_lane`：骨架【CC · 子任务泳道】变体——**不含** `set_session_title` 行
   （2026-09-05 队列 §一 `#487`／(甲) 拍板：源头不放，不指望子任务读懂例外句），
   收尾无条件追加 P4 两条默认口径（并行上限 4／错峰 ≥90 秒；只 push 分支不 ff）。
+  🔴 **未传 `--do`／`--dont` 时不拼「做什么／不做什么」两段**（队列 §一 `#487`
+  2026-09-09 apply）：骨架【CC · 子任务泳道】节明写「本变体恒为三行，不多写一行」，
+  做什么／不做什么／收工一律写进**队列行**。此前无条件硬塞 `1. …／- …` 两段占位，
+  与本行既有子项**同源而镜像**——既有子项是「一个参数被接受却不生效」（`--dont`
+  静默丢弃），这一处是「**一个参数没传却仍产出内容**」；根因都是生成器与格式正本
+  各自演进、其间无机器守。传了 `--do`／`--dont` 则照拼（`BODY_PARAM_SUPPORT` 登记
+  本组合两个都支持，调用方明确要写就不拦）。机器守＝`工具-opener块lint.py` 形态⑧
+  ＋ 单测 `骨架与生成器契约`（读骨架原文比对，不靠人每次肉眼核）。
 - `guardian`：骨架 §三bis 看护者开场词变体——含 `set_session_title`（它是本批
   唯一真正被粘贴进独立 CC 会话的一份），分支字段是固定字面量（看护者本身不建
   分支），正文追加同一条 P4 默认口径（这次是讲给看护者听，指导它怎么起子任务）。
@@ -165,6 +173,14 @@ OP_ID_RE = re.compile(r"^OP-\d{4}-[A-Za-z0-9]+$")
 CHECKBOX_RE = re.compile(r"^[☑☐]")
 #: CC 侧分支短横线名（骨架 `<短横线名>` 占位符的字面约束）。
 BRANCH_SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+#: 🔴 **`--branch` 只收「前缀之后」那一截**（队列 §一 `#487` 2026-09-09 追记⑵）：
+#: `_settings_line` 自己会拼 `claude/op{MMDD}{X}-`，调用方再把 OP 短号写进 slug
+#: 就成了 `claude/op0909b-op0909b-docx-481`。**这条原本不是 bug 是用法**——但
+#: `--help` 只写「短横线 slug」、没写「勿含 OP 短号」，按直觉传全名必踩，
+#: 且成品是一个**看起来正常的分支名、不报错**，与本行既有子项同族（错得无声）。
+#: 故按「拒含 `opNNNN[a-z]` 形态前缀的 slug」显式化。`\d{4}` 要四个真数字 ⇒
+#: `opener-gen`／`ops-fix` 这类真实 slug 不会误伤。
+BRANCH_SLUG_OP_PREFIX_RE = re.compile(r"^op\d{4}[a-z]?(?=-|$)")
 #: 路径纪律：仓库根相对路径，不接受本机绝对路径（根 CLAUDE.md §5「路径写仓库根相对路径」）。
 WINDOWS_ABS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
@@ -339,11 +355,34 @@ def _validate_spec(spec: OpenerSpec) -> None:
             "CC 侧分支须传短横线 slug（骨架 `<短横线名>` 占位符，如 'opener-gen'，"
             f"小写字母数字与连字符），收到：{spec.branch!r}"
         )
+    if (spec.env == "CC" and spec.variant != "guardian"
+            and BRANCH_SLUG_OP_PREFIX_RE.match(spec.branch)):
+        # 队列 §一 `#487` 追记⑵：本工具自己会拼 `claude/opMMDDX-` 前缀，slug 里
+        # 再带一次 ⇒ `claude/op1231r-op0909b-docx-481`，**不报错**、成品看着正常。
+        mmdd, suffix = _mmdd_and_suffix(spec.op_id)
+        stripped = BRANCH_SLUG_OP_PREFIX_RE.sub("", spec.branch).lstrip("-")
+        raise OpenerGenError(
+            f"`--branch` 只收 OP 短号**之后**那一截：本工具会自动拼上 "
+            f"`claude/op{mmdd}{suffix.lower()}-`，slug 里再带一次 OP 短号会拼成 "
+            f"`claude/op{mmdd}{suffix.lower()}-{spec.branch}`（前缀重复、且**不报错**，"
+            f"成品是个看起来正常的分支名）。收到：{spec.branch!r}，"
+            f"应传：{stripped!r}" + ("" if stripped else "（去掉短号后为空，请另起语义名）")
+        )
     if WINDOWS_ABS_PATH_RE.match(spec.input_pointer):
         raise OpenerGenError(
             "输入指针须写仓库根相对路径，不接受本机绝对路径"
             f"（根 CLAUDE.md §5「路径写仓库根相对路径」），收到：{spec.input_pointer!r}"
         )
+
+
+def _body_params_given(kwargs: dict) -> bool:
+    """调用方**真的传了**任一正文参数（`--do`／`--dont`）？
+
+    🔴 **只看 `kwargs`，不看 `spec`**——同 `_reject_silently_dropped_body_params`：
+    `OpenerSpec.__init__` 会把 `None` 兜成 `["…"]` 占位，读 `spec` 分不出
+    「没传」与「传了」，判据必须站在兜底之前。
+    """
+    return any(kwargs.get(k) for k in _BODY_PARAM_FLAG)
 
 
 def _reject_silently_dropped_body_params(kwargs: dict, spec: OpenerSpec) -> None:
@@ -507,19 +546,18 @@ def generate_opener(**kwargs) -> str:
         elif spec.env == "CC" and spec.variant == "subtask_lane":
             # 骨架【CC · 子任务泳道】变体：不放 set_session_title 行（源头不放，
             # 见模块文档「variant」节），收尾无条件追加 P4 两条默认口径。
+            # 🔴 **正文两段只在调用方真的传了 `--do`／`--dont` 时才拼**
+            #（队列 §一 `#487` 2026-09-09 apply）：骨架该节明写「恒为三行，不多写
+            # 一行」——做什么／不做什么／收工一律写进队列行。无条件硬塞占位
+            # 等于把「没填的模板」当成品发出去，是既有子项的镜像形态。
             body_lines = [
                 title_line,
                 _settings_line(spec),
                 _read_line(spec),
-                "",
-                "做什么：",
-                do_block,
-                "",
-                "不做什么：",
-                dont_block,
-                SUBTASK_PARALLEL_NOTE,
-                SUBTASK_PUSH_NOTE,
             ]
+            if _body_params_given(kwargs):
+                body_lines += ["", "做什么：", do_block, "", "不做什么：", dont_block]
+            body_lines += [SUBTASK_PARALLEL_NOTE, SUBTASK_PUSH_NOTE]
         else:
             body_lines = [
                 title_line,
@@ -565,7 +603,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--env", required=True, choices=VALID_ENVS, help="执行环境")
     ap.add_argument("--short-name", required=True, help="短名，≤12 字")
     ap.add_argument("--branch", required=True,
-                    help="CC：短横线 slug（如 opener-gen）；Cowork：固定传 master")
+                    help="CC：短横线 slug（如 opener-gen）——🔴 只传 OP 短号**之后**那一截，"
+                         "本工具会自动拼 `claude/opMMDDX-` 前缀，slug 里勿再含 "
+                         "`opNNNN[a-z]` 形态的 OP 短号（传 `op0909b-docx-481` 会拼成 "
+                         "`claude/op0909b-op0909b-docx-481`，现已 fail-loud 拒绝）；"
+                         "Cowork：固定传 master")
     ap.add_argument("--worktree", required=True, help="worktree 情形，须以 ☑／☐ 开头")
     ap.add_argument("--workspace", required=True, help="工作区情形（§〇.1 四种填法之一或「无」）")
     ap.add_argument("--session", required=True, help="骨架固定为「新开」")
