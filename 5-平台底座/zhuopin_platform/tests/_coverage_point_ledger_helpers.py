@@ -17,12 +17,20 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-# —— 平台底座路径引导（与 tests/conftest.py 同一样板，队列 #345 收拢）——
+# —— 平台底座路径引导（与 tests/conftest.py 同一样板，队列 #345 收拢；`工具-引导样板lint.py` 守）——
+# 🔴 下面五行只负责让 `bootstrap` 自身可被 import、**不含任何判断分支**；开发机 monorepo 与
+# `.51` 扁平部署两种布局的分歧一律由 `ensure_paths` 处理（队列 #520：本文件 2026-09-06 由
+# `1ea9ac8` 引入时漏了这两行收拢调用，被 `引导样板lint::test_存量已清零` 判为「引导块未收拢」）。
+# 第二参数＝调用方自身的包根：`tests/` 下的文件传 `_HERE.parent.parent`＝`5-平台底座/zhuopin_platform/`。
+# `strict=True` 与同目录 `conftest.py` 一致——测试就该跑在仓库里，找不到标记说明环境真错了，
+# 此时静默回退到环境里的另一份平台底座，会让测试悄悄测了别人的代码。
 _HERE = Path(__file__).resolve()
 for _p in _HERE.parents:
     if (_p / "5-平台底座" / "zhuopin_platform").is_dir():
         sys.path.insert(0, str(_p / "5-平台底座" / "zhuopin_platform"))
         break
+from zhuopin_platform.bootstrap import ensure_paths  # noqa: E402
+ensure_paths(__file__, _HERE.parent.parent, strict=True)  # noqa: E402
 
 from zhuopin_platform.coverage_point_ledger import (  # noqa: E402
     Event,
