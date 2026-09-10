@@ -45,6 +45,40 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().with_name("工具-共享文档编辑锁.py")
 
 
+def _due_mmdd(offset_days: int) -> str:
+    """按**相对今天**的天数偏移造一个 `到期 MM-DD` 用的日期串（本机本地日期）。
+
+    🔴 **判据（队列 §一 `#535`，2026-09-10）：夹具里任何绝对日期都是一颗定时
+    炸弹，一律改相对构造。** 本行是「时间相关的测试夹具」这一族的第一条——
+    `RegistrationWaiverAnnotationParsingTests` 原先把 `09-09` 这个绝对日期写死
+    进 `到期` 字段，2026-09-10 零点一过整类 6 条自动转红，**红因与被测逻辑无关**，
+    却逼每一个跑全量回归的人重做一次「这是不是真红」的对照实验（当日已发生
+    三次）。判据不是「有几条红」，是「红得与被测逻辑无关且会周期性复发」。
+
+    🔴 **本地日期，不是 UTC**：与被测的 `_resolve_waiver_due_date` 对齐——它
+    刻意用 `date.today()` 而非 `_now()`（UTC），用 UTC 造夹具会在每天
+    16:00–24:00 那一段整整差一天。
+
+    ⚠️ **偏移量请保持在 ±60 天内**：`MM-DD` 无年份，偏移大到跨年时可能落在
+    「今年不存在、目标年才存在」的 2-29 上，被 `_resolve_waiver_due_date` 判成
+    非法日期而返回 `None`。±30 天以内不可能跨年落到 2-29。
+
+    ⚠️ **`MM-DD` 表达不了「1 月 1 日的昨天」**：格式无年份，补年份口径是
+    「早于今天 180 天以上者解为次年」，故 1 月 1 日当天不存在任何能解成「已
+    过期」的 `MM-DD`。需要「已过期」夹具的用例请用 `_expired_due_representable()`
+    判一下，或改走显式 `today=` 注入的白盒路径。
+    """
+    from datetime import date as _date, timedelta as _timedelta
+    target = _date.today() + _timedelta(days=offset_days)
+    return f"{target.month:02d}-{target.day:02d}"
+
+
+def _expired_due_representable() -> bool:
+    """今天是否存在能解成「已过期」的 `MM-DD`（1 月 1 日当天没有，见上）。"""
+    from datetime import date as _date
+    return _date.today().timetuple().tm_yday > 1
+
+
 def _load_module():
     """白盒 import 脚本本体（文件名含连字符/中文，不能直接 `import`）。"""
     spec = importlib.util.spec_from_file_location("_edit_lock_tool_under_test", SCRIPT)
@@ -6373,7 +6407,7 @@ class RegistrationCompletenessTests(unittest.TestCase):
     def test_named_waiver_in_note_passes(self):
         """点名了本次真实脏文件的豁免 ⇒ 放行。"""
         self._dirty("某文件.md")
-        note = self._waiver("某文件.md（作者 OP-测试，到期 12-31）")
+        note = self._waiver(f"某文件.md（作者 OP-测试，到期 {_due_mmdd(30)}）")
         self.assertEqual(self._run(self._queue(), note=note), [])
 
     def test_blanket_waiver_is_rejected(self):
@@ -6403,7 +6437,9 @@ class RegistrationCompletenessTests(unittest.TestCase):
         数字对不上它也不看。"""
         self._dirty("甲.md")
         self._dirty("乙.md")
-        violations = self._run(self._queue(), note=self._waiver("甲.md（作者 OP-测试，到期 12-31）"))
+        violations = self._run(
+            self._queue(),
+            note=self._waiver(f"甲.md（作者 OP-测试，到期 {_due_mmdd(30)}）"))
         self.assertEqual(len(violations), 1)
         self.assertIn("乙.md", violations[0])
         self.assertNotIn("- 甲.md", violations[0])
@@ -6437,21 +6473,18 @@ class RegistrationCompletenessTests(unittest.TestCase):
         # 队列行里的残留连"检测到标记"都不该触发——它压根不在取材面里。
         self.assertNotIn("没有点名任何有效路径", violations[0])
 
+    @unittest.skipUnless(
+        _expired_due_representable(),
+        "1 月 1 日当天 `MM-DD` 表达不出「已过期」（补年份口径见 _due_mmdd 文档）")
     def test_expired_waiver_does_not_pass(self):
         """到期已过 ⇒ 整条失效，等同没写。"""
-        from datetime import date, timedelta
-        yesterday = date.today() - timedelta(days=1)
         self._dirty("某文件.md")
-        note = self._waiver(
-            f"某文件.md（作者 OP-测试，到期 {yesterday.month:02d}-{yesterday.day:02d}）")
+        note = self._waiver(f"某文件.md（作者 OP-测试，到期 {_due_mmdd(-1)}）")
         self.assertTrue(self._run(self._queue(), note=note))
 
     def test_unexpired_waiver_passes(self):
-        from datetime import date, timedelta
-        tomorrow = date.today() + timedelta(days=1)
         self._dirty("某文件.md")
-        note = self._waiver(
-            f"某文件.md（作者 OP-测试，到期 {tomorrow.month:02d}-{tomorrow.day:02d}）")
+        note = self._waiver(f"某文件.md（作者 OP-测试，到期 {_due_mmdd(1)}）")
         self.assertEqual(self._run(self._queue(), note=note), [])
 
     def test_waiver_without_due_defaults_to_today(self):
@@ -6477,14 +6510,15 @@ class RegistrationCompletenessTests(unittest.TestCase):
             with self.subTest(sep=sep):
                 self._dirty("甲.md")
                 self._dirty("乙.md")
-                note = self._waiver(f"`甲.md`{sep}乙.md（作者 OP-测试，到期 12-31）")
+                note = self._waiver(
+                    f"`甲.md`{sep}乙.md（作者 OP-测试，到期 {_due_mmdd(30)}）")
                 self.assertEqual(self._run(self._queue(), note=note), [])
 
     def test_waiver_naming_nonexistent_path_is_not_valid(self):
         """点名了一个既不在工作树、也不在本次脏文件集合里的路径 ⇒ 不算有效，
         整条按泛豁免拒。"""
         self._dirty("某文件.md")
-        note = self._waiver("根本不存在的/文件.md（作者 OP-测试，到期 12-31）")
+        note = self._waiver(f"根本不存在的/文件.md（作者 OP-测试，到期 {_due_mmdd(30)}）")
         violations = self._run(self._queue(), note=note)
         self.assertEqual(len(violations), 1)
         self.assertIn("没有点名任何有效路径", violations[0])
@@ -6492,7 +6526,7 @@ class RegistrationCompletenessTests(unittest.TestCase):
     def test_named_waiver_also_covers_status_failure(self):
         """取数失败时豁免仍适用，但适用的是"点名了真实文件"的豁免。"""
         self._dirty("某文件.md")
-        note = self._waiver("某文件.md（作者 OP-测试，到期 12-31）")
+        note = self._waiver(f"某文件.md（作者 OP-测试，到期 {_due_mmdd(30)}）")
         with unittest.mock.patch.object(self.m, "_local_git_status_paths", return_value=None):
             self.assertEqual(self._run(self._queue(), note=note), [])
 
@@ -6510,7 +6544,7 @@ class RegistrationCompletenessTests(unittest.TestCase):
         删除豁免拒掉。"""
         seed = self.root / "seed.txt"
         seed.unlink()
-        note = self._waiver("seed.txt（作者 OP-测试，到期 12-31）")
+        note = self._waiver(f"seed.txt（作者 OP-测试，到期 {_due_mmdd(30)}）")
         self.assertEqual(self._run(self._queue(), note=note), [])
 
     def test_registration_waiver_scope_excludes_touched_rows(self):
@@ -6609,7 +6643,9 @@ class ReleaseWaiverCliTests(unittest.TestCase):
         self.assertEqual(blocked.returncode, 1)
         self.assertIn("别人的在办件.md", blocked.stdout + blocked.stderr)
 
-        ok = self._release("--waiver", "登记豁免：别人的在办件.md（作者 OP-他线，到期 12-31）")
+        ok = self._release(
+            "--waiver",
+            f"登记豁免：别人的在办件.md（作者 OP-他线，到期 {_due_mmdd(30)}）")
         self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
         self.assertIn("点名放行", ok.stdout)
 
@@ -6627,7 +6663,8 @@ class ReleaseWaiverCliTests(unittest.TestCase):
         self.assertEqual(self._acquire().returncode, 0)
         (self.root / "甲.md").write_text("x", encoding="utf-8")
         (self.root / "乙.md").write_text("y", encoding="utf-8")
-        r = self._release("--waiver", "登记豁免：甲.md（作者 OP-测试，到期 12-31）")
+        r = self._release(
+            "--waiver", f"登记豁免：甲.md（作者 OP-测试，到期 {_due_mmdd(30)}）")
         self.assertEqual(r.returncode, 1)
         self.assertIn("乙.md", r.stdout + r.stderr)
 
@@ -6637,7 +6674,7 @@ class ReleaseWaiverCliTests(unittest.TestCase):
         必须有人能在事后看见。**"""
         self.assertEqual(self._acquire().returncode, 0)
         (self.root / "别人的在办件.md").write_text("并发会话的改动", encoding="utf-8")
-        waiver = "登记豁免：别人的在办件.md（作者 OP-他线，到期 12-31）"
+        waiver = f"登记豁免：别人的在办件.md（作者 OP-他线，到期 {_due_mmdd(30)}）"
         self.assertEqual(self._release("--waiver", waiver).returncode, 0)
 
         lock_file = (self.root / self.MECH_REL).with_suffix(".md.editlock")
@@ -6677,7 +6714,7 @@ class ReleaseWaiverCliTests(unittest.TestCase):
         地方。若哪天有人把它写进 note 之外的持久位置，这条会变红。"""
         self.assertEqual(self._acquire().returncode, 0)
         (self.root / "别人的在办件.md").write_text("并发会话的改动", encoding="utf-8")
-        waiver = "登记豁免：别人的在办件.md（作者 OP-他线，到期 12-31）"
+        waiver = f"登记豁免：别人的在办件.md（作者 OP-他线，到期 {_due_mmdd(30)}）"
         self.assertEqual(self._release("--waiver", waiver).returncode, 0)
 
         # 第二把锁：同样的脏文件还在，但这次不带 --waiver ⇒ 必须被拦。
@@ -8214,7 +8251,7 @@ class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
     def test_every_path_survives_its_own_annotation(self):
         clauses = self.m._parse_registration_waiver_clauses(
             "登记豁免：a/b/c.md（本批新建）；d/e/f.md（同批）"
-            "（作者 OP-0909-W，到期 09-09）"
+            f"（作者 OP-0909-W，到期 {_due_mmdd(30)}）"
         )
         self.assertEqual(len(clauses), 1)
         self.assertEqual(clauses[0]["paths"], ["a/b/c.md", "d/e/f.md"])
@@ -8222,15 +8259,16 @@ class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
     def test_author_and_due_still_parsed_after_annotation_stripping(self):
         """反向闸：括注改成"整段剔除"之后，`作者`／`到期` 仍须解析得出——
         否则修好一条就打坏另一条。"""
+        due = _due_mmdd(30)
         clauses = self.m._parse_registration_waiver_clauses(
-            "登记豁免：a/b/c.md（本批新建）；d/e/f.md（作者 OP-0909-W，到期 12-31）"
+            f"登记豁免：a/b/c.md（本批新建）；d/e/f.md（作者 OP-0909-W，到期 {due}）"
         )
         self.assertEqual(clauses[0]["author"], "OP-0909-W")
-        self.assertEqual(clauses[0]["due_raw"], "12-31")
+        self.assertEqual(clauses[0]["due_raw"], due)
 
     def test_half_width_parentheses_also_stripped(self):
         clauses = self.m._parse_registration_waiver_clauses(
-            "登记豁免：a/b/c.md(new);d/e/f.md(same)(作者 OP-X,到期 09-09)"
+            f"登记豁免：a/b/c.md(new);d/e/f.md(same)(作者 OP-X,到期 {_due_mmdd(30)})"
         )
         self.assertEqual(clauses[0]["paths"], ["a/b/c.md", "d/e/f.md"])
         self.assertEqual(clauses[0]["author"], "OP-X")
@@ -8239,7 +8277,7 @@ class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
         """保守侧：括号没闭合时从左括号起全算括注——宁可少认一个路径并显式
         告警，也不要把半句话当路径去匹配。"""
         head, annotation = self.m._split_parenthetical_annotations(
-            "a/b/c.md（作者 OP-X，到期 09-09"
+            f"a/b/c.md（作者 OP-X，到期 {_due_mmdd(30)}"
         )
         self.assertEqual(head.strip(), "a/b/c.md")
         self.assertIn("作者 OP-X", annotation)
@@ -8254,7 +8292,7 @@ class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
 
     def test_trailing_prose_reported_as_non_path(self):
         clauses = self.m._parse_registration_waiver_clauses(
-            "登记豁免：a/b.md；他线脏文件由其作者线自登（作者 OP-X，到期 09-09）"
+            f"登记豁免：a/b.md；他线脏文件由其作者线自登（作者 OP-X，到期 {_due_mmdd(30)}）"
         )
         self._touch("a/b.md")
         valid, notes = self.m._valid_waiver_paths(clauses, self.root, ["a/b.md"])
@@ -8265,7 +8303,7 @@ class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
         """🔴 逐条 `✗` 仍可能被读成"少放行了一个"——整条 0 生效必须单独说
         出来，那才是 `#513` 那族"看起来生效、实则没覆盖到"的形态。"""
         clauses = self.m._parse_registration_waiver_clauses(
-            "登记豁免：不存在/的/路径.md（作者 OP-X，到期 09-09）"
+            f"登记豁免：不存在/的/路径.md（作者 OP-X，到期 {_due_mmdd(30)}）"
         )
         valid, notes = self.m._valid_waiver_paths(clauses, self.root, [])
         self.assertEqual(valid, set())
@@ -8274,7 +8312,7 @@ class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
     def test_all_valid_clause_gets_no_summary_warning(self):
         self._touch("a/b.md")
         clauses = self.m._parse_registration_waiver_clauses(
-            "登记豁免：a/b.md（作者 OP-X，到期 09-09）"
+            f"登记豁免：a/b.md（作者 OP-X，到期 {_due_mmdd(30)}）"
         )
         valid, notes = self.m._valid_waiver_paths(clauses, self.root, ["a/b.md"])
         self.assertEqual(valid, {"a/b.md"})
@@ -8288,7 +8326,7 @@ class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
         被静默拒掉——那是把一条同族缺陷从 ⑶ 搬到 ⑵。"""
         self._touch("0-学习与工具/run-commit-sweep-hidden.vbs")
         clauses = self.m._parse_registration_waiver_clauses(
-            "登记豁免：0-学习与工具/run-commit-sweep-hidden.vbs（作者 OP-X，到期 09-09）"
+            f"登记豁免：0-学习与工具/run-commit-sweep-hidden.vbs（作者 OP-X，到期 {_due_mmdd(30)}）"
         )
         valid, notes = self.m._valid_waiver_paths(clauses, self.root, [])
         self.assertEqual(valid, {"0-学习与工具/run-commit-sweep-hidden.vbs"})
@@ -8298,17 +8336,61 @@ class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
         """既有口径不得被本次改动动到：被删除的脏文件在磁盘上恰恰不存在，
         只按"文件存在"判会把一次合法的删除豁免拒掉。"""
         clauses = self.m._parse_registration_waiver_clauses(
-            "登记豁免：已删/的/件.md（作者 OP-X，到期 09-09）"
+            f"登记豁免：已删/的/件.md（作者 OP-X，到期 {_due_mmdd(30)}）"
         )
         valid, _notes = self.m._valid_waiver_paths(clauses, self.root, ["已删/的/件.md"])
         self.assertEqual(valid, {"已删/的/件.md"})
 
     def test_missing_path_shaped_candidate_keeps_original_wording(self):
         clauses = self.m._parse_registration_waiver_clauses(
-            "登记豁免：不存在/的/路径.md（作者 OP-X，到期 09-09）"
+            f"登记豁免：不存在/的/路径.md（作者 OP-X，到期 {_due_mmdd(30)}）"
         )
         _valid, notes = self.m._valid_waiver_paths(clauses, self.root, [])
         self.assertTrue(any("既不在工作树内" in n for n in notes), notes)
+
+
+class FixtureDateTimeBombGuardTests(unittest.TestCase):
+    """🔴 无回归闸（队列 §一 `#535`，2026-09-10）：夹具里不得再出现写死的 `到期 MM-DD`。
+
+    **判据＝夹具里任何绝对日期都是一颗定时炸弹**：它今天绿、某天零点自动转红，
+    而红的原因与被测逻辑零关系。这种红的真实代价不是「多 6 条失败」，是**逼
+    每一个跑全量回归的人重做一次「这是不是真红」的对照实验**——`OP-0909-Z`
+    当日就做了三次，第三次才立行。
+
+    **「靠人记住这是假红」那条路已被实证走不通**，所以这里不写进文档、写成闸：
+    下一个想把一个绝对日期敲进 `到期` 字段的人，当场看见红，而不是三十天后。
+    修法只有一条——改用 `_due_mmdd(±N)` 造相对日期。
+    """
+
+    def test_no_hardcoded_due_date_in_fixtures(self):
+        source = Path(__file__).read_text(encoding="utf-8")
+        offenders = [
+            f"第 {i} 行：{line.strip()[:100]}"
+            for i, line in enumerate(source.splitlines(), 1)
+            if re.search(r"到期\s*\d", line)
+        ]
+        self.assertEqual(offenders, [], "夹具里出现写死的到期日期，请改用 _due_mmdd(±N)：\n"
+                                       + "\n".join(offenders))
+
+    def test_helper_produces_relative_date_across_year_boundary(self):
+        """helper 自身的正确性闸：偏移后仍须与被测的补年份口径对得上。"""
+        m = _load_module()
+        from datetime import date, timedelta
+        for offset in (1, 7, 30):
+            mmdd = _due_mmdd(offset)
+            month, day = (int(x) for x in mmdd.split("-"))
+            resolved = m._resolve_waiver_due_date(month, day)
+            self.assertEqual(resolved, date.today() + timedelta(days=offset),
+                             f"偏移 {offset} 天 ⇒ {mmdd} 解错了")
+            self.assertGreater(resolved, date.today())
+
+    def test_helper_past_offset_resolves_to_past(self):
+        if not _expired_due_representable():
+            self.skipTest("1 月 1 日当天 `MM-DD` 表达不出「已过期」")
+        m = _load_module()
+        from datetime import date
+        month, day = (int(x) for x in _due_mmdd(-1).split("-"))
+        self.assertLess(m._resolve_waiver_due_date(month, day), date.today())
 
 
 class WriteSideGuardCliTests(unittest.TestCase):
