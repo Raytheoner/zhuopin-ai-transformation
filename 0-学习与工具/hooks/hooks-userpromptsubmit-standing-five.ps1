@@ -107,7 +107,9 @@ function Get-StandingAnchorsFromClaudeMd([string]$RepoRoot) {
         [void]$byIndex[$idx].Add($body)
     }
 
-    # ── 锚点集自洽性校验（三族，与总条数无关；判据见文件头 .DESCRIPTION） ──────────
+    # ── 锚点集自洽性校验（与总条数无关；判据全文见文件头 .DESCRIPTION）─────────────
+    #    判据四路：缺号／重复／非法编号／一条都没命中；另两道是挂死防线（编号偏大、编号溢出），
+    #    它们不是判据、是护栏——判据管"锚点集对不对"，护栏管"别把每一轮对话都卡住"。
     $indexes = @($byIndex.Keys | Sort-Object)
     $notes = New-Object System.Collections.ArrayList
 
