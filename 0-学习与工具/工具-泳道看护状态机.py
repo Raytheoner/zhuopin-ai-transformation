@@ -63,6 +63,16 @@ lane-heartbeat/<泳道>.md` 由自己的 CWD 解析，`reports/` 又被 `.gitign
 供任一撞锁的泳道留痕一次；`summary` 现取汇总，报「本批 index.lock 撞击 N 次」，
 不再靠人工回忆有没有撞过。
 
+## 批次归属（队列 §一 `#536`，源 §四 `#189`）
+
+`summary --batch X` 的每一列都只统计**属于 X 的**留痕。泳道归哪一批由
+`resolve_lane_batch()` 单值判定：`lane_state["batch"]`（`heartbeat --done
+--batch`／`pause`／看门狗写入）优先，缺失时回落取不晚于 `done_at` 的最后一条
+带批次流水，皆无 ⇒ **归属未知**。🔴 **「没写批次」不等于「属于本批」**——旧
+实现把缺失当成"哪一批都算"，实测让 `B-0909_三泳道夜批` 报出 5 条（实为 3 条）
+终态泳道；归属未知者现在谁都不算，另起一行单列，**不消失也不冒充**。
+⇒ 所以 `heartbeat --done` **务必带 `--batch`**，否则该泳道进不了任何一批的账。
+
 ## 用法
 
     python 0-学习与工具/工具-泳道看护状态机.py criteria
@@ -81,7 +91,7 @@ lane-heartbeat/<泳道>.md` 由自己的 CWD 解析，`reports/` 又被 `.gitign
         --wave 2 --lane A --heartbeat-file reports/lane-heartbeat/OP-xxxx.md
     python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane A --text "已开工"
     python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane A --done \\
-        --text "产出落点：openspec/changes/xxx/"
+        --batch 2026-09-02-看护批A --text "产出落点：openspec/changes/xxx/"
     python 0-学习与工具/工具-泳道看护状态机.py summary --batch 2026-09-02-看护批A
     python 0-学习与工具/工具-泳道看护状态机.py show
 
