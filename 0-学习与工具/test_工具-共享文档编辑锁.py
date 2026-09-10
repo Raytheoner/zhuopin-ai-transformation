@@ -8087,6 +8087,18 @@ class FileListBarePathGuardTests(unittest.TestCase):
             "而 .gitignore:35 的 **/reports/ 规则把该目录整体排除"
         ), [])
 
+    def test_backtick_span_with_inner_spaces_is_not_this_guards_business(self):
+        """🔬 变异检验补漏（`OP-0910-X`，2026-09-11）：把 `_bare_path_like_tokens`
+        的「反引号跨度整段剔除」（ⓑ）改成不剔除，原有 19 例**全绿存活**——
+        因为紧贴的反引号会让 `suffix` 变成 ``.md` ``、恰好不在扩展名表里。
+        真正区分两者的是**反引号内含空白**的跨度（如写成命令的
+        `` `python 0-学习与工具/工具-队列查询.py --row 513` ``）：不剔除跨度就会
+        把里面的 `.py` 串误报成裸路径。本守卫的契约＝**只看没被反引号保护
+        的残余**，反引号内的串合不合法归正面守卫 ⑶ 管，两条互不越界。"""
+        self.assertEqual(self._violations(
+            "`python 0-学习与工具/工具-队列查询.py --row 513`（核验命令，非产出件）"
+        ), [])
+
     def test_preregistered_row_is_exempt(self):
         """与 ⑶／ⓘ1 同一豁免口径：预登记行的清单本就允许是范围性描述。"""
         status = self.m.PREREGISTERED_STATUS_PREFIX + "，收工时精确化）"
