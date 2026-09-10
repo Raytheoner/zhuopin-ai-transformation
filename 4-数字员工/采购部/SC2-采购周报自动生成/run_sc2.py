@@ -2,7 +2,8 @@
 
 用法：
     python run_sc2.py serve --mode mock            # 起服务（过渡期端口 8096）
-    python run_sc2.py report --mode real           # 生成一期周报到 stdout 并存快照
+    python run_sc2.py report --mode real           # 生成一期周报到 stdout 并存快照（含数据集快照）
+    python run_sc2.py detail --period 2026-W36     # 从该期数据集快照导出三节×三窗口明细 CSV（不触网）
     python run_sc2.py probe                        # F14 端点参数名对照取证（需真实网络）
 """
 from __future__ import annotations
@@ -126,6 +127,7 @@ def cmd_serve(args) -> int:
 
 
 def cmd_report(args) -> int:
+    from sc2 import detail
     from sc2.report import build_report, render_text, save_snapshot
     from sc2.sources import build_feed
     from sc2.windows import build_windows
@@ -135,10 +137,50 @@ def cmd_report(args) -> int:
     if getattr(args, "max_status_materials", None) is not None and hasattr(
             feed, "max_status_materials"):
         feed.max_status_materials = args.max_status_materials
-    report = build_report(feed.fetch(windows), windows)
+    dataset = feed.fetch(windows)
+    report = build_report(dataset, windows)
     print(render_text(report))
     path = save_snapshot(report)
     print(f"\n[快照] {path}", file=sys.stderr)
+    # 数据集与周报快照成对落盘（§一 `#538`），使该期此后可展开到行、可脱离 ERP 重算。
+    print(f"[数据集快照] {detail.save_dataset(dataset, report.period)}", file=sys.stderr)
+    return 0
+
+
+def cmd_detail(args) -> int:
+    """从某期**数据集快照**导出计算过程明细（§一 `#538`，姚祖怡 2026-09-09「把这 187 行的明细列出来」）。
+
+    🔴 **只读落盘快照、不触网**：现取 ERP 得到的行集与他手上那份周报不是同一时刻的，
+    对不上是必然、对上了才是巧合。该期没有数据集快照即报错退出，不回退到现取。
+    🔴 **先对账再写文件**：三节 × 三窗口任一格明细行数 ≠ 周报指标 ⇒ 一个文件都不写。
+    产出落 `reports/`（gitignore），**交到专员手上属对外交付，须走跟进信审批**——本命令只管产出。
+    """
+    from sc2 import detail
+    from sc2.report import load_snapshot, snapshot_to_report
+
+    report = snapshot_to_report(load_snapshot(args.period))
+    dataset = detail.load_dataset(args.period)
+    windows = detail.windows_of(report)
+    counts = detail.reconcile(dataset, windows, report)          # 不等即抛，不写文件
+    metrics = {m.key: m for m in report.metrics}
+    out_dir = Path(args.out) if args.out else config.reports_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sections = [args.section] if args.section else list(detail.SECTIONS)
+    slots = [args.window] if args.window else list(detail.WINDOWS)
+    for section in sections:
+        name, metric_key = detail.SECTIONS[section]
+        for slot in slots:
+            table = detail.build_table(dataset, windows, section, slot)
+            path = out_dir / detail.csv_filename(report.period, section, slot)
+            path.write_text(detail.render_csv(table), encoding="utf-8", newline="")
+            reported = getattr(metrics[metric_key], slot).value
+            print(f"[{name}·{detail.WINDOWS[slot]}] 计入 {table.counted} 行 ＝ 周报"
+                  f"「{metrics[metric_key].name}」{int(reported)}{metrics[metric_key].current.unit}"
+                  f" ✅ → {path}"
+                  + (f"（另列 {len(table.rows) - table.counted} 行被剔除、附剔除原因）"
+                     if len(table.rows) != table.counted else ""))
+    print(f"[对账] 期次 {report.period}｜基准日 {report.base_date}｜取数时刻 {report.fetched_at}｜"
+          f"三节×三窗口 {sum(len(v) for v in counts.values())} 格全等")
     return 0
 
 
@@ -156,7 +198,7 @@ def cmd_autopush(args) -> int:
     周报顶部会自动带上 O-7 那句「本周窗口尚未走完」的声明（`report._incomplete_week_note`）。
     **那句声明不是噪音，正是让他不会把结构性偏低当成采购塌方**，不要因为「难看」去掉它。
     """
-    from sc2 import notify, outbox
+    from sc2 import detail, notify, outbox
     from sc2.report import build_report, render_text, save_snapshot
     from sc2.review import ReviewStore
     from sc2.sources import build_feed
@@ -168,12 +210,15 @@ def cmd_autopush(args) -> int:
     if hasattr(feed, "max_status_materials"):
         # 与 serve 同口径：不截断，否则在途类指标偏高（见 build_parser 注释）。
         feed.max_status_materials = args.max_status_materials
-    report = build_report(feed.fetch(windows), windows)
+    dataset = feed.fetch(windows)
+    report = build_report(dataset, windows)
 
     store = ReviewStore()
     store.register(report)
     snapshot = save_snapshot(report)
     print(f"[快照] {snapshot}")
+    # 数据集与周报快照成对落盘（§一 `#538`）——推到群里的那份数字，此后必须能展开到行。
+    print(f"[数据集快照] {detail.save_dataset(dataset, report.period)}")
 
     if args.no_push:
         print("[跳过推送] --no-push")
@@ -241,6 +286,15 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--max-status-materials", type=int, default=None,
                    help="行级状态取数的料号上限（D17 缓解；0=不限，缺省 200）")
     r.set_defaults(func=cmd_report)
+
+    d = sub.add_parser("detail", help="从某期数据集快照导出计算过程明细 CSV（不触网，§一 #538）")
+    d.add_argument("--period", required=True, help="期次（采购口径周标签，如 2026-W36）")
+    d.add_argument("--section", choices=("order", "receipt", "open"), default=None,
+                   help="只导某一节（下单/收货/在途）；缺省三节全导")
+    d.add_argument("--window", choices=("current", "previous", "month_ago"), default=None,
+                   help="只导某一窗口；缺省三窗口全导")
+    d.add_argument("--out", default=None, help="输出目录，缺省场景 reports/")
+    d.set_defaults(func=cmd_detail)
 
     a = sub.add_parser("autopush", help="生成本周周报并推群（周五 20:00 计划任务调用）")
     # 🔴 缺省 real：这条命令的唯一调用方是 `.51` 上的计划任务，跑 mock 等于每周

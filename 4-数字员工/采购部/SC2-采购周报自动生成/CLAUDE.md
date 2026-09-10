@@ -43,6 +43,7 @@
 | **D35** | outbox **只写部门名，chatid 由中继侧解析**；部门键拼错**当场上抛** | 权威映射是 aibot 侧那张 yaml，抄一份即第二份真相。中继侧「部门不在映射表」是 **fail-closed 静默跳过**（同 `PMC部` 那次）⇒ 在入队侧把静默失败换成响亮失败 |
 | **D36** | 一期写**两条** outbox 记录（群 ＋ 私信），不合成一条 | 两次独立投递，中继可能一条成功一条失败。合成一条后「群发了、私信没发」无法表达，只能整条重发（重复）或整条丢弃（漏发） |
 | **D38** | 定时任务同时给 `MultipleInstancesIgnoreNew` **和** 2 小时执行时限 | 两者必须一起给。只给前者而不限时，一次挂死会把此后每周的触发**全部静默 IgnoreNew 掉**，表现为「任务还在、再也没跑过」 |
+| **D39** | 🔴 **计算过程明细导出**（队列 §一 `#538`，2026-09-10）：`sc2/detail.py` 明细层，三节（下单／收货／在途）× 三窗口逐行 CSV；**数据集快照 `sc2_dataset_{period}.json` 与周报快照成对落盘**；导出**只读落盘快照、绝不现取 ERP**；`reconcile()` 逐格断言「明细计入行数 ＝ 周报指标」，**不等即拒绝导出**（接口 500／CLI 不写文件） | 姚祖怡 2026-09-09：「周报中下单行数是 187 行，你把这 187 行的明细列出来」——周报数字必须能展开成「正是这些行」且行数逐字相等，差一行明细就是在替一个数说谎。现取 ERP 的行集与他手上那份周报不是同一时刻，对不上是必然。行集判据直接复用 `metrics.py` 同一组函数，口径只有一处。取证与 187 复现见同目录 `取证-538-下单行数187复现与明细导出-2026-09-10.md` |
 
 ## 三、依赖的平台底座
 
@@ -139,8 +140,11 @@ python run_sc2.py report --mode mock --base 2026-08-19    # mock 出一期周报
 python run_sc2.py report --mode real --max-status-materials 0   # 真实全量（约 2m20s）
 python run_sc2.py probe                                    # F14 端点参数名对照取证
 python run_sc2.py serve --mode real --port 8096            # 起服务（缺省即 8096，行级状态不截断）
-python -m pytest -v                                        # 120 passed
+python run_sc2.py detail --period 2026-W36                 # 从该期数据集快照导出三节×三窗口明细 CSV（不触网；D39）
+python -m pytest -v                                        # 190 passed（2026-09-10）
 ```
+
+- **明细导出（D39）**：页面底部 9 个链接／`GET /api/detail`（索引＋对账）／`GET /api/detail/{order|receipt|open}.csv?window={current|previous|month_ago}`。该期没有 `sc2_dataset_*.json`（生成于 2026-09-10 之前）时返回 404 并提示先 `POST /api/refresh`，**不会现取**。⏳ `.51` 上尚未部署本能力（LAN 收口批做）。
 
 - 凭据从最近的 `.env` 自动读入（向上逐级查找，同 SC8 `run_baoguan_web.py`）；**凭据只在 `.env`，不入库、不打印**。
 - `--max-status-materials` 是 D17 的已知代价开关：行级状态按料号逐个查，窗口内料号实测 812 个 ⇒ 全量约 2 分钟。**触发截断时会在周报取数说明里显式写出来**（No silent caps）。

@@ -13,12 +13,12 @@ from __future__ import annotations
 import html
 from datetime import date
 
-from flask import Blueprint, Flask, jsonify, request
+from flask import Blueprint, Flask, Response, jsonify, request
 
 from zhuopin_platform.shared_tools.access_log import install_flask_access_log
 from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
 
-from . import config, outbox
+from . import config, detail, outbox
 from .report import (
     build_report,
     load_snapshot,
@@ -81,10 +81,13 @@ def create_app(*, base_date: date | None = None, mode: str = "mock",
         # 它一旦在启动时求值一次并传进来，本行就永远走不到，页面被冻在启动日那一期。
         base = base_date if base_date is not None else date.today()
         windows = build_windows(base)
-        report = build_report(
-            build_feed(mode, max_status_materials).fetch(windows), windows)
+        dataset = build_feed(mode, max_status_materials).fetch(windows)
+        report = build_report(dataset, windows)
         (store or ReviewStore()).register(report)
         save_snapshot(report)
+        # 🔴 数据集与周报快照**成对**落盘（§一 `#538`）：周报只存聚合值，展不开到行；
+        # 明细导出只读这份落盘数据、绝不现取 ERP——现取的与他手上那份周报不是同一时刻。
+        detail.save_dataset(dataset, report.period)
         return report
 
     def _current_report():
@@ -121,6 +124,67 @@ def create_app(*, base_date: date | None = None, mode: str = "mock",
         return jsonify(ok=True, period=report.period,
                        anomalies=[m.key for m in report.anomalies])
 
+    def _detail_context():
+        """当期周报 ＋ 其数据集快照 ＋ 三窗口，并**先过对账**再交给任何导出路径。"""
+        report = _current_report()
+        dataset = detail.load_dataset(report.period)
+        windows = detail.windows_of(report)
+        counts = detail.reconcile(dataset, windows, report)
+        return report, dataset, windows, counts
+
+    @bp.get("/api/detail")
+    def api_detail_index():
+        """明细导出索引：三节 × 三窗口的「计入行数」＋ 对应周报指标值 ＋ 下载链接。
+
+        `counts` 由 `detail.reconcile` 产出，**它已断言每格与周报指标相等**——索引里两列
+        并排给出，是让人一眼看到「明细行数 ＝ 周报数字」这件事有据可查。
+        """
+        try:
+            report, _, _, counts = _detail_context()
+        except FileNotFoundError as e:
+            return jsonify(ok=False, error=str(e)), 404
+        except detail.DetailMismatch as e:
+            return jsonify(ok=False, error=str(e)), 500
+        metrics = {m.key: m for m in report.metrics}
+        sections = {}
+        for section, (name, metric_key) in detail.SECTIONS.items():
+            sections[section] = {
+                "name": name, "metric": metric_key,
+                "windows": {
+                    slot: {
+                        "name": detail.WINDOWS[slot],
+                        "rows": counts[section][slot],
+                        "reported": getattr(metrics[metric_key], slot).value,
+                        "csv": f"{config.ROUTE_PREFIX}/api/detail/{section}.csv?window={slot}",
+                    } for slot in detail.WINDOWS
+                },
+            }
+        return jsonify(ok=True, period=report.period, base_date=report.base_date.isoformat(),
+                       fetched_at=report.fetched_at, mode=report.mode, sections=sections)
+
+    @bp.get("/api/detail/<section>.csv")
+    def api_detail_csv(section: str):
+        """某节某窗口的逐行明细 CSV（UTF-8 BOM，Excel 直接打开）。
+
+        🔴 **对账不过即 500、不给文件**：一份行数与周报不一致的明细比没有明细更坏——
+        他会把差的那几行当成 ERP 取数差异去追，而其实是我方两处口径分了叉。
+        """
+        slot = request.args.get("window", "current")
+        if section not in detail.SECTIONS or slot not in detail.WINDOWS:
+            return jsonify(ok=False, error=f"未知明细节或窗口：{section}/{slot}"), 404
+        try:
+            report, dataset, windows, _ = _detail_context()
+        except FileNotFoundError as e:
+            return jsonify(ok=False, error=str(e)), 404
+        except detail.DetailMismatch as e:
+            return jsonify(ok=False, error=str(e)), 500
+        table = detail.build_table(dataset, windows, section, slot)
+        filename = detail.csv_filename(report.period, section, slot)
+        return Response(
+            detail.render_csv(table), mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition":
+                     f"attachment; filename*=UTF-8''{_quote(filename)}"})
+
     @bp.post("/api/confirm")
     def api_confirm():
         report = _current_report()
@@ -148,6 +212,11 @@ def create_app(*, base_date: date | None = None, mode: str = "mock",
     return app
 
 
+def _quote(name: str) -> str:
+    from urllib.parse import quote
+    return quote(name, safe="")
+
+
 _PAGE = """<!doctype html>
 <meta charset="utf-8">
 <title>采购周报 {period}</title>
@@ -168,6 +237,7 @@ _PAGE = """<!doctype html>
 （2026-08-22 拍板取消「确认发布」前置）。下方签认按钮仍可用，但它现在记录的是
 <b>事后复核</b>，不再是推送的前置条件。</p>
 <pre>{body}</pre>
+<p>{detail_links}</p>
 {notice}
 <p>{backlog}</p>
 <form method="post" action="{prefix}/api/confirm">
@@ -192,6 +262,26 @@ def _backlog_text() -> str:
             f"</span>")
 
 
+def _detail_links_html(report) -> str:
+    """页面上的明细导出链接：三节 × 三窗口，全部基于路由前缀（不用根路径绝对引用）。
+
+    🔴 **链接在、文件不一定在**：该期若生成于明细导出上线之前，数据集快照不存在，点开会得到
+    404 与一句「请先全量重算」——这是刻意的，不在页面上替他猜「大概有」。
+    """
+    has_dataset = detail.dataset_path(report.period).exists()
+    parts = []
+    for section, (name, _) in detail.SECTIONS.items():
+        links = "／".join(
+            f'<a href="{config.ROUTE_PREFIX}/api/detail/{section}.csv?window={slot}">{wname}</a>'
+            for slot, wname in detail.WINDOWS.items())
+        parts.append(f"{name}明细：{links}")
+    hint = ("" if has_dataset else
+            '　<span class="warn">该期尚无数据集快照（生成于明细导出上线之前），'
+            "请先点全量重算（POST api/refresh）</span>")
+    return ("计算过程明细导出（CSV，每行＝周报行数里的一行；行数与周报不等时拒绝导出）："
+            + "｜".join(parts) + hint)
+
+
 def _render_page(report, *, error: str | None = None,
                  confirmed_by: str | None = None) -> str:
     if error:
@@ -204,4 +294,5 @@ def _render_page(report, *, error: str | None = None,
                         iso_period=html.escape(report.iso_period or "—"),
                         body=html.escape(render_text(report)),
                         prefix=config.ROUTE_PREFIX, notice=notice,
+                        detail_links=_detail_links_html(report),
                         backlog=_backlog_text())
