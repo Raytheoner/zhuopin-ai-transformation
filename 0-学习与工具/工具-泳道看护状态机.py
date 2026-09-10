@@ -8,8 +8,9 @@
 部署与 LAN 留步）。本包＝「他在场、自动排波推进、开跑先判 LAN 状态定候选
 范围、跑到决策点即停等他一个字母」。本包**唯一新建的代码**就是这个停/续
 状态机——判一个动作该不该停（D1，现为**四档**）、命中即落档＋推「等人」
-通知、他答复后解除暂停、待答超时 4 小时自动收回（D5 解法 3）、开跑前判
-on/off-LAN（3.5）、波间无心跳看门狗（5.6，承接 clearpool 2.3）。
+通知、他答复后解除暂停、待答超时 **10 分钟按推荐/默认执行**（D5 解法 3，
+2026-09-09 翻面，见下节）、开跑前判 on/off-LAN（3.5）、波间无心跳看门狗
+（5.6，承接 clearpool 2.3）。
 
 ## 权威判据正本
 
@@ -73,6 +74,28 @@ lane-heartbeat/<泳道>.md` 由自己的 CWD 解析，`reports/` 又被 `.gitign
 终态泳道；归属未知者现在谁都不算，另起一行单列，**不消失也不冒充**。
 ⇒ 所以 `heartbeat --done` **务必带 `--batch`**，否则该泳道进不了任何一批的账。
 
+## 待答超时：按默认执行，不再收回（队列 §一 `#529`，Shao Peishen 2026-09-09 定）
+
+旧语义＝停在决策点 **4 小时**未答 ⇒ 降回原状态（「因超时未获答复而收回」）。
+他 2026-09-09 17:2x 明示「泳道的定夺项我 10 分钟没及时回复，你就按推荐或默认
+执行」，并就「现有语义正好相反」答「按我新决定改」⇒ **改现有语义，不新增并存
+动作**。新语义：`check_timeouts()` 命中超时（默认 **10 分钟**，`--minutes`；
+`--hours` 保留兼容）且该暂停项**带推荐/默认选项**（`pause --default-option`）
+⇒ 视同他答了该选项：泳道置 `resumed`、`answer`＝默认选项原文、history
+`resolved_by="default_on_timeout"`，落档措辞固定为「超时按默认项生效（未获明确
+答复，…）」——**不得写成他当场答定**（根 `CLAUDE.md` §5）。
+
+🔴 **三种残留情形仍走原「收回」语义**（同一函数内的分支，不是并存动作）：
+⑴ 🔴 档（对外发送／L2 门禁签字／合规红线变更／ASIL C-D）**永不代办**——
+`pause` 对 🔴 档**拒绝登记** `default_option`，结构上没有默认可落；⑵ ⏭️ 档
+不进 pause（只 `transfer-out`），超时对它无事可做；⑶ 未带默认选项的项＝根
+`CLAUDE.md` §5「本项无默认，须你明确答复」——含判据未覆盖的 fail-safe 🟡
+（`pause` 同样拒绝给它登记默认：档位本身未定，按默认放行等于替他判档）与
+🐕 看门狗停点（失联不是选择题）。⇒ 新语义**只作用于有默认项的已覆盖 🟡 档**。
+
+D6 汇总把「他答的」与「超时按默认执行的」分列计数、不混计——后者是机器替他
+按的，那份统计正是他判断「默认项设得对不对」的依据。
+
 ## 用法
 
     python 0-学习与工具/工具-泳道看护状态机.py criteria
@@ -80,13 +103,14 @@ lane-heartbeat/<泳道>.md` 由自己的 CWD 解析，`reports/` 又被 `.gitign
     python 0-学习与工具/工具-泳道看护状态机.py lan-status
     python 0-学习与工具/工具-泳道看护状态机.py pause --batch 2026-09-02-看护批A \\
         --wave 2 --lane A --action-key change_criteria --waiting-for "口径该怎么改" \\
-        --option 方案一 --option 方案二
+        --option 方案一 --option 方案二 --default-option 方案一
     python 0-学习与工具/工具-泳道看护状态机.py transfer-out --batch 2026-09-02-看护批A \\
         --wave 2 --lane A --action-key deploy_51 --note "需部署到 .51"
     python 0-学习与工具/工具-泳道看护状态机.py deploy-authorize --batch 2026-09-07-看护批B         --wave 2 --lane A --action-key deploy_51 --item "<被授权的那一项>"         --authorized-text "<他的授权原文，逐字>"
     python 0-学习与工具/工具-泳道看护状态机.py deploy-record --lane A         --authorization-index 0 --outcome done --evidence-ref reports/xxx.md
     python 0-学习与工具/工具-泳道看护状态机.py resume --lane A --answer "方案一"
-    python 0-学习与工具/工具-泳道看护状态机.py check-timeout
+    python 0-学习与工具/工具-泳道看护状态机.py check-timeout               # 默认 10 分钟
+    python 0-学习与工具/工具-泳道看护状态机.py check-timeout --minutes 30
     python 0-学习与工具/工具-泳道看护状态机.py check-heartbeat --batch 2026-09-02-看护批A \\
         --wave 2 --lane A --heartbeat-file reports/lane-heartbeat/OP-xxxx.md
     python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane A --text "已开工"
@@ -133,7 +157,19 @@ REPO_ROOT: Path = _editlock.REPO_ROOT
 STATE_PATH_REL = "reports/lane-watch-state.json"
 LOCK_STALE_SECONDS = 120
 LOCK_TIMEOUT_SECONDS = 15
-DEFAULT_TIMEOUT_HOURS = 4.0  # D5 解法 3：待答超时自动收工
+# D5 解法 3 待答超时阈值。🔴 2026-09-09 由 4 小时改为 **10 分钟**（队列 §一
+# `#529`，Shao Peishen 当日定），量纲随之改为分钟；`DEFAULT_TIMEOUT_HOURS` 只作
+# 兼容别名（由分钟派生，不是第二份数值），CLI `--hours` 同理保留。
+DEFAULT_TIMEOUT_MINUTES = 10.0
+DEFAULT_TIMEOUT_HOURS = DEFAULT_TIMEOUT_MINUTES / 60.0
+
+# history / lane_state 的 `resolved_by` 取值（唯一定义处，summary 按它分列计数）。
+RESOLVED_BY_ANSWERED = "answered"                       # 他答的
+RESOLVED_BY_DEFAULT_ON_TIMEOUT = "default_on_timeout"   # 超时按默认项生效（机器替他按的）
+RESOLVED_BY_TIMEOUT = "timeout"                         # 超时收回（无默认可落）
+
+#: 根 CLAUDE.md §5：默认项不成立时的固定标注，`pause` 通知里原样打出。
+NO_DEFAULT_MARK = "本项无默认，须你明确答复"
 
 # ---------------------------------------------------------------------------
 # D1 · 决策点判据表（design.md D1 逐字转录，键名仅为程序内标识符，中文标签
@@ -336,7 +372,7 @@ def _with_state(mutate: Callable[[dict], None]) -> dict:
 
 def _format_wait_notice(
     *, batch: str, lane: str, wave: int, tier: str, action_label: str,
-    waiting_for: str, options: list, covered: bool,
+    waiting_for: str, options: list, covered: bool, default_option: Optional[str] = None,
 ) -> str:
     lines = [
         "**泳道看护 · 等人**",
@@ -346,6 +382,13 @@ def _format_wait_notice(
     ]
     if options:
         lines.append("选项：" + "／".join(options))
+    if default_option:
+        lines.append(
+            f"默认项：{default_option}（{DEFAULT_TIMEOUT_MINUTES:.0f} 分钟未答即按此执行，D5 `#529`）"
+        )
+    elif tier == TIER_YELLOW:
+        # 🟡 档没给默认 ⇒ 结构上没有默认可落，超时只会收回、不会替他按。
+        lines.append(f"默认项：无——{NO_DEFAULT_MARK}（超时只收回，不代办）")
     if not covered:
         lines.append(f'<font color="warning">{FAIL_SAFE_NOTE}</font>')
     lines.append("> 请回到 Cowork 会话回一个字母（本期仅认 Cowork 侧答复，D5/§8.1）。")
@@ -546,15 +589,39 @@ def parse_section_three_lanes(text: str) -> list[dict]:
 def pause_lane(
     *, batch: str, wave: int, lane: str, action_key: str, waiting_for: str,
     options: Optional[list] = None, notify_fn: Optional[Callable[[str], None]] = None,
+    default_option: Optional[str] = None,
 ) -> dict:
     """泳道命中 🟡/🔴 决策点：落续跑状态＋推「等人」企微通知（3.1/3.2/3.4/4.2）。
 
     🟢 档动作不需要停，调用即报错（调用方逻辑错误，非运行时可恢复场景）。
+
+    `default_option`（`#529`）＝推荐/默认选项原文；带它的暂停项在超时后由
+    `check_timeouts` 按它放行。🔴 **只有已覆盖的 🟡 档能带**：🔴 档永不代办，
+    判据未覆盖的 fail-safe 🟡 档位本身未定——两者都在这里拒绝登记，而不是
+    收下再在超时路径里"记得别放行"（那是靠人记得的失败模式）。给了 `options`
+    时默认项必须是其中之一，防止默认项与选项列表打字不一致。
     """
     cls = classify(action_key)
     if cls.tier in (TIER_GREEN, TIER_TRANSFER):
         reason = "不需要停" if cls.tier == TIER_GREEN else "走 transfer-out，不进问答循环"
         raise ValueError(f"{cls.tier} 档动作（{action_key}：{cls.label}）{reason}，不接受 pause。")
+    if default_option is not None and not str(default_option).strip():
+        default_option = None
+    if default_option:
+        if cls.tier == TIER_RED:
+            raise ValueError(
+                f"🔴 档动作（{action_key}：{cls.label}）永不代办，不接受 default_option——"
+                f"该项{NO_DEFAULT_MARK}。"
+            )
+        if not cls.covered:
+            raise ValueError(
+                f"动作 `{action_key}` 判据未覆盖（fail-safe 按 🟡 停），档位本身待他裁定，"
+                f"不接受 default_option——该项{NO_DEFAULT_MARK}。"
+            )
+        if options and default_option not in options:
+            raise ValueError(
+                f"default_option「{default_option}」不在 options {options} 之内，拒绝登记。"
+            )
 
     now = _now()
 
@@ -575,6 +642,7 @@ def pause_lane(
             "covered": cls.covered,
             "waiting_for": waiting_for,
             "options": options or [],
+            "default_option": default_option,
             "paused_at": _iso(now),
             "answer": None,
             "answered_at": None,
@@ -583,6 +651,7 @@ def pause_lane(
             "batch": batch, "wave": wave, "tier": cls.tier,
             "action_key": action_key, "action_label": cls.label,
             "waiting_for": waiting_for, "options": options or [],
+            "default_option": default_option,
             "paused_at": _iso(now), "answer": None, "answered_at": None,
             "resolved_by": None,
         })
@@ -592,6 +661,7 @@ def pause_lane(
     message = _format_wait_notice(
         batch=batch, lane=lane, wave=wave, tier=cls.tier, action_label=cls.label,
         waiting_for=waiting_for, options=options or [], covered=cls.covered,
+        default_option=default_option,
     )
     _notify_best_effort(message, notify_fn, lane=lane)
     return data["lanes"][lane]
@@ -881,19 +951,80 @@ def resume_lane(*, lane: str, answer: str) -> dict:
         if history and history[-1].get("resolved_by") is None:
             history[-1]["answer"] = answer
             history[-1]["answered_at"] = _iso(now)
-            history[-1]["resolved_by"] = "answered"
+            history[-1]["resolved_by"] = RESOLVED_BY_ANSWERED
 
     data = _with_state(_mutate)
     return data["lanes"][lane]
 
 
-def check_timeouts(*, hours: float = DEFAULT_TIMEOUT_HOURS) -> list:
-    """D5 解法 3：任一泳道停在决策点超过 `hours` 未获答复 ⇒ 降回
-    `original_status`，history 对应条目按 `resolved_by="timeout"` 收口。
-    降回是无损的——他回来仍可重新触发该泳道。"""
-    threshold = timedelta(hours=hours)
+#: 超时后走「收回」而非「按默认执行」的原因（`#529` 三条硬边界，逐条可读）。
+TIMEOUT_REVERT_REASON_RED = "🔴 档永不代办"
+TIMEOUT_REVERT_REASON_WATCHDOG = "🐕 看门狗停点无默认可落（失联不是选择题）"
+TIMEOUT_REVERT_REASON_UNCOVERED = "判据未覆盖（fail-safe 🟡），档位待他裁定"
+TIMEOUT_REVERT_REASON_NO_DEFAULT = NO_DEFAULT_MARK
+TIMEOUT_REVERT_PREFIX = "因超时未获答复而收回"
+
+TIMEOUT_OUTCOME_DEFAULT_APPLIED = "default_applied"
+TIMEOUT_OUTCOME_REVERTED = "reverted"
+
+
+def _timeout_revert_reason(lane_state: dict) -> Optional[str]:
+    """返回 None ＝ 可按默认执行；否则返回必须收回的原因。
+
+    判序写死：🔴 档 → 看门狗 → 判据未覆盖 → 无默认。前三者即使状态里意外
+    带了 `default_option`（例如手改状态文件）也**不放行**——放行只认「已覆盖
+    的 🟡 档 ＋ 非空默认项」这一种组合，其余一律 fail-closed。"""
+    tier = lane_state.get("tier")
+    if tier == TIER_RED:
+        return TIMEOUT_REVERT_REASON_RED
+    if tier == TIER_WATCHDOG:
+        return TIMEOUT_REVERT_REASON_WATCHDOG
+    if not lane_state.get("covered", False):
+        return TIMEOUT_REVERT_REASON_UNCOVERED
+    default_option = lane_state.get("default_option")
+    if not default_option or not str(default_option).strip():
+        return TIMEOUT_REVERT_REASON_NO_DEFAULT
+    if tier != TIER_YELLOW:
+        # 只认 🟡；出现别的档位值属状态文件异常，同样 fail-closed。
+        return f"档位 {tier} 不在可按默认放行的范围（只认 {TIER_YELLOW}）"
+    return None
+
+
+def _format_default_applied_notice(*, lane: str, lane_state: dict, waited_minutes: float, note: str) -> str:
+    return "\n".join([
+        "**泳道看护 · 超时按默认项生效**",
+        f"批次：{lane_state.get('batch')}　波次：{lane_state.get('wave')}　泳道：`{lane}`",
+        f"档位：{lane_state.get('tier')}　动作：{lane_state.get('action_label')}",
+        f"在等：{lane_state.get('waiting_for')}",
+        f"已按默认项执行：{lane_state.get('default_option')}（等了 {waited_minutes:.0f} 分钟未获答复）",
+        f"> {note}",
+    ])
+
+
+def check_timeouts(
+    *, minutes: Optional[float] = None, hours: Optional[float] = None,
+    notify_fn: Optional[Callable[[str], None]] = None,
+) -> list:
+    """D5 解法 3（`#529` 翻面后）：任一泳道停在决策点超过阈值未获答复 ⇒
+
+    - 该暂停项**带推荐/默认选项**且属已覆盖 🟡 档 ⇒ **按默认项执行**：泳道置
+      `resumed`、`answer`＝默认项原文、history `resolved_by="default_on_timeout"`
+      ＋ `resolution_note`（固定措辞「超时按默认项生效（未获明确答复，…）」）；
+      **不写 `revert_reason`**。并推一条「超时按默认项生效」通知（同 pause
+      通道，fail-closed）——机器替他按了一个字母，他必须知道。
+    - 否则（🔴 档／🐕 看门狗／判据未覆盖／无默认）⇒ 原语义：降回
+      `original_status`，`revert_reason`＝「因超时未获答复而收回（<原因>）」，
+      history `resolved_by="timeout"`。降回是无损的——他回来仍可重新触发。
+
+    阈值默认 `DEFAULT_TIMEOUT_MINUTES`（10 分钟）；`hours` 只为兼容旧调用，
+    两者同给以 `minutes` 为准。返回列表每项带 `outcome`（`default_applied`／
+    `reverted`）。"""
+    if minutes is None:
+        minutes = DEFAULT_TIMEOUT_MINUTES if hours is None else hours * 60.0
+    threshold = timedelta(minutes=minutes)
     now = _now()
-    reverted: list = []
+    results: list = []
+    notices: list = []
 
     def _mutate(data: dict) -> None:
         for lane, lane_state in data.get("lanes", {}).items():
@@ -905,23 +1036,63 @@ def check_timeouts(*, hours: float = DEFAULT_TIMEOUT_HOURS) -> list:
             elapsed = now - _parse_iso(paused_at)
             if elapsed < threshold:
                 continue
+            waited_minutes = elapsed.total_seconds() / 60.0
+            history = lane_state.get("history", [])
+            open_entry = history[-1] if history and history[-1].get("resolved_by") is None else None
+            revert_reason = _timeout_revert_reason(lane_state)
+
+            if revert_reason is None:
+                default_option = lane_state["default_option"]
+                note = (
+                    f"超时按默认项生效（未获明确答复，{lane_state.get('batch')} "
+                    f"波{lane_state.get('wave')} 泳道 {lane}，{_iso(now)}）"
+                )
+                lane_state["status"] = "resumed"
+                lane_state["answer"] = default_option
+                lane_state["answered_at"] = _iso(now)
+                lane_state["resolved_by"] = RESOLVED_BY_DEFAULT_ON_TIMEOUT
+                lane_state["resolution_note"] = note
+                lane_state.pop("revert_reason", None)
+                if open_entry is not None:
+                    open_entry["answer"] = default_option
+                    open_entry["answered_at"] = _iso(now)
+                    open_entry["resolved_by"] = RESOLVED_BY_DEFAULT_ON_TIMEOUT
+                    open_entry["resolution_note"] = note
+                results.append({
+                    "lane": lane,
+                    "outcome": TIMEOUT_OUTCOME_DEFAULT_APPLIED,
+                    "waited_minutes": round(waited_minutes, 1),
+                    "waited_hours": round(waited_minutes / 60.0, 1),
+                    "answer": default_option,
+                    "note": note,
+                })
+                notices.append((lane, _format_default_applied_notice(
+                    lane=lane, lane_state=lane_state, waited_minutes=waited_minutes, note=note,
+                )))
+                continue
+
             original = lane_state.get("original_status", "running")
             lane_state["status"] = original
             lane_state["reverted_at"] = _iso(now)
-            lane_state["revert_reason"] = "因超时未获答复而收回"
-            history = lane_state.get("history", [])
-            if history and history[-1].get("resolved_by") is None:
-                history[-1]["resolved_by"] = "timeout"
-                history[-1]["answer"] = None
-                history[-1]["answered_at"] = _iso(now)
-            reverted.append({
+            lane_state["revert_reason"] = f"{TIMEOUT_REVERT_PREFIX}（{revert_reason}）"
+            if open_entry is not None:
+                open_entry["resolved_by"] = RESOLVED_BY_TIMEOUT
+                open_entry["answer"] = None
+                open_entry["answered_at"] = _iso(now)
+                open_entry["revert_reason"] = revert_reason
+            results.append({
                 "lane": lane,
-                "waited_hours": round(elapsed.total_seconds() / 3600, 1),
+                "outcome": TIMEOUT_OUTCOME_REVERTED,
+                "waited_minutes": round(waited_minutes, 1),
+                "waited_hours": round(waited_minutes / 60.0, 1),
                 "reverted_to": original,
+                "reason": revert_reason,
             })
 
     _with_state(_mutate)
-    return reverted
+    for lane, message in notices:
+        _notify_best_effort(message, notify_fn, lane=lane)
+    return results
 
 
 HEARTBEAT_STALE_MINUTES_DEFAULT = 30.0
@@ -1221,7 +1392,11 @@ def _format_wait_duration(paused_at: Optional[str], answered_at: Optional[str]) 
 def build_summary(*, batch: Optional[str] = None) -> list:
     """D6：每次停顿摊平成一行素材——`<泳道>／<档位>／<停在什么动作>／
     <他答了什么>／<等了多久>`。「仍在等」的条目也列入，不因未收口而漏计
-    （D6 的意义正是让"该停没停"与"全程零停"在外观上不再一样）。"""
+    （D6 的意义正是让"该停没停"与"全程零停"在外观上不再一样）。
+
+    `resolution` 列（`#529`）：`answered`（他答的）／`default_on_timeout`（超时
+    按默认执行的）／`timeout`（超时收回）／`open`（仍在等）——前两者**不得混计**，
+    机器替他按的字母与他亲自答的是两种事实。"""
     data = _read_state()
     rows = []
     for lane, lane_state in data.get("lanes", {}).items():
@@ -1229,27 +1404,47 @@ def build_summary(*, batch: Optional[str] = None) -> list:
             if batch and h.get("batch") != batch:
                 continue
             resolved_by = h.get("resolved_by")
-            if resolved_by == "answered":
+            if resolved_by == RESOLVED_BY_ANSWERED:
                 answer_text = h.get("answer")
-            elif resolved_by == "timeout":
+                resolution = RESOLVED_BY_ANSWERED
+            elif resolved_by == RESOLVED_BY_DEFAULT_ON_TIMEOUT:
+                answer_text = f"超时按默认执行「{h.get('answer')}」"
+                resolution = RESOLVED_BY_DEFAULT_ON_TIMEOUT
+            elif resolved_by == RESOLVED_BY_TIMEOUT:
                 answer_text = "超时收回"
+                resolution = RESOLVED_BY_TIMEOUT
             else:
                 answer_text = "仍在等"
+                resolution = "open"
             rows.append({
                 "lane": lane,
                 "tier": h.get("tier"),
                 "action": h.get("action_label"),
                 "answer": answer_text,
+                "resolution": resolution,
                 "waited": _format_wait_duration(h.get("paused_at"), h.get("answered_at")),
             })
     return rows
 
 
+def count_summary_resolutions(rows: list) -> dict:
+    """D6 分列计数：他答／超时按默认／超时收回／仍在等，四者之和恒等于停次数。"""
+    counts = {RESOLVED_BY_ANSWERED: 0, RESOLVED_BY_DEFAULT_ON_TIMEOUT: 0, RESOLVED_BY_TIMEOUT: 0, "open": 0}
+    for r in rows:
+        counts[r.get("resolution", "open")] = counts.get(r.get("resolution", "open"), 0) + 1
+    return counts
+
+
 def format_summary_line(rows: list) -> str:
     if not rows:
         return "本批停 0 次"
+    c = count_summary_resolutions(rows)
+    breakdown = (
+        f"他答 {c[RESOLVED_BY_ANSWERED]}／超时按默认 {c[RESOLVED_BY_DEFAULT_ON_TIMEOUT]}／"
+        f"超时收回 {c[RESOLVED_BY_TIMEOUT]}／仍在等 {c['open']}"
+    )
     parts = [f"{r['lane']}／{r['tier']}／{r['action']}／{r['answer']}／{r['waited']}" for r in rows]
-    return f"本批停 {len(rows)} 次｜逐次：" + "；".join(parts)
+    return f"本批停 {len(rows)} 次（{breakdown}）｜逐次：" + "；".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -1549,11 +1744,16 @@ def _cmd_pause(args: argparse.Namespace) -> int:
         state = pause_lane(
             batch=args.batch, wave=args.wave, lane=args.lane, action_key=args.action_key,
             waiting_for=args.waiting_for, options=args.option or None, notify_fn=notify_fn,
+            default_option=args.default_option,
         )
     except ValueError as exc:
         print(f"✗ {exc}")
         return 1
     print(f"⏸ 已落状态：泳道 `{args.lane}` {state['tier']} 停在「{state['action_label']}」，等：{args.waiting_for}")
+    if state.get("default_option"):
+        print(f"   默认项：{state['default_option']}（{DEFAULT_TIMEOUT_MINUTES:.0f} 分钟未答即按此执行）")
+    elif state["tier"] == TIER_YELLOW:
+        print(f"   默认项：无——{NO_DEFAULT_MARK}（超时只收回，不代办）")
     if args.json:
         print(json.dumps(state, ensure_ascii=False))
     return 0
@@ -1573,17 +1773,28 @@ def _cmd_resume(args: argparse.Namespace) -> int:
 
 
 def _cmd_check_timeout(args: argparse.Namespace) -> int:
-    reverted = check_timeouts(hours=args.hours)
-    if not reverted:
-        print(f"✓ 无超过 {args.hours} 小时未答复的暂停泳道。")
-    else:
-        for r in reverted:
+    # `--hours` 只为兼容旧调用；两者同给以 `--minutes` 为准（与函数内口径一致）。
+    minutes = args.minutes if args.minutes is not None else (
+        args.hours * 60.0 if args.hours is not None else DEFAULT_TIMEOUT_MINUTES
+    )
+    notify_fn = (lambda _msg: None) if args.no_notify else None
+    results = check_timeouts(minutes=minutes, notify_fn=notify_fn)
+    if not results:
+        print(f"✓ 无超过 {minutes:g} 分钟未答复的暂停泳道。")
+    for r in results:
+        if r["outcome"] == TIMEOUT_OUTCOME_DEFAULT_APPLIED:
             print(
-                f"⏮ 泳道 `{r['lane']}` 等了 {r['waited_hours']} 小时未获答复，"
-                f"已收回至「{r['reverted_to']}」（因超时未获答复而收回）。"
+                f"▶ 泳道 `{r['lane']}` 等了 {r['waited_minutes']:.0f} 分钟未获答复，"
+                f"已按默认项执行「{r['answer']}」——{r['note']}。"
+                f"下一步：Cowork 据此起下一段泳道（同他亲自答复）。"
+            )
+        else:
+            print(
+                f"⏮ 泳道 `{r['lane']}` 等了 {r['waited_minutes']:.0f} 分钟未获答复，"
+                f"已收回至「{r['reverted_to']}」（{TIMEOUT_REVERT_PREFIX}：{r['reason']}）。"
             )
     if args.json:
-        print(json.dumps(reverted, ensure_ascii=False))
+        print(json.dumps(results, ensure_ascii=False))
     return 0
 
 
@@ -1720,6 +1931,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_pause.add_argument("--action-key", required=True)
     p_pause.add_argument("--waiting-for", required=True)
     p_pause.add_argument("--option", action="append", default=[], help="可重复，给出候选答案")
+    p_pause.add_argument(
+        "--default-option", default=None,
+        help=(f"推荐/默认选项原文（#529）：{DEFAULT_TIMEOUT_MINUTES:.0f} 分钟未答即由 check-timeout 按它执行；"
+              "只有已覆盖的 🟡 档能带（🔴 档／判据未覆盖者拒绝登记）；给了 --option 时必须是其中之一。"
+              f"不带＝「{NO_DEFAULT_MARK}」，超时只收回"),
+    )
     p_pause.add_argument("--no-notify", action="store_true", help="跳过企微推送（联调/测试用）")
     p_pause.add_argument("--json", action="store_true")
     p_pause.set_defaults(func=_cmd_pause)
@@ -1763,8 +1980,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_resume.add_argument("--json", action="store_true")
     p_resume.set_defaults(func=_cmd_resume)
 
-    p_timeout = sub.add_parser("check-timeout", help="D5 解法 3：收回超时未答复的暂停泳道")
-    p_timeout.add_argument("--hours", type=float, default=DEFAULT_TIMEOUT_HOURS)
+    p_timeout = sub.add_parser(
+        "check-timeout",
+        help=(f"D5 解法 3（#529）：超时（默认 {DEFAULT_TIMEOUT_MINUTES:.0f} 分钟）未答复的暂停泳道——"
+              "带默认项的已覆盖 🟡 档按默认项执行；🔴 档／看门狗／判据未覆盖／无默认者仍收回"),
+    )
+    p_timeout.add_argument("--minutes", type=float, default=None,
+                           help=f"阈值（分钟），默认 {DEFAULT_TIMEOUT_MINUTES:.0f}")
+    p_timeout.add_argument("--hours", type=float, default=None,
+                           help="兼容旧调用的小时量纲；与 --minutes 同给时以 --minutes 为准")
+    p_timeout.add_argument("--no-notify", action="store_true", help="跳过「超时按默认项生效」企微推送（联调/测试用）")
     p_timeout.add_argument("--json", action="store_true")
     p_timeout.set_defaults(func=_cmd_check_timeout)
 

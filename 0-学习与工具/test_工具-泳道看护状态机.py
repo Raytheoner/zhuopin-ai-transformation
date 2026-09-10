@@ -370,15 +370,248 @@ class LaneWatchStateMachineTests(unittest.TestCase):
         state["lanes"]["A"]["paused_at"] = self.module._iso(five_hours_ago)
         self.module._atomic_write_state(state)
 
+        # 无默认项 ⇒ `#529` 翻面后仍走原「收回」语义（本项无默认，须他明确答复）。
         reverted = self.module.check_timeouts(hours=4.0)
         self.assertEqual(len(reverted), 1)
         self.assertEqual(reverted[0]["lane"], "A")
+        self.assertEqual(reverted[0]["outcome"], self.module.TIMEOUT_OUTCOME_REVERTED)
         self.assertEqual(reverted[0]["reverted_to"], "running")
+        self.assertEqual(reverted[0]["reason"], self.module.NO_DEFAULT_MARK)
 
         on_disk = self.module._read_state()
         self.assertEqual(on_disk["lanes"]["A"]["status"], "running")
-        self.assertEqual(on_disk["lanes"]["A"]["revert_reason"], "因超时未获答复而收回")
+        self.assertTrue(on_disk["lanes"]["A"]["revert_reason"].startswith("因超时未获答复而收回"))
+        self.assertIn(self.module.NO_DEFAULT_MARK, on_disk["lanes"]["A"]["revert_reason"])
         self.assertEqual(on_disk["lanes"]["A"]["history"][-1]["resolved_by"], "timeout")
+
+    # ---------------- check-timeout 翻面（队列 §一 #529，Shao Peishen 2026-09-09 定） ----------------
+
+    def _pause_and_backdate(self, *, lane, action_key, minutes_ago, **kw):
+        """落一次 pause 后把 paused_at 拨回 `minutes_ago` 分钟前，模拟他没答。"""
+        self.module.pause_lane(
+            batch="B1", wave=1, lane=lane, action_key=action_key,
+            waiting_for=kw.pop("waiting_for", "怎么办"), notify_fn=_StubNotifier(), **kw,
+        )
+        state = self.module._read_state()
+        then = self.module._now() - self.module.timedelta(minutes=minutes_ago)
+        state["lanes"][lane]["paused_at"] = self.module._iso(then)
+        if "history" in state["lanes"][lane] and state["lanes"][lane]["history"]:
+            state["lanes"][lane]["history"][-1]["paused_at"] = self.module._iso(then)
+        self.module._atomic_write_state(state)
+
+    def test_timeout_default_is_ten_minutes(self):
+        self.assertEqual(self.module.DEFAULT_TIMEOUT_MINUTES, 10.0)
+        # 兼容别名由分钟派生，不是第二份数值。
+        self.assertAlmostEqual(self.module.DEFAULT_TIMEOUT_HOURS * 60.0, self.module.DEFAULT_TIMEOUT_MINUTES)
+
+    def test_timeout_yellow_with_default_is_applied(self):
+        # 四支之一：有默认 → 按默认放行（不再收回）。
+        self._pause_and_backdate(
+            lane="A", action_key="merge_to_master", minutes_ago=11,
+            options=["合入", "不合入"], default_option="合入",
+        )
+        notifier = _StubNotifier()
+        results = self.module.check_timeouts(notify_fn=notifier)
+        self.assertEqual(len(results), 1)
+        r = results[0]
+        self.assertEqual(r["outcome"], self.module.TIMEOUT_OUTCOME_DEFAULT_APPLIED)
+        self.assertEqual(r["answer"], "合入")
+        self.assertIn("超时按默认项生效（未获明确答复", r["note"])
+
+        on_disk = self.module._read_state()["lanes"]["A"]
+        self.assertEqual(on_disk["status"], "resumed")
+        self.assertEqual(on_disk["answer"], "合入")
+        self.assertEqual(on_disk["resolved_by"], "default_on_timeout")
+        self.assertNotIn("revert_reason", on_disk)
+        self.assertNotIn("reverted_at", on_disk)
+        h = on_disk["history"][-1]
+        self.assertEqual(h["resolved_by"], "default_on_timeout")
+        self.assertEqual(h["answer"], "合入")
+        self.assertIn("超时按默认项生效（未获明确答复", h["resolution_note"])
+        # 🔴 落档措辞不得写成「他当场答定」：answered 是他答的专用值。
+        self.assertNotEqual(h["resolved_by"], "answered")
+        # 机器替他按了字母，须推一条通知。
+        self.assertEqual(len(notifier.messages), 1)
+        self.assertIn("超时按默认项生效", notifier.messages[0])
+        self.assertIn("合入", notifier.messages[0])
+
+    def test_timeout_yellow_without_default_is_reverted(self):
+        # 四支之二：无默认 → 收回（「本项无默认，须你明确答复」）。
+        self._pause_and_backdate(lane="A", action_key="change_criteria", minutes_ago=11)
+        results = self.module.check_timeouts(notify_fn=_StubNotifier())
+        self.assertEqual(results[0]["outcome"], self.module.TIMEOUT_OUTCOME_REVERTED)
+        self.assertEqual(results[0]["reason"], self.module.NO_DEFAULT_MARK)
+        on_disk = self.module._read_state()["lanes"]["A"]
+        self.assertEqual(on_disk["status"], "running")
+        self.assertEqual(on_disk["history"][-1]["resolved_by"], "timeout")
+
+    def test_timeout_red_never_applies_default(self):
+        # 四支之三 (a)：🔴 档永不放行——pause 就拒绝登记默认项……
+        with self.assertRaises(ValueError) as ctx:
+            self.module.pause_lane(
+                batch="B1", wave=1, lane="R", action_key="external_send",
+                waiting_for="发不发", notify_fn=_StubNotifier(), default_option="发",
+            )
+        self.assertIn("永不代办", str(ctx.exception))
+        self.assertNotIn("R", self.module._read_state().get("lanes", {}))
+        # ……即使状态文件被手改塞进了默认项，超时路径也 fail-closed 只收回。
+        self._pause_and_backdate(lane="R", action_key="external_send", minutes_ago=11)
+        state = self.module._read_state()
+        state["lanes"]["R"]["default_option"] = "发"
+        self.module._atomic_write_state(state)
+        results = self.module.check_timeouts(notify_fn=_StubNotifier())
+        self.assertEqual(results[0]["outcome"], self.module.TIMEOUT_OUTCOME_REVERTED)
+        self.assertEqual(results[0]["reason"], self.module.TIMEOUT_REVERT_REASON_RED)
+        self.assertEqual(self.module._read_state()["lanes"]["R"]["status"], "running")
+
+    def test_timeout_transfer_tier_stays_out_of_pause_loop(self):
+        # 四支之三 (b)：⏭️ 档不进 pause，超时无事可做——转出记录原样不动。
+        self.module.transfer_out_lane(
+            batch="B1", wave=1, lane="T", action_key="deploy_51", notify_fn=_StubNotifier(),
+        )
+        with self.assertRaises(ValueError):
+            self.module.pause_lane(
+                batch="B1", wave=1, lane="T", action_key="deploy_51",
+                waiting_for="部署吗", notify_fn=_StubNotifier(), default_option="部署",
+            )
+        state = self.module._read_state()
+        state["lanes"]["T"]["paused_at"] = self.module._iso(
+            self.module._now() - self.module.timedelta(minutes=60)
+        )
+        self.module._atomic_write_state(state)
+        self.assertEqual(self.module.check_timeouts(notify_fn=_StubNotifier()), [])
+        self.assertEqual(self.module._read_state()["lanes"]["T"]["status"], "running")
+        self.assertEqual(len(self.module._read_state()["lanes"]["T"]["transfers"]), 1)
+
+    def test_timeout_uncovered_failsafe_never_applies_default(self):
+        # 判据未覆盖（fail-safe 🟡）：档位本身待他裁定，pause 拒绝登记默认；超时只收回。
+        with self.assertRaises(ValueError) as ctx:
+            self.module.pause_lane(
+                batch="B1", wave=1, lane="U", action_key="never_seen_action",
+                waiting_for="哪档", notify_fn=_StubNotifier(), default_option="🟢",
+            )
+        self.assertIn("判据未覆盖", str(ctx.exception))
+        self._pause_and_backdate(lane="U", action_key="never_seen_action", minutes_ago=11)
+        state = self.module._read_state()
+        state["lanes"]["U"]["default_option"] = "🟢"
+        self.module._atomic_write_state(state)
+        results = self.module.check_timeouts(notify_fn=_StubNotifier())
+        self.assertEqual(results[0]["outcome"], self.module.TIMEOUT_OUTCOME_REVERTED)
+        self.assertEqual(results[0]["reason"], self.module.TIMEOUT_REVERT_REASON_UNCOVERED)
+
+    def test_timeout_watchdog_pause_is_reverted_not_applied(self):
+        # 🐕 看门狗停点不是选择题，超时只收回。
+        hb = self.root / "reports" / "lane-heartbeat" / "W.md"
+        hb.parent.mkdir(parents=True)
+        hb.write_text("00:00:00 ｜ 开工\n", encoding="utf-8")
+        old = time.time() - 3600
+        os.utime(hb, (old, old))
+        self.module.check_heartbeat(
+            batch="B1", wave=1, lane="W", heartbeat_file="reports/lane-heartbeat/W.md",
+            notify_fn=_StubNotifier(),
+        )
+        state = self.module._read_state()
+        self.assertEqual(state["lanes"]["W"]["status"], "paused")
+        state["lanes"]["W"]["paused_at"] = self.module._iso(
+            self.module._now() - self.module.timedelta(minutes=11)
+        )
+        state["lanes"]["W"]["default_option"] = "继续"
+        self.module._atomic_write_state(state)
+        results = self.module.check_timeouts(notify_fn=_StubNotifier())
+        self.assertEqual(results[0]["outcome"], self.module.TIMEOUT_OUTCOME_REVERTED)
+        self.assertEqual(results[0]["reason"], self.module.TIMEOUT_REVERT_REASON_WATCHDOG)
+
+    def test_timeout_ten_minute_boundary(self):
+        # 四支之四：10 分钟边界——9 分钟不动，10 分钟整命中，且默认阈值即 10。
+        self._pause_and_backdate(
+            lane="A", action_key="merge_to_master", minutes_ago=9,
+            default_option="合入",
+        )
+        self.assertEqual(self.module.check_timeouts(notify_fn=_StubNotifier()), [])
+        self.assertEqual(self.module._read_state()["lanes"]["A"]["status"], "paused")
+
+        self._pause_and_backdate(
+            lane="B", action_key="merge_to_master", minutes_ago=10,
+            default_option="合入",
+        )
+        # 拨回 10 分钟后再经过的毫秒使 elapsed ≥ threshold，恰在边界内侧命中。
+        results = self.module.check_timeouts(notify_fn=_StubNotifier())
+        self.assertEqual([r["lane"] for r in results], ["B"])
+        self.assertEqual(results[0]["outcome"], self.module.TIMEOUT_OUTCOME_DEFAULT_APPLIED)
+        self.assertEqual(self.module._read_state()["lanes"]["A"]["status"], "paused")
+
+    def test_timeout_hours_kw_still_accepted_and_minutes_wins(self):
+        # `hours=` 兼容旧调用；与 `minutes=` 同给以 minutes 为准。
+        self._pause_and_backdate(lane="A", action_key="merge_to_master", minutes_ago=30, default_option="合入")
+        self.assertEqual(self.module.check_timeouts(hours=1.0, notify_fn=_StubNotifier()), [])
+        results = self.module.check_timeouts(hours=1.0, minutes=20, notify_fn=_StubNotifier())
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["outcome"], self.module.TIMEOUT_OUTCOME_DEFAULT_APPLIED)
+
+    def test_pause_rejects_default_option_outside_options(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.module.pause_lane(
+                batch="B1", wave=1, lane="A", action_key="merge_to_master",
+                waiting_for="X", notify_fn=_StubNotifier(),
+                options=["合入", "不合入"], default_option="合并",
+            )
+        self.assertIn("不在 options", str(ctx.exception))
+
+    def test_pause_notice_marks_default_or_no_default(self):
+        notifier = _StubNotifier()
+        self.module.pause_lane(
+            batch="B1", wave=1, lane="A", action_key="merge_to_master",
+            waiting_for="X", notify_fn=notifier, default_option="合入",
+        )
+        self.assertIn("默认项：合入", notifier.messages[-1])
+        self.assertIn("10 分钟", notifier.messages[-1])
+        self.module.pause_lane(
+            batch="B1", wave=1, lane="B", action_key="change_criteria",
+            waiting_for="Y", notify_fn=notifier,
+        )
+        self.assertIn(self.module.NO_DEFAULT_MARK, notifier.messages[-1])
+        self.assertIn("超时只收回", notifier.messages[-1])
+
+    def test_check_timeout_cli_minutes_default_and_hours_compat(self):
+        self._pause_and_backdate(lane="A", action_key="merge_to_master", minutes_ago=11, default_option="合入")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = self.module.main(["check-timeout", "--hours", "1", "--no-notify"])
+        self.assertEqual(rc, 0)
+        self.assertIn("无超过 60 分钟", out.getvalue())
+        self.assertEqual(self.module._read_state()["lanes"]["A"]["status"], "paused")
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = self.module.main(["check-timeout", "--no-notify", "--json"])
+        self.assertEqual(rc, 0)
+        text = out.getvalue()
+        self.assertIn("已按默认项执行「合入」", text)
+        self.assertIn("超时按默认项生效（未获明确答复", text)
+        self.assertIn('"outcome": "default_applied"', text)
+        self.assertEqual(self.module._read_state()["lanes"]["A"]["status"], "resumed")
+
+    def test_pause_cli_default_option_and_red_rejection(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = self.module.main([
+                "pause", "--batch", "B1", "--wave", "1", "--lane", "A",
+                "--action-key", "merge_to_master", "--waiting-for", "X",
+                "--option", "合入", "--option", "不合入", "--default-option", "合入", "--no-notify",
+            ])
+        self.assertEqual(rc, 0)
+        self.assertIn("默认项：合入", out.getvalue())
+        self.assertEqual(self.module._read_state()["lanes"]["A"]["default_option"], "合入")
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = self.module.main([
+                "pause", "--batch", "B1", "--wave", "1", "--lane", "R",
+                "--action-key", "external_send", "--waiting-for", "X",
+                "--default-option", "发", "--no-notify",
+            ])
+        self.assertEqual(rc, 1)
+        self.assertIn("永不代办", out.getvalue())
 
     def test_check_timeout_does_not_touch_resumed_lane(self):
         self.module.pause_lane(
@@ -886,17 +1119,40 @@ class LaneWatchStateMachineTests(unittest.TestCase):
         five_hours_ago = self.module._now() - self.module.timedelta(hours=5)
         state["lanes"]["C"]["paused_at"] = self.module._iso(five_hours_ago)
         self.module._atomic_write_state(state)
-        self.module.check_timeouts(hours=4.0)
+        self.module.check_timeouts(hours=4.0, notify_fn=_StubNotifier())
+
+        # 泳道 D：超时按默认执行（#529）——与 A「他答的」是两种事实，不得混计。
+        self.module.pause_lane(
+            batch="B1", wave=1, lane="D", action_key="merge_to_master",
+            waiting_for="是否合入 master", notify_fn=_StubNotifier(), default_option="合入",
+        )
+        state = self.module._read_state()
+        state["lanes"]["D"]["paused_at"] = self.module._iso(
+            self.module._now() - self.module.timedelta(minutes=11)
+        )
+        self.module._atomic_write_state(state)
+        self.module.check_timeouts(notify_fn=_StubNotifier())
 
         rows = self.module.build_summary(batch="B1")
-        self.assertEqual(len(rows), 3)
+        self.assertEqual(len(rows), 4)
         answers = {r["lane"]: r["answer"] for r in rows}
         self.assertEqual(answers["A"], "合入")
         self.assertEqual(answers["B"], "仍在等")
         self.assertEqual(answers["C"], "超时收回")
+        self.assertEqual(answers["D"], "超时按默认执行「合入」")
+        resolutions = {r["lane"]: r["resolution"] for r in rows}
+        self.assertEqual(resolutions["A"], "answered")
+        self.assertEqual(resolutions["D"], "default_on_timeout")
+        self.assertNotEqual(resolutions["A"], resolutions["D"])
+
+        counts = self.module.count_summary_resolutions(rows)
+        self.assertEqual(counts["answered"], 1)
+        self.assertEqual(counts["default_on_timeout"], 1)
+        self.assertEqual(counts["timeout"], 1)
+        self.assertEqual(counts["open"], 1)
 
         line = self.module.format_summary_line(rows)
-        self.assertTrue(line.startswith("本批停 3 次｜逐次："))
+        self.assertTrue(line.startswith("本批停 4 次（他答 1／超时按默认 1／超时收回 1／仍在等 1）｜逐次："), line)
 
     def test_summary_filters_by_batch(self):
         self.module.pause_lane(
