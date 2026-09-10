@@ -1014,6 +1014,15 @@ def write_heartbeat(
 
     `done=True` 时额外把泳道状态置终态 `done`（权威源），并在心跳行里写下
     `DONE ｜` 哨兵（回落源）——两者同批落，避免只有一半可读。
+
+    🔴 批次归属（队列 §一 `#544`，`#536` 的写侧残余）：`batch` 给了就写进
+    `lane_state["batch"]`（权威源）；**没给不猜、不默认**——猜错比归属未知更糟。
+    但也**不静默**：返回值带 `batch_attribution`（`declared`／`fallback`／
+    `unknown`）与 `batch_notice`，由 CLI 原样打印，让「这条泳道进不了任何一批
+    的账」在收工那一刻就被看见，而不是等到 `summary` 才单列出来。`fallback`
+    ＝本函数不写批次、但 `resolve_lane_batch()` 能从既有流水（pause／撞锁等）
+    回落判出——那是读侧既定口径的**如实预告**，不是本函数替调用方猜。
+    `batch` 给了但 `done=False` ⇒ 不落状态、同样出声说明被忽略。
     """
     rel = heartbeat_rel_path(lane)
     path = resolve_heartbeat_path(rel)
@@ -1028,6 +1037,12 @@ def write_heartbeat(
     result = {"lane": lane, "heartbeat_file": rel, "path": str(path),
               "line": line, "done": done}
     if not done:
+        if batch:
+            # 非静默：--batch 只在收工时才有落点，现在给了等于没给。
+            result["batch_notice"] = (
+                f"⚠ 本次未带 --done，`--batch {batch}` 未写入任何状态"
+                "（批次归属只在 `--done` 时落）；收工那次请再带一遍"
+            )
         return result
 
     now = _now()
@@ -1040,8 +1055,30 @@ def write_heartbeat(
         if batch:
             lane_state["batch"] = batch
 
-    _with_state(_mutate)
+    state = _with_state(_mutate)
     result["done_at"] = _iso(now)
+
+    # 🔴 缺 --batch 不静默、也不猜（`#544`）：按 summary 同一口径现算归属并回显。
+    resolved = resolve_lane_batch(state["lanes"][lane])
+    if batch:
+        result["batch_attribution"] = "declared"
+        result["batch"] = batch
+    elif resolved:
+        result["batch_attribution"] = "fallback"
+        result["batch"] = resolved
+        result["batch_notice"] = (
+            f"⚠ 本次未带 --batch：未写入批次；`summary` 将按既有流水回落把该泳道"
+            f"归入 `{resolved}`（读侧口径 `#536`）。若不是这一批，请显式带 --batch 重标"
+        )
+    else:
+        result["batch_attribution"] = "unknown"
+        result["batch"] = None
+        result["batch_notice"] = (
+            "⚠ 本次未带 --batch，该泳道终态将归入『归属未知』——不计入任何批次的账，"
+            "`summary --batch X` 只会在「批次归属未知」那一行单列它。"
+            "工具不替你猜批次（猜错比归属未知更糟）；请补跑一次 "
+            f"`heartbeat --lane {lane} --done --batch <批次> --text …` 显式归批"
+        )
     return result
 
 
@@ -1614,8 +1651,13 @@ def _cmd_heartbeat(args: argparse.Namespace) -> int:
     )
     if args.done:
         print(f"🏁 泳道 `{args.lane}` 已标终态（DONE）：{result['path']}")
+        if result.get("batch_attribution") == "declared":
+            print(f"   批次归属：`{result['batch']}`")
     else:
         print(f"💓 泳道 `{args.lane}` 心跳已写入：{result['path']}")
+    # 🔴 非静默降级（`#544`，同 `#398` 族口径）：缺陷不消失，但不冒充正确答案。
+    if result.get("batch_notice"):
+        print(result["batch_notice"])
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -1791,7 +1833,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_beat.add_argument(
         "--batch", default=None,
         help=("🔴 收工（--done）时强烈建议带上：`summary --batch X` 按它过滤终态泳道，"
-              "不带则该泳道**不计入任何批**，只在「批次归属未知」那一行单列（#536）"),
+              "不带则该泳道**不计入任何批**，只在「批次归属未知」那一行单列（#536）；"
+              "缺失时工具不猜、但会当场打印降级提示（#544）"),
     )
     p_beat.add_argument("--json", action="store_true")
     p_beat.set_defaults(func=_cmd_heartbeat)
