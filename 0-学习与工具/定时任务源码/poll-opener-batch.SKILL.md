@@ -1,6 +1,6 @@
 ---
 name: poll-opener-batch
-description: 只读探测卓品仓库 reports/opener-batch/ 有无新收工或新停滞的无头 CC 泳道批；[NO-SIGNAL] 立即空跑结束，[SIGNAL] 由脚本自行推运维群。把「棒跑完了没人知道」从人守转机器守。
+description: 只读探测卓品仓库 reports/opener-batch/ 有无新收工或新停滞的无头 CC 泳道批；[NO-SIGNAL] 立即空跑结束，[SIGNAL] 由脚本自行推运维群。2026-09-11 由 08-22 改为全天——七批无头棒里有两批（23:17 收工／05:26 起跑）落在旧窗口外。
 ---
 
 卓品智能 AI 转型项目 · 无头棒收工探针（承接队列 §一 `#551`／根 `CLAUDE.md` §5 `UPS5:7`）。
