@@ -41,6 +41,10 @@ $script:TotalByteCap = 300
 # 🔴 这里**故意没有** `ExpectedAnchorCount` —— 条目数由根 CLAUDE.md 的锚点集自己决定，
 #    脚本只校验该集合自洽（连续／不重复／编号合法）。判据见文件头 .DESCRIPTION。
 $script:AnchorRegex = '<!--\s*UPS5:(\d+)\s*-->'   # `\d+` 而非 `\d`：编号到两位数也不静默漏读
+# 🔴 编号合理上限＝**防御性护栏，不是「常驻纪律最多 100 条」这种业务判据**：`\d+` 无上界，
+#    一个笔误 `UPS5:999999999` 会让缺号检查去枚举 1..十亿 ⇒ 钩子挂死，而 UserPromptSubmit
+#    挂死＝**每一轮对话都卡住**。超过此值一律当「编号异常」报掉、不枚举。
+$script:AnchorIndexSanityCap = 100
 
 function Write-HookMessage([string]$msg) {
     $payload = @{
@@ -86,10 +90,17 @@ function Get-StandingAnchorsFromClaudeMd([string]$RepoRoot) {
     $lines = $text -split "`r?`n"
 
     $byIndex = @{}
+    $unparsable = New-Object System.Collections.ArrayList
     foreach ($ln in $lines) {
         $m = [regex]::Match($ln, $script:AnchorRegex)
         if (-not $m.Success) { continue }
-        $idx = [int]$m.Groups[1].Value
+        # `\d+` 无上界，`[int]` 直转会在 >2^31 时抛异常 ⇒ 整枚钩子走进 catch、每轮只剩一行报错。
+        # TryParse 让"编号大得离谱"退化成一条可读的异常提示，而不是把钩子本身打掉。
+        $idx = 0
+        if (-not [int]::TryParse($m.Groups[1].Value, [ref]$idx)) {
+            [void]$unparsable.Add($m.Groups[1].Value)
+            continue
+        }
         $body = $ln.Substring(0, $m.Index).Trim()
         $body = $body -replace '^-\s*', ''   # 去掉行首 Markdown 列表前缀，纯文本更省字节
         if (-not $byIndex.ContainsKey($idx)) { $byIndex[$idx] = New-Object System.Collections.ArrayList }
@@ -100,9 +111,13 @@ function Get-StandingAnchorsFromClaudeMd([string]$RepoRoot) {
     $indexes = @($byIndex.Keys | Sort-Object)
     $notes = New-Object System.Collections.ArrayList
 
+    if ($unparsable.Count -gt 0) {
+        [void]$notes.Add('编号无法解析：' + ($unparsable -join '、'))
+    }
     if ($indexes.Count -eq 0) {
         # 一条都没命中＝典型的"结果太干净"，比缺一条更该报，不得当"正好 0 条、自洽"放过。
-        [void]$notes.Add('未命中任何 UPS5:n 锚点')
+        # （若同时有无法解析的编号，上一条已说明原因，这里不再重复一句"什么都没有"。）
+        if ($unparsable.Count -eq 0) { [void]$notes.Add('未命中任何 UPS5:n 锚点') }
     }
     else {
         # ① 非法编号：编号从 1 起，`UPS5:0`／负数一律报（regex 只放 \d+，故只可能是 0）。
@@ -111,7 +126,12 @@ function Get-StandingAnchorsFromClaudeMd([string]$RepoRoot) {
 
         # ② 缺号：合法编号 MUST 构成 1..max 的连续整数集；缺哪个报哪个。
         #    这是"合法新增/删除条目不报警、真漏一条才报警"的关键——只看连续性，不看总数。
-        $legal = @($indexes | Where-Object { $_ -ge 1 })
+        $legal = @($indexes | Where-Object { $_ -ge 1 -and $_ -le $script:AnchorIndexSanityCap })
+        $oversized = @($indexes | Where-Object { $_ -gt $script:AnchorIndexSanityCap })
+        if ($oversized.Count -gt 0) {
+            # 不枚举 1..离谱值（会挂死 UserPromptSubmit），只报出来让人去看那一行。
+            [void]$notes.Add("编号异常偏大：" + ($oversized -join '、') + "（合理上限 $script:AnchorIndexSanityCap）")
+        }
         if ($legal.Count -gt 0) {
             $maxIdx = $legal[-1]
             $missing = @(1..$maxIdx | Where-Object { -not $byIndex.ContainsKey($_) })

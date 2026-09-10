@@ -439,6 +439,28 @@ class TestUserPromptSubmitStandingFive:
         assert "⚠" not in ctx, f"1..10 连续不该报异常：{ctx}"
         assert "第10条" in ctx, f"两位数编号被漏读：{ctx}"
 
+    def test_编号异常偏大不枚举也不静默(self, repo: Path):
+        """🔴 挂死防线：`\\d+` 无上界，一个笔误 `UPS5:999999999` 会让缺号检查去枚举 1..十亿
+        ⇒ 钩子挂死，而 UserPromptSubmit 挂死＝**每一轮对话都卡住**（比它要防的告警噪声
+        严重得多）。超过合理上限一律报掉、不枚举，且必须在有限时间内返回。"""
+        write_root_claude_md(repo, {1: "第一条", 2: "第二条", 999999999: "笔误的一条"})
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "编号异常偏大" in ctx and "999999999" in ctx, ctx
+        assert audit_lines(repo)[-1]["verdict"] == "undetermined"
+
+    def test_编号溢出int时不打掉钩子本身(self, repo: Path):
+        """`[int]` 直转 >2^31 会抛异常 ⇒ 整枚钩子走进 catch、每轮只剩一行报错、
+        常驻纪律一条都注入不了。TryParse 让它退化成一条可读提示，其余条目照常注入。"""
+        write_root_claude_md(repo, {1: "第一条", 2: "第二条", 99999999999999999999: "溢出的一条"})
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "编号无法解析" in ctx, ctx
+        assert "自身报错" not in ctx, f"钩子被打进 catch 分支了：{ctx}"
+        assert "第一条" in ctx and "第二条" in ctx, f"其余条目应照常注入：{ctx}"
+
     def test_锚点重复时报告不静默选一个(self, repo: Path):
         lines = [
             "# CLAUDE.md（测试夹具）", "",
