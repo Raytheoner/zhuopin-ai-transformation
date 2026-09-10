@@ -18,6 +18,10 @@
 #    C:\wecom-aibot\zhuopin_platform\   平台底座包
 #    C:\wecom-aibot\app\                本工程（本脚本所在）
 #    C:\wecom-aibot\.env                凭据（手工放，不入库）—— 与 5-平台底座/.env 同层级约定
+#      └ 本文件同时是 scripts/alert_webhook.py 取 WECOM_WEBHOOK_URL_OPS 的来源：
+#        该脚本的 find_repo_root() 认「与 app 兄弟的 zhuopin_platform 目录」＝扁平布局
+#        基目录（队列 #419 修法 a，2026-09-10 落地）；此前它只认 monorepo 的
+#        5-平台底座/zhuopin_platform，在本布局下恒取不到值，第三道防线因此从未活过。
 #
 #  与 SC8 baoguan-web-service（8091）的关键差异（design.md D1）：
 #    本服务是**纯出站 WebSocket 客户端**（wss://openws.work.weixin.qq.com），
@@ -82,7 +86,15 @@ if (-not (Test-Path $envFile)) {
 WECOM_AIBOT_BOTID=
 WECOM_AIBOT_SECRET=
 
-# 既有 webhook 群机器人凭据（并存不改，仅供 alert_webhook.py 自身故障告警用）
+# 运维逃生通道 webhook（第三道防线：三级重启退避耗尽时 scripts/alert_webhook.py 用它发告警）
+# 队列 #419 修法 a，2026-09-10 补进模板。取值来源就是本文件所在目录，脚本不读别处。
+# 必填：留空 ＝ 退避耗尽时只打印「未配置」并 exit 1，告警发不出去（这条防线 2026-07-16
+#       企微机器人停摆 24h49m 那次就是这么哑的）。
+# 不得填业务部门群的 webhook —— 队列 #282 拍板「业务部门此后不从任何 webhook 收消息」，
+#       且脚本已硬性禁止回退到下面那个裸键，填错这里不会被静默兜住。
+WECOM_WEBHOOK_URL_OPS=
+
+# 既有 webhook 群机器人凭据（并存不改；指向业务群，alert_webhook.py 绝不回退到本键）
 WECOM_WEBHOOK_URL=
 
 # 可选：覆盖默认路径（默认按仓库相对结构推导，通常不需要改）
@@ -100,7 +112,18 @@ if (Test-Path $envFile) {
     $botVal = if ($botLine) { ($botLine -split '=', 2)[1].Trim().Trim('"').Trim("'") } else { "" }
     if (-not $botVal) {
         Write-Host "      ⚠️ .env 里 WECOM_AIBOT_BOTID 为空/缺失 —— 服务启动会 fail-loud 报凭据缺失。" -ForegroundColor Red
-        Write-Host "         需 Paul 完成队列 §四#10 前置动作（企微后台建智能机器人取 BotID/Secret）后回填。" -ForegroundColor Red
+        Write-Host "         需 Shao Peishen 完成队列 §四#10 前置动作（企微后台建智能机器人取 BotID/Secret）后回填。" -ForegroundColor Red
+    }
+    # 运维逃生通道体检（队列 #419）：这条防线的历史缺陷全是「不报错、只是悄悄发不出去」，
+    # 故在部署期就把它查出来 —— 部署时能看见一行红字，胜过退避耗尽那天没人收到告警。
+    # 只告警不中止：本键为空不影响服务自身运行，只影响它挂掉时能不能喊出声。
+    $opsLine = Get-Content $envFile | Where-Object { $_ -match '^\s*WECOM_WEBHOOK_URL_OPS=' }
+    $opsVal = if ($opsLine) { ($opsLine -split '=', 2)[1].Trim().Trim('"').Trim("'") } else { "" }
+    if (-not $opsVal) {
+        Write-Host "      ⚠️ .env 里 WECOM_WEBHOOK_URL_OPS 为空/缺失 —— 三级重启退避耗尽时告警发不出去。" -ForegroundColor Red
+        Write-Host "         填运维群的 webhook（不是业务部门群，队列 #282）后重跑本脚本。" -ForegroundColor Red
+    } else {
+        Write-Host "      运维逃生通道 WECOM_WEBHOOK_URL_OPS 已配置" -ForegroundColor Green
     }
 }
 

@@ -104,3 +104,68 @@ def test_find_repo_root找不到标记时返回None(tmp_path):
     deep = tmp_path / "a" / "b"
     deep.mkdir(parents=True)
     assert alert_webhook.find_repo_root(deep / "x.py") is None
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 扁平布局分支（队列 §一 #419 第①问修法 (a)，Shao Peishen 2026-09-09 定；OP-0910-F）
+#
+# 背景：`5-平台底座/zhuopin_platform` 是 monorepo 布局特有、`.51` 扁平部署本就没有的
+# 那层目录（`bootstrap.py` 模块 docstring 的两种布局对照表）⇒ 增补前
+# `find_repo_root()` 在生产布局上恒返回 None，`load_dotenv` 从不执行，这条"第三道
+# 防线"取值恒为 None。下列用例照 `deploy-server.ps1` 实证布局搭盘。
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _make_flat_layout(base: Path) -> Path:
+    """按 `deploy-server.ps1` 实证布局搭一副扁平盘，返回脚本所在目录。
+
+    `C:\\wecom-aibot\\{app,zhuopin_platform}` ＋ `C:\\wecom-aibot\\.env`。
+    """
+    (base / "zhuopin_platform").mkdir(parents=True)
+    scripts = base / "app" / "scripts"
+    scripts.mkdir(parents=True)
+    return scripts
+
+
+def test_find_repo_root认扁平布局的兄弟目录(tmp_path):
+    """D2 的直接回归：改前此处返回 None，是这条防线在生产上死掉的死因。"""
+    scripts = _make_flat_layout(tmp_path)
+    assert alert_webhook.find_repo_root(scripts / "alert_webhook.py") == tmp_path
+
+
+def test_扁平布局下取到运维键(tmp_path, clean_env):
+    """把 `.env` 放在扁平布局的基目录（＝`C:\\wecom-aibot\\.env`），须取到 `_OPS`。"""
+    scripts = _make_flat_layout(tmp_path)
+    _write_env(tmp_path, f"{OPS_KEY}=https://qyapi.example.com/ops")
+    root = alert_webhook.find_repo_root(scripts / "alert_webhook.py")
+    assert alert_webhook.resolve_alert_webhook(root) == "https://qyapi.example.com/ops"
+
+
+def test_monorepo优先于扁平不得认回被退役的那份env(tmp_path):
+    """🔴 本文件最硬的一条结构性用例：两趟扫描的**次序**本身就是正确性。
+
+    monorepo 里 `<repo>/5-平台底座/` 这一层底下确实有 `zhuopin_platform`，扁平判据
+    在此为真且**先于** `<repo>` 被走到。若把两趟合成一个循环逐层双判，函数会返回
+    `<repo>/5-平台底座` —— 正好是 `#282` 拍板要弃用、裸键值长 0 且无 `_OPS` 的那份
+    `.env`。**必须返回 `<repo>`。**
+    """
+    (tmp_path / "5-平台底座" / "zhuopin_platform").mkdir(parents=True)
+    scripts = tmp_path / "5-平台底座" / "wecom-aibot-service" / "scripts"
+    scripts.mkdir(parents=True)
+    assert alert_webhook.find_repo_root(scripts / "alert_webhook.py") == tmp_path
+
+
+def test_扁平布局下裸键仍绝不回退(tmp_path, clean_env):
+    """新分支不得成为绕过 `#282` 那条禁令的后门。"""
+    scripts = _make_flat_layout(tmp_path)
+    _write_env(tmp_path, f"{BARE_KEY}=https://qyapi.example.com/business")
+    root = alert_webhook.find_repo_root(scripts / "alert_webhook.py")
+    assert root == tmp_path
+    assert alert_webhook.resolve_alert_webhook(root) is None
+
+
+def test_扁平标记从bootstrap的MARKER_PARTS派生不留字面量副本():
+    """两种布局认的是同一个包目录名；写死字面量会在日后改名时静默漂成两份。"""
+    from zhuopin_platform.bootstrap import MARKER_PARTS
+
+    assert alert_webhook.FLAT_MARKER_PART == MARKER_PARTS[-1] == "zhuopin_platform"
