@@ -857,6 +857,107 @@ class LaneWatchStateMachineTests(unittest.TestCase):
         self.assertIn("批次归属未知", out)
         self.assertIn("孤儿泳道", out)
 
+    # ------- 写侧归批（队列 §一 `#544`，`#536` 的残余缺口） -------
+
+    def test_heartbeat_done_with_batch_is_attributed_to_that_batch(self):
+        """#544 ⑶ 正向：带 `--batch` ⇒ 权威源落 `lane_state["batch"]`，
+        `summary --batch` 计入该批、归属未知行不出现。"""
+        code, out = self._run_cli([
+            "heartbeat", "--lane", "带批泳道", "--done", "--batch", "B1",
+            "--text", "产出落点：X",
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("🏁", out)
+        self.assertIn("批次归属：`B1`", out)
+        self.assertNotIn("未带 --batch", out)
+        self.assertNotIn("归属未知", out)
+
+        state = self.module._read_state()
+        self.assertEqual(state["lanes"]["带批泳道"]["batch"], "B1")
+        self.assertEqual(self.module.resolve_lane_batch(state["lanes"]["带批泳道"]), "B1")
+
+        code, out = self._run_cli(["summary", "--batch", "B1"])
+        self.assertEqual(code, 0)
+        self.assertIn("本批终态泳道 1 条", out)
+        self.assertNotIn("批次归属未知", out)
+
+    def test_heartbeat_done_without_batch_degrades_loudly_and_never_guesses(self):
+        """#544 ⑵⑶⑷：不带 `--batch` ⇒ 不猜（状态里没有 `batch` 键）、不静默
+        （CLI 当场打印降级提示）、且 `summary --batch X` **真的**把它列进
+        「批次归属未知」那一行——变异检验，防止提示与读侧口径各说各话。"""
+        # 先让另一批 B1 有一条正常泳道，证明「不带」不会被吸进任何已存在的批。
+        self.module.write_heartbeat(lane="本批泳道", text="产出落点：Y", done=True, batch="B1")
+
+        code, out = self._run_cli([
+            "heartbeat", "--lane", "漏批泳道", "--done", "--text", "产出落点：X",
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("🏁", out)                       # 终态照落，降级不等于拒绝
+        self.assertIn("本次未带 --batch", out)         # ⑵ 非静默
+        self.assertIn("归属未知", out)
+        self.assertIn("不替你猜", out)
+        self.assertIn("--lane 漏批泳道 --done --batch", out)   # 提示里给可直接补跑的命令
+
+        lane_state = self.module._read_state()["lanes"]["漏批泳道"]
+        self.assertNotIn("batch", lane_state)          # 🔴 一个字节都没猜进去
+        self.assertIsNone(self.module.resolve_lane_batch(lane_state))
+
+        # ⑷ 变异检验：读侧真的把它单列为归属未知，且不进 B1 的账。
+        code, out = self._run_cli(["summary", "--batch", "B1"])
+        self.assertEqual(code, 0)
+        self.assertIn("本批终态泳道 1 条", out)
+        self.assertIn("批次归属未知", out)
+        self.assertIn("漏批泳道", out)
+        # 换一个不存在的批过滤，它同样不被吸进去——「缺失 ≠ 属于本批」。
+        code, out = self._run_cli(["summary", "--batch", "B-不存在"])
+        self.assertIn("本批终态泳道 0 条", out)
+        self.assertIn("漏批泳道", out)
+
+    def test_heartbeat_done_without_batch_reports_fallback_when_stream_has_one(self):
+        """#544 边界：不带 `--batch` 但流水里已有批次（此前 `pause` 过）⇒ 写侧
+        仍不写 `batch`，提示改为「按流水回落归入 X」——如实预告读侧口径，
+        不冒充「归属未知」，也不冒充「已声明」。"""
+        self.module.pause_lane(
+            batch="B1", wave=1, lane="停过的泳道", action_key="merge_to_master",
+            waiting_for="是否合入", notify_fn=_StubNotifier(),
+        )
+        self.module.resume_lane(lane="停过的泳道", answer="是")
+        code, out = self._run_cli([
+            "heartbeat", "--lane", "停过的泳道", "--done", "--text", "产出落点：X",
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("本次未带 --batch", out)
+        self.assertIn("回落", out)
+        self.assertIn("`B1`", out)
+        self.assertNotIn("归属未知", out)
+        lane_state = self.module._read_state()["lanes"]["停过的泳道"]
+        # pause 已把 batch 写进权威源，这里只断言 write_heartbeat 没改写它
+        self.assertEqual(lane_state.get("batch"), "B1")
+
+    def test_heartbeat_done_result_carries_batch_attribution_field(self):
+        """`--json` 消费方也拿得到三态归属，不必靠解析人话。"""
+        declared = self.module.write_heartbeat(lane="A", text="x", done=True, batch="B1")
+        unknown = self.module.write_heartbeat(lane="B", text="x", done=True)
+        self.assertEqual(declared["batch_attribution"], "declared")
+        self.assertEqual(declared["batch"], "B1")
+        self.assertNotIn("batch_notice", declared)
+        self.assertEqual(unknown["batch_attribution"], "unknown")
+        self.assertIsNone(unknown["batch"])
+        self.assertIn("归属未知", unknown["batch_notice"])
+        # 非终态心跳不谈归属
+        running = self.module.write_heartbeat(lane="C", text="已开工")
+        self.assertNotIn("batch_attribution", running)
+
+    def test_heartbeat_batch_without_done_is_ignored_loudly(self):
+        """`--batch` 只在 `--done` 时落；非收工心跳带了它 ⇒ 不写状态、但出声。"""
+        code, out = self._run_cli([
+            "heartbeat", "--lane", "早给批泳道", "--batch", "B1", "--text", "已开工",
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("💓", out)
+        self.assertIn("未带 --done", out)
+        self.assertNotIn("早给批泳道", self.module._read_state().get("lanes", {}))
+
     # ---------------- summary（D6） ----------------
 
     def test_summary_empty(self):
