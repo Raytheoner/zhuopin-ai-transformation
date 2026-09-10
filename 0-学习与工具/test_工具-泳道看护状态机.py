@@ -725,6 +725,138 @@ class LaneWatchStateMachineTests(unittest.TestCase):
         self.assertIn("本批终态泳道 1 条", line)
         self.assertEqual(self.module.format_done_line([]), "本批终态泳道 0 条")
 
+    # ------- 批次收敛（队列 §一 `#536`，源 §四 `#189`） -------
+
+    def test_done_summary_does_not_leak_across_batches(self):
+        """#536 ⑵：两批共存于同一状态文件时，各自 `--batch` 的计数互不串。
+
+        实撞回归：`B-0909_三泳道夜批` 本只 3 条泳道，旧实现报 5 条——把上一批
+        的两条（`batch` 字段缺失）也算了进来。
+        """
+        self.module.write_heartbeat(lane="上一批泳道", text="产出落点：X", done=True, batch="B1")
+        self.module.write_heartbeat(lane="本批泳道甲", text="产出落点：Y", done=True, batch="B2")
+        self.module.write_heartbeat(lane="本批泳道乙", text="产出落点：Z", done=True, batch="B2")
+
+        b1 = self.module.build_done_summary(batch="B1")
+        b2 = self.module.build_done_summary(batch="B2")
+        self.assertEqual([r["lane"] for r in b1], ["上一批泳道"])
+        self.assertEqual(sorted(r["lane"] for r in b2), ["本批泳道乙", "本批泳道甲"])
+        # 不按批过滤时仍是全量（口径未变，只是不再冒充某一批）
+        self.assertEqual(len(self.module.build_done_summary()), 3)
+
+    def test_done_lane_without_batch_counts_toward_no_batch(self):
+        """#536 ⑴：`batch` 缺失 ≠ 属于本批——归属未知者谁都不算，单列一行。"""
+        self.module.write_heartbeat(lane="无批次泳道", text="产出落点：X", done=True)
+        self.module.write_heartbeat(lane="本批泳道", text="产出落点：Y", done=True, batch="B2")
+
+        rows = self.module.build_done_summary(batch="B2")
+        self.assertEqual([r["lane"] for r in rows], ["本批泳道"])
+        self.assertEqual(self.module.build_done_summary(batch="B1"), [])
+
+        orphan = self.module.build_unattributed_done_summary()
+        self.assertEqual([r["lane"] for r in orphan], ["无批次泳道"])
+        line = self.module.format_unattributed_done_line(orphan)
+        self.assertIn("批次归属未知", line)
+        self.assertIn("无批次泳道", line)
+
+    def test_lane_batch_falls_back_to_last_record_before_done(self):
+        """归属回落：`heartbeat --done` 没带 `--batch`，但该泳道有带批次的留痕
+        （停点／转出／撞锁／放行）⇒ 取**不晚于 done_at 的最后一条**，不取并集。"""
+        self.module.pause_lane(
+            batch="B1", wave=1, lane="A", action_key="merge_to_master",
+            waiting_for="是否合入", notify_fn=_StubNotifier(),
+        )
+        self.module.resume_lane(lane="A", answer="合入")
+        self.module.write_heartbeat(lane="A", text="产出落点：X", done=True)  # 未带 --batch
+
+        self.assertEqual([r["lane"] for r in self.module.build_done_summary(batch="B1")], ["A"])
+        self.assertEqual(self.module.build_done_summary(batch="B2"), [])
+        self.assertEqual(self.module.build_unattributed_done_summary(), [])
+
+    def test_lane_batch_ignores_records_after_done(self):
+        """终态之后才产生的留痕不改写「结束时属于哪一批」。"""
+        self.module.write_heartbeat(lane="A", text="产出落点：X", done=True, batch="B1")
+        done_at = self.module._read_state()["lanes"]["A"]["done_at"]
+
+        def _mutate(data):
+            lane_state = data["lanes"]["A"]
+            # 抹掉权威字段，逼回落路径；再构造一条晚于 done_at 的别批留痕
+            del lane_state["batch"]
+            lane_state["transfers"] = [{
+                "batch": "B1", "wave": 1, "action_key": "deploy_51",
+                "action_label": "x", "note": "", "recorded_at": done_at,
+            }]
+            lane_state["lock_hits"] = [
+                {"batch": "B9", "wave": 1, "recorded_at": "2099-01-01T00:00:00Z"},
+            ]
+
+        self.module._with_state(_mutate)
+        self.assertEqual([r["lane"] for r in self.module.build_done_summary(batch="B1")], ["A"])
+        self.assertEqual(self.module.build_done_summary(batch="B9"), [])
+
+    def test_all_summary_counters_are_batch_scoped(self):
+        """#536 ⑶：停点数／转出数／撞锁数／放行数与终态数**同一口径**，逐列核。"""
+        stub = _StubNotifier()
+        # B1：一停、一转出、一撞锁
+        self.module.pause_lane(
+            batch="B1", wave=1, lane="L1", action_key="merge_to_master",
+            waiting_for="是否合入", notify_fn=stub,
+        )
+        self.module.transfer_out_lane(
+            batch="B1", wave=1, lane="L1", action_key="deploy_51", note="B1 转出", notify_fn=stub,
+        )
+        self.module.record_lock_hit(batch="B1", wave=1, lane="L1")
+        # B2：两停、两转出、两撞锁
+        for wave in (1, 2):
+            self.module.pause_lane(
+                batch="B2", wave=wave, lane=f"M{wave}", action_key="change_criteria",
+                waiting_for="改阈值？", notify_fn=stub,
+            )
+            self.module.transfer_out_lane(
+                batch="B2", wave=wave, lane=f"M{wave}", action_key="deploy_51",
+                note="B2 转出", notify_fn=stub,
+            )
+            self.module.record_lock_hit(batch="B2", wave=wave, lane=f"M{wave}")
+
+        self.assertEqual(len(self.module.build_summary(batch="B1")), 1)
+        self.assertEqual(len(self.module.build_summary(batch="B2")), 2)
+        self.assertEqual(len(self.module.build_transfer_summary(batch="B1")), 1)
+        self.assertEqual(len(self.module.build_transfer_summary(batch="B2")), 2)
+        self.assertEqual(self.module.count_lock_hits(batch="B1"), 1)
+        self.assertEqual(self.module.count_lock_hits(batch="B2"), 2)
+
+        # 放行数：授权挂在 B1 的那条转出上，执行结果继承其批次
+        auth = self.module.authorize_deploy(
+            batch="B1", wave=1, lane="L1", action_key="deploy_51",
+            item="部署 X", authorized_text="他说：可以部署",
+            prober=lambda: {"status": "on", "on_lan": True},
+        )
+        self.module.record_deploy_attempt(
+            lane="L1", authorization_index=auth["index"], outcome="done", evidence_ref="ref",
+        )
+        self.assertEqual(self.module.count_deploy_authorizations(batch="B1"), 1)
+        self.assertEqual(self.module.count_deploy_authorizations(batch="B2"), 0)
+        self.assertEqual(self.module.build_deploy_attempt_summary(batch="B1")["done"], 1)
+        self.assertEqual(sum(self.module.build_deploy_attempt_summary(batch="B2").values()), 0)
+
+    def test_notify_failure_line_does_not_claim_batch_scope(self):
+        """#536 ⑶ 顺带核出：`notify_failures` 无批次归属 ⇒ 措辞不得声称「本批」。"""
+        for line in (
+            self.module.format_notify_failure_line(0),
+            self.module.format_notify_failure_line(3),
+        ):
+            self.assertNotIn("本批", line)
+            self.assertIn("全库累计", line)
+
+    def test_cli_summary_lists_unattributed_done_lanes(self):
+        self.module.write_heartbeat(lane="孤儿泳道", text="产出落点：X", done=True)
+        self.module.write_heartbeat(lane="本批泳道", text="产出落点：Y", done=True, batch="B1")
+        code, out = self._run_cli(["summary", "--batch", "B1"])
+        self.assertEqual(code, 0)
+        self.assertIn("本批终态泳道 1 条", out)
+        self.assertIn("批次归属未知", out)
+        self.assertIn("孤儿泳道", out)
+
     # ---------------- summary（D6） ----------------
 
     def test_summary_empty(self):

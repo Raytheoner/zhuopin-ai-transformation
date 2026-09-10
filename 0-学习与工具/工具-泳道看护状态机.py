@@ -1183,9 +1183,18 @@ def count_notify_failures() -> int:
 
 
 def format_notify_failure_line(count: int) -> str:
+    """🔴 2026-09-10（`#536` 期望产出 ⑶ 顺带核出）：措辞由「**本批**企微通知
+    失败 N 次」改为「全库累计」——`notify_failures` 条目按 design 决策点 2
+    **不挂 batch 归属**（只有 `at`/`reason` 两键），`count_notify_failures()`
+    也从不按批过滤，旧措辞等于**声称本批、实得全库**，与 `#536` 主症同族：
+    报出口径与实际口径不一致。此处改的是**标签**，计数逻辑一字未动——要真按
+    批过滤须先给 `notify_failures` 补批次留痕，那是另一件事（已登 §四）。"""
     if count == 0:
-        return "本批企微通知失败 0 次"
-    return f"⚠ 本批企微通知失败 {count} 次（已标记 notify_failures，未回落默认群，需人工核实 OPS 配置/网络）"
+        return "企微通知失败 0 次（全库累计，不按批过滤）"
+    return (
+        f"⚠ 企微通知失败 {count} 次（全库累计，不按批过滤；已标记 notify_failures，"
+        "未回落默认群，需人工核实 OPS 配置/网络）"
+    )
 
 
 def _format_wait_duration(paused_at: Optional[str], answered_at: Optional[str]) -> str:
@@ -1233,6 +1242,86 @@ def format_summary_line(rows: list) -> str:
     return f"本批停 {len(rows)} 次｜逐次：" + "；".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# 泳道 ↔ 批次归属（队列 §一 `#536`，源 §四 `#189`）
+#
+# 🔴 **「没写批次」不等于「属于本批」**——旧实现把 `batch` 缺失的泳道当成
+# 「哪一批都算」（`not in (None, batch)`），于是每跑一批，所有历史遗留的
+# 终态泳道都会被再算一遍，且**永远往多了报**：`B-0909_三泳道夜批` 实测报
+# 「本批终态泳道 5 条」而该批只有 3 条。它污染的是**唯一被授权的数据源**
+# （SKILL 步骤 6「现取、不手工数」全部效力都建立在这个数是对的之上），
+# 所以口径改成：**归属不明 ⇒ 谁都不算，另起一行单列**（§四 `#189` 写死的
+# 修法方向：「存量无 batch 的记录按『未知批次』单列，不并进本批计数」）。
+#
+# 归属判定单值、有优先级，**不取并集**——一条泳道只终态一次，它只可能属于
+# 结束时所在的那一批；取并集会让跨批复用同名泳道的场景重新往多了报。
+# ---------------------------------------------------------------------------
+
+# (字段名, 该条记录的时间戳候选字段) —— 每条 append-only 流水都带 batch，
+# 🔴 新增流水时必须同步登记到这里，否则新流水的批次留痕对归属判定不可见。
+_LANE_BATCH_RECORD_STREAMS = (
+    ("history", ("paused_at",)),
+    ("transfers", ("recorded_at",)),
+    ("lock_hits", ("recorded_at",)),
+    ("deploy_authorizations", ("authorized_at",)),
+    ("deploy_attempts", ("started_at", "finished_at")),
+)
+
+
+def _record_stamp(record: dict, ts_fields: tuple) -> Optional[str]:
+    for field in ts_fields:
+        value = record.get(field)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def resolve_lane_batch(lane_state: dict) -> Optional[str]:
+    """这条泳道归哪一批——`None` ＝ **归属未知**（不是「属于任何批」）。
+
+    优先级写死，不猜：
+
+    ⑴ `lane_state["batch"]`——权威源。由 `heartbeat --done --batch`、`pause`、
+       看门狗 `check-heartbeat` 写入（这三处都拿得到真批次）。
+    ⑵ 缺失时回落取该泳道 append-only 流水里**不晚于 `done_at` 的最后一条**
+       带批次记录（`history`/`transfers`/`lock_hits`/`deploy_*`）。时间戳一律
+       `%Y-%m-%dT%H:%M:%SZ` 定宽，故直接字符串比大小即等价于比时刻；
+       `done_at` 缺失（存量记录）时不做时间截断，取最后一条。
+    ⑶ 两者皆无 ⇒ 返回 `None`。**这不是失败，是一个必须被报出来的事实**，
+       由 `build_unattributed_done_summary()` 单列。
+    """
+    declared = lane_state.get("batch")
+    if declared:
+        return declared
+
+    done_at = lane_state.get("done_at")
+    if not isinstance(done_at, str):
+        done_at = None
+
+    best_stamp: Optional[str] = None
+    best_batch: Optional[str] = None
+    for field, ts_fields in _LANE_BATCH_RECORD_STREAMS:
+        for record in lane_state.get(field, []) or []:
+            if not isinstance(record, dict):
+                continue
+            rec_batch = record.get("batch")
+            if not rec_batch:
+                continue
+            stamp = _record_stamp(record, ts_fields) or ""
+            if done_at and stamp and stamp > done_at:
+                continue  # 终态之后才产生的留痕不改写「结束时属于哪一批」
+            if best_stamp is None or stamp >= best_stamp:
+                best_stamp, best_batch = stamp, rec_batch
+    return best_batch
+
+
+def lane_in_batch(lane_state: dict, batch: Optional[str]) -> bool:
+    """`batch=None`（不按批过滤）恒真；否则**严格相等**，归属未知一律为假。"""
+    if not batch:
+        return True
+    return resolve_lane_batch(lane_state) == batch
+
+
 def build_done_summary(*, batch: Optional[str] = None) -> list:
     """D6 邻接产出：本批有哪些泳道已进终态——现取，不靠人工回忆（同
     `count_lock_hits` 手法）。
@@ -1245,13 +1334,39 @@ def build_done_summary(*, batch: Optional[str] = None) -> list:
     **不得回写状态记录**（只读推断），故经哨兵豁免的那一半在状态文件里没有
     留痕；若强行单独计数，得到的会是一个**只统计到一半的数字**——那比不报
     更容易误导。终态泳道数是状态文件里唯一有权威留痕的口径。
+
+    🔴 2026-09-10（队列 §一 `#536`）：过滤改走 `lane_in_batch()`——**批次归属
+    未知的泳道不再被算进本批**，改由 `build_unattributed_done_summary()` 单列。
+    「终态不消失」这一条仍成立，变的只是它不再冒充本批战果。
     """
     data = _read_state()
     rows = []
     for lane, lane_state in data.get("lanes", {}).items():
         if lane_state.get("status") != STATUS_DONE:
             continue
-        if batch and lane_state.get("batch") not in (None, batch):
+        if not lane_in_batch(lane_state, batch):
+            continue
+        rows.append({
+            "lane": lane,
+            "batch": resolve_lane_batch(lane_state),
+            "done_at": lane_state.get("done_at"),
+            "note": lane_state.get("done_note") or "",
+        })
+    return rows
+
+
+def build_unattributed_done_summary() -> list:
+    """批次归属未知的终态泳道——**不并进任何一批的计数，但必须被看见**。
+
+    🔑 它同时是「谁没带 `--batch`」的现场证据：`heartbeat --done` 未带
+    `--batch`、且该泳道全程没停过（无 pause／转出／撞锁／放行留痕）时就落这里。
+    """
+    data = _read_state()
+    rows = []
+    for lane, lane_state in data.get("lanes", {}).items():
+        if lane_state.get("status") != STATUS_DONE:
+            continue
+        if resolve_lane_batch(lane_state) is not None:
             continue
         rows.append({
             "lane": lane,
@@ -1259,6 +1374,16 @@ def build_done_summary(*, batch: Optional[str] = None) -> list:
             "note": lane_state.get("done_note") or "",
         })
     return rows
+
+
+def format_unattributed_done_line(rows: list) -> str:
+    if not rows:
+        return "无批次归属未知的终态泳道"
+    return (
+        f"⚠ 另有终态泳道 {len(rows)} 条批次归属未知（未计入任何批；"
+        "成因＝`heartbeat --done` 未带 `--batch`）｜逐条："
+        + "；".join(r["lane"] for r in rows)
+    )
 
 
 def format_done_line(rows: list) -> str:
@@ -1493,6 +1618,11 @@ def _cmd_summary(args: argparse.Namespace) -> int:
     print(format_transfer_line(transfer_rows))
     done_rows = build_done_summary(batch=args.batch)
     print(format_done_line(done_rows))
+    # 归属未知的终态泳道：只在按批过滤时单列（不按批时它们已在上面那行里）。
+    # 🔴 有才打印——0 条时不占版面，且「没有这一行」本身就是"全部有归属"。
+    unattributed = build_unattributed_done_summary() if args.batch else []
+    if unattributed:
+        print(format_unattributed_done_line(unattributed))
     lock_hits = count_lock_hits(batch=args.batch)
     print(format_lock_hit_line(lock_hits))
     notify_failures = count_notify_failures()
@@ -1505,6 +1635,7 @@ def _cmd_summary(args: argparse.Namespace) -> int:
             {
                 "stops": rows, "transfers": transfer_rows, "lock_hits": lock_hits,
                 "done_lanes": done_rows,
+                "unattributed_done_lanes": unattributed,
                 "notify_failures": notify_failures,
                 "deploy_authorizations": deploy_auths,
                 "deploy_outcomes": deploy_outcomes,
@@ -1647,7 +1778,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_beat.add_argument("--lane", required=True, help="泳道标识，决定心跳文件名")
     p_beat.add_argument("--text", required=True, help="一句话：在做什么／产出落点")
     p_beat.add_argument("--done", action="store_true", help="收工：写 DONE 哨兵并把泳道置终态")
-    p_beat.add_argument("--batch", default=None, help="可选，供 summary 按批过滤终态泳道")
+    p_beat.add_argument(
+        "--batch", default=None,
+        help=("🔴 收工（--done）时强烈建议带上：`summary --batch X` 按它过滤终态泳道，"
+              "不带则该泳道**不计入任何批**，只在「批次归属未知」那一行单列（#536）"),
+    )
     p_beat.add_argument("--json", action="store_true")
     p_beat.set_defaults(func=_cmd_heartbeat)
 
