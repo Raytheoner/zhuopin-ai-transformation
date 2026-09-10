@@ -161,6 +161,38 @@ path()`）——§二 文件清单列里近一半反引号片段是正文强调�
 08-29 实测 1544 个里 757 个，如 `master`／`#422`／`.51`／`git status`），
 不做形状过滤就等于把 sweep 关掉，反而重造 #238 修掉的批次积压。
 
+覆盖校验的「缺项」判据改锚——不脏 ≠ 没到（队列 §一 #507，openspec 变更包
+`sweep-manifest-coverage-selflock`，Shao Peishen 2026-09-10 答 1a2a3a4a5a）：
+#136 原判据「形状合格 ＋ 不脏 ⇒ 缺项」隐含一条假设——「现在不脏 ＝ 内容
+还没到，等它合入 master 就会脏」。2026-09-10 解析 `reports/sweep-commit.log`
+全量 760 条整批跳过记录（48 个批次、最长 `B-0903_51` 连续 111 轮≈50 小时）、
+去重缺项路径 113 条逐条跑 `git ls-tree`／`git check-ignore --no-index` 归类：
+**16 条被 `.gitignore:50` 的 `**/reports/` 覆盖（物理上永远不可能脏）、89 条
+早已在 HEAD（除非有人再改它一次，而那与本批无关）、只有 8 条是假设成立的
+真缺项形态。** 两份队列真身与接力卡是每个批次都写的高频件（缺项频次 TOP2
+＝ 业务场景队列 600 次／机制环境队列 454 次）：批次 X 落库把它们提交走 ⇒
+批次 Y（清单里也有它们）判「不脏」⇒ 整批跳过 ⇒ 队列随后又被写脏，但那时
+轮到别的批次先落 ⇒ Y 永远等不到「清单里所有文件同时脏」的那一刻——**自锁**，
+且被锁批次的独有产出（如 `队列行日志/#502.md` 这类唯一副本）始终进不了 git。
+修法（design D1(a)）：缺项 ＝ 形状合格 ＋ 不脏 **＋ 不在 HEAD ＋ 未被
+`.gitignore` 覆盖**——换的是**锚**不是松紧：问「这条声明的内容在不在本仓库
+里」而非「这一刻它脏不脏」。实测放行 648/760（85.3%）、解锁 42/48 个批次；
+用 `git cat-file -e 6557047^:<path>` 逐条复原事故当时的 HEAD，那批 8 条声明里
+5 条当时不在 HEAD（其余 3 条＝队列文件本身＋2 条早已在 HEAD 的旧件）⇒ 新判据
+下**仍判 5 条缺项、仍整批跳过**，#136 要防的空壳形态原样被堵
+（`ManifestCoverageUnitTests::test_6557047_incident_input_is_still_caught`）。
+配套三条：⑴ D2——「清单 M 条、装入 N 条」自此成为常态，故 N<M 的提交**在
+提交信息正文自陈**未装入的路径及其归类（已在 HEAD／被忽略／缺项），标题一
+字不改（`_render_partial_landing_note`）；⑵ D3——形状判据补三条 reject
+（含反斜杠／盘符绝对路径／无斜杠且不是 HEAD 仓库根文件，🔴 `CLAUDE.md`
+是实测反例、须留例外）；⑶ D4——同一批次连续被跳过 ≥ `MANIFEST_SKIP_
+ESCALATION_ROUNDS`（＝3，他拍板的阈值）轮即升格 §四 一行交人处置，范式
+复用孤儿升格（当日同批次去重、失败不改退出码），跳过日志同时降频为「首轮
+一条 ＋ 每次升格一条」（760 条里单一批次重复 111 条同样的话，#147 实证每轮
+都响而无人接的告警信息量为零）。fail-open 契约（#136 ⑴）原样承继：新增的
+两次 git 子进程调用都在 main() 同一个 try 里，
+`ManifestCoverageFailOpenSourceTests` 一行未改。
+
 发布收口第②关：部署留痕检查（队列 #229，Shao Peishen 2026-08-03 拍板
 选 (a)，2026-08-05）：同族本周复发三次的"收口最后一段没人记得"——#204
 问题已解决但载体未更正／#221 代码未并 master 而生产已部署／#228 通知
@@ -679,6 +711,17 @@ ORPHAN_SECTION_FOUR_HOURS = 6
 #: 升格状态字段名（写在既有孤儿状态条目上，**不新建文件名形态**——见
 #: `editlock-waiver-time-scoped` proposal 的 .gitignore 覆盖节）。
 ORPHAN_SECTION_FOUR_LOGGED_KEY = "section_four_logged_on"
+
+# 队列 §一 #507（openspec `sweep-manifest-coverage-selflock`，design D4，
+# Shao Peishen 2026-09-10 答 4a）：同一批次被文件清单覆盖校验**连续**跳过
+# 达本阈值（轮）即升格 §四 一行交人处置。sweep 每 27 分钟一轮 ⇒ 3 轮≈81
+# 分钟。🔴 单位是「轮」不是「小时」，刻意不与 `ORPHAN_SECTION_FOUR_HOURS`
+# 对齐数值（design D4 (b) 被否的理由：数值相同、单位不同，对齐反而制造
+# 混淆）。阈值属 🟡 档口径项，改动须他明确答复，不得由泳道自定。
+MANIFEST_SKIP_STATE_REL = "reports/sweep-manifest-skip-state.json"
+MANIFEST_SKIP_ESCALATION_ROUNDS = 3
+#: 升格去重字段名，与孤儿状态条目同名同义（当日同批次只升一次）。
+MANIFEST_SKIP_SECTION_FOUR_LOGGED_KEY = "section_four_logged_on"
 
 # 队列 #229：发布收口第②关——已部署场景白名单（初版宁窄勿宽）。
 # key＝场景目录前缀，value＝该场景的部署留痕文件——本批 touched_paths 命中
@@ -2672,11 +2715,7 @@ def _resolve_batch_files(files_cell: str, dirty_paths: list[str]) -> tuple[list[
     fragments = re.findall(r"`([^`]+)`", files_cell)
     resolved, not_dirty, ambiguous = [], [], []
     for frag in fragments:
-        exact = [d for d in dirty_paths if d == frag]
-        if exact:
-            resolved.append(exact[0])
-            continue
-        matches = [d for d in dirty_paths if d.endswith("/" + frag)]
+        matches = _match_declared_fragment(frag, dirty_paths)
         if len(matches) == 1:
             resolved.append(matches[0])
         elif len(matches) == 0:
@@ -2684,6 +2723,22 @@ def _resolve_batch_files(files_cell: str, dirty_paths: list[str]) -> tuple[list[
         else:
             ambiguous.append(frag)
     return resolved, not_dirty, ambiguous
+
+
+def _match_declared_fragment(frag: str, candidates: list[str]) -> list[str]:
+    """清单片段对候选路径的匹配规则本体：**精确相等优先、否则按 `/` 后缀**
+    （队列 #234(1)）。`_resolve_batch_files` 对脏路径、`_ManifestRepoIndex.
+    in_head` 对 HEAD 路径清单都走这一个函数——队列 §一 #507 design D1 实现
+    细节①：HEAD 存在性判定「复用同一套规则，不另起一套」，否则两处判据会
+    随时间漂移（同 `_check_dirty_paths_against_pending_batches` 既有取舍）。
+
+    返回命中列表：恰 1 个 ＝ 唯一命中；0 个 ＝ 无；≥2 个 ＝ 歧义（无精确相等
+    命中时的多重后缀命中）。
+    """
+    exact = [c for c in candidates if c == frag]
+    if exact:
+        return [exact[0]]
+    return [c for c in candidates if c.endswith("/" + frag)]
 
 
 def _explain_ambiguous_candidates(frag: str, dirty_paths: list[str]) -> list[str]:
@@ -2705,10 +2760,29 @@ _DECLARED_PATH_TAIL_RE = re.compile(r"[^/.\s]\.[A-Za-z0-9]{1,10}$")
 # 通配/花括号展开写法（`派单件-*.md`、`{a,b}.py`）无法对到唯一路径，本判据
 # 一律不认领——它们在 `_resolve_batch_files` 里本来也永远解析不出脏路径。
 _DECLARED_PATH_REJECT_CHARS = "*?{}"
+# 队列 §一 #507 design D3：形如 `C:` 的 Windows 盘符开头 ⇒ 仓库外绝对路径。
+_DECLARED_PATH_DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 
-def _looks_like_declared_path(frag: str) -> bool:
+def _looks_like_declared_path(frag: str, head_root_names: frozenset[str] | None = None) -> bool:
     """片段是否"看起来是本批次声明要落库的一条仓库内路径"（队列 #136）。
+
+    队列 §一 #507 design D3（Shao Peishen 2026-09-10 答 3a）补三条 reject——
+    2026-09-10 现网 8 条「真缺项」里 2 条是形状误认：`hooks.PreToolUse`
+    （`settings.json` 的键名，无斜杠、末尾 `s.PreToolUse` 恰好匹配尾部正则）与
+    `C:\\Dev\\…\\5-平台底座\\.env`（仓库外 Windows 绝对路径，反斜杠不在拒绝
+    集里、末尾 `\\.env` 的 `\\` 落进 `[^/.\\s]`）。三条与既有五条同族——都是「这个形状
+    不可能是一条待落库的仓库内相对路径」：
+      ① 含反斜杠即拒（本仓库内路径一律 `/`）；
+      ② 形如 `<单字母>:` 的盘符绝对路径即拒；
+      ③ 不含任何 `/` **且不是 HEAD 仓库根层级里的文件**即拒。
+    🔴 **第③条不能一刀切**：对现网两份队列 §二 全量跑（69 行／84 个整行反引号
+    片段／42 个唯一片段）实测，「无斜杠即拒」会误拒 `CLAUDE.md`——仓库根下的
+    真实文件、确实以裸名出现在现存清单里。故 `head_root_names`（HEAD 根层级
+    文件名集合，由 `_ManifestRepoIndex` 提供）命中即保留。传 `None` ＝ 调用方
+    没有 HEAD 信息，第③条**不生效**（漏认方向的退化，同下文「漏认不新增破坏」）。
+    ③ 自带的失手方向：某天仓库根下新增一个尚未 commit 的文件、又被裸名写进
+    清单 ⇒ 漏认 ⇒ 退化成校验前的旧行为，不新增破坏（design D3 (a) 如实登记）。
 
     🔴 **为什么需要这道形状判据**：§二"文件清单"列不是纯路径列表，正文里
     大量用反引号做普通强调——2026-08-29 实测现存 182 行共 1544 个反引号
@@ -2738,13 +2812,146 @@ def _looks_like_declared_path(frag: str) -> bool:
         return False
     if any(ch in frag for ch in _DECLARED_PATH_REJECT_CHARS):
         return False
-    return bool(_DECLARED_PATH_TAIL_RE.search(frag))
+    if "\\" in frag:                       # D3 ①：Windows 反斜杠写法 ⇒ 仓库外
+        return False
+    if _DECLARED_PATH_DRIVE_RE.match(frag):  # D3 ②：`C:/…`／`C:\\…` 盘符绝对路径
+        return False
+    if not _DECLARED_PATH_TAIL_RE.search(frag):
+        return False
+    if "/" not in frag and head_root_names is not None and frag not in head_root_names:
+        return False                          # D3 ③：`hooks.PreToolUse` 类点分标识符
+    return True
 
 
-def _manifest_coverage_gap(resolved: list[str], not_dirty: list[str]) -> list[str]:
+class _ManifestRepoIndex:
+    """队列 §一 #507 design D1(a) 的两个锚：本轮 HEAD 路径清单 ＋ `.gitignore`
+    命中判定，供 `_classify_manifest_coverage` 回答「这条声明的内容在不在本仓库
+    里」。每轮（每份队列文件处理前）建一次，`ls-tree` 只跑一趟、`check-ignore`
+    逐片段缓存。
+
+    🔴 `.gitignore` 判定走 `git check-ignore -q --no-index`——**`--no-index`
+    不得省**：已跟踪文件默认不被 check-ignore 报告，省了会把「已被忽略但仍在
+    索引里」的路径漏判成未忽略（design D1 实现细节②）。单测可传 `ignored_paths`
+    集合直接构造，不经 git。
+    """
+
+    def __init__(self, head_paths: list[str], *, repo_root: Path | None = None,
+                 ignored_paths: set[str] | None = None) -> None:
+        self.head_paths = list(head_paths)
+        self.head_root_names = frozenset(p for p in self.head_paths if "/" not in p)
+        self._repo_root = repo_root
+        self._ignored_cache: dict[str, bool] = {p: True for p in (ignored_paths or ())}
+
+    def in_head(self, frag: str) -> bool:
+        return bool(_match_declared_fragment(frag, self.head_paths))
+
+    def is_ignored(self, frag: str) -> bool:
+        if frag in self._ignored_cache:
+            return self._ignored_cache[frag]
+        if self._repo_root is None:
+            return False
+        result = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "check-ignore", "-q", "--no-index", "--", frag],
+            cwd=self._repo_root, capture_output=True, text=True, encoding="utf-8",
+            timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
+        )
+        # 退出码 0 ＝ 被忽略；1 ＝ 未被忽略；其它（128，如片段指向仓库外）一律
+        # 按「未被忽略」处理——宁可多判一个缺项让人看见，不静默放行。
+        ignored = result.returncode == 0
+        self._ignored_cache[frag] = ignored
+        return ignored
+
+
+def _build_manifest_repo_index(repo_root: Path) -> _ManifestRepoIndex:
+    """一趟 `git ls-tree -r --name-only -z HEAD`（`-z`：路径含中文与空格，按行
+    切会失真，同 `_git_names_z`）。子进程失败即抛，由 main() 那层 fail-open 的
+    try 接住——**本函数不得自己吞异常**（design D6：新增 git 调用必须留在
+    `ManifestCoverageFailOpenSourceTests` 钉死的那个 try 覆盖范围内）。"""
+    return _ManifestRepoIndex(
+        _git_names_z(repo_root, ["ls-tree", "-r", "--name-only", "-z", "HEAD"]),
+        repo_root=repo_root,
+    )
+
+
+def _classify_manifest_coverage(
+    resolved: list[str], not_dirty: list[str], repo_index: _ManifestRepoIndex | None,
+) -> dict:
+    """把一个批次清单里形状合格的片段分成四类，返回
+    `{"landed": [...], "in_head": [...], "ignored": [...], "missing": [...]}`：
+      landed   — `resolved`，本次提交装得进去；
+      in_head  — 不脏但 HEAD 里已有（内容早已落库，与本批无关）；
+      ignored  — 不脏且被 `.gitignore` 覆盖（物理上不可能脏）；
+      missing  — 不脏、不在 HEAD、未被忽略 ⇒ **真缺项**，整批跳过的唯一依据。
+    形状不合格的片段（正文强调）不进任何一类。`repo_index=None` ＝ 没有 HEAD／
+    gitignore 锚 ⇒ 退回 #136 原判据（不脏即缺项）——单测用它做「非恒真自证」
+    （旁路两条排除后同一输入须重新被判缺项）。
+    """
+    head_root = repo_index.head_root_names if repo_index is not None else None
+    report = {"landed": list(resolved), "in_head": [], "ignored": [], "missing": []}
+    for frag in not_dirty:
+        if not _looks_like_declared_path(frag, head_root):
+            continue
+        if repo_index is not None and repo_index.in_head(frag):
+            report["in_head"].append(frag)
+        elif repo_index is not None and repo_index.is_ignored(frag):
+            report["ignored"].append(frag)
+        else:
+            report["missing"].append(frag)
+    return report
+
+
+def _render_partial_landing_note(report: dict) -> str | None:
+    """队列 §一 #507 design D2（Shao Peishen 2026-09-10 答 2a）：清单 M 条、
+    本次实际装入 N 条且 N<M 时，返回要追加到提交信息**正文**的自陈段；N==M
+    返回 `None`（不制造无信息量的噪音）。
+
+    🔴 **为什么载体是提交信息而不是 sweep 日志**：改锚之后「装入 N < 清单 M」
+    成为常态，而 #136 的伤害本体不是「只装了 N 条」，是「装了 N 条却让账面读
+    起来像装了 M 条」。`reports/` 被 `.gitignore` 覆盖、不入库、换机即失（#507
+    行内实证 `队列行日志/#502.md` 差点因此丢成唯一副本），把唯一的诚实记录放在
+    会消失的地方等于没记；提交信息随仓库走、永久。标题由调用方保持一字不改
+    ——它是批次在队列与 git 历史之间的唯一锚点。
+    """
+    landed = len(report["landed"])
+    declared = landed + len(report["in_head"]) + len(report["ignored"]) + len(report["missing"])
+    if landed >= declared:
+        return None
+    lines = [f"本批清单 {declared} 条，本次实际装入 {landed} 条（队列 #507 改锚后的自陈，#136 配套）："]
+    for frag in report["in_head"]:
+        lines.append(f"- 未装入：{frag}（已在 HEAD）")
+    for frag in report["ignored"]:
+        lines.append(f"- 未装入：{frag}（被 .gitignore 覆盖）")
+    for frag in report["missing"]:
+        lines.append(f"- 未装入：{frag}（缺项）")
+    return "\n".join(lines)
+
+
+def _manifest_coverage_gap(
+    resolved: list[str], not_dirty: list[str],
+    repo_index: _ManifestRepoIndex | None = None,
+) -> list[str]:
     """队列 #136（Shao Peishen 2026-08-29 裁定 (a)）：批次落库前的"文件清单
     覆盖校验"——返回清单里**声明了、但这次提交根本装不进去**的路径；返回
     空列表表示本批次可以照常落库。
+
+    🔴 **判据于 2026-09-10 由队列 §一 #507 改锚（design D1(a)，Shao Peishen
+    答 1a）**：缺项 ＝ 形状合格 ＋ 不脏 **＋ 不在 HEAD ＋ 未被 `.gitignore`
+    覆盖**（后两条由 `repo_index` 提供，见 `_classify_manifest_coverage`）。
+    **成因**：下文 #136 原判据「不脏即缺项」隐含「不脏 ＝ 内容还没到、等它合入
+    master 就会脏」，而这对两类路径永远不成立——被忽略的路径连 `git status`
+    都不出现；早已在 HEAD 的路径除非有人再改它一次。两份队列真身与接力卡是
+    每个批次都写的高频件，批次 X 把它们提交走 ⇒ 批次 Y 判「不脏」⇒ 整批跳过
+    ⇒ 队列随后又被写脏但轮到别的批次先落 ⇒ Y 永远等不到「清单里所有文件同时
+    脏」——**自锁**。2026-09-10 现网 760 条跳过记录／113 条缺项路径实测：16 条
+    被 gitignore、89 条早在 HEAD、仅 8 条是原假设成立的形态；改锚放行 85.3%、
+    解锁 42/48 个批次，而 `6557047` 事故输入（8 条里 5 条当时不在 HEAD）**仍被
+    判缺项**——换的是锚不是松紧，#136 原防护未放松（单测
+    `test_6557047_incident_input_is_still_caught`）。`repo_index=None` 即退回
+    原判据，只供单测做非恒真自证；生产路径由 main() 每轮构建后传入。
+    改锚后「清单 M 条、装入 N 条」成常态，账面诚实由 `_render_partial_landing_
+    note` 的提交信息自陈承接（design D2）。
+
+    ——以下为 #136 立行原文——
 
     🔴 **它防的是哪一类事故**（2026-08-29 OP-0829-A 实测，提交 6557047）：
     本班在 worktree 建造，按纪律先登记 §二 `B-0829_5_OP0829A_哨兵建造apply
@@ -2778,7 +2985,7 @@ def _manifest_coverage_gap(resolved: list[str], not_dirty: list[str]) -> list[st
     """
     if not resolved:
         return []
-    return [frag for frag in not_dirty if _looks_like_declared_path(frag)]
+    return _classify_manifest_coverage(resolved, not_dirty, repo_index)["missing"]
 
 
 def _check_dirty_paths_against_pending_batches(
@@ -3403,6 +3610,151 @@ def _escalate_long_lived_orphans_to_section_four(
         if released.returncode != 0:
             detail = " ".join((released.stdout + released.stderr).split())[:300]
             log.append(f"⚠ 孤儿升格：release 未生效（锁保持占用，下一轮会接管）：{detail}")
+
+
+def _read_manifest_skip_state(repo_root: Path) -> dict:
+    path = repo_root / MANIFEST_SKIP_STATE_REL
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_manifest_skip_state(repo_root: Path, state: dict) -> None:
+    path = repo_root / MANIFEST_SKIP_STATE_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _track_manifest_skips(
+    repo_root: Path, skipped: dict[str, dict], log: list[str], dry_run: bool = False,
+) -> dict:
+    """队列 §一 #507 design D4：维护「同一批次被文件清单覆盖校验**连续**跳过
+    的轮数」状态（`MANIFEST_SKIP_STATE_REL`，已实测被 `.gitignore:50` 的
+    `**/reports/` 覆盖、不入库）。
+
+    `skipped` ＝ 本轮被跳过的批次 `{batch_id: {"queue_path", "missing"}}`。
+    判据：本轮被跳过 ⇒ 计数 +1；**本轮没被本校验跳过**（正常落库、补销、
+    或已不再是待处理行）⇒ 条目整个删除 ＝ 归零，下次再被跳过从第 1 轮重计。
+    「连续」是字面意思——中间只要有一轮它没被本校验跳过，就不算连续。
+
+    返回更新后的状态（dry-run 不落盘，只返回计算结果供回显）。
+    """
+    state = _read_manifest_skip_state(repo_root)
+    now = datetime.now(timezone.utc).isoformat()
+    updated: dict = {}
+    for batch_id, info in skipped.items():
+        entry = dict(state.get(batch_id) or {})
+        entry["consecutive_skips"] = int(entry.get("consecutive_skips", 0)) + 1
+        entry.setdefault("first_skipped", now)
+        entry["last_skipped"] = now
+        entry["queue_path"] = info["queue_path"]
+        entry["missing"] = list(info["missing"])
+        updated[batch_id] = entry
+    if not dry_run:
+        _write_manifest_skip_state(repo_root, updated)
+    return updated
+
+
+def _escalate_manifest_skips_to_section_four(
+    repo_root: Path, state: dict, log: list[str], dry_run: bool = False,
+) -> None:
+    """队列 §一 #507 design D4（Shao Peishen 2026-09-10 答 4a，K=3）：同一批次
+    连续被覆盖校验跳过 ≥ `MANIFEST_SKIP_ESCALATION_ROUNDS` 轮 ⇒ 在队列 §四
+    追一行交人处置（当日同批次去重，跨天仍卡则再登一行）。
+
+    🔴 **升格是「找到承接面」，不是「加大音量」**：现网 760 条跳过记录里单一
+    批次重复 111 条同样的话（`B-0903_51`，≈50 小时），每轮都响而无人接的告警
+    信息量等于零（队列 #147 实证）——所以跳过日志同时降频为「首轮一条 ＋ 每次
+    升格一条」（见 main() 跳过分支），承接面换成 §四：本项目唯一「写进去就有人
+    排期」的地方。
+
+    **整套范式复用 `_escalate_long_lived_orphans_to_section_four`**（编辑锁
+    `acquire --reserve 1 --section 四` → `append-row` 位置式 `--cell`，🔴 不用
+    `--set`：兜底桩无 `SECTION_COLUMN_NAMES` → 当日去重 → 失败只留日志、不改
+    退出码），**不改那个函数的签名与判据、不共用它的状态文件**——两者受众
+    相同（总线排期）但对象不同（孤儿是文件、这里是批次）。
+
+    🔴 **三件刻意不做的事**：⑴ 不替人改清单——订正登记写法属登记方（#136
+    既有取舍：机器不替人改别人写的清单）；⑵ 不 `git add`／commit 任何东西；
+    ⑶ **不标默认项**：选 (a) 由登记方执行、选 (b) 无需动作，执行者取决于答案
+    本身，机器猜不出。出声形态如实限定为运行日志 ＋ §四 一行，不接推送通道。
+    """
+    today = datetime.now().strftime("%Y-%m-%d")  # 本机本地日期，与队列行写法同源
+    due = [
+        (batch_id, entry) for batch_id, entry in state.items()
+        if int(entry.get("consecutive_skips", 0)) >= MANIFEST_SKIP_ESCALATION_ROUNDS
+        and entry.get(MANIFEST_SKIP_SECTION_FOUR_LOGGED_KEY) != today
+    ]
+    log.append(
+        f"🧭 清单覆盖校验跳过升格 §四 扫描（阈值 {MANIFEST_SKIP_ESCALATION_ROUNDS} 轮，"
+        f"当日去重）：本轮被跳过 {len(state)} 个批次，待升格 {len(due)} 个"
+    )
+    if not due:
+        return
+    if dry_run:
+        log.append(f"[dry-run] 本应为 {len(due)} 个连续跳过批次各升格 §四 一行，本次不写。")
+        return
+
+    for batch_id, entry in due:
+        rounds = int(entry.get("consecutive_skips", 0))
+        missing = entry.get("missing") or []
+        listed = "、".join(f"`{m}`" for m in missing[:10])
+        if len(missing) > 10:
+            listed += f"…等共 {len(missing)} 条"
+        matter = (
+            f"🧭 **落库 sweep 清单覆盖校验升格（{today}）**：批次 `{batch_id}`"
+            f"（{entry.get('queue_path', '?')}）已连续 {rounds} 轮被文件清单覆盖校验"
+            f"整批跳过（#136 防护；#507 改锚后仍判缺项 ＝ 既不脏、也不在 HEAD、"
+            f"也未被 .gitignore 覆盖），其独有产出因此一直进不了 git。缺项："
+            f"{listed}。**请选**：(a) 订正登记写法——被点名片段若不是待落库路径就"
+            f"去掉那对反引号、若写错路径就改成仓库内真实路径，下一轮自动落库；"
+            f"(b) 内容确实还在别的分支上、继续等——合入 master 后下一轮自动落库，"
+            f"本行销号。🔴 **本项无默认**：选 (a) 由登记方执行、选 (b) 无需动作，"
+            f"机器不替人改别人写的清单。"
+        )
+        try:
+            acquired = _edit_lock(repo_root, "acquire", [
+                "--note", f"清单覆盖跳过升格 §四（{batch_id}，{rounds} 轮）",
+                "--reserve", "1", "--section", "四",
+            ])
+            if acquired.returncode != 0:
+                detail = " ".join((acquired.stdout + acquired.stderr).split())[:300]
+                log.append(f"⚠ 清单覆盖跳过升格 {batch_id}：编辑锁 acquire 未成功，本轮跳过"
+                           f"（不影响退出码）：{detail}")
+                continue
+            number = _parse_reserved_section_four_number(acquired.stdout)
+            if number is None:
+                log.append(f"⚠ 清单覆盖跳过升格 {batch_id}：acquire 成功但未能解析出 §四 预留号，"
+                           "本轮跳过（不猜号——猜错会撞上别人的行）。")
+                _edit_lock(repo_root, "release")
+                continue
+            appended = _edit_lock(repo_root, "append-row", [
+                "--section", "四", "--number", number,
+                "--cell", matter,
+                "--cell", "Shao Peishen",
+                "--cell", f"{today}（当日升格，卡一轮＝27 分钟）",
+            ])
+            if appended.returncode != 0:
+                detail = " ".join((appended.stdout + appended.stderr).split())[:300]
+                log.append(f"⚠ 清单覆盖跳过升格 {batch_id}：§四 追行被拒，本轮跳过"
+                           f"（不影响退出码）：{detail}")
+            else:
+                log.append(f"✓ 清单覆盖跳过升格：批次 {batch_id} 连续 {rounds} 轮，"
+                           f"已登 §四 #{number}（等 Shao Peishen 一字母）。")
+                entry[MANIFEST_SKIP_SECTION_FOUR_LOGGED_KEY] = today
+                _write_manifest_skip_state(repo_root, state)
+        except Exception as exc:  # noqa: BLE001 —— 升格失败不应影响本轮退出码
+            log.append(f"⚠ 清单覆盖跳过升格 {batch_id} 自身异常，本轮跳过（不影响退出码）："
+                       f"{type(exc).__name__}: {exc}")
+        finally:
+            released = _edit_lock(repo_root, "release")
+            if released.returncode != 0:
+                detail = " ".join((released.stdout + released.stderr).split())[:300]
+                log.append(f"⚠ 清单覆盖跳过升格：release 未生效（锁保持占用，下一轮会接管）：{detail}")
 
 
 def _parse_reserved_section_four_number(acquire_stdout: str) -> str | None:
@@ -5606,16 +5958,26 @@ def _strike_off_rows(
                  f"整轮结束仍未释放则下一轮起跑探测跳过，直至 30 分钟自陈旧）：{detail}")
 
 
-def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str], dry_run: bool, log: list[str]) -> None:
+def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str], dry_run: bool, log: list[str],
+                          coverage_note: str | None = None) -> None:
     """队列 #288（2026-08-06 起）：只负责把批次内容落成本地提交，不再自己
     校验快进或推送——是否能与 origin/master 对齐、何时推送，统一交给批次
     提交阶段结束后调用一次的 `_reconcile_with_origin_and_push`（main() 接
-    线顺序），原因见该函数与文件头部本节说明。"""
+    线顺序），原因见该函数与文件头部本节说明。
+
+    `coverage_note`（队列 §一 #507 design D2）：清单 M 条、本次实际装入 N<M
+    时由 main() 用 `_render_partial_landing_note` 算好传入，追加到提交信息
+    **正文**（空一行之后）；🔴 **标题一字不改**——它是批次在队列与 git 历史
+    之间的唯一锚点。N==M 时调用方传 `None`，提交信息与改锚前逐字一致。
+    自陈段在 main() 那层 fail-open 的 try 里算好（本函数在
+    `CRITICAL_GIT_WRITE_FUNCTIONS` 清单内，函数体不许宽捕获），这里只拼接。"""
     batch_id = row["batch_id"]
     if dry_run:
         print(f"[dry-run] 批次 {batch_id}：会 git add {resolved_files}，"
               f"提交信息「{_extract_commit_message(row['message_cell'])}」，标记销行后本地提交。")
         log.append(f"[dry-run] {batch_id} 待落库：{resolved_files}")
+        if coverage_note:
+            log.append(f"[dry-run] {batch_id} 提交信息将附自陈段：{coverage_note.splitlines()[0]}")
         return
 
     _run_git(["add", "--", *resolved_files], repo_root)
@@ -5626,6 +5988,8 @@ def _process_normal_batch(repo_root: Path, row: dict, resolved_files: list[str],
     _run_git(["add", "--", row["queue_path"]], repo_root)
 
     message = _extract_commit_message(row["message_cell"])
+    if coverage_note:
+        message = f"{message}\n\n{coverage_note}"
     # 队列 #479（`OP-0827-A` 实撞的就是这一处）：commit 补 pathspec。预期集合
     # ＝上面两处 add 的并集，**逐字同源、不另起一套计算**——另算一套就等于给
     # 自己造了第二个可能跑偏的地方。
@@ -7048,9 +7412,13 @@ def main() -> int:
         # 会改变工作区状态，须用最新状态判定这一份文件的孤儿/批次关系）；
         # ledger 重跑与最终的对齐推送只在两份文件都处理完后统一做一次。
         all_pending_rows: list[dict] = []
-        all_normal_rows: list[tuple[dict, list[str]]] = []
+        all_normal_rows: list[tuple[dict, list[str], str | None]] = []
         all_straggler_ids: list[str] = []
         touched_paths: set[str] = set()
+        # 队列 §一 #507 design D4：连续跳过计数——先读上一轮状态（判「首轮」
+        # 用），本轮跳过的批次收进 `manifest_skipped`，末尾统一落状态并升格。
+        manifest_skip_prev = _read_manifest_skip_state(repo_root)
+        manifest_skipped: dict[str, dict] = {}
 
         for queue_path in _iter_queue_paths():
             queue_text = _read_queue(repo_root, queue_path)
@@ -7075,13 +7443,25 @@ def main() -> int:
 
             straggler_rows = []
             normal_rows = []
+            # 队列 §一 #507：HEAD／gitignore 锚每份队列文件建一次（与上面
+            # `dirty_paths` 同一时点取——上一份文件的批次落库会推进 HEAD）。
+            # 构建放在下面那个 fail-open 的 try 里（design D6）。
+            manifest_index: _ManifestRepoIndex | None = None
             for row in clean_rows:
                 resolved, not_dirty, ambiguous = row_resolution[row["batch_id"]]
                 # 队列 #136 裁定 (a)：落库前的文件清单覆盖校验。**fail-open**
                 # ——校验自身出任何岔子都只留一条痕、按校验前的旧判据继续，
                 # 绝不让这道新加的检查把整轮 sweep 拖死（裁定原文的取向）。
+                # 队列 §一 #507：判据改锚（不脏 ＋ 不在 HEAD ＋ 未被忽略 ⇒ 缺项）
+                # 与 D2 自陈段都在同一个 try 里算——新增的 `ls-tree`／
+                # `check-ignore` 子进程调用同受这层 fail-open 覆盖。
+                coverage_note = None
                 try:
-                    missing = _manifest_coverage_gap(resolved, not_dirty)
+                    if manifest_index is None:
+                        manifest_index = _build_manifest_repo_index(repo_root)
+                    missing = _manifest_coverage_gap(resolved, not_dirty, manifest_index)
+                    coverage_note = _render_partial_landing_note(
+                        _classify_manifest_coverage(resolved, not_dirty, manifest_index))
                 except Exception as exc:
                     missing = []
                     log.append(
@@ -7090,23 +7470,30 @@ def main() -> int:
                         f"{exc!r}"
                     )
                 if missing:
-                    log.append(
-                        f"⚠ 批次 {row['batch_id']} 整批跳过——文件清单覆盖校验未过"
-                        f"（队列 #136 裁定 (a)）：清单声明的以下 {len(missing)} 条路径"
-                        f"在主仓工作区既无脏改动、也不会进本次提交，照旧落库只会产出"
-                        f"一个「标题说改了整批、实际只含 {len(resolved)} 个文件」的空壳"
-                        f"提交（2026-08-29 提交 6557047 即此形态）："
-                        f"{'、'.join(missing)}；本次能对上的只有：{'、'.join(resolved)}。"
-                        f"[{queue_path}] 本行状态不动、仍是待处理：代码若还在别的"
-                        f" worktree／分支上，合入 master 后下一轮自动落库；若被点名的"
-                        f"片段其实不是待落库路径（登记正文里的引用），把那对反引号"
-                        f"去掉即可。"
-                    )
+                    manifest_skipped[row["batch_id"]] = {"queue_path": queue_path, "missing": missing}
+                    prev_rounds = int((manifest_skip_prev.get(row["batch_id"]) or {}).get("consecutive_skips", 0))
+                    # 队列 §一 #507 design D4：跳过日志降频——同一批次只在**首轮**
+                    # 留这条全文（续轮只计数，达阈值由 §四 升格出声）；每轮都
+                    # 重复同一句话等于噪音（#147），且日志会轮转、承接面在 §四。
+                    if prev_rounds == 0:
+                        log.append(
+                            f"⚠ 批次 {row['batch_id']} 整批跳过——文件清单覆盖校验未过"
+                            f"（队列 #136 裁定 (a)，#507 改锚判据）：清单声明的以下 {len(missing)} 条路径"
+                            f"在主仓工作区既无脏改动、不在 HEAD、也未被 .gitignore 覆盖，不会进本次提交，"
+                            f"照旧落库只会产出一个「标题说改了整批、实际只含 {len(resolved)} 个文件」的空壳"
+                            f"提交（2026-08-29 提交 6557047 即此形态）："
+                            f"{'、'.join(missing)}；本次能对上的只有：{'、'.join(resolved)}。"
+                            f"[{queue_path}] 本行状态不动、仍是待处理：代码若还在别的"
+                            f" worktree／分支上，合入 master 后下一轮自动落库；若被点名的"
+                            f"片段其实不是待落库路径（登记正文里的引用），把那对反引号"
+                            f"去掉即可。续轮不再重复本条，连续 {MANIFEST_SKIP_ESCALATION_ROUNDS} 轮升格 §四。"
+                        )
                     if args.dry_run:
-                        print(f"[dry-run] 批次 {row['batch_id']} 因文件清单覆盖校验未过整批跳过：{missing}")
+                        print(f"[dry-run] 批次 {row['batch_id']} 因文件清单覆盖校验未过整批跳过"
+                              f"（此前已连续 {prev_rounds} 轮）：{missing}")
                     continue
                 if resolved:
-                    normal_rows.append((row, resolved))
+                    normal_rows.append((row, resolved, coverage_note))
                 elif not_dirty:
                     straggler_rows.append(row)
                 else:
@@ -7129,9 +7516,10 @@ def main() -> int:
                         f"[{queue_path}] {row['files_cell'][:120]}"
                     )
 
-            for row, resolved in normal_rows:
+            for row, resolved, coverage_note in normal_rows:
                 _mark_step(f"批次落库 {row['batch_id']}（{queue_path}）")
-                _process_normal_batch(repo_root, row, resolved, args.dry_run, log)
+                _process_normal_batch(repo_root, row, resolved, args.dry_run, log,
+                                      coverage_note=coverage_note)
                 touched_paths.update(resolved)
 
             if straggler_rows:
@@ -7169,7 +7557,7 @@ def main() -> int:
         if processed_any and not args.dry_run:
             # 队列 #257：先记数据（不告警），再重跑台账——两者均只在真实
             # 落库时才有意义，dry-run 不产生持久化副作用。
-            landed_batch_ids = [r["batch_id"] for r, _ in all_normal_rows] + all_straggler_ids
+            landed_batch_ids = [r["batch_id"] for r, _, _ in all_normal_rows] + all_straggler_ids
             _record_batch_landing_count(repo_root, landed_batch_ids)
             _mark_step("台账重跑并提交")
             _rerun_ledger(repo_root, log)
@@ -7294,6 +7682,12 @@ def main() -> int:
         # 4/6/7/9/10/11 类同一惯例：一个从来不出声的机制，没有人能判断它是
         # 「没问题」还是「没跑」。
         _escalate_long_lived_orphans_to_section_four(repo_root, log, dry_run=args.dry_run)
+        # 队列 §一 #507 design D4：清单覆盖校验连续跳过计数落盘 ＋ 达阈值升格
+        # §四。位置同上一条的理由：在全部 git 操作之后（它会 acquire 编辑锁并
+        # 把队列文件改脏）；dry-run 只算不写、零命中也回显。
+        _escalate_manifest_skips_to_section_four(
+            repo_root, _track_manifest_skips(repo_root, manifest_skipped, log, dry_run=args.dry_run),
+            log, dry_run=args.dry_run)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
         print("\n".join(log))

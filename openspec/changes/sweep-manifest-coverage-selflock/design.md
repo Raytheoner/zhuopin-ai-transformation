@@ -1,6 +1,6 @@
 # sweep-manifest-coverage-selflock Design
 
-> **design 审：⏳ 待 Shao Peishen。本包在他答复前不得 apply。**
+> **design 审：✅ 已过 —— Shao Peishen 2026-09-10 08:55（本地）答 `1a，2a，3a，4a，5a`**（D1 换锚＝不脏且不在 HEAD 且未被 .gitignore 覆盖；D2 提交信息自陈；D3 三条 reject 全补；🔴 D4 阈值 K=3；D5 靠新判据自动消化＋apply 现取核对残余；D6 为 #136 承继约束、不列拍板项）。apply 泳道 `OP-0910-L`（分支 `claude/op0910l-507-sweep-apply`，2026-09-10）。
 > 🔴 **本件与 `2026-09-07-sweep-manifest-coverage-guard` 那份「事后追认」型 design 不同——下面六个决策点全部是真正待拍板的新问题，没有一条是既成事实。**
 > **审完之后**：结论回填队列 §一 `#507` 与 §四 `#136`，再由 apply 泳道走 tasks。
 > **本件的全部数字均为 2026-09-10 现网实测**（解析 `reports/sweep-commit.log` 全量 760 条跳过记录 ＋ `git ls-tree` / `git check-ignore` 逐条判定），复现命令见 tasks §0.3。

@@ -2421,6 +2421,142 @@ class ManifestCoverageUnitTests(unittest.TestCase):
         # 不产生内容提交、不存在空壳问题，本校验一律不插手。
         self.assertEqual(sweep._manifest_coverage_gap([], ["hooks/a.ps1"]), [])
 
+    # ---- 以下为队列 §一 #507（openspec `sweep-manifest-coverage-selflock`，
+    # Shao Peishen 2026-09-10 答 1a2a3a4a5a）改锚后的用例 ----
+
+    @staticmethod
+    def _index(head, ignored=()):
+        return sweep._ManifestRepoIndex(list(head), ignored_paths=set(ignored))
+
+    def test_gap_three_states_head_ignored_missing(self):
+        """tasks §2.1 三态：已在 HEAD ⇒ 不缺项／被忽略 ⇒ 不缺项／两者皆非 ⇒
+        **仍缺项**。这是 #507 期望产出② 要的那三条。"""
+        index = self._index(
+            head=["1-转型规划/0-全景路线图/接力卡.md", "CLAUDE.md"],
+            ignored={"reports/lane-heartbeat/x.md"},
+        )
+        resolved = ["1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"]
+        # 高频共享件早在 HEAD（内容早已落库、本轮不脏）⇒ 不是缺项
+        self.assertEqual(
+            sweep._manifest_coverage_gap(resolved, ["0-全景路线图/接力卡.md"], index), [])
+        # 运行产物被 `**/reports/` 忽略（物理上永远不可能脏）⇒ 不是缺项
+        self.assertEqual(
+            sweep._manifest_coverage_gap(resolved, ["reports/lane-heartbeat/x.md"], index), [])
+        # 既不在 HEAD 也未被忽略 ⇒ 仍是缺项（代码还在别的分支上）
+        self.assertEqual(
+            sweep._manifest_coverage_gap(resolved, ["0-学习与工具/hooks/新建.ps1"], index),
+            ["0-学习与工具/hooks/新建.ps1"])
+        # 三类混在一张清单里时只报真缺项
+        report = sweep._classify_manifest_coverage(
+            resolved,
+            ["0-全景路线图/接力卡.md", "reports/lane-heartbeat/x.md",
+             "0-学习与工具/hooks/新建.ps1", "master", "#507"],
+            index)
+        self.assertEqual(report["in_head"], ["0-全景路线图/接力卡.md"])
+        self.assertEqual(report["ignored"], ["reports/lane-heartbeat/x.md"])
+        self.assertEqual(report["missing"], ["0-学习与工具/hooks/新建.ps1"])
+        self.assertEqual(report["landed"], resolved)
+
+    def test_6557047_incident_input_is_still_caught(self):
+        """🔴 tasks §2.2 事故本体回归：2026-08-29 提交 `6557047` 的真实输入
+        形态——清单 8 条，`git ls-tree -r 6557047^` 现取（2026-09-10）：3 条当时
+        在 HEAD（队列文件本身＝脏、`工具-落库sweep.py` 与 openspec tasks.md
+        ＝不脏但在 HEAD），其余 5 条是新建（还在 worktree 分支上）。改锚后
+        MUST 仍判缺项、仍整批跳过——本用例是「#136 原防护未被放松」的唯一
+        证据，不是论证。"""
+        head_at_incident = [
+            "0-学习与工具/工具-落库sweep.py",
+            "openspec/changes/project-hooks-write-time-sentinels/tasks.md",
+            "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md",
+        ]
+        index = self._index(head=head_at_incident)
+        resolved = ["1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"]
+        not_dirty = [
+            "0-学习与工具/hooks/hooks-common.ps1",
+            "0-学习与工具/hooks/sentinel-mojibake.ps1",
+            "0-学习与工具/hooks/sentinel-pronoun.ps1",
+            "0-学习与工具/hooks/README-安装步骤.md",
+            "0-学习与工具/test_hooks-哨兵.py",
+            "0-学习与工具/工具-落库sweep.py",
+            "openspec/changes/project-hooks-write-time-sentinels/tasks.md",
+        ]
+        missing = sweep._manifest_coverage_gap(resolved, not_dirty, index)
+        self.assertEqual(len(missing), 5, missing)
+        self.assertIn("0-学习与工具/hooks/hooks-common.ps1", missing)
+        self.assertIn("0-学习与工具/test_hooks-哨兵.py", missing)
+        # 两条在 HEAD 的被正确归到「已在 HEAD」而不是放过整批
+        report = sweep._classify_manifest_coverage(resolved, not_dirty, index)
+        self.assertEqual(sorted(report["in_head"]), sorted(head_at_incident[:2]))
+
+    def test_bypassing_head_and_ignore_anchors_reinstates_gap(self):
+        """🔴 tasks §2.6 非恒真自证：把 D1(a) 的两条排除旁路掉（`repo_index=
+        None` ＝ 退回 #136 原判据）重放 §2.1 的同一输入，它必须**重新被判
+        缺项**——证明放行确实来自本包的改锚，而不是被别的既有检查顺手放过。"""
+        resolved = ["1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"]
+        for frag in ["0-全景路线图/接力卡.md", "reports/lane-heartbeat/x.md"]:
+            with self.subTest(frag=frag):
+                self.assertEqual(sweep._manifest_coverage_gap(resolved, [frag]), [frag])
+                self.assertEqual(sweep._manifest_coverage_gap(resolved, [frag], None), [frag])
+
+    def test_shape_rejects_backslash_drive_and_dotted_identifier(self):
+        """tasks §2.3 design D3 三条 reject——各取自 2026-09-10 现网 8 条「真
+        缺项」里的形状误认。"""
+        root = frozenset({"CLAUDE.md", ".gitignore", "README.md"})
+        for frag in [
+            r"C:\Dev\zhuopin-ai\.claude\worktrees\wecom-service-home\5-平台底座\.env",  # ①② 反斜杠＋盘符
+            r"0-学习与工具\hooks\hooks-common.ps1",  # ① 仅反斜杠
+            "C:/Dev/zhuopin-ai/5-平台底座/.env",        # ② 仅盘符
+            "hooks.PreToolUse",                          # ③ settings.json 键名
+            "settings.local.json",                       # ③ 裸名且不在仓库根
+        ]:
+            with self.subTest(frag=frag):
+                self.assertFalse(sweep._looks_like_declared_path(frag, root))
+
+    def test_bare_root_filename_is_still_recognised(self):
+        """🔴 tasks §2.3 实测反例：`CLAUDE.md` 以裸名出现在现存清单里、且是
+        仓库根真实文件——「无斜杠即拒」不得把它一并拒掉。不加这条，下一个人
+        就会把第③条写成一刀切。"""
+        root = frozenset({"CLAUDE.md", "README.md"})
+        self.assertTrue(sweep._looks_like_declared_path("CLAUDE.md", root))
+        # 没有 HEAD 信息（None）时第③条不生效——漏认方向的退化，不新增破坏
+        self.assertTrue(sweep._looks_like_declared_path("hooks.PreToolUse", None))
+        self.assertTrue(sweep._looks_like_declared_path("hooks.PreToolUse"))
+
+    def test_partial_landing_note_lists_unlanded_with_category(self):
+        """tasks §2.4 单元侧：N<M 出自陈段并逐条归类；N==M 返回 None。"""
+        note = sweep._render_partial_landing_note({
+            "landed": ["队列.md", "报告.md"],
+            "in_head": ["接力卡.md"],
+            "ignored": ["reports/心跳.md"],
+            "missing": ["hooks/新建.ps1"],
+        })
+        self.assertIsNotNone(note)
+        self.assertIn("本批清单 5 条，本次实际装入 2 条", note)
+        self.assertIn("接力卡.md（已在 HEAD）", note)
+        self.assertIn("reports/心跳.md（被 .gitignore 覆盖）", note)
+        self.assertIn("hooks/新建.ps1（缺项）", note)
+        self.assertIsNone(sweep._render_partial_landing_note(
+            {"landed": ["队列.md"], "in_head": [], "ignored": [], "missing": []}))
+
+    def test_head_match_reuses_resolve_rule(self):
+        """design D1 实现细节①：HEAD 存在性与脏路径解析共用 `_match_declared_
+        fragment`（精确相等优先、否则 `/` 后缀）。"""
+        index = self._index(head=["a/b/CLAUDE.md", "CLAUDE.md", "x/y.md"])
+        self.assertTrue(index.in_head("CLAUDE.md"))
+        self.assertTrue(index.in_head("y.md"))
+        self.assertFalse(index.in_head("z.md"))
+        self.assertEqual(sweep._match_declared_fragment("CLAUDE.md", ["a/CLAUDE.md", "CLAUDE.md"]), ["CLAUDE.md"])
+        self.assertEqual(sweep._match_declared_fragment("CLAUDE.md", ["a/CLAUDE.md", "b/CLAUDE.md"]),
+                         ["a/CLAUDE.md", "b/CLAUDE.md"])
+        self.assertEqual(index.head_root_names, frozenset({"CLAUDE.md"}))
+
+    def test_escalation_threshold_is_rounds_and_equals_decided_value(self):
+        """design D4：K=3（Shao Peishen 2026-09-10 答 4a），单位是轮；刻意不与
+        孤儿升格的小时阈值共用常量。"""
+        self.assertEqual(sweep.MANIFEST_SKIP_ESCALATION_ROUNDS, 3)
+        self.assertIsNot(sweep.MANIFEST_SKIP_ESCALATION_ROUNDS, sweep.ORPHAN_SECTION_FOUR_HOURS)
+        self.assertTrue(sweep.MANIFEST_SKIP_STATE_REL.startswith("reports/"))
+
 
 class ManifestCoverageFailOpenSourceTests(unittest.TestCase):
     """队列 #136 裁定原文的 fail-open 取向："校验自身异常不得让 sweep 整轮死"。
@@ -2584,6 +2720,267 @@ class ManifestCoverageGateTests(SweepTestBase):
         landed = _git(self.origin, "show", "--name-only", "--format=", "master~1").stdout
         self.assertIn("另一件.md", landed)
         self.assertNotIn("hooks-common.ps1", landed)
+
+
+class ManifestCoverageSelflockGateTests(SweepTestBase):
+    """队列 §一 #507 端到端（design D1(a)＋D2）：高频共享件不脏不再把批次卡死，
+    且部分装入的提交自陈实际装入范围、标题一字不改。
+
+    **立项实证**：2026-09-10 解析 `reports/sweep-commit.log` 760 条整批跳过
+    记录／48 个批次，最长 `B-0903_51` 连续 111 轮（≈50 小时），缺项 TOP2 是
+    两份队列真身（600／454 次）——批次 X 把它们提交走，批次 Y 就永远等不到
+    「清单里所有文件同时脏」的那一刻。"""
+
+    def _init_with_relay_card(self) -> None:
+        # 先把「接力卡」提交进 HEAD，仿真高频共享件「内容早已落库」的形态
+        self._write_queue("")
+        (self.work / "1-转型规划" / "0-全景路线图" / "session接力-Phase1收口.md").write_text(
+            "接力卡 v1\n", encoding="utf-8")
+        self._commit_all("init")
+        _git(self.work, "branch", "-M", "master")
+        _git(self.work, "push", "-q", "-u", "origin", "master")
+
+    def test_shared_file_already_in_head_does_not_block_batch(self):
+        """自锁形态本体：清单含队列文件（脏）＋接力卡（不脏、已在 HEAD）。
+        改锚前整批永久跳过；改锚后照常落库，且提交信息正文自陈「清单 2 条、
+        装入 1 条」并点名接力卡「已在 HEAD」。"""
+        self._init_with_relay_card()
+        row = ("| B-高频 | `0-全景路线图/跨桌任务队列-机制环境.md`（本批次行自身）；"
+               "`0-全景路线图/session接力-Phase1收口.md`（上一批已提交走） "
+               "| `docs(test/#507): 高频共享件不脏不再卡死` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue, "已在 HEAD 的共享件不得再把批次拦住")
+        log_text = (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
+        self.assertNotIn("整批跳过", log_text)
+        # D2：标题逐字不变，正文自陈
+        subject = _git(self.origin, "log", "-1", "--format=%s", "master~1").stdout.strip()
+        body = _git(self.origin, "log", "-1", "--format=%b", "master~1").stdout
+        self.assertEqual(subject, "docs(test/#507): 高频共享件不脏不再卡死")
+        self.assertIn("本批清单 2 条，本次实际装入 1 条", body)
+        self.assertIn("0-全景路线图/session接力-Phase1收口.md（已在 HEAD）", body)
+        # 装入的确实只有队列文件
+        landed = _git(self.origin, "show", "--name-only", "--format=", "master~1").stdout
+        self.assertIn(sweep.QUEUE_MECHANISM_PATH_REL, landed)
+        self.assertNotIn("session接力-Phase1收口.md", landed)
+
+    def test_gitignored_manifest_item_does_not_block_batch(self):
+        """`reports/` 下的运行产物被 `**/reports/` 覆盖，物理上永远不可能脏——
+        改锚前它让 `B-0903_51` 卡了 111 轮。"""
+        self._init_and_push(rows="")
+        row = ("| B-心跳 | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位）；"
+               "`reports/lane-heartbeat/op0903d1.md`（心跳件，不入库） "
+               "| `docs(test/#507): 被忽略的心跳件不算缺项` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        pushed_queue = _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout
+        self.assertIn("✅ 已完成", pushed_queue)
+        body = _git(self.origin, "log", "-1", "--format=%b", "master~1").stdout
+        self.assertIn("reports/lane-heartbeat/op0903d1.md（被 .gitignore 覆盖）", body)
+
+    def test_full_landing_leaves_commit_message_unchanged(self):
+        """tasks §2.4 反面：N==M 时提交信息与改锚前一致——没有自陈段、正文为空。"""
+        self._init_and_push(rows="")
+        row = ("| B-齐 | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
+               "| `docs(test/#507): 全量装入不加自陈` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        subject = _git(self.origin, "log", "-1", "--format=%s", "master~1").stdout.strip()
+        body = _git(self.origin, "log", "-1", "--format=%b", "master~1").stdout.strip()
+        self.assertEqual(subject, "docs(test/#507): 全量装入不加自陈")
+        self.assertEqual(body, "", "N==M 时不得追加任何自陈段")
+
+    def test_bare_root_filename_in_manifest_is_still_recognised_end_to_end(self):
+        """D3 ③ 的例外走真流程：`CLAUDE.md` 以裸名出现、且在仓库根——不脏时
+        归「已在 HEAD」而不是被当成散文丢掉（自陈段里应能看见它）。"""
+        self._write_queue("")
+        (self.work / "CLAUDE.md").write_text("根 CLAUDE\n", encoding="utf-8")
+        self._commit_all("init")
+        _git(self.work, "branch", "-M", "master")
+        _git(self.work, "push", "-q", "-u", "origin", "master")
+        row = ("| B-根 | `0-全景路线图/跨桌任务队列-机制环境.md`；`CLAUDE.md`；`hooks.PreToolUse` "
+               "| `docs(test/#507): 裸名根文件` | 待 CC 取活 |\n")
+        self._write_queue(row)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        body = _git(self.origin, "log", "-1", "--format=%b", "master~1").stdout
+        self.assertIn("CLAUDE.md（已在 HEAD）", body)
+        self.assertNotIn("hooks.PreToolUse", body, "配置键名是散文，不进任何一类")
+
+
+def _restore_platform_package_fixture(work: Path) -> None:
+    """升格用例要真跑编辑锁 `append-row`，须还原平台底座包与凭据 lint 正本
+    （理由见 `OrphanSectionFourEscalationTests.setUp` 的红字，此处不复述）。"""
+    src = PLATFORM_PACKAGE_SOURCE
+    dst = work / "5-平台底座" / "zhuopin_platform" / "zhuopin_platform"
+    (dst / "shared_tools").mkdir(parents=True)
+    shutil.copy(src / "__init__.py", dst / "__init__.py")
+    for name in ("__init__.py", "queue_table.py", "followup_gate.py"):
+        shutil.copy(src / "shared_tools" / name, dst / "shared_tools" / name)
+    shutil.copy(CREDENTIAL_LINT_SOURCE, work / "0-学习与工具" / CREDENTIAL_LINT_SOURCE.name)
+
+
+class ManifestSkipEscalationTests(SweepTestBase):
+    """队列 §一 #507 design D4（K=3）：同一批次连续被覆盖校验跳过达阈值 ⇒ §四
+    追一行；当日去重；落库归零；升格失败不改退出码；跳过日志降频。
+
+    🔴 跑真实 sweep 子进程 ＋ 真实编辑锁 CLI，不用桩（同
+    `OrphanSectionFourEscalationTests`）。"""
+
+    # 6557047 型：三个代码件既不在 HEAD 也未被忽略 ⇒ 改锚后仍是真缺项
+    CROSS_WORKTREE_ROW = ManifestCoverageGateTests.CROSS_WORKTREE_ROW
+
+    def setUp(self):
+        super().setUp()
+        _restore_platform_package_fixture(self.work)
+
+    def _write_queue(self, rows: str) -> None:
+        (self.work / sweep.QUEUE_MECHANISM_PATH_REL).write_text(
+            OrphanSectionFourEscalationTests.QUEUE_WITH_SECTION_FOUR.format(rows=rows),
+            encoding="utf-8", newline="")
+
+    def _state_path(self) -> Path:
+        return self.work / sweep.MANIFEST_SKIP_STATE_REL
+
+    def _seed_state(self, entries: dict) -> None:
+        self._state_path().parent.mkdir(parents=True, exist_ok=True)
+        self._state_path().write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+
+    def _read_state(self) -> dict:
+        return json.loads(self._state_path().read_text(encoding="utf-8"))
+
+    def _section_four(self) -> str:
+        return self._queue_text().split("## 四、")[1]
+
+    def test_consecutive_skips_reaching_threshold_land_in_section_four(self):
+        self._init_and_push(rows="")
+        self._write_queue(self.CROSS_WORKTREE_ROW)
+        self._seed_state({"B-跨树": {"consecutive_skips": sweep.MANIFEST_SKIP_ESCALATION_ROUNDS - 1,
+                                    "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": []}})
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        section_four = self._section_four()
+        self.assertIn("B-跨树", section_four)
+        self.assertIn("清单覆盖校验升格", section_four)
+        self.assertIn(f"连续 {sweep.MANIFEST_SKIP_ESCALATION_ROUNDS} 轮", section_four)
+        self.assertIn(sweep.QUEUE_MECHANISM_PATH_REL, section_four)
+        self.assertIn("hooks-common.ps1", section_four, "缺项清单须点名")
+        self.assertIn("(a) 订正登记写法", section_four)
+        self.assertIn("(b) 内容确实还在别的分支上", section_four)
+        self.assertIn("本项无默认", section_four)
+        self.assertIn("Shao Peishen", section_four)
+        state = self._read_state()["B-跨树"]
+        self.assertEqual(state["consecutive_skips"], sweep.MANIFEST_SKIP_ESCALATION_ROUNDS)
+        self.assertEqual(state[sweep.MANIFEST_SKIP_SECTION_FOUR_LOGGED_KEY],
+                         datetime.now().strftime("%Y-%m-%d"))
+        # 升格不替人动清单、不提交任何东西
+        self.assertIn("待 CC 取活", self._queue_text().split("## 二、")[1].split("## 三、")[0])
+        self.assertIn("已登 §四", result.stdout)
+
+    def test_below_threshold_counts_but_does_not_escalate(self):
+        self._init_and_push(rows="")
+        self._write_queue(self.CROSS_WORKTREE_ROW)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self._read_state()["B-跨树"]["consecutive_skips"], 1)
+        self.assertNotIn("清单覆盖校验升格", self._section_four())
+        self.assertIn("待升格 0 个", result.stdout, "零命中也要回显")
+
+    def test_same_day_dedup_one_row_only(self):
+        self._init_and_push(rows="")
+        self._write_queue(self.CROSS_WORKTREE_ROW)
+        self._seed_state({"B-跨树": {"consecutive_skips": sweep.MANIFEST_SKIP_ESCALATION_ROUNDS - 1,
+                                    "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": []}})
+        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        self.assertEqual(self._section_four().count("清单覆盖校验升格"), 1)
+
+        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        self.assertEqual(self._section_four().count("清单覆盖校验升格"), 1, "当日同批次不得重复追行")
+        self.assertEqual(self._read_state()["B-跨树"]["consecutive_skips"],
+                         sweep.MANIFEST_SKIP_ESCALATION_ROUNDS + 1, "计数仍在累加")
+
+    def test_cross_day_still_skipped_is_escalated_again(self):
+        """跨天仍卡则再登一行——「登过一次即永久静默」是 #147 教训的另一面。"""
+        self._init_and_push(rows="")
+        self._write_queue(self.CROSS_WORKTREE_ROW)
+        self._seed_state({"B-跨树": {"consecutive_skips": sweep.MANIFEST_SKIP_ESCALATION_ROUNDS - 1,
+                                    "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": []}})
+        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        state = self._read_state()
+        state["B-跨树"][sweep.MANIFEST_SKIP_SECTION_FOUR_LOGGED_KEY] = (
+            datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        self._seed_state(state)
+
+        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        self.assertEqual(self._section_four().count("清单覆盖校验升格"), 2)
+
+    def test_counter_resets_once_batch_lands(self):
+        """批次恢复落库 ⇒ 计数归零（条目整个消失），下次再被跳过从第 1 轮重计。"""
+        self._init_and_push(rows="")
+        row = ("| B-回来了 | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
+               "| `docs(test/#507): 曾被卡的批次终于落库` | 待 CC 取活 |\n")
+        self._write_queue(row)
+        self._seed_state({"B-回来了": {"consecutive_skips": 2,
+                                      "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": ["x.md"]}})
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("✅ 已完成", _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout)
+        self.assertNotIn("B-回来了", self._read_state())
+
+    def test_skip_log_is_emitted_on_first_round_only(self):
+        """design D4 降频：同一批次「首轮一条 ＋ 每次升格一条」，续轮不再刷
+        同一句话（760 条里单一批次重复 111 条，#147：每轮都响没人接＝噪音）。"""
+        self._init_and_push(rows="")
+        self._write_queue(self.CROSS_WORKTREE_ROW)
+
+        first = _run_sweep(self.work)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertIn("B-跨树 整批跳过", first.stdout)
+
+        second = _run_sweep(self.work)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertNotIn("B-跨树 整批跳过", second.stdout, "续轮不得重复首轮那条全文")
+        self.assertIn("本轮被跳过 1 个批次", second.stdout, "但每轮仍有一行汇总回显")
+        self.assertEqual(self._read_state()["B-跨树"]["consecutive_skips"], 2)
+
+    def test_escalation_failure_does_not_change_exit_code(self):
+        """升格失败只留日志——把 §四 分区整个拿掉，`append-row` 必然被拒。"""
+        self._init_and_push(rows="")
+        (self.work / sweep.QUEUE_MECHANISM_PATH_REL).write_text(
+            QUEUE_HEADER_ONLY.format(rows=self.CROSS_WORKTREE_ROW), encoding="utf-8", newline="")
+        self._seed_state({"B-跨树": {"consecutive_skips": sweep.MANIFEST_SKIP_ESCALATION_ROUNDS - 1,
+                                    "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": []}})
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("清单覆盖跳过升格", result.stdout)
+        self.assertNotIn("已登 §四", result.stdout)
+        self.assertNotIn(sweep.MANIFEST_SKIP_SECTION_FOUR_LOGGED_KEY, self._read_state()["B-跨树"],
+                         "追行未成功就不得记成已升格")
+
+    def test_dry_run_counts_but_writes_nothing(self):
+        self._init_and_push(rows="")
+        self._write_queue(self.CROSS_WORKTREE_ROW)
+        before = self._queue_text()
+
+        result = _run_sweep(self.work, "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[dry-run] 批次 B-跨树 因文件清单覆盖校验未过整批跳过", result.stdout)
+        self.assertFalse(self._state_path().exists(), "dry-run 不落状态")
+        self.assertEqual(self._queue_text(), before)
 
 
 class OrphanFileAlertTests(SweepTestBase):
