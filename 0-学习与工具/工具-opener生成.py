@@ -222,8 +222,8 @@ USED_ID_SHORT_RE = re.compile(r"\[Win\](\d{4})([A-Za-z0-9]+)-")
 CLAIMS_FILE_REL = "reports/op-id-claims.jsonl"
 #: 测试覆盖点：不为 `None` 时直接用它，不再走 git 解析（同 `REPO_ROOT` 的 monkeypatch 手法）。
 CLAIMS_FILE: Path | None = None
-#: 占位时效（分钟）。⚠️ **初值由建造方定（`OP-0910-R`，2026-09-10），属阈值类、
-#: 尚未经 Shao Peishen 明确答复**——依据＝根 `CLAUDE.md` §5 记的 `OP-0909-P`
+#: 占位时效（分钟）。**Shao Peishen 2026-09-10 答 `1a` 定为 120 分钟**（追认建造方 `OP-0910-R`
+#: 初值；措辞由 `OP-0910-S` 同日清掉「待答」）——依据＝根 `CLAUDE.md` §5 记的 `OP-0909-P`
 #: 实证「派单件起草到复核 80 分钟」，取其 1.5 倍留余量；过短 ⇒ 起草期未结束
 #: 号就被别人取走（等于没建）；过长 ⇒ 未派出的号挡别人两小时以上（当日 26 个
 #: 字母不够用时才成问题，2026-09-10 实测当日用到 `R`）。改这个数只改这里。

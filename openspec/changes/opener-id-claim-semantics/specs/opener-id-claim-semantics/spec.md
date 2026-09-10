@@ -43,7 +43,7 @@ OP 号（`OP-MMDD-X`）SHALL 仅在**已落进仓库某份 `.md`** 时才视为�
 ### Requirement: 取号即声明——真空期的有时效机器占位
 `工具-opener生成.py` SHALL 在出件成功时于 `<主工作区>/reports/op-id-claims.jsonl` 写一条占位（`op_id`／`mmdd`／`suffix`／`short_name`／`line`／`claimed_at`），并在查重时同时扫「已落档文件」与「未过期占位」；当日同号已被**另一份草稿**（短名不同）声明且未过期时 MUST 拒绝出件并给出避开已落档与已声明后缀的下一个空号。占位 SHALL 在 `CLAIM_TTL_MINUTES` 后自动失效、在该号已落档后自动清理；占位台账读写失败 MUST fail-closed 不出件。台账路径 MUST 按 `git rev-parse --git-common-dir` 解析到主工作区，使各 worktree 共享一份。
 
-本 Requirement **不改变**「永久占用只认已落档」（前一 Requirement）：占位是「取号→落档」真空的有时效可见窗口，到期未落档即作废＝「未派出即作废」的机器实现；它由工具写入与清理，不是人手写进 `.md` 的占位登记。（授权：Shao Peishen 2026-09-10 答 `1a，2a`，队列 §一 `#549` ⑶／`#531` 子项；🔴 `CLAIM_TTL_MINUTES` 初值 120 由建造方定、待其明确答复。）
+本 Requirement **不改变**「永久占用只认已落档」（前一 Requirement）：占位是「取号→落档」真空的有时效可见窗口，到期未落档即作废＝「未派出即作废」的机器实现；它由工具写入与清理，不是人手写进 `.md` 的占位登记。（授权：Shao Peishen 2026-09-10 答 `1a，2a`，队列 §一 `#549` ⑶／`#531` 子项；`CLAIM_TTL_MINUTES` ＝ 120 由 Shao Peishen 2026-09-10 答 `1a` 定，追认建造方初值。）
 
 #### Scenario: 两份起草中的件同号（2026-09-10 `OP-0910-I` 实撞形态）
 - **WHEN** 线甲以短名 X 取到 `OP-MMDD-K` 并出件（占位已写），线乙在时效内以短名 Y 再取 `OP-MMDD-K`，两边均未落档
