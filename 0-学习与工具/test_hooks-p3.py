@@ -304,14 +304,20 @@ class TestPreToolUseEditlockGuard:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ⓑ UserPromptSubmit 常驻五条（hooks-userpromptsubmit-standing-five.ps1）
+# ⓑ UserPromptSubmit 常驻纪律（hooks-userpromptsubmit-standing-five.ps1）
+#
+# 🔴 判据于 2026-09-10 按队列 §一 `#537` 改判：**不再断言"恰好 5 条"**，改为按实际
+#    锚点集判「连续性／重复／非法编号」三族。成因＝2026-09-09 往根 `CLAUDE.md` §5
+#    合法新增第 6 条常驻纪律（`UPS5:6`）后，旧判据每轮都打"预期 5、实得 6"，并让
+#    `test_真实根CLAUDE_md…零漂移` 长期常红——常红会掩盖真红。把 5 改成 6 只是把同
+#    一颗定时炸弹推后一格（同族＝ §一 `#535` 夹具硬编码日期跨零点转红）。
 # ─────────────────────────────────────────────────────────────────────────────
 
 def write_root_claude_md(repo_root: Path, items: dict[int, str]) -> None:
     """构造一份带 `<!-- UPS5:n -->` 锚点的最小根 CLAUDE.md 夹具。
 
     `items`：`{锚点编号: 该行正文}`，编号可以不连续/不从 1 开始/重复出现同一编号
-    （多次调用同一 key 需在调用方自行拼多行），用于覆盖"缺失/重复"两类异常路径。
+    （多次调用同一 key 需在调用方自行拼多行），用于覆盖"缺号/重复/非法编号"三类异常路径。
     """
     lines = ["# CLAUDE.md（测试夹具）", ""]
     for idx, body in items.items():
@@ -323,11 +329,21 @@ def get_context(out: dict) -> str:
     return out.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
+def injected_body(ctx: str) -> str:
+    """剥掉 `📌 常驻纪律 N 条：` 前缀，返回真正被注入的摘要正文。
+
+    🔴 不硬编码前缀字面量——前缀里的条数本身是随实得数变化的（正是本次改判的一部分），
+    写死它等于在测试侧复刻同一颗定时炸弹。改按第一个全角冒号切。
+    """
+    head, sep, rest = ctx.partition("：")
+    return rest if sep else ctx
+
+
 class TestUserPromptSubmitStandingFive:
     def test_脚本文件存在(self):
         assert STANDING_FIVE.is_file()
 
-    def test_五条齐全时全部出现且各自截断在预算内(self, repo: Path):
+    def test_锚点集连续时全部出现且各自截断在预算内(self, repo: Path):
         write_root_claude_md(repo, {
             1: "称呼一律「Shao Peishen」，不用「Paul」",
             2: "禁从名字推断性别；正本之外称「该专员／其／对方」",
@@ -341,29 +357,87 @@ class TestUserPromptSubmitStandingFive:
         assert "⚠" not in ctx
         for kw in ("称呼一律", "禁从名字推断性别", "决策清单须带", "可粘贴 prompt", "默认项须先问"):
             assert kw in ctx, f"缺 {kw}：{ctx}"
-        body_bytes = len(ctx[len("📌 常驻五条："):].encode("utf-8"))
-        assert body_bytes <= 300
+        assert len(injected_body(ctx).encode("utf-8")) <= 300
         assert audit_lines(repo)[-1]["verdict"] == "pass"
 
-    def test_长文本各条仍全部出现不因总预算被整条挤掉(self, repo: Path):
-        """🔴 回归锁：曾经的实现"各截 80B 再整体截 300B"会让第 5 条整条从尾部消失——
-        改为按实得条数均分预算后，5 条都必须在，只是每条更短。"""
-        long_text = "这是一段刻意写得很长的正文用来测试截断行为是否会让后面的条目整条消失不见" * 2
-        write_root_claude_md(repo, {i: f"第{i}条：{long_text}" for i in range(1, 6)})
+    def test_合法新增第六条不再报异常(self, repo: Path):
+        """🔴 `#537` 的核心回归锁：根 `CLAUDE.md` §5 合法多出第 6 条常驻纪律时，
+        旧实现每轮打"预期 5、实得 6"且**第 6 条根本不会被注入**（旧代码只遍历 1..5）。
+        新判据只看连续性 ⇒ 1..6 连续即 pass，且第 6 条必须出现在注入内容里。"""
+        write_root_claude_md(repo, {i: f"第{i}条正文" for i in range(1, 7)})
         rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
         assert rc == 0, err
         ctx = get_context(out)
-        for i in range(1, 6):
-            assert f"第{i}条" in ctx, f"第{i}条从输出中消失了：{ctx}"
+        assert "⚠" not in ctx, f"合法新增第 6 条不应报异常：{ctx}"
+        assert "第6条正文" in ctx, f"第 6 条被整条丢掉了：{ctx}"
+        assert audit_lines(repo)[-1]["verdict"] == "pass"
 
-    def test_锚点缺失时可见不静默(self, repo: Path):
+    def test_条目数少于五条但连续时同样判pass(self, repo: Path):
+        """判据是"集合自洽"而非"够不够 5 条"——合法**删掉**条目也不该产生噪声。"""
         write_root_claude_md(repo, {1: "只有第一条", 2: "只有第二条", 3: "只有第三条"})
         rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
         assert rc == 0, err
         ctx = get_context(out)
-        assert "预期 5" in ctx and "实得 3" in ctx
-        assert "只有第一条" in ctx  # 找到的仍要展示，不因为不全就整体隐藏
+        assert "⚠" not in ctx, f"1..3 连续不该报异常：{ctx}"
+        assert audit_lines(repo)[-1]["verdict"] == "pass"
+
+    def test_长文本各条仍全部出现不因总预算被整条挤掉(self, repo: Path):
+        """🔴 回归锁：曾经的实现"各截 80B 再整体截 300B"会让最后一条整条从尾部消失——
+        改为按实得条数均分预算后，每条都必须在，只是每条更短。"""
+        long_text = "这是一段刻意写得很长的正文用来测试截断行为是否会让后面的条目整条消失不见" * 2
+        write_root_claude_md(repo, {i: f"第{i}条：{long_text}" for i in range(1, 7)})
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        for i in range(1, 7):
+            assert f"第{i}条" in ctx, f"第{i}条从输出中消失了：{ctx}"
+
+    def test_中间缺号时可见不静默(self, repo: Path):
+        """真正的"漏了一条"＝编号集不连续（此处 3 被误删），必须点名缺哪一号。"""
+        write_root_claude_md(repo, {1: "第一条", 2: "第二条", 4: "第四条", 5: "第五条"})
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "缺号" in ctx and "3" in ctx, ctx
+        assert "第一条" in ctx  # 找到的仍要展示，不因为不全就整体隐藏
         assert audit_lines(repo)[-1]["verdict"] == "undetermined"
+
+    def test_不从1开始时按缺号报告(self, repo: Path):
+        """编号从 2 起 ⇒ 1 号缺失，同样属"缺号"，不得因"3 条也挺整齐"而放过。"""
+        write_root_claude_md(repo, {2: "第二条", 3: "第三条", 4: "第四条"})
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "缺号" in ctx and "1" in ctx, ctx
+        assert audit_lines(repo)[-1]["verdict"] == "undetermined"
+
+    def test_非法编号0被点名(self, repo: Path):
+        write_root_claude_md(repo, {0: "零号", 1: "第一条", 2: "第二条"})
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "非法编号" in ctx and "0" in ctx, ctx
+        assert audit_lines(repo)[-1]["verdict"] == "undetermined"
+
+    def test_一个锚点都没有时不得静默判pass(self, repo: Path):
+        """🔴 "结果太干净"形态：锚点被整批删光/标记写错，旧判据会报"实得 0"，新判据
+        若只看连续性会把空集当"自洽"放过——必须显式兜住这一路。"""
+        (repo / "CLAUDE.md").write_text("# CLAUDE.md（无任何锚点）\n", encoding="utf-8")
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "未命中任何" in ctx, ctx
+        assert audit_lines(repo)[-1]["verdict"] == "undetermined"
+
+    def test_两位数编号不被漏读(self, repo: Path):
+        """旧正则 `UPS5:(\\d)` 只吃一位数 ⇒ `UPS5:10` 会被整条无视且不报告。
+        改 `\\d+` 后 1..10 连续即 pass，第 10 条须真的出现在注入内容里。"""
+        write_root_claude_md(repo, {i: f"第{i}条正文" for i in range(1, 11)})
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "⚠" not in ctx, f"1..10 连续不该报异常：{ctx}"
+        assert "第10条" in ctx, f"两位数编号被漏读：{ctx}"
 
     def test_锚点重复时报告不静默选一个(self, repo: Path):
         lines = [
@@ -378,6 +452,7 @@ class TestUserPromptSubmitStandingFive:
         assert rc == 0, err
         ctx = get_context(out)
         assert "重复编号" in ctx and "2" in ctx
+        assert audit_lines(repo)[-1]["verdict"] == "undetermined"
 
     def test_根CLAUDE_md不存在时fail_open(self, repo: Path):
         rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
@@ -397,13 +472,14 @@ class TestUserPromptSubmitStandingFive:
         )
         assert proc.returncode == 0
 
-    def test_真实根CLAUDE_md五条齐全零漂移(self):
-        """对**真实**根 `CLAUDE.md`（本 worktree 已按 ⓑ 建造插好五处锚点）跑一次——
-        既是回归锁，也是"锚点真的插对了地方"的生产前验活。"""
+    def test_真实根CLAUDE_md锚点集自洽零漂移(self):
+        """对**真实**根 `CLAUDE.md` 跑一次——既是回归锁，也是"锚点真的插对了地方"的
+        生产前验活。🔴 断言的是**锚点集自洽**（连续·不重复·编号合法），**不断言条数**：
+        §5 常驻纪律条目会随他立法增删，把条数写进断言就是把常红写进 CI（`#537`）。"""
         rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, REPO_ROOT)
         assert rc == 0, err
         ctx = get_context(out)
-        assert "⚠" not in ctx, f"真实根 CLAUDE.md 的锚点数量或格式有异常：{ctx}"
+        assert "⚠" not in ctx, f"真实根 CLAUDE.md 的锚点集不自洽（缺号/重复/非法编号）：{ctx}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

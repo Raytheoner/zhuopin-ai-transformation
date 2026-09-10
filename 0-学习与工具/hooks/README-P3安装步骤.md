@@ -129,7 +129,7 @@ python -c "import json,pathlib;d=json.loads(pathlib.Path(r'C:\Dev\zhuopin-ai\.cl
 |---|---|---|---|
 | 1 | ⓐ SessionStart | 在项目下新开一个 CC 会话 | 开场横幅出现"🕐 …本地 / …UTC"字样，且主仓 `reports/hooks-audit.jsonl` 新增一行 `hook=sessionstart-context` |
 | 2 | ⓒ PreToolUse | 不 `acquire` 直接尝试 `Edit` 两份队列文件之一 | 被拒绝（`exit 2`），审计新增一行 `hook=pretooluse-editlock-guard, verdict=violation` |
-| 3 | ⓑ UserPromptSubmit | 随便发一条消息 | 上下文出现"📌 常驻五条：…"字样，审计新增一行 `hook=userpromptsubmit-standing-five` |
+| 3 | ⓑ UserPromptSubmit | 随便发一条消息 | 上下文出现"📌 常驻纪律 N 条：…"字样（N＝根 `CLAUDE.md` 实得锚点数，随他立法增删自适应，`#537` 2026-09-10 改判），审计新增一行 `hook=userpromptsubmit-standing-five` |
 | 4 | ⓓ Stop | 让 CC 回复一段刻意缺 `(a)/(b)` 标签的"需你定夺"小节 | 该轮被拦下要求补全，审计新增一行 `hook=stop-decision-check, verdict=violation` |
 
 **每一条通过后**，对应根 `CLAUDE.md`／`.claude/rules/队列与落库.md` 里的等量人守文本才能按 `#381` 硬约束「先验活、后降指针」进入下一步（openspec 变更包 `cc-hooks-p3` tasks.md §8，本次未做，前置条件即此四条验收）。
