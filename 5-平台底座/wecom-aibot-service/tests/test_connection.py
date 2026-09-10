@@ -68,6 +68,82 @@ def test_build_connector_wires_credentials_into_client(tmp_path):
     assert store["client"].options["reconnect_interval"] == 2000
 
 
+def test_media_timeout_is_forwarded_to_sdk_request_timeout_ms(tmp_path):
+    """队列 #545：`media_timeout_seconds` 必须同时驱动内层 SDK 的
+    `WSClientOptions.request_timeout`（毫秒）。2026-09-10 陈忱三个 zip 三度
+    重发三度失败：审计 `timeout_seconds: 600.0` 已生效，但每次 attempt 仍在
+    10–12 s 内抛 `TimeoutError`——外层 600 s 只包住了一个 10 s 的内壳。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+        media_timeout_seconds=600,
+    )
+
+    assert store["client"].options["request_timeout"] == 600_000
+
+
+def test_media_timeout_default_still_forwards_to_sdk(tmp_path):
+    """默认 `media_timeout_seconds`（20 s）也透传——否则默认部署仍卡在 SDK 10 s。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+    )
+
+    assert store["client"].options["request_timeout"] == 20_000
+
+
+def test_media_timeout_nonpositive_keeps_sdk_default_request_timeout(tmp_path):
+    """`media_timeout_seconds<=0`＝排查模式「不加本层超时、只依赖 SDK 自身」，
+    此时不透传、`factory_kwargs` 不含 `request_timeout`（保留 SDK 默认）。"""
+    (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+    store: dict = {}
+
+    build_connector(
+        secrets=_secrets(),
+        audit=audit,
+        external_docs_root=tmp_path / "7-外部文档",
+        queue_path=tmp_path / "queue.md",
+        client_factory=fake_client_factory(store),
+        media_timeout_seconds=0,
+    )
+
+    assert "request_timeout" not in store["client"].options
+
+
+def test_connector_without_request_timeout_ms_leaves_factory_kwargs_untouched():
+    """旧调用方零回归：直接构造 `AibotConnector` 不传 `request_timeout_ms`
+    时，`factory_kwargs` 不含 `request_timeout` 键（SDK 默认 10000 ms 不变）。"""
+    from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
+
+    store: dict = {}
+    AibotConnector("BOT1", "SECRET1", client_factory=fake_client_factory(store))
+    assert "request_timeout" not in store["client"].options
+
+    store2: dict = {}
+    AibotConnector(
+        "BOT1",
+        "SECRET1",
+        client_factory=fake_client_factory(store2),
+        request_timeout_ms=600_000,
+    )
+    assert store2["client"].options["request_timeout"] == 600_000
+
+
 def test_connection_lifecycle_events_are_audited(tmp_path):
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")

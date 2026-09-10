@@ -10,7 +10,10 @@ timeout (5.0s) for reqId: aibot_upload_media_chunk_*`），恰撞在一段反复
 🔴 **不做静默跳过**。本模块只提供三件事：
 ⑴ **重试**——一次 ack 超时并不代表这份文件下不下来，尤其在重连窗口内；
 ⑵ **超时可配**——SDK 的 5.0s ack 等待对一份 40KB 的 docx 分片而言偏紧，
-   本层再包一道**可配**的整体超时，环境变量见 `connection.py`；
+   本层再包一道**可配**的整体超时，环境变量见 `connection.py`；⚠️ 外层
+   `wait_for` 只在内层 SDK 超时（`WSClientOptions.request_timeout`，默认
+   10 s）≥ 它时才有意义——队列 #545 起由 `connection.py` 把同一值透传给
+   内层；
 ⑶ **失败可辨识**——耗尽重试后抛 `MediaTransferError`，它带着**每一次**
    尝试的类型名与消息（见 `error_text.describe_exception`：无参异常的
    `str()` 是空的，只记 `str(exc)` 等于什么都没记）。

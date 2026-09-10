@@ -160,6 +160,9 @@ def build_connector(
     `media_transfer.py`。⚠️ 默认值是保守工程默认，**不是已裁定的口径**
     ——「专员等多久算可接受」需 Shao Peishen 定。`media_timeout_seconds<=0`
     时不加本层超时，只依赖 SDK 自身的 5.0s ack 等待（排查用）。
+    🔴 队列 #545：`media_timeout_seconds` 同时以毫秒透传为 SDK
+    `WSClientOptions.request_timeout`（附件下载的内层 aiohttp 上限，SDK 默认
+    10 s）——此前从未透传，外层配 600 s 也只包住一个 10 s 的内壳。
 
     `whitelist_alert_fallback_send`（队列 #380 ／ §四 #116 决策点 3，默认
     None——不影响任何既有测试/调用方）：入站白名单外的发送人被 fail-closed
@@ -673,6 +676,11 @@ def build_connector(
         max_reconnect_attempts=max_reconnect_attempts,
         heartbeat_interval_ms=heartbeat_interval_ms,
         reconnect_base_delay_ms=reconnect_base_delay_ms,
+        # 队列 #545：内层 SDK 下载超时与外层 media 超时由同一环境变量驱动；
+        # `<=0`（排查用，不加本层超时）时不透传、保留 SDK 默认。
+        request_timeout_ms=(
+            int(media_timeout_seconds * 1000) if media_timeout_seconds > 0 else None
+        ),
         on_connected=on_connected,
         on_authenticated=on_authenticated,
         on_disconnected=on_disconnected,

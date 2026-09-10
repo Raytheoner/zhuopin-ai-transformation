@@ -110,6 +110,7 @@ class AibotConnector:
         max_reconnect_attempts: int = 6,
         heartbeat_interval_ms: int = 30_000,
         reconnect_base_delay_ms: int = 5_000,
+        request_timeout_ms: int | None = None,
         ws_url: str | None = None,
         on_connected: Callable[[], None] | None = None,
         on_authenticated: Callable[[], None] | None = None,
@@ -130,6 +131,11 @@ class AibotConnector:
         }
         if ws_url:
             factory_kwargs["ws_url"] = ws_url
+        if request_timeout_ms is not None:
+            # 队列 #545：SDK `WSClientOptions.request_timeout`（毫秒，默认 10000）
+            # 是附件下载 `aiohttp.ClientTimeout(total=…)` 的内层上限；不透传则
+            # 任何 10 s 内下不完的附件必败，与外层 media 超时配多大无关。
+            factory_kwargs["request_timeout"] = request_timeout_ms
 
         self._client = client_factory(bot_id, secret, **factory_kwargs)
 
