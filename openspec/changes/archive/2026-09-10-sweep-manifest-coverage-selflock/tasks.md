@@ -46,17 +46,22 @@
 
 ## 3. 验证
 
-- [ ] 3.1 `python -m pytest "0-学习与工具/test_工具-落库sweep.py" -k "ManifestCoverage" -v`（propose 期基线：9 passed / 30 subtests，189.58s）
+- [x] 3.1 `python -m pytest "0-学习与工具/test_工具-落库sweep.py" -k "ManifestCoverage" -v`（propose 期基线：9 passed / 30 subtests，189.58s）
+  - ✅ 2026-09-10（`OP-0910-L`）：`-k "ManifestCoverage"` ＝ 12 单元（含 8 新增）＋ 1 fail-open 源码断言 ＋ 5 既有端到端 ＋ 4 新端到端 `ManifestCoverageSelflockGateTests` 全绿；`ManifestSkipEscalationTests` 8 个端到端全绿（两组端到端合计 12 passed / 178.84s）
 - [ ] 3.2 `python -m pytest "0-学习与工具/test_工具-落库sweep.py" -q` 全量，与本分支起点基线对比，**零新增失败**
 - [x] 3.3 `openspec validate sweep-manifest-coverage-selflock --strict` ＋ `openspec validate --all --strict`，记录 passed/failed 与基线差额及其来源
   - ✅ 2026-09-10 14:2x：单包 `is valid`；全量 **188 passed / 0 failed**（与 propose 期 188 持平，本包 apply 未新增 item）
-- [ ] 3.4 🔴 **`--dry-run` 实机跑一轮**：`python "0-学习与工具/工具-落库sweep.py" --dry-run`，逐条核对本轮被跳过/放行的批次与 0.3 的复算一致
+- [x] 3.4 🔴 **`--dry-run` 实机跑一轮**：`python "0-学习与工具/工具-落库sweep.py" --dry-run`，逐条核对本轮被跳过/放行的批次与 0.3 的复算一致
+  - ✅ 14:2x 本地对主仓实机 `--dry-run`（新码 vs master 旧码各跑一遍、同一工作区状态）：§二 待处理 4 个批次，旧码整批跳过 2（`B-0910_537锚点数判据` 缺 4 件／`B-0910_H3_371载荷作废与501留档迁位` 缺 1 件；5 件逐条 `git cat-file -e HEAD:<path>` ＝ 全部已在 HEAD），新码跳过 0、且两批 dry-run 回显「提交信息将附自陈段：本批清单 6 条，本次实际装入 2 条」／「4 条，装入 3 条」；`🧭 清单覆盖校验跳过升格 §四 扫描（阈值 3 轮，当日去重）：本轮被跳过 0 个批次，待升格 0 个` 零命中回显在场
 
 ## 4. 历史回扫（队列 `#507` 期望产出④，design D5(a)）
 
-- [ ] 4.1 落地后**现取**一次当前 §二 待处理批次的跳过情况，逐条登记：哪些已自动消化（正常落库／既有「遗留尾巴补销」`#328` 路径）、哪些仍被拦
-- [ ] 4.2 仍被拦的逐个点名并归因（预期全部为「清单写了仓库里没有的路径」＝ 登记错误）；🔴 **只报不改**——订正登记写法属登记方，机器不替人改别人写的清单（同 `#136` 既有取舍）
-- [ ] 4.3 propose 期已点名的 4 个历史卡死批次（`B-0902_64` / `B-0908_BN` / `B-0830_20` / `B-0830_24`），逐条现取核对其行是否仍在 §二 待处理；已归档的写明「已归档，不再回扫」
+- [x] 4.1 落地后**现取**一次当前 §二 待处理批次的跳过情况，逐条登记：哪些已自动消化（正常落库／既有「遗留尾巴补销」`#328` 路径）、哪些仍被拦
+  - ✅ 同 §3.4：当前 4 个待处理批次在新判据下全部可落库（2 个由「已在 HEAD」消化、2 个本就齐全），无仍被拦者
+- [x] 4.2 仍被拦的逐个点名并归因（预期全部为「清单写了仓库里没有的路径」＝ 登记错误）；🔴 **只报不改**——订正登记写法属登记方，机器不替人改别人写的清单（同 `#136` 既有取舍）
+  - ✅ 本次现取无仍被拦批次；日志重放里仍被拦的 5 个历史批次（`B-0830_20`／`B-0830_24`／`B-0902_64`／`B-0904_A13`／`B-0908_BN`）经 `grep -l` 核对**全部已在 `跨桌任务队列-归档-202609.md`**（本日每周清扫 `B-0910_443` 迁档），不再回扫；其中 `B-0904_A13` 的缺项 `hooks.PreToolUse` 属形状误认，D3 ③ 落地后此类不再被点名
+- [x] 4.3 propose 期已点名的 4 个历史卡死批次（`B-0902_64` / `B-0908_BN` / `B-0830_20` / `B-0830_24`），逐条现取核对其行是否仍在 §二 待处理；已归档的写明「已归档，不再回扫」
+  - ✅ 四个批次均已归档（同上），不再回扫
 
 ## 5. 收口
 
@@ -64,4 +69,5 @@
 - [ ] 5.2 队列 §四 `#136` 追一段：本次改锚的判据与成因、`6557047` 回归实测结论、`#136` 原防护未被放松的证据（2.2 用例名）
 - [ ] 5.3 §二 批次登记 ＋ 触发一轮 sweep，看 `reports/sweep-commit.log` 末几行确认真落库
   - [ ] 5.3.1 🔴 **登记时别把本包文件路径写成会被自己拦住的形态**——本包文件在本分支自行 commit，若 ff 尚未合入 master，主仓工作区对它们没有脏改动。**本包 ① 落地后这一条已不再是坑**（它们会落进「已在 HEAD」而被视为已覆盖），但在 ① 合入 master 之前仍按 `#136` 旧行为登记
-- [ ] 5.4 `openspec archive sweep-manifest-coverage-selflock -y`；🔴 **archive ≠ 合入 master**，ff 属 🟡 档、待总线派发
+- [x] 5.4 `openspec archive sweep-manifest-coverage-selflock -y`；🔴 **archive ≠ 合入 master**，ff 属 🟡 档、待总线派发
+  - ✅ 2026-09-10 14:4x 已在本泳道分支上 archive 为 `2026-09-10-sweep-manifest-coverage-selflock`，`openspec/specs/sweep-manifest-coverage-guard/spec.md` +2 ADDED／~2 MODIFIED；`openspec validate --all --strict` ＝ 187 passed / 0 failed（188→187 ＝ 本包由 change 转入 spec，与 propose 前 187 持平）。ff 入 master 仍 🟡、未做
