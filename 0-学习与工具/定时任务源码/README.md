@@ -31,15 +31,44 @@ created: 2026-07-30
 
 > **⚠️ 目前第 3 步靠人记得**——自动化已登记为队列待领行（见下）。在自动化落地前，**任何改定时任务 prompt 的 session 都必须自己回镜**。
 
-## 镜像范围（刻意只镜三份）
+## 镜像范围（刻意选镜，非全量自动发现）
 
-| taskId | 状态 | 为何镜 |
+**🔴 本表＝`工具-定时任务源码备份.py::WHITELIST` 的正本，改一处必改两处。**
+
+| taskId | 状态（2026-09-10 现取，手段＝`mcp__scheduled-tasks__list_scheduled_tasks`） | 为何镜 |
 |---|---|---|
-| `huijian-chaijian-patrol` | live（工作日双班 09:00/13:00） | 本项目调度机制核心，判据密集 |
-| `weekly-status-update` | live（周一 10:00） | 值周巡检＋对账审计入口 |
-| `check-skill-plugin-updates` | enabled（每月 1 日） | 项目环境依赖清单巡检 |
+| `huijian-chaijian-patrol` | **disabled**，cron `0 8-20 * * 1-5`（每整点），末次运行 2026-09-02 | 本项目调度机制核心，判据密集 |
+| `weekly-status-update` | enabled，周一 10:00 | 值周巡检＋对账审计入口 |
+| `check-skill-plugin-updates` | disabled，每月 1 日 | 项目环境依赖清单巡检 |
+| `zhuopin-lan-closeout-reminder` | enabled，工作日 09:00 | 项目机制；**2026-09-10 才发现一直漏镜**——不是刻意排除，是白名单没跟上 |
+| `poll-opener-batch` | enabled，每 15 分钟 08–22 点 | 无头棒收工探针；承接队列 §一 `#551`／根 `CLAUDE.md` §5 `UPS5:7` 的机器守本体 |
 
-**不镜的**：Paul 个人投资类扫描（`sanhuan-300408-weekly-scan`／`mlcc-probe-sector-weekly-scan`／`chokepoint-weekly-scan` 等）、已废弃/一次性任务（`morning-briefing`／`obsidian-localize-clipping-images`／`chaijian-patrol-adhoc-0728` 等）——**不属本项目机制，不宜镜入公司项目仓库**。
+### 刻意不镜（＝`BLACKLIST` 正本，同样一改必改两处）
+
+| taskId | 归类 | 理由 |
+|---|---|---|
+| `sanhuan-300408-weekly-scan` | 个人 | Shao Peishen 个人投资类扫描，不属本项目机制 |
+| `migration-observation-daily-check` | 孤儿 | 注册表已无（2026-09-10 现取），目录残留 |
+| `restore-commit-sweep-reminder` | 孤儿 | 同上 |
+| `wave-0826-watch` | 孤儿 | 同上，一次性波次看护 |
+| `morning-briefing` | 孤儿 | 同上，已废弃 |
+| `obsidian-localize-clipping-images` | 孤儿 | 同上，已废弃 |
+| `claude-force-close-verify-0905` | 一次性 | 在册，但自述「出结论即请求关停」 |
+| `_backup-20260813` | 非任务 | 工具自建备份目录（`_` 前缀一律不当任务看） |
+
+**其余个人投资类**（`mlcc-probe-sector-weekly-scan`／`chokepoint-weekly-scan`／`chaijian-patrol-adhoc-0728` 等）本机已无对应目录，未列表；**一旦重新出现会被下方的未分类告警逮住**，届时补进本表即可。
+
+### 🔴 未分类即告警（Shao Peishen 2026-09-10 答 `2c`）
+
+`find_unclassified()`：任务目录**既不在白名单也不在黑名单** ⇒ 告警。**这是本机制从人守转机器守的那一步。**
+
+在它之前，白名单漏一个的表现是**什么都不发生**——`zhuopin-lan-closeout-reminder` 就这样裸奔多日，直到 2026-09-10 有人偶然跑了脚本、数了数「怎么只有 3 条」才发现。🔑 **一个只在「有事」时出声、而漏项恰好表现为「没事」的机制，等于没有。**
+
+**为什么不改成自动发现＋黑名单**（他裁 (c) 的理由）：自动发现漏一个只是多镜一份；但**新建的个人任务会默认进公司仓库**，那是泄漏面。⇒ 方向不变，改双列＋未分类告警：既不静默漏镜，也不自动搬进个人内容。
+
+⚠️ **本检查看目录，看不见注册表**（脚本跑在本机 Python 里，拿不到 `mcp__scheduled-tasks__*`）。⇒ **「漏镜」这个方向守得住**（新任务一定新建目录）；守不住的只有反方向（任务删了、白名单没撤），代价仅为多镜一份陈旧文本。
+
+> ⚠️ **2026-09-10 实证：白名单是写死的清单，新建任务不会自己进来。** 当日跑本脚本报「只认得 3 条」，而现取实有 6 条——`zhuopin-lan-closeout-reminder`（项目机制）已裸奔多日无版本保护。**表里状态列同样会过期**：本行上方 `huijian-chaijian-patrol` 原写「live（工作日双班 09:00/13:00）」，现取实为 **disabled、每整点**，两处都不对。🔑 同族＝队列 §一 `#535`（夹具日期硬编码）／`#537`（锚点数写死）／贯穿全项目的「**写进文本的状态不会自己过期**」。⇒ 承接项：本脚本应改为**自动发现全部任务、再按「不镜的」黑名单排除**（当前是白名单，方向反了——白名单漏一个是静默漏镜，黑名单漏一个只是多镜一份）。
 
 ## 安全前置（每次回镜都要做一遍）
 
