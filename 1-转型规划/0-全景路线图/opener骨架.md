@@ -16,9 +16,11 @@ opener正本: 骨架
 
 ## 【CC】骨架
 
+🔴 **worktree 字段的唯一执行者是会话自己，不是 Claude 桌面端的「worktree」勾选框（Shao Peishen 2026-09-10 定）**：桌面端新开 CC 时那个勾选框**一律留空**——它勾上会由 app 另起一个 `<短名>-work` 分支＋worktree（实测 `origin/op0908j-work`…`op0908m-work` 四条即此来源），与 opener 里「从 master 起 `claude/…`」的分支字段**双轨并存**，人守越仔细越会选错。**口径**：⑴ 本字段写 ☑ 时，含义是「**会话开工第一步自己起隔离面**」——单棒一律按 §三bis 看护者形态起：会话本体不建分支不改代码，用 Task/Agent（`isolation: "worktree"`）起**一条**子泳道做正文（子泳道 opener 用【CC · 子任务泳道】变体三行），机器建、机器删；⑵ 写 ☐ 时会话在主 checkout 上做（只产 `.md`、只读取证、ff 入 master、收口批这类**必须在 master 上**的活）；⑶ 无论 ☑／☐，桌面端勾选框都不勾——它不再承载任何语义。生成器 `--worktree` 默认值改 ☐、☑ 时自动切 guardian 变体，机器守落 `#522`。
+
 ```
 [OP-MMDD-X]【CC】<短名，≤12字>
-【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，新 worktree，收工自删）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
+【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，会话自起子泳道隔离、收工自删；桌面端勾选框留空）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
 开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行——子任务没有自己的 session，"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。
 读 ① `<派单件或首要输入的完整仓库根相对路径>` → ② `CLAUDE.md` §<相关节> 恢复上下文，按<派单件/下述>执行。本件为 <A 类（口径已定、判据已写死），无需再问澄清，直接开工 ／ B 类，开工前问我 2-3 个澄清>。
 
