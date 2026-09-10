@@ -73,6 +73,21 @@ lane-heartbeat/<泳道>.md` 由自己的 CWD 解析，`reports/` 又被 `.gitign
 终态泳道；归属未知者现在谁都不算，另起一行单列，**不消失也不冒充**。
 ⇒ 所以 `heartbeat --done` **务必带 `--batch`**，否则该泳道进不了任何一批的账。
 
+## pause 前 patch-id 预检（队列 §一 `#534`，`OP-0910-Y`）
+
+「分支停等 ff」这一档（`merge_to_master`）此前只看分支图：分支未并入 ⇒ 落
+pause ⇒ 推「等人」⇒ 占他一个决策位。而 `#455`／`#341`／`#482`／`#504` 四次实证
+都是**内容早已在 master、分支图上却永远显示未并入**（apply 期分支与 master 各
+提交一份／sweep 另行落库／三点 diff 把已合入内容报成「+N 行」）。修法＝
+`pause --action-key merge_to_master --branch <ref>` 时**先跑
+`工具-patchid比对.py`**：分支独有提交逐个取 `git patch-id --stable`，与 master
+侧独有提交比对——**全部对上 ⇒ 不落 pause、不推通知**，改写「内容已在 master，
+无需停等」并把证据（逐对 patch-id ＋ 命中文件数）留痕到 `lane_state
+["patchid_skips"]`；对不上 ⇒ 照旧 pause，证据附进等人通知。🔴 预检只对
+`merge_to_master` 生效——别的档「内容在不在 master」不是它要不要停的判据，
+给其它 action 传 `--branch` 直接报错，不静默忽略。🔴 预检**不放松** 🟡 档处置：
+`needs_merge` 只是「照旧停等」，永远不是「可以自动 ff」。
+
 ## 用法
 
     python 0-学习与工具/工具-泳道看护状态机.py criteria
@@ -81,6 +96,9 @@ lane-heartbeat/<泳道>.md` 由自己的 CWD 解析，`reports/` 又被 `.gitign
     python 0-学习与工具/工具-泳道看护状态机.py pause --batch 2026-09-02-看护批A \\
         --wave 2 --lane A --action-key change_criteria --waiting-for "口径该怎么改" \\
         --option 方案一 --option 方案二
+    python 0-学习与工具/工具-泳道看护状态机.py pause --batch B-0910_X --wave 2 --lane A \\
+        --action-key merge_to_master --waiting-for "是否 ff" --branch claude/op0905n-editrow-guard-455
+        # ↑ 先 patch-id 预检：内容已在 master 即不落 pause、退出码 0、打印证据
     python 0-学习与工具/工具-泳道看护状态机.py transfer-out --batch 2026-09-02-看护批A \\
         --wave 2 --lane A --action-key deploy_51 --note "需部署到 .51"
     python 0-学习与工具/工具-泳道看护状态机.py deploy-authorize --batch 2026-09-07-看护批B         --wave 2 --lane A --action-key deploy_51 --item "<被授权的那一项>"         --authorized-text "<他的授权原文，逐字>"
@@ -479,6 +497,73 @@ def lan_status(*, prober: Optional[Callable[[], dict]] = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# patch-id 预检（`#534`）：停等 ff 之前先判「内容是否已在 master」
+# ---------------------------------------------------------------------------
+
+#: 预检只对这一档生效（模块文档「pause 前 patch-id 预检」节）。
+PATCHID_PRECHECK_ACTION_KEY = "merge_to_master"
+PATCHID_PRECHECK_DEFAULT_BASE = "master"
+
+
+def _load_patchid_comparer() -> Callable[..., dict]:
+    """按文件路径加载 `工具-patchid比对.py` 的 `compare`（判据与证据格式全部由
+    该模块实现与维护，本文件只调用、不重抄）。git 在 `REPO_ROOT` 下跑——refs
+    跨 worktree 共享，在主工作区解析分支名与在任一 worktree 里结果一致。"""
+    script = _TOOLS_DIR / "工具-patchid比对.py"
+    spec = importlib.util.spec_from_file_location("_lane_watch_patchid_reuse", script)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    def _compare(branch: str, base: str) -> dict:
+        return module.compare(branch=branch, base=base, repo=REPO_ROOT)
+
+    _compare.format_evidence = module.format_evidence  # type: ignore[attr-defined]
+    return _compare
+
+
+def _format_patchid_evidence(result: dict, compare_fn: Callable[..., dict]) -> str:
+    fmt = getattr(compare_fn, "format_evidence", None)
+    if fmt is None:
+        # 注入的 stub 没带格式化器时退化为一行摘要，不因证据格式缺席而影响判定。
+        return (
+            f"{result.get('branch')}@{str(result.get('branch_sha', ''))[:8]} vs "
+            f"{result.get('base')}：独有提交 {result.get('unique_commit_count')}，"
+            f"未在 master {len(result.get('missing', []))}，命中文件 {result.get('hit_file_count')}"
+        )
+    return fmt(result)
+
+
+def _record_patchid_skip(
+    *, batch: str, wave: int, lane: str, action_label: str, branch: str, base: str,
+    result: dict, evidence_text: str,
+) -> dict:
+    """预检命中（内容已在 master）的留痕：不改 `status`、不进 `history`（那两处
+    是「停过」的账），单列 `patchid_skips`，供事后核「省了几个决策位」。"""
+    now = _now()
+
+    def _mutate(data: dict) -> None:
+        lanes = data["lanes"]
+        lane_state = lanes.setdefault(lane, {"status": "running", "history": []})
+        lane_state.setdefault("patchid_skips", []).append({
+            "batch": batch, "wave": wave, "action_key": PATCHID_PRECHECK_ACTION_KEY,
+            "action_label": action_label, "branch": branch, "base": base,
+            "branch_sha": result.get("branch_sha"), "base_sha": result.get("base_sha"),
+            "unique_commit_count": result.get("unique_commit_count"),
+            "hit_file_count": result.get("hit_file_count"),
+            "pairs": [
+                {"sha": m["sha"], "master_sha": m["master_sha"], "patch_id": m["patch_id"]}
+                for m in result.get("matched", [])
+            ],
+            "evidence": evidence_text,
+            "recorded_at": _iso(now),
+        })
+
+    data = _with_state(_mutate)
+    return data["lanes"][lane]
+
+
+# ---------------------------------------------------------------------------
 # §三 泳道解析（P2）：只认两个锚点，不认行数、不认"做什么"字样
 # ---------------------------------------------------------------------------
 
@@ -546,15 +631,45 @@ def parse_section_three_lanes(text: str) -> list[dict]:
 def pause_lane(
     *, batch: str, wave: int, lane: str, action_key: str, waiting_for: str,
     options: Optional[list] = None, notify_fn: Optional[Callable[[str], None]] = None,
+    branch: Optional[str] = None, base: str = PATCHID_PRECHECK_DEFAULT_BASE,
+    compare_fn: Optional[Callable[..., dict]] = None,
 ) -> dict:
     """泳道命中 🟡/🔴 决策点：落续跑状态＋推「等人」企微通知（3.1/3.2/3.4/4.2）。
 
     🟢 档动作不需要停，调用即报错（调用方逻辑错误，非运行时可恢复场景）。
+
+    `branch` 非空 ⇒ 先跑 patch-id 预检（`#534`，仅 `merge_to_master`）：
+    - 内容已在 master ⇒ **不落 pause、不推通知**，留痕 `patchid_skips`，返回
+      `{"skipped": True, "reason": …, "evidence": …, "result": …, "lane": <lane_state>}`；
+    - 真需 ff ⇒ 照旧 pause，证据附进等人通知与 history。
     """
     cls = classify(action_key)
     if cls.tier in (TIER_GREEN, TIER_TRANSFER):
         reason = "不需要停" if cls.tier == TIER_GREEN else "走 transfer-out，不进问答循环"
         raise ValueError(f"{cls.tier} 档动作（{action_key}：{cls.label}）{reason}，不接受 pause。")
+
+    evidence_text: Optional[str] = None
+    if branch is not None:
+        if action_key != PATCHID_PRECHECK_ACTION_KEY:
+            raise ValueError(
+                f"`--branch` 只对 {PATCHID_PRECHECK_ACTION_KEY}（{YELLOW_ACTIONS[PATCHID_PRECHECK_ACTION_KEY]}）"
+                f"生效——{action_key} 要不要停与「内容在不在 master」无关，不接受 patch-id 预检。"
+            )
+        comparer = compare_fn if compare_fn is not None else _load_patchid_comparer()
+        result = comparer(branch, base)
+        evidence_text = _format_patchid_evidence(result, comparer)
+        if result.get("all_in_master"):
+            lane_state = _record_patchid_skip(
+                batch=batch, wave=wave, lane=lane, action_label=cls.label,
+                branch=branch, base=base, result=result, evidence_text=evidence_text,
+            )
+            return {
+                "skipped": True,
+                "reason": "内容已在 master，无需停等",
+                "evidence": evidence_text,
+                "result": result,
+                "lane": lane_state,
+            }
 
     now = _now()
 
@@ -586,6 +701,11 @@ def pause_lane(
             "paused_at": _iso(now), "answer": None, "answered_at": None,
             "resolved_by": None,
         })
+        if evidence_text is not None:
+            # 预检跑过但真需 ff：证据随停等一起留痕（只在跑过预检时加键，
+            # 未跑预检的 pause 记录形状一字不变）。
+            lane_state["patchid_evidence"] = evidence_text
+            lane_state["history"][-1]["patchid_evidence"] = evidence_text
 
     data = _with_state(_mutate)
 
@@ -593,6 +713,8 @@ def pause_lane(
         batch=batch, lane=lane, wave=wave, tier=cls.tier, action_label=cls.label,
         waiting_for=waiting_for, options=options or [], covered=cls.covered,
     )
+    if evidence_text is not None:
+        message += "\npatch-id 预检：" + evidence_text.splitlines()[0]
     _notify_best_effort(message, notify_fn, lane=lane)
     return data["lanes"][lane]
 
@@ -1549,11 +1671,25 @@ def _cmd_pause(args: argparse.Namespace) -> int:
         state = pause_lane(
             batch=args.batch, wave=args.wave, lane=args.lane, action_key=args.action_key,
             waiting_for=args.waiting_for, options=args.option or None, notify_fn=notify_fn,
+            branch=args.branch, base=args.base,
         )
     except ValueError as exc:
         print(f"✗ {exc}")
         return 1
+    except Exception as exc:  # noqa: BLE001 —— 预检的 git 失败（ref 不存在等）
+        # 🔴 预检跑不起来 ≠ 「内容已在 master」：不得静默改判成免停；也不替
+        # 调用方决定要不要不带 --branch 重来——报错、退出码 1，由调用方裁。
+        print(f"✗ patch-id 预检失败，未落 pause：{exc}")
+        return 1
+    if state.get("skipped"):
+        print(f"✓ 泳道 `{args.lane}` {state['reason']}——未落 pause、未推通知（`#534` patch-id 预检）。")
+        print(state["evidence"])
+        if args.json:
+            print(json.dumps(state["result"], ensure_ascii=False))
+        return 0
     print(f"⏸ 已落状态：泳道 `{args.lane}` {state['tier']} 停在「{state['action_label']}」，等：{args.waiting_for}")
+    if state.get("patchid_evidence"):
+        print(state["patchid_evidence"])
     if args.json:
         print(json.dumps(state, ensure_ascii=False))
     return 0
@@ -1721,6 +1857,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_pause.add_argument("--waiting-for", required=True)
     p_pause.add_argument("--option", action="append", default=[], help="可重复，给出候选答案")
     p_pause.add_argument("--no-notify", action="store_true", help="跳过企微推送（联调/测试用）")
+    p_pause.add_argument(
+        "--branch", default=None,
+        help=("`#534` patch-id 预检：仅 --action-key merge_to_master 可用。给出待合分支（ref），"
+              "内容已在 master 即不落 pause、不推通知、退出码 0 并打印证据"),
+    )
+    p_pause.add_argument(
+        "--base", default=PATCHID_PRECHECK_DEFAULT_BASE,
+        help=f"预检比对基准，默认 {PATCHID_PRECHECK_DEFAULT_BASE}",
+    )
     p_pause.add_argument("--json", action="store_true")
     p_pause.set_defaults(func=_cmd_pause)
 

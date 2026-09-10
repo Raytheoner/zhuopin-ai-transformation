@@ -1498,5 +1498,202 @@ class LaneParsingDryRunTests(unittest.TestCase):
             os.unlink(path)
 
 
+def _fake_compare_result(*, all_in_master: bool, branch: str = "claude/x", base: str = "master") -> dict:
+    """`工具-patchid比对.compare` 返回形状的最小仿制品（注入用，不跑 git）。"""
+    pair = {
+        "sha": "a" * 40, "subject": "feat: x", "patch_id": "c" * 40,
+        "master_sha": "b" * 40, "files": ["0-学习与工具/x.py"],
+    }
+    return {
+        "branch": branch, "base": base, "branch_sha": "a" * 40, "base_sha": "d" * 40,
+        "verdict": "in_master" if all_in_master else "needs_merge",
+        "all_in_master": all_in_master,
+        "unique_commit_count": 1, "merge_commit_count": 0,
+        "matched": [pair] if all_in_master else [],
+        "missing": [] if all_in_master else [{k: v for k, v in pair.items() if k != "master_sha"}],
+        "empty_commits": [],
+        "hit_file_count": 1 if all_in_master else 0,
+        "missing_file_count": 0 if all_in_master else 1,
+    }
+
+
+class _RecordingComparer:
+    def __init__(self, result: dict):
+        self.result = result
+        self.calls: list[tuple[str, str]] = []
+
+    def __call__(self, branch: str, base: str) -> dict:
+        self.calls.append((branch, base))
+        return self.result
+
+
+class PatchIdPrecheckTests(unittest.TestCase):
+    """`pause` 前 patch-id 预检（队列 §一 `#534`，`OP-0910-Y`）。
+
+    比对器一律注入（不跑 git）；真实 git 侧的正反向已在
+    `test_工具-patchid比对.py`（含 `#455` 三提交／`#341` 靶）覆盖。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.module = _load()
+        self.module.REPO_ROOT = self.root
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run_cli(self, argv):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.module.main(argv)
+        return code, buf.getvalue()
+
+    # ---------------- 反向：内容已在 master ⇒ 不停 ----------------
+
+    def test_in_master_skips_pause_and_notification(self):
+        notifier = _StubNotifier()
+        comparer = _RecordingComparer(_fake_compare_result(all_in_master=True))
+        out = self.module.pause_lane(
+            batch="B1", wave=2, lane="A", action_key="merge_to_master",
+            waiting_for="是否 ff", notify_fn=notifier,
+            branch="claude/x", base="master", compare_fn=comparer,
+        )
+        self.assertTrue(out["skipped"])
+        self.assertIn("内容已在 master", out["reason"])
+        self.assertEqual(comparer.calls, [("claude/x", "master")])
+        # 没推通知、没落 paused、history 里没有「停过」的账。
+        self.assertEqual(notifier.messages, [])
+        on_disk = self.module._read_state()["lanes"]["A"]
+        self.assertEqual(on_disk["status"], "running")
+        self.assertEqual(on_disk.get("history", []), [])
+        # 留痕在 patchid_skips：逐对 patch-id ＋ 命中文件数。
+        self.assertEqual(len(on_disk["patchid_skips"]), 1)
+        skip = on_disk["patchid_skips"][0]
+        self.assertEqual(skip["branch"], "claude/x")
+        self.assertEqual(skip["hit_file_count"], 1)
+        self.assertEqual(skip["pairs"][0]["patch_id"], "c" * 40)
+        self.assertEqual(skip["pairs"][0]["master_sha"], "b" * 40)
+        self.assertEqual(skip["action_key"], "merge_to_master")
+
+    def test_in_master_does_not_touch_an_existing_paused_state(self):
+        # 已因别的事停着的泳道，预检命中也不该改它的 status／history。
+        self.module.pause_lane(
+            batch="B1", wave=1, lane="A", action_key="change_criteria",
+            waiting_for="口径", notify_fn=_StubNotifier(),
+        )
+        self.module.pause_lane(
+            batch="B1", wave=2, lane="A", action_key="merge_to_master",
+            waiting_for="是否 ff", notify_fn=_StubNotifier(),
+            branch="claude/x", compare_fn=_RecordingComparer(_fake_compare_result(all_in_master=True)),
+        )
+        on_disk = self.module._read_state()["lanes"]["A"]
+        self.assertEqual(on_disk["status"], "paused")
+        self.assertEqual(on_disk["action_key"], "change_criteria")
+        self.assertEqual(len(on_disk["history"]), 1)
+        self.assertEqual(len(on_disk["patchid_skips"]), 1)
+
+    # ---------------- 正向：真需 ff ⇒ 照旧停 ----------------
+
+    def test_needs_merge_pauses_as_before_with_evidence_attached(self):
+        notifier = _StubNotifier()
+        comparer = _RecordingComparer(_fake_compare_result(all_in_master=False))
+        state = self.module.pause_lane(
+            batch="B1", wave=2, lane="A", action_key="merge_to_master",
+            waiting_for="是否 ff", notify_fn=notifier,
+            branch="claude/x", compare_fn=comparer,
+        )
+        self.assertNotIn("skipped", state)
+        self.assertEqual(state["status"], "paused")
+        self.assertEqual(state["tier"], self.module.TIER_YELLOW)
+        self.assertEqual(len(state["history"]), 1)
+        self.assertIn("patchid_evidence", state)
+        self.assertIn("patchid_evidence", state["history"][0])
+        self.assertNotIn("patchid_skips", state)
+        # 等人通知照发，且带一行预检摘要。
+        self.assertEqual(len(notifier.messages), 1)
+        self.assertIn("patch-id 预检：", notifier.messages[0])
+
+    def test_pause_without_branch_is_byte_for_byte_the_old_shape(self):
+        # 只加不改：不带 --branch 的 pause 记录里不出现任何预检键。
+        state = self.module.pause_lane(
+            batch="B1", wave=2, lane="A", action_key="merge_to_master",
+            waiting_for="是否 ff", notify_fn=_StubNotifier(),
+        )
+        self.assertNotIn("patchid_evidence", state)
+        self.assertNotIn("patchid_skips", state)
+        self.assertNotIn("patchid_evidence", state["history"][0])
+
+    # ---------------- 边界 ----------------
+
+    def test_branch_with_non_merge_action_is_rejected_not_ignored(self):
+        comparer = _RecordingComparer(_fake_compare_result(all_in_master=True))
+        with self.assertRaises(ValueError):
+            self.module.pause_lane(
+                batch="B1", wave=2, lane="A", action_key="change_criteria",
+                waiting_for="口径", notify_fn=_StubNotifier(),
+                branch="claude/x", compare_fn=comparer,
+            )
+        # 比对器根本没被调用，状态文件也没被写。
+        self.assertEqual(comparer.calls, [])
+        self.assertEqual(self.module._read_state().get("lanes", {}), {})
+
+    def test_default_comparer_is_the_patchid_tool_bound_to_repo_root(self):
+        # 不注入时加载的是 `工具-patchid比对.py`，且 git 在 REPO_ROOT 下跑：
+        # REPO_ROOT 指向一个非仓库的临时目录 ⇒ 比对器抛错，而不是静默判成免停。
+        with self.assertRaises(Exception):
+            self.module.pause_lane(
+                batch="B1", wave=2, lane="A", action_key="merge_to_master",
+                waiting_for="是否 ff", notify_fn=_StubNotifier(), branch="claude/x",
+            )
+        self.assertEqual(self.module._read_state().get("lanes", {}), {})
+
+    # ---------------- CLI ----------------
+
+    def test_cli_pause_with_branch_in_master_exits_0_prints_evidence(self):
+        comparer = _RecordingComparer(_fake_compare_result(all_in_master=True))
+        with mock.patch.object(self.module, "_load_patchid_comparer", return_value=comparer):
+            code, out = self._run_cli([
+                "pause", "--batch", "B1", "--wave", "2", "--lane", "A",
+                "--action-key", "merge_to_master", "--waiting-for", "是否 ff",
+                "--branch", "claude/x", "--no-notify", "--json",
+            ])
+        self.assertEqual(code, 0)
+        self.assertIn("无需停等", out)
+        self.assertIn("未落 pause", out)
+        self.assertIn('"verdict": "in_master"', out)
+        self.assertEqual(comparer.calls, [("claude/x", "master")])
+        code, out = self._run_cli(["show", "--lane", "A"])
+        self.assertIn("running", out)
+
+    def test_cli_pause_with_branch_needs_merge_exits_0_and_is_paused(self):
+        comparer = _RecordingComparer(_fake_compare_result(all_in_master=False))
+        with mock.patch.object(self.module, "_load_patchid_comparer", return_value=comparer):
+            code, out = self._run_cli([
+                "pause", "--batch", "B1", "--wave", "2", "--lane", "A",
+                "--action-key", "merge_to_master", "--waiting-for", "是否 ff",
+                "--branch", "claude/x", "--base", "origin/master", "--no-notify",
+            ])
+        self.assertEqual(code, 0)
+        self.assertIn("⏸ 已落状态", out)
+        self.assertEqual(comparer.calls, [("claude/x", "origin/master")])
+        code, out = self._run_cli(["show", "--lane", "A"])
+        self.assertIn("paused", out)
+
+    def test_cli_pause_precheck_git_failure_exits_1_without_pausing(self):
+        def _boom(branch, base):
+            raise RuntimeError("ref 解析失败")
+
+        with mock.patch.object(self.module, "_load_patchid_comparer", return_value=_boom):
+            code, out = self._run_cli([
+                "pause", "--batch", "B1", "--wave", "2", "--lane", "A",
+                "--action-key", "merge_to_master", "--waiting-for", "是否 ff",
+                "--branch", "claude/ghost", "--no-notify",
+            ])
+        self.assertEqual(code, 1)
+        self.assertIn("预检失败", out)
+        self.assertEqual(self.module._read_state().get("lanes", {}), {})
+
+
 if __name__ == "__main__":
     unittest.main()
