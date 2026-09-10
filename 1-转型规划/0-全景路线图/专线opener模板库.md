@@ -40,6 +40,7 @@ opener正本: 模板库
 - **开工第二件事：查同题 session**（凡 CC opener 必含）：`git worktree list` 看有无同主题 worktree，并核 `git -C <该 worktree> status --porcelain`；**有即停下回报，不另起一份**。**发起方判据**：同一 opener 重发前先问「上一次粘出去的那个还在跑吗」。**处置**：两个都已开工则保留产出多的、停零产出的，半成品先 commit 到其特性分支、不合 master。
 - **补救**：对已在跑的 CC session 说一句「请调 `mcp__ccd_session_mgmt__set_session_title`（`session_id` 传字面量 `"self"`），标题：`[Win]MMDDX-<主题短名>`」，不必重开。
 - 🛡 **机器守（部分）**：`工具-opener块lint.py` 与 `工具-共享文档编辑锁.py::release`（旁挂同一判据实现 `check_block`，不写第二份）扫两个失效形态——① 有 `【设置】` 而无 `set_session_title`；② 有 `set_session_title` 而无子任务例外句；持锁期间触碰的 `.md` 命中即拒 release，逃生阀 `opener豁免：<理由>`。**边界**：只覆盖走队列锁流程的 opener，直接粘出去的仍是人守 ⇒ §一 `#284` 不销号。
+- 🔴 **OP 号占用判据一句（openspec `opener-id-claim-semantics`，2026-09-08 答 `1(a)`，2026-09-10 落地）**：**永久占用只认「已落进仓库某份 `.md`」；取号→落档的真空由生成器写的有时效占位（`reports/op-id-claims.jsonl`）补，到期未落档即作废；未派出的号不预留、不得手写占位。** 正文与例外在 `opener骨架.md`「取号」节，本库不复述。🛡 机器守＝`工具-opener生成.py` 出件即占位、撞占位即拒（队列 §一 `#549` ⑶）。
 - **自检两问**：*单独发给没读过本周计划的人，他能一眼说出这是哪件任务吗？* *他把收工报告贴回来时，我能只凭标题定位到是哪一件吗？*
 
 ### 〇.1 【设置】行「工作区」字段（硬规则）

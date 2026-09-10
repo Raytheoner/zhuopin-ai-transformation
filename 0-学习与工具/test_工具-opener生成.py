@@ -17,8 +17,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().with_name("工具-opener生成.py")
@@ -44,6 +46,9 @@ def setUpModule():
     global _MODULE_TMP_ROOT
     _MODULE_TMP_ROOT = tempfile.TemporaryDirectory()
     M.REPO_ROOT = Path(_MODULE_TMP_ROOT.name)
+    # 取号即声明（队列 §一 `#549` ⑶）：占位台账同样钉到临时目录——否则单测会往主工作区
+    # `reports/op-id-claims.jsonl` 写真占位，把当日真实取号挡掉两小时。
+    M.CLAIMS_FILE = Path(_MODULE_TMP_ROOT.name) / "op-id-claims.jsonl"
 
 
 def tearDownModule():
@@ -245,9 +250,14 @@ class UsedSuffixDedupTests(unittest.TestCase):
         (self.root / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
         self._orig_repo_root = M.REPO_ROOT
         M.REPO_ROOT = self.root
+        # 本类断言「下一个空号」，而空号推荐会避开未过期占位——用独立台账，
+        # 不受同文件其它用例已写下的占位影响（顺序相关的假红）。
+        self._orig_claims = M.CLAIMS_FILE
+        M.CLAIMS_FILE = self.root / "op-id-claims.jsonl"
 
     def tearDown(self):
         M.REPO_ROOT = self._orig_repo_root
+        M.CLAIMS_FILE = self._orig_claims
         self._tmp.cleanup()
 
     def _write(self, name: str, content: str) -> None:
@@ -313,6 +323,7 @@ class VariantSubtaskLaneTests(unittest.TestCase):
     def test_default_parallel_and_push_notes_present(self):
         self.assertIn(M.SUBTASK_PARALLEL_NOTE, self.out)
         self.assertIn(M.SUBTASK_PUSH_NOTE, self.out)
+        self.assertIn(M.SUBTASK_SENTINEL_NOTE, self.out)   # 队列 §一 `#550`
 
     def test_passes_lint_as_subtask_lane_form6_not_triggered(self):
         lint = M._load_lint_module()
@@ -657,10 +668,12 @@ class 子任务泳道占位段(unittest.TestCase):
         self.assertNotIn("1. …", out)
         self.assertNotIn("- …", out)
 
-    def test_未传时正文恰为三行加两条P4口径(self):
+    def test_未传时正文恰为三行加三条机器口径(self):
+        """三行正文 ＋ P4 两条 ＋ 收工哨兵一条（队列 §一 `#550`，2026-09-10 有意扩入）。"""
         body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
-        self.assertEqual(len(body), 5, f"实为 {len(body)} 行：{body}")
-        self.assertEqual(body[-2:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_PUSH_NOTE])
+        self.assertEqual(len(body), 6, f"实为 {len(body)} 行：{body}")
+        self.assertEqual(body[-3:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_PUSH_NOTE,
+                                     M.SUBTASK_SENTINEL_NOTE])
 
     def test_传了do_dont仍照拼_不误伤显式调用(self):
         """`BODY_PARAM_SUPPORT` 登记本组合两个都支持——调用方明确要写就不拦。"""
@@ -788,10 +801,18 @@ class 骨架与生成器契约(unittest.TestCase):
                 self.assertFalse([ln for ln in lines if "做什么：" in ln],
                                  f"{label} 出现了「做什么／不做什么」段")
 
-    def test_P4两条口径逐字取自正本(self):
-        """正本尾两行必须与生成器常量**逐字**相同——改一处不改另一处即红。"""
-        self.assertEqual(self.canon_lines[-2], M.SUBTASK_PARALLEL_NOTE)
-        self.assertEqual(self.canon_lines[-1], M.SUBTASK_PUSH_NOTE)
+    def test_三条机器口径逐字取自正本(self):
+        """正本尾三行（P4 两条 ＋ 收工哨兵，队列 §一 `#550`）必须与生成器常量**逐字**相同——
+        改一处不改另一处即红。"""
+        self.assertEqual(self.canon_lines[-3], M.SUBTASK_PARALLEL_NOTE)
+        self.assertEqual(self.canon_lines[-2], M.SUBTASK_PUSH_NOTE)
+        self.assertEqual(self.canon_lines[-1], M.SUBTASK_SENTINEL_NOTE)
+
+    def test_正本写明哨兵行是有意扩入(self):
+        """骨架该节此前纪律是「P4 两条」——本次扩为三条，正本必须写明理由与 `#550`，
+        否则下一个人会按旧纪律把它删掉（派单件 §二 第 1 步的明文要求）。"""
+        self.assertIn("#550", self.section)
+        self.assertIn("有意扩入", self.section)
 
     def test_前三行形状与正本对齐(self):
         """占位符不同、结构必须同：首行编号形态、`【设置】` 六字段、`读 ①` 起手。"""
@@ -814,6 +835,197 @@ class 骨架与生成器契约(unittest.TestCase):
         fenced = "\n".join(["```"] + self.gen_lines + ["```"])
         blocks = lint.iter_fenced_blocks(fenced)
         self.assertEqual(lint.check_block(blocks[0], is_subtask_lane=True), [])
+
+
+class 收工哨兵强制注入(unittest.TestCase):
+    """队列 §一 `#550`（2026-09-10）——`--variant subtask_lane` 拼装时**自动带上**收工哨兵行，
+    不依赖起草人记得写。
+
+    🔑 **成因**：`工具-opener批处理执行v2.ps1` 判成败靠 `claude` 退出码 ＋ 顶格哨兵两个指标；
+    2026-09-10 四条泳道活全做了、无一 `OPENER_DONE`——因为子任务泳道 opener 此前一个字
+    没提哨兵。**修法必须落在生成器注入**（`#487` 已证明「正文里写一句」拦不住，本次更前
+    一步：压根没生成）。`工具-opener块lint.py` 形态⑨是它的机器守。
+    """
+
+    @staticmethod
+    def _gen(**over):
+        kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
+        kw.update({"variant": "subtask_lane", "op_id": "OP-1230-S"})
+        kw.update(over)
+        return M.generate_opener(**kw)
+
+    def test_子任务泳道成品含哨兵行且在末行(self):
+        body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
+        self.assertEqual(body[-1], M.SUBTASK_SENTINEL_NOTE)
+        self.assertIn("OPENER_DONE", body[-1])
+        self.assertIn("OPENER_PARTIAL", body[-1])
+
+    def test_传了do_dont仍在最末(self):
+        body = [ln for ln in self._gen(do_items=["建造"], dont_items=["不动产线"]).splitlines()
+                if not ln.startswith("```")]
+        self.assertEqual(body[-3:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_PUSH_NOTE,
+                                     M.SUBTASK_SENTINEL_NOTE])
+
+    def test_其它变体不注入(self):
+        """收窄：标准／guardian／reference 都是人粘贴进交互会话的，不经批处理器，不加。"""
+        std = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-1230-T"})
+        self.assertNotIn("OPENER_DONE", std)
+        kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
+        kw.update(op_id="OP-1230-U", variant="guardian", short_name="示例批",
+                  branch="master（看护者本身不建分支，不改代码）")
+        guardian = M.generate_opener(**kw)
+        self.assertNotIn("OPENER_DONE", guardian)
+
+    def test_变异检验_去掉哨兵行lint即转红(self):
+        """🔴 队列 `#550` ⑷ 的变异检验以单测形式钉死：把注入逻辑注释掉（等价于从成品
+        里删掉那一行），`check_block(is_subtask_lane=True)` 必须报 F9——证明生成器
+        自检那道闸对本项**不是恒真**。"""
+        lint = M._load_lint_module()
+        out = self._gen()
+        mutated = "\n".join(ln for ln in out.splitlines() if ln != M.SUBTASK_SENTINEL_NOTE)
+        self.assertNotEqual(mutated, out)
+        block = lint.iter_fenced_blocks(mutated)[0]
+        codes = {c for c, _ in lint.check_block(block, is_subtask_lane=True)}
+        self.assertIn("F9", codes)
+        # 反向：原样成品零违规。
+        self.assertEqual(lint.check_block(lint.iter_fenced_blocks(out)[0], is_subtask_lane=True), [])
+
+
+class 取号即声明(unittest.TestCase):
+    """队列 §一 `#549` ⑶／`#531` 子项（2026-09-10）——取号时写一条轻量占位到
+    `reports/op-id-claims.jsonl`，查重同时扫「已落档文件」与「已取未落档的占位」。
+
+    🔑 **成因**：2026-09-10 `OP-0910-I`／`OP-0910-J` 两次撞号**未被拦**——两边都在起草期、
+    都没落档，`_scan_used_suffixes` 只看得见已落档的号；同日 `OP-0910-H` 被拦，差别只在
+    对方已落档。两次对比正好界定了旧查重的边界，占位就是补这一段真空。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._old_root, self._old_claims = M.REPO_ROOT, M.CLAIMS_FILE
+        M.REPO_ROOT = self.root
+        M.CLAIMS_FILE = self.root / "reports" / "op-id-claims.jsonl"
+
+    def tearDown(self):
+        M.REPO_ROOT, M.CLAIMS_FILE = self._old_root, self._old_claims
+        self._tmp.cleanup()
+
+    @staticmethod
+    def _kw(**over):
+        kw = dict(VALID_CC_KWARGS)
+        kw.update({"op_id": "OP-1229-A"})
+        kw.update(over)
+        return kw
+
+    def _claims(self) -> list[dict]:
+        return M._load_claims(M.CLAIMS_FILE)
+
+    def test_出件即写占位(self):
+        M.generate_opener(**self._kw())
+        recs = self._claims()
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0]["op_id"], "OP-1229-A")
+        self.assertEqual(recs[0]["short_name"], VALID_CC_KWARGS["short_name"])
+        self.assertIn("claimed_at", recs[0])
+
+    def test_并发取同号_第二份起草件撞红(self):
+        """🔴 变异检验的靶子（队列 `#549` ⑷）：把 `_claim_op_id` 的调用注释掉，本用例必红——
+        两份件都没落档、`_scan_used_suffixes` 两边都看不见，只有占位能拦。"""
+        M.generate_opener(**self._kw(short_name="甲线派单", line="业务总线"))
+        with self.assertRaises(M.OpenerGenError) as cm:
+            M.generate_opener(**self._kw(short_name="乙线派单", line="环境总线"))
+        msg = str(cm.exception)
+        self.assertIn("起草中", msg)
+        self.assertIn("甲线派单", msg)
+        self.assertIn("OP-1229-B", msg)   # 下一个空号避开已声明的 A
+
+    def test_同一草稿重生成不自撞(self):
+        """短名相同＝同一份草稿改参数再跑一次，刷新占位而不是拦自己。"""
+        M.generate_opener(**self._kw(short_name="同一份件"))
+        M.generate_opener(**self._kw(short_name="同一份件", branch="another-slug"))
+        recs = self._claims()
+        self.assertEqual(len(recs), 1)
+
+    def test_同线不同件同号仍撞(self):
+        """🔴 刻意不看 `line`：同一条线在同一时段起两份不同的件却传同一个号，正是要拦的。"""
+        M.generate_opener(**self._kw(short_name="件一", line="业务总线"))
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**self._kw(short_name="件二", line="业务总线"))
+
+    def test_过期占位不挡号且被清理(self):
+        old = M._fmt_utc(M._utc_now() - timedelta(minutes=M.CLAIM_TTL_MINUTES + 1))
+        M.CLAIMS_FILE.parent.mkdir(parents=True)
+        M.CLAIMS_FILE.write_text(json.dumps({
+            "op_id": "OP-1229-A", "mmdd": "1229", "suffix": "A", "short_name": "陈旧件",
+            "line": "X", "claimed_at": old}) + "\n", encoding="utf-8")
+        M.generate_opener(**self._kw(short_name="新件"))
+        recs = self._claims()
+        self.assertEqual([r["short_name"] for r in recs], ["新件"])
+
+    def test_未过期占位_隔线仍挡(self):
+        """反向配对：同样的记录只是没过期 ⇒ 必须拦，证明上一条的放行来自时效而非记录被忽略。"""
+        fresh = M._fmt_utc(M._utc_now() - timedelta(minutes=1))
+        M.CLAIMS_FILE.parent.mkdir(parents=True)
+        M.CLAIMS_FILE.write_text(json.dumps({
+            "op_id": "OP-1229-A", "mmdd": "1229", "suffix": "A", "short_name": "在跑件",
+            "line": "X", "claimed_at": fresh}) + "\n", encoding="utf-8")
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**self._kw(short_name="新件"))
+
+    def test_已落档的号_占位自动清理(self):
+        """落了档就由 `_scan_used_suffixes` 接管；占位只覆盖取号→落档的真空。"""
+        M.generate_opener(**self._kw(short_name="要落档的件"))
+        (self.root / "1-转型规划").mkdir()
+        (self.root / "1-转型规划" / "派单件.md").write_text("[OP-1229-A]【CC】要落档的件", encoding="utf-8")
+        # 任意一次当日取号都会顺手清理：取 B。
+        M.generate_opener(**self._kw(op_id="OP-1229-B", short_name="另一件"))
+        recs = self._claims()
+        self.assertEqual([r["op_id"] for r in recs], ["OP-1229-B"])
+        # 已落档的 A 仍被拦（由落档扫描拦，不是由占位拦）。
+        with self.assertRaises(M.OpenerGenError) as cm:
+            M.generate_opener(**self._kw(short_name="第三件"))
+        self.assertIn("已被使用", str(cm.exception))
+
+    def test_落档撞号时下一空号也避开占位(self):
+        M.generate_opener(**self._kw(op_id="OP-1229-B", short_name="占了B"))
+        (self.root / "1-转型规划").mkdir()
+        (self.root / "1-转型规划" / "x.md").write_text("OP-1229-A 已落档", encoding="utf-8")
+        with self.assertRaises(M.OpenerGenError) as cm:
+            M.generate_opener(**self._kw(short_name="再取A"))
+        self.assertIn("OP-1229-C", str(cm.exception))
+
+    def test_台账写不了即不出件(self):
+        """fail-closed：不能证明占到号就不算取到号（同「缺字段直接报错退出、不出半成品」）。"""
+        blocker = self.root / "reports"
+        blocker.write_text("我是文件不是目录", encoding="utf-8")   # 使 reports/ 无法成为目录
+        with self.assertRaises(M.OpenerGenError) as cm:
+            M.generate_opener(**self._kw())
+        self.assertIn("fail-closed", str(cm.exception))
+
+    def test_不同日期同后缀互不干扰(self):
+        M.generate_opener(**self._kw(op_id="OP-1228-A", short_name="昨天的A"))
+        M.generate_opener(**self._kw(op_id="OP-1229-A", short_name="今天的A"))
+        self.assertEqual(len(self._claims()), 2)
+
+    def test_坏行不崩(self):
+        M.CLAIMS_FILE.parent.mkdir(parents=True)
+        M.CLAIMS_FILE.write_text("{not json\n\n", encoding="utf-8")
+        M.generate_opener(**self._kw())
+        self.assertEqual(len(self._claims()), 1)
+
+    def test_台账落主工作区_跨worktree共享(self):
+        """`CLAIMS_FILE` 未覆盖时按 `git rev-parse --git-common-dir` 解析到主工作区——
+        Cowork 在主 checkout、CC 泳道在各自 worktree，各算各的就会写出 N 份互相看不见的台账。"""
+        M.CLAIMS_FILE = None
+        M.REPO_ROOT = SCRIPT.parents[1]   # 真实仓库位置（setUpModule 已把它钉到空临时目录）
+        try:
+            shared = M._shared_repo_root()
+            self.assertTrue((shared / ".git").exists(), shared)
+            self.assertEqual(M._claims_file(), shared / M.CLAIMS_FILE_REL)
+        finally:
+            M.CLAIMS_FILE = self.root / "reports" / "op-id-claims.jsonl"
+            M.REPO_ROOT = self.root
 
 
 if __name__ == "__main__":

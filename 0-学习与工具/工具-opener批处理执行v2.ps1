@@ -1,4 +1,4 @@
-# 工具-opener批处理执行v2.ps1 —— 泳道并行版（v2.0，2026-08-25）
+# 工具-opener批处理执行v2.ps1 —— 泳道并行版（v2.0，2026-08-25；v2.1，2026-09-10 队列 §一 `#549`：--resume 接管 ＋ -Detach）
 # 相对 v1 的唯一结构变化：opener 按「▶ 泳道：<名>」分组——泳道间并行（各起一个后台 Job）、泳道内严格串行。
 # 并行判据沿用矩阵纪律：同泳道＝触碰区/资源相斥（SRM 限流、同文件、同信链），跨泳道＝实测零重叠。
 # 用法（一行）：
@@ -6,6 +6,16 @@
 # 参数同 v1：-Plan / -Only / -DryRun / -FullAuto / -Yes / -Model；新增 -MaxParallel（默认 3）、-StaggerSec（泳道错峰启动间隔，默认 90，降编辑锁碰撞）
 # 判成败双指标不变：claude 退出码 ＋ OPENER_DONE/OPENER_PARTIAL 哨兵；FAIL/NO-SENTINEL 只停本泳道，其余泳道继续。
 # 日志：reports/opener-batch/<时间戳>/<泳道>-<编号>.log；结束在同目录写 summary.txt。
+#
+# v2.1（队列 §一 `#549` ⑴⑵，承接 `#522` ⑷⑸，2026-09-10）：
+#   ⑴ --resume 接管：每条 opener 起 claude 前先生成 session id（GUID），以 `--session-id <id>` 传入，
+#      并写进该泳道日志**首行**（`session=<id>`）与 summary.txt 的 Session 列 ⇒ 棒停了可用
+#      `claude --resume <id>` 接管，不必人工粘贴互动重跑（`#443` 清扫棒因此只能人工跑，是唯一一次必须切 tab 的）。
+#   ⑵ -Detach：先建日志目录、再用 Start-Process 把本脚本自身后台起一份（子进程带 -LogDir 指向同一目录），
+#      **立即**把日志目录路径打到 stdout 并退出 0，供 Cowork 调用而不占 PowerShell 通道。
+#      🔴 子进程退出码不再丢：子进程结束时把退出码写进 <日志目录>\exit.txt（并在 summary.txt 末行 `EXIT=<code>`），
+#      launcher.json 记 pid／起跑时刻／计划文件。此前调用方自己用 Start-Process 包一层拿不到退出码，正是本项要消灭的。
+#   -LogDir：内部参数（-Detach 子进程用），也可由调用方显式指定日志目录；未给则按时间戳新建。
 param(
     [string]$Plan = '',
     [string[]]$Only = @(),
@@ -14,7 +24,9 @@ param(
     [switch]$Yes,
     [string]$Model = '',
     [int]$MaxParallel = 3,
-    [int]$StaggerSec = 90
+    [int]$StaggerSec = 90,
+    [switch]$Detach,
+    [string]$LogDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,11 +36,48 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 $global:OutputEncoding = $Utf8NoBom
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# -File 方式传 `-Only A1,A2` 到达时是单个字符串，这里统一按逗号拆开（-Detach 子进程走的就是 -File）。
+$Only = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
+# 退出码落盘：只要日志目录已定，任何退出点都把 code 写进 exit.txt（-Detach 调用方读它，不猜）。
+function Exit-WithCode([int]$code) {
+    if ($LogDir) {
+        New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $LogDir 'exit.txt'), "$code`r`n", $Utf8NoBom)
+    }
+    exit $code
+}
+
 $claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
-if (-not $claudeCmd) { Write-Host '✗ 找不到 claude CLI。' -ForegroundColor Red; exit 10 }
-if ([string]::IsNullOrWhiteSpace($Plan)) { Write-Host '✗ 请用 -Plan 指定波次计划文件。' -ForegroundColor Red; exit 11 }
+if (-not $claudeCmd) { Write-Host '✗ 找不到 claude CLI。' -ForegroundColor Red; Exit-WithCode 10 }
+if ([string]::IsNullOrWhiteSpace($Plan)) { Write-Host '✗ 请用 -Plan 指定波次计划文件。' -ForegroundColor Red; Exit-WithCode 11 }
 if (-not (Test-Path $Plan)) { $Plan = Join-Path $RepoRoot $Plan }
-if (-not (Test-Path $Plan)) { Write-Host "✗ 计划文件不存在：$Plan" -ForegroundColor Red; exit 11 }
+if (-not (Test-Path $Plan)) { Write-Host "✗ 计划文件不存在：$Plan" -ForegroundColor Red; Exit-WithCode 11 }
+$Plan = (Resolve-Path $Plan).Path
+
+# ---------- -Detach：后台起自己，立即返回日志目录 ----------
+if ($Detach) {
+    if (-not $LogDir) { $LogDir = Join-Path $RepoRoot ('reports\opener-batch\' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    $childArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath,
+                   '-Plan', $Plan, '-Yes', '-LogDir', $LogDir,
+                   '-MaxParallel', $MaxParallel, '-StaggerSec', $StaggerSec)
+    if ($FullAuto) { $childArgs += '-FullAuto' }
+    if ($DryRun) { $childArgs += '-DryRun' }
+    if ($Model) { $childArgs += @('-Model', $Model) }
+    if ($Only.Count -gt 0) { $childArgs += @('-Only', ($Only -join ',')) }
+    $shell = (Get-Process -Id $PID).Path
+    $proc = Start-Process -FilePath $shell -ArgumentList $childArgs -WorkingDirectory $RepoRoot -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $LogDir 'launcher-stdout.log') -RedirectStandardError (Join-Path $LogDir 'launcher-stderr.log')
+    $launcher = [ordered]@{ pid = $proc.Id; shell = $shell; plan = $Plan; log_dir = $LogDir
+                            started_at_utc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                            exit_file = (Join-Path $LogDir 'exit.txt'); summary = (Join-Path $LogDir 'summary.txt') }
+    [System.IO.File]::WriteAllText((Join-Path $LogDir 'launcher.json'), ($launcher | ConvertTo-Json), $Utf8NoBom)
+    Write-Host ('✓ 已后台起（pid ' + $proc.Id + '）。日志目录：' + $LogDir)
+    Write-Host ('  退出码看 ' + (Join-Path $LogDir 'exit.txt') + '；各泳道 session id 看 summary.txt 的 Session 列或各 .log 首行。')
+    Write-Output $LogDir
+    exit 0
+}
 
 # ---------- 解析：### A<N> 标题 → ▶ 泳道 → 代码块 ----------
 $lines = [System.IO.File]::ReadAllLines($Plan, $Utf8NoBom)
@@ -54,10 +103,10 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
         }
     }
 }
-if ($openers.Count -eq 0) { Write-Host '✗ 未解析到任何 opener。' -ForegroundColor Red; exit 12 }
+if ($openers.Count -eq 0) { Write-Host '✗ 未解析到任何 opener。' -ForegroundColor Red; Exit-WithCode 12 }
 $openers = $openers | Sort-Object { [int]($_.Id.Substring(1)) }
 if ($Only.Count -gt 0) { $openers = $openers | Where-Object { $Only -contains $_.Id } }
-if ($openers.Count -eq 0) { Write-Host '✗ -Only 过滤后为空。' -ForegroundColor Red; exit 12 }
+if ($openers.Count -eq 0) { Write-Host '✗ -Only 过滤后为空。' -ForegroundColor Red; Exit-WithCode 12 }
 
 $laneNames = @()
 foreach ($op in $openers) { if ($laneNames -notcontains $op.Lane) { $laneNames += $op.Lane } }
@@ -68,12 +117,12 @@ foreach ($ln in $laneNames) {
     Write-Host ('  ◆ ' + $ln + ' ：' + $ids + '（泳道内串行）')
 }
 Write-Host ('权限模式：' + $(if ($FullAuto) { 'dangerously-skip-permissions（全自动）' } else { 'acceptEdits' }))
-if ($DryRun) { exit 0 }
-if (-not $Yes) { $ans = Read-Host '开跑？(y/N)'; if ($ans -ne 'y' -and $ans -ne 'Y') { exit 0 } }
+if ($DryRun) { Exit-WithCode 0 }
+if (-not $Yes) { $ans = Read-Host '开跑？(y/N)'; if ($ans -ne 'y' -and $ans -ne 'Y') { Exit-WithCode 0 } }
 
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$logDir = Join-Path $RepoRoot ('reports\opener-batch\' + $stamp)
-New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+if (-not $LogDir) { $LogDir = Join-Path $RepoRoot ('reports\opener-batch\' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
+New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+$logDir = $LogDir
 
 $header = @(
     '【无头批处理引导（v2 泳道版）】本 session 由脚本无头启动。五条硬规则：',
@@ -96,10 +145,13 @@ $laneBlock = {
         $tmp = Join-Path $logDir ($laneName + '-' + $op.Id + '.opener.txt')
         [System.IO.File]::WriteAllText($tmp, $header + "`r`n" + $op.Text, $Utf8NoBom)
         $t0 = Get-Date
-        $claudeArgs = @('-p', '--output-format', 'text')
+        # v2.1 ⑴：session id 由本脚本先定、再交给 claude（--session-id），首行即落盘——
+        # 不等 claude 输出再去抓（text 输出格式根本不带 session id），棒停了也接得上。
+        $sid = [guid]::NewGuid().ToString()
+        $claudeArgs = @('-p', '--output-format', 'text', '--session-id', $sid)
         if ($fullAuto) { $claudeArgs += '--dangerously-skip-permissions' } else { $claudeArgs += @('--permission-mode', 'acceptEdits') }
         if ($model) { $claudeArgs += @('--model', $model) }
-        ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Encoding utf8
+        ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | session=' + $sid + ' | resume: claude --resume ' + $sid + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Encoding utf8
         Get-Content -Raw -Encoding UTF8 $tmp | & claude @claudeArgs 2>&1 | Out-File -FilePath $log -Append -Encoding utf8
         $code = $LASTEXITCODE
         $t1 = Get-Date
@@ -109,7 +161,7 @@ $laneBlock = {
         $done = [bool]($tail | Where-Object { $_ -match '^OPENER_DONE\s*$' })
         $partial = [bool]($tail | Where-Object { $_ -match '^OPENER_PARTIAL' })
         $status = if ($code -eq 0 -and $done) { 'OK' } elseif ($code -eq 0 -and $partial) { 'PARTIAL' } elseif ($code -eq 0) { 'NO-SENTINEL' } else { 'FAIL(' + $code + ')' }
-        $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Log = $log }
+        $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Session = $sid; Log = $log }
         if ($status -like 'FAIL*' -or $status -eq 'NO-SENTINEL') { break }
     }
     $results
@@ -138,12 +190,17 @@ foreach ($k in $jobs.Keys) { $all += Receive-Job -Job $jobs[$k]; Remove-Job -Job
 $all = $all | Sort-Object Lane, { [int]($_.Id.Substring(1)) }
 Write-Host ''
 Write-Host '━━━━━━ 泳道批处理汇总 ━━━━━━'
-$all | Format-Table Lane, Id, Status, Minutes -AutoSize | Out-String | Write-Host
-$all | Format-Table Lane, Id, Status, Minutes -AutoSize | Out-String | Out-File -FilePath (Join-Path $logDir 'summary.txt') -Encoding utf8
-Write-Host ('日志目录：' + $logDir)
+$all | Format-Table Lane, Id, Status, Minutes, Session -AutoSize | Out-String -Width 300 | Write-Host
 $failed = @($all | Where-Object { $_.Status -like 'FAIL*' -or $_.Status -eq 'NO-SENTINEL' })
+$exitCode = if ($failed.Count -gt 0) { 1 } else { 0 }
+$summaryText = ($all | Format-Table Lane, Id, Status, Minutes, Session -AutoSize | Out-String -Width 300)
+# v2.1 ⑵：退出码随 summary 落盘（末行 EXIT=<code>）——-Detach 调用方读文件即得，不必持有子进程句柄。
+$summaryText += "`r`nEXIT=" + $exitCode + "`r`n"
+[System.IO.File]::WriteAllText((Join-Path $logDir 'summary.txt'), $summaryText, $Utf8NoBom)
+# 机读副本：Cowork 取件不必解析表格文本。
+[System.IO.File]::WriteAllText((Join-Path $logDir 'summary.json'), (@($all | Select-Object Lane, Id, Status, Minutes, Session, Log) | ConvertTo-Json -AsArray), $Utf8NoBom)
+Write-Host ('日志目录：' + $logDir)
 if ($failed.Count -gt 0) {
-    Write-Host ('✗ ' + $failed.Count + ' 项失败/无哨兵（只停了所在泳道）。续跑：-Only ' + (($failed | ForEach-Object { $_.Id }) -join ',') + ' 加其泳道内后续编号。') -ForegroundColor Red
-    exit 1
+    Write-Host ('✗ ' + $failed.Count + ' 项失败/无哨兵（只停了所在泳道）。续跑：-Only ' + (($failed | ForEach-Object { $_.Id }) -join ',') + ' 加其泳道内后续编号；或 claude --resume <Session> 接管。') -ForegroundColor Red
 }
-exit 0
+Exit-WithCode $exitCode

@@ -29,12 +29,28 @@
 两种形态皆计入。命中即拒绝，报错信息里直接给出当日下一个未用的空号，不需要
 调用方自己再算一遍。
 
+## 取号即声明——占位台账（队列 §一 `#549` ⑶／`#531` 子项；openspec `opener-id-claim-semantics`，2026-09-10）
+
+P7① 查重只看得见**已落档**的号（`_scan_used_suffixes` 的射程自陈见其文档字符串）。
+2026-09-10 当日实证正好界定这条边界：`OP-0910-H` 撞号被拦（对方已落档），`OP-0910-I`／
+`OP-0910-J` 撞号**未被拦**（两边都在起草期、都没落档，靠读对方锁 note 才发现）。
+⇒ 出件成功即在 `<主工作区>/reports/op-id-claims.jsonl` 写一条**有时效的机器占位**
+（`_claim_op_id`）；查重同时扫已落档文件与未过期占位；落档后（`used` 命中）或超过
+`CLAIM_TTL_MINUTES` 自动清理。**语义边界**：永久占用仍只认「已落档」（design ①(a)），
+占位只覆盖「取号→落档」那段真空、到期即作废＝「未派出即作废」的机器实现；它**不是**
+人手把号写进 `.md` 的占位登记（spec 明令禁止的那种）。台账读写失败 ⇒ fail-closed 不出件。
+🔴 **台账必须落主工作区**（`git rev-parse --git-common-dir`），否则各 worktree 各写一份、
+互相看不见——「不可见的占号台账等于没占」。
+
 ## variant：三种骨架变体（构建环境瘦身第三轮方案 P2/P4；队列 §一 `#487`）
 
 - `standard`（默认）：骨架【CC】／【Cowork】标准变体，含 `set_session_title` 行。
 - `subtask_lane`：骨架【CC · 子任务泳道】变体——**不含** `set_session_title` 行
   （2026-09-05 队列 §一 `#487`／(甲) 拍板：源头不放，不指望子任务读懂例外句），
-  收尾无条件追加 P4 两条默认口径（并行上限 4／错峰 ≥90 秒；只 push 分支不 ff）。
+  收尾无条件追加 P4 两条默认口径（并行上限 4／错峰 ≥90 秒；只 push 分支不 ff）
+  ＋ **收工哨兵一条**（队列 §一 `#550`，2026-09-10：`OPENER_DONE`／`OPENER_PARTIAL` 是
+  `工具-opener批处理执行v2.ps1` 判成败的双指标之一，此前正文一个字没提，四条泳道活全做了
+  却全被判 `NO-SENTINEL`；机器守＝`工具-opener块lint.py` 形态⑨）。
   🔴 **未传 `--do`／`--dont` 时不拼「做什么／不做什么」两段**（队列 §一 `#487`
   2026-09-09 apply）：骨架【CC · 子任务泳道】节明写「本变体恒为三行，不多写一行」，
   做什么／不做什么／收工一律写进**队列行**。此前无条件硬塞 `1. …／- …` 两段占位，
@@ -81,9 +97,14 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
+import os
 import re
 import string
+import subprocess
 import sys
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -191,12 +212,47 @@ USED_ID_FULL_RE = re.compile(r"OP-(\d{4})-([A-Za-z0-9]+)")
 #: 不做全文裸子串扫描——避免把正文里纯数字巧合误判为已用编号。
 USED_ID_SHORT_RE = re.compile(r"\[Win\](\d{4})([A-Za-z0-9]+)-")
 
+# ── 取号即声明（队列 §一 `#549` ⑶／`#531` 子项，2026-09-10）──────────────────
+#: 占位台账：`<主工作区>/reports/op-id-claims.jsonl`，一行一条 JSON。🔴 **按
+#: `git rev-parse --git-common-dir` 定位主工作区**（同 `工具-共享文档编辑锁.py`
+#: `_resolve_repo_root` 手法）——Cowork 在主 checkout、CC 泳道各在自己的
+#: worktree 里跑本工具，若按 `REPO_ROOT`（本文件所在 worktree）各算各的，就会
+#: 写出 N 份互相看不见的台账，「不可见的占号台账等于没占」（`opener-id-claim-
+#: semantics` design 对 `reports/` 变体的原话；`#504` 心跳件同坑）。
+CLAIMS_FILE_REL = "reports/op-id-claims.jsonl"
+#: 测试覆盖点：不为 `None` 时直接用它，不再走 git 解析（同 `REPO_ROOT` 的 monkeypatch 手法）。
+CLAIMS_FILE: Path | None = None
+#: 占位时效（分钟）。⚠️ **初值由建造方定（`OP-0910-R`，2026-09-10），属阈值类、
+#: 尚未经 Shao Peishen 明确答复**——依据＝根 `CLAUDE.md` §5 记的 `OP-0909-P`
+#: 实证「派单件起草到复核 80 分钟」，取其 1.5 倍留余量；过短 ⇒ 起草期未结束
+#: 号就被别人取走（等于没建）；过长 ⇒ 未派出的号挡别人两小时以上（当日 26 个
+#: 字母不够用时才成问题，2026-09-10 实测当日用到 `R`）。改这个数只改这里。
+CLAIM_TTL_MINUTES = 120
+#: 台账写侧互斥锁的陈旧阈值／等待上限（秒）。写一次只有毫秒级，30 s 未释放即视为
+#: 持锁进程已死；等 10 s 仍拿不到锁 ⇒ **fail-closed 不出件**（不能验证占位就不算取到号）。
+CLAIMS_LOCK_STALE_SECONDS = 30
+CLAIMS_LOCK_TIMEOUT_SECONDS = 10
+
 #: P4 默认口径（构建环境瘦身第三轮方案 P4；队列 §一 `#487`）——生成子任务泳道／
 #: 看护者开场词时无条件写入，不由调用方每次手打、防止漏写。
 SUBTASK_PARALLEL_NOTE = "🔴 并行上限 4，超出排下一波，错峰 ≥90 秒（构建环境瘦身第三轮方案 P4）。"
 SUBTASK_PUSH_NOTE = (
     "🔴 收工只 push 本泳道分支，不碰主仓、不 ff master——主仓 ff 由 sweep 收尾段"
     "或看护者收工时串行做（构建环境瘦身第三轮方案 P4）。"
+)
+#: 收工哨兵（队列 §一 `#550`，2026-09-10）——`工具-opener批处理执行v2.ps1` 判成败靠
+#: `claude` 退出码 ＋ 顶格一行 `OPENER_DONE`／`OPENER_PARTIAL` 两个指标，缺哨兵即判
+#: `NO-SENTINEL` 并中断本泳道。2026-09-10 四条泳道（`507`／`529`／`544`／`k2-externalize`）
+#: **活全做了、无一 `OPENER_DONE`**——因为子任务泳道 opener 此前一个字没提哨兵。
+#: 🔴 **修法必须落在这里（生成器强制注入），不能只改骨架文字**：`#487` 已证明「正文里写
+#: 一句」拦不住，本次更前一步——不是没被遵守，是压根没生成。**一个把成功报成失败的判据
+#: 比没有判据更糟，它会训练下一个人忽略 summary。** 机器守＝`工具-opener块lint.py` 形态⑨。
+#: 🔴 与骨架【CC · 子任务泳道】块末行**逐字相同**（单测「骨架与生成器契约」比对）。
+SUBTASK_SENTINEL_NOTE = (
+    "🔴 收工以顶格一行 `OPENER_DONE` 收尾；命中 🟡/🔴 决策点则以 "
+    "`OPENER_PARTIAL: 停在<档位>决策点——<在等什么>` 收尾"
+    "（`工具-opener批处理执行v2.ps1` 判成败双指标之一，缺它做完的活也会被判 NO-SENTINEL；"
+    "队列 §一 `#550`）。"
 )
 GUARDIAN_PARALLEL_NOTE = (
     "🔴 用 Task/Agent 起子任务时并行上限 4，超出排下一波，错峰 ≥90 秒；"
@@ -206,6 +262,14 @@ GUARDIAN_PARALLEL_NOTE = (
 
 def _scan_used_suffixes(mmdd: str) -> set[str]:
     """扫 `1-转型规划/` 全树 `.md`，收集当日（`mmdd`）已出现过的编号后缀（大写）。
+
+    🔴 **射程自陈（openspec `opener-id-claim-semantics`「撞号查重须自陈其射程」；`#487` 裁定 ⑵）**：
+    本查重只认**已落盘痕迹**——取号与落盘之间存在一段真空，查重是取号那一刻的快照、
+    **不是锁**；未落盘的号按未占用处理（永久占用的唯一语义＝「已落进仓库某份 `.md`」，
+    design ①(a)）。接力卡「⏳ 本线在跑会话」表在 `1-转型规划/` 树内，登进去的号**会**被
+    本函数扫到、**会**挡号——这是可见性的副作用，design ②(a) 明知并接受，不跳过。
+    真空期由 `_claim_op_id` 的**有时效机器占位**补（队列 §一 `#549` ⑶，2026-09-10 追加），
+    不由本函数消除；占位到期未落档即作废。
 
     🔴 读 `REPO_ROOT` 走模块全局、不做默认参数——测试靠 monkeypatch
     `模块.REPO_ROOT` 指向临时夹具目录（同 `test_工具-泳道看护状态机.py`
@@ -243,19 +307,208 @@ def _next_free_suffix(used: set[str]) -> str:
     raise OpenerGenError("当日编号后缀已耗尽（含双字母兜底），需人工介入")
 
 
-def _check_op_id_not_reused(spec: "OpenerSpec") -> None:
+def _check_op_id_not_reused(spec: "OpenerSpec") -> set[str]:
+    """已落档撞号即拒；返回当日已落档后缀集合（供 `_claim_op_id` 复用，不扫第二遍）。"""
     mmdd, suffix = _mmdd_and_suffix(spec.op_id)
     used = _scan_used_suffixes(mmdd)
     if suffix.upper() in used:
-        next_free = _next_free_suffix(used)
+        # 下一个空号同时避开未过期的占位（只读，不上锁）——推荐一个已被别人声明的号等于
+        # 让调用方再撞一次。
+        next_free = _next_free_suffix(used | _live_claimed_suffixes(mmdd))
         raise OpenerGenError(
             f"编号 {spec.op_id} 当日（{mmdd}）已被使用（撞号，队列 #461／#487 P7① 查重，"
-            f"命中全称或 `[Win]{mmdd}{suffix}-` 短形）；下一个空号：OP-{mmdd}-{next_free}"
+            f"命中全称或 `[Win]{mmdd}{suffix}-` 短形；射程见 `_scan_used_suffixes` 文档字符串：只认已落档痕迹）；"
+            f"下一个空号：OP-{mmdd}-{next_free}"
         )
+    return used
 
 
 class OpenerGenError(ValueError):
     """字段缺失或不合骨架硬规则 ⇒ 报错退出、不出件（队列 #461 明文要求）。"""
+
+
+def _shared_repo_root() -> Path:
+    """主工作区根（所有 worktree 共享）：`git rev-parse --git-common-dir` 的父目录；
+    跑不了 git 时退回 `REPO_ROOT`（同 `工具-共享文档编辑锁.py::_resolve_repo_root`）。"""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=True, timeout=30,
+        ).stdout.strip()
+        if out:
+            return Path(out).parent
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return REPO_ROOT
+
+
+def _claims_file() -> Path:
+    return CLAIMS_FILE if CLAIMS_FILE is not None else _shared_repo_root() / CLAIMS_FILE_REL
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _fmt_utc(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_utc(text: str) -> datetime | None:
+    try:
+        return datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+class _ClaimsLock:
+    """台账写侧最小互斥（原子 `O_CREAT|O_EXCL` 建锁文件 ＋ 陈旧接管），只做互斥、
+    不做内容校验——同 `工具-泳道看护状态机.py::_StateLock` 手法，不借队列的 markdown 行锁。"""
+
+    def __init__(self, target: Path) -> None:
+        self.path = target.with_name(target.name + ".lock")
+
+    def __enter__(self) -> "_ClaimsLock":
+        deadline = time.monotonic() + CLAIMS_LOCK_TIMEOUT_SECONDS
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        while True:
+            try:
+                fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode("ascii"))
+                os.close(fd)
+                return self
+            except FileExistsError:
+                try:
+                    age = time.time() - self.path.stat().st_mtime
+                except OSError:
+                    age = 0.0
+                if age > CLAIMS_LOCK_STALE_SECONDS:
+                    try:
+                        self.path.unlink()
+                    except OSError:
+                        pass
+                    continue
+                if time.monotonic() >= deadline:
+                    raise OpenerGenError(
+                        f"占位台账锁 {self.path} 等待超过 {CLAIMS_LOCK_TIMEOUT_SECONDS} s 仍被占用"
+                        "⇒ 无法登记占位，按 fail-closed 不出件（队列 §一 `#549` ⑶）")
+                time.sleep(0.1)
+
+    def __exit__(self, *exc) -> None:
+        try:
+            self.path.unlink()
+        except OSError:
+            pass
+
+
+def _load_claims(path: Path) -> list[dict]:
+    """读台账；坏行跳过不崩（台账是本地高频小文件，坏一行不该让取号停摆）。"""
+    if not path.is_file():
+        return []
+    claims: list[dict] = []
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict) and {"mmdd", "suffix", "claimed_at"} <= set(rec):
+            claims.append(rec)
+    return claims
+
+
+def _write_claims(path: Path, claims: list[dict]) -> None:
+    """整文件重写（先写临时件再 `os.replace`，不留半成品）。"""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text("".join(json.dumps(c, ensure_ascii=False) + "\n" for c in claims),
+                   encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _claim_is_live(rec: dict, now: datetime) -> bool:
+    claimed = _parse_utc(rec.get("claimed_at", ""))
+    return claimed is not None and now - claimed < timedelta(minutes=CLAIM_TTL_MINUTES)
+
+
+def _prune_claims(claims: list[dict], mmdd: str, used: set[str], now: datetime) -> list[dict]:
+    """两条清理规则：⑴ 超时效的一律丢（不分日期）；⑵ 当日已落档（`used` 命中）的丢——
+    落了档就由 `_scan_used_suffixes` 接管，占位只覆盖「取号→落档」那段真空。"""
+    kept: list[dict] = []
+    for rec in claims:
+        if not _claim_is_live(rec, now):
+            continue
+        if rec.get("mmdd") == mmdd and str(rec.get("suffix", "")).upper() in used:
+            continue
+        kept.append(rec)
+    return kept
+
+
+def _same_draft(rec: dict, spec: "OpenerSpec") -> bool:
+    """同一份草稿的重生成（改个参数再跑一次）不该撞自己的占位：判据＝短名相同。
+    🔴 刻意不看 `line`——同一条线在同一时段起两份不同的件、却传了同一个号，
+    正是要拦的形态（2026-09-10 `OP-0910-I` 撞号的一半就是这样来的）。"""
+    return str(rec.get("short_name", "")) == spec.short_name
+
+
+def _claim_op_id(spec: "OpenerSpec", used: set[str]) -> None:
+    """取号即声明（队列 §一 `#549` ⑶）：核占位 → 写占位，同一把锁内完成。
+
+    - 当日同号已被**别的草稿**声明且未过期 ⇒ 撞号，报错并给下一个空号（空号计算
+      同时避开已落档与已声明的后缀）；
+    - 同一草稿（短名相同）⇒ 刷新时间戳；
+    - 台账读写任一步失败 ⇒ `OpenerGenError`（fail-closed：**不能证明占到号就不算取到号**，
+      与「缺字段直接报错退出、不出半成品」同一条纪律）。
+    """
+    mmdd, suffix = _mmdd_and_suffix(spec.op_id)
+    suffix = suffix.upper()
+    now = _utc_now()
+    path = _claims_file()
+    try:
+        with _ClaimsLock(path):
+            claims = _prune_claims(_load_claims(path), mmdd, used, now)
+            rivals = [c for c in claims
+                      if c.get("mmdd") == mmdd and str(c.get("suffix", "")).upper() == suffix
+                      and not _same_draft(c, spec)]
+            if rivals:
+                r = rivals[0]
+                claimed_suffixes = {str(c.get("suffix", "")).upper()
+                                    for c in claims if c.get("mmdd") == mmdd}
+                next_free = _next_free_suffix(used | claimed_suffixes)
+                raise OpenerGenError(
+                    f"编号 {spec.op_id} 当日（{mmdd}）已被另一份起草中的件声明占用"
+                    f"（短名「{r.get('short_name', '?')}」／派出线「{r.get('line', '?')}」，"
+                    f"声明于 {r.get('claimed_at', '?')} UTC，时效 {CLAIM_TTL_MINUTES} 分钟；"
+                    f"台账 {path}）——对方尚未落档、`_scan_used_suffixes` 看不见它，"
+                    f"这正是占位存在的理由（队列 §一 `#549` ⑶／`#531` 子项，"
+                    f"2026-09-10 `OP-0910-I`／`OP-0910-J` 两次实撞）；下一个空号：OP-{mmdd}-{next_free}"
+                )
+            claims = [c for c in claims
+                      if not (c.get("mmdd") == mmdd and str(c.get("suffix", "")).upper() == suffix)]
+            claims.append({
+                "op_id": spec.op_id, "mmdd": mmdd, "suffix": suffix,
+                "short_name": spec.short_name, "line": spec.line, "env": spec.env,
+                "claimed_at": _fmt_utc(now),
+                "expires_at": _fmt_utc(now + timedelta(minutes=CLAIM_TTL_MINUTES)),
+            })
+            _write_claims(path, claims)
+    except OpenerGenError:
+        raise
+    except OSError as exc:
+        raise OpenerGenError(
+            f"占位台账 {path} 读写失败（{exc}）⇒ 无法证明占到号，按 fail-closed 不出件"
+            "（队列 §一 `#549` ⑶）") from exc
+
+def _live_claimed_suffixes(mmdd: str) -> set[str]:
+    """当日未过期占位的后缀集合（只读、不上锁、不清理；供推荐空号用）。"""
+    now = _utc_now()
+    try:
+        claims = _load_claims(_claims_file())
+    except OSError:
+        return set()
+    return {str(c.get("suffix", "")).upper() for c in claims
+            if c.get("mmdd") == mmdd and _claim_is_live(c, now)}
 
 
 def _load_lint_module():
@@ -487,7 +740,7 @@ def generate_opener(**kwargs) -> str:
     # 放在 `_check_op_id_not_reused` 之前——撞号查重要扫全树 `.md`（秒级），
     # 而「参数会被丢掉」是纯本地判断，没理由让调用方先等一次全树扫描才被告知。
     _reject_silently_dropped_body_params(kwargs, spec)
-    _check_op_id_not_reused(spec)  # P7①：当日撞号即拒，见模块文档
+    used = _check_op_id_not_reused(spec)  # P7①：当日已落档撞号即拒，见模块文档
 
     do_block = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(spec.do_items))
     dont_block = "\n".join(f"- {item}" for item in spec.dont_items)
@@ -557,7 +810,8 @@ def generate_opener(**kwargs) -> str:
             ]
             if _body_params_given(kwargs):
                 body_lines += ["", "做什么：", do_block, "", "不做什么：", dont_block]
-            body_lines += [SUBTASK_PARALLEL_NOTE, SUBTASK_PUSH_NOTE]
+            # 🔴 队列 §一 `#550`：收工哨兵**由生成器注入**、不依赖起草人记得写（见常量注释）。
+            body_lines += [SUBTASK_PARALLEL_NOTE, SUBTASK_PUSH_NOTE, SUBTASK_SENTINEL_NOTE]
         else:
             body_lines = [
                 title_line,
@@ -591,6 +845,10 @@ def generate_opener(**kwargs) -> str:
     if problems:
         detail = "；".join(f"[{code}] {msg}" for code, msg in problems)
         raise OpenerGenError(f"生成物未通过 `工具-opener块lint.py::check_block` 自检：{detail}")
+
+    # 取号即声明（队列 §一 `#549` ⑶）：自检通过、确定要出件了才写占位——同一把锁内
+    # 先核别人的占位再写自己的；撞上未落档的对方即在这里拒绝，出件＝占位已落。
+    _claim_op_id(spec, used)
 
     return opener_block
 

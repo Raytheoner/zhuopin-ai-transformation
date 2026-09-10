@@ -71,6 +71,12 @@ SETTINGS_CC_WRONG_ORDER = (
 
 #: 合规首行（形态⑤）——短名分别为 11 字／6 字，均 ≤12。
 TITLE_LINE_CC = "[OP-0828-Y]【CC】opener块lint"
+#: 收工哨兵行（形态⑨，队列 §一 `#550`，2026-09-10）——子任务泳道块的「干净样本」自此必须带它，
+#: 同 2026-09-04 扩形态时把 `SETTINGS_CC` 改为六字段齐的做法：**共享夹具必须满足全部现行判据**。
+SENTINEL_LINE = (
+    "🔴 收工以顶格一行 `OPENER_DONE` 收尾；命中 🟡/🔴 决策点则以 "
+    "`OPENER_PARTIAL: 停在<档位>决策点——<在等什么>` 收尾（批处理器判成败双指标之一）。"
+)
 TITLE_LINE_COWORK = "[OP-0828-N]【Cowork】接力文件核对"
 
 
@@ -409,7 +415,7 @@ class 形态六_子任务泳道opener含session标题(unittest.TestCase):
         "",
         "粘贴端：CC ｜ 泳道：示例泳道",
         "",
-        _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：建造到底，不设 session 标题。"),
+        _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：建造到底，不设 session 标题。", SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -422,7 +428,7 @@ class 形态六_子任务泳道opener含session标题(unittest.TestCase):
         "",
         "粘贴端：CC ｜ 泳道：示例泳道",
         "",
-        _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC, "做什么：建造到底。"),
+        _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC, "做什么：建造到底。", SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -983,7 +989,8 @@ class 形态八_子任务泳道块含未替换占位条目(unittest.TestCase):
         "### A1 · 示例泳道",
         "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
-            "读 ① 队列 §一 `#487` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。"),
+            "读 ① 队列 §一 `#487` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -1000,7 +1007,8 @@ class 形态八_子任务泳道块含未替换占位条目(unittest.TestCase):
             "1. 落地两处缺陷 ＋ 一道闸。",
             "",
             "不做什么：",
-            "- 不碰 `#522`。"),
+            "- 不碰 `#522`。",
+            SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -1069,6 +1077,102 @@ class 形态八_子任务泳道块含未替换占位条目(unittest.TestCase):
         子任务泳道块，F8 天然不覆盖它——与 F6 同一条既有性质，此处钉死防回归。"""
         self.assertNotIn(
             "F8", {f.form for f in M.scan_single_file(M.REPO_ROOT / M.SKELETON_CANON_REL)})
+
+
+class 形态九_子任务泳道块缺收工哨兵(unittest.TestCase):
+    """⑨ 子任务泳道 opener 块**缺收工哨兵行**（`OPENER_DONE`／`OPENER_PARTIAL`）⇒ 告警
+    （队列 §一 `#550`，2026-09-10）。
+
+    🔑 **成因不是活没做完，是收工协议没走完**：`工具-opener批处理执行v2.ps1` 判成败靠
+    `claude` 退出码 ＋ 顶格哨兵两个指标，2026-09-10 四条泳道（`507`／`529`／`544`／
+    `k2-externalize`）活全做了、无一 `OPENER_DONE`——因为【CC · 子任务泳道】变体此前
+    一个字没提哨兵。**一个把成功报成失败的判据比没有判据更糟**。修法主体在生成器
+    （强制注入），本形态是它的机器守：正本改了而生成器没跟、或起草人手抄漏了，当场红。
+    """
+
+    _LANE_WITH_SENTINEL = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#550` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            SENTINEL_LINE),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0910-R]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    _LANE_WITHOUT_SENTINEL = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#550` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            "🔴 并行上限 4，超出排下一波，错峰 ≥90 秒（构建环境瘦身第三轮方案 P4）。"),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0910-R]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    @staticmethod
+    def _scan(text: str) -> set[str]:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件.md"
+            p.write_text(text, encoding="utf-8")
+            return {f.form for f in M.scan_single_file(p)}
+
+    def test_反例_泳道块缺哨兵行_命中F9(self):
+        """2026-09-10 `B-0910_三泳道续排` 看护件 §三 的真实现场形态。"""
+        self.assertIn("F9", self._scan(self._LANE_WITHOUT_SENTINEL))
+
+    def test_正例_带哨兵行_不命中任何形态(self):
+        """🔴 验收条款「两侧都能关掉」：补上哨兵行 ⇒ F9 消失，且不牵连出别的形态。"""
+        self.assertEqual(self._scan(self._LANE_WITH_SENTINEL), set())
+
+    def test_只有一半哨兵不算(self):
+        """判据要求 DONE 与 PARTIAL 同现于一行——只写「以 OPENER_DONE 收尾」等于没告诉
+        子任务停在决策点时该怎么收，批处理仍会判 NO-SENTINEL。"""
+        half = _md(TITLE_LINE_CC, SETTINGS_CC, "读 ① 队列 §一 `#550`。", "🔴 收工以 `OPENER_DONE` 收尾。")
+        forms = {f for f, _ in M.check_block(_only_block(half), is_subtask_lane=True)}
+        self.assertIn("F9", forms)
+
+    def test_非子任务泳道块不受约束(self):
+        """收窄：没有 `## 三bis` 的普通派单件／【Cowork】块不判——它们不经批处理器的
+        哨兵判据（看护者开场词是人粘贴的交互会话，Cowork 桌根本没有批处理器）。"""
+        md = _md(TITLE_LINE_COWORK, SETTINGS_COWORK, "读 ① 队列 §一 `#550`。")
+        self.assertNotIn("F9", _forms(md))
+        cc_top = _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC, "读 ① 队列 §一 `#550`。")
+        self.assertNotIn("F9", _forms(cc_top))
+
+    def test_看护者自己的开场词不受约束(self):
+        """`## 三bis` 之后的块＝看护者（交互会话），不判 F9。"""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件.md"
+            p.write_text(self._LANE_WITHOUT_SENTINEL, encoding="utf-8")
+            findings = M.scan_single_file(p)
+            watcher_line = M._watcher_section_line(self._LANE_WITHOUT_SENTINEL)
+            self.assertFalse(any(f.form == "F9" and f.line >= watcher_line for f in findings))
+
+    def test_明细指向生成器与批处理器(self):
+        detail = dict(M.check_block(_only_block(_md(TITLE_LINE_CC, SETTINGS_CC, "读。")),
+                                    is_subtask_lane=True))["F9"]
+        self.assertIn("OPENER_DONE", detail)
+        self.assertIn("工具-opener生成.py", detail)
+        self.assertIn("NO-SENTINEL", detail)
+
+    def test_生效日与明细分组均已登记(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F9"], date(2026, 9, 10))
+        self.assertIn("F9", M.FORM_TITLE)
+
+    def test_格式正本自身不命中F9(self):
+        """骨架的 `## §三bis` 标题带 `§`、锚不上 ⇒ 其块不是子任务泳道块，F9 不覆盖它（同 F6／F8）。"""
+        self.assertNotIn(
+            "F9", {f.form for f in M.scan_single_file(M.REPO_ROOT / M.SKELETON_CANON_REL)})
+
+    def test_骨架子任务泳道节自带哨兵行(self):
+        """正本必须教这一行——否则照抄者的成品会缺它，F9 只能在成品上报、报不到源头。"""
+        text = (M.REPO_ROOT / M.SKELETON_CANON_REL).read_text(encoding="utf-8")
+        start = text.index("## 【CC · 子任务泳道】骨架")
+        section = text[start:text.index("\n## ", start + 1)]
+        block = M.iter_fenced_blocks(section)[0]
+        self.assertTrue(any(M.SENTINEL_LINE_RE.search(ln) for ln in block.lines),
+                        "骨架【CC · 子任务泳道】块缺收工哨兵行")
 
 
 if __name__ == "__main__":

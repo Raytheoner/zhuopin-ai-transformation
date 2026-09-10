@@ -8,6 +8,7 @@
 - [ ] 0.2 核 `cc-hooks-p3` 当前状态（是否已 apply、形态编号是否已占用 ⑧）——**propose 期未核，此处必须实查**（手段：`ls openspec/changes/`／该包 `tasks.md` 勾选状态／`grep 形态⑧ 0-学习与工具/工具-opener块lint.py`）。
 - [ ] 0.3 核 `#504`（心跳件可见性）是否已改变 `reports/` 的处置口径——若已变，重算决策点 ②(c)／③-2(b) 的代价。
 - [ ] 0.4 确认同泳道 A4（`#487`）已收工、无未提交改动占用 `opener骨架.md`／`工具-opener块lint.py`。
+- [ ] 0.5 🔴 **先后已定（2026-09-10 `OP-0910-R`，队列 `#531` ⑵）**：`opener-id-claim-semantics` 已随 `#549` 泳道先 apply（分支 `claude/op0910r-549-550-opener-infra`，同触 `工具-opener生成.py`：取号查重段新增占位台账 `_claim_op_id`／`CLAIMS_FILE`）⇒ 本包 apply 前须 rebase 到其之后；0.2 记的形态编号 ⑧ 已被 `#487` 占、**⑨ 已被 `#550`（收工哨兵）占**，本包须另取 ⑩ 起。
 
 ## 1. 取证与口径（🔴 必须先于实现）
 
