@@ -164,6 +164,24 @@ editlock-hold-scope-and-wip-block，Shao Peishen 当日审 design 六个决策�
           存量 24／16 已超限，此后任何新建机制行的 session 都会当场撞上
           这道门——这是预期效果，不是回归。
 
+措施 C 换量具（队列 §四 #58 ＋ `OP-0911-D` propose／`OP-0911-N` apply 批 1，
+openspec 变更包 mechanism-wip-staleness-gate，Shao Peishen 2026-09-11 答 `2a`
+审过 design 六点）：⑨ 的判据由「开着几条机制行」换成直接测目标变量
+「**有几条开着的行已经不动了**」——
+
+  量具    `STALE` ＝ 计入 WIP 的行中，所在物理行末次 commit（`git blame
+          --incremental` author-time，工作区未提交按今天）距今 > N 天的条数；
+          N＝7、K＝3（现网三次实测定死，`--stale-days`／`--stale-cap` 可覆盖）。
+  批 1    **告警模式** `MECHANISM_WIP_GATE_MODE = "warn"`：行数闸照旧拒绝，
+          陈旧度只算不拦、每次触发回显两个数＋最老 K+1 条；持续 7 天。
+  批 2    切 `"block"` 须先过 D-D 三条前置（告警有没有被当回事／榜首 3 条
+          抽查／非主 checkout 取龄实测）＋ Shao Peishen 一字母；同批删
+          `--mechanism-wip-cap` 与 `MECHANISM_WIP_CAP_DEFAULT`（一进一出）。
+  顺手修  🛑 排除认两列（`#381` 形态误计 4 行）＋ 写侧非阻断引导；新增行本身
+          不计入时不阻断、不要求豁免（`#58` ⑸，三条假豁免的来源）。
+  不做    取龄失败一律 fail-open **但出声**（design D-E）；不建缓存、不写状态
+          文件；不追改存量 🛑 写法与 15 条 `WIP豁免：`。
+
 队列 #285（因果断言证伪命令，openspec 变更包
 editlock-causal-assertion-falsifiability-gate）：④断言门槛新增一项独立
 检测——§一 状态列（剔除引号包裹片段后）一旦出现 P0/P1 定级 token，须在
@@ -687,7 +705,37 @@ STATUS_FIELD_RE = re.compile(
 #     机制行；
 #   余量 ＝ **1** 格。
 # **⇒ 22 ＝ 21 ＋ 0 ＋ 1。**
+#
+# 🔴 **迁移期保留、切阻断时删除**（队列 §四 #58 ＋ `OP-0911-D`，openspec 变更包
+# `mechanism-wip-staleness-gate`，Shao Peishen 2026-09-11 答 `2a` 审过 design）：
+# 行数上限这个量具已被 `#58` 自书的证伪判据判死（`WIP豁免：` 0 → 15、§二
+# 吞吐逆势上行、24 条豁免/🛑 行全部立进），且第三次抬上限＝废掉措施 C。故本
+# 常量与 `--mechanism-wip-cap` 只在 `MECHANISM_WIP_GATE_MODE == "warn"` 的
+# 7 天告警期内继续作为拒绝条件生效；切 `"block"` 的同一批**整条删除**，不留
+# 「仅提示」半边（协议〇.9 措施 B 一进一出）。
 MECHANISM_WIP_CAP_DEFAULT = 22
+# ── 措施 C 换量具：陈旧度闸（design D-A／D-D／D-E／D-F）──
+# 判据由「开着几条」换成直接测目标变量「有几条开着的行已经不动了」：
+#   STALE ＝ 计入 WIP 的行中，该行物理行末次 commit（`git blame` author-time）
+#            距今 > N 天的条数；STALE > K 才拒绝。
+# 🔴 模式切换载体＝本模块常量（D-F 甲）：**不做 CLI 开关**（每个会话各自决定
+# 拦不拦 ⇒ 闸不再是闸），**不写死日期自动切**（若那天 D-D 三条前置没满足，
+# 机器会替人做一个没人拍板的决定）。切阻断＝改成 `"block"` 并同批删上面的行数
+# 闸，是一次有 design 审前置的 apply（tasks.md §5，🟡 Shao Peishen 一字母）。
+MECHANISM_WIP_GATE_MODE = "warn"  # "warn"（告警期，行数闸照旧）| "block"（只认陈旧度）
+# N＝7、K＝3：2026-09-11 以现网计入行的真实提交时间三次实测定死（方案件 §D2、
+# 09:39、09:55 三跑 `STALE(7)=0`／`STALE(5)=4`／`STALE(3)=7`／`STALE(2)=9` 完全
+# 一致，最老行 6.96–6.97 天；`N=10` 永不触发＝悄悄废闸）。N 是「多久算不动」的
+# 语义尺度（跨过一轮值周巡检），K 是余量；观察期若发现机械改动污染严重，
+# **回 design 重定 N、不调 K**（D-A 缓解）。
+MECHANISM_WIP_STALE_DAYS_DEFAULT = 7
+MECHANISM_WIP_STALE_CAP_DEFAULT = 3
+# 取龄子进程超时：主 checkout 实测 6.9–8.0 s（09:39／09:55）、20:0x 再测 15.9 s
+# （文件 644 KB、900+ commit 触碰）；沙箱挂载盘倍率未知（rules/队列与落库已记
+# 「沙箱挂载盘上 git 极慢」）。超时**不拒绝、不静默**——打印带耗时与超时值的
+# 降级告警后按「本次未判陈旧」放行（D-E 甲）。若非主 checkout 实测普遍 >30 s，
+# 回 design 议缓存（D-E 丁）而不是静默调大（每次超时降级＝闸永远不生效）。
+MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT = 30
 # 子项 G（队列 #308 决策点 10）：跟进信串行原则闸——"前一封"发送状态属
 # **闭环四态**之一即视为已闭环；新增行任一单元格含此逃生阀标记即放行但留痕。
 #
@@ -1535,35 +1583,265 @@ def _count_mechanism_wip(section_one_text: str) -> tuple[int, list[str]]:
     另一种猜（且会把业务行算进机制上限）。故本函数照旧不计，但**每一条可动
     的缺域行都产出一条降级日志**，让"算少"这件事从不可见变成可见——与上面
     那条"状态字段缺失/非法"完全同一范式。
+
+    🔴 **🛑 排除认两列（2026-09-11，`OP-0911-N`，design D-B 甲）**：改前只看
+    状态列 `cells[5]` 的自然语言正文是否以 🛑 起首；而队列里人写 🛑 有两种
+    并存写法——落状态列、或落任务列（`#381` 的形态：任务列「🛑 **排队中·
+    暂非可动（…）** ━━━ …」、状态列不含 🛑）。实测 `#381`／`#382`／`#448`／
+    `#505` 四行正文自陈「排队中·暂非可动」却被计入，09:55 基数下认两列后
+    **27 → 23／22**（09:39 基数下 23 → 20）——认两列消掉的是**误计**，不单独
+    构成合规。判据现为「状态列或任务列任一以 🛑 起首即排除」；存量只写任务列
+    的行**不追改**（历史记录不追改），写侧改由 `_section_one_stop_marker_
+    column_warning` 引导落状态列（非阻断）。
+    **返回值签名不变**（仍是两项）；需要计入行号清单的调用方（取龄）改用
+    `_mechanism_wip_counted_rows`，两者共用 `_mechanism_wip_row_counts` 这一
+    套判据，不复制第二套。
     """
-    count = 0
+    numbers, degraded = _mechanism_wip_counted_rows(section_one_text)
+    return len(numbers), degraded
+
+
+def _mechanism_wip_row_counts(cells: list[str]) -> tuple[bool, str | None]:
+    """单行判据：这一行计不计入机制类可动 WIP。返回 (计入?, 降级日志或 None)。
+    `_count_mechanism_wip`／`_mechanism_wip_counted_rows`／release ⑨ 段收窄
+    `new_mechanism_rows` 时都调它——**判据只写这一处**。"""
+    if len(cells) <= 5:
+        return False, None
+    row_id = cells[0] if cells and cells[0] else "?"
+    status_value, domain_value, rest = _parse_status_domain_fields(cells[5])
+    if status_value is None:
+        return False, f"§一 #{row_id} 状态字段缺失/非法，已跳过 WIP 计数（非静默降级）"
+    if domain_value is None and status_value in MOVABLE_STATUS_VALUES:
+        # 只对**可动**状态告警：done/blocked/timed 本就不进计数，为它们
+        # 刷屏会让这条告警变成噪声，噪声化的告警等于没有（`#143` 教训）。
+        return False, (
+            f"§一 #{row_id} 状态为 [S:{status_value}]（可动）但**缺 [D:机|业] 域字段**，"
+            f"已跳过 WIP 计数 ⇒ 本次机制类 WIP 可能算少（非静默降级，队列 #523）。"
+            f"请用 `edit-row --section 一 --number {row_id} --set 状态=\"[S:{status_value}][D:机|业] …\"` 补齐。"
+        )
+    if domain_value != "机":
+        return False, None
+    if status_value == "done" or status_value == "blocked" or status_value.startswith("timed="):
+        return False, None
+    if _stop_marker_in_status(rest) or _stop_marker_in_task(cells[1]):
+        return False, None
+    return True, None
+
+
+def _stop_marker_in_status(status_rest: str) -> bool:
+    """状态列自然语言正文（去掉 `[S:][D:]` 字段与前导修饰符后）以 🛑 起首。"""
+    return status_rest.lstrip(STATUS_LEADING_STRIP_CHARS).startswith("🛑")
+
+
+def _stop_marker_in_task(task_cell: str) -> bool:
+    """任务列正文（去掉前导修饰符后）以 🛑 起首。🛑 出现在任务列**非起首**位置
+    （如「…见 🛑 说明」）不算——判据只认「以 🛑 起首」，防判据过宽。"""
+    return task_cell.lstrip(STATUS_LEADING_STRIP_CHARS).startswith("🛑")
+
+
+def _mechanism_wip_counted_rows(section_one_text: str) -> tuple[list[str], list[str]]:
+    """机制类可动 WIP 计入集的**行号清单**（按文中顺序）＋降级日志。
+    `len(清单) == _count_mechanism_wip()[0]` 恒成立（同一套判据）。"""
+    numbers: list[str] = []
     degraded: list[str] = []
-    for line, cells in _table_data_rows(section_one_text):
-        if len(cells) <= 5:
+    for _line, cells in _table_data_rows(section_one_text):
+        counted, note = _mechanism_wip_row_counts(cells)
+        if note is not None:
+            degraded.append(note)
+        if counted:
+            numbers.append(cells[0])
+    return numbers, degraded
+
+
+def _section_one_stop_marker_column_warning(cells: list[str]) -> str | None:
+    """写侧告警（design D-B 甲的另一半，spec「🛑 排除认两列」第三 Scenario）：
+    `[D:机]` 且状态可动的 §一 行，若 🛑 只落任务列、状态列自然语言正文不以 🛑
+    起首 ⇒ 返回一条**非阻断**引导文案；其余形态返回 None。
+    边界：🛑 落状态列的既有写法不响；`[D:业]` 不响；done／blocked／timed= 不响
+    （它们本就不进计数，为它们刷屏＝噪声化，`#143` 教训）。"""
+    if len(cells) <= SECTION_ONE_STATUS_COL:
+        return None
+    status_value, domain_value, rest = _parse_status_domain_fields(cells[SECTION_ONE_STATUS_COL])
+    if status_value is None or domain_value != "机" or status_value not in MOVABLE_STATUS_VALUES:
+        return None
+    if not _stop_marker_in_task(cells[1]) or _stop_marker_in_status(rest):
+        return None
+    row_id = cells[0].strip() if cells and cells[0].strip() else "?"
+    return (
+        f"§一 #{row_id} 的 🛑 只写在「任务」列、「状态」列自然语言正文不以 🛑 起首——"
+        f"🛑 的规范落点是**状态列**（`[S:{status_value}][D:机] 🛑 …`）。读侧判据已认两列、"
+        f"本行**不会**被计入机制类可动 WIP，本次写入照常；但两种写法并存会让下一个读队列的"
+        f"工具再撞一次同一坑（队列 §四 #58、`OP-0911-D` design D-B）。"
+    )
+
+
+# ── 措施 C 换量具：取龄（design D-A 甲／D-E 甲；tasks 3.3）──────────────
+#
+# 「末次真实活动」＝该行所在物理行在版本历史中的末次 commit 的 author-time，
+# 用 `git blame --incremental` 取：增量模式只出提交头与行号区间、不带正文，
+# 避开 644 KB 文件与 78 KB 长行。🔴 **只读、不写任何文件**（D-E 丁「缓存到
+# reports/」已否：`#322` `*.editlock.mutex.stale` 教训——凭空造出的文件形态
+# 没人回头看忽略规则）。
+#
+# 🔴 已知偏差（D-A，派单件点名必落纸）：blame 记的是这一行的**任何**改动。K2
+# 外置、每周清扫、称呼订正、并入审核这类**机械改动也会刷新时间** ⇒ STALE
+# **系统性偏低、是乐观估计**（09:55 实证：`OP-0911-A` 一笔回滚编辑让 4 行行龄
+# 归零）。漏报方向是「该拦没拦」而不是「不该拦却拦」——对写入咽喉而言是更
+# 安全的一侧。缓解＝值周巡检对行龄榜首 3 条人工抽查（tasks 4.2）。**不**在
+# blame 层按 commit message 区分机械／实质（sweep 自动 commit 会把同批次里人
+# 的实质回写一并带走，过滤反而把实质活动也滤掉），留作 Open Question。
+
+_BLAME_INCREMENTAL_HEAD_RE = re.compile(r"^([0-9a-f]{40}) (\d+) (\d+) (\d+)$")
+_ZERO_SHA = "0" * 40
+_SECTION_ONE_ROW_HEAD_RE = re.compile(r"^\|\s*(\d+)\s*\|")
+
+
+def _run_git_blame_incremental(repo_root: Path, queue_path: str, timeout: float) -> str:
+    """跑 `git blame --incremental -- <queue_path>`，返回 stdout。
+    单测经 monkeypatch 整个替换本函数注入假输出（不真跑 git）。
+    异常一律**原样上抛**，由 `_mechanism_wip_stale_rows` 统一转成降级告警：
+    `FileNotFoundError`（git 不在 PATH）／`subprocess.TimeoutExpired`（超时，
+    `subprocess.run` 在抛出前已 kill 子进程）／`subprocess.CalledProcessError`
+    （非零退出，stderr 随异常带出）。"""
+    result = subprocess.run(
+        ["git", "blame", "--incremental", "--", queue_path],
+        cwd=repo_root, capture_output=True, timeout=timeout,
+        encoding="utf-8", errors="replace",
+    )
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, ["git", "blame", "--incremental", "--", queue_path],
+            output=result.stdout, stderr=result.stderr,
+        )
+    return result.stdout
+
+
+def _parse_blame_incremental(output: str) -> dict[int, tuple[str, int | None]]:
+    """解析 `--incremental` 输出 ⇒ {物理行号: (sha, author-time)}。
+    格式：每组以 `<sha> <src_line> <result_line> <n_lines>` 起头，**同一 sha 第二次
+    出现时不再重复 author-*／committer-*／summary 头**（只给头行＋ `filename`），
+    故 author-time 按 sha 记忆后回填。全零 sha（工作区未提交）git 也会给
+    author-time（＝当前时刻），调用方按「今天」计。"""
+    line_sha: dict[int, str] = {}
+    sha_time: dict[str, int] = {}
+    current_sha: str | None = None
+    for raw in output.splitlines():
+        head = _BLAME_INCREMENTAL_HEAD_RE.match(raw)
+        if head:
+            current_sha = head.group(1)
+            start, count = int(head.group(3)), int(head.group(4))
+            for lineno in range(start, start + count):
+                line_sha[lineno] = current_sha
             continue
-        row_id = cells[0] if cells and cells[0] else "?"
-        status_value, domain_value, rest = _parse_status_domain_fields(cells[5])
-        if status_value is None:
-            degraded.append(f"§一 #{row_id} 状态字段缺失/非法，已跳过 WIP 计数（非静默降级）")
-            continue
-        if domain_value is None and status_value in MOVABLE_STATUS_VALUES:
-            # 只对**可动**状态告警：done/blocked/timed 本就不进计数，为它们
-            # 刷屏会让这条告警变成噪声，噪声化的告警等于没有（`#143` 教训）。
+        if current_sha is not None and raw.startswith("author-time "):
+            try:
+                sha_time[current_sha] = int(raw.split()[1])
+            except (IndexError, ValueError):
+                pass
+    return {lineno: (sha, sha_time.get(sha)) for lineno, sha in line_sha.items()}
+
+
+def _section_one_physical_lines(queue_text: str) -> dict[str, int]:
+    """§一 分区内「以 `|<编号>|` 起首的物理行」⇒ {编号: 1 起算的行号}。
+    只扫 §一（§四 有自己的编号序列，`#58` 在两个分区里都存在），同一编号取
+    首次出现。行号以 `\\n` 计，与 `git blame` 的行号口径一致。"""
+    bounds = _section_bounds(queue_text, "一")
+    if bounds is None:
+        return {}
+    start, end = bounds  # 字符偏移，不是行号（memory：`_section_bounds` 返回字符偏移）
+    first_line = queue_text.count("\n", 0, start) + 1
+    mapping: dict[str, int] = {}
+    for offset, line in enumerate(queue_text[start:end].split("\n")):
+        m = _SECTION_ONE_ROW_HEAD_RE.match(line)
+        if m:
+            mapping.setdefault(m.group(1), first_line + offset)
+    return mapping
+
+
+def _mechanism_wip_stale_rows(
+    queue_text: str, counted_numbers: list[str], *,
+    days: float, timeout: float, repo_root: Path, queue_path: str,
+) -> tuple[list[tuple[str, float]] | None, list[str]]:
+    """对计入 WIP 的行取龄，返回 (陈旧行清单, 降级日志)。
+
+    · 陈旧行清单 ＝ `[(编号, 行龄天数), …]`，只含行龄 > `days` 的行，按行龄
+      **降序**；取龄整体失败（子进程起不来／超时／非零退出／输出不可解析）时
+      为 **`None`**——调用方据此打印「本次未判陈旧」，**不得**把它当成 `STALE=0`
+      （把降级伪装成合规，与 `#523`「静默跳过 ⇒ 算少」同形）。
+    · 降级日志：整体失败时一条含原因；部分失败（某编号映射不到物理行／blame
+      输出未覆盖该行／该组缺 author-time）时逐条点名，其余行照常判定。
+    · 全零 sha（工作区未提交）按今天计（行龄 0）、不计陈旧、不降级。
+    · `queue_text` 须是**整份**队列正文（行号映射要的是文件绝对行号，不是 §一
+      相对行号——tasks 3.3 写的形参名 `section_one_text` 在此按整份文本实现）。
+    🔴 **只读，不写任何文件。**
+    """
+    if not counted_numbers:
+        return [], []
+    degraded: list[str] = []
+    started = time.monotonic()
+    try:
+        output = _run_git_blame_incremental(repo_root, queue_path, timeout)
+    except subprocess.TimeoutExpired:
+        elapsed = time.monotonic() - started
+        return None, [
+            f"取龄子进程超时（耗时 {elapsed:.1f} s，超时上限 {timeout} s，"
+            f"`git blame --incremental -- {queue_path}`，子进程已终止）⇒ 本次未判陈旧，按放行处理"
+            f"（降级出声，design D-E；沙箱挂载盘上 git 极慢，可用 --stale-probe-timeout 调大，"
+            f"普遍 >30 s 请回 design 议缓存而不是静默调大）。"
+        ]
+    except FileNotFoundError as exc:
+        return None, [
+            f"取龄子进程启动失败（{exc}）⇒ 本次未判陈旧，按放行处理（降级出声，design D-E）。"
+        ]
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        return None, [
+            f"取龄子进程非零退出（rc={exc.returncode}，stderr：{stderr or '<空>'}）"
+            f"⇒ 本次未判陈旧，按放行处理（降级出声，design D-E）。"
+        ]
+    except OSError as exc:
+        return None, [
+            f"取龄子进程异常（{exc}）⇒ 本次未判陈旧，按放行处理（降级出声，design D-E）。"
+        ]
+    line_info = _parse_blame_incremental(output)
+    if not line_info:
+        head = output.strip().splitlines()[:1]
+        return None, [
+            f"取龄输出不可解析（未读到任何 `<sha> <行号> <行号> <n>` 头行；首行："
+            f"{head[0] if head else '<空>'}）⇒ 本次未判陈旧，按放行处理（降级出声，design D-E）。"
+        ]
+    mapping = _section_one_physical_lines(queue_text)
+    now = time.time()
+    stale: list[tuple[str, float]] = []
+    for number in counted_numbers:
+        lineno = mapping.get(number)
+        if lineno is None:
             degraded.append(
-                f"§一 #{row_id} 状态为 [S:{status_value}]（可动）但**缺 [D:机|业] 域字段**，"
-                f"已跳过 WIP 计数 ⇒ 本次机制类 WIP 可能算少（非静默降级，队列 #523）。"
-                f"请用 `edit-row --section 一 --number {row_id} --set 状态=\"[S:{status_value}][D:机|业] …\"` 补齐。"
+                f"§一 #{number} 计入 WIP 但编号映射不到 `|{number}|` 起首的物理行"
+                f"⇒ 该行不参与陈旧计数（其余行照常判定，降级出声）。"
             )
             continue
-        if domain_value != "机":
+        info = line_info.get(lineno)
+        if info is None:
+            degraded.append(
+                f"§一 #{number}（物理行 {lineno}）blame 输出未覆盖该行"
+                f"⇒ 该行不参与陈旧计数（其余行照常判定，降级出声）。"
+            )
             continue
-        if status_value == "done" or status_value == "blocked" or status_value.startswith("timed="):
+        sha, author_time = info
+        if sha == _ZERO_SHA:
+            continue  # 工作区未提交 ＝ 今天，行龄 0
+        if author_time is None:
+            degraded.append(
+                f"§一 #{number}（物理行 {lineno}，{sha[:7]}）blame 组缺 author-time"
+                f"⇒ 该行不参与陈旧计数（其余行照常判定，降级出声）。"
+            )
             continue
-        natural_text = rest.lstrip(STATUS_LEADING_STRIP_CHARS)
-        if natural_text.startswith("🛑"):
-            continue
-        count += 1
-    return count, degraded
+        age_days = max(0.0, (now - author_time) / 86400.0)
+        if age_days > days:
+            stale.append((number, age_days))
+    stale.sort(key=lambda item: -item[1])
+    return stale, degraded
 
 
 LIVE_SECTION_HEADING_RE = re.compile(r"^## ([一二三四])、", re.MULTILINE)
@@ -3148,6 +3426,18 @@ def cmd_edit_row(args: argparse.Namespace) -> int:
         for problem in domain_problems:
             print(f"⚠ {problem}")
             print("  （本次未改动「状态」格，按存量处理：只告警、不阻断。）")
+        # ── 措施 C 换量具 D-B 写侧告警（`OP-0911-N`）：🛑 只落任务列 ⇒ 引导落状态列 ──
+        # 只在**本次写入的值**触发时响（改的是任务列或状态列、且改后形态命中）；
+        # 只改触碰区之类的存量行编辑不响——不为存量行刷屏（`#143` 噪声化教训）。
+        marker_cols_touched = any(
+            queue_table.resolve_column_index("一", name) in (1, SECTION_ONE_STATUS_COL)
+            for name in changed_values
+        )
+        if marker_cols_touched:
+            stop_hint = _section_one_stop_marker_column_warning(new_cells)
+            if stop_hint:
+                print(f"⚠ {stop_hint}")
+                print("  （非阻断：本次写入照常；建议把 🛑 挪到状态列 `[S:x][D:机] 🛑 …`。）")
 
     new_line = "| " + " | ".join(new_cells) + " |"
 
@@ -3316,6 +3606,12 @@ def cmd_append_row(args: argparse.Namespace) -> int:
             for problem in domain_problems:
                 print(f"  - {problem}")
             return 1
+        # 措施 C 换量具 D-B 写侧告警（`OP-0911-N`）：新行整行都是本次写的，
+        # 🛑 只落任务列即响；非阻断，写入照常。
+        stop_hint = _section_one_stop_marker_column_warning(parsed_cells)
+        if stop_hint:
+            print(f"⚠ {stop_hint}")
+            print("  （非阻断：本次写入照常；建议把 🛑 挪到状态列 `[S:x][D:机] 🛑 …`。）")
 
     def _compose(current_text: str) -> str | None:
         """把 `new_line` 插到 §{section} 表格末尾，返回整份新正文；结构不可解析
@@ -4576,6 +4872,34 @@ def _validate_release_structure(
       **上限值 16 不动**（§四 #58 ⑴：第三次为迁就现状改口径即等于废掉措施
       C）；**存量 24／16 的清理不由本项代做**（§四 #58 ⑵ 交给"A 节收口后
       复核、仍超限则强制关行至 16"）。
+      🔴 **2026-09-11 换量具（队列 §四 #58 ＋ `OP-0911-D`／`OP-0911-N`，openspec
+      变更包 `mechanism-wip-staleness-gate`，Shao Peishen 答 `2a` 审过 design
+      六点）**：「开着几条」这个代理变量已被 `#58` 自书的证伪判据判死（豁免
+      0 → 15；§二吞吐 37 → 57 逆势上行；24 条豁免/🛑 行全部立进），上限又被
+      现实抬过两次（8 → 16 → 22）而第三次抬＝废掉措施 C。本项**同一触发点**
+      上改测目标变量本身：`STALE` ＝ 计入行中所在物理行末次 commit 距今 > N
+      天的条数（`_mechanism_wip_stale_rows`，`git blame --incremental` 只读子
+      进程，N＝7／K＝3 现网三次实测定死）。
+        · **触发条件逐字不变**（仍只在真正新增 `[D:机]` §一 行时判，上面那条
+          红字一字不动）；
+        · **D-C 收窄**：`new_mechanism_rows` 只收「本次新增**且计入**」的行；
+          新增的全是 🛑 起首／blocked／timed= 时只回显、不判定、不要求豁免
+          （消掉 `#448`／`#522`／`#526` 那种「本行本就不计入」的假豁免）；
+        · **D-B 认两列**：🛑 落状态列或任务列任一即排除（`#381`／`#382`／`#448`／
+          `#505` 四行误计的来源）；
+        · **D-F 模式常量** `MECHANISM_WIP_GATE_MODE`："warn"（告警期 7 天）＝
+          行数闸照旧拒绝、陈旧度只回显两个数＋最老 K+1 条；"block"＝只认
+          STALE > K、行数上限与 `--mechanism-wip-cap` 同批退休；切换＝一次有
+          design 审前置的 apply，不做 CLI 开关、不写死日期；
+        · 🔴 **D-A 乐观偏差**：blame 记的是该行**任何**改动，K2 外置／清扫／
+          称呼订正这类机械改动也刷新时间 ⇒ `STALE` 系统性偏低——漏报方向是
+          「该拦没拦」，对写入咽喉是更安全的一侧；缓解＝值周巡检抽查行龄榜首
+          3 条，污染严重则回 design 重定 N、不调 K；
+        · 🔴 **D-E fail-open 但必须出声**：取龄失败（git 不在 PATH／超时／非零
+          退出／输出不可解析／编号映射不到物理行）**不拒绝、不静默**——闸自身
+          的故障不得变成全项目写不进队列；但「静默回退不产生信号」是根
+          CLAUDE.md 点名的失效形态，故降级逐条打印、回显写「本次未判陈旧」
+          而**不得**写成 `STALE=0`（把降级伪装成合规＝`#523` 同形）。
     ⑩因果断言证伪命令（仅 §一，队列 #285）：状态列（同④先剔除引号包裹
       片段）一旦含 P0/P1 定级 token，须在同一单元格内含至少一处反引号
       包裹的非空片段，缺失即报——与④是两条独立校验，一行可同时触发两者
@@ -4609,6 +4933,9 @@ def _validate_release_structure(
     # bool 改为清单，因为逃生阀要逐行核对行内 `WIP豁免：` 标记，且拒绝文案
     # 须点名"本次新增的是哪一行"（design.md 决策点 6）。
     new_mechanism_rows: list[tuple[str, str]] = []
+    # ⑨用（design D-C，2026-09-11）：本次新增但**不计入** WIP 的 [D:机] 行编号
+    # （🛑 起首／blocked／timed=）——只回显、不判定、不要求豁免。
+    new_mechanism_rows_excluded: list[str] = []
 
     for label, expected_cols in SECTION_COLUMN_COUNTS.items():
         new_text = new_sections.get(label, "")
@@ -4842,49 +5169,126 @@ def _validate_release_structure(
                 if cells[0].isdigit() and int(cells[0]) not in old_numbers:
                     _, domain_value, _ = _parse_status_domain_fields(cells[5])
                     if domain_value == "机":
-                        new_mechanism_rows.append((cells[0], cells[5]))
+                        # design D-C 甲（`#58` ⑸ 修法⑴，2026-09-11）：新增行按
+                        # **同一套**计入判据分成「计入」与「不计入」两桶——判定与
+                        # 逃生阀只针对前者，后者只回显。
+                        counted, _note = _mechanism_wip_row_counts(cells)
+                        if counted:
+                            new_mechanism_rows.append((cells[0], cells[5]))
+                        else:
+                            new_mechanism_rows_excluded.append(cells[0])
 
             if label in ("一", "四"):
                 touched_for_hold_consistency.append((line, cells, label))
 
     violations.extend(_validate_followup_hold_consistency(touched_for_hold_consistency, repo_root))
 
-    if new_mechanism_rows:
+    if new_mechanism_rows or new_mechanism_rows_excluded:
         # ⑨ 阻断（队列 §四 #58 ⑶，2026-08-17）：超限进 violations，release 被
         # 拒绝、锁保持占用。**触发条件与改造前逐字不变**——仅在本次持锁期间
         # 真正新增了 [D:机] §一 行时才重算判定，理由见 docstring ⑨ 段那条
         # "把自己锁在门外"的红字。
+        # 措施 C 换量具（`OP-0911-N`，2026-09-11）：同一触发点上多做一次取龄，
+        # `MECHANISM_WIP_GATE_MODE` 决定谁是拒绝条件（"warn"＝行数照旧、陈旧度
+        # 只回显；"block"＝只认陈旧度）。取龄只读、失败非静默放行（D-E）。
         cap = args.mechanism_wip_cap
-        wip_count, degraded = _count_mechanism_wip(new_sections.get("一", ""))
+        stale_days = args.stale_days
+        stale_cap = args.stale_cap
+        section_one_text = new_sections.get("一", "")
+        counted_numbers, degraded = _mechanism_wip_counted_rows(section_one_text)
+        wip_count = len(counted_numbers)
         for note in degraded:
             print(f"⚠ {note}")
-        if wip_count > cap:
-            # 🔴 队列 §一 #454（2026-09-06，OP-0906-N，Shao Peishen 答 D3=(a)）：
-            # **改判候选接线已在此退休**（one-in-one-out）。原实现在这里顺带算
-            # 一次候选清单并拼进拒绝文案，但它的读者恰恰是**唯一改不动那些候选
-            # 行的那个人**——被拦的 session 无权改他人的行，能做的只有给自己标
-            # 🛑 排队（`#439`／`#440`／`#447`／`#448`／`#452` 五行全是这么来的）。
-            # 候选改由 `工具-落库sweep.py` 第 12 类常驻轮次每小时读一次
-            # `triage-candidates --json`、推给有权改判的人。留着这条接线等于同
-            # 一份判据在两个轮次上各跑一遍（`#366`「两套判据各自轮询」教训）。
-            # **退的是接线，不是判据**：`_suggest_status_reclassification()`／
-            # `_render_reclassification_candidates()`／`STALE_STATUS_PHRASES`
-            # 原样留在本模块，既有单测保留。
-            violations.extend(
-                _mechanism_wip_over_cap_violations(args, new_mechanism_rows, wip_count, cap)
+        stale_rows, stale_degraded = _mechanism_wip_stale_rows(
+            current_text, counted_numbers,
+            days=stale_days, timeout=args.stale_probe_timeout,
+            repo_root=repo_root, queue_path=args.file,
+        )
+        for note in stale_degraded:
+            print(f"⚠ 取龄降级：{note}")
+        stale_echo = _mechanism_wip_stale_echo(stale_rows, stale_days, stale_cap)
+        if new_mechanism_rows_excluded:
+            shown = "／".join(f"#{num}" for num in new_mechanism_rows_excluded)
+            print(
+                f"ⓘ 本次新增机制行 {shown} 不计入机制类可动 WIP（🛑 起首／blocked／timed=），"
+                f"与超限无关、不要求写豁免标记（`#58` ⑸ 修法⑴，design D-C）。"
+                f"存量回显：{stale_echo}"
+                + (f"；机制类可动 WIP {wip_count}／{cap}" if MECHANISM_WIP_GATE_MODE == "warn" else "")
+                + "。"
             )
+        if not new_mechanism_rows:
+            return violations
+        if MECHANISM_WIP_GATE_MODE == "warn":
+            # 告警期：行数闸照旧是拒绝条件；陈旧度算了只回显（含最老 K+1 条）。
+            if wip_count > cap:
+                # 🔴 队列 §一 #454（2026-09-06，OP-0906-N，Shao Peishen 答 D3=(a)）：
+                # **改判候选接线已在此退休**（one-in-one-out）。原实现在这里顺带算
+                # 一次候选清单并拼进拒绝文案，但它的读者恰恰是**唯一改不动那些候选
+                # 行的那个人**——被拦的 session 无权改他人的行，能做的只有给自己标
+                # 🛑 排队（`#439`／`#440`／`#447`／`#448`／`#452` 五行全是这么来的）。
+                # 候选改由 `工具-落库sweep.py` 第 12 类常驻轮次每小时读一次
+                # `triage-candidates --json`、推给有权改判的人。留着这条接线等于同
+                # 一份判据在两个轮次上各跑一遍（`#366`「两套判据各自轮询」教训）。
+                # **退的是接线，不是判据**：`_suggest_status_reclassification()`／
+                # `_render_reclassification_candidates()`／`STALE_STATUS_PHRASES`
+                # 原样留在本模块，既有单测保留。
+                violations.extend(_mechanism_wip_over_cap_violations(
+                    args, new_mechanism_rows, wip_count, cap,
+                    stale_rows=stale_rows, stale_days=stale_days, stale_cap=stale_cap,
+                ))
+            else:
+                numbers = "／".join(f"#{num}" for num, _ in new_mechanism_rows)
+                stale_over = stale_rows is not None and len(stale_rows) > stale_cap
+                print(
+                    f"ⓘ 措施 C 陈旧度闸（告警期，未阻断）：{stale_echo}；"
+                    f"机制类可动 WIP {wip_count}／{cap}——本次新增机制行 {numbers}。"
+                    + ("🔴 陈旧行已超 K，**7 天后此项将阻断**（design D-D）；请推进或关闭上列最老行。"
+                       if stale_over else "7 天后此项将阻断（design D-D）。")
+                )
+        else:
+            # 阻断模式：只认 STALE > K；行数不再是拒绝条件、也不回显上限。
+            if stale_rows is not None and len(stale_rows) > stale_cap:
+                violations.extend(_mechanism_wip_over_cap_violations(
+                    args, new_mechanism_rows, wip_count, cap,
+                    stale_rows=stale_rows, stale_days=stale_days, stale_cap=stale_cap,
+                ))
+            else:
+                numbers = "／".join(f"#{num}" for num, _ in new_mechanism_rows)
+                print(f"ⓘ 措施 C 陈旧度闸：{stale_echo}——本次新增机制行 {numbers}，放行。")
 
     return violations
 
 
+def _mechanism_wip_stale_echo(
+    stale_rows: list[tuple[str, float]] | None, stale_days: float, stale_cap: int,
+) -> str:
+    """回显串：`STALE(N天)=S／K` ＋ 最老 K＋1 条（编号＋天数）；取龄整体失败时
+    **不得**写成 `STALE=0`，改写「本次未判陈旧」（防把降级伪装成合规，2.8）。"""
+    days_label = f"{stale_days:g}"
+    if stale_rows is None:
+        return f"STALE({days_label}天)=本次未判陈旧（取龄降级，见上方 ⚠）／{stale_cap}"
+    head = f"STALE({days_label}天)={len(stale_rows)}／{stale_cap}"
+    if not stale_rows:
+        return head
+    shown = "、".join(f"#{num}（{age:.1f} 天）" for num, age in stale_rows[: stale_cap + 1])
+    return f"{head}（最老：{shown}）"
+
+
 def _mechanism_wip_over_cap_violations(
     args: argparse.Namespace, new_mechanism_rows: list[tuple[str, str]],
-    wip_count: int, cap: int,
+    wip_count: int, cap: int, *,
+    stale_rows: list[tuple[str, float]] | None, stale_days: float, stale_cap: int,
 ) -> list[str]:
     """⑨ 超限时的逃生阀判定与拒绝文案（队列 §四 #58 ⑶，design.md 决策点
     5/6）。逃生阀须**两个条件同时到位**才放行：① release 传入
     `--force-mechanism-wip` 开关（不携带理由文本）；② 本次新增的机制行状态
     列内写明 `WIP豁免：<理由>`。缺任一即拒绝，并指出缺的是哪一个。
+
+    措施 C 换量具（`OP-0911-N`，2026-09-11，tasks 3.5）：文案改写为**陈旧行清单
+    （最老 K＋1 条，编号＋天数）放在行数之前**；告警期明写「7 天后此项将阻断」；
+    出路①改为「推进或关闭上列最老行」。`MECHANISM_WIP_GATE_MODE` 决定 head
+    说的是哪条判据超了（"warn"＝行数超上限；"block"＝STALE > K）。**逃生阀
+    两条件与三个分支的判定逐字不变。**
 
     **一次新增多条机制行时，要求每一条都各自写明理由**（spec 原文按单条
     表述，此处是它在多行输入下的显式取舍，不是加码）：每一条新行都是一次
@@ -4909,14 +5313,27 @@ def _mechanism_wip_over_cap_violations(
     numbers = "／".join(f"#{num}" for num, _ in new_mechanism_rows)
     # 决策点 6：拒绝必须**可行动**，否则只是把噪音从"每次都响"换成"每次都
     # 堵"。文案含当前计数与上限、本次新增的是哪一行、两条出路的确切写法。
-    head = (
-        f"§一 机制类可动 WIP 当前 {wip_count}／{cap}，已超上限（协议〇.9 措施 C，"
-        f"队列 §四 #58 ⑶：2026-08-17 起由提示改为阻断）——本次新增机制行 {numbers}。"
-    )
+    # 换量具后：陈旧行清单（最老 K+1 条）排在行数之前——两套判据并存的告警期
+    # 里，操作者可能只看熟的那个数（design Risks），把该看的放前面。
+    stale_echo = _mechanism_wip_stale_echo(stale_rows, stale_days, stale_cap)
+    if MECHANISM_WIP_GATE_MODE == "warn":
+        head = (
+            f"§一 措施 C 陈旧度 {stale_echo}；机制类可动 WIP 当前 {wip_count}／{cap}，已超上限"
+            f"（协议〇.9 措施 C，队列 §四 #58 ⑶：2026-08-17 起由提示改为阻断；"
+            f"换量具告警期，7 天后此项将改按陈旧度阻断、行数上限退休——`OP-0911-D` design D-D）"
+            f"——本次新增机制行 {numbers}。"
+        )
+    else:
+        head = (
+            f"§一 机制类可动 WIP：{stale_echo}，陈旧行已超允许条数 K（N={stale_days:g} 天；"
+            f"协议〇.9 措施 C 换量具，队列 §四 #58＋`OP-0911-D`）——本次新增机制行 {numbers}。"
+        )
     ways_out = (
         "两条出路："
-        "⑴ 先关闭一条既有机制类可动行（把其状态字段改为 `[S:done]`，"
-        "或让正文以 🛑 起首），使计数回到上限内后重试；"
+        "⑴ 推进或关闭上列最老行（实质推进后随批次提交、把其状态字段改为 `[S:done]`、"
+        "或让状态列正文以 🛑 起首），使陈旧行数回到 K 以内"
+        + ("、行数回到上限内" if MECHANISM_WIP_GATE_MODE == "warn" else "")
+        + "后重试；"
         f"⑵ 若确属紧急必须此时立行，在本次新增行的状态列内写明"
         f"「{MECHANISM_WIP_WAIVER_MARKER}<理由>」，并给 release 加"
         f" `--force-mechanism-wip` 开关（两者缺一不可）。"
@@ -6889,7 +7306,29 @@ def main() -> int:
         help=f"队列 #308 决策点 6：机制类可动 WIP 上限（默认 {MECHANISM_WIP_CAP_DEFAULT}，"
              "对齐协议〇.9 措施 C）。本次持锁期间新增了 [D:机] 的 §一 行且重算后"
              "超限时，release 被拒绝（队列 §四 #58 ⑶，2026-08-17 起由提示改为"
-             f"阻断）——见 --force-mechanism-wip",
+             f"阻断）——见 --force-mechanism-wip。"
+             "🔴 迁移期保留，切阻断时删除（措施 C 换量具，`OP-0911-D` design D-D："
+             f"当前模式 {MECHANISM_WIP_GATE_MODE}；切 block 的同一批本参数与其判据整条退休，"
+             "改用 --stale-days／--stale-cap）",
+    )
+    p_release.add_argument(
+        "--stale-days", type=float, default=MECHANISM_WIP_STALE_DAYS_DEFAULT,
+        help=f"措施 C 换量具（队列 §四 #58＋`OP-0911-D`）：陈旧天数 N（默认 "
+             f"{MECHANISM_WIP_STALE_DAYS_DEFAULT}，2026-09-11 现网实测定死）。计入 WIP 的行中，"
+             "所在物理行末次 commit（git blame author-time，工作区未提交按今天）距今 > N 天"
+             "即计入 STALE；行内文本日期不作数",
+    )
+    p_release.add_argument(
+        "--stale-cap", type=int, default=MECHANISM_WIP_STALE_CAP_DEFAULT,
+        help=f"措施 C 换量具：允许的陈旧行条数 K（默认 {MECHANISM_WIP_STALE_CAP_DEFAULT}）。"
+             f"当前模式 {MECHANISM_WIP_GATE_MODE}：warn ⇒ STALE > K 只回显、不拒绝；"
+             "block ⇒ STALE > K 拒绝 release（逃生阀同 --force-mechanism-wip）",
+    )
+    p_release.add_argument(
+        "--stale-probe-timeout", type=float, default=MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
+        help=f"措施 C 换量具：取龄子进程 `git blame --incremental` 超时秒数（默认 "
+             f"{MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT}；主 checkout 实测 7–16 s）。超时不拒绝、"
+             "不静默：打印含耗时的降级告警后按「本次未判陈旧」放行（design D-E）",
     )
     p_release.add_argument(
         "--force-mechanism-wip", action="store_true",

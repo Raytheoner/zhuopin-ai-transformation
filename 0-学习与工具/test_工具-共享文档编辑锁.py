@@ -1281,6 +1281,13 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         self.module.QUEUE_BUSINESS_PATH_REL = "queue-business.md"
         self.module.QUEUE_LOCK_ANCHOR = "queue.md"
         self.target_path = self.repo_root / "queue.md"
+        # 措施 C 换量具（`OP-0911-N`）：release ⑨ 新增取龄子进程。本类用例一律
+        # 注入「全部行今天刚提交」的假 blame（STALE=0），**不真跑 git**——临时
+        # 目录不是仓库，真跑只会走降级路径、把每条用例的 stdout 都灌一行 ⚠。
+        # 陈旧度本身的用例见 `MechanismWipStalenessGateTests`。
+        self.module._run_git_blame_incremental = (
+            lambda repo_root, queue_path, timeout: _fake_blame_for(self.target_path, {})
+        )
 
     def tearDown(self):
         self._tmpdir.cleanup()
@@ -1315,6 +1322,9 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
                 else self.module.MECHANISM_WIP_CAP_DEFAULT
             ),
             force_mechanism_wip=force_mechanism_wip,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         return self.module.cmd_release(ns)
 
@@ -1950,6 +1960,9 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
             file="其他共享文件.md", who="A",
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         self.assertEqual(self.module.cmd_release(release_ns), 0)
 
@@ -1988,6 +2001,9 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
                 file=other_target, who="A",
                 mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
                 force_mechanism_wip=False,
+                stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+                stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+                stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
             )
         ), 0)
         (self.repo_root / other_target).write_text("原始内容\n绕锁写入\n", encoding="utf-8")
@@ -2278,7 +2294,17 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             result = self._release(who="A", mechanism_wip_cap=8)
         self.assertEqual(result, 0)
-        self.assertNotIn("机制类可动 WIP", buf.getvalue())
+        # 🔴 断言改写（`OP-0911-N`，2026-09-11）：改前此处断言 stdout **完全不含**
+        # 「机制类可动 WIP」。变更包 `mechanism-wip-staleness-gate` 的 ADDED
+        # Requirement「迁移期并行回显」明写：告警期内每次触发本项检查 release
+        # **MUST 同时回显两个数**（行数／上限 ＋ STALE(N天)／K）——旧断言编码的是
+        # 被 spec 明确改掉的行为，不是本棒要守的回归。改后守的仍是原意：**不拒绝、
+        # 不出现拒绝文案**。
+        out = buf.getvalue()
+        self.assertNotIn("已超上限", out)
+        self.assertNotIn("两条出路", out)
+        self.assertIn("1／8", out)
+        self.assertIn("STALE(7天)=0／3", out)
 
     def test_mechanism_wip_not_recomputed_when_new_row_is_business_domain(self):
         """新增行域为「业」（非「机」）——不触发本项重新计数（无提示，也不
@@ -2832,6 +2858,9 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
             file=self.module.FOLLOWUP_README_TARGET, who=who,
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         return self.module.cmd_release(ns)
 
@@ -3199,6 +3228,9 @@ class FollowupReadmeRowLengthGuardTests(unittest.TestCase):
             file=self.module.FOLLOWUP_README_TARGET, who=who,
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         return self.module.cmd_release(ns)
 
@@ -3440,6 +3472,9 @@ class FollowupReplyStateSyncTests(unittest.TestCase):
             file=self.module.DEFAULT_TARGET, who=who,
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         ))
 
     def _stdout_of_release(self, who="A"):
@@ -3794,6 +3829,9 @@ class HoldConsistencyValidationTests(unittest.TestCase):
             file=self.module.DEFAULT_TARGET, who=who,
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         return self.module.cmd_release(ns)
 
@@ -4191,6 +4229,9 @@ class DualFileRoutingTests(unittest.TestCase):
             file=self.module.DEFAULT_TARGET, who="A",
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         self.assertEqual(self.module.cmd_release(ns_release), 0)
         # release 后两份文件均应有各自的 lastknown 基准。
@@ -4214,6 +4255,9 @@ class DualFileRoutingTests(unittest.TestCase):
             file=self.module.DEFAULT_TARGET, who="A",
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         self.assertNotEqual(self.module.cmd_release(ns_release), 0)
 
@@ -4414,6 +4458,9 @@ class DualFileRoutingTests(unittest.TestCase):
             file=absolute_old_pointer, who="A",
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         self.assertEqual(self.module.cmd_release(ns_release), 0)
 
@@ -4522,6 +4569,9 @@ class ClaudeProgressOpenItemTests(unittest.TestCase):
             file=self.module.CLAUDE_PROGRESS_TARGET, who=who,
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         return self.module.cmd_release(ns)
 
@@ -4658,7 +4708,10 @@ class ClaudeProgressOpenItemTests(unittest.TestCase):
                          "> **乙（2026-08-02，CC）**：也尚未完成。\n\n---\n", encoding="utf-8")
         ns_r = argparse.Namespace(file="别的共享文件.md", who="A",
                                   mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
-                                  force_mechanism_wip=False)
+                                  force_mechanism_wip=False,
+                                  stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+                                  stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+                                  stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT)
         self.assertEqual(self.module.cmd_release(ns_r), 0)
 
     def test_绝对路径指向根CLAUDE同样被识别(self):
@@ -7471,6 +7524,9 @@ class FollowupSerialGateIdentityTests(unittest.TestCase):
             file=self.module.FOLLOWUP_README_TARGET, who=who,
             mechanism_wip_cap=self.module.MECHANISM_WIP_CAP_DEFAULT,
             force_mechanism_wip=False,
+            stale_days=self.module.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=self.module.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=self.module.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
         )
         return self.module.cmd_release(ns)
 
@@ -8539,6 +8595,665 @@ class WriteSideGuardCliTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("[S:partial][D:机] 在办", self.target.read_text(encoding="utf-8"))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 协议〇.9 措施 C 换量具 —— 陈旧度闸（队列 §四 #58 ＋ `OP-0911-D`，openspec
+# 变更包 `mechanism-wip-staleness-gate`，apply 批 1 ＝ 告警模式，`OP-0911-N`）
+#
+# 🔴 取龄的 git 依赖一律经 `module._run_git_blame_incremental` monkeypatch 注入
+# 假 blame 输出，**单测里不真跑 git**（主 checkout 实测 6.9–15.9 s／次，×N 条
+# 用例不可接受；且单测临时目录根本不是 git 仓库）。
+# 沿用 `ReleaseStructuralValidationTests` 的 `cmd_release` 端到端范式（`#58`
+# 包 2.4 的教训：不按实现符号 grep 判覆盖）。
+# ═══════════════════════════════════════════════════════════════════════
+
+import hashlib as _hashlib
+
+
+def _fake_blame_for(path: Path, ages: dict[str, float | None]) -> str:
+    """为 `path` 里每条 `|<编号>|` 起首行拼一组记录。`ages`：编号 → 行龄天数；`None` ⇒
+    全零 sha（工作区未提交）；未列出的行按 0 天、各自独立 sha。
+    按 `git blame --incremental` 的真实格式拼装：首次出现的 sha 带完整
+    头（author-time 在其中），再次出现只给 `<sha> <src> <dst> <n>` 头与
+    `filename` 行——解析器必须能处理第二种（真实输出就是这样省略的）。"""
+    text = path.read_text(encoding="utf-8")
+    now = time.time()
+    out: list[str] = []
+    seen: set[str] = set()
+    for lineno, line in enumerate(text.split("\n"), 1):
+        m = re.match(r"^\|\s*(\d+)\s*\|", line)
+        if not m:
+            continue
+        num = m.group(1)
+        age = ages.get(num, 0.0)
+        if age is None:
+            sha = "0" * 40
+            at = int(now)
+        else:
+            sha = _hashlib.sha1(f"{num}-{age}".encode("utf-8")).hexdigest()
+            at = int(now - age * 86400)
+        out.append(f"{sha} {lineno} {lineno} 1")
+        if sha not in seen:
+            seen.add(sha)
+            out.extend([
+                "author t", "author-mail <t@example.com>", f"author-time {at}",
+                "author-tz +0800", "committer t", "committer-mail <t@example.com>",
+                f"committer-time {at}", "committer-tz +0800", "summary x",
+            ])
+        out.append("filename queue.md")
+    return "\n".join(out) + "\n"
+
+
+class MechanismWipStalenessGateTests(unittest.TestCase):
+    """tasks.md §2（2.1–2.10）。每条用例的编号在 docstring 首行。"""
+
+    SECTION_ONE_HEADER = ReleaseStructuralValidationTests.SECTION_ONE_HEADER
+    SECTION_FOUR_HEADER = ReleaseStructuralValidationTests.SECTION_FOUR_HEADER
+    SECTION_TWO_HEADER = ReleaseStructuralValidationTests.SECTION_TWO_HEADER
+
+    #: `#381` 真实行的任务列起首形态（🛑 落任务列、状态列不含 🛑）——
+    #: 取自 `工具-队列查询.py --row 381 --field all`，2026-09-11。
+    REAL_381_TASK_CELL = (
+        "🛑 **排队中·暂非可动（2026-08-23 立行时机制类可动 WIP 23/22 已满，"
+        "守协议〇.9 不强推；值周巡检在 WIP 回落时去🛑转可动）** ━━━ "
+        "**§5 规则机制化降指针程序（one-in-one-out）**：目标＝……"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self._tmpdir.name)
+        self.module = _load_module()
+        self.module.REPO_ROOT = self.repo_root
+        self.module.DEFAULT_TARGET = "queue.md"
+        self.module.QUEUE_MECHANISM_PATH_REL = "queue.md"
+        self.module.QUEUE_BUSINESS_PATH_REL = "queue-business.md"
+        self.module.QUEUE_LOCK_ANCHOR = "queue.md"
+        self.target_path = self.repo_root / "queue.md"
+        # 默认注入：真跑 git 即失败——每条用例必须显式给假输出或显式声明「不得取龄」
+        self._blame_calls: list[dict] = []
+        self.module._run_git_blame_incremental = self._blame_must_not_run
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    # ---------------- 夹具 ----------------
+
+    def _blame_must_not_run(self, repo_root, queue_path, timeout):
+        raise AssertionError("本用例不得取龄（2.7：未新增计入行时不取龄）")
+
+    def _install_blame(self, ages: dict[str, float | None] | None = None,
+                       *, raise_exc: BaseException | None = None,
+                       raw_output: str | None = None):
+        """把假 blame 装进模块。`ages`：行编号 → 行龄天数；`None` ⇒ 全零哈希
+        （工作区未提交）。未列出的 §一/§四 行一律按 0 天、各自独立 sha。"""
+        def runner(repo_root, queue_path, timeout):
+            self._blame_calls.append({"repo_root": repo_root, "queue_path": queue_path,
+                                      "timeout": timeout})
+            if raise_exc is not None:
+                raise raise_exc
+            if raw_output is not None:
+                return raw_output
+            return self._fake_blame_output(ages or {})
+        self.module._run_git_blame_incremental = runner
+
+    def _fake_blame_output(self, ages: dict[str, float | None]) -> str:
+        return _fake_blame_for(self.target_path, ages)
+
+    def _write_queue(self, section_one_rows="", section_four_rows="", hwm_one=200, hwm_four=40):
+        text = (
+            f"> **编号高水位线：§一 #{hwm_one} ｜ §四 #{hwm_four}**（说明文字）\n\n"
+            "## 一、任务看板\n\n" + self.SECTION_ONE_HEADER + section_one_rows +
+            "\n## 二、待 commit 批次（CC 取活销行）\n\n" + self.SECTION_TWO_HEADER +
+            "\n## 三、口径冻结标（重梳期防在途建造撞车）\n\n"
+            "| 域/场景 | 冻结原因 | 挂标 | 解除条件 |\n"
+            "|---------|---------|------|---------|\n"
+            "\n## 四、需 Shao Peishen 的动作（例外与拍板）\n\n" +
+            self.SECTION_FOUR_HEADER + section_four_rows
+        )
+        self.target_path.write_text(text, encoding="utf-8")
+
+    @staticmethod
+    def _row(num, status="[S:open][D:机] 待领", task="既有机制行", date="2026-08-01"):
+        return f"| {num} | {task} | CC | 指针 | 产出 | {status} | 触碰区 | {date} |\n"
+
+    def _write_existing(self, n: int, start: int = 150):
+        self._write_queue(section_one_rows="".join(self._row(start + i) for i in range(n)),
+                          hwm_one=200)
+
+    def _acquire(self, who="A", reserve=None, section=None, reserve_multi=None, domain=None):
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, who=who, note="",
+            reserve=reserve, section=section, reserve_multi=reserve_multi, domain=domain,
+        )
+        return self.module.cmd_acquire(ns)
+
+    def _append_rows(self, *rows: str):
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + "".join(rows), 1)
+        self.target_path.write_text(text, encoding="utf-8")
+
+    def _release(self, who="A", *, cap=None, force=False, stale_days=None, stale_cap=None,
+                 probe_timeout=None) -> tuple[int, str]:
+        m = self.module
+        ns = argparse.Namespace(
+            file=m.DEFAULT_TARGET, who=who,
+            mechanism_wip_cap=cap if cap is not None else m.MECHANISM_WIP_CAP_DEFAULT,
+            force_mechanism_wip=force,
+            stale_days=stale_days if stale_days is not None else m.MECHANISM_WIP_STALE_DAYS_DEFAULT,
+            stale_cap=stale_cap if stale_cap is not None else m.MECHANISM_WIP_STALE_CAP_DEFAULT,
+            stale_probe_timeout=(probe_timeout if probe_timeout is not None
+                                 else m.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT),
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = m.cmd_release(ns)
+        return rc, buf.getvalue()
+
+    def _lock_held(self) -> bool:
+        return self.module._read_lock(self.module._lock_path(self.module.QUEUE_LOCK_ANCHOR)) is not None
+
+    def _set_mode(self, mode: str):
+        self.module.MECHANISM_WIP_GATE_MODE = mode
+
+    def _new_counted_row(self, number="201"):
+        """本次新增一条计入 WIP 的 `[D:机]` 行（触发 ⑨ 判定的唯一入口）。"""
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_rows(self._row(number, task="新机制行", date="2026-09-11"))
+
+    # ---------------- 2.1 STALE 计数三态 ----------------
+
+    def test_2_1_1_all_rows_blamed_ages_by_author_time(self):
+        """2.1⑴ 全部行有 blame 记录 ⇒ 按 author-time 计龄。"""
+        self._write_existing(3)
+        self._new_counted_row()
+        self._install_blame({"150": 9.0, "151": 7.5, "152": 2.0})
+        rc, out = self._release()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("STALE(7天)=2／3", out)
+        self.assertIn("#150", out)
+        self.assertIn("#151", out)
+        self.assertNotIn("#152（", out)
+
+    def test_2_1_2_zero_hash_counts_as_today_not_stale(self):
+        """2.1⑵ 全零哈希（工作区未提交）⇒ 按今天计、不计陈旧、不降级。"""
+        self._write_existing(2)
+        self._new_counted_row()
+        self._install_blame({"150": None, "151": 8.0})
+        rc, out = self._release()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("STALE(7天)=1／3", out)
+        self.assertNotIn("本次未判陈旧", out)
+        self.assertNotIn("降级", out)
+
+    def test_2_1_3_unmapped_number_degrades_named_others_still_judged(self):
+        """2.1⑶ 行号漂移（编号映射不到 `|<编号>|` 起首行）⇒ 该行不参与计数、
+        降级告警点名该编号、其余行照常判定（spec「取龄失败非静默降级」第三
+        Scenario）。映射器白盒注入：让 #151 找不到物理行。"""
+        self._write_existing(3)
+        self._new_counted_row()
+        self._install_blame({"150": 9.0, "151": 9.0, "152": 9.0})
+        real_mapper = self.module._section_one_physical_lines
+
+        def mapper_dropping_151(queue_text):
+            mapping = real_mapper(queue_text)
+            mapping.pop("151", None)
+            return mapping
+        self.module._section_one_physical_lines = mapper_dropping_151
+        rc, out = self._release()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("STALE(7天)=2／3", out, "其余两行照常判定")
+        self.assertIn("#151", out)
+        self.assertIn("映射不到", out)
+
+    def test_2_1_3b_line_not_covered_by_blame_output_degrades_named(self):
+        """2.1⑶ 补：blame 输出未覆盖该物理行（部分失败）⇒ 同样逐条点名、
+        其余照常。"""
+        self._write_existing(2)
+        self._new_counted_row()
+        full = self._fake_blame_output({"150": 9.0, "151": 9.0})
+        text = self.target_path.read_text(encoding="utf-8")
+        line_151 = next(i for i, l in enumerate(text.split("\n"), 1) if l.startswith("| 151 |"))
+        # 只删掉 #151 那一组（头行＋其后到 filename 行）
+        keep, skip = [], False
+        for l in full.split("\n"):
+            if re.match(rf"^[0-9a-f]{{40}} {line_151} {line_151} 1$", l):
+                skip = True
+                continue
+            if skip:
+                if l.startswith("filename "):
+                    skip = False
+                continue
+            keep.append(l)
+        self._install_blame(raw_output="\n".join(keep))
+        rc, out = self._release()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("STALE(7天)=1／3", out)
+        self.assertIn("#151", out)
+        self.assertIn("未覆盖", out)
+
+    # ---------------- 2.2 🛑 两列各自排除 ----------------
+
+    def test_2_2_stop_marker_two_columns(self):
+        """2.2 ⑴ 状态列 🛑 ⇒ 不计（回归）；⑵ 任务列 🛑（#381 真实形态）⇒ 不计（新）；
+        ⑶ 两列都无 ⇒ 计；⑷ 🛑 在任务列非起首 ⇒ 仍计（防判据过宽）。"""
+        cases = [
+            ("⑴", "[S:open][D:机] 🛑 排队中", "普通任务", 0),
+            ("⑵", "[S:open][D:机] 待领，WIP 回落后转可动", self.REAL_381_TASK_CELL, 0),
+            ("⑶", "[S:open][D:机] 待领", "普通任务", 1),
+            ("⑷", "[S:open][D:机] 待领", "普通任务，见 🛑 说明", 1),
+        ]
+        for label, status, task, expected in cases:
+            with self.subTest(label=label):
+                section = self._row("1", status=status, task=task)
+                count, degraded = self.module._count_mechanism_wip(section)
+                self.assertEqual(count, expected)
+                self.assertEqual(degraded, [])
+
+    def test_2_2_counted_numbers_helper_agrees_with_count(self):
+        """`_mechanism_wip_counted_rows` 与 `_count_mechanism_wip` 是同一套判据
+        （不复制第二套）：编号清单长度恒等于计数。"""
+        section = (
+            self._row("1") + self._row("2", status="[S:open][D:机] 🛑 排队") +
+            self._row("3", task=self.REAL_381_TASK_CELL) + self._row("4", status="[S:blocked][D:机] 等") +
+            self._row("5", status="[S:partial][D:机] 在办")
+        )
+        numbers, degraded = self.module._mechanism_wip_counted_rows(section)
+        count, degraded2 = self.module._count_mechanism_wip(section)
+        self.assertEqual(numbers, ["1", "5"])
+        self.assertEqual(count, len(numbers))
+        self.assertEqual(degraded, degraded2)
+
+    # ---------------- 2.3 写侧告警 ----------------
+
+    def _append_row_cli(self, status: str, task: str, number="201") -> tuple[int, str]:
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, section="一", number=number,
+            cell=[task, "CC", "指针", "产出", status, "触碰区", "2026-09-11"],
+            domain=None,
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.module.cmd_append_row(ns)
+        return rc, buf.getvalue()
+
+    def _edit_row_cli(self, number: str, sets: list[str]) -> tuple[int, str]:
+        ns = argparse.Namespace(
+            file=self.module.DEFAULT_TARGET, section="一", number=number,
+            set=list(sets), append=[], changes_json=None, stdin_json=False,
+            append_sep="、", domain=None,
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.module.cmd_edit_row(ns)
+        return rc, buf.getvalue()
+
+    def test_2_3_1_append_row_stop_marker_only_in_task_column_warns_but_writes(self):
+        """2.3⑴ `[D:机]` 行且 🛑 只落任务列 ⇒ 写入成功、stdout 含引导文案。"""
+        self._write_queue(hwm_one=200)
+        rc, out = self._append_row_cli("[S:open][D:机] 待领", self.REAL_381_TASK_CELL)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("🛑", out)
+        self.assertIn("状态列", out)
+        self.assertIn("⚠", out)
+        self.assertIn(self.REAL_381_TASK_CELL[:20], self.target_path.read_text(encoding="utf-8"))
+
+    def test_2_3_2_append_row_stop_marker_in_status_column_is_quiet(self):
+        """2.3⑵ 🛑 落状态列 ⇒ 不响。"""
+        self._write_queue(hwm_one=200)
+        rc, out = self._append_row_cli("[S:open][D:机] 🛑 排队中", "普通任务")
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("规范落点", out)
+
+    def test_2_3_3_append_row_business_domain_is_quiet(self):
+        """2.3⑶ `[D:业]` 行 ⇒ 不响。"""
+        self._write_queue(hwm_one=200)
+        rc, out = self._append_row_cli("[S:open][D:业] 待领", self.REAL_381_TASK_CELL)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("规范落点", out)
+
+    def test_2_3_4_edit_row_untriggering_write_is_quiet_even_if_row_already_has_form(self):
+        """2.3⑷ `edit-row` 改既有行但本次写入值不触发（只改触碰区）⇒ 不响
+        （不为存量行刷屏，`#143` 噪声化教训）；改到任务/状态列且触发 ⇒ 响。"""
+        self._write_queue(
+            section_one_rows=self._row("150", task=self.REAL_381_TASK_CELL), hwm_one=200,
+        )
+        rc, out = self._edit_row_cli("150", ["触碰区=新触碰区"])
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("规范落点", out)
+        rc, out = self._edit_row_cli("150", ["任务=🛑 **排队中**：改写后仍在任务列"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("规范落点", out)
+
+    # ---------------- 2.4 D-C：新增行不计入时不阻断 ----------------
+
+    def test_2_4_1_new_stop_row_with_stock_over_cap_passes_and_says_not_counted(self):
+        """2.4⑴ 新增 🛑 起首行＋存量超限（行数与 STALE 都超）⇒ 放行、回显注明
+        「不计入、与超限无关」、不要求豁免。"""
+        self._write_existing(5)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_rows(self._row("201", status="[S:open][D:机] 🛑 排队中", task="新行"))
+        self._install_blame({str(150 + i): 10.0 for i in range(5)})
+        rc, out = self._release(cap=2)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("#201", out)
+        self.assertIn("不计入", out)
+        self.assertIn("与超限无关", out)
+        self.assertNotIn("WIP豁免", out)
+        self.assertFalse(self._lock_held())
+
+    def test_2_4_2_new_blocked_row_does_not_trigger(self):
+        """2.4⑵ 新增 `[S:blocked]` 行 ⇒ 不触发判定（不要求豁免，放行）。"""
+        self._write_existing(5)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_rows(self._row("201", status="[S:blocked][D:机] 等签认", task="新行"))
+        self._install_blame({str(150 + i): 10.0 for i in range(5)})
+        rc, out = self._release(cap=2)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("WIP豁免", out)
+
+    def test_2_4_3_mixed_new_rows_only_counted_one_named_and_waived(self):
+        """2.4⑶ 一次新增计入行 #A＋不计入行 #B＋超限＋无逃生阀 ⇒ 拒绝且文案只
+        点名 #A；逃生阀齐备时只要求 #A 有 `WIP豁免：`。"""
+        self._write_existing(3)
+        self.assertEqual(self._acquire(who="A", reserve=2, section="一", domain="机"), 0)
+        self._append_rows(
+            self._row("201", task="A 计入行"),
+            self._row("202", status="[S:open][D:机] 🛑 排队中", task="B 不计入行"),
+        )
+        self._install_blame({"150": 1.0})
+        rc, out = self._release(cap=2)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("#201", out)
+        # 文案里 #202 只能出现在「不计入」说明里，不得作为被拒行点名
+        rejected_line = next(l for l in out.split("\n") if "已超上限" in l)
+        self.assertIn("#201", rejected_line)
+        self.assertNotIn("#202", rejected_line)
+        # 逃生阀：只给 #201 写理由即可
+        text = self.target_path.read_text(encoding="utf-8")
+        text = text.replace("[S:open][D:机] 待领 | 触碰区 | 2026-08-01 |\n| 202",
+                            "[S:open][D:机] 待领 WIP豁免：紧急 | 触碰区 | 2026-08-01 |\n| 202", 1)
+        self.target_path.write_text(text, encoding="utf-8")
+        rc, out = self._release(cap=2, force=True)
+        self.assertEqual(rc, 0, out)
+
+    # ---------------- 2.5 告警模式 ----------------
+
+    def test_2_5_1_warn_mode_count_over_cap_rejects_and_echoes_stale(self):
+        """2.5⑴ 行数 23／22、STALE=0 ⇒ 按行数拒绝、文案同时回显 STALE(7天)=0／3。"""
+        self._set_mode("warn")
+        self._write_existing(22)
+        self._new_counted_row()
+        self._install_blame({})
+        rc, out = self._release()
+        self.assertNotEqual(rc, 0)
+        self.assertIn("23／22", out)
+        self.assertIn("STALE(7天)=0／3", out)
+        self.assertTrue(self._lock_held())
+
+    def test_2_5_2_warn_mode_stale_over_cap_passes_with_full_echo(self):
+        """2.5⑵ 行数 20／22、STALE=5／3 ⇒ 放行、回显两个数＋最老 4 条陈旧行
+        （编号＋天数）＋「告警期，未阻断」。"""
+        self._set_mode("warn")
+        self._write_existing(19)
+        self._new_counted_row()
+        self._install_blame({"150": 30.0, "151": 20.0, "152": 12.0, "153": 9.0, "154": 8.0})
+        rc, out = self._release()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("20／22", out)
+        self.assertIn("STALE(7天)=5／3", out)
+        self.assertIn("告警期，未阻断", out)
+        self.assertIn("7 天后此项将阻断", out)
+        for num, days in (("150", "30.0"), ("151", "20.0"), ("152", "12.0"), ("153", "9.0")):
+            self.assertIn(f"#{num}（{days} 天）", out)
+        self.assertNotIn("#154（", out, "只列最老 K+1=4 条")
+        # 陈旧行清单须排在行数之前（design Risks：操作者只看熟的那个数）
+        self.assertLess(out.index("#150（"), out.index("20／22"))
+
+    # ---------------- 2.6 阻断模式 ----------------
+
+    def test_2_6_1_block_mode_count_ignored(self):
+        """2.6⑴ 行数 25、STALE=1／3 ⇒ 放行、不回显行数上限。"""
+        self._set_mode("block")
+        self._write_existing(24)
+        self._new_counted_row()
+        self._install_blame({"150": 9.0})
+        rc, out = self._release()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("STALE(7天)=1／3", out)
+        self.assertNotIn("／22", out)
+
+    def test_2_6_2_block_mode_stale_over_cap_rejects_actionably(self):
+        """2.6⑵ STALE=4／3＋无逃生阀 ⇒ 拒绝、锁保持占用、文案含 STALE／K／N、
+        新增行编号、最老 K＋1 条清单、两条出路。"""
+        self._set_mode("block")
+        self._write_existing(6)
+        self._new_counted_row()
+        self._install_blame({"150": 30.0, "151": 20.0, "152": 12.0, "153": 9.0})
+        rc, out = self._release()
+        self.assertNotEqual(rc, 0)
+        self.assertTrue(self._lock_held())
+        self.assertIn("STALE(7天)=4／3", out)
+        self.assertIn("#201", out)
+        for num in ("150", "151", "152", "153"):
+            self.assertIn(f"#{num}（", out)
+        self.assertIn("两条出路", out)
+        self.assertIn("推进或关闭", out)
+        self.assertIn("--force-mechanism-wip", out)
+        self.assertIn("WIP豁免：", out)
+
+    def test_2_6_3_block_mode_escape_hatch_passes_with_reason_in_row(self):
+        """2.6⑶ 逃生阀齐备 ⇒ 放行且理由留在队列文本里。"""
+        self._set_mode("block")
+        self._write_existing(6)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_rows(self._row("201", status="[S:open][D:机] 待领 WIP豁免：紧急立行", task="新"))
+        self._install_blame({"150": 30.0, "151": 20.0, "152": 12.0, "153": 9.0})
+        rc, out = self._release(force=True)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("WIP豁免：紧急立行", self.target_path.read_text(encoding="utf-8"))
+
+    def test_2_6_4_block_mode_switch_only_or_marker_only_each_rejected(self):
+        """2.6⑷ 只给开关／只写标记 ⇒ 各自拒绝（`#58` 决策点 5 回归）。"""
+        self._set_mode("block")
+        self._write_existing(6)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="机"), 0)
+        self._append_rows(self._row("201", task="新"))
+        self._install_blame({"150": 30.0, "151": 20.0, "152": 12.0, "153": 9.0})
+        rc, out = self._release(force=True)
+        self.assertNotEqual(rc, 0, "只给开关")
+        self.assertIn("未写明", out)
+        text = self.target_path.read_text(encoding="utf-8").replace(
+            "| 201 | 新 | CC | 指针 | 产出 | [S:open][D:机] 待领 |",
+            "| 201 | 新 | CC | 指针 | 产出 | [S:open][D:机] 待领 WIP豁免：理由 |", 1)
+        self.target_path.write_text(text, encoding="utf-8")
+        rc, out = self._release(force=False)
+        self.assertNotEqual(rc, 0, "只写标记")
+        self.assertIn("未传 `--force-mechanism-wip`", out)
+
+    # ---------------- 2.7 关行 session 照旧放行（#58 决策点 4，不许丢） ----------------
+
+    def _assert_closing_session_passes(self, mode: str):
+        self._set_mode(mode)
+        rows = "".join(self._row(150 + i) for i in range(6))
+        # ⑴ 本次编辑正是把最老一行改 [S:done]
+        self._write_queue(section_one_rows=rows, hwm_one=200)
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8").replace(
+            "| 150 | 既有机制行 | CC | 指针 | 产出 | [S:open][D:机] 待领 |",
+            "| 150 | 既有机制行 | CC | 指针 | 产出 | [S:done][D:机] 已关 |", 1)
+        self.target_path.write_text(text, encoding="utf-8")
+        rc, out = self._release(cap=0)
+        self.assertEqual(rc, 0, f"[{mode}] ⑴ 关最老行须放行\n{out}")
+        self.assertEqual(self._blame_calls, [], "⑴ 不取龄")
+        # ⑵ 推进最老一行（改状态格正文）
+        self._write_queue(section_one_rows=rows, hwm_one=200)
+        self.assertEqual(self._acquire(who="A"), 0)
+        text = self.target_path.read_text(encoding="utf-8").replace(
+            "| 150 | 既有机制行 | CC | 指针 | 产出 | [S:open][D:机] 待领 |",
+            "| 150 | 既有机制行 | CC | 指针 | 产出 | [S:partial][D:机] 在办中，已推进 |", 1)
+        self.target_path.write_text(text, encoding="utf-8")
+        rc, out = self._release(cap=0)
+        self.assertEqual(rc, 0, f"[{mode}] ⑵ 推进最老行须放行\n{out}")
+        # ⑶ 本次只新增 [D:业] 行
+        self._write_queue(section_one_rows=rows, hwm_one=200)
+        self.assertEqual(self._acquire(who="A", reserve=1, section="一", domain="业"), 0)
+        self._append_rows(self._row("201", status="[S:open][D:业] 待领", task="业务新行"))
+        rc, out = self._release(cap=0)
+        self.assertEqual(rc, 0, f"[{mode}] ⑶ 只新增业务行须放行\n{out}")
+        self.assertNotIn("机制类可动 WIP", out)
+        self.assertEqual(self._blame_calls, [], "⑶ 不取龄")
+
+    def test_2_7_closing_session_passes_in_warn_mode(self):
+        """2.7 告警模式：⑴⑵⑶ 全放行、不取龄、不判定。"""
+        self._assert_closing_session_passes("warn")
+
+    def test_2_7_closing_session_passes_in_block_mode(self):
+        """2.7 阻断模式：⑴⑵⑶ 全放行、不取龄、不判定。"""
+        self._assert_closing_session_passes("block")
+
+    # ---------------- 2.8 取龄失败非静默 ----------------
+
+    def _assert_degraded_not_disguised(self, out: str):
+        self.assertIn("本次未判陈旧", out)
+        self.assertNotIn("STALE=0", out)
+        self.assertNotIn("STALE(7天)=0", out)
+        self.assertIn("降级", out)
+
+    def test_2_8_1_git_missing_passes_with_reason(self):
+        """2.8⑴ 子进程启动失败（FileNotFoundError）⇒ 放行＋降级告警含原因。"""
+        for mode in ("warn", "block"):
+            with self.subTest(mode=mode):
+                self._set_mode(mode)
+                self._write_existing(3)
+                self._new_counted_row()
+                self._install_blame(raise_exc=FileNotFoundError("git: command not found"))
+                rc, out = self._release()
+                self.assertEqual(rc, 0, out)
+                self._assert_degraded_not_disguised(out)
+                self.assertIn("command not found", out)
+
+    def test_2_8_2_timeout_passes_with_elapsed_and_limit(self):
+        """2.8⑵ 超时（注入 TimeoutExpired）⇒ 放行＋告警含耗时与超时值
+        （子进程终止由 `subprocess.run(timeout=)` 保证：超时即 kill 再抛）。"""
+        self._set_mode("block")
+        self._write_existing(3)
+        self._new_counted_row()
+        self._install_blame(raise_exc=subprocess.TimeoutExpired(cmd="git blame", timeout=5))
+        rc, out = self._release(probe_timeout=5)
+        self.assertEqual(rc, 0, out)
+        self._assert_degraded_not_disguised(out)
+        self.assertIn("超时", out)
+        self.assertIn("5", out)
+        self.assertIn("耗时", out)
+
+    def test_2_8_3_unparsable_output_passes_with_warning(self):
+        """2.8⑶ 输出不可解析 ⇒ 放行＋告警。"""
+        self._set_mode("block")
+        self._write_existing(3)
+        self._new_counted_row()
+        self._install_blame(raw_output="fatal: not a git repository\n")
+        rc, out = self._release()
+        self.assertEqual(rc, 0, out)
+        self._assert_degraded_not_disguised(out)
+        self.assertIn("不可解析", out)
+
+    def test_2_8_4_nonzero_exit_passes_with_stderr(self):
+        """2.8 补：子进程非零退出 ⇒ 同降级路径，stderr 原文带进告警。"""
+        self._set_mode("block")
+        self._write_existing(3)
+        self._new_counted_row()
+        self._install_blame(raise_exc=subprocess.CalledProcessError(
+            128, ["git", "blame"], output="", stderr="fatal: no such path"))
+        rc, out = self._release()
+        self.assertEqual(rc, 0, out)
+        self._assert_degraded_not_disguised(out)
+        self.assertIn("no such path", out)
+
+    # ---------------- 2.9 行内日期不作数 ----------------
+
+    def test_2_9_inline_future_date_ignored_blame_decides(self):
+        """2.9 状态格内写着「截止 2026-12-31」但 blame 显示 30 天前 ⇒ 计陈旧
+        （spec 第五 Scenario）。阻断模式、K=0 ⇒ 这一行单独就足以拒绝。"""
+        self._set_mode("block")
+        self._write_queue(section_one_rows=self._row(
+            "150", status="[S:partial][D:机] 在办，截止 2026-12-31，本周推进"), hwm_one=200)
+        self._new_counted_row()
+        self._install_blame({"150": 30.0})
+        rc, out = self._release(stale_cap=0)
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn("STALE(7天)=1／0", out)
+        self.assertIn("#150（30.0 天）", out)
+
+    # ---------------- 2.10 参数生效 ----------------
+
+    def test_2_10_stale_days_and_cap_override(self):
+        """2.10 `--stale-days 10` 让 8 天行不算陈旧；`--stale-cap 5` 让 STALE=4 放行。"""
+        self._set_mode("block")
+        self._write_existing(5)
+        self._new_counted_row()
+        self._install_blame({"150": 8.0, "151": 8.0, "152": 8.0, "153": 8.0})
+        rc, out = self._release(stale_days=10)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("STALE(10天)=0／3", out)
+        # 同一批行、默认 7 天 ⇒ 4 条陈旧；cap=5 放行、cap=3 拒绝
+        self._write_existing(5)
+        self._new_counted_row()
+        rc, out = self._release(stale_cap=5)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("STALE(7天)=4／5", out)
+        self._write_existing(5)
+        self._new_counted_row()
+        rc, out = self._release()
+        self.assertNotEqual(rc, 0, out)
+
+    def test_2_10_probe_timeout_reaches_runner(self):
+        """2.10 `--stale-probe-timeout` 原样传到取龄子进程。"""
+        self._write_existing(2)
+        self._new_counted_row()
+        self._install_blame({})
+        rc, out = self._release(probe_timeout=11)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([c["timeout"] for c in self._blame_calls], [11])
+        self.assertEqual(self._blame_calls[0]["queue_path"], "queue.md")
+        self.assertEqual(self._blame_calls[0]["repo_root"], self.repo_root)
+
+    def test_2_10_mechanism_wip_cap_still_effective_in_warn_mode(self):
+        """2.10 告警模式下 `--mechanism-wip-cap` 仍生效（阻断模式的「未知参数」
+        用例留到 apply 批 2）。"""
+        self._set_mode("warn")
+        self._write_existing(2)
+        self._new_counted_row()
+        self._install_blame({})
+        rc, out = self._release(cap=3)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("3／3", out)
+        # 拒绝的那一支放最后（拒绝后锁保持占用，再 acquire 会被自己挡住）
+        self._write_existing(2)
+        self._new_counted_row()
+        rc, out = self._release(cap=2)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("3／2", out)
+
+    def test_defaults_are_the_design_values(self):
+        """D-D／D-F：常量取值＝design 定死值；批 1 只能是告警模式。"""
+        m = self.module
+        self.assertEqual(m.MECHANISM_WIP_GATE_MODE, "warn")
+        self.assertEqual(m.MECHANISM_WIP_STALE_DAYS_DEFAULT, 7)
+        self.assertEqual(m.MECHANISM_WIP_STALE_CAP_DEFAULT, 3)
+        self.assertEqual(m.MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT, 30)
+        self.assertEqual(m.MECHANISM_WIP_CAP_DEFAULT, 22, "迁移期保留，切阻断时删")
+
+    def test_release_cli_accepts_three_stale_arguments(self):
+        """3.7：三个参数在 argparse 上真实存在（不只是 Namespace 里手填）。"""
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "release", "--help"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for flag in ("--stale-days", "--stale-cap", "--stale-probe-timeout", "--mechanism-wip-cap"):
+            self.assertIn(flag, result.stdout)
+        self.assertIn("迁移期保留", result.stdout)
 
 
 if __name__ == "__main__":
