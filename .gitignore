@@ -87,3 +87,17 @@ start-aibot-service-dev.ps1
 # register-decision-reminder-task.ps1 在注册时机械生成（写死本机账户的
 # 绝对路径），同 start-aibot-service-dev.ps1 一样本机专属、不同环境不通用
 run-decision-reminder-check.ps1
+
+# #379：年度节假日提醒计划任务的启动包装，由
+# register-annual-holiday-reminder-task.ps1 机械生成，同上一条同族。
+# 2026-09-11 `OP-0910-H` 补：此前既未入库也未入本表，在常驻执行体
+# worktree 里以 `??` 常驻脏着，每轮 sweep 响一次。
+run-annual-holiday-reminder-check.ps1
+
+# `OP-0911-H` 2026-09-11（Shao Peishen 当日答 `a`）：Cowork 每调一次
+# SendUserFile 交付文件，桌面端就在连接文件夹根（＝本仓库根）自动落一份
+# 同名副本到本目录。它是交付通道的副产物、不是仓库资产——权威件一律另在
+# 库内正式落点（如 6-人才与组织/部门AI专员跟进/）。不入表则每交付一次就
+# 多一个 ?? 孤儿、卡住队列锁 release 的 ⑹ 登记完整性守卫。判据全文见
+# .claude/rules/两桌同步与取证.md §二。
+Claude outputs/
