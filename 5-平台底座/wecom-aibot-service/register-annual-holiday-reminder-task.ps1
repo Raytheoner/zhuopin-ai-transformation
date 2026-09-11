@@ -97,7 +97,13 @@ $wrapperContent = $wrapperContent.Replace('__PY_EXE__', $pyExe)
 $wrapperContent = $wrapperContent.Replace('__CHECK_SCRIPT__', $CHECK_SCRIPT)
 
 Assert-NoOrphanCR -Text $wrapperContent -Label "run-annual-holiday-reminder-check.ps1 模板（写盘前）"
-Set-Content -Path $WRAPPER -Value $wrapperContent -Encoding UTF8
+# 🔴 显式无 BOM（`OP-0910-H`，2026-09-11）：`Set-Content -Encoding UTF8` 的产物**随 host 分叉**
+# ——PS 5.1 写 BOM、PS 7 不写（实测同一字符串 49 B vs 46 B）。于是同一份注册脚本，谁用
+# powershell.exe 跑谁就产出带 BOM 的 wrapper，而库里跟踪的那份是无 BOM 的 ⇒ 每跑必脏、
+# 每轮 sweep 告警一次（2026-09-11 实撞：run-followup-dispatch-check.ps1 差的就是一个 BOM）。
+# WriteAllText 显式指定 UTF8Encoding($false) 后两个 host 下字节完全一致；末尾 CRLF 是为了与
+# Set-Content 的行为对齐（它会在内容后补一个换行）。
+[System.IO.File]::WriteAllText($WRAPPER, $wrapperContent + "`r`n", (New-Object System.Text.UTF8Encoding $false))
 Assert-NoOrphanCR -Path $WRAPPER -Label "已写盘的 run-annual-holiday-reminder-check.ps1"
 Write-Host "      已生成 $WRAPPER（孤立 CR 自检通过）" -ForegroundColor Green
 
