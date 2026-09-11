@@ -177,11 +177,81 @@ class RunBackupWhitelistTests(unittest.TestCase):
         self.assertEqual({r.task_id for r in results}, set(backup.WHITELIST))
 
     def test_default_whitelist_matches_readme_declared_scope(self):
-        """白名单硬编码需与 README.md「镜像范围」表保持一致——三份、且仅三份。"""
-        self.assertEqual(
-            set(backup.WHITELIST),
-            {"huijian-chaijian-patrol", "weekly-status-update", "check-skill-plugin-updates"},
-        )
+        """白名单须与 README.md「镜像范围」表一致。
+
+        🔴 **本用例 2026-09-10 重写**：原版把三个任务名**硬编码在断言里**，
+        于是「与 README 保持一致」这句话从来没被真的检查过——**它检查的是
+        白名单与另一份写死的清单一致**。当日往白名单补两条，它照常转红，
+        逼人去改断言，而不是去改 README。🔑 **同族＝ `#535`（夹具日期硬
+        编码）／`#537`（锚点数写死）：一个「防漂移」的检查，自己就是第三
+        个会漂的副本。** 现改为**现场解析 README 表格**，两处再也分不开。
+        """
+        whitelist, blacklist = _parse_readme_tables()
+        self.assertEqual(set(backup.WHITELIST), whitelist,
+                         "WHITELIST 与 README「镜像范围」表不一致")
+        self.assertEqual(set(backup.BLACKLIST), blacklist,
+                         "BLACKLIST 与 README「刻意不镜」表不一致")
+
+    def test_whitelist_and_blacklist_are_disjoint(self):
+        self.assertEqual(set(backup.WHITELIST) & set(backup.BLACKLIST), set())
+
+
+class UnclassifiedAlertTests(unittest.TestCase):
+    """`find_unclassified`：两表皆无即告警（Shao Peishen 2026-09-10 答 `2c`）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.source_dir = Path(self._tmp.name) / "Scheduled"
+        self.source_dir.mkdir()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_新任务目录未分类即报出(self):
+        _write_task(self.source_dir, "huijian-chaijian-patrol", "x")      # 白名单
+        _write_task(self.source_dir, "sanhuan-300408-weekly-scan", "x")   # 黑名单
+        _write_task(self.source_dir, "brand-new-task-0911", "x")          # 两表皆无
+        self.assertEqual(backup.find_unclassified(self.source_dir), ["brand-new-task-0911"])
+
+    def test_全部已分类时为空(self):
+        _write_task(self.source_dir, "weekly-status-update", "x")
+        _write_task(self.source_dir, "wave-0826-watch", "x")
+        self.assertEqual(backup.find_unclassified(self.source_dir), [])
+
+    def test_下划线前缀目录不当任务看(self):
+        _write_task(self.source_dir, "_scratch-whatever", "x")
+        self.assertEqual(backup.find_unclassified(self.source_dir), [])
+
+    def test_变异_把黑名单清空则原本已分类的也会报出(self):
+        """🔴 变异检验：`test_全部已分类时为空` 不得恒真。"""
+        _write_task(self.source_dir, "wave-0826-watch", "x")
+        real = backup.BLACKLIST
+        try:
+            backup.BLACKLIST = ()
+            self.assertEqual(backup.find_unclassified(self.source_dir), ["wave-0826-watch"])
+        finally:
+            backup.BLACKLIST = real
+
+    def test_真身目录不存在时不炸(self):
+        self.assertEqual(backup.find_unclassified(self.source_dir / "nope"), [])
+
+
+def _parse_readme_tables() -> tuple[set[str], set[str]]:
+    """从 README「镜像范围」/「刻意不镜」两张表里现场解析 taskId。
+
+    判据：表体行形如 `| \\`taskId\\` | … |`，取首格反引号内的名字。**不按列位
+    硬解析**——列宽与列数都会变（同 `#535`）。
+    """
+    import re
+    text = (SCRIPT.parent / "定时任务源码" / "README.md").read_text(encoding="utf-8")
+    mirror_head = text.index("## 镜像范围")
+    black_head = text.index("### 刻意不镜")
+    tail = text.index("### 🔴 未分类即告警")
+    row = re.compile(r"^\|\s*`([^`]+)`\s*\|", re.M)
+    white = {m.group(1) for m in row.finditer(text[mirror_head:black_head])}
+    black = {m.group(1) for m in row.finditer(text[black_head:tail])}
+    assert white and black, "README 表解析落空——先怀疑没读到对象，不要当成两表为空"
+    return white, black
 
 
 class DirectionIsOneWayTests(unittest.TestCase):

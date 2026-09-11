@@ -390,8 +390,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import fnmatch
 import importlib.util
+import io
 import json
 import os
 import re
@@ -6034,6 +6036,124 @@ def _check_hooks_heartbeat(repo_root: Path, log: list[str]) -> None:
 
 
 # ============================================================
+# 队列 §一 #551 旁生（2026-09-10，OP-0910-A）：**第 14 类**常驻状态告警 ——
+# 定时任务目录未分类（白名单与黑名单皆无 ⇒ 不会被镜像、也不会有人发现）
+# ============================================================
+#
+# **成因（当日现取，非设想）**：`工具-定时任务源码备份.py` 的 `WHITELIST`
+# 写死 3 条，而 `mcp__scheduled-tasks__list_scheduled_tasks` 现取实有 6 条在
+# 册 ⇒ 项目机制 `zhuopin-lan-closeout-reminder` **一直无版本保护地裸奔**，
+# 直到有人偶然跑了一次脚本、数了数「怎么只有 3 条」才发现。
+#
+# 🔑 **一个只在「有事」时出声、而漏项恰好表现为「没事」的机制，等于没有。**
+#    同族＝ `#398`（用来发现问题的东西自己坏了）。
+#
+# 🔴 **为什么挂 sweep 而不是留在那个脚本里**：`定时任务源码/README.md` 自
+#    陈「尚未接自动触发器，仍需人手动跑第 3 步这一动作本身」——**检查建好
+#    了却没有东西会去跑它，就还是人守**，正是当日 `UPS5:7` 那一课。sweep
+#    每小时由 Windows 计划任务 `ZhuopinCommitSweep` 真跑（现取 LastRunTime
+#    17:17、NextRunTime 18:17、LastTaskResult 0），且已有 webhook 与「出现→
+#    告警／消失→解除」骨架，不新增任何计划任务（同 #433 ⑴ 的取向）。
+#
+# 🔴 **只读、只告警**：不写白/黑名单、不镜任何文件、不影响本轮退出码。
+SCHEDULED_TASK_COVERAGE_STATE_REL = "reports/sweep-scheduled-task-coverage-state.json"
+SCHEDULED_TASK_COVERAGE_ALERT_INTERVAL_HOURS = 24.0
+
+
+def _check_scheduled_task_coverage(repo_root: Path, log: list[str]) -> None:
+    """第 14 类常驻状态告警：定时任务目录未分类。
+
+    判据正本在 `工具-定时任务源码备份.py::find_unclassified`（白/黑名单也在
+    那里，README 表是它的正本）——**本函数只调用、不重抄一份判据**，否则就
+    成了第三个会漂的副本（同 `#535`／`#537` 那一族）。
+    """
+    tool = repo_root / "0-学习与工具" / "工具-定时任务源码备份.py"
+    keys: set[str] = set()
+    detail = ""
+    if not tool.exists():
+        keys.add("备份工具不在")
+        detail = f"`{tool.relative_to(repo_root).as_posix()}` 不存在——本类无法判定。"
+    else:
+        try:
+            spec = importlib.util.spec_from_file_location("_sweep_sched_backup_reuse", tool)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            # 🔴 **exec_module 会执行那个路径上的任意顶层代码**，两个后果都实撞过
+            # （2026-09-10，`ScheduledTaskMirrorSyncTests`）：
+            #   ⑴ 它 `raise SystemExit(1)` ⇒ **SystemExit 不是 Exception**，穿过
+            #      本函数的 except、冲掉 sweep 本轮退出码，把「凭据拦截是纯提示、
+            #      不应改变退出码」那条既有用例打红；
+            #   ⑵ 它 `print(...)` ⇒ 报告原样混进 sweep 的 stdout。
+            # 🔑 **一个只读告警绝不该有能力改变宿主的退出码。** 故：吞掉 stdout、
+            #    捕到 BaseException 层（`KeyboardInterrupt` 例外，仍放行）。
+            _buf = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(_buf), contextlib.redirect_stderr(_buf):
+                    spec.loader.exec_module(module)
+            except KeyboardInterrupt:
+                raise
+            except BaseException as exc:  # noqa: BLE001 —— 含 SystemExit，见上
+                log.append(f"🗂 第 14 类：加载备份工具时它自行退出（{type(exc).__name__}），本类跳过、不告警。")
+                _track_and_alert_standing_state(
+                    repo_root, "定时任务分类", SCHEDULED_TASK_COVERAGE_STATE_REL, set(),
+                    SCHEDULED_TASK_COVERAGE_ALERT_INTERVAL_HOURS,
+                    lambda keys: "",
+                    lambda keys: "✅ 落库sweep：定时任务分类告警已解除（备份工具不可加载）。",
+                    log,
+                )
+                return
+            if not hasattr(module, "find_unclassified"):
+                # 🔴 **「工具还没有这个能力」≠「判据坏了」**，不告警。
+                # 2026-09-10 实撞：`ScheduledTaskMirrorSyncTests` 会在沙箱里把
+                # 备份脚本换成一个只 `print` 的桩，本类原先把 AttributeError 当
+                # 成「判据自身异常」推了一条 webhook，直接把三条既有用例打红
+                # （它们断言「无差异时零 webhook 噪声」）。
+                # 🔑 **一个新装的告警把既有测试的「安静」判据打破，说明它在真实
+                #    环境里也会制造同样的噪声** —— 沙箱只是先替人撞上了。
+                # 传空 keys：若此前告警过，这一步顺带自动解除。
+                log.append("🗂 第 14 类：备份工具尚无 `find_unclassified`（旧版本或桩），本类按设计不告警。")
+                _track_and_alert_standing_state(
+                    repo_root, "定时任务分类", SCHEDULED_TASK_COVERAGE_STATE_REL, set(),
+                    SCHEDULED_TASK_COVERAGE_ALERT_INTERVAL_HOURS,
+                    lambda keys: "",
+                    lambda keys: "✅ 落库sweep：定时任务分类告警已解除（备份工具已无该判据）。",
+                    log,
+                )
+                return
+            unclassified = module.find_unclassified()
+            if unclassified:
+                keys.update(unclassified)
+                detail = "／".join(f"`{n}`" for n in unclassified)
+            log.append(
+                f"🗂 第 14 类：定时任务目录分类——白名单 {len(module.WHITELIST)}"
+                f" ＋ 黑名单 {len(module.BLACKLIST)}，未分类 {len(unclassified)} 个。"
+            )
+        except Exception as exc:  # noqa: BLE001 —— 🔴 判据坏了和没有违规是两回事
+            keys.add("判据自身异常")
+            detail = f"{type(exc).__name__}: {exc}"
+            log.append(f"🔴 第 14 类：判据自身异常——{detail}")
+
+    def render_alert(alert_keys):
+        return (
+            "🗂 落库sweep：**定时任务目录未分类**（第 14 类常驻告警，队列 §一 `#551` 旁生）\n"
+            f"- 命中 {len(alert_keys)} 个：{detail}\n"
+            "⇒ 它们**既不会被镜进仓库、也不会有人发现**。请逐个判定后写进 "
+            "`工具-定时任务源码备份.py` 的 `WHITELIST`（项目机制）或 `BLACKLIST`"
+            "（个人/一次性/孤儿），并同步 `0-学习与工具/定时任务源码/README.md` 两张表"
+            "（单测会现场解析 README 比对，改一处不改另一处即转红）。恢复后下一轮自动解除。"
+        )
+
+    def render_resolved(resolved_keys):
+        return ("✅ 落库sweep：定时任务目录分类已补齐，以下告警自动解除：\n"
+                + "\n".join(f"- `{k}`" for k in resolved_keys))
+
+    _track_and_alert_standing_state(
+        repo_root, "定时任务分类", SCHEDULED_TASK_COVERAGE_STATE_REL, keys,
+        SCHEDULED_TASK_COVERAGE_ALERT_INTERVAL_HOURS, render_alert, render_resolved, log,
+    )
+
+
+# ============================================================
 # 队列 §一 #382⑵（2026-09-02，OP-0902-D）：第 10 类常驻状态告警——
 # 跟进信待发信盘点 + 交叉红标（原巡逻章程 `huijian-chaijian-patrol.
 # SKILL.md` §一.3「待发信盘点」判据下放）
@@ -7283,6 +7403,14 @@ def main() -> int:
             # （design D5 ＝ (b)，Shao Peishen 2026-09-07 合审），排在第 12 类之后。
             _check_plan_backpressure(repo_root, log)
             plan_backpressure_scanned = True
+
+            # 队列 §一 #551 旁生（2026-09-10，OP-0910-A；Shao Peishen 答 `2c`）：
+            # 第 14 类常驻状态告警——定时任务目录未分类。同上九类，检测对象是
+            # 本机 `~/Claude/Scheduled/` 的整体状态、与本轮是否有批次落库无关；
+            # 🔴 **只读、只告警、不镜任何文件、不改白/黑名单、不影响退出码**。
+            # 🔴 零命中也回显（同第 4/6/7/9/10/11 类）——一个从来不出声的机制，
+            #    没人能判断它是「没问题」还是「没跑」。
+            _check_scheduled_task_coverage(repo_root, log)
 
         # 队列 §一 #416 ⑶ D4（2026-09-07，OP-0907-AM）：孤儿升格 §四。
         # 🔴 **位置是判据的一部分**：排在本轮全部 git 操作（批次提交、台账
