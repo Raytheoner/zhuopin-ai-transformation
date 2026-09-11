@@ -16,32 +16,33 @@ title: "Session 接力（滚动·最新）—— 业务总线（三域合一）"
 
 | 编号 | 会话名 | 触碰区 | 起止 |
 |---|---|---|---|
-| `OP-0911-C` | 【Cowork】业务总线接棒（接 OP-0910-A） | `6-人才与组织/部门AI专员跟进/`（质量部#14）＋ 两份队列 §一 #540/#553/#555 | 09-11 14:53 – 15:2x ✅ |
+| `OP-0911-C` | 【Cowork】业务总线接棒（接 OP-0910-A） | `6-人才与组织/部门AI专员跟进/`（质量部#14）＋ 两份队列 §一 #540/#553/#555 | 09-11 14:53 – 15:5x ✅ |
+| `OP-0911-G` | 【CC】`553-p4-unmerged-alert`（无头，OP-0911-C 代起） | `opener骨架.md` L62／`工具-opener生成.py`／其单测／`工具-落库sweep.py` 新常驻类＋单测 | 09-11 15:36 – |
 
-> 夜批 `B-0911_差集告警与超限清扫`（`554-intake-gap`／`k2-sweep-overlimit`）与 `552-single-seg-split` **三条分支均已 0 ahead master**（`git rev-list --count master..分支` 现取），本批已收工。
+> `OP-0911-G` 日志 `reports/opener-batch/20260911-153644/`（session `c8b43e15-7fd1-43c6-9320-03686e933203`）；收工由定时任务 `poll-opener-batch` 推运维群。🔴 **批处理脚本只能用 `pwsh` 起**（`20260911-153523/` 是用 Windows PowerShell 5.1 误起的空目录，`Start-Job -WorkingDirectory` 不存在）。夜批三条分支已 0 ahead master。
 
 ## 二、当前状态快照（手段随句写明）
 
 - **`master` 现取 `983826b`**；🔴 **判落地一律按 `#534` patch-id 口径看产物，不看分支图**。
-- 🆕 **`质量部#14` 已起草、README `⏳ 待你审`（本会话）**：判例表 J1–J7 ＋ J8 二选一 ＋ J9 材料索取表，`决策点: 9 项`；docx 36 枚 `w14:checkbox`（`zipfile` 计数）。🔴 **已安装 skill `md-to-word` 的 `md2word.py` 不出真复选框（36 死字符）——判例表一律用仓库 `0-学习与工具/md转Word工具/md2word.py`**。串行闸现 🔒（#14 在途），**#14 回件在第九态桥覆盖面内**（在途信件），不再落 `#554` 差集。
-- 🆕 **口径点台账 `质量域.jsonl` 已建 9 点 `Q2-Q14-01…09`**（`LedgerStore.append_many`，`lint_ledger_dir` ok）；发出后须 `coverage_point_ledger.cli transition` 转「在途」——**没有机器规则做这一步**，谁发信谁转。
+- 🆕 **`质量部#14` 已批准 `🆕 待发`**（他答 `1a`＋「审核通过」；`approve_followup_letter.py --quote` 二跑 15:43 过冷却窗口，`工具-跟进闸查询.py` 反查＝`🆕 待发 · 在途`）：判例表 J1–J7 ＋ J8 二选一 ＋ J9 材料索取表，`决策点: 9 项`；docx 36 枚 `w14:checkbox`。🔴 **已安装 skill `md-to-word` 的 `md2word.py` 不出真复选框——判例表一律用仓库 `0-学习与工具/md转Word工具/md2word.py`**。每日派发＝工作日 09:30（下一个 09-14 周一）；**#14 回件在第九态桥覆盖面内**，不落 `#554` 差集。
+- 🆕 **口径点台账 `质量域.jsonl` 已建 9 点 `Q2-Q14-01…09`**（`LedgerStore.append_many`，`lint_ledger_dir` ok）；**发出时由 `aibot_service/delivery.py::push_followup → ledger_writeback.record_letter_sent` 机器转「在途」**（按 `letters` 连线，已连），不需人补。
 - **`#540` 已销号**（K2 外置第 1 批，格 4035 B）；**`#555` ✅**；`#553` 追段＋K2 第 2 批（格 3666 B）。
 - 🔴 **行长闸已阻断**：格 >4096 B 的 `edit-row` 会被拒——先 `工具-队列行K2外置.py` plan → `--apply --keep` → 把新段并进 JSON 再 `edit-row`（本会话 #540/#553 即此法；`--verify-json` 对并段后的格会报「≠」，属预期，看字节数即可）。
-- **`#553` ⑵ 判为 CC 件**：`opener骨架.md` L62 与 `工具-opener生成.py` `SUBTASK_PUSH_NOTE` 被 `test_工具-opener生成.py::骨架与生成器契约` 逐字绑死，Cowork 不得只改 md。⑶ 阈值口径待他答。
+- **`#553` ⑵⑶ 已起无头棒 `OP-0911-G`**（他答 `2a`＝B 类 ≥5 条且最老 ≥7 天）：⑵ 骨架 L62／生成器 `SUBTASK_PUSH_NOTE`／契约单测三处同一提交改；⑶ sweep 新常驻类只数 patch-id B 类。收工后 🟡 ff 仍要他一字母。
 - **`#538` SC2**：仍 `partial`——⏭️ `.51` 部署＋与线上比对待 LAN 收口批。
 - **`#556`（环境总线新立）**：outbox→aibot 中继 SMB 读 11 天不通、失败表象＝无待发消息；**业务线发信前先确认通道**（`工具-跟进闸查询.py` 只判闸，不判通道）。
 
 ## 三、下一会话主攻（业务总线）
 
-1. **`质量部#14` 发送链**：他审 → `scripts/approve_followup_letter.py --quote`（10 分钟冷却）→ 每日派发；**发出后 `coverage_point_ledger.cli transition` 9 点转「在途」**。回件到 ⇒ 拆件回灌 ⇒ 第一批验收（红线⑥按 V1 走完；①④⑤只出参考数据）。
-2. **`#553` ⑵⑶ CC 派单**：待他答 ⑶ 阈值后，经 `工具-opener生成.py` 出 standard 变体 opener，改三处（骨架 L62／生成器 L239–241／契约单测若断言原文）。
+1. **`质量部#14` 已 `🆕 待发`**：09-14 09:30 派发（`ZhuopinFollowupDispatchDaily`）；发出后核 `工具-跟进闸查询.py --to 陈忱` 转 `✅ 已推送`、台账 9 点已「在途」（`points-by-letter`）。回件到 ⇒ 拆件回灌 ⇒ 第一批验收（红线⑥按 V1 走完；①④⑤只出参考数据）。
+2. **`OP-0911-G` 收工接件**：看 `reports/opener-batch/20260911-153644/summary.txt`；回写核 `#553` ⑵⑶ 段；分支 `claude/op0911g-553-p4-unmerged-alert` 🟡 ff 端「需你定夺」（`#534` patch-id 先比）。
 3. **业务域 `[S:open]` 待领池**（`--digest` 现取）：`#518` FI10 判例批改表（唐燕萍底稿已到）、`#499` SC2 六指标、`#494`/`#495` FI2、`#506` SC2 基准日、`#463`+14 场景立行（`#467` SC4 最紧）。**先查串行闸再动笔**：唐燕萍／姚祖怡各自最近一封状态用 `工具-跟进闸查询.py --to`。
 4. 🔴 **两处回归未整跑，不得当已绿**：`test_工具-落库sweep.py` 471 条／`test_工具-opener批处理执行v2.py` 16 条（环境：整跑超工具单次上限，后台 detach 会被会话超时连带杀掉）。
 5. **行长⑪ 两条日期炸弹用例**长期红，须改按日期分档断言（`#513` ⑷）。
 
 ## 四、在途与等他动作（只写指针）
 
-- **等他一字母**：`质量部#14` 审（`⏳ 待你审`）；`#553` ⑶ 阈值。
+- **等他一字母**：`OP-0911-G` 收工后的 🟡 ff（分支 `claude/op0911g-553-p4-unmerged-alert`）。
 - **等他动作**：§四 `#194`／`#157`（无默认）／`#152`／`#156`／`#170`。**`#193` 已闭合**（三 zip 09-10 13:39 自动落盘，微盘取件不再需要）——接力卡此前那句已过时，勿再引用。
 - **⚠️ 权限规则**：`.claude/settings.local.json` 2 条过宽 Bash 允许规则。🔴 **安全设置，本方不代改，只报。**
 - **无头档实际权限模式 ＝ `acceptEdits`**：`git worktree remove` 会被拒 ⇒ 泳道 worktree 常需看护者收工手工 `--force` 清。
