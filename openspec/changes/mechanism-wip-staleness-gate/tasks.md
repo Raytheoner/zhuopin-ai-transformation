@@ -1,6 +1,6 @@
 # mechanism-wip-staleness-gate Tasks
 
-> 🔴 **1.x 全部完成、且 Shao Peishen 已批准 design.md 六个决策点（D-A～D-F）之后，才可开工 2.x 起的实现项。** 派单指令（`OP-0911-D`）：本棒只做 propose＋design，不 apply、不改 `工具-共享文档编辑锁.py` 任何一行；apply 另派。
+> ✅ **1.x 已全部完成，design 六决策点已于 2026-09-11 获 Shao Peishen 批准（答 `2a`，全按推荐）——2.x 起可开工。** 派单指令（`OP-0911-D`）：本棒只做 propose＋design，不 apply、不改 `工具-共享文档编辑锁.py` 任何一行；apply 另派。
 > 🔴 **apply 棒开工第一件事＝重跑 1.1 的探针（现取表过期守，同 `#522`）**，与本文 1.1 记录的分布对照，计入行偏差 >3 条即停手回报，不得拿过期基数写进实现。
 
 ## 1. Propose ＋ Design（本棒已完成，2026-09-11）
@@ -10,7 +10,7 @@
 - [x] 1.3 design.md 六个决策点（D-A 取龄定义与乐观偏差、D-B 🛑 两列 (甲)＋写侧告警、D-C `#58` ⑸ 修法⑴、D-D 迁移期与退休判据、D-E 取龄失败非静默、D-F 模式切换载体），均带推荐与默认项
 - [x] 1.4 spec delta `editlock-mechanism-wip-guard`（MODIFIED「超限时拒绝 release」／REMOVED「上限值可配置」／ADDED 五条）
 - [x] 1.5 `openspec validate mechanism-wip-staleness-gate --strict` 通过（回显见本棒收工汇总）
-- [ ] 1.6 **Shao Peishen 审 design.md 六个决策点**（🟡，泳道无权自行通过）——答复模板见本棒收工汇总；批准后本行改 [x] 并记日期与答复字母
+- [x] 1.6 **Shao Peishen 审 design.md 六个决策点**——2026-09-11 答 `1a，2a，3a`：1a＝认可「偏差 ＋4 基数改写＋N/K 不变」继续；**2a＝六点全按推荐**（D-A 甲／D-B 甲＋写侧告警／D-C 甲／D-D 7 天＋三前置／D-E 甲／D-F 甲）；3a＝分支即刻 ff 进 master。⇒ 2.x 起可开工（apply 另派，本棒不 apply）
 
 ## 2. 单测先写（apply 棒；红→绿，实现前先写红）
 

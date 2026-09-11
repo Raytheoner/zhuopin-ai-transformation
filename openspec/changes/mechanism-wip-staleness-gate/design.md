@@ -1,6 +1,6 @@
 # mechanism-wip-staleness-gate Design
 
-> 🔴 **本包 propose 期只产本目录下的 `.md`，不改 `工具-共享文档编辑锁.py` 任何一行**（派单件 `OP-0911-D` §〇：闸是全项目唯一写入咽喉，改错它所有会话当场写不进队列；apply 另派）。决策点 D-A～D-D 为派单件点名必含项，D-E／D-F 为 propose 期实测新增。每个决策点带推荐与默认项；🟡 **design 审须 Shao Peishen 一字母，泳道无权自行通过**。
+> 🔴 **本包 propose 期只产本目录下的 `.md`，不改 `工具-共享文档编辑锁.py` 任何一行**（派单件 `OP-0911-D` §〇：闸是全项目唯一写入咽喉，改错它所有会话当场写不进队列；apply 另派）。决策点 D-A～D-D 为派单件点名必含项，D-E／D-F 为 propose 期实测新增。每个决策点带推荐与默认项；🟡 design 审须 Shao Peishen 一字母，泳道无权自行通过。✅ **已审：Shao Peishen 2026-09-11 答 `2a`——D-A～D-F 六点全按推荐执行**（同答 `1a` 认可 09:55 基数改写＋N/K 不变、`3a` 即刻 ff）。
 
 ## Context
 
