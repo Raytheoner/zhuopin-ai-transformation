@@ -64,3 +64,22 @@
 - [x] 8.1 场景 `CLAUDE.md` 状态时间线补一行
 - [x] 8.2 队列 `#394` 回写（**不销号**，销号判据是 6.5）＋ 登记 §二 批次
 - [ ] 8.3 归档（待 §6 全勾）
+
+## 9. 🔴 队列 `#556` 修法（决策点 9，2026-09-11 设计完成，尚未 apply）
+
+> `OP-0911-U` 本次为**纯设计会话**——读失败告警连续 11 天未去重（`2026-08-31` 起
+> `outbox_relay_scan_failed` 占当日审计 52%），决策点 9 给出修法；本节任务全部
+> **未做**，留给下一个 apply 泳道，**须先经 Shao Peishen design 审**（机制/工具类
+> 模块改变既有模块对外语义，按根 `CLAUDE.md` §5 门槛必走 openspec design 审，
+> 泳道无权自行通过）。
+
+- [ ] 9.1 新增 `reports/outbox_relay_unreadable_state.json` 读写（路径级 `first_failed_at`／`last_alert_at`），gitignore 覆盖，同 `decision_reminder_ack.json` 先例
+- [ ] 9.2 `relay_once()` 读失败分支改判：转入 ⇒ 立即告警；持续态未到复报周期 ⇒ 只记审计不告警；到复报周期 ⇒ 告警并回填 `last_alert_at`；恢复 ⇒ 告警并清除状态
+- [ ] 9.3 新增环境变量 `WECOM_AIBOT_OUTBOX_UNREADABLE_REALERT_SECONDS`（默认 `21600` ＝ 6 小时）
+- [ ] 9.4 新增可区分审计事件：`outbox_relay_scan_unreadable_started` / `_persisting` / `_recovered`（`outbox_relay_scan_failed` 原样保留、每轮照记不变）
+- [ ] 9.5 单测：首次转入必告警／节流期内不告警但审计照记／超过周期复报／恢复后告警并清状态／状态跨进程重启不重置（用临时文件模拟重启，MUST NOT 复现「首次转入」告警）
+- [ ] 9.6 `scripts/check_outbox_relay.py`：读不到时追加打印状态文件里的 `first_failed_at` 与距今时长（不改动既有退出码语义）
+- [ ] 9.7 🔴 源码层断言：中继不得出现任何 `socket`/`Test-NetConnection` 一类网络自检代码（钉住决策点 9.1「否掉方案」的结论，防止有人事后加回来）
+- [ ] 9.8 sweep 新增一类值周提示（范式同队列 `#312` 陈化催办）：`first_failed_at` 距今 > 24 小时的路径进值周清单
+- [ ] 9.9 队列 `#556` 回写＋登记 §二 批次（本次设计会话即完成，见 `1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md` `#556` 行）
+- [ ] 9.10 apply 完成后回归：服务全量 ＋ 平台全量零漂移，openspec `validate --strict` 绿
