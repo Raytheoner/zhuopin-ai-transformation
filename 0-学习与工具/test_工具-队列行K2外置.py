@@ -353,7 +353,258 @@ class 静态守卫_源码里没有覆盖式写盘(unittest.TestCase):
     def test_write_text只用于JSON产物(self):
         src = SCRIPT.read_text(encoding="utf-8")
         calls = re.findall(r"(\w+)\.write_text\(", src)
-        self.assertEqual(calls, ["out_path"], f"write_text 只许写 JSON 产物，实际：{calls}")
+        self.assertTrue(calls, "源码应至少有一处 write_text（JSON 产物）")
+        self.assertEqual(set(calls), {"out_path"}, f"write_text 只许写 JSON 产物，实际：{calls}")
+
+
+# ---------------------------------------------------------------------------
+# 单段格拆分（`OP-0911-F`，派单件 §一.4 验收单）
+# ---------------------------------------------------------------------------
+
+def _single_cell(min_bytes: int = 4300, *, prefix: str = "[S:done][D:机] ✅ **已完成**。") -> str:
+    """造一个无 `━━━`、超闸的单段格：子句以 🔴 标记起、句号收，反引号成对。"""
+    parts = [prefix]
+    i = 0
+    while len(" ".join(parts).encode("utf-8")) < min_bytes:
+        i += 1
+        parts.append(f"🔴 **第{i}条** 甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥（`code{i}`）。")
+    return " ".join(parts)
+
+
+class 单段格拆分(_Base):
+    def setUp(self):
+        super().setUp()
+        self.cell = _single_cell()
+        self.assertNotIn(SEP, self.cell)
+        self.assertGreaterEqual(len(self.cell.encode("utf-8")), self.module.ROW_LENGTH_CAP_BYTES)
+        self.write_queue(HEADER_1 + _row1("9", self.cell))
+
+    def apply(self, *extra):
+        return self.run_cli("--row", "9", "--split-single", "--apply", "--expect-segments", "1", "--who", "CC T", *extra)
+
+    def test_plan_打出切点与两侧字节_不写任何文件(self):
+        code, out, _ = self.run_cli("--row", "9", "--who", "CC T")
+        self.assertEqual(code, 0)
+        self.assertIn("切点 @ 字符", out)
+        self.assertIn("依据「标记前」", out)
+        self.assertIn("预计新格", out)
+        self.assertFalse(self.log("9").exists())
+        self.assertFalse(self.json_path("9").exists())
+
+    def test_正常切_行内小于上限_两侧反引号成对_外置件含被切走原文逐字(self):
+        code, out, err = self.apply()
+        self.assertEqual(code, 0, err)
+        payload = json.loads(self.json_path("9").read_text(encoding="utf-8"))
+        new_cell = payload["set"]["状态"]
+        self.assertLess(len(new_cell.encode("utf-8")), self.module.ROW_LENGTH_CAP_BYTES)
+        self.assertTrue(new_cell.startswith("[S:done][D:机]"))
+        head, pointer = new_cell.split(f" {SEP} ")
+        self.assertIn("✂ **单段格已于 2026-09-10 切分**", pointer)
+        self.assertIn("直接接在本格结尾之后", pointer)
+        self.assertIn("切在「标记前」边界", pointer)
+        self.assertIn(f"`{LOG_DIR_REL}/#9.md`", pointer)
+        self.assertEqual(head.count("`") % 2, 0)
+        self.assertEqual(new_cell.count("`") % 2, 0)
+        # 被切走的原文＝原格去掉行内部分之后的余下，逐字在外置件里
+        self.assertTrue(self.cell.startswith(head))
+        tail = self.cell[len(head):].lstrip()
+        self.assertTrue(tail.startswith("🔴 **第"), tail[:20])
+        self.assertEqual(tail.count("`") % 2, 0)
+        log_text = self.log("9").read_text(encoding="utf-8")
+        self.assertIn(tail, log_text)
+        self.assertIn("单段切分，原文原样", log_text)
+        self.assertIn("直接接在行内结尾之后", log_text)
+        # 行内 ＋ 外置 ＝ 原文（切点处只吃掉了一个空格），一个字都没改
+        self.assertEqual(head + " " + tail, self.cell)
+        self.assertIn("[OK]", out)
+        self.assertIn("单段切分@字符", out)
+
+    def test_未带split_single即拒绝_不猜(self):
+        code, _, err = self.run_cli("--row", "9", "--apply", "--expect-segments", "1", "--who", "CC T")
+        self.assertEqual(code, 2)
+        self.assertIn("显式动作", err)
+        self.assertFalse(self.log("9").exists())
+
+    def test_多段格带split_single即拒绝_原路径不受影响(self):
+        multi = _cell("[S:open][D:机] 首段", _seg("二", 600), "末段")
+        self.write_queue(HEADER_1 + _row1("9", multi))
+        code, _, err = self.apply()
+        self.assertEqual(code, 2)
+        self.assertIn("走按段外置路径", err)
+        code, _, err = self.run_cli("--row", "9", "--apply", "--expect-segments", "3", "--who", "T")
+        self.assertEqual(code, 0, err)
+
+    def test_单段未超闸_无事可做(self):
+        self.write_queue(HEADER_1 + _row1("9", "[S:open][D:机] 一句。 🔴 两句。"))
+        code, _, err = self.apply()
+        self.assertEqual(code, 2)
+        self.assertIn("未超闸", err)
+
+    def test_切点落在反引号中间即拒_无安全切点非零退出(self):
+        # 唯一的语义边界与句号全部包在一个反引号跨度里；跨度外没有任何可读的切点。
+        inner = " ".join(f"🔴 第{i}条甲乙丙丁戊己庚辛壬癸。" for i in range(1, 140))
+        cell = f"[S:done][D:机] `{inner}` 尾"
+        self.assertGreaterEqual(len(cell.encode("utf-8")), self.module.ROW_LENGTH_CAP_BYTES)
+        self.write_queue(HEADER_1 + _row1("9", cell))
+        code, out, err = self.apply()
+        self.assertEqual(code, 2)
+        self.assertIn("找不到安全切点", err)
+        self.assertIn("反引号", out)
+        self.assertFalse(self.log("9").exists(), "拒绝时外置件一个字节不写")
+        self.assertFalse(self.json_path("9").exists())
+
+    def test_切点落在代码块内即拒(self):
+        text = "[S:open][D:机] 前言。\n~~~\n🔴 甲。\n🔴 乙。\n~~~\n🔴 后记。"
+        pos = text.index("🔴 乙")
+        self.assertEqual(self.module.cut_block_reason(text, pos, "一"), "代码块")
+        self.assertIsNone(self.module.cut_block_reason(text, text.index("\n~~~"), "一"))
+
+    def test_切点落在表格行内即拒(self):
+        text = "[S:open][D:机] 前言。\n| 甲。 🔴 乙。 | 丙 |\n🔴 后记。"
+        pos = text.index("🔴 乙")
+        self.assertEqual(self.module.cut_block_reason(text, pos, "一"), "表格行")
+        self.assertIsNone(self.module.cut_block_reason(text, text.index("\n|"), "一"))
+
+    def test_半句话不切_无标点即无安全切点(self):
+        cell = "[S:done][D:机] " + " ".join(f"🔴 第{i}条甲乙丙丁戊己庚辛" for i in range(1, 200))
+        self.assertGreaterEqual(len(cell.encode("utf-8")), self.module.ROW_LENGTH_CAP_BYTES)
+        self.write_queue(HEADER_1 + _row1("9", cell))
+        code, out, err = self.apply()
+        self.assertEqual(code, 2)
+        self.assertIn("找不到安全切点", err)
+        self.assertIn("半句话", out)
+        self.assertFalse(self.log("9").exists())
+
+    def test_句号后紧跟粗体闭合的位置不切(self):
+        text = "[S:open][D:机] **前言。** 🔴 后记。"
+        self.assertEqual(self.module.cut_block_reason(text, text.index("**") + 4 + 1, "一"), "半句话（读不通）")
+        self.assertIsNone(self.module.cut_block_reason(text, text.index("🔴"), "一"))
+
+    def test_反引号里的粗体字面量不计入粗体奇偶(self):
+        # `#537` 实例：引用的 hook 回显 `… 🔴 **代执行优先…` 夹在反引号里，其后的合法切点不得因此被判半句话
+        text = "[S:open][D:机] 回显 `📌 常驻纪律 6 条：… ｜ 🔴 **代执行优先（…`，**无 ⚠**。 🔴 后记。"
+        self.assertEqual(self.module._bold_marks_outside_code(text[: text.index("🔴 后记")]), 2)
+        self.assertIsNone(self.module.cut_block_reason(text, text.index("🔴 后记"), "一"))
+
+    def test_既有外置件只追加_旧内容锚点仍在(self):
+        old = "---\ntitle: 既有\n---\n\n# 立行时原文\n\n这是别的会话先前写的一整段建造对账，一个字都不能少。\n"
+        self.log("9").write_text(old, encoding="utf-8")
+        code, _, err = self.apply()
+        self.assertEqual(code, 0, err)
+        new = self.log("9").read_text(encoding="utf-8")
+        self.assertTrue(new.startswith(old))
+        self.assertGreater(len(new), len(old))
+
+    def test_幂等_重跑不把切点后原文追加两次(self):
+        self.apply()
+        first = self.log("9").read_text(encoding="utf-8")
+        code, out, err = self.apply()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.log("9").read_text(encoding="utf-8"), first, "第二次跑不得再写外置件")
+        self.assertIn("未重复追加", out)
+        new_cell = json.loads(self.json_path("9").read_text(encoding="utf-8"))["set"]["状态"]
+        self.assertIn("本次未重复追加", new_cell)
+        self.assertIn("工具第 1 批", new_cell)
+
+    def test_指针md5与外置件一致_verify反查(self):
+        import hashlib
+        code, _, err = self.apply()
+        self.assertEqual(code, 0, err)
+        real = hashlib.md5(self.log("9").read_text(encoding="utf-8").encode("utf-8")).hexdigest()[:8]
+        new_cell = json.loads(self.json_path("9").read_text(encoding="utf-8"))["set"]["状态"]
+        self.assertIn(f"md5:{real}", new_cell)
+        jp = str(self.json_path("9"))
+        code, out, _ = self.run_cli("--verify-json", jp)
+        self.assertEqual(code, 1)
+        self.write_queue(HEADER_1 + _row1("9", new_cell))
+        code, out, _ = self.run_cli("--verify-json", jp)
+        self.assertEqual(code, 0, out)
+
+    def test_切点选法_语义边界优先于句号后(self):
+        # 同一格里既有「标记前」也有更靠近上限的「句号后」——只要标记前可行，不退到句号后。
+        code, _, err = self.apply()
+        self.assertEqual(code, 0, err)
+        new_cell = json.loads(self.json_path("9").read_text(encoding="utf-8"))["set"]["状态"]
+        self.assertIn("切在「标记前」边界", new_cell)
+
+    def test_切点选法_无语义边界时退到句号后(self):
+        cell = "[S:done][D:机] " + " ".join(f"第{i}条甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥。" for i in range(1, 80))
+        self.assertGreaterEqual(len(cell.encode("utf-8")), self.module.ROW_LENGTH_CAP_BYTES)
+        self.write_queue(HEADER_1 + _row1("9", cell))
+        code, _, err = self.apply()
+        self.assertEqual(code, 0, err)
+        new_cell = json.loads(self.json_path("9").read_text(encoding="utf-8"))["set"]["状态"]
+        self.assertIn("切在「句号后」边界", new_cell)
+        self.assertLess(len(new_cell.encode("utf-8")), self.module.ROW_LENGTH_CAP_BYTES)
+
+
+def _mutant(tag: str, replacement: str):
+    """把源码里带 `tag` 尾注的那一行 `return …` 换成 `return <replacement>`——等价于把
+    该条判据整条注释掉；以原文件路径编译执行，使 `__file__` 仍指向真身、编辑锁照常加载。"""
+    import types
+    lines = SCRIPT.read_text(encoding="utf-8").splitlines(keepends=True)
+    hits = [i for i, ln in enumerate(lines) if ln.rstrip().endswith(tag)]
+    assert len(hits) == 1, f"{tag} 应恰好标在一行 return 上，实际 {len(hits)} 处"
+    ln = lines[hits[0]]
+    assert ln.lstrip().startswith("return "), ln
+    indent = ln[: len(ln) - len(ln.lstrip())]
+    lines[hits[0]] = f"{indent}return {replacement}  # 变异：{tag} 已注释掉\n"
+    mod = types.ModuleType(f"_k2_mutant_{tag}")
+    mod.__file__ = str(SCRIPT)
+    exec(compile("".join(lines), str(SCRIPT), "exec"), mod.__dict__)
+    return mod
+
+
+class 变异检验_安全切点判据逐条注释掉即转红(_Base):
+    """派单件 §一.4 🔴 变异四组：三条安全切点判据 ＋「读得通」判据，逐条注释掉，
+    确认对应用例**真的**从「拒绝」变成「放行」——证明那些用例不是恒过的摆设。"""
+
+    def _run_mutant(self, mod, cell: str):
+        self.write_queue(HEADER_1 + _row1("9", cell))
+        mod.REPO_ROOT = self.root
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = mod.main(["--row", "9", "--split-single", "--apply", "--expect-segments", "1", "--who", "M"], today=TODAY)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_变异1_反引号判据注释掉_反引号中间用例转红(self):
+        inner = " ".join(f"🔴 第{i}条甲乙丙丁戊己庚辛壬癸。" for i in range(1, 140))
+        cell = f"[S:done][D:机] `{inner}` 尾"
+        pos = cell.index("🔴 第100条")
+        self.assertEqual(self.module.cut_block_reason(cell, pos, "一"), "反引号", "原版必须拒绝")
+        mutant = _mutant("# 切点判据①", "False")
+        self.assertIsNone(mutant.cut_block_reason(cell, pos, "一"), "判据①注释掉后本应放行（用例转红）")
+        cut, _ = mutant.find_cut(cell, "一", lambda c: True)
+        self.assertIsNotNone(cut)
+        self.assertEqual(cut.head.count("`") % 2, 1, "变异版选出的切点确实把反引号切成了奇数")
+        # 第二道闸（`apply_split` 对新格整体跑 `has_unbalanced_backtick_run`）仍把它拦在写盘之前：
+        # 判据①失效时行为从「选点即拒」退化为「写前才拒」，仍不落盘——如实记录，不是判据①可省。
+        code, _, err = self._run_mutant(mutant, cell)
+        self.assertEqual(code, 2)
+        self.assertIn("切点判据失效", err)
+        self.assertFalse(self.log("9").exists())
+
+    def test_变异2_代码块判据注释掉_代码块内用例转红(self):
+        text = "[S:open][D:机] 前言。\n~~~\n🔴 甲。\n🔴 乙。\n~~~\n🔴 后记。"
+        pos = text.index("🔴 乙")
+        self.assertEqual(self.module.cut_block_reason(text, pos, "一"), "代码块")
+        mutant = _mutant("# 切点判据②", "False")
+        self.assertIsNone(mutant.cut_block_reason(text, pos, "一"), "判据②注释掉后本应放行（用例转红）")
+
+    def test_变异3_表格行判据注释掉_表格行内用例转红(self):
+        text = "[S:open][D:机] 前言。\n| 甲。 🔴 乙。 | 丙 |\n🔴 后记。"
+        pos = text.index("🔴 乙")
+        self.assertEqual(self.module.cut_block_reason(text, pos, "一"), "表格行")
+        mutant = _mutant("# 切点判据③", "False")
+        self.assertIsNone(mutant.cut_block_reason(text, pos, "一"), "判据③注释掉后本应放行（用例转红）")
+
+    def test_变异4_读得通判据注释掉_半句话用例转红(self):
+        cell = "[S:done][D:机] " + " ".join(f"🔴 第{i}条甲乙丙丁戊己庚辛" for i in range(1, 200))
+        code, _, _ = self._run_mutant(self.module, cell)
+        self.assertEqual(code, 2, "原版必须拒绝")
+        mutant = _mutant("# 切点判据④", "True")
+        code, _, err = self._run_mutant(mutant, cell)
+        self.assertEqual(code, 0, f"判据④注释掉后本应放行（用例转红），实际：{err}")
 
 
 if __name__ == "__main__":
