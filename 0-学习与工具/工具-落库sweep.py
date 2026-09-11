@@ -7074,7 +7074,21 @@ def _check_plan_backpressure(repo_root: Path, log: list[str]) -> None:
 #    （`#492`：本文件内不出现 webhook 键名字面量的第二份）。
 INTAKE_GAP_TASK_PREFIX = "企微反馈自动归档："
 INTAKE_GAP_PENDING_MARK = "待领"
-INTAKE_GAP_THRESHOLD_HOURS = 4.0  # 🔴 初值，待 Shao Peishen 明确答复（见上）
+# 🔴 **2 小时**（Shao Peishen 2026-09-11 明确答复，取代建造方初值 4.0）。
+# **它不是兜底阈值，是主探测器的发现延迟**：本类看的是「§一 待领的归档行」，
+# 而事件驱动的拆件是 ollowup_readme_bridge.mark_reply_arrived 在标完第九态的
+# **同一次调用**里 subprocess.Popen 起无头 CC（见 ibot_service/
+# patrol_dispatch.py「打标即开班」），**不等任何定时器**。⇒
+#   ⑴ **差集**（专员主动发言／对已闭环信件的补发）**不标第九态 ⇒ 根本不开班**，
+#      永不自清 —— 本类是它的**唯一探测器**，阈值即纯发现延迟；
+#   ⑵ **patrol_dispatch 起活失败**（章程读不到／claude 不在 PATH／Popen 抛异常）
+#      时该模块 fail-open，恢复路径是「下一条真实回件到达时再触发」，可能几小时
+#      到几天 —— 本类同样是**唯一探测器**；
+#   ⑶ 只有「已覆盖且正常派发」那一类本类才是兜底，而它几乎不会触发。
+# **2.0 的余量依据（实测，非估计）**：2026-09-10 质量拆件泳道从起到收 20.2 分钟
+# ⇒ 2 小时对 ⑶ 仍有 6 倍余量；而对 ⑴ 把发现延迟减半（当日陈忱五件 5/5 全落差集，
+# 从 09:21 挂到 21:xx 才被人眼发现，8–12 小时）。
+INTAKE_GAP_THRESHOLD_HOURS = 2.0
 INTAKE_GAP_ALERT_INTERVAL_HOURS = 24.0
 INTAKE_GAP_FIRST_SEEN_STATE_REL = "reports/sweep-intake-gap-first-seen.json"
 INTAKE_GAP_STATE_REL = "reports/sweep-intake-gap-state.json"
