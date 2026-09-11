@@ -193,6 +193,19 @@ print(json.dumps({"scope": "测试桩", "total": 0,
                   "queue_row_drafts": []}, ensure_ascii=False))
 '''
 
+# 队列 §一 #553 ⑶（2026-09-11，OP-0911-G）：第 16 类（未并入分支超阈值）子进程调
+# `工具-未并入分支分类.py`——同第 13 类，夹具还原真实布局：缺它每个 CLI 级用例都会
+# 如实报「判据不可用」并推一条告警，把「收到几次 webhook」的断言染红（第 14 类
+# 2026-09-10 实撞过同一形态）。桩恒零候选、零 git；本类自己的判据在
+# `test_工具-落库sweep-未并入分支告警.py` 用真临时仓库测。
+STUB_UNMERGED_BRANCH_SCRIPT = '''"""测试桩：未并入分支分类（恒零候选、零 git）。"""
+import json
+
+print(json.dumps({"base": "master", "base_sha": "0" * 40, "generated_utc": "2026-01-01T00:00:00+00:00",
+                  "total": 0, "counts": {"A": 0, "B": 0, "C": 0}, "branches": [], "b_branches": []},
+                 ensure_ascii=False))
+'''
+
 
 class SweepTestBase(unittest.TestCase):
     def setUp(self):
@@ -264,6 +277,8 @@ class SweepTestBase(unittest.TestCase):
             STUB_DRAFT_GAP_CHECK_SCRIPT, encoding="utf-8")
         (self.work / sweep.PLAN_BACKPRESSURE_SCRIPT_REL).write_text(
             STUB_PLAN_BACKPRESSURE_SCRIPT, encoding="utf-8")
+        (self.work / sweep.UNMERGED_BRANCH_SCRIPT_REL).write_text(
+            STUB_UNMERGED_BRANCH_SCRIPT, encoding="utf-8")
         (self.work / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
 
         # 队列 §一 #435（2026-08-30 回归排查后补）：第 4 类常驻告警新增

@@ -392,6 +392,7 @@ import argparse
 import ast
 import contextlib
 import fnmatch
+import hashlib
 import importlib.util
 import io
 import json
@@ -7248,6 +7249,172 @@ def _check_intake_gap_rows(repo_root: Path, log: list[str]) -> None:
     )
 
 
+# ============================================================
+# 队列 §一 #553 ⑶（2026-09-11，OP-0911-G；Shao Peishen 当日答 `2a`）：**第 16 类**
+# 常驻状态告警 —— 未并入分支超阈值（B 类 ≥5 条且最老 ≥7 天）
+# ============================================================
+#
+# **成因**：派单件与看护件长期写着「主仓 ff 由 sweep 收尾段做（P4）」，而本文件
+# grep `claude/op`／`泳道分支` 零命中——**留给 sweep ＝ 留给没有人**。`#553` ⑴ 现取
+# 134 条 `claude/*` 未并入分支，按 `#534` patch-id 三分类＝A 64（内容已在 master）／
+# B 18（真未落地）／C 4（该删）。这些真未落地的产出此前**以每天若干条的速度增加，
+# 而没有任何机制会报出来**。本类只让「不知道」变「知道」——🔴 **不合并、不删除任何
+# 分支**，合与删是后续决策。
+#
+# 🔴 **只数 B、不数分支图**（分类清单 §七 定量）：直接数 `--no-merged` 会把 64 条
+#    A 类假阴性算进去，告警从第一天起就是噪声。判据正本＝`工具-未并入分支分类.py`
+#    （patch-id 三层 A 判 → C 判 → B），本文件只调用、不重抄一份判据（同第 14 类）。
+# 🔴 **子进程调用、不进程内 import**（同第 13 类）：分类要跑 ≈80 次 git、首轮建
+#    patch-id 缓存 ≈80 s，进程内 import 会把这条对 git 布局的依赖搬进 sweep 自己。
+# 🔴 **阈值 5／7 由 Shao Peishen 2026-09-11 答 `2a` 定**——改它属口径判据类（🟡），
+#    不在本文件里调。「最老」按分支**首个未在 master 的提交**的 committer 日期算。
+# 🔴 **指纹不变即静默**（同第 13 类范式）：告警 key ＝ B 类分支名集合的哈希；集合
+#    不变时 24 h 内不再推，集合变化（新增／落地）即换 key ⇒ 旧 key 解除、新 key 告警。
+# 🔴 零命中也回显（同第 4/6/7/9/14/15 类）；`--dry-run` 也跑到本类（只回显、不写状态、
+#    不推送），使「实弹核一次判据」不必真跑一轮 sweep。
+UNMERGED_BRANCH_SCRIPT_REL = "0-学习与工具/工具-未并入分支分类.py"
+UNMERGED_BRANCH_STATE_REL = "reports/sweep-unmerged-branch-state.json"
+UNMERGED_BRANCH_UNAVAILABLE_STATE_REL = "reports/sweep-unmerged-branch-unavailable.json"
+UNMERGED_BRANCH_PATCHID_CACHE_REL = "reports/sweep-unmerged-branch-patchid-cache.json"
+UNMERGED_BRANCH_ALERT_INTERVAL_HOURS = 24.0
+UNMERGED_BRANCH_B_MIN_COUNT = 5
+UNMERGED_BRANCH_B_MIN_AGE_DAYS = 7
+UNMERGED_BRANCH_UNAVAILABLE_KEY = "unmerged-branch-unavailable"
+UNMERGED_BRANCH_SUBPROCESS_TIMEOUT_SECONDS = 900
+
+
+def _run_unmerged_branch_json(repo_root: Path) -> tuple[dict | None, str | None]:
+    """子进程调 `工具-未并入分支分类.py --json`，返回 (payload, None) 或 (None, 原因)。"""
+    script = repo_root / UNMERGED_BRANCH_SCRIPT_REL
+    if not script.exists():
+        return None, f"未找到 {UNMERGED_BRANCH_SCRIPT_REL}"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "--json", "--repo", str(repo_root),
+             "--cache", str(repo_root / UNMERGED_BRANCH_PATCHID_CACHE_REL)],
+            cwd=repo_root, capture_output=True, text=True, encoding="utf-8",
+            timeout=UNMERGED_BRANCH_SUBPROCESS_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"子进程调用异常：{type(exc).__name__}: {exc}"
+    if result.returncode != 0:
+        return None, (result.stderr or result.stdout).strip()[:500]
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return None, f"输出不是合法 JSON：{exc}"
+    if not isinstance(payload, dict) or "b_branches" not in payload or "counts" not in payload:
+        return None, "输出 JSON 缺少 `b_branches`／`counts` 字段"
+    return payload, None
+
+
+def _evaluate_unmerged_branch_backlog(payload: dict, now: datetime | None = None) -> dict:
+    """把分类结果折成告警判据：B 条数、最老天数、是否触发、指纹。
+
+    🔴 只看 `b_branches`（真未落地）；A／C 只带计数进正文。天数＝`now` − 分支首个未在
+    master 的提交的 committer 时刻；缺日期的条目算 0 天（只会让告警更晚，不会更早）。
+    """
+    now = now or datetime.now(timezone.utc)
+    items = []
+    for b in payload.get("b_branches", []):
+        days = 0
+        raw = b.get("first_unmerged_date")
+        if raw:
+            try:
+                stamp = datetime.fromisoformat(raw)
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone.utc)
+                days = max(0, (now - stamp).days)
+            except ValueError:
+                days = 0
+        items.append({"name": b.get("name", "?"), "tip": (b.get("tip") or "")[:8],
+                      "first_unmerged_date": (raw or "?")[:10], "days": days})
+    items.sort(key=lambda i: (-i["days"], i["name"]))
+    b_count = len(items)
+    oldest_days = items[0]["days"] if items else 0
+    triggered = b_count >= UNMERGED_BRANCH_B_MIN_COUNT and oldest_days >= UNMERGED_BRANCH_B_MIN_AGE_DAYS
+    names = sorted(i["name"] for i in items)
+    digest = hashlib.sha1("\n".join(names).encode("utf-8")).hexdigest()[:12]
+    counts = payload.get("counts", {})
+    return {
+        "b_count": b_count, "oldest_days": oldest_days, "items": items,
+        "a_count": int(counts.get("A", 0) or 0), "c_count": int(counts.get("C", 0) or 0),
+        "total": int(payload.get("total", 0) or 0),
+        "triggered": triggered,
+        "fingerprint": f"unmerged-B{b_count}:{digest}",
+    }
+
+
+def _render_unmerged_branch_alert(ev: dict) -> str:
+    top = ev["items"][:3]
+    lines = [
+        f"🌿 落库sweep：**未并入分支超阈值**（第 16 类常驻告警，队列 §一 `#553` ⑶）——"
+        f"B 类（真未落地）**{ev['b_count']} 条**，最老 **{ev['oldest_days']} 天**"
+        f"（阈值 B ≥{UNMERGED_BRANCH_B_MIN_COUNT} 且最老 ≥{UNMERGED_BRANCH_B_MIN_AGE_DAYS} 天）。",
+        "- 最老三条（分支｜首个未落地提交日｜天数）：",
+    ]
+    for i in top:
+        lines.append(f"    · `{i['name']}`@{i['tip']}｜{i['first_unmerged_date']}｜{i['days']} 天")
+    lines.append(f"- 另：A 类（内容已在 master）{ev['a_count']} 条／C 类（该删）{ev['c_count']} 条不计入阈值"
+                 f"（候选共 {ev['total']}）。")
+    lines.append("⇒ 本告警只让「不知道」变「知道」：🔴 **不自动合并、不自动删除**。合与删走"
+                 "『已授权待合』登记处（`工具-待合分支巡检.ps1`）或看护者收工串行 ff；"
+                 f"逐条证据：`python {UNMERGED_BRANCH_SCRIPT_REL}`。B 类集合不变时 24 h 内不重推。")
+    return "\n".join(lines)
+
+
+def _check_unmerged_branch_backlog(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
+    """第 16 类入口。只读、只告警、不合并不删除任何分支、不写任何队列、不影响本轮退出码。
+
+    `dry_run=True`：照样跑判据并回显，但不写状态文件、不推送——供人实弹核判据用。
+    """
+    payload, reason = _run_unmerged_branch_json(repo_root)
+    if payload is None:
+        log.append(f"🌿 第 16 类：⚠ **判据不可用**（{reason}）——**不据此判为零未落地**。")
+        if dry_run:
+            return
+        _track_and_alert_standing_state(
+            repo_root, "未并入分支判据不可用", UNMERGED_BRANCH_UNAVAILABLE_STATE_REL,
+            {UNMERGED_BRANCH_UNAVAILABLE_KEY}, UNMERGED_BRANCH_ALERT_INTERVAL_HOURS,
+            lambda _keys: ("🌿 落库sweep：第 16 类**判据不可用**，本轮没有量到任何数——"
+                           f"{reason}\n⇒ 这不等于「没有未落地分支」，只等于「这一轮什么也没量」。"),
+            lambda _keys: "✅ 落库sweep：第 16 类判据已恢复可用。",
+            log,
+        )
+        return
+
+    ev = _evaluate_unmerged_branch_backlog(payload)
+    verdict = "**触发告警**" if ev["triggered"] else "未触发"
+    log.append(
+        f"🌿 第 16 类：未并入 claude/* 分支 {ev['total']} ＝ A {ev['a_count']}（内容已在 master）"
+        f"／B {ev['b_count']}（真未落地）／C {ev['c_count']}（该删）；B 最老 {ev['oldest_days']} 天"
+        f"（阈值 B ≥{UNMERGED_BRANCH_B_MIN_COUNT} 且 ≥{UNMERGED_BRANCH_B_MIN_AGE_DAYS} 天）——{verdict}"
+        f"；指纹 {ev['fingerprint']}。"
+    )
+    for i in ev["items"][:3]:
+        log.append(f"    · B `{i['name']}`@{i['tip']}｜{i['first_unmerged_date']}｜{i['days']} 天")
+    if dry_run:
+        log.append("    （dry-run：不写状态文件、不推送；下为真跑时会推的正文）")
+        if ev["triggered"]:
+            log.extend("    | " + ln for ln in _render_unmerged_branch_alert(ev).splitlines())
+        return
+
+    _track_and_alert_standing_state(
+        repo_root, "未并入分支判据不可用", UNMERGED_BRANCH_UNAVAILABLE_STATE_REL, set(),
+        UNMERGED_BRANCH_ALERT_INTERVAL_HOURS,
+        lambda _keys: "", lambda _keys: "✅ 落库sweep：第 16 类判据已恢复可用。", log)
+    keys = {ev["fingerprint"]} if ev["triggered"] else set()
+    _track_and_alert_standing_state(
+        repo_root, "未并入分支超阈值", UNMERGED_BRANCH_STATE_REL, keys,
+        UNMERGED_BRANCH_ALERT_INTERVAL_HOURS,
+        lambda _keys: _render_unmerged_branch_alert(ev),
+        lambda resolved: ("✅ 落库sweep：未并入分支超阈值告警解除／指纹变化——"
+                          f"B 类现 {ev['b_count']} 条、最老 {ev['oldest_days']} 天"
+                          "（旧指纹 " + "、".join(sorted(resolved)) + "）。"),
+        log,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="只打印计划动作，不 add/commit/push/改队列")
@@ -7639,6 +7806,14 @@ def main() -> int:
             # 🔴 零命中也回显（同第 4/6/7/9/10/11 类）——一个从来不出声的机制，
             #    没人能判断它是「没问题」还是「没跑」。
             _check_scheduled_task_coverage(repo_root, log)
+
+        # 队列 §一 #553 ⑶（2026-09-11，OP-0911-G；Shao Peishen 答 `2a`）：第 16 类
+        # 常驻状态告警——未并入分支超阈值（B 类 ≥5 且最老 ≥7 天）。同上十类，检测
+        # 对象是仓库 refs 的整体状态、与本轮是否有批次落库无关；🔴 **只读、只告警、
+        # 不合并不删除任何分支、不写队列、不影响退出码**。🔴 刻意放在 `if not
+        # args.dry_run` 块之外：`--dry-run` 也跑到（函数内只回显、不写状态、不推送），
+        # 使「实弹核一次判据」不必真跑一轮；零命中也回显。
+        _check_unmerged_branch_backlog(repo_root, log, dry_run=args.dry_run)
 
         # 队列 §一 #416 ⑶ D4（2026-09-07，OP-0907-AM）：孤儿升格 §四。
         # 🔴 **位置是判据的一部分**：排在本轮全部 git 操作（批次提交、台账
