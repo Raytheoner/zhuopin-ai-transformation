@@ -34,7 +34,49 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-WHITELIST = ("huijian-chaijian-patrol", "weekly-status-update", "check-skill-plugin-updates")
+WHITELIST = (
+    "huijian-chaijian-patrol",
+    "weekly-status-update",
+    "check-skill-plugin-updates",
+    # 2026-09-10 补两条（`OP-0910-A`）：跑本脚本时报出「只认得 3 条」，
+    # 而 `mcp__scheduled-tasks__list_scheduled_tasks` 现取实有 6 条 ⇒
+    # 白名单是**写死的清单**，新任务建好不会自己进来（同族＝队列 §一
+    # `#535` 夹具硬编码／`#537` 锚点数写死）。
+    "zhuopin-lan-closeout-reminder",  # 项目机制，此前一直漏镜、非刻意排除
+    "poll-opener-batch",              # 承接 `#551`／`UPS5:7` 的机器守本体
+    # 🔴 仍**刻意不镜** `claude-force-close-verify-0905`：其自述「出结论即
+    #    请求关停」＝一次性任务，属 README「不镜的」第二类。
+)
+
+# 🔴 **黑名单：刻意不镜、且已确认过的目录**（Shao Peishen 2026-09-10 答 `2c`）。
+# 与 WHITELIST 合起来构成「已分类集合」；**任何在册目录两表皆无 ⇒ 告警**。
+#
+# **为什么保白名单而不是改成自动发现（他 2026-09-10 裁 (c) 的理由）**：
+# 自动发现＋黑名单排除，漏一个只是多镜一份；但**新建的个人任务会默认进公司
+# 仓库**，那是泄漏面。⇒ 方向不变，改为**双列 + 未分类即告警**：既不会静默
+# 漏镜（今天 `zhuopin-lan-closeout-reminder` 就是这么漏了多日），也不会把
+# 他的个人扫描自动搬进来。
+#
+# 🔴 **分类依据是注册表，不是猜名字**：2026-09-10 现取
+# `mcp__scheduled-tasks__list_scheduled_tasks` **实有 6 条在册**，而本目录下
+# 有 12 个任务目录 ⇒ **另外 6 个是注册表里已经没有的孤儿目录**（任务删了、
+# 目录留着）。孤儿不是「待镜候选」，归黑名单。
+BLACKLIST = (
+    # —— 注册表已无（孤儿目录，2026-09-10 现取坐实）——
+    "migration-observation-daily-check",
+    "restore-commit-sweep-reminder",
+    "wave-0826-watch",
+    "morning-briefing",
+    "obsidian-localize-clipping-images",
+    "sanhuan-300408-weekly-scan",
+    # —— 在册但刻意不镜 ——
+    "claude-force-close-verify-0905",  # 自述「出结论即请求关停」＝一次性
+    # —— 非任务目录 ——
+    "_backup-20260813",
+)
+
+#: 目录名以此开头的一律不当任务看（工具自建的备份/临时目录）。
+NON_TASK_PREFIXES = ("_", ".")
 
 DEFAULT_SOURCE_DIR = Path.home() / "Claude" / "Scheduled"
 DEFAULT_MIRROR_DIR = Path(__file__).resolve().with_name("定时任务源码")
@@ -120,6 +162,35 @@ def format_report(results: list[MirrorResult]) -> str:
     return "\n".join(lines)
 
 
+def find_unclassified(source_dir: Path | None = None) -> list[str]:
+    """列出**既不在白名单、也不在黑名单**的任务目录（Shao Peishen 2026-09-10 答 `2c`）。
+
+    🔴 **这是本文件从「人守」变成「机器守」的那一步。** 在它之前，白名单漏了
+    一个任务，表现是**什么都不发生**——`zhuopin-lan-closeout-reminder` 就这样
+    无版本保护地裸奔了多日，直到 2026-09-10 有人偶然跑了一次脚本、数了数
+    「怎么只有 3 条」才发现。🔑 **一个只在「有事」时出声、而漏项恰好表现为
+    「没事」的机制，等于没有。**
+
+    ⚠️ **本函数只看目录，看不见注册表**：脚本跑在本机 Python 里，拿不到
+    `mcp__scheduled-tasks__*`。⇒ 任务被删除后**目录仍在**，本函数看不出来；
+    这类孤儿一律靠 `BLACKLIST` 显式排除（现有 6 个已排）。**新建任务一定会
+    新建目录，所以「漏镜」这个方向是守得住的**——守不住的只有反方向（已删
+    任务仍留在白名单），代价仅为多镜一份陈旧文本，可接受。
+    """
+    source_dir = source_dir or DEFAULT_SOURCE_DIR
+    if not source_dir.exists():
+        return []
+    known = set(WHITELIST) | set(BLACKLIST)
+    out = []
+    for d in sorted(source_dir.iterdir()):
+        if not d.is_dir() or d.name in known:
+            continue
+        if d.name.startswith(NON_TASK_PREFIXES):
+            continue
+        out.append(d.name)
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--source-dir", default=None, help="仅测试用：覆盖真身目录（默认 ~/Claude/Scheduled）")
@@ -131,6 +202,21 @@ def main() -> int:
 
     results = run_backup(source_dir, mirror_dir)
     print(format_report(results))
+
+    # 🔴 零命中也回显（同 sweep 第 4/6/7/9 类惯例）：一个从来不出声的检查，
+    #    没人能判断它是「没问题」还是「没跑」。
+    unclassified = find_unclassified(source_dir)
+    if unclassified:
+        print(
+            f"\n🔴 **{len(unclassified)} 个在册任务目录既不在白名单也不在黑名单**"
+            f"——它们**不会被镜像、也不会有人发现**：\n  - "
+            + "\n  - ".join(f"`{n}`" for n in unclassified)
+            + "\n  ⇒ 逐个判定后写进 WHITELIST（项目机制）或 BLACKLIST（个人/一次性/孤儿），"
+              "并同步 `定时任务源码/README.md`「镜像范围」表。"
+        )
+    else:
+        print(f"\n✅ 任务目录分类完备：白名单 {len(WHITELIST)} ＋ 黑名单 {len(BLACKLIST)}，无未分类。")
+
     return 1 if any(r.status == "credential_blocked" for r in results) else 0
 
 
