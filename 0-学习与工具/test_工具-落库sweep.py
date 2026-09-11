@@ -8554,5 +8554,218 @@ class OrphanSectionFourEscalationTests(SweepTestBase):
             sweep.ORPHAN_SECTION_FOUR_HOURS, sweep.ORPHAN_ALERT_THRESHOLD_HOURS)
 
 
+class IntakeGapRowsTests(unittest.TestCase):
+    """队列 §一 #554（OP-0911-A）：第 15 类常驻告警——企微反馈自动归档行待领超时。
+
+    本组直接对函数断言（进程内 monkeypatch 发送层），不走黑盒子进程；夹具把
+    行写到 `QUEUE_BUSINESS_PATH_REL` 这个真实相对路径上（同 #315 惯例）。
+    """
+
+    HEAD = ("## 一、任务看板\n\n"
+            "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+            "|---|---|---|---|---|---|---|---|\n")
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "reports").mkdir(parents=True)
+        for rel in (sweep.QUEUE_MECHANISM_PATH_REL, sweep.QUEUE_BUSINESS_PATH_REL):
+            (self.repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / rel).write_text(self.HEAD, encoding="utf-8")
+        self.sent = []
+        self._orig_webhook = sweep._load_webhook_url
+        self._orig_send = sweep._send_wecom_markdown
+        sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
+        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+
+    def tearDown(self):
+        sweep._load_webhook_url = self._orig_webhook
+        sweep._send_wecom_markdown = self._orig_send
+        self._tmp.cleanup()
+
+    @staticmethod
+    def _day(offset_days: int) -> str:
+        return (datetime.now() + timedelta(days=offset_days)).strftime("%Y-%m-%d")
+
+    def _row(self, n, task="企微反馈自动归档：ChenChen 发来文本反馈", owner="质量专线",
+             status="[S:open][D:业] 待领", registered=None):
+        registered = registered or self._day(0)
+        return (f"| {n} | {task} | {owner} | `7-外部文档/质量部/x-{n}.md` | 核实 "
+                f"| {status} | | {registered} |\n")
+
+    def _write(self, rows: str, rel=None):
+        rel = rel or sweep.QUEUE_BUSINESS_PATH_REL
+        (self.repo / rel).write_text(self.HEAD + rows, encoding="utf-8")
+
+    def _run(self):
+        log = []
+        sweep._check_intake_gap_rows(self.repo, log)
+        return "\n".join(log)
+
+    def _state(self, rel):
+        path = self.repo / rel
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    # ---------------------------------------------------------------- 接线
+
+    def test_已接入主流程(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("_check_intake_gap_rows(repo_root, log)", source)
+
+    def test_零命中也回显(self):
+        """同第 4/6/7/9/14 类：一个从来不出声的机制，没人能判断它是「没问题」还是「没跑」。"""
+        text = self._run()
+        self.assertIn("第 15 类", text)
+        self.assertIn("待领 0 条", text)
+        self.assertIn("无人拆 0 条", text)
+        self.assertEqual(self.sent, [])
+
+    # ---------------------------------------------------------------- 判据
+
+    def test_只认归档前缀且待领且open(self):
+        self._write(
+            self._row(601, registered=self._day(-2))
+            + self._row(602, status="[S:done][D:业] ✅ 已拆件", registered=self._day(-2))
+            + self._row(603, task="别的任务", status="[S:open][D:机] 待领", registered=self._day(-2))
+            + self._row(604, status="[S:open][D:业] 🔵 在办——质量专线已领", registered=self._day(-2))
+        )
+        log = []
+        hits = sweep._find_pending_intake_rows(self.repo, log)
+        self.assertEqual([h["row_id"] for h in hits], ["601"])
+
+    def test_两份队列都扫(self):
+        self._write(self._row(601, registered=self._day(-2)), rel=sweep.QUEUE_MECHANISM_PATH_REL)
+        self._write(self._row(602, registered=self._day(-2)), rel=sweep.QUEUE_BUSINESS_PATH_REL)
+        hits = sweep._find_pending_intake_rows(self.repo, [])
+        self.assertEqual(sorted(h["row_id"] for h in hits), ["601", "602"])
+
+    def test_缺机器字段的待领行照算并点名(self):
+        """宁多报不漏报——本类要治的正是「漏件静默」；但降级必须留痕。"""
+        self._write(self._row(601, status="待领", registered=self._day(-2)))
+        log = []
+        hits = sweep._find_pending_intake_rows(self.repo, log)
+        self.assertEqual([h["row_id"] for h in hits], ["601"])
+        self.assertIn("缺 `[S:x]` 机器字段", "\n".join(log))
+        self.assertIn("#601", "\n".join(log))
+
+    # ---------------------------------------------------------------- 时长
+
+    def test_登记日前的行按登记日末算时长_首见即超时(self):
+        """下界 ⑵：登记列只有日期，「那天 23:59:59 它一定已在」——sweep 停跑
+        几天再恢复，也不会把两天前的件算成零小时。"""
+        self._write(self._row(601, registered=self._day(-2)))
+        text = self._run()
+        self.assertIn("无人拆 1 条", text)
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("#601", self.sent[0])
+        self.assertIn("已待领", self.sent[0])
+        self.assertIn("`#554`", self.sent[0])
+
+    def test_今日登记且首见即刻_不告警(self):
+        self._write(self._row(601, registered=self._day(0)))
+        text = self._run()
+        self.assertIn("待领 1 条", text)
+        self.assertIn("无人拆 0 条", text)
+        self.assertEqual(self.sent, [])
+
+    def test_今日登记但首见已超阈值_告警(self):
+        """下界 ⑴：首见台账说它 5 小时前就在了。"""
+        self._write(self._row(601, registered=self._day(0)))
+        seen = (datetime.now(timezone.utc)
+                - timedelta(hours=sweep.INTAKE_GAP_THRESHOLD_HOURS + 1)).isoformat()
+        sweep._write_json_state(self.repo / sweep.INTAKE_GAP_FIRST_SEEN_STATE_REL, {"#601": seen})
+        text = self._run()
+        self.assertIn("无人拆 1 条", text)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_时长取两个下界里更早的(self):
+        now = datetime.now(timezone.utc)
+        two_days_ago = (now - timedelta(days=2)).astimezone(sweep.INTAKE_GAP_LOCAL_TZ).date()
+        # 首见＝刚才、登记＝两天前 ⇒ 按登记日末算，≥ 24 h
+        age = sweep._intake_gap_age_hours(now.isoformat(), two_days_ago, now)
+        self.assertGreaterEqual(age, 24.0)
+        # 首见＝10 h 前、登记＝今天 ⇒ 按首见算
+        age = sweep._intake_gap_age_hours(
+            (now - timedelta(hours=10)).isoformat(), now.astimezone(sweep.INTAKE_GAP_LOCAL_TZ).date(), now)
+        self.assertAlmostEqual(age, 10.0, delta=0.01)
+        # 登记列解析不出日期 ⇒ 只按首见
+        age = sweep._intake_gap_age_hours((now - timedelta(hours=3)).isoformat(), None, now)
+        self.assertAlmostEqual(age, 3.0, delta=0.01)
+
+    # ---------------------------------------------------------------- 生命周期
+
+    def test_消失即解除并清首见台账(self):
+        self._write(self._row(601, registered=self._day(-2)))
+        self._run()
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("#601", self._state(sweep.INTAKE_GAP_FIRST_SEEN_STATE_REL))
+
+        self._write(self._row(601, status="[S:done][D:业] ✅ 已拆件", registered=self._day(-2)))
+        text = self._run()
+        self.assertIn("解除通知：1 项", text)
+        self.assertEqual(len(self.sent), 2)
+        self.assertIn("自动解除", self.sent[1])
+        self.assertIn("#601", self.sent[1])
+        self.assertEqual(self._state(sweep.INTAKE_GAP_FIRST_SEEN_STATE_REL), {})
+        self.assertEqual(self._state(sweep.INTAKE_GAP_STATE_REL), {})
+
+    def test_key只含行号不含会变的数值(self):
+        """key 里混进时长就退化成「事件」：每轮都是新 key、天天当新问题重报。"""
+        self._write(self._row(601, registered=self._day(-2)))
+        recorder = _StandingStateRecorder()
+        orig = sweep._track_and_alert_standing_state
+        sweep._track_and_alert_standing_state = recorder
+        try:
+            self._run()
+        finally:
+            sweep._track_and_alert_standing_state = orig
+        row_calls = [c for c in recorder.calls if c["label"] == "归档行待领超时"]
+        self.assertEqual(len(row_calls), 1)
+        self.assertEqual(row_calls[0]["keys"], {"#601"})
+
+    def test_同一行24h内不重复推送(self):
+        self._write(self._row(601, registered=self._day(-2)))
+        self._run()
+        self._run()
+        self.assertEqual(len(self.sent), 1)
+
+    # ---------------------------------------------------------------- 降级
+
+    def test_判据自身异常_不判为零待领_且不动行状态(self):
+        self._write(self._row(601, registered=self._day(-2)))
+        self._run()
+        self.assertEqual(len(self.sent), 1)
+        row_state_before = self._state(sweep.INTAKE_GAP_STATE_REL)
+
+        orig = sweep._find_pending_intake_rows
+
+        def boom(repo_root, log):
+            raise RuntimeError("队列解析炸了")
+
+        sweep._find_pending_intake_rows = boom
+        try:
+            text = self._run()
+        finally:
+            sweep._find_pending_intake_rows = orig
+        self.assertIn("判据自身异常", text)
+        self.assertIn("不据此判为零待领", text)
+        self.assertEqual(len(self.sent), 2)
+        self.assertIn("判据自身异常", self.sent[1])
+        self.assertNotIn("自动解除", self.sent[1])
+        self.assertEqual(self._state(sweep.INTAKE_GAP_STATE_REL), row_state_before)
+
+        # 恢复后：解除「判据不可用」，行仍在、仍不重复推
+        text = self._run()
+        self.assertEqual(len(self.sent), 3)
+        self.assertIn("判据已恢复可用", self.sent[2])
+
+    def test_不出现webhook键名字面量(self):
+        """`#492`：企微目标复用 `WECOM_WEBHOOK_ENV_KEY`，本类代码段内不得再抄一份键名。"""
+        source = SCRIPT.read_text(encoding="utf-8")
+        start = source.index("第 15 类**常驻状态告警")
+        end = source.index("def main() -> int:")
+        self.assertNotIn(BARE_WEBHOOK_ENV_KEY, source[start:end])
+
+
 if __name__ == "__main__":
     unittest.main()

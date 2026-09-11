@@ -7029,6 +7029,211 @@ def _check_plan_backpressure(repo_root: Path, log: list[str]) -> None:
         pass
 
 
+# ============================================================
+# 队列 §一 #554（2026-09-11，OP-0911-A）：**第 15 类**常驻状态告警 ——
+# 企微反馈自动归档行「待领」超时（拆件巡逻下线后留下的覆盖面差集）
+# ============================================================
+#
+# **成因（2026-09-10 两端现取，非设想）**：拆件巡逻 `huijian-chaijian-patrol`
+# 已**正式下线**（本就不该开，Shao Peishen 当日更正过本方误判），接替它的事件
+# 驱动机制唯一触发点＝`followup_readme_bridge._raise_patrol_signal`，**只在
+# 「在途信件收到回件」被标第九态时落信号**。旧巡逻消费的是「§一 待领的归档行」
+# ＝行驱动、覆盖全部到件；新机制消费的是「在途信件的回件」＝信件驱动、只覆盖
+# 在途 ⇒ **差集 ＝ 专员主动发言 ＋ 对已闭环信件的补发**，这部分没有任何消费者。
+# 定量：陈忱 2026-09-10 五件（两条无编号文本反馈 ＋ 三个针对已闭环 `质量部#13`
+# 的补发 zip）**5/5 全部落在差集**，静静躺在 §一 待领，直到他人眼看出才被发现。
+#
+# 🔑 **换掉一个机制时，覆盖面不会自己被核**（`#554` 期望产出 ⑵，同族＝
+#    `UPS5:7`／`#550`／`#553`）。本类补的只是「让人知道」这一半——**它不拆件、
+#    不代领、不改任何行**；差集里的件仍然要人（或另一棒）去拆。
+#
+# **判据（只读，两份队列 §一）**：任务列以 `企微反馈自动归档：` 开头（写手＝
+# `aibot_service/intake.py`，本文件只认前缀、不 import 它）**且**状态列机器字段
+# `[S:open]`、正文以 `待领` 起头（写手＝`queue_appender._build_status_cell`）
+# ⇒ 该行「存在且无人拆」；存在时长 ≥ `INTAKE_GAP_THRESHOLD_HOURS` ⇒ 告警。
+#
+# **「存在了多久」怎么算（两个下界取更早的那个）**：
+#   ⑴ 本类第一次看见它的时刻（`INTAKE_GAP_FIRST_SEEN_STATE_REL`，消失即清除，
+#      同第 13 类 `_plan_backpressure_first_seen`）；
+#   ⑵ 登记列日期当天的 23:59:59（本地 UTC+8）——登记列只有日期没有时刻，但
+#      「那天结束时它一定已经在了」是可证的下界。sweep 停跑几天再恢复时，⑴ 会
+#      把一切都当成刚出现，⑵ 保证不会因此把三天前的件算成零小时。
+#   🔴 刻意不用 git 历史（`-S` 扫两份大文件每行一次，太慢）、不用归档文件 mtime
+#      （listener 在 `ops/wecom-service-home` worktree 落盘、经 git 同步到主
+#      checkout，mtime 反映的是拉取时刻）。
+#
+# 🔴 **阈值初值＝4 h，属判据阈值类，须 Shao Peishen 明确答复、不默认生效为定稿**
+#    （已登 `#554` 行内待答）。取 4 h 的依据：① 事件驱动路径对在途回件的拆件在
+#    一轮 sweep 内（≤1 h）完成并把行改 `[S:done]`，4 h ≈ 4 轮，足以排除「本来就
+#    要被自动吃掉」的行，不对它们误报；② 半个工作日——09:21 到件 13:2x 就响，
+#    当天仍来得及处理；③ 更短（1~2 h）会对人手拆件班正常节奏内的行也响，把本类
+#    做回噪音（同 `#387` 那一课：告警太多与太少同样致盲）。
+#
+# 🔴 **零命中也回显**（同第 4/6/7/9/14 类）；🔴 **只读、只告警、不向队列写一个
+#    字节、不 acquire 锁、不影响本轮退出码**；企微目标复用 `WECOM_WEBHOOK_ENV_KEY`
+#    （`#492`：本文件内不出现 webhook 键名字面量的第二份）。
+INTAKE_GAP_TASK_PREFIX = "企微反馈自动归档："
+INTAKE_GAP_PENDING_MARK = "待领"
+INTAKE_GAP_THRESHOLD_HOURS = 4.0  # 🔴 初值，待 Shao Peishen 明确答复（见上）
+INTAKE_GAP_ALERT_INTERVAL_HOURS = 24.0
+INTAKE_GAP_FIRST_SEEN_STATE_REL = "reports/sweep-intake-gap-first-seen.json"
+INTAKE_GAP_STATE_REL = "reports/sweep-intake-gap-state.json"
+# 🔴 「判据自身异常」与「哪些行超时」分两个状态文件——合成一个会让判据崩溃的
+# 那一轮把所有行 key 判成「已解除」并推一条假的解除通知（第 8 类 2026-08-29 同形）。
+INTAKE_GAP_UNAVAILABLE_STATE_REL = "reports/sweep-intake-gap-unavailable.json"
+INTAKE_GAP_LOCAL_TZ = timezone(timedelta(hours=8))
+INTAKE_GAP_JUDGE_ERROR_KEY = "intake-gap-unavailable"
+_INTAKE_GAP_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+
+
+def _find_pending_intake_rows(repo_root: Path, log: list[str]) -> list[dict]:
+    """两份队列 §一 里「企微反馈自动归档 ＋ 待领」的行。只读。
+
+    返回 dict：`row_id`／`queue_path`／`task_cell`／`owner_cell`／`input_cell`／
+    `registered_date`（date 或 None）。状态列缺机器字段的行**不静默跳过**：
+    正文以「待领」起头即照算（宁多报不漏报——本类要治的正是「漏件静默」），
+    并在日志里点名（同 #302/#308 非静默降级纪律）。
+    """
+    hits: list[dict] = []
+    unfielded: list[str] = []
+    for queue_path in _iter_queue_paths():
+        for row in _parse_section_one(_read_queue(repo_root, queue_path)):
+            if not row["task_cell"].startswith(INTAKE_GAP_TASK_PREFIX):
+                continue
+            status, _domain, body = _parse_status_domain_fields(row["status_cell"])
+            if status is None:
+                unfielded.append(f"#{row['row_id']}")
+            elif status != "open":
+                continue
+            if not body.lstrip(LEADING_STRIP_CHARS).startswith(INTAKE_GAP_PENDING_MARK):
+                continue
+            m = _INTAKE_GAP_DATE_RE.search(row["registered_cell"])
+            registered = None
+            if m:
+                try:
+                    registered = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date()
+                except ValueError:
+                    registered = None
+            hits.append({
+                "row_id": row["row_id"],
+                "queue_path": queue_path,
+                "task_cell": row["task_cell"],
+                "owner_cell": row["owner_cell"],
+                "input_cell": row["input_cell"],
+                "registered_date": registered,
+            })
+    if unfielded:
+        log.append("📬 第 15 类：以下归档行状态列缺 `[S:x]` 机器字段，按正文「待领」照算："
+                   + "、".join(unfielded))
+    return hits
+
+
+def _intake_gap_first_seen(repo_root: Path, keys: set[str]) -> dict[str, str]:
+    """「这条待领行是本类哪一刻第一次看见的」台账；**消失即清除**（同第 13 类）。"""
+    path = repo_root / INTAKE_GAP_FIRST_SEEN_STATE_REL
+    state = _read_json_state(path) or {}
+    now = datetime.now(timezone.utc).isoformat()
+    fresh = {k: state.get(k, now) for k in keys}
+    try:
+        _write_json_state(path, fresh)
+    except OSError:
+        pass
+    return fresh
+
+
+def _intake_gap_age_hours(first_seen_iso: str, registered_date, now: datetime) -> float:
+    """存在时长（小时）＝ now − min(首见时刻, 登记日 23:59:59 本地)。见类头注 ⑴⑵。"""
+    try:
+        existed_by = datetime.fromisoformat(first_seen_iso)
+    except ValueError:
+        existed_by = now
+    if existed_by.tzinfo is None:
+        existed_by = existed_by.replace(tzinfo=timezone.utc)
+    if registered_date is not None:
+        day_end = datetime(registered_date.year, registered_date.month, registered_date.day,
+                           23, 59, 59, tzinfo=INTAKE_GAP_LOCAL_TZ)
+        if day_end < existed_by:
+            existed_by = day_end
+    return max(0.0, (now - existed_by).total_seconds() / 3600.0)
+
+
+def _render_intake_gap_alert(details: dict[str, dict], keys) -> str:
+    lines = [
+        "📬 落库sweep：**企微反馈自动归档行待领超时**（第 15 类常驻告警，队列 §一 `#554`）",
+        f"- 以下 {len(keys)} 行在 §一 待领已超 {INTAKE_GAP_THRESHOLD_HOURS:g} h、无人拆件：",
+    ]
+    for key in sorted(keys, key=lambda k: details.get(k, {}).get("age_hours", 0.0), reverse=True):
+        d = details.get(key, {})
+        if not d:
+            lines.append(f"- {key}")
+            continue
+        reg = d.get("registered_date")
+        lines.append(
+            f"- **#{d['row_id']}** {d['task_cell']}｜领取方 {d['owner_cell'] or '（空）'}"
+            f"｜已待领 {d['age_hours']:.1f} h（登记 {reg.isoformat() if reg else '未知'}）"
+            f"｜{d['input_cell'] or '（无输入指针）'}"
+        )
+    lines.append(
+        "⇒ 事件驱动拆件只覆盖「在途信件的回件」；**专员主动发言与对已闭环信件的补发"
+        "没有任何自动消费者**——这些行不会自己被拆，需人（或另一棒）读件、拆件、回写。"
+        "拆完把该行状态改离「待领」（领取或 `[S:done]`），下一轮自动解除。"
+    )
+    return "\n".join(lines)
+
+
+def _check_intake_gap_rows(repo_root: Path, log: list[str]) -> None:
+    """第 15 类入口。只读、只告警、不写任何队列、不影响本轮退出码。"""
+    now = datetime.now(timezone.utc)
+    keys: set[str] = set()
+    details: dict[str, dict] = {}
+    try:
+        pending = _find_pending_intake_rows(repo_root, log)
+        first_seen = _intake_gap_first_seen(repo_root, {f"#{r['row_id']}" for r in pending})
+        for r in pending:
+            key = f"#{r['row_id']}"
+            age = _intake_gap_age_hours(first_seen.get(key, now.isoformat()), r["registered_date"], now)
+            r["age_hours"] = age
+            if age >= INTAKE_GAP_THRESHOLD_HOURS:
+                keys.add(key)
+                details[key] = r
+        overdue = len(keys)
+        log.append(
+            f"📬 第 15 类：企微反馈自动归档行——待领 {len(pending)} 条，"
+            f"其中超 {INTAKE_GAP_THRESHOLD_HOURS:g} h 无人拆 {overdue} 条"
+            f"（阈值为初值，待 Shao Peishen 确认）。"
+        )
+        if pending:
+            log.append("    · " + "；".join(
+                f"#{r['row_id']} 已待领 {r['age_hours']:.1f} h" for r in pending))
+    except Exception as exc:  # noqa: BLE001 —— 🔴 判据坏了和没有待领是两回事
+        detail = f"{type(exc).__name__}: {exc}"
+        log.append(f"🔴 第 15 类：判据自身异常——{detail}（**不据此判为零待领**）")
+        _track_and_alert_standing_state(
+            repo_root, "归档行待领判据不可用", INTAKE_GAP_UNAVAILABLE_STATE_REL,
+            {INTAKE_GAP_JUDGE_ERROR_KEY}, INTAKE_GAP_ALERT_INTERVAL_HOURS,
+            lambda _keys: ("📬 落库sweep：第 15 类**判据自身异常**，本轮没有量到任何数——"
+                           f"{detail}\n⇒ 这不等于「没有待领的归档行」，"
+                           "只等于「这一轮什么也没量」。"),
+            lambda _keys: "✅ 落库sweep：第 15 类判据已恢复可用。",
+            log,
+        )
+        # 🔴 行 key 那份状态本轮不动：既不新增也不解除——什么都没量到就什么都不改。
+        return
+
+    _track_and_alert_standing_state(
+        repo_root, "归档行待领判据不可用", INTAKE_GAP_UNAVAILABLE_STATE_REL,
+        set(), INTAKE_GAP_ALERT_INTERVAL_HOURS,
+        lambda _keys: "", lambda _keys: "✅ 落库sweep：第 15 类判据已恢复可用。", log)
+    _track_and_alert_standing_state(
+        repo_root, "归档行待领超时", INTAKE_GAP_STATE_REL, keys,
+        INTAKE_GAP_ALERT_INTERVAL_HOURS,
+        lambda alert_keys: _render_intake_gap_alert(details, alert_keys),
+        lambda resolved: ("✅ 落库sweep：以下企微反馈自动归档行已被领取或拆件，"
+                          "待领超时告警自动解除——" + "、".join(sorted(resolved))),
+        log,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="只打印计划动作，不 add/commit/push/改队列")
@@ -7395,6 +7600,15 @@ def main() -> int:
             # 不向任何队列写入一个字节、不 acquire 任何锁、不影响退出码**
             # （Shao Peishen 2026-09-06 答 D4=(a)），排在第 11 类之后。
             _check_status_triage_and_ledger(repo_root, log)
+
+            # 队列 §一 #554（2026-09-11，OP-0911-A）：第 15 类常驻状态告警——
+            # 企微反馈自动归档行待领超时（拆件巡逻下线后的覆盖面差集）。同上，
+            # 检测对象是两份队列 §一 的整体状态、与本轮是否有批次落库无关；
+            # 🔴 **只读、只告警、不向队列写一个字节、不 acquire 锁、不影响退出码**；
+            # 🔴 零命中也回显。⚠️ 调用位置刻意排在第 13 类之前：第 14 类（`#551`
+            # 旁生）与本类同日分别在主 checkout／本泳道加进 main()，两者若都贴在
+            # 第 13 类之后会撞同一个 hunk；族内各类彼此独立，顺序不构成判据。
+            _check_intake_gap_rows(repo_root, log)
 
             # 队列 §一 #462（2026-09-07，OP-0907-AH）：第 13 类常驻状态告警——
             # 规划倒逼（规划里有、执行侧三处皆无的场景）。同上八类，检测对象是
