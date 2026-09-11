@@ -16,11 +16,33 @@
 仅供测试/特殊场景使用）后再次调用才会真正批准——逼出一个独立、蓄意的
 等待动作，堵住"起草→release→立刻批准"这种同一 actor 一步做完的反模式。
 
-环境变量（审计路径解析，同 push_followup_letter.py，队列 #126）：
-  WECOM_AIBOT_QUEUE_PATH   可选，仅作仓库根解析的锚点，默认
-                           <本 checkout 根>/1-转型规划/0-全景路线图/跨桌任务队列.md
+环境变量（审计路径解析，同 push_followup_letter.py，队列 #126／#559）：
+  WECOM_AIBOT_QUEUE_PATH   可选，仅作仓库根解析的锚点，默认按
+                           `resolve_default_queue_anchor` 动态解析（见下）
   WECOM_AIBOT_AUDIT_PATH   可选，直接指定审计文件路径，跳过下方解析
   WECOM_AIBOT_REPO_ROOT    可选，显式指定仓库根，绕开动态 git 解析
+
+🔴 队列 #559（2026-09-11 实测事故，`OP-0910-H`）：本文件此前锚点计算写成
+`NAIVE_REPO_ROOT / DEFAULT_QUEUE_RELATIVE_PATH`（即"本 checkout 自身"），
+是 `resolve_default_queue_anchor()` 在 #269（2026-08-06）已修过、且全部
+7 个兄弟入口（`push_followup_letter.py`／`dispatch_followup_letters.py`／
+`decision_reminder_check.py`／`draft_gap_check.py`／`check_patrol_signal.py`／
+`flush_pending_lock_appends.py`／`run_aibot_service.py`）均已采用的**同一个
+锚点，本文件当时独漏未跟进**。后果：本脚本在 CC 一任务一 worktree（本项目
+常规工作方式）里跑时，`resolve_repo_root` 对着"本 worktree 自身"问
+`git rev-parse --show-toplevel`——linked worktree 天然有自己的合法
+toplevel，答案就是这个用完即删的临时 worktree，而不是常驻 listener
+所在的主工作区；两处审计各写各的物理文件，人工门禁决策（批准/驳回）
+落进了主仓审计完全看不见的那一份。现改为与全部兄弟入口同一套
+`resolve_default_queue_anchor(NAIVE_REPO_ROOT)`（`git --git-common-dir`
+动态解析所有 linked worktree 共享的那个仓库根），**审计落点与常驻
+listener 恒同源、不再随 cwd/worktree 分叉**。
+
+🔴 两份历史审计文件（主仓 `wecom_aibot_audit.jsonl` 与本次事故涉及的
+worktree `wecom-service-home` 那份）的关系口径——**不合并、单向权威 +
+可追溯 backfill**，详见 `aibot_service/repo_paths.py` 模块头
+`AUDIT_RELATIVE_PATH` 常量上方说明；处置执行记录见
+`5-平台底座/wecom-aibot-service/scripts/backfill_orphan_audit_chain.py`。
 """
 from __future__ import annotations
 
@@ -60,8 +82,8 @@ from aibot_service.readme_table import (  # noqa: E402
     DraftNotPendingReviewError,
 )
 from aibot_service.repo_paths import (  # noqa: E402
-    DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
+    resolve_default_queue_anchor,
     resolve_followup_approval_cooldown_state_path,
     resolve_repo_root,
 )
@@ -72,9 +94,13 @@ _TABLE_SECTIONS = {"主表": MAIN_TABLE_SECTION, "补件": SUPPLEMENT_TABLE_SECT
 
 
 def _run(args: argparse.Namespace) -> int:
-    queue_anchor = Path(
-        os.environ.get("WECOM_AIBOT_QUEUE_PATH", NAIVE_REPO_ROOT / DEFAULT_QUEUE_RELATIVE_PATH)
-    )
+    # 队列 #559：锚点改与全部兄弟入口（push_followup_letter.py 等）同一套
+    # `resolve_default_queue_anchor`——未显式设 `WECOM_AIBOT_QUEUE_PATH` 时，
+    # 不再默认"本 checkout 自身"（worktree 里跑就是这个临时 worktree），
+    # 而是动态解析所有 linked worktree 共享的那个仓库根，与常驻 listener
+    # 恒同源。此前手写 `NAIVE_REPO_ROOT / DEFAULT_QUEUE_RELATIVE_PATH` 正是
+    # `resolve_default_queue_anchor` 要防的那个已知失效模式（#269）。
+    queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT)
     resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
     audit_path = Path(
         os.environ.get("WECOM_AIBOT_AUDIT_PATH", resolve_audit_path(resolved_repo_root))

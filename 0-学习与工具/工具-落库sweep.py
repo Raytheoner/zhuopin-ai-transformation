@@ -6155,6 +6155,101 @@ def _check_scheduled_task_coverage(repo_root: Path, log: list[str]) -> None:
 
 
 # ============================================================
+# 队列 §一 #559（2026-09-11，OP-0911-T）：**第 17 类**常驻状态告警 ——
+# 企微机器人审计文件在 worktree 里被再次分叉写入
+# ============================================================
+#
+# **真实事故**：`scripts/approve_followup_letter.py` 此前独漏未跟进 #269
+# 的锚点修法，在 CC worktree 里跑批准/驳回时把审计写进了那个临时 worktree
+# 自己的物理文件——常驻 listener 与主仓审计完全看不到那条人工门禁决策，
+# 直到有人偶然去 worktree 里反查才发现。#559 已把该脚本收口（改用
+# `resolve_default_queue_anchor`，与全部兄弟入口同源）；**本类是防再发**：
+# `resolve_audit_path()` 本身不能证明"没有第二个调用方再犯同一种错"——
+# 未来任何新脚本/改动只要重复 #269/#559 那个手写拼接，都会在某个 worktree
+# 里静默复刻同一条分叉。
+#
+# 🔴 **判据只看 mtime，不做内容/hash 链比对**：queue #559 行原文要求
+# "发现第二份审计被写即告警"——**"被写"这个动作本身**才是信号，不是
+# "内容与主仓有没有差异"（那需要进程内 import `aibot_service` 做 hash
+# 链回溯，违反本文件"零依赖"原则，也没必要——一份 worktree 副本只要
+# 最近被写过，就已经是分叉正在发生的证据，不需要先弄清楚写了多少才报）。
+# 🔴 **零依赖**：只用标准库 `Path.stat()`，不 import 任何 aibot_service 模块。
+AIBOT_AUDIT_ORPHAN_RELATIVE_PATH = "5-平台底座/wecom-aibot-service/reports/wecom_aibot_audit.jsonl"
+AIBOT_AUDIT_ORPHAN_STATE_REL = "reports/sweep-aibot-audit-orphan-state.json"
+AIBOT_AUDIT_ORPHAN_ALERT_INTERVAL_HOURS = 24.0
+# 只对"最近确实被写过"的副本告警——worktree 早已删除、只是文件系统里
+# 残留的陈年孤儿不算"正在分叉"，翻旧账只会制造噪声（同族判据见 #433
+# `HOOKS_HEARTBEAT_STALE_DAYS` 注释同一条道理：阈值是为了分清"活跃"与
+# "陈旧"，不是为了掩盖）。
+AIBOT_AUDIT_ORPHAN_RECENT_WRITE_HOURS = 6.0
+
+
+def _check_aibot_audit_orphan_writes(repo_root: Path, log: list[str]) -> None:
+    """第 17 类常驻状态告警：企微机器人审计文件在某个 worktree 里被再次
+    分叉写入（队列 §一 `#559`）。同上十一类，检测对象是本机 worktree 文件
+    系统整体状态，与本轮是否有批次落库无关；**只读、只告警，不删除/改动
+    任何 worktree 或文件，不影响本轮退出码**；🔴 零命中也回显（同
+    第 4/6/7/9/10/11/14 类）。
+    """
+    worktrees_dir = repo_root / ".claude" / "worktrees"
+    canonical_path = repo_root / AIBOT_AUDIT_ORPHAN_RELATIVE_PATH
+    keys: set[str] = set()
+    details: dict[str, str] = {}
+    scanned = 0
+
+    if not worktrees_dir.is_dir():
+        log.append("🔀 第 17 类：本机无 `.claude/worktrees/` 目录，无 worktree 可扫，跳过（不算告警）。")
+    else:
+        now = datetime.now(timezone.utc).timestamp()
+        for entry in sorted(worktrees_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            candidate = entry / AIBOT_AUDIT_ORPHAN_RELATIVE_PATH
+            try:
+                if not candidate.is_file():
+                    continue
+                if candidate.resolve() == canonical_path.resolve():
+                    continue  # 同一物理文件（不太可能，但同 #126 惯例，宁可多判一次
+                scanned += 1
+                age_hours = (now - candidate.stat().st_mtime) / 3600
+            except OSError as exc:
+                keys.add(f"读取异常:{entry.name}")
+                details[f"读取异常:{entry.name}"] = f"{type(exc).__name__}: {exc}"
+                continue
+            if age_hours <= AIBOT_AUDIT_ORPHAN_RECENT_WRITE_HOURS:
+                key = entry.name
+                keys.add(key)
+                details[key] = (
+                    f"`{candidate}` 最近 {age_hours:.1f} 小时内被写过"
+                    f"（阈值 {AIBOT_AUDIT_ORPHAN_RECENT_WRITE_HOURS:.0f} 小时）——"
+                    "常驻 listener 恒写主仓那份，这份若也在被写，说明有调用方"
+                    "的锚点解析又分叉了（同 #559 根因）。"
+                )
+        log.append(f"🔀 第 17 类：扫描 {scanned} 份 worktree 副本，命中 {len(keys)} 份最近被写。")
+
+    def render_alert(alert_keys):
+        lines = "\n".join(f"- {k}：{details[k]}" for k in alert_keys)
+        return (
+            "🔀 落库sweep：**企微机器人审计文件在 worktree 里被再次分叉写入**"
+            "（第 17 类常驻告警，队列 §一 `#559`）\n"
+            f"{lines}\n"
+            "排查：该 worktree 里最近跑过的 `5-平台底座/wecom-aibot-service/scripts/*.py` "
+            "是否又绕开了 `resolve_default_queue_anchor`（对照 `aibot_service/repo_paths.py` "
+            "模块头 `AUDIT_RELATIVE_PATH` 上方的处置口径，找回记录走 "
+            "`scripts/backfill_orphan_audit_chain.py`，**不得裸 append 并回**）。"
+        )
+
+    def render_resolved(resolved_keys):
+        lines = "\n".join(f"- {k}" for k in resolved_keys)
+        return f"✅ 落库sweep：以下 worktree 的审计分叉写入已停止（不再是最近写入）：\n{lines}"
+
+    _track_and_alert_standing_state(
+        repo_root, "审计文件分叉写入", AIBOT_AUDIT_ORPHAN_STATE_REL, keys,
+        AIBOT_AUDIT_ORPHAN_ALERT_INTERVAL_HOURS, render_alert, render_resolved, log,
+    )
+
+
+# ============================================================
 # 队列 §一 #382⑵（2026-09-02，OP-0902-D）：第 10 类常驻状态告警——
 # 跟进信待发信盘点 + 交叉红标（原巡逻章程 `huijian-chaijian-patrol.
 # SKILL.md` §一.3「待发信盘点」判据下放）
@@ -7806,6 +7901,13 @@ def main() -> int:
             # 🔴 零命中也回显（同第 4/6/7/9/10/11 类）——一个从来不出声的机制，
             #    没人能判断它是「没问题」还是「没跑」。
             _check_scheduled_task_coverage(repo_root, log)
+
+            # 队列 §一 #559（2026-09-11，OP-0911-T）：第 17 类常驻状态告警——
+            # 企微机器人审计文件在 worktree 里被再次分叉写入。同上十二类，
+            # 检测对象是本机 worktree 文件系统整体状态、与本轮是否有批次
+            # 落库无关；🔴 **只读、只告警、不删除/改动任何 worktree 或文件、
+            # 不影响本轮退出码**；零命中也回显。
+            _check_aibot_audit_orphan_writes(repo_root, log)
 
         # 队列 §一 #553 ⑶（2026-09-11，OP-0911-G；Shao Peishen 答 `2a`）：第 16 类
         # 常驻状态告警——未并入分支超阈值（B 类 ≥5 且最老 ≥7 天）。同上十类，检测

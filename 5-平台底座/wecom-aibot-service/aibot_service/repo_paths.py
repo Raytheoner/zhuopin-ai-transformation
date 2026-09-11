@@ -63,6 +63,46 @@ DEFAULT_QUEUE_RELATIVE_PATH = Path("1-转型规划") / "0-全景路线图" / "�
 # 见 `queue-dual-file-topology` spec）。读这四样的消费者一律用本常量，
 # **不得**用 `DEFAULT_QUEUE_RELATIVE_PATH`。
 QUEUE_MECHANISM_RELATIVE_PATH = Path("1-转型规划") / "0-全景路线图" / "跨桌任务队列-机制环境.md"
+# 🔴 队列 #559（2026-09-11，两份物理审计文件的关系口径——当场定死，不留
+# 中间态）：**单向权威 + 可追溯 backfill，永不裸拼接／裸 append 并回**。
+#
+# 背景：`resolve_audit_path()` 早在 #126（2026-07-下旬）就已把"落点与
+# 常驻 listener 同源"定为设计目标，但 #559 实测发现 `approve_followup_
+# letter.py` 一个脚本独漏、仍用旧的"本 checkout 自身"当锚点（同族根因
+# 是 #269 那次迁移未覆盖全部调用方），导致它在 worktree 里跑时写进了
+# 一份 `resolve_repo_root` 解出的、只属于那个临时 worktree 的物理文件
+# ——两份审计各自维护**独立的 hash 链**（`JsonlSink.write` 的 `prev_hash`
+# 只对着"这一个物理文件的上一行"，见 `zhuopin_platform.audit.sinks`），
+# 互不相知也无法互相验证。
+#
+# 判定：
+#   ① **本常量（`resolve_audit_path` 的落点）是唯一权威**——凡由本函数
+#      算出的路径即"当前生效的那一份"，与常驻 listener 恒同源（#559 已
+#      把最后一个独漏的调用方 `approve_followup_letter.py` 收口）。
+#   ② **发现的孤儿副本永不原地合并**：孤儿文件的 `prev_hash` 链是它自己
+#      独立的创世链，把它的行原样接到权威文件尾部会伪造一条从未真实存在
+#      过的因果链接（权威文件当时的"上一行"另有其行），`verify_chain()`
+#      会在接缝处判断为断链——**这比"看不见"更坏，它会让人误信一条被
+#      伪造过的证据链**。故**禁止**任何形式的裸 `cat 孤儿文件 >> 权威
+#      文件`／脚本化逐行 append 孤儿原始字节。
+#   ③ **真正需要找回的内容（孤儿链里记录的真实人工决策）走 backfill**：
+#      用 `AuditLogger.jsonl(权威路径)` 正常 `record()` 一条新事件（走
+#      权威文件自己当前的 hash 链、拿到权威文件当时真实的 prev_hash），
+#      `action` 固定为 `orphan_chain_backfill`，`decision` 载荷内嵌被
+#      找回事件的完整原始字典（含其原 `prev_hash`／原 `timestamp`，供
+#      人工核对）＋孤儿文件路径／孤儿文件整份内容的 SHA-256（backfill
+#      发生时刻的快照指纹，供事后核验孤儿文件本身未被再改过）。backfill
+#      事件的 `timestamp` 是**发现并找回的时刻**，不得回填成被找回事件
+#      的原始时刻——那会让审计读者误以为权威文件当时就已经知道这件事。
+#      工具实现见 `scripts/backfill_orphan_audit_chain.py`。
+#   ④ **孤儿文件本身不删除**（IATF 留存要求 3 年、且是唯一的原始取证
+#      件），backfill 完成后原地改名加 `-orphan-worktree-<YYYY-MM-DD>`
+#      后缀 quarantine，防止之后又被某个未升级的调用方继续误写。
+#   ⑤ **防再发**：`0-学习与工具/工具-落库sweep.py` 第 17 类常驻状态
+#      告警（队列 §一 `#559`）按 mtime 扫描 `.claude/worktrees/*/` 下
+#      是否又出现"最近被写过"的第二份 `wecom_aibot_audit.jsonl`——本
+#      常量与常驻 listener 同源不代表"不会再分叉"，代表"分叉了能在
+#      24 小时内被发现"。
 AUDIT_RELATIVE_PATH = Path("5-平台底座") / "wecom-aibot-service" / "reports" / "wecom_aibot_audit.jsonl"
 # 队列 #192-C：此前 `run_aibot_service.py` 用 `SERVICE_DIR / "reports"`
 # （机器人常驻 checkout 自身）硬编码这两个 pending 暂存文件落点，与
