@@ -5,7 +5,7 @@
 
 ## 1. Propose ＋ Design（本棒已完成，2026-09-11）
 
-- [x] 1.1 前置实测复跑：`git blame --incremental` 取 23 条计入行末次 `author-time`，计入集直接调 `_count_mechanism_wip`（不复制判据）。结果：计入 23／22（行号集合与方案件 §D2 完全一致）、🛑 认两列后 20、最老 6.96 天（`#240` `#312` `#381` `#382`）、`STALE(7)=0`／`STALE(5)=4`／`STALE(3)=7`／`STALE(2)=9`，与方案件零偏差 ⇒ N＝7／K＝3 沿用。附带实测：blame 主 checkout 耗时 6.9–8.0 s（文件 644 KB、941 commit 触碰）。探针脚本只读、未落盘、未 acquire（脚本位于本棒 scratchpad，手段已全文写进 proposal「前置实测复跑」表，可按表复算）
+- [x] 1.1 前置实测复跑：`git blame --incremental` 取 23 条计入行末次 `author-time`，计入集直接调 `_count_mechanism_wip`（不复制判据）。结果：09:39 计入 23／22（行号集合与方案件 §D2 完全一致）、认两列后 20；**09:55 持锁前二跑 27／22**（`OP-0911-A` 回滚 `#455` `#482` `#487` `#505` 误判分诊）、认两列后 23／22；两跑最老均 6.96–6.97 天（`#240` `#312` `#381` `#382`）、`STALE(7)=0`／`STALE(5)=4`／`STALE(3)=7`／`STALE(2)=9` 完全一致 ⇒ N＝7／K＝3 沿用。🔴 09:55 计入行偏差 ＋4 > 派单件阈值 3——基数已按现取值改写进本包，处置与理由见 proposal「前置实测复跑」表下段，待 Shao Peishen 认可（收工汇总首项）。附带实测：blame 主 checkout 耗时 6.9–8.0 s（文件 644 KB、941 commit 触碰）。探针脚本只读、未落盘、未 acquire（脚本位于本棒 scratchpad，手段已全文写进 proposal「前置实测复跑」表，可按表复算）
 - [x] 1.2 proposal.md（含「退休哪个守卫」／`.gitignore` 覆盖／知识资产三问／验收与晋档条件四个强制节；晋档条件 2 为切阻断硬前置）
 - [x] 1.3 design.md 六个决策点（D-A 取龄定义与乐观偏差、D-B 🛑 两列 (甲)＋写侧告警、D-C `#58` ⑸ 修法⑴、D-D 迁移期与退休判据、D-E 取龄失败非静默、D-F 模式切换载体），均带推荐与默认项
 - [x] 1.4 spec delta `editlock-mechanism-wip-guard`（MODIFIED「超限时拒绝 release」／REMOVED「上限值可配置」／ADDED 五条）
@@ -30,7 +30,7 @@
 ## 3. 实现（apply 批 1，告警模式）
 
 - [ ] 3.1 先 grep `_count_mechanism_wip` 全部调用方（`_validate_release_structure`／`cmd_status`／`cmd_triage_candidates`／`_collect_triage_candidates`／单测），返回值增第三项「计入行号清单」时逐一核对解包处；签名兼容（既有两项不变）
-- [ ] 3.2 `_count_mechanism_wip`：🛑 排除加任务列 `cells[1]` 判（D-B 甲），docstring 记 `#381`／`#382`／`#448` 三行实测与 23→20
+- [ ] 3.2 `_count_mechanism_wip`：🛑 排除加任务列 `cells[1]` 判（D-B 甲），docstring 记 `#381`／`#382`／`#448`／`#505` 四行实测与 27→23（09:55 基数）
 - [ ] 3.3 新增 `_mechanism_wip_stale_rows(section_one_text, counted_numbers, *, days, timeout, repo_root, queue_path) -> tuple[list[tuple[str, float]], list[str]]`：`git blame --incremental -- <queue_path>` 子进程（`subprocess.run`，`timeout=`，`encoding="utf-8", errors="replace"`），解析 `<sha> <src> <start> <n>` 头与 `author-time`，全零哈希按今天计；按行首 `|<编号>|` 映射；返回（陈旧行 [编号, 天数] 按天数降序，降级日志）。**只读，不写任何文件**（D-E 丁已否）
 - [ ] 3.4 `_validate_release_structure` ⑨ 段：`new_mechanism_rows` 收窄为「本次新增且计入」（D-C）；空 ⇒ 只回显；非空 ⇒ 告警模式按行数判＋回显 `STALE`；`MECHANISM_WIP_GATE_MODE = "warn"` 模块常量（D-F）＋ `MECHANISM_WIP_STALE_DAYS_DEFAULT = 7`／`MECHANISM_WIP_STALE_CAP_DEFAULT = 3`／`MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT = 30`
 - [ ] 3.5 `_mechanism_wip_over_cap_violations` 文案改写：陈旧行清单（最老 K＋1 条，编号＋天数）放在行数之前；告警期明写「7 天后此项将阻断」；出路①改为「推进或关闭上列最老行」
