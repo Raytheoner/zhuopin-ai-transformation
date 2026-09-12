@@ -668,12 +668,13 @@ class 子任务泳道占位段(unittest.TestCase):
         self.assertNotIn("1. …", out)
         self.assertNotIn("- …", out)
 
-    def test_未传时正文恰为三行加三条机器口径(self):
-        """三行正文 ＋ P4 两条 ＋ 收工哨兵一条（队列 §一 `#550`，2026-09-10 有意扩入）。"""
+    def test_未传时正文恰为三行加四条机器口径(self):
+        """三行正文 ＋ P4 两条 ＋ 心跳一条（队列 §一 `#565`，2026-09-12 有意扩入）＋
+        收工哨兵一条（队列 §一 `#550`，2026-09-10 有意扩入）。"""
         body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
-        self.assertEqual(len(body), 6, f"实为 {len(body)} 行：{body}")
-        self.assertEqual(body[-3:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_PUSH_NOTE,
-                                     M.SUBTASK_SENTINEL_NOTE])
+        self.assertEqual(len(body), 7, f"实为 {len(body)} 行：{body}")
+        self.assertEqual(body[-4:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_HEARTBEAT_NOTE,
+                                     M.SUBTASK_PUSH_NOTE, M.SUBTASK_SENTINEL_NOTE])
 
     def test_传了do_dont仍照拼_不误伤显式调用(self):
         """`BODY_PARAM_SUPPORT` 登记本组合两个都支持——调用方明确要写就不拦。"""
@@ -801,10 +802,11 @@ class 骨架与生成器契约(unittest.TestCase):
                 self.assertFalse([ln for ln in lines if "做什么：" in ln],
                                  f"{label} 出现了「做什么／不做什么」段")
 
-    def test_三条机器口径逐字取自正本(self):
-        """正本尾三行（P4 两条 ＋ 收工哨兵，队列 §一 `#550`）必须与生成器常量**逐字**相同——
-        改一处不改另一处即红。"""
-        self.assertEqual(self.canon_lines[-3], M.SUBTASK_PARALLEL_NOTE)
+    def test_四条机器口径逐字取自正本(self):
+        """正本尾四行（P4 两条 ＋ 心跳一条 ＋ 收工哨兵，队列 §一 `#550`／`#565`）
+        必须与生成器常量**逐字**相同——改一处不改另一处即红。"""
+        self.assertEqual(self.canon_lines[-4], M.SUBTASK_PARALLEL_NOTE)
+        self.assertEqual(self.canon_lines[-3], M.SUBTASK_HEARTBEAT_NOTE)
         self.assertEqual(self.canon_lines[-2], M.SUBTASK_PUSH_NOTE)
         self.assertEqual(self.canon_lines[-1], M.SUBTASK_SENTINEL_NOTE)
 
@@ -812,6 +814,12 @@ class 骨架与生成器契约(unittest.TestCase):
         """骨架该节此前纪律是「P4 两条」——本次扩为三条，正本必须写明理由与 `#550`，
         否则下一个人会按旧纪律把它删掉（派单件 §二 第 1 步的明文要求）。"""
         self.assertIn("#550", self.section)
+        self.assertIn("有意扩入", self.section)
+
+    def test_正本写明心跳行是有意扩入(self):
+        """同上，心跳约定行是 2026-09-12 `#565` 扩入的，正本必须写明理由，
+        否则下一个人会按「P4 两条＋收工哨兵」的旧纪律把它删掉。"""
+        self.assertIn("#565", self.section)
         self.assertIn("有意扩入", self.section)
 
     def test_前三行形状与正本对齐(self):
@@ -863,8 +871,8 @@ class 收工哨兵强制注入(unittest.TestCase):
     def test_传了do_dont仍在最末(self):
         body = [ln for ln in self._gen(do_items=["建造"], dont_items=["不动产线"]).splitlines()
                 if not ln.startswith("```")]
-        self.assertEqual(body[-3:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_PUSH_NOTE,
-                                     M.SUBTASK_SENTINEL_NOTE])
+        self.assertEqual(body[-4:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_HEARTBEAT_NOTE,
+                                     M.SUBTASK_PUSH_NOTE, M.SUBTASK_SENTINEL_NOTE])
 
     def test_其它变体不注入(self):
         """收窄：标准／guardian／reference 都是人粘贴进交互会话的，不经批处理器，不加。"""
@@ -887,6 +895,65 @@ class 收工哨兵强制注入(unittest.TestCase):
         block = lint.iter_fenced_blocks(mutated)[0]
         codes = {c for c, _ in lint.check_block(block, is_subtask_lane=True)}
         self.assertIn("F9", codes)
+
+
+class 心跳强制注入(unittest.TestCase):
+    """队列 §一 `#565`（2026-09-12）——`--variant subtask_lane` 拼装时**自动带上**心跳约定行，
+    不依赖起草人记得写。
+
+    🔑 **成因**：`工具-泳道看护状态机.py summary`／看门狗全靠心跳文件判泳道死活；2026-09-12
+    看护批 `B-0911_机制收口` 5 条泳道活全做了、五条分支全部 ff 进 master，`summary` 却报
+    「本批终态泳道 0 条」——因为子任务泳道 opener 此前一个字没提心跳。**修法落在生成器注入**
+    （同 `#550` 收工哨兵一样，「正文里写一句」拦不住）。`工具-opener块lint.py` 形态⑩是它的机器守。
+    """
+
+    @staticmethod
+    def _gen(**over):
+        kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
+        kw.update({"variant": "subtask_lane", "op_id": "OP-1229-S"})
+        kw.update(over)
+        return M.generate_opener(**kw)
+
+    def test_子任务泳道成品含心跳行(self):
+        body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
+        self.assertIn(M.SUBTASK_HEARTBEAT_NOTE, body)
+        self.assertIn("heartbeat", M.SUBTASK_HEARTBEAT_NOTE)
+        self.assertIn("--lane", M.SUBTASK_HEARTBEAT_NOTE)
+
+    def test_含batch提醒(self):
+        """🔴 同批复核发现的第二个坑：`heartbeat --done` 不带 `--batch` 就不计入任何批次
+        `summary`（已实测撞过 8 条历史泳道）——心跳提醒必须把 `--batch` 一并写死。"""
+        self.assertIn("--batch", M.SUBTASK_HEARTBEAT_NOTE)
+
+    def test_排在并行上限之后push规则之前(self):
+        body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
+        idx_parallel = body.index(M.SUBTASK_PARALLEL_NOTE)
+        idx_heartbeat = body.index(M.SUBTASK_HEARTBEAT_NOTE)
+        idx_push = body.index(M.SUBTASK_PUSH_NOTE)
+        self.assertEqual(idx_heartbeat, idx_parallel + 1)
+        self.assertEqual(idx_push, idx_heartbeat + 1)
+
+    def test_其它变体不注入(self):
+        """收窄：标准／guardian／reference 都是人粘贴进交互会话的，不经批处理器，不加。"""
+        std = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-1229-T"})
+        self.assertNotIn(M.SUBTASK_HEARTBEAT_NOTE, std)
+        kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
+        kw.update(op_id="OP-1229-U", variant="guardian", short_name="示例批",
+                  branch="master（看护者本身不建分支，不改代码）")
+        guardian = M.generate_opener(**kw)
+        self.assertNotIn(M.SUBTASK_HEARTBEAT_NOTE, guardian)
+
+    def test_变异检验_去掉心跳行lint即转红(self):
+        """🔴 队列 `#565` 的变异检验以单测形式钉死：把注入逻辑注释掉（等价于从成品里
+        删掉那一行），`check_block(is_subtask_lane=True)` 必须报 F10——证明生成器
+        自检那道闸对本项**不是恒真**。"""
+        lint = M._load_lint_module()
+        out = self._gen()
+        mutated = "\n".join(ln for ln in out.splitlines() if ln != M.SUBTASK_HEARTBEAT_NOTE)
+        self.assertNotEqual(mutated, out)
+        block = lint.iter_fenced_blocks(mutated)[0]
+        codes = {c for c, _ in lint.check_block(block, is_subtask_lane=True)}
+        self.assertIn("F10", codes)
         # 反向：原样成品零违规。
         self.assertEqual(lint.check_block(lint.iter_fenced_blocks(out)[0], is_subtask_lane=True), [])
 

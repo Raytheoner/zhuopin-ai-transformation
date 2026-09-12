@@ -77,6 +77,12 @@ SENTINEL_LINE = (
     "🔴 收工以顶格一行 `OPENER_DONE` 收尾；命中 🟡/🔴 决策点则以 "
     "`OPENER_PARTIAL: 停在<档位>决策点——<在等什么>` 收尾（批处理器判成败双指标之一）。"
 )
+#: 心跳约定行（形态⑩，队列 §一 `#565`，2026-09-12）——子任务泳道块的「干净样本」自此
+#: 也必须带它，同 `SENTINEL_LINE` 那条注释的既有纪律：**共享夹具必须满足全部现行判据**。
+HEARTBEAT_LINE = (
+    "🔴 心跳跑命令写 `heartbeat --lane <泳道标识> --text \"...\"`"
+    "（收工带 `--done --batch <批次>`）。"
+)
 TITLE_LINE_COWORK = "[OP-0828-N]【Cowork】接力文件核对"
 
 
@@ -415,7 +421,8 @@ class 形态六_子任务泳道opener含session标题(unittest.TestCase):
         "",
         "粘贴端：CC ｜ 泳道：示例泳道",
         "",
-        _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：建造到底，不设 session 标题。", SENTINEL_LINE),
+        _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：建造到底，不设 session 标题。",
+            HEARTBEAT_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -990,7 +997,7 @@ class 形态八_子任务泳道块含未替换占位条目(unittest.TestCase):
         "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#487` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            SENTINEL_LINE),
+            HEARTBEAT_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -1094,7 +1101,7 @@ class 形态九_子任务泳道块缺收工哨兵(unittest.TestCase):
         "### A1 · 示例泳道", "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#550` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            SENTINEL_LINE),
+            HEARTBEAT_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
         _md("[OP-0910-R]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
@@ -1173,6 +1180,88 @@ class 形态九_子任务泳道块缺收工哨兵(unittest.TestCase):
         block = M.iter_fenced_blocks(section)[0]
         self.assertTrue(any(M.SENTINEL_LINE_RE.search(ln) for ln in block.lines),
                         "骨架【CC · 子任务泳道】块缺收工哨兵行")
+
+
+class 形态十_子任务泳道块缺心跳约定(unittest.TestCase):
+    """⑩ 子任务泳道 opener 块缺心跳约定行 ⇒ 告警（队列 §一 `#565`，2026-09-12：看护批
+    `B-0911_机制收口` 5 条泳道全做完全 ff、心跳两小时零新增——同 F9 一样，「正文里写一句」
+    拦不住起草人漏写；本形态是生成器强制注入（`SUBTASK_HEARTBEAT_NOTE`）的机器守。"""
+
+    _LANE_WITHOUT_HEARTBEAT = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#565` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            SENTINEL_LINE),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0912-B]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    _LANE_WITH_HEARTBEAT = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#565` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            HEARTBEAT_LINE, SENTINEL_LINE),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0912-B]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    @staticmethod
+    def _scan(text: str) -> set[str]:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件.md"
+            p.write_text(text, encoding="utf-8")
+            return {f.form for f in M.scan_single_file(p)}
+
+    def test_反例_泳道块缺心跳行_命中F10(self):
+        """2026-09-12 看护批 `B-0911_机制收口` §三 的真实现场形态。"""
+        self.assertIn("F10", self._scan(self._LANE_WITHOUT_HEARTBEAT))
+
+    def test_正例_带心跳行_不命中任何形态(self):
+        """🔴 验收条款「两侧都能关掉」：补上心跳行 ⇒ F10 消失，且不牵连出别的形态。"""
+        self.assertEqual(self._scan(self._LANE_WITH_HEARTBEAT), set())
+
+    def test_非子任务泳道块不受约束(self):
+        """收窄：没有 `## 三bis` 的普通派单件／【Cowork】块不判——它们不经批处理器的
+        看门狗（看护者开场词是人粘贴的交互会话，Cowork 桌根本没有批处理器）。"""
+        md = _md(TITLE_LINE_COWORK, SETTINGS_COWORK, "读 ① 队列 §一 `#565`。")
+        self.assertNotIn("F10", _forms(md))
+        cc_top = _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC, "读 ① 队列 §一 `#565`。")
+        self.assertNotIn("F10", _forms(cc_top))
+
+    def test_看护者自己的开场词不受约束(self):
+        """`## 三bis` 之后的块＝看护者（交互会话），不判 F10。"""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件.md"
+            p.write_text(self._LANE_WITHOUT_HEARTBEAT, encoding="utf-8")
+            findings = M.scan_single_file(p)
+            watcher_line = M._watcher_section_line(self._LANE_WITHOUT_HEARTBEAT)
+            self.assertFalse(any(f.form == "F10" and f.line >= watcher_line for f in findings))
+
+    def test_明细指向生成器(self):
+        detail = dict(M.check_block(_only_block(_md(TITLE_LINE_CC, SETTINGS_CC, "读。")),
+                                    is_subtask_lane=True))["F10"]
+        self.assertIn("heartbeat", detail)
+        self.assertIn("工具-opener生成.py", detail)
+
+    def test_生效日与明细分组均已登记(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F10"], date(2026, 9, 12))
+        self.assertIn("F10", M.FORM_TITLE)
+
+    def test_格式正本自身不命中F10(self):
+        """骨架的 `## §三bis` 标题带 `§`、锚不上 ⇒ 其块不是子任务泳道块，F10 不覆盖它（同 F6／F8／F9）。"""
+        self.assertNotIn(
+            "F10", {f.form for f in M.scan_single_file(M.REPO_ROOT / M.SKELETON_CANON_REL)})
+
+    def test_骨架子任务泳道节自带心跳行(self):
+        """正本必须教这一行——否则照抄者的成品会缺它，F10 只能在成品上报、报不到源头。"""
+        text = (M.REPO_ROOT / M.SKELETON_CANON_REL).read_text(encoding="utf-8")
+        start = text.index("## 【CC · 子任务泳道】骨架")
+        section = text[start:text.index("\n## ", start + 1)]
+        block = M.iter_fenced_blocks(section)[0]
+        self.assertTrue(any(M.HEARTBEAT_LINE_RE.search(ln) for ln in block.lines),
+                        "骨架【CC · 子任务泳道】块缺心跳约定行")
 
 
 if __name__ == "__main__":

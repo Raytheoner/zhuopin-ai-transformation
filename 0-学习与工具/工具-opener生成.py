@@ -48,6 +48,10 @@ P7① 查重只看得见**已落档**的号（`_scan_used_suffixes` 的射程自
 - `subtask_lane`：骨架【CC · 子任务泳道】变体——**不含** `set_session_title` 行
   （2026-09-05 队列 §一 `#487`／(甲) 拍板：源头不放，不指望子任务读懂例外句），
   收尾无条件追加 P4 两条默认口径（并行上限 4／错峰 ≥90 秒；只 push 分支不 ff）
+  ＋ **心跳约定一条**（队列 §一 `#565`，2026-09-12：看护批 `B-0911_机制收口` 5 条泳道
+  全做完全 ff、心跳文件两小时零新增，根因＝心跳约定只写在看护件「硬边界继承」段
+  与 SKILL.md 步骤 4——两处都不是子任务会读到的 opener 正文；机器守＝
+  `工具-opener块lint.py` 形态⑩）
   ＋ **收工哨兵一条**（队列 §一 `#550`，2026-09-10：`OPENER_DONE`／`OPENER_PARTIAL` 是
   `工具-opener批处理执行v2.ps1` 判成败的双指标之一，此前正文一个字没提，四条泳道活全做了
   却全被判 `NO-SENTINEL`；机器守＝`工具-opener块lint.py` 形态⑨）。
@@ -244,6 +248,34 @@ SUBTASK_PUSH_NOTE = (
     "🔴 收工只 push 本泳道分支，不碰主仓、不 ff master——主仓 ff 由看护者收工时串行做，"
     "或经『已授权待合』登记处由 `工具-待合分支巡检.ps1` 机器做；sweep 不做 ff"
     "（构建环境瘦身第三轮方案 P4，`#553` 更正）。"
+)
+#: 心跳约定（队列 §一 `#565`，2026-09-12）——`工具-泳道看护状态机.py summary`／
+#: `check-heartbeat` 看门狗完全靠心跳文件判断泳道死活；子任务泳道 opener 此前
+#: 一个字没提心跳（心跳约定只写在看护件 §一「硬边界继承」——**看护者自己读**的
+#: 那一段——与 SKILL.md 步骤 4 里，两处都不是子任务会读到的 opener 正文）。
+#: 🔴 **实撞**：看护批 `B-0911_机制收口` 5 条泳道全部做完、五条分支全部 ff 进
+#: master，`summary --batch B-0911_机制收口` 却报「本批终态泳道 0 条」，
+#: `reports/lane-heartbeat/` 两小时窗口零新文件——五条泳道一条心跳都没写。
+#: 🔴 **同批还实测出第二个坑**：本机现取 `summary` 命中 8 条历史泳道心跳「已写但
+#: 批次归属未知」——根因是 `heartbeat --done` 没带 `--batch`，故本行同时把
+#: `--batch` 写进提醒，不能只补心跳这一半。
+#: 🔴 **修法必须落在这里（生成器强制注入），不能只改骨架文字**：同 `SUBTASK_SENTINEL_NOTE`
+#: 的教训——`#487` 证明「正文里写一句」拦不住起草人漏写，`#550` 证明连「起草人」都
+#: 没有的批处理场景压根不会自己冒出这一行；本行同理。机器守＝`工具-opener块lint.py` 形态⑩。
+#: 🔴 与骨架【CC · 子任务泳道】块对应行**逐字相同**（单测「骨架与生成器契约」比对）。
+#: 🔴 **`--lane` 取值不预先算好塞进来**：本包收窄到「调用侧」修复，不新增必填字段
+#: 去跟每份看护件的次序矩阵拉一致性——沿用 SKILL.md 步骤 4／看护件既有约定，`<泳道
+#: 标识>` 是留给执行者按队列行号自行填的字面占位（同 SKILL.md 里 `<批次>`／`<波次>`／
+#: `<泳道名>` 一样是模板占位，不是本工具的必填参数）。
+SUBTASK_HEARTBEAT_NOTE = (
+    "🔴 心跳跑命令写，不自己拼路径：开工 1 分钟内跑 "
+    "`python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane <泳道标识，"
+    "无更明确约定时用本任务队列行号，如 561> --text \"<一句话：在做什么>\"`，"
+    "每里程碑追加一行；收工带 `--done --batch <本批次名>`（🔴 `--batch` 不能漏——"
+    "`heartbeat --done` 不带它就不计入任何批次的 `summary`，已实测撞过 8 条历史泳道）；"
+    "不接受 `--repo-root`／`--heartbeat-file`，工具没有这两个参数；预计等待超过 10 分钟"
+    "须补写一行「仍在等 X，预计还要 N 分钟」"
+    "（`0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md` 步骤 4／5.6；队列 §一 `#565`）。"
 )
 #: 收工哨兵（队列 §一 `#550`，2026-09-10）——`工具-opener批处理执行v2.ps1` 判成败靠
 #: `claude` 退出码 ＋ 顶格一行 `OPENER_DONE`／`OPENER_PARTIAL` 两个指标，缺哨兵即判
@@ -816,7 +848,9 @@ def generate_opener(**kwargs) -> str:
             if _body_params_given(kwargs):
                 body_lines += ["", "做什么：", do_block, "", "不做什么：", dont_block]
             # 🔴 队列 §一 `#550`：收工哨兵**由生成器注入**、不依赖起草人记得写（见常量注释）。
-            body_lines += [SUBTASK_PARALLEL_NOTE, SUBTASK_PUSH_NOTE, SUBTASK_SENTINEL_NOTE]
+            # 🔴 队列 §一 `#565`：心跳约定同理由生成器注入（见 `SUBTASK_HEARTBEAT_NOTE` 常量注释）。
+            body_lines += [SUBTASK_PARALLEL_NOTE, SUBTASK_HEARTBEAT_NOTE,
+                            SUBTASK_PUSH_NOTE, SUBTASK_SENTINEL_NOTE]
         else:
             body_lines = [
                 title_line,
