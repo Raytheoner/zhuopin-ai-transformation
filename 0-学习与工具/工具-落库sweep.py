@@ -25,7 +25,9 @@ git 历史才救回，见协议〇.7 背景）。
 ④ 计划任务 Action 指主工作区稳定路径（非建造 worktree）+ SYSTEM + AtStartup +
    绝对路径烘焙——本脚本运行时另有 MAIN_WORKSPACE 断言兜底（见 _resolve_repo_root），
    注册脚本见 `register-commit-sweep-task.ps1`。
-⑤ 台账随 sweep 重跑一次（仅当本轮确有批次被处理时才重跑，见 main() 末尾）。
+⑤ 台账随 sweep 重跑一次（仅当本轮确有批次被处理时才重跑，见 main() 末尾）；
+   🔴 重跑后**只有内容真变了才提交**——去掉「生成于」时间戳行后与 index 里那份
+   同口径比对，指纹一致即还原工作区、不产生 commit（OP-0912-R，见 _rerun_ledger）。
 
 "非 clean" 的定义（关键设计决策，非字面"git status 必须全空"）：
     §二 待 commit 批次的存在本身就意味着主工作区必然有未提交改动（那正是
@@ -7990,10 +7992,71 @@ def main() -> int:
         return UNEXPECTED_EXIT_CODE
 
 
+# ============================================================
+# OP-0912-R（批 B-0912_落库瘦身，Shao Peishen 2026-09-12 答 2a）：台账重跑改条件触发
+# ============================================================
+# 病灶（`OP-0912-E` 2026-09-12 现取）：当日 master 54 个 commit 里 14 条（26%）是
+# 「收工重跑文档台账（sweep 自动）」。台账是纯派生产物，文件集没变时内容必然
+# 一样——可 `工具-文档台账生成.py` 每跑都会把「> 生成于 YYYY-MM-DD HH:MM｜…」
+# 那一行写成当前时刻，于是 `git status` 永远报"有改动"，上面那句"内容无变化，
+# 不产生新 commit"在生产里从未走到过。
+#
+# 指纹口径 ＝ **生成结果去掉时间戳行后的 sha256**，与 index 里已入库的那份
+# 同口径比对。不取「输入集 mtime／size」：⑴ ff／rebase／checkout 会刷新 mtime
+# 而内容未变；⑵ 台账真正依赖的只是各 md 的 frontmatter 与队列 §一 列数，§二 销行
+# 之类的正文改动每轮都发生、却不改台账一个字——按输入集判会把 26% 噪音原样
+# 留下。对生成结果算 hash 则**由构造精确**：它就是"这次提交会不会带来一行
+# 实质 diff"本身，不存在两套逻辑跑偏。也不把指纹落 `reports/`：权威来源是
+# index 里那份台账（ff 之后自动跟着新、不会过期），旁存一份反而会在 ff 后失真。
+# 生成器本身照跑（≈1 s、无副作用）——跳过的是「提交」这一步。
+#
+# 🔴 fail-open：指纹任一侧取不到（首次入库前 index 里没有／读文件异常／还原
+# 失败）⇒ 一律按"变了"处理、照旧提交，并在日志里写明原因——漏跑一次台账
+# 没人会发现，是本项目反复吃亏的形态；多提交一次只是噪音。
+LEDGER_GENERATED_AT_LINE_RE = re.compile(r"^> 生成于 \d{4}-\d{2}-\d{2} \d{2}:\d{2}｜")
+
+
+def _ledger_content_fingerprint(text: str) -> str:
+    """台账内容指纹：剔除「> 生成于 …」时间戳行后的 sha256（十六进制）。
+
+    只剔那一行、其余逐字保留——判据是"实质内容是否变了"，不是"像不像"。
+    """
+    kept = [line for line in text.splitlines() if not LEDGER_GENERATED_AT_LINE_RE.match(line)]
+    return hashlib.sha256("\n".join(kept).encode("utf-8")).hexdigest()
+
+
+def _ledger_unchanged_against_index(repo_root: Path, log: list[str]) -> tuple[bool, str]:
+    """判「刚生成的台账」与 index 里那份的**内容指纹**是否一致。
+
+    返回 `(unchanged, 指纹前 8 位)`；🔴 任何一步取不到 ⇒ `(False, "")` 并把原因
+    写进 `log`（fail-open，绝不静默跳过）。比对对象取 index（`git show :path`）
+    而非 HEAD——`git status` 报的"有改动"正是工作区 vs index，随后的还原
+    `git checkout -- path` 也是从 index 取，三者同一基准。
+    """
+    try:
+        new_text = (repo_root / LEDGER_OUTPUT_REL).read_text(encoding="utf-8")
+        shown = _run_git(["show", f":{LEDGER_OUTPUT_REL}"], repo_root, check=False)
+        if shown.returncode != 0:
+            log.append(
+                "台账指纹：index 里没有已入库的台账（"
+                f"{shown.stderr.strip().splitlines()[0] if shown.stderr.strip() else 'git show 非零退出'}"
+                "），按已变处理、照常提交。")
+            return False, ""
+        new_fp = _ledger_content_fingerprint(new_text)
+        old_fp = _ledger_content_fingerprint(shown.stdout)
+    except Exception as exc:  # noqa: BLE001 —— 指纹只是"要不要提交"的旁证，取不到就照常提交
+        log.append(f"⚠ 台账指纹取不到（{type(exc).__name__}: {exc}），按已变处理、照常提交。")
+        return False, ""
+    return new_fp == old_fp, new_fp[:8]
+
+
 def _rerun_ledger(repo_root: Path, log: list[str]) -> None:
     """队列 #288（2026-08-06 起）：只负责生成台账并按需本地提交，不再自己
     校验快进或推送——原因同 `_process_normal_batch`，统一交给
-    `_reconcile_with_origin_and_push`。"""
+    `_reconcile_with_origin_and_push`。
+
+    OP-0912-R：生成之后先比内容指纹（见 `_ledger_unchanged_against_index`），
+    一致即还原工作区、跳过提交；取不到指纹或还原失败 ⇒ 按原路径照常提交。"""
     result = subprocess.run(
         [sys.executable, str(repo_root / LEDGER_SCRIPT_REL)],
         cwd=repo_root, capture_output=True, text=True, encoding="utf-8",
@@ -8005,6 +8068,17 @@ def _rerun_ledger(repo_root: Path, log: list[str]) -> None:
     if not changed:
         log.append("台账重跑：内容无变化，不产生新 commit。")
         return
+    unchanged, fp8 = _ledger_unchanged_against_index(repo_root, log)
+    if unchanged:
+        restored = _run_git(["checkout", "--", LEDGER_OUTPUT_REL], repo_root, check=False)
+        if restored.returncode == 0:
+            log.append(
+                f"台账未变、跳过（指纹 {fp8}）——仅「生成于」时间戳行不同，"
+                "工作区已从 index 还原，不产生 commit。")
+            return
+        log.append(
+            f"⚠ 台账未变（指纹 {fp8}）但工作区还原失败（{restored.stderr.strip()[:120]}），"
+            "按已变处理、照常提交，避免留下孤儿脏文件。")
     _run_git(["add", "--", LEDGER_OUTPUT_REL], repo_root)
     # 队列 #479 决策点② ⒝：commit 补 pathspec，与上一行 add 对齐。本处的固定
     # 标题「收工重跑文档台账（sweep 自动）」正是 design 里点名的那类——看起来
