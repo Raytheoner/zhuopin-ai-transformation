@@ -193,8 +193,12 @@ Cowork 走补段让它生效、guardian 走报错把静默变显式，两个洞�
 🔴🔴 **默认后台起，不给他看护件、不要他粘**（Shao Peishen 2026-09-12 定，两桌全局）——看护件 §三 的 `### A<N>` ＋ `粘贴端：… ｜ 泳道：…` ＋ 代码块，**正是 `工具-opener批处理执行v2.ps1` 的 `-Plan` 解析格式**（该脚本 L94 解析段逐字吻合），而 `-Detach` 的注释原文写明「立即把日志目录路径打到 stdout 并退出 0，**供 Cowork 调用而不占 PowerShell 通道**」⇒ **看护件不用改一个字就能无头跑，Cowork 侧一条命令即可**：
 
 ```
-powershell -ExecutionPolicy Bypass -File "0-学习与工具\工具-opener批处理执行v2.ps1" -Plan "<看护件仓库根相对路径>" -FullAuto -Yes -Detach
+pwsh -NoProfile -ExecutionPolicy Bypass -File "0-学习与工具\工具-opener批处理执行v2.ps1" -Plan "<看护件仓库根相对路径>" -FullAuto -Yes -Detach
 ```
+
+🔴 **必须写 `pwsh`，不得写 `powershell`（2026-09-13 `OP-0913-E` 二次实撞后订正）**——`-Detach` 用 `(Get-Process -Id $PID).Path` 把**调用它的那个 shell** 原样传给子进程；本机 `powershell` ＝ **PS 5.1**，而脚本用了 PS 7 才有的 `Start-Job -WorkingDirectory` ⇒ 子进程当场 `NamedParameterNotFound`、**零泳道日志、`exit.txt` 不落**，而父进程照报 `✓ 已后台起（pid …）` 且 `EXIT=0`——**「起跑成功」是个假读数，只有读 `launcher-stderr.log` 才知道死了**。承接行 `#567`（2026-09-12 首撞、2026-09-13 复现）。🟩 **同一条 `-Detach` 路径改用 `pwsh` 起实测正常**（`launcher.json` 的 `shell` ＝ pwsh 7.6.6、`launcher-stderr.log` **0 B**、泳道日志正常生成）⇒ **缺陷在「继承调用方 shell」，不在 `-Detach` 本身**。
+
+🔴 **不传 `-LogDir`**——批目录必须落成**纯时间戳名**；传了语义名，该批就掉进 `#571` 的探针盲区（`工具-无头棒收工探针.py` 的目录名正则只认纯数字，语义名批次 09-08 起 **0/3** 进过 notified 名单）。
 
 **新口径三条**：⑴ **看护件照出、照落库，但不贴给他**——他要看随时能读，不是必经步骤；⑵ **只给他一条「授权请求」**：本批几条泳道、各自触碰区、是否 `-FullAuto`，他回一字母即起；⑶ **跑完把结果与需他定夺的停点一次返回**，不要中途拿日志碎片打扰他。退出码不丢：子进程写 `exit.txt`、`summary.txt` 末行 `EXIT=<code>`、`launcher.json` 记 pid，**轮询这三样，不猜**。
 
