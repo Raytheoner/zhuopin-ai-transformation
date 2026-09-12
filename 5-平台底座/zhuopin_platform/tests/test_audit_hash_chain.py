@@ -5,14 +5,18 @@
   - 链接正确（磁盘原始行字节哈希）
   - key 乱序写入 event dict 不影响 verify_chain（哈希磁盘原始行而非 canonical）
   - 多线程并发写不断链
-  - 双实例同文件交替写（_last_hashes 类级共享）
+  - 双实例同文件交替写（跨进程锁下现读磁盘，不依赖任何进程内缓存）
   - verify_chain 完整通过
   - verify_chain 检测删行
   - verify_chain 检测改行
   - AuditLogger.verify_chain() 代理
+  - `#564`：跨进程互斥（多进程并发写不分叉）
+  - `#564`：verify_chain 报出全部断点，不止第一个
+  - `#564`：与哈希定义无关的旁证判据（相邻两行同一 prev_hash）
 """
 import hashlib
 import json
+import multiprocessing
 import threading
 import time
 from pathlib import Path
@@ -36,6 +40,21 @@ def _make_event(scenario: str = "TEST", seq: int = 0) -> AuditEvent:
 
 def _line_hash(line_bytes: bytes) -> str:
     return hashlib.sha256(line_bytes).hexdigest()
+
+
+def _mp_writer_worker(path_str: str, tag: str, n: int) -> None:
+    """独立 OS 进程里的写入 worker（供 multiprocessing.Process 调用）。
+
+    与 `threading.Thread` 版本的关键区别：这是**全新的 Python 解释器**，
+    `JsonlSink._locks`（类级 dict）与本进程完全无关——intra-process
+    `threading.Lock` 对跨进程并发毫无作用，唯一能防分叉的只有
+    `_CrossProcessFileLock`（文件级 OS 锁）。这就是 `#564` 要修的场景：
+    实际生产环境至少 5 个独立 OS 进程（常驻 listener ＋ 若干计划任务）
+    并发写同一份 `wecom_aibot_audit.jsonl`。
+    """
+    sink = JsonlSink(Path(path_str))
+    for i in range(n):
+        sink.write(_make_event(scenario=tag, seq=i))
 
 
 # ── 基础写入 ────────────────────────────────────────────────────────────────
@@ -122,7 +141,9 @@ class TestHashChainConcurrency:
         assert result.total == 20
 
     def test_two_instances_same_file_alternate_writes(self, tmp_path):
-        """双实例同文件交替写，_last_hashes 类级共享保证链不断裂。"""
+        """双实例同文件交替写，链不断裂（每次写入在跨进程锁内现读磁盘末行，
+        不依赖任何进程内缓存——`#564` 修复后两个实例甚至不需要共享任何
+        Python 对象）。"""
         path = tmp_path / "shared.jsonl"
         sink_a = JsonlSink(path)
         sink_b = JsonlSink(path)
@@ -134,6 +155,41 @@ class TestHashChainConcurrency:
         result = sink_a.verify_chain()
         assert result.ok is True, f"双实例交替写后链断裂：{result}"
         assert result.total == 6
+
+
+# ── `#564` 跨进程互斥 ─────────────────────────────────────────────────────────
+
+class TestCrossProcessMutex:
+
+    def test_two_processes_concurrent_write_no_fork(self, tmp_path):
+        """两个独立 OS 进程并发写同一审计文件，链不断、无 prev_hash 分叉。
+
+        这是 `#564` 的核心回归用例：`threading.Lock`（进程内）救不了这个
+        场景，因为两个 `multiprocessing.Process` 是完全独立的 Python 解释器，
+        各自的 `JsonlSink._locks` 类级字典互不相干。只有跨进程文件锁
+        `_CrossProcessFileLock` 能保证"现读磁盘末行 → 落盘新行"这段操作
+        在全机范围内对同一文件串行化。
+        """
+        path = tmp_path / "audit.jsonl"
+        n_per_proc = 25
+        procs = [
+            multiprocessing.Process(target=_mp_writer_worker, args=(str(path), tag, n_per_proc))
+            for tag in ("PROC_A", "PROC_B")
+        ]
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join(timeout=90)
+
+        assert all(p.exitcode == 0 for p in procs), \
+            f"子进程异常退出：{[p.exitcode for p in procs]}"
+
+        sink = JsonlSink(path)
+        result = sink.verify_chain()
+        assert result.ok is True, f"跨进程并发写后链断裂或分叉：{result}"
+        assert result.total == n_per_proc * 2
+        assert result.breaks == []
+        assert result.duplicate_prev_hash_pairs == []
 
 
 # ── verify_chain ──────────────────────────────────────────────────────────────
@@ -231,6 +287,147 @@ class TestVerifyChain:
         result = sink.verify_chain()
         assert result.ok is False
         assert result.broken_at == 2   # 第 1 行豁免，第 2 行起缺字段即判篡改
+
+
+# ── `#564` verify_chain 报全部断点 ─────────────────────────────────────────────
+
+class TestVerifyChainAllBreaks:
+
+    def test_reports_all_breaks_not_only_first(self, tmp_path):
+        """多断点 fixture：verify_chain 报出**全部**断点，不是只报第一个。
+
+        正本修复前的行为（`#564` 原始缺陷）：一撞见第一个 broken_at 就
+        `return`，本用例构造的两个独立断点中只有第一个会被看到，第二个完全
+        不可见——正是队列 `#564` 描述的「broken_at=685 就停手，后面 206 处
+        全部被遮住」的缩小复现。
+
+        构造方式：篡改第 2、4 行的内容（不碰它们自己的 `prev_hash` 字段）。
+        哈希链的"断"体现在**下一行**——第 3 行的 `prev_hash` 仍指向"原始"第
+        2 行的哈希，但磁盘上第 2 行已变；第 5 行同理指向第 4 行——所以两处
+        独立断点分别落在第 3、5 行。🔴 重写文件必须显式 `newline=""`：
+        `Path.write_text` 默认文本模式在 Windows 上会把 `\\n` 全部转写成
+        `\\r\\n`（连未改动的行也会被换行符污染），那样会把每一行的原始字节
+        都改掉，制造出与本测试意图无关的额外断点。
+        """
+        path = tmp_path / "audit.jsonl"
+        sink = JsonlSink(path)
+        for i in range(6):
+            sink.write(_make_event(seq=i))
+
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        assert len(lines) == 6
+
+        def _tamper(line: str) -> str:
+            record = json.loads(line)
+            record["decision"] = {"tampered": True}
+            return json.dumps(record, ensure_ascii=False) + "\n"
+
+        # 篡改第 2 行（index 1）与第 4 行（index 3）——各自独立触发下一行的断点
+        lines[1] = _tamper(lines[1])
+        lines[3] = _tamper(lines[3])
+        path.write_text("".join(lines), encoding="utf-8", newline="")
+
+        result = sink.verify_chain()
+        assert result.ok is False
+        assert result.total == 6
+        broken_line_numbers = {b["line"] for b in result.breaks}
+        assert broken_line_numbers == {3, 5}, \
+            f"应报出全部 2 个断点，实际：{result.breaks}"
+        # 向后兼容镜像字段：broken_at/error 指向第一个断点
+        assert result.broken_at == 3
+        assert result.error == result.breaks[0]["error"]
+
+    def test_break_does_not_cascade_to_every_following_line(self, tmp_path):
+        """一处断点之后，链若重新自洽，不应把后面每一行都级联误判为断点。
+
+        断点之后的哈希游标续接用"当前行原始字节的真实哈希"（而非"本应匹配
+        的哈希"），所以断点后新写入、彼此自洽的记录不会被误伤。
+        """
+        path = tmp_path / "audit.jsonl"
+        sink = JsonlSink(path)
+        for i in range(3):
+            sink.write(_make_event(seq=i))
+
+        # 篡改第 2 行内容制造一个断点——断点会体现在第 3 行（它的 prev_hash
+        # 仍指向"原始"第 2 行，而磁盘上第 2 行已变）；第 2 行自身的 prev_hash
+        # 字段（指向第 1 行）未被触碰，依旧自洽，不会在第 2 行报断点。
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        record = json.loads(lines[1])
+        record["decision"] = {"tampered": True}
+        lines[1] = json.dumps(record, ensure_ascii=False) + "\n"
+        path.write_text("".join(lines), encoding="utf-8", newline="")
+
+        # 断点之后继续正常写入（新记录的 prev_hash 会基于磁盘上第 3 行的真实
+        # 字节重算——第 3 行本身内容未被篡改，只是它「声称」的上一条已经对不
+        # 上——所以第 4 行起应重新自洽，不应被连累）
+        for i in range(3, 6):
+            sink.write(_make_event(seq=i))
+
+        result = sink.verify_chain()
+        assert result.ok is False
+        assert result.total == 6
+        # 只应有第 3 行这一个断点，第 2 行与后面 3 条新写入都不应被连累
+        assert {b["line"] for b in result.breaks} == {3}
+
+
+# ── `#564` 与哈希定义无关的旁证判据 ────────────────────────────────────────────
+
+class TestDuplicatePrevHashPairs:
+
+    def test_find_prev_hash_forks_detects_adjacent_duplicate(self, tmp_path):
+        """相邻两行携带同一个 prev_hash 字面值 ⇒ 判定为一对分叉痕迹。
+
+        直接手工构造两条记录、都把 `prev_hash` 写成同一个值（模拟两个独立
+        写入方各自读到同一条"上一行"、各自算出同一个 prev_hash 后先后落盘）
+        ——`find_prev_hash_forks` 全程不重算任何 SHA-256，只比较字段字面值。
+        """
+        path = tmp_path / "audit.jsonl"
+        shared_prev = "deadbeef" * 8   # 任意固定值，不需要是真实哈希
+        rec_a = {"scenario": "A", "action": "x", "evaluator": "u",
+                  "automation_level": "L2", "decision": {}, "prev_hash": ""}
+        rec_b = {"scenario": "B", "action": "x", "evaluator": "u",
+                  "automation_level": "L2", "decision": {}, "prev_hash": shared_prev}
+        rec_c = {"scenario": "C", "action": "x", "evaluator": "u",
+                  "automation_level": "L2", "decision": {}, "prev_hash": shared_prev}
+        path.write_text(
+            "\n".join(json.dumps(r, ensure_ascii=False) for r in (rec_a, rec_b, rec_c)) + "\n",
+            encoding="utf-8",
+        )
+
+        sink = JsonlSink(path)
+        pairs = sink.find_prev_hash_forks()
+        assert pairs == [(2, 3)]
+
+    def test_find_prev_hash_forks_empty_when_no_duplicates(self, tmp_path):
+        """正常写入（每行 prev_hash 各不相同）不应产生任何旁证分叉记录。"""
+        path = tmp_path / "audit.jsonl"
+        sink = JsonlSink(path)
+        for i in range(5):
+            sink.write(_make_event(seq=i))
+
+        assert sink.find_prev_hash_forks() == []
+
+    def test_verify_chain_surfaces_duplicate_pairs_and_fails_ok(self, tmp_path):
+        """verify_chain() 的 duplicate_prev_hash_pairs 字段与 find_prev_hash_forks
+        结果一致，且发现分叉旁证时 ok 必须为 False（即便哈希链本身恰好没有在
+        同一处报出 broken_at）。"""
+        path = tmp_path / "audit.jsonl"
+        shared_prev = "cafebabe" * 8
+        rec_a = {"scenario": "A", "action": "x", "evaluator": "u",
+                  "automation_level": "L2", "decision": {}, "prev_hash": ""}
+        rec_b = {"scenario": "B", "action": "x", "evaluator": "u",
+                  "automation_level": "L2", "decision": {}, "prev_hash": shared_prev}
+        rec_c = {"scenario": "C", "action": "x", "evaluator": "u",
+                  "automation_level": "L2", "decision": {}, "prev_hash": shared_prev}
+        path.write_text(
+            "\n".join(json.dumps(r, ensure_ascii=False) for r in (rec_a, rec_b, rec_c)) + "\n",
+            encoding="utf-8",
+        )
+
+        sink = JsonlSink(path)
+        result = sink.verify_chain()
+        assert result.duplicate_prev_hash_pairs == [(2, 3)]
+        assert result.ok is False
 
 
 # ── AuditLogger 代理 ──────────────────────────────────────────────────────────
