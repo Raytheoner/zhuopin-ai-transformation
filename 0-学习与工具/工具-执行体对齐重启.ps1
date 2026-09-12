@@ -24,7 +24,8 @@
 
     九关（任一关不过即停，退出码见 .NOTES）：
       1 身份校验    —— `.git` 条目 ＋ 注册项；**不看 `git -C` 的输出**
-      2 可 ff 校验  —— 不满足即停，绝不 revert／挑拣
+      2 可 ff 校验  —— 不满足即停，绝不 revert／挑拣；**落后为 0 时再判一道
+                       进程新鲜度**（2b，见下），否则本关在断口上报绿
       3 固化备份    —— 未跟踪 ＋ ignored 全量复制到**仓库外**
       4 停服        —— 整条进程链，**先父后子**，复查零残留
       5 ff          —— `merge --ff-only`，校验落后归零
@@ -32,6 +33,27 @@
       7 验重启      —— 比对进程链 CreationTime **真的变了**
       8 验活        —— 心跳时间戳**真的刷新**（不是看服务在不在）
       9 摘要
+
+    🔴 **2b 进程新鲜度（队列 §一 #570，OP-0913-G）**：第 2 关原来只算落后数
+    `rev-list --count <targetHead>..master`，为 0 即报「已对齐，无需处置」
+    ——**它只看 git、不看进程**。2026-09-12 实证：`#312` 的代码 18:22–18:44
+    ff 进 master，常驻进程却起于前一天 21:22，**跑了 21 小时旧判据**，而
+    `-DryRun` 照报「已对齐（落后 0）」；同日又一例：listener 起于 13:10:20Z，
+    `#556` 修复 13:11:10Z 落 master，**晚 50 秒**，工具照报绿。两把尺子量的
+    不是一件事，读数好看反而掩盖断口。
+    ⇒ 落后为 0 时，再把**常驻进程 `CreationDate`** 与**代码落库时刻**比一次：
+      · 代码落库时刻 ＝ max(`git log -1 --format=%cI <targetHead>` 的提交时刻，
+        该 worktree `HEAD` 最近一次 reflog 移动时刻)。取后者是因为提交时刻
+        只是下界——进程若起于「提交之后、ff 之前」，按提交时刻会误判新鲜。
+      · 任一常驻进程早于代码落库时刻 ⇒ 判**「代码已对齐、执行体过期」**。
+    ⚠️ **判过期之后怎么办，不一刀切**（#570 末句约束）：
+      · `-DryRun`             ⇒ 只报告，退出码 **18**（不再是 0——量具不得报绿）；
+      · 实跑且 `.env` 里 `CARRIER_AUTO_RESTART_ENABLED` 为 ON
+                             ⇒ 走既有 `-RestartOnly` 路径（停服→启动→验重启→验活）；
+      · 实跑且开关 OFF／缺失  ⇒ 只告警，退出码 18，打印处置命令；人工确认后
+                             自己带 `-RestartOnly` 再跑一次。
+    开关与 sweep `_carrier_auto_restart_enabled` 同一把、同一解析规则（读不到
+    即 OFF，fail-safe）——**不新造第二套开关**。
 
 .PARAMETER WorktreeName
     执行体 worktree 目录名，如 `wecom-service-home`。
@@ -48,7 +70,8 @@
     改版后的常规用法。**
 
 .PARAMETER DryRun
-    干跑：只跑判定并打印将要做什么，不停服、不 ff、不启动。
+    干跑：只跑判定并打印将要做什么，不停服、不 ff、不启动。🔴 判到「执行体
+    过期」时退出码为 18 而非 0（见 2b）。
 
 .EXAMPLE
     powershell -NoProfile -File "0-学习与工具\工具-执行体对齐重启.ps1" -WorktreeName wecom-service-home -DryRun
@@ -60,6 +83,7 @@
     退出码（🔴 由本脚本自身 `exit` 给出，调用方读 `$LASTEXITCODE`）：
       0 全关通过 ／ 10 身份 ／ 11 不可 ff ／ 12 备份 ／ 13 停服残留
       14 ff 失败 ／ 15 重启未生效 ／ 16 验活失败 ／ 17 无可重启的常驻任务
+      18 执行体过期（代码已对齐但常驻进程早于代码落库时刻；仅报告、未重启）
       20 参数或环境错误
 
     🔴 **绝不要**用 `cmd /c ... & echo %ERRORLEVEL%` 之类取本脚本的退出码：
@@ -168,10 +192,74 @@ if (-not $targetHead -or $targetHead -match '^0+$') {
 }
 Write-Gate '1 身份校验' '✓' "注册项命中，HEAD=$($targetHead.Substring(0,7))"
 
+# ─────────────────────── 公用：找常驻进程链 ───────────────────────
+function Get-CarrierProcesses {
+    param([string]$NormPath)
+    # ⚠️ #68 假警报教训：过滤字符串会**命中执行这条查询的进程自己**（当时
+    # 看到"第二个 run_aibot_service 进程"，查明是自己的命令行自匹配）。故
+    # 显式排除本进程及其父链。
+    $selfChain = @()
+    $cur = $PID
+    for ($i = 0; $i -lt 8 -and $cur; $i++) {
+        $selfChain += $cur
+        $p = Get-CimInstance Win32_Process -Filter "ProcessId = $cur" -ErrorAction SilentlyContinue
+        if (-not $p) { break }
+        $cur = $p.ParentProcessId
+    }
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            ($_.CommandLine.Replace('\', '/').ToLower().Contains(($NormPath + '/').ToLower())) -and
+            ($selfChain -notcontains $_.ProcessId)
+        }
+}
+
+# ─────────────────────── 公用：2b 进程新鲜度的两个读数 ───────────────────────
+function Get-CodeLandedTime {
+    <# 代码落库时刻 ＝ max(HEAD 提交时刻, worktree HEAD 最近一次 reflog 移动时刻)。
+       返回 [pscustomobject]{ Landed, CommitAt, ReflogAt, Basis }；两者都取不到
+       返回 $null（调用方按「无法判定」处理，不得当新鲜）。#>
+    param([string]$Head, [string]$Wt, [string]$Root)
+    $commitAt = $null; $reflogAt = $null
+    $c = Invoke-Git @('log', '-1', '--format=%cI', $Head) $Root
+    if ($c.Code -eq 0 -and $c.Text.Trim()) {
+        try { $commitAt = [DateTimeOffset]::Parse($c.Text.Trim(), [cultureinfo]::InvariantCulture) } catch { }
+    }
+    # reflog 时刻：`%gd` 配 `--date=iso-strict` 形如 `HEAD@{2026-09-13T07:19:00+08:00}`。
+    $r = Invoke-Git @('log', '-g', '-1', '--date=iso-strict', '--format=%gd', 'HEAD') $Wt
+    if ($r.Code -eq 0 -and $r.Text -match '\{([^}]+)\}') {
+        try { $reflogAt = [DateTimeOffset]::Parse($Matches[1], [cultureinfo]::InvariantCulture) } catch { }
+    }
+    if (-not $commitAt -and -not $reflogAt) { return $null }
+    $landed = $commitAt; $basis = '提交时刻'
+    if ($reflogAt -and (-not $commitAt -or $reflogAt -gt $commitAt)) { $landed = $reflogAt; $basis = 'reflog 移动时刻' }
+    return [pscustomobject]@{ Landed = $landed; CommitAt = $commitAt; ReflogAt = $reflogAt; Basis = $basis }
+}
+
+function Test-CarrierAutoRestartEnabled {
+    <# 与 sweep `_carrier_auto_restart_enabled` 同一把开关、同一解析：仓库根
+       `.env` 里 `CARRIER_AUTO_RESTART_ENABLED=<1|true|yes|on>`；读不到、读错、
+       值不认识一律 OFF。 #>
+    param([string]$Root)
+    $envPath = Join-Path $Root '.env'
+    if (-not (Test-Path -LiteralPath $envPath)) { return $false }
+    try { $lines = Get-Content -LiteralPath $envPath -Encoding UTF8 -ErrorAction Stop } catch { return $false }
+    foreach ($l in $lines) {
+        $t = $l.Trim()
+        if ($t.StartsWith('CARRIER_AUTO_RESTART_ENABLED=')) {
+            $v = $t.Substring('CARRIER_AUTO_RESTART_ENABLED='.Length).Trim().Trim('"').Trim("'").ToLower()
+            return @('1', 'true', 'yes', 'on') -contains $v
+        }
+    }
+    return $false
+}
+
 # ─────────────────────── 第 2 关：可 ff 校验 ───────────────────────
 # 不满足即停。**绝不 revert、绝不挑拣提交**——#68 的原话是"未在生产载体上
 # 造出第三种代码状态"。
 $behindN = -1
+$StaleCarrier = $false        # 2b 判「代码已对齐、执行体过期」时置真
+$StaleDetail = ''
 if ($RestartOnly) {
     Write-Gate '2 可 ff 校验' 'i' '已跳过（-RestartOnly：ff 由 sweep 每轮负责，本次只重启验活）'
 }
@@ -188,10 +276,42 @@ if ($ancestor.Code -ne 0 -or $aheadN -ne 0) {
 Write-Gate '2 可 ff 校验' '✓' "可纯 ff：落后 $behindN 个提交，ahead=0"
 
 if ($behindN -eq 0) {
-    Write-Gate '总体' '✓' '已对齐（落后 0），无需处置'
-    Stop-WithCode 0 '已对齐，未做任何改动'
+    # ── 2b 进程新鲜度（#570）：落后 0 只说明 git 对齐了，**不说明进程跟上了**。
+    $landed = Get-CodeLandedTime $targetHead $WorktreePath $RepoRoot
+    $procs = @(Get-CarrierProcesses $normTarget)
+    if (-not $landed) {
+        # 代码落库时刻取不到 ⇒ 无法判定；按「不得报绿」处理，但也没有依据去重启。
+        Write-Gate '2b 进程新鲜度' '✗' '代码落库时刻取不到（git log／reflog 均失败），无法判定新鲜度——不报「已对齐」'
+        Stop-WithCode 20 '落后 0 但新鲜度无法判定，未做任何改动'
+    }
+    $landedShown = "{0}Z（{1} 本地，取 {2}）" -f $landed.Landed.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'), $landed.Landed.ToLocalTime().ToString('HH:mm:ss'), $landed.Basis
+    if ($procs.Count -eq 0) {
+        Write-Gate '2b 进程新鲜度' 'i' "落后 0，且当前**没有**指向本执行体的进程在跑（无从比对；代码落库于 $landedShown）——若该执行体本应常驻，那是「没起来」而非「过期」，本脚本不代为启动"
+        Write-Gate '总体' '✓' '已对齐（落后 0），无在跑进程，无需处置'
+        Stop-WithCode 0 '已对齐，未做任何改动'
+    }
+    $staleProcs = @()
+    foreach ($p in $procs) {
+        $created = [DateTimeOffset]$p.CreationDate
+        $mark = if ($created -lt $landed.Landed) { '过期' } else { '新鲜' }
+        Write-Host ("      在跑：{0} pid={1} 起于 {2}Z（{3} 本地）⇒ {4}" -f $p.Name, $p.ProcessId, $created.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'), $created.ToLocalTime().ToString('HH:mm:ss'), $mark)
+        if ($created -lt $landed.Landed) { $staleProcs += $p }
+    }
+    if ($staleProcs.Count -eq 0) {
+        Write-Gate '2b 进程新鲜度' '✓' "$($procs.Count) 个在跑进程均晚于代码落库时刻 $landedShown"
+        Write-Gate '总体' '✓' '已对齐（落后 0，执行体新鲜），无需处置'
+        Stop-WithCode 0 '已对齐且执行体新鲜，未做任何改动'
+    }
+    $oldest = ($staleProcs | ForEach-Object { [DateTimeOffset]$_.CreationDate } | Sort-Object | Select-Object -First 1)
+    $lag = $landed.Landed - $oldest
+    $lagShown = if ($lag.TotalMinutes -ge 1) { '{0:N0} 分钟' -f $lag.TotalMinutes } else { '{0:N0} 秒' -f $lag.TotalSeconds }
+    $StaleDetail = "代码已对齐（落后 0），但 {0}/{1} 个在跑进程早于代码落库时刻 {2}，最老进程比代码老 {3} ⇒ 执行体过期，跑的是旧代码" -f $staleProcs.Count, $procs.Count, $landedShown, $lagShown
+    Write-Gate '2b 进程新鲜度' '✗' $StaleDetail
+    $StaleCarrier = $true
 }
 }
+# 从这里起，「只重启验活」有两个来源：调用方显式 `-RestartOnly`，或 2b 判过期。
+$SkipFf = $RestartOnly -or $StaleCarrier
 
 # 找出指向本执行体的计划任务（与 sweep 侧同一判据：Action 路径落在该
 # worktree 之下）。
@@ -222,29 +342,46 @@ foreach ($name in $tasks) {
     } catch { }
 }
 if ($tasks.Count -eq 0) {
-    Write-Gate '前置' 'i' '未找到指向本执行体的计划任务——本次只做 ff，不涉停服/重启/验活'
+    Write-Gate '前置' 'i' $(if ($SkipFf) { '未找到指向本执行体的计划任务——无可停服/重启的任务（进程链仍按命令行匹配处理）' } else { '未找到指向本执行体的计划任务——本次只做 ff，不涉停服/重启/验活' })
 } else {
     Write-Gate '前置' 'i' ("关联计划任务 {0} 个：{1}" -f $tasks.Count, ($tasks -join '、'))
 }
 
 if ($DryRun) {
-    $plan = if ($RestartOnly) {
+    $plan = if ($SkipFf) {
         "将执行：停 $($tasks.Count) 个任务并杀进程链 → 只重启其中在跑的 $($runningBefore.Count) 个（$($runningBefore -join '、')）→ 验重启 → 验活（跳过 ff 三关）"
     } else {
         "将执行：备份 → 停 $($tasks.Count) 个任务并杀进程链 → ff（$behindN 个提交）→ 只重启其中在跑的 $($runningBefore.Count) 个（$($runningBefore -join '、')）→ 验重启 → 验活"
     }
     Write-Gate '干跑' 'i' $plan
+    if ($StaleCarrier) {
+        # 🔴 量具不得报绿：干跑判到过期，退出码给 18，不给 0。
+        Stop-WithCode 18 ("干跑结束，未做任何改动；但执行体过期——处置：本脚本 -WorktreeName {0} -RestartOnly（人工确认后跑）" -f $WorktreeName)
+    }
     Stop-WithCode 0 '干跑结束，未做任何改动'
+}
+
+# ─────────── 2b 判过期后的分流：什么条件下自动重启、什么条件下只告警 ───────────
+# #570 末句：重启在跑的生产服务属 ⏭️／🟡，**不得一刀切自动**。判据只有一条、
+# 且复用既有的：`.env` 的 `CARRIER_AUTO_RESTART_ENABLED`（与 sweep 同一把开关）。
+#   · ON  ⇒ 继续往下，走既有 -RestartOnly 路径（第 4/6/7/8 关），成功只留痕；
+#   · OFF ⇒ 只告警（退出码 18）并打印处置命令，由人带 -RestartOnly 再跑。
+if ($StaleCarrier -and -not (Test-CarrierAutoRestartEnabled $RepoRoot)) {
+    Write-Gate '2b 分流' 'i' ("自动重启开关 CARRIER_AUTO_RESTART_ENABLED＝OFF（缺省，读不到即 OFF）⇒ 只告警不重启；处置：本脚本 -WorktreeName {0} -RestartOnly" -f $WorktreeName)
+    Stop-WithCode 18 '执行体过期（代码已对齐、进程早于代码落库时刻），自动重启关着，已停手、未做任何改动'
+}
+if ($StaleCarrier) {
+    Write-Gate '2b 分流' 'i' '自动重启开关＝ON ⇒ 按既有 -RestartOnly 路径重启验活（跳过备份／ff）'
 }
 
 # ─────────────────────── 第 3 关：固化备份 ───────────────────────
 # #267 真实事故：两份签字审计报告落在某 worktree 的 `reports/`（gitignore
 # 命中），被判"干净可删"后随 `worktree remove` **真实丢失**。故 ff 之前
 # 一律先把未跟踪 ＋ ignored 内容固化到**仓库外**。
-if ($RestartOnly) {
-    Write-Gate '3 固化备份' 'i' '已跳过（-RestartOnly：本次不 ff，工作区内容不会被覆盖）'
+if ($SkipFf) {
+    Write-Gate '3 固化备份' 'i' $(if ($RestartOnly) { '已跳过（-RestartOnly：本次不 ff，工作区内容不会被覆盖）' } else { '已跳过（2b 判过期、落后 0：本次不 ff，工作区内容不会被覆盖）' })
 }
-if (-not $RestartOnly) {
+if (-not $SkipFf) {
 if (-not $BackupDir) {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $BackupDir = Join-Path $env:TEMP "carrier-realign-$WorktreeName-$stamp"
@@ -281,26 +418,8 @@ try {
 # 🔴 **坑⑴**（#68 当场复现）：`Stop-ScheduledTask` **只杀 wscript**，遗留
 # powershell 与 python 子进程。**父进程带自愈，先杀子会被立刻拉起** ⇒ 必须
 # 先杀父再杀子，且复查零残留后才继续。
-function Get-CarrierProcesses {
-    param([string]$NormPath)
-    # ⚠️ #68 假警报教训：过滤字符串会**命中执行这条查询的进程自己**（当时
-    # 看到"第二个 run_aibot_service 进程"，查明是自己的命令行自匹配）。故
-    # 显式排除本进程及其父链。
-    $selfChain = @()
-    $cur = $PID
-    for ($i = 0; $i -lt 8 -and $cur; $i++) {
-        $selfChain += $cur
-        $p = Get-CimInstance Win32_Process -Filter "ProcessId = $cur" -ErrorAction SilentlyContinue
-        if (-not $p) { break }
-        $cur = $p.ParentProcessId
-    }
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            ($_.CommandLine.Replace('\', '/').ToLower().Contains(($NormPath + '/').ToLower())) -and
-            ($selfChain -notcontains $_.ProcessId)
-        }
-}
+# （`Get-CarrierProcesses` 定义已上移到第 2 关之前——2b 进程新鲜度也要用它，
+#  且 PowerShell 脚本里函数须先定义后调用。）
 
 foreach ($name in $tasks) {
     try { Stop-ScheduledTask -TaskName $name -ErrorAction Stop } catch { }
@@ -341,10 +460,10 @@ if ($residue.Count -gt 0) {
 Write-Gate '4 停服' '✓' "整条进程链已清零（停服前 $($before.Count) 个，先父后子，复查零残留）"
 
 # ─────────────────────── 第 5 关：ff ───────────────────────
-if ($RestartOnly) {
-    Write-Gate '5 ff' 'i' '已跳过（-RestartOnly）'
+if ($SkipFf) {
+    Write-Gate '5 ff' 'i' $(if ($RestartOnly) { '已跳过（-RestartOnly）' } else { '已跳过（2b 判过期、落后 0，无需 ff）' })
 }
-if (-not $RestartOnly) {
+if (-not $SkipFf) {
 $merge = Invoke-Git @('merge', '--ff-only', 'master') $WorktreePath
 if ($merge.Code -ne 0) {
     Write-Gate '5 ff' '✗' "merge --ff-only 失败：$($merge.Text)"
@@ -428,5 +547,6 @@ if (-not (Test-Path -LiteralPath $svcDir)) {
 
 # ─────────────────────── 第 9 关：摘要 ───────────────────────
 if ($RestartOnly) { Write-Gate '9 摘要' '✓' '只重启验活模式，未 ff、未备份' }
+elseif ($StaleCarrier) { Write-Gate '9 摘要' '✓' '2b 判过期后自动重启（开关 ON），未 ff、未备份' }
 else { Write-Gate '9 摘要' '✓' "备份在 $BackupDir" }
-Stop-WithCode 0 $(if ($RestartOnly) { '各关通过：已重启并验活' } else { '九关全过：已对齐并重启验活' })
+Stop-WithCode 0 $(if ($RestartOnly) { '各关通过：已重启并验活' } elseif ($StaleCarrier) { '各关通过：执行体过期已自动重启并验活' } else { '九关全过：已对齐并重启验活' })
