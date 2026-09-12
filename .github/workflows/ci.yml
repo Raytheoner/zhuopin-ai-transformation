@@ -330,3 +330,42 @@ jobs:
         with:
           python-version: "3.14"
       - run: python 0-学习与工具/工具-取证件回显lint.py --enforce
+
+  zombie-task-lint:
+    # openspec 包 `tasks-zombie-item-detect`（队列 §一 #561 ／ OP-0912-AA，Shao Peishen
+    # 2026-09-12 回 `P2：4a` 签认 design）：`openspec/changes/*/tasks.md` 里「做完了没人回来勾」
+    # 的僵尸未勾项检出。实证＝`fi2-recon-mvp` 1.5 挂了 45 天，依赖它的 7.1／7.2 早在 07-23
+    # 就已 `[x]`——信号从那天起就该响，却长出了一次错误的对外催办（`财务部#13`）。
+    #
+    # 🔴 与 `claude-progress-lint` 的取法**不同**，且不是它的「一期告警／二期 enforce」两段式：
+    # ① 档位分在**判据**上、不分在时间上——J-A（前置矛盾）／J-C（前置登记项无下游引用）是强
+    #    判据，直接 `--enforce`；J-B（节内乱序）／J-D（基线回显）是弱判据／纯回显，**脚本本身
+    #    对它们永不返回非零退出码**（design 决策点 2／3）。所以本 job **不需要**
+    #    `continue-on-error`——那个开关是在 job 层把整套判据一起降档，而这里要的恰是
+    #    「同一次运行里强的拦、弱的只摆到眼前」，只能在脚本内分档。
+    # ② J-B 精度实测 4/5、当前 47 条命中，唯一那条已知误报是一项**真未决**（fi2 `10.11b`，等
+    #    唐燕萍团队批改）。它若判违规，最省事的过关方式是把它勾掉——误勾比漏勾更危险。故 J-B
+    #    永远只出「请复核」清单，**不是**「等存量清零后二期再切 enforce」，是**永不切**。
+    # ③ 强判据这一侧沿 bootstrap-stub-lint／scene-intent-gate-lint 的「先确认清零、再关门」：
+    #    apply 时对现取 79 个活跃包实跑，J-A 命中 3（全部是 `status-triage-resident-round` §7
+    #    标题把「前置 6.3」声明得过宽，7.1–7.3 实际不依赖 6.3），已把该声明下移到 7.4 ⇒ J-A 0、
+    #    J-C 0，首跑即绿。它变红只可能是：有人勾了一项而它声明的前置仍 `[ ]`，或写了「前置登记」
+    #    项却没在任何下游写 `前置 N.M`——两种都是当场就该修的书写不一致，不是要「过渡」的存量。
+    #
+    # 🔴 `fetch-depth: 0`：J-D 用 `git blame` 取每个未勾项的末次触碰日期；浅克隆下全部行都会
+    # 显示成 checkout 那一笔的日期，J-D 就成了假回显。J-D 不进退出码，所以取不到只是失真
+    # 不是失败——但失真的回显比没有更坏（同 opener-block-lint 头部对 H3 的判断）。
+    #
+    # 扫描面不含 `openspec/changes/archive/`（design 决策点 5：归档包的 `[ ]` 按「历史记录不
+    # 追改」不动）；脚本纯只读、零写盘。
+    name: "僵尸未勾项 lint（J-A 前置矛盾／J-C 前置登记无下游引用；J-B/J-D 仅回显）"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      # 不加 --jd-summary：J-D 按 design 逐项列日期（约 1,000 行，CI 日志可折叠）；本地看摘要再加
+      - run: python 0-学习与工具/工具-僵尸未勾项lint.py --enforce
