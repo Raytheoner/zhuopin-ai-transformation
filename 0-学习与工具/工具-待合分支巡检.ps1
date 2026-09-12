@@ -50,14 +50,208 @@
 #      在有未提交改动或未跟踪内容时非零退出，这正是我们要的「脏的只告警、不删」；
 #      remove 失败只记一行警告并点名，**不重试、不强删、不代查是谁在用**。
 #
-# 用法：pwsh -File 工具-待合分支巡检.ps1 [-DryRun] [-IdleBufferMinutes 60]
-param([switch]$DryRun, [int]$IdleBufferMinutes = 60)
+# 用法：pwsh -File 工具-待合分支巡检.ps1 [-DryRun] [-IdleBufferMinutes 60] [-NoAutoWhitelist] [-WhitelistMaxAgeDays 14]
+#       pwsh -File 工具-待合分支巡检.ps1 -EvaluateBranch <ref> [-EvaluateBase master]   # 只干跑白名单判据，不合入
+param(
+    [switch]$DryRun,
+    [int]$IdleBufferMinutes = 60,
+    [switch]$NoAutoWhitelist,          # 动作〇 总开关之一（另一个＝标记文件 reports/ff-whitelist.OFF）
+    [int]$WhitelistMaxAgeDays = 14,    # 动作〇 候选窗口：只看最近 N 天内有提交的 claude/* 分支
+    [string]$EvaluateBranch = '',      # 只评估这一条 ref 的白名单判据并退出（干跑）
+    [string]$EvaluateBase = 'master'
+)
 
 $ErrorActionPreference = 'Stop'
 $Repo = 'C:\Dev\zhuopin-ai'
 Set-Location $Repo
 $Reg = Join-Path $Repo 'reports\pending-ff.jsonl'
 $Merge = Join-Path $Repo '0-学习与工具\工具-泳道分支合入.ps1'
+
+# ============================================================
+# 动作〇：ff 低风险白名单 —— 「纯文档分支也要问一次」的机器那一半
+# （派单件 `1-转型规划/0-全景路线图/派单件-【CC】ff低风险白名单-2026-09-12.md`，
+#   Shao Peishen 2026-09-12 答 `3b`，OP-0912-E，批 B-0912_落库瘦身）
+# ============================================================
+# 🔴 成因：WIP 降不下来的主因是「待 ff」堆积——`OP-0912-E` 取证：计入 WIP 的行里 `partial`
+#    占 54%，抽样 16 条里尾巴就是「待 ff」的 4 条；同日 sweep 第 16 类 B 类真未落地分支 15 条。
+#    泳道产分支的速度远大于 ff 的速度，因为**每条分支都要单独问他一次**。他的原话「我是看护者，
+#    永远在环，只做审核和决策」⇒ 要改的不是「他审」，是「逐条问」这个形态。
+#
+# 判据正本在 `工具-待合分支巡检-白名单判据.ps1`（⑴ 全部文件在允许集合 ／ ⑵ 零代码文件 ／
+# ⑶ 不触碰队列·CLAUDE.md·.claude/**·.gitignore ／ ⑷ merge-tree 零冲突 ／ ⑸ 取不到即不命中）。
+# 🔴 fail-closed：任一不满足即回到「等他一字母」（动作一那条路径），本段一律不碰。
+#
+# 候选集（本段自己的前置过滤，不是第六条判据，只把明显不该碰的分支挡在门外）：
+#   · 只看本地 `refs/heads/claude/*`（泳道分支固定前缀；`backup/*`／`ops/*` 不在内）；
+#   · 内容尚未在 master（`git merge-base --is-ancestor` 非零）；
+#   · 🔴 不在『已授权待合』登记处（那条路径有他的原文授权，不与本条混用——派单件 §二）；
+#   · 🔴 未被任何 worktree 检出（活跃泳道还在上面提交；且 `工具-泳道分支合入.ps1` 步骤③
+#     `git worktree add` 对已检出分支会失败）；
+#   · 最近一次提交在 `-WhitelistMaxAgeDays`（默认 14）天内——更老的分支多半是被放弃的草稿或
+#     已被别的分支承接，自动复活它们不是「低风险」；它们照旧留在动作一那侧等他一字母。
+#
+# 合入仍调 `工具-泳道分支合入.ps1`（六道守卫一条不改；docs 分支无测试目标 ⇒ 不传 `-Tests`、
+# 日志写明「跳过回归」——白名单 ⑵ 已保证零代码文件，没有可回归之物），**不新造第二条合入路径**。
+#
+# 留痕与可撤销：
+#   · 每条命中分支的判据 ⑴–⑸ 逐条结果写 stdout ＋ 追加 `reports/ff-whitelist-autoff.log`；
+#   · 本轮有实际合入／失败 ⇒ 汇总一条推运维群（`.env` 的 `WECOM_WEBHOOK_URL_OPS`；未配置即只落
+#     日志、不回落业务群，同 `工具-泳道看护状态机.py` 的 fail-closed 取向）；
+#   · 🔴 总开关两种，任一即关停：参数 `-NoAutoWhitelist`；或存在标记文件 `reports/ff-whitelist.OFF`
+#     （他一句话，本方 `New-Item reports/ff-whitelist.OFF` 即关；删除即开）。
+#
+# 干跑单条 ref 的判据（不合入、不写日志）：
+#   pwsh -File 工具-待合分支巡检.ps1 -EvaluateBranch <ref> [-EvaluateBase <ref>]
+
+. (Join-Path $PSScriptRoot '工具-待合分支巡检-白名单判据.ps1')
+
+$WlOffMarker = Join-Path $Repo 'reports\ff-whitelist.OFF'
+$WlAuditLog = Join-Path $Repo 'reports\ff-whitelist-autoff.log'
+$WlOpsWebhookKey = 'WECOM_WEBHOOK_URL_OPS'
+
+function Send-OpsWecomMarkdown {
+    <# 推一条 markdown 到运维群。成功返回 `$null`，失败返回原因字符串（调用方只记日志，不抛）。
+       🔴 键名带 `=` 精确前缀匹配——`WECOM_WEBHOOK_URL` 是 `WECOM_WEBHOOK_URL_OPS` 的真前缀，
+       不带 `=` 会把两键读混、把汇总发回业务群（`test_工具-落库sweep.py` 记过这一坑）。 #>
+    param([Parameter(Mandatory)][string]$Repo, [Parameter(Mandatory)][string]$Content)
+    $envPath = Join-Path $Repo '.env'
+    if (-not (Test-Path $envPath)) { return "未找到 $envPath" }
+    $prefix = "$WlOpsWebhookKey="
+    $line = Get-Content $envPath -Encoding UTF8 | Where-Object { $_.Trim().StartsWith($prefix) } | Select-Object -First 1
+    if (-not $line) { return ".env 未配置 $WlOpsWebhookKey（fail-closed，不回落业务群）" }
+    $url = $line.Trim().Substring($prefix.Length).Trim().Trim('"', "'")
+    if (-not $url) { return "$WlOpsWebhookKey 为空" }
+    $body = @{ msgtype = 'markdown'; markdown = @{ content = $Content } } | ConvertTo-Json -Depth 4 -Compress
+    try {
+        $r = Invoke-RestMethod -Method Post -Uri $url -ContentType 'application/json; charset=utf-8' `
+            -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 10
+        if ($r.errcode -ne 0) { return "errcode=$($r.errcode) errmsg=$($r.errmsg)" }
+        return $null
+    } catch { return "推送异常：$($_.Exception.Message)" }
+}
+
+function Get-RegisteredPendingBranches {
+    <# 『已授权待合』登记处里的分支名集合（解析失败的行跳过——它们由动作一自己报）。 #>
+    param([Parameter(Mandatory)][string]$RegistryPath)
+    $set = New-Object 'System.Collections.Generic.HashSet[string]'
+    if (-not (Test-Path $RegistryPath)) { return ,$set }
+    foreach ($line in (Get-Content $RegistryPath -Encoding UTF8 | Where-Object { $_.Trim() })) {
+        try { $e = $line | ConvertFrom-Json; if ($e.branch) { [void]$set.Add([string]$e.branch) } } catch { }
+    }
+    return ,$set
+}
+
+function Get-CheckedOutBranches {
+    <# 所有 worktree 当前检出的分支名集合（`git worktree list --porcelain` 的 `branch refs/heads/<name>` 行）。 #>
+    param([Parameter(Mandatory)][string]$Repo)
+    $set = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($line in (git -C $Repo worktree list --porcelain)) {
+        if ($line -like 'branch refs/heads/*') { [void]$set.Add($line.Substring(18).Trim()) }
+    }
+    return ,$set
+}
+
+function Invoke-WhitelistAutoFf {
+    param(
+        [Parameter(Mandatory)][string]$Repo,
+        [Parameter(Mandatory)][string]$RegistryPath,
+        [Parameter(Mandatory)][string]$MergeScript,
+        [switch]$DryRun,
+        [int]$MaxAgeDays = 14
+    )
+    $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'   # 本地时间（UTC+8），日志里统一标「本地」
+    $registered = Get-RegisteredPendingBranches -RegistryPath $RegistryPath
+    $checkedOut = Get-CheckedOutBranches -Repo $Repo
+    $cutoff = (Get-Date).AddDays(-$MaxAgeDays)
+
+    $refs = @(git -C $Repo for-each-ref --format='%(refname:short)|%(committerdate:iso-strict)' refs/heads/claude/)
+    $candidates = @(); $skipped = @{ merged = 0; registered = 0; checkedOut = 0; old = 0 }
+    foreach ($r in $refs) {
+        $parts = $r -split '\|', 2
+        $br = $parts[0].Trim(); if (-not $br) { continue }
+        $when = $null; try { $when = [datetimeoffset]::Parse($parts[1]) } catch { }
+        if ($null -eq $when -or $when.LocalDateTime -lt $cutoff) { $skipped.old++; continue }
+        if ($registered.Contains($br)) { $skipped.registered++; continue }
+        if ($checkedOut.Contains($br)) { $skipped.checkedOut++; continue }
+        git -C $Repo merge-base --is-ancestor $br master 2>$null
+        if ($LASTEXITCODE -eq 0) { $skipped.merged++; continue }
+        $candidates += $br
+    }
+    Write-Host "· 白名单候选 $($candidates.Count) 条（claude/* 共 $($refs.Count)；跳过：已在 master $($skipped.merged)／已登记待合 $($skipped.registered)／被 worktree 检出 $($skipped.checkedOut)／超 $MaxAgeDays 天或无日期 $($skipped.old)）"
+    if (-not $candidates) { Write-Host '[WL-NO-ACTION] 无白名单候选。'; return }
+
+    $dirty = git -C $Repo status --porcelain | ForEach-Object { $_.Substring(3).Trim('"') }
+    $done = @(); $failed = @(); $waiting = @(); $notHit = @(); $audit = @(); $dryHits = @()
+
+    foreach ($br in $candidates) {
+        $v = Test-FfWhitelist -Repo $Repo -Branch $br -Base master
+        $lines = @(Format-FfWhitelistVerdict -Verdict $v)
+        if (-not $v.Hit) {
+            $why = @($v.Checks | Where-Object { -not $_.Ok } | ForEach-Object { "$($_.Id) $($_.Detail)" }) -join '；'
+            Write-Host "⛔ $br 不命中白名单，留在「等他一字母」：$why"
+            $notHit += $br; continue
+        }
+        $lines | ForEach-Object { Write-Host $_ }
+        $audit += "[$stamp 本地] $($lines -join "`n")"
+
+        $x = @($v.Files | Where-Object { $dirty -contains $_ })
+        if ($x) {
+            Write-Host "⏳ $br 命中白名单但前置未满足：与脏文件交集 $($x -join ', ')"
+            $waiting += "$br ← $($x -join ', ')"; $audit += "    ⏳ 脏文件交集，本轮未合入：$($x -join ', ')"; continue
+        }
+        if ($DryRun) {
+            Write-Host "[DRY] $br 命中白名单、前置已满足，本可自动 ff（未执行）"
+            $dryHits += $br; continue
+        }
+
+        Write-Host "▶ $br 命中白名单，自动 ff（docs 分支无测试目标，跳过回归——⑵ 已保证零代码文件）"
+        & pwsh -NoProfile -File $MergeScript -Branch $br
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ $br 已自动 ff（白名单）"; $done += $br; $audit += "    ✅ 已 ff，master → $(git -C $Repo rev-parse --short master)"
+        } else {
+            Write-Host "🔴 $br 自动 ff 失败（工具-泳道分支合入.ps1 退出码 $LASTEXITCODE），留在「等他一字母」"
+            $failed += "$br（退出码 $LASTEXITCODE）"; $audit += "    🔴 合入失败，退出码 $LASTEXITCODE"
+        }
+    }
+
+    if ($audit -and -not $DryRun) {   # 干跑不落审计日志，只看 stdout
+        $dir = Split-Path $WlAuditLog -Parent
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        Add-Content -Path $WlAuditLog -Value ($audit -join "`n") -Encoding UTF8
+    }
+
+    if (-not $DryRun -and ($done -or $failed)) {
+        $msg = @("🌿 待合分支巡检：**白名单自动 ff**（$stamp 本地；判据逐条见 reports/ff-whitelist-autoff.log）")
+        if ($done) { $msg += "✅ 已合入 $($done.Count) 条："; $done | ForEach-Object { $msg += "    · $_" } }
+        if ($failed) { $msg += "🔴 合入失败（留在等他一字母）：$($failed -join '；')" }
+        if ($waiting) { $msg += "⏳ 命中但脏文件交集：$($waiting -join '；')" }
+        $msg += '关停：New-Item reports/ff-whitelist.OFF（或加 -NoAutoWhitelist）。'
+        $err = Send-OpsWecomMarkdown -Repo $Repo -Content ($msg -join "`n")
+        if ($err) { Write-Host "⚠ 运维群汇总未推出（$err），仅落日志 $WlAuditLog" } else { Write-Host '· 运维群汇总已推送' }
+    }
+
+    if ($notHit) { Write-Host "· 不命中白名单 $($notHit.Count) 条（照旧等他一字母）" }
+    if ($done) { Write-Host "[WL-MERGED] $($done -join '; ')" }
+    if ($failed) { Write-Host "[WL-FAILED] $($failed -join '; ')" }
+    if ($waiting) { Write-Host "[WL-WAITING] $($waiting -join ' ｜ ')" }
+    if ($dryHits) { Write-Host "[WL-DRY] $($dryHits.Count) 条命中且前置已满足，本可自动 ff：$($dryHits -join '; ')" }
+    elseif (-not $done -and -not $failed -and -not $waiting) { Write-Host '[WL-NO-ACTION] 本轮白名单无可合入项。' }
+}
+
+if ($EvaluateBranch) {
+    $v = Test-FfWhitelist -Repo $Repo -Branch $EvaluateBranch -Base $EvaluateBase
+    Format-FfWhitelistVerdict -Verdict $v | ForEach-Object { Write-Host $_ }
+    Write-Host ($(if ($v.Hit) { '[WL-EVAL-HIT]' } else { '[WL-EVAL-MISS]' }))
+    exit 0
+}
+
+if ($NoAutoWhitelist) {
+    Write-Host '[WL-OFF] 白名单自动 ff 已关停（参数 -NoAutoWhitelist）。'
+} elseif (Test-Path $WlOffMarker) {
+    Write-Host "[WL-OFF] 白名单自动 ff 已关停（存在标记文件 $WlOffMarker，删除即恢复）。"
+} else {
+    Invoke-WhitelistAutoFf -Repo $Repo -RegistryPath $Reg -MergeScript $Merge -DryRun:$DryRun -MaxAgeDays $WhitelistMaxAgeDays
+}
 
 # ── 动作一：已授权待合分支 → ff 入 master（原有逻辑，判据与行为均未改） ──
 if (-not (Test-Path $Reg)) {
