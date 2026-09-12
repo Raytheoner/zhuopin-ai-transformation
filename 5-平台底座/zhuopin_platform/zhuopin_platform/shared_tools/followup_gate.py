@@ -1042,6 +1042,26 @@ CLOSURE_FORM_BASIS_PREFIX = "依据："
 #     ✅ 无需回复 <UTC>　━━━　闭环形态（发出时快照）━━━　✅ 无需回复（依据：…）　━━━　✅ 已推送 <UTC>
 CLOSURE_SNAPSHOT_LABEL = "闭环形态（发出时快照）"
 STATUS_SEGMENT_SEPARATOR = "　━━━　"
+# 分隔符去掉两侧全角空格后的核心；取首段按它切——`normalize_status` 本就会剥掉
+# 全角空格，按核心切能同时容下 `　━━━　`（本包写侧）与手写漏掉空格的形态。
+_STATUS_SEGMENT_SEPARATOR_CORE = STATUS_SEGMENT_SEPARATOR.strip(_DECORATION_CHARS)
+
+
+def leading_status_segment(status_cell: str) -> str:
+    """状态格的**首段**（第一个 `━━━` 之前），已 `normalize_status`。
+
+    tasks 4.4 收尾（Shao Peishen 2026-09-13 回「第 5 项选 a」＝签认放宽编辑锁
+    **两处**等值比较，由「整格等值」改为「取首段后再等值」）。🔴 **切分口径只此
+    一份**：写侧 `delivery.resolve_backfill` 用 `STATUS_SEGMENT_SEPARATOR` 拼，读侧
+    这里按同一常量切，编辑锁不得另写一份。🔴 **本函数只服务那两处**——
+    `gates.assert_finalized`（design D8 门禁②红线）／`readme_table.
+    assert_draft_pending_review`／`dispatch.py` 三处／`dispatch_followup_letters.py`
+    仍是整格等值，不在签认范围内、不得改用本函数。
+
+    无分隔符时返回归一化后的整格，与「未写快照的同一状态」结论一致。
+    """
+    head = (status_cell or "").split(_STATUS_SEGMENT_SEPARATOR_CORE, 1)[0]
+    return normalize_status(head)
 
 # 与 `readme_table._TARGET_FILE_RE`（`目标文件[^`]*`([^`]+\.md)``）同构：引导词
 # 之后第一对反引号里是取值；紧随其后的一对全角括号里是依据（不支持嵌套括号

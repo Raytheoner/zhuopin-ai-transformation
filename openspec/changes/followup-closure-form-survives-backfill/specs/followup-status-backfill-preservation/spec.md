@@ -58,15 +58,21 @@ MUST NOT 用 `write_status()` 做整格替换。
   且该信的回件到达
 - **THEN** 桥一正常打第九态，且快照文本在新状态格内仍可读到
 
-#### Scenario: 快照不影响两态语义拦截（🟩 2026-09-12 apply 时如实更正）
+#### Scenario: 快照不影响两态语义拦截（🟩 2026-09-13 签认放宽后成立）
 - **WHEN** 一个**新增**行的状态格写有 `🆕 待发` 加任意快照段
-- **THEN** ~~编辑锁仍判其为「新建即终态」违规（该拦截按首段判定，不因分段而失效）~~
-  🔴 **实测不成立、且本包不得改它**：两态语义拦截用的是**整格等值**
-  `status_value != FOLLOWUP_FINALIZED_STATUS`（design 节首更正 4 列出的七处等值比较之一，
-  派单件明令「一处都不许改」），故带快照段的 `🆕 待发　━━━　…` **不会**被它拦下。
-  风险＝零：该形态门禁②（同为等值断言）同样发不出去，且回填从不产出 `🆕 待发` 首段的快照态、
-  它只能来自人手写。已由 `test_工具-共享文档编辑锁.py::test_新增行终态加快照段_两态语义等值拦截不命中_如实钉住`
-  把现状钉住；要让两态语义按首段判，须 Shao Peishen 另行签认放宽那处等值比较，不在本包范围。
+- **THEN** 编辑锁仍判其为「新建即终态」违规（该拦截按首段判定，不因分段而失效）
+  ——🟩 **Shao Peishen 2026-09-13 回「第 5 项选 a」＝签认放宽编辑锁两处等值比较**
+  （两态语义 ＋ `_validate_followup_hold_consistency` ⑥），由「整格等值」改为「取首段后再等值」，
+  首段切分口径只此一份＝`followup_gate.leading_status_segment`（隔离环境走 `_FollowupGateFallback`
+  逐条镜像，`FollowupSerialGateIdentityFallbackTests` 双跑钉住）。用例：
+  `test_4_4_新增行终态加快照段_两态语义按首段判_与不带快照结论一致`／
+  `test_4_4_既有草稿行转终态加快照段_与不带快照同样放行`／
+  `test_4_4_hold_row_readme_pending_with_snapshot_segment_blocks_release`／
+  `test_4_4_两态语义首段判_带快照与不带快照结论一致_权威与回落双跑`（CC 泳道 `OP-0913-C`）。
+  🔴 **只放宽这两处**：`gates.assert_finalized`（design D8 门禁②红线）／`readme_table.assert_draft_pending_review`／
+  `dispatch.py` 三处／`dispatch_followup_letters.py` 仍为整格等值，不在签认范围内、一字未动。
+  历史：2026-09-12 apply 时此场景曾如实更正为「实测不成立、本包不得改」并由
+  `test_新增行终态加快照段_两态语义等值拦截不命中_如实钉住` 钉住，该用例已被上列用例取代。
   串行闸那一处校验（`_followup_status_is_closed` → 前缀）**与未写快照的同一状态结论一致**，已配用例。
 
 ---

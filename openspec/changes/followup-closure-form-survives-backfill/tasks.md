@@ -36,7 +36,7 @@
 > ⚠️ **本包不归档理由（写在机器认得的地方）**：**暂不归档** —— ~~本包按 opener 授权停在
 > design 审，未 apply、未落任何生产码~~（2026-09-12 已 apply）；现仍不归档的唯一原因＝
 > 7.2／7.3 两条「首次真实生效／首次真实开闸」尚未发生（须一封真信、一次真起草，
-> 单测绿不算数），另 4.4 编辑锁两态语义一项如实登记为不一致（须另签放宽等值比较）。
+> 单测绿不算数）；~~另 4.4 编辑锁两态语义一项如实登记为不一致（须另签放宽等值比较）~~（2026-09-13 已签认放宽并闭合，`OP-0913-C`）。
 
 ## 1. 前置取证（已完成，本 session）
 
@@ -97,14 +97,18 @@
 - [x] 4.2 回填时把标注快照进状态格，标识为「发出时快照」。（`followup_gate.CLOSURE_SNAPSHOT_LABEL`）
 - [x] 4.3 无标注时回填结果与本变更前**逐字相同**（含不多出空分隔符）——配单测。（`test_无标注回填结果与本变更前逐字相同`／
       `test_端到端_无标注_行为与今天逐字相同`；既有 `test_supplement_channel.py::test_主表回填语义未变` 一字未改仍绿）
-- [ ] 4.4 🔴 **兼容性反例单测**：把「写了快照的状态格」喂给 `classify_status`／`is_closed_status`／
+- [x] 4.4 🔴 **兼容性反例单测**：把「写了快照的状态格」喂给 `classify_status`／`is_closed_status`／
       `is_reply_arrived_status`／桥一转态／编辑锁两处校验，断言结论与「未写快照的同一状态」一致。
-      🟡 **部分完成、如实不勾**：`classify_status`／`normalize_status`／`is_closed_status`／`is_reply_arrived_status`／
-      `is_not_yet_sent`／`is_dispatched`／桥一 `build_reply_arrived_status`／编辑锁**串行闸**一处——结论一致，
-      均配用例（`test_closure_form_backfill.py` 兼容节 ＋ `test_工具-共享文档编辑锁.py::test_闭环形态快照态_串行闸放行且不需串行豁免`）。
-      🔴 编辑锁**两态语义**一处结论**不一致**：它按整格等值判（七处等值比较之一，派单件明令不改），带快照段的
-      `🆕 待发　━━━　…` 新增行不被拦（风险＝零：门禁②同为等值断言，该形态发不出去）。已由
-      `test_新增行终态加快照段_两态语义等值拦截不命中_如实钉住` 钉住现状、spec 场景已如实更正；闭合须 Shao Peishen 另签放宽。
+      🟩 **2026-09-13 闭合**（CC 泳道 `OP-0913-C`，Shao Peishen 2026-09-13 回「第 5 项选 a」＝签认放宽编辑锁两处等值比较）：
+      前半（`classify_status`／`normalize_status`／`is_closed_status`／`is_reply_arrived_status`／`is_not_yet_sent`／
+      `is_dispatched`／桥一 `build_reply_arrived_status`／编辑锁串行闸）于 `OP-0912-AB` 已配用例；后半＝编辑锁
+      **两态语义**＋**⑥ 暂缓一致性**两处由「整格等值」改为「取首段后再等值」，切分口径只此一份
+      `followup_gate.leading_status_segment`（`_FollowupGateFallback` 逐条镜像、双跑钉住）。用例：
+      `test_4_4_新增行终态加快照段_两态语义按首段判_与不带快照结论一致`／`test_4_4_既有草稿行转终态加快照段_与不带快照同样放行`／
+      `test_4_4_hold_row_readme_pending_with_snapshot_segment_blocks_release`／
+      `test_4_4_两态语义首段判_带快照与不带快照结论一致_权威与回落双跑`（权威＋回落各一遍）＋
+      `test_followup_gate_closure_form.py::TestLeadingStatusSegment` 4 例；原钉现状用例
+      `test_新增行终态加快照段_两态语义等值拦截不命中_如实钉住` 已被取代。🔴 其余五处整格等值（含 D8 门禁②）一字未动。
 - [x] 4.5 决策点 2 的落点——**仅在 0.2 签认后实现**，未签认前此项 MUST 留空。（🟩 0.2 已签 `2a`＋三护栏 ⇒ 落字：
       spec `followup-status-backfill-preservation` 末节改写为 SHALL ＋ 三条护栏；实现＝`resolve_backfill` 主表分支，
       `form.value == NO_REPLY_NEEDED_STATUS` ⇒ 首段 `✅ 无需回复 <UTC>`、快照段、`✅ 已推送 <UTC>` 后段；

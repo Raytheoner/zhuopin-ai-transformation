@@ -3042,27 +3042,44 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
 
         self.assertNotEqual(self._release(who="A"), 0)
 
-    def test_新增行终态加快照段_两态语义等值拦截不命中_如实钉住(self):
-        """🔴 **如实登记一处 spec 与代码的不一致**（tasks 4.4 编辑锁两态语义那一项）：
-        spec 场景「快照不影响两态语义拦截」写的是「该拦截按首段判定」，但两态语义
-        用的是**整格等值** `status_value != FOLLOWUP_FINALIZED_STATUS`——它是 design
-        节首更正 4 列出的**七处等值比较之一**，派单件明令「一处都不许改」。
+    def test_4_4_新增行终态加快照段_两态语义按首段判_与不带快照结论一致(self):
+        """tasks 4.4 收尾（Shao Peishen 2026-09-13 回「第 5 项选 a」＝签认放宽编辑锁
+        两处等值比较）：两态语义由「整格等值」改为「**取首段后再等值**」
+        （`followup_gate.leading_status_segment`）。
 
-        ⇒ 新增行写 `🆕 待发　━━━　<快照段>` **不会**被两态语义拦下（release 返回 0），
-        与不带快照的 `🆕 待发` 新增行（被拦）结论**不一致**。本用例把这个事实钉住，
-        不假装它已满足。**风险＝零**：这样的状态格门禁②（同为等值断言）同样发不出去
-        （`test_closure_form_backfill.py::test_门禁二仍拒绝带附加内容的状态格`），且
-        回填从不产出 `🆕 待发` 首段的快照态——它只能来自人手写。要让两态语义按首段判，
-        须 Shao Peishen 另行签认放宽那处等值比较，不在本包范围。"""
-        self._write_readme()
-        self.assertEqual(self._acquire(who="A"), 0)
-        new_row = ("| 质量部#9 | 2026-09-12 | 质量部 · 陈忱 | 新事项 | 不急 | "
-                   "🆕 待发　━━━　闭环形态（发出时快照） ━━━　✅ 无需回复（依据：x） |\n")
-        self._write_readme(new_row)
+        本用例取代此前如实钉住「等值拦截不命中」的那一条
+        （`test_新增行终态加快照段_两态语义等值拦截不命中_如实钉住`，`OP-0912-AB`）——
+        那条钉的是「须签认才能改」，现已签认 ⇒ 断言方向翻转为兼容性反例：
+        带快照的 `🆕 待发　━━━　…` 新增行与不带快照的 `🆕 待发` 新增行**结论一致**，
+        都被两态语义拦下（release 非 0）。"""
+        bare = "| 质量部#9 | 2026-09-12 | 质量部 · 陈忱 | 新事项 | 不急 | 🆕 待发 |\n"
+        with_snapshot = ("| 质量部#9 | 2026-09-12 | 质量部 · 陈忱 | 新事项 | 不急 | "
+                         "🆕 待发　━━━　闭环形态（发出时快照） ━━━　✅ 无需回复（依据：x） |\n")
+        results = {}
+        for label, new_row in (("bare", bare), ("snapshot", with_snapshot)):
+            # release 被拒时锁仍在手上 ⇒ 每轮换一个干净的临时目录。
+            self.tearDown(); self.setUp()
+            self._write_readme()
+            self.assertEqual(self._acquire(who="A"), 0)
+            self._write_readme(new_row)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                results[label] = (self._release(who="A"), buf.getvalue())
+        self.assertNotEqual(results["bare"][0], 0, "不带快照的新增终态行应被两态语义拦下")
+        self.assertNotEqual(results["snapshot"][0], 0, "带快照段的新增终态行应与不带快照结论一致")
+        self.assertIn("违反两态语义", results["bare"][1])
+        self.assertIn("违反两态语义", results["snapshot"][1])
 
-        # 钉住现状：等值拦截不命中 ⇒ release 放行。这条一旦变红，说明有人改了
-        # 七处等值比较之一——那必须是一次经签认的改动，而不是静默漂移。
-        self.assertEqual(self._release(who="A"), 0)
+    def test_4_4_既有草稿行转终态加快照段_与不带快照同样放行(self):
+        """兼容性反例的另一半：⏳ 待你审 → 🆕 待发 是批准脚本的合法产物，
+        首段判定不得把「合法转态＋快照段」误拦。"""
+        prior = "| 质量部#9 | 2026-09-12 | 质量部 · 陈忱 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        for finalized in ("🆕 待发",
+                          "🆕 待发　━━━　闭环形态（发出时快照） ━━━　✅ 无需回复（依据：x）"):
+            self._write_readme(prior)
+            self.assertEqual(self._acquire(who="A"), 0)
+            self._write_readme(prior.replace("⏳ 待你审", finalized))
+            self.assertEqual(self._release(who="A"), 0, finalized)
 
 
 class AppendRowTests(unittest.TestCase):
@@ -3907,6 +3924,29 @@ class HoldConsistencyValidationTests(unittest.TestCase):
 
         result = self._release(who="A")
         self.assertNotEqual(result, 0)
+
+    def test_4_4_hold_row_readme_pending_with_snapshot_segment_blocks_release(self):
+        """tasks 4.4 收尾（Shao Peishen 2026-09-13「第 5 项选 a」）：⑥ 的等值比较改为
+        取首段后再等值——README 状态格为 `🆕 待发　━━━　闭环形态（发出时快照）…` 时，
+        结论与不带快照的 `🆕 待发` 一致（release 被拒）。"""
+        for status in ("🆕 待发",
+                       "🆕 待发　━━━　闭环形态（发出时快照） ━━━　✅ 无需回复（依据：x）"):
+            self.tearDown(); self.setUp()  # release 被拒时锁仍在手上，每轮换干净目录
+            self._write_readme(
+                "| 采购部#10 | 2026-07-29 | 采购部 · 姚祖怡 | 判例包 → 目标文件：`某跟进信.md` "
+                f"| 不急 | {status} |\n"
+            )
+            self._write_queue(hwm_one=200)
+            self.assertEqual(self._acquire(who="A", reserve=1, section="一"), 0)
+            text = self.target_path.read_text(encoding="utf-8")
+            new_row = "| 201 | 测试 | CC | `某跟进信.md` | 产出 | 本行拍板暂不发，待前信闭环 | 无 | 2026-08-07 |\n"
+            text = text.replace(self.SECTION_ONE_HEADER, self.SECTION_ONE_HEADER + new_row, 1)
+            self.target_path.write_text(text, encoding="utf-8")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                result = self._release(who="A")
+            self.assertNotEqual(result, 0, status)
+            self.assertIn("仍为「🆕 待发」", buf.getvalue())
 
     def test_hold_row_with_readme_already_non_pending_passes(self):
         """README 已同步非待发（如 ⏳待你审）——正常放行。"""
@@ -7808,6 +7848,38 @@ class FollowupSerialGateIdentityTests(unittest.TestCase):
             violations = self._violations(prior, new_row)
         self.assertTrue(violations, "新增行直接写终态仍应被两态语义拦住")
         self.assertIn("回落", buf.getvalue())
+
+    def test_4_4_两态语义首段判_带快照与不带快照结论一致_权威与回落双跑(self):
+        """tasks 4.4 收尾（Shao Peishen 2026-09-13「第 5 项选 a」）：两态语义按
+        `leading_status_segment` 取首段再等值。本用例在权威实现与
+        `_FollowupGateFallback` 上各跑一遍（子类置 None）——回落桩的镜像若漂，这里红。"""
+        bare = "| 质量部#9 | 2026-09-12 | 质量部 · 陈忱 | 新事项 | 不急 | 🆕 待发 |\n"
+        snap = bare.replace(
+            "🆕 待发", "🆕 待发　━━━　闭环形态（发出时快照） ━━━　✅ 无需回复（依据：x）")
+        v_bare = self._violations("", bare)
+        v_snap = self._violations("", snap)
+        self.assertTrue(v_bare)
+        self.assertTrue(v_snap, "带快照段的新增终态行应与不带快照结论一致")
+        self.assertEqual(len(v_bare), len(v_snap))
+        # 合法转态（⏳ 待你审 → 🆕 待发）加快照段同样放行。
+        prior = bare.replace("🆕 待发", "⏳ 待你审")
+        self.assertEqual(self._violations(prior, bare), [])
+        self.assertEqual(self._violations(prior, snap), [])
+
+    def test_4_4_leading_status_segment_回落桩与权威实现同口径(self):
+        """回落桩 `leading_status_segment` 逐条对应权威实现：无分隔符返回归一化整格，
+        有分隔符取首段（含手写漏掉全角空格的形态）。"""
+        gate = self.module._gate()
+        self.assertEqual(gate.leading_status_segment("🆕 待发"), "🆕 待发")
+        self.assertEqual(gate.leading_status_segment("**🆕 待发**"), "🆕 待发")
+        self.assertEqual(
+            gate.leading_status_segment("🆕 待发　━━━　闭环形态（发出时快照） ━━━　✅ 无需回复（依据：x）"),
+            "🆕 待发")
+        self.assertEqual(gate.leading_status_segment("🆕 待发━━━x"), "🆕 待发")
+        self.assertEqual(
+            gate.leading_status_segment("✅ 无需回复 2026-09-12 08:00 UTC　━━━　闭环形态（发出时快照） ━━━　✅ 无需回复（依据：y）　━━━　✅ 已推送 2026-09-12 08:00 UTC"),
+            "✅ 无需回复 2026-09-12 08:00 UTC")
+        self.assertEqual(gate.leading_status_segment(""), "")
 
     def test_串行豁免收窄_有标记没理由不再放行(self):
         """design D5「两案共同要求 2」：`串行豁免：` 收窄为「标记后 MUST 跟

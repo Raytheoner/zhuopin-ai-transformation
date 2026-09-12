@@ -134,3 +134,33 @@ class TestMismatchWarning:
         topic = "主题 → 闭环形态：`✅ 大概不用回`（依据：x）"
         msg = fg.closure_form_mismatch_warning(topic, "✅ 已推送 T")
         assert msg is not None and "以快照为准" in msg
+
+
+class TestLeadingStatusSegment:
+    """tasks 4.4 收尾（Shao Peishen 2026-09-13 回「第 5 项选 a」）：编辑锁两处
+    等值比较改为「取首段后再等值」，切分口径只此一份、落在本模块。"""
+
+    快照态 = (
+        "✅ 无需回复 2026-09-12 08:00 UTC　━━━　闭环形态（发出时快照） ━━━　"
+        "✅ 无需回复（依据：三要素明写不用回）　━━━　✅ 已推送 2026-09-12 08:00 UTC"
+    )
+
+    def test_无分隔符_返回归一化整格_与未写快照同行为(self):
+        assert fg.leading_status_segment("🆕 待发") == "🆕 待发"
+        assert fg.leading_status_segment("**🆕 待发**　") == "🆕 待发"
+        assert fg.leading_status_segment("") == ""
+
+    def test_写侧分隔符拼出的状态格_首段等于第一段(self):
+        assert fg.leading_status_segment(self.快照态) == "✅ 无需回复 2026-09-12 08:00 UTC"
+        composed = f"🆕 待发{fg.STATUS_SEGMENT_SEPARATOR}闭环形态（发出时快照） ━━━　✅ 无需回复（依据：x）"
+        assert fg.leading_status_segment(composed) == "🆕 待发"
+
+    def test_手写漏掉全角空格_同样只取首段(self):
+        assert fg.leading_status_segment("🆕 待发━━━x") == "🆕 待发"
+        assert fg.leading_status_segment("🆕 待发 ━━━ x") == "🆕 待发"
+
+    def test_带快照与不带快照_对既有前缀判据结论一致(self):
+        """4.4 反例的判据侧：首段与整格喂给前缀判据结论相同。"""
+        bare = "✅ 无需回复 2026-09-12 08:00 UTC"
+        assert fg.classify_status(self.快照态) == fg.classify_status(bare) == "closed"
+        assert fg.is_closed_status(fg.leading_status_segment(self.快照态)) is True

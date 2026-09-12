@@ -819,6 +819,16 @@ class _FollowupGateFallback:
     def normalize_status(self, cell):
         return cell.replace("*", "").strip(self._DECORATION_CHARS)
 
+    # tasks 4.4 收尾（Shao Peishen 2026-09-13「第 5 项选 a」）：镜像权威实现
+    # `followup_gate.leading_status_segment`——按 `━━━` 核心切首段再归一化。
+    # 🔴 这不是第二份切分逻辑，是回落桩的逐条对应（本类契约），由
+    # `FollowupSerialGateIdentityFallbackTests` 双跑钉住不漂。
+    _STATUS_SEGMENT_SEPARATOR_CORE = "━━━"
+
+    def leading_status_segment(self, cell):
+        head = (cell or "").split(self._STATUS_SEGMENT_SEPARATOR_CORE, 1)[0]
+        return self.normalize_status(head)
+
     def is_closed_status(self, cell):
         n = self.normalize_status(cell)
         return any(n.startswith(p) for p in self.CLOSED_STATUS_PREFIXES)
@@ -3984,9 +3994,16 @@ def _validate_followup_readme_release(current_text: str, snapshot_text: str) -> 
         return s[:width] + "…" if len(s) > width else s
 
     # ---- 两态语义：新建即终态 ＋（D5(a) 配套）既有编号行被直接改写成终态 ----
+    # tasks 4.4 收尾（Shao Peishen 2026-09-13 回「第 5 项选 a」＝签认放宽）：
+    # 由「整格等值」改为「**取首段后再等值**」——带 `　━━━　闭环形态（发出时快照）…`
+    # 后段的 `🆕 待发` 与不带快照的同一状态结论一致。切分口径复用权威实现
+    # `followup_gate.leading_status_segment`（经 `_gate()` 取用，隔离环境走回落
+    # 桩镜像），本文件不另写切分。🔴 只放宽本处与 `_validate_followup_hold_
+    # consistency` 那处；`gates.assert_finalized`（D8 门禁②红线）等其余五处
+    # 整格等值不在签认范围内、一字未动。
     for line, cells, status_col_index in current_rows:
         status_value = cells[status_col_index]
-        if status_value != FOLLOWUP_FINALIZED_STATUS:
+        if gate.leading_status_segment(status_value) != FOLLOWUP_FINALIZED_STATUS:
             continue
         identity = _identity(cells, status_col_index)
         if identity not in old_status_by_identity:
@@ -4230,6 +4247,7 @@ def _validate_followup_hold_consistency(
     except OSError:
         return violations  # README 读不到不阻断队列 release，本校验静默跳过
     status_map = _followup_status_by_filename(readme_text)
+    gate = _gate()
 
     for line, cells, section, filename in hold_rows:
         preview = line.strip()
@@ -4238,7 +4256,9 @@ def _validate_followup_hold_consistency(
         status = status_map.get(filename)
         if status is None:
             continue  # README 未找到匹配行——判不出，不拦（design.md 决策点3）
-        if status == FOLLOWUP_FINALIZED_STATUS:
+        # tasks 4.4 收尾（Shao Peishen 2026-09-13「第 5 项选 a」）：整格等值 →
+        # 取首段后再等值，口径同两态语义那处（`followup_gate.leading_status_segment`）。
+        if gate.leading_status_segment(status) == FOLLOWUP_FINALIZED_STATUS:
             violations.append(
                 f"§{section} 行点名跟进信「{filename}」且结论为暂缓，但该信在 README "
                 f"中「发送状态」仍为「{FOLLOWUP_FINALIZED_STATUS}」（机制唯一认可的可"
