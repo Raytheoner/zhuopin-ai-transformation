@@ -927,7 +927,8 @@ class 明细分组不得漏掉形态(unittest.TestCase):
         out = buf.getvalue()
         claimed = re.search(r"当前在用件 (\d+) 处待修", out)
         self.assertIsNotNone(claimed, out[-400:])
-        printed = len(re.findall(r"^  - .*\[[FC]\d\] ", out, re.MULTILINE))
+        # 🔴 形态码不再保证单位数（`#565` 起有 F10）——`\d` 曾漏计双位数形态码，改 `\d+`（队列 §一 `#565`）。
+        printed = len(re.findall(r"^  - .*\[[FC]\d+\] ", out, re.MULTILINE))
         self.assertEqual(int(claimed.group(1)), printed,
                          "声称的待修数与实际打印的明细条数不一致——又漏形态了")
 
