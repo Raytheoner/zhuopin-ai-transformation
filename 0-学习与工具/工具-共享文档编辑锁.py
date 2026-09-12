@@ -5883,6 +5883,20 @@ PERSON_GENDER_ROSTER: dict[str, str] = {
     "邵培申": "男",
 }
 GENDER_PRONOUN_WAIVER_MARKER = "性别豁免："
+# 队列 §一 #566：正本 §一 明写「`邵培申` ＝ Shao Peishen 本人」——跟进信里他
+# 几乎只以英文名出现（落款「OPVP Shao Peishen」、正文「Shao Peishen 拍板」），
+# 若不把这两个写法挂回同一条名录项，「唐燕萍与 Shao Peishen 讨论后，他…」会
+# 被误判成给唐燕萍写了「他」。**这不是第二份名录**：它只把别名映射回
+# `PERSON_GENDER_ROSTER` 的键，性别仍只在那一份表里。
+PERSON_NAME_ALIASES: dict[str, str] = {
+    "Shao Peishen": "邵培申",
+    "Peishen": "邵培申",
+}
+# 名录值里表示「性别未落档」的写法。正本 §一 当前「全员 21 人，无一未确认」，
+# 但本常量必须能表达这种状态：标它的人一律要求改中性表述（该专员／其／对方），
+# 「他」「她」都算错——**不得二选一猜**（正本 §一 末段硬规则）。
+GENDER_UNCONFIRMED = "未确认"
+GENDER_NEUTRAL_HINT = "该专员／其／对方（中性表述）"
 # 窗口取 25 是**实测定标**的（2026-08-23 两份队列文件全量）：
 #   整行判据（#351 原文）65 行 ／ 40 字 19 行 ／ **25 字 18 行** ／ 15 字 13 行。
 # 40→25 只差 1 行、已到平台期；15 开始漏掉正常语序（"姚祖怡在 8 月 12 日的
@@ -5900,6 +5914,10 @@ GENDER_PRONOUN_WINDOW = 25
 NON_PRONOUN_TA_WORDS = (
     "其他人", "他人", "其他", "其它", "他们", "他处", "他方", "他日", "他者",
 )
+# 去姓短名（「祖怡」「姣龙」…）与常见非人名复合词撞车时的遮蔽后缀——正本 §二
+# 的 7 个易错名里 `国庆` 同时是节日名（「国庆假期后他…」里的「他」不指孙国庆）。
+# 写成后缀规则而不是点名某个名字：任何短名 ＋ 这些后缀都不是在叫人。
+SHORT_NAME_NON_PERSON_SUFFIXES = ("节", "假期", "长假", "期间", "档期")
 
 
 def _mask_non_pronoun_ta(text: str) -> str:
@@ -5911,41 +5929,165 @@ def _mask_non_pronoun_ta(text: str) -> str:
     return masked
 
 
+def gender_roster_aliases(roster: dict[str, str] | None = None,
+                          *, include_short_names: bool = False) -> dict[str, str]:
+    """别名 → 名录键。**从名录派生，不是第二份表**（队列 §一 #566 ①）。
+
+    - 全名恒在（键映到自身）；`PERSON_NAME_ALIASES` 里的英文写法映回中文键。
+    - `include_short_names=True` 时补去姓短名（≥3 字的名去首字）：正本 §二
+      列的 7 个易错名（`祖怡`／`燕萍`／`映桦`／`植雅`／`易水`／`姣龙`／`国庆`）
+      在信里常以短名出现。歧义（两人同短名、或短名恰是另一人全名）一律不收——
+      与 `sentinel-pronoun.ps1` 的派生口径一致。队列行守卫（⑷）**刻意不开**
+      此项：队列语料里短名极少、而误报会淹掉真报（#351 ⑷ 那条红字）。
+    """
+    roster = PERSON_GENDER_ROSTER if roster is None else roster
+    aliases: dict[str, str] = {name: name for name in roster}
+    for alias, name in PERSON_NAME_ALIASES.items():
+        if name in roster:
+            aliases[alias] = name
+    if include_short_names:
+        short_map: dict[str, str | None] = {}
+        for name in roster:
+            if len(name) < 3:
+                continue
+            short = name[1:]
+            if short in roster:
+                continue
+            short_map[short] = None if short in short_map else name
+        for short, name in short_map.items():
+            if name is not None:
+                aliases[short] = name
+    return aliases
+
+
+class GenderFinding:
+    """一处「人名之后的代词与名录不符」。字段全是原始材料，措辞由调用方定
+    （队列行守卫与发件侧核对各有各的回显格式，判据只有这一份）。"""
+
+    __slots__ = ("name", "alias", "gender", "written", "expected",
+                 "name_pos", "pronoun_pos", "snippet")
+
+    def __init__(self, name: str, alias: str, gender: str, written: str, expected: str,
+                 name_pos: int, pronoun_pos: int, snippet: str) -> None:
+        self.name = name
+        self.alias = alias
+        self.gender = gender
+        self.written = written
+        self.expected = expected
+        self.name_pos = name_pos
+        self.pronoun_pos = pronoun_pos
+        self.snippet = snippet
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试用
+        return (f"GenderFinding({self.name!r}, {self.gender!r}, written={self.written!r}, "
+                f"expected={self.expected!r}, at={self.pronoun_pos})")
+
+
+def _wrong_pronouns_for(gender: str) -> tuple[str, ...]:
+    if gender == "男":
+        return ("她",)
+    if gender == "女":
+        return ("他",)
+    return ("他", "她")  # 未确认：两个都不许写
+
+
+def _expected_pronoun_for(gender: str) -> str:
+    if gender == "男":
+        return "他"
+    if gender == "女":
+        return "她"
+    return GENDER_NEUTRAL_HINT
+
+
+def gender_pronoun_findings(
+    text: str,
+    *,
+    roster: dict[str, str] | None = None,
+    aliases: dict[str, str] | None = None,
+    window: int | None = None,
+    waiver_markers: tuple[str, ...] = (GENDER_PRONOUN_WAIVER_MARKER,),
+) -> list[GenderFinding]:
+    """判据正本（队列 §一 #351 ⑷ ＋ #566 ①）：**一段文本里名录人名之后
+    `window` 字内出现与名录不符的第三人称代词 ⇒ 一处命中**。
+
+    - `text` 含任一 `waiver_markers` ⇒ 整段放行（行内豁免语义，调用方决定
+      「段」是队列一行还是信件一行／一个 docx 段落）。
+    - 名字与代词之间隔着**性别不同**的另一名录人名 ⇒ 代词多半指那个人，放行
+      （复刻 2026-08-21 那次 244 处追改所用脚本口径）。
+    - 名录值为「未确认」⇒「他」「她」都算命中，`expected` 给中性表述。
+    - 返回**全部**命中（同一人名多次、同一窗口多个代词都逐个给出），调用方
+      按需去重——队列行守卫只报每人首处，发件侧核对逐处列出。
+    """
+    for marker in waiver_markers:
+        if marker in text:
+            return []
+    roster = PERSON_GENDER_ROSTER if roster is None else roster
+    aliases = gender_roster_aliases(roster) if aliases is None else aliases
+    window = GENDER_PRONOUN_WINDOW if window is None else window
+    scan = _mask_non_pronoun_ta(text)
+    for suffix in SHORT_NAME_NON_PERSON_SUFFIXES:
+        # 只遮短名（非名录键本身）＋后缀的组合；全名＋后缀不存在这种歧义。
+        for alias, name in aliases.items():
+            if alias != name and alias + suffix in scan:
+                scan = scan.replace(alias + suffix, "〇" * len(alias) + suffix)
+    findings: list[GenderFinding] = []
+    # 长别名优先：同一位置「姚祖怡」胜过「祖怡」，避免一处名字报两次。
+    ordered = sorted(aliases.items(), key=lambda kv: -len(kv[0]))
+    claimed: list[tuple[int, int]] = []
+    for alias, name in ordered:
+        gender = roster.get(name)
+        if gender is None:
+            continue
+        wrong = _wrong_pronouns_for(gender)
+        expected = _expected_pronoun_for(gender)
+        for match in re.finditer(re.escape(alias), scan):
+            span = (match.start(), match.end())
+            if any(a <= span[0] < b or a < span[1] <= b for a, b in claimed):
+                continue
+            claimed.append(span)
+            after = scan[match.end():match.end() + window]
+            for idx, ch in enumerate(after):
+                if ch not in wrong:
+                    continue
+                between = after[:idx]
+                if any(other_alias in between for other_alias, other in aliases.items()
+                       if other != name and roster.get(other) != gender):
+                    break  # 隔着异性名字 ⇒ 此后的代词归那个人
+                pronoun_pos = match.end() + idx
+                snippet = scan[max(0, match.start() - 12):match.end() + window]
+                findings.append(GenderFinding(
+                    name, alias, gender, ch, expected,
+                    match.start(), pronoun_pos, snippet,
+                ))
+    findings.sort(key=lambda f: (f.pronoun_pos, f.name_pos))
+    return findings
+
+
 def _gender_pronoun_violations(label: str, cells: list[str], line: str) -> list[str]:
     """⑷：行内人名与性别代词邻近矛盾即违规。行内写 `性别豁免：<理由>` 放行。
 
     逃生阀是**常态配套、不是异常出口**：实测残余命中里绝大多数是**引用
     规则条文本身**的行（`§一 #351`／`§四 #75` 的正文逐字写着"出现 `陈忱`／
     `唐燕萍`（女）且出现独立的 `他`"），这类命中必然发生且必然合法。
+
+    判据本体在 `gender_pronoun_findings`（队列 §一 #566 ① 抽出，供发件侧
+    `工具-称谓核对.py` 复用）；本函数只做队列行的取材与措辞——同一人名在同一
+    行只报一次，不为一行刷屏。
     """
-    if GENDER_PRONOUN_WAIVER_MARKER in line:
-        return []
-    scan = _mask_non_pronoun_ta(line)
     row_id = cells[0].strip() if cells else "?"
     violations = []
-    for name, gender in PERSON_GENDER_ROSTER.items():
-        wrong = "她" if gender == "男" else "他"
-        for match in re.finditer(re.escape(name), scan):
-            window = scan[match.end():match.end() + GENDER_PRONOUN_WINDOW]
-            idx = window.find(wrong)
-            if idx == -1:
-                continue
-            # 中间隔着异性名字 ⇒ 代词多半指那个人，属合法情形。判据复刻
-            # 2026-08-21 那次 244 处追改所用的脚本口径（"含姚祖怡、含她、
-            # 且同行不含陈忱／唐燕萍"）。
-            between = window[:idx]
-            if any(other in between for other in PERSON_GENDER_ROSTER
-                   if PERSON_GENDER_ROSTER[other] != gender):
-                continue
-            snippet = scan[max(0, match.start() - 12):match.end() + GENDER_PRONOUN_WINDOW]
-            violations.append(
-                f"§{label} {row_id} 行内「{name}」（{gender}）之后 {GENDER_PRONOUN_WINDOW} 字内"
-                f"出现「{wrong}」：…{snippet}…"
-                f"——人的属性一律以根 CLAUDE.md §1 名录为准，不得从名字推断；"
-                f"确属合法情形（同行多人／引用规则条文本身）请在本行内写"
-                f"「{GENDER_PRONOUN_WAIVER_MARKER}<理由>」放行。"
-            )
-            break  # 同一人名在同一行只报一次，不为一行刷屏
+    seen: set[str] = set()
+    for f in gender_pronoun_findings(line):
+        if f.name in seen:
+            continue
+        seen.add(f.name)
+        violations.append(
+            f"§{label} {row_id} 行内「{f.alias}」（{f.gender}）之后 {GENDER_PRONOUN_WINDOW} 字内"
+            f"出现「{f.written}」：…{f.snippet}…"
+            f"——人的属性一律以根 CLAUDE.md §1 名录为准，不得从名字推断；"
+            f"确属合法情形（同行多人／引用规则条文本身）请在本行内写"
+            f"「{GENDER_PRONOUN_WAIVER_MARKER}<理由>」放行。"
+        )
     return violations
 
 
@@ -6561,6 +6703,135 @@ def _load_opener_lint_module():
     return module
 
 
+_GENDER_LINT_SCRIPT = Path(__file__).resolve().parent / "工具-称谓核对.py"
+_GENDER_LINT_MODULE_NAME = "_gender_lint_editlock_reuse"
+# 「寄出去的信」的判别（队列 §一 #566）：目录内一层的 `.md`／`.docx`；README 主表
+# 与归档件（表格，另有守卫）、子目录（行日志／口径点台账＝历史与台账）都不是信。
+# 判据放在本文件、`工具-称谓核对.py` 复用——release 挂载点靠它决定要不要去加载
+# 那个模块，不能反过来先加载再问。
+FOLLOWUP_LETTER_DIR = "6-人才与组织/部门AI专员跟进"
+FOLLOWUP_LETTER_SUFFIXES = (".md", ".docx")
+FOLLOWUP_NON_LETTER_PREFIXES = ("README-",)
+
+
+def is_followup_letter_path(rel: str) -> bool:
+    rel = rel.replace("\\", "/")
+    if not rel.startswith(FOLLOWUP_LETTER_DIR + "/"):
+        return False
+    tail = rel[len(FOLLOWUP_LETTER_DIR) + 1:]
+    if "/" in tail or tail.startswith(FOLLOWUP_NON_LETTER_PREFIXES):
+        return False
+    return tail.lower().endswith(FOLLOWUP_LETTER_SUFFIXES)
+
+
+def _load_gender_lint_module():
+    """动态加载 `工具-称谓核对.py`（文件名含中文，不能直接 import）。
+
+    先把**本模块自己**注册到它取名录用的那个名字下，它 import 时直接拿到当前
+    这份，不会把 7000 行的本文件再 exec 一遍——也保证两边看到的是同一份
+    `PERSON_GENDER_ROSTER`。
+    """
+    # 白盒测试用 `spec.loader.exec_module` 直接加载本文件而不注册 `sys.modules`
+    # 时，`__name__` 查不到——那就让它自己再加载一份（慢一点，但结论相同）。
+    self_module = sys.modules.get(__name__)
+    if self_module is not None:
+        sys.modules.setdefault(_GENDER_LINT_MODULE_NAME, self_module)
+    spec = importlib.util.spec_from_file_location("_zp_gender_lint", _GENDER_LINT_SCRIPT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载称谓核对判据：{_GENDER_LINT_SCRIPT}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _gender_sendside_guard_violations(
+    repo_root: Path, waiver_sources: list[str],
+    lock_data: dict | None = None, queue_texts: dict[str, str] | None = None,
+) -> list[str]:
+    """release 前对本次触碰的**跟进信件**（`6-人才与组织/部门AI专员跟进/*.md|*.docx`）
+    跑称谓核对（队列 §一 `#566` ③，2026-09-12）。
+
+    🔴 **为什么挂在这里**：⑷ 守的是队列表格行、README 登记 CLI 守的是台账格——
+    两处都是内部记录，**寄出去的那份**此前零校验，而唯一一次不可撤回事故
+    （`财务部#14`）恰恰出在正文。持锁窗口是起草信件必经的咽喉（起草前要占
+    README 锁、收工要 release 队列锁），故与 opener 守卫并列挂在同一处。
+
+    取材与判据**逐字复用** `工具-称谓核对.py`（它再复用本文件的
+    `gender_pronoun_findings` 与 `PERSON_GENDER_ROSTER`）——判据只有一份。
+    归属分流与 opener 守卫同一口径（`_opener_attribution`）：归本次持锁者的
+    命中拒绝 release；不归的一条不少地打印、降级为告警。
+    🔴 **docx 也在扫**：docx 是真正发出去的成品，md 改好 docx 没重出照样翻车。
+    逃生阀＝行内 `性别豁免：<理由>`（信里那一行），或本次 note／`--waiver` 里
+    写同一标记（整次放行，留痕在 history）。
+    """
+    if not _is_inside_git_work_tree(repo_root):
+        print("ℹ 称谓守卫（发件侧）：仓库根不在 git 工作树内，适用前提不成立，本次跳过。")
+        return []
+    waiver = next((s for s in waiver_sources if GENDER_PRONOUN_WAIVER_MARKER in s), None)
+    dirty_now = _local_git_status_paths(repo_root)
+    if dirty_now is None:
+        if waiver is not None:
+            print(f"✓ 工作区状态取数失败，但检测到性别豁免声明，已放行：{waiver.strip()[:120]}")
+            return []
+        return [
+            "无法取得工作区脏文件状态（非 git 仓库／git 不可用／超时），"
+            "称谓守卫（发件侧）无法执行 ⇒ 拒绝 release（fail-closed，不静默放行）。"
+            f"确需放行请在本次 note 或 `--waiver` 里写「{GENDER_PRONOUN_WAIVER_MARKER}<理由>」。"
+        ]
+    letters = sorted(
+        rel for rel in dirty_now
+        if is_followup_letter_path(rel) and (repo_root / rel).is_file()
+    )
+    n_md = sum(1 for rel in letters if rel.lower().endswith(".md"))
+    n_docx = len(letters) - n_md
+    if not letters:
+        print("ℹ 称谓核对：已核对 0 个文件（md 0／docx 0），命中 0 处。（本次未触碰跟进信件）")
+        return []
+    # 只有真的触碰了信件才去加载判据模块——同目录缺件（如测试用的玩具仓库只复制了
+    # 本文件）时不能让一次与信无关的 release 崩在这里；但**触碰了信而模块取不到**
+    # 是 fail-closed，不是跳过。
+    try:
+        lint = _load_gender_lint_module()
+    except (RuntimeError, OSError, ImportError, SyntaxError) as exc:
+        if waiver is not None:
+            print(f"✓ 称谓核对判据加载失败（{exc}），但检测到性别豁免声明，已放行。")
+            return []
+        return [f"称谓核对判据加载失败 ⇒ 拒绝 release（fail-closed，本次触碰了 {len(letters)} 个跟进信件）：{exc}"]
+    try:
+        hits = lint.scan_files([repo_root / rel for rel in letters], repo_root=repo_root)
+    except lint.GenderLintError as exc:
+        if waiver is not None:
+            print(f"✓ 称谓核对无法执行（{exc}），但检测到性别豁免声明，已放行。")
+            return []
+        return [f"称谓核对无法执行 ⇒ 拒绝 release（fail-closed）：{exc}"]
+
+    dirty_at_acquire = (lock_data or {}).get("dirty_at_acquire")
+    fragments = _pending_batch_fragments(queue_texts or {})
+    mine: list[str] = []
+    others: list[str] = []
+    for hit in hits:
+        sink = mine if _opener_attribution(hit["path"], dirty_at_acquire, fragments) else others
+        sink.append(lint.format_hit(hit))
+
+    print(lint.summary_line(len(letters), n_md, n_docx, len(hits)))
+    if others:
+        print(f"⚠ 称谓守卫（发件侧）：另有 {len(others)} 处命中**不落在本次持锁者触碰过的"
+              "信件里** ⇒ 降级为告警、不阻断本次 release（谁碰谁修；信发出撤不回，"
+              "别等到发送侧）：")
+        for line in others:
+            print(f"   - {line}")
+    if not mine:
+        return []
+    if waiver is not None:
+        print(f"✓ 称谓核对命中 {len(mine)} 处，但检测到性别豁免声明，已放行：{waiver.strip()[:120]}")
+        return []
+    return [
+        f"跟进信正文第三人称代词与人员名录正本不符（{len(mine)} 处，寄出去撤不回）："
+        + " ‖ ".join(mine)
+        + f" ⇒ 按名录改正后重出 docx；确属合法情形在信内该行写「{GENDER_PRONOUN_WAIVER_MARKER}<理由>」。"
+    ]
+
+
 def _opener_attribution(
     rel: str, dirty_at_acquire: list[str] | None, fragments: list[str],
 ) -> bool:
@@ -7149,6 +7420,11 @@ def cmd_release(args: argparse.Namespace) -> int:
         violations.extend(_opener_guard_violations(
             REPO_ROOT, waiver_sources, existing, queue_texts,
         ))
+        # 队列 §一 #566 ③：发件侧称谓守卫，与 opener 守卫同一取材面（本次触碰的
+        # 脏文件）、同一归属分流；只是对象换成寄出去的跟进信件（md ＋ docx）。
+        violations.extend(_gender_sendside_guard_violations(
+            REPO_ROOT, waiver_sources, existing, queue_texts,
+        ))
     elif args.file == FOLLOWUP_README_TARGET:
         # 队列 #124 阶段二（design.md D1）：跟进信 README 两态语义结构性
         # 拦截，与上面那套队列专属校验各自独立、互不干扰。
@@ -7174,6 +7450,16 @@ def cmd_release(args: argparse.Namespace) -> int:
                 for _msg in _rl_warnings:
                     print(_msg)
                 violations.extend(_rl_violations)
+        # 队列 §一 #566 ③：起草跟进信的持锁窗口就是这把 README 锁（判据版 §四.1），
+        # 信件正文的称谓核对必须在这里跑，否则「起草→登记→release」一路无人看正文。
+        # 豁免取材＝本次 note ＋ `--waiver`（同 ⑹ 的时间维口径，不取文件全文）。
+        _gender_waiver_sources = [
+            src for src in (existing.get("note", "") or "", getattr(args, "waiver", "") or "")
+            if src
+        ]
+        violations.extend(_gender_sendside_guard_violations(
+            REPO_ROOT, _gender_waiver_sources, existing, None,
+        ))
     elif _is_claude_progress_target(args.file):
         # 判据 J4（队列 §四 #80）：根 CLAUDE.md 顶部进度段新增条目时的未闭合
         # 项拦截，同样是一张与队列表格无关的独立判据，见
