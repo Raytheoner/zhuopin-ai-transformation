@@ -74,6 +74,14 @@
 > 交付了 sweep 可消费的纯函数（`list_persistently_unreadable`），**未把它
 > 接进 `工具-落库sweep.py` 的值周巡检**——那是另一件事，留给专门的后续
 > 任务（已在队列 `#556` 回写里点名，不假装本次已接好）。
+>
+> `OP-0913-A`（2026-09-13）：**9.8 残余已补齐**——`工具-落库sweep.py` 新增
+> **第 18 类**常驻状态告警 `_check_outbox_relay_unreadable_visibility`：读
+> `reports/outbox_relay_unreadable_state.json`、子进程调正本纯函数
+> `list_persistently_unreadable`（sweep 侧不另抄判据）、`first_failed_at`
+> 距今 > 24 小时的路径点名进值周清单（`reports/sweep-commit.log`）＋ 运维
+> 逃生通道 24 小时节流告警；`--dry-run` 只回显不写不推。单测
+> `0-学习与工具/test_工具-落库sweep-中继持续不可读.py` 14 条＋3 组变异检验。
 
 - [x] 9.1 新增 `reports/outbox_relay_unreadable_state.json` 读写（路径级 `first_failed_at`／`last_alert_at`），gitignore 覆盖，同 `decision_reminder_ack.json` 先例——见 `aibot_service/repo_paths.py::resolve_outbox_relay_unreadable_state_path`、`aibot_service/outbox_relay.py::load_unreadable_state`/`save_unreadable_state`
 - [x] 9.2 `relay_once()` 读失败分支改判：转入 ⇒ 立即告警；持续态未到复报周期 ⇒ 只记审计不告警；到复报周期 ⇒ 告警并回填 `last_alert_at`；恢复 ⇒ 告警并清除状态——见 `outbox_relay.py::_handle_unreadable_scan`/`_handle_recovered_scan`
@@ -82,6 +90,6 @@
 - [x] 9.5 单测：首次转入必告警／节流期内不告警但审计照记／超过周期复报／恢复后告警并清状态／状态跨进程重启不重置（用临时文件模拟重启，MUST NOT 复现「首次转入」告警）——`tests/test_outbox_relay.py` 决策点 9 段，18 条新用例
 - [x] 9.6 `scripts/check_outbox_relay.py`：读不到时追加打印状态文件里的 `first_failed_at` 与距今时长（不改动既有退出码语义），已实跑冒烟（`--path` 指一个不存在的路径，退出码仍为 1）
 - [x] 9.7 🔴 源码层断言：中继不得出现任何 `socket`/`Test-NetConnection`/`subprocess.run` 一类网络自检代码——`test_relay_source_contains_no_network_self_check`
-- [~] 9.8 **部分完成**：`outbox_relay.list_persistently_unreadable()` 纯函数已交付＋单测覆盖；**接入 `工具-落库sweep.py` 值周清单本次未做**（不在本包触碰区），留待后续任务
+- [x] 9.8 `outbox_relay.list_persistently_unreadable()` 纯函数已交付＋单测覆盖（`OP-0912-C2`）；接入 `工具-落库sweep.py` 值周清单＝第 18 类 `_check_outbox_relay_unreadable_visibility`（`OP-0913-A`，2026-09-13，子进程调纯函数、不另抄判据；单测 14 条＋变异 3 组各转红复绿）
 - [x] 9.9 队列 `#556` 回写＋登记 §二 批次
 - [x] 9.10 apply 完成后回归：服务 **847 passed / 1 skipped / 2 failed**（2 处失败与本次改动无关——`test_ps1_orphan_cr_guard.py` 两条，纯 master `2882bfa` 同命令复跑逐条复现，零回归）／平台 **619 passed / 1 skipped**（零漂移）／openspec `validate --all --strict` **191 passed 0 failed**
