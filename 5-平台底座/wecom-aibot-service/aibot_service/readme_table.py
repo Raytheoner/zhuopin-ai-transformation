@@ -332,3 +332,50 @@ def build_target_file_annotation(filename: str) -> str:
     followup_readme_release`/`_validate_release_structure`（编辑锁工具的
     列数/身份校验）因此不受影响，无需同步修改。"""
     return f" → 目标文件：`{filename}`"
+
+
+# 变更包 `followup-closure-form-survives-backfill`（决策点 1(a)，Shao Peishen
+# 2026-09-12 签认）：起草时把「这封信怎样算闭环」写成机器认得的形态——与上面
+# 队列 #241 的 `目标文件：` **同构、同列、同手法**：只在「主要事项」既有单元格
+# 内追加文本，不新增列、不改变任何一行的列数，`_validate_release_structure`／
+# `_followup_readme_rows` 的列数/身份校验因此不受影响。
+#
+# 🔴 判据（合法取值＝`followup_gate.CLOSED_STATUS_PREFIXES` 四态、依据非空、
+# 越界 fail-loud）**只在 `followup_gate` 一处**；本模块的写入函数只负责把
+# 合法值拼成固定形态，提取函数只是该判据的薄封装——同 `split_department_and_name`
+# 对 `recipient_identity` 的关系，消费者侧不复制第二份口径。
+#
+# ⚠️ 「主要事项」列有 `README_TOPIC_CAP_BYTES = 600` 行长判据（编辑锁），标注
+# 须压在约 100 B 内：取值＋一句话依据，依据长文进 `跟进信行日志/<编号>.md`。
+
+
+def build_closure_form_annotation(value: str, basis: str) -> str:
+    """起草新行时追加到「主要事项」列末尾的固定格式片段（决策点 1(a)）。
+
+    `value` MUST 是闭环四态之一、`basis` MUST 非空且不含括号——不合法当场
+    `ValueError`，**不写出一条日后会被判据拒掉的标注**（写侧与读侧用同一份
+    判据：拼好后回喂 `parse_closure_form`，通不过就不产出）。
+    """
+    gate = _followup_gate()
+    annotation = (
+        f" → {gate.CLOSURE_FORM_MARKER}`{value}`"
+        f"（{gate.CLOSURE_FORM_BASIS_PREFIX}{basis}）"
+    )
+    form = gate.parse_closure_form(annotation)
+    if form is None or not form.is_valid:
+        raise ValueError(
+            "闭环形态标注不合法，拒绝写出："
+            + (form.problem if form is not None else "解析不出标注形态")
+        )
+    return annotation
+
+
+def extract_closure_form(topic_cell: str):
+    """从「主要事项」列文本中提取闭环形态标注（`followup_gate.ClosureForm`），
+    未标注返回 None。
+
+    🔴 返回值可能带 `problem`（越界／缺依据）——调用方 MUST 把它报出来并按
+    「无标注」处理（`value is None`），MUST NOT 静默忽略；判据见
+    `followup_gate.parse_closure_form`。
+    """
+    return _followup_gate().parse_closure_form(topic_cell)

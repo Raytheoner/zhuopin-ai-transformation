@@ -997,3 +997,193 @@ def serial_waiver_reason(cells: Iterable[str]) -> Optional[str]:
     据 README 扫豁免会误判串行原则被跳过」说的事。
     """
     return _marker_reason(cells, SERIAL_WAIVER_MARKER)
+
+
+# ---------------------------------------------------------------------------
+# 八、闭环形态标注（变更包 `followup-closure-form-survives-backfill`，
+#     design 决策点 1(a)／2(a)＋三护栏／3(a)／4(a)／5(c)，Shao Peishen 2026-09-12 签认）
+# ---------------------------------------------------------------------------
+#
+# ## 它治的病
+#
+# 一封信起草时就已判定「不用回复」，但这个判定此前**无处安放**：状态格被七处
+# 等值比较钉成「只能是那一个字串」（含 D8 门禁②红线），回填又整格覆盖。
+# `质量部#7` 那次只能靠人手写两态并列 ＋ 一条 `串行豁免：` 绕过去——
+# **拿逃生阀去绕它本来要拦的那件事**（本模块文档开篇记的那一族）。
+#
+# ## 落点（决策点 1(a)）
+#
+# 标注写在「主要事项」列内，与队列 `#241` 的 `目标文件：` 同构同列同手法：
+#     → 闭环形态：`✅ 无需回复`（依据：三要素明写不用回）
+# 写入走 `aibot_service.readme_table.build_closure_form_annotation`，**判据只在
+# 本节**（决策点 4(a)：取值 MUST 是 `CLOSED_STATUS_PREFIXES` 四者之一 ＋ 非空
+# 依据；越界 fail-loud、按「无标注」处理 ⇒ 闸仍锁）。
+#
+# 🔴 **刻意写成四态枚举、不写布尔开关**——写成布尔就等于在这里悄悄复制了一份
+# 口径。已知边界：实测语料里起草时能判定的只有 `✅ 无需回复` 一种（另三态都是
+# 事后转态），枚举**实际退化为一个取值**，如实登记、不改枚举。
+#
+# ## 快照（决策点 3(a)／5(c)）
+#
+# 回填那一刻机器把标注**复制进状态格**（`CLOSURE_SNAPSHOT_LABEL` 段），此后闸
+# 判据只读状态格前缀、**不回读「主要事项」列** ⇒ 发出后再补写标注对闸零效果
+# ⇒ 「起草时判定、非事后追认」由数据流保证，不新增任何门禁。
+# 必配缓解：`工具-跟进闸查询.py` 在「标注 ≠ 快照」时明确报出「以快照为准」
+# （`closure_form_mismatch_warning`）。
+
+# 标注的固定引导词（写侧与读侧共用同一份字面量）。
+CLOSURE_FORM_MARKER = "闭环形态："
+
+# 依据文本的固定引导词（可省略；省略时括号内整段即依据）。
+CLOSURE_FORM_BASIS_PREFIX = "依据："
+
+# 状态格里「发出时快照」段的标签。落字形态沿用 `followup_readme_bridge.
+# build_reply_arrived_status` 已在生产上跑着的 `　━━━　<标签> ━━━　<内容>` 范式：
+#     ✅ 无需回复 <UTC>　━━━　闭环形态（发出时快照）━━━　✅ 无需回复（依据：…）　━━━　✅ 已推送 <UTC>
+CLOSURE_SNAPSHOT_LABEL = "闭环形态（发出时快照）"
+STATUS_SEGMENT_SEPARATOR = "　━━━　"
+
+# 与 `readme_table._TARGET_FILE_RE`（`目标文件[^`]*`([^`]+\.md)``）同构：引导词
+# 之后第一对反引号里是取值；紧随其后的一对全角括号里是依据（不支持嵌套括号
+# ——标注被「主要事项」列 600 B 行长判据压在约 100 B 内，依据长文进行日志）。
+_CLOSURE_FORM_RE = re.compile(
+    r"闭环形态[^`]*`(?P<value>[^`]+)`[\s*　]*(?:（(?P<basis>[^（）]*)）)?"
+)
+
+
+@dataclass(frozen=True)
+class ClosureForm:
+    """一条闭环形态标注的解析结果。
+
+    - `value`：合法取值（`CLOSED_STATUS_PREFIXES` 之一）；**违规时为 None**，
+      调用方据此按「无标注」处理（闸仍锁，保守方向）。
+    - `basis`：依据文本（已剥引导词与首尾装饰）；违规时可能为空。
+    - `raw`：命中的原文片段，供报错指名。
+    - `problem`：fail-loud 说明；`None` ＝ 合法。
+    """
+
+    value: Optional[str]
+    basis: str
+    raw: str
+    problem: Optional[str] = None
+
+    @property
+    def is_valid(self) -> bool:
+        return self.problem is None and self.value is not None
+
+
+def parse_closure_form(topic_cell: str) -> Optional[ClosureForm]:
+    """从「主要事项」列文本里解析闭环形态标注。
+
+    返回三种形态，**调用方 MUST 区分**：
+    - `None`：无标注——与本变更前逐字同行为（回填仍写 `✅ 已推送`）。
+    - `ClosureForm(problem=None)`：合法。
+    - `ClosureForm(problem=…, value=None)`：写了标注但**越界或缺依据**——
+      MUST 报出来（fail-loud），并 MUST 按「无标注」处理；MUST NOT 静默忽略。
+
+    取值比对＝`normalize_status` 之后与枚举**整串相等**，不做前缀、不做模糊
+    ——一个机器要读的位置上放自由文本，结局本项目已验证过四遍（README「下一个
+    可用号」段）。
+    """
+    m = _CLOSURE_FORM_RE.search(topic_cell or "")
+    if not m:
+        return None
+    raw = m.group(0)
+    value = normalize_status(m.group("value"))
+    basis_raw = m.group("basis")
+    basis = ""
+    if basis_raw is not None:
+        basis = basis_raw.strip(_DECORATION_CHARS)
+        for prefix in (CLOSURE_FORM_BASIS_PREFIX, "依据:"):
+            if basis.startswith(prefix):
+                basis = basis[len(prefix):].strip(_DECORATION_CHARS)
+                break
+    if value not in CLOSED_STATUS_PREFIXES:
+        return ClosureForm(
+            value=None, basis=basis, raw=raw,
+            problem=(
+                f"闭环形态标注取值「{value}」不在闭环四态枚举内"
+                f"（{'／'.join(CLOSED_STATUS_PREFIXES)}）——已按「无标注」处理："
+                "回填仍写「✅ 已推送」、串行闸仍锁。判据只此一份"
+                "（`followup_gate.CLOSED_STATUS_PREFIXES`），请改标注、不要扩消费者侧。"
+            ),
+        )
+    if not basis:
+        return ClosureForm(
+            value=None, basis="", raw=raw,
+            problem=(
+                f"闭环形态标注「{value}」缺依据文本——形态须为"
+                f"「{CLOSURE_FORM_MARKER}`{value}`（{CLOSURE_FORM_BASIS_PREFIX}…）」，"
+                "括号内非空；已按「无标注」处理（回填仍写「✅ 已推送」、闸仍锁）。"
+            ),
+        )
+    return ClosureForm(value=value, basis=basis, raw=raw)
+
+
+def build_closure_snapshot_segment(form: ClosureForm) -> str:
+    """回填时写进状态格的「发出时快照」段（不含首段、不含前导分隔符）。
+
+    只接受合法标注——违规标注按「无标注」处理，根本不该走到这里。
+    """
+    if not form.is_valid:
+        raise ValueError(f"只有合法的闭环形态标注才能快照：{form.problem}")
+    return (
+        f"{CLOSURE_SNAPSHOT_LABEL} ━━━　{form.value}"
+        f"（{CLOSURE_FORM_BASIS_PREFIX}{form.basis}）"
+    )
+
+
+_CLOSURE_SNAPSHOT_RE = re.compile(
+    re.escape(CLOSURE_SNAPSHOT_LABEL) + r"\s*━━━\s*(?P<value>[^（(　]+)"
+)
+
+
+def extract_closure_snapshot(status_cell: str) -> Optional[str]:
+    """从状态格里读回「发出时快照」的取值；无快照段返回 `None`。
+
+    只取取值、不取依据——闸判据只关心「快照说它是哪一态」。返回值已
+    `normalize_status`，可与 `CLOSED_STATUS_PREFIXES` 直接比对。
+    """
+    m = _CLOSURE_SNAPSHOT_RE.search(status_cell or "")
+    if not m:
+        return None
+    return normalize_status(m.group("value"))
+
+
+def closure_form_mismatch_warning(topic_cell: str, status_cell: str) -> Optional[str]:
+    """决策点 5(c) 的**必配缓解**：「主要事项」列标注 ≠ 状态格快照时，给出
+    一条明确声明「以快照为准」的告警文案；一致或两侧皆无时返回 `None`。
+
+    三种要报的形态（都出声，都不改判定）：
+    1. 有快照、标注取值与之不同 ⇒ 标注在发出后被改过。
+    2. 有快照、标注已被删 ⇒ 同上（判定不变，只是 README 上读不到依据了）。
+    3. **无快照、状态格已是已发出态、却有标注** ⇒ 事后追认——对闸零效果，
+       但它长得和真判定一模一样，读的人会被误导，必须点破。
+    未发出（草稿／待发／暂缓）的行不报：那时标注还没到快照那一步。
+    """
+    snapshot = extract_closure_snapshot(status_cell)
+    form = parse_closure_form(topic_cell)
+    if snapshot is None:
+        if form is None or is_not_yet_sent(status_cell):
+            return None
+        shown = form.value if form.value is not None else form.raw
+        return (
+            f"⚠ 「主要事项」列写有闭环形态标注「{shown}」，但状态格里**没有**发出时"
+            "快照——这封信发出时标注尚不存在（或不合法），属事后追认：**对串行闸零"
+            "效果、以快照为准**（本行无快照 ⇒ 按状态格首段判）。请勿据此标注认为"
+            "闸已开。"
+        )
+    if form is None:
+        return (
+            f"⚠ 状态格快照为「{snapshot}」，而「主要事项」列已无闭环形态标注"
+            "——两者不一致，**以快照为准**（快照是发出那一刻冻结的值，此后对"
+            "「主要事项」列的任何改动不改变闸判定）。"
+        )
+    if form.value != snapshot:
+        shown = form.value if form.value is not None else form.raw
+        return (
+            f"⚠ 「主要事项」列标注「{shown}」≠ 状态格快照「{snapshot}」，"
+            "**以快照为准**（快照是发出那一刻冻结的值，此后对「主要事项」列的"
+            "任何改动不改变闸判定）。"
+        )
+    return None

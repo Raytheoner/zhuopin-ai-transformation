@@ -2,6 +2,7 @@
 
 > 🔴 本 spec 按 design **推荐选项**（决策点 1(a)／4(a)／5(c)／6(a)）撰写。
 > 决策点 1 若改选 (b)「状态列首段化」，本 spec 的落点整段作废、须重写。**签认前不得 apply。**
+> 🟩 **2026-09-12 已按推荐全签**（Shao Peishen 回 `P3：1a，2a，3a，4a，5c，6a`），本 spec 落点不变、已 apply（泳道 `OP-0912-AB`）。落点：判据 `followup_gate.parse_closure_form`／`closure_form_mismatch_warning`；写入 `readme_table.build_closure_form_annotation`；提取 `readme_table.extract_closure_form`；缓解 `工具-跟进闸查询.py`（同行输出 ＋「以快照为准」）。「其余 53 行」按 2026-09-12 现取＝主表 49 行中的其余 48 行（原文保留，不改数）。
 
 ### Requirement: 跟进信起草时 SHALL 可写下机器可读的「闭环形态」标注
 起草一封跟进信时，起草人 SHALL 可在 README「现有跟进信清单」表该行的**「主要事项」列**内

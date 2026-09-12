@@ -116,6 +116,12 @@ class GateReport:
     next_number: str | None
     pending_intakes: list[IntakeRow] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # 变更包 `followup-closure-form-survives-backfill`（决策点 1(a) 代价①的缓解
+    # ＋ 决策点 5(c) 必配缓解）：「怎样算闭环」与「当前状态」同报。
+    # `closure_snapshot` ＝ 状态格里发出时冻结的快照取值（**闸只认这个**）；
+    # `closure_annotation` ＝ 「主要事项」列此刻的标注取值（只供人读、对闸零效果）。
+    closure_snapshot: str | None = None
+    closure_annotation: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -394,12 +400,27 @@ def build_report(recipient: str, readme_text: str) -> GateReport:
     number_cell = latest.cells[number_col]
     kind = followup_gate.classify_status(status)
     gate_open = kind == "closed"
-    target_file = (
-        extract_target_filename(latest.cells[topic_col])
-        if topic_col is not None and len(latest.cells) > topic_col else None
+    topic_cell = (
+        latest.cells[topic_col]
+        if topic_col is not None and len(latest.cells) > topic_col else ""
     )
+    target_file = extract_target_filename(topic_cell) if topic_cell else None
 
     warnings: list[str] = []
+
+    # ---- 闭环形态：快照（闸的判据）与标注（人读）同报，不一致必须出声 ----
+    # 决策点 5(c) 取「结构性防止」而不新增门禁 ⇒ 事后追认**写得进去**、只是
+    # 对闸零效果；不把这一点报出来，(c) 就是用一个静默失效换掉了一个静默滥用。
+    closure_snapshot = followup_gate.extract_closure_snapshot(status)
+    closure_form = followup_gate.parse_closure_form(topic_cell)
+    closure_annotation = None
+    if closure_form is not None:
+        closure_annotation = closure_form.value if closure_form.is_valid else closure_form.raw
+        if closure_form.problem:
+            warnings.append(f"⚠ 「{number_cell}」{closure_form.problem}")
+    mismatch = followup_gate.closure_form_mismatch_warning(topic_cell, status)
+    if mismatch:
+        warnings.append(f"{mismatch}（行「{number_cell}」）")
     if kind == "unknown":
         warnings.append(
             f"README 状态列出现本工具不认识的写法「{followup_gate.normalize_status(status)[:40]}」"
@@ -443,6 +464,8 @@ def build_report(recipient: str, readme_text: str) -> GateReport:
         next_number=_next_available_number(rows, number_col, department),
         pending_intakes=pending,
         warnings=warnings,
+        closure_snapshot=closure_snapshot,
+        closure_annotation=closure_annotation,
     )
 
 
@@ -482,7 +505,15 @@ def render_human(report: GateReport) -> str:
         "closed": "已闭环", "reply_arrived": "回件已到、待拆件",
         "in_flight": "在途", "unknown": "状态写法未知（按在途处理）",
     }[report.letter_status_kind]
-    lines.append(f"依据：{report.letter_number} · {status_brief} · {kind_label}")
+    # 「当前状态」与「怎样算闭环」拼在同一行（决策点 1(a) 代价①的缓解：两者
+    # 落在两列，人读要合看两格——这里替他合）。
+    if report.closure_snapshot is not None:
+        closure = f"闭环形态（发出时快照）＝{report.closure_snapshot}"
+    elif report.closure_annotation is not None:
+        closure = f"闭环形态标注＝{report.closure_annotation}（未快照，对闸零效果）"
+    else:
+        closure = "闭环形态：无标注（按状态格首段判）"
+    lines.append(f"依据：{report.letter_number} · {status_brief} · {kind_label} · {closure}")
     if report.pending_intakes:
         ids = " / ".join(f"§一 #{r.number}" for r in report.pending_intakes)
         states = "、".join(sorted({f"[S:{r.status_field or '缺字段'}]" for r in report.pending_intakes}))

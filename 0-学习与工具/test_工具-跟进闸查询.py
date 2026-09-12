@@ -320,6 +320,66 @@ class GateQueryTests(unittest.TestCase):
         self.assertEqual(payload[0]["letter_number"], report.letter_number)
         self.assertEqual(payload[0]["warnings"], report.warnings)
 
+    # ---- 变更包 `followup-closure-form-survives-backfill`（tasks 5.2 必配缓解 ＋
+    # 决策点 1(a) 代价①缓解），Shao Peishen 2026-09-12 签认。
+    快照态 = (
+        "✅ 无需回复 2026-09-12 08:00 UTC　━━━　闭环形态（发出时快照） ━━━　"
+        "✅ 无需回复（依据：三要素明写不用回）　━━━　✅ 已推送 2026-09-12 08:00 UTC"
+    )
+    合法标注 = "主题 → 闭环形态：`✅ 无需回复`（依据：三要素明写不用回）"
+
+    def test_当前状态与闭环形态拼在同一行输出(self):
+        self._write_readme(_readme_row("质量部#7", "质量部 · 陈忱", self.合法标注, self.快照态))
+        report = self._report("陈忱")
+        self.assertTrue(report.gate_open)
+        self.assertEqual(report.closure_snapshot, "✅ 无需回复")
+        self.assertEqual(report.closure_annotation, "✅ 无需回复")
+        self.assertEqual(report.warnings, [])
+        human = self.module.render_human(report)
+        line = next(l for l in human.splitlines() if l.startswith("依据："))
+        self.assertIn("质量部#7", line)
+        self.assertIn("已闭环", line)
+        self.assertIn("闭环形态（发出时快照）＝✅ 无需回复", line)
+
+    def test_标注与快照不一致_明确报以快照为准_判定按快照(self):
+        """决策点 5(c) 必配缓解：不做这条，(c) 就是用一个静默失效换掉一个静默滥用。"""
+        topic = "主题 → 闭环形态：`❌ 已作废`（依据：发出后改口）"
+        self._write_readme(_readme_row("质量部#7", "质量部 · 陈忱", topic, self.快照态))
+        report = self._report("陈忱")
+        self.assertTrue(report.gate_open)          # 判定按快照走
+        self.assertEqual(report.closure_snapshot, "✅ 无需回复")
+        self.assertEqual(report.closure_annotation, "❌ 已作废")
+        self.assertTrue(any("以快照为准" in w for w in report.warnings), report.warnings)
+        self.assertIn("以快照为准", self.module.render_human(report))
+
+    def test_发出后补写标注_无快照_闸仍锁且点破事后追认(self):
+        """tasks 5.3 前半（读侧）：状态格无快照 ⇒ 闸按首段判（锁），并把
+        「主要事项」列那条看起来像判定的标注点破。"""
+        self._write_readme(_readme_row(
+            "质量部#7", "质量部 · 陈忱", self.合法标注, "✅ 已推送 2026-08-18 06:53 UTC"))
+        report = self._report("陈忱")
+        self.assertFalse(report.gate_open)
+        self.assertIsNone(report.closure_snapshot)
+        self.assertEqual(report.closure_annotation, "✅ 无需回复")
+        self.assertTrue(any("事后追认" in w and "以快照为准" in w for w in report.warnings), report.warnings)
+        self.assertIn("未快照，对闸零效果", self.module.render_human(report))
+
+    def test_越界标注fail_loud(self):
+        topic = "主题 → 闭环形态：`✅ 大概不用回`（依据：x）"
+        self._write_readme(_readme_row("质量部#7", "质量部 · 陈忱", topic, "🆕 待发"))
+        report = self._report("陈忱")
+        self.assertFalse(report.gate_open)
+        self.assertTrue(any("不在闭环四态枚举内" in w for w in report.warnings), report.warnings)
+
+    def test_无标注行输出与判定与今天相同(self):
+        self._write_readme(_readme_row("质量部#7", "质量部 · 陈忱", "普通主题", "✅ 已推送 2026-08-18"))
+        report = self._report("陈忱")
+        self.assertFalse(report.gate_open)
+        self.assertIsNone(report.closure_snapshot)
+        self.assertIsNone(report.closure_annotation)
+        self.assertEqual(report.warnings, [])
+        self.assertIn("闭环形态：无标注", self.module.render_human(report))
+
     def test_all覆盖全部收信人无遗漏无重复(self):
         self._write_readme(
             _readme_row("采购部#17", "采购部 · 姚祖怡", "x", "✅ 已推送")

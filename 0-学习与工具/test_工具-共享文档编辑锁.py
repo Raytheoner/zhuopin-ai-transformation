@@ -3007,6 +3007,63 @@ class FollowupReadmeStructuralValidationTests(unittest.TestCase):
 
         self.assertEqual(self._release(who="A"), 0)
 
+    # ---- 变更包 `followup-closure-form-survives-backfill`（tasks 4.4 编辑锁两处
+    # 校验 ＋ 5.3 后半），Shao Peishen 2026-09-12 签认 2(a)＋三护栏／3(a)。
+    快照态 = (
+        "✅ 无需回复 2026-09-12 08:00 UTC　━━━　闭环形态（发出时快照） ━━━　"
+        "✅ 无需回复（依据：三要素明写不用回）　━━━　✅ 已推送 2026-09-12 08:00 UTC"
+    )
+
+    def test_闭环形态快照态_串行闸放行且不需串行豁免(self):
+        """tasks 5.3 后半：起草时即有标注 ⇒ 回填首段为 `✅ 无需回复 <UTC>`
+        ⇒ 起草下一封 release **直接放行**，输出中不含「检测到串行豁免声明」。
+        这正是 `质量部#7 → #8` 那次本该有的形态。"""
+        prior = ("| 质量部#7 | 2026-08-18 | 质量部 · 陈忱 | 主题 → 闭环形态：`✅ 无需回复`"
+                 f"（依据：三要素明写不用回） | 不用回 | {self.快照态} |\n")
+        self._write_readme(prior)
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 质量部#8 | 2026-08-21 | 质量部 · 陈忱 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(prior + new_row)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = self._release(who="A")
+        self.assertEqual(result, 0)
+        self.assertNotIn("检测到串行豁免声明", buf.getvalue())
+
+    def test_发出后补写标注_无快照_串行闸仍锁(self):
+        """tasks 5.3 前半：闸只读状态格，「主要事项」列事后补写的标注对闸零效果。"""
+        prior = ("| 质量部#7 | 2026-08-18 | 质量部 · 陈忱 | 主题 → 闭环形态：`✅ 无需回复`"
+                 "（依据：事后补的） | 不用回 | ✅ 已推送 2026-08-18 06:53 UTC |\n")
+        self._write_readme(prior)
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = "| 质量部#8 | 2026-08-21 | 质量部 · 陈忱 | 新事项 | 不急 | ⏳ 待你审 |\n"
+        self._write_readme(prior + new_row)
+
+        self.assertNotEqual(self._release(who="A"), 0)
+
+    def test_新增行终态加快照段_两态语义等值拦截不命中_如实钉住(self):
+        """🔴 **如实登记一处 spec 与代码的不一致**（tasks 4.4 编辑锁两态语义那一项）：
+        spec 场景「快照不影响两态语义拦截」写的是「该拦截按首段判定」，但两态语义
+        用的是**整格等值** `status_value != FOLLOWUP_FINALIZED_STATUS`——它是 design
+        节首更正 4 列出的**七处等值比较之一**，派单件明令「一处都不许改」。
+
+        ⇒ 新增行写 `🆕 待发　━━━　<快照段>` **不会**被两态语义拦下（release 返回 0），
+        与不带快照的 `🆕 待发` 新增行（被拦）结论**不一致**。本用例把这个事实钉住，
+        不假装它已满足。**风险＝零**：这样的状态格门禁②（同为等值断言）同样发不出去
+        （`test_closure_form_backfill.py::test_门禁二仍拒绝带附加内容的状态格`），且
+        回填从不产出 `🆕 待发` 首段的快照态——它只能来自人手写。要让两态语义按首段判，
+        须 Shao Peishen 另行签认放宽那处等值比较，不在本包范围。"""
+        self._write_readme()
+        self.assertEqual(self._acquire(who="A"), 0)
+        new_row = ("| 质量部#9 | 2026-09-12 | 质量部 · 陈忱 | 新事项 | 不急 | "
+                   "🆕 待发　━━━　闭环形态（发出时快照） ━━━　✅ 无需回复（依据：x） |\n")
+        self._write_readme(new_row)
+
+        # 钉住现状：等值拦截不命中 ⇒ release 放行。这条一旦变红，说明有人改了
+        # 七处等值比较之一——那必须是一次经签认的改动，而不是静默漂移。
+        self.assertEqual(self._release(who="A"), 0)
+
 
 class AppendRowTests(unittest.TestCase):
     """队列 #258：`append-row` 子命令——插入位置/列数/裸竖线校验交给工具，

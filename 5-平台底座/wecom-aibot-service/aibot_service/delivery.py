@@ -17,7 +17,7 @@ from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector
 
 from .error_text import describe_exception
 from .constants import PAUL_USERID
-from .gates import assert_finalized, DeliveryNotFinalizedError
+from .gates import FINALIZED_STATUS_MARKER, assert_finalized, DeliveryNotFinalizedError
 from .ledger_writeback import record_letter_sent
 from .message_length import (
     CC_PREFIX,
@@ -31,6 +31,7 @@ from .readme_table import (
     SUPPLEMENT_REPLY_REQUIRED_NO,
     SUPPLEMENT_TABLE_SECTION,
     column_index,
+    extract_closure_form,
     locate_row,
     write_status,
     RowLocation,
@@ -39,31 +40,128 @@ from .repo_paths import resolve_repo_root
 
 DELIVERED_STATUS_PREFIX = "✅ 已推送"
 
+# 变更包 `followup-closure-form-survives-backfill` 决策点 3(a)：主表回填改
+# **保留式**，分段范式沿用 S4 桥一 `followup_readme_bridge.build_reply_arrived_status`
+# 已在生产上跑着的 `　━━━　原状态 ━━━　<旧状态>`——不新造第二种分段。
+PRESERVED_STATUS_LABEL = "原状态 ━━━　"
+
+
+@dataclass(frozen=True)
+class BackfillDecision:
+    """一次回填的完整结论——不止「写哪个字串」，还带着**为什么**。
+
+    - `status`：要写进状态格的整格文本。
+    - `closure_form`：「主要事项」列解析出的闭环形态标注（`followup_gate.ClosureForm`
+      或 None）。**带 `problem` 的标注已按「无标注」处理**，但它必须被报出来
+      （fail-loud，决策点 4(a)），故原样带回给调用方写审计。
+    - `snapshot_written`：状态格里是否写入了「发出时快照」段。
+    - `gate_opened_at_backfill`：首段是否已直接写成闭环态（决策点 2(a)）。
+    """
+
+    status: str
+    closure_form: object = None
+    snapshot_written: bool = False
+    gate_opened_at_backfill: bool = False
+
+    @property
+    def closure_form_problem(self) -> Optional[str]:
+        form = self.closure_form
+        return getattr(form, "problem", None) if form is not None else None
+
+
+def _topic_cell(loc: RowLocation) -> str:
+    idx = column_index(loc.header_cells, "主要事项")
+    if idx is None or idx >= len(loc.cells):
+        return ""
+    return loc.cells[idx]
+
+
+def resolve_backfill(loc: RowLocation, section: str, timestamp: str) -> BackfillDecision:
+    """回填时该写哪个终态（队列 #399 决策点 5 答 (b)；变更包
+    `followup-closure-form-survives-backfill` 决策点 2(a)／3(a)，Shao Peishen
+    2026-09-12 签认）。
+
+    **补件表**（`#399`，本次一字未动）：
+    - 「需回复 ＝ 否」（通知型）：直接置 `✅ 无需回复` —— 它属闭环四态之一，
+      **发出即了结，不再需要任何后续人工转态**（不带时刻、不带快照，是 `#399`
+      已拍板的形态）。
+    - 「需回复 ＝ 是」（签认型）：置 `✅ 已推送 <时刻>`，等回件回灌后由人转
+      `📥 已回件并回灌`。
+    - 🔴 读不到「需回复」列时按**签认型**处理（即仍需人来收尾）。两个方向代价
+      不对称：误判成通知型会把一封还在等签认的补件直接标成「已了结」，那个签认
+      从此在任何机器载体上都无迹可寻；误判成签认型最坏只是多一次人工转态。
+
+    **主表**（本变更包）：
+    - 无标注 ⇒ `✅ 已推送 <时刻>`，**与本变更前逐字相同**（不多出空分隔符）。
+    - 「主要事项」列有**合法**闭环形态标注 ⇒ 写入「发出时快照」段（决策点 3(a)）：
+      `✅ 已推送 <UTC>　━━━　闭环形态（发出时快照） ━━━　<取值>（依据：…）`。
+    - 🔴 标注取值 ＝ `✅ 无需回复`（决策点 2(a)，**与补件表通知型同一语义、同一
+      函数内分支**）⇒ 首段直接写闭环态 `✅ 无需回复 <UTC>`，**串行闸当场开**；
+      三条护栏同时生效：
+        ① 只认**批准那一刻已存在**的标注——本函数读的是 `loc`，即门禁②
+           `assert_finalized` 通过时那一次读取的行（状态仍为 `🆕 待发`）；此后
+           闸判据只读状态格快照、不回读「主要事项」，发出后再补写标注对闸零效果。
+        ② 取值只认 `followup_gate.CLOSED_STATUS_PREFIXES` 枚举，越界／缺依据
+           ⇒ 按「无标注」处理：**仍写 `✅ 已推送`、闸仍锁**（保守方向），但
+           `closure_form.problem` 必须被调用方报出来（fail-loud）。
+        ③ 落字时**保留 `✅ 已推送 <UTC>` 作为快照后段**，「何时推送」这个事实不丢。
+      枚举另三态（`📥`／`📨`／`❌`）在起草时不可能成立，只快照、不开闸。
+    - 状态格属「未发出」家族且在 `🆕 待发` 之外还有内容（`⏸ 暂缓（依据：…）`
+      理由／起草人临时备注；门禁②等值断言下经 `push_followup` 实际不可达，只在
+      直接调用时成立）⇒ 按桥一范式接 `　━━━　原状态 ━━━　<旧状态>`。
+    """
+    if section == SUPPLEMENT_TABLE_SECTION:
+        reply_idx = column_index(loc.header_cells, SUPPLEMENT_REPLY_REQUIRED_COLUMN)
+        reply_value = (
+            loc.cells[reply_idx].strip()
+            if reply_idx is not None and reply_idx < len(loc.cells)
+            else ""
+        )
+        if reply_value == SUPPLEMENT_REPLY_REQUIRED_NO:
+            return BackfillDecision(status=NO_REPLY_NEEDED_STATUS)
+        return BackfillDecision(status=f"{DELIVERED_STATUS_PREFIX} {timestamp}")
+
+    from zhuopin_platform.shared_tools import followup_gate as _gate
+
+    delivered = f"{DELIVERED_STATUS_PREFIX} {timestamp}"
+    form = extract_closure_form(_topic_cell(loc))
+    snapshot_written = False
+    gate_opened = False
+    if form is not None and form.is_valid:
+        snapshot = _gate.build_closure_snapshot_segment(form)
+        if form.value == NO_REPLY_NEEDED_STATUS:
+            status = (
+                f"{NO_REPLY_NEEDED_STATUS} {timestamp}"
+                f"{_gate.STATUS_SEGMENT_SEPARATOR}{snapshot}"
+                f"{_gate.STATUS_SEGMENT_SEPARATOR}{delivered}"
+            )
+            gate_opened = True
+        else:
+            status = f"{delivered}{_gate.STATUS_SEGMENT_SEPARATOR}{snapshot}"
+        snapshot_written = True
+    else:
+        status = delivered
+
+    # 保留式（决策点 3(a)）：状态格里若在 `🆕 待发` 之外还带着「未发出」家族的
+    # 内容（`⏸ 暂缓（依据：…）` 的暂缓理由、起草人写在格里的临时备注），按桥一
+    # 范式原样接在后面。🔴 只对「未发出」家族保留：一格已是 `✅ 已推送 …` 的行
+    # 再被回填不是「保住理由」而是重发异常，那一类维持既有整格语义
+    # （`test_主表回填语义未变` 钉着）。门禁②等值断言下此分支在 `push_followup`
+    # 里实际不可达，只在直接调用本函数时成立——如实登记在 tasks 4.3。
+    previous = loc.cells[loc.status_col_index] if loc.status_col_index < len(loc.cells) else ""
+    if (_gate.is_not_yet_sent(previous)
+            and _gate.normalize_status(previous) != FINALIZED_STATUS_MARKER):
+        status = f"{status}{_gate.STATUS_SEGMENT_SEPARATOR}{PRESERVED_STATUS_LABEL}{previous}"
+
+    return BackfillDecision(
+        status=status, closure_form=form,
+        snapshot_written=snapshot_written, gate_opened_at_backfill=gate_opened,
+    )
+
 
 def resolve_backfill_status(loc: RowLocation, section: str, timestamp: str) -> str:
-    """回填时该写哪个终态（队列 #399 决策点 5 答 (b)）。
-
-    - 主表：一律 `✅ 已推送 <时刻>`（既有语义，未改）。
-    - 补件表「需回复 ＝ 否」（通知型）：直接置 `✅ 无需回复` —— 它属闭环四态
-      之一，**发出即了结，不再需要任何后续人工转态**。
-    - 补件表「需回复 ＝ 是」（签认型）：置 `✅ 已推送 <时刻>`，等回件回灌后
-      由人转 `📥 已回件并回灌`。
-
-    🔴 读不到「需回复」列时按**签认型**处理（即仍需人来收尾）。两个方向代价
-    不对称：误判成通知型会把一封还在等签认的补件直接标成「已了结」，那个签认
-    从此在任何机器载体上都无迹可寻；误判成签认型最坏只是多一次人工转态。
-    """
-    if section != SUPPLEMENT_TABLE_SECTION:
-        return f"{DELIVERED_STATUS_PREFIX} {timestamp}"
-    reply_idx = column_index(loc.header_cells, SUPPLEMENT_REPLY_REQUIRED_COLUMN)
-    reply_value = (
-        loc.cells[reply_idx].strip()
-        if reply_idx is not None and reply_idx < len(loc.cells)
-        else ""
-    )
-    if reply_value == SUPPLEMENT_REPLY_REQUIRED_NO:
-        return NO_REPLY_NEEDED_STATUS
-    return f"{DELIVERED_STATUS_PREFIX} {timestamp}"
+    """`resolve_backfill(...).status` 的向后兼容薄封装（既有单测与调用方按此名取值）。"""
+    return resolve_backfill(loc, section, timestamp).status
 
 
 _NON_FAST_FORWARD_MARKERS = (
@@ -436,7 +534,26 @@ async def push_followup(
     # 只是少一份知会，事后能补。**⇒ 让回填成为"进程随时可能被杀也无法
     # 回退"的那一步，必须最先落地，抄送退居其后。**
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    new_status = resolve_backfill_status(loc, section, timestamp)
+    backfill = resolve_backfill(loc, section, timestamp)
+    new_status = backfill.status
+
+    # 变更包 `followup-closure-form-survives-backfill` 决策点 4(a)：闭环形态标注
+    # 越界／缺依据 ⇒ **fail-loud**——审计里单独记一条可见事件（本服务的「报出来」
+    # 通道就是审计），且已按「无标注」处理（上面 `new_status` 仍是 `✅ 已推送`、
+    # 闸仍锁）。MUST NOT 静默忽略。
+    if backfill.closure_form_problem:
+        audit.record(
+            AuditEvent(
+                scenario="wecom-aibot",
+                action="followup_closure_form_rejected",
+                evaluator=evaluator,
+                automation_level="L1",
+                decision={"treated_as": "no_annotation", "kind": kind,
+                          "problem": backfill.closure_form_problem,
+                          "raw": getattr(backfill.closure_form, "raw", "")},
+                data_sources={"readme": str(readme_path)},
+            )
+        )
 
     try:
         new_text = write_status(text, loc, new_status)
@@ -464,7 +581,10 @@ async def push_followup(
             action="followup_backfilled",
             evaluator=evaluator,
             automation_level="L1",
-            decision={"sent": True, "backfilled": True, "new_status": new_status, "kind": kind},
+            decision={"sent": True, "backfilled": True, "new_status": new_status, "kind": kind,
+                      # 决策点 2(a)／3(a) 留痕：快照写没写、闸是否在回填时直接开
+                      "closure_snapshot_written": backfill.snapshot_written,
+                      "gate_opened_at_backfill": backfill.gate_opened_at_backfill},
             data_sources={"readme": str(readme_path)},
         )
     )
