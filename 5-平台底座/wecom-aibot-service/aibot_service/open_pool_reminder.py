@@ -13,19 +13,21 @@
 把他要做的动作从"主动问一句『现在有什么可推进』＋等一个 session 算出来"
 压缩到"收到一条带 opener 路径的推送，然后粘贴"，不是"自动开工"。
 
-**判据（与 Cowork 半看板卡同一份，队列 #308 机器字段）**：§一 状态列
-`[S:open]` 即"可立即开工"——`timed=`/`hold`/`blocked`/`partial`/`done`
-均为不同枚举取值，天然被排除，不需要额外的"非 timed 非 hold"否定判断。
-`partial`（主体已完成而子项待领，如 #96/#118/#264）行本轮已如实登记为
-已知边界（见队列 #312 行"本轮还实测出一个池子算法必须处理的边界"段：
-"只取 open 会漏掉 13 条中的绝大多数可做项"）——本模块不处理该边界，只
-处理"整行仍是 open"的最直接情形；若未来要把 partial 的"仍有待领子项"
-纳入本池，须先有一个可机读的二次判据，不能靠正则猜中文（同 #308 立行
-初衷），此处只登记不代定实现方案。
+**判据（🔴 2026-09-02 Shao Peishen 裁定「以看板判据为准」，`OP-0912-H` 落地）**：
+可 Open 池的判据**不在本文件**——权威实现是 `zhuopin_platform.shared_tools.
+open_pool.judge_open_pool_row`，看板数据层 `0-学习与工具/工具-项目状态卡数据层
+.ps1` 经 `工具-可Open池.py` 调的是同一个函数。裁定原文：「对齐不是抄一遍判据，
+是让两侧共用同一个判定函数，否则今天修完明天照样漂」。要点：`[S:open]` 与
+`[S:partial]` 都入池（partial ＝ 主体做完、尾巴挂着，尾巴本身就是可开工的活；
+推送器此前只取 open，2026-09-02 实测少报 11 条、本班实测少报 29 条）；状态列
+含 `[A:`、状态列或任务列以 🛑 起首、`[S:partial]` 且开头片段自陈在办者排除；
+缺 `[S:]`／`[D:]` 归 degraded 并发 `RuntimeWarning`。逐条理由见该模块 docstring。
 
-**独立解析（不跨文件 import 判据）**：同 `decision_reminder.py` 既有
-惯例（见该文件"本文件独立实现一份解析"注释），本模块重新实现一份 §一
-状态字段解析与表格切分，不 import `decision_reminder.py` 的同名函数。
+**历史（2026-08-10 首版）**：本模块曾独立实现一份 §一 状态字段解析并只取
+`[S:open]`，把 partial 登记为「已知边界、不处理」——该边界即两侧漂移的根因，
+已随裁定消除；`_parse_status_domain_fields`／`_parse_table_rows` 两份本地
+副本随之退休，改 import 权威模块（本项目「跨文件不 import 判据」的旧惯例在
+本判据上被裁定明确推翻：两套实现无人对账正是「第二份真身」形态）。
 """
 from __future__ import annotations
 
@@ -40,36 +42,31 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from zhuopin_platform.audit import AuditEvent
+from zhuopin_platform.shared_tools.open_pool import (
+    ASSIGNED_MARKER,
+    STATUS_LEADING_STRIP_CHARS,
+    VERDICT_DEGRADED,
+    VERDICT_POOL,
+    judge_section_one,
+    parse_status_domain_fields,
+    section_one_text,
+)
 from zhuopin_platform.shared_tools.queue_table import (
-    SECTION_COLUMN_COUNTS,
     iter_queue_paths,
+    parse_section_rows,
 )
-
-SECTION_ONE_HEADING = "## 一、"
-_NEXT_HEADING = "\n## "
-
-# 队列 #308（2026-08-09，决策点 4）：§一 状态列开头机器可读字段——本文件
-# 独立实现一份解析（同本项目"跨文件不 import 同一份判据"既有惯例，见
-# decision_reminder.py 同名常量的注释）。
-_STATUS_FIELD_RE = re.compile(
-    r"^\[S:(done|open|partial|hold|blocked|timed=\d{4}-\d{2}-\d{2})\]"
-    r"(?:\[D:(机|业)\])?"
-)
-_STATUS_LEADING_STRIP_CHARS = "* \t　"
 
 # 队列 #312（OP-0830-D，design D1）：assigned 机器字段——独立字段，不新增
-# `[S:...]` 枚举值。决定性理由是一条实测：`[S:open][D:机][A:已派出]` 经
-# 既有 `_parse_status_domain_fields`（本文件与编辑锁各自独立实现的同名
-# 函数）解析仍得 `('open','机')`——未知尾字段被天然忽略，零改动向后兼容。
-# 判据"行含 `[A:` 即排除"故意不解析取值：`已派出` 是当前唯一取值，但向
-# 前兼容未来扩展取值时不必再改这里的正则（同 spec "不解析取值" 要求）。
-_ASSIGNED_MARKER = "[A:"
+# `[S:...]` 枚举值。判据"行含 `[A:` 即排除"故意不解析取值：`已派出` 是当前
+# 唯一取值，但向前兼容未来扩展取值时不必再改正则（同 spec "不解析取值"）。
+# 常量本体在权威模块 `open_pool.ASSIGNED_MARKER`，此处只留别名。
+_ASSIGNED_MARKER = ASSIGNED_MARKER
 _DOMAIN_MARKER = "[D:"
 
 
 def _warn_if_assigned_before_domain(row_id: str, status_cell: str) -> None:
     """顺序守卫（design D1 实测坐实）：`[A:...]` 出现在 `[D:...]` 之前时，
-    `_STATUS_FIELD_RE` 的 `(?:\\[D:(机|业)\\])?` 只在紧跟 `[S:...]` 之后
+    `open_pool.STATUS_FIELD_RE` 的 `(?:\\[D:(机|业)\\])?` 只在紧跟 `[S:...]` 之后
     的位置尝试匹配——一旦该位置先出现的是 `[A:...]`，可选组直接匹配空、
     域字段被静默解析为 `None`，且**不产生任何异常**：WIP 计数等下游消费
     方会把该行当"域未知"悄悄跳过。本函数只负责发现并告警（非静默降级，
@@ -129,40 +126,6 @@ OPENER_GLOB_PATTERNS: tuple[str, ...] = (
 OPENER_SEARCH_DIR_REL = "1-转型规划/0-全景路线图"
 
 
-def _parse_status_domain_fields(status_cell: str) -> tuple[str | None, str | None, str]:
-    stripped = status_cell.lstrip(_STATUS_LEADING_STRIP_CHARS)
-    m = _STATUS_FIELD_RE.match(stripped)
-    if not m:
-        return None, None, status_cell
-    return m.group(1), m.group(2), stripped[m.end():]
-
-
-def _parse_table_rows(queue_text: str, heading: str) -> list[list[str]]:
-    """同 `decision_reminder.py` 同名函数——提取 `heading` 到下一个
-    `## ` 标题之间的表格数据行（跳过表头/分隔行），原样切分不做列数
-    校验，交调用方按预期列数处理。"""
-    start = queue_text.find(heading)
-    if start == -1:
-        return []
-    rest = queue_text[start + len(heading):]
-    next_heading = rest.find(_NEXT_HEADING)
-    section = rest if next_heading == -1 else rest[:next_heading]
-
-    rows: list[list[str]] = []
-    for line in section.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("|") or not stripped.endswith("|"):
-            continue
-        cells = [c.strip() for c in stripped.strip("|").split("|")]
-        if not cells:
-            continue
-        first = cells[0]
-        if first in ("#", "") or set(first) <= {"-", " "}:
-            continue  # 表头行 / 分隔行
-        rows.append(cells)
-    return rows
-
-
 @dataclass
 class OpenPoolRow:
     row_id: str
@@ -171,41 +134,43 @@ class OpenPoolRow:
     # 队列 #312（OP-0830-D）：领取方环境（"CC"/"Cowork"/None），供
     # find_opener_path 环境过滤用，见 _infer_row_environment。
     env: Optional[str] = None
+    # OP-0912-H：入池行的状态字段取值（"open"／"partial"），供提醒文案标注
+    # partial 行"尾巴待领"的性质；判据本身在 open_pool.judge_open_pool_row。
+    status: str = "open"
 
 
 def parse_open_pool_rows(queue_text: str) -> list[OpenPoolRow]:
-    """解析队列 §一 中状态字段为 `open` 的行（即"可立即开工"）。
+    """解析队列 §一 中**可 Open** 的行——判据全部委托权威模块
+    `open_pool.judge_open_pool_row`（`OP-0912-H`，2026-09-02 裁定），本函数
+    只做两件事：把 `verdict == pool` 的行组装成 `OpenPoolRow`；把 degraded
+    行（缺 `[S:]`／缺 `[D:]`）以 `RuntimeWarning` 报出——非静默降级，不像
+    `decision_reminder.parse_priority_pending_rows` 那样回退旧"待领"子串
+    判据：队列 #308 落地后 `工具-队列结构lint.py` 已把"§一 新行必须带机器
+    字段"升级为 CI 硬门禁，此处的"跳过"只是防御性兜底、不是常态路径。
 
-    字段缺失/非法时非静默降级——发 `RuntimeWarning` 并跳过该行。不像
-    `decision_reminder.parse_priority_pending_rows` 那样回退旧"待领"
-    子串判据：队列 #308 落地后 `工具-队列结构lint.py` 已把"§一 新行必须
-    带机器字段"升级为 CI 硬门禁，此处的"跳过"只是防御性兜底、不是常态
-    路径，不值得为它复刻一份已被正式退休的旧判据。
-
-    **队列 #312（OP-0830-D）**：状态列含 `[A:...]`（assigned，取值恒为
-    "已派出"，含"已派出未认领"与"在办"两态）的行不再进池——"一个值背
-    三种意思"是本次要修的根因，见 design.md D1/D2；字段顺序 `S→D→A` 写
-    反会被 `_warn_if_assigned_before_domain` 告警但不拦截。"""
+    列数不符（裸竖线撑列）的行 verdict 为 skipped，不纳入判定、交人工核查；
+    `[A:...]`（已派出/在办）、🛑 起首、partial 自陈在办等排除项均在权威模块
+    内判定，此处不复述；字段顺序 `S→D→A` 写反会被
+    `_warn_if_assigned_before_domain` 告警但不拦截。"""
     rows: list[OpenPoolRow] = []
-    for cells in _parse_table_rows(queue_text, SECTION_ONE_HEADING):
-        if len(cells) != SECTION_COLUMN_COUNTS["一"]:
-            continue  # 列数不符（如裸竖线撑列）的行不纳入判定，交人工核查
-        row_id, task_cell, owner_cell, _input, _output, status_cell, _touch, _registered = cells
-        status_value, domain_value, _rest = _parse_status_domain_fields(status_cell)
-        if status_value is None:
+    for v in judge_section_one(queue_text):
+        if v.status is not None:
+            # 先于 degraded 判定：`[A:` 写在 `[D:` 前会让域解析为 None、行归
+            # degraded——顺序告警必须先出声，否则「缺 [D:]」那条会掩盖真因。
+            _warn_if_assigned_before_domain(v.row_id, v.status_cell)
+        if v.verdict == VERDICT_DEGRADED:
             warnings.warn(
-                f"§一 #{row_id} 状态字段缺失/非法，已跳过可 Open 池判定（非静默降级，见队列 #308）",
+                f"§一 #{v.row_id} {v.why}，已跳过可 Open 池判定（非静默降级，见队列 #308／#523）",
                 RuntimeWarning, stacklevel=2,
             )
             continue
-        _warn_if_assigned_before_domain(row_id, status_cell)
-        if status_value != "open":
+        if v.verdict != VERDICT_POOL:
             continue
-        if _ASSIGNED_MARKER in status_cell:
-            continue  # 队列 #312（OP-0830-D）：已派出/在办行不再进池，不解析取值
-        summary = task_cell[:80] + ("…" if len(task_cell) > 80 else "")
-        env = _infer_row_environment(owner_cell)
-        rows.append(OpenPoolRow(row_id=row_id, domain=domain_value, summary=summary, env=env))
+        summary = v.task_cell[:80] + ("…" if len(v.task_cell) > 80 else "")
+        env = _infer_row_environment(v.owner_cell)
+        rows.append(OpenPoolRow(
+            row_id=v.row_id, domain=v.domain, summary=summary, env=env, status=v.status or "open",
+        ))
     return rows
 
 
@@ -361,6 +326,8 @@ class OpenPoolItem:
     # 份文本"反推，故随行携带。`None` 表示调用方走的是单文本入口
     # `build_pool_items` 且未声明来源（该入口保留给既有单测与单文件场景）。
     queue_rel: Optional[str] = None
+    # OP-0912-H：随行携带状态字段取值（"open"／"partial"），提醒文案据此标注。
+    status: Optional[str] = None
 
 
 def _items_from_rows(
@@ -383,7 +350,7 @@ def _items_from_rows(
                 opener_rel = str(opener)
         items.append(OpenPoolItem(
             row_id=row.row_id, domain=row.domain, summary=row.summary,
-            opener_path=opener_rel, queue_rel=queue_rel,
+            opener_path=opener_rel, queue_rel=queue_rel, status=row.status,
         ))
     return items
 
@@ -426,7 +393,7 @@ def build_pool_items_from_repo(repo_root: Path) -> list[OpenPoolItem]:
     （派单件 OP-0819-A ⑵ 明写的范围红线）。故本函数是"可 Open 池专用的
     双文件取数"，`DEFAULT_QUEUE_RELATIVE_PATH` 一字未动。
 
-    🔴 **逐份解析后合并，绝不先拼接文本再解析一次**：`_parse_table_rows`
+    🔴 **逐份解析后合并，绝不先拼接文本再解析一次**：`open_pool.section_one_text`
     用 `text.find(heading)` 定位 `## 一、`，**只取第一个**——拼接两份文本会
     让第二份的 §一 被静默丢弃，**症状与本次要修的缺口一模一样、且更难发现**。
 
@@ -481,16 +448,16 @@ def list_assigned_backfill_candidates(queue_text: str) -> list[AssignedBackfillC
     🟡／🔧／🔬），🔄 覆盖率仅 2/22，靠它排除等于没排除。本函数只用于
     "生成候选清单供人过目"，`parse_open_pool_rows` 的池子判定不读它。"""
     candidates: list[AssignedBackfillCandidate] = []
-    for cells in _parse_table_rows(queue_text, SECTION_ONE_HEADING):
-        if len(cells) != SECTION_COLUMN_COUNTS["一"]:
+    for _line, cells, column_ok in parse_section_rows(section_one_text(queue_text), "一"):
+        if not column_ok:
             continue
         row_id, task_cell, _owner, _input, _output, status_cell, _touch, _registered = cells
-        status_value, domain_value, rest = _parse_status_domain_fields(status_cell)
+        status_value, domain_value, rest = parse_status_domain_fields(status_cell)
         if status_value != "open":
             continue
         if _ASSIGNED_MARKER in status_cell:
             continue  # 已打过 A 字段，不需要回填
-        if not rest.lstrip(_STATUS_LEADING_STRIP_CHARS).startswith(_BACKFILL_MARKER):
+        if not rest.lstrip(STATUS_LEADING_STRIP_CHARS).startswith(_BACKFILL_MARKER):
             continue
         summary = task_cell[:80] + ("…" if len(task_cell) > 80 else "")
         candidates.append(AssignedBackfillCandidate(row_id=row_id, domain=domain_value, summary=summary))
@@ -728,6 +695,10 @@ def format_stale_reminder_message(candidates: list[StaleCandidate]) -> Optional[
     ):
         item = cand.item
         domain_tag = f"[{item.domain}]" if item.domain else "[域未标注]"
+        if item.status == "partial":
+            # 2026-09-02 裁定 ⑴：partial 入池——主体做完、尾巴挂着；文案点明
+            # 「尾巴待领」，让他一眼知道这不是整行从头开工。
+            domain_tag += "[partial·尾巴待领]"
         if item.opener_path:
             action = f"opener 在 `{item.opener_path}`，复制即用"
         else:
@@ -752,6 +723,10 @@ def format_pool_reminder_message(items: list[OpenPoolItem], new_ids: set[str]) -
     lines = [f"🔔 可 Open 池新增 {len(fresh)} 条（可立即开工，非例行提醒）："]
     for item in sorted(fresh, key=lambda i: int(i.row_id) if i.row_id.isdigit() else 0):
         domain_tag = f"[{item.domain}]" if item.domain else "[域未标注]"
+        if item.status == "partial":
+            # 2026-09-02 裁定 ⑴：partial 入池——主体做完、尾巴挂着；文案点明
+            # 「尾巴待领」，让他一眼知道这不是整行从头开工。
+            domain_tag += "[partial·尾巴待领]"
         if item.opener_path:
             action = f"opener 在 `{item.opener_path}`，复制即用"
         else:

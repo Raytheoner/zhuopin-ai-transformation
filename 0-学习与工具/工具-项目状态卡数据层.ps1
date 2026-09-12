@@ -13,7 +13,8 @@
 #      且脚本进版本控制、可 grep、可脱离 artifact 单跑。
 #
 # 契约：stdout 必须输出且仅输出一行 "@@JSON@@" + 压缩 JSON。调用方按该前缀切片。
-# 纪律：纯只读——不改文件、不触发动作、不发通知。
+# 纪律：纯只读——不改文件、不触发动作、不发通知。可 Open 池一节经子进程调 python
+#       （`工具-可Open池.py`，同样纯只读）取判定结果，见该节注释（队列 #312，2026-09-12）。
 # 编码：UTF-8 with BOM（含中文字面量与正则；无 BOM 时 PS 5.1 会按 ANSI 解致乱码）。
 # ============================================================================
 
@@ -178,16 +179,21 @@ if(Test-Path -LiteralPath $odir){
         if(-not $op.ContainsKey($kk2)){ $op[$kk2]=[ordered]@{file=$of.BaseName;date=$ofd;labs=@()} }
         if($op[$kk2].file -eq $of.BaseName -and $lab -ne '' -and ($op[$kk2].labs -notcontains $lab)){ $op[$kk2].labs+=$lab } } } } }
 # ===== 队列 #312 主体：可 Open 池 =====
-# 入池判据**全部读 #308 机器字段**，不用关键词猜中文：
-#   · [S:open]          → 结构性入池
-#   · [S:partial]       → **默认入池**（partial 语义即"部分完成 ⇒ 必有剩余"），
-#                         仅当状态列开头片段自陈「在办/在建/进行中/建造中」时排除，且**单列出来不静默丢弃**
-#   · done/blocked/hold/timed= / 正文以 🛑 起首 → 结构性排除（同 _count_mechanism_wip 口径）
-# 🔑 为何 partial 用"默认入池 + 例外排除"，而不是反过来"找待领证据才入池"：
-#   本轮实测——用 #304 那张待领词表（待领|仍待|待补|…）反向找证据，13 条 partial 只命中 4 条，
-#   会漏掉 #22／#68／#234／#254 这类**把待领子项写在句号之后**的行（开头片段截到句号即止）。
-#   **漏报正是 #312 立行时点名要避免的失败形态**（原文：只取 open 会漏掉 13 条中的绝大多数可做项），
-#   而多报一条的代价只是他多看一眼。故选偏多报、并把被排除的行也列出来供反查。
+# 🔴 2026-09-12（`OP-0912-H`，Shao Peishen 2026-09-02 裁定「以看板判据为准、两侧共用同一判定函数」）：
+#    入池判据**不再写在本文件**。此前本节与企微推送器 `open_pool_reminder.py` 各持一份判据，
+#    2026-09-02 实测两侧对同一份队列真身算出 25 vs 35，本班再测 48 vs 72——**同一个概念、两套实现、
+#    无人对账，漂移随时间放大**（「第二份真身」形态）。裁定原文：「对齐不是抄一遍判据，是让两侧
+#    共用同一个判定函数，否则今天修完明天照样漂」，且不取「各保留、只加对账告警」。
+#    ⇒ 权威实现 ＝ `5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/open_pool.py::judge_open_pool_row`；
+#      本节经子进程调 `工具-可Open池.py --json-b64`（CLI 薄壳，判据不在其中）取 `@@POOL64@@` 一行 JSON，
+#      推送器直接 import 同一模块。判据原文（[S:open]／[S:partial] 默认入池、[A: 排除、🛑 起首排除、
+#      partial 自陈在办单列 poolEx、缺字段单列 poolDeg）与逐条理由见该模块 docstring，本处不复述。
+#    🔑 脚本路径取 `$PSScriptRoot`（本文件所在 checkout），数据根仍取 `$root`：生产两者同为
+#      C:\Dev\zhuopin-ai；单测从 worktree 跑本文件时可用 worktree 的代码算主 checkout 的数据。
+# 🔴 fail-loud：python 不在位／脚本不在位／未输出 @@POOL64@@／任一队列文件读取失败 ⇒ 本节判「无法核验」——
+#    同时把 q1 标 ok=false（JS 的可 Open 池卡与徽标只认 `src.q1`，改 JS 属 Cowork 侧、本文件够不着；
+#    宁可任务看板一并显示「无法核验」，也不让池渲染成绿色 0——那正是本文件反复记录的「看起来最健康
+#    的时候恰是坏掉的时候」）。另登记独立键 `src.pool`，供 JS 日后改 `srcBad(d,['q1','pool'])` 后收窄。
 # 🔴 2026-08-31：$qkSkip 记录**切列失败被跳过的 §一 行**。原为裸 continue：这类行不进任何桶、
 #    不进可 Open 池、也不进 poolDeg，等于从全页彻底消失 —— 行还在文件里，页面上却当它不存在。
 $pool=@(); $poolEx=@(); $poolDeg=@(); $qkSkip=@()
@@ -213,14 +219,41 @@ foreach($rq in $qk){ $cq=Split-Row $rq; if($null -eq $cq -or $cq.Count -lt 8){ $
   $scq=$cq[$nq-3]; $mfq=[regex]::Match($scq,'^[\s\*]*\[S:(\w+)(?:=[\d-]+)?\]\[D:(.)\]')
   if($mfq.Success){ $svq=$mfq.Groups[1].Value; $dvq=$mfq.Groups[2].Value; $rq2=($scq.Substring($mfq.Index+$mfq.Length) -replace '^[\s\*]+','')
     if(@('open','partial','hold') -contains $svq -and -not $rq2.StartsWith('🛑')){ if($dvq -eq '机'){ $wipMeta++ } elseif($dvq -eq '业'){ $wipBiz++ } }
-    $LR=Get-LeadSeg $rq2; $tk=Get-LeadSeg $cq[1]; if($tk.Length -gt 78){ $tk=$tk.Substring(0,78)+[char]0x2026 }
-    if(@('open','partial') -contains $svq -and -not $rq2.StartsWith('🛑') -and $scq -notmatch '\[A:'){
-      if($svq -eq 'partial' -and $LR -match '在办|在建|进行中|建造中'){ $poolEx+=,([ordered]@{no=$cq[0];dom=$dvq;why='partial 但开头片段自陈在办';lead=(Get-LeadSeg $rq2)}) }
-      else { $fl=''; if($svq -eq 'partial' -and $LR -match '^\s*✅'){ $fl='字段=partial 但首标记写 ✅（以字段为准，#308 决策点 1）' }
-        $oo=$null; if($op.ContainsKey($cq[0])){ $oo=$op[$cq[0]] }
-        $pool+=,([ordered]@{no=$cq[0];dom=$dvq;st=$svq;task=$tk;flag=$fl;op=$oo}) } } }
-  else { $poolDeg+=,$cq[0] }
+  }
 }
+# 可 Open 池：调权威判定函数（见本节顶部注释）。`op`（opener 出处）由上方本文件的扫描器附上，
+# 判定层不管 opener——两件事分属两处，各自只有一份实现。
+$poolWhy=''; $pyExe=''
+foreach($cand in @('python','py')){ if($pyExe -eq ''){ try{ $pyExe=(Get-Command $cand -ErrorAction Stop).Source }catch{} } }
+if($pyExe -eq ''){ $poolWhy='python 不在 PATH（可 Open 池判定层 工具-可Open池.py 无法运行）' }
+$poolPy=Join-Path $PSScriptRoot '工具-可Open池.py'
+if($poolWhy -eq '' -and -not (Test-Path -LiteralPath $poolPy)){ $poolWhy='脚本不在位：'+$poolPy }
+if($poolWhy -eq '' -and -not $rootOk){ $poolWhy='仓库根不存在：'+$root }
+if($poolWhy -eq ''){
+  # stdout 契约＝一行 `@@POOL64@@` + base64(UTF-8 JSON)，**纯 ASCII**：子进程 stdout 的解码走
+  # [Console]::OutputEncoding，在无控制台宿主（Windows-MCP）里不可控，中文 `机／业` 若被按 GBK 解
+  # 就整卡分组失效且不报错；base64 把编码问题从通道上拿掉，不碰 [Console]。
+  try{ $pyArgs=@(); if($pyExe -like '*\py.exe'){ $pyArgs+='-3' }; $pyArgs+=@('-X','utf8',$poolPy,'--repo-root',$root,'--json-b64')
+    $pyOut=@(& $pyExe @pyArgs 2>&1 | ForEach-Object { "$_" }); $pyRc=$LASTEXITCODE
+  }catch{ $pyOut=@(); $pyRc=-1; $poolWhy='调用 python 异常：'+$_.Exception.Message }
+  if($poolWhy -eq ''){
+    $pl=@($pyOut | Where-Object { $_ -like '@@POOL64@@*' } | Select-Object -First 1)
+    if($pl.Count -eq 0){ $poolWhy='工具-可Open池.py 未输出 @@POOL64@@（exit '+$pyRc+'）：'+((@($pyOut | Select-Object -Last 3)) -join ' ／ ') }
+    else {
+      try{ $pj=[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($pl[0]).Substring(10))) | ConvertFrom-Json }catch{ $pj=$null; $poolWhy='@@POOL64@@ JSON 解析失败：'+$_.Exception.Message }
+      if($null -ne $pj){
+        $perr=@($pj.errors)
+        if($perr.Count -gt 0){ $poolWhy='队列文件读取失败（残缺结果不当作完整的池）：'+((@($perr | ForEach-Object { $_.file+' — '+$_.why })) -join '；') }
+        elseif($pyRc -ne 0){ $poolWhy='工具-可Open池.py exit '+$pyRc }
+        else {
+          foreach($pp in @($pj.pool)){ $oo=$null; $pno=[string]$pp.no; if($op.ContainsKey($pno)){ $oo=$op[$pno] }
+            $pool+=,([ordered]@{no=$pno;dom=[string]$pp.dom;st=[string]$pp.st;task=[string]$pp.task;flag=[string]$pp.flag;op=$oo}) }
+          foreach($pe in @($pj.poolEx)){ $poolEx+=,([ordered]@{no=[string]$pe.no;dom=[string]$pe.dom;why=[string]$pe.why;lead=[string]$pe.lead}) }
+          $poolDeg=@(@($pj.poolDeg) | ForEach-Object { [string]$_ })
+          foreach($sk in @($pj.skipped)){ $sks=[string]$sk; if($qkSkip -notcontains $sks){ $qkSkip+=,$sks } }
+        } } } } }
+if($poolWhy -eq ''){ Set-Src 'pool' $true '' } else { Set-Src 'pool' $false $poolWhy; $pool=@(); $poolEx=@(); $poolDeg=@()
+  if($src['q1'].ok){ Set-Src 'q1' $false ('可 Open 池判定层不可用 ⇒ 本卡连带判无法核验：'+$poolWhy) } }
 $rep=@(); $rd=Join-Path $root '1-转型规划\0-全景路线图'
 if(Test-Path -LiteralPath $rd){ $rep=@(Get-ChildItem -LiteralPath $rd -Filter '拆件巡逻报告-*.md' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 4 | ForEach-Object { $_.BaseName + ' ｜ ' + $_.LastWriteTime.ToString('MM-dd HH:mm') }); Set-Src 'rep' $true '' } else { Set-Src 'rep' $false '目录不存在：1-转型规划\0-全景路线图' }
 # ===== sweep 执行结果统计（队列 #232，2026-08-04 环境保障线）=====

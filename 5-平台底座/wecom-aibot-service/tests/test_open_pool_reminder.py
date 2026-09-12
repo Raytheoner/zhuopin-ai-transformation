@@ -1,6 +1,8 @@
 """open_pool_reminder.py 单测（队列 #312）。
 
-覆盖五类：①§一 `[S:open]` 行解析（含域字段/缺字段非静默降级）；②opener
+覆盖五类：①§一 可 Open 行解析（`[S:open]`＋`[S:partial]`，2026-09-02 裁定；
+判据权威在 `zhuopin_platform.shared_tools.open_pool`，本文件只测组装与告警，
+判据本身的用例在平台 `tests/test_open_pool.py`；含缺字段非静默降级）；②opener
 文件探测（词边界，同 #302 教训避免 `#22` 误命中 `#220`）；③指纹去重（池
 从 0 变非 0 / 新增行号触发，集合不变或缩小静默，消失后再现视为新）；
 ④提醒文案格式（自带下一步动作）；⑤`send_open_pool_reminder` 主通道/
@@ -48,8 +50,11 @@ SECTION_ONE_SAMPLE = """\
 |---|------|--------|-------------|----------|------|--------|------|
 | 82 | 真可开工·业务域 | 待领 | 输入 | 产出 | [S:open][D:业] 待领（P1，紧急） | — | 07-30 |
 | 98 | 真可开工·机制域 | 待领 | 输入 | 产出 | [S:open][D:机] 待领（P2） | — | 07-30 |
-| 315 | 域字段缺失仍算可开工 | 待领 | 输入 | 产出 | [S:open] 待领（域字段历史缺失） | — | 07-30 |
-| 172 | 在办中不算 | CC 平台 | 输入 | 产出 | [S:partial][D:机] 待领（三步已完成两步） | — | 07-30 |
+| 315 | 域字段缺失归 degraded（看板 poolDeg 口径） | 待领 | 输入 | 产出 | [S:open] 待领（域字段历史缺失） | — | 07-30 |
+| 172 | partial 尾巴待领也算可开工 | CC 平台 | 输入 | 产出 | [S:partial][D:机] 待领（三步已完成两步） | — | 07-30 |
+| 173 | partial 但自陈在办不算 | CC 平台 | 输入 | 产出 | [S:partial][D:机] 🔄 在办（三步已完成两步）。尾注 | — | 07-30 |
+| 174 | 状态列 🛑 起首不算 | 待领 | 输入 | 产出 | [S:open][D:机] 🛑 **排队中·暂非可动** | — | 07-30 |
+| 175 | 🛑 **排队中·暂非可动**（任务列 🛑 起首不算，#381 形态） | 待领 | 输入 | 产出 | [S:open][D:机] 待领 | — | 07-30 |
 | 224 | 受阻不算 | CC | 输入 | 产出 | [S:blocked][D:业] 待领（依赖签认） | — | 07-30 |
 | 129 | 定时触发不算 | CC | 输入 | 产出 | [S:timed=2026-08-25][D:机] 待领 | — | 07-30 |
 | 22 | 已完成不算 | CC | 输入 | 产出 | [S:done][D:机] ✅ 已完成 | — | 07-30 |
@@ -62,15 +67,32 @@ SECTION_ONE_SAMPLE = """\
 # ── 解析：§一 [S:open] 行 ──────────────────────────────────────────────────
 
 
-def test_parse_open_pool_only_status_open_rows_included():
+def test_parse_open_pool_open_and_partial_rows_included():
+    """2026-09-02 裁定 ⑴：`[S:partial]` 入池——尾巴本身就是可开工的活。"""
     rows = {r.row_id: r for r in parse_open_pool_rows(SECTION_ONE_SAMPLE)}
-    assert set(rows) == {"82", "98", "315"}
+    assert set(rows) == {"82", "98", "172"}
+    assert rows["172"].status == "partial"
+    assert rows["82"].status == "open"
 
 
-def test_parse_open_pool_partial_hold_blocked_timed_done_excluded():
+def test_parse_open_pool_hold_blocked_timed_done_excluded():
     rows = {r.row_id: r for r in parse_open_pool_rows(SECTION_ONE_SAMPLE)}
-    for excluded_id in ("172", "224", "129", "22"):
+    for excluded_id in ("224", "129", "22"):
         assert excluded_id not in rows
+
+
+def test_parse_open_pool_partial_self_declared_in_progress_excluded():
+    """看板判据：partial 且开头片段自陈「在办」⇒ 排除（看板单列 poolEx）。"""
+    assert "173" not in {r.row_id for r in parse_open_pool_rows(SECTION_ONE_SAMPLE)}
+
+
+def test_parse_open_pool_stop_marker_in_either_column_excluded():
+    """2026-09-02 裁定 ⑵：🛑 起首＝结构性不可动；认两列（OP-0911-N D-B 甲，
+    `#381` 形态：任务列 🛑、状态列不含）——推送器此前把 `#382`／`#448` 推成
+    「可开工」即此反向误报。"""
+    ids = {r.row_id for r in parse_open_pool_rows(SECTION_ONE_SAMPLE)}
+    assert "174" not in ids
+    assert "175" not in ids
 
 
 def test_parse_open_pool_domain_field_captured():
@@ -79,10 +101,17 @@ def test_parse_open_pool_domain_field_captured():
     assert rows["98"].domain == "机"
 
 
-def test_parse_open_pool_missing_domain_field_is_none_not_excluded():
-    rows = {r.row_id: r for r in parse_open_pool_rows(SECTION_ONE_SAMPLE)}
-    assert "315" in rows
-    assert rows["315"].domain is None
+def test_parse_open_pool_missing_domain_field_is_degraded_with_warning():
+    """缺 `[D:]` 归 degraded（看板 `$poolDeg` 口径：按域分组渲染的看板对域为
+    None 的行会计入 N 却渲染不出来），且非静默——发 RuntimeWarning。"""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rows = {r.row_id: r for r in parse_open_pool_rows(SECTION_ONE_SAMPLE)}
+    assert "315" not in rows
+    assert any(
+        issubclass(w.category, RuntimeWarning) and "#315" in str(w.message) and "缺 [D:" in str(w.message)
+        for w in caught
+    )
 
 
 def test_parse_open_pool_malformed_row_column_count_is_skipped():
@@ -408,11 +437,11 @@ def test_build_pool_items_marks_opener_path_when_referenced(tmp_path: Path):
     (opener_dir / "本周计划-2026-08-10.md").write_text("A7 处理 #82，复制即用。", encoding="utf-8")
 
     items = {i.row_id: i for i in build_pool_items(SECTION_ONE_SAMPLE, repo_root)}
-    assert set(items) == {"82", "98", "315"}
+    assert set(items) == {"82", "98", "172"}
     expected_rel = str(Path("1-转型规划") / "0-全景路线图" / "本周计划-2026-08-10.md")
     assert items["82"].opener_path == expected_rel
     assert items["98"].opener_path is None
-    assert items["315"].opener_path is None
+    assert items["172"].opener_path is None
 
 
 def test_build_pool_items_empty_pool_returns_empty_without_scanning(tmp_path: Path):
@@ -647,9 +676,9 @@ def test_business_file_open_rows_enter_pool(tmp_path: Path):
 def test_dual_files_merged_into_one_pool(tmp_path: Path):
     _write_dual_queue(tmp_path, SECTION_ONE_SAMPLE, _BUSINESS_SAMPLE)
     ids = {i.row_id for i in build_pool_items_from_repo(tmp_path)}
-    # 机制环境三条（82/98/315）＋ 业务场景一条（334）；另一条业务行是
-    # blocked，结构性排除。
-    assert ids == {"82", "98", "315", "334"}
+    # 机制环境三条（82/98/172）＋ 业务场景一条（334）；另一条业务行是
+    # blocked，结构性排除；315 缺 [D:] 归 degraded。
+    assert ids == {"82", "98", "172", "334"}
 
 
 def test_pool_items_carry_source_queue_file(tmp_path: Path):
@@ -670,13 +699,13 @@ def test_missing_one_queue_file_warns_and_keeps_the_other(tmp_path: Path):
         warnings.simplefilter("always")
         items = build_pool_items_from_repo(tmp_path)
     assert any(issubclass(w.category, RuntimeWarning) for w in caught)
-    assert {i.row_id for i in items} == {"82", "98", "315"}
+    assert {i.row_id for i in items} == {"82", "98", "172"}
 
 
 def test_concatenating_texts_would_silently_drop_second_section_one(tmp_path: Path):
     """锁死"逐份解析后合并"这个选择，不是"拼接文本后解析一次"。
 
-    _parse_table_rows 用 text.find(heading) 只取**第一个** `## 一、`
+    open_pool.section_one_text 用 text.find(heading) 只取**第一个** `## 一、`
     ⇒ 拼接后第二份的 §一 会被静默丢弃，症状与缺口一一模一样且更难发现。
     本用例把这个陷阱固化成断言，防止后来者"顺手简化"成拼接。
     """
