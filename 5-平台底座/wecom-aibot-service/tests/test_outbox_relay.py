@@ -348,24 +348,256 @@ def test_corrupt_line_is_skipped_and_alerted(tmp_path):
     assert path.read_text(encoding="utf-8").splitlines()[0] == "{坏行"
 
 
-def test_unreadable_outbox_alerts_every_round_and_is_never_read_as_empty(tmp_path):
-    """🔴 通路断了要**每轮都响**（它不属于"结构性、等人处理"那一类，
-    它是"东西现在坏了"），且绝不能被读成「没有待发」。"""
+def test_unreadable_outbox_is_never_read_as_empty(tmp_path):
+    """绝不能被读成「没有待发」——不论告警节流与否，扫描结果都必须诚实
+    报告「这份 outbox 本轮读不到」。"""
+    missing = tmp_path / "gone.jsonl"
+    conn, audit = _Conn(), _audit(tmp_path)
+
+    outcome = asyncio.run(relay_once(connector=conn, audit=audit, paths=[missing], mapping=MAPPING))
+
+    assert outcome.scanned == 0 and len(outcome.unreadable) == 1
+
+
+# ======================================== 决策点 9：读失败告警节流（`#556`）--
+
+
+def test_unreadable_scan_audit_fires_every_round_regardless_of_throttle(tmp_path):
+    """🔴 审计通道不受决策点 9 影响——`outbox_relay_scan_failed` 仍每轮都记
+    （怕漏不怕多），只有「活人告警」这一条通道被节流。"""
+    missing = tmp_path / "gone.jsonl"
+    conn, audit = _Conn(), _audit(tmp_path)
+    state: dict = {}
+
+    for _ in range(3):
+        asyncio.run(relay_once(
+            connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+            unreadable_state=state,
+        ))
+
+    assert _actions(audit).count("outbox_relay_scan_failed") == 3
+
+
+def test_unreadable_scan_alerts_immediately_on_first_transition(tmp_path):
+    """转入失败：不受阈值影响，立即响。"""
     missing = tmp_path / "gone.jsonl"
     conn, audit = _Conn(), _audit(tmp_path)
     alerts: list[str] = []
-    alerted: set = set()
 
-    for _ in range(2):
-        outcome = asyncio.run(relay_once(
-            connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
-            alert_send=alerts.append, alerted=alerted,
-        ))
+    outcome = asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state={},
+    ))
 
     assert outcome.scanned == 0 and len(outcome.unreadable) == 1
-    assert len(alerts) == 2
+    assert len(alerts) == 1
     assert "不等于" in alerts[0]
+    assert "outbox_relay_scan_unreadable_started" in _actions(audit)
+
+
+def test_unreadable_scan_does_not_realert_within_threshold(tmp_path):
+    """持续失败、未到复报点：不告警（但审计已由上一条用例钉死每轮照记）。"""
+    import datetime as dt
+
+    missing = tmp_path / "gone.jsonl"
+    conn, audit = _Conn(), _audit(tmp_path)
+    alerts: list[str] = []
+    state: dict = {}
+    t0 = dt.datetime(2026, 9, 12, 0, 0, tzinfo=dt.timezone.utc)
+
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=state, now=t0,
+    ))
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=state,
+        now=t0 + dt.timedelta(hours=5, minutes=59),
+    ))
+
+    assert len(alerts) == 1  # 只有首次转入那一次
     assert _actions(audit).count("outbox_relay_scan_failed") == 2
+
+
+def test_unreadable_scan_realerts_after_threshold_with_duration_in_text(tmp_path):
+    """到复报点：复报，文案含「已连续不可读 X 天 Y 小时」。"""
+    import datetime as dt
+
+    missing = tmp_path / "gone.jsonl"
+    conn, audit = _Conn(), _audit(tmp_path)
+    alerts: list[str] = []
+    state: dict = {}
+    t0 = dt.datetime(2026, 9, 12, 0, 0, tzinfo=dt.timezone.utc)
+
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=state, now=t0,
+    ))
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=state,
+        now=t0 + dt.timedelta(hours=6, seconds=1),
+    ))
+
+    assert len(alerts) == 2
+    assert "已连续不可读" in alerts[1]
+    assert "6 小时" in alerts[1] or "0 天 6 小时" in alerts[1]
+    assert "outbox_relay_scan_unreadable_persisting" in _actions(audit)
+
+
+def test_unreadable_scan_custom_threshold_is_respected(tmp_path):
+    """阈值可调（`WECOM_AIBOT_OUTBOX_UNREADABLE_REALERT_SECONDS`）——直接
+    传参验证，不依赖环境变量读取（那是 `run_aibot_service.py` 的活）。"""
+    import datetime as dt
+
+    missing = tmp_path / "gone.jsonl"
+    conn, audit = _Conn(), _audit(tmp_path)
+    alerts: list[str] = []
+    state: dict = {}
+    t0 = dt.datetime(2026, 9, 12, 0, 0, tzinfo=dt.timezone.utc)
+
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=state, now=t0,
+        unreadable_realert_seconds=60,
+    ))
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=state,
+        now=t0 + dt.timedelta(seconds=61), unreadable_realert_seconds=60,
+    ))
+
+    assert len(alerts) == 2
+
+
+def test_unreadable_scan_recovers_and_clears_state(tmp_path):
+    """恢复：告警一次并**删除**该路径的状态条目——下次再失败按「转入」
+    重新起算，不接着上一轮的复报节奏。"""
+    path = tmp_path / "sc2.jsonl"
+    conn, audit = _Conn(), _audit(tmp_path)
+    alerts: list[str] = []
+    state: dict = {}
+
+    # 第一轮：文件不存在，转入失败。
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[path], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=state,
+    ))
+    assert str(path) in state
+
+    # 第二轮：文件出现了，读成功 ⇒ 恢复。
+    _write_outbox(path, [_record()])
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[path], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=state,
+    ))
+
+    assert state == {}
+    assert len(alerts) == 2
+    assert "已恢复" in alerts[1]
+    assert "outbox_relay_scan_recovered" in _actions(audit)
+
+
+def test_unreadable_scan_recovery_is_silent_when_path_never_failed(tmp_path):
+    """从未失败过的路径读成功——没有多余的「恢复」告警。"""
+    path = _write_outbox(tmp_path / "sc2.jsonl", [_record()])
+    conn, audit = _Conn(), _audit(tmp_path)
+    alerts: list[str] = []
+
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[path], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state={},
+    ))
+
+    assert "outbox_relay_scan_recovered" not in _actions(audit)
+    assert not any("已恢复" in a for a in alerts)
+
+
+def test_unreadable_state_round_trips_through_disk(tmp_path):
+    from aibot_service.outbox_relay import load_unreadable_state, save_unreadable_state
+
+    path = tmp_path / "sub" / "outbox_relay_unreadable_state.json"
+    state = {"a.jsonl": {"first_failed_at": "2026-09-12T00:00:00+00:00",
+                          "last_alert_at": "2026-09-12T00:00:00+00:00"}}
+
+    save_unreadable_state(path, state)
+
+    assert load_unreadable_state(path) == state
+
+
+def test_unreadable_state_missing_or_corrupt_file_falls_back_to_empty(tmp_path):
+    from aibot_service.outbox_relay import load_unreadable_state
+
+    assert load_unreadable_state(tmp_path / "never-existed.json") == {}
+
+    corrupt = tmp_path / "corrupt.json"
+    corrupt.write_text("{not json", encoding="utf-8")
+    assert load_unreadable_state(corrupt) == {}
+
+    not_a_dict = tmp_path / "list.json"
+    not_a_dict.write_text("[1, 2, 3]", encoding="utf-8")
+    assert load_unreadable_state(not_a_dict) == {}
+
+
+def test_list_persistently_unreadable_is_a_pure_function_over_the_state_dict():
+    """决策点 9.3（可见化）：`list_persistently_unreadable` 只读状态字典、不
+    做任何 I/O——给未来接进值周巡检/sweep 的调用方一个可独立测试的判定。
+    范式同队列 `#312` 陈化催办：按状态文件里的时间戳判「多久没好」。"""
+    import datetime as dt
+
+    from aibot_service.outbox_relay import list_persistently_unreadable
+
+    now = dt.datetime(2026, 9, 12, 12, 0, tzinfo=dt.timezone.utc)
+    state = {
+        "old.jsonl": {"first_failed_at": (now - dt.timedelta(hours=30)).isoformat()},
+        "recent.jsonl": {"first_failed_at": (now - dt.timedelta(hours=2)).isoformat()},
+        "malformed.jsonl": {"first_failed_at": "not-a-date"},
+        "not-a-dict": "oops",
+    }
+
+    result = list_persistently_unreadable(state, now, threshold_seconds=86400)
+
+    assert [key for key, _, _ in result] == ["old.jsonl"]
+    assert result[0][2] == pytest.approx(30.0, abs=0.01)
+
+
+def test_unreadable_state_survives_process_restart_simulation(tmp_path):
+    """🔴 本条是决策点 9 要修的核心缺陷本体：跨进程重启持久化。
+
+    模拟真实场景——服务起来、读失败、把状态落盘（`save_unreadable_state`）；
+    进程"重启"（本测试里就是丢掉内存里的 dict，从磁盘重新 `load_unreadable_
+    state`）；重启后立刻又扫到同一个失败，**不得**把它重新判成"首次转入"
+    再响一次（那正是 11 天里 20 余次重启从未让节流生效的根因）。
+    """
+    import datetime as dt
+
+    from aibot_service.outbox_relay import load_unreadable_state, save_unreadable_state
+
+    missing = tmp_path / "gone.jsonl"
+    state_path = tmp_path / "unreadable_state.json"
+    conn, audit = _Conn(), _audit(tmp_path)
+    alerts: list[str] = []
+    t0 = dt.datetime(2026, 9, 12, 0, 0, tzinfo=dt.timezone.utc)
+
+    # 第一次"进程生命周期"：转入失败，落盘。
+    state = {}
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=state, now=t0,
+    ))
+    save_unreadable_state(state_path, state)
+    assert len(alerts) == 1
+
+    # "重启"：内存状态丢弃，从磁盘重新加载——10 分钟后立刻再扫一次。
+    reloaded_state = load_unreadable_state(state_path)
+    asyncio.run(relay_once(
+        connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+        alert_send=alerts.append, unreadable_state=reloaded_state,
+        now=t0 + dt.timedelta(minutes=10),
+    ))
+
+    assert len(alerts) == 1  # 没有因为"重启"而被误判成首次转入、再响一次
+    assert _actions(audit).count("outbox_relay_scan_failed") == 2  # 审计仍每轮照记
 
 
 def test_one_unreadable_outbox_does_not_block_the_others(tmp_path):
@@ -497,6 +729,22 @@ def test_relay_source_contains_no_chatid_literal_and_no_scenario_branch():
         assert forbidden not in source, f"出现按场景分支的判断：{forbidden}"
 
 
+def test_relay_source_contains_no_network_self_check():
+    """🔴 决策点 9.1 已否掉的方案：中继不得自己判断"现在是不是在 LAN 里"。
+
+    `#556` 2026-09-11 实测证伪了本机唯一可用的量具（`Test-NetConnection` 在
+    Clash/Mihomo TUN 环境下对任意 `IP:port` 恒真、零信息量）——复用它会把
+    「真正 off-LAN」读成「在网」，把一个本该响的真故障静默掉，比现在的
+    「太吵」更危险。此断言钉住"有人哪天悄悄加回来"这一类回归。
+    """
+    source = Path(outbox_relay.__file__).read_text(encoding="utf-8")
+    for forbidden in (
+        "import socket", "socket.socket(", "socket.create_connection",
+        "Test-NetConnection", "TcpTestSucceeded", "subprocess.run",
+    ):
+        assert forbidden not in source, f"中继里出现了网络自检代码：{forbidden}"
+
+
 # ==================================================== 常驻任务：循环与取消 --
 
 
@@ -518,6 +766,44 @@ def test_relay_loop_runs_immediately_then_sleeps(tmp_path):
 
     assert len(conn.sent) == 1
     assert sleeps == [42]
+
+
+def test_relay_loop_persists_unreadable_state_across_rounds_and_restarts(tmp_path):
+    """`run_outbox_relay` 是真正落盘持久化发生的地方——`relay_once` 本身不
+    碰磁盘。第二轮（模拟"重启后又跑了一轮"）从磁盘重新加载状态，不应该
+    把仍在失败的路径重新判成"首次转入"再告警一次。"""
+    missing = tmp_path / "gone.jsonl"
+    state_path = tmp_path / "state.json"
+    conn, audit = _Conn(), _audit(tmp_path)
+    alerts: list[str] = []
+    rounds = {"n": 0}
+
+    async def _fake_sleep(seconds):
+        rounds["n"] += 1
+        if rounds["n"] >= 1:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run_outbox_relay(
+            connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+            interval_seconds=1, _sleep=_fake_sleep, alert_send=alerts.append,
+            unreadable_state_path=state_path,
+        ))
+
+    assert len(alerts) == 1
+    saved = outbox_relay.load_unreadable_state(state_path)
+    assert str(missing) in saved
+
+    # "重启"：新的一次 run_outbox_relay 调用，从磁盘加载已有状态。
+    rounds["n"] = 0
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run_outbox_relay(
+            connector=conn, audit=audit, paths=[missing], mapping=MAPPING,
+            interval_seconds=1, _sleep=_fake_sleep, alert_send=alerts.append,
+            unreadable_state_path=state_path,
+        ))
+
+    assert len(alerts) == 1  # 没有因"重启"重新判成首次转入
 
 
 def test_relay_loop_survives_a_bad_round(tmp_path):

@@ -64,6 +64,42 @@ outbox 里不丢弃**，只在**首次**观测到时告警一次（同一 `(文�
 本进程内不重复告警，免得 5 分钟一条把告警做成噪音）。留着的代价是
 `pending()` 数字下不去——**而那正是要的**：它是这条记录还没被人处理的
 唯一外部信号。
+
+━━━ 决策点 9（队列 `#556`，2026-09-12 apply）：读失败告警改
+「转入即报 ＋ 持续态按周期复报」━━━
+
+上面那条「读不到每轮都告警」在本机的真实使用形态下把 `outbox_relay_
+scan_failed` 刷成了单日审计的 52%——本机是笔记本，`.51` → 笔记本那条
+文件通路只在本机身处那个 LAN 网段时才通，而本机**大部分时间不在**（居
+家/在途/接入访客网络皆是），⇒ 「读不到」从「罕见故障」变成了「常态下
+的默认状态」。
+
+**MUST NOT 的修法**：让中继自己判断「现在是不是在 LAN 里」——`#556`
+2026-09-11 当天实测证伪了本机唯一可用的那个 PowerShell 网络探测量具
+（在 Clash/Mihomo TUN 环境下对任意 `IP:port` 恒真，详见队列 `#556` 行内
+取证），复用它会把「真正 off-LAN」读成「在网」，比现在的「太吵」更危险。
+⇒ **中继不新增任何网络自检**（`test_relay_source_contains_no_network_self_check`
+钉住这一条——该断言逐字禁止出现那个探测量具的命令名字面量）。
+
+**采用的修法**：把决策点 7 已经在用的「结构性去重」模式扩展到读失败，
+去重键改成 `(路径,)`，且**必须跨进程重启持久化**（见下方
+`load_unreadable_state`/`save_unreadable_state`，落盘位置
+`reports/outbox_relay_unreadable_state.json`，同 `decision_reminder_ack.json`
+先例）——本次 11 天里服务因断线重连/笔记本休眠反复重启了 20 余次，若
+去重状态只存在内存里，每次重启都会把「已经报过一次了」的记忆清零，
+等于去重从未生效。
+
+| 场景 | 动作 |
+|---|---|
+| 该路径首次读失败 | **转入失败**：立即告警 ＋ 记 `first_failed_at=now,last_alert_at=now` ＋ 审计 `outbox_relay_scan_unreadable_started` |
+| 仍在失败，`now − last_alert_at < 阈值` | **不告警**，审计 `outbox_relay_scan_failed` 照每轮记 |
+| 仍在失败，`now − last_alert_at ≥ 阈值` | **复报**（文案含「已连续不可读 X 天 Y 小时」）＋ 更新 `last_alert_at` ＋ 审计 `outbox_relay_scan_unreadable_persisting` |
+| 此前在状态文件里、本轮读成功 | **恢复**：告警「已恢复」＋ **删除**该路径的状态条目 ＋ 审计 `outbox_relay_scan_recovered` |
+
+阈值默认 6 小时（`WECOM_AIBOT_OUTBOX_UNREADABLE_REALERT_SECONDS` 可调）。
+🔴 **决策点 6 原文不变**：`OutboxReadError` MUST NOT 被读成「没有待发」；
+一份读不到 MUST NOT 阻塞其余几份；审计每轮都记——本决策点只改「活人
+告警」这一条通道的节奏，不改这条红线。
 """
 from __future__ import annotations
 
@@ -107,6 +143,13 @@ DEFAULT_POLL_INTERVAL_SECONDS = 300  # 5 分钟，同 liveness 心跳量级
 OUTBOX_PATHS_ENV = "WECOM_AIBOT_OUTBOX_PATHS"
 #: 环境变量：轮询间隔秒数。
 POLL_INTERVAL_ENV = "WECOM_AIBOT_OUTBOX_POLL_SECONDS"
+#: 环境变量：决策点 9——读失败复报阈值秒数。首次转入永远立即响，不受本值
+#: 影响；此后同一路径持续失败，间隔满本值才复报一次。
+UNREADABLE_REALERT_SECONDS_ENV = "WECOM_AIBOT_OUTBOX_UNREADABLE_REALERT_SECONDS"
+#: 默认 6 小时——SC2 周报级、FI2 工作日日报级，6 小时复报在「一个工作日内
+#: 出现的真故障不会拖到第二天才响」与「持续 off-LAN 时告警量从 288/天压到
+#: ≤4/天」之间取中（见模块 docstring 决策点 9）。
+DEFAULT_UNREADABLE_REALERT_SECONDS = 21600
 
 # ---- 跳过原因（全部属「结构性不可投递」，全部告警，全部留在 outbox 里）----
 REASON_DEPARTMENT_MISSING = "department_missing"
@@ -380,6 +423,170 @@ def mark_delivered(entry: OutboxEntry, updated_record: dict) -> bool:
     return True
 
 
+# ------------------------------------------------------ 决策点 9：读失败节流 --
+
+
+def default_unreadable_state() -> dict:
+    return {}
+
+
+def load_unreadable_state(path: Path) -> dict:
+    """读不到/内容非法一律回落空状态——本状态文件本身读不到，不该反过来
+    把中继的启动挡住（同 `decision_reminder.load_state` 既有惯例）。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default_unreadable_state()
+    return data if isinstance(data, dict) else default_unreadable_state()
+
+
+def save_unreadable_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _parse_iso(value: object) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def format_unreadable_duration(delta) -> str:
+    """「已连续不可读 X 天 Y 小时」的 X/Y 部分——体检 CLI（决策点 9.3）与
+    活人告警文案共用同一段格式化，避免两处各写一份、慢慢措辞漂移。"""
+    total_seconds = max(int(delta.total_seconds()), 0)
+    days, rem = divmod(total_seconds, 86400)
+    hours, _ = divmod(rem, 3600)
+    if days > 0:
+        return f"{days} 天 {hours} 小时"
+    return f"{hours} 小时"
+
+
+async def _handle_unreadable_scan(
+    *,
+    path: Path,
+    exc: Exception,
+    stamp: datetime,
+    unreadable_state: dict,
+    realert_seconds: float,
+    alert_send: Optional[Callable[[str], None]],
+    audit: AuditLogger,
+    evaluator: str,
+) -> None:
+    """决策点 9：把「活人告警」这一条通道按「转入即报／持续态按周期复报」
+    节流。🔴 **审计 `outbox_relay_scan_failed` 已在调用方每轮记过，不受本
+    函数影响**——本函数只管这一条通道，且只在这条通道上区分三档。"""
+    key = str(path)
+    entry = unreadable_state.get(key)
+    now_iso = stamp.isoformat(timespec="seconds")
+
+    if not isinstance(entry, dict):
+        # 转入失败：不受阈值影响，立即响——真故障出现的那一刻不因本次
+        # 修法变慢。
+        unreadable_state[key] = {"first_failed_at": now_iso, "last_alert_at": now_iso}
+        _audit(
+            audit, evaluator, "outbox_relay_scan_unreadable_started",
+            {"path": key}, {"path": key}, str(exc),
+        )
+        if alert_send is not None:
+            try:
+                await asyncio.to_thread(
+                    alert_send,
+                    f"outbox 中继读不到 {path} —— 这**不等于**没有待发消息，"
+                    f"请确认 `.51` 到本机的文件通路是否还通。原因：{exc}",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        return
+
+    first_failed_at = _parse_iso(entry.get("first_failed_at")) or stamp
+    last_alert_at = _parse_iso(entry.get("last_alert_at")) or first_failed_at
+    if (stamp - last_alert_at).total_seconds() < realert_seconds:
+        # 持续失败，未到复报点：不告警。审计通道不受影响（怕漏不怕多）。
+        return
+
+    entry["last_alert_at"] = now_iso
+    unreadable_state[key] = entry
+    duration_text = format_unreadable_duration(stamp - first_failed_at)
+    _audit(
+        audit, evaluator, "outbox_relay_scan_unreadable_persisting",
+        {"path": key, "first_failed_at": entry.get("first_failed_at")}, {"path": key}, str(exc),
+    )
+    if alert_send is not None:
+        try:
+            await asyncio.to_thread(
+                alert_send,
+                f"outbox 中继读不到 {path} —— 已连续不可读 {duration_text}"
+                f"（首次失败于 {entry.get('first_failed_at')}）。这**不等于**没有待发消息，"
+                f"请确认 `.51` 到本机的文件通路是否还通。原因：{exc}",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _handle_recovered_scan(
+    *,
+    path: Path,
+    stamp: datetime,
+    unreadable_state: dict,
+    alert_send: Optional[Callable[[str], None]],
+    audit: AuditLogger,
+    evaluator: str,
+) -> None:
+    """该路径此前记在「读失败」状态里、本轮读成功了 ⇒ 恢复：告警一次并
+    **删除**该路径的状态条目（下次再失败即按「转入」重新起算，同设计
+    决策点 9.2 原文）。此前从未失败过的路径不在状态里，本函数静默返回。"""
+    key = str(path)
+    entry = unreadable_state.pop(key, None)
+    if not isinstance(entry, dict):
+        return
+    first_failed_at = _parse_iso(entry.get("first_failed_at")) or stamp
+    duration_text = format_unreadable_duration(stamp - first_failed_at)
+    _audit(
+        audit, evaluator, "outbox_relay_scan_recovered",
+        {"path": key, "first_failed_at": entry.get("first_failed_at")}, {"path": key},
+    )
+    if alert_send is not None:
+        try:
+            await asyncio.to_thread(
+                alert_send,
+                f"outbox 中继 {path} 已恢复可读——此前累计不可读 {duration_text}。",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def list_persistently_unreadable(
+    state: dict, now: datetime, threshold_seconds: float = 86400,
+) -> list[tuple[str, str, float]]:
+    """决策点 9.3（可见化）：`first_failed_at` 距今超过 `threshold_seconds`
+    的路径清单——**纯函数**，不做任何 I/O，供值周巡检/sweep 类调用方消费
+    （范式同队列 `#312` 陈化催办：用状态文件的时间戳判「多久没好」，不用
+    mtime／审计行数）。返回 `(路径, first_failed_at, 已不可读小时数)` 三元组
+    列表，按已不可读时长降序。
+
+    🔴 **本函数只暴露判定能力，不负责往任何巡检工具里接线**——`5-平台
+    底座/wecom-aibot-service/` 是本次变更包的触碰区，`0-学习与工具/工具-
+    落库sweep.py` 不在其内；把它接进 sweep 的第 N 类告警是另一件事，留给
+    专门的后续任务（已在队列 `#556` 回写里如实登记，不假装本次已接好）。
+    """
+    out: list[tuple[str, str, float]] = []
+    for key, entry in state.items():
+        if not isinstance(entry, dict):
+            continue
+        first_failed_at = _parse_iso(entry.get("first_failed_at"))
+        if first_failed_at is None:
+            continue
+        elapsed = (now - first_failed_at).total_seconds()
+        if elapsed >= threshold_seconds:
+            out.append((key, entry.get("first_failed_at"), elapsed / 3600))
+    out.sort(key=lambda item: item[2], reverse=True)
+    return out
+
+
 # ---------------------------------------------------------------------- 轮 --
 
 
@@ -431,6 +638,8 @@ async def relay_once(
     alert_send: Optional[Callable[[str], None]] = None,
     alerted: Optional[set] = None,
     now: Optional[datetime] = None,
+    unreadable_state: Optional[dict] = None,
+    unreadable_realert_seconds: float = DEFAULT_UNREADABLE_REALERT_SECONDS,
 ) -> RelayOutcome:
     """扫一遍全部 outbox，把待投递记录经 `connector` 发出去。
 
@@ -439,9 +648,16 @@ async def relay_once(
     的就是常驻服务已经握着的那一条连接，**本函数从不自己建连接**。
 
     每条记录彼此独立：一条失败/跳过不影响其余条，也不影响其余 outbox 文件。
+
+    `unreadable_state`（决策点 9，队列 `#556`）：**调用方按路径持有并跨轮
+    复用同一个 dict**（同 `alerted` 的既有惯例——本函数原地修改它，不返回
+    新副本）；不传时每次调用各自起一个空 dict，等价于"每次都当首次转入"。
+    真正的跨进程重启持久化由调用方负责落盘（见 `run_outbox_relay` 的
+    `unreadable_state_path`），本函数本身不做任何 I/O。
     """
     outcome = RelayOutcome()
     alerted = alerted if alerted is not None else set()
+    unreadable_state = unreadable_state if unreadable_state is not None else {}
     stamp = now or datetime.now(timezone.utc)
 
     for path in paths:
@@ -449,19 +665,25 @@ async def relay_once(
             pending, corrupt = iter_pending(path)
         except OutboxReadError as exc:
             outcome.unreadable.append((path, str(exc)))
+            # 🔴 读不到 ≠ 没有待发。审计每轮都记（怕漏不怕多）；「活人告警」
+            # 这一条通道按决策点 9 节流（转入即报、持续态按周期复报），见
+            # `_handle_unreadable_scan`。
             _audit(audit, evaluator, "outbox_relay_scan_failed", {}, {"path": str(path)}, str(exc))
-            # 🔴 读不到 ≠ 没有待发。这条告警不去重（它是"通路断了"，
-            # 每轮都该响，直到有人管）。
-            if alert_send is not None:
-                try:
-                    await asyncio.to_thread(
-                        alert_send,
-                        f"outbox 中继读不到 {path} —— 这**不等于**没有待发消息，"
-                        f"请确认 `.51` 到本机的文件通路是否还通。原因：{exc}",
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
+            await _handle_unreadable_scan(
+                path=path, exc=exc, stamp=stamp, unreadable_state=unreadable_state,
+                realert_seconds=unreadable_realert_seconds, alert_send=alert_send,
+                audit=audit, evaluator=evaluator,
+            )
             continue
+
+        # 该路径本轮读成功——若此前在「读失败」状态里挂着，即为「恢复」
+        # （决策点 9.2）。刻意放在 `iter_pending` 成功之后、处理具体记录之
+        # 前：读成功这件事本身与文件内容无关，恢复判定不该等到扫完全部
+        # 记录才做。
+        await _handle_recovered_scan(
+            path=path, stamp=stamp, unreadable_state=unreadable_state,
+            alert_send=alert_send, audit=audit, evaluator=evaluator,
+        )
 
         for index, raw in corrupt:
             entry = OutboxEntry(path=path, index=index, raw=raw, record={})
@@ -562,6 +784,8 @@ async def run_outbox_relay(
     alert_send: Optional[Callable[[str], None]] = None,
     on_round: Optional[Callable[[RelayOutcome], None]] = None,
     _sleep: Callable[[float], "asyncio.Future"] = asyncio.sleep,
+    unreadable_state_path: Optional[Path] = None,
+    unreadable_realert_seconds: float = DEFAULT_UNREADABLE_REALERT_SECONDS,
 ) -> None:
     """常驻后台任务：每 `interval_seconds` 扫一遍 outbox 并代发，直至被取消。
 
@@ -571,15 +795,28 @@ async def run_outbox_relay(
 
     ⚠️ **单轮异常一律吞掉并留痕**，绝不让中继的一次失败把常驻服务的主链路
     （收件归档／回执／转发）带下水——它是旁路。
+
+    `unreadable_state_path`（决策点 9，队列 `#556`）：提供时，进程起来时
+    先从盘上把「读失败节流」状态读进来、此后每轮结束都落盘一次——这是
+    「跨进程重启持久化」真正落地的地方（`relay_once` 本身不碰磁盘，只原地
+    改内存里的 dict）。不提供时（如测试）状态只存在本次调用的内存里，
+    行为等价于修复前「每次进程重启都从零开始」。
     """
     resolved_mapping = mapping if mapping is not None else load_department_group_chatid_mapping()
     alerted: set = set()
+    unreadable_state = (
+        load_unreadable_state(unreadable_state_path) if unreadable_state_path is not None else {}
+    )
     while True:
         try:
             outcome = await relay_once(
                 connector=connector, audit=audit, paths=paths, mapping=resolved_mapping,
                 evaluator=evaluator, alert_send=alert_send, alerted=alerted,
+                unreadable_state=unreadable_state,
+                unreadable_realert_seconds=unreadable_realert_seconds,
             )
+            if unreadable_state_path is not None:
+                save_unreadable_state(unreadable_state_path, unreadable_state)
             if on_round is not None:
                 on_round(outcome)
         except asyncio.CancelledError:

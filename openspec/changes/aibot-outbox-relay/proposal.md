@@ -101,3 +101,29 @@ Clash/Mihomo TUN 环境下恒真、不可信），改为**持久化的「转入�
 **没有发现漏发**——细节与命令见 `design.md` 决策点 9.4。`2026-W36`（本周，2026-09-11）
 是否已送达**本次未能确认**（本机 off-LAN，需下次回 LAN 核验），已如实登记进
 `design.md` §三 留步项 L5，**不得读成「本周也已确认」**。
+
+## 二次追补（2026-09-12，队列 `#556`，`OP-0912-C2`）：决策点 9 已 apply
+
+design 决策点 9 已由 Shao Peishen 2026-09-12 答 `1a` 签认（复报阈值 6 小时，按原案
+采纳），本次按原案落地。**改动范围**：`aibot_service/outbox_relay.py`（新增读失败
+节流状态机 ＋ 三个可区分审计事件 ＋ 跨进程重启持久化状态读写）、
+`aibot_service/repo_paths.py`（新增状态文件路径解析函数，同既有 `resolve_audit_
+path` 一套 `repo_root`）、`scripts/run_aibot_service.py`（接线新环境变量与状态
+路径）、`scripts/check_outbox_relay.py`（读不到时追加打印「已连续不可读多久」）；
+`connection.py`／`delivery.py`／`group_notify.py`／映射表／`sc2/` 一行未改。
+
+**回归**：服务 **847 passed / 1 skipped / 2 failed**（2 处失败——`test_ps1_orphan_
+cr_guard.py` 两条——与本次改动无关，纯 master `2882bfa` 同命令复跑逐条复现，零
+回归）／平台 **619 passed / 1 skipped**（零漂移）／openspec `validate --all
+--strict` **191 passed 0 failed**。`tests/test_outbox_relay.py` 新增 18 条用例
+（决策点 9 段），含跨进程重启模拟（不得复现「首次转入」告警）与源码层网络自检
+禁令断言。
+
+⚠️ **如实登记，与本包既有留步无关**：`design.md` §9.3「可见化」原文提到
+「体检 CLI／sweep／值周巡检三处对齐」——本次只做到**两处**（体检 CLI 已接、
+`list_persistently_unreadable()` 纯函数已交付并有单测）；**接进
+`0-学习与工具/工具-落库sweep.py` 的值周清单本次未做**（该文件不在本包触碰区
+`5-平台底座/wecom-aibot-service/` 内），见 `tasks.md` 9.8。
+
+**⇒ 本次未动 D3/D4（真实送达、`#394` 销号）、未动本包既有留步项 L1-L6，变更包
+仍暂不归档**（判据不变：姚祖怡在群里真的看到那条周报，不是 tasks 打满勾）。

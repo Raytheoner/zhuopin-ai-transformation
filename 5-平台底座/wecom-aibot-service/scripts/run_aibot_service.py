@@ -12,6 +12,10 @@
                                             JSONL 路径清单，`;` 或换行分隔、支持通配；
                                             **未配置即中继关闭**（会打印并记审计，不静默）
   WECOM_AIBOT_OUTBOX_POLL_SECONDS          可选（队列 #394），中继轮询间隔秒数，默认 300
+  WECOM_AIBOT_OUTBOX_UNREADABLE_REALERT_SECONDS
+                                            可选（队列 #556 决策点 9），outbox 读失败告警
+                                            复报阈值秒数，默认 21600（6 小时）；首次转入
+                                            永远立即响，不受本值影响
 
 队列 #126：本服务常驻的 checkout（如 `ops/wecom-service-home` worktree）与
 `WECOM_AIBOT_QUEUE_PATH` 实际指向的 checkout（通常是主工作区）可能不是同一
@@ -62,8 +66,10 @@ from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp
 from aibot_service.liveness import read_liveness, run_liveness_heartbeat  # noqa: E402
 from aibot_service.outbox_relay import (  # noqa: E402
     DEFAULT_POLL_INTERVAL_SECONDS,
+    DEFAULT_UNREADABLE_REALERT_SECONDS,
     OUTBOX_PATHS_ENV,
     POLL_INTERVAL_ENV,
+    UNREADABLE_REALERT_SECONDS_ENV,
     RelayOutcome,
     resolve_outbox_paths,
     run_outbox_relay,
@@ -73,6 +79,7 @@ from aibot_service.repo_paths import (  # noqa: E402
     DEFAULT_QUEUE_RELATIVE_PATH,
     resolve_audit_path,
     resolve_default_queue_anchor,
+    resolve_outbox_relay_unreadable_state_path,
     resolve_pending_queue_appends_path,
     resolve_pending_queue_lock_appends_path,
     resolve_repo_root,
@@ -117,6 +124,8 @@ async def _run_forever(
     liveness_path: Optional[Path] = None,
     outbox_paths: Optional[list[Path]] = None,
     outbox_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
+    outbox_unreadable_state_path: Optional[Path] = None,
+    outbox_unreadable_realert_seconds: float = DEFAULT_UNREADABLE_REALERT_SECONDS,
 ) -> None:
     # 必须在 connect() 之前读——建连会写新的审计事件，建连后再读会读到刚写
     # 入的"连接成功"事件本身，间隔恒为 0，判断不出真实中断时长。
@@ -178,6 +187,8 @@ async def _run_forever(
             interval_seconds=outbox_interval_seconds,
             alert_send=fallback_send,
             on_round=_print_relay_round,
+            unreadable_state_path=outbox_unreadable_state_path,
+            unreadable_realert_seconds=outbox_unreadable_realert_seconds,
         ))
     else:
         _audit_relay_lifecycle(
@@ -323,11 +334,24 @@ def main() -> None:
     outbox_interval_seconds = float(
         os.environ.get(POLL_INTERVAL_ENV, DEFAULT_POLL_INTERVAL_SECONDS)
     )
+    # 队列 #556 决策点 9：读失败节流状态——落盘位置与 audit_path 同一套
+    # resolved_repo_root 解析结果（统一落盘位置，同 pending_queue_appends_path
+    # 等既有惯例），环境变量留作显式指定/测试隔离用。
+    outbox_unreadable_state_path = Path(
+        os.environ.get(
+            "WECOM_AIBOT_OUTBOX_UNREADABLE_STATE_PATH",
+            resolve_outbox_relay_unreadable_state_path(resolved_repo_root),
+        )
+    )
+    outbox_unreadable_realert_seconds = float(
+        os.environ.get(UNREADABLE_REALERT_SECONDS_ENV, DEFAULT_UNREADABLE_REALERT_SECONDS)
+    )
 
     asyncio.run(
         _run_forever(
             connector, audit_path, audit, fatal_event, fallback_send, queue_path, liveness_path,
             outbox_paths, outbox_interval_seconds,
+            outbox_unreadable_state_path, outbox_unreadable_realert_seconds,
         )
     )
 

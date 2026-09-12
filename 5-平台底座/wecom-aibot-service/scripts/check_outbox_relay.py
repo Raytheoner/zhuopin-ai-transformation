@@ -26,17 +26,25 @@
 退出码：0 ＝ 全部 outbox 可读且没有结构性投不出去的记录；
         1 ＝ 有 outbox 读不到（🔴 通路问题，**不等于"没有待发"**）；
         2 ＝ 全部可读，但存在结构性投不出去的记录（配置/契约问题）。
+
+决策点 9（队列 `#556`，2026-09-12）：读不到时**追加打印**常驻服务那份
+读失败节流状态文件（`outbox_relay_unreadable_state.json`）里记的
+`first_failed_at`／距今时长——本脚本只读那份文件，**不写**它（写只发生
+在常驻服务的中继任务里），把「这不是今天才坏的」摆在体检输出里。退出码
+语义不因本决策点改变。
 """
 from __future__ import annotations
 
 import argparse
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 SERVICE_DIR = Path(__file__).resolve().parent.parent
+NAIVE_REPO_ROOT = SERVICE_DIR.parents[1]  # 5-平台底座/wecom-aibot-service -> 本 checkout 自身的根
 
 # —— 平台底座路径引导（队列 #345 收拢；唯一被允许的样板，实现见
 # `5-平台底座/zhuopin_platform/zhuopin_platform/bootstrap.py`）。必须放在本文件任何
@@ -57,9 +65,17 @@ from aibot_service.outbox_relay import (  # noqa: E402
     OUTBOX_PATHS_ENV,
     SKIP_EXPLANATIONS,
     OutboxReadError,
+    format_unreadable_duration,
     iter_pending,
+    load_unreadable_state,
     resolve_outbox_paths,
     resolve_target,
+)
+from aibot_service.repo_paths import (  # noqa: E402
+    DEFAULT_QUEUE_RELATIVE_PATH,
+    resolve_default_queue_anchor,
+    resolve_outbox_relay_unreadable_state_path,
+    resolve_repo_root,
 )
 
 
@@ -88,6 +104,18 @@ def main() -> None:
     unreadable = 0
     undeliverable = 0
 
+    # 决策点 9：与常驻服务同一套 repo_root 解析，读同一份状态文件（本脚本
+    # 只读，不写）；环境变量覆盖口同 `WECOM_AIBOT_AUDIT_PATH` 既有惯例。
+    queue_anchor = resolve_default_queue_anchor(NAIVE_REPO_ROOT, DEFAULT_QUEUE_RELATIVE_PATH)
+    resolved_repo_root = resolve_repo_root(queue_anchor, fallback=NAIVE_REPO_ROOT)
+    unreadable_state_path = Path(
+        os.environ.get(
+            "WECOM_AIBOT_OUTBOX_UNREADABLE_STATE_PATH",
+            resolve_outbox_relay_unreadable_state_path(resolved_repo_root),
+        )
+    )
+    unreadable_state = load_unreadable_state(unreadable_state_path)
+
     for path in paths:
         print(f"\n=== {path} ===")
         try:
@@ -96,6 +124,16 @@ def main() -> None:
             unreadable += 1
             print(f"  🔴 读不到：{exc}")
             print("     ⚠️ 读不到 **不等于** 没有待发消息——请先确认这条文件通路。")
+            entry = unreadable_state.get(str(path))
+            if isinstance(entry, dict) and entry.get("first_failed_at"):
+                first_failed_at = entry["first_failed_at"]
+                try:
+                    parsed = datetime.fromisoformat(first_failed_at)
+                    duration = format_unreadable_duration(datetime.now(timezone.utc) - parsed)
+                    print(f"     🔴 这不是今天才坏的：首次失败于 {first_failed_at}"
+                          f"（已连续不可读约 {duration}，据 {unreadable_state_path} 常驻服务侧记录）。")
+                except ValueError:
+                    print(f"     （状态文件记着首次失败于 {first_failed_at}，但时间格式无法解析）")
             continue
 
         for index, _raw in corrupt:

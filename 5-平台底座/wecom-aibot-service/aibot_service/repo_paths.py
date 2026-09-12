@@ -145,6 +145,12 @@ PATROL_DISPATCH_LOG_DIR_RELATIVE_PATH = (
 PATROL_CHARTER_RELATIVE_PATH = (
     Path("0-学习与工具") / "skills源码" / "huijian-chaijian-patrol" / "SKILL.md"
 )
+# 队列 #556（决策点 9）：outbox 中继「读失败告警节流」状态文件（按路径记
+# first_failed_at/last_alert_at，跨进程重启持久化），与 audit/pending 系列
+# 文件同一套 repo_root 解析、同一目录（见 outbox_relay.py 决策点 9 段）。
+OUTBOX_RELAY_UNREADABLE_STATE_RELATIVE_PATH = (
+    Path("5-平台底座") / "wecom-aibot-service" / "reports" / "outbox_relay_unreadable_state.json"
+)
 
 
 def resolve_default_queue_anchor(
@@ -284,3 +290,9 @@ def resolve_patrol_charter_path(repo_root: Path) -> Path:
     """队列 #382⑴bis：拆件巡逻章程正本（已迁入仓库，原文照搬）的统一
     落点，与 `resolve_audit_path` 同一套 `repo_root`。"""
     return repo_root / PATROL_CHARTER_RELATIVE_PATH
+
+
+def resolve_outbox_relay_unreadable_state_path(repo_root: Path) -> Path:
+    """队列 #556（决策点 9）：outbox 中继读失败节流状态文件的统一落点，
+    与 `resolve_audit_path` 同一套 `repo_root`。"""
+    return repo_root / OUTBOX_RELAY_UNREADABLE_STATE_RELATIVE_PATH
