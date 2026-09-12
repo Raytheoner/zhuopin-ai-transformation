@@ -6252,6 +6252,191 @@ def _check_aibot_audit_orphan_writes(repo_root: Path, log: list[str]) -> None:
 
 
 # ============================================================
+# 队列 §一 #556 ⑨3 残余（2026-09-13，OP-0913-A）：**第 18 类**常驻状态告警 ——
+# outbox → aibot 中继「持续不可读」可见化（读失败 ≠ 没有待发消息）
+# ============================================================
+#
+# **真实事故**：中继自 2026-08-31 起连续 11 天读不通 `\\192.168.100.51\C$\...
+# \sc2_group_outbox.jsonl`，而读不到的表象在下游**与「没有待发消息」完全同形**
+# ——`#394` 行内当初写下的担忧一字不差地兑现。决策点 9（`19e02c7`）已把中继
+# 侧改成「转入即报 ＋ 持续态按周期复报 ＋ 状态落盘」；design 9.3 要求**三处对齐
+# 同一份状态**：①活人告警（已接）②体检 CLI `check_outbox_relay.py`（已接）
+# ③值周巡检 sweep——**本类就是第 ③ 处**，`OP-0912-C2` 收工时如实登记未做。
+#
+# 🔴 **判据只此一份**（同族红线：`followup_gate` 模块文档「判据只此一份」）：
+#    正本＝`aibot_service/outbox_relay.py::list_persistently_unreadable(state,
+#    now, threshold_seconds)`（纯函数、无 I/O、已有单测钉住）。**本类只负责读
+#    状态文件、把 dict 交给那个纯函数、把结果排进值周清单**——不在这里另抄
+#    一份「距今多久算持续」的判定，否则就是第三个会漂的副本（`#535`／`#537`）。
+# 🔴 **用状态文件里的 `first_failed_at` 判「多久没好」，不用 mtime、不用审计
+#    行数**：mtime 会被任何一次写盘刷新；审计行数受重启与休眠影响（2026-09-13
+#    实测：进程休眠导致小时桶出现 0，用行数判会得出「已恢复」的假阳性）。
+# 🔴 **子进程调用、不进程内 import `aibot_service`**（本文件头部「零依赖」原则，
+#    同第 10/11/12/13 类）：`outbox_relay` 一 import 就连带 `delivery`／
+#    `department_group_chatid_mapping` 等 10 个模块进来，sweep 不该背这个依赖面。
+#    子进程 `-c` 只有五行、cwd＝服务目录（包可直接 import，同 `scripts/` 惯例）；
+#    起不来／超时 ⇒ 「判据不可用」单独告警，**不据此判为零命中**（同第 16 类）。
+# 🔴 **出口＝值周清单（本 log ＝ `reports/sweep-commit.log`）＋ 本文件既有的
+#    运维逃生通道 webhook（`WECOM_WEBHOOK_ENV_KEY`，`#282` 已把它从业务群切
+#    走）**；本类**不得**接任何业务部门群——`#73`／`#282` 教训：采购内部工作群
+#    累计收到 58 条机制告警，其中一条正文是 Python traceback。
+# 🔴 **只读、只告警**：不写中继的状态文件、不动 `outbox_relay.py` 的节流逻辑
+#    （决策点 9 已签认，动它要重签）、不给中继新增任何网络自检（design 9.1 已
+#    否掉：会复用被证伪的 `Test-NetConnection` 量具，真 off-LAN 时得到「在网」
+#    假阳性）、不影响本轮退出码；零命中也回显（同第 4/6/7/9/10/11/14/17 类）。
+OUTBOX_RELAY_SERVICE_DIR_REL = "5-平台底座/wecom-aibot-service"
+# 与 `aibot_service/repo_paths.py::OUTBOX_RELAY_UNREADABLE_STATE_RELATIVE_PATH`
+# 同一落点（那边是权威；这里只是零依赖前提下的字面副本，单测现场比对两者相等）。
+OUTBOX_RELAY_UNREADABLE_STATE_REL = "5-平台底座/wecom-aibot-service/reports/outbox_relay_unreadable_state.json"
+OUTBOX_RELAY_UNREADABLE_SWEEP_STATE_REL = "reports/sweep-outbox-relay-unreadable-state.json"
+OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL = "reports/sweep-outbox-relay-unreadable-unavailable-state.json"
+OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_KEY = "判据不可用"
+OUTBOX_RELAY_UNREADABLE_ALERT_INTERVAL_HOURS = 24.0
+# 派单件口径：`first_failed_at` 距今 > 24 小时才点名进值周清单——短于一天的读
+# 失败由中继自己的「转入即报／6 小时复报」告警覆盖，本类不重复它。
+OUTBOX_RELAY_UNREADABLE_WEEKLY_THRESHOLD_SECONDS = 24 * 3600
+OUTBOX_RELAY_JUDGE_TIMEOUT_SECONDS = 60
+# 子进程里跑的就是这五行——**没有任何判定逻辑**，只做「stdin 进、纯函数、stdout 出」。
+OUTBOX_RELAY_JUDGE_SNIPPET = (
+    "import json, sys\n"
+    "from datetime import datetime\n"
+    "from aibot_service.outbox_relay import list_persistently_unreadable\n"
+    "p = json.load(sys.stdin)\n"
+    "print(json.dumps([list(r) for r in list_persistently_unreadable("
+    "p['state'], datetime.fromisoformat(p['now']), p['threshold_seconds'])], ensure_ascii=False))\n"
+)
+
+
+def _outbox_relay_service_dir(repo_root: Path) -> Path:
+    """子进程的 cwd——单独成函数，供单测把它指向真实服务目录（夹具仓库里没有包）。"""
+    return repo_root / OUTBOX_RELAY_SERVICE_DIR_REL
+
+
+def _judge_outbox_relay_persistently_unreadable(
+    repo_root: Path, state: dict, now: datetime,
+) -> tuple[list[tuple[str, str, float]] | None, str]:
+    """把状态 dict 交给正本纯函数（子进程），返回 `(三元组列表, 原因)`；列表为
+    None ＝ 判据不可用（包起不来／超时／输出不是 JSON），原因给人看。"""
+    service_dir = _outbox_relay_service_dir(repo_root)
+    if not (service_dir / "aibot_service" / "outbox_relay.py").is_file():
+        return None, f"`{OUTBOX_RELAY_SERVICE_DIR_REL}/aibot_service/outbox_relay.py` 不存在"
+    payload = json.dumps(
+        {"state": state, "now": now.isoformat(),
+         "threshold_seconds": OUTBOX_RELAY_UNREADABLE_WEEKLY_THRESHOLD_SECONDS},
+        ensure_ascii=False,
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", OUTBOX_RELAY_JUDGE_SNIPPET],
+            cwd=service_dir, input=payload, capture_output=True, text=True, encoding="utf-8",
+            timeout=OUTBOX_RELAY_JUDGE_TIMEOUT_SECONDS,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"子进程未能跑完：{type(exc).__name__}: {exc}"
+    if result.returncode != 0:
+        tail = (result.stderr or "").strip().splitlines()[-1:] or ["（无 stderr）"]
+        return None, f"子进程退出码 {result.returncode}：{tail[0]}"
+    try:
+        rows = json.loads(result.stdout)
+        return [(str(r[0]), str(r[1]), float(r[2])) for r in rows], ""
+    except (json.JSONDecodeError, ValueError, TypeError, IndexError) as exc:
+        return None, f"子进程输出不是预期 JSON：{type(exc).__name__}: {exc}"
+
+
+def _format_unreadable_hours(hours: float) -> str:
+    days, rem = divmod(int(hours), 24)
+    return f"{days} 天 {rem} 小时" if days else f"{rem} 小时"
+
+
+def _render_outbox_relay_unreadable_alert(rows: list[tuple[str, str, float]]) -> str:
+    lines = "\n".join(
+        f"- `{path}`：自 {first_failed_at} 起持续不可读，已 {_format_unreadable_hours(hours)}"
+        for path, first_failed_at, hours in rows
+    )
+    return (
+        "📭 落库sweep：**outbox → aibot 中继持续不可读 > 24 小时**"
+        "（第 18 类常驻告警，队列 §一 `#556` ⑨3）\n"
+        f"{lines}\n"
+        "🔴 **读不到 ≠ 没有待发消息**——这段时间里 SC2／FI2 的待发周报可能一条都没出去。"
+        "排查：`python 5-平台底座/wecom-aibot-service/scripts/check_outbox_relay.py`"
+        "（体检 CLI 与本类读的是同一份状态文件），凭据／共享路径见 `#394` `#556` 行内取证；"
+        "🔴 涉 `.51` 侧动作 ⇒ 转 `zhuopin-lan-closeout`，sweep 与 Cowork 都不代办。"
+        "恢复后中继自动删状态条目，本类下一轮自动解除。"
+    )
+
+
+def _check_outbox_relay_unreadable_visibility(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
+    """第 18 类入口。只读、只告警、不写中继状态文件、不动中继逻辑、不影响本轮退出码。
+
+    `dry_run=True`：照样读状态文件并跑判据回显，但不写 sweep 状态文件、不推送——
+    供人实弹核判据用（同第 16 类）。
+    """
+    state_path = repo_root / OUTBOX_RELAY_UNREADABLE_STATE_REL
+    if not state_path.exists():
+        # 中继从未记录过读失败（或本机没部署服务）——这是「零命中」，不是「判据不可用」。
+        log.append(f"📭 第 18 类：中继状态文件不存在（`{OUTBOX_RELAY_UNREADABLE_STATE_REL}`），当前无持续不可读路径。")
+        rows: list[tuple[str, str, float]] | None = []
+        reason = ""
+        tracked = 0
+    else:
+        try:
+            raw = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raw = None
+            reason = f"状态文件读不出：{type(exc).__name__}: {exc}"
+        if raw is None or not isinstance(raw, dict):
+            rows, reason = None, (reason or "状态文件顶层不是 JSON object")
+            tracked = 0
+        else:
+            tracked = len(raw)
+            rows, reason = _judge_outbox_relay_persistently_unreadable(
+                repo_root, raw, datetime.now(timezone.utc),
+            )
+
+    if rows is None:
+        log.append(f"📭 第 18 类：⚠ **判据不可用**（{reason}）——**不据此判为「中继读得通」**。")
+        if dry_run:
+            return
+        _track_and_alert_standing_state(
+            repo_root, "中继不可读判据不可用", OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL,
+            {OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_KEY}, OUTBOX_RELAY_UNREADABLE_ALERT_INTERVAL_HOURS,
+            lambda _keys: ("📭 落库sweep：第 18 类**判据不可用**，本轮没有量到任何数——"
+                           f"{reason}\n⇒ 这不等于「中继读得通」，只等于「这一轮什么也没量」。"),
+            lambda _keys: "✅ 落库sweep：第 18 类判据已恢复可用。",
+            log,
+        )
+        return
+
+    if state_path.exists():
+        log.append(
+            f"📭 第 18 类：中继状态文件记 {tracked} 条读失败路径，其中 {len(rows)} 条已持续不可读"
+            f" > {OUTBOX_RELAY_UNREADABLE_WEEKLY_THRESHOLD_SECONDS // 3600} 小时。"
+        )
+    for path, first_failed_at, hours in rows[:3]:
+        log.append(f"    · `{path}`｜自 {first_failed_at}｜{_format_unreadable_hours(hours)}")
+    if dry_run:
+        log.append("    （dry-run：不写状态文件、不推送；下为真跑时会推的正文）")
+        if rows:
+            log.extend("    | " + ln for ln in _render_outbox_relay_unreadable_alert(rows).splitlines())
+        return
+
+    _track_and_alert_standing_state(
+        repo_root, "中继不可读判据不可用", OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL, set(),
+        OUTBOX_RELAY_UNREADABLE_ALERT_INTERVAL_HOURS,
+        lambda _keys: "", lambda _keys: "✅ 落库sweep：第 18 类判据已恢复可用。", log)
+    by_path = {path: (path, first_failed_at, hours) for path, first_failed_at, hours in rows}
+    _track_and_alert_standing_state(
+        repo_root, "中继持续不可读", OUTBOX_RELAY_UNREADABLE_SWEEP_STATE_REL, set(by_path),
+        OUTBOX_RELAY_UNREADABLE_ALERT_INTERVAL_HOURS,
+        lambda alert_keys: _render_outbox_relay_unreadable_alert([by_path[k] for k in sorted(alert_keys)]),
+        lambda resolved: ("✅ 落库sweep：以下 outbox 路径已恢复可读（中继已删其状态条目），第 18 类告警自动解除：\n"
+                          + "\n".join(f"- `{k}`" for k in sorted(resolved))),
+        log,
+    )
+
+
+# ============================================================
 # 队列 §一 #382⑵（2026-09-02，OP-0902-D）：第 10 类常驻状态告警——
 # 跟进信待发信盘点 + 交叉红标（原巡逻章程 `huijian-chaijian-patrol.
 # SKILL.md` §一.3「待发信盘点」判据下放）
@@ -7918,6 +8103,15 @@ def main() -> int:
         # args.dry_run` 块之外：`--dry-run` 也跑到（函数内只回显、不写状态、不推送），
         # 使「实弹核一次判据」不必真跑一轮；零命中也回显。
         _check_unmerged_branch_backlog(repo_root, log, dry_run=args.dry_run)
+
+        # 队列 §一 #556 ⑨3 残余（2026-09-13，OP-0913-A）：第 18 类常驻状态告警——
+        # outbox → aibot 中继「持续不可读 > 24 小时」可见化（读不到 ≠ 没有待发消息）。
+        # 同上十一类，检测对象是中继落盘的状态文件、与本轮是否有批次落库无关；
+        # 🔴 **只读、只告警、不写中继状态文件、不动中继节流逻辑、不给中继加任何
+        # 网络自检、不写队列、不影响退出码**；判据正本＝`outbox_relay.list_persistently_
+        # unreadable`（子进程调用，sweep 不另抄一份）。同第 16 类放在 `if not
+        # args.dry_run` 块之外：`--dry-run` 也跑到（只回显、不写状态、不推送）；零命中也回显。
+        _check_outbox_relay_unreadable_visibility(repo_root, log, dry_run=args.dry_run)
 
         # 队列 §一 #416 ⑶ D4（2026-09-07，OP-0907-AM）：孤儿升格 §四。
         # 🔴 **位置是判据的一部分**：排在本轮全部 git 操作（批次提交、台账
