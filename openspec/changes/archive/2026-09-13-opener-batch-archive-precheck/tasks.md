@@ -71,7 +71,7 @@
 
 - [x] 7.1 零回归：分支侧 7 份相关测试文件同命令跑全，失败集 ⊆ 纯 master `4fb9eab` 失败集（两条 `test_工具-共享文档编辑锁.py::ReleaseStructuralValidationTests::test_row_length_*` 在 master 同命令逐条复现；`test_工具-opener块lint.py`／`--digest` 两侧输出一致）。实测数见 §一 `#561` 追段。
 - [x] 7.2 队列回写：§一 `#561`（apply 母行）与 `#397` 追段；`#395`／`#396` 已在归档件内不动（历史记录不追改）。
-- [ ] 7.3 `/opsx:archive opener-batch-archive-precheck -y`——🟡 **关包属关行类动作，本泳道无权**（`#561` 行内「归档动作本身属 🟡，本棒只出建议不执行」）；留待分支 ff 入 master 后由看护者／总线执行。
+- [x] 7.3 `/opsx:archive opener-batch-archive-precheck -y`——🟩 **已执行（2026-09-13 03:3x 本地，Cowork 环境总线 `OP-0912-E`，Shao Peishen 当轮回「全按推荐」＝定夺 2a）**：分支 `claude/op0912z-p1-archive-precheck-apply` 已经六道守卫机器 ff 入 master `a6f75dc`（四 ref 一致），归档前置「产出已在 master」由此满足。🔴 **§8 三项刻意不勾**——它们是「不在本包范围」的如实登记，不是遗漏：8.1 属 `#396` 自己的活；8.2 已另立队列 §一 `#572`；8.3 建议登记 §四 交值周清扫。原文：🟡 **关包属关行类动作，本泳道无权**（`#561` 行内「归档动作本身属 🟡，本棒只出建议不执行」）；留待分支 ff 入 master 后由看护者／总线执行。
 
 ## 8. 不在本包范围（如实登记，非遗漏）
 
