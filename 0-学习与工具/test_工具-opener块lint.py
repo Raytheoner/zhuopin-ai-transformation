@@ -77,11 +77,14 @@ SENTINEL_LINE = (
     "🔴 收工以顶格一行 `OPENER_DONE` 收尾；命中 🟡/🔴 决策点则以 "
     "`OPENER_PARTIAL: 停在<档位>决策点——<在等什么>` 收尾（批处理器判成败双指标之一）。"
 )
-#: 心跳约定行（形态⑩，队列 §一 `#565`，2026-09-12）——子任务泳道块的「干净样本」自此
-#: 也必须带它，同 `SENTINEL_LINE` 那条注释的既有纪律：**共享夹具必须满足全部现行判据**。
+#: 心跳行（形态⑩，队列 §一 `#565`，2026-09-12）——子任务泳道块的「干净样本」自此还必须带它
+#: （同上条：共享夹具必须满足全部现行判据）。🔴 `OP-0912-F` 收紧判据后须是**完整形**：同一行
+#: 同现 `工具-泳道看护状态机.py heartbeat`、`--done` 与 `--batch`；对照棒的缩略形夹具
+#: （只有 `heartbeat`＋`--lane`）自此过不了 F10。
 HEARTBEAT_LINE = (
-    "🔴 心跳跑命令写 `heartbeat --lane <泳道标识> --text \"...\"`"
-    "（收工带 `--done --batch <批次>`）。"
+    "🔴 心跳一律跑命令写：开工 `python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane op0828y-demo "
+    "--text \"已开工\"`；收工 `python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane op0828y-demo "
+    "--done --batch B-0828_示例 --text \"产出落点：<落点>\"`。"
 )
 TITLE_LINE_COWORK = "[OP-0828-N]【Cowork】接力文件核对"
 
@@ -1183,26 +1186,34 @@ class 形态九_子任务泳道块缺收工哨兵(unittest.TestCase):
                         "骨架【CC · 子任务泳道】块缺收工哨兵行")
 
 
-class 形态十_子任务泳道块缺心跳约定(unittest.TestCase):
-    """⑩ 子任务泳道 opener 块缺心跳约定行 ⇒ 告警（队列 §一 `#565`，2026-09-12：看护批
-    `B-0911_机制收口` 5 条泳道全做完全 ff、心跳两小时零新增——同 F9 一样，「正文里写一句」
-    拦不住起草人漏写；本形态是生成器强制注入（`SUBTASK_HEARTBEAT_NOTE`）的机器守。"""
+class 形态十_子任务泳道缺心跳行(unittest.TestCase):
+    """队列 §一 `#565`（`OP-0912-B`，2026-09-12；`OP-0912-F` 同日收紧判据）。
 
-    _LANE_WITHOUT_HEARTBEAT = "\n".join([
+    🔑 **成因不是子任务不遵守，是它们从未收到过这句**：看护批 `B-0911_机制收口` 五条泳道
+    全做完、五条分支全 ff 进 master，`summary --batch` 却报「终态泳道 0 条」、
+    `reports/lane-heartbeat/` 两小时零文件——心跳命令此前只写在 SKILL.md 步骤 4 与看护件
+    §一「硬边界继承」，两处都只有看护者读；子任务拿到的 prompt ＝ opener 正文原样。且
+    SKILL.md 缩略形收工句漏 `--batch`，照做也进不了任何一批的账（`#536`）。修法主体在
+    生成器（`subtask_heartbeat_note` 强制注入），本形态是它的机器守。
+    """
+
+    _LANE_WITH = "\n".join([
         "### A1 · 示例泳道", "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#565` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            SENTINEL_LINE),
+            HEARTBEAT_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
         _md("[OP-0912-B]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
     ])
 
-    _LANE_WITH_HEARTBEAT = "\n".join([
+    #: 2026-09-11 `B-0911_机制收口` 看护件 §三 的真实现场形态：三条机器口径齐、唯独没有心跳。
+    _LANE_WITHOUT = "\n".join([
         "### A1 · 示例泳道", "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#565` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            HEARTBEAT_LINE, SENTINEL_LINE),
+            "🔴 并行上限 4，超出排下一波，错峰 ≥90 秒（构建环境瘦身第三轮方案 P4）。",
+            SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
         _md("[OP-0912-B]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
@@ -1216,12 +1227,35 @@ class 形态十_子任务泳道块缺心跳约定(unittest.TestCase):
             return {f.form for f in M.scan_single_file(p)}
 
     def test_反例_泳道块缺心跳行_命中F10(self):
-        """2026-09-12 看护批 `B-0911_机制收口` §三 的真实现场形态。"""
-        self.assertIn("F10", self._scan(self._LANE_WITHOUT_HEARTBEAT))
+        self.assertIn("F10", self._scan(self._LANE_WITHOUT))
 
     def test_正例_带心跳行_不命中任何形态(self):
         """🔴 验收条款「两侧都能关掉」：补上心跳行 ⇒ F10 消失，且不牵连出别的形态。"""
-        self.assertEqual(self._scan(self._LANE_WITH_HEARTBEAT), set())
+        self.assertEqual(self._scan(self._LANE_WITH), set())
+
+    def test_收工句缺batch不算(self):
+        """`--batch` 缺 ⇒ 终态泳道归属未知、`summary --batch` 照报 0——SKILL.md 缩略形正是这样漏的。"""
+        half = _md(TITLE_LINE_CC, SETTINGS_CC, "读 ① 队列 §一 `#565`。",
+                   "🔴 收工 `python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane x --done --text \"落点\"`。",
+                   SENTINEL_LINE)
+        forms = {f for f, _ in M.check_block(_only_block(half), is_subtask_lane=True)}
+        self.assertIn("F10", forms)
+
+    def test_只有开工句没有done不算(self):
+        half = _md(TITLE_LINE_CC, SETTINGS_CC, "读 ① 队列 §一 `#565`。",
+                   "🔴 开工 `python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane x --text \"已开工\"`，批次 --batch B-1_x。",
+                   SENTINEL_LINE)
+        forms = {f for f, _ in M.check_block(_only_block(half), is_subtask_lane=True)}
+        self.assertIn("F10", forms)
+
+    def test_对照棒缩略形夹具已过不了收紧后的判据(self):
+        """`OP-0912-F` 收紧的反向证据：对照棒（`6733cb4`）的干净夹具只有 `heartbeat`＋`--lane`，
+        没有工具子命令路径——按现判据它就是「子任务不知道该跑什么」的形态，必须红。"""
+        loose = _md(TITLE_LINE_CC, SETTINGS_CC, "读 ① 队列 §一 `#565`。",
+                    "🔴 心跳跑命令写 `heartbeat --lane <泳道标识> --text \"...\"`（收工带 `--done --batch <批次>`）。",
+                    SENTINEL_LINE)
+        forms = {f for f, _ in M.check_block(_only_block(loose), is_subtask_lane=True)}
+        self.assertIn("F10", forms)
 
     def test_非子任务泳道块不受约束(self):
         """收窄：没有 `## 三bis` 的普通派单件／【Cowork】块不判——它们不经批处理器的
@@ -1235,16 +1269,17 @@ class 形态十_子任务泳道块缺心跳约定(unittest.TestCase):
         """`## 三bis` 之后的块＝看护者（交互会话），不判 F10。"""
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "看护件.md"
-            p.write_text(self._LANE_WITHOUT_HEARTBEAT, encoding="utf-8")
+            p.write_text(self._LANE_WITHOUT, encoding="utf-8")
             findings = M.scan_single_file(p)
-            watcher_line = M._watcher_section_line(self._LANE_WITHOUT_HEARTBEAT)
+            watcher_line = M._watcher_section_line(self._LANE_WITHOUT)
             self.assertFalse(any(f.form == "F10" and f.line >= watcher_line for f in findings))
 
-    def test_明细指向生成器(self):
+    def test_明细指向生成器与看门狗(self):
         detail = dict(M.check_block(_only_block(_md(TITLE_LINE_CC, SETTINGS_CC, "读。")),
                                     is_subtask_lane=True))["F10"]
-        self.assertIn("heartbeat", detail)
         self.assertIn("工具-opener生成.py", detail)
+        self.assertIn("--batch", detail)
+        self.assertIn("check-heartbeat", detail)
 
     def test_生效日与明细分组均已登记(self):
         self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F10"], date(2026, 9, 12))
@@ -1262,7 +1297,7 @@ class 形态十_子任务泳道块缺心跳约定(unittest.TestCase):
         section = text[start:text.index("\n## ", start + 1)]
         block = M.iter_fenced_blocks(section)[0]
         self.assertTrue(any(M.HEARTBEAT_LINE_RE.search(ln) for ln in block.lines),
-                        "骨架【CC · 子任务泳道】块缺心跳约定行")
+                        "骨架【CC · 子任务泳道】块缺心跳行")
 
 
 if __name__ == "__main__":

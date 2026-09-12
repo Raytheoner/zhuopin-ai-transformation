@@ -31,6 +31,12 @@ status: 起草（2026-09-12 `OP-0912-B`，🟢 propose ＋ design 起草 ＋「�
 
 **推荐 (a)。默认项 ＝ (a)。已落地：`工具-opener生成.py` 未新增任何字段，`SUBTASK_HEARTBEAT_NOTE` 是与 `SUBTASK_PARALLEL_NOTE`／`SUBTASK_PUSH_NOTE` 同类的静态常量。**
 
+> 🟩 **修订（2026-09-12，`OP-0912-F`；Shao Peishen 2026-09-12 回 `2a`＝`OP-0912-E` 报告定夺 2(a)「全量移植第二棒」）：本决策点的取值由 (a) 占位符改为「第三条路」＝真值填充、但不经看护者手传。**
+> 成品心跳行的 `--lane`／`--batch` 由生成器**现取**：泳道标识＝`_lane_id()` 从 `--branch` 推出（＝【设置】行分支名去掉 `claude/`＝worktree 名），批次＝`_resolve_batch()` 从 `派出线` 字段现取 `B-MMDD_…`（或可选旗标 `--batch` 显式给），两者皆无 ⇒ fail-loud 不出件、不得静默留占位符（手段＝`0-学习与工具/工具-opener生成.py::subtask_heartbeat_note`／`_lane_id`／`_resolve_batch` 源码；`test_工具-opener生成.py::心跳尾句强制注入` 逐条单测）。
+> **改判理由**：当初否 (b) 的核心代价是「新增了一处两处必须人工保持一致」——**对本实现不成立**：两个取值都从 opener 自身已有字段推导，看护者调用 `工具-opener生成.py` 时**不多传一个参数**，没有第二处需要人手对齐；(b) 里设想的必填 `--lane-id` 从未落地，`--batch` 是可选旗标（缺失即走现取），故 §二 Non-Goal「不新增生成器必填字段」仍成立。同时 (a) 的代价「`--lane` 取值完全依赖子任务自己判断、机器不保证与矩阵一致」被消除。
+> 配套：lint 形态⑩由「同一行同现 `heartbeat` 与 `--lane`」收紧为「同一行同现 `工具-泳道看护状态机.py heartbeat`、`--done`、`--batch`」，生效日 2026-09-12 不变；生成器注入位置沿对照棒（并行→心跳→push→哨兵）；SKILL.md v2.3.1。
+> 🔴 **不追改已 ff 的提交**：`6733cb4`／`b64e442` 原文不动，本段即本包自述「视为回改需求、按正常 openspec 变更流程另开一版」的那一版落字，载体＝`claude/op0912f-heartbeat-realvalue-565`（第二棒 `8a1021f` 叠加到 master 的移植）。
+
 ---
 
 ### 决策点 2 · 心跳提醒行插入的位置

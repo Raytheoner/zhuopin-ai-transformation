@@ -48,10 +48,14 @@ P7① 查重只看得见**已落档**的号（`_scan_used_suffixes` 的射程自
 - `subtask_lane`：骨架【CC · 子任务泳道】变体——**不含** `set_session_title` 行
   （2026-09-05 队列 §一 `#487`／(甲) 拍板：源头不放，不指望子任务读懂例外句），
   收尾无条件追加 P4 两条默认口径（并行上限 4／错峰 ≥90 秒；只 push 分支不 ff）
-  ＋ **心跳约定一条**（队列 §一 `#565`，2026-09-12：看护批 `B-0911_机制收口` 5 条泳道
+  ＋ **心跳尾句一条**（队列 §一 `#565`，2026-09-12：看护批 `B-0911_机制收口` 5 条泳道
   全做完全 ff、心跳文件两小时零新增，根因＝心跳约定只写在看护件「硬边界继承」段
-  与 SKILL.md 步骤 4——两处都不是子任务会读到的 opener 正文；机器守＝
-  `工具-opener块lint.py` 形态⑩）
+  与 SKILL.md 步骤 4——两处都不是子任务会读到的 opener 正文；且 SKILL.md 的缩略形
+  收工句漏了 `--batch`，即便照做也进不了任何一批的账（`#536`）。🔴 **真值填充**
+  （`OP-0912-F`，2026-09-12 Shao Peishen 回 `2a`）：泳道标识＝worktree 名（由 `--branch`
+  拼出，与分支名去掉 `claude/` 前缀后相同），批次由 `--batch` 显式给或从 `派出线`
+  字段现取 `B-MMDD_…`，两者皆无 ⇒ fail-loud 不出件；机器守＝`工具-opener块lint.py`
+  形态⑩）
   ＋ **收工哨兵一条**（队列 §一 `#550`，2026-09-10：`OPENER_DONE`／`OPENER_PARTIAL` 是
   `工具-opener批处理执行v2.ps1` 判成败的双指标之一，此前正文一个字没提，四条泳道活全做了
   却全被判 `NO-SENTINEL`；机器守＝`工具-opener块lint.py` 形态⑨）。
@@ -262,21 +266,41 @@ SUBTASK_PUSH_NOTE = (
 #: 🔴 **修法必须落在这里（生成器强制注入），不能只改骨架文字**：同 `SUBTASK_SENTINEL_NOTE`
 #: 的教训——`#487` 证明「正文里写一句」拦不住起草人漏写，`#550` 证明连「起草人」都
 #: 没有的批处理场景压根不会自己冒出这一行；本行同理。机器守＝`工具-opener块lint.py` 形态⑩。
-#: 🔴 与骨架【CC · 子任务泳道】块对应行**逐字相同**（单测「骨架与生成器契约」比对）。
-#: 🔴 **`--lane` 取值不预先算好塞进来**：本包收窄到「调用侧」修复，不新增必填字段
-#: 去跟每份看护件的次序矩阵拉一致性——沿用 SKILL.md 步骤 4／看护件既有约定，`<泳道
-#: 标识>` 是留给执行者按队列行号自行填的字面占位（同 SKILL.md 里 `<批次>`／`<波次>`／
-#: `<泳道名>` 一样是模板占位，不是本工具的必填参数）。
-SUBTASK_HEARTBEAT_NOTE = (
-    "🔴 心跳跑命令写，不自己拼路径：开工 1 分钟内跑 "
-    "`python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane <泳道标识，"
-    "无更明确约定时用本任务队列行号，如 561> --text \"<一句话：在做什么>\"`，"
-    "每里程碑追加一行；收工带 `--done --batch <本批次名>`（🔴 `--batch` 不能漏——"
-    "`heartbeat --done` 不带它就不计入任何批次的 `summary`，已实测撞过 8 条历史泳道）；"
-    "不接受 `--repo-root`／`--heartbeat-file`，工具没有这两个参数；预计等待超过 10 分钟"
-    "须补写一行「仍在等 X，预计还要 N 分钟」"
-    "（`0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md` 步骤 4／5.6；队列 §一 `#565`）。"
+#: 🔴 与骨架【CC · 子任务泳道】块对应行**逐字相同**（占位符版，单测「骨架与生成器契约」
+#: 比对）；成品由 `subtask_heartbeat_note(lane, batch)` 填入真值。
+#: 🔴 **真值填充、但看护者不多传一个参数**（`OP-0912-F`，2026-09-12 Shao Peishen 回 `2a`＝
+#: design 决策点 1 改判「第三条路」）：对照棒（`6733cb4`）此处曾是字面占位「<泳道标识，
+#: 无更明确约定时用本任务队列行号>」，理由是 design 否 (b) 的核心代价「新增一处两处必须
+#: 人工保持一致」——但该代价对本实现不成立：泳道标识由 `_lane_id()` 从 `--branch` 推出
+#: （＝【设置】行分支名去 `claude/`＝worktree 名），批次由 `_resolve_batch()` 从 `派出线`
+#: 现取 `B-MMDD_…`（或 `--batch` 显式给），**没有第二处需要人手对齐**；两者皆无 ⇒
+#: fail-loud 不出件，不得静默留占位符（那正是「归属未知」的源头）。
+#: 🔴 心跳工具在 worktree 内**可达**且落主工作区（2026-09-12 于泳道 worktree 实测：
+#: `heartbeat` 写到 `<主工作区>/reports/lane-heartbeat/<lane>.md`，路径由
+#: `REPO_ROOT`＝`git rev-parse --git-common-dir` 父目录解析）⇒ `#565` ④ 的反向方案
+#: （`summary` 从收工报告结构化字段自动闭环）**不需要**，固定尾句即可闭合。
+SUBTASK_HEARTBEAT_NOTE_TEMPLATE = (
+    "🔴 心跳一律跑命令写、不自己拼路径：开工 1 分钟内 "
+    "`python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane {lane} --text \"已开工\"`；"
+    "每里程碑追加一行（等待 >10 分钟须补写「仍在等 X，预计还要 N 分钟」）；收工 "
+    "`python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane {lane} --done --batch {batch} "
+    "--text \"产出落点：<落点>\"`——不带 `--batch` 该泳道不计入任何批"
+    "（`heartbeat --done` 不带它就不计入任何批次的 `summary`，已实测撞过 8 条历史泳道）；"
+    "它没有 `--repo-root`／`--heartbeat-file` 两个参数，别给（队列 §一 `#565`）。"
 )
+#: 骨架正本块里的占位符——正本教的是形态，真值由生成器填。
+SUBTASK_HEARTBEAT_LANE_PLACEHOLDER = "<泳道标识＝worktree名>"
+SUBTASK_HEARTBEAT_BATCH_PLACEHOLDER = "<批次>"
+#: 从 `派出线` 字段现取批次：`B-MMDD_…`（看护件既有写法两种——「批 B-0912_心跳与称谓」
+#: 或直接「业务总线 B-0905_B」——都能命中；遇全角／半角括号、空白、竖线即止）。
+BATCH_IN_LINE_RE = re.compile(r"B-\d{4}_[^\s（）()｜|]+")
+
+
+def subtask_heartbeat_note(lane: str, batch: str) -> str:
+    """心跳尾句成品：`SUBTASK_HEARTBEAT_NOTE_TEMPLATE` 填入真实泳道标识与批次。"""
+    return SUBTASK_HEARTBEAT_NOTE_TEMPLATE.format(lane=lane, batch=batch)
+
+
 #: 收工哨兵（队列 §一 `#550`，2026-09-10）——`工具-opener批处理执行v2.ps1` 判成败靠
 #: `claude` 退出码 ＋ 顶格一行 `OPENER_DONE`／`OPENER_PARTIAL` 两个指标，缺哨兵即判
 #: `NO-SENTINEL` 并中断本泳道。2026-09-10 四条泳道（`507`／`529`／`544`／`k2-externalize`）
@@ -566,7 +590,7 @@ def _mmdd_and_suffix(op_id: str) -> tuple[str, str]:
 
 #: 十项必填字段 ＋ 五项可选补充字段——`OpenerSpec.__init__` 的关键字参数名单一可信源。
 _OPENER_SPEC_FIELDS = REQUIRED_FIELDS + (
-    "claude_section", "do_items", "dont_items", "title_call_override", "variant",
+    "claude_section", "do_items", "dont_items", "title_call_override", "variant", "batch",
 )
 
 
@@ -584,7 +608,7 @@ class OpenerSpec:
         workspace: str, session: str, line: str, input_pointer: str, task_class: str,
         claude_section: str = "", do_items: list[str] | None = None,
         dont_items: list[str] | None = None, title_call_override: str | None = None,
-        variant: str = "standard",
+        variant: str = "standard", batch: str | None = None,
     ) -> None:
         self.op_id, self.env, self.short_name = op_id, env, short_name
         self.branch, self.worktree, self.workspace = branch, worktree, workspace
@@ -595,6 +619,7 @@ class OpenerSpec:
         self.dont_items = list(dont_items) if dont_items else ["…"]
         self.title_call_override = title_call_override
         self.variant = variant
+        self.batch = batch
 
 
 def _require_all_fields(values: dict) -> None:
@@ -627,6 +652,11 @@ def _validate_spec(spec: OpenerSpec) -> None:
             f"短名须 ≤12 字（guardian 变体首行拼「看护」+短名，须一并 ≤12），"
             f"收到 {label_len} 字：{spec.short_name!r}"
         )
+    if spec.batch and spec.variant != "subtask_lane":
+        # 同 `_reject_silently_dropped_body_params` 的判据：参数被接受却不生效比被拒更危险。
+        raise OpenerGenError(
+            f"`--batch` 只对 `--variant subtask_lane` 生效（拼进心跳尾句），当前 "
+            f"variant={spec.variant!r} 的成品不含它 ⇒ 会被静默丢弃，故在此拒绝（队列 §一 `#565`）。")
     if not CHECKBOX_RE.match(spec.worktree):
         raise OpenerGenError(
             "worktree 字段须以勾选符号 ☑／☐ 开头，不是裸名字"
@@ -730,6 +760,37 @@ def _title_call_line_guardian(op_id: str, short_name: str) -> str:
         "源头不放，不再指望子任务的文本例外句被真正遵守），本条对你适用，正常执行即可，"
         "标题设定后不要再被子任务顶掉，你自己不属于「跳过本行」的例外范围。"
     )
+
+
+def _lane_id(spec: OpenerSpec) -> str:
+    """心跳的泳道标识＝worktree 名＝分支名去掉 `claude/`（与 `_settings_line` 同一拼法）。
+
+    🔴 从 opener 自身字段推导、不另开参数：看护者跑 `check-heartbeat --heartbeat-file
+    reports/lane-heartbeat/<lane>.md` 时只需看【设置】行就能算出同一个名字。既有心跳件
+    `op0910m-544-heartbeat-batch.md` 即此形态。
+    """
+    mmdd, suffix = _mmdd_and_suffix(spec.op_id)
+    return f"op{mmdd}{suffix.lower()}-{spec.branch}"
+
+
+def _resolve_batch(spec: OpenerSpec) -> str:
+    """心跳收工句的 `--batch`：显式 `--batch` 优先，否则从 `派出线` 现取 `B-MMDD_…`。
+
+    🔴 两者皆无 ⇒ fail-loud 不出件（队列 §一 `#565`）：不带 `--batch` 的 `heartbeat --done`
+    会让该泳道「归属未知」，`summary --batch` 照报 0 终态——那正是本行的现象本身，
+    生成器不能替下游把这个洞留着。单棒（无批次）请显式传派出线 OP 号作批次。
+    """
+    if spec.batch:
+        return spec.batch.strip()
+    m = BATCH_IN_LINE_RE.search(spec.line)
+    if m:
+        return m.group(0)
+    raise OpenerGenError(
+        "子任务泳道 opener 须有批次给心跳收工句的 `--batch`：`--line` 里未找到 `B-MMDD_…`，"
+        f"也未显式传 `--batch`（收到 --line={spec.line!r}）。不带 `--batch` 的 "
+        "`heartbeat --done` 会让该泳道不计入任何批（`#536`），`summary --batch` 报 0 终态——"
+        "即 `#565` 的现象本身。看护批请在 `--line` 写「批 B-MMDD_名」；单棒请 "
+        "`--batch <派出线 OP 号>`（队列 §一 `#565`）。")
 
 
 def _settings_line(spec: OpenerSpec) -> str:
@@ -848,9 +909,13 @@ def generate_opener(**kwargs) -> str:
             if _body_params_given(kwargs):
                 body_lines += ["", "做什么：", do_block, "", "不做什么：", dont_block]
             # 🔴 队列 §一 `#550`：收工哨兵**由生成器注入**、不依赖起草人记得写（见常量注释）。
-            # 🔴 队列 §一 `#565`：心跳约定同理由生成器注入（见 `SUBTASK_HEARTBEAT_NOTE` 常量注释）。
-            body_lines += [SUBTASK_PARALLEL_NOTE, SUBTASK_HEARTBEAT_NOTE,
-                            SUBTASK_PUSH_NOTE, SUBTASK_SENTINEL_NOTE]
+            # 🔴 队列 §一 `#565`：心跳尾句同法注入——泳道标识／批次从 spec 推导（真值，
+            # `OP-0912-F`），缺批次即 fail-loud；位置沿对照棒（并行 → 心跳 → push → 哨兵）。
+            body_lines += [
+                SUBTASK_PARALLEL_NOTE,
+                subtask_heartbeat_note(_lane_id(spec), _resolve_batch(spec)),
+                SUBTASK_PUSH_NOTE, SUBTASK_SENTINEL_NOTE,
+            ]
         else:
             body_lines = [
                 title_line,
@@ -923,6 +988,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--dont", dest="dont_items", action="append", default=None, help="不做什么条目，可重复")
     ap.add_argument("--variant", default="standard", choices=VALID_VARIANTS,
                     help="骨架变体：standard（默认）／subtask_lane（子任务泳道）／guardian（§三bis 看护者开场词）")
+    ap.add_argument("--batch", default=None,
+                    help="仅 subtask_lane：心跳收工句 `heartbeat --done --batch` 用的批次；"
+                         "不传则从 --line 现取 `B-MMDD_…`，两者皆无即拒绝出件（队列 §一 `#565`）")
     return ap
 
 
@@ -974,6 +1042,8 @@ def main(argv: list[str] | None = None) -> int:
         "task_class": args.task_class, "claude_section": args.claude_section,
         "variant": args.variant,
     }
+    if args.batch:
+        kwargs["batch"] = args.batch
     if args.do_items:
         kwargs["do_items"] = args.do_items
     if args.dont_items:

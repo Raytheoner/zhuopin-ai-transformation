@@ -6800,6 +6800,8 @@ class OpenerGuardReleaseTests(unittest.TestCase):
     SETTINGS_COWORK = _OPENER_FIXTURES.SETTINGS_COWORK
     #: 形态⑨（队列 §一 `#550`）：子任务泳道块的干净样本必须带收工哨兵行，同源导入。
     SENTINEL_LINE = _OPENER_FIXTURES.SENTINEL_LINE
+    #: 形态⑩（队列 §一 `#565`）：子任务泳道块的干净样本还必须带心跳行，同源导入。
+    HEARTBEAT_LINE = _OPENER_FIXTURES.HEARTBEAT_LINE
 
     def setUp(self):
         self.m = _load_module()
@@ -6925,7 +6927,7 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         path = self.root / "看护件-x.md"
         path.write_text("\n".join([
             "### A1 · 示例泳道", "", "粘贴端：CC ｜ 泳道：示例泳道", "",
-            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, "做什么：建造到底。", self.SENTINEL_LINE, "```", "",
+            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, "做什么：建造到底。", self.HEARTBEAT_LINE, self.SENTINEL_LINE, "```", "",
             "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
             "```", "[OP-0905-C]【CC】看护示例", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, "```",
         ]), encoding="utf-8")
@@ -6937,7 +6939,7 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         path = self.root / "看护件-y.md"
         path.write_text("\n".join([
             "### A1 · 示例泳道", "", "粘贴端：CC ｜ 泳道：示例泳道", "",
-            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, self.SENTINEL_LINE, "```", "",
+            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, self.HEARTBEAT_LINE, self.SENTINEL_LINE, "```", "",
             "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
             "```", "[OP-0905-C]【CC】看护示例", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, "```",
         ]), encoding="utf-8")

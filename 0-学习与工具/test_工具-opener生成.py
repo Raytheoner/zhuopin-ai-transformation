@@ -64,7 +64,8 @@ VALID_CC_KWARGS = dict(
     worktree="☑（demo-wt，新 worktree，收工自删）",
     workspace="无（纯库内，不触碰 `.51`）",
     session="新开",
-    line="环境总线",
+    # 队列 §一 `#565`：subtask_lane 变体的心跳收工句要 `--batch`，从本字段现取 `B-MMDD_…`。
+    line="环境总线（批 B-1231_示例批）",
     input_pointer="1-转型规划/0-全景路线图/示例派单件.md",
     task_class="A",
     do_items=["第一步", "第二步"],
@@ -673,7 +674,8 @@ class 子任务泳道占位段(unittest.TestCase):
         收工哨兵一条（队列 §一 `#550`，2026-09-10 有意扩入）。"""
         body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
         self.assertEqual(len(body), 7, f"实为 {len(body)} 行：{body}")
-        self.assertEqual(body[-4:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_HEARTBEAT_NOTE,
+        self.assertEqual(body[-4:], [M.SUBTASK_PARALLEL_NOTE,
+                                     M.subtask_heartbeat_note("op1231a-demo-slug", "B-1231_示例批"),
                                      M.SUBTASK_PUSH_NOTE, M.SUBTASK_SENTINEL_NOTE])
 
     def test_传了do_dont仍照拼_不误伤显式调用(self):
@@ -804,9 +806,11 @@ class 骨架与生成器契约(unittest.TestCase):
 
     def test_四条机器口径逐字取自正本(self):
         """正本尾四行（P4 两条 ＋ 心跳一条 ＋ 收工哨兵，队列 §一 `#550`／`#565`）
-        必须与生成器常量**逐字**相同——改一处不改另一处即红。"""
+        必须与生成器常量**逐字**相同——改一处不改另一处即红。心跳行比的是占位符版
+        （正本教形态、生成器填真值，`OP-0912-F`）。"""
         self.assertEqual(self.canon_lines[-4], M.SUBTASK_PARALLEL_NOTE)
-        self.assertEqual(self.canon_lines[-3], M.SUBTASK_HEARTBEAT_NOTE)
+        self.assertEqual(self.canon_lines[-3], M.subtask_heartbeat_note(
+            M.SUBTASK_HEARTBEAT_LANE_PLACEHOLDER, M.SUBTASK_HEARTBEAT_BATCH_PLACEHOLDER))
         self.assertEqual(self.canon_lines[-2], M.SUBTASK_PUSH_NOTE)
         self.assertEqual(self.canon_lines[-1], M.SUBTASK_SENTINEL_NOTE)
 
@@ -871,7 +875,8 @@ class 收工哨兵强制注入(unittest.TestCase):
     def test_传了do_dont仍在最末(self):
         body = [ln for ln in self._gen(do_items=["建造"], dont_items=["不动产线"]).splitlines()
                 if not ln.startswith("```")]
-        self.assertEqual(body[-4:], [M.SUBTASK_PARALLEL_NOTE, M.SUBTASK_HEARTBEAT_NOTE,
+        self.assertEqual(body[-4:], [M.SUBTASK_PARALLEL_NOTE,
+                                     M.subtask_heartbeat_note("op1230s-demo-slug", "B-1231_示例批"),
                                      M.SUBTASK_PUSH_NOTE, M.SUBTASK_SENTINEL_NOTE])
 
     def test_其它变体不注入(self):
@@ -897,51 +902,129 @@ class 收工哨兵强制注入(unittest.TestCase):
         self.assertIn("F9", codes)
 
 
-class 心跳强制注入(unittest.TestCase):
-    """队列 §一 `#565`（2026-09-12）——`--variant subtask_lane` 拼装时**自动带上**心跳约定行，
-    不依赖起草人记得写。
+class 心跳尾句强制注入(unittest.TestCase):
+    """队列 §一 `#565`（2026-09-12）——`--variant subtask_lane` 拼装时**自动带上**心跳尾句，
+    泳道标识与批次由生成器从 spec 推导（真值，`OP-0912-F`），不靠起草人记得写。
 
-    🔑 **成因**：`工具-泳道看护状态机.py summary`／看门狗全靠心跳文件判泳道死活；2026-09-12
-    看护批 `B-0911_机制收口` 5 条泳道活全做了、五条分支全部 ff 进 master，`summary` 却报
-    「本批终态泳道 0 条」——因为子任务泳道 opener 此前一个字没提心跳。**修法落在生成器注入**
-    （同 `#550` 收工哨兵一样，「正文里写一句」拦不住）。`工具-opener块lint.py` 形态⑩是它的机器守。
+    🔑 **成因**：看护批 `B-0911_机制收口` 五条泳道全做完、`summary` 报「终态泳道 0 条」、
+    `reports/lane-heartbeat/` 零文件——心跳命令此前只在 SKILL.md 与看护件 §一（看护者读的
+    那段）里，子任务拿到的 prompt ＝ opener 正文原样，一个字没提。且 SKILL.md 缩略形收工句
+    漏了 `--batch`，照做也进不了任何一批的账（`#536`）。
+    🔴 位置沿对照棒（`6733cb4`）：排在并行上限之后、push 规则之前（成品第二条机器口径）。
     """
 
     @staticmethod
     def _gen(**over):
         kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
-        kw.update({"variant": "subtask_lane", "op_id": "OP-1229-S"})
+        kw.update({"variant": "subtask_lane", "op_id": "OP-1230-H"})
         kw.update(over)
         return M.generate_opener(**kw)
 
-    def test_子任务泳道成品含心跳行(self):
-        body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
-        self.assertIn(M.SUBTASK_HEARTBEAT_NOTE, body)
-        self.assertIn("heartbeat", M.SUBTASK_HEARTBEAT_NOTE)
-        self.assertIn("--lane", M.SUBTASK_HEARTBEAT_NOTE)
+    @staticmethod
+    def _body(text: str) -> list[str]:
+        return [ln for ln in text.splitlines() if not ln.startswith("```")]
 
-    def test_含batch提醒(self):
-        """🔴 同批复核发现的第二个坑：`heartbeat --done` 不带 `--batch` 就不计入任何批次
-        `summary`（已实测撞过 8 条历史泳道）——心跳提醒必须把 `--batch` 一并写死。"""
-        self.assertIn("--batch", M.SUBTASK_HEARTBEAT_NOTE)
+    @staticmethod
+    def _heartbeat_line(body: list[str]) -> str:
+        hits = [ln for ln in body if "工具-泳道看护状态机.py heartbeat" in ln]
+        assert len(hits) == 1, hits
+        return hits[0]
 
-    def test_排在并行上限之后push规则之前(self):
-        body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
+    def test_心跳行在并行上限之后push规则之前_哨兵仍在末行(self):
+        body = self._body(self._gen())
         idx_parallel = body.index(M.SUBTASK_PARALLEL_NOTE)
-        idx_heartbeat = body.index(M.SUBTASK_HEARTBEAT_NOTE)
+        idx_heartbeat = body.index(self._heartbeat_line(body))
         idx_push = body.index(M.SUBTASK_PUSH_NOTE)
         self.assertEqual(idx_heartbeat, idx_parallel + 1)
         self.assertEqual(idx_push, idx_heartbeat + 1)
+        self.assertEqual(body[-1], M.SUBTASK_SENTINEL_NOTE)
+
+    def test_泳道标识等于worktree名与分支名同源(self):
+        """`--lane` 值 ＝ `op{mmdd}{x}-{slug}` ＝ 【设置】行分支名去掉 `claude/`——看护者只看
+        【设置】行就能推出 `check-heartbeat --heartbeat-file` 该填什么。"""
+        body = self._body(self._gen(branch="demo-slug"))
+        self.assertIn("--lane op1230h-demo-slug ", self._heartbeat_line(body))
+        self.assertIn("`claude/op1230h-demo-slug`", body[1])
+
+    def test_不留占位符(self):
+        """🔴 真值填充的反面：成品里不得残留骨架占位符（`OP-0912-F` 派单件 §一 3⑴）。"""
+        line = self._heartbeat_line(self._body(self._gen()))
+        self.assertNotIn(M.SUBTASK_HEARTBEAT_LANE_PLACEHOLDER, line)
+        self.assertNotIn(M.SUBTASK_HEARTBEAT_BATCH_PLACEHOLDER, line)
+        self.assertNotIn("<泳道标识", line)
+
+    def test_批次从派出线现取(self):
+        body = self._body(self._gen(line="Cowork 环境总线 OP-1230-Z（批 B-1230_夜批）"))
+        self.assertIn("--done --batch B-1230_夜批 ", self._heartbeat_line(body))
+
+    def test_批次直写在派出线不带括号也能取(self):
+        """看护件既有写法之二：「业务总线 B-0905_B」。"""
+        body = self._body(self._gen(line="Cowork 业务总线 B-1230_B"))
+        self.assertIn("--done --batch B-1230_B ", self._heartbeat_line(body))
+
+    def test_显式batch优先于派出线(self):
+        body = self._body(self._gen(line="环境总线（批 B-1230_甲）", batch="B-1230_乙"))
+        line = self._heartbeat_line(body)
+        self.assertIn("--batch B-1230_乙 ", line)
+        self.assertNotIn("B-1230_甲 ", line)
+
+    def test_无批次即拒绝出件(self):
+        """不带 `--batch` 的 `heartbeat --done` 让泳道归属未知、`summary --batch` 报 0——
+        正是 `#565` 的现象本身，生成器不替下游留这个洞。"""
+        with self.assertRaises(M.OpenerGenError) as ctx:
+            self._gen(line="环境总线 OP-1230-Z")
+        self.assertIn("--batch", str(ctx.exception))
+        self.assertIn("#565", str(ctx.exception))
+
+    def test_收工句带batch_开工句不带done(self):
+        line = self._heartbeat_line(self._body(self._gen()))
+        start = line.index("--text \"已开工\"")
+        self.assertNotIn("--done", line[:start])
+        self.assertIn("--done --batch B-1231_示例批 --text \"产出落点：<落点>\"", line)
+
+    def test_不教人给不存在的参数(self):
+        """SKILL.md 步骤 4 明写：工具没有 `--repo-root`／`--heartbeat-file`，尾句必须把这条带上，
+        否则子任务按旧散文自己拼路径又会写回各自 worktree。"""
+        line = self._heartbeat_line(self._body(self._gen()))
+        self.assertIn("--repo-root", line)
+        self.assertIn("--heartbeat-file", line)
+
+    def test_batch传给非子任务变体即拒绝(self):
+        """参数被接受却不生效比被拒更危险（`#487` 子项同判据）。"""
+        kw = dict(VALID_CC_KWARGS)
+        kw.update({"op_id": "OP-1230-I", "batch": "B-1230_X"})
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**kw)
 
     def test_其它变体不注入(self):
         """收窄：标准／guardian／reference 都是人粘贴进交互会话的，不经批处理器，不加。"""
         std = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-1229-T"})
-        self.assertNotIn(M.SUBTASK_HEARTBEAT_NOTE, std)
+        self.assertNotIn("工具-泳道看护状态机.py heartbeat", std)
         kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
         kw.update(op_id="OP-1229-U", variant="guardian", short_name="示例批",
                   branch="master（看护者本身不建分支，不改代码）")
         guardian = M.generate_opener(**kw)
-        self.assertNotIn(M.SUBTASK_HEARTBEAT_NOTE, guardian)
+        self.assertNotIn("工具-泳道看护状态机.py heartbeat", guardian)
+
+    def test_CLI_batch旗标可用(self):
+        import io as _io
+        import contextlib
+        out, err = _io.StringIO(), _io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = M.main([
+                "--op-id", "OP-1230-J", "--env", "CC", "--short-name", "心跳示例",
+                "--branch", "hb-demo", "--worktree", "☑（hb，新 worktree，收工自删）",
+                "--workspace", "无", "--session", "新开", "--line", "环境总线 OP-1230-Z",
+                "--input-pointer", "1-转型规划/0-全景路线图/示例派单件.md", "--task-class", "A",
+                "--variant", "subtask_lane", "--batch", "B-1230_单棒",
+            ])
+        self.assertEqual(rc, 0, err.getvalue())
+        self.assertIn("--done --batch B-1230_单棒 ", out.getvalue())
+
+    def test_产物过lint零违规(self):
+        lint = M._load_lint_module()
+        blocks = lint.iter_fenced_blocks(self._gen())
+        self.assertEqual(lint.check_block(blocks[0], is_subtask_lane=True), [])
 
     def test_变异检验_去掉心跳行lint即转红(self):
         """🔴 队列 `#565` 的变异检验以单测形式钉死：把注入逻辑注释掉（等价于从成品里
@@ -949,7 +1032,8 @@ class 心跳强制注入(unittest.TestCase):
         自检那道闸对本项**不是恒真**。"""
         lint = M._load_lint_module()
         out = self._gen()
-        mutated = "\n".join(ln for ln in out.splitlines() if ln != M.SUBTASK_HEARTBEAT_NOTE)
+        hb = self._heartbeat_line(self._body(out))
+        mutated = "\n".join(ln for ln in out.splitlines() if ln != hb)
         self.assertNotEqual(mutated, out)
         block = lint.iter_fenced_blocks(mutated)[0]
         codes = {c for c, _ in lint.check_block(block, is_subtask_lane=True)}
