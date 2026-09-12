@@ -124,6 +124,17 @@ class 解析与DryRun(_Base):
         # `-LogDir` 已定 ⇒ 任何退出点都落退出码（-Detach 调用方靠它，不靠进程句柄）。
         self.assertEqual((self.log_dir / "exit.txt").read_text(encoding="utf-8").strip(), "0")
 
+    def test_非Detach也写launcher_json_起跑时刻正本(self):
+        """`#571`⑶：收工探针取起跑时刻以 `launcher.json.started_at_utc` 为正本；此前只有 `-Detach`
+        写它，`-LogDir` 显式指定的语义名批没有正本。非 Detach 跑也必须写。"""
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        launcher = json.loads((self.log_dir / "launcher.json").read_text(encoding="utf-8-sig"))
+        self.assertIn("pid", launcher)
+        self.assertRegex(launcher["started_at_utc"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        self.assertEqual(Path(launcher["log_dir"]), self.log_dir)
+
 
 class Resume接管_session_id(_Base):
     def test_session_id先定_传给claude_并落日志首行与summary(self):

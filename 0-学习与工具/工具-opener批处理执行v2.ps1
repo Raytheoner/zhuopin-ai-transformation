@@ -159,6 +159,15 @@ if (-not $Yes) { $ans = Read-Host '开跑？(y/N)'; if ($ans -ne 'y' -and $ans -
 if (-not $LogDir) { $LogDir = Join-Path $RepoRoot ('reports\opener-batch\' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 $logDir = $LogDir
+# v2.4 `#571`⑶：launcher.json 是起跑时刻的正本，此前只有 -Detach 那一支写它 ⇒ `-LogDir` 显式指定的语义名批
+# （20260912-portal197／20260913-收口三泳道…）没有正本，收工探针只能退目录 mtime。这里补齐：非 Detach 也写，
+# 已有（Detach 父进程先写了）就不覆盖——父进程那份带子进程 pid，更准。
+if (-not (Test-Path (Join-Path $logDir 'launcher.json'))) {
+    $launcher = [ordered]@{ pid = $PID; shell = (Get-Process -Id $PID).Path; plan = $Plan; log_dir = $logDir
+                            started_at_utc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                            exit_file = (Join-Path $logDir 'exit.txt'); summary = (Join-Path $logDir 'summary.txt') }
+    [System.IO.File]::WriteAllText((Join-Path $logDir 'launcher.json'), ($launcher | ConvertTo-Json), $Utf8NoBom)
+}
 
 $header = @(
     '【无头批处理引导（v2 泳道版）】本 session 由脚本无头启动。五条硬规则：',
