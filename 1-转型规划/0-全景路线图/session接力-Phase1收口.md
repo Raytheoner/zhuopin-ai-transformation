@@ -15,26 +15,26 @@ title: "Session 接力（滚动·最新）—— 全景规划实现"
 
 | 编号 | 会话名 | 触碰区 | 起止 |
 |---|---|---|---|
-| — | — | — | — |
+| `OP-0912-E` | Cowork 环境总线接棒 | `design.md`／派单件与看护件（新建）／`pending-ff.jsonl` | 09-12 11:2x→ |
 
 > 并发在跑（勿代登其脏件）：业务总线 `OP-0911-H`、拆件巡逻班。
-> 09-12 09:2x 收工划掉三条：`OP-0910-H`（环境总线）／`OP-0911-N`（措施C-apply批1，已 ff）／`OP-0912-A`（`#564`，已 ff `59b54f7`）。
+> 09-12 09:2x 划掉：`OP-0910-H`／`OP-0911-N`／`OP-0912-A`（`#564` 已 ff `59b54f7`）。
 
-## 二、当前状态快照（2026-09-12 09:2x）
+## 二、当前状态快照（2026-09-12 11:5x）
 
 - **全景 35 场景**。机制可动 WIP **31/33**；陈旧度闸 `STALE(7)=2/3`（最老 `#312` 7.9 天），**7 天后转阻断**。
-- 🔴🔴 **本日主线＝「规则活在正本文本里、没有机器在出件时校验」同族三连**：`#563` 回件勾选只认 `☑` 不认 `☒`（三犯）／`#565` 心跳写在 SKILL.md、生成器不注入（看护批 5 条泳道 0 心跳）／`#566` 称谓守卫**守在队列行与 README 台账、没守在跟进信正文**（`git grep -ln PERSON_GENDER_ROSTER` 仅两处；`zhuopin-followup-letter` skill 目录零脚本）。
-- 🟩 **`#564` 已完成并已 ff**（`OP-0912-A` 无头泳道 → `59b54f7`）：跨进程文件锁＋锁内现读末行重算 `prev_hash`；`verify_chain()` 报全部断点；新增 `find_prev_hash_forks()` 旁证判据。
+- 🔴🔴 **本日主线＝「规则活在正本文本里、没有机器在出件时校验」同族三连**：🟩 `#566` 已建成并 **ff 进 master**（`07456e5`，`OP-0912-E` 经登记处＋`工具-待合分支巡检.ps1` 机器 ff；release 现已实跑称谓核对）；🟡 `#565` 对照棒已在 master、第二棒走 `OP-0912-F` 全量移植（在跑）；🔴 `#563` 回件勾选只认 `☑` 不认 `☒`（三犯）**未动**。
 - 🔴 **`采购部#22` 回灌结论曾全库流通错误**：姚祖怡（**男**）七行全选「判对」，我方判成「未批改」。已更正 3 处（§一 `#541`／§四 `#194`／README 台账）。**更正必须插在 `📥` 之后**——`工具-跟进闸查询.py` 从 `📥` 起截，写行尾看不见（实测）。历史流水 2 处未动。
 - 🟩 **「一次粘贴」四条口径已落 `opener骨架.md`**（lint 零违规）：⑴ 要他粘的一律单块；⑵ ≥2 个 opener 且有时序/并发约束 ⇒ 改出看护件；⑶ **默认后台起**——看护件照出照落库但不贴他，只给授权请求，跑完一次返回结果与停点；⑷ **只有 opener 才是要粘的块，答复模板不是**。
-- 🟩 **无头链实证可用**：`工具-opener批处理执行v2.ps1 -Plan` 解析的正是看护件 §三 的 `### A<N>`＋`粘贴端／泳道`＋代码块，`-Detach` 注释原文「供 Cowork 调用而不占 PowerShell 通道」；`-DryRun` 已解出 2 泳道。
+- 🟩 **ff 已全机器化**：往 `reports/pending-ff.jsonl` 写一条含 `branch`／`authorized_text`／`tests` 的授权行，`工具-待合分支巡检.ps1` 即 rebase→差集回归→ff→push→销登记（`#566` 实跑通）。**授权仍须他一字母**，脚本绝不代授权。
+- 🔴 **Cowork 侧 `device_bash` 今日失效**（9-08 Windows 更新，实测 `no Plan9 drive shares mounted`）；`Filesystem` MCP 亦不可用。**改走 `Windows-MCP PowerShell` 通道**，照常。
 - **三处真红**：`#556` outbox 中继／决策台账缺口 9 行／openspec 收口段（`#561` 分诊：可归档 0／真没完 22／待复核 3）。
 
 ## 三、下一会话主攻（环境总线）
 
 🔴 **本线缺的不是新任务，是把已有 open 行做完；除非出血，不新立机制行。**
 
-1. **轮询 `B-0912_心跳与称谓` 无头批收口**——**已于 09-12 09:23:58 起跑**（日志 `reports/opener-batch/20260912-092357/`，A1／A2 两条泳道均已启动）。🔴 **不要用 `-Detach`**：它在 PS 5.1 子进程下必炸（`#567` 已立行取证），本批走绕行＝`Start-Process pwsh -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File <脚本> -Plan <看护件> -FullAuto -Yes -LogDir <目录>'`。轮询 `summary.txt` 与各泳道 `.log`，**一次返回结果与停点**；两条分支的 ff 属 🟡 档、等他一字母。
+1. **轮询 `B-0912_565移植` 无头批**（`OP-0912-F`，11:52:42 起跑，日志 `reports/opener-batch/20260912-115239/`）。🔴 **不要用 `-Detach`**（PS 5.1 子进程下必炸，`#567`），走 `Start-Process pwsh -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File <脚本> -Plan <看护件> -FullAuto -Yes -LogDir <目录>'`。触发器已建：定时任务 `trig_01HH4rKbJLR2dGuJXy3JY7dY`（12:36 唤醒本会话）——**不是靠记性**。收工的 ff 属 🟡 档、等他一字母。
 2. **11 份 `☒` 形态回件对账**（机器重读已落 `回件勾选逐格重读对账-13份-2026-09-11.md`，**与已回灌结论的对账未做**）。🔴 `财务部#16` 三条「判不对」的改判意见优先；**B 表 `#7` 与 `#8` 互相矛盾**（跨两料号「一律不认领」vs「拆成两条」两条都勾判对），须向唐燕萍确认。
 3. **openspec 其余三包 17 个决策点**：`opener-batch-archive-precheck`(6)／`tasks-zombie-item-detect`(5)／`followup-closure-form-survives-backfill`(6)。
 4. **3 个待复核包立行**：`wecom-aibot-channel` 42/45／`env-anchor-collapse` 29/32／`queue-status-machine-field` 47/48。
