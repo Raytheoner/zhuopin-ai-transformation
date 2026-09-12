@@ -44,9 +44,22 @@ grep/Read，一次命中就把 50-78 KB 的单行原文灌进上下文（实测�
 同一套目标解析路径，不另起一套；仍只输出摘要行，命中了再 `--row`
 展开，读入量从 ≥50 KB 降到 <2 KB。
 
+队列 §一 #397／#561（2026-09-12，openspec 包 `opener-batch-archive-precheck`
+apply，design 决策点 5 签认 (a)）：新增两个**可选**开关 `--include-archive`
+（默认关）与 `--format json`（默认 text）——**不传时输出与退出码逐字不变**。
+成因：opener 批处理器派出前要判「这条 §一 行是不是已经做完了」，而本工具
+此前 ⑴ 只查两份在办真身、不查归档件；⑵ 「未找到」与「读取失败／参数错」
+共用 exit=1，调用方靠退出码分不出三种结局 ⇒ JSON 才是机器消费的唯一通道。
+归档侧判据（决策点 1 (a)）：**归档命中即已完成、不读归档行的状态列**——
+实测 `归档-202608.md` L583 `#368` 的状态列仍写 `[S:open]`（销号信息被写进
+任务列），按状态字段判会把已归档行当在办派出、白跑原样重演。JSON 契约里
+`status_field` 与 `done` 因此**允许不一致**，消费方只准读 `done`。
+
 用法：
   python 0-学习与工具/工具-队列查询.py --row 258
   python 0-学习与工具/工具-队列查询.py --row 150 --section 一
+  python 0-学习与工具/工具-队列查询.py --row 368 --section 一 --include-archive
+  python 0-学习与工具/工具-队列查询.py --row 368 --section 一 --include-archive --format json
   python 0-学习与工具/工具-队列查询.py --row B-0806_xxx --section 二
   python 0-学习与工具/工具-队列查询.py --row 51 --section 四
   python 0-学习与工具/工具-队列查询.py --row 258 --field all
@@ -59,6 +72,7 @@ grep/Read，一次命中就把 50-78 KB 的单行原文灌进上下文（实测�
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -162,6 +176,92 @@ assert {k: len(v) for k, v in SECTION_COLUMNS.items()} == queue_table.SECTION_CO
 SECTION_STATUS_INDEX = {"一": 5, "二": 3, "四": 1}
 SECTION_STATUS_LABEL = {"一": "状态", "二": "状态", "四": "事项（§四无独立状态列，取本列展示）"}
 ROW_NUMBER_SECTIONS = ("一", "四")
+
+# ── 归档检索（openspec `opener-batch-archive-precheck`，spec
+# `queue-query-archive-lookup`）────────────────────────────────────────
+# 归档件发现契约：glob 写进 spec，归档件命名变更时须同步改 spec 与此处。
+ARCHIVE_DIR_REL = "1-转型规划/0-全景路线图"
+ARCHIVE_GLOB = "跨桌任务队列-归档-*.md"
+# 章节标题三种写法通吃（design 取证五）：live `## 一、任务看板`／archive
+# `## §一 任务看板 · …`／`### §一 任务看板 · 机制环境`——H2/H3 混用、单
+# 文件多表。章节到下一个 H2/H3 标题为止（live 与归档件实测 §一 内均无
+# H3 子标题，2026-09-12 逐文件列标题核过）。
+ANY_SECTION_HEADING_RE = re.compile(r"^#{2,3}\s*§?\s*([一二三四])[、\s·]")
+ANY_HEADING_RE = re.compile(r"^#{2,3}\s")
+# JSON 契约取值域（决策点 5）：消费方只准读 done；reason 供人复核。
+CARRIER_LIVE, CARRIER_ARCHIVE, CARRIER_NONE = "live", "archive", "none"
+REASON_LIVE_OPEN, REASON_LIVE_DONE = "live-open", "live-done"
+REASON_ARCHIVED, REASON_UNRESOLVED = "archived", "unresolved"
+
+
+def iter_archive_paths() -> list[str]:
+    """按契约 glob 发现全部归档件，返回仓库根相对路径（正斜杠、按文件名
+    排序）。目录不存在 ⇒ 空列表（隔离测试环境），不抛错。"""
+    directory = REPO_ROOT / ARCHIVE_DIR_REL
+    if not directory.is_dir():
+        return []
+    return [
+        p.relative_to(REPO_ROOT).as_posix()
+        for p in sorted(directory.glob(ARCHIVE_GLOB))
+    ]
+
+
+def _split_sections_any(text: str) -> list[tuple[str, list[tuple[int, str]]]]:
+    """把整份文本按 H2/H3 标题切成 [(章节标签, [(1-based 行号, 行文本), …]),
+    …]；标签取 ANY_SECTION_HEADING_RE 捕获的「一二三四」，不带 §/顿号的
+    普通标题（如归档件 `## 2026-08-24 值周清扫迁入`）切出的段标签为 ""，
+    调用方按标签过滤即可。同一标签可出现多次（归档件单文件多表）——
+    **不合并**，逐段返回，行号保真。"""
+    sections: list[tuple[str, list[tuple[int, str]]]] = []
+    label = ""
+    body: list[tuple[int, str]] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if ANY_HEADING_RE.match(line):
+            if body or sections:
+                sections.append((label, body))
+            m = ANY_SECTION_HEADING_RE.match(line)
+            label = m.group(1) if m else ""
+            body = []
+            continue
+        body.append((line_no, line))
+    sections.append((label, body))
+    return sections
+
+
+def _row_id_matches(first_cell: str, row_id: str) -> bool:
+    """行匹配判据：首格去空白后与目标**数值相等**（§一/§四 纯数字编号，
+    `int` 比较，容忍前导零之类写法差异）；非数字（§二 批次号）退化为字符串
+    相等。绝不做 `#N` 子串检索（design 取证三：`#368` 在归档件出现 7 次，
+    没有一次是它自己那一行）。"""
+    first = first_cell.strip()
+    target = row_id.strip()
+    if first.isdigit() and target.isdigit():
+        return int(first) == int(target)
+    return first == target
+
+
+def _locate_rows(
+    text: str, row_id: str, section: str | None,
+) -> list[tuple[str, int, list[str]]]:
+    """通用行定位（live 与 archive 同一套判据，spec「归档侧章节与行定位」）：
+    返回 [(章节标签, 1-based 行号, 单元格列表), …]。三条件全满足才命中：
+    ① 行位于某个目标章节内；② 切格复用 queue_table.split_row_cells（反
+    引号游程屏蔽，#314）；③ 首格与目标行号数值相等。"""
+    candidates = {section} if section else set(SECTION_COLUMNS)
+    hits: list[tuple[str, int, list[str]]] = []
+    for label, body in _split_sections_any(text):
+        if label not in candidates:
+            continue
+        for line_no, line in body:
+            cells = queue_table.split_row_cells(line)
+            if cells is None:
+                continue
+            first = cells[0]
+            if first in _TABLE_HEADER_FIRST_CELLS or set(first) <= {"-", " "}:
+                continue
+            if _row_id_matches(first, row_id):
+                hits.append((label, line_no, cells))
+    return hits
 
 # 队列 #248 锚定口径（与编辑锁/sweep 两处独立实现保持同一算法，见模块文档）。
 LEADING_STRIP_CHARS = "* \t　"
@@ -396,6 +496,98 @@ def _find_rows(text: str, row_id: str, section: str | None) -> list[tuple[str, l
     return hits
 
 
+def _status_field_of(label: str, cells: list[str]) -> str | None:
+    """取状态列开头机器字段的取值（仅 §一 有 [S:...] 字段；其它分区或
+    列数不足 ⇒ None，供 JSON `status_field`）。"""
+    if label != "一":
+        return None
+    idx = SECTION_STATUS_INDEX[label]
+    if idx >= len(cells):
+        return None
+    value, _domain, _rest = _parse_status_domain_fields(cells[idx])
+    return value
+
+
+def _read_carriers(
+    paths: list[str], row_id: str, section: str | None,
+) -> tuple[list[tuple[str, str, int, list[str]]], list[str]]:
+    """逐份读取、逐份解析后合并（绝不拼接文本再解析，#312）。返回
+    ([(文件, 章节标签, 行号, 单元格), …], [读取失败描述, …])。"""
+    hits: list[tuple[str, str, int, list[str]]] = []
+    read_errors: list[str] = []
+    for query_path in paths:
+        target_path = (REPO_ROOT / query_path).resolve()
+        try:
+            text = target_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            read_errors.append(f"{target_path}（{exc}）")
+            continue
+        for label, line_no, cells in _locate_rows(text, row_id, section):
+            hits.append((query_path, label, line_no, cells))
+    return hits, read_errors
+
+
+def _run_lookup_json(args: argparse.Namespace, live_paths: list[str]) -> int:
+    """`--format json`：输出单个 JSON 对象（决策点 5 契约），消费方只读
+    `done`。四态按 A→D 短路：live 命中 ⇒ 看 status_field 是否 done；live
+    未命中且 `--include-archive` 且归档命中 ⇒ **恒 done、不看状态列**；
+    都未命中 ⇒ unresolved（消费方据此照常派出）。
+
+    退出码：只要 JSON 已成功输出即 0（含未命中）——「未找到」是一个合法
+    结论、由 `found`/`reason` 表达，不再与读取失败共用 exit=1；调用方按
+    契约不依赖退出码（spec 3.3）。歧义（未给 --section 而多分区同号）与
+    全部载体读取失败均以 `error` 字段如实报告，`done` 恒 false（fail-open）。"""
+    archive_paths = iter_archive_paths() if args.include_archive else []
+    result: dict = {
+        "row": args.row, "section": args.section,
+        "found": False, "carrier": CARRIER_NONE, "file": None, "line": None,
+        "status_field": None, "done": False, "reason": REASON_UNRESOLVED,
+        "error": None, "read_errors": [],
+        "searched": list(live_paths) + list(archive_paths),
+    }
+    live_hits, live_errors = _read_carriers(live_paths, args.row, args.section)
+    result["read_errors"].extend(live_errors)
+    chosen: tuple[str, str, int, list[str]] | None = None
+    carrier = CARRIER_NONE
+    if live_hits:
+        carrier = CARRIER_LIVE
+        chosen = live_hits[0]
+        if len(live_hits) > 1:
+            labels = "、".join(f"{p}:§{lb}@L{ln}" for p, lb, ln, _ in live_hits)
+            result["error"] = f"ambiguous: 「{args.row}」在多个分区/文件命中（{labels}），请加 --section 消歧"
+            chosen = None
+            carrier = CARRIER_NONE
+    elif archive_paths:
+        archive_hits, archive_errors = _read_carriers(archive_paths, args.row, args.section)
+        result["read_errors"].extend(archive_errors)
+        if archive_hits:
+            carrier = CARRIER_ARCHIVE
+            chosen = archive_hits[0]
+            if len(archive_hits) > 1:
+                labels = "、".join(f"{p}:§{lb}@L{ln}" for p, lb, ln, _ in archive_hits)
+                result["error"] = f"ambiguous: 「{args.row}」在多个归档位置命中（{labels}），请加 --section 消歧"
+                chosen = None
+                carrier = CARRIER_NONE
+    if chosen is not None:
+        query_path, label, line_no, cells = chosen
+        result.update({
+            "found": True, "carrier": carrier, "file": query_path, "line": line_no,
+            "section": label, "status_field": _status_field_of(label, cells),
+        })
+        if carrier == CARRIER_ARCHIVE:
+            # 决策点 1 (a)／spec「归档命中不解析归档行的状态内容」：恒 done。
+            result["done"] = True
+            result["reason"] = REASON_ARCHIVED
+        else:
+            result["done"] = result["status_field"] == "done"
+            result["reason"] = REASON_LIVE_DONE if result["done"] else REASON_LIVE_OPEN
+    elif result["error"] is None and result["read_errors"] and \
+            len(result["read_errors"]) == len(result["searched"]):
+        result["error"] = "all carriers unreadable"
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="跨桌任务队列只读查询——默认返回状态列全文、不截断，"
@@ -435,6 +627,19 @@ def main() -> int:
              "该文件，行为与拆分前一致；--digest 同一套规则，显式传归档件"
              "路径即可对归档件出 digest，队列 #442）",
     )
+    parser.add_argument(
+        "--include-archive", action="store_true",
+        help=f"--row 模式：在办两份之外追加全部归档件（glob `{ARCHIVE_DIR_REL}/"
+             f"{ARCHIVE_GLOB}`，spec 契约）；归档命中即视为已完成、不读其状态列"
+             "（openspec opener-batch-archive-precheck 决策点 1）。默认关，不传"
+             "时行为逐字不变",
+    )
+    parser.add_argument(
+        "--format", choices=("text", "json"), default="text",
+        help="--row 模式输出格式：text（默认，逐字不变）／json（单个 JSON 对象，"
+             "字段 row/section/found/carrier/file/line/status_field/done/reason；"
+             "机器消费只读 done——status_field 与 done 允许不一致）",
+    )
     args = parser.parse_args()
 
     if args.digest:
@@ -451,6 +656,9 @@ def main() -> int:
         queue_table.iter_queue_paths()
         if _is_queue_system_target(args.file) else [args.file]
     )
+    if args.format == "json":
+        return _run_lookup_json(args, query_paths)
+
     hits: list[tuple[str, str, list[str]]] = []  # (来源文件, 分区标签, 单元格)
     read_errors: list[str] = []
     for query_path in query_paths:
@@ -468,9 +676,20 @@ def main() -> int:
         for label, cells in _find_rows(text, args.row, args.section):
             hits.append((query_path, label, cells))
 
+    # `--include-archive`（text 模式）：live 未命中才查归档（A→D 短路），
+    # 归档命中打一行判据提示后按既有展示逻辑输出整行/状态列。
+    archive_paths = iter_archive_paths() if args.include_archive else []
+    archive_hit = False
+    if not hits and archive_paths:
+        archive_hits, archive_errors = _read_carriers(archive_paths, args.row, args.section)
+        read_errors.extend(archive_errors)
+        for query_path, label, line_no, cells in archive_hits:
+            hits.append((query_path, label, cells))
+        archive_hit = bool(archive_hits)
+
     if not hits:
         scope = f"§{args.section}" if args.section else "§一／§二／§四"
-        files_desc = "、".join(query_paths)
+        files_desc = "、".join(list(query_paths) + list(archive_paths))
         print(f"✗ 未找到 {scope} 中编号/批次为「{args.row}」的行"
               f"（已查：{files_desc}）。")
         if read_errors:
@@ -487,8 +706,11 @@ def main() -> int:
         return 1
 
     query_path, label, cells = hits[0]
-    if _is_queue_system_target(args.file):
+    if _is_queue_system_target(args.file) or archive_hit:
         print(f"【命中于：{query_path}】")
+    if archive_hit:
+        print("【归档命中 ⇒ 按「归档命中即完成」判据视为已完成，下方状态列仅供人工排查、"
+              "不作判据（openspec opener-batch-archive-precheck 决策点 1）】")
     columns = SECTION_COLUMNS[label]
     if len(cells) != len(columns):
         print(f"⚠ §{label} 该行实际列数（{len(cells)}）与预期（{len(columns)}）不符，"

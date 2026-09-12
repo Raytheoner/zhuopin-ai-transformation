@@ -1,9 +1,9 @@
-# 工具-opener批处理执行v2.ps1 —— 泳道并行版（v2.0，2026-08-25；v2.1，2026-09-10 队列 §一 `#549`：--resume 接管 ＋ -Detach；v2.2，2026-09-10 队列 §一 `#550`：NO-SENTINEL 补问一次）
+# 工具-opener批处理执行v2.ps1 —— 泳道并行版（v2.0，2026-08-25；v2.1，2026-09-10 队列 §一 `#549`：--resume 接管 ＋ -Detach；v2.2，2026-09-10 队列 §一 `#550`：NO-SENTINEL 补问一次；v2.3，2026-09-12 队列 §一 `#397`／`#561`：派出前查队列态，已完成的行 SKIPPED 不派）
 # 相对 v1 的唯一结构变化：opener 按「▶ 泳道：<名>」分组——泳道间并行（各起一个后台 Job）、泳道内严格串行。
 # 并行判据沿用矩阵纪律：同泳道＝触碰区/资源相斥（SRM 限流、同文件、同信链），跨泳道＝实测零重叠。
 # 用法（一行）：
 #   powershell -ExecutionPolicy Bypass -File "0-学习与工具\工具-opener批处理执行v2.ps1" -Plan "1-转型规划\0-全景路线图\建造波次-2026-08-25-泳道版.md" -FullAuto -Yes
-# 参数同 v1：-Plan / -Only / -DryRun / -FullAuto / -Yes / -Model；新增 -MaxParallel（默认 3）、-StaggerSec（泳道错峰启动间隔，默认 90，降编辑锁碰撞）、-SentinelRetryTimeoutSec（v2.2，NO-SENTINEL 补问超时秒数，默认 180）
+# 参数同 v1：-Plan / -Only / -DryRun / -FullAuto / -Yes / -Model / -Force；新增 -MaxParallel（默认 3）、-StaggerSec（泳道错峰启动间隔，默认 90，降编辑锁碰撞）、-SentinelRetryTimeoutSec（v2.2，NO-SENTINEL 补问超时秒数，默认 180）
 # 判成败双指标不变：claude 退出码 ＋ OPENER_DONE/OPENER_PARTIAL 哨兵；FAIL/NO-SENTINEL 只停本泳道，其余泳道继续。
 # 日志：reports/opener-batch/<时间戳>/<泳道>-<编号>.log；结束在同目录写 summary.txt。
 #
@@ -26,6 +26,13 @@
 #   🔴 补问自身也是一次 claude 调用、会挂死：每条 opener **只补问一次、不循环**，超时 -SentinelRetryTimeoutSec
 #   （默认 180s，明显短于正常泳道）到即 taskkill /T 整棵进程树并判 NO-SENTINEL，不吞。
 #   退出码 ≠ 0 的 FAIL 不补问（那是进程层失败，不是遵守问题）。
+#
+# v2.3（openspec `opener-batch-archive-precheck`，design 决策点 1/2/3 Shao Peishen 2026-09-12 签认 (a)，apply 泳道 OP-0912-Z）：
+#   解析完成、-Only 过滤之后、**泳道分组之前** dot-source `工具-opener派出前校验.ps1`，按每个 opener 标题引用的 §一 行号
+#   （`队列 #N[／#M]`，多行号取合取）调 `工具-队列查询.py --include-archive --format json` 判四态：live 未 done ⇒ 派；
+#   live [S:done] ⇒ SKIPPED（live-done）；已迁归档 ⇒ SKIPPED（archived，不读归档行状态列）；查不到／校验自身失败 ⇒ 告警＋照派（fail-open）。
+#   🔴 SKIPPED 在分组前从泳道成员滤除——不起 claude、不产生哨兵、不进 NO-SENTINEL 判定、不停泳道；整泳道被跳空 ⇒ 不 Start-Job、不占并发额、不等 -StaggerSec。
+#   SKIPPED 作为第一等状态进汇总表／summary.txt／summary.json（含行号与理由），不影响退出码。-Force ⇒ 全部照派、日志留痕 [Force]。
 param(
     [string]$Plan = '',
     [string[]]$Only = @(),
@@ -37,7 +44,8 @@ param(
     [int]$StaggerSec = 90,
     [switch]$Detach,
     [string]$LogDir = '',
-    [int]$SentinelRetryTimeoutSec = 180
+    [int]$SentinelRetryTimeoutSec = 180,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,6 +84,7 @@ if ($Detach) {
                    '-SentinelRetryTimeoutSec', $SentinelRetryTimeoutSec)
     if ($FullAuto) { $childArgs += '-FullAuto' }
     if ($DryRun) { $childArgs += '-DryRun' }
+    if ($Force) { $childArgs += '-Force' }
     if ($Model) { $childArgs += @('-Model', $Model) }
     if ($Only.Count -gt 0) { $childArgs += @('-Only', ($Only -join ',')) }
     $shell = (Get-Process -Id $PID).Path
@@ -120,10 +129,25 @@ $openers = $openers | Sort-Object { [int]($_.Id.Substring(1)) }
 if ($Only.Count -gt 0) { $openers = $openers | Where-Object { $Only -contains $_.Id } }
 if ($openers.Count -eq 0) { Write-Host '✗ -Only 过滤后为空。' -ForegroundColor Red; Exit-WithCode 12 }
 
+# ---------- v2.3 派出前查队列态（挂点：解析后、-Only 过滤后、泳道分组前；判据只有 Python 一份） ----------
+$precheckHelper = Join-Path $PSScriptRoot '工具-opener派出前校验.ps1'
+Write-Host ('计划：' + $Plan)
+if (Test-Path $precheckHelper) {
+    . $precheckHelper
+    Write-Host '派出前查队列态（live [S:done]／已迁归档 ⇒ SKIPPED；查不到 ⇒ 照常派出）：'
+    $openers = @(Set-OpenerDispatchDecision -Openers @($openers) -RepoRoot $RepoRoot -Force:$Force)
+} else {
+    # 校验自身不可用 ⇒ fail-open：全部照常派出＋告警（spec「校验自身失败时 fail-open」），绝不因此停批。
+    Write-Host ('⚠ 派出前校验 helper 不存在（' + $precheckHelper + '）⇒ 跳过校验、全部照常派出（fail-open）') -ForegroundColor Yellow
+    $openers = @($openers | ForEach-Object { $_ | Add-Member -NotePropertyName Skip -NotePropertyValue $false -Force -PassThru | Add-Member -NotePropertyName SkipReason -NotePropertyValue '' -Force -PassThru })
+}
+$skippedOps = @($openers | Where-Object { $_.Skip })
+$openers = @($openers | Where-Object { -not $_.Skip })
+if ($skippedOps.Count -gt 0) { Write-Host ('⏭ SKIPPED ' + $skippedOps.Count + ' 个（不起 session、不占泳道）：' + (($skippedOps | ForEach-Object { $_.Id + '［' + $_.SkipReason + '］' }) -join '；')) -ForegroundColor Yellow }
+
 $laneNames = @()
 foreach ($op in $openers) { if ($laneNames -notcontains $op.Lane) { $laneNames += $op.Lane } }
-Write-Host ('计划：' + $Plan)
-Write-Host ('泳道 ' + $laneNames.Count + ' 条（并行上限 ' + $MaxParallel + '，错峰 ' + $StaggerSec + 's）：')
+Write-Host ('泳道 ' + $laneNames.Count + ' 条（并行上限 ' + $MaxParallel + '，错峰 ' + $StaggerSec + 's）：' + $(if ($laneNames.Count -eq 0) { '（全部 opener 已 SKIPPED，无泳道可起）' } else { '' }))
 foreach ($ln in $laneNames) {
     $ids = ($openers | Where-Object { $_.Lane -eq $ln } | ForEach-Object { $_.Id }) -join '→'
     Write-Host ('  ◆ ' + $ln + ' ：' + $ids + '（泳道内串行）')
@@ -245,6 +269,8 @@ while ($queue.Count -gt 0 -or ($jobs.Values | Where-Object { $_.State -eq 'Runni
 
 $all = @()
 foreach ($k in $jobs.Keys) { $all += Receive-Job -Job $jobs[$k]; Remove-Job -Job $jobs[$k] -Force }
+# v2.3：SKIPPED 作为第一等状态并入汇总（Sentinel='—'：未起 session、不谈哨兵；Log 列放跳过理由含行号与命中载体）。
+foreach ($so in $skippedOps) { $all += [pscustomobject]@{ Lane = $so.Lane; Id = $so.Id; Status = 'SKIPPED'; Sentinel = '—'; Minutes = 0; Session = ''; Log = $so.SkipReason } }
 $all = $all | Sort-Object Lane, { [int]($_.Id.Substring(1)) }
 Write-Host ''
 Write-Host '━━━━━━ 泳道批处理汇总 ━━━━━━'
@@ -257,6 +283,10 @@ $sentinelFirst = @($all | Where-Object { $_.Sentinel -eq '首轮' }).Count
 $sentinelRetry = @($all | Where-Object { $_.Sentinel -eq '补问' }).Count
 $sentinelNone = @($all | Where-Object { $_.Sentinel -eq '无' }).Count
 $summaryText += "`r`nSENTINEL_FIRST=" + $sentinelFirst + "`r`nSENTINEL_RETRY=" + $sentinelRetry + "`r`nSENTINEL_NONE=" + $sentinelNone
+# v2.3：跳过必留痕——summary.txt 逐条写 [skipped] <编号> | <行号 理由@载体:行>，人可直接复核判定。
+$skippedRows = @($all | Where-Object { $_.Status -eq 'SKIPPED' })
+$summaryText += "`r`nSKIPPED=" + $skippedRows.Count
+foreach ($sr in $skippedRows) { $summaryText += "`r`n[skipped] " + $sr.Id + ' | ' + $sr.Log }
 if ($sentinelRetry -gt 0) { Write-Host ('⚠ ' + $sentinelRetry + ' 项哨兵靠补问才拿到（首轮未自觉输出）——遵守率看 SENTINEL_FIRST/RETRY，不看 OK 数。') -ForegroundColor Yellow }
 # v2.1 ⑵：退出码随 summary 落盘（末行 EXIT=<code>）——-Detach 调用方读文件即得，不必持有子进程句柄。
 $summaryText += "`r`nEXIT=" + $exitCode + "`r`n"

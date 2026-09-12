@@ -1,4 +1,4 @@
-# 工具-opener批处理执行.ps1 —— 把《本周计划》A 节的 N 个 opener 塌缩成一次粘贴（v1.1，2026-08-24：修 Tee-Object UTF-16 追加致哨兵误判）
+# 工具-opener批处理执行.ps1 —— 把《本周计划》A 节的 N 个 opener 塌缩成一次粘贴（v1.1，2026-08-24：修 Tee-Object UTF-16 追加致哨兵误判；v1.2，2026-09-12 队列 §一 #397／#561：派出前查队列态，已完成的行 SKIPPED 不派）
 # 用法（在本机 PowerShell / Windows Terminal 里，一行）：
 #   powershell -ExecutionPolicy Bypass -File "0-学习与工具\工具-opener批处理执行.ps1" -Plan "1-转型规划\0-全景路线图\本周计划-2026-08-24.md" -FullAuto -Yes
 # 参数：
@@ -9,19 +9,24 @@
 #               Bash/git 类调用会因无人批准而失败——Cowork 纯 .md 类 opener 可用默认模式）
 #   -Yes        跳过开跑前确认
 #   -Resume     出错停下后续跑：等价于 -Only <失败项及其后全部>
+#   -Force      v1.2：绕过「派出前查队列态」校验，全部照派（日志留痕 [Force]）
 # 设计要点（对齐项目纪律）：
 #   ① 串行执行——天然避开编辑锁并发撞车；每个 opener 独立日志 reports/opener-batch/<日期>/<编号>.log
 #   ② 双指标判成败：claude 退出码 ＋ 日志中 OPENER_DONE 哨兵串（防「返回 0 但没干活」的静默回退）
 #   ③ 无头引导头：明告 session 无人在场——凡需 Shao Peishen 拍板/批准的点一律登记后停在该点；
 #      跟进信只到「⏳ 待你审」绝不发送；判据/口径类绝不默认生效（这两道业务闸不受 -FullAuto 影响）
 #   ④ 本脚本自身不改队列、不 commit——各 opener session 按其纪律回写队列/登记 §二 批次，落库交 sweep
+#   ⑤ v1.2（openspec `opener-batch-archive-precheck`，决策点 3 (a)）：解析完成、-Only 过滤之后、派出之前，
+#      dot-source `工具-opener派出前校验.ps1` 查每个 opener 标题引用的 §一 行——live 已 [S:done] 或已迁归档 ⇒ SKIPPED
+#      （不起 claude、不进哨兵判定、不触发 fail-loud break）；查不到／校验自身失败 ⇒ 告警＋照常派出（fail-open）。
 param(
     [string]$Plan = '',
     [string[]]$Only = @(),
     [switch]$DryRun,
     [switch]$FullAuto,
     [switch]$Yes,
-    [string]$Model = ''
+    [string]$Model = '',
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -75,10 +80,23 @@ $openers = $openers | Sort-Object { [int]($_.Id.Substring(1)) }
 if ($Only.Count -gt 0) { $openers = $openers | Where-Object { $Only -contains $_.Id } }
 if ($openers.Count -eq 0) { Write-Host '✗ -Only 过滤后为空。' -ForegroundColor Red; exit 12 }
 
+# ---------- v1.2 派出前查队列态（挂点：解析后、-Only 过滤后、任何派出动作前；判据只有 Python 一份） ----------
+$precheckHelper = Join-Path $PSScriptRoot '工具-opener派出前校验.ps1'
 Write-Host ('计划：' + $Plan)
-Write-Host ('将按序执行 ' + $openers.Count + ' 个 opener：' + (($openers | ForEach-Object { $_.Id + '(' + $_.Paste + ')' }) -join ' → '))
+if (Test-Path $precheckHelper) {
+    . $precheckHelper
+    Write-Host '派出前查队列态（live [S:done]／已迁归档 ⇒ SKIPPED；查不到 ⇒ 照常派出）：'
+    $openers = @(Set-OpenerDispatchDecision -Openers @($openers) -RepoRoot $RepoRoot -Force:$Force)
+} else {
+    # 校验自身不可用 ⇒ fail-open：全部照常派出＋告警（spec「校验自身失败时 fail-open」），绝不因此停批。
+    Write-Host ('⚠ 派出前校验 helper 不存在（' + $precheckHelper + '）⇒ 跳过校验、全部照常派出（fail-open）') -ForegroundColor Yellow
+    $openers = @($openers | ForEach-Object { $_ | Add-Member -NotePropertyName Skip -NotePropertyValue $false -Force -PassThru | Add-Member -NotePropertyName SkipReason -NotePropertyValue '' -Force -PassThru })
+}
+$skippedOps = @($openers | Where-Object { $_.Skip })
+$runOps = @($openers | Where-Object { -not $_.Skip })
+Write-Host ('将按序执行 ' + $runOps.Count + ' 个 opener：' + (($runOps | ForEach-Object { $_.Id + '(' + $_.Paste + ')' }) -join ' → ') + $(if ($skippedOps.Count -gt 0) { '　｜ SKIPPED ' + $skippedOps.Count + ' 个：' + (($skippedOps | ForEach-Object { $_.Id }) -join '、') } else { '' }))
 Write-Host ('权限模式：' + $(if ($FullAuto) { 'dangerously-skip-permissions（全自动）' } else { 'acceptEdits（默认；CC 建造类可能停在命令授权）' }))
-if ($DryRun) { $openers | ForEach-Object { Write-Host ('  ' + $_.Id + ' | ' + $_.Paste + ' | ' + $_.Title) }; exit 0 }
+if ($DryRun) { $openers | ForEach-Object { Write-Host ('  ' + $_.Id + ' | ' + $_.Paste + ' | ' + $(if ($_.Skip) { '⏭ SKIPPED（' + $_.SkipReason + '） | ' } else { '' }) + $_.Title) }; exit 0 }
 if (-not $Yes) {
     $ans = Read-Host '开跑？(y/N)'
     if ($ans -ne 'y' -and $ans -ne 'Y') { Write-Host '已取消。'; exit 0 }
@@ -101,6 +119,13 @@ $header = @(
 $results = @()
 $failedAt = ''
 foreach ($op in $openers) {
+    # v1.2：被跳过的 opener 在状态计算之前短路——不起 claude、不产生哨兵、不判 NO-SENTINEL、不 break。
+    if ($op.Skip) {
+        Write-Host ''
+        Write-Host ('━━ ' + $op.Id + ' ⏭ SKIPPED（' + $op.SkipReason + '）')
+        $results += [pscustomobject]@{ Id = $op.Id; Paste = $op.Paste; Status = 'SKIPPED'; Minutes = 0; Log = $op.SkipReason }
+        continue
+    }
     $log = Join-Path $logDir ($op.Id + '.log')
     $tmp = Join-Path $logDir ($op.Id + '.opener.txt')
     [System.IO.File]::WriteAllText($tmp, $header + "`r`n" + $op.Text, $Utf8NoBom)
@@ -129,7 +154,11 @@ foreach ($op in $openers) {
     Write-Host ('━━ ' + $op.Id + ' 结束：' + $status + '（' + $mins + ' 分钟）')
     if ($status -like 'FAIL*' -or $status -eq 'NO-SENTINEL') {
         $failedAt = $op.Id
-        Write-Host ('✗ 在 ' + $op.Id + ' 停下（fail-loud，不带病续跑）。修复后续跑：加参数 -Only ' + (($openers | Where-Object { [int]($_.Id.Substring(1)) -ge [int]($op.Id.Substring(1)) } | ForEach-Object { $_.Id }) -join ',')) -ForegroundColor Red
+        # #395 并入项：续跑提示给完整可粘贴命令（-Command 形态，保留本次的 -Plan／-FullAuto／-Model／-Force），不再只给一段参数。
+        $resumeIds = (($openers | Where-Object { [int]($_.Id.Substring(1)) -ge [int]($op.Id.Substring(1)) } | ForEach-Object { $_.Id }) -join ',')
+        $resumeCmd = 'powershell -ExecutionPolicy Bypass -Command "& ''' + $PSCommandPath + ''' -Plan ''' + $Plan + ''' -Only ' + $resumeIds + ' -Yes' + $(if ($FullAuto) { ' -FullAuto' } else { '' }) + $(if ($Model) { ' -Model ' + $Model } else { '' }) + $(if ($Force) { ' -Force' } else { '' }) + '"'
+        Write-Host ('✗ 在 ' + $op.Id + ' 停下（fail-loud，不带病续跑）。修复后续跑（整行可粘贴）：') -ForegroundColor Red
+        Write-Host ('  ' + $resumeCmd) -ForegroundColor Red
         break
     }
 }
@@ -138,5 +167,11 @@ Write-Host ''
 Write-Host '━━━━━━ 批处理汇总 ━━━━━━'
 $results | Format-Table Id, Paste, Status, Minutes -AutoSize | Out-String | Write-Host
 Write-Host ('日志目录：' + $logDir)
+$skippedResults = @($results | Where-Object { $_.Status -eq 'SKIPPED' })
+if ($skippedResults.Count -gt 0) {
+    Write-Host ('⏭ SKIPPED ' + $skippedResults.Count + ' 项（派出前查队列态判已完成，未起 session）：')
+    foreach ($sr in $skippedResults) { Write-Host ('  ' + $sr.Id + ' ｜ ' + $sr.Log) }
+    ($skippedResults | ForEach-Object { '[skipped] ' + $_.Id + ' | ' + $_.Log }) -join "`r`n" | Out-File -FilePath (Join-Path $logDir 'skipped.txt') -Encoding utf8
+}
 Write-Host '跑完后请核对：① 各 opener 的队列行回写与 §二 批次（sweep 每小时自动落库）；② 跟进信仍停在「⏳ 待你审」等你批准；③ NO-SENTINEL 表示退出码 0 但未见 OPENER_DONE——按「工具静默回退」纪律人工读该日志再下结论。'
 if ($failedAt) { exit 1 } else { exit 0 }
