@@ -1,5 +1,6 @@
 # 单条泳道分支 rebase → ff → push，带全套守卫。
-# 用法：pwsh -File ffbranch.ps1 -Branch <分支名> [-Tests <pytest 目标，逗号分隔>] [-Repo <仓库根>] [-TempRoot <临时 worktree 父目录>]
+# 用法：pwsh -File ffbranch.ps1 -Branch <分支名> [-Tests <pytest 目标，逗号分隔>] [-Repo <仓库根>] [-TempRoot <临时 worktree 父目录>] [-KeepWorktree]
+# 🔴 临时 worktree 不论结局都在 finally 里收（队列 §一 #576）；例外：rebase 冲突（exit 3）留现场、或显式传 -KeepWorktree。
 # 🔴 任一守卫不过即停，不继续；备份 ref 先打，回滚靠它。
 # 🔴 ④ 回归闸＝「与纯 master 比失败集合」，不是二值「全绿」（队列 §一 `#562`，`OP-0911-S`，2026-09-11；
 #    判据正本 .claude/rules/两桌同步与取证.md §二）；集合比对函数见 `工具-泳道分支合入-回归判定.ps1`。
@@ -12,7 +13,8 @@ param(
     [Parameter(Mandatory)][string]$Branch,
     [string]$Tests = '',
     [string]$Repo = 'C:\Dev\zhuopin-ai',
-    [string]$TempRoot = 'C:\Dev'
+    [string]$TempRoot = 'C:\Dev',
+    [switch]$KeepWorktree
 )
 
 $ErrorActionPreference = 'Stop'
@@ -156,8 +158,7 @@ function Invoke-LaneMerge {
         return 6
     }
     $script:gates['⑥四ref一致'] = $true
-    git worktree remove $wt --force | Out-Null
-    Write-Host "✅ [$Branch] 完成，临时 worktree 已清"
+    Write-Host "✅ [$Branch] 完成"
     return 0
 }
 
@@ -171,6 +172,25 @@ try {
     $code = 9
 } finally {
     $extra.exit = $code
+    # 🔴 队列 §一 #576（构建闭环第 13 环）：临时 worktree 的清理原本只挂在成功路径上，
+    # 四／五／六关不过或抛异常即漏一条，积久成山。现改为不论结局都在这里收。
+    # 例外两条：① rebase 冲突（code=3）故意留现场；② -KeepWorktree 显式要求留。
+    # 删它不丢东西：分支 ref 与备份 ref $bak 都指向 rebase 后的 commit。
+    Set-Location $Repo
+    $swept = @()
+    if (-not $KeepWorktree) {
+        $toSweep = @($wtMaster)
+        if ($code -ne 3) { $toSweep += $wt }
+        foreach ($w in $toSweep) {
+            if (Test-Path $w) {
+                try { git worktree remove $w --force 2>&1 | Out-Null; if ($LASTEXITCODE -eq 0) { $swept += (Split-Path $w -Leaf) } }
+                catch { Write-Host "  ⚠ 临时 worktree 没删掉：$w" }
+            }
+        }
+        if ($swept.Count -gt 0) { Write-Host "  临时 worktree 已清：$($swept -join '、')" }
+        if ($code -eq 3) { Write-Host "  rebase 冲突，留现场：$wt" }
+    }
+    $extra.worktree_swept = $swept
     $tracePath = Write-FfPatrolTrace -Repo $Repo -Actor '合入' -Branch $Branch -Action (Resolve-MergeAction -Code $code) `
         -Gates $gates -FailedBranch $failedBranchAll -FailedMaster $failedMasterAll -Extra $extra
     Write-Host "  留痕 → $tracePath（action=$(Resolve-MergeAction -Code $code)，exit=$code）"
