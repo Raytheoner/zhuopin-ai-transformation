@@ -6,7 +6,12 @@
 ' 🔴 起 轮询守 一律 pwsh 7（巡检脚本本身要 pwsh；Windows PowerShell 5.1 跑不动）——pwsh 的绝对路径
 ' 也烘焙在 run-poll-guard.ps1 里，这里只负责用系统自带的 powershell.exe 把它以隐藏窗口拉起来
 ' （5.1 只是个跳板，真正的工作进程是包装脚本里那条 pwsh）。等待完成（True）以保持任务「运行中」语义。
+' 🔴 退出码必须透传（OP-0913-S 缺陷二，批 B-0913_轮询守实机三修）：原先 `objShell.Run cmd, 0, True` 以语句形式
+'    调用，把子进程退出码丢掉，wscript 恒返回 0 ⇒ 包装脚本起不来（缺陷一）时任务面板与 LastTaskResult 照样报成功——
+'    「只会报成功的守卫等于没有守卫」。改为函数形式取返回值再 WScript.Quit 透传：包装脚本 exit N ⇒ 本进程 exit N ⇒
+'    任务 LastTaskResult=N。单测用 cscript 起本文件＋桩 run-poll-guard.ps1（exit 7）验证非零能传出来。
 Set objShell = CreateObject("WScript.Shell")
 scriptDir = Left(WScript.ScriptFullName, Len(WScript.ScriptFullName) - Len(WScript.ScriptName))
 cmd = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File """ & scriptDir & "run-poll-guard.ps1"""
-objShell.Run cmd, 0, True
+rc = objShell.Run(cmd, 0, True)
+WScript.Quit rc

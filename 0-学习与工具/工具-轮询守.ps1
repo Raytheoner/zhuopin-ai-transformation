@@ -22,6 +22,13 @@
 #   ③ 🔴 命令非零退出／超时／stdout 一个顶层标记都没有 ⇒ 一律视为信号、唤模型并把 stderr 带进去。**不静默吞。**
 #      （同日实证：`git blame` 取龄 32.9 s 超 30 s 上限而降级放行——静默失效的活例。）
 #   任一侧有信号 ⇒ 唤模型一次；两侧都无 ⇒ 本轮到此结束，只留痕。
+#   ④ 🔴 常驻标记去重（`OP-0913-S` 缺陷三，批 `B-0913_轮询守实机三修`）：`[WT-BLOCKED]` 指向的是「已合入但 remove 被拒」的
+#      陈年 worktree——**不会自己消失的常驻状态，不是事件**。第一轮实机留痕：探针安静、白名单无动作、登记处为空，
+#      唯一叫醒模型的就是它，每 15 分钟一次、永远，甲因此一分钱都省不下。解法照抄 `工具-待合分支巡检.ps1`
+#      `Get-TodayWhitelistMissKeys` 的形状（同一结论只记一次、内容一变再记）：`$PatrolStickyMarkers` 里的标记
+#      按「标记＋其内容集合」去重——内容集合落盘在 `<LogDir>/sticky-markers.json`（同 reports/，不入库、不是 ff 正本），
+#      **同一组 worktree 再次出现 ⇒ 不算新信号，留痕照写（verdict=`quiet-sticky:<标记>`）；集合多一个／少一个／换一个 ⇒ 新信号、唤模型。**
+#      只比标记名不比集合＝把「又多堵了一个」也吞掉，故集合必须落盘比对。`-DryRun` 不写状态文件。
 #
 # 🔴 留痕（病二的解）：每轮**无条件**在 `<Repo>/reports/poll-guard/poll-guard-<yyyyMMdd>.jsonl` 追加一行——
 #   时刻／两条命令退出码与耗时／各自判定与顶层标记／是否唤模型／模型退出码与耗时／本轮总耗时。
@@ -66,10 +73,13 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }   # �
 $ProbeQuietMarkers  = @('NO-SIGNAL')
 $PatrolQuietMarkers = @('WL-NO-ACTION', 'WL-OFF', 'NO-PENDING', 'NO-ACTION', 'WT-NO-ACTION')
 $MarkerRegex        = '^\[([A-Z][A-Z0-9-]*)\]'   # 顶层标记＝行首 `[大写-数字]`；`[lane:…]`／`[S:…]` 之类小写的不算
+# 常驻标记（判据 ④）：其行内容是 `; ` 分隔的名字集合（巡检 L549 `[WT-BLOCKED] a; b`），按集合去重；同属 🟡 档判据字面
+$PatrolStickyMarkers = @('WT-BLOCKED')
 
 $LogDirNote = '本文件不入库、只用于计数（reports/ 被 .gitignore 整棵忽略；不是 ff 正本，与 合入登记/ 无关）'
 
 if (-not $LogDir)       { $LogDir       = Join-Path $Repo 'reports\poll-guard' }
+$StickyStateFile = Join-Path $LogDir 'sticky-markers.json'   # 🔴 只落 reports/ 下；绝不落 合入登记/
 if (-not $ProbeScript)  { $ProbeScript  = Join-Path $Repo '0-学习与工具\工具-无头棒收工探针.py' }
 if (-not $PatrolScript) { $PatrolScript = Join-Path $Repo '0-学习与工具\工具-待合分支巡检.ps1' }
 if (-not $SkillDoc)     { $SkillDoc     = Join-Path $Repo '0-学习与工具\定时任务源码\poll-opener-batch.SKILL.md' }
@@ -176,6 +186,70 @@ function Get-CommandVerdict {
     return @{ signal = $false; verdict = 'quiet'; markers = $markers }
 }
 
+function Get-MarkerPayloadSet {
+    <# 取某标记行的内容集合：`[WT-BLOCKED] a; b` ⇒ @('a','b')（去空、去重、排序——顺序不同不算变化）。 #>
+    param([string]$Text, [string]$Marker)
+    $items = @()
+    $re = '^\[' + [regex]::Escape($Marker) + '\]\s*(.*)$'
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -match $re) { $items += @($Matches[1] -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+    }
+    return @($items | Sort-Object -Unique)
+}
+
+function Read-StickyState {
+    param([string]$Path)
+    $state = @{}
+    if (-not (Test-Path $Path)) { return $state }
+    try {
+        $raw = Get-Content -Raw -Encoding UTF8 $Path | ConvertFrom-Json
+        foreach ($p in $raw.PSObject.Properties) { $state[$p.Name] = @{ set = @($p.Value.set); since = [string]$p.Value.since; suppressed = [int]$p.Value.suppressed } }
+    } catch { $state = @{} }   # 状态文件坏了＝当没有：最多多唤一次，不会少唤
+    return $state
+}
+
+function Resolve-StickyMarkers {
+    <# 判据 ④ 的机械实现：把巡检判定里属于 $PatrolStickyMarkers、且内容集合与落盘状态**完全相同**的标记从
+       「响亮」里摘掉；集合变化（含首次出现）照旧算信号并更新状态；标记本轮不出现 ⇒ 清掉状态（再出现即重新算新）。
+       只改写 verdict 为 markers:… 的判定；exit/timeout/no-marker 三种异常判定不碰（异常永远出声）。
+       返回 @{ verdict=<改写后的判定>; sticky=<每个常驻标记的 @{set; changed; prev}> }。 #>
+    param([hashtable]$Verdict, [string]$Text, [string]$StateFile, [bool]$Persist, [string]$Now)
+    $state = Read-StickyState -Path $StateFile
+    $report = [ordered]@{}
+    $seen = @()
+    $dirty = $false
+    foreach ($m in $PatrolStickyMarkers) {
+        $present = @($Verdict.markers) -contains $m
+        if (-not $present) {
+            if ($state.ContainsKey($m)) { $state.Remove($m); $dirty = $true }
+            continue
+        }
+        $cur  = Get-MarkerPayloadSet -Text $Text -Marker $m
+        $prev = if ($state.ContainsKey($m)) { @($state[$m].set) } else { $null }
+        $same = ($null -ne $prev) -and (($prev -join "`n") -eq ($cur -join "`n"))
+        if ($same) {
+            $seen += $m
+            $state[$m].suppressed = [int]$state[$m].suppressed + 1
+        } else {
+            $state[$m] = @{ set = @($cur); since = $Now; suppressed = 0 }
+        }
+        $dirty = $true
+        $report[$m] = @{ set = @($cur); changed = (-not $same); prev = @(if ($null -ne $prev) { $prev } else { @() }) }
+    }
+    if ($dirty -and $Persist) {
+        $out = [ordered]@{}
+        foreach ($k in ($state.Keys | Sort-Object)) { $out[$k] = $state[$k] }
+        Set-Content -Path $StateFile -Value ($out | ConvertTo-Json -Depth 5) -Encoding UTF8
+    }
+    $v = @{ signal = $Verdict.signal; verdict = $Verdict.verdict; markers = $Verdict.markers }
+    if ($seen.Count -gt 0 -and $Verdict.verdict -like 'markers:*') {
+        $loud = @($Verdict.markers | Where-Object { $PatrolQuietMarkers -notcontains $_ -and $seen -notcontains $_ } | Select-Object -Unique)
+        if ($loud.Count -eq 0) { $v = @{ signal = $false; verdict = ('quiet-sticky:' + ($seen -join ',')); markers = $Verdict.markers } }
+        else                   { $v = @{ signal = $true;  verdict = ('markers:' + ($loud -join ',')); markers = $Verdict.markers } }
+    }
+    return @{ verdict = $v; sticky = $report }
+}
+
 $row = [ordered]@{
     ts = $roundStart.ToString('o'); round = $roundId; dry_run = [bool]$DryRun
 }
@@ -193,10 +267,14 @@ try {
     if ($DryRun) { $patrolArgs += '-DryRun' }
     $patrol = Invoke-Captured -Exe $PwshExe -ArgList $patrolArgs -Tag 'patrol' -TimeoutSec $PatrolTimeoutSec
     $tj = Get-CommandVerdict -Run $patrol -QuietSet $PatrolQuietMarkers
+    # 判据 ④：常驻标记按内容集合去重（干跑不落状态）
+    $sticky = Resolve-StickyMarkers -Verdict $tj -Text $patrol.out -StateFile $StickyStateFile -Persist (-not $DryRun) -Now $roundStart.ToString('o')
+    $tj = $sticky.verdict
 
     $wake = ($pj.signal -or $tj.signal)
     $row['probe']  = @{ exit = $probe.exit;  ms = $probe.ms;  verdict = $pj.verdict; markers = @($pj.markers) }
     $row['patrol'] = @{ exit = $patrol.exit; ms = $patrol.ms; verdict = $tj.verdict; markers = @($tj.markers) }
+    if ($sticky.sticky.Count -gt 0) { $row['patrol']['sticky'] = $sticky.sticky }
     $row['signal'] = $wake
     $row['woke']   = $false
     $row['claude'] = @{ exit = $null; ms = 0 }
@@ -219,8 +297,15 @@ try {
             if ($cc) { $ClaudeExe = $cc.Source }
         }
         $skillText = if (Test-Path $SkillDoc) { Get-Content -Raw -Encoding UTF8 $SkillDoc } else { "（章程文件不存在：$SkillDoc）" }
+        $stickyNote = ''
+        foreach ($k in $sticky.sticky.Keys) {
+            if ($sticky.sticky[$k].changed) {
+                $stickyNote += "常驻标记 [$k] 内容集合较上次落盘变化：旧＝{$($sticky.sticky[$k].prev -join '; ')}；新＝{$($sticky.sticky[$k].set -join '; ')}——同集合再现不会再唤你，只有变化才会。`n"
+            }
+        }
         $prompt = @"
 [轮询守唤模型 · $($roundStart.ToString('yyyy-MM-dd HH:mm:ss'))] 本轮由 工具-轮询守.ps1 按写死判据判定有信号：探针＝$($pj.verdict)；巡检＝$($tj.verdict)。
+$stickyNote
 🔴 两条命令本轮已由脚本跑过，stdout／stderr 原样附在下面。**不要重跑探针**（它已把信号标为「已报」并推送企微，重跑只会得到 [NO-SIGNAL]）；**不要重跑巡检**（它已执行过合入／销行／清理动作，重跑＝双次副作用）。
 按下方章程的「按输出分支」处理；章程里「运行第 1 件／第 2 件命令」两步视为已完成，只做章程允许的只读核查（读 summary.txt、git log -1）。
 命令非零退出／超时／无标记的，按章程「探针自身异常」「脚本非零退出」分支处理：原样贴出 stderr 末几行，说明需人工核，**不要自行修脚本、不要重试**。

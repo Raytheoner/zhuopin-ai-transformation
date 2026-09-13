@@ -17,6 +17,8 @@
 #    · Execute=wscript.exe + run-poll-guard-hidden.vbs 拉起隐藏窗口（#231：每 15 分钟闪一次控制台窗口不可接受）；
 #    · 提权自检守卫（#412 M1）：S4U 任务的 Register/Unregister 需 SeTcbPrivilege，非提权跑＝「以为刷新了、其实没刷新」。
 #  🔴 起 轮询守 一律用 pwsh 7（看护件顶部：巡检脚本本身就要 `pwsh -NoProfile -File`，Windows PowerShell 5.1 跑不动它）。
+#  🔴 解析出的 pwsh/python/git/claude/node 一律过 Assert-RealExecutable（OP-0913-S 缺陷一，批 B-0913_轮询守实机三修）：
+#     0 字节／ReparsePoint 的应用执行别名 ⇒ 报错退出、不生成包装、不注册。-PwshExe 等五个参数只为单测指向桩而设。
 #
 #  用法（本机管理员 PowerShell，在主工作区目录下执行一次；幂等——先注销旧任务再重建）：
 #    pwsh -NoProfile -ExecutionPolicy Bypass -File "0-学习与工具\工具-注册轮询守计划任务.ps1"
@@ -34,6 +36,12 @@ param(
     [string]$Repo = 'C:\Dev\zhuopin-ai',   # 只为 -WhatIf 在泳道 worktree 里自测而设；生产一律主工作区
     [int]$IntervalMinutes = 15,
     [string]$Model = '',        # 传给 轮询守 -Model（留空＝claude CLI 默认）
+    # 下列五个只为单测指向桩／伪造件而设（配合 -WhatIf），留空＝自动解析；生产一律留空
+    [string]$PwshExe = '',
+    [string]$PythonExe = '',
+    [string]$GitExe = '',
+    [string]$ClaudeExe = '',
+    [string]$NodeExe = '',
     [switch]$Unregister,
     [switch]$WhatIf
 )
@@ -79,24 +87,53 @@ if (-not $WhatIf -and -not (Test-Path (Join-Path $REPO ".git") -PathType Contain
 
 # ── 1. 解析绝对路径 + 运行身份 ──
 Write-Host "[1/3] 解析 pwsh / python / git / claude 绝对路径 + 运行身份..." -ForegroundColor Yellow
-function Resolve-Exe([string]$name) {
-    $c = Get-Command $name -ErrorAction SilentlyContinue
-    if (-not $c) { Write-Error "未找到 $name，请确认已安装并加入当前用户 PATH。"; exit 1 }
-    return $c.Source
+function Assert-RealExecutable {
+    <# 🔴 fail-loud 校验（OP-0913-S 缺陷一，批 B-0913_轮询守实机三修）：解析出的可执行文件若 Length -eq 0 或带 ReparsePoint
+       属性 ⇒ 它是 App Execution Alias（%LOCALAPPDATA%\Microsoft\WindowsApps\*.exe 那种 0 字节重解析点），不是真二进制。
+       S4U 无交互式登录上下文、解析不了该别名：第一轮实机验收 wscript 1 秒返回 0（手跑 94.8 s）——整条链路根本没起来，
+       而对照组 ZhuopinCommitSweep（同 Principal）一直跑得好，只因它调的是 …\Python314\python.exe 这个真实二进制。
+       校验不过 ⇒ 报错退出、不生成包装、不注册。只把解析换个写法而不加校验＝换台机器再踩一遍。 #>
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Path)
+    $fi = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (-not $fi -or $fi.PSIsContainer) {
+        Write-Error "$Name 解析到 $Path，但它不存在或不是文件——已中止，不生成包装、不注册。"; exit 1
+    }
+    $isReparse = (($fi.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+    if ($fi.Length -eq 0 -or $isReparse) {
+        Write-Error ("$Name 解析到 $Path（Length=$($fi.Length)，Attributes=$($fi.Attributes)）——这是 0 字节／ReparsePoint 的应用执行别名，" +
+            "不是可执行文件，S4U 计划任务解析不了它（缺陷一）。已中止，不生成包装、不注册。" +
+            "请改用真身路径重跑（如 -${Name}Exe `"<真实 .exe 全路径>`"），或把真身目录放到 PATH 里 WindowsApps 之前。")
+        exit 1
+    }
 }
-$pwshExe   = Resolve-Exe pwsh
-# 🔴 本机 pwsh 是 Store 安装：Get-Command 解析到 C:\Program Files\WindowsApps\Microsoft.PowerShell_<版本>_…\pwsh.exe，
-#    版本号烘进路径，Store 自动升级一次就失效（当前 PATH 里已残留一条 7.6.0.0 的死目录即为证）。优先用
-#    每用户稳定别名 %LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe（App Execution Alias，升级不变），没有才退回解析值。
-$pwshAlias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
-if ($pwshExe -like '*\Program Files\WindowsApps\*' -and (Test-Path $pwshAlias)) { $pwshExe = $pwshAlias }
-$pyExe     = Resolve-Exe python
-$gitExe    = Resolve-Exe git
-$claudeExe = Resolve-Exe claude
+function Resolve-Exe([string]$name, [string]$override = '') {
+    if ($override) { $src = $override }
+    else {
+        $c = Get-Command $name -ErrorAction SilentlyContinue
+        if (-not $c) { Write-Error "未找到 $name，请确认已安装并加入当前用户 PATH。"; exit 1 }
+        $src = $c.Source
+    }
+    Assert-RealExecutable -Name $name -Path $src
+    return $src
+}
+# 🔴 pwsh：本机是 Store 安装，Get-Command 常解析到 %LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe 这个别名（上文校验会拒掉），
+#    真身在 C:\Program Files\WindowsApps\Microsoft.PowerShell_<版本>_…\pwsh.exe。本脚本本就要求在 pwsh 7 下跑，
+#    当前进程的 Path 就是真身（实测返回的正是该路径），优先取它。代价：版本号烘进路径，Store 升级一次就失效——
+#    包装脚本起手先校验 pwsh 存在，不存在则留痕＋exit 9（配合 VBS 退出码透传，任务面板会红），届时重跑本脚本即可
+#    （注册动作本就归人）。此前「优先用别名、升级不变」的取舍正是缺陷一的根因，已撤。
+if (-not $PwshExe -and $PSVersionTable.PSEdition -eq 'Core') {
+    $selfPath = (Get-Process -Id $PID).Path
+    if ($selfPath -and (Split-Path $selfPath -Leaf) -ieq 'pwsh.exe') { $PwshExe = $selfPath }
+}
+$pwshExe   = Resolve-Exe pwsh   $PwshExe
+$pyExe     = Resolve-Exe python $PythonExe
+$gitExe    = Resolve-Exe git    $GitExe
+$claudeExe = Resolve-Exe claude $ClaudeExe
 $gitDir    = Split-Path $gitExe -Parent
 $nodeDir   = ''
-$nodeCmd   = Get-Command node -ErrorAction SilentlyContinue
-if ($nodeCmd) { $nodeDir = Split-Path $nodeCmd.Source -Parent }
+$nodeSrc   = $NodeExe
+if (-not $nodeSrc) { $nodeCmd = Get-Command node -ErrorAction SilentlyContinue; if ($nodeCmd) { $nodeSrc = $nodeCmd.Source } }
+if ($nodeSrc) { Assert-RealExecutable -Name node -Path $nodeSrc; $nodeDir = Split-Path $nodeSrc -Parent }
 $currentUser = (whoami).Trim()
 Write-Host "      pwsh    : $pwshExe" -ForegroundColor Green
 Write-Host "      python  : $pyExe" -ForegroundColor Green
@@ -113,6 +150,13 @@ $wrapperContent = @"
 # 轮询守启动包装（由 工具-注册轮询守计划任务.ps1 生成，勿手改——重跑注册脚本会覆盖此文件；已在 .gitignore）。
 # S4U 触发时的 PATH 未必等同交互式登录 shell，此处把 git/node/claude/python 的绝对目录显式烘焙进来。
 `$env:PATH = "$pathPrefix;`$env:PATH"
+# 🔴 pwsh 真身路径含 Store 版本号，升级后会消失（OP-0913-S 缺陷一的取舍）：不存在就留一行痕＋exit 9，别静默返回 0。
+if (-not (Test-Path -LiteralPath "$pwshExe" -PathType Leaf)) {
+    `$d = "$REPO\reports\poll-guard"; New-Item -ItemType Directory -Force -Path `$d | Out-Null
+    `$ts = Get-Date
+    Add-Content -Path (Join-Path `$d ("poll-guard-" + `$ts.ToString('yyyyMMdd') + ".jsonl")) -Encoding UTF8 -Value ('{"ts":"' + `$ts.ToString('o') + '","round":"' + `$ts.ToString('yyyyMMdd-HHmmss') + '","wrapper_error":"pwsh 不存在（Store 升级后路径失效？请重跑 工具-注册轮询守计划任务.ps1）：' + "$pwshExe".Replace('\', '\\') + '","woke":false,"total_ms":0}')
+    exit 9
+}
 & "$pwshExe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$GUARD_SCRIPT" -Repo "$REPO" -PythonExe "$pyExe" -PwshExe "$pwshExe" -ClaudeExe "$claudeExe"$modelArg
 exit `$LASTEXITCODE
 "@
