@@ -50,9 +50,24 @@
 #      在有未提交改动或未跟踪内容时非零退出，这正是我们要的「脏的只告警、不删」；
 #      remove 失败只记一行警告并点名，**不重试、不强删、不代查是谁在用**。
 #
-# 用法：pwsh -File 工具-待合分支巡检.ps1 [-DryRun] [-IdleBufferMinutes 60] [-NoAutoWhitelist] [-WhitelistMaxAgeDays 14]
+# ============================================================
+# 队列 §一 #571 ⑹⑺（2026-09-13，OP-0913-E 并入）：合入链路留痕 ＋ 登记册收尾销行
+# ============================================================
+# 🔴 成因：机器把 rebase／ff 做了，结论只留在某条会话的 stdout 里——对其它会话等于没跑过，
+#    看护者只能靠 `git reflog` ＋进程表反推（反推一次就是一次人守）。
+#   ⑹ 本脚本每处置一条分支（白名单命中／不命中／脏文件交集／干跑／调合入脚本得到退出码／销行）
+#      都在 `reports/ff-patrol-<yyyyMMdd>.jsonl` 追加一行；合入脚本自己另写它的六关明细行，两行
+#      以 `actor` 区分（巡检／合入）。落盘函数正本在 `工具-合入链路留痕.ps1`。
+#   ⑺ 动作一开头先做登记册收尾销行：「分支已不存在」「已是 master 祖先」的行迁进
+#      `reports/pending-ff.done-<yyyyMMdd>.jsonl`（附 done_reason／master_sha），本轮合入成功的行
+#      同样迁走（done_reason=本轮合入）——`pending-ff.jsonl` 从此恒等于「真待合清单」。
+#   `-Repo`／`-TempRoot` 只为单测指向临时仓库而设，默认值即生产值。
+#
+# 用法：pwsh -File 工具-待合分支巡检.ps1 [-DryRun] [-IdleBufferMinutes 60] [-NoAutoWhitelist] [-WhitelistMaxAgeDays 14] [-Repo <仓库根>] [-TempRoot <临时 worktree 父目录>]
 #       pwsh -File 工具-待合分支巡检.ps1 -EvaluateBranch <ref> [-EvaluateBase master]   # 只干跑白名单判据，不合入
 param(
+    [string]$Repo = 'C:\Dev\zhuopin-ai',
+    [string]$TempRoot = 'C:\Dev',
     [switch]$DryRun,
     [int]$IdleBufferMinutes = 60,
     [switch]$NoAutoWhitelist,          # 动作〇 总开关之一（另一个＝标记文件 reports/ff-whitelist.OFF）
@@ -62,10 +77,57 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Repo = 'C:\Dev\zhuopin-ai'
 Set-Location $Repo
 $Reg = Join-Path $Repo 'reports\pending-ff.jsonl'
-$Merge = Join-Path $Repo '0-学习与工具\工具-泳道分支合入.ps1'
+# 🔴 合入脚本按本脚本所在目录找（不是按 $Repo 拼）——单测把 -Repo 指到临时仓库时，脚本本体仍在源码目录。
+$Merge = Join-Path $PSScriptRoot '工具-泳道分支合入.ps1'
+. (Join-Path $PSScriptRoot '工具-合入链路留痕.ps1')
+
+function Resolve-MergeExitAction {
+    <# 合入脚本退出码 → 本脚本留痕动作（与 `工具-泳道分支合入.ps1::Resolve-MergeAction` 同一张表）：
+       0 合入；2 脏文件交集／4 回归新增失败＝拒绝；其余（3 rebase 冲突／5 ff 失败／6 四 ref 不一致／9 异常）＝被打断。 #>
+    param([int]$Code)
+    switch ($Code) { 0 { '合入' } 2 { '拒绝' } 4 { '拒绝' } default { '被打断' } }
+}
+
+function Write-PatrolTrace {
+    <# 本脚本的留痕入口（actor 固定＝巡检）。🔴 `-DryRun` 一律不留痕——同白名单审计日志「干跑只看 stdout」：
+       干跑什么都没做，也就没有「结论」可留给下一个人。 #>
+    param(
+        [Parameter(Mandatory)][string]$Branch,
+        [Parameter(Mandatory)][string]$Action,
+        [hashtable]$Gates = @{},
+        [hashtable]$Extra = @{}
+    )
+    if ($DryRun) { return }
+    Write-FfPatrolTrace -Repo $Repo -Actor '巡检' -Branch $Branch -Action $Action -Gates $Gates -Extra $Extra | Out-Null
+}
+
+function Get-TodayWhitelistMissKeys {
+    <# 当日留痕里已记过的「白名单不命中」键集合（`分支|分支sha`）。白名单候选常年几十条、每轮都不命中，
+       若每轮都追加一行，一天就是上千行噪声；同一 sha 的同一结论只记一次，分支一有新提交再记。 #>
+    $set = New-Object 'System.Collections.Generic.HashSet[string]'
+    $path = Get-FfPatrolTracePath -Repo $Repo
+    if (-not (Test-Path $path)) { return ,$set }
+    foreach ($line in (Get-Content $path -Encoding UTF8 | Where-Object { $_.Trim() })) {
+        try { $r = $line | ConvertFrom-Json } catch { continue }
+        if ($r.actor -eq '巡检' -and $r.action -eq '拒绝' -and $r.path -eq '白名单' -and $r.branch_sha) {
+            [void]$set.Add("$($r.branch)|$($r.branch_sha)")
+        }
+    }
+    return ,$set
+}
+
+function Invoke-MergeScript {
+    <# 调 `工具-泳道分支合入.ps1` 并返回退出码；参数原样透传 -Repo／-TempRoot，使单测与生产走同一条路。 #>
+    param([Parameter(Mandatory)][string]$Branch, [string]$Tests = '')
+    $a = @('-NoProfile', '-File', $Merge, '-Branch', $Branch, '-Repo', $Repo, '-TempRoot', $TempRoot)
+    if ($Tests) { $a += @('-Tests', $Tests) }
+    # 🔴 子进程 stdout 经 Write-Host 走宿主流（仍逐行实时回显），不能漏进本函数输出流——否则返回值变成数组、
+    #    `[int]` 转换即炸（单测实撞）。`$LASTEXITCODE` 取的是 pwsh 子进程自己的退出码，与管道末端无关。
+    & pwsh @a | ForEach-Object { Write-Host $_ }
+    return [int]$LASTEXITCODE
+}
 
 # ============================================================
 # 动作〇：ff 低风险白名单 —— 「纯文档分支也要问一次」的机器那一半
@@ -182,13 +244,21 @@ function Invoke-WhitelistAutoFf {
 
     $dirty = git -C $Repo status --porcelain | ForEach-Object { $_.Substring(3).Trim('"') }
     $done = @(); $failed = @(); $waiting = @(); $notHit = @(); $audit = @(); $dryHits = @()
+    $missLogged = Get-TodayWhitelistMissKeys
 
     foreach ($br in $candidates) {
         $v = Test-FfWhitelist -Repo $Repo -Branch $br -Base master
         $lines = @(Format-FfWhitelistVerdict -Verdict $v)
+        $wlGates = @{}
+        foreach ($c in $v.Checks) { $wlGates["白名单$($c.Id)"] = [bool]$c.Ok }
         if (-not $v.Hit) {
             $why = @($v.Checks | Where-Object { -not $_.Ok } | ForEach-Object { "$($_.Id) $($_.Detail)" }) -join '；'
             Write-Host "⛔ $br 不命中白名单，留在「等他一字母」：$why"
+            $sha = (git -C $Repo rev-parse --short $br 2>$null)
+            if (-not $missLogged.Contains("$br|$sha")) {
+                Write-PatrolTrace -Branch $br -Action '拒绝' -Gates $wlGates `
+                    -Extra @{ path = '白名单'; branch_sha = $sha; reason = "不命中白名单：$why" }
+            }
             $notHit += $br; continue
         }
         $lines | ForEach-Object { Write-Host $_ }
@@ -197,6 +267,7 @@ function Invoke-WhitelistAutoFf {
         $x = @($v.Files | Where-Object { $dirty -contains $_ })
         if ($x) {
             Write-Host "⏳ $br 命中白名单但前置未满足：与脏文件交集 $($x -join ', ')"
+            Write-PatrolTrace -Branch $br -Action '跳过' -Gates $wlGates -Extra @{ path = '白名单'; reason = "脏文件交集：$($x -join ', ')" }
             $waiting += "$br ← $($x -join ', ')"; $audit += "    ⏳ 脏文件交集，本轮未合入：$($x -join ', ')"; continue
         }
         if ($DryRun) {
@@ -205,12 +276,15 @@ function Invoke-WhitelistAutoFf {
         }
 
         Write-Host "▶ $br 命中白名单，自动 ff（docs 分支无测试目标，跳过回归——⑵ 已保证零代码文件）"
-        & pwsh -NoProfile -File $MergeScript -Branch $br
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ $br 已自动 ff（白名单）"; $done += $br; $audit += "    ✅ 已 ff，master → $(git -C $Repo rev-parse --short master)"
+        $code = Invoke-MergeScript -Branch $br
+        $masterNow = (git -C $Repo rev-parse --short master)
+        Write-PatrolTrace -Branch $br -Action (Resolve-MergeExitAction -Code $code) -Gates $wlGates `
+            -Extra @{ path = '白名单'; merge_exit = $code; master_after = $masterNow; tests = '' }
+        if ($code -eq 0) {
+            Write-Host "✅ $br 已自动 ff（白名单）"; $done += $br; $audit += "    ✅ 已 ff，master → $masterNow"
         } else {
-            Write-Host "🔴 $br 自动 ff 失败（工具-泳道分支合入.ps1 退出码 $LASTEXITCODE），留在「等他一字母」"
-            $failed += "$br（退出码 $LASTEXITCODE）"; $audit += "    🔴 合入失败，退出码 $LASTEXITCODE"
+            Write-Host "🔴 $br 自动 ff 失败（工具-泳道分支合入.ps1 退出码 $code），留在「等他一字母」"
+            $failed += "$br（退出码 $code）"; $audit += "    🔴 合入失败，退出码 $code"
         }
     }
 
@@ -253,7 +327,13 @@ if ($NoAutoWhitelist) {
     Invoke-WhitelistAutoFf -Repo $Repo -RegistryPath $Reg -MergeScript $Merge -DryRun:$DryRun -MaxAgeDays $WhitelistMaxAgeDays
 }
 
-# ── 动作一：已授权待合分支 → ff 入 master（原有逻辑，判据与行为均未改） ──
+# ── 动作一：已授权待合分支 → ff 入 master（判据未改；#571 ⑹⑺ 加留痕与销行） ──
+# ⑺ 登记册收尾销行：先把「分支已不存在」「已是 master 祖先」的行迁进 done 文件，再读真待合清单。
+$sweep = Invoke-PendingFfRegistrySweep -Repo $Repo -RegistryPath $Reg -DryRun:$DryRun
+if ($sweep.Moved.Count -gt 0) {
+    $sweep.Moved | ForEach-Object { Write-Host "· $($_.Branch) $($_.Reason)，$(if ($DryRun) { '[DRY] 本可销行' } else { '已销行' })" }
+    if (-not $DryRun) { Write-Host "[PENDING-SWEPT] $($sweep.Moved.Count) 行 → $($sweep.DonePath)" }
+}
 if (-not (Test-Path $Reg)) {
     Write-Host '[NO-PENDING] 无待合登记。'
 } else {
@@ -269,32 +349,51 @@ if (-not (Test-Path $Reg)) {
             try { $e = $line | ConvertFrom-Json } catch { Write-Host "⚠ 登记行解析失败，原样保留：$line"; $kept += $line; continue }
             $br = $e.branch
 
+            # 「分支已不存在」「已是 master 祖先」两类正常已被上方 ⑺ sweep 迁走；这里只在 -DryRun（sweep 不写）
+            # 或两次读之间状态变化时兜底，行为与 sweep 同（销行留痕，不静默丢）。
             git show-ref --verify --quiet "refs/heads/$br"
-            if ($LASTEXITCODE -ne 0) { Write-Host "· $br 分支已不存在，销登记"; continue }
-
-            # 已经并进 master 了 ⇒ 销登记，不重复做
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "· $br 分支已不存在，销登记"
+                if (-not $DryRun) { Add-PendingFfDoneRow -Repo $Repo -RawLine $line -Reason '分支已不存在' | Out-Null }
+                continue
+            }
             git merge-base --is-ancestor $br master 2>$null
-            if ($LASTEXITCODE -eq 0) { Write-Host "· $br 内容已在 master，销登记"; continue }
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "· $br 内容已在 master，销登记"
+                if (-not $DryRun) { Add-PendingFfDoneRow -Repo $Repo -RawLine $line -Reason '已是 master 祖先' -MasterSha (git rev-parse master) | Out-Null }
+                continue
+            }
 
             # 🔴 授权是硬前置：没有他的原文就不碰
-            if (-not $e.authorized_text) { Write-Host "⚠ $br 无授权原文，跳过（本脚本绝不代授权）"; $kept += $line; continue }
+            if (-not $e.authorized_text) {
+                Write-Host "⚠ $br 无授权原文，跳过（本脚本绝不代授权）"
+                Write-PatrolTrace -Branch $br -Action '拒绝' -Gates @{ '授权原文' = $false } -Extra @{ path = '登记册'; reason = '无授权原文，本脚本绝不代授权' }
+                $kept += $line; continue
+            }
 
             # 前置：该分支触碰的文件在主仓不得有未提交改动（ff 会覆盖）
             $touched = git show --name-only --format='' $br | Where-Object { $_ }
             $x = $touched | Where-Object { $dirty -contains $_ }
             if ($x) {
                 Write-Host "⏳ $br 前置未满足：与脏文件交集 $($x -join ', ')"
+                Write-PatrolTrace -Branch $br -Action '跳过' -Gates @{ '授权原文' = $true; '脏文件零交集' = $false } -Extra @{ path = '登记册'; reason = "脏文件交集：$($x -join ', ')" }
                 $blocked += "$br ← $($x -join ', ')"; $kept += $line; continue
             }
 
             if ($DryRun) { Write-Host "[DRY] $br 前置已满足，本可合入（未执行）"; $kept += $line; continue }
 
             Write-Host "▶ $br 前置已满足，按授权合入（授权原文：$($e.authorized_text)）"
-            $args = @('-NoProfile', '-File', $Merge, '-Branch', $br)
-            if ($e.tests) { $args += @('-Tests', $e.tests) }
-            & pwsh @args
-            if ($LASTEXITCODE -eq 0) { Write-Host "✅ $br 已合入"; $done += $br }
-            else { Write-Host "🔴 $br 合入失败（退出码 $LASTEXITCODE），保留登记待人看"; $kept += $line }
+            $code = Invoke-MergeScript -Branch $br -Tests ([string]$e.tests)
+            $masterNow = (git rev-parse master)
+            Write-PatrolTrace -Branch $br -Action (Resolve-MergeExitAction -Code $code) `
+                -Gates @{ '授权原文' = $true; '脏文件零交集' = $true } `
+                -Extra @{ path = '登记册'; merge_exit = $code; tests = [string]$e.tests; master_after = $masterNow.Substring(0, 7)
+                          authorized_text = [string]$e.authorized_text }
+            if ($code -eq 0) {
+                Write-Host "✅ $br 已合入"; $done += $br
+                Add-PendingFfDoneRow -Repo $Repo -RawLine $line -Reason '本轮合入' -MasterSha $masterNow | Out-Null
+            }
+            else { Write-Host "🔴 $br 合入失败（退出码 $code），保留登记待人看"; $kept += $line }
         }
 
         if (-not $DryRun) {
