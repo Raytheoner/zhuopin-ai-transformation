@@ -60,7 +60,7 @@ param(
     [switch]$DryRun
 )
 $ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }   # 无控制台（计划任务隐藏窗口）时可能抛，不致命
 
 # ── 判据常量（🔴 改这两个集合＝改口径判据，属 🟡 档，须 Shao Peishen 答复；单测锁定它们的字面） ──
 $ProbeQuietMarkers  = @('NO-SIGNAL')
