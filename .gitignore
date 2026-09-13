@@ -110,3 +110,6 @@ run-annual-holiday-reminder-check.ps1
 # 多一个 ?? 孤儿、卡住队列锁 release 的 ⑹ 登记完整性守卫。判据全文见
 # .claude/rules/两桌同步与取证.md §二。
 Claude outputs/
+
+# 轮询守启动包装（由 工具-注册轮询守计划任务.ps1 生成，绝对路径烘焙、机器专属；队列 #575 甲）
+0-学习与工具/run-poll-guard.ps1
