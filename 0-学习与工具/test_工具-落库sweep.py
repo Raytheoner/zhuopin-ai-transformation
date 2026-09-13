@@ -1931,6 +1931,187 @@ class ScheduledTaskMirrorSyncTests(SweepTestBase):
         self.assertFalse(marker.exists(), "dry-run 不应真实调用定时任务镜像核对脚本")
 
 
+class MergeLedgerAutoCommitTests(SweepTestBase):
+    """队列 §四 #199（OP-0913-O，2026-09-13）：ff 授权登记册目录 `合入登记/`
+    的机器自提交——看护件 §二 写死的三条：⑴ 只有该目录脏 ⇒ 提交且只含该目录；
+    ⑵ 该目录与**其它路径同时脏** ⇒ 只提交前者、后者原样留脏（命门）；⑶ 无
+    改动 ⇒ 零动作、无空 commit。另加 dry-run 只留痕、目录不存在静默两条。
+
+    夹具在 `.gitignore` 里还原真实仓库那两条相邻规则（`**/*.jsonl` 整棵忽略
+    ＋ `!合入登记/*.jsonl` 点名放行）——`git add -- <目录>` 对被忽略文件静默
+    跳过，不还原这两条就测不出"放行规则真的让 add 捡得到留痕文件"。
+    """
+
+    LEDGER_REL = sweep.MERGE_LEDGER_DIR_REL
+    OTHER_TRACKED_REL = "1-转型规划/session接力-测试线.md"
+    OTHER_UNTRACKED_REL = "1-转型规划/0-全景路线图/拆件巡逻报告-测试.md"
+    OTHER_STAGED_REL = "0-学习与工具/他线暂存件.txt"
+
+    def setUp(self):
+        super().setUp()
+        gitignore = self.work / ".gitignore"
+        gitignore.write_text(
+            gitignore.read_text(encoding="utf-8")
+            + f"**/*.jsonl\n!{self.LEDGER_REL}/*.jsonl\n",
+            encoding="utf-8",
+        )
+
+    def _ledger(self, name: str) -> Path:
+        path = self.work / self.LEDGER_REL / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _init_with_ledger(self) -> None:
+        """初始提交里已有一份登记册（模拟 b1ebcce 迁入后的状态）。"""
+        self._ledger("pending-ff.jsonl").write_text(
+            '{"branch": "claude/x", "status": "pending"}\n', encoding="utf-8")
+        (self.work / self.OTHER_TRACKED_REL).write_text("接力卡 v1\n", encoding="utf-8")
+        self._init_and_push(rows="")
+
+    def _head(self) -> str:
+        return _git(self.work, "rev-parse", "HEAD").stdout.strip()
+
+    def _head_files(self) -> set[str]:
+        return {p for p in _git(
+            self.work, "show", "--name-only", "--format=", "-z", "HEAD",
+        ).stdout.split("\0") if p}
+
+    def test_only_ledger_dirty_commits_that_dir_and_is_idempotent(self):
+        """⑴ 只有 `合入登记/` 脏（一份已跟踪改动＋一份新留痕）⇒ 一个本地 commit、
+        只含这两个文件、提交信息可从 git log 认出是机器自提交；再跑一次零动作。"""
+        self._init_with_ledger()
+        before = self._head()
+        self._ledger("pending-ff.jsonl").write_text(
+            '{"branch": "claude/x", "status": "done"}\n', encoding="utf-8")
+        self._ledger("ff-patrol-20260913.jsonl").write_text(
+            '{"ts": "2026-09-13T06:00:00Z", "action": "ff"}\n', encoding="utf-8")
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("合入登记目录留痕已自动本地提交", result.stdout)
+
+        after = self._head()
+        self.assertNotEqual(before, after, "应产生一个新的本地 commit")
+        self.assertEqual(
+            _git(self.work, "log", "-1", "--format=%s").stdout.strip(),
+            sweep.MERGE_LEDGER_COMMIT_MESSAGE)
+        self.assertIn("机器自提交", sweep.MERGE_LEDGER_COMMIT_MESSAGE)
+        self.assertEqual(self._head_files(), {
+            f"{self.LEDGER_REL}/pending-ff.jsonl",
+            f"{self.LEDGER_REL}/ff-patrol-20260913.jsonl",
+        })
+        self.assertEqual(
+            _git(self.work, "status", "--porcelain", "--", self.LEDGER_REL).stdout.strip(), "",
+            "留痕必须在 dirty_paths 捕获前就地提交，不留孤儿")
+        # 不单独 push、但随本轮末尾统一对齐推送——origin 应能看到这次提交。
+        self.assertIn(
+            '"status": "done"',
+            _git(self.origin, "show", f"master:{self.LEDGER_REL}/pending-ff.jsonl").stdout)
+
+        # 幂等：第二轮零动作、无空 commit。
+        second = _run_sweep(self.work)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertNotIn("合入登记", second.stdout)
+        self.assertEqual(self._head(), after, "第二轮不得产生任何新 commit")
+
+    def test_ledger_and_other_paths_dirty_commits_only_ledger(self):
+        """⑵ 命门：`合入登记/` 与其它路径同时脏——已跟踪改动、未跟踪新文件、
+        甚至**已在 index 里的他线暂存件**——只提交前者，后三者原样留在工作区／
+        index，一个字节不带。"""
+        self._init_with_ledger()
+        self._ledger("ff-patrol-20260913.jsonl").write_text(
+            '{"ts": "2026-09-13T06:00:00Z", "action": "ff"}\n', encoding="utf-8")
+        other_tracked = self.work / self.OTHER_TRACKED_REL
+        other_tracked.write_text("接力卡 v2（他线未提交改动）\n", encoding="utf-8")
+        other_untracked = self.work / self.OTHER_UNTRACKED_REL
+        other_untracked.write_text("巡逻报告（他线未跟踪件）\n", encoding="utf-8")
+        other_staged = self.work / self.OTHER_STAGED_REL
+        other_staged.write_text("他线已 git add 未 commit\n", encoding="utf-8")
+        _git(self.work, "add", "--", self.OTHER_STAGED_REL)
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("合入登记目录留痕已自动本地提交", result.stdout)
+        # index 里的他线暂存件须被点名（#479 决策点③ ⒝），且不被带入。
+        self.assertIn("未被带入本提交", result.stdout)
+        self.assertIn(self.OTHER_STAGED_REL, result.stdout)
+
+        # 沿 git log 找到那笔机器自提交（本轮末尾对齐推送不会再产生别的提交，
+        # 但判据不依赖它是否恰为 HEAD）。
+        subjects = _git(self.work, "log", "--format=%H %s").stdout.splitlines()
+        ledger_commits = [line.split(" ", 1)[0] for line in subjects
+                          if line.endswith(sweep.MERGE_LEDGER_COMMIT_MESSAGE)]
+        self.assertEqual(len(ledger_commits), 1, subjects)
+        files = {p for p in _git(
+            self.work, "show", "--name-only", "--format=", "-z", ledger_commits[0],
+        ).stdout.split("\0") if p}
+        self.assertEqual(files, {f"{self.LEDGER_REL}/ff-patrol-20260913.jsonl"})
+
+        # 他线三件原样留下：内容未变、git 状态未变。
+        self.assertEqual(other_tracked.read_text(encoding="utf-8"), "接力卡 v2（他线未提交改动）\n")
+        self.assertEqual(other_untracked.read_text(encoding="utf-8"), "巡逻报告（他线未跟踪件）\n")
+        self.assertEqual(other_staged.read_text(encoding="utf-8"), "他线已 git add 未 commit\n")
+        status = {line[3:]: line[:2] for line in _git(
+            self.work, "status", "--porcelain=v1", "--untracked-files=all",
+        ).stdout.splitlines() if line}
+        self.assertEqual(status.get(self.OTHER_TRACKED_REL), " M")
+        self.assertEqual(status.get(self.OTHER_UNTRACKED_REL), "??")
+        self.assertEqual(status.get(self.OTHER_STAGED_REL), "A ")
+        self.assertNotIn(f"{self.LEDGER_REL}/ff-patrol-20260913.jsonl", status)
+        # 三件里任何一件都不曾进过任何提交。
+        for rel in (self.OTHER_UNTRACKED_REL, self.OTHER_STAGED_REL):
+            self.assertEqual(
+                _git(self.work, "log", "--format=%H", "--", rel).stdout.strip(), "",
+                f"{rel} 不得被任何提交带走")
+        self.assertEqual(
+            _git(self.work, "show", f"HEAD:{self.OTHER_TRACKED_REL}").stdout, "接力卡 v1\n")
+
+    def test_no_change_is_noop_without_empty_commit(self):
+        """⑶ 登记册在库内且无改动 ⇒ 零动作、零日志、HEAD 不动。"""
+        self._init_with_ledger()
+        before = self._head()
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("合入登记", result.stdout)
+        self.assertEqual(self._head(), before)
+
+    def test_missing_ledger_dir_is_silently_skipped(self):
+        self._init_and_push(rows="")
+        before = self._head()
+
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("合入登记", result.stdout)
+        self.assertEqual(self._head(), before)
+
+    def test_dry_run_only_logs_and_does_not_commit(self):
+        self._init_with_ledger()
+        before = self._head()
+        self._ledger("ff-patrol-20260913.jsonl").write_text('{"action": "ff"}\n', encoding="utf-8")
+
+        result = _run_sweep(self.work, "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[dry-run] 合入登记目录", result.stdout)
+        self.assertEqual(self._head(), before)
+        self.assertIn(
+            f"{self.LEDGER_REL}/ff-patrol-20260913.jsonl",
+            _git(self.work, "status", "--porcelain", "--untracked-files=all").stdout)
+
+    def test_接线断言_自提交排在孤儿脏文件捕获之前(self):
+        """建成而没接线与没建成外观相同：函数须在 main() 里、且位于
+        `_commit_uncovered_queue_changes` 之前（即 dirty_paths 捕获之前）。"""
+        source = SCRIPT.read_text(encoding="utf-8")
+        call = "_commit_merge_ledger_changes(repo_root, log, dry_run=args.dry_run)"
+        self.assertIn(call, source)
+        self.assertLess(
+            source.index(call),
+            source.index("_commit_uncovered_queue_changes(repo_root, log, dry_run=args.dry_run)"))
+        self.assertIn("合入登记目录自提交", source[max(0, source.index(call) - 400):source.index(call)],
+                      "调用前须有对应的 _mark_step，兜底告警才说得出崩在哪一步")
+        self.assertIn("_commit_merge_ledger_changes", sweep.CRITICAL_GIT_WRITE_FUNCTIONS)
+
+
 class BatchLandingCountTests(SweepTestBase):
     """队列 #257（P3，先计数不告警）：每轮落库批次数记录——纯数据积累，
     不改变任何既有行为。"""

@@ -606,6 +606,16 @@ SCHEDULED_TASK_BACKUP_SCRIPT_REL = "0-学习与工具/工具-定时任务源码�
 SCHEDULED_TASK_MIRROR_DIR_REL = "0-学习与工具/定时任务源码"
 SCHEDULED_TASK_MIRROR_TIMEOUT_SECONDS = 60
 
+# 队列 §四 #199（2026-09-13，OP-0913-O，Shao Peishen 答 2a）：ff 授权登记册目录的
+# 机器自提交。`b1ebcce` 把登记册正本（`pending-ff.jsonl` 待合清单＋ `pending-ff.done-*`
+# 销行＋ `ff-patrol-*` 处置留痕）从被 `**/reports/` 整棵忽略的 `reports/` 迁进本目录
+# 后，巡检与合入脚本每写一行留痕，主仓就多一个"没人声明的孤儿脏文件"——与
+# `_run_scheduled_task_mirror_sync` 那族"自动机制改了文件、没人负责让它落库"同形态，
+# 故同族收拢：sweep 起跑段检出该目录有变化即就地 add＋本地 commit（不单独 push、
+# 不 ff），巡检脚本自身不提交（(b)「巡检脚本自 commit」已被否）。
+MERGE_LEDGER_DIR_REL = "1-转型规划/0-全景路线图/合入登记"
+MERGE_LEDGER_COMMIT_MESSAGE = "chore(合入登记): sweep 自动提交合入链路留痕（机器自提交，§四 #199）"
+
 # 队列 #257（P3，先计数不告警）：每轮落库批次数记录，供后续攒样本定阈值。
 SESSION_BATCH_COUNT_LOG_REL = "reports/sweep-batch-landing-count.jsonl"
 
@@ -1301,6 +1311,10 @@ CRITICAL_GIT_WRITE_FUNCTIONS = (
     # 列举 4＋2 个函数时按"直接 commit/push"的直觉扫了一遍、漏了 merge 这一支。
     # 这正是决策点⑤ ⒜ 配反向检查的全部理由：**让清单漏项自己暴露，不靠人记。**
     "_ff_carrier",
+    # 队列 §四 #199（OP-0913-O）：合入登记目录机器自提交——它经 `_commit_scoped`
+    # 写 git 历史，且函数体内没有子进程/webhook 那类需要宽捕获的东西，按判据
+    # 直接进清单（不走豁免）。
+    "_commit_merge_ledger_changes",
 )
 
 # 反向检查的豁免名单：确实调用了 git 写动词、但按上面那句判据**不该**进清单的
@@ -2178,6 +2192,58 @@ def _run_scheduled_task_mirror_sync(repo_root: Path, log: list[str]) -> None:
                 log.append("✓ 凭据拦截告警已推送。")
             except Exception as send_exc:  # noqa: BLE001
                 log.append(f"⚠ 凭据拦截告警推送失败（不影响本轮）：{send_exc}")
+
+
+def _commit_merge_ledger_changes(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
+    """队列 §四 #199（OP-0913-O）：ff 授权登记册目录 `MERGE_LEDGER_DIR_REL` 的
+    机器自提交——仿 `_run_scheduled_task_mirror_sync` 的"检出变化即就地
+    add＋本地 commit"那一段，不另造一套。
+
+    🔴 **只提交该目录下的文件，一个字节都不许多带**：队列真身、他线脏件、
+    `session接力-*.md`、`队列回写待补/` 一律不碰——代提交他人脏件是本项目
+    踩过的真事故（编辑锁 `--who` 就是为它加的）。边界由两道同源机制守：
+    `git add -- <目录>` 只暂存该目录；`_commit_scoped` 用 `diff HEAD -- <目录>`
+    算出的 `expected` 当 commit 的 pathspec（`--only` 语义），index 里别人
+    暂存的东西点名告警但**不带入本提交**（#479 决策点③ ⒝）。
+
+    🔴 **幂等**：目录无变化即零动作、不产生空 commit（`_commit_scoped` 对
+    "与 HEAD 无差异"返回 `None`，本函数据此不写"已提交"那句话）。
+
+    🔴 **不 push、不 ff**：本函数只做本地 commit，推送仍随本轮末尾
+    `_reconcile_with_origin_and_push` 统一对齐；ff master 由看护者收工串行做
+    或经登记册由 `工具-待合分支巡检.ps1` 机器做，sweep 不做 ff（`#553` 更正）。
+
+    🔴 **不得宽捕获**：本函数会自己写 git 历史，已进 `CRITICAL_GIT_WRITE_
+    FUNCTIONS`——add/commit 失败须原样抛给 `main()` 的步骤指纹兜底点名，
+    不得在此吞掉（与 `_run_scheduled_task_mirror_sync` 不同：它的 3 个宽
+    except 罩的是子进程与 webhook，本函数没有那两样，也就没有豁免理由）。
+
+    须排在 `dirty_paths = _status_paths(...)` 捕获之前（main() 接线固定顺序），
+    使留痕文件在孤儿判据看到之前已是 clean 的——否则 3 小时触发孤儿告警、
+    6 小时升 §四，正是本条要治的病。
+    """
+    changed = _run_git(
+        ["status", "--porcelain=v1", "--untracked-files=all", "--", MERGE_LEDGER_DIR_REL],
+        repo_root,
+    ).stdout.strip()
+    if not changed:
+        return
+    if dry_run:
+        log.append(
+            f"[dry-run] 合入登记目录 `{MERGE_LEDGER_DIR_REL}` 有未提交留痕，"
+            "将自动本地提交（本次不实际执行）。")
+        return
+
+    _run_git(["add", "--", MERGE_LEDGER_DIR_REL], repo_root)
+    # 队列 #479 决策点② ⒝：commit 带 pathspec，与上一行 add 对齐。
+    sha = _commit_scoped(
+        repo_root, MERGE_LEDGER_COMMIT_MESSAGE, [MERGE_LEDGER_DIR_REL], log,
+        label="合入登记自提交")
+    if sha is None:
+        return
+    log.append(
+        f"✓ 合入登记目录留痕已自动本地提交（{sha}），等待本轮末尾统一对齐并推送；"
+        "不 ff master（§四 #199）。")
 
 
 def _record_batch_landing_count(repo_root: Path, landed_batch_ids: list[str]) -> None:
@@ -7815,6 +7881,12 @@ def main() -> int:
             # ——本地纯文件操作，不依赖网络/git 状态，排在这一批"起跑段
             # 子进程"之后、批次处理之前均可，此处与既有三项归并同一批。
             _rotate_weekly_logs(repo_root, log)
+        # ③bis 队列 §四 #199（OP-0913-O，2026-09-13）：ff 授权登记册目录
+        #   `合入登记/` 的机器自提交——巡检与合入脚本每写一行留痕，主仓就多一个
+        #   孤儿脏文件；同 #235/#188 镜像核对那条，须排在下方 dirty_paths 捕获
+        #   之前就地本地 commit（只提交该目录、不 push、不 ff）。dry-run 只留痕。
+        _mark_step("合入登记目录自提交（§四 #199）")
+        _commit_merge_ledger_changes(repo_root, log, dry_run=args.dry_run)
         # ⓘ2（队列 #398，2026-09-04）：批次处理之前，先把"编辑锁 acquire/
         # release 自带、但不在任何 §二 待处理批次文件清单覆盖范围内"的两份
         # 队列文件改动单独落库一次——防止这类改动因不落在任何批次清单里而
