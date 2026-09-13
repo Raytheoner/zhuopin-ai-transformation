@@ -143,7 +143,9 @@ def test_probe_signal_wakes_model_exactly_once_with_both_outputs(rig: Rig):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert rig.claude_call_count() == 1
     args = rig.claude_calls.read_text(encoding="utf-8")
-    assert "-p" in args and "--allowedTools" in args and "Read,Glob,Grep,Bash(git log:*)" in args
+    assert "-p" in args and "--allowedTools" in args
+    # 🔴 `Bash(git log:*)` 须作为**一个**参数到达（Start-Process 不自动加引号、CLI 按空格切分——2026-09-13 真 claude.exe 实测踩过）
+    assert "--allowedTools Read Glob Grep Bash(git log:*)" in args
     prompt = rig.claude_prompt.read_text(encoding="utf-8")
     assert "不要重跑探针" in prompt and "不要重跑巡检" in prompt
     assert "桩章程" in prompt, "章程原文须整段进 prompt"
