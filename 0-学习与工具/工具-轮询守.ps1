@@ -124,8 +124,10 @@ function Invoke-Captured {
     $outF = Join-Path $tmpDir "$roundId-$Tag.out"
     $errF = Join-Path $tmpDir "$roundId-$Tag.err"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    # 🔴 Start-Process 不给含空格的参数自动加引号（2026-09-13 实测：`Bash(git log:*)` 被拆成两个参数），这里统一补上
+    $quoted = @($ArgList | ForEach-Object { if ($_ -match '\s' -and $_ -notmatch '^".*"$') { '"' + $_ + '"' } else { $_ } })
     $sp = @{
-        FilePath = $Exe; ArgumentList = $ArgList; WorkingDirectory = $Repo; PassThru = $true; NoNewWindow = $true
+        FilePath = $Exe; ArgumentList = $quoted; WorkingDirectory = $Repo; PassThru = $true; NoNewWindow = $true
         RedirectStandardOutput = $outF; RedirectStandardError = $errF
     }
     if ($StdinFile) { $sp['RedirectStandardInput'] = $StdinFile }
@@ -238,7 +240,8 @@ $($patrol.err)
 "@
         $promptFile = Join-Path $roundDir 'prompt.txt'
         Set-Content -Path $promptFile -Value $prompt -Encoding UTF8
-        $claudeArgs = @('-p', '--output-format', 'text', '--allowedTools', 'Read,Glob,Grep,Bash(git log:*)')
+        # 🔴 `--allowedTools` 按逗号**和空格**切分，`Bash(git log:*)` 不能与别的规则合成一个逗号串，须各自成参（含空格者由 Invoke-Captured 加引号）
+        $claudeArgs = @('-p', '--output-format', 'text', '--allowedTools', 'Read', 'Glob', 'Grep', 'Bash(git log:*)')
         if ($Model) { $claudeArgs += @('--model', $Model) }
         if (-not $ClaudeExe) {
             $claude = @{ exit = -2; ms = 0; out = ''; err = '[GUARD] 找不到 claude CLI（Get-Command claude 为空，且未传 -ClaudeExe）'; timeout = $false }
