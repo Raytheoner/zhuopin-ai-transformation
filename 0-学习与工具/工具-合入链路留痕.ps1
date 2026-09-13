@@ -7,28 +7,51 @@
 #    🔑 判据一句：一个只把结论写进「某条会话」的机器，对其它会话等于没跑过。
 #
 # 两件产出（形态照抄 `reports/ff-whitelist-autoff.log` 的「每次处置追加一条」，只是改成 jsonl 便于机器读）：
-#   ⑹ `reports/ff-patrol-<yyyyMMdd>.jsonl`：巡检与合入各自把**每次处置**追加一行——分支、各关通过与否、
+#   ⑹ `<登记册目录>/ff-patrol-<yyyyMMdd>.jsonl`：巡检与合入各自把**每次处置**追加一行——分支、各关通过与否、
 #      ④ 两侧失败集合、最终动作（合入／拒绝／被打断）。两个脚本各写各的（`actor` 字段区分），同一次合入
 #      会留两行：合入脚本那行是它自己的六关明细，巡检那行是「我调了它、它回了什么退出码」。
-#   ⑺ `reports/pending-ff.done-<yyyyMMdd>.jsonl`：登记册收尾销行——「已是 master 祖先」／「分支已不存在」／
+#   ⑺ `<登记册目录>/pending-ff.done-<yyyyMMdd>.jsonl`：登记册收尾销行——「已是 master 祖先」／「分支已不存在」／
 #      「本轮合入」的行从 `pending-ff.jsonl` 迁走并附销行原因，使 `pending-ff.jsonl` 恒等于「真待合清单」。
 #      🔴 迁走不是删——原行字段（含他的授权原文）原样保留，只追加 `done_at`／`done_reason`／`master_sha`。
+#
+# 🔴 登记册目录＝`1-转型规划/0-全景路线图/合入登记/`（`OP-0913-L`，2026-09-13，Shao Peishen 答「第一环就按你的
+#    设计安排」）。原落点 `reports/` 被 `.gitignore` `**/reports/` 整棵忽略、`git ls-files reports` ＝ 0，即
+#    🟡 人工 ff 授权原文的唯一载体不入版本控制——当日实证 `reports/pending-ff.jsonl` 09:46–09:55 间整个文件
+#    无痕消失（取证件-2026-09-13-ff登记册无痕消失）。目录级 `**/reports/` 对否定式免疫（git 不下探被排除的目录），
+#    唯一出路是把正本搬出来、在 `**/*.jsonl` 之后加目录级否定（同 `.gitignore` 口径点台账先例，例外不递归）。
+#    三个文件名形态（`pending-ff.jsonl`／`pending-ff.done-*`／`ff-patrol-*`）只有目录变了，字段与行为不变。
+#    🔴 路径只从 `Get-FfLedgerDir` 取，三个脚本不得各自再拼一遍。
 #
 # 🔴 落盘函数一律不抛：留痕失败只 `Write-Host` 一行警告，不能让「写不进日志」反过来把合入本身拦下
 #    （留痕是给下一个人看的副产品，主产品是合入判定；两者失败模式不许耦合）。
 #
 # 时间一律本地（UTC+8）ISO 8601 带偏移（`2026-09-13T09:41:07+08:00`），字段名 `ts`，读者不必再猜基准。
 
+$script:FfLedgerDirRel = '1-转型规划\0-全景路线图\合入登记'
+
+function Get-FfLedgerDir {
+    <# 登记册目录：`<Repo>/1-转型规划/0-全景路线图/合入登记`——`pending-ff.jsonl`／done／ff-patrol 三类文件的唯一落点。
+       🔴 不建子目录（`.gitignore` 例外不递归，子目录内 .jsonl 会被静默忽略）。 #>
+    param([Parameter(Mandatory)][string]$Repo)
+    return (Join-Path $Repo $script:FfLedgerDirRel)
+}
+
+function Get-PendingFfRegistryPath {
+    <# 「已授权待合」登记册：`<登记册目录>/pending-ff.jsonl`——恒等于「真待合清单」。 #>
+    param([Parameter(Mandatory)][string]$Repo)
+    return (Join-Path (Get-FfLedgerDir -Repo $Repo) 'pending-ff.jsonl')
+}
+
 function Get-FfPatrolTracePath {
-    <# ⑹ 留痕文件路径：`<Repo>/reports/ff-patrol-<yyyyMMdd>.jsonl`，按本地日期分文件。 #>
+    <# ⑹ 留痕文件路径：`<登记册目录>/ff-patrol-<yyyyMMdd>.jsonl`，按本地日期分文件。 #>
     param([Parameter(Mandatory)][string]$Repo, [datetime]$Now = (Get-Date))
-    return (Join-Path $Repo ('reports\ff-patrol-' + $Now.ToString('yyyyMMdd') + '.jsonl'))
+    return (Join-Path (Get-FfLedgerDir -Repo $Repo) ('ff-patrol-' + $Now.ToString('yyyyMMdd') + '.jsonl'))
 }
 
 function Get-PendingFfDonePath {
-    <# ⑺ 销行落点：`<Repo>/reports/pending-ff.done-<yyyyMMdd>.jsonl`（该命名 09-12／09-13 已各有一份手工件，沿用）。 #>
+    <# ⑺ 销行落点：`<登记册目录>/pending-ff.done-<yyyyMMdd>.jsonl`（该命名 09-12／09-13 已各有一份手工件，沿用）。 #>
     param([Parameter(Mandatory)][string]$Repo, [datetime]$Now = (Get-Date))
-    return (Join-Path $Repo ('reports\pending-ff.done-' + $Now.ToString('yyyyMMdd') + '.jsonl'))
+    return (Join-Path (Get-FfLedgerDir -Repo $Repo) ('pending-ff.done-' + $Now.ToString('yyyyMMdd') + '.jsonl'))
 }
 
 function Get-LocalIsoNow {

@@ -2,9 +2,9 @@
 
 ⑻ 点名的四条：
 - `工具-泳道分支合入.ps1` 合入成功／被拒（④ 回归新增失败）／被打断（③ rebase 冲突）三条路径各在
-  `reports/ff-patrol-<yyyyMMdd>.jsonl` 留一行，`action`／`exit`／各关布尔／④ 两侧失败集合与实际结局一致；
+  `<登记册目录>/ff-patrol-<yyyyMMdd>.jsonl` 留一行，`action`／`exit`／各关布尔／④ 两侧失败集合与实际结局一致；
 - 已合分支再入册即被销：`Invoke-PendingFfRegistrySweep` 把「已是 master 祖先」「分支已不存在」的行迁进
-  `reports/pending-ff.done-<yyyyMMdd>.jsonl`（原字段保留＋`done_reason`），登记册只剩真待合行，且幂等。
+  `<登记册目录>/pending-ff.done-<yyyyMMdd>.jsonl`（原字段保留＋`done_reason`），登记册只剩真待合行，且幂等。
 外加 `工具-待合分支巡检.ps1` 端到端一条：登记册里一条带授权原文的 docs 分支 → 巡检调合入脚本 → 两个
 actor 各留一行、登记册销行、done 文件写 `本轮合入`（验证 `-Repo`／`-TempRoot` 透传这条路真通）。
 
@@ -26,6 +26,9 @@ TOOLS = Path(__file__).resolve().parent
 LIB = TOOLS / "工具-合入链路留痕.ps1"
 MERGE = TOOLS / "工具-泳道分支合入.ps1"
 PATROL = TOOLS / "工具-待合分支巡检.ps1"
+# 登记册目录（OP-0913-L：自被 gitignore 整棵忽略的 reports/ 迁出）——与 `工具-合入链路留痕.ps1::Get-FfLedgerDir` 同源。
+# 🔴 这里故意写死字面量而不去读 ps1：脚本改落点时让本测试失败、逼人同步，而不是两边一起悄悄漂移。
+LEDGER = Path("1-转型规划") / "0-全景路线图" / "合入登记"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("pwsh") is None or shutil.which("git") is None, reason="需要 PowerShell 7（pwsh）与 git"
@@ -70,14 +73,14 @@ def _read_jsonl(path: Path) -> list[dict]:
 
 def _trace_rows(repo: Path) -> list[dict]:
     rows: list[dict] = []
-    for p in sorted((repo / "reports").glob("ff-patrol-*.jsonl")):
+    for p in sorted((repo / LEDGER).glob("ff-patrol-*.jsonl")):
         rows.extend(_read_jsonl(p))
     return rows
 
 
 def _done_rows(repo: Path) -> list[dict]:
     rows: list[dict] = []
-    for p in sorted((repo / "reports").glob("pending-ff.done-*.jsonl")):
+    for p in sorted((repo / LEDGER).glob("pending-ff.done-*.jsonl")):
         rows.extend(_read_jsonl(p))
     return rows
 
@@ -120,6 +123,45 @@ def _run_merge(repo: Path, tmp_root: Path, branch: str, tests: str = "") -> subp
     if tests:
         args += ["-Tests", tests]
     return _pwsh_file(MERGE, *args)
+
+
+# ── OP-0913-L 登记册落点：三类文件都落在 合入登记/，且该目录在真仓库里不被 gitignore 吞掉 ──────
+
+def test_ledger_paths_all_resolve_under_relocated_dir(repo: Path, tmp_path: Path):
+    """`Get-FfLedgerDir`／`Get-PendingFfRegistryPath`／`Get-FfPatrolTracePath`／`Get-PendingFfDonePath` 四个函数
+    与本测试写死的 `LEDGER` 同源；路径里不得再出现 `reports`。"""
+    out = _pwsh_lib_json(
+        f"$r = '{repo.as_posix()}'\r\n"
+        "$now = Get-Date -Year 2026 -Month 9 -Day 13 -Hour 10 -Minute 0 -Second 0\r\n"
+        "[ordered]@{ dir = (Get-FfLedgerDir -Repo $r); reg = (Get-PendingFfRegistryPath -Repo $r);"
+        " trace = (Get-FfPatrolTracePath -Repo $r -Now $now); done = (Get-PendingFfDonePath -Repo $r -Now $now) }"
+        " | ConvertTo-Json -Compress", tmp_path,
+    )
+    norm = {k: Path(v) for k, v in out.items()}
+    assert norm["dir"] == repo / LEDGER
+    assert norm["reg"] == repo / LEDGER / "pending-ff.jsonl"
+    assert norm["trace"] == repo / LEDGER / "ff-patrol-20260913.jsonl"
+    assert norm["done"] == repo / LEDGER / "pending-ff.done-20260913.jsonl"
+    assert all("reports" not in p.parts for p in norm.values()), "落点不得回到被 gitignore 整棵忽略的 reports/"
+
+
+def test_real_repo_gitignore_tracks_ledger_dir_but_still_ignores_reports():
+    """对真仓库的 `.gitignore` 做 `git check-ignore`：合入登记/ 下的三类 jsonl 不被忽略，reports/ 下同名文件仍被忽略。
+    🔴 只读、不写真仓库；这条是 A1 三条判据里「目录级 glob 否定有效」的机器守。"""
+    real = TOOLS.parent
+    if not (real / ".gitignore").exists() or _git(real, "rev-parse", "--is-inside-work-tree", check=False) != "true":
+        pytest.skip("不在真仓库内")
+    ledger = LEDGER.as_posix()
+    tracked = [f"{ledger}/pending-ff.jsonl", f"{ledger}/pending-ff.done-20260913.jsonl",
+               f"{ledger}/ff-patrol-20260913.jsonl", f"{ledger}/pending-ff.parked-20260913.jsonl"]
+    ignored = ["reports/pending-ff.jsonl", "reports/ff-patrol-20260913.jsonl", "reports/noise.jsonl",
+               f"{ledger}/sub/pending-ff.jsonl"]   # 例外不递归（D8）
+    for rel in tracked:
+        proc = subprocess.run(["git", "-C", str(real), "check-ignore", "-q", rel], capture_output=True)
+        assert proc.returncode == 1, f"{rel} 不该被忽略（check-ignore 退出码 {proc.returncode}）"
+    for rel in ignored:
+        proc = subprocess.run(["git", "-C", str(real), "check-ignore", "-q", rel], capture_output=True)
+        assert proc.returncode == 0, f"{rel} 应仍被忽略（check-ignore 退出码 {proc.returncode}）"
 
 
 # ── ⑻ 合入脚本三条路径各留一行 ──────────────────────────────────────────────
@@ -189,7 +231,7 @@ def test_registry_sweep_moves_merged_and_missing_rows_only(repo: Path, tmp_path:
     _branch_with(repo, "claude/already-in", {"a.md": "a\n"})
     _git(repo, "merge", "-q", "--ff-only", "claude/already-in")           # 已是 master 祖先
     _branch_with(repo, "claude/still-pending", {"b.md": "b\n"})            # 真待合
-    reg = repo / "reports" / "pending-ff.jsonl"
+    reg = repo / LEDGER / "pending-ff.jsonl"
     reg.parent.mkdir(parents=True, exist_ok=True)
     rows = [
         {"branch": "claude/already-in", "authorized_text": "Shao Peishen 答 1a"},
@@ -236,7 +278,7 @@ def test_registry_sweep_moves_merged_and_missing_rows_only(repo: Path, tmp_path:
 def test_registry_sweep_dry_run_touches_nothing(repo: Path, tmp_path: Path):
     _branch_with(repo, "claude/already-in", {"a.md": "a\n"})
     _git(repo, "merge", "-q", "--ff-only", "claude/already-in")
-    reg = repo / "reports" / "pending-ff.jsonl"
+    reg = repo / LEDGER / "pending-ff.jsonl"
     reg.parent.mkdir(parents=True, exist_ok=True)
     reg.write_text(json.dumps({"branch": "claude/already-in", "authorized_text": "x"}) + "\n", encoding="utf-8")
     result = _pwsh_lib_json(
@@ -251,7 +293,7 @@ def test_registry_sweep_dry_run_touches_nothing(repo: Path, tmp_path: Path):
 def test_registry_sweep_removes_file_when_everything_is_done(repo: Path, tmp_path: Path):
     _branch_with(repo, "claude/already-in", {"a.md": "a\n"})
     _git(repo, "merge", "-q", "--ff-only", "claude/already-in")
-    reg = repo / "reports" / "pending-ff.jsonl"
+    reg = repo / LEDGER / "pending-ff.jsonl"
     reg.parent.mkdir(parents=True, exist_ok=True)
     reg.write_text(json.dumps({"branch": "claude/already-in", "authorized_text": "x"}) + "\n", encoding="utf-8")
     _pwsh_lib_json(
@@ -263,7 +305,7 @@ def test_registry_sweep_removes_file_when_everything_is_done(repo: Path, tmp_pat
 
 def test_write_trace_keeps_unparseable_registry_line_verbatim(repo: Path, tmp_path: Path):
     """解析不了的登记行不能被 sweep 丢掉，也不能被误销（它由动作一自己报）。"""
-    reg = repo / "reports" / "pending-ff.jsonl"
+    reg = repo / LEDGER / "pending-ff.jsonl"
     reg.parent.mkdir(parents=True, exist_ok=True)
     reg.write_text("{not json\n", encoding="utf-8")
     result = _pwsh_lib_json(
@@ -278,7 +320,7 @@ def test_write_trace_keeps_unparseable_registry_line_verbatim(repo: Path, tmp_pa
 
 def test_patrol_end_to_end_merges_registered_branch_and_leaves_both_traces(repo: Path, tmp_path: Path):
     _branch_with(repo, "claude/registered-docs", {"docs/x.md": "x\n"})
-    reg = repo / "reports" / "pending-ff.jsonl"
+    reg = repo / LEDGER / "pending-ff.jsonl"
     reg.parent.mkdir(parents=True, exist_ok=True)
     reg.write_text(json.dumps({
         "branch": "claude/registered-docs",
@@ -310,7 +352,7 @@ def test_patrol_registered_branch_already_merged_is_swept_not_remerged(repo: Pat
     """⑺ 当日实证原型：`op0913g` 08:34 已 ff 进 master，09:3x 那行仍在登记册 ⇒ 巡检一跑即销、不再调合入脚本。"""
     _branch_with(repo, "claude/merged-by-hand", {"docs/y.md": "y\n"})
     _git(repo, "merge", "-q", "--ff-only", "claude/merged-by-hand")
-    reg = repo / "reports" / "pending-ff.jsonl"
+    reg = repo / LEDGER / "pending-ff.jsonl"
     reg.parent.mkdir(parents=True, exist_ok=True)
     reg.write_text(json.dumps({"branch": "claude/merged-by-hand", "authorized_text": "x"}) + "\n", encoding="utf-8")
 
@@ -331,7 +373,7 @@ def test_patrol_rejected_merge_keeps_registry_row_and_records_exit_code(repo: Pa
     _branch_with(repo, "claude/registered-regress", {
         "test_tool.py": "from tool import f\n\n\ndef test_f():\n    assert f() == 2\n",
     })
-    reg = repo / "reports" / "pending-ff.jsonl"
+    reg = repo / LEDGER / "pending-ff.jsonl"
     reg.parent.mkdir(parents=True, exist_ok=True)
     row = {"branch": "claude/registered-regress", "tests": "test_tool.py", "authorized_text": "Shao Peishen 答 1a"}
     reg.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -353,7 +395,7 @@ def test_patrol_dry_run_writes_no_trace_and_moves_nothing(repo: Path, tmp_path: 
     _branch_with(repo, "claude/already-in", {"a.md": "a\n"})
     _git(repo, "merge", "-q", "--ff-only", "claude/already-in")
     _branch_with(repo, "claude/registered-docs", {"docs/x.md": "x\n"})
-    reg = repo / "reports" / "pending-ff.jsonl"
+    reg = repo / LEDGER / "pending-ff.jsonl"
     reg.parent.mkdir(parents=True, exist_ok=True)
     rows = [
         {"branch": "claude/already-in", "authorized_text": "x"},

@@ -56,11 +56,13 @@
 # 🔴 成因：机器把 rebase／ff 做了，结论只留在某条会话的 stdout 里——对其它会话等于没跑过，
 #    看护者只能靠 `git reflog` ＋进程表反推（反推一次就是一次人守）。
 #   ⑹ 本脚本每处置一条分支（白名单命中／不命中／脏文件交集／干跑／调合入脚本得到退出码／销行）
-#      都在 `reports/ff-patrol-<yyyyMMdd>.jsonl` 追加一行；合入脚本自己另写它的六关明细行，两行
+#      都在 `<登记册目录>/ff-patrol-<yyyyMMdd>.jsonl` 追加一行；合入脚本自己另写它的六关明细行，两行
 #      以 `actor` 区分（巡检／合入）。落盘函数正本在 `工具-合入链路留痕.ps1`。
 #   ⑺ 动作一开头先做登记册收尾销行：「分支已不存在」「已是 master 祖先」的行迁进
-#      `reports/pending-ff.done-<yyyyMMdd>.jsonl`（附 done_reason／master_sha），本轮合入成功的行
+#      `<登记册目录>/pending-ff.done-<yyyyMMdd>.jsonl`（附 done_reason／master_sha），本轮合入成功的行
 #      同样迁走（done_reason=本轮合入）——`pending-ff.jsonl` 从此恒等于「真待合清单」。
+#   🔴 登记册目录＝`1-转型规划/0-全景路线图/合入登记/`（`OP-0913-L`，2026-09-13）：原 `reports/` 被 gitignore
+#      整棵忽略，🟡 授权原文的唯一载体不入库、当日已无痕消失过一次；路径只从 `Get-FfLedgerDir` 取。
 #   `-Repo`／`-TempRoot` 只为单测指向临时仓库而设，默认值即生产值。
 #
 # 用法：pwsh -File 工具-待合分支巡检.ps1 [-DryRun] [-IdleBufferMinutes 60] [-NoAutoWhitelist] [-WhitelistMaxAgeDays 14] [-Repo <仓库根>] [-TempRoot <临时 worktree 父目录>]
@@ -78,10 +80,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-Location $Repo
-$Reg = Join-Path $Repo 'reports\pending-ff.jsonl'
 # 🔴 合入脚本按本脚本所在目录找（不是按 $Repo 拼）——单测把 -Repo 指到临时仓库时，脚本本体仍在源码目录。
 $Merge = Join-Path $PSScriptRoot '工具-泳道分支合入.ps1'
 . (Join-Path $PSScriptRoot '工具-合入链路留痕.ps1')
+# 登记册路径只从留痕库取（`OP-0913-L`：正本已从被 gitignore 整棵忽略的 reports/ 迁到 1-转型规划/0-全景路线图/合入登记/）。
+$Reg = Get-PendingFfRegistryPath -Repo $Repo
 
 function Resolve-MergeExitAction {
     <# 合入脚本退出码 → 本脚本留痕动作（与 `工具-泳道分支合入.ps1::Resolve-MergeAction` 同一张表）：
