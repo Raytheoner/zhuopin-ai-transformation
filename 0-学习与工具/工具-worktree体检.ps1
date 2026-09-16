@@ -89,8 +89,12 @@ $rows = @()
 foreach ($it in ($items | Select-Object -Skip 1)) {
     $p = $it.path -replace '/', '\'
     $name = Split-Path $p -Leaf
-    $stOut = & git -C $p status --porcelain 2>&1
-    $stOk = ($LASTEXITCODE -eq 0)
+    # 🔴 目录已消失时 `git -C` 会抛 fatal，$ErrorActionPreference='Stop' 下直接终止整个体检。
+    # 2026-09-17 首轮真跑就栖在这里（合入脚本刚收掉基线件、管理记录还在）。
+    $stOk = $false; $stOut = @()
+    if (Test-Path -LiteralPath $p) {
+        try { $stOut = & git -C $p status --porcelain 2>&1; $stOk = ($LASTEXITCODE -eq 0) } catch { $stOk = $false }
+    }
     $lines = @()
     if ($stOk) { $lines = @($stOut | ForEach-Object { [string]$_ } | Where-Object { $_.Trim() -ne '' }) }
     $ahead = -1
@@ -101,7 +105,8 @@ foreach ($it in ($items | Select-Object -Skip 1)) {
     $onlyDeletions = ($lines.Count -gt 0) -and (@($lines | Where-Object { $_ -notmatch '^\s?D\s' }).Count -eq 0)
 
     $isKept = ($Keep -contains $name) -or ($name -like '_rb-*')
-    if (-not $stOk)            { $cls = '坏(未修)' }
+    if (-not (Test-Path -LiteralPath $p)) { $cls = '目录已消失' }
+    elseif (-not $stOk)        { $cls = '坏(未修)' }
     elseif ($it.locked)        { $cls = '锁定' }
     elseif ($ahead -lt 0)      { $cls = '读不出HEAD' }
     elseif ($ahead -gt 0)      { $cls = '有未合commit' }
@@ -127,7 +132,7 @@ Write-Line ("合计 {0} 条：{1}" -f $rows.Count, (($byCls | ForEach-Object { "
 # ---------- (3) 安全清理 ----------
 $targets = @($rows | Where-Object { -not $_.keep -and $_.cls -eq '干净已并' })
 if ($IncludeMissingOnly) { $targets += @($rows | Where-Object { -not $_.keep -and $_.cls -eq '仅缺文件' }) }
-$removed = @(); $failed = @()
+$removed = @(); $failed = @(); $fellBack = @(); $orphans = @()
 
 if ($targets.Count -eq 0) {
     Write-Line '可删集合为空。'
@@ -137,11 +142,33 @@ if ($targets.Count -eq 0) {
     foreach ($t in $targets) {
         $force = @()
         if ($t.cls -eq '仅缺文件') { $force = @('--force') }
-        & git -C $Repo worktree remove $t.path @force 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { $removed += $t.name; Write-Line "  ✓ 已删 $($t.name)" }
+        $ok = $false
+        try { & git -C $Repo worktree remove $t.path @force 2>&1 | Out-Null; $ok = ($LASTEXITCODE -eq 0) } catch { $ok = $false }
+        if (-not $ok -and (Test-Path -LiteralPath $t.path)) {
+            # 🔴 回退（2026-09-17 实测）：本仓里 `git worktree remove --force` 与 `git worktree prune`
+            #    一律报 Permission denied，而同一个 shell 里 PowerShell 的 Remove-Item 删得掉。
+            #    原因未查明；巡检的 worktree 清理长期空转就栖在这里（[WT-BLOCKED] 天天报、一条也没删成）。
+            #    🔴 只对已过三条闸（未 locked ＋ahead=0 ＋脏行全是 D）的件回退。
+            try { Remove-Item -LiteralPath $t.path -Recurse -Force -ErrorAction Stop; $ok = $true; $fellBack += $t.name }
+            catch { $ok = $false }
+        }
+        if ($ok) { $removed += $t.name; Write-Line "  ✓ 已删 $($t.name)" }
         else { $failed += $t.name; Write-Line "  🔴 删失败 $($t.name)" }
     }
-    & git -C $Repo worktree prune 2>&1 | Out-Null
+    try { & git -C $Repo worktree prune 2>&1 | Out-Null } catch { }
+    # prune 同样会被 Permission denied 拦下，履带掉工作目录已消失的孤儿管理目录。
+    $adminRoot2 = Join-Path $Repo '.git\worktrees'
+    if (Test-Path $adminRoot2) {
+        foreach ($d in (Get-ChildItem -Force -Directory $adminRoot2)) {
+            $gd = Join-Path $d.FullName 'gitdir'
+            if (-not (Test-Path $gd)) { continue }
+            $wtDir = Split-Path ((Get-Content $gd -Raw).Trim()) -Parent
+            if (-not (Test-Path -LiteralPath $wtDir)) {
+                try { Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction Stop; $orphans += $d.Name } catch { }
+            }
+        }
+    }
+    if ($orphans.Count -gt 0) { Write-Line ("  顺手清掉 {0} 个孤儿管理目录（git prune 删不动）" -f $orphans.Count) }
     Write-Line ("已删 {0} 条，失败 {1} 条。" -f $removed.Count, $failed.Count)
 }
 
@@ -160,6 +187,8 @@ $record = [ordered]@{
     counts = ($byCls | ForEach-Object { @{ cls = $_.Name; n = $_.Count } })
     candidates = ($targets | ForEach-Object { $_.name })
     removed = $removed
+    removed_by_fallback = $fellBack
+    orphan_admin_dirs_removed = $orphans
     remove_failed = $failed
     kept = ($rows | Where-Object { $targets -notcontains $_ } | ForEach-Object { @{ name = $_.name; cls = $_.cls; ahead = $_.ahead; dirty = $_.dirty; keep = $_.keep } })
 }

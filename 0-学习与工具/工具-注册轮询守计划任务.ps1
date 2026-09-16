@@ -158,7 +158,18 @@ if (-not (Test-Path -LiteralPath "$pwshExe" -PathType Leaf)) {
     exit 9
 }
 & "$pwshExe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$GUARD_SCRIPT" -Repo "$REPO" -PythonExe "$pyExe" -PwshExe "$pwshExe" -ClaudeExe "$claudeExe"$modelArg
-exit `$LASTEXITCODE
+`$rc = `$LASTEXITCODE
+# 🔴 #575：原生命令**压根没启动**时 `$LASTEXITCODE 为 `$null，exit `$null 就是 exit 0——
+#    VBS 那一层刚补上的退出码透传被这一层吃掉。实测：09-14～09-16 一天 ~96 轮里
+#    只有 2 轮真跑，其余轮轮 1 秒、LastTaskResult=0、零留痕，面板上全是「成功」。
+#    取不到退出码即当失败：写一行痕并 exit 8。**只会报成功的守卫等于没有守卫。**
+if (`$null -eq `$rc) {
+    `$d = "$REPO\reports\poll-guard"; New-Item -ItemType Directory -Force -Path `$d | Out-Null
+    `$ts = Get-Date
+    Add-Content -Path (Join-Path `$d ("poll-guard-" + `$ts.ToString('yyyyMMdd') + ".jsonl")) -Encoding UTF8 -Value ('{"ts":"' + `$ts.ToString('o') + '","round":"wrapper-nostart","skipped":"pwsh-not-started","woke":false,"total_ms":0}')
+    exit 8
+}
+exit `$rc
 "@
 if ($WhatIf) {
     Write-Host "[WhatIf] 将写入 $WRAPPER：" -ForegroundColor DarkGray

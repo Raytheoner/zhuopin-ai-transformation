@@ -144,3 +144,15 @@ def test_留痕每次一行且记录模式(repo: Path):
     assert rows[0]["mode"] == "dry-run"
     assert rows[1]["mode"] == "apply"
     assert rows[1]["removed"] == ["clean"] or "clean" in rows[1]["removed"]
+
+def test_目录已消失的worktree不让整份体检崩掉(repo: Path):
+    """🔴 2026-09-17 首轮真跑就栽在这里：合入脚本刚收掉基线件、`.git/worktrees/` 里管理记录还在，
+    `git -C <已消失目录> status` 抛 fatal，$ErrorActionPreference='Stop' 下整个体检直接终止。
+    现在它应归为「目录已消失」一类，照常出报告。"""
+    p = _add_wt(repo, "vanished")
+    _add_wt(repo, "clean")
+    shutil.rmtree(p)          # 只删工作目录，管理记录留着（复刻当时的现场）
+
+    out = _run(repo)          # 不得抛、不得非零
+    assert "目录已消失" in out
+    assert "clean" in out     # 崩掉的话后面这条根本不会被打印
