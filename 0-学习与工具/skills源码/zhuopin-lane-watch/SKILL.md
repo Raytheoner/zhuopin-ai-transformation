@@ -97,7 +97,15 @@ description: 卓品智能AI转型项目·泳道看护模式（吸收并退休 zh
    🔑 **取代关系**：改的是**写入口**（散文里的相对路径 → 工具子命令），**不是心跳的格式与节奏**——文件位置、行形态、里程碑节奏、长等待补写规则全部不变。成因：v2.0 把默认起法从无头 ps1（CWD＝主工作区）改成 `isolation: worktree`，而这句散文一字未动 ⇒ 泳道按自己的 CWD 解析，写进了各自 worktree，看护者从主工作区一份也读不到。
 
    </details>
-5. **看护**：
+5. **看护**：🆕 **循环入口＝一次 `wait` 调用，不再自己写轮询**（`#598` ①②，Token 优化 P2）：看护会话此前每轮自己起 `check-heartbeat`／`summary`／`show` 逐条查一遍再判断要不要继续等，请求数偏高；改为
+   ```
+   python 0-学习与工具/工具-泳道看护等待.py wait --batch <批次> --max-wait 540
+   ```
+   （默认每 15 秒轮询一次，`--max-wait` 秒预算耗尽仍无事件才返回；跑长回归等预计等待超过 10 分钟的步骤，仍要在心跳里补写「仍在等 X，预计还要 N 分钟」——`wait` 只是把轮询收进一次调用，不替代步骤 4 的心跳约定）。**它只读、不落任何状态、不推通知**——真正的判定与落状态仍由下面各档各自的命令做，`wait` 只负责"该退出去看一眼了"这一件事。退出码四档，按档处置：
+   - **DONE（0）**：批次内至少一条泳道已终态，或已知 `--log-dir` 的子进程已退出——去跑步骤 6 的 `summary` 现取详情，或按下面 🟢／⏭️ 档收尾该泳道，再对剩余泳道重新调一次 `wait`。
+   - **PAUSED（10）**：命中下面 🟡/🔴 档，按该档处置（`resume` 后对剩余泳道重新调 `wait`）。
+   - **NO-HEARTBEAT（11）／TIMEOUT（12）**：对应 5.6 波间看门狗的两种信号（心跳文件缺失／超龄），跑该节的 `check-heartbeat` 命令做真正的判定与落状态（会落 `paused`＋推通知，`wait` 本身不会）。
+   - **MAX-WAIT（13）**：健康运行中，无任何可判定信号，直接对同一批次再调一次 `wait` 继续等；预算内多次 MAX-WAIT 是正常现象，不是异常。
    - 🟢 档：自动做完，继续下一项（同清池）。
    - ⏭️ 档：已由 `transfer-out` 记录，泳道不停，继续其余任务（见步骤 3）。🆕 **若他此刻在环且 LAN 探针实测 on**，该项可走步骤 3 的条件放行分支在同一 session 内续做——**照样不进问答循环**（放行不是一个要等他裁的决策点，是他已经给过授权这件事的记录）；未获授权的一律保持已转出态，收工汇总里照旧列入待收口。授权与执行结果由 `summary` 现取报出（见步骤 6），🔴 **会话不得自算**。
    - 🟡/🔴 档：泳道以 `OPENER_PARTIAL` 退出，`reports/lane-watch-state.json` 已有该泳道的 `paused` 记录（跨 worktree 共享同一物理文件，见工具模块文档「跨 worktree 可见性」）；Cowork 在会话内以「需你定夺」格式呈现（根 `CLAUDE.md` §5 格式四条：编号 + (a)(b)(c) + 各自代价 + 默认项）；他回一个字母后，Cowork 跑
@@ -204,10 +212,11 @@ D1 🔴 档（对外发送／L2 门禁签字／合规红线变更／ASIL C-D 相
 
 ## 与既有件的关系
 
-见 `openspec/changes/lane-watch-mode/design.md`「与既有件的关系」表——opener 塌缩、心跳、企微四类事件推送通道、触碰区排波、看护件模板全部复用；LAN 探针只读引用 `0-学习与工具/工具-未闭合产出扫描.py::probe_lan`（不复制 ping/HTTP 判据代码）。**本包唯一新增代码 ＝ `0-学习与工具/工具-泳道看护状态机.py`**（§3 停/续状态机：D1 判据现取、`pause`/`transfer-out`/`resume`/`check-timeout`/`heartbeat`/`check-heartbeat`/`summary`/`lan-status`，见该文件模块文档）。
+见 `openspec/changes/lane-watch-mode/design.md`「与既有件的关系」表——opener 塌缩、心跳、企微四类事件推送通道、触碰区排波、看护件模板全部复用；LAN 探针只读引用 `0-学习与工具/工具-未闭合产出扫描.py::probe_lan`（不复制 ping/HTTP 判据代码）。**本包新增代码 ＝ `0-学习与工具/工具-泳道看护状态机.py`**（§3 停/续状态机：D1 判据现取、`pause`/`transfer-out`/`resume`/`check-timeout`/`heartbeat`/`check-heartbeat`/`summary`/`lan-status`，见该文件模块文档）**＋ `0-学习与工具/工具-泳道看护等待.py`**（v2.4 新增，只读轮询封装，见该文件模块文档）。
 
 ## 版本
 
+- v2.4（2026-09-16 `OP-0916-U` 出件：步骤 5 看护循环入口改为一次 `工具-泳道看护等待.py wait --batch <批次>` 调用，代替看护会话逐轮自起 `check-heartbeat`／`summary`／`show` 的自查，退出码 DONE/PAUSED/NO-HEARTBEAT/TIMEOUT/MAX-WAIT 四档各自指回既有处置命令——`wait` 只读、只负责"该退出去看一眼了"，真正的判定与落状态仍由 5.6 `check-heartbeat`／`pause`/`resume` 等既有命令做，一字未改。队列 §一 `#598`，`OP-0916-T` 派出。）
 - v2.3.1（2026-09-12 `OP-0912-F` 出件：心跳尾句由字面占位改为**真值填充**——泳道标识＝worktree 名、批次从 `派出线` 现取或 `--batch` 显式给、两者皆无 fail-loud；lint 形态⑩ 收紧为「`工具-泳道看护状态机.py heartbeat`＋`--done`＋`--batch` 同行」；对照棒 `6733cb4`／`b64e442` 原文不动，第二棒 `8a1021f` 全量移植。Shao Peishen 2026-09-12 回 `2a`＝`OP-0912-E` 定夺 2(a)，design 决策点 1 修订段见 `openspec/changes/lane-watch-heartbeat-wiring/design.md`。队列 §一 `#565`。）
 - v2.3（2026-09-12 `OP-0912-B` 出件：子任务泳道 opener 正文此前从未提心跳——步骤 4 示例命令补 `--done --batch <批次>`，新增「已知缺陷与其状态」缺陷四并标已修。修法主体在 `工具-opener生成.py`／`opener骨架.md`（生成器强制注入 `SUBTASK_HEARTBEAT_NOTE`），本文件只同步示例命令与缺陷登记。队列 §一 `#565`。）
 - v2.2（2026-09-09 `OP-0909-M` 出件：心跳读写同锚——步骤 4 心跳约定由「写文件」改为「跑命令」（`heartbeat` 子命令，路径由工具按 `REPO_ROOT` 解析），5.6 增终态豁免（双源＋优先级，`STOPPED` 与 `DONE` 同等豁免），新增「已知缺陷与其状态」节。随 openspec 变更包 `lane-watch-heartbeat-visibility`，队列 §一 `#504`，design 审 2026-09-08 已过（Shao Peishen 答 1(a)＋§五 1(a)＋2026-09-09 答 2a）。**旧版原文原样保留、标注取代关系**）。
