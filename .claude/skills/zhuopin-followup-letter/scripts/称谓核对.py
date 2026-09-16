@@ -8,7 +8,7 @@
 
 用法（在仓库任意子目录下均可）：
 
-    python "0-学习与工具/skills源码/zhuopin-followup-letter/scripts/称谓核对.py" <信件.md> [<信件.docx>]
+    python ".claude/skills/zhuopin-followup-letter/scripts/称谓核对.py" <信件.md> [<信件.docx>]
     python ".../scripts/称谓核对.py" --dirty     # 工作区脏的跟进信件
 
 退出码同主工具：0 命中 0 处／1 有命中／2 无法执行（找不到主工具也是 2，不静默通过）。

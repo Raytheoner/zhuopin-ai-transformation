@@ -11,7 +11,7 @@
 | `zhuopin-rebaseline` | Cowork | 全景路线图重组循环执行清单 |
 | `zhuopin-需求grill` | Cowork | 新场景开工前需求收敛第一道把关 |
 | `zhuopin-queue-audit` | Cowork | 跨会话对账审计。🆕 **本次（#585）盘点补入**——队列 #585 立行时的枚举漏计了本 skill（源码目录客观存在，但未列入原定 6 条 Cowork 清单），依"以文件系统真身为准"补齐，无归属分歧、不改变结论 |
-| `zhuopin-followup-letter` | CC | 建造类，CC worktree 会话内调用过（统一门户设计 worktree 1 次）。**拟迁**至 `.claude/skills/zhuopin-followup-letter/`（`git mv` 保留历史）——**本次（#585 第一棒）尚未执行迁移**，仍在本目录，下一棒续做时以本行状态为准，不得假设已迁 |
+| `zhuopin-followup-letter` | CC | 建造类，CC worktree 会话内调用过（统一门户设计 worktree 1 次）。**已迁**至 `.claude/skills/zhuopin-followup-letter/`（`git mv` 保留历史，#585 续三 OP-0916-O 执行），本目录不再有该 skill |
 | `huijian-chaijian-patrol` | 不安装 | 正文由 `check_patrol_signal.py`／调度 Dispatch 直读源码，不走 Cowork `save_skill` 或 CC `.claude/skills/` 安装机制 |
 | `zhuopin-lane-clearpool` | 已退休·已下架 | 2026-09-02 `OP-0902-C` 被 `zhuopin-lane-watch` 吸收；Shao Peishen 已于 2026-09-16 在 Cowork 手动关闭（§四 `#204` 销）。**历史记录不追改**：其 SKILL.md description 原文（含已归档说明）按项目纪律保留不压缩 |
 
@@ -19,9 +19,12 @@
 
 - ✅ `0-学习与工具/skills源码/*/SKILL.md` description ≤200 字压缩 ＋ 触发词对照表已完成（7 个文件：`huijian-chaijian-patrol`／`zhuopin-followup-letter`／`zhuopin-lan-closeout`／`zhuopin-lane-watch`／`zhuopin-queue-audit`／`zhuopin-send-followup`／`zhuopin-需求grill`）。压缩前后逐条触发词对照表写回队列 §一 `#585`；被压缩掉的机制细节一律以「触发与机制细节」段原文迁入各文件正文首段，不丢信息。
 
-## 本表之外未完成事项（#585 续棒交接，2026-09-16）
+## 续三（#585 续三，2026-09-16 `OP-0916-O`）已做
 
-- `zhuopin-followup-letter` 迁移（`git mv` ＋ 全仓 grep 引用改点）未做。
+- ✅ `zhuopin-followup-letter` `git mv` 迁移至 `.claude/skills/zhuopin-followup-letter/`（保留历史）＋全仓引用改点：仅改「当下生效的指针」（openspec 未合入变更包 `followup-decision-point-gate` 的 tasks.md／proposal.md 两处未来路径、skill 自身脚本内的用法示例路径、本 README 归属表与未完成事项）；历史叙事件（CHANGELOG／队列归档／队列行日志／看护件／取证件／session 接力归档／队列 §二 批次历史）依「历史记录不追改」原样不动。
+
+## 本表之外未完成事项（#585 续三交接，2026-09-16）
+
 - `工具-仓库外载体扫描.py` 载体③ 拆分（CC 侧库内即正本免扫／Cowork 侧账号级安装路径先取证、取不到输出"未核验"）未做，单测三态覆盖未做。
 
 详情与承接见队列 §一 `#585`。

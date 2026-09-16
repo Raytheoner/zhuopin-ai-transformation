@@ -50,7 +50,7 @@ skill v3.8（2026-09-06，Cowork 已落）已在 §5 补入步骤 1bis 与 §6 �
 
 ## 本次退休哪一个既有守卫（强制，协议〇.9 措施 B）
 
-**退休：`skills源码/zhuopin-followup-letter/SKILL.md` §5 步骤 1bis 末句括号里的「（登记 CLI `append` 校验为机器守，建成前人守）」中的**「建成前人守」**这半句——本包上线后该半句作废，改为指向机器守。**
+**退休：`.claude/skills/zhuopin-followup-letter/SKILL.md` §5 步骤 1bis 末句括号里的「（登记 CLI `append` 校验为机器守，建成前人守）」中的**「建成前人守」**这半句——本包上线后该半句作废，改为指向机器守。**
 
 这是 one-in-one-out 的本体：**一进（`append` 闸上岗）一出（人守条目减一）**。
 
@@ -108,7 +108,7 @@ skill v3.8（2026-09-06，Cowork 已落）已在 §5 补入步骤 1bis 与 §6 �
 
 - **受影响代码**：`0-学习与工具/工具-跟进信README登记.py`（模块 docstring 两节、importlib 复用 `工具-跟进信frontmatter校验.py`、`DECISION_FIELD`／`DECISION_HINT` 常量、`_assert_decision_points`、`cmd_append` 首段与 `[PLAN]` 回显、`--letter-path` 参数）。
 - **受影响测试**：`0-学习与工具/test_工具-跟进信README登记.py`（新增 `DecisionPointGateTests` 11 条 ＋ argparse 必填 1 条；夹具基类新增 `_write_letter`，`_run` 为不关心本闸的既有用例注入默认夹具信）。
-- **受影响文档**：`skills源码/zhuopin-followup-letter/SKILL.md` §5 步骤 1bis 末句（🔴 **仅在满足"真实验活"前置条件后**才改）；`.claude/rules/跟进信与专员.md` 的登记命令示例句（须补 `--letter-path`）；队列 §一 `#436` 行回写。
+- **受影响文档**：`.claude/skills/zhuopin-followup-letter/SKILL.md` §5 步骤 1bis 末句（🔴 **仅在满足"真实验活"前置条件后**才改）；`.claude/rules/跟进信与专员.md` 的登记命令示例句（须补 `--letter-path`）；队列 §一 `#436` 行回写。
 - **受影响的其它消费者（已核）**：全仓 `grep` `工具-跟进信README登记` 无任何自动化调用方（`.py`／`.ps1`／`.yml` 中零处 subprocess 调用）；命中处均为文档正文、hook 白名单正则（只匹配脚本名、不解析参数）、与 `test_hooks-pretooluse-queue-read-guard.py` 的一条**不执行本 CLI** 的白名单放行用例。⇒ **必填新参数不会打断任何自动链路**，只影响人／agent 手敲的命令。
 - **红线核对**：mock 先行 —— 适用且已做（单测夹具 ＋ 真实语料只读 `--dry-run`）；audit 留痕 —— 不适用（本 CLI 不写 `zhuopin_platform.audit`）；OEM 隔离 —— 不适用；L2 人工确认门禁 —— 不适用；ISO 26262 —— 不适用（非车规安全相关代码）；对外发送 —— **不适用且不触碰**（本闸只管登记，发送仍走既有 D7 判据与人工门禁）。
 
