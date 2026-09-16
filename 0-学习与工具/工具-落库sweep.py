@@ -410,7 +410,12 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from _输出截流 import emit as _emit_output  # 队列 #597 ⑵：成功路径默认摘要，见该模块 docstring。
+try:
+    from _输出截流 import emit as _emit_output  # 队列 #597 ⑵：成功路径默认摘要，见该模块 docstring。
+except ImportError:  # 队列 #600：同目录助手缺席（临时复刻目录／早于 #597 的 worktree）时退回整段原样打印，不因输出层崩溃拖垮判据加载
+    def _emit_output(tool_name, lines, exit_code, *, verbose=False, repo_root=None):
+        print("\n".join(lines))
+        return exit_code
 
 # 队列 #306：本脚本自身所在的 worktree 本地路径找 zhuopin_platform（同
 # 工具-共享文档编辑锁.py 既有引导，与队列 #300 conftest.py 同一原则）。

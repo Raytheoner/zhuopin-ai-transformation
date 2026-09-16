@@ -106,7 +106,12 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from _输出截流 import emit as _emit_output
+try:
+    from _输出截流 import emit as _emit_output
+except ImportError:  # 队列 #600：同目录助手缺席（临时复刻目录／早于 #597 的 worktree）时退回整段原样打印，不因输出层崩溃拖垮判据加载
+    def _emit_output(tool_name, lines, exit_code, *, verbose=False, repo_root=None):
+        print("\n".join(lines))
+        return exit_code
 
 # ── 与 `工具-队列结构lint.py` 同一手法：按文件路径加载编辑锁模块，复用其
 #    `_split_live_sections`（队列分区切分）与 `queue_table` 委托，不自己再写

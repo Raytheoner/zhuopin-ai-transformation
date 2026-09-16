@@ -108,7 +108,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _输出截流 import emit as _emit_output
+try:
+    from _输出截流 import emit as _emit_output
+except ImportError:  # 队列 #600：同目录助手缺席（临时复刻目录／早于 #597 的 worktree）时退回整段原样打印，不因输出层崩溃拖垮判据加载
+    def _emit_output(tool_name, lines, exit_code, *, verbose=False, repo_root=None):
+        print("\n".join(lines))
+        return exit_code
 
 
 def _repo_root() -> Path:
