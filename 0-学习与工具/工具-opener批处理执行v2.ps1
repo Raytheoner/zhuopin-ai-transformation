@@ -103,6 +103,11 @@ if ($Detach) {
 # ---------- 解析：### A<N> 标题 → ▶ 泳道 → 代码块 ----------
 $lines = [System.IO.File]::ReadAllLines($Plan, $Utf8NoBom)
 $fence = [char]0x60 + [char]0x60 + [char]0x60
+# 队列 #581 合入前补缺 ⑴：每条 opener【设置】行可带「模型：sonnet｜opus」——同一口径
+# 由 `工具-opener生成.py::_settings_line` 落笔（`｜ 模型：<值>`），本正则只按值本身
+# 匹配（不锚定前缀「｜」），故手写 opener（无本字段）与生成器产出（有本字段）都解得出。
+$modelFieldRe = '模型[：:]\s*([^\s｜\|]+)'
+$validModels = @('sonnet', 'opus')
 $openers = @()
 for ($i = 0; $i -lt $lines.Count; $i++) {
     if ($lines[$i] -match '^###\s+(A\d+)\s*·?\s*(.*)$') {
@@ -120,7 +125,21 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
             $j++
         }
         if ($body.Count -gt 0) {
-            $openers += [pscustomobject]@{ Id = $id; Title = $title; Paste = $paste; Lane = $lane; Text = ($body -join "`r`n") }
+            # 缺省＝批级 `-Model`；显式合法值覆盖；非法值不在此处报错——留到 laneBlock
+            # 判 FAIL 并点名（判成败与报告落在同一处，不在解析期就中断整批解析）。
+            $modelRaw = $null
+            foreach ($bl in $body) { if ($bl -match $modelFieldRe) { $modelRaw = $Matches[1]; break } }
+            if ([string]::IsNullOrEmpty($modelRaw)) {
+                $resolvedModel = $Model; $modelInvalid = $false
+            } elseif ($validModels -contains $modelRaw) {
+                $resolvedModel = $modelRaw; $modelInvalid = $false
+            } else {
+                $resolvedModel = $null; $modelInvalid = $true
+            }
+            $openers += [pscustomobject]@{
+                Id = $id; Title = $title; Paste = $paste; Lane = $lane; Text = ($body -join "`r`n")
+                Model = $resolvedModel; ModelRaw = $modelRaw; ModelInvalid = $modelInvalid
+            }
         }
     }
 }
@@ -178,12 +197,18 @@ $sentinelRetryPrompt = @(
 
 # 每个泳道一个 Job：泳道内严格串行，FAIL/NO-SENTINEL 停本泳道
 $laneBlock = {
-    param($laneName, $items, $logDir, $header, $fullAuto, $model, $retryPrompt, $retryTimeoutSec, $claudeExe)
+    param($laneName, $items, $logDir, $header, $fullAuto, $retryPrompt, $retryTimeoutSec, $claudeExe)
     $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
     $global:OutputEncoding = $Utf8NoBom
     $results = @()
     foreach ($op in $items) {
         $log = Join-Path $logDir ($laneName + '-' + $op.Id + '.log')
+        # 队列 #581 合入前补缺 ⑴：opener【设置】行模型字段非法值 ⇒ 判 FAIL、不起 claude（不消耗一个 session）。
+        if ($op.ModelInvalid) {
+            ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | 模型字段非法值 ' + $op.ModelRaw + '（须 sonnet｜opus 之一，见 opener【设置】行「模型：」）⇒ 判 FAIL，未起 claude') | Out-File -FilePath $log -Encoding utf8
+            $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(model)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.ModelRaw; Log = $log }
+            break
+        }
         $tmp = Join-Path $logDir ($laneName + '-' + $op.Id + '.opener.txt')
         [System.IO.File]::WriteAllText($tmp, $header + "`r`n" + $op.Text, $Utf8NoBom)
         $t0 = Get-Date
@@ -192,8 +217,10 @@ $laneBlock = {
         $sid = [guid]::NewGuid().ToString()
         $claudeArgs = @('-p', '--output-format', 'text', '--session-id', $sid)
         if ($fullAuto) { $claudeArgs += '--dangerously-skip-permissions' } else { $claudeArgs += @('--permission-mode', 'acceptEdits') }
-        if ($model) { $claudeArgs += @('--model', $model) }
-        ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | session=' + $sid + ' | resume: claude --resume ' + $sid + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Encoding utf8
+        # 队列 #581 合入前补缺 ⑴：模型由 opener【设置】行自带（解析期已按批级 `-Model` 兜底），
+        # 不再读批级泳道共享的形参——每条 opener 可各自覆盖。
+        if ($op.Model) { $claudeArgs += @('--model', $op.Model) }
+        ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | model=' + $op.Model + ' | session=' + $sid + ' | resume: claude --resume ' + $sid + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Encoding utf8
         Get-Content -Raw -Encoding UTF8 $tmp | & claude @claudeArgs 2>&1 | Out-File -FilePath $log -Append -Encoding utf8
         $code = $LASTEXITCODE
         $t1 = Get-Date
@@ -213,7 +240,7 @@ $laneBlock = {
             [System.IO.File]::WriteAllText($retryPromptFile, $retryPrompt, $Utf8NoBom)
             $retryArgs = @('-p', '--output-format', 'text', '--resume', $sid)
             if ($fullAuto) { $retryArgs += '--dangerously-skip-permissions' } else { $retryArgs += @('--permission-mode', 'acceptEdits') }
-            if ($model) { $retryArgs += @('--model', $model) }
+            if ($op.Model) { $retryArgs += @('--model', $op.Model) }
             $tr0 = Get-Date
             ('[lane:' + $laneName + '] ' + $op.Id + ' NO-SENTINEL ⇒ 补问一次：claude ' + ($retryArgs -join ' ') + ' | timeout=' + $retryTimeoutSec + 's | start=' + $tr0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
             $retryOutcome = 'timeout'
@@ -239,7 +266,7 @@ $laneBlock = {
             $t1 = Get-Date
         }
         # <<< #550 补问 end
-        $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Sentinel = $sentinelBy; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Session = $sid; Log = $log }
+        $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Sentinel = $sentinelBy; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Session = $sid; Model = $op.Model; Log = $log }
         if ($status -like 'FAIL*' -or $status -eq 'NO-SENTINEL') { break }
     }
     $results
@@ -261,7 +288,7 @@ while ($queue.Count -gt 0 -or ($jobs.Values | Where-Object { $_.State -eq 'Runni
         # `C:\Users\Paul Shao\OneDrive\文档`（Cowork 调用方的 cwd），而 claude 按 cwd 归档 session、`--resume` 也按 cwd 找
         # ⇒ 不显式给 -WorkingDirectory，补问与人工接管都会「No conversation found」。
         # 同批实证：`[bool]$FullAuto` 在参数位是字符串 "[bool]False"（非空 ⇒ 恒真）⇒ 此前 -FullAuto 给不给都 skip-permissions；加括号才是布尔。
-        $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $Model, $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source
+        $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source
         $started++
     }
     Start-Sleep -Seconds 20
@@ -270,14 +297,18 @@ while ($queue.Count -gt 0 -or ($jobs.Values | Where-Object { $_.State -eq 'Runni
 $all = @()
 foreach ($k in $jobs.Keys) { $all += Receive-Job -Job $jobs[$k]; Remove-Job -Job $jobs[$k] -Force }
 # v2.3：SKIPPED 作为第一等状态并入汇总（Sentinel='—'：未起 session、不谈哨兵；Log 列放跳过理由含行号与命中载体）。
-foreach ($so in $skippedOps) { $all += [pscustomobject]@{ Lane = $so.Lane; Id = $so.Id; Status = 'SKIPPED'; Sentinel = '—'; Minutes = 0; Session = ''; Log = $so.SkipReason } }
+# 队列 #581 合入前补缺 ⑵：Model 列同样带（跳过的也报其本来会用的模型，'—' 表示解析期已判非法）。
+foreach ($so in $skippedOps) {
+    $skipModel = if ($so.ModelInvalid) { '—' } else { $so.Model }
+    $all += [pscustomobject]@{ Lane = $so.Lane; Id = $so.Id; Status = 'SKIPPED'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $skipModel; Log = $so.SkipReason }
+}
 $all = $all | Sort-Object Lane, { [int]($_.Id.Substring(1)) }
 Write-Host ''
 Write-Host '━━━━━━ 泳道批处理汇总 ━━━━━━'
-$all | Format-Table Lane, Id, Status, Sentinel, Minutes, Session -AutoSize | Out-String -Width 300 | Write-Host
+$all | Format-Table Lane, Id, Status, Model, Sentinel, Minutes, Session -AutoSize | Out-String -Width 300 | Write-Host
 $failed = @($all | Where-Object { $_.Status -like 'FAIL*' -or $_.Status -eq 'NO-SENTINEL' })
 $exitCode = if ($failed.Count -gt 0) { 1 } else { 0 }
-$summaryText = ($all | Format-Table Lane, Id, Status, Sentinel, Minutes, Session -AutoSize | Out-String -Width 300)
+$summaryText = ($all | Format-Table Lane, Id, Status, Model, Sentinel, Minutes, Session -AutoSize | Out-String -Width 300)
 # v2.2 `#550`：哨兵来源三个计数分开落盘——「活干完了却 NO-SENTINEL」应归零，而 RETRY 那个数才是真实遵守率，不得混进 OK 里看不见。
 $sentinelFirst = @($all | Where-Object { $_.Sentinel -eq '首轮' }).Count
 $sentinelRetry = @($all | Where-Object { $_.Sentinel -eq '补问' }).Count
@@ -292,7 +323,7 @@ if ($sentinelRetry -gt 0) { Write-Host ('⚠ ' + $sentinelRetry + ' 项哨兵靠
 $summaryText += "`r`nEXIT=" + $exitCode + "`r`n"
 [System.IO.File]::WriteAllText((Join-Path $logDir 'summary.txt'), $summaryText, $Utf8NoBom)
 # 机读副本：Cowork 取件不必解析表格文本。
-[System.IO.File]::WriteAllText((Join-Path $logDir 'summary.json'), (@($all | Select-Object Lane, Id, Status, Sentinel, Minutes, Session, Log) | ConvertTo-Json -AsArray), $Utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $logDir 'summary.json'), (@($all | Select-Object Lane, Id, Status, Model, Sentinel, Minutes, Session, Log) | ConvertTo-Json -AsArray), $Utf8NoBom)
 Write-Host ('日志目录：' + $logDir)
 if ($failed.Count -gt 0) {
     Write-Host ('✗ ' + $failed.Count + ' 项失败/无哨兵（只停了所在泳道）。续跑：-Only ' + (($failed | ForEach-Object { $_.Id }) -join ',') + ' 加其泳道内后续编号；或 claude --resume <Session> 接管。') -ForegroundColor Red

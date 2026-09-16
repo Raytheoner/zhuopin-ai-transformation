@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -32,7 +33,17 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().with_name("工具-opener批处理执行v2.ps1")
+GEN_SCRIPT = Path(__file__).resolve().with_name("工具-opener生成.py")
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def _load_gen_module():
+    """按 `test_工具-opener生成.py::_load_module` 同法白盒加载生成器——本文件只借它拼一个
+    带「模型：」字段的真实【设置】行做互测夹具，不测生成器自身（那是它自己的测试文件的事）。"""
+    spec = importlib.util.spec_from_file_location("_opener_gen_for_v2_mutual_test", GEN_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 pytestmark = pytest.mark.skipif(
     shutil.which("pwsh") is None or os.name != "nt", reason="需要 Windows ＋ PowerShell 7（pwsh）"
@@ -369,6 +380,88 @@ class Model路由默认sonnet(_Base):
         retry_log = self.log_dir / "demo-lane-A1.retry.log"
         self.assertIn("--model sonnet", retry_log.read_text(encoding="utf-8-sig"),
                       "补问轮与首轮同源自同一个 $Model 形参，不得漏传")
+
+
+class Opener级模型字段(_Base):
+    """队列 §一 `#581` 合入前补缺 ⑴⑵⑶：opener【设置】行可带「模型：sonnet｜opus」——
+    缺省继承批级 `-Model`；显式值覆盖批级默认；非法值判 `FAIL(model)` 且不起 claude
+    （不消耗一个 session、日志点名非法值）。首轮与 NO-SENTINEL 补问同源自同一个 `$op.Model`。"""
+
+    _SETTINGS_LINE = (
+        "【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/op1231a-demo`） ｜ "
+        "worktree：☑（demo，新 worktree，收工自删） ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线"
+    )
+
+    def _write_plan_with_model_field(self, suffix: str):
+        text = PLAN_TEXT.replace(self._SETTINGS_LINE, self._SETTINGS_LINE + suffix)
+        self.assertNotEqual(text, PLAN_TEXT, "夹具替换未命中【设置】行，测试基线已漂移")
+        self.plan.write_text(text, encoding="utf-8")
+
+    def test_缺省继承批级(self):
+        # opener 本身不带「模型」字段，批级传 -Model opus（非默认 sonnet）⇒ 该条须继承 opus。
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir),
+                  "-Model", "opus"], self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        first = (self.log_dir / "demo-lane-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("model=opus", first)
+        self.assertIn("--model opus", first)
+
+    def test_显式opus覆盖批级默认(self):
+        self._write_plan_with_model_field(" ｜ 模型：opus")
+        # 批级不传 -Model ⇒ 批级默认 sonnet；本条 opener 显式 opus 须覆盖之。
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                  self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        first = (self.log_dir / "demo-lane-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("model=opus", first)
+        self.assertIn("--model opus", first)
+        self.assertNotIn("--model sonnet", first)
+
+    def test_非法值判FAIL不起claude(self):
+        self._write_plan_with_model_field(" ｜ 模型：haiku")
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                  self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["Status"], "FAIL(model)")
+        log_text = (self.log_dir / "demo-lane-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("haiku", log_text, "日志须点名非法取值，不能只说「模型不对」")
+        self.assertNotIn("STUB-ARGS", log_text, "非法模型值须在起 claude 之前拦下，不得真的调用一次")
+        self.assertEqual(rows[0]["Session"], "", "未起 claude ⇒ 不应生成 session id")
+
+
+class 生成器与v2解析口径互测(_Base):
+    """队列 §一 `#581` 合入前补缺 ⑷：`工具-opener生成.py::_settings_line` 落笔的「模型：」字段形态，
+    与本脚本的解析正则须是同一口径——任一方悄悄改了分隔符/字段名，这条互测应转红（其余单测各自
+    只测半边，看不见两边漂移）。用生成器真实产出（非手写模拟）喂给 v2 解析＋真跑一次桩 claude。"""
+
+    def test_生成器产出的模型字段被v2按同一口径解析(self):
+        gen = _load_gen_module()
+        with tempfile.TemporaryDirectory() as gen_tmp:
+            # 隔离撞号扫描与取号台账（同 `test_工具-opener生成.py::setUpModule` 手法），
+            # 不因本机当日真实占用编号或写脏 reports/op-id-claims.jsonl 而失真/致污染。
+            gen.REPO_ROOT = Path(gen_tmp)
+            gen.CLAIMS_FILE = Path(gen_tmp) / "op-id-claims.jsonl"
+            block = gen.generate_opener(
+                op_id="OP-1231-M", env="CC", short_name="互测任务", branch="mutual-slug",
+                worktree="☑（demo-wt，新 worktree，收工自删）", workspace="无（纯库内）",
+                session="新开", line="环境总线", input_pointer="示例派单件.md",
+                task_class="A", do_items=["第一步"], dont_items=["不做的事"], model="opus",
+            )
+        self.assertIn("｜ 模型：opus", block, "生成器自身产出形态已变——互测夹具先于 v2 那半失真")
+        plan = "\n".join([
+            "# 波次计划（生成器互测夹具）", "",
+            "### A1 · 互测", "", "粘贴端：CC ｜ 泳道：demo-lane", "",
+            block, "",
+        ])
+        self.plan.write_text(plan, encoding="utf-8")
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                  self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        first = (self.log_dir / "demo-lane-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("model=opus", first)
+        self.assertIn("--model opus", first)
 
 
 class 历史泳道回放_桩(_Base):
