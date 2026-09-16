@@ -169,6 +169,26 @@ def test_probe_signal_wakes_model_exactly_once_with_both_outputs(rig: Rig):
     assert (cap / "prompt.txt").exists() and (cap / "probe.out").exists() and (cap / "patrol.out").exists()
 
 
+def test_不给Model_唤模型默认带model_sonnet(rig: Rig):
+    """队列 #581 ⑶：全仓 grep 补漏的第三处 claude -p 调用点（此前 `-Model` 默认 ''，与 v2.ps1 同款缺口）。"""
+    rig.set_probe("[SIGNAL]\n批完成。\n")
+    rig.set_patrol(QUIET_PATROL)
+    proc = rig.run()
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    args = rig.claude_calls.read_text(encoding="utf-8")
+    assert "--model sonnet" in args
+
+
+def test_显式Model_opus_覆盖默认(rig: Rig):
+    rig.set_probe("[SIGNAL]\n批完成。\n")
+    rig.set_patrol(QUIET_PATROL)
+    proc = rig.run("-Model", "opus")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    args = rig.claude_calls.read_text(encoding="utf-8")
+    assert "--model opus" in args
+    assert "--model sonnet" not in args
+
+
 def test_patrol_merged_wakes_model_once(rig: Rig):
     rig.set_probe("[NO-SIGNAL] 无新事。\n")
     rig.set_patrol("[WL-NO-ACTION] 本轮白名单无可合入项。\n[MERGED] claude/op0913x-demo\n[WT-NO-ACTION] 本轮无可清理 worktree。")

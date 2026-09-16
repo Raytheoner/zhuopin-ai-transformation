@@ -70,6 +70,8 @@ from .repo_paths import (
 )
 
 CLAUDE_EXECUTABLE = "claude"
+#: Token 优化 Phase 1（队列 #581）：无头巡逻默认走最便宜的模型；ASIL/合规相关建造不走本模块。
+PATROL_MODEL = "sonnet"
 
 ACTION_STARTED = "started"
 ACTION_SKIPPED_BUSY = "skipped_busy"
@@ -219,6 +221,7 @@ def dispatch_headless_patrol(
         try:
             proc = popen(
                 [CLAUDE_EXECUTABLE, "-p", "--output-format", "text",
+                 "--model", PATROL_MODEL,
                  "--dangerously-skip-permissions"],
                 stdin=subprocess.PIPE, stdout=log_file, stderr=subprocess.STDOUT,
                 cwd=str(repo_root), text=True,

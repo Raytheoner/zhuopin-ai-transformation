@@ -60,7 +60,7 @@ param(
     [string]$PythonExe = 'python',
     [string]$PwshExe = 'pwsh',
     [string]$ClaudeExe = '',
-    [string]$Model = '',
+    [string]$Model = 'sonnet',
     [int]$ProbeTimeoutSec = 120,
     [int]$PatrolTimeoutSec = 900,
     [int]$ClaudeTimeoutSec = 1200,
