@@ -57,6 +57,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+# 队列 #600 实测补缺（2026-09-17）：相对 -LogDir 须在切目录前按调用方 cwd 定成绝对路径——泳道 Job 会 Push-Location
+# 进 worktree，相对路径随之漂进 worktree，Out-File 找不到目录、泳道在起 claude 前就崩（实测 op0917a 实撞）。
+if ($LogDir -and -not [System.IO.Path]::IsPathRooted($LogDir)) { $LogDir = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $LogDir)) }
 Set-Location $RepoRoot
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 $global:OutputEncoding = $Utf8NoBom

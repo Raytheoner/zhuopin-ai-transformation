@@ -668,6 +668,18 @@ class 脚本建隔离worktree四场景_v2_600(_Base):
         self.assertEqual(Path(m.group(1).strip()).resolve(), self.wt_dir.resolve())
         self.assertFalse((self.log_dir / f"{self.lane_name}-A1-main-leak.patch").exists())
 
+    def test_相对LogDir在worktree泳道下仍落到调用方目录(self):
+        # 实测补缺：相对 -LogDir 曾随泳道 Push-Location 漂进 worktree，泳道起 claude 前即崩。
+        self._write_plan()
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", "rel-log"],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rel = self.root / "rel-log"
+        rows = json.loads((rel / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(rows[0]["Status"], "OK")
+        self.assertRegex((rel / f"{self.lane_name}-A1.log").read_text(encoding="utf-8-sig").splitlines()[0],
+                         r"session=" + UUID_RE.pattern)
+
     def test_worktree建失败时判FAIL不起claude(self):
         # 让目标分支先在别处（decoy worktree）被检出——脚本走「分支已存在 ⇒ 不带 -b 的
         # worktree add」分支，git 会因「分支已在别的 worktree 检出」报错（fatal，exit 128），
