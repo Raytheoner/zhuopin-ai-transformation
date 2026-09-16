@@ -37,6 +37,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"C:\\Dev\\zhuopin-ai\\0-学习与工具\\hooks\\hooks-posttooluse-context-meter.ps1\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionStart": [
