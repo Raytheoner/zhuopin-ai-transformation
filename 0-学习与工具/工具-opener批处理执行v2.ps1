@@ -228,6 +228,7 @@ $laneBlock = {
         # worktree 已在（续棒复用同名 worktree）⇒ 跳过建、直接复用，不重建。
         $wtDeclared = $op.Text -match 'worktree[：:]\s*☑'
         $laneWorktreePath = $null
+        $wtNote = $null  # 队列 #600 合入前补缺：worktree 提示延后到 session 首行之后写，守「日志首行＝session」契约（#549）
         if ($wtDeclared) {
             $wtMatch = [regex]::Match($op.Text, 'worktree[：:]\s*☑\s*[（(]\s*([^，,）)]+)')
             if (-not $wtMatch.Success -or [string]::IsNullOrWhiteSpace($wtMatch.Groups[1].Value)) {
@@ -261,9 +262,9 @@ $laneBlock = {
                     $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(worktree-build)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log }
                     break
                 }
-                ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 已建：' + $laneWorktreePath + '（分支 ' + $branchName + $(if ($branchExists) { '，既有分支检出' } else { '，新建自 master' }) + '）') | Out-File -FilePath $log -Append -Encoding utf8
+                $wtNote = ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 已建：' + $laneWorktreePath + '（分支 ' + $branchName + $(if ($branchExists) { '，既有分支检出' } else { '，新建自 master' }) + '）')
             } else {
-                ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 已存在（复用）：' + $laneWorktreePath) | Out-File -FilePath $log -Append -Encoding utf8
+                $wtNote = ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 已存在（复用）：' + $laneWorktreePath)
             }
         }
 
@@ -284,6 +285,7 @@ $laneBlock = {
         # 不再读批级泳道共享的形参——每条 opener 可各自覆盖。
         if ($op.Model) { $claudeArgs += @('--model', $op.Model) }
         ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | model=' + $op.Model + ' | session=' + $sid + ' | resume: claude --resume ' + $sid + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
+        if ($wtNote) { $wtNote | Out-File -FilePath $log -Append -Encoding utf8 }
         # 队列 #600 ⑵：claude 子进程的 cwd 与环境标记——worktree 已声明时 cwd 切进该 worktree
         # （Push/Pop-Location；管道调用的子进程 cwd 随宿主 runspace 的 Get-Location 走，
         # 下面的补问 Start-Process 也用同一 `(Get-Location).Path` 取 -WorkingDirectory，故无需

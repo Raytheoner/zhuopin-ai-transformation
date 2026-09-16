@@ -51,7 +51,11 @@ pytestmark = pytest.mark.skipif(
 )
 
 #: 最小 plan：一个泳道一条 opener（`### A1` ＋ 粘贴端／泳道行 ＋ 围栏块）。
-PLAN_TEXT = "\n".join([
+#: 🔴 队列 #600 合入前补缺：通用夹具一律「worktree：☐」——#600 起脚本会对【设置】声明 ☑ 的 opener
+#: 真跑 `git worktree add`，而 `$RepoRoot` 取脚本物理位置＝真实仓库；通用用例（session/哨兵/模型）
+#: 与 worktree 无关，声明 ☑ 只会往真实仓库塞 `demo` worktree 与 `claude/op1231a-demo` 分支（09-17 实撞）。
+#: 需要 ☑ 的两类（残留回收、#600 四场景）改用 `PLAN_TEXT_WT` 并以随机名＋tearDown 自清。
+PLAN_TEXT_WT = "\n".join([
     "# 波次计划（单测夹具）", "",
     "### A1 · 示例泳道", "",
     "粘贴端：CC ｜ 泳道：demo-lane", "",
@@ -61,6 +65,8 @@ PLAN_TEXT = "\n".join([
     "读 ① 队列 §一 `#549` → ② `CLAUDE.md` 恢复上下文，按该行执行。本件为 A 类，直接开工。",
     "```", "",
 ])
+PLAN_TEXT = PLAN_TEXT_WT.replace("master（从 master 起 `claude/op1231a-demo`）", "master").replace(
+    "worktree：☑（demo，新 worktree，收工自删）", "worktree：☐")
 
 #: 桩 claude：回显参数（供断言 `--session-id <id>` 真的传到了）并打哨兵。
 CLAUDE_STUB = "@echo off\r\necho STUB-ARGS: %*\r\necho OPENER_DONE\r\nexit /b 0\r\n"
@@ -342,6 +348,9 @@ class NoSentinel补问(_Base):
         i, j = src.index(begin), src.index(end)
         self.assertGreater(j, i)
         mutant_dir = self.root / "mutant" / "tools"
+        # 队列 #600：脚本以自身物理位置的上一级为仓库根并对其跑 git（收工核验快照），变异副本所在目录须是 git 仓库。
+        (self.root / "mutant").mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", str(self.root / "mutant")], check=True, capture_output=True)
         mutant_dir.mkdir(parents=True)
         mutant = mutant_dir / SCRIPT.name
         mutant.write_text(src[:i] + src[j:], encoding="utf-8")
@@ -389,8 +398,8 @@ class Opener级模型字段(_Base):
     （不消耗一个 session、日志点名非法值）。首轮与 NO-SENTINEL 补问同源自同一个 `$op.Model`。"""
 
     _SETTINGS_LINE = (
-        "【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/op1231a-demo`） ｜ "
-        "worktree：☑（demo，新 worktree，收工自删） ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线"
+        "【设置】执行环境：CC ｜ 分支：master ｜ "
+        "worktree：☐ ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线"
     )
 
     def _write_plan_with_model_field(self, suffix: str):
@@ -446,7 +455,7 @@ class 生成器与v2解析口径互测(_Base):
             gen.CLAIMS_FILE = Path(gen_tmp) / "op-id-claims.jsonl"
             block = gen.generate_opener(
                 op_id="OP-1231-M", env="CC", short_name="互测任务", branch="mutual-slug",
-                worktree="☑（demo-wt，新 worktree，收工自删）", workspace="无（纯库内）",
+                worktree="☐", workspace="无（纯库内）",
                 session="新开", line="环境总线", input_pointer="示例派单件.md",
                 task_class="A", do_items=["第一步"], dont_items=["不做的事"], model="opus",
             )
@@ -509,6 +518,7 @@ class Worktree残留回收_v2_4(_Base):
         self.real_repo_root = SCRIPT.resolve().parent.parent
         token = uuid.uuid4().hex[:8]
         self.wt_name = f"test-wt-{token}"
+        self.branch_name = f"claude/optest584-{token}"
         self.lane_name = f"test-lane-{token}"
         self.wt_dir = self.real_repo_root / ".claude" / "worktrees" / self.wt_name
         self.dest_dir = self.real_repo_root / "reports" / "_from-worktree" / self.lane_name
@@ -525,15 +535,16 @@ class Worktree残留回收_v2_4(_Base):
                         capture_output=True)
         shutil.rmtree(self.wt_dir, ignore_errors=True)
         subprocess.run(["git", "-C", str(real_repo), "worktree", "prune"], capture_output=True)
-        subprocess.run(["git", "-C", str(real_repo), "branch", "-D", "claude/op1231a-demo"],
+        subprocess.run(["git", "-C", str(real_repo), "branch", "-D", self.branch_name],
                         capture_output=True)
         shutil.rmtree(self.dest_dir, ignore_errors=True)
         super().tearDown()
 
     def _write_plan(self, worktree_field: str = "☑（{wt}，新 worktree，收工自删）") -> None:
         text = (
-            PLAN_TEXT
+            PLAN_TEXT_WT
             .replace("泳道：demo-lane", f"泳道：{self.lane_name}")
+            .replace("claude/op1231a-demo", self.branch_name)
             .replace("worktree：☑（demo，新 worktree，收工自删）",
                       "worktree：" + worktree_field.format(wt=self.wt_name))
         )
@@ -616,7 +627,7 @@ class 脚本建隔离worktree四场景_v2_600(_Base):
 
     def _write_plan(self, worktree_field: str = "☑（{wt}，新 worktree，收工自删）") -> None:
         text = (
-            PLAN_TEXT
+            PLAN_TEXT_WT
             .replace("泳道：demo-lane", f"泳道：{self.lane_name}")
             .replace("claude/op1231a-demo", self.branch_name)
             .replace("worktree：☑（demo，新 worktree，收工自删）",
@@ -630,6 +641,7 @@ class 脚本建隔离worktree四场景_v2_600(_Base):
             "@echo off\r\n"
             "echo STUB-LANE-WT: %ZHUOPIN_LANE_WORKTREE%\r\n"
             "echo STUB-MAIN-REPO: %ZHUOPIN_MAIN_REPO%\r\n"
+            "echo STUB-CWD: %CD%\r\n"
             "echo OPENER_DONE\r\n"
             "exit /b 0\r\n",
             encoding="utf-8",
@@ -648,6 +660,12 @@ class 脚本建隔离worktree四场景_v2_600(_Base):
         self.assertIn("worktree 已建", log)
         self.assertIn("STUB-LANE-WT: " + str(self.wt_dir), log)
         self.assertIn("STUB-MAIN-REPO: " + str(self.real_repo_root), log)
+        # 合入前补缺：worktree 提示不得挤掉「日志首行＝session」契约（#549 续跑接管靠它）。
+        self.assertRegex(log.splitlines()[0], r"session=" + UUID_RE.pattern)
+        # 声明 worktree 时 claude 在该 worktree 里跑（首轮与补问同一 cwd 的前提）。
+        m = re.search(r"STUB-CWD: (.+)", log)
+        self.assertIsNotNone(m)
+        self.assertEqual(Path(m.group(1).strip()).resolve(), self.wt_dir.resolve())
         self.assertFalse((self.log_dir / f"{self.lane_name}-A1-main-leak.patch").exists())
 
     def test_worktree建失败时判FAIL不起claude(self):
