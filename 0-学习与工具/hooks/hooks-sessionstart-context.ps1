@@ -119,21 +119,57 @@ try {
     $timeLine = "🕐 {0} 本地 / {1} UTC" -f `
         $localNow.ToString('yyyy-MM-dd HH:mm:ss'), $utcNow.ToString('yyyy-MM-dd HH:mm:ss')
 
-    # ── 仓库连通性 ────────────────────────────────────────────────────────
+    # ── 仓库连通性（缓存，队列 #584⑵'：`git fsck --connectivity-only` 单跑实测
+    #    ~5-6s，加上探针／队列解析后整钩子逼近 10s 超时——多 worktree／多会话并发时
+    #    磁盘 I/O 抢占会把它推过线，整条横幅随之被引擎静默丢弃（不是"跑错"，是
+    #    "没跑完"）。同一份 fsck 结果对同一仓库在短窗口内不会变，缓存把这个高成本项
+    #    从"每次 SessionStart 都摊一次"降到"每 TTL 窗口摊一次"，几乎不改变判据本身。──
+    $fsckCacheTtlSec = 300
+    if ($env:ZHUOPIN_FSCK_CACHE_TTL_SEC -and ($env:ZHUOPIN_FSCK_CACHE_TTL_SEC -match '^\d+$')) {
+        $fsckCacheTtlSec = [int]$env:ZHUOPIN_FSCK_CACHE_TTL_SEC
+    }
+    $fsckCacheDir = Join-Path $repoRoot 'reports/hooks-cache'
+    $fsckCachePath = Join-Path $fsckCacheDir 'fsck-connectivity.json'
     $fsckOk = $true
-    try {
-        $fsckOut = & git -C $repoRoot fsck --connectivity-only 2>&1
-        if ($LASTEXITCODE -ne 0) {
+    $fsckLine = ''
+    $fsckFromCache = $false
+    if (Test-Path -LiteralPath $fsckCachePath) {
+        try {
+            $cached = (Get-Content -LiteralPath $fsckCachePath -Raw -Encoding UTF8) | ConvertFrom-Json
+            $cachedTs = [DateTimeOffset]::Parse([string]$cached.ts)
+            $ageSec = [Math]::Round(([DateTimeOffset]::Now - $cachedTs).TotalSeconds)
+            if ($ageSec -ge 0 -and $ageSec -lt $fsckCacheTtlSec) {
+                $fsckOk = [bool]$cached.ok
+                $fsckLine = "$($cached.line)（缓存 ${ageSec}s 前，非本次实测）"
+                $fsckFromCache = $true
+            }
+        } catch { }   # 缓存文件坏了／格式不符 ⇒ 当没有缓存，走下面的实测分支，不报错
+    }
+
+    if (-not $fsckFromCache) {
+        try {
+            $fsckOut = & git -C $repoRoot fsck --connectivity-only 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                $fsckOk = $false
+                $fsckLine = "🔴 git fsck 退出码 $LASTEXITCODE：" + (($fsckOut | Select-Object -First 5) -join '; ')
+            } elseif ($fsckOut) {
+                $fsckLine = "⚠ git fsck 有输出（前 5 行）：" + (($fsckOut | Select-Object -First 5) -join '; ')
+            } else {
+                $fsckLine = '✓ 仓库连通性正常（git fsck --connectivity-only 无输出）'
+            }
+        } catch {
             $fsckOk = $false
-            $fsckLine = "🔴 git fsck 退出码 $LASTEXITCODE：" + (($fsckOut | Select-Object -First 5) -join '; ')
-        } elseif ($fsckOut) {
-            $fsckLine = "⚠ git fsck 有输出（前 5 行）：" + (($fsckOut | Select-Object -First 5) -join '; ')
-        } else {
-            $fsckLine = '✓ 仓库连通性正常（git fsck --connectivity-only 无输出）'
+            $fsckLine = "仓库健康信息不可用：$($_.Exception.Message)"
         }
-    } catch {
-        $fsckOk = $false
-        $fsckLine = "仓库健康信息不可用：$($_.Exception.Message)"
+        try {
+            if (-not (Test-Path -LiteralPath $fsckCacheDir)) {
+                New-Item -ItemType Directory -Path $fsckCacheDir -Force | Out-Null
+            }
+            $cacheObj = [ordered]@{ ts = (Get-Date).ToString('o'); ok = $fsckOk; line = $fsckLine }
+            $cacheTmp = "$fsckCachePath.tmp"
+            $cacheObj | ConvertTo-Json -Compress | Set-Content -LiteralPath $cacheTmp -Encoding UTF8
+            Move-Item -LiteralPath $cacheTmp -Destination $fsckCachePath -Force
+        } catch { }   # 缓存写不了不影响本次横幅——只是下次仍会重跑一次实测，fail-open
     }
 
     # ── 与 origin/master 双向计数（🔴 不 fetch，只读本地已知的 origin/master）──
@@ -166,9 +202,10 @@ try {
     #    等于把横幅训练成背景音）。判据与根因全在
     #    `0-学习与工具/工具-Claude包版本探针.ps1` 头部，本处不复述、不重实现。
     # 🔴 探针自身炸了也不许拖累本钩子：它退出码恒 0，且这里再包一层 try。
-    # ⏱ 实测成本约 3s（Get-AppxPackage ~1.7s ＋ Win32_Service ~1.4s ＋ 目录列举 ~0.06s）；
-    #    本钩子既有的 `git fsck` 在本仓库实测已 ~18s，探针不是这里的瓶颈。真要关掉，
-    #    置环境变量 `ZHUOPIN_SKIP_CLAUDE_PROBE=1`。
+    # ⏱ 实测成本约 2-3s（Get-AppxPackage ~1.7s ＋ Win32_Service ~1.4s ＋ 目录列举 ~0.06s）；
+    #    `git fsck` 在本仓库 `-C` 单跑实测 5-6s（`#584⑵'` 2026-09-16，主仓与 worktree
+    #    各 3 次），二者相加逼近钩子 10s 超时——已改走上方缓存，探针本身不是这里的瓶颈。
+    #    真要关掉，置环境变量 `ZHUOPIN_SKIP_CLAUDE_PROBE=1`。
     $probeLine = ''
     if (-not $env:ZHUOPIN_SKIP_CLAUDE_PROBE) {
         try {

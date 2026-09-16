@@ -40,10 +40,13 @@ pytestmark = pytest.mark.skipif(
 # 驱动
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_hook(script: Path, payload: dict, repo_root: Path) -> tuple[int, dict, str]:
+def run_hook(script: Path, payload: dict, repo_root: Path,
+             extra_env: dict | None = None) -> tuple[int, dict, str]:
     """真跑一次钩子：喂 stdin JSON，返回 `(退出码, 解析后的 stdout JSON 或 {}, stderr)`。"""
     env = dict(os.environ)
     env["ZHUOPIN_SENTINEL_REPO_ROOT"] = str(repo_root)
+    if extra_env:
+        env.update(extra_env)
     proc = subprocess.run(
         ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
         input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -177,6 +180,63 @@ class TestSessionStartContext:
         lines = audit_lines(git_repo)
         assert len(lines) == 2
         assert {l["sessionId"] for l in lines} == {"a", "b"}
+
+    # ── fsck 缓存（`#584`⑵'：单跑 5-6s 逼近钩子 10s 超时，缓存降低命中概率）──────
+
+    FSCK_CACHE_REL = "reports/hooks-cache/fsck-connectivity.json"
+
+    def _write_fsck_cache(self, repo_root: Path, *, ts: "object", ok: bool, line: str) -> None:
+        import datetime
+        p = repo_root / self.FSCK_CACHE_REL
+        p.parent.mkdir(parents=True, exist_ok=True)
+        ts_str = ts.strftime("%Y-%m-%dT%H:%M:%S.%f%z") if isinstance(ts, datetime.datetime) else str(ts)
+        p.write_text(json.dumps({"ts": ts_str, "ok": ok, "line": line}, ensure_ascii=False), encoding="utf-8")
+
+    def test_首次运行写入fsck缓存文件(self, git_repo: Path):
+        assert not (git_repo / self.FSCK_CACHE_REL).is_file()
+        rc, out, err = run_hook(SESSIONSTART, {"session_id": "s"}, git_repo)
+        assert rc == 0, err
+        cache_path = git_repo / self.FSCK_CACHE_REL
+        assert cache_path.is_file()
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        assert set(cached.keys()) >= {"ts", "ok", "line"}
+        assert cached["ok"] is True
+
+    def test_窗口内命中缓存不重跑fsck(self, git_repo: Path):
+        """预置一条**刚写入、带独一无二标记**的缓存——若钩子真的复用它而非重新实测，
+        注入内容里必须原样带着这个标记（真实 `git fsck` 不可能自己生成这段文字）。"""
+        import datetime
+        marker = "✓ 测试专用独一无二标记-不会由真实fsck产生"
+        self._write_fsck_cache(git_repo, ts=datetime.datetime.now().astimezone(), ok=True, line=marker)
+        rc, out, err = run_hook(SESSIONSTART, {"session_id": "s"}, git_repo)
+        assert rc == 0, err
+        ctx = out.get("hookSpecificOutput", {}).get("additionalContext", "")
+        assert marker in ctx, f"未复用缓存，标记丢失：{ctx}"
+        assert "缓存" in ctx and "非本次实测" in ctx
+
+    def test_缓存过期后重新实测(self, git_repo: Path):
+        """过期缓存（超过 TTL）必须被忽略——用一个极短 TTL（1 秒）＋ 放在很久以前的
+        时间戳，逼出"缓存存在但已过期"这条分支，断言标记**不**出现在输出里。"""
+        import datetime
+        marker = "✓ 测试专用独一无二标记-陈旧缓存不应被复用"
+        stale_ts = datetime.datetime.now().astimezone() - datetime.timedelta(hours=1)
+        self._write_fsck_cache(git_repo, ts=stale_ts, ok=True, line=marker)
+        rc, out, err = run_hook(
+            SESSIONSTART, {"session_id": "s"}, git_repo,
+            extra_env={"ZHUOPIN_FSCK_CACHE_TTL_SEC": "1"},
+        )
+        assert rc == 0, err
+        ctx = out.get("hookSpecificOutput", {}).get("additionalContext", "")
+        assert marker not in ctx, f"过期缓存不该被复用：{ctx}"
+
+    def test_缓存文件损坏时fail_open重新实测(self, git_repo: Path):
+        cache_path = git_repo / self.FSCK_CACHE_REL
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text("{not valid json", encoding="utf-8")
+        rc, out, err = run_hook(SESSIONSTART, {"session_id": "s"}, git_repo)
+        assert rc == 0, err
+        ctx = out.get("hookSpecificOutput", {}).get("additionalContext", "")
+        assert "仓库连通性正常" in ctx or "git fsck" in ctx
 
 
 # ─────────────────────────────────────────────────────────────────────────────
