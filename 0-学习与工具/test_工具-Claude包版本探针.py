@@ -287,18 +287,144 @@ def test_空的已注册列表算读不到而不是ok():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ⑺ 队列 `#584` ⑷：插件加载探针（`claude plugin list`）
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: 三处版本原始读数照抄「三者一致」那组，本节只变插件相关两个键——版本判定不是本节的关注点。
+_VERSION_OK_FAKE = {
+    "registered": ["1.46388.4.0"],
+    "servicePathName": svc_path("1.46388.4.0"),
+    "stagedDirs": [pkg_dir("1.46388.4.0")],
+}
+
+
+def test_声明插件全部enabled时不触发plugin_disabled():
+    v = verdict_of(
+        {
+            **_VERSION_OK_FAKE,
+            "projectDeclaredPlugins": ["superpowers@claude-plugins-official"],
+            "pluginList": [
+                {"id": "superpowers@claude-plugins-official", "enabled": True},
+                {"id": "context7@claude-plugins-official", "enabled": False},
+            ],
+        }
+    )
+    assert v["verdict"] == "ok"
+    assert v["declaredPlugins"] == ["superpowers@claude-plugins-official"]
+    assert v["missingPlugins"] == []
+    assert v["errors"] == []
+
+
+def test_声明插件未enabled时判定plugin_disabled并给出安装命令():
+    v = verdict_of(
+        {
+            **_VERSION_OK_FAKE,
+            "projectDeclaredPlugins": ["superpowers@claude-plugins-official"],
+            "pluginList": [
+                {"id": "superpowers@claude-plugins-official", "enabled": False}
+            ],
+        }
+    )
+    assert v["verdict"] == "plugin-disabled"
+    assert v["missingPlugins"] == ["superpowers@claude-plugins-official"]
+    assert "claude plugin install superpowers@claude-plugins-official" in v["remedy"]
+    assert "--scope project" in v["remedy"]
+
+
+def test_声明插件在plugin_list里完全查不到也算未启用():
+    """`claude plugin list` 里连这个 id 都没有（比如被卸载）—— 跟「装了但 disabled」同等对待。"""
+    v = verdict_of(
+        {
+            **_VERSION_OK_FAKE,
+            "projectDeclaredPlugins": ["superpowers@claude-plugins-official"],
+            "pluginList": [{"id": "context7@claude-plugins-official", "enabled": True}],
+        }
+    )
+    assert v["verdict"] == "plugin-disabled"
+    assert v["missingPlugins"] == ["superpowers@claude-plugins-official"]
+
+
+def test_没有声明插件时不必跑plugin_list也不算错位():
+    v = verdict_of({**_VERSION_OK_FAKE, "projectDeclaredPlugins": []})
+    assert v["verdict"] == "ok"
+    assert v["declaredPlugins"] == []
+    assert v["missingPlugins"] == []
+
+
+def test_plugin_disabled横幅一行且含修复命令():
+    line = banner_of(
+        {
+            **_VERSION_OK_FAKE,
+            "projectDeclaredPlugins": ["superpowers@claude-plugins-official"],
+            "pluginList": [
+                {"id": "superpowers@claude-plugins-official", "enabled": False}
+            ],
+        }
+    )
+    assert line
+    assert "\n" not in line
+    assert "superpowers@claude-plugins-official" in line
+    assert "claude plugin install" in line
+
+
+def test_pending与plugin_disabled同时成立时pending优先但两条理由都在():
+    """跟既有 ⑷ 用例（两种版本错位同时成立）同一手法：优先级链要能叠加第三个信号。"""
+    v = verdict_of(
+        {
+            "registered": ["1.46388.4.0"],
+            "servicePathName": svc_path("1.46388.4.0"),
+            "stagedDirs": [pkg_dir("1.46388.4.0"), pkg_dir("1.46388.9.0")],
+            "projectDeclaredPlugins": ["superpowers@claude-plugins-official"],
+            "pluginList": [
+                {"id": "superpowers@claude-plugins-official", "enabled": False}
+            ],
+        }
+    )
+    assert v["verdict"] == "pending-update"
+    joined = " ".join(v["reasons"])
+    assert "已暂存未注册" in joined
+    assert "未见 enabled" in joined
+
+
+@pytest.mark.parametrize("missing_key", ["projectDeclaredPlugins", "pluginList"])
+def test_插件相关读数被夹具置为null时算unknown(missing_key: str):
+    """🔴 缺省语义的另一半：键**存在但为 null** 才是模拟读不到，走既有『任一读不到即 unknown』闸。"""
+    fake = {
+        **_VERSION_OK_FAKE,
+        "projectDeclaredPlugins": ["superpowers@claude-plugins-official"],
+        "pluginList": [{"id": "superpowers@claude-plugins-official", "enabled": True}],
+    }
+    fake[missing_key] = None
+    v = verdict_of(fake)
+    assert v["verdict"] == "unknown"
+    assert v["errors"]
+
+
+def test_旧夹具不带插件键时视为不关心插件_既有三条用例的口径不受影响():
+    """🔴 本条是防回归钉子：旧夹具（`#486` 那批）从不带这两个新键——若把「缺键」误判成
+    「读不到」，会把 ⑴ ok 场景的既有断言 `errors == []` 全部打破。"""
+    v = verdict_of(dict(_VERSION_OK_FAKE))
+    assert v["verdict"] == "ok"
+    assert v["errors"] == []
+    assert v["declaredPlugins"] == []
+    assert v["missingPlugins"] == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 真读一次（不构造夹具）—— 只断言契约面，不断言本机具体版本
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_真读本机时输出结构完整且退出码为0():
     v = verdict_of(None)
-    assert v["verdict"] in {"ok", "pending-update", "service-drift", "unknown"}
+    assert v["verdict"] in {"ok", "pending-update", "service-drift", "plugin-disabled", "unknown"}
     for key in (
         "registeredVersion",
         "serviceVersion",
         "stagedVersions",
         "pendingVersions",
         "staleStagedVersions",
+        "declaredPlugins",
+        "missingPlugins",
         "reasons",
         "errors",
         "remedy",
@@ -431,6 +557,25 @@ def test_探针不可用时横幅仍出且钩子不崩(hook_repo: Path):
     assert len(probe_lines) == 1
     assert "读不到" in probe_lines[0]
     assert "🕐" in msg
+
+
+def test_横幅在plugin_disabled时多打一行(hook_repo: Path):
+    """队列 `#584` ⑷「接入既有探针消费链路」的端到端证据——钩子代码本身零改动，
+    单靠 `Format-BannerLine` 新分支自动接上，这条用真跑钩子钉住这一点。"""
+    ctx = run_sessionstart(
+        {
+            **_VERSION_OK_FAKE,
+            "projectDeclaredPlugins": ["superpowers@claude-plugins-official"],
+            "pluginList": [
+                {"id": "superpowers@claude-plugins-official", "enabled": False}
+            ],
+        },
+        hook_repo,
+    )
+    msg = ctx["hookSpecificOutput"]["additionalContext"]
+    probe_lines = [l for l in msg.splitlines() if l.startswith("📦")]
+    assert len(probe_lines) == 1, f"应恰好多打一行，实得 {probe_lines}"
+    assert "superpowers@claude-plugins-official" in probe_lines[0]
 
 
 def test_环境变量可关掉探针(hook_repo: Path):

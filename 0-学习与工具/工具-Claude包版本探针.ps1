@@ -83,6 +83,20 @@
       }
 
   生产运行时该变量不存在，三处一律真读。
+
+  🔴 队列 `#584` ⑷ 新增第四处读数（插件加载探针），夹具键＝ `projectDeclaredPlugins` ／
+  `pluginList`，与上面三处**缺省语义不同**——上面三处「夹具存在但缺此键 ⇒ 判读不到」；
+  这两个新键「夹具存在但缺此键 ⇒ 判不关心插件（沿用旧夹具的三条既有单测不用改）」，
+  只有**键存在且显式为 null** 才算「模拟这一处读不出来」。成因：`#486` 那批既有单测的
+  夹具从不带这两个新键，若照抄旧口径会把它们全部拖进 `unknown`。
+
+      {
+        "projectDeclaredPlugins": ["superpowers@claude-plugins-official"],
+        "pluginList": [
+          { "id": "superpowers@claude-plugins-official", "enabled": true },
+          { "id": "context7@claude-plugins-official",     "enabled": false }
+        ]
+      }
 #>
 
 [CmdletBinding()]
@@ -224,16 +238,80 @@ function Read-StagedDirNames {
     }
 }
 
+function Read-ProjectDeclaredPlugins {
+    <#
+      读本项目 `.claude/settings.json` 的 `enabledPlugins`，取值为 true 的键（`<插件>@<市场>`）——
+      这是「本项目声明要用」的插件清单，用来跟 `claude plugin list` 的实际启用态对照（队列 `#584` ⑷）。
+      🔴 缺省语义见上方 `.NOTES`：夹具缺此键 ＝ 不关心（Ok=true 空清单，不进 errors）；
+      键存在但为 null ＝ 模拟这一处读不出来。
+    #>
+    param($Fake)
+    $r = [ordered]@{ Ok = $true; Value = @(); Error = '' }
+    if ($null -ne $Fake -and (Test-HasProperty $Fake 'projectDeclaredPlugins')) {
+        if ($null -eq $Fake.projectDeclaredPlugins) {
+            $r.Ok = $false; $r.Error = '（夹具）项目声明插件清单一处被置为读不出来'
+            return $r
+        }
+        $r.Value = @($Fake.projectDeclaredPlugins | ForEach-Object { [string]$_ })
+        return $r
+    }
+    if ($null -ne $Fake) { return $r }
+    try {
+        $settingsPath = Join-Path (Split-Path $PSScriptRoot -Parent) '.claude\settings.json'
+        if (-not (Test-Path -LiteralPath $settingsPath)) { return $r }
+        $settings = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (-not (Test-HasProperty $settings 'enabledPlugins')) { return $r }
+        $r.Value = @($settings.enabledPlugins.PSObject.Properties | Where-Object { $_.Value } | ForEach-Object { $_.Name })
+        return $r
+    } catch {
+        $r.Ok = $false; $r.Error = "读项目 settings.json 的 enabledPlugins 失败：$($_.Exception.Message)"
+        return $r
+    }
+}
+
+function Read-ClaudePluginList {
+    <# 跑 `claude plugin list --json`，返回条目数组（每条含 `id`/`enabled`）。缺省语义同上一函数。#>
+    param($Fake)
+    $r = [ordered]@{ Ok = $true; Value = @(); Error = '' }
+    if ($null -ne $Fake -and (Test-HasProperty $Fake 'pluginList')) {
+        if ($null -eq $Fake.pluginList) {
+            $r.Ok = $false; $r.Error = '（夹具）claude plugin list 一处被置为读不出来'
+            return $r
+        }
+        $r.Value = @($Fake.pluginList)
+        return $r
+    }
+    if ($null -ne $Fake) { return $r }
+    $claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
+    if (-not $claudeCmd) {
+        $r.Ok = $false; $r.Error = '找不到 claude CLI，无法跑 claude plugin list'
+        return $r
+    }
+    try {
+        $raw = & claude plugin list --json 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $r.Ok = $false; $r.Error = "claude plugin list --json 退出码 $LASTEXITCODE：$(($raw | Out-String).Trim())"
+            return $r
+        }
+        $joined = ($raw | Out-String).Trim()
+        if ([string]::IsNullOrWhiteSpace($joined)) { return $r }
+        $r.Value = @($joined | ConvertFrom-Json)
+        return $r
+    } catch {
+        $r.Ok = $false; $r.Error = "claude plugin list --json 解析失败：$($_.Exception.Message)"
+        return $r
+    }
+}
+
 
 # ── 判定 ──────────────────────────────────────────────────────────────────────
 
 function Get-ClaudePackageVerdict {
     <#
       汇总三处读数出判定。返回一个 ordered 哈希（不是数组，避开 PowerShell 单元素展平坑）。
-      verdict ∈ ok | pending-update | service-drift | unknown
-      （pending-update 与 service-drift 同时成立时，verdict 取 pending-update，
-        reasons 里两条都在 —— 前者是「会被强关」，后者是「跑的可能是旧的」，
-        前者更急，但两条都得让人看见。）
+      verdict ∈ ok | pending-update | service-drift | plugin-disabled | unknown
+      （多个同时成立时优先级：pending-update > service-drift > plugin-disabled，
+        reasons 里全部命中的条目都在 —— 越靠前越急，但每一条都得让人看见。）
     #>
     param($Fake)
 
@@ -245,17 +323,29 @@ function Get-ClaudePackageVerdict {
         pendingVersions     = @()   # 高于已注册 ⇒ 待应用的更新（本探针的主信号）
         staleStagedVersions = @()   # 低于已注册 ⇒ 残留旧包，信息项，不触发提示
         servicePathName     = ''
+        declaredPlugins     = @()   # 队列 #584 ⑷：项目 settings.json 声明启用的插件
+        missingPlugins      = @()   # 声明了但 claude plugin list 里未见 enabled 的那些
         reasons             = @()
         errors              = @()
         remedy              = ''
     }
 
-    $reg    = Read-RegisteredVersions -Fake $Fake
-    $svc    = Read-ServicePathName    -Fake $Fake
-    $staged = Read-StagedDirNames     -Fake $Fake
+    $reg      = Read-RegisteredVersions      -Fake $Fake
+    $svc      = Read-ServicePathName         -Fake $Fake
+    $staged   = Read-StagedDirNames          -Fake $Fake
+    $declared = Read-ProjectDeclaredPlugins  -Fake $Fake
 
-    foreach ($src in @($reg, $svc, $staged)) {
+    foreach ($src in @($reg, $svc, $staged, $declared)) {
         if (-not $src.Ok) { $out.errors = @($out.errors) + @($src.Error) }
+    }
+    $out.declaredPlugins = @($declared.Value)
+
+    # 没声明插件、或声明清单本身读不出来 ⇒ 不必多起一次 `claude plugin list` 进程；
+    # 声明清单读失败已经进了上面的 errors，没必要再问第二遍。
+    $pluginListRead = $null
+    if ($declared.Ok -and @($declared.Value).Count -gt 0) {
+        $pluginListRead = Read-ClaudePluginList -Fake $Fake
+        if (-not $pluginListRead.Ok) { $out.errors = @($out.errors) + @($pluginListRead.Error) }
     }
 
     # 已注册版本：正常只有一个；万一多个（同族多版本并存）取最高，并把这个反常写进 reasons。
@@ -324,6 +414,21 @@ function Get-ClaudePackageVerdict {
     $isPending = @($out.pendingVersions).Count -gt 0
     $isDrift   = ($null -ne $regVer -and $null -ne $svcVer -and $svcVer -ne $regVer)
 
+    # 队列 #584 ⑷：声明启用但 `claude plugin list` 里查不到 enabled 记录的插件——
+    # 只在真的跑过 plugin list 时判（$pluginListRead 为 $null ＝ 没声明插件、天然没有缺失项）。
+    $missingPlugins = @()
+    if ($null -ne $pluginListRead) {
+        $enabledIds = @()
+        foreach ($p in @($pluginListRead.Value)) {
+            if ((Test-HasProperty $p 'id') -and (Test-HasProperty $p 'enabled') -and $p.enabled) {
+                $enabledIds = @($enabledIds) + @([string]$p.id)
+            }
+        }
+        $missingPlugins = @(@($declared.Value) | Where-Object { $enabledIds -notcontains $_ })
+    }
+    $out.missingPlugins = @($missingPlugins)
+    $isPluginDisabled = @($missingPlugins).Count -gt 0
+
     if ($isPending) {
         $out.reasons = @($out.reasons) + @(
             ("🔴 已暂存未注册的**更高**版本：$(@($out.pendingVersions) -join ', ')（当前已注册 $($out.registeredVersion)）" +
@@ -335,16 +440,25 @@ function Get-ClaudePackageVerdict {
             "🔴 $ServiceName 的 PathName 指向包版本 $($out.serviceVersion)，与已注册版本 $($out.registeredVersion) 不一致"
         )
     }
+    $pluginRemedy = ''
+    if ($isPluginDisabled) {
+        $pluginRemedy = (@($missingPlugins) | ForEach-Object { "claude plugin install $_ --scope project -y" }) -join '；'
+        $out.reasons = @($out.reasons) + @(
+            "🔴 项目 .claude/settings.json 声明启用但 claude plugin list 里未见 enabled：$(@($missingPlugins) -join ', ') —— 修复：$pluginRemedy"
+        )
+    }
 
     if ($isPending) { $out.verdict = 'pending-update' }
     elseif ($isDrift) { $out.verdict = 'service-drift' }
+    elseif ($isPluginDisabled) { $out.verdict = 'plugin-disabled' }
     else {
         $out.verdict = 'ok'
         $out.reasons = @($out.reasons) +
             @("✓ 已注册 / 服务 PathName 均为 $($out.registeredVersion)，无更高版本待注册")
     }
 
-    if ($out.verdict -ne 'ok') { $out.remedy = $RemedyText }
+    if ($isPluginDisabled -and $out.verdict -eq 'plugin-disabled') { $out.remedy = $pluginRemedy }
+    elseif ($out.verdict -ne 'ok') { $out.remedy = $RemedyText }
 
     if (@($out.staleStagedVersions).Count -gt 0) {
         $out.reasons = @($out.reasons) +
@@ -370,6 +484,10 @@ function Format-BannerLine {
             return ("📦 Claude 包版本错位：已注册 $($Verdict.registeredVersion)，" +
                     "$ServiceName PathName 指向 $($Verdict.serviceVersion) —— $RemedyText")
         }
+        'plugin-disabled' {
+            return ("📦 项目声明启用但实际未启用的插件：$(@($Verdict.missingPlugins) -join ', ') —— " +
+                    "$($Verdict.remedy)")
+        }
         'unknown' {
             return ("📦 Claude 包版本探针读数不完整（读不到 ≠ 没有错位）：" +
                     (@($Verdict.errors) -join '；'))
@@ -381,17 +499,20 @@ function Format-BannerLine {
 function Format-HumanReport {
     param($Verdict)
     $mark = switch ($Verdict.verdict) {
-        'ok'             { '🟢 ok' }
-        'pending-update' { '🔴 pending-update' }
-        'service-drift'  { '🔴 service-drift' }
-        default          { '⚠ unknown' }
+        'ok'              { '🟢 ok' }
+        'pending-update'  { '🔴 pending-update' }
+        'service-drift'   { '🔴 service-drift' }
+        'plugin-disabled' { '🔴 plugin-disabled' }
+        default           { '⚠ unknown' }
     }
     $lines = @(
-        "Claude 包版本探针（只读，队列 #486）",
+        "Claude 包版本探针（只读，队列 #486／#584）",
         "  判定           : $mark",
         "  已注册版本     : $(if ($Verdict.registeredVersion) { $Verdict.registeredVersion } else { '（未读到）' })",
         "  服务 PathName  : $(if ($Verdict.serviceVersion) { $Verdict.serviceVersion } else { '（未读到）' })",
-        "  暂存目录版本   : $(if (@($Verdict.stagedVersions).Count) { @($Verdict.stagedVersions) -join ', ' } else { '（未读到）' })"
+        "  暂存目录版本   : $(if (@($Verdict.stagedVersions).Count) { @($Verdict.stagedVersions) -join ', ' } else { '（未读到）' })",
+        "  项目声明插件   : $(if (@($Verdict.declaredPlugins).Count) { @($Verdict.declaredPlugins) -join ', ' } else { '（未声明）' })",
+        "  未启用的声明插件: $(if (@($Verdict.missingPlugins).Count) { @($Verdict.missingPlugins) -join ', ' } else { '（无）' })"
     )
     foreach ($r in @($Verdict.reasons)) { $lines += "  · $r" }
     foreach ($e in @($Verdict.errors))  { $lines += "  ! $e" }
@@ -422,7 +543,8 @@ try {
         [pscustomobject]@{
             verdict = 'unknown'; registeredVersion = ''; serviceVersion = ''
             stagedVersions = @(); pendingVersions = @(); staleStagedVersions = @()
-            servicePathName = ''; reasons = @(); errors = @($msg); remedy = ''
+            servicePathName = ''; declaredPlugins = @(); missingPlugins = @()
+            reasons = @(); errors = @($msg); remedy = ''
         } | ConvertTo-Json -Depth 5 -Compress
     } elseif ($BannerLine) {
         "📦 Claude 包版本探针不可用：$($_.Exception.Message)"
