@@ -33,6 +33,13 @@
 #   live [S:done] ⇒ SKIPPED（live-done）；已迁归档 ⇒ SKIPPED（archived，不读归档行状态列）；查不到／校验自身失败 ⇒ 告警＋照派（fail-open）。
 #   🔴 SKIPPED 在分组前从泳道成员滤除——不起 claude、不产生哨兵、不进 NO-SENTINEL 判定、不停泳道；整泳道被跳空 ⇒ 不 Start-Job、不占并发额、不等 -StaggerSec。
 #   SKIPPED 作为第一等状态进汇总表／summary.txt／summary.json（含行号与理由），不影响退出码。-Force ⇒ 全部照派、日志留痕 [Force]。
+#
+# v2.4（队列 §一 `#584` ⑶b，2026-09-16 `OP-0916-N` 续四，承接 `#584⑵'`/`#584⑶a`）：
+#   每条 opener 处理完（claude 进程已退出、子会话理应已按自己【设置】行「worktree：☑（<名>，
+#   收工自删」）的纪律清干净）后，本脚本从该 opener 正文抠出它自建的 worktree 名，若那个
+#   worktree（及其 `reports/`）还在——说明子会话崩溃/超时/漏做，此前的产出会随 opener骨架.md
+#   ⑶a 之前的做法一起随 worktree 被删而无声丢失——就把残留 `reports/` 整棵拷回主工作区
+#   `reports/_from-worktree/<泳道>/`，日志留痕（非致命：拷贝失败只记警告，不改变该条判成败）。
 param(
     [string]$Plan = '',
     [string[]]$Only = @(),
@@ -266,6 +273,34 @@ $laneBlock = {
             $t1 = Get-Date
         }
         # <<< #550 补问 end
+        # ⑶b（队列 #584 续四）：收工阶段兜底扫描——按【设置】行「worktree：☑（<名>，」抠出
+        # 这条 opener 自建的 worktree 名；子会话应已按自己的纪律「收工自删」，但崩溃/超时/
+        # 遗忘会漏拷 reports/ 产出，删除前这里补一刀，把残留 reports/（gitignore、worktree
+        # 天生没有历史内容，能扫到的都是本次新产出）捞回主工作区 reports/_from-worktree/<泳道>/。
+        # 子会话已经删干净 ⇒ Test-Path 为假、本步骤无害跳过，不影响 $status 判定、不写进 break 条件。
+        try {
+            $wtMatch = [regex]::Match($op.Text, 'worktree[：:]\s*☑\s*[（(]\s*([^，,）)]+)')
+            if ($wtMatch.Success) {
+                $wtName = $wtMatch.Groups[1].Value.Trim()
+                $wtReports = Join-Path (Get-Location).Path ('.claude\worktrees\' + $wtName + '\reports')
+                if (Test-Path -LiteralPath $wtReports) {
+                    $destDir = Join-Path (Get-Location).Path ('reports\_from-worktree\' + $laneName)
+                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                    $recovered = 0
+                    Get-ChildItem -LiteralPath $wtReports -Recurse -File | ForEach-Object {
+                        $rel = $_.FullName.Substring($wtReports.Length).TrimStart('\', '/')
+                        $destPath = Join-Path $destDir $rel
+                        $destParent = Split-Path $destPath -Parent
+                        if (-not (Test-Path -LiteralPath $destParent)) { New-Item -ItemType Directory -Path $destParent -Force | Out-Null }
+                        Copy-Item -LiteralPath $_.FullName -Destination $destPath -Force
+                        $recovered++
+                    }
+                    ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 残留回收：' + $wtReports + '（' + $recovered + ' 个文件）→ ' + $destDir) | Out-File -FilePath $log -Append -Encoding utf8
+                }
+            }
+        } catch {
+            ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 残留回收失败（非致命，不影响本条判定）：' + $_.Exception.Message) | Out-File -FilePath $log -Append -Encoding utf8
+        }
         $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Sentinel = $sentinelBy; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Session = $sid; Model = $op.Model; Log = $log }
         if ($status -like 'FAIL*' -or $status -eq 'NO-SENTINEL') { break }
     }

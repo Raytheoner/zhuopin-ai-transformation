@@ -28,6 +28,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import uuid
 from pathlib import Path
 
 import pytest
@@ -489,6 +490,81 @@ class 历史泳道回放_桩(_Base):
     def test_k2_本就PARTIAL_不触发补问(self):
         row = self._run_lane("k2-externalize", HISTORY_FIRST_ROUND["k2-externalize"], "OPENER_DONE")
         self.assertEqual((row["Status"], row["Sentinel"]), ("PARTIAL", "首轮"))
+
+
+class Worktree残留回收_v2_4(_Base):
+    """队列 `#584` ⑶b：每条 opener 处理完后，若它自建的 worktree（【设置】行「worktree：☑
+    （<名>，...」）还在——多半是子会话崩溃/超时/漏做「收工自删」——把其 `reports/` 残留
+    捞回主工作区 `reports/_from-worktree/<泳道>/`，不丢产出。桩 claude 什么也不改，
+    worktree 目录本身由本测试预先摆好，模拟「子会话没来得及/没删掉」的现场。
+
+    🔴 本脚本 `$RepoRoot = Split-Path -Parent $PSScriptRoot` 后 `Set-Location $RepoRoot`——
+    走的是脚本**物理落盘位置**的仓库根，不认 `-Plan`/`cwd` 指到的临时夹具目录（`Resume接管`
+    等既有用例靠 `-LogDir` 传绝对路径绕开这一点）。本类的回收目标是仓库相对路径
+    （`.claude/worktrees/<名>`、`reports/_from-worktree/<泳道>`），天然只能落在这个真实仓库根，
+    故直接在其下用**随机名**摆放/清理夹具，不占用真实泳道名、跑完必删。"""
+
+    def setUp(self):
+        super().setUp()
+        self.real_repo_root = SCRIPT.resolve().parent.parent
+        token = uuid.uuid4().hex[:8]
+        self.wt_name = f"test-wt-{token}"
+        self.lane_name = f"test-lane-{token}"
+        self.wt_dir = self.real_repo_root / ".claude" / "worktrees" / self.wt_name
+        self.dest_dir = self.real_repo_root / "reports" / "_from-worktree" / self.lane_name
+
+    def tearDown(self):
+        shutil.rmtree(self.wt_dir, ignore_errors=True)
+        shutil.rmtree(self.dest_dir, ignore_errors=True)
+        super().tearDown()
+
+    def _write_plan(self, worktree_field: str = "☑（{wt}，新 worktree，收工自删）") -> None:
+        text = (
+            PLAN_TEXT
+            .replace("泳道：demo-lane", f"泳道：{self.lane_name}")
+            .replace("worktree：☑（demo，新 worktree，收工自删）",
+                      "worktree：" + worktree_field.format(wt=self.wt_name))
+        )
+        self.plan.write_text(text, encoding="utf-8")
+
+    def test_worktree残留reports被捞回主工作区(self):
+        self._write_plan()
+        wt_reports = self.wt_dir / "reports"
+        (wt_reports / "sub").mkdir(parents=True)
+        (wt_reports / "top.log").write_text("残留一", encoding="utf-8")
+        (wt_reports / "sub" / "nested.json").write_text('{"k":1}', encoding="utf-8")
+
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+        self.assertEqual((self.dest_dir / "top.log").read_text(encoding="utf-8"), "残留一")
+        self.assertEqual((self.dest_dir / "sub" / "nested.json").read_text(encoding="utf-8"), '{"k":1}')
+        # 源目录原样保留（本步骤是「捞一份」不是「搬走」，万一回收逻辑本身有 bug，原件还在能再救一次）。
+        self.assertTrue((wt_reports / "top.log").is_file())
+        log = (self.log_dir / f"{self.lane_name}-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("worktree 残留回收", log)
+        self.assertIn("2 个文件", log)
+
+    def test_worktree已被自己删干净时无残留可回收也不报错(self):
+        self._write_plan()  # 不预先创建 `.claude/worktrees/<名>/` ⇒ 模拟子会话已按纪律删除干净。
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(self.dest_dir.exists())
+        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(rows[0]["Status"], "OK")
+
+    def test_worktree字段是空框时不触发回收(self):
+        # 队列 #549 夹具里第二条 opener 本就是「worktree：☐」（不用 worktree）——同一路径上
+        # 不该硬解出一个名字来瞎扫。
+        self._write_plan(worktree_field="☐")
+        (self.wt_dir / "reports").mkdir(parents=True)
+        (self.wt_dir / "reports" / "top.log").write_text("不该被扫到", encoding="utf-8")
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(self.dest_dir.exists())
 
 
 if __name__ == "__main__":
