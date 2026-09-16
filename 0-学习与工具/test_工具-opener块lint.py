@@ -250,6 +250,26 @@ class 形态四_设置六字段缺失或顺序错(unittest.TestCase):
         self.assertNotIn("F4", _forms(_md(TITLE_LINE_WITH_EXC)))
 
 
+class 模型字段_可选缺省不报错(unittest.TestCase):
+    """队列 §一 `#581` ⑷：`【设置】` 行新增可选「模型」字段——lint 不强制它出现，
+    缺省即视为 sonnet；出现在既有六字段之后也不得撞坏形态④（子串 find 判据不要求行尾即止）。"""
+
+    def test_不带模型字段_不报任何新问题(self):
+        """`SETTINGS_CC` 本就不含「模型」——既有六字段判据齐全，缺省不报错。"""
+        md = _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC)
+        self.assertEqual(_forms(md), set())
+
+    def test_带模型sonnet_六字段判据仍干净(self):
+        settings = SETTINGS_CC + " ｜ 模型：sonnet"
+        md = _md(TITLE_LINE_CC, settings, TITLE_LINE_WITH_EXC)
+        self.assertNotIn("F4", _forms(md))
+
+    def test_带模型opus_六字段判据仍干净(self):
+        settings = SETTINGS_CC + " ｜ 模型：opus"
+        md = _md(TITLE_LINE_CC, settings, TITLE_LINE_WITH_EXC)
+        self.assertNotIn("F4", _forms(md))
+
+
 class 形态五_首行格式错(unittest.TestCase):
     """⑤ opener 块首行须为 `[OP-MMDD-X]【CC／Cowork】<短名，≤12字>`（生效日 2026-09-04）。"""
 

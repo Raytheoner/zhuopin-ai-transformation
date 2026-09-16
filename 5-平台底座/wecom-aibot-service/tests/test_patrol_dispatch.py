@@ -83,6 +83,20 @@ class TestStarted:
         assert "--dangerously-skip-permissions" in argv
         assert calls[0]["kwargs"]["cwd"] == str(tmp_path)
 
+    def test_起活带model参数取自模块常量(self, tmp_path):
+        # 队列 #581 ⑵：无头巡逻默认走最便宜的模型，argv 里的值须取自 PATROL_MODEL 常量，不得硬编码字符串。
+        write_charter(tmp_path)
+        calls = []
+
+        def popen(argv, **kwargs):
+            calls.append({"argv": argv, "kwargs": kwargs})
+            return FakeProc(pid=1234)
+
+        pd.dispatch_headless_patrol(tmp_path, now=NOW, popen=popen, pid_alive=lambda pid: False)
+        argv = calls[0]["argv"]
+        assert "--model" in argv
+        assert argv[argv.index("--model") + 1] == pd.PATROL_MODEL
+
     def test_prompt含章程原文且未改一字(self, tmp_path):
         charter_text = "第一行\n第二行\n"
         write_charter(tmp_path, charter_text)

@@ -39,7 +39,7 @@ param(
     [switch]$DryRun,
     [switch]$FullAuto,
     [switch]$Yes,
-    [string]$Model = '',
+    [string]$Model = 'sonnet',
     [int]$MaxParallel = 3,
     [int]$StaggerSec = 90,
     [switch]$Detach,

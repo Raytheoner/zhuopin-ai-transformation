@@ -86,6 +86,31 @@ VALID_COWORK_KWARGS = dict(
 )
 
 
+class ModelFieldTests(unittest.TestCase):
+    """队列 §一 `#581` ⑷：可选「模型」字段——不传即 sonnet；显式传须为 sonnet／opus。"""
+
+    def test_不传model_设置行落sonnet(self):
+        out = M.generate_opener(**VALID_CC_KWARGS)
+        self.assertIn("｜ 模型：sonnet", out)
+
+    def test_显式opus_设置行落opus(self):
+        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0905-C", "model": "opus"})
+        self.assertIn("｜ 模型：opus", out)
+        self.assertNotIn("｜ 模型：sonnet", out)
+
+    def test_非法取值报错(self):
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0905-D",
+                                  "model": "claude-sonnet-5"})
+
+    def test_不传model仍过lint零违规(self):
+        """附加字段不得撞坏形态④（六字段顺序判据用子串 find，不要求行尾即止）。"""
+        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0905-E"})
+        lint = M._load_lint_module()
+        blocks = lint.iter_fenced_blocks(out)
+        self.assertEqual(lint.check_block(blocks[0]), [])
+
+
 class MissingFieldTests(unittest.TestCase):
     """反例① —— 十项必填字段任一缺失即报错退出、不出件。"""
 
@@ -542,7 +567,7 @@ class 引用版变体(unittest.TestCase):
         "[OP-0908-Z]【CC】引用版试跑\n"
         "【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/op0908z-ref-demo`）"
         " ｜ worktree：☑（demo-wt，新 worktree，收工自删） ｜ 工作区：无 ｜ "
-        "session：新开 ｜ 派出线：环境总线 OP-0907-AL\n"
+        "session：新开 ｜ 派出线：环境总线 OP-0907-AL ｜ 模型：sonnet\n"
         "开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "
         '"self"），标题：[Win]0908Z-引用版试跑。' + M.SUBTASK_EXCEPTION + "\n"
         "读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `CLAUDE.md` 恢复上下文，"
@@ -554,7 +579,7 @@ class 引用版变体(unittest.TestCase):
         "```\n"
         "[OP-0908-Y]【Cowork】引用版Cowork\n"
         "【设置】执行环境：Cowork ｜ 分支：master ｜ worktree：☐（不建，只产改 `.md`）"
-        " ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线\n"
+        " ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线 ｜ 模型：sonnet\n"
         "读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `CLAUDE.md` 恢复上下文，"
         "按该件执行。本件为 B 类。\n"
         "```"

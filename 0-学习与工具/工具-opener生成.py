@@ -183,6 +183,9 @@ _BODY_PARAM_ALTERNATIVE = {
 
 VALID_ENVS = ("CC", "Cowork")
 VALID_TASK_CLASSES = ("A", "B")
+#: 队列 #581 ⑷：可选字段，CLI 别名（不写具体模型 ID）。不传即 `sonnet`——
+#: 无头/看护/巡检/批量跑测默认走它，design 起草／需求 grill／ASIL 合规建造显式传 opus。
+VALID_MODELS = ("sonnet", "opus")
 #: 四种骨架变体（模块文档「variant」节）；`subtask_lane`／`guardian` 只对 CC 有意义，
 #: `reference`（队列 §一 `#489` 步骤 5／`#284` 退休制阈值触发）CC 与 Cowork 皆可。
 VALID_VARIANTS = ("standard", "subtask_lane", "guardian", "reference")
@@ -588,9 +591,10 @@ def _mmdd_and_suffix(op_id: str) -> tuple[str, str]:
     return mmdd, suffix
 
 
-#: 十项必填字段 ＋ 五项可选补充字段——`OpenerSpec.__init__` 的关键字参数名单一可信源。
+#: 十项必填字段 ＋ 六项可选补充字段——`OpenerSpec.__init__` 的关键字参数名单一可信源。
 _OPENER_SPEC_FIELDS = REQUIRED_FIELDS + (
     "claude_section", "do_items", "dont_items", "title_call_override", "variant", "batch",
+    "model",
 )
 
 
@@ -608,7 +612,7 @@ class OpenerSpec:
         workspace: str, session: str, line: str, input_pointer: str, task_class: str,
         claude_section: str = "", do_items: list[str] | None = None,
         dont_items: list[str] | None = None, title_call_override: str | None = None,
-        variant: str = "standard", batch: str | None = None,
+        variant: str = "standard", batch: str | None = None, model: str = "sonnet",
     ) -> None:
         self.op_id, self.env, self.short_name = op_id, env, short_name
         self.branch, self.worktree, self.workspace = branch, worktree, workspace
@@ -620,6 +624,7 @@ class OpenerSpec:
         self.title_call_override = title_call_override
         self.variant = variant
         self.batch = batch
+        self.model = model
 
 
 def _require_all_fields(values: dict) -> None:
@@ -644,6 +649,8 @@ def _validate_spec(spec: OpenerSpec) -> None:
         )
     if spec.task_class not in VALID_TASK_CLASSES:
         raise OpenerGenError(f"A或B类须为 'A' 或 'B'，收到：{spec.task_class!r}")
+    if spec.model not in VALID_MODELS:
+        raise OpenerGenError(f"模型须为 {VALID_MODELS} 之一（CLI 别名，不写具体模型 ID），收到：{spec.model!r}")
     if not OP_ID_RE.match(spec.op_id):
         raise OpenerGenError(f"编号须匹配全称 `OP-MMDD-X` 形式（如 OP-0905-A），收到：{spec.op_id!r}")
     label_len = len(spec.short_name) + (2 if spec.variant == "guardian" else 0)
@@ -807,7 +814,8 @@ def _settings_line(spec: OpenerSpec) -> str:
         branch_field = "master"
     return (
         f"【设置】执行环境：{spec.env} ｜ 分支：{branch_field} ｜ worktree：{spec.worktree} ｜ "
-        f"工作区：{spec.workspace} ｜ session：{spec.session} ｜ 派出线：{spec.line}"
+        f"工作区：{spec.workspace} ｜ session：{spec.session} ｜ 派出线：{spec.line} ｜ "
+        f"模型：{spec.model}"
     )
 
 
@@ -991,6 +999,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--batch", default=None,
                     help="仅 subtask_lane：心跳收工句 `heartbeat --done --batch` 用的批次；"
                          "不传则从 --line 现取 `B-MMDD_…`，两者皆无即拒绝出件（队列 §一 `#565`）")
+    ap.add_argument("--model", default="sonnet", choices=VALID_MODELS,
+                    help="CLI 别名（不传即 sonnet）：无头/看护/巡检/批量跑测默认它，"
+                         "design 起草／需求 grill／ASIL 合规建造显式传 opus（队列 §一 `#581` ⑷）")
     return ap
 
 
@@ -1040,7 +1051,7 @@ def main(argv: list[str] | None = None) -> int:
         "branch": args.branch, "worktree": args.worktree, "workspace": args.workspace,
         "session": args.session, "line": args.line, "input_pointer": args.input_pointer,
         "task_class": args.task_class, "claude_section": args.claude_section,
-        "variant": args.variant,
+        "variant": args.variant, "model": args.model,
     }
     if args.batch:
         kwargs["batch"] = args.batch

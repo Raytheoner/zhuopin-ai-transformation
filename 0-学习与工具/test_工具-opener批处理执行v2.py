@@ -341,6 +341,36 @@ class NoSentinel补问(_Base):
         self.assertFalse((self.log_dir / "demo-lane-A1.retry.log").exists())
 
 
+class Model路由默认sonnet(_Base):
+    """队列 §一 `#581` ⑴：`-Model` 默认由 `''` 改为 `'sonnet'`；显式 `-Model opus` 照常生效；
+    首轮与补问两处（`$claudeArgs`/`$retryArgs`）同源自同一个 `$Model` 形参，一次断言两处。"""
+
+    def test_不给Model_首轮默认传sonnet(self):
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                  self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        first = (self.log_dir / "demo-lane-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("--model sonnet", first)
+
+    def test_显式Model_opus_覆盖默认(self):
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir),
+                   "-Model", "opus"], self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        first = (self.log_dir / "demo-lane-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("--model opus", first)
+        self.assertNotIn("--model sonnet", first)
+
+    def test_NO_SENTINEL补问轮_同样带model_sonnet(self):
+        self.stub_file.write_text(
+            _stub_two_round(first="活干完了但忘了哨兵", retry="OPENER_DONE"), encoding="utf-8")
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir),
+                   "-SentinelRetryTimeoutSec", "20"], self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        retry_log = self.log_dir / "demo-lane-A1.retry.log"
+        self.assertIn("--model sonnet", retry_log.read_text(encoding="utf-8-sig"),
+                      "补问轮与首轮同源自同一个 $Model 形参，不得漏传")
+
+
 class 历史泳道回放_桩(_Base):
     """2026-09-10 四条立行实证泳道的首轮形态逐字回放（桩）。🔴 真 session id 回放不在此（见 `#550` 行内）。"""
 
