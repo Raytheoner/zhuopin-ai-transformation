@@ -394,6 +394,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -7532,6 +7533,111 @@ def cmd_release(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_step(fn, sub_args: argparse.Namespace, verbose: bool, buf: io.StringIO) -> int:
+    """在 `verbose` 时原样直连真实 stdout；否则把该步输出并入 `buf`，由调用方
+    决定成功后折成摘要、失败后原文吐出（队列 #594 ⑶：失败永远打印全文）。"""
+    if verbose:
+        return fn(sub_args)
+    with contextlib.redirect_stdout(buf):
+        return fn(sub_args)
+
+
+def cmd_commit_edit(args: argparse.Namespace) -> int:
+    """队列 #594（P3 机制税削减）：`acquire → edit-row → release` 一次完成。
+
+    🔴 **不新写任何一条判据**——三步分别原样调用 `cmd_acquire`／`cmd_edit_row`／
+    `cmd_release`（同一份守卫函数，非复制一份），只省掉中间两轮 Bash 往返。
+    失败原样透传、不吞：edit 失败即返回其 returncode 并打印**三步至此为止的
+    全部原文**（队列 #594 ⑶：失败永远不折叠），**锁保持占用**（与人工
+    「acquire → edit-row 失败 → 重试 edit-row → release」完全同一恢复路径，
+    重试请直接调 `edit-row`，本命令的 acquire 前置会因锁已被自己占用而拒绝）。
+    """
+    verbose = getattr(args, "verbose", False)
+    buf = io.StringIO()
+
+    acquire_args = argparse.Namespace(
+        file=args.file, who=args.who, note=args.note,
+        reserve=None, section=None, reserve_multi=None, domain=None,
+    )
+    rc = _run_step(cmd_acquire, acquire_args, verbose, buf)
+    if rc != 0:
+        sys.stdout.write(buf.getvalue())
+        return rc
+
+    edit_args = argparse.Namespace(
+        file=args.file, who=args.who, section=args.section, number=args.number,
+        set=args.set, append=args.append, changes_json=args.changes_json,
+        stdin_json=args.stdin_json, append_sep=args.append_sep, domain=args.domain,
+        repair=args.repair,
+    )
+    rc = _run_step(cmd_edit_row, edit_args, verbose, buf)
+    if rc != 0:
+        note = "⚠ edit-row 未通过，锁保持占用——请直接用 `edit-row` 重试或人工核实后 `release`。"
+        if verbose:
+            print(note)
+        else:
+            buf.write(note + "\n")
+        sys.stdout.write(buf.getvalue())
+        return rc
+
+    release_args = argparse.Namespace(
+        file=args.file, who=args.who, waiver=args.waiver,
+        mechanism_wip_cap=args.mechanism_wip_cap, stale_days=args.stale_days,
+        stale_cap=args.stale_cap, stale_probe_timeout=args.stale_probe_timeout,
+        force_mechanism_wip=args.force_mechanism_wip,
+    )
+    rc = _run_step(cmd_release, release_args, verbose, buf)
+    if not verbose:
+        sys.stdout.write(buf.getvalue() if rc != 0 else _quiet_success_summary(buf.getvalue()) + "\n")
+    return rc
+
+
+def cmd_commit_append(args: argparse.Namespace) -> int:
+    """队列 #594（P3 机制税削减）：`acquire → append-row → release` 一次完成。
+
+    设计与 `cmd_commit_edit` 同一取向——三步复用既有 `cmd_acquire`／
+    `cmd_append_row`／`cmd_release`，append 失败即返回、锁保持占用（重试请
+    直接调 `append-row`）。
+    """
+    verbose = getattr(args, "verbose", False)
+    buf = io.StringIO()
+
+    acquire_args = argparse.Namespace(
+        file=args.file, who=args.who, note=args.note,
+        reserve=None, section=None, reserve_multi=None, domain=None,
+    )
+    rc = _run_step(cmd_acquire, acquire_args, verbose, buf)
+    if rc != 0:
+        sys.stdout.write(buf.getvalue())
+        return rc
+
+    append_args = argparse.Namespace(
+        file=args.file, who=args.who, section=args.section, number=args.number,
+        cell=args.cell, cells_json=args.cells_json, stdin_json=args.stdin_json,
+        set=args.set, domain=args.domain, repair=False,
+    )
+    rc = _run_step(cmd_append_row, append_args, verbose, buf)
+    if rc != 0:
+        note = "⚠ append-row 未通过，锁保持占用——请直接用 `append-row` 重试或人工核实后 `release`。"
+        if verbose:
+            print(note)
+        else:
+            buf.write(note + "\n")
+        sys.stdout.write(buf.getvalue())
+        return rc
+
+    release_args = argparse.Namespace(
+        file=args.file, who=args.who, waiver=args.waiver,
+        mechanism_wip_cap=args.mechanism_wip_cap, stale_days=args.stale_days,
+        stale_cap=args.stale_cap, stale_probe_timeout=args.stale_probe_timeout,
+        force_mechanism_wip=args.force_mechanism_wip,
+    )
+    rc = _run_step(cmd_release, release_args, verbose, buf)
+    if not verbose:
+        sys.stdout.write(buf.getvalue() if rc != 0 else _quiet_success_summary(buf.getvalue()) + "\n")
+    return rc
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     lock_path = _lock_path(
         QUEUE_LOCK_ANCHOR if _is_queue_system_target(args.file) else args.file
@@ -7556,6 +7662,45 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+QUIET_SUMMARY_LINE_MAX = 200
+
+
+def _quiet_success_summary(output: str) -> str:
+    """队列 #594 ⑶：把 `commit-edit`／`commit-append` 内部三步（acquire ＋
+    edit-row/append-row ＋ release）的合并输出折成一份精简摘要。
+
+    🔴 **只用于这两个新增复合子命令**——`acquire`／`release`／`append-row`／
+    `edit-row`／`status` 等既有子命令的输出不经过本函数，行为不变。
+
+    🔴 **⚠／ℹ 起始的块永远全量保留（含缩进续行）、不折叠**——本文件通篇的
+    既有惯例是"⚠ 不降级成静默，只是不阻断"（见 `_file_list_git_state_
+    violations` 等处同款注释），压缩输出不能破这条例：陈旧锁接管／绕锁改写
+    检测／域路由回退提示这类信号，默认（非 --verbose）路径下也必须看得见。
+    真正被折叠的是三步各自的「✓ 已...」例行确认（只保留最后一条，即
+    release 的最终确认）与「📍 权威路径」之类纯回显——复合命令内部锁全程
+    未离手，这些中间态路径提示不携带决策相关信息。
+    """
+    blocks: list[list[str]] = []
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        if line[:1].isspace() and blocks:
+            blocks[-1].append(line)
+        else:
+            blocks.append([line])
+    kept_blocks = [b for b in blocks if b[0][:1] in ("⚠", "ℹ")]
+    check_blocks = [b for b in blocks if b[0].startswith("✓")]
+    if check_blocks:
+        primary = check_blocks[-1][0]
+    elif blocks:
+        primary = blocks[-1][0]
+    else:
+        primary = "（无输出）"
+    if len(primary) > QUIET_SUMMARY_LINE_MAX:
+        primary = primary[:QUIET_SUMMARY_LINE_MAX] + "…（完整内容用 --verbose 重跑查看）"
+    return "\n".join("\n".join(b) for b in kept_blocks) + ("\n" if kept_blocks else "") + primary
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -7565,6 +7710,17 @@ def main() -> int:
              "机制环境与业务场景两份物理文件、共用一把锁；append-row 按 "
              "--domain 路由到其中一份。显式传其它路径（如跟进信 README）时"
              "行为与拆分前完全一致，单文件单锁）",
+    )
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #594（P3 机制税削减）：仅 `commit-edit`／`commit-append` 认——"
+             "默认成功路径只打印内部三步（acquire/edit-or-append/release）合并后"
+             "的一份摘要（⚠ 告警块照旧全部保留，折叠的只是「一切正常」时的例行"
+             "回显），失败路径永远打印全文不受本参数影响。传本参数则原样透传三步"
+             "各自的完整输出。**`acquire`／`release`／`append-row`／`edit-row`／"
+             "`status` 等既有子命令的输出不受本参数影响**——它们的多行回显（权威"
+             "路径、高水位线、路由提示等）是既有测试与既有工作流依赖的既定契约，"
+             "本次改造的合并对象是「新增的复合子命令」，不回改存量子命令行为",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -7796,6 +7952,60 @@ def main() -> int:
              "⚠️ `append-row` 不接受本参数（新增行不存在「旧行已塌列」这个前提）",
     )
     p_edit_row.set_defaults(func=cmd_edit_row)
+
+    # ── 队列 #594（P3 机制税削减）：commit-edit／commit-append 一次完成 ──
+    # 参数集＝ acquire 的 --who/--note ＋ edit-row/append-row 本体参数 ＋
+    # release 的 --waiver 等，含义与既有子命令逐一相同（不重复写长 help，
+    # 见对应子命令）。
+    p_commit_edit = sub.add_parser(
+        "commit-edit",
+        help="队列 #594：acquire → edit-row → release 一次完成（三步复用既有"
+             "同名子命令的同一套守卫，不新增判据）",
+    )
+    p_commit_edit.add_argument("--who", required=True, help="同 acquire --who")
+    p_commit_edit.add_argument("--note", default="", help="同 acquire --note")
+    p_commit_edit.add_argument("--section", required=True, choices=sorted(SECTION_APPEND_CONTENT_COUNTS))
+    p_commit_edit.add_argument("--number", required=True, help="同 edit-row --number")
+    p_commit_edit.add_argument("--set", action="append", default=[], metavar="列名=值")
+    p_commit_edit.add_argument("--append", action="append", default=[], metavar="列名=值")
+    p_commit_edit.add_argument("--changes-json", default=None, metavar="文件")
+    p_commit_edit.add_argument("--stdin-json", action="store_true")
+    p_commit_edit.add_argument("--append-sep", default=" ")
+    p_commit_edit.add_argument("--domain", choices=("机", "业"), default=None)
+    p_commit_edit.add_argument("--repair", action="store_true")
+    p_commit_edit.add_argument("--waiver", default="", help="同 release --waiver")
+    p_commit_edit.add_argument("--mechanism-wip-cap", type=int, default=MECHANISM_WIP_CAP_DEFAULT)
+    p_commit_edit.add_argument("--stale-days", type=float, default=MECHANISM_WIP_STALE_DAYS_DEFAULT)
+    p_commit_edit.add_argument("--stale-cap", type=int, default=MECHANISM_WIP_STALE_CAP_DEFAULT)
+    p_commit_edit.add_argument(
+        "--stale-probe-timeout", type=float, default=MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
+    )
+    p_commit_edit.add_argument("--force-mechanism-wip", action="store_true")
+    p_commit_edit.set_defaults(func=cmd_commit_edit)
+
+    p_commit_append = sub.add_parser(
+        "commit-append",
+        help="队列 #594：acquire → append-row → release 一次完成（同上，三步"
+             "复用既有同名子命令）。§二 不传 --number（同 append-row）",
+    )
+    p_commit_append.add_argument("--who", required=True, help="同 acquire --who")
+    p_commit_append.add_argument("--note", default="", help="同 acquire --note")
+    p_commit_append.add_argument("--section", required=True, choices=sorted(SECTION_APPEND_CONTENT_COUNTS))
+    p_commit_append.add_argument("--number", default=None, help="同 append-row --number")
+    p_commit_append.add_argument("--cell", action="append", default=[])
+    p_commit_append.add_argument("--cells-json", default=None, metavar="文件")
+    p_commit_append.add_argument("--stdin-json", action="store_true")
+    p_commit_append.add_argument("--set", action="append", default=[], metavar="列名=值")
+    p_commit_append.add_argument("--domain", choices=("机", "业"), default=None)
+    p_commit_append.add_argument("--waiver", default="", help="同 release --waiver")
+    p_commit_append.add_argument("--mechanism-wip-cap", type=int, default=MECHANISM_WIP_CAP_DEFAULT)
+    p_commit_append.add_argument("--stale-days", type=float, default=MECHANISM_WIP_STALE_DAYS_DEFAULT)
+    p_commit_append.add_argument("--stale-cap", type=int, default=MECHANISM_WIP_STALE_CAP_DEFAULT)
+    p_commit_append.add_argument(
+        "--stale-probe-timeout", type=float, default=MECHANISM_WIP_STALE_PROBE_TIMEOUT_DEFAULT,
+    )
+    p_commit_append.add_argument("--force-mechanism-wip", action="store_true")
+    p_commit_append.set_defaults(func=cmd_commit_append)
 
     args = parser.parse_args()
     return args.func(args)

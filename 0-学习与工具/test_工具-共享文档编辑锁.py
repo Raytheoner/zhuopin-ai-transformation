@@ -9387,5 +9387,149 @@ class MechanismWipStalenessGateTests(unittest.TestCase):
         self.assertIn("迁移期保留", result.stdout)
 
 
+class CommitEditAppendCompositeTests(unittest.TestCase):
+    """队列 #594（P3 机制税削减）：`commit-edit`／`commit-append` 把
+    `acquire → edit-row/append-row → release` 三次 Bash 往返合并成一次。
+
+    🔴 **不测判据本身**——三步复用的是既有 `cmd_acquire`／`cmd_edit_row`／
+    `cmd_append_row`／`cmd_release`，判据已由既有测试类覆盖。本类只测
+    "合并" 与 "默认精简输出/--verbose 透传" 这两件新东西：成功路径落盘结果
+    与既有子命令一致、失败路径原样透传且锁保持占用、⚠ 告警不因精简而丢。
+    """
+
+    FIXTURE = (
+        "## 一、任务看板\n\n"
+        "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
+        "|---|------|--------|-------------|----------|------|--------|------|\n"
+        "| 100 | 示例 | CC | 无 | 无 | [S:open][D:机] 待领 | 无 | 2026-08-01 |\n"
+        "\n## 二、待 commit 批次（CC 取活销行）\n\n"
+        "| 批次 | 文件清单 | 说明 | 状态 |\n"
+        "|------|---------|------|------|\n"
+        "\n## 四、需 Shao Peishen 的动作（例外与拍板）\n\n"
+        "| # | 事项 | 等谁 | 截止 |\n"
+        "|---|------|------|------|\n"
+    )
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = Path(self._tmpdir.name) / "假想队列.md"
+        self.target.write_text(self.FIXTURE, encoding="utf-8")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _run(self, *args: str) -> subprocess.CompletedProcess:
+        return run("--file", str(self.target), *args)
+
+    def test_commit_edit_quiet_success_is_one_line_and_writes_same_as_edit_row(self):
+        result = self._run(
+            "commit-edit", "--who", "A", "--section", "一", "--number", "100",
+            "--set", "触碰区=改了一下",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # 精简输出＝恰好一行，且是最终 release 的确认行（中间 acquire/edit-row
+        # 各自的「✓ 已...」／「📍 权威路径」例行回显被折叠）。
+        self.assertEqual(len(result.stdout.strip().splitlines()), 1)
+        self.assertTrue(result.stdout.startswith("✓ 已释放"))
+        text = self.target.read_text(encoding="utf-8")
+        self.assertIn(
+            "| 100 | 示例 | CC | 无 | 无 | [S:open][D:机] 待领 | 改了一下 | 2026-08-01 |", text,
+        )
+        # 锁已释放（released 标记，非仍占用）。
+        lock_text = Path(str(self.target) + ".editlock").read_text(encoding="utf-8")
+        self.assertIn("released", lock_text)
+
+    def test_commit_edit_failure_at_edit_row_step_keeps_lock_and_prints_full_detail(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._run(
+            "commit-edit", "--who", "A", "--section", "一", "--number", "100",
+            "--set", "触碰区=一个`落单反引号",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        # 失败路径不受精简影响：原样透传 edit-row 的多行拒绝详情。
+        self.assertIn("未闭合的反引号游程", result.stdout)
+        self.assertIn("edit-row 未通过，锁保持占用", result.stdout)
+        # 未落盘。
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+        # 锁仍被 A 占用（不是 released 标记）。
+        lock_text = Path(str(self.target) + ".editlock").read_text(encoding="utf-8")
+        self.assertNotIn('"released"', lock_text)
+        self.assertIn('"who": "A"', lock_text)
+
+    def test_commit_edit_failure_at_acquire_step_propagates_and_touches_nothing(self):
+        # 先用另一个身份占锁，commit-edit 的 acquire 前置应直接失败。
+        held = self._run("acquire", "--who", "B")
+        self.assertEqual(held.returncode, 0, held.stdout)
+        before = self.target.read_text(encoding="utf-8")
+        result = self._run(
+            "commit-edit", "--who", "A", "--section", "一", "--number", "100",
+            "--set", "触碰区=不该生效",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("占用中", result.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+        lock_text = Path(str(self.target) + ".editlock").read_text(encoding="utf-8")
+        self.assertIn('"who": "B"', lock_text)
+
+    def test_commit_edit_verbose_passes_through_all_three_steps_untouched(self):
+        result = self._run(
+            "--verbose", "commit-edit", "--who", "A", "--section", "一", "--number", "100",
+            "--set", "触碰区=verbose改动",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("✓ 已占锁", result.stdout)
+        self.assertIn("✓ 已改 §一 #100 的「触碰区」格", result.stdout)
+        self.assertIn("✓ 已释放", result.stdout)
+
+    def test_commit_edit_quiet_still_shows_warning_block(self):
+        """精简不等于静默：⚠ 告警块（含续行）必须在默认路径下也可见——本例
+        用"最近 120 分钟内还有其它身份 acquire 过"触发（同一把锁短时间内
+        换身份 acquire 两次）。"""
+        first = self._run("acquire", "--who", "B", "--note", "占一下")
+        self.assertEqual(first.returncode, 0, first.stdout)
+        release_b = self._run("release", "--who", "B")
+        self.assertEqual(release_b.returncode, 0, release_b.stdout)
+        result = self._run(
+            "commit-edit", "--who", "A", "--section", "一", "--number", "100",
+            "--set", "触碰区=改了一下",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("⚠ 最近", result.stdout)
+        self.assertIn("其它身份 acquire 过本锁", result.stdout)
+
+    def test_commit_append_quiet_success_is_one_line_and_writes_same_as_append_row(self):
+        result = self._run(
+            "commit-append", "--who", "A", "--section", "四", "--number", "51",
+            "--cell", "新事项", "--cell", "Shao Peishen", "--cell", "不急",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(result.stdout.strip().splitlines()), 1)
+        self.assertTrue(result.stdout.startswith("✓ 已释放"))
+        text = self.target.read_text(encoding="utf-8")
+        self.assertIn("| 51 | 新事项 | Shao Peishen | 不急 |", text)
+
+    def test_commit_append_failure_at_append_row_step_keeps_lock(self):
+        before = self.target.read_text(encoding="utf-8")
+        result = self._run(
+            "commit-append", "--who", "A", "--section", "四", "--number", "51",
+            "--cell", "只有一个字段",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("append-row 未通过，锁保持占用", result.stdout)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), before)
+        lock_text = Path(str(self.target) + ".editlock").read_text(encoding="utf-8")
+        self.assertNotIn('"released"', lock_text)
+
+    def test_commit_edit_help_lists_new_subcommands(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--help"],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("commit-edit", result.stdout)
+        self.assertIn("commit-append", result.stdout)
+        self.assertIn("--verbose", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
