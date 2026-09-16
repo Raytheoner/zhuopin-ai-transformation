@@ -151,3 +151,120 @@ def test_new_disconnect_after_recovery_starts_a_fresh_timer():
 
 def test_default_threshold_is_within_60_to_90_seconds_range():
     assert 60 <= DEFAULT_THRESHOLD_SECONDS <= 90
+
+
+# ── 队列 #586：断连窗口丢信风险告警（不管时长，每次恢复都发） ──────────────
+
+def test_loss_risk_alert_fires_on_every_recovery_regardless_of_duration():
+    """真实事故（唐燕萍 13:19:11–13:19:14，仅 3 秒）：既有"进行中"提示阈值
+    是 60~90 秒，这种短暂断连从未触发过任何通知——本告警必须不看时长。"""
+    import itertools
+    from datetime import datetime, timezone
+
+    loss_alerts: list[str] = []
+    clock = iter([
+        datetime(2026, 9, 16, 13, 19, 11, tzinfo=timezone.utc),  # on_disconnected
+        datetime(2026, 9, 16, 13, 19, 14, tzinfo=timezone.utc),  # on_recovered
+    ])
+
+    async def scenario():
+        monitor = DisconnectInProgressMonitor(
+            fallback_send=lambda t: None, _sleep=_immediate_sleep,
+            loss_risk_fallback_send=loss_alerts.append,
+            _now=lambda: next(clock),
+        )
+        monitor.on_disconnected()
+        monitor.on_recovered()
+
+    asyncio.run(scenario())
+
+    assert len(loss_alerts) == 1
+    assert "13:19:11" in loss_alerts[0] and "13:19:14" in loss_alerts[0]
+    assert "3 秒" in loss_alerts[0]
+    assert "可能已丢失" in loss_alerts[0]
+
+
+def test_loss_risk_alert_not_sent_when_no_channel_configured():
+    """`loss_risk_fallback_send` 未传（默认 None）——功能整体关闭，向后兼容
+    既有调用方，不产生任何新副作用。"""
+    async def scenario():
+        monitor = DisconnectInProgressMonitor(fallback_send=lambda t: None, _sleep=_immediate_sleep)
+        monitor.on_disconnected()
+        monitor.on_recovered()  # 不应抛异常
+
+    asyncio.run(scenario())  # 不抛异常即通过
+
+
+def test_loss_risk_alert_not_sent_without_a_prior_disconnect():
+    """从未发生过断连时调用 `on_recovered()`（理论上不该发生，防御性场景）
+    ——不应凭空发出一条"窗口"告警。"""
+    loss_alerts: list[str] = []
+
+    async def scenario():
+        monitor = DisconnectInProgressMonitor(
+            fallback_send=lambda t: None, _sleep=_immediate_sleep,
+            loss_risk_fallback_send=loss_alerts.append,
+        )
+        monitor.on_recovered()
+
+    asyncio.run(scenario())
+    assert loss_alerts == []
+
+
+def test_loss_risk_alert_independent_of_in_progress_threshold_alert():
+    """两条告警互不影响：`fallback_send`（超阈值"进行中"提示）与
+    `loss_risk_fallback_send`（每次恢复都报窗口）各自独立触发——短暂断连
+    只触发后者、不触发前者。"""
+    in_progress: list[str] = []
+    loss_alerts: list[str] = []
+
+    async def _never_wakes_naturally(_seconds: float) -> None:
+        await asyncio.sleep(1000)  # 阈值远未到，只会被 on_recovered 的 cancel 打断
+
+    async def scenario():
+        monitor = DisconnectInProgressMonitor(
+            fallback_send=in_progress.append, _sleep=_never_wakes_naturally,
+            loss_risk_fallback_send=loss_alerts.append,
+        )
+        monitor.on_disconnected()
+        await asyncio.sleep(0)
+        monitor.on_recovered()
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+
+    assert in_progress == [], "阈值内恢复不应触发「进行中」提示"
+    assert len(loss_alerts) == 1, "但窗口告警应无条件触发一次"
+
+
+def test_loss_risk_alert_send_failure_is_swallowed():
+    def _boom(_text: str) -> None:
+        raise RuntimeError("webhook 挂了")
+
+    async def scenario():
+        monitor = DisconnectInProgressMonitor(
+            fallback_send=lambda t: None, _sleep=_immediate_sleep,
+            loss_risk_fallback_send=_boom,
+        )
+        monitor.on_disconnected()
+        monitor.on_recovered()
+
+    asyncio.run(scenario())  # 不向上抛出即通过
+
+
+def test_second_recovery_without_new_disconnect_does_not_resend_window_alert():
+    """`_disconnected_at` 在一次告警后即清空——重复调用 `on_recovered()`
+    （理论上不该发生，防御性场景）不应重复发送同一扇窗口的告警。"""
+    loss_alerts: list[str] = []
+
+    async def scenario():
+        monitor = DisconnectInProgressMonitor(
+            fallback_send=lambda t: None, _sleep=_immediate_sleep,
+            loss_risk_fallback_send=loss_alerts.append,
+        )
+        monitor.on_disconnected()
+        monitor.on_recovered()
+        monitor.on_recovered()  # 重复调用
+
+    asyncio.run(scenario())
+    assert len(loss_alerts) == 1

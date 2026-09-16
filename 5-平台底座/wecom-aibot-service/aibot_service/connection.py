@@ -293,6 +293,11 @@ def build_connector(
         disconnect_monitor = DisconnectInProgressMonitor(
             fallback_send=disconnect_alert_fallback_send,
             reconnect_base_delay_ms=reconnect_base_delay_ms,
+            # 队列 #586：复用同一条独立 webhook 通道发"窗口丢信风险"告警
+            # ——不管本次断连长短、也不管它发生在进程启动还是运行期
+            # （SDK 内部自愈式重连不会再走 `gap_alert.py` 那次性的
+            # 启动通知），每次恢复都点名窗口起止。
+            loss_risk_fallback_send=disconnect_alert_fallback_send,
         )
 
     def on_connected() -> None:

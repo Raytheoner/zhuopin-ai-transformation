@@ -73,52 +73,68 @@ async def flush_pending_queue_appends(
     消息到达时的行为一致。
 
     返回本次成功补录的行数（供调用方按需审计/日志，不强制）。
+
+    🔴 **幂等（队列 #586 ⑸）**：本函数有两个真实调用方（常驻监听
+    `on_message` 与 `decision_reminder_check.py` 的"第二道载体"），各自
+    独立进程、各自可能同时读到同一批未 flush 的记录——`read → 处理 →
+    rewrite` 这段临界区用 `pending_jsonl.try_claim_flush` 互斥；声明失败
+    （另一进程正在 flush）直接返回 0，不做任何处理，避免同一条记录被
+    两边各自 append 成两行队列行。
     """
-    records = read_deferred_appends(pending_path)
-    if not records:
-        return 0
-
-    flushed = 0
-    remaining = list(records)
-    for record in records:
-        lock = lock_factory()
-        try:
-            row = append_pending_task(
-                queue_path, audit=audit, lock=lock, **record["append_kwargs"]
-            )
-        except QueueLockBusy:
-            break
-
-        remaining.pop(0)
-        flushed += 1
+    if not pending_jsonl.try_claim_flush(pending_path):
         audit.record(AuditEvent(
-            scenario="wecom-aibot", action="queue_append_pending_flushed", evaluator=evaluator,
-            automation_level="L1",
-            decision={"recorded_at": record.get("recorded_at", "")},
-            data_sources={"sender": record.get("sender", "")},
+            scenario="wecom-aibot", action="queue_append_pending_flush_skipped_concurrent",
+            evaluator=evaluator, automation_level="L1", decision={}, data_sources={},
         ))
-        await sync_after_archive(
-            repo_root=repo_root,
-            queue_path=queue_path,
-            append_kwargs=record["append_kwargs"],
-            already_appended_row=row,
-            audit=audit,
-            connector=connector,
-            recipient=recipient,
-            fallback_send=fallback_send,
-            pending_path=git_sync_pending_path,
-            # 注意：故意不传 `lock_pending_path=pending_path`——本函数仍在
-            # 迭代 `pending_path` 并会在循环结束后用 `_rewrite_deferred_
-            # appends` 整体重写该文件；若这里再次锁忙并直接 append 回同一
-            # 文件，会被随后的整体重写覆盖丢失。若这次重算恰好再次撞上
-            # 锁忙，改落 `git_sync_pending_path`（由 `flush_pending_git_
-            # sync_appends` 在下一条消息到达时接手补录），只是多一轮
-            # 延迟，不会丢。
-            evaluator=evaluator,
-            remote=remote,
-            branch=branch,
-            lock_factory=lock_factory,
-        )
+        return 0
+    try:
+        records = read_deferred_appends(pending_path)
+        if not records:
+            return 0
 
-    _rewrite_deferred_appends(pending_path, remaining)
-    return flushed
+        flushed = 0
+        remaining = list(records)
+        for record in records:
+            lock = lock_factory()
+            try:
+                row = append_pending_task(
+                    queue_path, audit=audit, lock=lock, **record["append_kwargs"]
+                )
+            except QueueLockBusy:
+                break
+
+            remaining.pop(0)
+            flushed += 1
+            audit.record(AuditEvent(
+                scenario="wecom-aibot", action="queue_append_pending_flushed", evaluator=evaluator,
+                automation_level="L1",
+                decision={"recorded_at": record.get("recorded_at", "")},
+                data_sources={"sender": record.get("sender", "")},
+            ))
+            await sync_after_archive(
+                repo_root=repo_root,
+                queue_path=queue_path,
+                append_kwargs=record["append_kwargs"],
+                already_appended_row=row,
+                audit=audit,
+                connector=connector,
+                recipient=recipient,
+                fallback_send=fallback_send,
+                pending_path=git_sync_pending_path,
+                # 注意：故意不传 `lock_pending_path=pending_path`——本函数仍在
+                # 迭代 `pending_path` 并会在循环结束后用 `_rewrite_deferred_
+                # appends` 整体重写该文件；若这里再次锁忙并直接 append 回同一
+                # 文件，会被随后的整体重写覆盖丢失。若这次重算恰好再次撞上
+                # 锁忙，改落 `git_sync_pending_path`（由 `flush_pending_git_
+                # sync_appends` 在下一条消息到达时接手补录），只是多一轮
+                # 延迟，不会丢。
+                evaluator=evaluator,
+                remote=remote,
+                branch=branch,
+                lock_factory=lock_factory,
+            )
+
+        _rewrite_deferred_appends(pending_path, remaining)
+        return flushed
+    finally:
+        pending_jsonl.release_flush_claim(pending_path)

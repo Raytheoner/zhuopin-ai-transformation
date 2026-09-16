@@ -17,10 +17,26 @@
 发送通道**必须是独立 webhook（`fallback_send`）**，不能是同一条故障连接
 本身——断连期间用它发送必然失败（与 `gap_alert.py` 2026-07-19 事故同一
 教训）。
+
+队列 #586（2026-09-16）：**断连窗口丢信风险告警**——本模块原有的"进行中"
+提示只在断连持续 ≥ `DEFAULT_THRESHOLD_SECONDS`（60~90s）时才发一条，且
+`gap_alert.py::build_reconnect_notice` 只在**进程启动时的那一次**
+`connector.connect()` 前后被调用一次，SDK 内部自愈式重连（`on_disconnected`
+→`on_reconnecting`→`on_authenticated`，本模块正挂在这条回调链上）此后每次
+恢复都**不会再触发任何通知**——07-31/09-16 两次真实事故（唐燕萍 13:19:11–
+13:19:14 那 3 秒断连窗口）都短于阈值、也都发生在进程运行期而非启动时，
+两条既有机制对它同时失效，本机制关不掉、无人知道那扇窗口存在过。
+企微 aibot 协议**没有离线消息补推能力**（见 `gap_alert.py` 模块 docstring）
+——不存在"重连成功后自动补拉"这条路；本模块改走**不管时长、每次恢复都
+点名窗口起止**发一条告警（`loss_risk_fallback_send`，独立于既有
+`fallback_send`/`DEFAULT_THRESHOLD_SECONDS` 判据，两者互不影响、互不
+覆盖——`fallback_send` 仍只在超阈值时报"还在自愈"，本告警只在**任一次
+断连结束时**报"这段窗口内的来信可能已经丢了，请人工核对"）。
 """
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 # 60~90 秒区间取中值——短于此判定为正常重连抖动，不必打扰；长于此才是
@@ -54,6 +70,8 @@ class DisconnectInProgressMonitor:
         threshold_seconds: float = DEFAULT_THRESHOLD_SECONDS,
         reconnect_base_delay_ms: int = 2000,
         _sleep: Callable[[float], "asyncio.Future"] = asyncio.sleep,
+        loss_risk_fallback_send: Optional[Callable[[str], None]] = None,
+        _now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._fallback_send = fallback_send
         self._threshold_seconds = threshold_seconds
@@ -61,6 +79,9 @@ class DisconnectInProgressMonitor:
         self._sleep = _sleep
         self._task: Optional["asyncio.Task"] = None
         self._last_attempt = 0
+        self._loss_risk_fallback_send = loss_risk_fallback_send
+        self._now = _now
+        self._disconnected_at: Optional[datetime] = None
 
     def on_disconnected(self) -> None:
         """断连发生——启动一次计时任务；若已有计时任务在跑（理论上不该
@@ -68,6 +89,7 @@ class DisconnectInProgressMonitor:
         self._last_attempt = 0
         if self._task is not None and not self._task.done():
             return
+        self._disconnected_at = self._now()
         self._task = asyncio.create_task(self._wait_and_alert())
 
     def on_reconnecting(self, attempt: int) -> None:
@@ -75,10 +97,30 @@ class DisconnectInProgressMonitor:
 
     def on_recovered(self) -> None:
         """重新认证成功——取消未触发的计时任务，重置去重状态，供下一次
-        断连重新计一次"新增"。"""
+        断连重新计一次"新增"。**同时**（队列 #586）不管这次断连长短，都
+        发一条"窗口丢信风险"告警——与上面的计时任务是两件独立的事，取消
+        计时任务不影响本告警是否发送。"""
         if self._task is not None:
             self._task.cancel()
             self._task = None
+        self._emit_loss_risk_alert()
+
+    def _emit_loss_risk_alert(self) -> None:
+        started_at = self._disconnected_at
+        self._disconnected_at = None
+        if started_at is None or self._loss_risk_fallback_send is None:
+            return
+        ended_at = self._now()
+        window = f"{started_at.strftime('%H:%M:%S')}–{ended_at.strftime('%H:%M:%S UTC')}"
+        gap_seconds = (ended_at - started_at).total_seconds()
+        text = (
+            f"🔴 监听断连窗口 {window}（约 {gap_seconds:.0f} 秒）已结束并自动重连。"
+            "企微没有离线消息补推能力，该窗口内若有人发来消息可能已丢失，请人工核对相关来源是否收到回应。"
+        )
+        try:
+            self._loss_risk_fallback_send(text)
+        except Exception:  # noqa: BLE001 —— 告警失败不应影响服务本身运行
+            pass
 
     async def _wait_and_alert(self) -> None:
         try:

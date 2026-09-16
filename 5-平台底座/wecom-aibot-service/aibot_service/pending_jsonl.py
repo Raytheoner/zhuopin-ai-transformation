@@ -10,8 +10,41 @@
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 from pathlib import Path
+
+
+def _claim_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".flushing")
+
+
+def try_claim_flush(path: Path) -> bool:
+    """互斥声明"本进程正在 flush 这份暂存文件"（队列 #586 ⑸）。
+
+    用同目录下一个 `<path>.flushing` 哨兵文件、`O_CREAT|O_EXCL` 原子创建
+    实现——两个进程（如常驻监听的 `on_message` 与 `decision_reminder_
+    check.py` 的"第二道载体"）几乎同时各自 `read_records()` 到同一批未
+    处理记录、各自成功写出一份队列行 ⇒ 同一条来信被写成两行（真实事故：
+    `#588`＝`#590`、`#589`＝`#591`）。`read → 处理 → rewrite` 这段临界区
+    此前没有任何互斥，本函数把它补上。**声明失败即视为"另一进程正在
+    flush"，调用方应放弃本轮、直接返回 0**（下次消息到达/下次巡逻自然
+    会重试，不会真的漏 flush，只是多等一轮）。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    claim = _claim_path(path)
+    try:
+        fd = os.open(str(claim), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+    os.close(fd)
+    return True
+
+
+def release_flush_claim(path: Path) -> None:
+    """释放 `try_claim_flush` 的声明；文件不存在（如从未成功声明过）静默忽略。"""
+    with contextlib.suppress(FileNotFoundError):
+        _claim_path(path).unlink()
 
 
 def append_record(path: Path, record: dict) -> None:

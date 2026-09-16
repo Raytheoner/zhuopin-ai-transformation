@@ -162,3 +162,60 @@ def test_flush_partial_success_preserves_remaining_order(tmp_path, monkeypatch):
     remaining = read_deferred_appends(pending_path)
     assert len(remaining) == 1
     assert remaining[0]["append_kwargs"]["description"] == "仍锁忙"
+
+
+def test_concurrent_flush_does_not_duplicate_same_record(tmp_path, monkeypatch):
+    """队列 #586 ⑸ 真实事故复现：常驻监听 `on_message` 与
+    `decision_reminder_check.py` 第二道载体**同时**对同一份暂存文件调用
+    flush——此前两者各自 `read_deferred_appends` 到同一条记录、各自成功
+    append，同一条来信被写成两行（`#588`＝`#590`）。修法后第二个并发调用
+    必须声明失败、直接返回 0，不得再次 append。"""
+    queue_path = tmp_path / "queue.md"
+    queue_path.write_text(QUEUE_TEXT, encoding="utf-8")
+    pending_path = tmp_path / "pending.jsonl"
+    record_deferred_append(pending_path, {"recorded_at": "t1", "append_kwargs": _append_kwargs("并发来信")})
+    audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
+
+    async def _fake_sync_after_archive(**kwargs):
+        pass
+
+    monkeypatch.setattr(queue_lock_pending_mod, "sync_after_archive", _fake_sync_after_archive)
+
+    async def _scenario():
+        # 模拟"第一个调用者已声明、尚未释放"——第二个并发调用此刻发生。
+        import aibot_service.pending_jsonl as pending_jsonl_mod
+        assert pending_jsonl_mod.try_claim_flush(pending_path) is True
+        try:
+            second = await flush_pending_queue_appends(
+                pending_path=pending_path,
+                queue_path=queue_path,
+                repo_root=tmp_path,
+                audit=audit,
+                lock_factory=lambda: FakeQueueEditLock(busy=False),
+            )
+        finally:
+            pending_jsonl_mod.release_flush_claim(pending_path)
+        return second
+
+    second_flushed = asyncio.run(_scenario())
+
+    assert second_flushed == 0, "声明被占用时应直接放弃本轮，不得二次 append"
+    # 记录仍原样留在暂存文件里（未被并发的第二个调用误清空）。
+    assert len(read_deferred_appends(pending_path)) == 1
+    assert queue_path.read_text(encoding="utf-8").count("并发来信") == 0
+
+    actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
+    assert "queue_append_pending_flush_skipped_concurrent" in actions
+
+    # 声明释放后，正常 flush 应能顺利补录、且只补录一次。
+    flushed = asyncio.run(
+        flush_pending_queue_appends(
+            pending_path=pending_path,
+            queue_path=queue_path,
+            repo_root=tmp_path,
+            audit=audit,
+            lock_factory=lambda: FakeQueueEditLock(busy=False),
+        )
+    )
+    assert flushed == 1
+    assert queue_path.read_text(encoding="utf-8").count("并发来信") == 1

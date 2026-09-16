@@ -818,9 +818,14 @@ def test_disconnect_alert_disabled_by_default_lifecycle_events_work_outside_even
 def test_disconnect_alert_enabled_wires_lifecycle_without_firing_within_short_test_window(tmp_path):
     """启用本特性（传入 fallback）时，断连→（在阈值内）恢复的完整生命周期
     须能在真实事件循环里跑通、不抛异常、不产生未取消的悬空任务；默认阈值
-    75 秒远大于本测试实际耗时，故不应触发提示（提示逻辑本身的判据已在
-    test_disconnect_inprogress_alert.py 用可控假 _sleep 精确覆盖，此处只
-    验证接线本身）。"""
+    75 秒远大于本测试实际耗时，故"进行中"提示不应触发（该提示逻辑本身的
+    判据已在 test_disconnect_inprogress_alert.py 用可控假 _sleep 精确覆盖，
+    此处只验证接线本身）。
+
+    队列 #586：`loss_risk_fallback_send` 复用同一条 `disconnect_alert_
+    fallback_send` 通道，且**不看时长**——本场景虽在阈值内恢复，仍应收到
+    一条"窗口丢信风险"告警（真实事故：唐燕萍 13:19:11–13:19:14 仅 3 秒的
+    断连窗口，此前两条既有机制对它都不触发，无人知道那扇窗口存在过）。"""
     (tmp_path / "queue.md").write_text(QUEUE_TEXT, encoding="utf-8")
     audit = AuditLogger.jsonl(tmp_path / "audit.jsonl")
     store: dict = {}
@@ -845,7 +850,9 @@ def test_disconnect_alert_enabled_wires_lifecycle_without_firing_within_short_te
 
     asyncio.run(scenario())
 
-    assert fallback_calls == []
+    assert len(fallback_calls) == 1, "阈值内不应有「进行中」提示，但应有一条窗口丢信风险告警"
+    assert "监听断连窗口" in fallback_calls[0]
+    assert "可能已丢失" in fallback_calls[0]
     actions = [r["action"] for r in audit.query_by(scenario="wecom-aibot")]
     assert actions == ["disconnected", "reconnecting", "authenticated"]
     assert "pending_lock_flush_dispatch_failed" not in actions
