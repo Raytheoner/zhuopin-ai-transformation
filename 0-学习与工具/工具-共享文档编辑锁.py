@@ -7340,6 +7340,13 @@ def _acquire_locked(
                   "（写行时请在状态列开头带上对应的 [D:...] 域字段）")
         print("   （顶部高水位线已同步回写；即使本次未写满，编号不复用、留空即可）")
         print("   改完请立刻 release。")
+        # 队列 #596 ⑷：`commit-append --reserve` 需要拿到字面编号才能接着拼
+        # append 参数，而 `cmd_acquire` 对外只有一个整数返回码。`args` 是
+        # 调用方传入的同一个 Namespace 对象（非拷贝），挂一个下划线前缀的
+        # 私有属性回传——不改变 `cmd_acquire` 对 CLI 调用方（main() 经
+        # argparse 分发）的既有返回值契约，只给"同进程内直接拿 Namespace
+        # 调用"这条路留一个side channel。
+        args._reserved_map = reserved_map
         return 0
 
     # 高水位线声明恒定只存机制环境文件（决策点1/2），队列系统模式下不论
@@ -7542,6 +7549,20 @@ def _run_step(fn, sub_args: argparse.Namespace, verbose: bool, buf: io.StringIO)
         return fn(sub_args)
 
 
+def _step_target_texts(file_arg: str) -> dict[str, str]:
+    """快照 `edit-row`／`append-row` 这一步**可能触碰到的全部物理文件**内容
+    （队列系统目标覆盖两份物理文件——含高水位线所在的机制环境文件，`append-row`
+    的推线写入落在这份文件而非行本身的写入目标，见 `cmd_append_row` 队列
+    §一 #505 段；非队列系统目标只有 `args.file` 自己）。
+
+    队列 #596 ⑴：`commit-edit`／`commit-append` 复合命令要判定"改行/追加失败
+    时是否确未写入"，不能只看控制流有没有在写盘语句之前 `return`——那是当前
+    实现的偶然性质，不是契约；用写前/写后内容是否逐字节相同做判定，对实现
+    细节变化免疫。"""
+    paths = _iter_queue_paths() if _is_queue_system_target(file_arg) else [file_arg]
+    return {p: _read_target_text(p) for p in paths}
+
+
 def cmd_commit_edit(args: argparse.Namespace) -> int:
     """队列 #594（P3 机制税削减）：`acquire → edit-row → release` 一次完成。
 
@@ -7564,6 +7585,7 @@ def cmd_commit_edit(args: argparse.Namespace) -> int:
         sys.stdout.write(buf.getvalue())
         return rc
 
+    before_texts = _step_target_texts(args.file)
     edit_args = argparse.Namespace(
         file=args.file, who=args.who, section=args.section, number=args.number,
         set=args.set, append=args.append, changes_json=args.changes_json,
@@ -7572,7 +7594,24 @@ def cmd_commit_edit(args: argparse.Namespace) -> int:
     )
     rc = _run_step(cmd_edit_row, edit_args, verbose, buf)
     if rc != 0:
-        note = "⚠ edit-row 未通过，锁保持占用——请直接用 `edit-row` 重试或人工核实后 `release`。"
+        # 队列 #596 ⑴：只有确认写前/写后内容逐字节相同，才自动放锁——已写入
+        # （哪怕只是高水位线之类的副作用写入）一律保持占用，交人工核实。
+        if _step_target_texts(args.file) == before_texts:
+            release_args = argparse.Namespace(
+                file=args.file, who=args.who, waiver=args.waiver,
+                mechanism_wip_cap=args.mechanism_wip_cap, stale_days=args.stale_days,
+                stale_cap=args.stale_cap, stale_probe_timeout=args.stale_probe_timeout,
+                force_mechanism_wip=args.force_mechanism_wip,
+            )
+            release_rc = _run_step(cmd_release, release_args, verbose, buf)
+            if release_rc == 0:
+                note = ("⚠ edit-row 未通过，但校验失败发生在写盘之前（目标文件内容与占锁前"
+                        "逐字节相同，确未写入）——已自动放锁，无需人工 release。")
+            else:
+                note = ("⚠ edit-row 未通过（确未写入），自动 release 时另遇阻断——锁可能仍占用，"
+                        "请人工核实后 `release`。")
+        else:
+            note = "⚠ edit-row 未通过，且目标文件已被改动（与占锁前不一致，判定为已写入），锁保持占用——请直接用 `edit-row` 重试或人工核实后 `release`。"
         if verbose:
             print(note)
         else:
@@ -7596,29 +7635,79 @@ def cmd_commit_append(args: argparse.Namespace) -> int:
     """队列 #594（P3 机制税削减）：`acquire → append-row → release` 一次完成。
 
     设计与 `cmd_commit_edit` 同一取向——三步复用既有 `cmd_acquire`／
-    `cmd_append_row`／`cmd_release`，append 失败即返回、锁保持占用（重试请
-    直接调 `append-row`）。
+    `cmd_append_row`／`cmd_release`，append 失败即返回；锁是否保持占用见
+    队列 #596 ⑴（下方按写前/写后快照判定，不再无条件保持占用）。
+
+    队列 #596 ⑷：`--reserve` 让本命令在 acquire 这一步一并预留一个字面编号、
+    直接拿来当 `--number` 用——治的是此前"§一/§四 经 commit-append 新增时
+    无处预留，只能事后在行里写「预留豁免：」"这个缺口（本行 `#596` 自身即是
+    实例）。与 `--number` 互斥（工具不替调用方决定用哪个号），且只对有编号列
+    的 §一／§四 有意义。
     """
     verbose = getattr(args, "verbose", False)
     buf = io.StringIO()
 
+    reserve = getattr(args, "reserve", False)
+    if reserve:
+        if args.number is not None:
+            print("✗ `--reserve` 与 `--number` 互斥——要么自己指定编号，要么让本命令用 "
+                  "`--reserve` 自动取号，不能两者都给。")
+            return 1
+        if args.section not in SECTION_NUMBER_PATTERNS:
+            print(f"✗ `--reserve` 仅对有编号列的 §一／§四 有意义，§{args.section} 不接受本参数。")
+            return 1
+
     acquire_args = argparse.Namespace(
         file=args.file, who=args.who, note=args.note,
-        reserve=None, section=None, reserve_multi=None, domain=None,
+        reserve=(1 if reserve else None), section=(args.section if reserve else None),
+        reserve_multi=None, domain=(args.domain if reserve else None),
     )
     rc = _run_step(cmd_acquire, acquire_args, verbose, buf)
     if rc != 0:
         sys.stdout.write(buf.getvalue())
         return rc
 
+    number = args.number
+    if reserve:
+        reserved_numbers = getattr(acquire_args, "_reserved_map", {}).get(args.section) or []
+        if not reserved_numbers:
+            note = ("✗ `--reserve` 预留失败：acquire 未返回预留编号（不应发生）——锁保持占用，"
+                    "请人工核实后 `release`。")
+            if verbose:
+                print(note)
+            else:
+                buf.write(note + "\n")
+            sys.stdout.write(buf.getvalue())
+            return 1
+        number = str(reserved_numbers[0])
+
+    before_texts = _step_target_texts(args.file)
     append_args = argparse.Namespace(
-        file=args.file, who=args.who, section=args.section, number=args.number,
+        file=args.file, who=args.who, section=args.section, number=number,
         cell=args.cell, cells_json=args.cells_json, stdin_json=args.stdin_json,
         set=args.set, domain=args.domain, repair=False,
     )
     rc = _run_step(cmd_append_row, append_args, verbose, buf)
     if rc != 0:
-        note = "⚠ append-row 未通过，锁保持占用——请直接用 `append-row` 重试或人工核实后 `release`。"
+        # 队列 #596 ⑴：同 `cmd_commit_edit`——只有写前/写后内容逐字节相同
+        # 才自动放锁；`--reserve` 已推过高水位线时，"写前"快照已含那次推线，
+        # 不会被误判成"append-row 又写了一次"。
+        if _step_target_texts(args.file) == before_texts:
+            release_args = argparse.Namespace(
+                file=args.file, who=args.who, waiver=args.waiver,
+                mechanism_wip_cap=args.mechanism_wip_cap, stale_days=args.stale_days,
+                stale_cap=args.stale_cap, stale_probe_timeout=args.stale_probe_timeout,
+                force_mechanism_wip=args.force_mechanism_wip,
+            )
+            release_rc = _run_step(cmd_release, release_args, verbose, buf)
+            if release_rc == 0:
+                note = ("⚠ append-row 未通过，但校验失败发生在写盘之前（目标文件内容与占锁前"
+                        "逐字节相同，确未写入）——已自动放锁，无需人工 release。")
+            else:
+                note = ("⚠ append-row 未通过（确未写入），自动 release 时另遇阻断——锁可能仍占用，"
+                        "请人工核实后 `release`。")
+        else:
+            note = "⚠ append-row 未通过，且目标文件已被改动（与占锁前不一致，判定为已写入），锁保持占用——请直接用 `append-row` 重试或人工核实后 `release`。"
         if verbose:
             print(note)
         else:
@@ -7992,6 +8081,11 @@ def main() -> int:
     p_commit_append.add_argument("--note", default="", help="同 acquire --note")
     p_commit_append.add_argument("--section", required=True, choices=sorted(SECTION_APPEND_CONTENT_COUNTS))
     p_commit_append.add_argument("--number", default=None, help="同 append-row --number")
+    p_commit_append.add_argument(
+        "--reserve", action="store_true",
+        help="队列 #596 ⑷：acquire 这一步一并预留一个字面编号、直接当 --number 用"
+             "（与 --number 互斥；仅对有编号列的 §一／§四 有意义）",
+    )
     p_commit_append.add_argument("--cell", action="append", default=[])
     p_commit_append.add_argument("--cells-json", default=None, metavar="文件")
     p_commit_append.add_argument("--stdin-json", action="store_true")
