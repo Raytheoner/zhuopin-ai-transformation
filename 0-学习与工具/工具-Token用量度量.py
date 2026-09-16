@@ -32,15 +32,26 @@ cache_read），但本仓从未解析过 `~/.claude/projects/**/*.jsonl`（CC �
 --------------------------------------------------------------------------
 
 1. 按日、按模型统计 input / cache_creation / cache_read / output 与请求数
-2. 按会话统计：请求数、工具调用数、上下文峰值（单条请求 input+cache 之和的
-   最大值）、累计 cache_read；Top N（默认 20）按窗口内总 token 降序，
-   附会话首条用户消息前 60 字作为标题
+2. 🔴 按「链」统计，不按 sessionId：Agent 子泳道 jsonl（`<会话目录>/subagents/
+   *.jsonl`）与主会话 jsonl 共享同一 `sessionId` 字段——若直接按 sessionId
+   分组会把「一条主链＋N 条子泳道」全部塌成一行。统计单位改为**文件**（每
+   个 jsonl 文件＝一条链），每条链标 `chain_type`（主链／子泳道）与
+   `parent_session_id`（子泳道＝其所属会话目录名，主链＝自身）；另出一张
+   按 `parent_session_id` 合计的表（主链＋其全部子泳道相加）。请求数、工具
+   调用数、上下文峰值（单条请求 input+cache 之和的最大值）、累计
+   cache_read 口径不变；Top N（默认 20）按窗口内总 token 降序，附首条用户
+   消息前 60 字作为标题（子泳道的首条用户消息通常是派单 prompt 本身）
 3. 开场底噪：本窗口内新起会话的首次请求 input+cache 总量，报 P50/P95
 4. 机制税：Bash 命令命中机制工具白名单的占比（白名单口径同
    `0-学习与工具/hooks/hooks-pretooluse-queue-read-guard.ps1::AllowlistedToolScripts`，
    见 `reports/hooks-audit.jsonl` 「命中机制工具白名单」历史记录佐证）
-5. 看护会话识别：Bash 中 `check-heartbeat|check-timeout|summary` 调用占比
-   > 30% 的会话
+5. 看护会话识别：满足其一即算——⑴ 首条用户消息**前 60 字**（同 §二 展示口径）
+   含「看护」；⑵ Bash 命令命中
+   `check-heartbeat|check-timeout|heartbeat|summary|泳道看护状态机\\.py`
+   （覆盖 `lane-heartbeat`／`Get-Content …heartbeat` 等轮询形态）且占比
+   > 30%。原判据只认 ⑵ 且正则过窄，漏掉标题即含「看护」但未必高频调用
+   看护脚本的链；⑴ 判据只看**前 60 字**、不搜全文——建造类 opener 正文里
+   普遍带「看护者 OP-xxx」溯源尾注，搜全文会把大多数建造链也误判成看护链
 
 用法
 --------------------------------------------------------------------------
@@ -56,6 +67,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -75,8 +87,11 @@ MECHANISM_TOOL_NAMES = [
 ]
 _MECHANISM_RE = re.compile("|".join(re.escape(name) for name in MECHANISM_TOOL_NAMES))
 
-# 看护会话识别：Bash 命令命中即算一次「看护类调用」
-WATCHER_RE = re.compile(r"check-heartbeat|check-timeout|summary")
+# 看护会话识别：Bash 命令命中即算一次「看护类调用」（`heartbeat` 已覆盖
+# `check-heartbeat`／`lane-heartbeat`／`Get-Content …heartbeat` 等轮询形态）
+WATCHER_CMD_RE = re.compile(r"check-heartbeat|check-timeout|heartbeat|summary|泳道看护状态机\.py")
+# 标题判据：首条用户消息含「看护」即直接判定，不受 Bash 占比阈值约束
+WATCHER_TITLE_RE = re.compile(r"看护")
 WATCHER_THRESHOLD = 0.30  # 🔴 口径判据，改它须 Shao Peishen 拍板
 
 
@@ -113,8 +128,13 @@ class ToolCall:
 
 @dataclass
 class SessionData:
-    session_id: str
+    session_id: str          # 链标识：主链＝文件名（＝真实 sessionId）；子泳道＝
+                              # "<所属会话目录名>/subagents/<文件名>"，与主链的
+                              # session_id 不会撞（避免同一 parent_session_id 下
+                              # 多条链被误判成同一行，见模块 docstring 指标口径 2）
     file: Path
+    chain_type: str = "主链"  # "主链" | "子泳道"
+    parent_session_id: str = ""  # 所属会话（子泳道＝派它出去的主会话；主链＝自身）
     first_user_text: str = ""
     # 按文件内出现顺序去重后的请求（每 requestId 一条，取末条 usage）
     requests_order: list = field(default_factory=list)   # list[str]，requestId 出现顺序
@@ -163,10 +183,26 @@ def to_local_day(dt: datetime, basis: str) -> date:
     return dt.astimezone().date()   # 本机时区
 
 
+def _chain_identity(path: Path) -> tuple[str, str, str]:
+    """按文件路径判「链」身份，不依赖行内 `sessionId`字段（该字段在子泳道
+    jsonl 里就是父会话的 sessionId，两者相同，不能拿它当链的唯一标识）。
+
+    返回 (chain_id, chain_type, parent_session_id)。子泳道文件路径形如
+    `<会话目录>/subagents/agent-xxx.jsonl`；主链文件路径形如
+    `<会话目录>.jsonl`（文件名本身即 sessionId）。
+    """
+    if path.parent.name == "subagents":
+        parent_session_id = path.parent.parent.name
+        chain_id = f"{parent_session_id}/subagents/{path.stem}"
+        return chain_id, "子泳道", parent_session_id
+    return path.stem, "主链", path.stem
+
+
 def scan_file(path: Path, basis: str, gaps: dict, gap_samples: dict) -> SessionData | None:
-    """逐行流式扫一个会话 jsonl；返回该会话的全量（未按窗口过滤）聚合。"""
-    session_id = path.stem
-    sess = SessionData(session_id=session_id, file=path)
+    """逐行流式扫一条链（一个 jsonl 文件）；返回全量（未按窗口过滤）聚合。"""
+    chain_id, chain_type, parent_session_id = _chain_identity(path)
+    sess = SessionData(session_id=chain_id, file=path,
+                        chain_type=chain_type, parent_session_id=parent_session_id)
     try:
         fh = open(path, "r", encoding="utf-8", errors="replace")
     except OSError:
@@ -188,10 +224,6 @@ def scan_file(path: Path, basis: str, gaps: dict, gap_samples: dict) -> SessionD
             if not isinstance(rec, dict):
                 continue
             rec_type = rec.get("type")
-            sid = rec.get("sessionId")
-            if sid:
-                session_id = sid
-                sess.session_id = sid
 
             if rec_type == "user" and not sess.first_user_text:
                 msg = rec.get("message") or {}
@@ -249,8 +281,11 @@ class Aggregate:
     until: date
     # (day, model) -> 累加
     daily_model: dict = field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))
-    # 会话汇总（仅窗口内活动的会话）
+    # 链汇总（仅窗口内活动的链；一条链＝一个 jsonl 文件，见 `_chain_identity`）
     session_rows: list = field(default_factory=list)
+    # 按 parent_session_id 合计（主链＋其全部子泳道相加）
+    parent_totals: dict = field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))
+    parent_titles: dict = field(default_factory=dict)  # parent_session_id -> 标题（优先取主链）
     # 开场底噪：窗口内新起会话的首次请求 context_total
     opening_noise: list = field(default_factory=list)
     # 机制税（全局）
@@ -288,24 +323,38 @@ def aggregate_session(sess: SessionData, agg: Aggregate) -> None:
 
     bash_calls = [c for c in win_calls if c.name == "Bash"]
     mechanism_hits = sum(1 for c in bash_calls if _MECHANISM_RE.search(c.command))
-    watcher_hits = sum(1 for c in bash_calls if WATCHER_RE.search(c.command))
+    watcher_hits = sum(1 for c in bash_calls if WATCHER_CMD_RE.search(c.command))
     agg.bash_total += len(bash_calls)
     agg.bash_mechanism_hits += mechanism_hits
 
-    if bash_calls:
-        ratio = watcher_hits / len(bash_calls)
-        if ratio > WATCHER_THRESHOLD:
-            agg.watcher_sessions.append({
-                "session_id": sess.session_id, "ratio": ratio,
-                "watcher_calls": watcher_hits, "bash_calls": len(bash_calls),
-            })
+    title = sess.first_user_text[:60].replace("\n", " ").replace("\r", " ")
+
+    # 看护识别：标题含「看护」／Bash 占比超阈值，命中其一即算（见模块口径 5）。
+    # 🔴 标题判据只认「首条用户消息前 60 字」（同 §二 展示口径），不搜全文——
+    # 派单 opener 正文里几乎都有「派出线：… ｜ 看护者 OP-xxx」这类溯源尾注，
+    # 若搜全文会把绝大多数建造类主链也当成看护链（实测：全文口径命中 123／
+    # 177 条、cache_read 占比 67.3%，与 §〇 人工复核基线「24 条／14.4%」严重
+    # 不符；改搜前 60 字后才对齐，因为看护 opener 的标注习惯是「看护」二字
+    # 出现在标题最前面，如 `[OP-0907-Y]【CC】看护B-0907_Y`）。
+    ratio = (watcher_hits / len(bash_calls)) if bash_calls else 0.0
+    by_title = bool(WATCHER_TITLE_RE.search(title))
+    by_ratio = bool(bash_calls) and ratio > WATCHER_THRESHOLD
+    if by_title or by_ratio:
+        reason = "标题含看护+Bash占比" if (by_title and by_ratio) else ("标题含看护" if by_title else "Bash占比")
+        agg.watcher_sessions.append({
+            "session_id": sess.session_id, "parent_session_id": sess.parent_session_id,
+            "chain_type": sess.chain_type, "reason": reason, "ratio": ratio,
+            "watcher_calls": watcher_hits, "bash_calls": len(bash_calls),
+        })
 
     context_peak = max((r.context_total for r in win_reqs), default=0)
     cache_read_sum = sum(r.cache_read for r in win_reqs)
     total_tokens = sum(r.total for r in win_reqs)
     agg.session_rows.append({
         "session_id": sess.session_id,
-        "title": sess.first_user_text[:60].replace("\n", " ").replace("\r", " "),
+        "chain_type": sess.chain_type,
+        "parent_session_id": sess.parent_session_id,
+        "title": title,
         "requests": len(win_reqs),
         "tool_calls": len(win_calls),
         "context_peak": context_peak,
@@ -314,6 +363,19 @@ def aggregate_session(sess: SessionData, agg: Aggregate) -> None:
         "bash_calls": len(bash_calls),
         "bash_mechanism_hits": mechanism_hits,
     })
+
+    parent_id = sess.parent_session_id or sess.session_id
+    pbucket = agg.parent_totals[parent_id]
+    pbucket["chains"] += 1
+    pbucket["requests"] += len(win_reqs)
+    pbucket["tool_calls"] += len(win_calls)
+    pbucket["cache_read_sum"] += cache_read_sum
+    pbucket["total_tokens"] += total_tokens
+    pbucket["bash_calls"] += len(bash_calls)
+    pbucket["bash_mechanism_hits"] += mechanism_hits
+    # 标题优先取主链；主链尚未出现前，暂用先扫到的那条子泳道占位，扫到主链即覆盖
+    if title and (sess.chain_type == "主链" or parent_id not in agg.parent_titles):
+        agg.parent_titles[parent_id] = title
 
 
 def percentile(values: list, pct: float) -> float:
@@ -361,21 +423,37 @@ def render_markdown(agg: Aggregate, args, root: Path) -> str:
              f"**{tot_cr:,}** | **{tot_out:,}** |")
     L.append("")
 
-    # ── 二 按会话统计 Top N ──
+    # ── 二 按链统计 Top N（一个 jsonl 文件＝一条链；主链／子泳道分开列） ──
     top_n = args.top_n
     ranked = sorted(agg.session_rows, key=lambda r: -r["total_tokens"])
-    L.append(f"## 二 · 按会话统计 Top {top_n}（按窗口内总 token 降序）")
+    L.append(f"## 二 · 按链统计 Top {top_n}（按窗口内总 token 降序；主链＋子泳道各占一行）")
     L.append("")
-    L.append(f"- 窗口内有活动的会话数：**{len(agg.session_rows)}**")
+    L.append(f"- 窗口内有活动的链数：**{len(agg.session_rows)}**")
     L.append("")
-    L.append("| 会话（首条用户消息前 60 字） | 请求数 | 工具调用数 | 上下文峰值 | 累计 cache_read | 总 token |")
-    L.append("|---|---:|---:|---:|---:|---:|")
+    L.append("| 链（首条用户消息前 60 字） | 类型 | 父会话 | 请求数 | 工具调用数 | 上下文峰值 | 累计 cache_read | 总 token |")
+    L.append("|---|---|---|---:|---:|---:|---:|---:|")
     for r in ranked[:top_n]:
         title = r["title"] or f"`{r['session_id'][:8]}`（无可提取的首条用户文本）"
-        L.append(f"| {title} | {r['requests']:,} | {r['tool_calls']:,} | "
+        L.append(f"| {title} | {r['chain_type']} | `{r['parent_session_id'][:8]}` | {r['requests']:,} | {r['tool_calls']:,} | "
                  f"{r['context_peak']:,} | {r['cache_read_sum']:,} | {r['total_tokens']:,} |")
     if not ranked:
-        L.append("| _窗口内无会话活动_ | | | | | |")
+        L.append("| _窗口内无链活动_ | | | | | | | |")
+    L.append("")
+
+    # ── 二B 按父会话合计（主链＋其全部子泳道相加） ──
+    parent_ranked = sorted(agg.parent_totals.items(), key=lambda kv: -kv[1]["total_tokens"])
+    L.append(f"## 二B · 按父会话合计 Top {top_n}（主链＋其全部子泳道相加）")
+    L.append("")
+    L.append(f"- 窗口内出现过活动的父会话数：**{len(agg.parent_totals)}**")
+    L.append("")
+    L.append("| 父会话（标题取主链，无主链时取先扫到的子泳道） | 链数 | 请求数 | 工具调用数 | 累计 cache_read | 总 token |")
+    L.append("|---|---:|---:|---:|---:|---:|")
+    for parent_id, v in parent_ranked[:top_n]:
+        title = agg.parent_titles.get(parent_id, "") or f"`{parent_id[:8]}`（无可提取的首条用户文本）"
+        L.append(f"| {title} | {v['chains']:,} | {v['requests']:,} | {v['tool_calls']:,} | "
+                 f"{v['cache_read_sum']:,} | {v['total_tokens']:,} |")
+    if not parent_ranked:
+        L.append("| _窗口内无父会话活动_ | | | | | |")
     L.append("")
 
     # ── 三 开场底噪 ──
@@ -400,9 +478,9 @@ def render_markdown(agg: Aggregate, args, root: Path) -> str:
         [r for r in agg.session_rows if r["bash_calls"] > 0],
         key=lambda r: -(r["bash_mechanism_hits"] / r["bash_calls"]))[:top_n]
     if mech_ranked:
-        L.append(f"Top {len(mech_ranked)} 机制税占比最高的会话：")
+        L.append(f"Top {len(mech_ranked)} 机制税占比最高的链：")
         L.append("")
-        L.append("| 会话 | Bash 调用数 | 命中白名单 | 占比 |")
+        L.append("| 链 | Bash 调用数 | 命中白名单 | 占比 |")
         L.append("|---|---:|---:|---:|")
         for r in mech_ranked:
             pct = r["bash_mechanism_hits"] / r["bash_calls"]
@@ -410,18 +488,26 @@ def render_markdown(agg: Aggregate, args, root: Path) -> str:
             L.append(f"| {title} | {r['bash_calls']:,} | {r['bash_mechanism_hits']:,} | {pct:.1%} |")
         L.append("")
 
-    # ── 五 看护会话识别 ──
-    L.append(f"## 五 · 看护会话识别（`check-heartbeat\\|check-timeout\\|summary` 占比 > {WATCHER_THRESHOLD:.0%}）")
+    # ── 五 看护链识别 ──
+    L.append(f"## 五 · 看护链识别（首条用户消息含「看护」，或 Bash 命中 "
+             f"`check-heartbeat\\|check-timeout\\|heartbeat\\|summary\\|泳道看护状态机\\.py` "
+             f"占比 > {WATCHER_THRESHOLD:.0%}，命中其一即算）")
     L.append("")
     if agg.watcher_sessions:
-        L.append(f"命中 **{len(agg.watcher_sessions)}** 个会话：")
+        watcher_cache_read = sum(
+            r["cache_read_sum"] for r in agg.session_rows
+            if r["session_id"] in {w["session_id"] for w in agg.watcher_sessions})
+        pct_of_total = (watcher_cache_read / tot_cr) if tot_cr else 0.0
+        L.append(f"命中 **{len(agg.watcher_sessions)}** 条链，合计 cache_read **{watcher_cache_read:,}**"
+                 f"（占窗口总量 {pct_of_total:.1%}）：")
         L.append("")
-        L.append("| 会话 | 看护类 Bash 调用 | Bash 调用总数 | 占比 |")
-        L.append("|---|---:|---:|---:|")
+        L.append("| 链 | 类型 | 父会话 | 命中依据 | 看护类 Bash 调用 | Bash 调用总数 | 占比 |")
+        L.append("|---|---|---|---|---:|---:|---:|")
         for w in sorted(agg.watcher_sessions, key=lambda x: -x["ratio"]):
-            L.append(f"| `{w['session_id'][:8]}` | {w['watcher_calls']} | {w['bash_calls']} | {w['ratio']:.1%} |")
+            L.append(f"| `{w['session_id'][:8]}` | {w['chain_type']} | `{w['parent_session_id'][:8]}` | "
+                     f"{w['reason']} | {w['watcher_calls']} | {w['bash_calls']} | {w['ratio']:.1%} |")
     else:
-        L.append("_窗口内未命中任何看护会话。_")
+        L.append("_窗口内未命中任何看护链。_")
     L.append("")
 
     # ── 六 与 Antigravity 对账 ──
@@ -479,11 +565,31 @@ def render_markdown(agg: Aggregate, args, root: Path) -> str:
 # CLI
 # ══════════════════════════════════════════════════════════════════════════
 
-def find_repo_root(start: Path) -> Path:
+def _find_repo_root_by_markers(start: Path) -> Path:
+    """保底：跑不了 git 时按目录标记向上探测（原逻辑，仅作兜底）。"""
     for p in [start, *start.parents]:
         if (p / "CLAUDE.md").exists() and (p / "0-学习与工具").is_dir():
             return p
     return start
+
+
+def find_repo_root(start: Path) -> Path:
+    """主工作区根目录，手法同 `工具-共享文档编辑锁.py::_resolve_repo_root`：
+    `git rev-parse --git-common-dir` 不论在主工作区还是任一 linked worktree
+    里跑，都解到同一个共享 `.git` 目录，其父目录即主工作区根。🔴 若按目录
+    标记向上探测（原逻辑），在 worktree 内跑会探到 worktree 自己那份完整
+    checkout（同样有 `CLAUDE.md` 与 `0-学习与工具`），导致 `--out` 缺省落进
+    worktree、收工删 worktree 时报告随之丢失（`#580` 09-16 09:14 实撞，已由
+    Cowork 在主仓重跑找回）。"""
+    start_dir = start if start.is_dir() else start.parent
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=start_dir, capture_output=True, text=True, check=True,
+        )
+        return Path(result.stdout.strip()).parent
+    except (subprocess.CalledProcessError, OSError, FileNotFoundError):
+        return _find_repo_root_by_markers(start)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -554,6 +660,10 @@ def main(argv=None) -> int:
             for (day, model), v in sorted(agg.daily_model.items(), key=lambda kv: (kv[0][0], kv[0][1]))
         ],
         "sessions": sorted(agg.session_rows, key=lambda r: -r["total_tokens"]),
+        "parent_sessions": [
+            {"parent_session_id": pid, "title": agg.parent_titles.get(pid, ""), **v}
+            for pid, v in sorted(agg.parent_totals.items(), key=lambda kv: -kv[1]["total_tokens"])
+        ],
         "opening_noise": {
             "n": len(agg.opening_noise),
             "p50": percentile(agg.opening_noise, 0.50),
