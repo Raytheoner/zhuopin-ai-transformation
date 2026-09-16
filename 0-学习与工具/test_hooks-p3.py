@@ -364,6 +364,55 @@ class TestPreToolUseEditlockGuard:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 队列 #600 ⑶ 第二道闸：ZHUOPIN_LANE_WORKTREE 存在时禁写主工作区
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLaneWorktreeIsolationEditlock:
+    def test_无环境变量时不受影响(self, repo: Path):
+        """本条是既有行为的对照组——不设 `ZHUOPIN_LANE_WORKTREE` 时，第二道闸完全
+        不介入，非受保护文件照常放行（同 `test_非受保护文件放行`）。"""
+        rc, out, err = run_hook(
+            EDITLOCK_GUARD, pretooluse_payload(repo, "4-数字员工/某场景/foo.py"), repo)
+        assert rc == 0, err
+
+    def test_写主工作区非白名单文件被拒(self, repo: Path, tmp_path: Path):
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        rc, out, err = run_hook(
+            EDITLOCK_GUARD, pretooluse_payload(repo, "4-数字员工/某场景/foo.py"), repo,
+            extra_env={"ZHUOPIN_LANE_WORKTREE": str(wt)})
+        assert rc == 2
+        assert "泳道隔离门禁" in err
+        assert audit_lines(repo)[-1]["verdict"] == "violation"
+
+    def test_写worktree内文件放行(self, repo: Path):
+        wt = repo / ".claude" / "worktrees" / "op-demo"
+        wt.mkdir(parents=True)
+        payload = pretooluse_payload(repo, "4-数字员工/某场景/foo.py")
+        payload["tool_input"]["file_path"] = str(wt / "4-数字员工" / "某场景" / "foo.py")
+        rc, out, err = run_hook(
+            EDITLOCK_GUARD, payload, repo, extra_env={"ZHUOPIN_LANE_WORKTREE": str(wt)})
+        assert rc == 0, err
+
+    def test_写reports白名单放行(self, repo: Path, tmp_path: Path):
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        rc, out, err = run_hook(
+            EDITLOCK_GUARD, pretooluse_payload(repo, "reports/opener-batch/foo.log"), repo,
+            extra_env={"ZHUOPIN_LANE_WORKTREE": str(wt)})
+        assert rc == 0, err
+
+    def test_写pendingff白名单放行(self, repo: Path, tmp_path: Path):
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        rel = "1-转型规划/0-全景路线图/合入登记/pending-ff.jsonl"
+        rc, out, err = run_hook(
+            EDITLOCK_GUARD, pretooluse_payload(repo, rel), repo,
+            extra_env={"ZHUOPIN_LANE_WORKTREE": str(wt)})
+        assert rc == 0, err
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ⓑ UserPromptSubmit 常驻纪律（hooks-userpromptsubmit-standing-five.ps1）
 #
 # 🔴 判据于 2026-09-10 按队列 §一 `#537` 改判：**不再断言"恰好 5 条"**，改为按实际

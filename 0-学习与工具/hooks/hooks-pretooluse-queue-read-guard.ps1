@@ -137,6 +137,19 @@ function Test-BashAllowlisted([string]$Command) {
     return $false
 }
 
+function Get-GitToplevel([string]$Dir) {
+    <# 队列 #600 ⑶：解析 `$Dir` 所在 git 仓库的 toplevel；判不了返回 `$null`
+       （不是 fail-loud——调用方须把「判不了」与「判定为主仓」区分开，保守放行）。#>
+    if (-not $Dir -or -not (Test-Path -LiteralPath $Dir)) { return $null }
+    try {
+        $out = & git -C $Dir rev-parse --show-toplevel 2>$null
+        if ($LASTEXITCODE -eq 0 -and $out) {
+            return (Resolve-Path -LiteralPath $out.Trim()).Path.TrimEnd('\', '/')
+        }
+    } catch { }
+    return $null
+}
+
 function Test-BashHitsProtectedTarget([string]$Command) {
     <# 返回 @{ Hit=$bool; Verb=<string或$null>; Target=<string或$null> }。
        须同时命中"读命令名"与"目标文件名"两个条件——只命中其一不算
@@ -198,6 +211,35 @@ try {
                 -Tool $toolName -SessionId $sessionId -Detail '命中机制工具白名单（编辑锁/队列查询/sweep/lint/README登记/README归档/README查询/README行长外置）'
             exit 0
         }
+
+        # 队列 #600 ⑶：`ZHUOPIN_LANE_WORKTREE` 存在时（本泳道已由 v2.ps1 建好隔离
+        # worktree），命令内含 git 写操作子命令、且 harness 上报的当前 cwd 之 toplevel
+        # 正是主工作区 ⇒ 拒绝——防泳道漏切目录时把 commit/push/merge/reset 等误落主仓
+        # （worktree 内同类命令 toplevel≠主仓，不受影响；只看列出的写子命令，不管
+        # log/status/diff/show/fsck/rev-parse/worktree 这类只读或本就无害的子命令）。
+        $laneWorktree = $env:ZHUOPIN_LANE_WORKTREE
+        if ($laneWorktree) {
+            $gitWriteRe = '\bgit\b[^&|;`r`n]*\b(commit|push|merge|rebase|reset|checkout|switch|stash|apply|cherry-pick|restore|clean)\b'
+            if ($command -match $gitWriteRe) {
+                $bashCwd = ''
+                if ($tiProps -contains 'cwd') { $bashCwd = [string]$json.tool_input.cwd }
+                if (-not $bashCwd -and $jsonProps -contains 'cwd') { $bashCwd = [string]$json.cwd }
+                if (-not $bashCwd) { $bashCwd = $repoRoot }
+                $toplevel = Get-GitToplevel -Dir $bashCwd
+                $repoRootFull = $null
+                try { $repoRootFull = (Resolve-Path -LiteralPath $repoRoot).Path.TrimEnd('\', '/') } catch { }
+                if ($toplevel -and $repoRootFull -and $toplevel.Equals($repoRootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $laneMsg = "✗ 泳道隔离门禁：ZHUOPIN_LANE_WORKTREE=$laneWorktree 已设置，命令内出现 git 写操作" +
+                        "（commit/push/merge/rebase/reset/checkout/switch/stash/apply/cherry-pick/restore/clean 之一），" +
+                        "但当前目录 toplevel 是主工作区（$repoRootFull），不是该 worktree —— 拒绝执行。请在 worktree 内操作。"
+                    Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'violation' `
+                        -Tool $toolName -SessionId $sessionId -Detail "lane-isolation-git-write：$command"
+                    [Console]::Error.WriteLine($laneMsg)
+                    exit 2
+                }
+            }
+        }
+
         $hit = Test-BashHitsProtectedTarget -Command $command
         # 🔴 大文件整读守卫·Bash 侧（09-16 根治口径，与 Read 侧同阈值）：`cat／type／Get-Content／gc <文件>`
         # 且整条命令未出现截断手段（head／tail／sed -n／Select-Object -First|-Last／-TotalCount／-Tail／wc）

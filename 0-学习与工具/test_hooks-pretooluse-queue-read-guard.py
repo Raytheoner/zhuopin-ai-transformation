@@ -33,11 +33,13 @@ README_REL = "6-人才与组织/部门AI专员跟进/README-跟进机制与命�
 README_ARCHIVE_REL = "6-人才与组织/部门AI专员跟进/README-归档-202609.md"
 
 
-def run_hook(payload: dict, repo_root: Path) -> tuple[int, str, str]:
+def run_hook(payload: dict, repo_root: Path, extra_env: dict | None = None) -> tuple[int, str, str]:
     """真跑一次钩子：喂 stdin JSON，返回 `(退出码, stdout, stderr)`。本钩子不产出
     结构化 stdout（不同于 SessionStart 那枚），只在拦截时写 stderr。"""
     env = dict(os.environ)
     env["ZHUOPIN_SENTINEL_REPO_ROOT"] = str(repo_root)
+    if extra_env:
+        env.update(extra_env)
     proc = subprocess.run(
         ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(GUARD)],
         input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -88,6 +90,28 @@ def bash_payload(repo_root: Path, command: str) -> dict:
 def repo(tmp_path: Path) -> Path:
     (tmp_path / "reports").mkdir()
     return tmp_path
+
+
+@pytest.fixture()
+def git_repo(tmp_path: Path) -> Path:
+    """真实最小 git 仓库＋一个 linked worktree——队列 #600 ⑶ 的 git-写操作闸需要
+    真 toplevel 可解析（同 `test_hooks-p3.py::git_repo` 手法）。"""
+    root = tmp_path / "main"
+    root.mkdir()
+    (root / "reports").mkdir()
+
+    def run(*args, cwd=None):
+        subprocess.run(["git", *args], cwd=str(cwd or root), check=True, capture_output=True)
+
+    run("init", "-q", "-b", "master")
+    run("config", "user.email", "test@example.com")
+    run("config", "user.name", "Test")
+    (root / "README.md").write_text("test\n", encoding="utf-8")
+    run("add", "README.md")
+    run("commit", "-q", "-m", "init")
+    wt = tmp_path / "wt"
+    run("worktree", "add", "-b", "claude/op-demo", str(wt), "master")
+    return root
 
 
 class TestScriptExists:
@@ -368,3 +392,46 @@ class TestLargeReadGuard:
         p = self._big(repo, "0-学习与工具/big.py", 30_000)
         rc, _, _ = run_hook(bash_payload(repo, f"sed -n '1,100p' \"{p}\""), repo)
         assert rc == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 队列 #600 ⑶ 第二道闸：ZHUOPIN_LANE_WORKTREE 存在时禁在主工作区跑 git 写操作
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLaneWorktreeGitWriteGate:
+    def test_无环境变量不受影响(self, git_repo: Path):
+        rc, _, err = run_hook(bash_payload(git_repo, "git commit -am x"), git_repo)
+        assert rc == 0, err
+
+    def test_主工作区内commit被拒(self, git_repo: Path):
+        wt = git_repo.parent / "wt"
+        rc, _, err = run_hook(
+            bash_payload(git_repo, "git commit -am x"), git_repo,
+            extra_env={"ZHUOPIN_LANE_WORKTREE": str(wt)})
+        assert rc == 2
+        assert "泳道隔离门禁" in err
+
+    def test_worktree内commit放行(self, git_repo: Path):
+        wt = git_repo.parent / "wt"
+        payload = bash_payload(git_repo, "git commit -am x")
+        payload["cwd"] = str(wt)
+        rc, _, err = run_hook(
+            payload, git_repo, extra_env={"ZHUOPIN_LANE_WORKTREE": str(wt)})
+        assert rc == 0, err
+
+    def test_只读命令不受影响(self, git_repo: Path):
+        wt = git_repo.parent / "wt"
+        for cmd in ("git status", "git log --oneline", "git worktree list", "git rev-parse HEAD"):
+            rc, _, err = run_hook(
+                bash_payload(git_repo, cmd), git_repo,
+                extra_env={"ZHUOPIN_LANE_WORKTREE": str(wt)})
+            assert rc == 0, f"{cmd}: {err}"
+
+    def test_push_merge_reset等写子命令也被拒(self, git_repo: Path):
+        wt = git_repo.parent / "wt"
+        for cmd in ("git push origin master", "git merge foo", "git reset --hard HEAD~1",
+                    "git checkout -b foo", "git stash pop"):
+            rc, _, err = run_hook(
+                bash_payload(git_repo, cmd), git_repo,
+                extra_env={"ZHUOPIN_LANE_WORKTREE": str(wt)})
+            assert rc == 2, f"{cmd} 应被拒但放行了"

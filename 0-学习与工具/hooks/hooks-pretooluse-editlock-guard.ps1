@@ -106,6 +106,45 @@ function Test-ValidLock([string]$LockPath) {
     }
 }
 
+function Test-LaneWorktreeViolation([string]$RepoRoot, [string]$LaneWorktree, [string]$TargetPath) {
+    <# 队列 #600 ⑶：`ZHUOPIN_LANE_WORKTREE` 存在时（脚本已为本泳道建好隔离 worktree），
+       Edit/Write/MultiEdit 目标若落在主工作区内、且不在该 worktree 内 ⇒ 违规——这是
+       泳道隔离的第二道闸（第一道是 v2.ps1 起 claude 前强制建 worktree）。白名单只两处：
+       `reports/`（一切 reports 产出约定写主工作区，见 opener骨架 §四.4）与合入登记
+       `pending-ff.jsonl`（收工「已授权待合」登记允许跨 worktree 写）。判不了（路径解析
+       失败）一律放行——同本文件其余判据的保守方向：判不了不能等于判违规。 #>
+    if (-not $LaneWorktree) { return $false }
+    $targetFull = Resolve-RepoRelative $RepoRoot $TargetPath
+    if (-not $targetFull) { return $false }
+    $wtFull = $null
+    try { $wtFull = [System.IO.Path]::GetFullPath($LaneWorktree).TrimEnd('\', '/') } catch { return $false }
+    if (-not $wtFull) { return $false }
+    if ($targetFull.Equals($wtFull, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $targetFull.StartsWith(($wtFull + [System.IO.Path]::DirectorySeparatorChar), [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+    }
+    $repoFull = $null
+    try { $repoFull = [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\', '/') } catch { return $false }
+    if (-not $repoFull) { return $false }
+    if (-not $targetFull.StartsWith(($repoFull + [System.IO.Path]::DirectorySeparatorChar), [System.StringComparison]::OrdinalIgnoreCase) -and
+        -not $targetFull.Equals($repoFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $false  # 不在主工作区内（理论不该发生），保守放行
+    }
+    $reportsFull = Resolve-RepoRelative $RepoRoot 'reports'
+    if ($reportsFull) {
+        $reportsFull = $reportsFull.TrimEnd('\', '/')
+        if ($targetFull.Equals($reportsFull, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $targetFull.StartsWith(($reportsFull + [System.IO.Path]::DirectorySeparatorChar), [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+    }
+    $pendingFfFull = Resolve-RepoRelative $RepoRoot '1-转型规划/0-全景路线图/合入登记/pending-ff.jsonl'
+    if ($pendingFfFull -and $targetFull.Equals($pendingFfFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+    }
+    return $true
+}
+
 try {
     $stdinRaw = Read-SentinelStdin
     if (-not $stdinRaw -or -not $stdinRaw.Trim()) { exit 0 }
@@ -137,6 +176,18 @@ try {
         Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'undetermined' `
             -Tool $toolName -SessionId $sessionId -Detail '无法从 tool_input 解析出写入目标'
         exit 0
+    }
+
+    if ($env:ZHUOPIN_LANE_WORKTREE) {
+        if (Test-LaneWorktreeViolation -RepoRoot $repoRoot -LaneWorktree $env:ZHUOPIN_LANE_WORKTREE -TargetPath $targetPath) {
+            $laneMsg = "✗ 泳道隔离门禁：ZHUOPIN_LANE_WORKTREE=$($env:ZHUOPIN_LANE_WORKTREE) 已设置，" +
+                "目标 `"$targetPath`" 落在主工作区内且不在该 worktree 内、也不在白名单（reports/、pending-ff.jsonl）—— " +
+                "拒绝写入。请在该 worktree 内操作；若这确是收工回写，只能落 reports/ 或 pending-ff.jsonl。"
+            Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'violation' `
+                -Tool $toolName -SessionId $sessionId -Detail "lane-isolation：$targetPath（worktree=$($env:ZHUOPIN_LANE_WORKTREE)）"
+            [Console]::Error.WriteLine($laneMsg)
+            exit 2
+        }
     }
 
     $info = Get-LockPathForTarget -RepoRoot $repoRoot -TargetPath $targetPath
