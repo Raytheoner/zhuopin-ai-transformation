@@ -8,8 +8,13 @@ grep 域内）：
   ① Cowork artifacts（本机 `C:\\Users\\Paul Shao\\Claude\\Artifacts\\`）
   ② `.51` 四个服务的页面内嵌文案（保供看板 8091／命令中心 8092／
      QD-B 8093／FI2 8094）
-  ③ 已安装版 skill（本机 `C:\\Users\\Paul Shao\\.claude\\skills\\`，
-     源码在库、安装版只读）
+  ③ 已安装版 skill——**按归属拆两半**（队列 §一 `#585`，2026-09-16 拆分）：
+     CC 侧正本就是库内 `.claude/skills/<name>/`（随仓库走，全库 grep 已覆盖，
+     不属于"仓库外"盲区，本工具免扫）；Cowork 侧源码在库内 `skills源码/`，
+     但**运行时安装版**落在 Cowork/claude.ai 账号级存储，不在本机文件系统
+     任何路径下——此前误扫本机全局 `~/.claude/skills`（那是本机 CC 全局
+     skill 目录，与 Cowork 账号级存储是两回事），结构性只会扫到 0，
+     现改为如实报「本类无法核验」而非假装扫过。
   ④ 定时任务真身（本机 `C:\\Users\\Paul Shao\\Claude\\Scheduled\\`，
      库内仅镜像）
 
@@ -23,10 +28,11 @@ grep 域内）：
   · ② `.51` 四服务：四个服务已加访问口令门，HTTP GET 仍返回 **200**，
     但回的是 **1.6 KB 的登录页**、不是看板正文 ⇒ 此后永远命中 0，
     **与页面里写了什么无关**。
-  · ③ 已安装版 skill：扫描根 `~/.claude/skills` 下**根本没有本项目的
-    skill**（6 个 `zhuopin-*` 安装在 Cowork/claude.ai 侧，不落本机磁盘；
-    本机只有源码 `0-学习与工具/skills源码/`）⇒ 此后永远命中 0。
-    该类恰是高危载体（`zhuopin-queue-audit` 等若留旧指针，后果同 ④）。
+  · ③ 已安装版 skill（旧实现，2026-09-16 前）：扫描根 `~/.claude/skills`
+    下**根本没有本项目的 skill**（6 个 `zhuopin-*` 安装在 Cowork/claude.ai
+    侧，不落本机磁盘；本机只有源码）⇒ 此后永远命中 0。该类恰是高危载体
+    （`zhuopin-queue-audit` 等若留旧指针，后果同 ④）——2026-09-16 起按
+    CC／Cowork 归属拆分，CC 侧库内正本免扫、Cowork 侧如实报「无法核验」。
 
 故每一类都必须先过**阳性对照**（这一类此刻究竟还扫不扫得到东西），
 过不了就输出「🔴 本类无法核验：<原因>」而**不是**「命中 0 处」，并在
@@ -56,9 +62,11 @@ from pathlib import Path
 
 ARTIFACTS_DIR = Path(r"C:\Users\Paul Shao\Claude\Artifacts")
 SCHEDULED_DIR = Path(r"C:\Users\Paul Shao\Claude\Scheduled")
-SKILLS_DIR = Path(r"C:\Users\Paul Shao\.claude\skills")
-# ③ 类阳性对照的参照物：本项目 skill 的**源码**目录（在库内，恒可得）。
-# 安装版是否真的覆盖了这些名字，就是"这一类还扫不扫得到本项目的东西"。
+# ③ CC 侧：库内 `.claude/skills/<name>/` 即正本，随仓库被全库 grep 覆盖。
+CC_SKILLS_DIR = Path(__file__).resolve().parent.parent / ".claude" / "skills"
+# ③ Cowork 侧：源码在库内（恒可得），但**运行时安装版**落在 Cowork/claude.ai
+# 账号级存储，不在本机文件系统任何路径下——本工具只能列出"有哪些"，
+# 列出即代表"这些本机结构性无法核验"，不再假装去扫一个够不着的地方。
 SKILL_SOURCE_DIR = Path(__file__).resolve().with_name("skills源码")
 
 # 命令中心/保供看板/QD-B/FI2 四服务，见 CLAUDE.md §5 端口约定。
@@ -135,35 +143,27 @@ def scan_scheduled_tasks(keyword: str, scheduled_dir: Path = SCHEDULED_DIR) -> l
     return _scan_directory_for_keyword(scheduled_dir, keyword)
 
 
-def scan_installed_skills(keyword: str, skills_dir: Path = SKILLS_DIR) -> list[dict]:
-    return _scan_directory_for_keyword(skills_dir, keyword)
+def cc_skill_names(cc_skills_dir: Path = CC_SKILLS_DIR) -> set[str]:
+    """CC 侧 skill 名字集合——库内 `.claude/skills/<name>/` 即正本，随仓库
+    被全库 grep 覆盖，不属于本工具要补的"仓库外"盲区。目录不存在或为空
+    同等对待：均表示"本项目当前无 CC 侧 skill"，这是可直接确认的事实
+    （不像旧 ③ 实现那样依赖一个够不着的外部路径）。
+    """
+    if not cc_skills_dir.is_dir():
+        return set()
+    return {p.name for p in cc_skills_dir.iterdir() if p.is_dir()}
 
 
-def project_skill_names(source_dir: Path = SKILL_SOURCE_DIR) -> set[str]:
-    """本项目自有 skill 的名字集合，取自库内源码目录的子目录名。
+def cowork_skill_names(source_dir: Path = SKILL_SOURCE_DIR) -> set[str]:
+    """Cowork 侧 skill 名字集合，取自库内源码目录的子目录名。
 
-    源码目录不存在时返回空集——调用方据此判定"参照物缺失"，同样属于
-    无法核验，不得退化成"没有本项目 skill，所以零命中正常"。
+    这些名字**只用于报告"有多少个结构性无法核验"**，不再据此去扫任何
+    本机路径——运行时安装版在 Cowork/claude.ai 账号级存储，本机没有对应
+    文件系统路径可读。
     """
     if not source_dir.is_dir():
         return set()
     return {p.name for p in source_dir.iterdir() if p.is_dir()}
-
-
-def installed_project_skills(
-    skills_dir: Path = SKILLS_DIR, source_dir: Path = SKILL_SOURCE_DIR,
-) -> tuple[set[str], set[str]]:
-    """③ 类阳性对照：返回 (已安装的本项目 skill 名, 未安装的本项目 skill 名)。
-
-    判据是"扫描根下是否真的存在本项目的 skill"，不是"扫描根下有没有东西"
-    ——`~/.claude/skills` 一直有 2 个与本项目无关的第三方 skill，正是它们
-    让这一类看上去"扫了"。
-    """
-    expected = project_skill_names(source_dir)
-    if not skills_dir.is_dir():
-        return set(), expected
-    present = {p.name for p in skills_dir.iterdir() if p.is_dir()}
-    return expected & present, expected - present
 
 
 def looks_like_auth_gate(body: str) -> bool:
@@ -236,7 +236,7 @@ def _print_summary(statuses: list[tuple[str, bool, str]]) -> int:
         )
         print("   这些类别的「零命中」不构成证据，复检结论只能覆盖已核验的类别。")
     else:
-        print("\n✅ 四类全部已核验，本次命中数可作为「已复检」的依据。")
+        print(f"\n✅ 全部 {len(statuses)} 项已核验，本次命中数可作为「已复检」的依据。")
     print("=" * 60)
     return len(unverifiable)
 
@@ -251,8 +251,8 @@ def main() -> int:
     )
     parser.add_argument("--artifacts-dir", default=None, help="仅测试用：覆盖 Cowork artifacts 目录")
     parser.add_argument("--scheduled-dir", default=None, help="仅测试用：覆盖定时任务真身目录")
-    parser.add_argument("--skills-dir", default=None, help="仅测试用：覆盖已安装版 skill 目录")
-    parser.add_argument("--skill-source-dir", default=None, help="仅测试用：覆盖 skill 源码目录")
+    parser.add_argument("--cc-skills-dir", default=None, help="仅测试用：覆盖 CC 侧库内 .claude/skills 目录")
+    parser.add_argument("--skill-source-dir", default=None, help="仅测试用：覆盖 Cowork 侧 skill 源码目录")
     parser.add_argument(
         "--service-urls", default=None,
         help="仅测试用：逗号分隔覆盖 .51 四服务 URL",
@@ -261,7 +261,7 @@ def main() -> int:
 
     artifacts_dir = Path(args.artifacts_dir) if args.artifacts_dir else ARTIFACTS_DIR
     scheduled_dir = Path(args.scheduled_dir) if args.scheduled_dir else SCHEDULED_DIR
-    skills_dir = Path(args.skills_dir) if args.skills_dir else SKILLS_DIR
+    cc_skills_dir = Path(args.cc_skills_dir) if args.cc_skills_dir else CC_SKILLS_DIR
     skill_source_dir = (
         Path(args.skill_source_dir) if args.skill_source_dir else SKILL_SOURCE_DIR
     )
@@ -292,35 +292,32 @@ def main() -> int:
         _print_hits(label, hits)
         statuses.append((label, True, f"扫过 {scannable} 个文件，命中 {len(hits)} 处"))
 
-    # ③：阳性对照 ＝ 扫描根下真的存在**本项目**的 skill（不是随便有东西）。
-    label = "③ 已安装版 skill"
-    expected = project_skill_names(skill_source_dir)
-    installed, missing = installed_project_skills(skills_dir, skill_source_dir)
-    if not expected:
-        _print_unverifiable(
-            label, f"参照物缺失——skill 源码目录不存在或为空：{skill_source_dir}",
+    # ③：CC 侧库内正本免扫（已被全库 grep 覆盖）／Cowork 侧账号级安装本机
+    # 结构性不可达，如实报「无法核验」，不再假装去扫一个够不着的路径。
+    cc_label = "③ CC 侧 skill（库内 .claude/skills/）"
+    cowork_label = "③ Cowork 侧 skill（账号级安装）"
+    cc_names = cc_skill_names(cc_skills_dir)
+    cowork_names = cowork_skill_names(skill_source_dir)
+
+    if cc_names:
+        print(
+            f"\n【{cc_label}】{len(cc_names)} 个（{'／'.join(sorted(cc_names))}）"
+            "——库内即正本，已被全库 grep 覆盖，本工具免扫"
         )
-        statuses.append((label, False, "无参照物，无法判断覆盖面"))
-    elif not installed:
-        _print_unverifiable(
-            label,
-            f"扫描根 {skills_dir} 下不存在任何本项目 skill"
-            f"（本项目 {len(expected)} 个：{'／'.join(sorted(expected))}）"
-            "——已安装版在 Cowork/claude.ai 侧，不落本机磁盘，本机永远扫不到",
-        )
-        statuses.append((label, False, f"本项目 {len(expected)} 个 skill 一个都不在扫描根下"))
+        statuses.append((cc_label, True, f"{len(cc_names)} 个库内正本，免扫"))
     else:
-        hits = scan_installed_skills(args.keyword, skills_dir)
-        _print_hits(label, hits)
-        if missing:
-            print(
-                f"  ⚠ 部分覆盖：本项目 {len(expected)} 个 skill 中 {len(missing)} 个不在扫描根下"
-                f"（{'／'.join(sorted(missing))}），这些未被核验"
-            )
-        statuses.append((
-            label, True,
-            f"覆盖本项目 {len(installed)}/{len(expected)} 个 skill，命中 {len(hits)} 处",
-        ))
+        statuses.append((cc_label, True, "本项目当前无 CC 侧 skill"))
+
+    if cowork_names:
+        _print_unverifiable(
+            cowork_label,
+            f"运行时安装版落在 Cowork/claude.ai 账号级存储，不在本机文件系统"
+            f"任何路径下，本机结构性无法核验（本项目 {len(cowork_names)} 个："
+            f"{'／'.join(sorted(cowork_names))}）——需人工在 Cowork 会话内核对",
+        )
+        statuses.append((cowork_label, False, f"{len(cowork_names)} 个本机结构性不可达"))
+    else:
+        statuses.append((cowork_label, True, "本项目当前无 Cowork 侧 skill"))
 
     # ②：阳性对照 ＝ 取回的正文是看板正文，而不是访问口令门。
     label = "② .51 四服务页面"

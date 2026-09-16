@@ -11,11 +11,15 @@
 🔴 队列 #398⑵ 新增的**反例**（每条都对应 2026-08-24 环境体检实测到的一种
 结构性假零；这些用例的作用是"零命中必须说不出口"，而不是"零命中要正确"）：
 - ② 口令门：HTTP 200 + 正文是登录页 ⇒ 不得报「命中 0 处」，须报「无法核验」
-- ③ 扫描根下无本项目 skill（只有无关第三方）⇒ 同上
-- ③ 参照物（skill 源码目录）缺失 ⇒ 同上，不得退化成"零命中正常"
 - ①④ 目录还在但 0 个可扫文件 ⇒ 同上
 - --skip-http 时 ② 类不得被算作"已核验"
 - --strict 下有类无法核验即退出码 2
+
+🔧 队列 #585 ⑶ ③ 类拆分（2026-09-16，CC 侧库内正本免扫／Cowork 侧账号级
+安装本机结构性不可达）三态覆盖：
+- 仅 CC 侧有 skill、Cowork 侧为空 ⇒ 整体已核验（CC 免扫 ＋ Cowork 侧「无」）
+- 仅 Cowork 侧有 skill、CC 侧为空 ⇒ Cowork 侧无法核验，总表落"有类无法核验"
+- 两侧都有（混合）⇒ CC 半已核验免扫、Cowork 半无法核验，两条状态并存
 """
 from __future__ import annotations
 
@@ -42,25 +46,28 @@ def _run_cli(*extra: str) -> subprocess.CompletedProcess:
     )
 
 
-def _make_full_layout(base: Path, skill_names=("zhuopin-queue-audit",)) -> dict:
-    """搭一套四类载体齐全、且 ③ 类阳性对照能过的临时目录。"""
+def _make_full_layout(
+    base: Path, cc_names=("zhuopin-followup-letter",), cowork_names=("zhuopin-queue-audit",),
+) -> dict:
+    """搭一套四类载体齐全的临时目录；③ 类按 CC／Cowork 两侧分别落子目录。"""
     artifacts = base / "artifacts"
     scheduled = base / "scheduled" / "some-task"
-    skills = base / "skills"
+    cc_skills = base / ".claude" / "skills"
     source = base / "skills源码"
-    for d in (artifacts, scheduled, skills, source):
+    for d in (artifacts, scheduled, cc_skills, source):
         d.mkdir(parents=True, exist_ok=True)
     (artifacts / "index.html").write_text("周期 PT1H\n", encoding="utf-8")
     (scheduled / "run.ps1").write_text("周期 PT1H\n", encoding="utf-8")
-    for name in skill_names:
-        (skills / name).mkdir(exist_ok=True)
-        (skills / name / "SKILL.md").write_text("周期 PT1H\n", encoding="utf-8")
+    for name in cc_names:
+        (cc_skills / name).mkdir(exist_ok=True)
+        (cc_skills / name / "SKILL.md").write_text("周期 PT1H\n", encoding="utf-8")
+    for name in cowork_names:
         (source / name).mkdir(exist_ok=True)
         (source / name / "SKILL.md").write_text("周期 PT1H\n", encoding="utf-8")
     return {
         "artifacts": artifacts,
         "scheduled": scheduled.parent,
-        "skills": skills,
+        "cc_skills": cc_skills,
         "source": source,
     }
 
@@ -69,7 +76,7 @@ def _cli_args(layout: dict) -> list[str]:
     return [
         "--artifacts-dir", str(layout["artifacts"]),
         "--scheduled-dir", str(layout["scheduled"]),
-        "--skills-dir", str(layout["skills"]),
+        "--cc-skills-dir", str(layout["cc_skills"]),
         "--skill-source-dir", str(layout["source"]),
     ]
 
@@ -115,15 +122,6 @@ class ScanDirectoryUnitTests(unittest.TestCase):
             hits = scan_tool.scan_scheduled_tasks("PT1H", base.parent)
             self.assertEqual(len(hits), 1)
 
-    def test_installed_skills_scan_finds_keyword(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp) / "some-skill"
-            base.mkdir()
-            (base / "SKILL.md").write_text("周期：PT1H\n", encoding="utf-8")
-            hits = scan_tool.scan_installed_skills("PT1H", base.parent)
-            self.assertEqual(len(hits), 1)
-
-
 class CountScannableFilesTests(unittest.TestCase):
     """①④ 类阳性对照的判据本身。"""
 
@@ -156,39 +154,29 @@ class AuthGateDetectionTests(unittest.TestCase):
         ))
 
 
-class InstalledProjectSkillsTests(unittest.TestCase):
-    """③ 类阳性对照的判据本身（2026-08-24 体检 §4.3 实测形态）。"""
+class SkillOwnershipSplitTests(unittest.TestCase):
+    """③ 类拆分后的判据本身（队列 #585 ⑶，2026-09-16）——CC 侧库内枚举
+    ＋ Cowork 侧库内枚举，两者互不依赖对方是否存在。"""
 
-    def test_none_of_project_skills_installed(self):
+    def test_cc_skill_names_reads_repo_local_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            skills = base / "skills"
-            source = base / "源码"
-            # 扫描根下**有东西**，但全是与本项目无关的第三方 skill——
-            # 这正是让这一类看上去"扫过了"的实测形态。
-            for name in ("download-images-skill", "setup-sound-notifications-windows"):
-                (skills / name).mkdir(parents=True)
-            for name in ("zhuopin-queue-audit", "zhuopin-kickoff-prompt"):
-                (source / name).mkdir(parents=True)
-            installed, missing = scan_tool.installed_project_skills(skills, source)
-            self.assertEqual(installed, set())
-            self.assertEqual(missing, {"zhuopin-queue-audit", "zhuopin-kickoff-prompt"})
+            cc_dir = Path(tmp) / ".claude" / "skills"
+            (cc_dir / "zhuopin-followup-letter").mkdir(parents=True)
+            self.assertEqual(scan_tool.cc_skill_names(cc_dir), {"zhuopin-followup-letter"})
 
-    def test_partial_coverage_reported(self):
+    def test_cc_skill_names_missing_dir_is_empty_not_error(self):
         with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            skills = base / "skills"
-            source = base / "源码"
-            (skills / "zhuopin-queue-audit").mkdir(parents=True)
-            for name in ("zhuopin-queue-audit", "zhuopin-kickoff-prompt"):
-                (source / name).mkdir(parents=True)
-            installed, missing = scan_tool.installed_project_skills(skills, source)
-            self.assertEqual(installed, {"zhuopin-queue-audit"})
-            self.assertEqual(missing, {"zhuopin-kickoff-prompt"})
+            self.assertEqual(scan_tool.cc_skill_names(Path(tmp) / "无此目录"), set())
 
-    def test_missing_source_dir_yields_no_reference(self):
+    def test_cowork_skill_names_reads_source_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(scan_tool.project_skill_names(Path(tmp) / "无此目录"), set())
+            source = Path(tmp) / "源码"
+            (source / "zhuopin-queue-audit").mkdir(parents=True)
+            self.assertEqual(scan_tool.cowork_skill_names(source), {"zhuopin-queue-audit"})
+
+    def test_cowork_skill_names_missing_dir_is_empty_not_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(scan_tool.cowork_skill_names(Path(tmp) / "无此目录"), set())
 
 
 class _StubServiceHandler(BaseHTTPRequestHandler):
@@ -277,18 +265,18 @@ class Scan51AuthGateTests(unittest.TestCase):
 
     def test_cli_reports_unverifiable_not_zero_hits(self):
         with tempfile.TemporaryDirectory() as tmp:
-            layout = _make_full_layout(Path(tmp))
+            layout = _make_full_layout(Path(tmp), cc_names=("zhuopin-followup-letter",), cowork_names=())
             result = _run_cli(
                 "每 4h", *_cli_args(layout), "--service-urls", self.url,
             )
             self.assertIn("② .51 四服务页面】🔴 本类无法核验", result.stdout)
             self.assertIn("访问口令登录页", result.stdout)
             self.assertNotIn("【② .51 四服务页面】命中 0 处", result.stdout)
-            self.assertIn("🔴 本次 1/4 类无法核验", result.stdout)
+            self.assertIn("🔴 本次 1/5 类无法核验", result.stdout)
 
     def test_strict_exits_2_when_a_class_is_unverifiable(self):
         with tempfile.TemporaryDirectory() as tmp:
-            layout = _make_full_layout(Path(tmp))
+            layout = _make_full_layout(Path(tmp), cc_names=("zhuopin-followup-letter",), cowork_names=())
             result = _run_cli(
                 "每 4h", *_cli_args(layout), "--service-urls", self.url, "--strict",
             )
@@ -312,58 +300,54 @@ class CliEndToEndTests(unittest.TestCase):
             self.assertIn("命中 1 处", result.stdout)
             self.assertIn("已按 --skip-http 跳过联网检查", result.stdout)
 
-    def test_all_four_classes_verified_when_layout_intact(self):
-        """阳性面：三类目录健全 ＋ ② 类真取到正文 ⇒ 总表全绿。"""
+    def test_all_classes_verified_when_only_cc_side_skill_exists(self):
+        """三态之一：仅 CC 侧有 skill、Cowork 侧为空 ⇒ 总表全绿。"""
         fixture = _ServerFixture()
         url = fixture.start(_StubServiceHandler)
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                layout = _make_full_layout(Path(tmp))
+                layout = _make_full_layout(
+                    Path(tmp), cc_names=("zhuopin-followup-letter",), cowork_names=(),
+                )
                 result = _run_cli(
                     "PT1H", *_cli_args(layout), "--service-urls", url, "--strict",
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("✅ 四类全部已核验", result.stdout)
+                self.assertIn("✅ 全部", result.stdout)
+                self.assertIn("已核验", result.stdout)
+                self.assertIn("CC 侧 skill", result.stdout)
+                self.assertIn("免扫", result.stdout)
         finally:
             fixture.stop()
 
     def test_skip_http_marks_51_class_unverifiable(self):
         """--skip-http 是"没扫"，不是"扫过没有"——总表里必须是无法核验。"""
         with tempfile.TemporaryDirectory() as tmp:
-            layout = _make_full_layout(Path(tmp))
+            layout = _make_full_layout(Path(tmp), cc_names=("zhuopin-followup-letter",), cowork_names=())
             result = _run_cli("PT1H", "--skip-http", *_cli_args(layout))
             self.assertIn("② .51 四服务页面】🔴 本类无法核验", result.stdout)
-            self.assertNotIn("✅ 四类全部已核验", result.stdout)
+            self.assertNotIn("✅ 全部", result.stdout)
 
-    def test_no_project_skill_installed_reports_unverifiable(self):
-        """🔴 反例：扫描根下只有无关第三方 skill ⇒ ③ 类无法核验。"""
+    def test_cowork_side_skill_present_reports_unverifiable(self):
+        """三态之二：仅 Cowork 侧有 skill、CC 侧为空 ⇒ Cowork 半无法核验。"""
         with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            layout = _make_full_layout(base)
-            # 把已安装的本项目 skill 换成无关第三方，源码目录保持不变。
-            for child in layout["skills"].iterdir():
-                for f in child.rglob("*"):
-                    f.unlink()
-                child.rmdir()
-            (layout["skills"] / "download-images-skill").mkdir()
+            layout = _make_full_layout(Path(tmp), cc_names=(), cowork_names=("zhuopin-queue-audit",))
             result = _run_cli("PT1H", "--skip-http", *_cli_args(layout))
-            self.assertIn("③ 已安装版 skill】🔴 本类无法核验", result.stdout)
-            self.assertIn("不落本机磁盘", result.stdout)
-            self.assertNotIn("【③ 已安装版 skill】命中 0 处", result.stdout)
+            self.assertIn("Cowork 侧 skill（账号级安装）】🔴 本类无法核验", result.stdout)
+            self.assertIn("不在本机文件系统", result.stdout)
+            self.assertIn("zhuopin-queue-audit", result.stdout)
+            self.assertNotIn("✅ 全部", result.stdout)
 
-    def test_missing_skill_source_dir_reports_unverifiable(self):
-        """🔴 反例：参照物缺失也不得退化成"零命中正常"。"""
+    def test_mixed_cc_and_cowork_skills_reports_split_status(self):
+        """三态之三：两侧都有 ⇒ CC 半免扫已核验、Cowork 半无法核验，两条并存。"""
         with tempfile.TemporaryDirectory() as tmp:
-            layout = _make_full_layout(Path(tmp))
-            result = _run_cli(
-                "PT1H", "--skip-http",
-                "--artifacts-dir", str(layout["artifacts"]),
-                "--scheduled-dir", str(layout["scheduled"]),
-                "--skills-dir", str(layout["skills"]),
-                "--skill-source-dir", str(Path(tmp) / "无此源码目录"),
+            layout = _make_full_layout(
+                Path(tmp), cc_names=("zhuopin-followup-letter",), cowork_names=("zhuopin-queue-audit",),
             )
-            self.assertIn("③ 已安装版 skill】🔴 本类无法核验", result.stdout)
-            self.assertIn("参照物缺失", result.stdout)
+            result = _run_cli("PT1H", "--skip-http", *_cli_args(layout))
+            self.assertIn("CC 侧 skill（库内 .claude/skills/）】1 个", result.stdout)
+            self.assertIn("免扫", result.stdout)
+            self.assertIn("Cowork 侧 skill（账号级安装）】🔴 本类无法核验", result.stdout)
 
     def test_dir_present_but_no_scannable_file_is_unverifiable(self):
         """🔴 反例：①④ 目录还在、但一个可扫文件都没有。"""
@@ -381,7 +365,7 @@ class CliEndToEndTests(unittest.TestCase):
                 "任意关键词", "--skip-http",
                 "--artifacts-dir", str(missing),
                 "--scheduled-dir", str(missing),
-                "--skills-dir", str(missing),
+                "--cc-skills-dir", str(missing),
                 "--skill-source-dir", str(missing),
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
