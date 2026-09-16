@@ -54,7 +54,7 @@
           {
             "type": "command",
             "command": "pwsh -NoProfile -File \"C:\\Dev\\zhuopin-ai\\0-学习与工具\\hooks\\hooks-sessionstart-context.ps1\"",
-            "timeout": 10
+            "timeout": 30
           }
         ]
       }

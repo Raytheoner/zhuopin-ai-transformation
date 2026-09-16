@@ -320,3 +320,51 @@ class TestAuditTrail:
         assert line["hook"] == "pretooluse-queue-read-guard"
         assert line["tool"] == "Read"
         assert line["sessionId"] == "test-session"
+
+
+class TestLargeReadGuard:
+    """09-16 大文件整读守卫：>24KB 文本文件未带 offset/limit 即拒绝。"""
+
+    def _big(self, repo: Path, name: str, size: int) -> Path:
+        p = repo / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("x" * size, encoding="utf-8")
+        return p
+
+    def test_大文本文件整读即拒绝(self, repo: Path):
+        self._big(repo, "0-学习与工具/big.md", 30_000)
+        rc, _, err = run_hook(read_payload(repo, "0-学习与工具/big.md"), repo)
+        assert rc == 2 and "大文件禁整读" in err
+
+    def test_带offset或limit放行(self, repo: Path):
+        self._big(repo, "0-学习与工具/big.md", 30_000)
+        for extra in ({"limit": 200}, {"offset": 100}):
+            payload = read_payload(repo, "0-学习与工具/big.md")
+            payload["tool_input"].update(extra)
+            rc, _, _ = run_hook(payload, repo)
+            assert rc == 0
+
+    def test_小文件放行(self, repo: Path):
+        self._big(repo, "0-学习与工具/small.md", 5_000)
+        rc, _, _ = run_hook(read_payload(repo, "0-学习与工具/small.md"), repo)
+        assert rc == 0
+
+    def test_非文本类扩展名放行(self, repo: Path):
+        self._big(repo, "0-学习与工具/pic.png", 90_000)
+        rc, _, _ = run_hook(read_payload(repo, "0-学习与工具/pic.png"), repo)
+        assert rc == 0
+
+    def test_Bash_cat大文件即拒绝(self, repo: Path):
+        p = self._big(repo, "0-学习与工具/big.py", 30_000)
+        rc, _, err = run_hook(bash_payload(repo, f'cat "{p}"'), repo)
+        assert rc == 2 and "大文件禁整读" in err
+
+    def test_Bash_cat大文件带head放行(self, repo: Path):
+        p = self._big(repo, "0-学习与工具/big.py", 30_000)
+        rc, _, _ = run_hook(bash_payload(repo, f'cat "{p}" | head -50'), repo)
+        assert rc == 0
+
+    def test_Bash_sed分段放行(self, repo: Path):
+        p = self._big(repo, "0-学习与工具/big.py", 30_000)
+        rc, _, _ = run_hook(bash_payload(repo, f"sed -n '1,100p' \"{p}\""), repo)
+        assert rc == 0

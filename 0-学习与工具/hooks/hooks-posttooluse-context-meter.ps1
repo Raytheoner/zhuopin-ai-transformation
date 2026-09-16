@@ -34,6 +34,7 @@ try { [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch {}
 $HookName = 'posttooluse-context-meter'
 $script:ThresholdStart = 150000
 $script:ThresholdStep = 50000
+$script:HardLine = 250000  # 09-16 他拍 1a：150k 软提醒／250k 硬线
 # 窗口倍增序列：先按小窗口试（覆盖绝大多数一轮一次工具调用的常态），找不到再翻倍——
 # 封顶 20000 行，避免一份"连续几万行都没有 assistant 记录"的畸形 transcript 把钩子拖垮。
 $script:TailWindowSizes = @(200, 2000, 20000)
@@ -186,8 +187,13 @@ try {
     Write-ContextMeterState -RepoRoot $repoRoot -SessionId $sessionId -Tier $tier -Context $context
 
     $kDisplay = [math]::Round($context / 1000)
-    $msg = "当前上下文 ≈${kDisplay}k，已越 150k 转场线：完成当前里程碑即收尾——commit、写接力卡、" +
-        "交接后结束本会话；无头泳道以 ``OPENER_PARTIAL: 上下文转场（≈${kDisplay}k）`` 收尾"
+    if ($context -ge $script:HardLine) {
+        $msg = "当前上下文 ≈${kDisplay}k，已越 250k 硬线：立即收尾——commit 已有增量、写接力卡、交接后结束本会话；" +
+               "无头泳道以 ``OPENER_PARTIAL: 上下文转场（≈${kDisplay}k）`` 收尾"
+    } else {
+        $msg = "当前上下文 ≈${kDisplay}k，已越 150k 软提醒线：先把当前里程碑做完（至少 commit 一个可验证增量）再收尾交接，" +
+               "不要在零产出时停下；无头泳道交接时以 ``OPENER_PARTIAL: 上下文转场（≈${kDisplay}k）`` 收尾。此后大文件先 grep 定位再分段读、重输出交子代理；250k 为硬线，届时须立即收尾"
+    }
     Write-HookMessage $msg
 
     Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'remind' `

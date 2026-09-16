@@ -199,6 +199,32 @@ try {
             exit 0
         }
         $hit = Test-BashHitsProtectedTarget -Command $command
+        # 🔴 大文件整读守卫·Bash 侧（09-16 根治口径，与 Read 侧同阈值）：`cat／type／Get-Content／gc <文件>`
+        # 且整条命令未出现截断手段（head／tail／sed -n／Select-Object -First|-Last／-TotalCount／-Tail／wc）
+        # 且目标为 >阈值 的文本类文件 ⇒ 拒绝。路径解析失败一律放行（fail-open）。
+        if (-not $hit.Hit) {
+            $lbLimit = 24000
+            if ($env:ZHUOPIN_LARGE_READ_BYTES -match '^\d+$') { $lbLimit = [int]$env:ZHUOPIN_LARGE_READ_BYTES }
+            $lbMatch = [regex]::Match($command, '(?:^|[;&|]\s*)(?:cat|type|Get-Content|gc)\s+(?:-\S+\s+)*(?:"([^"]+)"|''([^'']+)''|(\S+))')
+            $lbTruncated = $command -match '\|\s*(head|tail|sed\s+-n|Select-Object|select|wc)\b|-TotalCount|\s-Tail\s|\s-First\s'
+            if ($lbMatch.Success -and -not $lbTruncated) {
+                $lbPath = @($lbMatch.Groups[1].Value, $lbMatch.Groups[2].Value, $lbMatch.Groups[3].Value) | Where-Object { $_ } | Select-Object -First 1
+                try {
+                    if ($lbPath -and (Test-Path -LiteralPath $lbPath -PathType Leaf)) {
+                        $lbExt = [IO.Path]::GetExtension($lbPath).ToLowerInvariant()
+                        $lbTextExt = @('.md', '.ps1', '.psm1', '.py', '.json', '.jsonl', '.txt', '.log', '.yaml', '.yml', '.csv', '.ts', '.js', '.html', '.toml', '.ini', '.cfg', '.sql')
+                        $lbSize = (Get-Item -LiteralPath $lbPath).Length
+                        if (($lbTextExt -contains $lbExt) -and $lbSize -gt $lbLimit) {
+                            $msg = "✗ 大文件禁整读：Bash 整份输出 `"$lbPath`" 约 $([math]::Round($lbSize/1024))KB。请先 grep -n 定位，再用 sed -n '起,止p' 或 Read 的 offset＋limit 分段读（单段建议 ≤200 行）。"
+                            Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'violation' `
+                                -Tool $toolName -SessionId $sessionId -Detail "large-read-bash ${lbSize}B：$lbPath"
+                            [Console]::Error.WriteLine($msg)
+                            exit 2
+                        }
+                    }
+                } catch { }
+            }
+        }
         if (-not $hit.Hit) {
             Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'pass' `
                 -Tool $toolName -SessionId $sessionId -Detail '未同时命中读命令名与目标文件名'
@@ -227,6 +253,30 @@ try {
     }
 
     if (-not (Test-ProtectedQueueTarget -RepoRoot $repoRoot -TargetPath $targetPath)) {
+        # 🔴 大文件整读守卫（2026-09-16 Shao Peishen「这个问题需要根治」，Token 优化 OP-0916-T）：
+        # 实测 09-16 两条无头泳道开工 3／7 分钟即触 150k，主因是整份 Read 30KB 级文件
+        # （opener骨架.md 34KB、工具-opener批处理执行v2.ps1 26KB、其测试 29KB）且同文件重复整读。
+        # 判据：Read 未带 offset 且未带 limit、目标是文本类文件、体积 > 阈值 ⇒ 拒绝并指路分段读。
+        # 带 offset／limit 任一即放行；阈值可用环境变量 ZHUOPIN_LARGE_READ_BYTES 覆盖；任何异常 fail-open。
+        if ($toolName -eq 'Read') {
+            $hasRange = ($tiProps -contains 'offset') -or ($tiProps -contains 'limit')
+            $limitBytes = 24000
+            if ($env:ZHUOPIN_LARGE_READ_BYTES -match '^\d+$') { $limitBytes = [int]$env:ZHUOPIN_LARGE_READ_BYTES }
+            $ext = [IO.Path]::GetExtension($targetPath).ToLowerInvariant()
+            $textExt = @('.md', '.ps1', '.psm1', '.py', '.json', '.jsonl', '.txt', '.log', '.yaml', '.yml', '.csv', '.ts', '.js', '.html', '.toml', '.ini', '.cfg', '.sql')
+            if (-not $hasRange -and ($textExt -contains $ext) -and (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
+                $size = (Get-Item -LiteralPath $targetPath).Length
+                if ($size -gt $limitBytes) {
+                    $kb = [math]::Round($size / 1024)
+                    $msg = "✗ 大文件禁整读：`"$targetPath`" 约 ${kb}KB（阈值 $([math]::Round($limitBytes/1024))KB），整份读入会把上下文一次抬高数千至上万 token。" +
+                           "请先用 Grep（带 -n）定位要看的行号，再用 Read 的 offset＋limit 分段读（单段建议 ≤200 行）；同一会话已读过的段不要重读。"
+                    Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'violation' `
+                        -Tool $toolName -SessionId $sessionId -Detail "large-read ${size}B：$targetPath"
+                    [Console]::Error.WriteLine($msg)
+                    exit 2
+                }
+            }
+        }
         Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'pass' `
             -Tool $toolName -SessionId $sessionId -Detail "非受保护目标：$targetPath"
         exit 0

@@ -167,6 +167,17 @@ class TestContextMeter:
         assert out2 == {}, "同档（仍在 [150k,200k)）不应重复提醒"
         assert audit_lines(repo)[-1]["verdict"] == "pass"
 
+    def test_软线措辞与硬线措辞(self, repo: Path):
+        """09-16 两档：<250k 为软提醒（须先产出增量），≥250k 为硬线（立即收尾）。"""
+        t1 = write_transcript(repo, 160_000)
+        _, out1, _, _ = run_hook(posttooluse_payload(t1, session_id="tier-soft"), repo)
+        ctx1 = out1["hookSpecificOutput"]["additionalContext"]
+        assert "软提醒" in ctx1 and "增量" in ctx1 and "硬线：立即收尾" not in ctx1
+        t2 = write_transcript(repo, 260_000)
+        _, out2, _, _ = run_hook(posttooluse_payload(t2, session_id="tier-hard"), repo)
+        ctx2 = out2["hookSpecificOutput"]["additionalContext"]
+        assert "250k 硬线" in ctx2 and "立即收尾" in ctx2
+
     def test_越200k再提醒(self, repo: Path):
         t1 = write_transcript(repo, 160_000, name="t1.jsonl")
         run_hook(posttooluse_payload(t1), repo)
