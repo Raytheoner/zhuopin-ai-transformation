@@ -7279,12 +7279,24 @@ def _acquire_locked(
         print(f"📖 命中根 §4 路由表 → 先读 `{hint}`（Cowork 侧规则按需 Read 的机器提示）")
 
     if recent_others:
-        others_desc = "、".join(
-            f"{h['who']}（{h['age_minutes']:.0f} 分钟前，{h['note']}）" if h.get("note")
-            else f"{h['who']}（{h['age_minutes']:.0f} 分钟前）"
-            for h in recent_others
-        )
-        print(f"⚠ 最近 {RECENT_ACQUIRE_WINDOW_MINUTES} 分钟内还有其它身份 acquire 过本锁：{others_desc}")
+        # 队列 #596 ⑵：单次可达数千字，抵消「成功只一行」的机制税削减
+        # 收益——默认压成一行（去重人数＋最近一条），`--verbose` 展开全文。
+        if getattr(args, "verbose", False):
+            others_desc = "、".join(
+                f"{h['who']}（{h['age_minutes']:.0f} 分钟前，{h['note']}）" if h.get("note")
+                else f"{h['who']}（{h['age_minutes']:.0f} 分钟前）"
+                for h in recent_others
+            )
+            print(f"⚠ 最近 {RECENT_ACQUIRE_WINDOW_MINUTES} 分钟内还有其它身份 acquire 过本锁：{others_desc}")
+        else:
+            distinct_who = len({h["who"] for h in recent_others})
+            latest = min(recent_others, key=lambda h: h["age_minutes"])
+            latest_desc = (
+                f"{latest['who']}（{latest['age_minutes']:.0f} 分钟前，{latest['note']}）"
+                if latest.get("note") else f"{latest['who']}（{latest['age_minutes']:.0f} 分钟前）"
+            )
+            print(f"⚠ 最近 {RECENT_ACQUIRE_WINDOW_MINUTES} 分钟内还有 {distinct_who} 个其它身份 "
+                  f"acquire 过本锁（最近一条：{latest_desc}；完整列表用 --verbose 重跑查看）")
 
     if reserve_requests:
         # 队列 #163/#185：直接分配并返回字面编号，同一次持锁窗口内原子
@@ -7802,14 +7814,15 @@ def main() -> int:
     )
     parser.add_argument(
         "--verbose", action="store_true",
-        help="队列 #594（P3 机制税削减）：仅 `commit-edit`／`commit-append` 认——"
-             "默认成功路径只打印内部三步（acquire/edit-or-append/release）合并后"
-             "的一份摘要（⚠ 告警块照旧全部保留，折叠的只是「一切正常」时的例行"
-             "回显），失败路径永远打印全文不受本参数影响。传本参数则原样透传三步"
-             "各自的完整输出。**`acquire`／`release`／`append-row`／`edit-row`／"
-             "`status` 等既有子命令的输出不受本参数影响**——它们的多行回显（权威"
-             "路径、高水位线、路由提示等）是既有测试与既有工作流依赖的既定契约，"
-             "本次改造的合并对象是「新增的复合子命令」，不回改存量子命令行为",
+        help="队列 #594（P3 机制税削减）：`commit-edit`／`commit-append` 默认成功"
+             "路径只打印内部三步（acquire/edit-or-append/release）合并后的一份摘要"
+             "（⚠ 告警块照旧全部保留，折叠的只是「一切正常」时的例行回显），失败"
+             "路径永远打印全文不受本参数影响。传本参数则原样透传三步各自的完整输出。"
+             "`release`／`append-row`／`edit-row`／`status` 等既有子命令的输出不受"
+             "本参数影响——它们的多行回显（权威路径、高水位线、路由提示等）是既有"
+             "测试与既有工作流依赖的既定契约。队列 #596 ⑵：`acquire`（含直接调用、"
+             "含复合命令内部转调）的「最近 N 分钟内还有其它身份 acquire 过本锁」提示"
+             "例外——默认压成一行（去重人数＋最近一条），传本参数展开全文",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 

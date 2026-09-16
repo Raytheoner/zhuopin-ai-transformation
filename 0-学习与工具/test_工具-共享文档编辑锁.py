@@ -873,8 +873,32 @@ class RecentAcquireHistoryTests(unittest.TestCase):
 
         result = run("--file", self.target, "acquire", "--who", "CC-QD-B")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("120 分钟内还有其它身份", result.stdout)
+        # 队列 #596 ⑵：默认压成一行（去重人数＋最近一条），不再铺开全文。
+        self.assertIn("120 分钟内还有 1 个其它身份", result.stdout)
         self.assertIn("Cowork-财务专线", result.stdout)
+        self.assertIn("完整列表用 --verbose 重跑查看", result.stdout)
+
+    def test_recent_acquirer_verbose_expands_full_list(self):
+        run("--file", self.target, "acquire", "--who", "Cowork-财务专线", "--note", "登记#1")
+        run("--file", self.target, "release", "--who", "Cowork-财务专线")
+
+        result = run("--verbose", "--file", self.target, "acquire", "--who", "CC-QD-B")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("120 分钟内还有其它身份 acquire 过本锁：Cowork-财务专线", result.stdout)
+        self.assertNotIn("完整列表用 --verbose 重跑查看", result.stdout)
+
+    def test_recent_acquirer_quiet_counts_distinct_who_not_entries(self):
+        """同一身份在窗口内多次 acquire 只算 1 人——「人数」去重按 who，不是
+        按条目数。"""
+        run("--file", self.target, "acquire", "--who", "A")
+        run("--file", self.target, "release", "--who", "A")
+        run("--file", self.target, "acquire", "--who", "A", "--note", "第二次")
+        run("--file", self.target, "release", "--who", "A")
+
+        result = run("--file", self.target, "acquire", "--who", "B")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("还有 1 个其它身份", result.stdout)
+        self.assertIn("第二次", result.stdout)  # 最近一条＝第二次那条
 
     def test_acquirer_outside_window_is_not_echoed(self):
         run("--file", self.target, "acquire", "--who", "A")
@@ -9398,6 +9422,7 @@ class CommitEditAppendCompositeTests(unittest.TestCase):
     """
 
     FIXTURE = (
+        "> **编号高水位线：§一 #100 ｜ §四 #50**（说明文字）\n\n"
         "## 一、任务看板\n\n"
         "| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |\n"
         "|---|------|--------|-------------|----------|------|--------|------|\n"
@@ -9439,7 +9464,9 @@ class CommitEditAppendCompositeTests(unittest.TestCase):
         lock_text = Path(str(self.target) + ".editlock").read_text(encoding="utf-8")
         self.assertIn("released", lock_text)
 
-    def test_commit_edit_failure_at_edit_row_step_keeps_lock_and_prints_full_detail(self):
+    def test_commit_edit_failure_before_write_auto_releases(self):
+        """队列 #596 ⑴：校验失败发生在写盘之前（目标文件写前/写后逐字节
+        相同）——自动放锁，不再要求人工 release。"""
         before = self.target.read_text(encoding="utf-8")
         result = self._run(
             "commit-edit", "--who", "A", "--section", "一", "--number", "100",
@@ -9448,10 +9475,45 @@ class CommitEditAppendCompositeTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         # 失败路径不受精简影响：原样透传 edit-row 的多行拒绝详情。
         self.assertIn("未闭合的反引号游程", result.stdout)
-        self.assertIn("edit-row 未通过，锁保持占用", result.stdout)
+        self.assertIn("已自动放锁，无需人工 release", result.stdout)
         # 未落盘。
         self.assertEqual(self.target.read_text(encoding="utf-8"), before)
-        # 锁仍被 A 占用（不是 released 标记）。
+        # 锁已自动释放（released 标记），不是仍被 A 占用。
+        lock_text = Path(str(self.target) + ".editlock").read_text(encoding="utf-8")
+        self.assertIn('"released"', lock_text)
+
+    def test_commit_edit_failure_after_write_keeps_lock(self):
+        """队列 #596 ⑴：edit-row 步骤返回非零，但目标文件已被改动（写前/
+        写后不再逐字节相同）——判定为已写入，锁必须保持占用，交人工核实。"""
+        m = self.module = _load_module()
+        before_texts = {str(self.target): self.target.read_text(encoding="utf-8")}
+
+        def fake_edit_row(sub_args):
+            # 模拟"写盘之后才失败"：先真写一次，再返回失败码。
+            self.target.write_text(
+                self.target.read_text(encoding="utf-8") + "\n<!-- 半成品写入 -->\n",
+                encoding="utf-8",
+            )
+            print("✗ 模拟：写盘后才发现的失败")
+            return 1
+
+        acquire_result = self._run("acquire", "--who", "A")
+        self.assertEqual(acquire_result.returncode, 0, acquire_result.stdout)
+        self._run("release", "--who", "A")
+
+        with unittest.mock.patch.object(m, "cmd_edit_row", side_effect=fake_edit_row):
+            ns = argparse.Namespace(
+                file=str(self.target), who="A", note="", section="一", number="100",
+                set=["触碰区=不会用到"], append=None, changes_json=None,
+                stdin_json=False, append_sep=None, domain=None, repair=False,
+                waiver="", mechanism_wip_cap=None, stale_days=None, stale_cap=None,
+                stale_probe_timeout=None, force_mechanism_wip=False, verbose=False,
+            )
+            rc = m.cmd_commit_edit(ns)
+        self.assertNotEqual(rc, 0)
+        self.assertNotEqual(
+            self.target.read_text(encoding="utf-8"), before_texts[str(self.target)],
+        )
         lock_text = Path(str(self.target) + ".editlock").read_text(encoding="utf-8")
         self.assertNotIn('"released"', lock_text)
         self.assertIn('"who": "A"', lock_text)
@@ -9508,17 +9570,37 @@ class CommitEditAppendCompositeTests(unittest.TestCase):
         text = self.target.read_text(encoding="utf-8")
         self.assertIn("| 51 | 新事项 | Shao Peishen | 不急 |", text)
 
-    def test_commit_append_failure_at_append_row_step_keeps_lock(self):
+    def test_commit_append_failure_before_write_auto_releases(self):
+        """队列 #596 ⑴：同 commit-edit——写盘之前失败（写前/写后逐字节
+        相同）自动放锁。"""
         before = self.target.read_text(encoding="utf-8")
         result = self._run(
             "commit-append", "--who", "A", "--section", "四", "--number", "51",
             "--cell", "只有一个字段",
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("append-row 未通过，锁保持占用", result.stdout)
+        self.assertIn("已自动放锁，无需人工 release", result.stdout)
         self.assertEqual(self.target.read_text(encoding="utf-8"), before)
         lock_text = Path(str(self.target) + ".editlock").read_text(encoding="utf-8")
-        self.assertNotIn('"released"', lock_text)
+        self.assertIn('"released"', lock_text)
+
+    def test_commit_append_reserve_uses_reserved_number_and_advances_high_water_mark(self):
+        """队列 #596 ⑷：`--reserve` 让 acquire 一步预留字面编号、直接当
+        `--number` 用；成功后高水位线随之推进，且不得与 `--number` 同传。"""
+        result = self._run(
+            "commit-append", "--who", "A", "--section", "四", "--reserve",
+            "--cell", "新事项", "--cell", "Shao Peishen", "--cell", "不急",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        text = self.target.read_text(encoding="utf-8")
+        self.assertIn("| 51 | 新事项 | Shao Peishen | 不急 |", text)
+
+        conflict = self._run(
+            "commit-append", "--who", "A", "--section", "四", "--reserve",
+            "--number", "52", "--cell", "x", "--cell", "y", "--cell", "z",
+        )
+        self.assertNotEqual(conflict.returncode, 0)
+        self.assertIn("互斥", conflict.stdout)
 
     def test_commit_edit_help_lists_new_subcommands(self):
         result = subprocess.run(
