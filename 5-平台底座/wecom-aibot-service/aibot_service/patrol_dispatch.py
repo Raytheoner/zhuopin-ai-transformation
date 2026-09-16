@@ -27,8 +27,8 @@ Popen` 起一个无头 `claude -p` 会话去执行拆件巡逻章程，不等任
    CC，会有多个会话同时抢 README/队列编辑锁——章程既有的编辑锁重试/退避
    （协议〇.7）能扛住偶发冲突，但没必要每次都制造这种冲突。锁文件记
    `pid`；下次候选起活时若该 `pid` 仍存活，直接跳过（不算失败——已有
-   一个在跑，它自己会在收工前按本模块下发的"再探测一次"指令把这次的
-   新信号一并吃掉，见 §三）。`pid` 不存活（上次异常退出留下的陈旧锁）
+   一个在跑，等它退出后 `_spawn_watcher` 会复查信号、把这次的新信号
+   一并接住，见后文「关于起活期间又来一条」）。`pid` 不存活（上次异常退出留下的陈旧锁）
    则视为空闲，照常起活——**宁可偶尔多起一个重复的（章程编辑锁会兜住），
    也不可把"查活着与否本身失败"当成"活着"而永久卡死**（`_pid_alive`
    查询异常时的口径，见该函数文首）。
@@ -44,18 +44,24 @@ Popen` 起一个无头 `claude -p` 会话去执行拆件巡逻章程，不等任
    是归档主流程的旁路增强，阻塞等一次可能耗时数分钟的拆件会话，等于把
    "标个状态"的延迟系在"干完一整套人工判断量级的活"上，本末倒置。
 
-## 关于"起活期间又来一条"
+## 关于"起活期间又来一条"（队列 #599 P6：调度层无状态化）
 
-见迁入仓库的章程正本文首——本模块**不修改**章程正文（原文照搬，规则改
-动须走总线），只在起活时于章程原文前追加一段"事件驱动起活"的调用侧
-说明（`_build_prompt`），要求无头 CC 收工前多探测一次信号、有则再走一轮
-再收工，直到某次探测为空。这段说明只影响"这次怎么被叫起来的"，不改
-章程本身判据。
+此前的做法是让无头 CC 自己在收工前多探测一次信号、有则回到章程 §一 再
+走一轮——这会让同一个会话越跑越长，且"要不要再走一轮"这个判断散落在
+被调度的那个会话自己手里，调度方（本模块）反而不知道也管不了。**现改
+为调度层负责**：起活成功后另起一个不阻塞的后台等待（`_spawn_watcher`，
+生产用守护线程、测试可注入同步替身 `run_in_thread`，遵循文首取舍 4
+「非阻塞」），待子进程真正退出后再读一次 `patrol_signal.read_signal`——
+仍有未消费的信号即再调用本函数起一轮全新会话，如此链式推进，直到某次
+子进程退出时信号已空为止。**每一轮会话只对"这一轮"负责，不再自己判断
+是否要再来一轮**——`_build_prompt` 因此不再附带"回到 §一 再走一轮"的
+调用侧说明。
 """
 from __future__ import annotations
 
 import json
 import subprocess
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,6 +69,7 @@ from typing import Callable, Optional
 
 from zhuopin_platform.audit import AuditEvent
 
+from . import patrol_signal
 from .repo_paths import (
     resolve_patrol_charter_path,
     resolve_patrol_dispatch_lock_path,
@@ -87,13 +94,12 @@ chaijian-patrol/SKILL.md`，原文原样、未改一字）。
 原因）；随后按 §一~§四 全套执行，**执行完毕、报告已登记 §二 批次之后**
 才消费信号——这是章程原有顺序，未变。
 
-🔴 唯一新增于本次起活方式、章程原文之外的规则（只在这次无头调用生效，
-不改章程正文）：你完成一轮 §一~§四（含信号消费）之后、在结束本次会话
-之前，**再跑一次章程 §〇ter 的探测命令**；若仍是 `[SIGNAL]`（说明处理
-期间又有新回件到达，被同一把并发守卫挡在外面、没能触发第二个无头会话），
-**回到 §一 再走一轮**，如此循环，直到某一次探测得到 `[NO-SIGNAL]` 为止，
-再按章程 §六 正常收尾。这只是为了不遗漏"起活期间又来一条"的信号，不是
-新增业务判据。
+🔴 本次起活方式新增于章程原文之外的规则（只在这次无头调用生效，不改
+章程正文；队列 #599 P6 起，"要不要再走一轮"已改由调度层负责，本会话
+不再自己判断）：**你只对这一轮 §一~§四（含信号消费）负责，收尾前不必
+再探测信号、不必回到 §一 重走**——起活期间若又有新回件到达，调度层会
+在你这次会话真正收工、进程退出后另起一个全新的无头会话去处理，与本次
+会话无关。按章程 §六 正常收尾即可。
 
 若 `mcp__ccd_session_mgmt__set_session_title` 等工具不存在，跳过继续。
 
@@ -128,6 +134,51 @@ def _pid_alive(pid: int) -> bool:
 
 def _build_prompt(charter_text: str) -> str:
     return _EVENT_DRIVEN_PREAMBLE + charter_text
+
+
+def _run_in_thread(target: Callable[[], None]) -> None:
+    threading.Thread(target=target, daemon=True).start()
+
+
+def _spawn_watcher(
+    proc: "subprocess.Popen",
+    repo_root: Path,
+    *,
+    audit,
+    evaluator: str,
+    log: Callable[[str], None],
+    popen: Callable[..., "subprocess.Popen"],
+    pid_alive: Callable[[int], bool],
+    run_in_thread: Callable[[Callable[[], None]], None],
+) -> None:
+    """子进程退出后复查信号，仍有未消费信号则再起一轮全新会话（队列 #599 P6）。
+
+    只等这一个子进程，不轮询——`proc.wait()` 阻塞在后台线程里，主线程
+    早已随 `dispatch_headless_patrol` 返回（文首取舍 4「非阻塞」）。链式
+    推进由"再调一次 `dispatch_headless_patrol`"自然实现：它自己起活成功
+    时又会再挂一个 `_spawn_watcher`，直到某次子进程退出时信号已空为止。
+    """
+    def _watch() -> None:
+        try:
+            proc.wait()
+        except Exception:  # noqa: BLE001 —— 等待本身失败不得让后台线程抛出
+            return
+        try:
+            snapshot = patrol_signal.read_signal(repo_root)
+        except Exception:  # noqa: BLE001 —— 复查信号失败按"无新信号"处理，不误起
+            return
+        if not snapshot.present:
+            return
+        try:
+            log("· [拆件起活] 子进程已退出、信号仍在，链式再起一轮")
+        except Exception:  # noqa: BLE001
+            pass
+        dispatch_headless_patrol(
+            repo_root, audit=audit, evaluator=evaluator, log=log,
+            popen=popen, pid_alive=pid_alive, run_in_thread=run_in_thread,
+        )
+
+    run_in_thread(_watch)
 
 
 @dataclass
@@ -169,6 +220,7 @@ def dispatch_headless_patrol(
     log: Callable[[str], None] = print,
     popen: Callable[..., "subprocess.Popen"] = subprocess.Popen,
     pid_alive: Callable[[int], bool] = _pid_alive,
+    run_in_thread: Callable[[Callable[[], None]], None] = _run_in_thread,
 ) -> DispatchResult:
     """起一个无头 CC 去执行拆件巡逻章程。绝不向上抛——任何失败都只记
     审计＋日志，不得让 `mark_reply_arrived` 的"绝不向上抛"契约被打破
@@ -190,7 +242,7 @@ def dispatch_headless_patrol(
                 return _record(audit, evaluator, DispatchResult(
                     ACTION_SKIPPED_BUSY, pid=existing_pid,
                     detail=(f"已有无头 CC 在跑（pid={existing_pid}），本次不重复起——"
-                            f"它收工前会按本次起活给的指令再探测一次信号，不会漏。"),
+                            f"它退出后调度层会复查一次信号，不会漏（队列 #599 P6）。"),
                 ), log=log)
             # pid 不存活（陈旧锁）——继续起活，下方会覆盖这份锁文件。
 
@@ -253,6 +305,14 @@ def dispatch_headless_patrol(
             )
         except OSError:
             pass  # 并发守卫锁写失败不影响"已真实起活"这个事实，见文首取舍 2
+
+        try:
+            _spawn_watcher(
+                proc, repo_root, audit=audit, evaluator=evaluator, log=log,
+                popen=popen, pid_alive=pid_alive, run_in_thread=run_in_thread,
+            )
+        except Exception:  # noqa: BLE001 —— 挂后台复查失败不代表进程没起，继续按已起活记
+            pass
 
         return _record(audit, evaluator, DispatchResult(
             ACTION_STARTED, pid=proc.pid, log_path=str(log_path),

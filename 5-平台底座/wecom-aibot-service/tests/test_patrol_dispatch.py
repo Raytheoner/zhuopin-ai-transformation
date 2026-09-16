@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from aibot_service import patrol_dispatch as pd
+from aibot_service import patrol_signal
 from aibot_service.repo_paths import (
     resolve_patrol_charter_path,
     resolve_patrol_dispatch_lock_path,
@@ -53,6 +54,10 @@ class FakeProc:
     def __init__(self, pid=4242, stdin_raises=False):
         self.pid = pid
         self.stdin = FakeStdin(raise_on_write=stdin_raises)
+
+    def wait(self):
+        """默认代表"进程立即退出"——`_spawn_watcher` 里 `proc.wait()` 的替身。"""
+        return 0
 
 
 def write_charter(repo_root: Path, text: str = "章程正文") -> Path:
@@ -311,3 +316,111 @@ class TestPrompt:
         assert prompt.rsplit(charter_text, 1)[-1] == "" or prompt.endswith(charter_text)
         assert charter_text in prompt
         assert prompt.index(charter_text) > 0, "章程原文前必须有事件驱动说明，不能是纯拼接"
+
+    def test_前言不再要求无头CC自己回到一再走一轮(self, tmp_path):
+        # 队列 #599 P6：这条指令已迁移给调度层（_spawn_watcher），
+        # 前言里不应再出现让无头 CC 自己判断"要不要再走一轮"的旧版措辞。
+        assert "回到 §一 再走一轮" not in pd._EVENT_DRIVEN_PREAMBLE
+        assert "不必回到" in pd._EVENT_DRIVEN_PREAMBLE
+        assert "调度层" in pd._EVENT_DRIVEN_PREAMBLE
+
+
+class TestWatcherChaining:
+    """队列 #599 P6：调度层在子进程退出后复查信号，链式起下一轮。"""
+
+    def test_锁占用期间到达的信号不丢失(self, tmp_path):
+        write_charter(tmp_path)
+        calls = []
+
+        class Round1Proc(FakeProc):
+            def wait(self):
+                # 模拟：第一轮无头 CC 正跑着的时候，又有一条新回件到达——
+                # 本模块从不读写 patrol_signal.json（文首取舍 3），这里只是
+                # 在测试里代替"外部世界在它运行期间发生的事"。
+                patrol_signal.raise_signal(
+                    tmp_path, letter_number="采购部#1",
+                    archived_filename="x.md", now=NOW,
+                )
+                return 0
+
+        class Round2Proc(FakeProc):
+            def wait(self):
+                # 模拟：第二轮无头 CC 按章程走完流程、自行消费了信号——
+                # 信号消费只发生在无头 CC 自己那一侧，不是本模块的职责。
+                patrol_signal.clear_signal(tmp_path)
+                return 0
+
+        def popen(argv, **kwargs):
+            proc = (Round1Proc if not calls else Round2Proc)(pid=100 + len(calls))
+            calls.append(proc)
+            return proc
+
+        pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, popen=popen, pid_alive=lambda pid: False,
+            run_in_thread=lambda fn: fn(),
+        )
+        assert len(calls) == 2, "第一轮退出时信号仍在，必须链式再起第二轮，不能丢"
+
+    def test_单次退出无新信号不重复起会话(self, tmp_path):
+        write_charter(tmp_path)
+        calls = []
+
+        def popen(argv, **kwargs):
+            proc = FakeProc(pid=100 + len(calls))
+            calls.append(proc)
+            return proc
+
+        pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, popen=popen, pid_alive=lambda pid: False,
+            run_in_thread=lambda fn: fn(),
+        )
+        assert len(calls) == 1, "退出时信号已空，不应再起第二轮"
+
+    def test_watcher读信号失败按无信号处理不误起(self, tmp_path, monkeypatch):
+        write_charter(tmp_path)
+        calls = []
+
+        def popen(argv, **kwargs):
+            proc = FakeProc(pid=100 + len(calls))
+            calls.append(proc)
+            return proc
+
+        def boom_read_signal(repo_root):
+            raise RuntimeError("信号文件读取本身挂了")
+
+        monkeypatch.setattr(patrol_signal, "read_signal", boom_read_signal)
+        pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, popen=popen, pid_alive=lambda pid: False,
+            run_in_thread=lambda fn: fn(),
+        )
+        assert len(calls) == 1, "复查信号本身异常不得误判为有信号、误起第二轮"
+
+    def test_watcher挂起失败不影响已起活的判定(self, tmp_path):
+        write_charter(tmp_path)
+
+        def boom_thread(fn):
+            raise RuntimeError("挂后台线程失败")
+
+        result = pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, popen=lambda *a, **k: FakeProc(pid=1),
+            pid_alive=lambda pid: False, run_in_thread=boom_thread,
+        )
+        assert result.action == pd.ACTION_STARTED
+
+    def test_默认watcher走真实后台线程不阻塞主流程(self, tmp_path):
+        write_charter(tmp_path)
+        import time
+
+        class SlowWaitProc(FakeProc):
+            def wait(self):
+                time.sleep(0.3)
+                return 0
+
+        start = time.monotonic()
+        result = pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, popen=lambda *a, **k: SlowWaitProc(pid=321),
+            pid_alive=lambda pid: False,
+        )
+        elapsed = time.monotonic() - start
+        assert result.action == pd.ACTION_STARTED
+        assert elapsed < 0.2, "默认 run_in_thread 必须是真实后台线程，不得阻塞主调用"
