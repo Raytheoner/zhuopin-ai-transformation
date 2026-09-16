@@ -579,5 +579,135 @@ class Worktree残留回收_v2_4(_Base):
         self.assertFalse(self.dest_dir.exists())
 
 
+class 脚本建隔离worktree四场景_v2_600(_Base):
+    """队列 `#600` ⑴⑵⑷ 四场景：脚本层强制建 worktree（成功／建失败／声明缺名）＋第三道闸
+    （收工核验主仓泄漏）。与 `Worktree残留回收_v2_4` 同法——`$RepoRoot` 走脚本物理落盘位置，
+    只能在真实仓库根下用随机名摆夹具、跑完必删（见该类 docstring）。
+
+    实测先确认过前提：`git worktree add` 建出的目录不会被主仓 `git status --porcelain`
+    判成未跟踪内容（git 认得链接 worktree），故第三道闸不会把「脚本自己建的 worktree」
+    误判成泄漏——本类第 1/4 条用例即验证这一点没有回归。
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.real_repo_root = SCRIPT.resolve().parent.parent
+        token = uuid.uuid4().hex[:8]
+        self.wt_name = f"test-wt600-{token}"
+        self.lane_name = f"test-lane600-{token}"
+        self.branch_name = f"claude/optest600-{token}"
+        self.wt_dir = self.real_repo_root / ".claude" / "worktrees" / self.wt_name
+        self.decoy_dir = self.real_repo_root / ".claude" / "worktrees" / f"decoy600-{token}"
+        self.leak_file = self.real_repo_root / f"_test-leak-600-{token}.md"
+
+    def tearDown(self):
+        real_repo = self.real_repo_root
+        subprocess.run(["git", "-C", str(real_repo), "worktree", "remove", "--force", str(self.wt_dir)],
+                        capture_output=True)
+        subprocess.run(["git", "-C", str(real_repo), "worktree", "remove", "--force", str(self.decoy_dir)],
+                        capture_output=True)
+        shutil.rmtree(self.wt_dir, ignore_errors=True)
+        shutil.rmtree(self.decoy_dir, ignore_errors=True)
+        subprocess.run(["git", "-C", str(real_repo), "worktree", "prune"], capture_output=True)
+        subprocess.run(["git", "-C", str(real_repo), "branch", "-D", self.branch_name], capture_output=True)
+        if self.leak_file.exists():
+            self.leak_file.unlink()
+        super().tearDown()
+
+    def _write_plan(self, worktree_field: str = "☑（{wt}，新 worktree，收工自删）") -> None:
+        text = (
+            PLAN_TEXT
+            .replace("泳道：demo-lane", f"泳道：{self.lane_name}")
+            .replace("claude/op1231a-demo", self.branch_name)
+            .replace("worktree：☑（demo，新 worktree，收工自删）",
+                      "worktree：" + worktree_field.format(wt=self.wt_name))
+        )
+        self.plan.write_text(text, encoding="utf-8")
+
+    def test_正常worktree由脚本建成并注入env标记(self):
+        self._write_plan()
+        self.stub_file.write_text(
+            "@echo off\r\n"
+            "echo STUB-LANE-WT: %ZHUOPIN_LANE_WORKTREE%\r\n"
+            "echo STUB-MAIN-REPO: %ZHUOPIN_MAIN_REPO%\r\n"
+            "echo OPENER_DONE\r\n"
+            "exit /b 0\r\n",
+            encoding="utf-8",
+        )
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(rows[0]["Status"], "OK")
+        # worktree 真被脚本建出来（不是夹具预置），且第三道闸没把它自己误判成泄漏。
+        self.assertTrue(self.wt_dir.is_dir())
+        wt_list = subprocess.run(["git", "-C", str(self.real_repo_root), "worktree", "list"],
+                                  capture_output=True, text=True, encoding="utf-8").stdout
+        self.assertIn(str(self.wt_dir).replace("\\", "/"), wt_list)  # git 输出恒用正斜杠
+        log = (self.log_dir / f"{self.lane_name}-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("worktree 已建", log)
+        self.assertIn("STUB-LANE-WT: " + str(self.wt_dir), log)
+        self.assertIn("STUB-MAIN-REPO: " + str(self.real_repo_root), log)
+        self.assertFalse((self.log_dir / f"{self.lane_name}-A1-main-leak.patch").exists())
+
+    def test_worktree建失败时判FAIL不起claude(self):
+        # 让目标分支先在别处（decoy worktree）被检出——脚本走「分支已存在 ⇒ 不带 -b 的
+        # worktree add」分支，git 会因「分支已在别的 worktree 检出」报错（fatal，exit 128），
+        # 产出确定性可复现的建失败场景（实测见 OP-0916-ZZ 手工探测，`already used by worktree`）。
+        subprocess.run(
+            ["git", "-C", str(self.real_repo_root), "worktree", "add", "-b", self.branch_name,
+             str(self.decoy_dir), "master"],
+            check=True, capture_output=True,
+        )
+        self._write_plan()
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)  # 批内有 FAIL ⇒ 批次退出码 1
+        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(rows[0]["Status"], "FAIL(worktree-build)")
+        log = (self.log_dir / f"{self.lane_name}-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("git worktree add 失败", log)
+        self.assertNotIn("STUB-ARGS", log)  # claude 确未被起，没消耗一次真实调用
+        self.assertFalse(self.wt_dir.exists())
+
+    def test_声明worktree却解析不出名字时判FAIL(self):
+        self._write_plan(worktree_field="☑")
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(rows[0]["Status"], "FAIL(worktree-name)")
+        log = (self.log_dir / f"{self.lane_name}-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("解析不出名字", log)
+        self.assertFalse(self.wt_dir.exists())
+
+    def test_主仓误写触发第三道闸判FAIL并存补丁不自动撤回(self):
+        # 模拟 #596/#599 那类泄漏：claude 子进程（本测试用桩顶替）绕过前两道闸，直接用
+        # 绝对路径往主工作区写一个白名单外的新文件——第三道闸须在收工核验时逮住它。
+        self._write_plan()
+        leak_path = self.leak_file
+        self.stub_file.write_text(
+            "@echo off\r\n"
+            f'echo leaked content> "{leak_path}"\r\n'
+            "echo OPENER_DONE\r\n"
+            "exit /b 0\r\n",
+            encoding="utf-8",
+        )
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(rows[0]["Status"], "FAIL(main-leak)")
+        log = (self.log_dir / f"{self.lane_name}-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("收工核验", log)
+        self.assertIn("🔴🔴🔴", log)
+        patch = self.log_dir / f"{self.lane_name}-A1-main-leak.patch"
+        self.assertTrue(patch.is_file())
+        patch_text = patch.read_text(encoding="utf-8-sig")
+        self.assertIn(leak_path.name, patch_text)
+        # 不自动撤回：泄漏文件应仍原样留在主工作区，供人工核实后再决定去留。
+        self.assertTrue(leak_path.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

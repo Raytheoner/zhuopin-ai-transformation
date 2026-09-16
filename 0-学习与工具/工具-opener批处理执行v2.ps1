@@ -267,6 +267,11 @@ $laneBlock = {
             }
         }
 
+        # 队列 #600 ⑷：收工核验（第三道闸）——起 claude 前先拍一张主工作区 git 状态快照，供
+        # 本条 opener 跑完后比对是否有非白名单脏文件泄漏进主工作区。不论是否声明 worktree 都跑
+        # 这一闸：#596/#599 两条实证泄漏正是「opener 未声明 worktree」——第一/二道闸管不到的情形。
+        $preLeakSnapshot = @(& git -C $repoRootInJob -c core.quotepath=false status --porcelain)
+
         $tmp = Join-Path $logDir ($laneName + '-' + $op.Id + '.opener.txt')
         [System.IO.File]::WriteAllText($tmp, $header + "`r`n" + $op.Text, $Utf8NoBom)
         $t0 = Get-Date
@@ -370,6 +375,43 @@ $laneBlock = {
             }
         } catch {
             ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 残留回收失败（非致命，不影响本条判定）：' + $_.Exception.Message) | Out-File -FilePath $log -Append -Encoding utf8
+        }
+        # 队列 #600 ⑷：收工核验——比对起跑前快照，主工作区新增非白名单脏文件（白名单仅
+        # `reports/`、`1-转型规划/0-全景路线图/合入登记/pending-ff.jsonl`，同 ⑶ 两道 hooks 白名单
+        # 一致）⇒ 本条判 FAIL、git diff／未跟踪文件原文存补丁到日志目录、日志醒目告警；
+        # **不自动撤回**（人工核实后再决定去留，机制化此前 596/599 两条靠手工 `git diff` 留证
+        # 的做法，实证见 reports/opener-batch/20260916-204736/596-main-leak.patch／599-main-leak.patch）。
+        $postLeakSnapshot = @(& git -C $repoRootInJob -c core.quotepath=false status --porcelain)
+        $newLeakLines = @($postLeakSnapshot | Where-Object { $preLeakSnapshot -notcontains $_ })
+        $leakLines = @($newLeakLines | Where-Object {
+            $lp = $_.Substring(3)
+            if ($lp -match '^"(.*)"$') { $lp = $lp.Substring(1, $lp.Length - 2) }
+            if ($lp -match ' -> ') { $lp = ($lp -split ' -> ')[-1] }
+            -not ($lp -eq 'reports' -or $lp -like 'reports/*' -or $lp -eq '1-转型规划/0-全景路线图/合入登记/pending-ff.jsonl')
+        })
+        if ($leakLines.Count -gt 0) {
+            $patchPath = Join-Path $logDir ($laneName + '-' + $op.Id + '-main-leak.patch')
+            $patchLines = @('# 队列 #600 ⑷ 收工核验：主工作区新增非白名单脏文件，未自动撤回，人工核实后再决定去留', '')
+            foreach ($ll in $leakLines) {
+                $lp = $ll.Substring(3)
+                if ($lp -match '^"(.*)"$') { $lp = $lp.Substring(1, $lp.Length - 2) }
+                if ($lp -match ' -> ') { $lp = ($lp -split ' -> ')[-1] }
+                if ($ll -match '^\?\?') {
+                    $patchLines += ('----- 未跟踪新文件：' + $lp + ' -----')
+                    $fullP = Join-Path $repoRootInJob $lp
+                    if (Test-Path -LiteralPath $fullP -PathType Leaf) {
+                        $patchLines += (Get-Content -LiteralPath $fullP -Raw -Encoding UTF8)
+                    }
+                } else {
+                    $patchLines += ('----- 已跟踪文件改动：' + $lp + ' -----')
+                    $patchLines += (& git -C $repoRootInJob diff -- $lp)
+                }
+            }
+            $patchLines -join "`r`n" | Out-File -FilePath $patchPath -Encoding utf8
+            $alertMsg = '🔴🔴🔴 [lane:' + $laneName + '] ' + $op.Id + ' 收工核验：主工作区新增非白名单脏文件（第三道闸拦截）⇒ 本条判 FAIL，补丁已存 ' + $patchPath + '，不自动撤回，须人工核实：' + "`r`n" + ($leakLines -join "`r`n")
+            $alertMsg | Out-File -FilePath $log -Append -Encoding utf8
+            Write-Warning $alertMsg
+            $status = 'FAIL(main-leak)'
         }
         $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Sentinel = $sentinelBy; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Session = $sid; Model = $op.Model; Log = $log }
         if ($status -like 'FAIL*' -or $status -eq 'NO-SENTINEL') { break }
