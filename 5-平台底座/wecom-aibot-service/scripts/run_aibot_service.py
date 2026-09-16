@@ -63,7 +63,15 @@ from aibot_service.media_transfer import (  # noqa: E402
 )
 from aibot_service.constants import PAUL_USERID  # noqa: E402
 from aibot_service.gap_alert import build_reconnect_notice, last_event_timestamp, send_gap_alert  # noqa: E402
-from aibot_service.liveness import read_liveness, run_liveness_heartbeat  # noqa: E402
+from aibot_service.liveness import (  # noqa: E402
+    DEFAULT_LIVENESS_REL_PATH,
+    read_liveness,
+    run_liveness_heartbeat,
+)
+from aibot_service.local_outbox_connector import (  # noqa: E402
+    ensure_local_outbox_exists,
+    resolve_local_outbox_path,
+)
 from aibot_service.outbox_relay import (  # noqa: E402
     DEFAULT_POLL_INTERVAL_SECONDS,
     DEFAULT_UNREADABLE_REALERT_SECONDS,
@@ -269,7 +277,7 @@ def main() -> None:
     )
     # 队列 #147：存活戳文件——与审计 JSONL 物理隔离（见 liveness.py 模块
     # docstring），不随 WECOM_AIBOT_AUDIT_PATH 迁移。
-    liveness_path = SERVICE_DIR / "reports" / "aibot_liveness.json"
+    liveness_path = SERVICE_DIR / DEFAULT_LIVENESS_REL_PATH
 
     secrets = EnvSecretsProvider()
     audit = AuditLogger.jsonl(audit_path)
@@ -331,6 +339,15 @@ def main() -> None:
     # 一直读不到"的配置——而读不到的表象恰恰是"没有待发消息"。故一律由 `.env`
     # 显式给出，`os.pathsep`（Windows 上是 `;`）分隔，支持通配。
     outbox_paths = resolve_outbox_paths(os.environ.get(OUTBOX_PATHS_ENV))
+    # 队列 #595：本机提醒脚本（decision_reminder_check.py 等）改写本机
+    # outbox 而非各自新开连接——该路径**始终**注册（不受 `WECOM_AIBOT_
+    # OUTBOX_PATHS` 是否配置影响，与 SC2/FI2 那份跨机 outbox 语义不同：
+    # 本机文件必然可达，不存在"读不到＝通路断了"这一类故障）。先 touch
+    # 一次，确保 `outbox_relay.iter_pending` 不会在"从未有过一条提醒"时
+    # 把"文件不存在"误判成 `OutboxReadError`。
+    local_reminder_outbox_path = resolve_local_outbox_path(SERVICE_DIR)
+    ensure_local_outbox_exists(local_reminder_outbox_path)
+    outbox_paths = outbox_paths + [local_reminder_outbox_path]
     outbox_interval_seconds = float(
         os.environ.get(POLL_INTERVAL_ENV, DEFAULT_POLL_INTERVAL_SECONDS)
     )

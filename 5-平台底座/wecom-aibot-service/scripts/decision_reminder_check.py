@@ -53,6 +53,10 @@ patrol\\SKILL.md`），本脚本无法从仓库内触达，需 Cowork 侧改动�
   WECOM_AIBOT_AUDIT_PATH   可选，直接指定审计文件路径
   WECOM_AIBOT_DECISION_ACK_PATH  可选，指纹确认文件路径（默认服务目录下
                            `reports/decision_reminder_ack.json`；便于只读验证时另指）
+  WECOM_AIBOT_LIVENESS_PATH  可选，常驻服务存活戳文件路径（默认服务目录下
+                           `reports/aibot_liveness.json`，须与 `run_aibot_service.py`
+                           所写为同一份；队列 #595——本脚本不再自建连接，改核这份
+                           存活戳判断是否可写本机 outbox，测试隔离用）
   WECOM_WEBHOOK_URL        可选，主通道（智能机器人私信）失败时的兜底群 webhook
 """
 from __future__ import annotations
@@ -83,11 +87,14 @@ ensure_paths(__file__, SERVICE_DIR)  # noqa: E402
 
 from zhuopin_platform.audit import AuditLogger  # noqa: E402
 from zhuopin_platform.shared_tools.notifiers import wecom  # noqa: E402
-from zhuopin_platform.shared_tools.notifiers.wecom_aibot import AibotConnector  # noqa: E402
-from zhuopin_platform.shared_tools.secrets import EnvSecretsProvider  # noqa: E402
 
-from aibot_service.connection import BOTID_KEY, SECRET_KEY  # noqa: E402
 from aibot_service.constants import PAUL_USERID  # noqa: E402
+from aibot_service.liveness import DEFAULT_LIVENESS_REL_PATH  # noqa: E402
+from aibot_service.local_outbox_connector import (  # noqa: E402
+    LocalOutboxConnector,
+    ensure_local_outbox_exists,
+    resolve_local_outbox_path,
+)
 from aibot_service.decision_reminder import (  # noqa: E402
     ACK_COMMAND_HINT,
     DEFAULT_ACK_REL,
@@ -383,12 +390,22 @@ async def _run(dry_run: bool) -> int:
     save_decision_state(decision_state_path, new_decision_state)
     save_pool_state(pool_state_path, new_pool_state)
 
-    secrets = EnvSecretsProvider()
-    bot_id = secrets.get(BOTID_KEY)
-    secret = secrets.get(SECRET_KEY)
-    connector = AibotConnector(bot_id, secret, max_reconnect_attempts=3)
-    await connector.connect()
-    await asyncio.sleep(1)  # 等 aibot_subscribe 认证完成
+    # 队列 #595：不再各自新开 AibotConnector（同 BotID 多处长连接互踢，
+    # 09-16 当天四次同型 disconnected 均落在本脚本调用后约 1 分钟）——改写
+    # 本机 outbox，由常驻服务已持有的那条连接代发（`local_outbox_connector`
+    # 模块 docstring）。主服务不在线（存活戳过期/缺失）时 `send_markdown`
+    # 会抛 `MainServiceUnavailableError`，下面 `send_decision_reminder`／
+    # `send_open_pool_reminder` 既有的 except 分支据此走 webhook 兜底
+    # （`fallback_send`），不回退为自行建连。
+    local_outbox_path = resolve_local_outbox_path(SERVICE_DIR)
+    liveness_path = Path(
+        os.environ.get("WECOM_AIBOT_LIVENESS_PATH", "") or str(SERVICE_DIR / DEFAULT_LIVENESS_REL_PATH)
+    )
+    ensure_local_outbox_exists(local_outbox_path)
+    connector = LocalOutboxConnector(
+        outbox_path=local_outbox_path, liveness_path=liveness_path, audit=audit,
+        scenario="decision_reminder_check",
+    )
 
     try:
         if decision_message:

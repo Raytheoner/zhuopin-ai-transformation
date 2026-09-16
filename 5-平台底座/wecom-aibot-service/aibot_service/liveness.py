@@ -28,6 +28,11 @@ from .error_text import describe_exception
 
 DEFAULT_LIVENESS_INTERVAL_SECONDS = 300  # 5 分钟
 
+# 存活戳文件相对服务目录（`SERVICE_DIR`）的路径——`run_aibot_service.py`
+# 与 `local_outbox_connector.py` 等其他一次性脚本需要读同一份存活戳判断
+# 常驻服务是否还活着，单一来源，避免两处各写一遍字面量走漂（队列 #595）。
+DEFAULT_LIVENESS_REL_PATH = Path("reports") / "aibot_liveness.json"
+
 
 def write_liveness(path: Path, now: datetime) -> None:
     """覆写存活戳文件；父目录不存在时先建好。"""
