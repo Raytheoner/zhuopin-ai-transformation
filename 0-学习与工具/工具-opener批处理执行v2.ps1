@@ -208,6 +208,10 @@ $laneBlock = {
     $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
     $global:OutputEncoding = $Utf8NoBom
     $results = @()
+    # Start-Job 起的是独立 runspace，外层脚本作用域的 `$RepoRoot` 变量在此不可见（同 ⑶b 段
+    # 既有注释「本脚本…走的是脚本物理落盘位置的仓库根」同一坑）——`-WorkingDirectory $RepoRoot`
+    # 已把 job 的 `Get-Location` 定到主仓，故在任何 `Push-Location` 之前先捕一份局部变量。
+    $repoRootInJob = (Get-Location).Path
     foreach ($op in $items) {
         $log = Join-Path $logDir ($laneName + '-' + $op.Id + '.log')
         # 队列 #581 合入前补缺 ⑴：opener【设置】行模型字段非法值 ⇒ 判 FAIL、不起 claude（不消耗一个 session）。
@@ -216,6 +220,53 @@ $laneBlock = {
             $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(model)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.ModelRaw; Log = $log }
             break
         }
+
+        # 队列 #600 ⑴⑵：脚本层强制建隔离 worktree——不再依赖泳道自觉「自己 cd 进去」。
+        # 【设置】行「worktree：☑（<名>，...」声明时，起 claude 前先在本仓 `git worktree add`
+        # （分支取「分支：」字段里首个反引号包裹的 `claude/...`；分支已存在 ⇒ 检出，否则从 master
+        # 新建）；建失败、或声明 ☑ 却解析不出 worktree 名／分支名 ⇒ 判 FAIL、不起 claude；
+        # worktree 已在（续棒复用同名 worktree）⇒ 跳过建、直接复用，不重建。
+        $wtDeclared = $op.Text -match 'worktree[：:]\s*☑'
+        $laneWorktreePath = $null
+        if ($wtDeclared) {
+            $wtMatch = [regex]::Match($op.Text, 'worktree[：:]\s*☑\s*[（(]\s*([^，,）)]+)')
+            if (-not $wtMatch.Success -or [string]::IsNullOrWhiteSpace($wtMatch.Groups[1].Value)) {
+                ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | 【设置】声明 worktree（☑）但解析不出名字 ⇒ 判 FAIL，未起 claude') | Out-File -FilePath $log -Encoding utf8
+                $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(worktree-name)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log }
+                break
+            }
+            $wtName = $wtMatch.Groups[1].Value.Trim()
+            $laneWorktreePath = Join-Path $repoRootInJob ('.claude\worktrees\' + $wtName)
+            $branchFieldMatch = [regex]::Match($op.Text, '分支[：:]\s*([^｜|]+)')
+            $branchName = $null
+            if ($branchFieldMatch.Success) {
+                $bm = [regex]::Match($branchFieldMatch.Groups[1].Value, ([char]0x60) + '(claude/[^' + ([char]0x60) + ']+)' + ([char]0x60))
+                if ($bm.Success) { $branchName = $bm.Groups[1].Value.Trim() }
+            }
+            if (-not $branchName) {
+                ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | worktree 已声明但「分支：」字段解不出反引号包裹的 claude/ 分支名 ⇒ 判 FAIL，未起 claude') | Out-File -FilePath $log -Encoding utf8
+                $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(branch-name)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log }
+                break
+            }
+            if (-not (Test-Path -LiteralPath $laneWorktreePath)) {
+                & git -C $repoRootInJob rev-parse --verify --quiet ('refs/heads/' + $branchName) *> $null
+                $branchExists = ($LASTEXITCODE -eq 0)
+                if ($branchExists) {
+                    $wtAddOut = & git -C $repoRootInJob worktree add $laneWorktreePath $branchName 2>&1
+                } else {
+                    $wtAddOut = & git -C $repoRootInJob worktree add -b $branchName $laneWorktreePath master 2>&1
+                }
+                if ($LASTEXITCODE -ne 0) {
+                    ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | git worktree add 失败（分支=' + $branchName + '，path=' + $laneWorktreePath + '）⇒ 判 FAIL，未起 claude' + "`r`n" + ($wtAddOut -join "`r`n")) | Out-File -FilePath $log -Encoding utf8
+                    $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(worktree-build)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log }
+                    break
+                }
+                ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 已建：' + $laneWorktreePath + '（分支 ' + $branchName + $(if ($branchExists) { '，既有分支检出' } else { '，新建自 master' }) + '）') | Out-File -FilePath $log -Append -Encoding utf8
+            } else {
+                ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 已存在（复用）：' + $laneWorktreePath) | Out-File -FilePath $log -Append -Encoding utf8
+            }
+        }
+
         $tmp = Join-Path $logDir ($laneName + '-' + $op.Id + '.opener.txt')
         [System.IO.File]::WriteAllText($tmp, $header + "`r`n" + $op.Text, $Utf8NoBom)
         $t0 = Get-Date
@@ -227,52 +278,71 @@ $laneBlock = {
         # 队列 #581 合入前补缺 ⑴：模型由 opener【设置】行自带（解析期已按批级 `-Model` 兜底），
         # 不再读批级泳道共享的形参——每条 opener 可各自覆盖。
         if ($op.Model) { $claudeArgs += @('--model', $op.Model) }
-        ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | model=' + $op.Model + ' | session=' + $sid + ' | resume: claude --resume ' + $sid + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Encoding utf8
-        Get-Content -Raw -Encoding UTF8 $tmp | & claude @claudeArgs 2>&1 | Out-File -FilePath $log -Append -Encoding utf8
-        $code = $LASTEXITCODE
-        $t1 = Get-Date
-        # 哨兵扫全文（原为 -Tail 40）：2026-08-25 实测 A21/A25 的哨兵落在第 2 行，
-        # 只因日志短于 40 行才侥幸命中；日志一长即误判 NO-SENTINEL 并误停整条泳道。
-        $tail = Get-Content $log -Encoding UTF8
-        $done = [bool]($tail | Where-Object { $_ -match '^OPENER_DONE\s*$' })
-        $partial = [bool]($tail | Where-Object { $_ -match '^OPENER_PARTIAL' })
-        $status = if ($code -eq 0 -and $done) { 'OK' } elseif ($code -eq 0 -and $partial) { 'PARTIAL' } elseif ($code -eq 0) { 'NO-SENTINEL' } else { 'FAIL(' + $code + ')' }
-        # Sentinel 列：首轮＝agent 自觉输出；补问＝靠下面 --resume 追问才拿到；无＝两轮都没有；—＝FAIL（进程层失败，不谈哨兵）。
-        $sentinelBy = if ($done -or $partial) { '首轮' } elseif ($code -eq 0) { '无' } else { '—' }
-        # >>> #550 补问 begin（变异检验时整段注释掉，NO-SENTINEL 须回来）
-        if ($status -eq 'NO-SENTINEL') {
-            $retryPromptFile = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry-prompt.txt')
-            $retryLog = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry.log')
-            $retryErr = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry.err')
-            [System.IO.File]::WriteAllText($retryPromptFile, $retryPrompt, $Utf8NoBom)
-            $retryArgs = @('-p', '--output-format', 'text', '--resume', $sid)
-            if ($fullAuto) { $retryArgs += '--dangerously-skip-permissions' } else { $retryArgs += @('--permission-mode', 'acceptEdits') }
-            if ($op.Model) { $retryArgs += @('--model', $op.Model) }
-            $tr0 = Get-Date
-            ('[lane:' + $laneName + '] ' + $op.Id + ' NO-SENTINEL ⇒ 补问一次：claude ' + ($retryArgs -join ' ') + ' | timeout=' + $retryTimeoutSec + 's | start=' + $tr0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
-            $retryOutcome = 'timeout'
-            try {
-                # Start-Process 而非管道：管道版没有超时；-PassThru 拿到 pid 才能到点整树 taskkill（claude 会再起 node 子进程）。
-                $proc = Start-Process -FilePath $claudeExe -ArgumentList $retryArgs -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
-                    -RedirectStandardInput $retryPromptFile -RedirectStandardOutput $retryLog -RedirectStandardError $retryErr
-                if ($proc.WaitForExit([int]($retryTimeoutSec * 1000))) {
-                    $retryOutcome = 'exit=' + $proc.ExitCode
-                } else {
-                    & taskkill /PID $proc.Id /T /F 2>&1 | Out-Null
-                    $retryOutcome = 'timeout(' + $retryTimeoutSec + 's, killed)'
-                }
-            } catch {
-                $retryOutcome = 'error: ' + $_.Exception.Message
+        ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | model=' + $op.Model + ' | session=' + $sid + ' | resume: claude --resume ' + $sid + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
+        # 队列 #600 ⑵：claude 子进程的 cwd 与环境标记——worktree 已声明时 cwd 切进该 worktree
+        # （Push/Pop-Location；管道调用的子进程 cwd 随宿主 runspace 的 Get-Location 走，
+        # 下面的补问 Start-Process 也用同一 `(Get-Location).Path` 取 -WorkingDirectory，故无需
+        # 额外改那处），并设 `ZHUOPIN_LANE_WORKTREE`／`ZHUOPIN_MAIN_REPO` 供两道 hooks 写入闸判定
+        # （`#600⑶`，6c68fd3）；未声明 worktree 时两个变量都清空，行为与此前完全一致。
+        if ($wtDeclared) { Push-Location -LiteralPath $laneWorktreePath }
+        try {
+            if ($wtDeclared) {
+                $env:ZHUOPIN_LANE_WORKTREE = $laneWorktreePath
+                $env:ZHUOPIN_MAIN_REPO = $repoRootInJob
+            } else {
+                Remove-Item Env:\ZHUOPIN_LANE_WORKTREE -ErrorAction SilentlyContinue
+                Remove-Item Env:\ZHUOPIN_MAIN_REPO -ErrorAction SilentlyContinue
             }
-            $tr1 = Get-Date
-            $retryText = if (Test-Path $retryLog) { Get-Content $retryLog -Encoding UTF8 } else { @() }
-            $rDone = [bool]($retryText | Where-Object { $_ -match '^OPENER_DONE\s*$' })
-            $rPartial = [bool]($retryText | Where-Object { $_ -match '^OPENER_PARTIAL' })
-            if ($rDone) { $status = 'OK'; $sentinelBy = '补问' } elseif ($rPartial) { $status = 'PARTIAL'; $sentinelBy = '补问' }
-            ('[lane:' + $laneName + '] ' + $op.Id + ' 补问结果：' + $retryOutcome + ' | sentinel=' + $sentinelBy + ' | status=' + $status + ' | ' + [math]::Round(($tr1 - $tr0).TotalSeconds, 1) + 's | 补问输出见 ' + $retryLog) | Out-File -FilePath $log -Append -Encoding utf8
+            Get-Content -Raw -Encoding UTF8 $tmp | & claude @claudeArgs 2>&1 | Out-File -FilePath $log -Append -Encoding utf8
+            $code = $LASTEXITCODE
             $t1 = Get-Date
+            # 哨兵扫全文（原为 -Tail 40）：2026-08-25 实测 A21/A25 的哨兵落在第 2 行，
+            # 只因日志短于 40 行才侥幸命中；日志一长即误判 NO-SENTINEL 并误停整条泳道。
+            $tail = Get-Content $log -Encoding UTF8
+            $done = [bool]($tail | Where-Object { $_ -match '^OPENER_DONE\s*$' })
+            $partial = [bool]($tail | Where-Object { $_ -match '^OPENER_PARTIAL' })
+            $status = if ($code -eq 0 -and $done) { 'OK' } elseif ($code -eq 0 -and $partial) { 'PARTIAL' } elseif ($code -eq 0) { 'NO-SENTINEL' } else { 'FAIL(' + $code + ')' }
+            # Sentinel 列：首轮＝agent 自觉输出；补问＝靠下面 --resume 追问才拿到；无＝两轮都没有；—＝FAIL（进程层失败，不谈哨兵）。
+            $sentinelBy = if ($done -or $partial) { '首轮' } elseif ($code -eq 0) { '无' } else { '—' }
+            # >>> #550 补问 begin（变异检验时整段注释掉，NO-SENTINEL 须回来）
+            if ($status -eq 'NO-SENTINEL') {
+                $retryPromptFile = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry-prompt.txt')
+                $retryLog = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry.log')
+                $retryErr = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry.err')
+                [System.IO.File]::WriteAllText($retryPromptFile, $retryPrompt, $Utf8NoBom)
+                $retryArgs = @('-p', '--output-format', 'text', '--resume', $sid)
+                if ($fullAuto) { $retryArgs += '--dangerously-skip-permissions' } else { $retryArgs += @('--permission-mode', 'acceptEdits') }
+                if ($op.Model) { $retryArgs += @('--model', $op.Model) }
+                $tr0 = Get-Date
+                ('[lane:' + $laneName + '] ' + $op.Id + ' NO-SENTINEL ⇒ 补问一次：claude ' + ($retryArgs -join ' ') + ' | timeout=' + $retryTimeoutSec + 's | start=' + $tr0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
+                $retryOutcome = 'timeout'
+                try {
+                    # Start-Process 而非管道：管道版没有超时；-PassThru 拿到 pid 才能到点整树 taskkill（claude 会再起 node 子进程）。
+                    $proc = Start-Process -FilePath $claudeExe -ArgumentList $retryArgs -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
+                        -RedirectStandardInput $retryPromptFile -RedirectStandardOutput $retryLog -RedirectStandardError $retryErr
+                    if ($proc.WaitForExit([int]($retryTimeoutSec * 1000))) {
+                        $retryOutcome = 'exit=' + $proc.ExitCode
+                    } else {
+                        & taskkill /PID $proc.Id /T /F 2>&1 | Out-Null
+                        $retryOutcome = 'timeout(' + $retryTimeoutSec + 's, killed)'
+                    }
+                } catch {
+                    $retryOutcome = 'error: ' + $_.Exception.Message
+                }
+                $tr1 = Get-Date
+                $retryText = if (Test-Path $retryLog) { Get-Content $retryLog -Encoding UTF8 } else { @() }
+                $rDone = [bool]($retryText | Where-Object { $_ -match '^OPENER_DONE\s*$' })
+                $rPartial = [bool]($retryText | Where-Object { $_ -match '^OPENER_PARTIAL' })
+                if ($rDone) { $status = 'OK'; $sentinelBy = '补问' } elseif ($rPartial) { $status = 'PARTIAL'; $sentinelBy = '补问' }
+                ('[lane:' + $laneName + '] ' + $op.Id + ' 补问结果：' + $retryOutcome + ' | sentinel=' + $sentinelBy + ' | status=' + $status + ' | ' + [math]::Round(($tr1 - $tr0).TotalSeconds, 1) + 's | 补问输出见 ' + $retryLog) | Out-File -FilePath $log -Append -Encoding utf8
+                $t1 = Get-Date
+            }
+            # <<< #550 补问 end
+        } finally {
+            if ($wtDeclared) { Pop-Location }
+            Remove-Item Env:\ZHUOPIN_LANE_WORKTREE -ErrorAction SilentlyContinue
+            Remove-Item Env:\ZHUOPIN_MAIN_REPO -ErrorAction SilentlyContinue
         }
-        # <<< #550 补问 end
         # ⑶b（队列 #584 续四）：收工阶段兜底扫描——按【设置】行「worktree：☑（<名>，」抠出
         # 这条 opener 自建的 worktree 名；子会话应已按自己的纪律「收工自删」，但崩溃/超时/
         # 遗忘会漏拷 reports/ 产出，删除前这里补一刀，把残留 reports/（gitignore、worktree

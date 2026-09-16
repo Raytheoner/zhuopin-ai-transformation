@@ -514,7 +514,19 @@ class Worktree残留回收_v2_4(_Base):
         self.dest_dir = self.real_repo_root / "reports" / "_from-worktree" / self.lane_name
 
     def tearDown(self):
+        # 队列 #600 ⑴：v2.ps1 现在会真的 `git worktree add` 建隔离 worktree——夹具里没
+        # 预先建目录的场景（`test_worktree已被自己删干净时无残留可回收也不报错`）会让脚本
+        # 对**真实仓库**跑一次真 `git worktree add -b claude/op1231a-demo`（分支名取自
+        # `PLAN_TEXT`「分支：」字段，未随 `self.wt_name` 变化）——先 rmtree 目录，
+        # 再 `worktree prune` 清掉 `.git/worktrees/<名>` 残留元数据，最后删分支，
+        # 不留手为真实仓库添的 worktree/branch 垃圾。
+        real_repo = self.real_repo_root
+        subprocess.run(["git", "-C", str(real_repo), "worktree", "remove", "--force", str(self.wt_dir)],
+                        capture_output=True)
         shutil.rmtree(self.wt_dir, ignore_errors=True)
+        subprocess.run(["git", "-C", str(real_repo), "worktree", "prune"], capture_output=True)
+        subprocess.run(["git", "-C", str(real_repo), "branch", "-D", "claude/op1231a-demo"],
+                        capture_output=True)
         shutil.rmtree(self.dest_dir, ignore_errors=True)
         super().tearDown()
 
