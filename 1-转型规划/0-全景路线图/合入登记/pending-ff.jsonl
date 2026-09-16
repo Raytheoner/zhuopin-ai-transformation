@@ -1,3 +1,5 @@
 {"branch":"claude/op0916a-token-metrics-580","tests":"0-学习与工具/test_工具-Token用量度量.py","authorized_text":""}
 {"branch":"claude/op0916b-model-route-581","tests":"0-学习与工具/test_工具-opener批处理执行v2.py,0-学习与工具/test_工具-opener生成.py,0-学习与工具/test_工具-opener块lint.py,0-学习与工具/test_工具-轮询守.py,5-平台底座/wecom-aibot-service/tests/test_patrol_dispatch.py","authorized_text":""}
 {"branch":"claude/op0916e-context-meter-582","tests":"0-学习与工具/test_hooks-context-meter.py","note":"settings.json的PostToolUse挂载未随本分支合入——被本机ISO26262受保护路径钩子拦截（AI工具禁改.claude/settings.json），需Shao Peishen手工执行队列#582报告里给的PowerShell命令后单独生效","authorized_text":""}
+{"branch": "claude/op0916i-headless-parity-584b", "tests": "0-学习与工具/test_hooks-p3.py", "note": "队列#584⑴'⑵'⑶a已完成commit（af2997f fsck缓存修复+4单测49/49绿，004e52a opener骨架补约束）；⑶b(v2.ps1收工reports回收兜底+单测)与⑷(插件加载探针扩展)未动手，续派见队列#584状态列", "authorized_text": ""}
+{"branch": "claude/op0916k-skill-home-585", "tests": "", "note": "队列#585第一棒：仅产出 0-学习与工具/skills源码/README.md 归属表（纯文档，无代码改动，无需回归）；未做followup-letter迁移／扫描器载体③拆分／7个SKILL.md description压缩，续派见队列#585状态列", "authorized_text": ""}
