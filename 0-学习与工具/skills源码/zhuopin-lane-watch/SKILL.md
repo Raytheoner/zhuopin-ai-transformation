@@ -1,10 +1,12 @@
 ---
 status: 生效（2026-09-02 架构收敛后重写，`OP-0902-C`；design.md 本身已于同日由 Shao Peishen 审定转生效，本次是执行编排随之对齐四档 D1 与两 workflow 架构的重写，非新一轮 design 审）
 name: zhuopin-lane-watch
-description: 卓品智能AI转型项目·泳道看护模式（2026-09-02 架构收敛，吸收并退休 zhuopin-lane-clearpool）。当 Shao Peishen 说"开启泳道看护"（或沿用旧口令"offlan清池"，二者同指本 skill）时使用：先跑 LAN 探针自动判 on/off-LAN 定候选范围（on-LAN 全部可领活入候选、off-LAN 自动排除依赖内网的活、探针不过按 off-LAN 处理），他在场、自动排波推进各泳道；🟢 档（队列回灌/文档改动/只读取证/单测回归/worktree 内建造/openspec 起草）全自动做完；🟡 档（合入 master/改口径判据阈值/design 审/关他人队列行）即停等他一个字母；⏭️ 档（`.51` 部署及任何触碰生产服务的动作）自动标注去向、不自行执行、不进问答，交给 zhuopin-lan-closeout——🆕 2026-09-07 起补一条时序放宽：转出之后若他在环且 LAN 探针实测 on，该项可凭他就该项的一次明确授权在同一 session 内续做，纪律仍须现读 zhuopin-lan-closeout 正本、本包只指向不复制（#478）；🔴 档（对外发送/L2 门禁/合规红线/ASIL C-D）永不代办、只做到可发送态即停。与 zhuopin-lan-closeout（专管 `.51` 部署与 LAN 留步，逐项串行他全程盯着）互补，两者构成收敛后的两个 workflow。
+description: 卓品智能AI转型项目·泳道看护模式（吸收并退休 zhuopin-lane-clearpool）。当 Shao Peishen 说"开启泳道看护"（或旧口令"offlan清池"）时使用：LAN 探针判 on/off-LAN 定候选，他在场时自动排波推进各泳道。🟢 档全自动；🟡 档停等一字母；⏭️ 档转 zhuopin-lan-closeout；🔴 档永不代办。详见正文。
 ---
 
 # 卓品 · 泳道看护模式（规则正本 v2.0）
+
+> **触发与机制细节**（2026-09-16 从 description 压缩迁入，原文一字不丢）：2026-09-02 架构收敛；on-LAN 全部可领活入候选、off-LAN 自动排除依赖内网的活、探针不过按 off-LAN 处理；🟢 档＝队列回灌/文档改动/只读取证/单测回归/worktree 内建造/openspec 起草；🟡 档＝合入 master/改口径判据阈值/design 审/关他人队列行；⏭️ 档＝`.51` 部署及任何触碰生产服务的动作，自动标注去向、不自行执行、不进问答；🆕 2026-09-07 起补一条时序放宽：转出之后若他在环且 LAN 探针实测 on，该项可凭他就该项的一次明确授权在同一 session 内续做，纪律仍须现读 zhuopin-lan-closeout 正本、本包只指向不复制（#478）；🔴 档＝对外发送/L2 门禁/合规红线/ASIL C-D，只做到可发送态即停。与 zhuopin-lan-closeout 互补，两者构成收敛后的两个 workflow。
 
 > **权威判据正本＝`openspec/changes/lane-watch-mode/design.md`（归档后＝对应 specs）**：D1-D7 全部判据在彼，本文件是执行编排，与 design/spec 冲突时以后者为准。骨架继承 clearpool/lan-closeout 既有五段式（触发/前置/执行步骤/红线/版本）。
 >

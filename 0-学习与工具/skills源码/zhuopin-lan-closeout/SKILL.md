@@ -1,10 +1,12 @@
 ---
 status: 生效（2026-08-29 Shao Peishen design 审通过，原话「审核通过」，D2 串行纪律未放宽；2026-09-02 `OP-0902-C` 随 lane-watch-mode 架构收敛补充边界指向，正本红线段未动）
 name: zhuopin-lan-closeout
-description: 卓品智能AI转型项目·回 LAN 一句话收口。当 Shao Peishen 说"我已回Lan""回LAN了""已回内网"时使用：先探针实证在网，再汇集三源 LAN 留步清单，白名单选件、.51 项全串行逐项冒烟回滚，无头 CC 泳道收口，心跳+企微推送，收工汇总。对外发送与人工门禁永不代办。🔴 边界（2026-09-02 补）：本 skill 专管 `.51` 部署与 LAN 留步；其余一切可领活（含 off-LAN 候选，原 zhuopin-lane-clearpool 覆盖范围）走 zhuopin-lane-watch（触发词"开启泳道看护"或别名"offlan清池"）——该包遇到 `.51` 类动作会自动转出到本 skill，不会自行执行。
+description: 卓品智能AI转型项目·回 LAN 一句话收口。当 Shao Peishen 说"我已回Lan""回LAN了""已回内网"时使用：探针实证在网后汇集 LAN 留步清单，`.51` 项全串行冒烟回滚，心跳+企微推送收工。对外发送/人工门禁永不代办。边界：非 `.51` 类活走 zhuopin-lane-watch（"开启泳道看护"）。详见正文。
 ---
 
 # 卓品 · 回 LAN 一句话收口（规则正本 v1.0）
+
+> **触发与机制细节**（2026-09-16 从 description 压缩迁入，原文一字不丢）：先探针实证在网，再汇集三源 LAN 留步清单，白名单选件，无头 CC 泳道收口，收工汇总。🔴 边界（2026-09-02 补）：本 skill 专管 `.51` 部署与 LAN 留步；其余一切可领活（含 off-LAN 候选，原 zhuopin-lane-clearpool 覆盖范围）走 zhuopin-lane-watch（触发词"开启泳道看护"或别名"offlan清池"）——该包遇到 `.51` 类动作会自动转出到本 skill，不会自行执行。
 
 > **权威判据正本＝`openspec/changes/lan-closeout-skill/`（归档后＝对应 specs）**：D1 白名单、D2 串行与冒烟回滚纪律、D3 护栏在彼；本文件是执行编排，与 design/spec 冲突时以后者为准。骨架整体继承 clearpool（含 #138 裁定：写活走无头链、Task 子代理限只读）。
 

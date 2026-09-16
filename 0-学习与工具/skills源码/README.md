@@ -15,10 +15,13 @@
 | `huijian-chaijian-patrol` | 不安装 | 正文由 `check_patrol_signal.py`／调度 Dispatch 直读源码，不走 Cowork `save_skill` 或 CC `.claude/skills/` 安装机制 |
 | `zhuopin-lane-clearpool` | 已退休·已下架 | 2026-09-02 `OP-0902-C` 被 `zhuopin-lane-watch` 吸收；Shao Peishen 已于 2026-09-16 在 Cowork 手动关闭（§四 `#204` 销）。**历史记录不追改**：其 SKILL.md description 原文（含已归档说明）按项目纪律保留不压缩 |
 
-## 本表之外未完成事项（#585 第一棒交接，2026-09-16）
+## 续棒（#585 第二棒，2026-09-16 `OP-0916-M`）已做
+
+- ✅ `0-学习与工具/skills源码/*/SKILL.md` description ≤200 字压缩 ＋ 触发词对照表已完成（7 个文件：`huijian-chaijian-patrol`／`zhuopin-followup-letter`／`zhuopin-lan-closeout`／`zhuopin-lane-watch`／`zhuopin-queue-audit`／`zhuopin-send-followup`／`zhuopin-需求grill`）。压缩前后逐条触发词对照表写回队列 §一 `#585`；被压缩掉的机制细节一律以「触发与机制细节」段原文迁入各文件正文首段，不丢信息。
+
+## 本表之外未完成事项（#585 续棒交接，2026-09-16）
 
 - `zhuopin-followup-letter` 迁移（`git mv` ＋ 全仓 grep 引用改点）未做。
 - `工具-仓库外载体扫描.py` 载体③ 拆分（CC 侧库内即正本免扫／Cowork 侧账号级安装路径先取证、取不到输出"未核验"）未做，单测三态覆盖未做。
-- `0-学习与工具/skills源码/*/SKILL.md` description ≤200 字压缩 ＋ 触发词对照表未做（已测得现状：`huijian-chaijian-patrol` 210／`zhuopin-followup-letter` 266／`zhuopin-lan-closeout` 327／`zhuopin-lane-watch` 631／`zhuopin-queue-audit` 212／`zhuopin-send-followup` 227／`zhuopin-需求grill` 205 字，均 >200；`zhuopin-kickoff-prompt` 132／`zhuopin-rebaseline` 138 已达标、`zhuopin-lane-clearpool` 383 因历史记录不追改而豁免）。经逐文件通读核实：以上 7 个待压文件的详细行为描述**已在各自正文中完整存在**，压缩描述字段不会丢失信息，只需保留触发短语＋极简摘要＋指向正文的指针。
 
 详情与承接见队列 §一 `#585`。

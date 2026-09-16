@@ -1,10 +1,12 @@
 ---
 status: 生效
 name: zhuopin-requirement-grill
-description: 卓品智能AI转型项目·新场景开工前的需求收敛第一道把关。当 Shao Peishen 说"给XX场景跑需求grill""开工前把需求问清楚""这个场景要做成什么样"，或任一新场景走 openspec propose 之前使用。按设计树/前沿分轮追问，把"能查的事实"自查掉、"只有专员知道的"分流进判例包，产出可直接充当 design.md Decisions 的需求树。只对新场景用，不对已上线场景的深化用。
+description: 卓品智能AI转型项目·新场景开工前需求收敛第一道把关。当 Shao Peishen 说"给XX场景跑需求grill""开工前把需求问清楚""这个场景要做成什么样"，或任一新场景走 openspec propose 之前使用。按设计树分轮追问，自查可查事实、分流专员事项，产出可充当 design.md Decisions 的需求树。只对新场景用。详见正文。
 ---
 
 # 卓品 · 需求收敛第一道把关（zhuopin-需求grill v1.0）
+
+> **触发与机制细节**（2026-09-16 从 description 压缩迁入，原文一字不丢）：按设计树/前沿分轮追问，把"能查的事实"自查掉、"只有专员知道的"分流进判例包；不对已上线场景的深化用。
 
 > **定位**：全景规划只是**需求概要**；从概要直接写 openspec propose 之间，此前**没有任何机制**。本 skill 补的就是这一格。
 > **溯源**：三条核心机制取自 `mattpocock/skills` 的 `grilling`（MIT），已 fork 为中文并绑上本项目四条接缝。上游 `grill-me` 正文只有一行转调 `grilling`；**本 skill 已内含全部机制，不依赖上游任何 skill**。
