@@ -5635,6 +5635,54 @@ class CredentialShapeGuardTests(unittest.TestCase):
                                  "——两处判据分叉正是 `#312` 付过学费的形态")
 
 
+class LintModuleSysPathIsolationTests(unittest.TestCase):
+    """判据正本加载不依赖调用方 `sys.path` 里恰好含它所在目录（队列 #600 收工
+
+    回执登记的 fail-closed 缺陷）：`工具-密钥扫描lint.py`／`工具-opener块lint.py`
+    内部对同目录模块（如 `_输出截流`）做裸导入，而 `_load_credential_lint_module`／
+    `_load_opener_lint_module`／`_load_gender_lint_module` 用
+    `importlib.util.spec_from_file_location` 动态加载判据正本时不会自动让该
+    目录进 `sys.path`——pytest 常驻进程因 rootdir 插入而恰好绕过了这条坑，故
+    必须在**独立子进程**里、显式把仓库目录排除出 `sys.path` 之后调用，才是
+    真实复现（不经子进程的话，测试进程自己的 `sys.path` 早就含目标目录，
+    测不出这颗雷）。判据正本本身不改，只验证加载期路径可见性的修复。
+    """
+
+    def _assert_loader_survives_missing_sys_path(self, loader_name: str, probe_attr: str) -> None:
+        script = (
+            "import sys, importlib.util\n"
+            "sys.path = [p for p in sys.path if p not in ('', '.')]\n"
+            f"assert {str(SCRIPT.parent)!r} not in sys.path, sys.path\n"
+            f"spec = importlib.util.spec_from_file_location('_zp_editlock_under_test', {str(SCRIPT)!r})\n"
+            "m = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(m)\n"
+            f"lint = m.{loader_name}()\n"
+            f"assert hasattr(lint, {probe_attr!r}), 'missing ' + {probe_attr!r}\n"
+            f"assert {str(SCRIPT.parent)!r} not in sys.path, "
+            "'sys.path 未恢复原状：' + repr(sys.path)\n"
+            "print('OK')\n"
+        )
+        with tempfile.TemporaryDirectory() as outside_repo:
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                cwd=outside_repo, capture_output=True, text=True, encoding="utf-8",
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("OK", result.stdout)
+
+    def test_credential_lint_loader_ok_without_script_dir_on_syspath(self):
+        self._assert_loader_survives_missing_sys_path(
+            "_load_credential_lint_module", "CREDENTIAL_PATTERNS")
+
+    def test_opener_lint_loader_ok_without_script_dir_on_syspath(self):
+        self._assert_loader_survives_missing_sys_path(
+            "_load_opener_lint_module", "check_block")
+
+    def test_gender_lint_loader_ok_without_script_dir_on_syspath(self):
+        self._assert_loader_survives_missing_sys_path(
+            "_load_gender_lint_module", "scan_files")
+
+
 class ArityBarePipeDiagnosticsTests(unittest.TestCase):
     """⑵-a 裸竖线诊断被 arity 遮蔽。
 

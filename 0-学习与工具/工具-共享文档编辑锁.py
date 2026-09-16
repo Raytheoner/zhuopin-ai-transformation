@@ -2848,6 +2848,30 @@ CREDENTIAL_HIT_PREFIX_LEN = 8
 CREDENTIAL_WAY_OUT = "凭据请落 `.env`，队列只写指针"
 
 
+@contextlib.contextmanager
+def _lint_script_dir_on_sys_path(script_path: Path):
+    """判据正本加载期临时把其所在目录塞进 `sys.path`，加载后原样恢复。
+
+    队列 #600 收工回执登记的缺陷：`工具-密钥扫描lint.py`／`工具-opener块lint.py`
+    内部对同目录模块（如 `_输出截流`）做裸导入 `import _输出截流`，而本文件用
+    `importlib.util.spec_from_file_location` 动态加载判据正本时不会自动让该
+    目录进 `sys.path`——不论当前 cwd、不论从哪个 worktree 调用都复现，
+    `ModuleNotFoundError: No module named '_输出截流'` 使 `edit-row`／
+    `commit-edit` 全线 fail-closed。判据正本本身一字不改，只补这道加载期的
+    路径可见性；用 contextmanager 确保无论加载成功与否都恢复原状，不常驻
+    污染 `sys.path`。
+    """
+    directory = str(script_path.resolve().parent)
+    inserted = directory not in sys.path
+    if inserted:
+        sys.path.insert(0, directory)
+    try:
+        yield
+    finally:
+        if inserted:
+            sys.path.remove(directory)
+
+
 def _load_credential_lint_module():
     """动态加载 `工具-密钥扫描lint.py`（文件名含中文/连字符，不能直接 import）。
 
@@ -2860,7 +2884,8 @@ def _load_credential_lint_module():
     if spec is None or spec.loader is None:
         raise RuntimeError(f"无法加载凭据形状判据正本：{_CREDENTIAL_LINT_SCRIPT}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    with _lint_script_dir_on_sys_path(_CREDENTIAL_LINT_SCRIPT):
+        spec.loader.exec_module(module)
     return module
 
 
@@ -6720,7 +6745,8 @@ def _load_opener_lint_module():
     if spec is None or spec.loader is None:
         raise RuntimeError(f"无法加载 opener lint 判据正本：{_OPENER_LINT_SCRIPT}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    with _lint_script_dir_on_sys_path(_OPENER_LINT_SCRIPT):
+        spec.loader.exec_module(module)
     return module
 
 
@@ -6761,7 +6787,8 @@ def _load_gender_lint_module():
     if spec is None or spec.loader is None:
         raise RuntimeError(f"无法加载称谓核对判据：{_GENDER_LINT_SCRIPT}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    with _lint_script_dir_on_sys_path(_GENDER_LINT_SCRIPT):
+        spec.loader.exec_module(module)
     return module
 
 
