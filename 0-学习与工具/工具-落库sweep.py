@@ -410,6 +410,8 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from _输出截流 import emit as _emit_output  # 队列 #597 ⑵：成功路径默认摘要，见该模块 docstring。
+
 # 队列 #306：本脚本自身所在的 worktree 本地路径找 zhuopin_platform（同
 # 工具-共享文档编辑锁.py 既有引导，与队列 #300 conftest.py 同一原则）。
 # 仅当目录真实存在时才尝试 import，缺失时（隔离环境）用本地兜底桩，import
@@ -7791,6 +7793,10 @@ def main() -> int:
              "tasks.md 有新勾选变化后自动失效。")
     parser.add_argument(
         "--note", default="", help="--ack-stale-change 配套：本次判定依据摘录，必填。")
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印 log，不裁成摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
     args = parser.parse_args()
 
     repo_root = _resolve_repo_root(args.repo_root)
@@ -8197,8 +8203,7 @@ def main() -> int:
         _escalate_long_lived_orphans_to_section_four(repo_root, log, dry_run=args.dry_run)
 
         _flush_remaining_log(repo_root, log, args.dry_run)
-        print("\n".join(log))
-        return 0
+        return _emit_output("工具-落库sweep", log, 0, verbose=args.verbose, repo_root=repo_root)
 
     except SweepAbort as exc:
         # 队列 #479 ⑵：点名当前步骤——早退日志此前只有原因、没有位置，
@@ -8214,8 +8219,8 @@ def main() -> int:
         if exc.is_fork and not args.dry_run:
             _handle_fork_detected(repo_root, log)
         _flush_remaining_log(repo_root, log, args.dry_run)
-        print("\n".join(log))
-        return exc.exit_code
+        return _emit_output(
+            "工具-落库sweep", log, exc.exit_code, verbose=args.verbose, repo_root=repo_root)
 
     except Exception as exc:  # noqa: BLE001 —— 队列 #198(a) 通用异常兜底
         # main() 此前只有 `except SweepAbort`，任何其它异常（子进程异常/
@@ -8254,8 +8259,8 @@ def main() -> int:
             _flush_remaining_log(repo_root, log, args.dry_run)
         except Exception:  # noqa: BLE001 —— 日志落盘本身失败也不应掩盖原始异常的退出码
             pass
-        print("\n".join(log))
-        return UNEXPECTED_EXIT_CODE
+        return _emit_output(
+            "工具-落库sweep", log, UNEXPECTED_EXIT_CODE, verbose=args.verbose, repo_root=repo_root)
 
 
 # ============================================================
