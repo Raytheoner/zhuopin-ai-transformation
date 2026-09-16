@@ -217,6 +217,150 @@ class TokenUsageMeterTests(unittest.TestCase):
         self.assertEqual(len(agg.watcher_sessions), 1)
         self.assertAlmostEqual(agg.watcher_sessions[0]["ratio"], 0.75)
 
+    # ---------------- 子泳道拆链（`#580` 合入前修复 ⑴） ----------------
+
+    def test_子泳道文件与主会话不再撞session_id(self):
+        """子泳道 jsonl（`<父会话>/subagents/*.jsonl`）行内 `sessionId` 字段
+        与主会话共享同一个值——若直接拿它当链标识，主链与子泳道会在报告里
+        挤成同一行（`#580` 实撞：45649529 一个 session_id 下混进 11 行，实为
+        1 条主链 + 10 条子泳道）。链标识须改按文件路径算，二者不能相等。"""
+        main_file = self.root / "PARENTID.jsonl"
+        sub_dir = self.root / "PARENTID" / "subagents"
+        sub_dir.mkdir(parents=True)
+        sub_file = sub_dir / "agent-xyz.jsonl"
+        usage = {"input_tokens": 1, "cache_creation_input_tokens": 0,
+                 "cache_read_input_tokens": 0, "output_tokens": 1}
+        main_rec = _assistant("2026-09-10T01:00:00Z", "req-main", "m-main", "claude-opus-5",
+                              {"type": "text", "text": "x"}, usage)
+        main_rec["sessionId"] = "PARENTID"
+        _write_jsonl(main_file, [main_rec])
+        sub_rec = _assistant("2026-09-10T01:00:00Z", "req-sub", "m-sub", "claude-opus-5",
+                             {"type": "text", "text": "y"}, usage)
+        sub_rec["sessionId"] = "PARENTID"  # 子泳道行内 sessionId 与主会话相同
+        _write_jsonl(sub_file, [sub_rec])
+
+        from collections import defaultdict
+        gaps, gap_samples = defaultdict(int), defaultdict(list)
+        main_sess = token_usage_meter.scan_file(main_file, "utc", gaps, gap_samples)
+        sub_sess = token_usage_meter.scan_file(sub_file, "utc", gaps, gap_samples)
+
+        self.assertNotEqual(main_sess.session_id, sub_sess.session_id)
+        self.assertEqual(main_sess.chain_type, "主链")
+        self.assertEqual(sub_sess.chain_type, "子泳道")
+        self.assertEqual(main_sess.parent_session_id, "PARENTID")
+        self.assertEqual(sub_sess.parent_session_id, "PARENTID")
+
+    def test_按父会话合计主链与子泳道相加(self):
+        main_file = self.root / "PID2.jsonl"
+        sub_dir = self.root / "PID2" / "subagents"
+        sub_dir.mkdir(parents=True)
+        sub_file = sub_dir / "agent-abc.jsonl"
+        usage_main = {"input_tokens": 10, "cache_creation_input_tokens": 0,
+                      "cache_read_input_tokens": 0, "output_tokens": 0}
+        usage_sub = {"input_tokens": 20, "cache_creation_input_tokens": 0,
+                     "cache_read_input_tokens": 0, "output_tokens": 0}
+        _write_jsonl(main_file, [_assistant("2026-09-10T01:00:00Z", "req-m", "m-m",
+                                            "claude-opus-5", {"type": "text", "text": "m"}, usage_main)])
+        _write_jsonl(sub_file, [_assistant("2026-09-10T01:00:00Z", "req-s", "m-s",
+                                           "claude-opus-5", {"type": "text", "text": "s"}, usage_sub)])
+        from collections import defaultdict
+        gaps, gap_samples = defaultdict(int), defaultdict(list)
+        main_sess = token_usage_meter.scan_file(main_file, "utc", gaps, gap_samples)
+        sub_sess = token_usage_meter.scan_file(sub_file, "utc", gaps, gap_samples)
+        agg = token_usage_meter.Aggregate(
+            since=token_usage_meter.date(2026, 9, 6), until=token_usage_meter.date(2026, 9, 13))
+        token_usage_meter.aggregate_session(main_sess, agg)
+        token_usage_meter.aggregate_session(sub_sess, agg)
+        self.assertEqual(len(agg.session_rows), 2)  # 两条链分开列，不塌成一行
+        parent_bucket = agg.parent_totals["PID2"]
+        self.assertEqual(parent_bucket["chains"], 2)
+        self.assertEqual(parent_bucket["total_tokens"], 30)  # 10 + 20 合计
+
+    # ---------------- 看护识别判据改法（`#580` 合入前修复 ⑵） ----------------
+    # 原判据只认「Bash 命中 check-heartbeat|check-timeout|summary 占比 >
+    # 30%」，路线图 §〇 实测标题含「看护」的 24 条链（cache_read 占比
+    # 14.4%）被工具识别为 0——以下用 OP-0909-Q／OP-0907-Y／OP-0907-R 三条真实
+    # 看护链的典型形态做夹具式断言（只断言识别结果，不入库真实日志内容）。
+
+    def test_看护识别_标题含看护即命中(self):
+        usage = {"input_tokens": 1, "cache_creation_input_tokens": 0,
+                 "cache_read_input_tokens": 0, "output_tokens": 1}
+        records = [
+            _user("2026-09-10T00:59:00Z", "[OP-0907-Y]【CC】看护 OP-0907-X 泳道进度"),
+            _assistant("2026-09-10T01:00:00Z", "req-1", "m1", "claude-sonnet-5",
+                       {"type": "tool_use", "id": "t1", "name": "Bash",
+                        "input": {"command": "ls"}}, usage),
+        ]
+        sess, _ = self._scan_one(records)
+        agg = token_usage_meter.Aggregate(
+            since=token_usage_meter.date(2026, 9, 6), until=token_usage_meter.date(2026, 9, 13))
+        token_usage_meter.aggregate_session(sess, agg)
+        self.assertEqual(len(agg.watcher_sessions), 1)
+        self.assertEqual(agg.watcher_sessions[0]["reason"], "标题含看护")
+
+    def test_看护识别_泳道看护状态机脚本命中(self):
+        usage = {"input_tokens": 1, "cache_creation_input_tokens": 0,
+                 "cache_read_input_tokens": 0, "output_tokens": 1}
+        records = []
+        cmds = ["python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane op0907r --text a",
+                "python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane op0907r --text b",
+                "ls -la", "pytest -q"]
+        for i, cmd in enumerate(cmds):
+            records.append(_assistant(
+                f"2026-09-10T01:00:0{i}Z", f"req-{i}", f"m{i}", "claude-sonnet-5",
+                {"type": "tool_use", "id": f"t{i}", "name": "Bash",
+                 "input": {"command": cmd}}, usage))
+        sess, _ = self._scan_one(records)
+        agg = token_usage_meter.Aggregate(
+            since=token_usage_meter.date(2026, 9, 6), until=token_usage_meter.date(2026, 9, 13))
+        token_usage_meter.aggregate_session(sess, agg)
+        self.assertEqual(len(agg.watcher_sessions), 1)
+        self.assertEqual(agg.watcher_sessions[0]["reason"], "Bash占比")
+
+    def test_看护识别_laneheartbeat轮询命令命中(self):
+        """`Get-Content …lane-heartbeat…` 轮询命令靠 `heartbeat` 子串命中，
+        覆盖原正则漏掉的 `lane-heartbeat` 变体。"""
+        usage = {"input_tokens": 1, "cache_creation_input_tokens": 0,
+                 "cache_read_input_tokens": 0, "output_tokens": 1}
+        records = []
+        cmds = ["Get-Content reports/lane-heartbeat/op0907r.md -Tail 5",
+                "Get-Content reports/lane-heartbeat/op0907r.md -Tail 5",
+                "Get-Content reports/lane-heartbeat/op0907r.md -Tail 5",
+                "git status"]
+        for i, cmd in enumerate(cmds):
+            records.append(_assistant(
+                f"2026-09-10T01:00:0{i}Z", f"req-{i}", f"m{i}", "claude-sonnet-5",
+                {"type": "tool_use", "id": f"t{i}", "name": "Bash",
+                 "input": {"command": cmd}}, usage))
+        sess, _ = self._scan_one(records)
+        agg = token_usage_meter.Aggregate(
+            since=token_usage_meter.date(2026, 9, 6), until=token_usage_meter.date(2026, 9, 13))
+        token_usage_meter.aggregate_session(sess, agg)
+        self.assertEqual(len(agg.watcher_sessions), 1)
+
+    def test_看护识别_标题判据只看前60字不搜全文(self):
+        """派单 opener 正文里普遍带「派出线：… ｜ 看护者 OP-xxx」溯源尾注——
+        若标题判据搜索首条用户消息全文，会把绝大多数建造类主链也误判成看护
+        链（曾实测：命中 123／177 条、cache_read 占比 67.3%，与 §〇 人工基线
+        「24 条／14.4%」严重不符）。判据须只看前 60 字（同 §二 展示口径）。"""
+        usage = {"input_tokens": 1, "cache_creation_input_tokens": 0,
+                 "cache_read_input_tokens": 0, "output_tokens": 1}
+        padding = "填充字符占位到六十字之外" * 6  # 纯填充，把「看护」挤出前 60 字窗口
+        long_body = f"[OP-0916-X]【CC】某建造任务标题 {padding} 派出线：Cowork 环境总线 OP-0916-T ／ 看护者 OP-0916-W"
+        self.assertNotIn("看护", long_body[:60])
+        self.assertIn("看护", long_body)
+        records = [
+            _user("2026-09-10T00:59:00Z", long_body),
+            _assistant("2026-09-10T01:00:00Z", "req-1", "m1", "claude-sonnet-5",
+                       {"type": "tool_use", "id": "t1", "name": "Bash",
+                        "input": {"command": "ls"}}, usage),
+        ]
+        sess, _ = self._scan_one(records)
+        agg = token_usage_meter.Aggregate(
+            since=token_usage_meter.date(2026, 9, 6), until=token_usage_meter.date(2026, 9, 13))
+        token_usage_meter.aggregate_session(sess, agg)
+        self.assertEqual(len(agg.watcher_sessions), 0)
+
     def test_看护会话未超阈值不识别(self):
         usage = {"input_tokens": 1, "cache_creation_input_tokens": 0,
                  "cache_read_input_tokens": 0, "output_tokens": 1}
@@ -259,6 +403,21 @@ class TokenUsageMeterTests(unittest.TestCase):
 
     def test_percentile_空列表返回零(self):
         self.assertEqual(token_usage_meter.percentile([], 0.50), 0.0)
+
+
+class FindRepoRootTests(unittest.TestCase):
+    """`#580` 合入前修复 ⑶：`--out` 缺省须解到主工作区 `reports/`，不能解到
+    当前 worktree 自己那份 checkout（worktree 收工被删时报告会随之丢失，
+    2026-09-16 09:14 实撞）。"""
+
+    def test_解析到git_common_dir的父目录(self):
+        import subprocess
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=SCRIPT.parent, capture_output=True, text=True, check=True)
+        expected = Path(result.stdout.strip()).parent
+        got = token_usage_meter.find_repo_root(SCRIPT)
+        self.assertEqual(got.resolve(), expected.resolve())
 
 
 class TokenUsageMeterCLITests(unittest.TestCase):
