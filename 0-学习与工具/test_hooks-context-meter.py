@@ -140,7 +140,12 @@ class TestContextMeter:
         assert out == {}, "未越线时不应有任何 stdout 输出"
         lines = audit_lines(repo)
         assert lines[-1]["verdict"] == "pass"
-        assert not state_path(repo, "s1").exists(), "未越线不应落状态文件"
+        # #598：调用计数轴独立于档位轴落盘，故状态文件此后恒存在（用于累计
+        # 跨调用的 toolCalls），但未越任何一条线时不应有提醒。
+        state = json.loads(state_path(repo, "s1").read_text(encoding="utf-8"))
+        assert state["lastTier"] == 0
+        assert state["toolCalls"] == 1
+        assert state["callCountNotified"] is False
 
     def test_越150k首次提醒(self, repo: Path):
         t = write_transcript(repo, 160_000)
@@ -249,6 +254,66 @@ class TestContextMeter:
         assert rc == 0, err
         ctx = out.get("hookSpecificOutput", {}).get("additionalContext", "")
         assert ctx, "不同 session 的档位状态互不影响，beta 首次越线仍应提醒"
+
+    # ── #598：单会话工具调用计数轴（与上下文档位轴独立） ──────────────────
+
+    def seed_state(self, repo: Path, session_id: str, **fields) -> None:
+        meter_dir = repo / "reports" / "context-meter"
+        meter_dir.mkdir(parents=True, exist_ok=True)
+        base = {"lastTier": 0, "lastContext": 10_000, "lastTs": "x",
+                "toolCalls": 0, "callCountNotified": False}
+        base.update(fields)
+        (meter_dir / f"{session_id}.json").write_text(
+            json.dumps(base, ensure_ascii=False), encoding="utf-8"
+        )
+
+    def test_调用数达150次触发提醒_不越上下文线(self, repo: Path):
+        self.seed_state(repo, "s1", toolCalls=149)
+        t = write_transcript(repo, 10_000)
+        rc, out, err, _ = run_hook(posttooluse_payload(t), repo)
+        assert rc == 0, err
+        ctx = out.get("hookSpecificOutput", {}).get("additionalContext", "")
+        assert "150" in ctx and "工具-泳道看护等待" in ctx
+        assert "150k" not in ctx, "计数提醒不应混入上下文档位措辞"
+        assert audit_lines(repo)[-1]["verdict"] == "remind"
+        state = json.loads(state_path(repo, "s1").read_text(encoding="utf-8"))
+        assert state["toolCalls"] == 150
+        assert state["callCountNotified"] is True
+
+    def test_调用计数提醒只触发一次(self, repo: Path):
+        self.seed_state(repo, "s1", toolCalls=150, callCountNotified=True)
+        t = write_transcript(repo, 10_000)
+        rc, out, err, _ = run_hook(posttooluse_payload(t), repo)
+        assert rc == 0, err
+        assert out == {}, "已提醒过的计数越线不应重复提醒"
+        state = json.loads(state_path(repo, "s1").read_text(encoding="utf-8"))
+        assert state["toolCalls"] == 151
+        assert state["callCountNotified"] is True
+
+    def test_调用计数与上下文提醒同批合并(self, repo: Path):
+        self.seed_state(repo, "s1", toolCalls=149)
+        t = write_transcript(repo, 160_000)
+        rc, out, err, _ = run_hook(posttooluse_payload(t), repo)
+        assert rc == 0, err
+        ctx = out.get("hookSpecificOutput", {}).get("additionalContext", "")
+        assert "工具-泳道看护等待" in ctx, "计数提醒应与档位提醒合并进同一条输出"
+        assert "160k" in ctx and "OPENER_PARTIAL" in ctx
+        state = json.loads(state_path(repo, "s1").read_text(encoding="utf-8"))
+        assert state["toolCalls"] == 150
+        assert state["callCountNotified"] is True
+        assert state["lastTier"] == 1
+
+    def test_调用计数在usage不可用时仍累计并可提醒(self, repo: Path):
+        """transcript 读不到 usage 不该拦住计数轴——两条轴各自独立判据。"""
+        self.seed_state(repo, "s1", toolCalls=149)
+        rc, out, err, _ = run_hook(
+            posttooluse_payload(repo / "不存在.jsonl"), repo)
+        assert rc == 0, err
+        ctx = out.get("hookSpecificOutput", {}).get("additionalContext", "")
+        assert "工具-泳道看护等待" in ctx
+        assert audit_lines(repo)[-1]["verdict"] == "remind"
+        state = json.loads(state_path(repo, "s1").read_text(encoding="utf-8"))
+        assert state["toolCalls"] == 150
 
     def test_耗时断言_大文件尾读不随文件体量线性变慢(self, repo: Path):
         """回归锁：钩子若退化成对整份 transcript 做 `Get-Content -Raw` 全量解析，
