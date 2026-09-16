@@ -229,6 +229,12 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File "0-学习与工具\工具-opener�
 2. **重输出步骤优先交子代理**：全量回归、大范围 grep 等预计输出体量大的步骤，优先用
    Agent/Task 工具交子代理执行，主会话只接收结论摘要，不把原始重输出读进主上下文。
 3. **大文件不整份读**：超过约 300 行的文件（`工具-opener批处理执行v2.ps1`、本骨架、队列真身、长测试文件等）先 `grep -n` 定位，再按行号区间分段读；同一文件同一会话不重复整读。
+4. **`reports/` 产出一律写主工作区**（队列 §一 `#584`⑶，2026-09-16）：无头泳道多为隔离
+   worktree 内作业，收工即 `git worktree remove`——写进该 worktree 自身 `reports/`（gitignore，
+   不随 commit 走）的取证件、debug 日志一并被删除，当日已实撞两次。落点判据同心跳工具：
+   `git rev-parse --git-common-dir` 取共享 `.git`，其上级目录＝主工作区，一切 `reports/` 产出
+   一律写到 `<主工作区>/reports/…`，不写 `$PWD/reports/…`。兜底见 `工具-opener批处理执行v2.ps1`
+   收工阶段的 worktree 残留 `reports/` 扫描回收（§三bis 收工步骤）。
 
 ## 取号
 
