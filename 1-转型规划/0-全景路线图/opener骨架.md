@@ -17,12 +17,12 @@ opener正本: 骨架
 
 ## 【CC】骨架
 
-🔴 **worktree 字段的唯一执行者是会话自己，不是 Claude 桌面端的「worktree」勾选框（Shao Peishen 2026-09-10 定）**：桌面端新开 CC 时那个勾选框**一律留空**——它勾上会由 app 另起一个 `<短名>-work` 分支＋worktree（实测 `origin/op0908j-work`…`op0908m-work` 四条即此来源），与 opener 里「从 master 起 `claude/…`」的分支字段**双轨并存**，人守越仔细越会选错。**口径**：⑴ 本字段写 ☑ 时，含义是「**会话开工第一步自己起隔离面**」——单棒一律按 §三bis 看护者形态起：会话本体不建分支不改代码，用 Task/Agent（`isolation: "worktree"`）起**一条**子泳道做正文（子泳道 opener 用【CC · 子任务泳道】变体三行），机器建、机器删；⑵ 写 ☐ 时会话在主 checkout 上做（只产 `.md`、只读取证、ff 入 master、收口批这类**必须在 master 上**的活）；⑶ 无论 ☑／☐，桌面端勾选框都不勾——它不再承载任何语义。生成器 `--worktree` 默认值改 ☐、☑ 时自动切 guardian 变体，机器守落 `#522`。
+🔴 **worktree 字段一旦声明 ☑，由批处理脚本 `工具-opener批处理执行v2.ps1` 在起 claude 子进程前强制建，不再靠泳道自觉（队列 §一 `#600`，2026-09-16 追加，取代此前「会话自己起隔离、自己 `git worktree add`」的旧说法）**：脚本按本行括号里的 worktree 名／分支字段执行 `git worktree add`（新分支自 master，或既有分支检出），建成后以该目录为 cwd 起 claude，并设 `ZHUOPIN_LANE_WORKTREE`／`ZHUOPIN_MAIN_REPO` 两个环境变量供 editlock-guard／queue-read-guard 两道写入闸判定；建失败，或【设置】声明 ☑ 却解析不出名字／分支，脚本当场判该条 `FAIL`、不起 claude。**泳道（会话本体）不建**，开工第一件事只是 `git rev-parse --show-toplevel` 断言等于该 worktree 路径——**不等于即以 `OPENER_PARTIAL: 停在🔴决策点——未在 worktree 内` 收尾，不得继续写码**；收工仍按纪律自删该 worktree（脚本收工核验第三道闸兜底扫残留 `reports/`，`工具-待合分支巡检.ps1` 兜底回收已并入 master 后的残留 worktree）。桌面端新开 CC 时那个勾选框**一律留空**——它勾上会由 app 另起一个 `<短名>-work` 分支＋worktree（实测 `origin/op0908j-work`…`op0908m-work` 四条即此来源），与 opener 里「从 master 起 `claude/…`」的分支字段**双轨并存**，人守越仔细越会选错，且不再承载任何语义。写 ☐ 时会话在主 checkout 上做（只产 `.md`、只读取证、ff 入 master、收口批这类**必须在 master 上**的活）。生成器 `--worktree` 默认值改 ☐、☑ 时自动切 guardian 变体，机器守落 `#522`。
 
 ```
 [OP-MMDD-X]【CC】<短名，≤12字>
-【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，会话自起子泳道隔离、收工自删；桌面端勾选框留空）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
-开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行——子任务没有自己的 session，"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。
+【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，v2.ps1 起 claude 前脚本建、收工自删；桌面端勾选框留空）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
+开工第一件事：断言 `git rev-parse --show-toplevel` 为该 worktree 路径，不对即 `OPENER_PARTIAL: 停在🔴决策点——未在 worktree 内`；再调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。🔴 例外：你若是被 Task/Agent 起的子任务，跳过 set_session_title 一句不要执行——子任务没有自己的 session，"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。
 读 ① `<派单件或首要输入的完整仓库根相对路径>` → ② `CLAUDE.md` §<相关节> 恢复上下文，按<派单件/下述>执行。本件为 <A 类（口径已定、判据已写死），无需再问澄清，直接开工 ／ B 类，开工前问我 2-3 个澄清>。
 
 做什么：
@@ -72,13 +72,18 @@ opener 只负责「你是谁、去哪读」。看护件目标 ≤10 KB。
 
 ```
 [OP-MMDD-X]【CC】<短名，≤12字>
-【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，新 worktree，收工自删）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
+【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/opMMDDx-<短横线名>`）｜ worktree：☑（<worktree名>，v2.ps1 起 claude 前脚本建、收工自删）｜ 工作区：<无（纯库内，不触碰 `.51`／企微机器人／定时任务）｜ 或按 §〇.1 四种情形之一写全> ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_X」>
 读 ① 队列 §一 `#N`（`python 0-学习与工具/工具-队列查询.py --row N --field all`，做什么/不做什么/收工全在该行）→ ② `CLAUDE.md` 恢复上下文，按该行执行。本件为 A 类，直接开工。
 🔴 并行上限 4，超出排下一波，错峰 ≥90 秒（构建环境瘦身第三轮方案 P4）。
 🔴 心跳一律跑命令写、不自己拼路径：开工 1 分钟内 `python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane <泳道标识＝worktree名> --text "已开工"`；每里程碑追加一行（等待 >10 分钟须补写「仍在等 X，预计还要 N 分钟」）；收工 `python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane <泳道标识＝worktree名> --done --batch <批次> --text "产出落点：<落点>"`——不带 `--batch` 该泳道不计入任何批（`heartbeat --done` 不带它就不计入任何批次的 `summary`，已实测撞过 8 条历史泳道）；它没有 `--repo-root`／`--heartbeat-file` 两个参数，别给（队列 §一 `#565`）。
 🔴 收工只 push 本泳道分支，不碰主仓、不 ff master——主仓 ff 由看护者收工时串行做，或经『已授权待合』登记处由 `工具-待合分支巡检.ps1` 机器做；sweep 不做 ff（构建环境瘦身第三轮方案 P4，`#553` 更正）。
 🔴 收工以顶格一行 `OPENER_DONE` 收尾；命中 🟡/🔴 决策点则以 `OPENER_PARTIAL: 停在<档位>决策点——<在等什么>` 收尾（`工具-opener批处理执行v2.ps1` 判成败双指标之一，缺它做完的活也会被判 NO-SENTINEL；队列 §一 `#550`）。
 ```
+
+🔴 **worktree 由 v2.ps1 起 claude 前脚本建好、以该目录为 cwd 启动，本变体不为此另加一行断言**
+（加了即撞「恒为三行」契约，§上文已述）——`git rev-parse --show-toplevel` 天然就是该
+worktree 路径，建失败时脚本当场判该条 `FAIL`、根本不起 claude，子任务不会跑在错误目录
+里；旧说法「泳道自己 `git worktree add`」已随 `#600` ⑴⑵ 废止，见上方标准【CC】骨架段。
 
 🔴 **不放 `开工第一件事：调 set_session_title…` 那一行**——2026-08-28／2026-09-05 两次实撞证明
 「文本例外句」拦不住子 agent 真的执行它（"self" 解析到父 session、把看护者的标题顶掉）；
@@ -99,7 +104,7 @@ Task/Agent `isolation: "worktree"` 只在子任务**零改动**时自动清，�
 
 ```
 [OP-MMDD-X]【CC】看护<语义短名>
-【设置】执行环境：CC ｜ 分支：master（看护者本身不建分支，不改代码）｜ worktree：☐（看护者不建，各子泳道自建）｜ 工作区：无 ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_<语义名>」>
+【设置】执行环境：CC ｜ 分支：master（看护者本身不建分支，不改代码）｜ worktree：☐（看护者不建；各子泳道声明 ☑ 后由 v2.ps1 脚本在起 claude 前建，非子泳道自建）｜ 工作区：无 ｜ session：新开 ｜ 派出线：<线名 OP-MMDD-X，有批次再加「批 B-MMDD_<语义名>」>
 开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），标题：[Win]MMDDX-看护<语义短名>。🔴 你是本批唯一真正被粘贴进独立 CC 会话的一份（其余泳道均由你用 Task/Agent 派发，正文里已不再放这一行——2026-09-05 队列 §一 `#487`／(甲)：源头不放，不再指望子任务的文本例外句被真正遵守），本条对你适用，正常执行即可，标题设定后不要再被子任务顶掉，你自己不属于「跳过本行」的例外范围。
 读 `<看护件完整仓库根相对路径>` 全文＋ CLAUDE.md 恢复上下文。
 
