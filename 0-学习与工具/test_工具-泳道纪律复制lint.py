@@ -11,8 +11,11 @@
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -130,6 +133,74 @@ class RepositoryScanTests(unittest.TestCase):
     def test_repository_is_currently_clean(self):
         """正例全库实跑：当前三处载体 ＋ 本变更包一律不含副本。"""
         self.assertEqual(self.m.main([]), 0)
+
+
+# ────────────────────────────────────────────── 输出截流（队列 §一 #597 ⑵）
+
+class 输出截流(unittest.TestCase):
+    """只改输出**形态**：成功路径摘要化＋落盘全文，`--verbose` 与失败路径整段打印，
+    抽词／判违规判据本身一字不动——本类只钉输出这一层。"""
+
+    def setUp(self):
+        self.m = _load()
+
+    def _capture(self, argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = self.m.main(argv)
+        return code, buf.getvalue()
+
+    def test_成功路径默认摘要并落盘全文(self):
+        self.m.guarded_files = lambda: []
+        report_dir = self.m.REPO_ROOT / "reports" / "output-throttle" / "工具-泳道纪律复制lint"
+        before = set(report_dir.glob("*.log")) if report_dir.exists() else set()
+
+        code, out = self._capture([])
+
+        self.assertEqual(code, 0)
+        lines = out.splitlines()
+        self.assertLessEqual(len(lines), 20, msg=out)
+        self.assertTrue(any("全文见" in ln or "全文已存" in ln for ln in lines), msg=out)
+
+        after = set(report_dir.glob("*.log"))
+        new_files = after - before
+        self.assertTrue(new_files, msg="应至少新增一份落盘全文")
+        content = max(new_files, key=lambda p: p.stat().st_mtime).read_text(encoding="utf-8")
+        self.assertIn("✓ 泳道纪律复制 lint 通过", content)
+
+    def test_verbose开关下成功路径整段打印不截断(self):
+        self.m.guarded_files = lambda: []
+        code, out = self._capture(["--verbose"])
+        self.assertEqual(code, 0)
+        self.assertIn("✓ 泳道纪律复制 lint 通过", out)
+        self.assertNotIn("全文已存", out)
+        self.assertNotIn("全文见", out)
+
+    def test_失败路径不受verbose影响仍整段打印(self):
+        """抄改既有负例夹具（`test_copied_sequence_is_flagged` 同一段落文本），
+        走 `main()` 整条链路验证失败路径不裁剪。"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source_path = root / self.m.SOURCE_OF_TRUTH_REL
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text(
+                "正文占位——本测试用假抽取函数，不依赖真实正本措辞。\n", encoding="utf-8")
+            bad_rel = "违规样例.md"
+            (root / bad_rel).write_text(
+                "每项固定四步＝甲步→乙步→丙步→丁步；丙步不过即撤回停项。\n",
+                encoding="utf-8",
+            )
+
+            self.m.REPO_ROOT = root
+            self.m.extract_markers = lambda text: ["甲步", "乙步", "丙步", "丁步", "撤回"]
+            self.m.guarded_files = lambda: [bad_rel]
+
+            code, out = self._capture([])
+
+        self.assertEqual(code, 1)
+        self.assertIn("✗ 泳道纪律复制 lint 发现 1 处违规", out)
+        self.assertNotIn("全文已存", out)
+        self.assertNotIn("全文见", out)
 
 
 if __name__ == "__main__":

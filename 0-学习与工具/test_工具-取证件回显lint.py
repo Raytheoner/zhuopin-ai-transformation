@@ -18,7 +18,9 @@
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -440,6 +442,60 @@ class 真实仓库现状(unittest.TestCase):
             "1-转型规划/0-全景路线图/CI长期红-逐job根因取证-2026-09-06.md", rels,
             msg=f"受守集合：{rels}",
         )
+
+
+# ────────────────────────────────────────────── 输出截流（队列 §一 #597 ⑵）
+
+class 输出截流(unittest.TestCase):
+    """只改输出**形态**：成功路径摘要化＋落盘全文，`--verbose` 与失败路径整段打印，
+    判据本身（违规判定／退出码）一字不动——本类只钉输出这一层。"""
+
+    def _capture(self, argv, files):
+        真 = M.guarded_files
+        M.guarded_files = lambda: files
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                code = M.main(argv)
+        finally:
+            M.guarded_files = 真
+        return code, buf.getvalue()
+
+    坏件 = [(
+        "1-转型规划/0-全景路线图/取证件-伪-无回显.md",
+        "## 三、结论\n\n那处 **✅ 已修**。\n",
+    )]
+
+    def test_成功路径默认摘要并落盘全文(self):
+        report_dir = M.REPO_ROOT / "reports" / "output-throttle" / "工具-取证件回显lint"
+        before = set(report_dir.glob("*.log")) if report_dir.exists() else set()
+
+        code, out = self._capture([], [])
+
+        self.assertEqual(code, 0)
+        lines = out.splitlines()
+        self.assertLessEqual(len(lines), 20, msg=out)
+        self.assertTrue(any("全文见" in ln or "全文已存" in ln for ln in lines), msg=out)
+
+        after = set(report_dir.glob("*.log"))
+        new_files = after - before
+        self.assertTrue(new_files, msg="应至少新增一份落盘全文")
+        content = max(new_files, key=lambda p: p.stat().st_mtime).read_text(encoding="utf-8")
+        self.assertIn("✓ 取证件判绿回显 lint 通过", content)
+
+    def test_verbose开关下成功路径整段打印不截断(self):
+        code, out = self._capture(["--verbose"], [])
+        self.assertEqual(code, 0)
+        self.assertIn("✓ 取证件判绿回显 lint 通过", out)
+        self.assertNotIn("全文已存", out)
+        self.assertNotIn("全文见", out)
+
+    def test_失败路径不受verbose影响仍整段打印(self):
+        code, out = self._capture(["--enforce"], self.坏件)
+        self.assertEqual(code, 1)
+        self.assertIn("✗ 取证件判绿回显 lint 发现 1 处违规", out)
+        self.assertNotIn("全文已存", out)
+        self.assertNotIn("全文见", out)
 
 
 if __name__ == "__main__":

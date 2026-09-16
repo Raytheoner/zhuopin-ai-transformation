@@ -229,7 +229,10 @@ class TestJB(unittest.TestCase):
         root = _repo({"p": many})
         rep = M.scan(root, git_dates=False)
         self.assertEqual(len(rep.jb), 29)
-        rc, out = _run_main(root, "--enforce")
+        # 队列 #597 ⑵：成功路径默认只出 <=20 行摘要，本用例要断言的具体文案
+        # 在 29 条明细里不保证入选摘要——用 --verbose 找回旧行为（整段打印），
+        # 不改本用例原本要核的判据（J-B 命中 29 条、rc 恒为 0、不含 forbidden 词）。
+        rc, out = _run_main(root, "--enforce", "--verbose")
         self.assertEqual(rc, 0)
         self.assertIn("J-B 节内乱序 29 条", out)
         self.assertNotIn(M.JB_FORBIDDEN, out)
@@ -338,6 +341,53 @@ class TestRealRepoSmoke(unittest.TestCase):
         rep = M.scan(root, git_dates=False)
         self.assertGreater(rep.scanned_packages, 0)
         self.assertGreater(rep.prereq_refs, 0, "R2：真实仓库前置声明数掉到 0 须被看见")
+
+
+class TestOutputThrottle(unittest.TestCase):
+    """队列 #597 ⑵：成功路径摘要 + `reports/output-throttle/` 落盘 + `--verbose` 全量、
+    失败路径不受影响（复用 TestJA 的 FI2_HEADER_DECL 违规夹具）。"""
+
+    REPORT_DIR = SCRIPT.parent.parent / "reports" / "output-throttle" / "工具-僵尸未勾项lint"
+
+    def test_success_path_summarized_and_logged(self):
+        root = _repo({"fi2-recon-mvp": FI2_HEADER_DECL})
+        before = set(self.REPORT_DIR.glob("*.log")) if self.REPORT_DIR.is_dir() else set()
+        rc, out = _run_main(root)
+        self.assertEqual(rc, 0)
+        lines = out.splitlines()
+        self.assertLessEqual(len(lines), 20, out)
+        self.assertTrue(any(("全文见" in ln) or ("全文已存" in ln) for ln in lines), out)
+        after = set(self.REPORT_DIR.glob("*.log")) if self.REPORT_DIR.is_dir() else set()
+        new_files = after - before
+        self.assertTrue(new_files, "应至少新增一个 .log 报告文件")
+        content = "".join(p.read_text(encoding="utf-8") for p in new_files)
+        self.assertIn("7.1 → 1.5", content)      # 全文落盘须含被摘要裁掉前的完整违规行
+
+    def test_verbose_keeps_full_output_uncut(self):
+        # 用与既有 TestJB.test_jb_never_nonzero_exit_even_with_enforce 同形态的
+        # 「J-D 29 项 + J-B」夹具：该形态在不加 --verbose 时会被摘要裁掉 J-B 小节
+        # （见本次改造已知副作用），--verbose 必须把它原样找回来。
+        many = "# T\n## 1. A\n" + "".join(f"- [ ] 1.{i} 未做\n" for i in range(1, 30)) + "- [x] 1.30 做完\n"
+        root = _repo({"p": many})
+        rc, out = _run_main(root, "--verbose")
+        self.assertEqual(rc, 0)
+        self.assertIn("J-B 节内乱序 29 条", out)
+        self.assertNotIn("已省略", out)
+        self.assertNotIn("全文已存", out)
+
+    def test_failure_path_full_output_without_verbose(self):
+        """借用既有失败夹具（FI2_HEADER_DECL + --enforce ⇒ 退出码 1）：不加 --verbose
+        也必须整段完整打印，退出码不变，且不落盘摘要报告。"""
+        root = _repo({"fi2-recon-mvp": FI2_HEADER_DECL})
+        before = set(self.REPORT_DIR.glob("*.log")) if self.REPORT_DIR.is_dir() else set()
+        rc, out = _run_main(root, "--enforce")
+        self.assertEqual(rc, 1)
+        self.assertIn("[J-A]", out)
+        self.assertIn("7.1 → 1.5", out)
+        self.assertNotIn("已省略", out)
+        self.assertNotIn("全文已存", out)
+        after = set(self.REPORT_DIR.glob("*.log")) if self.REPORT_DIR.is_dir() else set()
+        self.assertEqual(after - before, set(), "失败路径不应触发摘要落盘")
 
 
 if __name__ == "__main__":

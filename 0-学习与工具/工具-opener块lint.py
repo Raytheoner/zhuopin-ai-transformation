@@ -168,12 +168,16 @@ H1-H3 三层判据没有意义，全部命中一律按「当前」处理；② *
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
+import io
 import re
 import subprocess
 import sys
 from datetime import date
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output  # 队列 #597 ⑵：成功路径默认摘要，见该模块 docstring。
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -1114,8 +1118,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--file", metavar="路径", type=Path, default=None,
                     help="单文件自检模式：只查这一份文件，不跑 git、不分当前/历史，"
                          "有命中恒退出码 1（不受 --enforce 支配）")
+    ap.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印，不裁摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
     args = ap.parse_args(argv)
 
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run(args)
+    return _emit_output("工具-opener块lint", buf.getvalue().splitlines(), exit_code, verbose=args.verbose)
+
+
+def _run(args) -> int:
     if args.file is not None:
         if not args.file.is_file():
             print(f"✗ --file 指向的路径不存在或不是文件：{args.file}")

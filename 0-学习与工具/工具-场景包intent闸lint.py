@@ -86,11 +86,15 @@ FI1 06-29／QD-A 07-04／SC7 07-06／FI2 07-07 ⇒ 均早于 08-18；SC2 与 O1 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
+import io
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output  # 队列 #597 ⑵：成功路径默认摘要，见该模块 docstring。
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -343,8 +347,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--root", default=str(REPO_ROOT), help="仓库根（默认＝本脚本上一级）")
     ap.add_argument("--today", default=None,
                     help="以该日期判豁免到期（YYYY-MM-DD），默认取本机今天")
+    ap.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印，不裁摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
     args = ap.parse_args(argv)
 
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run(args)
+    return _emit_output(
+        "工具-场景包intent闸lint", buf.getvalue().splitlines(), exit_code, verbose=args.verbose
+    )
+
+
+def _run(args: argparse.Namespace) -> int:
     today = _dt.date.fromisoformat(args.today) if args.today else _dt.date.today()
     rep = scan(Path(args.root), today)
 

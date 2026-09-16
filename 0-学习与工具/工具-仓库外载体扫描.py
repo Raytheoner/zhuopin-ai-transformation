@@ -56,9 +56,13 @@ grep 域内）：
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output
 
 ARTIFACTS_DIR = Path(r"C:\Users\Paul Shao\Claude\Artifacts")
 SCHEDULED_DIR = Path(r"C:\Users\Paul Shao\Claude\Scheduled")
@@ -241,24 +245,7 @@ def _print_summary(statuses: list[tuple[str, bool, str]]) -> int:
     return len(unverifiable)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("keyword", help="要查找的关键词（纯子串匹配，非正则）")
-    parser.add_argument("--skip-http", action="store_true", help="不联网检查 .51 四服务页面")
-    parser.add_argument(
-        "--strict", action="store_true",
-        help="有类别无法核验即以退出码 2 结束（供机器消费，如月度体检复测）",
-    )
-    parser.add_argument("--artifacts-dir", default=None, help="仅测试用：覆盖 Cowork artifacts 目录")
-    parser.add_argument("--scheduled-dir", default=None, help="仅测试用：覆盖定时任务真身目录")
-    parser.add_argument("--cc-skills-dir", default=None, help="仅测试用：覆盖 CC 侧库内 .claude/skills 目录")
-    parser.add_argument("--skill-source-dir", default=None, help="仅测试用：覆盖 Cowork 侧 skill 源码目录")
-    parser.add_argument(
-        "--service-urls", default=None,
-        help="仅测试用：逗号分隔覆盖 .51 四服务 URL",
-    )
-    args = parser.parse_args()
-
+def _run(args) -> int:
     artifacts_dir = Path(args.artifacts_dir) if args.artifacts_dir else ARTIFACTS_DIR
     scheduled_dir = Path(args.scheduled_dir) if args.scheduled_dir else SCHEDULED_DIR
     cc_skills_dir = Path(args.cc_skills_dir) if args.cc_skills_dir else CC_SKILLS_DIR
@@ -351,6 +338,34 @@ def main() -> int:
     if args.strict and unverifiable_count:
         return 2
     return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("keyword", help="要查找的关键词（纯子串匹配，非正则）")
+    parser.add_argument("--skip-http", action="store_true", help="不联网检查 .51 四服务页面")
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="有类别无法核验即以退出码 2 结束（供机器消费，如月度体检复测）",
+    )
+    parser.add_argument("--artifacts-dir", default=None, help="仅测试用：覆盖 Cowork artifacts 目录")
+    parser.add_argument("--scheduled-dir", default=None, help="仅测试用：覆盖定时任务真身目录")
+    parser.add_argument("--cc-skills-dir", default=None, help="仅测试用：覆盖 CC 侧库内 .claude/skills 目录")
+    parser.add_argument("--skill-source-dir", default=None, help="仅测试用：覆盖 Cowork 侧 skill 源码目录")
+    parser.add_argument(
+        "--service-urls", default=None,
+        help="仅测试用：逗号分隔覆盖 .51 四服务 URL",
+    )
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印，不裁摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
+    args = parser.parse_args()
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run(args)
+    return _emit_output("工具-仓库外载体扫描", buf.getvalue().splitlines(), exit_code, verbose=args.verbose)
 
 
 if __name__ == "__main__":

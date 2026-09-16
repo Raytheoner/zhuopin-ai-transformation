@@ -1320,5 +1320,82 @@ class 形态十_子任务泳道缺心跳行(unittest.TestCase):
                         "骨架【CC · 子任务泳道】块缺心跳行")
 
 
+class 队列597成功路径输出截流(unittest.TestCase):
+    """队列 §一 `#597` ⑵：成功路径（退出码 0）默认只打印 ≤20 行摘要＋落盘全文
+    （`_输出截流.emit` 承接），`--verbose` 保留旧行为（整段原样打印，不截断、
+    不落盘）；失败路径（退出码非 0）不受 `--verbose` 影响，恒整段完整打印。
+
+    本类只验证「`main()` 已接上 `_输出截流.emit`」这层输出形态，不复测判据
+    本身——判据是否成立由既有 `file自检模式_scan_single_file` 等类负责。
+    """
+
+    #: 与 `file自检模式_scan_single_file.test_干净块零命中` 同一份已验证过的干净样本。
+    _CLEAN_MD = _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC)
+    #: 与 `file自检模式_scan_single_file.test_有问题的块全部按当前处理不查git`
+    #: 同一份已验证过会命中 F5 的脏样本（`--file` 模式恒退出码 1）。
+    _DIRTY_MD = _md(SETTINGS_CC, TITLE_LINE_WITH_EXC)
+
+    def test_成功路径默认裁摘要并落盘全文(self):
+        import contextlib as _ctx
+        import io as _io
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "干净样本.md"
+            p.write_text(self._CLEAN_MD, encoding="utf-8")
+            buf = _io.StringIO()
+            with _ctx.redirect_stdout(buf):
+                rc = M.main(["--file", str(p)])
+            out_lines = buf.getvalue().splitlines()
+
+        self.assertEqual(rc, 0)
+        self.assertLessEqual(len(out_lines), 20, f"摘要应 ≤20 行，实得 {len(out_lines)}：{out_lines}")
+        self.assertTrue(
+            any(("全文见" in ln or "全文已存" in ln) for ln in out_lines),
+            f"摘要末尾应回显落盘路径：{out_lines}",
+        )
+
+        report_dir = M.REPO_ROOT / "reports" / "output-throttle" / "工具-opener块lint"
+        self.assertTrue(report_dir.is_dir(), f"应已建目录：{report_dir}")
+        logs = sorted(report_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True)
+        self.assertTrue(logs, "未找到落盘的全文报告")
+        # 只断言「至少有一份内容匹配」而非「新增了几份」——并发跑测时同目录可能
+        # 已有其它用例先写过文件，数量不稳定；内容匹配才是本项要验的东西。
+        self.assertTrue(
+            any("零违规" in lg.read_text(encoding="utf-8") for lg in logs),
+            "落盘全文应包含原本该打印的完整信息（本例即『零违规』那句）",
+        )
+
+    def test_verbose开关保留整段打印不截断不落盘摘要标记(self):
+        import contextlib as _ctx
+        import io as _io
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "干净样本.md"
+            p.write_text(self._CLEAN_MD, encoding="utf-8")
+            buf = _io.StringIO()
+            with _ctx.redirect_stdout(buf):
+                rc = M.main(["--file", str(p), "--verbose"])
+            out = buf.getvalue()
+
+        self.assertEqual(rc, 0)
+        self.assertIn("零违规", out)
+        self.assertNotIn("全文已存", out)
+        self.assertNotIn("已省略", out)
+
+    def test_失败路径不受verbose支配恒整段打印(self):
+        import contextlib as _ctx
+        import io as _io
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "脏样本.md"
+            p.write_text(self._DIRTY_MD, encoding="utf-8")
+            buf = _io.StringIO()
+            with _ctx.redirect_stdout(buf):
+                rc = M.main(["--file", str(p)])
+            out = buf.getvalue()
+
+        self.assertEqual(rc, 1)
+        self.assertIn("标准写法见", out)
+        self.assertNotIn("全文已存", out)
+        self.assertNotIn("已省略", out)
+
+
 if __name__ == "__main__":
     unittest.main()

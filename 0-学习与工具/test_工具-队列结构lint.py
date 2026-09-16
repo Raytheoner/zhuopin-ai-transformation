@@ -7,7 +7,9 @@
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -904,6 +906,83 @@ class BrokenRowHeadLintTests(unittest.TestCase):
                     self.module._broken_row_head_violations(sections.get(label, ""), label),
                     [], f"{rel} §{label} 出现行头断裂",
                 )
+
+
+class MainOutputThrottleTests(unittest.TestCase):
+    """队列 #597 ⑵：main() 只改输出形态（摘要节流／--verbose／失败路径整段
+    打印），不改任何判据。
+
+    成功路径用真实仓库跑——main()/_run() 直接消费模块级 REPO_ROOT／
+    QUEUE_PATHS_REL 常量，合成一份能通得过 `check_queue_table_importable`
+    （需要真实 `5-平台底座/zhuopin_platform`）等一整套依赖的假仓库成本
+    远高于收益；真实仓库当前必须是 lint 通过状态（CI 门禁、且本文件上面
+    `test_real_queue_files_have_no_broken_row_heads` 等用例已把这当基线
+    断言），天然是本测试所需的"成功路径"样本。失败路径改用最小合成仓库
+    （只建 `openspec/changes/` 空目录，避免 `_enumerate_openspec_packages`
+    fail-loud；两份队列文件本就不存在 ⇒ `lint()` 自然报"文件不存在"），
+    不依赖真实仓库当下状态，隔离、稳定。"""
+
+    def setUp(self):
+        self.module = _load_module()
+        # 🔴 报告落点不用 `self.module.REPO_ROOT`——那是 `editlock.REPO_ROOT`，
+        # 经 `git rev-parse --git-common-dir` 解到"所有 worktree 共享的主
+        # 工作区"（见本文件头部 docstring 同一坑）；而 `_输出截流.py::emit()`
+        # 默认 `repo_root=None` 时走 `_repo_root_from_here()`，解的是该模块
+        # 自身 `__file__` 所在目录的上一级——本测试文件与它是同目录兄弟，
+        # 用 `Path(__file__).resolve().parents[1]` 才是同一份路径。
+        self.report_dir = (
+            Path(__file__).resolve().parents[1]
+            / "reports" / "output-throttle" / "工具-队列结构lint"
+        )
+
+    def _run_main(self, argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            exit_code = self.module.main(argv)
+        return exit_code, buf.getvalue()
+
+    def test_成功路径_摘要与落盘(self):
+        before = set(self.report_dir.glob("*.log")) if self.report_dir.is_dir() else set()
+
+        exit_code, out = self._run_main([])
+
+        self.assertEqual(exit_code, 0, out)
+        lines = out.splitlines()
+        self.assertLessEqual(len(lines), 20, out)
+        self.assertTrue(
+            any("全文见" in ln or "全文已存" in ln for ln in lines), out)
+
+        after = set(self.report_dir.glob("*.log"))
+        new_files = after - before
+        self.assertGreaterEqual(len(new_files), 1)
+        newest = max(new_files, key=lambda p: p.stat().st_mtime)
+        content = newest.read_text(encoding="utf-8")
+        self.assertIn("结构 lint 通过", content)
+
+    def test_verbose_不裁剪(self):
+        exit_code, out = self._run_main(["--verbose"])
+
+        self.assertEqual(exit_code, 0, out)
+        self.assertIn("结构 lint 通过", out)
+        self.assertNotIn("全文已存", out)
+        self.assertNotIn("全文见", out)
+
+    def test_失败路径_整段打印不受verbose影响(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo_root = Path(tmp.name)
+        (repo_root / "openspec" / "changes").mkdir(parents=True)
+        self.module.REPO_ROOT = repo_root
+
+        exit_code, out = self._run_main([])
+
+        self.assertEqual(exit_code, 1, out)
+        self.assertIn("✗", out)
+        self.assertIn("文件不存在", out)
+
+        exit_code2, out2 = self._run_main(["--verbose"])
+        self.assertEqual(exit_code2, exit_code)
+        self.assertEqual(out2, out)
 
 
 if __name__ == "__main__":

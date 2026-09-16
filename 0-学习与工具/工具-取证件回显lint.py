@@ -100,11 +100,15 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
+import io
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output
 
 
 def _repo_root() -> Path:
@@ -545,8 +549,25 @@ def main(argv: list[str] | None = None) -> int:
                         help="把当前违规集按 baseline 格式打到 stdout（不写盘）")
     parser.add_argument("--no-baseline", action="store_true",
                         help="忽略 baseline，报出全部违规（用于人工盘存量）")
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印，不裁摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
     args = parser.parse_args(argv)
 
+    if args.json or args.emit_baseline:
+        # 队列 #597 ⑵：这两个模式的 stdout 是机读契约（JSON／baseline 格式，
+        # 供显式重定向落盘），不得被摘要裁剪或包一层人读提示——同 sweep 的
+        # --check-dirty-in-pending-batch 一类只读机读模式一样，直接跑、不经节流。
+        return _run(args)
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run(args)
+    return _emit_output("工具-取证件回显lint", buf.getvalue().splitlines(), exit_code, verbose=args.verbose)
+
+
+def _run(args) -> int:
     try:
         manifest = load_manifest()
         problems = 校验清单自洽(manifest)

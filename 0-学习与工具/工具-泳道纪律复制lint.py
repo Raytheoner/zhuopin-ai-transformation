@@ -65,12 +65,16 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fnmatch
+import io
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output
 
 
 def _repo_root() -> Path:
@@ -249,8 +253,24 @@ def main(argv=None) -> int:
     ap.add_argument("--threshold", type=int, default=DEFAULT_THRESHOLD,
                     help=f"序列门槛条数（默认 {DEFAULT_THRESHOLD}，实测校准值，见模块 docstring）")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印，不裁摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
     args = ap.parse_args(argv)
 
+    if args.json:
+        # 队列 #597 ⑵：--json 的 stdout 是机读契约，不得被摘要包裹（emit() 即便
+        # 不截断也会在末尾追加一行「全文已存…」，破坏 JSON 可解析性）——直接跑。
+        return _run(args)
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run(args)
+    return _emit_output("工具-泳道纪律复制lint", buf.getvalue().splitlines(), exit_code, verbose=args.verbose)
+
+
+def _run(args) -> int:
     source_path = REPO_ROOT / SOURCE_OF_TRUTH_REL
     try:
         source_text = source_path.read_text(encoding="utf-8")

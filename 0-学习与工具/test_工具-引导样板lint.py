@@ -9,7 +9,11 @@
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -332,6 +336,71 @@ class 真实仓库现状(unittest.TestCase):
                 continue
             violations.extend(M.check_env_anchor(rel, text))
         self.assertEqual(violations, [], f"仍有「向上逐级找 .env」残留：{violations}")
+
+
+class CliMainTests(unittest.TestCase):
+    """`main()` 整体行为（队列 #597 ⑵：输出截流开关，不改判据本身）。"""
+
+    def setUp(self):
+        self._argv_backup = sys.argv[:]
+        self._repo_root_backup = M.REPO_ROOT
+        self._tracked_backup = M._tracked_py_files
+
+    def tearDown(self):
+        sys.argv[:] = self._argv_backup
+        M.REPO_ROOT = self._repo_root_backup
+        M._tracked_py_files = self._tracked_backup
+
+    def _run_main(self, argv_tail):
+        sys.argv = ["工具-引导样板lint.py", *argv_tail]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = M.main()
+        return code, buf.getvalue()
+
+    def _report_dir(self) -> Path:
+        return M.REPO_ROOT / "reports" / "output-throttle" / "工具-引导样板lint"
+
+    def test_成功路径摘要不超20行且落盘全文报告路径回显(self):
+        # 真实仓库当下可能已有存量违规（见 `真实仓库现状.test_env锚定存量已清零`，
+        # 与本变更无关的既有红）——本测试只验证输出截流开关本身，不依赖真实仓库
+        # 此刻是否干净，故把 `_tracked_py_files` 收窄成空列表，制造一个必然成功
+        # 的最小场景（REPO_ROOT 不动，报告落点仍是真实仓库）。
+        M._tracked_py_files = lambda repo_root: []
+        code, out = self._run_main([])
+        out_lines = out.rstrip("\n").splitlines()
+
+        self.assertEqual(code, 0)
+        self.assertLessEqual(len(out_lines), 20)
+        self.assertTrue(any("全文见" in ln or "全文已存" in ln for ln in out_lines))
+
+        files = list(self._report_dir().glob("*.log"))
+        self.assertTrue(files, "成功路径应至少落盘一份全文报告")
+        matched = [f for f in files
+                   if "引导与凭据锚定 lint 通过" in f.read_text(encoding="utf-8")]
+        self.assertTrue(matched, "落盘报告内容应含本次成功文案")
+
+    def test_verbose时成功路径仍整段打印不截断(self):
+        M._tracked_py_files = lambda repo_root: []
+        code, out = self._run_main(["--verbose"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("引导与凭据锚定 lint 通过", out)
+        self.assertNotIn("全文已存", out)
+
+    def test_失败路径不加verbose也整段打印且退出码不变(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        tmp_root = Path(tmp.name)
+        (tmp_root / "bad.py").write_text(FORM_A, encoding="utf-8")
+        M.REPO_ROOT = tmp_root
+        M._tracked_py_files = lambda repo_root: ["bad.py"]
+
+        code, out = self._run_main(["--enforce"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("✗ 引导与凭据锚定 lint 发现", out)
+        self.assertNotIn("全文已存", out)
 
 
 if __name__ == "__main__":

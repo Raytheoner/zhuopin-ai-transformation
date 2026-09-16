@@ -58,11 +58,15 @@ ImportError: class queue_table: ...` 兜底桩隔离测试环境（#306 apply �
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import re
 import sys
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output  # 队列 #597 ⑵：成功路径默认摘要，见该模块 docstring。
 
 QUEUE_REL = "1-转型规划/0-全景路线图/跨桌任务队列.md"
 EDIT_LOCK_SCRIPT = Path(__file__).resolve().with_name("工具-共享文档编辑锁.py")
@@ -717,9 +721,22 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if "--emit-baseline" in args:
         # 只打到 stdout，不写盘——落盘须显式重定向，见 `emit_appellation_baseline`。
+        # 队列 #597 ⑵：本分支是机读输出（供重定向落盘），不进摘要/节流。
         sys.stdout.write(emit_appellation_baseline(REPO_ROOT))
         return 0
 
+    # 队列 #597 ⑵：--verbose 时保留旧行为（整段原样打印）；失败路径
+    # （exit_code != 0）不受本开关影响，`_emit_output` 内部恒整段打印。
+    verbose = "--verbose" in args
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run(args)
+    return _emit_output(
+        "工具-队列结构lint", buf.getvalue().splitlines(), exit_code, verbose=verbose
+    )
+
+
+def _run(args: list[str]) -> int:
     violations = lint(REPO_ROOT)
     import_error = check_queue_table_importable(REPO_ROOT)
     if import_error:

@@ -10,8 +10,10 @@
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import importlib.util
+import io
 import sys
 import tempfile
 import unittest
@@ -203,6 +205,77 @@ class IntentGateTest(unittest.TestCase):
         self.assertEqual(rep.violations, [], "\n".join(rep.violations))
         self.assertGreater(rep.scanned_packages, 0)
         self.assertGreater(rep.scenes, 0)
+
+
+class MainOutputThrottleTests(unittest.TestCase):
+    """队列 #597 ⑵：main() 只改输出形态（摘要节流／--verbose／失败路径整段
+    打印），不改任何判据——用合成仓库跑（同上方 `_Repo`），不触碰真实仓库。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = _Repo(Path(self._tmp.name))
+        self.report_dir = (
+            M.REPO_ROOT / "reports" / "output-throttle" / "工具-场景包intent闸lint"
+        )
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run_main(self, argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            exit_code = M.main(argv)
+        return exit_code, buf.getvalue()
+
+    def test_成功路径_摘要与落盘(self):
+        rel = self.repo.scene("采购部", "SC20-新场景甲", intent=INTENT_CONFIRMED)
+        self.repo.package("sc20-new-scene", proposal=f"改 `{rel}/src/x.py`")
+        before = set(self.report_dir.glob("*.log")) if self.report_dir.is_dir() else set()
+
+        exit_code, out = self._run_main(
+            ["--root", str(self.repo.root), "--today", str(TODAY)])
+
+        self.assertEqual(exit_code, 0, out)
+        lines = out.splitlines()
+        self.assertLessEqual(len(lines), 20, out)
+        self.assertTrue(
+            any("全文见" in ln or "全文已存" in ln for ln in lines), out)
+
+        after = set(self.report_dir.glob("*.log"))
+        new_files = after - before
+        self.assertGreaterEqual(len(new_files), 1)
+        newest = max(new_files, key=lambda p: p.stat().st_mtime)
+        content = newest.read_text(encoding="utf-8")
+        self.assertIn("sc20-new-scene", content)
+
+    def test_verbose_不裁剪(self):
+        rel = self.repo.scene("采购部", "SC20-新场景甲", intent=INTENT_CONFIRMED)
+        self.repo.package("sc20-new-scene", proposal=f"改 `{rel}/src/x.py`")
+
+        exit_code, out = self._run_main(
+            ["--root", str(self.repo.root), "--today", str(TODAY), "--verbose"])
+
+        self.assertEqual(exit_code, 0, out)
+        self.assertIn("sc20-new-scene", out)
+        self.assertIn("场景包 intent 闸 lint：扫描", out)
+        self.assertNotIn("全文见", out)
+        self.assertNotIn("全文已存", out)
+
+    def test_失败路径_整段打印不受verbose影响(self):
+        rel = self.repo.scene("采购部", "SC20-新场景甲")  # 无 intent.md ⇒ 违规
+        self.repo.package("sc20-new-scene", proposal=f"改 `{rel}/src/x.py`")
+
+        exit_code, out = self._run_main(
+            ["--root", str(self.repo.root), "--today", str(TODAY), "--enforce"])
+
+        self.assertEqual(exit_code, 1, out)
+        self.assertIn("sc20-new-scene", out)
+        self.assertIn("✗ 违规", out)
+
+        exit_code2, out2 = self._run_main(
+            ["--root", str(self.repo.root), "--today", str(TODAY), "--enforce", "--verbose"])
+        self.assertEqual(exit_code2, exit_code)
+        self.assertEqual(out2, out)
 
 
 if __name__ == "__main__":

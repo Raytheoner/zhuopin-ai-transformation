@@ -14,7 +14,9 @@
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import sys
 import tempfile
 import unittest
@@ -361,6 +363,58 @@ class CliTests(_FixtureCase):
         argv = ["--root-only", "--repo-root", str(self.repo_root)]
         self.assertEqual(self.module.main(argv), 0)
         self.assertEqual(self.module.main(argv + ["--enforce"]), 0)
+
+
+class OutputThrottleTests(_FixtureCase):
+    """队列 #597 ⑵：成功路径摘要化、失败路径与 --verbose 不受影响，不改判据本身。"""
+
+    def _report_dir(self) -> Path:
+        return (Path(__file__).resolve().parents[1]
+                / "reports" / "output-throttle" / "工具-CLAUDE进度段lint")
+
+    def test_成功路径摘要不超20行且落盘全文报告路径回显(self):
+        self._write_root(_root_doc(["> **甲（2026-08-01，CC）**：正文。"]))
+        argv = ["--root-only", "--repo-root", str(self.repo_root)]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = self.module.main(argv)
+        out_lines = buf.getvalue().rstrip("\n").splitlines()
+
+        self.assertEqual(code, 0)
+        self.assertLessEqual(len(out_lines), 20)
+        self.assertTrue(any("全文见" in ln or "全文已存" in ln for ln in out_lines))
+
+        files = list(self._report_dir().glob("*.log"))
+        self.assertTrue(files, "成功路径应至少落盘一份全文报告")
+        matched = [f for f in files
+                   if "CLAUDE.md 进度段 lint 通过" in f.read_text(encoding="utf-8")]
+        self.assertTrue(matched, "落盘报告内容应含本次成功文案")
+
+    def test_verbose时成功路径仍整段打印不截断(self):
+        self._write_root(_root_doc(["> **甲（2026-08-01，CC）**：正文。"]))
+        argv = ["--root-only", "--repo-root", str(self.repo_root), "--verbose"]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = self.module.main(argv)
+        out = buf.getvalue()
+
+        self.assertEqual(code, 0)
+        self.assertIn("CLAUDE.md 进度段 lint 通过", out)
+        self.assertNotIn("全文已存", out)
+        self.assertNotIn("已省略", out)
+
+    def test_失败路径不加verbose也整段打印且退出码不变(self):
+        self._write_root(_root_doc([f"> **甲（2026-08-01，CC）**：{'正' * 1500}"]))
+        argv = ["--root-only", "--repo-root", str(self.repo_root), "--enforce"]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = self.module.main(argv)
+        out = buf.getvalue()
+
+        self.assertEqual(code, 1)
+        self.assertIn("✗ CLAUDE.md 进度段 lint 发现", out)
+        self.assertIn("判据正本见", out)
+        self.assertNotIn("全文已存", out)
 
 
 class J1ClosedEntryTests(_FixtureCase):

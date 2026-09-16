@@ -64,12 +64,16 @@ R2 配套：脚本每次打印「本次扫描共发现 N 个前置声明」—�
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
+import io
 import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CHANGES_REL = "openspec/changes"
@@ -390,15 +394,7 @@ def render(rep: Report, jd_summary: bool = False, git_dates: bool = True) -> lis
     return out
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="openspec tasks.md 僵尸未勾项 lint（J-A／J-B／J-C／J-D）")
-    ap.add_argument("--enforce", action="store_true",
-                    help="J-A／J-C 有命中即以退出码 1 阻断（默认只告警、退出码 0）；J-B／J-D 永不影响退出码")
-    ap.add_argument("--root", default=str(REPO_ROOT), help="仓库根（默认＝本脚本上一级）")
-    ap.add_argument("--no-git", action="store_true", help="不取 git 触碰日期（J-D 日期显示 ?）")
-    ap.add_argument("--jd-summary", action="store_true", help="J-D 只出每包一行，不逐项列日期")
-    args = ap.parse_args(argv)
-
+def _run(args) -> int:
     rep = scan(Path(args.root), git_dates=not args.no_git)
     for line in render(rep, jd_summary=args.jd_summary, git_dates=not args.no_git):
         print(line)
@@ -408,6 +404,25 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("\n  （告警模式，退出码 0；加 --enforce 阻断）")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="openspec tasks.md 僵尸未勾项 lint（J-A／J-B／J-C／J-D）")
+    ap.add_argument("--enforce", action="store_true",
+                    help="J-A／J-C 有命中即以退出码 1 阻断（默认只告警、退出码 0）；J-B／J-D 永不影响退出码")
+    ap.add_argument("--root", default=str(REPO_ROOT), help="仓库根（默认＝本脚本上一级）")
+    ap.add_argument("--no-git", action="store_true", help="不取 git 触碰日期（J-D 日期显示 ?）")
+    ap.add_argument("--jd-summary", action="store_true", help="J-D 只出每包一行，不逐项列日期")
+    ap.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印，不裁摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
+    args = ap.parse_args(argv)
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run(args)
+    return _emit_output("工具-僵尸未勾项lint", buf.getvalue().splitlines(), exit_code, verbose=args.verbose)
 
 
 if __name__ == "__main__":

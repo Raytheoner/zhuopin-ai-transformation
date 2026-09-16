@@ -46,10 +46,15 @@
 """
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output  # 队列 #597 ⑵：成功路径默认摘要，见该模块 docstring。
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -175,7 +180,21 @@ TEXT_EXTENSIONS = {
 }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="仓库凭据扫描（队列 #309 步骤 2④，CI 基线）")
+    ap.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印，不裁摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
+    args = ap.parse_args(argv)
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run()
+    return _emit_output("工具-密钥扫描lint", buf.getvalue().splitlines(), exit_code, verbose=args.verbose)
+
+
+def _run() -> int:
     tracked = _tracked_files(REPO_ROOT)
     violations = _check_env_files_not_tracked(tracked)
 

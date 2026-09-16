@@ -372,5 +372,62 @@ class CliEndToEndTests(unittest.TestCase):
             self.assertIn("扫描根目录不存在", result.stdout)
 
 
+class OutputThrottleTests(unittest.TestCase):
+    """队列 #597 ⑵：成功路径摘要 + `reports/output-throttle/` 落盘 + `--verbose` 全量、
+    失败路径（--strict 触发非零退出码）不受影响。"""
+
+    REPORT_DIR = SCRIPT.parent.parent / "reports" / "output-throttle" / "工具-仓库外载体扫描"
+
+    def test_success_path_summarized_and_logged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            layout = _make_full_layout(Path(tmp))
+            before = set(self.REPORT_DIR.glob("*.log")) if self.REPORT_DIR.is_dir() else set()
+            result = _run_cli("PT1H", "--skip-http", *_cli_args(layout))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            lines = result.stdout.splitlines()
+            self.assertLessEqual(len(lines), 20, result.stdout)
+            self.assertTrue(
+                any(("全文见" in ln) or ("全文已存" in ln) for ln in lines), result.stdout)
+            after = set(self.REPORT_DIR.glob("*.log")) if self.REPORT_DIR.is_dir() else set()
+            new_files = after - before
+            self.assertTrue(new_files, "应至少新增一个 .log 报告文件")
+            content = "".join(p.read_text(encoding="utf-8") for p in new_files)
+            self.assertIn("Cowork artifacts", content)   # 全文落盘须含被摘要裁掉前的完整命中行
+
+    def test_verbose_keeps_full_output_uncut(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            layout = _make_full_layout(Path(tmp))
+            terse = _run_cli("PT1H", "--skip-http", *_cli_args(layout))
+            full = _run_cli("PT1H", "--skip-http", "--verbose", *_cli_args(layout))
+            self.assertEqual(full.returncode, 0, full.stdout + full.stderr)
+            self.assertGreater(len(full.stdout.splitlines()), len(terse.stdout.splitlines()))
+            self.assertIn("🔴 本次 2/5 类无法核验", full.stdout)   # 摘要版会把总表尾行裁掉
+            self.assertNotIn("已省略", full.stdout)
+            self.assertNotIn("全文已存", full.stdout)
+
+    def test_failure_path_full_output_without_verbose(self):
+        """借用既有失败夹具（口令门 + --strict ⇒ 退出码 2）：不加 --verbose 也必须
+        整段完整打印，退出码不变，且不落盘摘要报告。"""
+        fixture = _ServerFixture()
+        url = fixture.start(_AuthGateHandler)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                layout = _make_full_layout(
+                    Path(tmp), cc_names=("zhuopin-followup-letter",), cowork_names=())
+                before = set(self.REPORT_DIR.glob("*.log")) if self.REPORT_DIR.is_dir() else set()
+                result = _run_cli(
+                    "每 4h", *_cli_args(layout), "--service-urls", url, "--strict",
+                )
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("访问口令登录页", result.stdout)
+                self.assertIn("核验状态总表", result.stdout)
+                self.assertNotIn("已省略", result.stdout)
+                self.assertNotIn("全文已存", result.stdout)
+                after = set(self.REPORT_DIR.glob("*.log")) if self.REPORT_DIR.is_dir() else set()
+                self.assertEqual(after - before, set(), "失败路径不应触发摘要落盘")
+        finally:
+            fixture.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

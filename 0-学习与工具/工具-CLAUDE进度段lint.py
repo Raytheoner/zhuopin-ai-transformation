@@ -98,11 +98,15 @@ CI，而 J6 的三份存量接力件正超限 5-9 倍（R5 改版实际只改了
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
+import io
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output
 
 # ── 与 `工具-队列结构lint.py` 同一手法：按文件路径加载编辑锁模块，复用其
 #    `_split_live_sections`（队列分区切分）与 `queue_table` 委托，不自己再写
@@ -714,8 +718,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--sentinel-min-bytes", type=int, default=SENTINEL_MIN_BYTES_DEFAULT,
                     help="J8 哨兵目标文件字节下限（默认 200，低于即判被清空）")
     ap.add_argument("--repo-root", default=None, help="覆盖仓库根（默认＝本 checkout）")
+    ap.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印，不裁摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
     args = ap.parse_args(argv)
 
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run(args)
+    return _emit_output(
+        "工具-CLAUDE进度段lint", buf.getvalue().splitlines(), exit_code, verbose=args.verbose)
+
+
+def _run(args) -> int:
     repo_root = Path(args.repo_root).resolve() if args.repo_root else REPO_ROOT
     violations, warnings, parsed_all = lint(
         repo_root, root_only=args.root_only,

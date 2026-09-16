@@ -79,10 +79,14 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
+import io
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+from _输出截流 import emit as _emit_output
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -249,8 +253,20 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="平台底座路径引导样板 lint")
     ap.add_argument("--enforce", action="store_true",
                     help="有违规即以退出码 1 阻断（默认只告警、退出码 0）")
+    ap.add_argument(
+        "--verbose", action="store_true",
+        help="队列 #597 ⑵：成功路径（退出码 0）也整段打印，不裁摘要、"
+             "不写 reports/output-throttle/。失败路径不受本开关影响，始终整段打印。")
     args = ap.parse_args()
 
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _run(args)
+    return _emit_output(
+        "工具-引导样板lint", buf.getvalue().splitlines(), exit_code, verbose=args.verbose)
+
+
+def _run(args) -> int:
     files = _tracked_py_files(REPO_ROOT)
     violations: list[str] = []
     env_violations: list[str] = []
