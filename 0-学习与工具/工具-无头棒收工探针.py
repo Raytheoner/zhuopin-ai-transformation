@@ -73,7 +73,12 @@ BATCH_DIR_RE = re.compile(r"^(\d{8})-(.+)$")
 WORKTREES_REL = Path(".claude") / "worktrees"
 
 #: summary.txt 里 `Format-Table Lane, Id, Status, Minutes` 的状态字面量。
-STATUS_RE = re.compile(r"\b(OK|PARTIAL|NO-SENTINEL|FAIL\(\d+\))")
+# 🔴 2026-09-17（OP-0917-E）：原写 `FAIL\(\d+\)`，而 v2 批处理器写出的字面量是 **`FAIL(-1)`**（进程被杀／未启动时退出码 -1）。
+#    `\d+` 不吃负号 ⇒ 这类行永远不命中 ⇒ 探针只报得出 OK。
+#    实证：批 `20260916-204736` 的 summary.txt 里 2 条 FAIL(-1)，探针一条未列。
+#    L202 的注释写着「它们是一等状态，不是脚注」——意图对，正则漏了个减号。
+#    **只会报成功的守卫等于没有守卫。**
+STATUS_RE = re.compile(r"\b(OK|PARTIAL|NO-SENTINEL|FAIL\(-?\d+\))")
 
 #: 无 summary.txt 且批内所有文件静默超过本阈值 ⇒ 报「疑似停滞」。
 #: 🔴 取 90 分钟而非 45：一条泳道可能长时间安静地干活（agent 不写 stdout），

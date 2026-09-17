@@ -497,3 +497,24 @@ def test_NO_SIGNAL点名在跑的批(tmp_path, capsys):
                 "--stall-minutes", "999999", "--peek"])   # 真实 now，两窗口都放大
     out = capsys.readouterr().out
     assert "[NO-SIGNAL]" in out and "`20260910-收口三泳道`" in out
+
+def test_FAIL负退出码也要被认成一等状态():
+    """🔴 2026-09-17 实证：批 20260916-204736 的 summary.txt 里有两条 `FAIL(-1)`，
+    探针一条都没列出来——因为 STATUS_RE 写的是 `FAIL\\(\\d+\\)`，`\\d+` 不吃负号。
+    v2 批处理器在进程被杀/未启动时写的就是 -1。锁死这个字面量：
+    **只会报成功的守卫等于没有守卫。**"""
+    import importlib.util, pathlib
+    mod_path = pathlib.Path(__file__).resolve().with_name("工具-无头棒收工探针.py")
+    spec = importlib.util.spec_from_file_location("probe_mod", mod_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    真实行 = "op0916s-lock-ux-596          A1 FAIL(-1) sonnet —           7.80 f836af18"
+    m = mod.STATUS_RE.search(真实行)
+    assert m is not None, "FAIL(-1) 必须命中，否则这类行又会整批消失"
+    assert m.group(1) == "FAIL(-1)"
+
+    # 正退出码与其余三个一等状态不得被这次放宽搞坏
+    for 字面量 in ("FAIL(2)", "OK", "PARTIAL", "NO-SENTINEL"):
+        assert mod.STATUS_RE.search(f"lane A1 {字面量} sonnet").group(1) == 字面量
+
