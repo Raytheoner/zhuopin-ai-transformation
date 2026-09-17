@@ -1,0 +1,14 @@
+# 运行产物与敏感数据，绝不入库（红线）
+reports/
+results/
+.env
+.env.*
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+# 🔴 真实 8D 原文一律不入 git（QD-A CLAUDE.md 红线 1）；data/mock 为合成样本、data/rules 为规则表搬运件，可入库
+data/golden/
+data/real_*
+tests/fixtures/real_*
+# 与 QD-A 的 *.json 地雷（评估件 §5.6）不同：本目录不整体忽略 json，只忽略真实件目录
