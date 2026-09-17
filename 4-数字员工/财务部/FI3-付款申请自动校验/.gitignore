@@ -1,0 +1,11 @@
+# 运行产物与敏感数据，绝不入库（红线）
+reports/
+.env
+.env.*
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+# 真实件不入库（财务红色数据）；data/mock 与 data/holidays 为合成/已交付公开日历，可入库
+data/real_*
+data/golden/real_*

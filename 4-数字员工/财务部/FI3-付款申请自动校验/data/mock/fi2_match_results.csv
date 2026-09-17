@@ -1,0 +1,9 @@
+inv_no,ap_no,match_class
+INV-A1,AP-A1,完全匹配
+INV-A2,AP-A2,完全匹配
+INV-B1,AP-B1,完全匹配
+INV-B2,AP-B2,金额微差
+INV-C3,AP-C3,完全匹配
+INV-D2,AP-D2,完全匹配
+INV-E1,AP-E1,完全匹配
+INV-F1,AP-F1,完全匹配
