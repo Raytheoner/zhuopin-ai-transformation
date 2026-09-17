@@ -1,0 +1,21 @@
+[project]
+name = "q2-8d-verdict"
+version = "0.1.0"
+description = "Q2 8D 报告 AI 自动判定（档 1 mock）— 输入 D1–D8 段落文本 → 七维评审结论＋百分制评分＋A/B/C/D 分级；判据正本＝陈忱 V3.2 ＋ 2026-09-01/09-14 签认覆盖层；L2（AI 只出评级与退回建议，退回由质量工程师签发）"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座可编辑安装为**可选**步骤；`pytest` 与服务入口不依赖它（路径引导见 tests/conftest.py）。
+dependencies = [
+    "zhuopin_platform",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["q2_8d_verdict*"]
