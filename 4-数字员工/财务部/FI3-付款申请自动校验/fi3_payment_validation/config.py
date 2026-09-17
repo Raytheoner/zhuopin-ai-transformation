@@ -25,6 +25,10 @@ from zhuopin_platform.criteria_signoff import CriteriaRegistry, Criterion, Signo
 # ── 数据源开关（档 1 只有 mock；u9c 一律 fail-loud，见 feed_source）──
 DATA_SOURCE_DEFAULT = os.environ.get("FI3_DATA_SOURCE", "mock").strip().lower()
 
+# ── 门户页路由前缀（D7；档 3 只建页面，`.51` 部署另行，见 webapp.py 模块说明）──
+ROUTE_PREFIX = "/finance/fi3"
+SERVICE_NAME = "FI3 付款申请自动校验"
+
 # ── 自动化等级：L3 旁路校验清单（拦截落点定乙方案，唐燕萍 2026-07-10 圈定）──
 # 🔴 升 L4 的唯一通道 ＝ `PENDING.value_of("L4_PROMOTION_COSIGN")`，未签认即抛。
 AUTOMATION_LEVEL = "L3"
