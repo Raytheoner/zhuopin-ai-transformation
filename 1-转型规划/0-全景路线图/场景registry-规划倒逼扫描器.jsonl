@@ -10,7 +10,7 @@
 // retired ＝ 已下架且不得重新分配的编号，留行只为不制造永久差集，不参与任何承接判定。
 {"code": "SC1", "domain": "采购", "title": "供应商风险初筛", "planned_month": "2026-07", "aliases": ["SC1"], "excludes": [], "suspended": ""}
 {"code": "SC2", "domain": "采购", "title": "采购周报自动生成", "planned_month": "2026-08", "aliases": ["SC2"], "excludes": [], "suspended": ""}
-{"code": "SC4", "domain": "采购", "title": "合同条款自动提取与审核", "planned_month": "2026-10", "aliases": ["SC4"], "excludes": [], "suspended": ""}
+{"code": "SC4", "domain": "采购", "title": "合同条款自动提取与审核", "planned_month": "2026-11", "aliases": ["SC4"], "excludes": [], "suspended": ""}
 {"code": "SC7", "domain": "采购", "title": "库存优化建议（两期制，并入原 SC5 采购建议/遴选）", "planned_month": "2026-09／2027-01", "aliases": ["SC7"], "excludes": [], "suspended": ""}
 {"code": "SC8", "domain": "采购", "title": "客户订单交期智能承诺", "planned_month": "2026-07", "aliases": ["SC8"], "excludes": [], "suspended": ""}
 {"code": "SC10", "domain": "采购", "title": "BOM 评审及公司物料库数据管控", "planned_month": "2027-03", "aliases": ["SC10"], "excludes": [], "suspended": ""}
