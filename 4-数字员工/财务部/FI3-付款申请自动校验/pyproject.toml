@@ -1,0 +1,21 @@
+[project]
+name = "fi3-payment-validation"
+version = "0.1.0"
+description = "FI3 付款申请自动校验（档 1 mock）— 配票前置/收款账户/重复付款/超合同/预付款分级/付款日期/综合仪表盘 七个子场景，L3 旁路校验清单"
+requires-python = ">=3.11"
+authors = [{ name = "卓品智能 AI 转型项目" }]
+# 平台底座可编辑安装为**可选**步骤；`pytest` 与服务入口不依赖它（路径引导见 tests/conftest.py）。
+dependencies = [
+    "zhuopin_platform",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "openpyxl>=3.1"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fi3_payment_validation*"]

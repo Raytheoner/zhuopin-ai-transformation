@@ -1,0 +1,3 @@
+prepay_no,supplier_id,amount,paid_on,written_off_amount,invoice_received,contract_no
+PP-001,SUP-005,200000,2026-05-10,50000,否,CT-005
+PP-002,SUP-001,20000,2026-08-01,20000,是,CT-001

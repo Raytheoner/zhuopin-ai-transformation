@@ -1,0 +1,9 @@
+contract_no,supplier_id,cap_amount,term_clause,is_framework,parent_contract_no,is_provisional,status
+CT-001,SUP-001,500000,验收后30天,否,,否,有效
+CT-002,SUP-002,200000,票到后,否,,否,有效
+CT-003F,SUP-003,300000,月结60天,是,,否,有效
+CT-003A,SUP-003,0,月结60天,否,CT-003F,否,有效
+CT-003B,SUP-003,0,月结60天,否,CT-003F,否,有效
+CT-004,SUP-004,1000000,到货后45天,否,,是,有效
+CT-005,SUP-005,800000,验收后30天,否,,否,有效
+CT-006,SUP-006,100000,季度结算,否,,否,有效
