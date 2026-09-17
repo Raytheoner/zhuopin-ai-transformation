@@ -22,11 +22,15 @@
 
 **原因未查明**：`core.longpaths` 未设、系统 `LongPathsEnabled=1`，但失败路径并不长，所以**不把长路径当因果**。修法与原因无关：git 删不动即回退。
 
-## 四、`#575` 轮询守：验收判据已改
+## 四、轮询守 `#575`：已收，且拓扑变了
 
-实测 09-14～09-16 每天 ~96 轮里只有 **2 轮**真跑，其余轮轮 1 秒、`LastTaskResult=0`、零留痕，面板全绿。原因在包装脚本那一行（见第二块第 2 点）。
+2026-09-17 11:03 三条判据全过：`LastTaskResult=0`、Operational 63 秒（不再是 1 秒）、留痕出真行（`probe{NO-SIGNAL,197ms}`／`patrol{WL-NO-ACTION,NO-PENDING,WT-NO-ACTION,59706ms}`／`woke:false`）。当日稳定跑满 22 轮，每轮 60–90 秒。行已翻 `[S:done]`。
 
-🔴 **ff 之后他还需提权重跑一次注册脚本**，新模板才会烘进包装脚本。新验收判据：**要么写出真留痕，要么 `LastTaskResult` 变 8——不允许再出现「1 秒返回 0 且零留痕」。** 在这条过之前，桌面端 15 分钟任务保持 Active。
+🔴 **真因是机器自己写出来的**：10:40 那轮留痕里是 `wrapper_error: pwsh 不存在：C:\Program Files\WindowsApps\...\pwsh.exe` —— S4U 上下文里那个 Store 封装路径连 `Test-Path` 都为假。解法是换非 Store 的 zip 版真身 `C:\Tools\pwsh7\pwsh.exe`（301,368 B、属性 Archive），提权重跑注册脚本传 `-PwshExe` 烘入。
+
+🔴 **拓扑已变，别再照旧卡片行事**：Cowork 桌面端「全天每 15 分钟」任务**已由他删除**（2026-09-17）。探针＋巡检两件现在**只由本机 `ZhuopinPollGuard` 一条腿承担**。以前卡上那句「桌面端 15 分钟任务不得停」已作废。
+
+➕ **残留风险，无承接行**：单腿之后没有第二条腿兜底。它现在失败会叫（exit 8／exit 9 ＋ 留痕），但**没有任何人或机器在看 `LastTaskResult`**——会叫而没人听，等于半个守卫。下一个 session 若要补，最省的做法是让 sweep 或收工探针每轮顺带核一次「当天留痕文件的最新行时间距今是否超过 30 分钟」。
 
 ## 五、下个 session 开头
 
