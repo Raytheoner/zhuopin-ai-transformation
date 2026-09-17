@@ -28,6 +28,11 @@
 - [x] 2.12 `pytest -q --tb=short --maxfail=5` **25 passed**（十二张申请四态与子场景命中逐张断言）
 - [x] 2.13 `intent.md`（转写版，`status: 待确认`）＋ 场景 `CLAUDE.md` 六段式
 
+## 2bis. design 审
+
+- [x] 2b.1 🟡 **design 审 ＝ ✅ 已通过**（Shao Peishen 2026-09-17 答 `1a`，D1–D8 整表通过、无驳回）⇒ §3 收口闸解除
+- [x] 2b.2 `intent.md` `status` 转 `已确认`（答 `2a`，认可转写版、不补跑 grill）⇒ CI `scene-intent-gate-lint --enforce` 对本包转绿
+
 ## 3. 🔴 design 审收口（未全部关闭不得进 §4）
 
 - [ ] 3.1 Shao Peishen 审 D1–D8（🟡）

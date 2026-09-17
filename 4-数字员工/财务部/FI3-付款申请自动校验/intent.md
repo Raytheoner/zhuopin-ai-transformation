@@ -1,6 +1,8 @@
 ---
-status: 待确认
+status: 已确认
 确认人: Shao Peishen
+确认时刻: 2026-09-17（答 `2a`＝认可转写版，不补跑 grill）
+确认依据: 队列 §一 `#605` 明令「不跑 grill、需求树已成文」；R1–R8 由唐燕萍 2026-07 三步法圈改定稿、零开放项；本件仅逐条指回来源，未新增任何判据
 场景: FI3
 scenario_name: 付款申请自动校验
 产出方式: 转写（未跑 grill——队列 §一 #605 明令「不跑 grill，需求树已成文」）
@@ -11,7 +13,7 @@ scenario_name: 付款申请自动校验
 # FI3 付款申请自动校验 · intent（需求收敛产出 · 转写版）
 
 > 🔴 **本件不是 grill 产出，是转写**：FI3 的需求树 2026-07 已由唐燕萍三步法圈改定稿（R1–R8 零开放项），队列 §一 `#605` 明令「不跑 grill、不要从零重开需求」。本件按 rules/场景建造与合规 §二 的三节固定格式，把已成文的判据**逐条指回来源**，供 CI `scene-intent-gate-lint` 与 design 审消费。
-> 🔴 **`status` 由 Shao Peishen 确认后改 `已确认`，本泳道不代填**（lint 在此之前对 `fi3-payment-validation-mvp` 报违规，属如实状态，见队列 `#605` 回写）。
+> ✅ **2026-09-17 Shao Peishen 已确认（答 `2a`）**，`status` 转 `已确认`，CI `scene-intent-gate-lint --enforce` 对本包转绿。〔原文：`status` 由 Shao Peishen 确认后改 `已确认`，本泳道不代填〕
 
 ## §一 · M2 已自查的事实（未问任何人）
 

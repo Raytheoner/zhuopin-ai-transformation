@@ -18,7 +18,10 @@
 
 **2.2 节假日日历口径**：① 数据源＝745 行 xlsx（唯一权威，`data/holidays/holiday_calendar.csv` 为其搬运件，源 md5 `8e5295e84d310477722b5bfc353e88be`）；**旧 33 天表已作废**，design 与代码不再出现「2026 全年 33 天」口径；② 工作日判定＝直查 `是否工作日` 列，不自行推导（`HolidayCalendar.is_workday`）；③ 覆盖上界 **2028-01-15** 为显式边界失败：`CalendarOutOfRangeError`，不静默外推、不回落自然日（用例 `test_calendar_out_of_range_fails_loud`／`test_due_date_beyond_calendar_fails_loud`）。
 
-## Decisions（工程决策，待审）
+## Decisions（工程决策，✅ **2026-09-17 Shao Peishen 审过，答 `1a` ＝ D1–D8 全数通过，无驳回**）
+
+> ✅ **审过留痕**：裁决人 Shao Peishen，2026-09-17，答复原文 `1a 2a 3a 4a` 的第 1 项；本次为**整表通过**，未驳回任何一条 D。⇒ 本包 tasks §3 收口闸解除，可进实现。
+> 🔴 **审过不等于口径已签认**：`Open Questions` 三条（`FI3-G-01` 账龄预警天数待财务信、`FI3-G-02` L4 会签、`FI3-G-03` 持有人/backup）**一条未动**，`PENDING` 注册表仍读即抛；`AUTOMATION_LEVEL` 维持 `L3`。
 
 | # | 决策 | 备选／代价 |
 |---|---|---|
