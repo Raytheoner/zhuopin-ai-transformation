@@ -49,7 +49,7 @@
 
 ## 5. 档 3 内部服务（design 审后）
 
-- [ ] 5.1 门户页 `/finance/fi3`（不新起端口，预留网关 auth 接入点）
+- [x] 5.1 门户页 `/finance/fi3`（不新起端口，预留网关 auth 接入点；队列 §一 `#613`，`fi3_payment_validation/webapp.py`＋`scripts/run_fi3_web.py`，32 passed）
 - [ ] 5.2 `.51` 部署＋冒烟＋回滚 SOP；场景 CLAUDE.md 补「部署状态」段
 - [ ] 5.3 第 8 步跟进信（串行闸三分支＋发送三条硬前置）
 
