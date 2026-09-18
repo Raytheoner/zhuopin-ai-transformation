@@ -153,7 +153,7 @@
       **对外行为与调用序列未变**，故不新增场景级记忆条目；判据与样板由 `4-数字员工/CLAUDE.md`
       的指针 ＋ lint 承接（守「机制化优于新增人守」，不复述即不漂移）
 - [x] 5.2 队列 #354 回写 ＋ §二 批次登记
-- [ ] 5.3 `/opsx:archive env-anchor-collapse -y` —— **暂不归档**，见文件顶部。
+- [x] 5.3 `/opsx:archive env-anchor-collapse -y` —— **已归档**（commit `2882bfa7` 2026-09-12 20:57 git mv 入 archive/ ＋ spec 落 `openspec/specs/platform-env-anchor/spec.md`；`openspec show env-anchor-collapse` → Unknown item、`openspec list` 不再列出，CLI 状态确认。本格勾晚了 7 天，2026-09-19 Cowork看护-OP0919 据实补勾，非补做。（原文顶部“🔴 暂不归档”一句是 08-27 写的，已被本行上方 09-12 签认回勾取代，未改原文，本行为补记。）
       解锁条件剩两项：**2.3.5 的「真实推送」那一半**（等 08-28 20:00 自然触发后核验，或
       Shao Peishen 明确同意用掉 `2026-W34` 的幂等票）＋ **3.5.1 切 `--enforce`**（最早 2026-09-03）。
 
