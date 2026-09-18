@@ -12,8 +12,8 @@
 - [x] 2.8 `intent.md`（转写版 `待确认`）＋场景 `CLAUDE.md`
 
 ## 3. 🔴 design 审收口
-- [ ] 3.1 Shao Peishen 审 D1–D8（D3／D4 须明确拍）
-- [ ] 3.2 `intent.md` 转 `已确认`（Shao Peishen）
+- [x] 3.1 Shao Peishen 审 D1–D8（D3／D4 须明确拍）⇒ ✅ **2026-09-18 答 `1a`：整表通过、无驳回，D3／D4 一并拍过**
+- [x] 3.2 `intent.md` 转 `已确认`（Shao Peishen）⇒ ✅ **2026-09-18 答 `2a`：认可转写版、不补跑 grill**，CI intent 闸转绿
 - [ ] 3.3 `Q2-G-01` 并进下一封质量部信（串行闸现取，不单起）
 - [ ] 3.4 `Q2-G-04` 持有人／backup 登记（人事，不代指派）
 
