@@ -21,7 +21,9 @@ Write-Host ("CmdLine={0}" -f $proc.CommandLine)
 $task = Get-ScheduledTask -TaskName Fi3WebServer -ErrorAction SilentlyContinue
 if ($task) {
   $info = Get-ScheduledTaskInfo -TaskName Fi3WebServer
-  Write-Host ("Task state={0}  LastResult={1}  LastRun={2}  Trigger={3}  User={4}" -f $task.State, $info.LastTaskResult, $info.LastRunTime, ($task.Triggers | ForEach-Object { $_.CimClass.CimClassName }) -join ',', $task.Principal.UserId)
+  $trig = ($task.Triggers | ForEach-Object { $_.CimClass.CimClassName }) -join ','
+  $rst  = "{0}x/{1}" -f $task.Settings.RestartCount, $task.Settings.RestartInterval
+  Write-Host ("Task state={0}  LastResult={1}  LastRun={2}  Trigger={3}  User={4}  Restart={5}" -f $task.State, $info.LastTaskResult, $info.LastRunTime, $trig, $task.Principal.UserId, $rst)
 } else { Write-Host "FAIL: task Fi3WebServer not registered"; $fail++ }
 $hash = (Get-FileHash "C:\fi3\app\fi3_payment_validation\webapp.py" -Algorithm SHA256).Hash
 Write-Host ("webapp.py sha256={0}" -f $hash)
