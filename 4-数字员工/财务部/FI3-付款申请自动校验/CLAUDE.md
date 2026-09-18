@@ -23,7 +23,7 @@
 ## 4. 红线
 - mock 先行；`u9c` 不回退 mock。收款账号任何呈现只留尾 4 位。主数据缺失＝拦截，不＝通过。
 - 引擎不得写死任何数字；新口径先立 `Criterion`。`AUTOMATION_LEVEL` 改 L4 唯一前提＝会签签认落档。
-- 不发信、不代指派持有人、不代联络 CFO 办公室。`.51` 只动 `C:i3\`／`Fi3WebServer`／`Fi3-WebServer-8097` 三处（`#615` 授权范围），不碰网关 8090、不动其余服务；口令值不入库、不打印、不进日志。
+- 不发信、不代指派持有人、不代联络 CFO 办公室。`.51` 只动 `C:\fi3\`／`Fi3WebServer`／`Fi3-WebServer-8097` 三处（`#615` 授权范围），不碰网关 8090、不动其余服务；口令值不入库、不打印、不进日志。
 
 ## 5. 时间线
 - 2026-07-07 就绪清单立；07-10 唐燕萍 R1–R8 圈改；07-14 暂估价统一确认；07-19 核实零开放项。
@@ -39,17 +39,17 @@
 |---|---|
 | 地址 | `http://192.168.100.51:8097/finance/fi3/`（档 1 mock，首屏黄条标注；**看形态、不看数字**） |
 | 健康检查 | `http://192.168.100.51:8097/finance/fi3/api/ping`（门禁豁免；无裸 `/api/ping`） |
-| 布局 | `C:i3\{zhuopin_platform, app, .venv, .env, deploy-tools}`，同 FI2 扁平布局 |
+| 布局 | `C:\fi3\{zhuopin_platform, app, .venv, .env, deploy-tools}`，同 FI2 扁平布局 |
 | 计划任务 | `Fi3WebServer`：`MSFT_TaskBootTrigger`（AtStartup）＋ `SYSTEM`＋ Restart `3x/PT1M`（smoke §0 回显） |
 | 防火墙 | 入站规则 `Fi3-WebServer-8097`，`RemoteAddress=Any`（smoke §0 回显 `remote=Any`） |
-| 门禁 | 共享口令 `ZP_GATE_PASSWORD`（`#160`），`C:i3\.env` 由 `deploy-server.ps1` 从同机 `C:i2\.env` 服务器本地借行、值不出机不回显；程序化读取走 `X-Auth-Token` |
+| 门禁 | 共享口令 `ZP_GATE_PASSWORD`（`#160`），`C:\fi3\.env` 由 `deploy-server.ps1` 从同机 `C:\fi2\.env` 服务器本地借行、值不出机不回显；程序化读取走 `X-Auth-Token` |
 | 脚本 | `sync-to-server.ps1`（笔记本跑）／`deploy-server.ps1`（`.51` 跑）／`smoke-server.ps1`（`.51` 跑，`exit`＝失败数） |
 | 部署 commit | `ae6a2d8`（webapp.py sha256 `CAE140BF…41F95` 两侧一致：本机 `sha256sum` ＝ `.51` `Get-FileHash`） |
 
 - **§二 前置**：全量 32 passed（`python -m pytest tests -q`）；design D1–D8 09-17 审过（答 `1a`）；变更包 `fi3-payment-validation-mvp` 仍开（5.3／§3 档 2 未做，不归档）；场景 CLAUDE.md 本段即更新；§三 无冻结标。
-- **§三 七类坑**：① 三脚本文件头 `EF BB BF`（`xxd` 取证）✅ ② 防火墙 `Any` ✅ ③ AtStartup＋SYSTEM ✅ ④ `start-fi3.ps1` 烘焙 `C:i3\.venv\Scripts\python.exe` 绝对路径（smoke §0 `CmdLine` 回显）✅ ⑤ `3x/PT1M` ✅ ⑥ `.env` 键非空、门禁生效（未登录 302 实测）✅ ⑦ 口令值未进任何库内文件／日志 ✅。
+- **§三 七类坑**：① 三脚本文件头 `EF BB BF`（`xxd` 取证）✅ ② 防火墙 `Any` ✅ ③ AtStartup＋SYSTEM ✅ ④ `start-fi3.ps1` 烘焙 `C:\fi3\.venv\Scripts\python.exe` 绝对路径（smoke §0 `CmdLine` 回显）✅ ⑤ `3x/PT1M` ✅ ⑥ `.env` 键非空、门禁生效（未登录 302 实测）✅ ⑦ 口令值未进任何库内文件／日志 ✅。
 - **§五 冒烟三件套（2026-09-18 08:26–08:40 本地）**：⑴ `/api/ping` 200——`.51` 本机（smoke §1）＋ 笔记本外部 `curl` 各一次 ✅；⑵ 未登录 `GET /finance/fi3/` → 302 `/_gate/login`（本机＋外部各一次），登录后 200 ✅；⑶ 主流程＝登录后首页渲染 mock 判定表，`bytes=3565`，关键字 `<b>mock</b>`／`并非真实付款申请`／`fi3-v1-tangyanping-2026-07-10`／`<th>结果态</th>` 四项全 True，前后 PID 9920 同一（未崩） ✅。`smoke-server.ps1` 回显 `SMOKE DONE failures=0`，exit 0。
-- **§六 回滚 SOP（已写死 TaskName）**：`schtasks /End /TN Fi3WebServer ; schtasks /Delete /TN Fi3WebServer /F ; Remove-NetFirewallRule -DisplayName Fi3-WebServer-8097`；门禁回滚＝清空 `C:i3\.env` 的 `ZP_GATE_PASSWORD=` 值后 `/End`＋`/Run`；代码回滚＝`sync-to-server.ps1` 重推上一 commit＋重启。
+- **§六 回滚 SOP（已写死 TaskName）**：`schtasks /End /TN Fi3WebServer ; schtasks /Delete /TN Fi3WebServer /F ; Remove-NetFirewallRule -DisplayName Fi3-WebServer-8097`；门禁回滚＝清空 `C:\fi3\.env` 的 `ZP_GATE_PASSWORD=` 值后 `/End`＋`/Run`；代码回滚＝`sync-to-server.ps1` 重推上一 commit＋重启。
 - **§七 可常驻**：服务由计划任务拉起（非手工前台）、AtStartup、带失败重启；重部署前 `Start-ZhuopinWebServiceAndCheckHealth` 先杀端口占用旧实例（防双实例）。
 - ⚠️ 未做／留步：`.51:8090` 网关未接管 `/finance/fi3`（`#615` 明令本批不碰网关）；5.3 跟进信未起草（对外发送永不代办）。
 
