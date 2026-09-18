@@ -50,7 +50,7 @@
 ## 5. 档 3 内部服务（design 审后）
 
 - [x] 5.1 门户页 `/finance/fi3`（不新起端口，预留网关 auth 接入点；队列 §一 `#613`，`fi3_payment_validation/webapp.py`＋`scripts/run_fi3_web.py`，32 passed）
-- [ ] 5.2 `.51` 部署＋冒烟＋回滚 SOP；场景 CLAUDE.md 补「部署状态」段
+- [x] 5.2 `.51` 部署＋冒烟＋回滚 SOP；场景 CLAUDE.md 补「部署状态」段（`OP-0918-A`，队列 §一 `#615`：`.51:8097` 过渡期独立端口，Shao Peishen 2026-09-18 答 `a`；冒烟三件套 `failures=0`，证据在场景 CLAUDE.md §5b）
 - [ ] 5.3 第 8 步跟进信（串行闸三分支＋发送三条硬前置）
 
 ## 6. L4 晋级（R8 门槛达标后）
