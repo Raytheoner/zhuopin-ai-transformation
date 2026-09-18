@@ -60,13 +60,13 @@ def test_identity_resolver_is_injectable_and_does_not_block_readonly_page():
 
 
 def test_gate_is_noop_without_env_var(monkeypatch):
-    monkeypatch.delenv("FI3_GATE_PASSWORD", raising=False)
+    monkeypatch.delenv("ZP_GATE_PASSWORD", raising=False)
     client = _client()
     assert client.get(f"{config.ROUTE_PREFIX}/").status_code == 200
 
 
 def test_gate_activates_when_env_var_set(monkeypatch):
-    monkeypatch.setenv("FI3_GATE_PASSWORD", "test-secret")
+    monkeypatch.setenv("ZP_GATE_PASSWORD", "test-secret")
     client = _client()
     resp = client.get(f"{config.ROUTE_PREFIX}/")
     assert resp.status_code == 302  # 未带 cookie/token，被门禁重定向到登录页

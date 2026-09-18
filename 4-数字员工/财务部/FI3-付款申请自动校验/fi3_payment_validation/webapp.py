@@ -1,9 +1,11 @@
-"""FI3 门户页 —— `/finance/fi3`（design D7；档 3，只建页面，不做 `.51` 部署，队列 §一 `#613`）。
+"""FI3 门户页 —— `/finance/fi3`（design D7；档 3，队列 §一 `#613` 建页、`#615` 上线 `.51:8097`）。
 
-🔴 **不新起端口对外**（D7 原文，`#613` 边界 ⑴）：本服务不比照 SC2 8096 那次的「过渡期新端口」
-豁免——监听端口默认只绑 `127.0.0.1`（非 `0.0.0.0`），不建 `deploy-server.ps1`／防火墙规则。唯一
-被认可的访问路径是 `.51:8090` 统一门户网关反向代理到本进程（收编条件与登记流程见
-`5-平台底座/unified-portal-gateway/CLAUDE.md` §6「决策件线③存量收编」，财务域排第一顺位）。
+🔴 **对外形态＝过渡期独立端口 8097**（`#615`，Shao Peishen 2026-09-18 答 `a`「现在都是内网，先上
+功能，认证完善以后慢慢上」）：与 design D7「不新起端口、走 `.51:8090` 网关反代」相反，属过渡形态，
+先例＝SC2 8096。**网关收编（决策件线③）时本端口一并回收**，届时 `/finance/fi3` 的 `required_tier`
+与权限映射另判（收编条件见 `5-平台底座/unified-portal-gateway/CLAUDE.md` §6）。本模块不持有端口
+——监听地址由 `scripts/run_fi3_web.py` 读 `FI3_WEB_HOST`／`FI3_WEB_PORT`，默认仍只绑 `127.0.0.1`
+（本机跑不对外），`.51` 部署由 `deploy-server.ps1` 置 `0.0.0.0`。
 
 🔴 **本页只展示档 1 mock 汇总**（`#613` 边界 ⑶）：数据固定来自 `feed_source.load_context("mock")`，
 页面首屏显著标注「mock 数据」，不得让人误以为是真实付款申请（同 2026-07 `:8092` 静态原型
@@ -12,8 +14,10 @@
 🔴 **网关 auth 接入点只预留、不实现**（`#613` 边界，"auth 接入点只预留不实现"）：
 `default_identity_resolver()` 读 `X-Zp-Identity` 请求头（统一门户网关下发身份的既定约定，同
 `sc2/webapp.py` 同名接入点），网关未接管时恒返回 `None`，本页不因此拒绝展示（只读档 1 mock
-页，无需身份即可看）。`install_flask_gate` 用 `FI3_GATE_PASSWORD` 环境变量，未配置即不装门禁
-（同 FI2/SC2 惯例），本包不代配、不代联络 IT。
+页，无需身份即可看）。门禁走 `install_flask_gate` 的**共享口令** `ZP_GATE_PASSWORD`（`#160`，与
+SC8／QD-B／FI2／SC2 同一个口令，成员不必记第二个；`#615` 由 `FI3_GATE_PASSWORD` 改回共享键），
+未配置即不装门禁（本机跑与测试因此无需改动）。🔴 口令值只在 `.51` 的 `.env`，不入库、不打印、
+不进日志；`.env` 的读入由 `run_fi3_web.py` 经 `zhuopin_platform.env_anchor` 完成，本模块只读进程环境。
 """
 from __future__ import annotations
 
@@ -71,7 +75,8 @@ def create_app(*, today: date | None = None, identity_resolver=None,
                audit_path: Path | str = "reports/fi3_web_audit.jsonl") -> Flask:
     """组装 Flask app（依赖注入 `identity_resolver`／`audit_path`，便于测试）。"""
     app = Flask(__name__)
-    install_flask_gate(app, service_name=config.SERVICE_NAME, env_var="FI3_GATE_PASSWORD",
+    # 共享口令门禁（#160）：env_var 取 install_flask_gate 默认值 ZP_GATE_PASSWORD，不再另设场景键（#615）。
+    install_flask_gate(app, service_name=config.SERVICE_NAME,
                        exempt_paths=(f"{config.ROUTE_PREFIX}/api/ping",))
 
     resolve_identity = identity_resolver or default_identity_resolver
