@@ -55,6 +55,6 @@
 
 仓库依赖实查：Gmail 命中 1 处系文档吐槽、visualize 命中 2 处系英文单词 Visualize（openspec 探索 skill），**无任何脚本／skill／看护件依赖非 remote-devices 的 MCP**。实测调用：remote-devices 367 次（97%）、claude-code-remote 2 次、memory 2 次，其余 6 个零调用。
 
-Shao Peishen 拍板 **丙（c）**：断 **Gmail／Google_Drive／Google_Calendar／visualize** 四项（减 51 个工具定义）；**claude-in-chrome 与 remote-devices 自带的 Claude_Browser 两套浏览器都留**；Claude_Docs 留。断连动作在 Cowork 设置里由他本人执行，本线不可代办。
+Shao Peishen 拍板 **丙（c）**。**实际执行结果（2026-09-18 已断实、工具侧确认）**：断 **Gmail（29 工具）／Google Calendar（9）／Google Drive（11）**，共卸载 **49 个工具定义**。🔴 **isualize 不是连接器**——它是网页端内置小工具，连接器面板里没有这一项，原计划的「四项」实为三项，此处按实况更正。**留**：Browser／Filesystem／Windows-MCP（＝emote-devices 三条腿，机器守命脉）、Claude in Chrome、Claude Docs、GitHub Integration。断连动作在 Cowork 设置里由他本人执行，本线不可代办。⚠️ 这三项是**账号级**连接，网页端用邮件／日历／云盘也一并失效，要用需重走一次 OAuth。
 
 后续会话若发现某能力缺失，先核是不是这四项之一被断——它们在本项目内零依赖，缺失应当只表现为「用不上」，不应表现为「跑挂」。
