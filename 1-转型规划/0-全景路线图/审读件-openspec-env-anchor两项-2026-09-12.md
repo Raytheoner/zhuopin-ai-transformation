@@ -1,7 +1,7 @@
 ---
 title: "审读件 · env-anchor-collapse 剩余两项（2.3.5 最后一跳／3.5.1 切 --enforce）"
 created: 2026-09-12
-status: 待签认
+status: 已签认（1a，2a；Shao Peishen 2026-09-18，经 B0918巡检代问）
 来源: openspec/changes/env-anchor-collapse/tasks.md 2.3.5 与 3.5.1（2026-08-27 扣住；队列 §一 #354）
 用途: 把两项 🟡 的选项与代价做熟成可一字母作答的问句；本件只做现取与可读提取，不落地、不切、不勾、不改 design/proposal 一个字
 派出线: Cowork 环境总线 OP-0912-E（批 B-0912_env-anchor，派单件 `派单件-【CC】env-anchor两项选项做熟-2026-09-12.md`）；执行 OP-0912-P【CC】
