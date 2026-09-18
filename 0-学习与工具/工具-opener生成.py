@@ -812,11 +812,18 @@ def _settings_line(spec: OpenerSpec) -> str:
             branch_field = f"master（从 master 起 `claude/op{mmdd}{suffix.lower()}-{spec.branch}`）"
     else:
         branch_field = "master"
-    return (
+    base = (
         f"【设置】执行环境：{spec.env} ｜ 分支：{branch_field} ｜ worktree：{spec.worktree} ｜ "
-        f"工作区：{spec.workspace} ｜ session：{spec.session} ｜ 派出线：{spec.line} ｜ "
-        f"模型：{spec.model}"
+        f"工作区：{spec.workspace} ｜ session：{spec.session} ｜ 派出线：{spec.line}"
     )
+    # Shao Peishen 2026-09-18/19 两次指出：「模型：」字段只对 CC 有意义——
+    # 工具-opener批处理执行v2.ps1 只从【CC】§三 子任务泳道 opener 块里解析这一格去起
+    # claude 子进程的 --model；【Cowork】opener 从不经该脚本启动，附上「模型：sonnet」
+    # 是个从来没人读、却总在那儿的死字段，纯属误导。六字段骨架（执行环境｜分支｜worktree｜
+    # 工作区｜session｜派出线）本就不含模型，故这里只对 CC 附加第七个可选字段。
+    if spec.env == "CC":
+        return base + f" ｜ 模型：{spec.model}"
+    return base
 
 
 def _read_line(spec: OpenerSpec) -> str:

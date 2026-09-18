@@ -575,11 +575,13 @@ class 引用版变体(unittest.TestCase):
         "```"
     )
 
+    #: 2026-09-19 更正：Cowork 变体不带「模型：」
+    #: 该字段只被 工具-opener批处理执行v2.ps1 用来给 CC 子进程传 --model，Cowork 从不经它启动。
     GOLDEN_COWORK = (
         "```\n"
         "[OP-0908-Y]【Cowork】引用版Cowork\n"
         "【设置】执行环境：Cowork ｜ 分支：master ｜ worktree：☐（不建，只产改 `.md`）"
-        " ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线 ｜ 模型：sonnet\n"
+        " ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线\n"
         "读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `CLAUDE.md` 恢复上下文，"
         "按该件执行。本件为 B 类。\n"
         "```"
