@@ -1,0 +1,6 @@
+{
+ "批次": "B-0919_口径点criteria对齐",
+ "文件清单": "`openspec/changes/coverage-point-ledger/design.md`（新增 D10，PENDING）／`openspec/changes/criteria-signoff-platform/design.md`（新增「关联决策」节，PENDING）／`6-人才与组织/部门AI专员跟进/口径点台账/SCHEMA.md`（§四与 frontmatter 改判指针）／`1-转型规划/0-全景路线图/design审读件-口径点台账与criteria_signoff打通-2026-09-19.md`（新增，审读件）",
+ "建议 message": "docs(coverage-point-ledger/#439): 补 D10 与 criteria_signoff 打通审读件——止步 design 可审态，不 apply（OP-0919-M）",
+ "状态": "待 —— 🔴 **跨 worktree 泳道批次**：本批已在分支 `claude/op0919m-ledger-r1-439` 上 commit 并 push origin，主仓工作区不脏，`_manifest_coverage_gap()` 会按覆盖校验整批跳过。**解除 ＝ 该分支 ff 合入 master 后下一轮自动落库**；ff 属 🟡 档，本泳道不自行合，待总线派发或经『已授权待合』登记处由 `工具-待合分支巡检.ps1` 机器做。本批为纯文档（design.md／SCHEMA.md／新审读件），零代码改动，`openspec validate --all --strict` 未受影响（未新增/修改任何 requirement，仅 design.md 追加 PENDING 段落）。"
+}
