@@ -580,3 +580,80 @@ class DigestDualFileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── 2026-09-19 `OP-0919-K`：`--digest --actionable`（队列 §一 #454／#583 同族）
+#    成因＝开场底噪实测，全池 digest 22.0 KB、其中一多半是开场不需要看的行。
+
+ACTIONABLE_FIXTURE = """## §一 任务看板
+
+| # | 任务 | 领取方 | 输入（指针） | 期望产出 | 状态 | 触碰区 | 登记 |
+|---|------|--------|-------------|----------|------|--------|------|
+| 600 | 可动的 open 行 | CC | 无 | 无 | [S:open][D:机] 待领（P1） | 无 | 2026-09-01 |
+| 601 | 可动的 partial 行 | CC | 无 | 无 | [S:partial][D:业] 半边已完成 | 无 | 2026-09-01 |
+| 602 | 已完成的行 | CC | 无 | 无 | [S:done][D:业] ✅ 已完成 | 无 | 2026-09-01 |
+| 603 | 受阻的行 | CC | 无 | 无 | [S:blocked][D:机] 硬阻塞 | 无 | 2026-09-01 |
+| 604 | 排队中暂非可动 | CC | 无 | 无 | [S:open][D:机] 🛑 **排队中·暂非可动**（WIP 超限） | 无 | 2026-09-01 |
+| 605 | 没有机器字段的历史行 | CC | 无 | 无 | 待领，老行没有 [S:...] 前缀 | 无 | 2026-07-01 |
+"""
+
+
+class DigestActionableFilterTests(unittest.TestCase):
+    """`--digest --actionable`：开场只出「现在能动的」行。
+
+    🔴 本类同时守两个方向：**该滤的滤掉**（done／blocked／🛑），与
+    **不该滤的一个都不许少**（open／partial，以及机器字段解析不了的历史行）。
+    过滤器吞掉自己看不懂的行，正是本项目「只会报成功的守卫等于没有守卫」那一族。
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.target = Path(self._tmpdir.name) / "假想队列.md"
+        self.target.write_text(ACTIONABLE_FIXTURE, encoding="utf-8")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _digest(self, *extra):
+        r = run("--digest", "--file", str(self.target), *extra)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r.stdout
+
+    def test_不带参数时全池照旧出六行(self):
+        out = self._digest()
+        for n in ("600", "601", "602", "603", "604", "605"):
+            self.assertIn(f"{n}｜", out, f"#{n} 应在全池 digest 里")
+
+    def test_actionable_滤掉_done_与_blocked(self):
+        out = self._digest("--actionable")
+        self.assertNotIn("602｜", out)
+        self.assertNotIn("603｜", out)
+
+    def test_actionable_滤掉_排队中暂非可动(self):
+        """`🛑` 行机器字段是 open，但行内自陈「立行只为不丢、不占在办位」——
+        开场看它没有意义。"""
+        out = self._digest("--actionable")
+        self.assertNotIn("604｜", out)
+
+    def test_actionable_保留_open_与_partial(self):
+        out = self._digest("--actionable")
+        self.assertIn("600｜", out)
+        self.assertIn("601｜", out)
+
+    def test_actionable_不吞掉机器字段解析不了的行(self):
+        """未识别 ⇒ 保留，并照旧计入行尾「未识别」提示。静默吞掉解析不了的
+        行，会让「过滤器坏了」这件事不产生任何信号。"""
+        out = self._digest("--actionable")
+        self.assertIn("605｜", out)
+        self.assertIn("未识别", out)
+
+    def test_actionable_隐藏行数随表头回显_不做无声瘦身(self):
+        out = self._digest("--actionable")
+        self.assertIn("--actionable：已隐藏 3 行", out)
+        self.assertIn("去掉本参数即出全池", out)
+
+    def test_actionable_可与_grep_叠加(self):
+        out = self._digest("--actionable", "--grep", "可动的")
+        self.assertIn("600｜", out)
+        self.assertIn("601｜", out)
+        self.assertNotIn("602｜", out)

@@ -340,6 +340,32 @@ _GREP_TASK_INDEX = 1
 _GREP_TOUCH_ZONE_INDEX = 6
 
 
+#: `--actionable` 的口径（2026-09-19 `OP-0919-K` 补立，队列 §一 `#454`／`#583` 同族）。
+#: 成因＝开场底噪实测：`--digest` 每次固定吐全部 199 行 **22.0 KB**，而开场只需要
+#: 「现在能动的」——`done` 行约占一半，`🛑 排队中·暂非可动` 又是另一批。三份定时任务／
+#: skill 章程要求开场必扫一次 digest，于是**每个 session 开场都为看不用看的行付一次 token**。
+#: 🔴 **过滤器不吃掉自己看不懂的行**：机器字段未识别（`[S:...]` 匹配不上）一律保留并照旧
+#: 计入行尾的「未识别」提示——静默吞掉解析不了的行，正是本项目「只会报成功的守卫」那一族。
+#: 🔴 **过滤是显式的、可回显的**：隐藏了几行、按哪条规则隐藏，写进 digest 表头，
+#: 不做无声瘦身（同 `TRIAGE_NEGATION_PHRASES`「只降档、不剔除」的同一条纪律）。
+ACTIONABLE_STATUSES = ("open", "partial")
+#: 状态格正文以它起首 ＝ 行内自陈「排队中·暂非可动」（立行只为不丢、不占在办位）。
+NOT_ACTIONABLE_LEADING_MARK = "🛑"
+
+
+def _digest_is_actionable(status_cell: str) -> bool:
+    """`--actionable` 的单行判据：机器字段 ∈ `ACTIONABLE_STATUSES`，且状态格正文
+    不以 `🛑` 起首。未识别机器字段 ⇒ 保留（见上方常量块的理由）。"""
+    stripped = status_cell.lstrip(LEADING_STRIP_CHARS)
+    m = STATUS_FIELD_RE.match(stripped)
+    if not m:
+        return True
+    if m.group(1) not in ACTIONABLE_STATUSES:
+        return False
+    rest = stripped[m.end():].lstrip(LEADING_STRIP_CHARS)
+    return not rest.startswith(NOT_ACTIONABLE_LEADING_MARK)
+
+
 def _run_digest(args: argparse.Namespace) -> int:
     section = args.section or DIGEST_SECTION
     if section != DIGEST_SECTION:
@@ -394,6 +420,17 @@ def _run_digest(args: argparse.Namespace) -> int:
     # ⓗ1：任务列／触碰区列关键词过滤，不区分大小写——两列命中都算数
     # （见模块顶部 docstring 的理由）。过滤发生在 digest_width 截断之前，
     # 对全量单元格文本匹配，不会漏掉落在截断点之后的命中。
+    # `--actionable`：在 grep 之前先滤，隐藏行数随表头回显（见 _digest_is_actionable）
+    status_index_for_filter = SECTION_STATUS_INDEX[section]
+    hidden_by_actionable = 0
+    if args.actionable:
+        before = len(all_rows)
+        all_rows = [
+            (row_id, cells) for row_id, cells in all_rows
+            if _digest_is_actionable(cells[status_index_for_filter])
+        ]
+        hidden_by_actionable = before - len(all_rows)
+
     needle = args.grep.casefold() if args.grep else None
     if needle is not None:
         shown_rows = [
@@ -406,6 +443,10 @@ def _run_digest(args: argparse.Namespace) -> int:
     else:
         shown_rows = all_rows
         print(f"【digest §{section} · 合计 {len(all_rows)} 行 ｜ {counts_desc}】")
+    if args.actionable:
+        print(f"【--actionable：已隐藏 {hidden_by_actionable} 行（机器字段非 "
+              f"{'／'.join(ACTIONABLE_STATUSES)}，或状态格以 {NOT_ACTIONABLE_LEADING_MARK} "
+              f"起首＝排队中·暂非可动）——去掉本参数即出全池】")
 
     malformed = 0
     width = args.digest_width
@@ -609,6 +650,12 @@ def main() -> int:
     parser.add_argument("--field", choices=("status", "all"), default="status",
                         help="status=只打印状态列全文（默认）；all=打印整行全部列"
                              "（仅 --row 模式适用）")
+    parser.add_argument(
+        "--actionable", action="store_true",
+        help="须配合 --digest：只出「现在能动的」行——机器字段为 open／partial 且"
+             "状态格不以 🛑（排队中·暂非可动）起首。开场扫池用它，实测 22.0 KB → "
+             "约 8 KB；隐藏行数随表头回显，未识别机器字段的行一律保留不吞（队列 §一 #454）",
+    )
     parser.add_argument(
         "--digest-width", type=int, default=DEFAULT_DIGEST_WIDTH,
         help=f"--digest 模式下「任务」列截断字数（默认 {DEFAULT_DIGEST_WIDTH}）",

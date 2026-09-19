@@ -7484,6 +7484,72 @@ class TriageCandidateTierUnitTests(unittest.TestCase):
         )
         self.assertEqual(self._tiers(row), {})
 
+    # ── 2026-09-19 `OP-0919-K` 补立：自身留痕降档（队列 §一 #454）
+    #    实测成因＝当日强档 9 条里 7 条假阳，全是「闸命中了自己上一轮写下的留痕」。
+
+    def test_自身留痕_段级_命中落在状态分诊改判段内即降弱档(self):
+        """`#96`／`#328`／`#337`／`#433` 的真实形态：命中的「待 Shao Peishen」
+        落在 2026-09-02 那次「🔁 状态分诊改判」段**引用的判据原文**里，不是
+        本行此刻真的在等他。段级判据须在 `━━━` 分段上算——标记常在引文前
+        一百多字处，按 ±60 字窗口判会漏。"""
+        row = (
+            "| 901 | 某行 | CC | 指针 | 产出 | "
+            "[S:partial][D:机] 半边已完成。 ━━━ 🔁 状态分诊改判 [S:partial] → [S:blocked]"
+            "（2026-09-02，Cowork OP-0902-A）—— 判据＝本行状态列自陈原文：「本条属口径判断，"
+            "待 Shao Peishen 认可后才算定案」⇒ 剩余动作硬卡在外部条件上。 | 触碰区 | 2026-09-02 |"
+        )
+        got = self._tiers(row)
+        self.assertEqual(got["901"]["tier"], "weak", got["901"])
+        self.assertTrue(
+            any("分诊自身留痕段" in r for r in got["901"]["downgrade_reasons"]),
+            got["901"]["downgrade_reasons"],
+        )
+
+    def test_自身留痕_行级_上一轮已显式判过不改判即降弱档(self):
+        """`#455`（`OP-0910-A` 写的「判定：不改判」）与 `#531`（`OP-0911-A` 写的
+        「改判已回滚」）的真实形态：命中点本身不在留痕段里，但整格已记着上一轮
+        的显式结论 ⇒ 再报一次就是重复劳动。"""
+        row = (
+            "| 902 | 某行 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 待总线激活；design 三个决策点全部待拍板。 ━━━ "
+            "⏪ 改判已回滚，复原为 [S:open]（2026-09-11，OP-0911-A）：本方改判 blocked 系误判。"
+            " | 触碰区 | 2026-09-11 |"
+        )
+        got = self._tiers(row)
+        self.assertEqual(got["902"]["tier"], "weak", got["902"])
+        self.assertTrue(
+            any("上一轮已显式判过" in r for r in got["902"]["downgrade_reasons"]),
+            got["902"]["downgrade_reasons"],
+        )
+
+    def test_自身留痕表只降档不剔除_被降的行仍在候选里(self):
+        """同 `TRIAGE_NEGATION_PHRASES` 上方那条：表一旦写宽，剔除会让失效
+        不产生信号；降档则仍逐条列出、理由随行可见。"""
+        row = (
+            "| 903 | 某行 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 正文。 ━━━ 🔁 状态分诊改判：判据＝本行状态列自陈原文：「待拍板」。"
+            " | 触碰区 | 2026-09-02 |"
+        )
+        got = self._tiers(row)
+        self.assertIn("903", got, "被降档的行必须仍在候选清单里，不得剔除")
+
+    def test_自身留痕不吞真阳性_没有留痕标记的行照旧强档(self):
+        """降档表写宽时真阳性会被一并吞掉——本用例守这个方向。"""
+        row = (
+            "| 904 | 某行 | CC | 指针 | 产出 | "
+            "[S:open][D:机] 实现已完成，剩余动作待 Shao Peishen 给一个窗口。 | 触碰区 | 2026-09-19 |"
+        )
+        got = self._tiers(row)
+        self.assertEqual(got["904"]["tier"], "strong", got["904"])
+        self.assertEqual(got["904"]["downgrade_reasons"], [])
+
+    def test_自身留痕表每条都附真实来源行号(self):
+        for table in (self.module.TRIAGE_SELF_RECORD_SEGMENT_MARKERS,
+                      self.module.TRIAGE_SELF_RECORD_ROW_MARKERS):
+            for marker, source in table:
+                self.assertTrue(marker.strip(), "标记不得为空")
+                self.assertRegex(source, r"^#\d+$", f"「{marker}」缺真实来源行号")
+
     def test_否定词表每条都附真实来源行号(self):
         """同 `STALE_STATUS_PHRASES` 上方那条纪律：可增不可删、新增须附真实
         来源。空来源＝编造的例句，是这类词表失效的第一步。"""

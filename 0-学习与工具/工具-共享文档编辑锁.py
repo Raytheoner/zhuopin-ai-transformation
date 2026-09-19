@@ -1166,6 +1166,67 @@ TRIAGE_NEGATION_PHRASES: tuple[tuple[str, str], ...] = (
 # 本出口取前后各 60 字，并在输出前做反引号奇偶守卫（见 `_balance_backticks`）。
 TRIAGE_EXCERPT_CONTEXT_CHARS = 60
 
+# 🔴 **自身留痕降档表（2026-09-19 `OP-0919-K` 实测补立，队列 §一 `#454`）。**
+# 成因＝当日跑 §四 `#208` (a) 的另一半时实测：`triage-candidates` 报强档 **9 条**，
+# 逐条读状态格全文复核后**只有 2 条成立**（`#479`／`#556`），**7 条假阳**。
+# 七条假阳是同一个形状——**闸命中的片段，正是上一轮分诊自己写下的那段留痕**：
+# `#96`／`#328`／`#337`／`#433` 命中的「待 Shao Peishen」落在 2026-09-02 那次
+# 「🔁 状态分诊改判」段引用的判据原文里；`#455` 落在 `OP-0910-A` 写的「判定：不改判」
+# 段里；`#531` 落在 `OP-0911-A` 写的回滚立据附近。**闸在扫自己的排泄物。**
+# 🔑 **判词：一个把自己的输出当输入的闸，每轮都会重新发现自己上一轮的结论。**
+#
+# 两级判据（分开是因为形态不同，不能合成一张表）：
+#   · **段级** ＝ 命中点所在的 `━━━` 分段里含「状态分诊改判」类标记 ⇒ 命中的是引文；
+#   · **行级** ＝ 整格里含「改判已回滚」「判定：不改判」类标记 ⇒ 上一轮已显式判过不改。
+# 🔴 **只降档、不剔除**（同 `TRIAGE_NEGATION_PHRASES` 上方那条）：被降档的行仍逐条列出、
+# 降档理由随行可见；否则表一旦写宽，失效不产生信号。
+# 🔴 每条附真实来源行号，不编例句。
+TRIAGE_SELF_RECORD_SEGMENT_MARKERS: tuple[tuple[str, str], ...] = (
+    # §一 机制 #96/#328/#337/#433：「🔁 **状态分诊改判 `[S:partial]` → `[S:blocked]`（…）**
+    # —— **判据＝本行状态列自陈原文**：「…待 Shao Peishen…」」
+    ("状态分诊改判", "#328"),
+    ("判据＝本行状态列自陈原文", "#337"),
+)
+TRIAGE_SELF_RECORD_ROW_MARKERS: tuple[tuple[str, str], ...] = (
+    # §一 机制 #531：「⏪ **改判已回滚，复原为 `[S:open]`（2026-09-11，`OP-0911-A`）**」
+    ("改判已回滚", "#531"),
+    # §一 机制 #455：「判候选 —— 判定：不改判**（Cowork 业务总线 `OP-0910-A`）」
+    ("判定：不改判", "#455"),
+)
+#: 队列行状态格的段分隔符（K2 外置工具与回写惯例同一符号）。
+TRIAGE_SEGMENT_SEP = "━━━"
+
+
+def _triage_segment_of(rest: str, idx: int) -> str:
+    """返回命中点 `idx` 所在的 `━━━` 分段原文。
+
+    段级判据必须在**段**上算、不能在 `_triage_excerpt` 的 ±60 字窗口上算：
+    窗口太窄，「🔁 状态分诊改判」这个标记常落在引文前一百多字处（`#433` 实测），
+    按窗口判会漏掉。
+    """
+    start = rest.rfind(TRIAGE_SEGMENT_SEP, 0, idx)
+    start = 0 if start == -1 else start + len(TRIAGE_SEGMENT_SEP)
+    end = rest.find(TRIAGE_SEGMENT_SEP, idx)
+    end = len(rest) if end == -1 else end
+    return rest[start:end]
+
+
+def _triage_self_record_reasons(rest: str, idx: int) -> list[str]:
+    """返回「命中的是分诊自己的留痕」这一类降档理由（列表而非布尔——理由必须
+    随告警可见，同 `_triage_negations_in` 的既有口径）。"""
+    reasons: list[str] = []
+    segment = _triage_segment_of(rest, idx)
+    for marker, _src in TRIAGE_SELF_RECORD_SEGMENT_MARKERS:
+        if marker in segment:
+            reasons.append(f"命中点落在分诊自身留痕段内（段级标记「{marker}」）")
+            break
+    for marker, _src in TRIAGE_SELF_RECORD_ROW_MARKERS:
+        if marker in rest:
+            reasons.append(f"本行上一轮已显式判过（行级标记「{marker}」）")
+            break
+    return reasons
+
+
 # ⑵ 决策台账缺口检测的扫描面（design 已知边界 2）：**刻意与分诊器不同**。
 # 分诊器只扫 `open`/`partial`，而 2026-09-06 实测 16 条「自陈在等他一次动作」
 # 的行里 **13 条状态已是 `blocked`** —— 它们确实在等他，只是无处可改判。
@@ -1248,8 +1309,10 @@ def _collect_triage_candidates(section_one_text: str) -> tuple[list[dict], list[
             seen.add(row_id)
             excerpt = _triage_excerpt(rest, idx, phrase)
             negations = _triage_negations_in(excerpt)
-            tier = "strong" if not negations and status_value != "blocked" else "weak"
-            reasons = list(negations)
+            self_records = _triage_self_record_reasons(rest, idx)
+            tier = ("strong" if not negations and not self_records
+                    and status_value != "blocked" else "weak")
+            reasons = list(negations) + self_records
             if status_value == "blocked":
                 reasons.append("状态已是 blocked")
             candidates.append({
