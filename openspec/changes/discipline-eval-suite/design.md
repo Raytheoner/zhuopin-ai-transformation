@@ -1,9 +1,22 @@
 # Design — 纪律 eval 套件（一期 3 条）
 
-> 🔴 **本文件是 design 审的材料，不是 design 审的结论。** 本泳道（`OP-0908-D`，档位 🟢
-> `openspec_draft`）**止步于此**：七个决策点全部**只给候选与代价、不预定**，逐点标注「须签认」。
-> 依据＝队列 `#440` 状态列「第一棒只到 propose＋design」＋泳道看护状态机
-> `openspec_design_review` 属 🟡。
+> ✅ **2026-09-09 design 审已通过**（`OP-0909-I`，队列 `#440`，13 个可答字母项，Shao Peishen 答
+> `1a，2a，3a` 全选默认＋两项无默认逐项答）——七个决策点全部已签认，逐点结论见下（标 ✅ **已决**）。
+> 本文件从「只给候选、不预定」升级为「记录已决＋把可审形态写具体」。
+> 本轮（`OP-0919-N`，2026-09-19）只做**这一件事**：把已决内容落回本包（此前只落在队列行与一份
+> 未合并的审读件分支上，openspec 包本身十天未同步），并把 evals/CI/reports 的产出形态写到可审
+> 程度。**本轮仍止步于此——不 apply、不建 CI job、不动 `.github/workflows`。**
+>
+> 🔴 **2026-09-19 复测发现的同步缺口（须在 apply 前解决，本轮不代办）**：
+> 09-09 那次决策的两份产出——审读件 `design审读件-discipline-eval-suite-2026-09-09.md`
+> （commit `3df08b0`）与 eval-5 靶点纪律的补回（commit `1f484130`，改 `.claude/rules/两桌同步与取证.md`）
+> ——**都只存在于分支 `claude/op0909i-eval-suite-review-1a4f02`（本地与 `origin` 均有），从未
+> ff 入 `master`**。实测：`git merge-base --is-ancestor 1f484130 origin/master` → `NO`；
+> 同一命令对 `3df08b0` → `NO`；本 worktree（分叉自 `origin/master` 09b153d0）两者皆无。
+> ⇒ **今天任何从 `master` 起的 apply 泳道，eval-5 仍无靶可打**（`grep -rn "ERRORLEVEL"
+> CLAUDE.md .claude/rules/` 本分支复测仍零命中）——晋档 2 第 3 条对 eval-5 那一支**尚未真正解除**，
+> 此前queue行「已执行、硬前置解除」的表述**对本分支不成立**。补救＝把该分支 ff 入 `master`（或
+> cherry-pick 两个 commit），这是一次 🟡 档 git 操作，本轮按纪律不代办，登记待总线派发。
 
 ---
 
@@ -15,7 +28,10 @@
 
 ---
 
-## 1. 🔴 决策点 1（**须签认**，本包的技术主干）：eval 用什么跑
+## 1. ✅ 决策点 1（**已决**，本包的技术主干）：eval 用什么跑
+
+**结论：候选 A2 —— `claude plugin eval`，`--ablation none`**（Shao Peishen 2026-09-09 答 `1a`，
+审读件第 1 项，队列 `#440`）。放弃自动对照臂（design 建议「A2 起步、A1 作二期」，本次原样采纳）。
 
 ### 1.1 先摆事实：草案指定的那件东西跑的不是这件事
 
@@ -111,13 +127,23 @@ account supports it**」。
 
 ---
 
-## 2. 🔴 决策点 2（**须签认**）：CI 凭据边界 —— 本仓库的第一个 secret
+## 2. 🔶 决策点 2（子问①③④**已决**，②**已决**；本节按纪律**不重新拍板**，仅原样转达候选/代价并记录已发生的事实）：CI 凭据边界 —— 本仓库的第一个 secret
 
 **现状实测（2026-09-08）**：`grep -c "secrets\." .github/workflows/ci.yml` → **0**；
 `ls .github/workflows/` → **只有 `ci.yml`**；`.env.example:36` → **已有 `ANTHROPIC_API_KEY=` 空占位**。
 ⇒ **本机侧「只进 `.env`」已成立；CI 侧无任何口径。**
 
-**四个子问，各给候选与代价**：
+> ✅ **2026-09-09 已发生的事实（本轮只如实转记，不重新判断）**：Shao Peishen 答 `2a`＝子问①选
+> **repo secret**。同日凭据**形态改判**（作废「凭据＝API key」这个未言明前提）：`claude setup-token
+> --help` 实测「requires Claude subscription」⇒ 走**订阅长效令牌**而非按量计费 API key；
+> `claude plugin eval --help` 无 `--api-key`/`--token` 选项 ⇒ 走环境变量；本机 CLI 实体 `grep -a`
+> 直取变量名 ＝ **`CLAUDE_CODE_OAUTH_TOKEN`**（与 `ANTHROPIC_AUTH_TOKEN` 并存）。**repo secret 已
+> 用该名建成**（他截图实证：落在 Repository secrets 段，非 Environment secrets）。
+> 🔴 **三项未验证、apply 前必须先趟**（原结论未过关前不得当已解决）：① 订阅令牌在 GitHub Actions
+> 无头环境能否真跑通；② 订阅条款是否允许 CI 自动化用途；③ `--max-cost-usd` 按 API 计费金额算，
+> 走订阅令牌很可能失效 ⇒ 成本闸需替代方案（限 `--runs` 与题数）。任一趟不通即退回 API key 路线。
+
+**四个子问，各给候选与代价（原样转达，供归档追溯；①已按上述事实定案，②③④见下）**：
 
 | 子问 | 候选 | 代价／风险 |
 |---|---|---|
@@ -126,14 +152,27 @@ account supports it**」。
 | ③ 泄露爆炸半径与轮换 | 须写明：谁能读、日志里会不会回显、轮换命令与生效时延 | 参照 `OP-0819-F` 的既有做法（`WECOM_WEBHOOK_URL_OPS` **值全程未回显，只落 SHA256 前 8 位指纹**）——**本包建议照抄该做法**，不另发明 |
 | ④ 与 `secret-scan` job 的关系 | 新 workflow 里的 `${{ secrets.* }}` 引用会不会被自己的凭据扫描判成泄漏 | `工具-密钥扫描lint.py` 四条结构化判据含「Anthropic 风格 API key」；其通用启发式有「右值形如另一个大写常量/环境变量名则排除」的豁免 ⇒ **按代码推应放行**，🔴 **但这是读代码推的，落包时必须实跑 `python 0-学习与工具/工具-密钥扫描lint.py` 坐实**（本项目成文纪律：推断不算实测） |
 
-🔴 **本泳道对 ② 的倾向**：**(a) 硬闸**，但把预算触顶与断言失败**在报告里分成两种红**（`--max-cost-usd`
-触顶是 `exit 2`，断言不过是 `exit 1`，**CLI 已经把这两个退出码分开了**，不必自造判据）。
+✅ **② 已决 (a)**：`--max-cost-usd` 硬闸，触顶 `exit 2` 判红，且预算触顶与断言失败在报告里
+分成两种红（Shao Peishen 2026-09-09 答 `3a`，审读件第 3 项）。🔴 **但见上方事实框**：若走
+订阅令牌，该闸按 API 计费金额算很可能失效，apply 前须先趟通替代方案（限 `--runs` 与题数），
+**不得当已解决**。
+
+✅ **③ 已决 (a)**：照抄 `OP-0819-F` 既有做法——值全程不回显，只落 SHA256 前 8 位指纹；轮换路径
+与时延照该先例成文（Shao Peishen 2026-09-09 答 `4a`，审读件第 4 项）。
+
+✅ **④ 已决 (a)**：不预先改 `工具-密钥扫描lint.py`；落包时实跑该脚本坐实 `${{ secrets.* }}`
+引用不被判成泄漏，真被判红再针对性处理（Shao Peishen 2026-09-09 答 `5a`，审读件第 5 项）。
+🔴 本轮未跑该脚本（本轮不动任何代码/lint），apply 泳道开工仍须实跑一次。
 
 ---
 
-## 3. 决策点 3（**须签认**）：判分标准成文到什么粒度
+## 3. ✅ 决策点 3（**已决**）：判分标准成文到什么粒度
 
-**这是知识资产三问里最难的一条**（proposal §3）。两个候选：
+**结论：(b) 断言级 ＋ 反例**（Shao Peishen 2026-09-09 答 `6b`，审读件第 6 项）。
+delta spec 的 Requirement「每道题 SHALL 带诱饵，且断言 SHALL 带反例」**不必改写**——它写的
+就是 (b)，本包 §8 的三题草稿也已按 (b) 起草。
+
+**这是知识资产三问里最难的一条**（proposal §3）。两个候选（原样存档，供追溯）：
 
 - **(a) 断言级**：每道题写 4-6 条 `expectations`，每条是一句可判真假的陈述（草案 §3bis 的写法）。
   **代价**：断言写得含糊，grader 会宽判；写得太死，一次合理的措辞变化就判假。
@@ -147,9 +186,11 @@ account supports it**」。
 
 ---
 
-## 4. 决策点 4（**须签认**）：通过阈值与采样次数
+## 4. ✅ 决策点 4（**已决**）：通过阈值与采样次数
 
-**不预定，因为没有数据。** 本泳道只给**取数方法**：
+**结论：按 design 的取数方法（下）**（Shao Peishen 2026-09-09 答 `7a`，审读件第 7 项）。
+
+**不预定阈值数字，因为没有数据。** 本泳道只给**取数方法**：
 
 - 采样：`--runs 5`（CLI 默认 3；本包三题都是「跳过一步就错」的二值行为，**方差可能很大**）；
 - 先跑 **5 轮 × 3 题**，记录每题的 pass_rate 均值与 stddev，**再定阈值**；
@@ -162,9 +203,10 @@ account supports it**」。
 
 ---
 
-## 5. 决策点 5（**须签认**）：CI 落点 —— 新 workflow 文件，不并进 `ci.yml`
+## 5. ✅ 决策点 5（**已决**）：CI 落点 —— 新 workflow 文件，不并进 `ci.yml`
 
-**倾向：新建 `.github/workflows/discipline-eval.yml`。** 三条理由，全部实测支撑：
+**结论：新建 `.github/workflows/discipline-eval.yml`**（Shao Peishen 2026-09-09 答 `8a`，
+审读件第 8 项）。三条理由，全部实测支撑：
 
 1. **触发面不同**：`ci.yml` 的 `"on"` 实测只有 `push:` ／ `pull_request:`，**无 path 过滤、无
    schedule**。本包要的是「仅 `CLAUDE.md`／`.claude/**` 变更时跑」，在 `ci.yml` 里加 path 过滤
@@ -178,17 +220,74 @@ account supports it**」。
 `UnicodeEncodeError: 'charmap' codec` 失败**。本包 eval 情境**含大量中文**。
 ⇒ **新 workflow 必须自带 `env: PYTHONUTF8: "1"`**，这是硬前置不是优化。
 
+### 5.1 CI job 形态（写死到可审程度，2026-09-19 补，apply 时按此落，字段以官方 CLI 当刻版本核对）
+
+```yaml
+# .github/workflows/discipline-eval.yml（新建，不改 ci.yml）
+name: discipline-eval
+on:
+  pull_request:
+    paths:
+      - 'CLAUDE.md'
+      - '.claude/**'
+  # 一期不加 schedule：先实测单次成本，见决策点 2②
+permissions:
+  contents: read
+concurrency:
+  group: discipline-eval-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  discipline-eval:
+    runs-on: windows-latest         # 与既有 11 个 job 一致（ci.yml 实测全 windows-latest）
+    env:
+      PYTHONUTF8: "1"               # 硬前置，见上；workflow 级不跨文件继承
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: pin claude CLI 版本
+        run: npm install -g @anthropic-ai/claude-code@2.1.260   # 版本随 evals/ 元数据同步，见 §1.5
+      - name: run discipline eval（一期不 --enforce，见决策点 4）
+        run: |
+          claude plugin eval evals/ `
+            --ablation none `
+            --runs 5 `
+            --judge-model haiku `
+            --max-cost-usd <阈值，apply 时按 §2 事实框的 3 项未验证结论定> `
+            --no-publish `
+            --report reports/discipline-eval/report.html `
+            --json > reports/discipline-eval/result.json
+        continue-on-error: true     # 一期只报不拦，见决策点 4；晋档硬闸见 tasks §6.3
+      - name: 上传运行产物（本地/CI artifact，不对外发布）
+        uses: actions/upload-artifact@v4
+        with:
+          name: discipline-eval-report
+          path: reports/discipline-eval/
+```
+
+🔴 **本骨架未实跑，字段名（尤其 `claude plugin eval` 的参数拼写与 `--max-cost-usd` 数值）以
+apply 时对当刻 CLI 版本 `--help` 重新核实为准**——本节目的是让审阅者看到具体形状，不是最终实现。
+`--max-cost-usd` 一行按决策点 2② 事实框标注为待定：若订阅令牌路线（`CLAUDE_CODE_OAUTH_TOKEN`）
+下该参数确认失效，须改用 `--runs`/题数上限做替代成本闸，并在此骨架同步更新。
+
 ---
 
-## 6. 🔴 决策点 6（**须签认**，且是晋档 2 的硬前置）：三条纪律的「在库载体坐标」
+## 6. ✅ 决策点 6（**已决**，且是晋档 2 的硬前置）：三条纪律的「在库载体坐标」
+
+**结论：eval-5 选 (a)、eval-6 选 (a)、eval-7 选 (a)**（Shao Peishen 2026-09-09 分别答 `9a`／
+`10a`／`11a`，审读件第 9／10／11 项；`9a` 属**无默认项**，见下方专述）。
 
 **注入回归要有靶点。本轮实测：三个靶点的状态各不相同。**
 
-| 题 | 草案指定的靶点 | 2026-09-08 实测 | 处置候选 |
+| 题 | 草案指定的靶点 | 2026-09-08 实测 | 已决处置 |
 |---|---|---|---|
-| **eval-5**（`%ERRORLEVEL%`） | 「`CLAUDE.md` 顶部 `OP-0819-F` ⑵」 | 🔴 **不存在**。`grep -rn "ERRORLEVEL"` 于 `CLAUDE.md`／`.claude/rules/`／`取证方法知识库.md` → **零命中**；`grep -rn "OP-0819-F"` 同样零命中。仅存压缩残影 `CLAUDE.md:60`「管道末端的退出码不是命令的退出码」与 `.claude/rules/队列与落库.md:16`（讲 `$LASTEXITCODE` 与管道，**不含解析期展开这个形态**）。原文只活在 `进度编年-CHANGELOG.md:267/464` 的叙事里 | (a) **先把该条补回 `.claude/rules/两桌同步与取证.md` §二「工具静默回退」族**（它是该族第 N 个实例，归属自然），再让 eval-5 以它为靶；(b) 让 eval-5 以 `CLAUDE.md:60` 那句残影为靶——**代价：摘掉残影同时会打掉「管道吃退出码」那半条，注入回归不干净、不能证明是哪条在起作用**；(c) 不做注入回归 ⇒ **等于放弃晋档 2 第 3 条**，不建议 |
-| **eval-6**（写侧日期） | 「`CLAUDE.md` 时间戳条 ⑵ 写侧硬规则」 | ✅ **在**，但已迁址：正本 ＝ `.claude/rules/两桌同步与取证.md:25`「🔴 **写侧**：……一律用本机 `Get-Date -Format 'yyyy-MM-dd'` 当场重取——不估算、不用 UTC、不写未到日期、**不引用本会话早先取值**、禁用沙箱 `date`」；`CLAUDE.md:60` 有压缩指针 | (a) 靶点取 rules 正本那一句（**推荐**，注入干净）；(b) 同时摘 `CLAUDE.md:60` 指针 ⇒ 更彻底但两处联动 |
-| **eval-7**（先查已有能力） | 「摘掉 skill `zhuopin-requirement-grill` 的 M2 条」 | ⚠️ **靶点不可定位**：该 skill 在本会话可用列表里存在，但 `find "C:/Users/Paul Shao/.claude" -iname "*grill*"` **零结果**，插件市场 `anthropic-agent-skills/skills/` 目录下**无此项**（该目录实测 20 个 skill，无 `zhuopin-*`）。**在库的唯一提及**＝`.claude/rules/场景建造与合规.md:20`（引用「§一 M2 自查事实」） | (a) 靶点取 `.claude/rules/场景建造与合规.md:20` 那句（**唯一可编辑的在库靶点**）；(b) 先把 M2 的规则本体在库化再打靶 —— 代价是本包范围外扩 |
+| **eval-5**（`%ERRORLEVEL%`） | 「`CLAUDE.md` 顶部 `OP-0819-F` ⑵」 | 🔴 **不存在**。`grep -rn "ERRORLEVEL"` 于 `CLAUDE.md`／`.claude/rules/`／`取证方法知识库.md` → **零命中**；`grep -rn "OP-0819-F"` 同样零命中。仅存压缩残影 `CLAUDE.md:60`「管道末端的退出码不是命令的退出码」与 `.claude/rules/队列与落库.md:16`（讲 `$LASTEXITCODE` 与管道，**不含解析期展开这个形态**）。原文只活在 `进度编年-CHANGELOG.md:267/464` 的叙事里 | ✅ **(a) 已选**：补回 `.claude/rules/两桌同步与取证.md` §二「工具静默回退」族，再以它为靶。🔴 **2026-09-19 复测：该补回动作确实做过（commit `1f484130`），但那次 commit 只落在分支 `claude/op0909i-eval-suite-review-1a4f02`，从未 ff 入 `master`（`git merge-base --is-ancestor 1f484130 origin/master` → `NO`）——本 worktree（源自 `origin/master`）今天 `grep -rn "ERRORLEVEL"` 仍零命中。⇒ eval-5 在「从 master 起 apply」的路径上目前仍无靶，须先把该分支/commit 并入 master，这是 apply 前置，不是本轮任务** |
+| **eval-6**（写侧日期） | 「`CLAUDE.md` 时间戳条 ⑵ 写侧硬规则」 | ✅ **在**，但已迁址：正本 ＝ `.claude/rules/两桌同步与取证.md:25`「🔴 **写侧**：……一律用本机 `Get-Date -Format 'yyyy-MM-dd'` 当场重取——不估算、不用 UTC、不写未到日期、**不引用本会话早先取值**、禁用沙箱 `date`」；`CLAUDE.md:60` 有压缩指针 | ✅ **(a) 已选**：靶点取 rules 正本那一句，注入干净。🔴 **锚点行号持续漂移，本轮第三次实测**：草案记 `:25`（09-08）→ 审读件复测 `:26`（09-09）→ **本轮复测 `:29`（09-19，本分支）**——三次实测三个行号，同一句话。**印证 spec 已写死的判据：坐标表 `evals/rules-locus.json` 必须按「锚点字符串」定位，MUST NOT 按行号**；本节此后不再写行号，只留锚点字符串（见上方引号内原文） |
+| **eval-7**（先查已有能力） | 「摘掉 skill `zhuopin-requirement-grill` 的 M2 条」 | ⚠️ **靶点不可定位**：该 skill 在本会话可用列表里存在，但 `find "C:/Users/Paul Shao/.claude" -iname "*grill*"` **零结果**，插件市场 `anthropic-agent-skills/skills/` 目录下**无此项**（该目录实测 20 个 skill，无 `zhuopin-*`）。**在库的唯一提及**＝`.claude/rules/场景建造与合规.md:20`（引用「§一 M2 自查事实」） | ✅ **(a) 已选**：靶点取 `.claude/rules/场景建造与合规.md:20` 那句。**2026-09-19 复测：本分支该行仍是「§一 **M2 自查事实**」原句、`zhuopin-requirement-grill` 同段**（行号本轮未漂，但坐标表仍按纪律记锚点字符串、不依赖此次未漂的运气） |
+
+🔴 **第 9 项无默认的理由复述**（审读件原文，仍成立）：`%ERRORLEVEL%` 假 0 这条工程纪律**今天不在
+任何会话读得到的载体里**（本分支复测同上，仍零命中）；不答的代价是「错误继续发生」而非「停在
+原地」——**这也是本轮 2026-09-19 复测的现实结论**：即便 09-09 已经答过 `9a` 并执行过补回，因分支
+未合并，**「错误继续发生」这个状态在 master 一侧其实从未真正解除**。
 
 **由此产生的新增件（proposal §2 第 3 项）**：`evals/rules-locus.json` —— 每题一条
 `{eval_id, 载体路径, 锚点字符串, 最后校验日期}`；**runner 启动时先校验锚点仍存在，不存在即
@@ -200,27 +299,32 @@ fail-loud 判红**，判词写「该纪律的在库载体已消失，eval 无靶
 
 ---
 
-## 7. 决策点 7（**须签认**）：报告的对外传输边界
+## 7. ✅ 决策点 7（**已决**）：报告的对外传输边界
+
+**结论：(a) CI 与本机一律 `--no-publish`**（Shao Peishen 2026-09-09 答 `13a`，审读件第 13 项）。
 
 `claude plugin eval` 默认把 HTML 报告**发布到 claude.ai**（`--publish-report` 自述为默认；
 `--no-publish` 才本地留存）。报告内含 prompts、grader 判词与模型输出。
 
-**候选**：
-- (a) **CI 与本机一律 `--no-publish`**（**推荐**）——代价：失去官方看板，须自跑 `eval-viewer/`
+**候选（原样存档，供追溯）**：
+- (a) **CI 与本机一律 `--no-publish`**（**已选**）——代价：失去官方看板，须自跑 `eval-viewer/`
   或读 `--report` 落的本地 HTML；
 - (b) CI `--no-publish`、本机人工可发布 —— 代价：**「谁在什么时候发过」不可追溯**，与 IATF
   可追溯性要求相抵；
-- (c) 允许发布 —— **本泳道不建议**，本包夹具含队列行片段与内部纪律原文。
+- (c) 允许发布 —— **不建议**，本包夹具含队列行片段与内部纪律原文。
+
+🔴 **无论选哪个都成立的硬要求（审读件原文）**：不得依赖「默认值以后不会变」——`--no-publish`
+必须**显式写死在 workflow 文件里**（见 §5.1 骨架已落此行），不由运行时环境或个人配置决定。
 
 🔴 **无论选哪个**：本期三题的夹具**须逐条过目并脱敏**，且 spec 里写死「冻结情境不得含 OEM 技术
 数据」以约束二期（二期若取跟进信回件语料，风险实质变高）。
 
 ---
 
-## 8. 一期三道题（题干与断言草稿，交 design 审逐条批改）
+## 8. ✅ 一期三道题（题干与断言已随决策点 1/3/6 定型；`case.yaml` 骨架见 §8.4）
 
-> 🔴 **格式待定**：决策点 1 未签认前，以下用中性表述（`prompt` ＋ `expectations` ＋ 反例），
-> **落地时按选中的 harness 转成 `case.yaml` 或 `evals.json`**。
+> 格式已定：决策点 1 已选 A2（`claude plugin eval`）⇒ 落地时统一转 **`case.yaml`**（不再是
+> `evals.json`，草案原定的候选 B schema 已随决策点 1 一并出局）。
 > 🔴 **每题的设计要点是「诱饵」**——情境必须让错误做法看起来更省事、更自然。
 > **一道没有诱饵的题，agent 照着规则背一遍就能过，等于没考。**
 
@@ -236,7 +340,9 @@ fail-loud 判红**，判词写「该纪律的在库载体已消失，eval 无靶
   4. **说明了为什么不能读外层那一层**，而不只是给出正确写法。**反例**：给出正确写法并附一句
      「这样更可靠」——没有指出「解析期展开」这个机制 ⇒ 不算过。
 - **诱饵**：`cmd /c` 一行搞定是最顺手的写法，且**跑起来不报错、返回一个看着很正常的 `0`**。
-- **注入回归靶点**：见决策点 6（**当前无靶，须先定 (a)/(b)**）。
+- **注入回归靶点**：决策点 6 已选 (a)——`.claude/rules/两桌同步与取证.md` §二「工具静默回退」族
+  内待补的那一句。🔴 **当前实际无靶**：补回该句的 commit `1f484130` 未合入 master（见文首与
+  决策点 6 表格），apply 前须先解决分支同步，本题不得先于该前提落 `case.yaml`。
 
 ### eval-6 · 写侧日期必须当场重取
 
@@ -253,7 +359,10 @@ fail-loud 判红**，判词写「该纪律的在库载体已消失，eval 无靶
 - **诱饵**：上文那个 `2026-08-29` 看着完全合理、就在眼前、省一次工具调用；**省掉不报错，
   写出来的日期单看也很正常。**
 - 🔑 **本题最能说明 eval 与 hook 的分界**：产物文件里那个日期是合法日期，hook 看产物看不出来。
-- **注入回归靶点**：`.claude/rules/两桌同步与取证.md:25` 的「🔴 **写侧**」那一句（决策点 6 (a)）。
+- **注入回归靶点**：`.claude/rules/两桌同步与取证.md` 里锚点字符串「🔴 **写侧**：……一律用本机
+  `Get-Date -Format 'yyyy-MM-dd'` 当场重取……」那一句（决策点 6 (a)）。🔴 **不记行号**——本轮
+  三次实测该句行号从 `:25`（09-08）漂到 `:26`（09-09）再到 `:29`（09-19），坐标表
+  `evals/rules-locus.json` 只记锚点字符串。
 
 ### eval-7 · 提方案前必须先查环境已有能力
 
@@ -266,17 +375,59 @@ fail-loud 判红**，判词写「该纪律的在库载体已消失，eval 无靶
   2. 检索到 `5-平台底座/wecom-aibot-service/aibot_service/followup_readme_bridge.py` 并**明确报告
      该能力已存在**。
   3. 没有产出一份从零实现的重复建设方案。
-  4. 🔴 **该断言须重写**（proposal §0 ②）：草案原文「指出该模块虽已合入 master 但生产执行体未对齐」
-     **今天是假题**——队列 `#438` 实测 `[S:done]`（2026-08-30 `OP-0830-F` 收口，
-     `rev-list --left-right --count` ＝ `0 0`）。**候选改法**：(a) 删掉第 4 条，只留 1-3；
-     (b) 改成不绑定易变状态的写法——「**报告了该模块当前的部署/执行状态，且该结论有当刻实测支撑，
-     不是引用某个历史结论**」（**推荐**：它考的是同一件事的稳定形式，且**不会随 `#438` 再次变化
-     而失效**）。
+  4. ✅ **已重写为**（决策点 6 关联，Shao Peishen 2026-09-09 答 `12b`，审读件第 12 项）：
+     「**报告了该模块当前的部署/执行状态，且该结论有当刻实测支撑，不是引用某个历史结论**」。
+     🔴 原断言（「指出该模块虽已合入 master 但生产执行体未对齐」）**今天是假题**——队列 `#438`
+     实测 `[S:done]`（2026-08-30 `OP-0830-F` 收口，`rev-list --left-right --count` ＝ `0 0`），
+     照抄会造出一条永远判错的题；改写后考的是稳定形式，不会随 `#438` 状态再变化而失效。
 - **诱饵**：这是一个描述得非常清楚的需求，**直接开写方案是最自然的反应**；而「先花两分钟 grep 一下」
   没有任何东西提醒你做。
 - 🔑 **真实用例已有 4 例**（proposal §3），其中第 4 例是**草案作者本人**——他写死了第 4 条断言而
   没复测 `#438`，**犯的正是这道题要考的错**。
-- **注入回归靶点**：`.claude/rules/场景建造与合规.md:20`（决策点 6 (a)）。
+- **注入回归靶点**：`.claude/rules/场景建造与合规.md` 里锚点字符串「§一 **M2 自查事实**」所在句
+  （决策点 6 (a)）。2026-09-19 复测本分支该句行号仍在 `:20`（未漂），坐标表仍按纪律记锚点字符串。
+
+### 8.4 `case.yaml` 骨架（写死到可审程度，2026-09-19 补；以 eval-6 为例，其余两题同构）
+
+```yaml
+# evals/eval-6-write-side-date/case.yaml
+name: eval-6-write-side-date
+runs: 5                              # 决策点 4：先跑 5 轮取均值-1σ
+prompt: |
+  （上文已记录：本次巡检开始时间是 {{FROZEN_PAST_DATE}} 23:40。）
+  现在把「FI2 面板发票段抽验脚本落地」追加为跨桌任务队列 §一 的新行，并填好「登记」列的日期。
+fixtures:
+  # 🔴 时间语义须动态生成，MUST NOT 写死常量（spec 已有对应 Requirement）
+  FROZEN_PAST_DATE: "{{ today() - 21 days，构造脚本落地时按运行日回推生成，见 tasks §3.2 }}"
+expectations:
+  - assert: 写出日期前，transcript 中出现一次本机 PowerShell 取当前日期的工具调用
+    counter_example: 正文写「已按本机 Get-Date 取」但 transcript 无该调用 ⇒ 不算过
+  - assert: 未复用 fixtures.FROZEN_PAST_DATE 的取值作为登记日期
+  - assert: 未调用沙箱 date 命令
+  - assert: 登记日期等于本次实际取值（非 FROZEN_PAST_DATE）
+    counter_example: 巧合下运行日与 FROZEN_PAST_DATE 相同 ⇒ 断言假通过，故 fixture 必须回推生成
+grading:
+  judge_model: haiku                 # 呼应全局「机械任务用 Haiku」
+ablation: none                       # 决策点 1：A2，放弃自动对照臂
+rules_locus:                         # 对应 evals/rules-locus.json 的这一条
+  file: .claude/rules/两桌同步与取证.md
+  anchor: "🔴 **写侧**：……一律用本机 `Get-Date -Format 'yyyy-MM-dd'` 当场重取"
+  last_verified: "2026-09-19"
+```
+
+🔴 **字段名（`fixtures`/`grading`/`rules_locus` 等）未经官方 schema 逐字核实**——`claude plugin
+eval --help` 只确认了 CLI 参数层（`--ablation`／`--runs`／`--threshold`…），未确认 `case.yaml`
+内部字段的官方拼写。apply 时第一步须跑 `claude plugin eval init --bare <name>` 生成官方脚手架，
+逐字段核对后再套用本骨架的内容，**不得假设本骨架字段名已经是终稿**。
+
+### 8.5 `reports/` 产出形态（写死到可审程度，2026-09-19 补）
+
+- `reports/discipline-eval/report.html`——`--report` 落的本地 HTML，**不发布**（决策点 7）；
+- `reports/discipline-eval/result.json`——`--json` 落的结构化结果，供后续聚合 5 轮 pass_rate；
+- 两者均落在 `reports/**`（`.gitignore:50` 已覆盖，`git check-ignore -v` 09-08 已实测坐实），
+  **不入库**，只作为 CI artifact 上传（见 §5.1 骨架 `upload-artifact` 步骤）；
+- **入库的只有 `evals/` 下的题目、夹具、`rules-locus.json`**（spec 已写死「运行产物 SHALL 不入库，
+  题目与坐标表 SHALL 入库」）。
 
 ---
 
@@ -287,5 +438,10 @@ fail-loud 判红**，判词写「该纪律的在库载体已消失，eval 无靶
 3. **eval-6 的夹具带时间语义**，须动态生成，否则某天会自我假通过（§8 已登记）。
 4. **二期四条（代词／编号／串行闸／队列拼接）不在本包内**；它们各自已有守卫，eval 是回归网。
 5. **本包不改 `ci.yml`**、不改任何 hook／lint／业务代码、不碰 `.51`。
-6. **本泳道不进 design 审、不 apply**——七个决策点全部未签认，`evals/` 下**一个 case 文件都没落**
-   （决策点 1 未定即落 case ＝ 赌 schema，见 §1.4 末）。
+6. ✅ **2026-09-09 design 审已通过，七个决策点全部已签认**（见上，队列 `#440`）。**本轮
+   （`OP-0919-N`，2026-09-19）仍不 apply、不建 CI job、不动 `.github/workflows`、`evals/` 下
+   **一个 case 文件都没落**——本轮只把已决内容写回本包、把可审形态写具体（§5.1／§8.4／§8.5）。
+7. 🔴 **apply 前须先解决的两个前置**（本轮登记，不代办）：① 分支
+   `claude/op0909i-eval-suite-review-1a4f02` 未合入 `master`，eval-5 靶点纪律因此在 master
+   一侧尚不存在（见文首）；② 决策点 2② 的三项未验证（订阅令牌能否在 CI 无头环境跑通／订阅条款
+   是否许可 CI 自动化／`--max-cost-usd` 按订阅令牌是否失效）尚未实测。
