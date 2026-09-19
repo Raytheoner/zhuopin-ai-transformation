@@ -28,10 +28,11 @@
 
 ## 5. 时间线
 - 2026-08-22 v8 定位改为「AI 自动判定」、QD-A 降为前置抽取层；08-25/08-28/09-01/09-14 四轮签认；09-02 规则库降为台账；09-14 验收集 10 份到件。
-- 2026-09-17 `OP-0917-Q` 无头泳道从零建到档 1（分支 `claude/op0917q-q2-verdict`，commit `0a52378` 起）。
+- 2026-09-17 `OP-0917-Q` 无头泳道从零建到档 1（分支 `claude/op0917q-q2-verdict`，commit `0a52378` 起），红线②③（判例 11）已随本次建造一并落地——`config.J11_REDLINES_2_3_NOT_ACCEPTED_THIS_BATCH` ＋ `redlines.evaluate_redlines` 命中即出 `NOT_ACCEPTED`／转人工、不代填默认判定，`test_all_mock_samples_match_expected` 逐样本断言。
 - 2026-09-18 design 审 D1–D8 通过（Shao Peishen 答 `1a`）；`intent.md` 转 `已确认`（答 `2a`）。
+- 2026-09-19（队列 §一 `#592`，`OP-0919-B`）：核对 ⑵ 红线②③引擎配置——**已在 09-17 建成，本次复核无需改动**；建 ⑷ PPT D2 页场景勾选行解析器（`QD-A/qda_prefill/doc_reader.extract_scene_checkbox`，详见该场景 CLAUDE.md 时间线），本包 `feed_source.from_qda(scene=...)` 接口原样接受、未改代码。
 - 2026-09-19 `OP-0919-C`（队列 §一 `#612`）：tasks 5.1 门户页 `/quality/q2` 落地——`q2_8d_verdict/webapp.py`（Flask 蓝图，首屏显著标注「mock 数据」，网关 `X-Zp-Identity` 接入点已挂但只预留不实现，`install_flask_gate` 用共享 `ZP_GATE_PASSWORD`）＋ `dashboard.py`（七维 D1–D7 得分／满分聚合、A/B/C/D 分级分布含语义层待人工区间桶、处置建议分布、结构性退回与红线命中清单）＋ `scripts/run_q2_web.py`（默认只绑 `127.0.0.1:8098`）。回归 19 passed（原 12＋新增 7）。**5.2 `.51` 部署未做**（本批不碰 `.51`、不新起对外端口，设计上仍走 `.51:8090` 网关反代，`#612` 明令不做）。
-- 下一步：语义层（V3 固定模型＋prompt 版本、V4 二级置信）＋ 用验收集 10 份跑校准（排除红线②③、样本 3 单列）→ 档 2 接 QD-A 真实解析（LAN 留步）→ 5.2 `.51` 部署／5.3 第 8 步跟进信（design 审已通过，两项余 §5 待做）。
+- 下一步：语义层（V3 固定模型＋prompt 版本、V4 二级置信）＋ 用验收集 10 份跑校准（排除红线②③、样本 3 单列）→ 档 2 接 QD-A 真实解析（含把 `SceneCheckbox.scene` 接进 `from_qda` 调用，LAN 留步）→ 5.2 `.51` 部署／5.3 第 8 步跟进信（design 审已通过，两项余 §5 待做）。
 
 ## 6. 依赖
 - 输入：陈忱团队 8D（pptx/docx/pdf，QD-A 解析）；PPT 模板 D2 页场景勾选行（J7，模板改版由质量部做）。

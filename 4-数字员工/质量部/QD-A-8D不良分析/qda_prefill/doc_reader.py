@@ -34,6 +34,41 @@ _D_NUM_RE = re.compile(r"[Dd]([1-8])")
 
 
 @dataclass
+class SceneCheckbox:
+    """D2 页「场景（必选）：☐制造 ☑研发」勾选行的解析结果（J7／`SCENE_LABEL_SOURCE`）。
+
+    读的是 **PPT 勾选态**——勾选符号（☑/☐ 等）本身就是文本框里的字符 run，不是 Word 的
+    `w14:checkbox` 内容控件，故不需要（也无法）走 OOXML 内容控件解析。
+    """
+    scene: str | None   # "制造"/"研发"；未标注或勾选歧义（0 个或 ≥2 个）时 None——AI 不猜，交 Q2 兜底
+    raw_line: str       # 原始整行文本，供追溯与异常标注留存（如验收集样本 3 的「※」）
+    ambiguous: bool     # True＝零勾选或多勾选，scene 恒为 None
+
+
+_SCENE_CHECKED_GLYPHS = "☑☒■✔✓●"
+_SCENE_UNCHECKED_GLYPHS = "☐□○"
+_SCENE_MARK_RE = re.compile(rf"([{_SCENE_CHECKED_GLYPHS}{_SCENE_UNCHECKED_GLYPHS}])\s*(制造|研发)")
+
+
+def extract_scene_checkbox(full_text: str) -> SceneCheckbox | None:
+    """从全文定位含「场景」的勾选行，按「勾选符号紧邻在前」的模板固定格式判定。
+
+    只在整份文档里找第一处含「场景」字样、且能配出 (勾选符, 制造/研发) 的行；没有这样的行
+    （旧模板／非本次改版文档）返回 `None`，调用方应视同「未按新载体标注」。
+    """
+    for line in full_text.splitlines():
+        if "场景" not in line:
+            continue
+        marks = _SCENE_MARK_RE.findall(line)
+        if not marks:
+            continue
+        checked = [label for glyph, label in marks if glyph in _SCENE_CHECKED_GLYPHS]
+        scene = checked[0] if len(checked) == 1 else None
+        return SceneCheckbox(scene=scene, raw_line=line.strip(), ambiguous=len(checked) != 1)
+    return None
+
+
+@dataclass
 class DocumentSections:
     """解析后的文档结构。"""
     full_text: str
@@ -42,6 +77,8 @@ class DocumentSections:
     # 文档的前 500 字（标题/摘要区）
     header_text: str = ""
     source_path: str = ""
+    # D2 页场景勾选行解析结果（J7）；模板未改版或本份未含该行 ⇒ None
+    scene_checkbox: SceneCheckbox | None = None
 
 
 def read(path: Path | str) -> DocumentSections:
@@ -198,4 +235,5 @@ def _parse_sections(full_text: str, source_path: str) -> DocumentSections:
         sections=sections,
         header_text=header_text,
         source_path=source_path,
+        scene_checkbox=extract_scene_checkbox(full_text),
     )

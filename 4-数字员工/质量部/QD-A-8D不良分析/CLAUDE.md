@@ -24,6 +24,7 @@
 4. **ASIL C/D 绝对禁区**：脚本不得用于含 ASIL C/D 安全证据的 8D 归档，那部分必须 FSE 双签、不走 AI 预填。
 
 ## 时间线
+- **2026-09-19（队列 §一 `#592` ⑷，`OP-0919-B`）**：新增 `doc_reader.extract_scene_checkbox`——解析 D2 页「场景（必选）：☐制造 ☑研发」勾选行，读的是 **PPT 勾选态**（Unicode 勾选符本身是文本 run），**不是 Word `w14:checkbox`** 内容控件。返回 `SceneCheckbox(scene, raw_line, ambiguous)`；0 个或 ≥2 个勾选一律 `ambiguous=True`、`scene=None`（AI 不猜，J7 兜底交 Q2 `config.SCENE_LABEL_SOURCE` 的 `default_when_missing`／`flag_when_missing`）。已接入 `_parse_sections`，`DocumentSections.scene_checkbox` 对 docx/pdf/pptx 三种来源统一可用。8 条单测（含一份合成 pptx 端到端，非真实 8D 内容）。**接口交给 Q2**：`.scene` 直接喂 `q2_8d_verdict.feed_source.from_qda(scene=...)`，该函数早已接受 `str | None`，本次不改 Q2 侧代码。**未接线**：目前尚无脚本把某份真实/合成文档的 `read()` 结果自动传给 `from_qda`（那属于档 2 QD-A→Q2 真实解析对接，LAN 留步）。
 - **2026-07-04（轨 A 校准跑通）**：原始 8D 为 .pptx（原 reader 仅 docx/pdf），已打通：pptx 解析 + 段落识别加「D1.」点号 & 无前缀标题回退（files 4-7）；xlsx「8D历史库录入表」黄金加载；12 字段可信度地图（候选）+ 逐字段 diff。**7/7 可校准**（案例1/2 曾源文件截断——交付 zip 内即 10MB/20MB 整、缺 EOCD，非本机/OneDrive；已由质量部重取完整原件替换、重跑通过）。脱敏加固：邮箱泄漏堵住（原全漏）、平台误匹配 362→1-4、供应商前缀修复。**校准结果在 `results/`（gitignore/LAN）交陈忱校准会审定档位终版**。31→41 tests。可信度地图（7份）：🟢安全相关/FMEA、🟡D2/D5-D7段落抓取、🔴其余（含**不良分类仅3/7、关键词分类器不可靠、建议降需人工**）。3 个坑（根因验证口径矛盾/案例4-5 安全相关复核/分类分歧）脚本只标不判、待陈忱。
 - **2026-08-01**：陈忱 7 份黄金样本校准完成，命中率 ≥ 60%（MVP 门槛）— 批改会前可演示。
 - **2026-09**：高置信字段接 audit 记录（与 QD-B 同批 ClickHouse 汇聚）。
