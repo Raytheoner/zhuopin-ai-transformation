@@ -1,7 +1,7 @@
 ---
 title: "口径点台账 · schema（coverage-point-ledger tasks §1.1）"
 created: 2026-09-06
-status: 生效（D1–D9 已审；与 `criteria_signoff` 同 ID 一条待两包合审，见 §四）
+status: 生效（D1–D9 已审；D10 与 `criteria_signoff` 打通待你审，见 §四）
 来源: openspec/changes/coverage-point-ledger/{proposal,design}.md；design审前置-口径点台账三开放点收敛-2026-09-01.md §2.3 P1–P4、§4.5；端到端构建workflow优化-方案-2026-09-06.md §四 W2
 ---
 
@@ -60,6 +60,10 @@ status: 生效（D1–D9 已审；与 `criteria_signoff` 同 ID 一条待两包�
 5. 跨域聚合不得写出任何含跨域数据的文件（tasks 1.4，D3）。
 6. 跨域 `id` 前缀与文件不符 ⇒ 写入拒绝（D2 派生）。
 
-## 四、待两包合审的一条（不阻塞 §1.3）
+## 四、待裁决的一条（不阻塞 §1.3，2026-09-19 更正指针）
 
-**`id` 形态⑴ 与 `criteria_signoff` 注册表同名、状态单向由台账驱动注册表**（专员签认回件 ⇒ 台账 `已签认` ⇒ 同一动作写 `Signoff(signed_by, evidence)`）——依据方案件 §四 W2；`criteria-signoff-platform` design 审未过，与本包 design 合并一次审时定死。定前，形态⑴ 只作 `id` 命名约定使用，不写注册表。
+**`id` 形态⑴ 与 `criteria_signoff` 注册表同名、状态是否单向由台账驱动注册表**——依据方案件 §四 W2。
+
+🔴 **原计划「与 `criteria-signoff-platform` design 合并一次审」已不成立**：该包 design 已于 2026-09-03 单独审过（G-1…G-7），早于本条被提出（09-06）。已改为单独立点，见 `coverage-point-ledger/design.md` D10 ＋ 审材料 `1-转型规划/0-全景路线图/design审读件-口径点台账与criteria_signoff打通-2026-09-19.md`（`OP-0919-M`，含实证：`FI10-NRV_ESTIMATION_BASIS` 台账已签认三天、代码侧 `Signoff` 仍未写入的活漂移）。
+
+**定前**：形态⑴ 只作 `id` 命名约定使用，不写注册表，不代拍答案。

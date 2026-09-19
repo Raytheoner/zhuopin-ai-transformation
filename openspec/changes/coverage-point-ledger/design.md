@@ -46,9 +46,17 @@ status: 生效（Shao Peishen 2026-09-01 当场审定：新增 D7／D9，D1–D5
 
 ---
 
+## D10 · 与 `criteria_signoff` 打通（🔴 PENDING，未审——2026-09-19 `OP-0919-M` 新立）
+
+**不是重开 D1–D9**，是补一条 09-06 方案件曾计划「与 criteria-signoff-platform 合并一次审」但从未真正定过的 Decision——`criteria-signoff-platform` 09-03 已单独审过，「合并」这条路径已不成立，故单独拿出来定。
+
+审材料 ＝ `1-转型规划/0-全景路线图/design审读件-口径点台账与criteria_signoff打通-2026-09-19.md`（三个决策点，含实证：`FI10-NRV_ESTIMATION_BASIS` 台账已 `已签认` 三天、代码侧 `Signoff` 仍未写入——两本账"ID 长得一样但状态互不知道对方"的活漂移）。
+
+**定前**：SCHEMA.md §四原口径不变——`id` 形态⑴只作命名约定，不写注册表；不代拍答案。
+
 ## Open Questions
 
-**已清空。**
+**D1–D9 已清空。D10 待你审（见上）。**
 
 原唯一开放项「JSONL vs YAML」由 **D7** 定死。
 ⚠️ 该项曾于 2026-09-02 被落包件**重新打开一次并给出相反结论**，已由本件《落包勘误》节关回。**它不是一个仍在争论的问题。**
