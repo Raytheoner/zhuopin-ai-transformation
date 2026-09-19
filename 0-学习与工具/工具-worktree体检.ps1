@@ -25,6 +25,12 @@
          另凡名字以 _rb- 开头的（合入脚本的 rebase/基线件）一律不删。
          更硬的护栏是 git worktree lock <路径>——锁住的 git 自己就拒绝删。
 
+  (4) 陈旧锁扫描（队列 §一 #618）：扫 `.git/**/*.lock`，默认只报不清。
+      🔴 清除三条判据：`Get-Process git` 计数为零 ＋ 锁文件 0 字节 ＋ 陈旧超 -StaleLockMinutes
+      （默认 30 分钟，与泳道看护看门狗同值）——三条齐备才 clearable；-ClearStaleLocks 才真删，
+      不传该开关时哪怕 -Apply 也不动锁（锁清理与 worktree 删除是两件独立的事，各自开关）。
+      扫描/判定逻辑在 `工具-git锁诊断.ps1`（与 `工具-泳道分支合入.ps1` 的 ff 失败诊断共用）。
+
 .NOTES
   留痕：reports/worktree-guard/worktree-guard-<yyyyMMdd>.jsonl，每次运行追加一行。
   reports/ 在 .gitignore 里，留痕不进版本库（与 poll-guard 同口径）。
@@ -37,10 +43,13 @@ param(
     [switch]$Apply,
     [switch]$IncludeMissingOnly,
     [string[]]$Keep = @('wecom-service-home'),
+    [int]$StaleLockMinutes = 30,
+    [switch]$ClearStaleLocks,
     [switch]$Quiet
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '工具-git锁诊断.ps1')
 
 function Write-Line { param([string]$Text) if (-not $Quiet) { Write-Host $Text } }
 
@@ -172,6 +181,23 @@ if ($targets.Count -eq 0) {
     Write-Line ("已删 {0} 条，失败 {1} 条。" -f $removed.Count, $failed.Count)
 }
 
+# ---------- (4) 陈旧锁扫描 ----------
+$lockStatus = Get-GitLockStatus -Repo $Repo -StaleMinutes $StaleLockMinutes
+Write-Line ''
+foreach ($l in (Format-GitLockStatusLines -Status $lockStatus)) { Write-Line $l }
+$clearableLocks = @($lockStatus.Locks | Where-Object { $_.clearable })
+$clearedLocks = @(); $lockClearFailed = @()
+if ($clearableLocks.Count -gt 0) {
+    if ($ClearStaleLocks) {
+        foreach ($r in $clearableLocks) {
+            try { Remove-Item -LiteralPath $r.fullPath -Force -ErrorAction Stop; $clearedLocks += $r.path; Write-Line "  ✓ 已清 $($r.path)" }
+            catch { $lockClearFailed += $r.path; Write-Line "  🔴 清失败 $($r.path)：$($_.Exception.Message)" }
+        }
+    } else {
+        Write-Line ("  可清 {0} 条（未加 -ClearStaleLocks，未动手）：{1}" -f $clearableLocks.Count, (($clearableLocks | ForEach-Object { $_.path }) -join ', '))
+    }
+}
+
 # ---------- 留痕 ----------
 $traceDir = Join-Path $Repo 'reports\worktree-guard'
 if (-not (Test-Path $traceDir)) { New-Item -ItemType Directory -Force -Path $traceDir | Out-Null }
@@ -191,6 +217,11 @@ $record = [ordered]@{
     orphan_admin_dirs_removed = $orphans
     remove_failed = $failed
     kept = ($rows | Where-Object { $targets -notcontains $_ } | ForEach-Object { @{ name = $_.name; cls = $_.cls; ahead = $_.ahead; dirty = $_.dirty; keep = $_.keep } })
+    stale_lock_minutes = $StaleLockMinutes
+    locks_total = $lockStatus.Locks.Count
+    locks_clearable = ($clearableLocks | ForEach-Object { $_.path })
+    locks_cleared = $clearedLocks
+    locks_clear_failed = $lockClearFailed
 }
 Add-Content -Path $tracePath -Value ($record | ConvertTo-Json -Depth 6 -Compress) -Encoding UTF8
 Write-Line "留痕 → $tracePath"

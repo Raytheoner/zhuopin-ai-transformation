@@ -21,6 +21,21 @@ $ErrorActionPreference = 'Stop'
 Set-Location $Repo
 . (Join-Path $PSScriptRoot '工具-泳道分支合入-回归判定.ps1')
 . (Join-Path $PSScriptRoot '工具-合入链路留痕.ps1')
+. (Join-Path $PSScriptRoot '工具-git锁诊断.ps1')
+
+function Write-WorktreeAddFailure {
+    <# 队列 §一 #618：`git worktree add` 撞 "already used by worktree" 时只报 `exit=9 脚本异常`、
+       不报成因（2026-09-19 实撞一次，手动 `git worktree remove` 后即通过）。现改为当场点名占用者：
+       git 报错文本本身通常已带占用路径，`Find-WorktreeByBranch` 作跨 git 版本文案变化的兜底核验。 #>
+    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$BranchName, [Parameter(Mandatory)][string]$AddOutput)
+    Write-Host "🔴 建临时 worktree 失败：$AddOutput"
+    if ($AddOutput -match "already used by worktree at '([^']+)'") {
+        Write-Host "  占用者（git 报错自带）：$($Matches[1])"
+    } else {
+        $occupant = Find-WorktreeByBranch -Repo $RepoPath -Branch $BranchName
+        if ($occupant) { Write-Host "  占用者（反查 worktree list 得出）：$occupant" }
+    }
+}
 
 $short = ($Branch -split '/')[-1]
 $wt = Join-Path $TempRoot "_rb-$short"
@@ -71,7 +86,12 @@ function Invoke-LaneMerge {
 
     # ③ 临时 worktree 里 rebase（不动主 checkout 的脏工作区）
     if (Test-Path $wt) { git worktree remove $wt --force | Out-Null }
-    git worktree add $wt $Branch 2>&1 | Out-Null
+    $addOut = (git worktree add $wt $Branch 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        Write-WorktreeAddFailure -RepoPath $Repo -BranchName $Branch -AddOutput $addOut
+        $script:gates['③rebase零冲突'] = $false; $script:extra.note = "worktree add 失败：$addOut"
+        return 9
+    }
     Push-Location $wt
     git rebase master 2>&1 | Select-Object -Last 2 | ForEach-Object { Write-Host "  $_" }
     if ($LASTEXITCODE -ne 0) {
@@ -101,7 +121,11 @@ function Invoke-LaneMerge {
                 $script:failedBranchAll += $branchFailed
 
                 if (Test-Path $wtMaster) { git worktree remove $wtMaster --force | Out-Null }
-                git worktree add --detach $wtMaster $masterSha 2>&1 | Out-Null
+                $addMasterOut = (git worktree add --detach $wtMaster $masterSha 2>&1 | Out-String).Trim()
+                if ($LASTEXITCODE -ne 0) {
+                    Write-WorktreeAddFailure -RepoPath $Repo -BranchName $Branch -AddOutput $addMasterOut
+                    throw "建 master 基线 worktree 失败：$addMasterOut"
+                }
                 try {
                     Push-Location $wtMaster
                     $masterOut = & python -m pytest $t -q -rf 2>&1
@@ -141,7 +165,11 @@ function Invoke-LaneMerge {
 
     # ⑤ ff + push
     git merge --ff-only $Branch 2>&1 | Select-Object -Last 1 | ForEach-Object { Write-Host "  $_" }
-    if ($LASTEXITCODE -ne 0) { Write-Host "🔴 ff 失败"; $script:gates['⑤ff+push'] = $false; return 5 }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "🔴 ff 失败"
+        foreach ($l in (Format-GitLockStatusLines -Status (Get-GitLockStatus -Repo $Repo))) { Write-Host "  $l" }
+        $script:gates['⑤ff+push'] = $false; return 5
+    }
     $script:extra.master_after = (git rev-parse --short master)
     Write-Host "  ✓ master → $($script:extra.master_after)"
     git push origin master 2>&1 | Select-Object -Last 1 | ForEach-Object { Write-Host "  $_" }

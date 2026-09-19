@@ -8,14 +8,21 @@
 - 干净且 ahead=0 的，`-Apply` 才删，dry-run 不动；
 - `-Keep` 点名的一律不删。
 
+另盯陈旧锁扫描（队列 §一 #618）三条：
+- 三条清除判据齐备（陈旧超阈值＋0 字节＋无 git 进程）时报「可清」，不加 `-ClearStaleLocks` 不动手；
+- 加 `-ClearStaleLocks` 后真删掉、且只删三条齐备的那些，未过阈值/非零字节的原样留着；
+- 留痕 jsonl 里带锁扫描字段。
+
 🔴 需要 PowerShell 7（`pwsh`），缺了整文件跳过（同 `test_工具-待合分支巡检-白名单判据.py` 手法）。
 每个用例在临时目录 `git init -b master` 造一个小仓库并挂若干 worktree，不碰真仓库。
 """
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -144,6 +151,45 @@ def test_留痕每次一行且记录模式(repo: Path):
     assert rows[0]["mode"] == "dry-run"
     assert rows[1]["mode"] == "apply"
     assert rows[1]["removed"] == ["clean"] or "clean" in rows[1]["removed"]
+
+def _touch_lock(repo: Path, name: str, *, age_minutes: float, size_bytes: int = 0) -> Path:
+    p = repo / ".git" / name
+    p.write_bytes(b"x" * size_bytes)
+    past = time.time() - age_minutes * 60
+    os.utime(p, (past, past))
+    return p
+
+
+def test_陈旧锁_三条齐备才报可清_不加开关不动手(repo: Path):
+    _touch_lock(repo, "stale.lock", age_minutes=45)
+    _touch_lock(repo, "fresh.lock", age_minutes=5)
+    out = _run(repo, "-StaleLockMinutes", "30")
+    assert "stale.lock" in out and "可清" in out
+    assert "fresh.lock" in out
+    # 未加 -ClearStaleLocks，两个锁文件都原样留着
+    assert (repo / ".git" / "stale.lock").exists()
+    assert (repo / ".git" / "fresh.lock").exists()
+
+
+def test_ClearStaleLocks只删三条齐备的(repo: Path):
+    _touch_lock(repo, "stale.lock", age_minutes=45, size_bytes=0)
+    _touch_lock(repo, "fresh.lock", age_minutes=5, size_bytes=0)
+    _touch_lock(repo, "inuse.lock", age_minutes=45, size_bytes=8)
+    out = _run(repo, "-StaleLockMinutes", "30", "-ClearStaleLocks")
+    assert "已清 stale.lock" in out
+    assert not (repo / ".git" / "stale.lock").exists()
+    assert (repo / ".git" / "fresh.lock").exists()
+    assert (repo / ".git" / "inuse.lock").exists()
+
+
+def test_留痕带锁扫描字段(repo: Path):
+    _touch_lock(repo, "stale.lock", age_minutes=45)
+    _run(repo, "-StaleLockMinutes", "30")
+    traces = sorted((repo / "reports" / "worktree-guard").glob("*.jsonl"))
+    rows = [json.loads(l) for l in traces[0].read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert rows[-1]["locks_total"] == 1
+    assert "stale.lock" in rows[-1]["locks_clearable"]
+
 
 def test_目录已消失的worktree不让整份体检崩掉(repo: Path):
     """🔴 2026-09-17 首轮真跑就栽在这里：合入脚本刚收掉基线件、`.git/worktrees/` 里管理记录还在，
