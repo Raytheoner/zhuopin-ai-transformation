@@ -390,18 +390,27 @@ $laneBlock = {
         } catch {
             ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 残留回收失败（非致命，不影响本条判定）：' + $_.Exception.Message) | Out-File -FilePath $log -Append -Encoding utf8
         }
-        # 队列 #600 ⑷：收工核验——比对起跑前快照，主工作区新增非白名单脏文件（白名单仅
-        # `reports/`、`1-转型规划/0-全景路线图/合入登记/pending-ff.jsonl`，同 ⑶ 两道 hooks 白名单
-        # 一致）⇒ 本条判 FAIL、git diff／未跟踪文件原文存补丁到日志目录、日志醒目告警；
-        # **不自动撤回**（人工核实后再决定去留，机制化此前 596/599 两条靠手工 `git diff` 留证
-        # 的做法，实证见 reports/opener-batch/20260916-204736/596-main-leak.patch／599-main-leak.patch）。
+        # 队列 #600 ⑷：收工核验——比对起跑前快照，主工作区新增非白名单脏文件⇒本条判 FAIL、
+        # git diff／未跟踪文件原文存补丁到日志目录、日志醒目告警；**不自动撤回**（人工核实
+        # 后再决定去留，机制化此前 596/599 两条靠手工 `git diff` 留证的做法，实证见
+        # reports/opener-batch/20260916-204736/596-main-leak.patch／599-main-leak.patch）。
+        # 🔴 队列 #611 方案 D（2026-09-19）：白名单一次补齐三类——协议〇要求泳道收工必写的
+        # `ff-patrol-<yyyyMMdd>.jsonl`＋两份队列物理文件＋`队列行日志/#<N>.md`（K2 外置件）；
+        # 判据正本＝本段，`工具-main-leak回放.py` 现取本块、不留第二份硬编码副本。
         $postLeakSnapshot = @(& git -C $repoRootInJob -c core.quotepath=false status --porcelain)
         $newLeakLines = @($postLeakSnapshot | Where-Object { $preLeakSnapshot -notcontains $_ })
         $leakLines = @($newLeakLines | Where-Object {
             $lp = $_.Substring(3)
             if ($lp -match '^"(.*)"$') { $lp = $lp.Substring(1, $lp.Length - 2) }
             if ($lp -match ' -> ') { $lp = ($lp -split ' -> ')[-1] }
-            -not ($lp -eq 'reports' -or $lp -like 'reports/*' -or $lp -eq '1-转型规划/0-全景路线图/合入登记/pending-ff.jsonl')
+            -not (
+                $lp -eq 'reports' -or $lp -like 'reports/*' -or
+                $lp -eq '1-转型规划/0-全景路线图/合入登记/pending-ff.jsonl' -or
+                $lp -like '1-转型规划/0-全景路线图/合入登记/ff-patrol-*.jsonl' -or
+                $lp -eq '1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md' -or
+                $lp -eq '1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md' -or
+                $lp -like '1-转型规划/0-全景路线图/队列行日志/#*.md'
+            )
         })
         if ($leakLines.Count -gt 0) {
             $patchPath = Join-Path $logDir ($laneName + '-' + $op.Id + '-main-leak.patch')

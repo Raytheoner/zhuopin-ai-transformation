@@ -749,6 +749,40 @@ class 脚本建隔离worktree四场景_v2_600(_Base):
         # 不自动撤回：泄漏文件应仍原样留在主工作区，供人工核实后再决定去留。
         self.assertTrue(leak_path.exists())
 
+    def test_泳道回写队列三类白名单后不判FAIL(self):
+        # 队列 #611 ⑵ 竞态复现：泳道收工按协议〇回写队列（`ff-patrol-<date>.jsonl` 每次
+        # ff 必写／两份队列物理文件／`队列行日志/#<N>.md` 这个 K2 外置件），但 sweep 尚未
+        # 及时提交——此时主工作区必然带着这三类改动。方案 D 之前，第三道闸会把这份「合规
+        # 回写」误判成泄漏；本例三类一次叠加造出同一竞态，断言不再判 FAIL。
+        self._write_plan(worktree_field="☐")
+        root_dir = self.real_repo_root / "1-转型规划" / "0-全景路线图"
+        ff_patrol = root_dir / "合入登记" / "ff-patrol-20261231.jsonl"
+        row_log = root_dir / "队列行日志" / "#999999.md"
+        queue_md = root_dir / "跨桌任务队列-业务场景.md"
+        original_queue_text = queue_md.read_text(encoding="utf-8")
+
+        def _cleanup():
+            ff_patrol.unlink(missing_ok=True)
+            row_log.unlink(missing_ok=True)
+            queue_md.write_text(original_queue_text, encoding="utf-8")
+
+        self.addCleanup(_cleanup)
+        self.stub_file.write_text(
+            "@echo off\r\n"
+            f'echo {{"op":"test"}}> "{ff_patrol}"\r\n'
+            f'echo # 泳道回写测试> "{row_log}"\r\n'
+            f'echo ^<!-- 泳道回写测试，tearDown 还原 --^>>> "{queue_md}"\r\n'
+            "echo OPENER_DONE\r\n"
+            "exit /b 0\r\n",
+            encoding="utf-8",
+        )
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(rows[0]["Status"], "OK")
+        self.assertFalse((self.log_dir / f"{self.lane_name}-A1-main-leak.patch").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
