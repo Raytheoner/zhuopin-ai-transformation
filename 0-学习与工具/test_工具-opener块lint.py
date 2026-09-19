@@ -1397,5 +1397,62 @@ class 队列597成功路径输出截流(unittest.TestCase):
         self.assertNotIn("已省略", out)
 
 
+class SelfReferentialLineTests(unittest.TestCase):
+    """形态⑪（队列 §一 `#620`，`OP-0918-C` 实撞两处错之一）：「派出线」字段引用的 OP 号
+    与块首行自身 OP 号相同 ⇒ 自引用错误。`工具-opener生成.py` 出件前已同判据拦截，
+    本形态是它的机器守：正本改了而生成器没跟、或起草人手抄漏了，当场红。"""
+
+    SETTINGS_CC_SELF_REF = (
+        "【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/op0828y-test`）｜ "
+        "worktree：☑（test-wt，新 worktree，收工自删）｜ 工作区：无 ｜ session：新开 ｜ "
+        "派出线：环境总线 OP-0828-Y（批 B-0828_示例）"
+    )
+
+    def test_反例_派出线自引用_命中F11(self):
+        md = _md(TITLE_LINE_CC, self.SETTINGS_CC_SELF_REF, TITLE_LINE_WITH_EXC)
+        self.assertIn("F11", _forms(md))
+
+    def test_正例_派出线引用不同编号_不命中F11(self):
+        """🔴 验收条款「两侧都能关掉」：换成别的编号 ⇒ F11 消失，且不牵连出别的形态。"""
+        settings = self.SETTINGS_CC_SELF_REF.replace("OP-0828-Y", "OP-0827-B")
+        md = _md(TITLE_LINE_CC, settings, TITLE_LINE_WITH_EXC)
+        self.assertNotIn("F11", _forms(md))
+
+    def test_共享干净夹具不命中F11(self):
+        md = _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC)
+        self.assertNotIn("F11", _forms(md))
+
+    def test_生效日与明细分组均已登记(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F11"], date(2026, 9, 19))
+        self.assertIn("F11", M.FORM_TITLE)
+
+
+class CoworkModelFieldTests(unittest.TestCase):
+    """形态⑫（队列 §一 `#620`，`OP-0918-C` 实撞两处错之一）：【Cowork】块的 `【设置】`
+    行出现「模型：」字段——该字段只被 `工具-opener批处理执行v2.ps1` 用来给【CC】子进程
+    解析 `--model`，Cowork opener 从不经该脚本启动，是个死字段。"""
+
+    def test_反例_cowork块含模型字段_命中F12(self):
+        settings = SETTINGS_COWORK + " ｜ 模型：sonnet"
+        md = _md(TITLE_LINE_COWORK, settings)
+        self.assertIn("F12", _forms(md))
+
+    def test_正例_cowork块不含模型字段_不命中F12(self):
+        """🔴 验收条款「两侧都能关掉」：去掉模型字段 ⇒ F12 消失。"""
+        md = _md(TITLE_LINE_COWORK, SETTINGS_COWORK)
+        self.assertNotIn("F12", _forms(md))
+
+    def test_cc块含模型字段不受约束(self):
+        """形态⑫只判 Cowork——CC 侧「模型：」是合法可选第七字段（同 `工具-opener生成.py
+        ModelFieldTests`），不该被本形态误伤。"""
+        settings = SETTINGS_CC + " ｜ 模型：opus"
+        md = _md(TITLE_LINE_CC, settings, TITLE_LINE_WITH_EXC)
+        self.assertNotIn("F12", _forms(md))
+
+    def test_生效日与明细分组均已登记(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F12"], date(2026, 9, 19))
+        self.assertIn("F12", M.FORM_TITLE)
+
+
 if __name__ == "__main__":
     unittest.main()

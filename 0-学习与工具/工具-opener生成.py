@@ -453,16 +453,33 @@ class _ClaimsLock:
                         pass
                     continue
                 if time.monotonic() >= deadline:
+                    try:
+                        mtime = datetime.fromtimestamp(
+                            self.path.stat().st_mtime, tz=timezone.utc)
+                        mtime_note = f"，锁文件 mtime {_fmt_utc(mtime)}"
+                    except OSError:
+                        mtime_note = "（锁文件此刻已读不到 mtime）"
                     raise OpenerGenError(
                         f"占位台账锁 {self.path} 等待超过 {CLAIMS_LOCK_TIMEOUT_SECONDS} s 仍被占用"
-                        "⇒ 无法登记占位，按 fail-closed 不出件（队列 §一 `#549` ⑶）")
+                        f"⇒ 无法登记占位，按 fail-closed 不出件（队列 §一 `#549` ⑶）{mtime_note}；"
+                        "若 mtime 早于本次调用起始时刻，很可能是同一会话上一次调用清锁失败留下的陈旧锁"
+                        "（Cowork 挂载侧 `rm` 常被沙箱拒绝，见队列 §一 `#620` 同族第四例），"
+                        f"可手工核实后 `rm {self.path}` 清掉再重试。"
+                    )
                 time.sleep(0.1)
 
     def __exit__(self, *exc) -> None:
         try:
             self.path.unlink()
-        except OSError:
-            pass
+        except OSError as e:
+            # 🔴 静默留锁会让同一会话第二次调用误判「等待超过 10 s」而看不出真因
+            # （Cowork 挂载侧 `rm` 被沙箱拒绝、生成器清不掉自己的锁——首次调用照常
+            # 返回 0、看不出异常）；改 fail-loud 打印，不吞（队列 §一 `#620` 同族第四例）。
+            print(
+                f"⚠ 占位台账锁 {self.path} 清理失败（{e!r}）——锁文件残留，"
+                "同一会话下一次调用会误判为「仍被占用」而非「清理失败」，请手工核实后清掉。",
+                file=sys.stderr,
+            )
 
 
 def _load_claims(path: Path) -> list[dict]:
@@ -700,6 +717,14 @@ def _validate_spec(spec: OpenerSpec) -> None:
             "输入指针须写仓库根相对路径，不接受本机绝对路径"
             f"（根 CLAUDE.md §5「路径写仓库根相对路径」），收到：{spec.input_pointer!r}"
         )
+    for m in USED_ID_FULL_RE.finditer(spec.line):
+        ref = f"OP-{m.group(1)}-{m.group(2)}"
+        if ref.upper() == spec.op_id.upper():
+            raise OpenerGenError(
+                f"`--line`（派出线）里引用的编号与本件自身编号 {spec.op_id} 相同"
+                f"（收到 --line={spec.line!r}）——派出线应指向派出本件的上级线/批次，"
+                "不应等于本件自己的编号（自引用，OP-0918-C 实撞两处错之一，队列 §一 `#620`）。"
+            )
 
 
 def _body_params_given(kwargs: dict) -> bool:
@@ -745,6 +770,26 @@ def _reject_silently_dropped_body_params(kwargs: dict, spec: OpenerSpec) -> None
         f"它们——若不报错就会被静默丢弃（参数被接受却不生效，比被拒绝更危险；"
         f"2026-09-06 实撞一次，队列 §一 `#487` 子项／`OP-0906-M`）。{alt}"
     )
+
+
+def _reject_explicit_model_for_cowork(kwargs: dict, spec: OpenerSpec) -> None:
+    """`--model` 只对 CC 有意义——`_settings_line` 只对 `env == "CC"` 附加该字段，
+    `工具-opener批处理执行v2.ps1` 只从【CC】§三 子任务泳道 opener 块解析它去起 `claude`
+    子进程；【Cowork】opener 从不经该脚本启动。此前对 `--env Cowork` 传 `--model` 会被
+    `_settings_line` 静默省略——不报错、也不出现在成品里（同 `_reject_silently_dropped_
+    body_params` 的判据：参数被接受却不生效，比被拒绝更危险；OP-0918-C 实撞两处错之一，
+    队列 §一 `#620`）。故显式传了即 fail-loud，不静默省略。
+
+    🔴 判「传没传」只看 `kwargs`，不看 `spec`——`OpenerSpec.__init__` 会把 `model` 的
+    缺省兜成 `"sonnet"`，读 `spec` 分不出「没传」与「传了 sonnet」。
+    """
+    if spec.env == "Cowork" and "model" in kwargs:
+        raise OpenerGenError(
+            f"`--model` 只对 `--env CC` 有意义（Cowork opener 从不经 "
+            "`工具-opener批处理执行v2.ps1` 起 `claude` 子进程，该字段无处生效）；"
+            f"当前 --env Cowork 却显式传了 --model={kwargs['model']!r}——此前会被 "
+            "静默省略，现改 fail-loud（队列 §一 `#620`）。不传该参数即可。"
+        )
 
 
 def _title_call_line(op_id: str, short_name: str) -> str:
@@ -853,6 +898,7 @@ def generate_opener(**kwargs) -> str:
     # 放在 `_check_op_id_not_reused` 之前——撞号查重要扫全树 `.md`（秒级），
     # 而「参数会被丢掉」是纯本地判断，没理由让调用方先等一次全树扫描才被告知。
     _reject_silently_dropped_body_params(kwargs, spec)
+    _reject_explicit_model_for_cowork(kwargs, spec)
     used = _check_op_id_not_reused(spec)  # P7①：当日已落档撞号即拒，见模块文档
 
     do_block = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(spec.do_items))
@@ -1006,9 +1052,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--batch", default=None,
                     help="仅 subtask_lane：心跳收工句 `heartbeat --done --batch` 用的批次；"
                          "不传则从 --line 现取 `B-MMDD_…`，两者皆无即拒绝出件（队列 §一 `#565`）")
-    ap.add_argument("--model", default="sonnet", choices=VALID_MODELS,
+    ap.add_argument("--model", default=None, choices=VALID_MODELS,
                     help="CLI 别名（不传即 sonnet）：无头/看护/巡检/批量跑测默认它，"
-                         "design 起草／需求 grill／ASIL 合规建造显式传 opus（队列 §一 `#581` ⑷）")
+                         "design 起草／需求 grill／ASIL 合规建造显式传 opus（队列 §一 `#581` ⑷）；"
+                         "🔴 `--env Cowork` 下不得传（fail-loud 拒绝出件，队列 §一 `#620`）")
     return ap
 
 
@@ -1058,8 +1105,10 @@ def main(argv: list[str] | None = None) -> int:
         "branch": args.branch, "worktree": args.worktree, "workspace": args.workspace,
         "session": args.session, "line": args.line, "input_pointer": args.input_pointer,
         "task_class": args.task_class, "claude_section": args.claude_section,
-        "variant": args.variant, "model": args.model,
+        "variant": args.variant,
     }
+    if args.model is not None:
+        kwargs["model"] = args.model
     if args.batch:
         kwargs["batch"] = args.batch
     if args.do_items:

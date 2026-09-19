@@ -1206,5 +1206,107 @@ class 取号即声明(unittest.TestCase):
             M.REPO_ROOT = self.root
 
 
+class LineSelfReferenceTests(unittest.TestCase):
+    """队列 §一 `#620`（`OP-0918-C` 实撞两处错之一）：`--line`（派出线）里引用的编号
+    与 `--op-id` 自身相同 ⇒ 自引用错误，fail-loud 拒绝出件，不静默出一份指向自己的件。"""
+
+    def test_line引用与op_id相同即拒绝(self):
+        with self.assertRaises(M.OpenerGenError) as ctx:
+            M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-1231-P",
+                                  "line": "环境总线 OP-1231-P（批 B-1231_示例批）"})
+        msg = str(ctx.exception)
+        self.assertIn("OP-1231-P", msg)
+        self.assertIn("#620", msg)
+
+    def test_line引用不同编号不受影响(self):
+        M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-1231-Q",
+                              "line": "环境总线 OP-1231-R（批 B-1231_示例批）"})  # 不抛即通过
+
+
+class CoworkModelRejectionTests(unittest.TestCase):
+    """队列 §一 `#620`（`OP-0918-C` 实撞两处错之一）：`--env Cowork` 下显式传 `--model`
+    此前被 `_settings_line` 静默省略——参数被接受却不生效，比被拒绝更危险，现改 fail-loud。"""
+
+    def test_cowork显式传model即拒绝(self):
+        with self.assertRaises(M.OpenerGenError) as ctx:
+            M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-T", "model": "opus"})
+        msg = str(ctx.exception)
+        self.assertIn("--model", msg)
+        self.assertIn("Cowork", msg)
+        self.assertIn("#620", msg)
+
+    def test_cowork传sonnet默认值同样拒绝(self):
+        """🔴 判「传没传」只看 kwargs，不看值——传显式 `sonnet`（即便与缺省值相同）也该拒绝，
+        否则「传了但恰好等于默认值」会绕过本守卫。"""
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-U", "model": "sonnet"})
+
+    def test_cowork不传model仍正常出件(self):
+        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-V"})
+        self.assertNotIn("模型", out)
+
+    def test_cli层cowork传model_退出码1且写stderr(self):
+        import contextlib
+        import io
+        argv = [
+            "--env", "Cowork", "--op-id", "OP-1231-W", "--short-name", "示例三",
+            "--branch", "master", "--worktree", "☐（不建，只产改 `.md`）",
+            "--workspace", "无", "--session", "新开", "--line", "环境总线",
+            "--input-pointer", "1-转型规划/0-全景路线图/示例派单件.md", "--task-class", "B",
+            "--model", "opus",
+        ]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = M.main(argv)
+        self.assertEqual(code, 1)
+        self.assertIn("--model", err.getvalue())
+
+
+class ClaimsLockFailLoudTests(unittest.TestCase):
+    """队列 §一 `#620` 同族第四例：Cowork 挂载侧 `rm` 常被沙箱拒绝，`_ClaimsLock.__exit__`
+    此前清锁失败即静默留锁——同一会话第二次调用只看到「等待超过 10 s」，看不出真因。
+    改为 fail-loud 打印；超时报错同批附上锁文件 mtime 与陈旧锁提示。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_清锁失败时打印警告而非静默(self):
+        import contextlib
+        import io
+        import os
+        from unittest import mock
+        lock = M._ClaimsLock(self.root / "claims.jsonl")
+        lock.path.parent.mkdir(parents=True, exist_ok=True)
+        lock.path.write_bytes(str(os.getpid()).encode("ascii"))
+        err = io.StringIO()
+        with mock.patch.object(Path, "unlink", side_effect=OSError("Operation not permitted")):
+            with contextlib.redirect_stderr(err):
+                lock.__exit__(None, None, None)
+        self.assertIn("清理失败", err.getvalue())
+        self.assertIn(str(lock.path), err.getvalue())
+
+    def test_超时报错带mtime与陈旧锁提示(self):
+        target = self.root / "claims.jsonl"
+        stale_lock = target.with_name(target.name + ".lock")
+        stale_lock.parent.mkdir(parents=True, exist_ok=True)
+        stale_lock.write_bytes(b"12345")
+        old_stale, old_timeout = M.CLAIMS_LOCK_STALE_SECONDS, M.CLAIMS_LOCK_TIMEOUT_SECONDS
+        M.CLAIMS_LOCK_STALE_SECONDS = 10_000  # 不走陈旧接管分支，逼进超时分支
+        M.CLAIMS_LOCK_TIMEOUT_SECONDS = 0
+        try:
+            with self.assertRaises(M.OpenerGenError) as ctx:
+                with M._ClaimsLock(target):
+                    pass
+            msg = str(ctx.exception)
+            self.assertIn("mtime", msg)
+            self.assertIn("#620", msg)
+        finally:
+            M.CLAIMS_LOCK_STALE_SECONDS, M.CLAIMS_LOCK_TIMEOUT_SECONDS = old_stale, old_timeout
+
+
 if __name__ == "__main__":
     unittest.main()
