@@ -7,6 +7,8 @@ authors = [{ name = "卓品智能 AI 转型项目" }]
 # 平台底座可编辑安装为**可选**步骤；`pytest` 与服务入口不依赖它（路径引导见 tests/conftest.py）。
 dependencies = [
     "zhuopin_platform",
+    "flask>=3.0",      # 门户页 `/quality/q2`（队列 #612 tasks 5.1）
+    "waitress>=3.0",   # 生产模式 WSGI server（同 FI2/FI3/SC2 范式）
 ]
 
 [project.optional-dependencies]

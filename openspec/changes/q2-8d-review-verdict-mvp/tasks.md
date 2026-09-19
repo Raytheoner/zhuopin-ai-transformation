@@ -1,4 +1,4 @@
-> 🔴 design 审 🟡 待 Shao Peishen。§1／§2 为档 1 范围（`#612`），本泳道已完成；§3 起 design 审通过前不得动手。停在档 1：语义层上线须 `PENDING.SEMANTIC_LAYER_ACCEPTANCE` 签认；不代联络陈忱。
+> ✅ design 审已通过（Shao Peishen 2026-09-19 追认，D3/D4 按 `1a 2a` 口径引用）。§1／§2／§3 已闭（3.3/3.4 分属串行闸与人事，不代办）；§5.1 门户页已建（`OP-0919-C`）。§4 语义层与 5.2/5.3 仍停：语义层上线须 `PENDING.SEMANTIC_LAYER_ACCEPTANCE` 签认，5.2 需 `.51` 部署（LAN 留步），5.3 需串行闸现取；均不代联络陈忱、不代办。
 
 ## 1. 工程骨架（🟢，commit `0a52378`）
 - [x] 1.1 场景目录＋`pyproject.toml`（`q2-8d-verdict`）；`.gitignore`（`reports/`／`results/`／`data/golden/`，`git check-ignore -v` 实测）
@@ -21,4 +21,5 @@
 - [ ] 4.1 语义来源实现（V3/V4）｜4.2 验收集 10 份校准（真实件不入库；红线②③排除、样本 3 单列）｜4.3 `SEMANTIC_LAYER_ACCEPTANCE` 签认｜4.4 接 QD-A 真实解析＋PPT D2 页勾选（LAN 留步）
 
 ## 5. 档 3 内部服务（design 审后）
-- [ ] 5.1 门户页 `/quality/q2`（不新起端口）｜5.2 `.51` 部署＋冒烟＋回滚 SOP｜5.3 第 8 步跟进信
+- [x] 5.1 门户页 `/quality/q2`（不新起端口；`q2_8d_verdict/webapp.py`＋`dashboard.py`＋`scripts/run_q2_web.py`，19 passed，`OP-0919-C`）
+- [ ] 5.2 `.51` 部署＋冒烟＋回滚 SOP｜5.3 第 8 步跟进信

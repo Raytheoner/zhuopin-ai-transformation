@@ -31,6 +31,10 @@ DATA_SOURCE_DEFAULT = os.environ.get("Q2_DATA_SOURCE", "mock").strip().lower()
 AUTOMATION_LEVEL = "L2"
 SCENARIO = "Q2"
 
+# ── 门户页路由前缀（design D7；档 3 只建页面，`.51` 部署另行，见 webapp.py 模块说明）──
+ROUTE_PREFIX = "/quality/q2"
+SERVICE_NAME = "Q2 8D 报告 AI 判定"
+
 # ── 规则版本 ──
 RULE_VERSION = "q2-v3.2-chenchen-2026-08-28+signoff-2026-09-14"
 RULES_JSON_RELPATH = "data/rules/8D评审规则库V3.2-结构化清单.json"
