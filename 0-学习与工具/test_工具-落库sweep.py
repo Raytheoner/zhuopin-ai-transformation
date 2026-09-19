@@ -3025,6 +3025,12 @@ def _restore_platform_package_fixture(work: Path) -> None:
     shutil.copy(CREDENTIAL_LINT_SOURCE, work / "0-学习与工具" / CREDENTIAL_LINT_SOURCE.name)
 
 
+# 队列 #597 ② 输出节流落地后：成功路径（退出码 0）的 stdout 被裁成摘要，
+# 剩下的行写进 reports/output-throttle/。本类用例断的就是那些回显行
+# （「待升格 N 个」「本轮被跳过 N 个批次」「已登 §四」），恰好落在被省略的
+# 那段里。因此本类一律带 --verbose 跑：被测的是 D4 升格行为本身，不是
+# 节流器的裁剪策略（节流器由 #597 自己的用例覆盖）。不加此参数时，
+# 升格确实发生（§四 已写、状态已计数），只是断言取不到回显文字。
 class ManifestSkipEscalationTests(SweepTestBase):
     """队列 §一 #507 design D4（K=3）：同一批次连续被覆盖校验跳过达阈值 ⇒ §四
     追一行；当日去重；落库归零；升格失败不改退出码；跳过日志降频。
@@ -3063,7 +3069,7 @@ class ManifestSkipEscalationTests(SweepTestBase):
         self._seed_state({"B-跨树": {"consecutive_skips": sweep.MANIFEST_SKIP_ESCALATION_ROUNDS - 1,
                                     "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": []}})
 
-        result = _run_sweep(self.work)
+        result = _run_sweep(self.work, "--verbose")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
         section_four = self._section_four()
@@ -3088,7 +3094,7 @@ class ManifestSkipEscalationTests(SweepTestBase):
         self._init_and_push(rows="")
         self._write_queue(self.CROSS_WORKTREE_ROW)
 
-        result = _run_sweep(self.work)
+        result = _run_sweep(self.work, "--verbose")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self._read_state()["B-跨树"]["consecutive_skips"], 1)
         self.assertNotIn("清单覆盖校验升格", self._section_four())
@@ -3099,10 +3105,10 @@ class ManifestSkipEscalationTests(SweepTestBase):
         self._write_queue(self.CROSS_WORKTREE_ROW)
         self._seed_state({"B-跨树": {"consecutive_skips": sweep.MANIFEST_SKIP_ESCALATION_ROUNDS - 1,
                                     "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": []}})
-        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        self.assertEqual(_run_sweep(self.work, "--verbose").returncode, 0)
         self.assertEqual(self._section_four().count("清单覆盖校验升格"), 1)
 
-        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        self.assertEqual(_run_sweep(self.work, "--verbose").returncode, 0)
         self.assertEqual(self._section_four().count("清单覆盖校验升格"), 1, "当日同批次不得重复追行")
         self.assertEqual(self._read_state()["B-跨树"]["consecutive_skips"],
                          sweep.MANIFEST_SKIP_ESCALATION_ROUNDS + 1, "计数仍在累加")
@@ -3113,13 +3119,13 @@ class ManifestSkipEscalationTests(SweepTestBase):
         self._write_queue(self.CROSS_WORKTREE_ROW)
         self._seed_state({"B-跨树": {"consecutive_skips": sweep.MANIFEST_SKIP_ESCALATION_ROUNDS - 1,
                                     "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": []}})
-        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        self.assertEqual(_run_sweep(self.work, "--verbose").returncode, 0)
         state = self._read_state()
         state["B-跨树"][sweep.MANIFEST_SKIP_SECTION_FOUR_LOGGED_KEY] = (
             datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         self._seed_state(state)
 
-        self.assertEqual(_run_sweep(self.work).returncode, 0)
+        self.assertEqual(_run_sweep(self.work, "--verbose").returncode, 0)
         self.assertEqual(self._section_four().count("清单覆盖校验升格"), 2)
 
     def test_counter_resets_once_batch_lands(self):
@@ -3131,7 +3137,7 @@ class ManifestSkipEscalationTests(SweepTestBase):
         self._seed_state({"B-回来了": {"consecutive_skips": 2,
                                       "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": ["x.md"]}})
 
-        result = _run_sweep(self.work)
+        result = _run_sweep(self.work, "--verbose")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("✅ 已完成", _git(self.origin, "show", "master:" + sweep.QUEUE_MECHANISM_PATH_REL).stdout)
         self.assertNotIn("B-回来了", self._read_state())
@@ -3142,11 +3148,11 @@ class ManifestSkipEscalationTests(SweepTestBase):
         self._init_and_push(rows="")
         self._write_queue(self.CROSS_WORKTREE_ROW)
 
-        first = _run_sweep(self.work)
+        first = _run_sweep(self.work, "--verbose")
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         self.assertIn("B-跨树 整批跳过", first.stdout)
 
-        second = _run_sweep(self.work)
+        second = _run_sweep(self.work, "--verbose")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
         self.assertNotIn("B-跨树 整批跳过", second.stdout, "续轮不得重复首轮那条全文")
         self.assertIn("本轮被跳过 1 个批次", second.stdout, "但每轮仍有一行汇总回显")
@@ -3160,7 +3166,7 @@ class ManifestSkipEscalationTests(SweepTestBase):
         self._seed_state({"B-跨树": {"consecutive_skips": sweep.MANIFEST_SKIP_ESCALATION_ROUNDS - 1,
                                     "queue_path": sweep.QUEUE_MECHANISM_PATH_REL, "missing": []}})
 
-        result = _run_sweep(self.work)
+        result = _run_sweep(self.work, "--verbose")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("清单覆盖跳过升格", result.stdout)
         self.assertNotIn("已登 §四", result.stdout)
