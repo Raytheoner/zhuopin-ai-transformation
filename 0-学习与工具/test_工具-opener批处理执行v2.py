@@ -725,10 +725,19 @@ class 脚本建隔离worktree四场景_v2_600(_Base):
     def test_主仓误写触发第三道闸判FAIL并存补丁不自动撤回(self):
         # 模拟 #596/#599 那类泄漏：claude 子进程（本测试用桩顶替）绕过前两道闸，直接用
         # 绝对路径往主工作区写一个白名单外的新文件——第三道闸须在收工核验时逮住它。
+        # 队列 #611 归属判定合入后，光凭这一步不够了：还须证明「该泳道 worktree 实际
+        # 触碰过」这个路径，故本例让泳道自己的分支先提交一份同名文件（模拟它确实在
+        # 做这份工作、只是又用绝对路径多写了一份到主仓），归属判定才会把这份泄漏计入
+        # 本泳道账——防判据过宽的另一半场景见下一条
+        # `test_看护者同时段写入主仓不判该泳道FAIL`。
         self._write_plan()
         leak_path = self.leak_file
+        leak_name = leak_path.name
         self.stub_file.write_text(
             "@echo off\r\n"
+            f'echo lane content> "{leak_name}"\r\n'
+            f'git -c user.name=test -c user.email=test@example.com add "{leak_name}"\r\n'
+            f'git -c user.name=test -c user.email=test@example.com commit -m "lane commit" --quiet\r\n'
             f'echo leaked content> "{leak_path}"\r\n'
             "echo OPENER_DONE\r\n"
             "exit /b 0\r\n",
@@ -747,6 +756,30 @@ class 脚本建隔离worktree四场景_v2_600(_Base):
         patch_text = patch.read_text(encoding="utf-8-sig")
         self.assertIn(leak_path.name, patch_text)
         # 不自动撤回：泄漏文件应仍原样留在主工作区，供人工核实后再决定去留。
+        self.assertTrue(leak_path.exists())
+
+    def test_看护者同时段写入主仓不判该泳道FAIL(self):
+        # 队列 #611 归属判定（`1a`）核心场景复现：泳道 worktree 干干净净跑完（没提交、
+        # 没碰这个文件），主工作区却在它运行期间冒出一个白名单外的新文件——这是看护者
+        # （或任何其它并行进程）同时段直接写主仓，与本泳道无关，不该记它的账。
+        # 本例用旧版桩（纯 `echo` 绝对路径、不碰 worktree）来站在「泄漏候选存在但
+        # 与本泳道 worktree 无关联」这一侧，断言判 OK、不产出 main-leak 补丁。
+        self._write_plan()
+        leak_path = self.leak_file
+        self.stub_file.write_text(
+            "@echo off\r\n"
+            f'echo bystander content> "{leak_path}"\r\n'
+            "echo OPENER_DONE\r\n"
+            "exit /b 0\r\n",
+            encoding="utf-8",
+        )
+        r = _run(["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)],
+                 self.root, self.env, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(rows[0]["Status"], "OK")
+        self.assertFalse((self.log_dir / f"{self.lane_name}-A1-main-leak.patch").exists())
+        # 旁观者文件本身不受第三道闸处置（既不属于泳道账，也不自动清理），原样留存。
         self.assertTrue(leak_path.exists())
 
     def test_泳道回写队列三类白名单后不判FAIL(self):
