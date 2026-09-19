@@ -412,6 +412,44 @@ $laneBlock = {
                 $lp -like '1-转型规划/0-全景路线图/队列行日志/#*.md'
             )
         })
+        # 队列 #611 归属判定（2026-09-19 OP-0919-Q，Shao Peishen 答 `1a`）：白名单过滤剩下的
+        # 候选，还须证明「该泳道 worktree 实际触碰过」才算它的泄漏——看护者（或任何其它并行
+        # 进程）同时段直接写主仓的文件，天然不落在这个集合里，不再被误记成本泳道账。
+        # 🔴 判据只认「该泳道自己的分支相对 fork 点新增了什么」＋「worktree 若还在、它自己的
+        # 实时 git status」的并集，**不看 git author／不按时间窗切**——`1a` 明确否决了方案
+        # `b`（看护者与泳道同身份同时段，两者切不干净，见 `#611` 行内原文）。用分支提交历史
+        # 而非只信 worktree 实时状态：泳道常见「收工自删」在先（见上⑶b 段），worktree 目录
+        # 届时可能已不在，但分支的提交对象仍在共享 `.git` 里、天然扛得住这个时序。
+        # 未声明 worktree（`$wtDeclared` 为假）时没有隔离基线可比，维持改动前的判法：非白名单
+        # 一律计入，不因本条新增而放宽。
+        if ($wtDeclared -and $leakLines.Count -gt 0) {
+            $branchTouched = @{}
+            if ($branchName) {
+                try {
+                    $forkPoint = (& git -C $repoRootInJob merge-base master $branchName 2>$null | Select-Object -First 1)
+                    if ($LASTEXITCODE -eq 0 -and $forkPoint) {
+                        foreach ($f in (& git -C $repoRootInJob diff --name-only $forkPoint.Trim() $branchName 2>$null)) {
+                            if ($f) { $branchTouched[$f] = $true }
+                        }
+                    }
+                } catch { }
+            }
+            if ($laneWorktreePath -and (Test-Path -LiteralPath $laneWorktreePath)) {
+                foreach ($wl in (& git -C $laneWorktreePath -c core.quotepath=false status --porcelain 2>$null)) {
+                    if (-not $wl) { continue }
+                    $wp = $wl.Substring(3)
+                    if ($wp -match '^"(.*)"$') { $wp = $wp.Substring(1, $wp.Length - 2) }
+                    if ($wp -match ' -> ') { $wp = ($wp -split ' -> ')[-1] }
+                    $branchTouched[$wp] = $true
+                }
+            }
+            $leakLines = @($leakLines | Where-Object {
+                $lp = $_.Substring(3)
+                if ($lp -match '^"(.*)"$') { $lp = $lp.Substring(1, $lp.Length - 2) }
+                if ($lp -match ' -> ') { $lp = ($lp -split ' -> ')[-1] }
+                $branchTouched.ContainsKey($lp)
+            })
+        }
         if ($leakLines.Count -gt 0) {
             $patchPath = Join-Path $logDir ($laneName + '-' + $op.Id + '-main-leak.patch')
             $patchLines = @('# 队列 #600 ⑷ 收工核验：主工作区新增非白名单脏文件，未自动撤回，人工核实后再决定去留', '')
