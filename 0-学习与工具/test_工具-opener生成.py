@@ -1308,5 +1308,38 @@ class ClaimsLockFailLoudTests(unittest.TestCase):
             M.CLAIMS_LOCK_STALE_SECONDS, M.CLAIMS_LOCK_TIMEOUT_SECONDS = old_stale, old_timeout
 
 
+class IgnoreBlindNoteTests(unittest.TestCase):
+    """队列 §一 `#616`（Shao Peishen 答 `4a` 选③＋①两点落地）① 部分：`工具-opener生成.py`
+    在标准 CC／Cowork 两变体的正文尾部无条件注入一句软提示——涉及 `7-外部文档/`／
+    `reports/` 等 gitignore 路径的检索须标注『worktree 不可见，须回主仓复核』。
+
+    只做软提示（③ 才是机器硬关卡，见 `工具-opener块lint.py` 形态⑬）；`subtask_lane`
+    变体受严格的骨架契约约束（`骨架与生成器契约` 测试类），本次不动，留作后续单独一批。
+    """
+
+    def test_标准CC变体含软提示(self):
+        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0906-ZA"})
+        self.assertIn(M.IGNORE_BLIND_NOTE, out)
+        self.assertIn("worktree 不可见，须回主仓复核", out)
+
+    def test_cowork变体含软提示(self):
+        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-0906-ZB"})
+        self.assertIn(M.IGNORE_BLIND_NOTE, out)
+
+    def test_子任务泳道变体本次不动_不含软提示(self):
+        """🔴 如实登记范围：`subtask_lane` 受骨架契约严格约束，扩第五条须同步改
+        `opener骨架.md` 与 `骨架与生成器契约` 测试类，本次不做，留作后续单独一批。"""
+        kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
+        kw.update({"variant": "subtask_lane", "op_id": "OP-0906-ZC"})
+        out = M.generate_opener(**kw)
+        self.assertNotIn(M.IGNORE_BLIND_NOTE, out)
+
+    def test_标准CC产物过lint零违规(self):
+        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0906-ZD"})
+        lint = M._load_lint_module()
+        blocks = lint.iter_fenced_blocks(out)
+        self.assertEqual(lint.check_block(blocks[0]), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -322,6 +322,22 @@ GUARDIAN_PARALLEL_NOTE = (
     "🔴 用 Task/Agent 起子任务时并行上限 4，超出排下一波，错峰 ≥90 秒；"
     "各子任务收工只 push 自己分支，不碰主仓、不 ff master（构建环境瘦身第三轮方案 P4）。"
 )
+#: 队列 §一 `#616`（Shao Peishen `4a` 选③＋①两点落地，2026-09-19）——`OP-0918-C` 实撞：
+#: worktree 是全新 checkout，只含 git 已跟踪的文件；`7-外部文档/`／`reports/` 等
+#: gitignore 路径的真实内容只存在于主仓物理磁盘、从未进 git，worktree 内对它的任何
+#: 检索天然零命中（实测：worktree 内 `git ls-files "7-外部文档"` 为 0，主仓
+#: `ls 7-外部文档/` 却见三子目录、财务部 30+ 件）。**只做软提示**（③ 是机器硬关卡，
+#: 见 `工具-opener块lint.py::check_zero_hit_assertions` 形态⑬）——本行治不住
+#: 「泳道真的读不到」这件事，但成本最低、与③不互斥。
+#: 🔴 **只注入标准 CC／Cowork 两变体**（含「做什么／不做什么」正文、真会去做检索的
+#: 那两类）；`subtask_lane` 受「本变体正文恒为三行、尾部四条机器口径逐字取自正本」的
+#: 严格契约约束（`test_工具-opener生成.py::骨架与生成器契约`），扩第五条须同步改
+#: `opener骨架.md`【CC · 子任务泳道】节与该契约测试，留作后续单独一批；`reference`／
+#: `guardian` 两变体不带任务正文本身不做检索，不适用。
+IGNORE_BLIND_NOTE = (
+    "🔴 涉及 `7-外部文档/`／`reports/` 等 gitignore 路径的检索须标注"
+    "『worktree 不可见，须回主仓复核』（队列 §一 `#616`）。"
+)
 
 
 def _scan_used_suffixes(mmdd: str) -> set[str]:
@@ -954,6 +970,8 @@ def generate_opener(**kwargs) -> str:
                 "",
                 "不做什么：",
                 dont_block,
+                "",
+                IGNORE_BLIND_NOTE,
             ]
         elif spec.env == "CC" and spec.variant == "subtask_lane":
             # 骨架【CC · 子任务泳道】变体：不放 set_session_title 行（源头不放，
@@ -992,6 +1010,8 @@ def generate_opener(**kwargs) -> str:
                 # 【Cowork】节已同步补段，`工具-opener块lint.py` 形态⑦机器守。
                 "不做什么：",
                 dont_block,
+                "",
+                IGNORE_BLIND_NOTE,
                 "",
                 "收工：产出登记 §二 待 commit 批次（走 `0-学习与工具/工具-共享文档编辑锁.py`，"
                 "勿裸改、勿自行 commit），由落库 sweep 取活。",
