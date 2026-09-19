@@ -1,4 +1,4 @@
-"""opener 代码块 lint —— 一次收十二个失效形态（队列 §一 `#284`／`#381`⑸ⓖ／`#487`／`#550`／`#565`／`#620`，OP-0828-Y／OP-0904-A／OP-0905-C／OP-0906-I／OP-0909-X／OP-0910-R／OP-0912-B／OP-0918-C）。
+"""opener 代码块 lint —— 一次收十三个失效形态（队列 §一 `#284`／`#381`⑸ⓖ／`#487`／`#550`／`#565`／`#620`／`#616`，OP-0828-Y／OP-0904-A／OP-0905-C／OP-0906-I／OP-0909-X／OP-0910-R／OP-0912-B／OP-0918-C／OP-0919-G）。
 
 本脚本是**规则退休制**（根 `CLAUDE.md` §5）欠下的对价：`专线opener模板库.md` §〇
 补充三那条人守规则 **2026-08-27 一天被违反 17 次**，远超「人守违反 3 次即须机制化或
@@ -25,6 +25,7 @@
 | 形态⑩ | **子任务泳道 opener 块**缺**心跳行**（同一行须同现 `工具-泳道看护状态机.py heartbeat`、`--done` 与 `--batch`；2026-09-12 `OP-0912-F` 由「`heartbeat`＋`--lane`」收紧） | 2026-09-12（队列 §一 `#565`／`OP-0912-B`） | 看护批 `B-0911_机制收口` 5 条泳道全做完全 ff 进 master，`summary --batch B-0911_机制收口` 却报「本批终态泳道 0 条」、`reports/lane-heartbeat/` 两小时零新文件——心跳约定此前只写在看护件「硬边界继承」段（看护者自己读）与 SKILL.md 步骤 4，两处都不是子任务会读到的 opener 正文。同批复核还发现 `heartbeat --done` 若不带 `--batch` 就不计入任何批次 `summary`（已实测撞过 8 条历史泳道），修法主体＝生成器强制注入（`subtask_heartbeat_note`，泳道标识＝worktree 名、批次从 `派出线` 现取，含 `--batch`），本形态是它的机器守 |
 | 形态⑪ | opener 块「派出线」字段引用的 OP 号与该块**首行**自身 OP 号相同（自引用） | 2026-09-19（队列 §一 `#620`／`OP-0918-C`） | `OP-0918-C` 实撞：派出线写成指向自己，读者顺着「派出线」找上级线时会绕回本件；`工具-opener生成.py` 出件前已同判据拦截，本形态是它的机器守 |
 | 形态⑫ | **【Cowork】** opener 块的 `【设置】` 行出现「模型：」字段 | 2026-09-19（队列 §一 `#620`／`OP-0918-C`） | 该字段只被 `工具-opener批处理执行v2.ps1` 用来给【CC】子进程解析 `--model`，Cowork opener 从不经该脚本启动——`工具-opener生成.py --env Cowork` 显式传 `--model` 现已 fail-loud 拒绝出件（同批），本形态是成品侧的机器守 |
+| 形态⑬ | 文件正文里「不存在」「零命中」「全库检索」类断言，同一行缺**检索位置**（主仓／worktree／仓库根）或**检索命令**（反引号包裹） | 2026-09-19（队列 §一 `#616`／`OP-0918-C`／`OP-0919-G`） | `OP-0918-C` 实撞：worktree 是全新 checkout，`7-外部文档/` 等 gitignore 路径的真实内容只存在于主仓物理磁盘、从未进 git，worktree 内检索天然零命中——同一句「不存在」在 worktree 与主仓查出来是相反的结论，只报断言不报检索位置读者无法分辨。**与形态①-⑫不同源**：不问 opener 块结构，问文件正文的取证质量，逐行判、不挂在块起始行 |
 
 形态②③与「工具静默回退」同族：它没错，只是解析到了另一个对象 —— 没有任何一层会报错，
 故只能靠结构检测拦，靠人读输出拦不住。
@@ -215,6 +216,9 @@ RULE_EFFECTIVE_FORM10 = date(2026, 9, 12)
 RULE_EFFECTIVE_FORM11 = date(2026, 9, 19)
 #: 形态⑫ ＝ 队列 §一 `#620`（`OP-0918-C` 实撞，2026-09-19 建成机器守：Cowork 块含「模型：」死字段）。
 RULE_EFFECTIVE_FORM12 = date(2026, 9, 19)
+#: 形态⑬ ＝ 队列 §一 `#616`（`OP-0918-C` 实撞、Shao Peishen `4a` 拍板，2026-09-19：
+#: 「不存在／零命中／全库检索」类断言缺检索位置或检索命令）。
+RULE_EFFECTIVE_FORM13 = date(2026, 9, 19)
 #: 正本自检 C1/C2/C3/C5 ＝ 队列 §一 `#493`（2026-09-07，形态①②③⑤ 在格式正本内的换判据版）。
 RULE_EFFECTIVE_CANON = date(2026, 9, 7)
 #: 正本角色声明自检 C0 ＝ 队列 §一 `#489` ⑴（2026-09-08，路径名单改自声明式判据时的防外溢条）。
@@ -234,6 +238,7 @@ RULE_EFFECTIVE_BY_FORM = {
     "F10": RULE_EFFECTIVE_FORM10,
     "F11": RULE_EFFECTIVE_FORM11,
     "F12": RULE_EFFECTIVE_FORM12,
+    "F13": RULE_EFFECTIVE_FORM13,
     "C0": RULE_EFFECTIVE_CANON_CLAIM,
     "C1": RULE_EFFECTIVE_CANON,
     "C2": RULE_EFFECTIVE_CANON,
@@ -342,6 +347,69 @@ LINE_FIELD_OP_ID_RE = re.compile(r"OP-\d{4}-[A-Za-z0-9]+")
 #: 用来给【CC】§三 子任务泳道 opener 块解析出 `--model`，Cowork 从不经该脚本启动
 #: （`工具-opener生成.py::_settings_line` 已改为只对 CC 附加这第七字段；队列 §一 `#620`）。
 MODEL_FIELD_RE = re.compile(r"模型\s*[:：]")
+
+#: 形态⑬：泳道产出／取证件里的「不存在」「零命中」「全库检索」类断言，须**同一行**
+#: 同时写明检索位置（主仓／worktree／仓库根）与检索命令（反引号包裹），缺一即报
+#: （队列 §一 `#616`，Shao Peishen 答 `4a` 选③＋①两点落地，2026-09-19）。
+#: 🔴 **成因**：`OP-0918-C` 实撞——worktree 是全新 checkout，只含 git 已跟踪的文件；
+#: `7-外部文档/` 等 gitignore 路径的真实内容只存在于主仓物理磁盘、从未进 git，
+#: worktree 内对它的任何检索天然零命中（实测：worktree 内 `git ls-files "7-外部文档"`
+#: 为 0，主仓 `ls 7-外部文档/` 却见三子目录、财务部 30+ 件）。同一句「不存在」在两处
+#: 检索出来是相反的结论——只报断言不报检索位置，读者无法分辨。
+#: 🔴 **排除「命名判据本身」的误伤**：本行文档字符串、`FORM_TITLE` 等描述性文字会
+#: 用「」把三个关键词整段引出来讨论这条规则，那是在**命名判据**、不是在下断言——
+#: 用「」原样包住关键词整体（`「不存在」`）时结构性排除，同 F1 docstring 那条
+#: 「讲解反范式的散文一律不命中」先例。
+ZERO_HIT_QUOTED_META_RE = re.compile(r"「(?:不存在|零命中|全库检索)」")
+#: 🔴 本机制自己的**名字**就叫「零命中断言守」（本队列行 `#616`／本 OP 号
+#: `OP-0919-G` 标题皆如此）——它不加「」也会被裸命中，实测两处仓库真身撞见
+#: （看护件标题、`### A2` 小节标题、opener 首行）：一律是在**命名这条守卫**，
+#: 不是在下断言，同 `ZERO_HIT_QUOTED_META_RE` 一并结构性排除。
+ZERO_HIT_NAME_META_RE = re.compile(r"零命中断言(?:守|类|机制|校验)?")
+#: 🔴 `不存在` 单独出现太泛（`опener骨架.md`/`专线opener模板库.md` 实测两处真命中：
+#: 「一个已经存在的能力没人用，等于**不存在**」「非 0 即失败（**不存在**＝1，未命中＝2）」，
+#: 均与「检索了却查不到」无关）——须与检索类动词**同现一行**才算候选断言；
+#: `零命中`／`全库检索` 本身已是技术专有说法，不必再加这层限定。
+ZERO_HIT_SEARCH_VERB_RE = re.compile(r"检索|查找|扫描|复核|核实|排查|搜索|全库|全仓")
+ZERO_HIT_TOKEN_RE = re.compile(r"不存在|零命中|全库检索")
+ZERO_HIT_LOCATION_RE = re.compile(r"主仓|worktree|仓库根", re.IGNORECASE)
+#: 检索命令＝反引号包裹且内含空白（区分「一条命令」与「一个裸文件名/路径」）。
+ZERO_HIT_COMMAND_RE = re.compile(r"`[^`\n]*\s[^`\n]*`")
+
+
+def check_zero_hit_assertions(text: str) -> list[tuple[int, str, str]]:
+    """形态⑬：逐行扫描「不存在／零命中／全库检索」类断言，缺检索位置或检索命令即报。
+
+    🔴 返回 `(行号, 形态代码, 说明)` 三元组——与其余 `check_*`（`check_canon_claim`／
+    `check_block` 等）统一固定挂在第 1 行或块起始行不同，本检查天然是逐行的：同一份
+    文件可能有多处互不相关的断言，行号必须随每处命中带出，不能像 C0/C1/C2 那样
+    笼统挂在文件第 1 行——那会让读者无法定位到底是哪一句断言缺了检索位置。
+    """
+    problems: list[tuple[int, str, str]] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        meta_spans = ([m.span() for m in ZERO_HIT_QUOTED_META_RE.finditer(line)]
+                      + [m.span() for m in ZERO_HIT_NAME_META_RE.finditer(line)])
+        hits = [m for m in ZERO_HIT_TOKEN_RE.finditer(line)
+                if not any(s <= m.start() < e for s, e in meta_spans)]
+        if hits and not ZERO_HIT_SEARCH_VERB_RE.search(line):
+            hits = [m for m in hits if m.group(0) != "不存在"]
+        if not hits:
+            continue
+        has_location = bool(ZERO_HIT_LOCATION_RE.search(line))
+        has_command = bool(ZERO_HIT_COMMAND_RE.search(line))
+        if has_location and has_command:
+            continue
+        missing = []
+        if not has_location:
+            missing.append("检索位置（主仓／worktree／仓库根）")
+        if not has_command:
+            missing.append("检索命令（反引号包裹）")
+        problems.append((lineno, "F13",
+            f"「{hits[0].group(0)}」类断言缺{'、'.join(missing)} ⇒ 读者无法判断这句断言"
+            "是在 worktree 里查的（可能因 gitignore／未跟踪而结构性看不见）还是在主仓查的"
+            "——同一断言两种情形结论相反（队列 §一 `#616`，`OP-0918-C` 实撞）"))
+    return problems
+
 
 # ── 格式正本自身的结构性排除（队列 §一 `#493`，2026-09-07）────────────────────
 #: 🔴 **判据把自己的格式正本判成违规** —— 2026-09-06 15:53 UTC 主仓实跑坐实
@@ -1101,6 +1169,13 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
             for form, detail in check_canon_file(text, role):
                 _emit(1, form, detail, None)
 
+        # 形态⑬（队列 §一 `#616`）：逐行扫「不存在／零命中／全库检索」类断言。
+        # 🔴 与形态①-⑫不同源——它不问 opener 块结构，问的是文件正文的取证质量；
+        # 沿用同一份 `【设置】`/`set_session_title` 门槛只是复用既有扫描面（本工具
+        # 只扫「含 opener 的 .md」），不代表判据本身限定在 opener 块内。
+        for lineno, form, detail in check_zero_hit_assertions(text):
+            _emit(lineno, form, detail, None)
+
         for block in candidates:
             env = block_env(block)
             if settings_line(block) is not None:
@@ -1136,6 +1211,9 @@ def scan_single_file(path: Path) -> list[Finding]:
         for form, detail in check_canon_file(text, role):
             findings.append(Finding(str(path), 1, form, detail,
                                     "current", "--file 自检模式：不判历史", None))
+    for lineno, form, detail in check_zero_hit_assertions(text):
+        findings.append(Finding(str(path), lineno, form, detail,
+                                "current", "--file 自检模式：不判历史", None))
     for block in iter_fenced_blocks(text):
         if settings_line(block) is None and not SESSION_TITLE_RE.search(block.text):
             continue
@@ -1161,6 +1239,7 @@ FORM_TITLE = {
     "F10": "形态⑩ · 子任务泳道块缺心跳行 heartbeat --done --batch（规则生效日 2026-09-12）",
     "F11": "形态⑪ · 派出线 OP 号与块首行 OP 号自引用相同（规则生效日 2026-09-19）",
     "F12": "形态⑫ · 【Cowork】块含「模型：」死字段（规则生效日 2026-09-19）",
+    "F13": "形态⑬ · 「不存在／零命中／全库检索」断言缺检索位置或检索命令（规则生效日 2026-09-19）",
     "C0": "正本自检C0 · opener正本 角色声明不成立（队列 #489，2026-09-08）",
     "C1": "正本自检C1 · 格式正本不再教 set_session_title（队列 #493，2026-09-07）",
     "C2": "正本自检C2 · 格式正本不再教子任务例外句（队列 #493，2026-09-07）",

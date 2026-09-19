@@ -1454,5 +1454,86 @@ class CoworkModelFieldTests(unittest.TestCase):
         self.assertIn("F12", M.FORM_TITLE)
 
 
+class 形态十三_零命中断言缺检索位置或命令(unittest.TestCase):
+    """形态⑬（队列 §一 `#616`，Shao Peishen 答 `4a` 选③＋①两点落地；`OP-0918-C` 实撞）：
+    文件正文里「不存在」「零命中」「全库检索」类断言，同一行须同时写明检索位置
+    （主仓／worktree／仓库根）与检索命令（反引号包裹），缺一即报。
+
+    🔴 与形态①-⑫不同源、不走 `check_block`——它不问 opener 块结构，问的是文件正文的
+    取证质量，故本类直接调 `check_zero_hit_assertions(text)`，不经 `_forms`/`_only_block`。
+    """
+
+    def _hit_forms(self, text: str) -> list[tuple[int, str, str]]:
+        return M.check_zero_hit_assertions(text)
+
+    def test_反例_零命中无检索位置与命令_命中F13(self):
+        text = "取证：全库检索该关键词，零命中。\n"
+        hits = self._hit_forms(text)
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0][1], "F13")
+
+    def test_反例_只有位置无命令_仍命中F13(self):
+        text = "worktree 内复核：该目录不存在。\n"
+        hits = self._hit_forms(text)
+        self.assertEqual([h[1] for h in hits], ["F13"])
+
+    def test_反例_只有命令无位置_仍命中F13(self):
+        text = "复核：`git ls-files \"7-外部文档\"` 零命中。\n"
+        hits = self._hit_forms(text)
+        self.assertEqual([h[1] for h in hits], ["F13"])
+
+    def test_正例_同行齐备位置与命令_不命中F13(self):
+        """🔴 验收条款「两侧都能关掉」：补齐检索位置＋反引号命令 ⇒ F13 消失。"""
+        text = ("实测手段＝worktree 内 `git ls-files \"7-外部文档\"`（0）＋"
+                "主仓 `ls 7-外部文档/`（三子目录）。\n")
+        self.assertEqual(self._hit_forms(text), [])
+
+    def test_正例_裸不存在无检索语境不命中(self):
+        """🔴 实测坐实：本形态刚落地即在仓库真身两处误伤——`opener骨架.md`
+        「一个已经存在的能力没人用，等于不存在」、`专线opener模板库.md`
+        「非 0 即失败（不存在＝1，未命中＝2）」，均与「检索了却查不到」无关。
+        `不存在` 单独出现太泛，须与检索类动词同现一行才算候选断言。"""
+        self.assertEqual(self._hit_forms("一个已经存在的能力没人用，等于不存在。\n"), [])
+        self.assertEqual(
+            self._hit_forms("非 0 即失败（不存在＝1，未命中＝2）。\n"), [])
+
+    def test_正例_机制自身名字不带引号也不命中(self):
+        """🔴 实测坐实第二处误伤：本机制自己的名字就叫「零命中断言守」（本队列行
+        `#616`／本 OP 号 `OP-0919-G` 标题皆如此），标题里不加「」也会裸命中——
+        看护件标题、`### A2` 小节标题、opener 首行三处仓库真身全撞见。"""
+        self.assertEqual(self._hit_forms(
+            'title: "机制缩编批看护件 · opener 双点机守 ＋ 零命中断言守 ＋ 陈旧锁哨兵"\n'), [])
+        self.assertEqual(self._hit_forms("### A2 · §一 #616 零命中断言守\n"), [])
+        self.assertEqual(self._hit_forms("[OP-0919-G]【CC】零命中断言守\n"), [])
+
+    def test_正例_命名判据本身的描述性文字不命中(self):
+        """🔴 判据把自己的规则说明判成违规——本形态自己的模块文档字符串／FORM_TITLE
+        都会用「」把三个关键词整段引出来讨论规则本身，不是在下断言，结构性排除
+        （同 F1 docstring「讲解反范式的散文一律不命中」先例）。"""
+        text = ("③ lint 扫泳道产出里「不存在」「零命中」「全库检索」类断言时，"
+                "须同时写明检索位置与检索命令，缺一即违规。\n")
+        self.assertEqual(self._hit_forms(text), [])
+
+    def test_行号随命中带出_不笼统挂第1行(self):
+        text = "第一行没有断言。\n全库检索：零命中。\n"
+        hits = self._hit_forms(text)
+        self.assertEqual([h[0] for h in hits], [2])
+
+    def test_scan_single_file集成_命中F13(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "draft.md"
+            path.write_text(
+                _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC)
+                + "\n全库检索：零命中。\n",
+                encoding="utf-8",
+            )
+            findings = M.scan_single_file(path)
+            self.assertIn("F13", {f.form for f in findings})
+
+    def test_生效日与明细分组均已登记(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F13"], date(2026, 9, 19))
+        self.assertIn("F13", M.FORM_TITLE)
+
+
 if __name__ == "__main__":
     unittest.main()
