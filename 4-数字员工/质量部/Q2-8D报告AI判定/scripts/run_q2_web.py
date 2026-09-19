@@ -1,17 +1,20 @@
-"""Q2 门户页 —— Web 服务启动入口（档 3，队列 §一 `#612` tasks 5.1）。
+"""Q2 门户页 —— Web 服务启动入口（档 3，队列 §一 `#612` tasks 5.1 建页、5.2 上线 `.51:8098`）。
 
 启动：
   python scripts/run_q2_web.py                  # 默认 127.0.0.1:8098（本机跑，不对外）
   Q2_WEB_PORT=9000 python scripts/run_q2_web.py
-  Q2_WEB_HOST=0.0.0.0 …                         # 仅 `.51` 部署时置（本批不做 `.51` 部署，`#612`
-                                                 # 明令 5.2 不在本批）；默认值不改
+  Q2_WEB_HOST=0.0.0.0 …                         # 仅 `.51` 部署由 deploy-server.ps1 生成的
+                                                 # start-q2.ps1 这样置；默认值不改
 
-🔴 **默认只绑 127.0.0.1**：本机跑永不对外。设计上对外访问唯一走 `.51:8090` 统一门户网关反代
-（design D7，本页未获 FI3 `#615` 式的过渡期独立端口改判），网关收编前本页不上线 `.51`。
+🔴 **默认只绑 127.0.0.1**：本机跑永不对外。`.51` 上以过渡期独立端口 8098 对外（`#612`，
+Shao Peishen 2026-09-19 答 `1a`＝比照 FI3 `#615` 走独立端口过渡形态，与 design D7「走 `.51:8090`
+网关反代」相反、先例＝FI3 8097；网关收编时回收），防火墙入站规则与计划任务由 `deploy-server.ps1`
+建，本文件不持有任何一项。
 
-凭据：启动时经 `zhuopin_platform.env_anchor.load_env` 读入本次该用的 `.env`，供共享口令门禁
-`ZP_GATE_PASSWORD`（`#160`）取值。`required=()`：本页档 1 只读 mock、无必需键——门禁键缺失即
-门禁静默 no-op（部署标准清单 §三⑥ 点名的静默失效形态），本批不部署 `.51`、故不在此跑冒烟核对。
+凭据：启动时经 `zhuopin_platform.env_anchor.load_env` 读入本次该用的 `.env`（`.51` 扁平布局
+＝ `C:/q2/.env`；monorepo ＝ 主工作区根 `.env`），供共享口令门禁 `ZP_GATE_PASSWORD`（`#160`）
+取值。`required=()`：本页档 1 只读 mock、无必需键——门禁键缺失即门禁静默 no-op（部署标准
+清单 §三⑥ 点名的静默失效形态），**由部署段冒烟三件套第 2 项（未登录 302）显式核对**，不靠报错。
 🔴 只打印命中的 `.env` 路径，绝不回显键值。
 
 红线：本页只读档 1 mock 汇总，不接 QD-A，不写回任何系统；页面首屏显著标注"mock 数据"。
@@ -58,8 +61,8 @@ def main() -> int:
     print(f"  报告/审计目录：{reports}（git-ignored）")
     print("  ⚠ 档 1 mock 数据·非真实 8D 评审结论；退回决定永远由质量工程师签发")
     if host == "127.0.0.1":
-        print("  ⚠ 只绑 127.0.0.1，不对 LAN 开放（`.51` 部署本批不做，`#612` 明令 5.2 不在本批）")
-    print("  ⚠ 门禁＝共享口令 ZP_GATE_PASSWORD（未配置即无门禁）")
+        print("  ⚠ 只绑 127.0.0.1，不对 LAN 开放（.51 部署由 deploy-server.ps1 置 Q2_WEB_HOST=0.0.0.0）")
+    print("  ⚠ 门禁＝共享口令 ZP_GATE_PASSWORD（未配置即无门禁，部署段冒烟第 2 项核对）")
     try:
         from waitress import serve
         print(f"\n[OK] waitress 生产模式 · http://{host}:{port}{config.ROUTE_PREFIX}/\n")

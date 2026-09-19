@@ -24,7 +24,7 @@
 - 🔴 ASIL C/D ＝ AI 绝对禁区：`AsilExcludedError` 直接抛，不出评分。安全相关＝是／未确认 ⇒ 一律转人工。
 - 🔴 判据不写死：引擎所有数字来自 `CRITERIA.value_of(...)`；缺签认一律 `PENDING` 读即抛。
 - 🔴 QD-A 命中率 37.9% 低于门槛：`feed_source.from_qda` 不把 LOW/MED 当已确认输入（P2）；红线④只在 HIGH＋确认为空时触发。
-- 不碰 `.51`、不发信、不代指派持有人、不代联络陈忱。
+- `.51` 只动本服务（`Q2WebServer`／8098／`Q2-WebServer-8098`／`C:\q2\`），不动 8090 网关与其余服务；不清共享 `ZP_GATE_PASSWORD` 键（回滚只停任务＋删任务＋撤防火墙）；不发信、不代指派持有人、不代联络陈忱。
 
 ## 5. 时间线
 - 2026-08-22 v8 定位改为「AI 自动判定」、QD-A 降为前置抽取层；08-25/08-28/09-01/09-14 四轮签认；09-02 规则库降为台账；09-14 验收集 10 份到件。
@@ -32,7 +32,8 @@
 - 2026-09-18 design 审 D1–D8 通过（Shao Peishen 答 `1a`）；`intent.md` 转 `已确认`（答 `2a`）。
 - 2026-09-19（队列 §一 `#592`，`OP-0919-B`）：核对 ⑵ 红线②③引擎配置——**已在 09-17 建成，本次复核无需改动**；建 ⑷ PPT D2 页场景勾选行解析器（`QD-A/qda_prefill/doc_reader.extract_scene_checkbox`，详见该场景 CLAUDE.md 时间线），本包 `feed_source.from_qda(scene=...)` 接口原样接受、未改代码。
 - 2026-09-19 `OP-0919-C`（队列 §一 `#612`）：tasks 5.1 门户页 `/quality/q2` 落地——`q2_8d_verdict/webapp.py`（Flask 蓝图，首屏显著标注「mock 数据」，网关 `X-Zp-Identity` 接入点已挂但只预留不实现，`install_flask_gate` 用共享 `ZP_GATE_PASSWORD`）＋ `dashboard.py`（七维 D1–D7 得分／满分聚合、A/B/C/D 分级分布含语义层待人工区间桶、处置建议分布、结构性退回与红线命中清单）＋ `scripts/run_q2_web.py`（默认只绑 `127.0.0.1:8098`）。回归 19 passed（原 12＋新增 7）。**5.2 `.51` 部署未做**（本批不碰 `.51`、不新起对外端口，设计上仍走 `.51:8090` 网关反代，`#612` 明令不做）。
-- 下一步：语义层（V3 固定模型＋prompt 版本、V4 二级置信）＋ 用验收集 10 份跑校准（排除红线②③、样本 3 单列）→ 档 2 接 QD-A 真实解析（含把 `SceneCheckbox.scene` 接进 `from_qda` 调用，LAN 留步）→ 5.2 `.51` 部署／5.3 第 8 步跟进信（design 审已通过，两项余 §5 待做）。
+- 下一步：语义层（V3 固定模型＋prompt 版本、V4 二级置信）＋ 用验收集 10 份跑校准（排除红线②③、样本 3 单列）→ 档 2 接 QD-A 真实解析（含把 `SceneCheckbox.scene` 接进 `from_qda` 调用，LAN 留步）→ 5.3 第 8 步跟进信（串行闸现取，不代办）。
+- 2026-09-19 `OP-0919-O`（队列 §一 `#612`）：tasks 5.2 上线 `.51:8098`——Shao Peishen 答 `1a` 比照 FI3 `#615` 走过渡期独立端口（design D7 原判走 8090 网关反代，网关收编时回收）；`deploy-server.ps1`／`sync-to-server.ps1`／`smoke-server.ps1` 逐字抄 FI3 只改参数（端口 8098／前缀 `/quality/q2`／任务 `Q2WebServer`／基目录 `C:\q2`／门禁键从同机 `C:\fi3\.env` 借值）；计划任务 AtStartup＋SYSTEM＋Restart 3x/1min；冒烟三件套服务器侧 `failures=0`（含任务重启后复跑）、笔记本外部腿 ping 200／匿名 302。服务地址 `http://192.168.100.51:8098/quality/q2/`。
 
 ## 6. 依赖
 - 输入：陈忱团队 8D（pptx/docx/pdf，QD-A 解析）；PPT 模板 D2 页场景勾选行（J7，模板改版由质量部做）。
