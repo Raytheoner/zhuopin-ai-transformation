@@ -56,12 +56,41 @@ Popen` 起一个无头 `claude -p` 会话去执行拆件巡逻章程，不等任
 子进程退出时信号已空为止。**每一轮会话只对"这一轮"负责，不再自己判断
 是否要再来一轮**——`_build_prompt` 因此不再附带"回到 §一 再走一轮"的
 调用侧说明。
+
+## 队列 #416 ⑸bis：链式推进本身可能因持续性故障而"看似在跑、实则空转"
+
+`#599` 那条链式推进只回答了"子进程退出了、还有信号吗"，从不问"这个子
+进程刚才那一轮到底是干完了活退出的，还是刚起来就死了"——2026-09-14
+两次无头会话均因账号月度用量上限秒退（一行 `You've hit your monthly
+spend limit` 即退出），`_spawn_watcher` 读到"信号仍在"但从不检查
+`proc.wait()` 的返回码，也不知道那一轮总共只活了几秒，於是**这类持续性
+失败会被当成正常的一轮**：链式推进不停地"再起一轮"，每一轮都在几秒内
+夭折，没有任何告警，直到有人手工发现。本节补三条治本判据（①②③；④见
+`scripts/patrol_stale_signal_fallback.py` 文首）：
+
+1. **夭折判据**：退出码非 0，**或**存活 < `MIN_ALIVE_SECONDS_FOR_SUCCESS`
+   （60 秒）且退出时信号仍未被消费——正常跑完一整套拆件巡逻章程耗时远
+   超 60 秒，「秒退且没做完事」本身就是异常信号，与退出码是否恰好为 0
+   无关（`claude` CLI 遇到用量上限时未必以非零码退出）。
+2. **退避与停摆上限**：连续夭折时按 `60 * 2**(n-1)` 秒退避（1/2/4… 分钟，
+   `BACKOFF_CAP_SECONDS` 封顶 30 分钟）再重试；连续 `FAILURE_ALERT_
+   THRESHOLD`（3）次仍夭折 ⇒ **停止链式**，告警一次，信号原样留着（不
+   消费、不假装处理过）——同 `#382⑴bis` 一贯口径：失败绝不允许被吞掉，
+   但也不允许无限制地空转重试。
+3. **失败计数落盘**（`load_failure_state`/`save_failure_state`，落点
+   `reports/patrol_dispatch_failure_state.json`，同 `outbox_relay.py`
+   决策点 9 的 `outbox_relay_unreadable_state.json` 先例）：服务本身
+   会因断线重连/笔记本休眠反复重启，只存内存的计数每次重启即清零，
+   "连续 3 次"这个判据在真实使用形态下永远数不到 3。任一次成功（非
+   夭折）即重置计数——"连续"只统计紧邻的失败，不与更早的历史失败
+   合并计数。
 """
 from __future__ import annotations
 
 import json
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,6 +101,7 @@ from zhuopin_platform.audit import AuditEvent
 from . import patrol_signal
 from .repo_paths import (
     resolve_patrol_charter_path,
+    resolve_patrol_dispatch_failure_state_path,
     resolve_patrol_dispatch_lock_path,
     resolve_patrol_dispatch_log_dir,
 )
@@ -83,6 +113,24 @@ PATROL_MODEL = "sonnet"
 ACTION_STARTED = "started"
 ACTION_SKIPPED_BUSY = "skipped_busy"
 ACTION_FAILED = "failed"
+#: 队列 #416 ⑸bis①：子进程真的起来过、但退出即被判定为「这一轮没干成活」。
+ACTION_CHILD_FAILED = "child_failed"
+#: 队列 #416 ⑸bis②：连续夭折达到阈值，主动停止链式推进（不再重试）。
+ACTION_CHAIN_HALTED = "chain_halted"
+
+#: ⑸bis①：正常跑完一整套拆件巡逻章程耗时远超此值，见模块 docstring。
+MIN_ALIVE_SECONDS_FOR_SUCCESS = 60.0
+#: ⑸bis②：连续夭折达到这个次数即停止链式（不是"重试这么多次"，是"数到
+#: 这个数就不再重试"——阈值本身不参与退避秒数计算）。
+FAILURE_ALERT_THRESHOLD = 3
+#: ⑸bis②：第 n 次连续夭折后的退避秒数 = BACKOFF_BASE_SECONDS * 2**(n-1)，
+#: 封顶 BACKOFF_CAP_SECONDS。
+BACKOFF_BASE_SECONDS = 60.0
+BACKOFF_CAP_SECONDS = 1800.0
+
+#: ⑸bis①：留痕日志尾部截取长度——章程失败时的最后一行诊断信息通常在
+#: 输出末尾（如"You've hit your monthly spend limit"），不需要整份日志。
+_LOG_TAIL_CHARS = 200
 
 _EVENT_DRIVEN_PREAMBLE = """【事件驱动拆件起活 · 队列 #382⑴bis】
 本 session 由 `followup_readme_bridge.mark_reply_arrived` 在把一封回件标为
@@ -140,6 +188,39 @@ def _run_in_thread(target: Callable[[], None]) -> None:
     threading.Thread(target=target, daemon=True).start()
 
 
+def load_failure_state(path: Path) -> dict:
+    """读不到/内容非法一律回落空状态（同 `outbox_relay.load_unreadable_
+    state` 既有惯例）——状态文件本身读不到不该反过来挡住起活流程。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_failure_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _backoff_seconds(consecutive_failures: int) -> float:
+    """第 n 次连续夭折后的退避秒数，见模块 docstring ⑸bis②。"""
+    exponent = max(consecutive_failures - 1, 0)
+    return min(BACKOFF_BASE_SECONDS * (2 ** exponent), BACKOFF_CAP_SECONDS)
+
+
+def _read_log_tail(log_path: str, chars: int = _LOG_TAIL_CHARS) -> str:
+    """留痕日志尾部——读不到/无日志路径时返回空串，不抛（诊断辅助，非
+    关键路径）。"""
+    if not log_path:
+        return ""
+    try:
+        text = Path(log_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return text[-chars:]
+
+
 def _spawn_watcher(
     proc: "subprocess.Popen",
     repo_root: Path,
@@ -150,32 +231,98 @@ def _spawn_watcher(
     popen: Callable[..., "subprocess.Popen"],
     pid_alive: Callable[[int], bool],
     run_in_thread: Callable[[Callable[[], None]], None],
+    log_path: str = "",
+    alert_send: Optional[Callable[[str], None]] = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    failure_state_path: Optional[Path] = None,
 ) -> None:
-    """子进程退出后复查信号，仍有未消费信号则再起一轮全新会话（队列 #599 P6）。
+    """子进程退出后复查信号，仍有未消费信号则再起一轮全新会话（队列 #599 P6）；
+    队列 #416 ⑸bis：先判这一轮是不是「夭折」的（退出码非 0，或存活 < 60s
+    且信号未被消费），夭折按连续失败计数退避/停摆（③落盘，②退避与阈值），
+    只有"确认跑完了"才照旧无退避地链式再起。
 
     只等这一个子进程，不轮询——`proc.wait()` 阻塞在后台线程里，主线程
     早已随 `dispatch_headless_patrol` 返回（文首取舍 4「非阻塞」）。链式
     推进由"再调一次 `dispatch_headless_patrol`"自然实现：它自己起活成功
-    时又会再挂一个 `_spawn_watcher`，直到某次子进程退出时信号已空为止。
+    时又会再挂一个 `_spawn_watcher`，直到某次子进程退出时信号已空、或连续
+    夭折触顶而主动停止为止。
     """
+    state_path = failure_state_path or resolve_patrol_dispatch_failure_state_path(repo_root)
+
     def _watch() -> None:
+        started = monotonic()
         try:
-            proc.wait()
+            returncode = proc.wait()
         except Exception:  # noqa: BLE001 —— 等待本身失败不得让后台线程抛出
             return
+        alive_seconds = monotonic() - started
+
         try:
             snapshot = patrol_signal.read_signal(repo_root)
+            signal_present = bool(snapshot.present)
         except Exception:  # noqa: BLE001 —— 复查信号失败按"无新信号"处理，不误起
+            signal_present = False
+
+        premature = bool(returncode) or (
+            alive_seconds < MIN_ALIVE_SECONDS_FOR_SUCCESS and signal_present
+        )
+        state = load_failure_state(state_path)
+
+        if not premature:
+            if state.get("consecutive_failures"):
+                state["consecutive_failures"] = 0
+                save_failure_state(state_path, state)
+            if not signal_present:
+                return
+            try:
+                log("· [拆件起活] 子进程已退出、信号仍在，链式再起一轮")
+            except Exception:  # noqa: BLE001
+                pass
+            dispatch_headless_patrol(
+                repo_root, audit=audit, evaluator=evaluator, log=log,
+                popen=popen, pid_alive=pid_alive, run_in_thread=run_in_thread,
+                alert_send=alert_send, monotonic=monotonic, sleep=sleep,
+                failure_state_path=state_path,
+            )
             return
-        if not snapshot.present:
+
+        consecutive = int(state.get("consecutive_failures", 0)) + 1
+        state["consecutive_failures"] = consecutive
+        save_failure_state(state_path, state)
+        detail = (
+            f"无头 CC（pid={getattr(proc, 'pid', 0)}）夭折——存活 {alive_seconds:.1f}s，"
+            f"退出码 {returncode}，连续第 {consecutive} 次；日志尾部：{_read_log_tail(log_path)}"
+        )
+        _record(audit, evaluator, DispatchResult(
+            ACTION_CHILD_FAILED, detail=detail, pid=getattr(proc, "pid", None), log_path=log_path,
+        ), log=log)
+
+        if consecutive >= FAILURE_ALERT_THRESHOLD:
+            halt_detail = (
+                f"连续 {consecutive} 次夭折，停止链式重试——信号原样留着、不消费。"
+                f"请检查 {log_path or '（无日志路径）'}。"
+            )
+            _record(audit, evaluator, DispatchResult(ACTION_CHAIN_HALTED, detail=halt_detail), log=log)
+            if alert_send is not None:
+                try:
+                    alert_send(f"⚠ 拆件巡逻无头会话{halt_detail}")
+                except Exception:  # noqa: BLE001
+                    pass
             return
+
+        if not signal_present:
+            return  # 没有待处理信号——等下一条真实回件到达再触发，不必重试。
+
         try:
-            log("· [拆件起活] 子进程已退出、信号仍在，链式再起一轮")
+            sleep(_backoff_seconds(consecutive))
         except Exception:  # noqa: BLE001
             pass
         dispatch_headless_patrol(
             repo_root, audit=audit, evaluator=evaluator, log=log,
             popen=popen, pid_alive=pid_alive, run_in_thread=run_in_thread,
+            alert_send=alert_send, monotonic=monotonic, sleep=sleep,
+            failure_state_path=state_path,
         )
 
     run_in_thread(_watch)
@@ -191,7 +338,10 @@ class DispatchResult:
 
 def _record(audit, evaluator: str, result: DispatchResult, *,
             log: Callable[[str], None]) -> DispatchResult:
-    prefix = {"started": "✓", "skipped_busy": "·", "failed": "⚠"}.get(result.action, "·")
+    prefix = {
+        "started": "✓", "skipped_busy": "·", "failed": "⚠",
+        "child_failed": "⚠", "chain_halted": "⚠",
+    }.get(result.action, "·")
     try:
         log(f"{prefix} [拆件起活] {result.detail}")
     except Exception:  # noqa: BLE001
@@ -221,6 +371,10 @@ def dispatch_headless_patrol(
     popen: Callable[..., "subprocess.Popen"] = subprocess.Popen,
     pid_alive: Callable[[int], bool] = _pid_alive,
     run_in_thread: Callable[[Callable[[], None]], None] = _run_in_thread,
+    alert_send: Optional[Callable[[str], None]] = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    failure_state_path: Optional[Path] = None,
 ) -> DispatchResult:
     """起一个无头 CC 去执行拆件巡逻章程。绝不向上抛——任何失败都只记
     审计＋日志，不得让 `mark_reply_arrived` 的"绝不向上抛"契约被打破
@@ -310,6 +464,8 @@ def dispatch_headless_patrol(
             _spawn_watcher(
                 proc, repo_root, audit=audit, evaluator=evaluator, log=log,
                 popen=popen, pid_alive=pid_alive, run_in_thread=run_in_thread,
+                log_path=str(log_path), alert_send=alert_send,
+                monotonic=monotonic, sleep=sleep, failure_state_path=failure_state_path,
             )
         except Exception:  # noqa: BLE001 —— 挂后台复查失败不代表进程没起，继续按已起活记
             pass

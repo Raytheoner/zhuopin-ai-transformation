@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import itertools
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,7 @@ from aibot_service import patrol_dispatch as pd
 from aibot_service import patrol_signal
 from aibot_service.repo_paths import (
     resolve_patrol_charter_path,
+    resolve_patrol_dispatch_failure_state_path,
     resolve_patrol_dispatch_lock_path,
     resolve_patrol_dispatch_log_dir,
 )
@@ -358,6 +360,10 @@ class TestWatcherChaining:
         pd.dispatch_headless_patrol(
             tmp_path, now=NOW, popen=popen, pid_alive=lambda pid: False,
             run_in_thread=lambda fn: fn(),
+            # 队列 #416 ⑸bis①判据＝存活 < 60s 且信号未消费才算夭折；本测试
+            # 模拟的是两轮都"跑完了一整套章程"的正常链式，需要 monotonic
+            # 每次调用都前进 ≥60s，否则会被新判据误判成夭折。
+            monotonic=itertools.count(0, 100).__next__,
         )
         assert len(calls) == 2, "第一轮退出时信号仍在，必须链式再起第二轮，不能丢"
 
@@ -406,6 +412,108 @@ class TestWatcherChaining:
             pid_alive=lambda pid: False, run_in_thread=boom_thread,
         )
         assert result.action == pd.ACTION_STARTED
+
+    def test_退出码非零判夭折且不重试因无信号(self, tmp_path):
+        write_charter(tmp_path)
+
+        class FailProc(FakeProc):
+            def wait(self):
+                return 1  # 非零退出码
+
+        audit = FakeAudit()
+        pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, audit=audit,
+            popen=lambda *a, **k: FailProc(pid=1), pid_alive=lambda pid: False,
+            run_in_thread=lambda fn: fn(),
+        )
+        assert "patrol_headless_dispatch_child_failed" in audit.actions()
+        state = pd.load_failure_state(resolve_patrol_dispatch_failure_state_path(tmp_path))
+        assert state["consecutive_failures"] == 1
+
+    def test_秒退且信号未消费判夭折并按退避重试(self, tmp_path, monkeypatch):
+        write_charter(tmp_path)
+        calls = []
+        slept = []
+
+        def popen(argv, **kwargs):
+            proc = FakeProc(pid=100 + len(calls))
+            calls.append(proc)
+            return proc
+
+        # 每次 monotonic() 只前进 1 秒——远小于 60s 阈值，模拟"秒退"；
+        # 信号在 dispatch 之前就已挂着且从未被任何一轮消费，天然满足
+        # "存活 <60s 且信号未消费"。
+        pd.patrol_signal.raise_signal(tmp_path, letter_number="财务部#1", archived_filename="x.md", now=NOW)
+        pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, popen=popen, pid_alive=lambda pid: False,
+            run_in_thread=lambda fn: fn(),
+            monotonic=itertools.count(0, 1).__next__,
+            sleep=lambda seconds: slept.append(seconds),
+        )
+        assert len(calls) == pd.FAILURE_ALERT_THRESHOLD, "连续夭折应按阈值重试，触顶即停"
+        assert slept == [60.0, 120.0], "退避秒数应为 60*2**(n-1)，第 3 次触顶不再重试、不再退避"
+
+    def test_连续夭折达阈值即停止链式并告警(self, tmp_path):
+        write_charter(tmp_path)
+        pd.patrol_signal.raise_signal(tmp_path, letter_number="财务部#1", archived_filename="x.md", now=NOW)
+        audit = FakeAudit()
+        alerts = []
+
+        def popen(argv, **kwargs):
+            return FakeProc(pid=1)
+
+        pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, audit=audit, popen=popen, pid_alive=lambda pid: False,
+            run_in_thread=lambda fn: fn(),
+            monotonic=itertools.count(0, 1).__next__,
+            sleep=lambda seconds: None,
+            alert_send=alerts.append,
+        )
+        assert audit.actions().count("patrol_headless_dispatch_chain_halted") == 1
+        assert len(alerts) == 1
+        assert "连续 3 次夭折" in alerts[0]
+        # 停摆后信号必须原样留着——不得被本模块消费。
+        snapshot = pd.patrol_signal.read_signal(tmp_path)
+        assert snapshot.present
+
+    def test_失败计数在成功一轮后清零(self, tmp_path):
+        write_charter(tmp_path)
+        from aibot_service.repo_paths import resolve_patrol_dispatch_failure_state_path
+
+        state_path = resolve_patrol_dispatch_failure_state_path(tmp_path)
+        pd.save_failure_state(state_path, {"consecutive_failures": 2})
+
+        result = pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, popen=lambda *a, **k: FakeProc(pid=1),
+            pid_alive=lambda pid: False, run_in_thread=lambda fn: fn(),
+            monotonic=itertools.count(0, 100).__next__,  # 模拟跑完一整套章程
+        )
+        assert result.action == pd.ACTION_STARTED
+        assert pd.load_failure_state(state_path).get("consecutive_failures", 0) == 0
+
+    def test_失败计数跨进程重启持久化(self, tmp_path):
+        """队列 #416 ⑸bis③：不能只存内存——本函数每次调用都重新从磁盘
+        读状态，模拟服务重启后计数不清零。"""
+        write_charter(tmp_path)
+        from aibot_service.repo_paths import resolve_patrol_dispatch_failure_state_path
+
+        state_path = resolve_patrol_dispatch_failure_state_path(tmp_path)
+        pd.save_failure_state(state_path, {"consecutive_failures": 2})
+        pd.patrol_signal.raise_signal(tmp_path, letter_number="财务部#1", archived_filename="x.md", now=NOW)
+
+        class FailProc(FakeProc):
+            def wait(self):
+                return 1
+
+        alerts = []
+        pd.dispatch_headless_patrol(
+            tmp_path, now=NOW, popen=lambda *a, **k: FailProc(pid=1),
+            pid_alive=lambda pid: False, run_in_thread=lambda fn: fn(),
+            sleep=lambda seconds: None, alert_send=alerts.append,
+        )
+        # 已有 2 次历史失败，本次是第 3 次 —— 应直接触顶停摆，不再重试。
+        assert len(alerts) == 1
+        assert pd.load_failure_state(state_path)["consecutive_failures"] == 3
 
     def test_默认watcher走真实后台线程不阻塞主流程(self, tmp_path):
         write_charter(tmp_path)

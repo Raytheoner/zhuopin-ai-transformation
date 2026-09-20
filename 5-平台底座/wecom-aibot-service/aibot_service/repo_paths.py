@@ -151,6 +151,13 @@ PATROL_CHARTER_RELATIVE_PATH = (
 OUTBOX_RELAY_UNREADABLE_STATE_RELATIVE_PATH = (
     Path("5-平台底座") / "wecom-aibot-service" / "reports" / "outbox_relay_unreadable_state.json"
 )
+# 队列 #416 ⑸bis③：无头拆件夭折的「连续失败计数」跨进程重启持久化，
+# 与 audit/pending 系列文件同一套 repo_root 解析、同一目录（见
+# patrol_dispatch.py ⑸bis 段）——同 OUTBOX_RELAY_UNREADABLE_STATE 先例，
+# 内存态计数在服务因断线/休眠反复重启的真实使用形态下等于从未生效。
+PATROL_DISPATCH_FAILURE_STATE_RELATIVE_PATH = (
+    Path("5-平台底座") / "wecom-aibot-service" / "reports" / "patrol_dispatch_failure_state.json"
+)
 
 
 def resolve_default_queue_anchor(
@@ -296,3 +303,9 @@ def resolve_outbox_relay_unreadable_state_path(repo_root: Path) -> Path:
     """队列 #556（决策点 9）：outbox 中继读失败节流状态文件的统一落点，
     与 `resolve_audit_path` 同一套 `repo_root`。"""
     return repo_root / OUTBOX_RELAY_UNREADABLE_STATE_RELATIVE_PATH
+
+
+def resolve_patrol_dispatch_failure_state_path(repo_root: Path) -> Path:
+    """队列 #416 ⑸bis③：无头拆件夭折连续失败计数状态文件的统一落点，
+    与 `resolve_audit_path` 同一套 `repo_root`。"""
+    return repo_root / PATROL_DISPATCH_FAILURE_STATE_RELATIVE_PATH
