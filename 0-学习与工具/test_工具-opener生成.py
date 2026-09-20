@@ -150,6 +150,22 @@ class WorktreeCheckboxTests(unittest.TestCase):
         kwargs["worktree"] = "☑（另一个-wt，新 worktree，收工自删）"
         M.generate_opener(**kwargs)  # 不应抛错
 
+    def test_checked_without_bracket_name_raises(self):
+        """队列 §一 `#627` B 面：2026-09-20 一批七条泳道因 `worktree：☑ 建`（有符号、
+        无括号名）全判 `FAIL(worktree-name)`、白起一次——`CHECKBOX_RE` 只验起首符号，
+        本用例钉死收紧后的判据。"""
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["worktree"] = "☑ 建"  # 有勾选符号，但符号后无括号名
+        with self.assertRaises(M.OpenerGenError) as ctx:
+            M.generate_opener(**kwargs)
+        self.assertIn("括号名", str(ctx.exception))
+
+    def test_unchecked_without_bracket_name_still_passes(self):
+        """☐ 维持原样不收紧——本条防止收紧误伤 ☐ 这一侧。"""
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["worktree"] = "☐ 不建"
+        M.generate_opener(**kwargs)  # 不应抛错
+
 
 class TitleCallPseudocodeTests(unittest.TestCase):
     """反例③ —— `set_session_title` 写成伪代码（非真实工具名＋`"self"` 字面量）必须报错。"""
@@ -398,6 +414,7 @@ class VariantSubtaskLaneTests(unittest.TestCase):
         self.assertIn(M.SUBTASK_SENTINEL_NOTE, self.out)   # 队列 §一 `#550`
         self.assertIn(M.SUBTASK_NARROW_TEST_NOTE, self.out)  # 队列 §一 `#627`
         self.assertIn(M.SUBTASK_EVIDENCE_NOTE, self.out)     # 队列 §一 `#627`
+        self.assertIn(M.SUBTASK_ALERT_FIXTURE_NOTE, self.out)  # 队列 §一 `#627` B 面
 
     def test_passes_lint_as_subtask_lane_form6_not_triggered(self):
         lint = M._load_lint_module()
@@ -744,16 +761,18 @@ class 子任务泳道占位段(unittest.TestCase):
         self.assertNotIn("1. …", out)
         self.assertNotIn("- …", out)
 
-    def test_未传时正文恰为三行加六条机器口径(self):
+    def test_未传时正文恰为三行加七条机器口径(self):
         """三行正文 ＋ P4 两条 ＋ 心跳一条（队列 §一 `#565`，2026-09-12 有意扩入）＋
         回归 narrow 一条 ＋ 产出实证一条（队列 §一 `#627`，2026-09-20 有意扩入）＋
+        新增告警类沙箱夹具一条（队列 §一 `#627` B 面，2026-09-20 有意扩入）＋
         收工哨兵一条（队列 §一 `#550`，2026-09-10 有意扩入）。"""
         body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
-        self.assertEqual(len(body), 9, f"实为 {len(body)} 行：{body}")
-        self.assertEqual(body[-6:], [M.SUBTASK_PARALLEL_NOTE,
+        self.assertEqual(len(body), 10, f"实为 {len(body)} 行：{body}")
+        self.assertEqual(body[-7:], [M.SUBTASK_PARALLEL_NOTE,
                                      M.subtask_heartbeat_note("op1231a-demo-slug", "B-1231_示例批"),
                                      M.SUBTASK_NARROW_TEST_NOTE,
                                      M.SUBTASK_PUSH_NOTE, M.SUBTASK_EVIDENCE_NOTE,
+                                     M.SUBTASK_ALERT_FIXTURE_NOTE,
                                      M.SUBTASK_SENTINEL_NOTE])
 
     def test_传了do_dont仍照拼_不误伤显式调用(self):
@@ -882,17 +901,18 @@ class 骨架与生成器契约(unittest.TestCase):
                 self.assertFalse([ln for ln in lines if "做什么：" in ln],
                                  f"{label} 出现了「做什么／不做什么」段")
 
-    def test_六条机器口径逐字取自正本(self):
-        """正本尾六行（P4 两条 ＋ 心跳一条 ＋ 回归 narrow 一条 ＋ push 一条 ＋ 产出实证
-        一条 ＋ 收工哨兵，队列 §一 `#550`／`#565`／`#627`）必须与生成器常量**逐字**
-        相同——改一处不改另一处即红。心跳行比的是占位符版（正本教形态、生成器填真值，
-        `OP-0912-F`）。"""
-        self.assertEqual(self.canon_lines[-6], M.SUBTASK_PARALLEL_NOTE)
-        self.assertEqual(self.canon_lines[-5], M.subtask_heartbeat_note(
+    def test_七条机器口径逐字取自正本(self):
+        """正本尾七行（P4 两条 ＋ 心跳一条 ＋ 回归 narrow 一条 ＋ push 一条 ＋ 产出实证
+        一条 ＋ 新增告警类沙箱夹具一条 ＋ 收工哨兵，队列 §一 `#550`／`#565`／`#627`／
+        `#627` B 面）必须与生成器常量**逐字**相同——改一处不改另一处即红。心跳行比的是
+        占位符版（正本教形态、生成器填真值，`OP-0912-F`）。"""
+        self.assertEqual(self.canon_lines[-7], M.SUBTASK_PARALLEL_NOTE)
+        self.assertEqual(self.canon_lines[-6], M.subtask_heartbeat_note(
             M.SUBTASK_HEARTBEAT_LANE_PLACEHOLDER, M.SUBTASK_HEARTBEAT_BATCH_PLACEHOLDER))
-        self.assertEqual(self.canon_lines[-4], M.SUBTASK_NARROW_TEST_NOTE)
-        self.assertEqual(self.canon_lines[-3], M.SUBTASK_PUSH_NOTE)
-        self.assertEqual(self.canon_lines[-2], M.SUBTASK_EVIDENCE_NOTE)
+        self.assertEqual(self.canon_lines[-5], M.SUBTASK_NARROW_TEST_NOTE)
+        self.assertEqual(self.canon_lines[-4], M.SUBTASK_PUSH_NOTE)
+        self.assertEqual(self.canon_lines[-3], M.SUBTASK_EVIDENCE_NOTE)
+        self.assertEqual(self.canon_lines[-2], M.SUBTASK_ALERT_FIXTURE_NOTE)
         self.assertEqual(self.canon_lines[-1], M.SUBTASK_SENTINEL_NOTE)
 
     def test_正本写明哨兵行是有意扩入(self):
@@ -905,6 +925,13 @@ class 骨架与生成器契约(unittest.TestCase):
         """同上，心跳约定行是 2026-09-12 `#565` 扩入的，正本必须写明理由，
         否则下一个人会按「P4 两条＋收工哨兵」的旧纪律把它删掉。"""
         self.assertIn("#565", self.section)
+        self.assertIn("有意扩入", self.section)
+
+    def test_正本写明新增告警类沙箱夹具行是有意扩入(self):
+        """同上，新增告警类沙箱夹具行是 2026-09-20 `#627` B 面扩入的，正本必须写明理由，
+        否则下一个人会按旧条数把它删掉。"""
+        self.assertIn("#627", self.section)
+        self.assertIn("B 面", self.section)
         self.assertIn("有意扩入", self.section)
 
     def test_前三行形状与正本对齐(self):
@@ -956,10 +983,11 @@ class 收工哨兵强制注入(unittest.TestCase):
     def test_传了do_dont仍在最末(self):
         body = [ln for ln in self._gen(do_items=["建造"], dont_items=["不动产线"]).splitlines()
                 if not ln.startswith("```")]
-        self.assertEqual(body[-6:], [M.SUBTASK_PARALLEL_NOTE,
+        self.assertEqual(body[-7:], [M.SUBTASK_PARALLEL_NOTE,
                                      M.subtask_heartbeat_note("op1230s-demo-slug", "B-1231_示例批"),
                                      M.SUBTASK_NARROW_TEST_NOTE,
                                      M.SUBTASK_PUSH_NOTE, M.SUBTASK_EVIDENCE_NOTE,
+                                     M.SUBTASK_ALERT_FIXTURE_NOTE,
                                      M.SUBTASK_SENTINEL_NOTE])
 
     def test_其它变体不注入(self):
@@ -1014,18 +1042,21 @@ class 心跳尾句强制注入(unittest.TestCase):
         return hits[0]
 
     def test_心跳行在并行上限之后narrow测试之前_哨兵仍在末行(self):
-        """队列 §一 `#627`：`#627` 新插两条尾句后，心跳仍紧跟并行上限，
-        回归 narrow 一条紧跟心跳，push 与产出实证依次排在其后，哨兵仍居末行。"""
+        """队列 §一 `#627`／`#627` B 面：新插三条尾句后，心跳仍紧跟并行上限，
+        回归 narrow 一条紧跟心跳，push、产出实证、新增告警类沙箱夹具依次排在其后，
+        哨兵仍居末行。"""
         body = self._body(self._gen())
         idx_parallel = body.index(M.SUBTASK_PARALLEL_NOTE)
         idx_heartbeat = body.index(self._heartbeat_line(body))
         idx_narrow = body.index(M.SUBTASK_NARROW_TEST_NOTE)
         idx_push = body.index(M.SUBTASK_PUSH_NOTE)
         idx_evidence = body.index(M.SUBTASK_EVIDENCE_NOTE)
+        idx_alert_fixture = body.index(M.SUBTASK_ALERT_FIXTURE_NOTE)
         self.assertEqual(idx_heartbeat, idx_parallel + 1)
         self.assertEqual(idx_narrow, idx_heartbeat + 1)
         self.assertEqual(idx_push, idx_narrow + 1)
         self.assertEqual(idx_evidence, idx_push + 1)
+        self.assertEqual(idx_alert_fixture, idx_evidence + 1)
         self.assertEqual(body[-1], M.SUBTASK_SENTINEL_NOTE)
 
     def test_泳道标识等于worktree名与分支名同源(self):

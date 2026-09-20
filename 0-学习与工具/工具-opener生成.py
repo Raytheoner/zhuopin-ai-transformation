@@ -134,7 +134,7 @@ SKELETON_FILE = REPO_ROOT / "1-转型规划" / "0-全景路线图" / "opener骨�
 #: `check_block` 判据实现的物理落点（复用，不第二次实现）。
 LINT_SCRIPT = REPO_ROOT / "0-学习与工具" / "工具-opener块lint.py"
 
-#: 子任务例外句——那一行的一部分，不得删、不得简写（骨架「三处最常丢的结构」表）。
+#: 子任务例外句——那一行的一部分，不得删、不得简写（骨架「四处最常丢的结构」表）。
 SUBTASK_EXCEPTION = (
     "🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行——子任务没有自己的 session，"
     '"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。'
@@ -214,8 +214,14 @@ REQUIRED_FIELDS = (
 )
 
 OP_ID_RE = re.compile(r"^OP-\d{4}-[A-Za-z0-9]+$")
-#: worktree 字段必须以勾选符号开头，不是裸名字（骨架「三处最常丢的结构」表第一条）。
+#: worktree 字段必须以勾选符号开头，不是裸名字（骨架「四处最常丢的结构」表第一条）。
 CHECKBOX_RE = re.compile(r"^[☑☐]")
+#: 🔴 `CHECKBOX_RE` 只验起首符号、不验括号里有没有名字——2026-09-20 一批七条泳道
+#: 因 `worktree：☑ 建`（有符号、无括号名）全判 `FAIL(worktree-name)`、白起一次。骨架表
+#: 第一条明写「☑ 后括号写 worktree 名与是否自删」，故只对 ☑ 收紧：符号后须紧跟
+#: 非空括号（全角／半角皆收）。☐ 维持原样不收紧——它的括号内容是「为什么不建」，
+#: 现行判据已够用，本条不扩大打击面（队列 §一 `#627` B 面）。
+CHECKBOX_CHECKED_NAME_RE = re.compile(r"^☑[（(]\S")
 #: CC 侧分支短横线名（骨架 `<短横线名>` 占位符的字面约束）。
 BRANCH_SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 #: 🔴 **`--branch` 只收「前缀之后」那一截**（队列 §一 `#487` 2026-09-09 追记⑵）：
@@ -335,6 +341,20 @@ SUBTASK_EVIDENCE_NOTE = (
     "期望产出点名的文件只要有一个不在清单里，就必须改以 `OPENER_PARTIAL` 收尾"
     "（不许判定为收工完成）——看护者按同一条命令机器核，不看哨兵自陈。本批若新增常驻"
     "状态告警类，须同批自陈「是否影响其它沙箱测试、用什么核的」（队列 §一 `#627`）。"
+)
+
+#: 新增告警类沙箱夹具尾句（队列 §一 `#627` B 面，2026-09-20）——`SUBTASK_EVIDENCE_NOTE`
+#: 上一句只写了「须同批自陈」，是散文提醒、没有自己的机器守（`EVIDENCE_LINE_RE` 只判
+#: `git diff --name-only master...HEAD` 与 `OPENER_PARTIAL` 同现，不判这句在不在）。
+#: 🔴 **成因**：第 19 类常驻状态告警上线后 `ScheduledTaskMirrorSyncTests` 三条断言全红——
+#: 事后查明是夹具缺桩（新增告警类需要的沙箱夹具没人补），不是门控逻辑错，
+#: Shao Peishen 2026-09-20 当日裁定 fail-loud 判对；但「判对」只解决了这一次，下一个
+#: 新增告警类同样会撞——须在写代码那一刻就交代其它测试要什么夹具，而不是等测试全红
+#: 才回头查。机器守＝`工具-opener块lint.py` 形态⑯。
+SUBTASK_ALERT_FIXTURE_NOTE = (
+    "🔴 新增常驻状态告警类须同批给出其它测试的沙箱夹具要求（哪些用例要补桩／改夹具，"
+    "不能等上线后测试全红才回头查）；收工报告自陈「本次新增告警类是否影响其它沙箱测试、"
+    "用什么核的」，只有结论没有手段不算（队列 §一 `#627` B 面）。"
 )
 #: 骨架正本块里的占位符——正本教的是形态，真值由生成器填。
 SUBTASK_HEARTBEAT_LANE_PLACEHOLDER = "<泳道标识＝worktree名>"
@@ -782,7 +802,12 @@ def _validate_spec(spec: OpenerSpec) -> None:
     if not CHECKBOX_RE.match(spec.worktree):
         raise OpenerGenError(
             "worktree 字段须以勾选符号 ☑／☐ 开头，不是裸名字"
-            f"（骨架「三处最常丢的结构」表第一条），收到：{spec.worktree!r}"
+            f"（骨架「四处最常丢的结构」表第一条），收到：{spec.worktree!r}"
+        )
+    if spec.worktree.startswith("☑") and not CHECKBOX_CHECKED_NAME_RE.match(spec.worktree):
+        raise OpenerGenError(
+            "worktree 字段 ☑ 后须紧跟非空括号名（worktree 名与是否自删），不能只有符号"
+            f"（骨架「四处最常丢的结构」表第一条），收到：{spec.worktree!r}"
         )
     if spec.session != "新开":
         raise OpenerGenError(
@@ -1075,12 +1100,16 @@ def generate_opener(**kwargs) -> str:
             # 🔴 队列 §一 `#627`：回归 narrow／产出实证两条尾句同法注入，位置沿对照棒——
             # 并行 → 心跳 → narrow测试 → push → 产出实证 → 哨兵（实证紧邻哨兵：它是
             # 「该写 OPENER_DONE 还是 OPENER_PARTIAL」这个判断的直接依据）。
+            # 🔴 队列 §一 `#627` B 面：新增告警类沙箱夹具尾句插在产出实证与哨兵之间——
+            # 它是「该不该写 OPENER_DONE」判断的又一项依据（本批若新增告警类而未点名
+            # 夹具影响面，同样不该写完成），哨兵仍须留在真正的最后一行。
             body_lines += [
                 SUBTASK_PARALLEL_NOTE,
                 subtask_heartbeat_note(_lane_id(spec), _resolve_batch(spec)),
                 SUBTASK_NARROW_TEST_NOTE,
                 SUBTASK_PUSH_NOTE,
                 SUBTASK_EVIDENCE_NOTE,
+                SUBTASK_ALERT_FIXTURE_NOTE,
                 SUBTASK_SENTINEL_NOTE,
             ]
         else:

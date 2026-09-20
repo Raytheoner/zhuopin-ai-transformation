@@ -96,6 +96,12 @@ NARROW_LINE = (
 EVIDENCE_LINE = (
     "🔴 收工前跑 `git diff --name-only master...HEAD`，缺产出即 `OPENER_PARTIAL`。"
 )
+#: 新增告警类沙箱夹具尾句行（形态⑯，队列 §一 `#627` B 面，2026-09-20）——子任务泳道块的
+#: 「干净样本」自此还必须带它（同上：共享夹具必须满足全部现行判据）。
+ALERT_FIXTURE_LINE = (
+    "🔴 新增常驻状态告警类须同批给出其它测试的沙箱夹具要求，收工报告自陈"
+    "「是否影响其它沙箱测试、用什么核的」（队列 §一 `#627` B 面）。"
+)
 TITLE_LINE_COWORK = "[OP-0828-N]【Cowork】接力文件核对"
 
 
@@ -455,7 +461,7 @@ class 形态六_子任务泳道opener含session标题(unittest.TestCase):
         "粘贴端：CC ｜ 泳道：示例泳道",
         "",
         _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：建造到底，不设 session 标题。",
-            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, ALERT_FIXTURE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -1031,7 +1037,7 @@ class 形态八_子任务泳道块含未替换占位条目(unittest.TestCase):
         "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#487` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, ALERT_FIXTURE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -1135,7 +1141,7 @@ class 形态九_子任务泳道块缺收工哨兵(unittest.TestCase):
         "### A1 · 示例泳道", "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#550` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, ALERT_FIXTURE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
         _md("[OP-0910-R]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
@@ -1231,7 +1237,7 @@ class 形态十_子任务泳道缺心跳行(unittest.TestCase):
         "### A1 · 示例泳道", "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#565` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, ALERT_FIXTURE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
         _md("[OP-0912-B]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
@@ -1476,7 +1482,7 @@ class 形态十四_子任务泳道缺回归narrow尾句(unittest.TestCase):
         "### A1 · 示例泳道", "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#627` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, ALERT_FIXTURE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
         _md("[OP-0920-N]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
@@ -1540,7 +1546,7 @@ class 形态十五_子任务泳道缺产出实证尾句(unittest.TestCase):
         "### A1 · 示例泳道", "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#627` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, ALERT_FIXTURE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
         _md("[OP-0920-N]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
@@ -1589,6 +1595,72 @@ class 形态十五_子任务泳道缺产出实证尾句(unittest.TestCase):
         block = M.iter_fenced_blocks(section)[0]
         self.assertTrue(any(M.EVIDENCE_LINE_RE.search(ln) for ln in block.lines),
                         "骨架【CC · 子任务泳道】块缺产出实证尾句行")
+
+
+class 形态十六_子任务泳道缺新增告警类沙箱夹具尾句(unittest.TestCase):
+    """⑯ 子任务泳道 opener 块**缺新增告警类沙箱夹具尾句行**⇒告警（队列 §一 `#627` B 面，
+    2026-09-20）。
+
+    🔑 **成因**：第 19 类常驻状态告警上线后 `ScheduledTaskMirrorSyncTests` 三条断言全红，
+    查明是夹具缺桩非门控逻辑错——`SUBTASK_EVIDENCE_NOTE` 那句「须同批自陈」只是散文
+    提醒、没有自己的机器守，下一个新增告警类照样能漏。
+    """
+
+    _LANE_WITH = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#627` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, ALERT_FIXTURE_LINE, SENTINEL_LINE),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0920-N]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    _LANE_WITHOUT = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#627` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0920-N]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    @staticmethod
+    def _scan(text: str) -> set[str]:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件.md"
+            p.write_text(text, encoding="utf-8")
+            return {f.form for f in M.scan_single_file(p)}
+
+    def test_反例_泳道块缺新增告警类沙箱夹具尾句_命中F16(self):
+        self.assertIn("F16", self._scan(self._LANE_WITHOUT))
+
+    def test_正例_带新增告警类沙箱夹具尾句_不命中任何形态(self):
+        self.assertEqual(self._scan(self._LANE_WITH), set())
+
+    def test_非子任务泳道块不受约束(self):
+        md = _md(TITLE_LINE_COWORK, SETTINGS_COWORK, "读 ① 队列 §一 `#627`。")
+        self.assertNotIn("F16", _forms(md))
+        cc_top = _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC, "读 ① 队列 §一 `#627`。")
+        self.assertNotIn("F16", _forms(cc_top))
+
+    def test_生效日与明细分组均已登记(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F16"], date(2026, 9, 20))
+        self.assertIn("F16", M.FORM_TITLE)
+
+    def test_格式正本自身不命中F16(self):
+        self.assertNotIn(
+            "F16", {f.form for f in M.scan_single_file(M.REPO_ROOT / M.SKELETON_CANON_REL)})
+
+    def test_骨架子任务泳道节自带新增告警类沙箱夹具尾句(self):
+        """正本必须教这一行——否则照抄者的成品会缺它，F16 只能在成品上报、报不到源头。"""
+        text = (M.REPO_ROOT / M.SKELETON_CANON_REL).read_text(encoding="utf-8")
+        start = text.index("## 【CC · 子任务泳道】骨架")
+        section = text[start:text.index("\n## ", start + 1)]
+        block = M.iter_fenced_blocks(section)[0]
+        self.assertTrue(any(M.ALERT_FIXTURE_LINE_RE.search(ln) for ln in block.lines),
+                        "骨架【CC · 子任务泳道】块缺新增告警类沙箱夹具尾句行")
 
 
 class 形态十三_零命中断言缺检索位置或命令(unittest.TestCase):
