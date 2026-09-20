@@ -192,7 +192,8 @@ class TestSdtXmlFidelity:
         cb = sdt.find('.//' + qn('w14:checkbox'))
         cs = cb.find(qn('w14:checkedState'))
         us = cb.find(qn('w14:uncheckedState'))
-        assert cs.get(qn('w14:val')) == '2612'
+        # 队列 #563 ⑤：已选中态源头根治为 ☑（2611），不再是 ☒（2612）
+        assert cs.get(qn('w14:val')) == '2611'
         assert us.get(qn('w14:val')) == '2610'
         assert cs.get(qn('w14:font')) == 'MS Gothic'
 
@@ -204,6 +205,37 @@ class TestSdtXmlFidelity:
             idel = sdt.find(qn('w:sdtPr') + '/' + qn('w:id'))
             ids.append(idel.get(qn('w:val')))
         assert len(ids) == len(set(ids)) == 3
+
+
+class TestBannedCheckedGlyphGuard:
+    """出件前机器守（队列 #563 ⑤）：成品含被禁 ☒ 一律 fail-loud，不静默放行。"""
+
+    def test_normal_build_passes_guard(self, tmp_path):
+        """回归：源头根治后的正常产出（checked val=2611）不触发拦截。"""
+        out = _build("☑ 已确认\n", str(tmp_path))
+        assert os.path.exists(out)
+
+    def test_guard_rejects_banned_checked_char(self, tmp_path, monkeypatch):
+        """若渲染路径退化回 ☒ 字符，出件须被拦截并删除产出，而非静默放行。"""
+        monkeypatch.setattr(mw, "CHECKBOX_CHECKED_CHAR", mw.BANNED_CHECKED_CHAR)
+        md_path = os.path.join(str(tmp_path), "case.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("☑ 已确认\n")
+        out_path = os.path.join(str(tmp_path), "case.docx")
+        with pytest.raises(SystemExit, match="出件前机器守拦截"):
+            mw.build(md_path, out_path, title="测试")
+        assert not os.path.exists(out_path)
+
+    def test_guard_rejects_banned_checked_val(self, tmp_path, monkeypatch):
+        """若渲染路径退化回 checkedState val=2612，同样须被拦截。"""
+        monkeypatch.setattr(mw, "CHECKBOX_CHECKED_VAL", mw.BANNED_CHECKED_VAL)
+        md_path = os.path.join(str(tmp_path), "case.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("☑ 已确认\n")
+        out_path = os.path.join(str(tmp_path), "case.docx")
+        with pytest.raises(SystemExit, match="出件前机器守拦截"):
+            mw.build(md_path, out_path, title="测试")
+        assert not os.path.exists(out_path)
 
 
 if __name__ == "__main__":

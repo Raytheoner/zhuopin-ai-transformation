@@ -2,7 +2,8 @@
 """md2word — 通用 House 风格 Markdown→Word 转换器（CLI）。
 特性：内置 Heading 样式（标题导航窗格）/ 专业表格（深蓝表头+斑马纹+紧凑单倍行距单元格）/
 代码块阴影 / 引用 callout / 列表 / <br> 换行 / 可选把指定 fenced block 替换为图片 /
-勾选标记（☐/[ ]/[x]，含表格单元格内）直出 w14:checkbox 真复选框内容控件。
+勾选标记（☐/[ ]/[x]，含表格单元格内）直出 w14:checkbox 真复选框内容控件；
+已选中态统一渲染为 ☑（队列 #563 ⑤ 源头根治，不再产出 ☒ 形态），出件前机器守拦截成品含 ☒。
 用法：
   python md2word.py input.md [-o output.docx] [--title T] [--subtitle S] [--org 公司名]
                     [--img-dir DIR --map map.json]   # map.json: {"块内出现的签名": "图片名(不含扩展)"}
@@ -53,10 +54,14 @@ def heading_bottom(p, color):
     b=OxmlElement('w:bottom'); b.set(qn('w:val'),'single'); b.set(qn('w:sz'),'6'); b.set(qn('w:space'),'4'); b.set(qn('w:color'),color)
     pbdr.append(b); pPr.append(pbdr)
 
-CHECKBOX_FONT="MS Gothic"; CHECKBOX_UNCHECKED_CHAR="☐"; CHECKBOX_CHECKED_CHAR="☒"
+CHECKBOX_FONT="MS Gothic"; CHECKBOX_UNCHECKED_CHAR="☐"; CHECKBOX_CHECKED_CHAR="☑"; CHECKBOX_CHECKED_VAL='2611'
 CHECKED_TOKENS={"☑","☒","[x]","[X]"}
 UNCHECKED_TOKENS={"☐","[ ]"}
 _SDT_ID=itertools.count(100000001)
+# 🔴 队列 #563 ⑤：☑ 与 ☒ 都是「已选中」，出现哪个符号由 Word 控件形式决定——
+# 但跟进信选择控件源头根治为统一只用 ☑，不再产出 ☒ 形态（避免与在途旧件的判据分叉）。
+# 成品若仍含 ☒（'2612'）即出件前机器守拦截，见 build() 末尾 _assert_no_banned_checked_glyph()。
+BANNED_CHECKED_CHAR="☒"; BANNED_CHECKED_VAL='2612'
 
 def add_checkbox(p, checked=False, size=10.5):
     """在段落/单元格末尾插入一枚真 w14:checkbox 内容控件（Word 可点选，非死字符）。"""
@@ -69,7 +74,7 @@ def add_checkbox(p, checked=False, size=10.5):
     idel=OxmlElement('w:id'); idel.set(qn('w:val'), str(next(_SDT_ID))); sdtPr.append(idel)
     cb=OxmlElement('w14:checkbox')
     c=OxmlElement('w14:checked'); c.set(qn('w14:val'), '1' if checked else '0'); cb.append(c)
-    cs=OxmlElement('w14:checkedState'); cs.set(qn('w14:val'),'2612'); cs.set(qn('w14:font'),CHECKBOX_FONT); cb.append(cs)
+    cs=OxmlElement('w14:checkedState'); cs.set(qn('w14:val'),CHECKBOX_CHECKED_VAL); cs.set(qn('w14:font'),CHECKBOX_FONT); cb.append(cs)
     us=OxmlElement('w14:uncheckedState'); us.set(qn('w14:val'),'2610'); us.set(qn('w14:font'),CHECKBOX_FONT); cb.append(us)
     sdtPr.append(cb)
     sdt.append(sdtPr); sdt.append(OxmlElement('w:sdtEndPr'))
@@ -263,6 +268,22 @@ def reorder_ppr(doc):
         for c in ch: pPr.remove(c)
         for c in ch: pPr.append(c)
 
+def assert_no_banned_checked_glyph(out_path):
+    """出件前机器守（队列 #563 ⑤）：成品 docx 若含被禁勾选符号 ☒ 即 fail-loud，
+    不静默放行——跟进信选择控件源头根治为统一只用 ☑。命中即删产出并抛异常。"""
+    import zipfile
+    with zipfile.ZipFile(out_path) as z:
+        xml_parts=[z.read(n).decode('utf-8','replace') for n in z.namelist() if n.endswith('.xml')]
+    hit_char=any(BANNED_CHECKED_CHAR in x for x in xml_parts)
+    hit_val=any(('w14:val="%s"'%BANNED_CHECKED_VAL) in x for x in xml_parts)
+    if hit_char or hit_val:
+        os.remove(out_path)
+        raise SystemExit(
+            "🔴 出件前机器守拦截（队列 #563 ⑤）：%s 含被禁勾选符号 ☒（%s）——"
+            "跟进信选择控件统一只用 ☑，产出已删除，请核对源 md 与 CHECKBOX_CHECKED_CHAR 配置。"
+            % (out_path, "字符" if hit_char else "checkedState val=2612")
+        )
+
 def build(md_path, out_path, title=None, subtitle="", org="", diagram_map=None, imgdir="."):
     title=title or derive_title(md_path)
     doc=Document()
@@ -286,7 +307,9 @@ def build(md_path, out_path, title=None, subtitle="", org="", diagram_map=None, 
     doc.add_paragraph()
     parse(md_path, doc, diagram_map, imgdir)
     reorder_ppr(doc)
-    doc.save(out_path); print("saved", out_path)
+    doc.save(out_path)
+    assert_no_banned_checked_glyph(out_path)
+    print("saved", out_path)
 
 def main():
     ap=argparse.ArgumentParser(description="House 风格 Markdown→Word 转换器")
