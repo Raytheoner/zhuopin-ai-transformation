@@ -6936,6 +6936,155 @@ def _check_outbox_relay_unreadable_visibility(repo_root: Path, log: list[str], d
 
 
 # ============================================================
+# 队列 §一 #601（2026-09-17 `OP-0911-H` 改判范围，2026-09-20 `OP-0920-F`
+# 建成）：第 19 类常驻状态告警——承载性一致性扫描
+# ============================================================
+#
+# 判据正本：`1-转型规划/0-全景路线图/派单件-【CC】新场景intent闸机器守-
+# 2026-09-17.md`。承接 `#284` ⑧「规则没有载体 ⇒ 永远不会被违反、也永远
+# 不会被发现」的更危险变种——**规则指错载体**：无载体只是空的，指错载体
+# 是错的，它会让人重复建造（`#601` 本行 2026-09-17 当天就险些因此被派去
+# 重建一个已在 CI 上跑着的闸——`.claude/rules/场景建造与合规.md` 那句
+# 自陈「机器守＝openspec validate 闸」指向的两样东西都不存在，真实落点
+# 在 CI job `scene-intent-gate-lint`）。
+#
+# 🔴 只判有无与一致性，不判规则对错（弱校验——`#284` 里 Shao Peishen 否
+# 「如实删除」时已写明理由：弱校验拦不住判断错误，但拦得住「压根没做
+# 这一步」，而后者才是多数形态）。**不改任何一条被扫到的规则**——扫描器
+# 只报，改由各线自己认领（派单件 §三「不做什么」第一条）。
+#
+# 与第 4～7／9／16～18 类同形：检测对象是仓库整体状态，与本轮是否有批次
+# 落库无关；只读、只告警，一个字节都不改任何被扫到的规则文件；零命中
+# 也回显。
+CARRIER_SCAN_SCRIPT_REL = "0-学习与工具/工具-承载性一致性扫描.py"
+CARRIER_SCAN_REPORT_REL = "reports/carrier-consistency-scan.md"
+CARRIER_SCAN_STATE_REL = "reports/sweep-carrier-consistency-state.json"
+CARRIER_SCAN_ALERT_INTERVAL_HOURS = 24
+CARRIER_SCAN_ALERT_MAX_ITEMS = 15
+
+
+def _load_carrier_scan(repo_root: Path):
+    """动态导入 `工具-承载性一致性扫描.py`（文件名含中文与连字符，不是
+    合法 Python 标识符，只能走 `spec_from_file_location`；同
+    `_load_unclosed_scan`：先注册 `sys.modules` 再 `exec_module`——本模块
+    用了 `@dataclass`，那一句会去 `sys.modules` 取自己的模块字典，没有
+    空值保护会直接崩，此为已踩坑教训，非防御性调味）。
+
+    返回 `(module, None)` 或 `(None, 失败原因)`——失败一律显式返回原因，
+    绝不吞成「零命中」（同第 7 类既有立场）。
+    """
+    script = repo_root / CARRIER_SCAN_SCRIPT_REL
+    if not script.is_file():
+        return None, f"未找到 {CARRIER_SCAN_SCRIPT_REL}"
+    module_name = "_sweep_carrier_scan"
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(module_name, script)
+        if spec is None or spec.loader is None:
+            return None, "spec_from_file_location 返回空"
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(module_name, None)
+            raise
+    except Exception as exc:  # noqa: BLE001 —— 导入失败不应影响本轮退出码
+        return None, f"导入失败：{type(exc).__name__}: {exc}"
+    return module, None
+
+
+def _render_carrier_alert(details: dict, keys) -> str:
+    ordered = sorted(keys, key=lambda k: (not k.startswith("unavailable:"), k))
+    shown = ordered[:CARRIER_SCAN_ALERT_MAX_ITEMS]
+    lines = "\n".join(f"- {details.get(key, key)}" for key in shown)
+    tail = (f"\n- …另有 {len(ordered) - len(shown)} 条未列出" if len(ordered) > len(shown) else "")
+    return (
+        f"🧷 落库sweep：{len(ordered)} 项规则自陈的机器守/落点载体核验不过——"
+        f"「规则指错载体」比「规则没有载体」更危险，它会让人重复建造：\n{lines}{tail}\n"
+        "⇒ 处置：各自认领核实并更正自陈（不改判据对错，只改「自陈是否属实」，"
+        "见 `.claude/rules/场景建造与合规.md` 2026-09-17 更正段为先例）。\n"
+        f"⇒ 本轮全文见 `{CARRIER_SCAN_REPORT_REL}`；重跑（只读）："
+        f"`python {CARRIER_SCAN_SCRIPT_REL} --write-report`"
+    )
+
+
+def _render_carrier_resolved(keys) -> str:
+    ordered = sorted(keys)
+    shown = ordered[:CARRIER_SCAN_ALERT_MAX_ITEMS]
+    lines = "\n".join(f"- `{key}`" for key in shown)
+    tail = (f"\n- …另有 {len(ordered) - len(shown)} 条未列出" if len(ordered) > len(shown) else "")
+    return f"✅ 落库sweep：{len(ordered)} 项此前告警过的承载性缺口已核实关闭：\n{lines}{tail}"
+
+
+def _check_carrier_consistency(repo_root: Path, log: list[str]) -> None:
+    """第 19 类常驻状态告警：承载性一致性扫描（队列 §一 `#601`）。
+
+    🔴 回显不是可选项（同第 4／6／7／9 类）：三态计数每轮回显，零命中
+    也不省略——一个从来不出声的机制，没人能判断它是「没问题」还是
+    「没跑」。
+    """
+    log.append("🧷 承载性一致性扫描（每轮回显，零命中时亦不省略）：")
+
+    def _alert(details: dict) -> None:
+        _track_and_alert_standing_state(
+            repo_root, "承载性一致性", CARRIER_SCAN_STATE_REL,
+            set(details), CARRIER_SCAN_ALERT_INTERVAL_HOURS,
+            lambda keys: _render_carrier_alert(details, keys),
+            _render_carrier_resolved, log,
+        )
+
+    module, reason = _load_carrier_scan(repo_root)
+    if module is None:
+        log.append(f"    ⚠ 扫描器不可用：{reason}——**不据此判为干净**")
+        _alert({"unavailable:load": f"扫描器起不来 —— {reason}"})
+        return
+
+    try:
+        findings = module.scan(repo_root)
+    except Exception as exc:  # noqa: BLE001 —— 扫描失败不应影响本轮退出码
+        log.append(f"    ⚠ 扫描过程异常：{type(exc).__name__}: {exc}——**不据此判为干净**")
+        _alert({"unavailable:scan": f"扫描过程抛异常 —— {type(exc).__name__}: {exc}"})
+        return
+
+    log.append(
+        f"    · 扫描面 {len(findings['sources_scanned'])} 份｜"
+        f"① 缺失 {len(findings['missing'])}｜② 指错载体 {len(findings['misdirected'])}"
+        f"（核心态）｜③ 无载体清单 {len(findings['no_carrier'])}（只列不报警）"
+    )
+    if findings["errors"]:
+        log.append(f"    ⚠ 扫描面读取异常 {len(findings['errors'])} 项（**不据此判为干净**）："
+                   + "；".join(findings["errors"][:5]))
+    if findings.get("notes"):
+        log.append(f"    · 备注 {len(findings['notes'])} 项（非扫描器故障）")
+
+    report_path = repo_root / CARRIER_SCAN_REPORT_REL
+    try:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(module.format_report(findings) + "\n", encoding="utf-8")
+        log.append(f"    · 本轮全文已写 `{CARRIER_SCAN_REPORT_REL}`")
+    except OSError as exc:
+        log.append(f"    ⚠ 全文写入 `{CARRIER_SCAN_REPORT_REL}` 失败：{exc}（不影响告警）")
+
+    # 🔴 只有 ①/② 进告警节流；③ 只列不报警（派单件明文：大量规则本就该
+    # 是人守且合理，塞进每轮告警必然「狼来了」`#147`，最后整个扫描器被
+    # 无视）。
+    details: dict = {}
+    for item in findings["missing"]:
+        details[f"missing:{item['key']}"] = (
+            f"① 缺失｜`{item['source']}` L{item['line']}｜"
+            f"载体（{item['carrier_kind']}）`{item['carrier_value']}` 不存在"
+        )
+    for item in findings["misdirected"]:
+        details[f"misdirected:{item['key']}"] = (
+            f"② 指错载体｜`{item['source']}` L{item['line']}｜"
+            f"自陈载体（{item['carrier_kind']}）`{item['carrier_value']}` 不存在，"
+            f"疑似真实落点：{item['suspected_real_location']}"
+        )
+    _alert(details)
+
+
+# ============================================================
 # 队列 §一 #382⑵（2026-09-02，OP-0902-D）：第 10 类常驻状态告警——
 # 跟进信待发信盘点 + 交叉红标（原巡逻章程 `huijian-chaijian-patrol.
 # SKILL.md` §一.3「待发信盘点」判据下放）
@@ -8676,6 +8825,13 @@ def main() -> int:
         # unreadable`（子进程调用，sweep 不另抄一份）。同第 16 类放在 `if not
         # args.dry_run` 块之外：`--dry-run` 也跑到（只回显、不写状态、不推送）；零命中也回显。
         _check_outbox_relay_unreadable_visibility(repo_root, log, dry_run=args.dry_run)
+
+        # 队列 §一 #601（2026-09-17 `OP-0911-H` 改判范围，2026-09-20 `OP-0920-F`
+        # 建成）：第 19 类常驻状态告警——承载性一致性扫描。同上十二类，检测
+        # 对象是仓库整体的规则文件状态、与本轮是否有批次落库无关，故放在
+        # `if not args.dry_run` 块之外（同第 16／18 类）：`--dry-run` 也跑到
+        # （只读、只告警，不写任何被扫到的规则文件，不影响本轮退出码）。
+        _check_carrier_consistency(repo_root, log)
 
         # 队列 §一 #416 ⑶ D4（2026-09-07，OP-0907-AM）：孤儿升格 §四。
         # 🔴 **位置是判据的一部分**：排在本轮全部 git 操作（批次提交、台账
