@@ -2,7 +2,7 @@
 
 > 覆盖不追加，8 KB 上限。最近改写：2026-09-20 上午（Cowork 泳道看护 `OP-0919-K` 收工转场）。
 > 🔴 **接棒第一件事**：读本卡全文 ＋ `CLAUDE.md`，再 `python 0-学习与工具/工具-队列查询.py --digest --actionable` 扫池，核触碰区无重叠再动手。
-> 🔴 **凡触碰 git 的队列／锁工具必须 Windows 侧跑**——2026-09-20 起已是**机器守**：挂载侧跑 `acquire`／`release`／`edit-row`／`append-row`／`commit-*` 会 fail-loud 拒绝（只读的 `status`／`triage-candidates` 放行）；确属唯一通道时传 `--allow-mounted-side`。
+> 🔴 **凡触碰 git 的命令一律 Windows 侧跑（射程＝任何 git 子命令，不只队列／锁工具）**——2026-09-20 实撞：挂载侧 `git grep`＋`git branch` 撞 120 秒超时零产出，本机侧 0.6 秒拿到。⚠️ **这一条只到文字级、不是机器守**：既有 fail-loud 长在工具代码里，拦不住会话直接敲 `git`。队列／锁工具部分——2026-09-20 起已是**机器守**：挂载侧跑 `acquire`／`release`／`edit-row`／`append-row`／`commit-*` 会 fail-loud 拒绝（只读的 `status`／`triage-candidates` 放行）；确属唯一通道时传 `--allow-mounted-side`。
 
 ## 〇、🔴 大任务开工前必过「方案闸」（Shao Peishen 2026-09-20 立，所有项目遵守）
 
