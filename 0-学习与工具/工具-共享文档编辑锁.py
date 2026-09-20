@@ -7892,6 +7892,51 @@ def _quiet_success_summary(output: str) -> str:
     return "\n".join("\n".join(b) for b in kept_blocks) + ("\n" if kept_blocks else "") + primary
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 队列 §一 `#454` 同批（2026-09-20 `OP-0919-K` 补立，源＝他当日「把开场 token／效率问题修理掉」）：
+# **挂载侧 fail-loud。** 本工具的写类子命令每次 `acquire`／`release` 都要跑 `git status --porcelain`
+# 做 ⑹ 登记完整性核验，而那条命令在 Cowork 云端挂载侧与本机侧差 **56 倍**——实测同一条：
+# 挂载侧 **33.9 秒**／Windows 侧 **0.6 秒**。更硬的一条：挂载侧 `rm` 被沙箱拒（`Operation not
+# permitted`），`release` 一旦被结构校验拒掉，锁文件就清不掉，同一会话第二次调用必撞「占用中」
+# （2026-09-19 实撞，连撞四次）。
+# 🔑 **判词：一条纪律只写在 `.claude/rules/` 里就只是人守——Cowork 不自动加载 rules，读了才守。**
+# 故改为入口处机器守。
+# 🔴 **只拦写类，不拦只读**：`status`／`triage-candidates` 不碰 git（实测 0.2 秒），两侧都行；
+#    把只读也拦掉会让「先看一眼锁在谁手上」这件事在挂载侧做不了，得不偿失。
+# 🔴 **必须带逃生阀** `--allow-mounted-side`：万一挂载侧成了唯一通道（本机离线／桥接断开），
+#    没有逃生阀就是把自己锁死——同 `#284` 行长闸那个「唯一能修它的入口把自己关上了」的形状。
+MOUNTED_SIDE_GUARDED_COMMANDS = (
+    "acquire", "release", "append-row", "edit-row", "commit-edit", "commit-append",
+)
+#: 只读、不碰 git 的子命令——两侧都放行（见上方常量块）。
+MOUNTED_SIDE_READONLY_COMMANDS = ("status", "triage-candidates")
+#: Cowork 云端挂载侧的形态：非 Windows，且仓库根落在挂载点 `/mnt/` 之下。
+MOUNTED_SIDE_PATH_MARK = "/mnt/"
+
+
+def is_mounted_side(repo_root: str | None = None, os_name: str | None = None) -> bool:
+    """判「当前是不是从 Cowork 云端挂载侧跑的」。判据只此一处，写侧守与单测共用。"""
+    name = os.name if os_name is None else os_name
+    if name == "nt":
+        return False
+    root = str(REPO_ROOT if repo_root is None else repo_root).replace("\\", "/")
+    return MOUNTED_SIDE_PATH_MARK in root
+
+
+def mounted_side_refusal(cmd: str) -> str:
+    """拒绝文案。写全「为什么」与「改去哪跑」——只说「被拒」的守卫会被下一个人绕过。"""
+    return (
+        f"✗ 子命令 `{cmd}` 在 Cowork 云端挂载侧被拒绝执行（队列 §一 `#454`）。\n"
+        f"  成因（实测，非推断）：本工具写类子命令每次 acquire／release 都要跑 "
+        f"`git status --porcelain` 做 ⑹ 登记完整性核验——同一条命令**挂载侧 33.9 秒／本机侧 0.6 秒，56 倍**；"
+        f"且挂载侧 `rm` 被沙箱拒，release 一旦被结构校验拒掉锁就清不掉，第二次调用必撞「占用中」。\n"
+        f"  改这样跑：Windows 侧 `C:\\Dev\\zhuopin-ai`（Cowork 走 `Windows-MCP PowerShell`）。\n"
+        f"  只读子命令（{'／'.join(MOUNTED_SIDE_READONLY_COMMANDS)}）不受本守限制，两侧都行。\n"
+        f"  🔴 逃生阀：确属挂载侧唯一通道（本机离线／桥接断开）时传 `--allow-mounted-side` 放行，"
+        f"并在本次 note 里写明理由。"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -8204,7 +8249,18 @@ def main() -> int:
     p_commit_append.add_argument("--force-mechanism-wip", action="store_true")
     p_commit_append.set_defaults(func=cmd_commit_append)
 
+    parser.add_argument(
+        "--allow-mounted-side", action="store_true",
+        help="队列 §一 #454 逃生阀：确属 Cowork 挂载侧唯一通道（本机离线／桥接断开）时放行写类子命令。"
+             "🔴 平时不要传——挂载侧跑 git 实测慢 56 倍，且 rm 被沙箱拒会留死锁",
+    )
     args = parser.parse_args()
+    # 挂载侧机器守（判据与文案见 is_mounted_side／mounted_side_refusal 上方常量块）
+    if (getattr(args, "cmd", None) in MOUNTED_SIDE_GUARDED_COMMANDS
+            and not getattr(args, "allow_mounted_side", False)
+            and is_mounted_side()):
+        print(mounted_side_refusal(args.cmd))
+        return 2
     return args.func(args)
 
 

@@ -9729,3 +9729,78 @@ class CommitEditAppendCompositeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MountedSideGuardTests(unittest.TestCase):
+    """挂载侧 fail-loud 机器守（队列 §一 `#454` 同批，2026-09-20 `OP-0919-K`）。
+
+    🔴 **成因是实测，不是洁癖**：写类子命令每次 acquire／release 都要跑 `git status --porcelain`
+    做 ⑹ 登记完整性核验，而同一条命令 **Cowork 挂载侧 33.9 秒／本机侧 0.6 秒，56 倍**；
+    且挂载侧 `rm` 被沙箱拒，release 一旦被结构校验拒掉锁就清不掉，第二次调用必撞「占用中」
+    （2026-09-19 连撞四次）。这条纪律此前只写在 `.claude/rules/队列与落库.md` 里——
+    **Cowork 不自动加载 rules，读了才守**，所以改成入口机器守。
+
+    本类守三个方向：**该拦的拦**（写类）、**不该拦的不拦**（只读，挂载侧照样能看锁）、
+    **逃生阀在**（挂载侧成唯一通道时不至于把自己锁死）。
+    """
+
+    def setUp(self):
+        self.module = _load_module()
+
+    # ── 判据本身
+
+    def test_windows_侧一律不判挂载侧(self):
+        self.assertFalse(self.module.is_mounted_side(repo_root="C:/Dev/zhuopin-ai", os_name="nt"))
+        self.assertFalse(self.module.is_mounted_side(repo_root="/sessions/x/mnt/zhuopin-ai", os_name="nt"))
+
+    def test_非windows且仓库根在挂载点下即判挂载侧(self):
+        self.assertTrue(self.module.is_mounted_side(
+            repo_root="/sessions/rcw-abc/mnt/zhuopin-ai", os_name="posix"))
+
+    def test_非windows但不在挂载点下不判挂载侧(self):
+        """本机 Linux 上的普通 clone 不该被误拦——判据是「挂载点」不是「非 Windows」。"""
+        self.assertFalse(self.module.is_mounted_side(repo_root="/home/paul/zhuopin-ai", os_name="posix"))
+
+    def test_反斜杠路径也能判(self):
+        self.assertTrue(self.module.is_mounted_side(
+            repo_root=r"\sessions\rcw-abc\mnt\zhuopin-ai", os_name="posix"))
+
+    # ── 覆盖面：新增写类子命令若忘了挂进守，本用例转红
+
+    def test_所有写类子命令都在守的名单里_否则新增的会静默漏守(self):
+        """🔴 变异检验的反面：这条钉住「覆盖面」。CLI 新增一个写类子命令而忘了加进
+        `MOUNTED_SIDE_GUARDED_COMMANDS`，就会在挂载侧静默慢 56 倍并留死锁——
+        那正是「加了守却漏了一个入口」的经典形状（同 `#620` 双点守那条判词）。"""
+        r = subprocess.run(
+            [sys.executable, str(SCRIPT), "--help"],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        m = re.search(r"\{([a-z,\-]+)\}", r.stdout)
+        self.assertIsNotNone(m, f"没解析出子命令清单：\n{r.stdout[:400]}")
+        all_cmds = set(m.group(1).split(","))
+        guarded = set(self.module.MOUNTED_SIDE_GUARDED_COMMANDS)
+        readonly = set(self.module.MOUNTED_SIDE_READONLY_COMMANDS)
+        self.assertEqual(guarded & readonly, set(), "同一个子命令不能既拦又放")
+        missing = all_cmds - guarded - readonly
+        self.assertEqual(
+            missing, set(),
+            f"这些子命令既不在守的名单也不在只读白名单里，挂载侧会静默放行：{sorted(missing)}",
+        )
+
+    def test_逃生阀参数存在(self):
+        """挂载侧一旦成为唯一通道（本机离线／桥接断开），没有逃生阀就是把自己锁死——
+        同 `#284` 行长闸那个「唯一能修它的入口把自己关上了」的形状。"""
+        r = subprocess.run(
+            [sys.executable, str(SCRIPT), "--help"],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertIn("--allow-mounted-side", r.stdout)
+
+    # ── 拒绝文案：只说「被拒」的守卫会被下一个人绕过
+
+    def test_拒绝文案写明成因_改去哪跑_与逃生阀(self):
+        msg = self.module.mounted_side_refusal("acquire")
+        self.assertIn("acquire", msg)
+        self.assertIn("56 倍", msg)
+        self.assertIn("--allow-mounted-side", msg)
+        self.assertIn("Windows", msg)

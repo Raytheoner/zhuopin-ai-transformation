@@ -4519,6 +4519,30 @@ def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: li
 # 队列 §一 #338 子项 A 实现（第 4 类常驻状态告警）
 # ============================================================
 
+# 队列 §一 `#583` 同族（2026-09-20 `OP-0919-K` 补立）：**根 `CLAUDE.md` 超阈值由告警改拒绝。**
+# 成因＝实测：2026-09-20 现取根文件 13,148 B，超 `CLAUDE_MD_ROOT_BYTE_CAP`（12,288 B）**860 B**，
+# 而这道守卫只进第 4 类常驻状态告警——**告警没有消费者，于是它超了十几天没人知道**。
+# 🔑 判词：一条只会说话、不会拦人的守卫，和没有守卫的区别只在于它会积累未读消息。
+# 🔴 **射程刻意收窄**：只拒「文件清单里含根 `CLAUDE.md` 的批次」，不拒同轮其它批次——
+#    把全轮拦停会让一次超限阻断所有人的落库，那是另一种「守卫比问题更坏」。
+# 处置形态与上方「文件清单解析不出片段」「提交信息为空」两处完全一致：只报不动、`continue`、
+# 不进 `touched_paths`，行留在待处理态，人把文件瘦下去后下一轮自愈。
+def claude_md_root_over_cap(repo_root: Path) -> int | None:
+    """根 `CLAUDE.md` 超阈值的字节数；未超或读不到返回 None（读不到不判超——不据不可用的
+    测量判人违规，同本文件「尺寸未取到 ⇒ 不据此判为合规」那条的反面）。"""
+    try:
+        size = (repo_root / CLAUDE_MD_ROOT_REL).stat().st_size
+    except OSError:
+        return None
+    over = size - CLAUDE_MD_ROOT_BYTE_CAP
+    return over if over > 0 else None
+
+
+def batch_touches_claude_md_root(resolved_paths) -> bool:
+    """本批次的文件清单是否含根 `CLAUDE.md`（只认根那一份，场景级 `CLAUDE.md` 不在此列）。"""
+    return any(str(p).replace("\\", "/") == CLAUDE_MD_ROOT_REL for p in (resolved_paths or ()))
+
+
 def _claude_md_targets(repo_root: Path) -> list[tuple[str, int]]:
     """返回受检的 `[(相对路径, 字节阈值)]`，按路径排序（正文可复现）。
 
@@ -8435,6 +8459,19 @@ def main() -> int:
                 # 人把 message 补上即自愈。
                 # 与上方"文件清单解析不出片段"同一处置形态（只报不动）与同一位置
                 # （`continue`，不进 touched_paths），保证**不影响同轮其它批次**。
+                over = claude_md_root_over_cap(repo_root)
+                if over is not None and batch_touches_claude_md_root(resolved):
+                    note = (
+                        f"🔴 批次 {row['batch_id']} 的文件清单含根 {CLAUDE_MD_ROOT_REL}，"
+                        f"而它现在超阈值 {over:,} B（{CLAUDE_MD_ROOT_BYTE_CAP:,} B 上限）"
+                        f"⇒ 本批次拒绝落库、状态保持待处理，同轮其它批次不受影响。"
+                        f"把根文件瘦到阈值内（成因段迁 `进度编年-CHANGELOG.md` 附录 P）后下一轮自动生效："
+                        f"[{queue_path}]"
+                    )
+                    log.append(note)
+                    if args.dry_run:
+                        print(f"[dry-run] {note}")
+                    continue
                 if not _extract_commit_message(row["message_cell"]):
                     note = (
                         f"⚠ 批次 {row['batch_id']} 的提交信息为空，本轮跳过、状态保持待处理"
