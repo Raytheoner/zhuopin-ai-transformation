@@ -393,6 +393,11 @@ $laneBlock = {
             $contextKilled = $false
             $proc = Start-Process -FilePath $claudeExe -ArgumentList $claudeArgs -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
                 -RedirectStandardInput $tmp -RedirectStandardOutput $mainOutFile -RedirectStandardError $mainErrFile
+            # 真 Windows PowerShell 5.1 实测：`Start-Process -PassThru`（不带 `-Wait`）配重定向流时，
+            # 事后读 `$proc.ExitCode` 恒为空（HasExited 仍报 True，输出仍正常落盘）——PS7/pwsh 不受影响。
+            # 起手立刻摸一次 `.Handle` 能让 .NET 保留一个全权限句柄，`ExitCode` 之后才读得到（PS 5.1／PS7
+            # 下重复实测 4 次均稳定复现／稳定修复）；不摸的话 PS 5.1 下退出码恒丢，误判 `FAIL()`。
+            $null = $proc.Handle
             # `WaitForExit(ms)` 而非 `HasExited` + `Start-Sleep`：前者进程已退出时立即返回 true，
             # 不会白等一整个轮询周期——常态（几秒内跑完的 opener）不因本闸多等一秒；只有进程
             # 真挂着的那种场景才会等满 `$contextPollSec` 再回来查一次上下文。
