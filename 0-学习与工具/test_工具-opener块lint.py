@@ -86,6 +86,16 @@ HEARTBEAT_LINE = (
     "--text \"已开工\"`；收工 `python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane op0828y-demo "
     "--done --batch B-0828_示例 --text \"产出落点：<落点>\"`。"
 )
+#: 回归 narrow 尾句行（形态⑭，队列 §一 `#627`，2026-09-20）——子任务泳道块的「干净样本」
+#: 自此还必须带它（同上两条：共享夹具必须满足全部现行判据）。
+NARROW_LINE = (
+    "🔴 自测只跑受影响测试类，禁 `-k`；不起后台任务轮询等待（队列 §一 `#627`）。"
+)
+#: 产出实证尾句行（形态⑮，队列 §一 `#627`，2026-09-20）——子任务泳道块的「干净样本」
+#: 自此还必须带它（同上：共享夹具必须满足全部现行判据）。
+EVIDENCE_LINE = (
+    "🔴 收工前跑 `git diff --name-only master...HEAD`，缺产出即 `OPENER_PARTIAL`。"
+)
 TITLE_LINE_COWORK = "[OP-0828-N]【Cowork】接力文件核对"
 
 
@@ -445,7 +455,7 @@ class 形态六_子任务泳道opener含session标题(unittest.TestCase):
         "粘贴端：CC ｜ 泳道：示例泳道",
         "",
         _md(TITLE_LINE_CC, SETTINGS_CC, "做什么：建造到底，不设 session 标题。",
-            HEARTBEAT_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -1021,7 +1031,7 @@ class 形态八_子任务泳道块含未替换占位条目(unittest.TestCase):
         "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#487` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            HEARTBEAT_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）",
         "",
@@ -1125,7 +1135,7 @@ class 形态九_子任务泳道块缺收工哨兵(unittest.TestCase):
         "### A1 · 示例泳道", "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#550` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            HEARTBEAT_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
         _md("[OP-0910-R]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
@@ -1221,7 +1231,7 @@ class 形态十_子任务泳道缺心跳行(unittest.TestCase):
         "### A1 · 示例泳道", "",
         _md(TITLE_LINE_CC, SETTINGS_CC,
             "读 ① 队列 §一 `#565` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
-            HEARTBEAT_LINE, SENTINEL_LINE),
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
         "",
         "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
         _md("[OP-0912-B]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
@@ -1452,6 +1462,133 @@ class CoworkModelFieldTests(unittest.TestCase):
     def test_生效日与明细分组均已登记(self):
         self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F12"], date(2026, 9, 19))
         self.assertIn("F12", M.FORM_TITLE)
+
+
+class 形态十四_子任务泳道缺回归narrow尾句(unittest.TestCase):
+    """⑭ 子任务泳道 opener 块**缺回归 narrow 尾句行**⇒告警（队列 §一 `#627`，2026-09-20）。
+
+    🔑 **成因**：2026-09-20 七条无头泳道全部越过 150k 转场线、零条执行 `OPENER_PARTIAL`，
+    三条 PARTIAL 全写成「回归没跑完」——泳道自己重跑整份回归（ff 六关④的活）外加起后台
+    任务轮询等待，两者合力耗死会话。修法主体在生成器（强制注入），本形态是它的机器守。
+    """
+
+    _LANE_WITH = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#627` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0920-N]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    _LANE_WITHOUT = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#627` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            HEARTBEAT_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0920-N]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    @staticmethod
+    def _scan(text: str) -> set[str]:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件.md"
+            p.write_text(text, encoding="utf-8")
+            return {f.form for f in M.scan_single_file(p)}
+
+    def test_反例_泳道块缺回归narrow尾句_命中F14(self):
+        self.assertIn("F14", self._scan(self._LANE_WITHOUT))
+
+    def test_正例_带回归narrow尾句_不命中任何形态(self):
+        self.assertEqual(self._scan(self._LANE_WITH), set())
+
+    def test_非子任务泳道块不受约束(self):
+        md = _md(TITLE_LINE_COWORK, SETTINGS_COWORK, "读 ① 队列 §一 `#627`。")
+        self.assertNotIn("F14", _forms(md))
+        cc_top = _md(TITLE_LINE_CC, SETTINGS_CC, TITLE_LINE_WITH_EXC, "读 ① 队列 §一 `#627`。")
+        self.assertNotIn("F14", _forms(cc_top))
+
+    def test_生效日与明细分组均已登记(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F14"], date(2026, 9, 20))
+        self.assertIn("F14", M.FORM_TITLE)
+
+    def test_格式正本自身不命中F14(self):
+        self.assertNotIn(
+            "F14", {f.form for f in M.scan_single_file(M.REPO_ROOT / M.SKELETON_CANON_REL)})
+
+    def test_骨架子任务泳道节自带回归narrow尾句(self):
+        """正本必须教这一行——否则照抄者的成品会缺它，F14 只能在成品上报、报不到源头。"""
+        text = (M.REPO_ROOT / M.SKELETON_CANON_REL).read_text(encoding="utf-8")
+        start = text.index("## 【CC · 子任务泳道】骨架")
+        section = text[start:text.index("\n## ", start + 1)]
+        block = M.iter_fenced_blocks(section)[0]
+        self.assertTrue(any(M.NARROW_TEST_LINE_RE.search(ln) for ln in block.lines),
+                        "骨架【CC · 子任务泳道】块缺回归 narrow 尾句行")
+
+
+class 形态十五_子任务泳道缺产出实证尾句(unittest.TestCase):
+    """⑮ 子任务泳道 opener 块**缺产出实证尾句行**⇒告警（队列 §一 `#627`，2026-09-20）。
+
+    🔑 **成因**：同日 `OP-0920-K` 报 `OPENER_DONE` 而本体一个字没改——哨兵自陈不可信，
+    须有机器可核的证据（`git diff --name-only` 与期望产出清单比对）才许写 `OPENER_DONE`。
+    """
+
+    _LANE_WITH = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#627` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            HEARTBEAT_LINE, NARROW_LINE, EVIDENCE_LINE, SENTINEL_LINE),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0920-N]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    _LANE_WITHOUT = "\n".join([
+        "### A1 · 示例泳道", "",
+        _md(TITLE_LINE_CC, SETTINGS_CC,
+            "读 ① 队列 §一 `#627` → ② `CLAUDE.md` 恢复上下文。本件为 A 类，直接开工。",
+            HEARTBEAT_LINE, NARROW_LINE, SENTINEL_LINE),
+        "",
+        "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
+        _md("[OP-0920-N]【CC】看护示例", SETTINGS_CC, TITLE_LINE_WITH_EXC),
+    ])
+
+    @staticmethod
+    def _scan(text: str) -> set[str]:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "看护件.md"
+            p.write_text(text, encoding="utf-8")
+            return {f.form for f in M.scan_single_file(p)}
+
+    def test_反例_泳道块缺产出实证尾句_命中F15(self):
+        self.assertIn("F15", self._scan(self._LANE_WITHOUT))
+
+    def test_正例_带产出实证尾句_不命中任何形态(self):
+        self.assertEqual(self._scan(self._LANE_WITH), set())
+
+    def test_非子任务泳道块不受约束(self):
+        md = _md(TITLE_LINE_COWORK, SETTINGS_COWORK, "读 ① 队列 §一 `#627`。")
+        self.assertNotIn("F15", _forms(md))
+
+    def test_生效日与明细分组均已登记(self):
+        self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F15"], date(2026, 9, 20))
+        self.assertIn("F15", M.FORM_TITLE)
+
+    def test_格式正本自身不命中F15(self):
+        self.assertNotIn(
+            "F15", {f.form for f in M.scan_single_file(M.REPO_ROOT / M.SKELETON_CANON_REL)})
+
+    def test_骨架子任务泳道节自带产出实证尾句(self):
+        """正本必须教这一行——否则照抄者的成品会缺它，F15 只能在成品上报、报不到源头。"""
+        text = (M.REPO_ROOT / M.SKELETON_CANON_REL).read_text(encoding="utf-8")
+        start = text.index("## 【CC · 子任务泳道】骨架")
+        section = text[start:text.index("\n## ", start + 1)]
+        block = M.iter_fenced_blocks(section)[0]
+        self.assertTrue(any(M.EVIDENCE_LINE_RE.search(ln) for ln in block.lines),
+                        "骨架【CC · 子任务泳道】块缺产出实证尾句行")
 
 
 class 形态十三_零命中断言缺检索位置或命令(unittest.TestCase):

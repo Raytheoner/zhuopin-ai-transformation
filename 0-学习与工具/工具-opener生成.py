@@ -57,6 +57,10 @@ P7① 查重只看得见**已落档**的号（`_scan_used_suffixes` 的射程自
 - `subtask_lane`：骨架【CC · 子任务泳道】变体——**不含** `set_session_title` 行
   （2026-09-05 队列 §一 `#487`／(甲) 拍板：源头不放，不指望子任务读懂例外句），
   收尾无条件追加 P4 两条默认口径（并行上限 4／错峰 ≥90 秒；只 push 分支不 ff）
+  ＋ **回归 narrow 与产出实证两条尾句**（队列 §一 `#627`，2026-09-20：七条无头泳道当日全部
+  越 150k 转场线仍零条执行、`OP-0920-K` 报 `OPENER_DONE` 而本体未改——修法同心跳尾句/收工
+  哨兵：正文原句拦不住，须由生成器强制注入，见 `SUBTASK_NARROW_TEST_NOTE`／
+  `SUBTASK_EVIDENCE_NOTE`，机器守＝`工具-opener块lint.py` 形态⑭⑮）
   ＋ **心跳尾句一条**（队列 §一 `#565`，2026-09-12：看护批 `B-0911_机制收口` 5 条泳道
   全做完全 ff、心跳文件两小时零新增，根因＝心跳约定只写在看护件「硬边界继承」段
   与 SKILL.md 步骤 4——两处都不是子任务会读到的 opener 正文；且 SKILL.md 的缩略形
@@ -300,6 +304,38 @@ SUBTASK_HEARTBEAT_NOTE_TEMPLATE = (
     "（`heartbeat --done` 不带它就不计入任何批次的 `summary`，已实测撞过 8 条历史泳道）；"
     "它没有 `--repo-root`／`--heartbeat-file` 两个参数，别给（队列 §一 `#565`）。"
 )
+
+#: 回归 narrow ＋ 不起后台轮询等待（队列 §一 `#627`，2026-09-20）——七条无头泳道当日全部
+#: 越过 150k 转场线、零条执行 `OPENER_PARTIAL`，根因之一＝泳道自己重跑整份回归（`#567`／
+#: `#561`／`#416` 同形态：起后台任务轮询等待 ⇒ 会话先到顶）；`OP-0920-K` 第一段被 25 分钟
+#: 耗死即实证。「与纯 master 比失败集合」是 ff 六关④的活，泳道再跑一遍＝同一件事做三遍
+#: （泳道一遍＋ff 两侧各一遍）。判据同 `.claude/rules/环境保障线.md`「回归闸 narrow」与
+#: 「长任务写哨兵、只看哨兵」两条——本条把它们**强制注入**子任务泳道 opener 正文，不指望
+#: 起草人／子任务自己想起去读规则文件。机器守＝`工具-opener块lint.py` 形态⑭。
+SUBTASK_NARROW_TEST_NOTE = (
+    "🔴 自测只跑受影响测试类（node-id `pytest <文件>::<类名>`，禁 `-k`，禁跑整份回归——"
+    "那是 ff 六关④的活，泳道再跑一遍＝同一件事做三遍）；测试输出一律重定向到文件、只读"
+    "结论行；长任务不起后台任务轮询等待收尾，改用哨兵文件、大间隔探测，不逐分钟 tail"
+    "（队列 §一 `#627`）。"
+)
+
+#: 产出实证尾句（队列 §一 `#627`，2026-09-20，Shao Peishen 当日答 `2a`／`1a`）——成因：
+#: `OP-0920-K` 报 `OPENER_DONE` 而其本体一个字没改（commit message 还写成改了别的）、
+#: `#601` 声称接第 9 类实际是第 19 类，两次自陈失真都发生在同一天。判据出处＝根
+#: `CLAUDE.md`「凡『已复核／已回读』类自陈，须同时写出用什么核的；只有动作没有手段＝
+#: 没有验证」——本条把这句判据落到子任务泳道 opener 正文，收工前逼一次机器可核的比对，
+#: 不再只认哨兵自陈。附带自陈一条：新增常驻状态告警类需同批点名沙箱夹具影响面
+#: （成因＝第 19 类上线后 `ScheduledTaskMirrorSyncTests` 三条断言全红，属夹具缺桩非门控
+#: 逻辑错，Shao Peishen 2026-09-20 当日裁定 fail-loud 判对）。机器守＝`工具-opener块lint.py` 形态⑮。
+#: 🔴 措辞刻意避开「同一行同现 OPENER_DONE 与 OPENER_PARTIAL」——那正是 `SENTINEL_LINE_RE`
+#: （形态⑨）的判据，两条尾句各管各的，写法重叠会让「删掉哨兵行」的变异检验测不出来
+#: （F9 会被本行误判为「仍在」，`test_变异检验_去掉哨兵行lint即转红` 现场撞出过一次）。
+SUBTASK_EVIDENCE_NOTE = (
+    "🔴 收工前自己跑 `git diff --name-only master...HEAD`，把输出原样贴进收工报告；"
+    "期望产出点名的文件只要有一个不在清单里，就必须改以 `OPENER_PARTIAL` 收尾"
+    "（不许判定为收工完成）——看护者按同一条命令机器核，不看哨兵自陈。本批若新增常驻"
+    "状态告警类，须同批自陈「是否影响其它沙箱测试、用什么核的」（队列 §一 `#627`）。"
+)
 #: 骨架正本块里的占位符——正本教的是形态，真值由生成器填。
 SUBTASK_HEARTBEAT_LANE_PLACEHOLDER = "<泳道标识＝worktree名>"
 SUBTASK_HEARTBEAT_BATCH_PLACEHOLDER = "<批次>"
@@ -339,7 +375,7 @@ GUARDIAN_PARALLEL_NOTE = (
 #: 见 `工具-opener块lint.py::check_zero_hit_assertions` 形态⑬）——本行治不住
 #: 「泳道真的读不到」这件事，但成本最低、与③不互斥。
 #: 🔴 **只注入标准 CC／Cowork 两变体**（含「做什么／不做什么」正文、真会去做检索的
-#: 那两类）；`subtask_lane` 受「本变体正文恒为三行、尾部四条机器口径逐字取自正本」的
+#: 那两类）；`subtask_lane` 受「本变体正文恒为三行、尾部六条机器口径逐字取自正本」的
 #: 严格契约约束（`test_工具-opener生成.py::骨架与生成器契约`），扩第五条须同步改
 #: `opener骨架.md`【CC · 子任务泳道】节与该契约测试，留作后续单独一批；`reference`／
 #: `guardian` 两变体不带任务正文本身不做检索，不适用。
@@ -1035,11 +1071,17 @@ def generate_opener(**kwargs) -> str:
                 body_lines += ["", "做什么：", do_block, "", "不做什么：", dont_block]
             # 🔴 队列 §一 `#550`：收工哨兵**由生成器注入**、不依赖起草人记得写（见常量注释）。
             # 🔴 队列 §一 `#565`：心跳尾句同法注入——泳道标识／批次从 spec 推导（真值，
-            # `OP-0912-F`），缺批次即 fail-loud；位置沿对照棒（并行 → 心跳 → push → 哨兵）。
+            # `OP-0912-F`），缺批次即 fail-loud。
+            # 🔴 队列 §一 `#627`：回归 narrow／产出实证两条尾句同法注入，位置沿对照棒——
+            # 并行 → 心跳 → narrow测试 → push → 产出实证 → 哨兵（实证紧邻哨兵：它是
+            # 「该写 OPENER_DONE 还是 OPENER_PARTIAL」这个判断的直接依据）。
             body_lines += [
                 SUBTASK_PARALLEL_NOTE,
                 subtask_heartbeat_note(_lane_id(spec), _resolve_batch(spec)),
-                SUBTASK_PUSH_NOTE, SUBTASK_SENTINEL_NOTE,
+                SUBTASK_NARROW_TEST_NOTE,
+                SUBTASK_PUSH_NOTE,
+                SUBTASK_EVIDENCE_NOTE,
+                SUBTASK_SENTINEL_NOTE,
             ]
         else:
             body_lines = [

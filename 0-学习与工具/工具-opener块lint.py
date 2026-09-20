@@ -1,4 +1,4 @@
-"""opener 代码块 lint —— 一次收十三个失效形态（队列 §一 `#284`／`#381`⑸ⓖ／`#487`／`#550`／`#565`／`#620`／`#616`，OP-0828-Y／OP-0904-A／OP-0905-C／OP-0906-I／OP-0909-X／OP-0910-R／OP-0912-B／OP-0918-C／OP-0919-G）。
+"""opener 代码块 lint —— 一次收十五个失效形态（队列 §一 `#284`／`#381`⑸ⓖ／`#487`／`#550`／`#565`／`#620`／`#616`／`#627`，OP-0828-Y／OP-0904-A／OP-0905-C／OP-0906-I／OP-0909-X／OP-0910-R／OP-0912-B／OP-0918-C／OP-0919-G／OP-0920-N）。
 
 本脚本是**规则退休制**（根 `CLAUDE.md` §5）欠下的对价：`专线opener模板库.md` §〇
 补充三那条人守规则 **2026-08-27 一天被违反 17 次**，远超「人守违反 3 次即须机制化或
@@ -9,7 +9,7 @@
 就地解决且根治」）**：判据正本自此改为 `1-转型规划/0-全景路线图/opener骨架.md`（唯一可照抄骨架；
 2026-09-04 A2 由模板库 §〇.00 拆出独立成件，模板库 §〇 此后只留判据，§〇.00 仅存一句指针）。
 
-## 十二个形态（判据正本＝`1-转型规划/0-全景路线图/opener骨架.md`；判据说明＝`专线opener模板库.md` §〇.0／§〇.00）
+## 十五个形态（判据正本＝`1-转型规划/0-全景路线图/opener骨架.md`；判据说明＝`专线opener模板库.md` §〇.0／§〇.00）
 
 | | 守什么 | 生效日 | 成因 |
 |---|---|---|---|
@@ -26,6 +26,8 @@
 | 形态⑪ | opener 块「派出线」字段引用的 OP 号与该块**首行**自身 OP 号相同（自引用） | 2026-09-19（队列 §一 `#620`／`OP-0918-C`） | `OP-0918-C` 实撞：派出线写成指向自己，读者顺着「派出线」找上级线时会绕回本件；`工具-opener生成.py` 出件前已同判据拦截，本形态是它的机器守 |
 | 形态⑫ | **【Cowork】** opener 块的 `【设置】` 行出现「模型：」字段 | 2026-09-19（队列 §一 `#620`／`OP-0918-C`） | 该字段只被 `工具-opener批处理执行v2.ps1` 用来给【CC】子进程解析 `--model`，Cowork opener 从不经该脚本启动——`工具-opener生成.py --env Cowork` 显式传 `--model` 现已 fail-loud 拒绝出件（同批），本形态是成品侧的机器守 |
 | 形态⑬ | 文件正文里「不存在」「零命中」「全库检索」类断言，同一行缺**检索位置**（主仓／worktree／仓库根）或**检索命令**（反引号包裹） | 2026-09-19（队列 §一 `#616`／`OP-0918-C`／`OP-0919-G`） | `OP-0918-C` 实撞：worktree 是全新 checkout，`7-外部文档/` 等 gitignore 路径的真实内容只存在于主仓物理磁盘、从未进 git，worktree 内检索天然零命中——同一句「不存在」在 worktree 与主仓查出来是相反的结论，只报断言不报检索位置读者无法分辨。**与形态①-⑫不同源**：不问 opener 块结构，问文件正文的取证质量，逐行判、不挂在块起始行 |
+| 形态⑭ | **子任务泳道 opener 块**缺**回归 narrow 尾句行**（同一行须同现「受影响测试类」、禁 `-k`、「不起后台任务轮询等待」） | 2026-09-20（队列 §一 `#627`／`OP-0920-N`） | 2026-09-20 当日七条无头泳道全部越过 150k 转场线、零条执行 `OPENER_PARTIAL`——三条 PARTIAL 的理由全写成「回归没跑完」，根因＝泳道自己重跑整份「与纯 master 比失败集合」（那是 ff 六关④的活，泳道再跑一遍＝同一件事做三遍）外加起后台任务轮询等待，两者合力把会话耗到顶（`OP-0920-K` 第一段被 25 分钟耗死）。修法主体＝生成器强制注入（`SUBTASK_NARROW_TEST_NOTE`），本形态是它的机器守 |
+| 形态⑮ | **子任务泳道 opener 块**缺**产出实证尾句行**（同一行须同现 `git diff --name-only master...HEAD` 与 `OPENER_PARTIAL`） | 2026-09-20（队列 §一 `#627`／`OP-0920-N`） | 同日 `OP-0920-K` 报 `OPENER_DONE` 而本体一个字没改（commit message 写成改了别的）——哨兵自陈不可信，须有机器可核的证据（`git diff --name-only` 与期望产出清单比对）才许写 `OPENER_DONE`。修法主体＝生成器强制注入（`SUBTASK_EVIDENCE_NOTE`），本形态是它的机器守 |
 
 形态②③与「工具静默回退」同族：它没错，只是解析到了另一个对象 —— 没有任何一层会报错，
 故只能靠结构检测拦，靠人读输出拦不住。
@@ -219,6 +221,10 @@ RULE_EFFECTIVE_FORM12 = date(2026, 9, 19)
 #: 形态⑬ ＝ 队列 §一 `#616`（`OP-0918-C` 实撞、Shao Peishen `4a` 拍板，2026-09-19：
 #: 「不存在／零命中／全库检索」类断言缺检索位置或检索命令）。
 RULE_EFFECTIVE_FORM13 = date(2026, 9, 19)
+#: 形态⑭ ＝ 队列 §一 `#627`（`OP-0920-N`，2026-09-20：子任务泳道 opener 缺回归 narrow 尾句）。
+RULE_EFFECTIVE_FORM14 = date(2026, 9, 20)
+#: 形态⑮ ＝ 队列 §一 `#627`（`OP-0920-N`，2026-09-20：子任务泳道 opener 缺产出实证尾句）。
+RULE_EFFECTIVE_FORM15 = date(2026, 9, 20)
 #: 正本自检 C1/C2/C3/C5 ＝ 队列 §一 `#493`（2026-09-07，形态①②③⑤ 在格式正本内的换判据版）。
 RULE_EFFECTIVE_CANON = date(2026, 9, 7)
 #: 正本角色声明自检 C0 ＝ 队列 §一 `#489` ⑴（2026-09-08，路径名单改自声明式判据时的防外溢条）。
@@ -239,6 +245,8 @@ RULE_EFFECTIVE_BY_FORM = {
     "F11": RULE_EFFECTIVE_FORM11,
     "F12": RULE_EFFECTIVE_FORM12,
     "F13": RULE_EFFECTIVE_FORM13,
+    "F14": RULE_EFFECTIVE_FORM14,
+    "F15": RULE_EFFECTIVE_FORM15,
     "C0": RULE_EFFECTIVE_CANON_CLAIM,
     "C1": RULE_EFFECTIVE_CANON,
     "C2": RULE_EFFECTIVE_CANON,
@@ -334,6 +342,22 @@ SENTINEL_LINE_RE = re.compile(r"OPENER_DONE.*OPENER_PARTIAL|OPENER_PARTIAL.*OPEN
 #: 🔴 只判子任务泳道块（同 F6／F8／F9 的收窄）：标准【CC】／guardian／【Cowork】块不经看门狗。
 HEARTBEAT_LINE_RE = re.compile(
     r"(?=.*工具-泳道看护状态机\.py heartbeat)(?=.*--done)(?=.*--batch)")
+
+#: 形态⑭：回归 narrow 尾句——**同一行**须同现「受影响测试类」、禁 `-k` 的提示与「不起
+#: 后台任务轮询等待」（队列 §一 `#627`）。三者缺一：缺「受影响测试类」＝泳道不知道该
+#: narrow 到哪；缺「禁 `-k`」＝仍可能整份重跑（`-k` 会 `exit=9` 中断，同 `.claude/rules/
+#: 环境保障线.md`「回归闸 narrow」判据）；缺「不起后台任务轮询等待」＝会话仍可能被自建
+#: Monitor／轮询耗到顶（2026-09-20 七条无头泳道全撞）。与 F9/F10 同为弱校验：只判
+#: 「有没有」，不判措辞。只判子任务泳道块（同 F6／F8／F9／F10 的收窄）。
+NARROW_TEST_LINE_RE = re.compile(
+    r"(?=.*受影响测试类)(?=.*禁.*-k)(?=.*不起后台任务轮询等待)")
+
+#: 形态⑮：产出实证尾句——**同一行**须同现 `git diff --name-only master...HEAD` 与
+#: `OPENER_PARTIAL`（队列 §一 `#627`）。缺此行 ⇒ 收工是否写 `OPENER_DONE` 只能靠哨兵
+#: 自陈，2026-09-20 `OP-0920-K` 即实撞「报 `OPENER_DONE` 而本体一个字没改」。与 F9/F10
+#: 同为弱校验：只判「有没有」，不判措辞。只判子任务泳道块（同 F6／F8／F9／F10 的收窄）。
+EVIDENCE_LINE_RE = re.compile(
+    r"(?=.*git diff --name-only master\.\.\.HEAD)(?=.*OPENER_PARTIAL)")
 
 #: 形态⑪：「派出线」字段里引用的 OP 号与块**首行**自身的 OP 号相同——自引用错误
 #: （队列 §一 `#620`，OP-0918-C 实撞两处错之一）。首行取 `OP-\d{4}-[A-Za-z]+`（同
@@ -776,7 +800,7 @@ def block_env(block: Block) -> str | None:
 def check_block(block: Block, *, is_subtask_lane: bool = False,
                 is_format_canon_file: bool = False,
                 canon_role: str | None = None) -> list[tuple[str, str]]:
-    """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F12", "C3", "C5"}。
+    """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F15", "C3", "C5"}。
 
     `is_subtask_lane`：该块是否为「看护者用 Task/Agent 派发的子任务泳道 opener」
     （见 `_is_subtask_lane_block`）。默认 `False`——不传时行为与形态⑥引入前完全一致，
@@ -948,6 +972,35 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
             "用 `工具-opener生成.py --variant subtask_lane` 重出，生成器会自动带上该行"
             "（泳道标识＝worktree 名，批次从 `--line` 现取或 `--batch` 显式给）；"
             "手抄请照骨架【CC · 子任务泳道】块对应行（队列 §一 `#565`）",
+        ))
+
+    # 形态⑭ —— 子任务泳道 opener 块缺回归 narrow 尾句行（队列 §一 `#627`，2026-09-20）：
+    # 2026-09-20 七条无头泳道全部越过 150k 转场线、零条执行 `OPENER_PARTIAL`——三条 PARTIAL
+    # 的理由全写成「回归没跑完」，根因＝泳道自己重跑整份回归（那是 ff 六关④的活）外加起
+    # 后台任务轮询等待。生成器已强制注入（`SUBTASK_NARROW_TEST_NOTE`），本形态守「正本改了
+    # 而生成器没跟」与「起草人手抄漏了」两种漂移（同 F9/F10）。
+    if is_subtask_lane and not any(NARROW_TEST_LINE_RE.search(ln) for ln in block.lines):
+        problems.append((
+            "F14",
+            "子任务泳道 opener 块缺**回归 narrow 尾句行**（同一行须同现「受影响测试类」、"
+            "禁 `-k` 与「不起后台任务轮询等待」）⇒ 泳道可能重跑整份回归或起后台轮询耗死会话"
+            "（2026-09-20 七条无头泳道全撞，零条执行 `OPENER_PARTIAL`）。用 "
+            "`工具-opener生成.py --variant subtask_lane` 重出，生成器会自动带上该行；"
+            "手抄请照骨架【CC · 子任务泳道】块对应行（队列 §一 `#627`）",
+        ))
+
+    # 形态⑮ —— 子任务泳道 opener 块缺产出实证尾句行（队列 §一 `#627`，2026-09-20）：
+    # 同日 `OP-0920-K` 报 `OPENER_DONE` 而本体一个字没改——哨兵自陈不可信，须有机器可核的
+    # 证据。生成器已强制注入（`SUBTASK_EVIDENCE_NOTE`），本形态守「正本改了而生成器没跟」
+    # 与「起草人手抄漏了」两种漂移（同 F9/F10）。
+    if is_subtask_lane and not any(EVIDENCE_LINE_RE.search(ln) for ln in block.lines):
+        problems.append((
+            "F15",
+            "子任务泳道 opener 块缺**产出实证尾句行**（同一行须同现 "
+            "`git diff --name-only master...HEAD` 与 `OPENER_PARTIAL`）⇒ 收工写不写 "
+            "`OPENER_DONE` 只能靠哨兵自陈，2026-09-20 `OP-0920-K` 即实撞「报 `OPENER_DONE` "
+            "而本体一个字没改」。用 `工具-opener生成.py --variant subtask_lane` 重出，"
+            "生成器会自动带上该行；手抄请照骨架【CC · 子任务泳道】块对应行（队列 §一 `#627`）",
         ))
 
     # 形态⑪ —— 「派出线」字段引用的 OP 号与块首行自身 OP 号相同（自引用错误，队列 §一
@@ -1240,6 +1293,8 @@ FORM_TITLE = {
     "F11": "形态⑪ · 派出线 OP 号与块首行 OP 号自引用相同（规则生效日 2026-09-19）",
     "F12": "形态⑫ · 【Cowork】块含「模型：」死字段（规则生效日 2026-09-19）",
     "F13": "形态⑬ · 「不存在／零命中／全库检索」断言缺检索位置或检索命令（规则生效日 2026-09-19）",
+    "F14": "形态⑭ · 子任务泳道块缺回归 narrow 尾句行（规则生效日 2026-09-20）",
+    "F15": "形态⑮ · 子任务泳道块缺产出实证尾句行（规则生效日 2026-09-20）",
     "C0": "正本自检C0 · opener正本 角色声明不成立（队列 #489，2026-09-08）",
     "C1": "正本自检C1 · 格式正本不再教 set_session_title（队列 #493，2026-09-07）",
     "C2": "正本自检C2 · 格式正本不再教子任务例外句（队列 #493，2026-09-07）",
