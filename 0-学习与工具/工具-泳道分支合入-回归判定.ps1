@@ -49,3 +49,66 @@ function Get-NewFailures {
     foreach ($m in $MasterFailed) { $masterSet[$m] = $true }
     return @($BranchFailed | Where-Object { -not $masterSet.ContainsKey($_) })
 }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 队列 §一 `#567` 同族第三例（2026-09-20 `OP-0919-K` 实撞补立）：**回归段会挂死，且挂死不落哨兵。**
+# 实证：2026-09-19 23:54 起的一条 ff，`python -m pytest` 跑到一半机器休眠，醒来后进程还在、
+# 日志 **8 小时 47 分一个字没写**；`工具-泳道分支合入.ps1` 同步等 `& python`，永远等不到返回 ⇒
+# 外层包装的 `<log>.done` 哨兵也永远不落 ⇒ **看护者按「只探哨兵」的纪律会一直判成「还在跑」**。
+# 🔑 判词：一个只会在成功时返回的调用，等同于没有超时；**挂死必须自己变成一个结局**，否则它
+# 会伪装成「进行中」直到有人用肉眼发现。同 `#550`（哨兵缺失）／`#618`（陈旧锁）一族。
+#
+# 修法＝**空闲超时**（不是总时长超时）：只要还在产出就不打断（全量回归本来就要 29 分钟），
+# 连续 `IdleTimeoutSeconds` 没有任何新输出才判挂死、杀进程树、如实返回 `TimedOut`。
+# 🔴 判超时不等于判回归失败——调用方须把它记成「被打断」（退出码 7），不得记成「新增失败」。
+function Invoke-PytestWithIdleTimeout {
+    <# 跑一条 pytest，带空闲超时。返回 @{ Output=<string[]>; ExitCode=<int>; TimedOut=<bool>; IdleSeconds=<int> }。
+       `-Command`／`-ArgList` 可注入（单测用假命令验证超时与正常两条路径，不需要真 pytest）。#>
+    param(
+        [Parameter(Mandatory)][string]$PytestTarget,
+        [string]$WorkingDirectory = '.',
+        [int]$IdleTimeoutSeconds = 1200,
+        [int]$PollSeconds = 5,
+        [string]$Command = 'python',
+        [string[]]$ArgList = $null
+    )
+    if (-not $ArgList) { $ArgList = @('-m', 'pytest', $PytestTarget, '-q', '-rf') }
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $p = Start-Process -FilePath $Command -ArgumentList $ArgList -WorkingDirectory $WorkingDirectory `
+             -RedirectStandardOutput $outFile -RedirectStandardError $errFile -NoNewWindow -PassThru
+        $lastSize = -1
+        $lastChange = Get-Date
+        while (-not $p.HasExited) {
+            Start-Sleep -Seconds $PollSeconds
+            $size = 0
+            foreach ($f in @($outFile, $errFile)) {
+                if (Test-Path -LiteralPath $f) { $size += (Get-Item -LiteralPath $f).Length }
+            }
+            if ($size -ne $lastSize) { $lastSize = $size; $lastChange = Get-Date }
+            elseif (((Get-Date) - $lastChange).TotalSeconds -ge $IdleTimeoutSeconds) {
+                # 杀进程树：pytest 常有子进程，只杀父进程会留孤儿继续占着 worktree。
+                try { & taskkill /PID $p.Id /T /F 2>&1 | Out-Null } catch { }
+                try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch { }
+                $txt = @()
+                foreach ($f in @($outFile, $errFile)) {
+                    if (Test-Path -LiteralPath $f) { $txt += (Get-Content -LiteralPath $f -ErrorAction SilentlyContinue) }
+                }
+                return [pscustomobject]@{
+                    Output = $txt; ExitCode = 124; TimedOut = $true
+                    IdleSeconds = [int]((Get-Date) - $lastChange).TotalSeconds
+                }
+            }
+        }
+        $p.WaitForExit()
+        $txt = @()
+        foreach ($f in @($outFile, $errFile)) {
+            if (Test-Path -LiteralPath $f) { $txt += (Get-Content -LiteralPath $f -ErrorAction SilentlyContinue) }
+        }
+        return [pscustomobject]@{ Output = $txt; ExitCode = $p.ExitCode; TimedOut = $false; IdleSeconds = 0 }
+    } finally {
+        foreach ($f in @($outFile, $errFile)) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    }
+}

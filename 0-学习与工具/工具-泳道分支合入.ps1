@@ -14,6 +14,7 @@ param(
     [string]$Tests = '',
     [string]$Repo = 'C:\Dev\zhuopin-ai',
     [string]$TempRoot = 'C:\Dev',
+    [int]$TestIdleTimeoutMinutes = 20,
     [switch]$KeepWorktree
 )
 
@@ -49,7 +50,8 @@ $extra = @{ tests = $Tests; master_before = ''; master_after = ''; branch_before
 
 function Resolve-MergeAction {
     <# 退出码 → 最终动作。0 合入；2（脏文件交集）／4（回归新增失败）＝守卫说「不」＝拒绝；
-       3（rebase 冲突）／5（ff 失败）／6（四 ref 不一致）／9（脚本异常）＝流程没走到判定＝被打断。 #>
+       3（rebase 冲突）／5（ff 失败）／6（四 ref 不一致）／7（回归挂死超时，队列 #567 同族）／
+       9（脚本异常）＝流程没走到判定＝被打断。🔴 7 **不是**「回归新增失败」——挂死没判出任何结论。 #>
     param([int]$Code)
     switch ($Code) { 0 { '合入' } 2 { '拒绝' } 4 { '拒绝' } default { '被打断' } }
 }
@@ -113,8 +115,16 @@ function Invoke-LaneMerge {
         foreach ($t in ($Tests -split ',')) {
             $cmd = "python -m pytest $t -q -rf"
             Write-Host "  跑 $t ..."
-            $branchOut = & python -m pytest $t -q -rf 2>&1
-            if ($LASTEXITCODE -ne 0) {
+            $r = Invoke-PytestWithIdleTimeout -PytestTarget $t -WorkingDirectory (Get-Location).Path `
+                 -IdleTimeoutSeconds ($TestIdleTimeoutMinutes * 60)
+            if ($r.TimedOut) {
+                $msg = "回归挂死：$cmd 连续 $TestIdleTimeoutMinutes 分钟无任何输出，已杀进程树（队列 #567 同族；2026-09-19 实撞一次，机器休眠致 ff 卡 8h47m 且哨兵不落）"
+                Write-Host "🔴 $msg"
+                $script:extra.note = $msg
+                return 7
+            }
+            $branchOut = $r.Output
+            if ($r.ExitCode -ne 0) {
                 $branchFailed = @(Get-PytestFailedTests -Output $branchOut)
                 $branchSummary = Get-PytestSummaryLine -Output $branchOut
                 Write-Host "    分支侧（$cmd）：$branchSummary ｜ 失败：$($branchFailed -join ', ')"
@@ -128,10 +138,19 @@ function Invoke-LaneMerge {
                 }
                 try {
                     Push-Location $wtMaster
-                    $masterOut = & python -m pytest $t -q -rf 2>&1
+                    $rm = Invoke-PytestWithIdleTimeout -PytestTarget $t -WorkingDirectory $wtMaster `
+                          -IdleTimeoutSeconds ($TestIdleTimeoutMinutes * 60)
+                    $masterOut = $rm.Output
+                    $masterTimedOut = $rm.TimedOut
                 } finally {
                     Pop-Location
                     git worktree remove $wtMaster --force | Out-Null
+                }
+                if ($masterTimedOut) {
+                    $msg = "回归挂死（纯 master 基线侧）：$cmd 连续 $TestIdleTimeoutMinutes 分钟无输出，已杀进程树——基线跑不出来就无从比较失败集合，不得据此放行或拒绝"
+                    Write-Host "🔴 $msg"
+                    $script:extra.note = $msg
+                    return 7
                 }
                 $masterFailed = @(Get-PytestFailedTests -Output $masterOut)
                 $masterSummary = Get-PytestSummaryLine -Output $masterOut

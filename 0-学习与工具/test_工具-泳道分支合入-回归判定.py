@@ -201,3 +201,60 @@ ConvertTo-Json -InputObject $r
 """
         result = _run_json(ps)
         assert result == []
+
+
+class TestInvokePytestWithIdleTimeout:
+    """`Invoke-PytestWithIdleTimeout`：回归段的空闲超时（队列 §一 `#567` 同族第三例）。
+
+    🔴 **成因是一次真实挂死**：2026-09-19 23:54 起的一条 ff，`python -m pytest` 跑到一半机器
+    休眠，醒来后进程还在、日志 **8 小时 47 分没写过一个字**；主脚本同步等 `& python`，外层包装
+    的 `<log>.done` 哨兵因此永远不落 ⇒ 按「只探哨兵」的纪律会一直判成「还在跑」。
+    **判词：一个只会在成功时返回的调用等同于没有超时——挂死必须自己变成一个结局。**
+
+    本类两个方向都守：**该杀的杀**（连续无输出即判 `TimedOut` 并杀进程树），
+    **不该杀的一个都不许杀**（只要还在产出就不打断——全量回归本来就要跑 29 分钟）。
+    """
+
+    def test_持续有输出的长命令不被误杀(self):
+        """防判据过宽这一侧：命令跑 6 秒、每秒吐一行，空闲阈值 3 秒 ⇒ 不得超时。"""
+        got = _run_json(r"""
+$r = Invoke-PytestWithIdleTimeout -PytestTarget 'dummy' -IdleTimeoutSeconds 3 -PollSeconds 1 `
+     -Command 'pwsh' -ArgList @('-NoProfile','-NonInteractive','-Command','1..6 | ForEach-Object { "tick $_"; Start-Sleep -Seconds 1 }')
+@{ TimedOut = $r.TimedOut; ExitCode = $r.ExitCode; Lines = @($r.Output).Count } | ConvertTo-Json -Compress
+""")
+        assert got["TimedOut"] is False, got
+        assert got["ExitCode"] == 0, got
+        assert got["Lines"] >= 6, got
+
+    def test_连续无输出即判挂死并杀掉进程(self):
+        """该杀的这一侧：命令睡 120 秒、零输出，空闲阈值 3 秒 ⇒ 判 `TimedOut`、退出码 124。
+        本用例若在 60 秒内跑完（`_run_json` 的 timeout），就证明进程真的被杀了而不是等它自己结束。"""
+        got = _run_json(r"""
+$r = Invoke-PytestWithIdleTimeout -PytestTarget 'dummy' -IdleTimeoutSeconds 3 -PollSeconds 1 `
+     -Command 'pwsh' -ArgList @('-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120')
+@{ TimedOut = $r.TimedOut; ExitCode = $r.ExitCode } | ConvertTo-Json -Compress
+""")
+        assert got["TimedOut"] is True, got
+        assert got["ExitCode"] == 124, got
+
+    def test_挂死前已产出的输出不丢(self):
+        """挂死返回的 `Output` 必须带上被杀之前已经写出来的行——否则调用方连「卡在哪一条用例」
+        都看不到，等于把一次挂死变成无证据事件。"""
+        got = _run_json(r"""
+$r = Invoke-PytestWithIdleTimeout -PytestTarget 'dummy' -IdleTimeoutSeconds 3 -PollSeconds 1 `
+     -Command 'pwsh' -ArgList @('-NoProfile','-NonInteractive','-Command',"Write-Output 'collected 563 items'; Start-Sleep -Seconds 120")
+@{ TimedOut = $r.TimedOut; Joined = (@($r.Output) -join "`n") } | ConvertTo-Json -Compress
+""")
+        assert got["TimedOut"] is True, got
+        assert "collected 563 items" in got["Joined"], got
+
+    def test_非零退出码原样传回_不被超时逻辑吞掉(self):
+        """回归有真失败时退出码必须原样回到调用方（④ 靠它决定要不要跑纯 master 基线）。"""
+        got = _run_json(r"""
+$r = Invoke-PytestWithIdleTimeout -PytestTarget 'dummy' -IdleTimeoutSeconds 30 -PollSeconds 1 `
+     -Command 'pwsh' -ArgList @('-NoProfile','-NonInteractive','-Command',"Write-Output 'FAILED x::y'; exit 1")
+@{ TimedOut = $r.TimedOut; ExitCode = $r.ExitCode; Joined = (@($r.Output) -join "`n") } | ConvertTo-Json -Compress
+""")
+        assert got["TimedOut"] is False, got
+        assert got["ExitCode"] == 1, got
+        assert "FAILED x::y" in got["Joined"], got
