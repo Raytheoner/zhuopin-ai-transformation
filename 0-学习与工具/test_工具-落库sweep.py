@@ -206,6 +206,26 @@ print(json.dumps({"base": "master", "base_sha": "0" * 40, "generated_utc": "2026
                  ensure_ascii=False))
 '''
 
+# 队列 §一 #631（2026-09-20，OP-0920-K）：第 19 类（承载性一致性扫描）
+# **动态 import**（不是子进程）`工具-承载性一致性扫描.py`——同第 7/10/11/
+# 13/16 类一模一样的形态、第五次撞见同一类缺口：`#601` 建成时没有同步在
+# 本夹具补桩，临时仓库里缺这个文件，`_load_carrier_scan` 如实报「不可用」
+# 并推一条告警，把 `ScheduledTaskMirrorSyncTests` 三个精确断言「收到几次
+# webhook」的用例全部染红（2026-09-20 实测：`test_no_diff_produces_no_
+# commit_and_no_webhook_noise` 期望 0 条、实收 1 条）。桩恒零三态、零文件
+# IO；本类自己的判据在 `test_工具-承载性一致性扫描.py` 20 项单测里锁死，
+# 不在本夹具重测。
+STUB_CARRIER_SCAN_SCRIPT = '''"""测试桩：承载性一致性扫描（恒零三态、零 IO）。"""
+
+def scan(repo_root):
+    return {"missing": [], "misdirected": [], "no_carrier": [], "markerless": [],
+            "errors": [], "notes": [], "sources_scanned": []}
+
+
+def format_report(findings):
+    return "# 测试桩：零命中"
+'''
+
 
 class SweepTestBase(unittest.TestCase):
     def setUp(self):
@@ -279,6 +299,8 @@ class SweepTestBase(unittest.TestCase):
             STUB_PLAN_BACKPRESSURE_SCRIPT, encoding="utf-8")
         (self.work / sweep.UNMERGED_BRANCH_SCRIPT_REL).write_text(
             STUB_UNMERGED_BRANCH_SCRIPT, encoding="utf-8")
+        (self.work / sweep.CARRIER_SCAN_SCRIPT_REL).write_text(
+            STUB_CARRIER_SCAN_SCRIPT, encoding="utf-8")
         (self.work / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
 
         # 队列 §一 #435（2026-08-30 回归排查后补）：第 4 类常驻告警新增
@@ -7225,6 +7247,226 @@ class UnclosedOutputGuardTests(unittest.TestCase):
             self.assertFalse(
                 name.startswith("subprocess."),
                 f"第 7 类判据必须只读，却调用了 {name}")
+
+
+class _FakeCarrierScanModule:
+    """替身：站在 `工具-承载性一致性扫描.py` 的位置，只暴露 `_check_
+    carrier_consistency` 实际会用到的两个名字（`scan`／`format_report`）。
+
+    扫描器自身判据（三态怎么判、`suspected_real_location` 怎么找）已由
+    `test_工具-承载性一致性扫描.py` 的 20 项单测锁死，本类不重复。
+    """
+
+    def __init__(self, findings=None, raises=None):
+        self._findings = findings
+        self._raises = raises
+        self.report_writes = []
+
+    def scan(self, repo_root):
+        if self._raises is not None:
+            raise self._raises
+        return self._findings
+
+    def format_report(self, findings):
+        self.report_writes.append(findings)
+        return f"# 报告\n扫描面 {len(findings['sources_scanned'])}"
+
+
+def _carrier_findings(missing=None, misdirected=None, no_carrier=None,
+                       errors=None, notes=None, scanned=None):
+    return {
+        "missing": missing or [],
+        "misdirected": misdirected or [],
+        "no_carrier": no_carrier or [],
+        "errors": errors or [],
+        "notes": notes or [],
+        "sources_scanned": scanned if scanned is not None else ["CLAUDE.md"],
+    }
+
+
+def _carrier_missing(key="规则A:file:载体A", source="CLAUDE.md", line=10,
+                      kind="file", value="不存在的文件.md"):
+    return {"key": key, "source": source, "line": line,
+            "carrier_kind": kind, "carrier_value": value}
+
+
+def _carrier_misdirected(key="规则A:file:载体A", source="CLAUDE.md", line=10,
+                          kind="file", value="旧位置.md",
+                          suspected="疑似真实落点.py"):
+    item = _carrier_missing(key, source, line, kind, value)
+    item["suspected_real_location"] = suspected
+    return item
+
+
+class CarrierConsistencyWiringTests(unittest.TestCase):
+    """队列 §一 #601（2026-09-20 `OP-0920-F` 建成）：承载性一致性扫描器
+    **接线**（第 19 类常驻告警）。
+
+    🔴 看护者 `OP-0920-B` 当日复核点名：`工具-承载性一致性扫描.py` 自身
+    已有 20 项单测，但接进 `工具-落库sweep.py` 的这一段（`_load_carrier_
+    scan`／`_check_carrier_consistency`／两个 `_render_*`）建成时一个字
+    没测——「装好但没试过的闸」（`#398` 一族）。本组补的是接线本身：
+    scan() 的结果有没有真的变成告警 key、有没有真的写出文件、判据自己
+    出故障时有没有被静默吞成「零命中」，而不是扫描器判据对不对。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / "reports").mkdir(parents=True)
+        self.recorder = _StandingStateRecorder()
+        self._orig_track = sweep._track_and_alert_standing_state
+        self._orig_loader = sweep._load_carrier_scan
+        sweep._track_and_alert_standing_state = self.recorder
+
+    def tearDown(self):
+        sweep._track_and_alert_standing_state = self._orig_track
+        sweep._load_carrier_scan = self._orig_loader
+        self._tmp.cleanup()
+
+    def _run(self, module):
+        sweep._load_carrier_scan = lambda repo_root: (module, None)
+        log = []
+        sweep._check_carrier_consistency(self.repo, log)
+        return "\n".join(log), self.recorder.calls[-1]
+
+    # ---------- 接线本身 ----------
+
+    def test_已接入主流程(self):
+        """建成而没接线，与没建成外观完全相同——同第 7 类那条的立意。"""
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("_check_carrier_consistency(repo_root, log)", source)
+
+    def test_真实扫描器可被本函数导入且两个名字齐全(self):
+        """🔴 锁的是接口契约：扫描器被改名／`scan`／`format_report` 换签名，
+        都会让接线在生产上静默退化成「判据不可用」。"""
+        repo_root = SCRIPT.parent.parent
+        module, reason = sweep._load_carrier_scan(repo_root)
+        self.assertIsNone(reason, f"真实扫描器导入失败：{reason}")
+        for name in ("scan", "format_report"):
+            self.assertTrue(hasattr(module, name), f"扫描器缺少 `{name}`")
+
+    # ---------- 回显（存在证明） ----------
+
+    def test_零命中时仍逐项回显三态计数(self):
+        """🔴 本组最要紧的一条：零命中是本判据的常态外观（首轮实测就是
+        0/0/179）。若零命中时连回显都没有，它与「建成后从未真正跑过」
+        在日志上无法区分。"""
+        text, call = self._run(_FakeCarrierScanModule(_carrier_findings()))
+        self.assertEqual(call["keys"], set())
+        self.assertIn("扫描面 1 份", text)
+        self.assertIn("缺失 0", text)
+        self.assertIn("指错载体 0", text)
+        self.assertIn("无载体清单 0", text)
+
+    def test_全文每轮落一份定长文件(self):
+        module = _FakeCarrierScanModule(_carrier_findings())
+        self._run(module)
+        self.assertEqual(len(module.report_writes), 1)
+        self.assertTrue((self.repo / sweep.CARRIER_SCAN_REPORT_REL).is_file())
+
+    # ---------- key 构成 ----------
+
+    def test_缺失项成key且正文含载体信息(self):
+        item = _carrier_missing()
+        text, call = self._run(_FakeCarrierScanModule(_carrier_findings(missing=[item])))
+        self.assertEqual(call["keys"], {f"missing:{item['key']}"})
+        self.assertIn(item["source"], call["alert_text"])
+        self.assertIn(item["carrier_value"], call["alert_text"])
+
+    def test_指错载体项成key且正文含疑似真实落点(self):
+        """② 是核心态——防的是「规则指错载体」比「规则没有载体」更危险的
+        那种重复建造风险，`suspected_real_location` 必须出现在告警正文。"""
+        item = _carrier_misdirected()
+        text, call = self._run(_FakeCarrierScanModule(_carrier_findings(misdirected=[item])))
+        self.assertEqual(call["keys"], {f"misdirected:{item['key']}"})
+        self.assertIn(item["suspected_real_location"], call["alert_text"])
+
+    def test_无载体清单只列不进告警key(self):
+        """派单件明文：③ 大量规则本就该是人守且合理，塞进每轮告警必然
+        「狼来了」（`#147`）——只列计数，不得进 `_track_and_alert_
+        standing_state` 的 key 集合。"""
+        module = _FakeCarrierScanModule(_carrier_findings(
+            no_carrier=[{"source": "CLAUDE.md", "line": i, "marker": "机器守＝"}
+                        for i in range(3)]))
+        text, call = self._run(module)
+        self.assertEqual(call["keys"], set())
+        self.assertIn("无载体清单 3", text)
+
+    def test_key不随行号变化(self):
+        """判据：会变的数进了 key，常驻状态就退化成事件——每次行号漂移
+        都会被当成新问题重报一遍，旧 key 还会被误判为「已解除」。"""
+        first = self._run(_FakeCarrierScanModule(
+            _carrier_findings(missing=[_carrier_missing(line=10)])))[1]["keys"]
+        second = self._run(_FakeCarrierScanModule(
+            _carrier_findings(missing=[_carrier_missing(line=999)])))[1]["keys"]
+        self.assertEqual(first, second)
+
+    # ---------- 判据不可用：绝不吞成干净 ----------
+
+    def test_扫描器不存在时报判据不可用而非干净(self):
+        sweep._load_carrier_scan = lambda repo_root: (None, "未找到脚本")
+        log = []
+        sweep._check_carrier_consistency(self.repo, log)
+        text = "\n".join(log)
+        call = self.recorder.calls[-1]
+        self.assertEqual(call["keys"], {"unavailable:load"})
+        self.assertIn("不据此判为干净", text)
+
+    def test_扫描过程抛异常不得吞成干净(self):
+        module = _FakeCarrierScanModule(raises=RuntimeError("解析炸了"))
+        text, call = self._run(module)
+        self.assertEqual(call["keys"], {"unavailable:scan"})
+        self.assertIn("不据此判为干净", text)
+        self.assertIn("解析炸了", text)
+
+    def test_读取异常回显但不进告警key(self):
+        module = _FakeCarrierScanModule(_carrier_findings(errors=["`x.md` 读取失败"]))
+        text, call = self._run(module)
+        self.assertIn("扫描面读取异常", text)
+        self.assertEqual(call["keys"], set())
+
+    # ---------- 告警正文：超上限截断 ----------
+
+    def test_超上限时显式说明另有N条未列出(self):
+        """🔴 绝不静默截断：一条说自己完整、其实只说了一半的告警，比不发
+        更坏（同第 7 类）。"""
+        many = [_carrier_missing(key=f"规则{i}:file:载体{i}")
+                for i in range(sweep.CARRIER_SCAN_ALERT_MAX_ITEMS + 3)]
+        _, call = self._run(_FakeCarrierScanModule(_carrier_findings(missing=many)))
+        self.assertIn("另有 3 条未列出", call["alert_text"])
+
+    def test_解除文案说清是被什么关掉的(self):
+        text = sweep._render_carrier_resolved({"missing:规则A:file:载体A"})
+        self.assertIn("已核实关闭", text)
+        self.assertIn("missing:规则A:file:载体A", text)
+
+    # ---------- 只读红线 ----------
+
+    def test_本组函数不动任何被扫到的规则文件(self):
+        """本类只读、只告警，一个字节都不改任何被扫到的规则文件（派单件
+        明文，同第 7 类「本不该有能力真动手」的立场）——锁的是执行构件：
+        本段代码内不得起子进程。
+
+        🔴 终点**不能**锚到下一个 `def _check_...`：第 10 类的辅助函数
+        （`_run_followup_readme_digest_json` 等，合法调用 `subprocess.run`
+        转发给同目录另一个只读脚本）物理上排在 `_check_carrier_consistency`
+        与 `_check_followup_pending_inventory` 之间——同 `UnclosedOutputGuard
+        Tests` 那条已踩过的坑。改锚到第 10 类的段首注释（精确复刻本测试
+        的原始意图：只切第 19 类自己的代码）。"""
+        source = SCRIPT.read_text(encoding="utf-8")
+        body = source[source.index("def _load_carrier_scan"):
+                      source.index("# 队列 §一 #382⑵（2026-09-02，OP-0902-D）："
+                                    "第 10 类常驻状态告警")]
+        tree = ast.parse(body)
+        called = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                called.add(ast.unparse(node.func))
+        for name in sorted(called):
+            self.assertFalse(
+                name.startswith("subprocess."),
+                f"第 19 类判据必须只读，却调用了 {name}")
 
 
 class FollowupPendingInventoryTests(unittest.TestCase):
