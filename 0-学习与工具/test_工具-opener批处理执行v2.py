@@ -915,5 +915,130 @@ class 脚本建隔离worktree四场景_v2_600(_Base):
         self.assertFalse((self.log_dir / f"{self.lane_name}-A1-main-leak.patch").exists())
 
 
+#: `write-context.ps1`——桩 claude 被调用时用它把 `--session-id <sid>` 抠出来，往
+#: `$env:STUB_REPO_ROOT\reports\context-meter\<sid>.json` 写一份「假的钩子输出」
+#: （字段名对齐 `hooks-posttooluse-context-meter.ps1::Write-ContextMeterState`），
+#: 模拟 PostToolUse 钩子在真会话里逐次写下的 `lastContext`。
+CONTEXT_WRITER_PS1 = (
+    "param()\r\n"
+    "$sid = $null\r\n"
+    "for ($i = 0; $i -lt $args.Count; $i++) {\r\n"
+    "    if ($args[$i] -eq '--session-id' -and $i + 1 -lt $args.Count) { $sid = $args[$i + 1]; break }\r\n"
+    "}\r\n"
+    "if ($sid) {\r\n"
+    "    $dir = Join-Path $env:STUB_REPO_ROOT 'reports\\context-meter'\r\n"
+    "    New-Item -ItemType Directory -Path $dir -Force | Out-Null\r\n"
+    "    $obj = [ordered]@{ lastTier = 0; lastContext = [long]$env:STUB_CONTEXT_VALUE; "
+    "lastTs = (Get-Date).ToString('o'); toolCalls = 1; callCountNotified = $false }\r\n"
+    "    $path = Join-Path $dir ($sid + '.json')\r\n"
+    "    $obj | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $path -Encoding UTF8\r\n"
+    "}\r\n"
+)
+
+
+def _stub_context(hang_sec: int = 0) -> str:
+    """写完假的 context-meter json 后，`hang_sec>0` 再 ping 挂住这么多秒（模拟越 250k 硬线时
+    agent 没有自觉收尾、还在继续跑）；否则直接哨兵收尾，验证低于硬线时不打断正常流程。"""
+    hang = f"ping -n {hang_sec} 127.0.0.1 >nul\r\n" if hang_sec else ""
+    return (
+        "@echo off\r\n"
+        'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0write-context.ps1" %*\r\n'
+        f"{hang}"
+        "echo OPENER_DONE\r\n"
+        "exit /b 0\r\n"
+    )
+
+
+class 上下文闸消费者_627(_Base):
+    """队列 §一 `#627` A 面：`hooks-posttooluse-context-meter.ps1` 越线只把提醒写进
+    transcript，agent 不理会就没有下文——本脚本轮询 `reports/context-meter/<sid>.json` 的
+    `lastContext` 装消费者：≥250k 立即 `taskkill /T /F` 整树判 `PARTIAL`；<250k（含越 150k
+    软线）只记峰值、不改变原有状态判法。
+
+    🔴 `$RepoRoot` 取脚本物理位置（本仓工作区根），不是 `self.root` 临时目录——context-meter
+    json 因此落在真实仓库的 `reports/context-meter/`，用随机 session id 隔离、每条用例自清。
+    """
+
+    def setUp(self):
+        super().setUp()
+        (self.stub_file.parent / "write-context.ps1").write_text(CONTEXT_WRITER_PS1, encoding="utf-8")
+        self.repo_root = SCRIPT.resolve().parent.parent
+        self.env["STUB_REPO_ROOT"] = str(self.repo_root)
+        self._written_json: list[Path] = []
+        self.addCleanup(self._cleanup_context_json)
+
+    def _cleanup_context_json(self):
+        for p in self._written_json:
+            try:
+                p.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _rows(self) -> list[dict]:
+        return json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
+
+    def _run_batch(self, extra: list[str] | None = None):
+        args = ["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir),
+                "-ContextPollSec", "2", *(extra or [])]
+        return _run(args, self.root, self.env, timeout=180)
+
+    def _track_json_for(self, sid: str):
+        self._written_json.append(self.repo_root / "reports" / "context-meter" / f"{sid}.json")
+
+    def test_低于150k_只记峰值不影响状态(self):
+        self.env["STUB_CONTEXT_VALUE"] = "80000"
+        self.stub_file.write_text(_stub_context(), encoding="utf-8")
+        r = self._run_batch()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = self._rows()
+        self._track_json_for(rows[0]["Session"])
+        self.assertEqual(rows[0]["Status"], "OK")
+        self.assertEqual(rows[0]["ContextPeak"], 80000)
+        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("本批越 150k 的泳道 0 条", summary)
+
+    def test_越150k软线_只记峰值不终止(self):
+        self.env["STUB_CONTEXT_VALUE"] = "160000"
+        self.stub_file.write_text(_stub_context(), encoding="utf-8")
+        r = self._run_batch()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = self._rows()
+        self._track_json_for(rows[0]["Session"])
+        self.assertEqual(rows[0]["Status"], "OK", "150k 只是软线，不得终止、不得影响状态判法")
+        self.assertEqual(rows[0]["ContextPeak"], 160000)
+        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("上下文峰值", summary)
+        self.assertIn("本批越 150k 的泳道 1 条", summary)
+
+    def test_越250k硬线_主泳道taskkill整树判PARTIAL(self):
+        self.env["STUB_CONTEXT_VALUE"] = "260000"
+        self.stub_file.write_text(_stub_context(hang_sec=60), encoding="utf-8")
+        t0 = time.monotonic()
+        r = self._run_batch()
+        elapsed = time.monotonic() - t0
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertLess(elapsed, 40, f"250k 硬线该在几个轮询周期内 kill，却等了 {elapsed:.0f}s——像是等满了 60s 的 ping")
+        rows = self._rows()
+        self._track_json_for(rows[0]["Session"])
+        self.assertEqual(rows[0]["Status"], "PARTIAL")
+        self.assertEqual(rows[0]["Sentinel"], "硬线终止")
+        self.assertGreaterEqual(rows[0]["ContextPeak"], 250000)
+        log = (self.log_dir / "demo-lane-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("OPENER_PARTIAL: 上下文转场（≈260k）", log)
+        self.assertNotIn("OPENER_DONE", log, "该被 taskkill 整树掐断在 ping 那一步，不该跑到 echo OPENER_DONE")
+        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("本批越 150k 的泳道 1 条", summary)
+
+    def test_硬线终止后不再触发NO_SENTINEL补问(self):
+        self.env["STUB_CONTEXT_VALUE"] = "260000"
+        self.stub_file.write_text(_stub_context(hang_sec=60), encoding="utf-8")
+        r = self._run_batch()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = self._rows()
+        self._track_json_for(rows[0]["Session"])
+        self.assertFalse((self.log_dir / "demo-lane-A1.retry.log").exists(),
+                          "硬线终止是主泳道代 agent 完成收尾，不该再补问一轮")
+
+
 if __name__ == "__main__":
     unittest.main()

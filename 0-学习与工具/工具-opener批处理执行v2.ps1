@@ -52,6 +52,16 @@
 #   ⑶ 崩溃发生在参数绑定期，早于任何 `Exit-WithCode` 调用 ⇒ `exit.txt` 此前根本不落盘，调用方
 #      只能读 stderr 才知道失败。新增脚本级 `trap`：兜住任何未被捕获的终止性异常，落一个专属
 #      退出码（20）并写 `exit.txt`／`launcher-crash.log` 后退出，不改变既有正常退出点的行为。
+#
+# v2.6（队列 §一 `#627` A 面，2026-09-20）：给 `hooks-posttooluse-context-meter.ps1` 的 150k／250k
+#   上下文闸装消费者——此前该钩子越线只把提醒写进 transcript，agent 不理会就没有下文。主调用由
+#   阻塞管道（`Get-Content | claude 2>&1`）改 `Start-Process` ＋ 轮询（周期 `-ContextPollSec`，默认
+#   15s），只读 `reports/context-meter/<sid>.json` 的 `lastContext`：≥250000（硬线）立即 `taskkill /T /F`
+#   整树、判 `PARTIAL`、日志补一行 `OPENER_PARTIAL: 上下文转场（≈Nk）`、Sentinel 列标「硬线终止」、
+#   天然跳过下面 `#550` 的 NO-SENTINEL 补问；<250000 只记峰值（含 150k 软线，不终止）。结果表与
+#   `summary.txt`／`summary.json` 新增「上下文峰值」列，`summary.txt` 末尾新增一行「本批越 150k 的
+#   泳道 N 条」（同一泳道多条 opener 只越线一次也只计一条）。读取失败一律 fail-open 返回 0，
+#   不改变原有 code/哨兵判法、不拦主流程。
 param(
     [string]$Plan = '',
     [string[]]$Only = @(),
@@ -64,7 +74,11 @@ param(
     [switch]$Detach,
     [string]$LogDir = '',
     [int]$SentinelRetryTimeoutSec = 180,
-    [switch]$Force
+    [switch]$Force,
+    # 队列 #627 A 面：150k／250k 上下文闸轮询周期——默认 15s；单测用它把等待压到秒级，
+    # 生产不必调（钩子每次工具调用后即写 json，15s 足够密）。阈值本身（150000／250000）
+    # 是 Shao Peishen 2026-09-16 既定政策值，不开放为参数。
+    [int]$ContextPollSec = 15
 )
 
 $ErrorActionPreference = 'Stop'
@@ -119,7 +133,7 @@ if ($Detach) {
     $childArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath,
                    '-Plan', $Plan, '-Yes', '-LogDir', $LogDir,
                    '-MaxParallel', $MaxParallel, '-StaggerSec', $StaggerSec,
-                   '-SentinelRetryTimeoutSec', $SentinelRetryTimeoutSec)
+                   '-SentinelRetryTimeoutSec', $SentinelRetryTimeoutSec, '-ContextPollSec', $ContextPollSec)
     if ($FullAuto) { $childArgs += '-FullAuto' }
     if ($DryRun) { $childArgs += '-DryRun' }
     if ($Force) { $childArgs += '-Force' }
@@ -250,7 +264,7 @@ $sentinelRetryPrompt = @(
 
 # 每个泳道一个 Job：泳道内严格串行，FAIL/NO-SENTINEL 停本泳道
 $laneBlock = {
-    param($laneName, $items, $logDir, $header, $fullAuto, $retryPrompt, $retryTimeoutSec, $claudeExe, $repoRootForJob)
+    param($laneName, $items, $logDir, $header, $fullAuto, $retryPrompt, $retryTimeoutSec, $claudeExe, $repoRootForJob, $contextPollSec)
     $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
     $global:OutputEncoding = $Utf8NoBom
     $results = @()
@@ -262,12 +276,31 @@ $laneBlock = {
     # 两个版本都过一遍这一步：PS7 下 `Set-Location` 到与 `-WorkingDirectory` 相同的目录、纯冗余不冲突。
     if ($repoRootForJob) { Set-Location $repoRootForJob }
     $repoRootInJob = (Get-Location).Path
+    if (-not $contextPollSec -or $contextPollSec -le 0) { $contextPollSec = 15 }
+
+    # 队列 #627 A 面：给 150k／250k 上下文闸装消费者——`hooks-posttooluse-context-meter.ps1`
+    # 每次工具调用后把当前会话上下文估算值写进 `reports/context-meter/<session_id>.json`
+    # （字段 `lastContext`，该 json 恒落在主仓根，与 cwd 是否已 Push-Location 进 worktree 无关，
+    # 因为钩子自己用 `git rev-parse --git-common-dir` 定位、不认 cwd）。此前只有钩子自己往
+    # transcript 里提醒 agent「该收尾了」，agent 不理会就没有下文——本函数是那句提醒的消费者：
+    # 只读、任何异常 fail-open 返回 0（读不到不拦、不报错，交由主流程继续走原有 code/哨兵判法）。
+    function Get-ContextMeterPeek([string]$RepoRootPath, [string]$SessionId) {
+        if (-not $SessionId) { return 0L }
+        $p = Join-Path $RepoRootPath ('reports\context-meter\' + $SessionId + '.json')
+        if (-not (Test-Path -LiteralPath $p)) { return 0L }
+        try {
+            $o = (Get-Content -LiteralPath $p -Raw -Encoding UTF8) | ConvertFrom-Json
+            if ($o.PSObject.Properties.Name -contains 'lastContext') { return [long]$o.lastContext }
+        } catch {}
+        return 0L
+    }
+
     foreach ($op in $items) {
         $log = Join-Path $logDir ($laneName + '-' + $op.Id + '.log')
         # 队列 #581 合入前补缺 ⑴：opener【设置】行模型字段非法值 ⇒ 判 FAIL、不起 claude（不消耗一个 session）。
         if ($op.ModelInvalid) {
             ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | 模型字段非法值 ' + $op.ModelRaw + '（须 sonnet｜opus 之一，见 opener【设置】行「模型：」）⇒ 判 FAIL，未起 claude') | Out-File -FilePath $log -Encoding utf8
-            $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(model)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.ModelRaw; Log = $log }
+            $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(model)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.ModelRaw; Log = $log; ContextPeak = 0 }
             break
         }
 
@@ -283,7 +316,7 @@ $laneBlock = {
             $wtMatch = [regex]::Match($op.Text, 'worktree[：:]\s*☑\s*[（(]\s*([^，,）)]+)')
             if (-not $wtMatch.Success -or [string]::IsNullOrWhiteSpace($wtMatch.Groups[1].Value)) {
                 ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | 【设置】声明 worktree（☑）但解析不出名字 ⇒ 判 FAIL，未起 claude') | Out-File -FilePath $log -Encoding utf8
-                $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(worktree-name)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log }
+                $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(worktree-name)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log; ContextPeak = 0 }
                 break
             }
             $wtName = $wtMatch.Groups[1].Value.Trim()
@@ -296,7 +329,7 @@ $laneBlock = {
             }
             if (-not $branchName) {
                 ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | worktree 已声明但「分支：」字段解不出反引号包裹的 claude/ 分支名 ⇒ 判 FAIL，未起 claude') | Out-File -FilePath $log -Encoding utf8
-                $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(branch-name)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log }
+                $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(branch-name)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log; ContextPeak = 0 }
                 break
             }
             if (-not (Test-Path -LiteralPath $laneWorktreePath)) {
@@ -309,7 +342,7 @@ $laneBlock = {
                 }
                 if ($LASTEXITCODE -ne 0) {
                     ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | git worktree add 失败（分支=' + $branchName + '，path=' + $laneWorktreePath + '）⇒ 判 FAIL，未起 claude' + "`r`n" + ($wtAddOut -join "`r`n")) | Out-File -FilePath $log -Encoding utf8
-                    $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(worktree-build)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log }
+                    $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(worktree-build)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log; ContextPeak = 0 }
                     break
                 }
                 $wtNote = ('[lane:' + $laneName + '] ' + $op.Id + ' worktree 已建：' + $laneWorktreePath + '（分支 ' + $branchName + $(if ($branchExists) { '，既有分支检出' } else { '，新建自 master' }) + '）')
@@ -350,8 +383,42 @@ $laneBlock = {
                 Remove-Item Env:\ZHUOPIN_LANE_WORKTREE -ErrorAction SilentlyContinue
                 Remove-Item Env:\ZHUOPIN_MAIN_REPO -ErrorAction SilentlyContinue
             }
-            Get-Content -Raw -Encoding UTF8 $tmp | & claude @claudeArgs 2>&1 | Out-File -FilePath $log -Append -Encoding utf8
-            $code = $LASTEXITCODE
+            # 队列 #627 A 面：主调用由阻塞管道改 Start-Process ＋ 轮询——管道版拿不到子进程句柄，
+            # 装不上 150k／250k 上下文闸的消费者（钩子此前只会把提醒写进 transcript，agent 不理会
+            # 就没有下文）。轮询周期由 `-ContextPollSec` 定（默认 15s），只读 `reports/context-meter/<sid>.json`，是那条软路径失灵
+            # 时的硬 backstop：≥250k 立即 taskkill 整树判 PARTIAL；<250k 只记峰值，不改变原有流程。
+            $mainOutFile = Join-Path $logDir ($laneName + '-' + $op.Id + '.stdout.log')
+            $mainErrFile = Join-Path $logDir ($laneName + '-' + $op.Id + '.stderr.log')
+            $peakContext = 0L
+            $contextKilled = $false
+            $proc = Start-Process -FilePath $claudeExe -ArgumentList $claudeArgs -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
+                -RedirectStandardInput $tmp -RedirectStandardOutput $mainOutFile -RedirectStandardError $mainErrFile
+            # `WaitForExit(ms)` 而非 `HasExited` + `Start-Sleep`：前者进程已退出时立即返回 true，
+            # 不会白等一整个轮询周期——常态（几秒内跑完的 opener）不因本闸多等一秒；只有进程
+            # 真挂着的那种场景才会等满 `$contextPollSec` 再回来查一次上下文。
+            while ($true) {
+                $ctxNow = Get-ContextMeterPeek -RepoRootPath $repoRootInJob -SessionId $sid
+                if ($ctxNow -gt $peakContext) { $peakContext = $ctxNow }
+                if ($peakContext -ge 250000) {
+                    & taskkill /PID $proc.Id /T /F 2>&1 | Out-Null
+                    $contextKilled = $true
+                    $proc.WaitForExit(10000) | Out-Null
+                    break
+                }
+                if ($proc.WaitForExit([int]($contextPollSec * 1000))) { break }
+            }
+            # 收尾再探一次：正常退出时最后一段窗口可能还没被轮询逮到。
+            $ctxFinal = Get-ContextMeterPeek -RepoRootPath $repoRootInJob -SessionId $sid
+            if ($ctxFinal -gt $peakContext) { $peakContext = $ctxFinal }
+            $code = if ($contextKilled) { -1 } else { $proc.ExitCode }
+            @('[stdout]') + $(if (Test-Path -LiteralPath $mainOutFile) { Get-Content -LiteralPath $mainOutFile -Encoding UTF8 } else { @() }) `
+                + @('[stderr]') + $(if (Test-Path -LiteralPath $mainErrFile) { Get-Content -LiteralPath $mainErrFile -Encoding UTF8 } else { @() }) `
+                | Out-File -FilePath $log -Append -Encoding utf8
+            if ($contextKilled) {
+                $kDisplay = [math]::Round($peakContext / 1000)
+                ('OPENER_PARTIAL: 上下文转场（≈' + $kDisplay + 'k）') | Out-File -FilePath $log -Append -Encoding utf8
+                ('[lane:' + $laneName + '] ' + $op.Id + ' 上下文越 250k 硬线（≈' + $kDisplay + 'k）⇒ 主泳道 taskkill 整树、判 PARTIAL，不补问') | Out-File -FilePath $log -Append -Encoding utf8
+            }
             $t1 = Get-Date
             # 哨兵扫全文（原为 -Tail 40）：2026-08-25 实测 A21/A25 的哨兵落在第 2 行，
             # 只因日志短于 40 行才侥幸命中；日志一长即误判 NO-SENTINEL 并误停整条泳道。
@@ -361,6 +428,9 @@ $laneBlock = {
             $status = if ($code -eq 0 -and $done) { 'OK' } elseif ($code -eq 0 -and $partial) { 'PARTIAL' } elseif ($code -eq 0) { 'NO-SENTINEL' } else { 'FAIL(' + $code + ')' }
             # Sentinel 列：首轮＝agent 自觉输出；补问＝靠下面 --resume 追问才拿到；无＝两轮都没有；—＝FAIL（进程层失败，不谈哨兵）。
             $sentinelBy = if ($done -or $partial) { '首轮' } elseif ($code -eq 0) { '无' } else { '—' }
+            # 上下文硬线终止不算真失败——是主泳道代 agent 完成了它没自觉做的收尾，覆盖掉上面按
+            # 退出码算出的 FAIL，且天然跳过下面的 NO-SENTINEL 补问（不该为这个再问一轮）。
+            if ($contextKilled) { $status = 'PARTIAL'; $sentinelBy = '硬线终止' }
             # >>> #550 补问 begin（变异检验时整段注释掉，NO-SENTINEL 须回来）
             if ($status -eq 'NO-SENTINEL') {
                 $retryPromptFile = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry-prompt.txt')
@@ -391,6 +461,9 @@ $laneBlock = {
                 $rDone = [bool]($retryText | Where-Object { $_ -match '^OPENER_DONE\s*$' })
                 $rPartial = [bool]($retryText | Where-Object { $_ -match '^OPENER_PARTIAL' })
                 if ($rDone) { $status = 'OK'; $sentinelBy = '补问' } elseif ($rPartial) { $status = 'PARTIAL'; $sentinelBy = '补问' }
+                # 补问也会攒上下文——同一 session、同一 sid，收尾前再探一次纳入峰值，不额外起轮询。
+                $ctxAfterRetry = Get-ContextMeterPeek -RepoRootPath $repoRootInJob -SessionId $sid
+                if ($ctxAfterRetry -gt $peakContext) { $peakContext = $ctxAfterRetry }
                 ('[lane:' + $laneName + '] ' + $op.Id + ' 补问结果：' + $retryOutcome + ' | sentinel=' + $sentinelBy + ' | status=' + $status + ' | ' + [math]::Round(($tr1 - $tr0).TotalSeconds, 1) + 's | 补问输出见 ' + $retryLog) | Out-File -FilePath $log -Append -Encoding utf8
                 $t1 = Get-Date
             }
@@ -512,7 +585,7 @@ $laneBlock = {
             Write-Warning $alertMsg
             $status = 'FAIL(main-leak)'
         }
-        $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Sentinel = $sentinelBy; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Session = $sid; Model = $op.Model; Log = $log }
+        $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Sentinel = $sentinelBy; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Session = $sid; Model = $op.Model; Log = $log; ContextPeak = $peakContext }
         if ($status -like 'FAIL*' -or $status -eq 'NO-SENTINEL') { break }
     }
     $results
@@ -538,9 +611,9 @@ while ($queue.Count -gt 0 -or ($jobs.Values | Where-Object { $_.State -eq 'Runni
         # `NamedParameterNotFound`。PS7 保留原样；PS 5.1 改把 `$RepoRoot` 当普通参数传给
         # `$laneBlock`，block 首行 `Set-Location` 兜住同一「显式定 cwd」语义。
         if ($PSVersionTable.PSVersion.Major -ge 7) {
-            $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot
+            $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot, $ContextPollSec
         } else {
-            $jobs[$l[0]] = Start-Job -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot
+            $jobs[$l[0]] = Start-Job -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot, $ContextPollSec
         }
         $started++
     }
@@ -553,20 +626,25 @@ foreach ($k in $jobs.Keys) { $all += Receive-Job -Job $jobs[$k]; Remove-Job -Job
 # 队列 #581 合入前补缺 ⑵：Model 列同样带（跳过的也报其本来会用的模型，'—' 表示解析期已判非法）。
 foreach ($so in $skippedOps) {
     $skipModel = if ($so.ModelInvalid) { '—' } else { $so.Model }
-    $all += [pscustomobject]@{ Lane = $so.Lane; Id = $so.Id; Status = 'SKIPPED'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $skipModel; Log = $so.SkipReason }
+    $all += [pscustomobject]@{ Lane = $so.Lane; Id = $so.Id; Status = 'SKIPPED'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $skipModel; Log = $so.SkipReason; ContextPeak = 0 }
 }
 $all = $all | Sort-Object Lane, { [int]($_.Id.Substring(1)) }
 Write-Host ''
 Write-Host '━━━━━━ 泳道批处理汇总 ━━━━━━'
-$all | Format-Table Lane, Id, Status, Model, Sentinel, Minutes, Session -AutoSize | Out-String -Width 300 | Write-Host
+$contextPeakCol = @{ Label = '上下文峰值'; Expression = { $_.ContextPeak } }
+$all | Format-Table Lane, Id, Status, Model, Sentinel, Minutes, Session, $contextPeakCol -AutoSize | Out-String -Width 300 | Write-Host
 $failed = @($all | Where-Object { $_.Status -like 'FAIL*' -or $_.Status -eq 'NO-SENTINEL' })
 $exitCode = if ($failed.Count -gt 0) { 1 } else { 0 }
-$summaryText = ($all | Format-Table Lane, Id, Status, Model, Sentinel, Minutes, Session -AutoSize | Out-String -Width 300)
+$summaryText = ($all | Format-Table Lane, Id, Status, Model, Sentinel, Minutes, Session, $contextPeakCol -AutoSize | Out-String -Width 300)
 # v2.2 `#550`：哨兵来源三个计数分开落盘——「活干完了却 NO-SENTINEL」应归零，而 RETRY 那个数才是真实遵守率，不得混进 OK 里看不见。
 $sentinelFirst = @($all | Where-Object { $_.Sentinel -eq '首轮' }).Count
 $sentinelRetry = @($all | Where-Object { $_.Sentinel -eq '补问' }).Count
 $sentinelNone = @($all | Where-Object { $_.Sentinel -eq '无' }).Count
 $summaryText += "`r`nSENTINEL_FIRST=" + $sentinelFirst + "`r`nSENTINEL_RETRY=" + $sentinelRetry + "`r`nSENTINEL_NONE=" + $sentinelNone
+# 队列 #627 A 面：150k 软线只记峰值不终止——数的是「越过 150k 的泳道数」，同一泳道内多条 opener
+# 只要有一条越线，该泳道计一次，不重复计数。
+$lanesOver150k = @($all | Where-Object { $_.ContextPeak -ge 150000 } | Select-Object -ExpandProperty Lane -Unique).Count
+$summaryText += "`r`n本批越 150k 的泳道 " + $lanesOver150k + ' 条'
 # v2.3：跳过必留痕——summary.txt 逐条写 [skipped] <编号> | <行号 理由@载体:行>，人可直接复核判定。
 $skippedRows = @($all | Where-Object { $_.Status -eq 'SKIPPED' })
 $summaryText += "`r`nSKIPPED=" + $skippedRows.Count
@@ -579,7 +657,7 @@ $summaryText += "`r`nEXIT=" + $exitCode + "`r`n"
 # 队列 #567 实测顺手补：`ConvertTo-Json -AsArray` 是 PS7 专有参数，PS 5.1 下同样 `NamedParameterNotFound`
 # ——`-AsArray` 本是为了在只有一行时也保证输出是 JSON 数组（无它，1 行会被解包成裸对象）。改手工拼数组
 # 括号，两个版本都不依赖该参数、行为一致。
-$summaryRows = @($all | Select-Object Lane, Id, Status, Model, Sentinel, Minutes, Session, Log)
+$summaryRows = @($all | Select-Object Lane, Id, Status, Model, Sentinel, Minutes, Session, Log, ContextPeak)
 $summaryJson = if ($summaryRows.Count -eq 0) { '[]' } else {
     '[' + (($summaryRows | ForEach-Object { $_ | ConvertTo-Json -Compress }) -join ',') + ']'
 }
