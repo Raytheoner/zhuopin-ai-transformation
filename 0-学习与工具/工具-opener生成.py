@@ -29,6 +29,15 @@
 两种形态皆计入。命中即拒绝，报错信息里直接给出当日下一个未用的空号，不需要
 调用方自己再算一遍。
 
+🔴 **自占放行判据（队列 §一 `#621`，2026-09-20）**：查重扫的是「已落进仓库某份
+`.md`」，分不清占号者是别人还是本件自己——若出件顺序反了（派单件先落档、生成器
+随后才跑），命中的会是本件自己那份派单件，被误判撞号（`OP-0920-A` 白烧一个号
+即实证）。`_check_op_id_not_reused` 因此改用 `_scan_used_suffixes_with_sources`
+留住命中源，命中源**仅**为本件 `--input-pointer` 时放行（`_is_self_occupancy`），
+命中源里只要多一个别的文件仍判真撞号。**正确顺序仍是先出 opener、再落派单件**
+（见 `opener骨架.md`「取号」节第 5 条）——本判据是顺序反了时的补救，不是鼓励
+反过来做。
+
 ## 取号即声明——占位台账（队列 §一 `#549` ⑶／`#531` 子项；openspec `opener-id-claim-semantics`，2026-09-10）
 
 P7① 查重只看得见**已落档**的号（`_scan_used_suffixes` 的射程自陈见其文档字符串）。
@@ -354,23 +363,53 @@ def _scan_used_suffixes(mmdd: str) -> set[str]:
     🔴 读 `REPO_ROOT` 走模块全局、不做默认参数——测试靠 monkeypatch
     `模块.REPO_ROOT` 指向临时夹具目录（同 `test_工具-泳道看护状态机.py`
     既定手法），默认参数会在定义时就把旧值绑死，测试改不动它。
+
+    只要「用没用过」，不要「谁用的」⇒ 委托 `_scan_used_suffixes_with_sources`
+    （队列 §一 `#621` 新增，供自占放行判据用），本函数取其 key 集合，不重扫一遍。
     """
-    used: set[str] = set()
+    return set(_scan_used_suffixes_with_sources(mmdd))
+
+
+def _scan_used_suffixes_with_sources(mmdd: str) -> dict[str, set[Path]]:
+    """同 `_scan_used_suffixes`，多记一件事：每个后缀是被哪些文件（仓库根相对路径）
+    命中的——供 `_is_self_occupancy`（队列 §一 `#621`）核对「占号者是不是本件自己」。
+
+    🔴 **成因**：出件顺序反了——派单件先落了档、生成器才轮到跑——扫的时候看到的
+    「已占用」其实就是本件自己那份还没生成完的 opener 所对应的派单件。原判据
+    只留得住一个布尔值（用没用过），分不清「别人占的」和「自己占的」，`OP-0920-A`
+    因此被误判撞号、白烧一个号。留下命中源，才有得分辨。
+    """
+    hits: dict[str, set[Path]] = {}
     search_root = REPO_ROOT / "1-转型规划"
     if not search_root.is_dir():
-        return used
+        return hits
     for path in search_root.rglob("*.md"):
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
+        rel = path.relative_to(REPO_ROOT)
         for m in USED_ID_FULL_RE.finditer(text):
             if m.group(1) == mmdd:
-                used.add(m.group(2).upper())
+                hits.setdefault(m.group(2).upper(), set()).add(rel)
         for m in USED_ID_SHORT_RE.finditer(text):
             if m.group(1) == mmdd:
-                used.add(m.group(2).upper())
-    return used
+                hits.setdefault(m.group(2).upper(), set()).add(rel)
+    return hits
+
+
+def _is_self_occupancy(occupying: set[Path], spec: "OpenerSpec") -> bool:
+    """自占放行判据（队列 §一 `#621`）：命中该后缀的文件若**只**是本件自己的
+    `--input-pointer`（约定即本件派单件的仓库根相对路径），说明出件顺序反了——
+    派单件先落档、生成器随后才跑——号仍是本件自己的号，不该判撞号。
+
+    🔴 **收紧到「仅命中 input_pointer 自身」**：命中源里哪怕多一个别的文件，
+    也判真撞号、不放行——这不是放松查重，只是把「谁占的」纳入判断，不再是
+    见号就拒。"""
+    if not occupying:
+        return False
+    self_rel = spec.input_pointer.replace("\\", "/")
+    return {p.as_posix() for p in occupying} == {self_rel}
 
 
 def _next_free_suffix(used: set[str]) -> str:
@@ -388,10 +427,17 @@ def _next_free_suffix(used: set[str]) -> str:
 
 
 def _check_op_id_not_reused(spec: "OpenerSpec") -> set[str]:
-    """已落档撞号即拒；返回当日已落档后缀集合（供 `_claim_op_id` 复用，不扫第二遍）。"""
+    """已落档撞号即拒；返回当日已落档后缀集合（供 `_claim_op_id` 复用，不扫第二遍）。
+
+    🔴 **自占放行判据（队列 §一 `#621`）**：命中的后缀若只来自本件自己的
+    `--input-pointer`（出件顺序反了——派单件先落档、生成器随后才跑——号仍是
+    自己的号），放行；命中源里只要多一个别的文件，照旧判真撞号。
+    """
     mmdd, suffix = _mmdd_and_suffix(spec.op_id)
-    used = _scan_used_suffixes(mmdd)
-    if suffix.upper() in used:
+    suffix_upper = suffix.upper()
+    sources = _scan_used_suffixes_with_sources(mmdd)
+    used = set(sources)
+    if suffix_upper in used and not _is_self_occupancy(sources[suffix_upper], spec):
         # 下一个空号同时避开未过期的占位（只读，不上锁）——推荐一个已被别人声明的号等于
         # 让调用方再撞一次。
         next_free = _next_free_suffix(used | _live_claimed_suffixes(mmdd))

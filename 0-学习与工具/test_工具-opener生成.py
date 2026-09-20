@@ -333,6 +333,52 @@ class UsedSuffixDedupTests(unittest.TestCase):
         self.assertEqual(M._next_free_suffix(used), "D")
 
 
+class SelfOccupancyReleaseTests(unittest.TestCase):
+    """自占放行判据（队列 §一 `#621`，2026-09-20）——出件顺序反了：派单件先落档、
+    生成器随后才跑，命中的号其实是"占号者就是本件自己"，不该判撞号。两向覆盖：
+    ⑴ 命中源仅为本件 `--input-pointer` ⇒ 放行；⑵ 命中源含别的文件（哪怕同时也
+    命中 input_pointer）⇒ 仍判真撞号，判据不放松查重本身。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        (self.root / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
+        self._orig_repo_root = M.REPO_ROOT
+        M.REPO_ROOT = self.root
+        self._orig_claims = M.CLAIMS_FILE
+        M.CLAIMS_FILE = self.root / "op-id-claims.jsonl"
+
+    def tearDown(self):
+        M.REPO_ROOT = self._orig_repo_root
+        M.CLAIMS_FILE = self._orig_claims
+        self._tmp.cleanup()
+
+    def _write(self, rel: str, content: str) -> None:
+        (self.root / rel).write_text(content, encoding="utf-8")
+
+    def test_hit_solely_in_own_input_pointer_is_allowed(self):
+        # 派单件先落了档（内含本件自己的编号），生成器才跑——命中源只有它自己。
+        rel = "1-转型规划/0-全景路线图/派单件-示例-2026-09-20-A.md"
+        self._write(rel, "本件编号 OP-0920-A（先落档、生成器随后才跑）。")
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["op_id"] = "OP-0920-A"
+        kwargs["input_pointer"] = rel
+        M.generate_opener(**kwargs)  # 不应抛错——命中源只是自己的派单件
+
+    def test_hit_in_other_file_still_rejected_even_with_self_hit(self):
+        # 自己的派单件命中之外，另一份不相干的件也命中同一个号——真撞号，
+        # 自占放行判据不得把它一并放过。
+        rel = "1-转型规划/0-全景路线图/派单件-示例-2026-09-20-A.md"
+        self._write(rel, "本件编号 OP-0920-A。")
+        self._write("1-转型规划/0-全景路线图/看护件.md", "别处也提到 OP-0920-A。")
+        kwargs = dict(VALID_CC_KWARGS)
+        kwargs["op_id"] = "OP-0920-A"
+        kwargs["input_pointer"] = rel
+        with self.assertRaises(M.OpenerGenError) as ctx:
+            M.generate_opener(**kwargs)
+        self.assertIn("撞号", str(ctx.exception))
+
+
 class VariantSubtaskLaneTests(unittest.TestCase):
     """P4（同方案 P4）—— `variant="subtask_lane"` 不放 set_session_title 行，
     且无条件追加并行上限/错峰、push 不 ff 两条默认口径。"""
