@@ -223,6 +223,104 @@ class Detach后台起(_Base):
         self.assertLess(elapsed, 60, "launcher 应立即返回，不该等子进程")
 
 
+class Detach子进程Shell选取_567(_Base):
+    """队列 `#567` ①：`-Detach` 子进程 shell 此前继承调用方自己的
+    `(Get-Process -Id $PID).Path`——调用方若是 PS 5.1 就把 5.1 传给子进程，子进程一进
+    `Start-Job -WorkingDirectory`（PS7 专有参数）就 `NamedParameterNotFound`。改法＝显式
+    优先 `pwsh`、回退 `powershell.exe`，与「谁起的本脚本」无关。"""
+
+    def _wait_launcher(self, timeout: int = 30) -> dict:
+        deadline = time.monotonic() + timeout
+        launcher_file = self.log_dir / "launcher.json"
+        while not launcher_file.is_file() and time.monotonic() < deadline:
+            time.sleep(0.2)
+        self.assertTrue(launcher_file.is_file(), "launcher.json 未生成")
+        return json.loads(launcher_file.read_text(encoding="utf-8-sig"))
+
+    def test_默认优先pwsh(self):
+        r = _run(["-Plan", str(self.plan), "-Detach", "-DryRun", "-LogDir", str(self.log_dir)],
+                 self.root, self.env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        launcher = self._wait_launcher()
+        self.assertEqual(Path(launcher["shell"]).name.lower(), "pwsh.exe", launcher["shell"])
+
+    def test_pwsh不在PATH时回退powershell_exe_而非继承调用方(self):
+        """模拟脚本自身找不到 `pwsh`（PS 5.1 常见形态：本机没装 pwsh，或 PATH 里没有）——
+        子进程 shell 须落到显式的 `powershell.exe`，不得报出别的（例如继续报 `pwsh`，
+        说明回退没生效；或报一个既不是 pwsh 也不是 powershell.exe 的路径，说明仍在读
+        调用方自己的进程路径）。
+
+        🔴 用 `pwsh` 当外层调用方去摘自己的 PATH 目录不可靠——实测 pwsh 启动时会把
+        `$PSHOME` 自动写回子进程的 `$env:PATH`（自举，与传入的 env 无关），摘了也白摘。
+        改用真正的 Windows PowerShell 5.1（`powershell.exe`，系统自带、不认识 pwsh、
+        不会做这种自举）当外层调用方，PATH 里摘掉所有含 `pwsh` 字样的目录即可稳定复现
+        「机器上找不到 pwsh」这个 PS 5.1 环境的常见形态。"""
+        env2 = dict(self.env)
+        parts = [p for p in env2.get("PATH", "").split(os.pathsep) if p and "pwsh" not in p.lower()]
+        env2["PATH"] = os.pathsep.join(parts)
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-File", str(SCRIPT), "-Plan", str(self.plan), "-Detach", "-DryRun",
+             "-LogDir", str(self.log_dir)],
+            cwd=self.root, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env=env2, timeout=180,
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        launcher = self._wait_launcher()
+        self.assertEqual(Path(launcher["shell"]).name.lower(), "powershell.exe", launcher["shell"])
+        # 回退分支自己也不能崩：子进程仍要正常起、落 exit.txt。
+        deadline = time.monotonic() + 90
+        exit_file = self.log_dir / "exit.txt"
+        while not exit_file.is_file() and time.monotonic() < deadline:
+            time.sleep(0.5)
+        self.assertTrue(exit_file.is_file(), "回退到 powershell.exe 后子进程仍未落 exit.txt")
+        self.assertEqual(exit_file.read_text(encoding="utf-8").strip(), "0")
+
+
+class PS51兼容_StartJob回退_567(_Base):
+    """队列 `#567` ②：直接用 Windows PowerShell 5.1（`powershell.exe`，系统自带、与是否装了
+    pwsh 无关）起本脚本主体（非 `-Detach`，走真正会 `Start-Job` 的那条路径）——修前必现
+    `Start-Job : A parameter cannot be found that matches parameter name 'WorkingDirectory'`
+    （`NamedParameterNotFound`），修后须能在真 5.1 下把整条泳道正常跑完、落全套哨兵文件。"""
+
+    def test_powershell_exe_5_1_直接起主体不崩_全套哨兵落盘(self):
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-File", str(SCRIPT), "-Plan", str(self.plan), "-Yes", "-StaggerSec", "0",
+             "-LogDir", str(self.log_dir)],
+            cwd=self.root, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env=self.env, timeout=300,
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("NamedParameterNotFound", r.stdout + r.stderr)
+        self.assertNotIn("WorkingDirectory", r.stderr)
+        exit_file = self.log_dir / "exit.txt"
+        self.assertTrue(exit_file.is_file(), "PS 5.1 下崩溃不落 exit.txt——本项要消灭的形态")
+        self.assertEqual(exit_file.read_text(encoding="utf-8").strip(), "0")
+        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8-sig")
+        self.assertRegex(summary, r"EXIT=0\s*$")
+        log = self.log_dir / "demo-lane-A1.log"
+        self.assertTrue(log.is_file(), sorted(p.name for p in self.log_dir.iterdir()))
+        self.assertIn("OPENER_DONE", log.read_text(encoding="utf-8-sig"))
+
+    def test_trap兜底_未捕获异常仍落exit_txt(self):
+        """`#567` ③：原始崩溃（`Start-Job` 参数绑定失败）发生在脚本主体执行期、早于任何
+        `Exit-WithCode` 调用——此前 `exit.txt` 因此根本不落盘。这里不复用已被本次修好的
+        `Start-Job` 路径，改用另一个同样「主体执行期终止性异常」的独立触发点验证 `trap`
+        是通用兜底、不是专门缝在 `Start-Job` 那一条路径上的补丁：`-Plan` 指向一个存在但是
+        目录（不是文件）的路径——`Test-Path`／`Resolve-Path` 对目录都不报错，直到后面
+        `[System.IO.File]::ReadAllLines($Plan, ...)` 才会抛 `UnauthorizedAccessException`。"""
+        plan_dir = self.root / "plan_is_a_dir.md"
+        plan_dir.mkdir()
+        r = _run(["-Plan", str(plan_dir), "-DryRun", "-LogDir", str(self.log_dir)], self.root, self.env)
+        self.assertEqual(r.returncode, 20, r.stdout + r.stderr)
+        exit_file = self.log_dir / "exit.txt"
+        self.assertTrue(exit_file.is_file(), "trap 未兜住——exit.txt 仍未落盘")
+        self.assertEqual(exit_file.read_text(encoding="utf-8").strip(), "20")
+        crash_log = self.log_dir / "launcher-crash.log"
+        self.assertTrue(crash_log.is_file())
+
+
 class NoSentinel补问(_Base):
     """v2.2 `#550`：判出 NO-SENTINEL 先 `--resume` 补问一次，仍无才停本泳道。"""
 

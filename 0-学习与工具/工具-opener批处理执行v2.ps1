@@ -40,6 +40,18 @@
 #   worktree（及其 `reports/`）还在——说明子会话崩溃/超时/漏做，此前的产出会随 opener骨架.md
 #   ⑶a 之前的做法一起随 worktree 被删而无声丢失——就把残留 `reports/` 整棵拷回主工作区
 #   `reports/_from-worktree/<泳道>/`，日志留痕（非致命：拷贝失败只记警告，不改变该条判成败）。
+#
+# v2.5（队列 §一 `#567`，2026-09-20 `OP-0920-D`）：`-Detach` 起跑路径在 PS 5.1 下必炸——
+#   ⑴ 子进程 shell 此前继承调用方自己的 `(Get-Process -Id $PID).Path`，调用方若是 5.1 就把
+#      5.1 传下去；改为显式优先 `pwsh`、回退 `powershell.exe`，与调用方用什么 shell 起本脚本无关。
+#   ⑵ `Start-Job -WorkingDirectory` 是 PS7 专有参数，PS 5.1 直接崩 `NamedParameterNotFound`
+#      （既有 `-Detach` 那一支、也有本脚本被直接用 PS 5.1 起时的泳道 `Start-Job` 那一支）；
+#      按 `$PSVersionTable.PSVersion.Major` 分支，5.1 改把 `$RepoRoot` 当参数传给 `$laneBlock`，
+#      block 首行 `Set-Location` 兜住原参数要解决的「显式定 cwd」语义（否则 `--resume`／补问
+#      接管会「No conversation found」）。
+#   ⑶ 崩溃发生在参数绑定期，早于任何 `Exit-WithCode` 调用 ⇒ `exit.txt` 此前根本不落盘，调用方
+#      只能读 stderr 才知道失败。新增脚本级 `trap`：兜住任何未被捕获的终止性异常，落一个专属
+#      退出码（20）并写 `exit.txt`／`launcher-crash.log` 后退出，不改变既有正常退出点的行为。
 param(
     [string]$Plan = '',
     [string[]]$Only = @(),
@@ -77,6 +89,22 @@ function Exit-WithCode([int]$code) {
     exit $code
 }
 
+# 队列 #567 并入项 ⑵：`Start-Job -WorkingDirectory` 在 PS 5.1 下崩（`NamedParameterNotFound`）——
+# 崩的是参数绑定期的终止性异常，早于任何 `Exit-WithCode` 调用，此前 `exit.txt` 因此根本没生成，
+# 调用方只能读 stderr 才知道失败。`trap` 兜住脚本主体里任何未被捕获的终止性异常，落盘一个专属
+# 退出码（20）后立即退出——不改变既有的正常 `Exit-WithCode` 调用点，只补「崩溃也落哨兵」这一条路径。
+trap {
+    $crashMsg = '✗ 未捕获异常：' + $_.Exception.Message + "`r`n" + $_.ScriptStackTrace
+    Write-Host $crashMsg -ForegroundColor Red
+    if ($LogDir) {
+        try {
+            New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+            $crashMsg | Out-File -FilePath (Join-Path $LogDir 'launcher-crash.log') -Encoding utf8 -Append
+        } catch {}
+    }
+    Exit-WithCode 20
+}
+
 $claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
 if (-not $claudeCmd) { Write-Host '✗ 找不到 claude CLI。' -ForegroundColor Red; Exit-WithCode 10 }
 if ([string]::IsNullOrWhiteSpace($Plan)) { Write-Host '✗ 请用 -Plan 指定波次计划文件。' -ForegroundColor Red; Exit-WithCode 11 }
@@ -97,7 +125,13 @@ if ($Detach) {
     if ($Force) { $childArgs += '-Force' }
     if ($Model) { $childArgs += @('-Model', $Model) }
     if ($Only.Count -gt 0) { $childArgs += @('-Only', ($Only -join ',')) }
-    $shell = (Get-Process -Id $PID).Path
+    # 队列 #567 ①：子进程 shell 此前继承「谁调用了本脚本」（`(Get-Process -Id $PID).Path`）——
+    # 若调用方本身在 PS 5.1（`powershell.exe`）下起本脚本，子进程也落进 5.1，撞见下面
+    # `Start-Job -WorkingDirectory`（PS7 专有参数）当场 `NamedParameterNotFound`。改为显式
+    # 优先 `pwsh`、回退 `powershell.exe`（系统自带、Start-Process 靠 PATH 即可解析），
+    # 不再看调用方自己是用什么 shell 起的。
+    $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+    $shell = if ($pwshCmd) { $pwshCmd.Source } else { 'powershell.exe' }
     $proc = Start-Process -FilePath $shell -ArgumentList $childArgs -WorkingDirectory $RepoRoot -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $LogDir 'launcher-stdout.log') -RedirectStandardError (Join-Path $LogDir 'launcher-stderr.log')
     $launcher = [ordered]@{ pid = $proc.Id; shell = $shell; plan = $Plan; log_dir = $LogDir
@@ -216,13 +250,17 @@ $sentinelRetryPrompt = @(
 
 # 每个泳道一个 Job：泳道内严格串行，FAIL/NO-SENTINEL 停本泳道
 $laneBlock = {
-    param($laneName, $items, $logDir, $header, $fullAuto, $retryPrompt, $retryTimeoutSec, $claudeExe)
+    param($laneName, $items, $logDir, $header, $fullAuto, $retryPrompt, $retryTimeoutSec, $claudeExe, $repoRootForJob)
     $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
     $global:OutputEncoding = $Utf8NoBom
     $results = @()
     # Start-Job 起的是独立 runspace，外层脚本作用域的 `$RepoRoot` 变量在此不可见（同 ⑶b 段
-    # 既有注释「本脚本…走的是脚本物理落盘位置的仓库根」同一坑）——`-WorkingDirectory $RepoRoot`
-    # 已把 job 的 `Get-Location` 定到主仓，故在任何 `Push-Location` 之前先捕一份局部变量。
+    # 既有注释「本脚本…走的是脚本物理落盘位置的仓库根」同一坑）。PS7 下调用方已传 `-WorkingDirectory
+    # $RepoRoot`，`Get-Location` 本就落在主仓；PS 5.1 没有该参数（队列 #567 并入项 ⑵：撞见即
+    # `NamedParameterNotFound`），改由调用方把 `$RepoRoot` 显式当参数传进来、这里 `Set-Location`
+    # 兜住同一语义（`#549` 要解决的「不显式定 cwd，`--resume`／补问接管会 No conversation found」）。
+    # 两个版本都过一遍这一步：PS7 下 `Set-Location` 到与 `-WorkingDirectory` 相同的目录、纯冗余不冲突。
+    if ($repoRootForJob) { Set-Location $repoRootForJob }
     $repoRootInJob = (Get-Location).Path
     foreach ($op in $items) {
         $log = Join-Path $logDir ($laneName + '-' + $op.Id + '.log')
@@ -496,7 +534,14 @@ while ($queue.Count -gt 0 -or ($jobs.Values | Where-Object { $_.State -eq 'Runni
         # `C:\Users\Paul Shao\OneDrive\文档`（Cowork 调用方的 cwd），而 claude 按 cwd 归档 session、`--resume` 也按 cwd 找
         # ⇒ 不显式给 -WorkingDirectory，补问与人工接管都会「No conversation found」。
         # 同批实证：`[bool]$FullAuto` 在参数位是字符串 "[bool]False"（非空 ⇒ 恒真）⇒ 此前 -FullAuto 给不给都 skip-permissions；加括号才是布尔。
-        $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source
+        # 队列 #567 并入项 ⑵：`Start-Job -WorkingDirectory` 是 PS7 专有参数，PS 5.1 下当场
+        # `NamedParameterNotFound`。PS7 保留原样；PS 5.1 改把 `$RepoRoot` 当普通参数传给
+        # `$laneBlock`，block 首行 `Set-Location` 兜住同一「显式定 cwd」语义。
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+            $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot
+        } else {
+            $jobs[$l[0]] = Start-Job -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot
+        }
         $started++
     }
     Start-Sleep -Seconds 20
@@ -531,7 +576,14 @@ if ($sentinelRetry -gt 0) { Write-Host ('⚠ ' + $sentinelRetry + ' 项哨兵靠
 $summaryText += "`r`nEXIT=" + $exitCode + "`r`n"
 [System.IO.File]::WriteAllText((Join-Path $logDir 'summary.txt'), $summaryText, $Utf8NoBom)
 # 机读副本：Cowork 取件不必解析表格文本。
-[System.IO.File]::WriteAllText((Join-Path $logDir 'summary.json'), (@($all | Select-Object Lane, Id, Status, Model, Sentinel, Minutes, Session, Log) | ConvertTo-Json -AsArray), $Utf8NoBom)
+# 队列 #567 实测顺手补：`ConvertTo-Json -AsArray` 是 PS7 专有参数，PS 5.1 下同样 `NamedParameterNotFound`
+# ——`-AsArray` 本是为了在只有一行时也保证输出是 JSON 数组（无它，1 行会被解包成裸对象）。改手工拼数组
+# 括号，两个版本都不依赖该参数、行为一致。
+$summaryRows = @($all | Select-Object Lane, Id, Status, Model, Sentinel, Minutes, Session, Log)
+$summaryJson = if ($summaryRows.Count -eq 0) { '[]' } else {
+    '[' + (($summaryRows | ForEach-Object { $_ | ConvertTo-Json -Compress }) -join ',') + ']'
+}
+[System.IO.File]::WriteAllText((Join-Path $logDir 'summary.json'), $summaryJson, $Utf8NoBom)
 Write-Host ('日志目录：' + $logDir)
 if ($failed.Count -gt 0) {
     Write-Host ('✗ ' + $failed.Count + ' 项失败/无哨兵（只停了所在泳道）。续跑：-Only ' + (($failed | ForEach-Object { $_.Id }) -join ',') + ' 加其泳道内后续编号；或 claude --resume <Session> 接管。') -ForegroundColor Red
