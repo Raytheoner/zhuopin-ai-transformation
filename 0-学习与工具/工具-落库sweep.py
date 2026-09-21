@@ -842,6 +842,11 @@ CLAUDE_MD_RULES_TOTAL_BYTE_CAP = 30 * 1024  # 30,720
 #: 既有原则（见下方 `_check_claude_md_carrier_size`）同构：会变的是"总和"这个
 #: 派生值，key 本身必须是稳定标识。
 CLAUDE_MD_RULES_TOTAL_KEY = ".claude/rules/__total__"
+#: 队列 §一 #629（2026-09-21，泳道看护续棒）：`zhuopin-lane-watch` 正本纳入同一套
+#: 尺寸巡检——它是泳道看护每棒固定要读的必读件，与 root/scene CLAUDE.md 同属
+#: "挤占开场注意力预算"这一判据；阈值独立设置（不与 rules 合计共享棘轮语义）。
+LANE_WATCH_SKILL_REL = "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md"
+LANE_WATCH_SKILL_BYTE_CAP = 24 * 1024      # 24,576；成因见队列 #629、CHANGELOG 附录 Q
 CLAUDE_MD_SIZE_STATE_REL = "reports/sweep-claude-md-size-state.json"
 CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS = 24
 # 棘轮自我提示阈值（仅对 root 生效，scene 不适用——spec 的 MODIFIED
@@ -4543,6 +4548,63 @@ def batch_touches_claude_md_root(resolved_paths) -> bool:
     return any(str(p).replace("\\", "/") == CLAUDE_MD_ROOT_REL for p in (resolved_paths or ()))
 
 
+# 队列 §一 #629（2026-09-21，泳道看护续棒）：把 `.claude/rules/*.md`（单份/合计）
+# 与 `zhuopin-lane-watch` 正本纳入同一套 reject-consumer——`#583` 那道根
+# CLAUDE.md 拒绝闸已证明"告警型守卫没有消费者，就会超限十几天没人知道"；
+# rules/ 单份阈值与合计阈值、以及 lane-watch 正本，此前都只进第 4 类常驻
+# 告警（只报不拦），同样长期无人消费（rules/ 合计超阈值 12,668 B 之久无人
+# 知道即是实例），本次补齐消费者。🔴 射程与根 CLAUDE.md 那道闸完全同构：
+# 只拒「文件清单含被超限载体」的批次，不拒同轮其它批次。
+def claude_md_rules_over_cap(repo_root: Path) -> dict[str, int] | None:
+    """`.claude/rules/*.md` 超阈值项：`{相对路径或 CLAUDE_MD_RULES_TOTAL_KEY: 超出字节数}`。
+
+    零超限返回空 dict（**不是** None）——None 专留给"判据不可用"（任一份读取
+    失败），同 `claude_md_root_over_cap` 的"读不到不判超"立场：不据不可用的
+    测量判人违规。
+    """
+    breaches: dict[str, int] = {}
+    rules_total = 0
+    rules_total_ok = True
+    for rel, cap in _claude_md_targets(repo_root):
+        if not rel.startswith(".claude/rules/"):
+            continue
+        try:
+            size = (repo_root / rel).stat().st_size
+        except OSError:
+            rules_total_ok = False
+            continue
+        rules_total += size
+        if size > cap:
+            breaches[rel] = size - cap
+    if not rules_total_ok:
+        return None
+    if rules_total > CLAUDE_MD_RULES_TOTAL_BYTE_CAP:
+        breaches[CLAUDE_MD_RULES_TOTAL_KEY] = rules_total - CLAUDE_MD_RULES_TOTAL_BYTE_CAP
+    return breaches
+
+
+def batch_touches_claude_md_rules(resolved_paths) -> bool:
+    """本批次的文件清单是否含任一 `.claude/rules/*.md`（合计超限时，拦的是
+    "碰过 rules/ 里任一份"的批次，不要求恰好碰到超限的那一份——合计超限
+    意味着"这个目录整体太大"，谁往里加内容都在恶化同一个问题）。"""
+    return any(str(p).replace("\\", "/").startswith(".claude/rules/") for p in (resolved_paths or ()))
+
+
+def lane_watch_skill_over_cap(repo_root: Path) -> int | None:
+    """`zhuopin-lane-watch/SKILL.md` 超阈值的字节数；未超或读不到返回 None。"""
+    try:
+        size = (repo_root / LANE_WATCH_SKILL_REL).stat().st_size
+    except OSError:
+        return None
+    over = size - LANE_WATCH_SKILL_BYTE_CAP
+    return over if over > 0 else None
+
+
+def batch_touches_lane_watch_skill(resolved_paths) -> bool:
+    """本批次的文件清单是否含 `zhuopin-lane-watch/SKILL.md`。"""
+    return any(str(p).replace("\\", "/") == LANE_WATCH_SKILL_REL for p in (resolved_paths or ()))
+
+
 def _claude_md_targets(repo_root: Path) -> list[tuple[str, int]]:
     """返回受检的 `[(相对路径, 字节阈值)]`，按路径排序（正文可复现）。
 
@@ -4578,6 +4640,10 @@ def _claude_md_targets(repo_root: Path) -> list[tuple[str, int]]:
             continue
         seen.add(rel)
         targets.append((rel, CLAUDE_MD_RULES_BYTE_CAP))
+    # 队列 §一 #629：`zhuopin-lane-watch` 正本同批纳入巡检（见上方常量注释）。
+    skill_path = repo_root / LANE_WATCH_SKILL_REL
+    if skill_path.is_file() and LANE_WATCH_SKILL_REL not in seen:
+        targets.append((LANE_WATCH_SKILL_REL, LANE_WATCH_SKILL_BYTE_CAP))
     return targets
 
 
@@ -8615,6 +8681,35 @@ def main() -> int:
                         f"而它现在超阈值 {over:,} B（{CLAUDE_MD_ROOT_BYTE_CAP:,} B 上限）"
                         f"⇒ 本批次拒绝落库、状态保持待处理，同轮其它批次不受影响。"
                         f"把根文件瘦到阈值内（成因段迁 `进度编年-CHANGELOG.md` 附录 P）后下一轮自动生效："
+                        f"[{queue_path}]"
+                    )
+                    log.append(note)
+                    if args.dry_run:
+                        print(f"[dry-run] {note}")
+                    continue
+                # 队列 §一 #629：rules/ 与 lane-watch 正本的 reject-consumer，
+                # 与上方根 CLAUDE.md 那道闸同构、独立判定（互不覆盖）。
+                rules_breaches = claude_md_rules_over_cap(repo_root)
+                if rules_breaches and batch_touches_claude_md_rules(resolved):
+                    detail = "；".join(f"`{k}` 超 {v:,} B" for k, v in rules_breaches.items())
+                    note = (
+                        f"🔴 批次 {row['batch_id']} 的文件清单含 `.claude/rules/*.md`，"
+                        f"而它现在超阈值（{detail}）"
+                        f"⇒ 本批次拒绝落库、状态保持待处理，同轮其它批次不受影响。"
+                        f"把超限文件瘦到阈值内（成因段迁 `进度编年-CHANGELOG.md`）后下一轮自动生效："
+                        f"[{queue_path}]"
+                    )
+                    log.append(note)
+                    if args.dry_run:
+                        print(f"[dry-run] {note}")
+                    continue
+                skill_over = lane_watch_skill_over_cap(repo_root)
+                if skill_over is not None and batch_touches_lane_watch_skill(resolved):
+                    note = (
+                        f"🔴 批次 {row['batch_id']} 的文件清单含 `{LANE_WATCH_SKILL_REL}`，"
+                        f"而它现在超阈值 {skill_over:,} B（{LANE_WATCH_SKILL_BYTE_CAP:,} B 上限）"
+                        f"⇒ 本批次拒绝落库、状态保持待处理，同轮其它批次不受影响。"
+                        f"把该文件瘦到阈值内（成因段迁 `进度编年-CHANGELOG.md` 附录 Q）后下一轮自动生效："
                         f"[{queue_path}]"
                     )
                     log.append(note)

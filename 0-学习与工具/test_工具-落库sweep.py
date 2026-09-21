@@ -5360,6 +5360,96 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
         self.assertNotIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, self.recorder.calls[-1]["keys"])
 
 
+class CarrierRejectConsumerTests(unittest.TestCase):
+    """队列 §一 #629：rules/ 与 lane-watch 正本的 reject-consumer——`#583`
+    根 CLAUDE.md 那道闸已证明"告警型守卫没有消费者就会超限十几天没人知道"，
+    本组验证新补的两道闸与它同构：只判定，不落库、不推送（落库拒绝的整合
+    在 `LogRotationTests` 一族的批处理主循环里，这里只测判定函数本体）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        (self.repo / ".claude/rules").mkdir(parents=True)
+        (self.repo / "0-学习与工具/skills源码/zhuopin-lane-watch").mkdir(parents=True)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_rule(self, name: str, size: int) -> None:
+        (self.repo / ".claude/rules" / name).write_text("x" * size, encoding="utf-8")
+
+    def _write_skill(self, size: int) -> None:
+        (self.repo / sweep.LANE_WATCH_SKILL_REL).write_text("x" * size, encoding="utf-8")
+
+    # ---- rules/ ----
+
+    def test_rules全部达标时返回空dict不是None(self):
+        self._write_rule("甲.md", 100)
+        self.assertEqual(sweep.claude_md_rules_over_cap(self.repo), {})
+
+    def test_rules单份超限被判出(self):
+        self._write_rule("甲.md", sweep.CLAUDE_MD_RULES_BYTE_CAP + 1)
+        breaches = sweep.claude_md_rules_over_cap(self.repo)
+        self.assertIn(".claude/rules/甲.md", breaches)
+        self.assertEqual(breaches[".claude/rules/甲.md"], 1)
+
+    def test_rules合计超限被判出(self):
+        for i in range(5):
+            self._write_rule(f"文件{i}.md", 7 * 1024)  # 单份不超，合计 35KB>30KB
+        breaches = sweep.claude_md_rules_over_cap(self.repo)
+        self.assertIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, breaches)
+
+    def test_batch_touches只认rules路径前缀(self):
+        self.assertTrue(sweep.batch_touches_claude_md_rules(
+            [".claude/rules/两桌同步与取证.md"]))
+        self.assertFalse(sweep.batch_touches_claude_md_rules(["CLAUDE.md"]))
+        self.assertFalse(sweep.batch_touches_claude_md_rules([]))
+
+    def test_rules合计超限时碰任一份都算命中(self):
+        """判据文档写明：合计超限拦的是「碰过 rules/ 里任一份」的批次，
+        不要求恰好碰到超限的那一份——反例守卫，防止未来误改成只匹配
+        breaches 里点名的路径。"""
+        for i in range(5):
+            self._write_rule(f"文件{i}.md", 7 * 1024)
+        self.assertTrue(sweep.claude_md_rules_over_cap(self.repo))
+        self.assertTrue(sweep.batch_touches_claude_md_rules(
+            [".claude/rules/文件0.md"]))
+
+    # ---- lane-watch 正本 ----
+
+    def test_skill未超限返回None(self):
+        self._write_skill(100)
+        self.assertIsNone(sweep.lane_watch_skill_over_cap(self.repo))
+
+    def test_skill超限被判出(self):
+        self._write_skill(sweep.LANE_WATCH_SKILL_BYTE_CAP + 1)
+        self.assertEqual(sweep.lane_watch_skill_over_cap(self.repo), 1)
+
+    def test_skill文件不存在时不判超(self):
+        """读不到不判超——同 `claude_md_root_over_cap` 的既有立场：不据
+        不可用的测量判人违规。"""
+        self.assertIsNone(sweep.lane_watch_skill_over_cap(self.repo))
+
+    def test_batch_touches只认skill正本路径(self):
+        self.assertTrue(sweep.batch_touches_lane_watch_skill(
+            [sweep.LANE_WATCH_SKILL_REL]))
+        self.assertFalse(sweep.batch_touches_lane_watch_skill(
+            ["0-学习与工具/skills源码/zhuopin-lane-watch/CHANGELOG.md"]))
+
+    # ---- 与常驻巡检的接线：SKILL.md 存在时应纳入 `_claude_md_targets` ----
+
+    def test_skill存在时纳入受检目标且阈值24KB(self):
+        self._write_skill(100)
+        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
+        caps = dict(sweep._claude_md_targets(self.repo))
+        self.assertEqual(caps[sweep.LANE_WATCH_SKILL_REL], sweep.LANE_WATCH_SKILL_BYTE_CAP)
+
+    def test_skill不存在时不纳入受检目标(self):
+        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
+        rels = [rel for rel, _cap in sweep._claude_md_targets(self.repo)]
+        self.assertNotIn(sweep.LANE_WATCH_SKILL_REL, rels)
+
+
 class RootRatchetHintUnitTests(unittest.TestCase):
     """队列 §一 #435（design D3/D6）：root 阈值只降不升，现值低于阈值
     超过 SLACK 时提示可下调；超阈值时仍走既有超限告警路径；scene 不
