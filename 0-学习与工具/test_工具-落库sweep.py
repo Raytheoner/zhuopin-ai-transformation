@@ -84,11 +84,29 @@ QUEUE_HEADER_ONLY = (
     "\n## 三、口径冻结标\n\n（无）\n"
 )
 
+# 🔴 **导入安全**：真实 `工具-文档台账生成.py` 在约 315 行处有
+# `if __name__ == "__main__":` 守卫——`工具-opener块lint.py::_load_status_
+# bucket` 会用 `spec.loader.exec_module` **动态 import** 这份脚本以复用
+# `status_bucket`/`parse_frontmatter`（release 侧 opener 守卫走这条路径）。
+# 桩若是裸顶层代码，`exec_module` 一执行就把文件写进临时仓库——即便随后
+# 因桩未定义 `status_bucket` 属性触发 `AttributeError` 被 `_declared_role_
+# raw` 的 `except Exception` 兜底吞掉（不崩溃），**写文件这个副作用已经
+# 发生**，产生一个未在任何批次声明的孤儿文件，污染 `ExactMatchEndToEnd
+# Tests` 断言孤儿清单精确内容的用例。改成"函数体 + `__main__` 守卫"后，
+# 导入不再有副作用；只有 `_rerun_ledger` 用 subprocess 真正把它当
+# `__main__` 跑时才写（同真实脚本的导入契约）。
 STUB_LEDGER_SCRIPT = (
     "from pathlib import Path\n"
-    "p = Path(__file__).resolve().parents[1] / '1-转型规划' / '0-全景路线图' / '文档台账-自动生成.md'\n"
-    "p.parent.mkdir(parents=True, exist_ok=True)\n"
-    "p.write_text('台账桩内容 v1\\n', encoding='utf-8')\n"
+    "\n"
+    "\n"
+    "def main() -> None:\n"
+    "    p = Path(__file__).resolve().parents[1] / '1-转型规划' / '0-全景路线图' / '文档台账-自动生成.md'\n"
+    "    p.parent.mkdir(parents=True, exist_ok=True)\n"
+    "    p.write_text('台账桩内容 v1\\n', encoding='utf-8')\n"
+    "\n"
+    "\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
 )
 
 
@@ -226,6 +244,27 @@ def format_report(findings):
     return "# 测试桩：零命中"
 '''
 
+# 队列 §一 #551 旁生（第 14 类常驻告警：定时任务目录未分类）——同第 7/10/
+# 11/13/16/19 类一模一样的形态、第六次撞见同一类缺口：
+# `_check_scheduled_task_coverage` 动态 import `工具-定时任务源码备份.py`
+# 并调用其 `find_unclassified()`/读取 `WHITELIST`/`BLACKLIST`，夹具此前
+# 从未还原这个文件，临时仓库里 `tool.exists()` 恒 False ⇒ 该类如实报
+# 「备份工具不在」并推一条告警，把每个 CLI 级用例断言精确 webhook 次数
+# 的用例全部染红。桩只提供该函数实际用到的最小接口（`find_unclassified`
+# 接收可选 `source_dir` 但恒零命中、不碰任何真实路径——**不能让它落到
+# 生产脚本的 `DEFAULT_SOURCE_DIR = Path.home()/"Claude"/"Scheduled"`**，
+# 否则测试行为会随本机是否存在该目录而漂；`WHITELIST`/`BLACKLIST` 仅供
+# `len()` 取数，留空元组即可）。本类自身判据不在本夹具重测。
+STUB_SCHEDULED_TASK_BACKUP_SCRIPT = '''"""测试桩：定时任务源码备份（恒零未分类、零 IO）。"""
+
+WHITELIST = ()
+BLACKLIST = ()
+
+
+def find_unclassified(source_dir=None):
+    return []
+'''
+
 
 class SweepTestBase(unittest.TestCase):
     def setUp(self):
@@ -301,6 +340,8 @@ class SweepTestBase(unittest.TestCase):
             STUB_UNMERGED_BRANCH_SCRIPT, encoding="utf-8")
         (self.work / sweep.CARRIER_SCAN_SCRIPT_REL).write_text(
             STUB_CARRIER_SCAN_SCRIPT, encoding="utf-8")
+        (self.work / sweep.SCHEDULED_TASK_BACKUP_SCRIPT_REL).write_text(
+            STUB_SCHEDULED_TASK_BACKUP_SCRIPT, encoding="utf-8")
         (self.work / "1-转型规划" / "0-全景路线图").mkdir(parents=True)
 
         # 队列 §一 #435（2026-08-30 回归排查后补）：第 4 类常驻告警新增
