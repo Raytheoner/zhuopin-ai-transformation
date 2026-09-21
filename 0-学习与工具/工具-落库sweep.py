@@ -872,7 +872,7 @@ CLAUDE_MD_RULES_TOTAL_KEY = ".claude/rules/__total__"
 #: "挤占开场注意力预算"这一判据。🔴 续棒 `OP-0921-F`：原固定 24,576 B 常量
 #: 改为**棘轮**（只降不升），基线＝本棒完工实测字节数（机械取值）。
 LANE_WATCH_SKILL_REL = "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md"
-LANE_WATCH_SKILL_BYTE_CAP = 30326  # 基线＝2026-09-21 `OP-0921-F` 完工实测 30,326 B
+LANE_WATCH_SKILL_BYTE_CAP = 30816  # 基线＝2026-09-21 `#638` 补看护等待口径后实测 30,758 B（前一基线 30,326 B，`OP-0921-F`）
 CLAUDE_MD_SIZE_STATE_REL = "reports/sweep-claude-md-size-state.json"
 CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS = 24
 # 棘轮自我提示阈值（仅对 root 生效，scene 不适用——spec 的 MODIFIED
