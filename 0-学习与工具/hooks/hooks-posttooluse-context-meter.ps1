@@ -35,122 +35,26 @@
   transcript 记录 schema（本机实测确认，字段名与 `message.usage.*` 路径）：
   `{"type":"assistant","sessionId":"...","message":{"usage":{"input_tokens":N,
   "cache_creation_input_tokens":N,"cache_read_input_tokens":N,...}}}`。
+
+  🔴 **读取面盲区（队列 §一 `#639`）＋修法**：本钩子只在工具调用后触发——若某一轮
+  回复不含工具调用（纯文本收尾）就直接进 Stop，那一轮 usage 永远不会被本钩子读到，
+  状态文件的 `lastContext` 因此持续低估真实峰值。状态读写、档位换算、usage 解析
+  已抽到 `hooks-context-meter-lib.ps1`，与新增的 Stop 读取面
+  `hooks-stop-context-meter.ps1` 共用——两个读取面合起来覆盖"有工具调用"与
+  "纯文本收尾"两种轮次，不留盲区；本钩子自身逻辑不变。
 #>
 
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch {}
 
 . (Join-Path $PSScriptRoot 'hooks-common.ps1')
+. (Join-Path $PSScriptRoot 'hooks-context-meter-lib.ps1')
 
 $HookName = 'posttooluse-context-meter'
 $script:ThresholdStart = 150000
 $script:ThresholdStep = 50000
 $script:HardLine = 250000  # 09-16 他拍 1a：150k 软提醒／250k 硬线
 $script:CallCountThreshold = 150  # #598：单会话工具调用数达此值提醒一次（一次性、不分档）
-# 窗口倍增序列：先按小窗口试（覆盖绝大多数一轮一次工具调用的常态），找不到再翻倍——
-# 封顶 20000 行，避免一份"连续几万行都没有 assistant 记录"的畸形 transcript 把钩子拖垮。
-$script:TailWindowSizes = @(200, 2000, 20000)
-
-
-function Get-ContextMeterStateDir([string]$RepoRoot) {
-    Join-Path $RepoRoot 'reports/context-meter'
-}
-
-function Get-ContextMeterStatePath([string]$RepoRoot, [string]$SessionId) {
-    # session_id 正常形态是 GUID，仍做一次白名单清洗防越权路径拼接。
-    $safe = ($SessionId -replace '[^A-Za-z0-9_-]', '_')
-    if (-not $safe) { $safe = 'unknown' }
-    Join-Path (Get-ContextMeterStateDir $RepoRoot) "$safe.json"
-}
-
-function Read-ContextMeterState([string]$RepoRoot, [string]$SessionId) {
-    $path = Get-ContextMeterStatePath -RepoRoot $RepoRoot -SessionId $SessionId
-    $result = @{ LastTier = 0; LastContext = 0L; ToolCalls = 0; CallCountNotified = $false }
-    if (-not (Test-Path -LiteralPath $path)) { return $result }
-    try {
-        $obj = (Get-Content -LiteralPath $path -Raw -Encoding UTF8) | ConvertFrom-Json
-        $props = Get-JsonPropertyNames $obj
-        if ($props -contains 'lastTier') { $result.LastTier = [int]$obj.lastTier }
-        if ($props -contains 'lastContext') { $result.LastContext = [long]$obj.lastContext }
-        if ($props -contains 'toolCalls') { $result.ToolCalls = [int]$obj.toolCalls }
-        if ($props -contains 'callCountNotified') { $result.CallCountNotified = [bool]$obj.callCountNotified }
-    } catch {
-        # 状态文件损坏 ⇒ 当作从未提醒过（更保守的一侧：宁可多提醒一次，也不能因为
-        # 一份坏 JSON 就此再也不提醒）。
-    }
-    return $result
-}
-
-function Write-ContextMeterState(
-    [string]$RepoRoot, [string]$SessionId, [int]$Tier, [long]$Context,
-    [int]$ToolCalls, [bool]$CallCountNotified
-) {
-    try {
-        $dir = Get-ContextMeterStateDir $RepoRoot
-        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-        $path = Get-ContextMeterStatePath -RepoRoot $RepoRoot -SessionId $SessionId
-        $obj = [ordered]@{
-            lastTier          = $Tier
-            lastContext       = $Context
-            lastTs            = (Get-SentinelTimestamp)
-            toolCalls         = $ToolCalls
-            callCountNotified = $CallCountNotified
-        }
-        $tmp = "$path.tmp"
-        $obj | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $tmp -Encoding UTF8
-        Move-Item -LiteralPath $tmp -Destination $path -Force
-    } catch {
-        # 状态写不了也不能打断宿主钩子——fail-open 是本框架第一原则。
-    }
-}
-
-function Get-ContextTier([long]$Context) {
-    if ($Context -lt $script:ThresholdStart) { return 0 }
-    return ([int][math]::Floor(($Context - $script:ThresholdStart) / $script:ThresholdStep)) + 1
-}
-
-function Get-LatestAssistantUsage([string]$TranscriptPath) {
-    <# 返回 @{ Ok=$bool; Context=[long]; Error=$string }。只读尾部窗口，找到即停。 #>
-    $result = @{ Ok = $false; Context = 0L; Error = '' }
-    if (-not $TranscriptPath -or -not (Test-Path -LiteralPath $TranscriptPath -PathType Leaf)) {
-        $result.Error = "transcript 文件不存在：$TranscriptPath"
-        return $result
-    }
-
-    foreach ($tailN in $script:TailWindowSizes) {
-        $lines = @(Get-Content -LiteralPath $TranscriptPath -Tail $tailN -Encoding UTF8 -ErrorAction Stop)
-        for ($i = $lines.Count - 1; $i -ge 0; $i--) {
-            $line = $lines[$i]
-            if (-not $line -or -not $line.Trim()) { continue }
-            try {
-                $obj = $line | ConvertFrom-Json
-            } catch {
-                continue
-            }
-            $objProps = Get-JsonPropertyNames $obj
-            if (-not ($objProps -contains 'type') -or [string]$obj.type -ne 'assistant') { continue }
-            if (-not ($objProps -contains 'message')) { continue }
-            $msgProps = Get-JsonPropertyNames $obj.message
-            if (-not ($msgProps -contains 'usage')) { continue }
-            $usageProps = Get-JsonPropertyNames $obj.message.usage
-            if (-not ($usageProps -contains 'input_tokens') `
-                    -or -not ($usageProps -contains 'cache_creation_input_tokens') `
-                    -or -not ($usageProps -contains 'cache_read_input_tokens')) { continue }
-
-            $ctx = [long]$obj.message.usage.input_tokens `
-                + [long]$obj.message.usage.cache_creation_input_tokens `
-                + [long]$obj.message.usage.cache_read_input_tokens
-            $result.Ok = $true
-            $result.Context = $ctx
-            return $result
-        }
-        # 若这个窗口已经等于全文件行数（文件比窗口还短）却仍没找到，再放大窗口也没用。
-        if ($lines.Count -lt $tailN) { break }
-    }
-
-    $result.Error = 'transcript 尾部窗口内未找到含 usage 的 assistant 记录（已放宽至最大窗口）'
-    return $result
-}
 
 function Write-HookMessage([string]$msg) {
     $payload = @{
@@ -214,7 +118,7 @@ try {
     }
 
     $context = $usage.Context
-    $tier = Get-ContextTier -Context $context
+    $tier = Get-ContextTier -Context $context -ThresholdStart $script:ThresholdStart -ThresholdStep $script:ThresholdStep
     $tierJustCrossed = $tier -gt $state.LastTier
     if ($tierJustCrossed) {
         $kDisplay = [math]::Round($context / 1000)
