@@ -443,11 +443,21 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
-    from _输出截流 import emit as _emit_output  # 队列 #597 ⑵：成功路径默认摘要，见该模块 docstring。
+    from _输出截流 import (  # 队列 #597 ⑵／#637：成功路径默认摘要＋零命中也回显行免裁，见该模块 docstring。
+        emit as _emit_output,
+        must_keep as _must_keep,
+        strip_must_keep as _strip_must_keep,
+    )
 except ImportError:  # 队列 #600：同目录助手缺席（临时复刻目录／早于 #597 的 worktree）时退回整段原样打印，不因输出层崩溃拖垮判据加载
     def _emit_output(tool_name, lines, exit_code, *, verbose=False, repo_root=None):
         print("\n".join(lines))
         return exit_code
+
+    def _must_keep(line):  # 无摘要裁剪可言，原样返回即可（不引入标记字符）
+        return line
+
+    def _strip_must_keep(line):
+        return line
 
 # 队列 #306：本脚本自身所在的 worktree 本地路径找 zhuopin_platform（同
 # 工具-共享文档编辑锁.py 既有引导，与队列 #300 conftest.py 同一原则）。
@@ -1782,7 +1792,7 @@ def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = F
         log.append("[dry-run] 将巡检本地 master 与 origin/master 的独有提交关系（本次不实际执行）。")
         return
 
-    log.append("🔀 本地 master ↔ origin/master 巡检（每轮回显，零命中时亦不省略）：")
+    log.append(_must_keep("🔀 本地 master ↔ origin/master 巡检（每轮回显，零命中时亦不省略）："))
 
     # 🔴 fetch 失败 / 引用读不到时**直接返回，不调用 `_track_and_alert_standing_state`**。
     # 这不是可省的细节：该函数以「不在 current_keys 里的既有 key 即已解除」为
@@ -3678,10 +3688,10 @@ def _escalate_long_lived_orphans_to_section_four(
             continue
         due.append((path, age_hours, first_seen.strftime("%Y-%m-%dT%H:%M:%SZ")))
 
-    log.append(
+    log.append(_must_keep(
         f"🧭 孤儿升格 §四 扫描（阈值 {ORPHAN_SECTION_FOUR_HOURS} 小时，当日去重）："
         f"本轮待升格 {len(due)} 个"
-    )
+    ))
     if not due:
         return
 
@@ -4744,7 +4754,7 @@ def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
     breaches: dict[str, str] = {}
     rules_total = 0
     rules_total_ok = True
-    log.append("📏 必载 CLAUDE.md 巡检（每轮回显，零超限时亦不省略）：")
+    log.append(_must_keep("📏 必载 CLAUDE.md 巡检（每轮回显，零超限时亦不省略）："))
     for rel, cap in _claude_md_targets(repo_root):
         try:
             size = (repo_root / rel).stat().st_size
@@ -4920,10 +4930,10 @@ def _check_global_memory_files(repo_root: Path, log: list[str]) -> None:
     "建成后从未真正发出过一条消息"那类风险（`OP-0819-F`）。
     """
     breaches: dict[str, str] = {}
-    log.append(
+    log.append(_must_keep(
         "🧭 本机全局记忆巡检（每轮回显，零红时亦不省略；受检对象在仓库外，"
         "半径论证见 openspec/changes/global-memory-inspection-and-root-ratchet/design.md D1）："
-    )
+    ))
     for target in _resolve_global_memory_targets():
         resolved = _expand_global_memory_path(target)
         path_obj = Path(resolved)
@@ -5849,7 +5859,7 @@ def _check_editable_install_targets(repo_root: Path, log: list[str]) -> None:
     唯一的存在证明，不是调试输出。
     """
     details: dict[str, str] = {}
-    log.append("🧭 editable 安装指向巡检（每轮回显，零异常时亦不省略）：")
+    log.append(_must_keep("🧭 editable 安装指向巡检（每轮回显，零异常时亦不省略）："))
 
     dirs, reason = _site_packages_dirs()
     if reason is not None:
@@ -6403,7 +6413,7 @@ def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
     它与『建成 9 天、一条没发出去、没人察觉』无法区分」，接上之后靠的就是
     这里。
     """
-    log.append("🧷 未闭合产出巡检（每轮回显，零命中时亦不省略）：")
+    log.append(_must_keep("🧷 未闭合产出巡检（每轮回显，零命中时亦不省略）："))
 
     def _alert(details: dict) -> None:
         _track_and_alert_standing_state(
@@ -6588,10 +6598,10 @@ def _check_hooks_heartbeat(repo_root: Path, log: list[str]) -> None:
                     f"＞ 阈值 {HOOKS_HEARTBEAT_STALE_DAYS:.0f} 天。"
                 )
             else:
-                log.append(
+                log.append(_must_keep(
                     f"✓ 写入时刻哨兵在岗：最后心跳 `{last_run}`（本机时区，非 UTC），"
                     f"距今 {age_days:.1f} 天；累计运行 {hb.get('runs', {}).get('total', '?')} 次。"
-                )
+                ))
         except Exception as exc:  # noqa: BLE001 —— 🔴 检查本身必须出声，不得静默
             key = "心跳文件损坏"
             keys.add(key)
@@ -7107,7 +7117,7 @@ def _check_carrier_consistency(repo_root: Path, log: list[str]) -> None:
     也不省略——一个从来不出声的机制，没人能判断它是「没问题」还是
     「没跑」。
     """
-    log.append("🧷 承载性一致性扫描（每轮回显，零命中时亦不省略）：")
+    log.append(_must_keep("🧷 承载性一致性扫描（每轮回显，零命中时亦不省略）："))
 
     def _alert(details: dict) -> None:
         _track_and_alert_standing_state(
@@ -7257,7 +7267,7 @@ def _check_followup_pending_inventory(repo_root: Path, log: list[str]) -> None:
     🔴 **回显不是可选项**（同第 4/6/7/9 类）：无论三态是否为零、交叉
     红标是否命中，每轮都打一行——零命中不省略。
     """
-    log.append("✉️ 跟进信待发信盘点（每轮回显，零命中时亦不省略）：")
+    log.append(_must_keep("✉️ 跟进信待发信盘点（每轮回显，零命中时亦不省略）："))
 
     digest, reason = _run_followup_readme_digest_json(repo_root)
     if digest is None:
@@ -7404,7 +7414,7 @@ def _check_draft_gap_inventory(repo_root: Path, log: list[str]) -> None:
     🔴 **回显不是可选项**（同第 4/6/7/9/10 类）：无论缺口是否为零，
     每轮都打一行——零命中不省略。
     """
-    log.append(f"📝 跟进信起草缺口检测（近 {DRAFT_GAP_WINDOW_DAYS} 天，每轮回显，零命中亦不省略）：")
+    log.append(_must_keep(f"📝 跟进信起草缺口检测（近 {DRAFT_GAP_WINDOW_DAYS} 天，每轮回显，零命中亦不省略）："))
 
     payload, reason = _run_draft_gap_check_json(repo_root)
     if payload is None:
@@ -7607,7 +7617,7 @@ def _check_status_triage_candidates(repo_root: Path, log: list[str],
     打一行——零命中不省略。**降档条数每轮回显**（spec 明列）：否定词表一旦
     写宽，"被降掉的越来越多"是唯一能看见它失效的信号。
     """
-    log.append("🧭 状态分诊候选常驻扫描（两份队列 §一，每轮回显，零命中亦不省略）：")
+    log.append(_must_keep("🧭 状态分诊候选常驻扫描（两份队列 §一，每轮回显，零命中亦不省略）："))
 
     if failures:
         for detail in failures:
@@ -7696,7 +7706,7 @@ def _check_decision_ledger_gaps(repo_root: Path, log: list[str], payloads: dict[
 
     🔴 **只检测、只告警、给可粘贴命令，绝不写 §四**（D4=(a)）。
     """
-    log.append("🗂 决策台账缺口检测（§一 自陈待他一次动作 vs §四 覆盖，每轮回显）：")
+    log.append(_must_keep("🗂 决策台账缺口检测（§一 自陈待他一次动作 vs §四 覆盖，每轮回显）："))
 
     # tasks 4.3 / design D7 已知边界：`#N` 是纯数字匹配，两份队列共用同一套行号
     # 空间。2026-09-06 实测交集为空集，**但这是现状而非不变量**——一旦重叠，
@@ -9252,8 +9262,10 @@ def _flush_log(repo_root: Path, log: list[str], dry_run: bool) -> None:
         return
     log_path = repo_root / LOG_REL
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    # 队列 §一 #637：本函数不走 `_emit_output`/`emit()` 那条摘要路径，`must_keep()`
+    # 标记字符不会被自动剥掉——常驻审计日志不该混进控制字符，这里显式清一遍。
     with open(log_path, "a", encoding="utf-8") as f:
-        f.write("\n".join(log) + "\n\n")
+        f.write("\n".join(_strip_must_keep(ln) for ln in log) + "\n\n")
 
 
 def _flush_remaining_log(repo_root: Path, log: list[str], dry_run: bool) -> None:
