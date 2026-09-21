@@ -22,6 +22,21 @@
 
 `emit()` 本身只负责"摘要 vs 全文"的裁决与落盘，不接管调用方已有的
 "是否打印""退出码是什么"这些判断——调用方仍自己决定何时调用它。
+
+队列 §一 #637（Shao Peishen 2026-09-21 答 `1b`）：某些"零命中也回显"的
+承诺行（如各常驻状态告警类的每轮首行）不带 `⚠/✗/🔴/🟡` 信号前缀，
+`summarize()` 原实现只按前缀猜测该保留谁，名额一满就把它们静默挤掉
+——"没打印"与"没跑"在屏幕上长得一模一样。**不走扩前缀集**（那只能
+挡住已知的这一批，下一个新类目照样复发），改让调用方在 `log.append`
+那一刻用 `must_keep()` 显式声明"本行不许被摘要裁"：
+
+    log.append(must_keep("🧭 XX 扫描（每轮回显，零命中亦不省略）：..."))
+
+`summarize()` 保证 must-keep 行**无条件全部保留**，不占用信号行／
+普通行的名额；这意味着 must-keep 行本身若多于 `SUMMARY_LINE_CAP`，
+摘要总行数**允许超出 19 行**——这是刻意选择，见 `summarize()` 判据：
+must-keep 存在的唯一理由就是"这一类到底跑没跑"必须可见，让摘要多打
+几行远比再次静默丢掉信号安全。
 """
 from __future__ import annotations
 
@@ -29,7 +44,35 @@ from datetime import datetime
 from pathlib import Path
 
 REPORTS_SUBDIR = "reports/output-throttle"
-SUMMARY_LINE_CAP = 19  # 摘要内容行上限；连同一行回显路径合计 ≤20 行。
+SUMMARY_LINE_CAP = 19  # 摘要内容行上限（must-keep 行不占用此名额，见 must_keep()）。
+
+# 队列 §一 #637：must-keep 行标记。选一个不可能出现在正常日志文本里的
+# 控制字符组合，`summarize()` 据此识别并无条件保留，其余场景（`--verbose`／
+# 失败路径整段打印）不解析该标记，直接原样打印——为免真的把控制字符甩到
+# 终端／落盘全文里，`emit()` 在那两条路径也会先行剥离标记。
+_MUST_KEEP_MARKER = "\x00MUST-KEEP\x00"
+
+
+def must_keep(line: str) -> str:
+    """标记一行"不许被 summarize() 的摘要名额挤掉"（队列 §一 #637）。
+
+    用在调用方 `log.append(must_keep(...))` 那一刻——判据在写入现场
+    显式声明，不靠 `summarize()` 事后用前缀猜。
+    """
+    return f"{_MUST_KEEP_MARKER}{line}"
+
+
+def _strip_must_keep(line: str) -> tuple[bool, str]:
+    if line.startswith(_MUST_KEEP_MARKER):
+        return True, line[len(_MUST_KEEP_MARKER):]
+    return False, line
+
+
+def strip_must_keep(line: str) -> str:
+    """去掉 `must_keep()` 标记、只留原文——供不经过 `emit()` 的落盘/打印
+    路径使用（如 `工具-落库sweep.py::_flush_log` 把 `log` 原样追加进常驻
+    审计日志 `reports/sweep-commit.log`，不是走 `emit()` 那条摘要路径）。"""
+    return _strip_must_keep(line)[1]
 
 
 def _repo_root_from_here() -> Path:
@@ -43,23 +86,35 @@ def write_full_report(tool_name: str, lines: list[str], *, repo_root: Path | Non
     report_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     report_path = report_dir / f"{ts}.log"
-    report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    clean_lines = [_strip_must_keep(ln)[1] for ln in lines]
+    report_path.write_text("\n".join(clean_lines) + "\n", encoding="utf-8")
     return report_path
 
 
 def summarize(lines: list[str], report_path: Path) -> list[str]:
-    """把全文行裁成 ≤20 行摘要：优先保留告警/失败/豁免类信号行，
-    不足则按原顺序补齐，末尾恒附回显路径行。"""
+    """把全文行裁成 ≤20 行摘要：`must_keep()` 标记行无条件全部保留、
+    不占名额（队列 §一 #637），剩余名额按原逻辑优先保留告警/失败/
+    豁免类信号行，不足则按原顺序补齐，末尾恒附回显路径行。"""
     signal_prefixes = ("⚠", "✗", "🔴", "🟡")
-    signal_lines = [ln for ln in lines if ln.strip().startswith(signal_prefixes)]
 
-    body = signal_lines[:SUMMARY_LINE_CAP]
-    if len(body) < SUMMARY_LINE_CAP:
-        for ln in lines:
-            if len(body) >= SUMMARY_LINE_CAP:
+    must_keep_lines: list[str] = []
+    other_lines: list[str] = []
+    for ln in lines:
+        is_must_keep, text = _strip_must_keep(ln)
+        (must_keep_lines if is_must_keep else other_lines).append(text)
+
+    remaining_cap = max(0, SUMMARY_LINE_CAP - len(must_keep_lines))
+    signal_lines = [ln for ln in other_lines if ln.strip().startswith(signal_prefixes)]
+
+    body = list(must_keep_lines)
+    fill = signal_lines[:remaining_cap]
+    if len(fill) < remaining_cap:
+        for ln in other_lines:
+            if len(fill) >= remaining_cap:
                 break
-            if ln not in body:
-                body.append(ln)
+            if ln not in fill:
+                fill.append(ln)
+    body.extend(fill)
 
     omitted = len(lines) - len(body)
     if omitted > 0:
@@ -78,10 +133,11 @@ def emit(
     repo_root: Path | None = None,
 ) -> int:
     """成功（exit_code == 0）且非 --verbose 时输出摘要＋落盘全文；
-    其余情形整段原样打印（旧行为）。返回值＝传入的 exit_code，方便
-    调用方写成 `return emit(...)`。"""
+    其余情形整段原样打印（旧行为，`must_keep()` 标记不生效——反正整段
+    都保留，标记字符先剥掉，不让控制字符漏进终端）。返回值＝传入的
+    exit_code，方便调用方写成 `return emit(...)`。"""
     if verbose or exit_code != 0:
-        print("\n".join(lines))
+        print("\n".join(_strip_must_keep(ln)[1] for ln in lines))
         return exit_code
 
     report_path = write_full_report(tool_name, lines, repo_root=repo_root)
