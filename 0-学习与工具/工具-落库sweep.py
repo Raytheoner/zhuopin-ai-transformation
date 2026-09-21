@@ -833,10 +833,25 @@ CLAUDE_MD_SCENE_BYTE_CAP = 50 * 1024     # 51,200
 #: `.claude/rules/*.md` 单份阈值（队列 #381⑸ⓕ）——与 root/scene 共用同一套
 #: "尺寸挤占开场注意力预算"判据，但 rules 只在**触碰对应路径的那一刻**注入
 #: （CC 侧），不是每次开场必载，故阈值独立于 root/scene、不共享棘轮语义。
+#: 🔴 队列 §一 #629（2026-09-21 `OP-0921-F` 续棒续完）：原固定 8,192 B 单一
+#: 常量早于六份瘦身完成前拍板、与实际产出脱节；改为**逐份棘轮**（只降不升），
+#: 基线＝本棒完工实测字节数（机械取值，不是拍板定数）。任一份继续瘦身后
+#: 应同步调低对应值；**不得为容纳新增内容顺手调高**。
 CLAUDE_MD_RULES_GLOB = ".claude/rules/*.md"
-CLAUDE_MD_RULES_BYTE_CAP = 8 * 1024      # 8,192
+CLAUDE_MD_RULES_BYTE_CAP_BY_FILE: dict[str, int] = {
+    ".claude/rules/两桌同步与取证.md": 6351,
+    ".claude/rules/场景建造与合规.md": 4230,
+    ".claude/rules/文档与全景治理.md": 3523,
+    ".claude/rules/环境保障线.md": 5280,
+    ".claude/rules/跟进信与专员.md": 5159,
+    ".claude/rules/队列与落库.md": 5907,
+}
+#: 未在上方字典里出现的新增 rules 文件的兜底阈值——同样是棘轮语义的一部分，
+#: 只是尚无该文件自己的完工实测值；出现新文件后应尽快替换为专属条目。
+CLAUDE_MD_RULES_BYTE_CAP_FALLBACK = 8 * 1024  # 8,192
 #: `.claude/rules/` 目录合计阈值（队列 #381⑸ⓕ）——单份达标不代表总量可控，
 #: 见 `根CLAUDE.md彻底瘦身-方案-2026-09-03.md` §二 H2 的"合计 ≤30 KB"设计。
+#: 既有口径，本棒（`OP-0921-F`）保留不动。
 CLAUDE_MD_RULES_TOTAL_BYTE_CAP = 30 * 1024  # 30,720
 #: 合计超限的告警 key——固定字面量而非某个文件路径，与"key 不含会变数值"的
 #: 既有原则（见下方 `_check_claude_md_carrier_size`）同构：会变的是"总和"这个
@@ -844,9 +859,10 @@ CLAUDE_MD_RULES_TOTAL_BYTE_CAP = 30 * 1024  # 30,720
 CLAUDE_MD_RULES_TOTAL_KEY = ".claude/rules/__total__"
 #: 队列 §一 #629（2026-09-21，泳道看护续棒）：`zhuopin-lane-watch` 正本纳入同一套
 #: 尺寸巡检——它是泳道看护每棒固定要读的必读件，与 root/scene CLAUDE.md 同属
-#: "挤占开场注意力预算"这一判据；阈值独立设置（不与 rules 合计共享棘轮语义）。
+#: "挤占开场注意力预算"这一判据。🔴 续棒 `OP-0921-F`：原固定 24,576 B 常量
+#: 改为**棘轮**（只降不升），基线＝本棒完工实测字节数（机械取值）。
 LANE_WATCH_SKILL_REL = "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md"
-LANE_WATCH_SKILL_BYTE_CAP = 24 * 1024      # 24,576；成因见队列 #629、CHANGELOG 附录 Q
+LANE_WATCH_SKILL_BYTE_CAP = 30326  # 基线＝2026-09-21 `OP-0921-F` 完工实测 30,326 B
 CLAUDE_MD_SIZE_STATE_REL = "reports/sweep-claude-md-size-state.json"
 CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS = 24
 # 棘轮自我提示阈值（仅对 root 生效，scene 不适用——spec 的 MODIFIED
@@ -4639,7 +4655,8 @@ def _claude_md_targets(repo_root: Path) -> list[tuple[str, int]]:
         if rel in seen:
             continue
         seen.add(rel)
-        targets.append((rel, CLAUDE_MD_RULES_BYTE_CAP))
+        cap = CLAUDE_MD_RULES_BYTE_CAP_BY_FILE.get(rel, CLAUDE_MD_RULES_BYTE_CAP_FALLBACK)
+        targets.append((rel, cap))
     # 队列 §一 #629：`zhuopin-lane-watch` 正本同批纳入巡检（见上方常量注释）。
     skill_path = repo_root / LANE_WATCH_SKILL_REL
     if skill_path.is_file() and LANE_WATCH_SKILL_REL not in seen:

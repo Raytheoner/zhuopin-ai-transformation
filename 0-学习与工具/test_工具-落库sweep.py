@@ -5240,10 +5240,10 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
     def test_rules文件纳入受检目标且阈值8KB(self):
         self._write_rule("甲.md", 100)
         caps = dict(sweep._claude_md_targets(self.repo))
-        self.assertEqual(caps[".claude/rules/甲.md"], sweep.CLAUDE_MD_RULES_BYTE_CAP)
+        self.assertEqual(caps[".claude/rules/甲.md"], sweep.CLAUDE_MD_RULES_BYTE_CAP_FALLBACK)
 
     def test_rules单份超限被判出(self):
-        self._write_rule("甲.md", sweep.CLAUDE_MD_RULES_BYTE_CAP + 1)
+        self._write_rule("甲.md", sweep.CLAUDE_MD_RULES_BYTE_CAP_FALLBACK + 1)
         log = []
         sweep._check_claude_md_carrier_size(self.repo, log)
         call = self.recorder.calls[-1]
@@ -5263,7 +5263,7 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
         self.assertIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, text)
 
     def test_合计与单份可同时超限_各自独立记账(self):
-        self._write_rule("超份.md", sweep.CLAUDE_MD_RULES_BYTE_CAP + 100)
+        self._write_rule("超份.md", sweep.CLAUDE_MD_RULES_BYTE_CAP_FALLBACK + 100)
         for i in range(4):
             self._write_rule(f"文件{i}.md", 7 * 1024)
         log = []
@@ -5347,7 +5347,7 @@ class CarrierRejectConsumerTests(unittest.TestCase):
         self.assertEqual(sweep.claude_md_rules_over_cap(self.repo), {})
 
     def test_rules单份超限被判出(self):
-        self._write_rule("甲.md", sweep.CLAUDE_MD_RULES_BYTE_CAP + 1)
+        self._write_rule("甲.md", sweep.CLAUDE_MD_RULES_BYTE_CAP_FALLBACK + 1)
         breaches = sweep.claude_md_rules_over_cap(self.repo)
         self.assertIn(".claude/rules/甲.md", breaches)
         self.assertEqual(breaches[".claude/rules/甲.md"], 1)
