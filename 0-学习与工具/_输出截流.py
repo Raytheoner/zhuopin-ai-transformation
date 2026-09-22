@@ -92,7 +92,7 @@ def write_full_report(tool_name: str, lines: list[str], *, repo_root: Path | Non
 
 
 def summarize(lines: list[str], report_path: Path) -> list[str]:
-    """把全文行裁成 ≤20 行摘要：`must_keep()` 标记行无条件全部保留、
+    """把全文行裁成「must-keep 行数 ＋ ≤20 行」摘要（Shao Peishen 2026-09-22 答 `1a` 放开原 ≤20 硬上限）：`must_keep()` 标记行无条件全部保留、
     不占名额（队列 §一 #637），剩余名额按原逻辑优先保留告警/失败/
     豁免类信号行，不足则按原顺序补齐，末尾恒附回显路径行。"""
     signal_prefixes = ("⚠", "✗", "🔴", "🟡")
@@ -103,7 +103,13 @@ def summarize(lines: list[str], report_path: Path) -> list[str]:
         is_must_keep, text = _strip_must_keep(ln)
         (must_keep_lines if is_must_keep else other_lines).append(text)
 
-    remaining_cap = max(0, SUMMARY_LINE_CAP - len(must_keep_lines))
+    # 队列 §一 `#637` 六关④ 实证修正（2026-09-21 `Win-0921-A`）：此处原为
+    # `SUMMARY_LINE_CAP - len(must_keep_lines)`，与第 47 行注释「must-keep 行不占用
+    # 此名额」自相矛盾——十余条常驻表头被保住后 remaining_cap 只剩 7，正文被挤掉。
+    # 实撞：`ResidentServiceDeploymentHintTests::test_batch_touching_resident_service_path_gets_hint`
+    # 断言的 `ZhuopinAibotDevListener` 那行（表头 `⚠ 本批改动涉及常驻服务运行体` 在、
+    # 点名正文被裁）。must-keep 是「保住表头」，不该以「挤掉正文」为代价。
+    remaining_cap = SUMMARY_LINE_CAP
     signal_lines = [ln for ln in other_lines if ln.strip().startswith(signal_prefixes)]
 
     body = list(must_keep_lines)

@@ -86,7 +86,15 @@ def test_must_keep行不占信号行名额且无条件保留(tmp_path):
     report_path = tmp_path / "fake.log"
     summary = summarize(lines, report_path)
     assert "🧭 XX 扫描（每轮回显，零命中亦不省略）：本轮待升格 0 个" in summary
-    assert len(summary) <= 20
+    # 队列 §一 `#637`（Shao Peishen 2026-09-22 答 `1a`：放开原 ≤20 硬上限）：
+    # must-keep 行**不占** `SUMMARY_LINE_CAP` 名额，总行数上限＝must-keep 行数
+    # ＋ 19 内容行 ＋ 1 行省略指针。原断言写死 `<= 20`，等于要求「保住表头」以
+    # 「挤掉正文」为代价——那正是本行要治的病（实撞 `ResidentServiceDeploymentHintTests`
+    # 断言的 `ZhuopinAibotDevListener` 正文行被裁，六关④ 2026-09-21 拦下）。
+    # 本测试与 `test_must_keep行超过上限时允许摘要超出19行` 从此口径一致、不再自相矛盾。
+    must_keep_count = sum(1 for ln in lines if ln.startswith("\x00MUST-KEEP\x00"))
+    assert must_keep_count == 1
+    assert len(summary) <= must_keep_count + 20
 
 
 def test_must_keep行超过上限时允许摘要超出19行(tmp_path):
