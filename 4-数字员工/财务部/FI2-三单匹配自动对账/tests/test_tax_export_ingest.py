@@ -1256,3 +1256,50 @@ def test_split_writes_two_invoice_rows_end_to_end(tmp_path):
     assert round(sum(r["untaxed_amount"] for r in result.resolved_rows), 2) == 1061.95
     assert round(sum(r["tax_amount"] for r in result.resolved_rows), 2) == 138.05
     assert sum(r["inv_qty"] for r in result.resolved_rows) == 6000
+
+
+def test_split_does_not_leak_item_codes_across_different_ap_documents(tmp_path):
+    """🔴 唐燕萍 2026-09-20 `财务部#19` J1 签认（队列 §一 `#424` 新增待建范围）：
+    跨两料号合计开票**只在两个料号同属一张 AP 单时才拆行认领**——不同 AP 单的组合
+    改按判例 7 办，**一律不认领**，不得挑一个凑。
+
+    本条件在现有架构下由 `ap_no` 缓存边界天然保证——`resolve_item_code_split` 永远
+    只接收调用方按 `ap_no` 取好的 `ap_lines_for_ap_no`（见其 docstring 与
+    `_ap_lines_cache[ap_no] = self._connector.get_ap_lines(ap_no)`），不存在跨
+    `ap_no` 凑法的代码路径；本用例用**两张真实 AP 单同批摄取**端到端坐实这条边界，
+    而不是只改一句注释：气泡袋 `AP-2026080137`（判例 8，跨料号拆行的真实案例）与
+    密封胶 `AP-2026080041`（判例 5，单料号的真实案例）在同一次 `ingest_directory`
+    运行里**同时进入 `_ap_lines_cache`**——这是唯一可能发生跨单泄漏的窗口。
+    """
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    _make_export_xlsx(export_dir / "a.xlsx", [
+        _row(digital_no="26322000006465433532", qty=6000, unit_price=0.176991,
+             amount=1061.95, tax_amount=138.05),
+        _row(digital_no="26322000006465433531", qty=20, unit_price=32.756,
+             amount=655.12, tax_amount=85.16),
+    ])
+
+    class _Conn:
+        def get_ap_lines_by_invoice_no(self, suffix):
+            # 同一批查询即返回两张真实 AP 单各自的候选行，靠 endswith 客户端校验
+            # 各自认领自己的发票号——不靠调用方传的 suffix 做筛选。
+            return [
+                {"InvoiceNo": "26322000006465433532", "DocNo": "AP-2026080137"},
+                {"InvoiceNo": "26322000006465433531", "DocNo": "AP-2026080041"},
+            ]
+
+        def get_ap_lines(self, ap_no):
+            return list(_CASE_BUBBLE_AP_ROWS if ap_no == "AP-2026080137"
+                        else _CASE_SEALANT_AP_ROWS)
+
+    result = ingest_directory(export_dir, tmp_path / "l.json", _Conn(),
+                              now="2026-09-07T00:00:00Z")
+    assert result.diagnostics == []
+    bubble_rows = [r for r in result.resolved_rows if r["ap_no"] == "AP-2026080137"]
+    sealant_rows = [r for r in result.resolved_rows if r["ap_no"] == "AP-2026080041"]
+    # 气泡袋那一行仍只拆出它自己 AP 单下的两个料号——密封胶的 R02D.0001 没有混入。
+    assert {r["item_code"] for r in bubble_rows} == {"J02E.0024", "R02E.0024"}
+    # 密封胶那一行仍是单条、单料号——气泡袋的两个料号没有混入，也没有被误拆。
+    assert len(sealant_rows) == 1
+    assert sealant_rows[0]["item_code"] == "R02D.0001"
