@@ -977,10 +977,16 @@ class 上下文闸消费者_627(_Base):
     def _rows(self) -> list[dict]:
         return json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8-sig"))
 
-    def _run_batch(self, extra: list[str] | None = None):
+    def _run_batch(self, extra: list[str] | None = None, script: Path | None = None):
         args = ["-Plan", str(self.plan), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir),
                 "-ContextPollSec", "2", *(extra or [])]
-        return _run(args, self.root, self.env, timeout=180)
+        if script is None:
+            return _run(args, self.root, self.env, timeout=180)
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script), *args],
+            cwd=self.root, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env=self.env, timeout=180,
+        )
 
     def _track_json_for(self, sid: str):
         self._written_json.append(self.repo_root / "reports" / "context-meter" / f"{sid}.json")
@@ -1029,6 +1035,25 @@ class 上下文闸消费者_627(_Base):
         summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8-sig")
         self.assertIn("本批越 150k 的泳道 1 条", summary)
 
+    def test_硬线终止也落续棒载荷(self):
+        """队列 #639 3a：#627 的硬线终止此前只 taskkill、什么都不排——被掐掉的活静默掉在地上。"""
+        self.env["STUB_CONTEXT_VALUE"] = "260000"
+        self.stub_file.write_text(_stub_context(hang_sec=60), encoding="utf-8")
+        r = self._run_batch()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = self._rows()
+        self._track_json_for(rows[0]["Session"])
+        relay = self.log_dir / "demo-lane-A1.续棒.json"
+        self.assertTrue(relay.exists(), "硬线终止必须落一份续棒载荷")
+        payload = json.loads(relay.read_text(encoding="utf-8-sig"))
+        self.assertEqual(payload["reason"], "硬线")
+        self.assertGreaterEqual(payload["contextPeak"], 250000)
+        self.assertEqual(payload["session"], rows[0]["Session"])
+        self.assertIn("--resume", payload["hint"], "载荷须点明不许 --resume 续——那等于没转场")
+        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("本批因上下文终止、续棒待排 1 条", summary,
+                      "续棒是本闸的消费者，必须抬到 summary 正面，不能只躺在 logDir 里")
+
     def test_硬线终止后不再触发NO_SENTINEL补问(self):
         self.env["STUB_CONTEXT_VALUE"] = "260000"
         self.stub_file.write_text(_stub_context(hang_sec=60), encoding="utf-8")
@@ -1038,6 +1063,108 @@ class 上下文闸消费者_627(_Base):
         self._track_json_for(rows[0]["Session"])
         self.assertFalse((self.log_dir / "demo-lane-A1.retry.log").exists(),
                           "硬线终止是主泳道代 agent 完成收尾，不该再补问一轮")
+
+
+class 软线兜底期限_639(上下文闸消费者_627):
+    """队列 §一 `#639` 3a（2026-09-23）：150k 软线此前只记峰值、不设上限。
+
+    实测（`reports/probe-0921/ctxcurve.py` 从 transcript 重建上下文曲线，09-20~09-23
+    十条无头泳道）：**9 条越过 150k，且 9 条全部自行收工**，越线后耗时最短 1 分／中位
+    7 分／最长 14 分，峰值冲到 210k／242k／249k。两条结论决定了本闸的形状——
+    ⑴ 越线**不能立刻杀**（会砍掉离收工只剩几分钟的活）；⑵ 250k 硬线在已观测的样本里
+    **一次都没触发过**（峰值全部落在它下面），所以无界的那条尾巴至今没有任何上限。
+    ⇒ 软线越线起一个兜底期限，跑满仍不收尾才判定真挂住，终止并排续棒。
+    """
+
+    def test_越150k且期限内收工_不终止(self):
+        """不误伤：这是已观测到的 9/9 常态形状，默认 15 分期限一条都不该咬。"""
+        self.env["STUB_CONTEXT_VALUE"] = "160000"
+        self.stub_file.write_text(_stub_context(), encoding="utf-8")
+        r = self._run_batch()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = self._rows()
+        self._track_json_for(rows[0]["Session"])
+        self.assertEqual(rows[0]["Status"], "OK")
+        self.assertFalse((self.log_dir / "demo-lane-A1.续棒.json").exists(),
+                         "期限内自行收工的泳道不该被当成挂住、更不该排续棒")
+
+    def test_越150k满兜底期限_终止判PARTIAL并落续棒(self):
+        self.env["STUB_CONTEXT_VALUE"] = "160000"
+        self.stub_file.write_text(_stub_context(hang_sec=60), encoding="utf-8")
+        t0 = time.monotonic()
+        r = self._run_batch(["-ContextGraceMin", "0.05"])   # 3 秒，同 -ContextPollSec 的压秒做法
+        elapsed = time.monotonic() - t0
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertLess(elapsed, 40, f"该在期限＋一两个轮询周期内终止，却等了 {elapsed:.0f}s")
+        rows = self._rows()
+        self._track_json_for(rows[0]["Session"])
+        self.assertEqual(rows[0]["Status"], "PARTIAL")
+        self.assertEqual(rows[0]["Sentinel"], "软线超期")
+        log = (self.log_dir / "demo-lane-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("上下文越 150k 软线", log, "越线那一刻要留痕，否则事后查不出期限从何时起算")
+        self.assertIn("仍未收尾", log)
+        self.assertNotIn("OPENER_DONE", log, "该被掐断在 ping 那一步")
+        payload = json.loads((self.log_dir / "demo-lane-A1.续棒.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(payload["reason"], "软线超期")
+        self.assertEqual(payload["lane"], "demo-lane")
+        # 🔴 `$op` 只有 Id/Title/Paste/Lane/Text/Model 六个属性——续棒载荷初稿误写
+        # `$op.Branch`／`$op.Worktree`，PowerShell 对不存在的属性**不报错、返回 $null**，
+        # 于是载荷里两个关键字段恒空而没人发现（本项目判为「参数被接受却不生效，比被拒绝更危险」）。
+        # 本断言就是那道守：字段必须在载荷里出现（本用例的计划未声明 worktree ⇒ 两者为 null，
+        # 但键必须在，缺键说明拼装处又被改回不存在的属性）。
+        self.assertIn("branch", payload)
+        self.assertIn("worktree", payload)
+
+    def test_期限设0即关闭_退回只记峰值的老行为(self):
+        """逃生阀：0 ＝ 关掉兜底期限。软线回到 #627 的「只记峰值不终止」。"""
+        self.env["STUB_CONTEXT_VALUE"] = "160000"
+        self.stub_file.write_text(_stub_context(hang_sec=8), encoding="utf-8")
+        r = self._run_batch(["-ContextGraceMin", "0"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = self._rows()
+        self._track_json_for(rows[0]["Session"])
+        self.assertEqual(rows[0]["Status"], "OK", "期限关闭时不得终止")
+        self.assertFalse((self.log_dir / "demo-lane-A1.续棒.json").exists())
+
+    def test_worktree名不像slug时判FAIL不建(self):
+        """队列 `#639`（2026-09-23 实撞）：`worktree：☑（v2.ps1 起 claude 前脚本建、收工自删）`
+        漏写首项名字，原正则把整段说明文字当成名字，真建出一个带空格与中文顿号的 worktree。"""
+        plan = self.plan.read_text(encoding="utf-8")
+        plan = plan.replace("worktree：☐", "worktree：☑（v2.ps1 起 claude 前脚本建、收工自删）", 1)
+        self.assertIn("worktree：☑（v2.ps1", plan, "计划模板的 worktree 字段形态变了，请同步本用例")
+        self.plan.write_text(plan, encoding="utf-8")
+        self.env["STUB_CONTEXT_VALUE"] = "80000"
+        self.stub_file.write_text(_stub_context(), encoding="utf-8")
+        r = self._run_batch()
+        rows = self._rows()
+        self.assertEqual(rows[0]["Status"], "FAIL(worktree-name)", r.stdout + r.stderr)
+        log = (self.log_dir / "demo-lane-A1.log").read_text(encoding="utf-8-sig")
+        self.assertIn("不像 worktree 名", log)
+        bad = self.repo_root / ".claude" / "worktrees" / "v2.ps1 起 claude 前脚本建、收工自删"
+        self.assertFalse(bad.exists(), "判 FAIL 就不许把畸形 worktree 建出来")
+
+    def test_变异守卫_抽掉软线终止段_用例必须转红(self):
+        """🔴 恒真检验（同本文件 `#550` 补问段的做法：改**副本**，绝不碰真身）：
+        把软线终止那一段抽掉后跑同一场景，`软线超期` 必须消失。"""
+        src = SCRIPT.read_text(encoding="utf-8")
+        begin, end = "# >>> #639 软线兜底 begin", "# <<< #639 软线兜底 end"
+        i, j = src.index(begin), src.index(end)
+        self.assertGreater(j, i)
+        mutant_dir = self.root / "mutant" / "tools"
+        # 队列 #600：脚本以自身物理位置的上一级为仓库根并对其跑 git，变异副本所在目录须是 git 仓库。
+        (self.root / "mutant").mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", str(self.root / "mutant")], check=True, capture_output=True)
+        mutant_dir.mkdir(parents=True)
+        mutant = mutant_dir / SCRIPT.name
+        mutant.write_text(src[:i] + src[j + len(end):], encoding="utf-8")
+        self.env["STUB_CONTEXT_VALUE"] = "160000"
+        self.stub_file.write_text(_stub_context(hang_sec=20), encoding="utf-8")
+        r = self._run_batch(["-ContextGraceMin", "0.05"], script=mutant)
+        rows = self._rows()
+        self._track_json_for(rows[0]["Session"])
+        self.assertNotEqual(rows[0]["Sentinel"], "软线超期",
+                            "抽掉软线终止段后仍判「软线超期」⇒ 正例是恒真的\n" + r.stdout + r.stderr)
+        self.assertFalse((self.log_dir / "demo-lane-A1.续棒.json").exists())
 
 
 if __name__ == "__main__":

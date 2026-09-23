@@ -78,7 +78,13 @@ param(
     # 队列 #627 A 面：150k／250k 上下文闸轮询周期——默认 15s；单测用它把等待压到秒级，
     # 生产不必调（钩子每次工具调用后即写 json，15s 足够密）。阈值本身（150000／250000）
     # 是 Shao Peishen 2026-09-16 既定政策值，不开放为参数。
-    [int]$ContextPollSec = 15
+    [int]$ContextPollSec = 15,
+    # 队列 #639 3a（2026-09-23）：150k 软线的兜底期限（分钟，0＝关闭）。阈值本身（150000／250000）
+    # 仍是 Shao Peishen 2026-09-16 既定政策值、**不动**；本参数只给软线加一条「越线后最多再跑多久」
+    # 的上限。默认 15 分的实测依据：09-20~09-23 十条泳道里 9 条越过 150k，越线后自行收工耗时
+    # 最短 1 分／中位 7 分／最长 14 分（`reports/probe-0921/ctxcurve.py` 重建 transcript 曲线），
+    # 15 分因此不咬任何一条已观测到的常态泳道，只咬真挂住的那种。
+    [double]$ContextGraceMin = 15
 )
 
 $ErrorActionPreference = 'Stop'
@@ -133,7 +139,8 @@ if ($Detach) {
     $childArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath,
                    '-Plan', $Plan, '-Yes', '-LogDir', $LogDir,
                    '-MaxParallel', $MaxParallel, '-StaggerSec', $StaggerSec,
-                   '-SentinelRetryTimeoutSec', $SentinelRetryTimeoutSec, '-ContextPollSec', $ContextPollSec)
+                   '-SentinelRetryTimeoutSec', $SentinelRetryTimeoutSec, '-ContextPollSec', $ContextPollSec,
+                   '-ContextGraceMin', $ContextGraceMin.ToString([cultureinfo]::InvariantCulture))
     if ($FullAuto) { $childArgs += '-FullAuto' }
     if ($DryRun) { $childArgs += '-DryRun' }
     if ($Force) { $childArgs += '-Force' }
@@ -264,7 +271,7 @@ $sentinelRetryPrompt = @(
 
 # 每个泳道一个 Job：泳道内严格串行，FAIL/NO-SENTINEL 停本泳道
 $laneBlock = {
-    param($laneName, $items, $logDir, $header, $fullAuto, $retryPrompt, $retryTimeoutSec, $claudeExe, $repoRootForJob, $contextPollSec)
+    param($laneName, $items, $logDir, $header, $fullAuto, $retryPrompt, $retryTimeoutSec, $claudeExe, $repoRootForJob, $contextPollSec, $contextGraceMin)
     $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
     $global:OutputEncoding = $Utf8NoBom
     $results = @()
@@ -277,6 +284,7 @@ $laneBlock = {
     if ($repoRootForJob) { Set-Location $repoRootForJob }
     $repoRootInJob = (Get-Location).Path
     if (-not $contextPollSec -or $contextPollSec -le 0) { $contextPollSec = 15 }
+    if ($null -eq $contextGraceMin) { $contextGraceMin = 15 }
 
     # 队列 #627 A 面：给 150k／250k 上下文闸装消费者——`hooks-posttooluse-context-meter.ps1`
     # 每次工具调用后把当前会话上下文估算值写进 `reports/context-meter/<session_id>.json`
@@ -311,6 +319,10 @@ $laneBlock = {
         # worktree 已在（续棒复用同名 worktree）⇒ 跳过建、直接复用，不重建。
         $wtDeclared = $op.Text -match 'worktree[：:]\s*☑'
         $laneWorktreePath = $null
+        # 队列 #639 3a：显式清零——两者只在 ☑ 分支里赋值，不清会把上一条 opener 的
+        # 分支／worktree 名残留进本条的续棒载荷（同一泳道内串行跑多条时必现）。
+        $wtName = $null
+        $branchName = $null
         $wtNote = $null  # 队列 #600 合入前补缺：worktree 提示延后到 session 首行之后写，守「日志首行＝session」契约（#549）
         if ($wtDeclared) {
             $wtMatch = [regex]::Match($op.Text, 'worktree[：:]\s*☑\s*[（(]\s*([^，,）)]+)')
@@ -320,6 +332,17 @@ $laneBlock = {
                 break
             }
             $wtName = $wtMatch.Groups[1].Value.Trim()
+            # 队列 §一 `#639`（2026-09-23 实撞）：括注首项**必须是 worktree 名**，但上面的
+            # 正则只是「切到第一个逗号／右括号为止」——首项漏写时它会把整段括注散文当成名字。
+            # 今日实证：`worktree：☑（v2.ps1 起 claude 前脚本建、收工自删）` 漏了名字，于是
+            # 真建出一个名叫「v2.ps1 起 claude 前脚本建、收工自删」的 worktree（含空格与中文
+            # 顿号），`git worktree list` 从此常驻一条畸形行，且该行还登记进了 git。
+            # ⇒ 名字须是 slug；不像名字就当场 FAIL，**不建**。与既有 13 条 worktree 实测同形。
+            if ($wtName -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{1,79}$') {
+                ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | 【设置】worktree 括注首项不像 worktree 名（解出「' + $wtName + '」，须为 [A-Za-z0-9._-] 组成的 slug）——多半是括注漏写了名字、把说明文字当成了名字 ⇒ 判 FAIL，未建 worktree、未起 claude') | Out-File -FilePath $log -Encoding utf8
+                $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(worktree-name)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log; ContextPeak = 0 }
+                break
+            }
             $laneWorktreePath = Join-Path $repoRootInJob ('.claude\worktrees\' + $wtName)
             $branchFieldMatch = [regex]::Match($op.Text, '分支[：:]\s*([^｜|]+)')
             $branchName = $null
@@ -391,6 +414,10 @@ $laneBlock = {
             $mainErrFile = Join-Path $logDir ($laneName + '-' + $op.Id + '.stderr.log')
             $peakContext = 0L
             $contextKilled = $false
+            # 队列 #639 3a：软线越线时刻与终止事由。'硬线'＝越 250k 立杀（#627 原行为，不动）；
+            # '软线超期'＝越 150k 后又跑满 $contextGraceMin 分钟仍不收尾。
+            $softCrossedAt = $null
+            $killReason = ''
             $proc = Start-Process -FilePath $claudeExe -ArgumentList $claudeArgs -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
                 -RedirectStandardInput $tmp -RedirectStandardOutput $mainOutFile -RedirectStandardError $mainErrFile
             # 真 Windows PowerShell 5.1 实测：`Start-Process -PassThru`（不带 `-Wait`）配重定向流时，
@@ -407,9 +434,27 @@ $laneBlock = {
                 if ($peakContext -ge 250000) {
                     & taskkill /PID $proc.Id /T /F 2>&1 | Out-Null
                     $contextKilled = $true
+                    $killReason = '硬线'
                     $proc.WaitForExit(10000) | Out-Null
                     break
                 }
+                # >>> #639 软线兜底 begin（变异检验时整段抽掉，「软线超期」须消失）
+                # 队列 #639 3a：150k 软线此前只记峰值——实测 9 条越线泳道全部自行收工（1~14 分），
+                # 所以越线**不立刻杀**（那会砍掉离收工只剩几分钟的活）；只起一个表，把这条无界的
+                # 尾巴封成有界。跑满兜底期限仍在跑 ⇒ 判定为真挂住，终止并排续棒。
+                if ($peakContext -ge 150000) {
+                    if ($null -eq $softCrossedAt) {
+                        $softCrossedAt = Get-Date
+                        ('[lane:' + $laneName + '] ' + $op.Id + ' 上下文越 150k 软线（≈' + [math]::Round($peakContext / 1000) + 'k）⇒ 起兜底期限 ' + $contextGraceMin + ' 分钟') | Out-File -FilePath $log -Append -Encoding utf8
+                    } elseif ($contextGraceMin -gt 0 -and ((Get-Date) - $softCrossedAt).TotalMinutes -ge $contextGraceMin) {
+                        & taskkill /PID $proc.Id /T /F 2>&1 | Out-Null
+                        $contextKilled = $true
+                        $killReason = '软线超期'
+                        $proc.WaitForExit(10000) | Out-Null
+                        break
+                    }
+                }
+                # <<< #639 软线兜底 end
                 if ($proc.WaitForExit([int]($contextPollSec * 1000))) { break }
             }
             # 收尾再探一次：正常退出时最后一段窗口可能还没被轮询逮到。
@@ -422,7 +467,35 @@ $laneBlock = {
             if ($contextKilled) {
                 $kDisplay = [math]::Round($peakContext / 1000)
                 ('OPENER_PARTIAL: 上下文转场（≈' + $kDisplay + 'k）') | Out-File -FilePath $log -Append -Encoding utf8
-                ('[lane:' + $laneName + '] ' + $op.Id + ' 上下文越 250k 硬线（≈' + $kDisplay + 'k）⇒ 主泳道 taskkill 整树、判 PARTIAL，不补问') | Out-File -FilePath $log -Append -Encoding utf8
+                if ($killReason -eq '软线超期') {
+                    ('[lane:' + $laneName + '] ' + $op.Id + ' 上下文越 150k 软线后满 ' + $contextGraceMin + ' 分钟仍未收尾（≈' + $kDisplay + 'k）⇒ 主泳道 taskkill 整树、判 PARTIAL，不补问') | Out-File -FilePath $log -Append -Encoding utf8
+                } else {
+                    ('[lane:' + $laneName + '] ' + $op.Id + ' 上下文越 250k 硬线（≈' + $kDisplay + 'k）⇒ 主泳道 taskkill 整树、判 PARTIAL，不补问') | Out-File -FilePath $log -Append -Encoding utf8
+                }
+                # 队列 #639 3a：终止即落一份薄续棒载荷——#627 的硬线终止此前只 taskkill，
+                # 什么都不排，被掐掉的活静默掉在地上。本文件是「具名承接载体」：谁来续、
+                # 从哪续、续什么，一条不缺（机制守＝下面 summary 的「续棒待排」行）。
+                try {
+                    $relayPath = Join-Path $logDir ($laneName + '-' + $op.Id + '.续棒.json')
+                    ([ordered]@{
+                        lane        = $laneName
+                        id          = $op.Id
+                        reason      = $killReason
+                        contextPeak = $peakContext
+                        graceMin    = $contextGraceMin
+                        session     = $sid
+                        branch      = $branchName
+                        worktree    = $wtName
+                        model       = $op.Model
+                        killedAt    = (Get-Date).ToString('o')
+                        laneLog     = $log
+                        hint        = '续棒须新开 session（--resume 会把被掐断那 ' + [math]::Round($peakContext / 1000) + 'k 上下文原样载回来，等于没转场）；做什么以队列行为准，本文件只交代从哪续。'
+                    } | ConvertTo-Json -Depth 4) | Set-Content -LiteralPath $relayPath -Encoding UTF8
+                    ('[lane:' + $laneName + '] ' + $op.Id + ' 续棒载荷已落：' + $relayPath) | Out-File -FilePath $log -Append -Encoding utf8
+                } catch {
+                    # fail-open：续棒落不下不许连累本闸——终止本身已经生效，这里只少一份交接件。
+                    ('[lane:' + $laneName + '] ' + $op.Id + ' ⚠ 续棒载荷写入失败：' + $_.Exception.Message) | Out-File -FilePath $log -Append -Encoding utf8
+                }
             }
             $t1 = Get-Date
             # 哨兵扫全文（原为 -Tail 40）：2026-08-25 实测 A21/A25 的哨兵落在第 2 行，
@@ -435,7 +508,7 @@ $laneBlock = {
             $sentinelBy = if ($done -or $partial) { '首轮' } elseif ($code -eq 0) { '无' } else { '—' }
             # 上下文硬线终止不算真失败——是主泳道代 agent 完成了它没自觉做的收尾，覆盖掉上面按
             # 退出码算出的 FAIL，且天然跳过下面的 NO-SENTINEL 补问（不该为这个再问一轮）。
-            if ($contextKilled) { $status = 'PARTIAL'; $sentinelBy = '硬线终止' }
+            if ($contextKilled) { $status = 'PARTIAL'; $sentinelBy = if ($killReason -eq '软线超期') { '软线超期' } else { '硬线终止' } }
             # >>> #550 补问 begin（变异检验时整段注释掉，NO-SENTINEL 须回来）
             if ($status -eq 'NO-SENTINEL') {
                 $retryPromptFile = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry-prompt.txt')
@@ -616,9 +689,9 @@ while ($queue.Count -gt 0 -or ($jobs.Values | Where-Object { $_.State -eq 'Runni
         # `NamedParameterNotFound`。PS7 保留原样；PS 5.1 改把 `$RepoRoot` 当普通参数传给
         # `$laneBlock`，block 首行 `Set-Location` 兜住同一「显式定 cwd」语义。
         if ($PSVersionTable.PSVersion.Major -ge 7) {
-            $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot, $ContextPollSec
+            $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot, $ContextPollSec, $ContextGraceMin
         } else {
-            $jobs[$l[0]] = Start-Job -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot, $ContextPollSec
+            $jobs[$l[0]] = Start-Job -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot, $ContextPollSec, $ContextGraceMin
         }
         $started++
     }
@@ -650,6 +723,14 @@ $summaryText += "`r`nSENTINEL_FIRST=" + $sentinelFirst + "`r`nSENTINEL_RETRY=" +
 # 只要有一条越线，该泳道计一次，不重复计数。
 $lanesOver150k = @($all | Where-Object { $_.ContextPeak -ge 150000 } | Select-Object -ExpandProperty Lane -Unique).Count
 $summaryText += "`r`n本批越 150k 的泳道 " + $lanesOver150k + ' 条'
+# 队列 #639 3a：续棒待排行——本闸的**消费者**（规则「新建告警必须自带消费者」）。
+# 每条因上下文终止的泳道都在 logDir 里留了一份 `<lane>-<id>.续棒.json`，这里把条数与
+# 路径抬到 summary 正面，收工只读 summary 的人也不会漏掉被掐断的那条活。
+$relayFiles = @(Get-ChildItem -LiteralPath $logDir -Filter '*.续棒.json' -ErrorAction SilentlyContinue)
+if ($relayFiles.Count -gt 0) {
+    $summaryText += "`r`n本批因上下文终止、续棒待排 " + $relayFiles.Count + ' 条'
+    foreach ($rf in $relayFiles) { $summaryText += "`r`n[续棒待排] " + $rf.FullName }
+}
 # v2.3：跳过必留痕——summary.txt 逐条写 [skipped] <编号> | <行号 理由@载体:行>，人可直接复核判定。
 $skippedRows = @($all | Where-Object { $_.Status -eq 'SKIPPED' })
 $summaryText += "`r`nSKIPPED=" + $skippedRows.Count
