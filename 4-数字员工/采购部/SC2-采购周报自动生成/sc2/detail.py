@@ -47,6 +47,9 @@ from .windows import Window, WindowSet, build_windows
 #: 三个可导出的节。键＝URL 段与 CLI 参数；值＝(中文名, 对账所对的周报指标 key)。
 #: 🔴 「在途」节对的是 `open_line_count`（未清行数）——它数的是**本窗口内下单、且至今未清**的行，
 #: 不是全库所有未清行；这一口径与 `metrics._SPECS` 里 `open_line_count` 的定义**完全同源**。
+#: 🔴 队列 #538（姚祖怡 2026-09-18 回件）另立了一个**不限本窗口下单**的累计在途口径
+#: （`open_line_count_cumulative` 等，见 `metrics._CAVEAT_OPEN_CUMULATIVE`）——本节
+#: 明细导出**尚未覆盖**该口径，只导出既有 `open_line_count` 对应的行集，不要混淆。
 SECTIONS: dict[str, tuple[str, str]] = {
     "order": ("下单", "order_line_count"),
     "receipt": ("收货", "receipt_line_count"),

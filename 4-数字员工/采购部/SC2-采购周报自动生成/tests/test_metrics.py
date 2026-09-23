@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -328,6 +328,46 @@ def test_波动标记不驱动任何推送():
 
     src = inspect.getsource(notify)
     assert "anomaly" not in src, "推送层不该知道波动标记的存在，更不该据它决定发不发"
+
+
+# ── 在途累计口径（队列 #538，姚祖怡 2026-09-18 采购部#23 回件）──────────────────
+
+def test_在途累计口径不限于该周下单_姚祖怡定义():
+    """姚祖怡 2026-09-18 采购部#23 回件原话：『ERP在途行数应该是2501行，在途订单的定义：
+    是截止本周最后一天即9-13，所有"行.状态"为审核的订单"未交数量"大于0的即为在途。』
+    这与既有 open_line_count（本周下单、且至今未清）是两个不同口径的指标，须并存呈现，
+    不得互相替代（他没有说「本周下单」这个限定，说的是「所有」）。"""
+    lines = [
+        _line(po_id="OLD-OPEN", order_date=WS.month_ago.start, line_status=2,
+              qty_ordered=50, qty_received=0),
+        _line(po_id="CUR-OPEN", order_date=WS.current.start, line_status=2,
+              qty_ordered=30, qty_received=0),
+        _line(po_id="OLD-DRAFT", order_date=WS.month_ago.start, line_status=0,
+              qty_ordered=10, qty_received=0),
+        _line(po_id="OLD-CLOSED", order_date=WS.month_ago.start, line_status=4,
+              qty_ordered=10, qty_received=0),
+        _line(po_id="FUTURE", order_date=WS.current.end, line_status=2,
+              qty_ordered=999, qty_received=0),  # 落在本窗口内，验证不重复计入下面的"跨窗口"用例
+    ]
+    metrics = {m.key: m for m in compute_metrics(_ds(lines, []), WS)}
+    assert metrics["open_line_count_cumulative"].current.value == 3
+    assert metrics["open_qty_cumulative"].current.value == pytest.approx(80.0 + 999)
+    # 既有『本周下单未清』口径不受影响——只统计本周下的那些行
+    assert metrics["open_line_count"].current.value == 2
+
+
+def test_在途累计口径晚于截止日的下单不计入():
+    """截至窗口最后一天——晚于该窗口结束日下的单，此刻本不该算在途，须排除。"""
+    lines = [_line(po_id="LATER", order_date=WS.current.end + timedelta(days=1),
+                    line_status=2, qty_ordered=10, qty_received=0)]
+    metrics = {m.key: m for m in compute_metrics(_ds(lines, []), WS)}
+    assert metrics["open_line_count_cumulative"].current.value == 0
+
+
+def test_在途累计口径caveat引用姚祖怡原话():
+    metrics = {m.key: m for m in compute_metrics(_ds([_line()], []), WS)}
+    caveat = metrics["open_line_count_cumulative"].current.caveat
+    assert "姚祖怡" in caveat and "2026-09-18" in caveat and "2501" in caveat
 
 
 def test_确认数量未知的行不进数量与金额求和但计入行数():

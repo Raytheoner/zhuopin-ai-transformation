@@ -55,6 +55,17 @@ _CAVEAT_AMOUNT = "金额为含税单价 × 数量（未扣退货与折让，口�
 _CAVEAT_CONFIRM_QTY = ("订单量＝ERP「确认数量」（ConfirmQty）；"
                        "未取到确认数量的行不参与本项求和，条数见取数说明")
 
+#: 「已审核未交清」ERP LineStatus 码，见 models.py 顶部映射表。
+_STATUS_APPROVED_UNDELIVERED = 2
+
+_CAVEAT_OPEN_CUMULATIVE = (
+    "在途口径＝截至本窗口最后一天，全部『行状态』＝已审核未交清、且未交数量>0的订单行，"
+    "不限于该窗口内下单（与 open_line_count「本窗口下单且至今未清」是两个不同口径，并存"
+    "不互相替代）——姚祖怡 2026-09-18 采购部#23 回件原话：『ERP在途行数应该是2501行，"
+    "在途订单的定义：是截止本周最后一天即9-13，所有"
+    "“行.状态”为审核的订单“未交数量”大于0的即为在途。』"
+)
+
 
 @dataclass(frozen=True)
 class _Ctx:
@@ -68,6 +79,9 @@ class _Ctx:
     lines: tuple[OrderLine, ...]           # 本窗口内**下单**的行
     receipts: tuple[ReceiptRecord, ...]    # 本窗口内**收货**的行
     order_index: dict[tuple[str, str], OrderLine]
+    #: 姚祖怡在途口径（队列 #538）——不限本窗口下单，截至窗口最后一天全部
+    #: 「已审核未交清」且未交数量>0 的订单行（见 `_CAVEAT_OPEN_CUMULATIVE`）。
+    cumulative_open: tuple[OrderLine, ...] = ()
 
 
 def _in(window: Window, day) -> bool:
@@ -93,6 +107,15 @@ def _qty_known(lines: Iterable[OrderLine]) -> list[OrderLine]:
     而真相是这个数没取到。行数类指标仍照计（那些行确实存在），未知条数写进取数说明。
     """
     return [l for l in lines if l.qty_confirmed_known]
+
+
+def _cumulative_open_lines(all_lines: Iterable[OrderLine], cutoff) -> list[OrderLine]:
+    """姚祖怡在途口径（队列 #538，2026-09-18 采购部#23 回件）：不限该窗口内下单，
+    截至 `cutoff`（窗口最后一天）全部「已审核未交清」且未交数量>0 的订单行。"""
+    return [l for l in all_lines
+            if l.order_date is not None and l.order_date <= cutoff
+            and l.line_status == _STATUS_APPROVED_UNDELIVERED
+            and l.qty_open > 0]
 
 
 def _top_share(lines) -> float | None:
@@ -179,6 +202,13 @@ _SPECS: list[tuple[str, str, str, Callable[[_Ctx], float | None], str, str]] = [
      lambda c: float(sum(1 for l in c.lines if l.is_closed)), "行", ""),
     ("open_ratio", "未清行占比", "在途",
      lambda c: _rate(len(_open_lines(c.lines)), len(c.lines)), "%", ""),
+    ("open_line_count_cumulative", "在途行数（累计口径）", "在途",
+     lambda c: float(len(c.cumulative_open)), "行", _CAVEAT_OPEN_CUMULATIVE),
+    ("open_qty_cumulative", "在途数量（累计口径）", "在途",
+     lambda c: float(sum(l.qty_open for l in c.cumulative_open)), "", _CAVEAT_OPEN_CUMULATIVE),
+    ("open_amount_cumulative", "在途金额（累计口径）", "在途",
+     lambda c: float(sum(l.qty_open * l.unit_price for l in c.cumulative_open)),
+     "元", _CAVEAT_OPEN_CUMULATIVE),
     # ── 供应商 ──
     ("supplier_count", "活跃供应商数", "供应商",
      lambda c: float(len({l.supplier_id for l in c.lines if l.supplier_id})), "家", ""),
@@ -219,6 +249,7 @@ def compute_metrics(
             lines=tuple(l for l in dataset.order_lines if _in(w, l.order_date)),
             receipts=tuple(r for r in dataset.receipts if _in(w, r.receipt_date)),
             order_index=order_index,
+            cumulative_open=tuple(_cumulative_open_lines(dataset.order_lines, w.end)),
         )
 
     buckets = {"current": _ctx(windows.current),
