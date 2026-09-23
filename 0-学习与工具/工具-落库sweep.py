@@ -4558,11 +4558,34 @@ def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: li
 #    把全轮拦停会让一次超限阻断所有人的落库，那是另一种「守卫比问题更坏」。
 # 处置形态与上方「文件清单解析不出片段」「提交信息为空」两处完全一致：只报不动、`continue`、
 # 不进 `touched_paths`，行留在待处理态，人把文件瘦下去后下一轮自愈。
+def _git_bytes(path: Path) -> int:
+    """按 **git 存进 blob 的那套字节** 量尺寸——即 CRLF 归一成 LF 之后的长度。
+
+    🔴 队列 §一 `#639`（2026-09-23 `Win-0921-A` 实测）：本文件三处尺寸闸此前一律用
+    `stat().st_size`（工作区磁盘字节）。本仓工作区是 CRLF，git blob 是 LF ⇒ 磁盘字节
+    恒比 blob 多「行数」那么多，**每道闸的余量都被行数悄悄吃掉**：
+
+    - `zhuopin-lane-watch/SKILL.md` 190 行：磁盘 30,516 vs blob 30,326 ＝ 阈值
+      `LANE_WATCH_SKILL_BYTE_CAP` 一字不差，却被这道闸判「超 190 B」——**棘轮基线
+      没破，是尺子读错了**；而该闸是 reject 型，于是任何触碰这份正本的批次都被
+      永久拒绝落库。
+    - 根 `CLAUDE.md` 69 行：12 KB 上限实际收成 12,219 B。
+    - `.claude/rules/` 合计：30,720 上限实际收成 30,545 B。
+
+    阈值全部按 blob 字节写下（`LANE_WATCH_SKILL_BYTE_CAP` 注释里那句「完工实测
+    30,326 B」即 `git cat-file -s` 的读数），所以这里**不是改口径、不是抬基线**，
+    是把执行时的计量单位修回阈值被写下时的那一个。
+
+    判词：**尺子和刻度必须同一套单位，否则越守越紧，紧到守住的是尺子的毛病。**
+    """
+    return len(path.read_bytes().replace(b"\r\n", b"\n"))
+
+
 def claude_md_root_over_cap(repo_root: Path) -> int | None:
     """根 `CLAUDE.md` 超阈值的字节数；未超或读不到返回 None（读不到不判超——不据不可用的
     测量判人违规，同本文件「尺寸未取到 ⇒ 不据此判为合规」那条的反面）。"""
     try:
-        size = (repo_root / CLAUDE_MD_ROOT_REL).stat().st_size
+        size = _git_bytes(repo_root / CLAUDE_MD_ROOT_REL)
     except OSError:
         return None
     over = size - CLAUDE_MD_ROOT_BYTE_CAP
@@ -4595,7 +4618,7 @@ def claude_md_rules_over_cap(repo_root: Path) -> dict[str, int] | None:
         if not rel.startswith(".claude/rules/"):
             continue
         try:
-            size = (repo_root / rel).stat().st_size
+            size = _git_bytes(repo_root / rel)
         except OSError:
             rules_total_ok = False
             continue
@@ -4619,7 +4642,7 @@ def batch_touches_claude_md_rules(resolved_paths) -> bool:
 def lane_watch_skill_over_cap(repo_root: Path) -> int | None:
     """`zhuopin-lane-watch/SKILL.md` 超阈值的字节数；未超或读不到返回 None。"""
     try:
-        size = (repo_root / LANE_WATCH_SKILL_REL).stat().st_size
+        size = _git_bytes(repo_root / LANE_WATCH_SKILL_REL)
     except OSError:
         return None
     over = size - LANE_WATCH_SKILL_BYTE_CAP
@@ -4757,7 +4780,7 @@ def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
     log.append(_must_keep("📏 必载 CLAUDE.md 巡检（每轮回显，零超限时亦不省略）："))
     for rel, cap in _claude_md_targets(repo_root):
         try:
-            size = (repo_root / rel).stat().st_size
+            size = _git_bytes(repo_root / rel)
         except OSError as exc:
             log.append(f"    ⚠ {rel}：尺寸未取到（{exc}）——**不据此判为合规**")
             if rel.startswith(".claude/rules/"):
@@ -4944,7 +4967,7 @@ def _check_global_memory_files(repo_root: Path, log: list[str]) -> None:
             breaches[target] = f"受检对象缺失：{resolved}"
             continue
         try:
-            size = path_obj.stat().st_size
+            size = _git_bytes(path_obj)
             text = path_obj.read_text(encoding="utf-8")
         except OSError as exc:
             log.append(f"    ⚠ {target}：读取失败（{exc}）——不据此判为合规")

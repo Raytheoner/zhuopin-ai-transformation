@@ -5142,6 +5142,46 @@ class _StandingStateRecorder:
         })
 
 
+class 尺寸闸计量单位_639(unittest.TestCase):
+    """队列 §一 `#639`（2026-09-23 `Win-0921-A` 实撞）：三道尺寸闸的**计量单位**必须是
+    git blob 字节（CRLF 归一后），不是工作区磁盘字节。
+
+    本仓工作区是 CRLF、git blob 是 LF ⇒ `stat().st_size` 恒比 blob 多「行数」那么多，
+    而三个阈值都是按 blob 字节写下的（`LANE_WATCH_SKILL_BYTE_CAP` 注释里那句
+    「完工实测 30,326 B」即 `git cat-file -s` 读数）。用错单位的后果不是差几个字节：
+    `zhuopin-lane-watch/SKILL.md` 190 行，磁盘 30,516 vs 阈值 30,326，被这道 **reject 型**
+    闸判「超 190 B」，于是**任何触碰这份正本的批次被永久拒绝落库**——棘轮基线一字没破，
+    是尺子读错了。本用例把单位钉死，防止哪天又被改回 `st_size`。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.repo = Path(self._tmp.name)
+
+    def test_CRLF文件按归一后字节量_不按磁盘字节(self):
+        body = ("x" * 40 + "\r\n") * 100          # 100 行，磁盘比归一后正好多 100 B
+        f = self.repo / "crlf.md"
+        f.write_bytes(body.encode("utf-8"))
+        self.assertEqual(f.stat().st_size, 4200, "夹具自检：磁盘字节")
+        self.assertEqual(sweep._git_bytes(f), 4100, "须按 CRLF 归一后的字节量——即 git blob 的长度")
+
+    def test_LF文件两种量法一致(self):
+        f = self.repo / "lf.md"
+        f.write_bytes((("y" * 40 + "\n") * 100).encode("utf-8"))
+        self.assertEqual(sweep._git_bytes(f), f.stat().st_size,
+                         "纯 LF 文件两种量法必须相等——否则说明归一实现动了不该动的字节")
+
+    def test_三道闸都不再直接用st_size(self):
+        """🔴 机器守而非人守：源码级断言，防止将来有人图省事改回 `stat().st_size`。"""
+        src = SCRIPT.read_text(encoding="utf-8")
+        for fn in ("claude_md_root_over_cap", "lane_watch_skill_over_cap"):
+            i = src.index("def %s(" % fn)
+            body = src[i:i + 900]
+            self.assertNotIn("st_size", body, f"{fn} 又用回磁盘字节了")
+            self.assertIn("_git_bytes", body, f"{fn} 须走 _git_bytes")
+
+
 class ClaudeMdCarrierSizeTests(unittest.TestCase):
     """子项 A：必载 CLAUDE.md 尺寸/批次跨度守卫。"""
 
