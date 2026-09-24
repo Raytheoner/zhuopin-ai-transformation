@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import itertools
+import sys
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,19 @@ from aibot_service.repo_paths import (
     resolve_patrol_dispatch_lock_path,
     resolve_patrol_dispatch_log_dir,
 )
+
+@pytest.fixture(autouse=True)
+def isolated_codex_policy(tmp_path, monkeypatch):
+    # 每个旧状态机用例仍走注入的FakeProc；仅配置新provider接缝。
+    monkeypatch.delenv('ZHUOPIN_CODEX_RUNTIME', raising=False)
+    config=tmp_path/'.codex'
+    config.mkdir(exist_ok=True)
+    (config/'runtime.local.json').write_text(json.dumps({'python':sys.executable}),encoding='utf-8')
+    (config/'consumers.local.json').write_text(json.dumps({'patrol':{'enabled':True}}),encoding='utf-8')
+    provider=tmp_path/'0-学习与工具/codex-handoff/model_provider.py'
+    provider.parent.mkdir(parents=True,exist_ok=True)
+    provider.write_text('# FakeProc only',encoding='utf-8')
+
 
 NOW = datetime(2026, 9, 4, 15, 0, 0, tzinfo=timezone.utc)
 
@@ -85,9 +99,10 @@ class TestStarted:
         assert result.pid == 1234
         assert len(calls) == 1
         argv = calls[0]["argv"]
-        assert argv[0] == pd.CLAUDE_EXECUTABLE
-        assert "-p" in argv
-        assert "--dangerously-skip-permissions" in argv
+        assert argv[0] == sys.executable
+        assert "model_provider.py" in argv[2]
+        assert not any("dangerously" in arg for arg in argv)
+        assert argv[argv.index("--sandbox") + 1] == "workspace-write"
         assert calls[0]["kwargs"]["cwd"] == str(tmp_path)
 
     def test_起活带model参数取自模块常量(self, tmp_path):
@@ -101,8 +116,7 @@ class TestStarted:
 
         pd.dispatch_headless_patrol(tmp_path, now=NOW, popen=popen, pid_alive=lambda pid: False)
         argv = calls[0]["argv"]
-        assert "--model" in argv
-        assert argv[argv.index("--model") + 1] == pd.PATROL_MODEL
+        assert "--model" not in argv  # 继承已验证的Codex配置，禁止sonnet/opus透传
 
     def test_prompt含章程原文且未改一字(self, tmp_path):
         charter_text = "第一行\n第二行\n"

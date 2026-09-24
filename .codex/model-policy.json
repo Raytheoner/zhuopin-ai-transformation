@@ -1,0 +1,8 @@
+{
+  "provider": "codex",
+  "routes": {
+    "routine": null,
+    "design": null
+  },
+  "basis": "Both routes explicitly inherit verified user Codex configuration. No claimed price or Claude-model equivalence. Actual model recorded from native telemetry."
+}

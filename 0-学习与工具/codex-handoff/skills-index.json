@@ -1,0 +1,142 @@
+[
+  {
+    "name": "openspec-apply-change",
+    "kind": "native-entry",
+    "source": ".claude/skills/openspec-apply-change"
+  },
+  {
+    "name": "openspec-archive-change",
+    "kind": "native-entry",
+    "source": ".claude/skills/openspec-archive-change"
+  },
+  {
+    "name": "openspec-explore",
+    "kind": "native-entry",
+    "source": ".claude/skills/openspec-explore"
+  },
+  {
+    "name": "openspec-propose",
+    "kind": "native-entry",
+    "source": ".claude/skills/openspec-propose"
+  },
+  {
+    "name": "openspec-sync-specs",
+    "kind": "native-entry",
+    "source": ".claude/skills/openspec-sync-specs"
+  },
+  {
+    "name": "zhuopin-followup-letter",
+    "kind": "native-entry",
+    "source": ".claude/skills/zhuopin-followup-letter"
+  },
+  {
+    "name": "zhuopin-kickoff-prompt",
+    "kind": "adapter-entry",
+    "source": "0-学习与工具/skills源码/zhuopin-kickoff-prompt/SKILL.md"
+  },
+  {
+    "name": "zhuopin-lan-closeout",
+    "kind": "adapter-entry",
+    "source": "0-学习与工具/skills源码/zhuopin-lan-closeout/SKILL.md"
+  },
+  {
+    "name": "zhuopin-lane-watch",
+    "kind": "adapter-entry",
+    "source": "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md"
+  },
+  {
+    "name": "zhuopin-queue-audit",
+    "kind": "adapter-entry",
+    "source": "0-学习与工具/skills源码/zhuopin-queue-audit/SKILL.md"
+  },
+  {
+    "name": "zhuopin-rebaseline",
+    "kind": "adapter-entry",
+    "source": "0-学习与工具/skills源码/zhuopin-rebaseline/SKILL.md"
+  },
+  {
+    "name": "zhuopin-send-followup",
+    "kind": "adapter-entry",
+    "source": "0-学习与工具/skills源码/zhuopin-send-followup/SKILL.md"
+  },
+  {
+    "name": "zhuopin-requirement-grill",
+    "kind": "adapter-entry",
+    "source": "0-学习与工具/skills源码/zhuopin-需求grill/SKILL.md"
+  },
+  {
+    "name": "brainstorming",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "diagnosing-superpowers",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "dispatching-parallel-agents",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "executing-plans",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "finishing-a-development-branch",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "receiving-code-review",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "requesting-code-review",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "subagent-driven-development",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "systematic-debugging",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "test-driven-development",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "using-git-worktrees",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "using-superpowers",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "verification-before-completion",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "writing-plans",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  },
+  {
+    "name": "writing-skills",
+    "kind": "superpowers-native-skill",
+    "source": "Superpowers 6.4.1"
+  }
+]

@@ -1,4 +1,4 @@
-# 工具-opener批处理执行v2.ps1 —— 泳道并行版（v2.0，2026-08-25；v2.1，2026-09-10 队列 §一 `#549`：--resume 接管 ＋ -Detach；v2.2，2026-09-10 队列 §一 `#550`：NO-SENTINEL 补问一次；v2.3，2026-09-12 队列 §一 `#397`／`#561`：派出前查队列态，已完成的行 SKIPPED 不派）
+﻿# 工具-opener批处理执行v2.ps1 —— 泳道并行版（v2.0，2026-08-25；v2.1，2026-09-10 队列 §一 `#549`：--resume 接管 ＋ -Detach；v2.2，2026-09-10 队列 §一 `#550`：NO-SENTINEL 补问一次；v2.3，2026-09-12 队列 §一 `#397`／`#561`：派出前查队列态，已完成的行 SKIPPED 不派）
 # 相对 v1 的唯一结构变化：opener 按「▶ 泳道：<名>」分组——泳道间并行（各起一个后台 Job）、泳道内严格串行。
 # 并行判据沿用矩阵纪律：同泳道＝触碰区/资源相斥（SRM 限流、同文件、同信链），跨泳道＝实测零重叠。
 # 用法（一行）：
@@ -10,7 +10,7 @@
 # v2.1（队列 §一 `#549` ⑴⑵，承接 `#522` ⑷⑸，2026-09-10）：
 #   ⑴ --resume 接管：每条 opener 起 claude 前先生成 session id（GUID），以 `--session-id <id>` 传入，
 #      并写进该泳道日志**首行**（`session=<id>`）与 summary.txt 的 Session 列 ⇒ 棒停了可用
-#      `claude --resume <id>` 接管，不必人工粘贴互动重跑（`#443` 清扫棒因此只能人工跑，是唯一一次必须切 tab 的）。
+#      `codex exec resume <id>` 接管，不必人工粘贴互动重跑（`#443` 清扫棒因此只能人工跑，是唯一一次必须切 tab 的）。
 #   ⑵ -Detach：先建日志目录、再用 Start-Process 把本脚本自身后台起一份（子进程带 -LogDir 指向同一目录），
 #      **立即**把日志目录路径打到 stdout 并退出 0，供 Cowork 调用而不占 PowerShell 通道。
 #      🔴 子进程退出码不再丢：子进程结束时把退出码写进 <日志目录>\exit.txt（并在 summary.txt 末行 `EXIT=<code>`），
@@ -20,7 +20,7 @@
 # v2.2（队列 §一 `#550` 重定向棒 `OP-0910-S`，2026-09-10）：哨兵从「注入」改到「强制」
 #   立行实证：2026-09-10 四条泳道活全做了却判 NO-SENTINEL——哨兵要求一直由下面前言 ⑤ 注入，
 #   是 agent 拿到了没照做（544 把哨兵包在反引号里；507/529 被 claude 自身 600s 后台任务上限掐断在收尾前）。
-#   正文里再写一句拦不住 ⇒ 本版在判出 NO-SENTINEL 时**用 `claude --resume <sid>` 补问一次**，
+#   正文里再写一句拦不住 ⇒ 本版在判出 NO-SENTINEL 时**用 `codex exec resume <sid>` 补问一次**，
 #   prompt 极窄（只要一行哨兵），拿到即按 OK/PARTIAL 记、Sentinel 列标「补问」（🔴 与首轮自觉输出分开计数，
 #   summary 末尾 SENTINEL_FIRST/RETRY/NONE 三个数才是真实遵守率）；仍无 ⇒ 仍判 NO-SENTINEL 并停本泳道。
 #   🔴 补问自身也是一次 claude 调用、会挂死：每条 opener **只补问一次、不循环**，超时 -SentinelRetryTimeoutSec
@@ -62,13 +62,15 @@
 #   `summary.txt`／`summary.json` 新增「上下文峰值」列，`summary.txt` 末尾新增一行「本批越 150k 的
 #   泳道 N 条」（同一泳道多条 opener 只越线一次也只计一条）。读取失败一律 fail-open 返回 0，
 #   不改变原有 code/哨兵判法、不拦主流程。
+[CmdletBinding()]
 param(
     [string]$Plan = '',
     [string[]]$Only = @(),
     [switch]$DryRun,
     [switch]$FullAuto,
     [switch]$Yes,
-    [string]$Model = 'sonnet',
+    [string]$Model = 'inherit',
+    [switch]$ConsumerEnabled,
     [int]$MaxParallel = 3,
     [int]$StaggerSec = 90,
     [switch]$Detach,
@@ -125,8 +127,20 @@ trap {
     Exit-WithCode 20
 }
 
-$claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
-if (-not $claudeCmd) { Write-Host '✗ 找不到 claude CLI。' -ForegroundColor Red; Exit-WithCode 10 }
+if (-not $ConsumerEnabled -and -not $DryRun) { Write-Host '[consumer-paused] Codex泳道尚未启用，保留派单。'; Exit-WithCode 4 }
+if ($Model -in @('sonnet','opus','haiku')) { Write-Host '旧模型别名不可传入Codex'; Exit-WithCode 10 }
+$runtimeFile = if ($env:ZHUOPIN_CODEX_RUNTIME) { $env:ZHUOPIN_CODEX_RUNTIME } else { Join-Path $RepoRoot '.codex/runtime.local.json' }
+$pythonExe = ''
+if (-not (Test-Path -LiteralPath $runtimeFile) -and -not $env:ZHUOPIN_CODEX_RUNTIME) {
+    $common = & git -c "safe.directory=$($RepoRoot.Replace('\','/'))" -C $RepoRoot rev-parse --path-format=absolute --git-common-dir
+    if ($LASTEXITCODE -eq 0) { $runtimeFile = Join-Path (Split-Path $common -Parent) '.codex/runtime.local.json' }
+}
+if (-not $DryRun) {
+    if (-not (Test-Path -LiteralPath $runtimeFile)) { Write-Host '缺少Codex本机runtime配置'; Exit-WithCode 10 }
+    $env:ZHUOPIN_CODEX_RUNTIME = $runtimeFile
+    $pythonExe = (Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json).python
+    if (-not (Test-Path -LiteralPath $pythonExe)) { Write-Host '隔离Python不存在'; Exit-WithCode 10 }
+}
 if ([string]::IsNullOrWhiteSpace($Plan)) { Write-Host '✗ 请用 -Plan 指定波次计划文件。' -ForegroundColor Red; Exit-WithCode 11 }
 if (-not (Test-Path $Plan)) { $Plan = Join-Path $RepoRoot $Plan }
 if (-not (Test-Path $Plan)) { Write-Host "✗ 计划文件不存在：$Plan" -ForegroundColor Red; Exit-WithCode 11 }
@@ -142,6 +156,7 @@ if ($Detach) {
                    '-SentinelRetryTimeoutSec', $SentinelRetryTimeoutSec, '-ContextPollSec', $ContextPollSec,
                    '-ContextGraceMin', $ContextGraceMin.ToString([cultureinfo]::InvariantCulture))
     if ($FullAuto) { $childArgs += '-FullAuto' }
+    if ($ConsumerEnabled) { $childArgs += '-ConsumerEnabled' }
     if ($DryRun) { $childArgs += '-DryRun' }
     if ($Force) { $childArgs += '-Force' }
     if ($Model) { $childArgs += @('-Model', $Model) }
@@ -153,7 +168,8 @@ if ($Detach) {
     # 不再看调用方自己是用什么 shell 起的。
     $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
     $shell = if ($pwshCmd) { $pwshCmd.Source } else { 'powershell.exe' }
-    $proc = Start-Process -FilePath $shell -ArgumentList $childArgs -WorkingDirectory $RepoRoot -PassThru -WindowStyle Hidden `
+    $quotedChildArgs = @($childArgs | ForEach-Object { '"' + ([string]$_).Replace('"', '\"') + '"' })
+    $proc = Start-Process -FilePath $shell -ArgumentList $quotedChildArgs -WorkingDirectory $RepoRoot -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $LogDir 'launcher-stdout.log') -RedirectStandardError (Join-Path $LogDir 'launcher-stderr.log')
     $launcher = [ordered]@{ pid = $proc.Id; shell = $shell; plan = $Plan; log_dir = $LogDir
                             started_at_utc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
@@ -172,7 +188,7 @@ $fence = [char]0x60 + [char]0x60 + [char]0x60
 # 由 `工具-opener生成.py::_settings_line` 落笔（`｜ 模型：<值>`），本正则只按值本身
 # 匹配（不锚定前缀「｜」），故手写 opener（无本字段）与生成器产出（有本字段）都解得出。
 $modelFieldRe = '模型[：:]\s*([^\s｜\|]+)'
-$validModels = @('sonnet', 'opus')
+$validModels = @('inherit', 'routine', 'design', $Model) | Select-Object -Unique
 $openers = @()
 for ($i = 0; $i -lt $lines.Count; $i++) {
     if ($lines[$i] -match '^###\s+(A\d+)\s*·?\s*(.*)$') {
@@ -180,7 +196,7 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
         $body = New-Object System.Collections.Generic.List[string]
         $j = $i + 1
         while ($j -lt $lines.Count -and -not ($lines[$j] -match '^###?\s')) {
-            if ($lines[$j] -match '粘贴端：\s*(CC|Cowork)') { $paste = $Matches[1] }
+            if ($lines[$j] -match '粘贴端：\s*(Codex|CC|Cowork)') { $paste = $Matches[1] }
             if ($lines[$j] -match '泳道：\s*(\S+)') { $lane = $Matches[1] }
             if ($lines[$j].StartsWith($fence)) {
                 $j++
@@ -236,7 +252,7 @@ foreach ($ln in $laneNames) {
     $ids = ($openers | Where-Object { $_.Lane -eq $ln } | ForEach-Object { $_.Id }) -join '→'
     Write-Host ('  ◆ ' + $ln + ' ：' + $ids + '（泳道内串行）')
 }
-Write-Host ('权限模式：' + $(if ($FullAuto) { 'dangerously-skip-permissions（全自动）' } else { 'acceptEdits' }))
+Write-Host ('权限模式：' + $(if ($FullAuto) { 'workspace-write / never（受限自动执行）' } else { 'workspace-write / never' }))
 if ($DryRun) { Exit-WithCode 0 }
 if (-not $Yes) { $ans = Read-Host '开跑？(y/N)'; if ($ans -ne 'y' -and $ans -ne 'Y') { Exit-WithCode 0 } }
 
@@ -271,7 +287,7 @@ $sentinelRetryPrompt = @(
 
 # 每个泳道一个 Job：泳道内严格串行，FAIL/NO-SENTINEL 停本泳道
 $laneBlock = {
-    param($laneName, $items, $logDir, $header, $fullAuto, $retryPrompt, $retryTimeoutSec, $claudeExe, $repoRootForJob, $contextPollSec, $contextGraceMin)
+    param($laneName, $items, $logDir, $header, $fullAuto, $retryPrompt, $retryTimeoutSec, $pythonExe, $repoRootForJob, $contextPollSec, $contextGraceMin)
     $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
     $global:OutputEncoding = $Utf8NoBom
     $results = @()
@@ -305,6 +321,11 @@ $laneBlock = {
 
     foreach ($op in $items) {
         $log = Join-Path $logDir ($laneName + '-' + $op.Id + '.log')
+        if ($op.Text -notmatch '执行环境[：:]\s*Codex' -or $op.Text -match 'mcp__ccd_|set_session_title|claude\s+-p') {
+            'Codex 执行器只接受原生派单；请用生成器 --env Codex 重出。' | Out-File -FilePath $log -Encoding utf8
+            $results += [pscustomobject]@{ Lane=$laneName; Id=$op.Id; Status='FAIL(native-contract)'; DeliveryAccepted=$false; Log=$log; ContextPeak=0 }
+            break
+        }
         # 队列 #581 合入前补缺 ⑴：opener【设置】行模型字段非法值 ⇒ 判 FAIL、不起 claude（不消耗一个 session）。
         if ($op.ModelInvalid) {
             ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | 模型字段非法值 ' + $op.ModelRaw + '（须 sonnet｜opus 之一，见 opener【设置】行「模型：」）⇒ 判 FAIL，未起 claude') | Out-File -FilePath $log -Encoding utf8
@@ -347,7 +368,7 @@ $laneBlock = {
             $branchFieldMatch = [regex]::Match($op.Text, '分支[：:]\s*([^｜|]+)')
             $branchName = $null
             if ($branchFieldMatch.Success) {
-                $bm = [regex]::Match($branchFieldMatch.Groups[1].Value, ([char]0x60) + '(claude/[^' + ([char]0x60) + ']+)' + ([char]0x60))
+                $bm = [regex]::Match($branchFieldMatch.Groups[1].Value, ([char]0x60) + '((?:codex|claude)/[^' + ([char]0x60) + ']+)' + ([char]0x60))
                 if ($bm.Success) { $branchName = $bm.Groups[1].Value.Trim() }
             }
             if (-not $branchName) {
@@ -377,6 +398,11 @@ $laneBlock = {
         # 队列 #600 ⑷：收工核验（第三道闸）——起 claude 前先拍一张主工作区 git 状态快照，供
         # 本条 opener 跑完后比对是否有非白名单脏文件泄漏进主工作区。不论是否声明 worktree 都跑
         # 这一闸：#596/#599 两条实证泄漏正是「opener 未声明 worktree」——第一/二道闸管不到的情形。
+        if (-not $wtDeclared) {
+            ('[lane:' + $laneName + '] ' + $op.Id + ' FAIL(worktree-required)') | Out-File -FilePath $log -Encoding utf8
+            $results += [pscustomobject]@{ Lane=$laneName; Id=$op.Id; Status='FAIL(worktree-required)'; Sentinel='—'; Minutes=0; Session=''; Model=$op.Model; Log=$log; ContextPeak=0 }
+            break
+        }
         $preLeakSnapshot = @(& git -C $repoRootInJob -c core.quotepath=false status --porcelain)
 
         $tmp = Join-Path $logDir ($laneName + '-' + $op.Id + '.opener.txt')
@@ -385,12 +411,16 @@ $laneBlock = {
         # v2.1 ⑴：session id 由本脚本先定、再交给 claude（--session-id），首行即落盘——
         # 不等 claude 输出再去抓（text 输出格式根本不带 session id），棒停了也接得上。
         $sid = [guid]::NewGuid().ToString()
-        $claudeArgs = @('-p', '--output-format', 'text', '--session-id', $sid)
-        if ($fullAuto) { $claudeArgs += '--dangerously-skip-permissions' } else { $claudeArgs += @('--permission-mode', 'acceptEdits') }
-        # 队列 #581 合入前补缺 ⑴：模型由 opener【设置】行自带（解析期已按批级 `-Model` 兜底），
-        # 不再读批级泳道共享的形参——每条 opener 可各自覆盖。
-        if ($op.Model) { $claudeArgs += @('--model', $op.Model) }
-        ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | model=' + $op.Model + ' | session=' + $sid + ' | resume: claude --resume ' + $sid + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
+        $sourceSid = $sid
+        $modelEvidence = Join-Path $logDir ($laneName + '-' + $op.Id + '.model')
+        $providerScript = Join-Path $repoRootInJob '0-学习与工具/codex-handoff/model_provider.py'
+        $meterFile = Join-Path $repoRootInJob ('reports/context-meter/' + $sourceSid + '.json')
+        $modelArgs = @('-B', $providerScript, '--workspace', $laneWorktreePath, '--evidence', $modelEvidence,
+            '--source-id', $sourceSid, '--sandbox', 'workspace-write', '--timeout', '7200', '--enabled',
+            '--emit-final', '--require-context', '--meter-file', $meterFile, '--grace-seconds', [string]($contextGraceMin * 60))
+        if ($op.Model -and $op.Model -ne 'inherit') { $modelArgs += @('--model', $op.Model) }
+        $modelArgs = @($modelArgs | ForEach-Object { '"' + ([string]$_).Replace('"','\"') + '"' })
+        ('[lane:' + $laneName + '] ' + $op.Id + ' | provider=codex | source=' + $sourceSid + ' | evidence=' + $modelEvidence + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
         if ($wtNote) { $wtNote | Out-File -FilePath $log -Append -Encoding utf8 }
         # 队列 #600 ⑵：claude 子进程的 cwd 与环境标记——worktree 已声明时 cwd 切进该 worktree
         # （Push/Pop-Location；管道调用的子进程 cwd 随宿主 runspace 的 Get-Location 走，
@@ -418,7 +448,7 @@ $laneBlock = {
             # '软线超期'＝越 150k 后又跑满 $contextGraceMin 分钟仍不收尾。
             $softCrossedAt = $null
             $killReason = ''
-            $proc = Start-Process -FilePath $claudeExe -ArgumentList $claudeArgs -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
+            $proc = Start-Process -FilePath $pythonExe -ArgumentList $modelArgs -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
                 -RedirectStandardInput $tmp -RedirectStandardOutput $mainOutFile -RedirectStandardError $mainErrFile
             # 真 Windows PowerShell 5.1 实测：`Start-Process -PassThru`（不带 `-Wait`）配重定向流时，
             # 事后读 `$proc.ExitCode` 恒为空（HasExited 仍报 True，输出仍正常落盘）——PS7/pwsh 不受影响。
@@ -429,7 +459,7 @@ $laneBlock = {
             # 不会白等一整个轮询周期——常态（几秒内跑完的 opener）不因本闸多等一秒；只有进程
             # 真挂着的那种场景才会等满 `$contextPollSec` 再回来查一次上下文。
             while ($true) {
-                $ctxNow = Get-ContextMeterPeek -RepoRootPath $repoRootInJob -SessionId $sid
+                $ctxNow = Get-ContextMeterPeek -RepoRootPath $repoRootInJob -SessionId $sourceSid
                 if ($ctxNow -gt $peakContext) { $peakContext = $ctxNow }
                 if ($peakContext -ge 250000) {
                     & taskkill /PID $proc.Id /T /F 2>&1 | Out-Null
@@ -458,9 +488,21 @@ $laneBlock = {
                 if ($proc.WaitForExit([int]($contextPollSec * 1000))) { break }
             }
             # 收尾再探一次：正常退出时最后一段窗口可能还没被轮询逮到。
-            $ctxFinal = Get-ContextMeterPeek -RepoRootPath $repoRootInJob -SessionId $sid
+            $ctxFinal = Get-ContextMeterPeek -RepoRootPath $repoRootInJob -SessionId $sourceSid
             if ($ctxFinal -gt $peakContext) { $peakContext = $ctxFinal }
             $code = if ($contextKilled) { -1 } else { $proc.ExitCode }
+            $providerResultPath = Join-Path $modelEvidence 'result.json'
+            $providerResult = if (Test-Path -LiteralPath $providerResultPath) { Get-Content -LiteralPath $providerResultPath -Raw | ConvertFrom-Json } else { $null }
+            if ($providerResult -and $providerResult.thread_id) {
+                $sid = [string]$providerResult.thread_id
+                ('[session] native=' + $sid + ' | source=' + $sourceSid + ' | resume: codex exec resume ' + $sid) | Out-File -FilePath $log -Append -Encoding utf8
+            } elseif (-not $contextKilled) { $code = 97 }
+            if ($providerResult -and $providerResult.status -eq 'context_stopped' -and $providerResult.context_reason -in @('hard_limit','soft_grace_expired')) {
+                $contextKilled=$true
+                $killReason=if ($providerResult.context_reason -eq 'hard_limit') { '硬线' } else { '软线超期' }
+            }
+            if ($providerResult -and $providerResult.status -ne 'output_needs_review' -and -not $contextKilled) { $code=98 }
+
             @('[stdout]') + $(if (Test-Path -LiteralPath $mainOutFile) { Get-Content -LiteralPath $mainOutFile -Encoding UTF8 } else { @() }) `
                 + @('[stderr]') + $(if (Test-Path -LiteralPath $mainErrFile) { Get-Content -LiteralPath $mainErrFile -Encoding UTF8 } else { @() }) `
                 | Out-File -FilePath $log -Append -Encoding utf8
@@ -503,7 +545,7 @@ $laneBlock = {
             $tail = Get-Content $log -Encoding UTF8
             $done = [bool]($tail | Where-Object { $_ -match '^OPENER_DONE\s*$' })
             $partial = [bool]($tail | Where-Object { $_ -match '^OPENER_PARTIAL' })
-            $status = if ($code -eq 0 -and $done) { 'OK' } elseif ($code -eq 0 -and $partial) { 'PARTIAL' } elseif ($code -eq 0) { 'NO-SENTINEL' } else { 'FAIL(' + $code + ')' }
+            $status = if ($code -eq 0 -and $done) { 'OUTPUT-NEEDS-REVIEW' } elseif ($code -eq 0 -and $partial) { 'PARTIAL' } elseif ($code -eq 0) { 'NO-SENTINEL' } else { 'FAIL(' + $code + ')' }
             # Sentinel 列：首轮＝agent 自觉输出；补问＝靠下面 --resume 追问才拿到；无＝两轮都没有；—＝FAIL（进程层失败，不谈哨兵）。
             $sentinelBy = if ($done -or $partial) { '首轮' } elseif ($code -eq 0) { '无' } else { '—' }
             # 上下文硬线终止不算真失败——是主泳道代 agent 完成了它没自觉做的收尾，覆盖掉上面按
@@ -515,15 +557,18 @@ $laneBlock = {
                 $retryLog = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry.log')
                 $retryErr = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry.err')
                 [System.IO.File]::WriteAllText($retryPromptFile, $retryPrompt, $Utf8NoBom)
-                $retryArgs = @('-p', '--output-format', 'text', '--resume', $sid)
-                if ($fullAuto) { $retryArgs += '--dangerously-skip-permissions' } else { $retryArgs += @('--permission-mode', 'acceptEdits') }
-                if ($op.Model) { $retryArgs += @('--model', $op.Model) }
+                $retryEvidence = Join-Path $logDir ($laneName + '-' + $op.Id + '.retry-model')
+                $retryArgs = @('-B', $providerScript, '--workspace', (Get-Location).Path, '--evidence', $retryEvidence,
+                    '--source-id', ($sourceSid + '-retry'), '--thread', $sid, '--sandbox', 'workspace-write',
+                    '--timeout', [string]$retryTimeoutSec, '--enabled', '--emit-final', '--require-context', '--meter-file', $meterFile)
+                if ($op.Model -and $op.Model -ne 'inherit') { $retryArgs += @('--model', $op.Model) }
+                $retryArgs = @($retryArgs | ForEach-Object { '"' + ([string]$_).Replace('"','\"') + '"' })
                 $tr0 = Get-Date
-                ('[lane:' + $laneName + '] ' + $op.Id + ' NO-SENTINEL ⇒ 补问一次：claude ' + ($retryArgs -join ' ') + ' | timeout=' + $retryTimeoutSec + 's | start=' + $tr0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
+                ('[lane:' + $laneName + '] ' + $op.Id + ' NO-SENTINEL ⇒ 补问一次：Codex provider ' + ($retryArgs -join ' ') + ' | timeout=' + $retryTimeoutSec + 's | start=' + $tr0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
                 $retryOutcome = 'timeout'
                 try {
                     # Start-Process 而非管道：管道版没有超时；-PassThru 拿到 pid 才能到点整树 taskkill（claude 会再起 node 子进程）。
-                    $proc = Start-Process -FilePath $claudeExe -ArgumentList $retryArgs -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
+                    $proc = Start-Process -FilePath $pythonExe -ArgumentList $retryArgs -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
                         -RedirectStandardInput $retryPromptFile -RedirectStandardOutput $retryLog -RedirectStandardError $retryErr
                     if ($proc.WaitForExit([int]($retryTimeoutSec * 1000))) {
                         $retryOutcome = 'exit=' + $proc.ExitCode
@@ -538,9 +583,9 @@ $laneBlock = {
                 $retryText = if (Test-Path $retryLog) { Get-Content $retryLog -Encoding UTF8 } else { @() }
                 $rDone = [bool]($retryText | Where-Object { $_ -match '^OPENER_DONE\s*$' })
                 $rPartial = [bool]($retryText | Where-Object { $_ -match '^OPENER_PARTIAL' })
-                if ($rDone) { $status = 'OK'; $sentinelBy = '补问' } elseif ($rPartial) { $status = 'PARTIAL'; $sentinelBy = '补问' }
+                if ($retryOutcome -eq 'exit=0' -and $rDone) { $status = 'OUTPUT-NEEDS-REVIEW'; $sentinelBy = '补问' } elseif ($retryOutcome -eq 'exit=0' -and $rPartial) { $status = 'PARTIAL'; $sentinelBy = '补问' }
                 # 补问也会攒上下文——同一 session、同一 sid，收尾前再探一次纳入峰值，不额外起轮询。
-                $ctxAfterRetry = Get-ContextMeterPeek -RepoRootPath $repoRootInJob -SessionId $sid
+                $ctxAfterRetry = Get-ContextMeterPeek -RepoRootPath $repoRootInJob -SessionId $sourceSid
                 if ($ctxAfterRetry -gt $peakContext) { $peakContext = $ctxAfterRetry }
                 ('[lane:' + $laneName + '] ' + $op.Id + ' 补问结果：' + $retryOutcome + ' | sentinel=' + $sentinelBy + ' | status=' + $status + ' | ' + [math]::Round(($tr1 - $tr0).TotalSeconds, 1) + 's | 补问输出见 ' + $retryLog) | Out-File -FilePath $log -Append -Encoding utf8
                 $t1 = Get-Date
@@ -663,7 +708,7 @@ $laneBlock = {
             Write-Warning $alertMsg
             $status = 'FAIL(main-leak)'
         }
-        $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Sentinel = $sentinelBy; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Session = $sid; Model = $op.Model; Log = $log; ContextPeak = $peakContext }
+        $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = $status; Sentinel = $sentinelBy; Minutes = [math]::Round(($t1 - $t0).TotalMinutes, 1); Session = $sid; SourceId = $sourceSid; DeliveryAccepted = $false; Evidence = $modelEvidence; Model = $op.Model; Log = $log; ContextPeak = $peakContext }
         if ($status -like 'FAIL*' -or $status -eq 'NO-SENTINEL') { break }
     }
     $results
@@ -689,9 +734,9 @@ while ($queue.Count -gt 0 -or ($jobs.Values | Where-Object { $_.State -eq 'Runni
         # `NamedParameterNotFound`。PS7 保留原样；PS 5.1 改把 `$RepoRoot` 当普通参数传给
         # `$laneBlock`，block 首行 `Set-Location` 兜住同一「显式定 cwd」语义。
         if ($PSVersionTable.PSVersion.Major -ge 7) {
-            $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot, $ContextPollSec, $ContextGraceMin
+            $jobs[$l[0]] = Start-Job -WorkingDirectory $RepoRoot -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $pythonExe, $RepoRoot, $ContextPollSec, $ContextGraceMin
         } else {
-            $jobs[$l[0]] = Start-Job -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $claudeCmd.Source, $RepoRoot, $ContextPollSec, $ContextGraceMin
+            $jobs[$l[0]] = Start-Job -ScriptBlock $laneBlock -ArgumentList $l[0], $l[1], $logDir, $header, ([bool]$FullAuto), $sentinelRetryPrompt, $SentinelRetryTimeoutSec, $pythonExe, $RepoRoot, $ContextPollSec, $ContextGraceMin
         }
         $started++
     }
@@ -743,13 +788,13 @@ $summaryText += "`r`nEXIT=" + $exitCode + "`r`n"
 # 队列 #567 实测顺手补：`ConvertTo-Json -AsArray` 是 PS7 专有参数，PS 5.1 下同样 `NamedParameterNotFound`
 # ——`-AsArray` 本是为了在只有一行时也保证输出是 JSON 数组（无它，1 行会被解包成裸对象）。改手工拼数组
 # 括号，两个版本都不依赖该参数、行为一致。
-$summaryRows = @($all | Select-Object Lane, Id, Status, Model, Sentinel, Minutes, Session, Log, ContextPeak)
+$summaryRows = @($all | Select-Object Lane, Id, Status, Model, Sentinel, Minutes, Session, SourceId, DeliveryAccepted, Evidence, Log, ContextPeak)
 $summaryJson = if ($summaryRows.Count -eq 0) { '[]' } else {
     '[' + (($summaryRows | ForEach-Object { $_ | ConvertTo-Json -Compress }) -join ',') + ']'
 }
 [System.IO.File]::WriteAllText((Join-Path $logDir 'summary.json'), $summaryJson, $Utf8NoBom)
 Write-Host ('日志目录：' + $logDir)
 if ($failed.Count -gt 0) {
-    Write-Host ('✗ ' + $failed.Count + ' 项失败/无哨兵（只停了所在泳道）。续跑：-Only ' + (($failed | ForEach-Object { $_.Id }) -join ',') + ' 加其泳道内后续编号；或 claude --resume <Session> 接管。') -ForegroundColor Red
+    Write-Host ('✗ ' + $failed.Count + ' 项失败/无哨兵（只停了所在泳道）。续跑：-Only ' + (($failed | ForEach-Object { $_.Id }) -join ',') + ' 加其泳道内后续编号；或 codex exec resume <Session> 接管。') -ForegroundColor Red
 }
 Exit-WithCode $exitCode

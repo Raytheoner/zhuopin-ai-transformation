@@ -518,3 +518,7 @@ def test_FAIL负退出码也要被认成一等状态():
     for 字面量 in ("FAIL(2)", "OK", "PARTIAL", "NO-SENTINEL"):
         assert mod.STATUS_RE.search(f"lane A1 {字面量} sonnet").group(1) == 字面量
 
+
+@pytest.mark.parametrize('status',['OUTPUT-NEEDS-REVIEW','FAIL(main-leak)','FAIL(native-contract)','FAIL(model)'])
+def test_codex_pending_review_and_named_failures_are_visible(status):
+    assert probe._parse_summary(f'fixture A1 {status} 0.1')==[('fixture',status)]

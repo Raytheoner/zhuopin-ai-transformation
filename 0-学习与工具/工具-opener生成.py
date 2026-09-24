@@ -194,11 +194,11 @@ _BODY_PARAM_ALTERNATIVE = {
     ("Cowork", "reference"): _REFERENCE_ALTERNATIVE_TEXT,
 }
 
-VALID_ENVS = ("CC", "Cowork")
+VALID_ENVS = ("CC", "Cowork", "Codex")
 VALID_TASK_CLASSES = ("A", "B")
 #: 队列 #581 ⑷：可选字段，CLI 别名（不写具体模型 ID）。不传即 `sonnet`——
 #: 无头/看护/巡检/批量跑测默认走它，design 起草／需求 grill／ASIL 合规建造显式传 opus。
-VALID_MODELS = ("sonnet", "opus")
+VALID_MODELS = ("inherit", "routine", "design")
 #: 四种骨架变体（模块文档「variant」节）；`subtask_lane`／`guardian` 只对 CC 有意义，
 #: `reference`（队列 §一 `#489` 步骤 5／`#284` 退休制阈值触发）CC 与 Cowork 皆可。
 VALID_VARIANTS = ("standard", "subtask_lane", "guardian", "reference")
@@ -747,7 +747,7 @@ class OpenerSpec:
         workspace: str, session: str, line: str, input_pointer: str, task_class: str,
         claude_section: str = "", do_items: list[str] | None = None,
         dont_items: list[str] | None = None, title_call_override: str | None = None,
-        variant: str = "standard", batch: str | None = None, model: str = "sonnet",
+        variant: str = "standard", batch: str | None = None, model: str = "inherit",
     ) -> None:
         self.op_id, self.env, self.short_name = op_id, env, short_name
         self.branch, self.worktree, self.workspace = branch, worktree, workspace
@@ -785,7 +785,7 @@ def _validate_spec(spec: OpenerSpec) -> None:
     if spec.task_class not in VALID_TASK_CLASSES:
         raise OpenerGenError(f"A或B类须为 'A' 或 'B'，收到：{spec.task_class!r}")
     if spec.model not in VALID_MODELS:
-        raise OpenerGenError(f"模型须为 {VALID_MODELS} 之一（CLI 别名，不写具体模型 ID），收到：{spec.model!r}")
+        raise OpenerGenError(f"模型须为 {VALID_MODELS} 之一（Codex策略路由，不传旧模型别名），收到：{spec.model!r}")
     if not OP_ID_RE.match(spec.op_id):
         raise OpenerGenError(f"编号须匹配全称 `OP-MMDD-X` 形式（如 OP-0905-A），收到：{spec.op_id!r}")
     label_len = len(spec.short_name) + (2 if spec.variant == "guardian" else 0)
@@ -977,7 +977,7 @@ def _settings_line(spec: OpenerSpec) -> str:
             branch_field = spec.branch
         else:
             mmdd, suffix = _mmdd_and_suffix(spec.op_id)
-            branch_field = f"master（从 master 起 `claude/op{mmdd}{suffix.lower()}-{spec.branch}`）"
+            branch_field = f"master（从 master 起 `codex/op{mmdd}{suffix.lower()}-{spec.branch}`）"
     else:
         branch_field = "master"
     base = (
@@ -1013,6 +1013,32 @@ def _read_line(spec: OpenerSpec) -> str:
 
 def generate_opener(**kwargs) -> str:
     """按十项必填字段拼出成品 opener 文本；缺字段或违反骨架硬规则 ⇒ 抛 `OpenerGenError`。"""
+    if kwargs.get("env") == "Codex":
+        if kwargs.get("variant") == "guardian":
+            raise OpenerGenError("Codex guardian 尚未验收；使用已受控的批处理执行器，不派源端 Task/Agent。")
+        if kwargs.get("title_call_override") is not None:
+            raise OpenerGenError("Codex 标识行由生成器维护，不接受源端 title_call_override。")
+        # Reuse business assembly/claims, then adapt the execution contract explicitly.
+        text = _generate_opener_core(claim_env="Codex", **{**kwargs, "env": "CC"})
+        native_lines = []
+        for line in text.splitlines():
+            if "mcp__ccd_session_mgmt__set_session_title" in line:
+                mmdd, suffix = _mmdd_and_suffix(kwargs["op_id"])
+                line = (f"会话标识：[Win]{mmdd}{suffix}-{kwargs['short_name']}；"
+                        "桌面顶层任务可用 mcp__codex_app__set_thread_title 设置标题；"
+                        "无该工具的 headless 运行由 provider 的 source_id→thread_id 审计绑定，"
+                        "不得调用源端接口或改父任务标题。")
+            native_lines.append(line.replace("【CC】", "【Codex】").replace("执行环境：CC", "执行环境：Codex"))
+        text = "\n".join(native_lines)
+        lint = _load_lint_module()
+        errors = lint.check_block(lint.iter_fenced_blocks(text)[0], is_subtask_lane=kwargs.get("variant")=="subtask_lane")
+        if errors:
+            raise OpenerGenError(f"Codex 原生派单自检失败：{errors}")
+        return text
+    return _generate_opener_core(**kwargs)
+
+
+def _generate_opener_core(*, claim_env=None, **kwargs):
     _require_all_fields(kwargs)
     known = set(_OPENER_SPEC_FIELDS)
     spec = OpenerSpec(**{k: v for k, v in kwargs.items() if k in known})
@@ -1150,6 +1176,8 @@ def generate_opener(**kwargs) -> str:
 
     # 取号即声明（队列 §一 `#549` ⑶）：自检通过、确定要出件了才写占位——同一把锁内
     # 先核别人的占位再写自己的；撞上未落档的对方即在这里拒绝，出件＝占位已落。
+    if claim_env is not None:
+        spec.env = claim_env
     _claim_op_id(spec, used)
 
     return opener_block

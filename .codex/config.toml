@@ -1,0 +1,10 @@
+# Codex 原生项目配置；继承用户模型与权限偏好，不携带凭据。
+project_doc_fallback_filenames = ["CLAUDE.md"]
+project_doc_max_bytes = 65536
+
+[features]
+hooks = true
+
+[shell_environment_policy.set]
+PYTHONUTF8 = "1"
+PYTHONDONTWRITEBYTECODE = "1"

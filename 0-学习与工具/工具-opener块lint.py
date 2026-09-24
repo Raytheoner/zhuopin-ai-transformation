@@ -823,6 +823,25 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
     ①②③⑤ 换成正本自检 `C3`/`C5`（＋文件级 `check_canon_file` 的 `C1`/`C2`），形态
     ④⑥⑦ 照常生效。**不是关掉，是换成对这份件成立的那条判据**，见 `SKELETON_CANON_REL`。
     """
+    if re.search(r"执行环境\s*[：:]\s*Codex\b", block.text):
+        # Native title metadata replaces source-only API. Normalize only for the
+        # existing structural checks; no normalized text is emitted or executed.
+        problems = []
+        if re.search(r"mcp__ccd_|set_session_title|claude\s+-p|isolation:\s*[\"]worktree", block.text):
+            problems.append(("F1", "Codex opener 包含不可执行的源端接口"))
+        identity = [line for line in block.lines if line.startswith("会话标识：")]
+        if not is_subtask_lane and (len(identity)!=1 or not TITLE_VALUE_RE.search(identity[0])
+                                   or "source_id" not in identity[0] or "thread_id" not in identity[0]):
+            problems.append(("F1", "Codex opener 缺原生会话标识与 source_id/thread_id 绑定"))
+        if is_subtask_lane and (identity or "set_thread_title" in block.text):
+            problems.append(("F6", "Codex 子任务不得设置父任务标题"))
+        lines = []
+        for line in block.lines:
+            if line.startswith("会话标识："):
+                line = 'set_session_title ' + line + '；若是子任务则跳过本行。'
+            lines.append(line.replace("【Codex】", "【CC】").replace("执行环境：Codex", "执行环境：CC"))
+        return problems + check_block(Block(block.start_line,lines,block.info),is_subtask_lane=is_subtask_lane,
+            is_format_canon_file=is_format_canon_file,canon_role=canon_role)
     problems: list[tuple[str, str]] = []
     is_opener = settings_line(block) is not None
     has_title_call = bool(SESSION_TITLE_RE.search(block.text))

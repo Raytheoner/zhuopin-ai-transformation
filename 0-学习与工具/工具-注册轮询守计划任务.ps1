@@ -1,4 +1,4 @@
-# ================================================================
+﻿# ================================================================
 #  工具-注册轮询守计划任务.ps1
 #  用途：把 工具-轮询守.ps1 注册为 Windows 计划任务 ZhuopinPollGuard（每 15 分钟一轮），
 #        作为 Cowork 桌面端 `poll-opener-batch` 定时任务的替代品。
@@ -11,13 +11,13 @@
 #
 #  沿用 工具-注册落库sweep计划任务.ps1 的全部范式（成因原文在那里，此处只留指针）：
 #    · 当前账户 + LogonType S4U（#96：SYSTEM 对用户目录无 ACL；不落密码、不要求保持登录会话）；
-#    · Action 指主工作区稳定路径，绝不指 .claude\worktrees\<name>（#49/#79）；
+#    · Action 指主工作区稳定路径，绝不指 .codex\worktrees\<name>（#49/#79）；
 #    · 绝对路径烘焙进生成的包装脚本 run-poll-guard.ps1（S4U 触发时 PATH ≠ 交互式登录 shell；
-#      python 是用户级安装、claude.exe 在 ~\.local\bin、pwsh 在 WindowsApps——三个都不在 SYSTEM/S4U 默认 PATH）；
+#      python 是用户级安装、codex.exe 在 ~\.local\bin、pwsh 在 WindowsApps——三个都不在 SYSTEM/S4U 默认 PATH）；
 #    · Execute=wscript.exe + run-poll-guard-hidden.vbs 拉起隐藏窗口（#231：每 15 分钟闪一次控制台窗口不可接受）；
 #    · 提权自检守卫（#412 M1）：S4U 任务的 Register/Unregister 需 SeTcbPrivilege，非提权跑＝「以为刷新了、其实没刷新」。
 #  🔴 起 轮询守 一律用 pwsh 7（看护件顶部：巡检脚本本身就要 `pwsh -NoProfile -File`，Windows PowerShell 5.1 跑不动它）。
-#  🔴 解析出的 pwsh/python/git/claude/node 一律过 Assert-RealExecutable（OP-0913-S 缺陷一，批 B-0913_轮询守实机三修）：
+#  🔴 解析出的 pwsh/python/git/codex/node 一律过 Assert-RealExecutable（OP-0913-S 缺陷一，批 B-0913_轮询守实机三修）：
 #     0 字节／ReparsePoint 的应用执行别名 ⇒ 报错退出、不生成包装、不注册。-PwshExe 等五个参数只为单测指向桩而设。
 #
 #  用法（本机管理员 PowerShell，在主工作区目录下执行一次；幂等——先注销旧任务再重建）：
@@ -32,16 +32,18 @@
 #    Get-ScheduledTaskInfo -TaskName ZhuopinPollGuard
 #    Get-Content "C:\Dev\zhuopin-ai\reports\poll-guard\poll-guard-$(Get-Date -Format yyyyMMdd).jsonl" -Tail 3
 # ================================================================
+[CmdletBinding()]
 param(
     [string]$Repo = 'C:\Dev\zhuopin-ai',   # 只为 -WhatIf 在泳道 worktree 里自测而设；生产一律主工作区
     [int]$IntervalMinutes = 15,
-    [string]$Model = '',        # 传给 轮询守 -Model（留空＝claude CLI 默认）
+    [string]$Model = '',        # 传给 轮询守 -Model（留空＝codex CLI 默认）
     # 下列五个只为单测指向桩／伪造件而设（配合 -WhatIf），留空＝自动解析；生产一律留空
     [string]$PwshExe = '',
     [string]$PythonExe = '',
     [string]$GitExe = '',
-    [string]$ClaudeExe = '',
+    [string]$CodexExe = '',
     [string]$NodeExe = '',
+    [switch]$ConsumerEnabled,
     [switch]$Unregister,
     [switch]$WhatIf
 )
@@ -86,7 +88,7 @@ if (-not $WhatIf -and -not (Test-Path (Join-Path $REPO ".git") -PathType Contain
 }
 
 # ── 1. 解析绝对路径 + 运行身份 ──
-Write-Host "[1/3] 解析 pwsh / python / git / claude 绝对路径 + 运行身份..." -ForegroundColor Yellow
+Write-Host "[1/3] 解析 pwsh / python / git / codex 绝对路径 + 运行身份..." -ForegroundColor Yellow
 function Assert-RealExecutable {
     <# 🔴 fail-loud 校验（OP-0913-S 缺陷一，批 B-0913_轮询守实机三修）：解析出的可执行文件若 Length -eq 0 或带 ReparsePoint
        属性 ⇒ 它是 App Execution Alias（%LOCALAPPDATA%\Microsoft\WindowsApps\*.exe 那种 0 字节重解析点），不是真二进制。
@@ -128,7 +130,11 @@ if (-not $PwshExe -and $PSVersionTable.PSEdition -eq 'Core') {
 $pwshExe   = Resolve-Exe pwsh   $PwshExe
 $pyExe     = Resolve-Exe python $PythonExe
 $gitExe    = Resolve-Exe git    $GitExe
-$claudeExe = Resolve-Exe claude $ClaudeExe
+if (-not $CodexExe) {
+    $runtimeFile = Join-Path $REPO '.codex/runtime.local.json'
+    if (Test-Path -LiteralPath $runtimeFile) { $CodexExe = (Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json).codex_executable }
+}
+$codexExe = Resolve-Exe codex $CodexExe
 $gitDir    = Split-Path $gitExe -Parent
 $nodeDir   = ''
 $nodeSrc   = $NodeExe
@@ -138,18 +144,26 @@ $currentUser = (whoami).Trim()
 Write-Host "      pwsh    : $pwshExe" -ForegroundColor Green
 Write-Host "      python  : $pyExe" -ForegroundColor Green
 Write-Host "      git     : $gitDir" -ForegroundColor Green
-Write-Host "      claude  : $claudeExe" -ForegroundColor Green
-Write-Host "      node    : $(if ($nodeDir) { $nodeDir } else { '（未找到，claude.exe 为原生二进制时不需要）' })" -ForegroundColor Green
+Write-Host "      codex  : $codexExe" -ForegroundColor Green
+Write-Host "      node    : $(if ($nodeDir) { $nodeDir } else { '（未找到，codex.exe 为原生二进制时不需要）' })" -ForegroundColor Green
 Write-Host "      运行身份: $currentUser" -ForegroundColor Green
 
 # ── 2. 生成启动包装脚本（绝对路径烘焙；本文件在 .gitignore 里，机器专属） ──
 Write-Host "[2/3] 生成 run-poll-guard.ps1..." -ForegroundColor Yellow
+$consumerArg = if ($ConsumerEnabled) { ' -ConsumerEnabled' } else { '' }
 $modelArg = if ($Model) { " -Model `"$Model`"" } else { '' }
-$pathPrefix = "$gitDir;" + $(if ($nodeDir) { "$nodeDir;" } else { '' }) + (Split-Path $claudeExe -Parent) + ";" + (Split-Path $pyExe -Parent)
+$pathPrefix = "$gitDir;" + $(if ($nodeDir) { "$nodeDir;" } else { '' }) + (Split-Path $codexExe -Parent) + ";" + (Split-Path $pyExe -Parent)
 $wrapperContent = @"
 # 轮询守启动包装（由 工具-注册轮询守计划任务.ps1 生成，勿手改——重跑注册脚本会覆盖此文件；已在 .gitignore）。
-# S4U 触发时的 PATH 未必等同交互式登录 shell，此处把 git/node/claude/python 的绝对目录显式烘焙进来。
+# S4U 触发时的 PATH 未必等同交互式登录 shell，此处把 git/node/codex/python 的绝对目录显式烘焙进来。
 `$env:PATH = "$pathPrefix;`$env:PATH"
+# 每次启动按本机runtime解析，升级不永久烘焙版本路径；配置缺失即停止。
+`$runtimeFile = Join-Path "$REPO" '.codex/runtime.local.json'
+if (-not (Test-Path -LiteralPath `$runtimeFile)) { exit 9 }
+`$runtime = Get-Content -LiteralPath `$runtimeFile -Raw | ConvertFrom-Json
+`$env:ZHUOPIN_CODEX_EXECUTABLE = `$runtime.codex_executable
+if (-not (Test-Path -LiteralPath `$env:ZHUOPIN_CODEX_EXECUTABLE)) { exit 9 }
+
 # 🔴 pwsh 真身路径含 Store 版本号，升级后会消失（OP-0913-S 缺陷一的取舍）：不存在就留一行痕＋exit 9，别静默返回 0。
 if (-not (Test-Path -LiteralPath "$pwshExe" -PathType Leaf)) {
     `$d = "$REPO\reports\poll-guard"; New-Item -ItemType Directory -Force -Path `$d | Out-Null
@@ -157,7 +171,7 @@ if (-not (Test-Path -LiteralPath "$pwshExe" -PathType Leaf)) {
     Add-Content -Path (Join-Path `$d ("poll-guard-" + `$ts.ToString('yyyyMMdd') + ".jsonl")) -Encoding UTF8 -Value ('{"ts":"' + `$ts.ToString('o') + '","round":"' + `$ts.ToString('yyyyMMdd-HHmmss') + '","wrapper_error":"pwsh 不存在（Store 升级后路径失效？请重跑 工具-注册轮询守计划任务.ps1）：' + "$pwshExe".Replace('\', '\\') + '","woke":false,"total_ms":0}')
     exit 9
 }
-& "$pwshExe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$GUARD_SCRIPT" -Repo "$REPO" -PythonExe "$pyExe" -PwshExe "$pwshExe" -ClaudeExe "$claudeExe"$modelArg
+& "$pwshExe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$GUARD_SCRIPT" -Repo "$REPO" -PythonExe "$pyExe" -PwshExe "$pwshExe"$modelArg$consumerArg
 `$rc = `$LASTEXITCODE
 # 🔴 #575：原生命令**压根没启动**时 `$LASTEXITCODE 为 `$null，exit `$null 就是 exit 0——
 #    VBS 那一层刚补上的退出码透传被这一层吃掉。实测：09-14～09-16 一天 ~96 轮里
@@ -193,7 +207,7 @@ $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType S4U
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 40) `
     -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 $description = ("轮询守（队列 #575 甲／OP-0913-Q）：每 $IntervalMinutes 分钟跑 无头棒收工探针 ＋ 待合分支巡检，" +
-                "只在有信号时才唤 claude -p；每轮无条件留一行痕到 reports\poll-guard\。替代 Cowork 桌面端 poll-opener-batch。")
+                "只在有信号时才唤 codex -p；每轮无条件留一行痕到 reports\poll-guard\。替代 Cowork 桌面端 poll-opener-batch。")
 
 if ($WhatIf) {
     Write-Host "[WhatIf] 将注册 $TASK：Execute=wscript.exe `"$VBS_LAUNCHER`"；触发＝开机 + 每 $IntervalMinutes 分钟；身份＝$currentUser/S4U；上限 40 分钟；IgnoreNew。"

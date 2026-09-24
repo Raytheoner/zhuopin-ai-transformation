@@ -1,4 +1,4 @@
-' 队列 #231（2026-08-04，环境保障线取证）：ZhuopinCommitSweep 计划任务的
+﻿' 队列 #231（2026-08-04，环境保障线取证）：ZhuopinCommitSweep 计划任务的
 ' Action 此前直接 Execute=powershell.exe，每小时触发时会弹出一闪而过的
 ' 控制台窗口（Shao Peishen 反馈"屏幕一闪不知做了啥"）。单把
 ' Settings.Hidden=$true 打开是否足以消除该窗口未经实测——Hidden 主要影响
@@ -11,4 +11,5 @@
 Set objShell = CreateObject("WScript.Shell")
 scriptDir = Left(WScript.ScriptFullName, Len(WScript.ScriptFullName) - Len(WScript.ScriptName))
 cmd = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File """ & scriptDir & "run-commit-sweep.ps1"""
-objShell.Run cmd, 0, True
+exitCode = objShell.Run(cmd, 0, True)
+WScript.Quit exitCode

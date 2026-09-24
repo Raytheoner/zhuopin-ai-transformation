@@ -87,16 +87,16 @@ VALID_COWORK_KWARGS = dict(
 
 
 class ModelFieldTests(unittest.TestCase):
-    """队列 §一 `#581` ⑷：可选「模型」字段——不传即 sonnet；显式传须为 sonnet／opus。"""
+    """队列 §一 `#581` ⑷：可选「模型」字段——不传即 inherit；显式传须为 inherit／design。"""
 
-    def test_不传model_设置行落sonnet(self):
+    def test_不传model_设置行落inherit(self):
         out = M.generate_opener(**VALID_CC_KWARGS)
-        self.assertIn("｜ 模型：sonnet", out)
+        self.assertIn("｜ 模型：inherit", out)
 
-    def test_显式opus_设置行落opus(self):
-        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0905-C", "model": "opus"})
-        self.assertIn("｜ 模型：opus", out)
-        self.assertNotIn("｜ 模型：sonnet", out)
+    def test_显式design_设置行落design(self):
+        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0905-C", "model": "design"})
+        self.assertIn("｜ 模型：design", out)
+        self.assertNotIn("｜ 模型：inherit", out)
 
     def test_非法取值报错(self):
         with self.assertRaises(M.OpenerGenError):
@@ -630,9 +630,9 @@ class 引用版变体(unittest.TestCase):
     GOLDEN_CC = (
         "```\n"
         "[OP-0908-Z]【CC】引用版试跑\n"
-        "【设置】执行环境：CC ｜ 分支：master（从 master 起 `claude/op0908z-ref-demo`）"
+        "【设置】执行环境：CC ｜ 分支：master（从 master 起 `codex/op0908z-ref-demo`）"
         " ｜ worktree：☑（demo-wt，新 worktree，收工自删） ｜ 工作区：无 ｜ "
-        "session：新开 ｜ 派出线：环境总线 OP-0907-AL ｜ 模型：sonnet\n"
+        "session：新开 ｜ 派出线：环境总线 OP-0907-AL ｜ 模型：inherit\n"
         "开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "
         '"self"），标题：[Win]0908Z-引用版试跑。' + M.SUBTASK_EXCEPTION + "\n"
         "读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `CLAUDE.md` 恢复上下文，"
@@ -1064,7 +1064,7 @@ class 心跳尾句强制注入(unittest.TestCase):
         【设置】行就能推出 `check-heartbeat --heartbeat-file` 该填什么。"""
         body = self._body(self._gen(branch="demo-slug"))
         self.assertIn("--lane op1230h-demo-slug ", self._heartbeat_line(body))
-        self.assertIn("`claude/op1230h-demo-slug`", body[1])
+        self.assertIn("`codex/op1230h-demo-slug`", body[1])
 
     def test_不留占位符(self):
         """🔴 真值填充的反面：成品里不得残留骨架占位符（`OP-0912-F` 派单件 §一 3⑴）。"""
@@ -1322,17 +1322,17 @@ class CoworkModelRejectionTests(unittest.TestCase):
 
     def test_cowork显式传model即拒绝(self):
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-T", "model": "opus"})
+            M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-T", "model": "design"})
         msg = str(ctx.exception)
         self.assertIn("--model", msg)
         self.assertIn("Cowork", msg)
         self.assertIn("#620", msg)
 
-    def test_cowork传sonnet默认值同样拒绝(self):
-        """🔴 判「传没传」只看 kwargs，不看值——传显式 `sonnet`（即便与缺省值相同）也该拒绝，
+    def test_cowork传inherit默认值同样拒绝(self):
+        """🔴 判「传没传」只看 kwargs，不看值——传显式 `inherit`（即便与缺省值相同）也该拒绝，
         否则「传了但恰好等于默认值」会绕过本守卫。"""
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-U", "model": "sonnet"})
+            M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-U", "model": "inherit"})
 
     def test_cowork不传model仍正常出件(self):
         out = M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-V"})
@@ -1346,7 +1346,7 @@ class CoworkModelRejectionTests(unittest.TestCase):
             "--branch", "master", "--worktree", "☐（不建，只产改 `.md`）",
             "--workspace", "无", "--session", "新开", "--line", "环境总线",
             "--input-pointer", "1-转型规划/0-全景路线图/示例派单件.md", "--task-class", "B",
-            "--model", "opus",
+            "--model", "design",
         ]
         err = io.StringIO()
         with contextlib.redirect_stderr(err):

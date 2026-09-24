@@ -78,7 +78,7 @@ WORKTREES_REL = Path(".claude") / "worktrees"
 #    实证：批 `20260916-204736` 的 summary.txt 里 2 条 FAIL(-1)，探针一条未列。
 #    L202 的注释写着「它们是一等状态，不是脚注」——意图对，正则漏了个减号。
 #    **只会报成功的守卫等于没有守卫。**
-STATUS_RE = re.compile(r"\b(OK|PARTIAL|NO-SENTINEL|FAIL\(-?\d+\))")
+STATUS_RE = re.compile(r"\b(OUTPUT-NEEDS-REVIEW|OK|PARTIAL|NO-SENTINEL|FAIL\([^()\s]+\))")
 
 #: 无 summary.txt 且批内所有文件静默超过本阈值 ⇒ 报「疑似停滞」。
 #: 🔴 取 90 分钟而非 45：一条泳道可能长时间安静地干活（agent 不写 stdout），

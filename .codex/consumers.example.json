@@ -1,0 +1,7 @@
+{
+  "patrol": {
+    "enabled": false,
+    "timeout_seconds": 1200,
+    "model": "inherit"
+  }
+}

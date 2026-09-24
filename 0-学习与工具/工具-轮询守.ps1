@@ -1,5 +1,5 @@
-# 轮询守 —— 把 `poll-opener-batch` 定时任务从「每 15 分钟起一个完整模型会话」降级成
-# 「纯脚本先跑两条命令，只在有信号时才唤 `claude -p`；每轮无条件留一行可计数痕」。
+﻿# 轮询守 —— 把 `poll-opener-batch` 定时任务从「每 15 分钟起一个完整模型会话」降级成
+# 「纯脚本先跑两条命令，只在有信号时才唤 `Codex provider`；每轮无条件留一行可计数痕」。
 #
 # 承接：队列 §一 `#575` 甲（Shao Peishen 2026-09-13 答「甲→乙」）；派出线 Cowork 环境总线 `OP-0913-E`，
 #       批 `B-0913_轮询守`；看护件 `1-转型规划/0-全景路线图/看护件-【CC】轮询守信号才唤模型-2026-09-13.md`。
@@ -34,12 +34,12 @@
 #   时刻／两条命令退出码与耗时／各自判定与顶层标记／是否唤模型／模型退出码与耗时／本轮总耗时。
 #   `reports/` 被 `.gitignore` 整棵忽略（`**/reports/`），**本文件不入库、只用于计数**——它不是 ff 正本，
 #   与 `1-转型规划/0-全景路线图/合入登记/` 无关、也不许混进去。唤模型或命令异常的轮次另存全文捕获到
-#   `reports/poll-guard/rounds/<轮次号>/`（probe.out／probe.err／patrol.out／patrol.err／prompt.txt／claude.out／claude.err）。
+#   `reports/poll-guard/rounds/<轮次号>/`（probe.out／probe.err／patrol.out／patrol.err／prompt.txt／model.out／model.err）。
 #
-# 🔴 唤模型的方式：把 `poll-opener-batch.SKILL.md` 章程原文＋两条命令本轮的 stdout/stderr 一并喂给 `claude -p`（stdin），
+# 🔴 唤模型的方式：把 `poll-opener-batch.SKILL.md` 章程原文＋两条命令本轮的 stdout/stderr 一并喂给 `Codex provider`（stdin），
 #   并明写「两条命令已跑过、不要重跑」——探针跑过一次已把信号标为「已报」并推了企微，重跑只会得到 `[NO-SIGNAL]`；
 #   巡检跑过一次已执行合入／销行／清理，重跑是双次副作用。工具白名单只给只读（`Read`／`Glob`／`Grep`／`Bash(git log:*)`），
-#   章程本就只许它做只读核查。模型回复落在本轮捕获目录的 `claude.out`。
+#   章程本就只许它做只读核查。模型回复落在本轮捕获目录的 `model.out`。
 #
 # 🔴 本脚本只**调用**探针与巡检，不改它们一个字节；不碰 `工具-opener批处理执行v2.ps1`／`工具-落库sweep.py`／合入链路三脚本；
 #   不停用、不改动现有 Cowork 桌面端任务（那在他本机、归他手动）。注册计划任务见 `工具-注册轮询守计划任务.ps1`。
@@ -47,10 +47,11 @@
 # 用法：pwsh -NoProfile -File 工具-轮询守.ps1 [-DryRun] [-Repo <仓库根>] [-LogDir <留痕目录>] [-Model <模型>]
 #   -DryRun：零副作用干跑——探针加 `--peek`（不标已报、不推企微）、巡检加 `-DryRun`（不合入不删）、不唤模型；
 #            仍按同一判据打出「本轮本会不会唤模型」并留痕（行内 `dry_run=true`）。
-#   `-ProbeScript`／`-PatrolScript`／`-ClaudeExe`／`-SkillDoc`／`-PythonExe`／`-PwshExe` 只为单测指向桩而设，默认值即生产值。
+#   `-ProbeScript`／`-PatrolScript`／`-ProviderScript`／`-SkillDoc`／`-PythonExe`／`-PwshExe` 只为单测指向桩而设，默认值即生产值。
 #
-# 退出码：0＝本轮走完（不论有无信号、模型退出码如何——模型结果在留痕行与 claude.out 里）；
+# 退出码：0＝本轮走完（模型执行输出待复核；模型失败返回5，暂停返回4）；
 #         2＝本脚本自身异常（写不了留痕目录等）；3＝上一轮仍在跑（互斥体占用，本轮跳过，跳过也留一行痕）。
+[CmdletBinding()]
 param(
     [string]$Repo = 'C:\Dev\zhuopin-ai',
     [string]$LogDir = '',
@@ -59,11 +60,12 @@ param(
     [string]$SkillDoc = '',
     [string]$PythonExe = 'python',
     [string]$PwshExe = 'pwsh',
-    [string]$ClaudeExe = '',
-    [string]$Model = 'sonnet',
+    [string]$ProviderScript = '',
+    [switch]$ConsumerEnabled,
+    [string]$Model = '',
     [int]$ProbeTimeoutSec = 120,
     [int]$PatrolTimeoutSec = 900,
-    [int]$ClaudeTimeoutSec = 1200,
+    [int]$ModelTimeoutSec = 1200,
     [switch]$DryRun
 )
 $ErrorActionPreference = 'Stop'
@@ -85,7 +87,7 @@ if (-not $PatrolScript) { $PatrolScript = Join-Path $Repo '0-学习与工具\工
 if (-not $SkillDoc)     { $SkillDoc     = Join-Path $Repo '0-学习与工具\定时任务源码\poll-opener-batch.SKILL.md' }
 
 $roundStart = Get-Date
-$roundId    = $roundStart.ToString('yyyyMMdd-HHmmss')
+$roundId    = ($roundStart.ToString('yyyyMMdd-HHmmss-fff') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8))
 $dayFile    = Join-Path $LogDir ("poll-guard-" + $roundStart.ToString('yyyyMMdd') + ".jsonl")
 $roundDir   = Join-Path (Join-Path $LogDir 'rounds') $roundId
 
@@ -105,6 +107,14 @@ function Write-Trace {
     }
     return $true
 }
+
+# 默认停消费：不运行可能清信号/合入/发送的上游探针，保留现场。
+if (-not $ConsumerEnabled) {
+    $null = Write-Trace @{ ts=$roundStart.ToString('o'); round=$roundId; skipped='consumer-paused'; woke=$false; total_ms=0 }
+    Write-Host '[GUARD-PAUSED] 模型消费者未启用，信号与业务状态保持原样。'
+    exit 4
+}
+if (-not $ProviderScript) { $ProviderScript = Join-Path $Repo '0-学习与工具/codex-handoff/model_provider.py' }
 
 # ── 互斥：上一轮（多半是巡检在 rebase/ff/回归）还没跑完时，本轮不叠加、但仍留一行痕 ──
 $mutex = New-Object System.Threading.Mutex($false, 'Global\ZhuopinPollGuard')
@@ -268,16 +278,19 @@ try {
     $patrol = Invoke-Captured -Exe $PwshExe -ArgList $patrolArgs -Tag 'patrol' -TimeoutSec $PatrolTimeoutSec
     $tj = Get-CommandVerdict -Run $patrol -QuietSet $PatrolQuietMarkers
     # 判据 ④：常驻标记按内容集合去重（干跑不落状态）
-    $sticky = Resolve-StickyMarkers -Verdict $tj -Text $patrol.out -StateFile $StickyStateFile -Persist (-not $DryRun) -Now $roundStart.ToString('o')
+    $sticky = Resolve-StickyMarkers -Verdict $tj -Text $patrol.out -StateFile $StickyStateFile -Persist $false -Now $roundStart.ToString('o')
     $tj = $sticky.verdict
 
     $wake = ($pj.signal -or $tj.signal)
     $row['probe']  = @{ exit = $probe.exit;  ms = $probe.ms;  verdict = $pj.verdict; markers = @($pj.markers) }
     $row['patrol'] = @{ exit = $patrol.exit; ms = $patrol.ms; verdict = $tj.verdict; markers = @($tj.markers) }
     if ($sticky.sticky.Count -gt 0) { $row['patrol']['sticky'] = $sticky.sticky }
+    if (-not $wake -and -not $DryRun) {
+        $null = Resolve-StickyMarkers -Verdict $tj -Text $patrol.out -StateFile $StickyStateFile -Persist $true -Now $roundStart.ToString('o')
+    }
     $row['signal'] = $wake
     $row['woke']   = $false
-    $row['claude'] = @{ exit = $null; ms = 0 }
+    $row['model'] = @{ provider='codex'; exit=$null; ms=0; status='not_called'; accepted=$false }
 
     if ($wake -or $probe.exit -ne 0 -or $patrol.exit -ne 0) {
         # 有信号或有异常的轮次才存全文捕获（安静轮只留标记，免得 15 分钟一份 10 KB 巡检回显把盘撑满）
@@ -292,10 +305,6 @@ try {
 
     if ($wake -and -not $DryRun) {
         # ── 唤模型（一次）：章程原文 ＋ 两条命令本轮实际输出，stdin 喂给 claude -p ──
-        if (-not $ClaudeExe) {
-            $cc = Get-Command claude -ErrorAction SilentlyContinue
-            if ($cc) { $ClaudeExe = $cc.Source }
-        }
         $skillText = if (Test-Path $SkillDoc) { Get-Content -Raw -Encoding UTF8 $SkillDoc } else { "（章程文件不存在：$SkillDoc）" }
         $stickyNote = ''
         foreach ($k in $sticky.sticky.Keys) {
@@ -309,7 +318,7 @@ $stickyNote
 🔴 两条命令本轮已由脚本跑过，stdout／stderr 原样附在下面。**不要重跑探针**（它已把信号标为「已报」并推送企微，重跑只会得到 [NO-SIGNAL]）；**不要重跑巡检**（它已执行过合入／销行／清理动作，重跑＝双次副作用）。
 按下方章程的「按输出分支」处理；章程里「运行第 1 件／第 2 件命令」两步视为已完成，只做章程允许的只读核查（读 summary.txt、git log -1）。
 命令非零退出／超时／无标记的，按章程「探针自身异常」「脚本非零退出」分支处理：原样贴出 stderr 末几行，说明需人工核，**不要自行修脚本、不要重试**。
-回复写清：① 每件的判定一句；② 非 OK 泳道清单（若探针 [SIGNAL]）；③ 新 master 短号（若巡检 [MERGED]）；④ 非零退出／超时的原因原文。本回复只落在留痕目录的 claude.out，无人会追问——不要提问、不要等待答复。
+回复写清：① 每件的判定一句；② 非 OK 泳道清单（若探针 [SIGNAL]）；③ 新 master 短号（若巡检 [MERGED]）；④ 非零退出／超时的原因原文。本回复只落在留痕目录的 model.out，无人会追问——不要提问、不要等待答复。
 
 === 章程原文（$SkillDoc）===
 $skillText
@@ -325,21 +334,23 @@ $($patrol.err)
 "@
         $promptFile = Join-Path $roundDir 'prompt.txt'
         Set-Content -Path $promptFile -Value $prompt -Encoding UTF8
-        # 🔴 `--allowedTools` 按逗号**和空格**切分，`Bash(git log:*)` 不能与别的规则合成一个逗号串，须各自成参（含空格者由 Invoke-Captured 加引号）
-        $claudeArgs = @('-p', '--output-format', 'text', '--allowedTools', 'Read', 'Glob', 'Grep', 'Bash(git log:*)')
-        if ($Model) { $claudeArgs += @('--model', $Model) }
-        if (-not $ClaudeExe) {
-            $claude = @{ exit = -2; ms = 0; out = ''; err = '[GUARD] 找不到 claude CLI（Get-Command claude 为空，且未传 -ClaudeExe）'; timeout = $false }
-        } elseif ($ClaudeExe -like '*.ps1') {
-            # 单测桩：.ps1 经 pwsh 起，参数原样透传
-            $claude = Invoke-Captured -Exe $PwshExe -ArgList (@('-NoProfile', '-NonInteractive', '-File', $ClaudeExe) + $claudeArgs) -Tag 'claude' -TimeoutSec $ClaudeTimeoutSec -StdinFile $promptFile
-        } else {
-            $claude = Invoke-Captured -Exe $ClaudeExe -ArgList $claudeArgs -Tag 'claude' -TimeoutSec $ClaudeTimeoutSec -StdinFile $promptFile
-        }
-        Set-Content -Path (Join-Path $roundDir 'claude.out') -Value $claude.out -Encoding UTF8
-        Set-Content -Path (Join-Path $roundDir 'claude.err') -Value $claude.err -Encoding UTF8
-        $row['woke']   = $true
-        $row['claude'] = @{ exit = $claude.exit; ms = $claude.ms; timeout = $claude.timeout }
+        $modelEvidence = Join-Path $roundDir 'model-evidence'
+        $modelArgs = @('-B', $ProviderScript, '--workspace', $Repo, '--evidence', $modelEvidence,
+            '--source-id', ('poll-' + $roundId), '--sandbox', 'read-only', '--timeout', [string]$ModelTimeoutSec, '--enabled')
+        if ($Model) { $modelArgs += @('--model', $Model) }
+        $modelRun = Invoke-Captured -Exe $PythonExe -ArgList $modelArgs -Tag 'model' -TimeoutSec ($ModelTimeoutSec + 30) -StdinFile $promptFile
+        Set-Content -LiteralPath (Join-Path $roundDir 'model.out') -Value $modelRun.out -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $roundDir 'model.err') -Value $modelRun.err -Encoding UTF8
+        $row['woke'] = $true
+        $modelResult = $null
+        $resultFile = Join-Path $modelEvidence 'result.json'
+        if (Test-Path -LiteralPath $resultFile) { $modelResult = Get-Content -LiteralPath $resultFile -Raw -Encoding UTF8 | ConvertFrom-Json }
+        $modelStatus = if ($modelResult) { [string]$modelResult.status } else { 'missing-evidence' }
+        $row['model'] = @{ provider='codex'; exit=$modelRun.exit; ms=$modelRun.ms; timeout=$modelRun.timeout; status=$modelStatus; evidence=$modelEvidence; accepted=$false }
+        if ($modelResult) { $row['model']['thread_id'] = $modelResult.thread_id }
+        if ($modelRun.exit -ne 0 -or $modelStatus -ne 'output_needs_review') { $row['model_failed']=$true }
+        else { $null = Resolve-StickyMarkers -Verdict $tj -Text $patrol.out -StateFile $StickyStateFile -Persist $true -Now $roundStart.ToString('o') }
+
     }
 } catch {
     # 本脚本自身异常也不吞：记进留痕行再退出 2
@@ -356,9 +367,10 @@ $ok = Write-Trace -Row $row
 $mutex.ReleaseMutex() | Out-Null
 
 $summary = "[GUARD] round=$roundId dry_run=$([bool]$DryRun) probe=$($pj.verdict)(exit $($probe.exit),$($probe.ms)ms) patrol=$($tj.verdict)(exit $($patrol.exit),$($patrol.ms)ms) signal=$wake woke=$($row['woke'])"
-if ($row['woke']) { $summary += " claude_exit=$($row['claude'].exit) claude_ms=$($row['claude'].ms)" }
+if ($row['woke']) { $summary += " model_exit=$($row['model'].exit) model_ms=$($row['model'].ms)" }
 $summary += " total_ms=$($row['total_ms']) trace=$dayFile"
 if ($capture) { $summary += " capture=$capture" }
 Write-Host $summary
 if (-not $ok) { exit 2 }
+if ($row['model_failed']) { exit 5 }
 exit 0

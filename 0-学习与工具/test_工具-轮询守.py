@@ -22,6 +22,7 @@ import json
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -56,13 +57,17 @@ class Rig:
         self.patrol_args = tmp / "patrol-args.txt"
         self.probe = tmp / "probe.py"
         self.patrol = tmp / "patrol.ps1"
-        self.claude = _write(
-            tmp / "claude.ps1",
-            "$in = [Console]::In.ReadToEnd()\n"
-            f"Add-Content -Path '{self.claude_calls}' -Value ('ARGS: ' + ($args -join ' ')) -Encoding UTF8\n"
-            f"Set-Content -Path '{self.claude_prompt}' -Value $in -Encoding UTF8\n"
-            "Write-Output '桩回复'\nexit 0\n",
-        )
+        self.guard = tmp / 'guard.ps1'
+        self.guard.write_text(GUARD.read_text(encoding='utf-8-sig').replace('Global\\ZhuopinPollGuard', 'Local\\PollFixture-' + uuid.uuid4().hex), encoding='utf-8-sig')
+        self.claude = _write(tmp / 'provider.py',
+            "import sys,json,pathlib\n"
+            "args=sys.argv[1:]\n"
+            "prompt=sys.stdin.read()\n"
+            f"with open({str(self.claude_calls)!r},'a',encoding='utf-8') as f: f.write('ARGS: '+' '.join(args)+'\\n')\n"
+            f"pathlib.Path({str(self.claude_prompt)!r}).write_text(prompt,encoding='utf-8')\n"
+            "ev=pathlib.Path(args[args.index('--evidence')+1]); ev.mkdir(parents=True)\n"
+            "(ev/'result.json').write_text(json.dumps({'status':'output_needs_review','thread_id':'fixture'}),encoding='utf-8')\n"
+            "print('桩回复')\n")
 
     def set_probe(self, stdout: str, exit_code: int = 0, stderr: str = "") -> None:
         _write(
@@ -86,10 +91,10 @@ class Rig:
     def run(self, *extra: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             [
-                "pwsh", "-NoProfile", "-NonInteractive", "-File", str(GUARD),
+                "pwsh", "-NoProfile", "-NonInteractive", "-File", str(self.guard),
                 "-Repo", str(self.repo), "-LogDir", str(self.log),
                 "-ProbeScript", str(self.probe), "-PatrolScript", str(self.patrol),
-                "-ClaudeExe", str(self.claude), "-SkillDoc", str(self.skill),
+                "-ProviderScript", str(self.claude), "-ConsumerEnabled", "-SkillDoc", str(self.skill),
                 "-PythonExe", sys.executable, *extra,
             ],
             capture_output=True, text=True, encoding="utf-8", timeout=180,
@@ -152,9 +157,9 @@ def test_probe_signal_wakes_model_exactly_once_with_both_outputs(rig: Rig):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert rig.claude_call_count() == 1
     args = rig.claude_calls.read_text(encoding="utf-8")
-    assert "-p" in args and "--allowedTools" in args
+    assert "--sandbox read-only" in args and "--enabled" in args
     # 🔴 `Bash(git log:*)` 须作为**一个**参数到达（Start-Process 不自动加引号、CLI 按空格切分——2026-09-13 真 claude.exe 实测踩过）
-    assert "--allowedTools Read Glob Grep Bash(git log:*)" in args
+    assert "--workspace " + str(rig.repo) in args
     prompt = rig.claude_prompt.read_text(encoding="utf-8")
     assert "不要重跑探针" in prompt and "不要重跑巡检" in prompt
     assert "桩章程" in prompt, "章程原文须整段进 prompt"
@@ -163,29 +168,29 @@ def test_probe_signal_wakes_model_exactly_once_with_both_outputs(rig: Rig):
     row = rig.rows()[-1]
     assert row["woke"] is True and row["signal"] is True
     assert row["probe"]["verdict"] == "markers:SIGNAL" and row["patrol"]["verdict"] == "quiet"
-    assert row["claude"]["exit"] == 0
+    assert row["model"]["exit"] == 0
     cap = Path(row["capture"])
-    assert (cap / "claude.out").read_text(encoding="utf-8").strip() == "桩回复"
+    assert (cap / "model.out").read_text(encoding="utf-8").strip() == "桩回复"
     assert (cap / "prompt.txt").exists() and (cap / "probe.out").exists() and (cap / "patrol.out").exists()
 
 
-def test_不给Model_唤模型默认带model_sonnet(rig: Rig):
+def test_不给Model_继承Codex配置(rig: Rig):
     """队列 #581 ⑶：全仓 grep 补漏的第三处 claude -p 调用点（此前 `-Model` 默认 ''，与 v2.ps1 同款缺口）。"""
     rig.set_probe("[SIGNAL]\n批完成。\n")
     rig.set_patrol(QUIET_PATROL)
     proc = rig.run()
     assert proc.returncode == 0, proc.stdout + proc.stderr
     args = rig.claude_calls.read_text(encoding="utf-8")
-    assert "--model sonnet" in args
+    assert "--model" not in args
 
 
-def test_显式Model_opus_覆盖默认(rig: Rig):
+def test_显式CodexModel_覆盖默认(rig: Rig):
     rig.set_probe("[SIGNAL]\n批完成。\n")
     rig.set_patrol(QUIET_PATROL)
-    proc = rig.run("-Model", "opus")
+    proc = rig.run("-Model", "gpt-6-astra")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     args = rig.claude_calls.read_text(encoding="utf-8")
-    assert "--model opus" in args
+    assert "--model gpt-6-astra" in args
     assert "--model sonnet" not in args
 
 
@@ -411,7 +416,7 @@ def _run_register(**exe: str) -> subprocess.CompletedProcess:
 def _real_exes(**override: str) -> dict[str, str]:
     git = shutil.which("git")
     base = {"PwshExe": _real_pwsh(), "PythonExe": sys.executable, "GitExe": git or sys.executable,
-            "ClaudeExe": sys.executable, "NodeExe": sys.executable}   # claude/node 只要求是真二进制，拿 python 顶替即可
+            "CodexExe": sys.executable, "NodeExe": sys.executable}   # claude/node 只要求是真二进制，拿 python 顶替即可
     base.update(override)
     return base
 
@@ -425,7 +430,7 @@ def test_register_accepts_real_binaries_and_bakes_real_pwsh_path():
     assert "exit 9" in proc.stdout, "包装起手校验 pwsh 存在，不存在留痕＋exit 9"
 
 
-@pytest.mark.parametrize("which", ["PwshExe", "PythonExe", "GitExe", "ClaudeExe", "NodeExe"])
+@pytest.mark.parametrize("which", ["PwshExe", "PythonExe", "GitExe", "CodexExe", "NodeExe"])
 def test_register_rejects_zero_byte_executable(tmp_path: Path, which: str):
     fake = tmp_path / "fake.exe"
     fake.write_bytes(b"")

@@ -113,3 +113,9 @@ Claude outputs/
 
 # 轮询守启动包装（由 工具-注册轮询守计划任务.ps1 生成，绝对路径烘焙、机器专属；队列 #575 甲）
 0-学习与工具/run-poll-guard.ps1
+
+# Codex machine-local state and isolated test fixtures
+.test-temp/
+.codex/runtime.local.json
+.codex/consumers.local.json
+.codex/state/

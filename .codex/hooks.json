@@ -1,0 +1,61 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -Command \"& { $r = Get-Item -LiteralPath .; while ($r -and -not (Test-Path -LiteralPath (Join-Path $r.FullName '.git'))) { $r = $r.Parent }; if (-not $r) { exit 2 }; & (Join-Path $r.FullName '0-学习与工具/codex-handoff/invoke.ps1') -Mode Hook }\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -Command \"& { $r = Get-Item -LiteralPath .; while ($r -and -not (Test-Path -LiteralPath (Join-Path $r.FullName '.git'))) { $r = $r.Parent }; if (-not $r) { exit 2 }; & (Join-Path $r.FullName '0-学习与工具/codex-handoff/invoke.ps1') -Mode Hook }\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -Command \"& { $r = Get-Item -LiteralPath .; while ($r -and -not (Test-Path -LiteralPath (Join-Path $r.FullName '.git'))) { $r = $r.Parent }; if (-not $r) { exit 2 }; & (Join-Path $r.FullName '0-学习与工具/codex-handoff/invoke.ps1') -Mode Hook }\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -Command \"& { $r = Get-Item -LiteralPath .; while ($r -and -not (Test-Path -LiteralPath (Join-Path $r.FullName '.git'))) { $r = $r.Parent }; if (-not $r) { exit 2 }; & (Join-Path $r.FullName '0-学习与工具/codex-handoff/invoke.ps1') -Mode Hook }\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -Command \"& { $r = Get-Item -LiteralPath .; while ($r -and -not (Test-Path -LiteralPath (Join-Path $r.FullName '.git'))) { $r = $r.Parent }; if (-not $r) { exit 2 }; & (Join-Path $r.FullName '0-学习与工具/codex-handoff/invoke.ps1') -Mode Hook }\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

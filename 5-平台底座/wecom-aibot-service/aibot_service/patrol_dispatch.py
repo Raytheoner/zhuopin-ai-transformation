@@ -1,4 +1,4 @@
-"""队列 #382⑴bis：桥一落信号后直接起无头 CC 拆件，彻底去掉轮询。
+"""队列 #382⑴bis：桥一落信号后直接起无头 Codex 拆件，彻底去掉轮询。
 
 ## 它替代的是什么
 
@@ -14,7 +14,7 @@ Popen` 起一个无头 `claude -p` 会话去执行拆件巡逻章程，不等任
 
 ## 四条设计取舍
 
-1. **章程正本必须在仓库内，不内联、不复述**：无头 CC 的 `cwd` 是仓库根，
+1. **章程正本必须在仓库内，不内联、不复述**：无头 Codex 的 `cwd` 是仓库根，
    能读仓库内任何文件；仓库外的 `C:\\Users\\Paul Shao\\Claude\\Scheduled\\
    huijian-chaijian-patrol\\SKILL.md` 它读不到。内联一份到本模块字符串里
    是另一条路，但那会再造一份"会漂"的副本——两份正本谁改了谁没改，迟早
@@ -39,14 +39,14 @@ Popen` 起一个无头 `claude -p` 会话去执行拆件巡逻章程，不等任
    到达时会再触发一次起活候选。**失败绝不允许被吞掉**：`_record` 把每
    一次候选（起了/跳过/失败）都记一条 `audit` 事件外加一行 `log()` 输出
    ——"起活失败"和"起活成功但拆件本身出错"是两件事，本模块只保证前者
-   可见，后者留给无头 CC 自己在其章程 §四 报告里交代。
+   可见，后者留给无头 Codex 自己在其章程 §四 报告里交代。
 4. **非阻塞**：`Popen` 后立即返回，不等子进程收工——`mark_reply_arrived`
    是归档主流程的旁路增强，阻塞等一次可能耗时数分钟的拆件会话，等于把
    "标个状态"的延迟系在"干完一整套人工判断量级的活"上，本末倒置。
 
 ## 关于"起活期间又来一条"（队列 #599 P6：调度层无状态化）
 
-此前的做法是让无头 CC 自己在收工前多探测一次信号、有则回到章程 §一 再
+此前的做法是让无头 Codex 自己在收工前多探测一次信号、有则回到章程 §一 再
 走一轮——这会让同一个会话越跑越长，且"要不要再走一轮"这个判断散落在
 被调度的那个会话自己手里，调度方（本模块）反而不知道也管不了。**现改
 为调度层负责**：起活成功后另起一个不阻塞的后台等待（`_spawn_watcher`，
@@ -88,9 +88,12 @@ spend limit` 即退出），`_spawn_watcher` 读到"信号仍在"但从不检查
 from __future__ import annotations
 
 import json
+import os
+import uuid
 import subprocess
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -106,9 +109,40 @@ from .repo_paths import (
     resolve_patrol_dispatch_log_dir,
 )
 
-CLAUDE_EXECUTABLE = "claude"
-#: Token 优化 Phase 1（队列 #581）：无头巡逻默认走最便宜的模型；ASIL/合规相关建造不走本模块。
-PATROL_MODEL = "sonnet"
+ACTION_PAUSED = "paused"
+
+
+def _codex_policy(repo_root: Path) -> dict:
+    path = repo_root / '.codex' / 'consumers.local.json'
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding='utf-8-sig'))
+    policy = data.get('patrol', {})
+    if not isinstance(policy, dict):
+        raise ValueError('patrol policy must be an object')
+    return policy
+
+
+def _codex_command(repo_root: Path, evidence: Path, policy: dict) -> list[str]:
+    runtime_path = Path(os.environ.get('ZHUOPIN_CODEX_RUNTIME', str(repo_root / '.codex/runtime.local.json')))
+    runtime = json.loads(runtime_path.read_text(encoding='utf-8-sig'))
+    python = Path(runtime['python'])
+    provider = repo_root / '0-学习与工具/codex-handoff/model_provider.py'
+    if not python.is_file() or not provider.is_file():
+        raise FileNotFoundError('Codex provider/runtime is not installed; no legacy fallback')
+    timeout = int(policy.get('timeout_seconds', 1200))
+    if timeout <= 0:
+        raise ValueError('patrol timeout must be positive')
+    argv = [str(python), '-B', str(provider), '--workspace', str(repo_root),
+            '--evidence', str(evidence), '--source-id', 'patrol-' + evidence.name,
+            '--sandbox', 'workspace-write', '--timeout', str(timeout), '--enabled']
+    model = policy.get('model')
+    if model:
+        if str(model).lower() in ('sonnet', 'opus', 'haiku'):
+            raise ValueError('legacy model aliases are prohibited')
+        argv += ['--model', str(model)]
+    return argv
+
 
 ACTION_STARTED = "started"
 ACTION_SKIPPED_BUSY = "skipped_busy"
@@ -165,7 +199,7 @@ def _pid_alive(pid: int) -> bool:
     """Windows 判活：`tasklist /FI "PID eq N"` 输出含该 PID 即视为存活。
 
     查询本身失败（`tasklist` 不存在/超时/异常）时**按"不存活"处理**（会
-    去起一个可能重复的无头 CC）而非"存活"（会永久跳过、信号原地卡死）
+    去起一个可能重复的无头 Codex）而非"存活"（会永久跳过、信号原地卡死）
     ——两个方向的代价不对称：重复起活的后果由既有编辑锁重试/退避兜住，
     是"多做一次无害的事"；误判存活的后果是"该做的事没人做"，正是本模块
     要防的那类失效（见文首取舍 2）。
@@ -221,6 +255,16 @@ def _read_log_tail(log_path: str, chars: int = _LOG_TAIL_CHARS) -> str:
     return text[-chars:]
 
 
+def _signal_not_consumed(initial, current) -> bool:
+    if initial is None or not initial.present or not current.present:
+        return False
+    if initial.corrupted or current.corrupted:
+        return True
+    before = Counter(json.dumps(x, sort_keys=True, ensure_ascii=False) for x in initial.pending)
+    after = Counter(json.dumps(x, sort_keys=True, ensure_ascii=False) for x in current.pending)
+    return bool(before) and all(after[key] >= count for key, count in before.items())
+
+
 def _spawn_watcher(
     proc: "subprocess.Popen",
     repo_root: Path,
@@ -236,6 +280,7 @@ def _spawn_watcher(
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     failure_state_path: Optional[Path] = None,
+    initial_signal=None,
 ) -> None:
     """子进程退出后复查信号，仍有未消费信号则再起一轮全新会话（队列 #599 P6）；
     队列 #416 ⑸bis：先判这一轮是不是「夭折」的（退出码非 0，或存活 < 60s
@@ -264,7 +309,8 @@ def _spawn_watcher(
         except Exception:  # noqa: BLE001 —— 复查信号失败按"无新信号"处理，不误起
             signal_present = False
 
-        premature = bool(returncode) or (
+        no_progress = signal_present and _signal_not_consumed(initial_signal, snapshot)
+        premature = bool(returncode) or no_progress or (
             alive_seconds < MIN_ALIVE_SECONDS_FOR_SUCCESS and signal_present
         )
         state = load_failure_state(state_path)
@@ -291,8 +337,8 @@ def _spawn_watcher(
         state["consecutive_failures"] = consecutive
         save_failure_state(state_path, state)
         detail = (
-            f"无头 CC（pid={getattr(proc, 'pid', 0)}）夭折——存活 {alive_seconds:.1f}s，"
-            f"退出码 {returncode}，连续第 {consecutive} 次；日志尾部：{_read_log_tail(log_path)}"
+            f"无头 Codex（pid={getattr(proc, 'pid', 0)}）夭折——存活 {alive_seconds:.1f}s，"
+            f"退出码 {returncode}，无消费进展={no_progress}，连续第 {consecutive} 次；日志尾部：{_read_log_tail(log_path)}"
         )
         _record(audit, evaluator, DispatchResult(
             ACTION_CHILD_FAILED, detail=detail, pid=getattr(proc, "pid", None), log_path=log_path,
@@ -376,12 +422,17 @@ def dispatch_headless_patrol(
     sleep: Callable[[float], None] = time.sleep,
     failure_state_path: Optional[Path] = None,
 ) -> DispatchResult:
-    """起一个无头 CC 去执行拆件巡逻章程。绝不向上抛——任何失败都只记
+    """起一个无头 Codex 去执行拆件巡逻章程。绝不向上抛——任何失败都只记
     审计＋日志，不得让 `mark_reply_arrived` 的"绝不向上抛"契约被打破
     （调用方 `_raise_patrol_signal` 已包一层 `except`，本函数自身也不
     应假设那层保护一定存在）。
     """
     try:
+        policy = _codex_policy(repo_root)
+        if policy.get('enabled') is not True:
+            return _record(audit, evaluator, DispatchResult(
+                ACTION_PAUSED, detail='Codex 拆件消费者暂停；保留信号，不启动任何模型。',
+            ), log=log)
         lock_path = resolve_patrol_dispatch_lock_path(repo_root)
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -395,7 +446,7 @@ def dispatch_headless_patrol(
             if existing_pid and pid_alive(existing_pid):
                 return _record(audit, evaluator, DispatchResult(
                     ACTION_SKIPPED_BUSY, pid=existing_pid,
-                    detail=(f"已有无头 CC 在跑（pid={existing_pid}），本次不重复起——"
+                    detail=(f"已有无头 Codex 在跑（pid={existing_pid}），本次不重复起——"
                             f"它退出后调度层会复查一次信号，不会漏（队列 #599 P6）。"),
                 ), log=log)
             # pid 不存活（陈旧锁）——继续起活，下方会覆盖这份锁文件。
@@ -412,9 +463,14 @@ def dispatch_headless_patrol(
         stamp = (now or datetime.now(tz=timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
         log_dir = resolve_patrol_dispatch_log_dir(repo_root)
         log_dir.mkdir(parents=True, exist_ok=True)
+        stamp += "-" + uuid.uuid4().hex[:8]
         log_path = log_dir / f"{stamp}.log"
 
         prompt = _build_prompt(charter_text)
+        try:
+            initial_signal = patrol_signal.read_signal(repo_root)
+        except Exception:
+            initial_signal = None
 
         try:
             log_file = open(log_path, "w", encoding="utf-8")
@@ -426,16 +482,14 @@ def dispatch_headless_patrol(
 
         try:
             proc = popen(
-                [CLAUDE_EXECUTABLE, "-p", "--output-format", "text",
-                 "--model", PATROL_MODEL,
-                 "--dangerously-skip-permissions"],
+                _codex_command(repo_root, log_dir / (stamp + '.evidence'), policy),
                 stdin=subprocess.PIPE, stdout=log_file, stderr=subprocess.STDOUT,
                 cwd=str(repo_root), text=True,
             )
         except OSError as exc:
             return _record(audit, evaluator, DispatchResult(
                 ACTION_FAILED,
-                detail=f"起 claude 无头会话失败（claude 是否在 PATH？），"
+                detail=f"起 Codex provider 失败（检查运行配置与证据），"
                        f"未起活，信号原样留着：{exc}",
             ), log=log)
         finally:
@@ -466,13 +520,14 @@ def dispatch_headless_patrol(
                 popen=popen, pid_alive=pid_alive, run_in_thread=run_in_thread,
                 log_path=str(log_path), alert_send=alert_send,
                 monotonic=monotonic, sleep=sleep, failure_state_path=failure_state_path,
+                initial_signal=initial_signal,
             )
         except Exception:  # noqa: BLE001 —— 挂后台复查失败不代表进程没起，继续按已起活记
             pass
 
         return _record(audit, evaluator, DispatchResult(
             ACTION_STARTED, pid=proc.pid, log_path=str(log_path),
-            detail=f"无头 CC 已起（pid={proc.pid}），输出见 {log_path}",
+            detail=f"无头 Codex 已起（pid={proc.pid}），输出见 {log_path}",
         ), log=log)
     except Exception as exc:  # noqa: BLE001 —— 本函数绝不向上抛，见文首
         return _record(audit, evaluator, DispatchResult(
