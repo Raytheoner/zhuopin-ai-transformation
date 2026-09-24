@@ -2,7 +2,7 @@
 
 基础安装与路径修复已验收，以下旧章节保留的是初始交付时状态；现况以本节、OpenSpec `codex-mechanism-migration/progress.md` 和本机证据为准。
 
-统一 provider 及三消费者的隔离实现已具备；默认暂停。原生只读工具运行已产生 thread/turn/工具证据，但新工作树 hook 信任尚待用户正常完成。两轮独立代码审查及修复已完成；三链路端到端、全新工作树原生守卫、现场调度切换仍未闭合；业务开发不得启动。
+统一 provider 及三消费者的隔离实现已具备；默认暂停。原生只读工具运行已产生 thread/turn/工具证据，正常 /hooks 信任已完成，linked worktree 实际加载主仓项目配置。两轮独立代码审查及修复已完成；原生hook正负例、轮询和事件拆件隔离端到端已通过；批处理全新工作树完整产物验收与现场调度切换仍未闭合；业务开发不得启动。
 
 - 原生 provider：`model_provider.py`，按 runtime.local.json 或显式环境定位 Codex；routine/design 路由明示继承用户模型，不虚构模型或价格。
 - 轮询与批处理：显式 `-ConsumerEnabled` 才启动；旧入口转交 v2。原生 opener 使用生成器 `--env Codex`，旧 guardian 尚未验收会拒绝生成。
@@ -57,7 +57,7 @@ Codex 官方要求非托管 hooks 通过 /hooks 审阅信任；本项目不会�
 
 适配器支持 native apply_patch（含多文件、删除、移动双端）、exec_command/Bash、旧结构 Read/Grep/Edit/Write/MultiEdit；复用原 editlock、queue-read、dedup 与两种写入哨兵。旧 Bash/Edit/Write matcher 在 Codex 有别名支持，真正迁移问题是 payload 字段和 transcript 格式。
 
-functions.exec 内嵌工具、任意 Python/Node/PowerShell 文件写入、MCP 和不走该事件路径的工具不能保证完整拦截。shell 的业务读取判据仍是原脚本能力，不把它宣称为通用安全边界。原守卫内部 fail-open 语义未改；适配层解析/启动失败会报错退出2。原守卫日志仍按原协议写入。
+functions.exec 内嵌工具、任意 Python/Node/PowerShell 文件写入、MCP 和不走该事件路径的工具不能保证完整拦截。shell 的业务读取判据仍是原脚本能力，不把它宣称为通用安全边界。原守卫内部 fail-open 语义未改；适配层PreToolUse解析/启动失败明确返回原生JSON deny；其他事件失败报错退出2。原生apply_patch读取tool_input.command；详情见当前验收矩阵。原守卫日志仍按原协议写入。
 
 原 Claude context-meter、基于 Claude transcript 的 Stop 审核没有伪造等价迁移：本次用事件审计及 AGENTS 检查点承接，缺少精确 token 用量与最终回复硬拦截。Superpowers 安装形态是项目技能包，未宣称已在 Codex 插件商店安装。
 

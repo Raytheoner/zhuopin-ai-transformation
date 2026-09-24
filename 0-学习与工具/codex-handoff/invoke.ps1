@@ -3,7 +3,28 @@ param(
  [ValidateSet('Probe','Hook','Workflow','Test')][string]$Mode='Probe',
  [Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments
 )
+# A failed Hook launcher must not become an implicitly allowed tool call.
+trap {
+  if ($Mode -eq 'Hook' -and $hookEventName -notin @('SessionStart','UserPromptSubmit','PostToolUse','Stop')) {
+    Write-Output '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Codex hook launcher failed; inspect runtime configuration."}}'
+    exit 0
+  }
+  [Console]::Error.WriteLine($_.Exception.Message)
+  if ($Mode -eq 'Hook') { exit 2 }
+  exit 1
+}
 $ErrorActionPreference='Stop'
+$hookInput = $null
+$hookEventName = $null
+if ($Mode -eq 'Hook') {
+  [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+  $OutputEncoding = [Text.UTF8Encoding]::new($false)
+  $hookInput = [Console]::In.ReadToEnd()
+  try {
+    $hookEnvelope = $hookInput | ConvertFrom-Json -ErrorAction Stop
+    if ($hookEnvelope.hook_event_name -is [string]) { $hookEventName = $hookEnvelope.hook_event_name }
+  } catch { } # The bridge rejects malformed or unclassifiable input explicitly.
+}
 $env:PYTHONUTF8='1'
 $env:PYTHONDONTWRITEBYTECODE='1'
 $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
@@ -23,7 +44,8 @@ $nodeBin = 'C:\Dev\Codex\runtimes\zhuopin-ai\node\node_modules\.bin'
 if (Test-Path -LiteralPath $nodeBin) { $env:PATH = "$nodeBin;$env:PATH" }
 $entry = Join-Path $PSScriptRoot 'handoff.py'
 if ($Mode -eq 'Hook') {
-  & $config.python (Join-Path $PSScriptRoot 'hook_bridge.py')
+  $hookInput | & $config.python (Join-Path $PSScriptRoot 'hook_bridge.py')
+  if ($LASTEXITCODE -ne 0 -and $hookEventName -notin @('SessionStart','UserPromptSubmit','PostToolUse','Stop')) { throw 'Codex hook bridge failed.' }
 } elseif ($Mode -eq 'Test') {
   & $config.python -m pytest (Join-Path $PSScriptRoot 'tests') -q -p no:cacheprovider @Arguments
 } elseif ($Mode -eq 'Workflow') {

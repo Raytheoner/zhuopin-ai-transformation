@@ -11,7 +11,7 @@ HOOKS = ROOT / "0-学习与工具" / "hooks"
 def targets(tool, data):
     """Parse native apply_patch grammar, including both rename endpoints."""
     if tool in ("apply_patch", "functions.apply_patch"):
-        patch = data if isinstance(data, str) else data.get("patch", data.get("input", ""))
+        patch = data if isinstance(data, str) else data.get("command", data.get("patch", data.get("input", "")))
         if not isinstance(patch, str):
             raise ValueError("apply_patch payload is not text")
         result, current = [], None
@@ -77,11 +77,23 @@ def audit(event, results, error=None):
            "input_sha256": hashlib.sha256(json.dumps(event, ensure_ascii=False).encode()).hexdigest()}
     (folder / (uuid.uuid4().hex + ".json")).write_text(json.dumps(row, ensure_ascii=False), encoding="utf8")
 
+def deny_pretool(reason):
+    # Native JSON denial does not depend on shell exit-code propagation.
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+        "permissionDecision": "deny", "permissionDecisionReason": reason}}, ensure_ascii=False))
+    return 0
+
+
 def main():
     event, results = {}, []
+    known_events = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"}
     try:
         event = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
-        name = event["hook_event_name"]
+        if not isinstance(event, dict):
+            raise ValueError("hook payload must be an object")
+        name = event.get("hook_event_name")
+        if not isinstance(name, str) or name not in known_events:
+            raise ValueError("missing or unsupported hook event")
         if name in ("SessionStart", "UserPromptSubmit"):
             context = ("遵守根 AGENTS.md、CLAUDE.md 和适用 .claude/rules。队列只走工具-队列查询.py；"
                        "先读批准的 intent/design/tasks；ff、生产部署、对外发送保留逐项授权。"
@@ -96,7 +108,10 @@ def main():
             if proc.returncode:
                 audit(event, results)
                 # Original guard reason is feedback only; never persist raw payload.
-                sys.stderr.write(proc.stderr or proc.stdout or ("Guard failed: " + script))
+                reason = proc.stderr or proc.stdout or ("Guard failed: " + script)
+                if name == "PreToolUse":
+                    return deny_pretool(reason)
+                sys.stderr.write(reason)
                 return 2
         if name == "Stop":
             # Native transcript format is not assumed. Decision formatting is instruction-only.
@@ -109,7 +124,12 @@ def main():
             audit(event, results, type(exc).__name__)
         except Exception:
             pass
-        sys.stderr.write("Codex hook adapter error: " + type(exc).__name__ + "; inspect runtime and hook audit.\n")
+        reason = "Codex hook adapter error: " + type(exc).__name__ + "; inspect runtime and hook audit."
+        # An unclassifiable input must never turn a PreToolUse error into permission.
+        event_name = event.get("hook_event_name") if isinstance(event, dict) else None
+        if not isinstance(event_name, str) or event_name == "PreToolUse" or event_name not in known_events:
+            return deny_pretool(reason)
+        sys.stderr.write(reason + "\n")
         return 2
 
 if __name__ == "__main__":

@@ -179,3 +179,35 @@ def test_implementation_head_capture_failure_is_not_review_ready(tmp_path,monkey
     assert state['status']=='failed' and state['model_status']=='implementation_head_unavailable'
     assert 'implementation_head' not in state and state['delivery_accepted'] is False
     assert not (folder/'running.lock').exists()
+
+
+@pytest.mark.parametrize('event_name',['PreToolUse','PostToolUse'])
+def test_native_patch_command_envelope(event_name,tmp_path):
+    event={'hook_event_name':event_name,'tool_name':'apply_patch','cwd':str(tmp_path),
+           'tool_input':{'command':'*** Begin Patch\n*** Add File: fixture.txt\n+native\n*** End Patch'}}
+    result=bridge.calls(event)
+    assert result and result[0][1]['tool_input']['file_path']==str((tmp_path/'fixture.txt').resolve())
+    assert result[0][1]['tool_input']['new_string']=='native\n'
+
+
+@pytest.mark.parametrize('malformed',[False,True])
+def test_pretool_denial_uses_explicit_native_decision(tmp_path,monkeypatch,capsys,malformed):
+    import io
+    event={'hook_event_name':'PreToolUse','tool_name':'apply_patch','cwd':str(tmp_path),'session_id':'fixture',
+           'tool_input':{'command':'invalid' if malformed else '*** Begin Patch\n*** Add File: fixture.txt\n+x\n*** End Patch'}}
+    monkeypatch.setattr(bridge.sys,'stdin',SimpleNamespace(buffer=io.BytesIO(json.dumps(event).encode())))
+    monkeypatch.setattr(bridge.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=2,stdout='',stderr='fixture lock denied'))
+    monkeypatch.setattr(bridge,'audit',lambda *a,**k:None)
+    assert bridge.main()==0
+    output=json.loads(capsys.readouterr().out)['hookSpecificOutput']
+    assert output['hookEventName']=='PreToolUse' and output['permissionDecision']=='deny'
+    assert output['permissionDecisionReason']
+
+@pytest.mark.parametrize('raw',[b'{',b'null',b'[]',b'{}',b'{"hook_event_name":"unknown"}',b'{"hook_event_name":[]}',b'{"hook_event_name":{}}'])
+def test_unclassifiable_hook_input_cannot_allow_tool(monkeypatch,capsys,raw):
+    import io
+    monkeypatch.setattr(bridge.sys,'stdin',SimpleNamespace(buffer=io.BytesIO(raw)))
+    monkeypatch.setattr(bridge,'audit',lambda *a,**k:None)
+    assert bridge.main()==0
+    output=json.loads(capsys.readouterr().out)['hookSpecificOutput']
+    assert output['hookEventName']=='PreToolUse' and output['permissionDecision']=='deny'
