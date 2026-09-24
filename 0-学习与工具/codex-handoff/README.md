@@ -2,7 +2,7 @@
 
 基础安装与路径修复已验收，以下旧章节保留的是初始交付时状态；现况以本节、OpenSpec `codex-mechanism-migration/progress.md` 和本机证据为准。
 
-统一 provider 及三消费者的隔离实现已具备；默认暂停。原生只读工具运行已产生 thread/turn/工具证据，但新工作树 hook 信任尚待用户正常完成。三链路端到端、独立审查、全新工作树继承、现场调度切换仍未闭合；业务开发不得启动。
+统一 provider 及三消费者的隔离实现已具备；默认暂停。原生只读工具运行已产生 thread/turn/工具证据，但新工作树 hook 信任尚待用户正常完成。两轮独立代码审查及修复已完成；三链路端到端、全新工作树原生守卫、现场调度切换仍未闭合；业务开发不得启动。
 
 - 原生 provider：`model_provider.py`，按 runtime.local.json 或显式环境定位 Codex；routine/design 路由明示继承用户模型，不虚构模型或价格。
 - 轮询与批处理：显式 `-ConsumerEnabled` 才启动；旧入口转交 v2。原生 opener 使用生成器 `--env Codex`，旧 guardian 尚未验收会拒绝生成。

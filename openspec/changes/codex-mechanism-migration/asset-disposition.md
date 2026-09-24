@@ -37,9 +37,9 @@
 | writing-skills | 保留，具体工作流未验收 | 需要对应业务输入或独立机械夹具；不得按 frontmatter 通过宣称可用 |
 | zhuopin-codex-handoff | 本次实际使用 | 本分支 intent/design/tasks、RED→GREEN、native worktree 与 progress 证据；不宣称覆盖技能全部分支 |
 | zhuopin-followup-letter | 保留，具体工作流未验收 | 需要对应业务输入或独立机械夹具；不得按 frontmatter 通过宣称可用 |
-| zhuopin-kickoff-prompt | 保留，具体工作流未验收 | 需要对应业务输入或独立机械夹具；不得按 frontmatter 通过宣称可用 |
+| zhuopin-kickoff-prompt | 原生指令压力验证通过；真实链待验 | 原生生成器格式覆盖旧标题骨架要求，skill-pressure-baseline/green；合法新夹具已生成/lint/DryRun，未启动模型 |
 | zhuopin-lan-closeout | 保留，具体工作流未验收 | 需要对应业务输入或独立机械夹具；不得按 frontmatter 通过宣称可用 |
-| zhuopin-lane-watch | 保留，具体工作流未验收 | 需要对应业务输入或独立机械夹具；不得按 frontmatter 通过宣称可用 |
+| zhuopin-lane-watch | 模式/停点压力验证通过；guardian未迁移 | 默认看护者不得擅改无头；显式无头仍须信任/隔离等前置；压力验证不等于编排功能通过 |
 | zhuopin-queue-audit | 保留，具体工作流未验收 | 需要对应业务输入或独立机械夹具；不得按 frontmatter 通过宣称可用 |
 | zhuopin-rebaseline | 保留，具体工作流未验收 | 需要对应业务输入或独立机械夹具；不得按 frontmatter 通过宣称可用 |
 | zhuopin-requirement-grill | 保留，具体工作流未验收 | 需要对应业务输入或独立机械夹具；不得按 frontmatter 通过宣称可用 |

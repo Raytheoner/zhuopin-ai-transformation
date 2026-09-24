@@ -66,3 +66,17 @@ Public MIT Superpowers-LICENSE copied separately; historical memory originals re
 ## 用户收窄范围 — 2026-09-24T18:19:57.794936+08:00
 
 本线仅覆盖 zhuopinAI 项目的必要技能、配置和机制。中英文 last30days 属于行业研报项目，与本线无关，保留现状，不再检查、补测或配置；其他无关项目资产同样留待所属项目处理，不计入本次验收门槛。排除不代表已验收，也不删除或禁用原资产。 已同步 intent/design/tasks、资产台账、验收矩阵和发布准备件；既有历史证据不追改。此次仅文档范围修正，未运行无关测试、未修改技能或配置。三消费者、原生hook和项目现场切换的必要验收保持不变。
+
+## Continued acceptance preparation — 2026-09-24T23:27:51.532215+08:00
+
+User explicitly requested continuing all four open areas. Normal project/hooks trust question sent; user replied “正在处理”. No completion confirmation and no matching recent native hook audit at time of check; dependent model runs not started.
+
+Prepared .test-temp/native-acceptance-648: native apply_patch positive and no-lock negative (fake queue only); poll fixture changes only Global to Local test mutex, uses fake probe/charter but real provider; patrol fixture substitutes policy/path resolvers only, keeps real Popen/provider/watcher and checks duplicate PID. Inputs/hashes in native-acceptance-inputs.json; launchers are preparations, not acceptance.
+
+Created actual batch worktree .claude/worktrees/mechanism-native-648 on codex/op0924z-mechanism-native-648 at7c9a3a0f. Initial checkout failed Windows path length and auto-cleaned its partial directory; preserved branch, retried with per-command core.longpaths=true, succeeded. No global setting or old worktree changed. Native opener generated and lint passed. DryRun parses exactly one A1 lane, no real queue row ref; evidence native-batch-dryrun.txt. Real model not launched.
+
+Main advanced toa707dca2 through only the two governance files since8c66. main-asset-overlap.json lists108 installed/candidate overlaps,7 differing; no overwrite orff. Aibot actual task working directory is persistent service worktree; start script uses main queue anchor and code imports persistent checkout. aibot-cutover-preparation.json records old/new module hashes and separate main runtime dependency; no restart or deployment authorized/executed.
+
+writing-skills baseline pressure review found kickoff precedence unclear, default guardian unsupported, and no explicit native activation gate. Updated only three native project entries (kickoff/lane-watch/handoff), preserving source business rules, giving explicit Codex-generator precedence and fail-closed mode/trust rules, fixing historical-memory lookup to references/README.md. Independent GREEN pressure review resolves those three instruction ambiguities; it does NOT validate guardian or live execution. Default guardian remains a real unsupported project capability and cannot be replaced by headless without explicit mode choice.
+
+Official hooks reference rechecked: https://learn.chatgpt.com/docs/hooks (project layer and exact-hook trust required); no documented blanket worktree trust guarantee assumed. No bypass used. No unrelated project skills/configurations changed.
