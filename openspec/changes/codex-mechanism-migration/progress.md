@@ -62,3 +62,7 @@ Still no native hook acceptance, three production end-to-end acceptance, ff or A
 Native final review completed: thread01a0d2da-8023-7330-94e5-809135df4f8c,9 tool calls,0 failed; latest context91976, cumulative input560369. Two P2 findings (native lint whitespace recursion; implementation commit blocked by source HEAD review guard), no P1 reported. Both reproduced: final-review-red.txt had5 failed/1 passed. Repairs: same horizontal-whitespace regex detects and normalizes native env; newline is invalid, cannot recurse. Handoff records successful implementation HEAD while preserving source HEAD; review compares that head, unrelated drift still rejected. final-review-green.txt:182 passed,15 subtests. Additional head-capture-failure.txt:1 passed; failure to capture HEAD fails closed, does not mark review-ready. No process result becomes delivery acceptance.
 
 Public MIT Superpowers-LICENSE copied separately; historical memory originals remain uncopied. Release preparation is documented in release-readiness.md; no activation, ff, push or deployment performed. User deferred hook trust; dependent native end-to-end tests remain unrun. All reported passing tests are scoped; counts from overlapping suites must not be summed.
+
+## 用户收窄范围 — 2026-09-24T18:19:57.794936+08:00
+
+本线仅覆盖 zhuopinAI 项目的必要技能、配置和机制。中英文 last30days 属于行业研报项目，与本线无关，保留现状，不再检查、补测或配置；其他无关项目资产同样留待所属项目处理，不计入本次验收门槛。排除不代表已验收，也不删除或禁用原资产。 已同步 intent/design/tasks、资产台账、验收矩阵和发布准备件；既有历史证据不追改。此次仅文档范围修正，未运行无关测试、未修改技能或配置。三消费者、原生hook和项目现场切换的必要验收保持不变。

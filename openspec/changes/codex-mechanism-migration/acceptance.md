@@ -16,7 +16,7 @@
 | 可版本化资产继承 | 检查点及全新checkout通过 | fresh-worktree-inheritance.json：6个核心blob一致，34技能，无runtime副本，共享runtime解析成功，工作树干净；不等于native hook生效 |
 | Windows旧任务 | 三项已暂停 | runtime scheduler-export/pause-648-admin-*：XML、SHA256和enabled=false；轮询守、Claude体检、Claude插件补丁 |
 | 单消费者调度/现场切换 | 未完成 | 五项Codex自动化PAUSED；Aibot受控切换、实际触发到证据闭环未验 |
-| 技能/插件 | 部分验证 | asset-disposition.md逐项34/9；中英文研究引擎离线验证通过；在线能力、若干具体技能工作流不宣称已验 |
+| zhuopinAI 必要技能/配置 | 部分验证 | asset-disposition.md 是历史全量索引；只核验本项目依赖。中英文last30days属行业研报项目，连同其他无关配置移出本线门槛，保留现状 |
 | 独立代码审查 | 两轮审查修复通过 | 初审四项、终审两项均复现修复；final-review-green.txt：182通过/15子测试；另HEAD取证失败分支1通过 |
 | 发布/ff | 未授权执行 | 只有隔离WIP检查点，无push/ff/部署。期间主线sweep仅增两份治理文档，至69aa3ef1；合入前仍需核对与具体授权 |
 | 历史覆盖 | 边界明示 | 原26份记忆保留主仓；复制被自动审批拒绝，本分支仅检索指针。Cowork主对话完整覆盖仍是已知证据缺口，不重启Claude |

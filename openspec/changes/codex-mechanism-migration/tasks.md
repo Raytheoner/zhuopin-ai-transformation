@@ -61,7 +61,7 @@ Files: aibot_service/patrol_dispatch.py、服务相关tests。
 ## Task 5：资产与调度
 
 Files: 原生资产、技能插件处置台账、CommitSweep VBS注册器、部署/停止消费工具。
-逐项处置34技能与9插件（10安装记录）；中英last30days保留互补能力。关键依赖实测。
+历史清单为34技能与9插件（10安装记录），不等于本线验收范围。按最新 intent 仅处置 zhuopinAI 必要依赖；中英文last30days及其他无关项目技能配置保留现状，留待所属项目处理，不继续补测。关键项目依赖实测。
 CommitSweep先写非零夹具测试，再修退出码；新工作树验证版本化资产继承和原生apply_patch负例。
 现场切换前导出Action/触发器/账户摘要和备份，计划触发后对模型事件和产物；五个Codex自动化保持PAUSED直到单消费者核验。
 

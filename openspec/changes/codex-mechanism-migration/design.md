@@ -4,6 +4,10 @@
 # Goals / Non-Goals
 目标：原生 Codex 进程、三消费者状态机、跨工作树 hook、可版本化资产与单一调度消费闭环。非目标：业务场景开发、改变人工签核、迁移凭据、恢复 Claude。
 
+# Scope clarification
+本线仅覆盖 zhuopinAI 项目的必要技能、配置和机制。中英文 last30days 属于行业研报项目，与本线无关，保留现状，不再检查、补测或配置；其他无关项目资产同样留待所属项目处理，不计入本次验收门槛。排除不代表已验收，也不删除或禁用原资产。
+仅因出现在全局技能或源插件安装清单中，不足以判为 zhuopinAI 必要依赖；本项目实际依赖的通用工具仍按其本项目用途核验。
+
 # Decisions
 1. provider 使用 `-a never` 与 read-only/workspace-write；无旧模型回退，无 sandbox/hook trust 旁路。默认暂停，显式 enabled 才起一次进程。
 2. 每次运行独立证据目录，source_id 与原生 thread_id 分开，进程/tool/turn/hook/产物各自记录；输出最多 output_needs_review，accepted 恒 false。外层验收不得从 exit0 或哨兵推导。
