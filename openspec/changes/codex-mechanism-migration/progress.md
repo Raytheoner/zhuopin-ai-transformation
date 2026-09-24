@@ -56,3 +56,9 @@ Handoff runner now reuses provider instead of separate subprocess.run: native st
 Downstream probe previously missed OUTPUT-NEEDS-REVIEW and named failures; native opener claims previously recorded CC. Five failing cases reproduced and fixed;136 passed/25 subtests in downstream-green.txt (generator regression plus focused probe/native tests). These interface fixes occurred after initial independent review and must be included in final review scope.
 Original 26 history memory files NOT copied, per automatic review rejection. Only retrieval pointer added.
 Still no native hook acceptance, three production end-to-end acceptance, ff or Aibot deployment. No business work started.
+
+## Final review repairs and release preparation — 2026-09-24T18:17:26.952685+08:00
+
+Native final review completed: thread01a0d2da-8023-7330-94e5-809135df4f8c,9 tool calls,0 failed; latest context91976, cumulative input560369. Two P2 findings (native lint whitespace recursion; implementation commit blocked by source HEAD review guard), no P1 reported. Both reproduced: final-review-red.txt had5 failed/1 passed. Repairs: same horizontal-whitespace regex detects and normalizes native env; newline is invalid, cannot recurse. Handoff records successful implementation HEAD while preserving source HEAD; review compares that head, unrelated drift still rejected. final-review-green.txt:182 passed,15 subtests. Additional head-capture-failure.txt:1 passed; failure to capture HEAD fails closed, does not mark review-ready. No process result becomes delivery acceptance.
+
+Public MIT Superpowers-LICENSE copied separately; historical memory originals remain uncopied. Release preparation is documented in release-readiness.md; no activation, ff, push or deployment performed. User deferred hook trust; dependent native end-to-end tests remain unrun. All reported passing tests are scoped; counts from overlapping suites must not be summed.

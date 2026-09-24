@@ -823,7 +823,8 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
     ①②③⑤ 换成正本自检 `C3`/`C5`（＋文件级 `check_canon_file` 的 `C1`/`C2`），形态
     ④⑥⑦ 照常生效。**不是关掉，是换成对这份件成立的那条判据**，见 `SKELETON_CANON_REL`。
     """
-    if re.search(r"执行环境\s*[：:]\s*Codex\b", block.text):
+    native_env = re.compile(r"执行环境[ \t]*[：:][ \t]*Codex\b")
+    if native_env.search(block.text):
         # Native title metadata replaces source-only API. Normalize only for the
         # existing structural checks; no normalized text is emitted or executed.
         problems = []
@@ -839,7 +840,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
         for line in block.lines:
             if line.startswith("会话标识："):
                 line = 'set_session_title ' + line + '；若是子任务则跳过本行。'
-            lines.append(line.replace("【Codex】", "【CC】").replace("执行环境：Codex", "执行环境：CC"))
+            lines.append(native_env.sub("执行环境：CC", line.replace("【Codex】", "【CC】")))
         return problems + check_block(Block(block.start_line,lines,block.info),is_subtask_lane=is_subtask_lane,
             is_format_canon_file=is_format_canon_file,canon_role=canon_role)
     problems: list[tuple[str, str]] = []

@@ -107,7 +107,8 @@ def run_stage(args):
     status = git("status", "--porcelain", cwd=workspace)
     if head["exit"] or status["exit"]:
         raise ValueError("workspace must be an existing Git checkout")
-    if head["stdout"].strip() != state["source_head"]:
+    expected_head = state.get("implementation_head", state["source_head"]) if args.phase == "review" else state["source_head"]
+    if head["stdout"].strip() != expected_head:
         raise ValueError("HEAD drift: re-prepare task against current source before execution")
     if args.phase == "implement" and status["stdout"].strip():
         raise ValueError("implementation workspace must be clean")
@@ -145,6 +146,13 @@ def run_stage(args):
         except (OSError,ValueError) as exc:
             result = {'status':'adapter_failed','exit_code':None,'thread_id':None,'error':type(exc).__name__}
         code = 0 if result.get('status')=='output_needs_review' else 1
+        if code == 0 and args.phase == "implement":
+            implementation_head = git("rev-parse", "HEAD", cwd=workspace)
+            if implementation_head["exit"] or not implementation_head["stdout"].strip():
+                code = 1
+                result['status'] = 'implementation_head_unavailable'
+            else:
+                state['implementation_head'] = implementation_head['stdout'].strip()
         final = model_evidence/'final.txt'
         if final.is_file():
             shutil.copyfile(final,attempt/'final.txt')

@@ -332,3 +332,13 @@ class TestBatchMutationAndStagger:
         assert len(starts)==2,result.stdout
         seconds=(datetime.strptime(starts[1],'%H:%M:%S')-datetime.strptime(starts[0],'%H:%M:%S')).total_seconds()%86400
         assert seconds>=5
+
+class TestNativeLintSpacing:
+    @pytest.mark.parametrize('field',['执行环境: Codex','执行环境： Codex','执行环境 :\tCodex','执行环境：\nCodex'])
+    def test_native_environment_spacing_does_not_recurse(self,tmp_path,monkeypatch,field):
+        f=TestNativeOpener().fixture(tmp_path,monkeypatch)
+        text=f.M.generate_opener(**dict(f.VALID_CC_KWARGS,env='Codex'))
+        text=text.replace('执行环境：Codex',field)
+        lint=f.M._load_lint_module()
+        problems=lint.check_block(lint.iter_fenced_blocks(text)[0])
+        assert bool(problems)==('\n' in field)

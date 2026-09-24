@@ -16,8 +16,8 @@
 | openspec-explore | 入口保留，CLI依赖验证 | OpenSpec strict 验证成功；archive/sync 等写操作未为了验收而调用 |
 | openspec-propose | 入口保留，CLI依赖验证 | OpenSpec strict 验证成功；archive/sync 等写操作未为了验收而调用 |
 | openspec-sync-specs | 入口保留，CLI依赖验证 | OpenSpec strict 验证成功；archive/sync 等写操作未为了验收而调用 |
-| receiving-code-review | 保留，具体工作流未验收 | 需要对应业务输入或独立机械夹具；不得按 frontmatter 通过宣称可用 |
-| requesting-code-review | 正在功能验证 | 首个子代理未读取到文件；native-review-1 只读原生审查进行中 |
+| receiving-code-review | 本次实际使用 | 两轮真实只读审查共六项发现，经复现、修复及针对性回归；不宣称覆盖全部分支 |
+| requesting-code-review | 两次原生只读审查完成 | native-review-1、native-final-review 有真实工具事件和审查成果；首个未能读文件的子代理不计入 |
 | source-command-opsx-apply | 入口保留，CLI依赖验证 | OpenSpec strict 验证成功；archive/sync 等写操作未为了验收而调用 |
 | source-command-opsx-archive | 入口保留，CLI依赖验证 | OpenSpec strict 验证成功；archive/sync 等写操作未为了验收而调用 |
 | source-command-opsx-explore | 入口保留，CLI依赖验证 | OpenSpec strict 验证成功；archive/sync 等写操作未为了验收而调用 |
@@ -45,7 +45,7 @@
 
 | 原插件 | 处置 | 已有证据与剩余边界 |
 |---|---|---|
-| superpowers | 原生项目技能包替代源端插件安装 | 本次 plan/TDD/worktree 工作实际使用；子代理审查路径未成功，替代只读审查进行中 |
+| superpowers | 原生项目技能包替代源端插件安装 | 本次 plan/TDD/worktree 工作实际使用；子代理审查路径未成功；两次替代原生只读审查完成并推动六项修复 |
 | claude-code-setup | 源端自动化安装退役；能力由 Codex 官方配置/原生工具承接 | 不执行源端 setup；本分支 provider/hook 及 OpenSpec 是实证，hook 信任仍待用户 |
 | context7 | 源端 MCP 安装退役；官方文档检索按当前可用工具承接 | 本次已查 Codex 官方 hook/noninteractive 文档；无同名已安装的虚假声明 |
 | frontend-design | 源端插件安装退役；可用原生前端开发流程按需承接 | 本次无前端业务任务，不声明视觉交付已验收 |

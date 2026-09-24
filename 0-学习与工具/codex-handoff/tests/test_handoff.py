@@ -146,3 +146,36 @@ def test_stage_uses_structured_provider_outcome(tmp_path,monkeypatch,provider_st
     assert state['model_status']==provider_status
     assert state['delivery_accepted'] is False
     assert not (folder/'running.lock').exists()
+
+def test_implementation_commit_can_be_reviewed_in_same_task(tmp_path,monkeypatch):
+    folder=setup_run(tmp_path,monkeypatch)
+    auth=tmp_path/'authorization.md';auth.write_text('fixture explicit design authorization')
+    heads=iter(['a','b','b'])
+    monkeypatch.setattr(workflow,'git',lambda *a,**k:{'exit':0,'stdout':next(heads) if a[0]=='rev-parse' else ''})
+    monkeypatch.setattr(workflow,'model_run',lambda **k:{'status':'output_needs_review','exit_code':0,'thread_id':'fixture'})
+    assert workflow.run_stage(SimpleNamespace(id='sample',phase='implement',workspace=str(tmp_path),authorization=str(auth),timeout=10))==0
+    assert workflow.run_stage(SimpleNamespace(id='sample',phase='review',workspace=str(tmp_path),timeout=10))==0
+    state=json.loads((folder/'state.json').read_text())
+    assert state['source_head']=='a' and state['implementation_head']=='b'
+    assert state['delivery_accepted'] is False
+
+
+def test_review_rejects_drift_from_recorded_implementation(tmp_path,monkeypatch):
+    folder=setup_run(tmp_path,monkeypatch)
+    (folder/'state.json').write_text(json.dumps({'source_head':'a','implementation_head':'b'}))
+    monkeypatch.setattr(workflow,'git',lambda *a,**k:{'exit':0,'stdout':'c' if a[0]=='rev-parse' else ''})
+    with pytest.raises(ValueError,match='HEAD drift'):
+        workflow.run_stage(SimpleNamespace(id='sample',phase='review',workspace=str(tmp_path),timeout=10))
+
+
+def test_implementation_head_capture_failure_is_not_review_ready(tmp_path,monkeypatch):
+    folder=setup_run(tmp_path,monkeypatch)
+    auth=tmp_path/'authorization.md';auth.write_text('fixture design authorization')
+    heads=iter([{'exit':0,'stdout':'a'},{'exit':1,'stdout':''}])
+    monkeypatch.setattr(workflow,'git',lambda *a,**k:next(heads) if a[0]=='rev-parse' else {'exit':0,'stdout':''})
+    monkeypatch.setattr(workflow,'model_run',lambda **k:{'status':'output_needs_review','exit_code':0,'thread_id':'fixture'})
+    assert workflow.run_stage(SimpleNamespace(id='sample',phase='implement',workspace=str(tmp_path),authorization=str(auth),timeout=10))==1
+    state=json.loads((folder/'state.json').read_text())
+    assert state['status']=='failed' and state['model_status']=='implementation_head_unavailable'
+    assert 'implementation_head' not in state and state['delivery_accepted'] is False
+    assert not (folder/'running.lock').exists()
