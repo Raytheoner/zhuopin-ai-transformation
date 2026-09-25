@@ -96,3 +96,25 @@ Official hooks reference rechecked: https://learn.chatgpt.com/docs/hooks (projec
 ## 2026-09-25T08:01:37.053690+08:00 三链隔离验收收口与发布准备
 
 v4批处理机器核验通过，独立产物内容审查无发现（审查通道限制及替代方式完整记录于native-batch-v4-independent-review.md）。三条消费者的隔离原生链已闭合；现场服务/调度、获准ff、主线portable配置正常信任仍未闭合。候选同步主线两份治理文档至75c65c82，未改已测实现。portable配置最外层退出码缺陷真实pwsh复现修复，启动器8通过。主仓108同名未跟踪资产、8差异已有逐文件hash清单，非本轮旧资产原位保留。#648已更新并登记B-0925_Codex原生机制验收075041，锁已释放；状态继续open。
+
+## 2026-09-25T08:25:39.213884+08:00 已获授权的现场执行
+
+主线a707dca2已ff至ce8443b6；108个重名未跟踪原件逐hash核对后保存在reports/mechanism-migration-648/authorized-ff-backup-20260925T081037，其他脏文件保留。后续既有sweep追加治理提交42be8dd3；6个核心blob不变，发布后新工作树mechanism-release-648已实际继承，未复制runtime。证据authorized-ff-result.json、release-worktree-inheritance.json。
+
+Aibot实际服务工作树仅替换patrol_dispatch.py，新hash1c76a6f9；旧模块已备份。仅停止核实的子进程30900，原看门狗2692按原60秒退避起新PID31792，服务心跳从00:15:27Z更新至00:20:27Z。新增本机consumers.local.json令patrol.enabled=false；实际服务Python导入现场模块返回paused且原信号hash不变，证据aibot-cutover-start.json、aibot-installed-pause-proof.json。这不是实际入站回件的全链验收，暂不启用消费。
+
+轮询旧模型wrapper已备份并由正式注册器WhatIf输出生成的Codex默认暂停wrapper替换；原任务仍Disabled，原XML/账户/周期保存。管理员真实触发非零夹具脚本已通过PS语法检查，并发起正常UAC；截至本记录无结果文件，不能判通过。新portable hooks配置hash变化，已请求用户正常/hooks审阅信任，没有代写trust。两个用户环境动作未完成前，原生守卫/调度验收和业务总闸继续关闭。
+
+
+### 2026-09-25 完整外层 shell 回归补漏（#648 未闭合）
+
+用户五事件正常信任已落盘，但发布工作树原生负例 thread `01a0d60f-a3bc-7870-9c9b-78763755abee` 未被拦截，隔离假队列实际变化；本轮 FAIL，真实队列未触及。主项目对照 thread `01a0d613-8cb9-7881-ab79-5a2efc039185` 遇 Windows sandbox helper 初始化失败，没有完成守卫验收。
+
+复现配置缺陷：此前 test_portable_hook_wrapper_preserves_child_exit 拆掉了外层命令，只测试内层；完整命令经 PowerShell 解析时，双引号内 `$r` 提前展开，守卫启动前语法失败。现改用 UTF-16LE EncodedCommand 传递同一脚本，外层显式 `exit $LASTEXITCODE`；编码只用于避免 shell 重解析，不含凭据，不改变信任策略。测试覆盖 pwsh 与 Windows PowerShell 完整命令、非零退出、stdin 和原生 deny JSON；RED 2 failed，修复后 launcher 11 passed。证据 reports/mechanism-migration-648/portable-hook-shell-fix.json 和 portable-hook-shell-regression.txt。修复后五项目事件须重新正常审阅，尚未通过原生验收，消费者停用、业务闸关闭。
+
+可审阅的编码命令原文（五事件相同）：
+```powershell
+& { $r = Get-Item -LiteralPath .; while ($r -and -not (Test-Path -LiteralPath (Join-Path $r.FullName '.git'))) { $r = $r.Parent }; if (-not $r) { exit 2 }; & (Join-Path $r.FullName '0-学习与工具/codex-handoff/invoke.ps1') -Mode Hook; exit $LASTEXITCODE }
+```
+
+调度独立项已 PASS：ZhuopinPollGuard 08:59:32 实际启动隔离夹具，LastTaskResult=7，回执 model_started=false/business_probe_started=false；已恢复 Disabled 和 canonical paused wrapper，SHA256=9C2B53F1DD5B6D4BB9A5309B630FDDFC5472AC2CB286B0BFF2E039B44456F453。证据 poll-authorized-cutover/scheduled-nonzero-result.json、scheduled-fixture-receipt.json。该通过仅覆盖真实计划任务非零透传，不代表计划任务模型链通过。

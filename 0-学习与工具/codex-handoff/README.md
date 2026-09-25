@@ -2,7 +2,7 @@
 
 基础安装与路径修复已验收，以下旧章节保留的是初始交付时状态；现况以本节、OpenSpec `codex-mechanism-migration/progress.md` 和本机证据为准。
 
-统一 provider 及三消费者的隔离实现已具备；默认暂停。原生只读工具运行已产生 thread/turn/工具证据，正常 /hooks 信任已完成，linked worktree 实际加载主仓项目配置。两轮独立代码审查及修复已完成；原生hook正负例、轮询和事件拆件隔离端到端已通过；批处理全新工作树写入/测试/独立内容审查/交接也已通过；获准主线合入、portable配置正常信任及现场调度切换仍未闭合；业务开发不得启动。
+统一 provider 及三消费者的隔离实现已具备；默认暂停。原生只读工具运行已产生 thread/turn/工具证据，正常 /hooks 信任已完成，linked worktree 实际加载主仓项目配置。两轮独立代码审查及修复已完成；原生hook正负例、轮询和事件拆件隔离端到端已通过；批处理全新工作树写入/测试/独立内容审查/交接也已通过；主线获准ff已完成；Aibot模块已切换并保持暂停、轮询Codex包装已安装且任务Disabled；portable配置正常信任及现场调度验收仍未闭合；业务开发不得启动。
 
 - 原生 provider：`model_provider.py`，按 runtime.local.json 或显式环境定位 Codex；routine/design 路由明示继承用户模型，不虚构模型或价格。
 - 轮询与批处理：显式 `-ConsumerEnabled` 才启动；旧入口转交 v2。原生 opener 使用生成器 `--env Codex`，旧 guardian 尚未验收会拒绝生成。
@@ -12,7 +12,7 @@
 - 守卫：portable hook 从 cwd 查根目录，再由 invoke.ps1 解析共享 runtime；本机配置、consumer 开关、state 不入版本库。正常 /hooks 信任不可代写。
 - 恢复：停止自动模型消费并保留信号/日志；Claude 已封存，禁止执行和回退。
 
-五项既有 Codex 自动化已查询，均为 PAUSED。OpenSpec CLI 实际位于用户 npm 目录并通过本变更 strict 结构校验；该结果不代表机制功能验收。三个旧任务（轮询守、Claude环境体检、Claude插件补丁）已通过正常UAC备份并停用；Aibot服务尚未切换，仍有旧模型启动路径，不能宣称已消除。
+五项既有 Codex 自动化已查询，均为 PAUSED。OpenSpec CLI 实际位于用户 npm 目录并通过本变更 strict 结构校验；该结果不代表机制功能验收。三个旧任务（轮询守、Claude环境体检、Claude插件补丁）已通过正常UAC备份并停用；Aibot活动模块已切换到Codex适配并保持暂停，服务已重启和持续心跳；尚不宣称现场消费验收完成。
 
 验证证据位于隔离分支 `reports/mechanism-migration-648/`（本机忽略目录）；阶段记录与测试隔离事故见 OpenSpec progress.md。后续提交/ff/现场切换分别取证，既有脏文件和历史工作树不清理。
 
