@@ -6452,7 +6452,7 @@ def _split_parenthetical_annotations(body: str) -> tuple[str, str]:
     annotations: list[str] = []
     current: list[str] = []
     closer: str | None = None
-    for ch in body:
+    for index, ch in enumerate(body):
         if closer is None:
             if ch in _WAIVER_ANNOTATION_BRACKETS:
                 closer = _WAIVER_ANNOTATION_BRACKETS[ch]
@@ -6462,7 +6462,12 @@ def _split_parenthetical_annotations(body: str) -> tuple[str, str]:
         else:
             current.append(ch)
             if ch == closer:
-                annotations.append("".join(current))
+                # 文件名可含括号，例如「实施计划（最新版）.docx」。紧接扩展名的
+                # 括号属于路径；末尾的「（作者…）」仍是登记备注。
+                if body[index + 1:index + 2] == ".":
+                    kept.extend(current)
+                else:
+                    annotations.append("".join(current))
                 current = []
                 closer = None
     if closer is not None:  # 未闭合：整段算括注（保守侧，见 docstring）

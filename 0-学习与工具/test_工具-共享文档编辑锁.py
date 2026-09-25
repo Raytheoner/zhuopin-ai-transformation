@@ -8585,6 +8585,16 @@ class RegistrationWaiverAnnotationParsingTests(unittest.TestCase):
         path.write_text("x", encoding="utf-8")
         return rel
 
+    def test_parentheses_inside_filename_survive_waiver(self):
+        rel = "1-转型规划/0-全景路线图/~$智能AI转型实施计划（最新版）.docx"
+        clauses = self.m._parse_registration_waiver_clauses(
+            f"登记豁免：{rel}（作者 Codex-0925，到期 {_due_mmdd(5)}）"
+        )
+        self.assertEqual(clauses[0]["paths"], [rel])
+        self._touch(rel)
+        valid, notes = self.m._valid_waiver_paths(clauses, self.root, [rel])
+        self.assertEqual(valid, {rel}, notes)
+
     # ---- ⒜ 多路径各带括注 ----
 
     def test_every_path_survives_its_own_annotation(self):
