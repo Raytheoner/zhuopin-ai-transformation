@@ -10,7 +10,7 @@
 #     待他确认本任务的留痕连续若干轮正常后，再手动停 Cowork 那条。
 #
 #  沿用 工具-注册落库sweep计划任务.ps1 的全部范式（成因原文在那里，此处只留指针）：
-#    · 当前账户 + LogonType S4U（#96：SYSTEM 对用户目录无 ACL；不落密码、不要求保持登录会话）；
+#    · 当前账户 + LogonType Interactive（#648 用户批准：仅账户已登录时运行；S4U Session 0 的 Codex sandbox 管道超时）；
 #    · Action 指主工作区稳定路径，绝不指 .codex\worktrees\<name>（#49/#79）；
 #    · 绝对路径烘焙进生成的包装脚本 run-poll-guard.ps1（S4U 触发时 PATH ≠ 交互式登录 shell；
 #      python 是用户级安装、codex.exe 在 ~\.local\bin、pwsh 在 WindowsApps——三个都不在 SYSTEM/S4U 默认 PATH）；
@@ -60,7 +60,7 @@ $__isAdmin = ([Security.Principal.WindowsPrincipal] `
     [Security.Principal.WindowsIdentity]::GetCurrent()
 ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $__isAdmin -and -not $WhatIf) {
-    Write-Error ("本脚本要注册/修改 S4U 计划任务，需要管理员 PowerShell。" +
+    Write-Error ("本脚本要注册/修改计划任务，需要管理员 PowerShell。" +
         "当前会话非提权，已在改动任何任务之前退出——请在管理员 PowerShell 里重跑本脚本（或加 -WhatIf 只看不动）。")
     exit 1
 }
@@ -193,7 +193,7 @@ if ($WhatIf) {
     Write-Host "      已生成 $WRAPPER" -ForegroundColor Green
 }
 
-# ── 3. 注册计划任务（当前账户 S4U + AtStartup + 每 N 分钟；上一轮未完则忽略新实例） ──
+# ── 3. 注册计划任务（当前账户 Interactive + AtStartup + 每 N 分钟；上一轮未完则忽略新实例） ──
 Write-Host "[3/3] 注册计划任务 $TASK..." -ForegroundColor Yellow
 $action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VBS_LAUNCHER`"" -WorkingDirectory $REPO
 $triggerStartup = New-ScheduledTaskTrigger -AtStartup
@@ -201,16 +201,16 @@ $triggerStartup = New-ScheduledTaskTrigger -AtStartup
 $triggerRepeat = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
     -RepetitionDuration (New-TimeSpan -Days 3650)
-$principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType S4U
+$principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive
 # ExecutionTimeLimit 40 分钟 ＝ 探针 2 + 巡检 15 + 模型 20 三个上限之和再留余量；MultipleInstances IgnoreNew 与
 # 脚本内的 Global\ZhuopinPollGuard 互斥体双保险（前者省一次进程起动，后者管手工与任务并发）。
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 40) `
     -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 $description = ("轮询守（队列 #575 甲／OP-0913-Q）：每 $IntervalMinutes 分钟跑 无头棒收工探针 ＋ 待合分支巡检，" +
-                "只在有信号时才唤 codex -p；每轮无条件留一行痕到 reports\poll-guard\。替代 Cowork 桌面端 poll-opener-batch。")
+                "只在有信号时才唤 codex exec；每轮无条件留一行痕到 reports\poll-guard\。替代 Cowork 桌面端 poll-opener-batch。")
 
 if ($WhatIf) {
-    Write-Host "[WhatIf] 将注册 $TASK：Execute=wscript.exe `"$VBS_LAUNCHER`"；触发＝开机 + 每 $IntervalMinutes 分钟；身份＝$currentUser/S4U；上限 40 分钟；IgnoreNew。"
+    Write-Host "[WhatIf] 将注册 $TASK：Execute=wscript.exe `"$VBS_LAUNCHER`"；触发＝开机 + 每 $IntervalMinutes 分钟；身份＝$currentUser/Interactive（仅已登录时运行）；上限 40 分钟；IgnoreNew。"
     exit 0
 }
 if (Get-ScheduledTask -TaskName $TASK -ErrorAction SilentlyContinue) {

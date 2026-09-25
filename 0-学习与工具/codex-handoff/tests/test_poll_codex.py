@@ -89,3 +89,4 @@ class TestSchedulerWrappers:
         assert '-ClaudeExe' not in proc.stdout
         assert 'ZHUOPIN_CODEX_EXECUTABLE' in proc.stdout
         assert '-ConsumerEnabled' not in proc.stdout
+        assert '/Interactive' in proc.stdout
