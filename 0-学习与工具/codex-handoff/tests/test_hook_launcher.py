@@ -49,3 +49,14 @@ def test_hook_launcher_preserves_utf8_input(tmp_path):
     result=subprocess.run(['pwsh','-NoProfile','-File',str(folder/'invoke.ps1'),'-Mode','Hook'],input=json.dumps(event,ensure_ascii=False),text=True,capture_output=True,encoding='utf8',env=env,timeout=30)
     assert result.returncode==0,result.stderr
     assert json.loads(result.stdout)==event
+
+def test_portable_hook_wrapper_preserves_child_exit(tmp_path):
+    config=json.loads((Path(__file__).resolve().parents[3]/'.codex/hooks.json').read_text(encoding='utf8'))
+    command=config['hooks']['PostToolUse'][0]['hooks'][0]['command']
+    inner=command.split(' -Command "',1)[1][:-1]
+    (tmp_path/'.git').mkdir()
+    folder=tmp_path/'0-学习与工具/codex-handoff';folder.mkdir(parents=True)
+    (folder/'invoke.ps1').write_text('[Console]::Error.WriteLine("fixture sentinel failed"); exit 2\n',encoding='utf8')
+    result=subprocess.run(['pwsh','-NoProfile','-Command',inner],cwd=tmp_path,text=True,capture_output=True,encoding='utf8',timeout=30)
+    assert result.returncode==2
+    assert 'fixture sentinel failed' in result.stderr

@@ -91,3 +91,8 @@ Official hooks reference rechecked: https://learn.chatgpt.com/docs/hooks (projec
 独立 reviewer review_mechanism_seams 发现畸形事件输入与非Pre错误反馈两项P2，均已复现并修复。bridge七种畸形输入保守deny；invoke在Hook模式固定UTF8解码与管道、仅Pre/未知失败deny，已知非Pre保留stderr/exit2，普通模式不被伪装为成功。test_handoff最终34项；与launcher前6项合跑40通过，新增UTF8透传后launcher7项通过。证据native-hook-final-green.txt、native-hook-launcher-utf8-final.txt。独立静态复审无新的确定性缺陷，建议的中文透传边界已实测通过。主仓活动bridge/invoke按既有迁移授权逐文件检查旧hash、备份、同步；hooks.json和trust未改，备份manifest见active-hook-final-install.json。
 
 批处理首轮真实创建三个隔离产物并pytest2通过，但Get-Item检查尚不存在文件返回1，provider tool_failed、外层FAIL(98)、DeliveryAccepted=false；失败保留，不能以OPENER_DONE验收。独立产物审查无发现。已由生成器重建v4夹具，用Test-Path表达预期缺失，将在新工作树复验。
+
+
+## 2026-09-25T08:01:37.053690+08:00 三链隔离验收收口与发布准备
+
+v4批处理机器核验通过，独立产物内容审查无发现（审查通道限制及替代方式完整记录于native-batch-v4-independent-review.md）。三条消费者的隔离原生链已闭合；现场服务/调度、获准ff、主线portable配置正常信任仍未闭合。候选同步主线两份治理文档至75c65c82，未改已测实现。portable配置最外层退出码缺陷真实pwsh复现修复，启动器8通过。主仓108同名未跟踪资产、8差异已有逐文件hash清单，非本轮旧资产原位保留。#648已更新并登记B-0925_Codex原生机制验收075041，锁已释放；状态继续open。
