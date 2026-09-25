@@ -138,3 +138,26 @@ Aibot实际服务工作树仅替换patrol_dispatch.py，新hash1c76a6f9；旧模
 主目录sandbox修复：首版管理员脚本因当前CLI要求 --permission-profile 提前退出，未启动sandbox；已用无修改命令验证 -P :workspace 正确入口。v2保持官方sandbox约束，但其UAC返回“用户取消”，尚未执行，未擅自重弹。脚本 invoke-sandbox-repair-admin-v2.ps1 已准备，待正常提权后还须普通身份原生正负例验证。未手工放宽ACL或绕过sandbox。
 
 e7fe8aea窄独立审阅无具体缺陷发现；审阅范围仅两文件diff与已有机器验收记录，未重跑模型/测试，不覆盖主仓ACL或S4U运行时；见 portable-hook-independent-review.md。#648仍open，所有业务开工闸仍关闭。
+
+
+### 2026-09-25T10:33:53.085413+08:00 主仓 sandbox 普通身份验收闭合
+
+正常UAC执行官方 codex sandbox -P :workspace 初始化后，管理员夹具实际写入并回读。随后确认父进程 ParentIsAdministrator=false，以正常 workspace-write 原生复验：正例thread 01a0d660-9b1e-7983-89dc-e736f7376520 实际写入、1工具0失败、五类hook完整；负例thread 01a0d662-1bd5-7e11-8bca-caa03d5c42f2 明确PreToolUse拒绝、假队列未变、四类hook完整。按当前bridge SHA、cwd、thread和产物机器断言通过。主仓sandbox写入缺陷PASS，证据 reports/mechanism-migration-648/main-sandbox-repair-verification.json；没有放宽sandbox或代写信任。
+
+S4U环境修复后复验thread 01a0d665-d642-7b80-a935-17bd3af105fc仍工具管道连接超时，0工具、随机凭据未读，FAIL；已恢复任务Disabled和paused wrapper。这是与主仓ACL修复独立的调度问题，不能用普通身份PASS替代。正在使用原S4U任务无模型直接sandbox短诊断定位，诊断结束同样恢复Disabled；不启业务，五项Codex自动化仍PAUSED。
+
+
+### 2026-09-25T10:36:51.649093+08:00 S4U 无模型对照定位与待决配置
+
+原任务在Session 0（S4U）直接执行官方sandbox的cmd /c ver和pwsh只读输出，两者均exit1、15000ms connecting runner pipe-in超时；不涉及模型、MCP、业务脚本。普通登录身份同类sandbox命令成功。证据 poll-authorized-cutover/s4u-direct-result.json、s4u-direct-cmd.txt、s4u-direct-pwsh.txt。诊断已恢复Disabled及原paused wrapper，恢复记录s4u-diagnostic-task-result.json。
+
+已准备未应用的 task-interactive-proposed-disabled.xml，仅将Principal.LogonType从S4U改InteractiveToken，账户/动作/触发器均不变，Enabled=false。该候选需正常授权后先隔离验收，不能提前声称已解决；其代价是该账户未登录时不能执行。已向用户询问是否同意该运行条件变化；未获答复前不改正式任务。不通过放宽sandbox或启动Claude解决Session 0问题。
+
+
+### 2026-09-25T10:50:15.436601+08:00 用户批准 InteractiveToken 后真实调度通过
+
+用户明确同意“同意，改已登录模式并验收”。原任务仅登录方式S4U→InteractiveToken，账户/动作/周期保留；退出Windows登录后不执行。真实计划运行thread 01a0d670-f39c-77e1-a8aa-cb9bcbcb026c，1次成功工具读取随机凭据，凭据同时存在工具输出和最终答复，5类hook同thread/current bridge关联，测试结束恢复Disabled及paused wrapper。机器核验见interactive-scheduled-verification.json。该通过不覆盖真实业务探针/回件/对外发送，也不使五个Codex自动化自动启用。
+
+版本化注册器同步采用Interactive，避免重注册回退S4U。注册回归RED→GREEN1通过；旧注册器路径/执行别名保护6通过2环境跳过；独立窄审阅无具体缺陷发现（已读diff、实际Principal传参及验收记录，未重跑测试）。注意：原注册器仍为注销重建，完整注册会重建任务启用状态；默认ConsumerEnabled仍关闭，不得将测试恢复Disabled误解为该脚本永久保持任务Disabled。
+
+必要机制规定范围与三模型消费者端到端实测已齐；末轮注册器源码/文档登记自动落库后再关闭#648和最终业务开工闸。当前不启用真实业务自动消费；不调用Claude、不改五个PAUSED自动化、不做真实发送。之前失败证据保留。
