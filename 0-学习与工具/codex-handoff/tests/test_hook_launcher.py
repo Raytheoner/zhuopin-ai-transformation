@@ -50,13 +50,31 @@ def test_hook_launcher_preserves_utf8_input(tmp_path):
     assert result.returncode==0,result.stderr
     assert json.loads(result.stdout)==event
 
-def test_portable_hook_wrapper_preserves_child_exit(tmp_path):
+@pytest.mark.parametrize('shell', ['pwsh', 'powershell'])
+def test_portable_hook_wrapper_preserves_child_exit(tmp_path, shell):
     config=json.loads((Path(__file__).resolve().parents[3]/'.codex/hooks.json').read_text(encoding='utf8'))
     command=config['hooks']['PostToolUse'][0]['hooks'][0]['command']
-    inner=command.split(' -Command "',1)[1][:-1]
     (tmp_path/'.git').mkdir()
     folder=tmp_path/'0-学习与工具/codex-handoff';folder.mkdir(parents=True)
     (folder/'invoke.ps1').write_text('[Console]::Error.WriteLine("fixture sentinel failed"); exit 2\n',encoding='utf8')
-    result=subprocess.run(['pwsh','-NoProfile','-Command',inner],cwd=tmp_path,text=True,capture_output=True,encoding='utf8',timeout=30)
+    result=subprocess.run([shell,'-NoProfile','-Command',command],cwd=tmp_path,text=True,capture_output=True,encoding='utf8',timeout=30)
     assert result.returncode==2
     assert 'fixture sentinel failed' in result.stderr
+
+
+@pytest.mark.parametrize('shell', ['pwsh', 'powershell'])
+def test_portable_hook_wrapper_delivers_stdin_and_native_deny(tmp_path, shell):
+    config=json.loads((Path(__file__).resolve().parents[3]/'.codex/hooks.json').read_text(encoding='utf8'))
+    command=config['hooks']['PreToolUse'][0]['hooks'][0]['command']
+    (tmp_path/'.git').mkdir()
+    folder=tmp_path/'0-学习与工具/codex-handoff';folder.mkdir(parents=True)
+    shutil.copyfile(Path(__file__).resolve().parents[1]/'invoke.ps1',folder/'invoke.ps1')
+    runtime=tmp_path/'runtime.json'
+    runtime.write_text(json.dumps({'python':sys.executable,'state_root':str(tmp_path/'state')}),encoding='utf8')
+    (folder/'hook_bridge.py').write_text('import sys,json\ne=json.load(sys.stdin)\nprint(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":e["marker"]}},ensure_ascii=False))\n',encoding='utf8')
+    env=dict(os.environ,ZHUOPIN_CODEX_RUNTIME=str(runtime))
+    event={'hook_event_name':'PreToolUse','marker':'fixture-648'}
+    result=subprocess.run([shell,'-NoProfile','-Command',command],cwd=tmp_path,input=json.dumps(event),env=env,text=True,capture_output=True,encoding='utf8',timeout=30)
+    assert result.returncode==0,result.stderr
+    decision=json.loads(result.stdout)['hookSpecificOutput']
+    assert decision=={'hookEventName':'PreToolUse','permissionDecision':'deny','permissionDecisionReason':'fixture-648'}
