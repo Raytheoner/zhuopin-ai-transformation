@@ -118,3 +118,23 @@ Aibot实际服务工作树仅替换patrol_dispatch.py，新hash1c76a6f9；旧模
 ```
 
 调度独立项已 PASS：ZhuopinPollGuard 08:59:32 实际启动隔离夹具，LastTaskResult=7，回执 model_started=false/business_probe_started=false；已恢复 Disabled 和 canonical paused wrapper，SHA256=9C2B53F1DD5B6D4BB9A5309B630FDDFC5472AC2CB286B0BFF2E039B44456F453。证据 poll-authorized-cutover/scheduled-nonzero-result.json、scheduled-fixture-receipt.json。该通过仅覆盖真实计划任务非零透传，不代表计划任务模型链通过。
+
+
+### 2026-09-25 09:35+08 新信任后的现场验证
+
+新配置已由用户正常信任。发布验收工作树已快进 e7fe8aea；原生正例 thread 01a0d62d-54e2-7e61-b6c8-645ad0de5540 实际写出预期内容，五类 hook 完整；负例 thread 01a0d62e-d63e-7ed3-83d4-2985020eed8e 原生明确拒绝无锁修改，假队列原文不变，四类 hook 无 Post。同会话 ID、当前 bridge 哈希与守卫码均已机器核验，发布工作树 hook 继承 PASS。主仓负例 01a0d62a-0f38-7062-a1f5-1a23fc55a884 也明确拦截。
+
+现场服务实际 Python314 + 已安装 patrol_dispatch.py（SHA 1c76a6f9）隔离消费验证 PASS：thread 01a0d62f-a2c7-7490-93d3-351ee03a4b9c，3工具0失败、9条同会话hook、回执 PATROL_NATIVE_648、假信号清空、重复触发 skipped_busy 同PID41332、watcher结束。只替换路径/策略解析器；未向实际监听服务注入业务事件，真实信号未参与验收。详见 reports/mechanism-migration-648/release-fixed-verification.json。
+
+仍未闭合：主仓正例 01a0d62b-249c-7352-b014-c452ec098c60 被守卫允许后写入失败。sandbox日志复现主仓 write ACE / .git deny ACE 更新 error5；ACL root Owner Administrators，当前用户有Modify而非FullControl；隔离工作树有CodexSandboxUsers ACE。休眠前已有同类错误，不能归因于休眠。未绕过sandbox、未改ACL，诊断见 main-sandbox-acl-diagnosis.json。需正常提权完成环境修复再实测主仓。
+
+真实调度模型隔离验收脚本已准备：poll-authorized-cutover/invoke-scheduled-model-admin.ps1；仅隔离探针及随机凭据，临时无触发器，结束恢复Disabled和paused wrapper。本次 Start-Process RunAs 返回“操作已被用户取消”，脚本未启动、无模型回执；已询问是否重新弹UAC，未获答复前不重弹。此前真实调度非零7已通过，不重复。业务闸仍关闭，patrol.enabled=false，五个Codex自动化PAUSED。
+
+
+### 2026-09-25 10:16+08 实际 S4U 调度模型验收未通过
+
+用户要求重新弹出后正常UAC通过。ZhuopinPollGuard 10:08:00以原S4U身份及VBS动作实际运行隔离模型，thread 01a0d651-d7c2-7820-b92e-4c63f0e42814；模型turn完成但工具创建报 connecting runner pipe-in 超时，tool_events=0，随机凭据未读到。因此 FAIL，虽计划任务返回0也不验收。10:09:17恢复Disabled及原Codex paused wrapper。普通登录会话 codex sandbox -P :read-only cmd /c ver 成功，只构成环境对照，不能替代S4U验证。证据 scheduled-model-verification.json 和 poll-authorized-cutover/scheduled-model-result.json。
+
+主目录sandbox修复：首版管理员脚本因当前CLI要求 --permission-profile 提前退出，未启动sandbox；已用无修改命令验证 -P :workspace 正确入口。v2保持官方sandbox约束，但其UAC返回“用户取消”，尚未执行，未擅自重弹。脚本 invoke-sandbox-repair-admin-v2.ps1 已准备，待正常提权后还须普通身份原生正负例验证。未手工放宽ACL或绕过sandbox。
+
+e7fe8aea窄独立审阅无具体缺陷发现；审阅范围仅两文件diff与已有机器验收记录，未重跑模型/测试，不覆盖主仓ACL或S4U运行时；见 portable-hook-independent-review.md。#648仍open，所有业务开工闸仍关闭。
