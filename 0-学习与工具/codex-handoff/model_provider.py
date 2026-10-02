@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -180,28 +181,101 @@ def event_objects(path):
 
 
 def stop_child(proc):
-    """只终止本适配器持有的子进程树；绝不按进程名批量杀。"""
-    if proc.poll() is not None:
-        return
-    if os.name == 'nt':
-        result = subprocess.run(['taskkill','/PID',str(proc.pid),'/T','/F'],
-                                capture_output=True, timeout=15)
-        if result.returncode and proc.poll() is None:
-            proc.kill()
-    else:
-        proc.kill()
-    proc.wait(timeout=15)
+    """只操作持有的 Popen；命令失败也保留观察并尽力回收根进程。"""
+    taskkill = dict(invoked=False, argv=None, timeout_seconds=15, returncode=None,
+                    stdout_base64=None, stderr_base64=None, stdout_sha256=None,
+                    stderr_sha256=None, timed_out=False, error=None,
+                    started_at=None, ended_at=None)
+    fallback = dict(invoked=False, method=None, error=None)
+    wait = dict(invoked=False, timeout_seconds=15, returned=False, returncode=None,
+                poll_after=None, timed_out=False, error=None, started_at=None, ended_at=None)
+    record = dict(started_at=stamp(), ended_at=None, poll_before=None,
+                  taskkill=taskkill, fallback=fallback, wait=wait, error=None)
+    errors = []
+    def capture(stream, raw):
+        if isinstance(raw, bytes):
+            taskkill[stream+'_base64'] = base64.b64encode(raw).decode('ascii')
+            taskkill[stream+'_sha256'] = hashlib.sha256(raw).hexdigest()
+    try:
+        record['poll_before'] = proc.poll()
+        if record['poll_before'] is not None:
+            return record
+        if sys.platform == 'win32':
+            taskkill.update(invoked=True, argv=['taskkill','/PID',str(proc.pid),'/T','/F'], started_at=stamp())
+            try:
+                result = subprocess.run(taskkill['argv'], capture_output=True, timeout=15)
+                taskkill['returncode'] = result.returncode
+                capture('stdout', result.stdout)
+                capture('stderr', result.stderr)
+                if result.returncode != 0:
+                    errors.append('taskkill returned nonzero')
+            except (OSError, subprocess.SubprocessError) as exc:
+                taskkill['error'] = f'{type(exc).__name__}: {exc}'
+                taskkill['timed_out'] = isinstance(exc, subprocess.TimeoutExpired)
+                capture('stdout', getattr(exc, 'stdout', None))
+                capture('stderr', getattr(exc, 'stderr', None))
+                errors.append(taskkill['error'])
+            finally:
+                taskkill['ended_at'] = stamp()
+        if (not taskkill['invoked'] or taskkill['returncode'] != 0) and proc.poll() is None:
+            fallback.update(invoked=True, method='proc.kill')
+            try:
+                proc.kill()
+            except (OSError, subprocess.SubprocessError) as exc:
+                fallback['error'] = f'{type(exc).__name__}: {exc}'
+                errors.append(fallback['error'])
+        wait.update(invoked=True, started_at=stamp())
+        try:
+            wait['returncode'] = proc.wait(timeout=15)
+            wait['returned'] = True
+            wait['poll_after'] = proc.poll()
+        except (OSError, subprocess.SubprocessError) as exc:
+            wait['error'] = f'{type(exc).__name__}: {exc}'
+            wait['timed_out'] = isinstance(exc, subprocess.TimeoutExpired)
+            errors.append(wait['error'])
+        finally:
+            wait['ended_at'] = stamp()
+    except (OSError, subprocess.SubprocessError) as exc:
+        errors.append(f'{type(exc).__name__}: {exc}')
+    finally:
+        record.update(ended_at=stamp(), error='; '.join(errors) or None)
+    return record
+
+
+def termination_outcome(termination):
+    """生产侧保守汇总；消费侧仍独立核验原始字段和封存。"""
+    attempts = termination['attempts']
+    if not attempts:
+        return 'termination_unknown'
+    if any(item.get('error') for item in attempts) or len(attempts) != 1:
+        return 'termination_failed'
+    item = attempts[0]
+    if type(item.get('poll_before')) is int:
+        return 'parent_exited_only'
+    kill, wait, fallback = item['taskkill'], item['wait'], item['fallback']
+    if (termination['platform'] == 'win32' and kill['invoked'] is True
+            and type(kill['returncode']) is int and kill['returncode'] == 0
+            and not kill['timed_out'] and kill['error'] is None
+            and all(isinstance(kill.get(suffix), str) for suffix in
+                    ('stdout_base64', 'stderr_base64', 'stdout_sha256', 'stderr_sha256'))
+            and fallback['invoked'] is False and wait['returned'] is True
+            and not wait['timed_out'] and wait['error'] is None
+            and type(wait['returncode']) is int and type(wait['poll_after']) is int
+            and wait['returncode'] == wait['poll_after']):
+        return 'tree_termination_confirmed'
+    return 'parent_exited_only' if wait['returned'] else 'termination_unknown'
 
 
 def run(*, workspace, evidence, prompt, enabled=False, sandbox='read-only', timeout=1200,
         thread=None, model=None, source_id='', executable=None, popen=subprocess.Popen,
-        argv_override=None, require_context=False, meter_file=None, grace_seconds=900):
+        argv_override=None, require_context=False, meter_file=None, grace_seconds=900,
+        attempt_id=None):
     workspace, evidence = Path(workspace).resolve(), Path(evidence).resolve()
     if timeout <= 0:
         raise ValueError('timeout must be positive')
     evidence.mkdir(parents=True, exist_ok=False)
     started = stamp()
-    base = {'source_id':source_id, 'workspace':str(workspace), 'started_at':started,
+    base = {'source_id':source_id, 'attempt_id':attempt_id, 'workspace':str(workspace), 'started_at':started,
             'sandbox':sandbox, 'requested_model':model or 'inherit',
             'actual_model':None, 'resume_thread':thread,
             'prompt_sha256':hashlib.sha256(prompt.encode('utf-8')).hexdigest()}
@@ -219,6 +293,37 @@ def run(*, workspace, evidence, prompt, enabled=False, sandbox='read-only', time
     argv = None
     exit_code = None
     proc = None
+    termination = None
+    def stop_owned():
+        nonlocal termination
+        evidence_error = None
+        if termination is None:
+            termination = dict(evidence_version=1, attempt_id=attempt_id, source_id=source_id,
+                workspace=str(workspace), pid=proc.pid, process_sha256=None,
+                trigger=context_reason, requested_at=stamp(), finished_at=None,
+                platform=sys.platform, attempts=[], outcome='termination_unknown')
+            process_path = evidence/'process.json'
+            try:
+                if process_path.is_file():
+                    termination['process_sha256'] = hashlib.sha256(process_path.read_bytes()).hexdigest()
+            except OSError as exc:
+                evidence_error = exc
+        # pending 写入失败也要清理；该写入异常不得被最终成功覆盖。
+        pending_error = None
+        termination['outcome'] = 'termination_unknown'
+        try:
+            write_json(evidence/'result.json', {**base, 'status':'termination_pending',
+                       'termination':termination})
+        except OSError as exc:
+            pending_error = exc
+        record = stop_child(proc)
+        if isinstance(record, dict):
+            record['sequence'] = len(termination['attempts']) + 1
+            termination['attempts'].append(record)
+        termination['finished_at'] = stamp()
+        termination['outcome'] = termination_outcome(termination)
+        if evidence_error or pending_error:
+            raise evidence_error or pending_error
     try:
         argv = command(executable or resolve_executable(workspace), workspace,
                        evidence/'final.txt', sandbox, thread=thread, model=resolve_model(model, workspace))
@@ -231,13 +336,16 @@ def run(*, workspace, evidence, prompt, enabled=False, sandbox='read-only', time
             proc = popen(argv, cwd=workspace, stdin=subprocess.PIPE, stdout=out, stderr=err,
                          text=True, encoding='utf-8', errors='replace',
                          creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
-            write_json(evidence/'process.json', {'pid':proc.pid, 'started_at':started})
+            write_json(evidence/'process.json', {'pid':proc.pid, 'started_at':started,
+                'evidence_version':1, 'attempt_id':attempt_id, 'source_id':source_id,
+                'workspace':str(workspace),
+                'request_sha256':hashlib.sha256((evidence/'request.json').read_bytes()).hexdigest()})
             pending_input = prompt
             while True:
                 elapsed = time.monotonic()-meter_started
                 if elapsed >= timeout:
                     timed_out = True
-                    stop_child(proc)
+                    stop_owned()
                     break
                 try:
                     proc.communicate(pending_input, timeout=min(2.0, timeout-elapsed))
@@ -265,7 +373,7 @@ def run(*, workspace, evidence, prompt, enabled=False, sandbox='read-only', time
                     if process_done and telemetry.get('current_context_tokens') is None:
                         context_reason = 'context_unavailable'
                     if context_reason:
-                        stop_child(proc)
+                        stop_owned()
                         break
                 if process_done:
                     break
@@ -274,10 +382,12 @@ def run(*, workspace, evidence, prompt, enabled=False, sandbox='read-only', time
         error = f'{type(exc).__name__}: {exc}'
         if proc is not None and proc.poll() is None:
             try:
-                stop_child(proc)
+                stop_owned()
                 exit_code = proc.returncode
             except (OSError, subprocess.SubprocessError) as cleanup_error:
                 error += f'; child cleanup failed: {cleanup_error}'
+        if proc is not None:
+            exit_code = proc.returncode
     events = []
     malformed = 0
     event_file = evidence/'events.jsonl'
@@ -295,6 +405,8 @@ def run(*, workspace, evidence, prompt, enabled=False, sandbox='read-only', time
     result = {**summarize(events, exit_code), **base, 'ended_at':stamp(),
               'malformed_events':malformed, 'error':error, 'timed_out':timed_out,
               'context_reason':context_reason, **telemetry}
+    if termination is not None:
+        result['termination'] = termination
     if context_reason:
         result['status'] = 'context_stopped'
     elif timed_out:

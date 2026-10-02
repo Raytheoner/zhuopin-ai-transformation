@@ -70,6 +70,8 @@ apply，design 决策点 5 签认 (a)）：新增两个**可选**开关 `--inclu
   python 0-学习与工具/工具-队列查询.py --digest --grep OP-0904 --file 1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md
 """
 from __future__ import annotations
+import os
+import json
 
 import argparse
 import json
@@ -134,10 +136,55 @@ else:
             ]
 
 
-def _resolve_repo_root() -> Path:
+def _fixture_repo_root() -> Path | None:
+    """Explicit test-only checkout root; invalid overrides never reach shared main."""
+    value = os.environ.get("ZHUOPIN_CODEX_FIXTURE_ROOT")
+    if value is None:
+        return None
     try:
+        root = Path(value)
+        checkout = Path(__file__).resolve().parents[1]
+        if not value or not root.is_absolute() or root.resolve(strict=True) != checkout:
+            raise ValueError()
+        root = root.resolve(strict=True)
+        if not (root / ".git").is_file():
+            raise ValueError()
+        runtime = Path(os.environ.get("ZHUOPIN_CODEX_RUNTIME", ""))
+        state = Path(os.environ.get("ZHUOPIN_CODEX_STATE", ""))
+        if (not runtime.is_absolute() or not runtime.resolve(strict=True).is_relative_to(root)
+                or not state.is_absolute() or not state.resolve().is_relative_to(root)):
+            raise ValueError()
+        data = json.loads(runtime.read_text(encoding="utf-8-sig"))
+        configured_state = Path(data["state_root"])
+        if not configured_state.is_absolute() or configured_state.resolve() != state.resolve():
+            raise ValueError()
+        safe_directory = f"safe.directory={root.as_posix()}"
+        listing = subprocess.run(
+            ["git", "-c", safe_directory, "worktree", "list", "--porcelain", "-z"], cwd=checkout,
+            capture_output=True, text=True, check=True, timeout=10,
+        )
+        roots = [Path(item[9:]).resolve() for item in listing.stdout.split("\0")
+                 if item.startswith("worktree ")]
+        top = subprocess.run(
+            ["git", "-c", safe_directory, "rev-parse", "--show-toplevel"], cwd=checkout,
+            capture_output=True, text=True, check=True, timeout=10,
+        )
+        if root not in roots or Path(top.stdout.strip()).resolve() != root:
+            raise ValueError()
+        return root
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        raise ValueError("Invalid explicit fixture root/runtime/state; shared main fallback prohibited") from None
+
+
+def _resolve_repo_root() -> Path:
+    fixture = _fixture_repo_root()
+    if fixture is not None:
+        return fixture
+    try:
+        checkout = Path(__file__).resolve().parents[1]
         result = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            ["git", "-c", f"safe.directory={checkout.as_posix()}",
+             "rev-parse", "--path-format=absolute", "--git-common-dir"],
             cwd=Path(__file__).resolve().parent,
             capture_output=True, text=True, check=True,
         )

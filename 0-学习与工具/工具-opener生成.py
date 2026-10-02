@@ -1014,12 +1014,32 @@ def _read_line(spec: OpenerSpec) -> str:
 def generate_opener(**kwargs) -> str:
     """按十项必填字段拼出成品 opener 文本；缺字段或违反骨架硬规则 ⇒ 抛 `OpenerGenError`。"""
     if kwargs.get("env") == "Codex":
-        if kwargs.get("variant") == "guardian":
-            raise OpenerGenError("Codex guardian 尚未验收；使用已受控的批处理执行器，不派源端 Task/Agent。")
+        native_model = kwargs.get("model", "gpt-6-luna")
+        if native_model != "gpt-6-luna":
+            raise OpenerGenError("Codex 子任务模型必须显式为 gpt-6-luna，不接受继承、策略别名或其它模型。")
+        kwargs = {**kwargs, "model": native_model}
         if kwargs.get("title_call_override") is not None:
             raise OpenerGenError("Codex 标识行由生成器维护，不接受源端 title_call_override。")
         # Reuse business assembly/claims, then adapt the execution contract explicitly.
-        text = _generate_opener_core(claim_env="Codex", **{**kwargs, "env": "CC"})
+        text = _generate_opener_core(claim_env="Codex", **{**kwargs, "env": "CC", "model": "inherit"})
+        text = text.replace("｜ 模型：inherit", "｜ 模型：gpt-6-luna", 1)
+        if kwargs.get("variant") == "guardian":
+            text = text.replace(
+                "你是本批的**看护者**，不是执行者。用 Task/Agent 工具为各条泳道各起一个子任务，"
+                '`isolation: "worktree"`，把对应【CC · 子任务泳道】opener 的正文原样作为子任务 prompt。'
+                "🔴 不要改写 opener 正文。",
+                "你是本批的**看护者**。先读完整看护件，按项目技能和 codex-handoff/README.md 的 manifest 契约用专用队列工具"
+                "核实 live 候选、取得 LAN 探针、登记看护件与批次；先用 "
+                "invoke.ps1 -Mode Guardian start --manifest <本批JSON绝对路径> 审阅计划，"
+                "再在当前 Codex 会话内加 --run。guardian_adapter 内部逐任务接 "
+                "workflow_driver.advance；--run 不是任何设计、ff、生产或外发授权。"
+                "只有 Shao Peishen 明确指定无头模式才调用批处理器。不得调用源端 Task/Agent。"
+            ).replace(
+                GUARDIAN_PARALLEL_NOTE,
+                "🔴 并行上限 4，错峰 ≥90 秒；依赖项未通过时只停该链，独立泳道继续。"
+                "各子任务只提交自己的隔离分支，不碰主仓、不 ff master；"
+                "本机无常驻触发器时标 needs_manual_wake，不宣称后台自动继续。"
+            )
         native_lines = []
         for line in text.splitlines():
             if "mcp__ccd_session_mgmt__set_session_title" in line:
@@ -1217,7 +1237,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--batch", default=None,
                     help="仅 subtask_lane：心跳收工句 `heartbeat --done --batch` 用的批次；"
                          "不传则从 --line 现取 `B-MMDD_…`，两者皆无即拒绝出件（队列 §一 `#565`）")
-    ap.add_argument("--model", default=None, choices=VALID_MODELS,
+    ap.add_argument("--model", default=None, choices=(*VALID_MODELS, "gpt-6-luna"),
                     help="CLI 别名（不传即 sonnet）：无头/看护/巡检/批量跑测默认它，"
                          "design 起草／需求 grill／ASIL 合规建造显式传 opus（队列 §一 `#581` ⑷）；"
                          "🔴 `--env Cowork` 下不得传（fail-loud 拒绝出件，队列 §一 `#620`）")

@@ -36,9 +36,30 @@ def targets(tool, data):
         return [{"path": data["file_path"], "text": text}]
     return []
 
+def execution_cwd(event, data):
+    """Resolve native exec cwd without hiding invalid explicit input."""
+    base = event.get("cwd", str(ROOT))
+    if not isinstance(base, str) or not base.strip():
+        raise ValueError("invalid event cwd")
+    base_path = Path(base)
+    if not base_path.is_absolute():
+        raise ValueError("event cwd must be absolute")
+    value = next((data[key] for key in ("workdir", "cwd") if key in data), base)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("invalid execution cwd")
+    path = Path(value)
+    if not path.is_absolute():
+        path = base_path / path
+    path = Path(os.path.abspath(path))
+    if not path.is_dir():
+        raise ValueError("execution cwd is not an existing directory")
+    return str(path)
+
+
 def legacy_payload(event, tool, data):
     return {"session_id": event.get("session_id", "codex"), "cwd": event.get("cwd", str(ROOT)),
-            "hook_event_name": event["hook_event_name"], "tool_name": tool, "tool_input": data}
+            "hook_event_name": event["hook_event_name"], "tool_name": tool, "tool_input": data,
+            "_zhuopin_codex_adapter": "native-v1"}
 
 def calls(event):
     name, tool = event["hook_event_name"], event.get("tool_name", "")
@@ -57,7 +78,9 @@ def calls(event):
         result.extend((script, payload) for script in scripts)
     if name == "PreToolUse" and tool in ("exec_command", "functions.exec_command", "Bash", "Read", "Grep"):
         if tool in ("exec_command", "functions.exec_command", "Bash"):
-            data = {"command": data.get("cmd", data.get("command", ""))}
+            cwd = execution_cwd(event, data)
+            data = {"command": data.get("cmd", data.get("command", "")), "cwd": cwd}
+            event = dict(event, cwd=cwd)
             tool = "Bash"
         payload = legacy_payload(event, tool, data)
         result.extend((script, payload) for script in [

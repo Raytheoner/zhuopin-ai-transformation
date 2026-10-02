@@ -387,3 +387,108 @@ class FollowupReadmeRawRowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+import subprocess
+
+class ExplicitFixtureRootTests(unittest.TestCase):
+    def _case(self):
+        import os, runpy
+        from unittest import mock
+        with mock.patch.dict(os.environ):
+            os.environ.pop('ZHUOPIN_CODEX_FIXTURE_ROOT', None)
+            namespace = runpy.run_path(str(SCRIPT), run_name='fixture_root_tests')['_resolve_repo_root'].__globals__
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name) / 'linked fixture 中文'
+        tools = root / '0-学习与工具'; tools.mkdir(parents=True)
+        (root / '.git').write_text('gitdir: synthetic-test-admin', encoding='utf8')
+        namespace['__file__'] = str(tools / SCRIPT.name)
+        namespace['_TOOLS_DIR'] = tools
+        namespace['_REPO_GUESS'] = root
+        config = root / '.codex/runtime.local.json'; config.parent.mkdir()
+        state = root / 'reports/state'
+        import json
+        config.write_text(json.dumps({'state_root':str(state)}), encoding='utf8')
+        env = {'ZHUOPIN_CODEX_FIXTURE_ROOT':str(root), 'ZHUOPIN_CODEX_RUNTIME':str(config), 'ZHUOPIN_CODEX_STATE':str(state)}
+        def git_result(argv, **kwargs):
+            if 'list' in argv:
+                out = 'worktree ' + str(root) + '\0HEAD ' + 'a'*40 + '\0detached\0\0'
+            elif '--show-toplevel' in argv:
+                out = str(root)
+            else:
+                out = str(root.parent / 'canonical/.git')
+            return subprocess.CompletedProcess(argv, 0, out, '')
+        return namespace, root, config, state, env, git_result
+
+    def test_explicit_fixture_root_is_used(self):
+        import os
+        from unittest import mock
+        ns, root, config, state, env, git_result = self._case()
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=git_result):
+            self.assertEqual(ns['_resolve_repo_root'](), root.resolve())
+
+    def test_fixture_git_checks_use_command_scoped_safe_directory(self):
+        import os
+        from unittest import mock
+        ns, root, config, state, env, git_result = self._case()
+        calls = []
+        def recording_git(argv, **kwargs):
+            calls.append(argv)
+            return git_result(argv, **kwargs)
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=recording_git):
+            self.assertEqual(ns['_resolve_repo_root'](), root.resolve())
+        self.assertEqual(len(calls), 2)
+        expected = f'safe.directory={root.resolve().as_posix()}'
+        self.assertTrue(all(argv[0:3] == ['git', '-c', expected] for argv in calls))
+
+    def test_invalid_override_does_not_fall_back_to_main(self):
+        import os
+        from unittest import mock
+        for value in ('relative-root', '', 'different'):
+            with self.subTest(value=value):
+                ns, root, config, state, env, git_result = self._case()
+                env['ZHUOPIN_CODEX_FIXTURE_ROOT'] = str(root.parent / value) if value=='different' else value
+                with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=git_result):
+                    with self.assertRaises(ValueError): ns['_resolve_repo_root']()
+
+    def test_runtime_and_state_must_stay_inside_fixture(self):
+        import os, json
+        from unittest import mock
+        for kind in ('runtime-outside', 'state-outside', 'runtime-state-outside', 'state-mismatch'):
+            with self.subTest(kind=kind):
+                ns, root, config, state, env, git_result = self._case()
+                if kind=='runtime-outside': env['ZHUOPIN_CODEX_RUNTIME']=str(root.parent/'runtime.json')
+                if kind=='state-outside': env['ZHUOPIN_CODEX_STATE']=str(root.parent/'state')
+                if kind=='runtime-state-outside': config.write_text(json.dumps({'state_root':str(root.parent/'state')}))
+                if kind=='state-mismatch': env['ZHUOPIN_CODEX_STATE']=str(root/'different-state')
+                with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=git_result):
+                    with self.assertRaises(ValueError): ns['_resolve_repo_root']()
+
+    def test_unregistered_or_primary_checkout_is_rejected(self):
+        import os
+        from unittest import mock
+        for kind in ('unregistered', 'primary'):
+            ns, root, config, state, env, git_result = self._case()
+            if kind=='primary': (root/'.git').unlink(); (root/'.git').mkdir()
+            def result(argv, **kwargs):
+                if kind=='unregistered' and 'list' in argv: return subprocess.CompletedProcess(argv,0,'worktree '+str(root.parent/'other')+'\0','')
+                return git_result(argv,**kwargs)
+            with self.subTest(kind=kind), mock.patch.dict(os.environ,env), mock.patch.object(subprocess,'run',side_effect=result):
+                with self.assertRaises(ValueError): ns['_resolve_repo_root']()
+
+    def test_unset_override_preserves_canonical_root(self):
+        import os
+        from pathlib import Path
+        from unittest import mock
+        ns, root, config, state, env, git_result = self._case()
+        calls = []
+        def recording_git(argv, **kwargs):
+            calls.append(argv)
+            return git_result(argv, **kwargs)
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess,'run',side_effect=recording_git):
+            os.environ.pop('ZHUOPIN_CODEX_FIXTURE_ROOT',None)
+            self.assertEqual(ns['_resolve_repo_root'](), root.parent/'canonical')
+        self.assertEqual(len(calls), 1)
+        checkout = Path(ns['__file__']).resolve().parents[1]
+        self.assertEqual(calls[0][0:3], ['git', '-c', f'safe.directory={checkout.as_posix()}'])

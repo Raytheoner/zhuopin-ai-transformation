@@ -390,6 +390,8 @@ Shao Peishen 同日 design 审当场拍板五个决策点，原话「A5按建议
   不住形状不在规则内的新型凭据——新增外部凭据类型须回 lint 本体补规则。
 """
 from __future__ import annotations
+import os
+import json
 
 import argparse
 import contextlib
@@ -465,6 +467,46 @@ else:
             ]
 
 
+def _fixture_repo_root() -> Path | None:
+    """Explicit test-only checkout root; invalid overrides never reach shared main."""
+    value = os.environ.get("ZHUOPIN_CODEX_FIXTURE_ROOT")
+    if value is None:
+        return None
+    try:
+        root = Path(value)
+        checkout = Path(__file__).resolve().parents[1]
+        if not value or not root.is_absolute() or root.resolve(strict=True) != checkout:
+            raise ValueError()
+        root = root.resolve(strict=True)
+        if not (root / ".git").is_file():
+            raise ValueError()
+        runtime = Path(os.environ.get("ZHUOPIN_CODEX_RUNTIME", ""))
+        state = Path(os.environ.get("ZHUOPIN_CODEX_STATE", ""))
+        if (not runtime.is_absolute() or not runtime.resolve(strict=True).is_relative_to(root)
+                or not state.is_absolute() or not state.resolve().is_relative_to(root)):
+            raise ValueError()
+        data = json.loads(runtime.read_text(encoding="utf-8-sig"))
+        configured_state = Path(data["state_root"])
+        if not configured_state.is_absolute() or configured_state.resolve() != state.resolve():
+            raise ValueError()
+        safe_directory = f"safe.directory={root.as_posix()}"
+        listing = subprocess.run(
+            ["git", "-c", safe_directory, "worktree", "list", "--porcelain", "-z"], cwd=checkout,
+            capture_output=True, text=True, check=True, timeout=10,
+        )
+        roots = [Path(item[9:]).resolve() for item in listing.stdout.split("\0")
+                 if item.startswith("worktree ")]
+        top = subprocess.run(
+            ["git", "-c", safe_directory, "rev-parse", "--show-toplevel"], cwd=checkout,
+            capture_output=True, text=True, check=True, timeout=10,
+        )
+        if root not in roots or Path(top.stdout.strip()).resolve() != root:
+            raise ValueError()
+        return root
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        raise ValueError("Invalid explicit fixture root/runtime/state; shared main fallback prohibited") from None
+
+
 def _resolve_repo_root() -> Path:
     """定位主工作区根目录（所有 git worktree 共享同一把锁的关键）。
 
@@ -473,9 +515,14 @@ def _resolve_repo_root() -> Path:
     根——由此不同 worktree 里的本脚本都算出同一个锁文件路径。跑不了 git
     （非仓库/未装 git）时退回按脚本自身路径推算，保底不崩。
     """
+    fixture = _fixture_repo_root()
+    if fixture is not None:
+        return fixture
     try:
+        checkout = Path(__file__).resolve().parents[1]
         result = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            ["git", "-c", f"safe.directory={checkout.as_posix()}",
+             "rev-parse", "--path-format=absolute", "--git-common-dir"],
             cwd=Path(__file__).resolve().parent,
             capture_output=True, text=True, check=True,
         )
@@ -485,6 +532,29 @@ def _resolve_repo_root() -> Path:
 
 
 REPO_ROOT = _resolve_repo_root()
+_SHARED_QUEUE_ROOT: Path | None = None
+
+
+def _resolve_shared_queue_root(value: str) -> Path:
+    """Fixture-only route for authoritative queue and shared lock files."""
+    fixture_root = _fixture_repo_root()
+    if fixture_root is None:
+        raise ValueError("--shared-queue-root is only valid with a trusted fixture root")
+    candidate = Path(value)
+    if not value or not candidate.is_absolute():
+        raise ValueError("--shared-queue-root must be an absolute main-checkout path")
+    try:
+        candidate = candidate.resolve(strict=True)
+        common_dir = subprocess.run(
+            ["git", "-c", f"safe.directory={fixture_root.as_posix()}", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=True, timeout=10,
+        )
+        expected = Path(common_dir.stdout.strip()).resolve().parent.resolve(strict=True)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        raise ValueError("Cannot validate --shared-queue-root against the fixture Git common-dir") from None
+    if not candidate.is_dir() or candidate != expected:
+        raise ValueError("--shared-queue-root must exactly match the fixture Git common-dir's main checkout")
+    return candidate
 DEFAULT_TARGET = queue_table.QUEUE_PATH_REL  # 队列 #313：收拢自本地字面量；
 # 队列 #315（apply，2026-08-11）：拆分后本路径转为纯指针文件，不再是权威
 # 内容承载，但仍是"调用方未显式传 --file"这一信号的判据值——`args.file ==
@@ -2021,6 +2091,12 @@ def _atomic_write_json(path: Path, payload: dict) -> None:
 
 
 def _target_path(target: str) -> Path:
+    if _SHARED_QUEUE_ROOT is not None:
+        requested = Path(target)
+        requested = (requested if requested.is_absolute() else REPO_ROOT / requested).resolve()
+        for queue_target in (DEFAULT_TARGET, QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL):
+            if requested == (REPO_ROOT / queue_target).resolve():
+                return (_SHARED_QUEUE_ROOT / queue_target).resolve()
     return (REPO_ROOT / target).resolve()
 
 
@@ -7943,7 +8019,12 @@ def mounted_side_refusal(cmd: str) -> str:
 
 
 def main() -> int:
+    global _SHARED_QUEUE_ROOT
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--shared-queue-root", default=None,
+        help="fixture-only: route authoritative queue and shared lock files to the validated main checkout",
+    )
     parser.add_argument(
         "--file", default=DEFAULT_TARGET,
         help=f"目标文件相对仓库根路径（默认 {DEFAULT_TARGET}——队列 #315 起，"
@@ -8260,6 +8341,13 @@ def main() -> int:
              "🔴 平时不要传——挂载侧跑 git 实测慢 56 倍，且 rm 被沙箱拒会留死锁",
     )
     args = parser.parse_args()
+    try:
+        _SHARED_QUEUE_ROOT = (
+            _resolve_shared_queue_root(args.shared_queue_root)
+            if args.shared_queue_root is not None else None
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     # 挂载侧机器守（判据与文案见 is_mounted_side／mounted_side_refusal 上方常量块）
     if (getattr(args, "cmd", None) in MOUNTED_SIDE_GUARDED_COMMANDS
             and not getattr(args, "allow_mounted_side", False)

@@ -452,6 +452,15 @@ class VariantGuardianTests(unittest.TestCase):
         )
         self.out = M.generate_opener(**self.kwargs)
 
+    def test_codex_guardian_uses_native_foreground_entry(self):
+        out = M.generate_opener(**{**self.kwargs, "env": "Codex"})
+        self.assertIn("【Codex】看护示例批", out)
+        self.assertIn("invoke.ps1 -Mode Guardian start", out)
+        self.assertIn("guardian_adapter", out)
+        self.assertNotIn("mcp__ccd_session_mgmt__", out)
+        self.assertNotIn("用 Task/Agent 起子任务", out)
+        lint = M._load_lint_module()
+        self.assertEqual(lint.check_block(lint.iter_fenced_blocks(out)[0]), [])
     def test_first_line_is_guardian_label(self):
         first_line = self.out.splitlines()[1]
         self.assertEqual(first_line, "[OP-0905-VG]【CC】看护示例批")
@@ -1436,3 +1445,26 @@ class IgnoreBlindNoteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CodexLunaContractTests(unittest.TestCase):
+    def test_native_default_and_explicit_luna(self):
+        for variant in ('standard', 'subtask_lane', 'guardian'):
+            kwargs = dict(VALID_CC_KWARGS, env='Codex', variant=variant)
+            if variant == 'guardian':
+                kwargs.pop('do_items'); kwargs.pop('dont_items')
+            for extra in ({}, {'model': 'gpt-6-luna'}):
+                with self.subTest(variant=variant, extra=extra):
+                    out = M.generate_opener(**{**kwargs, **extra})
+                    self.assertIn('模型：gpt-6-luna', out)
+                    lint = M._load_lint_module()
+                    self.assertEqual(lint.check_block(lint.iter_fenced_blocks(out)[0], is_subtask_lane=variant == 'subtask_lane'), [])
+
+    def test_native_rejects_aliases_and_other_models(self):
+        for model in ('inherit', 'routine', 'design', 'sonnet', 'gpt-6-astra', ''):
+            with self.subTest(model=model), self.assertRaises(M.OpenerGenError):
+                M.generate_opener(**dict(VALID_CC_KWARGS, env='Codex', model=model))
+
+    def test_cc_rejects_native_model(self):
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**dict(VALID_CC_KWARGS, model="gpt-6-luna"))

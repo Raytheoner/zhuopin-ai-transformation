@@ -69,7 +69,7 @@ param(
     [switch]$DryRun,
     [switch]$FullAuto,
     [switch]$Yes,
-    [string]$Model = 'inherit',
+    [string]$Model = 'gpt-6-luna',
     [switch]$ConsumerEnabled,
     [int]$MaxParallel = 3,
     [int]$StaggerSec = 90,
@@ -128,7 +128,7 @@ trap {
 }
 
 if (-not $ConsumerEnabled -and -not $DryRun) { Write-Host '[consumer-paused] Codex泳道尚未启用，保留派单。'; Exit-WithCode 4 }
-if ($Model -in @('sonnet','opus','haiku')) { Write-Host '旧模型别名不可传入Codex'; Exit-WithCode 10 }
+if ($Model -cne 'gpt-6-luna') { Write-Host 'Codex 子任务必须显式使用 gpt-6-luna'; Exit-WithCode 10 }
 $runtimeFile = if ($env:ZHUOPIN_CODEX_RUNTIME) { $env:ZHUOPIN_CODEX_RUNTIME } else { Join-Path $RepoRoot '.codex/runtime.local.json' }
 $pythonExe = ''
 if (-not (Test-Path -LiteralPath $runtimeFile) -and -not $env:ZHUOPIN_CODEX_RUNTIME) {
@@ -187,8 +187,8 @@ $fence = [char]0x60 + [char]0x60 + [char]0x60
 # 队列 #581 合入前补缺 ⑴：每条 opener【设置】行可带「模型：sonnet｜opus」——同一口径
 # 由 `工具-opener生成.py::_settings_line` 落笔（`｜ 模型：<值>`），本正则只按值本身
 # 匹配（不锚定前缀「｜」），故手写 opener（无本字段）与生成器产出（有本字段）都解得出。
-$modelFieldRe = '模型[：:]\s*([^\s｜\|]+)'
-$validModels = @('inherit', 'routine', 'design', $Model) | Select-Object -Unique
+$modelFieldRe = '模型[ \t]*[：:][ \t]*([^\s｜\|]*)'
+$validModels = @('gpt-6-luna')
 $openers = @()
 for ($i = 0; $i -lt $lines.Count; $i++) {
     if ($lines[$i] -match '^###\s+(A\d+)\s*·?\s*(.*)$') {
@@ -208,11 +208,11 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($body.Count -gt 0) {
             # 缺省＝批级 `-Model`；显式合法值覆盖；非法值不在此处报错——留到 laneBlock
             # 判 FAIL 并点名（判成败与报告落在同一处，不在解析期就中断整批解析）。
-            $modelRaw = $null
-            foreach ($bl in $body) { if ($bl -match $modelFieldRe) { $modelRaw = $Matches[1]; break } }
-            if ([string]::IsNullOrEmpty($modelRaw)) {
+            $modelMatches = @([regex]::Matches(($body -join "`n"), $modelFieldRe))
+            $modelRaw = if ($modelMatches.Count -gt 0) { ($modelMatches | ForEach-Object { $_.Groups[1].Value }) -join "," } else { $null }
+            if ($modelMatches.Count -eq 0) {
                 $resolvedModel = $Model; $modelInvalid = $false
-            } elseif ($validModels -contains $modelRaw) {
+            } elseif ($modelMatches.Count -eq 1 -and $validModels -ccontains $modelRaw) {
                 $resolvedModel = $modelRaw; $modelInvalid = $false
             } else {
                 $resolvedModel = $null; $modelInvalid = $true
@@ -228,6 +228,11 @@ if ($openers.Count -eq 0) { Write-Host '✗ 未解析到任何 opener。' -Foreg
 $openers = $openers | Sort-Object { [int]($_.Id.Substring(1)) }
 if ($Only.Count -gt 0) { $openers = $openers | Where-Object { $Only -contains $_.Id } }
 if ($openers.Count -eq 0) { Write-Host '✗ -Only 过滤后为空。' -ForegroundColor Red; Exit-WithCode 12 }
+$invalidModelOps = @($openers | Where-Object { $_.ModelInvalid })
+if ($invalidModelOps.Count -gt 0) {
+    Write-Host ('Codex opener 模型必须为 gpt-6-luna：' + (($invalidModelOps | ForEach-Object { $_.Id + '=' + $_.ModelRaw }) -join ', '))
+    Exit-WithCode 10
+}
 
 # ---------- v2.3 派出前查队列态（挂点：解析后、-Only 过滤后、泳道分组前；判据只有 Python 一份） ----------
 $precheckHelper = Join-Path $PSScriptRoot '工具-opener派出前校验.ps1'
@@ -418,7 +423,7 @@ $laneBlock = {
         $modelArgs = @('-B', $providerScript, '--workspace', $laneWorktreePath, '--evidence', $modelEvidence,
             '--source-id', $sourceSid, '--sandbox', 'workspace-write', '--timeout', '7200', '--enabled',
             '--emit-final', '--require-context', '--meter-file', $meterFile, '--grace-seconds', [string]($contextGraceMin * 60))
-        if ($op.Model -and $op.Model -ne 'inherit') { $modelArgs += @('--model', $op.Model) }
+        $modelArgs += @('--model', $op.Model)
         $modelArgs = @($modelArgs | ForEach-Object { '"' + ([string]$_).Replace('"','\"') + '"' })
         ('[lane:' + $laneName + '] ' + $op.Id + ' | provider=codex | source=' + $sourceSid + ' | evidence=' + $modelEvidence + ' | start=' + $t0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8
         if ($wtNote) { $wtNote | Out-File -FilePath $log -Append -Encoding utf8 }
@@ -561,7 +566,7 @@ $laneBlock = {
                 $retryArgs = @('-B', $providerScript, '--workspace', (Get-Location).Path, '--evidence', $retryEvidence,
                     '--source-id', ($sourceSid + '-retry'), '--thread', $sid, '--sandbox', 'workspace-write',
                     '--timeout', [string]$retryTimeoutSec, '--enabled', '--emit-final', '--require-context', '--meter-file', $meterFile)
-                if ($op.Model -and $op.Model -ne 'inherit') { $retryArgs += @('--model', $op.Model) }
+                $retryArgs += @('--model', $op.Model)
                 $retryArgs = @($retryArgs | ForEach-Object { '"' + ([string]$_).Replace('"','\"') + '"' })
                 $tr0 = Get-Date
                 ('[lane:' + $laneName + '] ' + $op.Id + ' NO-SENTINEL ⇒ 补问一次：Codex provider ' + ($retryArgs -join ' ') + ' | timeout=' + $retryTimeoutSec + 's | start=' + $tr0.ToString('s')) | Out-File -FilePath $log -Append -Encoding utf8

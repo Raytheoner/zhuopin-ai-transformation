@@ -828,6 +828,10 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
         # Native title metadata replaces source-only API. Normalize only for the
         # existing structural checks; no normalized text is emitted or executed.
         problems = []
+        native_settings = "\n".join(line for line in block.lines if "【设置】" in line)
+        model_fields = re.findall(r"模型[ \t]*[：:][ \t]*([^\s｜|]*)", native_settings)
+        if model_fields != ["gpt-6-luna"]:
+            problems.append(("F1", "Codex opener 模型必须显式为 gpt-6-luna"))
         if re.search(r"mcp__ccd_|set_session_title|claude\s+-p|isolation:\s*[\"]worktree", block.text):
             problems.append(("F1", "Codex opener 包含不可执行的源端接口"))
         identity = [line for line in block.lines if line.startswith("会话标识：")]

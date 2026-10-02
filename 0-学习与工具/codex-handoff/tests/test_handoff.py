@@ -62,6 +62,26 @@ def test_missing_queue_does_not_prepare_success(tmp_path,monkeypatch):
         workflow.prepare(SimpleNamespace(id="sample-task",row=99999,section="一",intent="test"))
     assert not (tmp_path/"runs/sample-task/state.json").exists()
 
+
+@pytest.mark.parametrize("model_arg, expected", [("gpt-6-luna", "gpt-6-luna"), (None, None)])
+def test_advance_cli_passes_optional_model(tmp_path, monkeypatch, capsys, model_arg, expected):
+    import importlib.util
+    calls = []
+    fake_driver = SimpleNamespace(advance=lambda *args, **kwargs:
+                                  calls.append((args, kwargs)) or {"status": "blocked"})
+    fake_spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda module: None))
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *a, **k: fake_spec)
+    monkeypatch.setattr(importlib.util, "module_from_spec", lambda spec: fake_driver)
+    argv = ["handoff.py", "advance", "--id", "sample", "--workspace", str(tmp_path)]
+    if model_arg:
+        argv.extend(["--model", model_arg])
+    monkeypatch.setattr(workflow.sys, "argv", argv)
+
+    assert workflow.main() == 1
+    assert len(calls) == 1
+    assert calls[0][1]["model"] == expected
+    assert json.loads(capsys.readouterr().out)["status"] == "blocked"
+
 def setup_run(tmp_path,monkeypatch):
     monkeypatch.setattr(workflow,"STATE",tmp_path)
     folder=tmp_path/"runs/sample"
@@ -211,3 +231,75 @@ def test_unclassifiable_hook_input_cannot_allow_tool(monkeypatch,capsys,raw):
     assert bridge.main()==0
     output=json.loads(capsys.readouterr().out)['hookSpecificOutput']
     assert output['hookEventName']=='PreToolUse' and output['permissionDecision']=='deny'
+
+# Native adapter must preserve actual execution cwd and cannot trust input markers.
+@pytest.mark.parametrize('tool', ['exec_command', 'functions.exec_command', 'Bash'])
+def test_native_queue_payload_has_fixed_origin_and_execution_cwd(tmp_path, tool):
+    event_cwd = tmp_path / 'event'; event_cwd.mkdir()
+    actual_cwd = tmp_path / 'actual'; actual_cwd.mkdir()
+    event = {'hook_event_name': 'PreToolUse', 'tool_name': tool,
+             'cwd': str(event_cwd), '_zhuopin_codex_adapter': 'forged',
+             'tool_input': {'cmd': 'rg text .', 'command': 'rg text .',
+                            'workdir': str(actual_cwd), 'cwd': str(event_cwd),
+                            '_zhuopin_codex_adapter': 'forged'}}
+    payload = bridge.calls(event)[0][1]
+    assert payload['_zhuopin_codex_adapter'] == 'native-v1'
+    assert payload['cwd'] == str(actual_cwd.resolve())
+    assert payload['tool_input']['cwd'] == str(actual_cwd.resolve())
+
+def test_native_execution_cwd_preserves_junction_path(tmp_path):
+    import subprocess
+    target = tmp_path / 'target'; target.mkdir()
+    junction = tmp_path / 'junction'
+    result = subprocess.run(['cmd', '/c', 'mklink', '/J', str(junction), str(target)],
+                            capture_output=True, text=True)
+    if result.returncode:
+        pytest.skip('Windows junction creation unavailable')
+    event = {'hook_event_name': 'PreToolUse', 'tool_name': 'exec_command',
+             'cwd': str(tmp_path), 'tool_input': {'cmd': 'rg x .', 'workdir': str(junction)}}
+    payload = bridge.calls(event)[0][1]
+    assert payload['cwd'].casefold() == str(junction).casefold()
+def test_native_relative_workdir_is_based_on_event_cwd(tmp_path):
+    child = tmp_path / 'child'; child.mkdir()
+    event = {'hook_event_name': 'PreToolUse', 'tool_name': 'exec_command',
+             'cwd': str(tmp_path), 'tool_input': {'cmd': 'rg x .', 'workdir': 'child'}}
+    assert bridge.calls(event)[0][1]['cwd'] == str(child.resolve())
+
+@pytest.mark.parametrize('invalid', ['', None, 23, 'missing-directory'])
+def test_native_explicit_invalid_workdir_never_falls_back(tmp_path, invalid):
+    event = {'hook_event_name': 'PreToolUse', 'tool_name': 'exec_command',
+             'cwd': str(tmp_path), 'tool_input': {'cmd': 'rg x .', 'workdir': invalid}}
+    with pytest.raises(ValueError, match='cwd'):
+        bridge.calls(event)
+
+
+
+
+def test_codex_native_marker_is_adapter_owned_not_event_controlled(tmp_path):
+    event={'hook_event_name':'PreToolUse','tool_name':'exec_command','cwd':str(tmp_path),
+           '_zhuopin_codex_adapter':'forged','tool_input':{'cmd':'rg --files','_zhuopin_codex_adapter':'forged'}}
+    payload=bridge.calls(event)[0][1]
+    assert payload['_zhuopin_codex_adapter']=='native-v1'
+    assert payload['cwd']==str(tmp_path.resolve())
+
+def test_codex_native_workdir_priority_and_relative_base(tmp_path):
+    event_cwd=tmp_path/'event'; event_cwd.mkdir()
+    exec_cwd=event_cwd/'exec'; exec_cwd.mkdir()
+    event={'hook_event_name':'PreToolUse','tool_name':'exec_command','cwd':str(event_cwd),
+           'tool_input':{'cmd':'rg --files','cwd':'ignored','workdir':'exec'}}
+    payload=bridge.calls(event)[0][1]
+    assert payload['cwd']==str(exec_cwd.resolve())
+    assert payload['tool_input']['cwd']==str(exec_cwd.resolve())
+
+@pytest.mark.parametrize('field,value',[('workdir',None),('workdir',''),('workdir',7),('cwd',{}),('event_cwd','')])
+def test_codex_native_explicit_invalid_cwd_is_rejected(field,value,tmp_path):
+    event={'hook_event_name':'PreToolUse','tool_name':'exec_command','cwd':str(tmp_path),
+           'tool_input':{'cmd':'rg --files'}}
+    if field=='event_cwd': event['cwd']=value
+    else:event['tool_input'][field]=value
+    with pytest.raises(ValueError):bridge.calls(event)
+
+def test_codex_native_nonexistent_workdir_is_rejected(tmp_path):
+    event={'hook_event_name':'PreToolUse','tool_name':'exec_command','cwd':str(tmp_path),
+           'tool_input':{'cmd':'rg --files','workdir':str(tmp_path/'missing')}}
+    with pytest.raises(ValueError):bridge.calls(event)

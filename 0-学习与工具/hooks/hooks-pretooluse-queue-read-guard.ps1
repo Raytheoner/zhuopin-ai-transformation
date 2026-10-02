@@ -178,6 +178,267 @@ function Test-BashHitsProtectedTarget([string]$Command) {
     return @{ Hit = $false; Verb = $null; Target = $null }
 }
 
+function Get-NativeLiteral($Node) {
+    if ($Node -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+        return [string]$Node.Value
+    }
+    if ($Node -is [System.Management.Automation.Language.ExpandableStringExpressionAst] -and
+        $Node.NestedExpressions.Count -eq 0) { return [string]$Node.Value }
+    if ($Node -is [System.Management.Automation.Language.CommandParameterAst]) {
+        return [string]$Node.Extent.Text
+    }
+    if ($Node -is [System.Management.Automation.Language.ConstantExpressionAst]) {
+        return [string]$Node.Value
+    }
+    return $null
+}
+
+function Test-NativePathTraversesReparsePoint([string]$Candidate) {
+    # Inspect each lexical component before GetFullPath can collapse a link/.. pair.
+    try {
+        $root = [IO.Path]::GetPathRoot($Candidate)
+        if (-not $root) { return $true }
+        $part = $root
+        foreach ($segment in $Candidate.Substring($root.Length).Split([char[]]@('\', '/'),
+                [StringSplitOptions]::RemoveEmptyEntries)) {
+            if ($segment -eq '.') { continue }
+            if ($segment -eq '..') {
+                $parent = Split-Path -Parent $part
+                if (-not $parent) { return $true }
+                $part = $parent
+                continue
+            }
+            $part = Join-Path $part $segment
+            if (Test-Path -LiteralPath $part) {
+                $attributes = (Get-Item -LiteralPath $part -Force).Attributes
+                if ($attributes -band [IO.FileAttributes]::ReparsePoint) { return $true }
+            }
+        }
+        return $false
+    } catch { return $true }
+}
+function Test-NativeProtectedScope([string]$RepoRoot, [string]$Cwd, [string]$Target) {
+    # Scope is resolved from actual exec cwd; globs/links are never a safety waiver.
+    $rawPath = if ([IO.Path]::IsPathRooted($Target)) { $Target } else { Join-Path $Cwd $Target }
+    if (Test-NativePathTraversesReparsePoint $rawPath) { return $true }
+    $full = Resolve-RepoRelative $Cwd $Target
+    if (-not $full -or $Target -match '[*?\[\]]') { return $true }
+    try {
+        $part = [IO.Path]::GetPathRoot($full)
+        foreach ($segment in $full.Substring($part.Length).Split([char[]]@('\', '/'),
+                [StringSplitOptions]::RemoveEmptyEntries)) {
+            $part = Join-Path $part $segment
+            if (Test-Path -LiteralPath $part) {
+                if ((Get-Item -LiteralPath $part -Force).Attributes -band
+                    [IO.FileAttributes]::ReparsePoint) { return $true }
+            }
+        }
+        if (Test-ProtectedQueueTarget $RepoRoot $full) { return $true }
+        if (-not (Test-Path -LiteralPath $full)) { return $true }
+        if (-not (Test-Path -LiteralPath $full -PathType Container)) { return $false }
+        $prefix = $full.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        foreach ($rel in $script:ProtectedExactRel) {
+            $protected = Resolve-RepoRelative $RepoRoot $rel
+            if ($protected.Equals($full, [StringComparison]::OrdinalIgnoreCase) -or
+                $protected.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                return $true
+            }
+        }
+        foreach ($pattern in $script:ProtectedArchivePatterns) {
+            $directory = Resolve-RepoRelative $RepoRoot $pattern.Dir
+            if ($directory.Equals($full, [StringComparison]::OrdinalIgnoreCase) -or
+                $directory.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                return $true
+            }
+        }
+        return $false
+    } catch { return $true }
+}
+
+function Test-NativeQueryCommand([string[]]$Argv, [string]$Root, [string]$Cwd) {
+    $name = [IO.Path]::GetFileName($Argv[0])
+    if ($name -notmatch '^(python(\d+(\.\d+)?)?|py)(\.exe)?$') { return $false }
+    $i = 1
+    while ($i -lt $Argv.Count -and $Argv[$i] -in @('-B', '-u', '-I', '-E', '-s')) { $i++ }
+    if ($i -ge $Argv.Count -or $Argv[$i].StartsWith('-')) { return $false }
+    $actual = Resolve-RepoRelative $Cwd $Argv[$i]
+    foreach ($scriptPattern in $script:AllowlistedToolScripts) {
+        $name = $scriptPattern.Replace('\.py', '.py')
+        $expected = Resolve-RepoRelative $Root ('0-学习与工具/' + $name)
+        if ($actual -and $actual -eq $expected) { return $true }
+    }
+    return $false
+}
+
+function Get-NativeRgTargets([string[]]$Argv) {
+    $paths = [Collections.Generic.List[string]]::new()
+    $pattern = $false
+    $explicitPattern = $false
+    $files = $false
+    $content = $false
+    $literal = $false
+    $flags = @('-n', '--line-number', '-i', '--ignore-case', '-s', '--case-sensitive',
+        '-S', '--smart-case', '-F', '--fixed-strings', '-w', '--word-regexp',
+        '-x', '--line-regexp', '-a', '--text', '-U', '--multiline',
+        '--multiline-dotall', '--hidden', '--no-ignore', '--no-ignore-vcs',
+        '--no-ignore-parent', '--no-ignore-global', '--no-messages', '--no-heading',
+        '--heading', '--with-filename', '--no-filename', '--sort-files', '--stats',
+        '--json', '--pcre2', '-P', '--crlf', '--passthru', '--null', '-0',
+        '--no-config', '--no-unicode', '--unicode')
+    $contentFlags = @('-l', '--files-with-matches', '--files-without-match',
+        '-c', '--count', '--count-matches', '-q', '--quiet', '-v', '--invert-match',
+        '-o', '--only-matching', '--replace')
+    $values = @('-g', '--glob', '--iglob', '-t', '--type', '-T', '--type-not',
+        '--type-add', '--type-clear', '-e', '--regexp', '-f', '--file',
+        '-A', '--after-context', '-B', '--before-context', '-C', '--context',
+        '-m', '--max-count', '--max-depth', '--max-filesize', '--encoding',
+        '--color', '--colors', '--sort', '--sortr', '--threads', '-j',
+        '--path-separator', '--engine', '--replace')
+    for ($i = 1; $i -lt $Argv.Count; $i++) {
+        $arg = $Argv[$i]
+        if (-not $literal -and $arg -eq '--') { $literal = $true; continue }
+        if (-not $literal -and $arg.StartsWith('-')) {
+            $option = $arg.Split('=', 2)[0]
+            if ($option -eq '--files') { $files = $true; continue }
+            if ($option -in $values) {
+                if (-not $arg.Contains('=')) {
+                    $i++
+                    if ($i -ge $Argv.Count -or $Argv[$i].StartsWith('-')) {
+                        return @{ Invalid = $true; FilesOnly = $false; Paths = @() }
+                    }
+                }
+                if ($option -in @('-e', '--regexp', '-f', '--file')) {
+                    $explicitPattern = $true; $content = $true
+                }
+                if ($option -eq '--replace') { $content = $true }
+                # A pattern file is itself a read target.
+                if ($option -in @('-f', '--file')) {
+                    $paths.Add($(if ($arg.Contains('=')) { $arg.Split('=', 2)[1] } else { $Argv[$i] }))
+                }
+                continue
+            }
+            if ($option -in $contentFlags) { $content = $true; continue }
+            if ($option -in $flags) { continue }
+            return @{ Invalid = $true; FilesOnly = $false; Paths = @() }
+        }
+        if (-not $files -and -not $explicitPattern -and -not $pattern) {
+            $pattern = $true
+        } else { $paths.Add($arg) }
+    }
+    $filesOnly = $files -and -not $content
+    if (-not $filesOnly -and $paths.Count -eq 0) { $paths.Add('.') }
+    return @{ Invalid = $false; FilesOnly = $filesOnly; Paths = @($paths.ToArray()) }
+}
+
+function Get-NativeReadHit([string]$Command, [string]$Root, [string]$Cwd) {
+    $deny = @{ Hit = $true; Verb = 'native-read'; Target = '保护范围或无法解析的读取' }
+    if (-not $Cwd -or -not [IO.Path]::IsPathRooted($Cwd) -or
+        -not (Test-Path -LiteralPath $Cwd -PathType Container)) { return $deny }
+    $tokens = $null; $parseErrors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseInput($Command,
+        [ref]$tokens, [ref]$parseErrors)
+    if ($parseErrors.Count) { return $deny }
+    $commands = $ast.FindAll({
+        param($node) $node -is [Management.Automation.Language.CommandAst]
+    }, $true)
+    foreach ($node in $commands) {
+        # Write-Output only formats output. FindAll still visits every nested
+        # command, so $(rg ...) and dynamic reader calls remain checked below.
+        $commandLiteral = Get-NativeLiteral $node.CommandElements[0]
+        if ($null -ne $commandLiteral -and $commandLiteral -ieq 'Write-Output') { continue }
+        if ($null -ne $commandLiteral -and $commandLiteral -ieq 'Select-Object') {
+            # Only literal formatting properties are accepted; calculated or
+            # dynamic properties remain denied. FindAll still checks readers.
+            for ($index = 1; $index -lt $node.CommandElements.Count; $index++) {
+                $element = $node.CommandElements[$index]
+                # An inline parameter owns its value AST. Inspect that value,
+                # never treat the complete parameter extent as a literal.
+                if ($element -is [Management.Automation.Language.CommandParameterAst]) {
+                    if ($null -eq $element.Argument) { continue }
+                    $element = $element.Argument
+                }
+                $parts = if ($element -is [Management.Automation.Language.ArrayLiteralAst]) {
+                    @($element.Elements)
+                } else { @($element) }
+                foreach ($part in $parts) {
+                    if ($null -eq (Get-NativeLiteral $part)) { return $deny }
+                }
+            }
+            continue
+        }
+        $argv = [Collections.Generic.List[string]]::new()
+        foreach ($element in $node.CommandElements) {
+            $value = Get-NativeLiteral $element
+            if ($null -eq $value) { return $deny }
+            $argv.Add($value)
+        }
+        if ($argv.Count -eq 0) { return $deny }
+        if (Test-NativeQueryCommand $argv.ToArray() $Root $Cwd) { continue }
+        $name = [IO.Path]::GetFileName($argv[0])
+        if ($name -in @('rg', 'rg.exe')) {
+            $scope = Get-NativeRgTargets $argv.ToArray()
+            if ($scope.Invalid) { return $deny }
+            if ($scope.FilesOnly) { continue }
+            foreach ($path in $scope.Paths) {
+                if (Test-NativeProtectedScope $Root $Cwd $path) {
+                    return @{ Hit = $true; Verb = $name; Target = $path }
+                }
+            }
+        } elseif ($name -ieq 'Get-Content') {
+            # Parse Get-Content's value-taking parameters so values such as -Tail 80
+            # are not mistaken for file paths. Unknown options fail closed.
+            $pathArgs = [Collections.Generic.List[string]]::new()
+            $valueOptions = @('-Tail', '-TotalCount', '-Head', '-ReadCount',
+                '-Encoding', '-Delimiter', '-Stream')
+            $switchOptions = @('-Raw', '-Wait', '-Force', '-AsByteStream',
+                '-NoNewline', '-UseTransaction')
+            for ($i = 1; $i -lt $argv.Count; $i++) {
+                $arg = $argv[$i]
+                if (-not $arg.StartsWith('-')) { $pathArgs.Add($arg); continue }
+                $parts = $arg.Split(':', 2)
+                $option = $parts[0]
+                $hasInlineValue = $parts.Count -gt 1
+                if ($option -in @('-Path', '-LiteralPath', '-PSPath')) {
+                    if ($hasInlineValue) {
+                        if (-not $parts[1]) { return $deny }
+                        $pathArgs.Add($parts[1])
+                    } else {
+                        $i++
+                        if ($i -ge $argv.Count -or $argv[$i].StartsWith('-')) { return $deny }
+                        $pathArgs.Add($argv[$i])
+                    }
+                } elseif ($option -in $valueOptions) {
+                    if (-not $hasInlineValue) {
+                        $i++
+                        if ($i -ge $argv.Count -or $argv[$i].StartsWith('-')) { return $deny }
+                    }
+                } elseif ($option -in $switchOptions -and -not $hasInlineValue) {
+                    continue
+                } else { return $deny }
+            }
+            foreach ($path in $pathArgs) {
+                if (Test-NativeProtectedScope $Root $Cwd $path) {
+                    return @{ Hit = $true; Verb = $name; Target = $path }
+                }
+            }
+        } elseif ($name -in $script:BashReadVerbs) {
+            foreach ($path in @($argv.ToArray() | Select-Object -Skip 1)) {
+                if ($path.StartsWith('-')) { continue }
+                if (Test-NativeProtectedScope $Root $Cwd $path) {
+                    return @{ Hit = $true; Verb = $name; Target = $path }
+                }
+            }
+        } elseif ($name -in @('pwsh', 'pwsh.exe', 'powershell', 'powershell.exe',
+                'cmd', 'cmd.exe', 'bash', 'bash.exe', 'sh', 'sh.exe')) {
+            # Wrapper programs hide command nodes: do not infer a safe inner read.
+            if (($argv -join ' ') -match '(?i)\brg(\.exe)?\b|跨桌任务队列|README-归档|README-跟进') {
+                return $deny
+            }
+        }
+    }
+    return @{ Hit = $false; Verb = $null; Target = $null }
+}
+
 try {
     $stdinRaw = Read-SentinelStdin
     if (-not $stdinRaw -or -not $stdinRaw.Trim()) { exit 0 }
@@ -206,7 +467,18 @@ try {
                 -Tool $toolName -SessionId $sessionId -Detail 'Bash tool_input 无 command 字段'
             exit 0
         }
-        if (Test-BashAllowlisted -Command $command) {
+        $native = ($jsonProps -contains '_zhuopin_codex_adapter') -and
+            ($json._zhuopin_codex_adapter -eq 'native-v1')
+        if ($native) {
+            $nativeCwd = if ($tiProps -contains 'cwd') { [string]$json.tool_input.cwd } else { [string]$json.cwd }
+            $nativeHit = Get-NativeReadHit $command $repoRoot $nativeCwd
+            if ($nativeHit.Hit) {
+                Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'violation' -Tool $toolName -SessionId $sessionId -Detail "native-read: $($nativeHit.Verb)"
+                [Console]::Error.WriteLine("✗ Codex 读侧禁通读：$($nativeHit.Target)。$(Get-GuidanceForTarget $nativeHit.Target)")
+                exit 2
+            }
+        }
+        if (-not $native -and (Test-BashAllowlisted -Command $command)) {
             Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'pass' `
                 -Tool $toolName -SessionId $sessionId -Detail '命中机制工具白名单（编辑锁/队列查询/sweep/lint/README登记/README归档/README查询/README行长外置）'
             exit 0
@@ -240,7 +512,7 @@ try {
             }
         }
 
-        $hit = Test-BashHitsProtectedTarget -Command $command
+        $hit = if ($native) { @{ Hit = $false; Verb = $null; Target = $null } } else { Test-BashHitsProtectedTarget -Command $command }
         # 🔴 大文件整读守卫·Bash 侧（09-16 根治口径，与 Read 侧同阈值）：`cat／type／Get-Content／gc <文件>`
         # 且整条命令未出现截断手段（head／tail／sed -n／Select-Object -First|-Last／-TotalCount／-Tail／wc）
         # 且目标为 >阈值 的文本类文件 ⇒ 拒绝。路径解析失败一律放行（fail-open）。

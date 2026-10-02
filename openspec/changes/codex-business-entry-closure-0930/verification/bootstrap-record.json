@@ -1,0 +1,49 @@
+{
+  "recorded_at": "2026-09-30T13:00:05.949913+08:00",
+  "files": {
+    "0-学习与工具/codex-handoff/workflow_driver.py": "2ec69fbbaa6e1c0d6af3c64bd9ba09b6fb66341fc5d195fd11936cbb6e1d65d6",
+    "0-学习与工具/codex-handoff/handoff.py": "ae98dcc1d28788902487d68436bbdd4f845fb69d02b03665071064c95df478cd",
+    "0-学习与工具/codex-handoff/tests/test_workflow_driver.py": "2d70491384d60dd0364bb9af372d5ea3b5be0e9b52541eb51b96e68dab7ee303",
+    "0-学习与工具/codex-handoff/tests/test_handoff.py": "c3ed47d763f043a648949015dfb657fe5b0f83de9fa8a68f46830a757379ff56",
+    ".agents/skills/zhuopin-lane-watch/SKILL.md": "ff512013cd4f8853696af39ea22a1db82e28eb8dc771f9ff9878484f498e99de",
+    ".agents/skills/weekly-status-update/SKILL.md": "1866e3c5c4948b2c10442020a5a93e94c3e3a57506bb8cfc78c58451b9e56b76",
+    ".agents/skills/zhuopin-lan-closeout/SKILL.md": "aec01c9c27bfbdf4d9413980b874314c38023582e6d75ebeea2533de60cb6545",
+    ".agents/skills/zhuopin-send-followup/SKILL.md": "dc9888a1c9572c588f841dc5973f97c4584607d4d1fd41eb84c92daea5649d45",
+    "0-学习与工具/codex-handoff/README.md": "b8d7ae40cd0eab765affd6c3f94da0e6d196b40760ef88d9eee509c8552308bc"
+  },
+  "full_v3": {
+    "passed": 473,
+    "skipped": 4,
+    "seconds": 848.29,
+    "scope": "complete codex-handoff project before final Luna default amendment",
+    "skip_reason": "Windows symlink privilege unavailable, WinError 1314; skips are not passes"
+  },
+  "luna_and_timeout_regression": {
+    "passed": 35,
+    "deselected": 229,
+    "seconds": 89.38,
+    "scope": "final Luna default/rejection and model+timeout selection in driver/handoff tests"
+  },
+  "review": {
+    "reviewer": "bootstrap_readonly_review",
+    "model": "gpt-6-luna",
+    "timeout_p1": "closed",
+    "luna_route": "approved readonly review",
+    "skill_runtime_p2": "corrected via isolated runtime resolver; final diff checked"
+  },
+  "openspec_strict": [
+    "workflow-mvp-closure-0930: valid",
+    "codex-business-entry-closure-0930: valid"
+  ],
+  "not_yet_accepted": [
+    "successor native Guardian proposal/implement/CI/review/release-prep",
+    "native reply archive/unpack",
+    "current weekly plan registered",
+    "production delivery/consumer activation"
+  ],
+  "user_reported_operational_evidence": {
+    "supplychain_alerts": "User confirms restored after one week outage; screenshot shows messages, backend case creation not verified",
+    "commit_sweep": "2026-09-30 12:55+08 observation: hourly enabled; last12:17:02 exit0, logfile12:23:04, next13:17:01; no missed runs",
+    "poll_guard": "still disabled; not enabled by this work"
+  }
+}

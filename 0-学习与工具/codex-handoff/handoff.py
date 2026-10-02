@@ -68,16 +68,45 @@ def probe():
 def prepare(args):
     if not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", args.id):
         raise ValueError("id must be lowercase slug, 3..64 characters")
-    folder = STATE / "runs" / args.id
-    folder.mkdir(parents=True, exist_ok=False)
     queue = execute([sys.executable, QUERY, "--row", str(args.row), "--section", args.section,
                      "--format", "json"])
-    write_json(folder/"queue.json", queue)
     if queue["exit"]:
         raise RuntimeError("queue query failed; no task prepared")
+    try:
+        row = json.loads(queue["stdout"])
+    except (KeyError, ValueError, TypeError):
+        raise RuntimeError("queue query returned no structured row")
+    if (row.get("found") is not True or row.get("carrier") != "live" or row.get("done") is not False
+            or row.get("error") is not None or row.get("read_errors") != []
+            or str(row.get("row")) != str(args.row) or row.get("section") != args.section):
+        raise RuntimeError("queue row is not live and open")
+    full = execute([sys.executable, QUERY, "--row", str(args.row), "--section", args.section,
+                    "--field", "all"])
+    if full.get("exit") != 0 or not isinstance(full.get("stdout"), str) or not full["stdout"].strip():
+        raise RuntimeError("queue full-row query failed; no task prepared")
+    full_sha256 = hashlib.sha256(full["stdout"].encode("utf8")).hexdigest()
+    approval_path = Path(getattr(args, "intent_approval", "") or "").resolve()
+    if not approval_path.is_file() or approval_path.is_relative_to(ROOT.resolve()):
+        raise ValueError("external intent and action classification approval required")
+    approval = json.loads(approval_path.read_text(encoding="utf-8-sig"))
+    intent_digest = hashlib.sha256(args.intent.encode("utf8")).hexdigest()
+    action = getattr(args, "action_key", None)
+    if (not isinstance(approval, dict) or approval.get("task_id") != args.id
+            or approval.get("row") != args.row or approval.get("section") != args.section
+            or approval.get("queue_file") != row.get("file")
+            or approval.get("queue_line") != row.get("line")
+            or approval.get("intent_sha256") != intent_digest or approval.get("action_key") != action
+            or approval.get("queue_full_sha256") != full_sha256
+            or not isinstance(action, str) or not action.strip()
+            or not isinstance(approval.get("text"), str) or not approval["text"].strip()):
+        raise ValueError("intent approval or action classification does not match")
+    folder = STATE / "runs" / args.id
+    folder.mkdir(parents=True, exist_ok=False)
+    write_json(folder/"queue.json", queue)
     head = git("rev-parse", "HEAD")
-    if head["exit"]:
-        raise RuntimeError("cannot read git HEAD")
+    common_dir = git("rev-parse", "--path-format=absolute", "--git-common-dir")
+    if head["exit"] or common_dir["exit"] or not Path(common_dir["stdout"].strip()).is_absolute():
+        raise RuntimeError("cannot read git HEAD/common-dir")
     prompt = (
         "请在当前项目执行下述单一队列任务。先读 AGENTS.md、CLAUDE.md、适用规则及全景/实施计划。"
         "真实队列通过查询工具确认，快照不能代替实时状态。\n"
@@ -90,8 +119,17 @@ def prepare(args):
         "最终交付命令、退出码、证据路径、未闭合项。不得声称未执行的阶段已完成。\n"
     )
     (folder/"intent.md").write_text(prompt, encoding="utf8")
+    intent_ref = {"path": str(folder/"intent.md"),
+                  "sha256": hashlib.sha256((folder/"intent.md").read_bytes()).hexdigest()}
     write_json(folder/"state.json", {"id": args.id, "created": now(), "source_head": head["stdout"].strip(),
-                                   "status": "prepared", "row": args.row, "section": args.section})
+                                   "status": "prepared", "phase": "intent", "phase_status": "prepared", "attempts": [], "delivery_accepted": False, "row": args.row, "section": args.section, "action_key": action,
+                                   "source_git_common_dir": str(Path(common_dir["stdout"].strip()).resolve()),
+                                   "source_checkout": str(ROOT.resolve()),
+                                   "intent_text_sha256": intent_digest,
+                                   "queue_full_sha256": full_sha256,
+                                   "intent_ref": intent_ref,
+                                   "intent_approval_ref": {"path": str(approval_path), "sha256": hashlib.sha256(approval_path.read_bytes()).hexdigest()},
+                                   "queue_ref": {"path": str(folder/"queue.json"), "sha256": hashlib.sha256((folder/"queue.json").read_bytes()).hexdigest()}})
     print(str(folder))
     return 0
 
@@ -107,7 +145,7 @@ def run_stage(args):
     status = git("status", "--porcelain", cwd=workspace)
     if head["exit"] or status["exit"]:
         raise ValueError("workspace must be an existing Git checkout")
-    expected_head = state.get("implementation_head", state["source_head"]) if args.phase == "review" else state["source_head"]
+    expected_head = (state.get("implementation_head", state["source_head"]) if args.phase == "review" else state.get("design_head", state["source_head"]) if args.phase == "implement" else state["source_head"])
     if head["stdout"].strip() != expected_head:
         raise ValueError("HEAD drift: re-prepare task against current source before execution")
     if args.phase == "implement" and status["stdout"].strip():
@@ -174,13 +212,40 @@ def main():
     q=sub.add_parser("prepare")
     q.add_argument("--id",required=True); q.add_argument("--row",required=True,type=int)
     q.add_argument("--section",choices=["一","二","四"],default="一")
-    q.add_argument("--intent",required=True)
+    q.add_argument("--intent",required=True); q.add_argument("--action-key")
+    q.add_argument("--intent-approval",required=True)
     r=sub.add_parser("run")
     r.add_argument("--id",required=True); r.add_argument("--phase",choices=["plan","implement","review"],required=True)
     r.add_argument("--workspace",required=True); r.add_argument("--authorization")
     r.add_argument("--timeout",type=int,default=1800)
+    a=sub.add_parser("advance")
+    a.add_argument("--id",required=True); a.add_argument("--workspace",required=True)
+    a.add_argument("--authorization"); a.add_argument("--retry-failed-ci", action="store_true")
+    a.add_argument("--model")
+    a.add_argument("--refresh-ci-evidence", action="store_true")
+    st=sub.add_parser("status"); st.add_argument("--id",required=True)
+    rec=sub.add_parser("recover"); rec.add_argument("--id",required=True)
+    rel=sub.add_parser("release"); rel.add_argument("--id",required=True); rel.add_argument("--branch",required=True)
+    trans=sub.add_parser("transfer"); trans.add_argument("--id",required=True)
+    trans.add_argument("--batch",required=True); trans.add_argument("--lane",required=True)
+    trans.add_argument("--item",required=True)
     args=p.parse_args()
     try:
+        if args.command in ("advance", "status", "recover", "release", "transfer"):
+            import importlib.util
+            spec=importlib.util.spec_from_file_location("workflow_driver_cli",Path(__file__).with_name("workflow_driver.py"))
+            driver=importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(driver)
+            result=(driver.advance(args.id,Path(args.workspace),Path(args.authorization) if args.authorization else None,
+                                   model=args.model,
+                                   retry_failed_ci=args.retry_failed_ci,
+                                   refresh_ci_evidence=args.refresh_ci_evidence)
+                    if args.command=="advance" else driver.status(args.id) if args.command=="status"
+                    else driver.recover(args.id) if args.command=="recover"
+                    else driver.release_ready(args.id,args.branch) if args.command=="release"
+                    else driver.transfer(args.id,args.batch,args.lane,args.item))
+            print(json.dumps(result,ensure_ascii=False))
+            return 0 if result.get("status") not in ("blocked", "blocked_unknown") else 1
         return probe() if args.command=="probe" else prepare(args) if args.command=="prepare" else run_stage(args)
     except Exception as e:
         print(type(e).__name__+": "+str(e),file=sys.stderr)

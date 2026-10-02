@@ -33,6 +33,7 @@ prompt=sys.stdin.read()
 e=pathlib.Path(get('--evidence')); e.mkdir(parents=True)
 tid=get('--thread') if '--thread' in args else str(uuid.uuid5(uuid.NAMESPACE_URL,get('--source-id')))
 (e/'session.json').write_text(json.dumps({'thread_id':tid}))
+(e/'request-args.json').write_text(json.dumps(args))
 (e/'result.json').write_text(json.dumps({'thread_id':tid,'status':'output_needs_review','accepted':False}))
 if '--meter-file' in args:
  m=pathlib.Path(get('--meter-file')); m.parent.mkdir(parents=True,exist_ok=True); m.write_text(json.dumps({'lastContext':40000,'session_id':tid}))
@@ -68,7 +69,7 @@ if mode=='failure' or (mode=='retry-failure' and retry): sys.exit(7)
 ▶ 粘贴端：Codex
 泳道：fixture
 ```text
-【设置】执行环境：Codex ｜ 分支：master（从 master 起 `codex/fixture`） ｜ worktree：☑（fixture，新 worktree，收工自删） ｜ 模型：inherit
+【设置】执行环境：Codex ｜ 分支：master（从 master 起 `codex/fixture`） ｜ worktree：☑（fixture，新 worktree，收工自删） ｜ 模型：gpt-6-luna
 只写made.txt并输出OPENER_DONE；不调用业务。
 ```
 ''',encoding='utf-8')
@@ -231,7 +232,7 @@ class TestBatchValidation:
         ('执行环境：Codex','执行环境：CC'),
         ('worktree：☑（fixture，新 worktree，收工自删）','worktree：☐'),
         ('☑（fixture，','☑（../escape，'),
-        ('模型：inherit','模型：sonnet')])
+        ('模型：gpt-6-luna','模型：sonnet')])
     def test_invalid_contract_never_starts_provider(self,tmp_path,before,after):
         result=TestBatchCodex().run(tmp_path,'-ConsumerEnabled',transform=lambda p:p.replace(before,after))
         assert result.returncode!=0,result.stdout+result.stderr
@@ -342,3 +343,36 @@ class TestNativeLintSpacing:
         lint=f.M._load_lint_module()
         problems=lint.check_block(lint.iter_fenced_blocks(text)[0])
         assert bool(problems)==('\n' in field)
+
+
+class TestCodexLunaBatchContract:
+    def test_explicit_luna_routes_to_provider(self, tmp_path):
+        result = TestBatchCodex().run(tmp_path, '-ConsumerEnabled', transform=lambda p: p.replace('模型：gpt-6-luna', '模型：gpt-6-luna'))
+        assert result.returncode == 0, result.stdout + result.stderr
+        rows = json.loads((tmp_path/'reports/batch/summary.json').read_text(encoding='utf-8-sig'))
+        assert rows[0]['Model'] == 'gpt-6-luna'
+        args = json.loads(next((tmp_path/'reports/batch').rglob('request-args.json')).read_text())
+        assert args[args.index('--model') + 1] == 'gpt-6-luna'
+
+    @pytest.mark.parametrize('model', ['inherit', 'routine', 'design', 'gpt-6-astra', 'GPT-6-LUNA'])
+    def test_dryrun_rejects_non_luna_opener(self, tmp_path, model):
+        result = TestBatchCodex().run(tmp_path, '-DryRun', transform=lambda p: p.replace('模型：gpt-6-luna', '模型:' + model))
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert not (tmp_path/'.claude/worktrees/fixture').exists()
+
+    @pytest.mark.parametrize('model', ['inherit', 'routine', 'design', 'gpt-6-astra'])
+    def test_dryrun_rejects_non_luna_batch_parameter(self, tmp_path, model):
+        result = TestBatchCodex().run(tmp_path, '-DryRun', '-Model', model,
+                                   transform=lambda p: p.replace('模型：gpt-6-luna', '模型：gpt-6-luna'))
+        assert result.returncode != 0, result.stdout + result.stderr
+
+    @pytest.mark.parametrize("extra", [" ｜ 模型：inherit", "\n【设置】模型：inherit", " ｜ 模型：gpt-6-luna", " ｜ 模型："])
+    def test_duplicate_models_rejected_before_provider(self, tmp_path, extra):
+        result = TestBatchCodex().run(tmp_path, "-DryRun", transform=lambda p: p.replace("模型：gpt-6-luna", "模型：gpt-6-luna" + extra))
+        assert result.returncode != 0, result.stdout + result.stderr
+
+    def test_missing_opener_model_defaults_explicit_luna(self, tmp_path):
+        result = TestBatchCodex().run(tmp_path, "-ConsumerEnabled", transform=lambda p: p.replace(" ｜ 模型：gpt-6-luna", ""))
+        assert result.returncode == 0, result.stdout + result.stderr
+        args = json.loads(next((tmp_path/"reports/batch").rglob("request-args.json")).read_text())
+        assert args[args.index("--model") + 1] == "gpt-6-luna"

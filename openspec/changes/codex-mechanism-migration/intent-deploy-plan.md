@@ -196,3 +196,13 @@
 ## Execution handoff
 
 先由 Shao Peishen 审阅本计划。批准后按既定 inline 方式调用 `executing-plans`，实施 Task 1→6；每片失败即停依赖步骤、修复后才前进。期间需新的 design、ff、生产或真实发送决定时呈现该项具体产物和证据再请求逐项授权；已有授权不重复索取。
+
+## 2026-09-26 Task 6 人守触发补充实施切片
+
+Shao Peishen 已批准沿 inline 实施，并允许按原推荐方案微调；此次明确选“业务总线人守开启泳道看护”，不启用新的后台轮询。本补充只替代 Task 6 Step 4 对后台触发器的前提，不改变 Task 6.3 原生最终源码整链、逐项授权和证据判据。
+
+1. **入口与来源（RED→GREEN）**：在现有 guardian 接缝加可调用的人守批次入口；队列候选由专用 `--digest --actionable` 与选定 `--row N --field all` 核对，LAN 由现有状态机探针；计划中持久保留 off/unknown 的 LAN 留步项及 deploy_51 转出候选，不能因“排除”而消失。测试必须让错误的 LAN 处理、空队列定位、未知动作和重复批次实际失败。
+2. **会话内有界循环与恢复（RED→GREEN）**：沿用 workflow_driver.advance 的原生阶段闸、现有 lane 状态机和批次记录；一轮仅推进证据充分的任务，达到人工闸/失败/有界预算即停。再唤醒时先读持久状态、真实工作树和授权引用；禁止重复启动成功阶段、禁止仅用 lane resume 代替设计授权。批次状态需区分全部 release_ready、人工等待、失败与仍可继续。
+3. **Aibot 与业务总线接缝**：核对现有 Aibot 事件唤醒、拆件巡逻、队列登记的 Codex 消费路径，不重跑已验收的三模型消费者；以脱敏新事件夹具验证信号→拆件→队列行可被看护者选中。直接人守场景从真实队列行走同一候选路径，外发始终不由构建触发。
+4. **隔离现场验收**：一条全新当前源码 fixture，从真实队列定位及批准 intent→OpenSpec→该项设计审→原生 implement→目标 CI→独立 review→release-prep，记录 thread/turn/tool/hook、HEAD、哈希、报告；另证 off/unknown LAN 留步、stop/resume、依赖停链/独立泳道、重复唤醒不双跑、deploy_51 零生产连接。旧 f6a1/e75a 授权不得复用。真实 .51 发布、ff、对外发送不执行。
+5. **判定与落库**：运行受影响测试及 OpenSpec validate、独立 review；只有实际路径和机器证据齐全才勾 Task 6.3 / #648。当前 Off LAN 的生产项独立列为 LAN 留步，不挡已授权本地机制验收，也不被写成已部署。旧三消费者结论照用，PAUSED 自动化保持暂停。

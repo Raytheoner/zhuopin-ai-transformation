@@ -1746,3 +1746,29 @@ class 形态十三_零命中断言缺检索位置或命令(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CodexLunaLintTests(unittest.TestCase):
+    def native(self, model='gpt-6-luna'):
+        return _md('[OP-0828-Y]【Codex】opener块lint',
+                   '会话标识：[Win]0828Y-opener块lint；source_id→thread_id 审计绑定；不得改父标题。',
+                   SETTINGS_CC.replace('执行环境：CC', '执行环境：Codex').replace('claude/', 'codex/') + ' ｜ 模型：' + model,
+                   '读输入文件后按批准范围执行。')
+
+    def test_luna_is_valid_and_aliases_are_rejected(self):
+        self.assertEqual(_forms(self.native()), set())
+        for model in ('inherit', 'routine', 'design', 'sonnet', 'gpt-6-astra', ''):
+            with self.subTest(model=model):
+                self.assertIn('F1', _forms(self.native(model)))
+
+    def test_missing_native_model_is_rejected(self):
+        self.assertIn('F1', _forms(self.native().replace(' ｜ 模型：gpt-6-luna', '')))
+
+    def test_legacy_api_remains_forbidden(self):
+        bad = self.native().replace('读输入文件', '运行 mcp__ccd_session_mgmt__set_session_title 后读输入文件')
+        self.assertIn('F1', _forms(bad))
+
+    def test_duplicate_and_multiline_models_are_rejected(self):
+        for extra in (" ｜ 模型：inherit", "\n【设置】模型：inherit", " ｜ 模型：gpt-6-luna", " ｜ 模型："):
+            with self.subTest(extra=extra):
+                self.assertIn("F1", _forms(self.native().replace("模型：gpt-6-luna", "模型：gpt-6-luna" + extra)))

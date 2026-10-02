@@ -1,6 +1,6 @@
 
 param(
- [ValidateSet('Probe','Hook','Workflow','Test')][string]$Mode='Probe',
+ [ValidateSet('Probe','Hook','Workflow','Guardian','Test')][string]$Mode='Probe',
  [Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments
 )
 # A failed Hook launcher must not become an implicitly allowed tool call.
@@ -50,6 +50,8 @@ if ($Mode -eq 'Hook') {
   & $config.python -m pytest (Join-Path $PSScriptRoot 'tests') -q -p no:cacheprovider @Arguments
 } elseif ($Mode -eq 'Workflow') {
   & $config.python $entry @Arguments
+} elseif ($Mode -eq 'Guardian') {
+  & $config.python (Join-Path $PSScriptRoot 'guardian_entry.py') @Arguments
 } else {
   & $config.python $entry probe @Arguments
 }

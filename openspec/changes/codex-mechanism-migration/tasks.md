@@ -20,7 +20,7 @@ Architecture: 保留现有调度和消费状态机，以统一 Codex provider �
 - [x] 5.3 主线ff、新工作树原生继承及InteractiveToken真实调度验证已通过；末轮注册器源码于11:20实际提交08428d42，-WhatIf定向回归1通过，任务仍Disabled。
 - [x] 6.1 独立原生审查四个关键接缝，四项缺陷均RED→GREEN。
 - [x] 6.2 接力runner复用provider；新汇总状态探针及原生占号审计修复并验证。
-- [ ] 6.3 三消费者规定范围验收及末轮实际commit已核；追加的intent→deploy阶段接力书面设计已获Shao Peishen批准，实施计划待审。后续须完成实现与原生端到端实证，再决定#648与业务开发闸。不以登记或exit0代替验收。
+- [ ] 6.3 三消费者规定范围验收及末轮实际commit已核；追加的 intent→deploy 设计与 inline 计划已获批准，Tasks 1–5 已在隔离分支实现。Task 6 离线回归及旧候选原生夹具到 release 停点有证据；独立审查的四个闸门缺口已修，但最终源码尚须跑全新原生整链；用户已批准人守启动，后台触发器不属本线当前验收目标。#648 与业务开发闸保持 open/关闭；不以登记或 exit 0 代替验收。
 
 ## 全局约束
 
@@ -74,3 +74,19 @@ CommitSweep先写非零夹具测试，再修退出码；新工作树验证版本
 ## Review Focus
 
 参数含空格/非ASCII；resume权限继承；多个并发信号与服务重启；模型失败伪0；本地路径泄漏或凭据误入库。
+
+## 追加任务：Guardian 默认复用 Windows executor（proposal 补充）
+
+证据：`reports/workflow-mvp-native-1002/inputs/guardian-executor-proof-1002.json` 记录同参数下裸 `openspec` 在 Guardian 默认执行路径 WinError 2，而 `workflow_driver.default_executor` 解析为 `openspec.cmd` 且 strict validation exit 0。只处理本次实测缺陷；不得重置或覆盖此前失败 attempt。
+
+允许修改的源文件仅为：
+- `0-学习与工具/codex-handoff/guardian_entry.py`
+- `0-学习与工具/codex-handoff/tests/test_guardian_entry.py`
+
+执行顺序：
+1. TDD RED：添加回归用例，证明 `start` 未显式注入 executor 时当前默认路径没有复用 `workflow_driver.default_executor`；同时覆盖显式 executor 注入仍被调用。
+2. 最小修复：默认直接复用现存 `workflow_driver.default_executor`，保留显式注入语义。不新建 Windows 解析器、执行层、第二 fixture 或 r4 专属 timeout/resume，不改变 route/gate/provider/state/hook trust。
+3. TDD GREEN：运行新增/相关 `test_guardian_entry.py` 用例，然后按 handoff CI 矩阵运行本次受影响 handoff 的完整 CI；保留每个实际命令、cwd、退出码和原始证据，失败时停止并保留旧、新 attempt。
+4. 完整 CI 通过后，使用独立原生 `gpt-6-luna` review 对照实际 implementation HEAD；review 通过后再做 release preparation。release preparation 仅准备审查证据，不等同于 ff、生产部署、真实外发或 L2 签署授权。
+
+本追加任务属于既有 `codex-mechanism-migration` 包；不创建新迁移包，不改既有 specs。proposal 阶段只更新本文件与同包 `proposal.md`、`design.md`，实现白名单仍以外层批准为准。

@@ -8,3 +8,4 @@ hooks = true
 [shell_environment_policy.set]
 PYTHONUTF8 = "1"
 PYTHONDONTWRITEBYTECODE = "1"
+POWERSHELL_TELEMETRY_OPTOUT = "1"

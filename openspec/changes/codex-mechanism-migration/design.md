@@ -1,6 +1,8 @@
 # Context
 本设计细化已批准 source-spec.md，用户本轮授权及冲突裁决见 intent.md。实施工作树 codex/mechanism-migration-648；队列 #648。全部消费者验收前禁止业务开工。
 
+本轮补充依据位于 `reports/workflow-mvp-native-1002/inputs/guardian-executor-supplement-1002.md`、`guardian-executor-proof-1002.json` 与 `current-human-authorization.json`。当前证据证明裸 `openspec validate codex-mechanism-migration --strict` 经 Guardian 默认调用以 WinError 2 失败；同一调用经现存 `workflow_driver.default_executor` 解析为 `openspec.cmd` 并退出 0。此前失败 attempt 与私有 state 均保持原样。
+
 # Goals / Non-Goals
 目标：原生 Codex 进程、三消费者状态机、跨工作树 hook、可版本化资产与单一调度消费闭环。非目标：业务场景开发、改变人工签核、迁移凭据、恢复 Claude。
 
@@ -17,12 +19,13 @@
 6. Codex opener 明示环境；桌面标题 API 与 headless 审计分开。旧 guardian 不作为已迁移能力放行。旧格式可检索，消费者不执行源端 API。
 7. hook 命令从 cwd 寻找 git root，runtime 从共享主仓解析；版本库不携带本机 runtime/consumer 开关。用户正常 /hooks 信任是实测前置，不代写信任数据库。
 8. 调度现场切换独立于代码验收。保留原触发器、账户及信号；五项 Codex 自动化保持暂停。恢复只允许停止自动消费并留证据。
+9. Guardian CLI 的 `start` 默认复用现有 `workflow_driver.default_executor`，让 Windows 命令解析沿用已验证路径；调用方显式传入 executor 时继续使用注入值。仅改 `guardian_entry.py` 与 `tests/test_guardian_entry.py`：先加能复现默认绕过的 RED 测试，再以复用函数实现最小修复并跑聚焦 GREEN 测试及受影响 handoff 完整 CI。不得新增 shim 解析、executor 层或 fixture #2，也不扩展 r4 timeout/resume；不改 route、gate、provider、state、hook trust、业务章程及迁移范围。
 
 # Risks / Trade-offs
 原生 hook 与 telemetry 格式依赖当前 CLI，必须实测；工作树新资产未合入 master 前不能宣称继承。服务现场旧消费者仍存在，切换须具体授权。测试隔离事故详见 progress.md，原失败结果不可当验收。
 
 # Migration Plan
-按 tasks.md 六阶段推进；证据矩阵逐项填实际结果。提交前做独立 review 和受影响测试；ff、现场切换分别申请具体动作授权。最后再验计划触发到产物审计。
+既有工作依 tasks.md 六阶段及已保留证据推进；本次两文件补丁单列后续任务，不重置任何旧 attempt。proposal strict 通过后，实施按两文件 TDD RED→GREEN，运行完整受影响 handoff CI；随后由独立原生 Luna review 对照实际实施 HEAD，完成 review 后才做 release preparation。每阶段证据由外层驱动记录。ff、现场切换分别申请具体动作授权；最后再验计划触发到产物审计。
 
 # Open Questions
 正常信任已确认：linked worktree 使用主仓项目 hooks；原生正负例、轮询和事件拆件隔离端到端已通过。批处理链与现场切换继续验收。历史 Cowork 完整覆盖是已声明证据缺口，不重启 Claude 取记录。

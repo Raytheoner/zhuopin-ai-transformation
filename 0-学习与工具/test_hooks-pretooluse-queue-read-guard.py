@@ -435,3 +435,233 @@ class TestLaneWorktreeGitWriteGate:
                 bash_payload(git_repo, cmd), git_repo,
                 extra_env={"ZHUOPIN_LANE_WORKTREE": str(wt)})
             assert rc == 2, f"{cmd} 应被拒但放行了"
+
+# Native-only regression cases; the legacy CC cases above remain unchanged.
+def native_payload(repo_root, command, cwd=None):
+    payload = bash_payload(repo_root, command)
+    payload['_zhuopin_codex_adapter'] = 'native-v1'
+    payload['cwd'] = str(repo_root if cwd is None else cwd)
+    payload['tool_input']['cwd'] = payload['cwd']
+    return payload
+
+@pytest.mark.parametrize('command', [
+    'rg x "1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md"',
+    'rg.exe -n x "1-转型规划/0-全景路线图"',
+    'rg x .',
+    'rg -g "*.py" x .',
+    'rg -l x "1-转型规划"',
+    'rg --files-without-match x "6-人才与组织"',
+    'rg -c x "6-人才与组织/部门AI专员跟进"',
+    'rg --count-matches x .',
+    'rg --files --replace replacement x .',
+    'rg -q x .',
+    'python "0-学习与工具/工具-队列查询.py" --digest; rg x .',
+    'python "0-学习与工具/工具-队列查询.py" --digest\nrg x .',
+    'python "0-学习与工具/工具-队列查询.py" --digest && rg x .',
+    'python "0-学习与工具/工具-队列查询.py" --digest || rg x .',
+    'python "0-学习与工具/工具-队列查询.py" --digest | rg x .',
+    'Write-Output $(rg x .)',
+    'Get-Content "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"',
+    "python -c \"print('工具-队列查询.py')\" ; rg x .",
+    'rg --unknown-range x "0-学习与工具"',
+    'rg -g',
+    '& $reader x .',
+    'pwsh -Command "rg x ."',
+    'rg x "1-转型规划/0-全景路线图/跨桌任务队列-归档-*.md"',
+])
+def test_native_content_search_cannot_read_protected_tree(repo, command):
+    rc, _, err = run_hook(native_payload(repo, command), repo)
+    assert rc == 2, command
+    assert '队列查询' in err
+
+@pytest.mark.parametrize('command', [
+    'rg --files .',
+    'rg --files -g "*.py" .',
+    'rg -n x "0-学习与工具"',
+    'rg -e x -g "*.py" "0-学习与工具"',
+    'rg --regexp x --glob "*.py" "0-学习与工具"',
+    'python "0-学习与工具/工具-队列查询.py" --digest --grep x',
+    'python "0-学习与工具/工具-队列查询.py" --row 648 --file "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"',
+    'python "0-学习与工具/工具-跟进信README查询.py" --digest',
+    'python -m pytest -k "grep; rg queue" tests',
+    'rg x "0-学习与工具" | Select-Object -First 5',
+])
+def test_native_safe_search_and_specialized_query_remain_allowed(repo, command):
+    (repo / '0-学习与工具').mkdir(exist_ok=True)
+    rc, _, err = run_hook(native_payload(repo, command), repo)
+    assert rc == 0, (command, err)
+
+def test_native_cwd_changes_relative_target_resolution(repo):
+    cwd = repo / '0-学习与工具'; cwd.mkdir()
+    assert run_hook(native_payload(repo, 'rg x .', cwd), repo)[0] == 0
+    assert run_hook(native_payload(repo, 'rg x ..', cwd), repo)[0] == 2
+
+def test_native_absolute_protected_ancestor_is_denied(repo):
+    assert run_hook(native_payload(repo, f'rg x "{repo}"'), repo)[0] == 2
+
+def test_native_symlink_target_is_not_assumed_safe(repo):
+    target = repo / 'safe'; target.mkdir()
+    alias = repo / 'link'
+    # A real junction works without Windows developer-mode symlink permission.
+    p = subprocess.run(['cmd', '/c', 'mklink', '/J', str(alias), str(target)],
+                       capture_output=True)
+    if p.returncode: pytest.skip('junction unavailable')
+    try:
+        assert run_hook(native_payload(repo, f'rg x "{alias}"'), repo)[0] == 2
+    finally:
+        alias.rmdir()
+
+@pytest.mark.parametrize('cwd', ['', 'not-an-existing-directory'])
+def test_native_invalid_explicit_cwd_is_denied(repo, cwd):
+    assert run_hook(native_payload(repo, 'rg x .', cwd), repo)[0] == 2
+
+
+
+
+class TestCodexNativeSearchReadGuard:
+    def _prepare(self, repo):
+        archive=repo/QUEUE_ARCHIVE_REL
+        archive.parent.mkdir(parents=True,exist_ok=True)
+        archive.write_text('synthetic secret phrase\n',encoding='utf-8')
+        query=repo/'0-学习与工具/工具-队列查询.py'
+        query.parent.mkdir(parents=True,exist_ok=True)
+        query.write_text('# synthetic mechanism stub\n',encoding='utf-8')
+        return archive
+
+    @pytest.mark.parametrize('command',[
+        'rg -n phrase "1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md"',
+        'rg --files-with-matches phrase "1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md"',
+        'rg --count phrase "1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md"',
+        'rg --count-matches phrase "1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md"',
+        'rg --quiet phrase "1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md"',
+        'rg -g "!跨桌任务队列-归档-202608.md" phrase "1-转型规划/0-全景路线图"',
+        'python 0-学习与工具/工具-队列查询.py --digest; rg -n phrase "1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md"',
+    ])
+    def test_rg内容读取保护归档和混合命令即拒绝(self,repo,command):
+        self._prepare(repo)
+        payload=bash_payload(repo,command);payload['_zhuopin_codex_adapter']='native-v1'
+        rc,_,err=run_hook(payload,repo)
+        assert rc==2 and '工具-队列查询.py' in err
+
+    def test_rg_仅列文件允许且不读取内容(self,repo):
+        self._prepare(repo)
+        payload=bash_payload(repo,'rg --files "1-转型规划/0-全景路线图"');payload['_zhuopin_codex_adapter']='native-v1'
+        rc,_,err=run_hook(payload,repo)
+        assert rc==0,err
+
+    def test_rg仅搜索无关代码目录放行(self,repo):
+        code=repo/'0-学习与工具/demo.py';code.parent.mkdir(parents=True,exist_ok=True);code.write_text('synthetic_marker\n',encoding='utf-8')
+        payload=bash_payload(repo,'rg -n synthetic_marker "0-学习与工具"');payload['_zhuopin_codex_adapter']='native-v1'
+        rc,_,err=run_hook(payload,repo)
+        assert rc==0,err
+
+    def test_native机制查询单独放行(self,repo):
+        self._prepare(repo)
+        payload=bash_payload(repo,'python 0-学习与工具/工具-队列查询.py --digest');payload['_zhuopin_codex_adapter']='native-v1'
+        rc,_,err=run_hook(payload,repo)
+        assert rc==0,err
+
+    def test_native外部junction目标含父路径时仍按实际范围拒绝(self,repo):
+        target=repo/'0-学习与工具';target.mkdir(parents=True)
+        junction=repo.parent/'outside'/'external-queue-link'
+        junction.parent.mkdir()
+        result=subprocess.run(['cmd','/c','mklink','/J',str(junction),str(target)],capture_output=True,text=True)
+        if result.returncode:pytest.skip('Windows junction creation unavailable')
+        payload=bash_payload(repo,'rg -n phrase ..')
+        payload['_zhuopin_codex_adapter']='native-v1'
+        payload['tool_input']['cwd']=str(junction)
+        rc,_,err=run_hook(payload,repo)
+        assert rc==2 and '工具-队列查询.py' in err
+    def test_native_cwd经过junction时无路径rg拒绝(self,repo):
+        target=repo/QUEUE_DIR_REL;target.mkdir(parents=True)
+        junction=repo/'queue-link'
+        result=subprocess.run(['cmd','/c','mklink','/J',str(junction),str(target)],capture_output=True,text=True)
+        if result.returncode:pytest.skip('Windows junction creation unavailable')
+        payload=bash_payload(repo,'rg -n phrase')
+        payload['_zhuopin_codex_adapter']='native-v1'
+        payload['tool_input']['cwd']=str(junction)
+        rc,_,err=run_hook(payload,repo)
+        assert rc==2 and '工具-队列查询.py' in err
+    def test_current_workdir落在受保护目录时无路径rg拒绝(self,repo):
+        protected=repo/'1-转型规划/0-全景路线图';protected.mkdir(parents=True)
+        payload=bash_payload(repo,'rg -n phrase')
+        payload['_zhuopin_codex_adapter']='native-v1';payload['cwd']=str(repo)
+        payload['tool_input']['cwd']=str(protected)
+        rc,_,err=run_hook(payload,repo)
+        assert rc==2 and '工具-队列查询.py' in err
+
+    def test_legacy无Codex标识仍走原拒绝规则(self,repo):
+        self._prepare(repo)
+        rc,_,err=run_hook(bash_payload(repo,'Get-Content "1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md"'),repo)
+        assert rc==2 and '工具-队列查询.py' in err
+
+    def test_native_GetContentTail仍拒绝保护归档(self,repo):
+        archive=self._prepare(repo)
+        relative=archive.relative_to(repo).as_posix()
+        payload=native_payload(repo,f'Get-Content -LiteralPath "{relative}" -Tail 80')
+        rc,_,err=run_hook(payload,repo)
+        assert rc==2 and '工具-队列查询.py' in err
+
+    def test_native_GetContent尾部计数不是读取路径(self,repo):
+        (repo/'docs.md').write_text('ordinary safe content\n',encoding='utf-8')
+        payload=native_payload(repo,'Get-Content -LiteralPath docs.md -Tail 80')
+        rc,_,err=run_hook(payload,repo)
+        assert rc==0,err
+
+    def test_native_GetContent空内联值fail_closed(self,repo):
+        payload=native_payload(repo,'Get-Content -Tail:')
+        rc,_,err=run_hook(payload,repo)
+        assert rc==2 and '工具-队列查询.py' in err
+
+
+@pytest.mark.parametrize('command', [
+    'Write-Output "SIGNAL_EXIT=$signalExit DIGEST_EXIT=$digestExit"',
+    '$env:PYTHONDONTWRITEBYTECODE="1"; python "5-平台底座/wecom-aibot-service/scripts/check_patrol_signal.py"; $signalExit=$LASTEXITCODE; python "0-学习与工具/工具-队列查询.py" --digest; $digestExit=$LASTEXITCODE; Write-Output "SIGNAL_EXIT=$signalExit DIGEST_EXIT=$digestExit"',
+])
+def test_native_dynamic_output_allows_exit_code_reporting(repo, command):
+    assert run_hook(native_payload(repo, command), repo)[0] == 0
+
+@pytest.mark.parametrize('command', [
+    'Write-Output $(rg x .)',
+    'Write-Output "EXIT=$exit $(rg x .)"',
+    'Write-Output $(& $reader x .)',
+])
+def test_native_dynamic_output_still_checks_nested_readers(repo, command):
+    assert run_hook(native_payload(repo, command), repo)[0] == 2
+
+
+@pytest.mark.parametrize('command', [
+    "Get-ChildItem -LiteralPath '.' -File | Select-Object Name,Length",
+    "Get-Content -LiteralPath docs.md -Tail 2 | Select-Object -Property Name,Length",
+])
+def test_native_literal_select_properties_allow_formatting(repo, command):
+    (repo/'docs.md').write_text('ordinary safe content\n',encoding='utf-8')
+    rc,_,err=run_hook(native_payload(repo,command),repo)
+    assert rc==0,err
+
+
+@pytest.mark.parametrize('command', [
+    'Get-Content "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md" | Select-Object Name,Length',
+    "Get-ChildItem '.' | Select-Object $properties",
+    'Get-ChildItem "." | Select-Object Name,@{Name="x";Expression={rg x .}}',
+    'Get-ChildItem "." | Select-Object Name,$(rg x .)',
+])
+def test_native_select_properties_still_reject_protected_or_dynamic(repo, command):
+    assert run_hook(native_payload(repo,command),repo)[0]==2
+
+
+@pytest.mark.parametrize('command', [
+    "Get-ChildItem '.' | Select-Object -Property:Name",
+    "Get-ChildItem '.' | Select-Object -Property:Name,Length",
+])
+def test_native_select_inline_literal_properties(repo, command):
+    assert run_hook(native_payload(repo,command),repo)[0]==0
+
+
+@pytest.mark.parametrize('command', [
+    'Get-ChildItem "." | Select-Object -Property:$properties',
+    'Get-ChildItem "." | Select-Object -Property:@{Name="x";Expression={[IO.File]::ReadAllText("1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md")}}',
+    'Get-ChildItem "." | Select-Object -Property:$(Get-Date)',
+])
+def test_native_select_inline_dynamic_properties_rejected(repo, command):
+    assert run_hook(native_payload(repo,command),repo)[0]==2

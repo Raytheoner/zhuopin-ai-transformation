@@ -115,9 +115,23 @@ def run(*args: str) -> subprocess.CompletedProcess:
 
 
 def run_at(script: Path, *args: str) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    configured = env.get("ZHUOPIN_CODEX_FIXTURE_ROOT")
+    if configured:
+        try:
+            suite_root = Path(SCRIPT).resolve().parents[1]
+            configured_root = Path(configured).resolve(strict=True)
+            target_root = Path(script).resolve().parents[1]
+            if configured_root == suite_root and target_root != configured_root:
+                for key in ("ZHUOPIN_CODEX_FIXTURE_ROOT", "ZHUOPIN_CODEX_RUNTIME",
+                            "ZHUOPIN_CODEX_STATE"):
+                    env.pop(key, None)
+        except (OSError, ValueError):
+            pass  # Invalid fixture input must reach the child and fail closed.
     return subprocess.run(
         [sys.executable, str(script), *args],
         capture_output=True, text=True, encoding="utf-8",
+        env=env,
     )
 
 
@@ -2435,6 +2449,9 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         text = text.replace(long_status, long_status + "（追加一段）")
         self.target_path.write_text(text, encoding="utf-8")
 
+        cutoff = datetime.fromisoformat(self.module.ROW_LENGTH_BLOCK_FROM) - timedelta(days=1)
+        self._freeze_module_now(cutoff.year, cutoff.month, cutoff.day)
+
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             result = self._release(who="A")
@@ -2512,6 +2529,9 @@ class ReleaseStructuralValidationTests(unittest.TestCase):
         text = self.target_path.read_text(encoding="utf-8")
         text = text.replace(long_topic, long_topic + "（追加一段）")
         self.target_path.write_text(text, encoding="utf-8")
+
+        cutoff = datetime.fromisoformat(self.module.ROW_LENGTH_BLOCK_FROM) - timedelta(days=1)
+        self._freeze_module_now(cutoff.year, cutoff.month, cutoff.day)
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -6971,6 +6991,9 @@ class OpenerGuardReleaseTests(unittest.TestCase):
     SENTINEL_LINE = _OPENER_FIXTURES.SENTINEL_LINE
     #: 形态⑩（队列 §一 `#565`）：子任务泳道块的干净样本还必须带心跳行，同源导入。
     HEARTBEAT_LINE = _OPENER_FIXTURES.HEARTBEAT_LINE
+    NARROW_LINE = _OPENER_FIXTURES.NARROW_LINE
+    EVIDENCE_LINE = _OPENER_FIXTURES.EVIDENCE_LINE
+    ALERT_FIXTURE_LINE = _OPENER_FIXTURES.ALERT_FIXTURE_LINE
 
     def setUp(self):
         self.m = _load_module()
@@ -7096,7 +7119,7 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         path = self.root / "看护件-x.md"
         path.write_text("\n".join([
             "### A1 · 示例泳道", "", "粘贴端：CC ｜ 泳道：示例泳道", "",
-            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, "做什么：建造到底。", self.HEARTBEAT_LINE, self.SENTINEL_LINE, "```", "",
+            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, "做什么：建造到底。", self.HEARTBEAT_LINE, self.NARROW_LINE, self.EVIDENCE_LINE, self.ALERT_FIXTURE_LINE, self.SENTINEL_LINE, "```", "",
             "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
             "```", "[OP-0905-C]【CC】看护示例", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, "```",
         ]), encoding="utf-8")
@@ -7108,7 +7131,7 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         path = self.root / "看护件-y.md"
         path.write_text("\n".join([
             "### A1 · 示例泳道", "", "粘贴端：CC ｜ 泳道：示例泳道", "",
-            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, self.HEARTBEAT_LINE, self.SENTINEL_LINE, "```", "",
+            "```", self.TITLE_LINE_CC, self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, self.HEARTBEAT_LINE, self.NARROW_LINE, self.EVIDENCE_LINE, self.ALERT_FIXTURE_LINE, self.SENTINEL_LINE, "```", "",
             "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
             "```", "[OP-0905-C]【CC】看护示例", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, "```",
         ]), encoding="utf-8")
@@ -9814,3 +9837,153 @@ class MountedSideGuardTests(unittest.TestCase):
         self.assertIn("56 倍", msg)
         self.assertIn("--allow-mounted-side", msg)
         self.assertIn("Windows", msg)
+
+
+class ExplicitFixtureRootTests(unittest.TestCase):
+    def _case(self):
+        import os, runpy
+        from unittest import mock
+        with mock.patch.dict(os.environ):
+            os.environ.pop('ZHUOPIN_CODEX_FIXTURE_ROOT', None)
+            namespace = runpy.run_path(str(SCRIPT), run_name='fixture_root_tests')['_resolve_repo_root'].__globals__
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name) / 'linked fixture 中文'
+        tools = root / '0-学习与工具'; tools.mkdir(parents=True)
+        (root / '.git').write_text('gitdir: synthetic-test-admin', encoding='utf8')
+        namespace['__file__'] = str(tools / SCRIPT.name)
+        namespace['_TOOLS_DIR'] = tools
+        namespace['_REPO_GUESS'] = root
+        config = root / '.codex/runtime.local.json'; config.parent.mkdir()
+        state = root / 'reports/state'
+        import json
+        config.write_text(json.dumps({'state_root':str(state)}), encoding='utf8')
+        env = {'ZHUOPIN_CODEX_FIXTURE_ROOT':str(root), 'ZHUOPIN_CODEX_RUNTIME':str(config), 'ZHUOPIN_CODEX_STATE':str(state)}
+        def git_result(argv, **kwargs):
+            if 'list' in argv:
+                out = 'worktree ' + str(root) + '\0HEAD ' + 'a'*40 + '\0detached\0\0'
+            elif '--show-toplevel' in argv:
+                out = str(root)
+            else:
+                out = str(root.parent / 'canonical/.git')
+            return subprocess.CompletedProcess(argv, 0, out, '')
+        return namespace, root, config, state, env, git_result
+
+    def test_explicit_fixture_root_is_used(self):
+        import os
+        from unittest import mock
+        ns, root, config, state, env, git_result = self._case()
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=git_result):
+            self.assertEqual(ns['_resolve_repo_root'](), root.resolve())
+
+    def test_fixture_git_checks_use_command_scoped_safe_directory(self):
+        import os
+        from unittest import mock
+        ns, root, config, state, env, git_result = self._case()
+        calls = []
+        def recording_git(argv, **kwargs):
+            calls.append(argv)
+            return git_result(argv, **kwargs)
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=recording_git):
+            self.assertEqual(ns['_resolve_repo_root'](), root.resolve())
+        self.assertEqual(len(calls), 2)
+        expected = f'safe.directory={root.resolve().as_posix()}'
+        self.assertTrue(all(argv[0:3] == ['git', '-c', expected] for argv in calls))
+
+    def test_invalid_override_does_not_fall_back_to_main(self):
+        import os
+        from unittest import mock
+        for value in ('relative-root', '', 'different'):
+            with self.subTest(value=value):
+                ns, root, config, state, env, git_result = self._case()
+                env['ZHUOPIN_CODEX_FIXTURE_ROOT'] = str(root.parent / value) if value=='different' else value
+                with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=git_result):
+                    with self.assertRaises(ValueError): ns['_resolve_repo_root']()
+
+    def test_runtime_and_state_must_stay_inside_fixture(self):
+        import os, json
+        from unittest import mock
+        for kind in ('runtime-outside', 'state-outside', 'runtime-state-outside', 'state-mismatch'):
+            with self.subTest(kind=kind):
+                ns, root, config, state, env, git_result = self._case()
+                if kind=='runtime-outside': env['ZHUOPIN_CODEX_RUNTIME']=str(root.parent/'runtime.json')
+                if kind=='state-outside': env['ZHUOPIN_CODEX_STATE']=str(root.parent/'state')
+                if kind=='runtime-state-outside': config.write_text(json.dumps({'state_root':str(root.parent/'state')}))
+                if kind=='state-mismatch': env['ZHUOPIN_CODEX_STATE']=str(root/'different-state')
+                with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=git_result):
+                    with self.assertRaises(ValueError): ns['_resolve_repo_root']()
+
+    def test_unregistered_or_primary_checkout_is_rejected(self):
+        import os
+        from unittest import mock
+        for kind in ('unregistered', 'primary'):
+            ns, root, config, state, env, git_result = self._case()
+            if kind=='primary': (root/'.git').unlink(); (root/'.git').mkdir()
+            def result(argv, **kwargs):
+                if kind=='unregistered' and 'list' in argv: return subprocess.CompletedProcess(argv,0,'worktree '+str(root.parent/'other')+'\0','')
+                return git_result(argv,**kwargs)
+            with self.subTest(kind=kind), mock.patch.dict(os.environ,env), mock.patch.object(subprocess,'run',side_effect=result):
+                with self.assertRaises(ValueError): ns['_resolve_repo_root']()
+
+    def test_unset_override_preserves_canonical_root(self):
+        import os
+        from pathlib import Path
+        from unittest import mock
+        ns, root, config, state, env, git_result = self._case()
+        calls = []
+        def recording_git(argv, **kwargs):
+            calls.append(argv)
+            return git_result(argv, **kwargs)
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess,'run',side_effect=recording_git):
+            os.environ.pop('ZHUOPIN_CODEX_FIXTURE_ROOT',None)
+            self.assertEqual(ns['_resolve_repo_root'](), root.parent/'canonical')
+        self.assertEqual(len(calls), 1)
+        checkout = Path(ns['__file__']).resolve().parents[1]
+        self.assertEqual(calls[0][0:3], ['git', '-c', f'safe.directory={checkout.as_posix()}'])
+
+    def test_shared_queue_root_common_dir_git_probe_uses_fixture_safe_directory(self):
+        import os
+        from unittest import mock
+        ns, root, config, state, env, git_result = self._case()
+        (root.parent / "canonical").mkdir()
+        calls = []
+
+        def recording_git(argv, **kwargs):
+            calls.append(argv)
+            return git_result(argv, **kwargs)
+
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, "run", side_effect=recording_git):
+            ns["_resolve_shared_queue_root"](str(root.parent / "canonical"))
+
+        common_dir_calls = [argv for argv in calls if "--git-common-dir" in argv]
+        self.assertEqual(len(common_dir_calls), 1)
+        expected = f"safe.directory={root.resolve().as_posix()}"
+        self.assertEqual(common_dir_calls[0][0:3], ["git", "-c", expected])
+    def test_explicit_shared_queue_root_routes_only_official_queue_paths(self):
+        import os
+        from unittest import mock
+        ns, root, config, state, env, git_result = self._case()
+        shared_root = root.parent / 'canonical'
+        shared_root.mkdir()
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=git_result):
+            resolved = ns['_resolve_shared_queue_root'](str(shared_root))
+            ns['REPO_ROOT'] = root
+            ns['_SHARED_QUEUE_ROOT'] = resolved
+            self.assertEqual(ns['_target_path'](ns['DEFAULT_TARGET']), (shared_root / ns['DEFAULT_TARGET']).resolve())
+            self.assertEqual(ns['_target_path'](ns['QUEUE_MECHANISM_PATH_REL']), (shared_root / ns['QUEUE_MECHANISM_PATH_REL']).resolve())
+            self.assertEqual(ns['_target_path'](ns['QUEUE_BUSINESS_PATH_REL']), (shared_root / ns['QUEUE_BUSINESS_PATH_REL']).resolve())
+            self.assertEqual(ns['_target_path']('fixture-only.txt'), (root / 'fixture-only.txt').resolve())
+
+    def test_shared_queue_root_rejects_non_fixture_and_wrong_roots(self):
+        import os
+        from unittest import mock
+        ns, root, config, state, env, git_result = self._case()
+        shared_root = root.parent / 'canonical'
+        shared_root.mkdir()
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, 'run', side_effect=git_result):
+            for candidate in ('relative-root', str(root.parent / 'other')):
+                with self.subTest(candidate=candidate), self.assertRaises(ValueError):
+                    ns['_resolve_shared_queue_root'](candidate)
+            os.environ.pop('ZHUOPIN_CODEX_FIXTURE_ROOT', None)
+            with self.assertRaises(ValueError):
+                ns['_resolve_shared_queue_root'](str(shared_root))
