@@ -135,7 +135,8 @@ def _codex_command(repo_root: Path, evidence: Path, policy: dict) -> list[str]:
         raise ValueError('patrol timeout must be positive')
     argv = [str(python), '-B', str(provider), '--workspace', str(repo_root),
             '--evidence', str(evidence), '--source-id', 'patrol-' + evidence.name,
-            '--sandbox', 'workspace-write', '--timeout', str(timeout), '--enabled']
+            '--sandbox', 'workspace-write', '--timeout', str(timeout), '--enabled',
+            '--process-completion-exit']
     model = policy.get('model')
     if model:
         if str(model).lower() in ('sonnet', 'opus', 'haiku'):

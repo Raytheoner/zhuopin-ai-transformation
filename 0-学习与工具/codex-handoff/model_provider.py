@@ -433,9 +433,13 @@ def main():
     parser.add_argument('--meter-file')
     parser.add_argument('--grace-seconds', type=float, default=900)
     parser.add_argument('--emit-final', action='store_true')
+    parser.add_argument('--process-completion-exit', action='store_true',
+                        help='Report completed native process separately from tool/output acceptance')
     args = parser.parse_args()
     emit_final = args.emit_final
     del args.emit_final
+    process_completion_exit = args.process_completion_exit
+    del args.process_completion_exit
     result = run(**vars(args), prompt=sys.stdin.read())
     if emit_final:
         final = Path(args.evidence)/'final.txt'
@@ -443,6 +447,21 @@ def main():
         print(json.dumps(result, ensure_ascii=False), file=sys.stderr)
     else:
         print(json.dumps(result, ensure_ascii=False))
+    if process_completion_exit:
+        thread_id = result.get('thread_id')
+        try:
+            valid_thread = isinstance(thread_id, str) and bool(uuid.UUID(thread_id))
+        except ValueError:
+            valid_thread = False
+        completed = (result.get('status') in ('output_needs_review', 'tool_failed')
+                     and type(result.get('exit_code')) is int and result['exit_code'] == 0
+                     and result.get('turn_completed') is True and valid_thread
+                     and result.get('timed_out') is False
+                     and type(result.get('malformed_events')) is int and result['malformed_events'] == 0
+                     and result.get('error', 'missing') is None
+                     and result.get('context_reason', 'missing') is None
+                     and result.get('accepted') is False)
+        return 0 if completed else 124 if result.get('status') == 'timeout' else 1
     return 0 if result['status'] == 'output_needs_review' else 124 if result['status'] == 'timeout' else 1
 
 

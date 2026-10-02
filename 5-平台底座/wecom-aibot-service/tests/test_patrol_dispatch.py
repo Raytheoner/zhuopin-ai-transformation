@@ -546,3 +546,78 @@ class TestWatcherChaining:
         elapsed = time.monotonic() - start
         assert result.action == pd.ACTION_STARTED
         assert elapsed < 0.2, "默认 run_in_thread 必须是真实后台线程，不得阻塞主调用"
+
+
+class TestProcessCompletionExitSeam:
+    def test_only_patrol_explicitly_requests_process_completion_exit(self, tmp_path):
+        argv = pd._codex_command(tmp_path, tmp_path / 'round.evidence', {'model': 'gpt-6-luna'})
+        assert argv.count('--process-completion-exit') == 1
+        assert argv[argv.index('--model') + 1] == 'gpt-6-luna'
+
+    @pytest.mark.parametrize('mode, counter, calls_expected, pending', [
+        ('consumed', 0, 1, False), ('unconsumed', 3, 1, True),
+        ('new_signal', 0, 2, False), ('fatal', 3, 1, True),
+    ])
+    def test_public_provider_cli_drives_original_watcher_lifecycle(
+            self, tmp_path, monkeypatch, mode, counter, calls_expected, pending):
+        import importlib.util
+        import io
+        from contextlib import redirect_stdout
+        source = Path(__file__).resolve().parents[3] / '0-学习与工具/codex-handoff/model_provider.py'
+        spec = importlib.util.spec_from_file_location('patrol_completion_provider', source)
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        native = module.summarize([
+            {'type': 'thread.started', 'thread_id': '01234567-89ab-cdef-0123-456789abcdef'},
+            {'type': 'item.completed', 'item': {'type': 'command_execution', 'status': 'failed', 'exit_code': 7}},
+            {'type': 'turn.completed'},
+        ], 7 if mode == 'fatal' else 0)
+        terminal = {**native, 'timed_out': False, 'malformed_events': 0,
+                    'error': None, 'context_reason': None}
+        returns = []; evidence = []
+        def run(**kwargs):
+            folder = Path(kwargs['evidence']); folder.mkdir(exist_ok=True)
+            (folder / 'result.json').write_text(json.dumps(terminal), encoding='utf-8')
+            evidence.append(folder / 'result.json')
+            return terminal
+        monkeypatch.setattr(module, 'run', run)
+        write_charter(tmp_path)
+        patrol_signal.raise_signal(tmp_path, letter_number='fixture#1', archived_filename='reply.docx', now=NOW)
+        state_path = resolve_patrol_dispatch_failure_state_path(tmp_path)
+        pd.save_failure_state(state_path, {'consecutive_failures': 2})
+        initial = patrol_signal.read_signal(tmp_path)
+        class ProviderProc(FakeProc):
+            def __init__(self, argv):
+                super().__init__(); self.argv = argv
+            def wait(self):
+                if mode in ('consumed', 'new_signal'):
+                    patrol_signal.clear_signal(tmp_path)
+                if mode == 'new_signal' and not returns:
+                    from datetime import timedelta
+                    patrol_signal.raise_signal(tmp_path, letter_number='fixture#2',
+                        archived_filename='new.docx', now=NOW + timedelta(minutes=1))
+                monkeypatch.setattr(sys, 'argv', self.argv[2:])
+                monkeypatch.setattr(sys, 'stdin', io.StringIO('fixture reply'))
+                with redirect_stdout(io.StringIO()):
+                    code = module.main()
+                returns.append(code)
+                return code
+        audit = FakeAudit()
+        pd.dispatch_headless_patrol(tmp_path, now=NOW, audit=audit,
+            popen=lambda argv, **kwargs: ProviderProc(argv), pid_alive=lambda pid: False,
+            run_in_thread=lambda fn: fn(), monotonic=itertools.count(0, 100).__next__,
+            sleep=lambda seconds: None)
+        assert pd.load_failure_state(state_path)['consecutive_failures'] == counter
+        assert len(returns) == calls_expected
+        assert patrol_signal.read_signal(tmp_path).present is pending
+        if mode == 'unconsumed':
+            assert patrol_signal.read_signal(tmp_path).pending == initial.pending
+            assert returns == [0]  # complete process still fails original no_progress guard
+        elif mode == 'fatal':
+            assert returns == [1]
+        else:
+            assert returns == [0] * calls_expected
+        assert ('patrol_headless_dispatch_chain_halted' in audit.actions()) is (counter == 3)
+        for path in evidence:
+            saved = json.loads(path.read_text(encoding='utf-8'))
+            assert saved['accepted'] is False and saved['tool_failures'] == 1
+            assert saved['status'] == ('failed' if mode == 'fatal' else 'tool_failed')

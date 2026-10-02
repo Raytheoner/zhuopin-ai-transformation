@@ -439,3 +439,87 @@ def test_d3_native_windows_tree_and_child_handle(tmp_path, monkeypatch):
             if kernel.WaitForSingleObject(handle, 0) == 258:
                 kernel.TerminateProcess(handle, 1)
             kernel.CloseHandle(handle)
+
+
+class TestProcessCompletionExit:
+    THREAD = '01234567-89ab-cdef-0123-456789abcdef'
+
+    @staticmethod
+    def result(p, *, failed_tool=True, exit_code=0):
+        events = [{'type': 'thread.started', 'thread_id': TestProcessCompletionExit.THREAD}]
+        if failed_tool:
+            events.append({'type': 'item.completed', 'item': {
+                'type': 'command_execution', 'status': 'failed', 'exit_code': 7}})
+        events.append({'type': 'turn.completed'})
+        return {**p.summarize(events, exit_code), 'timed_out': False,
+                'malformed_events': 0, 'error': None, 'context_reason': None}
+
+    @staticmethod
+    def cli(p, result, tmp_path, monkeypatch, *, explicit):
+        import io
+        evidence = tmp_path / 'evidence'
+        evidence.mkdir(exist_ok=True)
+        original = json.dumps(result, sort_keys=True).encode('utf-8')
+        def run(**kwargs):
+            assert 'process_completion_exit' not in kwargs
+            (evidence / 'result.json').write_bytes(original)
+            return result
+        monkeypatch.setattr(p, 'run', run)
+        monkeypatch.setattr(sys, 'argv', ['model_provider.py', '--workspace', str(tmp_path),
+            '--evidence', str(evidence), *(['--process-completion-exit'] if explicit else [])])
+        monkeypatch.setattr(sys, 'stdin', io.StringIO('isolated lifecycle fixture'))
+        code = p.main()
+        assert (evidence / 'result.json').read_bytes() == original
+        return code
+
+    def test_default_keeps_tool_failure_nonzero(self, tmp_path, monkeypatch):
+        p = provider(); result = self.result(p)
+        assert self.cli(p, result, tmp_path, monkeypatch, explicit=False) == 1
+        assert result['status'] == 'tool_failed' and result['accepted'] is False
+
+    @pytest.mark.parametrize('failed_tool', [True, False])
+    def test_explicit_mode_reports_completed_process_without_accepting_output(
+            self, tmp_path, monkeypatch, failed_tool):
+        p = provider(); result = self.result(p, failed_tool=failed_tool)
+        assert self.cli(p, result, tmp_path, monkeypatch, explicit=True) == 0
+        assert result['status'] == ('tool_failed' if failed_tool else 'output_needs_review')
+        assert result['tool_failures'] == (1 if failed_tool else 0)
+        assert result['accepted'] is False
+
+    @pytest.mark.parametrize('updates, expected', [
+        ({'exit_code': 7, 'status': 'failed'}, 1),
+        ({'status': 'failed'}, 1),
+        ({'status': 'incomplete'}, 1),
+        ({'status': 'paused'}, 1),
+        ({'status': 'start_failed', 'error': 'unavailable'}, 1),
+        ({'status': 'timeout', 'timed_out': True}, 124),
+        ({'timed_out': True}, 1),
+        ({'status': 'context_stopped', 'context_reason': 'context_unavailable'}, 1),
+        ({'context_reason': 'context_unavailable'}, 1),
+        ({'context_reason': 'hard_limit'}, 1),
+        ({'status': 'protocol_error', 'malformed_events': 1}, 1),
+        ({'malformed_events': 1}, 1),
+        ({'malformed_events': False}, 1),
+        ({'error': 'CLI error'}, 1),
+        ({'thread_id': None}, 1),
+        ({'thread_id': ''}, 1),
+        ({'thread_id': 'not-a-native-uuid'}, 1),
+        ({'thread_id': True}, 1),
+        ({'turn_completed': False}, 1),
+        ({'turn_completed': 1}, 1),
+        ({'exit_code': False}, 1),
+        ({'exit_code': True}, 1),
+        ({'exit_code': 0.0}, 1),
+        ({'exit_code': '0'}, 1),
+        ({'accepted': True}, 1),
+    ])
+    def test_explicit_mode_rejects_fatal_or_incomplete_terminal(
+            self, tmp_path, monkeypatch, updates, expected):
+        p = provider(); result = {**self.result(p), **updates}
+        assert self.cli(p, result, tmp_path, monkeypatch, explicit=True) == expected
+
+    @pytest.mark.parametrize('field', ['exit_code', 'thread_id', 'turn_completed',
+        'timed_out', 'malformed_events', 'error', 'context_reason', 'accepted'])
+    def test_explicit_mode_rejects_missing_terminal_field(self, tmp_path, monkeypatch, field):
+        p = provider(); result = self.result(p); result.pop(field)
+        assert self.cli(p, result, tmp_path, monkeypatch, explicit=True) == 1
