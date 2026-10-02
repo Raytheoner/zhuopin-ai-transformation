@@ -20,7 +20,7 @@ Architecture: 保留现有调度和消费状态机，以统一 Codex provider �
 - [x] 5.3 主线ff、新工作树原生继承及InteractiveToken真实调度验证已通过；末轮注册器源码于11:20实际提交08428d42，-WhatIf定向回归1通过，任务仍Disabled。
 - [x] 6.1 独立原生审查四个关键接缝，四项缺陷均RED→GREEN。
 - [x] 6.2 接力runner复用provider；新汇总状态探针及原生占号审计修复并验证。
-- [ ] 6.3 三消费者规定范围验收及末轮实际commit已核；追加的 intent→deploy 设计与 inline 计划已获批准，Tasks 1–5 已在隔离分支实现。Task 6 离线回归及旧候选原生夹具到 release 停点有证据；独立审查的四个闸门缺口已修，但最终源码尚须跑全新原生整链；用户已批准人守启动，后台触发器不属本线当前验收目标。#648 与业务开发闸保持 open/关闭；不以登记或 exit 0 代替验收。
+- [x] 6.3 2026-10-02：最终实际原生正常阶段链5bfb、独立Luna review与release_ready已核；批准补修与900005真实回灌事务、纯master零回归比较、4a085781逐项授权ff及原位监听重启/启用均落地。当前主仓公开入口已复核。六入口证据及限制见 0-学习与工具/codex-handoff/0930Y-MVP交付-2026-10-02.md；不把进程0、tool_failed或acceptedfalse当作业务接受。五自动化仍PAUSED，.51/真实外发/L2保持原逐项闸。
 
 ## 全局约束
 

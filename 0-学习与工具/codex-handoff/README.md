@@ -1,3 +1,5 @@
+> 2026-10-02T16:27:43.7178516+08:00 0930Y现时交付：master已ff4a085781；原监听现场核验通过后，原patrol消费者已启用gpt-6-luna。六入口证据、旧失败、真实积压保留及授权边界见 [0930Y-MVP交付-2026-10-02.md](0930Y-MVP交付-2026-10-02.md)。下文较早日期的暂停/待验收描述保留为历史，不替代本次实测；其他五自动化仍PAUSED，PollGuard仍Disabled。
+
 > 2026-09-26 现时状态：主仓普通身份 sandbox、正常信任 hooks、新工作树继承及三条模型消费者规定范围原生 E2E 已通过；轮询任务采用已登录账户 InteractiveToken，任务仍 Disabled。追加的 intent→deploy 前台 guardian 与阶段驱动已在隔离分支实现，并发 claim 锁复审修复后控制器 241 项、Aibot 接缝相关 110 项通过；最终源码的新原生 intent→OpenSpec→实现→CI→独立 review→release-prep 链仍待运行，业务开工闸关闭。真实业务自动消费及五项 Codex 自动化保持暂停，Off LAN 不连接 .51。现时证据见 OpenSpec acceptance.md 末节；以下历史记录不代替现时状态。
 
 ## 2026-09-30 六业务入口与验收分层
