@@ -1,7 +1,12 @@
 # q2-8d-review-verdict-mvp Proposal
 
+> **现时审批：✅ 转写intent已确认、D1–D8已通过**（09-18 `1a`/`2a`，09-19追认；来源为同包intent/design/tasks及场景笔记）。本包业务场景性质不变。
+> **原09-17起草状态快照（保留原文）**：
+>
 > 🔴 **状态：档 1 mock 已全绿（12 passed），design 审 🟡 待 Shao Peishen。** 由无头泳道 `B-0917_波1bis / op0917q-q2-verdict`（件号 `OP-0917-Q`，队列 §一 `#612`）起草并建造。**本包类别 ＝ 业务场景变更包**（非机制/环境类）⇒ `openspec/config.yaml`「本次退休哪一个既有守卫」按其括注不适用。
 > 🔴 **`intent.md` 现为 `status: 待确认`**（转写版，非 grill；`#612` 明令不跑 grill）⇒ CI `scene-intent-gate-lint` 对本包报违规属**如实状态**，转 `已确认` 由 Shao Peishen 定。
+>
+> 上述“待审／intent待确认／CI如实违规”在审批后已过期；未重新运行CI或产品验证，不把历史状态作为现时阻塞。09-19晚历史部署与当前主仓待合分开记于`0-学习与工具/codex-handoff/Q2-612历史部署与主仓交付分离核验-2026-10-04.md`。
 
 ## Why（为什么做）
 
@@ -31,8 +36,8 @@
 ## 验收与晋档条件（强制，四档口径）
 
 - **本变更包交付后场景所处档位 ＝ 档 1（mock 验证）**：11 份合成样本覆盖 合格/边界/客户模板/七步法/结构性退回/供应商编制/红线④⑥触发/研发/场景未标注，`pytest -q --tb=short --maxfail=5` **12 passed**；`openspec validate --strict` 通过；CLI 出清单＋审计 JSONL。
-- **晋档 2（真实数据跑通）条件**：① design 审通过（🟡）；② 语义层实现（V3 固定模型＋temperature=0＋prompt 版本入 audit；V4 二级置信）；③ 用验收集 10 份跑校准，**红线②③排除在指标外、样本 3 单列**，语义规则一致率≥80%、红线假阳≤2%（V2）；④ `PENDING.SEMANTIC_LAYER_ACCEPTANCE` 签认落档；⑤ `feed_source.from_qda` 接 QD-A 真实解析（LAN 留步）。
-- **晋档 3（内部服务）**：门户页 `/quality/q2`（不新起端口）、`.51` 部署＋冒烟＋回滚 SOP、跟进信（串行闸三分支）。
+- **晋档 2（真实数据跑通）条件**：① design审已通过（09-18/09-19）；② 语义层实现（V3 固定模型＋temperature=0＋prompt 版本入 audit；V4 二级置信）；③ 用验收集 10 份跑校准，**红线②③排除在指标外、样本 3 单列**，语义规则一致率≥80%、红线假阳≤2%（V2）；④ `PENDING.SEMANTIC_LAYER_ACCEPTANCE` 签认落档；⑤ `feed_source.from_qda` 接 QD-A 真实解析（LAN 留步）。
+- **晋档 3（内部服务）**：门户页`/quality/q2`、`.51`部署＋冒烟＋回滚SOP、跟进信（串行闸三分支）。09-19已批过渡期独立端口8098的历史部署事实另见#612回灌；不因已有mock门户而宣称§4真实数据或完整晋档已通过。
 - **价值指标（质量型为主）**：8D 首次评审通过率↑、退回轮次↓、评审工时↓（基线由陈忱确认）；红线误判＝0 为硬指标（宁可漏报不可误报）。
 - **LLM 判据黄金集**：档 1 不含 LLM 运行时判断；语义层上线前须以验收集为黄金集（V5 漂移闸）。
 
@@ -55,6 +60,6 @@
 ### 伴生文件的 .gitignore 覆盖（强制项，队列 #328 子项②）
 本变更新增自动生成物：`reports/q2_verdicts.md`／`reports/q2_audit.jsonl`（CLI 产出）。`git check-ignore -v` 实测：`4-数字员工/质量部/Q2-8D报告AI判定/.gitignore:2:reports/` 命中 `reports/x.md`；`:11:data/golden/` 命中 `data/golden/a.pptx`；`data/rules/*.json`、`data/mock/*.json` 实测**不**命中，刻意不整体忽略 json（评估件 §5.6 的 QD-A 地雷不复制）。
 
-## design 停审点（🟡 Shao Peishen）
+## 审批与未闭合项（2026-10-04事实回灌）
 
-见 `design.md` D1–D8。**本包停在档 1**：design 审通过前不接真实解析、不上语义层、不部署、不发信。
+D1–D8及转写intent已审批；本包仍是档1 mock，§4真实数据/语义来源/校准/专业签认与5.3仍未闭。历史09-19部署已有官方执行记录，但三脚本及相应源码/纪律改动仍仅在原部署分支，主仓交付未收口。本轮不改业务设计、不代签专业口径、不改代码/生产、不发送或合分支。
