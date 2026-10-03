@@ -1,5 +1,8 @@
 # oem-audit-fail-closed Tasks
 
+> ✅ **2026-10-04 Native历史消费（#466）**：7.7规范映射已于09-07获本人2(a)批准并落字，现同步勾选；7.6主spec仍未同步，不把本包规划artifacts已齐当作实现或归档全闭。
+
+
 > 合规口径（D2=(a)）已由 Shao Peishen 本人于 2026-09-02 裁决，本包只实现，不再走 design 审拍板；`design.md` 记录的是实现层技术决策。
 
 ## 1. 出件
@@ -43,4 +46,4 @@
 - [x] 7.4 **调用点清单复核（重跑穷举 grep，非抽样）**：`grep -rn "OEMRouter(" --include="*.py"` 全仓 **16 处**，与 §2 逐条对齐、无新增生产调用点 —— 1 处类文档字符串示例（`router.py:53`）＋ 15 处测试（FI9 8 处、平台 `test_oem_isolation_audit.py` 5 处、`test_smoke.py` 2 处）；`import` 面另有 FI10 `tests/test_scaffold.py:28` 仅导入不实例化（§2.7 原表述「三处均为文档字符串/注释提及」对该行不精确，**结论不变**：FI10 无实例化）。**全仓无任何生产代码构造 `OEMRouter`**，QD-B OEM 路由红线仍未接线【CC】
 - [x] 7.5 **运行期产物不污染仓库**：`test_smoke.py::test_isolation_blocks_cross_oem` 已 `monkeypatch.chdir(tmp_path)`；`**/reports/`（根 `.gitignore:41`）＋ `reports/audit_log.jsonl`（平台 `.gitignore:16`）双重忽略；全仓 `find -name audit_log.jsonl` 零命中，`git status` 无 `reports` 相关条目【CC】
 - [ ] 7.6 🟡 **主 spec 未同步（本次新发现，须先定归属再动手）**：`openspec/specs/platform-oem-isolation/spec.md` L9／L15-17 仍是**旧文** ——「无 audit 注入时仅抛错（**向后兼容**）」＋ Scenario「无 audit 注入时仅抛错」。该 Scenario 现已与实现**直接相反**（默认构造现会经默认 logger 留痕，默认 logger 不可用时 fail-closed 拒绝）。⚠️ 队列 `#466` 状态格「文本侧冲突已于 2026-09-02 收口」只在**变更包 delta 内**成立，主 spec 尚未落。🔴 **注意 archive 次序**：`oem-chroma-ownership-rejudge` 与本包**各持同一 Requirement 的 MODIFIED**，本包版本是其超集（多一段 fail-closed 义务范围限定）⇒ 必须 **先 archive `oem-chroma-ownership-rejudge`、后 archive 本包**，反序会把已收紧的文本回退。归属与执行时机待业务总线派发【CC】
-- [ ] 7.7 🟡 **`3-治理与合规/OEM数据隔离规范.md` §5 映射表 §3.2 行现状改判**（`#466` 剩余项②，队列已注明「归业务总线另批」）：现文 `⚠️ **部分实现**`，按本次复验应改判 `✅ 已实现`。改动属「改口径判据」⇒ 停等 Shao Peishen 一个字母，**本会话不动该文件**；拟改文本已随 `OP-0907-T` 复命件交出【CC】
+- [x] 7.7 🟡 **`3-治理与合规/OEM数据隔离规范.md` §5 映射表 §3.2 行现状改判**（`#466` 剩余项②，队列已注明「归业务总线另批」）：现文 `⚠️ **部分实现**`，按本次复验应改判 `✅ 已实现`。改动属「改口径判据」⇒ 停等 Shao Peishen 一个字母，**本会话不动该文件**；拟改文本已随 `OP-0907-T` 复命件交出【CC】 ✅ **2026-10-04 Native历史交付消费**：规范§5映射与V1.2已记录Shao Peishen 2026-09-07答2(a)放行并改为已实现，故本项已于当日落地；现时仅回灌本tasks。原“停等一个字母”为历史快照，7.6主spec同步仍未完成；本次未运行产品测试。
