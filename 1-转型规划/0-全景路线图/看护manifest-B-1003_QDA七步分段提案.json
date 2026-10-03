@@ -1,0 +1,26 @@
+{
+  "batch_id": "B-1003_QDA七步分段提案",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1003_QDA七步分段提案.md",
+  "candidates": [
+    {
+      "task_id": "qda-seven-step-extraction",
+      "row": 656,
+      "section": "一",
+      "task_excerpt": "QD-A七步法原始章节离线技术提案",
+      "next_action": "隔离QD-A七步分段技术提案",
+      "opener_id": "A1",
+      "lane": "op1003e-qda-seven-step",
+      "touches": [
+        "openspec/changes/qda-seven-step-extraction/"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1003-qda-seven-step-proposal\\lan-decision.json"
+    }
+  ],
+  "workspaces": {
+    "qda-seven-step-extraction": "C:\\Users\\Paul Shao\\.codex\\worktrees\\qda-seven-step-proposal-1003\\zhuopin-ai"
+  },
+  "authorizations": {}
+}
