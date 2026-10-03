@@ -1,0 +1,26 @@
+{
+  "batch_id": "B-1003_R7方向信号提案",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1003_R7方向信号提案.md",
+  "candidates": [
+    {
+      "task_id": "fi2-r7-directional-signals",
+      "row": 657,
+      "section": "一",
+      "task_excerpt": "FI2 R7方向与采购信号离线技术提案",
+      "next_action": "隔离FI2R7方向与内部采购信号技术提案",
+      "opener_id": "A1",
+      "lane": "op1003f-fi2-r7-direction",
+      "touches": [
+        "openspec/changes/fi2-r7-directional-signals/"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1003-fi2-r7-proposal\\lan-decision.json"
+    }
+  ],
+  "workspaces": {
+    "fi2-r7-directional-signals": "C:\\Users\\Paul Shao\\.codex\\worktrees\\fi2-r7-proposal-1003\\zhuopin-ai"
+  },
+  "authorizations": {}
+}
