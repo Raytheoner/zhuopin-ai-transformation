@@ -1,0 +1,755 @@
+{
+  "bundle_id": "OPS-EVIDENCE-DRAFT",
+  "revision": "r1",
+  "synthetic": true,
+  "status": "requirements_preparation_only",
+  "author_role": "Native OP-1002-Z",
+  "o3_sub_bundle_id": "O3-MOCK-OUT01/r1",
+  "o3_outbound_cases": [
+    {
+      "case_id": "O3-OUT-C01",
+      "synthetic": true,
+      "inputs": {
+        "oem_scope": "MOCK-OEM-A",
+        "direction": "outbound",
+        "shipment_id": "MOCK-OUT-01",
+        "customer_delivery_ref": "MOCK-DELIVERY-01",
+        "dispatch_quantity": 100,
+        "promise_versions": [
+          {
+            "revision": "r1",
+            "promised_delivery_at": "2026-10-01T12:00:00+08:00",
+            "issued_at": "2026-10-01T08:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/promise/r1/2026-10-01T12:00:00+08:00"
+          }
+        ],
+        "events": [
+          {
+            "source_event_id": "OUT01-D",
+            "event_type": "dispatch",
+            "occurred_at": "2026-10-01T09:00:00+08:00",
+            "retrieved_at": "2026-10-01T09:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT01-D",
+            "quantity": 100
+          },
+          {
+            "source_event_id": "OUT01-T",
+            "event_type": "checkpoint",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T10:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT01-T"
+          },
+          {
+            "source_event_id": "OUT01-R",
+            "event_type": "customer_received",
+            "occurred_at": "2026-10-01T12:00:00+08:00",
+            "retrieved_at": "2026-10-01T12:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT01-R",
+            "quantity": 100
+          }
+        ]
+      },
+      "input_sha256": "4421fa52358b9db295d33022f3149b17901e2cd814579bc92777fdf4efd6bef9",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "three source events present; dates/quantities are synthetic",
+          "no service-level judgment"
+        ],
+        "time_deltas_min": {
+          "r1": 0
+        },
+        "quantity_deltas": {
+          "customer_received_minus_dispatch": 0
+        }
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O3-OUT-C02",
+      "synthetic": true,
+      "inputs": {
+        "oem_scope": "MOCK-OEM-A",
+        "direction": "outbound",
+        "shipment_id": "MOCK-OUT-02",
+        "customer_delivery_ref": "MOCK-DELIVERY-02",
+        "dispatch_quantity": 100,
+        "promise_versions": [
+          {
+            "revision": "r1",
+            "promised_delivery_at": "2026-10-01T12:00:00+08:00",
+            "issued_at": "2026-10-01T08:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/promise/r1/2026-10-01T12:00:00+08:00"
+          }
+        ],
+        "events": [
+          {
+            "source_event_id": "OUT02-D",
+            "event_type": "dispatch",
+            "occurred_at": "2026-10-01T09:00:00+08:00",
+            "retrieved_at": "2026-10-01T09:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT02-D",
+            "quantity": 100
+          }
+        ]
+      },
+      "input_sha256": "edd6b1f177c80a226ff1f7de8abf02aa2afd594ab7f519bd4cc3d298f228fc08",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "checkpoint evidence absent",
+          "customer receipt evidence absent",
+          "absence is not proof of loss"
+        ]
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O3-OUT-C03",
+      "synthetic": true,
+      "inputs": {
+        "oem_scope": "MOCK-OEM-A",
+        "direction": "outbound",
+        "shipment_id": "MOCK-OUT-03",
+        "customer_delivery_ref": "MOCK-DELIVERY-03",
+        "dispatch_quantity": 100,
+        "promise_versions": [
+          {
+            "revision": "r1",
+            "promised_delivery_at": "2026-10-01T12:00:00+08:00",
+            "issued_at": "2026-10-01T08:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/promise/r1/2026-10-01T12:00:00+08:00"
+          }
+        ],
+        "events": [
+          {
+            "source_event_id": "OUT03-D",
+            "event_type": "dispatch",
+            "occurred_at": "2026-10-01T09:00:00+08:00",
+            "retrieved_at": "2026-10-01T09:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT03-D",
+            "quantity": 100
+          },
+          {
+            "source_event_id": "OUT03-R",
+            "event_type": "customer_received",
+            "occurred_at": "2026-10-01T12:00:00+08:00",
+            "retrieved_at": "2026-10-01T12:01:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT03-R",
+            "quantity": 100
+          },
+          {
+            "source_event_id": "OUT03-R",
+            "event_type": "customer_received",
+            "occurred_at": "2026-10-01T12:00:00+08:00",
+            "retrieved_at": "2026-10-01T12:10:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT03-R",
+            "quantity": 100
+          },
+          {
+            "source_event_id": "OUT03-T",
+            "event_type": "checkpoint",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T13:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT03-T"
+          }
+        ]
+      },
+      "input_sha256": "05cc99369491b928791296395e11b370d6c47fbdc24b82fa7f83fd43ff2c95a5",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "same source receipt event retrieved twice: duplicate candidate, preserve both records",
+          "checkpoint occurred earlier but retrieved later",
+          "do not double-count receipt automatically"
+        ],
+        "duplicate_source_event_candidates": [
+          "OUT03-R"
+        ]
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O3-OUT-C04",
+      "synthetic": true,
+      "inputs": {
+        "oem_scope": "MOCK-OEM-A",
+        "direction": "outbound",
+        "shipment_id": "MOCK-OUT-04",
+        "customer_delivery_ref": "MOCK-DELIVERY-04",
+        "dispatch_quantity": 100,
+        "promise_versions": [
+          {
+            "revision": "r1",
+            "promised_delivery_at": "2026-10-01T12:00:00+08:00",
+            "issued_at": "2026-10-01T08:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/promise/r1/2026-10-01T12:00:00+08:00"
+          }
+        ],
+        "events": [
+          {
+            "source_event_id": "OUT04-D",
+            "event_type": "dispatch",
+            "occurred_at": "2026-10-01T09:00:00+08:00",
+            "retrieved_at": "2026-10-01T09:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT04-D",
+            "quantity": 100
+          },
+          {
+            "source_event_id": "OUT04-R",
+            "event_type": "customer_received",
+            "occurred_at": "2026-10-01T12:40:00+08:00",
+            "retrieved_at": "2026-10-01T12:40:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT04-R",
+            "quantity": 100
+          }
+        ]
+      },
+      "input_sha256": "9ec04a39a4b1f5c703cd96545e8412ca725fd26dd2250ebb28d9a03298d75f90",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "delta is relative to r1 only; not a severity threshold"
+        ],
+        "time_deltas_min": {
+          "r1": 40
+        }
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O3-OUT-C05",
+      "synthetic": true,
+      "inputs": {
+        "oem_scope": "MOCK-OEM-A",
+        "direction": "outbound",
+        "shipment_id": "MOCK-OUT-05",
+        "customer_delivery_ref": "MOCK-DELIVERY-05",
+        "dispatch_quantity": 100,
+        "promise_versions": [
+          {
+            "revision": "r1",
+            "promised_delivery_at": "2026-10-01T12:00:00+08:00",
+            "issued_at": "2026-10-01T08:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/promise/r1/2026-10-01T12:00:00+08:00"
+          }
+        ],
+        "events": [
+          {
+            "source_event_id": "OUT05-D",
+            "event_type": "dispatch",
+            "occurred_at": "2026-10-01T09:00:00+08:00",
+            "retrieved_at": "2026-10-01T09:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT05-D",
+            "quantity": 100
+          },
+          {
+            "source_event_id": "OUT05-R-A",
+            "event_type": "customer_report",
+            "occurred_at": "2026-10-01T12:00:00+08:00",
+            "retrieved_at": "2026-10-01T12:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT05-R-A",
+            "quantity": 98
+          },
+          {
+            "source_event_id": "OUT05-R-B",
+            "event_type": "customer_receipt_document",
+            "occurred_at": "2026-10-01T12:00:00+08:00",
+            "retrieved_at": "2026-10-01T12:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT05-R-B",
+            "quantity": 100
+          }
+        ],
+        "attachments": [
+          {
+            "source_ref": "mock://O3-MOCK-OUT01/OUT05-damage",
+            "raw_text": "2 pieces reported damaged",
+            "reported_damaged_quantity": 2
+          }
+        ]
+      },
+      "input_sha256": "b95300e02605db37972badc427dd3a11c74d67eb4fb0c45a5c760719ff15a47a",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "two customer quantity sources conflict",
+          "damage and short receipt remain distinct",
+          "no liability or compensation decision"
+        ],
+        "quantity_deltas": {
+          "customer_report_minus_dispatch": -2,
+          "receipt_document_minus_dispatch": 0
+        }
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O3-OUT-C06",
+      "synthetic": true,
+      "inputs": {
+        "oem_scope": "MOCK-OEM-A",
+        "direction": "outbound",
+        "shipment_id": "MOCK-OUT-06",
+        "customer_delivery_ref": "MOCK-DELIVERY-06",
+        "dispatch_quantity": 100,
+        "promise_versions": [
+          {
+            "revision": "r1",
+            "promised_delivery_at": "2026-10-01T12:00:00+08:00",
+            "issued_at": "2026-10-01T08:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/promise/r1/2026-10-01T12:00:00+08:00"
+          },
+          {
+            "revision": "r2",
+            "promised_delivery_at": "2026-10-01T12:30:00+08:00",
+            "issued_at": "2026-10-01T09:30:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/promise/r2/2026-10-01T12:30:00+08:00"
+          }
+        ],
+        "events": [
+          {
+            "source_event_id": "OUT06-D",
+            "event_type": "dispatch",
+            "occurred_at": "2026-10-01T09:00:00+08:00",
+            "retrieved_at": "2026-10-01T09:00:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT06-D",
+            "quantity": 100
+          },
+          {
+            "source_event_id": "OUT06-R",
+            "event_type": "customer_received",
+            "occurred_at": "2026-10-01T12:40:00+08:00",
+            "retrieved_at": "2026-10-01T12:40:00+08:00",
+            "source_ref": "mock://O3-MOCK-OUT01/OUT06-R",
+            "quantity": 100
+          }
+        ]
+      },
+      "input_sha256": "166ae856a69e59090b16117e6bb4e96b88c9fad4747066731a254417e20c821f",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "preserve both promises and source revisions",
+          "effective promise selection pending professional signoff"
+        ],
+        "time_deltas_min": {
+          "r1": 40,
+          "r2": 10
+        }
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    }
+  ],
+  "o4_cases": [
+    {
+      "case_id": "O4-C01",
+      "synthetic": true,
+      "inputs": {
+        "assets": [
+          {
+            "asset_id": "MOCK-ASSET-01",
+            "oem_scope": "MOCK-OEM-A",
+            "display_label": "MOCK-ASSET-01",
+            "device_category": null,
+            "source_ref": "mock://O4-common/MOCK-OEM-A/asset/MOCK-ASSET-01"
+          }
+        ],
+        "measurements": [
+          {
+            "source_event_id": "M01",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-01",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": 10.0,
+            "declared_unit": "unit_unassigned",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M01/r1"
+          }
+        ],
+        "maintenance": [
+          {
+            "record_id": "MAINT-MOCK-ASSET-01",
+            "asset_id": "MOCK-ASSET-01",
+            "oem_scope": "MOCK-OEM-A",
+            "occurred_at": "2026-10-01T09:00:00+08:00",
+            "raw_report": "synthetic maintenance record; no fault label confirmed",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/maintenance/MOCK-ASSET-01",
+            "professional_fault_label": null
+          }
+        ]
+      },
+      "input_sha256": "dd3a071f3b9cb1fa23c6938673c3e68c736958dfb19ed840cc54bfa0a54831c8",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "common identity/time references present",
+          "device category and physical signal meaning unselected",
+          "no prediction"
+        ],
+        "prediction_status": "not_evaluated",
+        "health_score": null,
+        "failure_probability": null,
+        "remaining_useful_life": null
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O4-C02",
+      "synthetic": true,
+      "inputs": {
+        "assets": [],
+        "measurements": [
+          {
+            "source_event_id": "M02",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-02",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": 11.0,
+            "declared_unit": "unit_unassigned",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M02/r1"
+          }
+        ],
+        "maintenance": []
+      },
+      "input_sha256": "c84bf3983d0625569a7339012b4d8545b1c87f8f834122cf47bbe5d4c98855b8",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "asset reference lacks supporting asset record",
+          "do not borrow another asset record"
+        ],
+        "prediction_status": "not_evaluated",
+        "health_score": null,
+        "failure_probability": null,
+        "remaining_useful_life": null
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O4-C03",
+      "synthetic": true,
+      "inputs": {
+        "assets": [
+          {
+            "asset_id": "MOCK-ASSET-03",
+            "oem_scope": "MOCK-OEM-A",
+            "display_label": "MOCK-ASSET-03",
+            "device_category": null,
+            "source_ref": "mock://O4-common/MOCK-OEM-A/asset/MOCK-ASSET-03"
+          }
+        ],
+        "measurements": [
+          {
+            "source_event_id": "M03",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-03",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": null,
+            "declared_unit": "unit_unassigned",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M03/r1"
+          }
+        ],
+        "maintenance": []
+      },
+      "input_sha256": "b6f7ca0f22967a25a3e63f7f3a1e24cf75108b1fbf9766f588fc2c582e5e7855",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "raw measurement value missing",
+          "missing data is not equipment failure"
+        ],
+        "prediction_status": "not_evaluated",
+        "health_score": null,
+        "failure_probability": null,
+        "remaining_useful_life": null
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O4-C04",
+      "synthetic": true,
+      "inputs": {
+        "assets": [
+          {
+            "asset_id": "MOCK-ASSET-04",
+            "oem_scope": "MOCK-OEM-A",
+            "display_label": "MOCK-ASSET-04",
+            "device_category": null,
+            "source_ref": "mock://O4-common/MOCK-OEM-A/asset/MOCK-ASSET-04"
+          }
+        ],
+        "measurements": [
+          {
+            "source_event_id": "M04-A",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-04",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": 12.0,
+            "declared_unit": "unit_A",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M04-A/r1"
+          },
+          {
+            "source_event_id": "M04-B",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-04",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": 13.0,
+            "declared_unit": "unit_B",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M04-B/r1"
+          }
+        ],
+        "maintenance": []
+      },
+      "input_sha256": "1d8c65c9a366acc4853cfce1e4ff000fa2cf068c8cd0d1338d4ac4d071bba21f",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "unit meanings/conversion unknown",
+          "preserve raw values; no physical anomaly classification"
+        ],
+        "prediction_status": "not_evaluated",
+        "health_score": null,
+        "failure_probability": null,
+        "remaining_useful_life": null
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O4-C05",
+      "synthetic": true,
+      "inputs": {
+        "assets": [
+          {
+            "asset_id": "MOCK-ASSET-05",
+            "oem_scope": "MOCK-OEM-A",
+            "display_label": "MOCK-ASSET-05",
+            "device_category": null,
+            "source_ref": "mock://O4-common/MOCK-OEM-A/asset/MOCK-ASSET-05"
+          }
+        ],
+        "measurements": [
+          {
+            "source_event_id": "M05",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-05",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": 14.0,
+            "declared_unit": "unit_unassigned",
+            "occurred_at": "2026-10-01T10:00:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M05/r1"
+          }
+        ],
+        "maintenance": []
+      },
+      "input_sha256": "fe75c72af7123f212c9f84fac495cdb4dea9410049b53e84446ad7b44875764a",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "original occurred_at has no timezone",
+          "do not default to host timezone"
+        ],
+        "prediction_status": "not_evaluated",
+        "health_score": null,
+        "failure_probability": null,
+        "remaining_useful_life": null
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O4-C06",
+      "synthetic": true,
+      "inputs": {
+        "assets": [
+          {
+            "asset_id": "MOCK-ASSET-06",
+            "oem_scope": "MOCK-OEM-A",
+            "display_label": "MOCK-ASSET-06",
+            "device_category": null,
+            "source_ref": "mock://O4-common/MOCK-OEM-A/asset/MOCK-ASSET-06"
+          }
+        ],
+        "measurements": [
+          {
+            "source_event_id": "M06",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-06",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": 15.0,
+            "declared_unit": "unit_unassigned",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M06/r1"
+          },
+          {
+            "source_event_id": "M06",
+            "source_revision": "r2",
+            "asset_id": "MOCK-ASSET-06",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": 16.0,
+            "declared_unit": "unit_unassigned",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M06/r2"
+          }
+        ],
+        "maintenance": []
+      },
+      "input_sha256": "ba7d67b4baa3d91b9f07f309ef23eb88c9843b9302327cd72808dafa778b5ae5",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "same source event has conflicting raw value versions",
+          "preserve both; correction policy pending design"
+        ],
+        "prediction_status": "not_evaluated",
+        "health_score": null,
+        "failure_probability": null,
+        "remaining_useful_life": null
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O4-C07",
+      "synthetic": true,
+      "inputs": {
+        "assets": [
+          {
+            "asset_id": "MOCK-ASSET-07A",
+            "oem_scope": "MOCK-OEM-A",
+            "display_label": "MOCK-ASSET-07A",
+            "device_category": null,
+            "source_ref": "mock://O4-common/MOCK-OEM-A/asset/MOCK-ASSET-07A"
+          },
+          {
+            "asset_id": "MOCK-ASSET-07B",
+            "oem_scope": "MOCK-OEM-A",
+            "display_label": "MOCK-ASSET-07B",
+            "device_category": null,
+            "source_ref": "mock://O4-common/MOCK-OEM-A/asset/MOCK-ASSET-07B"
+          }
+        ],
+        "measurements": [
+          {
+            "source_event_id": "M07",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-07A",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": 17.0,
+            "declared_unit": "unit_unassigned",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M07/r1"
+          }
+        ],
+        "maintenance": [
+          {
+            "record_id": "MAINT-MOCK-ASSET-07B",
+            "asset_id": "MOCK-ASSET-07B",
+            "oem_scope": "MOCK-OEM-A",
+            "occurred_at": "2026-10-01T09:00:00+08:00",
+            "raw_report": "synthetic maintenance record; no fault label confirmed",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/maintenance/MOCK-ASSET-07B",
+            "professional_fault_label": null
+          }
+        ]
+      },
+      "input_sha256": "b29f01d810d52b6b5332d9082bbc0cad95a1731e068801c61a90e630294e6fde",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "measurement and maintenance belong to different assets",
+          "no cross-asset training-label association"
+        ],
+        "prediction_status": "not_evaluated",
+        "health_score": null,
+        "failure_probability": null,
+        "remaining_useful_life": null
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    },
+    {
+      "case_id": "O4-C08",
+      "synthetic": true,
+      "inputs": {
+        "assets": [
+          {
+            "asset_id": "MOCK-ASSET-08",
+            "oem_scope": "MOCK-OEM-A",
+            "display_label": "same mock label",
+            "device_category": null,
+            "source_ref": "mock://O4-common/MOCK-OEM-A/asset/MOCK-ASSET-08"
+          },
+          {
+            "asset_id": "MOCK-ASSET-08",
+            "oem_scope": "MOCK-OEM-B",
+            "display_label": "same mock label",
+            "device_category": null,
+            "source_ref": "mock://O4-common/MOCK-OEM-B/asset/MOCK-ASSET-08"
+          }
+        ],
+        "measurements": [
+          {
+            "source_event_id": "M08-A",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-08",
+            "oem_scope": "MOCK-OEM-A",
+            "metric_key": "synthetic_signal",
+            "raw_value": 18.0,
+            "declared_unit": "unit_unassigned",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-A/M08-A/r1"
+          },
+          {
+            "source_event_id": "M08-B",
+            "source_revision": "r1",
+            "asset_id": "MOCK-ASSET-08",
+            "oem_scope": "MOCK-OEM-B",
+            "metric_key": "synthetic_signal",
+            "raw_value": 19.0,
+            "declared_unit": "unit_unassigned",
+            "occurred_at": "2026-10-01T10:00:00+08:00",
+            "retrieved_at": "2026-10-01T11:00:00+08:00",
+            "source_ref": "mock://O4-common/MOCK-OEM-B/M08-B/r1"
+          }
+        ],
+        "maintenance": []
+      },
+      "input_sha256": "3d5bc1bbee837a9893bb3ab135395adb17b3c72efaeee6ee92c4fa08b7c0da87",
+      "expected_manual_review": {
+        "evidence_observations": [
+          "same display label is not cross-scope identity",
+          "keep both scopes separate; no cross-OEM merge"
+        ],
+        "prediction_status": "not_evaluated",
+        "health_score": null,
+        "failure_probability": null,
+        "remaining_useful_life": null
+      },
+      "actual_run": null,
+      "professional_signoff": null
+    }
+  ],
+  "actual_run": null,
+  "professional_signoff": null,
+  "disclaimer": "Prepared synthetic source data and expected manual observations. No product execution, prediction, signoff or interface conformance claimed."
+}
