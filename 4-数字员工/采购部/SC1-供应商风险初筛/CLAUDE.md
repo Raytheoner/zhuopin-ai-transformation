@@ -36,11 +36,13 @@
 - ERP（U9C）：✅ ZpConnector 已接通（BOM/质检，外网限 BOM/Query，CommonEntity/Query 待开放）
 - 外部征信 API：⬜ 待评估（天眼查/企查查，财务维度）
 
-## 平台对齐记录（2026-06-18，PR#11 合 master）
-- 从单体迁移到平台 `zhuopin_platform`：连接器/通知器/审计均走底座
-- 交付准时率维度：数据不足（U9C 收货历史 Receivement 待开放）→ 分数为空+权重归一化，ZB0022 5→4 级
-- 53 tests 全绿（含 test_golden_real 真实夹具零漂移）
-- 待办 #7：U9C CommonEntity/Query 开放后接入真实历史准时率
+## 5. 状态时间线
+
+### 平台对齐记录（2026-06-18，PR#11 合 master）
+
+| 日期 | 状态 |
+|---|---|
+| 2026-06-18 | - 从单体迁移到平台 `zhuopin_platform`：连接器/通知器/审计均走底座<br>- 交付准时率维度：数据不足（U9C 收货历史 Receivement 待开放）→ 分数为空+权重归一化，ZB0022 5→4 级<br>- 53 tests 全绿（含 test_golden_real 真实夹具零漂移）<br>- 待办 #7：U9C CommonEntity/Query 开放后接入真实历史准时率 |
 
 ## 输出格式
 每份报告包含：供应商名称、评估日期、综合风险等级（1-5）、
