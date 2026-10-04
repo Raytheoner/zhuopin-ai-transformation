@@ -1,0 +1,25 @@
+{
+  "batch_id": "B-1004_物料窗口提示提案",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1004_物料窗口提示提案.md",
+  "candidates": [
+    {
+      "task_id": "sc8-material-window-disclosure-334",
+      "row": 334,
+      "section": "一",
+      "task_excerpt": "保供看板新增「物料看板」视图",
+      "next_action": "Excel 导出",
+      "opener_id": "A1",
+      "lane": "op1004h-sc8-material-window-334",
+      "touches": [
+        "openspec/changes/sc8-material-window-disclosure-334/"
+      ],
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1004-material-window-334\\lan-decision.json"
+    }
+  ],
+  "workspaces": {
+    "sc8-material-window-disclosure-334": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-material-window-334-1004\\zhuopin-ai"
+  },
+  "authorizations": {}
+}
