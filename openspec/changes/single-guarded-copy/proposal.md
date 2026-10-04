@@ -1,5 +1,13 @@
 # single-guarded-copy Proposal
 
+## 当前记录（2026-10-04 Native 回填）
+
+官方 `工具-队列查询.py --row 503 --section 一 --field all`：状态格 2026-09-19 `OP-0919-P` 记载 **Shao Peishen 2026-09-08 答 1(a)：design 放行、按起草方推荐取值**。
+
+对应 ①②③-1③-2 均取原 design 的 (a)，逐项答案见 `design.md`「当前批准记录」。本次完成批准记录与 tasks 0.1；尚未执行 apply，实施前置及正式 Guardian 隔离执行仍待闭合。下方「等 design 审」是 2026-09-08 起草状态，原文保留作历史，不表示再次等待同一批准。
+
+### 原起草记录（以下原文保留）
+
 > **状态：propose 出件，等 design 审。** 本包**不得** apply，直到 Shao Peishen 完成 design 审。
 > **来源**：队列 §一 **#503**（2026-09-08 立行，Cowork `OP-0908-A`，Shao Peishen 当日直令，原话「同一个内容存在两份，只留一份有机器守、人只看有守的那份」）。本包由泳道 `503-opener-single`（`OP-0908-P`，批 `B-0908_四泳道机制根治`）起草。
 > **openspec 门槛核对**（`.claude/rules/场景建造与合规.md` §二）：命中 **①「改变全项目口径」**——本包改的是「会话怎么把 opener 交给他」这条**两桌全局流程**，触及所有 `zhuopin-*` skill 的出件段与根 `CLAUDE.md` §3；同时命中 **③「改变既有模块对外语义」**（`工具-opener生成.py` 的默认出件方式由「打到 stdout」改为「落文件」）。⇒ **必须走 openspec 且必须含 design 审**（`#503` 行内亦已写明「须 design 审须 Shao Peishen 本人过，因为解法会改他自己复制 opener 的习惯动作」）。
