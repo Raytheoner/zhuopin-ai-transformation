@@ -1,0 +1,27 @@
+{
+  "batch_id": "B-1004_漏销探测接线",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1004_漏销探测接线.md",
+  "candidates": [
+    {
+      "task_id": "sweep-stale-pending-wire-328",
+      "row": 328,
+      "section": "一",
+      "task_excerpt": "sweep 起跑段",
+      "next_action": "接线到定时任务",
+      "opener_id": "A1",
+      "lane": "op1004c-sweep-stale-pending-wire-328",
+      "touches": [
+        "openspec/changes/sweep-stale-pending-wire-328/",
+        "0-学习与工具/工具-落库sweep.py",
+        "0-学习与工具/test_工具-落库sweep.py"
+      ],
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1004-stale-pending-328\\lan-decision.json"
+    }
+  ],
+  "workspaces": {
+    "sweep-stale-pending-wire-328": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sweep-stale-pending-328-1004\\zhuopin-ai"
+  },
+  "authorizations": {}
+}
