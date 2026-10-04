@@ -1,0 +1,25 @@
+{
+  "batch_id": "B-1004_入口参数设计",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1004_入口参数设计.md",
+  "candidates": [
+    {
+      "task_id": "reasoning-entry-policy-658",
+      "row": 658,
+      "section": "一",
+      "task_excerpt": "执行入口推理参数契约实际设计包",
+      "next_action": "独立OpenSpec proposal/design/delta spec/tasks及元数据",
+      "opener_id": "A1",
+      "lane": "op1004g-reasoning-entry-policy-658",
+      "touches": [
+        "openspec/changes/reasoning-entry-policy-658/"
+      ],
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1004-entry-policy-658\\lan-decision-v2.json"
+    }
+  ],
+  "workspaces": {
+    "reasoning-entry-policy-658": "C:\\Users\\Paul Shao\\.codex\\worktrees\\reasoning-entry-design-1004\\zhuopin-ai"
+  },
+  "authorizations": {}
+}
