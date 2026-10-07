@@ -1,0 +1,110 @@
+{
+  "verifiedAt": "2026-10-08T04:53:48+08:00",
+  "timezone": "Asia/Shanghai",
+  "status": "rendered_and_all_pages_visually_checked",
+  "approval": "本会话本人答复“1、2都同意”：批准仓内官方便携渲染依赖，并同意审阅整套网页体验。非整套设计签认或部署授权。",
+  "document": "智能门户UI设计审核稿.docx",
+  "documentSha256": "815de68917e36ec2911f36c2a4d3e7be52110f02e377711a3cd51558859566e6",
+  "markdown": "智能门户UI设计审核稿.md",
+  "markdownSha256": "eb3e13cc1d51964411af92b42f84a0263a2b48c02693d78d59aa7aa19de46f36",
+  "renderer": "Codex documents/render_docx.py，使用仓内LibreOfficePortable及Codex bundled Poppler",
+  "renderCommand": "bundled-python .tmp/portal-ui-preview-1007/scripts/render-approved-word.py .tmp/portal-ui-preview-1007/qa/word-render-1008-v4",
+  "renderExitCode": 0,
+  "renderDirectory": ".tmp/portal-ui-preview-1007/qa/word-render-1008-v4",
+  "pageCount": 10,
+  "pdfSha256": "a80775d4af266daa2857f75bb890aaeb0a4da92d3412ede7a624e8a3711cf055",
+  "pages": [
+    {
+      "page": 1,
+      "file": "page-1.png",
+      "sha256": "5bcda128f0bda9efc364f5f8e192debcb0a01f7a15f7f728563b24752a342a62",
+      "visuallyChecked": true
+    },
+    {
+      "page": 2,
+      "file": "page-2.png",
+      "sha256": "681266645ca7e6b87a471374163be5b9121c62211a4718422eb7cc456def2d6a",
+      "visuallyChecked": true
+    },
+    {
+      "page": 3,
+      "file": "page-3.png",
+      "sha256": "a414713a47c043685edea0654165042d9f129b61f735565c9790c2499d3c22ef",
+      "visuallyChecked": true
+    },
+    {
+      "page": 4,
+      "file": "page-4.png",
+      "sha256": "8dc45a9da26b395811d06066f520106918911d4efd73902c3177914c12de11df",
+      "visuallyChecked": true
+    },
+    {
+      "page": 5,
+      "file": "page-5.png",
+      "sha256": "f090f2bf1f2fae0666be4e0c17d518c37125a090e58bac6b94a91813ba47bab3",
+      "visuallyChecked": true
+    },
+    {
+      "page": 6,
+      "file": "page-6.png",
+      "sha256": "d0318f6970161589ee689b3b449face32eb71d6d969dbfa0678ac489a8a35c2e",
+      "visuallyChecked": true
+    },
+    {
+      "page": 7,
+      "file": "page-7.png",
+      "sha256": "21e6170a779bcc79b20925c61e5eef5d0cd98cb7066b703dcfa59c7365ed6005",
+      "visuallyChecked": true
+    },
+    {
+      "page": 8,
+      "file": "page-8.png",
+      "sha256": "ca2903d9dac635156d7807914c7703344cec4b9d2820fab684228c195a8248c0",
+      "visuallyChecked": true
+    },
+    {
+      "page": 9,
+      "file": "page-9.png",
+      "sha256": "760379b57c3416f372faa9889791b060a4d78c2885218477cd88664d586b30af",
+      "visuallyChecked": true
+    },
+    {
+      "page": 10,
+      "file": "page-10.png",
+      "sha256": "e1793ebef497b64662ba347d69ccf0451da983788a6ca57d25b7cebdf6be795f",
+      "visuallyChecked": true
+    }
+  ],
+  "checks": {
+    "noBlankPages": true,
+    "noMissingChinese": true,
+    "noTextOverlap": true,
+    "noClippedTables": true,
+    "mobileImagesAndCaptionsFit": true,
+    "blackTitleWithoutRule": true,
+    "sameNamedMarkdown": true,
+    "docxZipCRC": true,
+    "desktopMappings": 25,
+    "mobileMappings": 4,
+    "embeddedImages": 8
+  },
+  "iterations": [
+    "v1：发现空白6/8页及封面装饰线",
+    "v2：分页及封面修正，标题字体仍有异常",
+    "v3：清除主题字体覆盖、设置一致字体；手机说明溢至独立页",
+    "v4：手机截图等比宽2.8英寸，正文11pt保持；10页逐页检查通过"
+  ],
+  "qaOutputs": "PDF和PNG仅作仓内临时QA证据，不作为对外交付件。",
+  "portableDependency": {
+    "version": "26.2.4",
+    "source": "https://download.documentfoundation.org/libreoffice/portable/26.2.4/LibreOfficePortable_26.2.4_MultilingualStandard.paf.exe",
+    "endorsement": "https://www.libreoffice.org/download-other/",
+    "publisherChecksumSource": "https://portableapps.com/apps/office/libreoffice_portable",
+    "sha256": "4bde93374aef4409243505b20d16561a4628ac7591457dd01fc6e1ccf571ba65",
+    "bytes": 223657592,
+    "directory": ".tmp/lo1008",
+    "method": "7-Zip静态解包；无系统安装或注册。官方7-Zip辅助文件也只放仓内.tmp。"
+  },
+  "productionApplied": false,
+  "wholeExperienceApproved": false
+}

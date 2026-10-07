@@ -322,9 +322,14 @@
   },
   "word": {
     "draftCreated": true,
-    "rendered": false,
-    "deliverable": false,
-    "blockedBy": "Packaged render_docx.py: LibreOffice soffice.exe was not found on PATH",
-    "pendingDecision": "repository-only official portable LibreOffice render dependency; no OS installation or production changes"
+    "rendered": true,
+    "deliverable": true,
+    "pages": 10,
+    "allPagesVisuallyChecked": true,
+    "docxSha256": "815de68917e36ec2911f36c2a4d3e7be52110f02e377711a3cd51558859566e6",
+    "evidence": "Word渲染验证-2026-10-08.json",
+    "verifiedAt": "2026-10-08T04:53:48+08:00",
+    "blockedBy": null,
+    "pendingDecision": null
   }
 }

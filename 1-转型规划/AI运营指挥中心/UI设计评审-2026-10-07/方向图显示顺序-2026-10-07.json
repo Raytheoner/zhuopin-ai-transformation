@@ -1,5 +1,5 @@
 {
-  "status": "whole_experience_review_ready_web_md_word_render_pending",
+  "status": "whole_experience_approved_implementation_plan_review_pending",
   "thread_id": "01a113bd-331e-71e2-874e-fd9052481301",
   "queue_row": 661,
   "target_viewport": [
@@ -49,7 +49,7 @@
   ],
   "binding": "Numbers bind to the three generated-image outputs in their actual main-chat display order; reference screenshots are not options.",
   "production_changes": false,
-  "prototype_built": false,
+  "prototype_built": true,
   "known_followup_corrections": [
     "All department availability labels must reflect capability vs trial vs planned, never infer production readiness.",
     "Generated option 2 has fictitious account name and labels 可访问 on planned areas; replace with 内部员工 and 规划 after selection.",
@@ -62,7 +62,19 @@
     "mobile": 4,
     "prototype": "http://127.0.0.1:4173/",
     "gallery": "效果图总览.html",
-    "word": "draft exists; render pending; not delivered",
-    "productionApplied": false
+    "word": "智能门户UI设计审核稿.docx；10页渲染逐页检查通过",
+    "productionApplied": false,
+    "wholeExperienceApproved": true,
+    "approval": {
+      "recordedAt": "2026-10-08T05:13:09+08:00",
+      "userResponse": "整套体验：A；修改意见：无",
+      "record": "智能门户UI-整套审核结论-2026-10-08.md",
+      "acceptedArtifactSha256": {
+        "智能门户UI设计审核稿.docx": "815de68917e36ec2911f36c2a4d3e7be52110f02e377711a3cd51558859566e6",
+        "智能门户UI设计审核稿.md": "eb3e13cc1d51964411af92b42f84a0263a2b48c02693d78d59aa7aa19de46f36"
+      },
+      "implementationAuthorized": false,
+      "productionApplied": false
+    }
   }
 }

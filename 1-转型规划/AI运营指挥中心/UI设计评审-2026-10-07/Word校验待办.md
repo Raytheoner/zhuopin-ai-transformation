@@ -1,7 +1,9 @@
-# Word审核稿渲染待办
+# Word审核稿渲染待办（已闭合）
 
-本轮Word稿已创建，未完成渲染及逐页图像检查，不作为正式完成件交付。稿件位于仓内临时目录 .tmp/portal-ui-preview-1007/qa/review-package/智能门户UI设计审核稿.docx，生成脚本为同目录工作树 scripts/build-word.py。
+完成时间：2026-10-08T04:53:48+08:00（上海）。本人“1、2都同意”已批准仓内官方便携LibreOffice补足渲染依赖。正式《智能门户UI设计审核稿.md》及同名.docx已归档，Word共10页，逐页图像检查通过。
 
-使用Codex依赖包Python及documents/render_docx.py，失败原因为 LibreOffice soffice.exe was not found on PATH。Windows依赖包没有LibreOffice，未安装系统软件或调用用户桌面Office。是否允许仓内官方便携版补足渲染依赖已通过本会话问题提交本人选择，选择未到达时保持待办。
+手段：documents/render_docx.py + 官方LibreOfficePortable 26.2.4 + Codex bundled Poppler，退出码0。最终v4修正空白页、封面装饰线、主题字体覆盖和手机截图分页；正文11pt保持。全部10张PNG由view_image逐页视觉检查，中文、表格、截图、页眉页脚与分页无可见缺字、裁切或重叠。文档哈希和各页图像哈希见《Word渲染验证-2026-10-08.json》。临时QA图与PDF不作为交付附件。
 
-批准后只进行仓内Word转图与逐页检查，修订直到无裁切、缺字或溢出，再另行归档正式Word。此前以可点击原型、页面效果图和Markdown供整套体验审阅。
+历史阻点：2026-10-07依赖包缺soffice.exe，故仅交网页与Markdown；批准后默认沙箱PAF解包遇DLL错误，授权进程随后停留在语言选择，已终止该任务自己的安装器并改为仓内7-Zip静态解包，成功得到便携运行文件。未安装系统Office，未修改仓外业务文件或生产。
+
+渲染阻点已解除；整套体验尚待本人审核，财务需求与正式品牌资产等实施前缺口保留。正式应用、合入和生产发布另审。
