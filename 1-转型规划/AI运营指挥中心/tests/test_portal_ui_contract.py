@@ -1,9 +1,31 @@
 from pathlib import Path
 from html.parser import HTMLParser
+import ast
 import json
 import shutil
 import subprocess
 ROOT = Path(__file__).resolve().parent.parent
+
+def test_scene_entry_paths_match_existing_backend_routes():
+    """Read route constants without importing engines or executing mock endpoints."""
+    repo = ROOT.parents[1]
+    apps = {app['id']: app for app in json.loads((ROOT/'ui/apps.json').read_text(encoding='utf-8'))}
+    contracts = (
+        ('q2', '质量部/Q2-8D报告AI判定/q2_8d_verdict', '8098'),
+        ('fi3', '财务部/FI3-付款申请自动校验/fi3_payment_validation', '8097'),
+    )
+    for app_id, package, port in contracts:
+        directory = repo/'4-数字员工'/package
+        config = ast.parse((directory/'config.py').read_text(encoding='utf-8-sig'))
+        prefix = next(ast.literal_eval(node.value) for node in config.body
+                      if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == 'ROUTE_PREFIX'
+                              for target in node.targets))
+        webapp = (directory/'webapp.py').read_text(encoding='utf-8-sig')
+        assert 'url_prefix=config.ROUTE_PREFIX' in webapp
+        assert '@bp.route("/")' in webapp
+        assert apps[app_id]['href'] == f'http://192.168.100.51:{port}{prefix}/'
+
 class Elements(HTMLParser):
     def __init__(self):
         super().__init__(); self.ids = []; self.links = []; self.buttons = []
@@ -26,7 +48,7 @@ def test_registry_preserves_old_and_known_entries_without_planned_actions():
     apps = json.loads((ROOT/'ui/apps.json').read_text(encoding='utf-8'))
     assert len({a['id'] for a in apps}) == len(apps)
     urls = {a['href'] for a in apps}
-    for url in ('http://192.168.100.51:8091/', 'http://192.168.100.51:8091/cases', 'http://192.168.100.51:8093/', 'http://192.168.100.51:8094/', 'http://192.168.100.51:8096/procurement/sc2/', 'http://192.168.100.51:8097/', 'http://192.168.100.51:8098/', '#sales'):
+    for url in ('http://192.168.100.51:8091/', 'http://192.168.100.51:8091/cases', 'http://192.168.100.51:8093/', 'http://192.168.100.51:8094/', 'http://192.168.100.51:8096/procurement/sc2/', 'http://192.168.100.51:8097/finance/fi3/', 'http://192.168.100.51:8098/quality/q2/', '#sales'):
         assert url in urls
     assert all(a['href'] is None for a in apps if a['stage']=='规划')
 def test_unconnected_pages_do_not_offer_business_submission():
