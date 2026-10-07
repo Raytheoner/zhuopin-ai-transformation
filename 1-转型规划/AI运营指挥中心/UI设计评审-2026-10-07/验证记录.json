@@ -1,0 +1,330 @@
+{
+  "desktop": [
+    {
+      "id": "P01",
+      "path": "login",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "欢迎回到智能门户",
+      "width": 1440
+    },
+    {
+      "id": "P02",
+      "path": "home",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "智能门户",
+      "width": 1440
+    },
+    {
+      "id": "P03",
+      "path": "apps",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "应用目录",
+      "width": 1440
+    },
+    {
+      "id": "P04",
+      "path": "tasks",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "我的待办",
+      "width": 1440
+    },
+    {
+      "id": "P05",
+      "path": "review",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "人工复核",
+      "width": 1440
+    },
+    {
+      "id": "P06",
+      "path": "system",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "系统与发布",
+      "width": 1440
+    },
+    {
+      "id": "P07",
+      "path": "procurement",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "采购部",
+      "width": 1440
+    },
+    {
+      "id": "P08",
+      "path": "quality",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "质量部",
+      "width": 1440
+    },
+    {
+      "id": "P09",
+      "path": "finance",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "财务部",
+      "width": 1440
+    },
+    {
+      "id": "P10",
+      "path": "sales",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "销售部",
+      "width": 1440
+    },
+    {
+      "id": "P11",
+      "path": "operations",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "运营管理",
+      "width": 1440
+    },
+    {
+      "id": "P12",
+      "path": "engineering",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "工程研发",
+      "width": 1440
+    },
+    {
+      "id": "P13",
+      "path": "qd-upload",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "QD-B立项预审",
+      "width": 1440
+    },
+    {
+      "id": "P14",
+      "path": "qd-report",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "QD-B预审报告",
+      "width": 1440
+    },
+    {
+      "id": "P15",
+      "path": "qd-evidence",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "规则与证据",
+      "width": 1440
+    },
+    {
+      "id": "P16",
+      "path": "q2-summary",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "Q2 8D评审汇总",
+      "width": 1440
+    },
+    {
+      "id": "P17",
+      "path": "q2-review",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "8D报告复核",
+      "width": 1440
+    },
+    {
+      "id": "P18",
+      "path": "sc8-products",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "SC8成品保供看板",
+      "width": 1440
+    },
+    {
+      "id": "P19",
+      "path": "sc8-materials",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "SC8物料覆盖",
+      "width": 1440
+    },
+    {
+      "id": "P20",
+      "path": "sc8-cases",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "SC8案例处置",
+      "width": 1440
+    },
+    {
+      "id": "P21",
+      "path": "sc8-correction",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "SC8判例批改",
+      "width": 1440
+    },
+    {
+      "id": "P22",
+      "path": "sc2-weekly",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "SC2采购周报",
+      "width": 1440
+    },
+    {
+      "id": "P23",
+      "path": "fi2-input",
+      "client": 1440,
+      "height": 1024,
+      "scroll": 1440,
+      "title": "FI2对账输入",
+      "width": 1440
+    },
+    {
+      "id": "P24",
+      "path": "fi2-result",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "FI2对账结果",
+      "width": 1440
+    },
+    {
+      "id": "P25",
+      "path": "fi3-checklist",
+      "client": 1425,
+      "height": 1024,
+      "scroll": 1425,
+      "title": "FI3付款校验清单",
+      "width": 1440
+    }
+  ],
+  "mobile": [
+    {
+      "id": "M01",
+      "path": "home",
+      "client": 376,
+      "height": 844,
+      "scroll": 376,
+      "width": 390
+    },
+    {
+      "id": "M02",
+      "path": "tasks",
+      "client": 376,
+      "height": 844,
+      "scroll": 376,
+      "width": 390
+    },
+    {
+      "id": "M03",
+      "path": "qd-report",
+      "client": 376,
+      "height": 844,
+      "scroll": 376,
+      "width": 390
+    },
+    {
+      "id": "M04",
+      "path": "review",
+      "client": 376,
+      "height": 844,
+      "scroll": 376,
+      "width": 390
+    }
+  ],
+  "narrow": [
+    {
+      "page": "review",
+      "width": 320,
+      "clientWidth": 305,
+      "scrollWidth": 305
+    },
+    {
+      "page": "sc8-products",
+      "width": 1024,
+      "clientWidth": 1009,
+      "scrollWidth": 1009
+    }
+  ],
+  "tests": {
+    "command": "node --test tests/model.test.mjs",
+    "passed": 4,
+    "failed": 0
+  },
+  "build": {
+    "command": "node node_modules/vite/bin/vite.js build",
+    "exitCode": 0,
+    "modules": 356
+  },
+  "browserConsole": {
+    "tab": 12,
+    "levels": [
+      "error",
+      "warn"
+    ],
+    "entries": []
+  },
+  "businessNetwork": {
+    "sourceSearch": "fetch, XMLHttpRequest, WebSocket, http/https in src",
+    "matches": 0,
+    "note": "Source and browser console inspection; not a production network acceptance test"
+  },
+  "review": {
+    "model": "gpt-6-luna",
+    "mode": "one read-only review",
+    "P0": 0,
+    "P1": 0,
+    "P2": 2,
+    "P2fixed": [
+      "closed mobile sidebar focusable",
+      "mobile nav aria-current missing"
+    ],
+    "additionalFixed": [
+      "mobile scrim close and Escape",
+      "320px body overflow"
+    ]
+  },
+  "production": {
+    "modified": false,
+    "merged": false,
+    "deployed": false,
+    "realUpload": false,
+    "matrixRun": false,
+    "businessFixtureRun": false
+  },
+  "word": {
+    "draftCreated": true,
+    "rendered": false,
+    "deliverable": false,
+    "blockedBy": "Packaged render_docx.py: LibreOffice soffice.exe was not found on PATH",
+    "pendingDecision": "repository-only official portable LibreOffice render dependency; no OS installation or production changes"
+  }
+}

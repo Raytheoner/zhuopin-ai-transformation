@@ -1,0 +1,75 @@
+{
+  "version": "2026-10-07-review1",
+  "selectedDirection": 1,
+  "colors": {
+    "brand": "#1677ff",
+    "action": "#126bd9",
+    "text": "#18253b",
+    "secondary": "#63738b",
+    "canvas": "#f5f8fc",
+    "surface": "#ffffff",
+    "border": "#e7edf5",
+    "risk": "#a3433b",
+    "warning": "#85621b",
+    "covered": "#176b59"
+  },
+  "type": {
+    "font": "Microsoft YaHei, PingFang SC, Segoe UI, sans-serif",
+    "desktopTitle": 28,
+    "homeTitle": 41,
+    "section": 18,
+    "body": 14,
+    "metadata": 12,
+    "mobileTitle": 25,
+    "mobileBody": 14,
+    "mobileMetadata": 11
+  },
+  "layout": {
+    "desktopViewport": [
+      1440,
+      1024
+    ],
+    "mobileViewport": [
+      390,
+      844
+    ],
+    "sidebar": 214,
+    "topbar": 66,
+    "desktopContentGutter": 38,
+    "mobileGutter": 17,
+    "mobileBottomNavigation": 69,
+    "space": [
+      4,
+      8,
+      12,
+      16,
+      20,
+      24,
+      32,
+      40
+    ],
+    "radius": {
+      "control": 6,
+      "card": 10,
+      "mobileCard": 8
+    }
+  },
+  "states": [
+    "正常",
+    "加载",
+    "空数据",
+    "失败",
+    "数据陈旧",
+    "权限不足",
+    "待确认",
+    "试点",
+    "模拟",
+    "规划"
+  ],
+  "motion": {
+    "reducedMotion": true
+  },
+  "data": "mock-only",
+  "authority": "AI suggestions; human decides",
+  "productionChanged": false
+}

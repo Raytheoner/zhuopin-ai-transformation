@@ -1,5 +1,5 @@
 {
-  "status": "visual_selected_building_review_package",
+  "status": "whole_experience_review_ready_web_md_word_render_pending",
   "thread_id": "01a113bd-331e-71e2-874e-fd9052481301",
   "queue_row": 661,
   "target_viewport": [
@@ -56,5 +56,13 @@
     "Option 1 needs explicit planning labels on future domains.",
     "Company marks are concept placeholders, not a verified official logo.",
     "Original image dimensions are preserved; precise 1440x1024 and 390x844 checks apply to the later prototype."
-  ]
+  ],
+  "reviewPackage": {
+    "desktop": 25,
+    "mobile": 4,
+    "prototype": "http://127.0.0.1:4173/",
+    "gallery": "效果图总览.html",
+    "word": "draft exists; render pending; not delivered",
+    "productionApplied": false
+  }
 }

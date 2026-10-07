@@ -1,0 +1,29 @@
+{
+  "selectedDisplay": 1,
+  "referenceSHA256": "5d4334a4b3d2428c6dafe6d7e5b1ffcf5452a878ac7504b1610e583b80be9bcd",
+  "hero": "ImageGen independent asset; original exec-eba21bc6-707d-4612-9799-5d9a3d1dd180.png",
+  "conceptLogo": "ImageGen independent asset; original exec-a62bd57d-d649-43ae-a8e0-4ce659b3ac7d.png; replace verified official brand before implementation",
+  "icons": "@heroicons/react 2.2.0 outline",
+  "assets": [
+    {
+      "file": "brand-concept.png",
+      "sha256": "09c8aeb2e4965257288534ea63a6e2de1df05292494de0fe5aae299d27ac2aa4",
+      "use": "generated concept, not official brand asset"
+    },
+    {
+      "file": "implementation-home.jpg",
+      "sha256": "712a293639d676fd85bdcc4ec11a42fdc0b4a0efe2607f73619acec00be923dd",
+      "use": "source/reference"
+    },
+    {
+      "file": "portal-search-illustration.png",
+      "sha256": "502d98baff5e6a8f5a73d0818a887b2fff1eb05d4a2e6101d2c4570c7a0cd119",
+      "use": "generated concept, not official brand asset"
+    },
+    {
+      "file": "selected-reference.png",
+      "sha256": "5d4334a4b3d2428c6dafe6d7e5b1ffcf5452a878ac7504b1610e583b80be9bcd",
+      "use": "source/reference"
+    }
+  ]
+}

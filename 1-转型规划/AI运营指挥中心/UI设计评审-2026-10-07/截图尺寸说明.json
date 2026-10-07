@@ -1,0 +1,324 @@
+{
+  "note": "Browser viewport matches acceptance sizes. CUA screenshots omit scrollbar strip; original pixels retained, no stretching or resampling.",
+  "images": [
+    {
+      "id": "P01",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P02",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P03",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P04",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P05",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P06",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P07",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P08",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P09",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P10",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P11",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P12",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P13",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P14",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P15",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P16",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P17",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P18",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P19",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P20",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P21",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P22",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P23",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1440,
+        1024
+      ]
+    },
+    {
+      "id": "P24",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "P25",
+      "viewport": [
+        1440,
+        1024
+      ],
+      "contentScreenshot": [
+        1425,
+        1024
+      ]
+    },
+    {
+      "id": "M01",
+      "viewport": [
+        390,
+        844
+      ],
+      "contentScreenshot": [
+        375,
+        844
+      ]
+    },
+    {
+      "id": "M02",
+      "viewport": [
+        390,
+        844
+      ],
+      "contentScreenshot": [
+        375,
+        844
+      ]
+    },
+    {
+      "id": "M03",
+      "viewport": [
+        390,
+        844
+      ],
+      "contentScreenshot": [
+        375,
+        844
+      ]
+    },
+    {
+      "id": "M04",
+      "viewport": [
+        390,
+        844
+      ],
+      "contentScreenshot": [
+        375,
+        844
+      ]
+    }
+  ]
+}

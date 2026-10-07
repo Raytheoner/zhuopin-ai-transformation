@@ -1,0 +1,252 @@
+[
+  {
+    "id": "P01",
+    "path": "login",
+    "title": "员工登录",
+    "group": "公共门户",
+    "source": "统一门户架构决策件-SSO与权限-2026-07-29.md；本人批准计划；L2/IATF审计纪律",
+    "interaction": "模拟员工身份进入门户；不创建凭据",
+    "status": "设计建议 / 规划",
+    "screenshot": "screens/P01.jpg"
+  },
+  {
+    "id": "P02",
+    "path": "home",
+    "title": "门户首页",
+    "group": "公共门户",
+    "source": "统一门户架构决策件-SSO与权限-2026-07-29.md；本人批准计划；L2/IATF审计纪律",
+    "interaction": "部门入口、常用应用及应用搜索",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P02.jpg"
+  },
+  {
+    "id": "P03",
+    "path": "apps",
+    "title": "应用目录",
+    "group": "公共门户",
+    "source": "统一门户架构决策件-SSO与权限-2026-07-29.md；本人批准计划；L2/IATF审计纪律",
+    "interaction": "中文检索、部门筛选、空结果与重置",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P03.jpg"
+  },
+  {
+    "id": "P04",
+    "path": "tasks",
+    "title": "我的待办",
+    "group": "公共门户",
+    "source": "统一门户架构决策件-SSO与权限-2026-07-29.md；本人批准计划；L2/IATF审计纪律",
+    "interaction": "检索/部门筛选；责任和期限可见，整合是设计目标",
+    "status": "设计建议 / 规划",
+    "screenshot": "screens/P04.jpg"
+  },
+  {
+    "id": "P05",
+    "path": "review",
+    "title": "人工复核",
+    "group": "公共门户",
+    "source": "统一门户架构决策件-SSO与权限-2026-07-29.md；本人批准计划；L2/IATF审计纪律",
+    "interaction": "建议/依据/缺失资料→人工决定与意见→本地模拟审计",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P05.jpg"
+  },
+  {
+    "id": "P06",
+    "path": "system",
+    "title": "系统与发布",
+    "group": "公共门户",
+    "source": "统一门户架构决策件-SSO与权限-2026-07-29.md；本人批准计划；L2/IATF审计纪律",
+    "interaction": "服务运行、技术验证、业务验收分开",
+    "status": "设计建议 / 规划",
+    "screenshot": "screens/P06.jpg"
+  },
+  {
+    "id": "P07",
+    "path": "procurement",
+    "title": "采购部",
+    "group": "部门入口",
+    "source": "本人六部门入口选择；设计基线现有场景目录；财务暂停和规划边界",
+    "interaction": "SC8与SC2入口及能力边界",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P07.jpg"
+  },
+  {
+    "id": "P08",
+    "path": "quality",
+    "title": "质量部",
+    "group": "部门入口",
+    "source": "本人六部门入口选择；设计基线现有场景目录；财务暂停和规划边界",
+    "interaction": "QD-B与Q2入口，预审与8D评审分开",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P08.jpg"
+  },
+  {
+    "id": "P09",
+    "path": "finance",
+    "title": "财务部",
+    "group": "部门入口",
+    "source": "本人六部门入口选择；设计基线现有场景目录；财务暂停和规划边界",
+    "interaction": "FI2/FI3参考入口，需求待确认",
+    "status": "待业务确认",
+    "screenshot": "screens/P09.jpg"
+  },
+  {
+    "id": "P10",
+    "path": "sales",
+    "title": "销售部",
+    "group": "部门入口",
+    "source": "本人六部门入口选择；设计基线现有场景目录；财务暂停和规划边界",
+    "interaction": "明确规划模板，无可执行操作",
+    "status": "设计建议 / 规划",
+    "screenshot": "screens/P10.jpg"
+  },
+  {
+    "id": "P11",
+    "path": "operations",
+    "title": "运营管理",
+    "group": "部门入口",
+    "source": "本人六部门入口选择；设计基线现有场景目录；财务暂停和规划边界",
+    "interaction": "明确规划模板，無真实任务执行",
+    "status": "设计建议 / 规划",
+    "screenshot": "screens/P11.jpg"
+  },
+  {
+    "id": "P12",
+    "path": "engineering",
+    "title": "工程研发",
+    "group": "部门入口",
+    "source": "本人六部门入口选择；设计基线现有场景目录；财务暂停和规划边界",
+    "interaction": "规划模板，OEM隔离与ASIL人工审核边界",
+    "status": "设计建议 / 规划",
+    "screenshot": "screens/P12.jpg"
+  },
+  {
+    "id": "P13",
+    "path": "qd-upload",
+    "title": "QD-B立项预审 · 上传",
+    "group": "质量样板",
+    "source": "质量旗舰PRD及后续批准资料；qd_b_gate/parser.py、report.py、webapp.py；Q2现有dashboard/签认资料",
+    "interaction": "XLSX/20 MB/EQQR8082 A2.1；仅文件元信息校验，模拟进度不读正文",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P13.jpg"
+  },
+  {
+    "id": "P14",
+    "path": "qd-report",
+    "title": "QD-B预审报告",
+    "group": "质量样板",
+    "source": "质量旗舰PRD及后续批准资料；qd_b_gate/parser.py、report.py、webapp.py；Q2现有dashboard/签认资料",
+    "interaction": "正式六段报告标题与13模块；演示评分不定档、不签认",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P14.jpg"
+  },
+  {
+    "id": "P15",
+    "path": "qd-evidence",
+    "title": "规则与证据",
+    "group": "质量样板",
+    "source": "质量旗舰PRD及后续批准资料；qd_b_gate/parser.py、report.py、webapp.py；Q2现有dashboard/签认资料",
+    "interaction": "规则版本、演示证据坐标、缺失资料与审计",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P15.jpg"
+  },
+  {
+    "id": "P16",
+    "path": "q2-summary",
+    "title": "Q2 8D评审汇总",
+    "group": "质量样板",
+    "source": "质量旗舰PRD及后续批准资料；qd_b_gate/parser.py、report.py、webapp.py；Q2现有dashboard/签认资料",
+    "interaction": "D1–D7、演示分级及报告复核入口，不新增阈值",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P16.jpg"
+  },
+  {
+    "id": "P17",
+    "path": "q2-review",
+    "title": "8D报告复核",
+    "group": "质量样板",
+    "source": "质量旗舰PRD及后续批准资料；qd_b_gate/parser.py、report.py、webapp.py；Q2现有dashboard/签认资料",
+    "interaction": "原报告示例对照D6证据，退回仍由质量工程师签发",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P17.jpg"
+  },
+  {
+    "id": "P18",
+    "path": "sc8-products",
+    "title": "SC8成品保供看板",
+    "group": "采购适配",
+    "source": "SC8既有看板/物料/案例规则；SC2库内需求与说明；六键取数授权不在原型执行",
+    "interaction": "四色+文字；中文筛选、排序、分页、展开依据",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P18.jpg"
+  },
+  {
+    "id": "P19",
+    "path": "sc8-materials",
+    "title": "SC8物料覆盖",
+    "group": "采购适配",
+    "source": "SC8既有看板/物料/案例规则；SC2库内需求与说明；六键取数授权不在原型执行",
+    "interaction": "独立物料演示数据，关联成品与缺资料态",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P19.jpg"
+  },
+  {
+    "id": "P20",
+    "path": "sc8-cases",
+    "title": "SC8案例处置",
+    "group": "采购适配",
+    "source": "SC8既有看板/物料/案例规则；SC2库内需求与说明；六键取数授权不在原型执行",
+    "interaction": "案例状态、来源、责任和批改入口",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P20.jpg"
+  },
+  {
+    "id": "P21",
+    "path": "sc8-correction",
+    "title": "SC8判例批改",
+    "group": "采购适配",
+    "source": "SC8既有看板/物料/案例规则；SC2库内需求与说明；六键取数授权不在原型执行",
+    "interaction": "判例反馈及意见校验；不改算法和阈值",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P21.jpg"
+  },
+  {
+    "id": "P22",
+    "path": "sc2-weekly",
+    "title": "SC2采购周报",
+    "group": "采购适配",
+    "source": "SC8既有看板/物料/案例规则；SC2库内需求与说明；六键取数授权不在原型执行",
+    "interaction": "周次、来源与更新时间；人工备注只模拟",
+    "status": "继承已确认边界 / 展示建议",
+    "screenshot": "screens/P22.jpg"
+  },
+  {
+    "id": "P23",
+    "path": "fi2-input",
+    "title": "FI2对账输入",
+    "group": "财务参考",
+    "source": "FI2/FI3现状；队列#494及财务需求回件待确认",
+    "interaction": "三源参考结构；期次/供应商操作仅演示",
+    "status": "待业务确认",
+    "screenshot": "screens/P23.jpg"
+  },
+  {
+    "id": "P24",
+    "path": "fi2-result",
+    "title": "FI2对账结果",
+    "group": "财务参考",
+    "source": "FI2/FI3现状；队列#494及财务需求回件待确认",
+    "interaction": "一致、差异待确认、资料不足；模拟意见不结案",
+    "status": "待业务确认",
+    "screenshot": "screens/P24.jpg"
+  },
+  {
+    "id": "P25",
+    "path": "fi3-checklist",
+    "title": "FI3付款校验清单",
+    "group": "财务参考",
+    "source": "FI2/FI3现状；队列#494及财务需求回件待确认",
+    "interaction": "逐项核验；模拟勾选不改变账户、不付款",
+    "status": "待业务确认",
+    "screenshot": "screens/P25.jpg"
+  }
+]
