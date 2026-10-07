@@ -1,0 +1,63 @@
+{
+  "recorded_at_local": "2026-10-08 06:06:52 +08:00",
+  "authorization": "实施计划：A；修改意见：无；仅仓内公共框架+一次gpt-6-luna只读review",
+  "base_commit": "0df6a7157e116f7f82d0a964a487b1cf37a57417",
+  "candidate_commit": null,
+  "branch": "codex/portal-public-frame-1008",
+  "worktree": "C:/Dev/zhuopin-ai/.claude/worktrees/portal-public-frame-1008",
+  "archive": "公共框架-候选源码-2026-10-08.zip",
+  "archive_sha256": "164587a9aaaa1f26c04c8de809acc68b623decfd244e0a9987e4e6e971eff809",
+  "candidate_files": [
+    {
+      "path": "1-转型规划/AI运营指挥中心/AI运营指挥中心-框架原型-v0.1.html",
+      "bytes": 1071426,
+      "sha256": "52155e9b2446b4e225c410b180f55e67f31b3da96463ad13596ea49c3e45f203"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/ui/portal-model.mjs",
+      "bytes": 1584,
+      "sha256": "881a7234f7334e9764b4dcfa2738048307e90e33b338c2b42b298c9dcca92247"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/ui/portal-page.js",
+      "bytes": 9485,
+      "sha256": "e0630ae319d4cbb5763079096ae88807ff5bf8b9ebf5b39688a6f7b8defb1621"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/ui/portal-theme.css",
+      "bytes": 12366,
+      "sha256": "1ce007d8e0517d7837ad81794b786529e192accd6a2c2ef30d67385ea087cf1e"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/ui/apps.json",
+      "bytes": 1993,
+      "sha256": "c58516a3526cfa2262c2ecb6cb6fb58282f547fa4b8c19a681b7ea20b92b6ba8"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/scripts/inline-portal-ui.mjs",
+      "bytes": 1471,
+      "sha256": "d7e4ecab194e4985e07b0465c75c014257adc51b58eda3f2bca9f1566920ebd4"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/tests/test_portal_model.mjs",
+      "bytes": 2414,
+      "sha256": "befdd21ef7ab2ebb66554d864fa08fd96e028c0c1890f3ad09ac2ee64852ae2e"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/tests/test_portal_ui_contract.py",
+      "bytes": 3595,
+      "sha256": "285aedf3bdd96ca054cf43fa848838db552bda946bc235bf8b216846350540cf"
+    }
+  ],
+  "production_target_if_authorized": "192.168.100.51 / C:/command-center/index.html / :8092",
+  "not_authorized": [
+    "ff",
+    "push candidate branch",
+    "production deploy",
+    "enablement",
+    "external sending",
+    "real collection",
+    "matrix",
+    "business fixture"
+  ]
+}
