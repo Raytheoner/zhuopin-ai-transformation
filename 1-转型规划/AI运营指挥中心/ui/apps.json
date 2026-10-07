@@ -1,0 +1,12 @@
+[
+  {"id":"sc8","name":"客户订单交期智能承诺","department":"采购","stage":"试用","href":"http://192.168.100.51:8091/","description":"成品保供、物料覆盖与订单交期依据"},
+  {"id":"sc8-cases","name":"案例处置与判例批改","department":"采购","stage":"试用","href":"http://192.168.100.51:8091/cases","description":"按原权限查看案例和专业反馈"},
+  {"id":"sc2","name":"采购周报自动生成","department":"采购","stage":"现网待核验","href":"http://192.168.100.51:8096/procurement/sc2/","description":"周报入口保留；最近打开超时，待核验"},
+  {"id":"qd-b","name":"项目立项预审","department":"质量","stage":"试用","href":"http://192.168.100.51:8093/","description":"EQQR8082 A2.1申请书预审，委员会保留最终决定"},
+  {"id":"q2","name":"8D报告AI判定","department":"质量","stage":"mock","href":"http://192.168.100.51:8098/","description":"七维判定与转人工，当前mock边界保留"},
+  {"id":"fi2","name":"三单匹配与对账","department":"财务","stage":"需求待确认","href":"http://192.168.100.51:8094/","description":"既有参考入口；需求变更待回件确认"},
+  {"id":"fi3","name":"付款校验清单","department":"财务","stage":"需求待确认 · mock","href":"http://192.168.100.51:8097/","description":"清单参考，付款执行仍由财务人员决定"},
+  {"id":"sales-dashboard","name":"ECU销售业绩看板","department":"销售","stage":"同源脱敏数据","href":"#sales","description":"保留销售数据镜像，来源与快照时间就近显示"},
+  {"id":"operations-plan","name":"运营场景工作入口","department":"运营管理","stage":"规划","href":null,"description":"待场景接口与业务验收接入，不提供执行动作"},
+  {"id":"engineering-plan","name":"工程研发工作入口","department":"工程研发","stage":"规划","href":null,"description":"OEM技术数据隔离，安全相关责任与人工审核保留"}
+]
