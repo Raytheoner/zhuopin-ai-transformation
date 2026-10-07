@@ -1,0 +1,60 @@
+{
+  "status": "visual_selected_building_review_package",
+  "thread_id": "01a113bd-331e-71e2-874e-fd9052481301",
+  "queue_row": 661,
+  "target_viewport": [
+    1440,
+    1024
+  ],
+  "date_anchor": "2026-10-07",
+  "selected_display_number": 1,
+  "user_selection": "选择：1；修改意见：无。当前会话本人明确答复。",
+  "options": [
+    {
+      "display_number": 1,
+      "concept_name": "明亮企业办公",
+      "file": "displayed-01.png",
+      "bytes": 1267435,
+      "sha256": "5d4334a4b3d2428c6dafe6d7e5b1ffcf5452a878ac7504b1610e583b80be9bcd",
+      "dimensions": [
+        1487,
+        1058
+      ],
+      "prompt_file": "displayed-01-prompt.md"
+    },
+    {
+      "display_number": 2,
+      "concept_name": "深色运营门户",
+      "file": "displayed-02.png",
+      "bytes": 1395567,
+      "sha256": "69d1e1fc8c099381fc746633c969b37b1e5ba426dd08ae252125388c83049dfd",
+      "dimensions": [
+        1487,
+        1058
+      ],
+      "prompt_file": "displayed-02-prompt.md"
+    },
+    {
+      "display_number": 3,
+      "concept_name": "深色导航＋浅色业务区",
+      "file": "displayed-03.png",
+      "bytes": 1250560,
+      "sha256": "14a5285bbd532ea7108a8a739e9809e55f5c9866bfe6cfdf701758f22accf1c1",
+      "dimensions": [
+        1487,
+        1058
+      ],
+      "prompt_file": "displayed-03-prompt.md"
+    }
+  ],
+  "binding": "Numbers bind to the three generated-image outputs in their actual main-chat display order; reference screenshots are not options.",
+  "production_changes": false,
+  "prototype_built": false,
+  "known_followup_corrections": [
+    "All department availability labels must reflect capability vs trial vs planned, never infer production readiness.",
+    "Generated option 2 has fictitious account name and labels 可访问 on planned areas; replace with 内部员工 and 规划 after selection.",
+    "Option 1 needs explicit planning labels on future domains.",
+    "Company marks are concept placeholders, not a verified official logo.",
+    "Original image dimensions are preserved; precise 1440x1024 and 390x844 checks apply to the later prototype."
+  ]
+}
