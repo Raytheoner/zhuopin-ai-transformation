@@ -1,0 +1,134 @@
+{
+  "schema": 1,
+  "observed_local": "2026-10-08T12:05:00+08:00",
+  "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
+  "goal_status": "active",
+  "queue_binding": {
+    "thread_owned": [
+      660,
+      661
+    ],
+    "read_only_evidence_support": [
+      538
+    ],
+    "other_owner_retained": true
+  },
+  "stage": "on_lan_existing_evidence_and_off_lan_material_readiness",
+  "probe": {
+    "normal_sandbox": "PermissionError writing original probe cache; exit 1",
+    "normal_permission_retry": {
+      "exit": 0,
+      "time_utc": "2026-10-08T03:52:46.091689+00:00",
+      "checks": [
+        "head",
+        "status",
+        "worktrees",
+        "python",
+        "codex",
+        "openspec",
+        "queue",
+        "ci_matrix"
+      ],
+      "all_exit_zero": true
+    },
+    "proves_workflow_full_chain": false
+  },
+  "lan": {
+    "observed_local": "2026-10-08 11:52:43",
+    "status": "on",
+    "health_8091": 200,
+    "health_8093": 200
+  },
+  "sc2": {
+    "copy_authorization": "用户明确选择：批准这两件既有快照复制（推荐）",
+    "source_directory": "supplychain-server:C:/sc2/app/reports",
+    "destination": "reports/onlan-evidence-1008/sc2-frozen-W36",
+    "files": [
+      {
+        "name": "sc2_dataset_2026-W36.json",
+        "bytes": 1769421,
+        "sha256": "f3a40eedab95cf505f8e486d177280217e3148dd86b72d13112b7e69083c1d8b"
+      },
+      {
+        "name": "sc2_weekly_2026-W36.json",
+        "bytes": 17063,
+        "sha256": "aa5c15a9fb2c6652f6eefcc77ab83910704411857c5a5669cfb6fe30ff535970"
+      }
+    ],
+    "hashes_server_before_local_server_after_equal": true,
+    "mode": "real",
+    "schema": 1,
+    "period": "2026-W36",
+    "base_date": "2026-09-13",
+    "fetched_at": "2026-09-13T20:10:12+08:00",
+    "copied_and_hash_verified_local": "2026-10-08T12:01:10+08:00",
+    "original_csv_directory": "4-数字员工/采购部/SC2-采购周报自动生成/reports/538-明细交付-2026-09-13",
+    "csv_checks": [
+      {
+        "name": "sc2_2026-W36_下单_本周.csv",
+        "rows": 187,
+        "sha256": "6ae1cb61eb2f7eccb52646a76f90d287c57da12cdd661e2867cb661b3ad5897d"
+      },
+      {
+        "name": "sc2_2026-W36_收货_本周.csv",
+        "rows": 58,
+        "sha256": "a5b264980d84dafcfb145ab3f3cd00c827f31e07527908c4090b9c8176b86dd7"
+      },
+      {
+        "name": "sc2_2026-W36_在途_本周.csv",
+        "rows": 187,
+        "sha256": "62ad2e24997fe4a6bb059e90b22ced522a24a917601ed04152dd7b8db478f1a9"
+      }
+    ],
+    "csv_cohorts_match_with_multiplicity": true,
+    "professional_sources": [
+      {
+        "name": "采购部-YaoZuYi-回复-采购部#23-2026-09-18-采购部-姚祖怡-跟进-2026-09-13-SC2三节计算过程明细交付与下单行核对-cd244f2bfb81e44cb2a2c65b0fc02835.docx",
+        "sha256": "9a9f48646efb0696ca11e390bbae7c0b357c1c70393ce63a3e2e51a2646ded14"
+      },
+      {
+        "name": "采购部-YaoZuYi-回复-采购部#24-2026-10-02-采购部-姚祖怡-跟进-2026-09-18-SC2周报第三版指标范围确认与两处口径澄清-a66b61b46745e2ab454e4db0c1dfb686.docx",
+        "sha256": "ad75d5d7f9fc36d321fdb31960d9a74298f74a533dfc0e2d5276025fad2ac8f8"
+      }
+    ],
+    "original_erp_ui_field_filter_time_and_reference_rows": "not_provided",
+    "root_cause_closed": false,
+    "new_source_fetches": 0,
+    "new_refreshes": 0,
+    "production_recomputes": 0
+  },
+  "sc8": {
+    "directory": "C:/Dev/Codex/runtimes/zhuopin-ai/sc8-real-1007",
+    "input_head": "29c1ee92167a4f4bba217078c80cd97928b635a3",
+    "input_business_date": "2026-10-07",
+    "capture_start_utc": "2026-10-07T06:49:35.710436+00:00",
+    "capture_end_utc": "2026-10-07T06:57:34.734837+00:00",
+    "hashes": {
+      "six-inputs.json": "e9bc55cec9febb31cbe700cb7f6086a382df2a63374e1f3dc3e664d85a91173e",
+      "r2-off-on.md": "b9b35a7611f92f324cc3a3524c69846ae3914d9604b27d48cb837a08f85a5d5d",
+      "r2-off-on.md.receipt.json": "838ae91267863420dc5efd5eb5b3d999231b5d33633f1a5cdc30a11b0553039e",
+      "sealed-evidence.json": "2ad00acc38cf93a748971a396d6c36fa3a656b37c42feffef092b1e9814d84a2"
+    },
+    "existing_receipt_hashes_equal": true,
+    "new_captures": 0,
+    "new_rule_comparisons": 0,
+    "coverage_color": "untriggered_unverified",
+    "professional_signoff": "pending"
+  },
+  "private_verification": {
+    "script": "reports/onlan-evidence-1008/offline_material_check.py",
+    "receipt": "reports/onlan-evidence-1008/offline-materials-verification.json",
+    "exit": 0,
+    "network_used": false,
+    "business_runner_called": false
+  },
+  "data_git_rule": "Real original pair and CSV remain in ignored reports; SC8 originals remain in existing approved external directory; this index contains metadata only",
+  "pending": {
+    "erp_evidence_owner": "采购专线/姚祖怡；本会话核验",
+    "letters": {
+      "quality16": "in_flight",
+      "procurement25": "in_flight"
+    },
+    "old_failures": "not_recovered_or_restarted"
+  }
+}
