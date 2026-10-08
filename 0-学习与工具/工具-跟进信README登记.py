@@ -87,7 +87,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -872,6 +874,154 @@ def cmd_set_status(args: argparse.Namespace) -> int:
         return 0
 
 
+def _append_verified_revision_log(path: Path, record: dict) -> None:
+    """向既有 Markdown 修订日志追加 fenced JSON 快照并回读校验。"""
+    if not path.is_file() or path.suffix.lower() != ".md":
+        raise RegistryError(f"修订历史必须是仓库内已有 Markdown 日志：{path}")
+    line = "\n\n## 自动登记的旧行快照\n\n```json\n" + json.dumps(
+        record, ensure_ascii=False, indent=2
+    ) + "\n```\n"
+    try:
+        with path.open("a", encoding="utf-8", newline="") as stream:
+            stream.write(line)
+            stream.flush()
+        if not path.read_text(encoding="utf-8").endswith(line):
+            raise RegistryError("修订历史日志回读校验失败")
+    except OSError as exc:
+        raise RegistryError(f"修订历史日志写入/回读失败：{exc}") from exc
+
+
+@_catches_registry_errors
+def cmd_revise(args: argparse.Namespace) -> int:
+    _assert_field_lengths(args.topic, "")
+    if not args.quote.strip():
+        raise RegistryError("--quote 必须包含明确修订授权原话")
+    target = re.search(r"→\s*目标文件：(?P<name>[^\s|]+\.md)(?:\s|$)", args.topic)
+    if not target:
+        raise RegistryError("--topic 必须包含 `→ 目标文件：<新版MD文件名>`")
+    decision = _assert_decision_points(args.letter_path)
+    letter_path = Path(args.letter_path)
+    if not letter_path.is_absolute():
+        letter_path = REPO_ROOT / letter_path
+    if not letter_path.is_file() or letter_path.name != target.group("name"):
+        raise RegistryError("--letter-path 不存在或与 topic 目标文件名不一致")
+    try:
+        letter_path.resolve().relative_to(REPO_ROOT.resolve())
+    except ValueError as exc:
+        raise RegistryError("--letter-path 必须位于仓库内") from exc
+    if letter_path.resolve().parent != _readme_path().resolve().parent:
+        raise RegistryError("新版信件必须与 README 位于同一跟进信目录")
+    try:
+        fm = letter_fm.parse_frontmatter(letter_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise RegistryError(f"新版信件读取失败：{exc}") from exc
+    if fm is None:
+        raise RegistryError("新版信件缺少 frontmatter")
+    fields, _ = fm
+    if fields.get("编号") != args.number or fields.get("收信人", "").find("唐燕萍") < 0:
+        raise RegistryError("新版信件 frontmatter 的编号/收信人必须绑定财务部#20与唐燕萍")
+    try:
+        new_date = date.fromisoformat(args.date)
+    except ValueError as exc:
+        raise RegistryError("--date 必须为有效的 YYYY-MM-DD 日期") from exc
+    if new_date.isoformat() != args.date:
+        raise RegistryError("--date 必须为 YYYY-MM-DD")
+
+    log_path = Path(args.history_log)
+    if not log_path.is_absolute():
+        log_path = REPO_ROOT / log_path
+    try:
+        log_path.resolve().relative_to(REPO_ROOT.resolve())
+    except ValueError as exc:
+        raise RegistryError("--history-log 必须位于仓库内") from exc
+
+    text = _readme_path().read_text(encoding="utf-8")
+    rows = _parse_rows(text)
+    header = rows[0].header_cells
+    number_col = column_index(header, "编号")
+    if number_col is None:
+        raise RegistryError("README 表头缺「编号」列")
+    status_col = column_index(header, "发送状态")
+    if status_col is None:
+        raise RegistryError("README 表头缺发送状态列")
+    match = next((r for r in rows if len(r.cells) > number_col and r.cells[number_col] == args.number), None)
+    if match is None:
+        raise RegistryError(f"编号「{args.number}」不存在")
+    _assert_row_column_count(match.cells, header, args.number)
+    recipient_col = column_index(header, "收信人")
+    recipient = match.cells[recipient_col] if recipient_col is not None else ""
+    department, name = split_department_and_name(recipient)
+    if department != "财务部" or name != "唐燕萍":
+        raise RegistryError("修订仅允许财务部#20原收信人行")
+    if args.number != "财务部#20":
+        raise RegistryError("当前修订授权仅适用于财务部#20")
+    status = match.cells[status_col]
+    if not (status.startswith("✅ 已推送") or status == DRAFT_STATUS):
+        raise RegistryError(f"仅允许从已推送或精确待审状态修订，当前为：{status}")
+    old_cells = match.cells.copy()
+    old_date = date.fromisoformat(old_cells[1])
+    if new_date < old_date:
+        raise RegistryError("修订日期不得早于原行日期")
+    old_line = readme_table._join_row(old_cells)
+    record = {
+        "number": args.number,
+        "header": header,
+        "old_cells": old_cells,
+        "old_line": old_line,
+        "sha256": hashlib.sha256(old_line.encode("utf-8")).hexdigest(),
+        "authorization_quote": args.quote,
+        "new_letter_path": str(letter_path.relative_to(REPO_ROOT)),
+        "decision_points": decision,
+    }
+    new_cells = old_cells.copy()
+    date_col = column_index(header, "日期")
+    topic_col = column_index(header, "主要事项")
+    deadline_col = column_index(header, "交期要点")
+    if None in (date_col, topic_col, deadline_col):
+        raise RegistryError("README 表头缺修订所需列")
+    new_cells[date_col] = args.date
+    new_cells[topic_col] = args.topic
+    new_cells[deadline_col] = old_cells[deadline_col] + ("" if "🔒人工发送" in old_cells[deadline_col] else "🔒人工发送")
+    new_cells[status_col] = DRAFT_STATUS
+    _assert_row_column_count(new_cells, header, args.number)
+    print(f"[PLAN] revise：{args.number} → {args.date} ｜ {args.topic} ｜ 状态={DRAFT_STATUS}")
+    if args.dry_run:
+        print("[DRY-RUN] 未取锁、未写入。")
+        return 0
+
+    _run_lock("acquire", args.who, note=f"登记 revise：{args.number}")
+    try:
+        # 持锁后重读，防止基于锁前旧版本覆盖并发更新。
+        locked_text = _readme_path().read_text(encoding="utf-8")
+        locked_rows = _parse_rows(locked_text)
+        current = next((r for r in locked_rows if len(r.cells) > number_col and r.cells[number_col] == args.number), None)
+        if current is None or current.cells != old_cells:
+            raise RegistryError("取锁后目标行已变化；拒绝按旧快照修订")
+        _append_verified_revision_log(log_path, record)
+        new_text = write_cells(locked_text, current, {
+            date_col: new_cells[date_col], topic_col: new_cells[topic_col],
+            deadline_col: new_cells[deadline_col], current.status_col_index: DRAFT_STATUS,
+        })
+        def _locate(t: str):
+            try:
+                return next((r for r in iter_rows(t) if len(r.cells) > number_col and r.cells[number_col] == args.number), None)
+            except ReadmeTableError:
+                return None
+        _write_readback(new_text, new_cells, _locate)
+    except ReadbackMismatchError as exc:
+        print(f"[READBACK-FAILED] {exc}", file=sys.stderr)
+        return 1
+    except RegistryError:
+        _run_lock("release", args.who)
+        raise
+    else:
+        if not _run_lock("release", args.who):
+            print("[WRITTEN-LOCK-HELD] 已修订但锁未释放，需人工处理", file=sys.stderr)
+            return 1
+        print(f"[OK] 已修订：{args.number}；历史已验证；状态精确为 {DRAFT_STATUS}")
+        return 0
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -912,6 +1062,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_status.add_argument("--dry-run", action="store_true")
     p_status.set_defaults(func=cmd_set_status)
+
+    p_revise = sub.add_parser("revise", help="保留编号修订既有待审/已推送行")
+    p_revise.add_argument("--number", required=True)
+    p_revise.add_argument("--who", required=True)
+    p_revise.add_argument("--date", required=True)
+    p_revise.add_argument("--topic", required=True)
+    p_revise.add_argument("--letter-path", required=True)
+    p_revise.add_argument("--history-log", required=True)
+    p_revise.add_argument("--quote", required=True)
+    p_revise.add_argument("--dry-run", action="store_true")
+    p_revise.set_defaults(func=cmd_revise)
 
     args = parser.parse_args(argv)
     return args.func(args)
