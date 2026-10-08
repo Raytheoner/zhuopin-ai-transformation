@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "observed_local": "2026-10-08T12:05:00+08:00",
+  "observed_local": "2026-10-08T12:17:46+08:00",
   "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
   "goal_status": "active",
   "queue_binding": {
@@ -14,6 +14,18 @@
     "other_owner_retained": true
   },
   "stage": "on_lan_existing_evidence_and_off_lan_material_readiness",
+  "latest_preparation": {
+    "date_shanghai": "2026-10-08",
+    "head_observed_at": "2026-10-08T12:48:44+08:00",
+    "head": "557429e2ed10afdfee35a63fa79e72520b9be88f",
+    "previous_goal_turn": "progress: frozen boundary evidence and successful authorized broadcast",
+    "this_goal_turn": "progress: SC2 conditional cache/date evidence; Q2 plan A and Native approval consumed",
+    "offline_material_recheck_at": "2026-10-08 13:01 Asia/Shanghai",
+    "offline_material_recheck_exit": 0,
+    "sc2_pair_csv_cohorts_sc8_frozen_still_match": true,
+    "q2_plan_material_check_at": "2026-10-08T13:34:40.027824+08:00",
+    "q2_plan_material_check_exit": 0
+  },
   "probe": {
     "normal_sandbox": "PermissionError writing original probe cache; exit 1",
     "normal_permission_retry": {
@@ -91,6 +103,58 @@
         "sha256": "ad75d5d7f9fc36d321fdb31960d9a74298f74a533dfc0e2d5276025fad2ac8f8"
       }
     ],
+    "boundary_verification": {
+      "observed_local": "2026-10-08T12:17:46+08:00",
+      "receipt": "reports/onlan-evidence-1008/sc2-frozen-boundary-verification.json",
+      "exit": 0,
+      "network_used": false,
+      "all_orders": 3270,
+      "all_receipts": 737,
+      "current_orders": 187,
+      "current_receipts": 58,
+      "all_and_current_primary_keys_unique_nonempty": true,
+      "all_and_current_dates_valid": true,
+      "current_order_documents": 33,
+      "current_receipt_documents": 31,
+      "current_receipt_source_order_lines": 56,
+      "current_receipt_rows_source_matched": 41,
+      "current_receipt_rows_source_not_found": 17,
+      "source_not_found_rows_excluded_from_receipt_count": false,
+      "actual_order_date_range": [
+        "2026-06-10",
+        "2026-09-07"
+      ],
+      "actual_receipt_date_range": [
+        "2026-08-10",
+        "2026-09-08"
+      ],
+      "source_notes_all_orders_outsource_excluded": 145,
+      "source_notes_all_orders_delivery_plan_rows_merged": 0,
+      "raw_api_total_pagination_and_cache_timestamp_present": false,
+      "historical_connector_git_revision_inspected": "14bbbb8",
+      "historical_production_platform_package_version_verified": false,
+      "comparison_checklist": "SC2现场证据与离网接续-2026-10-08.md §3.4"
+    },
+    "cache_date_consistency": {
+      "checked_at_shanghai": "2026-10-08T13:43:21.455841+08:00",
+      "receipt": "reports/onlan-evidence-1008/sc2-cache-boundary-verification.json",
+      "exit": 0,
+      "historical_source_revision": "14bbbb8b614cd765851e2d2d12a7f42abeaea677",
+      "conditional_cutoff_if_runtime_date_matches_fetched_at": "2026-06-15",
+      "orders_before_conditional_cutoff": 5,
+      "orders_before_cutoff_by_date": {
+        "2026-06-10": 1,
+        "2026-06-12": 4
+      },
+      "before_cutoff_rows_in_current_week": 0,
+      "cache_hit_reapplies_download_cutoff": false,
+      "timestamp_used_for_po_cache_validity": false,
+      "actual_production_platform_clock_cache_raw_makeDate_proven": false,
+      "professional_difference_explained": false,
+      "network_used": false,
+      "source_refresh_or_recompute": false,
+      "checklist": "SC2现场证据与离网接续-2026-10-08.md §3.5"
+    },
     "original_erp_ui_field_filter_time_and_reference_rows": "not_provided",
     "root_cause_closed": false,
     "new_source_fetches": 0,
@@ -113,7 +177,108 @@
     "new_captures": 0,
     "new_rule_comparisons": 0,
     "coverage_color": "untriggered_unverified",
-    "professional_signoff": "pending"
+    "professional_signoff": "pending",
+    "existing_report_review": {
+      "checked_at_shanghai": "2026-10-08T13:09:53.335076+08:00",
+      "safe_index": "0-学习与工具/codex-handoff/SC8冻结报告离网复核索引-2026-10-08.md",
+      "private_summary": "reports/onlan-evidence-1008/sc8-existing-review-summary.json",
+      "exit": 0,
+      "source_position_identity_qty_ship_matches_rows": 119,
+      "all_report_date_differences_match": true,
+      "moved_ship_date_cohort_sizes": [
+        23,
+        15,
+        8
+      ],
+      "moved_ship_date_cohort_advance_days": [
+        13,
+        44,
+        74
+      ],
+      "unchanged_rows": 73,
+      "horizon_from_receipt": "2027-01-07",
+      "boundary_day_and_adjacent_days_rows": 0,
+      "D4_actual_coverage": "untriggered_unverified",
+      "r2_runner_calls": 0,
+      "product_imports": 0,
+      "network_used": false,
+      "professional_or_D4_signoff": false
+    }
+  },
+  "q2_offline_design_preparation": {
+    "change": "portal-q2-ui",
+    "queue_binding": 661,
+    "approved_scope_source": "docs/superpowers/plans/2026-10-08-portal-ui-rollout.md stage3",
+    "directory": "openspec/changes/portal-q2-ui",
+    "source_index": "openspec/changes/portal-q2-ui/来源与审核索引.json",
+    "checked_at_shanghai": "2026-10-08T12:58:58.432868+08:00",
+    "sources_readable": 11,
+    "standard_artifacts_readable": 5,
+    "core_source_hashes_equal_before": true,
+    "requirements": 6,
+    "scenarios": 13,
+    "conditional_tasks_unchecked": 16,
+    "openspec_strict_validation": {
+      "command": "openspec validate portal-q2-ui --strict --json",
+      "exit": 0,
+      "items": 1,
+      "passed": 1,
+      "failed": 0,
+      "issues": []
+    },
+    "human_design_approval": {
+      "status": "approved",
+      "user_quote": "Q2设计：A",
+      "approval_date_shanghai": "2026-10-08",
+      "recorded_at_shanghai": "2026-10-08T13:34:40.027824+08:00",
+      "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
+      "scope": "proposal/spec/design D1-D7; permits detailed planning",
+      "plan_or_execution_method_approved": true
+    },
+    "implementation_plan_and_execution_method": "approved; Native setup",
+    "product_implementation_started": false,
+    "product_tests_run": false,
+    "business_get_or_source_collection": false,
+    "engine_or_criteria_changed": false,
+    "612_original_ownership_retained": true,
+    "business_tier_or_workflow_accepted": false,
+    "conditional_tasks_checked": 2,
+    "implementation_plan": {
+      "path": "docs/superpowers/plans/2026-10-08-portal-q2-ui.md",
+      "bytes": 35574,
+      "sha256": "f2cc1137df3179b07998e5f64034ce52689d76d9dca5dc5b3f394ba72c059d9f",
+      "readable_utf8": true,
+      "review_status": "approved",
+      "execution_method": "Native",
+      "recommendation": "Native",
+      "python_blocks_syntax_valid": 6,
+      "python_blocks_executed": 0,
+      "human_approval": {
+        "status": "approved",
+        "user_quote": "Q2计划：A；执行：Native；",
+        "recorded_at_shanghai": "2026-10-08T13:52:52.670400+08:00",
+        "execution_thread": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
+        "approved_plan_sha256": "f2cc1137df3179b07998e5f64034ce52689d76d9dca5dc5b3f394ba72c059d9f",
+        "ff_deployment_service_real_samples_send_approved": false
+      }
+    },
+    "native_creation": {
+      "operation_id": "4384161d-0c37-4a25-b2c5-9a25e7e0c215",
+      "stage_last_observed": "completed",
+      "revision": 87,
+      "workspace_directory": "C:/Users/Paul Shao/.codex/worktrees/portal-q2-ui-1008/zhuopin-ai",
+      "status_readback": "2026-10-08: elevated git status --porcelain=v1 exit0 empty; no product edits yet"
+    }
+  },
+  "broadcast": {
+    "group": "跨部门AI建设群",
+    "status": "delivered",
+    "delivered_at_shanghai": "2026-10-08T12:36:48+08:00",
+    "ack_errcode": 0,
+    "official_delivery_events": 1,
+    "evidence": "1-转型规划/AI运营指挥中心/UI设计评审-2026-10-07/实施证据/门户UI上线广播-2026-10-08.json",
+    "historical_audit_chain_passed": false,
+    "duplicate_send": false
   },
   "private_verification": {
     "script": "reports/onlan-evidence-1008/offline_material_check.py",
@@ -124,11 +289,60 @@
   },
   "data_git_rule": "Real original pair and CSV remain in ignored reports; SC8 originals remain in existing approved external directory; this index contains metadata only",
   "pending": {
-    "erp_evidence_owner": "采购专线/姚祖怡；本会话核验",
+    "erp_evidence_owner": "IT准备原件、采购专线/姚祖怡确认口径；本会话核验",
+    "erp_evidence_latest_user_reply": "IT还在准备；尚未收到正式原件",
     "letters": {
       "quality16": "in_flight",
       "procurement25": "in_flight"
     },
     "old_failures": "not_recovered_or_restarted"
+  },
+  "sc2_server_self_service_metadata": {
+    "receipt": "reports\\onlan-evidence-1008\\sc2-server-readonly-metadata-v2.json",
+    "sha256": "46ccd4d1a096fe25e950974be15800fa0df62c975b6c679415299d5ffa6c81b8",
+    "checked_at_shanghai": "2026-10-08T14:06:53.3765719+08:00",
+    "server_local": "2026-10-08T14:06:51.4701393+08:00",
+    "source_normalized_hash_matches_historical": true,
+    "cache_metadata": [
+      {
+        "days": 90,
+        "exists": true,
+        "list_counts": {
+          "rows": 2595
+        },
+        "mtime_local": "2026-10-07T20:26:03.852422+08:00",
+        "path": "C:\\sc2\\zhuopin_platform\\zhuopin_platform\\shared_tools\\erp_connector\\cache\\po_cache.json",
+        "root_type": "dict",
+        "schema": 2,
+        "sha256": "3fbed4502f4d758927be72a3759b4aaf39d1a823d172e3e8476cf2f7ca137dac",
+        "size": 1280295,
+        "timestamp": 1791375963.8373475,
+        "top_level_keys": [
+          "days",
+          "rows",
+          "schema",
+          "timestamp"
+        ]
+      },
+      {
+        "exists": true,
+        "mtime_local": "2026-10-07T20:27:00.070313+08:00",
+        "path": "C:\\sc2\\zhuopin_platform\\zhuopin_platform\\shared_tools\\erp_connector\\cache\\gr_lines_90d.json",
+        "root_type": "list",
+        "row_count": 1935,
+        "sha256": "f6959e55694f79fbc05436fc89da4ec06239e6bdacbea53453b0386234734053",
+        "size": 579226
+      }
+    ],
+    "trace_summary": {
+      "records": 12598,
+      "parse_errors": 0,
+      "timestamp_min": "2026-08-18T18:18:32.711803+08:00",
+      "timestamp_max": "2026-10-07T20:27:00.021924+08:00",
+      "sept13_count": 619
+    },
+    "historical_erp_326_90_record_access_missing": true,
+    "new_erp_requests_or_cache_changes": false,
+    "professional_root_cause_resolved": false
   }
 }
