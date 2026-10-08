@@ -67,76 +67,97 @@ def _secure_filename(filename: str) -> str:
 
 _PAGE_HEAD = """<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QD-B 立项审核门禁 · 试用版</title>
 <style>
-  body{font-family:-apple-system,"Segoe UI",'Microsoft YaHei',sans-serif;background:#0f172a;color:#e2e8f0;
-       max-width:1080px;margin:0 auto;padding:24px 20px 60px}
-  h1{font-size:20px;margin:0 0 4px}
-  .badge{display:inline-block;background:#f59e0b;color:#1c1917;font-size:12px;font-weight:700;
-         padding:2px 8px;border-radius:4px;vertical-align:middle;margin-left:8px}
-  .sub{color:#94a3b8;font-size:13px;margin-bottom:20px}
-  .disclaimer{background:#1e293b;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:4px;
-              font-size:13px;color:#fbbf24;margin-bottom:20px}
-  .card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:16px 20px;margin-bottom:14px}
-  .card h3{margin:0 0 10px;font-size:14px;color:#93c5fd;display:flex;align-items:center;gap:8px}
+  /* 批准来源：UI设计评审-2026-10-07/设计变量.json，方向1。独立服务内联子集。 */
+  :root{--brand:#1677ff;--action:#126bd9;--text:#18253b;--secondary:#63738b;
+        --canvas:#f5f8fc;--surface:#fff;--border:#e7edf5;--risk:#a3433b;--warning:#85621b;--covered:#176b59}
+  *{box-sizing:border-box}
+  body{font-family:'Microsoft YaHei','PingFang SC','Segoe UI',sans-serif;background:var(--canvas);
+       color:var(--text);max-width:1280px;margin:0 auto;padding:32px 38px 60px;font-size:14px;line-height:1.65;
+       overflow-wrap:anywhere}
+  h1{font-size:28px;line-height:1.35;margin:0 0 8px}
+  .badge{display:inline-block;background:#fff2d4;color:var(--warning);font-size:12px;font-weight:700;
+         padding:3px 8px;border-radius:6px;vertical-align:middle;margin-left:8px}
+  .sub,.meta,.note,.cross{color:var(--secondary)}
+  .sub{margin-bottom:20px}.meta,.note{font-size:12px}.note{margin-top:8px}
+  .eyebrow{color:var(--action);font-size:12px;font-weight:700;margin-bottom:8px}
+  .disclaimer{background:#fff8e9;border:1px solid #f1d9a1;border-left:3px solid var(--warning);
+              padding:12px 16px;border-radius:6px;color:var(--warning);margin-bottom:20px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+        padding:24px;margin-bottom:20px;min-width:0;scroll-margin-top:24px}
+  .card h2,.card h3{margin:0 0 16px;font-size:18px;line-height:1.5}
   .verdict{font-size:26px;font-weight:800;margin:6px 0}
-  .v-pass{color:#4ade80}.v-fail{color:#f87171}.v-warn{color:#fbbf24}
-  ul{margin:6px 0 0;padding-left:20px}
-  li{margin:4px 0;font-size:13px;line-height:1.5}
-  .meta{font-size:12px;color:#94a3b8}
-  .empty{color:#64748b;font-size:13px}
-  form{background:#1e293b;border:1px dashed #475569;border-radius:8px;padding:24px;text-align:center}
-  input[type=file]{color:#e2e8f0;margin-bottom:14px}
-  button{background:#2563eb;color:#fff;border:0;border-radius:6px;padding:8px 20px;font-size:14px;cursor:pointer}
-  button:hover{background:#1d4ed8}
-  a{color:#60a5fa}
-  .note{font-size:12px;color:#64748b;margin-top:6px}
-  .cross{color:#94a3b8;font-style:italic;font-size:13px}
-
-  .hero{display:flex;flex-wrap:wrap;align-items:center;gap:22px}
-  .hero .score-big{font-size:42px;font-weight:800;line-height:1}
-  .hero .ded{font-size:13px;color:#94a3b8}
-  .hero .ded b{color:#f87171}
-  .hero .ded b.warn{color:#fbbf24}
-  .btn-download{background:#16a34a;color:#fff;border:0;border-radius:6px;padding:10px 18px;font-size:14px;
-                font-weight:700;text-decoration:none;display:inline-block;white-space:nowrap}
-  .btn-download:hover{background:#15803d}
-  .info-grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:4px 20px;font-size:13px;margin-top:14px}
-  .info-grid div b{color:#93c5fd;font-weight:600}
-  table.grid{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
-  table.grid th{background:#0f172a;color:#93c5fd;text-align:left;padding:6px 8px;border-bottom:1px solid #334155;
-                position:sticky;top:0}
-  table.grid td{padding:5px 8px;border-bottom:1px solid #263349;vertical-align:top}
-  table.grid tr.row-fail td{background:rgba(248,113,113,.08)}
-  table.grid tr.row-warn td{background:rgba(251,191,36,.08)}
-  .scroll-box{max-height:520px;overflow:auto;border:1px solid #263349;border-radius:6px}
-  .tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
-  .tag-pass{background:#14532d;color:#4ade80}
-  .tag-warn{background:#78350f;color:#fbbf24}
-  .tag-fail{background:#7f1d1d;color:#f87171}
-  .tag-na{background:#334155;color:#94a3b8}
-  .tag-manual{background:#1e3a5f;color:#93c5fd}
-  .tag-pending{background:#334155;color:#cbd5e1}
-  .rate-bar{background:#334155;border-radius:4px;height:8px;overflow:hidden;width:90px;display:inline-block;
+  .v-pass{color:var(--covered)}.v-fail{color:var(--risk)}.v-warn{color:var(--warning)}
+  ul{margin:8px 0 0;padding-left:20px}li{margin:10px 0}
+  .empty{color:var(--secondary);padding:12px 0}
+  form{background:var(--surface);border:1px dashed #a9b9cf;border-radius:10px;padding:32px;max-width:760px}
+  .upload-label{display:block;font-size:18px;font-weight:700;margin-bottom:12px}
+  input[type=file]{display:block;max-width:100%;margin:0 0 20px;color:var(--text);font:inherit}
+  button,.btn-download{background:var(--action);color:#fff;border:0;border-radius:6px;padding:12px 20px;
+                      font:inherit;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}
+  button:hover,.btn-download:hover{background:#0f59b7}
+  a{color:var(--action)}
+  a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,.scroll-box:focus-visible{
+    outline:3px solid var(--brand);outline-offset:3px}
+  .page-nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+  .page-nav a{display:block;padding:8px 14px;background:var(--surface);border:1px solid var(--border);
+              border-radius:6px;text-decoration:none;font-weight:600}
+  .page-nav a:hover{background:#eef5ff}
+  .hero{display:flex;flex-wrap:wrap;align-items:center;gap:24px;padding:8px 0 20px;border-bottom:1px solid var(--border)}
+  .hero .score-big{font-size:42px;font-weight:800;line-height:1.2}
+  .hero .ded{color:var(--secondary)}.hero .ded b{color:var(--risk)}.hero .ded b.warn{color:var(--warning)}
+  .info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 24px;margin-top:20px}
+  .info-grid div b{font-weight:600}
+  table.grid{width:100%;border-collapse:collapse;font-size:14px;margin-top:4px}
+  table.grid th{background:var(--canvas);text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);
+                position:sticky;top:0;z-index:1}
+  table.grid td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  table.grid tr.row-fail td{background:#fff5f3}table.grid tr.row-warn td{background:#fffaf0}
+  .scroll-box{max-height:560px;overflow:auto;border:1px solid var(--border);border-radius:6px}
+  .tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;white-space:nowrap}
+  .tag-pass{background:#e8f5ef;color:var(--covered)}.tag-warn{background:#fff2d4;color:var(--warning)}
+  .tag-fail{background:#fdebe7;color:var(--risk)}.tag-na,.tag-pending{background:#eef1f6;color:var(--secondary)}
+  .tag-manual{background:#e9f2ff;color:var(--action)}
+  .rate-bar{background:var(--border);border-radius:4px;height:8px;overflow:hidden;width:90px;display:inline-block;
             vertical-align:middle;margin-right:6px}
-  .rate-bar i{display:block;height:100%;background:#4ade80}
-  .rate-bar.warn i{background:#fbbf24}
-  .filters{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:13px}
-  .filters select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:4px 8px}
-  .filters label{display:flex;align-items:center;gap:5px}
-  .topbar{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px}
+  .rate-bar i{display:block;height:100%;background:var(--covered)}.rate-bar.warn i{background:var(--warning)}
+  .filters{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+  .filters select{background:var(--surface);color:var(--text);border:1px solid #a9b9cf;border-radius:6px;
+                  padding:8px;max-width:100%;min-width:0;font:inherit}
+  .filters label{display:flex;align-items:center;gap:8px;max-width:100%;min-width:0}
+  .topbar{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:4px}
+  .topbar>div{flex:1;min-width:0}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+  .skip-link{position:absolute;top:-100px}.skip-link:focus{top:8px;background:var(--surface);padding:8px;z-index:2}
+  @media(max-width:700px){
+    body{padding:24px 17px 40px}h1{font-size:25px}.badge{margin-left:0;margin-top:8px}
+    .card{padding:16px;border-radius:8px}.info-grid{grid-template-columns:1fr;gap:10px}
+    form{padding:20px}.topbar{display:block}.topbar .btn-download{margin-bottom:16px}
+    .filters{display:block}.filters label{margin-bottom:12px}.filters select{flex:1;width:0}
+    .scroll-box{max-height:none;overflow:visible;border:0}
+    table.grid,table.grid tbody,table.grid tr{display:block;width:100%}
+    table.grid thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+    table.grid tr{border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+    table.grid td{display:grid;grid-template-columns:5em minmax(0,1fr);gap:12px;padding:8px 12px}
+    table.grid td::before{content:attr(data-label);color:var(--secondary);font-size:12px}
+    table.grid td:last-child{border-bottom:0}.page-nav a{padding:8px 10px}
+  }
 </style></head><body>
 """
 _PAGE_FOOT = "</body></html>"
 
 _INDEX_BODY = """
+<div class="eyebrow">质量部 / 立项预审</div>
 <h1>QD-B 立项审核门禁<span class="badge">试用版·灰度</span></h1>
 <div class="sub">上传立项申请书（EQQR8082 A2.1 模板，.xlsx）→ AI 出预审建议报告</div>
 <div class="disclaimer">⚠ 试用版：AI 预审建议，立项决策仍在评审委员会/PMO；不作为正式立项依据。反馈请经企微机器人（陈忱/朱映桦经陈忱转）。</div>
 <form action="/evaluate" method="post" enctype="multipart/form-data">
-  <input type="file" name="proposal" accept=".xlsx" required><br>
+  <label for="proposal" class="upload-label">选择立项申请书</label>
+  <input id="proposal" type="file" name="proposal" accept=".xlsx" required aria-describedby="upload-note">
   <button type="submit">上传并生成审核报告</button>
-  <div class="note">仅支持开发类 EQQR8082 A2.1 模板；文件不会被提交入代码库，仅落本机 LAN。</div>
+  <div id="upload-note" class="note">仅支持开发类 EQQR8082 A2.1 模板，.xlsx，最大 20 MB；文件不会被提交入代码库，仅落本机 LAN。</div>
 </form>
 """
 
@@ -174,6 +195,8 @@ def _error_page(message: str) -> str:
 def _verdict_class(verdict: str) -> str:
     if "不合格" in verdict:
         return "v-fail"
+    if "有条件合格" in verdict:
+        return "v-warn"
     if "合格" in verdict:
         return "v-pass"
     return "v-warn"
@@ -186,7 +209,8 @@ def _items_html(items: list[RuleResult]) -> str:
     for r in items:
         sug = f"｜建议：{html.escape(r.suggestion)}" if r.suggestion else ""
         lines.append(
-            f"<li><b>规则{html.escape(r.rule_id)}</b> {html.escape(r.check_item)}："
+            f'<li><span class="tag {_TAG_CLASS.get(r.verdict, "")}">{html.escape(r.verdict.value)}</span> '
+            f"<b>规则{html.escape(r.rule_id)}</b> {html.escape(r.check_item)}："
             f"{html.escape(r.evidence)}{sug}</li>"
         )
     return "<ul>" + "".join(lines) + "</ul>"
@@ -209,12 +233,13 @@ def _cross_module_html(items: list[RuleResult]) -> str:
         if it.suggestion:
             detail += f'<div class="note">建议：{html.escape(it.suggestion)}</div>'
         rows.append(
-            f'<tr class="{row_cls}"><td>{html.escape(it.rule_id)}</td>'
-            f'<td>{html.escape(it.check_item)}</td>'
-            f'<td><span class="tag {tag_cls}">{html.escape(label)}</span></td>'
-            f'<td>{detail}</td></tr>'
+            f'<tr class="{row_cls}"><td data-label="编号">{html.escape(it.rule_id)}</td>'
+            f'<td data-label="校验内容">{html.escape(it.check_item)}</td>'
+            f'<td data-label="判定"><span class="tag {tag_cls}">{html.escape(label)}</span></td>'
+            f'<td data-label="依据"><div>{detail}</div></td></tr>'
         )
-    return ('<table><thead><tr><th>编号</th><th>校验内容</th><th>判定</th><th>依据</th></tr></thead>'
+    return ('<table class="grid" id="cross-results"><caption class="sr-only">跨模块校验结果</caption>'
+            '<thead><tr><th>编号</th><th>校验内容</th><th>判定</th><th>依据</th></tr></thead>'
             '<tbody>' + "".join(rows) + '</tbody></table>')
 
 
@@ -228,11 +253,11 @@ def _item_table_rows_html(items: list[ScoredItem]) -> str:
         lines.append(
             f'<tr class="{row_cls}" data-module="{html.escape(it.module_key)}" '
             f'data-status="{html.escape(it.verdict.value)}" data-problem="{problem}">'
-            f'<td>{it.idx}</td><td>{html.escape(it.section)}</td>'
-            f'<td>{html.escape(it.check_item)}</td><td>{html.escape(it.pass_condition)}</td>'
-            f'<td><span class="tag {tag_cls}">{html.escape(it.status_label)}</span></td>'
-            f'<td>{it.std_score:.2f}</td><td>{it.actual_score:.2f}</td>'
-            f'<td>{ded_text}</td><td>{html.escape(it.detail_text)}</td></tr>'
+            f'<td data-label="序号">{it.idx}</td><td data-label="所属模块">{html.escape(it.section)}</td>'
+            f'<td data-label="检查项">{html.escape(it.check_item)}</td><td data-label="评审标准">{html.escape(it.pass_condition)}</td>'
+            f'<td data-label="状态"><span class="tag {tag_cls}">{html.escape(it.status_label)}</span></td>'
+            f'<td data-label="标准分">{it.std_score:.2f}</td><td data-label="实得">{it.actual_score:.2f}</td>'
+            f'<td data-label="扣分">{ded_text}</td><td data-label="详情"><div>{html.escape(it.detail_text)}</div></td></tr>'
         )
     return "".join(lines)
 
@@ -257,8 +282,9 @@ def _detail_table_html(items: list[ScoredItem], *, table_id: str,
 """
     rows = _item_table_rows_html(items)
     return f"""{filters_html}
-<div class="scroll-box">
+<div class="scroll-box" tabindex="0" role="region" aria-label="{'全量评审明细' if module_options is not None else '扣分明细'}">
 <table class="grid" id="{table_id}">
+<caption class="sr-only">{'全量评审明细' if module_options is not None else '扣分明细'}</caption>
 <thead><tr><th>序号</th><th>所属模块</th><th>检查项</th><th>评审标准</th><th>状态</th><th>标准分</th><th>实得</th><th>扣分</th><th>详情</th></tr></thead>
 <tbody>{rows}</tbody>
 </table>
@@ -273,12 +299,13 @@ def _module_rate_table_html(rates: list[ModuleRateRow]) -> str:
         status = "✅ 通过" if r.all_pass else "⚠️ 待改进"
         pct = max(0.0, min(100.0, r.rate_pct))
         rows.append(
-            f'<tr><td>{html.escape(r.section)}</td>'
-            f'<td><span class="rate-bar {bar_cls}"><i style="width:{pct:.0f}%"></i></span>{r.rate_pct:.1f}%</td>'
-            f'<td>{status}</td></tr>'
+            f'<tr><td data-label="模块">{html.escape(r.section)}</td>'
+            f'<td data-label="得分率"><div><span class="rate-bar {bar_cls}" aria-hidden="true"><i style="width:{pct:.0f}%"></i></span>{r.rate_pct:.1f}%</div></td>'
+            f'<td data-label="状态">{status}</td></tr>'
         )
     return (
-        '<table class="grid"><thead><tr><th>模块</th><th>得分率</th><th>状态</th></tr></thead>'
+        '<table class="grid" id="module-rates"><caption class="sr-only">各模块得分率</caption>'
+        '<thead><tr><th>模块</th><th>得分率</th><th>状态</th></tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table>'
     )
 
@@ -333,6 +360,8 @@ def _report_page(result: EvaluationResult, download_url: str) -> str:
     )
 
     return _PAGE_HEAD + f"""
+<a class="skip-link" href="#report-summary">跳到预审报告</a>
+<div class="eyebrow">质量部 / QD-B 立项预审</div>
 <div class="topbar">
   <div>
     <h1>《立项审核报告》<span class="badge">试用版·灰度</span></h1>
@@ -342,8 +371,13 @@ def _report_page(result: EvaluationResult, download_url: str) -> str:
   {download_btn}
 </div>
 <div class="disclaimer">{html.escape(rep.disclaimer)}</div>
+<nav class="page-nav" aria-label="报告区块">
+  <a href="#report-summary">预审报告</a><a href="#report-details">全量明细</a>
+  <a href="#rule-evidence">规则与证据</a><a href="#manual-todo">转人工待办</a>
+  <a href="#audit-metadata">审计信息</a>
+</nav>
 
-<div class="card">
+<div class="card" id="report-summary">
   <h3>① 总判定</h3>
   {_hero_html(rep.verdict, sr, fail_ded, warn_ded)}
   {provisional}
@@ -360,7 +394,7 @@ def _report_page(result: EvaluationResult, download_url: str) -> str:
   {dedu_section}
 </div>
 
-<div class="card">
+<div class="card" id="report-details">
   <h3>④ 全量评审明细表（{len(items)} 项）</h3>
   {_detail_table_html(items, table_id="detail-table", module_options=module_order(reg))}
 </div>
@@ -370,19 +404,24 @@ def _report_page(result: EvaluationResult, download_url: str) -> str:
   {_items_html(rep.blocking_items + rep.warning_items)}
 </div>
 
-<div class="card">
+<div class="card" id="rule-evidence">
   <h3>⑥ 跨模块校验结果（C01–C10）</h3>
   <div class="cross">{html.escape(rep.cross_module_note)}</div>
   {_cross_module_html(rep.cross_module_items)}
 </div>
 
-<div class="card">
+<div class="card" id="manual-todo">
   <h3>⑦ 转人工待办项（{len(rep.manual_todo_items)} 条）</h3>
   {_items_html(rep.manual_todo_items)}
 </div>
 
-<div class="card">
+<div class="card" id="audit-metadata">
   <h3>⑧ 审计元数据</h3>
+  <div class="info-grid meta">
+    <div><b>本次评估时间</b>：{html.escape(result.audit_event.timestamp or '未提供')}</div>
+    <div><b>原始资料更新时间</b>：未提供</div>
+  </div>
+  <div class="note">评估时间为审计事件时间；当前结果未提供来源系统更新时间，无法据此判断资料新鲜度。</div>
   <div class="meta">content_hash={html.escape(result.audit_event.content_hash[:16])}… ｜ 已写入平台 audit（scenario=QD-B，L2，append-only）</div>
 </div>
 
