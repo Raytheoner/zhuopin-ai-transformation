@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
+  "authorization": "Shao Peishen：IT还在准备；请给跨部门AI建设群发个广播，新门户UI上线，欢迎大家试用反馈意见。",
+  "group_name": "跨部门AI建设群",
+  "department_mapping_key": "跨部门",
+  "target_chatid": "wrvDL_DAAAntxO_zDcRCmGHMcuhvBTGw",
+  "message": "1-转型规划/AI运营指挥中心/门户UI上线广播-2026-10-08.md",
+  "message_sha256": "0d3216050225569cdd3b58c07015ef8cdfce57a49a562ab0a376cbfd07587f52",
+  "message_bytes": 780,
+  "public_portal_url": "http://192.168.100.51:8092/",
+  "portal_pre_send_check": "2026-10-08 12:27上海，HTTP HEAD 302，Location=/_gate/login?next=%2F；门禁可达，未登录或触发业务取数",
+  "transport": "existing_local_outbox_and_main_aibot_relay",
+  "status": "delivered",
+  "delivery_verified": true,
+  "delivery_id": "portal-ui-launch-1008-01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
+  "submitted_at_local": "2026-10-08T12:32:34+08:00",
+  "delivered_at_local": "2026-10-08T12:36:48+08:00",
+  "verified_at_local": "2026-10-08T12:40:37+08:00",
+  "delivered_ack": {
+    "errcode": 0,
+    "errmsg": "ok"
+  },
+  "outbox_path": "C:\\Dev\\zhuopin-ai\\.claude\\worktrees\\wecom-service-home\\5-平台底座\\wecom-aibot-service\\reports\\local_reminder_outbox.jsonl",
+  "outbox_record_number": 8,
+  "mapping_sha256": "fca834073d7d9d0d2eb5a77c84f5e9f6c34d0258226a0715396906a9383ef6a1",
+  "official_delivery_audit_events": [
+    {
+      "scenario": "wecom-aibot",
+      "action": "outbox_relay_delivered",
+      "evaluator": "system",
+      "automation_level": "L1",
+      "decision": {
+        "scenario": "portal_ui_launch_broadcast_20261008",
+        "period": "2026-10-08",
+        "channel": "aibot_group_chatid",
+        "target": "wrvDL_DAAAntxO_zDcRCmGHMcuhvBTGw",
+        "kind": "group",
+        "ack": {
+          "headers": {
+            "req_id": "aibot_send_msg_1791434209127_d726538b"
+          },
+          "errcode": 0,
+          "errmsg": "ok"
+        }
+      },
+      "data_sources": {
+        "path": "C:\\Dev\\zhuopin-ai\\.claude\\worktrees\\wecom-service-home\\5-平台底座\\wecom-aibot-service\\reports\\local_reminder_outbox.jsonl",
+        "line": "8"
+      },
+      "content_hash": "",
+      "oem_context": "",
+      "override_reason": "",
+      "report_path": "",
+      "timestamp": "2026-10-08T04:36:49.573773+00:00",
+      "prev_hash": "7684298ac6ad2bad6ec83bb749f233d709524b13f1bec567a977d61846e062a1"
+    }
+  ],
+  "official_audit_chain_verification": {
+    "ok": false,
+    "total": 11829,
+    "first_break": 685,
+    "break_count": 341,
+    "last_break": 6662,
+    "this_delivery_audit_lines": [
+      11829
+    ],
+    "this_delivery_has_hash_link_error": false,
+    "this_delivery_has_duplicate_prev_hash": false,
+    "limits": "Whole history verification is distinct from this successful delivery; no audit records rewritten"
+  },
+  "audit_history_limit": "全历史审计链检查未通过：341处断点，首685/末6662，均早于本条11829。本条相邻hash及重复prev_hash检查未报错。记录原问题，不改历史审计、不诊断根因、不以它重发。",
+  "verification": {
+    "command": "项目隔离Python运行reports/onlan-evidence-1008/portal_broadcast_delivery.py --verify",
+    "exit": 0,
+    "same_body_sha_and_target": true,
+    "successful_ack": true,
+    "official_matching_delivery_events": 1
+  },
+  "verification_helper_note": "初次附全链结果时ChainVerifyResult不能直接JSON序列化；仅改本机辅助记录转dataclass，无新提交或发送。",
+  "new_connection_or_service_change": false,
+  "other_recipients": []
+}
