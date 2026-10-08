@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "observed_local": "2026-10-08T12:17:46+08:00",
+  "observed_local": "2026-10-08T16:06:28.242499+08:00",
   "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
   "goal_status": "active",
   "queue_binding": {
@@ -13,13 +13,13 @@
     ],
     "other_owner_retained": true
   },
-  "stage": "on_lan_existing_evidence_and_off_lan_material_readiness",
+  "stage": "Approved LAN reads and offline materials ready; current IT14 delivered, original ERP record pending; Q2 candidate release-ready, ff/production pending",
   "latest_preparation": {
     "date_shanghai": "2026-10-08",
     "head_observed_at": "2026-10-08T12:48:44+08:00",
     "head": "557429e2ed10afdfee35a63fa79e72520b9be88f",
     "previous_goal_turn": "progress: frozen boundary evidence and successful authorized broadcast",
-    "this_goal_turn": "progress: SC2 conditional cache/date evidence; Q2 plan A and Native approval consumed",
+    "this_goal_turn": "progress: historical SC2 request narrowed by official letter comparison; Q2 Native candidate and release preparation completed with explicit coverage limits",
     "offline_material_recheck_at": "2026-10-08 13:01 Asia/Shanghai",
     "offline_material_recheck_exit": 0,
     "sc2_pair_csv_cohorts_sc8_frozen_still_match": true,
@@ -43,7 +43,27 @@
       ],
       "all_exit_zero": true
     },
-    "proves_workflow_full_chain": false
+    "proves_workflow_full_chain": false,
+    "latest_normal_permission_retry": {
+      "time_utc": "2026-10-08T07:44:31.767122+00:00",
+      "sha256": "1604480f2fac222e456461d5e3272ac328a844906d22e0bdbe4d269387374a8a",
+      "checks": {
+        "head": 0,
+        "status": 0,
+        "worktrees": 0,
+        "python": 0,
+        "codex": 0,
+        "openspec": 0,
+        "queue": 0,
+        "ci_matrix": 0
+      },
+      "head": "7644df9c2ad6d9019ca44fe78be21d5dfeca5f19",
+      "limitations": [
+        "Hooks trust requires /hooks; not inferable from this probe.",
+        "Windows registered-task state is not inferred from source scripts."
+      ],
+      "workflow_full_chain_proven": false
+    }
   },
   "lan": {
     "observed_local": "2026-10-08 11:52:43",
@@ -289,13 +309,19 @@
   },
   "data_git_rule": "Real original pair and CSV remain in ignored reports; SC8 originals remain in existing approved external directory; this index contains metadata only",
   "pending": {
-    "erp_evidence_owner": "IT准备原件、采购专线/姚祖怡确认口径；本会话核验",
+    "erp_evidence_owner": "陈承给原记录入口；姚祖怡仅补原记录缺少的报表/日期/筛选；本会话直接核差，采购专线归属保留",
     "erp_evidence_latest_user_reply": "IT还在准备；尚未收到正式原件",
     "letters": {
       "quality16": "in_flight",
       "procurement25": "in_flight"
     },
-    "old_failures": "not_recovered_or_restarted"
+    "old_failures": "not_recovered_or_restarted",
+    "it14_current_version": {
+      "delivered_at_shanghai": "2026-10-08T15:57:34.826869+08:00",
+      "readme_status_authority": "✅ 已推送 2026-10-08 07:57 UTC",
+      "reply_pending": true,
+      "original_erp_326_90_received": false
+    }
   },
   "sc2_server_self_service_metadata": {
     "receipt": "reports\\onlan-evidence-1008\\sc2-server-readonly-metadata-v2.json",
@@ -344,5 +370,160 @@
     "historical_erp_326_90_record_access_missing": true,
     "new_erp_requests_or_cache_changes": false,
     "professional_root_cause_resolved": false
+  },
+  "followup_scope_check_538": {
+    "observed_at_shanghai": "2026-10-08T14:59:23.108604+08:00",
+    "it14_body": {
+      "path": "6-人才与组织\\部门AI专员跟进\\IT部-陈承-跟进-2026-10-07-SC8现有记录核对.md",
+      "sha256": "102f93db5bacba81f111ac87647ddf6943750edd726f100254f32a7ee027c5ab",
+      "topic": "SC8现有记录核对",
+      "contains_538_original_326_90_request": false
+    },
+    "procurement24": "已回件回灌，三项新指标#499；#538旧残差保留",
+    "gates": {
+      "陈承": [
+        {
+          "recipient": "陈承",
+          "department": "IT部",
+          "gate_open": false,
+          "letter_number": "IT部#14",
+          "letter_status": "✅ 已推送 2026-10-07 03:24 UTC",
+          "letter_status_kind": "in_flight",
+          "letter_target_file": null,
+          "next_number": "IT部#15",
+          "pending_intakes": [],
+          "warnings": [],
+          "closure_snapshot": null,
+          "closure_annotation": null
+        }
+      ],
+      "姚祖怡": [
+        {
+          "recipient": "姚祖怡",
+          "department": "采购部",
+          "gate_open": false,
+          "letter_number": "采购部#25",
+          "letter_status": "✅ 已推送 2026-10-08 03:04 UTC",
+          "letter_status_kind": "in_flight",
+          "letter_target_file": "采购部-姚祖怡-跟进-2026-10-03-SC2真实案例微会准备.md",
+          "next_number": "采购部#26",
+          "pending_intakes": [],
+          "warnings": [],
+          "closure_snapshot": null,
+          "closure_annotation": null
+        }
+      ]
+    },
+    "remaining_request": [
+      "IT开放产生326/90的原ERP查询记录或既有导出访问位置/只读权限；本会话机器直读",
+      "若原记录未包含条件，姚祖怡只确认报表/日期字段/完整筛选；记录完整则无需重复回复"
+    ],
+    "existing_15_to_311_answer_reused": true,
+    "human_copying_requested": false,
+    "new_letter_drafted_or_sent": false,
+    "dispatch_condition": "待各收信人前信闭环，按正式下一号分别起草，不沿用采购24或凭空IT24",
+    "latest_user_direction": "Update existing IT14 directly; previous wait-for-IT15 plan superseded; procurement25 unchanged"
+  },
+  "q2_native_implementation": {
+    "candidate_commit": "f784cbb096604e7e98dabc29873a42065741617d",
+    "evidence": "openspec/changes/portal-q2-ui/实施证据.json",
+    "display_tests": 23,
+    "luna_critical": 0,
+    "luna_important": 0,
+    "minor_deferred": 1,
+    "production_metadata_read_at": "2026-10-08T14:34:48.1498795+08:00",
+    "main_source_unchanged": true,
+    "ff_production_service_samples_send_approved": false
+  },
+  "it14_same_number_revision": {
+    "number": "IT部#14",
+    "recipient": "IT部 · 陈承",
+    "user_quote": "不需要交代前因后果，直接用最通俗的话说明需要IT回复的问题，交代清楚上下文。",
+    "same_number_revision": true,
+    "original_directory": "6-人才与组织\\部门AI专员跟进\\版本留存\\IT部-陈承-跟进-2026-10-07-SC8现有记录核对",
+    "new_md_sha256": "7f8ba0c9175f599c770bf1f968b47688553dd7a6e5171d6d21ea9e1c8300f99e",
+    "new_docx_sha256": "c4c46d1b93df5937a0b55b49d00497063c464b05d61289b1c3d256286323d834",
+    "new_number_created": false,
+    "sent": true,
+    "visual_qa": {
+      "renderer": "documents/render_docx.py",
+      "renderer_exit": 0,
+      "pages": 1,
+      "inspected_at_shanghai": "2026-10-08T15:40:19.973350+08:00",
+      "inspected_at_original_resolution": true,
+      "result": "clean, no clipping/overlap/missing CJK glyphs, black visible title, no title border",
+      "images": [
+        {
+          "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\it14-plain-render\\page-1.png",
+          "sha256": "623e29d8a12f566dd483226c71f65385f15c48d6fbf535aa762f4dd695c729fc"
+        }
+      ]
+    },
+    "current_revision_status": "✅ 已推送 2026-10-08 07:57 UTC",
+    "revision_number": 2,
+    "title": "IT部第14封跟进信 请协助查找两项记录",
+    "previous_pending_revision": {
+      "md": "6-人才与组织\\部门AI专员跟进\\版本留存\\IT部-陈承-跟进-2026-10-07-SC8现有记录核对\\2026-10-08-待审第一版.md",
+      "docx": "6-人才与组织\\部门AI专员跟进\\版本留存\\IT部-陈承-跟进-2026-10-07-SC8现有记录核对\\2026-10-08-待审第一版.docx",
+      "md_sha256": "75a12e052daf0c5202fe40bedb1d8c441ad391278c4f38289ed1c9fda97c39cf",
+      "docx_sha256": "5e4bc5a728cd941c673a49d6fc9cd21085d473780fdcc3fe6c0eaa818c91d00b"
+    },
+    "delivery": {
+      "at_shanghai": "2026-10-08T15:57:34.826869+08:00",
+      "recipient": "陈承",
+      "cc": [
+        "Shao Peishen",
+        "运维部AI保障群"
+      ],
+      "four_chains_verified": true,
+      "acks_zero": true,
+      "body_not_degraded": true,
+      "md_sha256": "7f8ba0c9175f599c770bf1f968b47688553dd7a6e5171d6d21ea9e1c8300f99e",
+      "docx_sha256": "c4c46d1b93df5937a0b55b49d00497063c464b05d61289b1c3d256286323d834",
+      "new_audit_event_timestamps": {
+        "followup_delivered": "2026-10-08T07:57:34.826869+00:00",
+        "followup_backfilled": "2026-10-08T07:57:34.836418+00:00",
+        "followup_cc_delivered": "2026-10-08T07:57:40.006851+00:00",
+        "followup_group_cc_delivered": "2026-10-08T07:57:42.326131+00:00"
+      },
+      "private_receipt": "reports/onlan-evidence-1008/it14-current-send-evidence.json",
+      "private_receipt_sha256": "2952d1af020b3e169bae27c7056c358130f3a63a91ea9c57f932d064dd83eba6",
+      "cooldown_default_10_minutes_completed": true
+    }
+  },
+  "latest_verified_preparation": {
+    "receipt": "reports/onlan-evidence-1008/offline-ready-latest.json",
+    "sha256": "897fe8bdfd697c40e2cfd2f4c4b6c6524f164b4e66c5c9504f98a14433297c6e",
+    "verified_at_shanghai": "2026-10-08T15:53:22.352162+08:00",
+    "private_sc2_files_ignored_not_tracked": 5,
+    "q2_candidate": "f784cbb096604e7e98dabc29873a42065741617d",
+    "q2_evidence_files": 22,
+    "business_tests_not_rerun": true
+  },
+  "automatic_commit_observation": {
+    "commit": "b27aed5e9c6bd98d1f2e6b762f327d6e187756b0",
+    "files": [
+      "M\t6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md",
+      "D\topenspec/changes/portal-qd-b-ui/.openspec.yaml",
+      "D\topenspec/changes/portal-qd-b-ui/proposal.md",
+      "D\topenspec/changes/portal-qd-b-ui/specs/qd-b-portal-display/spec.md"
+    ],
+    "cause": "Original sender auto-commit also included three pre-existing staged QD-B archive deletions",
+    "archive_files_readable": [
+      {
+        "path": "openspec/changes/archive/2026-10-08-portal-qd-b-ui/.openspec.yaml",
+        "sha256": "ec3a1b167d0ccdb9f7a3f8f370ba8038feb637051c90a0b3fbcc5e9cef45d7a5"
+      },
+      {
+        "path": "openspec/changes/archive/2026-10-08-portal-qd-b-ui/proposal.md",
+        "sha256": "cea981a85457c50733bced0a0edcb82f8911f400aa90a291b717ddc941ba8d0b"
+      },
+      {
+        "path": "openspec/changes/archive/2026-10-08-portal-qd-b-ui/specs/qd-b-portal-display/spec.md",
+        "sha256": "b114c51f23ef53071bc22289eae3381d12a749d0876ea325c3a78eb0f116dc79"
+      }
+    ],
+    "history_not_rewritten": true,
+    "no_new_files_deleted_by_this_send": true
   }
 }

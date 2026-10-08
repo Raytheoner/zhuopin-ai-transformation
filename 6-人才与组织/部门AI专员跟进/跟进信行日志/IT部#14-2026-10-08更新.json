@@ -1,0 +1,278 @@
+{
+  "at_shanghai": "2026-10-08T15:38:37.934064+08:00",
+  "number": "IT部#14",
+  "recipient": "IT部 · 陈承",
+  "user_quote": "不需要交代前因后果，直接用最通俗的话说明需要IT回复的问题，交代清楚上下文。",
+  "same_number_revision": true,
+  "old_official_row": {
+    "section": "现有跟进信清单",
+    "queried_number": "IT部#14",
+    "number_cell_literal": "IT部#14",
+    "matched_by": "字面相等",
+    "line_index": 82,
+    "status_column_index": 5,
+    "cells": [
+      {
+        "column": "编号",
+        "index": 0,
+        "is_status_column": false,
+        "value": "IT部#14",
+        "chars": 6,
+        "bytes": 8,
+        "sha256": "4344eeda8f0dfb64158359c6da28ee7fd7b91e261ffca93de58ebf6169d5eba0"
+      },
+      {
+        "column": "日期",
+        "index": 1,
+        "is_status_column": false,
+        "value": "2026-10-07",
+        "chars": 10,
+        "bytes": 10,
+        "sha256": "903952e394cd91c74dc593a3135bfdb8cdf03a2330dc1c62b2af5bf8cdfca3a5"
+      },
+      {
+        "column": "收信人",
+        "index": 2,
+        "is_status_column": false,
+        "value": "IT部 · 陈承",
+        "chars": 8,
+        "bytes": 15,
+        "sha256": "22bd4d125b0ce29f8d91fdea9d23d8d04724ffac27b28964c1c038a592fe3f93"
+      },
+      {
+        "column": "主要事项",
+        "index": 3,
+        "is_status_column": false,
+        "value": "SC8现有记录核对：业务线自行核哈希、代码与格式；六题半数选择/判断，允许部分回复。md/docx双件待审，Word结构过但尚未视觉验版，不发送。",
+        "chars": 73,
+        "bytes": 189,
+        "sha256": "861d769cb5ae4f60188cdbb78f8db8d82ab1e4aeef0aa4c5e356a9f9275b4326"
+      },
+      {
+        "column": "交期要点",
+        "index": 4,
+        "is_status_column": false,
+        "value": "方便时先回已有部分；未核清题号、负责人、预计时间可填待定；不要求一次答全，不要求重新导出。",
+        "chars": 45,
+        "bytes": 135,
+        "sha256": "d2e1c01a6076858af25af60fff61c759ca92de458141672a70737c6fa0b1afdc"
+      },
+      {
+        "column": "发送状态（2026-07-06）",
+        "index": 5,
+        "is_status_column": true,
+        "value": "✅ 已推送 2026-10-07 03:24 UTC",
+        "chars": 26,
+        "bytes": 34,
+        "sha256": "1d7d739d64fad45429138682ea1d505fb083c58193e0015a7fda7f491885b975"
+      }
+    ],
+    "readme": "6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md",
+    "field": "all"
+  },
+  "original_md_sha256": "102f93db5bacba81f111ac87647ddf6943750edd726f100254f32a7ee027c5ab",
+  "original_docx_sha256": "63444bf032986ebdc412d5087412f810307ce21bf27a3237fe2b1b8f00740938",
+  "original_directory": "6-人才与组织\\部门AI专员跟进\\版本留存\\IT部-陈承-跟进-2026-10-07-SC8现有记录核对",
+  "new_md_sha256": "7f8ba0c9175f599c770bf1f968b47688553dd7a6e5171d6d21ea9e1c8300f99e",
+  "new_docx_sha256": "c4c46d1b93df5937a0b55b49d00497063c464b05d61289b1c3d256286323d834",
+  "new_number_created": false,
+  "sent": true,
+  "visual_qa": {
+    "renderer": "documents/render_docx.py",
+    "renderer_exit": 0,
+    "pages": 1,
+    "inspected_at_shanghai": "2026-10-08T15:40:19.973350+08:00",
+    "inspected_at_original_resolution": true,
+    "result": "clean, no clipping/overlap/missing CJK glyphs, black visible title, no title border",
+    "images": [
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\it14-plain-render\\page-1.png",
+        "sha256": "623e29d8a12f566dd483226c71f65385f15c48d6fbf535aa762f4dd695c729fc"
+      }
+    ]
+  },
+  "self_read_evidence": [
+    "reports/onlan-evidence-1008/it14-sc8-existing-metadata.json",
+    "reports/onlan-evidence-1008/sc2-server-readonly-metadata-v2.json",
+    "0-学习与工具/codex-handoff/SC8冻结报告离网复核索引-2026-10-08.md"
+  ],
+  "current_revision_status": "✅ 已推送 2026-10-08 07:57 UTC",
+  "revision_history": [
+    {
+      "at_shanghai": "2026-10-08T15:14:46.850421+08:00",
+      "number": "IT部#14",
+      "recipient": "IT部 · 陈承",
+      "user_quote": "IT回#14号有点困难，请直接收窄我们直接更新#14，能你自己核对的还是尽量自己做，人核容易产生误差。",
+      "same_number_revision": true,
+      "old_official_row": {
+        "section": "现有跟进信清单",
+        "queried_number": "IT部#14",
+        "number_cell_literal": "IT部#14",
+        "matched_by": "字面相等",
+        "line_index": 82,
+        "status_column_index": 5,
+        "cells": [
+          {
+            "column": "编号",
+            "index": 0,
+            "is_status_column": false,
+            "value": "IT部#14",
+            "chars": 6,
+            "bytes": 8,
+            "sha256": "4344eeda8f0dfb64158359c6da28ee7fd7b91e261ffca93de58ebf6169d5eba0"
+          },
+          {
+            "column": "日期",
+            "index": 1,
+            "is_status_column": false,
+            "value": "2026-10-07",
+            "chars": 10,
+            "bytes": 10,
+            "sha256": "903952e394cd91c74dc593a3135bfdb8cdf03a2330dc1c62b2af5bf8cdfca3a5"
+          },
+          {
+            "column": "收信人",
+            "index": 2,
+            "is_status_column": false,
+            "value": "IT部 · 陈承",
+            "chars": 8,
+            "bytes": 15,
+            "sha256": "22bd4d125b0ce29f8d91fdea9d23d8d04724ffac27b28964c1c038a592fe3f93"
+          },
+          {
+            "column": "主要事项",
+            "index": 3,
+            "is_status_column": false,
+            "value": "SC8现有记录核对：业务线自行核哈希、代码与格式；六题半数选择/判断，允许部分回复。md/docx双件待审，Word结构过但尚未视觉验版，不发送。",
+            "chars": 73,
+            "bytes": 189,
+            "sha256": "861d769cb5ae4f60188cdbb78f8db8d82ab1e4aeef0aa4c5e356a9f9275b4326"
+          },
+          {
+            "column": "交期要点",
+            "index": 4,
+            "is_status_column": false,
+            "value": "方便时先回已有部分；未核清题号、负责人、预计时间可填待定；不要求一次答全，不要求重新导出。",
+            "chars": 45,
+            "bytes": 135,
+            "sha256": "d2e1c01a6076858af25af60fff61c759ca92de458141672a70737c6fa0b1afdc"
+          },
+          {
+            "column": "发送状态（2026-07-06）",
+            "index": 5,
+            "is_status_column": true,
+            "value": "✅ 已推送 2026-10-07 03:24 UTC",
+            "chars": 26,
+            "bytes": 34,
+            "sha256": "1d7d739d64fad45429138682ea1d505fb083c58193e0015a7fda7f491885b975"
+          }
+        ],
+        "readme": "6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md",
+        "field": "all"
+      },
+      "original_md_sha256": "102f93db5bacba81f111ac87647ddf6943750edd726f100254f32a7ee027c5ab",
+      "original_docx_sha256": "63444bf032986ebdc412d5087412f810307ce21bf27a3237fe2b1b8f00740938",
+      "original_directory": "6-人才与组织\\部门AI专员跟进\\版本留存\\IT部-陈承-跟进-2026-10-07-SC8现有记录核对",
+      "new_md_sha256": "75a12e052daf0c5202fe40bedb1d8c441ad391278c4f38289ed1c9fda97c39cf",
+      "new_docx_sha256": "5e4bc5a728cd941c673a49d6fc9cd21085d473780fdcc3fe6c0eaa818c91d00b",
+      "new_number_created": false,
+      "sent": false,
+      "visual_qa": {
+        "renderer": "documents/render_docx.py",
+        "renderer_exit": 0,
+        "pages": 1,
+        "inspected_at_shanghai": "2026-10-08T15:22:44.248286+08:00",
+        "inspected_at_original_resolution": true,
+        "result": "clean, no clipping/overlap/missing CJK glyphs, black visible Title, no title border",
+        "images": [
+          {
+            "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\it14-updated-render-title\\page-1.png",
+            "sha256": "d019a5bf3e2db168c3c691fa4b5b1aaf1384738568eb4760191a89a6f6b95ae6"
+          }
+        ]
+      },
+      "self_read_evidence": [
+        "reports/onlan-evidence-1008/it14-sc8-existing-metadata.json",
+        "reports/onlan-evidence-1008/sc2-server-readonly-metadata-v2.json",
+        "0-学习与工具/codex-handoff/SC8冻结报告离网复核索引-2026-10-08.md"
+      ],
+      "current_revision_status": "⏳ 待你审"
+    }
+  ],
+  "previous_pending_revision": {
+    "md": "6-人才与组织\\部门AI专员跟进\\版本留存\\IT部-陈承-跟进-2026-10-07-SC8现有记录核对\\2026-10-08-待审第一版.md",
+    "docx": "6-人才与组织\\部门AI专员跟进\\版本留存\\IT部-陈承-跟进-2026-10-07-SC8现有记录核对\\2026-10-08-待审第一版.docx",
+    "md_sha256": "75a12e052daf0c5202fe40bedb1d8c441ad391278c4f38289ed1c9fda97c39cf",
+    "docx_sha256": "5e4bc5a728cd941c673a49d6fc9cd21085d473780fdcc3fe6c0eaa818c91d00b"
+  },
+  "revision_number": 2,
+  "title": "IT部第14封跟进信 请协助查找两项记录",
+  "pronoun_qa": {
+    "before_conversion_exit": 0,
+    "after_conversion_exit": 0,
+    "findings": 0
+  },
+  "scope": [
+    "SC8 Oct7 existing usage and customer data handling record locator",
+    "SC2 Sep7-13 original reported326/90 query or export record locator"
+  ],
+  "reply_options": [
+    "记录位置或链接",
+    "未找到",
+    "查找中"
+  ],
+  "approval": {
+    "status": "approved by specific current-version readback",
+    "user_quote": "发IT#14新版",
+    "explicit_send_approval_for_current_sha": true
+  },
+  "explicit_send_user_quote": "发IT#14新版",
+  "delivery": {
+    "at_shanghai": "2026-10-08T15:57:34.826869+08:00",
+    "recipient": "陈承",
+    "cc": [
+      "Shao Peishen",
+      "运维部AI保障群"
+    ],
+    "four_chains_verified": true,
+    "acks_zero": true,
+    "body_not_degraded": true,
+    "md_sha256": "7f8ba0c9175f599c770bf1f968b47688553dd7a6e5171d6d21ea9e1c8300f99e",
+    "docx_sha256": "c4c46d1b93df5937a0b55b49d00497063c464b05d61289b1c3d256286323d834",
+    "new_audit_event_timestamps": {
+      "followup_delivered": "2026-10-08T07:57:34.826869+00:00",
+      "followup_backfilled": "2026-10-08T07:57:34.836418+00:00",
+      "followup_cc_delivered": "2026-10-08T07:57:40.006851+00:00",
+      "followup_group_cc_delivered": "2026-10-08T07:57:42.326131+00:00"
+    },
+    "private_receipt": "reports/onlan-evidence-1008/it14-current-send-evidence.json",
+    "private_receipt_sha256": "2952d1af020b3e169bae27c7056c358130f3a63a91ea9c57f932d064dd83eba6",
+    "cooldown_default_10_minutes_completed": true
+  },
+  "automatic_commit_observation": {
+    "commit": "b27aed5e9c6bd98d1f2e6b762f327d6e187756b0",
+    "files": [
+      "M\t6-人才与组织/部门AI专员跟进/README-跟进机制与命名约定.md",
+      "D\topenspec/changes/portal-qd-b-ui/.openspec.yaml",
+      "D\topenspec/changes/portal-qd-b-ui/proposal.md",
+      "D\topenspec/changes/portal-qd-b-ui/specs/qd-b-portal-display/spec.md"
+    ],
+    "cause": "Original sender auto-commit also included three pre-existing staged QD-B archive deletions",
+    "archive_files_readable": [
+      {
+        "path": "openspec/changes/archive/2026-10-08-portal-qd-b-ui/.openspec.yaml",
+        "sha256": "ec3a1b167d0ccdb9f7a3f8f370ba8038feb637051c90a0b3fbcc5e9cef45d7a5"
+      },
+      {
+        "path": "openspec/changes/archive/2026-10-08-portal-qd-b-ui/proposal.md",
+        "sha256": "cea981a85457c50733bced0a0edcb82f8911f400aa90a291b717ddc941ba8d0b"
+      },
+      {
+        "path": "openspec/changes/archive/2026-10-08-portal-qd-b-ui/specs/qd-b-portal-display/spec.md",
+        "sha256": "b114c51f23ef53071bc22289eae3381d12a749d0876ea325c3a78eb0f116dc79"
+      }
+    ],
+    "history_not_rewritten": true,
+    "no_new_files_deleted_by_this_send": true
+  }
+}
