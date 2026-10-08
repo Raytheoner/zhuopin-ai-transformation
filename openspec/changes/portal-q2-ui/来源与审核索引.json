@@ -1,10 +1,10 @@
 {
-  "checked_at_shanghai": "2026-10-08T12:58:58.432868+08:00",
+  "checked_at_shanghai": "2026-10-08T14:59:23.108604+08:00",
   "source_head_observed": "557429e2ed10afdfee35a63fa79e72520b9be88f",
   "source_head_observed_at": "2026-10-08T12:48:44+08:00",
   "execution_thread": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
   "queue_binding": "661",
-  "scope": "design and detailed plan approved; Native execution setup",
+  "scope": "Native candidate and release preparation; pending explicit integration/publication approval",
   "design_approval": {
     "status": "approved",
     "user_quote": "Q2设计：A",
@@ -84,31 +84,31 @@
   ],
   "artifacts": [
     {
-      "path": "openspec/changes/portal-q2-ui/.openspec.yaml",
+      "path": "openspec\\changes\\portal-q2-ui\\.openspec.yaml",
       "bytes": 40,
       "sha256": "ec3a1b167d0ccdb9f7a3f8f370ba8038feb637051c90a0b3fbcc5e9cef45d7a5",
       "readable_utf8": true
     },
     {
-      "path": "openspec/changes/portal-q2-ui/proposal.md",
+      "path": "openspec\\changes\\portal-q2-ui\\proposal.md",
       "bytes": 3875,
       "sha256": "cd2de5101bc404d7c9fcf56597ea3eccd72978affe47d70cbf6e6bf5f32550c7",
       "readable_utf8": true
     },
     {
-      "path": "openspec/changes/portal-q2-ui/design.md",
+      "path": "openspec\\changes\\portal-q2-ui\\design.md",
       "bytes": 12068,
       "sha256": "47f38e3595b5d48d78224b5932e162d2320247d8930d7e905ce98b1dd4733d29",
       "readable_utf8": true
     },
     {
-      "path": "openspec/changes/portal-q2-ui/tasks.md",
-      "bytes": 4257,
-      "sha256": "1927584c4ac3aeb1c16c39725008ee48036f632e6a17f190315f34af7cbc4d25",
+      "path": "openspec\\changes\\portal-q2-ui\\tasks.md",
+      "bytes": 4805,
+      "sha256": "203264bfc8e2646bc34b4a329b40d98198e1ff7130ba77d4d3292a9b5888bff9",
       "readable_utf8": true
     },
     {
-      "path": "openspec/changes/portal-q2-ui/specs/q2-portal-display/spec.md",
+      "path": "openspec\\changes\\portal-q2-ui\\specs\\q2-portal-display\\spec.md",
       "bytes": 4880,
       "sha256": "8344408bca37c518db07478d08df4f0f5044dc2599a015bc7c847795876232b0",
       "readable_utf8": true
@@ -117,18 +117,18 @@
   "structure": {
     "requirements": 6,
     "scenarios": 13,
-    "unchecked_tasks": 16,
+    "unchecked_tasks": 4,
     "mandatory_proposal_sections": true,
-    "checked_tasks": 2,
+    "checked_tasks": 14,
     "plan_tasks": 4
   },
-  "product_code_changed": false,
-  "product_source_hashes_match_before": true,
-  "product_imported": false,
-  "product_tests_run": false,
+  "product_code_changed": true,
+  "product_source_hashes_match_before": false,
+  "product_imported": true,
+  "product_tests_run": true,
   "source_collection_or_recompute": false,
-  "network_used": false,
-  "validation_note": "13:34 plan material syntax/hash verification retained; current human plan A and Native choice recorded. Execution setup only; tests and implementation results require subsequent evidence.",
+  "network_used": true,
+  "validation_note": "Historical preparation results retained; current evidence is implementation record, no professional/production promotion.",
   "approval_baseline": {
     "checked_at_shanghai": "2026-10-08T12:58:58.432868+08:00",
     "artifacts": [
@@ -190,5 +190,244 @@
       "approved_plan_sha256": "f2cc1137df3179b07998e5f64034ce52689d76d9dca5dc5b3f394ba72c059d9f",
       "ff_deployment_service_real_samples_send_approved": false
     }
-  }
+  },
+  "design_preparation_result": {
+    "product_code_changed": false,
+    "product_source_hashes_match_before": true,
+    "product_imported": false,
+    "product_tests_run": false,
+    "network_used": false
+  },
+  "implementation_result": {
+    "recorded_at_shanghai": "2026-10-08T14:59:23.108604+08:00",
+    "thread": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
+    "branch": "codex/portal-q2-ui-1008",
+    "tree": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai",
+    "initial_base": "557429e2ed10afdfee35a63fa79e72520b9be88f",
+    "first_candidate_commit": "9aa754f5f90a2bef6f8752ccbc20fa606fdc3911",
+    "candidate_commit": "f784cbb096604e7e98dabc29873a42065741617d",
+    "candidate_parent": "7644df9c2ad6d9019ca44fe78be21d5dfeca5f19",
+    "tracked_tree_clean": true,
+    "files": [
+      {
+        "path": "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/webapp.py",
+        "sha256": "27d263fe6b329717c173c596142655c88132159e41c7f3b942f57167d1dfb27e"
+      },
+      {
+        "path": "4-数字员工/质量部/Q2-8D报告AI判定/tests/test_dashboard_ui_contract.py",
+        "sha256": "6c415a5936110ce7b8a7b0695096ee5f6e684912500adaaeaa76b8bba7161df1"
+      }
+    ],
+    "plan_sha256": "f2cc1137df3179b07998e5f64034ce52689d76d9dca5dc5b3f394ba72c059d9f",
+    "test_scope": "tests/test_dashboard_ui_contract.py only",
+    "checks": {
+      "task1_red": "20 failed, 1 passed",
+      "task1_green": "21 passed",
+      "task2_red": "1 failed, 22 passed",
+      "task2_green": "23 passed",
+      "rebased_final": "23 passed in 0.95s; exit 0"
+    },
+    "original_non_render_ast_equal": true,
+    "production_non_render_except_docstring_equal_to_repo": true,
+    "production_prepared_non_render_ast_equal_to_current_server": true,
+    "browser_receipt": {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\browser-checks.json",
+      "sha256": "55228eb073d0acb9b1e65f843a7251d6ce135bff3781c35844f6ca887d6b7505"
+    },
+    "screenshots": [
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\empty-1440-top.png",
+        "sha256": "16f110959c3f9270528148909cad073e9a9f84e224f319644848d6bb400b062e"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\empty-320-top.png",
+        "sha256": "69b7686800d3d09670dcc2dabc85a7c74c19598924d966b7b69242f35c553075"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\empty-390-top.png",
+        "sha256": "7555e0961a13b8b3569f1d6313e2c86de2be25934b26285a58c490c32c30d0bc"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\keyboard-320-open.png",
+        "sha256": "b7cbe13e492275eac5d9852cacc76eb77cbca81272977048e7a8de10f6018e70"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\mixed-1440-long-rule.png",
+        "sha256": "b3cffb96c05fcbcfb6a3a136731dadc26c0352e55a13e03cb25f5263a0415966"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\mixed-1440-top.png",
+        "sha256": "636899deb2e989c397a4e28815c96f23b6795bd0da720d17e4d84b8b2e5eae31"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\mixed-320-long-rule.png",
+        "sha256": "19b6b41fa332b7629517e7df27655a33d5951a42eb106ba1f27f7e2182938240"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\mixed-320-top.png",
+        "sha256": "b2e41029451ab4a242b1d74711f51be2a498179b597caf7442e27bb5ff90337c"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\mixed-390-long-rule.png",
+        "sha256": "d0e7ff3d5df193bcd7c5f1302d3c44ed0227cbb2337f8d947a3cba123c131682"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-browser\\mixed-390-top.png",
+        "sha256": "245ac55542117ccc7907bf7a9796b40af3cb92e2efa15c0160df6510be1e4e2d"
+      }
+    ],
+    "logs": {
+      "check-candidate.log": {
+        "path": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\.superpowers\\sdd\\2026-10-08-portal-q2-ui\\check-candidate.log",
+        "sha256": "5e49a7ad044cbee5014fd76390279b9f9cd991347b6a8fe42820c41e63c4e18f"
+      },
+      "check-final.log": {
+        "path": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\.superpowers\\sdd\\2026-10-08-portal-q2-ui\\check-final.log",
+        "sha256": "9d368341e6ba8222e478020c2c4af8362bf913a7773b66dbe63407fdc27ed5fe"
+      },
+      "check-rebased-final.log": {
+        "path": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\.superpowers\\sdd\\2026-10-08-portal-q2-ui\\check-rebased-final.log",
+        "sha256": "c3e0acc9e368e3ef863f4ad7849be35f26bf1851c6ce3a2f5d0a1ef87a4326cd"
+      },
+      "check1-green.log": {
+        "path": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\.superpowers\\sdd\\2026-10-08-portal-q2-ui\\check1-green.log",
+        "sha256": "86cb0659f3dc92fc8b5623aa0d0cddbe84685ec24fa0cee974165d7d09005f79"
+      },
+      "check1-red.log": {
+        "path": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\.superpowers\\sdd\\2026-10-08-portal-q2-ui\\check1-red.log",
+        "sha256": "4ac6dfb9dd7c51ac295464ca9e847717aa7131fe9c227330dca8cd354f6830a7"
+      },
+      "check2-green.log": {
+        "path": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\.superpowers\\sdd\\2026-10-08-portal-q2-ui\\check2-green.log",
+        "sha256": "a66c75b18fbc9e891943b260e08c9cb2760cc7024129194fc1b64a777b3d594a"
+      },
+      "check2-red.log": {
+        "path": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\.superpowers\\sdd\\2026-10-08-portal-q2-ui\\check2-red.log",
+        "sha256": "1a1e85a7d2288f299596840686c881d40630cf368deb8046299d9ab72985f83f"
+      },
+      "task-1-tests.log": {
+        "path": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\.superpowers\\sdd\\2026-10-08-portal-q2-ui\\task-1-tests.log",
+        "sha256": "975434f0b68283301cf0beb3d84bab1130e8c88f885321b6339ca6541c3a73e4"
+      },
+      "task-2-tests.log": {
+        "path": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\.superpowers\\sdd\\2026-10-08-portal-q2-ui\\task-2-tests.log",
+        "sha256": "6f19186eee88a764ab49af2765254fce0dab3c793147b0d6808c24274220935a"
+      }
+    },
+    "luna_review": {
+      "agent": "/root/q2_ui_review",
+      "model": "gpt-6-luna",
+      "reviews": 1,
+      "critical": 0,
+      "important": 0,
+      "minor": [
+        "空结果文字重复，按技能延后"
+      ],
+      "reviewed_file_hashes": [
+        {
+          "path": "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/webapp.py",
+          "sha256": "27d263fe6b329717c173c596142655c88132159e41c7f3b942f57167d1dfb27e"
+        },
+        {
+          "path": "4-数字员工/质量部/Q2-8D报告AI判定/tests/test_dashboard_ui_contract.py",
+          "sha256": "6c415a5936110ce7b8a7b0695096ee5f6e684912500adaaeaa76b8bba7161df1"
+        }
+      ],
+      "after_rebase_hashes_unchanged": true
+    },
+    "limits": [
+      "合成展示检查不证明专业校准或真实8D结论",
+      "未访问.51业务GET、未验证其evaluate/audit全链",
+      "未验证企微WebView",
+      "reduced-motion规则已解析，环境不能切换媒体偏好做运行时模拟"
+    ],
+    "server_receipt": {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-server-readonly-metadata.json",
+      "sha256": "624139ba51e37c95e05684f63b8a9a5795186f69a119fcd2b8ba8680c319998b",
+      "server_local": "2026-10-08T14:34:48.1498795+08:00"
+    },
+    "server_task": {
+      "actions": [
+        {
+          "execute": "powershell.exe",
+          "working_directory": "C:\\q2\\app"
+        }
+      ],
+      "last_task_result": 267009,
+      "last_run_time": "2026-09-19T22:47:47+08:00",
+      "state": "Running"
+    },
+    "server_processes": [
+      {
+        "creation_date": "2026-09-19T22:47:32.716162+08:00",
+        "pid": 8516,
+        "executable_path": "C:\\q2\\.venv\\Scripts\\python.exe"
+      },
+      {
+        "creation_date": "2026-09-19T22:47:32.733259+08:00",
+        "pid": 5852,
+        "executable_path": "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python314\\python.exe"
+      }
+    ],
+    "server_files": [
+      {
+        "path": "C:\\q2\\app\\q2_8d_verdict\\webapp.py",
+        "exists": true,
+        "size": 5747,
+        "sha256": "db967ac94b1415842d3c0b77ab01491a66985fb762ae8d43ca6dbdfef2345005",
+        "normalized_lf_sha256": "db967ac94b1415842d3c0b77ab01491a66985fb762ae8d43ca6dbdfef2345005",
+        "mtime": "2026-09-19T22:40:10.743587+08:00",
+        "non_render_ast_sha256": "198ff40758bdf058d4fc9dccbf6dc8f8cfe4b33dc0d9bceb0ee9ecfc4d5d6dfe",
+        "function_names": [
+          "default_identity_resolver",
+          "_render_page",
+          "create_app"
+        ]
+      },
+      {
+        "path": "C:\\q2\\app\\q2_8d_verdict\\dashboard.py",
+        "exists": true,
+        "size": 3572,
+        "sha256": "5b185eff070ffb7a79e524017df7537da46ce681c54c907869ca54a2b3231d3d",
+        "normalized_lf_sha256": "0397db1873c155fb569792f7d77c079efb8e624e9c1390a18aa66028b07a60a0",
+        "mtime": "2026-09-19T22:40:10.399847+08:00"
+      },
+      {
+        "path": "C:\\q2\\app\\q2_8d_verdict\\models.py",
+        "exists": true,
+        "size": 5087,
+        "sha256": "359710656b1323e541b9682c2ed8a774edbc36021a2c2bf70a4ee1753e7536ea",
+        "normalized_lf_sha256": "00cf3436d3b30b3eed1a0d7364bd9deb53626633ce0ea17b323afed89595fa0e",
+        "mtime": "2026-09-19T22:40:10.477966+08:00"
+      },
+      {
+        "path": "C:\\q2\\app\\q2_8d_verdict\\config.py",
+        "exists": true,
+        "size": 13468,
+        "sha256": "f3d086ee006d505b9376a06be3a4185ae73f6ccf6b14eb98d542d849009e27b7",
+        "normalized_lf_sha256": "026eba951b962d1aeadb3664e2c9709598783accdbd6a4c7825da7a6135b4730",
+        "mtime": "2026-09-19T22:40:10.384238+08:00"
+      },
+      {
+        "path": "C:\\q2\\app\\scripts\\run_q2_web.py",
+        "exists": true,
+        "size": 4130,
+        "sha256": "08ec92cfdf507927019df6961eef60f009b333c8dfee9aee1619fba4c96cbb7d",
+        "normalized_lf_sha256": "08ec92cfdf507927019df6961eef60f009b333c8dfee9aee1619fba4c96cbb7d",
+        "mtime": "2026-09-19T22:40:11.821679+08:00"
+      }
+    ],
+    "production_prepared": {
+      "file": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-release-prepared\\webapp.py.production-candidate",
+      "sha256": "878ce4a275cddc7f0d50d3218ddc9809971564a289fe78b52c68f8d98659d521",
+      "backup_local": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\q2-release-prepared\\webapp.py.original-db967ac9",
+      "backup_sha256": "db967ac94b1415842d3c0b77ab01491a66985fb762ae8d43ca6dbdfef2345005",
+      "preserves_current_deployment_module_docstring": true
+    },
+    "ff_approved": false,
+    "production_service_business_get_real_samples_send_approved": false,
+    "business_sources_refreshed": false,
+    "server_written": false
+  },
+  "main_checkout_product_code_unchanged": true
 }

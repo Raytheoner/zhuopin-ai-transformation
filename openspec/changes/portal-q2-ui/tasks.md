@@ -6,29 +6,29 @@
 
 - [x] 1.1 Shao Peishen 审本包 proposal/spec/design D1–D7，确认技术展示契约；2026-10-08本会话明确“Q2设计：A”，仍只消费已有结果，无业务晋档。
 - [x] 1.2 design批准后按 writing-plans形成具体实施计划，列精确文件和命令；本人已答“Q2计划：A；执行：Native；”。批准计划SHA f2cc1137df3179b07998e5f64034ce52689d76d9dca5dc5b3f394ba72c059d9f；不继承旧部署/发送批准。
-- [ ] 1.3 依 worktree技能核现有适用隔离树、HEAD和dirty，认领本包两件实现文件；保留原Q2语义泳道及未合部署分支。
+- [x] 1.3 依 worktree技能核现有适用隔离树、HEAD和dirty，认领本包两件实现文件；保留原Q2语义泳道及未合部署分支。
 
 ## 2. 纯渲染定向检查与适配
 
-- [ ] 2.1 新增 tests/test_dashboard_ui_contract.py，以手工合成 Verdict和发现构造输入，直接调用_render_page；禁止evaluate/load_mock/audit/file/network，断言输入不变。仅在批准测试范围内运行该场景检查。
-- [ ] 2.2 对P16断言七维聚合原数、五桶含0、处置建议原文、结构缺段及非CLEAR红线状态；max0不换算百分比。
-- [ ] 2.3 对P17断言单一grade/原grade_range、score_auto/score_upper/score_pending_max/score_max、needs_manual_review/L2、scene_flags/notes和所有规则/红线字段。
-- [ ] 2.4 对mock/非真实结论/质量工程师责任、缺来源时间/审计ID/原件入口、无可提交退回签发控件做文字契约断言。
-- [ ] 2.5 对空报告、结构闸无评分、PENDING/NA、空evidence、长中文/HTML字符及重复report_id唯一锚点做边界检查。
-- [ ] 2.6 仅修改webapp.py渲染与小型纯助手，继承已批变量、native details、表格独立滚动和原Markdown；create_app/_index/ping/gate/身份、dashboard、engine/config/models/feed_source保持，禁止改旧用例期望。
-- [ ] 2.7 复跑获批展示定向检查，核差异只包含准许实现文件，写精确命令/exit/覆盖限制，不用展示通过证明业务校准或Workflow全链。
+- [x] 2.1 新增 tests/test_dashboard_ui_contract.py，以手工合成 Verdict和发现构造输入，直接调用_render_page；禁止evaluate/load_mock/audit/file/network，断言输入不变。仅在批准测试范围内运行该场景检查。
+- [x] 2.2 对P16断言七维聚合原数、五桶含0、处置建议原文、结构缺段及非CLEAR红线状态；max0不换算百分比。
+- [x] 2.3 对P17断言单一grade/原grade_range、score_auto/score_upper/score_pending_max/score_max、needs_manual_review/L2、scene_flags/notes和所有规则/红线字段。
+- [x] 2.4 对mock/非真实结论/质量工程师责任、缺来源时间/审计ID/原件入口、无可提交退回签发控件做文字契约断言。
+- [x] 2.5 对空报告、结构闸无评分、PENDING/NA、空evidence、长中文/HTML字符及重复report_id唯一锚点做边界检查。
+- [x] 2.6 仅修改webapp.py渲染与小型纯助手，继承已批变量、native details、表格独立滚动和原Markdown；create_app/_index/ping/gate/身份、dashboard、engine/config/models/feed_source保持，禁止改旧用例期望。
+- [x] 2.7 复跑获批展示定向检查，核差异只包含准许实现文件，写精确命令/exit/覆盖限制，不用展示通过证明业务校准或Workflow全链。
 
 ## 3. 可用性与独立review
 
-- [ ] 3.1 保存合成结果纯HTML到临时位置，做1440×1024、390×844、320窄屏截图；检查mock/责任首屏可见、长说明、容器滚动与主体不溢出，不访问.51业务GET。
+- [x] 3.1 保存合成结果纯HTML到临时位置，做1440×1024、390×844、320窄屏截图；检查mock/责任首屏可见、长说明、容器滚动与主体不溢出，不访问.51业务GET。
 - [ ] 3.2 检查Tab、Enter/Space展开、可见焦点、返回门户、表格语义、44px触控与reduced-motion；无模态/侧栏，不生成Escape关闭动作。
-- [ ] 3.3 明确使用gpt-6-luna做一次只读独立review；先确认授权/可指定模型，修复本包范围问题再复验，原业务待签点不代裁决。
+- [x] 3.3 明确使用gpt-6-luna做一次只读独立review；先确认授权/可指定模型，修复本包范围问题再复验，原业务待签点不代裁决。
 
 ## 4. 发布准备与逐项授权
 
-- [ ] 4.1 形成精确候选commit、文件清单、定向检查与浏览器/Luna证据；技术文档自审与业务校准证据分别说明。
+- [x] 4.1 形成精确候选commit、文件清单、定向检查与浏览器/Luna证据；技术文档自审与业务校准证据分别说明。
 - [ ] 4.2 向Shao Peishen申请本包具体ff版本；批准后再整合。本包不合历史4816afc7部署分支，不清理旧树。
-- [ ] 4.3 准备现时Q2服务/服务器文件与源码版本差异、只替展示文件的备份和哈希、回滚方案；生产替换/原任务重启/业务GET审计/真实样本验证分别纳入具体发布授权。
+- [x] 4.3 准备现时Q2服务/服务器文件与源码版本差异、只替展示文件的备份和哈希、回滚方案；生产替换/原任务重启/业务GET审计/真实样本验证分别纳入具体发布授权。
 - [ ] 4.4 获相应批准后再实施发布及核验；followup按原串行闸/双件/发送审批，不能以UI新上线重复原信。本轮不执行此步骤。
 - [ ] 4.5 根据实际结果回写#661和§二；仅全部正式任务完成才归档、同步main spec。#612原语义/专业/部署整合余项继续保留。
 
@@ -42,3 +42,7 @@
 | 空结果和异常文字 | 2.5 | 空/零/缺失区分、转义和唯一锚点 |
 | 响应式及键盘 | 3.1/3.2 | 三视口截图和原生交互记录 |
 | 原业务访问契约 | 2.1/2.6/4.3 | 纯渲染无副作用证据、原路由流程diff与发布时实际核验 |
+
+## 2026-10-08 Native候选证据
+
+14项已完成、4项开放：3.2键盘/语义/焦点/触控实测完成，reduced-motion仅CSS解析、当前工具不能切换偏好，故保留部分未闭合；4.2具体ff审批、4.4实际发布、4.5正式发布回写/归档未完成。现候选f784cbb0、23 passed及一次Luna独审，无Critical/Important，Minor延后；详实施证据.json、Luna独审与裁决.md、发布准备.md。4.3仅发布备份/回滚材料准备完成，未替换或重启。
