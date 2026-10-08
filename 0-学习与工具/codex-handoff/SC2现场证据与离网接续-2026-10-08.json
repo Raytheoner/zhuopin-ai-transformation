@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "observed_local": "2026-10-08T16:06:28.242499+08:00",
+  "observed_local": "2026-10-08T18:32:51.128996+08:00",
   "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
   "goal_status": "active",
   "queue_binding": {
@@ -13,7 +13,7 @@
     ],
     "other_owner_retained": true
   },
-  "stage": "Q2 published and verified; SC8 Session approval closed; IT14 three intakes consumed; SC2 identifiable row differences located, root cause and correction remain partial",
+  "stage": "Approved LAN release verified; IT14 closed; SC2 row differences sealed; waiting specific approval for nine-document current GR lookup; historical cause/correction partial",
   "latest_preparation": {
     "date_shanghai": "2026-10-08",
     "head_observed_at": "2026-10-08T12:48:44+08:00",
@@ -636,7 +636,7 @@
     "customer_access_isolation_tested": false
   },
   "latest_it14_reply": {
-    "checked_at": "2026-10-08T17:45:18.0420247+08:00",
+    "checked_at": "2026-10-08T18:32:51.128996+08:00",
     "archived_paths": [
       "7-外部文档/IT/IT-2023458-回复-2026-10-08-文本反馈-3982ffad2f10b7f9f9a7a655c92d00a2.md",
       "7-外部文档/IT/IT-2023458-回复-IT部#14-2026-10-08-PurchaseOrder-b66aa4f90e9d0cb9449c3bd27db2ace8.xlsx",
@@ -647,8 +647,8 @@
       664,
       665
     ],
-    "gate_kind": "pending_official_release_auto_sync",
-    "gate_open": false,
+    "gate_kind": "closed",
+    "gate_open": true,
     "text_read": true,
     "xlsx_reconciliation": "completed_existing_materials",
     "erp_reply": {
@@ -681,6 +681,103 @@
       "excluded": 17,
       "remaining": 309
     },
-    "historical_311_retained": true
+    "historical_311_retained": true,
+    "pending_intakes": [],
+    "intake_rows_done": [
+      663,
+      664,
+      665
+    ]
+  },
+  "current_head_at_offlan_preparation": "574e3698c929167ec0faa3563dace70cdc49269f",
+  "offlan_current": {
+    "card": "0-学习与工具/codex-handoff/离网接续摘要-2026-10-09.md",
+    "checked_at": "2026-10-08T18:07:41.901719+08:00",
+    "assets_count": 26,
+    "readiness_receipt": "reports/onlan-evidence-1008/offlan-ready-current-1008.json",
+    "latest_health_checked_at": "2026-10-08T18:10:37.784660+08:00",
+    "health": [
+      {
+        "url": "http://192.168.100.51:8096/procurement/sc2/api/ping",
+        "status": 200,
+        "json": {
+          "mode": "real",
+          "ok": true,
+          "service": "SC2 采购周报"
+        },
+        "sha256": "cdea77a33755b16e570e8ed91290d31f32ddb60afa5f14e3bee45e615163832a",
+        "read_at": "2026-10-08T18:10:37.708838+08:00"
+      },
+      {
+        "url": "http://192.168.100.51:8098/quality/q2/api/ping",
+        "status": 200,
+        "json": {
+          "service": "Q2 8D 报告 AI 判定",
+          "status": "ok"
+        },
+        "sha256": "dd516353e2f5c59c6846cf44e79ad0b3af5b35fd32db677de606f0e28018606a",
+        "read_at": "2026-10-08T18:10:37.784577+08:00"
+      }
+    ],
+    "probe": {
+      "time": "2026-10-08T09:53:02.658334+00:00",
+      "checks": {
+        "head": 0,
+        "status": 0,
+        "worktrees": 0,
+        "python": 0,
+        "codex": 0,
+        "openspec": 0,
+        "queue": 0,
+        "ci_matrix": 0
+      },
+      "limitations": [
+        "Hooks trust requires /hooks; not inferable from this probe.",
+        "Windows registered-task state is not inferred from source scripts."
+      ],
+      "sha256": "2f83ed424b4f900c6c1203e148165cee15967c1bf22338db3a977f81b8092c5c"
+    },
+    "derived_diff_csvs": [
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\538-differences-1008\\purchase-erp-only-139.csv",
+        "rows": 139,
+        "sha256": "506e198b384ea3568ef0a7bb14db80682bae5696368bec33d972ed07f330e655",
+        "source": "IT14 PurchaseOrder October8 export",
+        "generated_at": "2026-10-08T18:07:38.170832+08:00",
+        "readback_ok": true
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\538-differences-1008\\receipt-erp-only-45.csv",
+        "rows": 45,
+        "sha256": "98ccb310e8ed6d44b53ddb38b94302db2e063dd874b7ef193ce3a85d069e3893",
+        "source": "IT14 Receivement October8 export",
+        "generated_at": "2026-10-08T18:07:38.202770+08:00",
+        "readback_ok": true
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\onlan-evidence-1008\\538-differences-1008\\receipt-frozen-only-13.csv",
+        "rows": 13,
+        "sha256": "6f273302af6d151be4d296653f64872c003379e9c37c6478b6a50b56564631e0",
+        "source": "SC2 frozen September13 snapshot",
+        "generated_at": "2026-10-08T18:07:38.234281+08:00",
+        "readback_ok": true
+      }
+    ],
+    "source_versions": {
+      "q2_reviewed": "6344c129f0d90ed3f163a20ec57a2952ca16126e",
+      "sc8_frozen_input": "29c1ee92167a4f4bba217078c80cd97928b635a3"
+    },
+    "real_business_data_git_tracked": false,
+    "business_538_closed": false,
+    "workflow_full_chain_proven": false,
+    "new_gr_lookup": {
+      "status": "awaiting_specific_user_approval",
+      "documents": 9,
+      "rows": 13,
+      "scope_sha256": "b78a136f4d2cfae65d0e9af29820a06e3f051e1fb41c095b378f905625f5c36a",
+      "helper_sha256": "7e00388e2befe9e01e16f7c4733297d4c34aa325324cfc6d49e50afa2b50040b",
+      "requests_executed": 0,
+      "packet": "reports/onlan-evidence-1008/538收货13行逐单只读核查申请.md"
+    }
   }
 }
