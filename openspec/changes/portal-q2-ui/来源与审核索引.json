@@ -1,0 +1,194 @@
+{
+  "checked_at_shanghai": "2026-10-08T12:58:58.432868+08:00",
+  "source_head_observed": "557429e2ed10afdfee35a63fa79e72520b9be88f",
+  "source_head_observed_at": "2026-10-08T12:48:44+08:00",
+  "execution_thread": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
+  "queue_binding": "661",
+  "scope": "design and detailed plan approved; Native execution setup",
+  "design_approval": {
+    "status": "approved",
+    "user_quote": "Q2设计：A",
+    "approval_date_shanghai": "2026-10-08",
+    "recorded_at_shanghai": "2026-10-08T13:34:40.027824+08:00",
+    "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
+    "scope": "proposal/spec/design D1-D7; permits detailed planning",
+    "plan_or_execution_method_approved": true
+  },
+  "sources": [
+    {
+      "path": "docs/superpowers/plans/2026-10-08-portal-ui-rollout.md",
+      "bytes": 14076,
+      "sha256": "ec31d1ec31a603d0f24d3dbf9dd96be851893a17b1a2ce9aa540028a045010b4",
+      "readable_utf8": true
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/UI设计评审-2026-10-07/设计变量.json",
+      "bytes": 1342,
+      "sha256": "e3882b1344d8de13ce16679be6102db594f08fc36ae4ac1a95e2f32ea14cec81",
+      "readable_utf8": true
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/UI设计评审-2026-10-07/需求页面映射.json",
+      "bytes": 9575,
+      "sha256": "e9f7e4907e47862573c7469a24fa67fa6e76f5298406d8cd6ce04a076c245951",
+      "readable_utf8": true
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/UI设计评审-2026-10-07/审核说明与统一UI规范.md",
+      "bytes": 14074,
+      "sha256": "33904eaeaa8f72b59218dfd0ef2110cd9d3d8bd5974380fce58032b6a9f0273a",
+      "readable_utf8": true
+    },
+    {
+      "path": "4-数字员工/质量部/Q2-8D报告AI判定/intent.md",
+      "bytes": 6631,
+      "sha256": "4995035680d712e36c7064d9fb90229b5d469d9aad6be77101b9b4580418dbf0",
+      "readable_utf8": true
+    },
+    {
+      "path": "openspec/changes/q2-8d-review-verdict-mvp/design.md",
+      "bytes": 5289,
+      "sha256": "9fc1facb23a23f48f22cdffec23898bef10199078588d3ff18cb4f420551da81",
+      "readable_utf8": true
+    },
+    {
+      "path": "openspec/changes/q2-8d-review-verdict-mvp/tasks.md",
+      "bytes": 3971,
+      "sha256": "2c43771e6690b23476d172c431d30a2fd0a99965b10a4ccaf466060aa3d89e95",
+      "readable_utf8": true
+    },
+    {
+      "path": "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/webapp.py",
+      "bytes": 5776,
+      "sha256": "a21251b0b2eede6f63f2f5bd3a28d5d086cb6d088efc7901094d091b363cb5b2",
+      "readable_utf8": true
+    },
+    {
+      "path": "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/dashboard.py",
+      "bytes": 3572,
+      "sha256": "5b185eff070ffb7a79e524017df7537da46ce681c54c907869ca54a2b3231d3d",
+      "readable_utf8": true
+    },
+    {
+      "path": "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/models.py",
+      "bytes": 5087,
+      "sha256": "359710656b1323e541b9682c2ed8a774edbc36021a2c2bf70a4ee1753e7536ea",
+      "readable_utf8": true
+    },
+    {
+      "path": "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/config.py",
+      "bytes": 13468,
+      "sha256": "f3d086ee006d505b9376a06be3a4185ae73f6ccf6b14eb98d542d849009e27b7",
+      "readable_utf8": true
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "openspec/changes/portal-q2-ui/.openspec.yaml",
+      "bytes": 40,
+      "sha256": "ec3a1b167d0ccdb9f7a3f8f370ba8038feb637051c90a0b3fbcc5e9cef45d7a5",
+      "readable_utf8": true
+    },
+    {
+      "path": "openspec/changes/portal-q2-ui/proposal.md",
+      "bytes": 3875,
+      "sha256": "cd2de5101bc404d7c9fcf56597ea3eccd72978affe47d70cbf6e6bf5f32550c7",
+      "readable_utf8": true
+    },
+    {
+      "path": "openspec/changes/portal-q2-ui/design.md",
+      "bytes": 12068,
+      "sha256": "47f38e3595b5d48d78224b5932e162d2320247d8930d7e905ce98b1dd4733d29",
+      "readable_utf8": true
+    },
+    {
+      "path": "openspec/changes/portal-q2-ui/tasks.md",
+      "bytes": 4257,
+      "sha256": "1927584c4ac3aeb1c16c39725008ee48036f632e6a17f190315f34af7cbc4d25",
+      "readable_utf8": true
+    },
+    {
+      "path": "openspec/changes/portal-q2-ui/specs/q2-portal-display/spec.md",
+      "bytes": 4880,
+      "sha256": "8344408bca37c518db07478d08df4f0f5044dc2599a015bc7c847795876232b0",
+      "readable_utf8": true
+    }
+  ],
+  "structure": {
+    "requirements": 6,
+    "scenarios": 13,
+    "unchecked_tasks": 16,
+    "mandatory_proposal_sections": true,
+    "checked_tasks": 2,
+    "plan_tasks": 4
+  },
+  "product_code_changed": false,
+  "product_source_hashes_match_before": true,
+  "product_imported": false,
+  "product_tests_run": false,
+  "source_collection_or_recompute": false,
+  "network_used": false,
+  "validation_note": "13:34 plan material syntax/hash verification retained; current human plan A and Native choice recorded. Execution setup only; tests and implementation results require subsequent evidence.",
+  "approval_baseline": {
+    "checked_at_shanghai": "2026-10-08T12:58:58.432868+08:00",
+    "artifacts": [
+      {
+        "path": "openspec/changes/portal-q2-ui/.openspec.yaml",
+        "bytes": 40,
+        "sha256": "ec3a1b167d0ccdb9f7a3f8f370ba8038feb637051c90a0b3fbcc5e9cef45d7a5",
+        "readable_utf8": true
+      },
+      {
+        "path": "openspec/changes/portal-q2-ui/proposal.md",
+        "bytes": 3833,
+        "sha256": "09cf4d895010073258f7e081b4fed7f886378797bb7ac7c21834c912265707ef",
+        "readable_utf8": true
+      },
+      {
+        "path": "openspec/changes/portal-q2-ui/design.md",
+        "bytes": 11733,
+        "sha256": "2f9f41ac791749fe9188782318b571a7e2b623c1bd083fc6d95df4fce6886084",
+        "readable_utf8": true
+      },
+      {
+        "path": "openspec/changes/portal-q2-ui/tasks.md",
+        "bytes": 4126,
+        "sha256": "f5b4c44da6592f4cf2b53ac30ca78ad129657752ee8525471068fdf0fd4b4537",
+        "readable_utf8": true
+      },
+      {
+        "path": "openspec/changes/portal-q2-ui/specs/q2-portal-display/spec.md",
+        "bytes": 4880,
+        "sha256": "8344408bca37c518db07478d08df4f0f5044dc2599a015bc7c847795876232b0",
+        "readable_utf8": true
+      }
+    ],
+    "structure": {
+      "requirements": 6,
+      "scenarios": 13,
+      "unchecked_tasks": 18,
+      "mandatory_proposal_sections": true
+    },
+    "meaning": "Human reviewed D1-D7 package before status annotations and plan were added"
+  },
+  "artifacts_checked_at_shanghai": "2026-10-08T13:52:52.670400+08:00",
+  "implementation_plan": {
+    "path": "docs/superpowers/plans/2026-10-08-portal-q2-ui.md",
+    "bytes": 35574,
+    "sha256": "f2cc1137df3179b07998e5f64034ce52689d76d9dca5dc5b3f394ba72c059d9f",
+    "readable_utf8": true,
+    "review_status": "approved",
+    "execution_method": "Native",
+    "recommendation": "Native",
+    "python_blocks_syntax_valid": 6,
+    "python_blocks_executed": 0,
+    "human_approval": {
+      "status": "approved",
+      "user_quote": "Q2计划：A；执行：Native；",
+      "recorded_at_shanghai": "2026-10-08T13:52:52.670400+08:00",
+      "execution_thread": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
+      "approved_plan_sha256": "f2cc1137df3179b07998e5f64034ce52689d76d9dca5dc5b3f394ba72c059d9f",
+      "ff_deployment_service_real_samples_send_approved": false
+    }
+  }
+}
