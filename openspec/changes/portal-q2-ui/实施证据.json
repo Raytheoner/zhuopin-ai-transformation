@@ -227,7 +227,7 @@
   "ff_approved": true,
   "production_service_business_get_real_samples_send_approved": false,
   "business_sources_refreshed": false,
-  "server_written": false,
+  "server_written": true,
   "pre_it14_candidate_snapshot": {
     "recorded_at_shanghai": "2026-10-08T14:59:23.108604+08:00",
     "candidate_commit": "f784cbb096604e7e98dabc29873a42065741617d",
@@ -277,5 +277,50 @@
     "tests_rerun": false,
     "new_review_performed": false,
     "production_approved": false
-  }
+  },
+  "remote_sync": {
+    "approval_quote": "批准推送该提交（推荐）",
+    "receipt": "reports/onlan-evidence-1008/q2-approved-remote-push.json",
+    "receipt_sha256": "2f10f1fb1fc68871319a19eec330edf9ef68d409e416ab165feb07d0bffe7978",
+    "destination": "https://github.com/Raytheoner/zhuopin-ai-transformation.git",
+    "remote_master_verified": "6344c129f0d90ed3f163a20ec57a2952ca16126e",
+    "verified_at_shanghai": "2026-10-08T16:47:12.6910984+08:00"
+  },
+  "production_execution": {
+    "approval_quote": "允许Q2本次发布及验收",
+    "recorded_at_shanghai": "2026-10-08T17:24:50.4776801+08:00",
+    "deployed_at_shanghai": "2026-10-08T17:14:22.1915141+08:00",
+    "receipt": "reports/onlan-evidence-1008/q2-production-file-transfer.json",
+    "receipt_sha256": "a777da16ebbe093762ae1bf6ed933ae8bde0ae79a04c7478080336066d26f022",
+    "target": "C:/q2/app/q2_8d_verdict/webapp.py",
+    "deployed_sha256": "878ce4a275cddc7f0d50d3218ddc9809971564a289fe78b52c68f8d98659d521",
+    "before": "C:/q2/app/reports/ui-release-2026-10-08-e51e162/webapp.py.before",
+    "before_sha256": "db967ac94b1415842d3c0b77ab01491a66985fb762ae8d43ca6dbdfef2345005",
+    "original_task": "Q2WebServer",
+    "original_task_running": true,
+    "new_processes": [
+      5664,
+      3640
+    ],
+    "authenticated_mock_get_count": 1,
+    "mock_reports": 12,
+    "audit_before": 48,
+    "audit_after": 60,
+    "audit_chain_ok": true,
+    "prior_audit_bytes_preserved": true,
+    "four_other_files_unchanged": true,
+    "real_samples_used": false,
+    "outbound_sent": false,
+    "rollback": false,
+    "limits": [
+      "formal SSO not implemented; identity header hook preserved",
+      "reduced-motion runtime not emulated",
+      "WeCom WebView not verified",
+      "professional semantic/real calibration and historical deployment integration remain #612"
+    ]
+  },
+  "production_service_business_get_approved": true,
+  "production_published_and_verified": true,
+  "real_samples_approved": false,
+  "outbound_send_approved": false
 }

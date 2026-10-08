@@ -13,7 +13,7 @@
     ],
     "other_owner_retained": true
   },
-  "stage": "Approved LAN reads and offline materials ready; current IT14 delivered, original ERP record pending; Q2 candidate release-ready, ff/production pending",
+  "stage": "Q2 published and verified; SC8 Session approval closed; IT14 three intakes consumed; SC2 identifiable row differences located, root cause and correction remain partial",
   "latest_preparation": {
     "date_shanghai": "2026-10-08",
     "head_observed_at": "2026-10-08T12:48:44+08:00",
@@ -325,11 +325,12 @@
     "q2_release_authorization": {
       "candidate_commit": "6344c129f0d90ed3f163a20ec57a2952ca16126e",
       "ff_approved": true,
-      "production_service_get_approved": false,
+      "production_service_get_approved": true,
       "source_prepared_sha256": "878ce4a275cddc7f0d50d3218ddc9809971564a289fe78b52c68f8d98659d521",
       "target_expected_before_sha256": "db967ac94b1415842d3c0b77ab01491a66985fb762ae8d43ca6dbdfef2345005",
       "request_document": "openspec/changes/portal-q2-ui/发布准备.md",
-      "ff_performed": true
+      "ff_performed": true,
+      "published_and_verified": true
     }
   },
   "sc2_server_self_service_metadata": {
@@ -569,5 +570,117 @@
     "tests_rerun": false,
     "new_review_performed": false,
     "production_approved": false
+  },
+  "q2_remote_sync": {
+    "approval_quote": "批准推送该提交（推荐）",
+    "receipt": "reports/onlan-evidence-1008/q2-approved-remote-push.json",
+    "receipt_sha256": "2f10f1fb1fc68871319a19eec330edf9ef68d409e416ab165feb07d0bffe7978",
+    "destination": "https://github.com/Raytheoner/zhuopin-ai-transformation.git",
+    "remote_master_verified": "6344c129f0d90ed3f163a20ec57a2952ca16126e",
+    "verified_at_shanghai": "2026-10-08T16:47:12.6910984+08:00"
+  },
+  "q2_production_execution": {
+    "approval_quote": "允许Q2本次发布及验收",
+    "recorded_at_shanghai": "2026-10-08T17:24:50.4776801+08:00",
+    "deployed_at_shanghai": "2026-10-08T17:14:22.1915141+08:00",
+    "receipt": "reports/onlan-evidence-1008/q2-production-file-transfer.json",
+    "receipt_sha256": "a777da16ebbe093762ae1bf6ed933ae8bde0ae79a04c7478080336066d26f022",
+    "target": "C:/q2/app/q2_8d_verdict/webapp.py",
+    "deployed_sha256": "878ce4a275cddc7f0d50d3218ddc9809971564a289fe78b52c68f8d98659d521",
+    "before": "C:/q2/app/reports/ui-release-2026-10-08-e51e162/webapp.py.before",
+    "before_sha256": "db967ac94b1415842d3c0b77ab01491a66985fb762ae8d43ca6dbdfef2345005",
+    "original_task": "Q2WebServer",
+    "original_task_running": true,
+    "new_processes": [
+      5664,
+      3640
+    ],
+    "authenticated_mock_get_count": 1,
+    "mock_reports": 12,
+    "audit_before": 48,
+    "audit_after": 60,
+    "audit_chain_ok": true,
+    "prior_audit_bytes_preserved": true,
+    "four_other_files_unchanged": true,
+    "real_samples_used": false,
+    "outbound_sent": false,
+    "rollback": false,
+    "limits": [
+      "formal SSO not implemented; identity header hook preserved",
+      "reduced-motion runtime not emulated",
+      "WeCom WebView not verified",
+      "professional semantic/real calibration and historical deployment integration remain #612"
+    ]
+  },
+  "sc8_session_authorization_verified": {
+    "source_thread": "01a113bd-331e-71e2-874e-fd9052481301",
+    "source_title": "[Win]1007SC-业务续场",
+    "user_approval_messages": [
+      {
+        "source_line": 2046,
+        "timestamp_raw": "2026-10-07T06:30:36.702Z",
+        "timestamp_shanghai": "2026-10-07T14:30:36.702000+08:00",
+        "user_text": "批准按申请件执行一次SC8真实六键只读采集与冻结R2 OFF/ON离线对照；不跑矩阵/fixture，不合入、不部署、不启用、不外发。\n"
+      },
+      {
+        "source_line": 2185,
+        "timestamp_raw": "2026-10-07T06:45:37.774Z",
+        "timestamp_shanghai": "2026-10-07T14:45:37.774000+08:00",
+        "user_text": "批准；\n"
+      }
+    ],
+    "document": "0-学习与工具/codex-handoff/SC8验证Session时间线与使用批准自核-2026-10-08.md",
+    "receipt": "reports/onlan-evidence-1008/sc8-session-timeline.json",
+    "receipt_sha256": "2d19c82d68835684f2fdbc03893ab84c48537b9db73fbb560e78d3fb6d5d28eb",
+    "usage_permission_no_longer_waiting_it": true,
+    "customer_access_isolation_tested": false
+  },
+  "latest_it14_reply": {
+    "checked_at": "2026-10-08T17:45:18.0420247+08:00",
+    "archived_paths": [
+      "7-外部文档/IT/IT-2023458-回复-2026-10-08-文本反馈-3982ffad2f10b7f9f9a7a655c92d00a2.md",
+      "7-外部文档/IT/IT-2023458-回复-IT部#14-2026-10-08-PurchaseOrder-b66aa4f90e9d0cb9449c3bd27db2ace8.xlsx",
+      "7-外部文档/IT/IT-2023458-回复-IT部#14-2026-10-08-Receivement-63d2cce3265c9b5a052804e923333dee.xlsx"
+    ],
+    "intake_rows": [
+      663,
+      664,
+      665
+    ],
+    "gate_kind": "pending_official_release_auto_sync",
+    "gate_open": false,
+    "text_read": true,
+    "xlsx_reconciliation": "completed_existing_materials",
+    "erp_reply": {
+      "date_field": "业务日期",
+      "start": "2026-09-07",
+      "end": "2026-09-13",
+      "po": 326,
+      "gr": 90
+    },
+    "it_reply_pending": false,
+    "do_not_chase_it_before_reconciliation": true,
+    "historical_export_same_as_sept13": "not_yet_established",
+    "dismantled": true,
+    "memo": "1-转型规划/0-全景路线图/拆件-IT部14-SC8使用批准与SC2原始行集核对-2026-10-08.md",
+    "erp_count_verified": {
+      "po": 326,
+      "gr": 90
+    },
+    "po_comparison": {
+      "common": 187,
+      "erp_only": 139,
+      "frozen_only": 0
+    },
+    "gr_comparison": {
+      "common": 45,
+      "erp_only": 45,
+      "frozen_only": 13
+    },
+    "current_po_exclusion": {
+      "excluded": 17,
+      "remaining": 309
+    },
+    "historical_311_retained": true
   }
 }
