@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "observed_local": "2026-10-08T23:48:15.6491424+08:00",
+  "observed_local": "2026-10-09T07:02:18.1376430+08:00",
   "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
   "goal_status": "blocked",
   "queue_binding": {
@@ -13,7 +13,7 @@
     ],
     "other_owner_retained": true
   },
-  "stage": "Approved four-call organization comparison completed; paired responses identical; server definition/export filters and historical root cause remain unresolved",
+  "stage": "Blocked: GR server definition and original IT filters remain inaccessible; completed approved queries and 51 readable offline materials retained",
   "latest_preparation": {
     "date_shanghai": "2026-10-08",
     "head_observed_at": "2026-10-08T12:48:44+08:00",
@@ -692,8 +692,8 @@
   "current_head_at_offlan_preparation": "574e3698c929167ec0faa3563dace70cdc49269f",
   "offlan_current": {
     "card": "0-学习与工具/codex-handoff/离网接续摘要-2026-10-09.md",
-    "checked_at": "2026-10-08T23:48:15.6491424+08:00",
-    "assets_count": 50,
+    "checked_at": "2026-10-09T07:02:18.1376430+08:00",
+    "assets_count": 51,
     "readiness_receipt": "reports/onlan-evidence-1008/offlan-ready-current-1008.json",
     "latest_health_checked_at": "2026-10-08T18:10:37.784660+08:00",
     "health": [
@@ -799,7 +799,7 @@
       "historical_state_reconstructed": false,
       "result": "reports/onlan-evidence-1008/538-gr-scoped-current-read/comparison-with-frozen-13.json"
     },
-    "latest_material_index": "reports/onlan-evidence-1008/538-org-result-offline-index.json",
+    "latest_material_index": "reports/onlan-evidence-1008/538-1009-access-offline-index.json",
     "saved_api_export_crosscheck": {
       "checked_at": "2026-10-08T21:51:49.082116+08:00",
       "mode": "existing_saved_files_only",
@@ -923,9 +923,20 @@
       "server_org_enforcement_proven": false,
       "historical_state_proven": false
     },
-    "goal_blocked_audit": "reports/onlan-evidence-1008/538-selfdiscovery-blocked-audit.json"
+    "goal_blocked_audit": "reports/onlan-evidence-1008/538-1009-no-progress-round3.json",
+    "latest_definition_access_recheck": {
+      "receipt": "reports/onlan-evidence-1008/538-server-lan-metadata-recheck-1009.json",
+      "local_window": [
+        "2026-10-09T06:55:43.3875549+08:00",
+        "2026-10-09T06:55:44.5187510+08:00"
+      ],
+      "ssh_exit": 0,
+      "sql_strict_tls_error": -2146893019,
+      "new_business_queries": 0,
+      "server_writes": 0
+    }
   },
-  "goal_status_source": "actual native get_goal after the approved execution still returned blocked; this user-authorized turn made concrete progress without changing native status",
+  "goal_status_source": "native update_goal returned blocked after three fresh no-progress turns following the completed four-call authorization",
   "authorization_blocker_resolved": true,
   "native_blocked_audit": {
     "source": "reports/onlan-evidence-1008/goal-1008-resumed-blocked-audit.json",
