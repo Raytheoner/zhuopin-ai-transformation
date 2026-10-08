@@ -114,6 +114,9 @@ _PAGE_HEAD = """<!doctype html>
   table.grid th{background:var(--canvas);text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);
                 position:sticky;top:0;z-index:1}
   table.grid td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  table.grid th{white-space:nowrap}
+  table.grid td[data-label="序号"],table.grid td[data-label="标准分"],
+  table.grid td[data-label="实得"],table.grid td[data-label="扣分"]{white-space:nowrap}
   table.grid tr.row-fail td{background:#fff5f3}table.grid tr.row-warn td{background:#fffaf0}
   .scroll-box{max-height:560px;overflow:auto;border:1px solid var(--border);border-radius:6px}
   .tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;white-space:nowrap}

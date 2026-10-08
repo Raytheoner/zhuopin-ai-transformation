@@ -187,3 +187,10 @@ def test_time_and_hash_metadata_are_escaped():
     assert html.escape(result.audit_event.timestamp) in page
     assert html.escape(result.audit_event.content_hash) in page
     assert '<time>' not in page and '<hash>' not in page
+
+
+def test_desktop_score_cells_keep_complete_decimal_values():
+    # 1440px 实际页图发现标准分等被长依据挤成两行；数字应完整可读。
+    for label in ["序号", "标准分", "实得", "扣分"]:
+        assert f'td[data-label="{label}"]' in _PAGE_HEAD
+    assert 'white-space:nowrap' in _PAGE_HEAD.split('table.grid td[data-label="序号"]', 1)[1].split('}', 1)[0]
