@@ -1,0 +1,54 @@
+{
+  "candidate_commit": "18a3565d257a6808d216051ba6a212d19d45af9d",
+  "observed_local": "2026-10-08 07:59:07 +08:00",
+  "scope": "公共框架路由补核；仅HTML部署；后端/权限/销售源/SC8树未改",
+  "tests": {
+    "node": "5/5",
+    "pytest": "6/6",
+    "route_red_observed": true
+  },
+  "review": "原候选一次Luna；后续320px与路由为作者补核，未追加独立review",
+  "files": [
+    {
+      "path": "1-转型规划/AI运营指挥中心/AI运营指挥中心-框架原型-v0.1.html",
+      "bytes": 1071449,
+      "sha256": "2c94c4ada5cbc323bbec5636128d971e0bf36e88d1791d26ce39233991e6465c"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/ui/portal-model.mjs",
+      "bytes": 1584,
+      "sha256": "881a7234f7334e9764b4dcfa2738048307e90e33b338c2b42b298c9dcca92247"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/ui/portal-page.js",
+      "bytes": 9485,
+      "sha256": "e0630ae319d4cbb5763079096ae88807ff5bf8b9ebf5b39688a6f7b8defb1621"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/ui/portal-theme.css",
+      "bytes": 12366,
+      "sha256": "1ce007d8e0517d7837ad81794b786529e192accd6a2c2ef30d67385ea087cf1e"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/ui/apps.json",
+      "bytes": 2016,
+      "sha256": "c56d93fb873d04a8d379813ac39c45dca255d5a642f7bb79fe3022f575609554"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/scripts/inline-portal-ui.mjs",
+      "bytes": 1471,
+      "sha256": "d7e4ecab194e4985e07b0465c75c014257adc51b58eda3f2bca9f1566920ebd4"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/tests/test_portal_model.mjs",
+      "bytes": 2414,
+      "sha256": "befdd21ef7ab2ebb66554d864fa08fd96e028c0c1890f3ad09ac2ee64852ae2e"
+    },
+    {
+      "path": "1-转型规划/AI运营指挥中心/tests/test_portal_ui_contract.py",
+      "bytes": 4800,
+      "sha256": "854f05222acc98a739621be4db571cc152a93d82e09b41098c30d036fa9708d0"
+    }
+  ],
+  "archive_sha256": "c54f658dbea8f9696e5b2c033f873c30a5fb700cecd9ed1e001354405f4c5c06"
+}
