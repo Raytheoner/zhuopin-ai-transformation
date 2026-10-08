@@ -321,6 +321,15 @@
       "readme_status_authority": "✅ 已推送 2026-10-08 07:57 UTC",
       "reply_pending": true,
       "original_erp_326_90_received": false
+    },
+    "q2_release_authorization": {
+      "candidate_commit": "6344c129f0d90ed3f163a20ec57a2952ca16126e",
+      "ff_approved": true,
+      "production_service_get_approved": false,
+      "source_prepared_sha256": "878ce4a275cddc7f0d50d3218ddc9809971564a289fe78b52c68f8d98659d521",
+      "target_expected_before_sha256": "db967ac94b1415842d3c0b77ab01491a66985fb762ae8d43ca6dbdfef2345005",
+      "request_document": "openspec/changes/portal-q2-ui/发布准备.md",
+      "ff_performed": true
     }
   },
   "sc2_server_self_service_metadata": {
@@ -525,5 +534,40 @@
     ],
     "history_not_rewritten": true,
     "no_new_files_deleted_by_this_send": true
+  },
+  "q2_post_it14_candidate_sync": {
+    "at_shanghai": "2026-10-08T16:23:48.559955+08:00",
+    "candidate_commit": "e51e1623f93a4f223f6af47901a8850b4ff8edd2",
+    "candidate_parent": "b27aed5e9c6bd98d1f2e6b762f327d6e187756b0",
+    "product_hashes": {
+      "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/webapp.py": "27d263fe6b329717c173c596142655c88132159e41c7f3b942f57167d1dfb27e",
+      "4-数字员工/质量部/Q2-8D报告AI判定/tests/test_dashboard_ui_contract.py": "6c415a5936110ce7b8a7b0695096ee5f6e684912500adaaeaa76b8bba7161df1"
+    },
+    "reviewed_bytes_unchanged": true,
+    "tests_and_review_not_repeated": true,
+    "ff_or_production_performed": false
+  },
+  "q2_ff_merge": {
+    "recorded_at_shanghai": "2026-10-08T16:40:00.0654185+08:00",
+    "approval_quote": "允许Q2合入",
+    "approved_candidate": "e51e1623f93a4f223f6af47901a8850b4ff8edd2",
+    "candidate_commit": "6344c129f0d90ed3f163a20ec57a2952ca16126e",
+    "candidate_parent": "78f6bb06c5a09ca4eceefe8571a878baffc24b9f",
+    "ff_performed": true,
+    "receipt": "reports/onlan-evidence-1008/q2-authorized-ff-verification.json",
+    "receipt_sha256": "c2be6e88df74948d13322234fca21321463d0c4e2f7558be53f023edd6a944ce",
+    "product_raw_sha256": {
+      "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/webapp.py": "27d263fe6b329717c173c596142655c88132159e41c7f3b942f57167d1dfb27e",
+      "4-数字员工/质量部/Q2-8D报告AI判定/tests/test_dashboard_ui_contract.py": "6c415a5936110ce7b8a7b0695096ee5f6e684912500adaaeaa76b8bba7161df1"
+    },
+    "git_blob_lf_sha256": {
+      "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/webapp.py": "7d1c18346997ed3eeec531782f7fad964ead0b4d565b3e92b00fb4909ccbf809",
+      "4-数字员工/质量部/Q2-8D报告AI判定/tests/test_dashboard_ui_contract.py": "4781aef00d143d2651a07153877468085a17ae36eeb2031979dc39595093db67"
+    },
+    "reviewed_bytes_unchanged": true,
+    "existing_dirty_preserved": true,
+    "tests_rerun": false,
+    "new_review_performed": false,
+    "production_approved": false
   }
 }

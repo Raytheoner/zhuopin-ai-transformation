@@ -427,7 +427,45 @@
     "ff_approved": false,
     "production_service_business_get_real_samples_send_approved": false,
     "business_sources_refreshed": false,
-    "server_written": false
+    "server_written": false,
+    "current_candidate_commit": "6344c129f0d90ed3f163a20ec57a2952ca16126e",
+    "current_candidate_parent": "78f6bb06c5a09ca4eceefe8571a878baffc24b9f",
+    "ff_merged": true
   },
-  "main_checkout_product_code_unchanged": true
+  "main_checkout_product_code_unchanged": true,
+  "post_it14_candidate_sync": {
+    "at_shanghai": "2026-10-08T16:23:48.559955+08:00",
+    "candidate_commit": "e51e1623f93a4f223f6af47901a8850b4ff8edd2",
+    "candidate_parent": "b27aed5e9c6bd98d1f2e6b762f327d6e187756b0",
+    "product_hashes": {
+      "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/webapp.py": "27d263fe6b329717c173c596142655c88132159e41c7f3b942f57167d1dfb27e",
+      "4-数字员工/质量部/Q2-8D报告AI判定/tests/test_dashboard_ui_contract.py": "6c415a5936110ce7b8a7b0695096ee5f6e684912500adaaeaa76b8bba7161df1"
+    },
+    "reviewed_bytes_unchanged": true,
+    "tests_and_review_not_repeated": true,
+    "ff_or_production_performed": false
+  },
+  "ff_merge": {
+    "recorded_at_shanghai": "2026-10-08T16:40:00.0654185+08:00",
+    "approval_quote": "允许Q2合入",
+    "approved_candidate": "e51e1623f93a4f223f6af47901a8850b4ff8edd2",
+    "candidate_commit": "6344c129f0d90ed3f163a20ec57a2952ca16126e",
+    "candidate_parent": "78f6bb06c5a09ca4eceefe8571a878baffc24b9f",
+    "ff_performed": true,
+    "receipt": "reports/onlan-evidence-1008/q2-authorized-ff-verification.json",
+    "receipt_sha256": "c2be6e88df74948d13322234fca21321463d0c4e2f7558be53f023edd6a944ce",
+    "product_raw_sha256": {
+      "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/webapp.py": "27d263fe6b329717c173c596142655c88132159e41c7f3b942f57167d1dfb27e",
+      "4-数字员工/质量部/Q2-8D报告AI判定/tests/test_dashboard_ui_contract.py": "6c415a5936110ce7b8a7b0695096ee5f6e684912500adaaeaa76b8bba7161df1"
+    },
+    "git_blob_lf_sha256": {
+      "4-数字员工/质量部/Q2-8D报告AI判定/q2_8d_verdict/webapp.py": "7d1c18346997ed3eeec531782f7fad964ead0b4d565b3e92b00fb4909ccbf809",
+      "4-数字员工/质量部/Q2-8D报告AI判定/tests/test_dashboard_ui_contract.py": "4781aef00d143d2651a07153877468085a17ae36eeb2031979dc39595093db67"
+    },
+    "reviewed_bytes_unchanged": true,
+    "existing_dirty_preserved": true,
+    "tests_rerun": false,
+    "new_review_performed": false,
+    "production_approved": false
+  }
 }
