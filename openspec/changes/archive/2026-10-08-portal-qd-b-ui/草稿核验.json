@@ -1,0 +1,24 @@
+[
+  {
+    "file": "质量部-陈忱-跟进-2026-10-04-C05词表与档三效力确认",
+    "md_sha256": "871c2f9aa54039e8e9f1b2971c3ecaae6839e7ed2be04948107e0c52434e405c",
+    "docx_sha256": "dc08be3fac0ecdd6d8653aca32bc40d79da258ccdcef8a4d690be5bbc99c960b",
+    "checkboxes": 64,
+    "checked": 0,
+    "tables": 5,
+    "pages_visually_inspected": 5,
+    "all_table_headers_repeat": true,
+    "all_table_rows_cant_split": true
+  },
+  {
+    "file": "采购部-姚祖怡-跟进-2026-10-03-SC2真实案例微会准备",
+    "md_sha256": "1c172ff2ec74b04c85a62241617fbebdb21f2792647167f443ff0e1d6a9b4453",
+    "docx_sha256": "8a319c6a126350038315ff349bc45aa286a6dcb05d3f88531dc41ec72a32981a",
+    "checkboxes": 13,
+    "checked": 0,
+    "tables": 1,
+    "pages_visually_inspected": 2,
+    "all_table_headers_repeat": true,
+    "all_table_rows_cant_split": true
+  }
+]
