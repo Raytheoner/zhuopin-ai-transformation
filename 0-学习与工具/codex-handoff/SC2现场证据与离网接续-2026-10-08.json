@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "observed_local": "2026-10-08T22:15:42.8224344+08:00",
+  "observed_local": "2026-10-08T22:53:32.1875853+08:00",
   "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
-  "goal_status": "active",
+  "goal_status": "blocked",
   "queue_binding": {
     "thread_owned": [
       660,
@@ -13,7 +13,7 @@
     ],
     "other_owner_retained": true
   },
-  "stage": "Scoped lookup and client query contract verified; server query and original ERP export filter definition access still missing",
+  "stage": "User-authorized self-discovery completed; GR OpenAPI orgCode found; SQL trust/login configuration and original ERP export filters remain unresolved",
   "latest_preparation": {
     "date_shanghai": "2026-10-08",
     "head_observed_at": "2026-10-08T12:48:44+08:00",
@@ -692,8 +692,8 @@
   "current_head_at_offlan_preparation": "574e3698c929167ec0faa3563dace70cdc49269f",
   "offlan_current": {
     "card": "0-学习与工具/codex-handoff/离网接续摘要-2026-10-09.md",
-    "checked_at": "2026-10-08T22:15:42.8224344+08:00",
-    "assets_count": 32,
+    "checked_at": "2026-10-08T22:53:32.1875853+08:00",
+    "assets_count": 41,
     "readiness_receipt": "reports/onlan-evidence-1008/offlan-ready-current-1008.json",
     "latest_health_checked_at": "2026-10-08T18:10:37.784660+08:00",
     "health": [
@@ -799,7 +799,7 @@
       "historical_state_reconstructed": false,
       "result": "reports/onlan-evidence-1008/538-gr-scoped-current-read/comparison-with-frozen-13.json"
     },
-    "latest_material_index": "reports/onlan-evidence-1008/538-gr-client-contract-offline-index.json",
+    "latest_material_index": "reports/onlan-evidence-1008/538-discovery-offline-index.json",
     "saved_api_export_crosscheck": {
       "checked_at": "2026-10-08T21:51:49.082116+08:00",
       "mode": "existing_saved_files_only",
@@ -841,8 +841,8 @@
       "result": "reports/onlan-evidence-1008/538-gr-scoped-current-read/interface-vs-it-export-crosscheck.json"
     },
     "remaining_machine_access": [
-      "Existing GR/Query server query/source/organization definition",
-      "Existing IT 90-row report original filters/access position"
+      "Trusted existing readonly SQL connection or GR server query definition; default/actual org scope unproven",
+      "IT original 90-row ERP report filter record"
     ],
     "client_query_contract": {
       "checked_at": "2026-10-08T22:12:10.995868+08:00",
@@ -890,8 +890,26 @@
       "source_paths_and_parameter_names_only_no_credentials_read": true,
       "result": "reports/onlan-evidence-1008/538-gr-scoped-current-read/client-query-contract.json"
     },
-    "remaining_machine_access_requested_from_user": true
+    "remaining_machine_access_requested_from_user": true,
+    "server_discovery": {
+      "authorized_by": "你能自己探测吗",
+      "completed": true,
+      "swagger_found": true,
+      "orgCode_optional_documented": true,
+      "server_sql_proven": false,
+      "sql_tls_error": -2146893019,
+      "sql_readonly_login_config_found": false,
+      "new_business_queries": 0,
+      "server_writes": 0
+    },
+    "interface_page_position_request_resolved_by_self_discovery": true
   },
-  "goal_status_source": "native get_goal observed 2026-10-08 22:06 Shanghai; fresh resumed turn made client-contract evidence progress",
-  "authorization_blocker_resolved": true
+  "goal_status_source": "latest native get_goal still blocked; concrete user-authorized discovery progressed without changing goal status",
+  "authorization_blocker_resolved": true,
+  "native_blocked_audit": {
+    "source": "reports/onlan-evidence-1008/goal-1008-resumed-blocked-audit.json",
+    "consecutive_resumed_turns": 3,
+    "old_blocked_count_reused": false,
+    "goal_completed": false
+  }
 }
