@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "observed_local": "2026-10-08T18:32:51.128996+08:00",
+  "observed_local": "2026-10-08T22:15:42.8224344+08:00",
   "thread_id": "01a118fc-82a7-7aa3-8c51-986a2de1a1ed",
   "goal_status": "active",
   "queue_binding": {
@@ -13,7 +13,7 @@
     ],
     "other_owner_retained": true
   },
-  "stage": "Approved LAN release verified; IT14 closed; SC2 row differences sealed; waiting specific approval for nine-document current GR lookup; historical cause/correction partial",
+  "stage": "Scoped lookup and client query contract verified; server query and original ERP export filter definition access still missing",
   "latest_preparation": {
     "date_shanghai": "2026-10-08",
     "head_observed_at": "2026-10-08T12:48:44+08:00",
@@ -692,8 +692,8 @@
   "current_head_at_offlan_preparation": "574e3698c929167ec0faa3563dace70cdc49269f",
   "offlan_current": {
     "card": "0-学习与工具/codex-handoff/离网接续摘要-2026-10-09.md",
-    "checked_at": "2026-10-08T18:07:41.901719+08:00",
-    "assets_count": 26,
+    "checked_at": "2026-10-08T22:15:42.8224344+08:00",
+    "assets_count": 32,
     "readiness_receipt": "reports/onlan-evidence-1008/offlan-ready-current-1008.json",
     "latest_health_checked_at": "2026-10-08T18:10:37.784660+08:00",
     "health": [
@@ -771,13 +771,127 @@
     "business_538_closed": false,
     "workflow_full_chain_proven": false,
     "new_gr_lookup": {
-      "status": "awaiting_specific_user_approval",
+      "status": "completed_specific_approved_scope",
       "documents": 9,
       "rows": 13,
       "scope_sha256": "b78a136f4d2cfae65d0e9af29820a06e3f051e1fb41c095b378f905625f5c36a",
       "helper_sha256": "7e00388e2befe9e01e16f7c4733297d4c34aa325324cfc6d49e50afa2b50040b",
-      "requests_executed": 0,
-      "packet": "reports/onlan-evidence-1008/538收货13行逐单只读核查申请.md"
-    }
-  }
+      "requests_executed": 9,
+      "packet": "reports/onlan-evidence-1008/538收货13行逐单只读核查申请.md",
+      "user_approval": "批准9单只读核查",
+      "checked_at": "2026-10-08T21:45:41.5415619+08:00",
+      "started_at": "2026-10-08T21:36:22.272701+08:00",
+      "finished_at": "2026-10-08T21:36:26.288042+08:00",
+      "categories": {
+        "current_key_found_same_basic_fields": 9,
+        "document_query_returned_zero_rows": 2,
+        "current_key_found_fields_differ": 1,
+        "document_returned_but_target_line_absent": 1
+      },
+      "access_trace_chain": {
+        "ok": true,
+        "total": 9,
+        "broken_at": null,
+        "error": "",
+        "breaks": [],
+        "duplicate_prev_hash_pairs": []
+      },
+      "historical_state_reconstructed": false,
+      "result": "reports/onlan-evidence-1008/538-gr-scoped-current-read/comparison-with-frozen-13.json"
+    },
+    "latest_material_index": "reports/onlan-evidence-1008/538-gr-client-contract-offline-index.json",
+    "saved_api_export_crosscheck": {
+      "checked_at": "2026-10-08T21:51:49.082116+08:00",
+      "mode": "existing_saved_files_only",
+      "api_targets_found": 10,
+      "export_rows": 90,
+      "api_target_keys_in_export": 0,
+      "api_target_documents_in_export": 0,
+      "api_target_dates_within_declared_window": 10,
+      "api_target_source_po_in_export": 0,
+      "source_po_material_date_qty_candidates": 0,
+      "api_source_po_observed_prefix_counts": {
+        "PO12": 10
+      },
+      "export_source_po_observed_prefix_counts": {
+        "ZPCG": 90
+      },
+      "prefixes_are_not_document_type_proof": true,
+      "export_has_source_po_line_column": false,
+      "export_observed_categories": {
+        "来源类别": {
+          "采购订单": 90
+        },
+        "业务类型": {
+          "标准采购": 90
+        },
+        "行状态": {
+          "业务关闭": 90
+        }
+      },
+      "api_does_not_provide_type_status_or_org_fields": true,
+      "source_hashes": {
+        "erp_export": "1f6e8c589d9509eb80d3fd2e597895cced4effadf554dc3af91fac218f906ce1",
+        "selected_api_rows": "372f15f7a8f923db9b7afc89a3ebe71fd7b08c0c12d97d71fa3ffc8c4e7879f8",
+        "parsed_export_inspection": "735a84731f1cdf7f1e058941f9f9f0ec53339035ad8aa5aaaa20b48efc027a32"
+      },
+      "new_erp_requests": 0,
+      "historical_state_proven": false,
+      "business_root_cause_proven": false,
+      "result": "reports/onlan-evidence-1008/538-gr-scoped-current-read/interface-vs-it-export-crosscheck.json"
+    },
+    "remaining_machine_access": [
+      "Existing GR/Query server query/source/organization definition",
+      "Existing IT 90-row report original filters/access position"
+    ],
+    "client_query_contract": {
+      "checked_at": "2026-10-08T22:12:10.995868+08:00",
+      "mode": "source_and_saved_metadata_only",
+      "approved_lookup_query_keys": [
+        "apiKey",
+        "docNo",
+        "page",
+        "pageSize"
+      ],
+      "approved_lookup_has_org_type_status_or_date_filter": false,
+      "client_gr_exact_document_filter": "docNo",
+      "client_receipt_date_field": "BusinessDate -> ReceiptLine.receipt_date",
+      "sc2_receipt_filter": "overall date range only; no client type/status/organization filter in _fetch_receipts",
+      "receipt_identity_fields": [
+        "receipt_doc_no",
+        "line_no"
+      ],
+      "source_matches_saved_deployed_files": [
+        {
+          "local_path": "C:\\Dev\\zhuopin-ai\\5-平台底座\\zhuopin_platform\\zhuopin_platform\\shared_tools\\erp_connector\\connector.py",
+          "local_sha256": "c0d20e35aec86d4bc109c99bc9a60033c63540c5554dedcf9c889de83424673f",
+          "local_lf_sha256": "112c9ea32e062204e6bddd521fef682d956c19c365371d2c1f29a449167566e5",
+          "saved_remote_path": "C:\\sc2\\zhuopin_platform\\zhuopin_platform\\shared_tools\\erp_connector\\connector.py",
+          "saved_remote_lf_sha256": "112c9ea32e062204e6bddd521fef682d956c19c365371d2c1f29a449167566e5",
+          "lf_matches_saved_remote": true
+        },
+        {
+          "local_path": "C:\\Dev\\zhuopin-ai\\4-数字员工\\采购部\\SC2-采购周报自动生成\\sc2\\sources.py",
+          "local_sha256": "c570fffa1aa90132690eeb3956241aee5d0d0904e0c90119a676cd81e275376b",
+          "local_lf_sha256": "01594b6c024917e98fdc7455f6fa9d8055dca8bf2c3404000e4113a6bda8f87e",
+          "saved_remote_path": "C:\\sc2\\app\\sc2\\sources.py",
+          "saved_remote_lf_sha256": "01594b6c024917e98fdc7455f6fa9d8055dca8bf2c3404000e4113a6bda8f87e",
+          "lf_matches_saved_remote": true
+        }
+      ],
+      "saved_remote_metadata_time": [
+        "2026-10-08T14:06:50.5766305+08:00",
+        "2026-10-08T14:06:53.3765719+08:00"
+      ],
+      "server_api_sql_or_bound_org_proven": false,
+      "september_13_original_runtime_filters_proven": false,
+      "new_erp_requests": 0,
+      "product_imports_or_execution": false,
+      "source_paths_and_parameter_names_only_no_credentials_read": true,
+      "result": "reports/onlan-evidence-1008/538-gr-scoped-current-read/client-query-contract.json"
+    },
+    "remaining_machine_access_requested_from_user": true
+  },
+  "goal_status_source": "native get_goal observed 2026-10-08 22:06 Shanghai; fresh resumed turn made client-contract evidence progress",
+  "authorization_blocker_resolved": true
 }
