@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -350,6 +351,73 @@ class DecisionPointGateTests(RegistryCliTestBase):
         )
         self.assertEqual(code, 0)
         self.assertIn("[OK]", out)
+
+
+class ReviseTests(RegistryCliTestBase):
+    def _revise(self, **kw):
+        log = self.root / "6-人才与组织/部门AI专员跟进/跟进信行日志/财务部#20-2026-10-08修订.md"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.touch(exist_ok=True)
+        letter_rel = "6-人才与组织/部门AI专员跟进/财务部-唐燕萍-跟进-2026-10-08-r2.md"
+        letter = self.root / letter_rel
+        letter.parent.mkdir(parents=True, exist_ok=True)
+        letter.write_text(
+            "---\ntitle: 修订信\nstatus: 待你审\ncreated: 2026-10-08\n"
+            "收信人: 唐燕萍（财务部 AI 专员）\n编号: 财务部#20\n决策点: 1 项（核对）\n---\n\n正文\n",
+            encoding="utf-8",
+        )
+        args = dict(who="t", number="财务部#20", date="2026-10-08",
+                    topic="原主题 → 目标文件：财务部-唐燕萍-跟进-2026-10-08-r2.md",
+                    letter_path=letter_rel,
+                    history_log="6-人才与组织/部门AI专员跟进/跟进信行日志/财务部#20-2026-10-08修订.md",
+                    quote="1. 采用上述首批范围；更新版跟进信#20可以直接发出")
+        args.update(kw)
+        return self._run(self.module.cmd_revise, **args)
+
+    def test_同号修订归档旧行并精确改为待审(self):
+        self._write_readme(_row("财务部#20", "财务部 · 唐燕萍（财务总监 / 财务域 AI 专员）", "旧主题", "4/30前",
+                                 "✅ 已推送 2026-10-01〔事实日 2026-10-01 ／ 补记日 2026-10-02〕"))
+        code, _out, err = self._revise()
+        self.assertEqual(code, 0, err)
+        rows = self.module._parse_rows(self._readme_text())
+        self.assertEqual(rows[0].cells[0], "财务部#20")
+        self.assertEqual(rows[0].cells[1], "2026-10-08")
+        self.assertEqual(rows[0].cells[2], "财务部 · 唐燕萍（财务总监 / 财务域 AI 专员）")
+        self.assertEqual(rows[0].cells[3], "原主题 → 目标文件：财务部-唐燕萍-跟进-2026-10-08-r2.md")
+        self.assertEqual(rows[0].cells[4], "4/30前🔒人工发送")
+        self.assertEqual(rows[0].cells[5], "⏳ 待你审")
+        log = self.root / "6-人才与组织/部门AI专员跟进/跟进信行日志/财务部#20-2026-10-08修订.md"
+        logged = log.read_text(encoding="utf-8")
+        record = json.loads(logged.split("```json\n", 1)[1].split("\n```", 1)[0])
+        self.assertEqual(record["number"], "财务部#20")
+        self.assertEqual(record["old_cells"][3], "旧主题")
+        self.assertEqual(record["authorization_quote"], "1. 采用上述首批范围；更新版跟进信#20可以直接发出")
+        self.assertEqual(self._lock_calls, [("acquire", "t"), ("release", "t")])
+
+    def test_历史日志无法写入则README不变(self):
+        self._write_readme(_row("财务部#20", "财务部 · 唐燕萍（财务总监 / 财务域 AI 专员）", "旧主题", "4/30前", "⏳ 待你审"))
+        before = self._readme_text()
+        self.module._append_verified_revision_log = lambda *a, **k: (_ for _ in ()).throw(self.module.RegistryError("log fail"))
+        code, _out, err = self._revise()
+        self.assertEqual(code, 1)
+        self.assertIn("log fail", err)
+        self.assertEqual(self._readme_text(), before)
+
+    def test_非法状态拒绝修订(self):
+        self._write_readme(_row("财务部#20", "财务部 · 唐燕萍（财务总监 / 财务域 AI 专员）", "旧主题", "4/30前", "📨 已确认闭环"))
+        before = self._readme_text()
+        code, _out, err = self._revise()
+        self.assertEqual(code, 1)
+        self.assertIn("仅允许", err)
+        self.assertEqual(self._readme_text(), before)
+
+    def test_目标文件名与topic不一致拒绝(self):
+        self._write_readme(_row("财务部#20", "财务部 · 唐燕萍（财务总监 / 财务域 AI 专员）", "旧主题", "4/30前", "✅ 已推送"))
+        before = self._readme_text()
+        code, _out, err = self._revise(topic="新主题 → 目标文件：wrong.md")
+        self.assertEqual(code, 1)
+        self.assertIn("文件名", err)
+        self.assertEqual(self._readme_text(), before)
 
 
 class SetStatusTests(RegistryCliTestBase):
