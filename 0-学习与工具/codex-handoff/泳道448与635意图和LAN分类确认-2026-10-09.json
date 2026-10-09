@@ -1,0 +1,39 @@
+{
+  "status": "awaiting_specific_human_approval",
+  "approved": false,
+  "text": null,
+  "batch_id": "B-1009_队列机制方案准备",
+  "path_approval": "1a remains valid; no reapproval requested",
+  "tasks": [
+    {
+      "task_id": "queue-row-blocker-field",
+      "row": 448,
+      "section": "一",
+      "intent": "承接队列§一#448及2026-09-05已批准queue-row-blocker-field设计，只消费历史批准并据当前接口事实补齐同包proposal/design/tasks和具体执行方案。五态none/person/env/external/split及既批split计入WIP、值周一次性补标保留；当前仅文档，不实施、不补真实存量、不新增判据。当前接口或审批与旧设计不一致则列差异/候选，停在实际方案审；不改工具、不跑业务测试、不ff、不部署、不外发。",
+      "action_key": "openspec_draft",
+      "lan_required": false,
+      "touches": [
+        "openspec/changes/queue-row-blocker-field/"
+      ],
+      "lane": "queue-blocker-plan-1009",
+      "workspace_requested": "C:/Users/Paul Shao/.codex/worktrees/queue-blocker-plan-1009/zhuopin-ai"
+    },
+    {
+      "task_id": "queue-delivery-deadline-635",
+      "row": 635,
+      "section": "一",
+      "intent": "承接队列§一#635，只起草queue-delivery-deadline-635 OpenSpec proposal/design/tasks：承诺落地日、超期检测及具名催办消费者作为主件；附四类问题中选2至3项的候选和代价。核当前已有机制后给字段/缺值/时区/告警去重/回执/升级方案；与#448已批阻塞源语义保持相容。只读官方队列查询，不自行判存量承诺日期、不新增列、不改工具、不注册任务或发送告警；真实阈值/专业口径和实际design待本人审，不进入实现、测试、ff或生产。",
+      "action_key": "openspec_draft",
+      "lan_required": false,
+      "touches": [
+        "openspec/changes/queue-delivery-deadline-635/"
+      ],
+      "lane": "queue-delivery-deadline-1009",
+      "workspace_requested": "C:/Users/Paul Shao/.codex/worktrees/queue-delivery-deadline-1009/zhuopin-ai"
+    }
+  ],
+  "reason": "auto_review rejected treating general project acceleration and directory permission as task-specific intent/LAN classification approval",
+  "scope_document": "0-学习与工具/codex-handoff/泳道看护开跑范围与停点-2026-10-09.md",
+  "no_workflow_prepared": true,
+  "no_guardian_started": true
+}
