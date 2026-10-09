@@ -1,0 +1,553 @@
+{
+  "recorded_at": "2026-10-09T14:54:24.8393863+08:00",
+  "command": [
+    "git",
+    "merge",
+    "--ff-only",
+    "b146e73f8462ed35c3fdf450e3031a0fc9580cea"
+  ],
+  "cwd": "C:\\Dev\\zhuopin-ai",
+  "exit": 0,
+  "master_before": "a03f2545c64d6080f692ab74428cf8aba0360525",
+  "master_after": "b146e73f8462ed35c3fdf450e3031a0fc9580cea",
+  "candidate": {
+    "base": "a03f2545c64d6080f692ab74428cf8aba0360525",
+    "head": "b146e73f8462ed35c3fdf450e3031a0fc9580cea",
+    "approved_head": "a90b60b1d59e86a36f5bf621071f4172fbc4f589",
+    "approved_alias": "codex/portal-procurement-approved-1009",
+    "all_four_blobs_equal": true,
+    "full_scene_and_platform_trees_equal": true
+  },
+  "authorization": {
+    "text": "批准本次 SC8/SC2 四件 UI 仅 ff 合入 master。",
+    "source": "direct human message in current thread",
+    "thread": "01a11df8-f725-7f61-b1de-bd912fa2a0ce",
+    "recorded_at": "2026-10-09T14:39:45.4675637+08:00",
+    "approved_candidate": "a90b60b1d59e86a36f5bf621071f4172fbc4f589",
+    "files": [
+      "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py",
+      "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_webapp_ui_contract.py"
+    ],
+    "approved_blobs": {
+      "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py": "cf8dd38a3886136678dbf22b16986f812bb06e9d",
+      "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py": "0a0b7416d7a6f0cf6de53fc30fa58f92683984a1",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py": "c2d56c0cb68391c8efe2d69ef2a9c0299a00015e",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_webapp_ui_contract.py": "430e10930c3129219ee0464dd840c26a9ce4fef2"
+    },
+    "local_ff_only": true
+  },
+  "code_files": [
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_webapp_ui_contract.py"
+  ],
+  "approved_blobs": {
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py": "cf8dd38a3886136678dbf22b16986f812bb06e9d",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py": "0a0b7416d7a6f0cf6de53fc30fa58f92683984a1",
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py": "c2d56c0cb68391c8efe2d69ef2a9c0299a00015e",
+    "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_webapp_ui_contract.py": "430e10930c3129219ee0464dd840c26a9ce4fef2"
+  },
+  "legacy_dirty_preserved": true,
+  "legacy_dirty": {
+    ".claude/rules/队列与落库.md": {
+      "status": " M",
+      "sha256": "4e88c97b56bdf01d2ddce71f4f47391954752207fcdedb60e09830cc1ddc1471"
+    },
+    "0-学习与工具/codex-handoff/O3入厂已发运来料首期mock对照目录-2026-10-04.md": {
+      "status": " M",
+      "sha256": "4bfab8a0b6bd9d140f6c6dfd5adab8ceddd508190ca3e7b180ad347130e545d5"
+    },
+    "0-学习与工具/codex-handoff/O3发布准备批准与执行-2026-10-05.md": {
+      "status": " M",
+      "sha256": "e830e66e26eb7d00ada62d1e6783c4f665833a123e7caa0519da12ec1a8fa461"
+    },
+    "0-学习与工具/codex-handoff/运营O3O4需求grill非财务补核-2026-10-04.md": {
+      "status": " M",
+      "sha256": "3915218b4c9d570851a5ebd40ffee667e65dd1527f83e7462c3f53b97c1df9db"
+    },
+    "1-转型规划/0-全景路线图/构建Token消耗优化-核验与路线图-2026-09-16.md": {
+      "status": " M",
+      "sha256": "26a1a0d2630caa8280cf44899e4edb780d8e0f06fc2787660a252551c1654d7a"
+    },
+    "1-转型规划/0-全景路线图/队列行日志/#499.md": {
+      "status": " M",
+      "sha256": "4c9af93688a0145496decd2cc54b12c39c6b42773264ea8da217f0767cf6ca9e"
+    },
+    "1-转型规划/0-全景路线图/队列行日志/#508.md": {
+      "status": " M",
+      "sha256": "5d18333391a693ceb11851e7e3eb1404b49b47d53eace4333bddd3cc77151049"
+    },
+    "1-转型规划/0-全景路线图/队列行日志/#592.md": {
+      "status": " M",
+      "sha256": "747da919c8bc8d48e205693e0ce116bed709cc6b24a912964f2af73a698a0fe8"
+    },
+    "AGENTS.md": {
+      "status": " M",
+      "sha256": "882ce7e183256c40a7ba72e9a0bce01137a997ee358a7fec236c5fa98160922b"
+    },
+    ".claude/settings.json.bak-20260923-080121": {
+      "status": "??",
+      "sha256": "f584aba16c58813e2943c3702063e8be789ff179ca3ed3c5efed7de9d8ab4a6e"
+    },
+    ".codex/.gitignore": {
+      "status": "??",
+      "sha256": "2fd55c84bd5ffb7754297cb5a2114eac455e255cc46805ec3a9faa43ea62df72"
+    },
+    ".codex/references/claude-memory/MEMORY.md": {
+      "status": "??",
+      "sha256": "481dbc205f0866cff2d47ab0be817fbe00fb0f1bfb092ee0033679d4d0d50d79"
+    },
+    ".codex/references/claude-memory/env_baoguan_gate_password_ssh_blocked.md": {
+      "status": "??",
+      "sha256": "e664d3187707fb68f50ee94d54d4c812e0a6f8c05a0b966300c1c5dc7e804ee0"
+    },
+    ".codex/references/claude-memory/env_bash_heredoc_strips_backslash.md": {
+      "status": "??",
+      "sha256": "c428d1d6943f64f7c5154bcc972423ae346507504793be504def191cb30eabc9"
+    },
+    ".codex/references/claude-memory/env_claude_p_allowedtools_split_startprocess_noquote.md": {
+      "status": "??",
+      "sha256": "7a0f275095df943a9480dd5a39d2dc58ce077c182a2f805ac7fd1d2d6ecfe647"
+    },
+    ".codex/references/claude-memory/env_editlock_hash_path_completeness_miss.md": {
+      "status": "??",
+      "sha256": "0c4cdcb7eae0b768182f28dee85472d2eeba059977e26dd3a82fcfb4e90910f9"
+    },
+    ".codex/references/claude-memory/env_editlock_wip_gate_blocks_new_row_even_stopped.md": {
+      "status": "??",
+      "sha256": "03cb4ec26d3fce56e74c0b6ce0b4622624711356e0f12f4af1ed1b39749a5fce"
+    },
+    ".codex/references/claude-memory/env_exitworktree_remove_kills_branch_needed_by_ff_patrol.md": {
+      "status": "??",
+      "sha256": "4dc62439351ef3b22fb37999ef7f2f07718d1fc0b77734c9e80b173a4f11520b"
+    },
+    ".codex/references/claude-memory/env_ff_blocked_by_uncommitted_same_file.md": {
+      "status": "??",
+      "sha256": "a7293e69e95794aebd46c2dbe10ba2d7c780e8d09651f53275e72892ac818846"
+    },
+    ".codex/references/claude-memory/env_git_push_merge_classifier_blocked.md": {
+      "status": "??",
+      "sha256": "a894c6212597d398b0128a89442592e3944c2d17ec760f47fe5a78213ac20721"
+    },
+    ".codex/references/claude-memory/env_headless_lane_acceptedits_python_prefix.md": {
+      "status": "??",
+      "sha256": "3989dd6b1d7bd8024eb891e1ae4db744be87958e1e5fa63ad9f3e3721ab1ebaa"
+    },
+    ".codex/references/claude-memory/env_opener_dispatch_file_uncommitted_in_main_checkout.md": {
+      "status": "??",
+      "sha256": "119580b901422532a3e6fec8867cdf161684f4819bdb45d316d3287f44a668e7"
+    },
+    ".codex/references/claude-memory/env_powershell_tool_ssh_exit255_use_bash.md": {
+      "status": "??",
+      "sha256": "855d381c97481adc560aa2c27ccab690746da2a6286744a84a9520ec0948b1c0"
+    },
+    ".codex/references/claude-memory/env_queue_batch_filelist_backtick_guard.md": {
+      "status": "??",
+      "sha256": "a7bdf4efefa9b4994002766068c7f68504fedd6ce1f65d35f6a26d72637fe6b7"
+    },
+    ".codex/references/claude-memory/env_queue_file_dense_lines_read_tool_overflow.md": {
+      "status": "??",
+      "sha256": "7879da57fae42584580e0fba90d7a17bfe3859db7d0f08d6927c9d35a9a49171"
+    },
+    ".codex/references/claude-memory/env_queue_new_batch_row_cannot_be_born_done.md": {
+      "status": "??",
+      "sha256": "51e635639c40e33ec804411b45f91fdd3f9fbd9925424b925084d40f80ba4300"
+    },
+    ".codex/references/claude-memory/env_queue_worktree_shadow_copy.md": {
+      "status": "??",
+      "sha256": "c6b10b62a00961203f485fdf9de7110744953dd6082d3e1430b41e57d8d043b1"
+    },
+    ".codex/references/claude-memory/env_reserve_rejected_stale_highwater.md": {
+      "status": "??",
+      "sha256": "9b638a44ac4e659d46f43009c40490d61b67502eb2496e0db978518244b3a02e"
+    },
+    ".codex/references/claude-memory/env_section_bounds_returns_char_offsets.md": {
+      "status": "??",
+      "sha256": "37b23e1677a5374512a5c768d9fbce5664e711e7fb1caf757601e0830de76fe0"
+    },
+    ".codex/references/claude-memory/env_ssh_prod_data_write_classifier_blocked.md": {
+      "status": "??",
+      "sha256": "c873d66422d8a72e96d18e35096c7ed5e0e8a08552a95c8d72cf0cae47a402e1"
+    },
+    ".codex/references/claude-memory/env_subagent_internal_monitor_notification_trap.md": {
+      "status": "??",
+      "sha256": "60fd7bf39424905b6581c5e128c4e46ce95a1282fdac6b286132efc89ec7a053"
+    },
+    ".codex/references/claude-memory/env_subagent_self_title_hijack.md": {
+      "status": "??",
+      "sha256": "fd4c4458bbc929cacf1ca31f84ece35a51b32361e52d36e7bf84ffd16ffb5a65"
+    },
+    ".codex/references/claude-memory/env_tmpdir_empty_cp_backup_lost_work.md": {
+      "status": "??",
+      "sha256": "fdcdf9fd8ba64acbbebc43870c4bb093a43b66b0665413b5c9d694ea5d2eab74"
+    },
+    ".codex/references/claude-memory/env_worktree_isolated_agent_cannot_nest_worktree.md": {
+      "status": "??",
+      "sha256": "39492350feeb973786081343b455155e17fb8b7df58349f7369202f00509ddd1"
+    },
+    ".codex/references/claude-memory/env_worktree_remove_partial_failure_windows.md": {
+      "status": "??",
+      "sha256": "2436653553ab614937911051fe195c14a3f4fecc677d6a625c45f2601264c52c"
+    },
+    ".codex/references/claude-memory/feedback_execute_everything_unless_elevation.md": {
+      "status": "??",
+      "sha256": "445ada89b4d98b1558d4687fb24b9da509ae153bf6f295bb3b33d120cd2de076"
+    },
+    ".codex/references/claude-memory/feedback_no_reask_decided_answers.md": {
+      "status": "??",
+      "sha256": "31c2849a84d494ac09d7d2bd6ded02b0fa04b0f35035348d59f57ebba8709298"
+    },
+    "0-学习与工具/codex-handoff/F17与三区冻结提案失败核验-2026-10-04.md": {
+      "status": "??",
+      "sha256": "a46e4a0a7c2cf3f619eeae9b3d2aa4f165bc43e5cfa0b6665f0429f78dc3cfda"
+    },
+    "0-学习与工具/codex-handoff/F17设计审阅结论-2026-10-04.md": {
+      "status": "??",
+      "sha256": "13f117597bd879e4e0e02583e16719b21eb70ca6e1a2e9ba2bb3b2a76ae3f61f"
+    },
+    "0-学习与工具/codex-handoff/O3发布准备停点与交付-2026-10-06.md": {
+      "status": "??",
+      "sha256": "8a4ef31a85fdfa68133222821c8351a9a0aba5455164ce4ccc9e23108a931472"
+    },
+    "0-学习与工具/codex-handoff/两项提案重派输入-2026-10-04.md": {
+      "status": "??",
+      "sha256": "d605862169bbb3a8863ea1b4bbaa8347dc7ace9d5965f8223ba311460e01b0fa"
+    },
+    "0-学习与工具/codex-handoff/企微连接就绪度判据-2026-10-04.md": {
+      "status": "??",
+      "sha256": "7d0a08c4179d63381a7f534b54a61428a0941b58927d82cd8a37973a44464dc5"
+    },
+    "0-学习与工具/codex-handoff/历史未提交资料保全登记-2026-10-04.md": {
+      "status": "??",
+      "sha256": "8d3aa0cd6b783b8b33214abfb276bb80257244d285041e79de686d45ee67abf4"
+    },
+    "0-学习与工具/codex-handoff/编号口径634-提案输入-2026-10-04.md": {
+      "status": "??",
+      "sha256": "7d34e186443952a0b2f39bd1530c8c44a8a7372c3719c14dc1e8a5dcb63a1c3f"
+    },
+    "1-转型规划/0-全景路线图/Guardian首轮提案复盘与补全输入-2026-10-03.md": {
+      "status": "??",
+      "sha256": "9b73669064de42adffc1b700b6ae7e7a9c7642a55b3e2c171dc0e8c207516bb1"
+    },
+    "1-转型规划/0-全景路线图/准备输入-Q2语义离线提案补全-2026-10-03.md": {
+      "status": "??",
+      "sha256": "339474c9c1e37ddc075880b4896d2d9266c417fb543786780d170972d5e7e750"
+    },
+    "1-转型规划/0-全景路线图/拆件-采购部24-SC2三项指标范围与字段签认-2026-10-03.md": {
+      "status": "??",
+      "sha256": "31900bfe6b1055ede86cb977fc5ee92a24f1a8ee9bc596472f387d4aaea84cb9"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_Q2语义提案.json": {
+      "status": "??",
+      "sha256": "f30ad2aadf1aea55ff06fb8dc4069b017779b37e416c122373c6e7c6b880cace"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_Q9候选提案.json": {
+      "status": "??",
+      "sha256": "f74202e6b66eceb6db6e19960b19ca13d6e0a6bb0c37132b81641e1f3c827266"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_SC2指标提案.json": {
+      "status": "??",
+      "sha256": "a39e11a7ac62db86f691d1103897b045713eea0ce53bc6c83aa5d088e135863f"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_三区冻结提案.json": {
+      "status": "??",
+      "sha256": "c9039584107ebf3e27ae12c381f2140318bdfb912655cc87cff898ccf0cf0816"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_F17机器守.json": {
+      "status": "??",
+      "sha256": "87527a50a415987777854af54a1cb2c60e48522e4829ef87fba4dd135976e0ab"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_F17重派提案.json": {
+      "status": "??",
+      "sha256": "907ab202af91d3ea17ccb7e5d6c5daa3a0c1779b5e9521114fd0eac58aa3e83d"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_三区冻结二次重派.json": {
+      "status": "??",
+      "sha256": "c8056fac03cfdb5657eedec061362982f5f839ce5d132181a2535cb8cd69cfa6"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_三区冻结重派提案.json": {
+      "status": "??",
+      "sha256": "41faf67444476c746903bce555b9fd64e7a00842cb7d06dd61a251cd9294eaa8"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_编号口径提案.json": {
+      "status": "??",
+      "sha256": "2a5047d1248ab720c68223ecb85ecc56ecb5de38153022e759c7245a1548cf0e"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1003_Q2语义提案.md": {
+      "status": "??",
+      "sha256": "737014ce90d1ac439720c8d4b5b471fdffd914d86e3d4ab689ee90806dc29287"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1003_Q9候选提案.md": {
+      "status": "??",
+      "sha256": "e9051108c6f366c75faaf689f69483ac171295b75918970aef5479c8d2013ded"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1003_SC2指标提案.md": {
+      "status": "??",
+      "sha256": "580909f86157de9880660eaf73a2bcfe022fba7d28c8e35239b291a32c19b189"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1003_三区冻结提案.md": {
+      "status": "??",
+      "sha256": "358a494850f63957bee187d76bdbbc31c84bb00ee469c1462dc9fd2e881ad8f2"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_F17机器守.md": {
+      "status": "??",
+      "sha256": "29b4f7ac760a0b99830aa299054a2ac4079681a547e17d185f3828d204f40cd1"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_F17重派提案.md": {
+      "status": "??",
+      "sha256": "d781d354a8a43f37d2ff092f2fcfb6dabb88c5e8d92eeca4e45544ce248eac38"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_三区冻结二次重派.md": {
+      "status": "??",
+      "sha256": "29896fc817693a14a24f52cca23829c9842f028de0b3ced9f6a7564e6022a899"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_三区冻结重派提案.md": {
+      "status": "??",
+      "sha256": "b454407721e167ff3e16b82a9ff9de250b31bb79b360aef57a601ba7559850b8"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_编号口径提案.md": {
+      "status": "??",
+      "sha256": "24782eff856311436c1ad3ecbcbbb7fde09f32d719994519293ed94b5c97c9ab"
+    },
+    "1-转型规划/0-全景路线图/移交单-Q2剩余语义来源离线提案-2026-10-03.md": {
+      "status": "??",
+      "sha256": "2b034caeb55ed06a13daab1fceb7652c3da774835eb98ff9a3e90e3b68803196"
+    },
+    "1-转型规划/0-全景路线图/移交单-Q9候选设计输出追溯提案-2026-10-03.md": {
+      "status": "??",
+      "sha256": "13b670c8426ca8dd2b4a1262b9d4f889603dc684b85deb3652326ad8aa262edd"
+    },
+    "1-转型规划/0-全景路线图/移交单-SC2三项指标证据合同提案-2026-10-03.md": {
+      "status": "??",
+      "sha256": "a5c37fa0664932c32dbac480997734e08ff66ccae8a4fa013bfec6c352e4b86c"
+    },
+    "1-转型规划/0-全景路线图/移交单-官方队列三区冻结接口补齐-2026-10-03.md": {
+      "status": "??",
+      "sha256": "efb383f3fb9225b49a3caf76099300cd1593966d76fd528a30e81670031517e2"
+    },
+    "4-数字员工/质量部/Q9-APQP阶段审查/intent.md": {
+      "status": "??",
+      "sha256": "0f3d267b3c7d303cca6b444e873f093eab0aacd9ee67d424106b0ee76f88b9e5"
+    },
+    "4-数字员工/质量部/Q9-APQP阶段审查/判例准备-设计输出追溯.md": {
+      "status": "??",
+      "sha256": "7c544466cf6092bea46daefdae6578431a79f7e242e2532c59440a400aaa6bed"
+    },
+    "4-数字员工/采购部/SC2-采购周报自动生成/intent.md": {
+      "status": "??",
+      "sha256": "0b4777da2382714b0dfaf56a2bb01b65d581359aba120470ae7467c00591e97a"
+    },
+    "4-数字员工/采购部/SC2-采购周报自动生成/判例准备-三项指标字段与边界.md": {
+      "status": "??",
+      "sha256": "b51bb5b3ca9e32e20cf208c0b8e6b9dce077992ec8fbcb6531321a4e4466b32c"
+    },
+    "docs/superpowers/plans/2026-10-03-q9-apqp-pilot-preparation.md": {
+      "status": "??",
+      "sha256": "f99f6d51e8ca6d11137554770d8c3f456022896eb63505d05529d044bcde7d51"
+    },
+    "docs/superpowers/plans/2026-10-03-sc2-three-metric-preparation.md": {
+      "status": "??",
+      "sha256": "599cd2556106c114cec97edab692be0ec0da0798aed025aae7eadab081e00b6e"
+    },
+    "docs/superpowers/plans/2026-10-06-o3-minimal-recovery.md": {
+      "status": "??",
+      "sha256": "5998b1590e93ec759652e19748a203bf1da12aac2e72fcb70c3ebfe88097a32a"
+    },
+    "docs/superpowers/plans/2026-10-06-o3-revocation-pending.md": {
+      "status": "??",
+      "sha256": "bd9beb896938b0c1967bfe3f3649cd89e16fec7bb5c35a8e49fcd42cb36bd7e0"
+    },
+    "docs/superpowers/specs/2026-10-06-o3-revocation-pending-design.md": {
+      "status": "??",
+      "sha256": "8e2a5b0e3eed20c0c568cc1682e83bff27a59e127e8e826fd1d896f560357e21"
+    }
+  },
+  "stdout": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-merge.stdout.txt",
+  "stderr": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-merge.stderr.txt",
+  "stdout_sha256": "f89be18dd7304d8286a93afe284637ce5597c8b5e7ab10256453c2a0312e698b",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "ff_done": true,
+  "push_executed_by_this_task": false,
+  "deployment_done": false,
+  "branch_and_tree_retained": true,
+  "recorded_at_closeout": "2026-10-09T14:56:35.9453731+08:00",
+  "test_receipts": {
+    "baseline-sc2": {
+      "command": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "--basetemp",
+        "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-tmp-baseline-sc2",
+        "tests/test_delivery.py"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai\\4-数字员工\\采购部\\SC2-采购周报自动生成",
+      "head": "a03f2545c64d6080f692ab74428cf8aba0360525",
+      "pythonpath": "C:\\Dev\\zhuopin-ai\\5-平台底座\\zhuopin_platform;",
+      "recorded_at": "2026-10-09T14:43:46.4404677+08:00",
+      "exit": 0,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-baseline-sc2.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-baseline-sc2.stderr.txt",
+      "stdout_sha256": "cc29fb7211eefb2a9a8f21e8cc50c7d2c6f98f9b82e36c172eb8f988a4f18cd2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": [
+        "37 passed in 5.18s"
+      ],
+      "expected_passed": 37
+    },
+    "baseline-sc8": {
+      "command": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "--basetemp",
+        "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-tmp-baseline-sc8",
+        "tests/test_baoguan_webapp.py",
+        "tests/test_baoguan_webapp_materials.py",
+        "tests/test_baoguan_webapp_feedback.py"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺",
+      "head": "a03f2545c64d6080f692ab74428cf8aba0360525",
+      "pythonpath": "C:\\Dev\\zhuopin-ai\\5-平台底座\\zhuopin_platform;",
+      "recorded_at": "2026-10-09T14:43:43.5391134+08:00",
+      "exit": 0,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-baseline-sc8.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-baseline-sc8.stderr.txt",
+      "stdout_sha256": "f1187791dc8607db5840ec4644cbcba45d0dfaa88a88a231e1376b00095d1d8f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": [
+        "35 passed in 3.13s"
+      ],
+      "expected_passed": 35
+    },
+    "candidate-sc2": {
+      "command": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "--basetemp",
+        "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-tmp-candidate-sc2",
+        "tests/test_webapp_ui_contract.py",
+        "tests/test_delivery.py"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai\\.claude\\worktrees\\portal-procurement-integrate-1009\\4-数字员工\\采购部\\SC2-采购周报自动生成",
+      "head": "b146e73f8462ed35c3fdf450e3031a0fc9580cea",
+      "pythonpath": "C:\\Dev\\zhuopin-ai\\.claude\\worktrees\\portal-procurement-integrate-1009\\5-平台底座\\zhuopin_platform;",
+      "recorded_at": "2026-10-09T14:43:45.9259021+08:00",
+      "exit": 0,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-candidate-sc2.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-candidate-sc2.stderr.txt",
+      "stdout_sha256": "a3bbd296fdf46c6a94bdf08aca37c4a64d2b3875da7eaae8ad3a521509a39a02",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": [
+        "44 passed in 5.72s"
+      ],
+      "expected_passed": 44
+    },
+    "candidate-sc8": {
+      "command": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "--basetemp",
+        "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-tmp-candidate-sc8",
+        "tests/test_webapp_ui_contract.py",
+        "tests/test_baoguan_webapp.py",
+        "tests/test_baoguan_webapp_materials.py",
+        "tests/test_baoguan_webapp_feedback.py"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai\\.claude\\worktrees\\portal-procurement-integrate-1009\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺",
+      "head": "b146e73f8462ed35c3fdf450e3031a0fc9580cea",
+      "pythonpath": "C:\\Dev\\zhuopin-ai\\.claude\\worktrees\\portal-procurement-integrate-1009\\5-平台底座\\zhuopin_platform;",
+      "recorded_at": "2026-10-09T14:43:47.3917002+08:00",
+      "exit": 0,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-candidate-sc8.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-candidate-sc8.stderr.txt",
+      "stdout_sha256": "9239f46e615389d77fd7bf39d0165cdf334b106e356df56c4c0c3817f309dc0d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": [
+        "45 passed in 7.50s"
+      ],
+      "expected_passed": 45
+    },
+    "merged-sc2": {
+      "command": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "--basetemp",
+        "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-tmp-merged-sc2",
+        "tests/test_webapp_ui_contract.py",
+        "tests/test_delivery.py"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai\\4-数字员工\\采购部\\SC2-采购周报自动生成",
+      "head": "b146e73f8462ed35c3fdf450e3031a0fc9580cea",
+      "pythonpath": "C:\\Dev\\zhuopin-ai\\5-平台底座\\zhuopin_platform;",
+      "recorded_at": "2026-10-09T14:55:07.7713707+08:00",
+      "exit": 0,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-merged-sc2.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-merged-sc2.stderr.txt",
+      "stdout_sha256": "8c048c25f8370d67868be7c7cdb516f4c097fa8e7085118fab5068d0f5d347d7",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": [
+        "44 passed in 3.88s"
+      ],
+      "expected_passed": 44
+    },
+    "merged-sc8": {
+      "command": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "--basetemp",
+        "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-tmp-merged-sc8",
+        "tests/test_webapp_ui_contract.py",
+        "tests/test_baoguan_webapp.py",
+        "tests/test_baoguan_webapp_materials.py",
+        "tests/test_baoguan_webapp_feedback.py"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺",
+      "head": "b146e73f8462ed35c3fdf450e3031a0fc9580cea",
+      "pythonpath": "C:\\Dev\\zhuopin-ai\\5-平台底座\\zhuopin_platform;",
+      "recorded_at": "2026-10-09T14:55:08.7508520+08:00",
+      "exit": 0,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-merged-sc8.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\ai-handoff-1009\\ff-merged-sc8.stderr.txt",
+      "stdout_sha256": "e899f9c36da79fc95ac45dc29c5084605381592b055d584afd7c1e7d2b392656",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": [
+        "45 passed in 4.63s"
+      ],
+      "expected_passed": 45
+    }
+  },
+  "rulings": [
+    "只做本地git merge --ff-only：现有泳道合入工具自动push，超出本次授权；代价是远端同步仍无本项授权。",
+    "仅同步已提交文档且四件blob、两场景及平台子树保持等价：继续承接原独立review；代价是未重新review新commit的文档。",
+    "按批准范围逐子项目复跑专项mock测试，旧树和ledger保留：遵守限定测试及保全要求；代价是完整发布验收和清理仍未执行。"
+  ],
+  "review_source": "reports/ai-handoff-1009/integration-review.json",
+  "reviewed_code_head": "d8acb0985281025d07e34e5d21b2c708747f63c6",
+  "approved_code_head": "a90b60b1d59e86a36f5bf621071f4172fbc4f589",
+  "content_equal_to_review_and_approval": true,
+  "row538_unchanged": true,
+  "harness_note": "First sync verification compared outer 5-平台底座 tree with the earlier nested zhuopin_platform tree field. Both actual levels were unchanged. Corrected comparison and repeated all assertions before ff. A duplicated terminal else also caused a syntax error before acquire; removed before any lock or ff action. No product code changed.",
+  "real_data_read": false,
+  "source_ui_candidates_retained": true,
+  "archive_state": "暂不归档"
+}
