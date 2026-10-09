@@ -1,0 +1,23 @@
+{
+  "recorded_at_shanghai": "2026-10-10T00:14:31.7635870+08:00",
+  "decision": 277,
+  "human_answer": "选择 A。新收货报表四项指标及对应明细只计 BizType316；API 省略 bizType 仍不筛选，旧冻结/缓存不重算。缺失类型或过滤未核验时明确报缺口。仅确认业务口径。",
+  "receipt_metrics": [
+    "收货行数",
+    "收货数量",
+    "收货金额",
+    "到货供应商数"
+  ],
+  "new_report_bizType": 316,
+  "detail_scope_same_as_metrics": true,
+  "api_omitted_bizType": "no filter",
+  "legacy_frozen_cached": "no recompute",
+  "missing_type_or_unverified_filter": "explicit gap",
+  "doc_prefix_inference_allowed": false,
+  "api_or_product_implementation_authorized": false,
+  "real_query_count_this_cycle": 0,
+  "historical_58_to_90_root_cause_closed": false,
+  "current_IT_122_breakdown": "316=90,326=29,449=3; IT statement, not independent query",
+  "IT14_status": "closed; no resend",
+  "task538_status": "partial; no real historical verification performed"
+}
