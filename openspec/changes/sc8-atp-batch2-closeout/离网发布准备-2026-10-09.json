@@ -1,0 +1,498 @@
+{
+  "prepared_at": "2026-10-09T15:36:46.9054277+08:00",
+  "current_master": "463922cabb4dd2644a5c8095c0074fdf35a7dbdb",
+  "source_candidate": "29c1ee92167a4f4bba217078c80cd97928b635a3",
+  "common_base": "637fa6f6140afb43bf73acab5366b7cde8dae0cb",
+  "source_scene_files": [
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/baoguan.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/baoguan_service.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/config.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/forecast.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/kit_date_comparison.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/scripts/compare_kit_date_rule2.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/scripts/run_baoguan_dashboard.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_service.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_webapp.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule1_start.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule2.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule2_comparison.py"
+  ],
+  "master_scene_changes": [
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py"
+  ],
+  "copied_source_blobs": {
+    "sc8/baoguan.py": {
+      "base": "5d9b86dea7f7145d1f6f3f5d2b2255a75c451eff",
+      "source": "4a583665d12b7202eebfd7da447db806c0fa310a"
+    },
+    "sc8/baoguan_service.py": {
+      "base": "57e64bd2ef7fe9076ea040a0763bed782259a067",
+      "source": "9d5156edc5355dbb1c90df9be5489d18a864344c"
+    },
+    "sc8/config.py": {
+      "base": "ce71169226791d9c7fc6a3ece51f490e25c49b5f",
+      "source": "b7e688447bcaf4858a65fb96bfd4c9fa8d98ff3a"
+    },
+    "sc8/forecast.py": {
+      "base": "910a355021fdd5371b744aac6e25a672df5ceaf2",
+      "source": "1eba2418812348ee37ab895fa332a7f179a162ad"
+    },
+    "sc8/kit_date_comparison.py": {
+      "base": null,
+      "source": "4d6db61e9c5697831c66deb14672d14e205e94a9"
+    },
+    "scripts/compare_kit_date_rule2.py": {
+      "base": null,
+      "source": "ae4479c44d3fb5d61e14dc460c36648a1b7ca968"
+    },
+    "scripts/run_baoguan_dashboard.py": {
+      "base": "d3821fe3f55e19aa3ae947dc910de51984da6f24",
+      "source": "0a3de18080399740a9425167391db40003dbae99"
+    },
+    "tests/test_baoguan.py": {
+      "base": "374c148490cd288bd09ae5ba9ea4d328191c2c69",
+      "source": "bec8758f0b3336efc8b25cfc34852e52e4dd047d"
+    },
+    "tests/test_baoguan_service.py": {
+      "base": "cca4743ff9f77b10ddfb35c80085e06e3c906937",
+      "source": "ec5054f6c6fe52ca9f1e8be6d3945ba6ecad472b"
+    },
+    "tests/test_baoguan_webapp.py": {
+      "base": "d813e4f7fb569d9a333ce5f3fefbe549e1bcd255",
+      "source": "4bc1b4c7f10aa5aa0ab4655aa4d26edaf2e9621d"
+    },
+    "tests/test_kit_date_rule1_start.py": {
+      "base": "516f0049351590aed832dfbd59a567687cbedfc1",
+      "source": "578cdc6edb1136e3606cf1abcd42a5859b0c2b44"
+    },
+    "tests/test_kit_date_rule2.py": {
+      "base": null,
+      "source": "7e07a935f1ae2b7eddf514d3e7f80bbf898a8381"
+    },
+    "tests/test_kit_date_rule2_comparison.py": {
+      "base": null,
+      "source": "f7915330da072fa834ee30acef9259a7f3c29678"
+    }
+  },
+  "overlap": [
+    "sc8/webapp.py"
+  ],
+  "approved_ui_blobs_retained": true,
+  "patch_path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\approved-r2-thirteen-files.patch",
+  "patch_sha256": "fe2335b1bae9ee009685395b11ea9b65bcb55f8536c6cd23b1cab4d12ff1137c",
+  "patch_applied": false,
+  "legacy_dirty": {
+    ".claude/rules/队列与落库.md": {
+      "status": " M",
+      "sha256": "4e88c97b56bdf01d2ddce71f4f47391954752207fcdedb60e09830cc1ddc1471"
+    },
+    "0-学习与工具/codex-handoff/O3入厂已发运来料首期mock对照目录-2026-10-04.md": {
+      "status": " M",
+      "sha256": "4bfab8a0b6bd9d140f6c6dfd5adab8ceddd508190ca3e7b180ad347130e545d5"
+    },
+    "0-学习与工具/codex-handoff/O3发布准备批准与执行-2026-10-05.md": {
+      "status": " M",
+      "sha256": "e830e66e26eb7d00ada62d1e6783c4f665833a123e7caa0519da12ec1a8fa461"
+    },
+    "0-学习与工具/codex-handoff/Opener-1009AI-AI赋能构建接力.md": {
+      "status": " M",
+      "sha256": "bd8e183e9a546d8d6b9f6777fea52270bd6798fe514efb74428dc8a39c300b8a"
+    },
+    "0-学习与工具/codex-handoff/Session1008-AI赋能构建接力-2026-10-09.md": {
+      "status": " M",
+      "sha256": "79156b300f98ec6838a21b3c818383bcf047b207d499a48640a75ad2649f4dca"
+    },
+    "0-学习与工具/codex-handoff/离网接续摘要-2026-10-09.md": {
+      "status": " M",
+      "sha256": "84d946031902f18000d945c6793a8abb5ec3a09ee62b51ddaf5b6a5d700be697"
+    },
+    "0-学习与工具/codex-handoff/运营O3O4需求grill非财务补核-2026-10-04.md": {
+      "status": " M",
+      "sha256": "3915218b4c9d570851a5ebd40ffee667e65dd1527f83e7462c3f53b97c1df9db"
+    },
+    "1-转型规划/0-全景路线图/构建Token消耗优化-核验与路线图-2026-09-16.md": {
+      "status": " M",
+      "sha256": "26a1a0d2630caa8280cf44899e4edb780d8e0f06fc2787660a252551c1654d7a"
+    },
+    "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md": {
+      "status": " M",
+      "sha256": null
+    },
+    "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md": {
+      "status": " M",
+      "sha256": null
+    },
+    "1-转型规划/0-全景路线图/队列行日志/#499.md": {
+      "status": " M",
+      "sha256": "4c9af93688a0145496decd2cc54b12c39c6b42773264ea8da217f0767cf6ca9e"
+    },
+    "1-转型规划/0-全景路线图/队列行日志/#508.md": {
+      "status": " M",
+      "sha256": "5d18333391a693ceb11851e7e3eb1404b49b47d53eace4333bddd3cc77151049"
+    },
+    "1-转型规划/0-全景路线图/队列行日志/#538.md": {
+      "status": " M",
+      "sha256": "2c5708fb04f26418ad4936282e29020059aef258e42aa36493c14ae5e0e0171d"
+    },
+    "1-转型规划/0-全景路线图/队列行日志/#592.md": {
+      "status": " M",
+      "sha256": "747da919c8bc8d48e205693e0ce116bed709cc6b24a912964f2af73a698a0fe8"
+    },
+    "4-数字员工/采购部/SC2-采购周报自动生成/CLAUDE.md": {
+      "status": " M",
+      "sha256": "2b560579055d1b7c747be376ed9f72def22bd7ef5abd048deabbbe8ea30b37b0"
+    },
+    "AGENTS.md": {
+      "status": " M",
+      "sha256": "882ce7e183256c40a7ba72e9a0bce01137a997ee358a7fec236c5fa98160922b"
+    },
+    ".claude/settings.json.bak-20260923-080121": {
+      "status": "??",
+      "sha256": "f584aba16c58813e2943c3702063e8be789ff179ca3ed3c5efed7de9d8ab4a6e"
+    },
+    ".codex/.gitignore": {
+      "status": "??",
+      "sha256": "2fd55c84bd5ffb7754297cb5a2114eac455e255cc46805ec3a9faa43ea62df72"
+    },
+    ".codex/references/claude-memory/MEMORY.md": {
+      "status": "??",
+      "sha256": "481dbc205f0866cff2d47ab0be817fbe00fb0f1bfb092ee0033679d4d0d50d79"
+    },
+    ".codex/references/claude-memory/env_baoguan_gate_password_ssh_blocked.md": {
+      "status": "??",
+      "sha256": "e664d3187707fb68f50ee94d54d4c812e0a6f8c05a0b966300c1c5dc7e804ee0"
+    },
+    ".codex/references/claude-memory/env_bash_heredoc_strips_backslash.md": {
+      "status": "??",
+      "sha256": "c428d1d6943f64f7c5154bcc972423ae346507504793be504def191cb30eabc9"
+    },
+    ".codex/references/claude-memory/env_claude_p_allowedtools_split_startprocess_noquote.md": {
+      "status": "??",
+      "sha256": "7a0f275095df943a9480dd5a39d2dc58ce077c182a2f805ac7fd1d2d6ecfe647"
+    },
+    ".codex/references/claude-memory/env_editlock_hash_path_completeness_miss.md": {
+      "status": "??",
+      "sha256": "0c4cdcb7eae0b768182f28dee85472d2eeba059977e26dd3a82fcfb4e90910f9"
+    },
+    ".codex/references/claude-memory/env_editlock_wip_gate_blocks_new_row_even_stopped.md": {
+      "status": "??",
+      "sha256": "03cb4ec26d3fce56e74c0b6ce0b4622624711356e0f12f4af1ed1b39749a5fce"
+    },
+    ".codex/references/claude-memory/env_exitworktree_remove_kills_branch_needed_by_ff_patrol.md": {
+      "status": "??",
+      "sha256": "4dc62439351ef3b22fb37999ef7f2f07718d1fc0b77734c9e80b173a4f11520b"
+    },
+    ".codex/references/claude-memory/env_ff_blocked_by_uncommitted_same_file.md": {
+      "status": "??",
+      "sha256": "a7293e69e95794aebd46c2dbe10ba2d7c780e8d09651f53275e72892ac818846"
+    },
+    ".codex/references/claude-memory/env_git_push_merge_classifier_blocked.md": {
+      "status": "??",
+      "sha256": "a894c6212597d398b0128a89442592e3944c2d17ec760f47fe5a78213ac20721"
+    },
+    ".codex/references/claude-memory/env_headless_lane_acceptedits_python_prefix.md": {
+      "status": "??",
+      "sha256": "3989dd6b1d7bd8024eb891e1ae4db744be87958e1e5fa63ad9f3e3721ab1ebaa"
+    },
+    ".codex/references/claude-memory/env_opener_dispatch_file_uncommitted_in_main_checkout.md": {
+      "status": "??",
+      "sha256": "119580b901422532a3e6fec8867cdf161684f4819bdb45d316d3287f44a668e7"
+    },
+    ".codex/references/claude-memory/env_powershell_tool_ssh_exit255_use_bash.md": {
+      "status": "??",
+      "sha256": "855d381c97481adc560aa2c27ccab690746da2a6286744a84a9520ec0948b1c0"
+    },
+    ".codex/references/claude-memory/env_queue_batch_filelist_backtick_guard.md": {
+      "status": "??",
+      "sha256": "a7bdf4efefa9b4994002766068c7f68504fedd6ce1f65d35f6a26d72637fe6b7"
+    },
+    ".codex/references/claude-memory/env_queue_file_dense_lines_read_tool_overflow.md": {
+      "status": "??",
+      "sha256": "7879da57fae42584580e0fba90d7a17bfe3859db7d0f08d6927c9d35a9a49171"
+    },
+    ".codex/references/claude-memory/env_queue_new_batch_row_cannot_be_born_done.md": {
+      "status": "??",
+      "sha256": "51e635639c40e33ec804411b45f91fdd3f9fbd9925424b925084d40f80ba4300"
+    },
+    ".codex/references/claude-memory/env_queue_worktree_shadow_copy.md": {
+      "status": "??",
+      "sha256": "c6b10b62a00961203f485fdf9de7110744953dd6082d3e1430b41e57d8d043b1"
+    },
+    ".codex/references/claude-memory/env_reserve_rejected_stale_highwater.md": {
+      "status": "??",
+      "sha256": "9b638a44ac4e659d46f43009c40490d61b67502eb2496e0db978518244b3a02e"
+    },
+    ".codex/references/claude-memory/env_section_bounds_returns_char_offsets.md": {
+      "status": "??",
+      "sha256": "37b23e1677a5374512a5c768d9fbce5664e711e7fb1caf757601e0830de76fe0"
+    },
+    ".codex/references/claude-memory/env_ssh_prod_data_write_classifier_blocked.md": {
+      "status": "??",
+      "sha256": "c873d66422d8a72e96d18e35096c7ed5e0e8a08552a95c8d72cf0cae47a402e1"
+    },
+    ".codex/references/claude-memory/env_subagent_internal_monitor_notification_trap.md": {
+      "status": "??",
+      "sha256": "60fd7bf39424905b6581c5e128c4e46ce95a1282fdac6b286132efc89ec7a053"
+    },
+    ".codex/references/claude-memory/env_subagent_self_title_hijack.md": {
+      "status": "??",
+      "sha256": "fd4c4458bbc929cacf1ca31f84ece35a51b32361e52d36e7bf84ffd16ffb5a65"
+    },
+    ".codex/references/claude-memory/env_tmpdir_empty_cp_backup_lost_work.md": {
+      "status": "??",
+      "sha256": "fdcdf9fd8ba64acbbebc43870c4bb093a43b66b0665413b5c9d694ea5d2eab74"
+    },
+    ".codex/references/claude-memory/env_worktree_isolated_agent_cannot_nest_worktree.md": {
+      "status": "??",
+      "sha256": "39492350feeb973786081343b455155e17fb8b7df58349f7369202f00509ddd1"
+    },
+    ".codex/references/claude-memory/env_worktree_remove_partial_failure_windows.md": {
+      "status": "??",
+      "sha256": "2436653553ab614937911051fe195c14a3f4fecc677d6a625c45f2601264c52c"
+    },
+    ".codex/references/claude-memory/feedback_execute_everything_unless_elevation.md": {
+      "status": "??",
+      "sha256": "445ada89b4d98b1558d4687fb24b9da509ae153bf6f295bb3b33d120cd2de076"
+    },
+    ".codex/references/claude-memory/feedback_no_reask_decided_answers.md": {
+      "status": "??",
+      "sha256": "31c2849a84d494ac09d7d2bd6ded02b0fa04b0f35035348d59f57ebba8709298"
+    },
+    "0-学习与工具/codex-handoff/F17与三区冻结提案失败核验-2026-10-04.md": {
+      "status": "??",
+      "sha256": "a46e4a0a7c2cf3f619eeae9b3d2aa4f165bc43e5cfa0b6665f0429f78dc3cfda"
+    },
+    "0-学习与工具/codex-handoff/F17设计审阅结论-2026-10-04.md": {
+      "status": "??",
+      "sha256": "13f117597bd879e4e0e02583e16719b21eb70ca6e1a2e9ba2bb3b2a76ae3f61f"
+    },
+    "0-学习与工具/codex-handoff/O3发布准备停点与交付-2026-10-06.md": {
+      "status": "??",
+      "sha256": "8a4ef31a85fdfa68133222821c8351a9a0aba5455164ce4ccc9e23108a931472"
+    },
+    "0-学习与工具/codex-handoff/两项提案重派输入-2026-10-04.md": {
+      "status": "??",
+      "sha256": "d605862169bbb3a8863ea1b4bbaa8347dc7ace9d5965f8223ba311460e01b0fa"
+    },
+    "0-学习与工具/codex-handoff/企微连接就绪度判据-2026-10-04.md": {
+      "status": "??",
+      "sha256": "7d0a08c4179d63381a7f534b54a61428a0941b58927d82cd8a37973a44464dc5"
+    },
+    "0-学习与工具/codex-handoff/历史未提交资料保全登记-2026-10-04.md": {
+      "status": "??",
+      "sha256": "8d3aa0cd6b783b8b33214abfb276bb80257244d285041e79de686d45ee67abf4"
+    },
+    "0-学习与工具/codex-handoff/编号口径634-提案输入-2026-10-04.md": {
+      "status": "??",
+      "sha256": "7d34e186443952a0b2f39bd1530c8c44a8a7372c3719c14dc1e8a5dcb63a1c3f"
+    },
+    "1-转型规划/0-全景路线图/Guardian首轮提案复盘与补全输入-2026-10-03.md": {
+      "status": "??",
+      "sha256": "9b73669064de42adffc1b700b6ae7e7a9c7642a55b3e2c171dc0e8c207516bb1"
+    },
+    "1-转型规划/0-全景路线图/准备输入-Q2语义离线提案补全-2026-10-03.md": {
+      "status": "??",
+      "sha256": "339474c9c1e37ddc075880b4896d2d9266c417fb543786780d170972d5e7e750"
+    },
+    "1-转型规划/0-全景路线图/拆件-回件666-SC2收货业务类型与查询定义-2026-10-09.json": {
+      "status": "??",
+      "sha256": "25308e77736d549742d45f723ddc34e13a9dd72eb34d26952a2baf704e01597e"
+    },
+    "1-转型规划/0-全景路线图/拆件-回件666-SC2收货业务类型与查询定义-2026-10-09.md": {
+      "status": "??",
+      "sha256": "e4f34d28b2faf72ed9ae94dc9b58552661c1f3e3a871307e396e44201f6be95c"
+    },
+    "1-转型规划/0-全景路线图/拆件-采购部24-SC2三项指标范围与字段签认-2026-10-03.md": {
+      "status": "??",
+      "sha256": "31900bfe6b1055ede86cb977fc5ee92a24f1a8ee9bc596472f387d4aaea84cb9"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_Q2语义提案.json": {
+      "status": "??",
+      "sha256": "f30ad2aadf1aea55ff06fb8dc4069b017779b37e416c122373c6e7c6b880cace"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_Q9候选提案.json": {
+      "status": "??",
+      "sha256": "f74202e6b66eceb6db6e19960b19ca13d6e0a6bb0c37132b81641e1f3c827266"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_SC2指标提案.json": {
+      "status": "??",
+      "sha256": "a39e11a7ac62db86f691d1103897b045713eea0ce53bc6c83aa5d088e135863f"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_三区冻结提案.json": {
+      "status": "??",
+      "sha256": "c9039584107ebf3e27ae12c381f2140318bdfb912655cc87cff898ccf0cf0816"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_F17机器守.json": {
+      "status": "??",
+      "sha256": "87527a50a415987777854af54a1cb2c60e48522e4829ef87fba4dd135976e0ab"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_F17重派提案.json": {
+      "status": "??",
+      "sha256": "907ab202af91d3ea17ccb7e5d6c5daa3a0c1779b5e9521114fd0eac58aa3e83d"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_三区冻结二次重派.json": {
+      "status": "??",
+      "sha256": "c8056fac03cfdb5657eedec061362982f5f839ce5d132181a2535cb8cd69cfa6"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_三区冻结重派提案.json": {
+      "status": "??",
+      "sha256": "41faf67444476c746903bce555b9fd64e7a00842cb7d06dd61a251cd9294eaa8"
+    },
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_编号口径提案.json": {
+      "status": "??",
+      "sha256": "2a5047d1248ab720c68223ecb85ecc56ecb5de38153022e759c7245a1548cf0e"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1003_Q2语义提案.md": {
+      "status": "??",
+      "sha256": "737014ce90d1ac439720c8d4b5b471fdffd914d86e3d4ab689ee90806dc29287"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1003_Q9候选提案.md": {
+      "status": "??",
+      "sha256": "e9051108c6f366c75faaf689f69483ac171295b75918970aef5479c8d2013ded"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1003_SC2指标提案.md": {
+      "status": "??",
+      "sha256": "580909f86157de9880660eaf73a2bcfe022fba7d28c8e35239b291a32c19b189"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1003_三区冻结提案.md": {
+      "status": "??",
+      "sha256": "358a494850f63957bee187d76bdbbc31c84bb00ee469c1462dc9fd2e881ad8f2"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_F17机器守.md": {
+      "status": "??",
+      "sha256": "29b4f7ac760a0b99830aa299054a2ac4079681a547e17d185f3828d204f40cd1"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_F17重派提案.md": {
+      "status": "??",
+      "sha256": "d781d354a8a43f37d2ff092f2fcfb6dabb88c5e8d92eeca4e45544ce248eac38"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_三区冻结二次重派.md": {
+      "status": "??",
+      "sha256": "29896fc817693a14a24f52cca23829c9842f028de0b3ced9f6a7564e6022a899"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_三区冻结重派提案.md": {
+      "status": "??",
+      "sha256": "b454407721e167ff3e16b82a9ff9de250b31bb79b360aef57a601ba7559850b8"
+    },
+    "1-转型规划/0-全景路线图/看护计划-B-1004_编号口径提案.md": {
+      "status": "??",
+      "sha256": "24782eff856311436c1ad3ecbcbbb7fde09f32d719994519293ed94b5c97c9ab"
+    },
+    "1-转型规划/0-全景路线图/移交单-Q2剩余语义来源离线提案-2026-10-03.md": {
+      "status": "??",
+      "sha256": "2b034caeb55ed06a13daab1fceb7652c3da774835eb98ff9a3e90e3b68803196"
+    },
+    "1-转型规划/0-全景路线图/移交单-Q9候选设计输出追溯提案-2026-10-03.md": {
+      "status": "??",
+      "sha256": "13b670c8426ca8dd2b4a1262b9d4f889603dc684b85deb3652326ad8aa262edd"
+    },
+    "1-转型规划/0-全景路线图/移交单-SC2三项指标证据合同提案-2026-10-03.md": {
+      "status": "??",
+      "sha256": "a5c37fa0664932c32dbac480997734e08ff66ccae8a4fa013bfec6c352e4b86c"
+    },
+    "1-转型规划/0-全景路线图/移交单-官方队列三区冻结接口补齐-2026-10-03.md": {
+      "status": "??",
+      "sha256": "efb383f3fb9225b49a3caf76099300cd1593966d76fd528a30e81670031517e2"
+    },
+    "4-数字员工/质量部/Q9-APQP阶段审查/intent.md": {
+      "status": "??",
+      "sha256": "0f3d267b3c7d303cca6b444e873f093eab0aacd9ee67d424106b0ee76f88b9e5"
+    },
+    "4-数字员工/质量部/Q9-APQP阶段审查/判例准备-设计输出追溯.md": {
+      "status": "??",
+      "sha256": "7c544466cf6092bea46daefdae6578431a79f7e242e2532c59440a400aaa6bed"
+    },
+    "4-数字员工/采购部/SC2-采购周报自动生成/intent.md": {
+      "status": "??",
+      "sha256": "0b4777da2382714b0dfaf56a2bb01b65d581359aba120470ae7467c00591e97a"
+    },
+    "4-数字员工/采购部/SC2-采购周报自动生成/判例准备-三项指标字段与边界.md": {
+      "status": "??",
+      "sha256": "b51bb5b3ca9e32e20cf208c0b8e6b9dce077992ec8fbcb6531321a4e4466b32c"
+    },
+    "docs/superpowers/plans/2026-10-03-q9-apqp-pilot-preparation.md": {
+      "status": "??",
+      "sha256": "f99f6d51e8ca6d11137554770d8c3f456022896eb63505d05529d044bcde7d51"
+    },
+    "docs/superpowers/plans/2026-10-03-sc2-three-metric-preparation.md": {
+      "status": "??",
+      "sha256": "599cd2556106c114cec97edab692be0ec0da0798aed025aae7eadab081e00b6e"
+    },
+    "docs/superpowers/plans/2026-10-06-o3-minimal-recovery.md": {
+      "status": "??",
+      "sha256": "5998b1590e93ec759652e19748a203bf1da12aac2e72fcb70c3ebfe88097a32a"
+    },
+    "docs/superpowers/plans/2026-10-06-o3-revocation-pending.md": {
+      "status": "??",
+      "sha256": "bd9beb896938b0c1967bfe3f3649cd89e16fec7bb5c35a8e49fcd42cb36bd7e0"
+    },
+    "docs/superpowers/specs/2026-10-06-o3-revocation-pending-design.md": {
+      "status": "??",
+      "sha256": "8e2a5b0e3eed20c0c568cc1682e83bff27a59e127e8e826fd1d896f560357e21"
+    }
+  },
+  "row660_before": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n660\n\n【任务】\nSC8规则2逐字化：承接#118已批准设计及完整Native具体计划的独立实施/mock离线验证\n\n【领取方】\n[Win]1009AI-AI赋能构建接力；唯一执行会话01a11df8-f725-7f61-b1de-bd912fa2a0ce；来源会话01a118fc-82a7-7aa3-8c51-986a2de1a1ed已停止本任务写入\n\n【输入（指针）】\n`docs/superpowers/plans/2026-10-03-sc8-rule2-literal-native.md`；`openspec/changes/sc8-atp-batch2-closeout/design.md`/`tasks.md`；`openspec/specs/delivery-date-forecast/spec.md`；`0-学习与工具/codex-handoff/SC8规则2实施批准与开工-2026-10-06.md` `0-学习与工具/codex-handoff/Session1007-AI赋能构建接力-2026-10-08.md`（本人要求同线转场，旧会话交付后停止本任务写入；新会话三查后绑定实际ID）\n\n【期望产出】\n独立默认OFF规则2/ForecastContext、实际构造性红绿/D5/逐行比较器；候选固定后SC8 OFF/ON、双黄金/平台/strict及同版Luna review，缺真实输入明确留步；具体发布另审。\n\n【状态】\n[S:partial][D:业] 2026-10-06T22:50:53.2431878+08:00 Shao Peishen已明确“批准 SC8 P1具体计划及实施”，沿用Native executing-plans；本行只承接规则2窄片，P2/原#118其余范围保留。已建托管隔离树sc8-rule2-literal-1006 @637fa6f6，Probe八项exit0，产品未改；准备Guardian查重/资格及定向基线。批准计划SHA 6defe2ef4758e07d2d3eae1a402afde62a3265d18f3b4888ddb4764a0581b16c；主仓LF/隔离checkout CRLF完整文本相同，原始SHA分开保存。实际执行/红绿/完成均据后续证据回写，不伪造runtime阶段。原失败批不退役重派，四CI/主仓对齐/ff/真实取数/.51/启用/外发/L2另审。P1系计划编号；证伪/回读 `python 0-学习与工具/工具-队列查询.py --section 一 --row 660 --field all`。 ━━━ 📎 **5 段已于 2026-10-08 外置**（K2 口径，原文原样、可 grep，文件 md5:03cba584，工具第 5 批）见 `1-转型规划/0-全景路线图/队列行日志/#660.md`；本格只留原第 1、8 段（共 8 段）＋本指针（外置人 Codex-1008AI-离网终核）。此前 1 条指针段已并入本指针，先后各批原文均在同一文件。 ━━━ 10-08离网接续封存：17:53现时Probe八项exit0，18:07核26件可读、真实数据未跟踪，18:10 SC2/Q2 ping均200；三份逐行差集139/45/13已留ignored。IT14闭环、663–665done；538仍partial。9单13行新增逐单查询申请待本人答复；本轮没有ERP新取/refresh/外发/复部署。明天清单与具体停点见`0-学习与工具/codex-handoff/离网接续摘要-2026-10-09.md`，业务进展不等于Workflow全链证明。 ━━━ 10-08 22:12现况覆盖此前“9单待批准”：本人已批且21:36完成9次/13行，只读结果及两轮离线核已回灌538；现32件材料已核可读，SC8原四件SHA不变、专业D4/颜色及采购25仍在途，partial及唯一领取方不变。客户端条件已核，538剩余服务端/原报表条件只读入口待提供；明天按`0-学习与工具/codex-handoff/离网接续摘要-2026-10-09.md`继续，不重复批准/查询/实采/发布/发送。 ━━━ 10-09 Codex续作：获准SC8隔离树HEAD 29c1ee92167a4f4bba217078c80cd97928b635a3；OFF/ON全套各580 passed、4 skipped，mock golden 1 passed，真实golden因缺少 data/golden/real_frozen/expected.json 为1 skipped（未重建/重采）；平台底座646 passed、1 skipped；OpenSpec strict 216 passed。独立只读Luna review未发现可复现缺陷。执行证据记录于当前会话R5；真实D4/颜色签认未闭、partial。 ━━━ 10-09同树独立采购UI批准范围已实施为4401eb4f（父29c1ee92）并通过46项展示回归；原R2已验证事实仍独立，UI不修改引擎。具体UI证据及发布停点见`openspec/changes/portal-sc8-ui/实施证据.json`与发布准备；当前旧分支已与主仓分叉，不能直接ff，R2/UI发布与D4/颜色签认仍分项闸。#538本棒未写。 ━━━ 10-09离网UI已另树定向集成为a90b60b1，仅展示四件，SC8回归45 passed，原R2 baoguan/config未导入、旧树保留。R2原验证与后续发布仍独立闸；详情`openspec/changes/portal-sc8-ui/主仓集成证据.json`。#538不改。 ━━━ 2026-10-09采购四件UI获批仅本地ff至master b146e73f；SC8 ff后45 passed，baoguan/config保持主仓旧版，R2未带入、原树保留。详`openspec/changes/portal-sc8-ui/ff合入批准与执行.json`；R2发布仍独立待办，#538不改。\n\n【触碰区】\n原已批准隔离树及计划触碰区；本次追加tests/test_baoguan.py仅六个已点名旧口径函数的monkeypatch参数/本函数R2 OFF前提，原断言不改；不在主仓改业务源码、不改失败批或claims。 本续场治理触碰区：本行领取方/状态及本批§二；证据封包只读，隔离树原位保留，主仓不改业务源码。 ━━━ 本轮补充0-学习与工具/codex-handoff/SC8本机核验与后续回件分工-2026-10-07.md、SC8采购下一封拟发要点-2026-10-07.md；6-人才与组织/部门AI专员跟进/IT部-陈承-跟进-2026-10-07-SC8现有记录核对.md与.docx、README登记；本机reports/sc8-local-check-1007/审计证据。 ；本轮只增`0-学习与工具/codex-handoff/SC8冻结报告离网复核索引-2026-10-08.md`及当前离网报告md/json、#660 K2历史保全与末段、对应§二；原SC8树/产品/判例正本/发送器不改。\n\n【登记】\nNative-1006-SC8规则2实施 2026-10-06T22:50:53.2431878+08:00\n\n",
+  "frozen_summary_sha256": "c610291997320fe339dd5f446a6faa1c16f8349799dcb045db20d94b22088cd5",
+  "frozen_report_hashes_verified": {
+    "six-inputs.json": "e9bc55cec9febb31cbe700cb7f6086a382df2a63374e1f3dc3e664d85a91173e",
+    "r2-off-on.md": "b9b35a7611f92f324cc3a3524c69846ae3914d9604b27d48cb837a08f85a5d5d",
+    "r2-off-on.md.receipt.json": "838ae91267863420dc5efd5eb5b3d999231b5d33633f1a5cdc30a11b0553039e",
+    "sealed-evidence.json": "2ad00acc38cf93a748971a396d6c36fa3a656b37c42feffef092b1e9814d84a2"
+  },
+  "frozen_summary": {
+    "rows": 119,
+    "moved": 46,
+    "unmoved": 73,
+    "colors_before": {
+      "🔴": 63,
+      "🟠": 49,
+      "🟡": 5,
+      "🟢": 2
+    },
+    "colors_after": {
+      "🔴": 63,
+      "🟠": 49,
+      "🟡": 5,
+      "🟢": 2
+    },
+    "coverage": {
+      "branch_direction": "triggered",
+      "date_direction": "triggered",
+      "color_direction": "untriggered_unverified"
+    },
+    "boundary_counts": {
+      "2026-10-07": 0,
+      "2026-10-08": 0,
+      "2027-01-06": 0,
+      "2027-01-07": 0,
+      "2027-01-08": 0
+    }
+  },
+  "product_changed": false,
+  "tests_run_in_this_preparation": false,
+  "real_data_fetches": 0,
+  "alignment_approval": "pending",
+  "recorded_at": "2026-10-09T15:37:50.6621207+08:00",
+  "plan_path": "docs/superpowers/plans/2026-10-09-sc8-rule2-master-alignment.md",
+  "plan_status": "pending review",
+  "source_plan_approval": "#660 2026-10-06批准SC8 P1具体计划及实施",
+  "scope_gate": "#660 current approved record: 四CI/主仓对齐/ff另审",
+  "test_history_from_current_R5": {
+    "source": "29c1ee92",
+    "SC8_OFF": "580 passed / 4 skipped",
+    "SC8_ON": "580 passed / 4 skipped",
+    "mock_golden": "1 passed",
+    "real_golden": "1 skipped: missing expected.json",
+    "platform": "646 passed / 1 skipped",
+    "strict": "216 passed"
+  },
+  "historical_test_reports_not_rerun": true,
+  "professional_or_D4_signoff": false,
+  "real_golden_closed": false,
+  "deployed": false,
+  "rule2_activated": false
+}
