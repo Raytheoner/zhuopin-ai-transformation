@@ -1,0 +1,14 @@
+{
+  "recorded_at": "2026-10-09T10:24:23.2609093+08:00",
+  "thread": "01a11df8-f725-7f61-b1de-bd912fa2a0ce",
+  "main_head": "85c97a29c93c9e365dd4f3d0e346e3802110f455",
+  "base": "29c1ee92167a4f4bba217078c80cd97928b635a3",
+  "candidate": "4401eb4ff85addee8c75459f70e766c4fd59316b",
+  "path": "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py",
+  "base_blob": "96ffa4877a058f7971009d27bdc5f8daf88c2961",
+  "main_blob": "25bd6251f6df9e427c9a48adf7cf4839511ea7a4",
+  "main_diff": "diff --git a/4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py b/4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py\nindex 96ffa487..25bd6251 100644\n--- a/4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py\n+++ b/4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py\n@@ -274,7 +274,7 @@ var DATA=[],META={today:'',ver:''};\n function applySnap(s){\n   DATA=(s&&s.rows)||[];META={today:(s&&s.today)||'',ver:(s&&s.param_version)||''};\n   var ts=document.getElementById('ts');\n-  if(ts)ts.textContent=(s&&s.ok)?('最后更新 '+(s.generated_at||'—')+' · 参数 '+META.ver):'尚未刷新 —— 点「刷新」或等待定时刷新';\n+  if(ts)ts.textContent=(s&&s.ok)?('最后更新 '+(s.generated_at||'—')):'尚未刷新 —— 点「刷新」或等待定时刷新';\n   renderKpis();renderFbtns();render();\n }\n function loadSnap(){\n@@ -329,7 +329,7 @@ setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全\n         + '<option value=\"200\">200 行/页</option></select>\\n'\n         + '<button class=\"btn\" id=\"xlsx\" type=\"button\">导出 Excel</button>\\n'\n         + '<button class=\"btn\" id=\"legendBtn\" type=\"button\">📖 图例</button></div>\\n'\n-        + '<div class=\"legend\" id=\"legendPanel\">' + render_legend(config.default_params(), include_version=False) + '</div>\\n'\n+        + '<div class=\"legend\" id=\"legendPanel\">' + render_legend(config.default_params()) + '</div>\\n'\n         + '<div class=\"cnt\" id=\"cnt\"></div>\\n<div class=\"pager\" id=\"pagerTop\"></div>\\n'\n         + '<div class=\"cards\" id=\"cards\"></div>\\n<div class=\"pager\" id=\"pagerBottom\"></div>\\n'\n         + '<div class=\"foot\">分级只看<b>有确定承诺</b>子件的齐料缺口：🔴 真延期 · 🟠 待催 · 🟡 偏紧 · 🟢 按期。'",
+  "candidate_blob": "b05b741e4648357180abc6a67fbe6822d78020a4",
+  "authorization": "本会话offlan继续；沿已批准UI范围，不含R2引擎发布或ff/部署",
+  "plan": "docs/superpowers/plans/2026-10-09-portal-procurement-integration.md"
+}

@@ -1,0 +1,14 @@
+{
+  "recorded_at": "2026-10-09T10:24:23.2609093+08:00",
+  "thread": "01a11df8-f725-7f61-b1de-bd912fa2a0ce",
+  "main_head": "85c97a29c93c9e365dd4f3d0e346e3802110f455",
+  "base": "5c6b3545c016dcaad85e7e1095487538e017a379",
+  "candidate": "b9798d5086ddf78220159416133a8d1de07daecd",
+  "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+  "base_blob": "03ef46ebc1280298f2b668c0647263ace7a4e639",
+  "main_blob": "03ef46ebc1280298f2b668c0647263ace7a4e639",
+  "main_diff": "",
+  "candidate_blob": "c2d56c0cb68391c8efe2d69ef2a9c0299a00015e",
+  "authorization": "本会话offlan继续；沿已批准UI范围，不含R2引擎发布或ff/部署",
+  "plan": "docs/superpowers/plans/2026-10-09-portal-procurement-integration.md"
+}
