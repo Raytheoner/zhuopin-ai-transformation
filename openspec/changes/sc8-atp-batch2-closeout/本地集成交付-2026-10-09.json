@@ -1,0 +1,1577 @@
+{
+  "captured_at": "2026-10-09T14:30:23.028611+00:00",
+  "tree": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai",
+  "original_candidate": "2bdd92f6bb0cde62962a85daae618994fe2209a8",
+  "master_base": "fc79860c72ae4855cd7f4b1e7ec4a96b31cfebf3",
+  "original_base": "463922cabb4dd2644a5c8095c0074fdf35a7dbdb",
+  "branch": "codex/sc8-r2-integration-1009",
+  "master_changed_paths": [
+    "0-学习与工具/codex-handoff/Opener-1009AI-AI赋能构建接力.md",
+    "0-学习与工具/codex-handoff/Session1008-AI赋能构建接力-2026-10-09.md",
+    "0-学习与工具/codex-handoff/泳道448与635具体批准与启动-2026-10-09.json",
+    "0-学习与工具/codex-handoff/泳道448与635具体批准与启动-2026-10-09.md",
+    "0-学习与工具/codex-handoff/泳道448与635意图和LAN分类确认-2026-10-09.json",
+    "0-学习与工具/codex-handoff/泳道448与635意图和LAN分类确认-2026-10-09.md",
+    "0-学习与工具/codex-handoff/泳道448与635方案成果与原生停点-2026-10-09.json",
+    "0-学习与工具/codex-handoff/泳道448与635方案成果与原生停点-2026-10-09.md",
+    "0-学习与工具/codex-handoff/泳道看护开跑范围与停点-2026-10-09.json",
+    "0-学习与工具/codex-handoff/泳道看护开跑范围与停点-2026-10-09.md",
+    "0-学习与工具/codex-handoff/离网接续摘要-2026-10-09.md",
+    "1-转型规划/0-全景路线图/拆件-回件666-SC2收货业务类型与查询定义-2026-10-09.json",
+    "1-转型规划/0-全景路线图/拆件-回件666-SC2收货业务类型与查询定义-2026-10-09.md",
+    "1-转型规划/0-全景路线图/文档台账-自动生成.md",
+    "1-转型规划/0-全景路线图/看护manifest-B-1009_队列机制方案准备.json",
+    "1-转型规划/0-全景路线图/看护计划-B-1009_队列机制方案准备.md",
+    "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md",
+    "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md",
+    "1-转型规划/0-全景路线图/队列行日志/#448.md",
+    "1-转型规划/0-全景路线图/队列行日志/#538.md",
+    "1-转型规划/0-全景路线图/队列行日志/#660.md",
+    "4-数字员工/采购部/SC2-采购周报自动生成/CLAUDE.md",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md",
+    "docs/superpowers/plans/2026-10-09-sc8-rule2-master-alignment.md",
+    "openspec/changes/sc8-atp-batch2-closeout/tasks.md",
+    "openspec/changes/sc8-atp-batch2-closeout/主仓对齐Luna评审-2026-10-09.md",
+    "openspec/changes/sc8-atp-batch2-closeout/主仓对齐批准与执行.json",
+    "openspec/changes/sc8-atp-batch2-closeout/主仓对齐批准与执行.md",
+    "openspec/changes/sc8-atp-batch2-closeout/离网发布准备-2026-10-09.json",
+    "openspec/changes/sc8-atp-batch2-closeout/离网发布准备-2026-10-09.md"
+  ],
+  "product_files": [
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/baoguan.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/baoguan_service.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/config.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/forecast.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/kit_date_comparison.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/scripts/compare_kit_date_rule2.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/scripts/run_baoguan_dashboard.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_service.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_webapp.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule1_start.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule2.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule2_comparison.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py"
+  ],
+  "approved_product_blobs": {
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/baoguan.py": "4a583665d12b7202eebfd7da447db806c0fa310a",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/baoguan_service.py": "9d5156edc5355dbb1c90df9be5489d18a864344c",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/config.py": "b7e688447bcaf4858a65fb96bfd4c9fa8d98ff3a",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/forecast.py": "1eba2418812348ee37ab895fa332a7f179a162ad",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/kit_date_comparison.py": "4d6db61e9c5697831c66deb14672d14e205e94a9",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py": "dadcaf9ca3026d9ba23e15eeefe2d25e3627766e",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/scripts/compare_kit_date_rule2.py": "ae4479c44d3fb5d61e14dc460c36648a1b7ca968",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/scripts/run_baoguan_dashboard.py": "0a3de18080399740a9425167391db40003dbae99",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan.py": "bec8758f0b3336efc8b25cfc34852e52e4dd047d",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_service.py": "ec5054f6c6fe52ca9f1e8be6d3945ba6ecad472b",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_webapp.py": "4bc1b4c7f10aa5aa0ab4655aa4d26edaf2e9621d",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule1_start.py": "578cdc6edb1136e3606cf1abcd42a5859b0c2b44",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule2.py": "7e07a935f1ae2b7eddf514d3e7f80bbf898a8381",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule2_comparison.py": "f7915330da072fa834ee30acef9259a7f3c29678",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py": "d0be1a2f6028e82349f59afe45f720371d1fce58"
+  },
+  "legacy_sha256": {
+    ".claude/rules/队列与落库.md": "4e88c97b56bdf01d2ddce71f4f47391954752207fcdedb60e09830cc1ddc1471",
+    "0-学习与工具/codex-handoff/O3入厂已发运来料首期mock对照目录-2026-10-04.md": "4bfab8a0b6bd9d140f6c6dfd5adab8ceddd508190ca3e7b180ad347130e545d5",
+    "0-学习与工具/codex-handoff/O3发布准备批准与执行-2026-10-05.md": "e830e66e26eb7d00ada62d1e6783c4f665833a123e7caa0519da12ec1a8fa461",
+    "0-学习与工具/codex-handoff/运营O3O4需求grill非财务补核-2026-10-04.md": "3915218b4c9d570851a5ebd40ffee667e65dd1527f83e7462c3f53b97c1df9db",
+    "1-转型规划/0-全景路线图/构建Token消耗优化-核验与路线图-2026-09-16.md": "26a1a0d2630caa8280cf44899e4edb780d8e0f06fc2787660a252551c1654d7a",
+    "1-转型规划/0-全景路线图/队列行日志/#499.md": "4c9af93688a0145496decd2cc54b12c39c6b42773264ea8da217f0767cf6ca9e",
+    "1-转型规划/0-全景路线图/队列行日志/#508.md": "5d18333391a693ceb11851e7e3eb1404b49b47d53eace4333bddd3cc77151049",
+    "1-转型规划/0-全景路线图/队列行日志/#592.md": "747da919c8bc8d48e205693e0ce116bed709cc6b24a912964f2af73a698a0fe8",
+    "AGENTS.md": "882ce7e183256c40a7ba72e9a0bce01137a997ee358a7fec236c5fa98160922b",
+    ".claude/settings.json.bak-20260923-080121": "f584aba16c58813e2943c3702063e8be789ff179ca3ed3c5efed7de9d8ab4a6e",
+    ".codex/.gitignore": "2fd55c84bd5ffb7754297cb5a2114eac455e255cc46805ec3a9faa43ea62df72",
+    ".codex/references/claude-memory/MEMORY.md": "481dbc205f0866cff2d47ab0be817fbe00fb0f1bfb092ee0033679d4d0d50d79",
+    ".codex/references/claude-memory/env_baoguan_gate_password_ssh_blocked.md": "e664d3187707fb68f50ee94d54d4c812e0a6f8c05a0b966300c1c5dc7e804ee0",
+    ".codex/references/claude-memory/env_bash_heredoc_strips_backslash.md": "c428d1d6943f64f7c5154bcc972423ae346507504793be504def191cb30eabc9",
+    ".codex/references/claude-memory/env_claude_p_allowedtools_split_startprocess_noquote.md": "7a0f275095df943a9480dd5a39d2dc58ce077c182a2f805ac7fd1d2d6ecfe647",
+    ".codex/references/claude-memory/env_editlock_hash_path_completeness_miss.md": "0c4cdcb7eae0b768182f28dee85472d2eeba059977e26dd3a82fcfb4e90910f9",
+    ".codex/references/claude-memory/env_editlock_wip_gate_blocks_new_row_even_stopped.md": "03cb4ec26d3fce56e74c0b6ce0b4622624711356e0f12f4af1ed1b39749a5fce",
+    ".codex/references/claude-memory/env_exitworktree_remove_kills_branch_needed_by_ff_patrol.md": "4dc62439351ef3b22fb37999ef7f2f07718d1fc0b77734c9e80b173a4f11520b",
+    ".codex/references/claude-memory/env_ff_blocked_by_uncommitted_same_file.md": "a7293e69e95794aebd46c2dbe10ba2d7c780e8d09651f53275e72892ac818846",
+    ".codex/references/claude-memory/env_git_push_merge_classifier_blocked.md": "a894c6212597d398b0128a89442592e3944c2d17ec760f47fe5a78213ac20721",
+    ".codex/references/claude-memory/env_headless_lane_acceptedits_python_prefix.md": "3989dd6b1d7bd8024eb891e1ae4db744be87958e1e5fa63ad9f3e3721ab1ebaa",
+    ".codex/references/claude-memory/env_opener_dispatch_file_uncommitted_in_main_checkout.md": "119580b901422532a3e6fec8867cdf161684f4819bdb45d316d3287f44a668e7",
+    ".codex/references/claude-memory/env_powershell_tool_ssh_exit255_use_bash.md": "855d381c97481adc560aa2c27ccab690746da2a6286744a84a9520ec0948b1c0",
+    ".codex/references/claude-memory/env_queue_batch_filelist_backtick_guard.md": "a7bdf4efefa9b4994002766068c7f68504fedd6ce1f65d35f6a26d72637fe6b7",
+    ".codex/references/claude-memory/env_queue_file_dense_lines_read_tool_overflow.md": "7879da57fae42584580e0fba90d7a17bfe3859db7d0f08d6927c9d35a9a49171",
+    ".codex/references/claude-memory/env_queue_new_batch_row_cannot_be_born_done.md": "51e635639c40e33ec804411b45f91fdd3f9fbd9925424b925084d40f80ba4300",
+    ".codex/references/claude-memory/env_queue_worktree_shadow_copy.md": "c6b10b62a00961203f485fdf9de7110744953dd6082d3e1430b41e57d8d043b1",
+    ".codex/references/claude-memory/env_reserve_rejected_stale_highwater.md": "9b638a44ac4e659d46f43009c40490d61b67502eb2496e0db978518244b3a02e",
+    ".codex/references/claude-memory/env_section_bounds_returns_char_offsets.md": "37b23e1677a5374512a5c768d9fbce5664e711e7fb1caf757601e0830de76fe0",
+    ".codex/references/claude-memory/env_ssh_prod_data_write_classifier_blocked.md": "c873d66422d8a72e96d18e35096c7ed5e0e8a08552a95c8d72cf0cae47a402e1",
+    ".codex/references/claude-memory/env_subagent_internal_monitor_notification_trap.md": "60fd7bf39424905b6581c5e128c4e46ce95a1282fdac6b286132efc89ec7a053",
+    ".codex/references/claude-memory/env_subagent_self_title_hijack.md": "fd4c4458bbc929cacf1ca31f84ece35a51b32361e52d36e7bf84ffd16ffb5a65",
+    ".codex/references/claude-memory/env_tmpdir_empty_cp_backup_lost_work.md": "fdcdf9fd8ba64acbbebc43870c4bb093a43b66b0665413b5c9d694ea5d2eab74",
+    ".codex/references/claude-memory/env_worktree_isolated_agent_cannot_nest_worktree.md": "39492350feeb973786081343b455155e17fb8b7df58349f7369202f00509ddd1",
+    ".codex/references/claude-memory/env_worktree_remove_partial_failure_windows.md": "2436653553ab614937911051fe195c14a3f4fecc677d6a625c45f2601264c52c",
+    ".codex/references/claude-memory/feedback_execute_everything_unless_elevation.md": "445ada89b4d98b1558d4687fb24b9da509ae153bf6f295bb3b33d120cd2de076",
+    ".codex/references/claude-memory/feedback_no_reask_decided_answers.md": "31c2849a84d494ac09d7d2bd6ded02b0fa04b0f35035348d59f57ebba8709298",
+    "0-学习与工具/codex-handoff/F17与三区冻结提案失败核验-2026-10-04.md": "a46e4a0a7c2cf3f619eeae9b3d2aa4f165bc43e5cfa0b6665f0429f78dc3cfda",
+    "0-学习与工具/codex-handoff/F17设计审阅结论-2026-10-04.md": "13f117597bd879e4e0e02583e16719b21eb70ca6e1a2e9ba2bb3b2a76ae3f61f",
+    "0-学习与工具/codex-handoff/O3发布准备停点与交付-2026-10-06.md": "8a4ef31a85fdfa68133222821c8351a9a0aba5455164ce4ccc9e23108a931472",
+    "0-学习与工具/codex-handoff/两项提案重派输入-2026-10-04.md": "d605862169bbb3a8863ea1b4bbaa8347dc7ace9d5965f8223ba311460e01b0fa",
+    "0-学习与工具/codex-handoff/企微连接就绪度判据-2026-10-04.md": "7d0a08c4179d63381a7f534b54a61428a0941b58927d82cd8a37973a44464dc5",
+    "0-学习与工具/codex-handoff/历史未提交资料保全登记-2026-10-04.md": "8d3aa0cd6b783b8b33214abfb276bb80257244d285041e79de686d45ee67abf4",
+    "0-学习与工具/codex-handoff/编号口径634-提案输入-2026-10-04.md": "7d34e186443952a0b2f39bd1530c8c44a8a7372c3719c14dc1e8a5dcb63a1c3f",
+    "1-转型规划/0-全景路线图/Guardian首轮提案复盘与补全输入-2026-10-03.md": "9b73669064de42adffc1b700b6ae7e7a9c7642a55b3e2c171dc0e8c207516bb1",
+    "1-转型规划/0-全景路线图/准备输入-Q2语义离线提案补全-2026-10-03.md": "339474c9c1e37ddc075880b4896d2d9266c417fb543786780d170972d5e7e750",
+    "1-转型规划/0-全景路线图/拆件-采购部24-SC2三项指标范围与字段签认-2026-10-03.md": "31900bfe6b1055ede86cb977fc5ee92a24f1a8ee9bc596472f387d4aaea84cb9",
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_Q2语义提案.json": "f30ad2aadf1aea55ff06fb8dc4069b017779b37e416c122373c6e7c6b880cace",
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_Q9候选提案.json": "f74202e6b66eceb6db6e19960b19ca13d6e0a6bb0c37132b81641e1f3c827266",
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_SC2指标提案.json": "a39e11a7ac62db86f691d1103897b045713eea0ce53bc6c83aa5d088e135863f",
+    "1-转型规划/0-全景路线图/看护manifest-B-1003_三区冻结提案.json": "c9039584107ebf3e27ae12c381f2140318bdfb912655cc87cff898ccf0cf0816",
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_F17机器守.json": "87527a50a415987777854af54a1cb2c60e48522e4829ef87fba4dd135976e0ab",
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_F17重派提案.json": "907ab202af91d3ea17ccb7e5d6c5daa3a0c1779b5e9521114fd0eac58aa3e83d",
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_三区冻结二次重派.json": "c8056fac03cfdb5657eedec061362982f5f839ce5d132181a2535cb8cd69cfa6",
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_三区冻结重派提案.json": "41faf67444476c746903bce555b9fd64e7a00842cb7d06dd61a251cd9294eaa8",
+    "1-转型规划/0-全景路线图/看护manifest-B-1004_编号口径提案.json": "2a5047d1248ab720c68223ecb85ecc56ecb5de38153022e759c7245a1548cf0e",
+    "1-转型规划/0-全景路线图/看护计划-B-1003_Q2语义提案.md": "737014ce90d1ac439720c8d4b5b471fdffd914d86e3d4ab689ee90806dc29287",
+    "1-转型规划/0-全景路线图/看护计划-B-1003_Q9候选提案.md": "e9051108c6f366c75faaf689f69483ac171295b75918970aef5479c8d2013ded",
+    "1-转型规划/0-全景路线图/看护计划-B-1003_SC2指标提案.md": "580909f86157de9880660eaf73a2bcfe022fba7d28c8e35239b291a32c19b189",
+    "1-转型规划/0-全景路线图/看护计划-B-1003_三区冻结提案.md": "358a494850f63957bee187d76bdbbc31c84bb00ee469c1462dc9fd2e881ad8f2",
+    "1-转型规划/0-全景路线图/看护计划-B-1004_F17机器守.md": "29b4f7ac760a0b99830aa299054a2ac4079681a547e17d185f3828d204f40cd1",
+    "1-转型规划/0-全景路线图/看护计划-B-1004_F17重派提案.md": "d781d354a8a43f37d2ff092f2fcfb6dabb88c5e8d92eeca4e45544ce248eac38",
+    "1-转型规划/0-全景路线图/看护计划-B-1004_三区冻结二次重派.md": "29896fc817693a14a24f52cca23829c9842f028de0b3ced9f6a7564e6022a899",
+    "1-转型规划/0-全景路线图/看护计划-B-1004_三区冻结重派提案.md": "b454407721e167ff3e16b82a9ff9de250b31bb79b360aef57a601ba7559850b8",
+    "1-转型规划/0-全景路线图/看护计划-B-1004_编号口径提案.md": "24782eff856311436c1ad3ecbcbbb7fde09f32d719994519293ed94b5c97c9ab",
+    "1-转型规划/0-全景路线图/移交单-Q2剩余语义来源离线提案-2026-10-03.md": "2b034caeb55ed06a13daab1fceb7652c3da774835eb98ff9a3e90e3b68803196",
+    "1-转型规划/0-全景路线图/移交单-Q9候选设计输出追溯提案-2026-10-03.md": "13b670c8426ca8dd2b4a1262b9d4f889603dc684b85deb3652326ad8aa262edd",
+    "1-转型规划/0-全景路线图/移交单-SC2三项指标证据合同提案-2026-10-03.md": "a5c37fa0664932c32dbac480997734e08ff66ccae8a4fa013bfec6c352e4b86c",
+    "1-转型规划/0-全景路线图/移交单-官方队列三区冻结接口补齐-2026-10-03.md": "efb383f3fb9225b49a3caf76099300cd1593966d76fd528a30e81670031517e2",
+    "4-数字员工/质量部/Q9-APQP阶段审查/intent.md": "0f3d267b3c7d303cca6b444e873f093eab0aacd9ee67d424106b0ee76f88b9e5",
+    "4-数字员工/质量部/Q9-APQP阶段审查/判例准备-设计输出追溯.md": "7c544466cf6092bea46daefdae6578431a79f7e242e2532c59440a400aaa6bed",
+    "4-数字员工/采购部/SC2-采购周报自动生成/intent.md": "0b4777da2382714b0dfaf56a2bb01b65d581359aba120470ae7467c00591e97a",
+    "4-数字员工/采购部/SC2-采购周报自动生成/判例准备-三项指标字段与边界.md": "b51bb5b3ca9e32e20cf208c0b8e6b9dce077992ec8fbcb6531321a4e4466b32c",
+    "docs/superpowers/plans/2026-10-03-q9-apqp-pilot-preparation.md": "f99f6d51e8ca6d11137554770d8c3f456022896eb63505d05529d044bcde7d51",
+    "docs/superpowers/plans/2026-10-03-sc2-three-metric-preparation.md": "599cd2556106c114cec97edab692be0ec0da0798aed025aae7eadab081e00b6e",
+    "docs/superpowers/plans/2026-10-06-o3-minimal-recovery.md": "5998b1590e93ec759652e19748a203bf1da12aac2e72fcb70c3ebfe88097a32a",
+    "docs/superpowers/plans/2026-10-06-o3-revocation-pending.md": "bd9beb896938b0c1967bfe3f3649cd89e16fec7bb5c35a8e49fcd42cb36bd7e0",
+    "docs/superpowers/specs/2026-10-06-o3-revocation-pending-design.md": "8e2a5b0e3eed20c0c568cc1682e83bff27a59e127e8e826fd1d896f560357e21"
+  },
+  "authorization_source": "本会话本人批准SC8 R2主仓对齐具体计划及mock验证，沿用Native；原计划允许仅文档推进后的产品等价master同步",
+  "coordination_message_source": "01a12104-2e30-7798-99a2-dd166566b00a",
+  "human_276_reply": {
+    "questionItemId": "[\"request_user_input_async\",\"call_3889e4250bc44f0b98fb97ceeefdefcf\",0]",
+    "answer": "批准两份供审设计，继续编具体计划（推荐）"
+  },
+  "mechanism_plan_preparation": "仅ignored payload已写，尚未发布进Native OpenSpec包；不实施/测试/重派",
+  "implementation_method": "Native",
+  "derived_review_model": "gpt-6-luna",
+  "lan_required": false,
+  "ff_push_production_real_write_authorized": false,
+  "status": "local integration candidate verified; real/professional/release gates remain",
+  "finished_at_utc": "2026-10-09T15:06:17.289061+00:00",
+  "head": "979fc6de9db06efc64ab179733dccf60f23ec795",
+  "bound_master_base": "fc79860c72ae4855cd7f4b1e7ec4a96b31cfebf3",
+  "master_at_final_check": "fc79860c72ae4855cd7f4b1e7ec4a96b31cfebf3",
+  "master_governance_drift_paths": [],
+  "candidate_tree_clean": true,
+  "15_product_blobs_equal_original": true,
+  "legacy_78_sha_preserved": true,
+  "tests": {
+    "target": {
+      "argv": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "-rs",
+        "--basetemp",
+        "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\zhuopin-r2-integration-1009\\target-30c7658467ed4afea77dcf5a082863b9",
+        "tests/test_webapp_ui_contract.py",
+        "tests/test_kit_date_rule2.py",
+        "tests/test_kit_date_rule2_comparison.py",
+        "tests/test_baoguan_webapp.py"
+      ],
+      "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺",
+      "head": "979fc6de9db06efc64ab179733dccf60f23ec795",
+      "start_utc": "2026-10-09T14:32:08.684177+00:00",
+      "end_utc": "2026-10-09T14:32:32.347909+00:00",
+      "exit": 0,
+      "mode": "target",
+      "PYTHONPATH": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺;C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\5-平台底座\\zhuopin_platform",
+      "SC8_KIT_DATE_RULE2_LITERAL": null,
+      "SC8_DATA_SOURCE": "mock",
+      "real_test_switches_removed": true,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\target-06044d96.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\target-06044d96.stderr.txt",
+      "stdout_sha256": "c5486ce48f05cbb9c5216e8d2abc279463cbcc3380cca0643152dadfc20a110d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "off": {
+      "argv": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "-rs",
+        "--basetemp",
+        "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\zhuopin-r2-integration-1009\\off-8d3f634a86524167ae9ae4a93225e344"
+      ],
+      "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺",
+      "head": "979fc6de9db06efc64ab179733dccf60f23ec795",
+      "start_utc": "2026-10-09T14:33:25.940531+00:00",
+      "end_utc": "2026-10-09T14:33:51.743288+00:00",
+      "exit": 0,
+      "mode": "off",
+      "PYTHONPATH": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺;C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\5-平台底座\\zhuopin_platform",
+      "SC8_KIT_DATE_RULE2_LITERAL": "off",
+      "SC8_DATA_SOURCE": "mock",
+      "real_test_switches_removed": true,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\off-e8bcd4a9.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\off-e8bcd4a9.stderr.txt",
+      "stdout_sha256": "6934089fdb8ad1931f60abd3d068d0e04f37d1260b8a1ff0f855993466bec81d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "on": {
+      "argv": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "-rs",
+        "--basetemp",
+        "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\zhuopin-r2-integration-1009\\on-70e3db6449e64aaf9d9a839ca91cc105"
+      ],
+      "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺",
+      "head": "979fc6de9db06efc64ab179733dccf60f23ec795",
+      "start_utc": "2026-10-09T14:39:37.254083+00:00",
+      "end_utc": "2026-10-09T14:39:59.346936+00:00",
+      "exit": 0,
+      "mode": "on",
+      "PYTHONPATH": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺;C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\5-平台底座\\zhuopin_platform",
+      "SC8_KIT_DATE_RULE2_LITERAL": "on",
+      "SC8_DATA_SOURCE": "mock",
+      "real_test_switches_removed": true,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\on-e5fccb90.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\on-e5fccb90.stderr.txt",
+      "stdout_sha256": "56a6c9fdec2d5e7485af556245077ce457867d37b12a13c5a987666ddafbd929",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "golden": {
+      "argv": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "-rs",
+        "--basetemp",
+        "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\zhuopin-r2-integration-1009\\golden-d43a4f814ccb437091a943bcc7804477",
+        "tests/test_golden.py"
+      ],
+      "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺",
+      "head": "979fc6de9db06efc64ab179733dccf60f23ec795",
+      "start_utc": "2026-10-09T14:41:06.890055+00:00",
+      "end_utc": "2026-10-09T14:41:08.316727+00:00",
+      "exit": 0,
+      "mode": "golden",
+      "PYTHONPATH": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺;C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\5-平台底座\\zhuopin_platform",
+      "SC8_KIT_DATE_RULE2_LITERAL": null,
+      "SC8_DATA_SOURCE": "mock",
+      "real_test_switches_removed": true,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\golden-0e4d91e3.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\golden-0e4d91e3.stderr.txt",
+      "stdout_sha256": "d124f9696ed40502b4b30c0104e7d254a7e35a3d854991f72025ba67c7e5c805",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "platform": {
+      "argv": [
+        "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "-rs",
+        "--basetemp",
+        "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\zhuopin-r2-integration-1009\\platform-f7eace4658c049c48e5be8904de846bb"
+      ],
+      "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\5-平台底座\\zhuopin_platform",
+      "head": "979fc6de9db06efc64ab179733dccf60f23ec795",
+      "start_utc": "2026-10-09T14:32:08.969752+00:00",
+      "end_utc": "2026-10-09T14:33:33.831035+00:00",
+      "exit": 0,
+      "mode": "platform",
+      "PYTHONPATH": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺;C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\5-平台底座\\zhuopin_platform",
+      "SC8_KIT_DATE_RULE2_LITERAL": null,
+      "SC8_DATA_SOURCE": "mock",
+      "real_test_switches_removed": true,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\platform-880511af.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\platform-880511af.stderr.txt",
+      "stdout_sha256": "4bf3f77bb178ef04b646f8be4255d72451edb83f5689e0760e0ee9c823a81f3f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "strict": {
+      "argv": [
+        "pwsh",
+        "-NoProfile",
+        "-Command",
+        "openspec.cmd validate --all --strict"
+      ],
+      "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai",
+      "head": "979fc6de9db06efc64ab179733dccf60f23ec795",
+      "start_utc": "2026-10-09T14:32:08.661527+00:00",
+      "end_utc": "2026-10-09T14:32:29.936703+00:00",
+      "exit": 0,
+      "mode": "strict",
+      "PYTHONPATH": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺;C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\5-平台底座\\zhuopin_platform",
+      "SC8_KIT_DATE_RULE2_LITERAL": null,
+      "SC8_DATA_SOURCE": "mock",
+      "real_test_switches_removed": true,
+      "stdout": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\strict-7adcef50.stdout.txt",
+      "stderr": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-integration-1009\\strict-7adcef50.stderr.txt",
+      "stdout_sha256": "747e06670611991fe123450128a4fd9f095e53f7797bf697ab20b2b3df3452e3",
+      "stderr_sha256": "30d6dbfd7d779f2b8af85b2ec2465cae58b9cdd0b36663100c21d457de3362e2"
+    }
+  },
+  "mock_demo": {
+    "off": {
+      "candidate": "979fc6de9db06efc64ab179733dccf60f23ec795",
+      "tree": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai",
+      "rule2": "off",
+      "business_date": "2026-09-02",
+      "data_source": "synthetic",
+      "module_files": {
+        "sc8.config": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\config.py",
+        "sc8.baoguan": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\baoguan.py",
+        "sc8.webapp": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\webapp.py"
+      },
+      "demo_sha256": "69c706e2bcb436b820ec3139c83e3e5dbe0e31732e150a9c5aa8bcad2508588d",
+      "real_calls": false,
+      "bind": "http://127.0.0.1:61536",
+      "verified_at": "2026-10-09T14:56:10.213083+00:00",
+      "exit": 0,
+      "routes": [
+        {
+          "route": "/",
+          "status": 200,
+          "sha256": "d43267a5ac52b87974ba658f6a5ef0e557d89a903d47a62873494304fb7cec3c"
+        },
+        {
+          "route": "/api/ping",
+          "status": 200,
+          "sha256": "a54f15d98597881a28f82dd22b60dd3cd5c4e5060a49d7e0134e062f9a3a72a9"
+        },
+        {
+          "route": "/api/baoguan",
+          "status": 200,
+          "sha256": "6430e91f7a890b104235ac3281bc0678b68c6f3fcf8cadd42fbd72571c93a990"
+        },
+        {
+          "route": "/materials",
+          "status": 200,
+          "sha256": "ce146ca5ef9faf785e00d11698ba6da00c1bbd61f9405c52e750627e35900894"
+        },
+        {
+          "route": "/api/materials",
+          "status": 200,
+          "sha256": "d1898e9d8f335f2de5d355378d3d490bfddd4cab2021ac9351e9bbdb5f3cbc3c"
+        },
+        {
+          "route": "/api/refresh",
+          "status": 200,
+          "response": {
+            "counts": {
+              "gap": 0,
+              "grn": 1,
+              "red": 6,
+              "yel": 0
+            },
+            "generated_at": "2026-10-09T22:56:10",
+            "new_reds": 0,
+            "ok": true,
+            "rows": 7
+          }
+        },
+        {
+          "route": "/cases/new",
+          "status": 403
+        }
+      ],
+      "expected_future": [
+        "2027-02-28",
+        90,
+        "red"
+      ],
+      "snapshot": {
+        "generated_at": "2026-10-09T22:56:10",
+        "today": "2026-09-02",
+        "rows": [
+          {
+            "id": "SYN-FUTURE",
+            "so": "FO-SYN-FUTURE",
+            "name": "SYN-FUTURE",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-30",
+            "kit": "2027-02-28",
+            "gap": 90,
+            "cg": null,
+            "comp": 1,
+            "nf": 1,
+            "bn": "SYN-NF1",
+            "ckit": null,
+            "cbn": "",
+            "risk": "red",
+            "hasBom": true,
+            "action": "保供高风险（保守预警）：瓶颈子件 SYN-NF1 尚未答复，按无答复估算晚出货 90 天，需紧急催供应商确认答交日期",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-NF1",
+            "ksf": 10,
+            "nfd": [
+              {
+                "id": "SYN-NF1",
+                "qty": 10.0,
+                "eta": "2027-02-28",
+                "name": "合成物料 SYN-NF1"
+              }
+            ],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-NF1",
+                "name": "合成物料 SYN-NF1",
+                "qty": 10.0,
+                "st": "transit_unconfirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": null,
+                "cb": [],
+                "role": ""
+              }
+            ],
+            "dkq": 0,
+            "dkbn": "SYN-NF1"
+          },
+          {
+            "id": "SYN-GAP-ZERO",
+            "so": "FO-SYN-GAP-ZERO",
+            "name": "SYN-GAP-ZERO",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-12-01",
+            "kit": "2027-03-01",
+            "gap": 90,
+            "cg": null,
+            "comp": 1,
+            "nf": 1,
+            "bn": "SYN-NF2",
+            "ckit": null,
+            "cbn": "",
+            "risk": "red",
+            "hasBom": true,
+            "action": "保供高风险（保守预警）：瓶颈子件 SYN-NF2 尚未答复，按无答复估算晚出货 90 天，需紧急催供应商确认答交日期",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-NF2",
+            "ksf": 10,
+            "nfd": [
+              {
+                "id": "SYN-NF2",
+                "qty": 10.0,
+                "eta": "2027-03-01",
+                "name": "合成物料 SYN-NF2"
+              }
+            ],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-NF2",
+                "name": "合成物料 SYN-NF2",
+                "qty": 10.0,
+                "st": "transit_unconfirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": null,
+                "cb": [],
+                "role": ""
+              }
+            ],
+            "dkq": 0,
+            "dkbn": "SYN-NF2"
+          },
+          {
+            "id": "SYN-RED",
+            "so": "FO-SYN-RED",
+            "name": "SYN-RED",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-27",
+            "kit": "2027-02-25",
+            "gap": 90,
+            "cg": null,
+            "comp": 1,
+            "nf": 1,
+            "bn": "SYN-NF3",
+            "ckit": null,
+            "cbn": "",
+            "risk": "red",
+            "hasBom": true,
+            "action": "保供高风险（保守预警）：瓶颈子件 SYN-NF3 尚未答复，按无答复估算晚出货 90 天，需紧急催供应商确认答交日期",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-NF3",
+            "ksf": 10,
+            "nfd": [
+              {
+                "id": "SYN-NF3",
+                "qty": 10.0,
+                "eta": "2027-02-25",
+                "name": "合成物料 SYN-NF3"
+              }
+            ],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-NF3",
+                "name": "合成物料 SYN-NF3",
+                "qty": 10.0,
+                "st": "transit_unconfirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": null,
+                "cb": [],
+                "role": ""
+              }
+            ],
+            "dkq": 0,
+            "dkbn": "SYN-NF3"
+          },
+          {
+            "id": "SYN-PAST",
+            "so": "FO-SYN-PAST",
+            "name": "SYN-PAST",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-09-01",
+            "kit": "2026-12-01",
+            "gap": 91,
+            "cg": null,
+            "comp": 1,
+            "nf": 1,
+            "bn": "SYN-NF4",
+            "ckit": null,
+            "cbn": "",
+            "risk": "red",
+            "hasBom": true,
+            "action": "保供高风险（保守预警）：瓶颈子件 SYN-NF4 尚未答复，按无答复估算晚出货 91 天，需紧急催供应商确认答交日期",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-NF4",
+            "ksf": 10,
+            "nfd": [
+              {
+                "id": "SYN-NF4",
+                "qty": 10.0,
+                "eta": "2026-12-01",
+                "name": "合成物料 SYN-NF4"
+              }
+            ],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-NF4",
+                "name": "合成物料 SYN-NF4",
+                "qty": 10.0,
+                "st": "transit_unconfirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": null,
+                "cb": [],
+                "role": ""
+              }
+            ],
+            "dkq": 0,
+            "dkbn": "SYN-NF4"
+          },
+          {
+            "id": "SYN-CONFIRMED",
+            "so": "FO-SYN-CONFIRMED",
+            "name": "SYN-CONFIRMED",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-30",
+            "kit": "2026-12-05",
+            "gap": 5,
+            "cg": 5,
+            "comp": 1,
+            "nf": 0,
+            "bn": "SYN-C1",
+            "ckit": "2026-12-05",
+            "cbn": "SYN-C1",
+            "risk": "red",
+            "hasBom": true,
+            "action": "保供高风险（真延期）：已有供应商承诺、但确定齐料晚出货 5 天，确定瓶颈子件 SYN-C1，需紧急协调到货/评估改期",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-C1",
+            "ksf": 10,
+            "nfd": [],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-C1",
+                "name": "合成物料 SYN-C1",
+                "qty": 10.0,
+                "st": "transit_confirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": "2026-12-05",
+                "cb": [
+                  {
+                    "d": "2026-12-05",
+                    "q": 20
+                  }
+                ],
+                "role": ""
+              }
+            ],
+            "dkq": 0,
+            "dkbn": "SYN-C1"
+          },
+          {
+            "id": "SYN-GREEN",
+            "so": "FO-SYN-GREEN",
+            "name": "SYN-GREEN",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-30",
+            "kit": "2026-11-29",
+            "gap": -1,
+            "cg": -1,
+            "comp": 1,
+            "nf": 0,
+            "bn": "SYN-C2",
+            "ckit": "2026-11-29",
+            "cbn": "SYN-C2",
+            "risk": "grn",
+            "hasBom": true,
+            "action": "齐料按期（出货前 1 天齐套），确定瓶颈子件 SYN-C2",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-C2",
+            "ksf": 10,
+            "nfd": [],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-C2",
+                "name": "合成物料 SYN-C2",
+                "qty": 10.0,
+                "st": "transit_confirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": "2026-11-29",
+                "cb": [
+                  {
+                    "d": "2026-11-29",
+                    "q": 20
+                  }
+                ],
+                "role": ""
+              }
+            ],
+            "dkq": 20,
+            "dkbn": "SYN-C2"
+          },
+          {
+            "id": "SYN-NOBOM",
+            "so": "FO-SYN-NOBOM",
+            "name": "SYN-NOBOM",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-30",
+            "kit": null,
+            "gap": null,
+            "cg": null,
+            "comp": 0,
+            "nf": 0,
+            "bn": "",
+            "ckit": null,
+            "cbn": "",
+            "risk": "red",
+            "hasBom": false,
+            "action": "无 BOM 直接子件数据，无法判定齐套，需人工核对子件清单",
+            "subs": {},
+            "kq": null,
+            "kbn": null,
+            "ksf": null,
+            "nfd": [],
+            "cn": {},
+            "cst": [],
+            "dkq": null,
+            "dkbn": null
+          }
+        ],
+        "counts": {
+          "red": 6,
+          "gap": 0,
+          "yel": 0,
+          "grn": 1
+        },
+        "status": "2",
+        "param_version": "sc8-params-v1+rule1",
+        "components": 6,
+        "srm_hit": 2,
+        "ok": true,
+        "note": "MOCK合成演示；业务日期固定 2026-09-02；R2 OFF；不作真实签认",
+        "materials": [
+          {
+            "id": "SYN-C1",
+            "name": "合成物料 SYN-C1",
+            "brand": "—（取数缺口）",
+            "st": "transit_confirmed",
+            "sts": [
+              "transit_confirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              0.0,
+              0.0,
+              10.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [
+              {
+                "d": "2026-12-05",
+                "q": 20
+              }
+            ],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          },
+          {
+            "id": "SYN-C2",
+            "name": "合成物料 SYN-C2",
+            "brand": "—（取数缺口）",
+            "st": "transit_confirmed",
+            "sts": [
+              "transit_confirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              0.0,
+              0.0,
+              10.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [
+              {
+                "d": "2026-11-29",
+                "q": 20
+              }
+            ],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          },
+          {
+            "id": "SYN-NF1",
+            "name": "合成物料 SYN-NF1",
+            "brand": "—（取数缺口）",
+            "st": "transit_unconfirmed",
+            "sts": [
+              "transit_unconfirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              0.0,
+              0.0,
+              10.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          },
+          {
+            "id": "SYN-NF3",
+            "name": "合成物料 SYN-NF3",
+            "brand": "—（取数缺口）",
+            "st": "transit_unconfirmed",
+            "sts": [
+              "transit_unconfirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              0.0,
+              0.0,
+              10.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          },
+          {
+            "id": "SYN-NF4",
+            "name": "合成物料 SYN-NF4",
+            "brand": "—（取数缺口）",
+            "st": "transit_unconfirmed",
+            "sts": [
+              "transit_unconfirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              10.0,
+              0.0,
+              0.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          }
+        ],
+        "materials_meta": {
+          "months": [
+            {
+              "ym": "2026-09",
+              "label": "9月"
+            },
+            {
+              "ym": "2026-10",
+              "label": "10月"
+            },
+            {
+              "ym": "2026-11",
+              "label": "11月"
+            }
+          ],
+          "window": "2026-09 ~ 2026-11",
+          "out_of_window_materials": 1,
+          "out_of_window_qty": 10.0
+        }
+      },
+      "attempted_egress": []
+    },
+    "on": {
+      "candidate": "979fc6de9db06efc64ab179733dccf60f23ec795",
+      "tree": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai",
+      "rule2": "on",
+      "business_date": "2026-09-02",
+      "data_source": "synthetic",
+      "module_files": {
+        "sc8.config": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\config.py",
+        "sc8.baoguan": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\baoguan.py",
+        "sc8.webapp": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\webapp.py"
+      },
+      "demo_sha256": "69c706e2bcb436b820ec3139c83e3e5dbe0e31732e150a9c5aa8bcad2508588d",
+      "real_calls": false,
+      "bind": "http://127.0.0.1:61567",
+      "verified_at": "2026-10-09T14:56:21.877886+00:00",
+      "exit": 0,
+      "routes": [
+        {
+          "route": "/",
+          "status": 200,
+          "sha256": "d31202f2320fd054a854ff7baa6d923137151f8ac6f3ddb8f23a0dc6a67fda07"
+        },
+        {
+          "route": "/api/ping",
+          "status": 200,
+          "sha256": "49dcf26e65a4f54809946d57052f511bad7d6d47cabbf4aa32a996de99c9bb93"
+        },
+        {
+          "route": "/api/baoguan",
+          "status": 200,
+          "sha256": "e159e32729c16cb142cb6b54d8c9eafbc93adeb73fbcdb3d0c7659208dae15ca"
+        },
+        {
+          "route": "/materials",
+          "status": 200,
+          "sha256": "ca8e03afd2ce1a4d8a83e4505c5f057104fe14cb405c5eb28920f8b4d487dcec"
+        },
+        {
+          "route": "/api/materials",
+          "status": 200,
+          "sha256": "142eea7d4485d460791df11b690a121495a8c35f7bb95452d5e0432920f73ce4"
+        },
+        {
+          "route": "/api/refresh",
+          "status": 200,
+          "response": {
+            "counts": {
+              "gap": 1,
+              "grn": 1,
+              "red": 4,
+              "yel": 1
+            },
+            "generated_at": "2026-10-09T22:56:21",
+            "new_reds": 0,
+            "ok": true,
+            "rows": 7
+          }
+        },
+        {
+          "route": "/cases/new",
+          "status": 403
+        }
+      ],
+      "expected_future": [
+        "2026-12-01",
+        1,
+        "yel"
+      ],
+      "snapshot": {
+        "generated_at": "2026-10-09T22:56:21",
+        "today": "2026-09-02",
+        "rows": [
+          {
+            "id": "SYN-FUTURE",
+            "so": "FO-SYN-FUTURE",
+            "name": "SYN-FUTURE",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-30",
+            "kit": "2026-12-01",
+            "gap": 1,
+            "cg": null,
+            "comp": 1,
+            "nf": 1,
+            "bn": "SYN-NF1",
+            "ckit": null,
+            "cbn": "",
+            "risk": "yel",
+            "hasBom": true,
+            "action": "保供偏紧（保守预警）：瓶颈子件 SYN-NF1 尚未答复，按无答复估算晚出货 1 天，需催供应商确认答交日期",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-NF1",
+            "ksf": 10,
+            "nfd": [
+              {
+                "id": "SYN-NF1",
+                "qty": 10.0,
+                "eta": "2026-12-01",
+                "name": "合成物料 SYN-NF1"
+              }
+            ],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-NF1",
+                "name": "合成物料 SYN-NF1",
+                "qty": 10.0,
+                "st": "transit_unconfirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": null,
+                "cb": [],
+                "role": ""
+              }
+            ],
+            "dkq": 0,
+            "dkbn": "SYN-NF1"
+          },
+          {
+            "id": "SYN-GAP-ZERO",
+            "so": "FO-SYN-GAP-ZERO",
+            "name": "SYN-GAP-ZERO",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-12-01",
+            "kit": "2026-12-01",
+            "gap": 0,
+            "cg": null,
+            "comp": 1,
+            "nf": 1,
+            "bn": "SYN-NF2",
+            "ckit": null,
+            "cbn": "",
+            "risk": "gap",
+            "hasBom": true,
+            "action": "承诺缺口待催：1 个子件供应商未答复、无确定承诺，齐料无法判定，瓶颈子件 SYN-NF2，需催供应商答交后再评估（已确定部分按期）",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-NF2",
+            "ksf": 10,
+            "nfd": [
+              {
+                "id": "SYN-NF2",
+                "qty": 10.0,
+                "eta": "2026-12-01",
+                "name": "合成物料 SYN-NF2"
+              }
+            ],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-NF2",
+                "name": "合成物料 SYN-NF2",
+                "qty": 10.0,
+                "st": "transit_unconfirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": null,
+                "cb": [],
+                "role": ""
+              }
+            ],
+            "dkq": 20,
+            "dkbn": "SYN-NF2"
+          },
+          {
+            "id": "SYN-RED",
+            "so": "FO-SYN-RED",
+            "name": "SYN-RED",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-27",
+            "kit": "2026-12-01",
+            "gap": 4,
+            "cg": null,
+            "comp": 1,
+            "nf": 1,
+            "bn": "SYN-NF3",
+            "ckit": null,
+            "cbn": "",
+            "risk": "red",
+            "hasBom": true,
+            "action": "保供高风险（保守预警）：瓶颈子件 SYN-NF3 尚未答复，按无答复估算晚出货 4 天，需紧急催供应商确认答交日期",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-NF3",
+            "ksf": 10,
+            "nfd": [
+              {
+                "id": "SYN-NF3",
+                "qty": 10.0,
+                "eta": "2026-12-01",
+                "name": "合成物料 SYN-NF3"
+              }
+            ],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-NF3",
+                "name": "合成物料 SYN-NF3",
+                "qty": 10.0,
+                "st": "transit_unconfirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": null,
+                "cb": [],
+                "role": ""
+              }
+            ],
+            "dkq": 0,
+            "dkbn": "SYN-NF3"
+          },
+          {
+            "id": "SYN-PAST",
+            "so": "FO-SYN-PAST",
+            "name": "SYN-PAST",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-09-01",
+            "kit": "2026-12-01",
+            "gap": 91,
+            "cg": null,
+            "comp": 1,
+            "nf": 1,
+            "bn": "SYN-NF4",
+            "ckit": null,
+            "cbn": "",
+            "risk": "red",
+            "hasBom": true,
+            "action": "保供高风险（保守预警）：瓶颈子件 SYN-NF4 尚未答复，按无答复估算晚出货 91 天，需紧急催供应商确认答交日期",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-NF4",
+            "ksf": 10,
+            "nfd": [
+              {
+                "id": "SYN-NF4",
+                "qty": 10.0,
+                "eta": "2026-12-01",
+                "name": "合成物料 SYN-NF4"
+              }
+            ],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-NF4",
+                "name": "合成物料 SYN-NF4",
+                "qty": 10.0,
+                "st": "transit_unconfirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": null,
+                "cb": [],
+                "role": ""
+              }
+            ],
+            "dkq": 0,
+            "dkbn": "SYN-NF4"
+          },
+          {
+            "id": "SYN-CONFIRMED",
+            "so": "FO-SYN-CONFIRMED",
+            "name": "SYN-CONFIRMED",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-30",
+            "kit": "2026-12-05",
+            "gap": 5,
+            "cg": 5,
+            "comp": 1,
+            "nf": 0,
+            "bn": "SYN-C1",
+            "ckit": "2026-12-05",
+            "cbn": "SYN-C1",
+            "risk": "red",
+            "hasBom": true,
+            "action": "保供高风险（真延期）：已有供应商承诺、但确定齐料晚出货 5 天，确定瓶颈子件 SYN-C1，需紧急协调到货/评估改期",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-C1",
+            "ksf": 10,
+            "nfd": [],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-C1",
+                "name": "合成物料 SYN-C1",
+                "qty": 10.0,
+                "st": "transit_confirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": "2026-12-05",
+                "cb": [
+                  {
+                    "d": "2026-12-05",
+                    "q": 20
+                  }
+                ],
+                "role": ""
+              }
+            ],
+            "dkq": 0,
+            "dkbn": "SYN-C1"
+          },
+          {
+            "id": "SYN-GREEN",
+            "so": "FO-SYN-GREEN",
+            "name": "SYN-GREEN",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-30",
+            "kit": "2026-11-29",
+            "gap": -1,
+            "cg": -1,
+            "comp": 1,
+            "nf": 0,
+            "bn": "SYN-C2",
+            "ckit": "2026-11-29",
+            "cbn": "SYN-C2",
+            "risk": "grn",
+            "hasBom": true,
+            "action": "齐料按期（出货前 1 天齐套），确定瓶颈子件 SYN-C2",
+            "subs": {},
+            "kq": 0,
+            "kbn": "SYN-C2",
+            "ksf": 10,
+            "nfd": [],
+            "cn": {
+              "SYN-NF1": "合成物料 SYN-NF1",
+              "SYN-NF2": "合成物料 SYN-NF2",
+              "SYN-NF3": "合成物料 SYN-NF3",
+              "SYN-NF4": "合成物料 SYN-NF4",
+              "SYN-C1": "合成物料 SYN-C1",
+              "SYN-C2": "合成物料 SYN-C2"
+            },
+            "cst": [
+              {
+                "id": "SYN-C2",
+                "name": "合成物料 SYN-C2",
+                "qty": 10.0,
+                "st": "transit_confirmed",
+                "tq": 20.0,
+                "aq": 0.0,
+                "gq": 10.0,
+                "cd": "2026-11-29",
+                "cb": [
+                  {
+                    "d": "2026-11-29",
+                    "q": 20
+                  }
+                ],
+                "role": ""
+              }
+            ],
+            "dkq": 20,
+            "dkbn": "SYN-C2"
+          },
+          {
+            "id": "SYN-NOBOM",
+            "so": "FO-SYN-NOBOM",
+            "name": "SYN-NOBOM",
+            "cust": "合成客户",
+            "qty": 10,
+            "ship": "2026-11-30",
+            "kit": null,
+            "gap": null,
+            "cg": null,
+            "comp": 0,
+            "nf": 0,
+            "bn": "",
+            "ckit": null,
+            "cbn": "",
+            "risk": "red",
+            "hasBom": false,
+            "action": "无 BOM 直接子件数据，无法判定齐套，需人工核对子件清单",
+            "subs": {},
+            "kq": null,
+            "kbn": null,
+            "ksf": null,
+            "nfd": [],
+            "cn": {},
+            "cst": [],
+            "dkq": null,
+            "dkbn": null
+          }
+        ],
+        "counts": {
+          "red": 4,
+          "gap": 1,
+          "yel": 1,
+          "grn": 1
+        },
+        "status": "2",
+        "param_version": "sc8-params-v1+rule1+rule2",
+        "components": 6,
+        "srm_hit": 2,
+        "ok": true,
+        "note": "MOCK合成演示；业务日期固定 2026-09-02；R2 ON；不作真实签认",
+        "materials": [
+          {
+            "id": "SYN-C1",
+            "name": "合成物料 SYN-C1",
+            "brand": "—（取数缺口）",
+            "st": "transit_confirmed",
+            "sts": [
+              "transit_confirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              0.0,
+              0.0,
+              10.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [
+              {
+                "d": "2026-12-05",
+                "q": 20
+              }
+            ],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          },
+          {
+            "id": "SYN-C2",
+            "name": "合成物料 SYN-C2",
+            "brand": "—（取数缺口）",
+            "st": "transit_confirmed",
+            "sts": [
+              "transit_confirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              0.0,
+              0.0,
+              10.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [
+              {
+                "d": "2026-11-29",
+                "q": 20
+              }
+            ],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          },
+          {
+            "id": "SYN-NF1",
+            "name": "合成物料 SYN-NF1",
+            "brand": "—（取数缺口）",
+            "st": "transit_unconfirmed",
+            "sts": [
+              "transit_unconfirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              0.0,
+              0.0,
+              10.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          },
+          {
+            "id": "SYN-NF3",
+            "name": "合成物料 SYN-NF3",
+            "brand": "—（取数缺口）",
+            "st": "transit_unconfirmed",
+            "sts": [
+              "transit_unconfirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              0.0,
+              0.0,
+              10.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          },
+          {
+            "id": "SYN-NF4",
+            "name": "合成物料 SYN-NF4",
+            "brand": "—（取数缺口）",
+            "st": "transit_unconfirmed",
+            "sts": [
+              "transit_unconfirmed"
+            ],
+            "tq": 20.0,
+            "m": [
+              10.0,
+              0.0,
+              0.0
+            ],
+            "total": 10.0,
+            "out": 0.0,
+            "cb": [],
+            "sup": [
+              "合成供应商"
+            ],
+            "owner": "—（取数缺口）",
+            "buyers": [],
+            "hasSub": false,
+            "nrow": 1
+          }
+        ],
+        "materials_meta": {
+          "months": [
+            {
+              "ym": "2026-09",
+              "label": "9月"
+            },
+            {
+              "ym": "2026-10",
+              "label": "10月"
+            },
+            {
+              "ym": "2026-11",
+              "label": "11月"
+            }
+          ],
+          "window": "2026-09 ~ 2026-11",
+          "out_of_window_materials": 1,
+          "out_of_window_qty": 10.0
+        }
+      },
+      "attempted_egress": []
+    }
+  },
+  "browser": {
+    "method": "actual cua browser interaction, final formal demo artifact",
+    "candidate": "979fc6de9db06efc64ab179733dccf60f23ec795",
+    "demo_sha256": "69c706e2bcb436b820ec3139c83e3e5dbe0e31732e150a9c5aa8bcad2508588d",
+    "checks": [
+      "MOCK/09-02/R2 ON label visible",
+      "7 synthetic rows",
+      "search SYN-FUTURE gives exactly1 row and kit12-01/gap+1",
+      "legend distinguishes current service config from snapshot version",
+      "navigation to materials shows5 material rows and1 outside-window exclusion",
+      "materials and dashboard share identical generated_at/business_date"
+    ],
+    "temporary_listener_closed": true,
+    "no_real_provider_called": true
+  },
+  "deliverable_demo": "openspec/changes/sc8-atp-batch2-closeout/local_mock_demo.py",
+  "deliverable_demo_sha256": "69c706e2bcb436b820ec3139c83e3e5dbe0e31732e150a9c5aa8bcad2508588d",
+  "review": {
+    "path": "openspec/changes/sc8-atp-batch2-closeout/本地集成Luna审查-2026-10-09.md",
+    "model": "gpt-6-luna",
+    "product_head": "979fc6de9db06efc64ab179733dccf60f23ec795",
+    "critical": 0,
+    "important": 0,
+    "minor_open": 0,
+    "minor_fixed": "fixture naming",
+    "final_demo_sha256": "69c706e2bcb436b820ec3139c83e3e5dbe0e31732e150a9c5aa8bcad2508588d"
+  },
+  "sc2_question_number": 277,
+  "sc2_business_answer_received": false,
+  "remaining_gates": [
+    "real expected.json missing",
+    "D4 real boundary/professional signature",
+    "real color professional coverage/signature",
+    "P2 scope",
+    "ff/push/production deploy or enable/real data/external send separate authorization"
+  ]
+}
