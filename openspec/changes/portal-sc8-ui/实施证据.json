@@ -1,0 +1,66 @@
+{
+  "recorded_at": "2026-10-09T09:26:16.636890+08:00",
+  "executor_thread": "01a11df8-f725-7f61-b1de-bd912fa2a0ce",
+  "approval": "批准",
+  "plan": "docs/superpowers/plans/2026-10-09-portal-sc8-ui.md",
+  "plan_sha256": "224fdf3841cf71a89aad8d57f2b9d60d0d1e243303f60fa5112febd5cea6ee61",
+  "tree": "C:/Users/Paul Shao/.codex/worktrees/sc8-rule2-literal-1006/zhuopin-ai",
+  "branch": "codex/op1006sc-sc8-rule2-literal-1006",
+  "base": "29c1ee92167a4f4bba217078c80cd97928b635a3",
+  "candidate": "4401eb4ff85addee8c75459f70e766c4fd59316b",
+  "scene": "4-数字员工/采购部/SC8-客户订单交期智能承诺",
+  "passed": 46,
+  "new_tests": 9,
+  "tests": [
+    "test_webapp_ui_contract.py",
+    "test_baoguan_webapp.py",
+    "test_baoguan_webapp_materials.py",
+    "test_baoguan_webapp_feedback.py"
+  ],
+  "files": [
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py"
+  ],
+  "raw_sha256": {
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py": "a45d3bf45f1c4c887dd51039e0ab738d994a59e74dbe214689caf2cad7acfc95",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py": "ae99fba8dc5e3ef03a78cdc224880ba69becee7c8d6932cfdb0f76971a283974"
+  },
+  "git_blob": {
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py": "b05b741e4648357180abc6a67fbe6822d78020a4",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py": "ceebbaf9edd6e30f8d09a9623c91e4f35baf4b63"
+  },
+  "main_merge_base": "637fa6f6140afb43bf73acab5366b7cde8dae0cb",
+  "main_ahead": 112,
+  "candidate_ahead": 10,
+  "test_command": "\"C:/Dev/Codex/runtimes/zhuopin-ai/venv/Scripts/python.exe\" -m pytest -q --tb=short \"4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py\" \"4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_webapp.py\" \"4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_webapp_materials.py\" \"4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_webapp_feedback.py\"",
+  "test_exit": 0,
+  "test_summary": "46 passed",
+  "diff_check_exit": 0,
+  "reviewer_model": "gpt-6-luna",
+  "review": "SC8：无 Critical/Important/Minor、无 declined-to-judge。",
+  "offline_visual": {
+    "combinations": 20,
+    "widths": [
+      1440,
+      768,
+      390,
+      320
+    ],
+    "pages": [
+      "sc8",
+      "materials",
+      "cases",
+      "sc2",
+      "sc2-error"
+    ],
+    "page_errors": 0,
+    "document_overflow": 0,
+    "evidence": "C:/Dev/zhuopin-ai/reports/ai-handoff-1009/visual/qa.json",
+    "constructed_mock_only": true,
+    "all_browser_requests_intercepted": true
+  },
+  "ff_possible": false,
+  "deployment_performed": false,
+  "real_source_read": false,
+  "scope_note": "mock测试不是专业签认、服务在线或业务验收证明；暂不归档"
+}

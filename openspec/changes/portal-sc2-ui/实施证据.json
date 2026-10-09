@@ -1,0 +1,64 @@
+{
+  "recorded_at": "2026-10-09T09:26:16.636890+08:00",
+  "executor_thread": "01a11df8-f725-7f61-b1de-bd912fa2a0ce",
+  "approval": "批准",
+  "plan": "docs/superpowers/plans/2026-10-09-portal-sc2-ui.md",
+  "plan_sha256": "9b118a4f4e7829ffb00326e4864b35641f264d38a4428142b02308f5f8c4d818",
+  "tree": "C:/Dev/zhuopin-ai/.claude/worktrees/portal-public-frame-1008",
+  "branch": "codex/portal-public-frame-1008",
+  "base": "5c6b3545c016dcaad85e7e1095487538e017a379",
+  "candidate": "b9798d5086ddf78220159416133a8d1de07daecd",
+  "scene": "4-数字员工/采购部/SC2-采购周报自动生成",
+  "passed": 44,
+  "new_tests": 7,
+  "tests": [
+    "test_webapp_ui_contract.py",
+    "test_delivery.py"
+  ],
+  "files": [
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_webapp_ui_contract.py"
+  ],
+  "raw_sha256": {
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py": "998dc6bf9191c97ab4ec0157765bd80ad3d92c7bdc7ed5916b0934e05f4b3212",
+    "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_webapp_ui_contract.py": "38e643d508b8c38d5cfc9b2342b31c26a708896f8d8db9595bd33e6ae2a0f97b"
+  },
+  "git_blob": {
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py": "c2d56c0cb68391c8efe2d69ef2a9c0299a00015e",
+    "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_webapp_ui_contract.py": "430e10930c3129219ee0464dd840c26a9ce4fef2"
+  },
+  "main_merge_base": "5c6b3545c016dcaad85e7e1095487538e017a379",
+  "main_ahead": 56,
+  "candidate_ahead": 1,
+  "test_command": "\"C:/Dev/Codex/runtimes/zhuopin-ai/venv/Scripts/python.exe\" -m pytest -q --tb=short --basetemp \"reports/ui-sc2-final-1009-b\" \"4-数字员工/采购部/SC2-采购周报自动生成/tests/test_webapp_ui_contract.py\" \"4-数字员工/采购部/SC2-采购周报自动生成/tests/test_delivery.py\"",
+  "test_exit": 0,
+  "test_summary": "44 passed",
+  "diff_check_exit": 0,
+  "reviewer_model": "gpt-6-luna",
+  "review": "SC2：两项 Important（未核验推送被写成事实、确认发布标签含混；数据年龄状态缺失）。一个修复 pass：两项专门测试先 RED（2 failed/5 passed），再 GREEN；现文案为“记录事后复核”“定时推送运行状态未核验”“年龄未分类（陈旧判据未提供）”。失败页样式另补同一读取失败测试 RED（1 failed/6 passed）→GREEN。无 Critical/Minor/declined-to-judge，未派二次 review。",
+  "offline_visual": {
+    "combinations": 20,
+    "widths": [
+      1440,
+      768,
+      390,
+      320
+    ],
+    "pages": [
+      "sc8",
+      "materials",
+      "cases",
+      "sc2",
+      "sc2-error"
+    ],
+    "page_errors": 0,
+    "document_overflow": 0,
+    "evidence": "C:/Dev/zhuopin-ai/reports/ai-handoff-1009/visual/qa.json",
+    "constructed_mock_only": true,
+    "all_browser_requests_intercepted": true
+  },
+  "ff_possible": false,
+  "deployment_performed": false,
+  "real_source_read": false,
+  "scope_note": "mock测试不是专业签认、服务在线或业务验收证明；暂不归档"
+}
