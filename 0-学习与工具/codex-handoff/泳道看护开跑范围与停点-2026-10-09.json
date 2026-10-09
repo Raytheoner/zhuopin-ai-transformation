@@ -52,12 +52,17 @@
       "workspace_requested": "C:/Users/Paul Shao/.codex/worktrees/queue-delivery-deadline-1009/zhuopin-ai"
     }
   ],
-  "external_write_authorization": "not yet task/path-specific; root AGENTS requires confirmation",
+  "external_write_authorization": {
+    "answer": "1a",
+    "scope": "本项目已批准范围内泳道使用Native worktrees和runtime运行目录",
+    "design_ff_production_send": "not granted"
+  },
   "formal_dispatch": {
     "created": false,
     "started": false,
     "workflow_prepared": false,
-    "reason": "仅开跑方案，尚未取得两Native隔离树与runtime审批绑定文件的仓库外写入授权；不伪造人工分类/intent批准。"
+    "reason": "auto_review rejected generalized intent/LAN evidence; awaiting specific human approval",
+    "approval_request": "0-学习与工具/codex-handoff/泳道448与635意图和LAN分类确认-2026-10-09.md"
   },
   "source_code_facts": {
     "deploy_server_count": 7,
@@ -432,5 +437,13 @@
   "approved_design_sha256": "0b964deef0529dd268a9b7ea179d613ed871fe17d1fcb7bad389fd75f7f8a318",
   "evidence_root": "C:\\Dev\\zhuopin-ai\\reports\\lane-watch-1009",
   "legacy_dirty_count": 78,
-  "legacy_dirty_sha256": "fbc1cb22881e26115058b12abc69514fdfe1d2b1dc57d93bcc8ca260c2f0226b"
+  "legacy_dirty_sha256": "fbc1cb22881e26115058b12abc69514fdfe1d2b1dc57d93bcc8ca260c2f0226b",
+  "watch_piece": "1-转型规划/0-全景路线图/看护计划-B-1009_队列机制方案准备.md",
+  "manifest": "1-转型规划/0-全景路线图/看护manifest-B-1009_队列机制方案准备.json",
+  "auto_review_rejection": {
+    "action": "bootstrap.py approvals: persist task intent-approval and lan-decision in runtime",
+    "reason": "auto_review rejected treating general project acceleration and directory permission as task-specific intent/LAN classification approval",
+    "external_write_executed": false,
+    "dependent_prepare_executed": false
+  }
 }

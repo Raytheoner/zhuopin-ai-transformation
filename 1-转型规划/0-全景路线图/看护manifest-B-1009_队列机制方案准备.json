@@ -1,0 +1,43 @@
+{
+  "batch_id": "B-1009_队列机制方案准备",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1009_队列机制方案准备.md",
+  "candidates": [
+    {
+      "task_id": "queue-row-blocker-field",
+      "row": 448,
+      "section": "一",
+      "lane": "queue-blocker-plan-1009",
+      "touches": [
+        "openspec/changes/queue-row-blocker-field/"
+      ],
+      "action_key": "openspec_draft",
+      "lan_required": false,
+      "next_action": "apply 阶段待重新排期领用",
+      "opener_id": "A1",
+      "task_excerpt": "🛑 **排队中·暂非可动（2026-09-01 立行时机制类可动 WIP 实测 23/22 已超限；本行以 🛑 起首不计入，实测加行前后同为 23——见状态列 WIP豁免）** —— **队列行「阻塞源」结构化字段 `[B:...]`（承接 §四 `#142` 点名、至今无人接的缺口：「建议器需要一条『整行 vs 子项』的区分判据，否则每次分诊都得靠人逐行读，成本压不下来」）**。 ━━━ 🔴 **入法依据是实测，不是设想**：`_suggest_status_reclassification` 对 `#142` 记录的 9 行黄金集（2026-08-31 值周巡检人工逐行判定）**一致率仅 2/9**——9 行全建议 `blocked`，人工只认可 2 行。 ━━━ 🔑 **本行最该被记住的一句（来自一次失败的实验，全文见设计件 §2）**：本线曾假设「改读**领取方**列即可修好」，v1 得 6/9、v2 把 `#422` 修对却**打坏了 `#96`**（其领取方 `Cowork 起草→CC 对齐` 箭头后无空格，模式不匹配）。**修一个坏一个 —— 这不是调参问题，是方向问题**：改读哪一列都仍是**用字符串匹配猜语义**，只是把脆弱性换了个位置。⇒ **判据不该建立在自由文本上。** ━━━ ⚠️ **实验还撞出第二个失真源**：`#312`／`#324` 判错的真因不在判据，而在**领取方列本身已过时**——它记的是「当初计划谁做」，不是「现在谁能做」，且**过时不报错**（同族＝错误不产生任何信号，今日第三次）。 ━━━ 🔑 **正解与关键洞察**：状态列已有 `[S:][D:]`，再加 `[B:none｜person｜env｜external｜split]`。**问题不是「该不该改判」，是「这行本来就该拆」**——`#142` 实测的 6 行混合态在「改判 or 不改判」二选一里**选哪个都错**（改判＝藏活，不改＝阻塞半边占着可动名额）；`[B:split]` 的动作是**拆行**：可动半边独立成行、阻塞半边挂 blocked，**这才真正降 WIP 且不藏活**。与 `#447` ⑴ 同一手法：把靠人读的判断变成必填结构化字段。",
+      "kind": "mechanism_proposal",
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1009-lane-mechanism-proposals\\queue-row-blocker-field\\lan-decision.json"
+    },
+    {
+      "task_id": "queue-delivery-deadline-635",
+      "row": 635,
+      "section": "一",
+      "lane": "queue-delivery-deadline-1009",
+      "touches": [
+        "openspec/changes/queue-delivery-deadline-635/"
+      ],
+      "action_key": "openspec_draft",
+      "lan_required": false,
+      "next_action": "开工前必过方案闸",
+      "opener_id": "A2",
+      "task_excerpt": "🔴 **「登记当交付」没有任何机器守**——队列行可以挂着 `[S:open]` 一整天而无人报警。2026-09-20 实证：环境侧一整天立了十行、并了五行，`#627` 的状态字段全天是 `open`，机制侧没有任何地方因此告警，直到 Shao Peishen 当面指出「业务侧为我们让路，环境侧已经修了很长时间」。🔑 **后果是他的注意力在充当唯一的调度器**——当日四次关键转向（token 仍大／这条治愈没有／业务侧让路／没修好不报）**全部来自他的追问**，机制侧零主动信号。同批并入另外四条仍靠人守、会复发的：⑴ 续尾用 `--resume` 续长上下文（实测 16.31M／峰值 238,175，当日最贵）；⑵ 哨兵脚本起跑前不删旧 `.done`（看护侧脚本不在仓库，需落成仓库内起批封装才拦得住）；⑶ 挂载侧跑 `git`（只到文字级）；⑷ 用 `--append` 去翻 `[S:xxx]` 前缀（`--help` 写了但不拦）。",
+      "kind": "mechanism_proposal",
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1009-lane-mechanism-proposals\\queue-delivery-deadline-635\\lan-decision.json"
+    }
+  ],
+  "workspaces": {
+    "queue-row-blocker-field": "C:/Users/Paul Shao/.codex/worktrees/queue-blocker-plan-1009/zhuopin-ai",
+    "queue-delivery-deadline-635": "C:/Users/Paul Shao/.codex/worktrees/queue-delivery-deadline-1009/zhuopin-ai"
+  },
+  "authorizations": {}
+}
