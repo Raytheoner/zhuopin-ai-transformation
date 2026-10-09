@@ -16,7 +16,7 @@ from urllib.request import Request, build_opener, ProxyHandler
 HERE = Path('C:/Dev/zhuopin-ai/reports/sc8-r2-integration-1009')
 TREE = Path('C:/Users/Paul Shao/.codex/worktrees/sc8-rule2-align-1009/zhuopin-ai')
 SCENE = TREE / '4-数字员工/采购部/SC8-客户订单交期智能承诺'
-HEAD = '979fc6de9db06efc64ab179733dccf60f23ec795'
+HEAD = '640ba847278f4ba775dd2b65bea2dd48137e3b92'
 TODAY = date(2026, 9, 2)  # Synthetic business date, not the current operational date.
 
 
