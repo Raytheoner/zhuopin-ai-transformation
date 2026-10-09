@@ -1,0 +1,23 @@
+{
+  "created_at_shanghai": "2026-10-10T05:37:37.7413454+08:00",
+  "state": "bound",
+  "source_thread": "01a11df8-f725-7f61-b1de-bd912fa2a0ce",
+  "source_title": "[Win]1009AI-AI赋能构建接力",
+  "new_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "new_title": "[Win]1010AI-AI赋能全景接力",
+  "card": "0-学习与工具/codex-handoff/Session1010-AI赋能全景接力-2026-10-10.md",
+  "opener": "0-学习与工具/codex-handoff/Opener-1010AI-AI赋能全景接力.md",
+  "model": "gpt-6-luna",
+  "source_stop": "本线执行/查询/写入停止；仅交接登记完成前由旧会话写本次交接产物",
+  "no_new_native_attempts": true,
+  "no_old_native_state_changes": true,
+  "authorized_original_answers_consumed": [
+    277,
+    278,
+    279
+  ],
+  "bound_at_shanghai": "2026-10-10T05:39:36.0023431+08:00",
+  "runtime_entry_updated_at_shanghai": "2026-10-10T05:42:12.3501281+08:00",
+  "python": "C:/Dev/Codex/runtimes/zhuopin-ai/venv/Scripts/python.exe",
+  "first_new_thread_ack": "身份已绑定；初次只读检查因py不可用/Probe状态目录权限/配置直读守卫未完成。来源会话补齐已实测完整Python与require_escalated入口后请求仅重做未完成只读核验。"
+}
