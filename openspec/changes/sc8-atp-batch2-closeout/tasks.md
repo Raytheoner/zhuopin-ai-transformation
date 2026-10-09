@@ -2,9 +2,9 @@
 
 ## 2026-10-09 · #660当前交付与对齐停点（当前入口）
 
-源候选`29c1ee92167a4f4bba217078c80cd97928b635a3`已实施P1；原实施批准见#660、原具体计划“待审”文字为历史。本主仓仅四件采购UI已ff，尚未含R2。候选实施/原验证/119行冻结对照与剩余真实黄金、D4/颜色专业和七步发布分别映射于`离网发布准备-2026-10-09.md/.json`。原tasks条目保留历史勾选，本次不凭文档搬运回勾产品/发布。
+本人已明确批准`docs/superpowers/plans/2026-10-09-sc8-rule2-master-alignment.md`及mock验证，沿用Native；本轮完成全部三项计划合同。新候选`2bdd92f6bb0cde62962a85daae618994fe2209a8`/codex/sc8-rule2-align-1009基于`463922cabb4dd2644a5c8095c0074fdf35a7dbdb`，15件范围已核、13源blob等价，原UI保留且仅一处图例调用适配。新调用契约actual RED→GREEN；当前HEAD OFF/ON分别591 passed/4 skipped，mock golden1，平台646/1，OpenSpec strict220/0，一次fresh-context gpt-6-luna review无发现。全部命令/HEAD/hash、skip与Ruling见`openspec/changes/sc8-atp-batch2-closeout/主仓对齐批准与执行.md/.json`；原文review见`openspec/changes/sc8-atp-batch2-closeout/主仓对齐Luna评审-2026-10-09.md`。
 
-本次新增具体对齐计划`docs/superpowers/plans/2026-10-09-sc8-rule2-master-alignment.md`已由本人明确批准及mock验证，沿用Native；本轮正在setup，后续据实际证据回写。真实黄金缺expected.json仍skip，10-07报告颜色空过且D4边界无覆盖，P2及专业/现网/启用仍待。**暂不归档**。
+主仓只已有采购UI四件ff，本次R2未ff/push/部署/启用/refresh/实采/外发。真实golden缺expected.json仍skip，真颜色空过及D4零边界/专业签认、七步发布及P2未闭合。#660继续partial，**暂不归档**。历史任务勾选与阶段原文保持，不能据本次mock验证回勾真实/专业/生产条目；当前映射见`openspec/changes/sc8-atp-batch2-closeout/离网发布准备-2026-10-09.md/.json`。
 
 以下为历史定义及原阶段记录，当前状态以上段及指针为准。
 

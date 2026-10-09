@@ -16,7 +16,7 @@ status: 已首次派出并完成接续绑定
 
 做什么：
 1. ✅ 已读R5卡并完成A类三查；当前桌面threadId已按锁协议认领#660/#661并同步R5与本opener，原会话已停止这两项写入。
-2. 沿原批准Native范围继续AI赋能构建；下一新子范围先完成proposal/design/tasks与具体计划供审。代码复用原获准隔离树；设置行的新分支仅为预留名，不在本棒创建。
+2. 沿原批准Native范围继续AI赋能构建；下一新子范围先完成proposal/design/tasks与具体计划供审。现R2主仓对齐另有已获准原生新树codex/sc8-rule2-align-1009；设置行早先预留分支未创建，实际路径和HEAD据R5及当前正本。
 
 3. ✅ SC8规则2目标分支已完成OFF/ON、mock golden、平台测试及OpenSpec strict验证；真实 golden 缺少冻结期望文件，按计划留步。独立 Luna review无可复现缺陷。验证证据与限制已回写R5/#660。
 4. ✅ 门户采购SC8与SC2设计及具体计划已获“批准”并实施；SC8候选4401eb4f/46 passed，SC2候选b9798d50/44 passed，一次独立Luna review及范围内修复完成，20个模拟页面组合通过。精确证据与发布停点见两个change；专业口径待核；当时#538未接管，此后转交见第6项。
@@ -24,7 +24,7 @@ status: 已首次派出并完成接续绑定
 
 6. ✅ 本人明确“改由本会话接管，并通知原会话停止”；原会话已完成停止确认。538采购业务归属不变，本会话唯一接管；666自由文本IT回件已事实拆件/回灌，详`1-转型规划/0-全景路线图/拆件-回件666-SC2收货业务类型与查询定义-2026-10-09.md/.json`。当前122→90为IT所述类型筛选差，历史58→90及订单139差仍partial；未实施bizType提议、不重开IT14。本人要求继续全景构建，先推进已批准离网范围。
 
-7. ✅ 已整理R2当前发布证据/tasks映射并准备具体主仓对齐计划`docs/superpowers/plans/2026-10-09-sc8-rule2-master-alignment.md`；仅13源blob＋webapp保留已ffUI的图例适配＋原UI测试。原660主仓对齐具体计划及mock验证已明确批准，沿用Native；正在原生新树setup，真实黄金/专业/发布仍留步。
+7. ✅ 已整理R2当前发布证据/tasks映射并准备具体主仓对齐计划`docs/superpowers/plans/2026-10-09-sc8-rule2-master-alignment.md`；仅13源blob＋webapp保留已ffUI的图例适配＋原UI测试。原660主仓对齐具体计划及mock已明确批准，Native完成新候选2bdd92f6bb0cde62962a85daae618994fe2209a8；15件范围/13blob等价，OFF/ON各591/4、mock golden1、平台646/1、strict220/0，一次fresh-context Luna review无发现。当前正本`openspec/changes/sc8-atp-batch2-closeout/主仓对齐批准与执行.md/.json`及独立review；真实skip/D4/颜色专业/发布/P2仍留步，未ff或生产。
 
 不做什么：
 - #538已明确授权本会话接管，原会话已停止该任务；不重复已发布/发送/真实采集，不扩大历史单次授权，不恢复旧失败批次，不清理既有脏文件/工作树。

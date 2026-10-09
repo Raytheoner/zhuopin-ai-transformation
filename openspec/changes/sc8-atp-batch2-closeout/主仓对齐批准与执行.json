@@ -397,6 +397,263 @@
   "review_model": "gpt-6-luna",
   "ff_authorized": false,
   "production_authorized": false,
-  "status": "authorized; setup in progress",
-  "worktree_creation_operation": "9682812c-9e30-4c3b-95e5-bfb5c4e82fe6"
+  "status": "Native alignment and mock verification complete; release gates open",
+  "worktree_creation_operation": "9682812c-9e30-4c3b-95e5-bfb5c4e82fe6",
+  "execution_result": {
+    "completed_at": "2026-10-09T16:21:54.1401771+08:00",
+    "status": "Native alignment and mock verification complete; release gates open",
+    "candidate": {
+      "tree": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai",
+      "master_base": "463922cabb4dd2644a5c8095c0074fdf35a7dbdb",
+      "branch": "codex/sc8-rule2-align-1009",
+      "source_candidate": "29c1ee92167a4f4bba217078c80cd97928b635a3",
+      "bound_at": "2026-10-09T15:52:46.2116000+08:00",
+      "head": "2bdd92f6bb0cde62962a85daae618994fe2209a8",
+      "files": [
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/baoguan.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/baoguan_service.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/config.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/forecast.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/kit_date_comparison.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/scripts/compare_kit_date_rule2.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/scripts/run_baoguan_dashboard.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_service.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_baoguan_webapp.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule1_start.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule2.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_kit_date_rule2_comparison.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py",
+        "4-数字员工/采购部/SC8-客户订单交期智能承诺/tests/test_webapp_ui_contract.py"
+      ],
+      "created_at": "2026-10-09T16:00:02.0486993+08:00"
+    },
+    "scope_mapping": {
+      "sc8/baoguan.py": {
+        "source_blob": "4a583665d12b7202eebfd7da447db806c0fa310a",
+        "candidate_blob": "4a583665d12b7202eebfd7da447db806c0fa310a"
+      },
+      "sc8/baoguan_service.py": {
+        "source_blob": "9d5156edc5355dbb1c90df9be5489d18a864344c",
+        "candidate_blob": "9d5156edc5355dbb1c90df9be5489d18a864344c"
+      },
+      "sc8/config.py": {
+        "source_blob": "b7e688447bcaf4858a65fb96bfd4c9fa8d98ff3a",
+        "candidate_blob": "b7e688447bcaf4858a65fb96bfd4c9fa8d98ff3a"
+      },
+      "sc8/forecast.py": {
+        "source_blob": "1eba2418812348ee37ab895fa332a7f179a162ad",
+        "candidate_blob": "1eba2418812348ee37ab895fa332a7f179a162ad"
+      },
+      "sc8/kit_date_comparison.py": {
+        "source_blob": "4d6db61e9c5697831c66deb14672d14e205e94a9",
+        "candidate_blob": "4d6db61e9c5697831c66deb14672d14e205e94a9"
+      },
+      "scripts/compare_kit_date_rule2.py": {
+        "source_blob": "ae4479c44d3fb5d61e14dc460c36648a1b7ca968",
+        "candidate_blob": "ae4479c44d3fb5d61e14dc460c36648a1b7ca968"
+      },
+      "scripts/run_baoguan_dashboard.py": {
+        "source_blob": "0a3de18080399740a9425167391db40003dbae99",
+        "candidate_blob": "0a3de18080399740a9425167391db40003dbae99"
+      },
+      "tests/test_baoguan.py": {
+        "source_blob": "bec8758f0b3336efc8b25cfc34852e52e4dd047d",
+        "candidate_blob": "bec8758f0b3336efc8b25cfc34852e52e4dd047d"
+      },
+      "tests/test_baoguan_service.py": {
+        "source_blob": "ec5054f6c6fe52ca9f1e8be6d3945ba6ecad472b",
+        "candidate_blob": "ec5054f6c6fe52ca9f1e8be6d3945ba6ecad472b"
+      },
+      "tests/test_baoguan_webapp.py": {
+        "source_blob": "4bc1b4c7f10aa5aa0ab4655aa4d26edaf2e9621d",
+        "candidate_blob": "4bc1b4c7f10aa5aa0ab4655aa4d26edaf2e9621d"
+      },
+      "tests/test_kit_date_rule1_start.py": {
+        "source_blob": "578cdc6edb1136e3606cf1abcd42a5859b0c2b44",
+        "candidate_blob": "578cdc6edb1136e3606cf1abcd42a5859b0c2b44"
+      },
+      "tests/test_kit_date_rule2.py": {
+        "source_blob": "7e07a935f1ae2b7eddf514d3e7f80bbf898a8381",
+        "candidate_blob": "7e07a935f1ae2b7eddf514d3e7f80bbf898a8381"
+      },
+      "tests/test_kit_date_rule2_comparison.py": {
+        "source_blob": "f7915330da072fa834ee30acef9259a7f3c29678",
+        "candidate_blob": "f7915330da072fa834ee30acef9259a7f3c29678"
+      }
+    },
+    "candidate_diff_sha256": "259764b6ed026570e8f3eacd6e5310315296a6aefbe29dbcdfbf8de1fb69780b",
+    "ui_only_call_replacement": true,
+    "actual_imports": {
+      "paths": {
+        "sc8.config": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\config.py",
+        "sc8.forecast": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\forecast.py",
+        "sc8.baoguan": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\baoguan.py",
+        "sc8.baoguan_service": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\baoguan_service.py",
+        "sc8.kit_date_comparison": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\kit_date_comparison.py",
+        "sc8.webapp": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\4-数字员工\\采购部\\SC8-客户订单交期智能承诺\\sc8\\webapp.py",
+        "zhuopin_platform": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc8-rule2-align-1009\\zhuopin-ai\\5-平台底座\\zhuopin_platform\\zhuopin_platform\\__init__.py"
+      },
+      "r2_default": false
+    },
+    "master_product_trees_unchanged": {
+      "4-数字员工/采购部/SC8-客户订单交期智能承诺": {
+        "approved_base_tree": "83543161274b4083905c28bbfe50ad5fc6592914",
+        "current_master_tree": "83543161274b4083905c28bbfe50ad5fc6592914"
+      },
+      "4-数字员工/采购部/SC2-采购周报自动生成": {
+        "approved_base_tree": "5e875c380d0668e9b8704d93b8af5676165c5a44",
+        "current_master_tree": "5e875c380d0668e9b8704d93b8af5676165c5a44"
+      },
+      "5-平台底座/zhuopin_platform": {
+        "approved_base_tree": "e2c1142f345d52723e74547b9c4278d33d15880d",
+        "current_master_tree": "e2c1142f345d52723e74547b9c4278d33d15880d"
+      }
+    },
+    "validation": {
+      "baseline": {
+        "head": "463922cabb4dd2644a5c8095c0074fdf35a7dbdb",
+        "exit": 0,
+        "receipt": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\baseline.receipt.json",
+        "stdout_sha256": "fe83290d68f2a083eb46a4eea7785c1822a8819d972d63724602c24bd0e2b730",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "red": {
+        "head": "463922cabb4dd2644a5c8095c0074fdf35a7dbdb",
+        "exit": 1,
+        "receipt": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\red.receipt.json",
+        "stdout_sha256": "d74a18dea0c04df1a60d9f6fc3310fc9c752014954fb0c10192d0a1499652dc8",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "green": {
+        "head": "463922cabb4dd2644a5c8095c0074fdf35a7dbdb",
+        "exit": 0,
+        "receipt": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\green.receipt.json",
+        "stdout_sha256": "cac8f2444c91387fbd4c6b3dfeebcac4afaf6000faff0f8746230c740f460d7a",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "target": {
+        "head": "463922cabb4dd2644a5c8095c0074fdf35a7dbdb",
+        "exit": 0,
+        "receipt": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\target.latest.json",
+        "stdout_sha256": "3cc54ac284edbb0f891c9020ef89617a146baae2a0e219cad72fdd0d847e2b36",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "off": {
+        "head": "2bdd92f6bb0cde62962a85daae618994fe2209a8",
+        "exit": 0,
+        "receipt": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\off.latest.json",
+        "stdout_sha256": "59f6362073f306a90c5f81fe9f241b45048aa652a7d440409b2f652c9770f1ce",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "on": {
+        "head": "2bdd92f6bb0cde62962a85daae618994fe2209a8",
+        "exit": 0,
+        "receipt": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\on.latest.json",
+        "stdout_sha256": "910795fe2494679d769aa33948ad36b319223171b1a43311aa7b43f9750abf75",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "platform": {
+        "head": "2bdd92f6bb0cde62962a85daae618994fe2209a8",
+        "exit": 0,
+        "receipt": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\platform.latest.json",
+        "stdout_sha256": "424b358a797003d99917e80b356d3df463d0a0ab17b889fe7ecbd8d39a3a718b",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "strict": {
+        "head": "2bdd92f6bb0cde62962a85daae618994fe2209a8",
+        "exit": 0,
+        "receipt": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\strict.latest.json",
+        "stdout_sha256": "747e06670611991fe123450128a4fd9f095e53f7797bf697ab20b2b3df3452e3",
+        "stderr_sha256": "30d6dbfd7d779f2b8af85b2ec2465cae58b9cdd0b36663100c21d457de3362e2"
+      },
+      "golden": {
+        "head": "2bdd92f6bb0cde62962a85daae618994fe2209a8",
+        "exit": 0,
+        "receipt": "C:\\Dev\\zhuopin-ai\\reports\\sc8-r2-alignment-1009\\golden.latest.json",
+        "stdout_sha256": "5bda4f8fc0165420e8b84a348679234f7bc8cc5532843d7e34d3e0c30ff83f12",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "counts": {
+      "UI_baseline": 45,
+      "RED_failed": 1,
+      "GREEN": 1,
+      "target": 90,
+      "SC8_OFF_pass": 591,
+      "SC8_OFF_skip": 4,
+      "SC8_ON_pass": 591,
+      "SC8_ON_skip": 4,
+      "mock_golden": 1,
+      "platform_pass": 646,
+      "platform_skip": 1,
+      "OpenSpec_strict_pass": 220
+    },
+    "review": {
+      "agent": "/root/review_r2_master_alignment",
+      "model": "gpt-6-luna",
+      "fork_turns": "none",
+      "recorded_at": "2026-10-09T16:20:18.5278008+08:00",
+      "base": "463922cabb4dd2644a5c8095c0074fdf35a7dbdb",
+      "head": "2bdd92f6bb0cde62962a85daae618994fe2209a8",
+      "critical": [],
+      "important": [],
+      "minor": [],
+      "original_report": "openspec/changes/sc8-atp-batch2-closeout/主仓对齐Luna评审-2026-10-09.md",
+      "original_report_sha256": "106cf30814b1f6a0ea76039d1d2cd13171204ac64a9234e6887184a534ee7f50",
+      "review_package_sha256": "f3bfa878e57360662e4ed63d183880e7cda921df2ac8f5958797b4126640ccd6",
+      "assessment": "code alignment candidate accepted; ff and production gates remain open"
+    },
+    "rulings": [
+      "Ruling: Bash helper hit Windows MSYS NtCreateDirectoryObject access denial; use equivalent plan-owned Python brief/ledger and captured subprocess receipts. No trust/config changes — cost: not using the Bash helper implementation; command, HEAD and raw hashes remain explicit.",
+      "Ruling: Preserve this ledger/workspace and original worktrees per user no-deletion instruction, overriding skill cleanup — cost: ignored disk evidence remains.",
+      "Task 2: Ruling: target harness used repo-contained basetemp, but all 7 comparison runner failures were _external guard rejection. Restore approved plan intent with unique OS-temp basetemp outside checkouts, preserve first receipts; no product or test assertions changed — cost: mock scratch files persist outside checkout. First task brief extractor also expected a space after Chinese colon; parser corrected before implementation.",
+      "Final: Ruling: Declined real golden — keep missing expected.json as unverified skip; mock contract is tested but real correctness cannot be inferred, no rebuild/query authorized — cost: real-data acceptance remains blocked.",
+      "Final: Ruling: Declined D4 zero-boundary signoff — retain approved algorithm and professional boundary gate; no real boundary rows or new professional decision — cost: boundary business acceptance remains unverified.",
+      "Final: Ruling: Declined real color behavior — D5 constructs exercise the guard, while frozen119 rows have no actual color change; keep untriggered_unverified/professional gate — cost: real color acceptance remains unverified.",
+      "Final: Ruling: Declined ff/push/deploy/enable/refresh/send/P2 — user approved only Native alignment+mock; keep candidate as-is and P2 independent — cost: no master integration or production release in this scope.",
+      "Final: Ruling: final readback whole-subtree hash asserted SC2 unchanged after Sweep committed earlier authorized CLAUDE intake text; replace that over-broad predicate with exact Git blob inventory excluding only the two scene CLAUDE governance files — every remaining file/mode/blob must equal approved base — cost if wrong: a product drift could be missed; exact2 exclusions and full remaining inventory close that risk, original failed readback retained."
+    ],
+    "deferred_minors": [],
+    "open_gates": {
+      "real_golden": "missing expected.json; skipped",
+      "SC8_real_integration": "3 skips",
+      "platform_real_integration": "1 skip",
+      "D4_professional": "pending, frozen boundary counts zero",
+      "real_color_professional": "pending; untriggered_unverified",
+      "ff": "not authorized",
+      "push": "not authorized",
+      "production": "not authorized",
+      "enable_refresh_real_queries_send": "not authorized",
+      "P2": "outside scope"
+    },
+    "new_real_queries": 0,
+    "ff_performed": false,
+    "push_performed": false,
+    "deployed": false,
+    "rule2_activated": false,
+    "cleanup_performed": false,
+    "plan_ledger": "C:\\Dev\\zhuopin-ai\\.superpowers\\sdd\\2026-10-09-sc8-rule2-master-alignment\\progress.md",
+    "raw_evidence_visibility": "worktree不可见，须回主仓复核",
+    "verification_adjustment": {
+      "observed_failure": "finalize.py verify: AssertionError SC2 subtree hash",
+      "cause": "Sweep committed previously authorized #538/#666 SC2 CLAUDE facts, not product changes",
+      "method": "git diff name-only and ls-tree -r -z; exclude exact SC8/CLAUDE.md and SC2/CLAUDE.md only",
+      "inventory": {
+        "read_at": "2026-10-09T16:26:31.3705334+08:00",
+        "base": "463922cabb4dd2644a5c8095c0074fdf35a7dbdb",
+        "main_head": "a745ec2dbc78279a20cb0a284cee1900a3d408e6",
+        "non_governance_file_count": 263,
+        "inventory_sha256": "1af7bc510ca8205749eaec2b2fc5be1e4500e47df822c1b33707853df7428d97",
+        "non_governance_blobs_equal": true,
+        "allowed_governance_files": [
+          "4-数字员工/采购部/SC2-采购周报自动生成/CLAUDE.md",
+          "4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md"
+        ],
+        "actual_committed_changes": [
+          "4-数字员工/采购部/SC2-采购周报自动生成/CLAUDE.md"
+        ]
+      }
+    }
+  }
 }

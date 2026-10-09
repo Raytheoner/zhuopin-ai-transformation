@@ -123,3 +123,9 @@
 **委外与其他参数**：D-4(a) 保持“先核实、不动代码”，保留 `.51 SC8_OUTSOURCE_IDS`/PMC 直接书面事实核验；不凭转述恒真委外、不自行加10天或全量降置信。`lead_time_days=30` 与 SC8 无答交启发式90天不是同一参数；本次不改无答交起算、规则1/2、四色分类、L2 双签或对客外发关闭状态。
 
 执行和剩余项见 `0-学习与工具/codex-handoff/IT403历史回件消费与下游口径核验-2026-10-04.md`。
+
+## 2026-10-09 #660 · Native主仓对齐与mock验证
+
+Shao Peishen明确批准具体对齐计划与mock，Native完成候选`2bdd92f6bb0cde62962a85daae618994fe2209a8`；基于master`463922cabb4dd2644a5c8095c0074fdf35a7dbdb`，13件源blob等于29c1ee92，现master UI保留并仅图例调用传include_version=False，新增调用契约actual RED→GREEN，共15产品文件。OFF/ON各591 passed/4 skipped；mock golden1；平台646/1；strict220/0；一次fresh-context gpt-6-luna review无发现。实际import来自新树，默认R2仍OFF。批准/命令/HEAD/hash与review据`openspec/changes/sc8-atp-batch2-closeout/主仓对齐批准与执行.md/.json`。
+
+本次未ff/push/部署/启用/refresh/实采/外发；真实golden缺expected.json、三项SC8真实集成及一项平台真实集成仍skip，D4/真实颜色专业及P2未闭合。此前现网状态不据本候选改写；#660 partial、暂不归档。原树/dirty保留。
