@@ -270,16 +270,30 @@ def _shell_page() -> str:
     """看板壳页：结构+样式+JS，启动时 fetch /api/baoguan 注入 DATA 再渲染。"""
     # 复用静态看板的 JS，但 DATA/META 由 fetch 注入（不嵌入真实数据 → 壳页本身无客户名）
     boot = r"""
-var DATA=[],META={today:'',ver:''};
+var DATA=[],META={today:'',ver:''},LAST_SNAP=null;
+function snapshotText(s){
+  return '来源：成品保供快照 · 快照生成时间 '+(s.generated_at||'未提供')
+    +' · 业务日期 '+(s.today||'未提供')+' · 参数 '+META.ver
+    +' · 源更新时间：未提供'+(s.note?(' · '+s.note):'');
+}
 function applySnap(s){
-  DATA=(s&&s.rows)||[];META={today:(s&&s.today)||'',ver:(s&&s.param_version)||''};
+  s=s||{};LAST_SNAP=s.ok?s:null;
+  DATA=(s&&s.rows)||[];META={today:(s&&s.today)||'',ver:(s&&s.param_version)||'未提供'};
   var ts=document.getElementById('ts');
-  if(ts)ts.textContent=(s&&s.ok)?('最后更新 '+(s.generated_at||'—')):'尚未刷新 —— 点「刷新」或等待定时刷新';
+  if(ts)ts.textContent=s.ok?snapshotText(s):'尚无快照 · 来源与更新时间未提供 · '+(s.note||'请显式重算后读取');
   renderKpis();renderFbtns();render();
+  if(!s.ok){var c=document.getElementById('cards');if(c)c.innerHTML='<div class="empty">尚无快照，未提供当前结果</div>';}
 }
 function loadSnap(){
-  fetch('/api/baoguan').then(function(r){return r.json();}).then(applySnap)
-   .catch(function(){var c=document.getElementById('cards');if(c)c.innerHTML='<div class="empty">加载失败</div>';});
+  var timer;
+  var timeout=new Promise(function(resolve,reject){timer=setTimeout(function(){reject(new Error('读取超时'));},15000);});
+  return Promise.race([fetch('/api/baoguan'),timeout]).then(function(r){
+    if(!r.ok||r.redirected){var err=new Error('HTTP '+r.status);err.status=r.redirected?403:r.status;throw err;}return r.json();
+  }).then(applySnap).catch(function(e){
+    var ts=document.getElementById('ts');
+    var label=(e.status===401||e.status===403)?'权限不足':'读取失败（超时或服务不可用）';
+    if(ts)ts.textContent=label+' · 当次结果不可用'+(LAST_SNAP?' · 以下为最近已知快照，非当次结果 · '+snapshotText(LAST_SNAP):' · 尚无已知快照');
+  }).finally(function(){clearTimeout(timer);});
 }
 function doRefresh(){
   var b=document.getElementById('recompute');if(b){b.disabled=true;b.textContent='重算中…';}
@@ -311,8 +325,8 @@ setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全�
     return (
         "<!DOCTYPE html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-        "<title>成品保供预警看板 · 服务</title>\n" + _HTML_STYLE + _NAV_CSS + "</head><body>\n"
-        + nav + "<div class=\"wrap\">\n"
+        "<title>成品保供预警看板 · 服务</title>\n" + _HTML_STYLE + _NAV_CSS + _PORTAL_CSS + "</head><body>\n"
+        + nav + "<div class=\"wrap\">\n" + _PORTAL_NOTICE
         + '<div class="head"><div><div class="title">成品保供预警看板</div>\n'
         + '<div class="sub" id="ts">加载中…</div></div>\n'
         + '<div class="badges">'
@@ -329,7 +343,7 @@ setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全�
         + '<option value="200">200 行/页</option></select>\n'
         + '<button class="btn" id="xlsx" type="button">导出 Excel</button>\n'
         + '<button class="btn" id="legendBtn" type="button">📖 图例</button></div>\n'
-        + '<div class="legend" id="legendPanel">' + render_legend(config.default_params()) + '</div>\n'
+        + '<div class="legend" id="legendPanel"><p>图例来源：当前服务配置；结果规则版本以快照来源栏为准。专业签认仍待确认。</p>' + render_legend(config.default_params()) + '</div>\n'
         + '<div class="cnt" id="cnt"></div>\n<div class="pager" id="pagerTop"></div>\n'
         + '<div class="cards" id="cards"></div>\n<div class="pager" id="pagerBottom"></div>\n'
         + '<div class="foot">分级只看<b>有确定承诺</b>子件的齐料缺口：🔴 真延期 · 🟠 待催 · 🟡 偏紧 · 🟢 按期。'
@@ -517,15 +531,21 @@ function applySnap(s){
   SNAP=s||{};ROWS=(s&&s.rows)||[];META=(s&&s.meta)||{};MONTHS=(META.months)||[];
   var ts=$('ts');
   if(ts)ts.textContent=(s&&s.ok)
-    ?('数据同源于成品保供快照　·　最后更新 '+(s.generated_at||'—')+'　·　业务日期 '+(s.today||'—'))
+    ?('数据同源于成品保供快照　·　快照生成时间 '+(s.generated_at||'未提供')+'　·　业务日期 '+(s.today||'未提供')+'　·　源更新时间：未提供')
     :'尚未刷新 —— 物料看板与成品看板共用同一份快照，请到成品看板点「立即重算」';
   var w=$('win');
   if(w)w.textContent=META.window?('本视图窗口＝'+META.window+'，共 '+MONTHS.length+' 个自然月，以快照业务日期所在月为首、随快照自动滚动。'):'';
   state.page=1;render();
 }
 function loadSnap(){
-  fetch('/api/materials').then(function(r){return r.json();}).then(applySnap)
-   .catch(function(){$('tblBox').innerHTML='<div class="empty">加载失败</div>';});
+  var timer;
+  var timeout=new Promise(function(resolve,reject){timer=setTimeout(function(){reject(new Error('读取超时'));},15000);});
+  return Promise.race([fetch('/api/materials'),timeout]).then(function(r){
+    if(!r.ok||r.redirected){var err=new Error('HTTP '+r.status);err.status=r.redirected?403:r.status;throw err;}return r.json();
+  }).then(applySnap).catch(function(e){
+    var label=(e.status===401||e.status===403)?'权限不足':'读取失败（超时或服务不可用）';
+    $('ts').textContent=label+' · 当次结果不可用'+(SNAP.ok?' · 下方为最近已知快照，非当次结果 · 快照生成时间 '+(SNAP.generated_at||'未提供'):' · 尚无已知快照');
+  }).finally(function(){clearTimeout(timer);});
 }
 function exportExcel(){
   var l=view(),h=head();
@@ -589,8 +609,8 @@ setInterval(loadSnap,120000);
     return (
         '<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        '<title>物料看板 · 成品保供预警</title>\n' + _HTML_STYLE + _NAV_CSS + _MAT_CSS
-        + '</head><body>\n' + _nav_html("materials") + '<div class="wrap mat-wrap">\n'
+        '<title>物料看板 · 成品保供预警</title>\n' + _HTML_STYLE + _NAV_CSS + _MAT_CSS + _PORTAL_CSS
+        + '</head><body>\n' + _nav_html("materials") + '<div class="wrap mat-wrap">\n' + _PORTAL_NOTICE
         + '<div class="head"><div><div class="title">物料看板 · 按单个物料看缺口</div>\n'
         + '<div class="sub" id="ts">加载中…</div></div>\n'
         + '<div class="badges"><span class="badge">与成品看板同源同一份快照</span>'
@@ -615,6 +635,19 @@ setInterval(loadSnap,120000);
 
 
 # ── 案例页面 HTML ─────────────────────────────────────────────────────────────
+
+
+_PORTAL_CSS = """<style>
+:root{--bg:#f5f8fc;--surface:#fff;--surface2:#f5f8fc;--border:#e7edf5;--text:#18253b;--text2:#63738b;--text3:#63738b;--danger:#a3433b;--gap:#85621b;--warn:#85621b;--ok:#176b59}
+body{background:#f5f8fc;color:#18253b;font-family:"Microsoft YaHei",system-ui,sans-serif;font-size:14px}
+.bg-nav{background:#fff!important;border-bottom:1px solid #e7edf5;gap:8px!important;overflow-x:auto;white-space:nowrap}
+.bg-nav .brand,.bg-nav .brand span{color:#126bd9!important}.bg-nav a{color:#63738b!important}.bg-nav a.active,.bg-nav a:hover{background:#edf4ff!important;color:#126bd9!important}
+.bg-btn.primary{background:#126bd9;border-color:#126bd9}.portal-note{padding:12px 16px;margin:14px 0;background:#fff8e6;border:1px solid #eadcba;border-radius:10px;color:#85621b;line-height:1.7;overflow-wrap:anywhere}
+.sub,.foot{overflow-wrap:anywhere}.bg-card,.card,.kpi{box-shadow:none}.toolbar{flex-wrap:wrap}.search{min-width:0;max-width:100%}
+:focus-visible{outline:3px solid #1677ff;outline-offset:3px}.bg-pg{overflow-wrap:anywhere}.bg-tbl{display:block;overflow-x:auto}.bg-in input,.bg-in textarea{max-width:100%}
+@media(max-width:600px){.wrap,.bg-pg{padding:17px!important}.head{flex-wrap:wrap;gap:12px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important}.bg-nav .brand{display:none}.mat-tbl th,.mat-tbl td{padding:4px;font-size:11px}.title{font-size:25px}}
+</style>"""
+_PORTAL_NOTICE = '<div class="portal-note">内部试用 · D4/颜色专业签认待确认 · DOS：未提供。快照生成时间与源更新时间分别标注；未定义自动陈旧阈值，请核对原时间。刷新只读缓存；立即重算按原流程执行。案例及判例批改保留原权限与审计责任。</div>'
 
 _NAV_CSS = """<style>
 .bg-nav{display:flex;align-items:center;gap:18px;background:#23221f;padding:0 22px;height:46px;position:sticky;top:0;z-index:99}
@@ -651,8 +684,8 @@ def _nav_html(active: str) -> str:
 def _page(title: str, active: str, body: str) -> str:
     return (f'<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-            f'<title>{_html.escape(title)}</title>{_HTML_STYLE}{_NAV_CSS}</head><body>'
-            f'{_nav_html(active)}<div class="bg-pg">{body}</div></body></html>')
+            f'<title>{_html.escape(title)}</title>{_HTML_STYLE}{_NAV_CSS}{_PORTAL_CSS}</head><body>'
+            f'{_nav_html(active)}<div class="bg-pg">{_PORTAL_NOTICE}{body}</div></body></html>')
 
 
 def _cases_list_html(cases, stale_ids, show_closed: bool) -> str:
