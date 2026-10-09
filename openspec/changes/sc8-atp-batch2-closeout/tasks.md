@@ -1,5 +1,9 @@
 # sc8-atp-batch2-closeout Tasks
 
+## 2026-10-10 · 本地ff完成（当前入口）
+
+2026-10-10T00:33:53.5700824+08:00（上海）#279批准后，本地master已ff `640ba847278f4ba775dd2b65bea2dd48137e3b92`，15件产品blob等价旧已验候选；最终候选及合入后mock OFF/ON均591p4skip，平台646p1skip、strict220/0。当前结果见`openspec/changes/sc8-atp-batch2-closeout/本地ff批准与执行-2026-10-10.md/.json`，默认R2 OFF；无push/部署/启用/实采/发送，真实golden/D4颜色专业/生产与P2闸仍未闭。#660 partial，**暂不归档**。以下较早“未ff”及阶段任务记录保留为历史，不回勾真实/生产任务。
+
 ## 2026-10-09 · #660当前交付与对齐停点（当前入口）
 
 本人已明确批准`docs/superpowers/plans/2026-10-09-sc8-rule2-master-alignment.md`及mock验证，沿用Native；本轮完成全部三项计划合同。新候选`2bdd92f6bb0cde62962a85daae618994fe2209a8`/codex/sc8-rule2-align-1009基于`463922cabb4dd2644a5c8095c0074fdf35a7dbdb`，15件范围已核、13源blob等价，原UI保留且仅一处图例调用适配。新调用契约actual RED→GREEN；当前HEAD OFF/ON分别591 passed/4 skipped，mock golden1，平台646/1，OpenSpec strict220/0，一次fresh-context gpt-6-luna review无发现。全部命令/HEAD/hash、skip与Ruling见`openspec/changes/sc8-atp-batch2-closeout/主仓对齐批准与执行.md/.json`；原文review见`openspec/changes/sc8-atp-batch2-closeout/主仓对齐Luna评审-2026-10-09.md`。

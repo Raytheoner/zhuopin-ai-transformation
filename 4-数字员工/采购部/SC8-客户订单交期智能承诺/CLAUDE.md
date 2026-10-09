@@ -129,3 +129,7 @@
 Shao Peishen明确批准具体对齐计划与mock，Native完成候选`2bdd92f6bb0cde62962a85daae618994fe2209a8`；基于master`463922cabb4dd2644a5c8095c0074fdf35a7dbdb`，13件源blob等于29c1ee92，现master UI保留并仅图例调用传include_version=False，新增调用契约actual RED→GREEN，共15产品文件。OFF/ON各591 passed/4 skipped；mock golden1；平台646/1；strict220/0；一次fresh-context gpt-6-luna review无发现。实际import来自新树，默认R2仍OFF。批准/命令/HEAD/hash与review据`openspec/changes/sc8-atp-batch2-closeout/主仓对齐批准与执行.md/.json`。
 
 本次未ff/push/部署/启用/refresh/实采/外发；真实golden缺expected.json、三项SC8真实集成及一项平台真实集成仍skip，D4/真实颜色专业及P2未闭合。此前现网状态不据本候选改写；#660 partial、暂不归档。原树/dirty保留。
+
+## 2026-10-10 · R2仅本地ff记录
+
+2026-10-10T00:33:53.5700824+08:00（上海）本人#279批准后，15件等价产品blob仅本地ff进master `640ba847278f4ba775dd2b65bea2dd48137e3b92`。候选与合入后OFF/ON均591p4skip；R2默认OFF，生产部署/启用/实采/外发均未授权未执行。真实golden/D4颜色专业/生产闸仍保留；#660 partial，暂不归档。证据`openspec/changes/sc8-atp-batch2-closeout/本地ff批准与执行-2026-10-10.md/.json`。
