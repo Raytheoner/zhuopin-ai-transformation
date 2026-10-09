@@ -23,6 +23,7 @@ from .report import (
     build_report,
     load_snapshot,
     render_text,
+    _fmt_value,
     save_snapshot,
     snapshot_to_report,
 )
@@ -115,7 +116,12 @@ def create_app(*, base_date: date | None = None, mode: str = "mock",
 
     @bp.get("/")
     def index():
-        return _render_page(_current_report())
+        try:
+            report = _current_report()
+        except Exception:
+            app.logger.exception("SC2 report read failed")
+            return _unavailable_page(), 503
+        return _render_page(report)
 
     @bp.post("/api/refresh")
     def api_refresh():
@@ -218,33 +224,79 @@ def _quote(name: str) -> str:
 
 
 _PAGE = """<!doctype html>
+<html lang="zh-CN"><head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>采购周报 {period}</title>
 <style>
- body{{font-family:system-ui,"Microsoft YaHei",sans-serif;margin:2rem;line-height:1.6}}
- table{{border-collapse:collapse;margin:.5rem 0 1.5rem}}
- th,td{{border:1px solid #d0d7de;padding:.35rem .7rem;text-align:left}}
- th{{background:#f6f8fa}}
+ *{{box-sizing:border-box}} body{{font-family:"Microsoft YaHei",system-ui,sans-serif;margin:0;background:#f5f8fc;color:#18253b;line-height:1.6;font-size:14px}}
+ main{{max-width:1180px;margin:auto;padding:32px}} header{{background:#fff;border-bottom:1px solid #e7edf5;padding:16px 32px;color:#126bd9;font-weight:600}}
+ h1{{font-size:28px;margin:0 0 12px}} section,details,form{{background:#fff;border:1px solid #e7edf5;border-radius:10px;padding:20px;margin:16px 0}}
+ table{{border-collapse:collapse;width:100%;min-width:540px}} .table-scroll{{overflow-x:auto}}
+ th,td{{border-bottom:1px solid #e7edf5;padding:12px;text-align:left;vertical-align:top;overflow-wrap:anywhere}}
+ th{{background:#f5f8fc}} a{{color:#126bd9}} .metadata{{overflow-wrap:anywhere;color:#63738b}} .metadata dt{{font-weight:600}} .metadata dd{{margin:0 0 8px}}
  .warn{{color:#9a6700;background:#fff8c5;padding:.5rem .8rem;border-radius:6px}}
  .ok{{color:#0a5c2e;background:#dafbe1;padding:.5rem .8rem;border-radius:6px}}
  input{{padding:.4rem .6rem;font-size:1rem;margin-right:.6rem}}
  button{{padding:.5rem 1.2rem;font-size:1rem;cursor:pointer}}
- pre{{white-space:pre-wrap}}
+ pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}} summary{{cursor:pointer}}
+ :focus-visible{{outline:3px solid #1677ff;outline-offset:3px}} input,button{{max-width:100%}} button{{background:#126bd9;color:white;border:0;border-radius:6px}}
+ @media(max-width:600px){{main{{padding:17px}}header{{padding:14px 17px}}h1{{font-size:25px}}section,details,form{{padding:14px}}}}
 </style>
+</head><body><header>卓品智能 · 采购门户 · SC2</header><main>
 <h1>采购周报 {period}</h1>
 <p>期次口径：<b>{period}（采购口径周序）</b>｜ISO 周号对照：{iso_period}</p>
-<p class="warn">本页数字为 AI 自动汇总。<b>每周五 20:00 自动生成并自动推送采购部群</b>
-（2026-08-22 拍板取消「确认发布」前置）。下方签认按钮仍可用，但它现在记录的是
-<b>事后复核</b>，不再是推送的前置条件。</p>
-<pre>{body}</pre>
+{metadata}
+<p class="warn">数量口径待核；本页保留原周报数值与依据，待采购专业签认。服务可访问不代表口径或业务验收通过。</p>
+<p class="warn">本页数字为 AI 自动汇总。<b>定时推送运行状态未核验</b>，
+当次送达请核对推送出口及回执。原「确认发布」入口记录的是<b>事后复核</b>，
+本页操作不触发发送；推送仍沿既有独立流程执行。</p>
+<section aria-label="周报指标">{metrics}</section>
+<details><summary>查看原始周报全文与计算依据</summary><pre>{body}</pre></details>
 <p>{detail_links}</p>
 {notice}
 <p>{backlog}</p>
 <form method="post" action="{prefix}/api/confirm">
   <label>复核人姓名：<input name="confirmed_by" required autocomplete="name"></label>
-  <button type="submit">确认发布</button>
+  <button type="submit">记录事后复核</button>
 </form>
+</main></body></html>
 """
+
+
+def _unavailable_page() -> str:
+    """Read failure stays an HTTP failure; no synthetic report or write action."""
+    head = _PAGE.split('</head>', 1)[0].format(period='读取失败')
+    return (head + '</head><body><header>卓品智能 · 采购门户 · SC2</header><main>'
+            '<h1>周报读取失败 · 当次结果不可用</h1>'
+            '<section><p>未取得当次周报，不显示统计值或签认控件。来源与更新时间：未提供。</p>'
+            f'<a href="{config.ROUTE_PREFIX}/">重新读取周报</a></section></main></body></html>')
+
+
+def _metadata_html(report) -> str:
+    notes = report.source_notes or {}
+    source = '；'.join(f'{key}：{value}' for key, value in notes.items()) or '未提供'
+    fields = [('统计期', report.period or '未提供'), ('数据模式', report.mode or '未提供'),
+              ('源更新时间', report.fetched_at or '未提供'), ('来源说明', source),
+              ('数据时效', '年龄未分类（陈旧判据未提供）；请核对源更新时间'),
+              ('服务状态', '未核验；请以当次请求和源更新时间判断，未定义自动陈旧阈值')]
+    return '<section><dl class="metadata">' + ''.join(
+        f'<dt>{html.escape(label)}</dt><dd>{html.escape(str(value))}</dd>'
+        for label, value in fields) + '</dl></section>'
+
+
+def _metrics_html(report) -> str:
+    if not report.metrics:
+        return '<p>暂无周报记录；未使用示例补位。</p>'
+    rows = []
+    for metric in report.metrics:
+        values = [metric.name]
+        for value in (metric.current, metric.previous, metric.month_ago):
+            text = _fmt_value(value) if value.has_data else '资料不足（无数据）'
+            values.append(text + ' · 口径待核' + (f'；{value.caveat}' if value.caveat else ''))
+        rows.append('<tr>' + ''.join(f'<td>{html.escape(value)}</td>' for value in values) + '</tr>')
+    return ('<div class="table-scroll"><table><thead><tr><th>指标</th><th>本期</th>'
+            '<th>上周</th><th>上月同周</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>')
 
 
 def _backlog_text() -> str:
@@ -283,16 +335,18 @@ def _detail_links_html(report) -> str:
 
 
 def _render_page(report, *, error: str | None = None,
-                 confirmed_by: str | None = None) -> str:
+                 confirmed_by: str | None = None, detail_links: str | None = None,
+                 backlog: str | None = None) -> str:
     if error:
         notice = f'<p class="warn">{html.escape(error)}</p>'
     elif confirmed_by:
         notice = f'<p class="ok">已由 {html.escape(confirmed_by)} 复核签认。</p>'
     else:
         notice = ""
-    return _PAGE.format(period=html.escape(report.period),
+    return _PAGE.format(period=html.escape(report.period or '未提供'),
                         iso_period=html.escape(report.iso_period or "—"),
                         body=html.escape(render_text(report)),
                         prefix=config.ROUTE_PREFIX, notice=notice,
-                        detail_links=_detail_links_html(report),
-                        backlog=_backlog_text())
+                        metadata=_metadata_html(report), metrics=_metrics_html(report),
+                        detail_links=_detail_links_html(report) if detail_links is None else detail_links,
+                        backlog=_backlog_text() if backlog is None else backlog)
