@@ -115,11 +115,12 @@ def main() -> int:
     print(f"携客云承诺命中子件：{len(srm)} / {len(components)}（其余走无答复 +{config.NO_FEEDBACK_LEAD_DAYS}）")
 
     # ④ 保供齐套 → 三色看板（HTML 主看板 + markdown 文本副本，均 git-ignored）
-    rows = build_dashboard(orders, bom, srm, today=today)
+    ctx = config.forecast_context()
+    rows = build_dashboard(orders, bom, srm, today=today, context=ctx)
     out_html = reports / f"baoguan_dashboard_{today.isoformat()}.html"
-    out_html.write_text(render_html(rows, today=today), encoding="utf-8")
+    out_html.write_text(render_html(rows, today=today, params=ctx.params), encoding="utf-8")
     out_md = reports / f"baoguan_dashboard_{today.isoformat()}.md"
-    out_md.write_text(render_markdown(rows, today=today), encoding="utf-8")
+    out_md.write_text(render_markdown(rows, today=today, params=ctx.params), encoding="utf-8")
 
     n_red = sum(1 for r in rows if r.risk == RISK_RED)
     n_gap = sum(1 for r in rows if r.risk == RISK_GAP)

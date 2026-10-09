@@ -149,3 +149,21 @@ def test_manual_case_without_checkbox_defaults_to_answered(monkeypatch):
                                "actor": "运维"}, follow_redirects=False)
     draft = c.get("/cases/1/draft?kind=customer").get_data(as_text=True)
     assert "预计调整至" in draft
+
+
+def test_service_shell_version_comes_from_snapshot():
+    from sc8.webapp import _shell_page
+    html = _shell_page()
+    assert 's.param_version' in html and "+' · 参数 '+META.ver" in html
+
+
+
+def test_cached_snapshot_version_survives_live_flag_change(monkeypatch):
+    from sc8 import config
+    snap = _snap(reds=1)
+    snap.param_version = 'frozen-test+rule1+rule2'
+    app, client = _client(monkeypatch, compute=lambda **kw: snap)
+    assert client.post('/api/refresh').status_code == 200
+    monkeypatch.setenv('SC8_KIT_DATE_RULE2_LITERAL', 'off')
+    assert client.get('/api/baoguan').get_json()['param_version'] == snap.param_version
+    assert snap.param_version != config.active_param_version()

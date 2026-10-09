@@ -116,3 +116,14 @@ def test_legend_uses_master_interface_and_labels_its_separate_provenance():
     page = webapp._shell_page()
     assert '图例来源：当前服务配置' in page
     assert '结果规则版本以快照来源栏为准' in page
+
+def test_rule2_legend_hides_live_parameter_version(monkeypatch):
+    calls = []
+    def legend(params=None, *, include_version=True):
+        calls.append(include_version)
+        return '<p>legend sentinel</p>'
+    monkeypatch.setattr(webapp, 'render_legend', legend)
+    page = webapp._shell_page()
+    assert calls == [False]
+    assert '图例来源：当前服务配置' in page
+    assert '结果规则版本以快照来源栏为准' in page

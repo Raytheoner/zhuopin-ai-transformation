@@ -162,6 +162,8 @@ class BaoguanRow:
     # 前置（净额开关 ON 且有 inventory）+ 需另传 purchase_orders，否则恒为 None。
     demand_kittable_qty:        int | None = None
     demand_kittable_bottleneck: str | None = None
+    # Preserve stable source identity for positional OFF/ON comparison.
+    customer_id: str = ""
 
 
 def _classify(gap_days: int | None, confirmed_gap: int | None, has_bom: bool,
@@ -679,16 +681,26 @@ def _demand_kittable_qty(
     return best_qty, best_material
 
 
+def _forecast_context(params: ForecastParams | None,
+                      context: config.ForecastContext | None) -> config.ForecastContext:
+    if context is None:
+        return config.forecast_context(params)
+    if params is not None and params != context.params:
+        raise ValueError('params differ from frozen forecast context')
+    return context
+
+
 def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
                        today: date, params: ForecastParams | None = None,
                        inventory: dict | None = None,
                        material_commitments: dict[str, list[tuple[date, float]]] | None = None,
                        purchase_orders: dict[str, float] | None = None,
+                       context: config.ForecastContext | None = None,
                        ) -> BaoguanRow:
     """对单张成品行（预测订单行）做保供齐套评估。
 
-    无答复基准：demand_date = max(出货日, 今天) → 无答复子件到货 = 该日 + no_feedback_lead_days。
-    分级基于"确定承诺"子件的缺口（剔除无答复估算），区分真延期 vs 待催（见 _classify）。
+    无答复基准由冻结规则上下文决定，起算点集中在 no_feedback_start_date。
+    分级沿用全量齐料缺口；动作区分确定承诺与无答复估算（见 _classify）。
 
     现货净额（`inventory`={material_id→白名单仓可用量}）：仅当 `SC8_NET_INVENTORY=on` 时生效，
     现货可用量≥毛需求的物料视为已齐、退出待催/催货（消除"有货却被追料"误判 P0）；
@@ -707,7 +719,8 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     传入时附加计算 `component_status`（#12）与 `demand_kittable_qty`（#14，另需 inventory +
     净额开关 ON）；缺省 None → 两者恒为空/None，零漂移，不影响既有四色/kittable_qty 判定。
     """
-    p = params or config.default_params()
+    ctx = _forecast_context(params, context)
+    p = ctx.params
     ship = date.fromisoformat(so.required_date)
     effective_demand = max(ship, today)        # ← Paul 定的 max(需求日,今天) 基准
 
@@ -715,7 +728,9 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
     # 传 None ⇒ `estimate_material_arrivals` 逐字节沿用 `effective_demand` 起算，零漂移；
     # ON 时由 `no_feedback_start_date` 单点决定走哪一支。判断只在这一处，不散落。
     heuristic_base = (
-        no_feedback_start_date(ship, today, p) if config.kit_date_rule1_enabled() else None
+        no_feedback_start_date(ship,today,p,rule1_enabled=ctx.rule1,
+                               rule2_enabled=ctx.rule2)
+        if ctx.rule1 or ctx.rule2 else None
     )
 
     # C-1（sc8-baoguan-substitute-partial-kit）：estimate_material_arrivals/explode_bom
@@ -773,6 +788,7 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
         risk, action = _classify(None, None, False, p, 0, None, None, False)
         return BaoguanRow(
             so_id=so.so_id, product_id=so.item_code, product_name=so.item_name,
+            customer_id=so.customer_id,
             customer_name=so.customer_name, qty=so.qty, ship_date=ship,
             kit_date=None, gap_days=None, risk=risk,
             bottleneck_material=mat.bottleneck_material,
@@ -784,6 +800,7 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
         # 有 BOM，但全部直接子件被现货覆盖 → 现货齐备、按期（🟢）
         return BaoguanRow(
             so_id=so.so_id, product_id=so.item_code, product_name=so.item_name,
+            customer_id=so.customer_id,
             customer_name=so.customer_name, qty=so.qty, ship_date=ship,
             kit_date=None, gap_days=None, risk=RISK_GREEN,
             bottleneck_material=None, no_feedback_materials=[],
@@ -823,6 +840,7 @@ def assess_supply_risk(so: SalesOrder, bom: list, srm_deliveries: list, *,
         action = f"{action}；可先齐 {kittable_qty} 套"
     return BaoguanRow(
         so_id=so.so_id, product_id=so.item_code, product_name=so.item_name,
+        customer_id=so.customer_id,
         customer_name=so.customer_name, qty=so.qty, ship_date=ship,
         kit_date=kit_date, gap_days=gap_days, risk=risk,
         bottleneck_material=mat.bottleneck_material,
@@ -947,6 +965,8 @@ def build_dashboard(orders: list[SalesOrder], bom: list, srm_deliveries: list, *
                     material_commitments: dict[str, list[tuple[date, float]]] | None = None,
                     priority_resolver=None,
                     purchase_orders: dict[str, float] | None = None,
+                    context: config.ForecastContext | None = None,
+                    preserve_input_order: bool = False,
                     ) -> list[BaoguanRow]:
     """对全部成品行生成保供预警，按风险降序（🔴→🟡→🟢）、缺口天数降序排列。
 
@@ -968,16 +988,19 @@ def build_dashboard(orders: list[SalesOrder], bom: list, srm_deliveries: list, *
     # 同时争用时必须按优先级顺序依次扣减，不能让每一行各自独立看到"全量库存"
     # （真实案例 S02Y.0210：3 张单合计需求 1,500 > 现货 1,153，此前 3 行都误判齐套）。
     # 仅当净额开关打开且传了 inventory 时才分配；否则行为与改造前完全一致（零漂移）。
+    ctx = _forecast_context(params, context)
     effective_inventory = None
     if inventory and config.net_inventory_enabled():
         effective_inventory = _allocate_sequential_inventory(orders, bom, inventory,
                                                               priority_resolver)
     rows = [assess_supply_risk(
-                so, bom, srm_deliveries, today=today, params=params,
+                so, bom, srm_deliveries, today=today, params=ctx.params, context=ctx,
                 inventory=(effective_inventory[i] if effective_inventory is not None
                           else inventory),
                 material_commitments=material_commitments, purchase_orders=purchase_orders)
             for i, so in enumerate(orders)]
+    if preserve_input_order:
+        return rows
     order = {RISK_RED: 0, RISK_GAP: 1, RISK_YELLOW: 2, RISK_GREEN: 3}
     rows.sort(key=lambda r: (order.get(r.risk, 4), -(r.gap_days if r.gap_days is not None else 9999)))
     return rows
@@ -1437,7 +1460,7 @@ def row_to_dict(r: BaoguanRow) -> dict:
     }
 
 
-def render_legend(params: ForecastParams | None = None) -> str:
+def render_legend(params: ForecastParams | None = None, *, include_version: bool = True) -> str:
     """看板内嵌图例面板（④ 功能批1，姚祖怡 07-23）：四色判据 + 无答复估算依据 + 现货净额/
     部分齐套/子件供给状态口径说明，供采购一线在看板内直接核对，不必外挂文档。
 
@@ -1445,18 +1468,19 @@ def render_legend(params: ForecastParams | None = None) -> str:
     （不会因为 config 调整而与文档失步，如 NO_FEEDBACK_LEAD_DAYS 30→90 那次校准）。
     """
     p = params or config.default_params()
+    version_note = f'，参数版本 {_html.escape(p.param_version)}' if include_version else ''
     return (
         '<h4>四色判据</h4>'
         '<table><tr><th>图标</th><th>名称</th><th>判据</th></tr>'
-        '<tr><td>🔴</td><td>真延期</td><td>存在已有真实供应商承诺的子件，其承诺到货日晚于计划出货日 &gt;3 天</td></tr>'
-        '<tr><td>🟠</td><td>待催</td><td>无真延期信号，但存在供应商未答复（无携客云承诺记录）的子件——齐料日无法确定，需催答交</td></tr>'
-        '<tr><td>🟡</td><td>偏紧</td><td>已有真实承诺的子件，其到货日晚于计划出货日 1-3 天</td></tr>'
-        '<tr><td>🟢</td><td>按期</td><td>全部子件均有真实承诺，且齐料日 ≤ 计划出货日</td></tr></table>'
-        '<p>分级只看"已有真实承诺"子件的缺口，剔除"无答复"估算——即便同时存在未答复子件，'
-        '只要有一个已确定承诺的子件已经延期，也优先判 🔴（确定信号优先于不确定信号）。</p>'
-        f'<p><b>无答复子件齐料日估算</b>（问题5）：无携客云承诺交期的子件，按 '
-        f'<code>max(计划出货日, 今天) + {p.no_feedback_lead_days} 天</code>（无反馈提前期，'
-        f'参数版本 {_html.escape(p.param_version)}）估算，仅供参考排期，非确定交期。</p>'
+        '<tr><td>🔴</td><td>高风险</td><td>无BOM或全量齐料缺口&gt;3天；瓶颈未答复时为保守预警</td></tr>'
+        '<tr><td>🟠</td><td>待催</td><td>缺口≤0且仍存在未答复子件，需催确认</td></tr>'
+        '<tr><td>🟡</td><td>偏紧</td><td>全量齐料缺口1–3天；按瓶颈是否已答复区分确定延期与估算</td></tr>'
+        '<tr><td>🟢</td><td>按期</td><td>全部已答复且齐料不晚于计划出货日</td></tr></table>'
+        '<p>颜色由现有全量齐料缺口判定；动作明确区分供应商确认与无答复估算。</p>'
+        f'<p><b>无答复子件齐料日估算</b>：在三自然月内、晚于业务日期且启用逐字规则时，'
+        f'从业务日期起算；已过期从业务日期起算；窗外仅在规则1启用时按前三自然月20日起算。'
+        f'其它情形沿用 max(计划出货日,业务日期)。起算点加 {p.no_feedback_lead_days} 天'
+        f'{version_note}；估算不等于供应商确定承诺。</p>'
         '<p><b>现货净额</b>：开关打开时，统计卓品自建库存 6 个白名单仓'
         '（WW01/ZP01/ZP21/ZP22/ZP02/ZP23）可用库存（ERP 口径 AvailQty），'
         '≥ 该子件毛需求视为已齐、退出待催/瓶颈判定；不参与四色判定基线本身。</p>'
@@ -1503,6 +1527,6 @@ def render_html(rows: list[BaoguanRow], *, today: date,
         + '<div class="legend" id="legendPanel">' + render_legend(p) + '</div>\n'
         + '<div class="cnt" id="cnt"></div>\n<div class="pager" id="pagerTop"></div>\n'
         + '<div class="cards" id="cards"></div>\n<div class="pager" id="pagerBottom"></div>\n'
-        + f'<div class="foot">分级只看<b>有确定承诺</b>子件的齐料缺口：🔴 真延期（有承诺仍晚 &gt;3天）· 🟠 待催（子件未答复、无确定承诺，齐料待定）· 🟡 偏紧（确定晚 1-3天）· 🟢 按期。未答复子件齐料按 max(出货日, 今天)+{p.no_feedback_lead_days} 天估算（仅参考，不计入真延期）。本看板为内部保供运维用途，不对客。</div>\n'
+        + '<div class="foot">全量齐料缺口：🔴 &gt;3天或无BOM · 🟡 1–3天 · 🟠 缺口≤0且仍有未答复件 · 🟢 全部已答复且按期。无答复估算按本页参数与图例，非供应商确定承诺。本看板为内部保供运维用途，不对客。</div>\n'
         + '</div>\n<script>\n' + js + '\n</script></body></html>'
     )

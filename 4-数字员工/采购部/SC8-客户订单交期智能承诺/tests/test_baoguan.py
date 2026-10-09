@@ -41,9 +41,10 @@ def _srm(material, committed):
                             committed_date=committed, status="confirmed")
 
 
-def test_all_no_feedback_is_red_conservative():
+def test_all_no_feedback_is_red_conservative(monkeypatch):
     """全部子件无答复 → 无确定承诺，但按保守估算（90天）晚出货远超3天门槛 → 🔴（队列#147续，
     2026-07-29 Paul 拍板：看板是保守预测，未答复子件按90天估算折入严重度，不降级成"待催"）。"""
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
     so = _so(ship="2026-09-01")
     bom = _bom("S02Y.0035", "R02A.0498", "R02D.0041")
     row = assess_supply_risk(so, bom, [], today=TODAY)
@@ -95,7 +96,8 @@ def test_all_confirmed_before_ship_is_green():
     assert row.no_feedback_materials == []
 
 
-def test_partial_confirmed_bottleneck_is_no_feedback_component():
+def test_partial_confirmed_bottleneck_is_no_feedback_component(monkeypatch):
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
     so = _so(ship="2026-09-01")
     bom = _bom("S02Y.0035", "R02A.0498", "R02D.0041")
     srm = [_srm("R02A.0498", "2026-08-01")]          # 仅 A 有承诺(按期)，B 无答复
@@ -112,7 +114,7 @@ def test_partial_confirmed_bottleneck_is_no_feedback_component():
     assert [d.component_id for d in row.no_feedback_detail] == ["R02D.0041"]
 
 
-def test_confirmed_bottleneck_differs_from_overall_bottleneck_when_no_feedback_material_later():
+def test_confirmed_bottleneck_differs_from_overall_bottleneck_when_no_feedback_material_later(monkeypatch):
     """真实缺陷复现（姚祖怡 07-29 二次举证，队列 #147，S02Y.0135 真实案例同构）：
 
     子件 A 有确定承诺、晚出货 14 天（>3 天 →🔴真延期，driving confirmed_gap_days）；
@@ -120,6 +122,7 @@ def test_confirmed_bottleneck_differs_from_overall_bottleneck_when_no_feedback_m
     两套指标（确定 vs 全量）各自计算正确，但指向**不同**的瓶颈子件与日期——
     这正是卡片头部"确定齐料晚 N 天"徽标与"出货→齐料"日期/瓶颈对不上的根因。
     """
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
     so = _so(ship="2026-09-01")
     bom = _bom("S02Y.0035", "A", "B")
     row = assess_supply_risk(so, bom, [_srm("A", "2026-09-15")], today=TODAY)
@@ -143,8 +146,9 @@ def test_confirmed_bottleneck_none_when_no_confirmed_materials():
     assert row.confirmed_kit_date is None
 
 
-def test_row_to_dict_serializes_confirmed_kit_and_bottleneck():
+def test_row_to_dict_serializes_confirmed_kit_and_bottleneck(monkeypatch):
     """row_to_dict 的 ckit/cbn 与 confirmed_kit_date/confirmed_bottleneck 一致，供前端卡片头部改用（队列 #147）。"""
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
     so = _so(ship="2026-09-01")
     bom = _bom("S02Y.0035", "A", "B")
     row = assess_supply_risk(so, bom, [_srm("A", "2026-09-15")], today=TODAY)
@@ -234,9 +238,10 @@ def test_gap_days_arithmetic_matches_calendar_day_span():
     assert row_b.gap_days == (date(2026, 8, 20) - date(2026, 7, 10)).days
 
 
-def test_build_dashboard_sorts_by_risk_tier_then_gap_days_desc():
+def test_build_dashboard_sorts_by_risk_tier_then_gap_days_desc(monkeypatch):
     """排序：先按风险等级、同等级内缺口天数降序（队列#147续，2026-07-29 Paul 拍板改口径后：
     无答复子件按90天保守估算同样归入🔴，与真实确认延期同一色阶，按缺口大小排序区分）。"""
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
     green = _so(item="GREEN", ship="2026-09-01")
     unanswered = _so(item="UNANSWERED", ship="2026-09-01")        # 无答复→保守估算，gap=90
     confirmed_late = _so(item="CONFIRMEDLATE", ship="2026-06-10")  # 确定承诺延期，gap=52（更小）
@@ -328,8 +333,9 @@ def test_row_to_dict_c1_c2_defaults_when_absent():
     assert d["kq"] is None and d["kbn"] is None and d["ksf"] is None
 
 
-def test_row_to_dict_no_feedback_detail_passthrough():
+def test_row_to_dict_no_feedback_detail_passthrough(monkeypatch):
     """判据说明 V2 答复2：row_to_dict 透传无答复子件明细（料号+数量+估算到货日），供前端展示。"""
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
     so = _so(item="P3", ship="2026-09-01", qty=500)
     bom = _bom("P3", "R09")
     row = assess_supply_risk(so, bom, [], today=TODAY)

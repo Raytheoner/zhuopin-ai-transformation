@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 # ── 数据源开关（design D2）：mock→真实切换点，默认 mock，保留 mock 回退 ─────────
 def data_source_mode() -> str:
@@ -263,21 +263,39 @@ class ForecastParams:
     rule1_start_day:       int = RULE1_START_DAY
 
 
-def active_param_version() -> str:
-    """当前生效的参数版本串（写入审计）。
+def kit_date_rule2_enabled() -> bool:
+    return os.environ.get('SC8_KIT_DATE_RULE2_LITERAL', 'off').strip().lower() in (
+        'on', '1', 'true', 'yes')
 
-    🔴 规则 1 开关是**会改变数值结论**的启发式分支，故它开着时版本串必须自带标记——
-    否则同一个 `sc8-params-v1` 会对应两套不同的齐料日算法，审计记录再也无法还原
-    「当时是按哪一支算的」（IATF 可追溯性）。**刻意做成自动派生而不是「翻开关时记得
-    手动 bump 常量」**：后者是一个必然会被忘记的人工步骤。
-    """
-    return PARAM_VERSION + ("+rule1" if kit_date_rule1_enabled() else "")
+def active_param_version(*, rule1: bool | None = None,
+                         rule2: bool | None = None,
+                         base_version: str | None = None) -> str:
+    r1 = kit_date_rule1_enabled() if rule1 is None else rule1
+    r2 = kit_date_rule2_enabled() if rule2 is None else rule2
+    base = PARAM_VERSION if base_version is None else base_version
+    while base.endswith(('+rule1', '+rule2')):
+        base = base.rsplit('+', 1)[0]
+    return base + ('+rule1' if r1 else '') + ('+rule2' if r2 else '')
 
+@dataclass(frozen=True)
+class ForecastContext:
+    params: ForecastParams
+    rule1: bool
+    rule2: bool
 
-def default_params() -> ForecastParams:
+def forecast_context(params: ForecastParams | None = None) -> ForecastContext:
+    r1, r2 = kit_date_rule1_enabled(), kit_date_rule2_enabled()
+    version = active_param_version(rule1=r1, rule2=r2,
+                                   base_version=None if params is None
+                                   else params.param_version)
+    p = (default_params(param_version=version) if params is None
+         else replace(params, param_version=version))
+    return ForecastContext(p, r1, r2)
+
+def default_params(*, param_version: str | None = None) -> ForecastParams:
     """取当前模块常量构造参数快照（测试可传入覆盖版做参数化验证）。"""
     return ForecastParams(
-        param_version=active_param_version(),
+        param_version=(param_version if param_version is not None else active_param_version()),
         no_feedback_lead_days=NO_FEEDBACK_LEAD_DAYS,
         outsource_extra_days=OUTSOURCE_EXTRA_DAYS,
         logistics_days=LOGISTICS_DAYS,

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from datetime import date
+import pytest
 
 from zhuopin_platform.shared_tools.models import BomRow, SrmDeliveryOrder
 
@@ -15,6 +16,14 @@ from sc8.baoguan_service import Snapshot, SnapshotStore, compute_snapshot
 from sc8.models import SalesOrder
 
 TODAY = date(2026, 6, 24)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_auxiliary_sources(monkeypatch):
+    """Keep auxiliary loaders offline; individual wiring tests override these stubs."""
+    monkeypatch.setattr(bs, "_prefetch_line_status", lambda *args, **kw: {})
+    monkeypatch.setattr(bs, "load_purchase_orders_by_material", lambda *args, **kw: {})
+    monkeypatch.setattr(bs, "load_purchase_supply_by_material", lambda *args, **kw: {})
 
 
 def _orders():
@@ -81,6 +90,7 @@ def test_compute_snapshot_param_version_tracks_kit_date_rule1_toggle(monkeypatch
                             material_id="C2", qty_committed=0,
                             committed_date="2026-08-01", status="confirmed")]
 
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
     monkeypatch.setenv("SC8_KIT_DATE_RULE1", "off")
     _patch_sources(monkeypatch, orders=_orders(), bom=bom, srm=srm)
     snap_off = compute_snapshot(today=TODAY, status="2")
@@ -356,3 +366,38 @@ def test_line_status_is_fetched_once_and_shared_by_both_po_loaders(monkeypatch):
     compute_snapshot(today=TODAY, status="2")
     assert calls["prefetch"] == 1                 # 只取一次
     assert seen == [sentinel, sentinel]           # 两个 loader 拿到的是同一份
+
+
+def test_snapshot_context_captured_once_even_if_loader_changes_environment(monkeypatch):
+    monkeypatch.setenv('SC8_KIT_DATE_RULE1','on')
+    monkeypatch.setenv('SC8_KIT_DATE_RULE2_LITERAL','on')
+    monkeypatch.setenv('SC8_NET_INVENTORY','off')
+    monkeypatch.setenv('SC8_PO_TRANSIT','off')
+    order = SalesOrder(so_id='SYN-FO',customer_id='',customer_name='合成客户',
+        item_code='SYN-P',qty=10,required_date='2026-12-01',doc_type='预测订单')
+    material_bom = _bom('SYN-P','NF')
+    calls = []
+    original = config.active_param_version
+    def observed_version(**kw):
+        calls.append(kw)
+        return original(**kw)
+    monkeypatch.setattr(config,'active_param_version',observed_version)
+    def orders_loader(**kw):
+        monkeypatch.setenv('SC8_KIT_DATE_RULE2_LITERAL','off')
+        return [order]
+    monkeypatch.setattr(bs,'load_real_orders',orders_loader)
+    monkeypatch.setattr(bs,'load_real_bom',lambda *args,**kw: material_bom)
+    monkeypatch.setattr(bs,'load_srm_deliveries',lambda *args,**kw: [])
+    monkeypatch.setattr(bs,'load_material_commitments',lambda *args,**kw: {})
+    class Sink:
+        def __init__(self): self.events=[]
+        def record(self,event): self.events.append(event)
+    sink = Sink()
+    snap = bs.compute_snapshot(today=date(2026,9,2),audit=sink)
+    event = next(e for e in sink.events if e.action == 'baoguan_snapshot')
+    assert len(calls) == 1
+    assert snap.rows[0]['kit'] == '2026-12-01'
+    assert snap.rows[0]['risk'] == 'gap'
+    assert snap.param_version == config.PARAM_VERSION + '+rule1+rule2'
+    assert event.decision['param_version'] == snap.param_version
+    assert event.decision['kit_date_rules'] == {'rule1':True,'rule2':True}

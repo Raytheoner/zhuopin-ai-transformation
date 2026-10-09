@@ -71,34 +71,16 @@ def ship_within_horizon(today: date, ship_date: date,
 
 
 def no_feedback_start_date(ship_date: date, today: date,
-                           params: ForecastParams | None = None) -> date:
-    """无答交启发式的**起算点**（姚祖怡 2026-08-18 书面签认的规则 1／规则 2）。
-
-    返回值随后 `+ no_feedback_lead_days`（90）得到该子件的估算到货日。
-
-      · **规则 1**（出货日**不在**三个月内）→ 出货日往前推 `rule1_months_back` 个自然月，
-        取那个自然月的第 `rule1_start_day` 日（＝20 号）。他 08-18 原话确认的例子：
-        「出货日是 12 月 5 日，往前推 3 个月是 9 月，起算点就是 **9 月 20 日**」。
-      · **规则 2**（出货日**在**三个月内，含已过期）→ **原样保留现行口径** `max(出货日, 今天)`。
-
-    🔴 **规则 2 这一支本次刻意不动，尽管实测它只是「部分覆盖」**：出货日在未来但仍在三个
-    月内的那 24 行，现行是「出货日+90」而规则 2 逐字是「此时此刻+90」，现行更晚、偏保守。
-    §四 #111 拍板 (a) 的标的是**规则 1**；把规则 2 顺手一起改，就是在一次上线里塞进两个
-    自变量——那正是 #344 拒绝顺手改规则 1 时给出的理由，不能反过来自己犯。**已登记为独立
-    待办**（本变更包 design D2 ／ 队列 §一 #401 收工回写）。
-
-    ⚠️ **规则 1 的起算点允许早于今天，且刻意不向今天钳制**：出货日刚过三个月边界时，
-    「前推 3 个月的 20 日」可能落在今天之前（例：今天 08-25、出货 11-30 ⇒ 起算 08-20）。
-    钳到今天会让规则 1 在边界附近**静默退化成规则 2**，等于这条规则在最该生效的那批行上
-    不生效；而不钳制时 `起算+90 ≈ 出货日`，估算到货日仍在未来，不会产生「到货日在过去」
-    这种荒谬结论。
-    """
+                           params: ForecastParams | None = None, *,
+                           rule1_enabled: bool = True,
+                           rule2_enabled: bool = False) -> date:
     p = params or config.default_params()
     if ship_within_horizon(today, ship_date, p):
+        return today if rule2_enabled else max(ship_date, today)
+    if not rule1_enabled:
         return max(ship_date, today)
     anchor = _shift_months(ship_date.replace(day=1), -p.rule1_months_back)
     return date(anchor.year, anchor.month, p.rule1_start_day)
-
 
 def _cumulative_confirmed_batches(
     commitments: list[tuple[date, float]], target_qty: float,

@@ -343,7 +343,7 @@ setInterval(loadSnap, 120000);   // 前端每 2 分钟回读缓存（不打全�
         + '<option value="200">200 行/页</option></select>\n'
         + '<button class="btn" id="xlsx" type="button">导出 Excel</button>\n'
         + '<button class="btn" id="legendBtn" type="button">📖 图例</button></div>\n'
-        + '<div class="legend" id="legendPanel"><p>图例来源：当前服务配置；结果规则版本以快照来源栏为准。专业签认仍待确认。</p>' + render_legend(config.default_params()) + '</div>\n'
+        + '<div class="legend" id="legendPanel"><p>图例来源：当前服务配置；结果规则版本以快照来源栏为准。专业签认仍待确认。</p>' + render_legend(config.default_params(), include_version=False) + '</div>\n'
         + '<div class="cnt" id="cnt"></div>\n<div class="pager" id="pagerTop"></div>\n'
         + '<div class="cards" id="cards"></div>\n<div class="pager" id="pagerBottom"></div>\n'
         + '<div class="foot">分级只看<b>有确定承诺</b>子件的齐料缺口：🔴 真延期 · 🟠 待催 · 🟡 偏紧 · 🟢 按期。'

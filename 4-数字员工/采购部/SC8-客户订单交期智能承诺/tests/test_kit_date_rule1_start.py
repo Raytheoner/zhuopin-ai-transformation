@@ -32,11 +32,13 @@ P = config.default_params()
 @pytest.fixture
 def rule1_on(monkeypatch):
     monkeypatch.setenv("SC8_KIT_DATE_RULE1", "on")
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
 
 
 @pytest.fixture
 def rule1_off(monkeypatch):
     monkeypatch.setenv("SC8_KIT_DATE_RULE1", "off")
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
 
 
 # ── 1. 起算点本身（规则 1 分支）────────────────────────────────────────────────
@@ -247,6 +249,7 @@ def test_param_version_carries_the_branch(monkeypatch):
 
     否则同一个 `sc8-params-v1` 会对应两套齐料日算法，事后无法还原当时按哪一支算的。
     """
+    monkeypatch.setenv("SC8_KIT_DATE_RULE2_LITERAL", "off")
     monkeypatch.setenv("SC8_KIT_DATE_RULE1", "off")
     assert config.default_params().param_version == config.PARAM_VERSION
     monkeypatch.setenv("SC8_KIT_DATE_RULE1", "on")

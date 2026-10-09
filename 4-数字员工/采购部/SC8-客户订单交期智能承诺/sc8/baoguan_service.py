@@ -97,6 +97,7 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
     real 任一源不可达 → 由 sources 层 fail-loud 抛出（本函数不吞异常，交调用方保留旧缓存）。
     """
     today = today or date.today()
+    ctx = config.forecast_context()
     fo_base = os.environ.get("FO_API_BASE")
     ops_hook = os.environ.get("SC8_FO_OPS_WEBHOOK_URL") or os.environ.get("WECOM_WEBHOOK_URL")
 
@@ -163,7 +164,7 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
             ))
     # ④ 保供齐套 → 四色看板（判级语义不变；inventory/purchase_orders/material_commitments
     #    =None（默认）时零漂移）
-    rows = build_dashboard(orders, bom, srm, today=today, inventory=inventory,
+    rows = build_dashboard(orders, bom, srm, today=today, params=ctx.params, context=ctx, inventory=inventory,
                            purchase_orders=purchase_orders,
                            material_commitments=material_commitments)
 
@@ -209,7 +210,7 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
     snap = Snapshot(
         generated_at=_now_iso(), today=today.isoformat(),
         rows=[row_to_dict(r) for r in rows], counts=counts, status=status,
-        param_version=config.active_param_version(), components=len(components), srm_hit=len(srm),
+        param_version=ctx.params.param_version, components=len(components), srm_hit=len(srm),
         materials=board.rows if board is not None else [],
         materials_meta=board.meta() if board is not None else {},
     )
@@ -219,7 +220,11 @@ def compute_snapshot(*, today: date | None = None, status: str | None = "2",
             scenario="SC8", action="baoguan_snapshot", evaluator="system",
             automation_level="L1",
             decision={"rows": len(rows), **counts, "components": len(components),
-                      "srm_hit": len(srm), "materials": len(snap.materials)},
+                      "srm_hit": len(srm), "materials": len(snap.materials),
+                      'param_version': ctx.params.param_version,
+                      'parameters': asdict(ctx.params),
+                      'kit_date_rules': {'rule1':ctx.rule1,'rule2':ctx.rule2},
+                      },
             data_sources={"fo": "real", "bom": "real", "srm_committed": "real"},
         ))
     return snap
