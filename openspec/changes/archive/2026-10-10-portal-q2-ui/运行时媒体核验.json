@@ -1,0 +1,213 @@
+{
+  "time": "2026-10-09T23:16:50.529Z",
+  "browser": "154.0.8037.98",
+  "task": "portal-q2-ui/3.2 reduced-motion only",
+  "sourceFilesUnchanged": true,
+  "productionRequests": 0,
+  "externalRequestsBlocked": [],
+  "samples": [
+    {
+      "name": "mixed",
+      "file": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\4-数字员工\\质量部\\Q2-8D报告AI判定\\reports\\q2-ui-preview\\mixed.html",
+      "url": "file:///C:/Users/Paul%20Shao/.codex/worktrees/portal-q2-ui-1008/zhuopin-ai/4-%E6%95%B0%E5%AD%97%E5%91%98%E5%B7%A5/%E8%B4%A8%E9%87%8F%E9%83%A8/Q2-8D%E6%8A%A5%E5%91%8AAI%E5%88%A4%E5%AE%9A/reports/q2-ui-preview/mixed.html",
+      "sha256": "2b57ec761395678e92876ad28d42cd786767e5fa836db2d639283c66d36e8fa5",
+      "results": [
+        {
+          "preference": "no-preference",
+          "mediaMatches": false,
+          "values": [
+            {
+              "pseudo": "element",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            },
+            {
+              "pseudo": "::before",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            },
+            {
+              "pseudo": "::after",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            }
+          ],
+          "activeAnimations": 3
+        },
+        {
+          "preference": "reduce",
+          "mediaMatches": true,
+          "values": [
+            {
+              "pseudo": "element",
+              "animationName": "none",
+              "animationDuration": "0s",
+              "transitionProperty": "none",
+              "transitionDuration": "0s",
+              "scrollBehavior": "auto"
+            },
+            {
+              "pseudo": "::before",
+              "animationName": "none",
+              "animationDuration": "0s",
+              "transitionProperty": "none",
+              "transitionDuration": "0s",
+              "scrollBehavior": "auto"
+            },
+            {
+              "pseudo": "::after",
+              "animationName": "none",
+              "animationDuration": "0s",
+              "transitionProperty": "none",
+              "transitionDuration": "0s",
+              "scrollBehavior": "auto"
+            }
+          ],
+          "activeAnimations": 0
+        },
+        {
+          "preference": "no-preference",
+          "mediaMatches": false,
+          "values": [
+            {
+              "pseudo": "element",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            },
+            {
+              "pseudo": "::before",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            },
+            {
+              "pseudo": "::after",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            }
+          ],
+          "activeAnimations": 3
+        }
+      ]
+    },
+    {
+      "name": "empty",
+      "file": "C:\\Users\\Paul Shao\\.codex\\worktrees\\portal-q2-ui-1008\\zhuopin-ai\\4-数字员工\\质量部\\Q2-8D报告AI判定\\reports\\q2-ui-preview\\empty.html",
+      "url": "file:///C:/Users/Paul%20Shao/.codex/worktrees/portal-q2-ui-1008/zhuopin-ai/4-%E6%95%B0%E5%AD%97%E5%91%98%E5%B7%A5/%E8%B4%A8%E9%87%8F%E9%83%A8/Q2-8D%E6%8A%A5%E5%91%8AAI%E5%88%A4%E5%AE%9A/reports/q2-ui-preview/empty.html",
+      "sha256": "412eef0b8819e0fc4270e675580301ab2dd8ad2e46377c4356751f1512f2a0f1",
+      "results": [
+        {
+          "preference": "no-preference",
+          "mediaMatches": false,
+          "values": [
+            {
+              "pseudo": "element",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            },
+            {
+              "pseudo": "::before",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            },
+            {
+              "pseudo": "::after",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            }
+          ],
+          "activeAnimations": 3
+        },
+        {
+          "preference": "reduce",
+          "mediaMatches": true,
+          "values": [
+            {
+              "pseudo": "element",
+              "animationName": "none",
+              "animationDuration": "0s",
+              "transitionProperty": "none",
+              "transitionDuration": "0s",
+              "scrollBehavior": "auto"
+            },
+            {
+              "pseudo": "::before",
+              "animationName": "none",
+              "animationDuration": "0s",
+              "transitionProperty": "none",
+              "transitionDuration": "0s",
+              "scrollBehavior": "auto"
+            },
+            {
+              "pseudo": "::after",
+              "animationName": "none",
+              "animationDuration": "0s",
+              "transitionProperty": "none",
+              "transitionDuration": "0s",
+              "scrollBehavior": "auto"
+            }
+          ],
+          "activeAnimations": 0
+        },
+        {
+          "preference": "no-preference",
+          "mediaMatches": false,
+          "values": [
+            {
+              "pseudo": "element",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            },
+            {
+              "pseudo": "::before",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            },
+            {
+              "pseudo": "::after",
+              "animationName": "q2MotionProbe",
+              "animationDuration": "2s",
+              "transitionProperty": "opacity",
+              "transitionDuration": "2s",
+              "scrollBehavior": "smooth"
+            }
+          ],
+          "activeAnimations": 3
+        }
+      ]
+    }
+  ],
+  "complete": true
+}
