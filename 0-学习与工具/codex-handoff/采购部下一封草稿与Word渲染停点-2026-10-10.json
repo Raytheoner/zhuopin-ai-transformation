@@ -1,0 +1,59 @@
+{
+  "recorded_at": "2026-10-10T20:41:01+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "next_number_checkpoint": "采购部#26；官方闸最近核验exit0/采购#25已回灌，未发不占号",
+  "drafts": {
+    "md": {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\procurement-intents-1010\\采购部-姚祖怡-跟进-2026-10-10-微会时段与页面反馈承接.md",
+      "sha256": "09B1EDB5BBFD56AD5482CE0610DE63D7D002EE2B62D2E78E6C9B2FE560CC8712"
+    },
+    "docx": {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\procurement-intents-1010\\采购部-姚祖怡-跟进-2026-10-10-微会时段与页面反馈承接.docx",
+      "sha256": "58EB72DDFEF16187BA245B697CBFD5955626A726D0F0728349441F8A127CEF77"
+    }
+  },
+  "content_review": "Luna质量review核ED660原答/名录；根按意见用明确登记跟进状态，补采购域协作说明节录/既有知识资产",
+  "pronoun_check": {
+    "command": "工具-称谓核对.py <current MD> <current DOCX>",
+    "actualexit": 0,
+    "findings": 0,
+    "files": 2
+  },
+  "authoring": {
+    "tool": "0-学习与工具/md转Word工具/md2word.py",
+    "actualexit": 0,
+    "python": "bundled artifacts Python"
+  },
+  "scope": "仅时间确认及反馈承接；10-12 13:30–14:00上海候选未预约；没有改专业判据/代签/宣布修复",
+  "visual_review_passed": false,
+  "followup_readme_registered": false,
+  "send_approved": false,
+  "sent": false,
+  "renderer_attempt": {
+    "proof": "reports/procurement-intents-1010/letter26-render-ab074796-7f93-4642-a410-9d13e0ac7a09",
+    "actualexit": 1,
+    "reason": "LibreOffice soffice.exe was not found on PATH"
+  },
+  "capability_review": {
+    "reviewer": "Luna procurement_readiness只读；根消费",
+    "native_bundled_packages": [
+      "git",
+      "jxrlib",
+      "libheif",
+      "poppler",
+      "powershell"
+    ],
+    "bundled_windows_libreoffice": false,
+    "renderer_windows_fallback": "_resolve_soffice lines62–80 uses installed native executable on Windows; bundled only macOS/Linux",
+    "bundled_poppler": "native/poppler/Library/bin；wrapper/exe存在，需该次进程PATH显式绑定",
+    "installed_desktop_lo_found": "C:/Program Files/LibreOffice/program/soffice.exe；只核存在，未运行",
+    "skill_conflict": "documents §474 requires bundled LO and prohibits desktop LO; current Windows bundle lacks it"
+  },
+  "specific_exception_question_pending": true,
+  "remaining": [
+    "本人仅本次隔离已装LO渲染例外或暂缓",
+    "如获批，用root新UUID专用TMP/HOME/LO profile、bundled Poppler及canonical renderer，检查所有PNG页",
+    "视觉核验后正式MD/DOCX登记README待你审",
+    "终稿/对外发送针对本封另审"
+  ]
+}
