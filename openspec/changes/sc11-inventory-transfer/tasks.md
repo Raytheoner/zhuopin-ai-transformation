@@ -44,8 +44,8 @@
 
 依赖：完整intent及design A2/B2/§10已批准；合成账本/情景顺序不能代签真实调拨口径/距离。2.2–2.6及第3–5组前置保留，产品实现须具体计划另审。
 
-- [ ] 3M.1 具体实施计划、产品/测试白名单与隔离Native执行副作用供审并获批
-  - 2026-10-10具体计划`docs/superpowers/plans/2026-10-10-sc11-shared-stock-versioned-confirmation.md`已根审静态过，独立审中，SHA54775F…7EE9B；未获实施/测试批准。
+- [x] 3M.1 具体计划07CD85…B6678、七路径/三测试/新Native与UUID副作用已于2026-10-10获本人明确批准；原答/实际候选见《SC11O4实施与O3诊断批准消费-2026-10-10.md/.json》
+  - 历史初稿时点（其后已复审并获本人明确批准，不作为当前停点）：2026-10-10具体计划`docs/superpowers/plans/2026-10-10-sc11-shared-stock-versioned-confirmation.md`已根审静态过，独立审中，SHA54775F…7EE9B；未获实施/测试批准。
 - [ ] 3M.2 同一snapshot/sourcewarehouse/material可用账本，整单原子预留；6库存/两4需求→拟稿4/unmet4/余2
 - [ ] 3M.3 demand scenario_order与候选scenario_candidate_order分别显式且入hash/audit；后者只破完整评分tuple同分；缺评分或无tie选择输出unranked
 - [ ] 3M.4 不可变DraftRevision与独立ApprovalRecord；canonical完整business hash覆盖输入/行/unmet/版本/假设

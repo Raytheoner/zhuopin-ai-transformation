@@ -1,0 +1,29 @@
+{
+  "recorded_at": "2026-10-10T12:55:28+08:00",
+  "status": "根审及独立Luna复审通过；具体执行范围供本人审；未授权实现",
+  "plan": "docs/superpowers/plans/2026-10-10-sc11-shared-stock-versioned-confirmation.md",
+  "sha256": "07CD85B01B8FB0A50C642613BCAFE36C023C96AFD9F5FE69ABDF66B6992B6678",
+  "approved_design_sha256": "EF3FFE667DB3A8959794E921245B42774F920FE764215F211F6D8EA43DF685C5",
+  "paths": 7,
+  "test_files": [
+    "tests/test_shared_reservation.py",
+    "tests/test_versioned_audit_gate.py",
+    "tests/test_pmc_gate.py"
+  ],
+  "doc_validation": {
+    "exit_code": 0,
+    "lines": 1237,
+    "python_blocks": 7,
+    "issues": []
+  },
+  "review": "A2共享守恒/整单预留；B2真实JSONL current revision＋最新确认拒绝事件；旧确认/手造ApprovalRecord/后续拒绝不放行；同authority/sink；模型真实校验；单进程串行mock、重启无authority关闭。精确测试12+12+6仅预期，尚未跑。",
+  "thread_id": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "main_head_at_record": "c4b3b8c2691db2ee0c0b1e2695c40de8d267a13a",
+  "execution": false,
+  "pre_revision_plan_sha256": "54775FA4A8DD32305FD75D7B15A96CBB2DBE5E463C44F74313EBD7F2AD47EE9B",
+  "revision_review": "独立审必修已落实：SC11 focused30/身份中和hash因果/真实sink失败字节不变；O4持久冲突计数与两run hash精确匹配。根审静态AST退出0，独立复审中。",
+  "pre_close_plan_sha256": "E178C9BA26D6958B65A7E634487B3C854806A8AA375BE0B631D589DAE345D80B",
+  "reviewer": "/root/quality_readiness (gpt-6-luna, read-only)",
+  "review_resolution": "SC11计数30及自审旧句已统一，随机ID干扰已中和并核源字段，三决策真实sink失败/日志字节不变；O4逐事件issues计数与两run完整hash匹配，必修闭合。SC11最后仅文案单处修订由根静态复核，不改代码块。",
+  "review_limitations": "仅计划/API与静态AST审查，未运行产品测试；预测效果/专业签认仍未评估。O4仅固定schema识别字段构成封套，未知扩展字段不作为已追溯业务输入；真实源/扩展schema另审。"
+}

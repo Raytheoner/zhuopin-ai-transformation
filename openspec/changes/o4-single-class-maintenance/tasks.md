@@ -8,8 +8,8 @@
 - [x] 1.2 形成proposal/design/delta spec与分阶段tasks供审
 - [x] 1.3 本包strict结构核验、独立design review与共享锁§二登记（2026-10-10；供审记录见O3核验与O4设计审阅绑定，登记本批）
 - [x] 1.4 Shao Peishen批准design D1–D7（2026-10-10；冻结SHA04F3A5…544D6及原答ID见O4设计D1-D7批准消费-2026-10-10.md/.json）
-- [ ] 1.5 编写并审具体Native隔离实施计划、精确文件/测试及报告副作用白名单
-  - 2026-10-10具体计划`docs/superpowers/plans/2026-10-10-o4-stage0-evidence.md`已根审静态过，独立审中，SHA69D668…C9C8E；八路径/单测试/新Native与UUID执行范围待批。
+- [x] 1.5 具体计划316175…D749F、八新路径/test_stage0/新Native及UUID副作用已于2026-10-10获本人明确批准；精确原答/SHA/实际候选见《SC11O4实施与O3诊断批准消费-2026-10-10.md/.json》
+  - 历史初稿时点（其后已复审并获本人明确批准，不作为当前停点）：2026-10-10具体计划`docs/superpowers/plans/2026-10-10-o4-stage0-evidence.md`已根审静态过，独立审中，SHA69D668…C9C8E；八路径/单测试/新Native与UUID执行范围待批。
 
 ## 2. Stage0 合成结构实现（依赖1.3–1.5）
 
