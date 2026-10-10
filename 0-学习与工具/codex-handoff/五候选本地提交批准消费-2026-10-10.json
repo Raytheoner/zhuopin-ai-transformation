@@ -1,0 +1,97 @@
+{
+  "schema": "candidate-seal-approval/v1",
+  "decision": "approve",
+  "approved_by": "Shao Peishen",
+  "local_commit_exception": "native_detached_candidate_commit_preservation",
+  "plan_sha256": "F9489E7A1729476F4068E80CA205F3AFE6A981C26F92D1278E3BED15C5953819",
+  "script_sha256": "6CAB74E0FA2E336C531E25FB62432D15C76A5998805D6818830EB6224D1A1277",
+  "manifest_sha256": "A4996E4758B4A36326D95D87524EAC63F02135AF57A126135CF2CBA5C51D12DB",
+  "base_commit": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+  "human_approval_evidence": "0-学习与工具/codex-handoff/六项人批消费-2026-10-10.json#entries/4",
+  "ee5_root_operation_active": false,
+  "lane_approvals": {
+    "SC2": {
+      "lane": "SC2",
+      "ref": "codex/candidate-sc2-1010",
+      "paths": [
+        "4-数字员工/采购部/SC2-采购周报自动生成/sc2/config.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/sc2/detail.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/sc2/metrics.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/sc2/models.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/sc2/report.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/sc2/sources.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_detail.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_metrics.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_report.py",
+        "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_sources.py",
+        "5-平台底座/zhuopin_platform/tests/test_erp_biztype316.py",
+        "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py",
+        "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/models.py"
+      ]
+    },
+    "SC4": {
+      "lane": "SC4",
+      "ref": "codex/candidate-sc4-1010",
+      "paths": [
+        "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/agent.py",
+        "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/clause_extract.py",
+        "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/models.py",
+        "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/text_source.py",
+        "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/sc4_evidence_fixtures.py",
+        "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_agent_audit.py",
+        "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_clause_extract.py",
+        "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_text_source.py"
+      ]
+    },
+    "SC10": {
+      "lane": "SC10",
+      "ref": "codex/candidate-sc10-1010",
+      "paths": [
+        "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/agent.py",
+        "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/evidence.py",
+        "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_agent_audit.py",
+        "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_evidence.py"
+      ],
+      "freeze_scope_exception": "completed_candidate_preservation_only",
+      "ee5_status_binding": {
+        "status": "not_started",
+        "record_path": "C:/Dev/zhuopin-ai/0-学习与工具/codex-handoff/EE5根作业状态-2026-10-10.json",
+        "record_sha256": "DF54F928EFDC499BA49EB25C339D5324D93B1494795E554A0CDA5F75D5C747B7"
+      }
+    },
+    "SC11": {
+      "lane": "SC11",
+      "ref": "codex/candidate-sc11-1010",
+      "paths": [
+        "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/agent.py",
+        "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/gate.py",
+        "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/models.py",
+        "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/routing.py",
+        "4-数字员工/采购部/SC11-库存智能调拨/tests/test_pmc_gate.py",
+        "4-数字员工/采购部/SC11-库存智能调拨/tests/test_shared_reservation.py",
+        "4-数字员工/采购部/SC11-库存智能调拨/tests/test_versioned_audit_gate.py"
+      ],
+      "freeze_scope_exception": "completed_candidate_preservation_only",
+      "ee5_status_binding": {
+        "status": "not_started",
+        "record_path": "C:/Dev/zhuopin-ai/0-学习与工具/codex-handoff/EE5根作业状态-2026-10-10.json",
+        "record_sha256": "DF54F928EFDC499BA49EB25C339D5324D93B1494795E554A0CDA5F75D5C747B7"
+      }
+    },
+    "O4": {
+      "lane": "O4",
+      "ref": "codex/candidate-o4-1010",
+      "paths": [
+        "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/__init__.py",
+        "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/agent.py",
+        "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/canonical.py",
+        "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/checks.py",
+        "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/models.py",
+        "4-数字员工/运营部/O4-设备预测性维护/tests/conftest.py",
+        "4-数字员工/运营部/O4-设备预测性维护/tests/o4_cases.py",
+        "4-数字员工/运营部/O4-设备预测性维护/tests/test_stage0.py"
+      ]
+    }
+  }
+}
