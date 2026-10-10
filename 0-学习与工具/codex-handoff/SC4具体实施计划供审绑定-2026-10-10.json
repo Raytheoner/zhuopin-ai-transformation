@@ -1,0 +1,36 @@
+{
+  "recorded_at": "2026-10-10T12:20:29+08:00",
+  "record_time_kind": "本次整理时间，不代替批准或测试发生时间",
+  "thread_id": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "status": "具体计划供审；未批准实现或产品测试",
+  "plan": "docs/superpowers/plans/2026-10-10-sc4-source-evidence.md",
+  "plan_sha256": "8EB31234EEA4B7F70D929E94AB326F9F5FBCCE8C35C8B983EAC6ECBADC565228",
+  "approved_design_sha256": "09B9083CD42F979D7BD912F0BC2ECBCCDA22DF15D7DAC2B55E26B6E29B18AA02",
+  "source_plan_sha256": "333B2CC80E4EF0EBEF14027478DD2D5BDA6F0BF4C46AD88723B9FDAD66BD1B1F",
+  "start_ref": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+  "future_native_worktree_name": "sc4-source-evidence-1010",
+  "future_product_paths": [
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/models.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/text_source.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/clause_extract.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/agent.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/sc4_evidence_fixtures.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_text_source.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_clause_extract.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_agent_audit.py"
+  ],
+  "future_test_files": [
+    "tests/test_text_source.py",
+    "tests/test_clause_extract.py",
+    "tests/test_agent_audit.py"
+  ],
+  "review": "Luna作者及根审闭合：实际固定共享parser API/snapshot/include_extra_parts=False、无parser注入；SourceReadError/DocxReadError区分；单次注册源读取具名计数测试；u32 raw CRLF位置；M01真实TXT/DOCX与M06两个hash/版本/审计区分；真实JsonlSink强制、chain.ok/total与sink失败；旧入口兼容。无产品实现/测试。",
+  "doc_validation": {
+    "exit_code": 0,
+    "lines": 985,
+    "python_blocks": 8,
+    "issues": []
+  },
+  "side_effects": "获批后app返回的仓库外新Native checkout/Git元数据；只改八路径；主仓ignored新UUID独立basetemp含合成TXT/DOCX/snapshot与JSONL/lock、JUnit/stdio/exit。symlink无权限时真实skip留证，无旧证据删除，无依赖安装。",
+  "not_authorized": "ff/提交整合/push/真实合同/SRM/PDF/OCR/专业判据与签认/生产/外发/晋档/归档"
+}
