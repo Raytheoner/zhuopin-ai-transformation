@@ -1,0 +1,943 @@
+{
+  "recorded_at": "2026-10-10T13:55:25.468902+08:00",
+  "reviewer": "/root (independent of implementation)",
+  "candidate": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc4-source-evidence-1010\\zhuopin-ai",
+  "candidate_head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+  "candidate_branch": "",
+  "sha256": {
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/models.py": "5E19EE9A8C6860DE43761234318F9F8E6CFA5A14761E93E399FD33332E5962B6",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/text_source.py": "FF2F2818AF54FEC06986C0EEEF40BAA7FA54DC0F630525A1F7750272E87670E9",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/clause_extract.py": "110BB03BEAC8F7043CD11DE36307F74F92A98A88E0A1DA3C13FFC0E39D5C7EB2",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/agent.py": "1AF0D6DDB2C0FEB6CFB289B38BC4479705967F2E4D4EE934D053D8588A955A75",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/sc4_evidence_fixtures.py": "71D294E4772C7F9A185F9A54617B9012222446998AA53131547A765DD032B7D4",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_text_source.py": "4DB727DAB2DDAD6C2D6B4F88D7253E1EFAF43B5782C75977EEDF7B6EEB51552C",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_clause_extract.py": "9E7ED1627B52152733797B733D8B72CE6B8BE6F804071D2E11C06869EBD10707",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_agent_audit.py": "8A1A4C7BE1F0AE3FE0EF41FD4845C2921D0EB27ECA30711B4260753BFBF5C7ED"
+  },
+  "dirty_exact_whitelist": [
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/agent.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/clause_extract.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/models.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/text_source.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/sc4_evidence_fixtures.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_agent_audit.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_clause_extract.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_text_source.py"
+  ],
+  "diff_check": "empty",
+  "legacy_function_exact": true,
+  "run": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448",
+  "junit": {
+    "tests": 40,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 1
+  },
+  "skips": [
+    {
+      "classname": "tests.test_text_source",
+      "name": "test_symlink_escape_is_rejected",
+      "time": "0.037",
+      "reason": {
+        "type": "pytest.skip",
+        "message": "当前 Windows 测试进程无创建 symlink 的权限"
+      }
+    }
+  ],
+  "stderr_bytes": 0,
+  "pytest_exit_file_present": false,
+  "pytest_exit_independently_read": false,
+  "audit_files": [
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_m01_txt_and_docx_preserve0\\m01.jsonl",
+      "sha256": "2ded5b9d2ec11d21ef5bc1bee54b2ac072849d6ffa559dd951f98345f223a93a",
+      "chain": {
+        "ok": true,
+        "total": 2
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-M01",
+            "lexicon_id": "mock-v0",
+            "span_count": 4,
+            "covered_types": [
+              "交付",
+              "价格",
+              "质保",
+              "违约责任"
+            ],
+            "unclassified_count": 0,
+            "artifact_id": "SC4-MOCK-M01",
+            "source_version": "r1",
+            "source_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "canonical_text_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "text_view_id": "sc4-utf8-strict-preserve-newlines",
+            "text_view_version": "synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "extracted",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-M01@r1",
+            "source_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "canonical_text_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "text_view": "sc4-utf8-strict-preserve-newlines@synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "b9ef0a8464c65d37869f6fab95c0148716cffebf21b6024ba113a7ab715b2c08",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.051826+00:00",
+          "prev_hash": ""
+        },
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-M01-DOCX",
+            "lexicon_id": "mock-v0",
+            "span_count": 4,
+            "covered_types": [
+              "交付",
+              "价格",
+              "质保",
+              "违约责任"
+            ],
+            "unclassified_count": 0,
+            "artifact_id": "SC4-MOCK-M01-DOCX",
+            "source_version": "r1",
+            "source_sha256": "88b1e24f2cd82874b343b735fc47b2e8bf72cd3093e76536d3af488a538e3345",
+            "canonical_text_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "text_view_id": "zhuopin_platform.shared_tools.doc_parser.extract_text",
+            "text_view_version": "synthetic-profile:sc4-main-document-include-extra-parts-false-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "extracted",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-M01-DOCX@r1",
+            "source_sha256": "88b1e24f2cd82874b343b735fc47b2e8bf72cd3093e76536d3af488a538e3345",
+            "canonical_text_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "text_view": "zhuopin_platform.shared_tools.doc_parser.extract_text@synthetic-profile:sc4-main-document-include-extra-parts-false-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "3aff494de5797a367c8ebbe6fa0ff691928e33ba85e661d808c343f2dd213ec0",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.070523+00:00",
+          "prev_hash": "f6c7ef651524ef0cbdf6c38b2785b4853d41c1c73583fdd1817c8979d01b701f"
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_m02_ambiguous_heading_is_0\\m02.jsonl",
+      "sha256": "18c6ed8ba1c44356881c9e8c0e553a40501a9c4b310dd4012f0fe6c196f79c7f",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-M02",
+            "lexicon_id": "fixture-ambiguous-v1",
+            "span_count": 1,
+            "covered_types": [],
+            "unclassified_count": 1,
+            "artifact_id": "SC4-MOCK-M02",
+            "source_version": "r1",
+            "source_sha256": "4e202604e78edf133ae9b053afee71fa1d33b3437b9e04d84d81206bb133d2b5",
+            "canonical_text_sha256": "4e202604e78edf133ae9b053afee71fa1d33b3437b9e04d84d81206bb133d2b5",
+            "text_view_id": "sc4-utf8-strict-preserve-newlines",
+            "text_view_version": "synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "extracted",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-M02@r1",
+            "source_sha256": "4e202604e78edf133ae9b053afee71fa1d33b3437b9e04d84d81206bb133d2b5",
+            "canonical_text_sha256": "4e202604e78edf133ae9b053afee71fa1d33b3437b9e04d84d81206bb133d2b5",
+            "text_view": "sc4-utf8-strict-preserve-newlines@synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "fixture-ambiguous-v1"
+          },
+          "content_hash": "5a1a7f1f182283ad876d7bd0813a4cf337556277a439395fd906b30d6bd35e06",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.699746+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_m03_unclassified_span_kee0\\m03.jsonl",
+      "sha256": "e880c36ecfe8a751bbe0e5d217e82dea41b567a353edb768e27c1ed58a6351a6",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-M03",
+            "lexicon_id": "mock-v0",
+            "span_count": 1,
+            "covered_types": [],
+            "unclassified_count": 1,
+            "artifact_id": "SC4-MOCK-M03",
+            "source_version": "r1",
+            "source_sha256": "2f1b184929a8bda51a5a5b5fcbbe1e5d678df4976daf1d7f949ec50ebfb0486b",
+            "canonical_text_sha256": "2f1b184929a8bda51a5a5b5fcbbe1e5d678df4976daf1d7f949ec50ebfb0486b",
+            "text_view_id": "sc4-utf8-strict-preserve-newlines",
+            "text_view_version": "synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "extracted",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-M03@r1",
+            "source_sha256": "2f1b184929a8bda51a5a5b5fcbbe1e5d678df4976daf1d7f949ec50ebfb0486b",
+            "canonical_text_sha256": "2f1b184929a8bda51a5a5b5fcbbe1e5d678df4976daf1d7f949ec50ebfb0486b",
+            "text_view": "sc4-utf8-strict-preserve-newlines@synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "2d6c834e3e30b63d42bbc4c6b8e71b6774a42f333286ca5465cadaf753553859",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.773264+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_m04_no_heading_and_empty_0\\empty.jsonl",
+      "sha256": "4fa79fb39c68d231d240e57254c5e4f8fc5b5f6d152575178e6d63378b386bb9",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-EMPTY",
+            "lexicon_id": "mock-v0",
+            "span_count": 0,
+            "covered_types": [],
+            "unclassified_count": 0,
+            "artifact_id": "SC4-MOCK-EMPTY",
+            "source_version": "r1",
+            "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "canonical_text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "text_view_id": "sc4-utf8-strict-preserve-newlines",
+            "text_view_version": "synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "empty_text",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-EMPTY@r1",
+            "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "canonical_text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "text_view": "sc4-utf8-strict-preserve-newlines@synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "bbdc6b9e4867993cd84234ad16bc085b6aa3c475b0ed96ff8a40b92cc3514bbf",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.878213+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_m04_no_heading_and_empty_0\\empty_docx.jsonl",
+      "sha256": "f50a37cba7bb0e3bc2e5a7b1427ce524706141e89d1fbbfc8fda4f1fb5c23be0",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-EMPTY-DOCX",
+            "lexicon_id": "mock-v0",
+            "span_count": 0,
+            "covered_types": [],
+            "unclassified_count": 0,
+            "artifact_id": "SC4-MOCK-EMPTY-DOCX",
+            "source_version": "r1",
+            "source_sha256": "f145ebcb3e9afd3b8148955140cbd637b4285b56626d3d285d0f3447bdcbcf90",
+            "canonical_text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "text_view_id": "zhuopin_platform.shared_tools.doc_parser.extract_text",
+            "text_view_version": "synthetic-profile:sc4-main-document-include-extra-parts-false-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "empty_text",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-EMPTY-DOCX@r1",
+            "source_sha256": "f145ebcb3e9afd3b8148955140cbd637b4285b56626d3d285d0f3447bdcbcf90",
+            "canonical_text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "text_view": "zhuopin_platform.shared_tools.doc_parser.extract_text@synthetic-profile:sc4-main-document-include-extra-parts-false-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "40bd86a45a381f43f1d69692cb264de33211a6b442ff7761a70e027362dc83bc",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.923333+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_m04_no_heading_and_empty_0\\no-heading.jsonl",
+      "sha256": "4948b34bf8d8ef62ef6fa802119acbf7de178ddb2a6bbe77535138a0cd6b15e3",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-M04",
+            "lexicon_id": "mock-v0",
+            "span_count": 0,
+            "covered_types": [],
+            "unclassified_count": 0,
+            "artifact_id": "SC4-MOCK-M04",
+            "source_version": "r1",
+            "source_sha256": "2683c0acd707e454adb06d4c4f21316f62d6df32dd27ed41baa5c4c5bcac71c1",
+            "canonical_text_sha256": "2683c0acd707e454adb06d4c4f21316f62d6df32dd27ed41baa5c4c5bcac71c1",
+            "text_view_id": "sc4-utf8-strict-preserve-newlines",
+            "text_view_version": "synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "no_clause_headings",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-M04@r1",
+            "source_sha256": "2683c0acd707e454adb06d4c4f21316f62d6df32dd27ed41baa5c4c5bcac71c1",
+            "canonical_text_sha256": "2683c0acd707e454adb06d4c4f21316f62d6df32dd27ed41baa5c4c5bcac71c1",
+            "text_view": "sc4-utf8-strict-preserve-newlines@synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "53e99ed062267cff02895018294d65227c036cfd6e0a5a3690349354a377ba96",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.848596+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_m05_audited_result_offset0\\m05.jsonl",
+      "sha256": "b15eefb755cb310ac2dbc26c0390a79a70cb65912a14ed97d3060e92674905e4",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-M05",
+            "lexicon_id": "mock-v0",
+            "span_count": 2,
+            "covered_types": [
+              "交付",
+              "价格"
+            ],
+            "unclassified_count": 0,
+            "artifact_id": "SC4-MOCK-M05",
+            "source_version": "r1",
+            "source_sha256": "a85d58411239e4b7ada544bba3b5743c743b842a725dba82ba684ca285247a14",
+            "canonical_text_sha256": "a85d58411239e4b7ada544bba3b5743c743b842a725dba82ba684ca285247a14",
+            "text_view_id": "sc4-utf8-strict-preserve-newlines",
+            "text_view_version": "synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "extracted",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-M05@r1",
+            "source_sha256": "a85d58411239e4b7ada544bba3b5743c743b842a725dba82ba684ca285247a14",
+            "canonical_text_sha256": "a85d58411239e4b7ada544bba3b5743c743b842a725dba82ba684ca285247a14",
+            "text_view": "sc4-utf8-strict-preserve-newlines@synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "8fd3a3a4ea8f81d50c5141d14836295fc57c5a12ff25bdfb5ca6a5784bda354f",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.992947+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_m06_same_coverage_differe0\\m06.jsonl",
+      "sha256": "22b1a142643897fe93d0370a51ae97894b84543a2acd6ff77916bd29de3a12e9",
+      "chain": {
+        "ok": true,
+        "total": 2
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-M06",
+            "lexicon_id": "mock-v0",
+            "span_count": 4,
+            "covered_types": [
+              "交付",
+              "价格",
+              "质保",
+              "违约责任"
+            ],
+            "unclassified_count": 0,
+            "artifact_id": "SC4-MOCK-M06",
+            "source_version": "r1",
+            "source_sha256": "bf2ed6fd4be0d08233dc0fcc1584fe71c379a80d859b8d932158370784fb9686",
+            "canonical_text_sha256": "bf2ed6fd4be0d08233dc0fcc1584fe71c379a80d859b8d932158370784fb9686",
+            "text_view_id": "sc4-utf8-strict-preserve-newlines",
+            "text_view_version": "synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "extracted",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-M06@r1",
+            "source_sha256": "bf2ed6fd4be0d08233dc0fcc1584fe71c379a80d859b8d932158370784fb9686",
+            "canonical_text_sha256": "bf2ed6fd4be0d08233dc0fcc1584fe71c379a80d859b8d932158370784fb9686",
+            "text_view": "sc4-utf8-strict-preserve-newlines@synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "b1ef2eb24ea39b293a43dfe1309b4d1c4f7fa55be9ffc881cac0158c9b358f6a",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.187038+00:00",
+          "prev_hash": ""
+        },
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-M06",
+            "lexicon_id": "mock-v0",
+            "span_count": 4,
+            "covered_types": [
+              "交付",
+              "价格",
+              "质保",
+              "违约责任"
+            ],
+            "unclassified_count": 0,
+            "artifact_id": "SC4-MOCK-M06",
+            "source_version": "r2",
+            "source_sha256": "38c2f984ca2abcfc4ade0e6e0ac1be9302d30d206e0cbc469fca1a0ac5af8f91",
+            "canonical_text_sha256": "38c2f984ca2abcfc4ade0e6e0ac1be9302d30d206e0cbc469fca1a0ac5af8f91",
+            "text_view_id": "sc4-utf8-strict-preserve-newlines",
+            "text_view_version": "synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "extracted",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-M06@r2",
+            "source_sha256": "38c2f984ca2abcfc4ade0e6e0ac1be9302d30d206e0cbc469fca1a0ac5af8f91",
+            "canonical_text_sha256": "38c2f984ca2abcfc4ade0e6e0ac1be9302d30d206e0cbc469fca1a0ac5af8f91",
+            "text_view": "sc4-utf8-strict-preserve-newlines@synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "4d7809b323cbaf3d4908eb65753dfe056296a213d0e5cb8563a8a5b883d8c81e",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.198685+00:00",
+          "prev_hash": "fa6dcef01ea4a1eeb43b0d2d70ae5c91ca39838d51704289d5498b09b29d5826"
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_malformed_docx_is_audited0\\invalid_docx.jsonl",
+      "sha256": "f84d8364116a5dff10022a04726ec4ccd0510980510506e713e6a380bf338792",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "artifact_id": "SC4-MOCK-INVALID-DOCX",
+            "source_version": "r1",
+            "source_status": "read_failed",
+            "extraction_status": "source_error",
+            "error_code": "docx_read_error",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "source": "synthetic:SC4-MOCK-INVALID-DOCX@r1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "dabbc830fb4b0d3fa462719ee72c826564d51c3269f5a71345b3035d9cc12850",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:36.051189+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_malformed_docx_is_audited1\\missing_main.jsonl",
+      "sha256": "811aee21ffa88e167cd5aaccc89e536983175d387ca2205e9a47e67897130cf3",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "artifact_id": "SC4-MOCK-MISSING-MAIN",
+            "source_version": "r1",
+            "source_status": "read_failed",
+            "extraction_status": "source_error",
+            "error_code": "docx_read_error",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "source": "synthetic:SC4-MOCK-MISSING-MAIN@r1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "13e9d95c3848a45b9c2bbe4a8ca21c57d3e614a2cb993c141e5f18b429c4809c",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:36.150753+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_malformed_docx_is_audited2\\bad_xml.jsonl",
+      "sha256": "ce6d90421ec99680ca9ca74b2771f59d9f6a4d847e9b55905a7ac62be4329f4a",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "artifact_id": "SC4-MOCK-BAD-XML",
+            "source_version": "r1",
+            "source_status": "read_failed",
+            "extraction_status": "source_error",
+            "error_code": "docx_read_error",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "source": "synthetic:SC4-MOCK-BAD-XML@r1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "635c9b7db092d0c2f03bede0b2acaf53da3d2b2a45d1efca87412938c8ad85ac",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:36.255032+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_source_evidence_run_write0\\source-evidence.jsonl",
+      "sha256": "11c3ad907656721562ffd852d517e2a15a70d54d37ca3cd6de041a30ca6177a2",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "SC4-MOCK-M01",
+            "lexicon_id": "mock-v0",
+            "span_count": 4,
+            "covered_types": [
+              "交付",
+              "价格",
+              "质保",
+              "违约责任"
+            ],
+            "unclassified_count": 0,
+            "artifact_id": "SC4-MOCK-M01",
+            "source_version": "r1",
+            "source_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "canonical_text_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "text_view_id": "sc4-utf8-strict-preserve-newlines",
+            "text_view_version": "synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "source_status": "captured",
+            "extraction_status": "extracted",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "synthetic:SC4-MOCK-M01@r1",
+            "source_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "canonical_text_sha256": "39ec4dd8a9e6df5a497b10fee21c44a8ba3be2cd774c27ae4ce6fea5cb138ccb",
+            "text_view": "sc4-utf8-strict-preserve-newlines@synthetic-profile:sc4-utf8-strict-preserve-newlines-v1",
+            "offset_scheme": "sc4-canonical-text-u32-half-open-v1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "b9ef0a8464c65d37869f6fab95c0148716cffebf21b6024ba113a7ab715b2c08",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:34.978247+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_typed_input_errors_are_au0\\invalid_utf8.jsonl",
+      "sha256": "d45fd7d1da8c754b5cd0131583ebfd219a8aac689bfbd7160133b3acc89db5d8",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "artifact_id": "SC4-MOCK-INVALID-UTF8",
+            "source_version": "r1",
+            "source_status": "read_failed",
+            "extraction_status": "source_error",
+            "error_code": "text_invalid_utf8",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "source": "synthetic:SC4-MOCK-INVALID-UTF8@r1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "32cb8ee6a0004b51d311c7eed4a76cb9b1b4e7e345cbba2b09b74d6929035912",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.413819+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_typed_input_errors_are_au1\\pdf.jsonl",
+      "sha256": "e888930d3a1f142bf584db9ed306a4f06e81108ca353ecbc323e83b93863769b",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "artifact_id": "SC4-MOCK-PDF",
+            "source_version": "r1",
+            "source_status": "read_failed",
+            "extraction_status": "source_error",
+            "error_code": "source_type_unsupported",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "source": "synthetic:SC4-MOCK-PDF@r1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "6de27f50aa1aaef7ba3655e6bb131c12a61fa9e9fbfa266163c7f56a03c3d7b9",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.492588+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_typed_input_errors_are_au2\\doc.jsonl",
+      "sha256": "f6f667b0b74ba76048bc818caeee83f1c185ef6933394c7eabde06511480bbae",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "artifact_id": "SC4-MOCK-DOC",
+            "source_version": "r1",
+            "source_status": "read_failed",
+            "extraction_status": "source_error",
+            "error_code": "source_type_unsupported",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "source": "synthetic:SC4-MOCK-DOC@r1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "9ac266b493cfba9a070a375f18256eac398f9fc5a13d6440e311b88a20c997b4",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.566025+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_typed_source_failure_is_a0\\missing.jsonl",
+      "sha256": "7265f1c20bca202c890cd250286440961c1dc6826412f40252ba78de5eb09755",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "synthetic-test-operator",
+          "automation_level": "L2",
+          "decision": {
+            "artifact_id": "SC4-MOCK-MISSING",
+            "source_version": "r1",
+            "source_status": "read_failed",
+            "extraction_status": "source_error",
+            "error_code": "source_unavailable",
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "source": "synthetic:SC4-MOCK-MISSING@r1",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "6afdbd74a9304622c7d738631b4897996c1660d95aa94ec404d6b088147a679e",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:35.336498+00:00",
+          "prev_hash": ""
+        }
+      ]
+    },
+    {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc4-source-evidence-1010\\run-25feb0a0ff7240579bd40d4ca9c9b448\\basetemp\\test_审计留痕标注审核未开始并点名两项前置0\\audit.jsonl",
+      "sha256": "36bda4772a807ac56e1c44945b4f6018ff5e4c6c02253c1076d49fa7d7b6f32b",
+      "chain": {
+        "ok": true,
+        "total": 1
+      },
+      "events": [
+        {
+          "scenario": "SC4",
+          "action": "contract_clause_extract",
+          "evaluator": "张采购",
+          "automation_level": "L2",
+          "decision": {
+            "doc_id": "sample_contract",
+            "lexicon_id": "mock-v0",
+            "span_count": 5,
+            "covered_types": [
+              "交付",
+              "价格",
+              "质保",
+              "违约责任"
+            ],
+            "unclassified_count": 1,
+            "review_status": "待前置到位",
+            "blocked_by": [
+              "standard_clause_library",
+              "risk_clause_criteria"
+            ]
+          },
+          "data_sources": {
+            "contract": "mock:plaintext:sample_contract.md",
+            "lexicon": "mock-v0"
+          },
+          "content_hash": "d05a7811bc683a00ffa3ed562c26ac6d413e1af615bf3449eeb05ad21eb75f1d",
+          "oem_context": "",
+          "override_reason": "",
+          "report_path": "",
+          "timestamp": "2026-10-10T05:33:34.898773+00:00",
+          "prev_hash": ""
+        }
+      ]
+    }
+  ],
+  "product_test_execution_by_this_script": false,
+  "review_coverage": "root本轮直读四产品/四测试或fixture全文；Luna审查SHA及JUnit/实际事件，agent读取缺口已由root补齐。",
+  "limitations": [
+    "Windows symlink创建权限导致一例skip；并未执行该安全边界验证",
+    "text_view_version是synthetic-profile标识，不冒称共享parser构建版本",
+    "legacy可选audit按后批准具体计划保留，不计作六项完整来源run验收；冻结design原措辞须保留并以当前兼容说明协调",
+    "合成范围、专业闸保留；候选未提交/整合/ff"
+  ],
+  "plan_sha256": "8EB31234EEA4B7F70D929E94AB326F9F5FBCCE8C35C8B983EAC6ECBADC565228",
+  "design_sha256": "09B9083CD42F979D7BD912F0BC2ECBCCDA22DF15D7DAC2B55E26B6E29B18AA02",
+  "root_review_proof": "reports/sc4-source-evidence-1010/root-review-b92e1cdb824f4f4e9a00c98380f2e7e3/root-review.json",
+  "stage": "2M synthetic source evidence only",
+  "pytest_exit_evidence": "作者工具实际exit0待原始工具返回补证；本次root独立读回JUnit/stdout/stderr，不声称目录已有exit文件"
+}

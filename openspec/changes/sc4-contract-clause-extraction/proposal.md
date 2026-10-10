@@ -1,5 +1,7 @@
 # sc4-contract-clause-extraction Proposal
 
+> 当前checkpoint（2026-10-10）：design A–E/§10与具体计划八路径/三测试均已本人批准；2M合成首项候选39passed/1skip及根独立review完成。下文09-03未写design等说明为历史时点，不作当前停点。旧入口可选audit按后批准具体计划保持兼容，完整来源验收只认新强制JSONL入口。候选未提交/ff；专业审核、真实源、生产与归档未完成。
+
 > 🔴 **本包为 proposal + tasks 起草，`design.md` 未写、design 审未过**（`OP-0903-B2` 泳道，
 > `openspec_design_review` 属 🟡 档，本无头 session 无人在场，不自行通过）。
 > 队列承接行：§一 `#467`。
