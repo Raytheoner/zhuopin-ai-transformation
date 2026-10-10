@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-10-10T23:22:40.218688+08:00",
+  "approved": false,
+  "plan": "docs/superpowers/plans/2026-10-10-sc8-local-css-verification.md",
+  "plan_sha256": "7292EDEDB14914732E16EDE38BC8AB70683E4106693B9A3FB0016C342A450CE4",
+  "generator": "docs/superpowers/plans/sc8-local-css-verification-1010/generate_synthetic_home.py",
+  "generator_sha256": "D8AF058410A5D121652C4C90FBA0BAD0DEC89518341F0232EFC2D3F3C14D3F97",
+  "draft_sha256": "AE312AB11F021AF6BA2E9A23B1A807EE6D434BE3D6411464E9B7746A4337D58F",
+  "run_uuid": "f41d8ef8-3d74-4e0e-9b10-f8c11ca0aa02",
+  "execution_started": false,
+  "output_directory_exists": false,
+  "scope": "one synthetic shell generation; only CUA file renderer 320x844 and 390x844; six artifact paths; no tests/product changes/network actions/deployment"
+}
