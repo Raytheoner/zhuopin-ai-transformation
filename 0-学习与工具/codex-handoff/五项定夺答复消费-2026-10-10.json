@@ -1,0 +1,51 @@
+{
+  "recorded_at": "2026-10-10T08:16:46+08:00",
+  "recorded_at_basis": "clock__curr_time，登记准备时刻；不冒充消息接收时刻",
+  "authority": "当前唯一执行会话中Shao Peishen的直接工具问题答复",
+  "thread_id": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "cases": [
+    {
+      "scene": "O4",
+      "id": "[\"request_user_input_async\",\"call_aab0445a4bb6410ca58f9682cca8badd\",0]",
+      "answer": "A：按单类预测维护试点收敛（推荐）",
+      "approved": "首期1类、类别后定，先核盘点与资料可得性；资料/专业签认就绪后跑通输入证据→风险/维护建议→人工复核→审计；不自动下发维护，阈值专业签认。",
+      "next": "继续完整intent收敛；本答不是完整intent或design批准。",
+      "row": 509
+    },
+    {
+      "scene": "SC4",
+      "id": "[\"request_user_input_async\",\"call_42936211c7344e63a8b959b33104c750\",0]",
+      "answer": "A：确认完整意图及首项（推荐）",
+      "approved": "完整采购合同取文、四类条款定位、标准库比对及风险/缺失提示，法务/采购经理L2；首项单供应商单合同合成文本/DOCX六项证据对照。专业能力随后接签认前置。",
+      "next": "补实际design供审；原知识闸未解除，首项拆分在design中审。",
+      "row": 467
+    },
+    {
+      "scene": "SC10",
+      "id": "[\"request_user_input_async\",\"call_42936211c7344e63a8b959b33104c750\",1]",
+      "answer": "A：确认完整意图及首项（推荐）",
+      "approved": "完整BOM评审、公司物料库治理和优先/淘汰建议，采购经理L2；首项版本明确合成2成品3物料毛需求/共用料/缺数对照，专业建议与真实源随后接前置。",
+      "next": "原包补实际design供审；事实与专业建议分阶段。",
+      "row": 468
+    },
+    {
+      "scene": "SC11",
+      "id": "[\"request_user_input_async\",\"call_42936211c7344e63a8b959b33104c750\",2]",
+      "answer": "A：确认完整意图及首项（推荐）",
+      "approved": "完整按周/月计划给1物料仓3委外仓生成调拨拟稿，PMC作L2；首项固定周计划合成拟稿，共享库存总量及确认内容版本核对。月中插单/真实库存/ERP/邮件另接前置。",
+      "next": "补实际design供审；库存守恒和内容版本由内部技术设计解决。",
+      "row": 469
+    },
+    {
+      "scene": "SC2",
+      "id": "[\"request_user_input_async\",\"call_7e16d833552b4487832c939930f1b1c1\",0]",
+      "answer": "A：批准D1–D10，继续写实施计划（推荐）",
+      "approved": "批准当前正式design D1–D10，A完整typed全量派生316；B未证禁启，四指标/detail隔离、其他共享指标保留、缺字段分影响、历史冻结/缓存不重算。",
+      "next": "编写具体实施计划供审；未授权代码、产品测试、真实源或发布。",
+      "row": 667,
+      "design": "openspec/changes/sc2-biztype316-receipts/design.md",
+      "sha256": "38E3BB0CE2DB024BF85BBC543E8997D14827C1CEBD679F75B9F6DCA017FE624D"
+    }
+  ]
+}
+
