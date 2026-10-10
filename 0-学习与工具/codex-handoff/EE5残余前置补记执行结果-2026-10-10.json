@@ -1,47 +1,14 @@
 {
-  "recorded_at": "2026-10-11T00:44:27.246728+08:00",
-  "approved_exception": "call_1c0842c033cb4a6386a867705402915d/0",
-  "operation_evidence": "reports/frontier-prerequisites-1010/ee5-execution-e023d4b9-c0da-45f1-9834-5beb459bbe82",
+  "recorded_at": "2026-10-11T00:44:27.285861+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
   "status": "completed",
-  "total_table_written": true,
-  "word_qa_completed": true,
-  "restored": true,
-  "text_readbacks": [
-    {
-      "path": "1-转型规划/0-全景路线图/跨场景前置数据与知识库任务总表.md",
-      "before_sha256": "DA1461E7CA30FC46CFF7A7EFE2817C5305178178FEF31D7346EDECF834E244E1",
-      "after_sha256": "D0A98F33DFB017745D8D2D3E3EA83DCA57B936FCA220825AA6D6D5E861D7B1E0",
-      "before_bytes": 36485,
-      "after_bytes": 38531,
-      "readback": true
-    },
-    {
-      "path": "1-转型规划/0-全景路线图/卓品智能AI转型全景规划.md",
-      "before_sha256": "256DD7BC85EE44761D14C52DAB20A714ADD771020DAA060050C5251A75280938",
-      "after_sha256": "566B637F687E6A4E5D3771F09C70AC54388B0D8FFAC359510D9BC20117CC4D7B",
-      "before_bytes": 186794,
-      "after_bytes": 187242,
-      "readback": true
-    },
-    {
-      "path": "1-转型规划/0-全景路线图/全景路线图重组机制与变更日志.md",
-      "before_sha256": "5B85DD08F0EB62C9AF39334E033A2E3832C07087D76BA9684084C4F0BFAC6EAC",
-      "after_sha256": "20FD4534D69CC6777F43CEFED0F40F9656E481966B41FCAA20EBC43957A43621",
-      "before_bytes": 36597,
-      "after_bytes": 37026,
-      "readback": true
-    },
-    {
-      "path": "1-转型规划/0-全景路线图/session接力-Phase1收口.md",
-      "before_sha256": "EA78CD302BC2DA54297C3F07E85608D5414935421D23BF2DB39F7C924BD68BCC",
-      "after_sha256": "13B77C5EA43BC0736A38E6BFC071BA564017A697ABB0382EFD27E366BA282052",
-      "before_bytes": 8184,
-      "after_bytes": 8609,
-      "readback": true
-    }
-  ],
-  "word_qa_evidence": "C:\\Dev\\zhuopin-ai\\reports\\ee5-b0d6710d-43ea-43bf-8514-ba9b30282eb0\\final-root-qa.json",
-  "word_qa_evidence_sha256": "8B634A59748385B4B918EFD3E25937994BF9092B6DC9182085EA30777C3AAD97",
+  "residual_carrier_status": "已执行归档",
+  "old_carrier_unchanged": true,
+  "root_operation_active": false,
+  "freeze_record_sha256": "F30C0F09AF859E53E5341CE4ADB95C0104AE5A471549FB660EE91BA539E8197C",
+  "root_record_sha256": "FF38A430257DBDC5068BE47630C48EE04B0096B7518925ED55122FB65E706663",
+  "qa_path": "C:\\Dev\\zhuopin-ai\\reports\\ee5-b0d6710d-43ea-43bf-8514-ba9b30282eb0\\final-root-qa.json",
+  "qa_sha256": "8B634A59748385B4B918EFD3E25937994BF9092B6DC9182085EA30777C3AAD97",
   "words": [
     {
       "kind": "roadmap",
@@ -149,5 +116,11 @@
       "actual_query_exit": 0
     }
   ],
-  "closure_scope": "本残余补记切片完成；旧冻结、旧移交部分执行及未决人事专业前置保留"
+  "preserved_pending": [
+    "Owner/backup",
+    "业务类型",
+    "专业判据与权威来源",
+    "工期与工作窗口"
+  ],
+  "boundary": "只本残余补记切片，不代表完整SC10/SC11或旧EE5全部完成、不解除旧§三冻结"
 }
