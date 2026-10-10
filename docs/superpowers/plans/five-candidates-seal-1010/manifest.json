@@ -1,0 +1,815 @@
+{
+  "manifest": "candidate-integration-freeze-inventory",
+  "main_state_rechecked_utc": "2026-10-10T11:14:43Z",
+  "collection_time_note": "Candidate status and per-file hashes were read sequentially during this evidence-gathering pass, before the final main-state recheck; this is not an atomic cross-worktree snapshot.",
+  "scope": "Read-only inventory freeze for later review/planning. No tests, worktree alignment, merge/rebase, add/commit/cherry-pick, Sweep, or Git metadata writes.",
+  "main": {
+    "root": "C:/Dev/zhuopin-ai",
+    "git_dir": "C:/Dev/zhuopin-ai/.git",
+    "common_git_dir": "C:/Dev/zhuopin-ai/.git",
+    "current_branch": "master",
+    "head": "75c1f76b791b1054f8a2e568fb7ba11162a8f693",
+    "refs_heads_master": "75c1f76b791b1054f8a2e568fb7ba11162a8f693",
+    "dirty_path_count": 122,
+    "approved_scope_path_count": 41,
+    "approved_scope_dirty_overlap": [],
+    "approved_scope_committed_delta_from_base": [],
+    "note": "Main has 122 dirty/untracked paths at capture time; none overlaps the 41 approved paths. The 27 paths tracked at both baseline and current HEAD have identical blob OIDs."
+  },
+  "base": {
+    "commit": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+    "relationship": "All five candidates are detached at this commit; it is the common parent used by the preceding preflight."
+  },
+  "candidate_count": 5,
+  "approved_path_count_total": 41,
+  "tracked_modified_total": 27,
+  "untracked_total": 14,
+  "candidates": [
+    {
+      "lane": "SC2",
+      "plan": "docs/superpowers/plans/2026-10-10-sc2-biztype316-receipts.md",
+      "root": "C:/Users/Paul Shao/.codex/worktrees/sc2-biztype316-1010/zhuopin-ai",
+      "git_dir": "C:/Dev/zhuopin-ai/.git/worktrees/zhuopin-ai",
+      "common_git_dir": "C:/Dev/zhuopin-ai/.git",
+      "head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "detached_head": true,
+      "branch": null,
+      "approved_path_count": 14,
+      "tracked_modified": 13,
+      "untracked": 1,
+      "files": [
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/config.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "23B613859D7971EB9002A65B058F44C35D52A38AEB0DF1A2D268419047FCF25B",
+          "candidate_git_blob_oid": "456abf077d3c1e61ebf5915b7740b08807ef6a18",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "dd5a6f30ba9fb2449f53cbca3d9b21a7763f1484"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "dd5a6f30ba9fb2449f53cbca3d9b21a7763f1484"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/detail.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "2D880A13AD060BE4C14BE8CFA47C4BE7E9AD3211E0A087C5B414314D9FE8AA7C",
+          "candidate_git_blob_oid": "452adee2964e708c61b78cf1cac2c8cc89f5aa24",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "7828ba8e9421e0e10c600e0b27dca7f5d2dc664a"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "7828ba8e9421e0e10c600e0b27dca7f5d2dc664a"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/metrics.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "4683D4DC4036F1F5B07484692F47D99C403BD1F4B9F441EE9DC88E7B57FCE541",
+          "candidate_git_blob_oid": "188d0c2dc253652aa6be3a6e57650a0600b2d8a4",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "481e84cb1ec498a98128adf7a2786fc19042a2a0"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "481e84cb1ec498a98128adf7a2786fc19042a2a0"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/models.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "2ACE616886C18BDD59336ED0A730E77D234A98ADADBDFD4A5E6DFCF92AF5E12E",
+          "candidate_git_blob_oid": "cdf66e1b39ac82dab295588ee2ccd50ea9f7a367",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "14e2ab401cdb7fd094c20543eaed76332e460933"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "14e2ab401cdb7fd094c20543eaed76332e460933"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/report.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "076DACB8B40F1116281FCC9E115301070E3DBBB43D7A167FB8CADBC6714140A4",
+          "candidate_git_blob_oid": "349e0a373b0ec4fdd5704e8ddbb69d7683d7ffff",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "6eee5caa6a3eba2969942d9ce68631ad5ad6d0c4"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "6eee5caa6a3eba2969942d9ce68631ad5ad6d0c4"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/sources.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "C8EA00C5552A0444B90C143478A32058437D4FF95833CE1014596B7EC46D4BFE",
+          "candidate_git_blob_oid": "50afe063c2642698b5dc274a29fab017b6d29743",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "29494560b341844568fee16b7f458e28df72e0bd"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "29494560b341844568fee16b7f458e28df72e0bd"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "4B985F315B920AA37E7337B0200192A4C26D3D60B8662F39B11ADE14E16A86A4",
+          "candidate_git_blob_oid": "1050c49db2382c1b7b2b62ddc583afe0e3880d0f",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "c2d56c0cb68391c8efe2d69ef2a9c0299a00015e"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "c2d56c0cb68391c8efe2d69ef2a9c0299a00015e"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_detail.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "5713E3248A7B04BB80C6A0F03DDE5ACB03B7610CBBB8D390FAC9AE4FD41B6B59",
+          "candidate_git_blob_oid": "c48f9d15eb7bf52ef9963056bee4289ee4f086e6",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "66e50f55898493a5ea480a18261ff30d0cda8125"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "66e50f55898493a5ea480a18261ff30d0cda8125"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_metrics.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "575C45EBF5B3E9543BF0C1ED6A8976F563ABF395FDA25157AF682723F7681739",
+          "candidate_git_blob_oid": "696330f3390add3b04d6ac82086d5eccaad68a0b",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "9f8e3030803d8e938e74c25468e6bbdb658e7aa9"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "9f8e3030803d8e938e74c25468e6bbdb658e7aa9"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_report.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "98CD41D73B7A150A329F2EB749E00544FBF5150AD3289D15728CE41AB7A6BB81",
+          "candidate_git_blob_oid": "3576e97f2c8917adb40292662769674a14cb8e35",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "49c9f8f6b6194e89293bd4e41915f4e12fb6d7e4"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "49c9f8f6b6194e89293bd4e41915f4e12fb6d7e4"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_sources.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "BD64B1BEB0011A6F07AFA566B4A2BA2A2A0C2381F0CC966D10F10E2D7FB1BD3C",
+          "candidate_git_blob_oid": "6d3114cc753666d55f04bdd3aab8408ee1fcb073",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "f1e3a5cf5e90b6c6c82be4b0e8480f6ba39f737b"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "f1e3a5cf5e90b6c6c82be4b0e8480f6ba39f737b"
+          }
+        },
+        {
+          "path": "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "341DEAC3A17DA61B2B6C427CC70159733599FE586F52AF8E9E47B877228193C6",
+          "candidate_git_blob_oid": "470efb13f5d61b34e42dfeb952b3f9e844e8b3bd",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "f68823b365a28bb037600b4154c3d815d91d90a6"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "f68823b365a28bb037600b4154c3d815d91d90a6"
+          }
+        },
+        {
+          "path": "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/models.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "60130A8946724EA79A46E7010D03C10D8C6C837E7E8A45A4233B7FB4C2E7BED0",
+          "candidate_git_blob_oid": "afd5c8cd362106231173ae1185a9a52a2148609f",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "3c847b104062aecd30a23679324886070b45f0ff"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "3c847b104062aecd30a23679324886070b45f0ff"
+          }
+        },
+        {
+          "path": "5-平台底座/zhuopin_platform/tests/test_erp_biztype316.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "6CEF2405445A9AC791547E5EA65C937E4632060699BEC86B069E6E3B0AD15A0E",
+          "candidate_git_blob_oid": "4951bbba478f48ef174f8320a4b52d374c53f83a",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        }
+      ]
+    },
+    {
+      "lane": "SC4",
+      "plan": "docs/superpowers/plans/2026-10-10-sc4-source-evidence.md",
+      "root": "C:/Users/Paul Shao/.codex/worktrees/sc4-source-evidence-1010/zhuopin-ai",
+      "git_dir": "C:/Dev/zhuopin-ai/.git/worktrees/zhuopin-ai23",
+      "common_git_dir": "C:/Dev/zhuopin-ai/.git",
+      "head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "detached_head": true,
+      "branch": null,
+      "approved_path_count": 8,
+      "tracked_modified": 7,
+      "untracked": 1,
+      "files": [
+        {
+          "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/models.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "5E19EE9A8C6860DE43761234318F9F8E6CFA5A14761E93E399FD33332E5962B6",
+          "candidate_git_blob_oid": "596a22fd3b590e0a03197e39211026da587514ad",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "0b6d952c79e87759205c1d184abc963d5282fcc6"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "0b6d952c79e87759205c1d184abc963d5282fcc6"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/text_source.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "FF2F2818AF54FEC06986C0EEEF40BAA7FA54DC0F630525A1F7750272E87670E9",
+          "candidate_git_blob_oid": "7483ecac8c36a72ba75b14556a27a088fb2beada",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "a3926a1c079363d329b84eb88b20fce629a5d8d2"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "a3926a1c079363d329b84eb88b20fce629a5d8d2"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/clause_extract.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "110BB03BEAC8F7043CD11DE36307F74F92A98A88E0A1DA3C13FFC0E39D5C7EB2",
+          "candidate_git_blob_oid": "c812b1fa7e77832ad6973cdd2abf45215c97d0bd",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "965cbf53b0c48f457481e43a2608bacbbaf3685e"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "965cbf53b0c48f457481e43a2608bacbbaf3685e"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/agent.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "1AF0D6DDB2C0FEB6CFB289B38BC4479705967F2E4D4EE934D053D8588A955A75",
+          "candidate_git_blob_oid": "13cb016fab3f037abd5b5d08f5f301c17aa5fe4a",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "53cfd3dfecdd40535cfcec75aa43bfc021386e56"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "53cfd3dfecdd40535cfcec75aa43bfc021386e56"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/sc4_evidence_fixtures.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "71D294E4772C7F9A185F9A54617B9012222446998AA53131547A765DD032B7D4",
+          "candidate_git_blob_oid": "f74f472d60a51f6b84d59140fa10107258b1719a",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_text_source.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "4DB727DAB2DDAD6C2D6B4F88D7253E1EFAF43B5782C75977EEDF7B6EEB51552C",
+          "candidate_git_blob_oid": "3f92445976dac1cdd2e875016f343e0e8e9c9506",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "535339b0edeb1fa5ed857f63ae9babd0f75bf4dc"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "535339b0edeb1fa5ed857f63ae9babd0f75bf4dc"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_clause_extract.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "9E7ED1627B52152733797B733D8B72CE6B8BE6F804071D2E11C06869EBD10707",
+          "candidate_git_blob_oid": "6165a09ada5762a6ca9e336e4a3faf6b91d7bd40",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "7632763509e8ffc301a83f09f3dcbbafbd130a86"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "7632763509e8ffc301a83f09f3dcbbafbd130a86"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_agent_audit.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "8A1A4C7BE1F0AE3FE0EF41FD4845C2921D0EB27ECA30711B4260753BFBF5C7ED",
+          "candidate_git_blob_oid": "21b9beb9519e0399c37940fa36522b7523942228",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "8d8229512b25593b0f08e2659ec0abb259d0d8e0"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "8d8229512b25593b0f08e2659ec0abb259d0d8e0"
+          }
+        }
+      ]
+    },
+    {
+      "lane": "SC10",
+      "plan": "docs/superpowers/plans/2026-10-10-sc10-versioned-facts.md",
+      "root": "C:/Users/Paul Shao/.codex/worktrees/sc10-versioned-facts-1010/zhuopin-ai",
+      "git_dir": "C:/Dev/zhuopin-ai/.git/worktrees/zhuopin-ai22",
+      "common_git_dir": "C:/Dev/zhuopin-ai/.git",
+      "head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "detached_head": true,
+      "branch": null,
+      "approved_path_count": 4,
+      "tracked_modified": 2,
+      "untracked": 2,
+      "files": [
+        {
+          "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/evidence.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "64575FC610A4A8765A4146A3D89A840D52762A3749C254F9944D75ACAAC6E0A8",
+          "candidate_git_blob_oid": "4594948f417119b8ab99477fc7943d65a806ada4",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/agent.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "0195119AC00C491FF58922C1D4925927E4BB81BC7D676AC7F1CCD69F25EF03F9",
+          "candidate_git_blob_oid": "f2062b879f091dc572e68fe950d72e51fd0eb14d",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "83816a009e40e15319e32731f669127539527b44"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "83816a009e40e15319e32731f669127539527b44"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_evidence.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "6EA0848B33E82D52023450222D75FCF53C83C0E7A03B28AC5420E773C6E297DF",
+          "candidate_git_blob_oid": "36523f7afe2c45b8f167df8041ad682403a6fcdd",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_agent_audit.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "6472FC1776D4A4D3069CB92A9B3F52B887FB05ACF1F04B1EC3488F82A2937199",
+          "candidate_git_blob_oid": "11185d2f62fc8e023a77ff05f5d4acbca8c9ba6a",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "690fb4cac095db8cc171de1fa67d5d3b1f9a27a2"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "690fb4cac095db8cc171de1fa67d5d3b1f9a27a2"
+          }
+        }
+      ]
+    },
+    {
+      "lane": "SC11",
+      "plan": "docs/superpowers/plans/2026-10-10-sc11-shared-stock-versioned-confirmation.md",
+      "root": "C:/Users/Paul Shao/.codex/worktrees/sc11-inventory-transfer-1010/zhuopin-ai",
+      "git_dir": "C:/Dev/zhuopin-ai/.git/worktrees/zhuopin-ai24",
+      "common_git_dir": "C:/Dev/zhuopin-ai/.git",
+      "head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "detached_head": true,
+      "branch": null,
+      "approved_path_count": 7,
+      "tracked_modified": 5,
+      "untracked": 2,
+      "files": [
+        {
+          "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/models.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "D325EB931EBAA0D3C0C3CBCB1278F90B04CD915065AECC1377B5422356334CD4",
+          "candidate_git_blob_oid": "ed56093caefc427ddf267c6f0db94faafe3c107b",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "e8d626c69fadd68e9941e745a1dfe38e3b90b7fb"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "e8d626c69fadd68e9941e745a1dfe38e3b90b7fb"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/routing.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "FF7C4398F629B4ECB959E8BEFB730E077EF7456CE6371C47FFD01D321C1C14BE",
+          "candidate_git_blob_oid": "3463b196b6266f485854734f408e90b5529e5b12",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "991ab38b2be6bf4241c1fb88b526b92e0f73d9e4"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "991ab38b2be6bf4241c1fb88b526b92e0f73d9e4"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/agent.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "B0CCC9108FFCCED2349CA0BA742F14C44462CF6D8A0C11E5BE1B8BC52A612166",
+          "candidate_git_blob_oid": "8710df4dc85c322da3371bc68000f6f61450e40b",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "4f1c868d368806f8693b634e4e4938845e6282c3"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "4f1c868d368806f8693b634e4e4938845e6282c3"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/gate.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "9C998B67B950F99D3FB6EC2C5046E79F3911BFDAF09ACC09AE42CB9F727A8790",
+          "candidate_git_blob_oid": "c6d369974ab9ecfe8a65b9b439ec905f0a8ae0be",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "b45c9cd424e1c1934806f92552994cf51506356e"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "b45c9cd424e1c1934806f92552994cf51506356e"
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC11-库存智能调拨/tests/test_shared_reservation.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "D2EF5EBA6CE12ED8DD7090CF500EB0C9390BEE950A8B8B9CBD83FDB30A0E61E8",
+          "candidate_git_blob_oid": "30b1782310fc545700587971f79d176653d5b74e",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC11-库存智能调拨/tests/test_versioned_audit_gate.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "349861348617F41FC7D0BC76D1F0E44FD1AD1A213938F0E9F0941E5F21326604",
+          "candidate_git_blob_oid": "4e5010656ced952ced5a08be02bdb1bb7043100e",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/采购部/SC11-库存智能调拨/tests/test_pmc_gate.py",
+          "worktree_status": " M",
+          "tracked_in_index": true,
+          "candidate_worktree_sha256": "00FD4A63483D3A7C7584E0700590AD26395D462E0BDD2FB5FFC57E0807897306",
+          "candidate_git_blob_oid": "efbd77094b5f775da4ad5aed29f1321d6de40c77",
+          "baseline": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "5d3293c03b6aa5065e2eee4bc8b4e9a747e81e3f"
+          },
+          "main_current": {
+            "present": true,
+            "mode": "100644",
+            "blob_oid": "5d3293c03b6aa5065e2eee4bc8b4e9a747e81e3f"
+          }
+        }
+      ]
+    },
+    {
+      "lane": "O4",
+      "plan": "docs/superpowers/plans/2026-10-10-o4-stage0-evidence.md",
+      "root": "C:/Users/Paul Shao/.codex/worktrees/o4-stage0-evidence-1010/zhuopin-ai",
+      "git_dir": "C:/Dev/zhuopin-ai/.git/worktrees/zhuopin-ai25",
+      "common_git_dir": "C:/Dev/zhuopin-ai/.git",
+      "head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "detached_head": true,
+      "branch": null,
+      "approved_path_count": 8,
+      "tracked_modified": 0,
+      "untracked": 8,
+      "files": [
+        {
+          "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/__init__.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "EE74AF0B2032F6236DC04675E2534E7C3CBA73573E9167BDA6AB620821C90970",
+          "candidate_git_blob_oid": "b87925770cc94d39e3b40add6fc28e7054d4c0a1",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/models.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "288805F6E63BCC4908403768B277C4EB108D3EA56006D6EBE8B39075B336D9A1",
+          "candidate_git_blob_oid": "6d370106d90a54a5598700649bbacc364af2323b",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/canonical.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "B97F3AD9BE5315EA6B5EF997B389456BB5777693F6FE5805DA10C972D31861E4",
+          "candidate_git_blob_oid": "05eb5bdad6eb3010eae2aa43e06e4a5bb4aa846d",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/checks.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "0B51B5499BDDAE585D87E0F2CEF041BB79FB7689BF52EDB72F5C8B03904FA99E",
+          "candidate_git_blob_oid": "567fa2f0aa1a6ef570695bdad04b100776623667",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/agent.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "AD554FB37CF0507D35685C0C15CD295B055F64CB4528C1CF38F14D66A06B0FEF",
+          "candidate_git_blob_oid": "024a2420518868a79c72874f49cf5812ebafc8df",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/运营部/O4-设备预测性维护/tests/conftest.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "773A6681A37125A6C887717263A5BE40E2D4B9133C4CC8351962F772362E82FC",
+          "candidate_git_blob_oid": "a3537599d79d098b8c0e2246dc42c10700754ceb",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/运营部/O4-设备预测性维护/tests/o4_cases.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "DA215205659AB1AAF512B1C8AA7FDAF33E5993703F63DDE0B9852119A492B754",
+          "candidate_git_blob_oid": "a561117de5dc7d9436515d1844d34cc4c8c1ceeb",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        },
+        {
+          "path": "4-数字员工/运营部/O4-设备预测性维护/tests/test_stage0.py",
+          "worktree_status": "??",
+          "tracked_in_index": false,
+          "candidate_worktree_sha256": "8DFFFD40455C6D3BAD05B30CD032D9A0F3284519FCA86C25C895A3E40D3A1999",
+          "candidate_git_blob_oid": "4982257c4f139d514228130eaa8c8f8ba9d11427",
+          "baseline": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          },
+          "main_current": {
+            "present": false,
+            "mode": null,
+            "blob_oid": null
+          }
+        }
+      ]
+    }
+  ],
+  "integration_entry_preflight": {"read_only":true,"candidates":[{"lane":"SC2","staged_index":{"clean":true,"exit_code":0,"name_status":[]},"planned_local_ref":{"ref":"refs/heads/codex/candidate-sc2-1010","exists":false,"check_exit_code":1,"check_output":"fatal: 'refs/heads/codex/candidate-sc2-1010' - not a valid ref"},"core_hooksPath":{"configured":false,"lookup_exit_code":1,"output":null},"effective_hooks_directory":"C:/Dev/zhuopin-ai/.git/hooks","hooks":{"pre-commit":{"active_file_exists":false,"sample_file_exists":true},"prepare-commit-msg":{"active_file_exists":false,"sample_file_exists":true},"commit-msg":{"active_file_exists":false,"sample_file_exists":true},"post-commit":{"active_file_exists":false,"sample_file_exists":true}}},{"lane":"SC4","staged_index":{"clean":true,"exit_code":0,"name_status":[]},"planned_local_ref":{"ref":"refs/heads/codex/candidate-sc4-1010","exists":false,"check_exit_code":1,"check_output":"fatal: 'refs/heads/codex/candidate-sc4-1010' - not a valid ref"},"core_hooksPath":{"configured":false,"lookup_exit_code":1,"output":null},"effective_hooks_directory":"C:/Dev/zhuopin-ai/.git/hooks","hooks":{"pre-commit":{"active_file_exists":false,"sample_file_exists":true},"prepare-commit-msg":{"active_file_exists":false,"sample_file_exists":true},"commit-msg":{"active_file_exists":false,"sample_file_exists":true},"post-commit":{"active_file_exists":false,"sample_file_exists":true}}},{"lane":"SC10","staged_index":{"clean":true,"exit_code":0,"name_status":[]},"planned_local_ref":{"ref":"refs/heads/codex/candidate-sc10-1010","exists":false,"check_exit_code":1,"check_output":"fatal: 'refs/heads/codex/candidate-sc10-1010' - not a valid ref"},"core_hooksPath":{"configured":false,"lookup_exit_code":1,"output":null},"effective_hooks_directory":"C:/Dev/zhuopin-ai/.git/hooks","hooks":{"pre-commit":{"active_file_exists":false,"sample_file_exists":true},"prepare-commit-msg":{"active_file_exists":false,"sample_file_exists":true},"commit-msg":{"active_file_exists":false,"sample_file_exists":true},"post-commit":{"active_file_exists":false,"sample_file_exists":true}}},{"lane":"SC11","staged_index":{"clean":true,"exit_code":0,"name_status":[]},"planned_local_ref":{"ref":"refs/heads/codex/candidate-sc11-1010","exists":false,"check_exit_code":1,"check_output":"fatal: 'refs/heads/codex/candidate-sc11-1010' - not a valid ref"},"core_hooksPath":{"configured":false,"lookup_exit_code":1,"output":null},"effective_hooks_directory":"C:/Dev/zhuopin-ai/.git/hooks","hooks":{"pre-commit":{"active_file_exists":false,"sample_file_exists":true},"prepare-commit-msg":{"active_file_exists":false,"sample_file_exists":true},"commit-msg":{"active_file_exists":false,"sample_file_exists":true},"post-commit":{"active_file_exists":false,"sample_file_exists":true}}},{"lane":"O4","staged_index":{"clean":true,"exit_code":0,"name_status":[]},"planned_local_ref":{"ref":"refs/heads/codex/candidate-o4-1010","exists":false,"check_exit_code":1,"check_output":"fatal: 'refs/heads/codex/candidate-o4-1010' - not a valid ref"},"core_hooksPath":{"configured":false,"lookup_exit_code":1,"output":null},"effective_hooks_directory":"C:/Dev/zhuopin-ai/.git/hooks","hooks":{"pre-commit":{"active_file_exists":false,"sample_file_exists":true},"prepare-commit-msg":{"active_file_exists":false,"sample_file_exists":true},"commit-msg":{"active_file_exists":false,"sample_file_exists":true},"post-commit":{"active_file_exists":false,"sample_file_exists":true}}}],"hook_inventory":"The effective shared hooks directory contains only *.sample variants of the four checked hooks. core.hooksPath lookup was unset (exit 1); git rev-parse --git-path hooks resolved each linked worktree to C:/Dev/zhuopin-ai/.git/hooks.","caution":"Index is clean and planned refs are absent at capture. This does not authorize branch creation or commits. Active hooks are absent at capture; no hook configuration was changed or bypassed."},
+  "method": {
+    "current_file_sha256": "Get-FileHash -LiteralPath <absolute candidate path> -Algorithm SHA256",
+    "current_candidate_git_blob_oid": "git -C <candidate root> hash-object -- <approved paths>",
+    "baseline_and_main_blob_oid": "git ls-tree -r --full-tree <commit> -- <approved paths>",
+    "status": "git -C <candidate root> status --porcelain=v1 --untracked-files=all",
+    "limitations": [
+      "Worktree SHA256 is content SHA256; Git blob OID is separate identity.",
+      "For 14 untracked files baseline/main HEAD blob identity is absent, recorded as null.",
+    "This manifest records bytes and status observed during one read-only collection pass; the five worktrees were not locked into an atomic snapshot.",
+    "It does not authorize or establish integration readiness."
+    ]
+  }
+}
+

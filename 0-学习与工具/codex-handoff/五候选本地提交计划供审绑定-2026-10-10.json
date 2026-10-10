@@ -1,0 +1,44 @@
+{
+  "recorded_at": "2026-10-10T20:31:36+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "stage": "concrete_plan_review_pending",
+  "plan": "docs/superpowers/plans/2026-10-10-five-candidates-seal.md",
+  "plan_sha256": "F9489E7A1729476F4068E80CA205F3AFE6A981C26F92D1278E3BED15C5953819",
+  "script": "docs/superpowers/plans/five-candidates-seal-1010/seal_candidates.py",
+  "script_sha256": "6CAB74E0FA2E336C531E25FB62432D15C76A5998805D6818830EB6224D1A1277",
+  "manifest": "docs/superpowers/plans/five-candidates-seal-1010/manifest.json",
+  "manifest_sha256": "A4996E4758B4A36326D95D87524EAC63F02135AF57A126135CF2CBA5C51D12DB",
+  "base_commit": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+  "candidate_count": 5,
+  "path_count": 41,
+  "local_commits_authorized": false,
+  "local_commits_executed": false,
+  "independent_static_review": "Luna quality_readiness绑定6CAB/A499；仅静态，不冒充运行时",
+  "readonly_preflight": {
+    "proof": "reports/candidate-integration-1010/seal-evidence/4b8d06cc-2b17-4fde-a896-90b8b7788866",
+    "actualexit": 0,
+    "script_sha256": "6CAB74E0FA2E336C531E25FB62432D15C76A5998805D6818830EB6224D1A1277",
+    "plan_snapshot_sha256": "CAC1D828B39B093E5039CDA76AE816412BD63F26B033CE2E8797E3B2B2069563",
+    "all_lanes_passed": true,
+    "main_heads": [
+      "6e2a4132b24ef900e0b8d9aec50802c46d34f276"
+    ],
+    "freeze_limits": {
+      "SC2": "not_applicable",
+      "SC4": "not_applicable",
+      "SC10": "unverifiable_by_official_query",
+      "SC11": "unverifiable_by_official_query",
+      "O4": "not_applicable"
+    }
+  },
+  "exceptions_pending": [
+    "native_detached_candidate_commit_preservation",
+    "SC10/SC11 completed_candidate_preservation_only；EE5串行且根状态未启动/已完成"
+  ],
+  "remaining": [
+    "本人具体计划及提交例外/候选共同Git副作用批准",
+    "实际逐棵本地提交",
+    "后续对齐整合计划及新基线验证审",
+    "ff/生产/真实/专业各自闸"
+  ]
+}

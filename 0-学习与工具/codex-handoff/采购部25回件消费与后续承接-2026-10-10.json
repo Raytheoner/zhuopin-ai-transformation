@@ -46,10 +46,11 @@
   "professional_signoff": false,
   "external_send": false,
   "meeting_confirmed": false,
-  "followup25_status": "回件已到且内容已消费；后续任务尚未完工。仅在正式落档及下游登记后经README CLI转📥",
+  "followup25_status": "采购#25已由锁release既有S4桥二自动转📥并开闸；官方闸复核exit0；不是本根手改README",
   "limitations": [
     "OOXML读取原件内容与勾选，不声称独立现场访问/修复验证",
     "时间候选不等于会议已预约",
     "保持原件及已发送信不修改"
-  ]
+  ],
+  "serial_gate_checkpoint_at": "2026-10-10T20:31:36+08:00"
 }

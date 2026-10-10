@@ -1,0 +1,36 @@
+{
+  "recorded_at": "2026-10-10T20:31:36+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "queue_row": 671,
+  "reviewer": "Luna procurement_readiness只读核验，根消费",
+  "source_sha256": {
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/webapp.py": "1CB27E63F548B72A6D36A69CB4FCB50158FA2B04B2C5F83716AEE8856286240E",
+    "4-数字员工/采购部/SC8-客户订单交期智能承诺/sc8/baoguan.py": "19D443EA46BEA534FCC0469053D361883AE08D22FA802A75ACE8C4FBC0DCFBF9",
+    "5-平台底座/unified-portal-gateway/portal_gateway/routing.py": "146E15F3D7C404DE57C3A77BDC5E266BA7676EA3E58BC7C00338918C13955B0C",
+    "openspec/changes/portal-sc8-ui/tasks.md": "9886D42DDCC23234DCB3A1A2B147B480E01F15FB921A3E2C91889CECEA60019E"
+  },
+  "facts": [
+    "当前SC8 webapp blob dadcaf9c…与R2本地ff640ba847…相同；主仓不是服务器版本证明",
+    "portal-sc8-ui本地ff b146e73…及R2本地ff均未生产部署；tasks7开放",
+    "当前gateway默认仅/→8092；历史记录8091直连/iframe与旧scene8090冲突，实际URL未知",
+    "旧320/390合成snapshot业务日期10/8，cst为空，无source revision绑定，不代表投诉已复现"
+  ],
+  "css_candidates": [
+    "卡片nm缺overflow-wrap；badge/gap nowrap可能挤压长文本",
+    "fixed子件表表头nowrap，小屏多列需实际核；旧fixture没子件",
+    "nav横向scroll与bg-tbl内部scroll，不等于投诉重叠"
+  ],
+  "browser_attempt": {
+    "requested_url": "http://192.168.100.51:8091/",
+    "result": "auto-review_rejected_before_navigation",
+    "reason": "可能读取真实业务，既有合成范围排除真实取数；只读调查不是具体live地址批准",
+    "actual_live_read": false,
+    "user_question_pending": true
+  },
+  "product_modified": false,
+  "tests_executed": false,
+  "reproduced": false,
+  "root_cause_confirmed": false,
+  "production_deployed": false,
+  "remaining": "具体Browser现网只读批准或可绑定当前版本的脱敏资料→现场证据→实际修订design/计划审"
+}
