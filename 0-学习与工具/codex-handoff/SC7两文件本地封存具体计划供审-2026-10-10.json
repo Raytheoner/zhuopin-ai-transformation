@@ -1,0 +1,23 @@
+{
+  "recorded_at": "2026-10-10T23:50:15.891331+08:00",
+  "approved": false,
+  "plan": "docs/superpowers/plans/2026-10-10-sc7-local-seal.md",
+  "plan_sha256": "2AC0928E43116670771B48391609EE94AC3CFE8B0B95BF0B381BC160DC7352D6",
+  "script": "docs/superpowers/plans/sc7-local-seal-1010/seal_sc7.py",
+  "script_sha256": "AE1B922E536B9638B0D6D4A2CBCA543DA39B759736A3CCF9527ADBB59CDE23D3",
+  "manifest_sha256": "6374EA681EB86C0AC52FA8D00ED578D50F7DD7CCE79CAC8821D61BE8ED186987",
+  "readonly_preflight_actual_exit": 0,
+  "readonly_preflight": "C:\\Dev\\zhuopin-ai\\reports\\sc7-batch-quantity-1010\\seal\\7e169a58-d81b-46de-9d05-ad5eee144cec\\summary.json",
+  "native_root": "C:/Users/Paul Shao/.codex/worktrees/sc7-batch-quantity-1010/zhuopin-ai",
+  "fixed_base": "310f54de71149b0cb0281749619ee3cd84f97bca",
+  "branch": "codex/candidate-sc7-1010",
+  "two_files": {
+    "4-数字员工/采购部/SC7-库存优化建议/sc7_inventory/batch_quantity.py": "DB97E8682D5D0966FBB47030451614B94B1099DE33B9970CE15D2F0417672972",
+    "4-数字员工/采购部/SC7-库存优化建议/tests/test_batch_quantity.py": "BAFBC7F80DFDBA56A6789B429BA7621DD7AA8D586C54BA2AE2620FBC352B8412"
+  },
+  "sealed": false,
+  "tests_rerun": false,
+  "review": "C:\\Dev\\zhuopin-ai\\reports\\sc7-batch-quantity-1010\\seal-plan\\seal-executor-final-review.md",
+  "review_sha256": "07E15846DB93742DCB67AF01573DFC5FEF3516B5F9CD52AFE7B7EC2CF38C9952",
+  "precise_exception_requested": "sc7_completed_candidate_preservation_only"
+}
