@@ -1,0 +1,25 @@
+{
+  "recorded_at": "2026-10-10T19:56:31+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "change": "openspec/changes/sc7-batch-quantity-mapping",
+  "stage": "written_design_review_pending",
+  "scene_type": "SC7深化增量，复用#125/#403已批业务口径",
+  "sha256": {
+    "proposal.md": "4C55B1AB683BEBD9438E7186029CDF47BF031FB8AE732B3183600D64F90374F5",
+    "design.md": "921FC0E4B60E50D44F51B452E87A29DAB80058DA7B077AD56DFC319A2977118A",
+    "tasks.md": "D18C419FBDEE5495741901BC29860F884A9A42B0CACC6683172E23D7112FA350",
+    "specs/sc7-batch-quantity-evidence/spec.md": "5383F3583567BDA7A7B87EA2B116D424FD7807E18857F2BA0C9024C54F2EE725"
+  },
+  "independent_review": "Luna quality_readiness初审五点根修后只读复审实质闭合；本次同步proposal/tasks",
+  "scope": "Stage0私有合成标准化batch mapping及独立JSONL证据入口",
+  "implementation_authorized": false,
+  "product_tests_executed": false,
+  "real_query": false,
+  "remaining": [
+    "本人书面design审",
+    "具体计划审及新Native副作用批准",
+    "IT raw ItemMaster字段/组织/权限/单位/重复语义",
+    "K2真实统计卫生/专业参数采用",
+    "整合ff/生产/外发"
+  ]
+}

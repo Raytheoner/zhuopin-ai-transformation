@@ -1,0 +1,55 @@
+{
+  "recorded_at": "2026-10-10T19:56:31+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "source_docx": "C:\\Dev\\zhuopin-ai\\7-外部文档\\采购部\\采购部-YaoZuYi-回复-采购部#25-2026-10-10-采购部-姚祖怡-跟进-2026-10-03-SC2真实案例微会准备-1f03976e6756aa57ae294e3424842726.docx",
+  "source_docx_sha256": "ED6601482B2682125C9741AC50693E2D3C4314D5FC18528323A3ABD5614E9E47",
+  "source_text": "7-外部文档/采购部/采购部-YaoZuYi-回复-2026-10-10-文本反馈-642c40f76c240f0c6f063255a764cfe6.md",
+  "source_text_sha256": "EC2A735D036198298D5B6CBC133A36758F5E428FB9EE8B411CE57702ED78E99E",
+  "read_evidence": "reports/procurement-intents-1010/docx-read-3351de472503426fa6a5b4429b9984c4/read.json",
+  "method": "OOXML paragraphs and table cells in document order, text runs/colors and Word14 checked controls; read-only source",
+  "processed_rows": [
+    668,
+    669
+  ],
+  "feedback": [
+    {
+      "topic": "真实记录",
+      "answer": "10月8日答复：暂无。",
+      "effect": "例子/四组专业判据仍待真实核对，不认已签认"
+    },
+    {
+      "topic": "微会时间",
+      "answer": "10月10日上午10:00到10:30或者10月12日下午13:30到14:00",
+      "effect": "前一时间已过；后一为候选，未联系/预约/确认"
+    },
+    {
+      "topic": "门户选择",
+      "answer": "入口、SC2打开、检索、来源更新时间四题☑是",
+      "effect": "该次试用反馈通过，不代表全部UI/业务完工"
+    },
+    {
+      "topic": "导航/检索",
+      "answer": "没有难找的，都比较顺利；周报，无差别；来源说明暂无",
+      "effect": "保存反馈，无新增口径"
+    },
+    {
+      "topic": "SC2三指标",
+      "answer": "周报内容还未按下单按时完成率、排程按时答交率、按时到货率的回复进行修改",
+      "effect": "承接#538/SC2指标专业与现网整合，316合成首项不替代此要求"
+    },
+    {
+      "topic": "手机SC8",
+      "answer": "成品保供看板内容文字超出边界或相互重叠，内容较多，请修改",
+      "effect": "新#671读取实际展示/版本/viewport复现后补具体修订设计；已ff未生产UI不能抵销原反馈"
+    }
+  ],
+  "professional_signoff": false,
+  "external_send": false,
+  "meeting_confirmed": false,
+  "followup25_status": "回件已到且内容已消费；后续任务尚未完工。仅在正式落档及下游登记后经README CLI转📥",
+  "limitations": [
+    "OOXML读取原件内容与勾选，不声称独立现场访问/修复验证",
+    "时间候选不等于会议已预约",
+    "保持原件及已发送信不修改"
+  ]
+}
