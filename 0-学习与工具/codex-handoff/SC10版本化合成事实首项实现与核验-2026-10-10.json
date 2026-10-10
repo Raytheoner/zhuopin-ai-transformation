@@ -1,0 +1,80 @@
+{
+  "recorded_at": "2026-10-10T13:30:38.765629+08:00",
+  "reviewer": "/root (independent of implementation)",
+  "candidate": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc10-versioned-facts-1010\\zhuopin-ai",
+  "candidate_head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+  "candidate_branch": "",
+  "sha256": {
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/evidence.py": "64575FC610A4A8765A4146A3D89A840D52762A3749C254F9944D75ACAAC6E0A8",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/agent.py": "0195119AC00C491FF58922C1D4925927E4BB81BC7D676AC7F1CCD69F25EF03F9",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_evidence.py": "6EA0848B33E82D52023450222D75FCF53C83C0E7A03B28AC5420E773C6E297DF",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_agent_audit.py": "6472FC1776D4A4D3069CB92A9B3F52B887FB05ACF1F04B1EC3488F82A2937199"
+  },
+  "dirty_exact_whitelist": [
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/agent.py",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/evidence.py",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_agent_audit.py",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_evidence.py"
+  ],
+  "diff_check": "empty",
+  "legacy_function_exact": true,
+  "run": "C:\\Dev\\zhuopin-ai\\reports\\sc10-versioned-facts-1010\\run-c4a320a6e84440b1a1f12bc2659cd867",
+  "junit": {
+    "tests": 56,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "exit_code": 0,
+  "stderr_bytes": 0,
+  "audit_path": "C:\\Dev\\zhuopin-ai\\reports\\sc10-versioned-facts-1010\\run-c4a320a6e84440b1a1f12bc2659cd867\\basetemp\\test_versioned_success_is_pers0\\sc10-versioned.jsonl",
+  "audit_sha256": "e542d27196972bd38c5d27344639984060737724584e4340c15133fa4d78536f",
+  "audit_chain": {
+    "ok": true,
+    "total": 1
+  },
+  "manifest_sha256_recomputed": "3c9a45d52527b63bd0192e51172b713d99f14bff79886afe9f358ef38a58034b",
+  "result_sha256": "5b340218eb0a955e7ef9b3812ba2c7756b0a49aae1e6b8169dc4f469ae785dfe",
+  "main_head": "c4b3b8c2691db2ee0c0b1e2695c40de8d267a13a",
+  "review_findings_resolved": "真实JsonlSink强制门、非持久/no-op拒绝、loss/price/planned量非法数边界；root已逐文件独立审阅最终实现与测试。",
+  "limitations": "合成事实首项；共享float展开数值合同；不做专业建议/签认；候选未提交/整合/ff，不代表完整SC10业务完成。",
+  "product_test_execution_by_this_script": false,
+  "registration_local_time": "2026-10-10T13:34:34+08:00",
+  "approval_plan_sha256": "F7A61C74916A0F380A04931170076DFB2C4E6CCA2769D1BD51A23AFCF8D076A3",
+  "approved_design_sha256": "06DA737EF7C8BC647AD456047A265071501759059EEAED7FB687CE333B9C36DC",
+  "root_proof_sha256": "38473ca4f528cfc692fb4ece52c9255fb463055eeddb58bcde9bf84ff94ab767",
+  "test_files": [
+    "tests/test_evidence.py",
+    "tests/test_review_facts.py",
+    "tests/test_agent_audit.py",
+    "tests/test_pending_gates.py"
+  ],
+  "test_command": [
+    "C:/Dev/Codex/runtimes/zhuopin-ai/venv/Scripts/python.exe",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-ra",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_evidence.py",
+    "tests/test_review_facts.py",
+    "tests/test_agent_audit.py",
+    "tests/test_pending_gates.py",
+    "--basetemp",
+    "C:\\Dev\\zhuopin-ai\\reports\\sc10-versioned-facts-1010\\run-c4a320a6e84440b1a1f12bc2659cd867/basetemp",
+    "--junitxml",
+    "C:\\Dev\\zhuopin-ai\\reports\\sc10-versioned-facts-1010\\run-c4a320a6e84440b1a1f12bc2659cd867/junit.xml"
+  ],
+  "test_cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc10-versioned-facts-1010\\zhuopin-ai/4-数字员工/采购部/SC10-BOM评审与物料库管控",
+  "preserved_attempts": [
+    "baseline run-c7d7d014957508b45c469f5fe6e946a8 (18 passed)",
+    "RED run-45e5683453ca4a552409e4da756d17f4 (import failure)",
+    "run-6e8b86cbb25d0601e289b7b914436d56 (42 passed)",
+    "run-8ef1dc30419b44989625f56830ec29c1 (54 passed)",
+    "audit backend RED run-2c61a894776f4a22b5d3e9d1c6f80a13 (54 passed/2 failed)",
+    "final run-c4a320a6e84440b1a1f12bc2659cd867 (56 passed)",
+    "root-review-parser-first-failure.json (review helper parser only)"
+  ]
+}
