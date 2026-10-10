@@ -1,9 +1,43 @@
 {
-  "recorded_at": "2026-10-10T22:11:18.745654+08:00",
+  "recorded_at": "2026-10-10T22:41:18.873242+08:00",
   "approved_exception": "call_1c0842c033cb4a6386a867705402915d/0",
   "operation_evidence": "reports/frontier-prerequisites-1010/ee5-execution-e023d4b9-c0da-45f1-9834-5beb459bbe82",
-  "status": "freeze_pending",
-  "total_table_written": false,
+  "status": "text_written_word_pending",
+  "total_table_written": true,
   "word_qa_completed": false,
-  "restored": false
+  "restored": false,
+  "text_readbacks": [
+    {
+      "path": "1-转型规划/0-全景路线图/跨场景前置数据与知识库任务总表.md",
+      "before_sha256": "DA1461E7CA30FC46CFF7A7EFE2817C5305178178FEF31D7346EDECF834E244E1",
+      "after_sha256": "D0A98F33DFB017745D8D2D3E3EA83DCA57B936FCA220825AA6D6D5E861D7B1E0",
+      "before_bytes": 36485,
+      "after_bytes": 38531,
+      "readback": true
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/卓品智能AI转型全景规划.md",
+      "before_sha256": "256DD7BC85EE44761D14C52DAB20A714ADD771020DAA060050C5251A75280938",
+      "after_sha256": "566B637F687E6A4E5D3771F09C70AC54388B0D8FFAC359510D9BC20117CC4D7B",
+      "before_bytes": 186794,
+      "after_bytes": 187242,
+      "readback": true
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/全景路线图重组机制与变更日志.md",
+      "before_sha256": "5B85DD08F0EB62C9AF39334E033A2E3832C07087D76BA9684084C4F0BFAC6EAC",
+      "after_sha256": "20FD4534D69CC6777F43CEFED0F40F9656E481966B41FCAA20EBC43957A43621",
+      "before_bytes": 36597,
+      "after_bytes": 37026,
+      "readback": true
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/session接力-Phase1收口.md",
+      "before_sha256": "EA78CD302BC2DA54297C3F07E85608D5414935421D23BF2DB39F7C924BD68BCC",
+      "after_sha256": "13B77C5EA43BC0736A38E6BFC071BA564017A697ABB0382EFD27E366BA282052",
+      "before_bytes": 8184,
+      "after_bytes": 8609,
+      "readback": true
+    }
+  ]
 }
