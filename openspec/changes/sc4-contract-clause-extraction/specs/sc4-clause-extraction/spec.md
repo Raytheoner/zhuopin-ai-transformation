@@ -4,7 +4,7 @@
 并把「与标准条款库比对、风险分级、缺失条款识别」三项**依赖法务判据的能力挡在前置闸之后**。
 本能力只回答「文档里有什么」，不回答「它算不算风险」。
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: 条款切分与定类
 系统 SHALL 把一份合同文本切分为条款片段，每个片段 MUST 携带其在源文档中的起止偏移量，
@@ -61,19 +61,29 @@ MUST NOT 为词表提供默认值。
 - **THEN** 系统报错，MUST NOT 静默放行
 
 ### Requirement: 取文层边界
-系统 SHALL 通过一个可替换的取文接口获取合同文本。在平台底座统一 `doc_parser` 落地前，
-系统 MUST NOT 自建 PDF/Word 解析实现，并 SHALL 在收到二进制文档后缀时明确拒绝。
+系统 SHALL 通过可替换取文接口获取合同文本，MUST NOT 自建PDF/Word解析实现。
+已批准的合成TXT/DOCX证据路径 SHALL 仅对受控合成目录一次捕获源字节；TXT按UTF-8保留原换行，
+DOCX从该次字节快照委托平台doc_parser.extract_text(include_extra_parts=False)。旧PlainTextSource合同保留。
+PDF、旧.doc、扫描件及OCR不属于本阶段，SHALL 明确拒绝；平台解析错误MUST传播，不当空文本成功。
 
 #### Scenario: 纯文本取文
-- **WHEN** 传入 `.txt` 或 `.md` 脱敏样例
-- **THEN** 系统返回合同文本，并记录来源标识
+- **WHEN** 传入受控合成.txt或.md样例
+- **THEN** 返回该次字节按UTF-8解码的原文本、来源身份/修订及hash，保留CRLF
 
-#### Scenario: 二进制后缀被拒绝
-- **WHEN** 传入 `.pdf` 或 `.docx`
-- **THEN** 系统报错并指向平台底座 `doc_parser`，MUST NOT 按文本读取该文件
+#### Scenario: 合成DOCX经共享解析器取文
+- **WHEN** 传入受控合成.docx且平台parser可用
+- **THEN** 从同一已捕获字节的独立snapshot取文，记录显式extractor profile/version和canonical text hash
+
+#### Scenario: 非支持二进制后缀被拒绝
+- **WHEN** 传入.pdf、.doc、扫描件或非受控真实合同
+- **THEN** 明确拒绝，不按文本读取、不自建解析/OCR、不默认为合成来源
+
+#### Scenario: DOCX解析失败
+- **WHEN** 已捕获的DOCX无法由平台parser读取
+- **THEN** 传播解析失败，MUST NOT 等同于无标题的合法空片段集合
 
 ### Requirement: L2 留痕与可归责
-每次抽取 SHALL 写入平台审计，记录场景、动作、可归责人、自动化等级 L2、所用词表与来源。
+本期完整来源证据入口run_source_evidence的每次抽取 SHALL 写入平台审计，记录场景、动作、可归责人、自动化等级 L2、所用词表与来源。
 可归责人为空时系统 MUST 拒绝执行。审计记录 SHALL 标明审核尚未开始及其被哪些前置阻塞。
 
 #### Scenario: 缺可归责人
@@ -83,3 +93,35 @@ MUST NOT 为词表提供默认值。
 #### Scenario: 审计如实标注审核未开始
 - **WHEN** 系统完成一次抽取并写入审计
 - **THEN** 该条记录的审核状态为「待前置到位」，并列出被阻塞的两项前置键
+
+#### Scenario: 历史入口兼容不计完整来源验收
+- **WHEN** 调用旧run_extraction(...,audit=None)或直接segment
+- **THEN** 保留获批具体计划的兼容行为，但MUST NOT记作六项完整来源run或业务审核验收
+
+## ADDED Requirements
+
+### Requirement: 版本化抽取证据
+合成完整run SHALL 非空artifact_id/revision、lexicon_id、源字节SHA256、canonical text SHA256、
+extractor profile/version及offset scheme；offset SHALL 为Python codepoint的0-based半开区间。
+每片段text MUST 等于raw_text[start:end]；展示trim MUST与证据字段分离。DOCX offset只回指canonical text，不冒称Word页码/XML位置。
+
+#### Scenario: 空白与CRLF可回指
+- **WHEN** 合成条款含前后空白及CRLF
+- **THEN** raw_slice严格等于记录text，展示清理不改写原片段/偏移量
+
+#### Scenario: 相同覆盖不同来源修订
+- **WHEN** 两份输入覆盖概览相同但artifact revision或源字节不同
+- **THEN** 对应证据身份/hash可区分，不能以同覆盖代替同输入
+
+### Requirement: 合成证据审计失败关闭
+完整合成run SHALL 使用可写平台audit记录真实持久化事件，保留L2/evaluator、审核未开始及blocked_by。
+审计仅记录来源引用/hash/版本和摘要，不写原合同；纯segment函数可无IO，但不得被称为完整run。
+
+#### Scenario: 审计缺失或写失败
+- **WHEN** 完整run没有可写audit或sink写入失败
+- **THEN** 不返回完整run成功，传播失败，不开启专业审核
+
+#### Scenario: 六项证据对照
+- **WHEN** 执行已批准六项合成场景
+- **THEN** 对照TXT/DOCX同canonical输入、四类及多类OTHER、未命中、无标题、空白/CRLF、同覆盖换版本；保留每项输入身份/预期/实际差异
+

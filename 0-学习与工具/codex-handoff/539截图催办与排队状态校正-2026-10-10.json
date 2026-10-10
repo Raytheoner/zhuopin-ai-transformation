@@ -1,0 +1,17 @@
+{
+  "recorded_at": "2026-10-10T09:06:57+08:00",
+  "trigger": "用户截图10/10 08:37:41邵总数字人open池催办#539",
+  "official_row_before": "S:open/D:业且存在本人09-19 4a等待538裁决",
+  "official_538": "S:partial，专业/真实源及部署/history差仍未闭",
+  "ui": {
+    "tasks": "openspec/changes/portal-sc2-ui/tasks.md",
+    "local_ff": "b146e73f8462ed35c3fdf450e3031a0fc9580cea",
+    "binding": "openspec/changes/portal-sc2-ui/ff合入批准与执行.json",
+    "scope": "同一sc2/webapp.py只读展示与mock UI契约；不改#538",
+    "limits": "没有#539三项专项对照及外部复看证据；未发版、未真实取数"
+  },
+  "decision": "仅校正机器状态为blocked，保留4a业务依赖和既有完整原文。已实施展示复用，不重建；之后先专项差异对照及触碰区顺序，具体未满足范围另审。已发催办消息不撤改，后续机器摘要按正式状态读。",
+  "changed_products": [],
+  "sent_messages": 0,
+  "tests_run": 0
+}

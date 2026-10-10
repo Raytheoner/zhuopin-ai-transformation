@@ -1,0 +1,37 @@
+{
+  "recorded_at": "2026-10-10T09:06:57+08:00",
+  "time_semantics": "实际整理时间，非答复接收时间",
+  "thread_id": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "approvals": [
+    {
+      "scene": "SC4",
+      "q": "[\"request_user_input_async\",\"call_f64683b0c27949afa006ed9c72edc82e\",0]",
+      "answer": "A：批准 design 与分阶段修订方向，继续具体计划（推荐）",
+      "path": "openspec/changes/sc4-contract-clause-extraction/design.md",
+      "sha256": "09B9083CD42F979D7BD912F0BC2ECBCCDA22DF15D7DAC2B55E26B6E29B18AA02"
+    },
+    {
+      "scene": "SC10",
+      "q": "[\"request_user_input_async\",\"call_f64683b0c27949afa006ed9c72edc82e\",1]",
+      "answer": "A：批准 design 与3M依赖拆分，继续具体计划（推荐）",
+      "path": "openspec/changes/sc10-bom-review-material-governance/design.md",
+      "sha256": "06DA737EF7C8BC647AD456047A265071501759059EEAED7FB687CE333B9C36DC"
+    },
+    {
+      "scene": "SC11",
+      "q": "[\"request_user_input_async\",\"call_f64683b0c27949afa006ed9c72edc82e\",2]",
+      "answer": "A：批准 A2/B2 及规格修订方向，继续具体计划（推荐）",
+      "path": "openspec/changes/sc11-inventory-transfer/design.md",
+      "sha256": "EF3FFE667DB3A8959794E921245B42774F920FE764215F211F6D8EA43DF685C5"
+    },
+    {
+      "scene": "O4",
+      "q": "[\"request_user_input_async\",\"call_bf8b3e5c41da4ccfbb518e1e67691567\",0]",
+      "answer": "A：确认完整 intent，继续创建分阶段设计（推荐）",
+      "path": "0-学习与工具/codex-handoff/O4完整intent供确认-2026-10-10.md",
+      "sha256": "4FBD44158218715E6D165ED9C70F6104BDE30463EFCC93F19EAAF0AE4BB59AE1"
+    }
+  ],
+  "consumption": "三采购delta spec/tasks依批准方向正式修订；设计原文SHA冻结且历史待审句不追改，当前批准以本记录/任务勾选为准。main specs未同步；具体实施计划仍待审。O4批准整体intent，仅允许建正式intent与OpenSpec设计，不授权产品实现/测试或真实取数。",
+  "verification": "三采购修改后openspec validate --strict各exit0/valid；不运行产品测试。"
+}

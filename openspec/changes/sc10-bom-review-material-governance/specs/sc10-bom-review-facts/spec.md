@@ -4,7 +4,7 @@
 并把「BOM 评审建议、物料优先选用级别建议、优先选用与淘汰建议」三项依赖外部数据与采购口径的
 能力挡在前置闸之后。本能力只回答「物料库和 BOM 里有什么、还差什么数据」，不回答「该选哪个」。
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: BOM 展开复用平台底座
 系统 SHALL 通过平台底座的 BOM 展开能力计算物料毛需求，MUST NOT 自建第二份展开实现。
@@ -88,3 +88,49 @@ OEM 路由。
 #### Scenario: 审计不带 OEM 上下文
 - **WHEN** 系统写入一条事实层审计记录
 - **THEN** 该记录的 OEM 上下文为空，体现「刻意不施加隔离」而非遗漏
+
+## ADDED Requirements
+
+### Requirement: 版本化合成事实封套
+首项SC10-MOCK-B01/r1 SHALL 使用冻结BOM/plans/materials值与显式schema/facts-contract；分别生成三源hash，
+再生成绑定输入身份及三源hash的manifest hash和绑定完整事实的result hash。旧未版本化入口保持兼容，
+无manifest的旧结果MUST NOT 被计作3M验收。计算MUST复用collect_facts及平台展开，不产专业建议。
+
+#### Scenario: 两成品三物料事实对照
+- **WHEN** 合成F01=10/F02=20，M-A分别用2/3，M-B仅F01用1，M-C仅F02用1
+- **THEN** 毛需求80/10/20，M-A共用且两产品来源可追溯；给定首项主数据完备度3/1/2/0，不推导BOM合格或选用优先级
+
+#### Scenario: 冻结后调用方改变原对象
+- **WHEN** 调用方在封套建立后修改原输入
+- **THEN** 本次计算/证据只依冻结值，不重新读取可变原对象
+
+### Requirement: Canonical hash和缺数证据
+规范化SHALL使用UTF-8 canonical JSON（ensure_ascii=False、sort_keys=True、separators逗号/冒号、allow_nan=False）。
+有限数按Decimal(str(value))无指数文本，去小数末零但保留整数位，负零归0；None为null、enum取value。
+逐源行按完整canonical JSON字节排序，重复BOM行MUST保留；计划日期不得冒充as-of。
+
+#### Scenario: 同计数不同内容
+- **WHEN** 物料值或BOM用量改变但四项完备度计数不变
+- **THEN** 相应输入/manifest/result hash改变，不能只以计数证明版本
+
+#### Scenario: 换序与重复BOM
+- **WHEN** 内容仅换排列或含重复BOM行
+- **THEN** 换序hash稳定；重复行保留其重复次数和毛需求，不去重
+
+#### Scenario: 非法数与缺数
+- **WHEN** 输入含NaN/Inf或None、0、UNKNOWN、缺主数据
+- **THEN** 非有限数拒绝；四种缺数/值语义保持可区分，不自动判断零价有效或淘汰
+
+### Requirement: 版本化事实审计有效性
+新run_versioned_review_facts SHALL 非空evaluator和可写audit，事件SHALL含
+evidence_contract=sc10-versioned-facts-v1、run_mode=synthetic_versioned及输入/manifest/result完整hash链。
+audit缺失或持久化失败MUST传播失败；摘要/引用不带原BOM/物料行，ordinary采购oem_context保持空。
+
+#### Scenario: 真实合成JSONL读回
+- **WHEN** 版本化合成事实run完成
+- **THEN** 可从实际JSONL读回匹配contract/mode/hash链事件，仅构造AuditEvent/no-op sink不算成功
+
+#### Scenario: Legacy事件与专业规则
+- **WHEN** 查询缺contract/hash链旧事件或请求任一专业suggest
+- **THEN** 旧事件不能算3M验收；专业suggest仍按原前置fail-loud，规则未应用显式not_applied
+

@@ -4,12 +4,12 @@
 按四条调拨原则的可度量定义排序，并以一道不可绕过的 PMC 确认门禁守住「AI 不自动落库、
 不自动外发」这条红线。本能力只产建议，不产已生效的计划。
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: PMC 确认门禁
-调拨清单落 ERP 与外发邮件 MUST 在 PMC 经理人工确认之后才可执行。确认 SHALL 记录实名。
-系统 MUST NOT 提供任何可跳过该确认的参数或开关。确认状态的唯一判据 SHALL 是拟稿自身
-所记录的确认人。
+调拨清单落ERP与外发邮件MUST先有可归责PMC实名确认，并且独立ApprovalRecord精确指向当前不可变DraftRevision的draft_id/revision/content_hash。
+仅approved_by非空MUST NOT构成有效确认；旧确认记录仅留unversioned history，不自动迁移授权。
+系统MUST NOT提供任何跳过确认参数或开关，执行侧仍只接受拟稿一个入参。
 
 #### Scenario: 未确认即落库
 - **WHEN** 调用方对一份未确认的拟稿请求落 ERP
@@ -110,3 +110,43 @@
 #### Scenario: 审计记录完整
 - **WHEN** 系统写入一条拟稿审计记录
 - **THEN** 记录中的确认状态为未确认、审核状态为「待前置到位」，并列出四项被阻塞的前置键
+
+## ADDED Requirements
+
+### Requirement: 共享库存原子守恒
+合成首项SHALL按(snapshot/sourcewarehouse/material)使用同一可用账本。需求依显式scenario_order整单试算，
+选中候选后原子预留，后续需求仅看余额；首项不拆单、不替代。MUST区分整单unmet quantity与总量arithmetic shortage。
+
+#### Scenario: 两需求共享六库存
+- **WHEN** 同源同物料可用6，两个需求各4且不能拆单
+- **THEN** 首需求拟稿4，次需求整单unmet4，余额2；总量shortage2，不把余2记为已调拨
+
+#### Scenario: 同分与缺评分不自动挑仓
+- **WHEN** 完整评分tuple同分而无scenario_candidate_order，或全部评分缺数
+- **THEN** 输出unranked；显式合成候选顺序仅破完整tuple同分，不改变非同分排序
+
+### Requirement: 不可变内容版本和确认绑定
+business hash SHALL覆盖完整输入引用/值、as-of、schema/algorithm版本、两种情景顺序、假设、拟稿行/unmet。
+显示/时间/签认人另记录。确认后内容变化SHALL新revision，旧确认不得授权新内容；所有绑定校验失败MUST关闭。
+
+#### Scenario: 确认后修改内容
+- **WHEN** 已确认拟稿的任何业务内容变化
+- **THEN** 创建新revision且默认未确认，旧审批保持历史，不能继续执行新版本
+
+#### Scenario: 旧版本或hash失配确认
+- **WHEN** ApprovalRecord指向旧revision或hash与当前内容不符
+- **THEN** 拒绝确认/执行，不能只凭确认人字段放行
+
+### Requirement: 拟稿与确认审计持久化
+完整新拟稿、确认/拒绝和修订orchestration SHALL有非空evaluator及可写audit，记录精确version/hash/假设。
+确认SHALL成功持久化绑定事件后才返回有效状态；无audit或写失败MUST保持未确认并传播失败。
+低层无IO preview不得被称为完整L2交付或可执行拟稿。
+
+#### Scenario: 审计确认写入失败
+- **WHEN** sink不可写或确认事件追加失败
+- **THEN** 不形成有效PMC确认，ERP/邮件不能执行
+
+#### Scenario: 合成真实JSONL读回
+- **WHEN** 新拟稿及PMC确认成功
+- **THEN** 实际JSONL中可读回分别匹配当前draft_id/revision/hash的事件；ERP和邮件通道仍报告NotWiredYet
+
