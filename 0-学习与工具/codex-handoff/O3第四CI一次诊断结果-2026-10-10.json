@@ -1,0 +1,30 @@
+{
+  "recorded_at": "2026-10-10T21:57:15.000+08:00",
+  "human_approval": "call_c4ba88c550b54e48a931b6e4b54b41f7/0 A",
+  "once_allowance_consumed": true,
+  "generator_actual_exit": 0,
+  "runner_actual_exit": 1,
+  "execution_state": "timed-out",
+  "elapsed_ms": 181333,
+  "timeout_ms": 180000,
+  "observed_exit_code": 124,
+  "exit_code": null,
+  "stdout_bytes": 0,
+  "stderr_bytes": 5802,
+  "phase_counts": {
+    "P0": 1,
+    "P1": 2,
+    "P2": 99,
+    "P3": 1,
+    "P4": 1
+  },
+  "last_phase": "P4",
+  "candidate_head": "0ad830234af70585d359df23123973eceeace3a3",
+  "diagnostic_copy_sha256": "6A068B9FE25DB1720FF5A7CC1AD21F5F9C4233863BE84FD2669AC7E30F60278A",
+  "proof": "reports/o3-fourth-ci-1010/runs/16ec8e3f9f3d4daab2218aad0ff1aee2",
+  "metadata_sha256": "7BCBC731D4AC26DE2B36C0D5705E9CB426B1AC20EE6556FF119E570859AC3BE5",
+  "classification": "status-card diagnostic only; not pytest and not CI pass/fail",
+  "retry_authorized": false,
+  "fourth_pytest_run": false,
+  "interpretation": "已进入P4整个sweep-commit.log读取/逐行解析/批次分类聚合区域后总超时；不能区分子步骤耗时。原Job进程退出观察124；不可作为pytest/CI通过或失败结论。"
+}

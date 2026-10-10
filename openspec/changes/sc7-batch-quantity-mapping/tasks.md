@@ -6,7 +6,7 @@
 
 ## 设计与实施闸
 
-- [ ] 审阅并书面批准正式 design：SC7 私有模块边界、标准化映射合同、hash/snapshot 内容、JSONL 成功条件与失败语义。
+- [x] 审阅并书面批准正式 design（本人 call_ddN5hY9Ddcj2KikNHxd1F2uV/0 A，2026-10-10；已答勿重做）：SC7 私有模块边界、标准化映射合同、hash/snapshot 内容、JSONL 成功条件与失败语义。
 - [ ] 独立批准具体实施计划和逐文件白名单；未批准前不得开始代码实现。
 
 ## Stage 0 合成实现（仅在前两项获批后）
@@ -21,3 +21,5 @@
 - [ ] IT 提供并核验 ItemMaster raw 请求/响应、物料自证、权限/组织、类型/单位、缺值和重复行语义；另行设计 raw adapter 与 query 白名单。
 - [ ] 为 raw adapter 单独取得设计/计划/实现批准；先检查 raw duplicate/conflict，再规范化为 mapping；独立验证真实来源与审计。
 - [ ] K2 仅在真实读取单独授权后核验既有统计器的数据卫生和样本分布，交采购专业人员签认；参数采用另行批准，未批准前 `lead_time_days=30` 保持不变。
+
+具体计划已登记 `docs/superpowers/plans/2026-10-10-sc7-batch-quantity-mapping.md`；实施计划/白名单尚待本人批准，无代码或测试执行。

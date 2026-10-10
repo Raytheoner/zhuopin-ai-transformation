@@ -1,9 +1,11 @@
 {
-  "recorded_at": "2026-10-10T20:31:36+08:00",
+  "recorded_at": "2026-10-10T22:11:18.745654+08:00",
   "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
   "operation": "EE5 residual prerequisite root operation",
-  "status": "not_started",
-  "ee5_root_operation_active": false,
-  "reason": "残余执行片段具体裁决尚未到；未启动EE5写入/冻结/Word重生成",
-  "scope_limit": "只证明本根EE5作业真实状态；不是§三无冻结证明或场景解冻授权"
+  "status": "active_freeze_pending",
+  "ee5_root_operation_active": true,
+  "reason": "本人批准限定状态行替代；根唯一串行作业，SC10/11暂停，待两个官方edit实际成功再写总表",
+  "scope_limit": "只证明本根EE5作业真实状态；不是§三无冻结证明或场景解冻授权",
+  "authorization": "EE5限定冻结替代批准消费-2026-10-10.json",
+  "operation_evidence": "reports/frontier-prerequisites-1010/ee5-execution-e023d4b9-c0da-45f1-9834-5beb459bbe82"
 }
