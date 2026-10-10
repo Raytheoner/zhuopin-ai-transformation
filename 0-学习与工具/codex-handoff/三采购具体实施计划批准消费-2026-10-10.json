@@ -1,0 +1,53 @@
+{
+  "recorded_at": "2026-10-10T12:32:48+08:00",
+  "record_time_kind": "本次整理时间；批准发生于当前会话原答，机器创建/核对见工具结果",
+  "thread_id": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "holder": "Native-1010-全景接力",
+  "status": "三计划原答已消费；新Native创建完成、干净起点已核；产品实施待派发",
+  "start_ref": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+  "plans": [
+    {
+      "scene": "SC2",
+      "row": 667,
+      "questionItemId": "[\"request_user_input_async\",\"call_5d96e9eaa1f14b0db09cdb831f778631\",0]",
+      "answer": "A：批准14文件、定向测试及所列隔离副作用（推荐）",
+      "plan": "docs/superpowers/plans/2026-10-10-sc2-biztype316-receipts.md",
+      "plan_sha256": "6B52F00872654AD407C931BCEEE12309500A13EACF93C42BC1A145E674219B9C",
+      "design_sha256": "38E3BB0CE2DB024BF85BBC543E8997D14827C1CEBD679F75B9F6DCA017FE624D",
+      "file_count": 14,
+      "test_file_count": 5,
+      "operationId": "a392906c-8820-42b2-a7d9-e8093c255abd",
+      "workspace": "C:/Users/Paul Shao/.codex/worktrees/sc2-biztype316-1010/zhuopin-ai"
+    },
+    {
+      "scene": "SC10",
+      "row": 468,
+      "questionItemId": "[\"request_user_input_async\",\"call_eLSvponGL5G3plvwoj79ojzo\",0]",
+      "answer": "A：批准具体计划及所列实现、测试与隔离副作用（推荐）",
+      "plan": "docs/superpowers/plans/2026-10-10-sc10-versioned-facts.md",
+      "plan_sha256": "F7A61C74916A0F380A04931170076DFB2C4E6CCA2769D1BD51A23AFCF8D076A3",
+      "design_sha256": "06DA737EF7C8BC647AD456047A265071501759059EEAED7FB687CE333B9C36DC",
+      "file_count": 4,
+      "test_file_count": 4,
+      "operationId": "9af82ee7-cc00-4704-9a62-893094675109",
+      "workspace": "C:/Users/Paul Shao/.codex/worktrees/sc10-versioned-facts-1010/zhuopin-ai"
+    },
+    {
+      "scene": "SC4",
+      "row": 467,
+      "questionItemId": "[\"request_user_input_async\",\"call_efd52b2921414de98287aa6da427576d\",0]",
+      "answer": "A：批准8文件、定向测试及所列隔离副作用（推荐）",
+      "plan": "docs/superpowers/plans/2026-10-10-sc4-source-evidence.md",
+      "plan_sha256": "8EB31234EEA4B7F70D929E94AB326F9F5FBCCE8C35C8B983EAC6ECBADC565228",
+      "design_sha256": "09B9083CD42F979D7BD912F0BC2ECBCCDA22DF15D7DAC2B55E26B6E29B18AA02",
+      "file_count": 8,
+      "test_file_count": 3,
+      "operationId": "87b9d2c5-c7e5-496e-a272-bd55c5e25586",
+      "workspace": "C:/Users/Paul Shao/.codex/worktrees/sc4-source-evidence-1010/zhuopin-ai"
+    }
+  ],
+  "preflight": "三树 git rev-parse HEAD为批准起点，git status --short空，退出0；正式三计划SHA逐件Get-FileHash相符。",
+  "authorization": "各自精确文件与定向测试、工具返回的仓库外新checkout/Git元数据、主仓新UUID证据；只做合成首项。",
+  "retained_gates": "实际字段/专业签认/真实源/B服务端过滤/专业建议/ff/候选提交整合/push/生产/外发/晋档/归档；旧Guardian锁及delivery状态保持。",
+  "children_model": "gpt-6-luna"
+}
