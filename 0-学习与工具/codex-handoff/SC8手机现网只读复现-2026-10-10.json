@@ -1,0 +1,36 @@
+{
+  "recorded_at": "2026-10-10T21:36:56.000+08:00",
+  "human_approval": "call_ec6e474030cb47b789c69941e37fbda8/0 A",
+  "url": "http://192.168.100.51:8091/",
+  "title": "成品保供预警看板 · 服务",
+  "displayed_updated_at": "2026-10-10T21:07:34",
+  "deployed_commit": null,
+  "version_limit": "页面没有build/version metadata；最后更新是数据时间，不是部署版本证明",
+  "screenshots": {
+    "mobile-320.jpg": {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\browser-c2783311-b714-4f3e-ae03-b9b03b4a3377\\mobile-320.jpg",
+      "sha256": "A516D23717395E633BF6655092BA2A3455CA0E539C601A1A1810E71993AAD158"
+    },
+    "mobile-390.jpg": {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\browser-c2783311-b714-4f3e-ae03-b9b03b4a3377\\mobile-390.jpg",
+      "sha256": "339C0F93DA35861CE17D4FB360A9A3DEECD0E72F3825DD3D46C782BD58647663"
+    }
+  },
+  "layout_files": {
+    "read-only-dom-390.json": {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\browser-c2783311-b714-4f3e-ae03-b9b03b4a3377\\read-only-dom-390.json",
+      "sha256": "08B7EB35DF58C123C4578083DEA5D01ACEAF324F6D081165B2941E5080DD3C55"
+    },
+    "read-only-layout-320.json": {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\browser-c2783311-b714-4f3e-ae03-b9b03b4a3377\\read-only-layout-320.json",
+      "sha256": "A9D539D2606DDA55B7ADFD6D636FF8C22BEE60FE88C135C9E7D3745E05FA08B7"
+    }
+  },
+  "observed": "390px导航bg-nav top24 bottom70 height46；brand height96 bottom95；links height114 top-10 bottom104，直接超过导航高度，截图与几何相符；320px同样发生页首竖排重叠",
+  "viewport_reset": true,
+  "read_scope": "Browser既有页面/DOM/CSS/截图，无refresh/recompute/filter/paging/export/审阅按钮/网络替代入口",
+  "reproduced_header_overlap": true,
+  "product_changed": false,
+  "fixed": false,
+  "remaining": "只读源CSS与现场style比对后书面修订design审；未识别生产revision，禁止直接发布本地候选"
+}

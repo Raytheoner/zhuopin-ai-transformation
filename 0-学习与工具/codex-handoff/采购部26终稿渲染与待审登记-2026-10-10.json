@@ -1,0 +1,36 @@
+{
+  "recorded_at": "2026-10-10T21:36:56.000+08:00",
+  "human_render_exception": "call_m3xLFz6bNgvwMoYIEPXMAKGl/0 A",
+  "render_actualexit": 0,
+  "proof": "reports/procurement-intents-1010/letter26-render-0fe64961-5949-4145-8e38-5ca85e5013f5",
+  "pages_reviewed": [
+    "page-1.png",
+    "page-2.png"
+  ],
+  "visual_review_passed": true,
+  "layout_revision": "删除模板重复title与空段；附录单页起，签名留正文末；MD业务文本未改",
+  "draft_sha256": {
+    "md": "09B1EDB5BBFD56AD5482CE0610DE63D7D002EE2B62D2E78E6C9B2FE560CC8712",
+    "docx": "A206FB155007287AB884F6C809A8CC0FEAF607F1883FD6324D4EC818EC33D1E3"
+  },
+  "formal_letter_paths": [
+    "6-人才与组织/部门AI专员跟进/采购部-姚祖怡-跟进-2026-10-10-微会时段与页面反馈承接.md",
+    "6-人才与组织/部门AI专员跟进/采购部-姚祖怡-跟进-2026-10-10-微会时段与页面反馈承接.docx"
+  ],
+  "followup_readme_registered": true,
+  "send_approved": true,
+  "sent": false,
+  "meeting_booked": false,
+  "status": "⏳待你审；一项确认10-12 13:30–14:00上海候选时段，非专业签认",
+  "registered_at": "2026-10-10T21:57:15.000+08:00",
+  "readme_number": "采购部#26（待你审，暂不占号）",
+  "readme_status": "⏳ 待你审",
+  "name_check_actual_exit": 0,
+  "readme_append_actual_exit": 0,
+  "send_approval_question_id": "call_kDMLTzO69DQEhhJ7zYFE2HHQ/0",
+  "send_approval_quote": "发：批准此终稿并按发送闸发出（推荐）",
+  "send_approval_recorded_at": "2026-10-10T22:07:50.000+08:00",
+  "readback_verified": true,
+  "approval_utility_first_actual_exit": 2,
+  "cooldown_status": "首次观测已记录；按默认10分钟，未绕过；保守14:14:34UTC后重核"
+}

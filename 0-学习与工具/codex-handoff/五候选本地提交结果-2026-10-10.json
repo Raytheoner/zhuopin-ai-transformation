@@ -1,0 +1,129 @@
+{
+  "recorded_at": "2026-10-10T21:36:56.000+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "human_approval": "五候选本地提交批准消费-2026-10-10.json",
+  "script_sha256": "6CAB74E0FA2E336C531E25FB62432D15C76A5998805D6818830EB6224D1A1277",
+  "manifest_sha256": "A4996E4758B4A36326D95D87524EAC63F02135AF57A126135CF2CBA5C51D12DB",
+  "lane_count": 5,
+  "path_count": 41,
+  "lanes": [
+    {
+      "lane": "SC2",
+      "head": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "ref": "codex/candidate-sc2-1010",
+      "tree": "8ce16b268ebe8ce5dc4418a0aab0063b782aae8c",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "proof": "reports/candidate-integration-1010/seal-evidence/d0f5d6cd-adb6-4e48-ae08-f8870711bb1f/summary.json",
+      "actualexit": 0,
+      "checks": {
+        "candidate_git_identity": "passed",
+        "candidate_head_base": "passed",
+        "exact_status_set": "passed",
+        "index_empty_and_tracked_inventory": "passed",
+        "hooks_filters_signing_identity": "passed",
+        "planned_ref_absent": "passed",
+        "main_master_clean_scope_and_baselines": "passed",
+        "raw_sha_and_clean_oids": "passed",
+        "authorization_binding": "passed",
+        "staged_exact_paths_modes_oids": "passed",
+        "commit_parent_tree_paths": "passed",
+        "post_commit_clean_and_raw_sha": "passed"
+      }
+    },
+    {
+      "lane": "SC4",
+      "head": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "ref": "codex/candidate-sc4-1010",
+      "tree": "ad1163674ded48a52bfaced0288f35637e1d78a0",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "proof": "reports/candidate-integration-1010/seal-evidence/10a42159-e7f3-431e-84e5-82871b8832fb/summary.json",
+      "actualexit": 0,
+      "checks": {
+        "candidate_git_identity": "passed",
+        "candidate_head_base": "passed",
+        "exact_status_set": "passed",
+        "index_empty_and_tracked_inventory": "passed",
+        "hooks_filters_signing_identity": "passed",
+        "planned_ref_absent": "passed",
+        "main_master_clean_scope_and_baselines": "passed",
+        "raw_sha_and_clean_oids": "passed",
+        "authorization_binding": "passed",
+        "staged_exact_paths_modes_oids": "passed",
+        "commit_parent_tree_paths": "passed",
+        "post_commit_clean_and_raw_sha": "passed"
+      }
+    },
+    {
+      "lane": "SC10",
+      "head": "25eb192258fcd6ce51e654ec01c62918486c7736",
+      "ref": "codex/candidate-sc10-1010",
+      "tree": "4b5097ac312adf338eca91d41eab5ef9d0751515",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "proof": "reports/candidate-integration-1010/seal-evidence/10ddd9f3-4826-4d47-9f4e-915e32b403ec/summary.json",
+      "actualexit": 0,
+      "checks": {
+        "candidate_git_identity": "passed",
+        "candidate_head_base": "passed",
+        "exact_status_set": "passed",
+        "index_empty_and_tracked_inventory": "passed",
+        "hooks_filters_signing_identity": "passed",
+        "planned_ref_absent": "passed",
+        "main_master_clean_scope_and_baselines": "passed",
+        "raw_sha_and_clean_oids": "passed",
+        "authorization_binding": "passed",
+        "staged_exact_paths_modes_oids": "passed",
+        "commit_parent_tree_paths": "passed",
+        "post_commit_clean_and_raw_sha": "passed"
+      }
+    },
+    {
+      "lane": "SC11",
+      "head": "6990139aca37e1252684ef051685198bc7e0c9a1",
+      "ref": "codex/candidate-sc11-1010",
+      "tree": "cf0ee4b32951869ea10c206b4274cfaa4f49d75c",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "proof": "reports/candidate-integration-1010/seal-evidence/67e48ba4-69a0-4289-a232-7ce283965e21/summary.json",
+      "actualexit": 0,
+      "checks": {
+        "candidate_git_identity": "passed",
+        "candidate_head_base": "passed",
+        "exact_status_set": "passed",
+        "index_empty_and_tracked_inventory": "passed",
+        "hooks_filters_signing_identity": "passed",
+        "planned_ref_absent": "passed",
+        "main_master_clean_scope_and_baselines": "passed",
+        "raw_sha_and_clean_oids": "passed",
+        "authorization_binding": "passed",
+        "staged_exact_paths_modes_oids": "passed",
+        "commit_parent_tree_paths": "passed",
+        "post_commit_clean_and_raw_sha": "passed"
+      }
+    },
+    {
+      "lane": "O4",
+      "head": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "ref": "codex/candidate-o4-1010",
+      "tree": "e92b623448a4478bd4f1e8033c2f7bfd7c723e09",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "proof": "reports/candidate-integration-1010/seal-evidence/9ddc9bd3-3238-483c-93d3-aab368ead274/summary.json",
+      "actualexit": 0,
+      "checks": {
+        "candidate_git_identity": "passed",
+        "candidate_head_base": "passed",
+        "exact_status_set": "passed",
+        "index_empty_and_tracked_inventory": "passed",
+        "hooks_filters_signing_identity": "passed",
+        "planned_ref_absent": "passed",
+        "main_master_clean_scope_and_baselines": "passed",
+        "raw_sha_and_clean_oids": "passed",
+        "authorization_binding": "passed",
+        "staged_exact_paths_modes_oids": "passed",
+        "commit_parent_tree_paths": "passed",
+        "post_commit_clean_and_raw_sha": "passed"
+      }
+    }
+  ],
+  "tests_executed_this_operation": false,
+  "alignment_or_ff": false,
+  "scope": "只保存各既已review字节；main master与生产未合入；真实/专业/整场景完工不由封存证明"
+}
