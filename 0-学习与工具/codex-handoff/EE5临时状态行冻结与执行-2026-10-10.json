@@ -1,0 +1,9 @@
+{
+  "recorded_at": "2026-10-10T22:11:18.745654+08:00",
+  "approved_exception": "call_1c0842c033cb4a6386a867705402915d/0",
+  "operation_evidence": "reports/frontier-prerequisites-1010/ee5-execution-e023d4b9-c0da-45f1-9834-5beb459bbe82",
+  "status": "freeze_pending",
+  "total_table_written": false,
+  "word_qa_completed": false,
+  "restored": false
+}
