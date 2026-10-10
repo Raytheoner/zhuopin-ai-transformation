@@ -1,0 +1,115 @@
+{
+  "recorded_at": "2026-10-10T18:57:13.140690+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "approved_plan": "docs/superpowers/plans/2026-10-10-sc2-biztype316-receipts.md",
+  "approved_plan_sha256": "6B52F00872654AD407C931BCEEE12309500A13EACF93C42BC1A145E674219B9C",
+  "root_proof_path": "reports/sc2-biztype316-1010/root-review-final-4a86f7fab8c04613a1f834480139a226/root-review.json",
+  "root_proof": {
+    "recorded_at": "2026-10-10T18:43:00.216311+08:00",
+    "reviewer": "/root, independent of implementation",
+    "candidate": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc2-biztype316-1010\\zhuopin-ai",
+    "candidate_head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+    "candidate_branch": "",
+    "dirty_exact_whitelist": [
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/config.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/detail.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/metrics.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/models.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/report.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/sources.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_detail.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_metrics.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_report.py",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_sources.py",
+      "5-平台底座/zhuopin_platform/tests/test_erp_biztype316.py",
+      "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py",
+      "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/models.py"
+    ],
+    "sha256": {
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/models.py": "2ACE616886C18BDD59336ED0A730E77D234A98ADADBDFD4A5E6DFCF92AF5E12E",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/sources.py": "C8EA00C5552A0444B90C143478A32058437D4FF95833CE1014596B7EC46D4BFE",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/metrics.py": "4683D4DC4036F1F5B07484692F47D99C403BD1F4B9F441EE9DC88E7B57FCE541",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/detail.py": "2D880A13AD060BE4C14BE8CFA47C4BE7E9AD3211E0A087C5B414314D9FE8AA7C",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/config.py": "23B613859D7971EB9002A65B058F44C35D52A38AEB0DF1A2D268419047FCF25B",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/report.py": "076DACB8B40F1116281FCC9E115301070E3DBBB43D7A167FB8CADBC6714140A4",
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py": "4B985F315B920AA37E7337B0200192A4C26D3D60B8662F39B11ADE14E16A86A4",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_sources.py": "BD64B1BEB0011A6F07AFA566B4A2BA2A2A0C2381F0CC966D10F10E2D7FB1BD3C",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_metrics.py": "575C45EBF5B3E9543BF0C1ED6A8976F563ABF395FDA25157AF682723F7681739",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_detail.py": "5713E3248A7B04BB80C6A0F03DDE5ACB03B7610CBBB8D390FAC9AE4FD41B6B59",
+      "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_report.py": "98CD41D73B7A150A329F2EB749E00544FBF5150AD3289D15728CE41AB7A6BB81",
+      "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/models.py": "60130A8946724EA79A46E7010D03C10D8C6C837E7E8A45A4233B7FB4C2E7BED0",
+      "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py": "341DEAC3A17DA61B2B6C427CC70159733599FE586F52AF8E9E47B877228193C6",
+      "5-平台底座/zhuopin_platform/tests/test_erp_biztype316.py": "6CEF2405445A9AC791547E5EA65C937E4632060699BEC86B069E6E3B0AD15A0E"
+    },
+    "diff_check": "empty",
+    "ast_parse": "14 passed",
+    "legacy_ast_unchanged": {
+      "4-数字员工/采购部/SC2-采购周报自动生成/sc2/models.py::ReceiptRecord": true,
+      "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py::_gr_query_all": true,
+      "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py::get_receipt_lines": "仅显式投影旧10字段缓存以排除新biz_type；其余AST与baseline完全相同"
+    },
+    "focused_reports": {
+      "scene": {
+        "path": "reports/sc2-biztype316-1010/runs/identity-linkage-final-scene-20261010-d3",
+        "junit": {
+          "tests": 144,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "exit_code": 0,
+        "stderr_bytes": 0,
+        "test_modules": [
+          "test_detail",
+          "test_metrics",
+          "test_report",
+          "test_sources"
+        ],
+        "command": "cwd=C:\\Users\\Paul Shao\\.codex\\worktrees\\sc2-biztype316-1010\\zhuopin-ai\\4-数字员工\\采购部\\SC2-采购周报自动生成\ncommand=& C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe -B -m pytest -p no:cacheprovider tests/test_sources.py tests/test_metrics.py tests/test_detail.py tests/test_report.py -q --basetemp C:\\Dev\\zhuopin-ai\\reports\\sc2-biztype316-1010\\runs\\identity-linkage-final-scene-20261010-d3\\pytest-temp --junitxml C:\\Dev\\zhuopin-ai\\reports\\sc2-biztype316-1010\\runs\\identity-linkage-final-scene-20261010-d3\\junit.xml\n\n"
+      },
+      "platform": {
+        "path": "reports/sc2-biztype316-1010/runs/identity-linkage-final-platform-20261010-d4",
+        "junit": {
+          "tests": 50,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "exit_code": 0,
+        "stderr_bytes": 0,
+        "test_modules": [
+          "test_erp_biztype316"
+        ],
+        "command": "cwd=C:\\Users\\Paul Shao\\.codex\\worktrees\\sc2-biztype316-1010\\zhuopin-ai\\5-平台底座\\zhuopin_platform\ncommand=& C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe -B -m pytest -p no:cacheprovider tests/test_erp_biztype316.py -q --basetemp C:\\Dev\\zhuopin-ai\\reports\\sc2-biztype316-1010\\runs\\identity-linkage-final-platform-20261010-d4\\pytest-temp --junitxml C:\\Dev\\zhuopin-ai\\reports\\sc2-biztype316-1010\\runs\\identity-linkage-final-platform-20261010-d4\\junit.xml\n\n"
+      }
+    },
+    "main_head": "75c1f76b791b1054f8a2e568fb7ba11162a8f693",
+    "resolved_findings": [
+      "raw receipt_doc_no/line_no缺口保留到scope row；缺/空白不给完整明细，整数0保留身份；四指标membership完整性不被identity gap改写",
+      "316收货关联采购行使用po_line_no而不是收货line_no；正反例RED→GREEN，final144+50"
+    ],
+    "review_scope": "前轮独立Luna全文审查A/B能力证据、同源单次冻结、旧语义/缓存/快照兼容；根逐个复核新身份/来源追溯代码与测试、最终14SHA/dirty/JUnit/exit。",
+    "limitations": [
+      "纯表函数缺口按目标窗口；HTTP detail保留原全量三节三窗口reconcile，任一身份缺口会闭锁该scope所有detail路由。四指标report继续可读；未放宽旧闸。",
+      "真实字段与服务端过滤证据未到，真实B未启用；合成能力对象不是现网验证。",
+      "候选未提交/整合/ff，发布与外发另审；#538/#654独立保持；整体SC2未完。"
+    ],
+    "product_tests_executed_by_this_script": false
+  },
+  "current_scope_status": "mock technical implementation/review complete; whole business partial",
+  "remaining_gates": [
+    "候选提交/整合/对齐/ff",
+    "真实源/专业阈值与Owner/Backup实名",
+    "生产部署/ERP/邮件/对外发送"
+  ],
+  "archive": false,
+  "approved_design_sha256": "38E3BB0CE2DB024BF85BBC543E8997D14827C1CEBD679F75B9F6DCA017FE624D",
+  "preserved_tdd_history": [
+    "前139＋42",
+    "稳定身份RED平台6/scene2失败→GREEN143＋50",
+    "来源行追溯RED失败→GREEN144＋50，旧UUID不覆盖"
+  ],
+  "not_completed_task_5_5": "synthetic MOCK项已证明；真实能力证据仍待独立确认，组合任务不勾全",
+  "not_completed_task_4_4": "默认reports/cache既有ignore取证沿用；未新增配置覆盖或ignore；真实部署覆盖目录仍需按精确实际配置另核"
+}

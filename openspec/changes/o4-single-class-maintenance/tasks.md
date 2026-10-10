@@ -1,3 +1,5 @@
+> 2026-10-10当前checkpoint：批准八新路径Stage0实现及唯一test_stage0已实跑28passed/exit0/0skip/fail/error；独立Luna全文review无实质问题，根8实际SHA/dirty/唯一测试JUnit/exit核查通过，实际四JSONL链共7事件均有效。输入原值冻结/hash/来源版本/跨scope及冲突保留；预测/维护/备件/OEE均not_evaluated且为空，专业签认为空。 完整证据见同日《O4Stage0合成结构实现与最终核验-2026-10-10.md/.json》，下文旧供审/未批字句仅历史时点。整体暂不归档。
+
 # O4 分阶段 tasks
 
 完整intent与D1–D7设计已确认、规划四件已形成；artifact done不等于产品完成。**暂不归档**：全业务试点未实现/验收。
@@ -13,12 +15,12 @@
 
 ## 2. Stage0 合成结构实现（依赖1.3–1.5）
 
-- [ ] 2.1 冻结输入身份与原值封套、完整canonical hash；仅synthetic单scope
-- [ ] 2.2 检查来源/资产关联、缺原值、单位声明、时区、版本冲突及跨资产；不补值或判故障
-- [ ] 2.3 输出所有预测not_evaluated且空、无专业签认；同标签跨scope独立
-- [ ] 2.4 完整run的actor及实际合成JSONL审计；缺audit/写失败关闭
-- [ ] 2.5 八例实际合成对照、变值同摘要hash差/冻结/非法数/审计失败；按具体批准测试范围执行
-- [ ] 2.6 独立产品review与结构证据交付，不晋真实档或预测能力；旧准备actual_run=null不算本次运行
+- [x] 2.1 冻结输入身份与原值封套、完整canonical hash；仅synthetic单scope
+- [x] 2.2 检查来源/资产关联、缺原值、单位声明、时区、版本冲突及跨资产；不补值或判故障
+- [x] 2.3 输出所有预测not_evaluated且空、无专业签认；同标签跨scope独立
+- [x] 2.4 完整run的actor及实际合成JSONL审计；缺audit/写失败关闭
+- [x] 2.5 八例实际合成对照、变值同摘要hash差/冻结/非法数/审计失败；按具体批准测试范围执行
+- [x] 2.6 独立产品review与结构证据交付，不晋真实档或预测能力；旧准备actual_run=null不算本次运行
 
 ## 3. Stage1 专属设计前置（后续，未解除）
 

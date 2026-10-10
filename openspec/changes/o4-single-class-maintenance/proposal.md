@@ -42,3 +42,7 @@ O4完整intent已明确确认；当前仅有类别无关合同/八例结构准�
 正本`4-数字员工/运营部/O4-设备预测性维护/intent.md`已确认，批准原件SHA与精确答复见《三采购design与O4完整intent批准消费-2026-10-10.md/.json》。
 首期1类、类别后定/盘点先行、不自动动作不重问。当前proposal不授权design、具体计划、代码/测试、真实数据、上线或外发。
 
+
+## 2026-10-10 合成首项实际checkpoint
+
+批准八新路径Stage0实现及唯一test_stage0已实跑28passed/exit0/0skip/fail/error；独立Luna全文review无实质问题，根8实际SHA/dirty/唯一测试JUnit/exit核查通过，实际四JSONL链共7事件均有效。输入原值冻结/hash/来源版本/跨scope及冲突保留；预测/维护/备件/OEE均not_evaluated且为空，专业签认为空。 完整证据见《O4Stage0合成结构实现与最终核验-2026-10-10.md/.json》。整体partial、暂不归档；候选未提交/ff；真实源/专业/生产各留闸。

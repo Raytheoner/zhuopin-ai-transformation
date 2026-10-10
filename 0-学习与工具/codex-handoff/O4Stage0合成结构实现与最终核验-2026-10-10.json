@@ -1,0 +1,111 @@
+{
+  "recorded_at": "2026-10-10T18:57:13.140690+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "approved_plan": "docs/superpowers/plans/2026-10-10-o4-stage0-evidence.md",
+  "approved_plan_sha256": "316175B4F5FDF04616C760819020A90232DA33B4AC60231B5BBEDBB5382D749F",
+  "root_proof_path": "reports/o4-single-class-1010/root-review-944d1a6449af44b08809c45e16e39b33/root-review.json",
+  "root_proof": {
+    "recorded_at": "2026-10-10T18:49:43.546285+08:00",
+    "candidate": "C:\\Users\\Paul Shao\\.codex\\worktrees\\o4-stage0-evidence-1010\\zhuopin-ai",
+    "candidate_head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+    "candidate_branch": "",
+    "main_head": "75c1f76b791b1054f8a2e568fb7ba11162a8f693",
+    "sha256": {
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/__init__.py": "EE74AF0B2032F6236DC04675E2534E7C3CBA73573E9167BDA6AB620821C90970",
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/models.py": "288805F6E63BCC4908403768B277C4EB108D3EA56006D6EBE8B39075B336D9A1",
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/canonical.py": "B97F3AD9BE5315EA6B5EF997B389456BB5777693F6FE5805DA10C972D31861E4",
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/checks.py": "0B51B5499BDDAE585D87E0F2CEF041BB79FB7689BF52EDB72F5C8B03904FA99E",
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/agent.py": "AD554FB37CF0507D35685C0C15CD295B055F64CB4528C1CF38F14D66A06B0FEF",
+      "4-数字员工/运营部/O4-设备预测性维护/tests/conftest.py": "773A6681A37125A6C887717263A5BE40E2D4B9133C4CC8351962F772362E82FC",
+      "4-数字员工/运营部/O4-设备预测性维护/tests/o4_cases.py": "DA215205659AB1AAF512B1C8AA7FDAF33E5993703F63DDE0B9852119A492B754",
+      "4-数字员工/运营部/O4-设备预测性维护/tests/test_stage0.py": "8DFFFD40455C6D3BAD05B30CD032D9A0F3284519FCA86C25C895A3E40D3A1999"
+    },
+    "dirty_exact_whitelist": [
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/__init__.py",
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/agent.py",
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/canonical.py",
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/checks.py",
+      "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/models.py",
+      "4-数字员工/运营部/O4-设备预测性维护/tests/conftest.py",
+      "4-数字员工/运营部/O4-设备预测性维护/tests/o4_cases.py",
+      "4-数字员工/运营部/O4-设备预测性维护/tests/test_stage0.py"
+    ],
+    "diff_check": "empty",
+    "ast_parse": "8 passed",
+    "run": "reports/o4-single-class-1010/670c1360-0317-4242-9efb-110eca2e59e1",
+    "command": "& 'C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe' -B -m pytest 'tests/test_stage0.py' -q -p no:cacheprovider '--basetemp=C:\\Dev\\zhuopin-ai\\reports\\o4-single-class-1010\\670c1360-0317-4242-9efb-110eca2e59e1\\basetemp' '--junitxml=C:\\Dev\\zhuopin-ai\\reports\\o4-single-class-1010\\670c1360-0317-4242-9efb-110eca2e59e1\\junit.xml' 1> 'C:\\Dev\\zhuopin-ai\\reports\\o4-single-class-1010\\670c1360-0317-4242-9efb-110eca2e59e1\\stdout.log' 2> 'C:\\Dev\\zhuopin-ai\\reports\\o4-single-class-1010\\670c1360-0317-4242-9efb-110eca2e59e1\\stderr.log'; $o4ActualExit = $LASTEXITCODE; [IO.File]::WriteAllText('C:/Dev/zhuopin-ai/reports/o4-single-class-1010/670c1360-0317-4242-9efb-110eca2e59e1/exit-code.txt', [string]$o4ActualExit, [Text.UTF8Encoding]::new($false)); Write-Output \"pytest_exit=$o4ActualExit\"; exit $o4ActualExit\n",
+    "junit": {
+      "tests": 28,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "exit_code": 0,
+    "stderr_bytes": 0,
+    "audit_evidence": [
+      {
+        "path": "reports\\o4-single-class-1010\\670c1360-0317-4242-9efb-110eca2e59e1\\basetemp\\test_complete_stage0_writes_re0\\o4-audit.jsonl",
+        "sha256": "71ecc3652429dc98c9175a8a0ebffea6ee31725dfd30c9c4bb2fdf36bb23eda2",
+        "chain": {
+          "ok": true,
+          "total": 1
+        },
+        "events_checked": 1
+      },
+      {
+        "path": "reports\\o4-single-class-1010\\670c1360-0317-4242-9efb-110eca2e59e1\\basetemp\\test_c08_two_independent_runs_0\\o4-c08.jsonl",
+        "sha256": "990260a0a684199722b5d9e15c6028459e39cdabc1452bfc78280189ab906668",
+        "chain": {
+          "ok": true,
+          "total": 2
+        },
+        "events_checked": 2
+      },
+      {
+        "path": "reports\\o4-single-class-1010\\670c1360-0317-4242-9efb-110eca2e59e1\\basetemp\\test_equal_issue_counts_with_c0\\changed-value.jsonl",
+        "sha256": "bdc7cb5430ed9a6ce24085f549cfa0f7349a7210a84e904fba9c7855b14c72a5",
+        "chain": {
+          "ok": true,
+          "total": 2
+        },
+        "events_checked": 2
+      },
+      {
+        "path": "reports\\o4-single-class-1010\\670c1360-0317-4242-9efb-110eca2e59e1\\basetemp\\test_conflicting_event_assets_0\\order-conflict.jsonl",
+        "sha256": "4492924ebf5bb1dd88ac6b2e72b5a8738481a674f0176897e632b2087c6f7892",
+        "chain": {
+          "ok": true,
+          "total": 2
+        },
+        "events_checked": 2
+      }
+    ],
+    "root_review": "实际读取最终agent及唯一测试文件；独立复核8SHA/dirty/JUnit/exit与4条真实JSONL链共7事件；本脚本不执行产品或测试入口。",
+    "independent_review": {
+      "agent": "/root/operations_readiness",
+      "model": "gpt-6-luna",
+      "conclusion": "已读主仓批准intent/design/tasks/spec/plan及最终源/测试，静态/现有28项证据通过，无实质问题；仅Stage0结构/audit"
+    },
+    "limitations": [
+      "类别无关合成证据Stage0，不证预测/维护/备件/OEE效果；专业签认始终为空",
+      "固定schema原值封套；未知扩展键不纳入合同",
+      "候选未提交/整合/ff，真实设备资料/类别/Owner与专业签认、生产分别另闸"
+    ],
+    "product_tests_executed_by_this_script": false
+  },
+  "current_scope_status": "mock technical implementation/review complete; whole business partial",
+  "remaining_gates": [
+    "候选提交/整合/对齐/ff",
+    "真实源/专业阈值与Owner/Backup实名",
+    "生产部署/ERP/邮件/对外发送"
+  ],
+  "archive": false,
+  "approval_question_item_id": "[\"request_user_input_async\",\"call_20776861bc6d4d7082d6d44f91eb3fc4\",1]",
+  "approval_answer": "A：批准八路径、定向测试及所列隔离副作用（推荐）",
+  "tdd_history": [
+    "b6029436原命令hook启动前拒绝，仅command记录",
+    "d250a9eb-2e33-404d-abb5-dcbd60b6cb0e actual RED exit2/module ImportError",
+    "670c1360-0317-4242-9efb-110eca2e59e1 actual GREEN28/exit0"
+  ],
+  "hash_transcription_correction": "原作者手工转贴models/canonical/conftest SHA各65字符，根实际hash与独立review一致的64字符以本JSON为准；未修改源码。两次metadata断言失败原工具返回保留，不当作测试失败。"
+}
