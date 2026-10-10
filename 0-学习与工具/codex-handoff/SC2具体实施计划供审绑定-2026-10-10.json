@@ -1,0 +1,29 @@
+{
+  "recorded_at": "2026-10-10T12:02:51+08:00",
+  "record_time_kind": "本次整理时间，不代替批准/测试发生时间",
+  "thread_id": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "status": "具体实施计划供审，未获产品实现或测试批准",
+  "plan": "docs/superpowers/plans/2026-10-10-sc2-biztype316-receipts.md",
+  "plan_sha256": "6B52F00872654AD407C931BCEEE12309500A13EACF93C42BC1A145E674219B9C",
+  "source_sha256": "D0E1901B9E6CB5B1A66DC8D1D27403B150FC91D13D7DA2C645921FF27017B8AB",
+  "approved_design_sha256": "38E3BB0CE2DB024BF85BBC543E8997D14827C1CEBD679F75B9F6DCA017FE624D",
+  "start_ref": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+  "future_native_worktree_name": "sc2-biztype316-1010",
+  "product_file_count": 14,
+  "test_file_count": 5,
+  "review": "Luna作者/根逐段读 actual API 和供审代码；A/B来源证据、严格日期/非法数、int|string biztype、成对快照/run_id、CSV真实section和旧builder一致性均修正确；源语义未知时不发过滤请求。",
+  "doc_validation": {
+    "exit_code": 0,
+    "lines": 1778,
+    "python_blocks": 16,
+    "issues": []
+  },
+  "side_effects": "获批后app返回的新仓库外Native checkout/Git元数据；创建后仅正文14路径。主仓ignored新UUID reports，独立basetemp含syntheticfixtures/cache/snapshot/audit，JUnit/stdout/stderr/exit。无清理旧目录/依赖安装。",
+  "retained_gates": [
+    "实际字段映射与分页/组织语义真实验收",
+    "B服务端过滤证明与启用",
+    "Owner/backup/专业签认",
+    "538/539专项收口",
+    "候选提交/ff/push/生产/外发"
+  ]
+}
