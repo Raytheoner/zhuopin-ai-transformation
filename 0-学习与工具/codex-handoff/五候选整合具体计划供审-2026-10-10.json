@@ -1,90 +1,130 @@
 {
-  "recorded_at": "2026-10-10T23:04:38.448112+08:00",
+  "recorded_at": "2026-10-11T01:35:18.304085+08:00",
   "formal_plan": "docs/superpowers/plans/2026-10-10-five-candidates-alignment.md",
-  "formal_plan_sha256": "2E3EEBFF4EC99F459811C81195A7B5B68E475228DA040D7078C4582F283317C2",
+  "formal_plan_sha256": "D5F582F1291ABE3C978B9D7E3671ADEF57CCF92D522040ED679AC1A26ACBAADE",
   "approved": false,
+  "supersedes_plan_sha256": "C9E7D25F90264AD6F90A759625CEACE734677C86E31486881C08656B6C832F15",
+  "old_question_not_execution_authority": true,
   "fixed_base": "310f54de71149b0cb0281749619ee3cd84f97bca",
-  "41_product_precheck": "passed, unchanged tree/blob/mode and clean/no overlap",
+  "41_product_precheck": "Historical old readonly evidence retained; must re-run before any execution after new approval. No new Git command in this registration.",
   "controls": [
     {
       "path": "docs/superpowers/plans/2026-10-10-five-candidates-alignment.md",
-      "sha256": "2E3EEBFF4EC99F459811C81195A7B5B68E475228DA040D7078C4582F283317C2",
-      "expected_porcelain_v2": "? docs/superpowers/plans/2026-10-10-five-candidates-alignment.md\n"
+      "sha256": "D5F582F1291ABE3C978B9D7E3671ADEF57CCF92D522040ED679AC1A26ACBAADE",
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "docs/superpowers/plans/2026-10-10-five-candidates-seal.md",
       "sha256": "F9489E7A1729476F4068E80CA205F3AFE6A981C26F92D1278E3BED15C5953819",
-      "expected_porcelain_v2": ""
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "docs/superpowers/plans/five-candidates-seal-1010/seal_candidates.py",
       "sha256": "6CAB74E0FA2E336C531E25FB62432D15C76A5998805D6818830EB6224D1A1277",
-      "expected_porcelain_v2": ""
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "docs/superpowers/plans/five-candidates-seal-1010/manifest.json",
       "sha256": "A4996E4758B4A36326D95D87524EAC63F02135AF57A126135CF2CBA5C51D12DB",
-      "expected_porcelain_v2": ""
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "0-学习与工具/codex-handoff/五候选本地提交批准消费-2026-10-10.json",
       "sha256": "AA487190423E44493A7004DB487545B89B9B85D2C898F6E219A77C2BB1FAD665",
-      "expected_porcelain_v2": ""
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "docs/superpowers/plans/2026-10-10-sc2-biztype316-receipts.md",
       "sha256": "6B52F00872654AD407C931BCEEE12309500A13EACF93C42BC1A145E674219B9C",
-      "expected_porcelain_v2": ""
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "docs/superpowers/plans/2026-10-10-sc4-source-evidence.md",
       "sha256": "8EB31234EEA4B7F70D929E94AB326F9F5FBCCE8C35C8B983EAC6ECBADC565228",
-      "expected_porcelain_v2": ""
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "docs/superpowers/plans/2026-10-10-sc10-versioned-facts.md",
       "sha256": "F7A61C74916A0F380A04931170076DFB2C4E6CCA2769D1BD51A23AFCF8D076A3",
-      "expected_porcelain_v2": ""
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "docs/superpowers/plans/2026-10-10-sc11-shared-stock-versioned-confirmation.md",
       "sha256": "07CD85B01B8FB0A50C642613BCAFE36C023C96AFD9F5FE69ABDF66B6992B6678",
-      "expected_porcelain_v2": ""
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "docs/superpowers/plans/2026-10-10-o4-stage0-evidence.md",
       "sha256": "316175B4F5FDF04616C760819020A90232DA33B4AC60231B5BBEDBB5382D749F",
-      "expected_porcelain_v2": ""
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "reports/candidate-integration-1010/seal-evidence/d0f5d6cd-adb6-4e48-ae08-f8870711bb1f/summary.json",
       "sha256": "71FE6B43E3429E0C5418D07113AD1CE3C7B2AA07F5DFA1099F013C333FE574D5",
-      "expected_porcelain_v2": "! reports/\n"
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "reports/candidate-integration-1010/seal-evidence/10a42159-e7f3-431e-84e5-82871b8832fb/summary.json",
       "sha256": "01C92606EDF5913FCDA5709EB4E5396E6CBBD9FF06542CB853AEDE2486CBB95D",
-      "expected_porcelain_v2": "! reports/\n"
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "reports/candidate-integration-1010/seal-evidence/10ddd9f3-4826-4d47-9f4e-915e32b403ec/summary.json",
       "sha256": "8FA930C2797219F0DBB598B28EFA3EB90E5510C661E53A1E447EC65B5BC107AF",
-      "expected_porcelain_v2": "! reports/\n"
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "reports/candidate-integration-1010/seal-evidence/67e48ba4-69a0-4289-a232-7ce283965e21/summary.json",
       "sha256": "C19C9376BC6111C5E59945B170D1F5E5C923ED7DBD07C5A2C3B57A6A891941FD",
-      "expected_porcelain_v2": "! reports/\n"
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     },
     {
       "path": "reports/candidate-integration-1010/seal-evidence/9ddc9bd3-3238-483c-93d3-aab368ead274/summary.json",
       "sha256": "FE893CC955746A96B2033FE8398A9E86361FC127A95761D7ABB2E496C4F265A1",
-      "expected_porcelain_v2": "! reports/\n"
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
+    },
+    {
+      "path": "docs/superpowers/plans/five-candidates-seal-1010/preflight_ee5_and_git.ps1",
+      "sha256": "9583859E24D4F7462F1A31475457912DC2A59D0ED0821D483E78D33253F5DC39",
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
+    },
+    {
+      "path": "docs/superpowers/plans/five-candidates-seal-1010/alignment-amendment.md",
+      "sha256": "7C22C19CA088B27D27538672913D34C884588D7D87EA9118F92AE670BA90E043",
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/EE5根作业状态-2026-10-10.json",
+      "sha256": "FF38A430257DBDC5068BE47630C48EE04B0096B7518925ED55122FB65E706663",
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/EE5临时状态行冻结与执行-2026-10-10.json",
+      "sha256": "F30C0F09AF859E53E5341CE4ADB95C0104AE5A471549FB660EE91BA539E8197C",
+      "porcelain_capture": "Not frozen for execution; root rechecks and records exact state after genuine current-version approval."
     }
   ],
   "auth_created": false,
-  "scope_exception_requested": "sealed_candidate_alignment_verification_only",
-  "ee5_gate": "must complete/inactive before SC10 then SC11 alignment/tests",
   "worktree_created": false,
-  "tests_run": false
+  "tests_run": false,
+  "scope_exception_requested": "sealed_candidate_alignment_verification_only",
+  "formal_script": "docs/superpowers/plans/five-candidates-seal-1010/preflight_ee5_and_git.ps1",
+  "formal_script_sha256": "9583859E24D4F7462F1A31475457912DC2A59D0ED0821D483E78D33253F5DC39",
+  "formal_amendment": "docs/superpowers/plans/five-candidates-seal-1010/alignment-amendment.md",
+  "formal_amendment_sha256": "7C22C19CA088B27D27538672913D34C884588D7D87EA9118F92AE670BA90E043",
+  "independent_review": "reports/candidate-integration-1010/alignment-amendment/native-root-binding-review.json",
+  "review_sha256": "3681425D220F73D8E2BFE3448849345E8C9051C07CB29549924C625E85B4C4A2",
+  "ee5_observation": {
+    "root_sha256": "FF38A430257DBDC5068BE47630C48EE04B0096B7518925ED55122FB65E706663",
+    "freeze_sha256": "F30C0F09AF859E53E5341CE4ADB95C0104AE5A471549FB660EE91BA539E8197C",
+    "completed_inactive": true,
+    "word_qa_and_restored": true,
+    "scope": "Only root EE5 slice state; no global freeze clearance"
+  },
+  "execution_state_frozen": false,
+  "supersedes_questions_for_sha256": [
+    "C9E7D25F90264AD6F90A759625CEACE734677C86E31486881C08656B6C832F15",
+    "2E3EEBFF4EC99F459811C81195A7B5B68E475228DA040D7078C4582F283317C2"
+  ],
+  "root_binding_correction": "Campaign persists exact NativeRoot; every continuation checks equality before any new evidence directory/gate/pytest."
 }

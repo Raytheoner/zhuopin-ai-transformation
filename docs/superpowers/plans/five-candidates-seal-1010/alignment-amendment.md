@@ -1,0 +1,11 @@
+# 五候选整合具体计划修订说明
+
+2026-10-11T01:12:13.649064+08:00；正式供审，不构成执行批准。旧完整计划SHA2E3EEB…317C2及原问题被本完整修订供审替代，历史原件保存在 reports\candidate-integration-1010\alignment-amendment\registration-301c9e59-b5cf-4e50-ba16-8bb499d0b370。
+
+完整修订以2026-10-10-five-candidates-alignment.md为准，保留310f54…7bca固定base、五封存提交、41路径和原六组定向矩阵。新增可执行四次SC10/SC11操作前EE5/Git闸、auth独立登记证和每次唯一checkpoint；控制文档允许仅同内容canonical dirty/untracked转clean；普通Git保留hooks/配置。逐组campaign从真实持久状态读回、固定target核对、manifest每次字节读回/hash与独立JSONL事件；结果路径与gate/test退出分别记录。无Read-Host或持久shell依赖。
+
+正式脚本SHA 9583859E24D4F7462F1A31475457912DC2A59D0ED0821D483E78D33253F5DC39；ignored完整审阅源SHA FBE0D135C572512A77C28AC9D5CF366C92308EE7E02E970C21A2BB09C50A2649；独立复审SHA AE1F4A8DB3782498DEE4922A949ED730E00A7DBB9E91B8E2A0DAEF0DCA434F2D。根只登记供审；真实人批后才形成auth，四项操作仅SC10:cherry-pick/SC10:tests/SC11:cherry-pick/SC11:tests精确消费例外，旧冻结不解除。
+
+## 唯一Native路径续跑绑定修订
+
+2026-10-11T01:35:18.304085+08:00：旧C9E7D2版补充静审发现campaign未保存/续核Native root，该旧问题和旧2E3EEB问题均不可启动。正式最新计划SHA D5F582F1291ABE3C978B9D7E3671ADEF57CCF92D522040ED679AC1A26ACBAADE，代码仅两行加入worktree_root及续跑精确相等检查，先于后续目录/gate/pytest；原六suite、41路径、EE5例外、副作用及边界不扩大。根Parser三块error0，独立复审 reports/candidate-integration-1010/alignment-amendment/native-root-binding-review.json SHA 3681425D220F73D8E2BFE3448849345E8C9051C07CB29549924C625E85B4C4A2。真实批准后才执行；未创建Native、Git mutation或产品测试。
