@@ -1,3 +1,5 @@
+> 2026-10-10当前checkpoint：原批准七路径固定周合成A2/B2实现完成，限定三定向测试最终30passed/exit0/0skip/fail/error；根七SHA/dirty/AST与旧run_draft兼容核验、独立Luna复审已完成。实际16份JSONL链24事件均有效；create/revise18个事件保留L2待前置标签。共享账本整单原子分配、完整内容hash/版本确认、审计失败拒绝及未接通执行门禁成立。 3M仅技术首项，专业/真实/封存对齐ff/生产留闸；旧未批字句为历史。详同日《SC11固定周合成拟稿实现与最终核验.md/.json》。
+
 # 任务 · SC11 库存智能调拨系统（队列 §一 #469）
 
 > 当前：Shao Peishen 2026-10-10已批准design A2/B2＋§10和库存/PMC规格修订方向。批准SHA/精确答复见《三采购design与O4完整intent批准消费-2026-10-10.md/.json》。
@@ -46,13 +48,13 @@
 
 - [x] 3M.1 具体计划07CD85…B6678、七路径/三测试/新Native与UUID副作用已于2026-10-10获本人明确批准；原答/实际候选见《SC11O4实施与O3诊断批准消费-2026-10-10.md/.json》
   - 历史初稿时点（其后已复审并获本人明确批准，不作为当前停点）：2026-10-10具体计划`docs/superpowers/plans/2026-10-10-sc11-shared-stock-versioned-confirmation.md`已根审静态过，独立审中，SHA54775F…7EE9B；未获实施/测试批准。
-- [ ] 3M.2 同一snapshot/sourcewarehouse/material可用账本，整单原子预留；6库存/两4需求→拟稿4/unmet4/余2
-- [ ] 3M.3 demand scenario_order与候选scenario_candidate_order分别显式且入hash/audit；后者只破完整评分tuple同分；缺评分或无tie选择输出unranked
-- [ ] 3M.4 不可变DraftRevision与独立ApprovalRecord；canonical完整business hash覆盖输入/行/unmet/版本/假设
-- [ ] 3M.5 PMC确认仅绑定当前draft_id/revision/hash；改内容新revision失效旧确认，旧签名只留历史
-- [ ] 3M.6 新拟稿/确认/拒绝/修订真实合成JSONL落盘；audit缺失/失败不得成功确认
-- [ ] 3M.7 门禁仍单拟稿入参无旁路，未接ERP/邮件继续NotWiredYet；版本/hash失配拒绝
-- [ ] 3M.8 独立review及合成证据交付；不执行ERP/外发、不晋档/归档，真实业务专业闸保留
+- [x] 3M.2 同一snapshot/sourcewarehouse/material可用账本，整单原子预留；6库存/两4需求→拟稿4/unmet4/余2
+- [x] 3M.3 demand scenario_order与候选scenario_candidate_order分别显式且入hash/audit；后者只破完整评分tuple同分；缺评分或无tie选择输出unranked
+- [x] 3M.4 不可变DraftRevision与独立ApprovalRecord；canonical完整business hash覆盖输入/行/unmet/版本/假设
+- [x] 3M.5 PMC确认仅绑定当前draft_id/revision/hash；改内容新revision失效旧确认，旧签名只留历史
+- [x] 3M.6 新拟稿/确认/拒绝/修订真实合成JSONL落盘；audit缺失/失败不得成功确认
+- [x] 3M.7 门禁仍单拟稿入参无旁路，未接ERP/邮件继续NotWiredYet；版本/hash失配拒绝
+- [x] 3M.8 独立review及合成证据交付；不执行ERP/外发、不晋档/归档，真实业务专业闸保留
 
 ## 3. 口径落地（依赖 2.5/2.6，不得自拟）
 

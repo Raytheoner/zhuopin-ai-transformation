@@ -1,0 +1,247 @@
+{
+  "recorded_at": "2026-10-10T19:20:57+08:00",
+  "unique_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "approved_plan": "docs/superpowers/plans/2026-10-10-sc11-shared-stock-versioned-confirmation.md",
+  "approved_plan_sha256": "07CD85B01B8FB0A50C642613BCAFE36C023C96AFD9F5FE69ABDF66B6992B6678",
+  "approval_question_item_id": "[\"request_user_input_async\",\"call_20776861bc6d4d7082d6d44f91eb3fc4\",0]",
+  "approval_answer": "A：批准七路径、定向测试及所列隔离副作用（推荐）",
+  "root_proof_path": "reports/sc11-inventory-transfer-1010/root-review-final-e9251427e49a45a58774e0cee816e790/root-review.json",
+  "root_proof": {
+    "recorded_at": "2026-10-10T19:11:00.233386+08:00",
+    "reviewer": "/root (independent of implementation)",
+    "candidate": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc11-inventory-transfer-1010\\zhuopin-ai",
+    "candidate_head": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+    "candidate_branch": "",
+    "sha256": {
+      "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/models.py": "D325EB931EBAA0D3C0C3CBCB1278F90B04CD915065AECC1377B5422356334CD4",
+      "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/routing.py": "FF7C4398F629B4ECB959E8BEFB730E077EF7456CE6371C47FFD01D321C1C14BE",
+      "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/agent.py": "B0CCC9108FFCCED2349CA0BA742F14C44462CF6D8A0C11E5BE1B8BC52A612166",
+      "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/gate.py": "9C998B67B950F99D3FB6EC2C5046E79F3911BFDAF09ACC09AE42CB9F727A8790",
+      "4-数字员工/采购部/SC11-库存智能调拨/tests/test_shared_reservation.py": "D2EF5EBA6CE12ED8DD7090CF500EB0C9390BEE950A8B8B9CBD83FDB30A0E61E8",
+      "4-数字员工/采购部/SC11-库存智能调拨/tests/test_versioned_audit_gate.py": "349861348617F41FC7D0BC76D1F0E44FD1AD1A213938F0E9F0941E5F21326604",
+      "4-数字员工/采购部/SC11-库存智能调拨/tests/test_pmc_gate.py": "00FD4A63483D3A7C7584E0700590AD26395D462E0BDD2FB5FFC57E0807897306"
+    },
+    "dirty_exact_whitelist": [
+      "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/agent.py",
+      "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/gate.py",
+      "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/models.py",
+      "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/routing.py",
+      "4-数字员工/采购部/SC11-库存智能调拨/tests/test_pmc_gate.py",
+      "4-数字员工/采购部/SC11-库存智能调拨/tests/test_shared_reservation.py",
+      "4-数字员工/采购部/SC11-库存智能调拨/tests/test_versioned_audit_gate.py"
+    ],
+    "diff_check": "empty",
+    "ast_all_seven": true,
+    "legacy_run_draft_ast_unchanged": true,
+    "run": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28",
+    "junit": {
+      "tests": 30,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "exit_code": 0,
+    "stderr_bytes": 0,
+    "audit_chains": [
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_actor_and_refusal_reason_0\\actors.jsonl",
+        "sha256": "8d00f0cde36838c6959f08800322900af826b76e28fd8a4ae35f469656d32b00",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_confirm_audit_failure_ret0\\confirm-fail.jsonl",
+        "sha256": "5454e381865ac4cad48ef17a22a9d16a58032f66243cd1444068b541527cda75",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_content_tamper_fails_clos0\\events-a9bf5172d55045dabd3a343b021e7672.jsonl",
+        "sha256": "1834ab0818750b5db64b66e7f8c9ff847e1c6f3dac4f01425ed5846da29aeffd",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_content_tamper_fails_clos0\\tamper.jsonl",
+        "sha256": "890c4027c93216cac2adb74e9427076afdc7e2630d8e0a21cdd956a5b6d7035a",
+        "ok": true,
+        "total": 2,
+        "actions": [
+          "transfer_plan_create",
+          "transfer_plan_confirm"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_create_confirm_refuse_rev0\\lifecycle.jsonl",
+        "sha256": "f5e97b359650a6f4a0da52e2e369edcc7c23efa13aa3abf9f06e6991f95e7193",
+        "ok": true,
+        "total": 4,
+        "actions": [
+          "transfer_plan_create",
+          "transfer_plan_confirm",
+          "transfer_plan_refuse",
+          "transfer_plan_revise"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_exact_confirmation_still_0\\channels.jsonl",
+        "sha256": "108ae51a1b685e22e48e15aa7dad63e85b88a6d5c0abadcb83213351812914f4",
+        "ok": true,
+        "total": 2,
+        "actions": [
+          "transfer_plan_create",
+          "transfer_plan_confirm"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_hash_capture_survives_sou0\\hash.jsonl",
+        "sha256": "ff5e7bd3224611d3e5c96363780d1606de92e2db76bc2d7b0255e35ca52d1ce6",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_refuse_audit_failure_retu0\\refuse-fail.jsonl",
+        "sha256": "d27e3de3b817f10097b8859eeacefd0658907c6fc879c092cf11946ce2cad309",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_refused_or_legacy_draft_c0\\legacy.jsonl",
+        "sha256": "70c500977ffdc818076ebed5949711d56499ddd3df68687c51acc885bf2d42b1",
+        "ok": true,
+        "total": 2,
+        "actions": [
+          "transfer_plan_create",
+          "transfer_plan_refuse"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_revise_audit_failure_retu0\\revise-fail.jsonl",
+        "sha256": "1c718e4eaaf224e5f6e5d5ed0e488e90cfa7d1dbca5ff9ec98c0ebc5e79be76a",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_revision_is_new_and_does_0\\revision.jsonl",
+        "sha256": "cb71b7692a64ed4a418743c9a4edc5dc7b34e08cf5e6c55006966e42d36a0bcb",
+        "ok": true,
+        "total": 3,
+        "actions": [
+          "transfer_plan_create",
+          "transfer_plan_confirm",
+          "transfer_plan_revise"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_source_snapshot_version_a0\\events-00f0e6d840ab42d8a264035a78263837.jsonl",
+        "sha256": "7a17da28a61dd0cbe59b3d74fec1eed25b5f21b0010e42dddda8c70828523752",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_source_snapshot_version_a0\\events-6529a58f7dac4c5e80dd806164c8a3f6.jsonl",
+        "sha256": "0b34a996c8b185746ef800633493acb16c1ddcde9c16c962c87cb89dc772e979",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_source_snapshot_version_a0\\events-8bebbca4b781425cb9c5bdfbf41d9673.jsonl",
+        "sha256": "cfc8cda3a993fb57c71a7d83c81daa0c28084813a67641f6df67ce7bb966fbe1",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_source_snapshot_version_a0\\events-c56137f389e24e1889677446527bb756.jsonl",
+        "sha256": "6932e9bdde75e8141adf7567d6262039e87804b87378fbcdefc3ba1442bcbcdd",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_source_snapshot_version_a0\\events-defa329f813d4028bc93c7c3de90d2bc.jsonl",
+        "sha256": "d43f60814bf6aecf84eccd146d2caee7b82a37e4dcbc3ff181398d082a605d2a",
+        "ok": true,
+        "total": 1,
+        "actions": [
+          "transfer_plan_create"
+        ]
+      }
+    ],
+    "create_revise_events_with_four_blockers": 18,
+    "lifecycle": {
+      "path": "C:\\Dev\\zhuopin-ai\\reports\\sc11-inventory-transfer-1010\\run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28\\basetemp\\test_create_confirm_refuse_rev0\\lifecycle.jsonl",
+      "sha256": "f5e97b359650a6f4a0da52e2e369edcc7c23efa13aa3abf9f06e6991f95e7193",
+      "ok": true,
+      "total": 4,
+      "actions": [
+        "transfer_plan_create",
+        "transfer_plan_confirm",
+        "transfer_plan_refuse",
+        "transfer_plan_revise"
+      ]
+    },
+    "main_head": "75c1f76b791b1054f8a2e568fb7ba11162a8f693",
+    "independent_luna_review": "procurement_readiness independently read all final SHA and resolved the three findings; no new test execution",
+    "review_findings_resolved": [
+      "malformed candidate-order value rejected even without a tie",
+      "valid incomplete/duplicate sequence remains unranked on actual tie",
+      "create/revise real JSONL retain L2 pending labels",
+      "obsolete approved_by-only comments corrected"
+    ],
+    "limitations": [
+      "synthetic fixed weekly trial only",
+      "single process serial; current authority is process-local registry; no automatic cross-process recovery or concurrency promise",
+      "mock PMC actor is not professional signing",
+      "ERP/email remain NotWiredYet",
+      "candidate not committed/aligned/ff; whole business partial"
+    ],
+    "product_test_execution_by_this_script": false
+  },
+  "tdd_history": [
+    "baseline run-effbb8ab-2354-474e-9984-1ac310ead455 6pass",
+    "run-d67f2fea-95e2-43c2-9e57-f4a38d93b97c exit2 ImportError",
+    "run-8ad48894-3119-4658-a538-d4fdeebeb702 27pass/3fail",
+    "run-229c11f9-f75f-46ff-bfa0-e357c1e788f3 30pass prior review findings",
+    "run-6a9196f5-64c7-4cb5-8922-77dc147c2c2a RED 28pass/2fail",
+    "run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28 final30/exit0"
+  ],
+  "whole_business_status": "partial",
+  "archive": false,
+  "remaining_gates": [
+    "synthetic fixed weekly trial only",
+    "single process serial; current authority is process-local registry; no automatic cross-process recovery or concurrency promise",
+    "mock PMC actor is not professional signing",
+    "ERP/email remain NotWiredYet",
+    "candidate not committed/aligned/ff; whole business partial"
+  ],
+  "actual_command_from_implementer_tool_return": "cwd: C:\\Users\\Paul Shao\\.codex\\worktrees\\sc11-inventory-transfer-1010\\zhuopin-ai\\4-数字员工\\采购部\\SC11-库存智能调拨\nSource: implementation agent's actual exec_command tool parameters, forwarded to root on 2026-10-10; no rerun and no historical run file reconstruction.\n\n& 'C:/Dev/Codex/runtimes/zhuopin-ai/venv/Scripts/python.exe' -B -m pytest -q -ra -p no:cacheprovider 'tests/test_shared_reservation.py' 'tests/test_versioned_audit_gate.py' 'tests/test_pmc_gate.py' --basetemp 'C:/Dev/zhuopin-ai/reports/sc11-inventory-transfer-1010/run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28/basetemp' --junitxml 'C:/Dev/zhuopin-ai/reports/sc11-inventory-transfer-1010/run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28/junit.xml' 1> 'C:/Dev/zhuopin-ai/reports/sc11-inventory-transfer-1010/run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28/stdout.log' 2> 'C:/Dev/zhuopin-ai/reports/sc11-inventory-transfer-1010/run-3ddc5d14-f7e5-4dc9-a63b-b47252122e28/stderr.log'\n\nAfter execution, implementer immediately captured LASTEXITCODE, wrote the actual 0 to exit-code.txt and returned actual exit 0. Original run directory contains exit-code.txt, JUnit, stdout/stderr and basetemp; it did not contain a separate command.txt.\n"
+}
