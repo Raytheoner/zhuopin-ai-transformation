@@ -1,0 +1,22 @@
+{
+  "recorded_at": "2026-10-10T23:04:38.448112+08:00",
+  "native_root": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc7-batch-quantity-1010\\zhuopin-ai",
+  "head": "310f54de71149b0cb0281749619ee3cd84f97bca",
+  "two_paths_sha256": {
+    "4-数字员工/采购部/SC7-库存优化建议/sc7_inventory/batch_quantity.py": "DB97E8682D5D0966FBB47030451614B94B1099DE33B9970CE15D2F0417672972",
+    "4-数字员工/采购部/SC7-库存优化建议/tests/test_batch_quantity.py": "BAFBC7F80DFDBA56A6789B429BA7621DD7AA8D586C54BA2AE2620FBC352B8412"
+  },
+  "approved_plan_sha256": "029584B72130AC1B159DB9FA32BE0EAD4EB027686705946F33ABDB5C1161496F",
+  "red_run": "d286276b-43b0-43c1-8b14-039284109874",
+  "first_green_setup_error_run": "721659c0-3213-4ca8-a866-3c3d0138c3af",
+  "green_run": "f8be65d3-b3d4-4ce7-a6d2-8933840ca786",
+  "actual_exit": 0,
+  "tests": 57,
+  "errors": 0,
+  "failures": 0,
+  "skips": 0,
+  "review": "C:\\Dev\\zhuopin-ai\\reports\\sc7-batch-quantity-1010\\evidence\\e7bcbf98-115f-482e-9739-1928b2a50276\\independent-review.md",
+  "review_sha256": "6E54F5E16B3748698C7143DA83A810446EA346239B3F259F93F1B5B329DF13A1",
+  "committed": false,
+  "scope": "synthetic_normalized private module, not real ItemMaster/K2/L2/full scene"
+}

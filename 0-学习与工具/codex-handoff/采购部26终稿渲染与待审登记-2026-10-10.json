@@ -19,7 +19,7 @@
   ],
   "followup_readme_registered": true,
   "send_approved": true,
-  "sent": false,
+  "sent": true,
   "meeting_booked": false,
   "status": "⏳待你审；一项确认10-12 13:30–14:00上海候选时段，非专业签认",
   "registered_at": "2026-10-10T21:57:15.000+08:00",
@@ -32,5 +32,9 @@
   "send_approval_recorded_at": "2026-10-10T22:07:50.000+08:00",
   "readback_verified": true,
   "approval_utility_first_actual_exit": 2,
-  "cooldown_status": "首次观测已记录；按默认10分钟，未绕过；保守14:14:34UTC后重核"
+  "cooldown_status": "首次观测已记录；按默认10分钟，未绕过；保守14:14:34UTC后重核",
+  "sent_at_utc": "2026-10-10 14:46 UTC",
+  "four_chains_verified": true,
+  "verification": "push CLI actual0/self-check4 plus independent literal audit tail: private markdown/file, cc/group cc all errcode0; official README status readback",
+  "send_evidence": "reports/procurement-intents-1010/letter26-send-0b5d2745-346d-4a14-aeec-2300f8a0704e"
 }

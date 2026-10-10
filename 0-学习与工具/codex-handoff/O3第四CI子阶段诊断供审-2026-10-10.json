@@ -1,0 +1,15 @@
+{
+  "recorded_at": "2026-10-10T23:04:38.448112+08:00",
+  "plan": "docs/superpowers/plans/2026-10-10-o3-p4-substage-diagnostic.md",
+  "plan_sha256": "B4220068BB73C6DC3D4372E025A6BC53F4562762058FF7EF8F28BBBBC6F7C43E",
+  "scripts": {
+    "generate_p4_substage_copy.py": "4AD3BE7691D4DA768720F130AA79CBEDE0FAF53E9B4372048FF4442D31849E8E",
+    "run_p4_substage_once.py": "0026B2FB6D23271FE6B1C5B0F5FF7ED11EE2B7C2004C3AFF572A258906DB9320"
+  },
+  "review_path": "C:\\Dev\\zhuopin-ai\\reports\\o3-fourth-ci-1010\\p4-substage-plan\\post-fix-review.md",
+  "review_sha256": "3D215553613B84E01091F6FC6421B50E87CDCF3179DD6C9B19A3935FBCEA301B",
+  "approved": false,
+  "new_diagnostic_runs": 0,
+  "old_run_consumed": true,
+  "request_scope": "one new 180s diagnostic only; original conditional LAN four pings/newUUID/rawlogs/ownJob cleanup; no fourth pytest/fix/ff"
+}
