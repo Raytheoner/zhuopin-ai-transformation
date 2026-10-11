@@ -1,0 +1,117 @@
+{
+  "schema": "headless-o3-approved-execution-results/v1",
+  "recorded_local": "2026-10-11T09:37:10.8045143+08:00",
+  "sc8": {
+    "approved_plan_sha256": "361815B72880B5E70FD5AF4F77E0885134D9206381CAF07CEE06B3DFC3A2096F",
+    "script_sha256": "7AA029A67418E3E4677DCB7105BB05CFDF2AC7CB07EF9F884C35869C91F615A4",
+    "proof_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\headless-eof-direct-answers\\fee2aeafbeef454bafe6d7cc4d4336f5\\approval-evidence.json",
+    "proof_sha256": "879E4F4EED08E3C2C3136F94F9534FD421C85DFFA982CF175CC0AE5ED96196C4",
+    "script_invocations": 1,
+    "tool_actual_exit": 0,
+    "status": "complete",
+    "synthetic_only": true,
+    "viewport_sizes": [
+      320,
+      390
+    ],
+    "checks_per_viewport": 8,
+    "visual_review": "Root view_image read both original JPEGs; no page horizontal overflow or title/nav overlap observed",
+    "own_browser_closed": true,
+    "input_unchanged": true,
+    "page_route_blocked_requests": 0,
+    "online_deployment_claim": false,
+    "queue_671_remains": "partial",
+    "evidence_files": [
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\playwright-headless-95a30c80-333f-4f81-bb9d-17c015ff1657\\viewport-320.jpg",
+        "sha256": "D8EC5D298CA4185EEF8DB0AD1A3FAB9A83B4418E2C205734378F21D236D86821"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\playwright-headless-95a30c80-333f-4f81-bb9d-17c015ff1657\\viewport-390.jpg",
+        "sha256": "B8B68CF90C4B42EFFBB5F045865965909AF64B4FE7CC2C06142270AA8BCF96DE"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\playwright-headless-95a30c80-333f-4f81-bb9d-17c015ff1657\\viewport-check.json",
+        "sha256": "515A54AC18C58058EFCAF031A596503691DDF757F17F0D4124E659ED070F7B1C"
+      }
+    ]
+  },
+  "o3": {
+    "approved_plan_sha256": "D5B46E112FEFE72DBF2F2A3A059249D1A439F0628BE0C280DDDBD4CC937B3A4C",
+    "generator_sha256": "11FB9FF1FD0CD4782E9873EECA4EBEE885F8B59B8245736414A80B04DA2A65DF",
+    "proof_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\o3-entry-v3-direct-answer\\5ac19180419b450cbe5d5c89c8c04f26\\approval-evidence.json",
+    "proof_sha256": "B9515B73B674BC1B3BE49A0DBD74192DAA570054FF9F92A613420CF1CD40115B",
+    "generator_invocations": 1,
+    "generator_tool_actual_exit": 0,
+    "runner_invocations": 1,
+    "runner_tool_actual_exit": 1,
+    "runner_reported_timeout_exit": 124,
+    "run_dir": "C:\\Dev\\zhuopin-ai\\reports\\o3-fourth-ci-1010\\runs\\d8df0c810a654098bc9f7d550dd0f52b",
+    "runner_metadata_sha256": "E7DACA5DCFB2DDFB4AAE5B3FDDF72487758B45B8A60B67F06BBFC01836A80FA5",
+    "manifest_sha256": "52F3FC54FB87371C3FAB14B89BB640661DAFD191930F3967A6C7CCA551D7DBAD",
+    "elapsed_ms": 180838,
+    "timed_out": true,
+    "stdout_bytes": 0,
+    "marker_events": 106,
+    "last_marker": {
+      "phase": "P4_PARSE_START",
+      "utc": "2026-10-11T01:31:18.1317442Z",
+      "pid": 80352,
+      "powershell_version": null,
+      "python_exe": null
+    },
+    "timing_valid": false,
+    "p4_substage_validation": {
+      "observed": [
+        "P4_READ_DONE",
+        "P4_PARSE_START"
+      ],
+      "missing_substages": [
+        "P4_PARSE_DONE",
+        "P4_CLASSIFY_DONE",
+        "P4_AGGREGATE_DONE"
+      ],
+      "ordered_unique_prefix": true,
+      "observed_p4_to_p5_sequence": [
+        "P4",
+        "P4_READ_DONE",
+        "P4_PARSE_START"
+      ],
+      "full_sequence": [
+        "P4",
+        "P4_READ_DONE",
+        "P4_PARSE_START",
+        "P4_PARSE_DONE",
+        "P4_CLASSIFY_DONE",
+        "P4_AGGREGATE_DONE",
+        "P5"
+      ],
+      "full_sequence_valid": false
+    },
+    "process_state": "completed",
+    "observed_exit_code": 124,
+    "job_assigned": true,
+    "raw_log_body_read_or_emitted": false,
+    "fourth_pytest_invocations": 0,
+    "fix_or_ci_pass_claim": false,
+    "further_run_requires_separate_approval": true
+  },
+  "five_candidates": {
+    "original_D5F_and_5828_approvals_retained": true,
+    "latest_observation_path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\auth-preparation-6fc84807-832b-4a79-9e32-e7d60e16a34c\\main-binding-observation.json",
+    "latest_observation_sha256": "5521016D6230BD1B0A44DAE3F189F9BF7A3AD1B3CB35021C97B4317D01B8620E",
+    "collector_actual_exit": 1,
+    "failed_stage": "path_status",
+    "controls_observed": 20,
+    "products_observed": 0,
+    "root_exact_git_status_actual_exit": 0,
+    "root_observed_type": "1",
+    "root_observed_XY": "A.",
+    "root_diagnosis": "collector default case-insensitive conflict regex searched path and matched lowercase u in superpowers; ordinary staged addition is not conflict evidence",
+    "next": "new ignored UUID collector preparation and independent static review within approved5828 scope",
+    "formal_auth_created": false,
+    "native_created": false,
+    "picks": 0,
+    "integration_test_calls": 0
+  }
+}
