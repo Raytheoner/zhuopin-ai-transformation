@@ -1,0 +1,68 @@
+{
+  "schema": "five-candidates-empty-output-supplement/v1",
+  "approved": true,
+  "draft_only": false,
+  "scope": "sealed_candidate_alignment_verification_only",
+  "approved_by": "Shao Peishen",
+  "recorded_at": "2026-10-11T12:39:12.3651174+08:00",
+  "original_authorization_sha256": "4D35E833357BA066B5C188F268B5AC3A1FB7D46B32A01A4D6DF7EC4599D0EBEC",
+  "original_preflight_sha256": "E9300BD2476DBCB3C69D33104A0B8EEF2848420A568F7CF6409C79CA14508A54",
+  "original_plan_sha256": "D5F582F1291ABE3C978B9D7E3671ADEF57CCF92D522040ED679AC1A26ACBAADE",
+  "registration_evidence_sha256": "4F41D08253C1EA5CA35172B6788F7EEA5EBAE9888439C8D9E0F383E074761908",
+  "continuation": {
+    "native_root": "C:/Users/Paul Shao/.codex/worktrees/five-candidates-align-1010/zhuopin-ai",
+    "expected_branch": "codex/five-candidates-align-1010",
+    "start_head": "2d4cd01c5c5557ea2151345e5146fe550efd5b52"
+  },
+  "plan_path": "C:/Dev/zhuopin-ai/docs/superpowers/plans/2026-10-11-five-candidates-empty-output-amendment.md",
+  "plan_sha256": "DF78E66EE7473E812EC126A862B6D223B8B4ACA18C30FF65D9AD4A9C9C760335",
+  "approval_evidence_path": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/64ee6acd-f686-473d-bfc5-0e9c65026ca9/approval-proof.json",
+  "approval_evidence_sha256": "FB7D506C0F60CF99FB4945666760EE035F1D332C036350BA50D2A757C6057547",
+  "human_answer_path": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/64ee6acd-f686-473d-bfc5-0e9c65026ca9/human-answer.json",
+  "human_answer_sha256": "2222B4B67790982C660BBB3BD0B1D89BFA056CA2CBD776D943280C6DF85730BB",
+  "allowed_operations": [
+    "SC10:cherry-pick",
+    "SC11:cherry-pick",
+    "O4:cherry-pick",
+    "SC2:tests",
+    "PLATFORM:tests",
+    "SC4:tests",
+    "SC10:tests",
+    "SC11:tests",
+    "O4:tests"
+  ],
+  "bindings": {
+    "guard": {
+      "path": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/preflight-empty-output-amendment-1011/supplement-guard.ps1",
+      "sha256": "AE4663132E546911E50EDC2D4D3BC9143C09F009094B3F58D450C798D05A14D2"
+    },
+    "preflight": {
+      "path": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/preflight-empty-output-amendment-1011/preflight_ee5_and_git-v2.ps1",
+      "sha256": "97C1ABB9824CA7CADABF7853C93355B7F9F7E0CBC0B764B9193220670B5FAE6E"
+    },
+    "block0": {
+      "path": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/preflight-empty-output-amendment-1011/block0-v2.ps1",
+      "sha256": "3CB97BB0B3FE00F90A48A9EA32EA2355018F42548640A0B65D8880F8B14C86A6"
+    },
+    "pick": {
+      "path": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/preflight-empty-output-amendment-1011/pick-one-lane-v4.ps1",
+      "sha256": "35E489C7FDBC25A470A6CC0DC9776BB1471387CC9E29D683E0902BF52D7DF5F9"
+    },
+    "suite": {
+      "path": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/preflight-empty-output-amendment-1011/run-one-suite-v2.ps1",
+      "sha256": "7406B1BA7184ABBC97F01CCC98319C3CB1703E2D8838FC42A1F41C769F7D449A"
+    }
+  },
+  "limits": {
+    "maximum_new_gated_attempts": 4,
+    "each_gate_once": true,
+    "stop_on_failure": true,
+    "no_retry_of_completed_SC2_SC4": true,
+    "master_ff": false,
+    "production": false,
+    "real_source": false,
+    "L2_signoff": false,
+    "external_send": false,
+    "old_freezes_preserved": true
+  }
+}

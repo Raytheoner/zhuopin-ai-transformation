@@ -1,0 +1,16 @@
+{
+  "schema": "o3-p4-bounded-design-approval/v1",
+  "approved": true,
+  "approved_by": "Shao Peishen",
+  "recorded_at": "2026-10-11T12:39:12.3651174+08:00",
+  "scope": "design_confirmation_and_concrete_plan_preparation_only",
+  "source_question_item_id": "[\"request_user_input_async\",\"call_8cf9bb7f75d54a218308dd983a510acb\",0]",
+  "human_answer_path": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/64ee6acd-f686-473d-bfc5-0e9c65026ca9/o3-design-human-answer.json",
+  "human_answer_sha256": "02D316200EE9BD6324786E3F0B9F6359D5E9AF00F5A42BF76CC25DE7541FB233",
+  "design": "P4 single pass, classify each run at completion; retain statistics metadata, latest run blockers and tail6; preserve fields, anchored predicates, classification priority, UTC windows and exception behavior; plan fixed-clock synthetic old/new comparison",
+  "implementation_approved": false,
+  "new_tests_approved": false,
+  "new_diagnostic_approved": false,
+  "source_sha256": "BC774E0C9965BE22981390AF7B3255525C87B07038ECB87E2CAB46FDF34A35DF",
+  "root_cause_proven": false
+}
