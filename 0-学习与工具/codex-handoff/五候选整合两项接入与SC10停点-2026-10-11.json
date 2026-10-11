@@ -1,0 +1,89 @@
+{
+  "schema": "five-candidates-alignment-progress/v1",
+  "stamp": "2026-10-11T11:38:22.5590269+08:00",
+  "roadmap_sha256": "020F47DA77B29AAC82CFDAAD156FBF7DF917A7594E25723BC94A38BCA77E8E59",
+  "r5_sha256": "2A62DFBA85AB80A415CD090AD136B450E9B18DD0C41F2D0C1D924396B0DC7A16",
+  "plan_sha256": "DF78E66EE7473E812EC126A862B6D223B8B4ACA18C30FF65D9AD4A9C9C760335",
+  "status": "partial; next_entry_waiting_human_approval",
+  "root_thread": "01a1229b-1106-7172-b5ed-b8b076448790",
+  "native_root": "C:/Users/Paul Shao/.codex/worktrees/five-candidates-align-1010/zhuopin-ai",
+  "branch": "codex/five-candidates-align-1010",
+  "head": "2d4cd01c5c5557ea2151345e5146fe550efd5b52",
+  "original_authorization_sha256": "4D35E833357BA066B5C188F268B5AC3A1FB7D46B32A01A4D6DF7EC4599D0EBEC",
+  "completed_picks": [
+    {
+      "lane": "SC2",
+      "source": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "actual_commit": "c78b36bf892bba1bead64ee2dbd100e154bd19aa",
+      "actual_exit": 0,
+      "after_checkpoint": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/auth-preparation-a9cecd4e-74d0-4518-a931-35d59bd3ffb7/execution-checkpoints-1011/fbe35d60-3cda-4d51-97d1-52e4a8e2e621/checkpoint.json",
+      "after_checkpoint_sha256": "A847DF858EC3978342C4AB177649F799DCD6643E939C4D1EEE85549DF6D69ACD"
+    },
+    {
+      "lane": "SC4",
+      "source": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "actual_commit": "2d4cd01c5c5557ea2151345e5146fe550efd5b52",
+      "actual_exit": 0,
+      "after_checkpoint": "C:/Dev/zhuopin-ai/reports/candidate-integration-1010/auth-preparation-a9cecd4e-74d0-4518-a931-35d59bd3ffb7/execution-checkpoints-1011/789b8cdb-b91e-48df-ac81-c8effa1519a8/checkpoint.json",
+      "after_checkpoint_sha256": "AF47ADFB9EECEC633A476214301E54F6D3A110FE715E104D59DA58EC727691D6"
+    }
+  ],
+  "sc10_gate": {
+    "actual_exit": 1,
+    "success": false,
+    "evidence": "reports/candidate-integration-1010/5e363363-847b-4e03-9933-91c72b8e250f/preflight-SC10-cherry-pick-a15eb7c1-6ab8-4d66-836f-717ad14e34ce.json",
+    "last_git_actual_exit": 0,
+    "last_git_output_lines": 0,
+    "last_git_output_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+    "failure": "String.Join values null",
+    "official_queries_passed": 4,
+    "ee5_completed_inactive": true,
+    "pick_started": false
+  },
+  "remaining": {
+    "picks": [
+      "SC10",
+      "SC11",
+      "O4"
+    ],
+    "suites": [
+      "SC2",
+      "PLATFORM",
+      "SC4",
+      "SC10",
+      "SC11",
+      "O4"
+    ],
+    "suites_started": 0
+  },
+  "amendment": {
+    "formal_plan": "docs/superpowers/plans/2026-10-11-five-candidates-empty-output-amendment.md",
+    "plan_sha256": "DF78E66EE7473E812EC126A862B6D223B8B4ACA18C30FF65D9AD4A9C9C760335",
+    "bindings": {
+      "supplement-guard.ps1": "AE4663132E546911E50EDC2D4D3BC9143C09F009094B3F58D450C798D05A14D2",
+      "preflight_ee5_and_git-v2.ps1": "97C1ABB9824CA7CADABF7853C93355B7F9F7E0CBC0B764B9193220670B5FAE6E",
+      "block0-v2.ps1": "3CB97BB0B3FE00F90A48A9EA32EA2355018F42548640A0B65D8880F8B14C86A6",
+      "pick-one-lane-v4.ps1": "35E489C7FDBC25A470A6CC0DC9776BB1471387CC9E29D683E0902BF52D7DF5F9",
+      "run-one-suite-v2.ps1": "7406B1BA7184ABBC97F01CCC98319C3CB1703E2D8838FC42A1F41C769F7D449A"
+    },
+    "root_parser_errors": 0,
+    "root_parser_files": 5,
+    "independent_review_sha256": "46CD666EEEC83286123C858F1C390C58F936393E8216A4BCCB941CA2A31B9E64",
+    "independent_review_scope": "selected static source/identity/parameter/plan; no independently recomputed hashes",
+    "approved": false,
+    "consumption_created": false,
+    "runs": 0
+  },
+  "boundaries": {
+    "ff": false,
+    "push": false,
+    "production": false,
+    "real_data": false,
+    "professional_signoff": false,
+    "external_messages": false,
+    "cleanup": false,
+    "sc8_671": "partial; local synthetic only",
+    "o3": "diagnostic budget consumed; bounded design pending"
+  },
+  "queue_batch": "B-1011_五候选两项接入与SC10前检补件"
+}
