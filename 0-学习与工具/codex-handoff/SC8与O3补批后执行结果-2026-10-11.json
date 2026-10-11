@@ -1,0 +1,63 @@
+{
+  "schema": "post-start-supplement-execution-results/v1",
+  "recorded_local": "2026-10-11T08:39:32.0860810+08:00",
+  "sc8": {
+    "approved_plan_sha256": "35D9FA73EEBFD1C4B4060F7653D78B0BD8AA310B7FC62BA96C4953525857E050",
+    "new_generator_invocations": 1,
+    "generator_actual_exit": 0,
+    "generator_result": "PASS",
+    "single_cua_script_invocations": 1,
+    "cua_result": "viewport_evidence_stopped",
+    "failure": {
+      "stage": "create-local-tab",
+      "error_type": "Error"
+    },
+    "viewport_measurements": 0,
+    "screenshots": 0,
+    "output_count": 4,
+    "output_files": [
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\local-css-f41d8ef8-3d74-4e0e-9b10-f8c11ca0aa02\\css-order-check.json",
+        "sha256": "CC668A173859ABC6BCC1F36FF2DAD1038C41B6EB8E70339A35989C84DC8B8604"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\local-css-f41d8ef8-3d74-4e0e-9b10-f8c11ca0aa02\\generator-manifest.json",
+        "sha256": "DA91BCC2078C6B3E0EBD08FAF6343AD87D3047652BDB16E2FDE8C3DCEC609283"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\local-css-f41d8ef8-3d74-4e0e-9b10-f8c11ca0aa02\\mock-home.html",
+        "sha256": "EC0886DA76451CE5926BF858979BC38F635F43C9E2BE2A65B176896BA1DA7106"
+      },
+      {
+        "path": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\local-css-f41d8ef8-3d74-4e0e-9b10-f8c11ca0aa02\\viewport-check.json",
+        "sha256": "5BF624AB796CD6C9BC21772DB3D8884E2FC829158B4FEF2883704C5C397B7080"
+      }
+    ],
+    "static_css_rules_passed": true,
+    "online_repair_claim": false,
+    "new_CLI_fallback_in_preparation_only": true
+  },
+  "o3": {
+    "approved_plan_sha256": "36AB2C961CB86501B69D6B0024FE1C1F9558F7D8F47B91ACC208E404FB1107AF",
+    "additional_generator_invocations": 1,
+    "generator_actual_exit": 1,
+    "failure": "13-marker diff gate: fixed original EOF missing newline, raw diff14 additions/1 deletion",
+    "partial_run_uuid": "bed61fa7ce7c4b9d9a7de721e583a4b5",
+    "manifest_created": false,
+    "markers_diff_created": false,
+    "runner_invocations": 0,
+    "new_180s_diagnostic_invocations": 0,
+    "raw_log_body_read_or_emitted": false,
+    "diff_analysis_path": "C:\\Dev\\zhuopin-ai\\reports\\o3-fourth-ci-1010\\p4-start-failure-1011\\bed61fa7ce7c4b9d9a7de721e583a4b5-diff-analysis.json",
+    "diff_analysis_sha256": "96DE24511AD1BE1C692667059B8AD3E874BD187348B2145ED2A94C65525EE348",
+    "new_EOF_amendment_in_preparation_only": true
+  },
+  "windows_amendment": {
+    "new_explicit_A_received": true,
+    "plan_sha256": "5828D0A43C7FD9CDD3361058FD1335C2CFAABFB7FB2262A2AAB11A9B4D3DAEC2",
+    "final_auth_created": false,
+    "native_created": false,
+    "picks": 0,
+    "integration_test_calls": 0
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "schema": "windows-path-supplement-consumption/v1",
+  "approved": true,
+  "explicit_human_answer": true,
+  "approved_by": "Shao Peishen",
+  "recorded_local": "2026-10-11T08:39:32.0860810+08:00",
+  "human_answer_text": "A：批准窄补件并续原范围（推荐）",
+  "human_answer_path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\aaafc0eb-9039-4f63-a50a-3d9bdd20881d\\human-answer.txt",
+  "human_answer_sha256": "5F2050660AD9655FA39E4A9C6F66D37D02C8C2FC00A265659D4F51BBDBC331E3",
+  "approval_evidence_path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\aaafc0eb-9039-4f63-a50a-3d9bdd20881d\\approval-evidence.json",
+  "approval_evidence_sha256": "D56F825CF27A4C58636AF91F450AFACA2079FB1ED426832D68E2DA65C484D6D0",
+  "plan_path": "C:\\Dev\\zhuopin-ai\\docs\\superpowers\\plans\\2026-10-11-five-candidates-windows-path-amendment.md",
+  "plan_sha256": "5828D0A43C7FD9CDD3361058FD1335C2CFAABFB7FB2262A2AAB11A9B4D3DAEC2",
+  "preflight_script_sha256": "E9300BD2476DBCB3C69D33104A0B8EEF2848420A568F7CF6409C79CA14508A54",
+  "original_D5F_approval_preserved": true,
+  "scope": "Windows path/quoting/new required controls and two template path constants; continue original fixed base/5 sources/41 paths/6 suites/Native/SC10SC11 exact exceptions",
+  "final_auth_not_yet_created": true,
+  "native_not_yet_created": true,
+  "picks": 0,
+  "integration_test_calls": 0,
+  "extra_ff_push_production_real_source_cleanup_authorized": false
+}
