@@ -1,0 +1,28 @@
+{
+  "recorded_local": "2026-10-11T07:42:30.1635680+08:00",
+  "failure_facts_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\start-amendments-177cccee-382f-4679-9569-6a0b730e38d0\\failure-facts.json",
+  "failure_facts_sha256": "0B5808615A9E4E313E438FB00FE9330D9CC65D8E7C37A8DB667B8C25C24CF2C2",
+  "original_approvals_consumed": true,
+  "sc8": {
+    "generator_attempts": 1,
+    "actual_exit": 1,
+    "output_directory_created": false,
+    "cua_executed": false,
+    "supplemental_plan": {
+      "path": "C:\\Dev\\zhuopin-ai\\docs\\superpowers\\plans\\2026-10-11-sc8-css-declaration-terminator-amendment.md",
+      "sha256": "35D9FA73EEBFD1C4B4060F7653D78B0BD8AA310B7FC62BA96C4953525857E050"
+    }
+  },
+  "o3": {
+    "generator_attempts": 1,
+    "actual_exit": 1,
+    "new_uuid_created": false,
+    "runner_calls": 0,
+    "new_180s_diagnostic_calls": 0,
+    "supplemental_plan": {
+      "path": "C:\\Dev\\zhuopin-ai\\docs\\superpowers\\plans\\2026-10-11-o3-p4-start-permission-amendment.md",
+      "sha256": "36AB2C961CB86501B69D6B0024FE1C1F9558F7D8F47B91ACC208E404FB1107AF"
+    }
+  },
+  "new_supplemental_approvals_received": false
+}

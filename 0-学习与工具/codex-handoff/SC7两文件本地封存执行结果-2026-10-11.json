@@ -1,0 +1,24 @@
+{
+  "schema": "sc7-local-seal-result/v1",
+  "recorded_local": "2026-10-11T07:42:30.1635680+08:00",
+  "plan_sha256": "2AC0928E43116670771B48391609EE94AC3CFE8B0B95BF0B381BC160DC7352D6",
+  "actual_exit": 0,
+  "summary_path": "C:\\Dev\\zhuopin-ai\\reports\\sc7-batch-quantity-1010\\seal\\4924413b-d37a-4ac3-a785-3ff4fd469d35\\summary.json",
+  "summary_sha256": "84FFAED30A44A44E78E1CC0094284EFB1714D580646AFF422A98714731748633",
+  "command": "C:/Dev/Codex/runtimes/zhuopin-ai/venv/Scripts/python.exe -B C:/Dev/zhuopin-ai/docs/superpowers/plans/sc7-local-seal-1010/seal_sc7.py --seal",
+  "commit": "14ddeaf3652ee10e98007b41c969eb6c87a5dde2",
+  "parent": "310f54de71149b0cb0281749619ee3cd84f97bca",
+  "tree": "653de306fa09264956d3be90ef5f65d122370471",
+  "native_root": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc7-batch-quantity-1010\\zhuopin-ai",
+  "branch": "codex/candidate-sc7-1010",
+  "file_sha256": {
+    "4-数字员工/采购部/SC7-库存优化建议/sc7_inventory/batch_quantity.py": "DB97E8682D5D0966FBB47030451614B94B1099DE33B9970CE15D2F0417672972",
+    "4-数字员工/采购部/SC7-库存优化建议/tests/test_batch_quantity.py": "BAFBC7F80DFDBA56A6789B429BA7621DD7AA8D586C54BA2AE2620FBC352B8412"
+  },
+  "only_two_100644_additions": true,
+  "clean_status_observed": true,
+  "tests_rerun": false,
+  "ff_executed": false,
+  "production_executed": false,
+  "whole_scenario_completed": false
+}
