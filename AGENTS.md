@@ -19,6 +19,7 @@
 
 ## Codex 执行约定
 
+- 转场接力按 `.claude/rules/队列与落库.md`「接力卡 R5」执行：一页精简摘要、`[Win]MMDD` 标题前缀、唯一执行会话，以新会话能准确接续为完成标准。
 - intent → proposal/design/tasks → 实现 → 逐项目测试 → review → 发布准备。项目 .agents/skills 下的 Codex 入口优先；原技能正文作规则与方法来源。遵守 Superpowers 先 Plan/Spec 后实现，不因切换模型省略人工闸。
 - Claude 的 Task/Agent、Bash/Read/Edit、save_skill、set_session_title、scheduled-tasks、claude -p 是源端接口。采用当前 Codex 实际可用工具；不能靠改产品名宣称接口兼容。子代理只在当前用户或适用技能明确要求时使用，模型只能取当前工具允许值。
 - 不使用 claude 作为 Codex 自动化后台。Codex 非交互入口是 codex exec。不得移植 --dangerously-skip-permissions 或绕过 Codex sandbox/hook trust；失败留证据并停止依赖步骤。
@@ -28,3 +29,9 @@
 - hooks 是辅助守卫，须正常 /hooks 审阅信任后才生效；测试正负例通过不等于运行时已信任。原上下文 token 计量器依赖 Claude transcript，不移植为虚假的 Codex 数值。
 - memory/history 只作检索资料，不凌驾于规则、队列或现时测试；原文不改，原凭据不复制。
 - 完工报告结果、命令/证据、未闭合项；有用户动作时用纯编号列表；无决策写“本次无需你决策”。
+
+## 定夺项答复格式（2026-10-11，Shao Peishen 明确要求）
+
+- 凡需 Shao Peishen 定夺，按编号列出可直接作答的选项，每项明确标一个推荐项，并简述选项影响；状态同步与需定夺事项分开。
+- 末尾必须给单独代码块形式的可复制粘贴答复模板，标明粘贴端为本 Codex 会话；多项可合并为一个块，编号与上文一致，涉及批准时绑定对应计划版本及范围。
+- 推荐项不等于默认授权。具体实施、设计审、仓库外修改、ff、生产部署、对外发送等需要明确批准的事项，未答仍待批；已批准事项不重复询问。
