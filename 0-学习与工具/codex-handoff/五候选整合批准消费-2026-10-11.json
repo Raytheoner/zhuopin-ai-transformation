@@ -1,0 +1,930 @@
+{
+  "schema": "five-candidate-alignment-authorization/v1",
+  "draft_only": false,
+  "approved": true,
+  "authorization_id": "f0c6ea07-14e8-436d-90d7-c4c95c4558b7",
+  "approval": {
+    "source": "Shao Peishen direct approval in current Codex task; root supplied byte identities",
+    "original_alignment_plan_sha256": "D5F582F1291ABE3C978B9D7E3671ADEF57CCF92D522040ED679AC1A26ACBAADE",
+    "windows_path_supplement_sha256": "5828D0A43C7FD9CDD3361058FD1335C2CFAABFB7FB2262A2AAB11A9B4D3DAEC2",
+    "human_answer_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\4e2eddc7-4ff6-45a6-ad16-615381984a8e\\human-answer.txt",
+    "human_answer_sha256": "5B4EEEA431E47D2823742DFF2F40D857369B08CAF9A22AA755869BCEAA1764DF",
+    "approval_evidence_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\4e2eddc7-4ff6-45a6-ad16-615381984a8e\\approval-evidence.json",
+    "approval_evidence_sha256": "54D70580302D96C29AE8597702EE5DD44BCC2AE0D0C90E253FDF597168CCD4A4",
+    "exact_quote": "1=A：批准五候选整合计划 D5F582…CBAADE，包括所列隔离副作用及SC10/SC11精确例外。",
+    "approved_plan_sha256": "D5F582F1291ABE3C978B9D7E3671ADEF57CCF92D522040ED679AC1A26ACBAADE"
+  },
+  "windows_path_supplement_approval": {
+    "evidence_path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\aaafc0eb-9039-4f63-a50a-3d9bdd20881d\\approval-evidence.json",
+    "evidence_sha256": "D56F825CF27A4C58636AF91F450AFACA2079FB1ED426832D68E2DA65C484D6D0",
+    "human_answer_path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\aaafc0eb-9039-4f63-a50a-3d9bdd20881d\\human-answer.txt",
+    "human_answer_sha256": "5F2050660AD9655FA39E4A9C6F66D37D02C8C2FC00A265659D4F51BBDBC331E3",
+    "schema": "five-candidates-windows-path-supplement-approval/v1",
+    "approved": true
+  },
+  "alignment_plan_sha256": "D5F582F1291ABE3C978B9D7E3671ADEF57CCF92D522040ED679AC1A26ACBAADE",
+  "formal_amendment_sha256": "7C22C19CA088B27D27538672913D34C884588D7D87EA9118F92AE670BA90E043",
+  "windows_path_amendment_sha256": "5828D0A43C7FD9CDD3361058FD1335C2CFAABFB7FB2262A2AAB11A9B4D3DAEC2",
+  "preflight_script_sha256": "E9300BD2476DBCB3C69D33104A0B8EEF2848420A568F7CF6409C79CA14508A54",
+  "scope_exception": "sealed_candidate_alignment_verification_only",
+  "authorized_operations": [
+    "native:create",
+    "SC2:cherry-pick",
+    "SC4:cherry-pick",
+    "SC10:cherry-pick",
+    "SC11:cherry-pick",
+    "O4:cherry-pick",
+    "SC2:tests",
+    "PLATFORM:tests",
+    "SC4:tests",
+    "SC10:tests",
+    "SC11:tests",
+    "O4:tests"
+  ],
+  "frozen_base_sha": "310f54de71149b0cb0281749619ee3cd84f97bca",
+  "seal_plan_sha256": "F9489E7A1729476F4068E80CA205F3AFE6A981C26F92D1278E3BED15C5953819",
+  "seal_manifest_sha256": "A4996E4758B4A36326D95D87524EAC63F02135AF57A126135CF2CBA5C51D12DB",
+  "seal_authorization_sha256": "AA487190423E44493A7004DB487545B89B9B85D2C898F6E219A77C2BB1FAD665",
+  "sc7_completion": {
+    "summary_path": "C:\\Dev\\zhuopin-ai\\reports\\sc7-batch-quantity-1010\\seal\\4924413b-d37a-4ac3-a785-3ff4fd469d35\\summary.json",
+    "summary_sha256": "84FFAED30A44A44E78E1CC0094284EFB1714D580646AFF422A98714731748633",
+    "committed": true,
+    "complete": true,
+    "error": null,
+    "commit": "14ddeaf3652ee10e98007b41c969eb6c87a5dde2",
+    "tree": "653de306fa09264956d3be90ef5f65d122370471",
+    "parent": "310f54de71149b0cb0281749619ee3cd84f97bca"
+  },
+  "candidate_sources": [
+    {
+      "lane": "SC2",
+      "ref": "codex/candidate-sc2-1010",
+      "commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "tree": "8ce16b268ebe8ce5dc4418a0aab0063b782aae8c",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "summary_path": "reports/candidate-integration-1010/seal-evidence/d0f5d6cd-adb6-4e48-ae08-f8870711bb1f/summary.json",
+      "summary_sha256": "71FE6B43E3429E0C5418D07113AD1CE3C7B2AA07F5DFA1099F013C333FE574D5"
+    },
+    {
+      "lane": "SC4",
+      "ref": "codex/candidate-sc4-1010",
+      "commit": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "tree": "ad1163674ded48a52bfaced0288f35637e1d78a0",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "summary_path": "reports/candidate-integration-1010/seal-evidence/10a42159-e7f3-431e-84e5-82871b8832fb/summary.json",
+      "summary_sha256": "01C92606EDF5913FCDA5709EB4E5396E6CBBD9FF06542CB853AEDE2486CBB95D"
+    },
+    {
+      "lane": "SC10",
+      "ref": "codex/candidate-sc10-1010",
+      "commit": "25eb192258fcd6ce51e654ec01c62918486c7736",
+      "tree": "4b5097ac312adf338eca91d41eab5ef9d0751515",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "summary_path": "reports/candidate-integration-1010/seal-evidence/10ddd9f3-4826-4d47-9f4e-915e32b403ec/summary.json",
+      "summary_sha256": "8FA930C2797219F0DBB598B28EFA3EB90E5510C661E53A1E447EC65B5BC107AF"
+    },
+    {
+      "lane": "SC11",
+      "ref": "codex/candidate-sc11-1010",
+      "commit": "6990139aca37e1252684ef051685198bc7e0c9a1",
+      "tree": "cf0ee4b32951869ea10c206b4274cfaa4f49d75c",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "summary_path": "reports/candidate-integration-1010/seal-evidence/67e48ba4-69a0-4289-a232-7ce283965e21/summary.json",
+      "summary_sha256": "C19C9376BC6111C5E59945B170D1F5E5C923ED7DBD07C5A2C3B57A6A891941FD"
+    },
+    {
+      "lane": "O4",
+      "ref": "codex/candidate-o4-1010",
+      "commit": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "tree": "e92b623448a4478bd4f1e8033c2f7bfd7c723e09",
+      "parent": "28337c0ebb52afdbf61e955ecdbc22d151bcd185",
+      "summary_path": "reports/candidate-integration-1010/seal-evidence/9ddc9bd3-3238-483c-93d3-aab368ead274/summary.json",
+      "summary_sha256": "FE893CC955746A96B2033FE8398A9E86361FC127A95761D7ABB2E496C4F265A1"
+    }
+  ],
+  "product_binding_source": {
+    "manifest_path": "docs/superpowers/plans/five-candidates-seal-1010/manifest.json",
+    "manifest_sha256": "A4996E4758B4A36326D95D87524EAC63F02135AF57A126135CF2CBA5C51D12DB",
+    "expected_product_path_count": 41,
+    "binding_rule": "freshly derive each exact path/source commit/mode/blob OID from the approved manifest and pinned source commit tree; do not reuse prior candidate controls or status snapshots"
+  },
+  "controls": [
+    {
+      "path": "docs/superpowers/plans/2026-10-10-five-candidates-seal.md",
+      "sha256": "F9489E7A1729476F4068E80CA205F3AFE6A981C26F92D1278E3BED15C5953819",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/five-candidates-seal-1010/seal_candidates.py",
+      "sha256": "6CAB74E0FA2E336C531E25FB62432D15C76A5998805D6818830EB6224D1A1277",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/five-candidates-seal-1010/manifest.json",
+      "sha256": "A4996E4758B4A36326D95D87524EAC63F02135AF57A126135CF2CBA5C51D12DB",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/candidate-integration-1010/seal-evidence/d0f5d6cd-adb6-4e48-ae08-f8870711bb1f/summary.json",
+      "sha256": "71FE6B43E3429E0C5418D07113AD1CE3C7B2AA07F5DFA1099F013C333FE574D5",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/candidate-integration-1010/seal-evidence/10a42159-e7f3-431e-84e5-82871b8832fb/summary.json",
+      "sha256": "01C92606EDF5913FCDA5709EB4E5396E6CBBD9FF06542CB853AEDE2486CBB95D",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/candidate-integration-1010/seal-evidence/10ddd9f3-4826-4d47-9f4e-915e32b403ec/summary.json",
+      "sha256": "8FA930C2797219F0DBB598B28EFA3EB90E5510C661E53A1E447EC65B5BC107AF",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/candidate-integration-1010/seal-evidence/67e48ba4-69a0-4289-a232-7ce283965e21/summary.json",
+      "sha256": "C19C9376BC6111C5E59945B170D1F5E5C923ED7DBD07C5A2C3B57A6A891941FD",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/candidate-integration-1010/seal-evidence/9ddc9bd3-3238-483c-93d3-aab368ead274/summary.json",
+      "sha256": "FE893CC955746A96B2033FE8398A9E86361FC127A95761D7ABB2E496C4F265A1",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/五候选本地提交批准消费-2026-10-10.json",
+      "sha256": "AA487190423E44493A7004DB487545B89B9B85D2C898F6E219A77C2BB1FAD665",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-10-sc2-biztype316-receipts.md",
+      "sha256": "6B52F00872654AD407C931BCEEE12309500A13EACF93C42BC1A145E674219B9C",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-10-sc4-source-evidence.md",
+      "sha256": "8EB31234EEA4B7F70D929E94AB326F9F5FBCCE8C35C8B983EAC6ECBADC565228",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-10-sc10-versioned-facts.md",
+      "sha256": "F7A61C74916A0F380A04931170076DFB2C4E6CCA2769D1BD51A23AFCF8D076A3",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-10-sc11-shared-stock-versioned-confirmation.md",
+      "sha256": "07CD85B01B8FB0A50C642613BCAFE36C023C96AFD9F5FE69ABDF66B6992B6678",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-10-o4-stage0-evidence.md",
+      "sha256": "316175B4F5FDF04616C760819020A90232DA33B4AC60231B5BBEDBB5382D749F",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-10-five-candidates-alignment.md",
+      "sha256": "D5F582F1291ABE3C978B9D7E3671ADEF57CCF92D522040ED679AC1A26ACBAADE",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/candidate-integration-1010/alignment-plan-candidate.md",
+      "sha256": "F62443491CE9BB87A95E2DC80FAC5A6D7BF6D0411F909F1C46DBC6FE07E5E8E3",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/five-candidates-seal-1010/alignment-amendment.md",
+      "sha256": "7C22C19CA088B27D27538672913D34C884588D7D87EA9118F92AE670BA90E043",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/five-candidates-seal-1010/preflight_ee5_and_git.ps1",
+      "sha256": "9583859E24D4F7462F1A31475457912DC2A59D0ED0821D483E78D33253F5DC39",
+      "expected_porcelain_v2": "",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/four-approvals-1011/4e2eddc7-4ff6-45a6-ad16-615381984a8e/human-answer.txt",
+      "sha256": "5B4EEEA431E47D2823742DFF2F40D857369B08CAF9A22AA755869BCEAA1764DF",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/four-approvals-1011/4e2eddc7-4ff6-45a6-ad16-615381984a8e/approval-evidence.json",
+      "sha256": "54D70580302D96C29AE8597702EE5DD44BCC2AE0D0C90E253FDF597168CCD4A4",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-11-five-candidates-windows-path-amendment.md",
+      "sha256": "5828D0A43C7FD9CDD3361058FD1335C2CFAABFB7FB2262A2AAB11A9B4D3DAEC2",
+      "expected_porcelain_v2": "1 A. N... 000000 100644 100644 0000000000000000000000000000000000000000 5a06ce8c8c33b6d6b0ec1ea00896e9ab2ead1538 docs/superpowers/plans/2026-10-11-five-candidates-windows-path-amendment.md",
+      "unmerged_rows": []
+    },
+    {
+      "path": "docs/superpowers/plans/five-candidates-alignment-1011/preflight_ee5_and_git.ps1",
+      "sha256": "E9300BD2476DBCB3C69D33104A0B8EEF2848420A568F7CF6409C79CA14508A54",
+      "expected_porcelain_v2": "1 A. N... 000000 100644 100644 0000000000000000000000000000000000000000 c656172ed961bfbdbb023fe7b28caddfad6d5ae3 docs/superpowers/plans/five-candidates-alignment-1011/preflight_ee5_and_git.ps1",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/candidate-integration-1010/aaafc0eb-9039-4f63-a50a-3d9bdd20881d/approval-evidence.json",
+      "sha256": "D56F825CF27A4C58636AF91F450AFACA2079FB1ED426832D68E2DA65C484D6D0",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    },
+    {
+      "path": "reports/candidate-integration-1010/aaafc0eb-9039-4f63-a50a-3d9bdd20881d/human-answer.txt",
+      "sha256": "5F2050660AD9655FA39E4A9C6F66D37D02C8C2FC00A265659D4F51BBDBC331E3",
+      "expected_porcelain_v2": "! reports/",
+      "unmerged_rows": []
+    }
+  ],
+  "template_binding": {
+    "source_d5f_block_hashes": [
+      "E7EE0751B5FC11E81C8DF91774557760F1BEF7D137895140AC32483DBF1D0AE3",
+      "DEE8CE3FE7DAAE3E60612BA5763A7C82E6D96B57C6A4CB57A0C7D5B3BF2800AF",
+      "E389B803BAE38A012B2FD18F68D644058AD0910755905288A4BE29A97A7C562E"
+    ],
+    "amended_block_hashes": [
+      "8C6F1557BA2B0F915462493154B8BF06E967FDBD3C058ED9836DDA1B6ADB80A0",
+      "DEE8CE3FE7DAAE3E60612BA5763A7C82E6D96B57C6A4CB57A0C7D5B3BF2800AF",
+      "E389B803BAE38A012B2FD18F68D644058AD0910755905288A4BE29A97A7C562E"
+    ],
+    "template_bindings_path": "reports/candidate-integration-1010/windows-path-amendment-1011/template-bindings.json",
+    "template_bindings_sha256": "4D834600B7054AC1E62824885599DC35DE3E1DE5FB71BDF61EABB89C1845A660"
+  },
+  "ee5_gate": {
+    "root_status_path": "C:\\Dev\\zhuopin-ai\\0-学习与工具\\codex-handoff\\EE5根作业状态-2026-10-10.json",
+    "freeze_status_path": "C:\\Dev\\zhuopin-ai\\0-学习与工具\\codex-handoff\\EE5临时状态行冻结与执行-2026-10-10.json",
+    "root_record_sha256": "FF38A430257DBDC5068BE47630C48EE04B0096B7518925ED55122FB65E706663",
+    "freeze_record_sha256": "F30C0F09AF859E53E5341CE4ADB95C0104AE5A471549FB660EE91BA539E8197C",
+    "root_record_stat": {
+      "bytes": 642,
+      "mtime_utc": "2026-10-10T16:44:27.2758894Z"
+    },
+    "freeze_record_stat": {
+      "bytes": 7986,
+      "mtime_utc": "2026-10-10T16:44:27.2471603Z"
+    },
+    "status": "completed",
+    "ee5_root_operation_active": false,
+    "word_qa_completed": true,
+    "restored": true,
+    "total_table_written": true,
+    "operation_evidence": "reports/frontier-prerequisites-1010/ee5-execution-e023d4b9-c0da-45f1-9834-5beb459bbe82",
+    "scope_limit": "只证明本根EE5作业真实状态；不是§三无冻结证明或场景解冻授权"
+  },
+  "native": {
+    "name": "five-candidates-align-1010",
+    "expected_branch": "codex/five-candidates-align-1010",
+    "frozen_base_sha": "310f54de71149b0cb0281749619ee3cd84f97bca",
+    "allowed_root": "C:\\Users\\Paul Shao\\.codex\\worktrees\\",
+    "returned_root": null,
+    "capability": "managed Native worktree; create from fixed committed SHA and return actual path",
+    "after_create_evidence_path": null
+  },
+  "registration": {
+    "formal_authorization_path": "0-学习与工具/codex-handoff/五候选整合批准消费-2026-10-11.json",
+    "after_registration_evidence_path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\auth-preparation-a9cecd4e-74d0-4518-a931-35d59bd3ffb7\\after-registration.json",
+    "auth_self_status": "independent after-registration record required before Native creation"
+  },
+  "product_file_bindings": [
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/config.py",
+      "mode": "100644",
+      "git_blob_oid": "456abf077d3c1e61ebf5915b7740b08807ef6a18"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/detail.py",
+      "mode": "100644",
+      "git_blob_oid": "452adee2964e708c61b78cf1cac2c8cc89f5aa24"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/metrics.py",
+      "mode": "100644",
+      "git_blob_oid": "188d0c2dc253652aa6be3a6e57650a0600b2d8a4"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/models.py",
+      "mode": "100644",
+      "git_blob_oid": "cdf66e1b39ac82dab295588ee2ccd50ea9f7a367"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/report.py",
+      "mode": "100644",
+      "git_blob_oid": "349e0a373b0ec4fdd5704e8ddbb69d7683d7ffff"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/sources.py",
+      "mode": "100644",
+      "git_blob_oid": "50afe063c2642698b5dc274a29fab017b6d29743"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+      "mode": "100644",
+      "git_blob_oid": "1050c49db2382c1b7b2b62ddc583afe0e3880d0f"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_detail.py",
+      "mode": "100644",
+      "git_blob_oid": "c48f9d15eb7bf52ef9963056bee4289ee4f086e6"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_metrics.py",
+      "mode": "100644",
+      "git_blob_oid": "696330f3390add3b04d6ac82086d5eccaad68a0b"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_report.py",
+      "mode": "100644",
+      "git_blob_oid": "3576e97f2c8917adb40292662769674a14cb8e35"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_sources.py",
+      "mode": "100644",
+      "git_blob_oid": "6d3114cc753666d55f04bdd3aab8408ee1fcb073"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py",
+      "mode": "100644",
+      "git_blob_oid": "470efb13f5d61b34e42dfeb952b3f9e844e8b3bd"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/models.py",
+      "mode": "100644",
+      "git_blob_oid": "afd5c8cd362106231173ae1185a9a52a2148609f"
+    },
+    {
+      "lane": "SC2",
+      "source_commit": "fe49e42a05b63ee41948be93c19a24989453d184",
+      "path": "5-平台底座/zhuopin_platform/tests/test_erp_biztype316.py",
+      "mode": "100644",
+      "git_blob_oid": "4951bbba478f48ef174f8320a4b52d374c53f83a"
+    },
+    {
+      "lane": "SC4",
+      "source_commit": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/models.py",
+      "mode": "100644",
+      "git_blob_oid": "596a22fd3b590e0a03197e39211026da587514ad"
+    },
+    {
+      "lane": "SC4",
+      "source_commit": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/text_source.py",
+      "mode": "100644",
+      "git_blob_oid": "7483ecac8c36a72ba75b14556a27a088fb2beada"
+    },
+    {
+      "lane": "SC4",
+      "source_commit": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/clause_extract.py",
+      "mode": "100644",
+      "git_blob_oid": "c812b1fa7e77832ad6973cdd2abf45215c97d0bd"
+    },
+    {
+      "lane": "SC4",
+      "source_commit": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/agent.py",
+      "mode": "100644",
+      "git_blob_oid": "13cb016fab3f037abd5b5d08f5f301c17aa5fe4a"
+    },
+    {
+      "lane": "SC4",
+      "source_commit": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/sc4_evidence_fixtures.py",
+      "mode": "100644",
+      "git_blob_oid": "f74f472d60a51f6b84d59140fa10107258b1719a"
+    },
+    {
+      "lane": "SC4",
+      "source_commit": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_text_source.py",
+      "mode": "100644",
+      "git_blob_oid": "3f92445976dac1cdd2e875016f343e0e8e9c9506"
+    },
+    {
+      "lane": "SC4",
+      "source_commit": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_clause_extract.py",
+      "mode": "100644",
+      "git_blob_oid": "6165a09ada5762a6ca9e336e4a3faf6b91d7bd40"
+    },
+    {
+      "lane": "SC4",
+      "source_commit": "91faf5b4c56e162011a5b56796170e9b212f1359",
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_agent_audit.py",
+      "mode": "100644",
+      "git_blob_oid": "21b9beb9519e0399c37940fa36522b7523942228"
+    },
+    {
+      "lane": "SC10",
+      "source_commit": "25eb192258fcd6ce51e654ec01c62918486c7736",
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/evidence.py",
+      "mode": "100644",
+      "git_blob_oid": "4594948f417119b8ab99477fc7943d65a806ada4"
+    },
+    {
+      "lane": "SC10",
+      "source_commit": "25eb192258fcd6ce51e654ec01c62918486c7736",
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/agent.py",
+      "mode": "100644",
+      "git_blob_oid": "f2062b879f091dc572e68fe950d72e51fd0eb14d"
+    },
+    {
+      "lane": "SC10",
+      "source_commit": "25eb192258fcd6ce51e654ec01c62918486c7736",
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_evidence.py",
+      "mode": "100644",
+      "git_blob_oid": "36523f7afe2c45b8f167df8041ad682403a6fcdd"
+    },
+    {
+      "lane": "SC10",
+      "source_commit": "25eb192258fcd6ce51e654ec01c62918486c7736",
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_agent_audit.py",
+      "mode": "100644",
+      "git_blob_oid": "11185d2f62fc8e023a77ff05f5d4acbca8c9ba6a"
+    },
+    {
+      "lane": "SC11",
+      "source_commit": "6990139aca37e1252684ef051685198bc7e0c9a1",
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/models.py",
+      "mode": "100644",
+      "git_blob_oid": "ed56093caefc427ddf267c6f0db94faafe3c107b"
+    },
+    {
+      "lane": "SC11",
+      "source_commit": "6990139aca37e1252684ef051685198bc7e0c9a1",
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/routing.py",
+      "mode": "100644",
+      "git_blob_oid": "3463b196b6266f485854734f408e90b5529e5b12"
+    },
+    {
+      "lane": "SC11",
+      "source_commit": "6990139aca37e1252684ef051685198bc7e0c9a1",
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/agent.py",
+      "mode": "100644",
+      "git_blob_oid": "8710df4dc85c322da3371bc68000f6f61450e40b"
+    },
+    {
+      "lane": "SC11",
+      "source_commit": "6990139aca37e1252684ef051685198bc7e0c9a1",
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/gate.py",
+      "mode": "100644",
+      "git_blob_oid": "c6d369974ab9ecfe8a65b9b439ec905f0a8ae0be"
+    },
+    {
+      "lane": "SC11",
+      "source_commit": "6990139aca37e1252684ef051685198bc7e0c9a1",
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/tests/test_shared_reservation.py",
+      "mode": "100644",
+      "git_blob_oid": "30b1782310fc545700587971f79d176653d5b74e"
+    },
+    {
+      "lane": "SC11",
+      "source_commit": "6990139aca37e1252684ef051685198bc7e0c9a1",
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/tests/test_versioned_audit_gate.py",
+      "mode": "100644",
+      "git_blob_oid": "4e5010656ced952ced5a08be02bdb1bb7043100e"
+    },
+    {
+      "lane": "SC11",
+      "source_commit": "6990139aca37e1252684ef051685198bc7e0c9a1",
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/tests/test_pmc_gate.py",
+      "mode": "100644",
+      "git_blob_oid": "efbd77094b5f775da4ad5aed29f1321d6de40c77"
+    },
+    {
+      "lane": "O4",
+      "source_commit": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/__init__.py",
+      "mode": "100644",
+      "git_blob_oid": "b87925770cc94d39e3b40add6fc28e7054d4c0a1"
+    },
+    {
+      "lane": "O4",
+      "source_commit": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/models.py",
+      "mode": "100644",
+      "git_blob_oid": "6d370106d90a54a5598700649bbacc364af2323b"
+    },
+    {
+      "lane": "O4",
+      "source_commit": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/canonical.py",
+      "mode": "100644",
+      "git_blob_oid": "05eb5bdad6eb3010eae2aa43e06e4a5bb4aa846d"
+    },
+    {
+      "lane": "O4",
+      "source_commit": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/checks.py",
+      "mode": "100644",
+      "git_blob_oid": "567fa2f0aa1a6ef570695bdad04b100776623667"
+    },
+    {
+      "lane": "O4",
+      "source_commit": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/agent.py",
+      "mode": "100644",
+      "git_blob_oid": "024a2420518868a79c72874f49cf5812ebafc8df"
+    },
+    {
+      "lane": "O4",
+      "source_commit": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "path": "4-数字员工/运营部/O4-设备预测性维护/tests/conftest.py",
+      "mode": "100644",
+      "git_blob_oid": "a3537599d79d098b8c0e2246dc42c10700754ceb"
+    },
+    {
+      "lane": "O4",
+      "source_commit": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "path": "4-数字员工/运营部/O4-设备预测性维护/tests/o4_cases.py",
+      "mode": "100644",
+      "git_blob_oid": "a561117de5dc7d9436515d1844d34cc4c8c1ceeb"
+    },
+    {
+      "lane": "O4",
+      "source_commit": "6a11819da67902eaa9ae934e061c607c24fcc624",
+      "path": "4-数字员工/运营部/O4-设备预测性维护/tests/test_stage0.py",
+      "mode": "100644",
+      "git_blob_oid": "4982257c4f139d514228130eaa8c8f8ba9d11427"
+    }
+  ],
+  "product_paths": [
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/config.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/detail.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/metrics.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/models.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/report.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/sources.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_detail.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_metrics.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_report.py",
+    "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_sources.py",
+    "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py",
+    "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/models.py",
+    "5-平台底座/zhuopin_platform/tests/test_erp_biztype316.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/models.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/text_source.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/clause_extract.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/agent.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/sc4_evidence_fixtures.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_text_source.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_clause_extract.py",
+    "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_agent_audit.py",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/evidence.py",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/agent.py",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_evidence.py",
+    "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_agent_audit.py",
+    "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/models.py",
+    "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/routing.py",
+    "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/agent.py",
+    "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/gate.py",
+    "4-数字员工/采购部/SC11-库存智能调拨/tests/test_shared_reservation.py",
+    "4-数字员工/采购部/SC11-库存智能调拨/tests/test_versioned_audit_gate.py",
+    "4-数字员工/采购部/SC11-库存智能调拨/tests/test_pmc_gate.py",
+    "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/__init__.py",
+    "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/models.py",
+    "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/canonical.py",
+    "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/checks.py",
+    "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/agent.py",
+    "4-数字员工/运营部/O4-设备预测性维护/tests/conftest.py",
+    "4-数字员工/运营部/O4-设备预测性维护/tests/o4_cases.py",
+    "4-数字员工/运营部/O4-设备预测性维护/tests/test_stage0.py"
+  ],
+  "main_products_status": [
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/config.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/detail.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/metrics.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/models.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/report.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/sources.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/sc2/webapp.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_detail.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_metrics.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_report.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/tests/test_sources.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/erp_connector/connector.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "5-平台底座/zhuopin_platform/zhuopin_platform/shared_tools/models.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "5-平台底座/zhuopin_platform/tests/test_erp_biztype316.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/models.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/text_source.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/clause_extract.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/sc4_contract/agent.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/sc4_evidence_fixtures.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_text_source.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_clause_extract.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/tests/test_agent_audit.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/evidence.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/sc10_bom_review/agent.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_evidence.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/tests/test_agent_audit.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/models.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/routing.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/agent.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/sc11_transfer/gate.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/tests/test_shared_reservation.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/tests/test_versioned_audit_gate.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/tests/test_pmc_gate.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/__init__.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/models.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/canonical.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/checks.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/o4_maintenance_evidence/agent.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/tests/conftest.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/tests/o4_cases.py",
+      "porcelain_v2": ""
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/tests/test_stage0.py",
+      "porcelain_v2": ""
+    }
+  ],
+  "git": {
+    "executable": "C:\\Program Files\\Git\\cmd\\git.exe",
+    "executable_sha256": "37C5725818D602E951BA2563B870D62763322956B73373DA4C33A0B566A80BC9",
+    "version": "git version 2.53.0.windows.2",
+    "environment_rejected_names": [],
+    "environment_policy": "GIT_PAGER allowed only with every argv --no-pager; GIT_OPTIONAL_LOCKS/GIT_TERMINAL_PROMPT only exact 0; no other GIT_* variable",
+    "main_config_sha256": "CF70790FD365E8E40986B073ED875F8A6115B9C12F0FADD83CB64BFD5957C2ED",
+    "hook_inventory": {
+      "main_sha256": "96D96A9EAB31887DB8519250CC68EBD0D99328605935F5141E628DAC4E18B367",
+      "native_sha256": null,
+      "state": "main hooks freshly inventoried; Native identity and hook inventory required after Native creation"
+    }
+  },
+  "main_config_sha256": "CF70790FD365E8E40986B073ED875F8A6115B9C12F0FADD83CB64BFD5957C2ED",
+  "main_hook_sha256": "96D96A9EAB31887DB8519250CC68EBD0D99328605935F5141E628DAC4E18B367",
+  "runtime": {
+    "python_path": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\venv\\Scripts\\python.exe",
+    "python_sha256": "760E6890B3DB606715075976C3793BFCE092DC8BDF30D48C56CFCACCFDD07F25",
+    "python_version": "Python 3.14.5",
+    "pytest_version": "pytest 9.0.3",
+    "pwsh_path": "C:\\Users\\Paul Shao\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\pwsh.exe",
+    "pwsh_sha256": "362A356CE7F0940EC74F73A8FC2C990A2CC24A38A11C90BBD8ECA947110AD139",
+    "pwsh_version": "7.6.5"
+  },
+  "code_blocks": [
+    {
+      "index": 0,
+      "sha256": "8C6F1557BA2B0F915462493154B8BF06E967FDBD3C058ED9836DDA1B6ADB80A0"
+    },
+    {
+      "index": 1,
+      "sha256": "DEE8CE3FE7DAAE3E60612BA5763A7C82E6D96B57C6A4CB57A0C7D5B3BF2800AF"
+    },
+    {
+      "index": 2,
+      "sha256": "E389B803BAE38A012B2FD18F68D644058AD0910755905288A4BE29A97A7C562E"
+    }
+  ],
+  "test_command_text_sha256": "E389B803BAE38A012B2FD18F68D644058AD0910755905288A4BE29A97A7C562E",
+  "test_matrix": [
+    {
+      "id": "SC2",
+      "cwd": "4-数字员工/采购部/SC2-采购周报自动生成",
+      "targets": [
+        "tests/test_detail.py",
+        "tests/test_metrics.py",
+        "tests/test_report.py",
+        "tests/test_sources.py"
+      ]
+    },
+    {
+      "id": "PLATFORM",
+      "cwd": "5-平台底座/zhuopin_platform",
+      "targets": [
+        "tests/test_erp_biztype316.py"
+      ]
+    },
+    {
+      "id": "SC4",
+      "cwd": "4-数字员工/采购部/SC4-合同条款自动提取与审核",
+      "targets": [
+        "tests/test_text_source.py",
+        "tests/test_clause_extract.py",
+        "tests/test_agent_audit.py"
+      ]
+    },
+    {
+      "id": "SC10",
+      "cwd": "4-数字员工/采购部/SC10-BOM评审与物料库管控",
+      "targets": [
+        "tests/test_evidence.py",
+        "tests/test_review_facts.py",
+        "tests/test_agent_audit.py",
+        "tests/test_pending_gates.py"
+      ]
+    },
+    {
+      "id": "SC11",
+      "cwd": "4-数字员工/采购部/SC11-库存智能调拨",
+      "targets": [
+        "tests/test_shared_reservation.py",
+        "tests/test_versioned_audit_gate.py",
+        "tests/test_pmc_gate.py"
+      ]
+    },
+    {
+      "id": "O4",
+      "cwd": "4-数字员工/运营部/O4-设备预测性维护",
+      "targets": [
+        "tests/test_stage0.py"
+      ]
+    }
+  ],
+  "test_evidence_root": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010",
+  "test_argv_contract": "python -B -m pytest -q -ra -p no:cacheprovider <fixed suite targets> --basetemp <new UUID> --junitxml <new UUID>; one suite per invocation; bind command text SHA before final registration",
+  "ee5_exception_contract": "SC10/SC11 pick and test gates each require fresh official full JSON plus status queries for rows 468/469, current EE5 root/freeze SHA+fields, and a new operation checkpoint; no §三 unfreeze claim",
+  "execution_boundaries": [
+    "normal five cherry-picks in SC2, SC4, SC10, SC11, O4 order",
+    "six exact suites only",
+    "keep hooks/signing/config active",
+    "no abort/reset/rebase/ff/push/deploy/queue writes",
+    "failures preserve Native/index and stop",
+    "all result evidence in new UUID ignored paths; original candidates retained"
+  ],
+  "observation_path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\auth-preparation-a9cecd4e-74d0-4518-a931-35d59bd3ffb7\\main-binding-observation.json",
+  "observation_sha256": "4D5B6057307B568AB86C71E0EABF516ABC82F6CB5B71476E4644C2093673D506",
+  "main_identity": {
+    "root": "C:/Dev/zhuopin-ai",
+    "branch": "master",
+    "head": "1cb0d7249ca1f7b6c63686ca8b565a8fd4322e88"
+  },
+  "auth_self_status": "not self-referenced; independent after-registration record required",
+  "recorded_local": "2026-10-11T09:46:53.5040840+08:00",
+  "status": "formally_registered_human_approved_alignment_only",
+  "after_registration_evidence_path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\auth-preparation-a9cecd4e-74d0-4518-a931-35d59bd3ffb7\\after-registration.json",
+  "root_binding_review": {
+    "path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\auth-preparation-a9cecd4e-74d0-4518-a931-35d59bd3ffb7\\final-binding-review.json",
+    "sha256": "E8E7A2F424721210FE17B199F91480D8A31BFBD7F7E3778C92E405E03978ED0F",
+    "static_passed": true
+  },
+  "control_status_source": {
+    "path": "C:\\Dev\\zhuopin-ai\\reports\\candidate-integration-1010\\auth-preparation-a9cecd4e-74d0-4518-a931-35d59bd3ffb7\\main-binding-observation.json",
+    "sha256": "4D5B6057307B568AB86C71E0EABF516ABC82F6CB5B71476E4644C2093673D506",
+    "actual_exit": 0,
+    "finished_local": "2026-10-11T09:41:18.3639272+08:00"
+  }
+}
