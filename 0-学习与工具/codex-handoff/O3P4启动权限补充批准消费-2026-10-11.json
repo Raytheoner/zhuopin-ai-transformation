@@ -1,0 +1,28 @@
+{
+  "schema": "scoped-start-supplement-approval/v1",
+  "approved": true,
+  "explicit_human_answer": true,
+  "approved_by": "Shao Peishen",
+  "recorded_local": "2026-10-11T08:20:34.0783953+08:00",
+  "human_source": "Shao Peishen direct user request_user_input_async reply in Codex thread 01a1229b-1106-7172-b5ed-b8b076448790",
+  "questionItemId": "[\"request_user_input_async\",\"call_1b6a82fd8b7d4b738dc9eec495e250f2\",1]",
+  "human_answer_text": "A：批准限定启动补件（推荐）",
+  "human_answer_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\edbce26c-124a-434e-b92a-424e350c1b56\\human-answer.txt",
+  "human_answer_sha256": "62AB770C26AA428CB771C5E4A3728EE46092343FD83AE2AF03321C3C1D5431C9",
+  "approval_evidence_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\edbce26c-124a-434e-b92a-424e350c1b56\\approval-evidence.json",
+  "approval_evidence_sha256": "43E3E1E2A07FBF2A869DCAFEB11043DADDAC4B084A22586E4FDD68F2CA0DD0BC",
+  "plan_path": "C:\\Dev\\zhuopin-ai\\docs\\superpowers\\plans\\2026-10-11-o3-p4-start-permission-amendment.md",
+  "plan_sha256": "36AB2C961CB86501B69D6B0024FE1C1F9558F7D8F47B91ACC208E404FB1107AF",
+  "scope": {
+    "generator_sha256": "4AD3BE7691D4DA768720F130AA79CBEDE0FAF53E9B4372048FF4442D31849E8E",
+    "runner_sha256": "0026B2FB6D23271FE6B1C5B0F5FF7ED11EE2B7C2004C3AFF572A258906DB9320",
+    "additional_generator_invocations": 1,
+    "current_first_runner_invocations": 1,
+    "timeout_ms": 180000,
+    "sandbox_permissions": "require_escalated",
+    "original_conditional_GET_logs_own_Job_cleanup_only": true
+  },
+  "execution_started": false,
+  "original_consumption_and_failure_records_preserved": true,
+  "extra_retries_pytest_ff_production_real_source_authorized": false
+}

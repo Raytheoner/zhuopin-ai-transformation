@@ -1,0 +1,27 @@
+{
+  "schema": "scoped-start-supplement-approval/v1",
+  "approved": true,
+  "explicit_human_answer": true,
+  "approved_by": "Shao Peishen",
+  "recorded_local": "2026-10-11T08:20:34.0783953+08:00",
+  "human_source": "Shao Peishen direct user request_user_input_async reply in Codex thread 01a1229b-1106-7172-b5ed-b8b076448790",
+  "questionItemId": "[\"request_user_input_async\",\"call_1b6a82fd8b7d4b738dc9eec495e250f2\",0]",
+  "human_answer_text": "A：批准精确补件并续跑（推荐）",
+  "human_answer_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\edbce26c-124a-434e-b92a-424e350c1b56\\human-answer.txt",
+  "human_answer_sha256": "62AB770C26AA428CB771C5E4A3728EE46092343FD83AE2AF03321C3C1D5431C9",
+  "approval_evidence_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\edbce26c-124a-434e-b92a-424e350c1b56\\approval-evidence.json",
+  "approval_evidence_sha256": "43E3E1E2A07FBF2A869DCAFEB11043DADDAC4B084A22586E4FDD68F2CA0DD0BC",
+  "plan_path": "C:\\Dev\\zhuopin-ai\\docs\\superpowers\\plans\\2026-10-11-sc8-css-declaration-terminator-amendment.md",
+  "plan_sha256": "35D9FA73EEBFD1C4B4060F7653D78B0BD8AA310B7FC62BA96C4953525857E050",
+  "scope": {
+    "generator_path": "C:/Dev/zhuopin-ai/docs/superpowers/plans/sc8-local-css-verification-1011/generate_synthetic_home.py",
+    "generator_sha256": "8969D351060E2C5F1DCBEF8B26F9481D09E951E63A7226E1CB5112DF6499009C",
+    "additional_generator_invocations": 1,
+    "first_cua_invocations": 1,
+    "run_id": "f41d8ef8-3d74-4e0e-9b10-f8c11ca0aa02",
+    "original_six_output_paths_and_320_390_viewports_only": true
+  },
+  "execution_started": false,
+  "original_consumption_and_failure_records_preserved": true,
+  "extra_retries_pytest_ff_production_real_source_authorized": false
+}
