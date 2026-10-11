@@ -1,0 +1,42 @@
+{
+  "schema": "sc8-local-css-approval/v1",
+  "approved": true,
+  "explicit_human_answer": true,
+  "approved_by": "Shao Peishen",
+  "recorded_at": "2026-10-11T07:18:50.651979+08:00",
+  "human_answer_text": "3=A：批准SC8本地核验计划 7292ED…50CE4，包括所列六件产物及两视口核验。",
+  "human_answer_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\4e2eddc7-4ff6-45a6-ad16-615381984a8e\\human-answer.txt",
+  "human_answer_sha256": "5B4EEEA431E47D2823742DFF2F40D857369B08CAF9A22AA755869BCEAA1764DF",
+  "human_source": "Shao Peishen direct user message in current Codex thread 01a1229b-1106-7172-b5ed-b8b076448790",
+  "plan_path": "C:\\Dev\\zhuopin-ai\\docs\\superpowers\\plans\\2026-10-10-sc8-local-css-verification.md",
+  "plan_sha256": "7292EDEDB14914732E16EDE38BC8AB70683E4106693B9A3FB0016C342A450CE4",
+  "generator_path": "C:\\Dev\\zhuopin-ai\\docs\\superpowers\\plans\\sc8-local-css-verification-1010\\generate_synthetic_home.py",
+  "generator_sha256": "D8AF058410A5D121652C4C90FBA0BAD0DEC89518341F0232EFC2D3F3C14D3F97",
+  "run_id": "f41d8ef8-3d74-4e0e-9b10-f8c11ca0aa02",
+  "output_root": "C:\\Dev\\zhuopin-ai\\reports\\sc8-live-readonly-1010\\local-css-f41d8ef8-3d74-4e0e-9b10-f8c11ca0aa02",
+  "outputs": [
+    "mock-home.html",
+    "css-order-check.json",
+    "generator-manifest.json",
+    "viewport-320.jpg",
+    "viewport-390.jpg",
+    "viewport-check.json"
+  ],
+  "viewports": [
+    {
+      "width": 320,
+      "height": 844
+    },
+    {
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "browser_id": "2",
+  "synthetic_only": true,
+  "one_generator_invocation": true,
+  "one_cua_script": true,
+  "online_view_authorized": false,
+  "ui_source_change_authorized": false,
+  "production_authorized": false
+}

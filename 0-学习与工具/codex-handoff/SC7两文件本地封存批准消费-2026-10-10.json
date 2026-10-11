@@ -1,0 +1,35 @@
+{
+  "schema": "sc7-seal-approval/v1",
+  "approved": true,
+  "explicit_human_answer": true,
+  "approved_by": "Shao Peishen",
+  "recorded_at": "2026-10-11T07:18:50.651979+08:00",
+  "human_answer_text": "2=A：批准SC7本地封存计划 2AC092…352D6，包括所列两文件提交及证据副作用。",
+  "human_answer_path": "C:\\Dev\\zhuopin-ai\\reports\\four-approvals-1011\\4e2eddc7-4ff6-45a6-ad16-615381984a8e\\human-answer.txt",
+  "human_answer_sha256": "5B4EEEA431E47D2823742DFF2F40D857369B08CAF9A22AA755869BCEAA1764DF",
+  "human_source": "Shao Peishen direct user message in current Codex thread 01a1229b-1106-7172-b5ed-b8b076448790",
+  "plan_path": "C:\\Dev\\zhuopin-ai\\docs\\superpowers\\plans\\2026-10-10-sc7-local-seal.md",
+  "plan_sha256": "2AC0928E43116670771B48391609EE94AC3CFE8B0B95BF0B381BC160DC7352D6",
+  "script_sha256": "AE1B922E536B9638B0D6D4A2CBCA543DA39B759736A3CCF9527ADBB59CDE23D3",
+  "manifest_sha256": "6374EA681EB86C0AC52FA8D00ED578D50F7DD7CCE79CAC8821D61BE8ED186987",
+  "native_root": "C:\\Users\\Paul Shao\\.codex\\worktrees\\sc7-batch-quantity-1010\\zhuopin-ai",
+  "branch": "codex/candidate-sc7-1010",
+  "base": "310f54de71149b0cb0281749619ee3cd84f97bca",
+  "file_sha256": {
+    "4-数字员工/采购部/SC7-库存优化建议/sc7_inventory/batch_quantity.py": "DB97E8682D5D0966FBB47030451614B94B1099DE33B9970CE15D2F0417672972",
+    "4-数字员工/采购部/SC7-库存优化建议/tests/test_batch_quantity.py": "BAFBC7F80DFDBA56A6789B429BA7621DD7AA8D586C54BA2AE2620FBC352B8412"
+  },
+  "scope_exception": "sc7_completed_candidate_preservation_only",
+  "single_ordinary_commit": true,
+  "commit_message": "feat(sc7): seal synthetic batch quantity evidence",
+  "tests_rerun": false,
+  "allowed_effects": [
+    "specified_native_HEAD_index",
+    "shared_common_git_objects_refs_reflog",
+    "new_uuid_seal_evidence",
+    "single_execution_claim"
+  ],
+  "ff_authorized": false,
+  "push_authorized": false,
+  "production_authorized": false
+}
