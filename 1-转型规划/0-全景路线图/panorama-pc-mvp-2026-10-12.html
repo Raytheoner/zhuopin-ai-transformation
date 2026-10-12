@@ -20,12 +20,24 @@
     #panoramaPcMvp1012 dd { margin:0; }
     #panoramaPcMvp1012 .waves { margin-top:1rem; }
     #panoramaPcMvp1012 .wave { padding:.35rem 0; border-bottom:1px solid var(--border); }
+    #panoramaPcMvp1012 .timeline { margin:.8rem 0 1rem; }
+    #panoramaPcMvp1012 .time-axis, #panoramaPcMvp1012 .time-lane { display:grid; grid-template-columns:4rem minmax(0,1fr); gap:.6rem; }
+    #panoramaPcMvp1012 .time-axis { margin-bottom:.4rem; color:var(--muted-foreground); }
+    #panoramaPcMvp1012 .time-ticks { display:flex; justify-content:space-between; }
+    #panoramaPcMvp1012 .time-lane { margin:.5rem 0; align-items:start; }
+    #panoramaPcMvp1012 .time-track { position:relative; height:1rem; background:color-mix(in srgb,var(--muted-foreground) 8%,transparent); }
+    #panoramaPcMvp1012 .time-bar { position:absolute; top:.2rem; height:.6rem; background:var(--viz-series-4); }
+    #panoramaPcMvp1012 .time-bar.blocked { background:var(--viz-series-2); }
+    #panoramaPcMvp1012 .time-mark { position:absolute; top:.1rem; width:.15rem; height:.8rem; background:var(--viz-series-1); }
+    #panoramaPcMvp1012 .time-description { margin-top:.2rem; overflow-wrap:anywhere; }
+    #panoramaPcMvp1012 .time-selected { font-weight:500; }
+    @media (max-width:480px) { #panoramaPcMvp1012 .time-axis, #panoramaPcMvp1012 .time-lane { grid-template-columns:1fr; gap:.15rem; } #panoramaPcMvp1012 .time-axis > span { display:none; } }
     @media (max-width:480px) { #panoramaPcMvp1012 dl { grid-template-columns:1fr; gap:.15rem; } #panoramaPcMvp1012 dd { margin-bottom:.55rem; } }
   </style>
   <section aria-labelledby="panorama-title">
     <h2 id="panorama-title">全景路线图 · PC端MVP推进视图</h2>
     <p class="intro">战略范围：35个场景。新版财务PRD扩展 FI11–FI16 单独展示，不改战略计数；Q9、QD-A为专项恢复项，不计入35。</p>
-    <p class="meta">进度快照：2026-10-12（上海） · 重点任务已现时核对，其余沿现有路线图；历史交付未重复验收。</p>
+    <p class="meta">进度快照：2026-10-12（上海） · 六项提案均已回件，SC2/FI14设计已批。其余沿现有路线图；历史交付未重复验收。</p>
     <div class="controls">
       <label for="panorama-dept">部门</label>
       <select id="panorama-dept" class="form-select" aria-label="按部门筛选">
@@ -34,32 +46,38 @@
       <span id="panorama-count" class="meta" aria-live="polite"></span>
     </div>
     <div id="panorama-list"></div>
-    <p class="meta" aria-label="场景阶段图例"><span style="color:var(--viz-series-3)">●</span> 已有交付　<span style="color:var(--viz-series-1)">●</span> 技术候选　<span style="color:var(--viz-series-4)">●</span> 提案准备　<span style="color:var(--viz-series-2)">●</span> 待材料　<span style="color:var(--muted-foreground)">●</span> 明确暂缓。多阶段时按最靠前阶段着色。</p>
+    <p class="meta" aria-label="场景阶段图例"><span style="color:var(--viz-series-3)">●</span> 已有交付　<span style="color:var(--viz-series-1)">●</span> 技术候选　<span style="color:var(--viz-series-4)">●</span> 提案 / 设计准备　<span style="color:var(--viz-series-2)">●</span> 待材料 / 正式接纳阻塞　<span style="color:var(--muted-foreground)">●</span> 明确暂缓。多阶段时按最靠前阶段着色。</p>
+    <section class="timeline" aria-labelledby="timeline-title">
+      <h3 id="timeline-title">泳道时间轴 · 10月12日</h3>
+      <div class="time-axis"><span>上海时间</span><div class="time-ticks tabular-nums"><span>16:00</span><span>16:30</span><span>17:00</span><span>17:30</span></div></div>
+      <div id="panorama-timeline" aria-live="polite"></div>
+      <p class="meta">条形＝实际提案运行；竖线＝4A批准登记17:20。后续实施：待审批排期。未列本轮时间的场景不推定开工日期。</p>
+    </section>
     <section class="detail" aria-live="polite" aria-labelledby="scene-title">
       <h3 id="scene-title">场景详情</h3>
       <dl id="panorama-detail"></dl>
     </section>
     <section class="waves" aria-label="当前推进波次">
       <h3>推进波次</h3>
-      <div class="wave"><strong>首组三泳道 · 已启动</strong> — 3A已批准并执行；旧批退役保全、六新树及输入核验完成。SC2、FI14、FI5于16:01–16:04错峰启动，仅生成离线提案，实际设计另审。</div>
+      <div class="wave"><strong>首组三泳道 · 已回件</strong> — SC2/FI14正式封存，4A已批准两项设计及FI14附录，详细实施计划自审中；FI5副本格式修正后strict通过，正式接纳仍阻塞。</div>
       <div class="wave"><strong>采购独立准备</strong> — SC4、SC7、SC8、SC10、SC11复用现有PRD与技术成果，逐项准备PC剩余切片；同场景按依赖串行。</div>
-      <div class="wave"><strong>质量次组三泳道 · 已准备</strong> — Q2、Q9、QD-A准备与正式规划均通过，待首组终态后启动。新质量回件指出Q2上传→判定报告未跑通，门户来源/更新时间需补齐；PPAP五份仍待10月16日前到件。</div>
+      <div class="wave"><strong>质量次组三泳道 · 已回件</strong> — Q2/Q9正式封存且独立审查完成，实际设计供审；QD-A副本strict通过，正式接纳仍阻塞。Q2上传→判定报告和门户来源/更新时间分别待业务切片；PPAP五份仍待10月16日前到件。</div>
       <div class="wave"><strong>人侧归集</strong> — 财务21于14:02、采购27于14:05发出，正文及Word、抄送本人、部门群和台账四链路均已核齐；等现有资料回件。</div>
     </section>
-    <p class="meta">阶段文字标记：已有交付 · 技术候选 · 提案准备 · 待材料 · 明确暂缓。阶段可并存；计划、候选和准备均不代表MVP完成、专业验收或生产发布。</p>
+    <p class="meta">计划、设计批准和技术候选均不代表MVP完成、专业验收或生产发布。两处正式接纳阻塞需针对性恢复；现有四份封存设计保留。</p>
   </section>
   <script>
     (() => {
       const root = document.getElementById('panoramaPcMvp1012');
       const rows = [
         ['采购','SC1','已有产品工程与历史验收；本轮未重验生产或真实源。','复用既有工程，按现时证据补齐PC端MVP剩余切片。','晋档/新增实现须补对应现时证据。','内部技术','队列行未在本次来源中逐行核对。','已有交付'],
-        ['采购','SC2','旧三指标四件保全；3A批准修订离线提案恢复，新泳道16:01实际启动。既有316与回归记录本次未重跑。','完成已签分母、未知/PENDING/零、版本快照与权威日历的完整设计，独立审核后提请实施。','新实际design尚未批准；G01–G04真实判例/字段与上线验收另留闸，旧明细差异独立承接。','内部提案 / 设计审查 / 业务资料','#499、#654、#538','技术候选 · 提案生成中'],
+        ['采购','SC2','本轮四件正式strict通过并封存，独立审查完成；4A已批准实际设计。既有316与回归记录本次未重跑。','完成12文件详细实施计划自审，按具体计划提请实现与测试批准。','G01–G04仍未签；起算边界不猜，真实判例/字段及上线验收另闸，旧明细差异独立承接。','内部实施计划 / 业务资料','#499、#654、#538、§四291已答','设计已批准 · 实施计划准备'],
         ['采购','SC4','八路径合成来源证据候选；取文和来源审计可演示。','列出PC工作流、审核依据和缺库表现，形成剩余实施切片。','法务条款库、风险判据、审核责任人尚待；真实合同和生产另闸。','内部技术 / 专员材料','#467','技术候选 · 提案准备 · 待材料'],
         ['采购','SC7','标准批量接入合成候选57项通过并封存；场景仍未闭环。','核PC显示与建议证据链；真实K1/K2仅在既有授权内准备。','真实ItemMaster/shared connector/K2参数、专业采用待前置；提前期分布须先取证。','内部技术 / 专员材料','#670','技术候选 · 待材料'],
         ['采购','SC8','门户规则候选已有；局部CSS部署及现网20项检查通过。','复用门户与规则候选，准备PC剩余交付；等待实际手机反馈。','手机回件未到；全场景golden/D4及专业闸未闭。','专员材料 / 内部技术','#660、#671','已有交付 · 技术候选 · 待材料'],
         ['采购','SC10','四路径版本化合成事实候选56项通过，集成候选保留；场景partial。','复用D1–D9/3M事实，准备PC物料/BOM事实对照及缺数表现。','三类专业建议、零价语义、真实源/主数据/价格接口待确认。','内部技术 / 专员材料','#468','技术候选 · 提案准备 · 待材料'],
         ['采购','SC11','七路径合成首项30项通过，拟稿与revision/hash绑定可评审。','复用A2/B2固定周计划与共享库存守恒，准备PC拟稿/修改/确认切片。','六项排序/缺数/临时计划问题待业务确认；真实库存、ERP、邮件另闸。','内部技术 / 专员材料','#469','技术候选 · 提案准备 · 待材料'],
-        ['质量','Q2','展示包已归档，18/18属展示记录；质量16反馈不能上传文件和取得判定报告。3A离线语义提案已准备。','先按序完成离线语义design；PC上传→判定→报告→人工→审计切片独立设计，复用QD-B交互。','尚未现场复现；当前查看源码未见上传路由。语义提案不代称使用阻碍已修；真实校准/上线另审。','内部业务闭环 / 设计审查 / 专业签认','#652、#661、#681','已有交付 · 技术候选 · 提案准备'],
+        ['质量','Q2','本轮离线语义四件正式strict通过并封存，独立审查完成；18/18是历史展示记录。质量16反馈上传和判定报告未跑通。','实际离线设计供审后写具体计划；PC上传→判定→报告→人工→审计另作独立切片，复用QD-B交互。','使用阻碍尚未现场复现；当前源码未见上传路由。离线语义提案不代表上传闭环已修；真实校准/上线另闸。','内部业务闭环 / 设计审查 / 专业签认','#652、#661、#681','已有交付 · 设计供审'],
         ['质量','Q4','三文件一致性范围未grill；质量部#15承诺10月16日交PPAP样本。','到件先核客户隔包与版本，再grill/intent/proposal/design审。','PPAP样本尚待；符号基准冲突待签认。','专员材料','#510、质量部#15','待材料'],
         ['质量','Q6','已有项目立项预审可用；质量16有限词/阶段映射/档三效力答复已核。','现有试用无冲突先保持；真实优先推进Q2/Q4，专业库应用按原三步法和设计闸。','表外语义族自动归一为新增建议，未默许自动映射；来源/更新时间需具体设计。','内部口径消费 / 业务主线','#681、#661','已有交付'],
         ['运营','O1','既有收割MVP、首版L1与mock档1基线。','补真实计划数据通路及具体范围，再审目标态动作链。','真实生产计划端点尚非就绪证据；生成/审核/下发动作链未证。','内部技术','队列指针未在本次来源中逐行核对。','已有交付 · 待材料'],
@@ -70,7 +88,7 @@
         ['财务','FI2','保留历史上线/门户成果；新版#20回件已消化。','复用既有职责和PRD，按可领任务推进PC准备。','设计、真实源、发布仍分别核验。','内部技术 / 专员材料','#20回件','已有交付 · 提案准备'],
         ['财务','FI3','保留历史上线/门户成果；新版#20回件已消化。','复用既有职责和PRD，按可领任务推进PC准备。','设计、真实源、发布仍分别核验。','内部技术 / 专员材料','#20回件','已有交付 · 提案准备'],
         ['财务','FI4','当前PRD来源明确暂缓。','有明确恢复决定后再立项推进。','明确暂缓。','本人定夺','财务PRD原暂缓项','明确暂缓'],
-        ['财务','FI5','#20的12项资产已核回灌；兼容意图由3A确认，新提案泳道16:04实际启动。','复用旧工程与规则，完成企微主源、OCR/验真、预算版本、补件幂等、人工与审计具体design。','仅提案运行，未实施；C2真实三例和预算/企微主源未闭，附件自陈不代表产品验收。','内部提案 / 设计审查 / 业务资料','#470、#674–677','提案生成中 · 待材料'],
+        ['财务','FI5','本轮四件已回；仅spec标题修正，父级strict通过，独立内容审查完成；原件保留。','按针对性恢复计划重新正式接纳后审实际设计，复用现有兼容意图和供审内容。','formal admission仍blocked，无design HEAD；不能把strict副本当正式design。C2真实三例/预算/企微主源另留闸。','内部正式接纳恢复 / 业务资料','#470、#674–677','正式接纳阻塞 · 待材料'],
         ['财务','FI6','当前PRD来源明确暂缓。','有明确恢复决定后再立项推进。','明确暂缓。','本人定夺','财务PRD原暂缓项','明确暂缓'],
         ['财务','FI7','新版PRD需求保留；预算职责已确认。','逐行按可独立片段梳理依赖并复用原骨架。','缺业务资料集中承接；专业判据/实际design另核。','内部技术 / 专员材料','#20回件','提案准备 · 待材料'],
         ['财务','FI8','新版#20确认FI8链需求理解；当前来源未证明技术交付。','按依赖准备PC MVP可独立片段。','需求理解不代签专业判据、完整intent或design。','内部技术 / 专员材料','#20回件','提案准备'],
@@ -90,15 +108,24 @@
         ['财务新版PRD扩展','FI11','10月8日PRD保留；预算链需求已确认。','依赖梳理并找可独立PC准备片段。','专业判据、完整intent/design各自核验。','内部技术 / 专员材料','新版PRD、#20','提案准备'],
         ['财务新版PRD扩展','FI12','10月8日PRD保留；预算链需求已确认。','依赖梳理并找可独立PC准备片段。','专业判据、完整intent/design各自核验。','内部技术 / 专员材料','新版PRD、#20','提案准备'],
         ['财务新版PRD扩展','FI13','10月8日PRD答疑需求保留。','按PRD准备可独立片段。','专业判据、完整intent/design各自核验。','内部技术 / 专员材料','新版PRD','提案准备'],
-        ['财务新版PRD扩展','FI14','#20付款计划样本已核；3A明确确认只读意图，已落库，新提案泳道16:03实际启动。','设计同截止账龄、只读计划草稿、人工调整版本/理由和审计，缺数状态可复查。','仅提案运行，未实施；逐笔AP/实付/合同/资金/标准账龄仍缺，六组专业PENDING保留。','内部提案 / 设计审查 / 业务资料','#678、#674–676','提案生成中 · 待材料'],
+        ['财务新版PRD扩展','FI14','本轮四件正式strict通过并封存，技术附录与独立审查齐；4A已批准design及绑定附录。','完成17文件详细实施计划自审；先MOCK JSON跑通勾稽/草稿/人工演示版本/历史/导出/audit，再提请实现批准。','逐笔AP/实付/合同/资金/标准账龄仍缺，G01–G06全PENDING；金额和原始理由不进通用audit。','内部实施计划 / 业务资料','#678、#674–676、§四291已答','设计已批准 · 实施计划准备 · 待材料'],
         ['财务新版PRD扩展','FI15','收款需求保留；新版#20确认理解。','按依赖准备PC端可独立片段。','专业判据和实际design仍需核验。','内部技术 / 专员材料','新版PRD、#20','提案准备'],
         ['财务新版PRD扩展','FI16','合并需求保留；新版#20确认理解。','按依赖准备PC端可独立片段。','专业判据和实际design仍需核验。','内部技术 / 专员材料','新版PRD、#20','提案准备'],
-        ['专项恢复','Q9','确认意图、已批计划与八mock已齐；3A恢复已准备并通过正式规划，旧资产引用保留。','首组终态后启动完整追溯提案；旧片段只在可读时复用，不作停笔前置。','旧文件可读性未证；实际design与专业G01–G06真实签认另闸。','内部提案 / 设计审查','#653','提案准备'],
-        ['专项恢复','QD-A','既有七步映射及场景勾选复用；实际四个源码只读副本已核，3A恢复正式规划通过。','首组终态后启动显式七步raw章节、顺序/来源/空白vs未知契约提案，接既有Q2映射。','实际design另审；不得改签认映射或把未可靠提取当空章，真实原件/上线另闸。','内部提案 / 设计审查','#656','提案准备']
+        ['专项恢复','Q9','本轮四件正式strict通过并封存，独立审查完成；客户/项目/文档/版本/位置追溯合同齐。','实际design供审后编写具体实施计划；不重做已成功提案。','G01–G06仍PENDING；候选关系不升为专业签认，与Q4规则和audit分域。','内部设计审查','#653','设计供审'],
+        ['专项恢复','QD-A','本轮四件已回，未改副本父级strict通过，独立内容审查完成；七步/顺序/来源及空白vs未知合同齐。','按针对性恢复计划重新正式接纳，仅两失败项重派，保留四份成功设计。','formal admission仍blocked，无design HEAD；初始可选目录探针退出1导致证据不完整，不是缺业务资料。真实原件/上线另闸。','内部正式接纳恢复','#656','正式接纳阻塞']
       ];
       const list = root.querySelector('#panorama-list');
       const detail = root.querySelector('#panorama-detail');
       const filter = root.querySelector('#panorama-dept');
+      const timeline = root.querySelector('#panorama-timeline');
+      const runs = [
+        {id:'SC2',dept:'采购',start:1.72,end:22.16,approved:true,text:'16:01–16:22 提案封存；4A设计已批准，实施计划自审中。'},
+        {id:'FI14',dept:'财务新版PRD扩展',start:3.22,end:22.16,approved:true,text:'16:03–16:22 提案封存；4A设计及附录已批准，实施计划自审中。'},
+        {id:'FI5',dept:'财务',start:4.72,end:22.16,blocked:true,text:'16:04–16:22 回件；格式修正副本strict通过，正式接纳阻塞。'},
+        {id:'Q2',dept:'质量',start:23.69,end:50.82,text:'16:23–16:50 提案封存；独立审查完成，实际设计供审。'},
+        {id:'Q9',dept:'专项恢复',start:25.19,end:50.82,text:'16:25–16:50 提案封存；独立审查完成，实际设计供审。'},
+        {id:'QD-A',dept:'专项恢复',start:26.69,end:50.82,blocked:true,text:'16:26–16:50 回件；副本strict通过，正式接纳阻塞。'}
+      ];
       let selected = 'SC2';
       const names = {SC1:'供应商风险初筛',SC2:'采购周报自动生成',SC4:'合同条款提取审核',SC7:'库存优化建议',SC8:'客户订单交期智能承诺',SC10:'BOM评审与物料库管控',SC11:'库存智能调拨',Q2:'8D报告AI判定',Q4:'PPAP三文件一致性',Q6:'立项审核门禁',O1:'生产排程智能优化',O2:'物料齐套预警',O3:'物流异常检测与追踪',O4:'设备预测性维护',R1:'软件需求分析助手',R2:'AUTOSAR配置助手',R3:'代码审查加速器',R4:'测试用例智能生成',R5:'技术文档智能生成助手',S1:'客户跟进与销售日报',S2:'拜访与技术交流助手',S3:'RFQ响应加速',S4:'客户技术支持文档',S5:'竞品动态监控',S6:'销售预测与商机管理',FI5:'费用报销初审',FI11:'预算链',FI12:'预算链',FI13:'财务答疑',FI14:'付款计划与账龄',FI15:'收款',FI16:'合并'};
       const fields = ['已有成果','当前阶段','PC MVP下一步','具体阻碍','去向','队列指针'];
@@ -131,11 +158,37 @@
           section.append(tiles); list.append(section);
         });
         root.querySelector('#panorama-count').textContent = `${count}项显示：35个战略场景 + 6个财务扩展 + 2个质量专项`;
+        renderTimeline();
       };
+      function renderTimeline() {
+        timeline.replaceChildren();
+        const shown = runs.filter(run => matchesDepartment(run.dept));
+        if (!shown.length) {
+          const note = document.createElement('p'); note.className = 'meta';
+          note.textContent = '该部门本轮暂无已核的运行时间；下一阶段待前置与审批排期。';
+          timeline.append(note); return;
+        }
+        shown.forEach(run => {
+          const lane = document.createElement('div'); lane.className = 'time-lane';
+          const label = document.createElement('span'); label.textContent = run.id;
+          if (run.id === selected) label.className = 'time-selected';
+          const content = document.createElement('div');
+          const track = document.createElement('div'); track.className = 'time-track'; track.setAttribute('aria-hidden','true');
+          const bar = document.createElement('div'); bar.className = `time-bar${run.blocked ? ' blocked' : ''}`;
+          bar.style.left = `${run.start/90*100}%`; bar.style.width = `${(run.end-run.start)/90*100}%`;
+          track.append(bar);
+          if (run.approved) {
+            const mark = document.createElement('div'); mark.className = 'time-mark'; mark.style.left = `${80.2/90*100}%`; track.append(mark);
+          }
+          const description = document.createElement('div'); description.className = 'time-description'; description.textContent = run.text;
+          content.append(track,description); lane.append(label,content); timeline.append(lane);
+        });
+      }
       function stageClass(stage) {
         if (stage.includes('已有交付')) return 's-delivered';
         if (stage.includes('技术候选')) return 's-candidate';
-        if (stage.includes('提案准备')) return 's-proposal';
+        if (stage.includes('正式接纳阻塞')) return 's-material';
+        if (stage.includes('提案') || stage.includes('设计') || stage.includes('实施计划')) return 's-proposal';
         if (stage.includes('待材料')) return 's-material';
         return 's-paused';
       }
