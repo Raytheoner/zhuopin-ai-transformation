@@ -41,5 +41,8 @@
     "q2-semantic-offline-source-1012v2": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v2-q2\\zhuopin-ai",
     "q9-apqp-evidence-pilot-1012v2": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v2-q9\\zhuopin-ai"
   },
-  "authorizations": {}
+  "authorizations": {
+    "q2-semantic-offline-source-1012v2": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-q2-q9-implementation\\q2-8a.json",
+    "q9-apqp-evidence-pilot-1012v2": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-q2-q9-implementation\\q9-8a.json"
+  }
 }
