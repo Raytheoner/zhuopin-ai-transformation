@@ -1,0 +1,45 @@
+{
+  "batch_id": "B-1012_v3质量双设计保全",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1012_v3质量双设计保全.md",
+  "max_parallel": 2,
+  "stagger_seconds": 90,
+  "candidates": [
+    {
+      "task_id": "q2-semantic-offline-source-1012v2",
+      "row": 652,
+      "section": "一",
+      "task_excerpt": "Q2剩余语义来源离线方案",
+      "next_action": "隔离Q2语义v2离线提案",
+      "opener_id": "A1",
+      "lane": "op1012x-pc-v2-q2-proposal",
+      "touches": [
+        "openspec/changes/q2-semantic-offline-source-1012v2/"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-two-blocked-v3\\lan-preserve-q2.json"
+    },
+    {
+      "task_id": "q9-apqp-evidence-pilot-1012v2",
+      "row": 653,
+      "section": "一",
+      "task_excerpt": "Q9候选设计输出追溯技术提案准备",
+      "next_action": "隔离Q9候选v2离线提案",
+      "opener_id": "A2",
+      "lane": "op1012y-pc-v2-q9-proposal",
+      "touches": [
+        "openspec/changes/q9-apqp-evidence-pilot-1012v2/"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-two-blocked-v3\\lan-preserve-q9.json"
+    }
+  ],
+  "workspaces": {
+    "q2-semantic-offline-source-1012v2": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v2-q2\\zhuopin-ai",
+    "q9-apqp-evidence-pilot-1012v2": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v2-q9\\zhuopin-ai"
+  },
+  "authorizations": {}
+}

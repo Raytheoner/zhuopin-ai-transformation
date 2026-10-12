@@ -1,0 +1,48 @@
+{
+  "batch_id": "B-1012_v3PC双设计保全",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1012_v3PC双设计保全.md",
+  "max_parallel": 2,
+  "stagger_seconds": 90,
+  "candidates": [
+    {
+      "task_id": "sc2-three-metric-evidence-1012v2",
+      "row": 654,
+      "section": "一",
+      "task_excerpt": "SC2既有三项指标替换技术提案",
+      "next_action": "隔离SC2三指标v2离线提案",
+      "opener_id": "A1",
+      "lane": "op1012u-pc-v2-sc2-proposal",
+      "touches": [
+        "openspec/changes/sc2-three-metric-evidence-1012v2/"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-two-blocked-v3\\lan-preserve-sc2.json"
+    },
+    {
+      "task_id": "fi14-payment-plan-pc-mvp-1012v2",
+      "row": 678,
+      "section": "一",
+      "task_excerpt": "FI14只读账龄与付款计划草稿",
+      "next_action": "隔离FI14只读PC v2离线提案",
+      "opener_id": "A2",
+      "lane": "op1012v-pc-v2-fi14-proposal",
+      "touches": [
+        "openspec/changes/fi14-payment-plan-pc-mvp-1012v2/"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-two-blocked-v3\\lan-preserve-fi14.json"
+    }
+  ],
+  "workspaces": {
+    "sc2-three-metric-evidence-1012v2": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v2-sc2\\zhuopin-ai",
+    "fi14-payment-plan-pc-mvp-1012v2": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v2-fi14\\zhuopin-ai"
+  },
+  "authorizations": {
+    "sc2-three-metric-evidence-1012v2": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-sc2-fi14-implementation\\sc2-7a.json",
+    "fi14-payment-plan-pc-mvp-1012v2": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-sc2-fi14-implementation\\fi14-7a.json"
+  }
+}
