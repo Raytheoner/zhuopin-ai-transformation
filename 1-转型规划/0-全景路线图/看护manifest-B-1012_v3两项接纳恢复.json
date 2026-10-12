@@ -1,0 +1,45 @@
+{
+  "batch_id": "B-1012_v3两项接纳恢复",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1012_v3两项接纳恢复.md",
+  "max_parallel": 2,
+  "stagger_seconds": 90,
+  "candidates": [
+    {
+      "task_id": "fi5-wecom-pc-review-alignment-1012v3",
+      "row": 470,
+      "section": "一",
+      "task_excerpt": "FI5",
+      "next_action": "隔离FI5企微PC v3兼容提案",
+      "opener_id": "A1",
+      "lane": "op1012aa-fi5-admission-v3",
+      "touches": [
+        "openspec/changes/fi5-wecom-pc-review-alignment-1012v3/"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-two-blocked-v3\\lan-fi5-v3.json"
+    },
+    {
+      "task_id": "qda-seven-step-extraction-1012v3",
+      "row": 656,
+      "section": "一",
+      "task_excerpt": "QD-A七步法原始章节离线技术提案",
+      "next_action": "隔离QD-A七步v3离线提案",
+      "opener_id": "A2",
+      "lane": "op1012ab-qda-admission-v3",
+      "touches": [
+        "openspec/changes/qda-seven-step-extraction-1012v3/"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1012-two-blocked-v3\\lan-qda-v3.json"
+    }
+  ],
+  "workspaces": {
+    "fi5-wecom-pc-review-alignment-1012v3": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v3-fi5\\zhuopin-ai",
+    "qda-seven-step-extraction-1012v3": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v3-qda\\zhuopin-ai"
+  },
+  "authorizations": {}
+}
