@@ -36,19 +36,10 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "部分文件同步失败，请检查 S
 # （本脚本不走 Sync-ZhuopinPlatformAndApp，故需单独调用，其余四服务经该函数自动推送）
 Publish-ZhuopinDeployToolsModule -SshAlias $SshAlias -ServerBase $Base
 
-# —— 销售域实时数据（队列 #53，走脱敏管道 sync_sales_data.py，勿直接 scp 原始 JSON）——
-#   sync_sales_data.py：读 SalesMarketing/crm_data/dashboard_data.json → 脱敏高危线索联系方式
-#   （Paul 2026-07-20 拍板：泓钦对齐前一律脱敏）→ 写本地 data/sales_dashboard_data.json；
-#   再把【已脱敏】文件推到 .51 同源 data/。⚠️ 切勿直接 scp 原始 dashboard_data.json（会带出未脱敏 PII）。
-#   日常刷新节奏：挂到 SalesMarketing 的「销售易数据同步」(每天 8:00) 之后，再跑本脚本即可。
-Write-Host "刷新销售域数据（脱敏管道 sync_sales_data.py）..." -ForegroundColor Yellow
-python "$CC\sync_sales_data.py"
-if (($LASTEXITCODE -eq 0) -and (Test-Path "$CC\data\sales_dashboard_data.json")) {
-    scp "$CC\data\sales_dashboard_data.json" "${SshAlias}:${Base}/data/sales_dashboard_data.json"
-    Write-Host "   销售数据（已脱敏）已推送" -ForegroundColor Green
-} else {
-    Write-Warning "   sync_sales_data.py 未成功产出 data\sales_dashboard_data.json（源 SalesMarketing 数据可能未同步）——跳过销售数据推送，销售域将回落 2026-06-25 快照。"
-}
+# 销售JSON由.51同机refresh_sales.py在完整取数与脱敏后发布。
+# 整站发布保留服务器最后有效销售快照，避免用笔记本旧数据覆盖日同步结果。
+# 首次销售数据初始化也须走获批的销售刷新验收，不从仓库历史JSON补造新数据。
+Write-Host "   保留服务器销售快照；销售更新由独立获批的同机入口执行。" -ForegroundColor Yellow
 
 Write-Host "重启服务（轮询确认端口释放 + 新进程存活）..." -ForegroundColor Yellow
 $r = Restart-ZhuopinTask -TaskName "CommandCenterWeb" -CheckMode Port -Port 8092
