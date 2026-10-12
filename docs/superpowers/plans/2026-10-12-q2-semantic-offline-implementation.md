@@ -85,7 +85,7 @@
 - Test: `C:/Users/Paul Shao/.codex/worktrees/pc-mvp-1012-v2-q2/zhuopin-ai/4-数字员工/质量部/Q2-8D报告AI判定/tests/test_semantic_offline_calibration.py`
 
 **Interfaces:**
-- `CalibrationCase` frozen dataclass：`case_id: str`、`input_sha256: str`、`oem_context_id: str`、`subject_kind: ObservationSubjectKind`、`rule_id: str | None`、`redline_no: int | None`、`expected_ratio: float | None`、`semantic_confidence_grade: ConfidenceGrade`、`extraction_confidence_grade: ConfidenceGrade`、`safety_related: bool | None`、`asil_level: str | None`、`sample_number: int | None`、`scene_tag: Literal['制造','研发','通用'] | None`、`trace_tag: str | None`、`synthetic: Literal[True]`。subject_kind/typed ID遵循合同：RULE只填string rule_id，REDLINE只填int redline_no；rule case必须将redline_no和追溯字段设None，redline case必须将rule_id/expected_ratio设None。`redline_no`合法性校验对照全部`RuleSetSnapshot.redline_ids`（实际1–6），但只在Case层保存2/3排除记录；二者confidence grades置`UNKNOWN`，无candidate response。对已知样本3使用synthetic case `sample_number=3, scene_tag='制造', trace_tag='Q2-G-03'`，其余两个追溯字段为None。
+- `CalibrationCase` frozen dataclass：`case_id: str`、`input_sha256: str`、`oem_context_id: str`、`subject_kind: ObservationSubjectKind`、`rule_id: str | None`、`redline_no: int | None`、`expected_ratio: float | None`、`semantic_confidence_grade: ConfidenceGrade`、`extraction_confidence_grade: ConfidenceGrade`、`safety_related: bool | None`、`asil_level: str | None`、`sample_number: int | None`、`scene_tag: Literal['制造','研发','通用'] | None`、`trace_tag: str | None`、`synthetic: Literal[True]`。subject_kind/typed ID遵循合同：RULE只填string rule_id且`redline_no=None`，可按fixture显式提供追溯三字段（普通case均None，case3填`sample_number=3, scene_tag='制造', trace_tag='Q2-G-03'`）；REDLINE只填int redline_no且rule_id/expected_ratio均None。`redline_no`合法性校验对照全部`RuleSetSnapshot.redline_ids`（实际1–6），但只在Case层保存2/3排除记录；二者confidence grades置`UNKNOWN`，无candidate response。
 - `CalibrationItem` frozen dataclass：`case_id: str`、`input_sha256: str`、`candidate_id: str | None`、`subject_kind: ObservationSubjectKind`、`rule_id: str | None`、`redline_no: int | None`、`candidate_ratio: float | None`、`semantic_confidence: ConfidenceValue`、`extraction_confidence: ConfidenceValue`、`semantic_confidence_grade: ConfidenceGrade`、`extraction_confidence_grade: ConfidenceGrade`、`sample_number: int | None`、`scene_tag: Literal['制造','研发','通用'] | None`、`trace_tag: str | None`、`state: CandidateState`、`review_reason: str | None`、`excluded_from_metrics: bool`。复制Case的input_sha256及sample_number/scene_tag/trace_tag至每个item，确保来源摘要及样本3可审计单列。
 - `CalibrationReport` frozen dataclass：`status: Literal['EXPERIMENTAL_ONLY']`、`batch_id: str`、`oem_context_id: str`、`input_sha256s: tuple[str, ...]`、`ruleset_sha256: str`、`model_id: str`、`model_version: str`、`prompt_version: str`、`confidence_grade_version: Literal['q2-experiment-confidence-v1']`、`items: tuple[CalibrationItem, ...]`、`synthetic_case_count: int`、`positive_count: int`、`negative_count: int`、`agreement_rate: float | None`、`redline_false_positive_rate: float | None`、`pending_review_count: int`。一个batch只允许单一tenant、RuleSet version/hash、batch/model/prompt/confidence-grade version；`input_sha256s`按case去重排序，但每item保留自己的原input digest与trace fields。
 - `OfflineCalibrationRunner(source_factory: Callable[[CalibrationCase], OfflineSemanticSource], *, expected_oem_context_id: str, expected_ruleset: RuleSetSnapshot)`；私有 `_build_report(cases: Sequence[CalibrationCase], *, created_at: str) -> CalibrationReport` 对每个RULE case调用一次factory，要求返回source.context的`input_sha256 == case.input_sha256`、tenant及RuleSet version/hash与expected快照一致，响应中的两个grade与case显式grade声明一致，且全batch共用相同batch/model/prompt/confidence-grade版本。factory是按`case_id`显式提供的`Mapping[str, OfflineSemanticSource]`闭包；每case一个source和固定mock responses，不共用单digest context。任一非合成、错误subject-ID类型、digest/context不匹配、重复case ID或缺失source均拒绝。REDLINE no.2/3须属于全redline_ids，先标记`NOT_EVALUATED`/`REVIEW_REQUIRED`、exclude metric，不调用semantic source；安全属性None/True/非HIGH或任一显式confidence grade LOW/UNKNOWN转人工，ASIL C/D退出。此私有builder仅用于纯合成指标单测，不是消费接口。V1/V2只报告实验数值，不生成通过布尔值/签认；V3记固定版本，V4低等级转人工，V5沿用既有闸，不生成新阈值。当前Q2源码中没有旧校准脚本或结果类型，故无adapter。
@@ -94,52 +94,57 @@
 
 ```python
 import hashlib
+import pytest
+from q2_8d_verdict.rules_loader import RuleSet
 from q2_8d_verdict.semantic_offline_contract import ConfidenceGrade, EvidenceLocator, ObservationSubjectKind, RuleSetSnapshot
 from q2_8d_verdict.semantic_offline_source import MockSemanticResponse, OfflineExperimentContext, OfflineSemanticSource
 from q2_8d_verdict.semantic_offline_calibration import CalibrationCase, OfflineCalibrationRunner
 
-rule_snapshot = RuleSetSnapshot.from_ruleset(ruleset)  # ruleset is the existing conftest fixture
-cases = tuple(
-    CalibrationCase(
-        case_id=f"syn-case-{i:02d}",
-        input_sha256=hashlib.sha256(f"synthetic-q2-case-{i:02d}".encode()).hexdigest(),
-        oem_context_id="tenant-fixture-a", subject_kind=ObservationSubjectKind.RULE,
-        rule_id="D2-05", redline_no=None, expected_ratio=1.0 if i <= 5 else 0.0,
-        semantic_confidence_grade=ConfidenceGrade.HIGH,
-        extraction_confidence_grade=ConfidenceGrade.HIGH,
-        safety_related=False, asil_level="B",
-        sample_number=3 if i == 3 else None,
-        scene_tag="制造" if i == 3 else None,
-        trace_tag="Q2-G-03" if i == 3 else None, synthetic=True,
+@pytest.fixture
+def synthetic_runner_inputs(ruleset: RuleSet) -> tuple[tuple[CalibrationCase, ...], OfflineCalibrationRunner]:
+    rule_snapshot = RuleSetSnapshot.from_ruleset(ruleset)
+    cases = tuple(
+        CalibrationCase(
+            case_id=f"syn-case-{i:02d}",
+            input_sha256=hashlib.sha256(f"synthetic-q2-case-{i:02d}".encode()).hexdigest(),
+            oem_context_id="tenant-fixture-a", subject_kind=ObservationSubjectKind.RULE,
+            rule_id="D2-05", redline_no=None, expected_ratio=1.0 if i <= 5 else 0.0,
+            semantic_confidence_grade=ConfidenceGrade.HIGH,
+            extraction_confidence_grade=ConfidenceGrade.HIGH,
+            safety_related=False, asil_level="B",
+            sample_number=3 if i == 3 else None,
+            scene_tag="制造" if i == 3 else None,
+            trace_tag="Q2-G-03" if i == 3 else None, synthetic=True,
+        )
+        for i in range(1, 11)
     )
-    for i in range(1, 11)
-)
-source_by_case: dict[str, OfflineSemanticSource] = {}
-for case in cases:
-    ctx = OfflineExperimentContext(
-        batch_id="batch-fixture-001", input_sha256=case.input_sha256,
-        oem_context_id=case.oem_context_id, ruleset=rule_snapshot,
-        model_id="fixed-mock", model_version="model-v1", prompt_version="prompt-v1",
-        confidence_grade_version="q2-experiment-confidence-v1",
-    )
-    response = MockSemanticResponse(
-        subject_kind=ObservationSubjectKind.RULE, rule_id="D2-05", redline_no=None,
-        candidate_ratio=case.expected_ratio, semantic_confidence=0.0,
-        extraction_confidence=0.8, semantic_confidence_grade=case.semantic_confidence_grade,
-        extraction_confidence_grade=case.extraction_confidence_grade,
-        evidence=EvidenceLocator("D3", f"fixture:{case.case_id}:D3", case.input_sha256),
-        source="MOCK",
-    )
-    source_by_case[case.case_id] = OfflineSemanticSource(
-        ctx, {(ObservationSubjectKind.RULE, "D2-05"): response}
-    )
+    source_by_case: dict[str, OfflineSemanticSource] = {}
+    for case in cases:
+        ctx = OfflineExperimentContext(
+            batch_id="batch-fixture-001", input_sha256=case.input_sha256,
+            oem_context_id=case.oem_context_id, ruleset=rule_snapshot,
+            model_id="fixed-mock", model_version="model-v1", prompt_version="prompt-v1",
+            confidence_grade_version="q2-experiment-confidence-v1",
+        )
+        response = MockSemanticResponse(
+            subject_kind=ObservationSubjectKind.RULE, rule_id="D2-05", redline_no=None,
+            candidate_ratio=case.expected_ratio, semantic_confidence=0.0,
+            extraction_confidence=0.8, semantic_confidence_grade=case.semantic_confidence_grade,
+            extraction_confidence_grade=case.extraction_confidence_grade,
+            evidence=EvidenceLocator("D3", f"fixture:{case.case_id}:D3", case.input_sha256),
+            source="MOCK",
+        )
+        source_by_case[case.case_id] = OfflineSemanticSource(
+            ctx, {(ObservationSubjectKind.RULE, "D2-05"): response}
+        )
 
-def source_factory(case: CalibrationCase) -> OfflineSemanticSource:
-    return source_by_case[case.case_id]
+    def source_factory(case: CalibrationCase) -> OfflineSemanticSource:
+        return source_by_case[case.case_id]
 
-runner = OfflineCalibrationRunner(
-    source_factory, expected_oem_context_id="tenant-fixture-a", expected_ruleset=rule_snapshot
-)
+    runner = OfflineCalibrationRunner(
+        source_factory, expected_oem_context_id="tenant-fixture-a", expected_ruleset=rule_snapshot
+    )
+    return cases, runner
 ```
 
 这里每个case分别构造输入摘要匹配的source context；runner必须逐case再校验摘要、租户、RuleSet及批次版本，不能复用第一条source处理其它输入。REDLINE 2/3用独立case加入`cases`后由规则显式排除，不添加到`source_by_case`。
