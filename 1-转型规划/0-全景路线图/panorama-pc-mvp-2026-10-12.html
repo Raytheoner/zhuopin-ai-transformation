@@ -1,0 +1,163 @@
+<div id="panoramaPcMvp1012">
+  <style>
+    #panoramaPcMvp1012 { color: var(--foreground); background: transparent; font-size: var(--font-size-base); }
+    #panoramaPcMvp1012 .intro { margin-bottom: 1rem; }
+    #panoramaPcMvp1012 .meta { color: var(--muted-foreground); }
+    #panoramaPcMvp1012 .controls { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin:.75rem 0; }
+    #panoramaPcMvp1012 .dept { margin:.8rem 0; }
+    #panoramaPcMvp1012 .dept h3 { margin:.3rem 0; }
+    #panoramaPcMvp1012 .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(4.5rem,1fr)); gap:.25rem; }
+    #panoramaPcMvp1012 .scene { text-align:center; }
+    #panoramaPcMvp1012 .s-delivered { background:color-mix(in srgb,var(--viz-series-3) 18%,transparent); }
+    #panoramaPcMvp1012 .s-candidate { background:color-mix(in srgb,var(--viz-series-1) 18%,transparent); }
+    #panoramaPcMvp1012 .s-proposal { background:color-mix(in srgb,var(--viz-series-4) 18%,transparent); }
+    #panoramaPcMvp1012 .s-material { background:color-mix(in srgb,var(--viz-series-2) 18%,transparent); }
+    #panoramaPcMvp1012 .s-paused { background:color-mix(in srgb,var(--muted-foreground) 14%,transparent); }
+    #panoramaPcMvp1012 .key { font-weight:500; }
+    #panoramaPcMvp1012 .detail { margin-top:1rem; }
+    #panoramaPcMvp1012 dl { display:grid; grid-template-columns:minmax(7rem,auto) 1fr; gap:.35rem .8rem; }
+    #panoramaPcMvp1012 dt { color:var(--muted-foreground); }
+    #panoramaPcMvp1012 dd { margin:0; }
+    #panoramaPcMvp1012 .waves { margin-top:1rem; }
+    #panoramaPcMvp1012 .wave { padding:.35rem 0; border-bottom:1px solid var(--border); }
+    @media (max-width:480px) { #panoramaPcMvp1012 dl { grid-template-columns:1fr; gap:.15rem; } #panoramaPcMvp1012 dd { margin-bottom:.55rem; } }
+  </style>
+  <section aria-labelledby="panorama-title">
+    <h2 id="panorama-title">全景路线图 · PC端MVP推进视图</h2>
+    <p class="intro">战略范围：35个场景。新版财务PRD扩展 FI11–FI16 单独展示，不改战略计数；Q9、QD-A为专项恢复项，不计入35。</p>
+    <p class="meta">进度快照：2026-10-12（上海） · 重点任务已现时核对，其余沿现有路线图；历史交付未重复验收。</p>
+    <div class="controls">
+      <label for="panorama-dept">部门</label>
+      <select id="panorama-dept" class="form-select" aria-label="按部门筛选">
+        <option value="all">全部部门</option><option>采购</option><option>质量</option><option>运营</option><option>财务</option><option>财务新版PRD扩展</option><option>工程研发</option><option>销售</option><option>专项恢复</option>
+      </select>
+      <span id="panorama-count" class="meta" aria-live="polite"></span>
+    </div>
+    <div id="panorama-list"></div>
+    <p class="meta" aria-label="场景阶段图例"><span style="color:var(--viz-series-3)">●</span> 已有交付　<span style="color:var(--viz-series-1)">●</span> 技术候选　<span style="color:var(--viz-series-4)">●</span> 提案准备　<span style="color:var(--viz-series-2)">●</span> 待材料　<span style="color:var(--muted-foreground)">●</span> 明确暂缓。多阶段时按最靠前阶段着色。</p>
+    <section class="detail" aria-live="polite" aria-labelledby="scene-title">
+      <h3 id="scene-title">场景详情</h3>
+      <dl id="panorama-detail"></dl>
+    </section>
+    <section class="waves" aria-label="当前推进波次">
+      <h3>推进波次</h3>
+      <div class="wave"><strong>提案泳道 · 待恢复确认</strong> — SC2完整提案与三项修订草案已成件，待技术设计审查。Q2、Q9、QD-A因输入读取受阻停止；修复输入后的六项离线提案计划已供审。</div>
+      <div class="wave"><strong>采购独立准备</strong> — SC4、SC7、SC8、SC10、SC11复用现有PRD与技术成果，逐项准备PC剩余切片；同场景按依赖串行。</div>
+      <div class="wave"><strong>财务首批准备</strong> — FI14 #678新意图、FI5 #470兼容意图已成件供确认；正式提案与实施尚未启动，C1/C2专业缺口保留。</div>
+      <div class="wave"><strong>人侧归集</strong> — 财务21于14:02、采购27于14:05发出，正文及Word、抄送本人、部门群和台账四链路均已核齐；等现有资料回件。</div>
+    </section>
+    <p class="meta">阶段文字标记：已有交付 · 技术候选 · 提案准备 · 待材料 · 明确暂缓。阶段可并存；计划、候选和准备均不代表MVP完成、专业验收或生产发布。</p>
+  </section>
+  <script>
+    (() => {
+      const root = document.getElementById('panoramaPcMvp1012');
+      const rows = [
+        ['采购','SC1','已有产品工程与历史验收；本轮未重验生产或真实源。','复用既有工程，按现时证据补齐PC端MVP剩余切片。','晋档/新增实现须补对应现时证据。','内部技术','队列行未在本次来源中逐行核对。','已有交付'],
+        ['采购','SC2','已有316收货合成接入候选及144+50项回归记录；本次未重跑。三指标提案四件与修订草案已成件。','按已签指标核计算边界，明确未知与待签状态，复用周报查看、明细、人工处理和审计。','技术设计尚未批准；新恢复计划待确认。G01–G04真实业务判例、真实字段与上线验收分别留闸；旧明细行数差异独立承接。','内部修订 / 设计审查 / 业务资料','#499、#654、#538','技术候选 · 提案准备'],
+        ['采购','SC4','八路径合成来源证据候选；取文和来源审计可演示。','列出PC工作流、审核依据和缺库表现，形成剩余实施切片。','法务条款库、风险判据、审核责任人尚待；真实合同和生产另闸。','内部技术 / 专员材料','#467','技术候选 · 提案准备 · 待材料'],
+        ['采购','SC7','标准批量接入合成候选57项通过并封存；场景仍未闭环。','核PC显示与建议证据链；真实K1/K2仅在既有授权内准备。','真实ItemMaster/shared connector/K2参数、专业采用待前置；提前期分布须先取证。','内部技术 / 专员材料','#670','技术候选 · 待材料'],
+        ['采购','SC8','门户规则候选已有；局部CSS部署及现网20项检查通过。','复用门户与规则候选，准备PC剩余交付；等待实际手机反馈。','手机回件未到；全场景golden/D4及专业闸未闭。','专员材料 / 内部技术','#660、#671','已有交付 · 技术候选 · 待材料'],
+        ['采购','SC10','四路径版本化合成事实候选56项通过，集成候选保留；场景partial。','复用D1–D9/3M事实，准备PC物料/BOM事实对照及缺数表现。','三类专业建议、零价语义、真实源/主数据/价格接口待确认。','内部技术 / 专员材料','#468','技术候选 · 提案准备 · 待材料'],
+        ['采购','SC11','七路径合成首项30项通过，拟稿与revision/hash绑定可评审。','复用A2/B2固定周计划与共享库存守恒，准备PC拟稿/修改/确认切片。','六项排序/缺数/临时计划问题待业务确认；真实库存、ERP、邮件另闸。','内部技术 / 专员材料','#469','技术候选 · 提案准备 · 待材料'],
+        ['质量','Q2','门户展示包已交付并归档；18/18检查完成，原业务档不晋级。','父会话核输入正文和哈希，送入新隔离树只读包后恢复离线语义提案。','本次提案模型因输入读取守卫停止，未产生四件；修复输入的新恢复计划待确认。语义专业校准与真实上线另审。','内部输入消阻 / 恢复范围确认','#652','已有交付 · 技术候选 · 提案准备'],
+        ['质量','Q4','三文件一致性范围未grill；质量部#15承诺10月16日交PPAP样本。','到件先核客户隔包与版本，再grill/intent/proposal/design审。','PPAP样本尚待；符号基准冲突待签认。','专员材料','#510、质量部#15','待材料'],
+        ['质量','Q6','展示部署、冒烟、既有样本核验及跟进发送已收口。','后续C05/档三按原专业与业务闸推进。','后续专业与业务关口未闭；本轮展示收口不代表场景全完工。','内部技术','队列指针未在本次来源中逐行核对。','已有交付'],
+        ['运营','O1','既有收割MVP、首版L1与mock档1基线。','补真实计划数据通路及具体范围，再审目标态动作链。','真实生产计划端点尚非就绪证据；生成/审核/下发动作链未证。','内部技术','队列指针未在本次来源中逐行核对。','已有交付 · 待材料'],
+        ['运营','O2','齐套算法及既有收割工程已有。','核真实源与专业验收，梳理PC端剩余交付。','芯片预警子功能依赖API选型/签约。','内部技术 / 专员材料','队列指针未在本次来源中逐行核对。','已有交付 · 待材料'],
+        ['运营','O3','三文件12节点通过；P4唯一180秒诊断超时；有界设计已获批，仅计划准备。','继续准备具体实施计划，和独立任务并行。','诊断根因未证；源码/新测试/第四pytest/ff/生产未获批准，旧预算不复用。','内部技术 / 本人定夺','队列指针未在本次来源中逐行核对。','技术候选 · 提案准备'],
+        ['运营','O4','八路径Stage0已接入，28项通过；类别无关结构与审计可演示。','准备首期单类资料和Owner，形成PC交付切片。','首期类别待定；prediction/maintenance/OEE未评估，专业签认空。','专员材料 / 内部技术','队列指针未在本次来源中逐行核对。','技术候选 · 待材料'],
+        ['财务','FI1','原MVP封存。','仅在原三条件满足且明确复启后处理。','明确暂缓。','本人定夺','财务PRD原暂缓项','明确暂缓'],
+        ['财务','FI2','保留历史上线/门户成果；新版#20回件已消化。','复用既有职责和PRD，按可领任务推进PC准备。','设计、真实源、发布仍分别核验。','内部技术 / 专员材料','#20回件','已有交付 · 提案准备'],
+        ['财务','FI3','保留历史上线/门户成果；新版#20回件已消化。','复用既有职责和PRD，按可领任务推进PC准备。','设计、真实源、发布仍分别核验。','内部技术 / 专员材料','#20回件','已有交付 · 提案准备'],
+        ['财务','FI4','当前PRD来源明确暂缓。','有明确恢复决定后再立项推进。','明确暂缓。','本人定夺','财务PRD原暂缓项','明确暂缓'],
+        ['财务','FI5','#20的37规则/v3/三制度等12项资产已核并回灌；企微主源与PC初审兼容意图已成件。','复用旧工程和既有规则，出来源、OCR待核、验真、预算、人工处理和审计的具体设计。','意图与新恢复范围待确认；正式提案/实施未启动。C2三例和预算主源未闭，附件自陈不代表产品验收。','技术意图确认 / 业务资料','#470、#674–677','提案准备 · 待材料'],
+        ['财务','FI6','当前PRD来源明确暂缓。','有明确恢复决定后再立项推进。','明确暂缓。','本人定夺','财务PRD原暂缓项','明确暂缓'],
+        ['财务','FI7','新版PRD需求保留；预算职责已确认。','逐行按可独立片段梳理依赖并复用原骨架。','缺业务资料集中承接；专业判据/实际design另核。','内部技术 / 专员材料','#20回件','提案准备 · 待材料'],
+        ['财务','FI8','新版#20确认FI8链需求理解；当前来源未证明技术交付。','按依赖准备PC MVP可独立片段。','需求理解不代签专业判据、完整intent或design。','内部技术 / 专员材料','#20回件','提案准备'],
+        ['财务','FI9','当前PRD来源明确暂缓；真实数据前置未到。','仅在具体恢复决定后处理。','明确暂缓。','本人定夺','财务PRD原暂缓项','明确暂缓'],
+        ['财务','FI10','存货跌价PRD需求保留。','按PRD梳理依赖与可独立准备片段。','缺业务资料集中承接；专业判据与实际design另核。','内部技术 / 专员材料','现有PRD','提案准备 · 待材料'],
+        ['工程研发','R1','按既有公司优先级暂停；战略排期2027-07—11。','等待明确排序/恢复决定。','公司排序暂缓；OEM隔离、ASIL边界持续适用。','本人定夺','排序决定待定','明确暂缓'],
+        ['工程研发','R2','按既有公司优先级暂停；战略排期2027-07—11。','等待明确排序/恢复决定。','公司排序暂缓；OEM隔离、ASIL边界持续适用。','本人定夺','排序决定待定','明确暂缓'],
+        ['工程研发','R3','按既有公司优先级暂停；战略排期2027-07—11。','等待明确排序/恢复决定。','公司排序暂缓；OEM隔离、ASIL边界持续适用。','本人定夺','排序决定待定','明确暂缓'],
+        ['工程研发','R4','按既有公司优先级暂停；战略排期2027-07—11。','等待明确排序/恢复决定。','公司排序暂缓；OEM隔离、ASIL边界持续适用。','本人定夺','排序决定待定','明确暂缓'],
+        ['工程研发','R5','按既有公司优先级暂停；战略排期2027-07—11。','等待明确排序/恢复决定。','公司排序暂缓；OEM隔离、ASIL边界持续适用。','本人定夺','排序决定待定','明确暂缓'],
+        ['销售','S1','按既有公司优先级暂停；战略排期2027-07—12。','等待明确排序/恢复决定。','公司排序暂缓。','本人定夺','排序决定待定','明确暂缓'],
+        ['销售','S2','按既有公司优先级暂停；战略排期2027-07—12。','等待明确排序/恢复决定。','公司排序暂缓。','本人定夺','排序决定待定','明确暂缓'],
+        ['销售','S3','按既有公司优先级暂停；战略排期2027-07—12。','等待明确排序/恢复决定。','公司排序暂缓。','本人定夺','排序决定待定','明确暂缓'],
+        ['销售','S4','按既有公司优先级暂停；战略排期2027-07—12。','等待明确排序/恢复决定。','公司排序暂缓。','本人定夺','排序决定待定','明确暂缓'],
+        ['销售','S5','按既有公司优先级暂停；战略排期2027-07—12。','等待明确排序/恢复决定。','公司排序暂缓。','本人定夺','排序决定待定','明确暂缓'],
+        ['销售','S6','按既有公司优先级暂停；战略排期2027-07—12。','等待明确排序/恢复决定。','公司排序暂缓。','本人定夺','排序决定待定','明确暂缓'],
+        ['财务新版PRD扩展','FI11','10月8日PRD保留；预算链需求已确认。','依赖梳理并找可独立PC准备片段。','专业判据、完整intent/design各自核验。','内部技术 / 专员材料','新版PRD、#20','提案准备'],
+        ['财务新版PRD扩展','FI12','10月8日PRD保留；预算链需求已确认。','依赖梳理并找可独立PC准备片段。','专业判据、完整intent/design各自核验。','内部技术 / 专员材料','新版PRD、#20','提案准备'],
+        ['财务新版PRD扩展','FI13','10月8日PRD答疑需求保留。','按PRD准备可独立片段。','专业判据、完整intent/design各自核验。','内部技术 / 专员材料','新版PRD','提案准备'],
+        ['财务新版PRD扩展','FI14','#20付款计划样本已核；新场景只读账龄与付款计划草稿意图已成件。','按同截止快照设计账龄清单、计划草稿、人工调整版本和审计；缺数明确展示。','意图与新恢复范围待确认；正式提案/实施未启动。逐笔AP、实付、合同、资金及同截止标准账龄仍缺；样本不等于专业签认。','技术意图确认 / 业务资料','#678、#674–676','提案准备 · 待材料'],
+        ['财务新版PRD扩展','FI15','收款需求保留；新版#20确认理解。','按依赖准备PC端可独立片段。','专业判据和实际design仍需核验。','内部技术 / 专员材料','新版PRD、#20','提案准备'],
+        ['财务新版PRD扩展','FI16','合并需求保留；新版#20确认理解。','按依赖准备PC端可独立片段。','专业判据和实际design仍需核验。','内部技术 / 专员材料','新版PRD、#20','提案准备'],
+        ['专项恢复','Q9','已确认意图、已批准备计划和八个内部合成案例；旧失败及部分产物引用保留，当前旧文件可读性未证。','用已确认资料设计完整版本/来源追溯；旧片段可读时才复用，不再漫游寻址。','本次提案停止、四件未生成；旧参考路径与守卫读取阻碍已定位，新恢复范围待确认。专业G01–G06仍待真实签认。','内部输入消阻 / 恢复范围确认','#653','提案准备'],
+        ['专项恢复','QD-A','现有七步映射与场景勾选继续复用；失败记录保留。','设计显式七步原始章节的顺序、来源、未知状态，再交既有Q2映射消费。','本次提案因输入哈希读取被守卫拒绝而停止，四件未生成；新恢复范围待确认。专业映射不改。','内部输入消阻 / 恢复范围确认','#656','提案准备']
+      ];
+      const list = root.querySelector('#panorama-list');
+      const detail = root.querySelector('#panorama-detail');
+      const filter = root.querySelector('#panorama-dept');
+      let selected = 'SC2';
+      const names = {SC1:'供应商风险初筛',SC2:'采购周报自动生成',SC4:'合同条款提取审核',SC7:'库存优化建议',SC8:'客户订单交期智能承诺',SC10:'BOM评审与物料库管控',SC11:'库存智能调拨',Q2:'8D报告AI判定',Q4:'PPAP三文件一致性',Q6:'立项审核门禁',O1:'生产排程智能优化',O2:'物料齐套预警',O3:'物流异常检测与追踪',O4:'设备预测性维护',R1:'软件需求分析助手',R2:'AUTOSAR配置助手',R3:'代码审查加速器',R4:'测试用例智能生成',R5:'技术文档智能生成助手',S1:'客户跟进与销售日报',S2:'拜访与技术交流助手',S3:'RFQ响应加速',S4:'客户技术支持文档',S5:'竞品动态监控',S6:'销售预测与商机管理',FI5:'费用报销初审',FI11:'预算链',FI12:'预算链',FI13:'财务答疑',FI14:'付款计划与账龄',FI15:'收款',FI16:'合并'};
+      const fields = ['已有成果','当前阶段','PC MVP下一步','具体阻碍','去向','队列指针'];
+      const renderDetail = () => {
+        const row = rows.find(r => r[1] === selected) || rows[0];
+        root.querySelector('#scene-title').textContent = `${row[1]} · ${names[row[1]] ? names[row[1]] + ' · ' : ''}${row[0]}`;
+        detail.replaceChildren();
+        [row[2], row[7], row[3], row[4], row[5], row[6]].forEach((value, i) => {
+          const dt = document.createElement('dt'); dt.textContent = fields[i];
+          const dd = document.createElement('dd'); dd.textContent = value;
+          detail.append(dt, dd);
+        });
+      };
+      const matchesDepartment = dept => filter.value === 'all' || dept === filter.value || (filter.value === '财务' && dept === '财务新版PRD扩展');
+      const render = () => {
+        list.replaceChildren();
+        const groups = [...new Set(rows.map(r => r[0]))].filter(matchesDepartment);
+        let count = 0;
+        groups.forEach(group => {
+          const section = document.createElement('section'); section.className = 'dept';
+          const h = document.createElement('h3'); h.textContent = group; section.append(h);
+          const tiles = document.createElement('div'); tiles.className = 'tiles';
+          rows.filter(r => r[0] === group).forEach(row => {
+            count++;
+          const b = document.createElement('button'); b.type = 'button'; b.className = `btn viz-tile scene ${stageClass(row[7])}`; b.textContent = row[1];
+            b.setAttribute('aria-pressed', String(row[1] === selected)); b.setAttribute('aria-label', `${row[1]}，${row[7]}`);
+            b.addEventListener('click', () => { selected = row[1]; render(); renderDetail(); persistState(); });
+            tiles.append(b);
+          });
+          section.append(tiles); list.append(section);
+        });
+        root.querySelector('#panorama-count').textContent = `${count}项显示：35个战略场景 + 6个财务扩展 + 2个质量专项`;
+      };
+      function stageClass(stage) {
+        if (stage.includes('已有交付')) return 's-delivered';
+        if (stage.includes('技术候选')) return 's-candidate';
+        if (stage.includes('提案准备')) return 's-proposal';
+        if (stage.includes('待材料')) return 's-material';
+        return 's-paused';
+      }
+      const persistState = () => {
+        if (window.openai?.setWidgetState) window.openai.setWidgetState({ privateContent: { dept: filter.value, selected } }).catch(() => {});
+      };
+      const restoreState = state => {
+        const saved = state?.privateContent || state || {};
+        const savedDept = [...filter.options].find(option => option.value === saved.dept || option.textContent === saved.dept);
+        if (savedDept) filter.value = savedDept.value;
+        const visible = rows.filter(r => matchesDepartment(r[0]));
+        selected = visible.some(r => r[1] === saved.selected) ? saved.selected : (visible.some(r => r[1] === selected) ? selected : (visible[0]?.[1] || rows[0][1]));
+        render(); renderDetail();
+      };
+      filter.addEventListener('change', () => {
+        const visible = rows.filter(r => matchesDepartment(r[0]));
+        if (!visible.some(r => r[1] === selected)) selected = visible[0]?.[1] || rows[0][1];
+        render(); renderDetail(); persistState();
+      });
+      window.addEventListener('openai:set_globals', event => restoreState(event.detail?.globals?.widgetState));
+      render(); renderDetail();
+      restoreState(window.openai?.widgetState);
+    })();
+  </script>
+</div>
