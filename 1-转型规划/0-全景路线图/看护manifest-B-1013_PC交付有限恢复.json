@@ -1,0 +1,31 @@
+{
+  "batch_id": "B-1013_PC交付有限恢复",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1013_PC交付有限恢复.md",
+  "max_parallel": 1,
+  "stagger_seconds": 90,
+  "candidates": [
+    {
+      "task_id": "pc-mvp-finite-recovery-1013",
+      "row": 682,
+      "section": "一",
+      "task_excerpt": "PC-MVP有限恢复机制",
+      "next_action": "同字节有限恢复四件正式接纳",
+      "opener_id": "A1",
+      "lane": "op1013y-pc-finite-recovery",
+      "touches": [
+        "openspec/changes/pc-mvp-finite-recovery-1013/proposal.md",
+        "openspec/changes/pc-mvp-finite-recovery-1013/design.md",
+        "openspec/changes/pc-mvp-finite-recovery-1013/tasks.md",
+        "openspec/changes/pc-mvp-finite-recovery-1013/specs/pc-mvp-finite-recovery/spec.md"
+      ],
+      "kind": "mechanism",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1013-pc-mvp-finite-recovery-v1\\lan-recovery-307.json"
+    }
+  ],
+  "workspaces": {
+    "pc-mvp-finite-recovery-1013": "C:/Users/Paul Shao/.codex/worktrees/pc-mvp-finite-recovery-1013/zhuopin-ai"
+  },
+  "authorizations": {}
+}
