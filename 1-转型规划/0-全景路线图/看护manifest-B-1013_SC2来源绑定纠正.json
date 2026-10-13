@@ -1,0 +1,31 @@
+{
+  "batch_id": "B-1013_SC2来源绑定纠正",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1013_SC2来源绑定纠正.md",
+  "max_parallel": 1,
+  "stagger_seconds": 90,
+  "candidates": [
+    {
+      "task_id": "sc2-three-metric-cold-1013v5",
+      "row": 654,
+      "section": "一",
+      "task_excerpt": "SC2既有三项指标替换技术提案",
+      "next_action": "v5四件同字节接纳与封存",
+      "opener_id": "A1",
+      "lane": "op1013w-sc2-source-bound",
+      "touches": [
+        "openspec/changes/sc2-three-metric-cold-1013v5/proposal.md",
+        "openspec/changes/sc2-three-metric-cold-1013v5/design.md",
+        "openspec/changes/sc2-three-metric-cold-1013v5/tasks.md",
+        "openspec/changes/sc2-three-metric-cold-1013v5/specs/sc2-three-metric-evidence/spec.md"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1013-cold-source-binding-v1\\lan-sc2-v5-1a.json"
+    }
+  ],
+  "workspaces": {
+    "sc2-three-metric-cold-1013v5": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v4-sc2-continuation\\zhuopin-ai"
+  },
+  "authorizations": {}
+}

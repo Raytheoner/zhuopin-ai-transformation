@@ -1,0 +1,31 @@
+{
+  "batch_id": "B-1013_FI5来源绑定纠正",
+  "watch_piece": "C:\\Dev\\zhuopin-ai\\1-转型规划\\0-全景路线图\\看护计划-B-1013_FI5来源绑定纠正.md",
+  "max_parallel": 1,
+  "stagger_seconds": 90,
+  "candidates": [
+    {
+      "task_id": "fi5-wecom-pc-review-alignment-1013v5",
+      "row": 470,
+      "section": "一",
+      "task_excerpt": "费用报销智能审核",
+      "next_action": "v5四件同字节接纳与封存，随后停实际design审",
+      "opener_id": "A1",
+      "lane": "op1013x-fi5-source-bound",
+      "touches": [
+        "openspec/changes/fi5-wecom-pc-review-alignment-1013v5/proposal.md",
+        "openspec/changes/fi5-wecom-pc-review-alignment-1013v5/design.md",
+        "openspec/changes/fi5-wecom-pc-review-alignment-1013v5/tasks.md",
+        "openspec/changes/fi5-wecom-pc-review-alignment-1013v5/specs/fi5-wecom-pc-review/spec.md"
+      ],
+      "kind": "business",
+      "action_key": "worktree_local_build",
+      "lan_required": false,
+      "lan_decision": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1013-cold-source-binding-v1\\lan-fi5-v5-1a.json"
+    }
+  ],
+  "workspaces": {
+    "fi5-wecom-pc-review-alignment-1013v5": "C:\\Users\\Paul Shao\\.codex\\worktrees\\pc-mvp-1012-v4-fi5-admission\\zhuopin-ai"
+  },
+  "authorizations": {}
+}
