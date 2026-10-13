@@ -27,5 +27,7 @@
   "workspaces": {
     "pc-mvp-finite-recovery-1013": "C:/Users/Paul Shao/.codex/worktrees/pc-mvp-finite-recovery-1013/zhuopin-ai"
   },
-  "authorizations": {}
+  "authorizations": {
+    "pc-mvp-finite-recovery-1013": "C:\\Dev\\Codex\\runtimes\\zhuopin-ai\\approvals\\1013-pc-mvp-finite-recovery-v1\\design-recovery-307.json"
+  }
 }
