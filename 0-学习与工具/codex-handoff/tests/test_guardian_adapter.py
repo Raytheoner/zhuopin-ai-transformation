@@ -37,7 +37,7 @@ def test_off_lan_excludes_internal_and_orders_touch_conflict():
     assert "lan-only" not in plan["dispatchable_ids"]
     assert plan["waves"][-1]["kind"] == "lock_tools"
     assert plan["waves"][0]["task_ids"] != ["local-a", "local-b"]
-    assert plan["max_parallel"] <= 4
+    assert plan["max_parallel"] == 1
     assert plan["stagger_seconds"] >= 90
     assert plan["max_items"] == 10
     assert plan["mode"] == "guardian"
@@ -138,7 +138,10 @@ def test_dry_run_same_lane_with_missing_opener_is_blocked(tmp_path):
                 "stderr": ""}
 
     assert guardian.dispatch_batch(plan, True, executor)["status"] == "blocked"
-    assert len(calls) == 1
+    assert len(calls) == 3
+    assert calls[-1][calls[-1].index("-Only") + 1] == "A2"
+    assert "-DryRun" in calls[-1] and "-ConsumerEnabled" not in calls[-1]
+    assert [c[c.index("-Only") + 1] for c in calls if "-ConsumerEnabled" in c] == ["A1"]
 
 def test_foreground_failed_task_blocks_dependents_but_independent_continues(tmp_path, monkeypatch):
     monkeypatch.setenv("ZHUOPIN_CODEX_STATE", str(tmp_path / "codex-state"))
@@ -364,7 +367,7 @@ def test_same_batch_changed_plan_cannot_resume_old_approval(tmp_path, monkeypatc
     assert calls == ["local-a"]
 
 
-def test_headless_two_openers_bind_as_one_powershell_only_argument(tmp_path):
+def test_headless_two_openers_run_as_separate_serial_arguments(tmp_path):
     guardian = load()
     file = tmp_path / "watch.md"
     file.write_text("fixture", encoding="utf8")
@@ -372,21 +375,18 @@ def test_headless_two_openers_bind_as_one_powershell_only_argument(tmp_path):
     plan = guardian.plan_batch("B-two", source, {"effective": "on"},
                                mode="headless", plan_file=file)
     calls = []
-
     def powershell_binding(argv, **kwargs):
         calls.append(argv)
-        index = argv.index("-Only")
-        if argv[index + 1] != "A1,A2" or "A2" in argv[index + 2:]:
-            return {"exit": 20, "stdout": "",
-                    "stderr": "A positional parameter cannot be found that accepts argument A2"}
+        only = argv[argv.index("-Only") + 1]
+        assert only in ("A1", "A2")
+        assert argv[argv.index("-MaxParallel") + 1] == "1"
+        lane = {"A1": "alpha", "A2": "beta"}[only]
         if "-DryRun" in argv:
-            return {"exit": 0, "stdout": "泳道 2 条：\n  ◆ alpha ：A1（泳道内串行）\n  ◆ beta ：A2（泳道内串行）",
-                    "stderr": ""}
+            return {"exit": 0, "stdout": f"泳道 1 条：\n  ◆ {lane} ：{only}（泳道内串行）", "stderr": ""}
         return {"exit": 0, "stdout": "not completion evidence", "stderr": ""}
-
     result = guardian.dispatch_batch(plan, True, powershell_binding)
     assert result["status"] == "output_needs_review"
-    assert len(calls) == 2
+    assert [c[c.index("-Only") + 1] for c in calls] == ["A1", "A1", "A2", "A2"]
 
 
 def test_stale_batch_lock_needs_task_settlement_before_recovery(tmp_path, monkeypatch):
@@ -722,37 +722,29 @@ def test_transfer_only_batch_carries_completed_source_without_model(tmp_path, mo
     assert transfers[0][0][0] == "completed-source"
 
 
-def test_foreground_independent_lanes_run_concurrently_with_stagger(tmp_path, monkeypatch):
-    import threading
+def test_foreground_independent_tasks_finish_before_next_starts(tmp_path, monkeypatch):
     monkeypatch.setenv("ZHUOPIN_CODEX_STATE", str(tmp_path / "state"))
     guardian = load()
     guardian.lane_machine.REPO_ROOT = tmp_path
     source = [
-        {"task_id": "a", "opener_id": "A1", "lane": "alpha",
-         "touches": ["service/a"], "action_key": "worktree_local_build"},
-        {"task_id": "b", "opener_id": "A2", "lane": "beta",
-         "touches": ["service/b"], "action_key": "worktree_local_build"},
+        {"task_id": "a", "opener_id": "A1", "lane": "alpha", "touches": ["service/a"], "action_key": "worktree_local_build"},
+        {"task_id": "b", "opener_id": "A2", "lane": "beta", "touches": ["service/b"], "action_key": "worktree_local_build"},
     ]
-    plan = guardian.plan_batch("B-parallel", source, {"effective": "on"})
-    assert plan["waves"][0]["task_ids"] == ["a", "b"]
-    rendezvous = threading.Barrier(2)
-    starts = []
-    stagger_calls = []
-    monkeypatch.setattr(guardian, "_stagger_sleep",
-                        lambda seconds: stagger_calls.append(seconds), raising=False)
-
+    plan = guardian.plan_batch("B-serial", source, {"effective": "on"})
+    assert [w["task_ids"] for w in plan["waves"]] == [["a"], ["b"]]
+    transitions = []
+    monkeypatch.setattr(guardian, "_stagger_sleep", lambda _: pytest.fail("serial tasks need no stagger"))
     def advance(task_id, *_args):
-        starts.append(task_id)
-        rendezvous.wait(timeout=2)
+        transitions.append(("start", task_id))
+        assert all(transitions[i + 1] == ("finish", value[1])
+                   for i, value in enumerate(transitions[:-1]) if value[0] == "start")
+        transitions.append(("finish", task_id))
         return {"status": "ready", "next_phase": "release_ready"}
-
     monkeypatch.setattr(guardian, "_advance_task", advance)
-    result = guardian.run_foreground(
-        plan, {"a": tmp_path / "a", "b": tmp_path / "b"},
-        lambda *a, **kw: pytest.fail("no headless"))
+    result = guardian.run_foreground(plan, {"a": tmp_path / "a", "b": tmp_path / "b"},
+                                     lambda *a, **k: pytest.fail("no headless"))
     assert result["status"] == "release_ready", result
-    assert set(starts) == {"a", "b"}
-    assert stagger_calls == [90]
+    assert transitions == [("start", "a"), ("finish", "a"), ("start", "b"), ("finish", "b")]
 
 
 def test_legacy_transfer_without_attempt_ledger_cannot_restart_when_state_missing(tmp_path, monkeypatch):
@@ -964,3 +956,70 @@ def test_guardian_advance_pins_explicit_luna_model(monkeypatch, tmp_path):
         "workflow-path-guard-v5-mvp-0930-r2", tmp_path, None, lambda: None, None)
     assert result["status"] == "stage_output_needs_review"
     assert captured["kwargs"]["model"] == "gpt-6-luna"
+
+
+def test_serial_default_separates_independent_tasks():
+    guardian = load()
+    source = [rows()[0], {**rows()[1], "touches": ["service/b"]}]
+    plan = guardian.plan_batch("B-serial-default", source, {"effective": "on"})
+    assert plan["max_parallel"] == 1
+    assert [wave["task_ids"] for wave in plan["waves"]] == [["local-a"], ["local-b"]]
+
+
+@pytest.mark.parametrize("parallel", [2, 4, 0, -1, True, 1.0, "1", None])
+def test_parallel_capacity_is_rejected_before_planning(tmp_path, parallel):
+    guardian = load()
+    watch = tmp_path / "watch.md"
+    watch.write_text("unchanged", encoding="utf8")
+    with pytest.raises(ValueError, match="serial"):
+        guardian.plan_batch("B-invalid-parallel", rows()[:1], {"effective": "on"},
+                            max_parallel=parallel, plan_file=watch)
+    assert watch.read_text(encoding="utf8") == "unchanged"
+
+
+@pytest.mark.parametrize("mode", ["guardian", "headless"])
+@pytest.mark.parametrize("entry", ["foreground", "dispatch-enabled", "dispatch-disabled"])
+@pytest.mark.parametrize("locked", [False, True])
+def test_legacy_parallel_dispatch_is_rejected_without_side_effects(tmp_path, monkeypatch, mode, entry, locked):
+    monkeypatch.setenv("ZHUOPIN_CODEX_STATE", str(tmp_path / "state"))
+    guardian = load()
+    guardian.lane_machine.REPO_ROOT = tmp_path
+    watch = tmp_path / "watch.md"
+    watch.write_text("sealed old plan", encoding="utf8")
+    plan = guardian.plan_batch("B-legacy-parallel", rows()[:1], {"effective": "on"},
+                               mode=mode, plan_file=watch)
+    plan["max_parallel"] = 2
+    sealed = json.dumps(plan, sort_keys=True).encode("utf8")
+    plan_file = tmp_path / "sealed-plan.json"
+    plan_file.write_bytes(sealed)
+    record = guardian._batch_record_path(plan["batch_id"])
+    record.parent.mkdir(parents=True)
+    original = json.dumps(guardian.initial_batch_record(plan)).encode("utf8")
+    record.write_bytes(original)
+    lock = record.with_suffix(".lock")
+    if locked:
+        lock.write_bytes(b'{"batch_id":"B-legacy-parallel","pid":1}')
+    lock_before = lock.read_bytes() if locked else None
+    calls = []
+    def executor(*args, **kwargs):
+        calls.append("executor")
+        return {"exit": 0, "stdout": "泳道 1 条：\n  ◆ alpha ：A1（泳道内串行）", "stderr": ""}
+    def advance(*args, **kwargs):
+        calls.append("model")
+        return {"status": "ready", "next_phase": "release_ready"}
+    monkeypatch.setattr(guardian, "_advance_task", advance)
+    workspaces = {"local-a": tmp_path / "workspace"}
+    if entry == "foreground":
+        result = guardian.run_foreground(plan, workspaces, executor, model_runner=advance)
+    else:
+        result = guardian.dispatch_batch(plan, entry == "dispatch-enabled", executor,
+                                         workspaces=workspaces, model_runner=advance)
+    assert result["status"] == "blocked"
+    assert "serial" in result["reason"]
+    assert result["delivery_accepted"] is False
+    assert calls == []
+    assert plan_file.read_bytes() == sealed
+    assert record.read_bytes() == original
+    assert lock.exists() is locked
+    if locked:
+        assert lock.read_bytes() == lock_before

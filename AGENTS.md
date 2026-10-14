@@ -17,11 +17,15 @@
 | 人员/跟进信 | .claude/rules/跟进信与专员.md；6-人才与组织/人员名录-称谓与性别-正本.md |
 | 全景/排期 | .claude/rules/文档与全景治理.md；1-转型规划/0-全景路线图/CLAUDE.md |
 
+## 默认建造合同（2026-10-14，§四313已批准）
+
+正本：`0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md`。普通默认由本会话串行实现，不自动调用Guardian --run、headless批处理或互审子任务。每片只携带目标/版本/必要函数/失败用例/下一步/禁项，自然结束时保存检查点后继续；同一已批任务不反复Probe、prepare、全景加载或设计确认。最终完整pytest及业务/audit自动验证绑定实际候选，不能过滤/改断言/随意skip取得全绿。具体ff仍逐项批准，仅在干净目标和可快进关系下ff-only；不默认push、生产或外发。旧task/plan/state/lock不自动改写，不能用新流程伪装成旧Workflow阶段已通过。
+
 ## Codex 执行约定
 
 - 转场接力按 `.claude/rules/队列与落库.md`「接力卡 R5」执行：一页精简摘要、`[Win]MMDD` 标题前缀、唯一执行会话，以新会话能准确接续为完成标准。
-- intent → proposal/design/tasks → 实现 → 逐项目测试 → review → 发布准备。项目 .agents/skills 下的 Codex 入口优先；原技能正文作规则与方法来源。遵守 Superpowers 先 Plan/Spec 后实现，不因切换模型省略人工闸。
-- Claude 的 Task/Agent、Bash/Read/Edit、save_skill、set_session_title、scheduled-tasks、claude -p 是源端接口。采用当前 Codex 实际可用工具；不能靠改产品名宣称接口兼容。子代理只在当前用户或适用技能明确要求时使用，模型只能取当前工具允许值。
+- intent → proposal/design/tasks一次批准 → 单主会话串行切片实现 → 定向pytest与检查点 → 最终受影响项目完整回归 → 本地整合/发布准备。普通非安全相关新任务不默认派实现或review代理，不以模型报告句式作为代码质量闸；用户明确要求独审、冻结旧合同或安全相关人工审核仍按对应范围执行。项目 .agents/skills 下的 Codex 入口优先，已批目标不逐片重审。
+- Claude 的 Task/Agent、Bash/Read/Edit、save_skill、set_session_title、scheduled-tasks、claude -p 是源端接口。采用当前 Codex 实际可用工具；不能靠改产品名宣称接口兼容。默认不派子代理、不并发开泳道；只有用户针对该任务明确要求时才派生，技能模板的扇出步骤不构成授权。获准派生时显式gpt-6-luna/high，不继承父模型；当前工具不支持时报告缺口。
 - 不使用 claude 作为 Codex 自动化后台。Codex 非交互入口是 codex exec。不得移植 --dangerously-skip-permissions 或绕过 Codex sandbox/hook trust；失败留证据并停止依赖步骤。
 - 所有路径加引号。运行 Python 用 invoke.ps1 解析的隔离环境；不得在共享全局 site-packages 重装 editable 平台指针。按 CI 矩阵逐子项目跑 pytest，不在根目录混跑。
 - mock/脱敏先行；OEM 技术数据隔离；AI 决策写 audit；L2 不代签；ASIL C/D 不自动修改/判定。ff 合入、生产 .51 部署、真实对外发送均按原规则取得针对该项的授权。

@@ -137,13 +137,15 @@ def _semantic_dry_run(plan: dict, dry_run):
 
 def plan_batch(batch_id: str, queue_rows: list[dict], lan: dict, *,
                mode: str = "guardian", plan_file: Path | None = None,
-               max_items: int = 10, max_parallel: int = 4,
+               max_items: int = 10, max_parallel: int = 1,
                stagger_seconds: int = 90) -> dict:
     if not batch_id or "/" in batch_id or "\\" in batch_id:
         raise ValueError("invalid batch ID")
     if mode not in ("guardian", "headless"):
         raise ValueError("unknown guardian mode")
-    if max_items < 1 or max_items > 10 or max_parallel < 1 or max_parallel > 4 or stagger_seconds < 90:
+    if type(max_parallel) is not int or max_parallel != 1:
+        raise ValueError("guardian serial policy requires max_parallel=1")
+    if max_items < 1 or max_items > 10 or stagger_seconds < 90:
         raise ValueError("guardian capacity exceeds approved source limits")
     if not isinstance(lan, dict) or lan.get("effective") not in ("on", "off", "unknown"):
         raise ValueError("LAN result unavailable")
@@ -632,10 +634,21 @@ def _recover_batch_locked(batch_id: str) -> dict:
 _stagger_sleep = time.sleep
 
 
+def _serial_plan_error(plan: dict) -> dict | None:
+    """Reject replayed parallel plans before any runtime or runner side effect."""
+    if (not isinstance(plan, dict) or type(plan.get("max_parallel")) is not int
+            or plan["max_parallel"] != 1):
+        return {"status": "blocked", "reason": "guardian serial policy requires max_parallel=1; legacy parallel plans remain read-only",
+                "delivery_accepted": False}
+    return None
+
+
 def run_foreground(plan: dict, workspaces: dict, executor, *,
                    authorizations: dict | None = None, model_runner=None,
                    transfer_validator=None, stage_validator=None) -> dict:
     """Persist one foreground batch and use lane state for pauses and explicit resume."""
+    if violation := _serial_plan_error(plan):
+        return violation
     batch_id = plan.get("batch_id")
     try:
         record_path = _batch_record_path(batch_id)
@@ -842,6 +855,8 @@ def run_foreground(plan: dict, workspaces: dict, executor, *,
 def dispatch_batch(plan: dict, enabled: bool, executor, *, workspaces: dict | None = None,
                    authorizations: dict | None = None, model_runner=None,
                    transfer_validator=None, stage_validator=None) -> dict:
+    if violation := _serial_plan_error(plan):
+        return violation
     if plan.get("mode") != "headless":
         if not enabled:
             return {"status": "paused", "reason": "consumer disabled"}
