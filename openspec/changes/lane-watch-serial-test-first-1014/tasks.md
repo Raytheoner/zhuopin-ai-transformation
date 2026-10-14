@@ -22,9 +22,8 @@
 
 ## 实施检查点
 
-§四313已按批准SHA消费，主会话串行实现，未派实现或review代理。新增21例先RED（21 failed）；直接模块首轮58 passed/1 failed，旧双opener用例与串行新合同不符，改为验证第二片缺失opener时不启动。随后完整直接模块59 passed，回执155567d20351a20482c2d5b9229c7f995bc91413d0e52f8bafa6f04fb4816437。最终完整回归及本地合入准备仍待下一步。
+§四313已按批准SHA消费，主会话串行实现，未派实现或review代理。新增21例先RED（21 failed）；直接模块首轮58 passed/1 failed，旧双opener用例与串行新合同不符，改为验证第二片缺失opener时不启动。随后完整直接模块59 passed，回执155567d20351a20482c2d5b9229c7f995bc91413d0e52f8bafa6f04fb4816437。完整回归已于HEAD 1c5605a4249e3a4fdd80cabda1fa1164d7979125完成：565 passed、4个Windows WinError1314 symlink skip，exit 0；receipt SHA256 b45a84fbd4d10bdc7db5fcf0df32256df706cdddf54cb253fb33edae2fdae311。详细原因与停点见下。
 
-暂不归档：候选完整回归与具体ff尚未闭合；不扩展到主spec或工具修复。
-
+暂不归档：具体验收已经完成；仅主线合入因既有冲突修改与缺少本候选逐项ff授权未闭合，不扩展到主spec或工具修复。
 
 暂不归档：当前工作已验收至本地隔离候选；master中既有脏场景规则与串行差量重叠，且本候选尚无逐项ff授权。保持范围开放，待脏文件所属执行会话按其权限正常结清后再做具体候选ff；不清理他人修改、不push或部署。
