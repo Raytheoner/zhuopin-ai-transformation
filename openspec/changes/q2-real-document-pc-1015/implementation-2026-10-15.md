@@ -52,3 +52,12 @@ Q2生产接入四类归属核验及§四331一次供审（2026-10-16T09:04:10+08
 
 
 332A启动（2026-10-16T12:30:30+08:00）：实际用户批准第1–5节/SHA12ddf7787850198fccf83803ad92fdc8e543320dee1e7f9d0c751d3cdf9dd151，原612精确10路径由1015认领，原树干净8ca9d627保全。指定陈承牵头运维；批准不等于已承接/已落位。Ruling: 沿原reports/progress及原实施记录执行，无新任务系统/代理或自动审核链，执行方式优先于技能模板。Pre-flight: adapter的CLI合同/配置指纹→预检及runner；候选固定venv/SYSTEM绑定→旁路准备及未来部署；不搬路径复用回执。默认Inspect无模型，D5唯一预算仍0/1；先RED。
+
+
+332A候选及旁路准备完成（2026-10-16T13:25:08+08:00，原612）：HEAD209ff4870ca057c2ffeb68b5a1ddea48af4fcb8e，332A精确10路径、累计24路径；Q2完整220 passed/0 skipped（332-full-03-host.xml），相关gateway98/QD-A56绑定原结果复用。产品包SHA9db75c1a75aa318e3d85ab39074a69eaaad15b0a46efaf505a0ab50147ec2846，运维旁件SHAaeda9f7702ac634cbe4698e5efe8a5c11ea36c6ccaecfabe4e17bc2975c55df9。.51固定C:\q2\releases\normal-runtime-60e92275bfcf已准备独立venv、锁定8wheel及精确CLI；实际导入路径/版本、CLI版本、新profile ACL仅SYSTEM/Admins通过。旧私有环境前后整树SHA一致，旧任务XML/固定四源SHA/PID3640一致，不切换现役服务。该证据仅SSH准备身份，authentication_configured=false；公司服务认证/正常出口与新任务SYSTEM Inspect由陈承协调，唯一Probe仍0/1。原stdin长载荷挂起已按精确PID/创建时间/父进程/命令hash定位关闭，失败材料保留；r2短EncodedCommand+独占上传通过，准备命令300秒有界等待超时后未重放，13:23:51回读完整prepared-runtime收据且精确命令指纹进程已退出，原unknown记录保留并由新reconciled证据解释，不伪造退出码。无执行策略绕过。服务器实际5.1.17763.2268，PATH/标准目录未见pwsh7，仅有限查找；本机默认pwsh7.6.5，不安装Shell或改旧启动器。无新模型/真实评分/ff/push/生产/外发，无后台。证据candidate-332-delivery.json、stage-332-r2-result.json、stage-332-reconciled-result.json、332-transport-finish.json、operations-332.md。
+
+
+2026-10-16T13:47:10.9821306+08:00 最新用户纠正：Q2无后台实时调用安排，只需判定，暂不撰写报告，立即执行。执行解释：用户提交时单件判定；停止新增实时/定时模型项目和当前操作单/说明报告写作，已有Excel导出及原件证据保全。源码run_q2_web.build_app不评分，DocumentUploadService.submit才启动单件线程，同件完成复用；本机GET表单及结果页均200，39项/20语义有评分、依据、理由和建议（两项图件引用无文字quote，未伪造），三次GET前后原结果/状态/模型文件SHA不变，新模型/上传/报告生成均0。质量原始反馈7-外部文档/质量部/质量部-ChenChen-回复-2026-10-16-文本反馈-b55561da18bb1970d2c1ffab75be30ab.md（SHA32dac2d59d0ff7bb6b14a1c5dc26852306472d9acc697b1f2acdbb349b906633）明确D2-M2不扣分，其余认可；当前该项0/1、总84/B，按该本件复核换算85/B。V3.2正本仍写明确产线名称和工位编号，与本件意见有差异，未擅改全库或不可变AI结果，也未宣称产品页面已更新/专业签认。#688原质量专线归属不抢。实际服务器固定候选209ff487/包9db75c1a正常PS5.1执行DryRun退出0，仅缺approved_existing_data_root；无Apply。按需AI语义判定如在服务器启用仍需该实际服务身份的可用模型通道，与实时监控无关；未把用户澄清当生产/新评分授权。候选源码未变，复用220完整测试及98/56相关结果。证据on-demand-judgement-check-20261016.json、on-demand-prepared-dryrun.json。
+
+
+2026-10-16T13:54:31.3222908+08:00 D2-M2直接实施授权已消费。Bounded design: 精确本件+已复核advice SHA1fcf87118d68f81bc2d7361f51f88e7f08219f3f7249bedcdf96f80008fa8ce4；纯函数补正视图85/B、保留84和质量来源；原service按对象权限+唯一复核audit后展示；Excel仍原AI版并标注。7路径串行，先RED→定向GREEN→完整Q2→本机原端口更新/实读→发布包。Ruling: 用户已明确批准本件设计结果及实施，沿现有接力/记录，不重复设计问答、不派review代理、不清场；生产/ff/push另按具体候选闸。
