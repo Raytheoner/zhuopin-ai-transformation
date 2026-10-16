@@ -50,3 +50,13 @@
 本会话01a118fc-82a7-7aa3-8c51-986a2de1a1ed/#661按本人技术设计A、计划A/Native及逐项ff/push/生产批准，6344c129展示两件已入主仓并远端同步。17:14上海仅替现网webapp为878ce4a2，原Q2WebServer已重启且健康/口令门禁/一次mock页GET通过；12份合成报告新增12条audit、全60链完整。原db967ac9备份在C:/q2/app/reports/ui-release-2026-10-08-e51e162/webapp.py.before。原非渲染流程/依赖四件不变，档1 mock、L2质量工程师责任及两项PENDING保留。身份头只是接入点，未正式SSO；#612专业/真实接线/历史部署主仓整合仍未闭。媒体偏好运行时及企微未覆盖，portal-q2-ui暂不归档，不以展示发布证明完整业务链。证据openspec/changes/portal-q2-ui/生产执行记录.md。
 
 Last Updated：2026-10-08（本次展示发布；历史段原文保留）。
+
+## 2026-10-15 · 326A真实单件PC候选（未生产发布）
+
+1015沿原612串行完成已批17产品/测试路径，分支`codex/q2-real-document-pc-1015`，隔离目录`reports/q2-real-document-pc-1015/worktree`。入口`/quality/q2/review`默认关闭；显式启用时只限本机及已授权OEM-A-01/A0/ASIL B同源PPTX SHA256，身份由可信钩子注入，不能用HTTP头/表单自授。原MOCK、engine/config/两PENDING及旧任务不变。
+
+完整OOXML证据保全跨页章节；本件独立回读19页/432段、22媒体、2嵌入表/1302缓存。受控Luna/high仅业务建议，无实现/审核代理。一次评分加一次引用结构修正，均零工具调用；原始响应、失败状态、请求/规则/提示词/schema哈希保留。字段中的空单元格注释须核真后提取已签字段，原值不丢。成功同件重提复用原对象，失败不自动重放传输/权限/未知结果。
+
+实际建议39项（含20语义项）全部有评分、依据、理由和整改，动态计算84/B；数字等级与红线/处置分列，恒为`ai_advice_unconfirmed`、未专业签认、转人工。五表Excel和原资产ZIP实际HTTP下载及全文/图件/嵌入/9公式缓存回读通过，唯一有效L2审计1条。实际候选Q2完整pytest149通过、零跳过；QD-A产品/依赖未改，复用已绑定56完整测。证据`reports/q2-real-document-pc-1015/real-delivery-receipt.json`、`junit-final-01.xml`及最终候选收据。
+
+浏览器自动选择文件被Chrome扩展本地文件权限阻断，原生Computer Use因无法可靠识别浏览器URL停止；未改权限。HTTP真实件闭环与浏览器手工选择/下载并打开Excel分列，后者尚未核验。临时URL/PID及进程退出即失效的生命周期见任务收据。不宣告业务验收/生产上线；ff、产品push、`.51`和新外发另批。

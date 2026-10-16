@@ -199,6 +199,12 @@ def _parse_sections(full_text: str, source_path: str) -> DocumentSections:
     current_lines: list[str] = []
     seen: set[str] = set()
 
+    def append_section(key: str, text: str) -> None:
+        # 同一D章节可跨页重复出现；空续段也不能抹掉已有内容。
+        sections[key] = "\n".join(
+            part for part in (sections.get(key, ""), text) if part
+        )
+
     # 段落分隔符：冒号/空白/逗号/句点/顿号（pptx 8D 用「D1.问题描述」点号格式）
     sep = r"[:：\s，,.．、]"
     for line in lines:
@@ -218,7 +224,7 @@ def _parse_sections(full_text: str, source_path: str) -> DocumentSections:
                 rest_from = None                     # 标题行整行即标头，正文从下一行起
         if key is not None:
             if current_key is not None:
-                sections[current_key] = "\n".join(current_lines).strip()
+                append_section(current_key, "\n".join(current_lines).strip())
             current_key = key
             seen.add(key)
             rest = re.sub(rest_from, "", stripped) if rest_from else ""
@@ -228,7 +234,7 @@ def _parse_sections(full_text: str, source_path: str) -> DocumentSections:
                 current_lines.append(line)
 
     if current_key is not None:
-        sections[current_key] = "\n".join(current_lines).strip()
+        append_section(current_key, "\n".join(current_lines).strip())
 
     return DocumentSections(
         full_text=full_text,

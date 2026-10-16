@@ -52,7 +52,22 @@ def main() -> int:
     host = os.environ.get("Q2_WEB_HOST", "127.0.0.1")
     port = int(os.environ.get("Q2_WEB_PORT", "8098"))
 
-    app = create_app(audit_path=reports / "q2_web_audit.jsonl")
+    real_enabled=os.environ.get('Q2_REAL_UPLOAD')=='1'
+    real_args={}
+    if real_enabled:
+        if host!='127.0.0.1':raise RuntimeError('真实件试评仅允许127.0.0.1')
+        from zhuopin_platform.audit import AuditLogger
+        from q2_8d_verdict.document_evidence import DocumentScope
+        from q2_8d_verdict.document_upload import DocumentUploadService
+        from q2_8d_verdict.model_adapter import CodexAdviceClient
+        scope=DocumentScope('OEM-A-01','A0','B','c8b52f55e0d2e76686619b7a8017e0a0bb90861393d5be57e9f9031d5842e069')
+        root=Path(os.environ['Q2_REAL_STORE']).resolve()
+        audit=AuditLogger.jsonl(root/'audit.jsonl')
+        service=DocumentUploadService(root,audit,CodexAdviceClient(),scope)
+        real_args=dict(real_upload_enabled=True,real_upload_service=service,
+            real_upload_actor=lambda:'local:1015',real_upload_access=lambda action,actor:actor=='local:1015')
+        print('  326A 单件真实试评：仅本机操作者；非正式身份/专业签认；进程退出即停止。')
+    app = create_app(audit_path=reports / "q2_web_audit.jsonl",**real_args)
 
     print(f"{config.SERVICE_NAME} — 门户页启动中…（{config.ROUTE_PREFIX}）")
     print(f"  报告/审计目录：{reports}（git-ignored）")

@@ -19,15 +19,21 @@
 from __future__ import annotations
 
 import html as _html
+import re
+import secrets
 from pathlib import Path
+from typing import Callable
 
-from flask import Blueprint, Flask, Response, request
+from flask import Blueprint, Flask, Response, request, session, redirect, g, send_file
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from zhuopin_platform.audit import AuditLogger
 from zhuopin_platform.shared_tools.simple_gate import install_flask_gate
 
 from . import config, dashboard, feed_source
-from .engine import VerdictEngine
+from .engine import VerdictEngine, AsilExcludedError
+from .mock_upload import MockUploadService, MockUploadError, example_input, MAX_BYTES
+from .document_upload import UploadError, MAX_BYTES as DOCUMENT_MAX_BYTES
 
 #: 统一门户网关落地后，身份由网关经该请求头下发（同 `fi3/sc2 webapp.py` GATEWAY_IDENTITY_HEADER）。
 #: **过渡期无人下发，值恒为空**——本页只读展示档 1 mock 汇总，不因身份未知而拒绝渲染。
@@ -175,6 +181,7 @@ def _render_page(verdicts: list) -> str:
 <header><a class="portal-link" href="http://192.168.100.51:8092/">返回智能门户</a>
 <h1>{_text(config.SERVICE_NAME)}</h1>
 <div class="banner"><strong>档1 · mock合成数据；非真实8D评审结论</strong>
+<p>并非真实 8D 评审结论。</p>
 <p>AI建议由质量工程师复核；退回决定永远由质量工程师签发；此页不提交退回/签发。</p>
 <p class="metadata">规则版本：{_text(config.RULE_VERSION)}；自动化等级：{_text(config.AUTOMATION_LEVEL)}。</p>
 <p class="metadata">源数据更新时间未提供；单份审计标识未接入；原报告入口未接入。</p></div></header>
@@ -187,7 +194,13 @@ def _render_page(verdicts: list) -> str:
 </main></body></html>'''
 
 
-def create_app(*, identity_resolver=None, audit_path: Path | str = "reports/q2_web_audit.jsonl") -> Flask:
+def create_app(*, identity_resolver=None, audit_path: Path | str = "reports/q2_web_audit.jsonl",
+               mock_upload_enabled=False, mock_upload_root: Path | None = None,
+               mock_upload_access: Callable[[str, str | None], bool] | None = None,
+               mock_upload_actor: Callable[[], str | None] | None = None,
+               real_upload_enabled=False, real_upload_service=None,
+               real_upload_access: Callable[[str, str | None], bool] | None = None,
+               real_upload_actor: Callable[[], str | None] | None = None) -> Flask:
     """组装 Flask app（依赖注入 `identity_resolver`／`audit_path`，便于测试）。"""
     app = Flask(__name__)
     # 共享口令门禁（#160）：env_var 取 install_flask_gate 默认值 ZP_GATE_PASSWORD，不再另设场景键。
@@ -199,6 +212,174 @@ def create_app(*, identity_resolver=None, audit_path: Path | str = "reports/q2_w
     engine = VerdictEngine(audit=audit_logger)
     bp = Blueprint("q2_portal", __name__, url_prefix=config.ROUTE_PREFIX)
 
+    upload_path = config.ROUTE_PREFIX + "/mock-upload"
+    result_prefix = config.ROUTE_PREFIX + "/mock-results/"
+    service = MockUploadService(mock_upload_root, audit_logger) if mock_upload_root is not None else None
+    if mock_upload_enabled or real_upload_enabled:
+        # Process-local session signing, no shared credential or gate modification.
+        app.secret_key = secrets.token_hex(32)
+        app.config.update(SESSION_COOKIE_NAME="q2_mock_session" if mock_upload_enabled else "q2_review_session", SESSION_COOKIE_HTTPONLY=True,
+                          SESSION_COOKIE_SAMESITE="Strict", SESSION_COOKIE_PATH=config.ROUTE_PREFIX)
+
+    def page(title, content):
+        return (f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{_text(title)}</title>'
+            f'<style>{_Q2_UI_CSS} textarea {{width:100%;min-height:130px}} '
+            'button,input {min-height:44px} code {overflow-wrap:anywhere}</style></head><body><main>'
+            f'<header><h1>{_text(title)}</h1><div class="banner"><strong>MOCK合成数据 · 并非真实 8D 评审结论</strong>'
+            '<p>仅接收本页合成JSON；Word/PPT/PDF解析尚未接入。AI提供L2建议，质量工程师复核并签发退回决定。</p>'
+            '</div></header>' + content + '</main></body></html>')
+
+    def form(error=None):
+        token = session.get("q2_csrf")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session["q2_csrf"] = token
+        return page("Q2 合成上传与单份报告", (
+            f'<p role="alert">{_text(error)}</p>' if error else '') + f'''
+<section class="card"><h2>1. 下载既有合成输入</h2>
+<a href="{upload_path}/example/1">下载合成示例JSON</a>
+<p>源时点未提供；示例不含验收标签。请保持MOCK客户与项目标记。</p></section>
+<section class="card"><h2>2. 生成单份报告</h2>
+<form method="post" action="{upload_path}" enctype="multipart/form-data">
+<input type="hidden" name="csrf_token" value="{token}">
+<p><label for="q2-file">选择合成JSON文件（最大2MB）</label><br>
+<input id="q2-file" name="file" type="file" accept=".json,application/json"></p>
+<p><label for="q2-json">或粘贴合成JSON（与文件二选一）</label><br>
+<textarea id="q2-json" name="input_json"></textarea></p>
+<button type="submit">生成并保存合成报告</button></form></section>
+<p><a href="{config.ROUTE_PREFIX}/">查看原只读合成汇总</a></p>''')
+
+    errors = {
+        "invalid_input": (400, "输入格式不符：请选择本页合成JSON，检查必填字段；文件与粘贴须二选一。"),
+        "input_too_large": (413, "输入超过2MB，请使用本页合成示例。"),
+        "access_denied": (403, "当前入口未获合成操作权限。"),
+        "csrf_failed": (403, "请求校验失败，请重新打开表单后提交。"),
+        "not_found": (404, "未找到该合成报告或示例。"),
+        "unknown_example": (404, "未找到该合成示例。"),
+        "disabled": (404, "合成上传入口未启用。"),
+        "storage_unavailable": (503, "保存或审计核验未完成，未确认成功；现场已保留，可重试同一输入。"),
+        "asil_excluded": (422, "ASIL C/D不进入自动评分；未生成报告，请交人工处理。"),
+    }
+
+    def failure(code):
+        status, message = errors.get(code, errors["storage_unavailable"])
+        if request.is_json:
+            return {"error": code if code in errors else "storage_unavailable", "message": message}, status
+        # Disabled/denied requests must not create sessions or form tokens.
+        content = form(message) if code not in ("disabled", "access_denied") else page("Q2操作暂不可用", f'<p role="alert">{message}</p>')
+        return Response(content, status=status, mimetype="text/html")
+
+    def new_operation():
+        return request.path.startswith(upload_path) or request.path.startswith(result_prefix)
+
+    @app.before_request
+    def _mock_access():
+        if not new_operation():
+            return None
+        request.max_content_length = MAX_BYTES + 64 * 1024
+        request.max_form_memory_size = MAX_BYTES + 64 * 1024
+        if not mock_upload_enabled:
+            return failure("disabled")
+        action = ("submit" if request.method == "POST" else "example" if "/example/" in request.path
+                  else "export" if request.path.endswith("/export") else "view")
+        try:
+            actor = mock_upload_actor() if mock_upload_actor else None
+            if (not isinstance(actor, str) or not re.fullmatch(r"synthetic:[A-Za-z0-9_-]{1,64}", actor)
+                    or mock_upload_access is None or mock_upload_access(action, actor) is not True or service is None):
+                return failure("access_denied")
+            g.q2_mock_actor = actor
+        except Exception:
+            return failure("storage_unavailable")
+        if request.method == "POST":
+            try:
+                token = request.headers.get("X-CSRF-Token") if request.is_json else request.form.get("csrf_token")
+                expected = session.get("q2_csrf")
+                if (not token or not expected or not secrets.compare_digest(token, expected)
+                        or request.headers.get("Origin") != request.host_url.rstrip("/")):
+                    return failure("csrf_failed")
+            except RequestEntityTooLarge:
+                return failure("input_too_large")
+
+    @app.after_request
+    def _mock_no_store(response):
+        if new_operation():
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    @bp.route("/mock-upload", methods=["GET", "POST"])
+    def _mock_upload():
+        if request.method == "GET":
+            return Response(form(), mimetype="text/html")
+        try:
+            if request.is_json:
+                source = request.get_data(cache=False)
+            else:
+                files = request.files.getlist("file")
+                files = [f for f in files if f.filename]
+                pasted = request.form.get("input_json", "")
+                if len(files) > 1 or bool(files) == bool(pasted.strip()):
+                    raise MockUploadError()
+                source = files[0].read(MAX_BYTES + 1) if files else pasted.encode("utf-8")
+            saved = service.submit(source, g.q2_mock_actor)
+            location = result_prefix + saved.object_id
+            if request.is_json:
+                response = app.json.response({"object_id": saved.object_id, "report_url": location, "receipt": saved.receipt})
+                response.status_code = 201
+                response.headers["Location"] = location
+                return response
+            return redirect(location, code=303)
+        except RequestEntityTooLarge:
+            return failure("input_too_large")
+        except AsilExcludedError:
+            return failure("asil_excluded")
+        except MockUploadError as exc:
+            return failure(exc.code)
+        except Exception:
+            return failure("storage_unavailable")
+
+    @bp.get("/mock-upload/example/<token>")
+    def _mock_example(token):
+        try:
+            return Response(example_input(token), mimetype="application/json",
+                            headers={"Content-Disposition": 'attachment; filename="q2-synthetic-input.json"'})
+        except MockUploadError as exc:
+            return failure(exc.code)
+
+    @bp.get("/mock-results/<object_id>")
+    def _mock_report(object_id):
+        try:
+            saved = service.get(object_id)
+            payload, receipt = saved.payload, saved.receipt
+            source = payload["source"]
+            fields = [("对象ID", saved.object_id), ("输入SHA256", payload["input_sha256"]),
+                ("源版本", source["source_version"]), ("来源", source["source_ref"]),
+                ("源时点", source["extracted_at_utc"]), ("运行保存时点", payload["saved_at_utc"]),
+                ("规则版本", payload["rules_version"]), ("规则SHA256", payload["rules_sha256"]),
+                ("审计回执", receipt["event_sha256"]), ("结果SHA256", receipt["payload_sha256"])]
+            metadata = ''.join(f'<dt>{name}</dt><dd><code>{_text(value)}</code></dd>' for name, value in fields)
+            detail = _report_detail(saved.verdict, 1).replace('<details ', '<details open ', 1)
+            detail = detail.replace('单份审计标识未接入；复核人及签认时间未提供。',
+                                    '单份操作审计回执见上方；复核人及签认时间未提供。')
+            content = (f'<section class="card"><h2>来源与审计核验</h2><dl>{metadata}</dl>'
+                '<p>同一对象、输入及结果hash的唯一审计事件已回读，非空审计链核验通过。'
+                '操作审计L1（synthetic），业务判定仍为L2建议；源时点缺失保持未提供。</p>'
+                f'<p><a href="{result_prefix}{saved.object_id}/export">导出原对象与报告JSON</a> · '
+                f'<a href="{upload_path}">返回上传</a></p></section>' + detail)
+            return Response(page("Q2 单份合成报告", content), mimetype="text/html")
+        except MockUploadError as exc:
+            return failure(exc.code)
+
+    @bp.get("/mock-results/<object_id>/export")
+    def _mock_export(object_id):
+        try:
+            data = service.export(object_id)
+            return Response(data, mimetype="application/json", headers={
+                "Content-Disposition": f'attachment; filename="q2-mock-report-{object_id}.json"'})
+        except MockUploadError as exc:
+            return failure(exc.code)
+
     @bp.route("/api/ping")
     def _ping():
         return {"status": "ok", "service": config.SERVICE_NAME}
@@ -208,6 +389,116 @@ def create_app(*, identity_resolver=None, audit_path: Path | str = "reports/q2_w
         resolve_identity()  # 接入点已挂；过渡期恒 None，不阻断只读 mock 展示
         verdicts = [engine.evaluate(doc) for doc, _ in feed_source.load_mock()]
         return Response(_render_page(verdicts), mimetype="text/html")
+
+    real_path=config.ROUTE_PREFIX+'/review'
+    def real_operation():return request.path==real_path or request.path.startswith(real_path+'/')
+
+    def real_page(content,refresh=False):
+        return ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            + ('<meta http-equiv="refresh" content="5">' if refresh else '')
+            +f'<title>Q2真实件建议评审</title><style>{_Q2_UI_CSS}</style></head><body><main>'
+            '<header><h1>8D完整建议评分</h1><div class="banner"><strong>受控真实件试评 · AI建议 · 未专业签认</strong>'
+            '<p>数字分数与等级用于修改参考。质量工程师最终复核并签发；本入口不执行退回、归档或业务放行。</p></div></header>'
+            +content+'</main></body></html>')
+
+    def real_error(code,message=''):
+        status={'disabled':404,'access_denied':403,'csrf_failed':403,'not_found':404,'input_too_large':413,'invalid_input':400,'scope_denied':422,'busy':409,'not_ready':409}.get(code,503)
+        explanation=message or {'disabled':'真实件入口尚未启用','access_denied':'当前操作者没有此操作权限','csrf_failed':'请求校验失败，请重新打开表单','not_found':'未找到此对象','input_too_large':'文件超过20MiB限制','invalid_input':'请选择一份PPTX文件','scope_denied':'文件不在本次授权范围','not_ready':'本件尚未成功完成，不能下载','busy':'本机已有业务评分执行中'}.get(code,'保存或审计核验失败，未确认成功；现场已保留')
+        return Response(real_page(f'<p role="alert">{_text(explanation)}</p><a href="{real_path}">返回上传</a>'),status=status,mimetype='text/html')
+
+    @app.before_request
+    def _real_access():
+        if not real_operation():return None
+        request.max_content_length=DOCUMENT_MAX_BYTES+64*1024
+        # Werkzeug 每次读取64KiB并保留边界尾；缓冲必须大于一个chunk。
+        request.max_form_memory_size=512*1024
+        request.max_form_parts=4
+        if not real_upload_enabled:return real_error('disabled')
+        action='submit' if request.method=='POST' else 'export' if request.path.endswith(('/excel','/bundle')) else 'asset' if '/assets/' in request.path else 'view'
+        try:
+            actor=real_upload_actor() if real_upload_actor else None
+            if not isinstance(actor,str) or not re.fullmatch(r'local:[A-Za-z0-9_-]{1,64}',actor) or real_upload_access is None or real_upload_access(action,actor) is not True or real_upload_service is None:return real_error('access_denied')
+            g.q2_real_actor=actor
+            if request.method=='POST':
+                token=request.form.get('csrf_token');expected=session.get('q2_real_csrf')
+                if not token or not expected or not secrets.compare_digest(token,expected) or request.headers.get('Origin')!=request.host_url.rstrip('/'):return real_error('csrf_failed')
+        except RequestEntityTooLarge:return real_error('input_too_large')
+        except Exception:return real_error('storage_integrity')
+
+    @app.after_request
+    def _real_no_store(response):
+        if real_operation():
+            response.headers['Cache-Control']='no-store';response.headers['X-Content-Type-Options']='nosniff';response.headers['Referrer-Policy']='same-origin'
+            response.headers['Content-Security-Policy']="default-src 'self'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; frame-ancestors 'none'"
+        return response
+
+    @bp.route('/review',methods=['GET','POST'])
+    def _real_upload():
+        if request.method=='GET':
+            token=session.setdefault('q2_real_csrf',secrets.token_urlsafe(32));scope=real_upload_service.scope
+            return Response(real_page(f'<section class="card"><h2>选择已授权8D原件</h2><p>隔离标签：{_text(scope.oem_label)}；版本：{_text(scope.source_version)}；ASIL {_text(scope.asil_level)}。</p>'
+                f'<p class="metadata">仅接受本件SHA256：{_text(scope.authorized_sha256)}；最多20MiB；其他真实件不在本次范围。</p>'
+                '<p>处理完整跨页正文、图件和嵌入表后生成逐项分数、原文依据、得扣分理由及整改建议。读取失败会阻断完整评分。</p>'
+                f'<form method="post" enctype="multipart/form-data" action="{real_path}"><input type="hidden" name="csrf_token" value="{token}">'
+                '<p><label for="q2-real-file">8D报告（PPTX）</label><br><input id="q2-real-file" name="file" type="file" accept=".pptx" required></p>'
+                '<button type="submit">上传并生成完整建议评分</button></form><p>同件成功结果会复用；失败或中断保留现场，不自动重复模型调用。</p></section>'),mimetype='text/html')
+        try:
+            files=[f for f in request.files.getlist('file') if f.filename]
+            repair_id=request.form.get('repair_object_id')
+            if repair_id and not files:ref=real_upload_service.repair(repair_id,g.q2_real_actor)
+            elif len(files)==1 and not repair_id:ref=real_upload_service.submit(files[0].read(DOCUMENT_MAX_BYTES+1),files[0].filename,g.q2_real_actor)
+            else:return real_error('invalid_input')
+            return redirect(real_path+'/'+ref.object_id,code=303)
+        except UploadError as exc:return real_error(exc.code,str(exc))
+        except RequestEntityTooLarge:return real_error('input_too_large')
+        except Exception:return real_error('storage_integrity')
+
+    @bp.get('/review/<object_id>')
+    def _real_report(object_id):
+        try:
+            saved=real_upload_service.get(object_id,g.q2_real_actor)
+            labels={'receiving':'接收原件','extracting':'完整取证','scoring':'受控Luna业务评分','exporting':'生成Excel及审计核验','complete':'已完成建议报告','failed':'处理失败','interrupted':'运行已中断'}
+            if saved.state!='complete':
+                repair_form=''
+                if saved.repair_available:
+                    token=session.setdefault('q2_real_csrf',secrets.token_urlsafe(32))
+                    repair_form=f'<form method="post" action="{real_path}"><input type="hidden" name="csrf_token" value="{token}"><input type="hidden" name="repair_object_id" value="{_text(object_id)}"><button type="submit">执行本件单次引用结构修正</button><p>只修正引用，不重新业务评分；首次响应和失败现场保留。</p></form>'
+                return Response(real_page(f'<section class="card"><h2>{_text(labels.get(saved.state,saved.state))}</h2><p>对象：{_text(object_id)}</p><p role="status">{_text(saved.error,"当前阶段执行中；本页每5秒读取状态。")}</p>'
+                    +repair_form+f'<p><a href="{real_path}">返回上传</a></p></section>',refresh=saved.state not in ('failed','interrupted')),mimetype='text/html')
+            p=saved.payload;r=p['advice'];receipt=saved.receipt
+            metadata=_table('来源与审计',('字段','内容'),[('对象',object_id),('源SHA256',r['source_sha256']),('隔离/版本/ASIL',f"{r['scope']['oem_label']} / {r['scope']['source_version']} / {r['scope']['asil_level']}"),('规则版本',r['rule_version']),('模型',p['model']['requested_model']),('实际模型版本',p['model']['observed_model'] or '通道未披露'),('审计回执',receipt['event_sha256']),('签认','未专业签认；转人工裁决')])
+            content=f'<section class="card"><h2>AI建议：{_text(r["total"])} / {_text(r["max_score"])}分 · 数字等级{_text(r["numeric_grade"])}</h2><p>数字等级不代表红线已清除或业务验收通过。</p><p><a href="{real_path}/{object_id}/excel">下载完整评分Excel</a> · <a href="{real_path}/{object_id}/bundle">下载Excel与原资产ZIP</a> · <a href="{real_path}">返回上传</a></p></section>'+metadata
+            for item in r['items']:
+                anchors=' '.join(f'<a href="#{_text(ref)}">{_text(ref)}</a>' for ref in item['refs'])
+                content+=f'<details class="card"><summary>{_text(item["rule_id"])} · {_text(item["dimension"])} · {_text(item["score"])} / {_text(item["max_score"])}分（AI建议）</summary><h2>原文依据</h2><pre>{_text(item["quote"],"图件依据，见引用")}</pre><p>{anchors}</p><h2>得扣分理由</h2><p>{_text(item["reason"])}</p><h2>整改建议</h2><p>{_text(item["remediation"])}</p><p>原基线：{_text(item["baseline_status"])} / {_text(item["baseline_score"])}；读取：{_text(item["evidence_state"])}；置信度：{_text(item["confidence"])}</p></details>'
+            content+=_table('红线与处置（独立于数字等级）',('红线','说明','状态'),[(x['no'],x['description'],x['status']) for x in r['redlines']])
+            evidence=real_upload_service.evidence(object_id,g.q2_real_actor)
+            content+='<details class="card"><summary>完整原文与图件依据（跨页保全）</summary>'
+            for record in evidence['records']:
+                content+=f'<details id="{_text(record["ref"])}"><summary>第{record["page"]}页 · {_text(record["ref"])}</summary><pre>{_text(record["text"],"空单元格/空文本")}</pre></details>'
+            for asset in evidence['assets']:
+                content+=f'<details id="{_text(asset["ref"])}"><summary>{_text(asset["ref"])} · {_text(asset["part"])}</summary>'
+                if asset.get('preview'):content+=f'<img style="max-width:100%" alt="原件图件预览" src="{real_path}/{object_id}/assets/{asset["ref"]}">'
+                else:content+=_table('嵌入表已保存值',('工作表','行','列','值','状态'),[(c['sheet'],c['row'],c['column'],c['value'],c['cache_state']) for c in asset.get('cells',[])])
+                content+='</details>'
+            return Response(real_page(content+'</details>'),mimetype='text/html')
+        except UploadError as exc:return real_error(exc.code,str(exc))
+        except Exception:return real_error('storage_integrity')
+
+    @bp.get('/review/<object_id>/excel')
+    @bp.get('/review/<object_id>/bundle')
+    def _real_export(object_id):
+        try:
+            kind='xlsx' if request.path.endswith('/excel') else 'bundle'
+            path=real_upload_service.export(object_id,g.q2_real_actor,kind)
+            return send_file(path,as_attachment=True,download_name=path.name,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if kind=='xlsx' else 'application/zip',conditional=False,max_age=0)
+        except UploadError as exc:return real_error(exc.code,str(exc))
+
+    @bp.get('/review/<object_id>/assets/<ref>')
+    def _real_asset(object_id,ref):
+        try:return send_file(real_upload_service.asset(object_id,g.q2_real_actor,ref),mimetype='image/png',conditional=False,max_age=0)
+        except UploadError as exc:return real_error(exc.code,str(exc))
 
     app.register_blueprint(bp)
     return app

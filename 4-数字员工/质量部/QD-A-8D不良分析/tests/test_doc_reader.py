@@ -1,5 +1,43 @@
 """doc_reader 单测 — 段落解析与文本提取。"""
 from qda_prefill.doc_reader import _parse_sections, DocumentSections, extract_scene_checkbox
+import pytest
+
+
+@pytest.mark.parametrize(('text', 'expected'), [
+    ('D3: first\nD3: second', {'D3': 'first\nsecond'}),
+    ('D3: first\nD4: root\nD3: second\nD5: action',
+     {'D3': 'first\nsecond', 'D4': 'root', 'D5': 'action'}),
+    ('D3:\nD3: second', {'D3': 'second'}),
+    ('D3: first\nD3:', {'D3': 'first'}),
+    ('D3:\nD3:', {'D3': ''}),
+    ('D3: first\n  indented\n\nD4: root',
+     {'D3': 'first\n  indented', 'D4': 'root'}),
+])
+def test_repeated_sections_preserve_order_and_empty_segments(text, expected):
+    doc = _parse_sections(text, 'synthetic.pptx')
+    assert doc.sections == expected
+    assert doc.full_text == text
+    assert doc.header_text == text[:500]
+    assert doc.source_path == 'synthetic.pptx'
+
+
+def test_read_pptx_preserves_repeated_sections_across_slides(tmp_path):
+    from pptx import Presentation
+    from qda_prefill.doc_reader import read
+
+    prs = Presentation()
+    for text in ('D4: first-page\nfirst-evidence',
+                 'D4: second-page\nsecond-evidence',
+                 'D5: action', 'D4: third-page', 'D4:'):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        box = slide.shapes.add_textbox(0, 0, 9144000, 1000000)
+        box.text_frame.text = text
+    source = tmp_path / 'synthetic_repeated_sections.pptx'
+    prs.save(str(source))
+    doc = read(source)
+    assert doc.sections['D4'] == (
+        'first-page\nfirst-evidence\nsecond-page\nsecond-evidence\nthird-page')
+    assert doc.sections['D5'] == 'action'
 
 
 def test_parse_d_sections_from_text():
