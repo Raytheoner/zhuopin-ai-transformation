@@ -49,3 +49,6 @@ Q2生产接入四类归属核验及§四331一次供审（2026-10-16T09:04:10+08
 
 
 正常SYSTEM通道查清与§332供审（2026-10-16T12:16:28+08:00，原612）：实测Q2WebServer/SYSTEM→start-q2.ps1→C:\q2\.venv；SSH下该绝对解释器8锁定库缺7，非SYSTEM导入证明。指定8个CLI位置未命中、无现成模型任务；平台53文件逐SHA同候选。原成功CLI事件observed_model=null，当前D5非空条件会阻断；不伪造观测、不消费探针。无认证API探路TimeoutError仅属SSH该URL，不推定Codex后端/其他身份不可用，已停止重试。离线CLI+8wheel运行包346503108 bytes/SHA60e92275bfcf7fa75965b81b3be855b9db0ca0f4c8f85701b95ac60168b5bef7，解出版本/SHA通过，无秘密/真实数据，未安装。推荐陈承运维接口（IT部#13历史操作依据，尚无本次承接）；公司服务认证/正常出口需其协调真实管理员。§332绑定openspec/changes/q2-real-document-pc-1015/normal-system-unblock-v1-2026-10-16.md第1–5节/SHA12ddf7787850198fccf83803ad92fdc8e543320dee1e7f9d0c751d3cdf9dd151，集中申请Q2精确10路径、旁路环境/精确CLI/私有8库、新建本件SYSTEM一次核验及仅新profile ACL/运维服务认证、D5明确CLI合同且observed保持null；均待答，不新增API计费/外发/真实评分/ff/push/生产。候选8ca9d627/355测及旧现场保持，D5=0/1。详细证据normal-channel-gap-summary.json。
+
+
+332A启动（2026-10-16T12:30:30+08:00）：实际用户批准第1–5节/SHA12ddf7787850198fccf83803ad92fdc8e543320dee1e7f9d0c751d3cdf9dd151，原612精确10路径由1015认领，原树干净8ca9d627保全。指定陈承牵头运维；批准不等于已承接/已落位。Ruling: 沿原reports/progress及原实施记录执行，无新任务系统/代理或自动审核链，执行方式优先于技能模板。Pre-flight: adapter的CLI合同/配置指纹→预检及runner；候选固定venv/SYSTEM绑定→旁路准备及未来部署；不搬路径复用回执。默认Inspect无模型，D5唯一预算仍0/1；先RED。
