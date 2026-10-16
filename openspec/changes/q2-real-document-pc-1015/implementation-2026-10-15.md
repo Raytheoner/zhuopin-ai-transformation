@@ -42,3 +42,10 @@ Q2生产接入四类归属核验及§四331一次供审（2026-10-16T09:04:10+08
 
 
 331A检查点与331B认领（2026-10-16T11:00:08+08:00）：Q2精确17路径已实现，隔离候选55f5d55ca0cb65a20b73d3e5f080b0f99da4652e，完整pytest200 passed/零跳过（q2-full-03.xml）。初轮198通过/1竞争失败及稳定RED保留；最小修复状态快照后worker退出误报中断，不重放模型。331B已从1013实际用户消息回读（source_user_message=01a142a4-d43a-7e83-b9ae-1880fd84e468）；门户六路径现由1015在同树串行认领，旧197/done保留，不再等待原维护方。先完成Q2离线包/DryRun/缓存回放，再进入门户D2–D3；不扩文件/权限映射。正常SYSTEM入口、CLI及8库实际环境仍未证，探针0/1，未新ff/push/生产/真实评分/外发。证据reports/q2-production-intake-1015/approval-331B.json及progress.md。
+
+331A/B候选交付（2026-10-16T11:24:35+08:00）：8ca9d627a52d1283b5f7c213a2acde2ff4f46a52，精确23路径、完整355测零跳过；Q2包SHA44740b0a15f9dee160ab1a2da376c769158566cc41fc9d8a20e2da7c0570e650，联审包SHA12ad3c566166196c56f01ecfefc54221899e27962e533a8bab1b255548125f97。原612/R5留真实前置，candidate-delivery.json记测试/代码hash/恢复。合成接缝与原件缓存回放均0外部模型，原store/audit保全；正常SYSTEM入口、现有CLI及实际生产私有环境尚未证，探针0/1。无后台/活动占写，未新ff/push/生产/账号凭据变更/评分/外发；不宣告业务验收。文档最后提交不改变测试代码，依照D7复用绑定回归，不机械重跑。
+
+1013运维入口补查回执（2026-10-16T11:31:12+08:00，原612/§331）：近期Codex会话与正式队列digest未找到新的SYSTEM现存合规Codex入口或模型回执；这是已查范围的未命中，不推定全机无CLI。SYSTEM的Q2服务计划任务不能代算模型调用入口，Administrator SSH也不能代算SYSTEM。责任缺口仍为现役Q2运维/IT提供正常入口、现有CLI绑定及实际私有8库/模型通道回执，尚未确认承接。D5继续0/1，不改写/重放SYSTEM任务、不安装/登录/复制凭据或换账号；候选8ca9d627与355测不变，无新ff/push/生产/评分/外发。证据reports/q2-production-intake-1015/operations-reply-1013.json。
+
+
+正常SYSTEM通道查清与§332供审（2026-10-16T12:16:28+08:00，原612）：实测Q2WebServer/SYSTEM→start-q2.ps1→C:\q2\.venv；SSH下该绝对解释器8锁定库缺7，非SYSTEM导入证明。指定8个CLI位置未命中、无现成模型任务；平台53文件逐SHA同候选。原成功CLI事件observed_model=null，当前D5非空条件会阻断；不伪造观测、不消费探针。无认证API探路TimeoutError仅属SSH该URL，不推定Codex后端/其他身份不可用，已停止重试。离线CLI+8wheel运行包346503108 bytes/SHA60e92275bfcf7fa75965b81b3be855b9db0ca0f4c8f85701b95ac60168b5bef7，解出版本/SHA通过，无秘密/真实数据，未安装。推荐陈承运维接口（IT部#13历史操作依据，尚无本次承接）；公司服务认证/正常出口需其协调真实管理员。§332绑定openspec/changes/q2-real-document-pc-1015/normal-system-unblock-v1-2026-10-16.md第1–5节/SHA12ddf7787850198fccf83803ad92fdc8e543320dee1e7f9d0c751d3cdf9dd151，集中申请Q2精确10路径、旁路环境/精确CLI/私有8库、新建本件SYSTEM一次核验及仅新profile ACL/运维服务认证、D5明确CLI合同且observed保持null；均待答，不新增API计费/外发/真实评分/ff/push/生产。候选8ca9d627/355测及旧现场保持，D5=0/1。详细证据normal-channel-gap-summary.json。
