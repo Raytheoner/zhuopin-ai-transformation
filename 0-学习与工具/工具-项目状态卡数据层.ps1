@@ -69,13 +69,13 @@ $relay = Read-Src 'relay' '1-转型规划\0-全景路线图\session接力-Phase1
 #    改锚 `## 二、当前状态快照（YYYY-MM-DD）` 一节正文：改版后状态文字即落在该节。
 #    §三「下一会话主攻」正则实测仍命中，不动。
 $snap=''
-$m=[regex]::Match($relay,'(?s)##+[^\r\n]*当前状态快照[^\r\n]*\r?\n(.*?)(?=\r?\n## |\z)')
+$m=[regex]::Match($relay,'(?s)##+[^\r\n]*(?:当前状态快照|完成/停点)[^\r\n]*\r?\n(.*?)(?=\r?\n## |\z)')
 if($m.Success){ $s=(($m.Groups[1].Value -split "`r?`n" | Where-Object { $_.Trim() -ne '' }) -join "`n").Trim(); if($s.Length -gt 900){$s=$s.Substring(0,900)+[char]0x2026}; $snap=$s }
-if(-not $src['relay'].ok){ Set-Src 'snap' $false $src['relay'].why } elseif(-not $m.Success){ Set-Src 'snap' $false '节未匹配：session接力-Phase1收口.md 内找不到「## 二、当前状态快照」' } else { Set-Src 'snap' $true '' }
+if(-not $src['relay'].ok){ Set-Src 'snap' $false $src['relay'].why } elseif(-not $m.Success -or -not $snap){ Set-Src 'snap' $false '节未匹配或为空：当前状态快照／完成/停点' } else { Set-Src 'snap' $true '' }
 $next=@()
-$mm=[regex]::Match($relay,'(?s)##+[^\r\n]*下一会话主攻[^\r\n]*\r?\n(.*?)(?=\r?\n## |\z)')
-if($mm.Success){ $next=@($mm.Groups[1].Value -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d' } | Select-Object -First 6) }
-if(-not $src['relay'].ok){ Set-Src 'next' $false $src['relay'].why } elseif(-not $mm.Success){ Set-Src 'next' $false '节未匹配：session接力-Phase1收口.md 内找不到「下一会话主攻」' } else { Set-Src 'next' $true '' }
+$mm=[regex]::Match($relay,'(?s)##+[^\r\n]*(?:下一会话主攻|接续路径/待批)[^\r\n]*\r?\n(.*?)(?=\r?\n## |\z)')
+if($mm.Success){ $lines=@($mm.Groups[1].Value -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }); $next=@($lines | Where-Object { $_ -match '^\d' } | Select-Object -First 6); if($next.Count -eq 0){ $next=@($lines | Select-Object -First 6) } }
+if(-not $src['relay'].ok){ Set-Src 'next' $false $src['relay'].why } elseif(-not $mm.Success -or $next.Count -eq 0){ Set-Src 'next' $false '节未匹配或为空：下一会话主攻／接续路径/待批' } else { Set-Src 'next' $true '' }
 $impl = Read-Src 'impl' '1-转型规划\0-全景路线图\卓品智能AI转型实施计划（最新版）.md'
 $dls=New-Object System.Collections.Generic.List[string]
 $on=$false
@@ -308,7 +308,7 @@ $svc=[ordered]@{}
 if($lan){ foreach($pp in 8091,8092,8093,8094){ try{ $rr2=Invoke-WebRequest -Uri ('http://192.168.100.51:' + $pp + '/api/ping') -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop; $svc["$pp"]=$(if($rr2.StatusCode -eq 200){'up'}else{'http' + $rr2.StatusCode}) }catch{ $svc["$pp"]='down' } } }
 $net=[ordered]@{ lan=$lan; ips=($ips -join ', '); svc=$svc; ipsWhy=$ipsWhy }
 $mt=[ordered]@{}
-foreach($rel in @('1-转型规划\0-全景路线图\session接力-Phase1收口.md','CLAUDE.md','1-转型规划\0-全景路线图\跨桌任务队列-机制环境.md','1-转型规划\0-全景路线图\跨桌任务队列-业务场景.md','1-转型规划\0-全景路线图\文档台账-自动生成.md')){
+foreach($rel in @('1-转型规划\0-全景路线图\session接力-Phase1收口.md','AGENTS.md','1-转型规划\0-全景路线图\跨桌任务队列-机制环境.md','1-转型规划\0-全景路线图\跨桌任务队列-业务场景.md','1-转型规划\0-全景路线图\文档台账-自动生成.md')){
   $p=Join-Path $root $rel
   if(Test-Path -LiteralPath $p){ $mt[(Split-Path $rel -Leaf)] = (Get-Item -LiteralPath $p).LastWriteTime.ToString('MM-dd HH:mm') }
 }

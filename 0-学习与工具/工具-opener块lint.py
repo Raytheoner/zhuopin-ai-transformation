@@ -811,7 +811,8 @@ def block_env(block: Block) -> str | None:
 
 def check_block(block: Block, *, is_subtask_lane: bool = False,
                 is_format_canon_file: bool = False,
-                canon_role: str | None = None) -> list[tuple[str, str]]:
+                canon_role: str | None = None,
+                _native_contract: bool = False) -> list[tuple[str, str]]:
     """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F16", "C3", "C5"}。
 
     `is_subtask_lane`：该块是否为「看护者用 Task/Agent 派发的子任务泳道 opener」
@@ -846,7 +847,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
                 line = 'set_session_title ' + line + '；若是子任务则跳过本行。'
             lines.append(native_env.sub("执行环境：CC", line.replace("【Codex】", "【CC】")))
         return problems + check_block(Block(block.start_line,lines,block.info),is_subtask_lane=is_subtask_lane,
-            is_format_canon_file=is_format_canon_file,canon_role=canon_role)
+            is_format_canon_file=is_format_canon_file,canon_role=canon_role,_native_contract=True)
     problems: list[tuple[str, str]] = []
     is_opener = settings_line(block) is not None
     has_title_call = bool(SESSION_TITLE_RE.search(block.text))
@@ -1015,7 +1016,10 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
     # 的理由全写成「回归没跑完」，根因＝泳道自己重跑整份回归（那是 ff 六关④的活）外加起
     # 后台任务轮询等待。生成器已强制注入（`SUBTASK_NARROW_TEST_NOTE`），本形态守「正本改了
     # 而生成器没跟」与「起草人手抄漏了」两种漂移（同 F9/F10）。
-    if is_subtask_lane and not any(NARROW_TEST_LINE_RE.search(ln) for ln in block.lines):
+    has_test_contract = (any(all(token in ln for token in ('定向', '受影响项目完整 pytest', '失败保留证据'))
+                             for ln in block.lines) if _native_contract else
+                         any(NARROW_TEST_LINE_RE.search(ln) for ln in block.lines))
+    if is_subtask_lane and not has_test_contract:
         problems.append((
             "F14",
             "子任务泳道 opener 块缺**回归 narrow 尾句行**（同一行须同现「受影响测试类」、"
@@ -1389,7 +1393,7 @@ def _run(args) -> int:
         print(f"✗ {args.file}：opener 块自检命中 {len(findings)} 处：")
         for f in findings:
             print(f"  - {f.render()}")
-        print("\n标准写法见 `1-转型规划/0-全景路线图/专线opener模板库.md` §〇.00（唯一可照抄骨架）。")
+        print("\n标准写法见 `docs/codex/opener-contract.md`（Codex 现役合同）；旧模板仅作历史核对。")
         return 1
 
     files = _tracked_md_files()
@@ -1413,8 +1417,8 @@ def _run(args) -> int:
     if unk:
         print(f"\n⚠ 有 {len(unk)} 处的 git 历史取不到（浅克隆或未跟踪），H3 判不了，"
               "已保守计入「当前在用」之外单列——这不是「突然多了违规」，CI 请配 fetch-depth: 0：")
-        for rel in sorted({f.rel for f in unk}):
-            print(f"  - {rel}")
+        for finding in sorted(unk, key=lambda f: (f.rel, f.line, f.form)):
+            print(f"  - {finding.render()}")
 
     # 🔴 **明细分组直接遍历 `FORM_TITLE`，不再手维护第二份形态清单**（队列 §一 `#489`
     # 顺带修，2026-09-08 实测发现）：此处原本写死 `("F1","F2","F6","F7","C1","C2","C3","C5")`
@@ -1458,7 +1462,8 @@ def _run(args) -> int:
         return 0
     mode = "阻断" if args.enforce else "告警（不阻断）"
     print(f"\n✗ 当前在用件 {len(blocking)} 处待修【{mode}】。"
-          "标准写法见 `1-转型规划/0-全景路线图/专线opener模板库.md` §〇 补充三「标准写法」块（全文照抄）。")
+          f"统计包含已确认当前 {len(cur)} 处、历史来源未知 UNKNOWN {len(unk)} 处。"
+          "标准写法见 `docs/codex/opener-contract.md`（Codex 现役合同）；旧模板仅作历史核对。")
     return 1 if args.enforce else 0
 
 

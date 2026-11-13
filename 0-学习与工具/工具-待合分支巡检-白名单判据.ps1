@@ -46,6 +46,17 @@ function Get-FfWhitelistFileVerdict {
     if ($name -eq 'claude.md') {
         return [pscustomobject]@{ Path = $p; Allowed = $false; Rule = 'carrier'; Reason = '⑶ CLAUDE.md' }
     }
+    if ($name -in @('agents.md', 'codex-rules.md')) {
+        return [pscustomobject]@{ Path = $p; Allowed = $false; Rule = 'carrier'; Reason = "⑶ 原生纪律 $name" }
+    }
+    if ($lower -like '.codex/*' -or $lower -like '*/.codex/*' -or
+        $lower -like '.agents/*' -or $lower -like '*/.agents/*') {
+        return [pscustomobject]@{ Path = $p; Allowed = $false; Rule = 'carrier'; Reason = '⑶ 原生配置/技能载体' }
+    }
+    if ($lower -like 'docs/codex/rules/*' -or
+        $lower -in @('docs/codex/执行纪律.md', 'docs/codex/沟通纪律.md')) {
+        return [pscustomobject]@{ Path = $p; Allowed = $false; Rule = 'carrier'; Reason = '⑶ 原生规则正本' }
+    }
     if ($lower -like '.claude/*' -or $lower -like '*/.claude/*') {
         return [pscustomobject]@{ Path = $p; Allowed = $false; Rule = 'carrier'; Reason = '⑶ .claude/**' }
     }

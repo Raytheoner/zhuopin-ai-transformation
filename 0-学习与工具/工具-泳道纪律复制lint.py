@@ -47,7 +47,7 @@
 
 ## 覆盖哪些载体
 
-① `0-学习与工具/skills源码/zhuopin-lane-watch/**`
+① `.agents/skills/zhuopin-lane-watch/**`
 ② `0-学习与工具/工具-泳道看护状态机.py`
 ③ `openspec/changes/lane-watch-mode/**`
 ④ `openspec/changes/lane-watch-deploy-extension/**`（**本变更包自身**——它是最有动机
@@ -94,14 +94,14 @@ def _repo_root() -> Path:
 REPO_ROOT = _repo_root()
 
 #: 被指向方＝纪律唯一正本。判据词从这里现取，本脚本一个词都不自带。
-SOURCE_OF_TRUTH_REL = "0-学习与工具/skills源码/zhuopin-lan-closeout/SKILL.md"
+SOURCE_OF_TRUTH_REL = ".agents/skills/zhuopin-lan-closeout/SKILL.md"
 #: 正本里承载步骤序列的小节标题（只锚标题、不锚行号——行号会漂）。
 SOURCE_SECTION_TITLE = "执行步骤"
 
 #: 受守护载体（glob，仓库根相对；`git ls-files` 的结果按此过滤）。
 GUARDED_GLOBS = (
-    "0-学习与工具/skills源码/zhuopin-lane-watch/*",
-    "0-学习与工具/skills源码/zhuopin-lane-watch/**/*",
+    ".agents/skills/zhuopin-lane-watch/*",
+    ".agents/skills/zhuopin-lane-watch/**/*",
     "0-学习与工具/工具-泳道看护状态机.py",
     "openspec/changes/lane-watch-mode/*",
     "openspec/changes/lane-watch-mode/**/*",
@@ -241,7 +241,7 @@ def check_file(rel: str, text: str, markers: list, threshold: int) -> list:
 
 def guarded_files() -> list:
     out = subprocess.run(
-        ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        ["git", "-c", "core.quotepath=false", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=True,
     )
     rels = [line.strip() for line in out.stdout.splitlines() if line.strip()]
     picked = []

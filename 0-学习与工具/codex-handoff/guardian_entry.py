@@ -297,7 +297,11 @@ def _publish_plan(record: Path, plan: dict) -> None:
             json.dump(plan, stream, ensure_ascii=False, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
-        os.link(temp, record)
+        if os.name == 'nt':
+            # os.rename on Windows refuses an existing destination atomically.
+            os.rename(temp, record)
+        else:
+            os.link(temp, record)
     finally:
         temp.unlink(missing_ok=True)
 

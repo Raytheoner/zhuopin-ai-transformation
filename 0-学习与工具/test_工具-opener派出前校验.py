@@ -361,6 +361,8 @@ V2_PLAN = "\n".join([
 ])
 
 
+# Legacy execution expectations are retained byte-for-byte in docs/codex/retired-evidence/OpenerRunnerHookTests-original.py.txt.
+# Active native execution is verified by test_native_preflight_integration.py; retired cases are not counted as passed.
 @pytest.mark.skipif(not HAS_PWSH, reason="需要 Windows ＋ PowerShell 7（pwsh）")
 class RunnerHookTests(unittest.TestCase):
     def setUp(self):
@@ -396,43 +398,9 @@ class RunnerHookTests(unittest.TestCase):
         return dirs[0]
 
     # ---- v1 ----
-    def test_v1_DryRun_显示跳过标记_不起session(self):
-        r = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-DryRun"])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertRegex(r.stdout, r"A1 \| Cowork \| ⏭ SKIPPED（#368 archived@跨桌任务队列-归档-202608\.md:\d+）")
-        self.assertIn("将按序执行 2 个 opener：A2(CC) → A3(CC)　｜ SKIPPED 1 个：A1", r.stdout)
-        self.assertFalse((self.root / "reports").exists())
 
-    def test_1_12_v1_跳过不起claude_不判NO_SENTINEL_不break_退出码0(self):
-        r = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-Yes"])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        log_dir = self._v1_log_dir()
-        self.assertFalse((log_dir / "A1.log").exists(), "被跳过的 A1 不得起 claude")
-        self.assertTrue((log_dir / "A2.log").exists())
-        self.assertTrue((log_dir / "A3.log").exists(), "A1 跳过后 A2/A3 须照常执行（不 break）")
-        # 收尾提示的静态文案本身含「NO-SENTINEL」四字，只断言汇总表里没有任何一行被判成它。
-        self.assertNotRegex(r.stdout, re.compile(r"^A\d+\s+\S+\s+NO-SENTINEL", re.MULTILINE))
-        self.assertNotIn("停下（fail-loud", r.stdout)
-        self.assertRegex(r.stdout, r"A1\s+Cowork\s+SKIPPED")
-        skipped = (log_dir / "skipped.txt").read_text(encoding="utf-8-sig")
-        self.assertIn("[skipped] A1 | #368 archived@跨桌任务队列-归档-202608.md", skipped)
 
-    def test_v1_Force_全部照派_日志留痕(self):
-        r = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-Yes", "-Force"])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue((self._v1_log_dir() / "A1.log").exists())
-        self.assertIn("[Force] 归档校验已被绕过", r.stdout)
 
-    def test_4_5_v1_停下时续跑提示是整行可粘贴命令(self):
-        stub = self.root / "stub" / "claude.cmd"
-        stub.write_text("@echo off\r\necho 没有哨兵\r\nexit /b 0\r\n", encoding="utf-8")
-        r = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-Yes", "-FullAuto"])
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("NO-SENTINEL", r.stdout)
-        m = re.search(r"^\s*(powershell -ExecutionPolicy Bypass -Command \"& '.*?' -Plan '.*?' -Only A2,A3 -Yes -FullAuto\")\s*$",
-                      r.stdout, re.MULTILINE)
-        self.assertIsNotNone(m, "续跑提示须是整行 -Command 形态：\n" + r.stdout)
-        self.assertIn(self.v1.name, m.group(1))  # 临时目录会以 8.3 短名出现，只比对文件名
 
     # ---- v2 ----
     def test_v2_DryRun_泳道清单只含实际将派出的成员(self):
@@ -444,73 +412,11 @@ class RunnerHookTests(unittest.TestCase):
         self.assertNotIn("◆ lane-skip", r.stdout)
         self.assertEqual((self.log_dir / "exit.txt").read_text(encoding="utf-8").strip(), "0")
 
-    def test_1_12_5_2_v2_整泳道跳空不StartJob_泳道内跳过不停泳道_SKIPPED进summary(self):
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertNotIn("泳道「lane-skip」启动", r.stdout, "整泳道跳空不得 Start-Job")
-        self.assertFalse((self.log_dir / "lane-skip-A1.log").exists())
-        self.assertTrue((self.log_dir / "lane-run-A2.log").exists())
-        self.assertFalse((self.log_dir / "lane-run-A3.log").exists(), "泳道内被跳过的 A3 不得起 claude")
-        self.assertTrue((self.log_dir / "lane-run-A4.log").exists(), "A3 跳过后 A4 须照常执行（不停泳道）")
-        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8")
-        self.assertIn("SKIPPED=2", summary)
-        self.assertRegex(summary, r"\[skipped\] A1 \| #368 archived@跨桌任务队列-归档-202608\.md:\d+")
-        self.assertRegex(summary, r"\[skipped\] A3 \| #395 live-done@跨桌任务队列-机制环境\.md:\d+")
-        self.assertIn("EXIT=0", summary)
-        self.assertNotIn("NO-SENTINEL", summary)
-        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8"))
-        by = {row["Id"]: row for row in rows}
-        self.assertEqual(by["A1"]["Status"], "SKIPPED")
-        self.assertEqual(by["A3"]["Status"], "SKIPPED")
-        self.assertEqual(by["A2"]["Status"], "OK")
-        self.assertEqual(by["A4"]["Status"], "OK")
 
-    def test_5_4_v2_退出码不受跳过影响_有FAIL仍为1(self):
-        (self.root / "stub" / "claude.cmd").write_text("@echo off\r\necho x\r\nexit /b 3\r\n", encoding="utf-8")
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)])
-        self.assertEqual(r.returncode, 1)
-        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8")
-        self.assertIn("SKIPPED=2", summary)
-        self.assertIn("FAIL(3)", summary)
 
-    def test_v2_全部跳过_无泳道_退出码0_summary仍写(self):
-        only = ["-Only", "A1,A3"]
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir), *only])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("全部 opener 已 SKIPPED，无泳道可起", r.stdout)
-        self.assertNotIn("启动", r.stdout)
-        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8")
-        self.assertIn("SKIPPED=2", summary)
-        self.assertIn("EXIT=0", summary)
 
-    def test_v2_Force_全部照派_Detach子进程也带Force(self):
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir), "-Force"])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue((self.log_dir / "lane-skip-A1.log").exists())
-        self.assertIn("[Force] 归档校验已被绕过", r.stdout)
-        src = self.v2.read_text(encoding="utf-8")
-        self.assertIn("if ($Force) { $childArgs += '-Force' }", src)
 
-    def test_3_4_helper缺失_v1_v2_均fail_open_全部照派(self):
-        (self.root / "0-学习与工具" / HELPER.name).unlink()
-        r1 = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-Yes"])
-        self.assertEqual(r1.returncode, 0, r1.stdout + r1.stderr)
-        self.assertIn("helper 不存在", r1.stdout)
-        self.assertTrue((self._v1_log_dir() / "A1.log").exists(), "helper 缺失时 A1 须照常派出")
-        r2 = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)])
-        self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
-        self.assertTrue((self.log_dir / "lane-skip-A1.log").exists())
-        self.assertIn("SKIPPED=0", (self.log_dir / "summary.txt").read_text(encoding="utf-8"))
 
-    def test_变异守卫_抽掉v2挂点_已归档的A1会被照常派出(self):
-        """🔴 恒真检验：把 v2 的 Set-OpenerDispatchDecision 调用换成空操作，A1 须回到「照常派出」。"""
-        src = self.v2.read_text(encoding="utf-8")
-        needle = "    $openers = @(Set-OpenerDispatchDecision -Openers @($openers) -RepoRoot $RepoRoot -Force:$Force)"
-        self.assertIn(needle, src)
-        self.v2.write_text(src.replace(needle, "    $openers = @($openers | ForEach-Object { $_ | Add-Member -NotePropertyName Skip -NotePropertyValue $false -PassThru })"), encoding="utf-8")
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue((self.log_dir / "lane-skip-A1.log").exists(), "挂点抽掉后 A1 没被派出 ⇒ 正例是恒真的")
 
 
 if __name__ == "__main__":

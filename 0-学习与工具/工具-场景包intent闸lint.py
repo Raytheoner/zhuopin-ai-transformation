@@ -3,7 +3,7 @@
 ## 这道闸守什么
 
 Shao Peishen 2026-09-06 拍板 ③(a)：**新场景走 `/opsx:propose` 之前，场景目录必须已有
-`intent.md` 且 frontmatter `status: 已确认`**（口径正本＝`.claude/rules/场景建造与合规.md`
+`intent.md` 且 frontmatter `status: 已确认`**（口径正本＝`docs/codex/rules/场景建造与合规.md`
 §二 那条 🔴，承 `1-转型规划/0-全景路线图/端到端构建workflow优化-方案-2026-09-06.md` §四 W1）。
 本脚本就是那条口径的机器守。
 
@@ -154,7 +154,7 @@ _FIX_HINT = (
     "出路：先跑 skill `zhuopin-requirement-grill` 做需求 grill，产出落 {expected}，"
     "三节固定（§一 M2 自查事实／§二 已定＝design Decisions／§三 待专员＝判例包待办），"
     "frontmatter 由 Shao Peishen 确认后写 `status: 已确认`；口径正本＝"
-    "`.claude/rules/场景建造与合规.md` §二。"
+    "`docs/codex/rules/场景建造与合规.md` §二。"
 )
 
 
@@ -196,7 +196,10 @@ def build_scene_index(root: Path) -> dict[str, Scene]:
             if not m:
                 continue
             code = m.group(1).upper()
-            claude_md = scene_dir / "CLAUDE.md"
+            native = scene_dir / "CODEX-RULES.md"
+            claude_md = native
+            if (scene_dir / "AGENTS.md").exists() and not native.is_file():
+                raise FileNotFoundError(f"Codex 规则正本缺失：{native}")
             has_deploy = False
             if claude_md.is_file():
                 has_deploy = bool(DEPLOY_SECTION_RE.search(

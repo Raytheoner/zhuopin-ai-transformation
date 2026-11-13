@@ -149,6 +149,11 @@ if _AIBOT_PATH.is_dir() and str(_AIBOT_PATH) not in sys.path:
 from aibot_service import readme_table  # noqa: E402
 from aibot_service.readme_table import (  # noqa: E402
     MAIN_TABLE_SECTION,
+    SUPPLEMENT_TABLE_SECTION,
+    SUPPLEMENT_CARRY_NUMBER_COLUMN,
+    SUPPLEMENT_REPLY_REQUIRED_COLUMN,
+    SUPPLEMENT_REPLY_REQUIRED_YES,
+    SUPPLEMENT_REPLY_REQUIRED_NO,
     ReadmeTableError,
     column_index,
     iter_rows,
@@ -704,6 +709,130 @@ def _catches_registry_errors(func):
 
 
 # ---------------------------------------------------------------------------
+# append-supplement — 沿用主表编号，不取新号、不改变主表在途状态
+# ---------------------------------------------------------------------------
+
+def _supplement_plan(text: str, args: argparse.Namespace):
+    parsed = followup_gate.parse_letter_number(args.number)
+    if parsed is None or args.number != f"{parsed[0]}#{parsed[1]}":
+        raise RegistryError("--number 须为原信规范编号，如 采购部#27；补件不取新号")
+    parents = []
+    for row in _parse_rows(text):
+        idx = column_index(row.header_cells, "编号")
+        if idx is not None and len(row.cells) > idx and followup_gate.parse_letter_number(row.cells[idx]) == parsed:
+            parents.append(row)
+    if len(parents) != 1:
+        raise RegistryError("承接编号须唯一存在于现役主表；不新建编号、不覆盖或猜测原信")
+    parent = parents[0]
+    _assert_row_column_count(parent.cells, parent.header_cells, args.number)
+    number_idx = column_index(parent.header_cells, "编号")
+    recipient_idx = column_index(parent.header_cells, "收信人")
+    if recipient_idx is None:
+        raise RegistryError("主表缺收信人列")
+    parent_status = parent.cells[parent.status_col_index]
+    if (followup_gate.number_cell_claims_unsent(parent.cells[number_idx])
+            or followup_gate.is_not_yet_sent(parent_status)
+            or followup_gate.classify_status(parent_status) == "unknown"
+            or followup_gate.normalize_status(parent_status).startswith("❌ 已作废")):
+        raise RegistryError("原信尚未发送、已作废或状态待核；不能作为补件承接编号")
+    recipient = parent.cells[recipient_idx]
+    _assert_recipient_cell(recipient, parsed[0])
+    topic = args.topic.strip()
+    _assert_field_lengths(topic, "")
+    if not topic or any(c in topic for c in "|\r\n"):
+        raise RegistryError("主要事项须非空且不得含管道符或换行")
+    try:
+        if date.fromisoformat(args.date).isoformat() != args.date:
+            raise ValueError("非规范日期")
+    except ValueError as exc:
+        raise RegistryError("--date 须为有效 YYYY-MM-DD") from exc
+    if args.reply_required not in (SUPPLEMENT_REPLY_REQUIRED_YES, SUPPLEMENT_REPLY_REQUIRED_NO):
+        raise RegistryError("--reply-required 必须显式为 是 或 否，不从正文推断")
+    decision_value = _assert_decision_points(args.letter_path)
+    letter = Path(args.letter_path)
+    letter = letter if letter.is_absolute() else REPO_ROOT / letter
+    fields, _ = letter_fm.parse_frontmatter(letter.read_text(encoding="utf-8"))
+    bindings = [fields[k].strip() for k in ("承接编号", "编号") if k in fields]
+    if any(value != args.number for value in bindings):
+        raise RegistryError("补件已有 frontmatter 承接编号/编号与 --number 不一致")
+    # 不新增业务材料字段要求；已有绑定字段不得与主表冲突。
+    if "收信人" in fields:
+        supplied = fields["收信人"].strip()
+        identity = followup_gate.recipient_identity(recipient)
+        if supplied != identity[1] and followup_gate.recipient_identity(supplied) != identity:
+            raise RegistryError("补件已有 frontmatter 收信人与原信不一致")
+
+    try:
+        lines = text.splitlines()
+        start, end = readme_table.section_span(lines, SUPPLEMENT_TABLE_SECTION)
+        header_line = next(i for i in range(start, end)
+                           if lines[i].strip().startswith("|") and "发送状态" in lines[i])
+        header = readme_table._split_row(lines[header_line])
+        columns = (SUPPLEMENT_CARRY_NUMBER_COLUMN, "日期", "收信人", "主要事项",
+                   SUPPLEMENT_REPLY_REQUIRED_COLUMN, "发送状态")
+        indices = {name: column_index(header, name) for name in columns}
+        if len(header) != len(columns) or any(idx is None for idx in indices.values()) or len(set(indices.values())) != len(columns):
+            raise RegistryError("补件表列结构不符合现行六列合同；不回退到主表")
+        separator = readme_table._split_row(lines[header_line + 1])
+        if len(separator) != len(header) or not all(re.fullmatch(r":?-+:?", c) for c in separator):
+            raise RegistryError("补件表分隔行损坏；拒绝写入")
+        rows = iter_rows(text, SUPPLEMENT_TABLE_SECTION)
+    except (ReadmeTableError, StopIteration, IndexError) as exc:
+        raise RegistryError(f"补件表缺失或结构不可用：{exc}；不回退到主表") from exc
+    for row in rows:
+        _assert_row_column_count(row.cells, header, "既有补件")
+        if row.cells[indices["主要事项"]] == topic:
+            raise RegistryError("该主要事项已有补件登记；请回读原行，不重复追加")
+    values = (args.number, args.date, recipient, topic, args.reply_required, DRAFT_STATUS)
+    cells = [""] * len(header)
+    for name, value in zip(columns, values):
+        cells[indices[name]] = value
+    _assert_row_column_count(cells, header, args.number)
+    insert_at = rows[-1].line_index + 1 if rows else header_line + 2
+    return lines, insert_at, cells, indices, decision_value
+
+
+@_catches_registry_errors
+def cmd_append_supplement(args: argparse.Namespace) -> int:
+    text = _readme_path().read_text(encoding="utf-8")
+    _, _, cells, _, decision = _supplement_plan(text, args)
+    print(f"[PLAN] append-supplement：{args.number}；不占新号；状态={DRAFT_STATUS}；{DECISION_FIELD}={decision}")
+    if args.dry_run:
+        print("[DRY-RUN] 未取锁、未写入；原信及补件均未审批、未发送。")
+        return 0
+    if not _run_lock("acquire", args.who, note=f"登记补件：{args.number}"):
+        raise LockAcquireFailedError("补件登记未取得共享锁，未写入")
+    writing = False
+    try:
+        # 锁前的预检不能作为写入快照：拿锁后重读并重新校验，保留并发作者更新。
+        current = _readme_path().read_text(encoding="utf-8")
+        lines, insert_at, cells, indices, _ = _supplement_plan(current, args)
+        lines.insert(insert_at, readme_table._join_row(cells))
+        new_text = "\n".join(lines) + ("\n" if current.endswith("\n") else "")
+        def locate(value):
+            return next((r for r in iter_rows(value, SUPPLEMENT_TABLE_SECTION)
+                         if r.cells[indices[SUPPLEMENT_CARRY_NUMBER_COLUMN]] == args.number
+                         and r.cells[indices["主要事项"]] == cells[indices["主要事项"]]), None)
+        writing = True
+        _write_readback(new_text, cells, locate)
+    except (ReadbackMismatchError, OSError) as exc:
+        if not writing:
+            _run_lock("release", args.who)
+        print(f"[READBACK-FAILED] {exc}；写入一旦开始即保留锁及现场，不报告成功。", file=sys.stderr)
+        return 1
+    except RegistryError:
+        if not writing:
+            _run_lock("release", args.who)
+        raise
+    if not _run_lock("release", args.who):
+        print("[WRITTEN-LOCK-HELD] 补件已写入并回读，但 release 被拒绝，不能视为完成。", file=sys.stderr)
+        return 1
+    print("[READBACK] " + json.dumps({name: cells[idx] for name, idx in indices.items()}, ensure_ascii=False))
+    print(f"[OK] 已追加补件：{args.number}；后续审批及发送须显式 --table 补件；未代批、未发送。")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # append
 # ---------------------------------------------------------------------------
 
@@ -893,6 +1022,7 @@ def _append_verified_revision_log(path: Path, record: dict) -> None:
 
 @_catches_registry_errors
 def cmd_revise(args: argparse.Namespace) -> int:
+    permitted = {"财务部#20": ("财务部", "唐燕萍"), "采购部#27": ("采购部", "姚祖怡")}
     _assert_field_lengths(args.topic, "")
     if not args.quote.strip():
         raise RegistryError("--quote 必须包含明确修订授权原话")
@@ -918,8 +1048,8 @@ def cmd_revise(args: argparse.Namespace) -> int:
     if fm is None:
         raise RegistryError("新版信件缺少 frontmatter")
     fields, _ = fm
-    if fields.get("编号") != args.number or fields.get("收信人", "").find("唐燕萍") < 0:
-        raise RegistryError("新版信件 frontmatter 的编号/收信人必须绑定财务部#20与唐燕萍")
+    if fields.get("编号") != args.number or args.number not in permitted or permitted[args.number][1] not in fields.get("收信人", ""):
+        raise RegistryError("新版信件 frontmatter 的编号/收信人必须绑定已授权的限定映射")
     try:
         new_date = date.fromisoformat(args.date)
     except ValueError as exc:
@@ -951,12 +1081,12 @@ def cmd_revise(args: argparse.Namespace) -> int:
     recipient_col = column_index(header, "收信人")
     recipient = match.cells[recipient_col] if recipient_col is not None else ""
     department, name = split_department_and_name(recipient)
-    if department != "财务部" or name != "唐燕萍":
-        raise RegistryError("修订仅允许财务部#20原收信人行")
-    if args.number != "财务部#20":
-        raise RegistryError("当前修订授权仅适用于财务部#20")
+    if permitted.get(args.number) != (department, name):
+        raise RegistryError("修订只允许已授权编号对应的原收信人行")
+    if args.number not in permitted:
+        raise RegistryError("当前编号不在限定修订映射内")
     status = match.cells[status_col]
-    if not (status.startswith("✅ 已推送") or status == DRAFT_STATUS):
+    if not (status.startswith("✅ 已推送") or status == DRAFT_STATUS or (args.number == "采购部#27" and status.startswith("📨 回件已到，待拆件"))):
         raise RegistryError(f"仅允许从已推送或精确待审状态修订，当前为：{status}")
     old_cells = match.cells.copy()
     old_date = date.fromisoformat(old_cells[1])
@@ -1046,6 +1176,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_append.add_argument("--dry-run", action="store_true")
     p_append.set_defaults(func=cmd_append)
+
+    p_supplement = sub.add_parser("append-supplement", help="补件登记：承接原编号，不占新号，恒为待审草稿态")
+    p_supplement.add_argument("--who", required=True)
+    p_supplement.add_argument("--number", required=True, help="原信编号，如 采购部#27；须已在主表且已发送")
+    p_supplement.add_argument("--date", required=True, help="YYYY-MM-DD")
+    p_supplement.add_argument("--topic", required=True, help="补件主要事项（≤600 B；须能唯一定位）")
+    p_supplement.add_argument("--letter-path", required=True, help="补件 md；沿用现有决策点校验；已有编号/收信人字段不得冲突")
+    p_supplement.add_argument("--reply-required", required=True, choices=(SUPPLEMENT_REPLY_REQUIRED_YES, SUPPLEMENT_REPLY_REQUIRED_NO))
+    p_supplement.add_argument("--dry-run", action="store_true")
+    p_supplement.set_defaults(func=cmd_append_supplement)
 
     p_status = sub.add_parser("set-status", help="按编号改写发送状态列")
     p_status.add_argument("--who", required=True)

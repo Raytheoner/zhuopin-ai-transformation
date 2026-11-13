@@ -133,9 +133,8 @@ def test_model_failure_is_fail_stop(tmp_path,monkeypatch):
 def test_real_legacy_lock_guard_positive_negative(tmp_path,monkeypatch):
     import os, subprocess
     from datetime import datetime, timezone
-    source=Path("C:/Dev/zhuopin-ai/0-学习与工具/hooks")
-    if not source.exists():
-        pytest.skip("source hooks not present on this machine")
+    source=BASE/"guards"
+    assert source.is_dir(), "native guard fixture missing"
     target=tmp_path/"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"
     target.parent.mkdir(parents=True)
     env=dict(os.environ,ZHUOPIN_SENTINEL_REPO_ROOT=str(tmp_path),PYTHONUTF8="1")

@@ -568,7 +568,7 @@ def render_markdown(agg: Aggregate, args, root: Path) -> str:
 def _find_repo_root_by_markers(start: Path) -> Path:
     """保底：跑不了 git 时按目录标记向上探测（原逻辑，仅作兜底）。"""
     for p in [start, *start.parents]:
-        if (p / "CLAUDE.md").exists() and (p / "0-学习与工具").is_dir():
+        if (p / "AGENTS.md").exists() and (p / "0-学习与工具").is_dir():
             return p
     return start
 

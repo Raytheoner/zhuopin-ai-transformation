@@ -1,0 +1,1200 @@
+"""Codex 开场生成器：只输出原生环境，旧 CC/Cowork 标签直接拒绝。
+
+保留字段验证、参数不丢失、自引用检查、共享占号锁和回读约定。
+开场按根 AGENTS.md 路由，不读取旧正本；不启动模型、派生、Guardian、
+headless 或业务消费者，不默认提交、合入、部署或发送。
+现行格式合同见 docs/codex/opener-contract.md；旧正文与证据在
+docs/codex/retired-evidence/工具-opener生成.py.txt 保留，仅供历史核对。
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import re
+import string
+import subprocess
+import sys
+import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+#: 骨架正本（唯一可照抄物，2026-09-04 由模板库 §〇.00 拆出独立成件）。
+SKELETON_FILE = REPO_ROOT / "docs/codex/opener-contract.md"
+#: `check_block` 判据实现的物理落点（复用，不第二次实现）。
+LINT_SCRIPT = REPO_ROOT / "0-学习与工具" / "工具-opener块lint.py"
+
+#: 子任务例外句——那一行的一部分，不得删、不得简写（骨架「四处最常丢的结构」表）。
+SUBTASK_EXCEPTION = (
+    "🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行——子任务没有自己的 session，"
+    '"self" 会解析到父 session、把调度你的那条会话改名（2026-08-28 实撞）。'
+)
+
+#: 「环境×变体」→ 该组合的成品**真的会拼进去**的可选正文参数（队列 §一 `#487` 子项／
+#: `OP-0906-M`，Shao Peishen 2026-09-06 裁 (c) 甲＋精简版乙）。不在名单里的参数一旦
+#: 传入即 **fail-loud 报错退出**，不静默丢弃。
+#:
+#: 🔴 **为什么是白名单而不是黑名单**：黑名单要求「每加一个变体就记得去登记它不支持什么」，
+#: 忘了登记 ⇒ 回到静默丢弃（fail-open，看不见）。白名单忘了登记 ⇒ 该组合所有可选正文参数
+#: 一律被拒（fail-closed，噪音大但当场看得见），下一个人两分钟就能补上。
+#: **判据：一个参数被接受却不生效，比它被拒绝更危险。**
+#:
+#: 🔴 **本表登记的是「拼装函数的事实」，不是「骨架应该长什么样」**——改了
+#: `generate_opener` 的任一 `body_lines` 分支，必须同步改这里，否则表本身就成了第二份
+#: 会漂移的判据。当前事实（2026-09-06 逐行核过 `generate_opener`，含本批方案甲改动）：
+#:   - CC/standard、CC/subtask_lane：拼 do_block ＋ dont_block ⇒ 两个都支持；
+#:   - Cowork/standard：方案甲 2026-09-06 补段后同样拼 do_block ＋ dont_block ⇒ 两个都支持
+#:     （🔴 **此前只拼 do_block，是本行实撞的那个洞；甲已让 `--dont` 生效，故本守卫
+#:     对 Cowork 自动失效——不要再在这里拦 Cowork，会与甲互相打架**）；
+#:   - CC/guardian：§三bis 看护者开场词固定四行 ＋ P4 口径，**do/dont 都不拼**，且不该补段
+#:     （看护者的任务正本在看护件全文里）⇒ 唯一仍需 fail-loud 的组合。
+BODY_PARAM_SUPPORT = {
+    ("CC", "standard"): {"do_items", "dont_items"},
+    ("CC", "subtask_lane"): {"do_items", "dont_items"},
+    ("CC", "guardian"): set(),
+    ("Cowork", "standard"): {"do_items", "dont_items"},
+    # 队列 §一 `#489` 步骤 5：引用版正文**在派单件里**，本变体不拼任何正文段 ⇒
+    # `--do`／`--dont` 传进来一律 fail-loud（同 guardian 的处置，理由见下方替代建议）。
+    ("CC", "reference"): set(),
+    ("Cowork", "reference"): set(),
+}
+
+#: 参数名 → CLI 旗标，用于报错信息里直接点名调用方敲的那个旗标。
+_BODY_PARAM_FLAG = {"do_items": "--do", "dont_items": "--dont"}
+
+#: `reference` 变体被拒时的替代承接建议（CC／Cowork 同文）。
+_REFERENCE_ALTERNATIVE_TEXT = (
+    "引用版（`--variant reference`）只出四行：标题行 ＋ `【设置】` 六字段 ＋ "
+    "`set_session_title` 行（Cowork 无此行）＋ 一句「读 <派单件> 全文」。"
+    "**正文（做什么／不做什么）在派单件里，不在开场词里**——这正是引用版存在的理由："
+    "把 >500 字的正文从聊天里挪进可版本化、可 lint、可回溯的文件。"
+    "要加做什么／不做什么请写进 `--ref-file` 指向的那份派单件；"
+    "确需把正文写进开场词请改用 `--variant standard`。"
+)
+
+#: 各组合被拒时给的**替代承接建议**——只报错不给出路会让调用方改去写更糟的形态
+#: （把硬约束塞进 `--do` 的某一条尾巴，读者当成待办而不是禁令）。
+_BODY_PARAM_ALTERNATIVE = {
+    ("CC", "guardian"): (
+        "§三bis 看护者开场词是固定形态（四行 ＋ P4 扇出口径），正文不拼 `做什么／不做什么` "
+        "——看护者的任务正本在**看护件全文**里，`--input-pointer` 已指向它。"
+        "要给看护者加约束请改看护件，不要走本工具的正文参数。"
+    ),
+    ("CC", "reference"): _REFERENCE_ALTERNATIVE_TEXT,
+    ("Cowork", "reference"): _REFERENCE_ALTERNATIVE_TEXT,
+}
+
+VALID_ENVS = ("CC", "Cowork", "Codex")
+VALID_TASK_CLASSES = ("A", "B")
+#: 队列 #581 ⑷：可选字段，CLI 别名（不写具体模型 ID）。不传即 `sonnet`——
+#: 无头/看护/巡检/批量跑测默认走它，design 起草／需求 grill／ASIL 合规建造显式传 opus。
+VALID_MODELS = ("inherit", "routine", "design")
+#: 四种骨架变体（模块文档「variant」节）；`subtask_lane`／`guardian` 只对 CC 有意义，
+#: `reference`（队列 §一 `#489` 步骤 5／`#284` 退休制阈值触发）CC 与 Cowork 皆可。
+VALID_VARIANTS = ("standard", "subtask_lane", "guardian", "reference")
+
+#: `reference` 变体：CC 与 Cowork 都成立（引用版就是「正文在派单件里」的那种形态，
+#: 两桌都要用），故不受 `_validate_spec` 里「非 standard 只对 CC 有意义」那条约束。
+ENV_AGNOSTIC_VARIANTS = frozenset({"standard", "reference"})
+
+#: 队列 #461 明文列出的十个必填字段；任一缺失即报错退出、不出件。
+REQUIRED_FIELDS = (
+    "op_id", "env", "short_name", "branch", "worktree", "workspace",
+    "session", "line", "input_pointer", "task_class",
+)
+
+OP_ID_RE = re.compile(r"^OP-\d{4}-[A-Za-z0-9]+$")
+#: worktree 字段必须以勾选符号开头，不是裸名字（骨架「四处最常丢的结构」表第一条）。
+CHECKBOX_RE = re.compile(r"^[☑☐]")
+#: 🔴 `CHECKBOX_RE` 只验起首符号、不验括号里有没有名字——2026-09-20 一批七条泳道
+#: 因 `worktree：☑ 建`（有符号、无括号名）全判 `FAIL(worktree-name)`、白起一次。骨架表
+#: 第一条明写「☑ 后括号写 worktree 名与是否自删」，故只对 ☑ 收紧：符号后须紧跟
+#: 非空括号（全角／半角皆收）。☐ 维持原样不收紧——它的括号内容是「为什么不建」，
+#: 现行判据已够用，本条不扩大打击面（队列 §一 `#627` B 面）。
+CHECKBOX_CHECKED_NAME_RE = re.compile(r"^☑[（(]\S")
+#: CC 侧分支短横线名（骨架 `<短横线名>` 占位符的字面约束）。
+BRANCH_SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+#: 🔴 **`--branch` 只收「前缀之后」那一截**（队列 §一 `#487` 2026-09-09 追记⑵）：
+#: `_settings_line` 自己会拼 `codex/op{MMDD}{X}-`，调用方再把 OP 短号写进 slug
+#: 就成了 `codex/op0909b-op0909b-docx-481`。**这条原本不是 bug 是用法**——但
+#: `--help` 只写「短横线 slug」、没写「勿含 OP 短号」，按直觉传全名必踩，
+#: 且成品是一个**看起来正常的分支名、不报错**，与本行既有子项同族（错得无声）。
+#: 故按「拒含 `opNNNN[a-z]` 形态前缀的 slug」显式化。`\d{4}` 要四个真数字 ⇒
+#: `opener-gen`／`ops-fix` 这类真实 slug 不会误伤。
+BRANCH_SLUG_OP_PREFIX_RE = re.compile(r"^op\d{4}[a-z]?(?=-|$)")
+#: 路径纪律：仓库根相对路径，不接受本机绝对路径（根 CLAUDE.md §5「路径写仓库根相对路径」）。
+WINDOWS_ABS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+# ── P7① 撞号查重（模块文档同节）────────────────────────────────────────────
+#: 全称形态：`OP-0905-A`。捕获 `(mmdd, suffix)`。
+USED_ID_FULL_RE = re.compile(r"OP-(\d{4})-([A-Za-z0-9]+)")
+#: 短形形态：只认 `[Win]MMDDX-` 这个锚点（骨架「短形 MMDDX 只用于 session 名」），
+#: 不做全文裸子串扫描——避免把正文里纯数字巧合误判为已用编号。
+USED_ID_SHORT_RE = re.compile(r"\[Win\](\d{4})([A-Za-z0-9]+)-")
+
+# ── 取号即声明（队列 §一 `#549` ⑶／`#531` 子项，2026-09-10）──────────────────
+#: 占位台账：`<主工作区>/reports/op-id-claims.jsonl`，一行一条 JSON。🔴 **按
+#: `git rev-parse --git-common-dir` 定位主工作区**（同 `工具-共享文档编辑锁.py`
+#: `_resolve_repo_root` 手法）——Cowork 在主 checkout、CC 泳道各在自己的
+#: worktree 里跑本工具，若按 `REPO_ROOT`（本文件所在 worktree）各算各的，就会
+#: 写出 N 份互相看不见的台账，「不可见的占号台账等于没占」（`opener-id-claim-
+#: semantics` design 对 `reports/` 变体的原话；`#504` 心跳件同坑）。
+CLAIMS_FILE_REL = "reports/op-id-claims.jsonl"
+#: 测试覆盖点：不为 `None` 时直接用它，不再走 git 解析（同 `REPO_ROOT` 的 monkeypatch 手法）。
+CLAIMS_FILE: Path | None = None
+#: 占位时效（分钟）。**Shao Peishen 2026-09-10 答 `1a` 定为 120 分钟**（追认建造方 `OP-0910-R`
+#: 初值；措辞由 `OP-0910-S` 同日清掉「待答」）——依据＝根 `AGENTS.md` §5 记的 `OP-0909-P`
+#: 实证「派单件起草到复核 80 分钟」，取其 1.5 倍留余量；过短 ⇒ 起草期未结束
+#: 号就被别人取走（等于没建）；过长 ⇒ 未派出的号挡别人两小时以上（当日 26 个
+#: 字母不够用时才成问题，2026-09-10 实测当日用到 `R`）。改这个数只改这里。
+CLAIM_TTL_MINUTES = 120
+#: 台账写侧互斥锁的陈旧阈值／等待上限（秒）。写一次只有毫秒级，30 s 未释放即视为
+#: 持锁进程已死；等 10 s 仍拿不到锁 ⇒ **fail-closed 不出件**（不能验证占位就不算取到号）。
+CLAIMS_LOCK_STALE_SECONDS = 30
+CLAIMS_LOCK_TIMEOUT_SECONDS = 10
+
+#: P4 默认口径（构建环境瘦身第三轮方案 P4；队列 §一 `#487`）——生成子任务泳道／
+#: 看护者开场词时无条件写入，不由调用方每次手打、防止漏写。
+SUBTASK_PARALLEL_NOTE = '本件仅供用户明确授权的派生任务；显式 gpt-6-luna/high，禁止进一步自动派生。'
+#: 🔴 措辞正本（队列 §一 `#553` ⑵，2026-09-11 更正）：此前写「主仓 ff 由 sweep 收尾段
+#: 或看护者收工时串行做」，而 sweep 从不合任何泳道分支（对其全文 grep `codex/op`／
+#: `泳道分支` 零命中）——**留给 sweep ＝ 留给没有人**。真做 ff 的只有两处：看护者收工
+#: 串行，或 `工具-待合分支巡检.ps1` 按『已授权待合』登记处机器做。
+SUBTASK_PUSH_NOTE = '不自动 commit/push 或合入；沿用任务既有范围与授权，ff 仅具体获准时 ff-only。'
+#: 心跳约定（队列 §一 `#565`，2026-09-12）——`工具-泳道看护状态机.py summary`／
+#: `check-heartbeat` 看门狗完全靠心跳文件判断泳道死活；子任务泳道 opener 此前
+#: 一个字没提心跳（心跳约定只写在看护件 §一「硬边界继承」——**看护者自己读**的
+#: 那一段——与 SKILL.md 步骤 4 里，两处都不是子任务会读到的 opener 正文）。
+#: 🔴 **实撞**：看护批 `B-0911_机制收口` 5 条泳道全部做完、五条分支全部 ff 进
+#: master，`summary --batch B-0911_机制收口` 却报「本批终态泳道 0 条」，
+#: `reports/lane-heartbeat/` 两小时窗口零新文件——五条泳道一条心跳都没写。
+#: 🔴 **同批还实测出第二个坑**：本机现取 `summary` 命中 8 条历史泳道心跳「已写但
+#: 批次归属未知」——根因是 `heartbeat --done` 没带 `--batch`，故本行同时把
+#: `--batch` 写进提醒，不能只补心跳这一半。
+#: 🔴 **修法必须落在这里（生成器强制注入），不能只改骨架文字**：同 `SUBTASK_SENTINEL_NOTE`
+#: 的教训——`#487` 证明「正文里写一句」拦不住起草人漏写，`#550` 证明连「起草人」都
+#: 没有的批处理场景压根不会自己冒出这一行；本行同理。机器守＝`工具-opener块lint.py` 形态⑩。
+#: 🔴 与骨架【CC · 子任务泳道】块对应行**逐字相同**（占位符版，单测「骨架与生成器契约」
+#: 比对）；成品由 `subtask_heartbeat_note(lane, batch)` 填入真值。
+#: 🔴 **真值填充、但看护者不多传一个参数**（`OP-0912-F`，2026-09-12 Shao Peishen 回 `2a`＝
+#: design 决策点 1 改判「第三条路」）：对照棒（`6733cb4`）此处曾是字面占位「<泳道标识，
+#: 无更明确约定时用本任务队列行号>」，理由是 design 否 (b) 的核心代价「新增一处两处必须
+#: 人工保持一致」——但该代价对本实现不成立：泳道标识由 `_lane_id()` 从 `--branch` 推出
+#: （＝【设置】行分支名去 `claude/`＝worktree 名），批次由 `_resolve_batch()` 从 `派出线`
+#: 现取 `B-MMDD_…`（或 `--batch` 显式给），**没有第二处需要人手对齐**；两者皆无 ⇒
+#: fail-loud 不出件，不得静默留占位符（那正是「归属未知」的源头）。
+#: 🔴 心跳工具在 worktree 内**可达**且落主工作区（2026-09-12 于泳道 worktree 实测：
+#: `heartbeat` 写到 `<主工作区>/reports/lane-heartbeat/<lane>.md`，路径由
+#: `REPO_ROOT`＝`git rev-parse --git-common-dir` 父目录解析）⇒ `#565` ④ 的反向方案
+#: （`summary` 从收工报告结构化字段自动闭环）**不需要**，固定尾句即可闭合。
+SUBTASK_HEARTBEAT_NOTE_TEMPLATE = (
+    "🔴 心跳一律跑命令写、不自己拼路径：开工 1 分钟内 "
+    "`python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane {lane} --text \"已开工\"`；"
+    "每里程碑追加一行（等待 >10 分钟须补写「仍在等 X，预计还要 N 分钟」）；收工 "
+    "`python 0-学习与工具/工具-泳道看护状态机.py heartbeat --lane {lane} --done --batch {batch} "
+    "--text \"产出落点：<落点>\"`——不带 `--batch` 该泳道不计入任何批"
+    "（`heartbeat --done` 不带它就不计入任何批次的 `summary`，已实测撞过 8 条历史泳道）；"
+    "它没有 `--repo-root`／`--heartbeat-file` 两个参数，别给（队列 §一 `#565`）。"
+)
+
+#: 回归 narrow ＋ 不起后台轮询等待（队列 §一 `#627`，2026-09-20）——七条无头泳道当日全部
+#: 越过 150k 转场线、零条执行 `OPENER_PARTIAL`，根因之一＝泳道自己重跑整份回归（`#567`／
+#: `#561`／`#416` 同形态：起后台任务轮询等待 ⇒ 会话先到顶）；`OP-0920-K` 第一段被 25 分钟
+#: 耗死即实证。「与纯 master 比失败集合」是 ff 六关④的活，泳道再跑一遍＝同一件事做三遍
+#: （泳道一遍＋ff 两侧各一遍）。判据同 `.claude/rules/环境保障线.md`「回归闸 narrow」与
+#: 「长任务写哨兵、只看哨兵」两条——本条把它们**强制注入**子任务泳道 opener 正文，不指望
+#: 起草人／子任务自己想起去读规则文件。机器守＝`工具-opener块lint.py` 形态⑭。
+SUBTASK_NARROW_TEST_NOTE = '先定向验证；代码收敛后完成受影响项目完整 pytest 与功能/audit 验收，失败保留证据。'
+
+#: 产出实证尾句（队列 §一 `#627`，2026-09-20，Shao Peishen 当日答 `2a`／`1a`）——成因：
+#: `OP-0920-K` 报 `OPENER_DONE` 而其本体一个字没改（commit message 还写成改了别的）、
+#: `#601` 声称接第 9 类实际是第 19 类，两次自陈失真都发生在同一天。判据出处＝根
+#: `AGENTS.md`「凡『已复核／已回读』类自陈，须同时写出用什么核的；只有动作没有手段＝
+#: 没有验证」——本条把这句判据落到子任务泳道 opener 正文，收工前逼一次机器可核的比对，
+#: 不再只认哨兵自陈。附带自陈一条：新增常驻状态告警类需同批点名沙箱夹具影响面
+#: （成因＝第 19 类上线后 `ScheduledTaskMirrorSyncTests` 三条断言全红，属夹具缺桩非门控
+#: 逻辑错，Shao Peishen 2026-09-20 当日裁定 fail-loud 判对）。机器守＝`工具-opener块lint.py` 形态⑮。
+#: 🔴 措辞刻意避开「同一行同现 OPENER_DONE 与 OPENER_PARTIAL」——那正是 `SENTINEL_LINE_RE`
+#: （形态⑨）的判据，两条尾句各管各的，写法重叠会让「删掉哨兵行」的变异检验测不出来
+#: （F9 会被本行误判为「仍在」，`test_变异检验_去掉哨兵行lint即转红` 现场撞出过一次）。
+SUBTASK_EVIDENCE_NOTE = (
+    "🔴 收工前自己跑 `git diff --name-only master...HEAD`，把输出原样贴进收工报告；"
+    "期望产出点名的文件只要有一个不在清单里，就必须改以 `OPENER_PARTIAL` 收尾"
+    "（不许判定为收工完成）——看护者按同一条命令机器核，不看哨兵自陈。本批若新增常驻"
+    "状态告警类，须同批自陈「是否影响其它沙箱测试、用什么核的」（队列 §一 `#627`）。"
+)
+
+#: 新增告警类沙箱夹具尾句（队列 §一 `#627` B 面，2026-09-20）——`SUBTASK_EVIDENCE_NOTE`
+#: 上一句只写了「须同批自陈」，是散文提醒、没有自己的机器守（`EVIDENCE_LINE_RE` 只判
+#: `git diff --name-only master...HEAD` 与 `OPENER_PARTIAL` 同现，不判这句在不在）。
+#: 🔴 **成因**：第 19 类常驻状态告警上线后 `ScheduledTaskMirrorSyncTests` 三条断言全红——
+#: 事后查明是夹具缺桩（新增告警类需要的沙箱夹具没人补），不是门控逻辑错，
+#: Shao Peishen 2026-09-20 当日裁定 fail-loud 判对；但「判对」只解决了这一次，下一个
+#: 新增告警类同样会撞——须在写代码那一刻就交代其它测试要什么夹具，而不是等测试全红
+#: 才回头查。机器守＝`工具-opener块lint.py` 形态⑯。
+SUBTASK_ALERT_FIXTURE_NOTE = (
+    "🔴 新增常驻状态告警类须同批给出其它测试的沙箱夹具要求（哪些用例要补桩／改夹具，"
+    "不能等上线后测试全红才回头查）；收工报告自陈「本次新增告警类是否影响其它沙箱测试、"
+    "用什么核的」，只有结论没有手段不算（队列 §一 `#627` B 面）。"
+)
+#: 骨架正本块里的占位符——正本教的是形态，真值由生成器填。
+SUBTASK_HEARTBEAT_LANE_PLACEHOLDER = "<泳道标识＝worktree名>"
+SUBTASK_HEARTBEAT_BATCH_PLACEHOLDER = "<批次>"
+#: 从 `派出线` 字段现取批次：`B-MMDD_…`（看护件既有写法两种——「批 B-0912_心跳与称谓」
+#: 或直接「业务总线 B-0905_B」——都能命中；遇全角／半角括号、空白、竖线即止）。
+BATCH_IN_LINE_RE = re.compile(r"B-\d{4}_[^\s（）()｜|]+")
+
+
+def subtask_heartbeat_note(lane: str, batch: str) -> str:
+    """心跳尾句成品：`SUBTASK_HEARTBEAT_NOTE_TEMPLATE` 填入真实泳道标识与批次。"""
+    return SUBTASK_HEARTBEAT_NOTE_TEMPLATE.format(lane=lane, batch=batch)
+
+
+#: 收工哨兵（队列 §一 `#550`，2026-09-10）——`工具-opener批处理执行v2.ps1` 判成败靠
+#: `claude` 退出码 ＋ 顶格一行 `OPENER_DONE`／`OPENER_PARTIAL` 两个指标，缺哨兵即判
+#: `NO-SENTINEL` 并中断本泳道。2026-09-10 四条泳道（`507`／`529`／`544`／`k2-externalize`）
+#: **活全做了、无一 `OPENER_DONE`**——因为子任务泳道 opener 此前一个字没提哨兵。
+#: 🔴 **修法必须落在这里（生成器强制注入），不能只改骨架文字**：`#487` 已证明「正文里写
+#: 一句」拦不住，本次更前一步——不是没被遵守，是压根没生成。**一个把成功报成失败的判据
+#: 比没有判据更糟，它会训练下一个人忽略 summary。** 机器守＝`工具-opener块lint.py` 形态⑨。
+#: 🔴 与骨架【CC · 子任务泳道】块末行**逐字相同**（单测「骨架与生成器契约」比对）。
+SUBTASK_SENTINEL_NOTE = (
+    "🔴 收工以顶格一行 `OPENER_DONE` 收尾；命中 🟡/🔴 决策点则以 "
+    "`OPENER_PARTIAL: 停在<档位>决策点——<在等什么>` 收尾"
+    "（`工具-opener批处理执行v2.ps1` 判成败双指标之一，缺它做完的活也会被判 NO-SENTINEL；"
+    "队列 §一 `#550`）。"
+)
+GUARDIAN_PARALLEL_NOTE = '默认主会话串行；无真实触发器标 needs_manual_wake，不宣称后台自动继续。'
+#: 队列 §一 `#616`（Shao Peishen `4a` 选③＋①两点落地，2026-09-19）——`OP-0918-C` 实撞：
+#: worktree 是全新 checkout，只含 git 已跟踪的文件；`7-外部文档/`／`reports/` 等
+#: gitignore 路径的真实内容只存在于主仓物理磁盘、从未进 git，worktree 内对它的任何
+#: 检索天然零命中（实测：worktree 内 `git ls-files "7-外部文档"` 为 0，主仓
+#: `ls 7-外部文档/` 却见三子目录、财务部 30+ 件）。**只做软提示**（③ 是机器硬关卡，
+#: 见 `工具-opener块lint.py::check_zero_hit_assertions` 形态⑬）——本行治不住
+#: 「泳道真的读不到」这件事，但成本最低、与③不互斥。
+#: 🔴 **只注入标准 CC／Cowork 两变体**（含「做什么／不做什么」正文、真会去做检索的
+#: 那两类）；`subtask_lane` 受「本变体正文恒为三行、尾部六条机器口径逐字取自正本」的
+#: 严格契约约束（`test_工具-opener生成.py::骨架与生成器契约`），扩第五条须同步改
+#: `opener骨架.md`【CC · 子任务泳道】节与该契约测试，留作后续单独一批；`reference`／
+#: `guardian` 两变体不带任务正文本身不做检索，不适用。
+IGNORE_BLIND_NOTE = (
+    "🔴 涉及 `7-外部文档/`／`reports/` 等 gitignore 路径的检索须标注"
+    "『worktree 不可见，须回主仓复核』（队列 §一 `#616`）。"
+)
+
+
+def _scan_used_suffixes(mmdd: str) -> set[str]:
+    """扫 `1-转型规划/` 全树 `.md`，收集当日（`mmdd`）已出现过的编号后缀（大写）。
+
+    🔴 **射程自陈（openspec `opener-id-claim-semantics`「撞号查重须自陈其射程」；`#487` 裁定 ⑵）**：
+    本查重只认**已落盘痕迹**——取号与落盘之间存在一段真空，查重是取号那一刻的快照、
+    **不是锁**；未落盘的号按未占用处理（永久占用的唯一语义＝「已落进仓库某份 `.md`」，
+    design ①(a)）。接力卡「⏳ 本线在跑会话」表在 `1-转型规划/` 树内，登进去的号**会**被
+    本函数扫到、**会**挡号——这是可见性的副作用，design ②(a) 明知并接受，不跳过。
+    真空期由 `_claim_op_id` 的**有时效机器占位**补（队列 §一 `#549` ⑶，2026-09-10 追加），
+    不由本函数消除；占位到期未落档即作废。
+
+    🔴 读 `REPO_ROOT` 走模块全局、不做默认参数——测试靠 monkeypatch
+    `模块.REPO_ROOT` 指向临时夹具目录（同 `test_工具-泳道看护状态机.py`
+    既定手法），默认参数会在定义时就把旧值绑死，测试改不动它。
+
+    只要「用没用过」，不要「谁用的」⇒ 委托 `_scan_used_suffixes_with_sources`
+    （队列 §一 `#621` 新增，供自占放行判据用），本函数取其 key 集合，不重扫一遍。
+    """
+    return set(_scan_used_suffixes_with_sources(mmdd))
+
+
+def _scan_used_suffixes_with_sources(mmdd: str) -> dict[str, set[Path]]:
+    """同 `_scan_used_suffixes`，多记一件事：每个后缀是被哪些文件（仓库根相对路径）
+    命中的——供 `_is_self_occupancy`（队列 §一 `#621`）核对「占号者是不是本件自己」。
+
+    🔴 **成因**：出件顺序反了——派单件先落了档、生成器才轮到跑——扫的时候看到的
+    「已占用」其实就是本件自己那份还没生成完的 opener 所对应的派单件。原判据
+    只留得住一个布尔值（用没用过），分不清「别人占的」和「自己占的」，`OP-0920-A`
+    因此被误判撞号、白烧一个号。留下命中源，才有得分辨。
+    """
+    hits: dict[str, set[Path]] = {}
+    search_root = REPO_ROOT / "1-转型规划"
+    if not search_root.is_dir():
+        return hits
+    for path in search_root.rglob("*.md"):
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        rel = path.relative_to(REPO_ROOT)
+        for m in USED_ID_FULL_RE.finditer(text):
+            if m.group(1) == mmdd:
+                hits.setdefault(m.group(2).upper(), set()).add(rel)
+        for m in USED_ID_SHORT_RE.finditer(text):
+            if m.group(1) == mmdd:
+                hits.setdefault(m.group(2).upper(), set()).add(rel)
+    return hits
+
+
+def _is_self_occupancy(occupying: set[Path], spec: "OpenerSpec") -> bool:
+    """自占放行判据（队列 §一 `#621`）：命中该后缀的文件若**只**是本件自己的
+    `--input-pointer`（约定即本件派单件的仓库根相对路径），说明出件顺序反了——
+    派单件先落档、生成器随后才跑——号仍是本件自己的号，不该判撞号。
+
+    🔴 **收紧到「仅命中 input_pointer 自身」**：命中源里哪怕多一个别的文件，
+    也判真撞号、不放行——这不是放松查重，只是把「谁占的」纳入判断，不再是
+    见号就拒。"""
+    if not occupying:
+        return False
+    self_rel = spec.input_pointer.replace("\\", "/")
+    return {p.as_posix() for p in occupying} == {self_rel}
+
+
+def _next_free_suffix(used: set[str]) -> str:
+    """按字母表找下一个当日未用的单字母后缀；26 个用尽再兜底双字母（本项目至今
+    未出现过单日超 26 个任务的极端情形，双字母只是不留死角，不特别优化）。"""
+    for ch in string.ascii_uppercase:
+        if ch not in used:
+            return ch
+    for c1 in string.ascii_uppercase:
+        for c2 in string.ascii_uppercase:
+            cand = c1 + c2
+            if cand not in used:
+                return cand
+    raise OpenerGenError("当日编号后缀已耗尽（含双字母兜底），需人工介入")
+
+
+def _check_op_id_not_reused(spec: "OpenerSpec") -> set[str]:
+    """已落档撞号即拒；返回当日已落档后缀集合（供 `_claim_op_id` 复用，不扫第二遍）。
+
+    🔴 **自占放行判据（队列 §一 `#621`）**：命中的后缀若只来自本件自己的
+    `--input-pointer`（出件顺序反了——派单件先落档、生成器随后才跑——号仍是
+    自己的号），放行；命中源里只要多一个别的文件，照旧判真撞号。
+    """
+    mmdd, suffix = _mmdd_and_suffix(spec.op_id)
+    suffix_upper = suffix.upper()
+    sources = _scan_used_suffixes_with_sources(mmdd)
+    used = set(sources)
+    if suffix_upper in used and not _is_self_occupancy(sources[suffix_upper], spec):
+        # 下一个空号同时避开未过期的占位（只读，不上锁）——推荐一个已被别人声明的号等于
+        # 让调用方再撞一次。
+        next_free = _next_free_suffix(used | _live_claimed_suffixes(mmdd))
+        raise OpenerGenError(
+            f"编号 {spec.op_id} 当日（{mmdd}）已被使用（撞号，队列 #461／#487 P7① 查重，"
+            f"命中全称或 `[Win]{mmdd}{suffix}-` 短形；射程见 `_scan_used_suffixes` 文档字符串：只认已落档痕迹）；"
+            f"下一个空号：OP-{mmdd}-{next_free}"
+        )
+    return used
+
+
+class OpenerGenError(ValueError):
+    """字段缺失或不合骨架硬规则 ⇒ 报错退出、不出件（队列 #461 明文要求）。"""
+
+
+def _shared_repo_root() -> Path:
+    """主工作区根（所有 worktree 共享）：`git rev-parse --git-common-dir` 的父目录；
+    跑不了 git 时退回 `REPO_ROOT`（同 `工具-共享文档编辑锁.py::_resolve_repo_root`）。"""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=True, timeout=30,
+        ).stdout.strip()
+        if out:
+            return Path(out).parent
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return REPO_ROOT
+
+
+def _claims_file() -> Path:
+    return CLAIMS_FILE if CLAIMS_FILE is not None else _shared_repo_root() / CLAIMS_FILE_REL
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _fmt_utc(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_utc(text: str) -> datetime | None:
+    try:
+        return datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+class _ClaimsLock:
+    """台账写侧最小互斥（原子 `O_CREAT|O_EXCL` 建锁文件 ＋ 陈旧接管），只做互斥、
+    不做内容校验——同 `工具-泳道看护状态机.py::_StateLock` 手法，不借队列的 markdown 行锁。"""
+
+    def __init__(self, target: Path) -> None:
+        self.path = target.with_name(target.name + ".lock")
+
+    def __enter__(self) -> "_ClaimsLock":
+        deadline = time.monotonic() + CLAIMS_LOCK_TIMEOUT_SECONDS
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        while True:
+            try:
+                fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode("ascii"))
+                os.close(fd)
+                return self
+            except FileExistsError:
+                try:
+                    age = time.time() - self.path.stat().st_mtime
+                except OSError:
+                    age = 0.0
+                if age > CLAIMS_LOCK_STALE_SECONDS:
+                    try:
+                        self.path.unlink()
+                    except OSError:
+                        pass
+                    continue
+                if time.monotonic() >= deadline:
+                    try:
+                        mtime = datetime.fromtimestamp(
+                            self.path.stat().st_mtime, tz=timezone.utc)
+                        mtime_note = f"，锁文件 mtime {_fmt_utc(mtime)}"
+                    except OSError:
+                        mtime_note = "（锁文件此刻已读不到 mtime）"
+                    raise OpenerGenError(
+                        f"占位台账锁 {self.path} 等待超过 {CLAIMS_LOCK_TIMEOUT_SECONDS} s 仍被占用"
+                        f"⇒ 无法登记占位，按 fail-closed 不出件（队列 §一 `#549` ⑶）{mtime_note}；"
+                        "若 mtime 早于本次调用起始时刻，很可能是同一会话上一次调用清锁失败留下的陈旧锁"
+                        "（Cowork 挂载侧 `rm` 常被沙箱拒绝，见队列 §一 `#620` 同族第四例），"
+                        f"可手工核实后 `rm {self.path}` 清掉再重试。"
+                    )
+                time.sleep(0.1)
+
+    def __exit__(self, *exc) -> None:
+        try:
+            self.path.unlink()
+        except OSError as e:
+            # 🔴 静默留锁会让同一会话第二次调用误判「等待超过 10 s」而看不出真因
+            # （Cowork 挂载侧 `rm` 被沙箱拒绝、生成器清不掉自己的锁——首次调用照常
+            # 返回 0、看不出异常）；改 fail-loud 打印，不吞（队列 §一 `#620` 同族第四例）。
+            print(
+                f"⚠ 占位台账锁 {self.path} 清理失败（{e!r}）——锁文件残留，"
+                "同一会话下一次调用会误判为「仍被占用」而非「清理失败」，请手工核实后清掉。",
+                file=sys.stderr,
+            )
+
+
+def _load_claims(path: Path) -> list[dict]:
+    """读台账；坏行跳过不崩（台账是本地高频小文件，坏一行不该让取号停摆）。"""
+    if not path.is_file():
+        return []
+    claims: list[dict] = []
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict) and {"mmdd", "suffix", "claimed_at"} <= set(rec):
+            claims.append(rec)
+    return claims
+
+
+def _write_claims(path: Path, claims: list[dict]) -> None:
+    """整文件重写（先写临时件再 `os.replace`，不留半成品）。"""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text("".join(json.dumps(c, ensure_ascii=False) + "\n" for c in claims),
+                   encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _claim_is_live(rec: dict, now: datetime) -> bool:
+    claimed = _parse_utc(rec.get("claimed_at", ""))
+    return claimed is not None and now - claimed < timedelta(minutes=CLAIM_TTL_MINUTES)
+
+
+def _prune_claims(claims: list[dict], mmdd: str, used: set[str], now: datetime) -> list[dict]:
+    """两条清理规则：⑴ 超时效的一律丢（不分日期）；⑵ 当日已落档（`used` 命中）的丢——
+    落了档就由 `_scan_used_suffixes` 接管，占位只覆盖「取号→落档」那段真空。"""
+    kept: list[dict] = []
+    for rec in claims:
+        if not _claim_is_live(rec, now):
+            continue
+        if rec.get("mmdd") == mmdd and str(rec.get("suffix", "")).upper() in used:
+            continue
+        kept.append(rec)
+    return kept
+
+
+def _same_draft(rec: dict, spec: "OpenerSpec") -> bool:
+    """同一份草稿的重生成（改个参数再跑一次）不该撞自己的占位：判据＝短名相同。
+    🔴 刻意不看 `line`——同一条线在同一时段起两份不同的件、却传了同一个号，
+    正是要拦的形态（2026-09-10 `OP-0910-I` 撞号的一半就是这样来的）。"""
+    return str(rec.get("short_name", "")) == spec.short_name
+
+
+def _claim_op_id(spec: "OpenerSpec", used: set[str]) -> None:
+    """取号即声明（队列 §一 `#549` ⑶）：核占位 → 写占位，同一把锁内完成。
+
+    - 当日同号已被**别的草稿**声明且未过期 ⇒ 撞号，报错并给下一个空号（空号计算
+      同时避开已落档与已声明的后缀）；
+    - 同一草稿（短名相同）⇒ 刷新时间戳；
+    - 台账读写任一步失败 ⇒ `OpenerGenError`（fail-closed：**不能证明占到号就不算取到号**，
+      与「缺字段直接报错退出、不出半成品」同一条纪律）。
+    """
+    mmdd, suffix = _mmdd_and_suffix(spec.op_id)
+    suffix = suffix.upper()
+    now = _utc_now()
+    path = _claims_file()
+    try:
+        with _ClaimsLock(path):
+            claims = _prune_claims(_load_claims(path), mmdd, used, now)
+            rivals = [c for c in claims
+                      if c.get("mmdd") == mmdd and str(c.get("suffix", "")).upper() == suffix
+                      and not _same_draft(c, spec)]
+            if rivals:
+                r = rivals[0]
+                claimed_suffixes = {str(c.get("suffix", "")).upper()
+                                    for c in claims if c.get("mmdd") == mmdd}
+                next_free = _next_free_suffix(used | claimed_suffixes)
+                raise OpenerGenError(
+                    f"编号 {spec.op_id} 当日（{mmdd}）已被另一份起草中的件声明占用"
+                    f"（短名「{r.get('short_name', '?')}」／派出线「{r.get('line', '?')}」，"
+                    f"声明于 {r.get('claimed_at', '?')} UTC，时效 {CLAIM_TTL_MINUTES} 分钟；"
+                    f"台账 {path}）——对方尚未落档、`_scan_used_suffixes` 看不见它，"
+                    f"这正是占位存在的理由（队列 §一 `#549` ⑶／`#531` 子项，"
+                    f"2026-09-10 `OP-0910-I`／`OP-0910-J` 两次实撞）；下一个空号：OP-{mmdd}-{next_free}"
+                )
+            claims = [c for c in claims
+                      if not (c.get("mmdd") == mmdd and str(c.get("suffix", "")).upper() == suffix)]
+            claims.append({
+                "op_id": spec.op_id, "mmdd": mmdd, "suffix": suffix,
+                "short_name": spec.short_name, "line": spec.line, "env": spec.env,
+                "claimed_at": _fmt_utc(now),
+                "expires_at": _fmt_utc(now + timedelta(minutes=CLAIM_TTL_MINUTES)),
+            })
+            _write_claims(path, claims)
+    except OpenerGenError:
+        raise
+    except OSError as exc:
+        raise OpenerGenError(
+            f"占位台账 {path} 读写失败（{exc}）⇒ 无法证明占到号，按 fail-closed 不出件"
+            "（队列 §一 `#549` ⑶）") from exc
+
+def _live_claimed_suffixes(mmdd: str) -> set[str]:
+    """当日未过期占位的后缀集合（只读、不上锁、不清理；供推荐空号用）。"""
+    now = _utc_now()
+    try:
+        claims = _load_claims(_claims_file())
+    except OSError:
+        return set()
+    return {str(c.get("suffix", "")).upper() for c in claims
+            if c.get("mmdd") == mmdd and _claim_is_live(c, now)}
+
+
+def _load_lint_module():
+    """复用 `工具-opener块lint.py` 的 `check_block`／`iter_fenced_blocks`，不写第二份判据。"""
+    spec = importlib.util.spec_from_file_location("_zp_opener_lint_reuse", LINT_SCRIPT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载 opener 块判据实现：{LINT_SCRIPT}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _mmdd_and_suffix(op_id: str) -> tuple[str, str]:
+    """`OP-0904-M` → `("0904", "M")`。"""
+    _, mmdd, suffix = op_id.split("-", 2)
+    return mmdd, suffix
+
+
+#: 十项必填字段 ＋ 六项可选补充字段——`OpenerSpec.__init__` 的关键字参数名单一可信源。
+_OPENER_SPEC_FIELDS = REQUIRED_FIELDS + (
+    "claude_section", "do_items", "dont_items", "title_call_override", "variant", "batch",
+    "model",
+)
+
+
+class OpenerSpec:
+    """字段容器（**不用 `@dataclass`**：本模块经 `importlib.util.module_from_spec` 跨文件
+    加载时不会注册进 `sys.modules`，而 Python 3.14 的 dataclass 处理需要
+    `sys.modules[cls.__module__]` 可解析——两者组合会在 import 时直接抛
+    `AttributeError`，手写 `__init__` 绕开这条依赖，不是风格选择）。
+    """
+
+    __slots__ = _OPENER_SPEC_FIELDS
+
+    def __init__(
+        self, *, op_id: str, env: str, short_name: str, branch: str, worktree: str,
+        workspace: str, session: str, line: str, input_pointer: str, task_class: str,
+        claude_section: str = "", do_items: list[str] | None = None,
+        dont_items: list[str] | None = None, title_call_override: str | None = None,
+        variant: str = "standard", batch: str | None = None, model: str = "inherit",
+    ) -> None:
+        self.op_id, self.env, self.short_name = op_id, env, short_name
+        self.branch, self.worktree, self.workspace = branch, worktree, workspace
+        self.session, self.line, self.input_pointer, self.task_class = (
+            session, line, input_pointer, task_class)
+        self.claude_section = claude_section
+        self.do_items = list(do_items) if do_items else ["…"]
+        self.dont_items = list(dont_items) if dont_items else ["…"]
+        self.title_call_override = title_call_override
+        self.variant = variant
+        self.batch = batch
+        self.model = model
+
+
+def _require_all_fields(values: dict) -> None:
+    missing = [f for f in REQUIRED_FIELDS if not str(values.get(f, "")).strip()]
+    if missing:
+        raise OpenerGenError(
+            f"缺失必填字段：{'、'.join(missing)}"
+            "（编号／执行环境／短名／分支／worktree情形／工作区情形／session／派出线／"
+            "输入指针／A或B类，十项任一不能省，队列 #461 明文要求）"
+        )
+
+
+def _validate_spec(spec: OpenerSpec) -> None:
+    if spec.env not in VALID_ENVS:
+        raise OpenerGenError(f"执行环境须为 CC 或 Cowork，收到：{spec.env!r}")
+    if spec.variant not in VALID_VARIANTS:
+        raise OpenerGenError(f"variant 须为 {VALID_VARIANTS} 之一，收到：{spec.variant!r}")
+    if spec.variant not in ENV_AGNOSTIC_VARIANTS and spec.env != "CC":
+        raise OpenerGenError(
+            f"variant={spec.variant!r} 只对 CC 有意义（骨架【CC · 子任务泳道】／§三bis "
+            f"均无 Cowork 对应形态），收到 env={spec.env!r}"
+        )
+    if spec.task_class not in VALID_TASK_CLASSES:
+        raise OpenerGenError(f"A或B类须为 'A' 或 'B'，收到：{spec.task_class!r}")
+    if spec.model not in VALID_MODELS:
+        raise OpenerGenError(f"模型须为 {VALID_MODELS} 之一（Codex策略路由，不传旧模型别名），收到：{spec.model!r}")
+    if not OP_ID_RE.match(spec.op_id):
+        raise OpenerGenError(f"编号须匹配全称 `OP-MMDD-X` 形式（如 OP-0905-A），收到：{spec.op_id!r}")
+    label_len = len(spec.short_name) + (2 if spec.variant == "guardian" else 0)
+    if label_len > 12:
+        raise OpenerGenError(
+            f"短名须 ≤12 字（guardian 变体首行拼「看护」+短名，须一并 ≤12），"
+            f"收到 {label_len} 字：{spec.short_name!r}"
+        )
+    if spec.batch and spec.variant != "subtask_lane":
+        # 同 `_reject_silently_dropped_body_params` 的判据：参数被接受却不生效比被拒更危险。
+        raise OpenerGenError(
+            f"`--batch` 只对 `--variant subtask_lane` 生效（拼进心跳尾句），当前 "
+            f"variant={spec.variant!r} 的成品不含它 ⇒ 会被静默丢弃，故在此拒绝（队列 §一 `#565`）。")
+    if not CHECKBOX_RE.match(spec.worktree):
+        raise OpenerGenError(
+            "worktree 字段须以勾选符号 ☑／☐ 开头，不是裸名字"
+            f"（骨架「四处最常丢的结构」表第一条），收到：{spec.worktree!r}"
+        )
+    if spec.worktree.startswith("☑") and not CHECKBOX_CHECKED_NAME_RE.match(spec.worktree):
+        raise OpenerGenError(
+            "worktree 字段 ☑ 后须紧跟非空括号名（worktree 名与是否自删），不能只有符号"
+            f"（骨架「四处最常丢的结构」表第一条），收到：{spec.worktree!r}"
+        )
+    if spec.session != "新开":
+        raise OpenerGenError(
+            f"session 字段骨架固定字面为「新开」（骨架未定义其他取值），收到：{spec.session!r}"
+        )
+    if spec.env == "Cowork" and spec.branch != "master":
+        raise OpenerGenError(f"Cowork 侧分支固定为 master（骨架【Cowork】骨架），收到：{spec.branch!r}")
+    if spec.env == "CC" and spec.variant != "guardian" and not BRANCH_SLUG_RE.match(spec.branch):
+        # guardian 的分支字段是骨架 §三bis 固定字面量「master（看护者本身不建分支，
+        # 不改代码）」，不是短横线 slug——调用方须整段传入，不受本条约束。
+        raise OpenerGenError(
+            "CC 侧分支须传短横线 slug（骨架 `<短横线名>` 占位符，如 'opener-gen'，"
+            f"小写字母数字与连字符），收到：{spec.branch!r}"
+        )
+    if (spec.env == "CC" and spec.variant != "guardian"
+            and BRANCH_SLUG_OP_PREFIX_RE.match(spec.branch)):
+        # 队列 §一 `#487` 追记⑵：本工具自己会拼 `codex/opMMDDX-` 前缀，slug 里
+        # 再带一次 ⇒ `codex/op1231r-op0909b-docx-481`，**不报错**、成品看着正常。
+        mmdd, suffix = _mmdd_and_suffix(spec.op_id)
+        stripped = BRANCH_SLUG_OP_PREFIX_RE.sub("", spec.branch).lstrip("-")
+        raise OpenerGenError(
+            f"`--branch` 只收 OP 短号**之后**那一截：本工具会自动拼上 "
+            f"`codex/op{mmdd}{suffix.lower()}-`，slug 里再带一次 OP 短号会拼成 "
+            f"`codex/op{mmdd}{suffix.lower()}-{spec.branch}`（前缀重复、且**不报错**，"
+            f"成品是个看起来正常的分支名）。收到：{spec.branch!r}，"
+            f"应传：{stripped!r}" + ("" if stripped else "（去掉短号后为空，请另起语义名）")
+        )
+    if WINDOWS_ABS_PATH_RE.match(spec.input_pointer):
+        raise OpenerGenError(
+            "输入指针须写仓库根相对路径，不接受本机绝对路径"
+            f"（根 CLAUDE.md §5「路径写仓库根相对路径」），收到：{spec.input_pointer!r}"
+        )
+    for m in USED_ID_FULL_RE.finditer(spec.line):
+        ref = f"OP-{m.group(1)}-{m.group(2)}"
+        if ref.upper() == spec.op_id.upper():
+            raise OpenerGenError(
+                f"`--line`（派出线）里引用的编号与本件自身编号 {spec.op_id} 相同"
+                f"（收到 --line={spec.line!r}）——派出线应指向派出本件的上级线/批次，"
+                "不应等于本件自己的编号（自引用，OP-0918-C 实撞两处错之一，队列 §一 `#620`）。"
+            )
+
+
+def _body_params_given(kwargs: dict) -> bool:
+    """调用方**真的传了**任一正文参数（`--do`／`--dont`）？
+
+    🔴 **只看 `kwargs`，不看 `spec`**——同 `_reject_silently_dropped_body_params`：
+    `OpenerSpec.__init__` 会把 `None` 兜成 `["…"]` 占位，读 `spec` 分不出
+    「没传」与「传了」，判据必须站在兜底之前。
+    """
+    return any(kwargs.get(k) for k in _BODY_PARAM_FLAG)
+
+
+def _reject_silently_dropped_body_params(kwargs: dict, spec: OpenerSpec) -> None:
+    """调用方传了「这个环境×变体根本不会拼进成品」的正文参数 ⇒ 报错退出（fail-loud）。
+
+    🔴 **本函数解决的不是「参数写错了」，而是「参数写对了却没生效」**：
+    2026-09-06 实撞——`--env Cowork --dont "<三条硬约束>"` 被静默丢弃，不报错、
+    不出现在成品里，起草者以为约束传达到了（当次靠那三条本来也写在接力卡里侥幸兜住，
+    属侥幸不属机制）。同族＝`acquire --domain` 漏传是「静默少算」而不是被拦下。
+
+    🔴 **Cowork 已由方案甲让 `--dont` 真的生效，不由本函数拦**（两者同落会互相打架）；
+    本函数落地后只剩 `--variant guardian` 一个洞在守——那个洞补段补不掉。
+
+    🔴 **判「传没传」只看 `kwargs`，不看 `spec`**：`OpenerSpec.__init__` 会把
+    `do_items`／`dont_items` 的 `None` 兜成 `["…"]` 占位，读 `spec` 分不出
+    「没传」与「传了空」——判据必须站在兜底之前。
+    """
+    supported = BODY_PARAM_SUPPORT.get((spec.env, spec.variant))
+    if supported is None:
+        # 白名单没登记这个组合 ⇒ fail-closed（宁可全拒也不静默丢），见常量表注释。
+        supported = set()
+    passed = {k for k in _BODY_PARAM_FLAG if kwargs.get(k)}
+    dropped = sorted(passed - supported, key=lambda k: _BODY_PARAM_FLAG[k])
+    if not dropped:
+        return
+    flags = "、".join(f"`{_BODY_PARAM_FLAG[k]}`" for k in dropped)
+    alt = _BODY_PARAM_ALTERNATIVE.get(
+        (spec.env, spec.variant),
+        "该组合的成品形态不含这些段，请改用 `--input-pointer` 指向的派单件承接。",
+    )
+    raise OpenerGenError(
+        f"{flags} 传入了内容，但 env={spec.env}／variant={spec.variant} 的成品**不会包含**"
+        f"它们——若不报错就会被静默丢弃（参数被接受却不生效，比被拒绝更危险；"
+        f"2026-09-06 实撞一次，队列 §一 `#487` 子项／`OP-0906-M`）。{alt}"
+    )
+
+
+def _reject_explicit_model_for_cowork(kwargs: dict, spec: OpenerSpec) -> None:
+    """`--model` 只对 CC 有意义——`_settings_line` 只对 `env == "CC"` 附加该字段，
+    `工具-opener批处理执行v2.ps1` 只从【CC】§三 子任务泳道 opener 块解析它去起 `claude`
+    子进程；【Cowork】opener 从不经该脚本启动。此前对 `--env Cowork` 传 `--model` 会被
+    `_settings_line` 静默省略——不报错、也不出现在成品里（同 `_reject_silently_dropped_
+    body_params` 的判据：参数被接受却不生效，比被拒绝更危险；OP-0918-C 实撞两处错之一，
+    队列 §一 `#620`）。故显式传了即 fail-loud，不静默省略。
+
+    🔴 判「传没传」只看 `kwargs`，不看 `spec`——`OpenerSpec.__init__` 会把 `model` 的
+    缺省兜成 `"sonnet"`，读 `spec` 分不出「没传」与「传了 sonnet」。
+    """
+    if spec.env == "Cowork" and "model" in kwargs:
+        raise OpenerGenError(
+            f"`--model` 只对 `--env CC` 有意义（Cowork opener 从不经 "
+            "`工具-opener批处理执行v2.ps1` 起 `claude` 子进程，该字段无处生效）；"
+            f"当前 --env Cowork 却显式传了 --model={kwargs['model']!r}——此前会被 "
+            "静默省略，现改 fail-loud（队列 §一 `#620`）。不传该参数即可。"
+        )
+
+
+def _title_call_line(op_id: str, short_name: str) -> str:
+    mmdd, suffix = _mmdd_and_suffix(op_id)
+    return (
+        f'开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），'
+        f"标题：[Win]{mmdd}{suffix}-{short_name}。{SUBTASK_EXCEPTION}"
+    )
+
+
+def _title_call_line_guardian(op_id: str, short_name: str) -> str:
+    """骨架 §三bis 看护者开场词的 `set_session_title` 行——它是本批唯一真正被
+    粘贴进独立 CC 会话的一份，仍需要标题；措辞与标准句不同（强调"你自己不属于
+    子任务跳过例外"），故不复用 `_title_call_line`。"""
+    mmdd, suffix = _mmdd_and_suffix(op_id)
+    return (
+        f'开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"），'
+        f"标题：[Win]{mmdd}{suffix}-看护{short_name}。🔴 你是本批唯一真正被粘贴进独立 CC 会话的一份"
+        "（其余泳道均由你用 Task/Agent 派发，正文里已不再放这一行——2026-09-05 队列 §一 `#487`／(甲)："
+        "源头不放，不再指望子任务的文本例外句被真正遵守），本条对你适用，正常执行即可，"
+        "标题设定后不要再被子任务顶掉，你自己不属于「跳过本行」的例外范围。"
+    )
+
+
+def _lane_id(spec: OpenerSpec) -> str:
+    """心跳的泳道标识＝worktree 名＝分支名去掉 `claude/`（与 `_settings_line` 同一拼法）。
+
+    🔴 从 opener 自身字段推导、不另开参数：看护者跑 `check-heartbeat --heartbeat-file
+    reports/lane-heartbeat/<lane>.md` 时只需看【设置】行就能算出同一个名字。既有心跳件
+    `op0910m-544-heartbeat-batch.md` 即此形态。
+    """
+    mmdd, suffix = _mmdd_and_suffix(spec.op_id)
+    return f"op{mmdd}{suffix.lower()}-{spec.branch}"
+
+
+def _resolve_batch(spec: OpenerSpec) -> str:
+    """心跳收工句的 `--batch`：显式 `--batch` 优先，否则从 `派出线` 现取 `B-MMDD_…`。
+
+    🔴 两者皆无 ⇒ fail-loud 不出件（队列 §一 `#565`）：不带 `--batch` 的 `heartbeat --done`
+    会让该泳道「归属未知」，`summary --batch` 照报 0 终态——那正是本行的现象本身，
+    生成器不能替下游把这个洞留着。单棒（无批次）请显式传派出线 OP 号作批次。
+    """
+    if spec.batch:
+        return spec.batch.strip()
+    m = BATCH_IN_LINE_RE.search(spec.line)
+    if m:
+        return m.group(0)
+    raise OpenerGenError(
+        "子任务泳道 opener 须有批次给心跳收工句的 `--batch`：`--line` 里未找到 `B-MMDD_…`，"
+        f"也未显式传 `--batch`（收到 --line={spec.line!r}）。不带 `--batch` 的 "
+        "`heartbeat --done` 会让该泳道不计入任何批（`#536`），`summary --batch` 报 0 终态——"
+        "即 `#565` 的现象本身。看护批请在 `--line` 写「批 B-MMDD_名」；单棒请 "
+        "`--batch <派出线 OP 号>`（队列 §一 `#565`）。")
+
+
+def _settings_line(spec: OpenerSpec) -> str:
+    if spec.env == "CC":
+        if spec.variant == "guardian":
+            # 骨架 §三bis 固定字面量：看护者本身不建分支、不改代码——调用方
+            # 须整段传入 `branch`（如 "master（看护者本身不建分支，不改代码）"），
+            # 不套用标准变体「从 master 起 codex/opMMDDx-<slug>」的拼装模板。
+            branch_field = spec.branch
+        else:
+            mmdd, suffix = _mmdd_and_suffix(spec.op_id)
+            branch_field = f"master（从 master 起 `codex/op{mmdd}{suffix.lower()}-{spec.branch}`）"
+    else:
+        branch_field = "master"
+    base = (
+        f"【设置】执行环境：{spec.env} ｜ 分支：{branch_field} ｜ worktree：{spec.worktree} ｜ "
+        f"工作区：{spec.workspace} ｜ session：{spec.session} ｜ 派出线：{spec.line}"
+    )
+    # Shao Peishen 2026-09-18/19 两次指出：「模型：」字段只对 CC 有意义——
+    # 工具-opener批处理执行v2.ps1 只从【CC】§三 子任务泳道 opener 块里解析这一格去起
+    # claude 子进程的 --model；【Cowork】opener 从不经该脚本启动，附上「模型：sonnet」
+    # 是个从来没人读、却总在那儿的死字段，纯属误导。六字段骨架（执行环境｜分支｜worktree｜
+    # 工作区｜session｜派出线）本就不含模型，故这里只对 CC 附加第七个可选字段。
+    if spec.env == "CC":
+        return base + f" ｜ 模型：{spec.model}"
+    return base
+
+
+def _read_line(spec: OpenerSpec) -> str:
+    section = f" §{spec.claude_section}" if spec.claude_section else ""
+    if spec.env == "CC":
+        clause = (
+            "A 类（口径已定、判据已写死），无需再问澄清，直接开工"
+            if spec.task_class == "A" else "B 类，仅在缺失信息阻塞当前范围时澄清，已批范围不重问"
+        )
+        return (
+            f"读 ① `{spec.input_pointer}` → ② `AGENTS.md`{section} 恢复上下文，"
+            f"按下述执行。本件为 {clause}。"
+        )
+    return (
+        f"读 ① `{spec.input_pointer}` → ② `AGENTS.md`{section} 恢复上下文，"
+        f"按下述执行。本件为 {spec.task_class} 类。"
+    )
+
+
+def generate_opener(**kwargs) -> str:
+    if kwargs.get("env") not in (None, "Codex"):
+        raise OpenerGenError("旧 CC/Cowork 执行入口已退役；请显式使用 env=Codex。")
+    """按十项必填字段拼出成品 opener 文本；缺字段或违反骨架硬规则 ⇒ 抛 `OpenerGenError`。"""
+    if kwargs.get("env") == "Codex":
+        if kwargs.get("claude_section"):
+            raise OpenerGenError("旧章节编号不再作为规则路由；请在任务输入中明确当前 Codex 规则。")
+        native_model = kwargs.get("model", "gpt-6-luna")
+        if native_model != "gpt-6-luna":
+            raise OpenerGenError("Codex --model 必须显式为 gpt-6-luna，不接受继承、策略别名或其它模型。")
+        kwargs = {**kwargs, "model": native_model}
+        if kwargs.get("title_call_override") is not None:
+            raise OpenerGenError("Codex 标识行由生成器维护，不接受源端 title_call_override。")
+        # Reuse business assembly/claims, then adapt the execution contract explicitly.
+        text, used = _generate_opener_core(claim_env="Codex", defer_claim=True, **{**kwargs, "env": "CC", "model": "inherit"})
+        text = text.replace("｜ 模型：inherit", "｜ 模型：gpt-6-luna", 1)
+        if kwargs.get("variant") == "guardian":
+            text = text.replace(
+                "你是本批的**看护者**，不是执行者。用 Task/Agent 工具为各条泳道各起一个子任务，"
+                '`isolation: "worktree"`，把对应【CC · 子任务泳道】opener 的正文原样作为子任务 prompt。'
+                "🔴 不要改写 opener 正文。",
+                "本件仅描述已明确授权的看护范围；先用正式队列查询核对任务、唯一写方与状态。"
+                "不自动派生、启动、恢复或变更消费者；具体执行仍须当次授权和现役入口验收。"
+            ).replace(GUARDIAN_PARALLEL_NOTE,
+                "默认主会话串行；无真实触发器标 needs_manual_wake，不宣称后台自动继续。")
+        if kwargs.get("variant") == "subtask_lane":
+            text = text.replace(SUBTASK_PARALLEL_NOTE,"本件仅供用户明确授权的派生任务；显式 gpt-6-luna/high，禁止进一步自动派生。")
+            text = text.replace(SUBTASK_PUSH_NOTE,"不自动 commit/push 或合入；沿用任务既有范围与授权，ff 仅具体获准时 ff-only。")
+            text = text.replace(SUBTASK_NARROW_TEST_NOTE,"先定向验证；代码收敛后完成受影响项目完整 pytest 与功能/audit 验收，失败保留证据。")
+        native_lines = []
+        for line in text.splitlines():
+            if "mcp__ccd_session_mgmt__set_session_title" in line:
+                mmdd, suffix = _mmdd_and_suffix(kwargs["op_id"])
+                line = (f"会话标识：[Win]{mmdd}{suffix}-{kwargs['short_name']}；"
+                        "只在当前 harness 实际提供且已确认本会话的标题工具中设置；"
+                        "无工具时保留建议名，通过 source_id→thread_id 审计绑定，"
+                        "不得调用源端接口或改父任务标题。")
+            native_lines.append(line.replace("【CC】", "【Codex】").replace("执行环境：CC", "执行环境：Codex"))
+        text = "\n".join(native_lines)
+        lint = _load_lint_module()
+        errors = lint.check_block(lint.iter_fenced_blocks(text)[0], is_subtask_lane=kwargs.get("variant")=="subtask_lane")
+        if errors:
+            raise OpenerGenError(f"Codex 原生派单自检失败：{errors}")
+        spec = OpenerSpec(**{k: v for k, v in kwargs.items() if k in _OPENER_SPEC_FIELDS})
+        _claim_op_id(spec, used)
+        return text
+    raise OpenerGenError("缺少执行环境；当前仅支持 Codex。")
+
+
+def _generate_opener_core(*, claim_env=None, defer_claim=False, **kwargs):
+    _require_all_fields(kwargs)
+    known = set(_OPENER_SPEC_FIELDS)
+    spec = OpenerSpec(**{k: v for k, v in kwargs.items() if k in known})
+    _validate_spec(spec)
+    # 🔴 顺序刻意：先 `_validate_spec` 定下合法的 env／variant，本条判据才有意义；
+    # 放在 `_check_op_id_not_reused` 之前——撞号查重要扫全树 `.md`（秒级），
+    # 而「参数会被丢掉」是纯本地判断，没理由让调用方先等一次全树扫描才被告知。
+    _reject_silently_dropped_body_params(kwargs, spec)
+    _reject_explicit_model_for_cowork(kwargs, spec)
+    used = _check_op_id_not_reused(spec)  # P7①：当日已落档撞号即拒，见模块文档
+
+    do_block = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(spec.do_items))
+    dont_block = "\n".join(f"- {item}" for item in spec.dont_items)
+
+    if spec.variant == "reference":
+        # 队列 §一 `#489` 步骤 5（Shao Peishen 2026-09-08 答 1a，`#284` 退休制阈值
+        # 触发，并入 `#461` 生成器）：**引用版**——只出四行，正文在派单件里。
+        # 🔴 为什么要它：`#284` 那条「聊天里给他的开场词一律引用版、禁手抄」是**人守**，
+        # 2026-09-08 已计到第三犯 ⇒ 退休制要求二选一（机制化或删除）。本变体就是
+        # 「机制化」那一半：手抄四行容易漏 `【设置】` 某一字段或写错标题占位符，
+        # 而拼装＋`check_block` 自检不会漏。
+        body_lines = [f"[{spec.op_id}]【{spec.env}】{spec.short_name}", _settings_line(spec)]
+        if spec.env == "CC":
+            # 🔴 Cowork 侧不放这一行：`set_session_title` 在 Cowork 桌根本不存在
+            # （2026-08-27 补充一实测），放了就是教人写一个不存在的工具调用。
+            body_lines.append(
+                spec.title_call_override if spec.title_call_override is not None
+                else _title_call_line(spec.op_id, spec.short_name))
+        section = f" §{spec.claude_section}" if spec.claude_section else ""
+        body_lines.append(
+            f"读 `{spec.input_pointer}` 全文＋ `AGENTS.md`{section} 恢复上下文，"
+            f"按该件执行。本件为 {spec.task_class} 类。")
+    elif spec.variant == "guardian":
+        title_line = f"[{spec.op_id}]【{spec.env}】看护{spec.short_name}"
+        title_call = spec.title_call_override if spec.title_call_override is not None \
+            else _title_call_line_guardian(spec.op_id, spec.short_name)
+        body_lines = [
+            title_line,
+            _settings_line(spec),
+            title_call,
+            f"读 `{spec.input_pointer}` 全文＋ `AGENTS.md` 恢复上下文。",
+            "",
+            "你是本批的**看护者**，不是执行者。用 Task/Agent 工具为各条泳道各起一个子任务，"
+            '`isolation: "worktree"`，把对应【CC · 子任务泳道】opener 的正文原样作为子任务 prompt。'
+            "🔴 不要改写 opener 正文。",
+            "",
+            GUARDIAN_PARALLEL_NOTE,
+        ]
+    else:
+        title_line = f"[{spec.op_id}]【{spec.env}】{spec.short_name}"
+        if spec.env == "CC" and spec.variant == "standard":
+            title_call = spec.title_call_override if spec.title_call_override is not None \
+                else _title_call_line(spec.op_id, spec.short_name)
+            body_lines = [
+                title_line,
+                _settings_line(spec),
+                title_call,
+                _read_line(spec),
+                "",
+                "做什么：",
+                do_block,
+                "",
+                "不做什么：",
+                dont_block,
+                "",
+                IGNORE_BLIND_NOTE,
+            ]
+        elif spec.env == "CC" and spec.variant == "subtask_lane":
+            # 骨架【CC · 子任务泳道】变体：不放 set_session_title 行（源头不放，
+            # 见模块文档「variant」节），收尾无条件追加 P4 两条默认口径。
+            # 🔴 **正文两段只在调用方真的传了 `--do`／`--dont` 时才拼**
+            #（队列 §一 `#487` 2026-09-09 apply）：骨架该节明写「恒为三行，不多写
+            # 一行」——做什么／不做什么／收工一律写进队列行。无条件硬塞占位
+            # 等于把「没填的模板」当成品发出去，是既有子项的镜像形态。
+            body_lines = [
+                title_line,
+                _settings_line(spec),
+                _read_line(spec),
+            ]
+            if _body_params_given(kwargs):
+                body_lines += ["", "做什么：", do_block, "", "不做什么：", dont_block]
+            # 🔴 队列 §一 `#550`：收工哨兵**由生成器注入**、不依赖起草人记得写（见常量注释）。
+            # 🔴 队列 §一 `#565`：心跳尾句同法注入——泳道标识／批次从 spec 推导（真值，
+            # `OP-0912-F`），缺批次即 fail-loud。
+            # 🔴 队列 §一 `#627`：回归 narrow／产出实证两条尾句同法注入，位置沿对照棒——
+            # 并行 → 心跳 → narrow测试 → push → 产出实证 → 哨兵（实证紧邻哨兵：它是
+            # 「该写 OPENER_DONE 还是 OPENER_PARTIAL」这个判断的直接依据）。
+            # 🔴 队列 §一 `#627` B 面：新增告警类沙箱夹具尾句插在产出实证与哨兵之间——
+            # 它是「该不该写 OPENER_DONE」判断的又一项依据（本批若新增告警类而未点名
+            # 夹具影响面，同样不该写完成），哨兵仍须留在真正的最后一行。
+            body_lines += [
+                SUBTASK_PARALLEL_NOTE,
+                subtask_heartbeat_note(_lane_id(spec), _resolve_batch(spec)),
+                SUBTASK_NARROW_TEST_NOTE,
+                SUBTASK_PUSH_NOTE,
+                SUBTASK_EVIDENCE_NOTE,
+                SUBTASK_ALERT_FIXTURE_NOTE,
+                SUBTASK_SENTINEL_NOTE,
+            ]
+        else:
+            body_lines = [
+                title_line,
+                _settings_line(spec),
+                _read_line(spec),
+                "",
+                "做什么：",
+                do_block,
+                "",
+                # 🔴 2026-09-06 补（队列 §一 `#487` 子项／`OP-0906-I`）：此前 Cowork 分支
+                # 不拼「不做什么」段，`--dont` 传进来被**静默丢弃**——不报错、不出现在
+                # 成品里，起草者以为约束传达到了（2026-09-06 实撞一次）。骨架
+                # 【Cowork】节已同步补段，`工具-opener块lint.py` 形态⑦机器守。
+                "不做什么：",
+                dont_block,
+                "",
+                IGNORE_BLIND_NOTE,
+                "",
+                "收工：产出登记 §二 待 commit 批次（走 `0-学习与工具/工具-共享文档编辑锁.py`，"
+                "勿裸改、勿自行 commit），由落库 sweep 取活。",
+            ]
+
+    opener_block = "```\n" + "\n".join(body_lines) + "\n```"
+    if claim_env == "Codex" and defer_claim:
+        # Only the emitted native form is authoritative. The public native path
+        # validates it before claiming an ID; legacy intermediate RPC formatting
+        # is not an execution contract or an alternate acceptance gate.
+        return opener_block, used
+
+
+    # 自校验：复用既有 `check_block` 判据，产出必须自己先过自己定的门（模板库 §〇.0 同款约束）。
+    # `is_subtask_lane`：subtask_lane 变体天生不含 set_session_title，须告知 lint
+    # 这是形态⑥要求的那类块，否则会被形态①误判为"CC opener 缺 set_session_title"。
+    lint = _load_lint_module()
+    blocks = lint.iter_fenced_blocks(opener_block)
+    if not blocks:
+        raise OpenerGenError("生成物未能被识别为围栏代码块（内部拼装错误）")
+    problems = lint.check_block(blocks[0], is_subtask_lane=(spec.variant == "subtask_lane"),
+                                _native_contract=(claim_env == "Codex"))
+    if problems:
+        detail = "；".join(f"[{code}] {msg}" for code, msg in problems)
+        raise OpenerGenError(f"生成物未通过 `工具-opener块lint.py::check_block` 自检：{detail}")
+
+    # 取号即声明（队列 §一 `#549` ⑶）：自检通过、确定要出件了才写占位——同一把锁内
+    # 先核别人的占位再写自己的；撞上未落档的对方即在这里拒绝，出件＝占位已落。
+    if claim_env is not None:
+        spec.env = claim_env
+    if not defer_claim:
+        _claim_op_id(spec, used)
+
+    return (opener_block, used) if defer_claim else opener_block
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        description="Codex 开场生成器：按现役原生合同出件，不派发或回退旧引擎。"
+    )
+    ap.add_argument("--op-id", required=True, help="全称编号，如 OP-0905-A")
+    ap.add_argument("--env", required=True, choices=("Codex",), help="执行环境：仅 Codex，旧标签不再派发")
+    ap.add_argument("--short-name", required=True, help="短名，≤12 字")
+    ap.add_argument("--branch", required=True,
+                    help="CC：短横线 slug（如 opener-gen）——🔴 只传 OP 短号**之后**那一截，"
+                         "本工具会自动拼 `codex/opMMDDX-` 前缀，slug 里勿再含 "
+                         "`opNNNN[a-z]` 形态的 OP 短号（传 `op0909b-docx-481` 会拼成 "
+                         "`codex/op0909b-op0909b-docx-481`，现已 fail-loud 拒绝）；"
+                         "Cowork：固定传 master")
+    ap.add_argument("--worktree", required=True, help="worktree 情形，须以 ☑／☐ 开头")
+    ap.add_argument("--workspace", required=True, help="工作区情形（§〇.1 四种填法之一或「无」）")
+    ap.add_argument("--session", required=True, help="骨架固定为「新开」")
+    ap.add_argument("--line", required=True, help="派出线名")
+    # 🔴 `--input-pointer` 由 argparse 必填改为**解析后校验**（队列 §一 `#489` 步骤 5）：
+    # `--variant reference` 用 `--ref-file` 提供同一个指针，两个旗标都必填会逼调用方
+    # 把同一条路径敲两遍——**同一事实两处来源，迟早对不上**。缺失仍然 fail-loud，
+    # 只是报错点从 argparse 移到 `_resolve_input_pointer`，措辞更具体。
+    ap.add_argument("--input-pointer", default=None, help="首要输入的仓库根相对路径"
+                                                         "（`--variant reference` 请改用 --ref-file）")
+    ap.add_argument("--ref-file", default=None,
+                    help="引用版专用：派单件的仓库根相对路径（`--variant reference` 必填）")
+    ap.add_argument("--task-class", required=True, choices=VALID_TASK_CLASSES, help="A 或 B 类")
+    ap.add_argument("--claude-section", default="", help="已退役参数：非空值会拒绝出件，不映射旧章节")
+    ap.add_argument("--do", dest="do_items", action="append", default=None, help="做什么条目，可重复")
+    ap.add_argument("--dont", dest="dont_items", action="append", default=None, help="不做什么条目，可重复")
+    ap.add_argument("--variant", default="standard", choices=VALID_VARIANTS,
+                    help="骨架变体：standard（默认）／subtask_lane（子任务泳道）／guardian（§三bis 看护者开场词）")
+    ap.add_argument("--batch", default=None,
+                    help="仅 subtask_lane：心跳收工句 `heartbeat --done --batch` 用的批次；"
+                         "不传则从 --line 现取 `B-MMDD_…`，两者皆无即拒绝出件（队列 §一 `#565`）")
+    ap.add_argument("--model", default=None, choices=(*VALID_MODELS, "gpt-6-luna"),
+                    help="派生显式模型：gpt-6-luna；不启动模型或改变桌面主会话设置")
+    return ap
+
+
+def _resolve_input_pointer(args) -> str:
+    """定下 `input_pointer` 的唯一来源，并对两个旗标的误用 fail-loud（`#489` 步骤 5）。
+
+    四条判据，每条都宁可报错也不猜：
+      ① `reference` 缺 `--ref-file` ⇒ 报错（引用版的全部意义就是指向那份件）；
+      ② `reference` 同时给了 `--input-pointer` 且**与 `--ref-file` 不一致** ⇒ 报错
+         （同一事实两处来源、且已经对不上，猜哪个都是错）；一致则放行，不为难调用方；
+      ③ 非 `reference` 却给了 `--ref-file` ⇒ 报错（参数被接受却不生效＝静默丢弃同族，
+         正是 `#487` 子项付过学费的形态）；
+      ④ 非 `reference` 缺 `--input-pointer` ⇒ 报错（原 argparse `required=True` 的等价物）。
+    """
+    if args.variant == "reference":
+        if not args.ref_file:
+            raise OpenerGenError(
+                "`--variant reference` 必须给 `--ref-file <派单件仓库根相对路径>`"
+                "——引用版四行里那句「读 <派单件> 全文」就是它的正文，缺了它这份开场词"
+                "什么也没说（队列 §一 `#489` 步骤 5）。")
+        if args.input_pointer and args.input_pointer != args.ref_file:
+            raise OpenerGenError(
+                "`--variant reference` 下 `--input-pointer` 与 `--ref-file` 同指一份件，"
+                f"两者不得给出不同的值：--input-pointer={args.input_pointer!r} "
+                f"vs --ref-file={args.ref_file!r}。只给 `--ref-file` 即可。")
+        return args.ref_file
+    if args.ref_file:
+        raise OpenerGenError(
+            f"`--ref-file` 只对 `--variant reference` 生效，当前 variant={args.variant!r} "
+            "⇒ 它会被静默丢弃，故在此拒绝（参数被接受却不生效，比被拒绝更危险；"
+            "队列 §一 `#487` 子项）。要指定输入请用 `--input-pointer`。")
+    if not args.input_pointer:
+        raise OpenerGenError("缺必填参数 `--input-pointer`（首要输入的仓库根相对路径）。")
+    return args.input_pointer
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = _build_arg_parser()
+    args = ap.parse_args(argv)
+    try:
+        args.input_pointer = _resolve_input_pointer(args)
+    except OpenerGenError as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return 1
+    kwargs = {
+        "op_id": args.op_id, "env": args.env, "short_name": args.short_name,
+        "branch": args.branch, "worktree": args.worktree, "workspace": args.workspace,
+        "session": args.session, "line": args.line, "input_pointer": args.input_pointer,
+        "task_class": args.task_class, "claude_section": args.claude_section,
+        "variant": args.variant,
+    }
+    if args.model is not None:
+        kwargs["model"] = args.model
+    if args.batch:
+        kwargs["batch"] = args.batch
+    if args.do_items:
+        kwargs["do_items"] = args.do_items
+    if args.dont_items:
+        kwargs["dont_items"] = args.dont_items
+    try:
+        print(generate_opener(**kwargs))
+    except OpenerGenError as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

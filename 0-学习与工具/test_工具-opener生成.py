@@ -58,7 +58,7 @@ def tearDownModule():
 #: 一组完整合法的 CC 侧参数——各条反例均从这份基线上单独破坏一个字段。
 VALID_CC_KWARGS = dict(
     op_id="OP-0905-A",
-    env="CC",
+    env="Codex",
     short_name="示例任务",
     branch="demo-slug",
     worktree="☑（demo-wt，新 worktree，收工自删）",
@@ -74,7 +74,7 @@ VALID_CC_KWARGS = dict(
 
 VALID_COWORK_KWARGS = dict(
     op_id="OP-0905-B",
-    env="Cowork",
+    env="Codex",
     short_name="示例二",
     branch="master",
     worktree="☐（不建，只产改 `.md`）",
@@ -91,12 +91,11 @@ class ModelFieldTests(unittest.TestCase):
 
     def test_不传model_设置行落inherit(self):
         out = M.generate_opener(**VALID_CC_KWARGS)
-        self.assertIn("｜ 模型：inherit", out)
+        self.assertIn("｜ 模型：gpt-6-luna", out)
 
-    def test_显式design_设置行落design(self):
-        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0905-C", "model": "design"})
-        self.assertIn("｜ 模型：design", out)
-        self.assertNotIn("｜ 模型：inherit", out)
+    def test_显式旧策略别名不能继承模型(self):
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**{**VALID_CC_KWARGS,"op_id":"OP-0905-C","model":"design"})
 
     def test_非法取值报错(self):
         with self.assertRaises(M.OpenerGenError):
@@ -170,31 +169,19 @@ class WorktreeCheckboxTests(unittest.TestCase):
 class TitleCallPseudocodeTests(unittest.TestCase):
     """反例③ —— `set_session_title` 写成伪代码（非真实工具名＋`"self"` 字面量）必须报错。"""
 
-    def test_pseudocode_title_call_raises(self):
-        kwargs = dict(VALID_CC_KWARGS)
-        kwargs["title_call_override"] = "开工第一件事：调用改名工具，把标题设为示例任务。"
+    def test_pseudocode_title_override_is_rejected(self):
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**kwargs)
-        # 断言拦下的正是复用的 check_block 形态①（不是本模块另起的第二套判据）
-        self.assertIn("check_block", str(ctx.exception))
-        self.assertIn("set_session_title", str(ctx.exception))
+            M.generate_opener(**dict(VALID_CC_KWARGS,title_call_override="调用改名工具"))
+        self.assertIn("title_call_override",str(ctx.exception))
 
-    def test_title_call_missing_subtask_exception_raises(self):
-        """伪代码之外的另一种破坏：有真实工具名但删掉了子任务例外句 —— 同样该被拦（形态②）。"""
-        kwargs = dict(VALID_CC_KWARGS)
-        kwargs["title_call_override"] = (
-            '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title'
-            '（session_id 传字面量 "self"），标题：[Win]0905A-示例任务。'
-        )
-        with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**kwargs)
-        self.assertIn("check_block", str(ctx.exception))
+    def test_old_title_rpc_is_rejected_even_with_native_label(self):
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**dict(VALID_CC_KWARGS,title_call_override='mcp__ccd_session_mgmt__set_session_title self'))
 
-    def test_real_tool_call_with_exception_passes(self):
-        kwargs = dict(VALID_CC_KWARGS)
-        kwargs["title_call_override"] = M._title_call_line(
-            kwargs["op_id"], kwargs["short_name"])
-        M.generate_opener(**kwargs)  # 不应抛错
+    def test_complete_old_rpc_still_cannot_become_native_entry(self):
+        old=M._title_call_line(VALID_CC_KWARGS['op_id'],VALID_CC_KWARGS['short_name'])
+        with self.assertRaises(M.OpenerGenError):
+            M.generate_opener(**dict(VALID_CC_KWARGS,title_call_override=old))
 
 
 class PositiveGenerationTests(unittest.TestCase):
@@ -209,7 +196,7 @@ class PositiveGenerationTests(unittest.TestCase):
 
     def test_first_line_matches_title_convention(self):
         first_line = self.out.splitlines()[1]  # 0 号行是围栏 ```
-        self.assertEqual(first_line, "[OP-0905-A]【CC】示例任务")
+        self.assertEqual(first_line, "[OP-0905-A]【Codex】示例任务")
 
     def test_six_fields_present_in_order(self):
         """六字段顺序固定：执行环境｜分支｜worktree｜工作区｜session｜派出线（骨架硬规则）。"""
@@ -222,14 +209,14 @@ class PositiveGenerationTests(unittest.TestCase):
     def test_session_literal_xinkai_appears(self):
         self.assertIn("session：新开", self.out)
 
-    def test_title_call_line_has_real_tool_and_self_literal(self):
-        self.assertIn(
-            'mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "self"）', self.out)
+    def test_native_identity_contains_source_and_thread_binding(self):
+        self.assertIn("会话标识：[Win]0905A-示例任务",self.out)
+        self.assertIn("source_id",self.out);self.assertIn("thread_id",self.out)
+        self.assertNotIn("mcp__ccd_",self.out)
 
-    def test_title_call_line_has_subtask_exception_clause(self):
-        self.assertIn("子任务", self.out)
-        self.assertIn("例外", self.out)
-        self.assertIn(M.SUBTASK_EXCEPTION, self.out)
+    def test_native_identity_cannot_rename_parent(self):
+        self.assertIn("不得调用源端接口或改父任务标题",self.out)
+        self.assertNotIn("set_session_title",self.out)
 
     def test_output_passes_lint_check_block_with_zero_problems(self):
         """产出本身必须让 `工具-opener块lint.py::check_block` 判零违规——同一份判据两处都用。"""
@@ -238,13 +225,13 @@ class PositiveGenerationTests(unittest.TestCase):
         self.assertEqual(len(blocks), 1)
         self.assertEqual(lint.check_block(blocks[0]), [])
 
-    def test_cowork_output_also_passes_lint(self):
-        out = M.generate_opener(**VALID_COWORK_KWARGS)
-        lint = M._load_lint_module()
-        blocks = lint.iter_fenced_blocks(out)
-        self.assertEqual(lint.check_block(blocks[0]), [])
-        self.assertIn("session：新开", out)
-        self.assertIn("收工：产出登记 §二 待 commit 批次", out)
+    def test_shared_document_input_uses_same_native_contract(self):
+        out=M.generate_opener(**VALID_COWORK_KWARGS)
+        lint=M._load_lint_module()
+        self.assertEqual(lint.check_block(lint.iter_fenced_blocks(out)[0]),[])
+        self.assertIn("执行环境：Codex",out)
+        self.assertIn("session：新开",out)
+        self.assertIn("模型：gpt-6-luna",out)
 
 
 class ValidationEdgeCaseTests(unittest.TestCase):
@@ -271,6 +258,7 @@ class ValidationEdgeCaseTests(unittest.TestCase):
     def test_cowork_branch_must_be_master(self):
         kwargs = dict(VALID_COWORK_KWARGS)
         kwargs["branch"] = "some-slug"
+        kwargs["env"] = "Cowork"  # 已退役标签不能借任意分支参数重新进入执行链
         with self.assertRaises(M.OpenerGenError):
             M.generate_opener(**kwargs)
 
@@ -444,7 +432,7 @@ class VariantGuardianTests(unittest.TestCase):
 
     def setUp(self):
         self.kwargs = dict(
-            op_id="OP-0905-VG", env="CC", variant="guardian", short_name="示例批",
+            op_id="OP-0905-VG", env="Codex", variant="guardian", short_name="示例批",
             branch="master（看护者本身不建分支，不改代码）",
             worktree="☐（看护者不建，各子泳道自建）",
             workspace="无", session="新开", line="环境总线",
@@ -452,25 +440,23 @@ class VariantGuardianTests(unittest.TestCase):
         )
         self.out = M.generate_opener(**self.kwargs)
 
-    def test_codex_guardian_uses_native_foreground_entry(self):
-        out = M.generate_opener(**{**self.kwargs, "env": "Codex"})
-        self.assertIn("【Codex】看护示例批", out)
-        self.assertIn("invoke.ps1 -Mode Guardian start", out)
-        self.assertIn("guardian_adapter", out)
-        self.assertNotIn("mcp__ccd_session_mgmt__", out)
-        self.assertNotIn("用 Task/Agent 起子任务", out)
-        lint = M._load_lint_module()
-        self.assertEqual(lint.check_block(lint.iter_fenced_blocks(out)[0]), [])
+    def test_native_guardian_has_no_automatic_dispatch(self):
+        out=M.generate_opener(**dict(self.kwargs,env="Codex"))
+        self.assertIn("【Codex】看护示例批",out)
+        self.assertIn("不自动派生、启动、恢复或变更消费者",out)
+        self.assertNotIn("再在当前 Codex 会话内加 --run",out)
+        self.assertNotIn("mcp__ccd_",out)
+        self.assertNotIn("用 Task/Agent",out)
     def test_first_line_is_guardian_label(self):
         first_line = self.out.splitlines()[1]
-        self.assertEqual(first_line, "[OP-0905-VG]【CC】看护示例批")
+        self.assertEqual(first_line, "[OP-0905-VG]【Codex】看护示例批")
 
-    def test_has_session_title_with_guardian_label(self):
-        self.assertIn("set_session_title", self.out)
-        self.assertIn("[Win]0905VG-看护示例批", self.out)
+    def test_guardian_has_native_identity_without_old_rpc(self):
+        self.assertIn("会话标识：[Win]0905VG-示例批",self.out)
+        self.assertNotIn("set_session_title",self.out)
 
     def test_default_note_present(self):
-        self.assertIn(M.GUARDIAN_PARALLEL_NOTE, self.out)
+        self.assertIn("默认主会话串行", self.out)
 
     def test_passes_lint_check_block(self):
         lint = M._load_lint_module()
@@ -485,7 +471,7 @@ class VariantGuardianTests(unittest.TestCase):
 
     def test_guardian_branch_not_forced_into_slug_template(self):
         # 分支字段须原样透传（固定字面量），不会被套上标准变体的
-        # "从 master 起 claude/opMMDDx-<slug>" 拼装模板。
+        # "从 master 起 codex/opMMDDx-<slug>" 拼装模板。
         self.assertIn("master（看护者本身不建分支，不改代码）", self.out)
         self.assertNotIn("从 master 起 `claude/", self.out)
 
@@ -508,7 +494,7 @@ class CoworkDontItemsTests(unittest.TestCase):
 
     def test_cowork_不做什么段排在收工段之前(self):
         out = M.generate_opener(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
-        self.assertLess(out.index("不做什么："), out.index("收工：产出登记 §二"))
+        self.assertLess(out.index("不做什么："), out.index(M.IGNORE_BLIND_NOTE))
         self.assertLess(out.index("做什么："), out.index("不做什么："))
 
     def test_cowork_未传dont时仍出段占位_不违反形态七(self):
@@ -540,7 +526,7 @@ class SilentlyDroppedBodyParamTests(unittest.TestCase):
 
     #: guardian 变体夹具（模块级没有共享的，同 VariantGuardianTests 自建一份）。
     GUARDIAN_KWARGS = dict(
-        op_id="OP-0905-VG", env="CC", variant="guardian", short_name="示例批",
+        op_id="OP-0905-VG", env="Codex", variant="guardian", short_name="示例批",
         branch="master（看护者本身不建分支，不改代码）",
         worktree="☐（看护者不建，各子泳道自建）",
         workspace="无", session="新开", line="环境总线",
@@ -590,7 +576,7 @@ class SilentlyDroppedBodyParamTests(unittest.TestCase):
         import io as _io
         import contextlib
         argv = [
-            "--op-id", "OP-1231-Z", "--env", "CC", "--variant", "guardian",
+            "--op-id", "OP-1231-Z", "--env", "Codex", "--variant", "guardian",
             "--short-name", "示例批",
             "--branch", "master（看护者本身不建分支，不改代码）",
             "--worktree", "☐（看护者不建，各子泳道自建）",
@@ -627,7 +613,7 @@ class 引用版变体(unittest.TestCase):
     """
 
     BASE = dict(
-        op_id="OP-0908-Z", env="CC", short_name="引用版试跑", branch="ref-demo",
+        op_id="OP-0908-Z", env="Codex", short_name="引用版试跑", branch="ref-demo",
         worktree="☑（demo-wt，新 worktree，收工自删）", workspace="无",
         session="新开", line="环境总线 OP-0907-AL", task_class="A",
         input_pointer="1-转型规划/0-全景路线图/示例派单件.md",
@@ -636,30 +622,11 @@ class 引用版变体(unittest.TestCase):
 
     #: 🔴 golden 对照：逐字钉死四行形态。改动它必须是**有意改格式**，
     #: 不能是「顺手动了拼装逻辑、golden 跟着改一下让测试变绿」。
-    GOLDEN_CC = (
-        "```\n"
-        "[OP-0908-Z]【CC】引用版试跑\n"
-        "【设置】执行环境：CC ｜ 分支：master（从 master 起 `codex/op0908z-ref-demo`）"
-        " ｜ worktree：☑（demo-wt，新 worktree，收工自删） ｜ 工作区：无 ｜ "
-        "session：新开 ｜ 派出线：环境总线 OP-0907-AL ｜ 模型：inherit\n"
-        "开工第一件事：调 mcp__ccd_session_mgmt__set_session_title（session_id 传字面量 "
-        '"self"），标题：[Win]0908Z-引用版试跑。' + M.SUBTASK_EXCEPTION + "\n"
-        "读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `CLAUDE.md` 恢复上下文，"
-        "按该件执行。本件为 A 类。\n"
-        "```"
-    )
+    GOLDEN_CC = '```\n[OP-0908-Z]【Codex】引用版试跑\n【设置】执行环境：Codex ｜ 分支：master（从 master 起 `codex/op0908z-ref-demo`） ｜ worktree：☑（demo-wt，新 worktree，收工自删） ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线 OP-0907-AL ｜ 模型：gpt-6-luna\n会话标识：[Win]0908Z-引用版试跑；只在当前 harness 实际提供且已确认本会话的标题工具中设置；无工具时保留建议名，通过 source_id→thread_id 审计绑定，不得调用源端接口或改父任务标题。\n读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `AGENTS.md` 恢复上下文，按该件执行。本件为 A 类。\n```'
 
     #: 2026-09-19 更正：Cowork 变体不带「模型：」
     #: 该字段只被 工具-opener批处理执行v2.ps1 用来给 CC 子进程传 --model，Cowork 从不经它启动。
-    GOLDEN_COWORK = (
-        "```\n"
-        "[OP-0908-Y]【Cowork】引用版Cowork\n"
-        "【设置】执行环境：Cowork ｜ 分支：master ｜ worktree：☐（不建，只产改 `.md`）"
-        " ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线\n"
-        "读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `CLAUDE.md` 恢复上下文，"
-        "按该件执行。本件为 B 类。\n"
-        "```"
-    )
+    GOLDEN_COWORK = '```\n[OP-0908-Y]【Codex】引用版Cowork\n【设置】执行环境：Codex ｜ 分支：master（从 master 起 `codex/op0908y-master`） ｜ worktree：☐（不建，只产改 `.md`） ｜ 工作区：无 ｜ session：新开 ｜ 派出线：环境总线 ｜ 模型：gpt-6-luna\n会话标识：[Win]0908Y-引用版Cowork；只在当前 harness 实际提供且已确认本会话的标题工具中设置；无工具时保留建议名，通过 source_id→thread_id 审计绑定，不得调用源端接口或改父任务标题。\n读 `1-转型规划/0-全景路线图/示例派单件.md` 全文＋ `AGENTS.md` 恢复上下文，按该件执行。本件为 B 类。\n```'
 
     def _gen(self, **over):
         return M.generate_opener(**{**self.BASE, **over})
@@ -670,7 +637,7 @@ class 引用版变体(unittest.TestCase):
     def test_golden_Cowork三行_无title调用(self):
         """🔴 Cowork 侧**不放** `set_session_title`：那个工具在 Cowork 桌根本不存在
         （2026-08-27 补充一实测），放了就是教人写一个不存在的调用。"""
-        out = self._gen(op_id="OP-0908-Y", env="Cowork", short_name="引用版Cowork",
+        out = self._gen(op_id="OP-0908-Y", env="Codex", short_name="引用版Cowork",
                         branch="master", worktree="☐（不建，只产改 `.md`）",
                         line="环境总线", task_class="B")
         self.assertEqual(out, self.GOLDEN_COWORK)
@@ -681,7 +648,7 @@ class 引用版变体(unittest.TestCase):
         这里再从外部独立跑一次，防止内部自检哪天被绕过。"""
         lint = M._load_lint_module()
         for out in (self._gen(),
-                    self._gen(op_id="OP-0908-Y", env="Cowork", short_name="引用版Cowork",
+                    self._gen(op_id="OP-0908-Y", env="Codex", short_name="引用版Cowork",
                               branch="master", worktree="☐（不建）", line="L",
                               task_class="B")):
             block = lint.iter_fenced_blocks(out)[0]
@@ -704,7 +671,7 @@ class 引用版变体(unittest.TestCase):
         return code, err.getvalue()
 
     _CLI_COMMON = [
-        "--env", "CC", "--short-name", "试", "--branch", "d",
+        "--env", "Codex", "--short-name", "试", "--branch", "d",
         "--worktree", "☑（x）", "--workspace", "无", "--session", "新开",
         "--line", "L", "--task-class", "A",
     ]
@@ -814,7 +781,7 @@ class 子任务泳道占位段(unittest.TestCase):
 
 class 分支slug前缀重复(unittest.TestCase):
     """队列 §一 `#487` 追记⑵（2026-09-09 apply）——`--branch` 传含 OP 短号的全名
-    会拼出 `claude/op1231c-op0909b-docx-481`。
+    会拼出 `codex/op1231c-op0909b-docx-481`。
 
     🔴 **这条原本不是 bug 是用法**，但 `--help` 只写「短横线 slug」、没写「勿含 OP
     短号」，按直觉传全名必踩，且成品是一个**看起来正常的分支名、不报错**——
@@ -836,7 +803,7 @@ class 分支slug前缀重复(unittest.TestCase):
     def test_报错信息给出拼坏后的分支名(self):
         with self.assertRaises(M.OpenerGenError) as cm:
             self._gen("op0909b-docx-481")
-        self.assertIn("claude/op1231c-op0909b-docx-481", str(cm.exception))
+        self.assertIn("codex/op1231c-op0909b-docx-481", str(cm.exception))
 
     def test_无字母后缀的短号同样被拒(self):
         with self.assertRaises(M.OpenerGenError):
@@ -864,106 +831,6 @@ class 分支slug前缀重复(unittest.TestCase):
         self.assertIn("opNNNN", help_text)
 
 
-class 骨架与生成器契约(unittest.TestCase):
-    """🔑 **本类就是队列 §一 `#487` 判据里那道闸**：此前**格式正本与生成器之间没有
-    机器守**，全靠人每次肉眼比对——两处口径各自演进，2026-09-06（`--dont` 静默丢弃）
-    与 2026-09-09（子任务泳道硬塞占位）已各出一例，不建闸必有第三例。
-
-    🔴 **闸的做法是「从正本现读，不在测试里抄第二份」**：本类的期望值全部现读
-    `opener骨架.md`【CC · 子任务泳道】那一节；正本改了而生成器没跟（或反过来），
-    本类当场红。测试里若把骨架内容硬抄一遍，就又造出了第三份会漂的判据。
-    """
-
-    SECTION_HEADING = "## 【CC · 子任务泳道】骨架"
-
-    @classmethod
-    def setUpClass(cls):
-        text = M.SKELETON_FILE.read_text(encoding="utf-8")
-        start = text.index(cls.SECTION_HEADING)
-        nxt = text.index("\n## ", start + 1)
-        cls.section = text[start:nxt]
-        lint = M._load_lint_module()
-        blocks = lint.iter_fenced_blocks(cls.section)
-        assert len(blocks) == 1, f"该节应恰有 1 个围栏块，实为 {len(blocks)}"
-        cls.canon_lines = [ln for ln in blocks[0].lines if ln.strip()]
-        kw = {k: v for k, v in VALID_CC_KWARGS.items()
-              if k not in ("do_items", "dont_items")}
-        kw.update({"variant": "subtask_lane", "op_id": "OP-1231-G"})
-        out = M.generate_opener(**kw)
-        cls.gen_lines = [ln for ln in out.splitlines()
-                         if ln.strip() and not ln.startswith("```")]
-
-    def test_正本仍写着恒为三行那条硬规则(self):
-        """规则本身被删/改写 ⇒ 本用例红，逼人看一眼，而不是让闸静默失效。"""
-        self.assertIn("正文恒为三行，不多写一行", self.section)
-        self.assertIn("做什么／不做什么／收工", self.section)
-
-    def test_行数与正本一致(self):
-        self.assertEqual(len(self.gen_lines), len(self.canon_lines),
-                         f"正本 {len(self.canon_lines)} 行 ／ 生成器 "
-                         f"{len(self.gen_lines)} 行：\n正本={self.canon_lines}\n"
-                         f"生成器={self.gen_lines}")
-
-    def test_正本与生成器都不含做什么段(self):
-        for label, lines in (("正本", self.canon_lines), ("生成器", self.gen_lines)):
-            with self.subTest(来源=label):
-                self.assertFalse([ln for ln in lines if "做什么：" in ln],
-                                 f"{label} 出现了「做什么／不做什么」段")
-
-    def test_七条机器口径逐字取自正本(self):
-        """正本尾七行（P4 两条 ＋ 心跳一条 ＋ 回归 narrow 一条 ＋ push 一条 ＋ 产出实证
-        一条 ＋ 新增告警类沙箱夹具一条 ＋ 收工哨兵，队列 §一 `#550`／`#565`／`#627`／
-        `#627` B 面）必须与生成器常量**逐字**相同——改一处不改另一处即红。心跳行比的是
-        占位符版（正本教形态、生成器填真值，`OP-0912-F`）。"""
-        self.assertEqual(self.canon_lines[-7], M.SUBTASK_PARALLEL_NOTE)
-        self.assertEqual(self.canon_lines[-6], M.subtask_heartbeat_note(
-            M.SUBTASK_HEARTBEAT_LANE_PLACEHOLDER, M.SUBTASK_HEARTBEAT_BATCH_PLACEHOLDER))
-        self.assertEqual(self.canon_lines[-5], M.SUBTASK_NARROW_TEST_NOTE)
-        self.assertEqual(self.canon_lines[-4], M.SUBTASK_PUSH_NOTE)
-        self.assertEqual(self.canon_lines[-3], M.SUBTASK_EVIDENCE_NOTE)
-        self.assertEqual(self.canon_lines[-2], M.SUBTASK_ALERT_FIXTURE_NOTE)
-        self.assertEqual(self.canon_lines[-1], M.SUBTASK_SENTINEL_NOTE)
-
-    def test_正本写明哨兵行是有意扩入(self):
-        """骨架该节此前纪律是「P4 两条」——本次扩为三条，正本必须写明理由与 `#550`，
-        否则下一个人会按旧纪律把它删掉（派单件 §二 第 1 步的明文要求）。"""
-        self.assertIn("#550", self.section)
-        self.assertIn("有意扩入", self.section)
-
-    def test_正本写明心跳行是有意扩入(self):
-        """同上，心跳约定行是 2026-09-12 `#565` 扩入的，正本必须写明理由，
-        否则下一个人会按「P4 两条＋收工哨兵」的旧纪律把它删掉。"""
-        self.assertIn("#565", self.section)
-        self.assertIn("有意扩入", self.section)
-
-    def test_正本写明新增告警类沙箱夹具行是有意扩入(self):
-        """同上，新增告警类沙箱夹具行是 2026-09-20 `#627` B 面扩入的，正本必须写明理由，
-        否则下一个人会按旧条数把它删掉。"""
-        self.assertIn("#627", self.section)
-        self.assertIn("B 面", self.section)
-        self.assertIn("有意扩入", self.section)
-
-    def test_前三行形状与正本对齐(self):
-        """占位符不同、结构必须同：首行编号形态、`【设置】` 六字段、`读 ①` 起手。"""
-        canon_head, gen_head = self.canon_lines[:3], self.gen_lines[:3]
-        self.assertTrue(canon_head[0].startswith("[OP-MMDD-X]【CC】"))
-        self.assertTrue(gen_head[0].startswith("[OP-1231-G]【CC】"))
-        for label, line in (("正本", canon_head[2]), ("生成器", gen_head[2])):
-            with self.subTest(来源=label):
-                self.assertTrue(line.startswith("读 ① "), line[:20])
-                self.assertIn("恢复上下文", line)
-        lint = M._load_lint_module()
-        for label, line in (("正本", canon_head[1]), ("生成器", gen_head[1])):
-            with self.subTest(来源=label):
-                self.assertEqual(
-                    [f for f in lint.SETTINGS_FIELD_ORDER if f in line],
-                    list(lint.SETTINGS_FIELD_ORDER), f"{label} 的六字段不全或错序")
-
-    def test_生成器产物过lint零违规(self):
-        lint = M._load_lint_module()
-        fenced = "\n".join(["```"] + self.gen_lines + ["```"])
-        blocks = lint.iter_fenced_blocks(fenced)
-        self.assertEqual(lint.check_block(blocks[0], is_subtask_lane=True), [])
 
 
 class 收工哨兵强制注入(unittest.TestCase):
@@ -1141,7 +1008,7 @@ class 心跳尾句强制注入(unittest.TestCase):
         out, err = _io.StringIO(), _io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = M.main([
-                "--op-id", "OP-1230-J", "--env", "CC", "--short-name", "心跳示例",
+                "--op-id", "OP-1230-J", "--env", "Codex", "--short-name", "心跳示例",
                 "--branch", "hb-demo", "--worktree", "☑（hb，新 worktree，收工自删）",
                 "--workspace", "无", "--session", "新开", "--line", "环境总线 OP-1230-Z",
                 "--input-pointer", "1-转型规划/0-全景路线图/示例派单件.md", "--task-class", "A",
@@ -1257,7 +1124,7 @@ class 取号即声明(unittest.TestCase):
         """落了档就由 `_scan_used_suffixes` 接管；占位只覆盖取号→落档的真空。"""
         M.generate_opener(**self._kw(short_name="要落档的件"))
         (self.root / "1-转型规划").mkdir()
-        (self.root / "1-转型规划" / "派单件.md").write_text("[OP-1229-A]【CC】要落档的件", encoding="utf-8")
+        (self.root / "1-转型规划" / "派单件.md").write_text("[OP-1229-A]【Codex】要落档的件", encoding="utf-8")
         # 任意一次当日取号都会顺手清理：取 B。
         M.generate_opener(**self._kw(op_id="OP-1229-B", short_name="另一件"))
         recs = self._claims()
@@ -1329,13 +1196,10 @@ class CoworkModelRejectionTests(unittest.TestCase):
     """队列 §一 `#620`（`OP-0918-C` 实撞两处错之一）：`--env Cowork` 下显式传 `--model`
     此前被 `_settings_line` 静默省略——参数被接受却不生效，比被拒绝更危险，现改 fail-loud。"""
 
-    def test_cowork显式传model即拒绝(self):
+    def test_native_rejects_strategy_alias_instead_of_dropping_it(self):
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-T", "model": "design"})
-        msg = str(ctx.exception)
-        self.assertIn("--model", msg)
-        self.assertIn("Cowork", msg)
-        self.assertIn("#620", msg)
+            M.generate_opener(**dict(VALID_COWORK_KWARGS,op_id="OP-1231-T",model="design"))
+        self.assertIn("gpt-6-luna",str(ctx.exception))
 
     def test_cowork传inherit默认值同样拒绝(self):
         """🔴 判「传没传」只看 kwargs，不看值——传显式 `inherit`（即便与缺省值相同）也该拒绝，
@@ -1343,15 +1207,15 @@ class CoworkModelRejectionTests(unittest.TestCase):
         with self.assertRaises(M.OpenerGenError):
             M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-U", "model": "inherit"})
 
-    def test_cowork不传model仍正常出件(self):
-        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-V"})
-        self.assertNotIn("模型", out)
+    def test_native_shared_input_has_explicit_luna(self):
+        out=M.generate_opener(**dict(VALID_COWORK_KWARGS,op_id="OP-1231-V"))
+        self.assertIn("模型：gpt-6-luna",out)
 
     def test_cli层cowork传model_退出码1且写stderr(self):
         import contextlib
         import io
         argv = [
-            "--env", "Cowork", "--op-id", "OP-1231-W", "--short-name", "示例三",
+            "--env", "Codex", "--op-id", "OP-1231-W", "--short-name", "示例三",
             "--branch", "master", "--worktree", "☐（不建，只产改 `.md`）",
             "--workspace", "无", "--session", "新开", "--line", "环境总线",
             "--input-pointer", "1-转型规划/0-全景路线图/示例派单件.md", "--task-class", "B",
@@ -1465,6 +1329,6 @@ class CodexLunaContractTests(unittest.TestCase):
             with self.subTest(model=model), self.assertRaises(M.OpenerGenError):
                 M.generate_opener(**dict(VALID_CC_KWARGS, env='Codex', model=model))
 
-    def test_cc_rejects_native_model(self):
+    def test_retired_cc_label_cannot_dispatch_native_or_old_model(self):
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**dict(VALID_CC_KWARGS, model="gpt-6-luna"))
+            M.generate_opener(**dict(VALID_CC_KWARGS,env="CC",model="gpt-6-luna"))

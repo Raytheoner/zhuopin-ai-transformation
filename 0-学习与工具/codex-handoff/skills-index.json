@@ -2,141 +2,186 @@
   {
     "name": "openspec-apply-change",
     "kind": "native-entry",
-    "source": ".claude/skills/openspec-apply-change"
+    "source": ".agents/skills/openspec-apply-change/SKILL.md"
   },
   {
     "name": "openspec-archive-change",
     "kind": "native-entry",
-    "source": ".claude/skills/openspec-archive-change"
+    "source": ".agents/skills/openspec-archive-change/SKILL.md"
   },
   {
     "name": "openspec-explore",
     "kind": "native-entry",
-    "source": ".claude/skills/openspec-explore"
+    "source": ".agents/skills/openspec-explore/SKILL.md"
   },
   {
     "name": "openspec-propose",
     "kind": "native-entry",
-    "source": ".claude/skills/openspec-propose"
+    "source": ".agents/skills/openspec-propose/SKILL.md"
   },
   {
     "name": "openspec-sync-specs",
     "kind": "native-entry",
-    "source": ".claude/skills/openspec-sync-specs"
+    "source": ".agents/skills/openspec-sync-specs/SKILL.md"
   },
   {
     "name": "zhuopin-followup-letter",
     "kind": "native-entry",
-    "source": ".claude/skills/zhuopin-followup-letter"
+    "source": ".agents/skills/zhuopin-followup-letter/SKILL.md"
   },
   {
     "name": "zhuopin-kickoff-prompt",
     "kind": "adapter-entry",
-    "source": "0-学习与工具/skills源码/zhuopin-kickoff-prompt/SKILL.md"
+    "source": ".agents/skills/zhuopin-kickoff-prompt/SKILL.md"
   },
   {
     "name": "zhuopin-lan-closeout",
     "kind": "adapter-entry",
-    "source": "0-学习与工具/skills源码/zhuopin-lan-closeout/SKILL.md"
+    "source": ".agents/skills/zhuopin-lan-closeout/SKILL.md"
   },
   {
     "name": "zhuopin-lane-watch",
     "kind": "adapter-entry",
-    "source": "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md"
+    "source": ".agents/skills/zhuopin-lane-watch/SKILL.md"
   },
   {
     "name": "zhuopin-queue-audit",
     "kind": "adapter-entry",
-    "source": "0-学习与工具/skills源码/zhuopin-queue-audit/SKILL.md"
+    "source": ".agents/skills/zhuopin-queue-audit/SKILL.md"
   },
   {
     "name": "zhuopin-rebaseline",
     "kind": "adapter-entry",
-    "source": "0-学习与工具/skills源码/zhuopin-rebaseline/SKILL.md"
+    "source": ".agents/skills/zhuopin-rebaseline/SKILL.md"
   },
   {
     "name": "zhuopin-send-followup",
     "kind": "adapter-entry",
-    "source": "0-学习与工具/skills源码/zhuopin-send-followup/SKILL.md"
+    "source": ".agents/skills/zhuopin-send-followup/SKILL.md"
   },
   {
     "name": "zhuopin-requirement-grill",
     "kind": "adapter-entry",
-    "source": "0-学习与工具/skills源码/zhuopin-需求grill/SKILL.md"
+    "source": ".agents/skills/zhuopin-requirement-grill/SKILL.md"
   },
   {
     "name": "brainstorming",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/brainstorming/SKILL.md"
   },
   {
     "name": "diagnosing-superpowers",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/diagnosing-superpowers/SKILL.md"
   },
   {
     "name": "dispatching-parallel-agents",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/dispatching-parallel-agents/SKILL.md"
   },
   {
     "name": "executing-plans",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/executing-plans/SKILL.md"
   },
   {
     "name": "finishing-a-development-branch",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/finishing-a-development-branch/SKILL.md"
   },
   {
     "name": "receiving-code-review",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/receiving-code-review/SKILL.md"
   },
   {
     "name": "requesting-code-review",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/requesting-code-review/SKILL.md"
   },
   {
     "name": "subagent-driven-development",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/subagent-driven-development/SKILL.md"
   },
   {
     "name": "systematic-debugging",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/systematic-debugging/SKILL.md"
   },
   {
     "name": "test-driven-development",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/test-driven-development/SKILL.md"
   },
   {
     "name": "using-git-worktrees",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/using-git-worktrees/SKILL.md"
   },
   {
     "name": "using-superpowers",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/using-superpowers/SKILL.md"
   },
   {
     "name": "verification-before-completion",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/verification-before-completion/SKILL.md"
   },
   {
     "name": "writing-plans",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/writing-plans/SKILL.md"
   },
   {
     "name": "writing-skills",
     "kind": "superpowers-native-skill",
-    "source": "Superpowers 6.4.1"
+    "source": ".agents/skills/writing-skills/SKILL.md"
+  },
+  {
+    "name": "source-command-opsx-apply",
+    "kind": "native-entry",
+    "source": ".agents/skills/source-command-opsx-apply/SKILL.md"
+  },
+  {
+    "name": "source-command-opsx-archive",
+    "kind": "native-entry",
+    "source": ".agents/skills/source-command-opsx-archive/SKILL.md"
+  },
+  {
+    "name": "source-command-opsx-explore",
+    "kind": "native-entry",
+    "source": ".agents/skills/source-command-opsx-explore/SKILL.md"
+  },
+  {
+    "name": "source-command-opsx-propose",
+    "kind": "native-entry",
+    "source": ".agents/skills/source-command-opsx-propose/SKILL.md"
+  },
+  {
+    "name": "source-command-opsx-sync",
+    "kind": "native-entry",
+    "source": ".agents/skills/source-command-opsx-sync/SKILL.md"
+  },
+  {
+    "name": "weekly-status-update",
+    "kind": "native-entry",
+    "source": ".agents/skills/weekly-status-update/SKILL.md"
+  },
+  {
+    "name": "zhuopin-codex-handoff",
+    "kind": "native-entry",
+    "source": ".agents/skills/zhuopin-codex-handoff/SKILL.md"
+  },
+  {
+    "name": "zhuopin-poll-opener-batch",
+    "kind": "native-entry",
+    "source": ".agents/skills/zhuopin-poll-opener-batch/SKILL.md"
+  },
+  {
+    "name": "huijian-chaijian-patrol",
+    "kind": "native-entry",
+    "source": ".agents/skills/huijian-chaijian-patrol/SKILL.md"
   }
 ]

@@ -72,11 +72,11 @@ except ImportError:  # 队列 #600：同目录助手缺席（临时复刻目录�
 ARTIFACTS_DIR = Path(r"C:\Users\Paul Shao\Claude\Artifacts")
 SCHEDULED_DIR = Path(r"C:\Users\Paul Shao\Claude\Scheduled")
 # ③ CC 侧：库内 `.claude/skills/<name>/` 即正本，随仓库被全库 grep 覆盖。
-CC_SKILLS_DIR = Path(__file__).resolve().parent.parent / ".claude" / "skills"
+CC_SKILLS_DIR = Path(__file__).resolve().parent.parent / ".agents" / "skills"
 # ③ Cowork 侧：源码在库内（恒可得），但**运行时安装版**落在 Cowork/claude.ai
 # 账号级存储，不在本机文件系统任何路径下——本工具只能列出"有哪些"，
 # 列出即代表"这些本机结构性无法核验"，不再假装去扫一个够不着的地方。
-SKILL_SOURCE_DIR = Path(__file__).resolve().with_name("skills源码")
+SKILL_SOURCE_DIR = Path(__file__).resolve().parent.parent / ".agents" / "skills"
 
 # 命令中心/保供看板/QD-B/FI2 四服务，见 CLAUDE.md §5 端口约定。
 SERVICE_URLS = (
@@ -170,6 +170,11 @@ def cowork_skill_names(source_dir: Path = SKILL_SOURCE_DIR) -> set[str]:
     本机路径——运行时安装版在 Cowork/claude.ai 账号级存储，本机没有对应
     文件系统路径可读。
     """
+    # Codex project skills are their own canonical installation, not an
+    # unverifiable Cowork account copy. Explicit historical source overrides
+    # retain the evidence-only helper contract.
+    if source_dir.resolve() == CC_SKILLS_DIR.resolve():
+        return set()
     if not source_dir.is_dir():
         return set()
     return {p.name for p in source_dir.iterdir() if p.is_dir()}

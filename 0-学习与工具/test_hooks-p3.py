@@ -603,14 +603,17 @@ class TestUserPromptSubmitStandingFive:
         )
         assert proc.returncode == 0
 
-    def test_真实根CLAUDE_md锚点集自洽零漂移(self):
-        """对**真实**根 `CLAUDE.md` 跑一次——既是回归锁，也是"锚点真的插对了地方"的
-        生产前验活。🔴 断言的是**锚点集自洽**（连续·不重复·编号合法），**不断言条数**：
-        §5 常驻纪律条目会随他立法增删，把条数写进断言就是把常红写进 CI（`#537`）。"""
-        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, REPO_ROOT)
-        assert rc == 0, err
-        ctx = get_context(out)
-        assert "⚠" not in ctx, f"真实根 CLAUDE.md 的锚点集不自洽（缺号/重复/非法编号）：{ctx}"
+    def test_现役根AGENTS锚点集自洽零漂移(self):
+        """核原生根路由及其纪律正本，不能用空输出冒充自洽。"""
+        import re
+        root = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf8")
+        discipline = "docs/codex/沟通纪律.md"
+        assert discipline in root, "原生根路由必须明确指向纪律正本"
+        source = root + "\n" + (REPO_ROOT / discipline).read_text(encoding="utf8")
+        anchors = [int(value) for value in re.findall(r"<!--\s*UPS5:(\d+)\s*-->", source)]
+        assert anchors, "原生根文件必须保留真实纪律锚点"
+        assert sorted(anchors) == list(range(1,len(anchors)+1)), "锚点不得缺号、重复或使用非法编号"
+        assert len(anchors) == 7, "现役七项纪律必须全部保全，不能因搬移或少读而漏检"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

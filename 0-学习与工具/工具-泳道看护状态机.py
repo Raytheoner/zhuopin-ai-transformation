@@ -204,7 +204,7 @@ TRANSFER_ACTIONS = {
 
 #: 被指向方（纪律唯一正本）的指针三件——**只锚文件 ＋ 小节标题 ＋ 条目序号，
 #: 不锚行号**（行号会漂，标题相对稳；design 决策点 2(a) 的代价段已如实登记）。
-DEPLOY_DISCIPLINE_POINTER_FILE = "0-学习与工具/skills源码/zhuopin-lan-closeout/SKILL.md"
+DEPLOY_DISCIPLINE_POINTER_FILE = ".agents/skills/zhuopin-lan-closeout/SKILL.md"
 DEPLOY_DISCIPLINE_POINTER_SECTION = "执行步骤"
 DEPLOY_DISCIPLINE_POINTER_ITEM = "第 4 项"
 

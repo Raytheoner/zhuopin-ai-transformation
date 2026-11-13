@@ -9,7 +9,7 @@
 
 | | 守什么 | 判据正本 | 来源 |
 |---|---|---|---|
-| 判据一 | 取证件里的 `✅ 已修／转绿` 必须同段附命令＋回显 | `.claude/rules/两桌同步与取证.md` §三 | Shao Peishen 2026-09-09 答 `1a` |
+| 判据一 | 取证件里的 `✅ 已修／转绿` 必须同段附命令＋回显 | `docs/codex/rules/两桌同步与取证.md` §三 | Shao Peishen 2026-09-09 答 `1a` |
 | 判据二 | 门禁工具守 ≥2 族判据时，判绿必须复跑整套 | 同上 ＋ `0-学习与工具/门禁判据族清单.json` | Shao Peishen 2026-09-09 答 `2a` |
 
 两族**同源＝结论与手段脱钩**：一条是「写了 ✅ 却没留下能证伪它的东西」，一条是「只核了
@@ -294,8 +294,8 @@ def 校验清单自洽(manifest: dict) -> list[str]:
 
 def _tracked_md_files() -> list[str]:
     out = subprocess.run(
-        ["git", "ls-files", "--", f"{SCAN_DIR_REL}/*.md"],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        ["git", "-c", "core.quotepath=false", "ls-files", "--", f"{SCAN_DIR_REL}/*.md"],
+        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=True,
     )
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
@@ -632,7 +632,7 @@ def _run(args) -> int:
             print(f"  - [{v['判据']}] {v['file']}:{v['line']}｜段「{v['段']}」")
             print(f"      {v['说明']}")
             print(f"      断言原文：{v['excerpt']}")
-        print("  判据正本＝`.claude/rules/两桌同步与取证.md` §三；")
+        print("  判据正本＝`docs/codex/rules/两桌同步与取证.md` §三；")
         print("  处置：把当时那条完整命令＋真实回显补进**同一段**；")
         print("        确实没取证的，把 ✅ 改成「据称已修·未取证」——降级措辞本身不算违规。")
         for d in drift:

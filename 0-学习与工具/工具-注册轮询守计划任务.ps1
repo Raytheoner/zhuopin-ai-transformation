@@ -193,6 +193,11 @@ if ($WhatIf) {
     Write-Host "      已生成 $WRAPPER" -ForegroundColor Green
 }
 
+if ($WhatIf) {
+    Write-Host "[WhatIf] 将注册 $TASK：Execute=wscript.exe `"$VBS_LAUNCHER`"；触发＝开机 + 每 $IntervalMinutes 分钟；身份＝$currentUser/Interactive（仅已登录时运行）；上限 40 分钟；IgnoreNew。"
+    exit 0
+}
+
 # ── 3. 注册计划任务（当前账户 Interactive + AtStartup + 每 N 分钟；上一轮未完则忽略新实例） ──
 Write-Host "[3/3] 注册计划任务 $TASK..." -ForegroundColor Yellow
 $action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VBS_LAUNCHER`"" -WorkingDirectory $REPO
@@ -209,10 +214,7 @@ $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minu
 $description = ("轮询守（队列 #575 甲／OP-0913-Q）：每 $IntervalMinutes 分钟跑 无头棒收工探针 ＋ 待合分支巡检，" +
                 "只在有信号时才唤 codex exec；每轮无条件留一行痕到 reports\poll-guard\。替代 Cowork 桌面端 poll-opener-batch。")
 
-if ($WhatIf) {
-    Write-Host "[WhatIf] 将注册 $TASK：Execute=wscript.exe `"$VBS_LAUNCHER`"；触发＝开机 + 每 $IntervalMinutes 分钟；身份＝$currentUser/Interactive（仅已登录时运行）；上限 40 分钟；IgnoreNew。"
-    exit 0
-}
+
 if (Get-ScheduledTask -TaskName $TASK -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $TASK -Confirm:$false   # 重建以更新路径
 }

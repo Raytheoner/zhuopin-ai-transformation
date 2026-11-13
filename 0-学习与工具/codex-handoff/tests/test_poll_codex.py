@@ -77,7 +77,9 @@ class TestSchedulerWrappers:
     def test_commit_sweep_propagates_failure(self,tmp_path):
         vbs=tmp_path/'run-commit-sweep-hidden.vbs'
         vbs.write_bytes((ROOT/'0-学习与工具/run-commit-sweep-hidden.vbs').read_bytes())
-        (tmp_path/'run-commit-sweep.ps1').write_text('exit 7\n',encoding='utf-8-sig')
+        launcher=tmp_path/'codex-handoff/launch_commit_sweep.ps1'
+        launcher.parent.mkdir()
+        launcher.write_text('exit 7\n',encoding='utf-8-sig')
         proc=subprocess.run(['cscript','//nologo',str(vbs)],capture_output=True,text=True,timeout=15)
         assert proc.returncode==7,proc.stdout+proc.stderr
 

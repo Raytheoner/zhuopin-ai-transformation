@@ -263,7 +263,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - run: python 0-学习与工具/工具-CLAUDE进度段lint.py --enforce
+      - run: python 0-学习与工具/工具-Codex规则lint.py --enforce
+      - name: "根入口体积硬闸（UTF-8字节）"
+        shell: python {0}
+        run: |
+          from pathlib import Path
+          limits = {"AGENTS.md": 2048, "CLAUDE.md": 2048, "docs/rules/操作细则.md": 8192}
+          sizes = {p: Path(p).stat().st_size for p in limits}
+          assert all(sizes[p] <= cap for p, cap in limits.items()), sizes
+          assert sizes["AGENTS.md"] + sizes["CLAUDE.md"] <= 3584, sizes
+          print(sizes)
 
   secret-scan:
     name: "凭据扫描"

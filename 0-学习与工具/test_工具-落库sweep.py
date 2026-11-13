@@ -59,6 +59,11 @@ _spec = importlib.util.spec_from_file_location("commit_sweep", SCRIPT)
 sweep = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(sweep)
 
+from _sweep_test_receipts import receipt_sender
+_accepted_test_receipt = receipt_sender(sweep)
+from _sweep_test_sources import seed_synthetic_sources
+from _sweep_test_cli_sources import seed_readonly_cli_sources, README_REL as SYNTHETIC_README_REL
+
 # 队列 #282：业务部门群（采购内部工作群）那个裸键。本文件里它只该出现在
 # "验证它绝不被使用"的用例里——其余测试桩一律写 `sweep.WECOM_WEBHOOK_ENV_KEY`。
 BARE_WEBHOOK_ENV_KEY = "WECOM_WEBHOOK_URL"
@@ -359,6 +364,7 @@ class SweepTestBase(unittest.TestCase):
         placeholder.write_text("占位内容，无路径无版本号，供隔离用\n", encoding="utf-8")
         self._orig_global_memory_env = os.environ.get(sweep.GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE)
         os.environ[sweep.GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE] = str(placeholder)
+        seed_synthetic_sources(self.work, sweep)
 
     def tearDown(self):
         if self._orig_global_memory_env is None:
@@ -976,21 +982,21 @@ class ResolveBatchFilesUnitTests(unittest.TestCase):
 
     def test_exact_match_wins_even_when_another_path_also_ends_with_fragment(self):
         # 08-04 真实现场复现：根 CLAUDE.md 与 SC8/CLAUDE.md 同时脏，片段
-        # `CLAUDE.md` 在旧实现下对两者各算一次 → 判为 ambiguous。
-        dirty = ["CLAUDE.md", "4-数字员工/采购部/SC8-.../CLAUDE.md"]
+        # `AGENTS.md` 在旧实现下对两者各算一次 → 判为 ambiguous。
+        dirty = ['AGENTS.md', '4-数字员工/采购部/SC8-.../AGENTS.md']
         resolved, not_dirty, ambiguous = sweep._resolve_batch_files(
-            "`CLAUDE.md`（根 CLAUDE.md 的改动）", dirty,
+            "`AGENTS.md`（根 CLAUDE.md 的改动）", dirty,
         )
-        self.assertEqual(resolved, ["CLAUDE.md"])
+        self.assertEqual(resolved, ['AGENTS.md'])
         self.assertEqual(not_dirty, [])
         self.assertEqual(ambiguous, [], "精确命中应唯一采用，不应被判为歧义")
 
     def test_suffix_match_still_works_when_no_exact_match(self):
-        dirty = ["4-数字员工/采购部/SC8-.../CLAUDE.md", "杂物.md"]
+        dirty = ['4-数字员工/采购部/SC8-.../CODEX-RULES.md', "杂物.md"]
         resolved, not_dirty, ambiguous = sweep._resolve_batch_files(
-            "`SC8-.../CLAUDE.md`（省略前缀写法）", dirty,
+            '`SC8-.../CODEX-RULES.md`（省略前缀写法）', dirty,
         )
-        self.assertEqual(resolved, ["4-数字员工/采购部/SC8-.../CLAUDE.md"])
+        self.assertEqual(resolved, ['4-数字员工/采购部/SC8-.../CODEX-RULES.md'])
         self.assertEqual(not_dirty, [])
         self.assertEqual(ambiguous, [])
 
@@ -999,13 +1005,13 @@ class ResolveBatchFilesUnitTests(unittest.TestCase):
         # 两个候选都只是后缀匹配、没有一个精确相等——真实无法判定，仍须
         # 落 ambiguous，不能因本次收窄而放松成"随便选一个"。
         dirty = [
-            "4-数字员工/采购部/SC8-.../CLAUDE.md",
-            "4-数字员工/质量部/QD-B-.../CLAUDE.md",
+            '4-数字员工/采购部/SC8-.../CODEX-RULES.md',
+            '4-数字员工/质量部/QD-B-.../CODEX-RULES.md',
         ]
-        resolved, not_dirty, ambiguous = sweep._resolve_batch_files("`CLAUDE.md`", dirty)
+        resolved, not_dirty, ambiguous = sweep._resolve_batch_files("`CODEX-RULES.md`", dirty)
         self.assertEqual(resolved, [])
         self.assertEqual(not_dirty, [])
-        self.assertEqual(ambiguous, ["CLAUDE.md"])
+        self.assertEqual(ambiguous, ['CODEX-RULES.md'])
 
     def test_no_match_is_not_dirty(self):
         resolved, not_dirty, ambiguous = sweep._resolve_batch_files(
@@ -1089,15 +1095,15 @@ class ExactMatchEndToEndTests(SweepTestBase):
 
     def test_correctly_declared_file_not_flagged_ambiguous_by_duplicate_basename(self):
         self._init_and_push(rows="")
-        row = ("| B-TEST | `CLAUDE.md`、`0-全景路线图/跨桌任务队列-机制环境.md` "
+        row = ("| B-TEST | `AGENTS.md`、`0-全景路线图/跨桌任务队列-机制环境.md` "
                "| `docs(test): 精确相等优先` | 待 CC 取活 |\n")
         self._write_queue(row)
-        (self.work / "CLAUDE.md").write_text("根 CLAUDE.md 的改动，属于本批次\n", encoding="utf-8")
+        (self.work / 'AGENTS.md').write_text("根 CLAUDE.md 的改动，属于本批次\n", encoding="utf-8")
         # 制造"另一个同名文件也脏"的现场——不属于本批次声明，与批次声明的
         # 片段字符串完全相同（模拟根 CLAUDE.md vs SC8/CLAUDE.md 撞名）。
         other_dir = self.work / "4-数字员工" / "采购部" / "SC8"
         other_dir.mkdir(parents=True)
-        (other_dir / "CLAUDE.md").write_text("另一份同名文件，不属于本批次（模拟并发 session）\n",
+        (other_dir / 'AGENTS.md').write_text("另一份同名文件，不属于本批次（模拟并发 session）\n",
                                                encoding="utf-8")
 
         result = _run_sweep(self.work)
@@ -1128,15 +1134,15 @@ class BatchIsolationIntegrationTests(SweepTestBase):
         (self.work / "content1.md").write_text("干净批次的内容\n", encoding="utf-8")
         sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8"
         sc8_dir.mkdir(parents=True)
-        (sc8_dir / "CLAUDE.md").write_text("SC8 的 CLAUDE.md\n", encoding="utf-8")
+        (sc8_dir / 'AGENTS.md').write_text("SC8 的 CLAUDE.md\n", encoding="utf-8")
         qdb_dir = self.work / "4-数字员工" / "质量部" / "QD-B"
         qdb_dir.mkdir(parents=True)
-        (qdb_dir / "CLAUDE.md").write_text("QD-B 的 CLAUDE.md\n", encoding="utf-8")
+        (qdb_dir / 'AGENTS.md').write_text("QD-B 的 CLAUDE.md\n", encoding="utf-8")
 
         rows = (
             "| B-CLEAN | `content1.md`、`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
             "| `docs(test): 干净批次应正常落库` | 待处理 |\n"
-            "| B-BLOCKED | `CLAUDE.md` "
+            "| B-BLOCKED | `AGENTS.md` "
             "| `docs(test): 歧义批次应被暂缓` | 待处理 |\n"
         )
         self._write_queue(rows)
@@ -1158,7 +1164,7 @@ class BatchIsolationIntegrationTests(SweepTestBase):
         # 可解释日志：逐条写明因哪个片段命中几处候选而暂缓。
         self.assertIn("B-BLOCKED", result.stdout)
         self.assertIn("因声明片段未能唯一判定而暂缓", result.stdout)
-        self.assertIn("CLAUDE.md", result.stdout)
+        self.assertIn('AGENTS.md', result.stdout)
         self.assertIn("命中 2 处", result.stdout)
         self.assertIn("SC8", result.stdout)
         self.assertIn("QD-B", result.stdout)
@@ -1170,12 +1176,12 @@ class BatchIsolationIntegrationTests(SweepTestBase):
         self._init_and_push(rows="")
         sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8"
         sc8_dir.mkdir(parents=True)
-        (sc8_dir / "CLAUDE.md").write_text("SC8\n", encoding="utf-8")
+        (sc8_dir / 'AGENTS.md').write_text("SC8\n", encoding="utf-8")
         qdb_dir = self.work / "4-数字员工" / "质量部" / "QD-B"
         qdb_dir.mkdir(parents=True)
-        (qdb_dir / "CLAUDE.md").write_text("QD-B\n", encoding="utf-8")
+        (qdb_dir / 'AGENTS.md').write_text("QD-B\n", encoding="utf-8")
 
-        row = "| B-BLOCKED | `CLAUDE.md` | `docs(test): 歧义批次` | 待处理 |\n"
+        row = "| B-BLOCKED | `AGENTS.md` | `docs(test): 歧义批次` | 待处理 |\n"
         self._write_queue(row)
 
         result = _run_sweep(self.work)
@@ -1918,7 +1924,7 @@ class DecisionReminderSecondCarrierTests(SweepTestBase):
     处理主流程（同 #192-A `FlushPendingLockAppendsTests` 同一测试范式）。"""
 
     def _reminder_script_path(self) -> Path:
-        path = self.work / sweep.DECISION_REMINDER_SCRIPT_REL
+        path = self.work / '.claude/worktrees/wecom-service-home' / sweep.DECISION_REMINDER_SCRIPT_REL
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -2013,122 +2019,7 @@ class DecisionReminderSecondCarrierTests(SweepTestBase):
                           "第二载体调用瞬间不应有编辑锁被 sweep 自己持有")
 
 
-class ScheduledTaskMirrorSyncTests(SweepTestBase):
-    """队列 #235/#188：定时任务真身↔镜像自动核对——检出差异需就地本地提交
-    （不留孤儿脏文件）+ 复用 #171 webhook 告警；无变化时静默；凭据拦截同样
-    告警但不产生 commit（脚本自身不写该任务的镜像文件）。"""
-
-    def setUp(self):
-        super().setUp()
-        _CapturingWebhookHandler.received = []
-        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
-        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-        self._server_thread.start()
-        self.webhook_url = f"http://127.0.0.1:{self._server.server_port}/webhook"
-
-    def tearDown(self):
-        self._server.shutdown()
-        self._server.server_close()
-        super().tearDown()
-
-    def _write_env_webhook(self) -> None:
-        (self.work / ".env").write_text(
-            f"{sweep.WECOM_WEBHOOK_ENV_KEY}={self.webhook_url}\n", encoding="utf-8",
-        )
-
-    def _backup_script_path(self) -> Path:
-        path = self.work / sweep.SCHEDULED_TASK_BACKUP_SCRIPT_REL
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
-
-    def test_missing_backup_script_is_silently_skipped(self):
-        self._init_and_push(rows="")
-        row = ("| B-TEST | `0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
-               "| `docs(test): 测试批次落库` | 待 CC 取活 |\n")
-        self._write_queue(row)
-
-        result = _run_sweep(self.work)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("镜像核对", result.stdout)
-
-    def test_no_diff_produces_no_commit_and_no_webhook_noise(self):
-        self._backup_script_path().write_text(
-            "print('=== 定时任务 prompt 回镜报告 ===\\n  任务甲: · 无变化')\n",
-            encoding="utf-8",
-        )
-        self._init_and_push(rows="")
-        self._write_env_webhook()
-
-        result = _run_sweep(self.work)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("镜像核对", result.stdout)
-        self.assertEqual(len(_CapturingWebhookHandler.received), 0)
-
-    def test_detected_diff_is_committed_locally_and_pushed_plus_alerted(self):
-        """脚本模拟"检出差异并写回镜像文件"——须被就地 add+commit（不留
-        孤儿脏文件），随本轮末尾统一推送，并触发一次 webhook 告警。"""
-        mirror_dir_rel = sweep.SCHEDULED_TASK_MIRROR_DIR_REL
-        mirror_leaf = mirror_dir_rel.split("/")[-1]
-        self._backup_script_path().write_text(
-            "from pathlib import Path\n"
-            f"mirror = Path(__file__).resolve().with_name({mirror_leaf!r})\n"
-            "mirror.mkdir(parents=True, exist_ok=True)\n"
-            "(mirror / '任务甲.SKILL.md').write_text('更正后的内容\\n', encoding='utf-8')\n"
-            "print('=== 定时任务 prompt 回镜报告 ===\\n  任务甲: ✓ 已更新镜像')\n",
-            encoding="utf-8",
-        )
-        self._init_and_push(rows="")
-        self._write_env_webhook()
-
-        result = _run_sweep(self.work)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("检出差异并已自动更正", result.stdout)
-
-        # 不留孤儿脏文件：镜像目录本身必须已被提交（不针对整个工作区断言——
-        # 测试夹具自己写的 .env 未加入 .gitignore，与本用例验证的行为无关）。
-        mirror_status = _git(self.work, "status", "--porcelain", "--", mirror_dir_rel).stdout
-        self.assertEqual(mirror_status.strip(), "", "镜像差异必须在 dirty_paths 捕获前就地提交，不留孤儿")
-
-        # 随本轮末尾统一推送——origin 应能看到这次镜像更正的提交。
-        pushed_mirror = _git(
-            self.origin, "show", f"master:{mirror_dir_rel}/任务甲.SKILL.md",
-        ).stdout
-        self.assertIn("更正后的内容", pushed_mirror)
-
-        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
-        payload = _CapturingWebhookHandler.received[0]
-        self.assertIn("镜像核对", payload["markdown"]["content"])
-
-    def test_credential_blocked_alerts_without_local_changes(self):
-        """命中凭据扫描——脚本按自身设计不写入该任务镜像（无 git 变化），
-        但退出码非零，须告警提示人工核实，不应静默。"""
-        self._backup_script_path().write_text(
-            "import sys\n"
-            "print('=== 定时任务 prompt 回镜报告 ===\\n  任务乙: 🔴 命中凭据扫描·已拒绝写入')\n"
-            "sys.exit(1)\n",
-            encoding="utf-8",
-        )
-        self._init_and_push(rows="")
-        self._write_env_webhook()
-
-        result = _run_sweep(self.work)
-        self.assertEqual(result.returncode, 0, "凭据拦截是纯提示，不应改变 sweep 本轮退出码：" +
-                          result.stdout + result.stderr)
-        self.assertIn("疑似命中凭据扫描", result.stdout)
-        self.assertEqual(len(_CapturingWebhookHandler.received), 1)
-        payload = _CapturingWebhookHandler.received[0]
-        self.assertIn("凭据扫描", payload["markdown"]["content"])
-
-    def test_dry_run_does_not_invoke_backup_script(self):
-        marker = self.work.parent / "mirror_sync_invoked.marker"
-        self._backup_script_path().write_text(
-            f"from pathlib import Path\nPath(r'{marker}').write_text('invoked')\n", encoding="utf-8",
-        )
-        self._init_and_push(rows="")
-
-        result = _run_sweep(self.work, "--dry-run")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(marker.exists(), "dry-run 不应真实调用定时任务镜像核对脚本")
+# Retired scheduler expectations preserved verbatim at docs/codex/retired-evidence/ScheduledTaskMirrorSyncTests.py.txt.
 
 
 class MergeLedgerAutoCommitTests(SweepTestBase):
@@ -2475,7 +2366,7 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
         )
         self._init_and_push(rows="")
         service_file = self.work / "5-平台底座" / "wecom-aibot-service" / "aibot_service" / "foo.py"
-        service_file.parent.mkdir(parents=True)
+        service_file.parent.mkdir(parents=True, exist_ok=True)
         service_file.write_text("# 测试改动\n", encoding="utf-8")
 
         row = ("| B-TEST | `5-平台底座/wecom-aibot-service/aibot_service/foo.py`、"
@@ -2508,12 +2399,10 @@ class ResidentServiceDeploymentHintTests(SweepTestBase):
             '    -AppFiles @("pyproject.toml", "aibot_service", "scripts") `\n', encoding="utf-8",
         )
         self._init_and_push(rows="")
-        doc = self.work / "5-平台底座" / "wecom-aibot-service" / "CLAUDE.md"
+        doc = self.work / "5-平台底座" / "wecom-aibot-service" / 'AGENTS.md'
         doc.write_text("# 只改文档\n", encoding="utf-8")
 
-        row = ("| B-TEST | `5-平台底座/wecom-aibot-service/CLAUDE.md`、"
-               "`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
-               "| `docs(test): 服务目录下只改文档` | 待 CC 取活 |\n")
+        row = ('| B-TEST | `5-平台底座/wecom-aibot-service/CODEX-RULES.md`、`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） | `docs(test): 服务目录下只改文档` | 待 CC 取活 |\n')
         self._write_queue(row)
 
         result = _run_sweep(self.work)
@@ -2590,7 +2479,7 @@ class ResidentServiceJudgeUnitTests(unittest.TestCase):
     def test_docs_only_change_is_not_a_hit(self):
         """2026-08-22 14:52 误报的复现口径：批次 B-0822_17 在服务目录下
         只改了一份 CLAUDE.md、零行代码，旧判据照样告警。"""
-        self.assertEqual(self._judge(f"{self.SERVICE}/CLAUDE.md"), [])
+        self.assertEqual(self._judge(f"{self.SERVICE}/CODEX-RULES.md"), [])
 
     def test_service_tests_dir_is_not_a_hit(self):
         self.assertEqual(self._judge(f"{self.SERVICE}/tests/test_dispatch.py"), [])
@@ -2639,10 +2528,10 @@ class ResidentServiceJudgeUnitTests(unittest.TestCase):
 
     def test_mixed_change_hits_and_names_only_the_runtime_file(self):
         hits = self._judge(
-            f"{self.SERVICE}/CLAUDE.md", f"{self.SERVICE}/aibot_service/dispatcher.py",
+            f"{self.SERVICE}/CODEX-RULES.md", f"{self.SERVICE}/aibot_service/dispatcher.py",
         )
         self.assertEqual(len(hits), 1)
-        self.assertNotIn("CLAUDE.md", hits[0][0])
+        self.assertNotIn('AGENTS.md', hits[0][0])
 
     def test_unrelated_path_is_not_a_hit(self):
         self.assertEqual(self._judge("1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"), [])
@@ -2666,7 +2555,7 @@ class ResidentServiceJudgeUnitTests(unittest.TestCase):
         _, _, err = sweep._parse_resident_service_manifest(self.root)
         self.assertIsNotNone(err)
         # 连本该被排除的文档也一律按命中——这是刻意的多报方向
-        self.assertEqual(self._sources(f"{self.SERVICE}/CLAUDE.md"), {"保守判定"})
+        self.assertEqual(self._sources(f"{self.SERVICE}/CODEX-RULES.md"), {"保守判定"})
 
     def test_missing_sync_script_falls_back_to_hit(self):
         (self.root / sweep.RESIDENT_SERVICE_SYNC_SCRIPT_REL).unlink()
@@ -2719,17 +2608,17 @@ class PartitionPendingRowsUnitTests(unittest.TestCase):
         self.assertTrue(any("杂物.md" in line for line in log))
 
     def test_ambiguous_row_excluded_from_clean_rows_with_explain_log(self):
-        rows = [{"batch_id": "B-BLOCKED", "files_cell": "`CLAUDE.md`"}]
+        rows = [{"batch_id": "B-BLOCKED", "files_cell": "`CODEX-RULES.md`"}]
         dirty = [
-            "4-数字员工/采购部/SC8-.../CLAUDE.md",
-            "4-数字员工/质量部/QD-B-.../CLAUDE.md",
+            '4-数字员工/采购部/SC8-.../CODEX-RULES.md',
+            '4-数字员工/质量部/QD-B-.../CODEX-RULES.md',
         ]
         log: list[str] = []
         clean_rows, resolution, orphans = sweep._partition_pending_rows_by_batch_isolation(
             rows, dirty, log,
         )
         self.assertEqual(clean_rows, [])
-        self.assertEqual(resolution["B-BLOCKED"], ([], [], ["CLAUDE.md"]))
+        self.assertEqual(resolution["B-BLOCKED"], ([], [], ['CODEX-RULES.md']))
         # 歧义片段的候选路径不应被算作"孤儿"——它们是有人声明（只是歧义）。
         self.assertEqual(orphans, [])
         self.assertTrue(any("B-BLOCKED" in line and "暂缓" in line for line in log))
@@ -2738,12 +2627,12 @@ class PartitionPendingRowsUnitTests(unittest.TestCase):
     def test_one_ambiguous_row_does_not_affect_other_clean_rows(self):
         rows = [
             {"batch_id": "B-CLEAN", "files_cell": "`content1.md`"},
-            {"batch_id": "B-BLOCKED", "files_cell": "`CLAUDE.md`"},
+            {"batch_id": "B-BLOCKED", "files_cell": "`CODEX-RULES.md`"},
         ]
         dirty = [
             "content1.md",
-            "4-数字员工/采购部/SC8-.../CLAUDE.md",
-            "4-数字员工/质量部/QD-B-.../CLAUDE.md",
+            '4-数字员工/采购部/SC8-.../CODEX-RULES.md',
+            '4-数字员工/质量部/QD-B-.../CODEX-RULES.md',
         ]
         log: list[str] = []
         clean_rows, resolution, orphans = sweep._partition_pending_rows_by_batch_isolation(
@@ -2796,7 +2685,7 @@ class ManifestCoverageUnitTests(unittest.TestCase):
             "4-数字员工/财务部/FI2-三单匹配自动对账/",  # 目录，非单个文件
             "1-转型规划/0-全景路线图/派单件-*.md",       # 通配写法
             "5-平台底座/.../{a,b}.py",                   # 花括号展开写法
-            "~/.claude/CLAUDE.md",                       # 仓库外引用
+            '~/.claude/CODEX-RULES.md',                       # 仓库外引用
         ]:
             with self.subTest(frag=frag):
                 self.assertFalse(sweep._looks_like_declared_path(frag))
@@ -2828,7 +2717,7 @@ class ManifestCoverageUnitTests(unittest.TestCase):
         """tasks §2.1 三态：已在 HEAD ⇒ 不缺项／被忽略 ⇒ 不缺项／两者皆非 ⇒
         **仍缺项**。这是 #507 期望产出② 要的那三条。"""
         index = self._index(
-            head=["1-转型规划/0-全景路线图/接力卡.md", "CLAUDE.md"],
+            head=["1-转型规划/0-全景路线图/接力卡.md", 'AGENTS.md'],
             ignored={"reports/lane-heartbeat/x.md"},
         )
         resolved = ["1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md"]
@@ -2897,7 +2786,7 @@ class ManifestCoverageUnitTests(unittest.TestCase):
     def test_shape_rejects_backslash_drive_and_dotted_identifier(self):
         """tasks §2.3 design D3 三条 reject——各取自 2026-09-10 现网 8 条「真
         缺项」里的形状误认。"""
-        root = frozenset({"CLAUDE.md", ".gitignore", "README.md"})
+        root = frozenset({'AGENTS.md', ".gitignore", "README.md"})
         for frag in [
             r"C:\Dev\zhuopin-ai\.claude\worktrees\wecom-service-home\5-平台底座\.env",  # ①② 反斜杠＋盘符
             r"0-学习与工具\hooks\hooks-common.ps1",  # ① 仅反斜杠
@@ -2912,8 +2801,8 @@ class ManifestCoverageUnitTests(unittest.TestCase):
         """🔴 tasks §2.3 实测反例：`CLAUDE.md` 以裸名出现在现存清单里、且是
         仓库根真实文件——「无斜杠即拒」不得把它一并拒掉。不加这条，下一个人
         就会把第③条写成一刀切。"""
-        root = frozenset({"CLAUDE.md", "README.md"})
-        self.assertTrue(sweep._looks_like_declared_path("CLAUDE.md", root))
+        root = frozenset({'AGENTS.md', "README.md"})
+        self.assertTrue(sweep._looks_like_declared_path('AGENTS.md', root))
         # 没有 HEAD 信息（None）时第③条不生效——漏认方向的退化，不新增破坏
         self.assertTrue(sweep._looks_like_declared_path("hooks.PreToolUse", None))
         self.assertTrue(sweep._looks_like_declared_path("hooks.PreToolUse"))
@@ -2937,14 +2826,14 @@ class ManifestCoverageUnitTests(unittest.TestCase):
     def test_head_match_reuses_resolve_rule(self):
         """design D1 实现细节①：HEAD 存在性与脏路径解析共用 `_match_declared_
         fragment`（精确相等优先、否则 `/` 后缀）。"""
-        index = self._index(head=["a/b/CLAUDE.md", "CLAUDE.md", "x/y.md"])
-        self.assertTrue(index.in_head("CLAUDE.md"))
+        index = self._index(head=['a/b/CODEX-RULES.md', 'AGENTS.md', "x/y.md"])
+        self.assertTrue(index.in_head('AGENTS.md'))
         self.assertTrue(index.in_head("y.md"))
         self.assertFalse(index.in_head("z.md"))
-        self.assertEqual(sweep._match_declared_fragment("CLAUDE.md", ["a/CLAUDE.md", "CLAUDE.md"]), ["CLAUDE.md"])
-        self.assertEqual(sweep._match_declared_fragment("CLAUDE.md", ["a/CLAUDE.md", "b/CLAUDE.md"]),
-                         ["a/CLAUDE.md", "b/CLAUDE.md"])
-        self.assertEqual(index.head_root_names, frozenset({"CLAUDE.md"}))
+        self.assertEqual(sweep._match_declared_fragment('AGENTS.md', ['a/CODEX-RULES.md', 'AGENTS.md']), ['AGENTS.md'])
+        self.assertEqual(sweep._match_declared_fragment('CODEX-RULES.md', ['a/CODEX-RULES.md', 'b/CODEX-RULES.md']),
+                         ['a/CODEX-RULES.md', 'b/CODEX-RULES.md'])
+        self.assertEqual(index.head_root_names, frozenset({'AGENTS.md'}))
 
     def test_escalation_threshold_is_rounds_and_equals_decided_value(self):
         """design D4：K=3（Shao Peishen 2026-09-10 答 4a），单位是轮；刻意不与
@@ -3198,7 +3087,7 @@ class ManifestCoverageSelflockGateTests(SweepTestBase):
         """D3 ③ 的例外走真流程：`CLAUDE.md` 以裸名出现、且在仓库根——不脏时
         归「已在 HEAD」而不是被当成散文丢掉（自陈段里应能看见它）。"""
         self._write_queue("")
-        (self.work / "CLAUDE.md").write_text("根 CLAUDE\n", encoding="utf-8")
+        (self.work / 'CLAUDE.md').write_text("根 CLAUDE\n", encoding="utf-8")
         self._commit_all("init")
         _git(self.work, "branch", "-M", "master")
         _git(self.work, "push", "-q", "-u", "origin", "master")
@@ -3571,13 +3460,9 @@ class DeploymentTraceHintTests(SweepTestBase):
         sc8_dir = self.work / "4-数字员工" / "采购部" / "SC8-客户订单交期智能承诺"
         sc8_dir.mkdir(parents=True)
         (sc8_dir / "webapp.py").write_text("# 改动\n", encoding="utf-8")
-        (sc8_dir / "CLAUDE.md").write_text("已补充部署状态段\n", encoding="utf-8")
+        (sc8_dir / 'CODEX-RULES.md').write_text("已补充部署状态段\n", encoding="utf-8")
 
-        row = ("| B-TEST | "
-               "`4-数字员工/采购部/SC8-客户订单交期智能承诺/webapp.py`、"
-               "`4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md`、"
-               "`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） "
-               "| `docs(test): 已同批补留痕` | 待 CC 取活 |\n")
+        row = ('| B-TEST | `4-数字员工/采购部/SC8-客户订单交期智能承诺/webapp.py`、`4-数字员工/采购部/SC8-客户订单交期智能承诺/CODEX-RULES.md`、`0-全景路线图/跨桌任务队列-机制环境.md`（新行占位） | `docs(test): 已同批补留痕` | 待 CC 取活 |\n')
         self._write_queue(row)
 
         result = _run_sweep(self.work)
@@ -3604,7 +3489,7 @@ class FindMissingDeploymentTraceUnitTests(unittest.TestCase):
     def test_only_claude_md_touched_is_not_treated_as_scenario_touch(self):
         """只改场景自己的 CLAUDE.md（无其它代码改动）——视为纯文档更新，
         不应触发"未见留痕"提示（本身就是留痕文件的改动）。"""
-        touched = {"4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md"}
+        touched = {'4-数字员工/采购部/SC8-客户订单交期智能承诺/CODEX-RULES.md'}
         self.assertEqual(sweep._find_missing_deployment_trace(touched), [])
 
     def test_unrelated_path_produces_no_hits(self):
@@ -3616,7 +3501,7 @@ class FindMissingDeploymentTraceUnitTests(unittest.TestCase):
         hits = sweep._find_missing_deployment_trace(touched)
         self.assertEqual(hits, ["1-转型规划/AI运营指挥中心/"])
 
-        touched_with_trace = {"1-转型规划/AI运营指挥中心/serve.py", "CLAUDE.md"}
+        touched_with_trace = {"1-转型规划/AI运营指挥中心/serve.py", 'AGENTS.md'}
         self.assertEqual(sweep._find_missing_deployment_trace(touched_with_trace), [])
 
 
@@ -3928,7 +3813,7 @@ class ScenarioSpecCoverageGapUnitTests(unittest.TestCase):
         for i in range(py_files):
             (d / f"m{i}.py").write_text("pass\n", encoding="utf-8")
         marker = "本场景编号已于 2026-07-06 采购域 v2.3 重排退役\n" if retired else "占位\n"
-        (d / "CLAUDE.md").write_text(marker, encoding="utf-8")
+        (d / 'AGENTS.md').write_text(marker, encoding="utf-8")
         return d
 
     def _make_spec(self, cap_name: str) -> None:
@@ -4225,7 +4110,8 @@ class ObservationWindowAnnounceUnitTests(unittest.TestCase):
             self._hit("observing-pkg", days_idle=5.0, window_days=30.0),
             self._hit("escalate-pkg", days_idle=40.0, window_days=30.0),
         ]
-        with mock.patch.object(sweep, "_load_webhook_url", return_value=None):
+        with mock.patch.object(sweep, "_load_webhook_url", return_value="https://example.invalid/mocked"), \
+                mock.patch.object(sweep, "_send_wecom_markdown", side_effect=_accepted_test_receipt):
             sweep._announce_stale_in_flight_changes(self.repo, hits, log)
         state = sweep._read_json_state(self.repo / sweep.STALE_CHANGE_STATE_REL)
         self.assertIn("escalate-pkg", state)
@@ -4251,6 +4137,13 @@ class StandingStateAlertLifecycleUnitTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self._tmp.name)
+        from unittest.mock import patch
+        self._webhook = patch.object(sweep, "_load_webhook_url", return_value="https://example.invalid/mocked")
+        self._sender = patch.object(sweep, "_send_wecom_markdown", side_effect=_accepted_test_receipt)
+        self._webhook.start()
+        self._sender.start()
+        self.addCleanup(self._webhook.stop)
+        self.addCleanup(self._sender.stop)
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -5135,9 +5028,9 @@ class _StandingStateRecorder:
         self.calls = []
 
     def __call__(self, repo_root, label, state_rel, current_keys,
-                 interval_hours, render_alert, render_resolved, log):
+                 interval_hours, render_alert, render_resolved, log, *, allow_resolve=True, preserve_keys=None):
         self.calls.append({
-            "label": label, "keys": set(current_keys),
+            "preserve_keys": set(preserve_keys or ()), "allow_resolve": allow_resolve, "label": label, "keys": set(current_keys),
             "alert_text": render_alert(sorted(current_keys)) if current_keys else "",
         })
 
@@ -5188,16 +5081,16 @@ class ClaudeMdCarrierSizeTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self._tmp.name)
-        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
+        (self.repo / 'AGENTS.md').write_text("根\n", encoding="utf-8")
         for rel in ("4-数字员工/财务部/FI2-三单匹配自动对账",
                     "5-平台底座/wecom-aibot-service"):
             d = self.repo / rel
             d.mkdir(parents=True)
-            (d / "CLAUDE.md").write_text("场景\n", encoding="utf-8")
+            (d / 'CODEX-RULES.md').write_text("场景\n", encoding="utf-8")
         # worktree 副本：结构与真身一模一样，**必须被排除**。
         wt = self.repo / ".claude/worktrees/some-wt/4-数字员工/财务部/FI2-三单匹配自动对账"
         wt.mkdir(parents=True)
-        (wt / "CLAUDE.md").write_text("x" * 999_999, encoding="utf-8")
+        (wt / 'CODEX-RULES.md').write_text("x" * 999_999, encoding="utf-8")
         self.recorder = _StandingStateRecorder()
         self._orig_track = sweep._track_and_alert_standing_state
         self._orig_webhook = sweep._load_webhook_url
@@ -5216,8 +5109,8 @@ class ClaudeMdCarrierSizeTests(unittest.TestCase):
 
     def test_阈值按根与场景分档(self):
         caps = dict(sweep._claude_md_targets(self.repo))
-        self.assertEqual(caps["CLAUDE.md"], sweep.CLAUDE_MD_ROOT_BYTE_CAP)
-        self.assertEqual(caps["5-平台底座/wecom-aibot-service/CLAUDE.md"],
+        self.assertEqual(caps['AGENTS.md'], sweep.CLAUDE_MD_ROOT_BYTE_CAP)
+        self.assertEqual(caps['5-平台底座/wecom-aibot-service/CODEX-RULES.md'],
                          sweep.CLAUDE_MD_SCENE_BYTE_CAP)
 
     def test_零超限时仍逐项回显(self):
@@ -5227,25 +5120,25 @@ class ClaudeMdCarrierSizeTests(unittest.TestCase):
         log = []
         sweep._check_claude_md_carrier_size(self.repo, log)
         text = "\n".join(log)
-        self.assertIn("CLAUDE.md：", text)
+        self.assertIn("AGENTS.md：", text)
         self.assertIn("阈值", text)
         self.assertIn("尚余", text)
         self.assertEqual(self.recorder.calls[-1]["keys"], set())
 
     def test_超限被判出且正文含处置(self):
-        (self.repo / "CLAUDE.md").write_text("x" * (sweep.CLAUDE_MD_ROOT_BYTE_CAP + 1),
+        (self.repo / 'AGENTS.md').write_text("x" * (sweep.CLAUDE_MD_ROOT_BYTE_CAP + 1),
                                              encoding="utf-8")
         log = []
         sweep._check_claude_md_carrier_size(self.repo, log)
         call = self.recorder.calls[-1]
-        self.assertEqual(call["keys"], {"CLAUDE.md"})
+        self.assertEqual(call["keys"], {'AGENTS.md'})
         self.assertIn("CHANGELOG", call["alert_text"])
 
     def test_key_不随尺寸变化(self):
         """反例锁死：key 必须是文件路径本身，**不得含尺寸数值**。"""
         seen = []
         for extra in (1, 5000):
-            (self.repo / "CLAUDE.md").write_text(
+            (self.repo / 'AGENTS.md').write_text(
                 "x" * (sweep.CLAUDE_MD_ROOT_BYTE_CAP + extra), encoding="utf-8")
             log = []
             sweep._check_claude_md_carrier_size(self.repo, log)
@@ -5258,7 +5151,7 @@ class ClaudeMdCarrierSizeTests(unittest.TestCase):
         回退」记的那一族：错误不产生任何信号。"""
         dates, reason = sweep._root_progress_batch_dates(self.repo)
         self.assertIsNone(dates)
-        self.assertIn("工具-CLAUDE进度段lint.py", reason)
+        self.assertIn('工具-Codex规则lint.py', reason)
         log = []
         sweep._check_claude_md_carrier_size(self.repo, log)
         self.assertIn("不据此判为合规", "\n".join(log))
@@ -5299,8 +5192,8 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self._tmp.name)
-        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
-        (self.repo / ".claude/rules").mkdir(parents=True)
+        (self.repo / 'AGENTS.md').write_text("根\n", encoding="utf-8")
+        (self.repo / "docs/codex/rules").mkdir(parents=True)
         self.recorder = _StandingStateRecorder()
         self._orig_track = sweep._track_and_alert_standing_state
         self._orig_webhook = sweep._load_webhook_url
@@ -5313,7 +5206,7 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def _write_rule(self, name: str, size: int) -> None:
-        (self.repo / ".claude/rules" / name).write_text("x" * size, encoding="utf-8")
+        (self.repo / "docs/codex/rules" / name).write_text("x" * size, encoding="utf-8")
 
     def test_root阈值已收紧到12KB(self):
         self.assertEqual(sweep.CLAUDE_MD_ROOT_BYTE_CAP, 12 * 1024)
@@ -5321,14 +5214,14 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
     def test_rules文件纳入受检目标且阈值8KB(self):
         self._write_rule("甲.md", 100)
         caps = dict(sweep._claude_md_targets(self.repo))
-        self.assertEqual(caps[".claude/rules/甲.md"], sweep.CLAUDE_MD_RULES_BYTE_CAP_FALLBACK)
+        self.assertEqual(caps['docs/codex/rules/甲.md'], sweep.CLAUDE_MD_RULES_BYTE_CAP_FALLBACK)
 
     def test_rules单份超限被判出(self):
         self._write_rule("甲.md", sweep.CLAUDE_MD_RULES_BYTE_CAP_FALLBACK + 1)
         log = []
         sweep._check_claude_md_carrier_size(self.repo, log)
         call = self.recorder.calls[-1]
-        self.assertIn(".claude/rules/甲.md", call["keys"])
+        self.assertIn('docs/codex/rules/甲.md', call["keys"])
 
     def test_rules单份未超但合计超限(self):
         """五份各 7KB（均 <8KB 单份阈值），合计 35KB（>30KB 总阈值）——
@@ -5350,7 +5243,7 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
         log = []
         sweep._check_claude_md_carrier_size(self.repo, log)
         call = self.recorder.calls[-1]
-        self.assertIn(".claude/rules/超份.md", call["keys"])
+        self.assertIn('docs/codex/rules/超份.md', call["keys"])
         self.assertIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, call["keys"])
         self.assertEqual(len(call["keys"]), 2)
 
@@ -5370,7 +5263,7 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
                  "文档与全景治理.md": 3521, "跟进信与专员.md": 3952, "队列与落库.md": 4269}
         for name, size in sizes.items():
             self._write_rule(name, size)
-        (self.repo / "CLAUDE.md").write_text("x" * 9703, encoding="utf-8")
+        (self.repo / 'AGENTS.md').write_text("x" * 9703, encoding="utf-8")
         log = []
         sweep._check_claude_md_carrier_size(self.repo, log)
         self.assertEqual(self.recorder.calls[-1]["keys"], set(),
@@ -5378,7 +5271,7 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
 
     def test_目录不存在时不报错(self):
         import shutil
-        shutil.rmtree(self.repo / ".claude/rules")
+        shutil.rmtree(self.repo / "docs/codex/rules")
         log = []
         sweep._check_claude_md_carrier_size(self.repo, log)  # 不应抛异常
         self.assertEqual(self.recorder.calls[-1]["keys"], set())
@@ -5394,7 +5287,7 @@ class ClaudeMdRulesCoverageTests(unittest.TestCase):
         self.assertIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, self.recorder.calls[-1]["keys"])
 
         for i in range(5):
-            (self.repo / ".claude/rules" / f"文件{i}.md").write_text("x" * 100, encoding="utf-8")
+            (self.repo / "docs/codex/rules" / f"文件{i}.md").write_text("x" * 100, encoding="utf-8")
         log2 = []
         sweep._check_claude_md_carrier_size(self.repo, log2)
         self.assertNotIn(sweep.CLAUDE_MD_RULES_TOTAL_KEY, self.recorder.calls[-1]["keys"])
@@ -5409,14 +5302,14 @@ class CarrierRejectConsumerTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self._tmp.name)
-        (self.repo / ".claude/rules").mkdir(parents=True)
-        (self.repo / "0-学习与工具/skills源码/zhuopin-lane-watch").mkdir(parents=True)
+        (self.repo / "docs/codex/rules").mkdir(parents=True)
+        (self.repo / ".agents/skills/zhuopin-lane-watch").mkdir(parents=True)
 
     def tearDown(self):
         self._tmp.cleanup()
 
     def _write_rule(self, name: str, size: int) -> None:
-        (self.repo / ".claude/rules" / name).write_text("x" * size, encoding="utf-8")
+        (self.repo / "docs/codex/rules" / name).write_text("x" * size, encoding="utf-8")
 
     def _write_skill(self, size: int) -> None:
         (self.repo / sweep.LANE_WATCH_SKILL_REL).write_text("x" * size, encoding="utf-8")
@@ -5430,8 +5323,8 @@ class CarrierRejectConsumerTests(unittest.TestCase):
     def test_rules单份超限被判出(self):
         self._write_rule("甲.md", sweep.CLAUDE_MD_RULES_BYTE_CAP_FALLBACK + 1)
         breaches = sweep.claude_md_rules_over_cap(self.repo)
-        self.assertIn(".claude/rules/甲.md", breaches)
-        self.assertEqual(breaches[".claude/rules/甲.md"], 1)
+        self.assertIn('docs/codex/rules/甲.md', breaches)
+        self.assertEqual(breaches['docs/codex/rules/甲.md'], 1)
 
     def test_rules合计超限被判出(self):
         for i in range(5):
@@ -5441,8 +5334,8 @@ class CarrierRejectConsumerTests(unittest.TestCase):
 
     def test_batch_touches只认rules路径前缀(self):
         self.assertTrue(sweep.batch_touches_claude_md_rules(
-            [".claude/rules/两桌同步与取证.md"]))
-        self.assertFalse(sweep.batch_touches_claude_md_rules(["CLAUDE.md"]))
+            ['docs/codex/rules/两桌同步与取证.md']))
+        self.assertFalse(sweep.batch_touches_claude_md_rules(['AGENTS.md']))
         self.assertFalse(sweep.batch_touches_claude_md_rules([]))
 
     def test_rules合计超限时碰任一份都算命中(self):
@@ -5453,7 +5346,7 @@ class CarrierRejectConsumerTests(unittest.TestCase):
             self._write_rule(f"文件{i}.md", 7 * 1024)
         self.assertTrue(sweep.claude_md_rules_over_cap(self.repo))
         self.assertTrue(sweep.batch_touches_claude_md_rules(
-            [".claude/rules/文件0.md"]))
+            ['docs/codex/rules/文件0.md']))
 
     # ---- lane-watch 正本 ----
 
@@ -5480,12 +5373,12 @@ class CarrierRejectConsumerTests(unittest.TestCase):
 
     def test_skill存在时纳入受检目标且阈值24KB(self):
         self._write_skill(100)
-        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
+        (self.repo / 'AGENTS.md').write_text("根\n", encoding="utf-8")
         caps = dict(sweep._claude_md_targets(self.repo))
         self.assertEqual(caps[sweep.LANE_WATCH_SKILL_REL], sweep.LANE_WATCH_SKILL_BYTE_CAP)
 
     def test_skill不存在时不纳入受检目标(self):
-        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
+        (self.repo / 'AGENTS.md').write_text("根\n", encoding="utf-8")
         rels = [rel for rel, _cap in sweep._claude_md_targets(self.repo)]
         self.assertNotIn(sweep.LANE_WATCH_SKILL_REL, rels)
 
@@ -5498,7 +5391,7 @@ class RootRatchetHintUnitTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self._tmp.name)
-        (self.repo / "CLAUDE.md").write_text("根\n", encoding="utf-8")
+        (self.repo / 'AGENTS.md').write_text("根\n", encoding="utf-8")
         self.recorder = _StandingStateRecorder()
         self._orig_track = sweep._track_and_alert_standing_state
         self._orig_webhook = sweep._load_webhook_url
@@ -5511,7 +5404,7 @@ class RootRatchetHintUnitTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def _write_root(self, size: int) -> None:
-        (self.repo / "CLAUDE.md").write_text("x" * size, encoding="utf-8")
+        (self.repo / 'AGENTS.md').write_text("x" * size, encoding="utf-8")
 
     def test_低于阈值超过SLACK时出提示(self):
         size = sweep.CLAUDE_MD_ROOT_BYTE_CAP - sweep.ROOT_RATCHET_SLACK_BYTES - 1
@@ -5536,12 +5429,12 @@ class RootRatchetHintUnitTests(unittest.TestCase):
         sweep._check_claude_md_carrier_size(self.repo, log)
         text = "\n".join(log)
         self.assertNotIn("棘轮提示", text)
-        self.assertEqual(self.recorder.calls[-1]["keys"], {"CLAUDE.md"})
+        self.assertEqual(self.recorder.calls[-1]["keys"], {'AGENTS.md'})
 
     def test_scene文件不适用棘轮提示(self):
         scene_dir = self.repo / "5-平台底座" / "示例场景"
         scene_dir.mkdir(parents=True)
-        (scene_dir / "CLAUDE.md").write_text("场景\n", encoding="utf-8")
+        (scene_dir / 'CODEX-RULES.md').write_text("场景\n", encoding="utf-8")
         # root 故意贴在"恰好不触发"边界上（上面已单独验证过），这样
         # "全程零提示"只可能因为 scene 被正确排除在棘轮语义之外，不与
         # root 自身是否触发混在一起判断。
@@ -5767,7 +5660,7 @@ class GlobalMemoryBackupPileupUnitTests(unittest.TestCase):
         sweep.GLOBAL_MEMORY_BAK_CAP = self._orig_bak_cap
         self._tmp.cleanup()
 
-    def _make_target(self, name="CLAUDE.md", text="占位内容，无路径无版本号\n"):
+    def _make_target(self, name='AGENTS.md', text="占位内容，无路径无版本号\n"):
         target = self.repo / name
         target.write_text(text, encoding="utf-8")
         sweep.GLOBAL_MEMORY_TARGETS = (str(target),)
@@ -5862,7 +5755,7 @@ class ResidentCarrierFfTests(unittest.TestCase):
         _git(base, "init", "-q", "-b", "master", str(self.repo))
         _git(self.repo, "config", "user.email", "t@t")
         _git(self.repo, "config", "user.name", "t")
-        (self.repo / "CLAUDE.md").write_text("v0\n", encoding="utf-8")
+        (self.repo / 'AGENTS.md').write_text("v0\n", encoding="utf-8")
         _git(self.repo, "add", "-A")
         _git(self.repo, "commit", "-qm", "base")
         self.wt = self.repo / ".claude" / "worktrees" / "carrier"
@@ -5920,14 +5813,14 @@ class ResidentCarrierFfTests(unittest.TestCase):
     def test_脏且与待入提交相交时停手(self):
         """#500 改判后这一支的判据是**相交**：待入提交里有 `CLAUDE.md`，
         而工作区脏的正是它 ⇒ ff 会覆盖它 ⇒ 仍停手，且 HEAD 一个字节不动。"""
-        self._advance_master("5-平台底座/wecom-aibot-service/c.py", "CLAUDE.md")
-        (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
+        self._advance_master("5-平台底座/wecom-aibot-service/c.py", 'AGENTS.md')
+        (self.wt / 'AGENTS.md').write_text("被改脏了\n", encoding="utf-8")
         result = sweep._ff_carrier(self.repo, self._carrier())
         self.assertEqual(result["outcome"], "dirty", result)
         self.assertIn("路径相交", result["detail"])
-        self.assertIn("CLAUDE.md", result["detail"], "必须点名相交的是哪个文件")
+        self.assertIn('AGENTS.md', result["detail"], "必须点名相交的是哪个文件")
         self.assertEqual(_git(self.wt, "rev-parse", "HEAD").stdout.strip(), self.old_head)
-        self.assertEqual((self.wt / "CLAUDE.md").read_text(encoding="utf-8"), "被改脏了\n",
+        self.assertEqual((self.wt / 'AGENTS.md').read_text(encoding="utf-8"), "被改脏了\n",
                          "停手时脏内容必须原样留着")
 
     def test_未跟踪件不算脏_不得挡住ff(self):
@@ -5971,8 +5864,8 @@ class ResidentCarrierFfTests(unittest.TestCase):
     def test_dirty停手时正文必须带落后幅度(self):
         # #500 后要落到 `dirty` 分支，脏文件必须**与待入提交相交**——
         # 故待入的两个提交里有一个碰 `CLAUDE.md`。
-        self._advance_master("CLAUDE.md", "1-转型规划/x.md")
-        (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
+        self._advance_master('AGENTS.md', "1-转型规划/x.md")
+        (self.wt / 'AGENTS.md').write_text("被改脏了\n", encoding="utf-8")
         detail = sweep._ff_carrier(self.repo, self._carrier())["detail"]
         self.assertIn("已停手不 ff", detail)
         self.assertIn("落后 2 个提交", detail)
@@ -5993,8 +5886,8 @@ class ResidentCarrierFfTests(unittest.TestCase):
         """三个提交里只有一个碰服务目录 ⇒ 只该数出 1 条命中路径，
         **不得把「落后几个提交」与「命中几条路径」混为一个数**。"""
         self._advance_master("5-平台底座/wecom-aibot-service/h.py",
-                             "1-转型规划/a.md", "CLAUDE.md")
-        (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
+                             "1-转型规划/a.md", 'AGENTS.md')
+        (self.wt / 'AGENTS.md').write_text("被改脏了\n", encoding="utf-8")
         detail = sweep._ff_carrier(self.repo, self._carrier())["detail"]
         self.assertIn("落后 3 个提交", detail)
         self.assertIn("1 条路径命中常驻服务运行体", detail)
@@ -6052,7 +5945,7 @@ class ResidentCarrierFfTests(unittest.TestCase):
         """🔴 「取不到」与「零相交」外观都是空集合，结论却相反 ——
         同 `_rev_count` 失败返回 None 而非 0。取不到就停手。"""
         self._advance_master("1-转型规划/r.md")
-        (self.wt / "CLAUDE.md").write_text("被改脏了\n", encoding="utf-8")
+        (self.wt / 'AGENTS.md').write_text("被改脏了\n", encoding="utf-8")
         saved = sweep._carrier_pending_paths
         try:
             sweep._carrier_pending_paths = lambda repo_root, head, base: None
@@ -6956,7 +6849,7 @@ class EditableGuardOutboundAlertTests(unittest.TestCase):
         self._orig_send = sweep._send_wecom_markdown
         sweep._site_packages_dirs = lambda: ([self.sp], None)
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = lambda url, text: (self.sent.append(text), _accepted_test_receipt(url, text))[1]
 
     def tearDown(self):
         sweep._site_packages_dirs = self._orig_dirs
@@ -7115,7 +7008,7 @@ class UnclosedOutputGuardTests(unittest.TestCase):
         self._orig_loader = sweep._load_unclosed_scan
         sweep._track_and_alert_standing_state = self.recorder
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = lambda url, text: (self.sent.append(text), _accepted_test_receipt(url, text))[1]
 
     def tearDown(self):
         sweep._track_and_alert_standing_state = self._orig_track
@@ -7451,17 +7344,17 @@ def _carrier_findings(missing=None, misdirected=None, no_carrier=None,
         "no_carrier": no_carrier or [],
         "errors": errors or [],
         "notes": notes or [],
-        "sources_scanned": scanned if scanned is not None else ["CLAUDE.md"],
+        "sources_scanned": scanned if scanned is not None else ['AGENTS.md'],
     }
 
 
-def _carrier_missing(key="规则A:file:载体A", source="CLAUDE.md", line=10,
+def _carrier_missing(key="规则A:file:载体A", source='AGENTS.md', line=10,
                       kind="file", value="不存在的文件.md"):
     return {"key": key, "source": source, "line": line,
             "carrier_kind": kind, "carrier_value": value}
 
 
-def _carrier_misdirected(key="规则A:file:载体A", source="CLAUDE.md", line=10,
+def _carrier_misdirected(key="规则A:file:载体A", source='AGENTS.md', line=10,
                           kind="file", value="旧位置.md",
                           suspected="疑似真实落点.py"):
     item = _carrier_missing(key, source, line, kind, value)
@@ -7558,7 +7451,7 @@ class CarrierConsistencyWiringTests(unittest.TestCase):
         「狼来了」（`#147`）——只列计数，不得进 `_track_and_alert_
         standing_state` 的 key 集合。"""
         module = _FakeCarrierScanModule(_carrier_findings(
-            no_carrier=[{"source": "CLAUDE.md", "line": i, "marker": "机器守＝"}
+            no_carrier=[{"source": 'AGENTS.md', "line": i, "marker": "机器守＝"}
                         for i in range(3)]))
         text, call = self._run(module)
         self.assertEqual(call["keys"], set())
@@ -7667,7 +7560,7 @@ class FollowupPendingInventoryTests(unittest.TestCase):
         self._orig_digest = sweep._run_followup_readme_digest_json
         sweep._track_and_alert_standing_state = self.recorder
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = lambda url, text: (self.sent.append(text), _accepted_test_receipt(url, text))[1]
 
     def tearDown(self):
         sweep._track_and_alert_standing_state = self._orig_track
@@ -7717,11 +7610,14 @@ class FollowupPendingInventoryTests(unittest.TestCase):
     def test_真实digest脚本调用契约齐全(self):
         """锁**接口契约**（同 `test_真实扫描器可被本函数导入且四个名字
         齐全`的立意）：字段被改名/脚本 CLI 被改动，会在这里当场变红，
-        而不是等某天有人问"待发信盘点怎么从来不响"。对**真实仓库根**跑，
-        不断言具体行数（那会随生产 README 变化）。"""
-        real_repo_root = SCRIPT.parent.parent
+        而不是等某天有人问"待发信盘点怎么从来不响"。原真实仓库烟测原文保全；
+        本合同使用逐字节复制的真实CLI与纯依赖、合成README/Git输入，不读业务。"""
+        fixture = seed_readonly_cli_sources(self.repo)
+        real_repo_root = self.repo
         digest, reason = sweep._run_followup_readme_digest_json(real_repo_root)
         self.assertIsNone(reason, f"真实 digest 脚本调用失败：{reason}")
+        self.assertEqual(digest["total_rows"], 1)
+        self.assertEqual(digest["rows"][0]["number"], fixture["readme_number"])
         for key in ("total_rows", "malformed_status_rows", "rows"):
             self.assertIn(key, digest)
         if digest["rows"]:
@@ -7855,7 +7751,7 @@ class DraftGapInventoryTests(unittest.TestCase):
         self._orig_run = sweep._run_draft_gap_check_json
         sweep._track_and_alert_standing_state = self.recorder
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = lambda url, text: (self.sent.append(text), _accepted_test_receipt(url, text))[1]
         self.sent = []
 
     def tearDown(self):
@@ -7891,13 +7787,16 @@ class DraftGapInventoryTests(unittest.TestCase):
 
     def test_真实脚本调用契约齐全(self):
         """锁**接口契约**（同 `test_真实digest脚本调用契约齐全`的立意）：
-        字段被改名/脚本 CLI 被改动，会在这里当场变红。对**真实仓库根**跑，
-        不断言具体缺口内容（那会随生产 commit/README 变化）。"""
-        real_repo_root = SCRIPT.parent.parent
+        字段被改名/脚本 CLI 被改动，会在这里当场变红。原真实仓库烟测原文保全；
+        本合同使用逐字节复制的真实CLI与纯依赖、合成README/Git输入，不读业务。"""
+        fixture = seed_readonly_cli_sources(self.repo)
+        real_repo_root = self.repo
         payload, reason = sweep._run_draft_gap_check_json(real_repo_root)
         self.assertIsNone(reason, f"真实起草缺口检测脚本调用失败：{reason}")
         self.assertIn("gaps", payload)
         self.assertIn("window_days", payload)
+        self.assertEqual(len(payload["gaps"]), 1)
+        self.assertEqual(payload["gaps"][0]["commit_sha"], fixture["commit_sha"])
         for gap in payload["gaps"]:
             for key in ("recipient", "scenario_prefix", "event_date", "commit_sha"):
                 self.assertIn(key, gap)
@@ -8018,7 +7917,7 @@ class LocalOnlyCommitGuardTests(unittest.TestCase):
         self._orig_webhook = sweep._load_webhook_url
         self._orig_send = sweep._send_wecom_markdown
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = lambda url, text: (self.sent.append(text), _accepted_test_receipt(url, text))[1]
 
     def tearDown(self):
         sweep._load_webhook_url = self._orig_webhook
@@ -8248,6 +8147,20 @@ class LocalOnlyCommitCliWiringTests(SweepTestBase):
     组存在的全部理由——建成而没接线，与没建成**外观完全相同**。
     """
 
+    def setUp(self):
+        super().setUp()
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        url = f"http://127.0.0.1:{self._server.server_port}/webhook"
+        (self.work / ".env").write_text(f"{sweep.WECOM_WEBHOOK_ENV_KEY}={url}\n", encoding="utf8")
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
     def _log_text(self) -> str:
         return (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
 
@@ -8282,8 +8195,7 @@ class LocalOnlyCommitCliWiringTests(SweepTestBase):
         log = self._log_text()
         self.assertIn("本地 master ↔ origin/master 巡检", log)
         self.assertIn("真分叉", log)
-        # 未配 webhook 时走「仅留痕日志与状态文件」那条降级分支——它同样证明
-        # 判据已判出并**走到了告警阶段**，不是在半路被谁跳过了。
+        # 只在loopback HTTP真实返回ACK后写成功状态，证实main接线和送达阶段。
         self.assertIn("本地 master 独有提交", log)
         self.assertEqual(set(self._state()), {sweep.LOCAL_ONLY_DIVERGED_KEY}, log)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -8321,6 +8233,19 @@ class LocalOnlyCommitCliWiringTests(SweepTestBase):
         self.assertEqual(self._state(), {}, "补推已解决的领先不该留下任何告警状态")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_no_webhook_keeps_due_visible_without_success_state(self):
+        (self.work / ".env").write_text("", encoding="utf8")
+        self._init_and_push(rows="")
+        self._make_local_only_commit()
+        self._advance_origin()
+        result = _run_sweep(self.work)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SWEEP_ALERT 本地 master 独有提交 candidate_count=1", result.stdout)
+        self.assertIn("未在 .env 找到", result.stdout)
+        self.assertEqual(self._state(), {})
+        self.assertEqual(_CapturingWebhookHandler.received, [])
+
+
 
 class _HintModule:
     """替身扫描器模块：只提供推送正文要用到的那两个渲染函数。"""
@@ -8354,7 +8279,7 @@ class LanFlipPushTests(unittest.TestCase):
         self._orig_webhook = sweep._load_webhook_url
         self._orig_send = sweep._send_wecom_markdown
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = lambda url, text: (self.sent.append(text), _accepted_test_receipt(url, text))[1]
 
     def tearDown(self):
         sweep._load_webhook_url = self._orig_webhook
@@ -8443,7 +8368,7 @@ class LocalOnlyScanBlindSpotTests(unittest.TestCase):
         self._orig_webhook = sweep._load_webhook_url
         self._orig_send = sweep._send_wecom_markdown
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = lambda url, text: (self.sent.append(text), _accepted_test_receipt(url, text))[1]
 
     def tearDown(self):
         sweep._load_webhook_url = self._orig_webhook
@@ -8976,6 +8901,7 @@ class StatusTriageResidentRoundTests(unittest.TestCase):
             "| 470 | 某行 | CC | 指针 | 产出 | "
             "[S:open][D:业] 上一条留步的 ⑤ 已由 Shao Peishen 当日答 G-6 = (a) 批准，"
             "五条定夺项全部依赖解除 | 触碰区 | 2026-09-03 |\n"))
+        self._write(sweep.STATUS_TRIAGE_STATE_REL, "{}")  # 已存在的空去重表；弱档不得新增成功 key
         joined = "\n".join(self._run())
         self.assertIn("弱档 #470", joined)
         self.assertIn("降档因：依赖解除", joined)
@@ -9561,6 +9487,8 @@ class OrphanSectionFourEscalationTests(SweepTestBase):
         # 写入侧凭据形状判据的正本（`工具-密钥扫描lint.py`）——同 opener lint
         # 那条：**取不到就 fail-closed 拒绝写入**，夹具不还原就测不到真实行为。
         shutil.copy(CREDENTIAL_LINT_SOURCE, self.work / "0-学习与工具" / CREDENTIAL_LINT_SOURCE.name)
+        query_source = Path(__file__).resolve().with_name("工具-队列查询.py")
+        shutil.copy(query_source, self.work / "0-学习与工具" / query_source.name)
 
     def _write_queue(self, rows: str) -> None:
         (self.work / sweep.QUEUE_MECHANISM_PATH_REL).write_text(
@@ -9623,21 +9551,21 @@ class OrphanSectionFourEscalationTests(SweepTestBase):
         self.assertEqual(_run_sweep(self.work).returncode, 0)
         self.assertEqual(self._queue_text().split("## 四、")[1].count("孤儿升格"), 1)
 
-    def test_cross_day_orphan_is_escalated_again(self):
-        """🔴 **跨天仍是孤儿则再登一行**——它确实是新的一天里仍然没人管。
-        「登过一次即永久静默」是 #147 `gap_alert` 教训的另一面。"""
+    def test_same_event_cross_day_keeps_original_confirmed_row(self):
+        """Same event keeps its verified row across dates; periodic alerts remain independent."""
         self._init_and_push(rows="")
         self._seed_aged_orphan("杂物.md", sweep.ORPHAN_SECTION_FOUR_HOURS + 1)
         self.assertEqual(_run_sweep(self.work).returncode, 0)
-
-        # 把去重日期改成昨天 ＝ 模拟跨天
         state = self._read_orphan_state()
+        reference = dict(state["杂物.md"]["section_four_receipt"])
+        self.assertEqual(reference["phase"], "confirmed")
+        self.assertEqual(self._queue_text().split("## 四、")[1].count("孤儿升格"), 1)
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         state["杂物.md"][sweep.ORPHAN_SECTION_FOUR_LOGGED_KEY] = yesterday
         self._write_orphan_state(state)
-
         self.assertEqual(_run_sweep(self.work).returncode, 0)
-        self.assertEqual(self._queue_text().split("## 四、")[1].count("孤儿升格"), 2)
+        self.assertEqual(self._queue_text().split("## 四、")[1].count("孤儿升格"), 1)
+        self.assertEqual(self._read_orphan_state()["杂物.md"]["section_four_receipt"], reference)
 
     def test_escalation_does_not_commit_or_declare_the_orphan(self):
         """🔴 **反例：升格只把事交给人，不替人决定。** 孤儿文件在升格之后
@@ -9725,7 +9653,7 @@ class IntakeGapRowsTests(unittest.TestCase):
         self._orig_webhook = sweep._load_webhook_url
         self._orig_send = sweep._send_wecom_markdown
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = lambda url, text: (self.sent.append(text), _accepted_test_receipt(url, text))[1]
 
     def tearDown(self):
         sweep._load_webhook_url = self._orig_webhook
@@ -9915,6 +9843,29 @@ class IntakeGapRowsTests(unittest.TestCase):
         end = source.index("def main() -> int:")
         self.assertNotIn(BARE_WEBHOOK_ENV_KEY, source[start:end])
 
+
+
+class ReadonlyCliSyntheticSourceFailures(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        seed_readonly_cli_sources(self.repo)
+        (self.repo / SYNTHETIC_README_REL).unlink()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_missing_readme_digest_is_unknown_not_empty(self):
+        value, reason = sweep._run_followup_readme_digest_json(self.repo)
+        self.assertIsNone(value)
+        self.assertTrue(reason)
+        self.assertIn('README', reason)
+
+    def test_missing_readme_draft_gap_is_unknown_not_empty(self):
+        value, reason = sweep._run_draft_gap_check_json(self.repo)
+        self.assertIsNone(value)
+        self.assertTrue(reason)
+        self.assertIn('README', reason)
 
 if __name__ == "__main__":
     unittest.main()

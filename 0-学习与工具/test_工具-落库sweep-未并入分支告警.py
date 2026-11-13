@@ -22,6 +22,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from _sweep_test_receipts import receipt_sender
 
 HERE = Path(__file__).resolve().parent
 SWEEP_SCRIPT = HERE / "工具-落库sweep.py"
@@ -37,6 +38,14 @@ def _load(name: str, path: Path):
 
 sweep = _load("commit_sweep_for_unmerged_tests", SWEEP_SCRIPT)
 triage = _load("unmerged_branch_triage", TRIAGE_SCRIPT)
+
+
+def _capturing_ack(sent):
+    verified = receipt_sender(sweep)
+    def send(url, text):
+        sent.append(text)
+        return verified(url, text)
+    return send
 
 
 # ------------------------------------------------------------------ 夹具
@@ -258,7 +267,7 @@ class UnmergedBranchAlertTests(unittest.TestCase):
         self.sent: list[str] = []
         self._orig = (sweep._load_webhook_url, sweep._send_wecom_markdown, sweep._run_unmerged_branch_json)
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = _capturing_ack(self.sent)
         self.payload = _payload([])
         sweep._run_unmerged_branch_json = lambda repo_root: (self.payload, None)
 
@@ -411,6 +420,52 @@ class UnmergedBranchAlertTests(unittest.TestCase):
         self.assertIn("不自动合并、不自动删除", text)
 
 
+    def test_无ACK保留UNKNOWN且不自动重发(self):
+        self.payload = _payload([30] * 5)
+        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        text = self._run()
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self._state(), {})
+        self.assertIn('status=unknown', text)
+        path = (self.repo / sweep.UNMERGED_BRANCH_STATE_REL).with_suffix('.delivery.json')
+        before = path.read_bytes()
+        progress = json.loads(before)['alert']
+        self.assertEqual(progress['status'], 'unknown')
+        self.assertEqual(progress['in_flight'], 0)
+        self.assertEqual(progress['acked'], {})
+        again = self._run()
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self._state(), {})
+        self.assertEqual(path.read_bytes(), before)
+        self.assertIn('不自动重发', again)
+
+    def test_解除通知传输异常保全已确认状态且不重发(self):
+        self.payload = _payload([30] * 5)
+        self._run()
+        confirmed = self._state()
+        self.assertEqual(len(confirmed), 1)
+        self.sent.clear()
+        def interrupted(url, text):
+            self.sent.append(text)
+            raise OSError('synthetic transport interruption')
+        sweep._send_wecom_markdown = interrupted
+        self.payload = _payload([])
+        text = self._run()
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self._state(), confirmed)
+        self.assertIn('status=unknown', text)
+        path = (self.repo / sweep.UNMERGED_BRANCH_STATE_REL).with_suffix('.delivery.json')
+        before = path.read_bytes()
+        progress = json.loads(before)['resolved']
+        self.assertEqual(progress['status'], 'unknown')
+        self.assertEqual(progress['in_flight'], 0)
+        self.assertEqual(progress['acked'], {})
+        self._run()
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self._state(), confirmed)
+        self.assertEqual(path.read_bytes(), before)
+
+
 class UnmergedBranchEndToEndTests(unittest.TestCase):
     """临时仓库里放真分类器，sweep 子进程真调：5 条 B 分支各 10 天 ⇒ 触发；含 1 条 A 不计。"""
 
@@ -423,7 +478,7 @@ class UnmergedBranchEndToEndTests(unittest.TestCase):
         self.sent: list[str] = []
         self._orig = (sweep._load_webhook_url, sweep._send_wecom_markdown)
         sweep._load_webhook_url = lambda repo_root: "https://example.invalid/hook"
-        sweep._send_wecom_markdown = lambda url, text: self.sent.append(text)
+        sweep._send_wecom_markdown = _capturing_ack(self.sent)
 
     def tearDown(self):
         sweep._load_webhook_url, sweep._send_wecom_markdown = self._orig

@@ -1,25 +1,43 @@
 ---
 name: zhuopin-lane-watch
-description: Use when Shao Peishen asks to start lane watch or requests read-only progress. Default is one foreground session, serial slices, test-first acceptance; no automatic implementer or reviewer agents.
+description: 卓品泳道看护默认单主会话串行建造；普通代码以真实pytest验收，不自行派并发、实现代理或模型互审。用户说“开启泳道看护”时按本合同推进，说“看看泳道”时只读查询。§四313，2026-10-14。
+metadata:
+  legacy_status: 生效
 ---
 
-# Codex 泳道看护入口（§四313，2026-10-14）
+## Codex 执行约定
 
-先读根AGENTS.md，再定向读正本`0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md`。普通默认主会话自行串行实现，当前片测试与检查点完成后立即下一片；不自动派实现/review代理、并发泳道、Guardian --run或无头批处理。已批目标/design/tasks不逐片重审。
+本文件为完整能力正本，执行不再读取旧配置或旧技能源码。先按根 AGENTS.md 路由读取本任务需要的规则；业务判据、逐封批准、专业签认、OEM隔离、ERP只读及生产边界均保留。
+默认一个主会话串行；不自动派子代理、Guardian或headless，不自动commit/push、部署或外发。用户明确要求派生才显式gpt-6-luna/high；旧运行状态、锁及冻结合同保留，不伪造验收。队列只用查询工具，写入遵守acquire→写→§二登记→release。已批范围不重问。
+历史源文完整保存在迁移证据中，仅供定向核对，不作为执行入口。当前工具无法提供的接口如实报告，禁止回退旧引擎。
 
-每片仅输入目标/版本/必要函数/失败用例/下一步/禁项；不重复全景、全历史或巨大旧计划。用invoke解析的隔离Python，在对应项目根运行定向pytest；最终候选跑对应项目完整回归和功能/audit自动验收。普通代码不增加模型形式review。用户明确要求独审、冻结旧Workflow合同及安全相关人工审查仍按对应范围执行。
+# 泳道看护 · 串行与测试优先（当前正本）
 
-具体候选ff仍逐项授权；干净主线、可快进且测试/范围绑定有效才复用原工具ff-only并更新R5。主线当前master，不自动push、生产、外发或修改凭据/权限。旧状态/锁不因新默认而释放或伪造成功。写队列/共享文档仍acquire→写→登记→release，只读队列仅专用查询。
+## 默认执行
 
-## 看看泳道：只读
+用户已批准目标/design/tasks后，由一个主会话连续执行切片，不派实现代理、review代理或并发泳道。每个切片按“必要输入→实现→定向pytest→检查点→下一片”推进；不为同一已批范围重复询问继续、重复设计审或重灌全部历史/全景/长计划。普通模式不自动调用Guardian --run、headless批处理或subagent-driven-development。
 
-使用当前Windows仓库正式入口，结构化截取必要字段，不把整份状态灌入上下文：
-1. 从工具-泳道看护状态机.py show --json返回的lane映射中，只取非终态lane/status/batch，去重batch。
-2. 对返回的batch调用invoke.ps1 -Mode Guardian observe --batch，再对返回task_id调用Mode Workflow status --id。
-3. 报告真实phase/last attempt/busy/thread/证据；缺thread为未知、不估百分比。旧引擎无批次绑定单列，命令失败/权限不足/状态损坏不能混作完成。
-只读查看不调用start/advance/resume/recover/retire，不创建模型或修改私有state。Python从主仓或Git common-dir定位.codex/runtime.local.json的python字段；不安装依赖、不用全局editable替换。
+1. 任务已指定就只查对应队列行；未指定才查digest --actionable。队列只走工具-队列查询.py，主文档依正常acquire→写→登记→release，不裸读/grep真身。
+2. 只携带已批目标、实际版本、必要文件/函数、失败用例、下一节点和禁项。同文件/共享状态由唯一执行者写，不以“独立触碰区”为由自动扇出。
+3. 用最具体项目根和invoke解析的隔离Python。每片先验证真实失败原因再修复；工具/权限失败不充当功能RED。自然完成后留下HEAD/文件hash、命令/结果、未完成项和下一节点的检查点，在运行/上下文限制前结束当前片。
+4. 范围有效、安全条件满足且目标未完成就继续下一步；等待测试时可做无冲突的只读准备。没有真实调度器不得宣称停机期间在工作或会自行唤醒。
+5. 仅新增权限、范围、不可逆动作或安全事实缺失时集中请示。共享锁/未知终止必须走受支持入口，不能伪造seal、改锁/快照、绕权限或叠加通用恢复任务。
 
-## 用户明确选择旧headless时
+## 代码和功能验收
 
-仅该明确授权允许派生，全部显式gpt-6-luna/high；wrapper不能指定时先核目标版本确实强制Luna，不允许继承。新计划/启动并行度只允许整数1；旧并行计划先拒绝启动、记录原件保留。不把调用参数或技能模板当intent/design/ff/部署授权。
-沿README的真实旧stage合同运行，不写假review或成功记录。正常hooks信任及必要前置缺失时保全，只阻断对应依赖。涉及.51只引用zhuopin-lan-closeout正本，不复制程序或执行源端Claude/Cowork专属API。没有真实调度器不得声称会自行继续。
+普通非安全相关代码以真实pytest全绿为硬门槛。切片只跑对应定向测试；代码收敛后，对受影响子项目完整回归，按实际模块集合留stdout/stderr/JUnit/argv/cwd、测试源与候选版本绑定。不能靠过滤、擅改断言或任意skip得到“全绿”；未覆盖分支明确记录，不包装为验收完成。
+
+可打开页面、来源明细、快照/audit一致性、缺数/待签与有效零、legacy/golden不漂移等明确交付要求，转成自动测试或真实实测。测试数和模型自述均不代替可运行成果。普通新任务不默认独立模型review或互审循环；用户针对范围明确要求的审查、安全相关人工审核与冻结旧合同照旧。ISO26262、ASIL C/D禁区、OEM隔离、L2签字和已签业务口径不由pytest代签。
+
+## 本地闭环
+
+主线采用仓库实际名称，当前master。只有具体候选ff已获批准，范围/HEAD/测试证据有效、目标干净且可快进时，复用既有工具ff-only，随后更新R5和正常队列。已有脏文件、分叉或授权缺失须报告具体障碍，不能stash/reset/清理他人修改。未经具体指令不git push、不部署生产、不对外发送；代码完成、本地主线完成、MOCK、真实对账和生产分别记录。
+
+## 明确选择旧headless接口
+
+只有用户针对该任务明确要求headless/派生时才使用既有入口，派生显式gpt-6-luna/high；不继承、不自动换模型。新计划及启动的并行度只允许整数1，旧并行计划仅可只读，启动前拒绝且不改旧plan/state/lock/claim。
+旧Workflow仍保留它的真实CI/review/终止证据合同，不用假review记录绕旧stage；新前台模式的机器验收记录不能冒充旧Workflow成功。原生hooks正常信任、intent/design与逐项ff/生产/外发权限仍分别满足，不执行Claude专属接口。
+
+## 看看泳道
+
+只读状态机show --json，结构化筛lane/status/batch并去重；有Guardian批次才observe，再按返回task_id读取Workflow status。只报phase/attempt/busy/thread及证据，无thread记未知、不估百分比。只读查看不启动/恢复/认领任务，不遍历私有state。具体命令与Python解析见Codex适配入口；无批次绑定的旧引擎明确标旧引擎，不假报损坏。

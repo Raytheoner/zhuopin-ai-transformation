@@ -66,7 +66,7 @@ class _Repo:
         if intent is not None:
             (d / "intent.md").write_text(intent, encoding="utf-8")
         if claude_md is not None:
-            (d / "CLAUDE.md").write_text(claude_md, encoding="utf-8")
+            (d / 'CODEX-RULES.md').write_text(claude_md, encoding="utf-8")
         return f"{M.SCENE_ROOT_NAME}/{dept}/{dirname}"
 
     def package(self, name: str, *, proposal: str = "", tasks: str = "",

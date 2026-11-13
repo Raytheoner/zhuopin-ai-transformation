@@ -1,12 +1,12 @@
 
 """Codex event adapter. Business predicates remain in the original PowerShell guards."""
 from __future__ import annotations
-import hashlib, json, os, subprocess, sys, uuid
+import hashlib, importlib.util, json, os, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-HOOKS = ROOT / "0-学习与工具" / "hooks"
+HOOKS = Path(__file__).resolve().parent / "guards"
 
 def targets(tool, data):
     """Parse native apply_patch grammar, including both rename endpoints."""
@@ -91,20 +91,45 @@ def audit(event, results, error=None):
     # No prompt, tool input, command, transcript or secret values are recorded.
     state = Path(os.environ.get("ZHUOPIN_CODEX_STATE", str(ROOT / ".codex" / "state")))
     folder = state / "hooks"
-    folder.mkdir(parents=True, exist_ok=True)
     row = {"utc": datetime.now(timezone.utc).isoformat(), "event": event.get("hook_event_name"),
            "tool": event.get("tool_name"), "results": results, "error": error,
            "session_id": event.get("session_id"), "turn_id": event.get("turn_id"),
            "cwd": event.get("cwd"), "model": event.get("model"),
            "bridge_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
            "input_sha256": hashlib.sha256(json.dumps(event, ensure_ascii=False).encode()).hexdigest()}
-    (folder / (uuid.uuid4().hex + ".json")).write_text(json.dumps(row, ensure_ascii=False), encoding="utf8")
+    if event.get('tool_name') in ('functions.exec', 'exec'):
+        row['coverage'] = 'opaque_orchestration; nested host events unverified'
+    spec = importlib.util.spec_from_file_location('local_hook_audit', Path(__file__).with_name('hook_audit_store.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.append(folder, row)
+
+
+def effective_calls(event):
+    """Preserve guard predicates while avoiding processes that cannot apply."""
+    for script, payload in calls(event):
+        if script == 'hooks-pretooluse-dedup-guard.ps1' and payload['tool_name'] == 'Bash':
+            # The legacy Bash branch only counts, never blocks or validates.
+            continue
+        if script == 'sentinel-pronoun.ps1':
+            path = payload['tool_input']['file_path'].replace('\\', '/')
+            if '/6-人才与组织/部门AI专员跟进/' not in path or not path.lower().endswith('.md'):
+                continue
+        yield script, payload
 
 def deny_pretool(reason):
     # Native JSON denial does not depend on shell exit-code propagation.
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
         "permissionDecision": "deny", "permissionDecisionReason": reason}}, ensure_ascii=False))
     return 0
+
+
+def native_guard_environment(event_name):
+    # Preserve all shared-lock, repository and roster roots. The native helper
+    # binds only audit output and mode configuration to the reviewed checkout.
+    env = dict(os.environ)
+    env['ZHUOPIN_SENTINEL_AUDIT_ROOT'] = str(ROOT)
+    return env
 
 
 def main():
@@ -117,16 +142,34 @@ def main():
         name = event.get("hook_event_name")
         if not isinstance(name, str) or name not in known_events:
             raise ValueError("missing or unsupported hook event")
-        if name in ("SessionStart", "UserPromptSubmit"):
-            context = ("遵守根 AGENTS.md、CLAUDE.md 和适用 .claude/rules。队列只走工具-队列查询.py；"
-                       "先读批准的 intent/design/tasks；ff、生产部署、对外发送保留逐项授权。"
-                       "Codex 迁移状态见 0-学习与工具/codex-handoff/README.md。")
+        if name in ('UserPromptSubmit', 'Stop'):
+            return 0
+        if name == "SessionStart":
+            context = "按根 AGENTS.md 路由；仅明确接续才读对应接力。"
             print(json.dumps({"hookSpecificOutput": {"hookEventName": name,
                                                      "additionalContext": context}}, ensure_ascii=False))
-        for script, payload in calls(event):
+        pending = list(effective_calls(event))
+        if name == 'PostToolUse' and not pending:
+            return 0
+        if pending:
+            config_spec = importlib.util.spec_from_file_location(
+                'native_guard_readiness', Path(__file__).with_name('hook_configuration.py'))
+            configuration = importlib.util.module_from_spec(config_spec)
+            config_spec.loader.exec_module(configuration)
+            try:
+                configuration.verify_native_guard_bundle(ROOT)
+            except (OSError, ValueError) as exc:
+                audit(event, results, 'native_guard_bundle_incomplete')
+                reason = str(exc)
+                if name == 'PreToolUse':
+                    return deny_pretool(reason)
+                sys.stderr.write(reason+'\n')
+                return 2
+        for script, payload in pending:
             proc = subprocess.run(["pwsh", "-NoProfile", "-File", str(HOOKS / script)],
                                   input=json.dumps(payload, ensure_ascii=False), text=True, encoding="utf8",
-                                  capture_output=True, cwd=payload["cwd"], timeout=20)
+                                  capture_output=True, cwd=payload["cwd"], timeout=20,
+                                  env=native_guard_environment(name))
             results.append({"script": script, "exit": proc.returncode})
             if proc.returncode:
                 audit(event, results)
@@ -136,10 +179,6 @@ def main():
                     return deny_pretool(reason)
                 sys.stderr.write(reason)
                 return 2
-        if name == "Stop":
-            # Native transcript format is not assumed. Decision formatting is instruction-only.
-            results.append({"native_last_message_available": "last_assistant_message" in event,
-                            "claude_token_meter": "unsupported"})
         audit(event, results)
         return 0
     except Exception as exc:

@@ -1,0 +1,8 @@
+def test_状态文件不存在时零命中且回显(repo: Path):
+    log: list[str] = []
+    sweep._check_outbox_relay_unreadable_visibility(repo, log)
+    text = "\n".join(log)
+    assert "第 18 类" in text and "不存在" in text
+    assert _sweep_state(repo) == {}
+    assert not (repo / sweep.OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL).exists() or \
+        json.loads((repo / sweep.OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL).read_text(encoding="utf-8")) == {}

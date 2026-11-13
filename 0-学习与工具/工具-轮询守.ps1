@@ -84,7 +84,7 @@ if (-not $LogDir)       { $LogDir       = Join-Path $Repo 'reports\poll-guard' }
 $StickyStateFile = Join-Path $LogDir 'sticky-markers.json'   # 🔴 只落 reports/ 下；绝不落 合入登记/
 if (-not $ProbeScript)  { $ProbeScript  = Join-Path $Repo '0-学习与工具\工具-无头棒收工探针.py' }
 if (-not $PatrolScript) { $PatrolScript = Join-Path $Repo '0-学习与工具\工具-待合分支巡检.ps1' }
-if (-not $SkillDoc)     { $SkillDoc     = Join-Path $Repo '0-学习与工具\定时任务源码\poll-opener-batch.SKILL.md' }
+if (-not $SkillDoc)     { $SkillDoc     = Join-Path $Repo '.agents\skills\zhuopin-poll-opener-batch\SKILL.md' }
 
 $roundStart = Get-Date
 $roundId    = ($roundStart.ToString('yyyyMMdd-HHmmss-fff') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8))

@@ -24,10 +24,15 @@ _SWEEP_SPEC.loader.exec_module(sweep)
 
 
 @pytest.fixture()
-def repo(tmp_path: Path) -> Path:
+def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """最小仓库夹具：不放 `.env`，`_load_webhook_url` 读不到真实 webhook——
     本类全部用例走「只留痕、不真发」路径，与 `test_hooks-哨兵.py` 同惯例。"""
     (tmp_path / "reports").mkdir()
+    # Detection assertions stay unchanged. Only the HTTP transport is synthetic;
+    # accepted receipts are parsed by production code, and no real message is sent.
+    from _sweep_test_receipts import receipt_sender
+    monkeypatch.setattr(sweep,"_load_webhook_url",lambda _:"https://example.invalid/test-only")
+    monkeypatch.setattr(sweep,"_send_wecom_markdown",receipt_sender(sweep))
     return tmp_path
 
 
@@ -64,6 +69,9 @@ def test_worktree里陈旧副本不告警(repo: Path):
         repo, "long-dead-worktree",
         age_hours=sweep.AIBOT_AUDIT_ORPHAN_RECENT_WRITE_HOURS + 5,
     )
+    # Existing empty standing registry: stale evidence must not add an alert.
+    # First-scan absence is a separate no-write contract, not a delivery receipt.
+    (repo / sweep.AIBOT_AUDIT_ORPHAN_STATE_REL).write_text("{}",encoding="utf8")
     log: list[str] = []
     sweep._check_aibot_audit_orphan_writes(repo, log)
     state = json.loads((repo / sweep.AIBOT_AUDIT_ORPHAN_STATE_REL).read_text(encoding="utf-8"))

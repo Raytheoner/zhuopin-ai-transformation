@@ -648,7 +648,7 @@ def render(tally: Tally, args, asof: date, win_start: date, inventory: dict,
 
 def find_repo_root(start: Path) -> Path:
     for p in [start, *start.parents]:
-        if (p / "CLAUDE.md").exists() and (p / "0-学习与工具").is_dir():
+        if (p / "AGENTS.md").exists() and (p / "0-学习与工具").is_dir():
             return p
     return start
 

@@ -108,7 +108,7 @@ def prepare(args):
     if head["exit"] or common_dir["exit"] or not Path(common_dir["stdout"].strip()).is_absolute():
         raise RuntimeError("cannot read git HEAD/common-dir")
     prompt = (
-        "请在当前项目执行下述单一队列任务。先读 AGENTS.md、CLAUDE.md、适用规则及全景/实施计划。"
+        "请在当前项目执行下述单一队列任务。先读根 AGENTS.md，只展开本任务命中的 docs/codex/rules/ 及目录 AGENTS.md 路由；不默认读取接力、全景或历史。"
         "真实队列通过查询工具确认，快照不能代替实时状态。\n"
         f"队列：§{args.section} #{args.row}\n意图：{args.intent}\n"
         "工作流：intent 确认 → OpenSpec proposal/design/tasks → 实现 → 按 CI 矩阵逐项目验证"

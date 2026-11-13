@@ -1,0 +1,26 @@
+{
+  "source": "0-学习与工具/test_工具-opener派出前校验.py",
+  "source_before_sha256": "5e4adab06f03871927309f7471868f8c1b598e5077951fdbf862f5d1b9fdc558",
+  "preserved_original": "docs/codex/retired-evidence/OpenerRunnerHookTests-original.py.txt",
+  "preserved_sha256": "5e4adab06f03871927309f7471868f8c1b598e5077951fdbf862f5d1b9fdc558",
+  "status": "retired-contract-not-passed",
+  "retired_methods": [
+    "test_1_12_5_2_v2_整泳道跳空不StartJob_泳道内跳过不停泳道_SKIPPED进summary",
+    "test_1_12_v1_跳过不起claude_不判NO_SENTINEL_不break_退出码0",
+    "test_3_4_helper缺失_v1_v2_均fail_open_全部照派",
+    "test_4_5_v1_停下时续跑提示是整行可粘贴命令",
+    "test_5_4_v2_退出码不受跳过影响_有FAIL仍为1",
+    "test_v1_DryRun_显示跳过标记_不起session",
+    "test_v1_Force_全部照派_日志留痕",
+    "test_v2_Force_全部照派_Detach子进程也带Force",
+    "test_v2_全部跳过_无泳道_退出码0_summary仍写",
+    "test_变异守卫_抽掉v2挂点_已归档的A1会被照常派出"
+  ],
+  "retained_current_runner_method": "test_v2_DryRun_泳道清单只含实际将派出的成员",
+  "original_failure_xml_sha256": "3a0d5aec54dfa6c3a4a1d177d9e51adfe4b0cfbd92dc24cd41ba7ebef8ee79a4",
+  "current_native_test": "0-学习与工具/test_native_preflight_integration.py",
+  "current_native_test_sha256": "61567a3caab95aa52351d5f9fd6130c94ba5693de7a9c54e8b1f4fb317930abc",
+  "current_native_mutation_proof": "native-preflight-v33/red.json",
+  "current_native_green": "native-preflight-v33/green.json",
+  "reason": "old automatic Claude/legacy OK/resume contract conflicts with retired execution and native default pause; assertions are preserved, not weakened or marked successful"
+}

@@ -10,6 +10,6 @@
 ' 中"状态语义与此前一致。
 Set objShell = CreateObject("WScript.Shell")
 scriptDir = Left(WScript.ScriptFullName, Len(WScript.ScriptFullName) - Len(WScript.ScriptName))
-cmd = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File """ & scriptDir & "run-commit-sweep.ps1"""
+cmd = "powershell.exe -NoProfile -WindowStyle Hidden -File """ & scriptDir & "codex-handoff/launch_commit_sweep.ps1"" -Run"
 exitCode = objShell.Run(cmd, 0, True)
 WScript.Quit exitCode

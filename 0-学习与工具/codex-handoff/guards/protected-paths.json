@@ -1,0 +1,23 @@
+{
+  "_comment": "PreToolUse 受保护路径。mode: block=拦截 / warn=仅警告。patterns 生效中；examples 仅示例，按你的真实仓库挪进 patterns 启用。通配符 *，大小写不敏感，分隔符统一按 / 匹配。",
+  "mode": "block",
+  "patterns": [
+    "*/.claude/hooks/*",
+    "*/.claude/settings.json",
+    "*/.claude/protected-paths.json",
+    "*claude_desktop_config.json",
+    "*/0-学习与工具/codex-handoff/guards/*",
+    "*/.codex/*",
+    "*/.agents/*"
+  ],
+  "examples": [
+    "*/safety/*",
+    "*/functional_safety/*",
+    "*asil_*",
+    "*iso26262*",
+    "*fmea*",
+    "*.dbc",
+    "*/release/*",
+    "*/oem/*"
+  ]
+}

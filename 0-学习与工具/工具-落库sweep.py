@@ -20,8 +20,10 @@ git 历史才救回，见协议〇.7 背景）。
    `git show --name-only` 校验），见该函数 docstring。
 ② 改队列销行前 acquire 编辑锁、改完 release；销行标记与批次文件同一 commit——
    见 _process_batch()：git add 批次文件 → 加锁改队列 → 一次 commit 两者一起进。
-③ 主工作区非 master / 非 clean / 推送非快进时跳过本轮并告警，不强推——见
+③ 主工作区非 master / 非 clean / 推送非快进时阻止落库并告警，不强推——见
    _check_preconditions() 与 _reconcile_with_origin_and_push()。
+   非 master 时只有正本主仓可继续已审查的必要观察；fetch 单独过门禁，
+   状态与通知沿原管理方，业务文件、队列及 Git index 不写入。
 ④ 计划任务 Action 指主工作区稳定路径（非建造 worktree）+ SYSTEM + AtStartup +
    绝对路径烘焙——本脚本运行时另有 MAIN_WORKSPACE 断言兜底（见 _resolve_repo_root），
    注册脚本见 `register-commit-sweep-task.ps1`。
@@ -760,6 +762,12 @@ MANIFEST_SKIP_SECTION_FOUR_LOGGED_KEY = "section_four_logged_on"
 # 前缀下的其它文件、但未同时命中这个留痕文件，即视为"未见留痕"。命令中心
 # （AI运营指挥中心）没有独立场景 CLAUDE.md，其部署历史落在仓库根 CLAUDE.md，
 # 沿用同一判据（宁可因根 CLAUDE.md 被顺手一并改动而漏报，也不误报）。
+
+def _current_rule_rel(repo_root: Path, legacy: str) -> str:
+    """Map historical references to native authority; missing never selects old text."""
+    path = Path(legacy)
+    return "AGENTS.md" if path.parent == Path(".") else path.with_name("CODEX-RULES.md").as_posix()
+
 DEPLOYED_SCENARIO_PREFIXES = {
     "4-数字员工/采购部/SC8-客户订单交期智能承诺/":
         "4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md",
@@ -871,7 +879,7 @@ CLAUDE_MD_RULES_TOTAL_KEY = ".claude/rules/__total__"
 #: 尺寸巡检——它是泳道看护每棒固定要读的必读件，与 root/scene CLAUDE.md 同属
 #: "挤占开场注意力预算"这一判据。🔴 续棒 `OP-0921-F`：原固定 24,576 B 常量
 #: 改为**棘轮**（只降不升），基线＝本棒完工实测字节数（机械取值）。
-LANE_WATCH_SKILL_REL = "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md"
+LANE_WATCH_SKILL_REL = ".agents/skills/zhuopin-lane-watch/SKILL.md"
 LANE_WATCH_SKILL_BYTE_CAP = 30326  # 基线＝2026-09-21 `OP-0921-F` 完工实测 30,326 B
 CLAUDE_MD_SIZE_STATE_REL = "reports/sweep-claude-md-size-state.json"
 CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS = 24
@@ -885,7 +893,7 @@ ROOT_RATCHET_MARGIN_BYTES = 512
 # 「顶部段条目」判据，lint 自己的模块注释记着裸正则数出 4 条、区间判据
 # 数出 2 条，而错的那个「看起来很确定」。再写第二套 = 再造一次同样的
 # 漂移，且两套的分歧不会有任何报错。
-CLAUDE_PROGRESS_LINT_REL = "0-学习与工具/工具-CLAUDE进度段lint.py"
+CLAUDE_PROGRESS_LINT_REL = "0-学习与工具/工具-Codex规则lint.py"
 
 # ============================================================
 # 队列 §一 #435（2026-08-30，OP-0830-C）：本机全局记忆巡检——受检对象
@@ -919,7 +927,7 @@ CLAUDE_PROGRESS_LINT_REL = "0-学习与工具/工具-CLAUDE进度段lint.py"
 # 的最小改动，不改 `_track_and_alert_standing_state` 本身的契约（它被
 # M1/M2 等多处复用，零回归门槛下，改共享契约的风险面比多一个状态
 # 文件大得多）。
-GLOBAL_MEMORY_TARGETS = ("~/.claude/CLAUDE.md",)
+GLOBAL_MEMORY_TARGETS = ("~/.codex/AGENTS.md",)
 # 现值 9,382 B（2026-08-29/30 两次实测一致）。本机全局记忆文件规模应
 # 远小于项目级 CLAUDE.md（root 48 KB/scene 50 KB）——它按机器而非按
 # 项目绑定、且每个会话都整份注入上下文，理应更精简。16 KB 留约 7 KB
@@ -1239,10 +1247,12 @@ class SweepAbort(Exception):
     非 clean/无待处理批次等，退出码仍为 0、不告警）区分开。
     """
 
-    def __init__(self, message: str, exit_code: int = 0, is_fork: bool = False):
+    def __init__(self, message: str, exit_code: int = 0, is_fork: bool = False,
+                 observation_branch: str | None = None):
         super().__init__(message)
         self.exit_code = exit_code
         self.is_fork = is_fork
+        self.observation_branch = observation_branch
 
 
 def _run_git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
@@ -1499,7 +1509,10 @@ def _check_preconditions(repo_root: Path, production: bool) -> None:
 
     branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_root).stdout.strip()
     if branch != "master":
-        raise SweepAbort(f"⚠ 主工作区当前分支是「{branch}」非 master——跳过本轮，不强切分支。")
+        raise SweepAbort(
+            f"⚠ 主工作区当前分支是「{branch}」非 master——跳过落库，保留必要观察，不强切分支。",
+            observation_branch=branch,
+        )
 
     for marker in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "rebase-merge", "rebase-apply"):
         if (repo_root / ".git" / marker).exists():
@@ -1538,6 +1551,19 @@ def _fetch(repo_root: Path, log: list[str], phase: str) -> bool:
         )
         return False
     return True
+
+
+def _fetch_observation_ref(repo_root: Path, log: list[str], phase: str) -> str | None:
+    """显式 fetch 阶段；成功退出仍须确认 origin/master 就是本次拉取的对象。"""
+    if not _fetch(repo_root, log, phase):
+        return None
+    fetched = _run_git(["rev-parse", "--verify", "FETCH_HEAD"], repo_root, check=False)
+    tracked = _run_git(["rev-parse", "--verify", "origin/master"], repo_root, check=False)
+    if (fetched.returncode or tracked.returncode or not fetched.stdout.strip()
+            or fetched.stdout.strip() != tracked.stdout.strip()):
+        log.append("⚠ fetch 已返回，但 origin/master 与 FETCH_HEAD 未核实一致；跟踪引用可能陈旧。")
+        return None
+    return tracked.stdout.strip()
 
 
 def _push_any_unpushed_commits(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
@@ -1633,7 +1659,7 @@ def _rebase_blocking_paths(repo_root: Path) -> tuple[list[str] | None, str | Non
     拦路石」，与「没读到」在下游会长得一模一样（同本文件反复记的那一族：
     一个「太干净」的返回值，先问它是不是根本没读到那个对象）。
     """
-    result = _run_git(["status", "--porcelain=v1"], repo_root, check=False)
+    result = _run_git(["--no-optional-locks", "status", "--porcelain=v1"], repo_root, check=False)
     if result.returncode != 0:
         return None, f"`git status --porcelain=v1` 失败：{result.stderr.strip()[:160]}"
     blocking: list[str] = []
@@ -1667,7 +1693,7 @@ def _mark_local_only_scan(repo_root: Path, status: str, detail: str) -> dict:
     marker = _read_json_state(path) or {}
     now = datetime.now(timezone.utc).isoformat()
     consecutive = int(marker.get("consecutive_skips") or 0)
-    consecutive = consecutive + 1 if status == "skipped" else 0
+    consecutive = consecutive + 1 if status in ("skipped", "unavailable") else 0
     fresh = {
         "last_round_utc": now,
         "last_round_status": status,
@@ -1681,7 +1707,7 @@ def _mark_local_only_scan(repo_root: Path, status: str, detail: str) -> dict:
     try:
         _write_json_state(path, fresh)
     except OSError:
-        pass
+        return {}
     return fresh
 
 
@@ -1703,7 +1729,7 @@ def _peek_local_only_counts(repo_root: Path) -> str:
 
 
 def _note_local_only_scan_skipped(repo_root: Path, reason: str, log: list[str],
-                                  dry_run: bool = False) -> None:
+                                  dry_run: bool = False, *, scan_status: str = "skipped") -> None:
     """整轮早退时补一条「本轮第 8 类未巡检」的痕迹，连续够数则亮灯。
 
     调用点只有一个——`main()` 的两个 except 分支，且**只在本类当轮没跑过时
@@ -1718,7 +1744,7 @@ def _note_local_only_scan_skipped(repo_root: Path, reason: str, log: list[str],
     if dry_run:
         return
     try:
-        marker = _mark_local_only_scan(repo_root, "skipped", reason)
+        marker = _mark_local_only_scan(repo_root, scan_status, reason)
         rounds = marker["consecutive_skips"]
         log.append(f"🔀 本地 master ↔ origin/master 巡检：⚠ **本轮未巡检**"
                    f"（{reason}）——**不据此判为已对齐**；已连续 {rounds} 轮未巡检。")
@@ -1727,14 +1753,18 @@ def _note_local_only_scan_skipped(repo_root: Path, reason: str, log: list[str],
             # `_track_and_alert_standing_state`，会把上一次真实的「已连续
             # 未巡检」告警判成「✅ 已解除」——而我们其实还在瞎着。
             return
-        peek = _peek_local_only_counts(repo_root)
+        try:
+            peek = _peek_local_only_counts(repo_root)
+        except (OSError, subprocess.SubprocessError) as exc:
+            peek = f"只读补测未核实：{type(exc).__name__}: {exc}"
         log.append(f"    · {peek}")
 
         def render_alert(_keys):
             return (
                 f"🔀 落库sweep：**第 8 类（本地 master 独有提交）已连续 {rounds} 轮没跑**"
-                f"——每轮都在它之前就整轮结束了。\n"
-                f"- 本轮早退原因：{reason}\n"
+                + ("——判据持续不可用，尚未获得可核实结果。\n" if scan_status == "unavailable"
+                   else "——每轮都在它之前就整轮结束了。\n")
+                + f"- 本轮未核实原因：{reason}\n"
                 f"- {peek}\n"
                 "⇒ 后果：这段时间里「本地 master 分叉／纯领先」**不会有任何告警**，"
                 "而没有告警此前一直被读成「已对齐」。\n"
@@ -1798,28 +1828,59 @@ def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = F
     # 这不是可省的细节：该函数以「不在 current_keys 里的既有 key 即已解除」为
     # 语义，若测量失败时传一个空集合进去，它会当场发出一条「✅ 已解除」——
     # **测量停摆会伪装成问题已解决**，比不报更坏。返回即保留上一轮状态原样。
-    if not _fetch(repo_root, log, "本地master巡检"):
+    fresh_ref = _fetch_observation_ref(repo_root, log, "本地master巡检")
+    if not fresh_ref:
         log.append("    ⚠ 判据不可用：未能刷新 origin/master——**不据此判为已对齐**，"
                    "本轮保留既有告警状态不变（不发解除通知）。")
-        _mark_local_only_scan(repo_root, "unavailable", "fetch origin 失败")
-        _clear_local_only_unscanned_alert(repo_root, log)
+        _note_local_only_scan_skipped(repo_root, "fetch／跟踪引用核验未通过", log,
+                                      scan_status="unavailable")
         return
 
-    ahead_raw = _run_git(["rev-list", "--count", "origin/master..master"], repo_root, check=False)
-    behind_raw = _run_git(["rev-list", "--count", "master..origin/master"], repo_root, check=False)
+    observation, reason = _collect_local_only_commits(repo_root)
+    if observation is not None and observation["origin_ref"] != fresh_ref:
+        observation, reason = None, "取数期间 origin/master 发生变化，远端未核实"
+    if observation is None:
+        log.append(f"    ⚠ 判据不可用：{reason}——**不据此判为已对齐**，保留既有告警。")
+        _note_local_only_scan_skipped(repo_root, reason or "", log, scan_status="unavailable")
+        return
+    _publish_local_only_commits(repo_root, log, observation)
+
+
+def _collect_local_only_commits(repo_root: Path) -> tuple[dict | None, str | None]:
+    """纯取数：只读已有 refs、提交与工作区；不 fetch、不写状态、不通知。"""
+    refs = _run_git(["rev-parse", "master", "origin/master"], repo_root, check=False)
+    hashes = refs.stdout.strip().splitlines()
+    if refs.returncode or len(hashes) != 2:
+        return None, "master／origin/master 引用读不到"
+    master_ref, origin_ref = hashes
+    ahead_raw = _run_git(["rev-list", "--count", f"{origin_ref}..{master_ref}"], repo_root, check=False)
+    behind_raw = _run_git(["rev-list", "--count", f"{master_ref}..{origin_ref}"], repo_root, check=False)
     if (ahead_raw.returncode != 0 or not ahead_raw.stdout.strip().isdigit()
             or behind_raw.returncode != 0 or not behind_raw.stdout.strip().isdigit()):
-        log.append("    ⚠ 判据不可用：本地 `master` 或 `origin/master` 引用读不到——"
-                   "**不据此判为已对齐**，本轮保留既有告警状态不变（不发解除通知）。")
-        _mark_local_only_scan(repo_root, "unavailable", "master／origin/master 引用读不到")
-        _clear_local_only_unscanned_alert(repo_root, log)
-        return
-
+        return None, "master／origin/master 引用读不到"
     ahead = int(ahead_raw.stdout.strip())
     behind = int(behind_raw.stdout.strip())
+    subjects = []
+    blocking, blocking_err = None, None
+    if ahead:
+        listed = _run_git(
+            ["log", "--format=%h %s", f"-{LOCAL_ONLY_ALERT_MAX_ITEMS}", f"{origin_ref}..{master_ref}"],
+            repo_root, check=False)
+        subjects = [ln.strip() for ln in listed.stdout.splitlines() if ln.strip()]
+        blocking, blocking_err = _rebase_blocking_paths(repo_root)
+    return {"ahead": ahead, "behind": behind, "origin_ref": origin_ref, "subjects": subjects,
+            "blocking": blocking, "blocking_error": blocking_err}, None
+
+
+def _publish_local_only_commits(repo_root: Path, log: list[str], observation: dict,
+                               *, observation_only: bool = False) -> None:
+    """只消费已核实的新鲜取数；状态与通知仍由原站立告警管理方处理。"""
+    ahead, behind = observation["ahead"], observation["behind"]
 
     if ahead == 0:
-        shape = "已对齐" if behind == 0 else "纯落后（收尾段会 ff 追上，非风险）"
+        shape = "已对齐" if behind == 0 else (
+            "纯落后（本轮只观察，不执行 ff）" if observation_only
+            else "纯落后（收尾段会 ff 追上，非风险）")
     elif behind == 0:
         shape = "🔴 纯领先：这些提交只存在于本机一处，GitHub 上看不出任何缺口"
     else:
@@ -1834,17 +1895,13 @@ def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = F
     remedy = "⇒ 处置：等下一轮 sweep 自动 rebase＋ff push；连续多轮不消失再人工介入。"
     if ahead > 0:
         key = LOCAL_ONLY_DIVERGED_KEY if behind > 0 else LOCAL_ONLY_AHEAD_KEY
-        listed = _run_git(
-            ["log", "--format=%h %s", f"-{LOCAL_ONLY_ALERT_MAX_ITEMS}", "origin/master..master"],
-            repo_root, check=False,
-        )
-        subjects = [ln.strip() for ln in listed.stdout.splitlines() if ln.strip()]
+        subjects = observation["subjects"]
         parts = [f"本地独有 {ahead} 个提交，远端独有 {behind} 个"]
         if subjects:
             parts.append("；".join(subjects[:LOCAL_ONLY_ALERT_MAX_ITEMS]))
             if ahead > len(subjects):
                 parts.append(f"另有 {ahead - len(subjects)} 条未列出")
-        blocking, blocking_err = _rebase_blocking_paths(repo_root)
+        blocking, blocking_err = observation["blocking"], observation["blocking_error"]
         if blocking_err is not None:
             # 不猜：读不到就说读不到，不写成「无拦路石」。
             parts.append(f"rebase 拦路石未取到（{blocking_err}）")
@@ -1857,11 +1914,14 @@ def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = F
             remedy = ("⇒ 处置：先清掉上面点名的脏文件（`git stash`／`git checkout --`／"
                       "登记成 §二 批次），再由下一轮 sweep 自动 rebase＋ff push。")
         details[key] = "｜".join(parts)
+    if observation_only:
+        remedy = "⇒ 处置：先核主仓修改归属并协调短暂交接窗口；本轮不切分支、不处理他人成果。"
 
     def render_alert(keys):
         lines = "\n".join(f"- `{key}`：{details[key]}" for key in sorted(keys))
+        push_status = "本轮受分支门禁保护，未执行自动补推。" if observation_only else "起跑段自动补推未能解决。"
         return (
-            "🔀 落库sweep：本地 `master` 上存在**只此一份**的提交，起跑段自动补推未能解决。\n"
+            f"🔀 落库sweep：本地 `master` 上存在**只此一份**的提交，{push_status}\n"
             f"{lines}\n"
             "⇒ 后果两条，均无其它信号：① 这些提交只在本机，GitHub 上看不出缺口，"
             "一次 `reset --hard origin/master` 即永久消失；② 主工作区跑的是滞后的代码。\n"
@@ -1879,8 +1939,11 @@ def _check_local_only_commits(repo_root: Path, log: list[str], dry_run: bool = F
     )
     # 🔴 顺序写死：先落「本轮真的巡检过了」的痕迹，再解除「连续未巡检」告警。
     # 反过来会出现「灯已解除、痕迹还写着 skipped」的半拍不一致窗口。
-    _mark_local_only_scan(repo_root, "scanned",
-                          f"本地独有 {ahead} 个／远端独有 {behind} 个")
+    marker = _mark_local_only_scan(repo_root, "scanned",
+                                  f"本地独有 {ahead} 个／远端独有 {behind} 个")
+    if not marker:
+        log.append("⚠ 第 8 类巡检结果留痕失败，恢复状态未核实；保留停摆告警，不发恢复通知。")
+        return
     _clear_local_only_unscanned_alert(repo_root, log)
 
 
@@ -2169,13 +2232,16 @@ def _run_decision_reminder_second_carrier(repo_root: Path, log: list[str]) -> No
 
     异常（含超时）必须捕获+记日志（标 UTC）后继续跑主流程，不得把 sweep
     带崩（实现约束③）。"""
-    script = repo_root / DECISION_REMINDER_SCRIPT_REL
+    script = repo_root / '.claude/worktrees/wecom-service-home' / DECISION_REMINDER_SCRIPT_REL
     if not script.exists():
         return  # 本 checkout 未部署机器人服务（如独立测试环境），静默跳过
     try:
+        child_env = os.environ.copy()
+        child_env['WECOM_AIBOT_REPO_ROOT'] = str(repo_root)
+        child_env['WECOM_AIBOT_QUEUE_PATH'] = str(repo_root / '1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md')
         result = subprocess.run(
             [sys.executable, str(script)], cwd=repo_root, capture_output=True,
-            text=True, encoding="utf-8", timeout=DECISION_REMINDER_TIMEOUT_SECONDS,
+            text=True, encoding="utf-8", timeout=DECISION_REMINDER_TIMEOUT_SECONDS, env=child_env,
         )
     except Exception as exc:  # noqa: BLE001 —— 第二载体失败不得影响 sweep 主流程
         log.append(
@@ -2194,85 +2260,9 @@ def _run_decision_reminder_second_carrier(repo_root: Path, log: list[str]) -> No
 
 
 def _run_scheduled_task_mirror_sync(repo_root: Path, log: list[str]) -> None:
-    """队列 #235/#188：定时任务真身↔镜像自动核对（每小时，随 sweep 一并触发）。
+    """Retired by the Windows Claude execution-system decommission."""
+    log.append('旧Claude定时任务镜像同步已退役：历史镜像保全；不读旧目录、不写镜像、不提交。')
 
-    走子进程调用 `工具-定时任务源码备份.py`（#169，规范化逐行比对+差异自动
-    写回镜像，理由同 `_flush_pending_lock_appends`/`_run_decision_reminder_
-    second_carrier`：多 worktree 共享全局 editable install 存在被静默劫持
-    到别的 checkout 的风险，子进程隔离规避）。
-
-    **与另外两个起跑段子进程不同：本次调用自身会写文件**（脚本检出真身与
-    镜像不一致时直接把镜像内容改正）。若放任不管，这些改动会在下方
-    `dirty_paths = _status_paths(...)` 捕获时变成"没人声明的孤儿脏文件"
-    （同 #289 指出的"自动机制改了文件、没人负责让它落库"——本函数不能重蹈
-    覆辙）。故仿照 `_rerun_ledger` 的做法：调用后检查镜像目录的 git 状态，
-    有变化即就地 `git add`+本地 commit，不在此处单独推送，随本轮末尾的
-    `_reconcile_with_origin_and_push` 一并对齐 origin 并推送——由此
-    `dirty_paths` 捕获时这些文件已经是 clean 的，不产生新孤儿。
-
-    检出真实差异（脚本报 `updated`）或命中凭据扫描拦截（脚本退出码 1，见其
-    `credential_blocked` 状态）时，复用 #171 的 webhook 通道各发一次告警，
-    满足 #188 原始诉求"不一致即告警"；无变化时静默，不产生 #147 式噪音。
-
-    须在 sweep 自己的编辑锁窗口之外调用（main() 接线固定顺序，同
-    #192-A/#219）；异常（含超时）必须捕获+记日志后继续跑主流程，不得把
-    sweep 带崩。"""
-    script = repo_root / SCHEDULED_TASK_BACKUP_SCRIPT_REL
-    if not script.exists():
-        return  # 本 checkout 未部署该脚本（如独立测试环境），静默跳过
-    try:
-        result = subprocess.run(
-            [sys.executable, str(script)], cwd=repo_root, capture_output=True,
-            text=True, encoding="utf-8", timeout=SCHEDULED_TASK_MIRROR_TIMEOUT_SECONDS,
-        )
-    except Exception as exc:  # noqa: BLE001 —— 本检查失败不得影响 sweep 主流程
-        log.append(f"⚠ 定时任务镜像核对调用异常（{_now_utc_str()}，不影响本轮批次处理）：{exc}")
-        return
-
-    stdout = result.stdout.strip()
-    changed = _run_git(
-        ["status", "--porcelain=v1", "--", SCHEDULED_TASK_MIRROR_DIR_REL], repo_root,
-    ).stdout.strip()
-    if changed:
-        _run_git(["add", "--", SCHEDULED_TASK_MIRROR_DIR_REL], repo_root)
-        # 队列 #479 决策点② ⒝：本处 commit 补 pathspec，与上一行的 add 对齐
-        # （此前是裸 commit ＝ 提交整个 index，会把别人暂存的东西按本条固定
-        # 标题一起带走，且该标题看起来天经地义、事后极难发现）。
-        if _commit_scoped(
-            repo_root, "docs(定时任务镜像): sweep 自动核对并更正真身↔镜像差异",
-            [SCHEDULED_TASK_MIRROR_DIR_REL], log, label="定时任务镜像核对提交",
-        ):
-            log.append("✓ 定时任务真身↔镜像核对：检出差异并已自动更正+本地提交，等待本轮末尾统一对齐并推送。")
-        webhook_url = _load_webhook_url(repo_root)
-        if webhook_url is None:
-            log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过定时任务镜像差异告警推送（仅留痕日志）。")
-        else:
-            try:
-                _send_wecom_markdown(
-                    webhook_url,
-                    f"🪞 定时任务真身↔镜像核对：检出并已自动更正差异\n{stdout[:800]}",
-                )
-                log.append("✓ 定时任务镜像差异告警已推送。")
-            except Exception as send_exc:  # noqa: BLE001 —— 告警失败不应影响主流程
-                log.append(f"⚠ 定时任务镜像差异告警推送失败（不影响本轮）：{send_exc}")
-
-    if result.returncode != 0:
-        log.append(
-            f"⚠ 定时任务镜像核对退出码 {result.returncode}（疑似命中凭据扫描被拒绝写入，需人工核实）："
-            f"{stdout[:500]}"
-        )
-        webhook_url = _load_webhook_url(repo_root)
-        if webhook_url is None:
-            log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过凭据拦截告警推送（仅留痕日志）。")
-        else:
-            try:
-                _send_wecom_markdown(
-                    webhook_url,
-                    f"🔴 定时任务真身↔镜像核对：命中凭据扫描，已拒绝写入镜像，需人工核实\n{stdout[:800]}",
-                )
-                log.append("✓ 凭据拦截告警已推送。")
-            except Exception as send_exc:  # noqa: BLE001
-                log.append(f"⚠ 凭据拦截告警推送失败（不影响本轮）：{send_exc}")
 
 
 def _commit_merge_ledger_changes(repo_root: Path, log: list[str], dry_run: bool = False) -> None:
@@ -2369,11 +2359,17 @@ def _load_webhook_url(repo_root: Path) -> str | None:
     return None
 
 
-def _send_wecom_markdown(webhook_url: str, content: str) -> None:
+class _SweepDeliveryRejected(RuntimeError):
+    """A valid nonzero server receipt proves that this send was rejected."""
+
+
+def _send_wecom_markdown(webhook_url: str, content: str) -> dict:
     """向企业微信群机器人推送 Markdown 消息（同 `发企微.py::send_markdown`
     同款纯标准库实现，本脚本刻意不 import `zhuopin_platform`——保持零依赖，
     不受多 worktree 共享全局 editable install 指向哪个 checkout 的影响）。
     """
+    if len(content.encode("utf-8")) > 4096:
+        raise ValueError("markdown.content 超过4096 UTF-8字节，未调用平台")
     payload = json.dumps(
         {"msgtype": "markdown", "markdown": {"content": content}}, ensure_ascii=False,
     ).encode("utf-8")
@@ -2381,9 +2377,23 @@ def _send_wecom_markdown(webhook_url: str, content: str) -> None:
         webhook_url, data=payload, headers={"Content-Type": "application/json; charset=utf-8"},
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
-    if result.get("errcode", 0) != 0:
-        raise RuntimeError(f"企业微信推送失败 errcode={result.get('errcode')} errmsg={result.get('errmsg')}")
+        response_bytes = resp.read()
+        result = json.loads(response_bytes.decode("utf-8"))
+    if not isinstance(result, dict) or type(result.get("errcode")) is not int:
+        raise RuntimeError("企业微信回执缺少有效整数errcode，发送结果未知")
+    receipt = {"errcode": result["errcode"], "kind": "wecom_webhook_ack",
+               "destination_sha256": hashlib.sha256(webhook_url.encode("utf-8")).hexdigest(),
+               "request_sha256": hashlib.sha256(payload).hexdigest(),
+               "response_sha256": hashlib.sha256(response_bytes).hexdigest(),
+               "received_at_utc": datetime.now(timezone.utc).isoformat()}
+    if result["errcode"] != 0:
+        error = _SweepDeliveryRejected(f"企业微信推送失败（明确拒收）：errcode={result['errcode']}")
+        error.receipt = receipt
+        raise error
+    request_id = result.get("req_id")
+    if isinstance(request_id, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", request_id):
+        receipt["req_id"] = request_id
+    return receipt
 
 
 def _read_fork_state(repo_root: Path) -> dict:
@@ -3451,6 +3461,7 @@ def _format_commit_shas(hits: list[dict]) -> list[str]:
 
 def _partition_pending_rows_by_batch_isolation(
     pending_rows: list[dict], dirty_paths: list[str], log: list[str],
+    *, emit_orphan_log: bool = True,
 ) -> tuple[list[dict], dict[str, tuple[list[str], list[str], list[str]]], list[str]]:
     """队列 #238：sweep 批次隔离——把"任一脏文件未声明即整轮 return 0"的
     全局门，改为"只阻塞自身声明存在歧义的批次，其余批次照常落库"。
@@ -3513,7 +3524,7 @@ def _partition_pending_rows_by_batch_isolation(
     orphan_paths = sorted(
         p for p in dirty_paths if p not in declared_all and p not in ambiguous_candidates
     )
-    if orphan_paths:
+    if orphan_paths and emit_orphan_log:
         log.append(
             "⚠ 以下脏路径不属于任何待 commit 批次声明（孤儿，不阻塞其它批次，"
             "长期未认领由 #236 孤儿告警另行点名）："
@@ -3525,42 +3536,72 @@ def _partition_pending_rows_by_batch_isolation(
 
 def _read_orphan_state(repo_root: Path) -> dict:
     path = repo_root / ORPHAN_STATE_REL
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    # 损坏或不可读的历史不能当作空历史，否则下一轮会误发新告警、漏发解除。
+    return _read_delivery_state(path)
 
 
 def _write_orphan_state(repo_root: Path, state: dict) -> None:
     path = repo_root / ORPHAN_STATE_REL
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_delivery_state(path, state)
+
+
+def _snapshot_current_orphans(
+    repo_root: Path, log: list[str], *, require_all: bool = True,
+) -> list[str]:
+    """两份 §二 与 Git 脏路径取同一稳定快照；证据不全时结果未知。"""
+    queue_paths = _iter_queue_paths()
+
+    def stamps() -> tuple:
+        result = []
+        for rel in queue_paths:
+            path = repo_root / rel
+            if not path.is_file():
+                if require_all:
+                    raise OSError(f"孤儿判定所需队列缺失：{rel}")
+                result.append((rel, None))  # 旧单队列测试夹具的兼容路径
+                continue
+            stat = path.stat()
+            result.append((rel, stat.st_size, stat.st_mtime_ns, stat.st_ino))
+        return tuple(result)
+
+    before = stamps()
+    dirty = _status_paths(repo_root)
+    declared: set[str] = set()
+    for rel in queue_paths:
+        if (repo_root / rel).is_file():
+            text = (repo_root / rel).read_text(encoding="utf-8")
+        else:
+            continue
+        if _find_section_heading(text, SECTION_TWO_HEADING) == -1:
+            raise ValueError(f"孤儿判定所需 §二 标题缺失：{rel}")
+        rows = _parse_section_two(text, rel)
+        pending, ambiguous_status = _classify_section_two_rows(rows)
+        if ambiguous_status:
+            raise ValueError(f"孤儿判定遇到 {len(ambiguous_status)} 个状态不明批次：{rel}")
+        for row in pending:
+            if not row["files_cell"].strip():
+                raise ValueError(f"孤儿判定遇到空文件声明：{rel} {row['batch_id']}")
+            resolved, _not_dirty, ambiguous = _resolve_batch_files(row["files_cell"], dirty)
+            declared.update(resolved)
+            for fragment in ambiguous:
+                declared.update(_explain_ambiguous_candidates(fragment, dirty))
+    if stamps() != before or _status_paths(repo_root) != dirty or stamps() != before:
+        raise ValueError("孤儿判定期间队列或 Git 脏路径发生变化")
+    current = sorted(set(dirty) - declared)
+    log.append(f"🧭 孤儿完整快照：脏路径 {len(set(dirty))}，当前未覆盖 {len(current)}")
+    if current:
+        # 主流程接近尾部，普通日志可能被输出压缩器折叠；保留首十条让
+        # 新鲜孤儿也可见，完整升格清单另在达到 §四 阈值时落盘。
+        log.extend(_must_keep(f"    - {path}") for path in current[:10])
+        if len(current) > 10:
+            log.append(_must_keep(f"    · 另有 {len(current) - 10} 个未覆盖路径，详见孤儿状态与升格清单"))
+    return current
 
 
 def _track_and_alert_orphan_paths(
     repo_root: Path, orphan_paths: list[str], log: list[str],
 ) -> None:
-    """队列 #236(2)：孤儿脏文件（不属于任何批次声明）持续超过阈值即主动
-    告警——#238 批次隔离后 sweep 不再因孤儿文件整轮停摆，但"安静地跳过"
-    本身仍是问题（#236 取证：4 个孤儿文件挡住 20 个批次跨天不落库，根因
-    正是"没人知道"）。复用 #171 已建的 webhook 通道。
-
-    去重：每个路径只在跨过 `ORPHAN_ALERT_THRESHOLD_HOURS` 阈值时首次告警，
-    此后每满一个阈值周期再提醒一次，不逐轮（每小时）重复打扰——#147
-    `gap_alert` 的"狼来了"教训：过密的提醒会被无视。路径一旦不再是孤儿
-    （被声明或已消失）即从状态里清除，不留陈旧记录误导下一次真实孤儿的
-    "已孤儿多久"文案。
-
-    队列 #301（2026-08-07，Shao Peishen 选 (b)）：路径从状态清除时，若其
-    `last_alerted` 非空（即真的对它告警过），补发一条"✅ 已解除"通知——
-    2026-08-07 实测：告警送达前孤儿已自愈，读者只能凭消息本身判断不了
-    是否还成立，被迫转人查证。`last_alerted` 为空（从未跨阈值即消失）不
-    补发——为一件对方根本没听说过的事发解除通知，本身就是新噪音（#147
-    教训）。
-    """
+    """完整双队列快照之后才追踪；回执确认后才推进告警/解除历史。"""
     state = _read_orphan_state(repo_root)
     now = datetime.now(timezone.utc)
     current = set(orphan_paths)
@@ -3571,7 +3612,9 @@ def _track_and_alert_orphan_paths(
             if entry.get("last_alerted") is not None:
                 first_seen = datetime.fromisoformat(entry["first_seen"])
                 resolved.append((path, (now - first_seen).total_seconds() / 3600))
-            del state[path]
+                entry.setdefault("absent_since", now.isoformat())
+            else:
+                del state[path]
 
     to_alert: list[tuple[str, float]] = []
     for path in orphan_paths:
@@ -3579,6 +3622,7 @@ def _track_and_alert_orphan_paths(
         if entry is None:
             state[path] = {"first_seen": now.isoformat(), "last_alerted": None}
             continue
+        entry.pop("absent_since", None)
         first_seen = datetime.fromisoformat(entry["first_seen"])
         age_hours = (now - first_seen).total_seconds() / 3600
         if age_hours < ORPHAN_ALERT_THRESHOLD_HOURS:
@@ -3589,60 +3633,108 @@ def _track_and_alert_orphan_paths(
             if since_last < ORPHAN_ALERT_THRESHOLD_HOURS:
                 continue
         to_alert.append((path, age_hours))
-        entry["last_alerted"] = now.isoformat()
 
     _write_orphan_state(repo_root, state)
-
-    # 队列 #301：解除通知与"出现"告警相互独立——即便本轮没有新的
-    # to_alert，此前告警过的孤儿一旦解除仍要补发通知，反之亦然，两条
-    # 分支不得用同一个 early return 互相挡住。
+    state_path = repo_root / ORPHAN_STATE_REL
     if resolved:
-        lines = "\n".join(f"- `{p}`（存续 {age:.1f} 小时，无需处置）" for p, age in resolved)
-        resolved_text = (
-            f"✅ 落库sweep：{len(resolved)} 个此前告警过的孤儿脏文件已解除：\n{lines}"
-        )
         log.append(f"✅ 孤儿脏文件解除通知：{len(resolved)} 个文件")
-        webhook_url = _load_webhook_url(repo_root)
-        if webhook_url is None:
-            log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过孤儿解除通知推送（仅留痕日志）。")
-        else:
-            try:
-                _send_wecom_markdown(webhook_url, resolved_text)
+        ages = dict(resolved)
+        def render_resolved(keys):
+            lines = "\n".join(f"- `{p}`（存续 {ages[p]:.1f} 小时，无需处置）" for p in keys)
+            return f"✅ 落库sweep：{len(keys)} 个此前告警过的孤儿脏文件已解除：\n{lines}"
+        try:
+            if _deliver_standing_message(repo_root, "孤儿脏文件", state_path, "resolved",
+                    [path for path, _age in resolved], ORPHAN_ALERT_THRESHOLD_HOURS,
+                    render_resolved, log):
+                for path, _age in resolved:
+                    state.pop(path, None)
+                _write_orphan_state(repo_root, state)
                 log.append("✓ 孤儿脏文件解除通知已推送。")
-            except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
-                log.append(f"⚠ 孤儿脏文件解除通知推送失败（不影响本轮退出码）：{exc}")
+        except Exception as exc:  # noqa: BLE001 —— 不影响本轮其它落库
+            log.append(f"⚠ 孤儿脏文件解除通知未确认：{type(exc).__name__}: {exc}")
 
     if not to_alert:
         return
 
-    lines = "\n".join(f"- `{p}`（已孤儿 {age:.1f} 小时）" for p, age in to_alert)
-    alert_text = (
-        f"🧭 落库sweep 检测到 {len(to_alert)} 个脏文件持续未被任何批次声明"
-        f"（阈值 {ORPHAN_ALERT_THRESHOLD_HOURS} 小时）：\n{lines}\n"
-        "若确认无主，请登记 §二 批次代为声明入库；若仍在编辑中，登记一条"
-        "占位批次即可解除本告警。"
-    )
     log.append(
         f"🧭 孤儿脏文件告警：{len(to_alert)} 个文件超过 "
         f"{ORPHAN_ALERT_THRESHOLD_HOURS} 小时未声明"
     )
-    webhook_url = _load_webhook_url(repo_root)
-    if webhook_url is None:
-        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过孤儿脏文件告警推送（仅留痕日志与状态文件）。")
-        return
+    ages = dict(to_alert)
+    def render_alert(keys):
+        lines = []
+        for p in keys:
+            entry = state[p]
+            reference = entry.get("section_four_receipt")
+            evidence = ""
+            if isinstance(reference, dict):
+                phase = "曾成功升格" if reference.get("phase") == "confirmed" else "升格结果待核"
+                evidence = (f"；{phase} §四 #{reference.get('number', '?')}，"
+                            f"清单 `{reference.get('receipt_rel', '?')}`")
+            elif entry.get(ORPHAN_SECTION_FOUR_LOGGED_KEY):
+                evidence = f"；旧升格行待核（登记日期 {entry[ORPHAN_SECTION_FOUR_LOGGED_KEY]}，缺精确行号；承接Win1107A预警维护）"
+            lines.append(f"- `{p}`（已孤儿 {ages[p]:.1f} 小时{evidence}）")
+        lines = "\n".join(lines)
+        return (
+            f"🧭 落库sweep 检测到 {len(keys)} 个脏文件持续未被任何批次声明"
+            f"（阈值 {ORPHAN_ALERT_THRESHOLD_HOURS} 小时）：\n{lines}\n"
+            "若确认无主，请登记 §二 批次代为声明入库；若仍在编辑中，登记一条"
+            "占位批次即可解除本告警。"
+        )
     try:
-        _send_wecom_markdown(webhook_url, alert_text)
-    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
-        log.append(f"⚠ 孤儿脏文件告警推送失败（不影响本轮退出码）：{exc}")
-        return
-    log.append("✓ 孤儿脏文件告警已推送。")
+        if _deliver_standing_message(repo_root, "孤儿脏文件", state_path, "alert",
+                [path for path, _age in to_alert], ORPHAN_ALERT_THRESHOLD_HOURS,
+                render_alert, log):
+            alerted_at = datetime.now(timezone.utc).isoformat()
+            for path, _age in to_alert:
+                state[path]["last_alerted"] = alerted_at
+            _write_orphan_state(repo_root, state)
+            log.append("✓ 孤儿脏文件告警已推送。")
+    except Exception as exc:  # noqa: BLE001 —— 不影响本轮其它落库
+        log.append(f"⚠ 孤儿脏文件告警未确认：{type(exc).__name__}: {exc}")
+
+
+def _parse_exact_section_four_query(output: str, text_output: str, number: str, queue_path: str) -> str:
+    """Bind JSON row identity and full text from the same official lookup arguments."""
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("官方查询JSON键重复")
+            result[key] = value
+        return result
+
+    record = json.loads(output, object_pairs_hook=unique_object)
+    required = {"row", "section", "found", "carrier", "file", "line", "status_field", "error", "read_errors"}
+    if (not isinstance(record, dict) or not required.issubset(record)
+            or record["row"] != str(number) or record["section"] != "四"
+            or record["found"] is not True or record["carrier"] != "live"
+            or record["file"] != queue_path or type(record["line"]) is not int or record["line"] <= 0
+            or record["error"] is not None or record["read_errors"] != []
+            or record["status_field"] is not None):  # JSON status_field只服务§一，不是§四事项。
+        raise ValueError("官方查询未返回同队列/分区/编号的完整精确行")
+    if not isinstance(text_output, str):
+        raise ValueError("官方精确行全文格式不可用")
+    text_output = text_output.replace("\r\n", "\n")
+    if not text_output.startswith("【#】\n"):
+        raise ValueError("官方精确行全文格式不可用")
+    fields = {}
+    for key, value in re.findall(r"(?ms)^【([^】]+)】\n(.*?)(?=^【|\Z)", text_output):
+        if key in fields:
+            raise ValueError("官方精确行全文字段重复")
+        fields[key] = value.strip()
+    if (set(fields) != {"#", "事项", "等谁", "截止"}
+            or fields["#"] != str(number) or not fields["事项"]):
+        raise ValueError("官方精确行全文的编号/事项不完整")
+    return fields["事项"]
 
 
 def _escalate_long_lived_orphans_to_section_four(
     repo_root: Path, log: list[str], dry_run: bool = False,
+    *, current_paths: set[str] | None = None,
 ) -> None:
     """队列 §一 #416 ⑶ D4：孤儿存续 ≥ `ORPHAN_SECTION_FOUR_HOURS` 小时 ⇒ 自动
-    在 §四 追一行，把它交给人处置（当日同文件去重）。
+    在 §四 追一行，把它交给人处置（同路径＋first_seen的持续事件只升格一次）。
 
     🔴 **为什么要在企微告警之外再加一条通路**：企微推送**没有承接面**——它
     响过就过去了，没有任何东西记得"这件事还没人管"。2026-09-07 16:21 实测：
@@ -3668,9 +3760,67 @@ def _escalate_long_lived_orphans_to_section_four(
     state = _read_orphan_state(repo_root)
     now = datetime.now(timezone.utc)
     today = datetime.now().strftime("%Y-%m-%d")  # 本机本地日期，与队列行写法同源
+    row_evidence = {}  # 仅本轮、同精确行/清单共用证据；每条路径仍单独核first_seen。
+
+    def confirm_reserved_row(path, entry, reference):
+        """只核已经持久化的精确预留行；未知不能转成重新申请编号。"""
+        try:
+            if (reference.get("first_seen") != entry.get("first_seen")
+                    or reference.get("queue_path") != QUEUE_MECHANISM_PATH_REL
+                    or reference.get("section") != "四"
+                    or not str(reference.get("number", "")).isdigit()):
+                raise ValueError("事件/队列/行号映射不完整")
+            rel, expected = reference["receipt_rel"], reference["receipt_sha"]
+            receipt_path = (repo_root / rel).resolve()
+            if (not rel.startswith("reports/sweep-orphan-escalation-") or not rel.endswith(".json")
+                    or receipt_path.parent != (repo_root / "reports").resolve()):
+                raise ValueError("回执路径不在既有升格目录")
+            cache_key = (reference["queue_path"], str(reference["number"]), rel, expected)
+            evidence = row_evidence.get(cache_key)
+            if isinstance(evidence, Exception):
+                raise evidence
+            if evidence is None:
+                try:
+                    raw = receipt_path.read_bytes()
+                    if hashlib.sha256(raw).hexdigest() != expected:
+                        raise ValueError("升格清单哈希不匹配")
+                    receipt_data = json.loads(raw)
+                    # JSON核身份，text核§四事项；两个查询都精确指定同一队列/分区/编号。
+                    query = [sys.executable, str(repo_root / "0-学习与工具/工具-队列查询.py"),
+                             "--row", str(reference["number"]), "--section", "四", "--field", "all",
+                             "--file", QUEUE_MECHANISM_PATH_REL]
+                    result = subprocess.run(
+                        [*query, "--format", "json"],
+                        cwd=repo_root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    if result.returncode:
+                        raise ValueError("官方精确行查询非零退出，结果待核")
+                    full = subprocess.run(query, cwd=repo_root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    if full.returncode:
+                        raise ValueError("官方精确行全文查询非零退出，结果待核")
+                    matter = _parse_exact_section_four_query(result.stdout, full.stdout, reference["number"], reference["queue_path"])
+                    evidence = (receipt_data, matter)
+                except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError, AttributeError) as exc:
+                    row_evidence[cache_key] = exc
+                    raise
+                row_evidence[cache_key] = evidence
+            receipt_data, matter = evidence
+            if not any(item.get("path") == path and item.get("first_seen") == entry["first_seen"]
+                       for item in receipt_data["paths"]):
+                raise ValueError("升格清单不含同一持续事件")
+            if f"`{rel}`" not in matter or f"`{expected}`" not in matter:
+                raise ValueError("精确行未返回匹配的路径/编号/清单回执")
+            reference["phase"] = "confirmed"
+            entry[ORPHAN_SECTION_FOUR_LOGGED_KEY] = reference.get("date", today)
+            return True
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError, AttributeError) as exc:
+            log.append(_must_keep(f"⚠ 孤儿升格结果待核：`{path}`，§四 #{reference.get('number', '?')}；{exc}。承接Win1107A预警维护；不申请新号，3h提醒继续。"))
+            return False
 
     due: list[tuple[str, float, str]] = []
+    reconciled = False
     for path, entry in state.items():
+        if entry.get("absent_since") or (current_paths is not None and path not in current_paths):
+            continue
         first_seen_raw = entry.get("first_seen")
         if not first_seen_raw:
             continue
@@ -3681,21 +3831,45 @@ def _escalate_long_lived_orphans_to_section_four(
         age_hours = (now - first_seen).total_seconds() / 3600
         if age_hours < ORPHAN_SECTION_FOUR_HOURS:
             continue
-        # 当日同文件去重：同一天内最多升格一次；**跨天仍是孤儿则再登一行**
-        # ——它确实是新的一天里仍然没人管，静默下去就成了"登过一次即永久
-        # 静默"，那是 #147 `gap_alert` 教训的另一面。
-        if entry.get(ORPHAN_SECTION_FOUR_LOGGED_KEY) == today:
+        reference = entry.get("section_four_receipt")
+        if reference is not None:
+            if not isinstance(reference, dict):
+                log.append(_must_keep(f"⚠ 孤儿 `{path}` 升格映射损坏，结果未知；保留3h提醒，不申请新号。"))
+            elif reference.get("phase") != "confirmed" or reference.get("first_seen") != first_seen_raw:
+                reconciled = confirm_reserved_row(path, entry, reference) or reconciled
+            continue
+        if entry.get(ORPHAN_SECTION_FOUR_LOGGED_KEY):
+            log.append(_must_keep(f"⚠ 孤儿 `{path}` 旧升格行待核（仅有日期 {entry[ORPHAN_SECTION_FOUR_LOGGED_KEY]}，无精确行号）；承接Win1107A预警维护。保留3h提醒，不新登/合并/销号旧行。"))
             continue
         due.append((path, age_hours, first_seen.strftime("%Y-%m-%dT%H:%M:%SZ")))
 
     log.append(_must_keep(
-        f"🧭 孤儿升格 §四 扫描（阈值 {ORPHAN_SECTION_FOUR_HOURS} 小时，当日去重）："
+        f"🧭 孤儿升格 §四 扫描（阈值 {ORPHAN_SECTION_FOUR_HOURS} 小时，同一持续事件去重）："
         f"本轮待升格 {len(due)} 个"
     ))
+    if reconciled and not dry_run:
+        try:
+            _write_orphan_state(repo_root, state)
+        except OSError as exc:
+            log.append(_must_keep(f"⚠ 孤儿升格精确行已核实但状态未保存：{exc}；下轮仍只核原行，不重新申请编号。"))
     if not due:
         return
 
     due.sort(key=lambda item: -item[1])
+    # 队列正文只展示前十条；完整集合必须能按指纹找回，不能再靠截断文案
+    # 事后猜 #242/#243 那种数千条告警究竟覆盖了哪些文件。
+    receipt = {
+        "schema": "sweep-orphan-escalation-v2",
+        "observed_utc": now.isoformat(),
+        "date": today,
+        "paths": [
+            {"path": path, "age_hours": round(age, 3), "first_seen": state[path]["first_seen"]}
+            for path, age, seen in due
+        ],
+    }
+    receipt_bytes = (json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    receipt_sha = hashlib.sha256(receipt_bytes).hexdigest()
+    receipt_rel = f"reports/sweep-orphan-escalation-{today}-{receipt_sha[:16]}.json"
     shown = due[:10]
     listed = "；".join(f"`{p}`（已孤儿 {age:.1f} 小时，首见 {seen}）" for p, age, seen in shown)
     if len(due) > len(shown):
@@ -3704,6 +3878,7 @@ def _escalate_long_lived_orphans_to_section_four(
         f"🧭 **落库 sweep 孤儿升格（{today}）**：{len(due)} 个脏文件持续 ≥ "
         f"{ORPHAN_SECTION_FOUR_HOURS} 小时不属于任何待处理 §二 批次声明，"
         f"不会被 sweep 提交、会静默掉在地上：{listed}。"
+        f"全量路径清单 `{receipt_rel}`（SHA256 `{receipt_sha}`，观察于 {receipt['observed_utc']}）。"
         f"**请选**：(a) 代登 §二 批次入库（先核 `git diff --numstat` 再登）；"
         f"(b) 丢弃——由作者线自行处置，本行销号。"
         f"🔴 **本项无默认**：选 (a) 由值周执行、选 (b) 由作者线执行，"
@@ -3723,6 +3898,18 @@ def _escalate_long_lived_orphans_to_section_four(
             detail = " ".join((acquired.stdout + acquired.stderr).split())[:300]
             log.append(f"⚠ 孤儿升格：编辑锁 acquire 未成功，本轮跳过（不影响退出码）：{detail}")
             return
+        if current_paths is not None:
+            # 锁取得之后再核一次：取数到追行之间若声明或脏路径改变，整行
+            # 判为未知并留待下轮，绝不把过时的孤儿快照写成当前事实。
+            locked_paths = set(_snapshot_current_orphans(
+                repo_root, log, require_all=(repo_root == MAIN_WORKSPACE),
+            ))
+            queue_metadata = set(_iter_queue_paths())
+            # acquire 会在 §四 写预留锁，使其所在的队列文件本身变脏；这是
+            # 本函数产生的元数据变化，不属于孤儿集合，复核时从两边剔除。
+            if (locked_paths - queue_metadata) != (current_paths - queue_metadata):
+                log.append("⚠ 孤儿升格：取数后归属变化，本轮不追行。")
+                return
         number = _parse_reserved_section_four_number(acquired.stdout)
         if number is None:
             log.append("⚠ 孤儿升格：acquire 成功但未能从输出解析出 §四 预留号，本轮跳过"
@@ -3736,6 +3923,17 @@ def _escalate_long_lived_orphans_to_section_four(
         # 本函数是**无人值守**路径（sweep 每 27 分钟自跑一轮），不能依赖一条
         # 在部分环境下必然崩的入口。§四 列序 ＝ 事项／等谁／截止。
         # ⚠️ 这条兜底桩缺字段本身是既存缺口（与本变更无关），已登记待派。
+        receipt_path = repo_root / receipt_rel
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_bytes(receipt_bytes)
+        for path, _age, _seen in due:
+            state[path]["section_four_receipt"] = {
+                "first_seen": state[path]["first_seen"], "phase": "prepared", "date": today,
+                "queue_path": QUEUE_MECHANISM_PATH_REL, "section": "四", "number": number,
+                "receipt_rel": receipt_rel, "receipt_sha": receipt_sha,
+            }
+        # 精确预留号与回执先持久化；失败时绝不进入append，未知结果不得盲重建。
+        _write_orphan_state(repo_root, state)
         appended = _edit_lock(repo_root, "append-row", [
             "--section", "四", "--number", number,
             "--cell", matter,
@@ -3746,10 +3944,11 @@ def _escalate_long_lived_orphans_to_section_four(
             detail = " ".join((appended.stdout + appended.stderr).split())[:300]
             log.append(f"⚠ 孤儿升格：§四 追行被拒，本轮跳过（不影响退出码）：{detail}")
         else:
-            log.append(f"✓ 孤儿升格：已登 §四 #{number}（{len(due)} 个孤儿，等 Shao Peishen 一字母）。")
+            confirmed = 0
             for path, _age, _seen in due:
-                state[path][ORPHAN_SECTION_FOUR_LOGGED_KEY] = today
+                confirmed += confirm_reserved_row(path, state[path], state[path]["section_four_receipt"])
             _write_orphan_state(repo_root, state)
+            log.append(_must_keep(f"孤儿升格：§四 #{number} append返回成功，精确行/回执已核实 {confirmed}/{len(due)} 个事件；未核实项仍待核，不申请新号。"))
     except Exception as exc:  # noqa: BLE001 —— 升格失败不应影响本轮退出码
         log.append(f"⚠ 孤儿升格自身异常，本轮跳过（不影响退出码）：{type(exc).__name__}: {exc}")
     finally:
@@ -3915,7 +4114,7 @@ def _parse_reserved_section_four_number(acquire_stdout: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _find_missing_deployment_trace(touched_paths: set[str]) -> list[str]:
+def _find_missing_deployment_trace(touched_paths: set[str], repo_root: Path | None = None) -> list[str]:
     """队列 #229：发布收口第②关——本轮 touched_paths 是否命中已部署场景
     白名单、却未同时改动该场景的部署留痕文件。返回命中但缺留痕的场景前缀
     清单（可能为空）。
@@ -3930,6 +4129,7 @@ def _find_missing_deployment_trace(touched_paths: set[str]) -> list[str]:
     """
     hits = []
     for prefix, trace_file in DEPLOYED_SCENARIO_PREFIXES.items():
+        trace_file = _current_rule_rel(repo_root, trace_file)
         touches_scenario = any(
             p.startswith(prefix) and p != trace_file for p in touched_paths
         )
@@ -3995,12 +4195,14 @@ def _scenario_dirs(repo_root: Path) -> list[Path]:
 
 
 def _scenario_is_retired(scenario_dir: Path) -> bool:
-    claude_md = scenario_dir / "CLAUDE.md"
+    claude_md = scenario_dir / "CODEX-RULES.md"
     if not claude_md.exists():
         return False
     try:
         return SCENARIO_RETIREMENT_MARKER in claude_md.read_text(encoding="utf-8")
     except OSError:
+        if globals().get("_STANDING_OBSERVATION") is not None:
+            raise
         return False
 
 
@@ -4084,6 +4286,8 @@ def _spec_dirs_mentioning(repo_root: Path, needle: str) -> list[str]:
             if needle in spec_file.read_text(encoding="utf-8"):
                 hits.append(cap_dir.name)
         except OSError:
+            if globals().get("_STANDING_OBSERVATION") is not None:
+                raise
             continue
     return hits
 
@@ -4115,78 +4319,217 @@ def _read_json_state(path: Path) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
+        if globals().get("_STANDING_OBSERVATION") is not None:
+            raise
         return {}
+    if not isinstance(data, dict) and globals().get("_STANDING_OBSERVATION") is not None:
+        raise ValueError(f"状态不是JSON object：{path.name}")
     return data if isinstance(data, dict) else {}
 
 
 def _write_json_state(path: Path, state: dict) -> None:
+    context = globals().get("_STANDING_OBSERVATION")
+    if context is not None and context["collecting"]:
+        context["pending"].append((_write_json_state, (path, dict(state)), {}))
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+WECOM_MARKDOWN_MAX_BYTES = 4096
+
+
+def _standing_message_parts(content: str, label: str, count: int, report_rel: str) -> list[str]:
+    """按 content 的 UTF-8 字节数装箱；风险正文完整保留，命令块不拆成残缺命令。"""
+    if len(content.encode("utf-8")) <= WECOM_MARKDOWN_MAX_BYTES:
+        return [content]
+    prefix = f"{label}｜总项 {count}｜完整报告 `{report_rel}`\n"
+    # 为分段序号留出余量，最终仍逐段检查真实长度。
+    budget = WECOM_MARKDOWN_MAX_BYTES - len(prefix.encode("utf-8")) - 64
+    if budget < 256:
+        raise ValueError("告警报告路径/标签过长，无法安全分段")
+    units = []
+    for block in re.split(r"(?m)(^```[^\n]*\n[\s\S]*?^```[^\n]*(?:\n|$))", content):
+        if block.startswith("```"):
+            units.append(block if len(block.encode("utf-8")) <= budget else
+                         "\n（完整命令块超过单段上限，请从完整报告复制；不发送残缺命令。）\n")
+            continue
+        for line in block.splitlines(keepends=True):
+            if len(line.encode("utf-8")) <= budget:
+                units.append(line)
+            else:
+                # 长行逐字符分段，但完整 Markdown 链接/裸 URL 为原子单位。
+                for atom in re.findall(r"!?\[[^\]\n]*\]\([^\n)]*\)|https?://\S+|[\s\S]", line):
+                    if len(atom.encode("utf-8")) > budget:
+                        raise ValueError("单个链接超过消息上限，完整报告已保留；未截断发送")
+                    units.append(atom)
+    chunks, chunk = [], ""
+    for unit in units:
+        if chunk and len((chunk + unit).encode("utf-8")) > budget:
+            chunks.append(chunk)
+            chunk = ""
+        chunk += unit
+    if chunk:
+        chunks.append(chunk)
+    parts = [prefix + f"分段 {i}/{len(chunks)}\n" + body for i, body in enumerate(chunks, 1)]
+    if not all(len(p.encode("utf-8")) <= WECOM_MARKDOWN_MAX_BYTES for p in parts):
+        raise ValueError("分段长度校验失败，未发送")
+    return parts
+
+
+def _read_delivery_state(path: Path) -> dict:
+    """投递回执不可读时停止此通知，不能当作空历史重发。"""
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"通知状态不是 JSON object：{path.name}")
+    return data
+
+
+def _write_delivery_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + f".r7-{os.getpid()}.tmp")
+    with temp.open("x", encoding="utf-8") as stream:
+        json.dump(state, stream, ensure_ascii=False, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temp, path)
+
+
+def _deliver_standing_message(repo_root, label, state_path, kind, keys, interval, render, log):
+    """沿原通知管理方保存逐段确认；不把尝试或退避时间写成发送成功。"""
+    now = datetime.now(timezone.utc)
+    journal_path = state_path.with_suffix(".delivery.json")
+    journal = _read_delivery_state(journal_path)
+    progress = journal.get(kind, {})
+    same_keys = progress.get("keys") == sorted(keys)
+    if progress.get("in_flight") is not None:
+        # 进程在发送/回执落盘之间中断，平台结果未知，禁止自动重复这一段。
+        log.append(_must_keep(f"SWEEP_DELIVERY {label} kind={kind} status=unknown reason=存在未确认在途段；需核回执，不自动重发"))
+        return False
+    retry_after = progress.get("retry_after")
+    if retry_after and now < datetime.fromisoformat(retry_after):
+        log.append(_must_keep(f"SWEEP_DELIVERY {label} kind={kind} status=backoff retry_after={retry_after} acknowledged={len(progress.get('acked', {}))}"))
+        return False
+    completed = progress.get("completed_at")
+    reusable = same_keys and (progress.get("status") != "success" or
+        (completed and (now - datetime.fromisoformat(completed)).total_seconds() < interval * 3600))
+    if not reusable:
+        content = render(keys)
+        report_path = state_path.with_suffix(f".{kind}.md")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(content, encoding="utf-8", newline="")
+        parts = _standing_message_parts(content, label, len(keys), report_path.relative_to(repo_root).as_posix())
+        progress = {"keys": sorted(keys), "parts": parts, "acked": {}, "status": "pending"}
+        journal[kind] = progress
+        _write_delivery_state(journal_path, journal)
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过{label}推送；未记成功。")
+        progress.update(status="unconfigured", retry_after=(now + timedelta(hours=interval)).isoformat())
+        _write_delivery_state(journal_path, journal)
+        return False
+    for i, part in enumerate(progress["parts"]):
+        part_hash = hashlib.sha256(part.encode("utf-8")).hexdigest()
+        ack = progress["acked"].get(str(i))
+        if ack and ack["sha256"] == part_hash:
+            continue
+        progress["in_flight"] = i
+        _write_delivery_state(journal_path, journal)
+        try:
+            attempt_started_at = datetime.now(timezone.utc)
+            result = _send_wecom_markdown(webhook_url, part)
+            if not isinstance(result, dict):
+                raise RuntimeError("发送函数未返回结构化ACK，送达结果未知，不记成功")
+            # A legacy callback's return value cannot confirm delivery. Require
+            # a bound structured ACK before committing success or deduplication.
+            receipt_evidence = None
+            if isinstance(result, dict):
+                if (type(result.get("errcode")) is not int or result["errcode"] != 0
+                        or result.get("kind") != "wecom_webhook_ack"
+                        or any(not isinstance(result.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", result[key])
+                               for key in ("response_sha256", "destination_sha256", "request_sha256"))):
+                    raise RuntimeError("发送函数ACK证据不可用，送达待核")
+                received = datetime.fromisoformat(result["received_at_utc"])
+                if received.tzinfo is None or not attempt_started_at <= received <= datetime.now(timezone.utc):
+                    raise RuntimeError("发送函数ACK时间不可用，送达待核")
+                expected_request = json.dumps({"msgtype": "markdown", "markdown": {"content": part}}, ensure_ascii=False).encode("utf-8")
+                if (result["destination_sha256"] != hashlib.sha256(webhook_url.encode("utf-8")).hexdigest()
+                        or result["request_sha256"] != hashlib.sha256(expected_request).hexdigest()):
+                    raise RuntimeError("发送函数ACK目标或请求不匹配，送达待核")
+                receipt_evidence = {key: result[key] for key in ("errcode", "kind", "response_sha256", "destination_sha256", "request_sha256", "received_at_utc")}
+                if isinstance(result.get("req_id"), str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", result["req_id"]):
+                    receipt_evidence["req_id"] = result["req_id"]
+        except Exception as exc:
+            error = re.sub(r"https?://\S+", "[URL已隐去]", str(exc))
+            if not isinstance(exc, _SweepDeliveryRejected):
+                # A transport exception or malformed receipt does not prove that
+                # the server rejected this segment. Preserve the pre-send journal.
+                progress.update(status="unknown", error=error)
+                progress.pop("retry_after", None)
+                _write_delivery_state(journal_path, journal)
+                log.append(_must_keep(f"SWEEP_DELIVERY {label} kind={kind} status=unknown segment={i+1}/{len(progress['parts'])} acknowledged={len(progress['acked'])} reason={error}；需核回执，不自动重发"))
+                return False
+            progress.pop("in_flight", None)
+            progress.update(status="failed", error=error,
+                            retry_after=(now + timedelta(hours=interval)).isoformat())
+            _write_delivery_state(journal_path, journal)
+            log.append(_must_keep(f"⚠ {label}推送失败：{error}；kind={kind} segment={i+1}/{len(progress['parts'])} acknowledged={len(progress['acked'])} retry_after={progress['retry_after']}"))
+            return False
+        progress["acked"][str(i)] = {"sha256": part_hash, "at": datetime.now(timezone.utc).isoformat()}
+        if receipt_evidence is not None:
+            progress["acked"][str(i)]["receipt"] = receipt_evidence
+        progress.pop("in_flight", None)
+        progress.pop("retry_after", None)
+        _write_delivery_state(journal_path, journal)
+        log.append(_must_keep(f"SWEEP_DELIVERY {label} kind={kind} status=acknowledged segment={i+1}/{len(progress['parts'])} utf8_bytes={len(part.encode('utf-8'))} sha256={part_hash}"))
+    progress.update(status="success", completed_at=datetime.now(timezone.utc).isoformat())
+    _write_delivery_state(journal_path, journal)
+    return True
 
 
 def _track_and_alert_standing_state(
     repo_root: Path, label: str, state_rel_path: str, current_keys: set,
     realert_interval_hours: float, render_alert_text, render_resolved_text, log: list[str],
+    *, allow_resolve: bool = True, preserve_keys: set | None = None,
 ) -> None:
-    """队列 #308 子项 D1：标准长期存在状态类告警的出现→告警／消失→解除
-    通用骨架，复刻 `_track_and_alert_orphan_paths`（#301）已验证的模式，
-    供场景 spec 缺口（M1）／在途变更包滞留（M2）复用（分叉告警状态形状
-    不同，单独在 `_handle_fork_detected`/`_reset_fork_state` 处理，未纳入
-    本函数）。
-
-    与孤儿脏文件那版的一处不同：本函数面向的两类 retrofit 对象现状均为
-    "发现即告警"，不设首次出现的存续阈值，只保留"多久后允许再提醒一次"
-    这一节流维度（`realert_interval_hours`）；resolved 消息也不携带
-    "存续了多久"（孤儿脏文件的 `first_seen`/`last_alerted` 双字段状态形状
-    更丰富，本函数保持与既有 `SCENARIO_SPEC_GAP_STATE_REL`/
-    `STALE_CHANGE_STATE_REL` 单时间戳状态形状兼容，不做 schema 迁移）。
-
-    `render_alert_text(to_alert_keys) -> str` / `render_resolved_text(resolved_keys) -> str`
-    由调用方提供，负责把 key 列表渲染成具体消息正文（各调用方的详情信息
-    不在本函数持有的 key 集合里，闭包捕获）。
-    """
+    """原成功状态仍为 key→时间；只有平台逐段确认后才更新，失败/回执另存原状态旁。"""
+    context = globals().get("_STANDING_OBSERVATION")
+    if context is not None and context["collecting"]:
+        context["pending"].append((_track_and_alert_standing_state,
+            (repo_root, label, state_rel_path, set(current_keys), realert_interval_hours,
+              render_alert_text, render_resolved_text, log),
+            {"allow_resolve": allow_resolve, "preserve_keys": preserve_keys}))
+        return
     state_path = repo_root / state_rel_path
-    state = _read_json_state(state_path)
+    state = _read_delivery_state(state_path)
     now = datetime.now(timezone.utc)
-
-    resolved = [key for key in state if key not in current_keys]
-    for key in resolved:
-        del state[key]
-
-    to_alert = []
-    for key in current_keys:
-        last_alerted = state.get(key)
-        if last_alerted is not None:
-            since = (now - datetime.fromisoformat(last_alerted)).total_seconds() / 3600
-            if since < realert_interval_hours:
+    resolved = sorted(key for key in state if key not in current_keys
+                      and key not in (preserve_keys or set())) if allow_resolve else []
+    to_alert = sorted(key for key in current_keys if state.get(key) is None or
+        (now - datetime.fromisoformat(state[key])).total_seconds() >= realert_interval_hours * 3600)
+    log.append(_must_keep(f"SWEEP_ALERT {label} candidate_count={len(current_keys)} deduplicated={len(current_keys)-len(to_alert)} due={len(to_alert)} resolved={len(resolved)}"))
+    for kind, keys, render in (("resolved", resolved, render_resolved_text), ("alert", to_alert, render_alert_text)):
+        if not keys:
+            continue
+        if kind == "resolved":
+            log.append(f"✅ {label}解除通知：{len(keys)} 项（确认后销记）")
+        try:
+            if not _deliver_standing_message(repo_root, label, state_path, kind, keys,
+                    realert_interval_hours, render, log):
                 continue
-        to_alert.append(key)
-        state[key] = now.isoformat()
-    _write_json_state(state_path, state)
-
-    webhook_url = _load_webhook_url(repo_root)
-
-    if resolved:
-        log.append(f"✅ {label}解除通知：{len(resolved)} 项")
-        if webhook_url is None:
-            log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过{label}解除通知推送（仅留痕日志）。")
-        else:
-            try:
-                _send_wecom_markdown(webhook_url, render_resolved_text(resolved))
-                log.append(f"✓ {label}解除通知已推送。")
-            except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
-                log.append(f"⚠ {label}解除通知推送失败（不影响本轮退出码）：{exc}")
-
-    if not to_alert:
-        return
-    if webhook_url is None:
-        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过{label}告警推送（仅留痕日志与状态文件）。")
-        return
-    try:
-        _send_wecom_markdown(webhook_url, render_alert_text(to_alert))
-        log.append(f"✓ {label}告警已推送。")
-    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
-        log.append(f"⚠ {label}告警推送失败（不影响本轮退出码）：{exc}")
+            if kind == "resolved":
+                for key in keys:
+                    state.pop(key, None)
+            else:
+                for key in keys:
+                    state[key] = datetime.now(timezone.utc).isoformat()
+            _write_delivery_state(state_path, state)
+            log.append(f"✓ {label}{'解除通知' if kind == 'resolved' else '告警'}已推送。")
+        except Exception as exc:
+            error = re.sub(r"https?://\S+", "[URL已隐去]", str(exc))
+            log.append(_must_keep(f"⚠ {label}推送失败（状态/回执未核实，不记成功）：{error}"))
 
 
 # ============================================================
@@ -4299,6 +4642,8 @@ def _parse_tasks_completion(tasks_md_path: Path) -> tuple[int, int] | None:
     try:
         text = tasks_md_path.read_text(encoding="utf-8")
     except OSError:
+        if globals().get("_STANDING_OBSERVATION") is not None:
+            raise
         return None
     done = len(TASK_DONE_RE.findall(text))
     todo = len(TASK_TODO_RE.findall(text))
@@ -4324,6 +4669,8 @@ def _change_package_has_defer_marker(change_dir: Path) -> bool:
             if STALE_CHANGE_DEFER_MARKER in p.read_text(encoding="utf-8"):
                 return True
         except OSError:
+            if globals().get("_STANDING_OBSERVATION") is not None:
+                raise
             continue
     return False
 
@@ -4340,6 +4687,8 @@ def _change_package_observation_window_days(change_dir: Path) -> float | None:
         try:
             text = p.read_text(encoding="utf-8")
         except OSError:
+            if globals().get("_STANDING_OBSERVATION") is not None:
+                raise
             continue
         m = OBSERVATION_WINDOW_RE.search(text)
         if m:
@@ -4536,7 +4885,7 @@ def _announce_stale_in_flight_changes(repo_root: Path, hits: list[dict], log: li
         return body
 
     def render_resolved(keys):
-        lines = "\n".join(f"- `{k}`（已归档或完成率/滞留天数不再满足条件）" for k in keys)
+        lines = "\n".join(f"- `{k}`（已归档、复核确认或异常条件不再成立；解除提醒不代表正式归档）" for k in keys)
         return f"✅ 落库sweep：{len(keys)} 个此前告警过的在途变更包滞留已解除：\n{lines}"
 
     _track_and_alert_standing_state(
@@ -4585,7 +4934,7 @@ def claude_md_root_over_cap(repo_root: Path) -> int | None:
     """根 `CLAUDE.md` 超阈值的字节数；未超或读不到返回 None（读不到不判超——不据不可用的
     测量判人违规，同本文件「尺寸未取到 ⇒ 不据此判为合规」那条的反面）。"""
     try:
-        size = _git_bytes(repo_root / CLAUDE_MD_ROOT_REL)
+        size = _git_bytes(repo_root / _current_rule_rel(repo_root, CLAUDE_MD_ROOT_REL))
     except OSError:
         return None
     over = size - CLAUDE_MD_ROOT_BYTE_CAP
@@ -4594,7 +4943,7 @@ def claude_md_root_over_cap(repo_root: Path) -> int | None:
 
 def batch_touches_claude_md_root(resolved_paths) -> bool:
     """本批次的文件清单是否含根 `CLAUDE.md`（只认根那一份，场景级 `CLAUDE.md` 不在此列）。"""
-    return any(str(p).replace("\\", "/") == CLAUDE_MD_ROOT_REL for p in (resolved_paths or ()))
+    return any(str(p).replace("\\", "/") in (CLAUDE_MD_ROOT_REL, "AGENTS.md") for p in (resolved_paths or ()))
 
 
 # 队列 §一 #629（2026-09-21，泳道看护续棒）：把 `.claude/rules/*.md`（单份/合计）
@@ -4615,7 +4964,7 @@ def claude_md_rules_over_cap(repo_root: Path) -> dict[str, int] | None:
     rules_total = 0
     rules_total_ok = True
     for rel, cap in _claude_md_targets(repo_root):
-        if not rel.startswith(".claude/rules/"):
+        if not rel.startswith((".claude/rules/", "docs/codex/rules/")):
             continue
         try:
             size = _git_bytes(repo_root / rel)
@@ -4636,7 +4985,7 @@ def batch_touches_claude_md_rules(resolved_paths) -> bool:
     """本批次的文件清单是否含任一 `.claude/rules/*.md`（合计超限时，拦的是
     "碰过 rules/ 里任一份"的批次，不要求恰好碰到超限的那一份——合计超限
     意味着"这个目录整体太大"，谁往里加内容都在恶化同一个问题）。"""
-    return any(str(p).replace("\\", "/").startswith(".claude/rules/") for p in (resolved_paths or ()))
+    return any(str(p).replace("\\", "/").startswith((".claude/rules/", "docs/codex/rules/")) for p in (resolved_paths or ()))
 
 
 def lane_watch_skill_over_cap(repo_root: Path) -> int | None:
@@ -4663,12 +5012,17 @@ def _claude_md_targets(repo_root: Path) -> list[tuple[str, int]]:
     这里会挡住，而不是静默多出 13 个告警对象。
     """
     targets: list[tuple[str, int]] = []
-    root = repo_root / CLAUDE_MD_ROOT_REL
+    root_rel = _current_rule_rel(repo_root, CLAUDE_MD_ROOT_REL)
+    root = repo_root / root_rel
     if root.is_file():
-        targets.append((CLAUDE_MD_ROOT_REL, CLAUDE_MD_ROOT_BYTE_CAP))
+        targets.append((root_rel, CLAUDE_MD_ROOT_BYTE_CAP))
     seen: set[str] = set()
-    for pattern in CLAUDE_MD_SCENE_GLOBS:
+    scene_patterns = (*(p.replace("CLAUDE.md", "CODEX-RULES.md") for p in CLAUDE_MD_SCENE_GLOBS),
+        "1-转型规划/*/CODEX-RULES.md", "4-数字员工/CODEX-RULES.md", "5-平台底座/CODEX-RULES.md", "6-人才与组织/CODEX-RULES.md")
+    for pattern in scene_patterns:
         for path in sorted(repo_root.glob(pattern)):
+            if path.name == "CLAUDE.md":
+                path = repo_root / _current_rule_rel(repo_root, path.relative_to(repo_root).as_posix())
             if not path.is_file():
                 continue
             rel = path.relative_to(repo_root).as_posix()
@@ -4681,14 +5035,15 @@ def _claude_md_targets(repo_root: Path) -> list[tuple[str, int]]:
     # 队列 §一 #381⑸ⓕ：`.claude/rules/*.md` 单份阈值——非递归 glob（`*` 不跨
     # 目录），结构上够不到 `.claude/worktrees/**/.claude/rules/`，与 root 一样
     # 不需要 WORKTREES_DIR_REL 排除这道防御。
-    for path in sorted(repo_root.glob(CLAUDE_MD_RULES_GLOB)):
+    rules_glob = "docs/codex/rules/*.md"
+    for path in sorted(repo_root.glob(rules_glob)):
         if not path.is_file():
             continue
         rel = path.relative_to(repo_root).as_posix()
         if rel in seen:
             continue
         seen.add(rel)
-        cap = CLAUDE_MD_RULES_BYTE_CAP_BY_FILE.get(rel, CLAUDE_MD_RULES_BYTE_CAP_FALLBACK)
+        cap = CLAUDE_MD_RULES_BYTE_CAP_BY_FILE.get(rel.replace("docs/codex/rules/", ".claude/rules/"), CLAUDE_MD_RULES_BYTE_CAP_FALLBACK)
         targets.append((rel, cap))
     # 队列 §一 #629：`zhuopin-lane-watch` 正本同批纳入巡检（见上方常量注释）。
     skill_path = repo_root / LANE_WATCH_SKILL_REL
@@ -4744,7 +5099,7 @@ def _root_progress_batch_dates(repo_root: Path) -> tuple[list[str] | None, str |
     lint, reason = _load_progress_lint(repo_root)
     if lint is None:
         return None, reason
-    root = repo_root / CLAUDE_MD_ROOT_REL
+    root = repo_root / _current_rule_rel(repo_root, CLAUDE_MD_ROOT_REL)
     try:
         text = root.read_text(encoding="utf-8")
     except OSError as exc:
@@ -4767,6 +5122,20 @@ def _root_progress_batch_dates(repo_root: Path) -> tuple[list[str] | None, str |
     return sorted(dates), None
 
 
+def _preserve_retired_authority_keys(repo_root: Path, state_rel: str, category: str) -> set:
+    """Retiring a source is not proof that its recorded failure recovered."""
+    old = _read_delivery_state(repo_root / state_rel)
+    def retired(key):
+        if category == "memory":
+            return key.startswith("~/.claude/")
+        if category == "carrier":
+            parts=key.split(":",1)
+            source=parts[1].split("#L",1)[0] if len(parts)==2 else ""
+            return source == "CLAUDE.md" or source.startswith((".claude/rules/", ".claude/skills/", "0-学习与工具/skills源码/"))
+        return key == "CLAUDE.md" or key.startswith(".claude/rules/") or key.endswith("/CLAUDE.md")
+    return {key for key in old if retired(key)}
+
+
 def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
     """第 4 类常驻状态告警：必载 `CLAUDE.md` 尺寸/批次跨度超限。
 
@@ -4783,10 +5152,10 @@ def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
             size = _git_bytes(repo_root / rel)
         except OSError as exc:
             log.append(f"    ⚠ {rel}：尺寸未取到（{exc}）——**不据此判为合规**")
-            if rel.startswith(".claude/rules/"):
+            if rel.startswith((".claude/rules/", "docs/codex/rules/")):
                 rules_total_ok = False
             continue
-        if rel.startswith(".claude/rules/"):
+        if rel.startswith((".claude/rules/", "docs/codex/rules/")):
             rules_total += size
         if size > cap:
             log.append(f"    🔴 {rel}：{size:,} B / 阈值 {cap:,} B（超出 {size - cap:,} B）")
@@ -4798,7 +5167,7 @@ def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
             # root，scene 不在此列）。现值低于 cap 超过 SLACK 时提示
             # 可下调到"现值+MARGIN"，使瘦身成果被机器记住，不必每次
             # 都重新发现"够不到"。
-            if rel == CLAUDE_MD_ROOT_REL and (cap - size) > ROOT_RATCHET_SLACK_BYTES:
+            if rel in (CLAUDE_MD_ROOT_REL, "AGENTS.md") and (cap - size) > ROOT_RATCHET_SLACK_BYTES:
                 suggested = size + ROOT_RATCHET_MARGIN_BYTES
                 log.append(
                     f"        💡 棘轮提示：现值低于阈值超过 {ROOT_RATCHET_SLACK_BYTES:,} B，"
@@ -4857,6 +5226,7 @@ def _check_claude_md_carrier_size(repo_root: Path, log: list[str]) -> None:
         # 会被判为「已解除」——常驻状态与事件的分界线就在这里。
         set(breaches), CLAUDE_MD_SIZE_ALERT_INTERVAL_HOURS,
         render_alert, render_resolved, log,
+        preserve_keys=_preserve_retired_authority_keys(repo_root, CLAUDE_MD_SIZE_STATE_REL, "rules"),
     )
 
 
@@ -5058,6 +5428,7 @@ def _check_global_memory_files(repo_root: Path, log: list[str]) -> None:
         repo_root, "本机全局记忆巡检", GLOBAL_MEMORY_STATE_REL,
         set(breaches), GLOBAL_MEMORY_ALERT_INTERVAL_HOURS,
         render_alert, render_resolved, log,
+        preserve_keys=_preserve_retired_authority_keys(repo_root, GLOBAL_MEMORY_STATE_REL, "memory"),
     )
 
 
@@ -6056,9 +6427,12 @@ def _abort_if_edit_lock_held(repo_root: Path, log: list[str]) -> None:
     `_strike_off_rows` 去 acquire 锁，锁占用时暂存区里已经是半成品；本函数
     把探测提到最前面，锁占用时连第一个 `git add` 都不会发生。"""
     result = _edit_lock(repo_root, "status")
-    if _edit_lock_is_actively_held(result.stdout):
+    unreadable = result.returncode != 0 or not result.stdout.strip()
+    if unreadable or _edit_lock_is_actively_held(result.stdout):
         raise SweepAbort(
-            f"⚠ 起跑探测到共享编辑锁被有效占用中，跳过本轮，零 git 动作：{result.stdout.strip()}",
+            (f"⚠ 起跑探测共享编辑锁状态读取失败，无法核实写入条件——跳过本轮，零 git 写入：{result.stderr.strip()}"
+             if unreadable else
+             f"⚠ 起跑探测到共享编辑锁被有效占用中，跳过本轮，零 git 动作：{result.stdout.strip()}"),
         )
 
 
@@ -6298,25 +6672,28 @@ def _load_unclosed_scan(repo_root: Path):
 
 
 def _render_unclosed_alert(details: dict, keys) -> str:
-    # 判据不可用排在最前：它比「发现了 N 条」更严重——前者是「守卫自己
-    # 瞎了」，后者是「守卫看见了东西」（同扫描器 `--enforce` 退出码 2 与 1
-    # 刻意不合并成同一个码的那条理由）。
+    # key证明检测形态，不能证明任务无人承接或业务尚未交付。
     ordered = sorted(keys, key=lambda k: (not k.startswith(UNCLOSED_UNAVAILABLE_KEY_PREFIX), k))
     shown = ordered[:UNCLOSED_OUTPUT_ALERT_MAX_ITEMS]
     lines = "\n".join(f"- `{key}`：{details.get(key, '（详情未取到）')}" for key in shown)
-    tail = ""
-    if len(ordered) > len(shown):
-        tail = (f"\n- …另有 {len(ordered) - len(shown)} 条未列出"
-                "（**不是没有，是这条消息装不下**）")
-    return (
-        f"🧷 落库sweep：{len(ordered)} 项未闭合产出——做了一半、剩下半步"
-        f"**没有承接方**：\n{lines}{tail}\n"
-        "⇒ 处置：形态 1 回 LAN 后按队列行内已写死的补法执行并回写销号；"
-        "形态 2 先验一眼再 ff 合入 master；形态 3 先跑回归、绿则 commit"
-        "（🔴 一次 `git worktree remove` 就会让它永久消失）。\n"
-        f"⇒ 本轮全文见 `{UNCLOSED_REPORT_REL}`；重跑（只读）："
-        f"`python {UNCLOSED_SCAN_SCRIPT_REL}`"
-    )
+    tail = (f"\n- …另有 {len(ordered) - len(shown)} 条未列出（不是没有，是本条装不下）"
+            if len(ordered) > len(shown) else "")
+    forms = {key.split(":", 1)[0] for key in ordered}
+    actions = []
+    if "form1" in forms:
+        actions.append("LAN留步记录：先核原任务现时状态、承接方和已批补法，再由原线回写。")
+    if "form2" in forms:
+        actions.append("未合入分支：先核内容等价与原任务归属；如需 ff 合入 master，须逐项批准。"
+                       "无worktree仅表示未登记检出目录，不等于Git提交丢失或无人承接。")
+    if "form3" in forms:
+        actions.append("未提交改动：先保全并核对所属任务，再按原流程回归及登记 commit；"
+                       "`git worktree remove`前须逐项批准并确认未提交产物已保全。")
+    if any(key.startswith(UNCLOSED_UNAVAILABLE_KEY_PREFIX) for key in ordered):
+        actions.append("判据不可用：保留原记录待核，不据此判为干净或已解除。")
+    return (f"🧷 落库sweep：{len(ordered)} 项未闭合产出（承接情况待核）：\n{lines}{tail}\n"
+            + "\n".join("⇒ " + action for action in actions)
+            + f"\n⇒ 本轮全文见 `{UNCLOSED_REPORT_REL}`；重跑（只读）："
+              f"`python {UNCLOSED_SCAN_SCRIPT_REL}`")
 
 
 def _render_unclosed_resolved(keys) -> str:
@@ -6428,7 +6805,44 @@ def _unclosed_details(findings: dict) -> dict:
     return details
 
 
-def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
+UNCLOSED_KEY_MIGRATIONS_REL = "reports/sweep-unclosed-key-migrations.jsonl"
+
+
+def _retire_delivered_unclosed_aliases(repo_root: Path, aliases: dict, log: list[str]) -> None:
+    """新路径全部确认后退休旧身份；不经 resolved，不把身份变化说成缺口解除。"""
+    context = globals().get("_STANDING_OBSERVATION")
+    if context is not None and context["collecting"]:
+        context["pending"].append((_retire_delivered_unclosed_aliases,
+                                   (repo_root, aliases, log), {}))
+        return
+    path = repo_root / UNCLOSED_OUTPUT_STATE_REL
+    state = _read_delivery_state(path)
+    ready = {old: sorted(keys) for old, keys in aliases.items()
+             if old in state and keys and all(key in state for key in keys)}
+    if not ready:
+        log.append("第7类旧身份保留：新路径投递尚未全部确认，不判解除。")
+        return
+    journal = repo_root / UNCLOSED_KEY_MIGRATIONS_REL
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    with journal.open("a", encoding="utf-8") as stream:
+        for old, keys in ready.items():
+            identity = json.dumps([old, keys, state[old]], ensure_ascii=False)
+            stream.write(json.dumps({
+                "kind": "identity_migration",
+                "migration_id": hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+                "at_utc": datetime.now(timezone.utc).isoformat(),
+                "legacy_key": old, "current_keys": keys,
+                "legacy_confirmed_at": state[old], "gap_resolved": False,
+            }, ensure_ascii=False) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    for old in ready:
+        state.pop(old)
+    _write_delivery_state(path, state)
+    log.append(f"第7类身份迁移：{len(ready)} 个旧key已转为确认的新路径key，缺口未判解除。")
+
+
+def _check_unclosed_outputs(repo_root: Path, log: list[str], observation_only: bool = False) -> None:
     """第 7 类常驻状态告警：未闭合产出（队列 §一 `#422`）。
 
     🔴 **回显不是可选项**（同第 4／第 6 类）：无论有无命中都打三形态计数与
@@ -6438,22 +6852,28 @@ def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
     """
     log.append(_must_keep("🧷 未闭合产出巡检（每轮回显，零命中时亦不省略）："))
 
-    def _alert(details: dict) -> None:
+    def _alert(details: dict, *, unavailable: bool = False, aliases: dict | None = None) -> None:
+        previous = _read_delivery_state(repo_root / UNCLOSED_OUTPUT_STATE_REL) if aliases else {}
+        pending_aliases = {old: keys for old, keys in (aliases or {}).items() if old in previous}
+        options = {"allow_resolve": False} if unavailable or pending_aliases else {}
         _track_and_alert_standing_state(
             repo_root, "未闭合产出", UNCLOSED_OUTPUT_STATE_REL,
             set(details), UNCLOSED_OUTPUT_ALERT_INTERVAL_HOURS,
             lambda keys: _render_unclosed_alert(details, keys),
-            _render_unclosed_resolved, log,
+            _render_unclosed_resolved, log, **options,
         )
+        if pending_aliases and not unavailable:
+            _retire_delivered_unclosed_aliases(repo_root, pending_aliases, log)
 
     module, reason = _load_unclosed_scan(repo_root)
     if module is None:
         log.append(f"    ⚠ 扫描器不可用：{reason}——**不据此判为干净**")
-        _alert({f"{UNCLOSED_UNAVAILABLE_KEY_PREFIX}scanner": f"扫描器本身起不来 —— {reason}"})
+        _alert({f"{UNCLOSED_UNAVAILABLE_KEY_PREFIX}scanner": f"扫描器本身起不来 —— {reason}"},
+               unavailable=True)
         return
 
     try:
-        findings = module.scan(repo_root, lan=True,
+        findings = module.scan(repo_root, lan=not observation_only,
                                state_path=repo_root / module.STATE_REL)
     except Exception as exc:  # noqa: BLE001 —— 扫描失败不应影响本轮退出码
         # 🔴 接住但**不吞**：整个扫描崩掉与「没有未闭合产出」外观完全相同，
@@ -6461,7 +6881,7 @@ def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
         # traceback 就是反面实例）。
         log.append(f"    ⚠ 扫描过程异常：{type(exc).__name__}: {exc}——**不据此判为干净**")
         _alert({f"{UNCLOSED_UNAVAILABLE_KEY_PREFIX}scan":
-                f"扫描过程抛异常 —— {type(exc).__name__}: {exc}"})
+                f"扫描过程抛异常 —— {type(exc).__name__}: {exc}"}, unavailable=True)
         return
 
     lan = findings["lan"]
@@ -6510,14 +6930,21 @@ def _check_unclosed_outputs(repo_root: Path, log: list[str]) -> None:
     # 淹掉」正是 §四 `#126` 记的那个形态。
     report_path = repo_root / UNCLOSED_REPORT_REL
     try:
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(module.format_report(findings) + "\n", encoding="utf-8")
-        log.append(f"    · 本轮全文已写 `{UNCLOSED_REPORT_REL}`")
+        _observation_report(report_path, module.format_report(findings) + "\n")
+        log.append(f"    · 全文报告 `{UNCLOSED_REPORT_REL}`：" + ("已准备，门禁通过后写入" if globals().get("_STANDING_OBSERVATION") is not None else "已写入"))
     except OSError as exc:
         log.append(f"    ⚠ 全文写入 `{UNCLOSED_REPORT_REL}` 失败：{exc}（不影响告警）")
 
-    may_persist = _announce_lan_flip(repo_root, findings, log, module)
-    _alert(_unclosed_details(findings))
+    may_persist = False if observation_only else _announce_lan_flip(repo_root, findings, log, module)
+    if observation_only:
+        log.append("第7类LAN探测/翻转通知/扫描器状态写入 skipped=非master；三形态检测沿原告警管理方")
+    aliases = {}
+    for item in findings["form3"]["items"]:
+        old = item.get("legacy_key")
+        if old and old != item["key"]:
+            aliases.setdefault(old, set()).add(item["key"])
+    unavailable = any(findings[form].get("unavailable") for form in ("form1", "form2", "form3"))
+    _alert(_unclosed_details(findings), unavailable=unavailable, aliases=aliases)
 
     if may_persist:
         try:
@@ -6563,18 +6990,41 @@ SENTINEL_SCRIPT_MARK = "0-学习与工具/hooks/sentinel-"
 
 
 def _sentinel_hooks_registered(repo_root: Path) -> bool:
-    """项目配置里是否已注册哨兵钩子（只读，一个字节都不改）。
-
-    🔴 未注册时**不告警**——否则安装单执行之前，本类会从上线第一天起每天红
-    一次，而「永远红着的告警」等于没有告警。未注册这件事由安装单自己承接
-    （`0-学习与工具/hooks/README-安装步骤.md` 里明写待办），不在这里重复喊。
-    """
-    settings = repo_root / ".claude" / "settings.json"
+    """Read native hook registrations only; decode command text without executing it."""
+    import base64
     try:
-        text = settings.read_text(encoding="utf-8")
-    except OSError:
+        config = json.loads((repo_root / '.codex' / 'hooks.json').read_text(encoding='utf-8-sig'))
+    except FileNotFoundError:
         return False
-    return SENTINEL_SCRIPT_MARK in text
+    except (OSError, ValueError) as exc:
+        raise ValueError('Codex hook 配置不可读或损坏') from exc
+    hooks = config.get('hooks') if isinstance(config, dict) else None
+    if not isinstance(hooks, dict):
+        raise ValueError('Codex hooks 结构不可用')
+    groups = hooks.get('PreToolUse', [])
+    if not isinstance(groups, list):
+        raise ValueError('Codex PreToolUse 结构不可用')
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        entries = group.get('hooks', [])
+        if not isinstance(entries, list):
+            raise ValueError('Codex command hooks 结构不可用')
+        for hook in entries:
+            if not isinstance(hook, dict) or hook.get('type') != 'command':
+                continue
+            command = str(hook.get('command', ''))
+            encoded = re.search(r'-EncodedCommand\s+([A-Za-z0-9+/=]+)', command, re.I)
+            if encoded:
+                try:
+                    command = base64.b64decode(encoded.group(1), validate=True).decode('utf-16-le')
+                except (ValueError, UnicodeError):
+                    continue
+            command = command.replace('\\', '/')
+            if ('0-学习与工具/codex-handoff/invoke.ps1' in command and '-Mode Hook' in command
+                or '0-学习与工具/codex-handoff/guards/sentinel-' in command):
+                return True
+    return False
 
 
 def _check_hooks_heartbeat(repo_root: Path, log: list[str]) -> None:
@@ -6583,17 +7033,27 @@ def _check_hooks_heartbeat(repo_root: Path, log: list[str]) -> None:
     与第 4～7 类同形——检测对象是仓库/本机整体状态，**与本轮是否有批次落库
     无关**，故不依赖 `touched_paths`；只读、只告警，不影响本轮退出码。
     """
-    if not _sentinel_hooks_registered(repo_root):
+    registration_error = None
+    try:
+        registered = _sentinel_hooks_registered(repo_root)
+    except (OSError, ValueError) as exc:
+        registered, registration_error = False, str(exc)
+    if not registered and registration_error is None:
         log.append(
             "🟡 写入时刻哨兵尚未注册进项目配置——本类**按设计不告警**"
-            "（未注册由安装单承接：`0-学习与工具/hooks/README-安装步骤.md`）。"
+            "（未注册由安装单承接：`0-学习与工具/codex-handoff/README.md`）。"
         )
-        # 传空集合：万一此前告警过（例如注册被回退），这一步会把它自动解除。
+        # 缺少现役注册不能证明旧告警恢复。保留旧状态，不伪造解除。
+        try:
+            old = json.loads((repo_root / HOOKS_HEARTBEAT_STATE_REL).read_text(encoding='utf8'))
+            old_keys = set(old) if isinstance(old, dict) else set()
+        except (OSError, ValueError):
+            old_keys = set()
         _track_and_alert_standing_state(
             repo_root, "哨兵心跳", HOOKS_HEARTBEAT_STATE_REL, set(),
             HOOKS_HEARTBEAT_ALERT_INTERVAL_HOURS,
             lambda keys: "", lambda keys: "✅ 落库sweep：哨兵心跳告警已解除（哨兵已不在注册状态）。",
-            log,
+            log, preserve_keys=old_keys,
         )
         return
 
@@ -6601,7 +7061,11 @@ def _check_hooks_heartbeat(repo_root: Path, log: list[str]) -> None:
     keys: set[str] = set()
     details: dict[str, str] = {}
 
-    if not path.exists():
+    if registration_error is not None:
+        key = "注册判据不可用"
+        keys.add(key)
+        details[key] = registration_error + "；保持 UNKNOWN，不回退旧配置、不据此判定恢复。"
+    elif not path.exists():
         key = "心跳文件不存在"
         keys.add(key)
         details[key] = f"`{HOOKS_HEARTBEAT_REL}` 不存在——哨兵已注册但一次都没跑过。"
@@ -6638,9 +7102,8 @@ def _check_hooks_heartbeat(repo_root: Path, log: list[str]) -> None:
         return (
             "🔴 落库sweep：**写入时刻哨兵可能已不在岗**（第 9 类常驻告警，队列 §一 #433）\n"
             f"{lines}\n"
-            "排查顺序：① 项目配置里的挂接还在不在；② `.claude.json` 里本目录的信任记录"
-            "是否两条斜杠方向、且有一条为 False（配置会被**静默忽略**，不报错）；"
-            "③ 手工触发一次写入看心跳有没有更新。恢复后本告警下一轮自动解除。"
+            "排查顺序：① `.codex/hooks.json` 的原生挂接是否存在；② hook 策略与原生守卫是否完整；"
+            "③ 在获准测试路径触发后核对心跳。不得修改信任记录或回退旧引擎；确认恢复后本告警下一轮解除。"
         )
 
     def render_resolved(resolved_keys):
@@ -6679,96 +7142,9 @@ SCHEDULED_TASK_COVERAGE_ALERT_INTERVAL_HOURS = 24.0
 
 
 def _check_scheduled_task_coverage(repo_root: Path, log: list[str]) -> None:
-    """第 14 类常驻状态告警：定时任务目录未分类。
+    """Retired by the Windows Claude execution-system decommission."""
+    log.append('第14类旧Claude定时任务覆盖已退役：不加载旧备份工具，不作现役健康判据；旧告警记录保留。')
 
-    判据正本在 `工具-定时任务源码备份.py::find_unclassified`（白/黑名单也在
-    那里，README 表是它的正本）——**本函数只调用、不重抄一份判据**，否则就
-    成了第三个会漂的副本（同 `#535`／`#537` 那一族）。
-    """
-    tool = repo_root / "0-学习与工具" / "工具-定时任务源码备份.py"
-    keys: set[str] = set()
-    detail = ""
-    if not tool.exists():
-        keys.add("备份工具不在")
-        detail = f"`{tool.relative_to(repo_root).as_posix()}` 不存在——本类无法判定。"
-    else:
-        try:
-            spec = importlib.util.spec_from_file_location("_sweep_sched_backup_reuse", tool)
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[spec.name] = module
-            # 🔴 **exec_module 会执行那个路径上的任意顶层代码**，两个后果都实撞过
-            # （2026-09-10，`ScheduledTaskMirrorSyncTests`）：
-            #   ⑴ 它 `raise SystemExit(1)` ⇒ **SystemExit 不是 Exception**，穿过
-            #      本函数的 except、冲掉 sweep 本轮退出码，把「凭据拦截是纯提示、
-            #      不应改变退出码」那条既有用例打红；
-            #   ⑵ 它 `print(...)` ⇒ 报告原样混进 sweep 的 stdout。
-            # 🔑 **一个只读告警绝不该有能力改变宿主的退出码。** 故：吞掉 stdout、
-            #    捕到 BaseException 层（`KeyboardInterrupt` 例外，仍放行）。
-            _buf = io.StringIO()
-            try:
-                with contextlib.redirect_stdout(_buf), contextlib.redirect_stderr(_buf):
-                    spec.loader.exec_module(module)
-            except KeyboardInterrupt:
-                raise
-            except BaseException as exc:  # noqa: BLE001 —— 含 SystemExit，见上
-                log.append(f"🗂 第 14 类：加载备份工具时它自行退出（{type(exc).__name__}），本类跳过、不告警。")
-                _track_and_alert_standing_state(
-                    repo_root, "定时任务分类", SCHEDULED_TASK_COVERAGE_STATE_REL, set(),
-                    SCHEDULED_TASK_COVERAGE_ALERT_INTERVAL_HOURS,
-                    lambda keys: "",
-                    lambda keys: "✅ 落库sweep：定时任务分类告警已解除（备份工具不可加载）。",
-                    log,
-                )
-                return
-            if not hasattr(module, "find_unclassified"):
-                # 🔴 **「工具还没有这个能力」≠「判据坏了」**，不告警。
-                # 2026-09-10 实撞：`ScheduledTaskMirrorSyncTests` 会在沙箱里把
-                # 备份脚本换成一个只 `print` 的桩，本类原先把 AttributeError 当
-                # 成「判据自身异常」推了一条 webhook，直接把三条既有用例打红
-                # （它们断言「无差异时零 webhook 噪声」）。
-                # 🔑 **一个新装的告警把既有测试的「安静」判据打破，说明它在真实
-                #    环境里也会制造同样的噪声** —— 沙箱只是先替人撞上了。
-                # 传空 keys：若此前告警过，这一步顺带自动解除。
-                log.append("🗂 第 14 类：备份工具尚无 `find_unclassified`（旧版本或桩），本类按设计不告警。")
-                _track_and_alert_standing_state(
-                    repo_root, "定时任务分类", SCHEDULED_TASK_COVERAGE_STATE_REL, set(),
-                    SCHEDULED_TASK_COVERAGE_ALERT_INTERVAL_HOURS,
-                    lambda keys: "",
-                    lambda keys: "✅ 落库sweep：定时任务分类告警已解除（备份工具已无该判据）。",
-                    log,
-                )
-                return
-            unclassified = module.find_unclassified()
-            if unclassified:
-                keys.update(unclassified)
-                detail = "／".join(f"`{n}`" for n in unclassified)
-            log.append(
-                f"🗂 第 14 类：定时任务目录分类——白名单 {len(module.WHITELIST)}"
-                f" ＋ 黑名单 {len(module.BLACKLIST)}，未分类 {len(unclassified)} 个。"
-            )
-        except Exception as exc:  # noqa: BLE001 —— 🔴 判据坏了和没有违规是两回事
-            keys.add("判据自身异常")
-            detail = f"{type(exc).__name__}: {exc}"
-            log.append(f"🔴 第 14 类：判据自身异常——{detail}")
-
-    def render_alert(alert_keys):
-        return (
-            "🗂 落库sweep：**定时任务目录未分类**（第 14 类常驻告警，队列 §一 `#551` 旁生）\n"
-            f"- 命中 {len(alert_keys)} 个：{detail}\n"
-            "⇒ 它们**既不会被镜进仓库、也不会有人发现**。请逐个判定后写进 "
-            "`工具-定时任务源码备份.py` 的 `WHITELIST`（项目机制）或 `BLACKLIST`"
-            "（个人/一次性/孤儿），并同步 `0-学习与工具/定时任务源码/README.md` 两张表"
-            "（单测会现场解析 README 比对，改一处不改另一处即转红）。恢复后下一轮自动解除。"
-        )
-
-    def render_resolved(resolved_keys):
-        return ("✅ 落库sweep：定时任务目录分类已补齐，以下告警自动解除：\n"
-                + "\n".join(f"- `{k}`" for k in resolved_keys))
-
-    _track_and_alert_standing_state(
-        repo_root, "定时任务分类", SCHEDULED_TASK_COVERAGE_STATE_REL, keys,
-        SCHEDULED_TASK_COVERAGE_ALERT_INTERVAL_HOURS, render_alert, render_resolved, log,
-    )
 
 
 # ============================================================
@@ -6911,6 +7287,240 @@ OUTBOX_RELAY_UNREADABLE_ALERT_INTERVAL_HOURS = 24.0
 # 失败由中继自己的「转入即报／6 小时复报」告警覆盖，本类不重复它。
 OUTBOX_RELAY_UNREADABLE_WEEKLY_THRESHOLD_SECONDS = 24 * 3600
 OUTBOX_RELAY_JUDGE_TIMEOUT_SECONDS = 60
+OUTBOX_RELAY_NETWORK_CONTEXT_REL = "reports/sweep-network-context.json"
+
+
+REMINDER_HEALTH_REL = "reports/decision-reminder-health.json"
+REMINDER_HEALTH_STATE_REL = "reports/sweep-decision-reminder-health-state.json"
+LOCAL_REMINDER_OUTBOX_REL = ".claude/worktrees/wecom-service-home/5-平台底座/wecom-aibot-service/reports/local_reminder_outbox.jsonl"
+LOCAL_REMINDER_HEALTH_STATE_REL = "reports/sweep-local-reminder-outbox-health-state.json"
+# 每日08:30调度 + 1h补跑余量；仅判检测证据陈旧，待安装后的自然轮验证。
+REMINDER_HEALTH_MAX_AGE_HOURS = 25.0
+REMINDER_HEALTH_ALERT_INTERVAL_HOURS = 24.0
+# 候选检测SLO：默认relay 300s×3轮；小时sweep名义发现上界约75min，非实时保证。
+# 激活前须核实际poll配置；若更慢，不得把本候选窗口冒称已验收。
+LOCAL_REMINDER_PENDING_GRACE_SECONDS = 15 * 60
+
+
+def _read_stable_health_text(path: Path) -> tuple[str, str]:
+    before = path.stat()
+    text = path.read_text(encoding="utf-8")
+    after = path.stat()
+    if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
+        raise OSError("读取期间来源变化；下轮重验")
+    return text, hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _publish_reminder_health(repo_root, label, source, state_rel, issues, log, *, complete):
+    context = globals().get("_STANDING_OBSERVATION")
+    if context is None or context["collecting"]:
+        log.append(_must_keep(f"SWEEP_HEALTH {label} status={'attention' if complete and issues else 'complete' if complete else 'unknown'}"
+                              f" source={source} candidate_count={len(issues)}"))
+    if context is not None and context["collecting"]:
+        # 整个发布体延迟到门禁之后，才能承接发布阶段才暴露的坏状态。
+        context["pending"].append((_publish_reminder_health,
+            (repo_root, label, source, state_rel, dict(issues), log), {"complete": complete}))
+        return
+    state_path = repo_root / state_rel
+    try:
+        state = _read_delivery_state(state_path)
+        now = datetime.now(timezone.utc)
+        for value in state.values():
+            observed = datetime.fromisoformat(value)
+            if observed.tzinfo is None or observed > now:
+                raise ValueError("告警状态时间无时区或在未来")
+        _track_and_alert_standing_state(
+            repo_root, label, state_rel, set(issues), REMINDER_HEALTH_ALERT_INTERVAL_HOURS,
+            lambda keys: (f"⚠ 落库sweep：{label}覆盖异常／回执待核\n来源：`{source}`\n"
+                          + "\n".join(f"- {issues[key]}" for key in sorted(keys))
+                          + "\n承接：Win1108RR预警机制总线（接管 Win1107A预警维护）。仅报告检测证据，不据此宣称业务故障。"),
+            lambda keys: (f"✅ 落库sweep：{label}此前覆盖异常已取得有效复核证据。"
+                          f"来源：`{source}`；只关闭本项，不代表整体健康。"),
+            log, allow_resolve=complete,
+        )
+        return True
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        reason = type(exc).__name__
+    try:
+        digest = hashlib.sha256(state_path.read_bytes()).hexdigest()
+    except OSError as exc:
+        digest = "unreadable:" + type(exc).__name__
+    keys = [f"{state_rel}:{digest}"]
+    journal_path = state_path.with_suffix(".delivery.json")
+    log.append(_must_keep(f"SWEEP_HEALTH {label} status=unknown source={state_path} sha256={digest} reason=自身告警状态不可用；原物保全"))
+    try:
+        progress = _read_delivery_state(journal_path).get("state-unavailable", {})
+        completed = progress.get("completed_at")
+        if (progress.get("keys") == keys and progress.get("status") == "success" and completed
+                and 0 <= (datetime.now(timezone.utc) - datetime.fromisoformat(completed)).total_seconds()
+                < REMINDER_HEALTH_ALERT_INTERVAL_HOURS * 3600):
+            log.append(_must_keep(f"SWEEP_DELIVERY {label} kind=state-unavailable status=deduplicated；沿用已确认回执，原物保全"))
+            return False
+        render = lambda _: (f"⚠ 落库sweep：{label}自身告警状态未知\n"
+            f"状态：`{state_path}`\nSHA256：`{digest}`；读取/校验：{reason}\n来源：`{source}`\n"
+            f"原物保全，未回空或覆盖；核坏状态原件与通知回执 `{journal_path}`。承接：Win1108RR预警机制总线（接管 Win1107A预警维护）。未据此解除旧告警。")
+        if _deliver_standing_message(repo_root, label, state_path, "state-unavailable", keys,
+                REMINDER_HEALTH_ALERT_INTERVAL_HOURS, render, log):
+            log.append(f"✓ {label}状态未知告警已推送；坏状态原物保全。")
+        else:
+            log.append(_must_keep(f"SWEEP_HEALTH {label} status=unknown 通知未确认：`{journal_path}`；原物保全，核既有投递回执。"))
+    except Exception as exc:
+        log.append(_must_keep(f"SWEEP_HEALTH {label} status=unknown 推送失败/未确认：{type(exc).__name__}；无法通知，核 `{journal_path}`；坏状态与回执原物保全，不新建递归状态。"))
+    return False
+
+
+def _check_decision_reminder_health(repo_root: Path, log: list[str]) -> None:
+    source = repo_root / REMINDER_HEALTH_REL
+    issues = {}
+    try:
+        text, digest = _read_stable_health_text(source)
+        log.append(f"提醒源读取 source={source} read_at_utc={datetime.now(timezone.utc).isoformat()} sha256={digest}")
+        health = json.loads(text)
+        if not isinstance(health, dict) or type(health.get("exit_code")) is not int:
+            raise ValueError("健康回执结构不可用")
+        finished = datetime.fromisoformat(health["finished_at_utc"])
+        now = datetime.now(timezone.utc)
+        if finished.tzinfo is None or not 0 <= (now - finished).total_seconds() <= REMINDER_HEALTH_MAX_AGE_HOURS * 3600:
+            raise ValueError("检测证据缺时区、在未来或已超过25h（每日调度+1h补跑，待自然轮验证）")
+        if health.get("coverage") not in {"complete", "unknown"}:
+            raise ValueError("健康回执coverage不可用")
+        if (health["coverage"] == "complete") != (health["exit_code"] == 0):
+            raise ValueError("健康回执coverage/exit_code组合不一致")
+        if health["coverage"] == "unknown":
+            error_class = re.fullmatch(r"运行异常：([A-Za-z][A-Za-z0-9_]{0,79})", str(health.get("detail", "")))
+            error_note = f"；生产者记录异常类={error_class[1]}" if error_class else "；具体未覆盖阶段见本轮source_snapshot审计"
+            issues["source:unknown"] = (f"UNKNOWN：本轮覆盖未完成，coverage=unknown，exit_code={health['exit_code']}，"
+                f"finished_at_utc={finished.isoformat()}{error_note}；不据此判整轮中断、送达失败或业务故障，旧待核项保留。")
+        log.append(f"提醒源健康回执 finished_at_utc={finished.isoformat()} read_at_utc={now.isoformat()} sha256={digest}")
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        issues["source:unknown"] = f"UNKNOWN：{type(exc).__name__}: {exc}；需核finished_at_utc/exit_code/coverage/detail，未确认前保留旧告警。"
+    _publish_reminder_health(repo_root, "提醒源健康", source, REMINDER_HEALTH_STATE_REL,
+                             issues, log, complete=not issues)
+
+
+def _check_local_reminder_outbox_health(repo_root: Path, log: list[str]) -> None:
+    source = repo_root / LOCAL_REMINDER_OUTBOX_REL
+    issues, confirmed, complete = {}, set(), True
+    mutable = {"delivered", "delivered_at_utc", "delivered_to", "delivered_kind", "delivered_ack",
+               "delivery_state", "delivery_attempted_at_utc", "delivery_error", "enqueue_state"}
+    try:
+        text, digest = _read_stable_health_text(source)
+        for number, line in enumerate(text.splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+                if not isinstance(row, dict) or ("delivered" in row and type(row["delivered"]) is not bool):
+                    raise ValueError("outbox行结构不可用")
+                channel = row.get("channel")
+                address = row.get("department") if channel == "aibot_group_chatid" else row.get("to_userid")
+                if (channel not in {"aibot_direct", "aibot_group_chatid"}
+                        or not isinstance(address, str) or not address.strip()
+                        or not isinstance(row.get("text"), str) or not row["text"].strip()):
+                    raise ValueError("本地outbox缺少受支持的渠道/接收方/正文")
+                identity = hashlib.sha256(json.dumps({k: v for k, v in row.items() if k not in mutable},
+                    sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+                state = row.get("delivery_state", "pending")
+                if state not in {"pending", "enqueue_pending", "sending", "unknown", "delivered"}:
+                    raise ValueError("delivery_state未识别")
+                if "enqueue_state" in row and row["enqueue_state"] not in {"pending", "queued"}:
+                    raise ValueError("enqueue_state未识别")
+                enqueue_unknown = state == "enqueue_pending" or row.get("enqueue_state") == "pending"
+                ack = row.get("delivered_ack")
+                receipt_ok = (row.get("delivered") is True and isinstance(ack, dict)
+                              and type(ack.get("errcode")) is int and ack["errcode"] == 0)
+                if receipt_ok and channel == "aibot_group_chatid":
+                    try:
+                        submitted = datetime.fromisoformat(row["submitted_at"])
+                        delivered_at = datetime.fromisoformat(row["delivered_at_utc"])
+                        receipt_ok = (row.get("delivered_kind") == "group"
+                            and isinstance(row.get("delivered_to"), str) and bool(row["delivered_to"].strip())
+                            and row.get("content_sha256") == hashlib.sha256(row["text"].encode("utf-8")).hexdigest()
+                            and submitted.tzinfo is not None and delivered_at.tzinfo is not None
+                            and submitted <= delivered_at <= datetime.now(timezone.utc))
+                    except (KeyError, TypeError, ValueError):
+                        receipt_ok = False
+                if enqueue_unknown:
+                    issues[f"delivery:{identity}:enqueue_pending"] = (
+                        f"行{number} delivery_state=enqueue_pending，入队持久化待核；核append/fsync/确认写回证据及同目录wecom_aibot_audit.jsonl，不能当普通pending或自动重发；最终送达须delivered_ack.errcode=0。")
+                elif receipt_ok:
+                    confirmed.add(identity)
+                    confirmed.add("row-sha256:" + hashlib.sha256(line.encode("utf-8")).hexdigest())
+                elif state in {"sending", "unknown", "delivered"} or row.get("delivered") is True:
+                    issues[f"delivery:{identity}:{state}"] = (
+                        f"行{number} delivery_state={state}，送达待核；核对delivered_ack.errcode=0及同目录wecom_aibot_audit.jsonl发送回执，不能自动重发。")
+                elif state == "pending" and len(row["text"].encode("utf-8")) > 20_480:
+                    # Match the installed relay's hard text cap; do not retry or rewrite this row.
+                    issues[f"delivery:{identity}:pending-time"] = (
+                        f"行{number} 内容超限、送达待核：正文{len(row['text'].encode('utf-8'))}字节，超过20480字节协议上限；"
+                        "原行保全，核原始回执与发送协议，不按普通pending重试，不自动拆分、重放或销号；不据此判业务失败。")
+                elif state == "pending" and row.get("delivery_error"):
+                    issues[f"delivery:{identity}:rejected"] = (
+                        f"行{number} delivery_state=pending，企微明确拒收后待重试；消费者仍按原策略自动重试。核对delivery_error及同目录wecom_aibot_audit.jsonl；仅匹配delivered=true且delivered_ack.errcode为整数0后结案。")
+                elif state == "pending":
+                    try:
+                        submitted = datetime.fromisoformat(row["submitted_at"])
+                        age = (datetime.now(timezone.utc) - submitted).total_seconds()
+                        if submitted.tzinfo is None or age < 0:
+                            raise ValueError("submitted_at无时区或在未来")
+                    except (KeyError, ValueError, TypeError):
+                        issues[f"delivery:{identity}:pending-time"] = (
+                            f"行{number} UNKNOWN：submitted_at缺失/无效/无时区/在未来，送达待核；核原入队时刻及同目录wecom_aibot_audit.jsonl，不据此判正常。")
+                    else:
+                        if age > LOCAL_REMINDER_PENDING_GRACE_SECONDS:
+                            issues[f"delivery:{identity}:pending-time"] = (
+                                f"行{number} 待发超时、送达待核：pending已{age / 60:.1f}分钟，超过15min候选检测窗口；核中继消费及delivered_ack.errcode=0回执，不推断业务失败、不改重试。")
+            except (ValueError, TypeError) as exc:
+                complete = False
+                issues[f"row:{number}:{hashlib.sha256(line.encode('utf-8')).hexdigest()}"] = f"行{number} UNKNOWN：{type(exc).__name__}；保留原行并核对JSON/状态字段。"
+        # 删除行或重置为pending不构成此前sending/unknown的成功回执。
+        prior_path = repo_root / LOCAL_REMINDER_HEALTH_STATE_REL
+        try:
+            prior = _read_delivery_state(prior_path)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"既有告警状态不可读：{prior_path}；{type(exc).__name__}") from exc
+        for key in prior:
+            if key.startswith("delivery:") and key.split(":")[1] not in confirmed:
+                issues.setdefault(key, "此前送达待核项尚无delivered_ack.errcode=0，需核同目录wecom_aibot_audit.jsonl；保留旧告警。")
+            elif key.startswith("row:") and "row-sha256:" + key.rsplit(":", 1)[-1] not in confirmed:
+                issues.setdefault(key, "此前原行结构待核项尚无相同原始行的严格送达回执；删行、换行或其它行恢复不能代替本项证据，保留旧告警。")
+        log.append(f"本地提醒outbox read_at_utc={datetime.now(timezone.utc).isoformat()} sha256={digest}；仅核回执，不输出消息正文")
+    except (OSError, ValueError, TypeError) as exc:
+        complete = False
+        issues["outbox:unknown"] = f"UNKNOWN：{type(exc).__name__}: {exc}；源缺失/变化/不可读不等于空队列。"
+    _publish_reminder_health(repo_root, "本地提醒outbox健康", source, LOCAL_REMINDER_HEALTH_STATE_REL,
+                             issues, log, complete=complete)
+
+
+def _outbox_relay_explicit_offlan(repo_root: Path, now: datetime) -> tuple[bool, str]:
+    """Only a bounded operator declaration suppresses remote read alerts; never probe .51."""
+    try:
+        context = json.loads((repo_root / OUTBOX_RELAY_NETWORK_CONTEXT_REL).read_text(encoding="utf-8"))
+        declared = datetime.fromisoformat(context["declared_at"].replace("Z", "+00:00"))
+        expires = datetime.fromisoformat(context["expires_at"].replace("Z", "+00:00"))
+        if (context.get("mode") != "offlan" or not context.get("confirmed_by")
+                or not (declared <= now < expires)
+                or not (0 < (expires - declared).total_seconds() <= 24 * 3600)):
+            raise ValueError("declaration inactive or unbounded")
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return False, "未确认offLAN（声明缺失、过期或无效）；不据此判健康，保留原告警"
+    # Reuse affirmative evidence only; an old off result or failed probe cannot grant silence.
+    try:
+        lan = json.loads((repo_root / "reports/unclosed-output-state.json").read_text(encoding="utf-8"))["lan"]
+        observed = datetime.fromisoformat(lan["last_probe_utc"].replace("Z", "+00:00"))
+        if (lan.get("last_probe_status") == "on" and lan.get("on_lan") is True
+                and declared <= observed <= now and (now - observed).total_seconds() <= 3600):
+            return False, "声明后已有新鲜在线证据，恢复原告警判定"
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass  # Explicit declaration remains valid; no health claim is made from missing evidence.
+    return True, f"明确offLAN（本人声明，到期 {expires.isoformat()}）；仅.51共享路径留本地log，未判恢复"
+
+
+def _is_lan_relay_path(path: str) -> bool:
+    normalized = path.replace("/", "\\")
+    return normalized.startswith("\\\\") and normalized.lstrip("\\").split("\\", 1)[0] == "192.168.100.51"
+
+
 # 子进程里跑的就是这五行——**没有任何判定逻辑**，只做「stdin 进、纯函数、stdout 出」。
 OUTBOX_RELAY_JUDGE_SNIPPET = (
     "import json, sys\n"
@@ -6988,39 +7598,136 @@ def _check_outbox_relay_unreadable_visibility(repo_root: Path, log: list[str], d
     供人实弹核判据用（同第 16 类）。
     """
     state_path = repo_root / OUTBOX_RELAY_UNREADABLE_STATE_REL
-    if not state_path.exists():
-        # 中继从未记录过读失败（或本机没部署服务）——这是「零命中」，不是「判据不可用」。
-        log.append(f"📭 第 18 类：中继状态文件不存在（`{OUTBOX_RELAY_UNREADABLE_STATE_REL}`），当前无持续不可读路径。")
-        rows: list[tuple[str, str, float]] | None = []
-        reason = ""
-        tracked = 0
+    # 缺失与坏结构均是未知；只有读到完整有效快照才能判定消失/恢复。
+    now = datetime.now(timezone.utc)
+    evidence_details, confirmed_evidence, confirmed_details = {}, set(), {}
+    evidence_state_unavailable = True
+    active_reads = {}
+
+    def checked_time(value):
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None or parsed > now:
+            raise ValueError("状态时间缺时区或在未来")
+        return parsed
+
+    def publish_evidence(complete):
+        if evidence_state_unavailable:
+            # 复用既有发布器处理自身state坏；仍走本检查自己的.delivery.json。
+            _publish_reminder_health(repo_root, "中继读取/通知/审计证据", state_path,
+                OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL, evidence_details, log, complete=False)
+            return
+        _track_and_alert_standing_state(
+            repo_root, "中继读取/通知/审计证据", OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL,
+            set(evidence_details), OUTBOX_RELAY_UNREADABLE_ALERT_INTERVAL_HOURS,
+            lambda keys: (f"⚠ 第18类证据待核；来源 `{state_path}`\n"
+                + "\n".join(f"- {evidence_details[key]}" for key in sorted(keys))
+                + "\n承接：Win1107A预警维护。读取、通知回执、审计缺口分别处理，不概括整体健康。"),
+            lambda keys: ("✅ 第18类以下对应项已核实：\n" + "\n".join(
+                "- " + confirmed_details.get(key, "读取/通知状态判据已恢复可用；不代表其他项恢复。")
+                for key in sorted(keys))),
+            log, allow_resolve=complete,
+        )
+
+    try:
+        prior = _read_delivery_state(repo_root / OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL)
+        for previous_at in prior.values():
+            checked_time(previous_at)
+        evidence_state_unavailable = False
+        raw = json.loads(state_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("状态文件顶层不是 JSON object")
+        for path, entry in raw.items():
+            if not path or not isinstance(entry, dict):
+                raise ValueError("状态路径或条目结构不可用")
+            first = checked_time(entry["first_failed_at"])
+            if "notification_only" in entry and type(entry["notification_only"]) is not bool:
+                raise ValueError("notification_only不是布尔值")
+            recovered = entry.get("recovered_at")
+            if recovered is not None and checked_time(recovered) < first:
+                raise ValueError("读取恢复时间早于故障")
+            if not entry.get("notification_only") and recovered is None:
+                active_reads[path] = entry
+            attempts = entry.get("notification_attempts", {})
+            if not isinstance(attempts, dict):
+                raise ValueError("notification_attempts不是object")
+            for attempt_id, attempt in attempts.items():
+                if not attempt_id or not isinstance(attempt, dict):
+                    raise ValueError("通知attempt结构不可用")
+                kind, status = attempt.get("kind"), attempt.get("status")
+                if kind not in {"unreadable", "recovery", "record"} or status not in {
+                        "pending", "sending", "unknown", "accepted", "rejected"}:
+                    raise ValueError("通知kind/status未识别")
+                attempted = checked_time(attempt["attempted_at"])
+                if kind in {"unreadable", "recovery"} and checked_time(attempt["outage_first_failed_at"]) > attempted:
+                    raise ValueError("通知尝试早于对应故障")
+                key = "notification:" + json.dumps([path, attempt_id, attempt["attempted_at"]],
+                    ensure_ascii=False, separators=(",", ":"))
+                if "completed_at" in attempt and checked_time(attempt["completed_at"]) < attempted:
+                    raise ValueError("通知完成时间早于尝试")
+                if status == "accepted":
+                    if attempt.get("receipt_kind") != "callback_confirmed" or "completed_at" not in attempt:
+                        raise ValueError("通知accepted缺少适配器确认回执")
+                    confirmed_evidence.add(key)
+                    confirmed_details[key] = (f"通知回执已确认：`{path}`，attempt=`{attempt_id}`，"
+                        f"attempted_at={attempt['attempted_at']}；callback_confirmed仅表示已核适配器合同，不伪造ACK0。")
+                elif status in {"sending", "unknown"}:
+                    reading = "仅通知记录，不代表读取故障" if entry.get("notification_only") else (
+                        "读取已恢复；通知尚未确认" if recovered is not None else "读取故障与通知回执分别待核")
+                    evidence_details[key] = (f"通知待核：`{path}`，kind={kind}，attempt=`{attempt_id}`，"
+                        f"attempted_at={attempt['attempted_at']}，status={status}；{reading}。"
+                        f"核 `{state_path}` 同attempt及既有通知回执；不自动重发、不把callback确认伪称ACK0。")
+            if "audit_health" in entry:
+                audit_health = entry["audit_health"]
+                if not isinstance(audit_health, dict) or audit_health.get("status") not in {"unknown", "recovered"}:
+                    raise ValueError("audit_health结构/status不可用")
+                audit_first = checked_time(audit_health["first_failed_at"])
+                audit_last = checked_time(audit_health["last_failed_at"])
+                if audit_last < audit_first or any(not isinstance(audit_health.get(field), str)
+                        or not audit_health[field].strip() for field in ("last_action", "error_type")):
+                    raise ValueError("审计缺口时间/动作/异常类不可用")
+                audit_key = "audit-health:" + json.dumps([path, audit_health["first_failed_at"]],
+                    ensure_ascii=False, separators=(",", ":"))
+                if audit_health["status"] == "recovered":
+                    if checked_time(audit_health["recovered_at"]) < audit_last:
+                        raise ValueError("审计恢复时间早于最后缺口")
+                    confirmed_evidence.add(audit_key)
+                    confirmed_details[audit_key] = (f"审计缺口已记录恢复：`{path}`，"
+                        f"first_failed_at={audit_health['first_failed_at']}；仅同一审计缺口解除，不代表通知已送达。")
+                else:
+                    if "recovered_at" in audit_health:
+                        raise ValueError("unknown审计缺口不能同时声明recovered_at")
+                    evidence_details[audit_key] = (f"审计记录缺口待核：`{path}`，first_failed_at={audit_health['first_failed_at']}，"
+                        f"last_failed_at={audit_health['last_failed_at']}，last_action={audit_health['last_action']}，"
+                        f"error_type={audit_health['error_type']}；核 `{state_path}` 的audit_health与审计文件，"
+                        "这不等于送达未知或读取失败；仅同first_failed_at的recovered回执可解除。")
+        for key in prior:
+            if key.startswith("notification:") and key not in confirmed_evidence:
+                try:
+                    old_path, old_id, old_at = json.loads(key[len("notification:"):])
+                    pointer = f"`{old_path}`，attempt=`{old_id}`，attempted_at={old_at}"
+                except (ValueError, TypeError):
+                    pointer = f"旧通知键 `{key}`"
+                evidence_details.setdefault(key, f"通知仍待核：{pointer}；无匹配同attempt的accepted/callback_confirmed回执，删除、换id或重置不能解除。核 `{state_path}`。")
+            elif key.startswith("audit-health:") and key not in confirmed_evidence:
+                try:
+                    old_path, old_first = json.loads(key[len("audit-health:"):])
+                    pointer = f"`{old_path}`，first_failed_at={old_first}"
+                except (ValueError, TypeError):
+                    pointer = f"旧审计缺口键 `{key}`"
+                evidence_details.setdefault(key, f"审计记录缺口仍待核：{pointer}；无同身份recovered回执，删除或更换first_failed_at不能解除。核 `{state_path}`。")
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        rows, reason, tracked = None, f"状态文件不可用：{type(exc).__name__}: {exc}", 0
     else:
-        try:
-            raw = json.loads(state_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raw = None
-            reason = f"状态文件读不出：{type(exc).__name__}: {exc}"
-        if raw is None or not isinstance(raw, dict):
-            rows, reason = None, (reason or "状态文件顶层不是 JSON object")
-            tracked = 0
-        else:
-            tracked = len(raw)
-            rows, reason = _judge_outbox_relay_persistently_unreadable(
-                repo_root, raw, datetime.now(timezone.utc),
-            )
+        tracked = len(active_reads)
+        rows, reason = _judge_outbox_relay_persistently_unreadable(repo_root, active_reads, now)
 
     if rows is None:
         log.append(f"📭 第 18 类：⚠ **判据不可用**（{reason}）——**不据此判为「中继读得通」**。")
         if dry_run:
             return
-        _track_and_alert_standing_state(
-            repo_root, "中继不可读判据不可用", OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL,
-            {OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_KEY}, OUTBOX_RELAY_UNREADABLE_ALERT_INTERVAL_HOURS,
-            lambda _keys: ("📭 落库sweep：第 18 类**判据不可用**，本轮没有量到任何数——"
-                           f"{reason}\n⇒ 这不等于「中继读得通」，只等于「这一轮什么也没量」。"),
-            lambda _keys: "✅ 落库sweep：第 18 类判据已恢复可用。",
-            log,
-        )
+        evidence_details[OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_KEY] = (
+            f"第18类判据不可用：{reason}；未量到不等于读取正常，原读取/通知告警保留。")
+        publish_evidence(False)
         return
 
     if state_path.exists():
@@ -7030,24 +7737,32 @@ def _check_outbox_relay_unreadable_visibility(repo_root: Path, log: list[str], d
         )
     for path, first_failed_at, hours in rows[:3]:
         log.append(f"    · `{path}`｜自 {first_failed_at}｜{_format_unreadable_hours(hours)}")
+    # 通知结果是本地持久回执；不受远端offLAN或24h读取阈值静默。
+    if not dry_run:
+        publish_evidence(True)
+    offlan, network_reason = _outbox_relay_explicit_offlan(repo_root, datetime.now(timezone.utc))
+    log.append(_must_keep(f"📭 第18类网络上下文：{network_reason}"))
+    offline_rows = [row for row in rows if offlan and _is_lan_relay_path(row[0])]
+    if offline_rows:
+        log.append(_must_keep(f"第18类offLAN本地留痕：{len(offline_rows)} 条远端不可核查记录不红推，原失败/投递状态保留，未判恢复。"))
+        rows = [row for row in rows if row not in offline_rows]
+        if not rows:
+            return
     if dry_run:
         log.append("    （dry-run：不写状态文件、不推送；下为真跑时会推的正文）")
         if rows:
             log.extend("    | " + ln for ln in _render_outbox_relay_unreadable_alert(rows).splitlines())
         return
 
-    _track_and_alert_standing_state(
-        repo_root, "中继不可读判据不可用", OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL, set(),
-        OUTBOX_RELAY_UNREADABLE_ALERT_INTERVAL_HOURS,
-        lambda _keys: "", lambda _keys: "✅ 落库sweep：第 18 类判据已恢复可用。", log)
     by_path = {path: (path, first_failed_at, hours) for path, first_failed_at, hours in rows}
     _track_and_alert_standing_state(
         repo_root, "中继持续不可读", OUTBOX_RELAY_UNREADABLE_SWEEP_STATE_REL, set(by_path),
         OUTBOX_RELAY_UNREADABLE_ALERT_INTERVAL_HOURS,
         lambda alert_keys: _render_outbox_relay_unreadable_alert([by_path[k] for k in sorted(alert_keys)]),
-        lambda resolved: ("✅ 落库sweep：以下 outbox 路径已恢复可读（中继已删其状态条目），第 18 类告警自动解除：\n"
+        lambda resolved: ("✅ 落库sweep：以下 outbox 路径已恢复可读（有效状态确认读取恢复或已移除读失败条目；通知回执独立待核），第 18 类读取告警解除：\n"
                           + "\n".join(f"- `{k}`" for k in sorted(resolved))),
-        log,
+        # 不足24小时或明确offLAN仍是读失败，不能作为已恢复的证据。
+        log, preserve_keys=set(active_reads),
     )
 
 
@@ -7148,6 +7863,7 @@ def _check_carrier_consistency(repo_root: Path, log: list[str]) -> None:
             set(details), CARRIER_SCAN_ALERT_INTERVAL_HOURS,
             lambda keys: _render_carrier_alert(details, keys),
             _render_carrier_resolved, log,
+            preserve_keys=_preserve_retired_authority_keys(repo_root, CARRIER_SCAN_STATE_REL, "carrier"),
         )
 
     module, reason = _load_carrier_scan(repo_root)
@@ -7176,9 +7892,8 @@ def _check_carrier_consistency(repo_root: Path, log: list[str]) -> None:
 
     report_path = repo_root / CARRIER_SCAN_REPORT_REL
     try:
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(module.format_report(findings) + "\n", encoding="utf-8")
-        log.append(f"    · 本轮全文已写 `{CARRIER_SCAN_REPORT_REL}`")
+        _observation_report(report_path, module.format_report(findings) + "\n")
+        log.append(f"    · 全文报告 `{CARRIER_SCAN_REPORT_REL}`：" + ("已准备，门禁通过后写入" if globals().get("_STANDING_OBSERVATION") is not None else "已写入"))
     except OSError as exc:
         log.append(f"    ⚠ 全文写入 `{CARRIER_SCAN_REPORT_REL}` 失败：{exc}（不影响告警）")
 
@@ -7863,7 +8578,7 @@ def _run_plan_backpressure_json(repo_root: Path) -> tuple[dict | None, str | Non
         return None, f"未找到 {PLAN_BACKPRESSURE_SCRIPT_REL}"
     try:
         result = subprocess.run(
-            [sys.executable, str(script), "--json"],
+            [sys.executable, str(script), "--json", "--root", str(repo_root)],
             cwd=repo_root, capture_output=True, text=True, encoding="utf-8", timeout=120,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -7874,8 +8589,12 @@ def _run_plan_backpressure_json(repo_root: Path) -> tuple[dict | None, str | Non
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         return None, f"输出不是合法 JSON：{exc}"
-    if not isinstance(payload, dict) or "unaccepted" not in payload:
-        return None, "输出 JSON 缺少 `unaccepted` 字段"
+    if (not isinstance(payload, dict) or not isinstance(payload.get("unaccepted"), list)
+            or not isinstance(payload.get("counts"), dict)
+            or any(not isinstance(row, dict) or not isinstance(row.get("code"), str)
+                   or not row["code"] or not isinstance(row.get("suspended"), str)
+                   for row in payload.get("unaccepted", []))):
+        return None, "输出 JSON 的 unaccepted／counts 结构不可用"
     return payload, None
 
 
@@ -7890,7 +8609,7 @@ def _mark_plan_backpressure_scan(repo_root: Path, status: str, detail: str) -> d
     marker = _read_json_state(path) or {}
     now = datetime.now(timezone.utc).isoformat()
     consecutive = int(marker.get("consecutive_skips") or 0)
-    consecutive = consecutive + 1 if status == "skipped" else 0
+    consecutive = consecutive + 1 if status in ("skipped", "unavailable") else 0
     fresh = {
         "last_round_utc": now,
         "last_round_status": status,
@@ -7901,17 +8620,17 @@ def _mark_plan_backpressure_scan(repo_root: Path, status: str, detail: str) -> d
     try:
         _write_json_state(path, fresh)
     except OSError:
-        pass
+        return {}
     return fresh
 
 
 def _note_plan_backpressure_skipped(repo_root: Path, reason: str, log: list[str],
-                                    dry_run: bool = False) -> None:
+                                    dry_run: bool = False, *, scan_status: str = "skipped") -> None:
     """整轮早退时补一条「本轮第 13 类未巡检」的痕迹，连续够数则亮灯。"""
     if dry_run:
         return
     try:
-        marker = _mark_plan_backpressure_scan(repo_root, "skipped", reason)
+        marker = _mark_plan_backpressure_scan(repo_root, scan_status, reason)
         rounds = marker["consecutive_skips"]
         log.append(f"🧭 规划倒逼巡检：⚠ **本轮未巡检**（{reason}）"
                    f"——**不据此判为零未承接**；已连续 {rounds} 轮未巡检。")
@@ -7992,22 +8711,27 @@ def _check_plan_backpressure(repo_root: Path, log: list[str]) -> None:
     """第 13 类入口。只读、只告警、不写任何队列、不影响本轮退出码。"""
     payload, reason = _run_plan_backpressure_json(repo_root)
     if payload is None:
-        _mark_plan_backpressure_scan(repo_root, "unavailable", reason or "")
-        log.append(f"🧭 规划倒逼巡检：⚠ **判据不可用**（{reason}）"
-                   "——**不据此判为零未承接**。")
-        _track_and_alert_standing_state(
-            repo_root, "规划倒逼判据不可用", PLAN_BACKPRESSURE_UNAVAILABLE_STATE_REL,
-            {PLAN_BACKPRESSURE_UNAVAILABLE_KEY},
-            PLAN_BACKPRESSURE_ALERT_INTERVAL_HOURS,
-            lambda _keys: ("🧭 落库sweep：第 13 类**判据不可用**，本轮没有量到任何数——"
-                           f"{reason}\n⇒ 这不等于"
-                           "「规划与执行已对齐」，只等于「这一轮什么也没量」。"),
-            lambda _keys: "✅ 落库sweep：第 13 类判据已恢复可用。",
-            log,
-        )
+        _publish_plan_backpressure_unavailable(repo_root, log, reason)
         return
 
-    _mark_plan_backpressure_scan(repo_root, "scanned", "")
+    _publish_plan_backpressure(repo_root, log, payload)
+
+
+def _publish_plan_backpressure_unavailable(repo_root: Path, log: list[str], reason: str | None) -> None:
+    """沿用第13类原判据不可用状态与通知，主路径和非master观察共用。"""
+    _mark_plan_backpressure_scan(repo_root, "unavailable", reason or "")
+    log.append(f"🧭 规划倒逼巡检：⚠ **判据不可用**（{reason}）——**不据此判为零未承接**。")
+    _track_and_alert_standing_state(
+        repo_root, "规划倒逼判据不可用", PLAN_BACKPRESSURE_UNAVAILABLE_STATE_REL,
+        {PLAN_BACKPRESSURE_UNAVAILABLE_KEY}, PLAN_BACKPRESSURE_ALERT_INTERVAL_HOURS,
+        lambda _keys: ("🧭 落库sweep：第 13 类**判据不可用**，本轮没有量到任何数——"
+                       f"{reason}\n⇒ 这不等于「规划与执行已对齐」，只等于「这一轮什么也没量」。"),
+        lambda _keys: "✅ 落库sweep：第 13 类判据已恢复可用。", log,
+    )
+
+
+def _publish_plan_backpressure(repo_root: Path, log: list[str], payload: dict) -> None:
+    """取数成功后统一持久化与通知；不重新扫描、不写队列。"""
     _track_and_alert_standing_state(
         repo_root, "规划倒逼判据不可用", PLAN_BACKPRESSURE_UNAVAILABLE_STATE_REL,
         set(), PLAN_BACKPRESSURE_ALERT_INTERVAL_HOURS,
@@ -8075,6 +8799,17 @@ def _check_plan_backpressure(repo_root: Path, log: list[str]) -> None:
     except OSError:
         pass
 
+    # 真实结果发布完成后才解除停摆；失败／未知不能走到这里。
+    if not _mark_plan_backpressure_scan(repo_root, "scanned", ""):
+        log.append("⚠ 第 13 类巡检结果留痕失败，恢复状态未核实；保留停摆告警，不发恢复通知。")
+        return
+    _track_and_alert_standing_state(
+        repo_root, "第13类巡检停摆", PLAN_BACKPRESSURE_UNSCANNED_STATE_REL,
+        set(), PLAN_BACKPRESSURE_ALERT_INTERVAL_HOURS,
+        lambda _keys: "", lambda _keys: "✅ 落库sweep：第 13 类巡检已恢复（本轮真的跑到了），此前的「连续未巡检」告警解除。",
+        log,
+    )
+
 
 # ============================================================
 # 队列 §一 #554（2026-09-11，OP-0911-A）：**第 15 类**常驻状态告警 ——
@@ -8109,8 +8844,8 @@ def _check_plan_backpressure(repo_root: Path, log: list[str]) -> None:
 #      （listener 在 `ops/wecom-service-home` worktree 落盘、经 git 同步到主
 #      checkout，mtime 反映的是拉取时刻）。
 #
-# 🔴 **阈值初值＝4 h，属判据阈值类，须 Shao Peishen 明确答复、不默认生效为定稿**
-#    （已登 `#554` 行内待答）。取 4 h 的依据：① 事件驱动路径对在途回件的拆件在
+# 🔴 **阈值定案＝4 h**（§一 #554，Shao Peishen 2026-09-13 明确答复）。
+#    建造时取 4 h 的依据：① 事件驱动路径对在途回件的拆件在
 #    一轮 sweep 内（≤1 h）完成并把行改 `[S:done]`，4 h ≈ 4 轮，足以排除「本来就
 #    要被自动吃掉」的行，不对它们误报；② 半个工作日——09:21 到件 13:2x 就响，
 #    当天仍来得及处理；③ 更短（1~2 h）会对人手拆件班正常节奏内的行也响，把本类
@@ -8121,7 +8856,7 @@ def _check_plan_backpressure(repo_root: Path, log: list[str]) -> None:
 #    （`#492`：本文件内不出现 webhook 键名字面量的第二份）。
 INTAKE_GAP_TASK_PREFIX = "企微反馈自动归档："
 INTAKE_GAP_PENDING_MARK = "待领"
-# 🔴 **2 小时**（Shao Peishen 2026-09-11 明确答复，取代建造方初值 4.0）。
+# 🔴 **4 小时**（§一 #554，Shao Peishen 2026-09-13 定案；取代 2026-09-11 的 2 h）。
 # **它不是兜底阈值，是主探测器的发现延迟**：本类看的是「§一 待领的归档行」，
 # 而事件驱动的拆件是 ollowup_readme_bridge.mark_reply_arrived 在标完第九态的
 # **同一次调用**里 subprocess.Popen 起无头 CC（见 ibot_service/
@@ -8132,10 +8867,10 @@ INTAKE_GAP_PENDING_MARK = "待领"
 #      时该模块 fail-open，恢复路径是「下一条真实回件到达时再触发」，可能几小时
 #      到几天 —— 本类同样是**唯一探测器**；
 #   ⑶ 只有「已覆盖且正常派发」那一类本类才是兜底，而它几乎不会触发。
-# **2.0 的余量依据（实测，非估计）**：2026-09-10 质量拆件泳道从起到收 20.2 分钟
+# **历史 2.0 的余量依据（实测，非当前阈值）**：2026-09-10 质量拆件泳道从起到收 20.2 分钟
 # ⇒ 2 小时对 ⑶ 仍有 6 倍余量；而对 ⑴ 把发现延迟减半（当日陈忱五件 5/5 全落差集，
 # 从 09:21 挂到 21:xx 才被人眼发现，8–12 小时）。
-INTAKE_GAP_THRESHOLD_HOURS = 2.0
+INTAKE_GAP_THRESHOLD_HOURS = 4.0
 INTAKE_GAP_ALERT_INTERVAL_HOURS = 24.0
 INTAKE_GAP_FIRST_SEEN_STATE_REL = "reports/sweep-intake-gap-first-seen.json"
 INTAKE_GAP_STATE_REL = "reports/sweep-intake-gap-state.json"
@@ -8261,7 +8996,7 @@ def _check_intake_gap_rows(repo_root: Path, log: list[str]) -> None:
         log.append(
             f"📬 第 15 类：企微反馈自动归档行——待领 {len(pending)} 条，"
             f"其中超 {INTAKE_GAP_THRESHOLD_HOURS:g} h 无人拆 {overdue} 条"
-            f"（阈值为初值，待 Shao Peishen 确认）。"
+            f"（定案阈值 {INTAKE_GAP_THRESHOLD_HOURS:g} h，依据 §一 #554）。"
         )
         if pending:
             log.append("    · " + "；".join(
@@ -8336,8 +9071,9 @@ def _run_unmerged_branch_json(repo_root: Path) -> tuple[dict | None, str | None]
         return None, f"未找到 {UNMERGED_BRANCH_SCRIPT_REL}"
     try:
         result = subprocess.run(
-            [sys.executable, str(script), "--json", "--repo", str(repo_root),
-             "--cache", str(repo_root / UNMERGED_BRANCH_PATCHID_CACHE_REL)],
+            [sys.executable, str(script), "--json", "--repo", str(repo_root)] +
+            ([] if globals().get("_STANDING_OBSERVATION") is not None else
+             ["--cache", str(repo_root / UNMERGED_BRANCH_PATCHID_CACHE_REL)]),
             cwd=repo_root, capture_output=True, text=True, encoding="utf-8",
             timeout=UNMERGED_BRANCH_SUBPROCESS_TIMEOUT_SECONDS,
         )
@@ -8379,13 +9115,16 @@ def _evaluate_unmerged_branch_backlog(payload: dict, now: datetime | None = None
     b_count = len(items)
     oldest_days = items[0]["days"] if items else 0
     triggered = b_count >= UNMERGED_BRANCH_B_MIN_COUNT and oldest_days >= UNMERGED_BRANCH_B_MIN_AGE_DAYS
-    names = sorted(i["name"] for i in items)
-    digest = hashlib.sha1("\n".join(names).encode("utf-8")).hexdigest()[:12]
+    # 同名分支内容更新必须重新评估；用完整尖端，不能只用展示的八位 SHA。
+    identities = sorted((b.get("name", "?"), b.get("tip") or "")
+                        for b in payload.get("b_branches", []))
+    digest = hashlib.sha1(json.dumps(identities, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
     counts = payload.get("counts", {})
     return {
         "b_count": b_count, "oldest_days": oldest_days, "items": items,
         "a_count": int(counts.get("A", 0) or 0), "c_count": int(counts.get("C", 0) or 0),
         "total": int(payload.get("total", 0) or 0),
+        "reviewed_process_count": int(payload.get("reviewed_process_count", 0) or 0),
         "triggered": triggered,
         "fingerprint": f"unmerged-B{b_count}:{digest}",
     }
@@ -8397,15 +9136,18 @@ def _render_unmerged_branch_alert(ev: dict) -> str:
         f"🌿 落库sweep：**未并入分支超阈值**（第 16 类常驻告警，队列 §一 `#553` ⑶）——"
         f"B 类（真未落地）**{ev['b_count']} 条**，最老 **{ev['oldest_days']} 天**"
         f"（阈值 B ≥{UNMERGED_BRANCH_B_MIN_COUNT} 且最老 ≥{UNMERGED_BRANCH_B_MIN_AGE_DAYS} 天）。",
+        "- **判读：B 是待核上界，不等于已确认部署遗漏或业务故障。** 草案、旧方案和现行代码须逐项复核。",
         "- 最老三条（分支｜首个未落地提交日｜天数）：",
     ]
     for i in top:
         lines.append(f"    · `{i['name']}`@{i['tip']}｜{i['first_unmerged_date']}｜{i['days']} 天")
     lines.append(f"- 另：A 类（内容已在 master）{ev['a_count']} 条／C 类（该删）{ev['c_count']} 条不计入阈值"
                  f"（候选共 {ev['total']}）。")
+    lines.append(f"- 已逐项核实的历史过程记录 {ev.get('reviewed_process_count', 0)} 条已排除功能积压，"
+                 "保留原分支。**C 不计入阈值不等于批准删除。**")
     lines.append("⇒ 本告警只让「不知道」变「知道」：🔴 **不自动合并、不自动删除**。合与删走"
-                 "『已授权待合』登记处（`工具-待合分支巡检.ps1`）或看护者收工串行 ff；"
-                 f"逐条证据：`python {UNMERGED_BRANCH_SCRIPT_REL}`。B 类集合不变时 24 h 内不重推。")
+                 "逐项批准；**处理承接：队列 §一 #617（机制环境线）**，#553 仅为检查工具建造记录。"
+                 f"逐条证据：`python {UNMERGED_BRANCH_SCRIPT_REL}`。分支名及完整尖端不变时 24 h 内不重推。")
     return "\n".join(lines)
 
 
@@ -8456,9 +9198,249 @@ def _check_unmerged_branch_backlog(repo_root: Path, log: list[str], dry_run: boo
         lambda _keys: _render_unmerged_branch_alert(ev),
         lambda resolved: ("✅ 落库sweep：未并入分支超阈值告警解除／指纹变化——"
                           f"B 类现 {ev['b_count']} 条、最老 {ev['oldest_days']} 天"
-                          "（旧指纹 " + "、".join(sorted(resolved)) + "）。"),
+                          "（旧指纹 " + "、".join(sorted(resolved)) + "）。仅结束旧指纹，不代表任务或业务已结案。"),
         log,
     )
+
+
+def _observation_blocker(repo_root: Path, branch: str) -> str | None:
+    """只读取门禁；锁未知也不放行 fetch 或成功结果发布，更不解除任何锁。"""
+    try:
+        _assert_not_a_linked_worktree(repo_root)
+        current = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_root, check=False)
+        if current.returncode or current.stdout.strip() != branch:
+            return "主仓分支读取失败或观察期间已变化"
+        for marker in ("index.lock", "MERGE_HEAD", "CHERRY_PICK_HEAD", "rebase-merge", "rebase-apply"):
+            if (repo_root / ".git" / marker).exists():
+                return f"{marker} 存在（不清理、不接管）"
+        status = _run_git(["--no-optional-locks", "status", "--porcelain=v1"], repo_root, check=False)
+        if status.returncode:
+            return "git status 读取失败"
+        if any(line[:2] in ("DD", "AU", "UD", "UA", "DU", "AA", "UU")
+               for line in status.stdout.splitlines()):
+            return "存在未合并冲突路径"
+        lock = _edit_lock(repo_root, "status")
+        if lock.returncode or not lock.stdout.strip():
+            return "共享编辑锁状态读取失败"
+        if _edit_lock_holder(lock.stdout) is not None:
+            return "共享编辑锁存在（含陈旧锁，不接管）"
+        if "（无锁，可直接编辑）" not in lock.stdout:
+            return "共享编辑锁状态未识别"
+    except (OSError, subprocess.SubprocessError, SweepAbort) as exc:
+        return f"观察门禁不可用：{exc}"
+    return None
+
+
+def _queue_observation_stamp(repo_root: Path) -> tuple:
+    """只取两份当前队列的文件元数据；缺失即失败，不能让扫描器当空队列。"""
+    stamps = []
+    for rel in (QUEUE_MECHANISM_PATH_REL, QUEUE_BUSINESS_PATH_REL):
+        path = repo_root / rel
+        if not path.is_file():
+            raise OSError(f"必要队列缺失：{rel}")
+        stat = path.stat()
+        stamps.append((rel, stat.st_size, stat.st_mtime_ns, stat.st_ino))
+    return tuple(stamps)
+
+
+def _observe_non_master(repo_root: Path, branch: str, log: list[str], dry_run: bool) -> None:
+    """原 sweep 的同一轮、同一 reports 状态方；不进入任何业务落库步骤。"""
+    log.append("必要观察：第 8／13 类；本轮不 add/commit/push、不回写队列、不执行收尾对齐。")
+    blocker = _observation_blocker(repo_root, branch)
+    if blocker:
+        log.append(f"⚠ 必要观察结果未知／未核实：{blocker}；不 fetch，不发布成功结果。")
+        if not dry_run:
+            _note_local_only_scan_skipped(repo_root, blocker, log, scan_status="unavailable")
+            _note_plan_backpressure_skipped(repo_root, blocker, log, scan_status="unavailable")
+        return
+
+    # fetch 是明确的共享 refs 写入阶段，绝不藏在纯取数函数内。
+    try:
+        fresh = None if dry_run else _fetch_observation_ref(repo_root, log, "非master必要观察")
+        observation, reason = _collect_local_only_commits(repo_root)
+        if fresh and observation is not None and observation["origin_ref"] != fresh:
+            observation, reason = None, "取数期间 origin/master 发生变化，远端未核实"
+    except (OSError, subprocess.SubprocessError) as exc:
+        fresh, observation, reason = None, None, f"Git 取数失败：{exc}"
+    blocker = _observation_blocker(repo_root, branch)
+    if dry_run or not fresh or blocker or observation is None:
+        reason = blocker or reason or ("dry-run 未 fetch，远端未核实" if dry_run else "fetch／跟踪引用核验未通过，远端未核实")
+        log.append(f"🔀 第 8 类：结果未知／未核实（{reason}），缓存计数不作对齐判定。")
+        if not dry_run:
+            _note_local_only_scan_skipped(repo_root, reason, log, scan_status="unavailable")
+    else:
+        _publish_local_only_commits(repo_root, log, observation, observation_only=True)
+
+    # 第 13 类只调用无写入的 --json；读取当前主仓，不从修复工作树或缓存取队列。
+    payload = None
+    reason = blocker
+    if not blocker:
+        try:
+            stamp = _queue_observation_stamp(repo_root)
+            payload, reason = _run_plan_backpressure_json(repo_root)
+            if _queue_observation_stamp(repo_root) != stamp:
+                payload, reason = None, "观察期间队列发生变化，结果未核实"
+            blocker = _observation_blocker(repo_root, branch)
+            if blocker:
+                payload, reason = None, blocker
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            payload, reason = None, f"取数失败：{exc}"
+    if payload is None:
+        log.append(f"🧭 第 13 类：结果未知／未核实（{reason}），不据此判为零未承接。")
+        if not dry_run:
+            _publish_plan_backpressure_unavailable(repo_root, log, reason)
+    elif dry_run:
+        log.append(f"[dry-run] 第 13 类：三处皆无 {len(payload['unaccepted'])}，不写状态、不通知。")
+    else:
+        _publish_plan_backpressure(repo_root, log, payload)
+
+
+# 单次sweep内的串行取数阶段；不新增任务、常驻状态或发送方。
+_STANDING_OBSERVATION = None
+OBSERVATION_REVISION = "R8-20261018"
+
+
+def _observation_report(path: Path, text: str) -> None:
+    context = _STANDING_OBSERVATION
+    if context is not None and context["collecting"]:
+        context["pending"].append((_observation_report, (path, text), {}))
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _observe_spec_gaps(repo_root: Path, log: list[str]) -> None:
+    for rel in (OPENSPEC_SPECS_REL, OPENSPEC_CHANGES_REL, SCENARIO_ROOT_REL):
+        if not (repo_root / rel).is_dir():
+            raise OSError(f"扫描目录未核实：{rel}")
+    hits = _find_scenario_spec_coverage_gaps(repo_root)
+    _announce_scenario_spec_coverage_gaps(repo_root, hits, log)
+    log.append(f"spec缺口 candidate_count={len(hits)}")
+    weak = _find_platform_packages_without_spec_mention(repo_root)
+    log.append(f"平台包零提及（只列） candidate_count={len(weak)}")
+
+
+def _observe_stale_changes(repo_root: Path, log: list[str]) -> None:
+    if not (repo_root / OPENSPEC_CHANGES_REL).is_dir():
+        raise OSError("openspec变更目录未核实")
+    hits = _find_stale_in_flight_changes(repo_root)
+    _announce_stale_in_flight_changes(repo_root, hits, log)
+    log.append(f"变更滞留 candidate_count={len(hits)}；沿用原暂缓/指纹确认过滤")
+
+
+def _observe_carrier_lag(repo_root: Path, log: list[str]) -> None:
+    carriers, reason = _resident_carriers(repo_root)
+    if carriers is None:
+        raise OSError(f"执行体名单未取到：{reason}")
+    base = _master_ref(repo_root)
+    if base is None:
+        raise OSError("master引用未核实")
+    for carrier in carriers:
+        head = carrier.get("head")
+        if not carrier.get("registered") or not head:
+            raise OSError(f"执行体引用未核实：{carrier['name']}")
+        result = _run_git(["rev-list", "--left-right", "--count", f"{head}...{base}"], repo_root, check=False)
+        if result.returncode or len(result.stdout.split()) != 2:
+            raise OSError(f"执行体差集未核实：{carrier['name']}")
+        ahead, behind = map(int, result.stdout.split())
+        log.append(f"执行体 {carrier['name']}：本地引用差集 ahead={ahead} behind={behind}（不据此声称远端新鲜）")
+    log.append(f"执行体只读名单={len(carriers)}；ff/重启 blocked=非master，原同步状态不写")
+
+
+def _standing_observation_incomplete(lines, pending):
+    # 计数为0是检测结果，不是不可用；不吞正数或真实读取失败。
+    tokens = ("不据此判", "判据不可用", "尺寸未取到", "未取到", "本类跳过", "status=unknown",
+              "尚无 `find_unclassified`", "读取失败", "读取异常")
+    return any(token in re.sub(r"判据不可用\s*[:：]?\s*0\s*项", "", line)
+               for line in lines for token in tokens) or any(
+        (bool(args[3]) and "不可用" in args[1]) or
+        bool(set(args[3]) & {"备份工具不在", "判据自身异常"}) or
+        any(str(key).startswith("unavailable:") for key in args[3])
+        for function, args, kw in pending if function is _track_and_alert_standing_state)
+
+
+def _observe_standing_checks(repo_root: Path, branch: str, log: list[str], dry_run: bool) -> None:
+    """逐类审过的检测白名单；原状态/通知只在取数完成且门禁仍有效时执行。"""
+    import hashlib
+    import os
+    global _STANDING_OBSERVATION
+    log.append(_must_keep(f"SWEEP_OBSERVATION_VERSION {OBSERVATION_REVISION} sha256={hashlib.sha256(Path(__file__).read_bytes()).hexdigest()} branch={branch}"))
+    log.append(_must_keep("SWEEP_CATEGORY class=1 status=blocked reason=孤儿判据依赖批次隔离上下文，本轮不进入落库/升格路径"))
+    log.append(_must_keep("SWEEP_ACTIONS status=blocked reason=非master；提交/队列回写/补推/镜像提交/ff/重启/孤儿升格均未进入"))
+    checks = [
+        (2, _observe_spec_gaps, {}), (3, _observe_stale_changes, {}),
+        (4, _check_claude_md_carrier_size, {}), ("4-global", _check_global_memory_files, {}),
+        (5, _observe_carrier_lag, {}), (6, _check_editable_install_targets, {}),
+        (7, _check_unclosed_outputs, {"observation_only": True}),
+        (9, _check_hooks_heartbeat, {}), (10, _check_followup_pending_inventory, {}),
+        (11, _check_draft_gap_inventory, {}), (12, _check_status_triage_and_ledger, {}),
+        (14, _check_scheduled_task_coverage, {}), (15, _check_intake_gap_rows, {}),
+        (16, _check_unmerged_branch_backlog, {}), (17, _check_aibot_audit_orphan_writes, {}),
+        (18, _check_outbox_relay_unreadable_visibility, {}), (19, _check_carrier_consistency, {}),
+        ("reminder-source", _check_decision_reminder_health, {}),
+        ("reminder-outbox", _check_local_reminder_outbox_health, {}),
+    ]
+    prior_env = os.environ.get("GIT_OPTIONAL_LOCKS")
+    os.environ["GIT_OPTIONAL_LOCKS"] = "0"
+    try:
+        for category, check, kwargs in checks:
+            started = datetime.now(timezone.utc).isoformat()
+            blocker = "dry-run不执行可能通知的新增检测" if dry_run else _observation_blocker(repo_root, branch)
+            if blocker:
+                log.append(_must_keep(f"SWEEP_CATEGORY class={category} status=skipped at={started} candidate_count=unknown reason={blocker}"))
+                continue
+            context = {"collecting": True, "pending": []}
+            first = len(log)
+            status, reason, candidates = "scanned", "", None
+            published_at = len(log)
+            try:
+                # 两项健康检查各自稳定读取独立来源，不依赖业务/机制队列是否存在。
+                independent_health = check in (_check_decision_reminder_health, _check_local_reminder_outbox_health)
+                stamp = None if independent_health else _queue_observation_stamp(repo_root)
+                _STANDING_OBSERVATION = context
+                check(repo_root, log, **kwargs)
+                context["collecting"] = False
+                candidates = sum(len(args[3]) for function, args, kw in context["pending"]
+                                 if function is _track_and_alert_standing_state)
+                candidates += sum(len(args[4]) for function, args, kw in context["pending"]
+                                  if function is _publish_reminder_health)
+                incomplete = _standing_observation_incomplete(log[first:], context["pending"])
+                if category == 5:
+                    status, reason, candidates = "observed_only", "仅本地引用差集；ff/重启及原同步例外状态保持保护", None
+                if incomplete:
+                    status, reason = "unavailable", "检测有未核实部分，保留旧告警；已知候选仍交原管理方"
+                published_at = len(log)
+                for function, args, kw in context["pending"]:
+                    blocker = _observation_blocker(repo_root, branch)
+                    if blocker or (stamp is not None and _queue_observation_stamp(repo_root) != stamp):
+                        raise OSError(blocker or "观察期间队列变化，结果未核实；不发布成功/解除")
+                    if incomplete:
+                        if function is _track_and_alert_standing_state:
+                            kw = dict(kw, allow_resolve=False)
+                        elif function is _publish_reminder_health:
+                            kw = dict(kw, complete=False)
+                        else:
+                            continue
+                    result = function(*args, **kw)
+                    if function is _publish_reminder_health and result is False:
+                        status, reason = "unavailable", "自身告警状态未知，原物保全；通知回执见原管理方日志"
+                        candidates = max(candidates, 1)
+                blocker = _observation_blocker(repo_root, branch)
+                if blocker or (stamp is not None and _queue_observation_stamp(repo_root) != stamp):
+                    raise OSError(blocker or "观察期间队列变化，结果未核实")
+            except Exception as exc:
+                status, reason = "unavailable", f"{type(exc).__name__}: {exc}"
+            finally:
+                _STANDING_OBSERVATION = None
+            sent_ok = sum("已推送" in s for s in log[published_at:])
+            sent_failed = sum("推送失败" in s for s in log[published_at:])
+            log.append(_must_keep(f"SWEEP_CATEGORY class={category} status={status} at={started} finished={datetime.now(timezone.utc).isoformat()} candidate_count={candidates if candidates is not None else 'unknown'} send_success={sent_ok} send_failure={sent_failed} reason={reason or '检测完成；发送/去重见原管理方日志，无发送不验证渠道'}"))
+    finally:
+        _STANDING_OBSERVATION = None
+        if prior_env is None:
+            os.environ.pop("GIT_OPTIONAL_LOCKS", None)
+        else:
+            os.environ["GIT_OPTIONAL_LOCKS"] = prior_env
 
 
 def main() -> int:
@@ -8550,12 +9532,12 @@ def main() -> int:
     # 不得继承上一次的残值，否则告警会点错步骤名。
     _mark_step("起跑前置检查")
     try:
-        _heal_stale_index_lock(repo_root, log)
         _check_preconditions(repo_root, production=args.repo_root is None)
         # 队列 #192/#194/#198/#219/#235 起跑段写死顺序（勿自行调整，详见各函数 docstring）：
         # ① #198(b) 编辑锁前置探测（任何 git 写动作之前）
         _mark_step("编辑锁前置探测")
         _abort_if_edit_lock_held(repo_root, log)
+        _heal_stale_index_lock(repo_root, log)
         # ② #194 无条件补推未推送提交
         _mark_step("补推未推送提交")
         _push_any_unpushed_commits(repo_root, log, dry_run=args.dry_run)
@@ -8633,11 +9615,9 @@ def main() -> int:
             # 孤儿（没有任何批次登记），仍需纳入 #236(2) 孤儿告警的追踪范围，
             # 故这一步不依赖 `pending_rows` 是否非空。
             dirty_paths = _status_paths(repo_root)
-            clean_rows, row_resolution, orphan_paths = _partition_pending_rows_by_batch_isolation(
-                pending_rows, dirty_paths, log,
+            clean_rows, row_resolution, _queue_local_orphans = _partition_pending_rows_by_batch_isolation(
+                pending_rows, dirty_paths, log, emit_orphan_log=False,
             )
-            if not args.dry_run:
-                _track_and_alert_orphan_paths(repo_root, orphan_paths, log)
 
             straggler_rows = []
             normal_rows = []
@@ -8842,7 +9822,7 @@ def main() -> int:
                 _announce_resident_service_deployment_hint(repo_root, resident_hits, log)
             # 队列 #229：发布收口第②关——命中已部署场景却未见部署留痕，纯
             # 提示，不影响下方的正常返回。
-            missing_trace_hits = _find_missing_deployment_trace(touched_paths)
+            missing_trace_hits = _find_missing_deployment_trace(touched_paths, repo_root)
             if missing_trace_hits:
                 _announce_missing_deployment_trace(repo_root, missing_trace_hits, log)
 
@@ -8971,6 +9951,10 @@ def main() -> int:
         # args.dry_run` 块之外：`--dry-run` 也跑到（只回显、不写状态、不推送）；零命中也回显。
         _check_outbox_relay_unreadable_visibility(repo_root, log, dry_run=args.dry_run)
 
+        if not args.dry_run:
+            _check_decision_reminder_health(repo_root, log)
+            _check_local_reminder_outbox_health(repo_root, log)
+
         # 队列 §一 #601（2026-09-17 `OP-0911-H` 改判范围，2026-09-20 `OP-0920-F`
         # 建成）：第 19 类常驻状态告警——承载性一致性扫描。同上十二类，检测
         # 对象是仓库整体的规则文件状态、与本轮是否有批次落库无关，故放在
@@ -8987,7 +9971,19 @@ def main() -> int:
         # 🔴 dry-run 也调（函数内部只打印不写）——**零命中每轮回显**，与第
         # 4/6/7/9/10/11 类同一惯例：一个从来不出声的机制，没有人能判断它是
         # 「没问题」还是「没跑」。
-        _escalate_long_lived_orphans_to_section_four(repo_root, log, dry_run=args.dry_run)
+        # 两队列均处理完且本轮 Git 操作结束后，才判断完整归属；任何读取/解析
+        # 不完整均保持上次状态，不发误解除，也不把未知升格成 §四 事实。
+        try:
+            current_orphans = _snapshot_current_orphans(
+                repo_root, log, require_all=(repo_root == MAIN_WORKSPACE),
+            )
+            if not args.dry_run:
+                _track_and_alert_orphan_paths(repo_root, current_orphans, log)
+            _escalate_long_lived_orphans_to_section_four(
+                repo_root, log, dry_run=args.dry_run, current_paths=set(current_orphans),
+            )
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            log.append(f"⚠ 孤儿完整判定未知，本轮保持历史且不升格：{type(exc).__name__}: {exc}")
         # 队列 §一 #507 design D4：清单覆盖校验连续跳过计数落盘 ＋ 达阈值升格
         # §四。位置同上一条的理由：在全部 git 操作之后（它会 acquire 编辑锁并
         # 把队列文件改脏）；dry-run 只算不写、零命中也回显。
@@ -9003,6 +9999,21 @@ def main() -> int:
         # 「哪一步没做」得靠人对着代码顺序反推。
         log.append(str(exc))
         log.append(f"    （早退于步骤：{_current_step()}）")
+        if exc.observation_branch is not None and repo_root == MAIN_WORKSPACE:
+            # 两项各自记录 scanned／unavailable／skipped，不能再由通用早退重复记一轮。
+            local_only_scanned = plan_backpressure_scanned = True
+            try:
+                _observe_non_master(repo_root, exc.observation_branch, log, args.dry_run)
+            except Exception as observe_exc:
+                log.append(f"⚠ 必要观察失败，结果未知／未核实：{type(observe_exc).__name__}: {observe_exc}")
+                if not args.dry_run:
+                    _mark_local_only_scan(repo_root, "unavailable", str(observe_exc))
+                    _mark_plan_backpressure_scan(repo_root, "unavailable", str(observe_exc))
+        if exc.observation_branch is not None and repo_root == MAIN_WORKSPACE:
+            try:
+                _observe_standing_checks(repo_root, exc.observation_branch, log, args.dry_run)
+            except Exception as coverage_exc:
+                log.append(f"SWEEP_OBSERVATION status=unavailable reason={type(coverage_exc).__name__}: {coverage_exc}；新增覆盖未核实")
         if not local_only_scanned:
             _note_local_only_scan_skipped(
                 repo_root, f"整轮早退（{str(exc).strip()[:120]}）", log, args.dry_run)

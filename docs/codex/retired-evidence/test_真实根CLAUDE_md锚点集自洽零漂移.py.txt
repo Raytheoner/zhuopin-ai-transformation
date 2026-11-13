@@ -1,0 +1,8 @@
+    def test_真实根CLAUDE_md锚点集自洽零漂移(self):
+        """对**真实**根 `CLAUDE.md` 跑一次——既是回归锁，也是"锚点真的插对了地方"的
+        生产前验活。🔴 断言的是**锚点集自洽**（连续·不重复·编号合法），**不断言条数**：
+        §5 常驻纪律条目会随他立法增删，把条数写进断言就是把常红写进 CI（`#537`）。"""
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, REPO_ROOT)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "⚠" not in ctx, f"真实根 CLAUDE.md 的锚点集不自洽（缺号/重复/非法编号）：{ctx}"

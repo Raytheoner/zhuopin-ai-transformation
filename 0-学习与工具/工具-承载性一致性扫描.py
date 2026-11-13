@@ -40,9 +40,14 @@ REPO_ROOT_MARKERS = (".git",)
 
 #: 逐条规则文件／skill 说明书 —— 支持 glob。
 SCAN_GLOBS = [
-    (".claude/rules/*.md", "rules"),
-    (".claude/skills/*/SKILL.md", "skills-installed"),
-    ("0-学习与工具/skills源码/*/SKILL.md", "skills-source"),
+    ("docs/codex/rules/*.md", "codex-rules"),
+    ("1-转型规划/*/CODEX-RULES.md", "codex-directory-rules"),
+    ("4-数字员工/CODEX-RULES.md", "codex-directory-rules"),
+    ("4-数字员工/*/*/CODEX-RULES.md", "codex-directory-rules"),
+    ("5-平台底座/CODEX-RULES.md", "codex-directory-rules"),
+    ("5-平台底座/*/CODEX-RULES.md", "codex-directory-rules"),
+    ("6-人才与组织/CODEX-RULES.md", "codex-directory-rules"),
+    (".agents/skills/*/SKILL.md", "codex-skills"),
 ]
 #: 根 CLAUDE.md 单独列（不是 glob 命中，文件名固定）。
 ROOT_CLAUDE_MD = "CLAUDE.md"
@@ -86,7 +91,9 @@ SKILL_CARRIER_RE = re.compile(r"skill\s*`([a-zA-Z0-9_-]+)`", re.IGNORECASE)
 CANDIDATE_REAL_LOCATIONS = [
     ("0-学习与工具/*.py", "script"),
     (".github/workflows/*.yml", "ci-workflow"),
-    (".claude/settings.json", "settings"),
+    (".codex/hooks.json", "codex-hooks"),
+    ("0-学习与工具/codex-handoff/*.py", "codex-adapter"),
+    ("0-学习与工具/codex-handoff/guards/*.ps1", "codex-guard"),
 ]
 #: 关键词抽取停用词——太通用，命中即噪声。
 STOPWORDS = {
@@ -139,9 +146,13 @@ class Claim:
 # 扫描面收集
 # ------------------------------------------------------------------
 
-def _iter_rule_texts(repo_root: Path):
+def _iter_rule_texts(repo_root: Path, *, include_directory_rules: bool = False):
     seen = set()
     for pattern, _label in SCAN_GLOBS:
+        # Directory bodies preserve historical claims. Keep the standing scanner's
+        # existing scope; these bodies are available only for explicit inspection.
+        if _label == "codex-directory-rules" and not include_directory_rules:
+            continue
         for path in sorted(repo_root.glob(pattern)):
             if not path.is_file() or path in seen:
                 continue
@@ -152,12 +163,10 @@ def _iter_rule_texts(repo_root: Path):
             except OSError as exc:
                 yield rel, f"<<读取失败：{exc}>>"
 
-    root_claude = repo_root / ROOT_CLAUDE_MD
-    if root_claude.is_file():
-        try:
-            yield ROOT_CLAUDE_MD, root_claude.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            yield ROOT_CLAUDE_MD, f"<<读取失败：{exc}>>"
+    native_agents = repo_root / "AGENTS.md"
+    if native_agents.is_file():
+        yield "AGENTS.md", native_agents.read_text(encoding="utf-8", errors="replace")
+
 
 
 def _extract_protocol_zero(text: str) -> str | None:
@@ -304,7 +313,7 @@ class ExistenceChecker:
         # 这类写法）；范围刻意收窄到 `.claude/` 与 `0-学习与工具/`，不做
         # 全仓 rglob（避免命中无关同名文件、也避免大仓库上的性能坑）。
         if "/" not in rel_or_name:
-            for base in (".claude", "0-学习与工具"):
+            for base in (".codex", ".agents", "docs/codex", "0-学习与工具"):
                 base_dir = self.repo_root / base
                 if not base_dir.is_dir():
                     continue
@@ -366,7 +375,7 @@ class ExistenceChecker:
         if self._skill_dirs is not None:
             return self._skill_dirs
         names: set[str] = set()
-        for base in (".claude/skills", "0-学习与工具/skills源码"):
+        for base in (".agents/skills",):
             base_dir = self.repo_root / base
             if not base_dir.is_dir():
                 continue

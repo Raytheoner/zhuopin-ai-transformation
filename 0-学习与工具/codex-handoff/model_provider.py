@@ -8,11 +8,16 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import time
 import uuid
+
+
+DEFAULT_CHILD_MODEL = 'gpt-6-luna'
+DEFAULT_CHILD_EFFORT = 'high'
 
 
 def stamp():
@@ -26,10 +31,17 @@ def write_json(path, value):
     temp.replace(path)
 
 
+def _native_executable(value):
+    name = str(value).replace('\\', '/').rsplit('/', 1)[-1].lower()
+    if name.startswith(("claude", "anthropic")) or re.search(r"(^|[-_])(claude|anthropic)([-_.]|$)", name):
+        raise ValueError('Retired Claude executable is prohibited')
+    return value
+
+
 def resolve_executable(workspace):
     override = os.environ.get('ZHUOPIN_CODEX_EXECUTABLE')
     if override:
-        return override
+        return _native_executable(override)
     runtime = os.environ.get('ZHUOPIN_CODEX_RUNTIME')
     config = Path(runtime) if runtime else Path(workspace)/'.codex/runtime.local.json'
     if not config.is_file() and not runtime:
@@ -46,11 +58,11 @@ def resolve_executable(workspace):
     if config.is_file():
         data = json.loads(config.read_text(encoding='utf-8-sig'))
         if data.get('codex_executable'):
-            return data['codex_executable']
+            return _native_executable(data['codex_executable'])
     found = shutil.which('codex')
     if not found:
         raise FileNotFoundError('Codex executable unavailable; Claude fallback is prohibited')
-    return found
+    return _native_executable(found)
 
 
 def resolve_model(model, workspace):
@@ -70,11 +82,16 @@ def resolve_model(model, workspace):
 def command(executable, workspace, final, sandbox, *, thread=None, model=None):
     if sandbox not in ('read-only', 'workspace-write'):
         raise ValueError('Only bounded Codex sandbox modes are permitted')
-    if model and (model.lower() in ('sonnet', 'opus', 'haiku') or model.startswith('-')):
+    _native_executable(executable)
+    if isinstance(model, str) and model and (re.search(r'(^|[-_/])(claude|sonnet|opus|haiku)([-_/.:]|$)', model.lower()) or model.startswith('-')):
         raise ValueError('Legacy model aliases are not Codex model routes')
+    model = DEFAULT_CHILD_MODEL if model is None else model
+    if model != DEFAULT_CHILD_MODEL:
+        raise ValueError('Child model must be explicit gpt-6-luna; inheritance and other models are prohibited')
     if thread:
         uuid.UUID(thread)
     args = [str(executable), '-a', 'never', '-s', sandbox, '-C', str(workspace)]
+    args += ['-c', f'model_reasoning_effort="{DEFAULT_CHILD_EFFORT}"']
     if model:
         args += ['-m', model]
     args += ['exec']
@@ -276,7 +293,8 @@ def run(*, workspace, evidence, prompt, enabled=False, sandbox='read-only', time
     evidence.mkdir(parents=True, exist_ok=False)
     started = stamp()
     base = {'source_id':source_id, 'attempt_id':attempt_id, 'workspace':str(workspace), 'started_at':started,
-            'sandbox':sandbox, 'requested_model':model or 'inherit',
+            'sandbox':sandbox, 'requested_model':DEFAULT_CHILD_MODEL if model is None else model,
+            'requested_reasoning_effort':DEFAULT_CHILD_EFFORT,
             'actual_model':None, 'resume_thread':thread,
             'prompt_sha256':hashlib.sha256(prompt.encode('utf-8')).hexdigest()}
     if not enabled:
@@ -325,8 +343,11 @@ def run(*, workspace, evidence, prompt, enabled=False, sandbox='read-only', time
         if evidence_error or pending_error:
             raise evidence_error or pending_error
     try:
+        selected_model = DEFAULT_CHILD_MODEL if model is None else resolve_model(model, workspace)
+        if selected_model != DEFAULT_CHILD_MODEL:
+            raise ValueError('Child model route must resolve explicitly to gpt-6-luna')
         argv = command(executable or resolve_executable(workspace), workspace,
-                       evidence/'final.txt', sandbox, thread=thread, model=resolve_model(model, workspace))
+                       evidence/'final.txt', sandbox, thread=thread, model=selected_model)
         # 可注入进程夹具，仅供 Python 测试 API；CLI 不暴露任意命令入口。
         if argv_override is not None:
             argv = list(argv_override)
@@ -427,7 +448,7 @@ def main():
     parser.add_argument('--sandbox', choices=['read-only','workspace-write'], default='read-only')
     parser.add_argument('--timeout', type=float, default=1200)
     parser.add_argument('--thread')
-    parser.add_argument('--model')
+    parser.add_argument('--model', default=DEFAULT_CHILD_MODEL)
     parser.add_argument('--enabled', action='store_true', help='Explicit bounded run; default is paused')
     parser.add_argument('--require-context', action='store_true')
     parser.add_argument('--meter-file')

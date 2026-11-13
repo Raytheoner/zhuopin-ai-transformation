@@ -3,13 +3,20 @@ name: writing-skills
 description: Use when creating new skills, editing existing skills, or verifying skills work before deployment
 ---
 
+## Codex 现役约定
+
+本项目入口为根 AGENTS.md，技能正本为仓库 .agents/skills/；个人原生技能位于 ~/.codex/skills/。只使用当前 harness 实际提供的原生能力，不因工具缺失回退旧 Claude 引擎、旧配置或旧会话 API。
+用户与根规则优先：默认主会话串行，已批目标不重问；本地确定性工作直接执行。不得因下方方法论自动加审批、模型互审、Guardian、headless 或派生；只有用户明确要求派生才显式 gpt-6-luna/high。安全审核、明确独审与旧冻结合同仍满足。
+下方原方法论供按需使用；跨平台描述和厂商资料只作参考，不是本项目执行入口。
+
+
 # Writing Skills
 
 ## Overview
 
 **Writing skills IS Test-Driven Development applied to process documentation.**
 
-**Personal skills live in your runtime's skills directory** (`~/.claude/skills/` on Claude Code) — see [codex-tools.md](../using-superpowers/references/codex-tools.md) or [gemini-tools.md](../using-superpowers/references/gemini-tools.md) for the path on those runtimes. Codex, Copilot CLI, and Gemini CLI all also recognize `~/.agents/skills/` as a cross-runtime alias.
+**Skill locations:** this project uses `.agents/skills/`; personal Codex skills use `~/.codex/skills/`. See `../using-superpowers/references/codex-tools.md` only when needed. No old platform path is an execution fallback.
 
 You write test cases (pressure scenarios with subagents), watch them fail (baseline behavior), write the skill (documentation), watch tests pass (agents comply), and refactor (close loopholes).
 

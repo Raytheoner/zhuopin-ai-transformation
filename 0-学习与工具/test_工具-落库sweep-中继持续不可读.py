@@ -40,6 +40,11 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     （夹具里没有 `aibot_service` 包），这样跑的就是正本纯函数、不是桩。"""
     (tmp_path / "reports").mkdir()
     monkeypatch.setattr(sweep, "_outbox_relay_service_dir", lambda _root: REAL_SERVICE_DIR)
+    # Standing success state now requires an explicit platform receipt. The
+    # fixture exercises the real parser over synthetic HTTP, with no real send.
+    from _sweep_test_receipts import receipt_sender
+    monkeypatch.setattr(sweep,"_load_webhook_url",lambda _:"https://example.invalid/test-only")
+    monkeypatch.setattr(sweep,"_send_wecom_markdown",receipt_sender(sweep))
     return tmp_path
 
 
@@ -97,8 +102,9 @@ def test_状态文件不存在时零命中且回显(repo: Path):
     text = "\n".join(log)
     assert "第 18 类" in text and "不存在" in text
     assert _sweep_state(repo) == {}
-    assert not (repo / sweep.OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL).exists() or \
-        json.loads((repo / sweep.OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL).read_text(encoding="utf-8")) == {}
+    unknown = repo / sweep.OUTBOX_RELAY_UNREADABLE_UNAVAILABLE_STATE_REL
+    assert unknown.exists(), "缺失快照必须显式显示 UNKNOWN，不能当作已恢复或零问题"
+    assert "判据不可用" in json.loads(unknown.read_text(encoding="utf-8"))
 
 
 def test_持续不可读超过24小时的路径点名进清单(repo: Path):

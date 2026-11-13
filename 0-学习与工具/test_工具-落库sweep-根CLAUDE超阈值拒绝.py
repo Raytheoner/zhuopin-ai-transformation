@@ -32,12 +32,12 @@ def sweep():
 
 class TestClaudeMdRootOverCap:
     def test_超阈值时返回超出字节数(self, sweep, tmp_path):
-        (tmp_path / "CLAUDE.md").write_bytes(b"x" * (sweep.CLAUDE_MD_ROOT_BYTE_CAP + 860))
+        (tmp_path / "AGENTS.md").write_bytes(b"x" * (sweep.CLAUDE_MD_ROOT_BYTE_CAP + 860))
         assert sweep.claude_md_root_over_cap(tmp_path) == 860
 
     def test_恰好等于阈值不算超(self, sweep, tmp_path):
         """边界：`>` 不是 `>=`——恰好卡在阈值上是合规的，否则瘦身到刚好达标也会被拒。"""
-        (tmp_path / "CLAUDE.md").write_bytes(b"x" * sweep.CLAUDE_MD_ROOT_BYTE_CAP)
+        (tmp_path / "AGENTS.md").write_bytes(b"x" * sweep.CLAUDE_MD_ROOT_BYTE_CAP)
         assert sweep.claude_md_root_over_cap(tmp_path) is None
 
     def test_读不到尺寸时不判违规(self, sweep, tmp_path):
@@ -47,10 +47,10 @@ class TestClaudeMdRootOverCap:
 
 class TestBatchTouchesClaudeMdRoot:
     def test_清单含根CLAUDE命中(self, sweep):
-        assert sweep.batch_touches_claude_md_root(["CLAUDE.md", "0-学习与工具/x.py"]) is True
+        assert sweep.batch_touches_claude_md_root(["AGENTS.md", "0-学习与工具/x.py"]) is True
 
     def test_反斜杠写法也命中(self, sweep):
-        assert sweep.batch_touches_claude_md_root(["CLAUDE.md".replace("/", "\\")]) is True
+        assert sweep.batch_touches_claude_md_root(["AGENTS.md".replace("/", "\\")]) is True
 
     def test_场景级CLAUDE不命中_只认根那一份(self, sweep):
         """🔴 射程守卫：场景级 `CLAUDE.md` 有自己的阈值，不该被根文件的超限连坐。"""

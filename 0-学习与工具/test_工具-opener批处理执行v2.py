@@ -125,9 +125,10 @@ class TestCodexEntryCompatibility:
         fixture=importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
         monkeypatch.setattr(fixture.M,'REPO_ROOT',tmp_path)
         monkeypatch.setattr(fixture.M,'CLAIMS_FILE',tmp_path/'claims.jsonl')
-        kwargs=dict(fixture.VALID_CC_KWARGS,model='inherit')
-        result=fixture.M.generate_opener(**kwargs)
-        assert '模型：inherit' in result
+        with pytest.raises(ValueError, match='gpt-6-luna'):
+            fixture.M.generate_opener(**dict(fixture.VALID_CC_KWARGS,model='inherit'))
+        result=fixture.M.generate_opener(**dict(fixture.VALID_CC_KWARGS,model='gpt-6-luna'))
+        assert '模型：gpt-6-luna' in result
         assert 'codex/op0905a-demo-slug' in result
 
     def test_old_entry_fails_closed_without_enable(self,tmp_path):

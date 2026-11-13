@@ -1,0 +1,4 @@
+def test_legacy_only_repository_retains_original_behavior(tmp_path):
+    write(tmp_path,SCENE+'/CLAUDE.md','本场景已退役')
+    assert sweep._scenario_is_retired(tmp_path/SCENE)
+    assert lint.target_files(tmp_path,True)==['CLAUDE.md']

@@ -324,7 +324,8 @@ def test_competing_first_plan_cannot_be_overwritten(tmp_path, monkeypatch):
     entry = load()
     data = manifest(tmp_path, [candidate()])
     plan_path = tmp_path / "state" / "guardian-plans" / "B-human.json"
-    original_link = entry.os.link
+    publish_method = 'rename' if entry.os.name == 'nt' else 'link'
+    original_link = getattr(entry.os,publish_method)
 
     def competing_link(source, target):
         if Path(target) == plan_path:
@@ -333,7 +334,7 @@ def test_competing_first_plan_cannot_be_overwritten(tmp_path, monkeypatch):
             raise FileExistsError(str(target))
         return original_link(source, target)
 
-    monkeypatch.setattr(entry.os, "link", competing_link)
+    monkeypatch.setattr(entry.os, publish_method, competing_link)
     result = entry.start(data, executor=executor([]),
                          lan_prober=lambda: {"status": "on"}, run=False)
     assert result["status"] == "blocked"
@@ -695,8 +696,10 @@ def test_different_batches_cannot_steal_same_lane_state(tmp_path, monkeypatch):
     first = manifest(tmp_path, [candidate()])
     first["batch_id"] = "B-first"
     first["workspaces"] = {"local-a": str(first_workspace)}
-    assert entry.start(first, executor=executor([]),
-                       lan_prober=lambda: {"status": "on"}, run=True)["tasks"]["local-a"]["status"] == "paused"
+    first_result = entry.start(first, executor=executor([]),
+                               lan_prober=lambda: {"status": "on"}, run=True)
+    assert "tasks" in first_result, first_result
+    assert first_result["tasks"]["local-a"]["status"] == "paused"
     second = manifest(tmp_path, [candidate("local-b", 649)])
     second["batch_id"] = "B-second"
     second["workspaces"] = {"local-b": str(second_workspace)}

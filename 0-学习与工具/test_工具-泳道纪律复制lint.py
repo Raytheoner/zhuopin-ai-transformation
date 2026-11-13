@@ -122,7 +122,7 @@ class RepositoryScanTests(unittest.TestCase):
     def test_guarded_globs_cover_the_four_carrier_families(self):
         files = self.m.guarded_files()
         self.assertIn("0-学习与工具/工具-泳道看护状态机.py", files)
-        self.assertIn("0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md", files)
+        self.assertIn(".agents/skills/zhuopin-lane-watch/SKILL.md", files)
         self.assertTrue(any(f.startswith("openspec/changes/lane-watch-mode/") for f in files))
         self.assertTrue(
             any(f.startswith("openspec/changes/lane-watch-deploy-extension/") for f in files),

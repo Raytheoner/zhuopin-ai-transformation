@@ -38,6 +38,7 @@ import tempfile
 import time
 import types
 import unittest
+from datetime import datetime
 import unittest.mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -5763,7 +5764,7 @@ class FileListPathFormatTests(unittest.TestCase):
         self.m = _load_module()
         self._tmpdir = tempfile.TemporaryDirectory()
         self.root = Path(self._tmpdir.name)
-        (self.root / "CLAUDE.md").write_text("根文件", encoding="utf-8")
+        (self.root / 'AGENTS.md').write_text("根文件", encoding="utf-8")
 
     def tearDown(self):
         self._tmpdir.cleanup()
@@ -5778,8 +5779,8 @@ class FileListPathFormatTests(unittest.TestCase):
 
     def test_bare_filename_that_is_a_root_file_passes(self):
         """反例：根目录文件的裸文件名**本身就是**合法的仓库根相对路径。
-        一刀切拒绝会误伤根 `CLAUDE.md`／`.gitignore`。"""
-        self.assertEqual(self._violations("`CLAUDE.md`"), [])
+        一刀切拒绝会误伤根 `AGENTS.md`／`.gitignore`。"""
+        self.assertEqual(self._violations("`AGENTS.md`"), [])
 
     def test_absolute_path_rejected(self):
         self.assertTrue(self._violations("`C:\\Users\\x\\SKILL.md`"))
@@ -6170,7 +6171,8 @@ class EditRowFileListAttributionTierTests(unittest.TestCase):
         "| 批次 | 文件清单 | 建议 message | 状态 |\n"
         "|------|---------|--------------|------|\n"
     )
-    BATCH = "B-0901_存量批次"
+    # 登记日随测试日；否则固定 9/1 到 11 月时会把“60 天前”错判为登记后的提交。
+    BATCH = f"B-{datetime.now():%m%d}_存量批次"
     #: 真实存在过、但早已落出登记日窗口的路径——正是 `#533` 实撞的那种形态。
     STALE_FILE_LIST = "`0-学习与工具/定时任务源码/已落库件.md`"
 
@@ -6313,10 +6315,10 @@ class GenderPronounLintTests(unittest.TestCase):
         标注）。
 
         **数据源 ＝ `6-人才与组织/人员名录-称谓与性别-正本.md` §一**（原文
-        原样迁自根 `CLAUDE.md` §1，2026-08-28，OP-0828-Q，队列 #433 A2，
+        原样迁自根 `AGENTS.md` §1，2026-08-28，OP-0828-Q，队列 #433 A2，
         CHANGELOG 附录 G-5；迁移时已用同一条正则对迁前／迁后两侧取
         name→gender 差集核过，缺失 0、新增 0）。本用例一度仍指向根
-        `CLAUDE.md` §1：瘦身后 §1 只剩指针、不再含名录正文，抽取正则从此
+        `AGENTS.md` §1：瘦身后 §1 只剩指针、不再含名录正文，抽取正则从此
         只抓到 0 个人名——不是判据被绕开，恰恰是下面的数量下限断言按设计
         抓住了它、当场把"抓不到"变成硬失败，只是这次失败在提示"数据源
         指针没跟着迁移改"，不是在提示"名录与常量真的漂移了"。这里把数据
@@ -7249,6 +7251,42 @@ class OpenerGuardReleaseTests(unittest.TestCase):
     def _lock(self, *dirty_at_acquire: str) -> dict:
         return {"who": "某会话", "dirty_at_acquire": list(dirty_at_acquire)}
 
+    def test_aibot_unmodified_other_batch_warns_but_new_batch_blocks(self):
+        self._write_block("旧批.md", self.SETTINGS_CC, "读队列。")
+        self._write_block("本批.md", self.SETTINGS_CC, "读队列。")
+        old = "## 二、待 commit 批次\n| B-old | `旧批.md` | docs | 待处理 |\n"
+        new = old + "| B-new | `本批.md` | docs | 待处理 |\n"
+        lock = {"who": self.m.AIBOT_LOCK_WHO, "dirty_at_acquire": ["旧批.md", "本批.md"],
+                "held_since": (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            violations = self.m._opener_guard_violations(
+                self.root, [], lock, {"q": new}, {"q": old})
+        self.assertIn("旧批.md", out.getvalue())
+        self.assertNotIn("旧批.md", " ".join(violations))
+        self.assertIn("本批.md", " ".join(violations))
+
+    def test_aibot_preexisting_file_modified_during_lock_still_blocks(self):
+        self._write_block("旧批.md", self.SETTINGS_CC, "读队列。")
+        text = "## 二、待 commit 批次\n| B-old | `旧批.md` | docs | 待处理 |\n"
+        lock = {"who": self.m.AIBOT_LOCK_WHO, "dirty_at_acquire": ["旧批.md"],
+                "held_since": (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat()}
+        violations = self.m._opener_guard_violations(self.root, [], lock, {"q": text}, {"q": text})
+        self.assertIn("旧批.md", " ".join(violations))
+
+    def test_aibot_missing_queue_snapshot_keeps_conservative_attribution(self):
+        self._write_block("旧批.md", self.SETTINGS_CC, "读队列。")
+        text = "## 二、待 commit 批次\n| B-old | `旧批.md` | docs | 待处理 |\n"
+        lock = {"who": self.m.AIBOT_LOCK_WHO, "dirty_at_acquire": ["旧批.md"]}
+        violations = self.m._opener_guard_violations(self.root, [], lock, {"q": text})
+        self.assertIn("旧批.md", " ".join(violations))
+
+    def test_aibot_new_dirty_file_blocks_even_without_batch(self):
+        self._write_block("新文件.md", self.SETTINGS_CC, "读队列。")
+        lock = {"who": self.m.AIBOT_LOCK_WHO, "dirty_at_acquire": []}
+        violations = self.m._opener_guard_violations(self.root, [], lock, {"q": ""}, {"q": ""})
+        self.assertIn("新文件.md", " ".join(violations))
+
     def test_violation_in_others_file_downgrades_to_warning(self):
         """acquire 之前就已经脏、且不在本次 §二 清单里 ⇒ 降级为告警、放行。
 
@@ -7348,7 +7386,7 @@ class AcquireRoutingHintTests(unittest.TestCase):
     def test_note含跟进信关键词命中对应规则文件(self):
         result = run("--file", self.target, "acquire", "--who", "A", "--note", "起草IT部#7跟进信")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("命中根 §4 路由表 → 先读 `.claude/rules/跟进信与专员.md`", result.stdout)
+        self.assertIn('命中根 §4 路由表 → 先读 `docs/codex/rules/跟进信与专员.md`', result.stdout)
 
     def test_note含openspec关键词命中场景建造规则(self):
         result = run("--file", self.target, "acquire", "--who", "A", "--note", "走openspec propose")
@@ -7400,7 +7438,7 @@ class AcquireRoutingHintTests(unittest.TestCase):
     def test_routing_hint_targets白盒_大小写与去重(self):
         m = _load_module()
         hits = m._routing_hint_targets("无关路径.md", "跟进信 跟进信 专员")
-        self.assertEqual(hits, [".claude/rules/跟进信与专员.md"])
+        self.assertEqual(hits, ['docs/codex/rules/跟进信与专员.md'])
         self.assertEqual(m._routing_hint_targets("无关路径.md", "不含任何关键词"), [])
 
 
@@ -7896,6 +7934,13 @@ class FollowupSerialGateIdentityTests(unittest.TestCase):
             "## 现有跟进信清单\n\n" + self.HEADER + rows
             + "\n## 补件登记（不占编号、不占串行闸）\n\n" + self.SUPPLEMENT_HEADER
         )
+        # The identity comparison uses synthetic README and synthetic queue inputs.
+        # The intake collector must never read the main checkout's business queue here.
+        gate_query.REPO_ROOT = self.repo_root
+        for relative in gate_query.QUEUE_PATHS_REL:
+            target = self.repo_root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("## 一、任务看板\n\n", encoding="utf-8")
         append_blocks = not gate_query.build_report("陈忱", readme_text).gate_open
         release_blocks = bool(self._violations(rows, rows + new_row))
         self.assertEqual(
@@ -9987,3 +10032,40 @@ class ExplicitFixtureRootTests(unittest.TestCase):
             os.environ.pop('ZHUOPIN_CODEX_FIXTURE_ROOT', None)
             with self.assertRaises(ValueError):
                 ns['_resolve_shared_queue_root'](str(shared_root))
+
+
+class CurrentDecisionSummaryTests(unittest.TestCase):
+    def setUp(self):
+        self.module = _load_module()
+
+    def _section(self, status):
+        return _reclass_section('| 447 | 元数据 | 原领取方 | 输入 | 产出 | '+status+' | 触碰区 | 2026-10-18 |')
+
+    def test_explicit_current_approval_does_not_resurrect_historical_decision(self):
+        text=self._section('[S:blocked][D:机] 【当前状态摘要】O1–O4已签认，剩余实现与验证归原领取方。 ━━━ 历史原文：待 Shao Peishen 拍板O1–O4')
+        self.assertEqual(self.module._collect_awaiting_decision_rows(text),[])
+
+    def test_real_current_decision_is_not_silenced_by_old_approval(self):
+        text=self._section('[S:blocked][D:机] 【当前状态摘要】待 Shao Peishen 批准特定群冒烟。 ━━━ 历史原文：设计已批准')
+        self.assertEqual([r['row_id'] for r in self.module._collect_awaiting_decision_rows(text)],['447'])
+
+    def test_unmarked_history_keeps_original_detection(self):
+        text=self._section('[S:blocked][D:机] 待拍板；后文有已批准但没有人工核清的当前摘要')
+        self.assertEqual(len(self.module._collect_awaiting_decision_rows(text)),1)
+
+    def test_empty_current_summary_cannot_hide_a_real_decision(self):
+        text=self._section('[S:blocked][D:机] 【当前状态摘要】 ━━━ 待拍板')
+        self.assertEqual(len(self.module._collect_awaiting_decision_rows(text)),1)
+
+    def test_current_execution_does_not_become_reclassification_candidate_from_history(self):
+        text=self._section('[S:open][D:机] 【当前状态摘要】设计已答，剩余实现待原领取方执行。 ━━━ 历史原文：待 Shao Peishen 拍板')
+        self.assertEqual(self.module._suggest_status_reclassification(text),[])
+        candidates,drift=self.module._collect_triage_candidates(text)
+        self.assertEqual((candidates,drift),([],[]))
+
+    def test_true_current_reclassification_and_authoritative_scan_still_agree(self):
+        text=self._section('[S:partial][D:机] 【当前状态摘要】待 Shao Peishen 定新口径。 ━━━ 历史原文：旧设计已过')
+        self.assertEqual(len(self.module._suggest_status_reclassification(text)),1)
+        candidates,drift=self.module._collect_triage_candidates(text)
+        self.assertEqual(len(candidates),1)
+        self.assertEqual(drift,[])

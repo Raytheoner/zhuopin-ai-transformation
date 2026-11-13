@@ -148,7 +148,7 @@ def test_ci_job_exists(m, tmp_path):
 
 
 def test_skill_exists(m, tmp_path):
-    (tmp_path / ".claude" / "skills" / "zhuopin-lane-watch").mkdir(parents=True)
+    (tmp_path / ".agents" / "skills" / "zhuopin-lane-watch").mkdir(parents=True)
     checker = m.ExistenceChecker(tmp_path)
     assert checker.skill_exists("zhuopin-lane-watch") is True
     assert checker.skill_exists("no-such-skill") is False
@@ -180,7 +180,7 @@ def test_extract_protocol_zero_section_absent(m):
 
 def _build_fake_repo(tmp_path: Path) -> Path:
     (tmp_path / ".git").mkdir()
-    (tmp_path / ".claude" / "rules").mkdir(parents=True)
+    (tmp_path / "docs" / "codex" / "rules").mkdir(parents=True)
     (tmp_path / "0-学习与工具").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     _fake_queue_query_tool(tmp_path, set())
@@ -189,7 +189,7 @@ def _build_fake_repo(tmp_path: Path) -> Path:
 
 def test_scan_state1_missing(m, tmp_path):
     repo = _build_fake_repo(tmp_path)
-    (repo / ".claude" / "rules" / "fake.md").write_text(
+    (repo / "docs" / "codex" / "rules" / "fake.md").write_text(
         "🔴 机器守＝`0-学习与工具/工具-不存在的脚本.py`（假设已建成）。\n",
         encoding="utf-8",
     )
@@ -202,7 +202,7 @@ def test_scan_state1_missing(m, tmp_path):
 def test_scan_state2_misdirected_deliberately_planted(m, tmp_path):
     """⑤ 自举验收：故意造一条「指错载体」的假规则，确认 ② 态真的报出来。"""
     repo = _build_fake_repo(tmp_path)
-    (repo / ".claude" / "rules" / "fake.md").write_text(
+    (repo / "docs" / "codex" / "rules" / "fake.md").write_text(
         "🔴 机器守＝`0-学习与工具/工具-并不存在的稀土价格扫描.py`（承接稀土价格扫描）。\n",
         encoding="utf-8",
     )
@@ -219,7 +219,7 @@ def test_scan_state2_misdirected_deliberately_planted(m, tmp_path):
 
 def test_scan_state3_no_carrier_listed_not_alerted(m, tmp_path):
     repo = _build_fake_repo(tmp_path)
-    (repo / ".claude" / "rules" / "fake.md").write_text(
+    (repo / "docs" / "codex" / "rules" / "fake.md").write_text(
         "改动前必须先做一次全面评审，不得跳过。\n", encoding="utf-8",
     )
     findings = m.scan(repo)
@@ -231,7 +231,7 @@ def test_scan_state3_no_carrier_listed_not_alerted(m, tmp_path):
 def test_scan_existing_carrier_produces_no_finding(m, tmp_path):
     repo = _build_fake_repo(tmp_path)
     (repo / "0-学习与工具" / "工具-真实存在.py").write_text("x", encoding="utf-8")
-    (repo / ".claude" / "rules" / "fake.md").write_text(
+    (repo / "docs" / "codex" / "rules" / "fake.md").write_text(
         "🔴 机器守＝`0-学习与工具/工具-真实存在.py`。\n", encoding="utf-8",
     )
     findings = m.scan(repo)

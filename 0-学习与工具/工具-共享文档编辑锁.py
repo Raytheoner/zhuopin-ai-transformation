@@ -1135,6 +1135,7 @@ def _suggest_status_reclassification(section_one_text: str) -> list[tuple[str, s
             continue
         row_id = cells[0].strip() if cells and cells[0] else "?"
         status_value, _domain_value, rest = _parse_status_domain_fields(cells[5])
+        rest = _current_decision_status(rest)
         if status_value not in ("open", "partial"):
             continue
         for phrase, suggested in STALE_STATUS_PHRASES:
@@ -1365,6 +1366,7 @@ def _collect_triage_candidates(section_one_text: str) -> tuple[list[dict], list[
             continue
         row_id = cells[0].strip() if cells and cells[0] else "?"
         status_value, _domain_value, rest = _parse_status_domain_fields(cells[5])
+        rest = _current_decision_status(rest)
         if status_value not in ("open", "partial"):
             continue
         for phrase, suggested in STALE_STATUS_PHRASES:
@@ -1404,6 +1406,15 @@ def _collect_triage_candidates(section_one_text: str) -> tuple[list[dict], list[
     return candidates, drift
 
 
+def _current_decision_status(rest: str) -> str:
+    """仅采用人工核清并显式标记的当前首段；未迁移/空摘要维持原扫描。"""
+    prefix = "【当前状态摘要】"
+    current = rest.lstrip().split("━━━", 1)[0]
+    if current.startswith(prefix) and current[len(prefix):].strip():
+        return current
+    return rest
+
+
 def _collect_awaiting_decision_rows(section_one_text: str) -> list[dict]:
     """⑵ 的扫描面：§一 里状态自陈「在等 Shao Peishen 一次动作」且非 `done`／
     `timed=` 的行。**刻意不复用分诊器的 open/partial 限制**（见
@@ -1420,6 +1431,7 @@ def _collect_awaiting_decision_rows(section_one_text: str) -> list[dict]:
             continue
         row_id = cells[0].strip() if cells and cells[0] else "?"
         status_value, _domain_value, rest = _parse_status_domain_fields(cells[5])
+        rest = _current_decision_status(rest)
         if status_value is None:
             continue
         if status_value in AWAITING_EXCLUDED_STATUSES or status_value.startswith("timed"):
@@ -1493,7 +1505,7 @@ def cmd_triage_candidates(args: argparse.Namespace) -> int:
 # 不是执行力——顶部段同时承担「进度记录」与「未闭合项的唯一跨会话载体」
 # 两个职能，SC2 那两条自己在正文里写着「本段是本任务仅有的跨会话载体」，
 # 迁走即丢。只要新增条目时就逼它点名一个队列行，这个二职合一就不再新增。
-CLAUDE_PROGRESS_TARGET = "CLAUDE.md"
+CLAUDE_PROGRESS_TARGET = "AGENTS.md"
 
 # 结构锚点：进度条目区 ＝ `> **当前进度**` 头行之后 → `📦` 迁移指针行之前。
 # 🔴 **不能只靠「像条目的行」这个形状**——2026-08-21 实测，`📦` 迁移指针行
@@ -2971,7 +2983,7 @@ def _load_cells_json(args: argparse.Namespace) -> list[str] | dict[str, str] | N
 # 两处判据分叉正是 `#312` 已付过学费的形态：补一处、漏一处，两边都以为对方
 # 守着。取不到判据正本就 **fail-loud**，不回退成"本地简化判据"、更不静默放行。
 # ---------------------------------------------------------------------------
-_CREDENTIAL_LINT_SCRIPT = REPO_ROOT / "0-学习与工具" / "工具-密钥扫描lint.py"
+_CREDENTIAL_LINT_SCRIPT = Path(__file__).resolve().parent / "工具-密钥扫描lint.py"
 
 #: 拒绝文案回显命中串的前缀位数上限（design 决策点③，Shao Peishen 2026-09-06
 #: 拍板 (b)＝前 8 字符 ＋ 截断标记）。
@@ -6269,7 +6281,7 @@ def _gender_pronoun_violations(label: str, cells: list[str], line: str) -> list[
         violations.append(
             f"§{label} {row_id} 行内「{f.alias}」（{f.gender}）之后 {GENDER_PRONOUN_WINDOW} 字内"
             f"出现「{f.written}」：…{f.snippet}…"
-            f"——人的属性一律以根 CLAUDE.md §1 名录为准，不得从名字推断；"
+            f"——人的属性一律以6-人才与组织/人员名录-称谓与性别-正本.md为准，不得从名字推断；"
             f"确属合法情形（同行多人／引用规则条文本身）请在本行内写"
             f"「{GENDER_PRONOUN_WAIVER_MARKER}<理由>」放行。"
         )
@@ -7055,6 +7067,7 @@ def _opener_attribution(
 def _opener_guard_violations(
     repo_root: Path, waiver_sources: list[str],
     lock_data: dict | None = None, queue_texts: dict[str, str] | None = None,
+    queue_snapshots: dict[str, str] | None = None,
 ) -> list[str]:
     """release 前校验本次触碰的 `.md` 里的 opener 代码块（队列 §一 #437／#493）。
 
@@ -7108,6 +7121,18 @@ def _opener_guard_violations(
 
     dirty_at_acquire = (lock_data or {}).get("dirty_at_acquire")
     fragments = _pending_batch_fragments(queue_texts or {})
+    all_fragments = fragments
+    if (queue_snapshots is not None
+            and all(path in queue_snapshots for path in (queue_texts or {}))):
+        # 各持锁者均不认领别人的存量批次；仅本次持锁中新增或修改的
+        # 待处理批次能证明其声明。快照缺失时沿用原来的保守判定。
+        fragments = []
+        for path, current in (queue_texts or {}).items():
+            before = _split_live_sections(queue_snapshots[path]).get("二", "")
+            after = _split_live_sections(current).get("二", "")
+            for _, cells in _diff_touched_rows(before, after):
+                if len(cells) >= 4 and "✅" not in _leading_status_segment(cells[3]):
+                    fragments.extend(re.findall(r"`([^`]+)`", cells[1]))
 
     opener_block_count = 0
     mine: list[str] = []
@@ -7132,7 +7157,16 @@ def _opener_guard_violations(
         # 本侧因此自动覆盖到 `专线opener模板库.md`——**此前它不在名单里，恒报 13 处，
         # 每次触碰都被迫写一次 `opener豁免：`，而豁免用滥则守卫失效。**
         role = lint.canon_role(text)
-        sink = mine if _opener_attribution(rel, dirty_at_acquire, fragments) else others
+        belongs = _opener_attribution(rel, dirty_at_acquire, fragments)
+        if not belongs and _dirty_path_is_covered(rel, all_fragments):
+            # 存量批次覆盖的文件只有最后修改时间早于占锁时才能证明本轮未改；
+            # 时间不可读或不早于占锁时保持原守卫的保守阻断。
+            try:
+                held = datetime.fromisoformat(lock_data["held_since"]).timestamp()
+                belongs = (repo_root / rel).stat().st_mtime >= held
+            except (OSError, ValueError, TypeError, KeyError):
+                belongs = True
+        sink = mine if belongs else others
         for form, detail in lint.check_canon_claim(text):
             sink.append(f"{rel}（正本角色声明自检）[{form}] {detail}")
         if role is not None:
@@ -7267,17 +7301,17 @@ def _parse_reserve_multi(tokens: list[str]) -> list[tuple[str, int]]:
 
 #: `(规则文件相对路径, 触发关键词元组)`，命中任一关键词即提示；顺序即路由表顺序。
 ROUTING_HINT_TABLE: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (".claude/rules/跟进信与专员.md",
+    ("docs/codex/rules/跟进信与专员.md",
      ("6-人才与组织", "7-外部文档", "跟进信", "专员")),
-    (".claude/rules/场景建造与合规.md",
+    ("docs/codex/rules/场景建造与合规.md",
      ("4-数字员工", "5-平台底座", "openspec", ".51", "OEM", "ASIL")),
-    (".claude/rules/文档与全景治理.md",
+    ("docs/codex/rules/文档与全景治理.md",
      # 🔴 刻意不含目录路径本身（如 "1-转型规划/0-全景路线图"）——两份队列真身与
      # 接力卡也物理落在这个目录下，用目录做关键词会让"改队列"本身触发一条与
      # 队列无关的路由提示，偏离 design.md 决策点4"默认队列编辑不自我指向"的原意；
      # 只用内容关键词，逐字对应根 CLAUDE.md §4 该行原文。
      ("全景规划", "实施计划", "排期变更", "重组循环", "文档命名归档", "台账")),
-    (".claude/rules/两桌同步与取证.md",
+    ("docs/codex/rules/两桌同步与取证.md",
      ("git", "fsck", "乱码", "时间戳", "取证", "企微")),
 )
 
@@ -7628,8 +7662,15 @@ def cmd_release(args: argparse.Namespace) -> int:
         # 队列 §一 #493：多传 `existing`（拿 `dirty_at_acquire` 快照）与
         # `queue_texts`（拿本次 §二 批次文件清单）——守卫据此把命中分成
         # 「归本次持锁者」（照旧拒绝）与「不归本次持锁者」（降级为告警）。
+        snapshot_paths = {p: _snapshot_path(p) for p in queue_texts}
+        opener_snapshots = None
+        try:
+            opener_snapshots = {p: target.read_text(encoding="utf-8")
+                                for p, target in snapshot_paths.items()}
+        except (OSError, UnicodeError):
+            pass  # 未知时沿用原来的保守归属，不把缺快照当空快照
         violations.extend(_opener_guard_violations(
-            REPO_ROOT, waiver_sources, existing, queue_texts,
+            REPO_ROOT, waiver_sources, existing, queue_texts, opener_snapshots,
         ))
         # 队列 §一 #566 ③：发件侧称谓守卫，与 opener 守卫同一取材面（本次触碰的
         # 脏文件）、同一归属分流；只是对象换成寄出去的跟进信件（md ＋ docx）。

@@ -1,0 +1,5 @@
+    def test_真实根CLAUDE可被解析为结构A(self):
+        text = (MODULE.REPO_ROOT / MODULE.ROOT_CLAUDE_REL).read_text(encoding="utf-8")
+        parsed = MODULE.parse_file(MODULE.ROOT_CLAUDE_REL, text)
+        self.assertEqual(parsed.structure, "A-根文件型")
+        self.assertGreaterEqual(len(parsed.entries), 1)

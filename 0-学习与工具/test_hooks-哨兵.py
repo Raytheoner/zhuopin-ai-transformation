@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-HOOKS_DIR = Path(__file__).resolve().parent / "hooks"
+HOOKS_DIR = Path(__file__).resolve().parent / "codex-handoff" / "guards"
 COMMON = HOOKS_DIR / "hooks-common.ps1"
 H3 = HOOKS_DIR / "sentinel-mojibake.ps1"
 H4 = HOOKS_DIR / "sentinel-pronoun.ps1"
@@ -56,7 +56,7 @@ def run_sentinel(script: Path, payload: dict, repo_root: Path, mode: str = "bloc
 
 
 def write_mode(repo_root: Path, mode: str) -> None:
-    d = repo_root / "0-学习与工具" / "hooks"
+    d = repo_root / "0-学习与工具" / "codex-handoff" / "guards"
     d.mkdir(parents=True, exist_ok=True)
     (d / "sentinels-mode.json").write_text(
         json.dumps({"mode": mode}, ensure_ascii=False), encoding="utf-8"
@@ -330,7 +330,7 @@ def test_H3_拦截进既有audit日志形态(repo: Path, tmp_path: Path):
         capture_output=True, env=env, cwd=str(repo),
     )
     assert proc.returncode == 2
-    logs = list((fake_home / ".claude").glob("audit-blocks-*.log"))
+    logs = list((repo / "reports" / "codex-hooks").glob("audit-blocks-*.log"))
     assert len(logs) == 1, "不得新造日志文件形态"
     line = logs[0].read_text(encoding="utf-8").strip().splitlines()[-1]
     cols = line.split("\t")
@@ -493,13 +493,13 @@ _SWEEP_SPEC.loader.exec_module(sweep)
 
 def _register_sentinels(repo: Path) -> None:
     """在夹具仓库里伪造一次「安装单已执行」——注册标记就是脚本相对路径片段。"""
-    d = repo / ".claude"
+    d = repo / ".codex"
     d.mkdir(parents=True, exist_ok=True)
-    (d / "settings.json").write_text(
+    (d / "hooks.json").write_text(
         json.dumps(
-            {"hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [
+            {"hooks": {"PreToolUse": [{"matcher": "Edit|Write", "hooks": [
                 {"type": "command",
-                 "command": 'pwsh -NoProfile -File "0-学习与工具/hooks/sentinel-mojibake.ps1"',
+                 "command": 'pwsh -NoProfile -File "0-学习与工具/codex-handoff/guards/sentinel-mojibake.ps1"',
                  "timeout": 10}]}]}},
             ensure_ascii=False,
         ),
@@ -515,6 +515,17 @@ def _set_heartbeat(repo: Path, age_days: float) -> None:
                     "runs": {"total": 7}}, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+@pytest.fixture()
+def fake_heartbeat_delivery(monkeypatch):
+    """心跳判据测试只用模拟回执；绝不读取真实 webhook 或发送消息。"""
+    sent = []
+    monkeypatch.setattr(sweep, "_load_webhook_url", lambda _root: "https://example.invalid/hook")
+    from _sweep_test_receipts import receipt_sender
+    accepted = receipt_sender(sweep)
+    monkeypatch.setattr(sweep, "_send_wecom_markdown", lambda url, text: (sent.append(text), accepted(url,text))[1])
+    return sent
 
 
 def test_sweep_未注册时按设计不告警(repo: Path):
@@ -536,7 +547,7 @@ def test_sweep_心跳新鲜时每轮回显在岗(repo: Path):
     assert "非 UTC" in text, "时刻必须显式标基准"
 
 
-def test_sweep_零心跳即告警(repo: Path):
+def test_sweep_零心跳即告警(repo: Path, fake_heartbeat_delivery):
     _register_sentinels(repo)
     _set_heartbeat(repo, age_days=sweep.HOOKS_HEARTBEAT_STALE_DAYS + 2)
     log: list[str] = []
@@ -545,7 +556,7 @@ def test_sweep_零心跳即告警(repo: Path):
     assert "零心跳" in state
 
 
-def test_sweep_心跳文件不存在即告警(repo: Path):
+def test_sweep_心跳文件不存在即告警(repo: Path, fake_heartbeat_delivery):
     _register_sentinels(repo)
     log: list[str] = []
     sweep._check_hooks_heartbeat(repo, log)
@@ -553,7 +564,7 @@ def test_sweep_心跳文件不存在即告警(repo: Path):
     assert "心跳文件不存在" in state
 
 
-def test_sweep_坏心跳时检查本身出声(repo: Path):
+def test_sweep_坏心跳时检查本身出声(repo: Path, fake_heartbeat_delivery):
     """tasks 5.3：心跳文件是坏 JSON 时，检查必须出声——判据坏了 ≠ 没有违规。"""
     _register_sentinels(repo)
     (repo / "reports" / "hooks-heartbeat.json").write_text("{ 这不是 json", encoding="utf-8")
@@ -563,7 +574,7 @@ def test_sweep_坏心跳时检查本身出声(repo: Path):
     assert "心跳文件损坏" in state
 
 
-def test_sweep_心跳恢复后告警自动解除(repo: Path):
+def test_sweep_心跳恢复后告警自动解除(repo: Path, fake_heartbeat_delivery):
     """🔴 告警必须能被「已恢复」关掉，否则又造出一个永远红着的告警。"""
     _register_sentinels(repo)
     log: list[str] = []
@@ -579,8 +590,74 @@ def test_sweep_心跳恢复后告警自动解除(repo: Path):
     assert "解除" in "\n".join(log2)
 
 
+def test_sweep_心跳通知失败不记录成功(repo: Path, monkeypatch):
+    """通知未确认时保留失败回执，不能把告警误记为已送达。"""
+    _register_sentinels(repo)
+    monkeypatch.setattr(sweep, "_load_webhook_url", lambda _root: "https://example.invalid/hook")
+
+    from _sweep_test_receipts import receipt_sender
+    rejected=receipt_sender(sweep,40058)
+    def fail_send(_url, _text):
+        return rejected(_url,_text)
+
+    monkeypatch.setattr(sweep, "_send_wecom_markdown", fail_send)
+    log: list[str] = []
+    sweep._check_hooks_heartbeat(repo, log)
+    state_path = repo / sweep.HOOKS_HEARTBEAT_STATE_REL
+    assert not state_path.exists(), "发送失败不能写入已送达状态"
+    journal = json.loads(state_path.with_suffix(".delivery.json").read_text(encoding="utf-8"))
+    assert journal["alert"]["status"] == "failed"
+    assert journal["alert"]["acked"] == {}
+    assert "推送失败" in "\n".join(log)
+
+
 def test_H4_脚本内零硬编码人名与性别():
     """spec：H4 MUST NOT 在脚本内硬编码任何人名或性别——硬编码即等于造出第二份名录。"""
     src = H4.read_text(encoding="utf-8")
     for alias in GOLDEN + ["李姣龙", "唐燕萍", "姚祖怡", "陈忱", "孙涛"]:
         assert alias not in src, f"脚本里出现了具体人名：{alias}"
+
+def test_sweep_传输异常保留UNKNOWN且不写送达(repo: Path, monkeypatch):
+    _register_sentinels(repo)
+    monkeypatch.setattr(sweep,"_load_webhook_url",lambda _:"https://example.invalid/test-only")
+    def unknown(*_args):
+        raise OSError("transport interrupted; acceptance unknown")
+    monkeypatch.setattr(sweep,"_send_wecom_markdown",unknown)
+    log=[]
+    sweep._check_hooks_heartbeat(repo,log)
+    state=repo/sweep.HOOKS_HEARTBEAT_STATE_REL
+    assert not state.exists()
+    journal=json.loads(state.with_suffix(".delivery.json").read_text(encoding="utf8"))
+    assert journal["alert"]["status"]=="unknown"
+    assert journal["alert"]["acked"]=={}
+
+def test_sweep_旧注册不作执行依据且不伪造历史恢复(repo: Path):
+    old=repo/".claude/settings.json";old.parent.mkdir(parents=True)
+    old.write_text('{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"0-学习与工具/hooks/sentinel-old.ps1"}]}]}}',encoding="utf8")
+    state=repo/sweep.HOOKS_HEARTBEAT_STATE_REL
+    state.parent.mkdir(exist_ok=True)
+    original=b'{"old-unverified":"2026-11-01T00:00:00+00:00"}'
+    state.write_bytes(original)
+    assert not sweep._sentinel_hooks_registered(repo)
+    log=[];sweep._check_hooks_heartbeat(repo,log)
+    assert state.read_bytes()==original
+
+@pytest.mark.parametrize("config",["{broken",'{"hooks":[]}', '{"hooks":{"PreToolUse":null}}', '{"hooks":{"PreToolUse":[{"hooks":null}]}}'])
+def test_sweep_原生hook配置损坏显式UNKNOWN(repo: Path,monkeypatch,config):
+    native=repo/".codex/hooks.json";native.parent.mkdir(parents=True,exist_ok=True)
+    native.write_text(config,encoding="utf8")
+    from _sweep_test_receipts import receipt_sender
+    monkeypatch.setattr(sweep,"_load_webhook_url",lambda _:"https://example.invalid/test-only")
+    monkeypatch.setattr(sweep,"_send_wecom_markdown",receipt_sender(sweep))
+    log=[];sweep._check_hooks_heartbeat(repo,log)
+    state=json.loads((repo/sweep.HOOKS_HEARTBEAT_STATE_REL).read_text(encoding="utf8"))
+    assert "注册判据不可用" in state
+    assert "按设计不告警" not in "\n".join(log)
+
+def test_sweep_识别原生EncodedCommand但不执行(repo: Path):
+    import base64
+    native=repo/".codex/hooks.json";native.parent.mkdir(parents=True,exist_ok=True)
+    decoded="& '0-学习与工具/codex-handoff/invoke.ps1' -Mode Hook"
+    command="pwsh -NoProfile -EncodedCommand "+base64.b64encode(decoded.encode("utf-16-le")).decode("ascii")
+    native.write_text(json.dumps({"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":command}]}]}}),encoding="utf8")
+    assert sweep._sentinel_hooks_registered(repo)
