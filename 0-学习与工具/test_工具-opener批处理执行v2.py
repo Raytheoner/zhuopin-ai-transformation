@@ -24,7 +24,7 @@ class TestBatchCodex:
         (tmp/'AGENTS.md').write_text('Only mechanism fixture.',encoding='utf-8')
         (config/'hooks.json').write_text('{"hooks":{}}')
         (config/'config.toml').write_text('')
-        (tmp/'.gitignore').write_text('reports/\n.claude/worktrees/\n.codex/runtime.local.json\n')
+        (tmp/'.gitignore').write_text('reports/\n.worktrees/\n.codex/runtime.local.json\n')
         provider=tools/'codex-handoff/model_provider.py'; provider.parent.mkdir()
         provider.write_text('''import json,sys,pathlib,os,uuid
 args=sys.argv
@@ -46,7 +46,7 @@ if mode=='parallel': time.sleep(8)
 if mode in ('hard','soft','soft-disabled'):
  value=250000 if mode=='hard' else 160000
  m.write_text(json.dumps({'lastContext':value,'session_id':tid}))
- time.sleep(4 if mode!='hard' else 30)
+ time.sleep(12 if mode!='hard' else 30)
 if mode=='retry-timeout' and retry: time.sleep(30)
 if mode=='reports':
  p=pathlib.Path('reports/nested/report.txt');p.parent.mkdir(parents=True);p.write_text('recover fixture')
@@ -86,14 +86,14 @@ if mode=='failure' or (mode=='retry-failure' and retry): sys.exit(7)
         r=self.run(tmp_path)
         assert r.returncode!=0
         assert 'consumer-paused' in r.stdout+r.stderr
-        assert not (tmp_path/'.claude/worktrees/fixture').exists()
+        assert not (tmp_path/'.worktrees/fixture').exists()
 
     def test_fixture_end_to_end(self,tmp_path):
         r=self.run(tmp_path,'-ConsumerEnabled')
         assert r.returncode==0,r.stdout+r.stderr
         results=list((tmp_path/'reports/batch').rglob('result.json'))
         assert len(results)==1
-        assert (tmp_path/'.claude/worktrees/fixture/made.txt').read_text()=='fixture'
+        assert (tmp_path/'.worktrees/fixture/made.txt').read_text()=='fixture'
         assert not (tmp_path/'made.txt').exists()
         summary=(tmp_path/'reports/batch/summary.txt').read_text(encoding='utf-8-sig')
         assert json.loads(results[0].read_text())['thread_id'] in summary
@@ -226,7 +226,7 @@ class TestRetainedBatchBehavior:
         result=TestBatchCodex().run(tmp_path,'-ConsumerEnabled')
         assert result.returncode==0,result.stdout+result.stderr
         assert (tmp_path/'reports/_from-worktree/fixture/nested/report.txt').read_text()=='recover fixture'
-        assert (tmp_path/'.claude/worktrees/fixture/reports/nested/report.txt').is_file()
+        assert (tmp_path/'.worktrees/fixture/reports/nested/report.txt').is_file()
 
 class TestBatchValidation:
     @pytest.mark.parametrize('before,after',[
@@ -250,7 +250,7 @@ class TestBatchValidation:
         result=TestBatchCodex().run(tmp_path,'-DryRun')
         assert result.returncode==0,result.stdout+result.stderr
         assert not list((tmp_path/'reports/batch').rglob('result.json'))
-        assert not (tmp_path/'.claude/worktrees/fixture').exists()
+        assert not (tmp_path/'.worktrees/fixture').exists()
 
     def test_parallel_limit_with_real_isolated_jobs(self,tmp_path,monkeypatch):
         monkeypatch.setenv('CODEX_FIXTURE_MODE','parallel')
@@ -280,7 +280,7 @@ class TestNativeBatchIntegration:
         (tmp_path/'plan.md').write_text('### A1 · 原生生成链\n▶ 粘贴端：Codex\n泳道：fixture\n'+body,encoding='utf-8')
         result=self.prepared(tmp_path)
         assert result.returncode==0,result.stdout+result.stderr
-        assert (tmp_path/'.claude/worktrees/fixture/made.txt').read_text()=='fixture'
+        assert (tmp_path/'.worktrees/fixture/made.txt').read_text()=='fixture'
         assert not (tmp_path/'made.txt').exists()
 
     def test_two_operations_have_distinct_source_and_native_ids(self,tmp_path):
@@ -359,7 +359,7 @@ class TestCodexLunaBatchContract:
     def test_dryrun_rejects_non_luna_opener(self, tmp_path, model):
         result = TestBatchCodex().run(tmp_path, '-DryRun', transform=lambda p: p.replace('模型：gpt-6-luna', '模型:' + model))
         assert result.returncode != 0, result.stdout + result.stderr
-        assert not (tmp_path/'.claude/worktrees/fixture').exists()
+        assert not (tmp_path/'.worktrees/fixture').exists()
 
     @pytest.mark.parametrize('model', ['inherit', 'routine', 'design', 'gpt-6-astra'])
     def test_dryrun_rejects_non_luna_batch_parameter(self, tmp_path, model):

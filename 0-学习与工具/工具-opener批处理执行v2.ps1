@@ -150,7 +150,7 @@ $Plan = (Resolve-Path $Plan).Path
 if ($Detach) {
     if (-not $LogDir) { $LogDir = Join-Path $RepoRoot ('reports\opener-batch\' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
     New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
-    $childArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath,
+    $childArgs = @('-NoProfile', '-File', $PSCommandPath,
                    '-Plan', $Plan, '-Yes', '-LogDir', $LogDir,
                    '-MaxParallel', $MaxParallel, '-StaggerSec', $StaggerSec,
                    '-SentinelRetryTimeoutSec', $SentinelRetryTimeoutSec, '-ContextPollSec', $ContextPollSec,
@@ -369,15 +369,15 @@ $laneBlock = {
                 $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(worktree-name)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log; ContextPeak = 0 }
                 break
             }
-            $laneWorktreePath = Join-Path $repoRootInJob ('.claude\worktrees\' + $wtName)
+            $laneWorktreePath = Join-Path $repoRootInJob ('.worktrees\' + $wtName)
             $branchFieldMatch = [regex]::Match($op.Text, '分支[：:]\s*([^｜|]+)')
             $branchName = $null
             if ($branchFieldMatch.Success) {
-                $bm = [regex]::Match($branchFieldMatch.Groups[1].Value, ([char]0x60) + '((?:codex|claude)/[^' + ([char]0x60) + ']+)' + ([char]0x60))
+                $bm = [regex]::Match($branchFieldMatch.Groups[1].Value, ([char]0x60) + '(codex/[^' + ([char]0x60) + ']+)' + ([char]0x60))
                 if ($bm.Success) { $branchName = $bm.Groups[1].Value.Trim() }
             }
             if (-not $branchName) {
-                ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | worktree 已声明但「分支：」字段解不出反引号包裹的 claude/ 分支名 ⇒ 判 FAIL，未起 claude') | Out-File -FilePath $log -Encoding utf8
+                ('[lane:' + $laneName + '] ' + $op.Id + ' ' + $op.Title + ' | worktree 已声明但「分支：」字段解不出反引号包裹的 codex/ 分支名 ⇒ 判 FAIL，未起 claude') | Out-File -FilePath $log -Encoding utf8
                 $results += [pscustomobject]@{ Lane = $laneName; Id = $op.Id; Status = 'FAIL(branch-name)'; Sentinel = '—'; Minutes = 0; Session = ''; Model = $op.Model; Log = $log; ContextPeak = 0 }
                 break
             }
@@ -610,7 +610,7 @@ $laneBlock = {
             $wtMatch = [regex]::Match($op.Text, 'worktree[：:]\s*☑\s*[（(]\s*([^，,）)]+)')
             if ($wtMatch.Success) {
                 $wtName = $wtMatch.Groups[1].Value.Trim()
-                $wtReports = Join-Path (Get-Location).Path ('.claude\worktrees\' + $wtName + '\reports')
+                $wtReports = Join-Path (Get-Location).Path ('.worktrees\' + $wtName + '\reports')
                 if (Test-Path -LiteralPath $wtReports) {
                     $destDir = Join-Path (Get-Location).Path ('reports\_from-worktree\' + $laneName)
                     New-Item -ItemType Directory -Path $destDir -Force | Out-Null

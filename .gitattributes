@@ -196,3 +196,6 @@
 "/0-学习与工具/run-commit-sweep-hidden.vbs" -text
 "/0-学习与工具/codex-handoff/tests/test_poll_codex.py" -text
 "/0-学习与工具/test_工具-opener批处理执行v2.py" -text
+"/.gitignore" -text
+"/0-学习与工具/工具-opener批处理执行v2.ps1" -text
+"/0-学习与工具/test_batch_native_final.py" -text

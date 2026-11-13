@@ -119,3 +119,6 @@ Claude outputs/
 .codex/runtime.local.json
 .codex/consumers.local.json
 .codex/state/
+
+# Native batch worktrees; runtime only.
+/.worktrees/
