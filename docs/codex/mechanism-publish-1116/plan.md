@@ -15,5 +15,5 @@
 - [x] 建立原生受管隔离worktree，绑定基线及已批分支；共享主树保持原分支/HEAD/索引。
 - [x] 形成逐文件manifest和差量，核必要前置及跨桌适配边界，不纳入业务候选。
 - [x] 隔离候选内跑受影响项目完整pytest、真实fixture闭环、OpenSpec strict及机械门禁，留命令/cwd/退出码/版本/hash。
-- [ ] 复核提交白名单及敏感信息，commit/push仅指定独立分支，并反查远端commit。
-- [ ] 原锁流程回写本线原任务与§二、释放/status；提供Mac获取分支、commit及适配边界。
+- [x] 复核提交白名单及敏感信息，commit/push仅指定独立分支，并反查远端commit。
+- [x] 原锁流程回写本线原任务与§二、释放/status；提供Mac获取分支、commit及适配边界。

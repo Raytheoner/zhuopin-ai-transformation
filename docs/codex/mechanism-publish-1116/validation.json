@@ -1,5 +1,5 @@
 {
-  "state": "verified-awaiting-authorized-commit-push",
+  "state": "code-published-and-original-queue-closeout-verified",
   "branch": "codex/1113a2-mechanism-closeout",
   "base": "6ce833345ed503dc916a37ca01d32c46ae26bd6c",
   "versions": {
@@ -68,5 +68,17 @@
   "whitespace_review": {
     "authored_implementation_hunks_exit": 0,
     "whole_diff_note": "Inherited native PS1 CRCRLF, historical/pytest literal XML whitespace and original spec EOF produce diagnostics; exact source/provenance bytes retained. Whole diff --check is not represented as passed."
+  },
+  "publication": {
+    "code_commit": "a8b779e286162df4a62164527c5ba6ba6cbe4419",
+    "remote_ref_verified": "refs/heads/codex/1113a2-mechanism-closeout",
+    "remote_SHA_matched": true,
+    "original_queue_row": "mechanism #715 remains done",
+    "source_section_two_batch": "B-1116_mechanism-closeout-publish",
+    "source_acquire_write_register_release_status_verified": true,
+    "source_lock_status": "no lock",
+    "candidate_receipt_only_commit_follows": true,
+    "main_merged": false,
+    "deployed_or_sent": false
   }
 }
