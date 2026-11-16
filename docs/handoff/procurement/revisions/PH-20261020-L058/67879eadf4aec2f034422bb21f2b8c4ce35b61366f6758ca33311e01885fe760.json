@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "PH-20261020-L058",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "SC4首批真实试用尚未进入执行审批：实际文件及具名人员未指定，不预批任意合同；本地场景包已交，受控标准与法务规则未确认的能力保留原闸。总控平台Goal绑定未核实，本轮不新建Goal或恢复自治loop；完成回执留本线程供协调任务读取，不主动回发消息。\n",
+  "owner": "原采购任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 58,
+      "path": "docs/handoff/procurement/archive/3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb.bin",
+      "sha256": "3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb",
+      "start": 58
+    }
+  ],
+  "status": "review",
+  "title": "SC4真实试用前置及禁止自治恢复",
+  "topic": "待核批准"
+}

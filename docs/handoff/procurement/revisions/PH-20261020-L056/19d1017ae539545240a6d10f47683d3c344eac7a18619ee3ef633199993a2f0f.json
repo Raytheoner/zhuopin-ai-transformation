@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "PH-20261020-L056",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "本人对SC8 v2的1=A及一次派发已消费，实际离线停止，不再待本人重复批准v2。当前唯一新增定夺为装载修正v3：A推荐同一原SSH stdin装载原wire、原1020UI一次恢复派发及一次标准平台申请；B暂停SC8现场补核。计划SHA256 `4fa59b077ef63dfa46888ed7dae2411dac2199fea60f9cbe029d696629562e1b`，已通过本会话request_user_input_async呈问；尚未收到新答复。SC2五路径与阶段一七入口发布不重审；新实采、ff、生产/外发仍未授权，专业签认沿原责任渠道。\n",
+  "owner": "原采购任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 56,
+      "path": "docs/handoff/procurement/archive/3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb.bin",
+      "sha256": "3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb",
+      "start": 56
+    }
+  ],
+  "status": "review",
+  "title": "SC8 v3唯一新增定夺与不重审范围",
+  "topic": "待核批准"
+}

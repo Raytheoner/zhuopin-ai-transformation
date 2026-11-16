@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "PH-20261020-L014",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "本人2026-10-21已在界面更新并恢复原Goal，两阶段串行：①UI统一、门户集成和MVP发布；②真实数据接入和专业验收。阶段一七入口v3已收口，当前仅推进阶段二。采购业务框架沿用，不重做框架或扩展场景。Goal未整体完成。\n",
+  "owner": "原采购任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 14,
+      "path": "docs/handoff/procurement/archive/3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb.bin",
+      "sha256": "3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb",
+      "start": 14
+    }
+  ],
+  "status": "review",
+  "title": "两阶段原Goal与阶段二未完",
+  "topic": "目标"
+}

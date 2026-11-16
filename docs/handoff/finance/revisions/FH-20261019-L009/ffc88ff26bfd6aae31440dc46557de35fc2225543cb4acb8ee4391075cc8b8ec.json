@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "FH-20261019-L009",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "2026-10-19｜转出OP-1016-A／01a143f1-1b4e-7c31-b997-ec780f2a3d8a。本人明确要求转场，并说明**已onLAN、原goal一并接续**。本卡是A类同线接力，不重开已批目标。\n",
+  "owner": "原财务任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 9,
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "start": 9
+    }
+  ],
+  "status": "review",
+  "title": "原Goal同线转出与onLAN边界",
+  "topic": "原接力"
+}

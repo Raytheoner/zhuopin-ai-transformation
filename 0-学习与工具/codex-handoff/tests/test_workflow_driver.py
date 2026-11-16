@@ -880,7 +880,10 @@ def fixture(tmp_path, monkeypatch):
     approval = tmp_path / "intent-approval.json"
     approval.write_text(json.dumps({"task_id": "sample", "row": 648, "section": "一",
         "action_key": "worktree_local_build", "intent_sha256": hashlib.sha256(b"Build fixture safely").hexdigest(),
-        "queue_file": "fixture-queue.md", "queue_line": 1, "text": "approved fixture"}), encoding="utf8")
+        "queue_file": "fixture-queue.md", "queue_line": 1, "text": "approved fixture",
+        "git_commit": {"phase":"proposal", "allowed_paths":[
+            "openspec/changes/sample/proposal.md", "openspec/changes/sample/design.md",
+            "openspec/changes/sample/tasks.md", "openspec/changes/sample/.openspec.yaml"]}}), encoding="utf8")
     queue = folder / "queue.json"
     queue.write_text(json.dumps({"exit": 0, "stdout": json.dumps({"found": True, "carrier": "live",
         "done": False, "row": "648", "section": "一", "error": None,
@@ -901,6 +904,9 @@ def fixture(tmp_path, monkeypatch):
     monkeypatch.setenv("ZHUOPIN_CODEX_STATE", str(state_root))
     driver = load("workflow_driver")
     monkeypatch.setattr(driver.state, "STATE", state_root)
+    # These are legacy driver unit contracts. Real lint integration is exercised
+    # by test_feedback_workflow and test_workflow_e2e, without this test double.
+    monkeypatch.setattr(driver.requirements, "inspect", lambda *a, **kw: {"status":"ready", "mode":"refinement"})
     return driver, repo, folder
 
 
@@ -1423,6 +1429,7 @@ def test_native_implementation_proof_advances_to_ci(fixture):
         "task_id": "sample", "design_head": saved["design_head"],
         "design_sha256": hashlib.sha256((change / "design.md").read_bytes()).hexdigest(),
         "text": "批准", "allowed_paths": ["feature.py"],
+        "git_commit": {"phase":"implement", "allowed_paths":["feature.py"]},
     }), encoding="utf8")
 
     def model(**kw):
@@ -1502,7 +1509,7 @@ def test_proposal_commits_strict_openspec_metadata_inside_change(fixture):
         change.mkdir(parents=True)
         for name in ("proposal.md", "design.md", "tasks.md"):
             (change / name).write_text(name + " fixture", encoding="utf8")
-        (change / ".openspec.yaml").write_text("schema: spec-driven\nskip_specs: true\n", encoding="utf8")
+        (change / ".openspec.yaml").write_text("schema: spec-driven\nmode: refinement\n", encoding="utf8")
         return {"status": "output_needs_review", "thread_id": "proposal-thread", "tool_events": 4}
 
     result = driver.advance("sample", repo, None,
@@ -1572,7 +1579,8 @@ def test_implement_outer_commit_is_bound_to_approval_paths(fixture, extra_path, 
     approval = folder / "approval.json"
     approval.write_text(json.dumps({"task_id": "sample", "design_head": saved["design_head"],
         "design_sha256": hashlib.sha256((change / "design.md").read_bytes()).hexdigest(),
-        "text": "fixture approval", "allowed_paths": ["service.py"]}), encoding="utf8")
+        "text": "fixture approval", "allowed_paths": ["service.py"],
+        "git_commit":{"phase":"implement", "allowed_paths":["service.py"]}}), encoding="utf8")
 
     def model(**kw):
         evidence = Path(kw["evidence"])

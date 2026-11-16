@@ -34,7 +34,7 @@ git rev-parse --show-superproject-working-tree 2>/dev/null
 
 Report with branch state:
 - On a branch: "Already in isolated workspace at `<path>` on branch `<name>`."
-- Detached HEAD: "Already in isolated workspace at `<path>` (detached HEAD, externally managed). Branch creation needed at finish time."
+- Detached HEAD: "Already in isolated workspace at `<path>` (detached HEAD, externally managed). Preserve detached state; create a branch only if the specific finishing action is authorized."
 
 **If `GIT_DIR == GIT_COMMON` (or in a submodule):** You are in a normal repo checkout.
 
@@ -83,7 +83,7 @@ Follow this priority order. Explicit user preference always beats observed files
 git check-ignore -q .worktrees 2>/dev/null || git check-ignore -q worktrees 2>/dev/null
 ```
 
-**If NOT ignored:** Add to .gitignore, commit the change, then proceed.
+**If NOT ignored:** Do not automatically edit/commit .gitignore. Prefer an already-authorized ignored location; any required tracked-file change and commit need their original approval.
 
 **Why critical:** Prevents accidentally committing worktree contents to repository.
 
@@ -97,7 +97,7 @@ git worktree add "$path" -b "$BRANCH_NAME"
 cd "$path"
 ```
 
-**Sandbox fallback:** If `git worktree add` fails with a permission error (sandbox denial), tell the user the sandbox blocked worktree creation and you're working in the current directory instead. Then run setup and baseline tests in place.
+**Sandbox fallback:** A permission error does not authorize writing in the current/shared checkout. Preserve the failure and first inspect branch/worktree identity, tracked/untracked changes, applicable shared/file locks and task touch ranges. Prefer reusing an authorized owned worktree. Only use the current directory when it is within the approved scope, ownership is known, no business session occupies it and edits can be serialized without conflicts. Otherwise keep the candidate isolated and report the concrete blocker; never switch branches, stash/clean others' work or remove a lock to fall back. Use normal sandbox approval for an already-authorized operation, not a bypass.
 
 ## Step 2: Project Setup
 
@@ -151,8 +151,8 @@ Ready to implement <feature-name>
 | `worktrees/` exists | Use it (verify ignored) |
 | Both exist | Use `.worktrees/` |
 | Neither exists | Check instruction file, then default `.worktrees/` |
-| Directory not ignored | Add to .gitignore + commit |
-| Permission error on create | Sandbox fallback, work in place |
+| Directory not ignored | Use an authorized ignored location; do not automatically edit/commit |
+| Permission error on create | Preserve failure; verify ownership/occupancy/conflicts before any authorized fallback |
 | Tests fail during baseline | Report failures + ask |
 | No package.json/Cargo.toml | Skip dependency install |
 

@@ -1,0 +1,105 @@
+{
+  "task_id": "queue-driven-daily-routine-1114",
+  "level": "mock",
+  "design": {
+    "path": "openspec/changes/queue-driven-daily-routine-1114/design.md",
+    "sha256": "b55a7a517a6f2ebd8d11ce6b265e5fde8ddbd82af9d4ddb1c3bdd21ed37a0f3e"
+  },
+  "candidate": [
+    {
+      "path": "0-学习与工具/codex-handoff/handoff.py",
+      "sha256": "6815c101290e455924d18f036c2d31069fe1a6a2974180a9af061981bc6e521c"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/workflow_requirements.py",
+      "sha256": "da8e7974c3bcadd694eff89f8edee2cfc45fbe658554e8700006be9dc50f2a19"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/workflow_release.py",
+      "sha256": "a9532ec38f5d2337d26bc2d3b75306cdc1c0625dab07364d639780f2a4aca30f"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/queue_context.py",
+      "sha256": "71eb130cd04a50ee0b5a6d1f37ddc22d588610a525f6efd1692957136dabb7cc"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/business_acceptance.py",
+      "sha256": "a361da48771578298bcca353b816ec5fe8473812f1cda1efcf473feaf464a0f9"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/requirement_fixtures.py",
+      "sha256": "8f89d11b7289623c761585c48c588ccba1b7492df4c12b2ad15e865f6638272f"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_feedback_workflow.py",
+      "sha256": "a148b20f7b7f9344e7c38fa902fd899f2c6ddcecc8e3b3acf028081673c4bb78"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_queue_context.py",
+      "sha256": "44af9677d9b180e3d0df88427dce814730b55398250917d5a134b9b45614d238"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_business_acceptance.py",
+      "sha256": "d90dd2cf4d648f365e8b955290fe423123b9548833b57019f1211277af4c4603"
+    }
+  ],
+  "specs": [
+    {
+      "path": "openspec/changes/queue-driven-daily-routine-1114/specs/serial-test-first-construction/spec.md",
+      "sha256": "51a02d0d37efce0816af4a1355e5ca3b427bf1682f47138e92e46ea95eae7876"
+    }
+  ],
+  "coverage": [
+    {
+      "scenario": "serial-test-first-construction::Short entry reconstructs current queue context::Previously approved work resumes",
+      "junit": {
+        "path": "docs/codex/evidence/routine-20261114.xml",
+        "sha256": "98bb2045a772e7901642dcddaff1eebac6b1fde2f02a2397570662db25a87d82"
+      },
+      "classname": "tests.test_feedback_workflow",
+      "testcase": "test_existing_reply_fixture_to_refinement_archive_and_queue_closeout",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_feedback_workflow.py",
+        "sha256": "a148b20f7b7f9344e7c38fa902fd899f2c6ddcecc8e3b3acf028081673c4bb78"
+      },
+      "functional": {
+        "path": "openspec/changes/queue-driven-daily-routine-1114/acceptance-functional.json",
+        "sha256": "40c87d3bf7094e5cba4773670f08f1c49ec160b135e1ff80c183973767cc7683"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Short entry reconstructs current queue context::Queue changes after organization",
+      "junit": {
+        "path": "docs/codex/evidence/routine-20261114.xml",
+        "sha256": "98bb2045a772e7901642dcddaff1eebac6b1fde2f02a2397570662db25a87d82"
+      },
+      "classname": "tests.test_queue_context",
+      "testcase": "test_expected_queue_hash_detects_stale_handoff",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_queue_context.py",
+        "sha256": "44af9677d9b180e3d0df88427dce814730b55398250917d5a134b9b45614d238"
+      },
+      "functional": {
+        "path": "openspec/changes/queue-driven-daily-routine-1114/acceptance-functional.json",
+        "sha256": "40c87d3bf7094e5cba4773670f08f1c49ec160b135e1ff80c183973767cc7683"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Business requirements have verifiable acceptance coverage::Green tests omit a business scenario",
+      "junit": {
+        "path": "docs/codex/evidence/routine-20261114.xml",
+        "sha256": "98bb2045a772e7901642dcddaff1eebac6b1fde2f02a2397570662db25a87d82"
+      },
+      "classname": "tests.test_business_acceptance",
+      "testcase": "test_green_count_cannot_hide_requirement_or_evidence_gap[missing_scenario]",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_business_acceptance.py",
+        "sha256": "d90dd2cf4d648f365e8b955290fe423123b9548833b57019f1211277af4c4603"
+      },
+      "functional": {
+        "path": "openspec/changes/queue-driven-daily-routine-1114/acceptance-functional.json",
+        "sha256": "40c87d3bf7094e5cba4773670f08f1c49ec160b135e1ff80c183973767cc7683"
+      }
+    }
+  ]
+}

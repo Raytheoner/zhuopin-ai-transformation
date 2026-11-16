@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import pytest
+from requirement_fixtures import seed, PROJECT
 
 BASE = Path(__file__).resolve().parents[1]
 
@@ -33,7 +34,8 @@ def chain(tmp_path, monkeypatch):
     git(repo, "config", "user.name", "Fixture")
     git(repo, "config", "user.email", "fixture@example.com")
     (repo / "AGENTS.md").write_text("Fixture only. No external actions.", encoding="utf8")
-    git(repo, "add", "AGENTS.md")
+    seed(repo, "fixture-task")
+    git(repo, "add", ".")
     git(repo, "commit", "-qm", "source")
     linked = tmp_path / "linked-worktree"
     git(repo, "worktree", "add", "--detach", str(linked), "HEAD")
@@ -47,7 +49,10 @@ def chain(tmp_path, monkeypatch):
         "action_key": "worktree_local_build",
         "intent_sha256": hashlib.sha256(b"Build a local pure-Python fixture only.").hexdigest(),
         "queue_file": "fixture-queue.md", "queue_line": 1,
-        "text": "approved synthetic fixture"}), encoding="utf8")
+        "text": "approved synthetic fixture",
+        "git_commit": {"phase":"proposal", "allowed_paths":[
+            "openspec/changes/fixture-task/proposal.md", "openspec/changes/fixture-task/design.md",
+            "openspec/changes/fixture-task/tasks.md", "openspec/changes/fixture-task/specs/sc1-core/spec.md"]}}), encoding="utf8")
     queue = folder / "queue.json"
     queue.write_text(json.dumps({"exit": 0, "stdout": json.dumps({"found": True, "carrier": "live",
         "done": False, "row": "648", "section": "一", "error": None,
@@ -83,18 +88,20 @@ def chain(tmp_path, monkeypatch):
         evidence.mkdir()
         if phase == "proposal":
             change = repo / "openspec" / "changes" / "fixture-task"
-            change.mkdir(parents=True)
-            for name in ("proposal.md", "design.md", "tasks.md"):
-                (change / name).write_text(name + " fixture", encoding="utf8")
+            (change / "proposal.md").write_text("## Why\nRefine the existing fixture.\n## What Changes\nReturn 42.\n## Impact\nFixture only.\n", encoding="utf8")
+            (change / "design.md").write_text("## Decisions\nExisting fixture only; serial TDD.\n", encoding="utf8")
+            (change / "tasks.md").write_text("- [ ] 1. RED test\n- [ ] 2. GREEN implementation\n", encoding="utf8")
             return {"status": "output_needs_review", "thread_id": "proposal-thread",
                     "tool_events": 3, "workspace": str(repo), "exit_code": 0}
         if phase == "implement":
-            service = repo / "service"
-            (service / "tests").mkdir(parents=True)
-            (service / "calc.py").write_text("def answer():\n    return 42\n", encoding="utf8")
+            service = repo / PROJECT
+            (service / "tests").mkdir(parents=True, exist_ok=True)
             (service / "tests" / "test_calc.py").write_text(
                 "from calc import answer\n\ndef test_answer():\n    assert answer() == 42\n",
                 encoding="utf8")
+            red = driver.handoff.execute([sys.executable, "-m", "pytest", "-q"], cwd=service, timeout=120)
+            assert red["exit"] == 1, red
+            (service / "calc.py").write_text("def answer():\n    return 42\n", encoding="utf8")
             (service / "__init__.py").write_text("", encoding="utf8")
             (evidence / "events.jsonl").write_text(
                 json.dumps({"type": "thread.started", "thread_id": "implement-thread"}) + "\n" +
@@ -133,7 +140,8 @@ def test_offline_full_chain_pauses_at_design_then_reaches_reviewed_release(chain
         "task_id": "fixture-task", "design_head": saved["design_head"],
         "design_sha256": hashlib.sha256(design.read_bytes()).hexdigest(),
         "text": "Shao Peishen approved fixture design",
-        "allowed_paths": ["service/__init__.py", "service/calc.py", "service/tests/test_calc.py"],
+        "allowed_paths": [PROJECT + "/__init__.py", PROJECT + "/calc.py", PROJECT + "/tests/test_calc.py"],
+        "git_commit": {"phase":"implement", "allowed_paths":[PROJECT + "/__init__.py", PROJECT + "/calc.py", PROJECT + "/tests/test_calc.py"]},
     }), encoding="utf8")
     second = driver.advance("fixture-task", repo, approval, executor, model_runner=model)
     assert second["next_phase"] == "test", second
@@ -146,12 +154,12 @@ def test_offline_full_chain_pauses_at_design_then_reaches_reviewed_release(chain
     assert saved["implementation_thread_id"] != saved["review_evidence"]["review_thread_id"]
     assert (folder / "ci-report.json").is_file()
     ci_report = json.loads((folder / "ci-report.json").read_text(encoding="utf8"))
-    assert ci_report["expected_roots"] == ["service"]
+    assert ci_report["expected_roots"] == [PROJECT]
     target = ci_report["targets"][0]
     assert target["argv"][1:] == ["-m", "pytest", "-q", "--tb=short", "--junit-xml=pytest-result.xml"]
     assert Path(target["junit_path"]).read_bytes().startswith(b"<?xml")
     assert driver.state.ci_evidence_error(saved) == ""
-    assert not (repo / "service/pytest-result.xml").exists()
+    assert not (repo / PROJECT / "pytest-result.xml").exists()
     assert (folder / "review.json").is_file()
     release = load("workflow_release")
     monkeypatch.setattr(release.state, "STATE", state_root)

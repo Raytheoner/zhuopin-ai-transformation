@@ -1,0 +1,177 @@
+{
+  "task_id": "watch-write-before-build-1115",
+  "level": "mock",
+  "design": {
+    "path": "openspec/changes/watch-write-before-build-1115/design.md",
+    "sha256": "fb96ec0b1b5b2b23e468f20856d873d0171bbcb5f18758d5f95c6fbe285c4f28"
+  },
+  "candidate": [
+    {
+      "path": "0-学习与工具/codex-handoff/workflow_driver.py",
+      "sha256": "c5a39528044463aa608cf0d5e40f6d16a1df52474fd21b619d5ad75dff6d44c3"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/queue_context.py",
+      "sha256": "4b031f921e3e4fa00e28c433cddde30f264cf023bbfff84deaac2c9e4d59be60"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/handoff.py",
+      "sha256": "37a8a93eb7947854f5eb18ddd04f14de5921da59ea4a5a2b6ae633583eba5d6d"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/hook_bridge.py",
+      "sha256": "8b949123d3cff9be278929156cdc07a14b95ba83feadf2577208a3ba8eaef7f2"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+      "sha256": "06730ced88612c53c5480660f0d3f6fecfb24cc9b06c7465f949bdd364162270"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_hook_optimization.py",
+      "sha256": "dc259482502cff9c57603572390d37432d9b29ace74607ff5650f87ae7e9e74a"
+    },
+    {
+      "path": "0-学习与工具/test_工具-共享文档编辑锁.py",
+      "sha256": "ee291741ec987ed62fac97f2d7a05611929ae3044ca535b709f3e8f91a6ba001"
+    },
+    {
+      "path": "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md",
+      "sha256": "fde49f57f6a8c32e0bbe4e8e3cea8c12832a0074a0f1d68747ec99a7f459608a"
+    },
+    {
+      "path": "docs/codex/rules/队列与落库.md",
+      "sha256": "fb83d4975fd1f3d440815418984f066db4e895fc7da736caafc4e1009c0c2c64"
+    },
+    {
+      "path": "docs/requirements/日常短入口与需求验收.md",
+      "sha256": "6f3b2cfea6851feb73d3d803b6a45403a9ff1dddd7eededaca15c2393491a4df"
+    }
+  ],
+  "specs": [
+    {
+      "path": "openspec/changes/watch-write-before-build-1115/specs/serial-test-first-construction/spec.md",
+      "sha256": "2f1f89f2813f966c203517810635b6c1b35935d6226cd6c7c7aeabc0949eb3da"
+    }
+  ],
+  "coverage": [
+    {
+      "scenario": "serial-test-first-construction::Foreground watch continues after context lookup::One blocked item does not stall independent work",
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+        "sha256": "99d465b45338046d14153f28aff8a81a8a60935e1d901a50331190398f9afb35"
+      },
+      "classname": "tests.test_foreground_watch",
+      "testcase": "test_failed_preregistration_continues_next_independent_item[write]",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+        "sha256": "06730ced88612c53c5480660f0d3f6fecfb24cc9b06c7465f949bdd364162270"
+      },
+      "functional": {
+        "path": "docs/codex/watch-write-before-build-1115/功能验收.json",
+        "sha256": "d3130427bdc2889c3b01f421d203460ae8362a1c3ea279030dc27e09265e1866"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Foreground watch continues after context lookup::One wake creates the first authorized candidate",
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+        "sha256": "99d465b45338046d14153f28aff8a81a8a60935e1d901a50331190398f9afb35"
+      },
+      "classname": "tests.test_foreground_watch",
+      "testcase": "test_single_wake_creates_candidate_writes_checkpoint_and_refreshes_pool",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+        "sha256": "06730ced88612c53c5480660f0d3f6fecfb24cc9b06c7465f949bdd364162270"
+      },
+      "functional": {
+        "path": "docs/codex/watch-write-before-build-1115/功能验收.json",
+        "sha256": "d3130427bdc2889c3b01f421d203460ae8362a1c3ea279030dc27e09265e1866"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Foreground watch continues after context lookup::The pool changes before a hold",
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+        "sha256": "99d465b45338046d14153f28aff8a81a8a60935e1d901a50331190398f9afb35"
+      },
+      "classname": "tests.test_foreground_watch",
+      "testcase": "test_pool_addition_before_hold_is_consumed_without_second_wake",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+        "sha256": "06730ced88612c53c5480660f0d3f6fecfb24cc9b06c7465f949bdd364162270"
+      },
+      "functional": {
+        "path": "docs/codex/watch-write-before-build-1115/功能验收.json",
+        "sha256": "d3130427bdc2889c3b01f421d203460ae8362a1c3ea279030dc27e09265e1866"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Native writes follow original claim and preregistration::A new target is registered before creation",
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+        "sha256": "99d465b45338046d14153f28aff8a81a8a60935e1d901a50331190398f9afb35"
+      },
+      "classname": "tests.test_foreground_watch",
+      "testcase": "test_preregister_missing_target_before_first_write",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+        "sha256": "06730ced88612c53c5480660f0d3f6fecfb24cc9b06c7465f949bdd364162270"
+      },
+      "functional": {
+        "path": "docs/codex/watch-write-before-build-1115/功能验收.json",
+        "sha256": "d3130427bdc2889c3b01f421d203460ae8362a1c3ea279030dc27e09265e1866"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Native writes follow original claim and preregistration::Existing writer or frozen work is present",
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+        "sha256": "99d465b45338046d14153f28aff8a81a8a60935e1d901a50331190398f9afb35"
+      },
+      "classname": "tests.test_foreground_watch",
+      "testcase": "test_frozen_and_review_only_items_are_not_claimed",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+        "sha256": "06730ced88612c53c5480660f0d3f6fecfb24cc9b06c7465f949bdd364162270"
+      },
+      "functional": {
+        "path": "docs/codex/watch-write-before-build-1115/功能验收.json",
+        "sha256": "d3130427bdc2889c3b01f421d203460ae8362a1c3ea279030dc27e09265e1866"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Native writes follow original claim and preregistration::Registration is rejected",
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+        "sha256": "99d465b45338046d14153f28aff8a81a8a60935e1d901a50331190398f9afb35"
+      },
+      "classname": "tests.test_foreground_watch",
+      "testcase": "test_failed_preregistration_continues_next_independent_item[readback]",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+        "sha256": "06730ced88612c53c5480660f0d3f6fecfb24cc9b06c7465f949bdd364162270"
+      },
+      "functional": {
+        "path": "docs/codex/watch-write-before-build-1115/功能验收.json",
+        "sha256": "d3130427bdc2889c3b01f421d203460ae8362a1c3ea279030dc27e09265e1866"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Native writes follow original claim and preregistration::Scope or evidence is unsafe",
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+        "sha256": "99d465b45338046d14153f28aff8a81a8a60935e1d901a50331190398f9afb35"
+      },
+      "classname": "tests.test_foreground_watch",
+      "testcase": "test_drifted_approval_is_not_permission",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+        "sha256": "06730ced88612c53c5480660f0d3f6fecfb24cc9b06c7465f949bdd364162270"
+      },
+      "functional": {
+        "path": "docs/codex/watch-write-before-build-1115/功能验收.json",
+        "sha256": "d3130427bdc2889c3b01f421d203460ae8362a1c3ea279030dc27e09265e1866"
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对原文中对应事项的最新队列/候选/批准及验收证据；记录遗留或被后续覆盖的具体部分后人工确认，不按旧时间自动关闭",
+  "id": "QH-20261020-L051",
+  "legacy_ids": [],
+  "notes": "2026-10-30仅迁移资料；原文快照截至2026-10-21，状态全部review，未代业务判断。",
+  "original_text": "受控运行终态：`reports/portal-local-visual-handoff-1021/restore-context-v1-result.json`、`受控恢复与首页503回执.md`、`context-restore-home-unavailable.png`；QA结果见受控恢复计划§5。QA以view_image核实际截图，以Get-Content核原JSON/MD，不将启动/清理exit0记为目测PASS。\n",
+  "owner": "原队列对应Owner；旧QA/UI执行状态待核",
+  "risk": "遗漏本条将丢失恢复证据的授权边界、剩余条件或证据定位",
+  "sources": [
+    {
+      "end": 51,
+      "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+      "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+      "start": 51
+    }
+  ],
+  "status": "review",
+  "title": "HOME503实际回执与目测失败",
+  "topic": "恢复证据"
+}

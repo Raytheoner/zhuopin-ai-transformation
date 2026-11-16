@@ -220,6 +220,7 @@ def test_completed_attempt_survives_reload_with_evidence_pointer(tmp_path, monke
 
 def test_prepare_initializes_empty_attempt_ledger(tmp_path, monkeypatch):
     from types import SimpleNamespace
+    from requirement_fixtures import seed
 
     entry = Path(__file__).resolve().parents[1] / "handoff.py"
     spec = importlib.util.spec_from_file_location("handoff_prepare_under_test", entry)
@@ -227,6 +228,10 @@ def test_prepare_initializes_empty_attempt_ledger(tmp_path, monkeypatch):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "STATE", tmp_path)
+    repo = tmp_path / "source"
+    repo.mkdir()
+    seed(repo, "sample-task")
+    monkeypatch.setattr(module, "ROOT", repo)
     full_row = "fixture queue complete row"
     def query(argv, **kwargs):
         if "--field" in argv:

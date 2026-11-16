@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+    "C:\\Dev\\zhuopin-ai\\0-学习与工具\\codex-handoff\\handoff.py",
+    "check-acceptance",
+    "--id",
+    "watch-write-before-build-1115",
+    "--evidence",
+    "C:\\Dev\\zhuopin-ai\\openspec\\changes\\watch-write-before-build-1115\\acceptance.json",
+    "--workspace",
+    "C:\\Dev\\zhuopin-ai"
+  ],
+  "cwd": "C:\\Dev\\zhuopin-ai",
+  "exit": 0,
+  "stdout": "{\"status\": \"accepted\", \"scenarios\": 7, \"level\": \"mock\", \"production_accepted\": false, \"professional_signoff\": false}\n",
+  "stderr": ""
+}

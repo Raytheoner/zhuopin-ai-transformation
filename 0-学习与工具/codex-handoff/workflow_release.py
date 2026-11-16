@@ -23,6 +23,7 @@ gate = _load("gate", BASE / "workflow_gate.py")
 lane_machine = _load("lane", ROOT / "0-学习与工具" / "工具-泳道看护状态机.py")
 handoff = _load("handoff", BASE / "handoff.py")
 execute = handoff.execute
+requirements = _load("requirements", BASE / "workflow_requirements.py")
 
 
 def patchid_compare(branch: str) -> dict:
@@ -142,3 +143,73 @@ def transfer_deploy(task_id: str, batch: str, lane: str, item: str, *, wave: int
     return {"status": "transferred", "item": item,
             "pointer": lane_machine.deploy_discipline_pointer(),
             "evidence": transfer, "production_executed": False}
+
+
+def closeout(task_id: str, workspace: Path, *, executor=None) -> dict:
+    """Archive only verified local work; caller retains the original queue lock.
+
+    This does not publish, commit, alter old CI/review evidence, or claim that
+    receipt consumption is equivalent to downstream business delivery.
+    """
+    workspace = Path(workspace).resolve()
+    current, reason = _verified(task_id)
+    if current is None:
+        return {'status': 'blocked', 'reason': reason}
+    head = handoff.git('rev-parse', 'HEAD', cwd=workspace)
+    if (str(workspace) != current.get('workspace') or head['exit']
+            or head['stdout'].strip() != current['implementation_head']):
+        return {'status': 'blocked', 'reason': 'closeout workspace or reviewed HEAD drift'}
+    observed = handoff.git('status', '--porcelain', '--untracked-files=all', cwd=workspace)
+    permitted = {'docs/requirements/INDEX.md', f'openspec/changes/{task_id}/tasks.md',
+                 f'openspec/changes/{task_id}/acceptance.json',
+                 f'openspec/changes/{task_id}/acceptance-functional.json'}
+    if observed['exit'] or any(line[3:].replace('\\', '/') not in permitted
+                               for line in observed['stdout'].splitlines()):
+        return {'status': 'blocked', 'reason': 'unverified changes outside closeout metadata'}
+    checked = requirements.inspect(workspace, task_id, stage='closeout')
+    if checked['status'] != 'ready':
+        return checked
+    if (current.get('requirements_contract') or {}).get('business_acceptance_required'):
+        try:
+            packet=json.loads((workspace/f'openspec/changes/{task_id}/acceptance.json').read_text(encoding='utf8'))
+            trusted=[{'path':t['junit_path'],'sha256':t['junit_sha256']} for t in current['ci_targets']]
+            acceptance=_load('business_acceptance',BASE/'business_acceptance.py').verify(
+                workspace,task_id,packet,trusted_junit=trusted)
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            return {'status':'blocked','reason':'business acceptance missing/invalid: '+str(exc)}
+        if acceptance['status']!='accepted':
+            return {'status':'blocked','reason':'business acceptance failed: '+acceptance['reason']}
+    if executor is None:
+        # Same Windows shim and execution contract as the original driver.
+        executor = _load('driver', BASE / 'workflow_driver.py').default_executor
+    validated = executor(['openspec', 'validate', task_id, '--strict'], cwd=workspace, timeout=120)
+    if validated.get('exit') != 0:
+        return {'status':'blocked', 'reason':'closeout OpenSpec validation failed', 'validation':validated}
+    archived = executor(['openspec', 'archive', task_id, '-y'], cwd=workspace, timeout=120)
+    if archived.get('exit') != 0:
+        return {'status':'blocked', 'reason':'OpenSpec archive failed; no queue closeout', 'archive':archived}
+    matches = list((workspace / 'openspec/changes/archive').glob('*-' + task_id))
+    if (workspace / 'openspec/changes' / task_id).exists() or len(matches) != 1:
+        return {'status':'blocked', 'reason':'archive location not proven; no queue closeout'}
+    archived_change = matches[0]
+    if requirements.lint.package_fingerprint(archived_change) != checked['package_sha256']:
+        return {'status':'blocked', 'reason':'archived package differs from checked package'}
+    # Verify each delta requirement made it into the main spec. OpenSpec handles
+    # merge semantics; this postcondition also detects a no-op/simulated archive.
+    import re
+    for delta in (archived_change / 'specs').glob('*/spec.md'):
+        main = workspace / 'openspec/specs' / delta.parent.name / 'spec.md'
+        if not main.is_file():
+            return {'status':'blocked', 'reason':'synced main spec missing'}
+        text = delta.read_text(encoding='utf8')
+        sections = re.split(r'^## ', text, flags=re.M)
+        for section in sections:
+            if section.startswith(('ADDED Requirements', 'MODIFIED Requirements')):
+                for heading in re.findall(r'^### Requirement: .+$', section, re.M):
+                    if heading not in main.read_text(encoding='utf8'):
+                        return {'status':'blocked', 'reason':'main spec sync not proven'}
+    return {'status':'archived', 'archive_path':archived_change.relative_to(workspace).as_posix(),
+            'task_id':task_id, 'row':current.get('row'), 'queue_writeback_ready':True,
+            'reviewed_head':current['implementation_head'], 'delivery_accepted':False,
+            'requires_revalidation_after_commit':True,
+            'next':'持原共享锁更新 INDEX 为 archive，并用原队列工具只销本地对应项；登记 §二后 release/status。'}

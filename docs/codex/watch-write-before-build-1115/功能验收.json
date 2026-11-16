@@ -1,0 +1,427 @@
+{
+  "task_id": "watch-write-before-build-1115",
+  "level": "mock",
+  "natural_trial_performed": false,
+  "head": "90ff9e3e1209997278bcdcb8720a235033746675",
+  "python": {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "--version"
+    ],
+    "cwd": "C:\\Dev\\zhuopin-ai",
+    "exit": 0,
+    "stdout": "Python 3.14.4\n",
+    "stderr": ""
+  },
+  "openspec": {
+    "argv": [
+      "openspec.cmd",
+      "--version"
+    ],
+    "cwd": "C:\\Dev\\zhuopin-ai",
+    "exit": 0,
+    "stdout": "1.7.0\n",
+    "stderr": ""
+  },
+  "actual_fixture_proofs": [
+    {
+      "fixture": "one_short_wake",
+      "outcomes": {
+        "outcomes": [
+          {
+            "row": 1,
+            "status": "blocked",
+            "reason": "fixture independent prerequisite unavailable"
+          },
+          {
+            "row": 2,
+            "status": "checkpointed",
+            "candidate": [
+              {
+                "path": "candidate/task2.py",
+                "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"
+              },
+              {
+                "path": "tests/test_task2.py",
+                "sha256": "461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec"
+              }
+            ],
+            "verification": {
+              "exit": 0,
+              "junit": {
+                "path": "reports/candidate2.xml",
+                "sha256": "46c69b98af42fd27e555199456941cc21d75fdf83ba81b20a0bd46450384c1ec"
+              },
+              "level": "mock",
+              "red_junit": {
+                "path": "reports/candidate-red2.xml",
+                "sha256": "6237b2f061d9c6af47cc782945dc377487fb3232adc4f5c7d438923d39ae2776"
+              }
+            },
+            "delivery_accepted": false
+          },
+          {
+            "row": 3,
+            "status": "blocked",
+            "reason": "fixture new design decision required"
+          }
+        ],
+        "pool_rechecks": 2,
+        "delivery_accepted": false,
+        "execution": "foreground_inline",
+        "natural_trial": false
+      },
+      "actual_candidate": {
+        "path": "candidate/task2.py",
+        "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"
+      }
+    },
+    {
+      "fixture": "write",
+      "outcomes": {
+        "outcomes": [
+          {
+            "row": 1,
+            "status": "blocked",
+            "reason": "preregistration rejected; no target writes allowed",
+            "recorded": true
+          },
+          {
+            "row": 2,
+            "status": "checkpointed",
+            "candidate": [
+              {
+                "path": "candidate/task2.py",
+                "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"
+              },
+              {
+                "path": "tests/test_task2.py",
+                "sha256": "461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec"
+              }
+            ],
+            "verification": {
+              "exit": 0,
+              "junit": {
+                "path": "reports/candidate2.xml",
+                "sha256": "7568d44c77eab7ff864a531de927f414c8d840cedeb0b9736e44a66674144683"
+              },
+              "level": "mock",
+              "red_junit": {
+                "path": "reports/candidate-red2.xml",
+                "sha256": "bb2adf47b001ef6fc6d7ff6983351496dd088f3b6297d9478a7a634c43f13ed9"
+              }
+            },
+            "delivery_accepted": false
+          },
+          {
+            "row": 3,
+            "status": "blocked",
+            "reason": "fixture prerequisite"
+          }
+        ],
+        "pool_rechecks": 2,
+        "delivery_accepted": false,
+        "execution": "foreground_inline",
+        "natural_trial": false
+      },
+      "actual_candidate": {
+        "path": "candidate/task2.py",
+        "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"
+      }
+    },
+    {
+      "fixture": "readback",
+      "outcomes": {
+        "outcomes": [
+          {
+            "row": 1,
+            "status": "blocked",
+            "reason": "preregistration readback not proven; no target writes allowed",
+            "recorded": true
+          },
+          {
+            "row": 2,
+            "status": "checkpointed",
+            "candidate": [
+              {
+                "path": "candidate/task2.py",
+                "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"
+              },
+              {
+                "path": "tests/test_task2.py",
+                "sha256": "461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec"
+              }
+            ],
+            "verification": {
+              "exit": 0,
+              "junit": {
+                "path": "reports/candidate2.xml",
+                "sha256": "a6e5299fcd240662b369a2f407dbe9e315e7e922fe17ff03144f9ed42a85c1cb"
+              },
+              "level": "mock",
+              "red_junit": {
+                "path": "reports/candidate-red2.xml",
+                "sha256": "051ecd003789a87e68bb8e6050a5026d4bb7bcb7b526701d77e12f7cef996eed"
+              }
+            },
+            "delivery_accepted": false
+          },
+          {
+            "row": 3,
+            "status": "blocked",
+            "reason": "fixture prerequisite"
+          }
+        ],
+        "pool_rechecks": 2,
+        "delivery_accepted": false,
+        "execution": "foreground_inline",
+        "natural_trial": false
+      },
+      "actual_candidate": {
+        "path": "candidate/task2.py",
+        "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"
+      }
+    },
+    {
+      "fixture": "pool_addition",
+      "outcomes": {
+        "outcomes": [
+          {
+            "row": 1,
+            "status": "blocked",
+            "reason": "fixture prerequisite"
+          },
+          {
+            "row": 2,
+            "status": "blocked",
+            "reason": "fixture prerequisite"
+          },
+          {
+            "row": 3,
+            "status": "blocked",
+            "reason": "fixture prerequisite"
+          },
+          {
+            "row": 4,
+            "status": "checkpointed",
+            "candidate": [
+              {
+                "path": "candidate/task4.py",
+                "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"
+              },
+              {
+                "path": "tests/test_task4.py",
+                "sha256": "504a2fae1c39c668a9de1cc430510694eb41d17df0e18ad15325b2077e8194db"
+              }
+            ],
+            "verification": {
+              "exit": 0,
+              "junit": {
+                "path": "reports/candidate4.xml",
+                "sha256": "c31175bba27fbcf8eabf273a044b7d4cf561a1d76abdbf2fe579c1d22d5774a2"
+              },
+              "level": "mock",
+              "red_junit": {
+                "path": "reports/candidate-red4.xml",
+                "sha256": "eba5e039cbe32afa57a816e0c337bbf969df9fa8dc7ae9ee5d837f071eeadbd7"
+              }
+            },
+            "delivery_accepted": false
+          }
+        ],
+        "pool_rechecks": 3,
+        "delivery_accepted": false,
+        "execution": "foreground_inline",
+        "natural_trial": false
+      },
+      "actual_candidate": {
+        "path": "candidate/task4.py",
+        "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"
+      }
+    }
+  ],
+  "native_hook_launcher": {
+    "argv": [
+      "pwsh",
+      "-NoProfile",
+      "-File",
+      "C:\\Dev\\zhuopin-ai\\0-学习与工具\\codex-handoff\\invoke.ps1",
+      "-Mode",
+      "Hook"
+    ],
+    "cwd": "C:\\Dev\\zhuopin-ai",
+    "exit": 0,
+    "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\", \"additionalContext\": \"调用zhuopin-lane-watch：本次短口令要求当前主会话串行消费原队列。watch-context只读取不授新权，execution_ready=false不是额外阻碍；核原批准/唯一写方/精确触碰区，持原锁claim-slice预登记成功后立即构建，不等第二条催办。单项阻塞记原行并取下一独立项；每次留步/收口前重查原池。不接管其他写方、不解冻、不扩审批、不新启后台。\"}}\n",
+    "stderr": ""
+  },
+  "regressions": {
+    "定向GREEN.xml": {
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/定向GREEN.xml",
+        "sha256": "af3246e73b8b8ed438ad1ab749cdcf5fe5416fee2b2c0bff8ae10ad0e0c3fecb"
+      },
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "51",
+          "time": "304.841",
+          "timestamp": "2026-11-15T22:57:51.082842+08:00",
+          "hostname": "SPSThinkpadWIN"
+        }
+      ],
+      "skips": []
+    },
+    "handoff完整.xml": {
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+        "sha256": "99d465b45338046d14153f28aff8a81a8a60935e1d901a50331190398f9afb35"
+      },
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "4",
+          "tests": "739",
+          "time": "703.860",
+          "timestamp": "2026-11-15T23:09:28.551843+08:00",
+          "hostname": "SPSThinkpadWIN"
+        }
+      ],
+      "skips": [
+        {
+          "case": {
+            "classname": "tests.test_workflow_driver",
+            "name": "test_ci_does_not_own_preexisting_xml[dangling]",
+            "time": "0.996"
+          },
+          "reason": {
+            "type": "pytest.skip",
+            "message": "symlink unavailable: [WinError 1314] 客户端没有所需的特权。: 'C:\\\\Users\\\\Paul Shao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-Paul Shao\\\\pytest-2813\\\\test_ci_does_not_own_preexisti4\\\\state\\\\runs\\\\sample\\\\missing' -> 'C:\\\\Users\\\\Paul Shao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-Paul Shao\\\\pytest-2813\\\\test_ci_does_not_own_preexisti4\\\\linked-worktree\\\\service\\\\pytest-result.xml'"
+          }
+        },
+        {
+          "case": {
+            "classname": "tests.test_workflow_driver",
+            "name": "test_review_approval_context_rejects_symlink[approval_into_repo]",
+            "time": "1.367"
+          },
+          "reason": {
+            "type": "pytest.skip",
+            "message": "symlink unavailable: [WinError 1314] 客户端没有所需的特权。: 'C:\\\\Users\\\\Paul Shao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-Paul Shao\\\\pytest-2813\\\\test_review_approval_context_r36\\\\linked-worktree\\\\approval.json' -> 'C:\\\\Users\\\\Paul Shao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-Paul Shao\\\\pytest-2813\\\\test_review_approval_context_r36\\\\state\\\\runs\\\\sample\\\\approval-link.json'"
+          }
+        },
+        {
+          "case": {
+            "classname": "tests.test_workflow_driver",
+            "name": "test_review_approval_context_rejects_symlink[allowed_outside]",
+            "time": "1.530"
+          },
+          "reason": {
+            "type": "pytest.skip",
+            "message": "symlink unavailable: [WinError 1314] 客户端没有所需的特权。: 'C:\\\\Users\\\\Paul Shao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-Paul Shao\\\\pytest-2813\\\\test_review_approval_context_r37\\\\state\\\\runs\\\\sample\\\\outside.py' -> 'C:\\\\Users\\\\Paul Shao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-Paul Shao\\\\pytest-2813\\\\test_review_approval_context_r37\\\\linked-worktree\\\\service.py'"
+          }
+        },
+        {
+          "case": {
+            "classname": "tests.test_workflow_state",
+            "name": "test_junit_reference_rejects_nonregular_files[symlink]",
+            "time": "0.035"
+          },
+          "reason": {
+            "type": "pytest.skip",
+            "message": "symlink unavailable: [WinError 1314] 客户端没有所需的特权。: 'C:\\\\Users\\\\Paul Shao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-Paul Shao\\\\pytest-2813\\\\test_junit_reference_rejects_n1\\\\runs\\\\sample\\\\original' -> 'C:\\\\Users\\\\Paul Shao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-Paul Shao\\\\pytest-2813\\\\test_junit_reference_rejects_n1\\\\runs\\\\sample\\\\ci-first-0.junit.xml'"
+          }
+        }
+      ]
+    },
+    "锁工具完整.xml": {
+      "junit": {
+        "path": "docs/codex/watch-write-before-build-1115/锁工具完整.xml",
+        "sha256": "79929b8399176490e9753a97c6a35dffba90dcc89da0c603fe922a32219c6232"
+      },
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "1",
+          "tests": "688",
+          "time": "268.260",
+          "timestamp": "2026-11-15T23:05:27.137611+08:00",
+          "hostname": "SPSThinkpadWIN"
+        }
+      ],
+      "skips": [
+        {
+          "case": {
+            "classname": "test_工具-共享文档编辑锁.FollowupSerialGateIdentityFallbackTests",
+            "name": "test_T6_append前置与release后置对同一形态给出同一结论",
+            "time": "0.068"
+          },
+          "reason": {
+            "type": "pytest.skip",
+            "message": "闸查询侧硬依赖平台包，无回落分支可测——非遗漏，见 docstring"
+          }
+        }
+      ]
+    }
+  },
+  "gates": {
+    "requirement": {
+      "argv": [
+        "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+        "C:\\Dev\\zhuopin-ai\\0-学习与工具\\工具-需求与变更包门禁lint.py",
+        "--enforce"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai",
+      "exit": 1,
+      "stdout": "INDEX_PROGRESS: editlock-write-guard-hardening: 索引 30/33；实际 31/33\nFEATURE_PROPOSAL: editlock-write-guard-hardening: 缺 MANDATORY：.gitignore、机制守卫退休\nCHANGE_NOT_INDEXED: reply-checkbox-column-evidence-563: propose 前须登记 INDEX\nCHANGE_NOT_INDEXED: wecom-connection-readiness-636: propose 前须登记 INDEX\n需求与变更包门禁：4 项问题\n",
+      "stderr": ""
+    },
+    "intent": {
+      "argv": [
+        "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+        "C:\\Dev\\zhuopin-ai\\0-学习与工具\\工具-场景包intent闸lint.py",
+        "--enforce"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai",
+      "exit": 0,
+      "stdout": "场景包 intent 闸 lint：扫描 107 个在办变更包 / 33 个场景目录（判豁免基准日 2026-11-15）\n  ✓ 合规场景包 17：fi10-inventory-writedown-mvp → FI10、fi11-project-budget-evidence-pc-mock → FI11、fi12-budget-version-evidence-pc-mock → FI12、fi13-policy-evidence-pc-mock → FI13、fi15-receivable-receipt-link-pc-mock → FI15、fi16-intercompany-evidence-pc-mock → FI16、fi5-expense-audit-mvp → FI5、fi6-anomaly-detect-mvp → FI6、fi7-catalog-intake-pc-mock → FI7、fi7-nonproject-budget-evidence-pc-mock → FI7、fi8-cashflow-forecast-mvp → FI8、fi9-rd-cost-mvp → FI9、o4-single-class-maintenance → O4、q2-8d-review-verdict-mvp → Q2、sc10-bom-review-material-governance → SC10、sc11-inventory-transfer → SC11、sc4-contract-clause-extraction → SC4\n  ○ 豁免 16：\n      - fi1-warehouse-reconcile → FI1：深化类·永久（2026-06-29 入库；propose/design 已过、MVP 已落 master，2026-06-29 起 ⏸ 暂停）\n      - fi2-recon-mvp → FI2：深化类·永久（2026-07-07 入库（另命中「部署状态」段信号））\n      - fi2-source-inversion → FI2：深化类·永久（2026-07-07 入库（另命中「部署状态」段信号））\n      - fi3-payment-validation-mvp → FI3：深化类·永久（场景 CLAUDE.md 有「部署状态」段）\n      - portal-sc2-ui → SC2：深化类·永久（场景 CLAUDE.md 有「部署状态」段）\n      - portal-sc8-ui → SC8：深化类·永久（2026-06-10 入库；已部署 `.51:8091`，部署信息写在「状态时间线」段故字面标记扫不到）\n      - qd-b-cross-module-tier3 → QD-B：深化类·永久（2026-06-27 入库（另命中「部署状态」段信号））\n      - sc2-autopush-friday → SC2：深化类·永久（场景 CLAUDE.md 有「部署状态」段）\n      - sc2-biztype316-receipts → SC2：深化类·永久（场景 CLAUDE.md 有「部署状态」段）\n      - sc2-procurement-monitor-v24 → SC2：深化类·永久（场景 CLAUDE.md 有「部署状态」段）；另注：未引用场景目录\n      - sc7-batch-quantity-mapping → SC7：深化类·永久（2026-07-06 入库）\n      - sc7-feedback-1112-refinement → SC7：深化类·永久（2026-07-06 入库）；另注：未引用场景目录\n      - sc8-atp-batch2-closeout → SC8：深化类·永久（2026-06-10 入库；已部署 `.51:8091`，部署信息写在「状态时间线」段故字面标记扫不到）\n      - sc8-kit-date-rule1-start → SC8：深化类·永久（2026-06-10 入库；已部署 `.51:8091`，部署信息写在「状态时间线」段故字面标记扫不到）；另注：未引用场景目录\n      - sc8-material-board-view → SC8：深化类·永久（2026-06-10 入库；已部署 `.51:8091`，部署信息写在「状态时间线」段故字面标记扫不到）\n      - sc8-real-producer-portal-bridge → SC8：深化类·永久（2026-06-10 入库；已部署 `.51:8091`，部署信息写在「状态时间线」段故字面标记扫不到）\n…（其余 10 行已省略，全文见 C:\\Dev\\zhuopin-ai\\reports\\output-throttle\\工具-场景包intent闸lint\\20261115-232222-209572.log）\n",
+      "stderr": ""
+    },
+    "zombie": {
+      "argv": [
+        "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+        "C:\\Dev\\zhuopin-ai\\0-学习与工具\\工具-僵尸未勾项lint.py",
+        "--enforce"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai",
+      "exit": 0,
+      "stdout": "僵尸未勾项 lint：扫描 107 个活跃变更包的 tasks.md（不含 openspec/changes/archive/）\n  本次扫描共发现 11 个前置声明（「前置 N.M」引用 11 处；「前置登记」项 6 个）\n\n  · J-D 基线回显（非判据，不定性）：105 个包共 1155 个未勾项\n      - aibot-inbound-whitelist-li-jiaolong：未勾 4 项（带编号 4），末次触碰 2026-08-31 ～ 2026-08-31\n          2026-08-31  4.1  **向李姣龙本人真实发送一条企微消息**——**本条严格按字面仍未做**：`#379` 硬前置是本行，但真正向她本人发…\n          2026-08-31  4.3  一并验回件方向：她回一句话后不再触发 `whitelist_rejected`，而是正常归档——**仍需她真实回复，无…\n          2026-08-31  5.2  `openspec archive` 本变更 —— **本次不归档**（§4 与 5.3 尚有真未完项，见顶部 `预期…\n          2026-08-31  5.3  `#379` 年度提醒 09-01 首触发前确认 4.x 已闭合 —— **留步**：依赖 4.x，需人在场\n      - aibot-outbox-relay：未勾 6 项（带编号 6），末次触碰 2026-08-27 ～ 2026-08-27\n          2026-08-27  6.1  **L1**：笔记本在 LAN 内时实跑「`.51` 写、笔记本读」，坐实文件通路（design 探测项 P6）\n          2026-08-27  6.2  **L1**：据此配置 `WECOM_AIBOT_OUTBOX_PATHS`，重启常驻服务，确认打印「已启动」而非「中…\n          2026-08-27  6.3  **L2**：首条真实送达 —— 发出后**对着采购部群看一眼**（chatid 采集只证明「机器人收到过来自该 ch…\n          2026-08-27  6.4  **L2**：同批反查 1:1 私信是否真的到了姚祖怡\n          2026-08-27  6.5  **L3**：确认 outbox 积压回落到 0，据此销 `#394`\n          2026-08-27  8.3  归档（待 §6 全勾）\n      - aibot-queue-sync-checkout-guard：未勾 3 项（带编号 3），末次触碰 2026-08-06 ～ 2026-08-06\n          2026-08-06  3.1  常驻服务部署后，观察至少一次真实非快进冲突场景，确认护栏未命中时机器人仍能顺利重算并推送（无外来内容的正常路径不受影响…\n          2026-08-06  3.2  若观察期内出现真实的\"护栏命中\"场景，核实降级记录/告警文案清晰可读、人工能据此找到磁盘上待处理的内容——同上，需观察…\n…（其余 1279 行已省略，全文见 C:\\Dev\\zhuopin-ai\\reports\\output-throttle\\工具-僵尸未勾项lint\\20261115-232234-051041.log）\n",
+      "stderr": ""
+    },
+    "requirement_tests": {
+      "argv": [
+        "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "test_工具-需求与变更包门禁lint.py",
+        "-q"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai\\0-学习与工具",
+      "exit": 0,
+      "stdout": ".....................                                                    [100%]\n21 passed in 1.48s\n",
+      "stderr": ""
+    }
+  },
+  "repository_gate_clear": false,
+  "scope_boundary": "only #715 mechanism; no takeover of 1115KH2, #563/#636 candidates or #670",
+  "this_session_changed_lock_tool_production_source": false,
+  "known_test_fixture_repair": "B-0901 fixed date no longer proves relative 60-day stale premise; bind batch to actual registration day, assertions unchanged",
+  "sandbox_run": "original full run and diagnostic repeat interrupted at asyncio socketpair initialization; entire suite rerun outside sandbox, no cases filtered",
+  "red_limit": "RED.xml records missing interfaces; initial ordinary missing-file fixture lacked guards and was not proof of that guard. Final GREEN uses actual parser, credential guard and original CLIs."
+}

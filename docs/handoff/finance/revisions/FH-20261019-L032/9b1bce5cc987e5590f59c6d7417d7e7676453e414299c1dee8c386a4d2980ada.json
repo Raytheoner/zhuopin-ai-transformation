@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "FH-20261019-L032",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "- 1017UI：`01a14a3d-7a74-78e0-8493-b5808f4c96cd`，标题`[Win]1017UI-智能门户本地恢复与部门导航收口`。内部联系继续获本人授权。SC4回执HEAD `b1e321f54b2c85383873f016d53edeee1a5ae9f6`、源ZIP SHA `d2cddd88f3201ab521b149c861e41429d33048fe72d678226631f903510d073d`；Plan及SHA在供审包绑定。不另核现场。\n",
+  "owner": "原财务任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 32,
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "start": 32
+    }
+  ],
+  "status": "review",
+  "title": "1017UI联系授权和SC4原回执",
+  "topic": "证据"
+}

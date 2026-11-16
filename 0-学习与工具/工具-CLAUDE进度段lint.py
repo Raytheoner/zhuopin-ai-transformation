@@ -134,6 +134,15 @@ _spec.loader.exec_module(editlock)
 #     worktree 里跑就会校验另一份文件、且不报错——正是要避免的静默回退。
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+
+def _current_rule_rel(repo_root: Path, legacy: str) -> str:
+    """Prefer native authority; an installed entry never falls back to its stub."""
+    path = Path(legacy)
+    native = "AGENTS.md" if path.parent == Path(".") else path.with_name("CODEX-RULES.md").as_posix()
+    if (repo_root / native).exists() or (repo_root / path.parent / "AGENTS.md").exists():
+        return native
+    return legacy
+
 ROOT_CLAUDE_REL = "CLAUDE.md"
 SCENE_GLOBS = ("4-数字员工/*/*/CLAUDE.md", "5-平台底座/*/CLAUDE.md")
 
@@ -168,7 +177,7 @@ OPENING_BUDGET_CAP_DEFAULT = 120_000
 # 判据：根 `CLAUDE.md` 中每一处**指向仓库内某个子目录 `CLAUDE.md` 的引用**，其目标
 # 文件必须存在且非空。缺失即违规。取全部反引号包裹、以 `CLAUDE.md` 结尾的路径串，
 # **只排除「自指」与「仓库外」两类**（见 `_classify_sentinel_path`），不挂在任何句式上。
-SENTINEL_QUOTED_RE = re.compile(r"`([^`\n]*CLAUDE\.md)`")
+SENTINEL_QUOTED_RE = re.compile(r"`([^`\n]*(?:CLAUDE|AGENTS|CODEX-RULES)\.md)`")
 # 裸路径（无反引号）扫描：**反引号同样是人写的格式约定**——若日后有人写成
 # 「先读 4-数字员工/CLAUDE.md」，只认反引号的实现会静默漏掉，正是本判据要防的失效模式。
 # 🔴 **但只进 warnings**（Shao Peishen 2026-08-23 答 (a)）：裸扫描可能误命中散文，而
@@ -176,7 +185,7 @@ SENTINEL_QUOTED_RE = re.compile(r"`([^`\n]*CLAUDE\.md)`")
 # 全部意义正是在真出事那次把人拦住。⇒ 反引号命中硬拦、裸命中只请人看一眼。
 # 必须含 `/`：不含 `/` 的裸 `CLAUDE.md` 在散文里指的就是根文件自己（自指）。
 SENTINEL_BARE_RE = re.compile(
-    r"([0-9A-Za-z_~.\u4e00-\u9fff][^\s`\"'（）()【】、，。：；]*/CLAUDE\.md)")
+    r"([0-9A-Za-z_~.\u4e00-\u9fff][^\s`\"'（）()【】、，。：；]*/(?:CLAUDE|AGENTS|CODEX-RULES)\.md)")
 # 目标文件字节下限：覆盖「被清空／只剩一行标题」这一种失效（Shao Peishen 2026-08-23
 # 答 (a)）。**这不算内容级校验**——不需要在根里冗余存摘要、也不需要给每块打标记，
 # 零同步负担。现存三份分别是 1,710／2,598／4,030 B，离 200 B 有一个数量级余量。
@@ -514,6 +523,7 @@ def opening_budget(repo_root: Path) -> tuple[list[tuple[str, str, int]], int]:
     parts: list[tuple[str, str, int]] = []
     total = 0
     for label, rel in OPENING_BUDGET_PARTS:
+        rel = _current_rule_rel(repo_root, rel) if rel == ROOT_CLAUDE_REL else rel
         path = repo_root / rel
         size = len(path.read_bytes()) if path.is_file() else -1
         parts.append((label, rel, size))
@@ -553,7 +563,7 @@ def _classify_sentinel_path(raw: str) -> tuple[str, str]:
     norm = raw.strip().replace("\\", "/")
     while norm.startswith("./"):
         norm = norm[2:]
-    if norm in ("", "CLAUDE.md"):
+    if norm in ("", "CLAUDE.md", "AGENTS.md", "CODEX-RULES.md"):
         # **自指**：根文件自己（「开场读 ① 本 `CLAUDE.md`」「写入 `CLAUDE.md` 顶部
         # Last Updated」，2026-08-23 实测在第 66／101 行）。判它**恒真、零信息量**。
         return "self", norm
@@ -613,22 +623,31 @@ def _sentinel_fault(repo_root: Path, rel: str, min_bytes: int) -> str:
 
 def check_sentinels(repo_root: Path, min_bytes: int = SENTINEL_MIN_BYTES_DEFAULT
                     ) -> tuple[list[str], list[str], int, int, int]:
-    """J8。返回 (violations, warnings, 判定处数, 失效处数, 裸路径疑似处数)。
+    """J8。返回 (violations, warnings, 根入口处数, 根入口失效数, 根入口裸路径数)。
+
+    目录入口缺陷也进 violations/warnings；数量合同仍只统计根入口，不混算下沉入口。
 
     **判定处数按「出现次数」数，不按去重后的路径数**（Shao Peishen 2026-08-23 答 (a)）：
     被删掉的是**某一处引用**，按次数数才能让人发现「上周还是 3 处、今天怎么 2 处了」。
     """
-    root = repo_root / ROOT_CLAUDE_REL
+    root = repo_root / _current_rule_rel(repo_root, ROOT_CLAUDE_REL)
     if not root.is_file():
         return [], [], 0, 0, 0
     quoted, bare = collect_sentinels(root.read_text(encoding="utf-8"))
+    root_total, root_bare = len(quoted), len(bare)
+    if root.name == "AGENTS.md":
+        for pattern in ("1-转型规划/*/AGENTS.md", "4-数字员工/AGENTS.md", "4-数字员工/*/*/AGENTS.md", "5-平台底座/AGENTS.md", "5-平台底座/*/AGENTS.md", "6-人才与组织/AGENTS.md"):
+            for entry in sorted(repo_root.glob(pattern)):
+                q, b = collect_sentinels(entry.read_text(encoding="utf-8"))
+                quoted.extend((n, p, entry.relative_to(repo_root).as_posix()+": "+s) for n,p,s in q)
+                bare.extend((n, p, entry.relative_to(repo_root).as_posix()+": "+s) for n,p,s in b)
     violations: list[str] = []
     warnings: list[str] = []
     faulted = 0
-    for line_no, rel, snippet in quoted:
+    for index, (line_no, rel, snippet) in enumerate(quoted):
         fault = _sentinel_fault(repo_root, rel, min_bytes)
         if fault:
-            faulted += 1
+            faulted += int(index < root_total)
             violations.append(
                 f"【J8】行{line_no} 哨兵「{snippet}」→ `{rel}` {fault}。"
                 f"**该哨兵指向的规则块将对所有新会话不可见**——被下沉的整块规则就此消失，"
@@ -640,7 +659,7 @@ def check_sentinels(repo_root: Path, min_bytes: int = SENTINEL_MIN_BYTES_DEFAULT
                 f"【J8】行{line_no} 疑似未加反引号的哨兵「{snippet}」→ `{rel}` {fault}。"
                 f"裸路径只告警不阻断（可能误命中散文）——若它确是哨兵，请补上反引号，"
                 f"补后本判据即改为硬拦")
-    return violations, warnings, len(quoted), faulted, len(bare)
+    return violations, warnings, root_total, faulted, root_bare
 
 
 def sentinel_summary_line(repo_root: Path, min_bytes: int) -> str:
@@ -650,18 +669,22 @@ def sentinel_summary_line(repo_root: Path, min_bytes: int) -> str:
     _v, _w, total, faulted, bare_n = check_sentinels(repo_root, min_bytes)
     verdict = "全部命中" if faulted == 0 else f"缺失或被清空 {faulted} 处"
     tail = f"　｜　另有 {bare_n} 处疑似裸路径（见告警）" if bare_n else ""
+    if (repo_root / "AGENTS.md").is_file():
+        tail += "　｜　根入口统计；目录引用另行校验"
     return f"🛡 哨兵存在性：{total} 处哨兵，{verdict}{tail}"
 
 
 # ─────────────────────────────────── 驱动 ───────────────────────────────────
 
 def target_files(repo_root: Path, root_only: bool) -> list[str]:
-    targets = [ROOT_CLAUDE_REL]
+    targets = [_current_rule_rel(repo_root, ROOT_CLAUDE_REL)]
     if root_only:
         return targets
     for pattern in SCENE_GLOBS:
-        targets.extend(sorted(p.relative_to(repo_root).as_posix()
-                              for p in repo_root.glob(pattern)))
+        matches = {p.relative_to(repo_root).as_posix() for p in repo_root.glob(pattern)}
+        native_pattern = pattern.replace("CLAUDE.md", "CODEX-RULES.md")
+        matches.update(p.with_name("CLAUDE.md").relative_to(repo_root).as_posix() for p in repo_root.glob(native_pattern))
+        targets.extend(sorted({_current_rule_rel(repo_root, rel) for rel in matches}))
     return targets
 
 

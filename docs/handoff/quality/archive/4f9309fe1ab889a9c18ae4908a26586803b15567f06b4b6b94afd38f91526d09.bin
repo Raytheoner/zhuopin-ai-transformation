@@ -1,0 +1,81 @@
+# [Win]1020QA-质量域接力（R5）
+
+更新：2026-10-21（限定质量核收准备完成：旧登记待批已消费，332候选/7定向通过但完整验收待定；QD-B条件追溯包已交付）。唯一 QA 会话 `01a1588d-67bb-7c43-a9d7-0c9758a6a7f0`；旧 QA `01a15208-9dcf-7570-9d0f-01dcda8411a6` 停止本批写入。门户/浏览器/.51唯一执行仍为1020UI `01a1577c-8e8f-7a20-b012-5b624a518412`。
+
+## 1. 当前目标
+
+本轮来源总控仅恢复质量核收方法/独立证据对照准备及QD-B历史只读追溯条件包，不重做规划、不解除旧Goal全部暂停、不启动自治loop。总控暂由01a15675-9989-7355-84ca-bc9bc8a45015协调，平台Goal对象/绑定未核；本线程未改变任何Goal。以下原质量目标与旧平台观察保留为历史执行背景，不扩为本轮运行或业务原文授权。
+
+阶段一先完成质量UI统一、门户集成、MVP发布及技术验收；复用Q2/QD-B/Q9既有逻辑，如实标明mock/历史数据/未提供时间，真实接入和专业签认不作前置。阶段一完成后才进入阶段二真实数据接入与人工专业/业务验收。串行持续推进，不开新泳道或扩大业务逻辑。现行计划`docs/superpowers/plans/2026-10-21-quality-two-stage-closeout.md`；QA核版本、audit与回执，1020UI保有门户/浏览器/进程/.51执行归属。
+
+本人已将平台Goal改为“按质量域全景路线图推进适用场景达到真实数据可用，完成UI统一、门户集成并完成 .51 部署及业务验收；”，objective保持一致。此前同一恢复批准缺口连续三轮后平台记录为blocked；本次本人1A已解除该缺口并恢复实际推进，现有工具不能将status写回active，不另建或缩减目标。总目标与两阶段顺序同时有效，不把Goal正文当作未具体批准的生产/真实源/权限授权；未完成前不标complete。
+
+## 2. 已批准范围
+
+Q-SOURCE-TIME-v1本地3产品/2测试绑定cfc7…ea44，已完成；Q-SOURCE-PROD-PREP-v1 G1/G2绑定计划f05f67e667c2fde3f04c7a1bc9690577263a8c7a24cf83771edd1f3dd02f4c31，已完成。Shao Peishen在本QA会话userMessage `01a158c3-682a-7840-87ca-67cadc63dddb`批准G3同manifest697078…1a64ee/ZIP70d267…03daa4，仅指定stage、原gateway8090/Q2 8098、漂移即停、同批快照恢复；UI直接回读并已消费。该批准不含新真实源/权限/模型/ff/push/外发或业务验收，不能沿用为新包/8092任务动作授权。Shao Peishen另批准一次仅限192.168.100.51:22、绑定Q-SOURCE-HOME-DIAG-v1 SHA256 9422ee61e7e998249a9025a3b72227987b0dcb309545c67b519ed0f5ba029ed2的D1–D4只读受控联网运行；不改持久权限/凭证/ACL/生产配置。该单次批准尚未消耗。随后Shao Peishen在现有1020UI线程要求只做本地守卫根因定位、按原设计补齐D2–D4并离线验证，明确不重连.51/不绕过；该本地范围已完成，现场核验保持未执行。
+
+2026-10-21 08:19 +08:00新增批准：1A批准仓库内仅供质量R5卡使用的固定路径更新入口，保留现有PreToolUse守卫、单文件编辑锁和§二批次登记；入口不提供任意路径或直接写卡能力。2A规定仅在CIM访问恢复并由本机只读核实确认后，再提交一次绑定计划SHA256 `9422ee61e7e998249a9025a3b72227987b0dcb309545c67b519ed0f5ba029ed2`、目标 `192.168.100.51:22` 的授权请求；CIM恢复前不提交请求、不重下D1–D4。
+
+## 3. 完成情况与停点
+
+**最新事实（优先于下列旧待批/未构建状态）**：UI后续直接批准及成功登记已消费旧停点，官方B-1021UI_统一候选收口现存，不再索批fc1或补登。合法summary/停点MD与官方批次一致：manifest d9d12e1f41691ea1beb034c28d668cfd329291efe2a8db22aba11f0976f9818d、332文件、7定向通过；完整回归、异步/pageshow/focus、QA及预览尚未完成。QA只核合法摘要与官方记录，未读受拒候选/ZIP/QA件或测试间接触发。13:46只读UI快照在限定准备回合，报告额外门户conftest前读不在清单，合法处置仍待定，不推断磁盘缺席。#340/#681已记录C05v2上线和三样本闭环，旧待批/未评不再当现态。QD-B条件案例包已完成：三历史样本只定位，不是读取白名单；报告/规则版本、用途受众、具名执行/验收待确认。MVP和部门验收未完成，本轮无代码、现场、业务请求、外发或Goal/loop变更。
+
+**本轮当前状态（优先于以下旧批次/待批记录）**：本人1A批准PORTAL-MVP-UNIFIED-CANDIDATE-v1（SHA550ef58e66094937df5664aea84d5ed2ee6c4e78e67b42ccb38c2c8c629604d7）已核SHA/读任务并成功转达。UI turn `01a15c61-f6dd-7c51-bcf8-d0ad98f21065`现completed/idle：8项输入及历史指针MATCH，静态定位4份销售段/3份历史空占位，随后官方§二append-row因计划路径漏反引号exit1、未修改队列，按失败即停未重试。只创建本批准备目录/四个证据文件，产品/候选/测试/服务/HTTP/.51均0，原UI锁已释放。QA已读小回执及修订登记文件，实际SHA02da6e77e18327ac01528b9c3682ad8aec650447676e27b396d3aadbef8ec325；未提交修订登记。当前仅待恢复登记格式这一项决定，原守卫/锁/零运行及设计范围不变。原v2不复用，MVP未完成。
+
+队列终态已回补：财务线正常释放共享锁后，QA按原工具成功acquire→回写#612及B-1021_质量两阶段收口→release，均exit0；官方查询已确认本次登记拒绝、零实施和修订文件SHA待批状态。未修改或释放他人锁，当前无队列更新待补。
+
+**当前状态（优先于下列历史记录）**：READ-RESUME本人1A已送达并实际执行，UI turn `01a15c49-5408-7943-9896-ecf10842d85d`。v2离线11 passed；四个require_escalated请求各一次、额度全部消费，8092/8090固定GET均200且SHA MATCH，原读取/503停点已越过。销售页出现4份重复标题/说明/提示区，整门户目测失败；手机完整检查、pageshow/focus未完成，Q-SOURCE最新差量未整合。仅清理run-home-v2和run-20261021-103349，分别10:37:57/10:37:56停止，两session退出0、临时标签关闭。QA实际查看销售截图、读小回执/原GET结果/两个stopped原件；53KB浏览器JSON整读及静态rg定位各被守卫拒绝，均未重试该目标，不从截图猜静态源位置。guard0922…22cb不变。下一项先在仓库内收口一份统一候选，完整范围/输入/SHA见§4；待本人批准，未实施、不恢复旧组合。CIM不再前置，原专业/生产待项不变。
+
+Shao Peishen已在本QA直接批准并授权发送Q-SOURCE-HOME-DIAG-v1（完整SHA见§4），限定D1–D4只读；首次已成功派至既有UI，后续明确要求中断后查实态、不重复下发。最新UI turn `01a159a5-e672-7222-a6c3-3d772f4698aa` 已completed/idle；22:11+08 D1本地SSH255、generic Permission denied，远端执行未确认且没有parent哈希，D2–D4依赖停止。QA本地20项一致性检查过，四项核验仍UNRESOLVED；原stdout/stderr未留，只存hash/分类，不能区分认证/sandbox/主机策略。原只读授权仍有效，不重新索同题批准。22:37+08获批的一次受控联网运行在SSH进程启动前被PreToolUse读侧守卫拦截：计划SHA MATCH、alias未完成核实、联网权限请求未提交、网络连接0。执行器SHA256 0f7102b0e30d4111543e827cb1987170b76684b22f29fd41856af754665205a1仅含D1，缺D2–D4；D1–D4均未执行，因此该一次性运行批准未实际联网消耗；随后用户明确本轮不重连.51。本地只读根因已复现：守卫的Get-NativeReadHit因Where-Object ScriptBlockExpressionAst不能转成静态字面量而保守拒绝，SSH参数未命中受保护路径。最小投影候选Write-Output数组匹配通过原守卫的离线分类；原守卫未修改。D2–D4执行器已补齐为默认离线/导入安全，33 Python全量、15 PowerShell、4原守卫兼容及1合成投影均通过；计划SHA仍MATCH。现场D1–D4仍UNRESOLVED。停点回执`reports/quality-source-time-qa-1020/home-diag-controlled-preflight-stop-20261020-223730.json` SHA256 `8deb0fb2ca87b85f6ace6c412d9057993dc8454469b33b4ec06994bd2623bc1e`。
+
+2026-10-20 23:29更新：Shao Peishen在当前QA会话重新明确批准一次限定`192.168.100.51:22`、绑定Q-SOURCE-HOME-DIAG-v1 SHA256 `9422ee61e7e998249a9025a3b72227987b0dcb309545c67b519ed0f5ba029ed2`的受控D1–D4只读运行。发送到现有1020UI会话的执行指令被平台auto-review拒绝；理由仍引用此前“不重连.51”指令。消息未送达，未触发SSH/网络请求。未换通道、未重试。现场D1–D4仍UNRESOLVED。
+
+G1/G2原34控制测试过、ZIP成员/载荷闭包依据为绑定控制测试，QA未直接枚举ZIP。G3前检及13阶段技术检查过，但实际浏览器异步ready后质量卡片缺三行，最终FAIL；同批snapshot恢复PASS，未重发原包。UI18:15留证gateway5696/Q2 13324、23ready/21routes，active c68a33047d0e32e27b4e605aed4a7035ae55b1065274ee3578452430aa7e3135/profile6f3438fa01471471dde9c6080d7ac7bb9e7a173960dba03efe082eabfbacb061，旧34ab/d602不是现势。QA本地30项一致性检查过，终态bb0c…5428及15引用SHA相符；三before、原任务、66guards/193历史保护、22其他receipt及audit均有留证。未刷新现场。
+
+精确采购v3 assembly载荷SHA aab17…5f7a2强制首页转8092；原G3只改gateway release下门户文件并操作8090/8098。本轮追加静态8项核验过：manifest绑定publisher79bc…5109的三产品/两根确实不能更新旧发布链的`C:/command-center/index.html`，三份旧ops明确同步该实际首页；当前8092实际映射仍待证，根因未定。原VM renderer测试截在async刷新前，不能证明整链；失败/恢复截图同SHA不算独立前后证据。本地serve.py读取曾被守卫阻断，未绕过。
+
+QD-B C05 v2既有发布/QA回执不重做；Q4材料/专业冲突仍由原Owner跟进。财务离线delta-v1（16文件/17成员，manifest280d39…86ffa/ZIPc1f84f…a2a73）仍NOT_APPLY_READY，旧父身份失效。环境健康检查不是本质量线修复范围，不续跑。
+
+2026-10-21 08:19 +08:00：本轮实现并登记R5固定路径更新入口，使用官方队列查询验证§二批次、复用共享锁工具管理该卡单文件锁；卡片正文仍经原生受守卫编辑。本次变更登记于 `B-1021_质量R5更新入口`。CIM访问仍未恢复；没有新的授权请求、D1–D4重跑、网络或生产动作。
+
+## 4. 关键证据
+
+本轮交付`reports/quality-source-time-qa-1020/质量限定核收与QD-B只读追溯准备-1021.md`，SHA c7bfb836e6f8295c614c4468338299125da2deb96ef47e1bd208827c6a198d7e；含独立可核/等待项、历史样本定位目录、版本和责任缺项、人工验收方法及最小需批动作。直接合法证据为UI的candidate-validation-summary.json（45f60c2a…2f82c3）、offline-validation-stop.md（6cf501e6…223cae）、10-19 final-lan-acceptance JSON（630c8a15…386cc1）及官方B-1021UI/#340/#681。候选本体/完整闭包未QA复算，三历史业务原文未读。#612/本批及当前R5已同步，不向其他业务线程回发。
+
+当前参数审阅：`reports/quality-source-time-qa-1020/unified-registration-reviewed-v2.json`，实际Get-FileHash SHA `fc1afe628825010e4f2004c84c899c781c8f9016b97c89dd50172a773d857783`；脚本`review_unified_registration_v2.py`及结果`unified-registration-preflight-v2.json`，仅只读参数校验。更新核收`QA-统一候选登记停点-1021.md`。原UI本次回执`reports/portal-mvp-unified-candidate-1021/registration-resume-stop.json`。#612第11批K2保留旧原文/反查PASS，日志md5 a2cc7e48；队列及批次终态已回补，当前无更新待补。
+
+现行两阶段计划：`docs/superpowers/plans/2026-10-21-quality-two-stage-closeout.md`（`QUALITY-TWO-STAGE-CLOSEOUT-v1`）；本轮登记`B-1021_质量两阶段收口`，官方业务#612已回写。本人更新平台Goal后已确认新正文；当前批准缺口已解除，平台状态及工具限制见§1，不影响沿原授权实际推进。
+
+本轮恢复原件：`reports/portal-local-visual-handoff-1021/restore-v1-execution-20261021-090832.json`、`原脚本恢复执行回执-20261021-090832.md`及对应sc1.stderr。CIM：同目录`local-cim-single-check-result.json`、`CIM单次只读对照回执.md`，QA核收与原批准范围见`docs/superpowers/plans/2026-10-21-local-cim-preflight-check-v1.md`。已批原脚本受控恢复：`docs/superpowers/plans/2026-10-21-portal-local-visual-restore-context-v1.md`。批次`B-1021_质量两阶段收口`，#612历史按K2第8批原文外置且官方反查PASS。
+
+受控运行终态：`reports/portal-local-visual-handoff-1021/restore-context-v1-result.json`、`受控恢复与首页503回执.md`、`context-restore-home-unavailable.png`；QA结果见受控恢复计划§5。QA以view_image核实际截图，以Get-Content核原JSON/MD，不将启动/清理exit0记为目测PASS。
+
+新8092精确批次：`docs/superpowers/plans/2026-10-21-portal-home8092-local-restore-v1.md` SHA256 `3280dafe23e82d317017ab354c7c951c794dc37f81b3103abe0ee34c1202e9b9`；附录包装器SHA `8be4cbe3a257354b4460b19016c8e291b2e1edf7a051df44b2c7638304807536`。UI准备证据`reports/portal-local-visual-handoff-1021/home8092-preparation-v1/核清回执.md`及`plan-binding.json`。QA已定向读计划全文/附录、原FI123源码和绑定回执；新计划字节不改。
+
+v1实际回执`reports/portal-home8092-restore-1021/execution-result.json`、`本批执行回执.md`、`offline-green.log`：11 passed，home已呈现，默认HTTP读失败、09:54:06正常停止。v2计划`docs/superpowers/plans/2026-10-21-portal-home8092-local-restore-v2.md` SHA `92db1e8b8be252e54c9228fb9acc528e823066efcda81685fd7ec9789a54aaaa`已批；准备拒绝原件同报告目录`v2-preparation-guard-stop.md`。离线原函数证据`v2-read-contract-offline.json`及源码`classify_v2_read_contract.ps1`；未改守卫。恢复项`docs/superpowers/plans/2026-10-21-portal-home8092-v2-read-resume-v1.md` SHA `6ebc38137115654a2376d6332c6a154ae5d02935b97b5b440550439525fc0b90`，实际Get-FileHash计算；本人本轮1A已批并成功转达，原冻结计划不改。
+
+v2终态：同目录`v2-execution-result.json`、`v2-本批执行回执.md`、`offline-green-v2.log`、`v2-desktop-sales-duplicate.png`及两个新run的`stopped.json`。QA核收`QA-v2核收与下一批边界.md`；四请求原命令、attempts=1、require_escalated和session/实际server身份见小JSON。8092响应ac273161…3a1428、8090响应0f2f8e0d…b1b6b9均MATCH，目测仍FAIL，不保留服务或标签。下一项`docs/superpowers/plans/2026-10-21-portal-mvp-unified-candidate-v1.md`（PORTAL-MVP-UNIFIED-CANDIDATE-v1）实际Get-FileHash SHA `550ef58e66094937df5664aea84d5ed2ee6c4e78e67b42ccb38c2c8c629604d7`，已登记，未批准或实施。#612第10批K2原文外置/落格反查PASS，日志md5 fb9ba7c4。
+
+G3执行原件：`reports/quality-source-time-production-plan-1020/g3/G3执行与恢复回执.md`及`final-rollback-receipt.json`（bb0c9b3c…5428）。QA：`reports/quality-source-time-qa-1020/G3本地QA核收与渲染缺口.md`及同名JSON（708350bd…9e75），复核脚本同目录`reconcile_g3.py`。新增`G3历史首页目标遗漏核验.json`（83508fa82019f284734676bb900881bcdda96ae55bf3780008a6adcc1f8900d0）及`G3首页目标缺证补记.md`；补证单`Q-SOURCE-HOME-DIAG-v1.json` SHA9422ee61e7e998249a9025a3b72227987b0dcb309545c67b519ed0f5ba029ed2。原计划/封包/历史件保留。
+
+HOME-DIAG源：`reports/quality-source-time-qa-1020/home-diag-20261020-221117-2143fe/diagnostic-receipt.json` SHA e4ebb7e4bb8c3f4e4fbbc340f3f09cda6082bf83f01d691ceb370dd163c90a36；QA：同根`QA-Q-SOURCE-HOME-DIAG-v1停点核收.md/json`，JSON SHA e0f818f6bf27d78dcb987bfee6d04cae80d3a9535f4db92626d8687eee9bc389；核收命令`review_home_diag_receipt.py` exit0。首次授权/派单见`home-diag-authorization.json`。本地诊断与离线验收报告`reports/quality-source-time-qa-1020/本地守卫诊断与D1-D4离线验收.md` SHA256 `87c36fb04db73c91455c6c98386e242382b726a56fb6d1e6455faff27c869682`；绑定回执`reports/quality-source-time-qa-1020/local-acceptance-final.json` SHA256 `b6a1431dcc8a6d155c7465ea4f23b9daef0c016893ae1adf8883ea253865ba66`。原守卫SHA `0922dffe454a9442ae9400440e08475667f9d387be38c4920c9827edb7a122cb`前后相同。22:37受控前置停点回执`reports/quality-source-time-qa-1020/home-diag-controlled-preflight-stop-20261020-223730.json` SHA256 `8deb0fb2ca87b85f6ace6c412d9057993dc8454469b33b4ec06994bd2623bc1e`；执行器`reports/quality-source-time-qa-1020/execute_home_diag_v1.py` SHA256 `0f7102b0e30d4111543e827cb1987170b76684b22f29fd41856af754665205a1`。
+
+质量部#17本次文本回件：PPAP格式说明`7-外部文档/质量部/质量部-ChenChen-回复-2026-10-16-文本反馈-4dfc723e95f16b3d93e29bb4b5979995.md` SHA256 `92386c5a7a3945b937208de169ebf93ae9103de4130ecd9a051aff0728d43ad8`；8D D2-M2纠错`7-外部文档/质量部/质量部-ChenChen-回复-2026-10-16-文本反馈-b55561da18bb1970d2c1ffab75be30ab.md` SHA256 `32dac2d59d0ff7bb6b14a1c5dc26852306472d9acc697b1f2acdbb349b906633`。EQ15G工作簿当前SHA：流程图`9cfad1a3eb183748e190276bd1591bea5411428085487d4c06e44e59fab68ddc`、控制计划`9d9258855951c930ece6a7c43972706df78eb3bf8728d5f23f3718f76a7bcc37`、特殊特性清单`7b5412dc389f85bf72322a0d64bbb191e28caaa4349bb85c0972156e6e805fa2`。文本反馈说明其余项目材料因客户格式差异仍在统一；第二份只涉及8D D2-M2，不并入Q4 PPAP判例。工作簿内容读取被本机PreToolUse读侧守卫拒绝，未绕过；采用队列既有纵向对照，不作新的内容判定。
+
+2026-10-20 23:40新鲜哈希复核：既有`reports/quality-business-1019/q4/identity-comparison.json` SHA256 `93eb45efa7adcebad700a4624a684f055ed3461b170d9b17b3b9df39ba284f4d`内的flow/control/special source_hashes，与三份原件当前SHA完全匹配。报告记录54流程/54控制、52共同编号；专业裁决仍为PENDING。只核文件SHA并读取既有对照JSON，未读取工作簿单元格、未更改判断或原件。
+
+2026-10-20 23:44归属核验：10-16 D2-M2反馈与官方#688状态内容一致；#688已于10-19消费“不扣分”及其余判定/报告可读性确认，并保全原84、补正85/B、Excel和audit。该反馈属于Q2既有回件，不产生新的Q4 PPAP样本或新评分动作，也不重开#688；Q2整体#612仍partial。
+
+R5更新入口：`0-学习与工具/codex-handoff/invoke.ps1` 的 `R5Card` 模式；§二批次 `B-1021_质量R5更新入口`。入口仅固定目标R5卡并委托原官方查询/锁工具，卡片正文继续使用原受守卫编辑方式。
+
+## 5. 下一步
+
+本轮限定准备已交付，由协调任务读取本线程回执。技术项等待UI/原维护方给出额外前读检查及合法回归处置，再核同一候选完整回归/动态证据；不擅自读取受拒件或启动测试/预览。业务项由总控集中圈定一例QD-B资料/报告白名单、规则版本链、用途受众及具名执行/验收/backup，再提出具体只读任务范围。陈忱仅已有联络人，不自动任命。本线程不联系其他业务线程，不启动旧loop或修改总Goal。
+
+现场映射核验确有依赖时，仅在CIM访问恢复且本机只读核实通过后，按2A提交绑定9422…9ed2与192.168.100.51:22的一次请求；未满足前不请求、不重下D1–D4。旧G3不重发，新生产方案另批。阶段一实际发布及技术验收闭合后，再推进阶段二真实源和专业验收。
+
+## 6. 待审批事项与禁项
+
+本轮没有新的登记批准项，旧登记题已消费。余最小待确认/需批：合法回归恢复处置；QD-B一例白名单/版本/用途受众和具名责任；后续完整目测、HTTPS实施及发布按实际方案另批。当前仅准备，未取得原文读取/分享、新运行或生产授权。原ZIP/QA等既往受拒内容保持原停止边界；不重评、不续C05、不代专业签认。
+
+固定路径R5入口已完成。2A为CIM恢复后条件步骤，目前无证明、不提交新请求；现场D1–D4仍未完成。ff/push/生产部署/外发、新真实源、权限/模型、守卫/凭据/ACL及仓库外改动不在本轮新增授权内。本批本地运行/测试及清理以§3/4实际回执为准；QA未另启服务、联网或重跑测试。

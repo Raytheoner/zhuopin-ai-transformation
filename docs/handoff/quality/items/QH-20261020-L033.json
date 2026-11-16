@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对原文中对应事项的最新队列/候选/批准及验收证据；记录遗留或被后续覆盖的具体部分后人工确认，不按旧时间自动关闭",
+  "id": "QH-20261020-L033",
+  "legacy_ids": [],
+  "notes": "2026-10-30仅迁移资料；原文快照截至2026-10-21，状态全部review，未代业务判断。",
+  "original_text": "G1/G2原34控制测试过、ZIP成员/载荷闭包依据为绑定控制测试，QA未直接枚举ZIP。G3前检及13阶段技术检查过，但实际浏览器异步ready后质量卡片缺三行，最终FAIL；同批snapshot恢复PASS，未重发原包。UI18:15留证gateway5696/Q2 13324、23ready/21routes，active c68a33047d0e32e27b4e605aed4a7035ae55b1065274ee3578452430aa7e3135/profile6f3438fa01471471dde9c6080d7ac7bb9e7a173960dba03efe082eabfbacb061，旧34ab/d602不是现势。QA本地30项一致性检查过，终态bb0c…5428及15引用SHA相符；三before、原任务、66guards/193历史保护、22其他receipt及audit均有留证。未刷新现场。\n",
+  "owner": "原队列对应Owner；旧QA/UI执行状态待核",
+  "risk": "遗漏本条将丢失生产历史的授权边界、剩余条件或证据定位",
+  "sources": [
+    {
+      "end": 33,
+      "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+      "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+      "start": 33
+    }
+  ],
+  "status": "review",
+  "title": "G3渲染失败和同批回滚证据",
+  "topic": "生产历史"
+}

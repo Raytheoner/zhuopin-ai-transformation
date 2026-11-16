@@ -1,0 +1,60 @@
+---
+title: "[Win]1021SC-采购目标接力（R5）"
+created: 2026-10-20
+updated: 2026-10-21T13:50:26+08:00
+执行方: Codex · 采购域
+来源: Session goal、业务队列 §一 #654、采购七场景v3现场验收
+status: 在办
+---
+
+# [Win]1021SC-采购目标接力
+
+## 1. 当前目标
+
+本人2026-10-21已在界面更新并恢复原Goal，两阶段串行：①UI统一、门户集成和MVP发布；②真实数据接入和专业验收。阶段一七入口v3已收口，当前仅推进阶段二。采购业务框架沿用，不重做框架或扩展场景。Goal未整体完成。
+
+## 2. 已批准范围
+
+七场景v3原授权已消费。2026-10-21本人A批准SC2冻结证据接入v1五路径本地设计、实施及测试，SHA256 `05f1813e3f250d57b516297a3e37aac8c1238ef38a5e3114804adddb1def70ba`，不含新实采、ff、生产、外发。既有Z/59578100、10/5—11及必要9/7起历史冻结授权继续有效；采购#27原渠道在途，不重发。
+
+## 3. 完成情况与停点
+
+七入口v3于2026-10-20 15:02:39 CST现场发布PASS：13阶段/61摘要/8原任务与留存均核；本人七页目测通过。阶段一收口证据见下，不重复发布。
+
+SC2本地接入片完成：从v3冻结源复制，159原文件前后SHA相等、恰五路径差量；38新用例、443完整SC2用例通过，0失败/错误/skip。1548条冻结行（814/494/212/28）经新schema/API/页面/audit同UUID/hash回读；三率unknown，专业未验。28比较行原生unknown保留并按原件行号定位。源包SHA256 `963aeef92940baff53c6b9b603aae2dbe1ca86869de38b779a5675f682c2baff`，未生产发布。
+
+续作已核原六真实案例：料号子检查SC2-READY-03核销，旧版单项作废/版本链/已证数量字段移出重复索取；其余5例保留历史/关联缺口。6例关联最终快照8条引用，原件SHA前后保持，未作专业签认。候选现时161文件SHA对manifest为0漂移，不重复pytest。
+
+SC8#350已由唯一现场Owner完成原生产者/8091链元数据核验，R1/R2有效运行口径仍未知；未读快照业务内容。SC4单份冻结合同51项检查完成，法律专业验收待；SC7/10/11仍缺同版真实包、独立主数据及onhand/reserved等来源证明。均沿原渠道，不跨源拼接、不代签。
+
+SC2又将同批IT15导出已有RtnType/Status按单号/行号及日期/料号/数量/来源行/组织严格补入212收货；API/页面/audit同ID/hash回读PASS，产品161 SHA不变。新UUID `32812540-daa3-4c66-8176-65f4a46bc778`；状态200行5/12行0仅保留原值，不代判过账/业务类型。缺字段收敛为relation_proven，三率unknown，未实采或发布。
+
+本人SC8 v1的A批准和一次派发已实际消费。核收原Owner`whitelist-20261021-100118-c2ba69/minimal-whitelist-receipt.json`：10:01身份前检SSH255、远端UNCONFIRMED、快照0；原因没有正文证据。随后本人1=A批准恢复v2及一次派发，已唯一送达并消费。v2完成26合成本地验证后，在离线编码6904/8016/9432（须<7400）停止，平台申请/SSH/快照均0；回执`reports/sc8-onsite-350-1020/whitelist-v2-offline-stop.json` SHA8d081e17d3f487c5b36657843177303a95fdd88c091256e7d7fb708c2b30a3ac。原SC8回合已结束，UI随后其它活跃回合不算SC8执行句柄。
+
+本线已准备装载修正v3：同一原SSH的stdin承载逐字节保留的原wire，身份/父闭包/源SHA/白名单不变，15项本地合成通过；参数6904/356/356、载荷3005/3537字节，14文件清单完整性核对通过。纯代码压紧仍8304的原型已否决、保留。v3计划SHA4fa59b077ef63dfa46888ed7dae2411dac2199fea60f9cbe029d696629562e1b，已向本人呈A/B待批，尚未再次派发/申请平台/调用SSH，不接源/发布。
+
+13:50按首批限定准备指令完成SC4条款定位/追溯场景包：复用b1e321f5和原非限制模板回执，原SHA43286a90c4e08bd736b6cc1b92176be631977110d579876923c6e54a901cfd00核对一致。51项为10/20历史技术证据，实际合同/专业验收仍false。C1仅拟选现存实际合同1件，文件/用途/受众及具名执行/验收人待指定批准；姚祖怡只列采购联络。12件模板不再索取，2限制历史合同排除。本轮未读新原件、重跑产品测试、导出、远端或联系其它线程；未恢复全部旧Goal/loop。
+
+## 4. 关键证据
+
+- 阶段一：`reports/procurement-mvp-closeout-1021/MVP发布收口.md`；`reports/procurement-seven-release-1020/assembly-v3/production-consumed-receipt.json`。
+- 两阶段正本：`reports/procurement-phased-goal-1021/两阶段执行正本.md`；批准设计与原SHA文件同目录。
+- SC2本片：`reports/procurement-sc2-frozen-1021/本地接入收口.md`、`local-acceptance-receipt.json`、`five-path-delta.patch`；最终真实回执`real-local-5fec96c43ace4bdca2128a20f0864062/receipt.json`。旧失败全部保留。
+- SC2六案例：同根`case-reconciliation-8775c9f11fcb46f2929165b1533c02ff/receipt.json`与`六案例核销.md`；SC8本次执行单、派发回执与`续作-六案例核销与来源停点-20261021.md`均在同根。
+- SC2头字段：同根`收货头字段接入增量.md`、`receipt-header-join-e0d84112b32a4c6a9f7cf0e65494ddf7/receipt.json`；原件和旧快照保留。
+- SC8：`reports/sc8-onsite-350-1020/continue-20261021-000944-719761/field-gap-map-final.json`及`minimal-continuation-receipt.json`。
+- SC8 v3：`reports/procurement-sc2-frozen-1021/SC8白名单补核-装载修正v3.md`；同根`sc8-wire-review-v3/candidate-manifest.json`（SHAf799de256a725f4b629ee63734da5683dd9c2e8a96fc77d8a5035ac9dd65fe36）、`tests-stdin-03-green.xml`、`stdin-byte-identity-and-length-proof.json`。v1/v2原失败与全部本地RED/未选原型保留。
+- SC4首批准备：`reports/sc4-first-trial-preparation-1021/首批试用场景包-v1.md`；资料白名单为待指定实际案例，部门任务/核对方法/具名人员缺项均已列明，本轮不执行试用。
+- 主任务#654，保持partial。队列只用工具查询。
+
+## 5. 下一步
+
+当前限定回合只交SC4本地准备包，下一步由业务指定现存实际合同1件、用途/受众及具名执行/验收人，技术方补齐身份后再呈精确本地试用范围。SC8 v2停点已核收、v3仍待明确决定，本轮不执行；SC2不新增取证，完整截止成员/转换结案及逐项答交历史继续沿#27原渠道。已解决问题不重做；未知保持unknown，未来现场/生产按精确范围批准。
+
+## 6. 待审批与唯一执行会话
+
+本人对SC8 v2的1=A及一次派发已消费，实际离线停止，不再待本人重复批准v2。当前唯一新增定夺为装载修正v3：A推荐同一原SSH stdin装载原wire、原1020UI一次恢复派发及一次标准平台申请；B暂停SC8现场补核。计划SHA256 `4fa59b077ef63dfa46888ed7dae2411dac2199fea60f9cbe029d696629562e1b`，已通过本会话request_user_input_async呈问；尚未收到新答复。SC2五路径与阶段一七入口发布不重审；新实采、ff、生产/外发仍未授权，专业签认沿原责任渠道。
+
+SC4首批真实试用尚未进入执行审批：实际文件及具名人员未指定，不预批任意合同；本地场景包已交，受控标准与法务规则未确认的能力保留原闸。总控平台Goal绑定未核实，本轮不新建Goal或恢复自治loop；完成回执留本线程供协调任务读取，不主动回发消息。
+
+唯一采购执行会话：`[Win]1021SC-采购目标接力`，threadId=`01a159f3-b4b7-7253-82a9-49b9f4a4fff5`。原1020SC线程`01a1586e-0ba1-72a1-aac1-070ef81e03f0`已确认交接并归档，不再执行；原审批/候选/state/lock保留。现场UI/发布仍由`[Win]1020UI-门户发布与业务接力`唯一负责。七场景承接行：SC4 #467、SC10 #468、SC11 #469、SC2 #654、SC8 #660、SC7 #670、SC1 #699。

@@ -1,0 +1,23 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "entry_summary": "预警修复未闭环；业务执行仍为`01a18a8b-968f-73cc-aa18-f0d82b23b010`。",
+  "id": "P1H-20261030-L004",
+  "legacy_ids": [],
+  "notes": "只迁移资料；原业务Owner、批准、未完编号、失败原文全部保留，未确认原业务线程停写。",
+  "original_text": "预警历史错漏、送达/UNKNOWN、防重复与巡检覆盖收口。唯一执行会话 `01a18a8b-968f-73cc-aa18-f0d82b23b010`；前会话 `01a185bc-3670-770b-a154-ccc4aa64c02e` 已停止写入，不并发接手。\n",
+  "owner": "原告警业务会话01a18a8b-968f-73cc-aa18-f0d82b23b010；资料维护由当前Codex主会话承接",
+  "r5_section": "目标",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 4,
+      "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+      "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+      "start": 4
+    }
+  ],
+  "status": "review",
+  "title": "目标",
+  "topic": "Phase1接力"
+}

@@ -1,5 +1,18 @@
 schema: spec-driven
 
+# 本仓双轨口径由 CI 的需求与变更包门禁 lint 执行；OpenSpec 1.7.0 的
+# validate 不读取 rules.proposal，不能以 validate 通过替代机器门禁。
+modes:
+  feature:
+    mode: feature
+    applies_to: 新场景或新能力
+    requires: intent.md -> proposal.md -> design.md -> specs/ delta -> tasks.md -> pytest
+  refinement:
+    mode: refinement
+    applies_to: 已有能力的微调优化
+    requires: 轻量 proposal.md -> specs/ delta -> 对应 pytest -> tasks.md
+    invariant: 不得绕开主规格或测试直接改代码
+
 rules:
   proposal:
     - >-
@@ -39,7 +52,7 @@ rules:
       且其 frontmatter 为 `status: 已确认`（三节固定：§一 M2 自查事实／§二 已定＝design Decisions／
       §三 待专员＝判例包待办，每条带口径点 ID 占位）。产出方式＝先跑 skill `zhuopin-requirement-grill`
       做需求 grill，`status` 由 Shao Peishen 确认后写。来源：Shao Peishen 2026-09-06 拍板 ③(a)
-      （队列 §一 #436 ⑶①），口径正本＝`.claude/rules/场景建造与合规.md` §二。
+      （队列 §一 #436 ⑶①），口径正本＝`docs/codex/rules/场景建造与合规.md` §二。
       🔴 **本条只是提示句、不是闸**：openspec 1.7.0 的 validate 不读 config.yaml 的 rules
       （实测：本仓库 8 份 proposal.md 缺上面那条「知识资产三问」MANDATORY 节，
       `openspec validate --all --strict` 仍报 169 passed／0 failed），CLI 也无自定义规则挂载点。

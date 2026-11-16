@@ -1,0 +1,23 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "PH-20261020-L048",
+  "legacy_ids": [
+    "#654"
+  ],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "- 主任务#654，保持partial。队列只用工具查询。\n",
+  "owner": "原采购任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 48,
+      "path": "docs/handoff/procurement/archive/3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb.bin",
+      "sha256": "3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb",
+      "start": 48
+    }
+  ],
+  "status": "review",
+  "title": "原主任务#654及查询方式",
+  "topic": "任务索引"
+}

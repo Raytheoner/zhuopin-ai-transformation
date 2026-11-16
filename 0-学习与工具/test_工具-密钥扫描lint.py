@@ -102,3 +102,32 @@ def test_main接受argv参数且默认走sys_argv不受影响(monkeypatch, capsy
 
     rc_verbose = M.main(["--verbose"])
     assert rc_verbose == 0
+
+
+# 1113A2发布接纳：固定非凭据协议标签不应误报，变值/错文件/真实模式仍必须报。
+import pytest
+
+@pytest.mark.parametrize("rel,name,value", [
+    ("0-学习与工具/工具-opener块lint.py","CANON_ROLE_KEY","opener正本"),
+    ("0-学习与工具/工具-未闭合产出扫描.py","EXPECTED_SERVER_TOKEN","waitress"),
+    ("0-学习与工具/工具-泳道看护状态机.py","PATCHID_PRECHECK_ACTION_KEY","merge_to_master"),
+    ("0-学习与工具/工具-落库sweep.py","LOCAL_ONLY_DIVERGED_KEY","local-master:diverged"),
+])
+def test_protocol_label_is_not_a_credential(tmp_path, rel, name, value):
+    p=tmp_path/rel;p.parent.mkdir(parents=True);p.write_text(name+" = "+repr(value),encoding="utf8")
+    assert _load_module()._scan_file_content(tmp_path, rel)==[]
+
+@pytest.mark.parametrize("rel,value", [("0-学习与工具/工具-opener块lint.py","new-unverified-value-12345"),("other.py","opener正本")])
+def test_protocol_identity_change_still_blocks(tmp_path,rel,value):
+    p=tmp_path/rel;p.parent.mkdir(parents=True,exist_ok=True);p.write_text("CANON_ROLE_KEY = "+repr(value),encoding="utf8")
+    assert _load_module()._scan_file_content(tmp_path,rel)
+
+def test_protocol_label_never_disables_structured_secret_scan(tmp_path):
+    rel="0-学习与工具/工具-opener块lint.py";p=tmp_path/rel;p.parent.mkdir(parents=True)
+    fake="AKIA"+"A"*16
+    p.write_text("CANON_ROLE_KEY = 'opener正本'\nDOC = "+repr(fake),encoding="utf8")
+    assert _load_module()._scan_file_content(tmp_path,rel)
+
+
+def test_public_protocol_classification_does_not_relax_write_side():
+    assert _load_module()._looks_like_real_secret("CANON_ROLE_KEY", "opener正本") is True

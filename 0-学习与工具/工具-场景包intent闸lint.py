@@ -196,7 +196,10 @@ def build_scene_index(root: Path) -> dict[str, Scene]:
             if not m:
                 continue
             code = m.group(1).upper()
-            claude_md = scene_dir / "CLAUDE.md"
+            native = scene_dir / "CODEX-RULES.md"
+            claude_md = native if native.exists() or (scene_dir / "AGENTS.md").exists() else scene_dir / "CLAUDE.md"
+            if (scene_dir / "AGENTS.md").exists() and not native.is_file():
+                raise FileNotFoundError(f"Codex 规则正本缺失：{native}")
             has_deploy = False
             if claude_md.is_file():
                 has_deploy = bool(DEPLOY_SECTION_RE.search(

@@ -1,0 +1,119 @@
+{
+  "task_id": "queue-prerequisite-context-1115",
+  "level": "mock",
+  "design": {
+    "path": "openspec/changes/queue-prerequisite-context-1115/design.md",
+    "sha256": "bb04d91b12029e2fc4b84c996db3a335427e65e755d5d11e9fea0b80571d0c45"
+  },
+  "candidate": [
+    {
+      "path": "0-学习与工具/codex-handoff/queue_context.py",
+      "sha256": "42a39fb68b0d4312e603a41ed7dc9275c3a2375d8fb9150452eb69748d1c9162"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_queue_context.py",
+      "sha256": "5f46a58bc77d2af63692cb449d6ea0431273fd3e5036c22234411d2ecc7a1db2"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/guardian_adapter.py",
+      "sha256": "6ed93f517249aa7d74fe1c76020c4b159cdb5063807f6363a570e4c4f9e5dd3a"
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_guardian_adapter.py",
+      "sha256": "20c6154c4151d2509b399e630ab2f6b96c982269b3cfe47ddb8cd27528435aee"
+    }
+  ],
+  "specs": [
+    {
+      "path": "openspec/changes/queue-prerequisite-context-1115/specs/serial-test-first-construction/spec.md",
+      "sha256": "b13ea6c0cf3d8afbc064e3188ed703e80f359d7af0e4971aa3f31895965609bf"
+    }
+  ],
+  "coverage": [
+    {
+      "scenario": "serial-test-first-construction::Existing queue consumption resolves prerequisites by stage::A predecessor or owner is still active",
+      "junit": {
+        "path": "docs/codex/queue-prerequisites-1115/handoff-final.xml",
+        "sha256": "50aad65e79fb745aa48d361ad1ed8d4a9183d39483d87f907908d4dd014b3773"
+      },
+      "classname": "tests.test_guardian_adapter",
+      "testcase": "test_foreground_failed_task_blocks_dependents_but_independent_continues",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_guardian_adapter.py",
+        "sha256": "20c6154c4151d2509b399e630ab2f6b96c982269b3cfe47ddb8cd27528435aee"
+      },
+      "functional": {
+        "path": "docs/codex/queue-prerequisites-1115/最终逐行反查.json",
+        "sha256": "fdf36f12d1be36816470ef535f278fcd8ad1c8eff115c41ba0b8432df6cdb3f9"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Existing queue consumption resolves prerequisites by stage::An independent offline proposal is authorized",
+      "junit": {
+        "path": "docs/codex/queue-prerequisites-1115/handoff-final.xml",
+        "sha256": "50aad65e79fb745aa48d361ad1ed8d4a9183d39483d87f907908d4dd014b3773"
+      },
+      "classname": "tests.test_guardian_adapter",
+      "testcase": "test_off_lan_excludes_internal_and_orders_touch_conflict",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_guardian_adapter.py",
+        "sha256": "20c6154c4151d2509b399e630ab2f6b96c982269b3cfe47ddb8cd27528435aee"
+      },
+      "functional": {
+        "path": "docs/codex/queue-prerequisites-1115/最终逐行反查.json",
+        "sha256": "fdf36f12d1be36816470ef535f278fcd8ad1c8eff115c41ba0b8432df6cdb3f9"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Short entry distinguishes queue candidates from execution authority::A scheduled review is due",
+      "junit": {
+        "path": "docs/codex/queue-prerequisites-1115/handoff-final.xml",
+        "sha256": "50aad65e79fb745aa48d361ad1ed8d4a9183d39483d87f907908d4dd014b3773"
+      },
+      "classname": "tests.test_queue_context",
+      "testcase": "test_elapsed_timed_row_is_review_only_and_future_remains_out",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_queue_context.py",
+        "sha256": "5f46a58bc77d2af63692cb449d6ea0431273fd3e5036c22234411d2ecc7a1db2"
+      },
+      "functional": {
+        "path": "docs/codex/queue-prerequisites-1115/最终逐行反查.json",
+        "sha256": "fdf36f12d1be36816470ef535f278fcd8ad1c8eff115c41ba0b8432df6cdb3f9"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Short entry distinguishes queue candidates from execution authority::A task title still queues the row",
+      "junit": {
+        "path": "docs/codex/queue-prerequisites-1115/handoff-final.xml",
+        "sha256": "50aad65e79fb745aa48d361ad1ed8d4a9183d39483d87f907908d4dd014b3773"
+      },
+      "classname": "tests.test_queue_context",
+      "testcase": "test_default_pool_does_not_offer_stopped_task_or_status[7\\uff5c[S:open][D:\\u673a]\\uff5c\\U0001f6d1 \\u6392\\u961f\\uff0c\\u539f\\u524d\\u7f6e\\u672a\\u89e3]",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_queue_context.py",
+        "sha256": "5f46a58bc77d2af63692cb449d6ea0431273fd3e5036c22234411d2ecc7a1db2"
+      },
+      "functional": {
+        "path": "docs/codex/queue-prerequisites-1115/最终逐行反查.json",
+        "sha256": "fdf36f12d1be36816470ef535f278fcd8ad1c8eff115c41ba0b8432df6cdb3f9"
+      }
+    },
+    {
+      "scenario": "serial-test-first-construction::Short entry distinguishes queue candidates from execution authority::Frozen or future work remains",
+      "junit": {
+        "path": "docs/codex/queue-prerequisites-1115/handoff-final.xml",
+        "sha256": "50aad65e79fb745aa48d361ad1ed8d4a9183d39483d87f907908d4dd014b3773"
+      },
+      "classname": "tests.test_queue_context",
+      "testcase": "test_full_digest_does_not_unlock_frozen_rows[blocked]",
+      "test_source": {
+        "path": "0-学习与工具/codex-handoff/tests/test_queue_context.py",
+        "sha256": "5f46a58bc77d2af63692cb449d6ea0431273fd3e5036c22234411d2ecc7a1db2"
+      },
+      "functional": {
+        "path": "docs/codex/queue-prerequisites-1115/最终逐行反查.json",
+        "sha256": "fdf36f12d1be36816470ef535f278fcd8ad1c8eff115c41ba0b8432df6cdb3f9"
+      }
+    }
+  ]
+}

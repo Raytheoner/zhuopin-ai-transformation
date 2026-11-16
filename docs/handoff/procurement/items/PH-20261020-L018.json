@@ -1,0 +1,23 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "PH-20261020-L018",
+  "legacy_ids": [
+    "#27"
+  ],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "七场景v3原授权已消费。2026-10-21本人A批准SC2冻结证据接入v1五路径本地设计、实施及测试，SHA256 `05f1813e3f250d57b516297a3e37aac8c1238ef38a5e3114804adddb1def70ba`，不含新实采、ff、生产、外发。既有Z/59578100、10/5—11及必要9/7起历史冻结授权继续有效；采购#27原渠道在途，不重发。\n",
+  "owner": "原采购任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 18,
+      "path": "docs/handoff/procurement/archive/3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb.bin",
+      "sha256": "3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb",
+      "start": 18
+    }
+  ],
+  "status": "review",
+  "title": "SC2已批五路径与冻结授权边界",
+  "topic": "授权"
+}

@@ -1,0 +1,25 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对原文中对应事项的最新队列/候选/批准及验收证据；记录遗留或被后续覆盖的具体部分后人工确认，不按旧时间自动关闭",
+  "id": "QH-20261020-L043",
+  "legacy_ids": [
+    "#340",
+    "#612",
+    "#681"
+  ],
+  "notes": "2026-10-30仅迁移资料；原文快照截至2026-10-21，状态全部review，未代业务判断。",
+  "original_text": "本轮交付`reports/quality-source-time-qa-1020/质量限定核收与QD-B只读追溯准备-1021.md`，SHA c7bfb836e6f8295c614c4468338299125da2deb96ef47e1bd208827c6a198d7e；含独立可核/等待项、历史样本定位目录、版本和责任缺项、人工验收方法及最小需批动作。直接合法证据为UI的candidate-validation-summary.json（45f60c2a…2f82c3）、offline-validation-stop.md（6cf501e6…223cae）、10-19 final-lan-acceptance JSON（630c8a15…386cc1）及官方B-1021UI/#340/#681。候选本体/完整闭包未QA复算，三历史业务原文未读。#612/本批及当前R5已同步，不向其他业务线程回发。\n",
+  "owner": "原队列对应Owner；旧QA/UI执行状态待核",
+  "risk": "遗漏本条将丢失核收证据的授权边界、剩余条件或证据定位",
+  "sources": [
+    {
+      "end": 43,
+      "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+      "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+      "start": 43
+    }
+  ],
+  "status": "review",
+  "title": "限定核收及QD-B历史样本追溯交付",
+  "topic": "核收证据"
+}

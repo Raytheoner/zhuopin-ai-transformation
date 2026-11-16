@@ -28,9 +28,9 @@ def model_run(**kwargs):
 def now():
     return datetime.now(timezone.utc).isoformat()
 
-def execute(argv, cwd=ROOT, timeout=90):
+def execute(argv, cwd=ROOT, timeout=90, input_text=None):
     try:
-        p = subprocess.run([str(x) for x in argv], cwd=cwd, capture_output=True,
+        p = subprocess.run([str(x) for x in argv], cwd=cwd, capture_output=True, input=input_text,
                            text=True, encoding="utf8", errors="replace", timeout=timeout)
         return {"argv": [str(x) for x in argv], "exit": p.returncode,
                 "stdout": p.stdout, "stderr": p.stderr}
@@ -100,6 +100,10 @@ def prepare(args):
             or not isinstance(action, str) or not action.strip()
             or not isinstance(approval.get("text"), str) or not approval["text"].strip()):
         raise ValueError("intent approval or action classification does not match")
+    requirements = _local_module("workflow_requirements")
+    contract = requirements.inspect(ROOT, args.id, stage="admission")
+    if contract["status"] != "ready":
+        raise ValueError("requirement admission blocked: " + json.dumps(contract, ensure_ascii=False))
     folder = STATE / "runs" / args.id
     folder.mkdir(parents=True, exist_ok=False)
     write_json(folder/"queue.json", queue)
@@ -108,7 +112,7 @@ def prepare(args):
     if head["exit"] or common_dir["exit"] or not Path(common_dir["stdout"].strip()).is_absolute():
         raise RuntimeError("cannot read git HEAD/common-dir")
     prompt = (
-        "请在当前项目执行下述单一队列任务。先读 AGENTS.md、CLAUDE.md、适用规则及全景/实施计划。"
+        "请在当前项目执行下述单一队列任务。先读 AGENTS.md 及本操作命中的规则。"
         "真实队列通过查询工具确认，快照不能代替实时状态。\n"
         f"队列：§{args.section} #{args.row}\n意图：{args.intent}\n"
         "工作流：intent 确认 → OpenSpec proposal/design/tasks → 实现 → 按 CI 矩阵逐项目验证"
@@ -123,6 +127,7 @@ def prepare(args):
                   "sha256": hashlib.sha256((folder/"intent.md").read_bytes()).hexdigest()}
     write_json(folder/"state.json", {"id": args.id, "created": now(), "source_head": head["stdout"].strip(),
                                    "status": "prepared", "phase": "intent", "phase_status": "prepared", "attempts": [], "delivery_accepted": False, "row": args.row, "section": args.section, "action_key": action,
+                                   "requirements_contract": contract,
                                    "source_git_common_dir": str(Path(common_dir["stdout"].strip()).resolve()),
                                    "source_checkout": str(ROOT.resolve()),
                                    "intent_text_sha256": intent_digest,
@@ -205,10 +210,44 @@ def run_stage(args):
     finally:
         lock.unlink()
 
+def _local_module(name):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("handoff_" + name, Path(__file__).with_name(name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     sub=p.add_subparsers(dest="command", required=True)
     sub.add_parser("probe")
+    context = sub.add_parser("watch-context", help="短入口只读取回原队列上下文，不派发/认领/授予权限")
+    context.add_argument("--row", type=int)
+    context.add_argument("--all-open", action="store_true", help="整理时包含blocked/hold/timed；默认原actionable池")
+    context.add_argument("--expected-sha256")
+    claim = sub.add_parser("claim-slice", help="持原锁绑定已批范围/唯一写方并预登记；不实施或授新权")
+    claim.add_argument("--plan", type=Path, required=True)
+    accept = sub.add_parser("check-acceptance", help="核规格场景、pytest与功能/audit证据；不执行或授予生产权限")
+    accept.add_argument("--id", required=True)
+    accept.add_argument("--evidence", type=Path, required=True)
+    accept.add_argument("--workspace", type=Path, default=ROOT)
+    feedback = sub.add_parser("receive-feedback", help="只归档会话转交原件，不启动业务或解跟进闸")
+    feedback.add_argument("--source", type=Path, required=True)
+    feedback.add_argument("--department", required=True)
+    feedback.add_argument("--scene", required=True)
+    feedback.add_argument("--source-ref", required=True)
+    feedback.add_argument("--submitted-by", required=True)
+    backfill = sub.add_parser("backfill-feedback", help="持原锁把已归档来源并入原队列行，不认领/构建")
+    backfill.add_argument("--receipt", type=Path, required=True)
+    backfill.add_argument("--row", type=int, required=True)
+    backfill.add_argument("--who", required=True)
+    backfill.add_argument("--domain", choices=['机','业'], required=True)
+    close = sub.add_parser("closeout", help="核原CI/review后归档，不提交或发布")
+    close.add_argument("--id", required=True)
+    close.add_argument("--workspace", type=Path, required=True)
+    close.add_argument("--who", required=True, help="当前共享锁持有人；归档及INDEX/队列回写在同一锁内")
     q=sub.add_parser("prepare")
     q.add_argument("--id",required=True); q.add_argument("--row",required=True,type=int)
     q.add_argument("--section",choices=["一","二","四"],default="一")
@@ -231,6 +270,39 @@ def main():
     trans.add_argument("--item",required=True)
     args=p.parse_args()
     try:
+        if args.command == "claim-slice":
+            result = _local_module("workflow_driver").claim_native_slice(
+                ROOT, json.loads(args.plan.read_text(encoding='utf8')), execute=execute)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
+        if args.command == "check-acceptance":
+            result = _local_module("business_acceptance").verify(args.workspace,args.id,
+                json.loads(args.evidence.read_text(encoding='utf8')))
+            print(json.dumps(result,ensure_ascii=False))
+            return 0 if result['status']=='accepted' else 1
+        if args.command == "watch-context":
+            module = _local_module("queue_context")
+            result = (module.load_context(ROOT,args.row,execute=execute,expected_sha256=args.expected_sha256)
+                      if args.row else module.list_rows(ROOT,execute=execute,all_open=args.all_open))
+            print(json.dumps(result,ensure_ascii=False))
+            return 0
+        if args.command == "backfill-feedback":
+            receipt = json.loads(args.receipt.read_text(encoding='utf8'))
+            result = _local_module("feedback_intake").attach_to_queue(ROOT, receipt,
+                row=args.row, who=args.who, domain=args.domain, execute=execute)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
+        if args.command == "closeout":
+            _local_module("feedback_intake").require_owned_lock(ROOT, args.who)
+            result = _local_module("workflow_release").closeout(args.id, args.workspace)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result.get("status") == "archived" else 1
+        if args.command == "receive-feedback":
+            result = _local_module("feedback_intake").archive_document(ROOT, args.source,
+                department=args.department, scene=args.scene, source_ref=args.source_ref,
+                submitted_by=args.submitted_by)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
         if args.command in ("advance", "status", "recover", "release", "transfer"):
             import importlib.util
             spec=importlib.util.spec_from_file_location("workflow_driver_cli",Path(__file__).with_name("workflow_driver.py"))

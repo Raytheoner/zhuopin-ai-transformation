@@ -3,11 +3,17 @@ name: executing-plans
 description: Use when executing an implementation plan in the current session as the implementer yourself — your human partner chose inline execution, or no subagent tool is available
 ---
 
+## zhuopinAI Codex 强制覆盖与衔接规则
+
+- 标准 feature 链：`zhuopin-requirement-grill` 产出并确认 `intent.md` → `openspec-propose` 产出 proposal/design/specs/tasks → `openspec-apply-change` 按 `executing-plans` + `test-driven-development` 在本主会话串行执行 `tasks.md` 切片；每片先写/更新 pytest 再实现，最终在受影响子项目独立跑完整 pytest 与功能/audit 验收。refinement 可用轻量 proposal，但必须同步 delta spec 与对应 pytest。
+- `tasks.md` 全 `[x]` 且归档前置、观察窗口与外部签认均闭合时，当场走 `openspec-archive-change`；明示暂缓或冻结合同保留，不能仅凭 N/N 越闸。
+- 根 `AGENTS.md` 的本主会话串行是唯一默认。未经任务级明确授权，不启动 `subagent-driven-development` 的自动派生、并发泳道或独立模型审核；旧冻结合同和明确独审仍按原要求。
+- 上游 “Rulings, not stalls” 不授权越权自决。缺 design 审、L2、合规、外部口径，或缺 `git commit/push/ff` 的逐项授权时停在对应闸；已批同范围不重复索取。真实源、生产与外发也遵守根规则。
+
 # Executing Plans
 
 Execute the plan yourself, task by task, in this session: no implementer
-subagent per task, no reviewer per task. One fresh-context review of the
-whole branch at the end.
+subagent per task, no reviewer per task. Final evidence review follows the approved project contract; ordinary non-safety work does not automatically dispatch a reviewer.
 
 **Why inline:** Subagent-driven development pays for a fresh implementer
 and a fresh reviewer on every task, each re-reading the codebase from zero.
@@ -15,7 +21,7 @@ Inline execution pays for one context (yours) plus one reviewer at the end.
 What it gives up is a fresh context per task and a second pair of eyes per
 task. This skill keeps what those two things bought, by other means: the
 brief is the spec, the ledger is your memory, TDD is the per-task gate, and
-the final reviewer is the second pair of eyes.
+the final evidence review closes the approved verification scope; an independent reviewer is used only when required.
 
 **Core principle:** The plan already did the thinking. Execute it exactly,
 prove each step with a test you watched fail and then pass, and leave a
@@ -24,23 +30,18 @@ record that survives your own forgetting.
 **Narration:** between tool calls, narrate at most one short line — the
 ledger and the tool results carry the record.
 
-**Continuous execution:** Do not pause to check in with your human partner
-between tasks. They chose inline execution to spend less, not to answer
-"should I continue?" after every task. Execute all tasks from the plan
-without stopping.
+**Continuous execution:** Work through approved tasks without routine
+"should I continue?" check-ins. Stop at the root `AGENTS.md` gates below;
+resume after the required authorization or evidence is present.
 
-**Rulings, not stalls.** Conflicts, ambiguities, plan defects — decide them.
-The spec is the binding authority, the plan is its argument, and your
-judgment settles what neither answers. Record every decision in the ledger
-as `Ruling: <what you decided> — <why> — <what it costs if wrong>`, and keep
-going. Deviating from the plan without a ledgered ruling is a decision made
-in secret.
-
-Four things stop you, and only these: an irreversible or destructive
-operation; a security-sensitive action; a side effect outside this worktree
-that norms say you ask about first (a merge, a push to a shared branch, a
-publish); and a plan so broken that every path forward is a guess. For
-those, stop and ask.
+Within approved scope, resolve routine implementation ambiguity using the
+spec and plan. Record the choice in the ledger as
+`Ruling: <what you decided> — <why> — <what it costs if wrong>`.
+A ruling never substitutes for design review, L2 or compliance signoff,
+external business confirmation, an explicit independent review, a frozen
+contract, or permission for `git commit/push/ff`, production, publication,
+or other destructive or irreversible work. Stop at any unmet gate in the
+root `AGENTS.md`; resume only when that gate is satisfied.
 
 ## When to Use
 
@@ -52,16 +53,7 @@ those, stop and ask.
 - Tasks are mostly independent — the same precondition as
   superpowers:subagent-driven-development.
 
-A fully specified plan makes inline execution transcription plus testing:
-it runs well on a mid-tier session model, and the one place the most
-capable model earns its cost is the final review, which this skill
-dispatches separately. Tell your human partner so when they choose inline.
-
-Prefer superpowers:subagent-driven-development when your human partner
-wants a review gate on every task, or when the plan is long enough that
-its later tasks would run on a compacted context. Inline execution over a
-long plan still works — the ledger is what makes it recoverable — but the
-last tasks get the least of you.
+A specified plan supports native serial execution. Reuse approved same-scope checkpoints; do not repeat prepare, design approval or executor selection. Subagent-driven development is an option only when the user explicitly chooses it, not because tools exist or a plan is long.
 
 ## The Process
 
@@ -75,16 +67,16 @@ digraph process {
         "Work the steps in order: TDD, run every verification, read every output" [shape=box];
         "Step output matches plan's Expected?" [shape=diamond];
         "Plan wrong? Rule and ledger. Code wrong? systematic-debugging" [shape=box];
-        "Commit as the plan's commit steps say" [shape=box];
+        "Commit only if explicitly authorized; otherwise preserve candidate hashes" [shape=box];
         "Completion contract met?" [shape=diamond];
         "task-done: run tests, ledger the result; mark todo complete" [shape=box];
     }
 
     "Setup: worktree, workspace + ledger, read plan + spec, pre-flight scan" [shape=box];
     "More tasks remain?" [shape=diamond];
-    "Final whole-branch review (fresh reviewer if you have one)" [shape=box];
+    "Final evidence review (independent only if required)" [shape=box];
     "Re-grade, then: Critical/Important → ONE fix pass, each fix RED→GREEN + green suite; Minor → ledger" [shape=box];
-    "Final review clean: delete this plan's workspace" [shape=box];
+    "Preserve evidence; cleanup only if authorized" [shape=box];
     "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
 
     "Setup: worktree, workspace + ledger, read plan + spec, pre-flight scan" -> "task-start: brief + BASE; read the brief";
@@ -92,16 +84,16 @@ digraph process {
     "Work the steps in order: TDD, run every verification, read every output" -> "Step output matches plan's Expected?";
     "Step output matches plan's Expected?" -> "Plan wrong? Rule and ledger. Code wrong? systematic-debugging" [label="no"];
     "Plan wrong? Rule and ledger. Code wrong? systematic-debugging" -> "Work the steps in order: TDD, run every verification, read every output";
-    "Step output matches plan's Expected?" -> "Commit as the plan's commit steps say" [label="yes, last step"];
-    "Commit as the plan's commit steps say" -> "Completion contract met?";
+    "Step output matches plan's Expected?" -> "Commit only if explicitly authorized; otherwise preserve candidate hashes" [label="yes, last step"];
+    "Commit only if explicitly authorized; otherwise preserve candidate hashes" -> "Completion contract met?";
     "Completion contract met?" -> "Work the steps in order: TDD, run every verification, read every output" [label="no - finish the task"];
     "Completion contract met?" -> "task-done: run tests, ledger the result; mark todo complete" [label="yes"];
     "task-done: run tests, ledger the result; mark todo complete" -> "More tasks remain?";
     "More tasks remain?" -> "task-start: brief + BASE; read the brief" [label="yes"];
-    "More tasks remain?" -> "Final whole-branch review (fresh reviewer if you have one)" [label="no"];
-    "Final whole-branch review (fresh reviewer if you have one)" -> "Re-grade, then: Critical/Important → ONE fix pass, each fix RED→GREEN + green suite; Minor → ledger";
-    "Re-grade, then: Critical/Important → ONE fix pass, each fix RED→GREEN + green suite; Minor → ledger" -> "Final review clean: delete this plan's workspace";
-    "Final review clean: delete this plan's workspace" -> "Use superpowers:finishing-a-development-branch";
+    "More tasks remain?" -> "Final evidence review (independent only if required)" [label="no"];
+    "Final evidence review (independent only if required)" -> "Re-grade, then: Critical/Important → ONE fix pass, each fix RED→GREEN + green suite; Minor → ledger";
+    "Re-grade, then: Critical/Important → ONE fix pass, each fix RED→GREEN + green suite; Minor → ledger" -> "Preserve evidence; cleanup only if authorized";
+    "Preserve evidence; cleanup only if authorized" -> "Use superpowers:finishing-a-development-branch";
 }
 ```
 
@@ -137,8 +129,7 @@ and the new one resumes from the same ledger.
   another plan's progress: leave it and start your own, fresh.
 - Create the ledger with its identity as the first line:
   `# SDD ledger — plan: <plan file path>`.
-- `git clean -fdx` will destroy the workspace (it's git-ignored scratch);
-  if that happens, recover from `git log`.
+- Do not use `git clean -fdx`: ignored ledgers, raw logs and uncommitted evidence are not recoverable from `git log`. Preserve them before any separately authorized cleanup.
 
 Read the plan once, note its context and Global Constraints, and create a
 todo per task. If the plan names a Spec, read that too: the spec is the
@@ -201,7 +192,7 @@ read its output, and compare. Three outcomes:
   continue. The ruling is carried, not remembered: later tasks that touch
   the same interface read it from the ledger.
 
-Commit as the plan's commit steps say. A task that spans several commits
+Commit only if explicitly authorized; otherwise preserve candidate hashes. A task that spans several commits
 is fine; BASE is what the review range is cut from, never `HEAD~1`.
 
 ### 3. The completion contract
@@ -233,29 +224,13 @@ mark the todo complete and take the next task.
 
 ## Final Review
 
-Run `../subagent-driven-development/scripts/review-package PLAN_FILE MERGE_BASE HEAD`
+For an uncommitted candidate, review its actual scoped file diff and hashes; a committed `HEAD` range alone does not represent those edits. Never commit merely to make a review helper work. Where the approved candidate is committed, run `../subagent-driven-development/scripts/review-package PLAN_FILE MERGE_BASE HEAD`
 (MERGE_BASE = the commit the branch started from, e.g.
 `git merge-base main HEAD`) and review from the file it prints.
 
-**With a subagent tool:** dispatch the reviewer on the most capable
-available model — the whole-branch review is a judgment task — using
-superpowers:requesting-code-review's
-[code-reviewer.md](../requesting-code-review/code-reviewer.md), with the
-package path, the plan and spec paths, the plan's Review Focus section
-verbatim if it has one (the input classes and failure modes the plan's
-tests do not exercise — the reviewer checks each deliberately), and a
-pointer to the ledger's `Ruling:` lines so it can weigh the calls you
-made. Specify the model
-explicitly; an omitted model inherits the session's, which may not be the
-most capable. This is the one fresh context the whole run buys. Do not
-skip it, and do not replace it with your own read of the diff.
+**Default for ordinary non-safety work:** perform the final evidence/diff review in this session and record it accurately as self-review. A subagent tool being available is not authorization to dispatch one, and a model report is not a replacement for tests or business/audit acceptance.
 
-**Without a subagent tool:** read code-reviewer.md and perform that review
-yourself against the package, as a separate pass after the last task's
-ledger line. Write `Final review: self-review (no subagent tool)` to the
-ledger, and say so in your final message: a self-review by the author is
-weaker than a fresh reviewer, and your human partner decides whether that
-is enough before merge.
+**When independent review is explicitly required** by the user, safety rules or a frozen contract, retain that gate. Use the approved review procedure; a self-review cannot satisfy it. If authorized to spawn, use the actual tool schema with `fork_turns="none"`, `model="gpt-6-luna"`, `reasoning_effort="high"`; do not inherit, upgrade or substitute the model. Missing authorized tools/models leave review pending rather than silently passing. Preserve the original review package, plan/spec references and ledger rulings.
 
 Sort the findings before you act on any of them. The reviewer's severity
 labels are advice; the gate is yours. Its "Declined to judge" list is
@@ -297,9 +272,7 @@ line under "Deferred minors". Both lists are exhaustive. Your final
 message is the only place the decisions you took on your human partner's
 behalf — and the findings you chose not to act on — reach them.
 
-When the final review is clean and its fixes are committed, delete this
-plan's workspace directory — the git history is the record now. Sibling
-directories belong to other plans; leave them alone.
+Keep this plan's workspace by default. Before any separately authorized cleanup, inventory and preserve ledgers, raw test/review output, hashes, untracked and ignored files at an accessible evidence location; verify that copy and its ownership. Git commits alone do not preserve ignored evidence. Unknown ownership, concurrent use or incomplete preservation means stop cleanup. Never delete sibling workspaces or use a full-repository clean/reset/stash as cleanup.
 
 Use superpowers:finishing-a-development-branch.
 
@@ -312,10 +285,10 @@ Use superpowers:finishing-a-development-branch.
 | "I'll run the full suite at the end instead of per step" | Per-step runs are how you learn which step broke it. The end-of-task run is the contract, not a substitute. |
 | "The plan is wrong here, I'll just do the right thing" | Do the right thing and ledger the ruling. Unledgered deviation is a decision made in secret. |
 | "I'll write the ledger lines after a few tasks" | Compaction does not wait for a convenient moment. One line per task, in the same message as the commit. |
-| "Let me check in before the next task" | They chose inline to spend less. Progress prompts spend their time instead. Only the four stops stop you. |
-| "I read my own diff carefully; the final reviewer is redundant" | Same author, same blind spots. The reviewer is the only fresh context this run buys. |
+| "Let me check in before the next task" | They chose inline to spend less. Progress prompts spend their time instead. Unmet scope, safety, required-review, frozen-contract and permission gates still stop the dependent action. |
+| "I read my own diff, so required independent review is done" | Self-review does not satisfy explicitly required independent review, safety rules or a frozen contract. |
 | "Tests should pass, the change was trivial" | "Should" is not evidence. The contract requires the command and its output. |
-| "Subagents are slow and expensive, I'll skip the final review too" | Inline already removed the per-task reviewers. One review of the whole branch is the floor, not the ceiling. |
+| "Subagents are unavailable, so review is automatically passed" | Complete the applicable evidence review; keep explicitly required independent review pending if it cannot be performed. |
 | "The reviewer said Minor, so it's Minor" | The label graded the spec's silence. Grade what the person gets. Re-grade, then gate. |
 | "The fix is obvious, no need for a failing test first" | The failing test is the only proof the finding was real and is now gone. Without it you have a diff and a hope. |
 | "I'll fix the minors too while I'm in there" | Every minor you fix is a test, a fix, and a suite run your partner did not ask for. Ledger them; your partner decides. |
@@ -354,7 +327,7 @@ Task 2: Recovery modes
 
 ...
 
-[After all tasks: review-package plan MERGE_BASE HEAD; dispatch code-reviewer, most capable model]
+[After all tasks: preserve the evidence package and perform the applicable review; dispatch only if explicitly authorized/required, with the approved Luna/high route]
 Reviewer: One Important finding — progress reporting interval hardcoded. Two Minor.
 [Re-grade: Important stands; minors → ledger as deferred]
 [Fix pass: test_progress_interval_configurable RED → extract PROGRESS_INTERVAL → GREEN; suite 12/12; commit]

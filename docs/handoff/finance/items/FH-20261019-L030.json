@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "FH-20261019-L030",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "- 矩阵：`reports/finance-sso-prep-1018-op1016a/finance-domain-FI1-FI16-matrix-20261019.md`及同目录`business-scope-matrix-33d1-20261019.md`；**worktree 不可见，须回主仓复核**。旧批准、intent/design/tasks、源码及18输入路径／指纹已在上述binding索引，不再通读历史。\n",
+  "owner": "原财务任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 30,
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "start": 30
+    }
+  ],
+  "status": "review",
+  "title": "矩阵和18输入来源索引",
+  "topic": "证据"
+}

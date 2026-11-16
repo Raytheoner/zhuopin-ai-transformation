@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "FH-20261019-L003",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "> **2026-10-19 11:10+08:00本轮续**：本人要求按FI6→FI9→FI4→FI1继续业务准备、无代码/无外发。已完成 `docs/superpowers/specs/2026-10-19-finance-four-scenes-business-review-v2.md`：历史编号映射、FI6逐笔核对字段、FI9专业问题按能力分期、FI4三件资料与Excel路径、FI1旧范围/CSV/公式及草案冲突纠正。下一步消费这些真实材料位置/已结底稿，集中财务/采购意见；当前无新真实资料或专业签认，不伪造案例。FI9完整intent、FI4候选粒度仍待正式审阅；本次无新增本人决策，UI归1019UI。\n",
+  "owner": "原财务任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 3,
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "start": 3
+    }
+  ],
+  "status": "review",
+  "title": "11:10续作：FI6/9/4/1业务准备与专业待核",
+  "topic": "后续指令"
+}

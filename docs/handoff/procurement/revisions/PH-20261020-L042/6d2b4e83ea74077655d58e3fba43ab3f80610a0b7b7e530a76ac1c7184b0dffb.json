@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "PH-20261020-L042",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "- SC2本片：`reports/procurement-sc2-frozen-1021/本地接入收口.md`、`local-acceptance-receipt.json`、`five-path-delta.patch`；最终真实回执`real-local-5fec96c43ace4bdca2128a20f0864062/receipt.json`。旧失败全部保留。\n",
+  "owner": "原采购任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 42,
+      "path": "docs/handoff/procurement/archive/3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb.bin",
+      "sha256": "3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb",
+      "start": 42
+    }
+  ],
+  "status": "review",
+  "title": "SC2本地接入与原失败证据",
+  "topic": "证据"
+}

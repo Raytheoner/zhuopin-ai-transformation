@@ -1,0 +1,5 @@
+## Decisions
+固定三元组只能来自本次已核Git基线的13个公开协议标签。只有仓库文件扫描层使用分类，_looks_like_real_secret、GENERIC_ASSIGNMENT_RE及CREDENTIAL_PATTERNS不变；结构化模式先检查。错误文件或新值不能借分类通过。无动态扫描结果自动豁免，无外置白名单扩大，未核字符串仍严格判断。
+
+## Validation
+先RED，包含4类公开标签、变值、错文件、结构化PAT负例及原写侧API保留。再跑原工具完整测试/真实候选扫描，保留变更前后规则AST指纹。源CLAUDE仅继承已迁移Codex正本，不重新收割或恢复执行。

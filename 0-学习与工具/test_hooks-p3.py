@@ -603,14 +603,52 @@ class TestUserPromptSubmitStandingFive:
         )
         assert proc.returncode == 0
 
-    def test_真实根CLAUDE_md锚点集自洽零漂移(self):
-        """对**真实**根 `CLAUDE.md` 跑一次——既是回归锁，也是"锚点真的插对了地方"的
-        生产前验活。🔴 断言的是**锚点集自洽**（连续·不重复·编号合法），**不断言条数**：
-        §5 常驻纪律条目会随他立法增删，把条数写进断言就是把常红写进 CI（`#537`）。"""
-        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, REPO_ROOT)
+    def test_有锚点AGENTS优先于旧CLAUDE(self, repo: Path):
+        write_root_claude_md(repo, {1: "旧口径不得注入"})
+        (repo / "AGENTS.md").write_text("- 新正本优先<!-- UPS5:1 -->\n", encoding="utf-8")
+        rc, out, err = run_hook(STANDING_FIVE, {}, repo)
         assert rc == 0, err
         ctx = get_context(out)
-        assert "⚠" not in ctx, f"真实根 CLAUDE.md 的锚点集不自洽（缺号/重复/非法编号）：{ctx}"
+        assert "新正本优先" in ctx and "旧口径不得注入" not in ctx
+        assert audit_lines(repo)[-1]["verdict"] == "pass"
+
+    def test_AGENTS无锚点时兼容回退CLAUDE(self, repo: Path):
+        (repo / "AGENTS.md").write_text("# 无常驻锚点的兼容入口\n", encoding="utf-8")
+        write_root_claude_md(repo, {1: "兼容口径"})
+        rc, out, err = run_hook(STANDING_FIVE, {}, repo)
+        assert rc == 0, err
+        assert "兼容口径" in get_context(out)
+        assert audit_lines(repo)[-1]["verdict"] == "pass"
+
+    def test_AGENTS坏锚点不得被旧CLAUDE掩盖(self, repo: Path):
+        write_root_claude_md(repo, {1: "旧完整口径"})
+        (repo / "AGENTS.md").write_text("- 缺首号<!-- UPS5:2 -->\n", encoding="utf-8")
+        rc, out, err = run_hook(STANDING_FIVE, {}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "缺号" in ctx and "旧完整口径" not in ctx
+        assert audit_lines(repo)[-1]["verdict"] == "undetermined"
+
+    def test_只有AGENTS时仍可提取(self, repo: Path):
+        (repo / "AGENTS.md").write_text("- 唯一正本<!-- UPS5:1 -->\n", encoding="utf-8")
+        rc, out, err = run_hook(STANDING_FIVE, {}, repo)
+        assert rc == 0, err
+        assert "唯一正本" in get_context(out)
+        assert audit_lines(repo)[-1]["verdict"] == "pass"
+
+    def test_真实根AGENTS_md锚点集自洽零漂移(self, repo: Path):
+        """真实正本与薄导航原样放入隔离夹具，保留全部锚点自洽检查。"""
+        canonical = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        legacy_navigation = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "AGENTS.md" in legacy_navigation
+        assert "<!-- UPS5:" not in legacy_navigation
+        (repo / "AGENTS.md").write_text(canonical, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text(legacy_navigation, encoding="utf-8")
+        rc, out, err = run_hook(STANDING_FIVE, {"session_id": "s"}, repo)
+        assert rc == 0, err
+        ctx = get_context(out)
+        assert "⚠" not in ctx, f"真实根 AGENTS.md 的锚点集不自洽（缺号/重复/非法编号）：{ctx}"
+        assert audit_lines(repo)[-1]["verdict"] == "pass"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

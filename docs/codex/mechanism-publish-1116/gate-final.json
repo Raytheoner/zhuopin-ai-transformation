@@ -1,0 +1,95 @@
+[
+  {
+    "command": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai\\0-学习与工具\\工具-需求与变更包门禁lint.py",
+      "--enforce",
+      "--verify-queue-links"
+    ],
+    "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai",
+    "exit_code": 0,
+    "output": "需求与变更包门禁：0 项问题\n"
+  },
+  {
+    "command": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai\\0-学习与工具\\工具-场景包intent闸lint.py",
+      "--enforce"
+    ],
+    "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai",
+    "exit_code": 0,
+    "output": "场景包 intent 闸 lint：扫描 93 个在办变更包 / 25 个场景目录（判豁免基准日 2026-11-16）\n  ✓ 合规场景包 11：fi10-inventory-writedown-mvp → FI10、fi5-expense-audit-mvp → FI5、fi6-anomaly-detect-mvp → FI6、fi8-cashflow-forecast-mvp → FI8、fi9-rd-cost-mvp → FI9、o4-single-class-maintenance → O4、portal-q2-ui → Q2、q2-8d-review-verdict-mvp → Q2、sc10-bom-review-material-governance → SC10、sc11-inventory-transfer → SC11、sc4-contract-clause-extraction → SC4\n  ○ 豁免 13：\n      - fi1-warehouse-reconcile → FI1：深化类·永久（2026-06-29 入库；propose/design 已过、MVP 已落 master，2026-06-29 起 ⏸ 暂停）\n      - fi2-recon-mvp → FI2：深化类·永久（2026-07-07 入库（另命中「部署状态」段信号））\n      - fi2-source-inversion → FI2：深化类·永久（2026-07-07 入库（另命中「部署状态」段信号））\n      - fi3-payment-validation-mvp → FI3：深化类·永久（场景 CLAUDE.md 有「部署状态」段）\n      - portal-sc2-ui → SC2：深化类·永久（场景 CLAUDE.md 有「部署状态」段）\n      - portal-sc8-ui → SC8：深化类·永久（2026-06-10 入库；已部署 `.51:8091`，部署信息写在「状态时间线」段故字面标记扫不到）\n      - qd-b-cross-module-tier3 → QD-B：深化类·永久（2026-06-27 入库（另命中「部署状态」段信号））\n      - sc2-autopush-friday → SC2：深化类·永久（场景 CLAUDE.md 有「部署状态」段）\n      - sc2-biztype316-receipts → SC2：深化类·永久（场景 CLAUDE.md 有「部署状态」段）\n      - sc7-batch-quantity-mapping → SC7：深化类·永久（2026-07-06 入库）\n      - sc8-atp-batch2-closeout → SC8：深化类·永久（2026-06-10 入库；已部署 `.51:8091`，部署信息写在「状态时间线」段故字面标记扫不到）\n      - sc8-kit-date-rule1-start → SC8：深化类·永久（2026-06-10 入库；已部署 `.51:8091`，部署信息写在「状态时间线」段故字面标记扫不到）；另注：未引用场景目录\n      - sc8-material-board-view → SC8：深化类·永久（2026-06-10 入库；已部署 `.51:8091`，部署信息写在「状态时间线」段故字面标记扫不到）\n  ? 疑似场景包但未引用场景目录 2（可见不判违规）：\n      - q2-mock-upload-report-pc-1015: 疑似 Q2（包名前缀 `q2-`），但 proposal/tasks 未引用 `4-数字员工/质量部/Q2-8D报告AI判定`\n      - q2-real-document-pc-1015: 疑似 Q2（包名前缀 `q2-`），但 proposal/tasks 未引用 `4-数字员工/质量部/Q2-8D报告AI判定`\n…（其余 8 行已省略，全文见 C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai\\reports\\output-throttle\\工具-场景包intent闸lint\\20261116-103507-581492.log）\n"
+  },
+  {
+    "command": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai\\0-学习与工具\\工具-僵尸未勾项lint.py",
+      "--enforce"
+    ],
+    "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai",
+    "exit_code": 0,
+    "output": "僵尸未勾项 lint：扫描 93 个活跃变更包的 tasks.md（不含 openspec/changes/archive/）\n  本次扫描共发现 11 个前置声明（「前置 N.M」引用 11 处；「前置登记」项 6 个）\n\n  · J-D 基线回显（非判据，不定性）：91 个包共 1099 个未勾项\n      - aibot-inbound-whitelist-li-jiaolong：未勾 4 项（带编号 4），末次触碰 2026-08-31 ～ 2026-08-31\n          2026-08-31  4.1  **向李姣龙本人真实发送一条企微消息**——**本条严格按字面仍未做**：`#379` 硬前置是本行，但真正向她本人发…\n          2026-08-31  4.3  一并验回件方向：她回一句话后不再触发 `whitelist_rejected`，而是正常归档——**仍需她真实回复，无…\n          2026-08-31  5.2  `openspec archive` 本变更 —— **本次不归档**（§4 与 5.3 尚有真未完项，见顶部 `预期…\n          2026-08-31  5.3  `#379` 年度提醒 09-01 首触发前确认 4.x 已闭合 —— **留步**：依赖 4.x，需人在场\n      - aibot-outbox-relay：未勾 6 项（带编号 6），末次触碰 2026-08-27 ～ 2026-08-27\n          2026-08-27  6.1  **L1**：笔记本在 LAN 内时实跑「`.51` 写、笔记本读」，坐实文件通路（design 探测项 P6）\n          2026-08-27  6.2  **L1**：据此配置 `WECOM_AIBOT_OUTBOX_PATHS`，重启常驻服务，确认打印「已启动」而非「中…\n          2026-08-27  6.3  **L2**：首条真实送达 —— 发出后**对着采购部群看一眼**（chatid 采集只证明「机器人收到过来自该 ch…\n          2026-08-27  6.4  **L2**：同批反查 1:1 私信是否真的到了姚祖怡\n          2026-08-27  6.5  **L3**：确认 outbox 积压回落到 0，据此销 `#394`\n          2026-08-27  8.3  归档（待 §6 全勾）\n      - aibot-queue-sync-checkout-guard：未勾 3 项（带编号 3），末次触碰 2026-08-06 ～ 2026-08-06\n          2026-08-06  3.1  常驻服务部署后，观察至少一次真实非快进冲突场景，确认护栏未命中时机器人仍能顺利重算并推送（无外来内容的正常路径不受影响…\n          2026-08-06  3.2  若观察期内出现真实的\"护栏命中\"场景，核实降级记录/告警文案清晰可读、人工能据此找到磁盘上待处理的内容——同上，需观察…\n…（其余 1216 行已省略，全文见 C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai\\reports\\output-throttle\\工具-僵尸未勾项lint\\20261116-103519-986925.log）\n"
+  },
+  {
+    "command": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai\\0-学习与工具\\工具-规划倒逼扫描器.py",
+      "--lint-registry"
+    ],
+    "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai",
+    "exit_code": 0,
+    "output": "registry ↔ 权威排期表 一致性校验：✓ 通过（双向差集为空）\n"
+  },
+  {
+    "command": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai\\0-学习与工具\\工具-CLAUDE进度段lint.py",
+      "--enforce"
+    ],
+    "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai",
+    "exit_code": 0,
+    "output": "⚠ AGENTS.md：未支持的结构（既无结构 A 的 `> **当前进度**` 头行，也无结构 B 的 `## 5. 状态时间线` 表）——已跳过，未做 J2/J3 判定\n⚠ 4-数字员工/财务部/FI1-供应链仓库对账/CODEX-RULES.md：未支持的结构（既无结构 A 的 `> **当前进度**` 头行，也无结构 B 的 `## 5. 状态时间线` 表）——已跳过，未做 J2/J3 判定\n⚠ 4-数字员工/财务部/FI2-三单匹配自动对账/CODEX-RULES.md：未支持的结构（既无结构 A 的 `> **当前进度**` 头行，也无结构 B 的 `## 5. 状态时间线` 表）——已跳过，未做 J2/J3 判定\n⚠ 4-数字员工/财务部/FI3-付款申请自动校验/CODEX-RULES.md：未支持的结构（既无结构 A 的 `> **当前进度**` 头行，也无结构 B 的 `## 5. 状态时间线` 表）——已跳过，未做 J2/J3 判定\n⚠ 4-数字员工/质量部/Q2-8D报告AI判定/CODEX-RULES.md：未支持的结构（既无结构 A 的 `> **当前进度**` 头行，也无结构 B 的 `## 5. 状态时间线` 表）——已跳过，未做 J2/J3 判定\n⚠ 4-数字员工/运营部/O4-设备预测性维护/CODEX-RULES.md：未支持的结构（既无结构 A 的 `> **当前进度**` 头行，也无结构 B 的 `## 5. 状态时间线` 表）——已跳过，未做 J2/J3 判定\n⚠ 【J6】1-转型规划/session接力-财务域场景落地.md：8,711 字节 > 上限 8,192（超 1.1 倍）。R5 已改版为定长交接卡（固定六块、收工覆盖而非追加），请把日期叙事迁 `进度编年-CHANGELOG.md`、方法教训迁 `取证方法知识库.md`、未闭合项迁队列行\n⚠ 【J6】1-转型规划/session接力-质量域场景落地.md：8,584 字节 > 上限 8,192（超 1.0 倍）。R5 已改版为定长交接卡（固定六块、收工覆盖而非追加），请把日期叙事迁 `进度编年-CHANGELOG.md`、方法教训迁 `取证方法知识库.md`、未闭合项迁队列行\n⚠ 【J6】1-转型规划/session接力-采购域场景落地.md：9,466 字节 > 上限 8,192（超 1.2 倍）。R5 已改版为定长交接卡（固定六块、收工覆盖而非追加），请把日期叙事迁 `进度编年-CHANGELOG.md`、方法教训迁 `取证方法知识库.md`、未闭合项迁队列行\n📐 开场预算：根 CLAUDE.md 3,864 B　交接卡 1,429 B　｜　合计 5,293 B / 上限 120,000 B（4%）　｜　队列 0-学习与工具/工具-队列查询.py ＝ 只读 CLI 按行号查，开场读入 ≈ 0 B\n🛡 哨兵存在性：3 处哨兵，全部命中　｜　根入口统计；目录引用另行校验\n📊 二期基线：0 个文件违反 J2（超 6 条，合计需迁出 0 条）；0 条违反 J3（超 1200 字符）；6 个文件结构未支持、未判定。\n✓ CLAUDE.md 进度段 lint 通过（J2 上限 6 条／J3 上限 1200 字符）。\n（全文已存 C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai\\reports\\output-throttle\\工具-CLAUDE进度段lint\\20261116-103521-593976.log）\n"
+  },
+  {
+    "command": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai\\0-学习与工具\\工具-密钥扫描lint.py",
+      "--verbose"
+    ],
+    "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai",
+    "exit_code": 0,
+    "output": "✓ 凭据扫描通过（4365 个已跟踪文件，无 .env 类文件被跟踪，无疑似凭据字符串）。\n"
+  },
+  {
+    "command": [
+      "pwsh",
+      "-NoProfile",
+      "-File",
+      "C:/Users/Paul Shao/AppData/Roaming/npm/openspec.ps1",
+      "validate",
+      "editlock-credential-shape-guard",
+      "--type",
+      "spec",
+      "--strict"
+    ],
+    "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai",
+    "exit_code": 0,
+    "output": "Specification 'editlock-credential-shape-guard' is valid\n"
+  },
+  {
+    "command": [
+      "pwsh",
+      "-NoProfile",
+      "-File",
+      "C:/Users/Paul Shao/AppData/Roaming/npm/openspec.ps1",
+      "validate",
+      "serial-test-first-construction",
+      "--type",
+      "spec",
+      "--strict"
+    ],
+    "cwd": "C:\\Users\\Paul Shao\\.codex\\worktrees\\1113a2-mechanism-closeout\\zhuopin-ai",
+    "exit_code": 0,
+    "output": "Specification 'serial-test-first-construction' is valid\n"
+  }
+]

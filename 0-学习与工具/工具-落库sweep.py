@@ -972,6 +972,162 @@ GLOBAL_MEMORY_BAK_CAP = 3
 GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE = "ZHUOPIN_SWEEP_GLOBAL_MEMORY_TARGETS"
 
 
+WECOM_MARKDOWN_MAX_BYTES = 4096
+
+def _deliver_standing_message(repo_root, label, state_path, kind, keys, interval, render, log):
+    """沿原通知管理方保存逐段确认；不把尝试或退避时间写成发送成功。"""
+    now = datetime.now(timezone.utc)
+    journal_path = state_path.with_suffix(".delivery.json")
+    journal = _read_delivery_state(journal_path)
+    progress = journal.get(kind, {})
+    same_keys = progress.get("keys") == sorted(keys)
+    if progress.get("in_flight") is not None:
+        # 进程在发送/回执落盘之间中断，平台结果未知，禁止自动重复这一段。
+        log.append(_must_keep(f"SWEEP_DELIVERY {label} kind={kind} status=unknown reason=存在未确认在途段；需核回执，不自动重发"))
+        return False
+    retry_after = progress.get("retry_after")
+    if retry_after and now < datetime.fromisoformat(retry_after):
+        log.append(_must_keep(f"SWEEP_DELIVERY {label} kind={kind} status=backoff retry_after={retry_after} acknowledged={len(progress.get('acked', {}))}"))
+        return False
+    completed = progress.get("completed_at")
+    reusable = same_keys and (progress.get("status") != "success" or
+        (completed and (now - datetime.fromisoformat(completed)).total_seconds() < interval * 3600))
+    if not reusable:
+        content = render(keys)
+        report_path = state_path.with_suffix(f".{kind}.md")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(content, encoding="utf-8", newline="")
+        parts = _standing_message_parts(content, label, len(keys), report_path.relative_to(repo_root).as_posix())
+        progress = {"keys": sorted(keys), "parts": parts, "acked": {}, "status": "pending"}
+        journal[kind] = progress
+        _write_delivery_state(journal_path, journal)
+    webhook_url = _load_webhook_url(repo_root)
+    if webhook_url is None:
+        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过{label}推送；未记成功。")
+        progress.update(status="unconfigured", retry_after=(now + timedelta(hours=interval)).isoformat())
+        _write_delivery_state(journal_path, journal)
+        return False
+    for i, part in enumerate(progress["parts"]):
+        part_hash = hashlib.sha256(part.encode("utf-8")).hexdigest()
+        ack = progress["acked"].get(str(i))
+        if ack and ack["sha256"] == part_hash:
+            continue
+        progress["in_flight"] = i
+        _write_delivery_state(journal_path, journal)
+        try:
+            attempt_started_at = datetime.now(timezone.utc)
+            result = _send_wecom_markdown(webhook_url, part)
+            if result is False:
+                raise RuntimeError("发送函数返回False，未获明确成功确认")
+            # Existing legacy callbacks remain unverified. Only a structured ACK
+            # is retained as raw platform evidence; production sender returns it.
+            receipt_evidence = None
+            if isinstance(result, dict):
+                if (type(result.get("errcode")) is not int or result["errcode"] != 0
+                        or result.get("kind") != "wecom_webhook_ack"
+                        or any(not isinstance(result.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", result[key])
+                               for key in ("response_sha256", "destination_sha256", "request_sha256"))):
+                    raise RuntimeError("发送函数ACK证据不可用，送达待核")
+                received = datetime.fromisoformat(result["received_at_utc"])
+                if received.tzinfo is None or not attempt_started_at <= received <= datetime.now(timezone.utc):
+                    raise RuntimeError("发送函数ACK时间不可用，送达待核")
+                expected_request = json.dumps({"msgtype": "markdown", "markdown": {"content": part}}, ensure_ascii=False).encode("utf-8")
+                if (result["destination_sha256"] != hashlib.sha256(webhook_url.encode("utf-8")).hexdigest()
+                        or result["request_sha256"] != hashlib.sha256(expected_request).hexdigest()):
+                    raise RuntimeError("发送函数ACK目标或请求不匹配，送达待核")
+                receipt_evidence = {key: result[key] for key in ("errcode", "kind", "response_sha256", "destination_sha256", "request_sha256", "received_at_utc")}
+                if isinstance(result.get("req_id"), str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", result["req_id"]):
+                    receipt_evidence["req_id"] = result["req_id"]
+        except Exception as exc:
+            error = re.sub(r"https?://\S+", "[URL已隐去]", str(exc))
+            if not isinstance(exc, _SweepDeliveryRejected):
+                # A transport exception or malformed receipt does not prove that
+                # the server rejected this segment. Preserve the pre-send journal.
+                progress.update(status="unknown", error=error)
+                progress.pop("retry_after", None)
+                _write_delivery_state(journal_path, journal)
+                log.append(_must_keep(f"SWEEP_DELIVERY {label} kind={kind} status=unknown segment={i+1}/{len(progress['parts'])} acknowledged={len(progress['acked'])} reason={error}；需核回执，不自动重发"))
+                return False
+            progress.pop("in_flight", None)
+            progress.update(status="failed", error=error,
+                            retry_after=(now + timedelta(hours=interval)).isoformat())
+            _write_delivery_state(journal_path, journal)
+            log.append(_must_keep(f"⚠ {label}推送失败：{error}；kind={kind} segment={i+1}/{len(progress['parts'])} acknowledged={len(progress['acked'])} retry_after={progress['retry_after']}"))
+            return False
+        progress["acked"][str(i)] = {"sha256": part_hash, "at": datetime.now(timezone.utc).isoformat()}
+        if receipt_evidence is not None:
+            progress["acked"][str(i)]["receipt"] = receipt_evidence
+        progress.pop("in_flight", None)
+        progress.pop("retry_after", None)
+        _write_delivery_state(journal_path, journal)
+        log.append(_must_keep(f"SWEEP_DELIVERY {label} kind={kind} status=acknowledged segment={i+1}/{len(progress['parts'])} utf8_bytes={len(part.encode('utf-8'))} sha256={part_hash}"))
+    progress.update(status="success", completed_at=datetime.now(timezone.utc).isoformat())
+    _write_delivery_state(journal_path, journal)
+    return True
+
+
+def _write_delivery_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + f".r7-{os.getpid()}.tmp")
+    with temp.open("x", encoding="utf-8") as stream:
+        json.dump(state, stream, ensure_ascii=False, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temp, path)
+
+
+class _SweepDeliveryRejected(RuntimeError):
+    """A valid nonzero server receipt proves that this send was rejected."""
+
+
+def _standing_message_parts(content: str, label: str, count: int, report_rel: str) -> list[str]:
+    """按 content 的 UTF-8 字节数装箱；风险正文完整保留，命令块不拆成残缺命令。"""
+    if len(content.encode("utf-8")) <= WECOM_MARKDOWN_MAX_BYTES:
+        return [content]
+    prefix = f"{label}｜总项 {count}｜完整报告 `{report_rel}`\n"
+    # 为分段序号留出余量，最终仍逐段检查真实长度。
+    budget = WECOM_MARKDOWN_MAX_BYTES - len(prefix.encode("utf-8")) - 64
+    if budget < 256:
+        raise ValueError("告警报告路径/标签过长，无法安全分段")
+    units = []
+    for block in re.split(r"(?m)(^```[^\n]*\n[\s\S]*?^```[^\n]*(?:\n|$))", content):
+        if block.startswith("```"):
+            units.append(block if len(block.encode("utf-8")) <= budget else
+                         "\n（完整命令块超过单段上限，请从完整报告复制；不发送残缺命令。）\n")
+            continue
+        for line in block.splitlines(keepends=True):
+            if len(line.encode("utf-8")) <= budget:
+                units.append(line)
+            else:
+                # 长行逐字符分段，但完整 Markdown 链接/裸 URL 为原子单位。
+                for atom in re.findall(r"!?\[[^\]\n]*\]\([^\n)]*\)|https?://\S+|[\s\S]", line):
+                    if len(atom.encode("utf-8")) > budget:
+                        raise ValueError("单个链接超过消息上限，完整报告已保留；未截断发送")
+                    units.append(atom)
+    chunks, chunk = [], ""
+    for unit in units:
+        if chunk and len((chunk + unit).encode("utf-8")) > budget:
+            chunks.append(chunk)
+            chunk = ""
+        chunk += unit
+    if chunk:
+        chunks.append(chunk)
+    parts = [prefix + f"分段 {i}/{len(chunks)}\n" + body for i, body in enumerate(chunks, 1)]
+    if not all(len(p.encode("utf-8")) <= WECOM_MARKDOWN_MAX_BYTES for p in parts):
+        raise ValueError("分段长度校验失败，未发送")
+    return parts
+
+
+def _read_delivery_state(path: Path) -> dict:
+    """投递回执不可读时停止此通知，不能当作空历史重发。"""
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"通知状态不是 JSON object：{path.name}")
+    return data
+
+
 def _resolve_global_memory_targets() -> tuple[str, ...]:
     override = os.environ.get(GLOBAL_MEMORY_TARGETS_ENV_OVERRIDE)
     if override is None:
@@ -2369,11 +2525,13 @@ def _load_webhook_url(repo_root: Path) -> str | None:
     return None
 
 
-def _send_wecom_markdown(webhook_url: str, content: str) -> None:
+def _send_wecom_markdown(webhook_url: str, content: str) -> dict:
     """向企业微信群机器人推送 Markdown 消息（同 `发企微.py::send_markdown`
     同款纯标准库实现，本脚本刻意不 import `zhuopin_platform`——保持零依赖，
     不受多 worktree 共享全局 editable install 指向哪个 checkout 的影响）。
     """
+    if len(content.encode("utf-8")) > 4096:
+        raise ValueError("markdown.content 超过4096 UTF-8字节，未调用平台")
     payload = json.dumps(
         {"msgtype": "markdown", "markdown": {"content": content}}, ensure_ascii=False,
     ).encode("utf-8")
@@ -2381,9 +2539,23 @@ def _send_wecom_markdown(webhook_url: str, content: str) -> None:
         webhook_url, data=payload, headers={"Content-Type": "application/json; charset=utf-8"},
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
-    if result.get("errcode", 0) != 0:
-        raise RuntimeError(f"企业微信推送失败 errcode={result.get('errcode')} errmsg={result.get('errmsg')}")
+        response_bytes = resp.read()
+        result = json.loads(response_bytes.decode("utf-8"))
+    if not isinstance(result, dict) or type(result.get("errcode")) is not int:
+        raise RuntimeError("企业微信回执缺少有效整数errcode，发送结果未知")
+    receipt = {"errcode": result["errcode"], "kind": "wecom_webhook_ack",
+               "destination_sha256": hashlib.sha256(webhook_url.encode("utf-8")).hexdigest(),
+               "request_sha256": hashlib.sha256(payload).hexdigest(),
+               "response_sha256": hashlib.sha256(response_bytes).hexdigest(),
+               "received_at_utc": datetime.now(timezone.utc).isoformat()}
+    if result["errcode"] != 0:
+        error = _SweepDeliveryRejected(f"企业微信推送失败（明确拒收）：errcode={result['errcode']}")
+        error.receipt = receipt
+        raise error
+    request_id = result.get("req_id")
+    if isinstance(request_id, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", request_id):
+        receipt["req_id"] = request_id
+    return receipt
 
 
 def _read_fork_state(repo_root: Path) -> dict:
@@ -4127,66 +4299,44 @@ def _write_json_state(path: Path, state: dict) -> None:
 def _track_and_alert_standing_state(
     repo_root: Path, label: str, state_rel_path: str, current_keys: set,
     realert_interval_hours: float, render_alert_text, render_resolved_text, log: list[str],
+    *, allow_resolve: bool = True, preserve_keys: set | None = None,
 ) -> None:
-    """队列 #308 子项 D1：标准长期存在状态类告警的出现→告警／消失→解除
-    通用骨架，复刻 `_track_and_alert_orphan_paths`（#301）已验证的模式，
-    供场景 spec 缺口（M1）／在途变更包滞留（M2）复用（分叉告警状态形状
-    不同，单独在 `_handle_fork_detected`/`_reset_fork_state` 处理，未纳入
-    本函数）。
-
-    与孤儿脏文件那版的一处不同：本函数面向的两类 retrofit 对象现状均为
-    "发现即告警"，不设首次出现的存续阈值，只保留"多久后允许再提醒一次"
-    这一节流维度（`realert_interval_hours`）；resolved 消息也不携带
-    "存续了多久"（孤儿脏文件的 `first_seen`/`last_alerted` 双字段状态形状
-    更丰富，本函数保持与既有 `SCENARIO_SPEC_GAP_STATE_REL`/
-    `STALE_CHANGE_STATE_REL` 单时间戳状态形状兼容，不做 schema 迁移）。
-
-    `render_alert_text(to_alert_keys) -> str` / `render_resolved_text(resolved_keys) -> str`
-    由调用方提供，负责把 key 列表渲染成具体消息正文（各调用方的详情信息
-    不在本函数持有的 key 集合里，闭包捕获）。
-    """
+    """原成功状态仍为 key→时间；只有平台逐段确认后才更新，失败/回执另存原状态旁。"""
+    context = globals().get("_STANDING_OBSERVATION")
+    if context is not None and context["collecting"]:
+        context["pending"].append((_track_and_alert_standing_state,
+            (repo_root, label, state_rel_path, set(current_keys), realert_interval_hours,
+              render_alert_text, render_resolved_text, log),
+            {"allow_resolve": allow_resolve, "preserve_keys": preserve_keys}))
+        return
     state_path = repo_root / state_rel_path
-    state = _read_json_state(state_path)
+    state = _read_delivery_state(state_path)
     now = datetime.now(timezone.utc)
-
-    resolved = [key for key in state if key not in current_keys]
-    for key in resolved:
-        del state[key]
-
-    to_alert = []
-    for key in current_keys:
-        last_alerted = state.get(key)
-        if last_alerted is not None:
-            since = (now - datetime.fromisoformat(last_alerted)).total_seconds() / 3600
-            if since < realert_interval_hours:
+    resolved = sorted(key for key in state if key not in current_keys
+                      and key not in (preserve_keys or set())) if allow_resolve else []
+    to_alert = sorted(key for key in current_keys if state.get(key) is None or
+        (now - datetime.fromisoformat(state[key])).total_seconds() >= realert_interval_hours * 3600)
+    log.append(_must_keep(f"SWEEP_ALERT {label} candidate_count={len(current_keys)} deduplicated={len(current_keys)-len(to_alert)} due={len(to_alert)} resolved={len(resolved)}"))
+    for kind, keys, render in (("resolved", resolved, render_resolved_text), ("alert", to_alert, render_alert_text)):
+        if not keys:
+            continue
+        if kind == "resolved":
+            log.append(f"✅ {label}解除通知：{len(keys)} 项（确认后销记）")
+        try:
+            if not _deliver_standing_message(repo_root, label, state_path, kind, keys,
+                    realert_interval_hours, render, log):
                 continue
-        to_alert.append(key)
-        state[key] = now.isoformat()
-    _write_json_state(state_path, state)
-
-    webhook_url = _load_webhook_url(repo_root)
-
-    if resolved:
-        log.append(f"✅ {label}解除通知：{len(resolved)} 项")
-        if webhook_url is None:
-            log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过{label}解除通知推送（仅留痕日志）。")
-        else:
-            try:
-                _send_wecom_markdown(webhook_url, render_resolved_text(resolved))
-                log.append(f"✓ {label}解除通知已推送。")
-            except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
-                log.append(f"⚠ {label}解除通知推送失败（不影响本轮退出码）：{exc}")
-
-    if not to_alert:
-        return
-    if webhook_url is None:
-        log.append(f"⚠ 未在 .env 找到 {WECOM_WEBHOOK_ENV_KEY}，跳过{label}告警推送（仅留痕日志与状态文件）。")
-        return
-    try:
-        _send_wecom_markdown(webhook_url, render_alert_text(to_alert))
-        log.append(f"✓ {label}告警已推送。")
-    except Exception as exc:  # noqa: BLE001 —— 告警失败不应影响本轮退出码
-        log.append(f"⚠ {label}告警推送失败（不影响本轮退出码）：{exc}")
+            if kind == "resolved":
+                for key in keys:
+                    state.pop(key, None)
+            else:
+                for key in keys:
+                    state[key] = datetime.now(timezone.utc).isoformat()
+            _write_delivery_state(state_path, state)
+            log.append(f"✓ {label}{'解除通知' if kind == 'resolved' else '告警'}已推送。")
+        except Exception as exc:
+            error = re.sub(r"https?://\S+", "[URL已隐去]", str(exc))
+            log.append(_must_keep(f"⚠ {label}推送失败（状态/回执未核实，不记成功）：{error}"))
 
 
 # ============================================================

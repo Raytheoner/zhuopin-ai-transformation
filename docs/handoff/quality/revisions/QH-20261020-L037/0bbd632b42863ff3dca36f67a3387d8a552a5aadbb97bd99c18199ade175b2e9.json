@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对原文中对应事项的最新队列/候选/批准及验收证据；记录遗留或被后续覆盖的具体部分后人工确认，不按旧时间自动关闭",
+  "id": "QH-20261020-L037",
+  "legacy_ids": [],
+  "notes": "2026-10-30仅迁移资料；原文快照截至2026-10-21，状态全部review，未代业务判断。",
+  "original_text": "QD-B C05 v2既有发布/QA回执不重做；Q4材料/专业冲突仍由原Owner跟进。财务离线delta-v1（16文件/17成员，manifest280d39…86ffa/ZIPc1f84f…a2a73）仍NOT_APPLY_READY，旧父身份失效。环境健康检查不是本质量线修复范围，不续跑。\n",
+  "owner": "原队列对应Owner；旧QA/UI执行状态待核",
+  "risk": "遗漏本条将丢失专业边界的授权边界、剩余条件或证据定位",
+  "sources": [
+    {
+      "end": 37,
+      "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+      "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+      "start": 37
+    }
+  ],
+  "status": "review",
+  "title": "C05已有闭环与Q4/财务原Owner边界",
+  "topic": "专业边界"
+}

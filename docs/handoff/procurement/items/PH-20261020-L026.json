@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "PH-20261020-L026",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "续作已核原六真实案例：料号子检查SC2-READY-03核销，旧版单项作废/版本链/已证数量字段移出重复索取；其余5例保留历史/关联缺口。6例关联最终快照8条引用，原件SHA前后保持，未作专业签认。候选现时161文件SHA对manifest为0漂移，不重复pytest。\n",
+  "owner": "原采购任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 26,
+      "path": "docs/handoff/procurement/archive/3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb.bin",
+      "sha256": "3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb",
+      "start": 26
+    }
+  ],
+  "status": "review",
+  "title": "SC2六案例去重与剩余关联缺口",
+  "topic": "SC2"
+}

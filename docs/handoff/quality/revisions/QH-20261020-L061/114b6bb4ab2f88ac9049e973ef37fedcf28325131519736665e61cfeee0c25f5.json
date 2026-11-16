@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对原文中对应事项的最新队列/候选/批准及验收证据；记录遗留或被后续覆盖的具体部分后人工确认，不按旧时间自动关闭",
+  "id": "QH-20261020-L061",
+  "legacy_ids": [],
+  "notes": "2026-10-30仅迁移资料；原文快照截至2026-10-21，状态全部review，未代业务判断。",
+  "original_text": "HOME-DIAG源：`reports/quality-source-time-qa-1020/home-diag-20261020-221117-2143fe/diagnostic-receipt.json` SHA e4ebb7e4bb8c3f4e4fbbc340f3f09cda6082bf83f01d691ceb370dd163c90a36；QA：同根`QA-Q-SOURCE-HOME-DIAG-v1停点核收.md/json`，JSON SHA e0f818f6bf27d78dcb987bfee6d04cae80d3a9535f4db92626d8687eee9bc389；核收命令`review_home_diag_receipt.py` exit0。首次授权/派单见`home-diag-authorization.json`。本地诊断与离线验收报告`reports/quality-source-time-qa-1020/本地守卫诊断与D1-D4离线验收.md` SHA256 `87c36fb04db73c91455c6c98386e242382b726a56fb6d1e6455faff27c869682`；绑定回执`reports/quality-source-time-qa-1020/local-acceptance-final.json` SHA256 `b6a1431dcc8a6d155c7465ea4f23b9daef0c016893ae1adf8883ea253865ba66`。原守卫SHA `0922dffe454a9442ae9400440e08475667f9d387be38c4920c9827edb7a122cb`前后相同。22:37受控前置停点回执`reports/quality-source-time-qa-1020/home-diag-controlled-preflight-stop-20261020-223730.json` SHA256 `8deb0fb2ca87b85f6ace6c412d9057993dc8454469b33b4ec06994bd2623bc1e`；执行器`reports/quality-source-time-qa-1020/execute_home_diag_v1.py` SHA256 `0f7102b0e30d4111543e827cb1987170b76684b22f29fd41856af754665205a1`。\n",
+  "owner": "原队列对应Owner；旧QA/UI执行状态待核",
+  "risk": "遗漏本条将丢失HOME-DIAG证据的授权边界、剩余条件或证据定位",
+  "sources": [
+    {
+      "end": 61,
+      "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+      "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+      "start": 61
+    }
+  ],
+  "status": "review",
+  "title": "原诊断回执与离线验收完整哈希",
+  "topic": "HOME-DIAG证据"
+}

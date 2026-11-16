@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "FH-20261019-L029",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "- 供审包：`reports/finance-business-minimum-1019-op1016a/README.md`，SHA `37da9e6cb22806365ea732a99cfee2306c4546af9c4a7ec45b918f3c15cb4448`；`scope.binding.json` SHA `baa379f05dd0b7a14eb7cc266310bda6e9564759bde64806dc02727e16ba31aa`。**worktree 不可见，须回主仓复核**。\n",
+  "owner": "原财务任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 29,
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "start": 29
+    }
+  ],
+  "status": "review",
+  "title": "供审包和scope绑定完整指纹",
+  "topic": "证据"
+}

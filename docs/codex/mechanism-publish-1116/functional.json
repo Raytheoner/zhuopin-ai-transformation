@@ -1,0 +1,94 @@
+{
+  "level": "mock",
+  "natural_short_wake_accepted": false,
+  "actual_isolated_candidate_created": [
+    2
+  ],
+  "fixture_root": "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo",
+  "result": {
+    "outcomes": [
+      {
+        "row": 1,
+        "status": "blocked",
+        "reason": "isolated fixture independent prerequisite; no real task"
+      },
+      {
+        "row": 2,
+        "status": "checkpointed",
+        "candidate": [
+          {
+            "path": "candidate/task2.py",
+            "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"
+          },
+          {
+            "path": "tests/test_task2.py",
+            "sha256": "461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec"
+          }
+        ],
+        "verification": {
+          "exit": 0,
+          "junit": {
+            "path": "reports/candidate2.xml",
+            "sha256": "d58e88a7137410471f56b1b5f7b49fbdb8b1ff259aa89be1022b17494405c871"
+          },
+          "level": "mock",
+          "red_junit": {
+            "path": "reports/candidate-red2.xml",
+            "sha256": "b95187f0f803dd97d6313fa22f6d6a3971f63ac81ea0737b7c01e337e4107d53"
+          }
+        },
+        "delivery_accepted": false
+      },
+      {
+        "row": 3,
+        "status": "blocked",
+        "reason": "isolated fixture independent prerequisite; no real task"
+      }
+    ],
+    "pool_rechecks": 2,
+    "delivery_accepted": false,
+    "execution": "foreground_inline",
+    "natural_trial": false
+  },
+  "final_row": {
+    "row": 2,
+    "queue_status": "open",
+    "queue_file": "1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md",
+    "queue_sha256": "5a6db9fde2e9fdcbb4ee1e18a662ef1aba331beab7bfb43125701096a66cc383",
+    "task": "Fixture 2",
+    "goal": "Return 42",
+    "owner": "fixture-foreground；本轮唯一写方。━━━ 历史归属：未领",
+    "source": "`docs/approval-2.md` 本轮原批准范围：Original fixture approval: isolated implementation and pytest only；批准指针及SHA256：[{\"path\": \"docs/approval-2.md\", \"sha256\": \"99154d4ca306b047e790b73f5a6d7b61076ac5d3f8e4f3376d967b2360c1f6a9\"}] 前台候选检查点（非交付验收）：{\"candidate\": [{\"path\": \"candidate/task2.py\", \"sha256\": \"1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c\"}, {\"path\": \"tests/test_task2.py\", \"sha256\": \"461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec\"}], \"verification\": {\"exit\": 0, \"junit\": {\"path\": \"reports/candidate2.xml\", \"sha256\": \"d58e88a7137410471f56b1b5f7b49fbdb8b1ff259aa89be1022b17494405c871\"}, \"level\": \"mock\", \"red_junit\": {\"path\": \"reports/candidate-red2.xml\", \"sha256\": \"b95187f0f803dd97d6313fa22f6d6a3971f63ac81ea0737b7c01e337e4107d53\"}}, \"next_action\": \"fixture candidate ready for original full acceptance; no production\"}",
+    "source_refs": [
+      {
+        "path": "docs/approval-2.md",
+        "sha256": "99154d4ca306b047e790b73f5a6d7b61076ac5d3f8e4f3376d967b2360c1f6a9"
+      }
+    ],
+    "scope": "本轮精确触碰区：`candidate/task2.py`、`tests/test_task2.py` ━━━ 原触碰区：`candidate/task2.py`",
+    "constraints_and_history": "[S:open][D:业] 原离网批准保持",
+    "missing": [],
+    "permissions_granted": [],
+    "execution_ready": false,
+    "checks_required": [
+      "existing_approval_scope",
+      "spec_test_acceptance_mapping"
+    ],
+    "consumer_action": "verify_existing_scope_then_claim_and_build",
+    "next": "本摘要不授新权；execution_ready=false仅表示读取器不判授权。开启看护后核原批准/唯一写方/触碰区，已批无冲突即持原锁claim-slice预登记后在本主会话构建，不等第二指令；单项留步继续下一独立项，留步或收口前重查原池。"
+  },
+  "production_accepted": false,
+  "scheduler_started": false,
+  "professional_signoff": false,
+  "native_hook_invocation": {
+    "exit": 0,
+    "output": {
+      "hookSpecificOutput": {
+        "hookEventName": "UserPromptSubmit",
+        "additionalContext": "调用zhuopin-lane-watch：本次短口令要求当前主会话串行消费原队列。watch-context只读取不授新权，execution_ready=false不是额外阻碍；核原批准/唯一写方/精确触碰区，持原锁claim-slice预登记成功后立即构建，不等第二条催办。单项阻塞记原行并取下一独立项；每次留步/收口前重查原池。不接管其他写方、不解冻、不扩审批、不新启后台。"
+      }
+    },
+    "level": "synthetic-event-only",
+    "natural_session_delivery_accepted": false
+  }
+}

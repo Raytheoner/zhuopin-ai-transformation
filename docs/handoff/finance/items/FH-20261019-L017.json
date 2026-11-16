@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "FH-20261019-L017",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "准备文档、原成果／指纹复用、与1017UI内部协调已批；新20路径业务增量**未批**。Q2模型关闭；不另做样板、不重跑旧测试。本人onLAN仅更新环境事实，**不解除暂不ff/push、服务器访问、部署、真实源、账号、付款入账或向同事外发**。SC2、机制、招聘、1010在办任务不接。\n",
+  "owner": "原财务任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 17,
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "start": 17
+    }
+  ],
+  "status": "review",
+  "title": "准备授权与新20路径及外发/生产禁项",
+  "topic": "授权"
+}

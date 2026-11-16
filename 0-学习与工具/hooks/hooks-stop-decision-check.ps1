@@ -33,7 +33,7 @@ $HookName = 'stop-decision-check'
 
 #: 需你定夺／需你决策，但排除"本次无需你决策"这类合法否定句（负向后顾断言）。
 $script:DecisionSectionRe = '(?<!无)需你(?:定夺|决策)'
-$script:OptionLabelRe = '\(a\)|\(b\)'
+$script:OptionLabelRe = '(?i)\(a\)|\(b\)|(?m)(?:^|\s)\d+[A-Z](?=[:：、.\s]|$)|^\s*\d+[.、]\s+\S'
 
 function Get-LastAssistantText([string]$TranscriptPath) {
     <# 返回 @{ Ok=$bool; Text=$string; Error=$string; ParseErrors=$int }。#>
@@ -134,12 +134,12 @@ try {
     $hasLabels = [regex]::IsMatch($rest, $script:OptionLabelRe)
     if ($hasLabels) {
         Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'pass' `
-            -SessionId $sessionId -Detail '"需你定夺"小节含 (a)/(b) 选项标签，格式完整'
+            -SessionId $sessionId -Detail '"需你定夺"小节含 (a)/(b) 或数字选项标签，格式完整'
         exit 0
     }
 
     $msg = '✗ 「需你定夺」小节缺选项标签：末条回复出现"需你定夺／需你决策"字样，' +
-        '但其后未找到 (a)/(b) 形态的选项标签。请补全为可直接作答的选择题（带字母标签、' +
+        '但其后未找到 (a)/(b)、1A 或 1. 形态的选项标签。请补全为可直接作答的选择题（带标签、' +
         '写清代价、标默认项或明写"本项无默认"），或若确无决策项，删掉该字样并改写为' +
         '"本次无需你决策"（根 CLAUDE.md §5）。'
     Add-HooksAuditLine -RepoRoot $repoRoot -Hook $HookName -Verdict 'violation' `

@@ -28,8 +28,258 @@ state = _load("state", BASE / "workflow_state.py")
 gate = _load("gate", BASE / "workflow_gate.py")
 handoff = _load("handoff", BASE / "handoff.py")
 provider = _load("provider", BASE / "model_provider.py")
+requirements = _load("requirements", BASE / "workflow_requirements.py")
 
 PHASES = ("proposal", "implement", "test", "review")
+
+
+# Foreground continuation uses the original queue and lease, not the sealed
+# headless implementer below. Callbacks are the current implementer's inline
+# slice (a controlled local substitute in tests); no model/process is dispatched.
+def _native_tools(root, execute):
+    def lock(*args, input_text=None):
+        kwargs = {'cwd': root, 'timeout': 90}
+        if input_text is not None:
+            kwargs['input_text'] = input_text
+        result = execute([sys.executable, str(BASE.parent / '工具-共享文档编辑锁.py'), *args], **kwargs)
+        if result.get('exit') != 0:
+            raise ValueError('original lock/queue command failed: ' + str(result))
+        return result
+    return handoff._local_module('queue_context'), lock
+
+
+def _native_path(root, raw, *, file=True):
+    if (not isinstance(raw, str) or not raw or raw != raw.strip()
+            or any(c in raw for c in '\\:*?[]`|\n\r') or raw.startswith('/')
+            or any(p in ('', '.', '..') for p in raw.rstrip('/').split('/'))
+            or (file and raw.endswith('/'))):
+        raise ValueError('exact repository-relative file path required')
+    path = root / raw.rstrip('/')
+    if not path.resolve().is_relative_to(root) or path.resolve() != path:
+        raise ValueError('scope path redirects or escapes repository')
+    if any(part.lower() in ('.git', '.env', 'credentials', 'secrets') for part in path.relative_to(root).parts):
+        raise ValueError('scope path contains protected credentials/Git data')
+    if path.suffix.lower() in ('.pem', '.key', '.pfx') or (file and path.is_dir()):
+        raise ValueError('scope path is not a safe target file')
+    return path
+
+
+def _native_ref(root, reference):
+    path = _native_path(root, reference.get('path'))
+    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != reference.get('sha256'):
+        raise ValueError('approval/candidate evidence hash mismatch')
+    return path
+
+
+def _native_owner_available(owner, who):
+    current = owner.split('━━━', 1)[0].strip()
+    if re.match(re.escape(who) + r'(?:$|[，；\s])', current):
+        return True
+    if re.search(r'本轮唯一(?:实施)?(?:认领|写方)|当前唯一写方', current):
+        return False
+    return (current in ('未领', '待领', '未领取') or
+            current.startswith('Codex现行workflow／全自动泳道看护任务池'))
+
+
+def _native_edit(lock, who, row, changes, queue_file):
+    domain = '业' if Path(queue_file).name == '跨桌任务队列-业务场景.md' else '机'
+    lock('edit-row', '--who', who, '--section', '一', '--number', str(row),
+         '--domain', domain, '--stdin-json', input_text=json.dumps(changes, ensure_ascii=False))
+
+
+def _native_preregister(root, lock, execute, *, batch, who, row, paths):
+    if not re.fullmatch(r'B-[A-Za-z0-9_-]+', batch):
+        raise ValueError('preregistration batch identifier required')
+    query = [sys.executable, str(BASE.parent / '工具-队列查询.py'), '--row', batch, '--section', '二']
+    before = execute(query + ['--format', 'json'], cwd=root, timeout=90)
+    if before.get('exit') != 0:
+        raise ValueError('preregistration query failed')
+    value = json.loads(before['stdout'])
+    if value.get('error') or value.get('read_errors') != []:
+        raise ValueError('preregistration query unavailable or ambiguous')
+    token = f'foreground {who} §一#{row}'
+    files = '、'.join('`' + p + '`' for p in dict.fromkeys(paths))
+    if not value.get('found'):
+        try:
+            lock('append-row', '--who', who, '--domain', '机', '--section', '二', '--cell', batch,
+                 '--cell', files, '--cell', token,
+                 '--cell', '在办（预登记，收工时精确化）；' + token)
+        except ValueError as exc:
+            raise ValueError('preregistration rejected; no target writes allowed') from exc
+    checked = execute(query + ['--field', 'all'], cwd=root, timeout=90)
+    text = checked.get('stdout', '')
+    if (checked.get('exit') != 0 or token not in text or '在办（预登记' not in text
+            or any('`' + p + '`' not in text for p in paths)):
+        raise ValueError('preregistration readback not proven; no target writes allowed')
+
+
+def claim_native_slice(root, plan, *, execute=handoff.execute):
+    """Bind verified existing approval before any target write, under caller's lease.
+
+    The foreground agent verifies approval meaning and supplies current competing
+    writers from the original records. Hashes bind that review; they grant no new
+    authority. Failure can leave an honest preregistration, never implementation.
+    """
+    root = Path(root).resolve()
+    who, row = plan.get('who'), plan.get('row')
+    if not isinstance(who, str) or not who.strip() or not plan.get('queue_sha256'):
+        raise ValueError('writer and current queue evidence required')
+    handoff._local_module('feedback_intake').require_owned_lock(root, who)
+    context, lock = _native_tools(root, execute)
+    ctx = context.load_context(root, row, execute=execute, expected_sha256=plan['queue_sha256'])
+    pool = context.list_rows(root, execute=execute)
+    if not any(item['row'] == row and not item.get('review_only') for item in pool):
+        raise ValueError('row is not eligible for implementation; state/review unchanged')
+    if not _native_owner_available(ctx['owner'], who):
+        raise ValueError('another current writer owns the original row')
+    scope, refs, paths = plan.get('approval_scope'), plan.get('approval_refs'), plan.get('allowed_paths')
+    if not isinstance(scope, str) or not scope.strip() or not isinstance(refs, list) or not refs:
+        raise ValueError('original approval scope/evidence required')
+    for reference in refs:
+        _native_ref(root, reference)
+    if not any(ref in ctx['source_refs'] for ref in refs):
+        raise ValueError('approval must retain an original row source anchor')
+    if (not isinstance(paths, list) or not paths or any(not isinstance(p, str) for p in paths)
+            or len({p.casefold() for p in paths}) != len(paths)):
+        raise ValueError('exact nonduplicate scope paths required')
+    for path in paths:
+        _native_path(root, path)
+    if not isinstance(plan.get('active_writers'), list):
+        raise ValueError('current writer review required')
+    for writer in plan['active_writers']:
+        if writer['who'] == who:
+            continue
+        for other in writer['allowed_paths']:
+            _native_path(root, other, file=False)
+            a = other.rstrip('/').casefold()
+            if any(p.casefold() == a or p.casefold().startswith(a + '/') or a.startswith(p.casefold() + '/') for p in paths):
+                raise ValueError('touch conflict with another current writer')
+    queue = ctx['queue_file'].replace('\\', '/')
+    mechanism = '1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md'
+    if Path(queue).is_absolute():
+        queue = Path(queue).resolve().relative_to(root).as_posix()
+    _native_preregister(root, lock, execute, batch=plan['batch'], who=who, row=row,
+                        paths=[*paths, queue, mechanism])
+    # Revalidate immutable evidence immediately before binding the original row.
+    context.load_context(root, row, execute=execute, expected_sha256=plan['queue_sha256'])
+    for reference in refs:
+        _native_ref(root, reference)
+    token = f"本轮原批准范围：{scope}；批准指针及SHA256：" + json.dumps(refs, ensure_ascii=False)
+    exact = '本轮精确触碰区：' + '、'.join('`' + path + '`' for path in paths)
+    _native_edit(lock, who, row, {'set': {
+        '领取方': who + '；本轮唯一写方。━━━ 历史归属：' + ctx['owner'],
+        '触碰区': exact + ' ━━━ 原触碰区：' + ctx['scope']},
+        'append': {'输入（指针）': token}}, ctx['queue_file'])
+    checked = context.load_context(root, row, execute=execute)
+    if (not checked['owner'].startswith(who + '；') or token not in checked['source']
+            or exact not in checked['scope']):
+        raise ValueError('original claim readback failed; no target writes allowed')
+    return {'status': 'claimed', 'row': row, 'who': who, 'batch': plan['batch'],
+            'allowed_paths': paths, 'preregistered': True, 'queue_sha256': checked['queue_sha256']}
+
+
+def consume_native_watch(root, *, who, resolve_scope, perform_slice, execute=handoff.execute,
+                         release_waiver=None):
+    """Continue inline after one wake; original pool/lease/checkpoints only.
+
+    No autonomous model, scheduler, task acceptance or production action. The
+    callbacks run in this foreground process and obey the original slice rules.
+    """
+    root = Path(root).resolve()
+    context, lock = _native_tools(root, execute)
+    seen, outcomes, rechecks = {}, [], 0
+
+    def release():
+        args = ['release', '--who', who]
+        if release_waiver:
+            args += ['--waiver', release_waiver]
+        lock(*args)
+
+    def checkpoint(ctx, note, batch):
+        lock('acquire', '--who', who)
+        try:
+            current = context.load_context(root, ctx['row'], execute=execute,
+                                           expected_sha256=ctx['queue_sha256'])
+            mechanism = '1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md'
+            queue = current['queue_file'].replace('\\', '/')
+            if Path(queue).is_absolute():
+                queue = Path(queue).resolve().relative_to(root).as_posix()
+            # A blocked item needs only an original-row note, never a new claim.
+            if batch is None:
+                batch = 'B-foreground-' + hashlib.sha256((who + str(ctx['row'])).encode()).hexdigest()[:16]
+                _native_preregister(root, lock, execute, batch=batch, who=who,
+                                    row=ctx['row'], paths=[queue, mechanism])
+            _native_edit(lock, who, ctx['row'], {'append': {'输入（指针）': note}}, current['queue_file'])
+        finally:
+            release()
+        return context.load_context(root, ctx['row'], execute=execute)['queue_sha256']
+
+    while True:
+        pool = context.list_rows(root, execute=execute)
+        rechecks += 1
+        pending = []
+        for item in pool:
+            if item.get('review_only'):
+                continue
+            ctx = context.load_context(root, item['row'], execute=execute)
+            if seen.get(ctx['row']) == ctx['queue_sha256']:
+                continue
+            if not _native_owner_available(ctx['owner'], who):
+                seen[ctx['row']] = ctx['queue_sha256']
+                continue
+            pending.append(ctx)
+        if not pending:
+            break  # This is a fresh original-pool query, never the old snapshot.
+        for ctx in pending:
+            row = ctx['row']
+            try:
+                plan = resolve_scope(ctx)
+                if plan.get('blocked_reason'):
+                    seen[row] = checkpoint(ctx, '看护本项留步（不改原状态/写方）：' + plan['blocked_reason'], None)
+                    outcomes.append({'row': row, 'status': 'blocked', 'reason': plan['blocked_reason']})
+                    continue
+                if plan.get('who') != who or plan.get('row') != row:
+                    raise ValueError('foreground plan writer/row mismatch')
+                lock('acquire', '--who', who)
+                try:
+                    receipt = claim_native_slice(root, plan, execute=execute)
+                finally:
+                    release()
+                # Failed preregistration, claim readback or release cannot reach here.
+                ctx = context.load_context(root, row, execute=execute,
+                                           expected_sha256=receipt['queue_sha256'])
+                result = perform_slice(ctx, receipt)
+                candidates, verification = result.get('candidate'), result.get('verification', {})
+                if not candidates or verification.get('exit') != 0 or not result.get('next_action'):
+                    raise ValueError('actual candidate, successful verification and next action required')
+                for reference in candidates:
+                    if reference.get('path') not in receipt['allowed_paths']:
+                        raise ValueError('candidate outside preregistered scope')
+                    _native_ref(root, reference)
+                junit = _native_ref(root, verification.get('junit', {}))
+                import xml.etree.ElementTree as ET
+                cases = list(ET.parse(junit).iter('testcase'))
+                if not cases or any(c.find(tag) is not None for c in cases for tag in ('failure', 'error', 'skipped')):
+                    raise ValueError('candidate JUnit has no executed green cases')
+                note = '前台候选检查点（非交付验收）：' + json.dumps(result, ensure_ascii=False)
+                seen[row] = checkpoint(ctx, note, receipt['batch'])
+                outcomes.append({'row': row, 'status': 'checkpointed', 'candidate': candidates,
+                                 'verification': verification, 'delivery_accepted': False})
+            except Exception as exc:
+                # The next independent item is still considered. Never release a
+                # foreign lease or turn failed queue output into an empty pool.
+                outcome = {'row': row, 'status': 'blocked', 'reason': str(exc), 'recorded': False}
+                current = context.load_context(root, row, execute=execute)
+                seen[row] = current['queue_sha256']
+                if _native_owner_available(current['owner'], who):
+                    try:
+                        seen[row] = checkpoint(current, '看护本项失败留证（不改原状态/写方）：' + str(exc), None)
+                        outcome['recorded'] = True
+                    except Exception as write_error:
+                        outcome['writeback_error'] = str(write_error)
+                outcomes.append(outcome)
+    return {'outcomes': outcomes, 'pool_rechecks': rechecks, 'delivery_accepted': False,
+            'execution': 'foreground_inline', 'natural_trial': False}
 
 
 class ModelStopUnsettled(RuntimeError):
@@ -293,7 +543,10 @@ def _approval_snapshot(task_id: str, workspace: Path, current: dict, path: Path)
             seen.add(resolved)
         binding = {key: approval[key] for key in ("task_id", "design_head", "design_sha256", "allowed_paths")}
         ref = {"path": str(target), "sha256": hashlib.sha256(raw).hexdigest()}
-        return ref, {**binding, "text": approval["text"], "authorization_sha256": ref["sha256"]}
+        context = {**binding, "text": approval["text"], "authorization_sha256": ref["sha256"]}
+        if "git_commit" in approval:
+            context["git_commit"] = approval["git_commit"]
+        return ref, context
     except (OSError, ValueError, KeyError, TypeError, RuntimeError):
         raise ValueError("invalid bound design approval evidence") from None
 
@@ -438,8 +691,8 @@ def _run_model(task_id: str, phase: str, workspace: Path, attempt: dict, model_r
         }
         prompt += ("\n仅在 openspec/changes/" + task_id +
                    " 下产出 proposal.md、design.md、tasks.md，并满足 OpenSpec strict："
-                   "规格变更须写 specs/<capability>/spec.md；纯工具变更可用 .openspec.yaml"
-                   " 中的 schema: spec-driven 与 skip_specs: true。严格校验由外层驱动运行；"
+                   "feature/refinement 均须写 specs/<capability>/spec.md 与对应 pytest 契约；"
+                   "refinement 可轻量 proposal，但仍保留短 design；不得 skip_specs。INDEX 由入队方持锁维护，本阶段只读。严格校验由外层驱动运行；"
                    "你只写文件，不在模型 sandbox 内运行 OpenSpec CLI。外层驱动已核队列行、intent 批准和 HEAD；"
                    "本阶段不要自行调用 Probe，不要写或读取 ZHUOPIN_CODEX_STATE 私有目录。"
                    "不要查询或读取任务队列，也不要重新认领或修改队列。来源队列行是父工单，"
@@ -455,7 +708,8 @@ def _run_model(task_id: str, phase: str, workspace: Path, attempt: dict, model_r
                    "直接依照已批准设计实施，不要调用 Probe，不要查询或读取任务队列，也不要调用 prepare/status/recover；"
                    "这些检查及状态写入已由外层驱动完成，ZHUOPIN_CODEX_STATE 位于当前工作树 sandbox 之外。"
                    "只可修改以下批准路径：" + json.dumps(implementation_paths or [], ensure_ascii=False) + "。"
-                   "不要 git add 或 commit，外层驱动核对授权白名单后提交。不合入、部署或对外发送。")
+                   "不要 git add 或 commit，外层驱动只有该阶段逐文件提交批准才提交，否则保留候选。不合入、部署或对外发送。")
+        prompt += requirements.implementation_prompt(task_id)
         if approved_design_context is None:
             raise ValueError("verified implementation approval context required")
         prompt += (
@@ -573,6 +827,9 @@ def _proposal(task_id, workspace, attempt, executor, model_runner, *, model=None
     current = state.load_state(task_id)
     if current_head(workspace) != current["source_head"] or not _clean(workspace):
         raise ValueError("proposal requires clean source HEAD")
+    admission = requirements.inspect(workspace, task_id, stage="admission")
+    if admission["status"] != "ready":
+        return admission
     result = _run_model(task_id, "proposal", workspace, attempt, model_runner, model=model)
     delegated = _proposal_validation_delegated(task_id, attempt, result)
     if (result.get("status") != "output_needs_review" and not delegated
@@ -597,7 +854,20 @@ def _proposal(task_id, workspace, attempt, executor, model_runner, *, model=None
     validation = executor(["openspec", "validate", task_id, "--strict"], cwd=workspace, timeout=120)
     if validation.get("exit") != 0:
         return {"status": "blocked", "reason": "OpenSpec strict validation failed", "validation": validation}
+    contract = requirements.inspect(workspace, task_id, stage="proposal")
+    if contract["status"] != "ready":
+        return contract
     relative = sorted(changed)
+    approval_ref = current.get("intent_approval_ref") or {}
+    if not gate._valid_file(approval_ref):
+        return {"status": "blocked", "reason": "proposal approval evidence drift"}
+    approval_raw = Path(approval_ref["path"]).read_bytes()
+    if hashlib.sha256(approval_raw).hexdigest() != approval_ref["sha256"]:
+        return {"status": "blocked", "reason": "proposal approval evidence drift"}
+    approval = json.loads(approval_raw.decode("utf-8-sig"))
+    if not requirements.commit_allowed(approval, phase="proposal", paths=relative):
+        return {"status": "blocked", "reason": "proposal candidate retained; explicit file-scoped git commit authorization required",
+                "candidate": [_ref(workspace / name) for name in relative]}
     added = handoff.git("add", "--", *relative, cwd=workspace)
     if added["exit"]:
         return {"status": "blocked", "reason": "design git add failed", "git": added}
@@ -608,7 +878,7 @@ def _proposal(task_id, workspace, attempt, executor, model_runner, *, model=None
     current.update(phase="proposal", design_head=current_head(workspace), openspec_valid=True,
                    design_ref=_ref(files[1]), proposal_ref=_ref(files[0]), tasks_ref=_ref(files[2]),
                    proposal_thread_id=result["thread_id"], proposal_validation_delegated=delegated,
-                   workspace=str(workspace), delivery_accepted=False)
+                   workspace=str(workspace), delivery_accepted=False, requirements_contract=contract)
     _save(task_id, current)
     return {"status": "stage_output_needs_review", "design_head": current["design_head"],
             "model_evidence": str(state._folder(task_id) / ("proposal-" + attempt["id"]))}
@@ -842,6 +1112,12 @@ def _implement(task_id, workspace, attempt, authorization, model_runner, *, resu
     if current_head(workspace) != anchor or resume_thread is None and not _clean(workspace):
         raise ValueError("implementation requires clean approved design HEAD")
     ref, context = _approval_snapshot(task_id, workspace, current, authorization)
+    # Existing sealed stages retain their frozen contract; all newly proposed
+    # tasks carry requirements_contract and are rechecked before implementation.
+    if current.get("requirements_contract"):
+        contract = requirements.inspect(workspace, task_id, stage="implement")
+        if contract["status"] != "ready":
+            return contract
     binding = {key: context[key] for key in ("task_id", "design_head", "design_sha256", "allowed_paths")}
     if "design_approval_ref" in current or "design_approval_binding" in current:
         if ref != current.get("design_approval_ref") or binding != current.get("design_approval_binding"):
@@ -891,6 +1167,15 @@ def _implement(task_id, workspace, attempt, authorization, model_runner, *, resu
                 return _implementation_blocked(task_id, attempt, legacy_reason, result,
                                                path_guard_reason="not_regular_file")
         relative = sorted(changed)
+        required_tests = (current.get("requirements_contract") or {}).get("tests", [])
+        if required_tests and not set(required_tests).intersection(changed):
+            return _implementation_blocked(task_id, attempt, "refinement requires corresponding pytest update", result)
+        if (current.get("requirements_contract", {}).get("mode") == "feature"
+                and not any(Path(name).name.startswith("test_") and name.endswith(".py") for name in changed)):
+            return _implementation_blocked(task_id, attempt, "feature implementation requires pytest update", result)
+        if not gate._valid_file(ref) or not requirements.commit_allowed(context, phase="implement", paths=relative):
+            return _implementation_blocked(task_id, attempt,
+                "implementation candidate retained; explicit file-scoped git commit authorization required", result)
         added = handoff.git("add", "--", *relative, cwd=workspace)
         if added["exit"]:
             return _implementation_blocked(task_id, attempt, "implementation git add failed", result)

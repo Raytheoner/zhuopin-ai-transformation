@@ -1,0 +1,22 @@
+[
+  {
+    "path": "candidate/task2.py",
+    "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c",
+    "content": "VALUE = 42\n"
+  },
+  {
+    "path": "tests/test_task2.py",
+    "sha256": "461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec",
+    "content": "import runpy\nfrom pathlib import Path\ndef test_value():\n    assert runpy.run_path(str(Path(__file__).parents[1]/\"candidate/task2.py\"))[\"VALUE\"] == 42\n"
+  },
+  {
+    "path": "reports/candidate-red2.xml",
+    "sha256": "b95187f0f803dd97d6313fa22f6d6a3971f63ac81ea0737b7c01e337e4107d53",
+    "content": "<?xml version=\"1.0\" encoding=\"utf-8\"?><testsuites name=\"pytest tests\"><testsuite name=\"pytest\" errors=\"0\" failures=\"1\" skipped=\"0\" tests=\"1\" time=\"0.166\" timestamp=\"2026-11-16T10:00:59.046684+08:00\" hostname=\"SPSThinkpadWIN\"><testcase classname=\"test_task2\" name=\"test_value\" time=\"0.003\"><failure message=\"FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\PAULSH~1\\\\AppData\\\\Local\\\\Temp\\\\1113a2-foreground-acceptance-wcb0mz1a\\\\repo\\\\candidate\\\\task2.py'\">def test_value():\n&gt;       assert runpy.run_path(str(Path(__file__).parents[1]/\"candidate/task2.py\"))[\"VALUE\"] == 42\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\ntest_task2.py:4: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n&lt;frozen runpy&gt;:286: in run_path\n    ???\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nfname = 'C:\\\\Users\\\\PAULSH~1\\\\AppData\\\\Local\\\\Temp\\\\1113a2-foreground-acceptance-wcb0mz1a\\\\repo\\\\candidate\\\\task2.py'\n\n&gt;   ???\nE   FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\PAULSH~1\\\\AppData\\\\Local\\\\Temp\\\\1113a2-foreground-acceptance-wcb0mz1a\\\\repo\\\\candidate\\\\task2.py'\n\n&lt;frozen runpy&gt;:254: FileNotFoundError</failure></testcase></testsuite></testsuites>"
+  },
+  {
+    "path": "reports/candidate2.xml",
+    "sha256": "d58e88a7137410471f56b1b5f7b49fbdb8b1ff259aa89be1022b17494405c871",
+    "content": "<?xml version=\"1.0\" encoding=\"utf-8\"?><testsuites name=\"pytest tests\"><testsuite name=\"pytest\" errors=\"0\" failures=\"0\" skipped=\"0\" tests=\"1\" time=\"0.026\" timestamp=\"2026-11-16T10:01:00.843709+08:00\" hostname=\"SPSThinkpadWIN\"><testcase classname=\"test_task2\" name=\"test_value\" time=\"0.006\" /></testsuite></testsuites>"
+  }
+]

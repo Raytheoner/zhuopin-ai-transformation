@@ -517,6 +517,15 @@ def _set_heartbeat(repo: Path, age_days: float) -> None:
     )
 
 
+@pytest.fixture()
+def fake_heartbeat_delivery(monkeypatch):
+    """心跳判据测试只用模拟回执；绝不读取真实 webhook 或发送消息。"""
+    sent = []
+    monkeypatch.setattr(sweep, "_load_webhook_url", lambda _root: "https://example.invalid/hook")
+    monkeypatch.setattr(sweep, "_send_wecom_markdown", lambda _url, text: sent.append(text))
+    return sent
+
+
 def test_sweep_未注册时按设计不告警(repo: Path):
     """🔴 安装单执行之前不得每天红一次——永远红着的告警等于没有告警。"""
     log: list[str] = []
@@ -536,7 +545,7 @@ def test_sweep_心跳新鲜时每轮回显在岗(repo: Path):
     assert "非 UTC" in text, "时刻必须显式标基准"
 
 
-def test_sweep_零心跳即告警(repo: Path):
+def test_sweep_零心跳即告警(repo: Path, fake_heartbeat_delivery):
     _register_sentinels(repo)
     _set_heartbeat(repo, age_days=sweep.HOOKS_HEARTBEAT_STALE_DAYS + 2)
     log: list[str] = []
@@ -545,7 +554,7 @@ def test_sweep_零心跳即告警(repo: Path):
     assert "零心跳" in state
 
 
-def test_sweep_心跳文件不存在即告警(repo: Path):
+def test_sweep_心跳文件不存在即告警(repo: Path, fake_heartbeat_delivery):
     _register_sentinels(repo)
     log: list[str] = []
     sweep._check_hooks_heartbeat(repo, log)
@@ -553,7 +562,7 @@ def test_sweep_心跳文件不存在即告警(repo: Path):
     assert "心跳文件不存在" in state
 
 
-def test_sweep_坏心跳时检查本身出声(repo: Path):
+def test_sweep_坏心跳时检查本身出声(repo: Path, fake_heartbeat_delivery):
     """tasks 5.3：心跳文件是坏 JSON 时，检查必须出声——判据坏了 ≠ 没有违规。"""
     _register_sentinels(repo)
     (repo / "reports" / "hooks-heartbeat.json").write_text("{ 这不是 json", encoding="utf-8")
@@ -563,7 +572,7 @@ def test_sweep_坏心跳时检查本身出声(repo: Path):
     assert "心跳文件损坏" in state
 
 
-def test_sweep_心跳恢复后告警自动解除(repo: Path):
+def test_sweep_心跳恢复后告警自动解除(repo: Path, fake_heartbeat_delivery):
     """🔴 告警必须能被「已恢复」关掉，否则又造出一个永远红着的告警。"""
     _register_sentinels(repo)
     log: list[str] = []
@@ -577,6 +586,32 @@ def test_sweep_心跳恢复后告警自动解除(repo: Path):
     state2 = json.loads((repo / sweep.HOOKS_HEARTBEAT_STATE_REL).read_text(encoding="utf-8"))
     assert state2 == {}, "恢复后必须自动解除，无需人工清除"
     assert "解除" in "\n".join(log2)
+
+
+def test_sweep_心跳通知失败不记录成功(repo: Path, monkeypatch):
+    """传输异常时送达未知；不记成功，也不自动重发可能已送达的段。"""
+    _register_sentinels(repo)
+    monkeypatch.setattr(sweep, "_load_webhook_url", lambda _root: "https://example.invalid/hook")
+
+    attempts = []
+
+    def fail_send(_url, _text):
+        attempts.append(_text)
+        raise OSError("synthetic delivery failure")
+
+    monkeypatch.setattr(sweep, "_send_wecom_markdown", fail_send)
+    log: list[str] = []
+    sweep._check_hooks_heartbeat(repo, log)
+    state_path = repo / sweep.HOOKS_HEARTBEAT_STATE_REL
+    assert not state_path.exists(), "发送失败不能写入已送达状态"
+    journal = json.loads(state_path.with_suffix(".delivery.json").read_text(encoding="utf-8"))
+    assert journal["alert"]["status"] == "unknown"
+    assert journal["alert"]["acked"] == {}
+    assert journal["alert"]["in_flight"] == 0
+    assert "需核回执，不自动重发" in "\n".join(log)
+    sweep._check_hooks_heartbeat(repo, log)
+    assert len(attempts) == 1
+    assert not state_path.exists()
 
 
 def test_H4_脚本内零硬编码人名与性别():

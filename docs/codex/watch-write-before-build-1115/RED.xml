@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="12" skipped="0" tests="13" time="27.103" timestamp="2026-11-15T22:42:25.537074+08:00" hostname="SPSThinkpadWIN"><testcase classname="tests.test_foreground_watch" name="test_preregister_missing_target_before_first_write" time="2.220"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE36A816F0&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE36A81590&gt;, ...)
+
+    def test_preregister_missing_target_before_first_write(foreground):
+        root, driver, context, execute, cli, scope, calls = foreground
+        ctx = context.load_context(root, 1, execute=execute)
+        plan = scope(ctx)
+        target = root / plan['allowed_paths'][0]
+        assert not target.exists()
+        acquire(cli)
+&gt;       receipt = driver.claim_native_slice(root, plan, execute=execute)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'
+
+tests\test_foreground_watch.py:110: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_rejected_registration_never_writes_target" time="1.934"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE36BBF320&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE36BBF1C0&gt;, ...)
+
+    def test_rejected_registration_never_writes_target(foreground):
+        root, driver, context, execute, cli, scope, calls = foreground
+        ctx = context.load_context(root, 1, execute=execute)
+        plan = scope(ctx)
+        original = (root / BUSINESS).read_bytes()
+        acquire(cli)
+    
+        def reject(argv, **kwargs):
+            if 'append-row' in argv and '二' in argv:
+                return {'exit': 1, 'stdout': '', 'stderr': 'fixture preregistration rejected'}
+            return execute(argv, **kwargs)
+    
+        with pytest.raises(ValueError, match='preregistration'):
+&gt;           driver.claim_native_slice(root, plan, execute=reject)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'
+
+tests\test_foreground_watch.py:134: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[../escape.py]" time="2.021"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE36BF3CC0&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE36BF3B60&gt;, ...)
+path = '../escape.py'
+
+    @pytest.mark.parametrize('path', ['../escape.py', '/outside.py', 'C:/outside.py',
+                                      'candidate/*.py', 'candidate/../escape.py', 'candidate/'])
+    def test_unsafe_scope_fails_before_queue_mutation(foreground, path):
+        root, driver, context, execute, cli, scope, calls = foreground
+        plan = scope(context.load_context(root, 1, execute=execute))
+        plan['allowed_paths'] = [path]
+        acquire(cli)
+        calls.clear()
+        with pytest.raises(ValueError, match='path|scope'):
+&gt;           driver.claim_native_slice(root, plan, execute=execute)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'
+
+tests\test_foreground_watch.py:149: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[/outside.py]" time="1.939"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE36B80670&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE36B80510&gt;, ...)
+path = '/outside.py'
+
+    @pytest.mark.parametrize('path', ['../escape.py', '/outside.py', 'C:/outside.py',
+                                      'candidate/*.py', 'candidate/../escape.py', 'candidate/'])
+    def test_unsafe_scope_fails_before_queue_mutation(foreground, path):
+        root, driver, context, execute, cli, scope, calls = foreground
+        plan = scope(context.load_context(root, 1, execute=execute))
+        plan['allowed_paths'] = [path]
+        acquire(cli)
+        calls.clear()
+        with pytest.raises(ValueError, match='path|scope'):
+&gt;           driver.claim_native_slice(root, plan, execute=execute)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'
+
+tests\test_foreground_watch.py:149: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[C:/outside.py]" time="2.261"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE37C74F60&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE37C74E00&gt;, ...)
+path = 'C:/outside.py'
+
+    @pytest.mark.parametrize('path', ['../escape.py', '/outside.py', 'C:/outside.py',
+                                      'candidate/*.py', 'candidate/../escape.py', 'candidate/'])
+    def test_unsafe_scope_fails_before_queue_mutation(foreground, path):
+        root, driver, context, execute, cli, scope, calls = foreground
+        plan = scope(context.load_context(root, 1, execute=execute))
+        plan['allowed_paths'] = [path]
+        acquire(cli)
+        calls.clear()
+        with pytest.raises(ValueError, match='path|scope'):
+&gt;           driver.claim_native_slice(root, plan, execute=execute)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'
+
+tests\test_foreground_watch.py:149: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[candidate/*.py]" time="2.082"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE37C31A60&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE37C31900&gt;, ...)
+path = 'candidate/*.py'
+
+    @pytest.mark.parametrize('path', ['../escape.py', '/outside.py', 'C:/outside.py',
+                                      'candidate/*.py', 'candidate/../escape.py', 'candidate/'])
+    def test_unsafe_scope_fails_before_queue_mutation(foreground, path):
+        root, driver, context, execute, cli, scope, calls = foreground
+        plan = scope(context.load_context(root, 1, execute=execute))
+        plan['allowed_paths'] = [path]
+        acquire(cli)
+        calls.clear()
+        with pytest.raises(ValueError, match='path|scope'):
+&gt;           driver.claim_native_slice(root, plan, execute=execute)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'
+
+tests\test_foreground_watch.py:149: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[candidate/../escape.py]" time="2.024"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE37DFE350&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE37DFE1F0&gt;, ...)
+path = 'candidate/../escape.py'
+
+    @pytest.mark.parametrize('path', ['../escape.py', '/outside.py', 'C:/outside.py',
+                                      'candidate/*.py', 'candidate/../escape.py', 'candidate/'])
+    def test_unsafe_scope_fails_before_queue_mutation(foreground, path):
+        root, driver, context, execute, cli, scope, calls = foreground
+        plan = scope(context.load_context(root, 1, execute=execute))
+        plan['allowed_paths'] = [path]
+        acquire(cli)
+        calls.clear()
+        with pytest.raises(ValueError, match='path|scope'):
+&gt;           driver.claim_native_slice(root, plan, execute=execute)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'
+
+tests\test_foreground_watch.py:149: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[candidate/]" time="2.182"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE37D32E50&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE37D32CF0&gt;, ...)
+path = 'candidate/'
+
+    @pytest.mark.parametrize('path', ['../escape.py', '/outside.py', 'C:/outside.py',
+                                      'candidate/*.py', 'candidate/../escape.py', 'candidate/'])
+    def test_unsafe_scope_fails_before_queue_mutation(foreground, path):
+        root, driver, context, execute, cli, scope, calls = foreground
+        plan = scope(context.load_context(root, 1, execute=execute))
+        plan['allowed_paths'] = [path]
+        acquire(cli)
+        calls.clear()
+        with pytest.raises(ValueError, match='path|scope'):
+&gt;           driver.claim_native_slice(root, plan, execute=execute)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'
+
+tests\test_foreground_watch.py:149: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_drifted_approval_is_not_permission" time="2.300"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE37D57A00&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE37D578A0&gt;, ...)
+
+    def test_drifted_approval_is_not_permission(foreground):
+        root, driver, context, execute, cli, scope, calls = foreground
+        plan = scope(context.load_context(root, 1, execute=execute))
+        plan['approval_refs'][0]['sha256'] = '0' * 64
+        acquire(cli)
+        with pytest.raises(ValueError, match='approval'):
+&gt;           driver.claim_native_slice(root, plan, execute=execute)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'feedback_test_workflow_driver' has no attribute 'claim_native_slice'
+
+tests\test_foreground_watch.py:160: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_other_writer_and_touch_conflict_are_not_reclaimed" time="2.059"><failure message="assert 1 == 0">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE37E6C670&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE37E6C510&gt;, ...)
+
+    def test_other_writer_and_touch_conflict_are_not_reclaimed(foreground):
+        root, driver, context, execute, cli, scope, calls = foreground
+        acquire(cli)
+&gt;       assert cli('edit-row', '--who', WHO, '--section', '一', '--number', '1',
+                   '--set', '领取方=other-current-writer')['exit'] == 0
+E       assert 1 == 0
+
+tests\test_foreground_watch.py:168: AssertionError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_frozen_and_review_only_items_are_not_claimed" time="1.801"><failure message="assert 1 == 0">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE37EDD2D0&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE37EDD170&gt;, ...)
+
+    def test_frozen_and_review_only_items_are_not_claimed(foreground):
+        root, driver, context, execute, cli, scope, calls = foreground
+        acquire(cli)
+        for row, state in ((1, 'hold'), (2, 'timed=2026-11-01')):
+&gt;           assert cli('edit-row', '--who', WHO, '--section', '一', '--number', str(row),
+                       '--set', f'状态=[S:{state}][D:业] 原边界保持')['exit'] == 0
+E           assert 1 == 0
+
+tests\test_foreground_watch.py:185: AssertionError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_single_wake_creates_candidate_writes_checkpoint_and_refreshes_pool" time="0.684"><failure message="AttributeError: module 'feedback_test_workflow_driver' has no attribute 'consume_native_watch'">foreground = (WindowsPath('C:/Users/Paul Shao/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{5f90e2ba-a6e1-445c-bd...nction foreground.&lt;locals&gt;.cli at 0x000002CE37FBDE80&gt;, &lt;function foreground.&lt;locals&gt;.scope at 0x000002CE37FBDD20&gt;, ...)
+
+    def test_single_wake_creates_candidate_writes_checkpoint_and_refreshes_pool(foreground):
+        root, driver, context, execute, cli, scope, calls = foreground
+        human_wakes = ['开启泳道看护']
+        built = []
+    
+        def resolve(ctx):
+            if ctx['row'] == 1:
+                return {'blocked_reason': 'fixture independent prerequisite unavailable'}
+            if ctx['row'] == 3:
+                return {'blocked_reason': 'fixture new design decision required'}
+            return scope(ctx)
+    
+        def implement(ctx, receipt):
+            assert receipt['preregistered'] and receipt['row'] == 2
+            current = context.load_context(root, 2, execute=execute)
+            assert current['owner'].startswith(WHO)
+            assert all(path in current['scope'] for path in receipt['allowed_paths'])
+            module, test = [root / name for name in receipt['allowed_paths']]
+            module.parent.mkdir(parents=True, exist_ok=True)
+            module.write_text('VALUE = 42\n', encoding='utf8')
+            test.parent.mkdir(exist_ok=True)
+            test.write_text('import runpy\nfrom pathlib import Path\n'
+                            'def test_value():\n'
+                            '    assert runpy.run_path(str(Path(__file__).parents[1]/"candidate/task2.py"))["VALUE"] == 42\n', encoding='utf8')
+            junit = root / 'reports/candidate.xml'
+            result = execute([sys.executable, '-m', 'pytest', str(test), '-q',
+                              '--junitxml=' + str(junit)], cwd=test.parent)
+            assert result['exit'] == 0, result
+            built.append(2)
+            return {'candidate': [ref(module, root), ref(test, root)],
+                    'verification': {'exit': 0, 'junit': ref(junit, root), 'level': 'mock'},
+                    'next_action': 'fixture candidate ready for original full acceptance; no production'}
+    
+&gt;       result = driver.consume_native_watch(root, who=WHO, resolve_scope=resolve,
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            perform_slice=implement, execute=execute)
+E       AttributeError: module 'feedback_test_workflow_driver' has no attribute 'consume_native_watch'
+
+tests\test_foreground_watch.py:226: AttributeError</failure></testcase><testcase classname="tests.test_foreground_watch" name="test_pre_registration_does_not_relax_normal_missing_entity_guard" time="3.173" /></testsuite></testsuites>

@@ -227,7 +227,7 @@ jobs:
           python-version: "3.14"
       # 队列 §一 #436 ⑶① / OP-0906-S：Shao Peishen 2026-09-06 拍板 ③(a)「新场景
       # propose 前置＝场景目录 intent.md（status: 已确认）」，口径正本＝
-      # `.claude/rules/场景建造与合规.md` §二。
+      # `docs/codex/rules/场景建造与合规.md`。
       #
       # 🔴 拍板原文写的是「闸落 openspec validate」，实测做不到、故改走 CI lint：
       # `openspec/config.yaml` 的 `rules.proposal` 只是喂给起草方的提示文本，
@@ -243,6 +243,19 @@ jobs:
       # 8 包至 2026-10-31），4 个机制类包因「正文引用了场景目录但包身份不属该场景」
       # 被正确摘出。首次运行即为绿；它变红只可能是有人新起了一个没做 grill 的场景包。
       - run: python 0-学习与工具/工具-场景包intent闸lint.py --enforce
+
+  requirements-change-gate-lint:
+    name: "需求索引与 OpenSpec 双轨门禁（四态/WIP/规格/测试/存量棘轮）"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      # config.yaml 的 rules.proposal 不由 OpenSpec validate 执行；本 job 执行机器判据。
+      # baseline 精确冻结存量缺节，包内容一旦触碰即重新从严检查。
+      - run: python 0-学习与工具/工具-规划倒逼扫描器.py --lint-registry
+      - run: python 0-学习与工具/工具-需求与变更包门禁lint.py --enforce --verify-queue-links
 
   claude-progress-lint:
     name: "CLAUDE.md 进度段 lint（J1 承接载体／J2 条目数／J3 单条长度／J5 场景级）"

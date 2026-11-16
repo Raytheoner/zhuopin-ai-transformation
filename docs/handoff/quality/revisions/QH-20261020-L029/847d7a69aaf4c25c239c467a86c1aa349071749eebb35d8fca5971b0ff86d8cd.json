@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对原文中对应事项的最新队列/候选/批准及验收证据；记录遗留或被后续覆盖的具体部分后人工确认，不按旧时间自动关闭",
+  "id": "QH-20261020-L029",
+  "legacy_ids": [],
+  "notes": "2026-10-30仅迁移资料；原文快照截至2026-10-21，状态全部review，未代业务判断。",
+  "original_text": "Shao Peishen已在本QA直接批准并授权发送Q-SOURCE-HOME-DIAG-v1（完整SHA见§4），限定D1–D4只读；首次已成功派至既有UI，后续明确要求中断后查实态、不重复下发。最新UI turn `01a159a5-e672-7222-a6c3-3d772f4698aa` 已completed/idle；22:11+08 D1本地SSH255、generic Permission denied，远端执行未确认且没有parent哈希，D2–D4依赖停止。QA本地20项一致性检查过，四项核验仍UNRESOLVED；原stdout/stderr未留，只存hash/分类，不能区分认证/sandbox/主机策略。原只读授权仍有效，不重新索同题批准。22:37+08获批的一次受控联网运行在SSH进程启动前被PreToolUse读侧守卫拦截：计划SHA MATCH、alias未完成核实、联网权限请求未提交、网络连接0。执行器SHA256 0f7102b0e30d4111543e827cb1987170b76684b22f29fd41856af754665205a1仅含D1，缺D2–D4；D1–D4均未执行，因此该一次性运行批准未实际联网消耗；随后用户明确本轮不重连.51。本地只读根因已复现：守卫的Get-NativeReadHit因Where-Object ScriptBlockExpressionAst不能转成静态字面量而保守拒绝，SSH参数未命中受保护路径。最小投影候选Write-Output数组匹配通过原守卫的离线分类；原守卫未修改。D2–D4执行器已补齐为默认离线/导入安全，33 Python全量、15 PowerShell、4原守卫兼容及1合成投影均通过；计划SHA仍MATCH。现场D1–D4仍UNRESOLVED。停点回执`reports/quality-source-time-qa-1020/home-diag-controlled-preflight-stop-20261020-223730.json` SHA256 `8deb0fb2ca87b85f6ace6c412d9057993dc8454469b33b4ec06994bd2623bc1e`。\n",
+  "owner": "原队列对应Owner；旧QA/UI执行状态待核",
+  "risk": "遗漏本条将丢失HOME-DIAG的授权边界、剩余条件或证据定位",
+  "sources": [
+    {
+      "end": 29,
+      "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+      "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+      "start": 29
+    }
+  ],
+  "status": "review",
+  "title": "D1-D4停止链及本地守卫修复验收",
+  "topic": "HOME-DIAG"
+}

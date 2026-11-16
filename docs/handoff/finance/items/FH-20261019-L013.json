@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "FH-20261019-L013",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "继续原财务域goal：复用已交成果，完成可授权推进的财务场景MVP及LAN试用／反馈闭环；当前按FI1–16矩阵优先准备FI14/FI5最小业务补齐，沿1017UI的SC4唯一样板。原goal含FI7下载／文件选择，两项早已闭合，**不要重做**。原goal原文、现时状态与接续目标见`reports/finance-business-minimum-1019-op1016a/handoff-goal-carryover.json`。\n",
+  "owner": "原财务任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 13,
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "start": 13
+    }
+  ],
+  "status": "review",
+  "title": "财务原Goal与FI7已闭合事项防重做",
+  "topic": "目标"
+}

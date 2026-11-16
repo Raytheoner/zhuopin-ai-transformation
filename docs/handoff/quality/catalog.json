@@ -1,0 +1,545 @@
+{
+  "entry": "0-学习与工具/codex-handoff/质量域-R5接力-2026-10-20.md",
+  "generated": {
+    "0-学习与工具/codex-handoff/质量域-R5接力-2026-10-20.md": "0610e657e56d80405ae4d7d6de7b1217b7d358c879a0e85ab6a814ddc6ae4300",
+    "docs/handoff/quality/views/review-001.md": "c75b75d45faccf0b93b66f1ce55abe48fb612f5970471636a4f6706e0abfe361"
+  },
+  "known": {
+    "QH-20261020-L003": {
+      "legacy_ids": [],
+      "original_sha256": "53de5bf079b446fff71f18f6cbfcea43420a3db58fee6a38c64f0704e89be2b0",
+      "sources": [
+        {
+          "end": 3,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 3
+        }
+      ]
+    },
+    "QH-20261020-L007": {
+      "legacy_ids": [],
+      "original_sha256": "379caede7fb7addafb411567e749b5bfeb240f7fd2b545419bc32da581efb5c2",
+      "sources": [
+        {
+          "end": 7,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 7
+        }
+      ]
+    },
+    "QH-20261020-L009": {
+      "legacy_ids": [],
+      "original_sha256": "4f598a719e643e916a0ec35c98071d1ba74b5b8e3bf25cab8a22bd502339b482",
+      "sources": [
+        {
+          "end": 9,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 9
+        }
+      ]
+    },
+    "QH-20261020-L011": {
+      "legacy_ids": [],
+      "original_sha256": "29015cab16520bd10af72e06a46f238c02d4ad96112ef0ee56e9d53b6110d6a6",
+      "sources": [
+        {
+          "end": 11,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 11
+        }
+      ]
+    },
+    "QH-20261020-L015": {
+      "legacy_ids": [],
+      "original_sha256": "8d73808daa73106ce209210c5a54d200b92327ba9f48e3af82cdfc06cf002d07",
+      "sources": [
+        {
+          "end": 15,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 15
+        }
+      ]
+    },
+    "QH-20261020-L017": {
+      "legacy_ids": [],
+      "original_sha256": "aee0a96e3dbd4854b4b0afe6120d0d4bba79a772c56e547f8fa4a15839235d14",
+      "sources": [
+        {
+          "end": 17,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 17
+        }
+      ]
+    },
+    "QH-20261020-L021": {
+      "legacy_ids": [
+        "#340",
+        "#681"
+      ],
+      "original_sha256": "b86e28ea23077d9e02e7d87cd80b1f9afbef8161d61acaf7da80b90e695464ee",
+      "sources": [
+        {
+          "end": 21,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 21
+        }
+      ]
+    },
+    "QH-20261020-L023": {
+      "legacy_ids": [],
+      "original_sha256": "e700f39abb8e74d4604370b603e8f0c24c3a54bfed23894da46bd72a55469e59",
+      "sources": [
+        {
+          "end": 23,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 23
+        }
+      ]
+    },
+    "QH-20261020-L025": {
+      "legacy_ids": [
+        "#612"
+      ],
+      "original_sha256": "49bf0518f03d96e4f8046fbf5546bebe8ed843c53fdbdfc5dbf46039ff562951",
+      "sources": [
+        {
+          "end": 25,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 25
+        }
+      ]
+    },
+    "QH-20261020-L027": {
+      "legacy_ids": [],
+      "original_sha256": "8cf762419d71d92d67bd834bb21e91e72e12509ec1f01642d31027d8654788d5",
+      "sources": [
+        {
+          "end": 27,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 27
+        }
+      ]
+    },
+    "QH-20261020-L029": {
+      "legacy_ids": [],
+      "original_sha256": "1709847ffef46e42bb96b8fe6b8587057b3b283dc9695d49a1726d596cf63e10",
+      "sources": [
+        {
+          "end": 29,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 29
+        }
+      ]
+    },
+    "QH-20261020-L031": {
+      "legacy_ids": [],
+      "original_sha256": "977da5ebd8db317b87d60add251c6ff004741a61d95c041cbfb7e58157d124d3",
+      "sources": [
+        {
+          "end": 31,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 31
+        }
+      ]
+    },
+    "QH-20261020-L033": {
+      "legacy_ids": [],
+      "original_sha256": "9e8986fd261e009fdd7336352fa7baa1c0e1df1ba383d15a1a456479647e5695",
+      "sources": [
+        {
+          "end": 33,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 33
+        }
+      ]
+    },
+    "QH-20261020-L035": {
+      "legacy_ids": [],
+      "original_sha256": "5cc5aa98a7f39bb96be807c563ad672abebe56cc04bb1d0545fbb972eb635a9b",
+      "sources": [
+        {
+          "end": 35,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 35
+        }
+      ]
+    },
+    "QH-20261020-L037": {
+      "legacy_ids": [],
+      "original_sha256": "21107d790e3b3841dc836fbdfafcfe8863b795bcb1b6fa226391b5819742ed1d",
+      "sources": [
+        {
+          "end": 37,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 37
+        }
+      ]
+    },
+    "QH-20261020-L039": {
+      "legacy_ids": [],
+      "original_sha256": "41a8130f38592f73b3e66aff069bc2ae72493dd20fc9c44e144cdc5a26bfeb22",
+      "sources": [
+        {
+          "end": 39,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 39
+        }
+      ]
+    },
+    "QH-20261020-L043": {
+      "legacy_ids": [
+        "#340",
+        "#612",
+        "#681"
+      ],
+      "original_sha256": "a817935023e010b5c1d550990a5ea3c366f7856744783caf259a9af12e50d2b9",
+      "sources": [
+        {
+          "end": 43,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 43
+        }
+      ]
+    },
+    "QH-20261020-L045": {
+      "legacy_ids": [
+        "#612"
+      ],
+      "original_sha256": "e7349790295ce3c36a61555dbac68a5c32baeb35c327320e46e90127337fee14",
+      "sources": [
+        {
+          "end": 45,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 45
+        }
+      ]
+    },
+    "QH-20261020-L047": {
+      "legacy_ids": [
+        "#612"
+      ],
+      "original_sha256": "02c89241716ee49aa0c97be2970d9d81f874699bda61b1dd2f22edad58f07f00",
+      "sources": [
+        {
+          "end": 47,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 47
+        }
+      ]
+    },
+    "QH-20261020-L049": {
+      "legacy_ids": [
+        "#612"
+      ],
+      "original_sha256": "a107eab48f969950b41d075d02a041b0442724791e5ba5ef882f3f526cd9396d",
+      "sources": [
+        {
+          "end": 49,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 49
+        }
+      ]
+    },
+    "QH-20261020-L051": {
+      "legacy_ids": [],
+      "original_sha256": "654ebe2470a421095387608ce70b0feebcaca49dfd7ee4b0d98046f79dba79cc",
+      "sources": [
+        {
+          "end": 51,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 51
+        }
+      ]
+    },
+    "QH-20261020-L053": {
+      "legacy_ids": [],
+      "original_sha256": "8ea8306a40fcb0196cd8b2d81a519292a3ddfd90793a661835c7eee26f0b7a88",
+      "sources": [
+        {
+          "end": 53,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 53
+        }
+      ]
+    },
+    "QH-20261020-L055": {
+      "legacy_ids": [],
+      "original_sha256": "3344062037259a8d95d256a292e74191fe57777c9a7c1466f072c1991d4b606f",
+      "sources": [
+        {
+          "end": 55,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 55
+        }
+      ]
+    },
+    "QH-20261020-L057": {
+      "legacy_ids": [
+        "#612"
+      ],
+      "original_sha256": "1c23d896b94205257a9c926e6a64784cf648230e47a736d1bf97281879b99f48",
+      "sources": [
+        {
+          "end": 57,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 57
+        }
+      ]
+    },
+    "QH-20261020-L059": {
+      "legacy_ids": [],
+      "original_sha256": "349046f58e25afbe1dbf561c6649c048d4ccf562ce5fcac47b06e553ec1fcad0",
+      "sources": [
+        {
+          "end": 59,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 59
+        }
+      ]
+    },
+    "QH-20261020-L061": {
+      "legacy_ids": [],
+      "original_sha256": "578326e2221c96c423d7af2ff0e7b65690d549bf84f8374b320019b92d8ddd43",
+      "sources": [
+        {
+          "end": 61,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 61
+        }
+      ]
+    },
+    "QH-20261020-L063": {
+      "legacy_ids": [
+        "#17"
+      ],
+      "original_sha256": "d791623d963955ce2c1a6d6e1f7f522d092f9b228a28b4fd0dc3c21177b19632",
+      "sources": [
+        {
+          "end": 63,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 63
+        }
+      ]
+    },
+    "QH-20261020-L065": {
+      "legacy_ids": [],
+      "original_sha256": "93b10aec1049cc46095af054c0bfdf323d08ae8525b0d63f821479a6e0aad0a5",
+      "sources": [
+        {
+          "end": 65,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 65
+        }
+      ]
+    },
+    "QH-20261020-L067": {
+      "legacy_ids": [
+        "#612",
+        "#688"
+      ],
+      "original_sha256": "b9fabc090410a0a35f2ff8b93d8333c5a2fdc66d781910c7f8db7905b0d75963",
+      "sources": [
+        {
+          "end": 67,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 67
+        }
+      ]
+    },
+    "QH-20261020-L069": {
+      "legacy_ids": [],
+      "original_sha256": "7e63121f99c4722024f18b286b93dc9d1d8530a3a70bf8bbfe8564fd1ac0a4f6",
+      "sources": [
+        {
+          "end": 69,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 69
+        }
+      ]
+    },
+    "QH-20261020-L073": {
+      "legacy_ids": [],
+      "original_sha256": "a7176d10fa2d958d6c860c7575c9ac4e4cffffb651507c2ed77ae06c0df81940",
+      "sources": [
+        {
+          "end": 73,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 73
+        }
+      ]
+    },
+    "QH-20261020-L075": {
+      "legacy_ids": [],
+      "original_sha256": "a8f3f9e7d23da595b5574a9c3096f0ce18216fdb29b9437fd175c9fd06cc75e0",
+      "sources": [
+        {
+          "end": 75,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 75
+        }
+      ]
+    },
+    "QH-20261020-L079": {
+      "legacy_ids": [],
+      "original_sha256": "b6809ea3b6c9e8286806734669928e4f05e4bdcb2a1429808f8728f5fb930396",
+      "sources": [
+        {
+          "end": 79,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 79
+        }
+      ]
+    },
+    "QH-20261020-L081": {
+      "legacy_ids": [],
+      "original_sha256": "d20ee156a001bfe6af5f93de21165ae9711bc5c5f8dcc48ea417adac6603f853",
+      "sources": [
+        {
+          "end": 81,
+          "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+          "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+          "start": 81
+        }
+      ]
+    }
+  },
+  "migration_sha256": "97876563c328256f2261e93c1526e1df0f222b624c214eb19b241dee6e63cb2d",
+  "revisions": {
+    "QH-20261020-L003": [
+      "8fbfcfbae2d5096f8c360cb93869094ba975582f725968895b85dec9a2143ed4"
+    ],
+    "QH-20261020-L007": [
+      "70faa4a661c767c6f6ac9106dba5ebaa8b3bbfe07555830affb3d119a7058cfc"
+    ],
+    "QH-20261020-L009": [
+      "3175d4f02a5ae20505bf235115118249b0816030a840b7f0ef2da62b462dc883"
+    ],
+    "QH-20261020-L011": [
+      "efe3fa25674e3a0d795ac803a1e38db550853ca57c8a5407bce0f334192b6747"
+    ],
+    "QH-20261020-L015": [
+      "a13fe56b298916d3f77e36a2510466f58b17d29c4ecfae487d458a00af9fa1ed"
+    ],
+    "QH-20261020-L017": [
+      "1cc830d7f5298853b5829b9fc47b5581e01d31a3a78aeba25fcd6f60f2c302d8"
+    ],
+    "QH-20261020-L021": [
+      "2e869b15a44bb7008cd33ab8c0fb7de56706e84cf5f6b19005654415964d8ff9"
+    ],
+    "QH-20261020-L023": [
+      "afe849102c27bdf049d0a11ada6423c11a1eff02272602d82d864be2051eac91"
+    ],
+    "QH-20261020-L025": [
+      "6fb504cef17947e55a47b178ab9c50dfb5433206a78bfc1fe234945f19c397de"
+    ],
+    "QH-20261020-L027": [
+      "791d3d9d36f995888211fd4586249ae6d9f3b4e08439dbc49377333bb1e12d1e"
+    ],
+    "QH-20261020-L029": [
+      "847d7a69aaf4c25c239c467a86c1aa349071749eebb35d8fca5971b0ff86d8cd"
+    ],
+    "QH-20261020-L031": [
+      "107a18a7c20fa7a15745f182ddb0007cf80d55ae6dbb0025d36b7e6748207658"
+    ],
+    "QH-20261020-L033": [
+      "dda40b3cad8aaa9b08bdec446861b8823b04a446c2fb997307eee38f153dcfa8"
+    ],
+    "QH-20261020-L035": [
+      "ecad6dd3d921f5bc1a1a04ac5ce690dbc22e681eea747284908c408268314b96"
+    ],
+    "QH-20261020-L037": [
+      "0bbd632b42863ff3dca36f67a3387d8a552a5aadbb97bd99c18199ade175b2e9"
+    ],
+    "QH-20261020-L039": [
+      "ea18b8f3f5459b59ec56c06427c47be3c6308405924d2c2546163a5625e303e7"
+    ],
+    "QH-20261020-L043": [
+      "3339d56419d717ace9ea374f6a2a72ffd2d3392cb1748c5fb51f85476e727dce"
+    ],
+    "QH-20261020-L045": [
+      "3b59fe6c2187e856899aa822b650762ed9422716ada46ec3f80203e4e7f49150"
+    ],
+    "QH-20261020-L047": [
+      "b00b08e16f1740aeda759fe101f84d7b1b02cc8b47d024d4d638ca3d36747422"
+    ],
+    "QH-20261020-L049": [
+      "51117455695e70a23a17d2a8ac8145c6d4e0c2840c0c4c08ac6a49242cec4c89"
+    ],
+    "QH-20261020-L051": [
+      "e0400345edcf7106fcc20081b7c0383a0bf474317f9ec0102c1a9374c80b4a78"
+    ],
+    "QH-20261020-L053": [
+      "0fdb750162ace57d56adb981ef4eebb9f0a05a253cdd7870f27796759d17d35b"
+    ],
+    "QH-20261020-L055": [
+      "31e8d53359b4db20630de8d95ca5e6d6b28c26e93b5d60d6e8b614cd1d474909"
+    ],
+    "QH-20261020-L057": [
+      "45987504a5a87d20343006828dc2bd0beb4c4f86293befb7faf9846953ca34b2"
+    ],
+    "QH-20261020-L059": [
+      "cca9c0a1133ff9c48920e2ff9d309022806f334807a0746d02c1ce469df171b5"
+    ],
+    "QH-20261020-L061": [
+      "114b6bb4ab2f88ac9049e973ef37fedcf28325131519736665e61cfeee0c25f5"
+    ],
+    "QH-20261020-L063": [
+      "038ca2544e210de3183a952df07e002d805e8c0f677db131de37f6b29356fdb1"
+    ],
+    "QH-20261020-L065": [
+      "ab484ae556c1aac2521b8ff5c6465758ef8987d9ba72b1be198941c030a837f8"
+    ],
+    "QH-20261020-L067": [
+      "0435affbee4ca125bcd56a3288ccb3ffbfdcb8faa5367875b2dfa9b7618af221"
+    ],
+    "QH-20261020-L069": [
+      "b4613a0ef7da43823b5a2aed8af8768c0d374b06315b0ee9ceb284546d470102"
+    ],
+    "QH-20261020-L073": [
+      "d3d2206211129591f78e35e17f7b421163842f3a2c87039a126f064395921d97"
+    ],
+    "QH-20261020-L075": [
+      "2a8adb1721e45db38948c67be705757bb18e7e9de6ecbf54a86701e7fb70a506"
+    ],
+    "QH-20261020-L079": [
+      "76c79446ecdc9f2afa5c608382f001918683b9b8152cc01e8460a0c0f5637b05"
+    ],
+    "QH-20261020-L081": [
+      "2f9abe4abacc16daf0e83810e03b85eff2b671699d4873a11bc93992885bbbef"
+    ]
+  },
+  "schema": 1
+}

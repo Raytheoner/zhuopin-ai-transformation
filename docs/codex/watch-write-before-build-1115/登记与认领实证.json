@@ -1,0 +1,152 @@
+{
+  "row": 715,
+  "who": "WinCodex-1113A2-watch-fix-1115",
+  "batch": "B-1115_watch-write-before-build",
+  "planned_paths": [
+    "0-学习与工具/codex-handoff/queue_context.py",
+    "0-学习与工具/codex-handoff/workflow_driver.py",
+    "0-学习与工具/codex-handoff/handoff.py",
+    "0-学习与工具/codex-handoff/hook_bridge.py",
+    "0-学习与工具/codex-handoff/tests/test_queue_context.py",
+    "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+    "0-学习与工具/codex-handoff/tests/test_hook_optimization.py",
+    "0-学习与工具/test_工具-共享文档编辑锁.py",
+    "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md",
+    "docs/codex/rules/队列与落库.md",
+    "docs/requirements/日常短入口与需求验收.md",
+    "docs/requirements/INDEX.md",
+    "docs/superpowers/plans/2026-11-15-watch-write-before-build.md",
+    "openspec/specs/serial-test-first-construction/spec.md",
+    "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md",
+    "openspec/changes/watch-write-before-build-1115/.openspec.yaml",
+    "openspec/changes/watch-write-before-build-1115/proposal.md",
+    "openspec/changes/watch-write-before-build-1115/design.md",
+    "openspec/changes/watch-write-before-build-1115/tasks.md",
+    "openspec/changes/watch-write-before-build-1115/specs/serial-test-first-construction/spec.md",
+    "openspec/changes/watch-write-before-build-1115/acceptance.json",
+    "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/.openspec.yaml",
+    "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/proposal.md",
+    "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/design.md",
+    "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/tasks.md",
+    "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/specs/serial-test-first-construction/spec.md",
+    "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/acceptance.json",
+    "docs/codex/watch-write-before-build-1115/登记与认领实证.json",
+    "docs/codex/watch-write-before-build-1115/反例与范围.json",
+    "docs/codex/watch-write-before-build-1115/RED.xml",
+    "docs/codex/watch-write-before-build-1115/定向GREEN.xml",
+    "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+    "docs/codex/watch-write-before-build-1115/锁工具完整.xml",
+    "docs/codex/watch-write-before-build-1115/功能验收.json",
+    "docs/codex/watch-write-before-build-1115/check-acceptance.json",
+    "docs/codex/watch-write-before-build-1115/结果与接力.md"
+  ],
+  "registered_before_target_writes": true,
+  "at_utc": "2026-11-15T14:25:22.713345+00:00",
+  "initial_sha256": {
+    "0-学习与工具/codex-handoff/queue_context.py": "42a39fb68b0d4312e603a41ed7dc9275c3a2375d8fb9150452eb69748d1c9162",
+    "0-学习与工具/codex-handoff/workflow_driver.py": "b067dafd474670881e311759375644198a8dfcec05a9f54cd695b7b13f183ab2",
+    "0-学习与工具/codex-handoff/handoff.py": "6815c101290e455924d18f036c2d31069fe1a6a2974180a9af061981bc6e521c",
+    "0-学习与工具/codex-handoff/hook_bridge.py": "b5d0988acd29850b7c81d25258a8e5b396fa3d6c6ffea1065b50bd138e2603a1",
+    "0-学习与工具/codex-handoff/tests/test_queue_context.py": "5f46a58bc77d2af63692cb449d6ea0431273fd3e5036c22234411d2ecc7a1db2",
+    "0-学习与工具/codex-handoff/tests/test_hook_optimization.py": "9cde9beb700e972ed2224c3ec42ad33bc17bb5ec80a0adc0dbea5fa7ffe33bb8",
+    "0-学习与工具/test_工具-共享文档编辑锁.py": "e768e2650adc2147f65ba4e447e1dbd4b786b071d53eaae9d855d0dde7d4f482",
+    "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md": "c32475e422408f3b14ede3ee0ea036fbeac8883e2eeca6ca2924d0c92cd9b87b",
+    "docs/codex/rules/队列与落库.md": "323c86a42a0add15d4434f54883d727c607bb4a3a884812efd05ceba28f66132",
+    "docs/requirements/日常短入口与需求验收.md": "00df29079e2fcef877a799dd09a123e51351474dd046a37311a379679a9506a7",
+    "docs/requirements/INDEX.md": "961adf1dff889e2e342cce4437a53490e1933b017ecc7956a953f058ee119514",
+    "openspec/specs/serial-test-first-construction/spec.md": "78bfd8ce1e59985b01b7e560428b1b9ee3b3def82b40c37e2a39f4a917de4524",
+    "1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md": "1934780537ab27894ffe8edff22768c4e44f6563b6953863cce358389361dc16"
+  },
+  "existing_missing_path_support": "在办（预登记，收工时精确化）原状态，不改普通落库判据。",
+  "planning_attempt_note": "一条规划登记内联命令SyntaxError，未写INDEX/触碰区；随后仅包骨架被创建。现已补齐INDEX与原行精确触碰区，proposal及实现尚未写；不倒填为骨架前成功。§二始终已在任何目标写入前成功。",
+  "closeout": {
+    "archive_command": {
+      "argv": [
+        "openspec.cmd",
+        "archive",
+        "watch-write-before-build-1115",
+        "--yes"
+      ],
+      "exit": 0,
+      "stdout": "Task status: ✓ Complete\n\nSpecs to update:\n  serial-test-first-construction: update\nApplying changes to openspec/specs/serial-test-first-construction/spec.md:\n  + 2 added\nTotals: + 2, ~ 0, - 0, → 0\nSpecs updated successfully.\nChange 'watch-write-before-build-1115' archived as '2026-11-15-watch-write-before-build-1115'.\n",
+      "stderr": ""
+    },
+    "strict_change": {
+      "argv": [
+        "openspec.cmd",
+        "validate",
+        "watch-write-before-build-1115",
+        "--type",
+        "change",
+        "--strict"
+      ],
+      "exit": 0,
+      "stdout": "Change 'watch-write-before-build-1115' is valid\n",
+      "stderr": ""
+    },
+    "strict_main": {
+      "argv": [
+        "openspec.cmd",
+        "validate",
+        "serial-test-first-construction",
+        "--type",
+        "spec",
+        "--strict"
+      ],
+      "exit": 0,
+      "stdout": "Specification 'serial-test-first-construction' is valid\n",
+      "stderr": ""
+    },
+    "archive_manifest_sha256": {
+      ".openspec.yaml": "e471028913e5982d6d06417ef3d5e283a5d11db95f2382133d489e18993f86cb",
+      "acceptance.json": "c62fe3230e75d4c5475034ea70858381c92f4d0a8aab687a29fc34c668b67553",
+      "design.md": "fb96ec0b1b5b2b23e468f20856d873d0171bbcb5f18758d5f95c6fbe285c4f28",
+      "proposal.md": "5ae5ccfaf671aabcb495520d36e85c8dce329a4dab5f075485bec2bfc90171c1",
+      "tasks.md": "caaa1c1813496a7675d10b3eece3cda9c7926f5fd9886ca074b680f998bc4133",
+      "specs/serial-test-first-construction/spec.md": "2f1f89f2813f966c203517810635b6c1b35935d6226cd6c7c7aeabc0949eb3da"
+    },
+    "package_bytes_preserved": true,
+    "natural_trial_performed": false,
+    "lock_fixture_red": "3 failures in original full regression; fixture registration date fixed, original assertions preserved; subsequent full exit0",
+    "foreign_requirement_gate_exit": 1
+  },
+  "terminal": {
+    "official_release_observed_exit": 0,
+    "lock_status_after_release": {
+      "argv": [
+        "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+        "C:\\Dev\\zhuopin-ai\\0-学习与工具\\工具-共享文档编辑锁.py",
+        "status"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai",
+      "exit": 0,
+      "stdout": "（无锁，可直接编辑）\n",
+      "stderr": ""
+    },
+    "fresh_original_pool": {
+      "argv": [
+        "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+        "C:\\Dev\\zhuopin-ai\\0-学习与工具\\codex-handoff\\handoff.py",
+        "watch-context"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai",
+      "exit": 0,
+      "stdout": "[{\"row\": 96, \"status\": \"[S:partial][D:机]\", \"task\": \"《.51 部署标准清单》固化（优化4）：四类已踩坑（UTF-8 BOM/防火墙入…\"}, {\"row\": 98, \"status\": \"[S:timed=2026-09-25][D:机]\", \"task\": \"**月度环境体检例行（Paul 2026-07-24 拍板固化，每月最后一个周五…\", \"review_only\": true, \"next_check\": \"只复核原定时/状态与前置；不授予执行，不改原批准/冻结。\"}, {\"row\": 118, \"status\": \"[S:partial][D:业]\", \"task\": \"**保供看板批 2 · 优先级驱动的多期物料分配（ATP）引擎 · 立项（Pau…\"}, {\"row\": 130, \"status\": \"[S:timed=2026-09-30][D:机]\", \"task\": \"**四专员通道规则通知待发（#129 的执行件）**：一段话通知，说清\\\"回件一律…\", \"review_only\": true, \"next_check\": \"只复核原定时/状态与前置；不授予执行，不改原批准/冻结。\"}, {\"row\": 334, \"status\": \"[S:partial][D:业]\", \"task\": \"**保供看板新增「物料看板」视图（姚祖怡 2026-08-12 采购部#13 回…\"}, {\"row\": 337, \"status\": \"[S:partial][D:机]\", \"task\": \"**场景级 R5——SC8／FI2 各建同目录 `CHANGELOG.md`，场…\"}, {\"row\": 340, \"status\": \"[S:partial][D:业]\", \"task\": \"**QD-B 跨模块校验 C01–C10：陈忱已点名第一组「必须对上」的数据——…\"}, {\"row\": 344, \"status\": \"[S:partial][D:业]\", \"task\": \"**🔴 齐料日期/瓶颈物料只取「最早答交日期」、完全不看答交数量（含答交数量为 …\"}, {\"row\": 374, \"status\": \"[S:partial][D:业]\", \"task\": \"**🔴 OEM 隔离层 Chroma 的归属须重判一次（P2，2026-08-2…\"}, {\"row\": 394, \"status\": \"[S:partial][D:业]\", \"task\": \"🔴 **outbox → aibot 中继建造（SC2 与 FI2 共用，建议合…\"}, {\"row\": 403, \"status\": \"[S:partial][D:业]\", \"task\": \"🔴 **消化 IT部#10 回件（陈承 2026-08-24，拆件巡逻 2026…\"}, {\"row\": 416, \"status\": \"[S:open][D:机]\", \"task\": \"**🔴 企微回件链路三缺陷（2026-08-26 由「唐燕萍文件没入档」实地排查…\"}, {\"row\": 433, \"status\": \"[S:partial][D:机]\", \"task\": \"🔴 «构建环境自动纠错与上下文治理» 方案落地（Shao Peishen 202…\"}, {\"row\": 440, \"status\": \"[S:partial][D:机]\", \"task\": \"🟢 **可领（2026-09-07 去 🛑：Shao Peishen 答 ①(a…\"}, {\"row\": 455, \"status\": \"[S:partial][D:机]\", \"task\": \"**`edit-row`／`append-row` 写侧校验三缺陷合并处置**—…\"}, {\"row\": 463, \"status\": \"[S:open][D:业]\", \"task\": \"🔴 **规划里有、执行侧完全没有的 14 个场景：立行与排期（含 `SC4` 优…\"}, {\"row\": 466, \"status\": \"[S:partial][D:业]\", \"task\": \"**🔴 实施：按 D2=(a) 收紧 `OEMRouter` 的审计注入语义（默…\"}, {\"row\": 467, \"status\": \"[S:partial][D:业]\", \"task\": \"🔴 **`SC4` 合同条款自动提取与审核 · 场景立行（本批八行中最紧：权威排…\"}, {\"row\": 468, \"status\": \"[S:partial][D:业]\", \"task\": \"**`SC10` BOM 评审及公司物料库数据管控 · 场景立行**（v2.3 …\"}, {\"row\": 469, \"status\": \"[S:partial][D:业]\", \"task\": \"**`SC11` 库存智能调拨系统 · 场景立行**（v2.3 新增，采购 7 …\"}, {\"row\": 470, \"status\": \"[S:partial][D:业]\", \"task\": \"**`FI5` 费用报销智能审核 · 场景立行** —— `#463` 十四个「…\"}, {\"row\": 472, \"status\": \"[S:partial][D:业]\", \"task\": \"**`FI8` 现金流预测与智能预警 · 场景立行** —— `#463` 十四…\"}, {\"row\": 475, \"status\": \"[S:open][D:业]\", \"task\": \"🔴 **芯片价格 API 选型与签约 · 独立立行（跨域基础设施，不挂单一场景名…\"}, {\"row\": 478, \"status\": \"[S:partial][D:机]\", \"task\": \"**lane-watch ⏭️ 档语义扩展：他在环且 on-LAN 时，可在同一…\"}, {\"row\": 479, \"status\": \"[S:partial][D:机]\", \"task\": \"**sweep 两处同触碰修（§四 `#127` ＋ `#126` 派生，合并立…\"}, {\"row\": 499, \"status\": \"[S:partial][D:业]\", \"task\": \"**SC2 采购周报新增六项指标（姚祖怡 2026-09-07 随 `采购部#2…\"}, {\"row\": 503, \"status\": \"[S:partial][D:机]\", \"task\": \"✅ **已解冻（原 🛑 排队中·暂非可动）**（2026-09-08 立行时机制…\"}, {\"row\": 508, \"status\": \"[S:partial][D:业]\", \"task\": \"**O3 物流异常检测与追踪 · 场景立行**（规划倒逼扫描器 2026-12 …\"}, {\"row\": 509, \"status\": \"[S:partial][D:业]\", \"task\": \"**O4 设备预测性维护 · 场景立行**（规划倒逼扫描器 2027-01 排期…\"}, {\"row\": 510, \"status\": \"[S:open][D:业]\", \"task\": \"**Q4 PPAP 文档自动审核助手 · 场景立行**（规划倒逼扫描器 2027…\"}, {\"row\": 538, \"status\": \"[S:partial][D:业]\", \"task\": \"🔴 **SC2 周报「已上线三节」数字与姚祖怡线下核算对不上 —— 下单／收货／…\"}, {\"row\": 561, \"status\": \"[S:open][D:机]\", \"task\": \"🔴 **openspec 收口段堵塞：在办 75／归档 62，**25 个包 >…\"}, {\"row\": 563, \"status\": \"[S:open][D:机]\", \"task\": \"🔴🔴 **回件勾选提取只认 `☑` 不认 `☒`，专员答了被判成「未作答」——三…\"}, {\"row\": 595, \"status\": \"[S:open][D:机]\", \"task\": \"**企微机器人断连根因：提醒脚本各自单开长连接挤掉主连接**。`#586` 取证…\"}, {\"row\": 610, \"status\": \"[S:open][D:业]\", \"task\": \"🔴🔴 **根治「聊天旁路」——机器守全装在文件系统通道上，而聊天是一条没有守卫的…\"}, {\"row\": 612, \"status\": \"[S:partial][D:业]\", \"task\": \"🟢 **Q2 8D 报告 AI 自动判定 · 引擎从零到档 1**（质量域旗舰①…\"}, {\"row\": 614, \"status\": \"[S:partial][D:业]\", \"task\": \"财务域需求 baseline 新起点：8 个未上线场景的「待专员定夺问题」成批生…\"}, {\"row\": 629, \"status\": \"[S:open][D:机]\", \"task\": \"🔴 **必读件缩编一棒（含 150k 硬闸，见本 §一 同批 D 行）**：⑴ …\"}, {\"row\": 635, \"status\": \"[S:open][D:机]\", \"task\": \"🔴 **「登记当交付」没有任何机器守**——队列行可以挂着 `[S:open]`…\"}, {\"row\": 636, \"status\": \"[S:partial][D:机]\", \"task\": \"🔴 **企微机器人 liveness 与「在线状态」不一致**（`#595` 根…\"}, {\"row\": 639, \"status\": \"[S:open][D:机]\", \"task\": \"🔴 **泳道上下文峰值的主导项是「泳道自己整读的几个大文件」，不是看护件体量——…\"}, {\"row\": 652, \"status\": \"[S:open][D:业]\", \"task\": \"🟢 Q2剩余语义来源离线方案：承接已确认intent及D1–D8/V1–V5，只…\"}, {\"row\": 653, \"status\": \"[S:partial][D:业]\", \"task\": \"🟢 Q9候选设计输出追溯技术提案准备：承接已确认完整intent和八例内部moc…\"}, {\"row\": 654, \"status\": \"[S:partial][D:业]\", \"task\": \"SC2连续业务交付：既有三指标MOCK → 可访问演示 → 真实只读接入与完整周…\"}, {\"row\": 656, \"status\": \"[S:open][D:业]\", \"task\": \"🟢 QD-A七步法原始章节离线技术提案：承接#592已签判例10/J5与Q2现有…\"}, {\"row\": 658, \"status\": \"[S:open][D:机]\", \"task\": \"#634前置：执行入口推理参数契约实际设计包。Shao Peishen已按已审方…\"}, {\"row\": 660, \"status\": \"[S:partial][D:业]\", \"task\": \"SC8规则2逐字化：承接#118已批准设计及完整Native具体计划的独立实施/…\"}, {\"row\": 661, \"status\": \"[S:partial][D:业]\", \"task\": \"智能门户高保真UI设计与审核：六部门入口、现有模块适配与质量样板（本人2026-…\"}, {\"row\": 667, \"status\": \"[S:partial][D:业]\", \"task\": \"SC2 新收货报表 BizType316 独立增量（四指标及同源明细）\"}, {\"row\": 670, \"status\": \"[S:partial][D:业]\", \"task\": \"SC7已批K1深化：标准化purchaseBatchQty合成证据入口的书面设计…\"}, {\"row\": 671, \"status\": \"[S:partial][D:业]\", \"task\": \"采购部25手机反馈：SC8成品保供看板文字越界/重叠的现时展示复现与修订设计\"}, {\"row\": 678, \"status\": \"[S:partial][D:业]\", \"task\": \"FI14只读账龄与付款计划草稿：沿已批准首批PRD和财务20回件，准备PC端MV…\"}, {\"row\": 681, \"status\": \"[S:partial][D:业]\", \"task\": \"企微反馈自动归档：ChenChen 发来文件 质量部-ChenChen-回复-质…\"}, {\"row\": 682, \"status\": \"[S:open][D:机]\", \"task\": \"PC-MVP有限恢复机制：SC2保全proposal接纳、Q2可信结算与原任务有…\"}, {\"row\": 683, \"status\": \"[S:open][D:机]\", \"task\": \"PC-MVP机制自举安全接续kernel：限定原机制自身可信结算与有限冷接续\"}, {\"row\": 698, \"status\": \"[S:partial][D:业]\", \"task\": \"财务 FI1–FI16 全部现存页面两阶段收口：UI统一/门户集成/MVP发布→…\"}, {\"row\": 699, \"status\": \"[S:partial][D:业]\", \"task\": \"SC1既定供应商风险初筛MVP发布收口：复用历史CLI/报告/原评分补最小入口及…\"}, {\"row\": 700, \"status\": \"[S:partial][D:业]\", \"task\": \"企微反馈自动归档：ChenChen 发来文本反馈\"}, {\"row\": 701, \"status\": \"[S:partial][D:业]\", \"task\": \"企微反馈自动归档：ChenChen 发来文件 质量部-ChenChen-回复-质…\"}, {\"row\": 702, \"status\": \"[S:partial][D:业]\", \"task\": \"企微反馈自动归档：ChenChen 发来文本反馈\"}, {\"row\": 704, \"status\": \"[S:partial][D:业]\", \"task\": \"门户基础设施与接口边界资料待补（承接IT#15回件；技术项未完成）\"}]\n",
+      "stderr": ""
+    },
+    "permitted_work_remaining_within_this_explicit_repair": false,
+    "post_archive_requirement_gate": {
+      "argv": [
+        "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+        "C:\\Dev\\zhuopin-ai\\0-学习与工具\\工具-需求与变更包门禁lint.py",
+        "--enforce"
+      ],
+      "cwd": "C:\\Dev\\zhuopin-ai",
+      "exit": 1,
+      "stdout": "INDEX_PROGRESS: editlock-write-guard-hardening: 索引 30/33；实际 31/33\nFEATURE_PROPOSAL: editlock-write-guard-hardening: 缺 MANDATORY：.gitignore、机制守卫退休\nCHANGE_NOT_INDEXED: reply-checkbox-column-evidence-563: propose 前须登记 INDEX\nCHANGE_NOT_INDEXED: wecom-connection-readiness-636: propose 前须登记 INDEX\n需求与变更包门禁：4 项问题\n",
+      "stderr": ""
+    },
+    "head": "90ff9e3e1209997278bcdcb8720a235033746675",
+    "periodic_patrol_readonly_status": "PAUSED"
+  }
+}

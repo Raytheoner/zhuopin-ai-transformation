@@ -6170,7 +6170,9 @@ class EditRowFileListAttributionTierTests(unittest.TestCase):
         "| 批次 | 文件清单 | 建议 message | 状态 |\n"
         "|------|---------|--------------|------|\n"
     )
-    BATCH = "B-0901_存量批次"
+    # Match the actual registration day. A fixed September batch eventually
+    # includes the relative 60-day-old commit, invalidating the stale premise.
+    BATCH = "B-" + datetime.now().strftime("%m%d") + "_存量批次"
     #: 真实存在过、但早已落出登记日窗口的路径——正是 `#533` 实撞的那种形态。
     STALE_FILE_LIST = "`0-学习与工具/定时任务源码/已落库件.md`"
 
@@ -7248,6 +7250,42 @@ class OpenerGuardReleaseTests(unittest.TestCase):
     #     同样修不了别人的文件（`#493` 原文：「对人类会话是硬拦截」）。
     def _lock(self, *dirty_at_acquire: str) -> dict:
         return {"who": "某会话", "dirty_at_acquire": list(dirty_at_acquire)}
+
+    def test_aibot_unmodified_other_batch_warns_but_new_batch_blocks(self):
+        self._write_block("旧批.md", self.SETTINGS_CC, "读队列。")
+        self._write_block("本批.md", self.SETTINGS_CC, "读队列。")
+        old = "## 二、待 commit 批次\n| B-old | `旧批.md` | docs | 待处理 |\n"
+        new = old + "| B-new | `本批.md` | docs | 待处理 |\n"
+        lock = {"who": self.m.AIBOT_LOCK_WHO, "dirty_at_acquire": ["旧批.md", "本批.md"],
+                "held_since": (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            violations = self.m._opener_guard_violations(
+                self.root, [], lock, {"q": new}, {"q": old})
+        self.assertIn("旧批.md", out.getvalue())
+        self.assertNotIn("旧批.md", " ".join(violations))
+        self.assertIn("本批.md", " ".join(violations))
+
+    def test_aibot_preexisting_file_modified_during_lock_still_blocks(self):
+        self._write_block("旧批.md", self.SETTINGS_CC, "读队列。")
+        text = "## 二、待 commit 批次\n| B-old | `旧批.md` | docs | 待处理 |\n"
+        lock = {"who": self.m.AIBOT_LOCK_WHO, "dirty_at_acquire": ["旧批.md"],
+                "held_since": (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat()}
+        violations = self.m._opener_guard_violations(self.root, [], lock, {"q": text}, {"q": text})
+        self.assertIn("旧批.md", " ".join(violations))
+
+    def test_aibot_missing_queue_snapshot_keeps_conservative_attribution(self):
+        self._write_block("旧批.md", self.SETTINGS_CC, "读队列。")
+        text = "## 二、待 commit 批次\n| B-old | `旧批.md` | docs | 待处理 |\n"
+        lock = {"who": self.m.AIBOT_LOCK_WHO, "dirty_at_acquire": ["旧批.md"]}
+        violations = self.m._opener_guard_violations(self.root, [], lock, {"q": text})
+        self.assertIn("旧批.md", " ".join(violations))
+
+    def test_aibot_new_dirty_file_blocks_even_without_batch(self):
+        self._write_block("新文件.md", self.SETTINGS_CC, "读队列。")
+        lock = {"who": self.m.AIBOT_LOCK_WHO, "dirty_at_acquire": []}
+        violations = self.m._opener_guard_violations(self.root, [], lock, {"q": ""}, {"q": ""})
+        self.assertIn("新文件.md", " ".join(violations))
 
     def test_violation_in_others_file_downgrades_to_warning(self):
         """acquire 之前就已经脏、且不在本次 §二 清单里 ⇒ 降级为告警、放行。
@@ -9987,3 +10025,40 @@ class ExplicitFixtureRootTests(unittest.TestCase):
             os.environ.pop('ZHUOPIN_CODEX_FIXTURE_ROOT', None)
             with self.assertRaises(ValueError):
                 ns['_resolve_shared_queue_root'](str(shared_root))
+
+
+class CurrentDecisionSummaryTests(unittest.TestCase):
+    def setUp(self):
+        self.module = _load_module()
+
+    def _section(self, status):
+        return _reclass_section('| 447 | 元数据 | 原领取方 | 输入 | 产出 | '+status+' | 触碰区 | 2026-10-18 |')
+
+    def test_explicit_current_approval_does_not_resurrect_historical_decision(self):
+        text=self._section('[S:blocked][D:机] 【当前状态摘要】O1–O4已签认，剩余实现与验证归原领取方。 ━━━ 历史原文：待 Shao Peishen 拍板O1–O4')
+        self.assertEqual(self.module._collect_awaiting_decision_rows(text),[])
+
+    def test_real_current_decision_is_not_silenced_by_old_approval(self):
+        text=self._section('[S:blocked][D:机] 【当前状态摘要】待 Shao Peishen 批准特定群冒烟。 ━━━ 历史原文：设计已批准')
+        self.assertEqual([r['row_id'] for r in self.module._collect_awaiting_decision_rows(text)],['447'])
+
+    def test_unmarked_history_keeps_original_detection(self):
+        text=self._section('[S:blocked][D:机] 待拍板；后文有已批准但没有人工核清的当前摘要')
+        self.assertEqual(len(self.module._collect_awaiting_decision_rows(text)),1)
+
+    def test_empty_current_summary_cannot_hide_a_real_decision(self):
+        text=self._section('[S:blocked][D:机] 【当前状态摘要】 ━━━ 待拍板')
+        self.assertEqual(len(self.module._collect_awaiting_decision_rows(text)),1)
+
+    def test_current_execution_does_not_become_reclassification_candidate_from_history(self):
+        text=self._section('[S:open][D:机] 【当前状态摘要】设计已答，剩余实现待原领取方执行。 ━━━ 历史原文：待 Shao Peishen 拍板')
+        self.assertEqual(self.module._suggest_status_reclassification(text),[])
+        candidates,drift=self.module._collect_triage_candidates(text)
+        self.assertEqual((candidates,drift),([],[]))
+
+    def test_true_current_reclassification_and_authoritative_scan_still_agree(self):
+        text=self._section('[S:partial][D:机] 【当前状态摘要】待 Shao Peishen 定新口径。 ━━━ 历史原文：旧设计已过')
+        self.assertEqual(len(self.module._suggest_status_reclassification(text)),1)
+        candidates,drift=self.module._collect_triage_candidates(text)
+        self.assertEqual(len(candidates),1)
+        self.assertEqual(drift,[])

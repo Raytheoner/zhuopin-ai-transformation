@@ -1,0 +1,23 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "PH-20261020-L028",
+  "legacy_ids": [
+    "#350"
+  ],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "SC8#350已由唯一现场Owner完成原生产者/8091链元数据核验，R1/R2有效运行口径仍未知；未读快照业务内容。SC4单份冻结合同51项检查完成，法律专业验收待；SC7/10/11仍缺同版真实包、独立主数据及onhand/reserved等来源证明。均沿原渠道，不跨源拼接、不代签。\n",
+  "owner": "原采购任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 28,
+      "path": "docs/handoff/procurement/archive/3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb.bin",
+      "sha256": "3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb",
+      "start": 28
+    }
+  ],
+  "status": "review",
+  "title": "SC8口径及SC4/7/10/11专业和来源缺口",
+  "topic": "业务缺口"
+}

@@ -1,0 +1,446 @@
+{
+  "lines": [
+    {
+      "kind": "structure",
+      "line": 1,
+      "sha256": "e38ca76220938bbbd8a51a39dfd4748fab2f453f7fc797ebebbe6ee0278a0b58"
+    },
+    {
+      "kind": "structure",
+      "line": 2,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L003",
+      "kind": "item",
+      "line": 3,
+      "sha256": "53de5bf079b446fff71f18f6cbfcea43420a3db58fee6a38c64f0704e89be2b0"
+    },
+    {
+      "kind": "structure",
+      "line": 4,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 5,
+      "sha256": "2100e6610312c93999f6d3b326fdb15fc744594c8ad6f76c9e82efcdbcbf054e"
+    },
+    {
+      "kind": "structure",
+      "line": 6,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L007",
+      "kind": "item",
+      "line": 7,
+      "sha256": "379caede7fb7addafb411567e749b5bfeb240f7fd2b545419bc32da581efb5c2"
+    },
+    {
+      "kind": "structure",
+      "line": 8,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L009",
+      "kind": "item",
+      "line": 9,
+      "sha256": "4f598a719e643e916a0ec35c98071d1ba74b5b8e3bf25cab8a22bd502339b482"
+    },
+    {
+      "kind": "structure",
+      "line": 10,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L011",
+      "kind": "item",
+      "line": 11,
+      "sha256": "29015cab16520bd10af72e06a46f238c02d4ad96112ef0ee56e9d53b6110d6a6"
+    },
+    {
+      "kind": "structure",
+      "line": 12,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 13,
+      "sha256": "492f480500217e18b2ce429be899890c5593f55cbabdcfbd50be8df573a806ea"
+    },
+    {
+      "kind": "structure",
+      "line": 14,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L015",
+      "kind": "item",
+      "line": 15,
+      "sha256": "8d73808daa73106ce209210c5a54d200b92327ba9f48e3af82cdfc06cf002d07"
+    },
+    {
+      "kind": "structure",
+      "line": 16,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L017",
+      "kind": "item",
+      "line": 17,
+      "sha256": "aee0a96e3dbd4854b4b0afe6120d0d4bba79a772c56e547f8fa4a15839235d14"
+    },
+    {
+      "kind": "structure",
+      "line": 18,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 19,
+      "sha256": "1cfd4562709c5a7d75738d03e5603904daa62b92cbd9fd34c5b39a587631650e"
+    },
+    {
+      "kind": "structure",
+      "line": 20,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L021",
+      "kind": "item",
+      "line": 21,
+      "sha256": "b86e28ea23077d9e02e7d87cd80b1f9afbef8161d61acaf7da80b90e695464ee"
+    },
+    {
+      "kind": "structure",
+      "line": 22,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L023",
+      "kind": "item",
+      "line": 23,
+      "sha256": "e700f39abb8e74d4604370b603e8f0c24c3a54bfed23894da46bd72a55469e59"
+    },
+    {
+      "kind": "structure",
+      "line": 24,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L025",
+      "kind": "item",
+      "line": 25,
+      "sha256": "49bf0518f03d96e4f8046fbf5546bebe8ed843c53fdbdfc5dbf46039ff562951"
+    },
+    {
+      "kind": "structure",
+      "line": 26,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L027",
+      "kind": "item",
+      "line": 27,
+      "sha256": "8cf762419d71d92d67bd834bb21e91e72e12509ec1f01642d31027d8654788d5"
+    },
+    {
+      "kind": "structure",
+      "line": 28,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L029",
+      "kind": "item",
+      "line": 29,
+      "sha256": "1709847ffef46e42bb96b8fe6b8587057b3b283dc9695d49a1726d596cf63e10"
+    },
+    {
+      "kind": "structure",
+      "line": 30,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L031",
+      "kind": "item",
+      "line": 31,
+      "sha256": "977da5ebd8db317b87d60add251c6ff004741a61d95c041cbfb7e58157d124d3"
+    },
+    {
+      "kind": "structure",
+      "line": 32,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L033",
+      "kind": "item",
+      "line": 33,
+      "sha256": "9e8986fd261e009fdd7336352fa7baa1c0e1df1ba383d15a1a456479647e5695"
+    },
+    {
+      "kind": "structure",
+      "line": 34,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L035",
+      "kind": "item",
+      "line": 35,
+      "sha256": "5cc5aa98a7f39bb96be807c563ad672abebe56cc04bb1d0545fbb972eb635a9b"
+    },
+    {
+      "kind": "structure",
+      "line": 36,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L037",
+      "kind": "item",
+      "line": 37,
+      "sha256": "21107d790e3b3841dc836fbdfafcfe8863b795bcb1b6fa226391b5819742ed1d"
+    },
+    {
+      "kind": "structure",
+      "line": 38,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L039",
+      "kind": "item",
+      "line": 39,
+      "sha256": "41a8130f38592f73b3e66aff069bc2ae72493dd20fc9c44e144cdc5a26bfeb22"
+    },
+    {
+      "kind": "structure",
+      "line": 40,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 41,
+      "sha256": "d6a1f4e525bcf31ca841e62a682256c00d6bcbba5b4e6ff640f8709d0f8ba079"
+    },
+    {
+      "kind": "structure",
+      "line": 42,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L043",
+      "kind": "item",
+      "line": 43,
+      "sha256": "a817935023e010b5c1d550990a5ea3c366f7856744783caf259a9af12e50d2b9"
+    },
+    {
+      "kind": "structure",
+      "line": 44,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L045",
+      "kind": "item",
+      "line": 45,
+      "sha256": "e7349790295ce3c36a61555dbac68a5c32baeb35c327320e46e90127337fee14"
+    },
+    {
+      "kind": "structure",
+      "line": 46,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L047",
+      "kind": "item",
+      "line": 47,
+      "sha256": "02c89241716ee49aa0c97be2970d9d81f874699bda61b1dd2f22edad58f07f00"
+    },
+    {
+      "kind": "structure",
+      "line": 48,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L049",
+      "kind": "item",
+      "line": 49,
+      "sha256": "a107eab48f969950b41d075d02a041b0442724791e5ba5ef882f3f526cd9396d"
+    },
+    {
+      "kind": "structure",
+      "line": 50,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L051",
+      "kind": "item",
+      "line": 51,
+      "sha256": "654ebe2470a421095387608ce70b0feebcaca49dfd7ee4b0d98046f79dba79cc"
+    },
+    {
+      "kind": "structure",
+      "line": 52,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L053",
+      "kind": "item",
+      "line": 53,
+      "sha256": "8ea8306a40fcb0196cd8b2d81a519292a3ddfd90793a661835c7eee26f0b7a88"
+    },
+    {
+      "kind": "structure",
+      "line": 54,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L055",
+      "kind": "item",
+      "line": 55,
+      "sha256": "3344062037259a8d95d256a292e74191fe57777c9a7c1466f072c1991d4b606f"
+    },
+    {
+      "kind": "structure",
+      "line": 56,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L057",
+      "kind": "item",
+      "line": 57,
+      "sha256": "1c23d896b94205257a9c926e6a64784cf648230e47a736d1bf97281879b99f48"
+    },
+    {
+      "kind": "structure",
+      "line": 58,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L059",
+      "kind": "item",
+      "line": 59,
+      "sha256": "349046f58e25afbe1dbf561c6649c048d4ccf562ce5fcac47b06e553ec1fcad0"
+    },
+    {
+      "kind": "structure",
+      "line": 60,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L061",
+      "kind": "item",
+      "line": 61,
+      "sha256": "578326e2221c96c423d7af2ff0e7b65690d549bf84f8374b320019b92d8ddd43"
+    },
+    {
+      "kind": "structure",
+      "line": 62,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L063",
+      "kind": "item",
+      "line": 63,
+      "sha256": "d791623d963955ce2c1a6d6e1f7f522d092f9b228a28b4fd0dc3c21177b19632"
+    },
+    {
+      "kind": "structure",
+      "line": 64,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L065",
+      "kind": "item",
+      "line": 65,
+      "sha256": "93b10aec1049cc46095af054c0bfdf323d08ae8525b0d63f821479a6e0aad0a5"
+    },
+    {
+      "kind": "structure",
+      "line": 66,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L067",
+      "kind": "item",
+      "line": 67,
+      "sha256": "b9fabc090410a0a35f2ff8b93d8333c5a2fdc66d781910c7f8db7905b0d75963"
+    },
+    {
+      "kind": "structure",
+      "line": 68,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L069",
+      "kind": "item",
+      "line": 69,
+      "sha256": "7e63121f99c4722024f18b286b93dc9d1d8530a3a70bf8bbfe8564fd1ac0a4f6"
+    },
+    {
+      "kind": "structure",
+      "line": 70,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 71,
+      "sha256": "f9b503fd98fd42926577e144a86e2f1f293a3195111828e98ccfb743c0f5e38f"
+    },
+    {
+      "kind": "structure",
+      "line": 72,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L073",
+      "kind": "item",
+      "line": 73,
+      "sha256": "a7176d10fa2d958d6c860c7575c9ac4e4cffffb651507c2ed77ae06c0df81940"
+    },
+    {
+      "kind": "structure",
+      "line": 74,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L075",
+      "kind": "item",
+      "line": 75,
+      "sha256": "a8f3f9e7d23da595b5574a9c3096f0ce18216fdb29b9437fd175c9fd06cc75e0"
+    },
+    {
+      "kind": "structure",
+      "line": 76,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 77,
+      "sha256": "b879ec2d7f1e3e67c7bcfb0d8699d53cd642d709408b3df257b34a12eed15b75"
+    },
+    {
+      "kind": "structure",
+      "line": 78,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L079",
+      "kind": "item",
+      "line": 79,
+      "sha256": "b6809ea3b6c9e8286806734669928e4f05e4bdcb2a1429808f8728f5fb930396"
+    },
+    {
+      "kind": "structure",
+      "line": 80,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "id": "QH-20261020-L081",
+      "kind": "item",
+      "line": 81,
+      "sha256": "d20ee156a001bfe6af5f93de21165ae9711bc5c5f8dcc48ea417adac6603f853"
+    }
+  ],
+  "snapshot": "archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+  "source": "0-学习与工具/codex-handoff/质量域-R5接力-2026-10-20.md",
+  "source_sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09"
+}

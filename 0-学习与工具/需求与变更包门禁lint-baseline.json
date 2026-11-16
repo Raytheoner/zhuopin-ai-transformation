@@ -1,0 +1,273 @@
+{
+  "schema_version": 1,
+  "created": "2026-11-14",
+  "initial_legacy": {
+    "aibot-outbox-relay": [
+      "FEATURE_PROPOSAL"
+    ],
+    "aibot-queue-sync-checkout-guard": [
+      "FEATURE_PROPOSAL"
+    ],
+    "batch-registration-precheck": [
+      "FEATURE_PROPOSAL"
+    ],
+    "ci-junit-648": [
+      "FEATURE_ARTIFACTS"
+    ],
+    "ci-junit-review-fix-648": [
+      "FEATURE_ARTIFACTS"
+    ],
+    "codex-mechanism-migration": [
+      "FEATURE_PROPOSAL"
+    ],
+    "discipline-eval-suite": [
+      "FEATURE_PROPOSAL"
+    ],
+    "editlock-write-guard-hardening": [
+      "FEATURE_PROPOSAL"
+    ],
+    "fi1-warehouse-reconcile": [
+      "FEATURE_PROPOSAL"
+    ],
+    "fi15-receivable-receipt-link-pc-mock": [
+      "FEATURE_PROPOSAL"
+    ],
+    "fi16-intercompany-evidence-pc-mock": [
+      "FEATURE_PROPOSAL"
+    ],
+    "fi2-recon-mvp": [
+      "FEATURE_PROPOSAL"
+    ],
+    "fi7-catalog-intake-pc-mock": [
+      "FEATURE_PROPOSAL"
+    ],
+    "fi7-nonproject-budget-evidence-pc-mock": [
+      "FEATURE_PROPOSAL"
+    ],
+    "finance-pc-trial-release": [
+      "FEATURE_PROPOSAL"
+    ],
+    "lan-closeout-skill": [
+      "FEATURE_PROPOSAL"
+    ],
+    "open-pool-assigned-field-and-opener-env-filter": [
+      "FEATURE_PROPOSAL"
+    ],
+    "open-pool-shared-criteria": [
+      "FEATURE_PROPOSAL"
+    ],
+    "orchestration-guards": [
+      "FEATURE_PROPOSAL"
+    ],
+    "procurement-seven-mvp-closeout-1017": [
+      "FEATURE_PROPOSAL"
+    ],
+    "q2-real-document-pc-1015": [
+      "FEATURE_PROPOSAL"
+    ],
+    "queue-lint-restate-package-progress": [
+      "FEATURE_ARTIFACTS"
+    ],
+    "recovery-input-261": [
+      "FEATURE_PROPOSAL"
+    ],
+    "review-approval-context-648": [
+      "FEATURE_ARTIFACTS",
+      "FEATURE_PROPOSAL"
+    ],
+    "sc7-batch-quantity-mapping": [
+      "FEATURE_PROPOSAL"
+    ],
+    "wecom-listener-macos-migration": [
+      "FEATURE_PROPOSAL"
+    ],
+    "workflow-context-ci-gate-fix-op-0929-x-v2": [
+      "FEATURE_ARTIFACTS"
+    ],
+    "workflow-context-continuation-op-0929-x-v3": [
+      "FEATURE_ARTIFACTS",
+      "FEATURE_PROPOSAL"
+    ],
+    "workflow-mvp-closure-0930": [
+      "FEATURE_PROPOSAL"
+    ]
+  },
+  "legacy": {
+    "aibot-outbox-relay": {
+      "fingerprint": "ce9afe5805deeac35c36135a5fc7d035b70bf9465d3f15faebb265e1d3f09eea",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "aibot-queue-sync-checkout-guard": {
+      "fingerprint": "a59b07d35b56cd39d1f47d52d71df195bec51092d82b098bf6a825015bbdc296",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "batch-registration-precheck": {
+      "fingerprint": "c5cb36709411bc722d990ec39e25b4d18cf04611d203a6b92171d88ae118f530",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "ci-junit-648": {
+      "fingerprint": "f1dffcc7b5f2a54439e628314cc1e0bede91a30b67468cec2e20d2a778cc356c",
+      "missing": [
+        "FEATURE_ARTIFACTS"
+      ]
+    },
+    "ci-junit-review-fix-648": {
+      "fingerprint": "87553760efc56b62d0df87fecdc072f74501b5927cbca8ff0428d9bd5e9622df",
+      "missing": [
+        "FEATURE_ARTIFACTS"
+      ]
+    },
+    "codex-mechanism-migration": {
+      "fingerprint": "56d72da83ea261503886c0473d4f6f79288f2e5c3ed9c224c9df745a415a41cc",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "discipline-eval-suite": {
+      "fingerprint": "2b6007b4e52638fb0bbc07eededd943d2d345b95d482d305337ecc2db0433b27",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "editlock-write-guard-hardening": {
+      "fingerprint": "98b9cd41124a8a5b670767463f7800ac040dea7093eb946fcb504b731c957432",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "fi1-warehouse-reconcile": {
+      "fingerprint": "d430dce7053817715d316e8dced2b180cce37d8c9d7850e6b438a612a4c206a2",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "fi15-receivable-receipt-link-pc-mock": {
+      "fingerprint": "35aadcd1e3a4d150fe14329572ebd8494637b617cd9c856f632620dc16211300",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "fi16-intercompany-evidence-pc-mock": {
+      "fingerprint": "3a36ddad70df461e37950300bd2809054bce8921249fe9b02a716dae2aa12608",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "fi2-recon-mvp": {
+      "fingerprint": "af13eb93de90d52de4ae769fa33b15cfb10255f7b119f7d5de0ffb295f2804c0",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "fi7-catalog-intake-pc-mock": {
+      "fingerprint": "1fcb4b1ee38f4bf9e4f25bd1375241065150b0ab48104128ba5082541ee017c7",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "fi7-nonproject-budget-evidence-pc-mock": {
+      "fingerprint": "1ebdda93ab5f542465bba2fb9c91a704bb763fdebb428d6acd805705bf56270f",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "finance-pc-trial-release": {
+      "fingerprint": "33d7f05c2974250931e882482017ddca22891f287547487c4f943034e052f02a",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "lan-closeout-skill": {
+      "fingerprint": "984baabb88f3a9e9575eb816df3da9851b230a1a4e69a42ab828e50bce521c20",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "open-pool-assigned-field-and-opener-env-filter": {
+      "fingerprint": "7b39ad51d173c2564226ff4c8eb7a5d85403f6f78a301a1c43f011b4d8b3b21f",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "open-pool-shared-criteria": {
+      "fingerprint": "b76e9a18a1e3a60b19031abc4645d3b4c00e1a25d500096c91fb8f5113e2d356",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "orchestration-guards": {
+      "fingerprint": "1a26edfcccbd6c3e9ce4b03a7581a902fb6cf6255c1803e72d05df4867bc569f",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "procurement-seven-mvp-closeout-1017": {
+      "fingerprint": "be73aaae44aae6933298fa39e38ace8ec9f3aa6fd9e15cb5bef8d860d745539b",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "q2-real-document-pc-1015": {
+      "fingerprint": "fccee089b00c4df5d6419d7fab2e9ac3a339ca7e592279527fcec1c9b01aee44",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "queue-lint-restate-package-progress": {
+      "fingerprint": "3b6edf0110e8a29ec4985df3663b68cf4e892a0eceb367e122616b7272a7eb1b",
+      "missing": [
+        "FEATURE_ARTIFACTS"
+      ]
+    },
+    "recovery-input-261": {
+      "fingerprint": "d137e01f2dc4c3c6f05e84a6ed366cf0c819d9864d0db8fa52f5c67baf44cb8a",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "review-approval-context-648": {
+      "fingerprint": "cbca99e0876ac1d608affcdf738c7f58031145f623340c66c5ea9758a35e94b2",
+      "missing": [
+        "FEATURE_ARTIFACTS",
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "sc7-batch-quantity-mapping": {
+      "fingerprint": "92f4419b94ab50c90a3857251bd86086a0f04403b5817b98c1a430e9534b4907",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "wecom-listener-macos-migration": {
+      "fingerprint": "c63f1eb1377a4b4de42a87ce12d8cda7b6087651df58e25572629e055df0bab1",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "workflow-context-ci-gate-fix-op-0929-x-v2": {
+      "fingerprint": "8d34fc4bfba70303da24137fd6e0d9430e0bb5f46e2aa145cef064d95ee1fb85",
+      "missing": [
+        "FEATURE_ARTIFACTS"
+      ]
+    },
+    "workflow-context-continuation-op-0929-x-v3": {
+      "fingerprint": "9e32064f54584dd4f56dd6dde5ec471943dfeb10616861af5ca65a0ca723843b",
+      "missing": [
+        "FEATURE_ARTIFACTS",
+        "FEATURE_PROPOSAL"
+      ]
+    },
+    "workflow-mvp-closure-0930": {
+      "fingerprint": "626edcccb372c04e22f289576949913b731836b5e8dae174954c467a4d475d54",
+      "missing": [
+        "FEATURE_PROPOSAL"
+      ]
+    }
+  }
+}

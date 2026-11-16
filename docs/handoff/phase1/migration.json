@@ -1,0 +1,108 @@
+{
+  "lines": [
+    {
+      "kind": "structure",
+      "line": 1,
+      "sha256": "52049aeee4b8e663dc7f5763c58e25817d1a852f453d75a07e4858b8b699b054"
+    },
+    {
+      "kind": "structure",
+      "line": 2,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 3,
+      "sha256": "ff2a6153fc0c17396cc930950e7b500435acdb1eed55942e3b9c1326cbf2d3ff"
+    },
+    {
+      "id": "P1H-20261030-L004",
+      "kind": "item",
+      "line": 4,
+      "sha256": "9b8c73f8c2e4aafbad319dcde2e165ca85fc490db00a463fddab703ca76a2526"
+    },
+    {
+      "kind": "structure",
+      "line": 5,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 6,
+      "sha256": "8e2bc057d95c9f409759667fa61591a697812e763b50499077bb9b95e0087757"
+    },
+    {
+      "id": "P1H-20261030-L007",
+      "kind": "item",
+      "line": 7,
+      "sha256": "f61f23c5fbde295e0e3397efcc46fcf0e6bd12d73fffe7f761338d7d5d5902dc"
+    },
+    {
+      "kind": "structure",
+      "line": 8,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 9,
+      "sha256": "58f3497e2b00bacd4c8aabaa6733578efeab3c9d7bd1fe9eda4821b2c8b8887c"
+    },
+    {
+      "id": "P1H-20261030-L010",
+      "kind": "item",
+      "line": 10,
+      "sha256": "ba45b629f5fe71a1c7a46246ef2f6a093e5e9f2766c375e4e361b0061afa0830"
+    },
+    {
+      "kind": "structure",
+      "line": 11,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 12,
+      "sha256": "3cb2b29955b36e5bdcba8765743b252c131b6844203ed6ff37280daf8a6ceb5d"
+    },
+    {
+      "id": "P1H-20261030-L013",
+      "kind": "item",
+      "line": 13,
+      "sha256": "a5a316e45ea428615badc52db6c106db052b048dd44bc34992d448a28a6b2f04"
+    },
+    {
+      "kind": "structure",
+      "line": 14,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 15,
+      "sha256": "9dd225a5ca0323aab31b5a6e0e9e681824704e8e4ccd4b07b6b08dede98d69e5"
+    },
+    {
+      "id": "P1H-20261030-L016",
+      "kind": "item",
+      "line": 16,
+      "sha256": "455451b08add64c923626d361bfbb01ef4dc82a27e175869896872b8e5bd122b"
+    },
+    {
+      "kind": "structure",
+      "line": 17,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "kind": "structure",
+      "line": 18,
+      "sha256": "619d038be18fe11eb1a08520ac07108a7b4b8ddd9d08b67d231b911d0e6572bf"
+    },
+    {
+      "id": "P1H-20261030-L019",
+      "kind": "item",
+      "line": 19,
+      "sha256": "f0fe6d29d3579e1064113824b64247d8afbb238cf7c031110c8aed919bf0f8bf"
+    }
+  ],
+  "snapshot": "archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+  "source": "1-转型规划/0-全景路线图/session接力-Phase1收口.md",
+  "source_sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb"
+}

@@ -113,6 +113,25 @@ CODE_CONFIG_EXTENSIONS = {
 TEST_FILE_RE = re.compile(r"(^|/)(test_[^/]+\.py|[^/]+_test\.py)$|(^|/)tests/")
 
 
+# 已核公开协议标签：固定文件、名称、值三元组；仅影响仓库通用启发式。
+# 强模式及写侧形状API不受本表影响。
+VERIFIED_PUBLIC_PROTOCOL_LABELS = frozenset({
+    ('0-学习与工具/工具-opener块lint.py', 'CANON_ROLE_KEY', 'opener正本'),
+    ('0-学习与工具/工具-未闭合产出扫描.py', 'EXPECTED_SERVER_TOKEN', 'waitress'),
+    ('0-学习与工具/工具-泳道看护状态机.py', 'PATCHID_PRECHECK_ACTION_KEY', 'merge_to_master'),
+    ('0-学习与工具/工具-落库sweep.py', 'LOCAL_ONLY_DIVERGED_KEY', 'local-master:diverged'),
+    ('0-学习与工具/工具-落库sweep.py', 'LOCAL_ONLY_AHEAD_KEY', 'local-master:unpushed'),
+    ('0-学习与工具/工具-落库sweep.py', 'LOCAL_ONLY_UNSCANNED_KEY', 'local-master:unscanned'),
+    ('0-学习与工具/工具-落库sweep.py', 'ORPHAN_SECTION_FOUR_LOGGED_KEY', 'section_four_logged_on'),
+    ('0-学习与工具/工具-落库sweep.py', 'MANIFEST_SKIP_SECTION_FOUR_LOGGED_KEY', 'section_four_logged_on'),
+    ('0-学习与工具/工具-落库sweep.py', 'CLAUDE_MD_RULES_TOTAL_KEY', '.claude/rules/__total__'),
+    ('0-学习与工具/工具-落库sweep.py', 'PLAN_BACKPRESSURE_UNSCANNED_KEY', 'plan-backpressure-unscanned'),
+    ('0-学习与工具/工具-落库sweep.py', 'PLAN_BACKPRESSURE_UNAVAILABLE_KEY', 'plan-backpressure-unavailable'),
+    ('0-学习与工具/工具-落库sweep.py', 'INTAKE_GAP_JUDGE_ERROR_KEY', 'intake-gap-unavailable'),
+    ('0-学习与工具/工具-落库sweep.py', 'UNMERGED_BRANCH_UNAVAILABLE_KEY', 'unmerged-branch-unavailable'),
+})
+
+
 def _tracked_files(repo_root: Path) -> list[str]:
     # -c core.quotepath=false：git 默认（true）会把路径里的非 ASCII 字节
     # 八进制转义（如中文目录名），本项目路径几乎全是中文，不关掉这个开关
@@ -170,7 +189,9 @@ def _scan_file_content(repo_root: Path, rel_path: str) -> list[str]:
     if is_generic_scan_target:
         for m in GENERIC_ASSIGNMENT_RE.finditer(text):
             name, value = m.group("name"), m.group("value")
-            if _looks_like_real_secret(name, value):
+            if (_looks_like_real_secret(name, value)
+                    and (rel_path.replace(chr(92), "/"), name, value)
+                    not in VERIFIED_PUBLIC_PROTOCOL_LABELS):
                 violations.append(
                     f"疑似凭据赋值 {name}=...：{rel_path}（右值非占位符，长度 {len(value)}）"
                 )

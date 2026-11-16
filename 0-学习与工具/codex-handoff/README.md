@@ -9,6 +9,10 @@
 
 ## 既有接口与迁移记录（历史及明确选择的旧合同）
 
+2026-11-14短入口：用户只需“开启泳道看护”或“我已回LAN”，当前会话用 `handoff.py watch-context [--row N]` 取原队列上下文并沿原证据续做，已批同范围不重问。`check-acceptance` 校验原规格场景、实际pytest及功能/audit覆盖，新driver合同在closeout同闸检查。接口说明见 `docs/requirements/日常短入口与需求验收.md`；周期拆件巡逻保持停用，监听事件消费者不因这些入口而启停。
+
+2026-11-14：原 prepare/proposal、implement、closeout 已接需求准入、同一 tasks 串行 TDD、归档检查；会话文档用同一 `handoff.py receive-feedback/backfill-feedback` 入口保留来源并并入原行。使用步骤与边界见 `docs/requirements/反馈承接与原workflow使用.md`（仓库相对路径）。不新增执行器、不恢复暂停消费者；没有该阶段逐文件 `git_commit` 授权时 driver 保留候选而不提交。历史已封存阶段、必要独审和 HEAD 绑定不改写。
+
 以下时点事实及接口说明原文保留；不作为普通新任务默认扇出或模型互审指令。
 
 > 2026-10-02T16:27:43.7178516+08:00 0930Y现时交付：master已ff4a085781；原监听现场核验通过后，原patrol消费者已启用gpt-6-luna。六入口证据、旧失败、真实积压保留及授权边界见 [0930Y-MVP交付-2026-10-02.md](0930Y-MVP交付-2026-10-02.md)。下文较早日期的暂停/待验收描述保留为历史，不替代本次实测；其他五自动化仍PAUSED，PollGuard仍Disabled。

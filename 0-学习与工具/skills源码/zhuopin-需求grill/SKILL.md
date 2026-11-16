@@ -101,7 +101,7 @@ grill 收敛后，需求树的三种状态**直接映射**，不再重写一遍�
 
 ⇒ **消除一次重复劳动**：现状是 design 的决策点到那一步才现想。
 
-🔴 **产出载体定名 `intent.md`（Shao Peishen 2026-09-06 答 ③ 选 (a)；承 Anthropic《AI Native 开发手册》intent 层）**：收工产出落**场景目录** `4-数字员工/<部门>/<场景>/intent.md`，不再用「需求grill产出-日期.md」命名（SC2 那份为历史件，不追改）。frontmatter：`status: 待确认`→Shao Peishen 确认后改 `已确认`；`场景:`；`grill会话:`（OP 号）；`进入判例包的开放点数量: N`。正文三节固定：**§一 M2 已自查的事实**／**§二 已定（＝design Decisions）**／**§三 待专员（＝判例包待办，每条带口径点 ID 占位，形如 `FI10-G-01`）**。它是 `/opsx:propose` 的前置：`status: 已确认` 才可 propose（rules/场景建造与合规 §二；机器守＝openspec validate 闸，CC 建成前人守）。**存量补 grill**（09-03 无头泳道批量落包的 8 个新场景包）：产出同样落 `intent.md`，并当场把 §二 写进该包 `design.md` Decisions、§三 写进 Open Questions「待专员」，**会话末即 design 审**——补 grill 就是补 design 审前置，不是额外一道工。
+🔴 **产出载体定名 `intent.md`（Shao Peishen 2026-09-06 答 ③ 选 (a)；承 Anthropic《AI Native 开发手册》intent 层）**：收工产出落**场景目录** `4-数字员工/<部门>/<场景>/intent.md`，不再用「需求grill产出-日期.md」命名（SC2 那份为历史件，不追改）。frontmatter：`status: 待确认`→Shao Peishen 确认后改 `已确认`；`场景:`；`grill会话:`（OP 号）；`进入判例包的开放点数量: N`。正文三节固定：**§一 M2 已自查的事实**／**§二 已定（＝design Decisions）**／**§三 待专员（＝判例包待办，每条带口径点 ID 占位，形如 `FI10-G-01`）**。它是 `/opsx:propose` 的前置：`status: 已确认` 才可 propose（rules/场景建造与合规 §二；机器守＝CI job `scene-intent-gate-lint`，执行 `0-学习与工具/工具-场景包intent闸lint.py --enforce`；`openspec validate` 不替代此闸）。**存量补 grill**（09-03 无头泳道批量落包的 8 个新场景包）：产出同样落 `intent.md`，并当场把 §二 写进该包 `design.md` Decisions、§三 写进 Open Questions「待专员」，**会话末即 design 审**——补 grill 就是补 design 审前置，不是额外一道工。
 
 ## 五、接缝 3 · 两个受众的量级边界（必须写死）
 

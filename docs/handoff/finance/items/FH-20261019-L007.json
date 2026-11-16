@@ -1,0 +1,24 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "FH-20261019-L007",
+  "legacy_ids": [
+    "#21",
+    "#471"
+  ],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "> **当前完成/下一步**：全域去重清单在 `docs/superpowers/specs/2026-10-19-finance-domain-business-evidence-gaps-v1.md`；FI6及FI10各change内有10-19业务核清稿；FI10本轮补齐来源映射、证据契约和纸面验收，纠正J7/J8已答、项目终止另题及全部行双签范围。继续按清单消费真实资料/专业会签；#21既有六包不重复索取，四恢复场景另列，未新外发。岗位批准不代逐笔确认/会签。队列本轮补§四205/206、#471/474/557/698及§二；未将专业实施blocked翻绿。未跑产品测试、未访问服务或改产品代码；本次无新增本人决策。\n",
+  "owner": "原财务任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 7,
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "start": 7
+    }
+  ],
+  "status": "review",
+  "title": "全域清单/FI10澄清及专业阻断保留",
+  "topic": "后续指令"
+}

@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="51" time="304.841" timestamp="2026-11-15T22:57:51.082842+08:00" hostname="SPSThinkpadWIN"><testcase classname="tests.test_foreground_watch" name="test_preregister_missing_target_before_first_write" time="9.184"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_rejected_registration_never_writes_target" time="6.435"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[../escape.py]" time="8.645"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[/outside.py]" time="5.295"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[C:/outside.py]" time="5.329"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[candidate/*.py]" time="5.663"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[candidate/../escape.py]" time="6.747"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_unsafe_scope_fails_before_queue_mutation[candidate/]" time="6.540"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_drifted_approval_is_not_permission" time="5.810"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_other_writer_and_touch_conflict_are_not_reclaimed[other-current-writer]" time="10.640"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_other_writer_and_touch_conflict_are_not_reclaimed[Codex\u73b0\u884cworkflow\uff0f\u5168\u81ea\u52a8\u6cf3\u9053\u770b\u62a4\u4efb\u52a1\u6c60\uff1b\u672c\u8f6e\u552f\u4e00\u5b9e\u65bd\u8ba4\u9886\uff1aWinCodex-1115KH2\uff0c\u539f\u8fb9\u754c\u4fdd\u6301]" time="10.514"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_frozen_and_review_only_items_are_not_claimed" time="10.264"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_single_wake_creates_candidate_writes_checkpoint_and_refreshes_pool" time="41.791"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+{"fixture": "one_short_wake", "outcomes": {"outcomes": [{"row": 1, "status": "blocked", "reason": "fixture independent prerequisite unavailable"}, {"row": 2, "status": "checkpointed", "candidate": [{"path": "candidate/task2.py", "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"}, {"path": "tests/test_task2.py", "sha256": "461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec"}], "verification": {"exit": 0, "junit": {"path": "reports/candidate2.xml", "sha256": "46c69b98af42fd27e555199456941cc21d75fdf83ba81b20a0bd46450384c1ec"}, "level": "mock", "red_junit": {"path": "reports/candidate-red2.xml", "sha256": "6237b2f061d9c6af47cc782945dc377487fb3232adc4f5c7d438923d39ae2776"}}, "delivery_accepted": false}, {"row": 3, "status": "blocked", "reason": "fixture new design decision required"}], "pool_rechecks": 2, "delivery_accepted": false, "execution": "foreground_inline", "natural_trial": false}, "actual_candidate": {"path": "candidate/task2.py", "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"}}
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_pre_registration_does_not_relax_normal_missing_entity_guard" time="4.080"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_missing_lock_and_drifted_row_never_reach_registration" time="5.738"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_failed_preregistration_continues_next_independent_item[write]" time="49.859"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+{"fixture": "write", "outcomes": {"outcomes": [{"row": 1, "status": "blocked", "reason": "preregistration rejected; no target writes allowed", "recorded": true}, {"row": 2, "status": "checkpointed", "candidate": [{"path": "candidate/task2.py", "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"}, {"path": "tests/test_task2.py", "sha256": "461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec"}], "verification": {"exit": 0, "junit": {"path": "reports/candidate2.xml", "sha256": "7568d44c77eab7ff864a531de927f414c8d840cedeb0b9736e44a66674144683"}, "level": "mock", "red_junit": {"path": "reports/candidate-red2.xml", "sha256": "bb2adf47b001ef6fc6d7ff6983351496dd088f3b6297d9478a7a634c43f13ed9"}}, "delivery_accepted": false}, {"row": 3, "status": "blocked", "reason": "fixture prerequisite"}], "pool_rechecks": 2, "delivery_accepted": false, "execution": "foreground_inline", "natural_trial": false}, "actual_candidate": {"path": "candidate/task2.py", "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"}}
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_failed_preregistration_continues_next_independent_item[readback]" time="51.979"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+{"fixture": "readback", "outcomes": {"outcomes": [{"row": 1, "status": "blocked", "reason": "preregistration readback not proven; no target writes allowed", "recorded": true}, {"row": 2, "status": "checkpointed", "candidate": [{"path": "candidate/task2.py", "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"}, {"path": "tests/test_task2.py", "sha256": "461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec"}], "verification": {"exit": 0, "junit": {"path": "reports/candidate2.xml", "sha256": "a6e5299fcd240662b369a2f407dbe9e315e7e922fe17ff03144f9ed42a85c1cb"}, "level": "mock", "red_junit": {"path": "reports/candidate-red2.xml", "sha256": "051ecd003789a87e68bb8e6050a5026d4bb7bcb7b526701d77e12f7cef996eed"}}, "delivery_accepted": false}, {"row": 3, "status": "blocked", "reason": "fixture prerequisite"}], "pool_rechecks": 2, "delivery_accepted": false, "execution": "foreground_inline", "natural_trial": false}, "actual_candidate": {"path": "candidate/task2.py", "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"}}
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_foreground_watch" name="test_pool_addition_before_hold_is_consumed_without_second_wake" time="58.526"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+{"fixture": "pool_addition", "outcomes": {"outcomes": [{"row": 1, "status": "blocked", "reason": "fixture prerequisite"}, {"row": 2, "status": "blocked", "reason": "fixture prerequisite"}, {"row": 3, "status": "blocked", "reason": "fixture prerequisite"}, {"row": 4, "status": "checkpointed", "candidate": [{"path": "candidate/task4.py", "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"}, {"path": "tests/test_task4.py", "sha256": "504a2fae1c39c668a9de1cc430510694eb41d17df0e18ad15325b2077e8194db"}], "verification": {"exit": 0, "junit": {"path": "reports/candidate4.xml", "sha256": "c31175bba27fbcf8eabf273a044b7d4cf561a1d76abdbf2fe579c1d22d5774a2"}, "level": "mock", "red_junit": {"path": "reports/candidate-red4.xml", "sha256": "eba5e039cbe32afa57a816e0c337bbf969df9fa8dc7ae9ee5d837f071eeadbd7"}}, "delivery_accepted": false}], "pool_rechecks": 3, "delivery_accepted": false, "execution": "foreground_inline", "natural_trial": false}, "actual_candidate": {"path": "candidate/task4.py", "sha256": "1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c"}}
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_short_entry_recovers_fields_without_granting_permissions" time="0.011"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_context_never_unlocks_old_states[blocked]" time="0.011"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_context_never_unlocks_old_states[hold]" time="0.014"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_context_never_unlocks_old_states[timed=2026-12-01]" time="0.009"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_context_never_unlocks_old_states[done]" time="0.011"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_queue_failure_is_not_empty_pool" time="0.007"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_reference_escape_never_reads_outside_repo" time="0.008"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_existing_owner_is_not_reassigned" time="0.012"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_expected_queue_hash_detects_stale_handoff" time="0.007"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_default_pool_does_not_offer_stopped_task_or_status[7\uff5c[S:open][D:\u673a]\uff5c\U0001f6d1 \u6392\u961f\uff0c\u539f\u524d\u7f6e\u672a\u89e3]" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_default_pool_does_not_offer_stopped_task_or_status[7\uff5c[S:partial][D:\u673a]\uff5c**\U0001f6d1 \u6392\u961f** \u5386\u53f2\u4ecd\u4fdd\u7559]" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_default_pool_does_not_offer_stopped_task_or_status[7\uff5c[S:open][D:\u673a] \U0001f6d1 \u6682\u975e\u53ef\u52a8\uff5c\u673a\u5236\u4efb\u52a1]" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_elapsed_timed_row_is_review_only_and_future_remains_out" time="0.007"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_full_digest_does_not_unlock_frozen_rows[blocked]" time="0.005"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_full_digest_does_not_unlock_frozen_rows[hold]" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_full_digest_does_not_unlock_frozen_rows[timed=2099-01-01]" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_missing_or_invalid_status_is_visible_for_review" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_stop_mention_inside_task_does_not_freeze_independent_work" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_queue_context" name="test_digest_hides_status_body_so_original_actionable_filter_is_required" time="0.008"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_empty_events_have_no_context_process_or_journal[UserPromptSubmit]" time="0.001"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_empty_events_have_no_context_process_or_journal[Stop]" time="0.001"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_empty_events_have_no_context_process_or_journal[PostToolUse]" time="0.001"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_watch_wake_routes_foreground_without_new_process[\u5f00\u542f\u6cf3\u9053\u770b\u62a4-True]" time="0.002"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_watch_wake_routes_foreground_without_new_process[\u8bf7\u89e3\u91ca\u201c\u5f00\u542f\u6cf3\u9053\u770b\u62a4\u201d\u7684\u542b\u4e49-False]" time="0.001"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_watch_wake_routes_foreground_without_new_process[-False]" time="0.001"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_exec_still_checks_queue_without_count_only_process" time="0.003"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_post_only_starts_relevant_sentinels[docs/one.md-1]" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_post_only_starts_relevant_sentinels[6-\u4eba\u624d\u4e0e\u7ec4\u7ec7/\u90e8\u95e8AI\u4e13\u5458\u8ddf\u8fdb/\u5408\u6210.md-2]" time="0.005"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_journal_shards_and_latest_summary_keep_all_events" time="0.341"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_torn_journal_preserved_and_refuses_append" time="0.016"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_old_json_untouched" time="0.015"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_cross_process_lock_prevents_interleaved_json" time="0.950"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_hook_optimization" name="test_lock_contention_preserves_lock_file" time="0.113"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase></testsuite></testsuites>

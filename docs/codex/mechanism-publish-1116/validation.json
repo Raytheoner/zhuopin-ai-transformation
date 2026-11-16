@@ -1,0 +1,72 @@
+{
+  "state": "verified-awaiting-authorized-commit-push",
+  "branch": "codex/1113a2-mechanism-closeout",
+  "base": "6ce833345ed503dc916a37ca01d32c46ae26bd6c",
+  "versions": {
+    "python": "3.14.4",
+    "openspec": "1.7.0",
+    "git": "2.53.0.windows.2"
+  },
+  "full_regression": [
+    {
+      "junit": "tools-full.xml",
+      "sha256": "f44381422a454e4aa0aab84e7cdbbc09eed7a3d243645ed036b6917c67c87b5d",
+      "passed": 689,
+      "skipped": 1,
+      "subtests": 68
+    },
+    {
+      "junit": "hooks-full.xml",
+      "sha256": "49e660fc5d31573bc69f44dad88df1a46564dca268026e6a0ca5929418bb0b2a",
+      "passed": 267,
+      "skipped": 0,
+      "subtests": 0
+    },
+    {
+      "junit": "handoff-full.xml",
+      "sha256": "12b05502e39dda561d17801c709579ae1d3d3cdfb2e4d4e8cbf19d32e806fc17",
+      "passed": 735,
+      "skipped": 4,
+      "subtests": 0
+    },
+    {
+      "junit": "secret-tests.xml",
+      "sha256": "1de8604a2d9179aeb521cc6aeeb8bea85ec40d2f7a78225480a658b44d2a37a7",
+      "passed": 12,
+      "skipped": 0,
+      "subtests": 0
+    },
+    {
+      "junit": "sweep-full.xml",
+      "sha256": "fcdbf225f3f01489acbaa3f50e491ead554db73aee35477e63f9956a4919f66c",
+      "passed": 549,
+      "skipped": 0,
+      "subtests": 78
+    }
+  ],
+  "passed": 2252,
+  "original_skips": 5,
+  "new_skips": 0,
+  "all_required_gates_exit": 0,
+  "canonical_targets_present": 31,
+  "canonical_claude_entries_match_original_thin_navigation": true,
+  "functional_level": "mock",
+  "natural_short_wake_accepted": false,
+  "production_accepted": false,
+  "professional_signoff": false,
+  "periodic_reply_patrol": "PAUSED (read-only verified)",
+  "source_head": "90ff9e3e1209997278bcdcb8720a235033746675",
+  "source_branch": "codex/op1016a-business-handoff",
+  "source_index_empty": true,
+  "source_selected_137_hashes_unchanged": true,
+  "failure_evidence": [
+    "handoff-before-prerequisites.xml",
+    "sweep-before-fixture-repair.xml",
+    "secret-red.xml"
+  ],
+  "note": "Full tools regression preceded repository-only public-label classification; original shared shape API and credential/generic patterns were proven AST-identical, full scanner module12 and hooks267 plus sweep549 rerun. Original failure artifacts are retained, not green evidence.",
+  "whitespace_review": {
+    "authored_implementation_hunks_exit": 0,
+    "whole_diff_note": "Inherited native PS1 CRCRLF, historical/pytest literal XML whitespace and original spec EOF produce diagnostics; exact source/provenance bytes retained. Whole diff --check is not represented as passed."
+  }
+}

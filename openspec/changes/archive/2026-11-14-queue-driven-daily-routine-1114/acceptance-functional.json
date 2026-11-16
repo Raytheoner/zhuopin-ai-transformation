@@ -1,0 +1,11 @@
+{
+  "kind": "actual-test-evidence-index",
+  "suite": {
+    "path": "docs/codex/evidence/routine-20261114.xml",
+    "sha256": "98bb2045a772e7901642dcddaff1eebac6b1fde2f02a2397570662db25a87d82"
+  },
+  "functional_case": "tests.test_feedback_workflow::test_existing_reply_fixture_to_refinement_archive_and_queue_closeout",
+  "behavior": "existing reply fixture performs original intake, claim, context retrieval, actual answer() subprocess, CI, absent-acceptance rejection, archive and queue closeout",
+  "level": "mock",
+  "production_executed": false
+}

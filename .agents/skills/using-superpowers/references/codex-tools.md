@@ -1,40 +1,11 @@
 ## Subagent dispatch requires multi-agent support
 
-Add to your Codex config (`~/.codex/config.toml`):
+Use the actual tools and schema exposed in the current session. Tool availability is not authorization to delegate. This project defaults to one serial main session; spawn only when the user explicitly requests it or the applicable frozen/safety contract requires authorized independent review. Do not edit machine-level config to enable an assumed feature as part of ordinary work.
 
-```toml
-[features]
-multi_agent = true
-```
-
-This enables the multi-agent tools that skills like
-`dispatching-parallel-agents` and `subagent-driven-development` use.
-Which tools you get depends on the multi-agent version your model
-preset selects (current presets run V2; older ones run V1). Trust your
-actual tool list over any table — including this one — when they
-disagree.
-
-- **Spawning:** give children a clean context with
-  `spawn_agent {fork_turns: "none"}`; the default `"all"` copies your
-  entire transcript into the child. On Codex 0.145+, role files under
-  `~/.codex/agents/` attach to isolated forks via `agent_type`.
-  Full-history forks accept `model` and `reasoning_effort` overrides
-  (only `agent_type` is refused there) — isolated forks are the SDD
-  default for context hygiene, not because overrides require them.
-- **Fix rounds:** resume the implementer with `followup_task` — it
-  delivers your message, triggers a turn, and transparently reloads a
-  child the harness evicted. Never dispatch a fresh implementer on the
-  theory that a spawned agent cannot be messaged again; on V2 it
-  always can.
-- **Lifecycle:** V2 has no `close_agent`. Finished children are
-  evicted automatically when slots are needed; leaving them unclosed
-  costs nothing. Only V1 sessions have `close_agent` — there, close
-  reviewers when their review returns, and close each implementer
-  after its task's review passes.
-- **Model names:** never copy a model name from a skill, table, or old
-  session into `spawn_agent` without checking it against your current
-  spawn allowlist — V2 accepts only V2-capable presets and hard-errors
-  on the rest.
+- **Spawning:** `fork_turns` accepts `"all"` (default) or `"none"` in the current schema. Full-history `"all"` inherits the parent model/effort and cannot take `model`/`reasoning_effort` overrides. An authorized project child must explicitly use `model: "gpt-6-luna"` and `reasoning_effort: "high"`, so use `fork_turns: "none"` and supply the task, allowed paths and required evidence explicitly. `agent_type` is a role selector, not a model; use it only within its actual permission/schema. Do not assert version-based behavior instead of reading the tools.
+- **Fix rounds:** use `followup_task` for an existing authorized non-root agent: an idle target is triggered, while a running target receives the follow-up at a message boundary. Do not assume eviction/reload behavior or dispatch a replacement without checking the actual returned status and authorization.
+- **Lifecycle:** the current tool set has `interrupt_agent`, which interrupts execution and leaves the agent available for messages; it is not a `close_agent` operation. Do not fabricate a close tool or assume eviction/reload guarantees absent from the actual schema.
+- **Model names:** check the current spawn allowlist before an authorized dispatch. If the mandated Luna/high route cannot be specified or is unavailable, keep that subtask pending; do not silently inherit or substitute a different model.
 
 ## Waiting on children
 
@@ -48,12 +19,9 @@ two-thirds of all wait calls were short polls that timed out.
   child's final answer is pushed into your mailbox and arrives with
   your next turn.
 - When you are genuinely idle with children outstanding, wait in
-  bounded stretches: `wait_agent` with `timeout_ms` 300000-600000
-  (5-10 minutes). After each stretch — wake or timeout — post one
+  bounded stretches consistent with active response requirements (here, `timeout_ms` up to 60000). After each stretch — wake or timeout — post one
   status line, run `list_agents`, and chase any child that finished
-  without reporting. Never stack polls shorter than five minutes; the
-  event subscription wakes a bounded stretch just as fast as a short
-  one.
+  without reporting. Avoid repeated unchanged polls; choose a bounded wait within the actual schema and active communication requirements.
 - Completion mail cannot wake an idle controller (it is delivered
   without triggering a turn); covering that idle window is
   `wait_agent`'s only job. A stretch that times out with no activity
@@ -61,22 +29,7 @@ two-thirds of all wait calls were short polls that timed out.
 
 ## Model routing on spawns
 
-Every `spawn_agent` you issue — including when you are yourself a
-spawned child running a fan-out — sets `model` AND `reasoning_effort`
-explicitly, per the Model Selection rules of the skill you are
-executing. Setting `model` alone is a trap: the child's effort
-silently resets to that model's default, not to yours.
-
-Ask your human partner to add a machine-level backstop to
-`~/.codex/config.toml` so any spawn that slips through still routes to
-a deliberate tier instead of silently inheriting the session's most
-expensive model:
-
-```toml
-[agents]
-default_subagent_model = "<a mid-tier model from your spawn allowlist>"
-default_subagent_reasoning_effort = "medium"
-```
+Only authorized isolated (`fork_turns: "none"`) spawns set both `model` and `reasoning_effort` explicitly, using this project's `gpt-6-luna`/`high` rule. Full-history forks inherit those settings and do not accept overrides; therefore they are not a substitute for the explicit-route requirement. Do not ask for or write unverified machine-level routing keys as a workaround. Availability of collaboration tools does not create a new reviewer requirement.
 
 ## Environment Detection
 
@@ -97,12 +50,9 @@ Step 1 for how each skill uses these signals.
 
 ## Codex App Finishing
 
-When the sandbox blocks branch/push operations (detached HEAD in an
-externally managed worktree), the agent commits all work and informs
-the user to use the App's native controls:
+When branch/push operations are unavailable in an externally managed worktree, preserve the scoped candidate and evidence. Do not commit all files or stage other sessions' changes. Only after the specific operation is authorized, inspect the actual App tools/controls; an observed control is not proof it can move this chat or bypass sandbox permissions. Possible user-requested controls include:
 
 - **"Create branch"** — names the branch, then commit/push/PR via App UI
 - **"Hand off to local"** — transfers work to the user's local checkout
 
-The agent can still run tests, stage files, and output suggested branch
-names, commit messages, and PR descriptions for the user to copy.
+The agent can prepare scoped evidence and run necessary verification. Staging, commits, branch moves, push and PR creation retain their specific authorization and ownership checks; none is a finishing default.

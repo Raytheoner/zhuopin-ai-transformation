@@ -1,0 +1,44 @@
+{
+  "source_thread": "01a1dea4-e91b-79c0-89f8-0067c68b32ff",
+  "source_kind": "existing Codex thread read-only snapshot",
+  "times": [
+    {
+      "turn": "01a1df83-4cfa-7741-bcd0-44014ca8b0a0",
+      "started_at_utc": "2026-11-15T14:01:26.000Z",
+      "completed_at_utc": null
+    },
+    {
+      "turn": "01a1df3e-70c8-74f0-a185-03ef77ce0734",
+      "started_at_utc": "2026-11-15T12:46:13.000Z",
+      "completed_at_utc": "2026-11-15T13:47:12.000Z"
+    },
+    {
+      "turn": "01a1df13-1177-7503-b950-b534c75a9d1d",
+      "started_at_utc": "2026-11-15T11:58:51.000Z",
+      "completed_at_utc": "2026-11-15T12:44:14.000Z"
+    },
+    {
+      "turn": "01a1dea4-eda6-7682-ac7a-3d17c077ef2a",
+      "started_at_utc": "2026-11-15T09:58:33.000Z",
+      "completed_at_utc": "2026-11-15T10:06:29.000Z"
+    }
+  ],
+  "local_timezone": "Asia/Shanghai",
+  "facts": [
+    "17:58:33 short watch request; 18:06:29 first turn ended after read-only investigation",
+    "19:58:51 user follow-up precedes construction",
+    "KH2 original correction admits substantive construction preceded claim; exact first-edit time remains unverified"
+  ],
+  "scope_excluded": [
+    "1115KH2 implementation/candidates",
+    "#563",
+    "#636",
+    "#670 business"
+  ],
+  "original_file_evidence": [
+    "docs/codex/lane-watch-1115kh2/纠偏认领与计划.json",
+    "docs/codex/lane-watch-1115kh2/执行记录.md"
+  ],
+  "natural_trial_performed": false,
+  "authorization_boundary": "17:58的继续义务只指原已批且无冲突的任务/准备；#563/#636后续A批准保留实际时刻，不倒推授权、不接管候选。"
+}

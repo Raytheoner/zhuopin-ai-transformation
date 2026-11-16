@@ -1,0 +1,23 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "entry_summary": "旧批不重审；新增notifier、生产文件及远端部署另闸；11月中旬前排S1外审。",
+  "id": "P1H-20261030-L019",
+  "legacy_ids": [],
+  "notes": "只迁移资料；原业务Owner、批准、未完编号、失败原文全部保留，未确认原业务线程停写。",
+  "original_text": "五文件既批不重问，完成验证前不得启用；新增本机 notifier/生产文件、远端 SC2 部署需待具体目标与候选就绪后分别说明。无真实触发器不承诺会话自动继续；S1外部评审2026-11中旬前排期。\r\n",
+  "owner": "原告警业务会话01a18a8b-968f-73cc-aa18-f0d82b23b010；资料维护由当前Codex主会话承接",
+  "r5_section": "待审批",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 19,
+      "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+      "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+      "start": 19
+    }
+  ],
+  "status": "review",
+  "title": "待审批",
+  "topic": "Phase1接力"
+}

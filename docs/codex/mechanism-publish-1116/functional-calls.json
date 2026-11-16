@@ -1,0 +1,1413 @@
+[
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--digest"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【digest §一 · 合计 3 行 ｜ 1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md（0 行）＋1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md（3 行）】\n1｜[S:open][D:业]｜Fixture 1\n2｜[S:open][D:业]｜Fixture 2\n3｜[S:open][D:业]｜Fixture 3\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--digest",
+      "--actionable"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【digest §一 · 合计 3 行 ｜ 1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md（0 行）＋1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md（3 行）】\n【--actionable：已隐藏 0 行（机器字段非 open／partial，或状态格以 🛑 起首＝排队中·暂非可动）——去掉本参数即出全池】\n1｜[S:open][D:业]｜Fixture 1\n2｜[S:open][D:业]｜Fixture 2\n3｜[S:open][D:业]｜Fixture 3\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"1\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 5, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n1\n\n【任务】\nFixture 1\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-1.md`\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task1.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"1\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 5, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-2.md`\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"3\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 7, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n3\n\n【任务】\nFixture 3\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-3.md`\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task3.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"3\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 7, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "acquire",
+      "--who",
+      "fixture-foreground"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已占锁：fixture-foreground（无备注）→ 跨桌任务队列-机制环境.md.editlock\n📍 权威物理路径：C:\\Users\\Paul Shao\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\1-转型规划\\0-全景路线图\\跨桌任务队列-机制环境.md\n📍 权威物理路径：C:\\Users\\Paul Shao\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\1-转型规划\\0-全景路线图\\跨桌任务队列-业务场景.md\n📍 持锁瞬间高水位线：§一 #3 ｜ §四 #0——新行编号从此值 +1 续排，勿用 acquire 之前读到的旧值（见协议〇.7）。\n  改完请立刻 release，不要跨整个 session 持有。\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"1\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 5, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n1\n\n【任务】\nFixture 1\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-1.md`\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task1.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"1\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 5, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "B-foreground-7b29d3edf0338c86",
+      "--section",
+      "二",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"B-foreground-7b29d3edf0338c86\", \"section\": \"二\", \"found\": false, \"carrier\": \"none\", \"file\": null, \"line\": null, \"status_field\": null, \"done\": false, \"reason\": \"unresolved\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "append-row",
+      "--who",
+      "fixture-foreground",
+      "--domain",
+      "机",
+      "--section",
+      "二",
+      "--cell",
+      "B-foreground-7b29d3edf0338c86",
+      "--cell",
+      "`1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md`、`1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md`",
+      "--cell",
+      "foreground fixture-foreground §一#1",
+      "--cell",
+      "在办（预登记，收工时精确化）；foreground fixture-foreground §一#1"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已追加一行到 §二：| B-foreground-7b29d3edf0338c86 | `1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md`、`1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md` | foreground fixture-foreground §一#1 | 在办（预登记，收工时精确化）；foreground fixture-foreground §一#1 |\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "B-foreground-7b29d3edf0338c86",
+      "--section",
+      "二",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md】\n【批次】\nB-foreground-7b29d3edf0338c86\n\n【文件清单】\n`1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md`、`1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md`\n\n【说明】\nforeground fixture-foreground §一#1\n\n【状态】\n在办（预登记，收工时精确化）；foreground fixture-foreground §一#1\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "edit-row",
+      "--who",
+      "fixture-foreground",
+      "--section",
+      "一",
+      "--number",
+      "1",
+      "--domain",
+      "业",
+      "--stdin-json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已改 §一 #1 的「输入（指针）」格\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "release",
+      "--who",
+      "fixture-foreground"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "ℹ opener 守卫：已校验本次触碰的 2 个 `.md`，其中含 opener 块 0 个（只覆盖走了队列锁 acquire/release 流程的 opener，非本流程直接粘出去的会话看不见，不代表全部覆盖）。\nℹ 称谓核对：已核对 0 个文件（md 0／docx 0），命中 0 处。（本次未触碰跟进信件）\n✓ 已释放（改写为释放标记，未删除文件——沙箱环境亦可用）\n",
+      "stderr": "ℹ opener-lint：权威 frontmatter 解析器加载不上（FileNotFoundError），本进程改用只认 `opener正本` 一行的最小解析（队列 §一 `#489` ⑴）。\n"
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"1\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 5, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n1\n\n【任务】\nFixture 1\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-1.md` 看护本项留步（不改原状态/写方）：isolated fixture independent prerequisite; no real task\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task1.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"1\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 5, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "acquire",
+      "--who",
+      "fixture-foreground"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已占锁：fixture-foreground（无备注）→ 跨桌任务队列-机制环境.md.editlock\n📍 权威物理路径：C:\\Users\\Paul Shao\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\1-转型规划\\0-全景路线图\\跨桌任务队列-机制环境.md\n📍 权威物理路径：C:\\Users\\Paul Shao\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\1-转型规划\\0-全景路线图\\跨桌任务队列-业务场景.md\n⚠ 最近 120 分钟内还有 1 个其它身份 acquire 过本锁（最近一条：fixture-foreground（0 分钟前）；完整列表用 --verbose 重跑查看）\n📍 持锁瞬间高水位线：§一 #3 ｜ §四 #0——新行编号从此值 +1 续排，勿用 acquire 之前读到的旧值（见协议〇.7）。\n  改完请立刻 release，不要跨整个 session 持有。\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-2.md`\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--digest"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【digest §一 · 合计 3 行 ｜ 1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md（0 行）＋1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md（3 行）】\n1｜[S:open][D:业]｜Fixture 1\n2｜[S:open][D:业]｜Fixture 2\n3｜[S:open][D:业]｜Fixture 3\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--digest",
+      "--actionable"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【digest §一 · 合计 3 行 ｜ 1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md（0 行）＋1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md（3 行）】\n【--actionable：已隐藏 0 行（机器字段非 open／partial，或状态格以 🛑 起首＝排队中·暂非可动）——去掉本参数即出全池】\n1｜[S:open][D:业]｜Fixture 1\n2｜[S:open][D:业]｜Fixture 2\n3｜[S:open][D:业]｜Fixture 3\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "B-1115_fixture2",
+      "--section",
+      "二",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"B-1115_fixture2\", \"section\": \"二\", \"found\": false, \"carrier\": \"none\", \"file\": null, \"line\": null, \"status_field\": null, \"done\": false, \"reason\": \"unresolved\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "append-row",
+      "--who",
+      "fixture-foreground",
+      "--domain",
+      "机",
+      "--section",
+      "二",
+      "--cell",
+      "B-1115_fixture2",
+      "--cell",
+      "`candidate/task2.py`、`tests/test_task2.py`、`1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md`、`1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md`",
+      "--cell",
+      "foreground fixture-foreground §一#2",
+      "--cell",
+      "在办（预登记，收工时精确化）；foreground fixture-foreground §一#2"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已追加一行到 §二：| B-1115_fixture2 | `candidate/task2.py`、`tests/test_task2.py`、`1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md`、`1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md` | foreground fixture-foreground §一#2 | 在办（预登记，收工时精确化）；foreground fixture-foreground §一#2 |\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "B-1115_fixture2",
+      "--section",
+      "二",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md】\n【批次】\nB-1115_fixture2\n\n【文件清单】\n`candidate/task2.py`、`tests/test_task2.py`、`1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md`、`1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md`\n\n【说明】\nforeground fixture-foreground §一#2\n\n【状态】\n在办（预登记，收工时精确化）；foreground fixture-foreground §一#2\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-2.md`\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "edit-row",
+      "--who",
+      "fixture-foreground",
+      "--section",
+      "一",
+      "--number",
+      "2",
+      "--domain",
+      "业",
+      "--stdin-json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已改 §一 #2 的「触碰区、输入（指针）、领取方」格\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\nfixture-foreground；本轮唯一写方。━━━ 历史归属：未领\n\n【输入（指针）】\n`docs/approval-2.md` 本轮原批准范围：Original fixture approval: isolated implementation and pytest only；批准指针及SHA256：[{\"path\": \"docs/approval-2.md\", \"sha256\": \"99154d4ca306b047e790b73f5a6d7b61076ac5d3f8e4f3376d967b2360c1f6a9\"}]\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n本轮精确触碰区：`candidate/task2.py`、`tests/test_task2.py` ━━━ 原触碰区：`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "release",
+      "--who",
+      "fixture-foreground"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "ℹ opener 守卫：已校验本次触碰的 2 个 `.md`，其中含 opener 块 0 个（只覆盖走了队列锁 acquire/release 流程的 opener，非本流程直接粘出去的会话看不见，不代表全部覆盖）。\nℹ 称谓核对：已核对 0 个文件（md 0／docx 0），命中 0 处。（本次未触碰跟进信件）\n✓ 已释放（改写为释放标记，未删除文件——沙箱环境亦可用）\n",
+      "stderr": "ℹ opener-lint：权威 frontmatter 解析器加载不上（FileNotFoundError），本进程改用只认 `opener正本` 一行的最小解析（队列 §一 `#489` ⑴）。\n"
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\nfixture-foreground；本轮唯一写方。━━━ 历史归属：未领\n\n【输入（指针）】\n`docs/approval-2.md` 本轮原批准范围：Original fixture approval: isolated implementation and pytest only；批准指针及SHA256：[{\"path\": \"docs/approval-2.md\", \"sha256\": \"99154d4ca306b047e790b73f5a6d7b61076ac5d3f8e4f3376d967b2360c1f6a9\"}]\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n本轮精确触碰区：`candidate/task2.py`、`tests/test_task2.py` ━━━ 原触碰区：`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\nfixture-foreground；本轮唯一写方。━━━ 历史归属：未领\n\n【输入（指针）】\n`docs/approval-2.md` 本轮原批准范围：Original fixture approval: isolated implementation and pytest only；批准指针及SHA256：[{\"path\": \"docs/approval-2.md\", \"sha256\": \"99154d4ca306b047e790b73f5a6d7b61076ac5d3f8e4f3376d967b2360c1f6a9\"}]\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n本轮精确触碰区：`candidate/task2.py`、`tests/test_task2.py` ━━━ 原触碰区：`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "-m",
+      "pytest",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\tests\\test_task2.py",
+      "-q",
+      "--junitxml=C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\reports\\candidate-red2.xml"
+    ],
+    "result": {
+      "exit": 1,
+      "stdout": "F                                                                        [100%]\n================================== FAILURES ===================================\n_________________________________ test_value __________________________________\n\n    def test_value():\n>       assert runpy.run_path(str(Path(__file__).parents[1]/\"candidate/task2.py\"))[\"VALUE\"] == 42\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\ntest_task2.py:4: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n<frozen runpy>:286: in run_path\n    ???\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nfname = 'C:\\\\Users\\\\PAULSH~1\\\\AppData\\\\Local\\\\Temp\\\\1113a2-foreground-acceptance-wcb0mz1a\\\\repo\\\\candidate\\\\task2.py'\n\n>   ???\nE   FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\PAULSH~1\\\\AppData\\\\Local\\\\Temp\\\\1113a2-foreground-acceptance-wcb0mz1a\\\\repo\\\\candidate\\\\task2.py'\n\n<frozen runpy>:254: FileNotFoundError\n=========================== short test summary info ===========================\nFAILED test_task2.py::test_value - FileNotFoundError: [Errno 2] No such file ...\n1 failed in 0.29s\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "-m",
+      "pytest",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\tests\\test_task2.py",
+      "-q",
+      "--junitxml=C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\reports\\candidate2.xml"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": ".                                                                        [100%]\n1 passed in 0.10s\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "acquire",
+      "--who",
+      "fixture-foreground"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已占锁：fixture-foreground（无备注）→ 跨桌任务队列-机制环境.md.editlock\n📍 权威物理路径：C:\\Users\\Paul Shao\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\1-转型规划\\0-全景路线图\\跨桌任务队列-机制环境.md\n📍 权威物理路径：C:\\Users\\Paul Shao\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\1-转型规划\\0-全景路线图\\跨桌任务队列-业务场景.md\n⚠ 最近 120 分钟内还有 1 个其它身份 acquire 过本锁（最近一条：fixture-foreground（0 分钟前）；完整列表用 --verbose 重跑查看）\n📍 持锁瞬间高水位线：§一 #3 ｜ §四 #0——新行编号从此值 +1 续排，勿用 acquire 之前读到的旧值（见协议〇.7）。\n  改完请立刻 release，不要跨整个 session 持有。\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\nfixture-foreground；本轮唯一写方。━━━ 历史归属：未领\n\n【输入（指针）】\n`docs/approval-2.md` 本轮原批准范围：Original fixture approval: isolated implementation and pytest only；批准指针及SHA256：[{\"path\": \"docs/approval-2.md\", \"sha256\": \"99154d4ca306b047e790b73f5a6d7b61076ac5d3f8e4f3376d967b2360c1f6a9\"}]\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n本轮精确触碰区：`candidate/task2.py`、`tests/test_task2.py` ━━━ 原触碰区：`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "edit-row",
+      "--who",
+      "fixture-foreground",
+      "--section",
+      "一",
+      "--number",
+      "2",
+      "--domain",
+      "业",
+      "--stdin-json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已改 §一 #2 的「输入（指针）」格\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "release",
+      "--who",
+      "fixture-foreground"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "ℹ opener 守卫：已校验本次触碰的 2 个 `.md`，其中含 opener 块 0 个（只覆盖走了队列锁 acquire/release 流程的 opener，非本流程直接粘出去的会话看不见，不代表全部覆盖）。\nℹ 称谓核对：已核对 0 个文件（md 0／docx 0），命中 0 处。（本次未触碰跟进信件）\n✓ 已释放（改写为释放标记，未删除文件——沙箱环境亦可用）\n",
+      "stderr": "ℹ opener-lint：权威 frontmatter 解析器加载不上（FileNotFoundError），本进程改用只认 `opener正本` 一行的最小解析（队列 §一 `#489` ⑴）。\n"
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\nfixture-foreground；本轮唯一写方。━━━ 历史归属：未领\n\n【输入（指针）】\n`docs/approval-2.md` 本轮原批准范围：Original fixture approval: isolated implementation and pytest only；批准指针及SHA256：[{\"path\": \"docs/approval-2.md\", \"sha256\": \"99154d4ca306b047e790b73f5a6d7b61076ac5d3f8e4f3376d967b2360c1f6a9\"}] 前台候选检查点（非交付验收）：{\"candidate\": [{\"path\": \"candidate/task2.py\", \"sha256\": \"1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c\"}, {\"path\": \"tests/test_task2.py\", \"sha256\": \"461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec\"}], \"verification\": {\"exit\": 0, \"junit\": {\"path\": \"reports/candidate2.xml\", \"sha256\": \"d58e88a7137410471f56b1b5f7b49fbdb8b1ff259aa89be1022b17494405c871\"}, \"level\": \"mock\", \"red_junit\": {\"path\": \"reports/candidate-red2.xml\", \"sha256\": \"b95187f0f803dd97d6313fa22f6d6a3971f63ac81ea0737b7c01e337e4107d53\"}}, \"next_action\": \"fixture candidate ready for original full acceptance; no production\"}\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n本轮精确触碰区：`candidate/task2.py`、`tests/test_task2.py` ━━━ 原触碰区：`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "acquire",
+      "--who",
+      "fixture-foreground"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已占锁：fixture-foreground（无备注）→ 跨桌任务队列-机制环境.md.editlock\n📍 权威物理路径：C:\\Users\\Paul Shao\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\1-转型规划\\0-全景路线图\\跨桌任务队列-机制环境.md\n📍 权威物理路径：C:\\Users\\Paul Shao\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\1-转型规划\\0-全景路线图\\跨桌任务队列-业务场景.md\n⚠ 最近 120 分钟内还有 1 个其它身份 acquire 过本锁（最近一条：fixture-foreground（0 分钟前）；完整列表用 --verbose 重跑查看）\n📍 持锁瞬间高水位线：§一 #3 ｜ §四 #0——新行编号从此值 +1 续排，勿用 acquire 之前读到的旧值（见协议〇.7）。\n  改完请立刻 release，不要跨整个 session 持有。\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"3\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 7, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n3\n\n【任务】\nFixture 3\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-3.md`\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task3.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"3\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 7, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "B-foreground-7e4cc20c1dafc52c",
+      "--section",
+      "二",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"B-foreground-7e4cc20c1dafc52c\", \"section\": \"二\", \"found\": false, \"carrier\": \"none\", \"file\": null, \"line\": null, \"status_field\": null, \"done\": false, \"reason\": \"unresolved\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "append-row",
+      "--who",
+      "fixture-foreground",
+      "--domain",
+      "机",
+      "--section",
+      "二",
+      "--cell",
+      "B-foreground-7e4cc20c1dafc52c",
+      "--cell",
+      "`1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md`、`1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md`",
+      "--cell",
+      "foreground fixture-foreground §一#3",
+      "--cell",
+      "在办（预登记，收工时精确化）；foreground fixture-foreground §一#3"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已追加一行到 §二：| B-foreground-7e4cc20c1dafc52c | `1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md`、`1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md` | foreground fixture-foreground §一#3 | 在办（预登记，收工时精确化）；foreground fixture-foreground §一#3 |\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "B-foreground-7e4cc20c1dafc52c",
+      "--section",
+      "二",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md】\n【批次】\nB-foreground-7e4cc20c1dafc52c\n\n【文件清单】\n`1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md`、`1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md`\n\n【说明】\nforeground fixture-foreground §一#3\n\n【状态】\n在办（预登记，收工时精确化）；foreground fixture-foreground §一#3\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "edit-row",
+      "--who",
+      "fixture-foreground",
+      "--section",
+      "一",
+      "--number",
+      "3",
+      "--domain",
+      "业",
+      "--stdin-json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "✓ 已改 §一 #3 的「输入（指针）」格\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "release",
+      "--who",
+      "fixture-foreground"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "ℹ opener 守卫：已校验本次触碰的 2 个 `.md`，其中含 opener 块 0 个（只覆盖走了队列锁 acquire/release 流程的 opener，非本流程直接粘出去的会话看不见，不代表全部覆盖）。\nℹ 称谓核对：已核对 0 个文件（md 0／docx 0），命中 0 处。（本次未触碰跟进信件）\n✓ 已释放（改写为释放标记，未删除文件——沙箱环境亦可用）\n",
+      "stderr": "ℹ opener-lint：权威 frontmatter 解析器加载不上（FileNotFoundError），本进程改用只认 `opener正本` 一行的最小解析（队列 §一 `#489` ⑴）。\n"
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"3\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 7, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n3\n\n【任务】\nFixture 3\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-3.md` 看护本项留步（不改原状态/写方）：isolated fixture independent prerequisite; no real task\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task3.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"3\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 7, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--digest"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【digest §一 · 合计 3 行 ｜ 1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md（0 行）＋1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md（3 行）】\n1｜[S:open][D:业]｜Fixture 1\n2｜[S:open][D:业]｜Fixture 2\n3｜[S:open][D:业]｜Fixture 3\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--digest",
+      "--actionable"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【digest §一 · 合计 3 行 ｜ 1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md（0 行）＋1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md（3 行）】\n【--actionable：已隐藏 0 行（机器字段非 open／partial，或状态格以 🛑 起首＝排队中·暂非可动）——去掉本参数即出全池】\n1｜[S:open][D:业]｜Fixture 1\n2｜[S:open][D:业]｜Fixture 2\n3｜[S:open][D:业]｜Fixture 3\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"1\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 5, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n1\n\n【任务】\nFixture 1\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-1.md` 看护本项留步（不改原状态/写方）：isolated fixture independent prerequisite; no real task\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task1.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "1",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"1\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 5, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\nfixture-foreground；本轮唯一写方。━━━ 历史归属：未领\n\n【输入（指针）】\n`docs/approval-2.md` 本轮原批准范围：Original fixture approval: isolated implementation and pytest only；批准指针及SHA256：[{\"path\": \"docs/approval-2.md\", \"sha256\": \"99154d4ca306b047e790b73f5a6d7b61076ac5d3f8e4f3376d967b2360c1f6a9\"}] 前台候选检查点（非交付验收）：{\"candidate\": [{\"path\": \"candidate/task2.py\", \"sha256\": \"1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c\"}, {\"path\": \"tests/test_task2.py\", \"sha256\": \"461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec\"}], \"verification\": {\"exit\": 0, \"junit\": {\"path\": \"reports/candidate2.xml\", \"sha256\": \"d58e88a7137410471f56b1b5f7b49fbdb8b1ff259aa89be1022b17494405c871\"}, \"level\": \"mock\", \"red_junit\": {\"path\": \"reports/candidate-red2.xml\", \"sha256\": \"b95187f0f803dd97d6313fa22f6d6a3971f63ac81ea0737b7c01e337e4107d53\"}}, \"next_action\": \"fixture candidate ready for original full acceptance; no production\"}\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n本轮精确触碰区：`candidate/task2.py`、`tests/test_task2.py` ━━━ 原触碰区：`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"3\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 7, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n3\n\n【任务】\nFixture 3\n\n【领取方】\n未领\n\n【输入（指针）】\n`docs/approval-3.md` 看护本项留步（不改原状态/写方）：isolated fixture independent prerequisite; no real task\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n`candidate/task3.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "3",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"3\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 7, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--field",
+      "all"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "【命中于：1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md】\n【#】\n2\n\n【任务】\nFixture 2\n\n【领取方】\nfixture-foreground；本轮唯一写方。━━━ 历史归属：未领\n\n【输入（指针）】\n`docs/approval-2.md` 本轮原批准范围：Original fixture approval: isolated implementation and pytest only；批准指针及SHA256：[{\"path\": \"docs/approval-2.md\", \"sha256\": \"99154d4ca306b047e790b73f5a6d7b61076ac5d3f8e4f3376d967b2360c1f6a9\"}] 前台候选检查点（非交付验收）：{\"candidate\": [{\"path\": \"candidate/task2.py\", \"sha256\": \"1cfeb13a2258c8d861adde18b4e105565bc270e77e710d9c26e8d55da7df5b9c\"}, {\"path\": \"tests/test_task2.py\", \"sha256\": \"461e8d2c360d635fa5affcbaf2c7f39c3f177ff17763560547a0d61bcb7032ec\"}], \"verification\": {\"exit\": 0, \"junit\": {\"path\": \"reports/candidate2.xml\", \"sha256\": \"d58e88a7137410471f56b1b5f7b49fbdb8b1ff259aa89be1022b17494405c871\"}, \"level\": \"mock\", \"red_junit\": {\"path\": \"reports/candidate-red2.xml\", \"sha256\": \"b95187f0f803dd97d6313fa22f6d6a3971f63ac81ea0737b7c01e337e4107d53\"}}, \"next_action\": \"fixture candidate ready for original full acceptance; no production\"}\n\n【期望产出】\nReturn 42\n\n【状态】\n[S:open][D:业] 原离网批准保持\n\n【触碰区】\n本轮精确触碰区：`candidate/task2.py`、`tests/test_task2.py` ━━━ 原触碰区：`candidate/task2.py`\n\n【登记】\n2026-11-15\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-队列查询.py",
+      "--row",
+      "2",
+      "--section",
+      "一",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "{\"row\": \"2\", \"section\": \"一\", \"found\": true, \"carrier\": \"live\", \"file\": \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\", \"line\": 6, \"status_field\": \"open\", \"done\": false, \"reason\": \"live-open\", \"error\": null, \"read_errors\": [], \"searched\": [\"1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md\", \"1-转型规划/0-全景路线图/跨桌任务队列-业务场景.md\"]}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "argv": [
+      "C:\\Dev\\zhuopin-ai\\.tmp\\native-rules-v32-venv\\Scripts\\python.exe",
+      "C:\\Users\\PAULSH~1\\AppData\\Local\\Temp\\1113a2-foreground-acceptance-wcb0mz1a\\repo\\0-学习与工具\\工具-共享文档编辑锁.py",
+      "status"
+    ],
+    "result": {
+      "exit": 0,
+      "stdout": "（无锁，可直接编辑）\n",
+      "stderr": ""
+    }
+  }
+]

@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   UserPromptSubmit 钩子（队列 §一 #381⑸ⓑ，openspec 变更包 cc-hooks-p3）：每轮从根
-  `CLAUDE.md` 正文按行内锚点抓取"常驻纪律"若干条（称呼纪律／禁推断性别／需你定夺
+  `AGENTS.md`（有 UPS5 锚点时优先，兼容回退 `CLAUDE.md`）按行内锚点抓取"常驻纪律"若干条（称呼纪律／禁推断性别／需你定夺
   格式／粘贴端标注／默认项两前提／代执行优先…），拼成 ≤300 B 摘要注入上下文——
   对抗"会话中途丢规则"。
 
@@ -9,7 +9,7 @@
   判据正本＝队列 §一 #381⑸ⓑ 原文 ＋ design.md 决策点 6；**条目数判据**已按队列
   §一 #537（2026-09-10）改判，见下。
 
-  🔴 **不在脚本内维护硬编码副本**：摘要文本 MUST 直接来自根 `CLAUDE.md` 当前正文，
+  🔴 **不在脚本内维护硬编码副本**：摘要文本 MUST 直接来自根规则正本当前正文，
   本脚本只做"找到那一行、截断、拼接"，正文改了下一轮自动反映新文本。
 
   🔴 **锚点机制，不做子串猜测**：目标行行尾各带 `<!-- UPS5:n -->`（n 从 1 起递增）
@@ -38,7 +38,7 @@ try { [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch {}
 $HookName = 'userpromptsubmit-standing-five'
 $script:PerLineByteCap = 80
 $script:TotalByteCap = 300
-# 🔴 这里**故意没有** `ExpectedAnchorCount` —— 条目数由根 CLAUDE.md 的锚点集自己决定，
+# 🔴 这里**故意没有** `ExpectedAnchorCount` —— 条目数由所选根规则的锚点集自己决定，
 #    脚本只校验该集合自洽（连续／不重复／编号合法）。判据见文件头 .DESCRIPTION。
 $script:AnchorRegex = '<!--\s*UPS5:(\d+)\s*-->'   # `\d+` 而非 `\d`：编号到两位数也不静默漏读
 # 🔴 编号合理上限＝**防御性护栏，不是「常驻纪律最多 100 条」这种业务判据**：`\d+` 无上界，
@@ -70,7 +70,7 @@ function Limit-Utf8Bytes([string]$Text, [int]$MaxBytes) {
     return "$t…"
 }
 
-function Get-StandingAnchorsFromClaudeMd([string]$RepoRoot) {
+function Get-StandingAnchorsFromRootRules([string]$RepoRoot) {
     <#
       返回 @{ Ok=$bool; Lines=<string[]>; Anomaly=<string>; Error=<string> }。
       `Anomaly` 为空串 ＝ 锚点集自洽（连续、不重复、编号合法）；非空 ＝ 须在注入内容
@@ -81,12 +81,25 @@ function Get-StandingAnchorsFromClaudeMd([string]$RepoRoot) {
       实测坐死的坑，见 hooks-sessionstart-context.ps1 同一处理法）。
     #>
     $result = @{ Ok = $false; Lines = @(); Anomaly = ''; Error = '' }
-    $claudeMdPath = Join-Path $RepoRoot 'CLAUDE.md'
-    if (-not (Test-Path -LiteralPath $claudeMdPath)) {
-        $result.Error = "根 CLAUDE.md 不存在：$claudeMdPath"
-        return $result
+    $sourcePath = $null
+    $text = ''
+    $agentsMdPath = Join-Path $RepoRoot 'AGENTS.md'
+    if (Test-Path -LiteralPath $agentsMdPath) {
+        $agentsText = Get-Content -LiteralPath $agentsMdPath -Raw -Encoding UTF8
+        # 有锚点标记就以 AGENTS 为准；坏编号交下方校验，不借旧文件掩盖异常。
+        if ($agentsText -match '<!--\s*UPS5:') {
+            $sourcePath = $agentsMdPath
+            $text = $agentsText
+        }
     }
-    $text = Get-Content -LiteralPath $claudeMdPath -Raw -Encoding UTF8
+    if ($null -eq $sourcePath) {
+        $sourcePath = Join-Path $RepoRoot 'CLAUDE.md'
+        if (-not (Test-Path -LiteralPath $sourcePath)) {
+            $result.Error = "根规则不可用：AGENTS.md 无 UPS5 锚点且兼容 CLAUDE.md 不存在：$sourcePath"
+            return $result
+        }
+        $text = Get-Content -LiteralPath $sourcePath -Raw -Encoding UTF8
+    }
     $lines = $text -split "`r?`n"
 
     $byIndex = @{}
@@ -185,7 +198,7 @@ try {
     }
 
     $repoRoot = Get-SentinelRepoRoot
-    $standing = Get-StandingAnchorsFromClaudeMd -RepoRoot $repoRoot
+    $standing = Get-StandingAnchorsFromRootRules -RepoRoot $repoRoot
 
     if (-not $standing.Ok) {
         Write-HookMessage "常驻纪律不可用：$($standing.Error)"

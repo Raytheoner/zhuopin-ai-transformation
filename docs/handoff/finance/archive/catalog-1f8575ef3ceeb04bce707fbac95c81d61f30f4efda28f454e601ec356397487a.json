@@ -1,0 +1,257 @@
+{
+  "domain": "finance",
+  "entry": "0-学习与工具/codex-handoff/1019财务业务补齐转场接力-2026-10-19.md",
+  "generated": {
+    "0-学习与工具/codex-handoff/1019财务业务补齐转场接力-2026-10-19.md": "1f78bdf24d05a10034b683cd509595475fef7d4b4a98ad5607ecbe54464c2e0e",
+    "docs/handoff/finance/views/review-001.md": "6a40a3703a06641cc5c102ad8a8351a43f8f096118ac669cbfc0054ef07a4961"
+  },
+  "known": {
+    "FH-20261019-L003": {
+      "legacy_ids": [],
+      "original_sha256": "abed5d016c316657cb2db5b675c83442e509fa84e0ceb933eb14c8629f91d13a",
+      "sources": [
+        {
+          "end": 3,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 3
+        }
+      ]
+    },
+    "FH-20261019-L005": {
+      "legacy_ids": [],
+      "original_sha256": "2849021ddb168d3e7e7d274c0f916692dcaa0c3ac24b345b95ad75a1243f8209",
+      "sources": [
+        {
+          "end": 5,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 5
+        }
+      ]
+    },
+    "FH-20261019-L007": {
+      "legacy_ids": [
+        "#21",
+        "#471"
+      ],
+      "original_sha256": "928e754aa3aa7d9dd5c11e8bbe2b74f4fd3d4fd4fd57c7ff48e5d2872015d415",
+      "sources": [
+        {
+          "end": 7,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 7
+        }
+      ]
+    },
+    "FH-20261019-L009": {
+      "legacy_ids": [],
+      "original_sha256": "4fe426edbd3ff3b8e6b30f44bcc6ffb9a6e665e7fa27704de68ae5174d5c2367",
+      "sources": [
+        {
+          "end": 9,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 9
+        }
+      ]
+    },
+    "FH-20261019-L013": {
+      "legacy_ids": [],
+      "original_sha256": "99d4dbaaaf1996138e83314fb15d5d8b793c218b0fc70ca2cb2e3c19784ab80a",
+      "sources": [
+        {
+          "end": 13,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 13
+        }
+      ]
+    },
+    "FH-20261019-L017": {
+      "legacy_ids": [],
+      "original_sha256": "2e3305c3f7044aade6498f1c058b937fbadbc336792116e176b08c9ec7c82e34",
+      "sources": [
+        {
+          "end": 17,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 17
+        }
+      ]
+    },
+    "FH-20261019-L019": {
+      "legacy_ids": [],
+      "original_sha256": "583506fee5fe2e34f7ed47f315a5f878e193aaa5bace2a6ff451474ee1ab2f03",
+      "sources": [
+        {
+          "end": 19,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 19
+        }
+      ]
+    },
+    "FH-20261019-L023": {
+      "legacy_ids": [],
+      "original_sha256": "d39253f84044182bab1ed15c0c75a3a45ecacb79ccbf0d84e35438d439263cac",
+      "sources": [
+        {
+          "end": 23,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 23
+        }
+      ]
+    },
+    "FH-20261019-L025": {
+      "legacy_ids": [],
+      "original_sha256": "ee62579ea5963da476f3bc2b97ed04c463d73670bc32a2bbeaae6a64f755b92a",
+      "sources": [
+        {
+          "end": 25,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 25
+        }
+      ]
+    },
+    "FH-20261019-L029": {
+      "legacy_ids": [],
+      "original_sha256": "d7894f703b094fa4391f62b83b4ae36edc10627cc7e634c7fa49b5c584c7c5cb",
+      "sources": [
+        {
+          "end": 29,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 29
+        }
+      ]
+    },
+    "FH-20261019-L030": {
+      "legacy_ids": [],
+      "original_sha256": "739343e03d26d198974d8a92c9435d5566af8a762708f6c604ebea2127a09304",
+      "sources": [
+        {
+          "end": 30,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 30
+        }
+      ]
+    },
+    "FH-20261019-L031": {
+      "legacy_ids": [],
+      "original_sha256": "ec018d9f134b96fe6edda50e837ff3301037365c08f78a67379cc480b9712728",
+      "sources": [
+        {
+          "end": 31,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 31
+        }
+      ]
+    },
+    "FH-20261019-L032": {
+      "legacy_ids": [],
+      "original_sha256": "58b0a3c7e72eba7d6b49e41fbb9f107402fba5838c46bf9715dab9c608c4e5cc",
+      "sources": [
+        {
+          "end": 32,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 32
+        }
+      ]
+    },
+    "FH-20261019-L036": {
+      "legacy_ids": [],
+      "original_sha256": "28fde04a5939a954691c251727806699d546ab07db2a8e4e0e37d40c0467de01",
+      "sources": [
+        {
+          "end": 36,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 36
+        }
+      ]
+    },
+    "FH-20261019-L038": {
+      "legacy_ids": [],
+      "original_sha256": "7f7de380aef973056120af7edf93401c8c38cf8013facaee639bd78df587c815",
+      "sources": [
+        {
+          "end": 38,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 38
+        }
+      ]
+    },
+    "FH-20261019-L042": {
+      "legacy_ids": [],
+      "original_sha256": "57850ee924cdcfe1fc5e9f31c08246a423ed01c8b8f4013a0e8456be83fec706",
+      "sources": [
+        {
+          "end": 42,
+          "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+          "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+          "start": 42
+        }
+      ]
+    }
+  },
+  "migration_sha256": "c600d1ee305a6c2be1d575d610aeddab70951a8aed33949ca4c20c52661587fd",
+  "revisions": {
+    "FH-20261019-L003": [
+      "b076de1b4451760e66ff9aced659610753c0b8bff96c416563a2b7ce68ca809d"
+    ],
+    "FH-20261019-L005": [
+      "244a87e9696f77d20e6a67805bdd26da53ebdfedeed4eb4ac7e2244465efb438"
+    ],
+    "FH-20261019-L007": [
+      "01fcbe763daebb38f01b756c86210f9c18b66b40acc132279822f9205de32a2d"
+    ],
+    "FH-20261019-L009": [
+      "ffc88ff26bfd6aae31440dc46557de35fc2225543cb4acb8ee4391075cc8b8ec"
+    ],
+    "FH-20261019-L013": [
+      "6fd6813d41e28f457e7ebb7c0670bebeba1d54fd19f5c00da71afa328ad371b3"
+    ],
+    "FH-20261019-L017": [
+      "929abd157771a5ccbfb8f5dca2c3c4837c0c32158a2f6168ae8e3bc0f8a1b5ca"
+    ],
+    "FH-20261019-L019": [
+      "f45ea3b02016d52e0caa7df6261bf04114b10c7d537cdeabb2ac6bfea5ec4ad8"
+    ],
+    "FH-20261019-L023": [
+      "c6af1346946d3942f61bfe1ef73b3f5416a54f0d125508b09deb013502e27056"
+    ],
+    "FH-20261019-L025": [
+      "3551a59d1d111919833a25dd5565ede61f0ff130451ad5d7e3cd4ba564208626"
+    ],
+    "FH-20261019-L029": [
+      "c92683787e0f713e1a9c29b325c078d26966e24ea6182ee13c6fece41260f212"
+    ],
+    "FH-20261019-L030": [
+      "3541267c63922eeb607ada61f244bf2c548c88cf16a3de01b55c5fe99cd7c723"
+    ],
+    "FH-20261019-L031": [
+      "19a95c159337c698e5df9e59229d5732b11da1be1e4589560936cd2c98b5c8b6"
+    ],
+    "FH-20261019-L032": [
+      "9b1bce5cc987e5590f59c6d7417d7e7676453e414299c1dee8c386a4d2980ada"
+    ],
+    "FH-20261019-L036": [
+      "9d99a161670fd3e3222c8b588b1df479e769fd3f4d9f7e47ef7031bf36548f5e"
+    ],
+    "FH-20261019-L038": [
+      "a07e338c14d1958d4c4d14e3dc05dbb8ed9939bdd2e9acf6e8230c6be3cabe07"
+    ],
+    "FH-20261019-L042": [
+      "8befaeac9fbcfee3563953c22362b8ebcf6c4913e64748a8fce9edb351f70efd"
+    ]
+  },
+  "schema": 1
+}

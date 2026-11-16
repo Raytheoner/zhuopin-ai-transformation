@@ -1,0 +1,23 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "entry_summary": "修复检查点、真实回执和历史失败按需读取，不把定向结果当作全绿。",
+  "id": "P1H-20261030-L013",
+  "legacy_ids": [],
+  "notes": "只迁移资料；原业务Owner、批准、未完编号、失败原文全部保留，未确认原业务线程停写。",
+  "original_text": "`reports/alert-repair-20261029/Win1030-修复检查点.md` 含逐项证据、测试、凭据隔离意外、待办和边界；旧卡保全在同目录 `Phase1接力-Win1029原版.md`。§二 `B-1030_alert-lock归属修复`、`B-1030_alert已答标记`、`B-1030_SC2状态候选`、`B-1030_提醒入队防重候选` 在办未授权提交。锁工具正反例29通过；完整文件616通过/3既有同条件失败/1skip；SC2离线200通过；服务隔离838通过/155共同失败＋1并发新增失败/1skip。不能据此称全绿或真实送达。\n",
+  "owner": "原告警业务会话01a18a8b-968f-73cc-aa18-f0d82b23b010；资料维护由当前Codex主会话承接",
+  "r5_section": "证据",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 13,
+      "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+      "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+      "start": 13
+    }
+  ],
+  "status": "review",
+  "title": "证据",
+  "topic": "Phase1接力"
+}

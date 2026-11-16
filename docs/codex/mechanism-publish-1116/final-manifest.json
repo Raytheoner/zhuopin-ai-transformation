@@ -1,0 +1,2594 @@
+{
+  "base": "6ce833345ed503dc916a37ca01d32c46ae26bd6c",
+  "branch": "codex/1113a2-mechanism-closeout",
+  "scope": "immutable mechanism/governance candidate; mutable publication receipts and original queue carriers excluded from self-hashing",
+  "files": [
+    {
+      "path": ".agents/skills/executing-plans/SKILL.md",
+      "sha256": "8e258aa972b2dd24b15025ffa5d58ecb52ccbb91ae1a0d7a88c6bff4a8de9fc3",
+      "source_equal": true,
+      "bytes": 22040
+    },
+    {
+      "path": ".agents/skills/finishing-a-development-branch/SKILL.md",
+      "sha256": "260594e307bb418ef91a19970e50e1bc16630373f6090ca34a79a32bab286fc4",
+      "source_equal": true,
+      "bytes": 10184
+    },
+    {
+      "path": ".agents/skills/openspec-apply-change/SKILL.md",
+      "sha256": "ab4c4ed43803fb2b888f12e17476e4fcd725c9ed4a0444a7b06be8e86b605f38",
+      "source_equal": true,
+      "bytes": 8855
+    },
+    {
+      "path": ".agents/skills/openspec-archive-change/SKILL.md",
+      "sha256": "6992415e78772581c6cfde3924ad1209e392f006511feaf6a7b9366bd7b22633",
+      "source_equal": true,
+      "bytes": 11476
+    },
+    {
+      "path": ".agents/skills/openspec-propose/SKILL.md",
+      "sha256": "509e73d3d0c3df4b6dadb8bb8168d3acbfb93cc4d44b0421396cf68f3f4c4e4c",
+      "source_equal": true,
+      "bytes": 9505
+    },
+    {
+      "path": ".agents/skills/source-command-opsx-apply/SKILL.md",
+      "sha256": "6bb6723b633f214605d4b1bbd70145a4e8852b2a61eab4590aea2dd9d2adf7b8",
+      "source_equal": true,
+      "bytes": 8576
+    },
+    {
+      "path": ".agents/skills/source-command-opsx-archive/SKILL.md",
+      "sha256": "4e0fd42204686bbf45c0f6a0830f421cdde794b6ad84ab1dd0ca7c18f3e088b1",
+      "source_equal": true,
+      "bytes": 12241
+    },
+    {
+      "path": ".agents/skills/source-command-opsx-explore/SKILL.md",
+      "sha256": "ba22eb3a92de6c9fbacf4b473808a4d2935a9c81db88143536fb8cad77b1962a",
+      "source_equal": true,
+      "bytes": 9406
+    },
+    {
+      "path": ".agents/skills/source-command-opsx-propose/SKILL.md",
+      "sha256": "188fea0035fdb983edccd2ab94633da12ac79a0c17ebbc68f2a5cf6a3906db90",
+      "source_equal": true,
+      "bytes": 9997
+    },
+    {
+      "path": ".agents/skills/source-command-opsx-sync/SKILL.md",
+      "sha256": "7779de8fb5ebcf431b79e9522462d7f9f06dca700c0b56313c850ac09178a237",
+      "source_equal": true,
+      "bytes": 10942
+    },
+    {
+      "path": ".agents/skills/subagent-driven-development/SKILL.md",
+      "sha256": "1e59181f6da80f8c215081b8ea12a3444e568d6d5ca078678919174d686788bb",
+      "source_equal": true,
+      "bytes": 34107
+    },
+    {
+      "path": ".agents/skills/test-driven-development/SKILL.md",
+      "sha256": "3905f168ede7ece3aa05b6fced8f3e71d1c8e6146be60c46442aacd12a147052",
+      "source_equal": true,
+      "bytes": 11088
+    },
+    {
+      "path": ".agents/skills/using-git-worktrees/SKILL.md",
+      "sha256": "01c913b161f1e87f0b80283494f62da9561ad8f39b3a6ad43e974ec1e78c6142",
+      "source_equal": true,
+      "bytes": 7690
+    },
+    {
+      "path": ".agents/skills/using-superpowers/SKILL.md",
+      "sha256": "0f83a7dd406fbb0f0e14c99a02ecfd5e41e9d81f2bf8618bae77abc2d701888f",
+      "source_equal": true,
+      "bytes": 4437
+    },
+    {
+      "path": ".agents/skills/using-superpowers/references/codex-tools.md",
+      "sha256": "dfbd6785fa9d5033c930ccaf8efd8e9c3bd2bfcbc214e233c5c001b91801a11c",
+      "source_equal": true,
+      "bytes": 4940
+    },
+    {
+      "path": ".agents/skills/writing-plans/SKILL.md",
+      "sha256": "ae5f75a2516d251ca4fa253769d5e40ee36db83cc6d28ce32fca6db8aaecef1c",
+      "source_equal": true,
+      "bytes": 10394
+    },
+    {
+      "path": ".agents/skills/zhuopin-codex-handoff/SKILL.md",
+      "sha256": "3967007930b20d85e534c80b4e510742b7c9c3a1f35bb8b3a9b679ee37b56194",
+      "source_equal": true,
+      "bytes": 1791
+    },
+    {
+      "path": ".claude/skills/openspec-apply-change/SKILL.md",
+      "sha256": "69fea572c592b3ab487b58bf2d4ad17aad1274381d60ac1e6b4c44404f4863f2",
+      "source_equal": true,
+      "bytes": 417
+    },
+    {
+      "path": ".claude/skills/openspec-archive-change/SKILL.md",
+      "sha256": "561f8a4c4decda4f4911a0e8ca75f45c85e311285f4b17491fd526c9ca9ecbb2",
+      "source_equal": true,
+      "bytes": 423
+    },
+    {
+      "path": ".claude/skills/openspec-explore/SKILL.md",
+      "sha256": "25450e985da511de53e831238d3a938b503e8f831e07594bd5c115bd3d0fb46a",
+      "source_equal": true,
+      "bytes": 402
+    },
+    {
+      "path": ".claude/skills/openspec-propose/SKILL.md",
+      "sha256": "25659d70e11d671fd87aa02cd449b0fdaae08c9209d0b2067d4a6adf7699ac94",
+      "source_equal": true,
+      "bytes": 402
+    },
+    {
+      "path": ".claude/skills/openspec-sync-specs/SKILL.md",
+      "sha256": "14335653366093b4bd8382919ae29c17c0158928ae462ac2bb7846f03b3bdc88",
+      "source_equal": true,
+      "bytes": 411
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "af4947f045a3f24b02590303af28a9ea7191e5375b5896bb868539041d296384",
+      "source_equal": false,
+      "bytes": 24018
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/1019财务业务补齐转场接力-2026-10-19.md",
+      "sha256": "5e9fe6c959d6e36d30f7fe64df9e4deba76215a9cfe532df21c96121b2ceef55",
+      "source_equal": true,
+      "bytes": 946
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/1020采购七场景真实数据接续-2026-10-20.md",
+      "sha256": "b2f96a063a11ec4b97f4dfb492a4c13d495736041f0dcc54872cc67a2c06d7ad",
+      "source_equal": true,
+      "bytes": 954
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/README.md",
+      "sha256": "e33be93ef662d3e5b64162b9ab8ffeaa974c0ac91d838839c9072d010681b4f1",
+      "source_equal": true,
+      "bytes": 26475
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/business_acceptance.py",
+      "sha256": "a361da48771578298bcca353b816ec5fe8473812f1cda1efcf473feaf464a0f9",
+      "source_equal": true,
+      "bytes": 4489
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/feedback_intake.py",
+      "sha256": "8ce1803fd255a56923544c1123efd418d756f952fbfe00f36666de14299ed20e",
+      "source_equal": true,
+      "bytes": 7555
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/guards/hooks-common.ps1",
+      "sha256": "e6c1b81cae513a1d98c8d96be6ddfa91722305c1dace6b94f66db9486bd78f88",
+      "source_equal": true,
+      "bytes": 29599
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/guards/hooks-pretooluse-dedup-guard.ps1",
+      "sha256": "202dc6abacea349aa1912171b05d702fea47c98640c7ab44cce92d681bb7aed5",
+      "source_equal": true,
+      "bytes": 8380
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/guards/hooks-pretooluse-editlock-guard.ps1",
+      "sha256": "e3428adad9f16d8210a27229450652065b57a87d88a69fe29d332b73d88c325b",
+      "source_equal": true,
+      "bytes": 11995
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/guards/hooks-pretooluse-queue-read-guard.ps1",
+      "sha256": "ff5fe7ae143c0c8c8dd10589150c5af41a93b58df9073956302c85d53ab5fcaa",
+      "source_equal": true,
+      "bytes": 42350
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/guards/mail-native.ps1",
+      "sha256": "5a684085eb40bce2587f9dd460e2117da53e22db8bd05b5e4f6ff5e3cbfcdb02",
+      "source_equal": true,
+      "bytes": 1851
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/guards/protected-native.ps1",
+      "sha256": "64db5a617686a3b8a7d08c45aaf7f8f80dc55c007278711237d5b348ca1315ef",
+      "source_equal": true,
+      "bytes": 2967
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/guards/sentinel-mojibake.ps1",
+      "sha256": "b1c88316d5831eb5dca5c3e22f144fc50df200ccab706fad88c252d334974366",
+      "source_equal": true,
+      "bytes": 6788
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/guards/sentinel-pronoun.ps1",
+      "sha256": "0eaaeaa77886cc2c92f1b0921bc3c21c4ded03e639f69bf8d7f9a3c782412e56",
+      "source_equal": true,
+      "bytes": 13753
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/handoff.py",
+      "sha256": "37a8a93eb7947854f5eb18ddd04f14de5921da59ea4a5a2b6ae633583eba5d6d",
+      "source_equal": true,
+      "bytes": 20445
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/hook_audit_store.py",
+      "sha256": "3042b47ba4687be0758fe44a955496651c62da5cf8e0f30f96a9095d658e4b61",
+      "source_equal": true,
+      "bytes": 3145
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/hook_bridge.py",
+      "sha256": "8b949123d3cff9be278929156cdc07a14b95ba83feadf2577208a3ba8eaef7f2",
+      "source_equal": true,
+      "bytes": 9851
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/hook_configuration.py",
+      "sha256": "bbd59a5d4ac4699e3dc26f6ee9d7e6568d851cd04cb122ddbc49977cdc06d467",
+      "source_equal": true,
+      "bytes": 14785
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/hook_log_archive.py",
+      "sha256": "5ed29f6e50c1d4c39152e35e6b8b1b24029abbeae2a225ce54e8de521c76071a",
+      "source_equal": true,
+      "bytes": 8907
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/hook_log_compact.py",
+      "sha256": "32ef4f964d78a1e5de2ce4a39adc232b75c74c5024d148b41f128c23c31712f6",
+      "source_equal": true,
+      "bytes": 6046
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/hook_policy.ps1",
+      "sha256": "b7be458484d01cf6c849f4ca28099fcfe8461bf88d846c70ca09d231c934f5b0",
+      "source_equal": true,
+      "bytes": 6045
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/install_local_handoff_task.ps1",
+      "sha256": "28a46fa2148a74ac32f2fe23fd3b1b0cb0881a650d7fd96eace1ad628c094f58",
+      "source_equal": true,
+      "bytes": 6887
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/install_readonly_hotfix.py",
+      "sha256": "4df8a63b4649fb50324e6b87b320892d1f8a181904e73e97d3a0a3dc45267877",
+      "source_equal": true,
+      "bytes": 6366
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/invoke.ps1",
+      "sha256": "8a87684ee185315d72c0e0e9f0e8d49ef5be6f7f401bcce2e4dbbeb81375bbda",
+      "source_equal": true,
+      "bytes": 11621
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/local_handoff_schedule.py",
+      "sha256": "1fc0cd26b6a353b82e02f390b078172954bd7d06118a0fcce0c66eebf8fbe77a",
+      "source_equal": true,
+      "bytes": 10890
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/quality_handoff.py",
+      "sha256": "07dbc8048e57ff3ae2f78f1802f078cc3985e3085e77dde0a3e07d2e309992e0",
+      "source_equal": true,
+      "bytes": 26381
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/queue_context.py",
+      "sha256": "4b031f921e3e4fa00e28c433cddde30f264cf023bbfff84deaac2c9e4d59be60",
+      "source_equal": true,
+      "bytes": 6196
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/readonly_guard_hotfix.ps1",
+      "sha256": "84266b186b0cc53655bee63ae6f34531c9decf6a9f1adb71d4d2edfc6066a55b",
+      "source_equal": true,
+      "bytes": 3019
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/fixtures/legacy_protected_guard.ps1",
+      "sha256": "3c7b2b9e9fc9314174505e22673b109522164ea906705a6c2c6302c188e8b7d7",
+      "source_equal": true,
+      "bytes": 2200
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/requirement_fixtures.py",
+      "sha256": "8f89d11b7289623c761585c48c588ccba1b7492df4c12b2ad15e865f6638272f",
+      "source_equal": true,
+      "bytes": 3444
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_business_acceptance.py",
+      "sha256": "d90dd2cf4d648f365e8b955290fe423123b9548833b57019f1211277af4c4603",
+      "source_equal": true,
+      "bytes": 3354
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_feedback_workflow.py",
+      "sha256": "a148b20f7b7f9344e7c38fa902fd899f2c6ddcecc8e3b3acf028081673c4bb78",
+      "source_equal": true,
+      "bytes": 15196
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_foreground_watch.py",
+      "sha256": "06730ced88612c53c5480660f0d3f6fecfb24cc9b06c7465f949bdd364162270",
+      "source_equal": true,
+      "bytes": 17397
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_hook_configuration.py",
+      "sha256": "a1e7ac1fe42cbf5ebe373005925e0a281a0755949ecf05e74cc76ddf511f786e",
+      "source_equal": true,
+      "bytes": 8538
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_hook_log_archive.py",
+      "sha256": "a2de989f275b3a03f9b0a76865a3d2d027f9c86163ab5dfcaca52df93f0a6503",
+      "source_equal": true,
+      "bytes": 2194
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_hook_log_compact.py",
+      "sha256": "92854573f53ad9e064f60dc78b5b7c43b3a41d87403f5c70a0563c5bf5970089",
+      "source_equal": true,
+      "bytes": 2016
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_hook_optimization.py",
+      "sha256": "dc259482502cff9c57603572390d37432d9b29ace74607ff5650f87ae7e9e74a",
+      "source_equal": true,
+      "bytes": 4921
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_local_handoff_schedule.py",
+      "sha256": "af4b35f8b950dd4c0f00540c6054e168dc3d1aa1ddab7932a9bbabd4d9b27667",
+      "source_equal": true,
+      "bytes": 9228
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_quality_handoff.py",
+      "sha256": "cb3ac9b02e10bb80366e70eb4cc8007453a2cd67aa5675e7d3f85e1ad635c580",
+      "source_equal": true,
+      "bytes": 16176
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_queue_context.py",
+      "sha256": "5f46a58bc77d2af63692cb449d6ea0431273fd3e5036c22234411d2ecc7a1db2",
+      "source_equal": true,
+      "bytes": 5270
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_readonly_hotfix.py",
+      "sha256": "b82546ffb1daa45efe3850ef0e495c52f8c33813faa490b9a14f957407f389d6",
+      "source_equal": true,
+      "bytes": 6339
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_workflow_driver.py",
+      "sha256": "9d7fdd7e1147223e283e2ceb52d04d7ebfca97e78c2313b4aafc50e227c9498f",
+      "source_equal": true,
+      "bytes": 111077
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_workflow_e2e.py",
+      "sha256": "f725d81c24bfee73e467ddae08c3f83b53a845e2ebbc9acc5044996229b250fd",
+      "source_equal": true,
+      "bytes": 12543
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/tests/test_workflow_state.py",
+      "sha256": "0d8c5d76ea4fcbcd1e74e57003148f084b4ee5211c3748f36deb3cedbf681e36",
+      "source_equal": true,
+      "bytes": 13647
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/verify_hook_optimization.ps1",
+      "sha256": "292bad10ccdb5cbe0d2c8e7489906a60114a8b1895998c32b4164549917e6b75",
+      "source_equal": true,
+      "bytes": 5050
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/verify_readonly_hotfix.py",
+      "sha256": "f187d0c332088cc8dc5898005e4914d29d9a7268f8a6c7fb0faf4fbe1e274aed",
+      "source_equal": true,
+      "bytes": 2509
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/verify_serial_handoff.ps1",
+      "sha256": "25007842a381b1f9f7e055f6fa4234024c480af10e7724ff6b6a7bb60e7a79ed",
+      "source_equal": true,
+      "bytes": 4283
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/workflow_driver.py",
+      "sha256": "c5a39528044463aa608cf0d5e40f6d16a1df52474fd21b619d5ad75dff6d44c3",
+      "source_equal": true,
+      "bytes": 103890
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/workflow_release.py",
+      "sha256": "a9532ec38f5d2337d26bc2d3b75306cdc1c0625dab07364d639780f2a4aca30f",
+      "source_equal": true,
+      "bytes": 12843
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/workflow_requirements.py",
+      "sha256": "da8e7974c3bcadd694eff89f8edee2cfc45fbe658554e8700006be9dc50f2a19",
+      "source_equal": true,
+      "bytes": 5643
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/质量域-R5接力-2026-10-20.md",
+      "sha256": "0610e657e56d80405ae4d7d6de7b1217b7d358c879a0e85ab6a814ddc6ae4300",
+      "source_equal": true,
+      "bytes": 934
+    },
+    {
+      "path": "0-学习与工具/hooks/hooks-common.ps1",
+      "sha256": "0bedfeaa547a2f56b3a6015fd2cfb56c00630b92757c3471fa764d647875ea9e",
+      "source_equal": true,
+      "bytes": 72
+    },
+    {
+      "path": "0-学习与工具/hooks/hooks-pretooluse-dedup-guard.ps1",
+      "sha256": "fa1064a29bbf1e8f882d97b9abe175dc08a3d5b46842aaecffa8938a75892ccc",
+      "source_equal": true,
+      "bytes": 180
+    },
+    {
+      "path": "0-学习与工具/hooks/hooks-pretooluse-editlock-guard.ps1",
+      "sha256": "8e05a42e7aa48cbbcc6c47b0435b0290f22ebb7aa38878e692c5f0f987b8dcdf",
+      "source_equal": true,
+      "bytes": 183
+    },
+    {
+      "path": "0-学习与工具/hooks/hooks-pretooluse-queue-read-guard.ps1",
+      "sha256": "16b8b340c83bde1f1ebe048c6c3b362425166cbf22e9739cc5959af0e9d6fc1f",
+      "source_equal": true,
+      "bytes": 185
+    },
+    {
+      "path": "0-学习与工具/hooks/hooks-stop-decision-check.ps1",
+      "sha256": "cb48f8e8dffda368a34ac87f170518bf36ffaa5e41a974b34d95cb84785d9d84",
+      "source_equal": true,
+      "bytes": 7167
+    },
+    {
+      "path": "0-学习与工具/hooks/hooks-userpromptsubmit-standing-five.ps1",
+      "sha256": "b7daaab55a4eb089b433a764745a6dd3ffd69525a92cbca806e71665e69de8b4",
+      "source_equal": true,
+      "bytes": 12959
+    },
+    {
+      "path": "0-学习与工具/hooks/sentinel-mojibake.ps1",
+      "sha256": "9aeb8f63a7204f7e08b5dcd87e65bd75c803214f88f3b4165ac31a07b09adbb7",
+      "source_equal": true,
+      "bytes": 169
+    },
+    {
+      "path": "0-学习与工具/hooks/sentinel-pronoun.ps1",
+      "sha256": "6cbe57690928c916ccdca9ca7f728590c2683dda1c2cfa0a53f9a894e9b5a77f",
+      "source_equal": true,
+      "bytes": 168
+    },
+    {
+      "path": "0-学习与工具/skills源码/zhuopin-lan-closeout/SKILL.md",
+      "sha256": "09e51d11da0ff60483f2fd0b500aefe2731f1f8bf53e79c4ea49ef3141753074",
+      "source_equal": true,
+      "bytes": 5075
+    },
+    {
+      "path": "0-学习与工具/skills源码/zhuopin-lane-watch/SKILL.md",
+      "sha256": "fde49f57f6a8c32e0bbe4e8e3cea8c12832a0074a0f1d68747ec99a7f459608a",
+      "source_equal": true,
+      "bytes": 12894
+    },
+    {
+      "path": "0-学习与工具/skills源码/zhuopin-queue-audit/SKILL.md",
+      "sha256": "7d26286b7dbf9e2846e358b563c1864b5f11d6f9272114aa8266947bbe234359",
+      "source_equal": true,
+      "bytes": 13123
+    },
+    {
+      "path": "0-学习与工具/skills源码/zhuopin-需求grill/SKILL.md",
+      "sha256": "724b22fc1ac4c3714ea84e386495deb633b35d116372b6784e0a6401301b7233",
+      "source_equal": true,
+      "bytes": 15367
+    },
+    {
+      "path": "0-学习与工具/test_hooks-p3.py",
+      "sha256": "ad4b10a3c6d5ad4192cd4146aa06ffc0ff996d880f4fb4e9202a7731bc2c08b6",
+      "source_equal": true,
+      "bytes": 40887
+    },
+    {
+      "path": "0-学习与工具/test_hooks-哨兵.py",
+      "sha256": "5d671f5e24c752db98624c0e24c98c9665e289295653898f5c3828de3f53c715",
+      "source_equal": true,
+      "bytes": 28127
+    },
+    {
+      "path": "0-学习与工具/test_工具-共享文档编辑锁.py",
+      "sha256": "ee291741ec987ed62fac97f2d7a05611929ae3044ca535b709f3e8f91a6ba001",
+      "source_equal": true,
+      "bytes": 557328
+    },
+    {
+      "path": "0-学习与工具/test_工具-密钥扫描lint.py",
+      "sha256": "15161aab170ab42a2c697693919caa1530c9e8a33083dd36377ea334910bd53f",
+      "source_equal": false,
+      "bytes": 6077
+    },
+    {
+      "path": "0-学习与工具/test_工具-落库sweep.py",
+      "sha256": "4b2cd46cb6b18319ece1001239eaa4ef6eeb57b03ff7bc094da5066ef7b3d609",
+      "source_equal": false,
+      "bytes": 545502
+    },
+    {
+      "path": "0-学习与工具/test_工具-需求与变更包门禁lint.py",
+      "sha256": "e3f0b15c10e1ade6f90f0f9fb4e1d7efd94b11415bc11ca8532e7523ca9803d6",
+      "source_equal": true,
+      "bytes": 12155
+    },
+    {
+      "path": "0-学习与工具/工具-CLAUDE进度段lint.py",
+      "sha256": "bde87405abb6b263f70e18eae438c660d6025c5c877b1e6ddf5c15baebb6e843",
+      "source_equal": true,
+      "bytes": 47248
+    },
+    {
+      "path": "0-学习与工具/工具-共享文档编辑锁.py",
+      "sha256": "8db9dc8d3cbad637b633699b643ec5fc1e359e92682eb0823ec5716c5f34a528",
+      "source_equal": true,
+      "bytes": 507244
+    },
+    {
+      "path": "0-学习与工具/工具-场景包intent闸lint.py",
+      "sha256": "6b4bb8d49237485289e2c3da6f95a209dc669495155be2057cc4f976442450c5",
+      "source_equal": true,
+      "bytes": 20187
+    },
+    {
+      "path": "0-学习与工具/工具-密钥扫描lint.py",
+      "sha256": "1ab5497cdf5d45cd860594a1665ae62aed34aaaa3156abf014bb0c6e41fe3dd6",
+      "source_equal": false,
+      "bytes": 12602
+    },
+    {
+      "path": "0-学习与工具/工具-落库sweep.py",
+      "sha256": "69ff29c4163d01d5fa955d71e037bcefe6e907eb571d209c34ce94eb53e87910",
+      "source_equal": false,
+      "bytes": 574017
+    },
+    {
+      "path": "0-学习与工具/工具-需求与变更包门禁lint.py",
+      "sha256": "3bc66fd141a9f50ccc78959e736e65c3d90772934febfc0d5b440eb5d8b78643",
+      "source_equal": true,
+      "bytes": 24274
+    },
+    {
+      "path": "0-学习与工具/需求与变更包门禁lint-baseline.json",
+      "sha256": "e2522c51d90470849904d00707639ac49c12950d5bcb02cc34f150a4362a02f5",
+      "source_equal": false,
+      "bytes": 7934
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/CLAUDE.md",
+      "sha256": "00b851782848731e116240dd28c3517e14ebd0ccdd72d4902d85e7e464d0d02a",
+      "source_equal": true,
+      "bytes": 283
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/CODEX-RULES.md",
+      "sha256": "5ef40cdb1bad3b4491caf7570244a8a03fb42fb1126be9d15b2a4c4ad201154a",
+      "source_equal": true,
+      "bytes": 3043
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/session接力-Phase1收口.md",
+      "sha256": "fb4a4885f00cffa2c336722d5ad42be2516cd1776b01e6a8b77c0f8604f2487e",
+      "source_equal": true,
+      "bytes": 1429
+    },
+    {
+      "path": "4-数字员工/CLAUDE.md",
+      "sha256": "9911d141f8dd5f1e11319020268d08a997d4d8c740d688429cd29a9c10fe598d",
+      "source_equal": true,
+      "bytes": 247
+    },
+    {
+      "path": "4-数字员工/CODEX-RULES.md",
+      "sha256": "47a134105f8a5cf3a250e2d8de9445b145e6c4db05654614098e01c2cd3b31c0",
+      "source_equal": true,
+      "bytes": 4016
+    },
+    {
+      "path": "4-数字员工/财务部/FI1-供应链仓库对账/CLAUDE.md",
+      "sha256": "04f8d831f273607f413aca5c7bff0ebc04a50a764db9e0170f2c9ed01e4119ee",
+      "source_equal": true,
+      "bytes": 319
+    },
+    {
+      "path": "4-数字员工/财务部/FI2-三单匹配自动对账/CLAUDE.md",
+      "sha256": "d5651b2c6d4c38a8cc3b6c9581781a96daca8a0b9b8ab0d33d217a6c7f289d07",
+      "source_equal": true,
+      "bytes": 325
+    },
+    {
+      "path": "4-数字员工/财务部/FI3-付款申请自动校验/CLAUDE.md",
+      "sha256": "b69397bc6434798ec51a4686c6e6d694bb19211909fefb9c94e71de8342103bb",
+      "source_equal": true,
+      "bytes": 325
+    },
+    {
+      "path": "4-数字员工/财务部/FI9-研发费用归集与高新认定/intent.md",
+      "sha256": "64881456696f37578bad01d1711393563b6fc0e42917df1bceda34f353b1e659",
+      "source_equal": true,
+      "bytes": 16872
+    },
+    {
+      "path": "4-数字员工/质量部/Q2-8D报告AI判定/CLAUDE.md",
+      "sha256": "16715850b51c55d2921cf431363f5b7da4e96fe38563d995f0447f74ed7f28ff",
+      "source_equal": true,
+      "bytes": 307
+    },
+    {
+      "path": "4-数字员工/质量部/QD-A-8D不良分析/CLAUDE.md",
+      "sha256": "ffb34a5530f7fbc9fc93b598495c78586b559fdbfc3fc633e6a26f8a987809db",
+      "source_equal": true,
+      "bytes": 307
+    },
+    {
+      "path": "4-数字员工/质量部/QD-B-立项审核门禁/CLAUDE.md",
+      "sha256": "97e931a98d6a71e2c595a8bf4884e79789aa0adcbea8ff88a78a9722745757a7",
+      "source_equal": true,
+      "bytes": 315
+    },
+    {
+      "path": "4-数字员工/运营部/O1-生产排程智能优化/CLAUDE.md",
+      "sha256": "6accfc30c9b1200c3f7af264caeb02c72531e4e298f069f7abd745dc4ea48395",
+      "source_equal": true,
+      "bytes": 323
+    },
+    {
+      "path": "4-数字员工/运营部/O2-物料齐套预警/CLAUDE.md",
+      "sha256": "d91989820fadb6530802a0c31c398c8bc95227a714b47812a47f28e820b19a63",
+      "source_equal": true,
+      "bytes": 311
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/CLAUDE.md",
+      "sha256": "9bec19fec35342f758aca15839764f681861ec273c09e0dea4f12510878f99c5",
+      "source_equal": true,
+      "bytes": 317
+    },
+    {
+      "path": "4-数字员工/采购部/SC1-供应商风险初筛/CLAUDE.md",
+      "sha256": "0b58a1322d205dcf7eb18615d24ea1c4d78b492aa9a82b7ad19de7cace238f76",
+      "source_equal": true,
+      "bytes": 319
+    },
+    {
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/CLAUDE.md",
+      "sha256": "ed987ebb5c3d097bb4b6405975513c0f24fa026d46b4691a6400fa334ce19a72",
+      "source_equal": true,
+      "bytes": 333
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/CLAUDE.md",
+      "sha256": "450ee9427782acd407ccd590e85950016272c94e4a3a2a7061e2b6ab105b00a1",
+      "source_equal": true,
+      "bytes": 315
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/CLAUDE.md",
+      "sha256": "8c068250ae3790874fe60b0e000d0ab594c05c6fff51926dff4c3fae4ae1a1bc",
+      "source_equal": true,
+      "bytes": 325
+    },
+    {
+      "path": "4-数字员工/采购部/SC3-供应商在途跟踪与绩效/CLAUDE.md",
+      "sha256": "bceaaa62185b99a519688c8a8b19603d5eb06e302dfb641cfc0c1d6cb4b8b742",
+      "source_equal": true,
+      "bytes": 337
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/CLAUDE.md",
+      "sha256": "7a0bf2b2ec2674bff6f39d4393c7c3059208424871fbe79f5cb14822106f5dac",
+      "source_equal": true,
+      "bytes": 343
+    },
+    {
+      "path": "4-数字员工/采购部/SC5-采购建议与供应商遴选/CLAUDE.md",
+      "sha256": "e8c6e507d2ce4c314c874af6c2b72dd6071413e3aa980f53bd708f8e46419b40",
+      "source_equal": true,
+      "bytes": 337
+    },
+    {
+      "path": "4-数字员工/采购部/SC7-库存优化建议/CLAUDE.md",
+      "sha256": "ade4ce61847461693e593815830c3e63b1b6bfb3612b4343311aa53b370b66f7",
+      "source_equal": true,
+      "bytes": 313
+    },
+    {
+      "path": "4-数字员工/采购部/SC8-客户订单交期智能承诺/CLAUDE.md",
+      "sha256": "6de9b4b2e128165380ac4554ac4136c4138cc434f21a19017bd44b01ccfd8127",
+      "source_equal": true,
+      "bytes": 337
+    },
+    {
+      "path": "5-平台底座/CLAUDE.md",
+      "sha256": "48cb69376e80a9c6f9f7aed20cb5306c1248efb1a2ef5b263002936e97071936",
+      "source_equal": true,
+      "bytes": 247
+    },
+    {
+      "path": "5-平台底座/CODEX-RULES.md",
+      "sha256": "5cb8be1e3e3452c975572e468c61d0dc6a9163fd3c132430897924a8fd23c393",
+      "source_equal": true,
+      "bytes": 4882
+    },
+    {
+      "path": "5-平台底座/unified-portal-gateway/CLAUDE.md",
+      "sha256": "2cc27f86e65c54e90c1c77b8c4ee6308f361323bc815eb3c14d500219a7a5c53",
+      "source_equal": true,
+      "bytes": 293
+    },
+    {
+      "path": "5-平台底座/wecom-aibot-service/AGENTS.md",
+      "sha256": "27d7d61323bd8ea661c2c8801f5ae3f46693b97d2cb6e1ead6f22a1beb5266ee",
+      "source_equal": true,
+      "bytes": 529
+    },
+    {
+      "path": "5-平台底座/wecom-aibot-service/CLAUDE.md",
+      "sha256": "cfbb81cf7fb8740a60d4d66b1c234f941ff783c080892e6ce820c27fa7aaf91a",
+      "source_equal": true,
+      "bytes": 287
+    },
+    {
+      "path": "5-平台底座/wecom-aibot-service/CODEX-RULES.md",
+      "sha256": "3b06bc5221171560025d8e085b6a8c10f3df9c071f9a1ce9c853c76599207581",
+      "source_equal": true,
+      "bytes": 9040
+    },
+    {
+      "path": "6-人才与组织/CLAUDE.md",
+      "sha256": "ec9f376f4effe23a233c8e73020f6f432e0e65dc583e440cc5014d41088ba5a7",
+      "source_equal": true,
+      "bytes": 253
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "360e73d2d523cb38443f958e25af62cdb9d8276449971bb0b65d179a959bc750",
+      "source_equal": true,
+      "bytes": 3864
+    },
+    {
+      "path": "CLAUDE.md",
+      "sha256": "482b003d238da297dc8af34e3bd21af432b6f1e580779d8a5b29d6e6194c45a7",
+      "source_equal": true,
+      "bytes": 679
+    },
+    {
+      "path": "docs/codex/directory-rule-map.json",
+      "sha256": "6b397260ec24ecf345dac76e5b9c7b6c5441659a71f2f788be955a88b94490ed",
+      "source_equal": true,
+      "bytes": 3655
+    },
+    {
+      "path": "docs/codex/rules/两桌同步与取证.md",
+      "sha256": "b52e9bc9aac5366696f8826afbffe334f538251b8858e40710e1a301b37cb3a0",
+      "source_equal": true,
+      "bytes": 2740
+    },
+    {
+      "path": "docs/codex/rules/场景建造与合规.md",
+      "sha256": "af6498c883829515d9e27c188bede8f7b68465f6f4b17a5b8694807b3178d38d",
+      "source_equal": true,
+      "bytes": 3349
+    },
+    {
+      "path": "docs/codex/rules/文档与全景治理.md",
+      "sha256": "fa2bccbe905fc952649f65698f599e4b93283e017c6a8c36e6172363a78106c1",
+      "source_equal": true,
+      "bytes": 2036
+    },
+    {
+      "path": "docs/codex/rules/环境保障线.md",
+      "sha256": "8f2efc40cc6618c1eecbd8e2ab40cca90ffff216cd862e67e140b5b075f369a7",
+      "source_equal": false,
+      "bytes": 4363
+    },
+    {
+      "path": "docs/codex/rules/跟进信与专员.md",
+      "sha256": "25187a3f26e1ac4270249caca0ede9c046373928c38610a9676c8bc0106033c0",
+      "source_equal": true,
+      "bytes": 3457
+    },
+    {
+      "path": "docs/codex/rules/队列与落库.md",
+      "sha256": "fb83d4975fd1f3d440815418984f066db4e895fc7da736caafc4e1009c0c2c64",
+      "source_equal": true,
+      "bytes": 4258
+    },
+    {
+      "path": "docs/codex/watch-write-before-build-1115/RED.xml",
+      "sha256": "4620be89c4d9fd91d44d4b9aab9c41fed060fdb2b8119c7a19172ffcb0de7209",
+      "source_equal": true,
+      "bytes": 17030
+    },
+    {
+      "path": "docs/codex/watch-write-before-build-1115/check-acceptance.json",
+      "sha256": "2ab8e177040ca78faa1a123c0d83772cdb29f6c23d19cb7e0998ca529c201002",
+      "source_equal": true,
+      "bytes": 626
+    },
+    {
+      "path": "docs/codex/watch-write-before-build-1115/handoff完整.xml",
+      "sha256": "99d465b45338046d14153f28aff8a81a8a60935e1d901a50331190398f9afb35",
+      "source_equal": true,
+      "bytes": 363960
+    },
+    {
+      "path": "docs/codex/watch-write-before-build-1115/功能验收.json",
+      "sha256": "d3130427bdc2889c3b01f421d203460ae8362a1c3ea279030dc27e09265e1866",
+      "source_equal": true,
+      "bytes": 21973
+    },
+    {
+      "path": "docs/codex/watch-write-before-build-1115/反例与范围.json",
+      "sha256": "55c9299384c444a0dbded89a6a8107480a2a6e6ee09f627a90969c01135df5fd",
+      "source_equal": true,
+      "bytes": 1646
+    },
+    {
+      "path": "docs/codex/watch-write-before-build-1115/定向GREEN.xml",
+      "sha256": "af3246e73b8b8ed438ad1ab749cdcf5fe5416fee2b2c0bff8ae10ad0e0c3fecb",
+      "source_equal": true,
+      "bytes": 27611
+    },
+    {
+      "path": "docs/codex/watch-write-before-build-1115/登记与认领实证.json",
+      "sha256": "a83adae5c15e8d204af20e1a338feefe4a94f269da52f76224f8787df08fbc2f",
+      "source_equal": true,
+      "bytes": 18364
+    },
+    {
+      "path": "docs/codex/watch-write-before-build-1115/结果与接力.md",
+      "sha256": "3dca45941ea5c1c15ae1ee40fc35a824b971ba967e8f6d860cfec34bcba978e2",
+      "source_equal": true,
+      "bytes": 2679
+    },
+    {
+      "path": "docs/codex/watch-write-before-build-1115/锁工具完整.xml",
+      "sha256": "79929b8399176490e9753a97c6a35dffba90dcc89da0c603fe922a32219c6232",
+      "source_equal": true,
+      "bytes": 98213
+    },
+    {
+      "path": "docs/handoff/finance/.gitignore",
+      "sha256": "7f0da08d75d256b03a97396033a075bf384466704c8e801ad5d2afee1a0c8bf4",
+      "source_equal": true,
+      "bytes": 61
+    },
+    {
+      "path": "docs/handoff/finance/archive/catalog-1f8575ef3ceeb04bce707fbac95c81d61f30f4efda28f454e601ec356397487a.json",
+      "sha256": "1f8575ef3ceeb04bce707fbac95c81d61f30f4efda28f454e601ec356397487a",
+      "source_equal": true,
+      "bytes": 9434
+    },
+    {
+      "path": "docs/handoff/finance/archive/catalog-a513f3ad8d201853400e862d2b3fc554243b48d6a2ef27fd19639e608e8c3e21.json",
+      "sha256": "a513f3ad8d201853400e862d2b3fc554243b48d6a2ef27fd19639e608e8c3e21",
+      "source_equal": true,
+      "bytes": 9434
+    },
+    {
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "source_equal": true,
+      "bytes": 6721
+    },
+    {
+      "path": "docs/handoff/finance/catalog.json",
+      "sha256": "a513f3ad8d201853400e862d2b3fc554243b48d6a2ef27fd19639e608e8c3e21",
+      "source_equal": true,
+      "bytes": 9434
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L003.json",
+      "sha256": "b076de1b4451760e66ff9aced659610753c0b8bff96c416563a2b7ce68ca809d",
+      "source_equal": true,
+      "bytes": 1461
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L005.json",
+      "sha256": "244a87e9696f77d20e6a67805bdd26da53ebdfedeed4eb4ac7e2244465efb438",
+      "source_equal": true,
+      "bytes": 1388
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L007.json",
+      "sha256": "01fcbe763daebb38f01b756c86210f9c18b66b40acc132279822f9205de32a2d",
+      "source_equal": true,
+      "bytes": 1521
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L009.json",
+      "sha256": "ffc88ff26bfd6aae31440dc46557de35fc2225543cb4acb8ee4391075cc8b8ec",
+      "source_equal": true,
+      "bytes": 1029
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L013.json",
+      "sha256": "6fd6813d41e28f457e7ebb7c0670bebeba1d54fd19f5c00da71afa328ad371b3",
+      "source_equal": true,
+      "bytes": 1253
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L017.json",
+      "sha256": "929abd157771a5ccbfb8f5dca2c3c4837c0c32158a2f6168ae8e3bc0f8a1b5ca",
+      "source_equal": true,
+      "bytes": 1206
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L019.json",
+      "sha256": "f45ea3b02016d52e0caa7df6261bf04114b10c7d537cdeabb2ac6bfea5ec4ad8",
+      "source_equal": true,
+      "bytes": 1587
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L023.json",
+      "sha256": "c6af1346946d3942f61bfe1ef73b3f5416a54f0d125508b09deb013502e27056",
+      "source_equal": true,
+      "bytes": 1127
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L025.json",
+      "sha256": "3551a59d1d111919833a25dd5565ede61f0ff130451ad5d7e3cd4ba564208626",
+      "source_equal": true,
+      "bytes": 1388
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L029.json",
+      "sha256": "c92683787e0f713e1a9c29b325c078d26966e24ea6182ee13c6fece41260f212",
+      "source_equal": true,
+      "bytes": 1122
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L030.json",
+      "sha256": "3541267c63922eeb607ada61f244bf2c548c88cf16a3de01b55c5fe99cd7c723",
+      "source_equal": true,
+      "bytes": 1138
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L031.json",
+      "sha256": "19a95c159337c698e5df9e59229d5732b11da1be1e4589560936cd2c98b5c8b6",
+      "source_equal": true,
+      "bytes": 1041
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L032.json",
+      "sha256": "9b1bce5cc987e5590f59c6d7417d7e7676453e414299c1dee8c386a4d2980ada",
+      "source_equal": true,
+      "bytes": 1177
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L036.json",
+      "sha256": "9d99a161670fd3e3222c8b588b1df479e769fd3f4d9f7e47ef7031bf36548f5e",
+      "source_equal": true,
+      "bytes": 1142
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L038.json",
+      "sha256": "a07e338c14d1958d4c4d14e3dc05dbb8ed9939bdd2e9acf6e8230c6be3cabe07",
+      "source_equal": true,
+      "bytes": 1182
+    },
+    {
+      "path": "docs/handoff/finance/items/FH-20261019-L042.json",
+      "sha256": "8befaeac9fbcfee3563953c22362b8ebcf6c4913e64748a8fce9edb351f70efd",
+      "source_equal": true,
+      "bytes": 1276
+    },
+    {
+      "path": "docs/handoff/finance/migration.json",
+      "sha256": "c600d1ee305a6c2be1d575d610aeddab70951a8aed33949ca4c20c52661587fd",
+      "source_equal": true,
+      "bytes": 6642
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L003/b076de1b4451760e66ff9aced659610753c0b8bff96c416563a2b7ce68ca809d.json",
+      "sha256": "b076de1b4451760e66ff9aced659610753c0b8bff96c416563a2b7ce68ca809d",
+      "source_equal": true,
+      "bytes": 1461
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L005/244a87e9696f77d20e6a67805bdd26da53ebdfedeed4eb4ac7e2244465efb438.json",
+      "sha256": "244a87e9696f77d20e6a67805bdd26da53ebdfedeed4eb4ac7e2244465efb438",
+      "source_equal": true,
+      "bytes": 1388
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L007/01fcbe763daebb38f01b756c86210f9c18b66b40acc132279822f9205de32a2d.json",
+      "sha256": "01fcbe763daebb38f01b756c86210f9c18b66b40acc132279822f9205de32a2d",
+      "source_equal": true,
+      "bytes": 1521
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L009/ffc88ff26bfd6aae31440dc46557de35fc2225543cb4acb8ee4391075cc8b8ec.json",
+      "sha256": "ffc88ff26bfd6aae31440dc46557de35fc2225543cb4acb8ee4391075cc8b8ec",
+      "source_equal": true,
+      "bytes": 1029
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L013/6fd6813d41e28f457e7ebb7c0670bebeba1d54fd19f5c00da71afa328ad371b3.json",
+      "sha256": "6fd6813d41e28f457e7ebb7c0670bebeba1d54fd19f5c00da71afa328ad371b3",
+      "source_equal": true,
+      "bytes": 1253
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L017/929abd157771a5ccbfb8f5dca2c3c4837c0c32158a2f6168ae8e3bc0f8a1b5ca.json",
+      "sha256": "929abd157771a5ccbfb8f5dca2c3c4837c0c32158a2f6168ae8e3bc0f8a1b5ca",
+      "source_equal": true,
+      "bytes": 1206
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L019/f45ea3b02016d52e0caa7df6261bf04114b10c7d537cdeabb2ac6bfea5ec4ad8.json",
+      "sha256": "f45ea3b02016d52e0caa7df6261bf04114b10c7d537cdeabb2ac6bfea5ec4ad8",
+      "source_equal": true,
+      "bytes": 1587
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L023/c6af1346946d3942f61bfe1ef73b3f5416a54f0d125508b09deb013502e27056.json",
+      "sha256": "c6af1346946d3942f61bfe1ef73b3f5416a54f0d125508b09deb013502e27056",
+      "source_equal": true,
+      "bytes": 1127
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L025/3551a59d1d111919833a25dd5565ede61f0ff130451ad5d7e3cd4ba564208626.json",
+      "sha256": "3551a59d1d111919833a25dd5565ede61f0ff130451ad5d7e3cd4ba564208626",
+      "source_equal": true,
+      "bytes": 1388
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L029/c92683787e0f713e1a9c29b325c078d26966e24ea6182ee13c6fece41260f212.json",
+      "sha256": "c92683787e0f713e1a9c29b325c078d26966e24ea6182ee13c6fece41260f212",
+      "source_equal": true,
+      "bytes": 1122
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L030/3541267c63922eeb607ada61f244bf2c548c88cf16a3de01b55c5fe99cd7c723.json",
+      "sha256": "3541267c63922eeb607ada61f244bf2c548c88cf16a3de01b55c5fe99cd7c723",
+      "source_equal": true,
+      "bytes": 1138
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L031/19a95c159337c698e5df9e59229d5732b11da1be1e4589560936cd2c98b5c8b6.json",
+      "sha256": "19a95c159337c698e5df9e59229d5732b11da1be1e4589560936cd2c98b5c8b6",
+      "source_equal": true,
+      "bytes": 1041
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L032/9b1bce5cc987e5590f59c6d7417d7e7676453e414299c1dee8c386a4d2980ada.json",
+      "sha256": "9b1bce5cc987e5590f59c6d7417d7e7676453e414299c1dee8c386a4d2980ada",
+      "source_equal": true,
+      "bytes": 1177
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L036/9d99a161670fd3e3222c8b588b1df479e769fd3f4d9f7e47ef7031bf36548f5e.json",
+      "sha256": "9d99a161670fd3e3222c8b588b1df479e769fd3f4d9f7e47ef7031bf36548f5e",
+      "source_equal": true,
+      "bytes": 1142
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L038/a07e338c14d1958d4c4d14e3dc05dbb8ed9939bdd2e9acf6e8230c6be3cabe07.json",
+      "sha256": "a07e338c14d1958d4c4d14e3dc05dbb8ed9939bdd2e9acf6e8230c6be3cabe07",
+      "source_equal": true,
+      "bytes": 1182
+    },
+    {
+      "path": "docs/handoff/finance/revisions/FH-20261019-L042/8befaeac9fbcfee3563953c22362b8ebcf6c4913e64748a8fce9edb351f70efd.json",
+      "sha256": "8befaeac9fbcfee3563953c22362b8ebcf6c4913e64748a8fce9edb351f70efd",
+      "source_equal": true,
+      "bytes": 1276
+    },
+    {
+      "path": "docs/handoff/finance/views/review-001.md",
+      "sha256": "6a40a3703a06641cc5c102ad8a8351a43f8f096118ac669cbfc0054ef07a4961",
+      "source_equal": true,
+      "bytes": 1590
+    },
+    {
+      "path": "docs/handoff/phase1/.gitignore",
+      "sha256": "7f0da08d75d256b03a97396033a075bf384466704c8e801ad5d2afee1a0c8bf4",
+      "source_equal": true,
+      "bytes": 61
+    },
+    {
+      "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+      "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+      "source_equal": true,
+      "bytes": 2638
+    },
+    {
+      "path": "docs/handoff/phase1/archive/catalog-a477a2578e2a05230edc7b3fe9edd83f545493ac302186b288bfb3dcac086e7f.json",
+      "sha256": "a477a2578e2a05230edc7b3fe9edd83f545493ac302186b288bfb3dcac086e7f",
+      "source_equal": true,
+      "bytes": 4426
+    },
+    {
+      "path": "docs/handoff/phase1/catalog.json",
+      "sha256": "a477a2578e2a05230edc7b3fe9edd83f545493ac302186b288bfb3dcac086e7f",
+      "source_equal": true,
+      "bytes": 4426
+    },
+    {
+      "path": "docs/handoff/phase1/items/P1H-20261030-L004.json",
+      "sha256": "ca529017a7434994a835b32e1da1770da49be25eeef6e540f9bb3a0454487615",
+      "source_equal": true,
+      "bytes": 1214
+    },
+    {
+      "path": "docs/handoff/phase1/items/P1H-20261030-L007.json",
+      "sha256": "4159132c7569586dbe97d9bb6145916665bc70492ffd32fbc37865269be2f601",
+      "source_equal": true,
+      "bytes": 1356
+    },
+    {
+      "path": "docs/handoff/phase1/items/P1H-20261030-L010.json",
+      "sha256": "25bbf082f307bbd5206d88f35de19c12b3145f1669464faba8c2c12fed4944d6",
+      "source_equal": true,
+      "bytes": 1839
+    },
+    {
+      "path": "docs/handoff/phase1/items/P1H-20261030-L013.json",
+      "sha256": "5c291ba802441ca70aef9a69382a4a093b25b60faf62ba5af7e58a649c0a5b0d",
+      "source_equal": true,
+      "bytes": 1558
+    },
+    {
+      "path": "docs/handoff/phase1/items/P1H-20261030-L016.json",
+      "sha256": "a728e35d777fda725b93a8b6b72926f232313372372a35b10764149b03dad63a",
+      "source_equal": true,
+      "bytes": 1784
+    },
+    {
+      "path": "docs/handoff/phase1/items/P1H-20261030-L019.json",
+      "sha256": "31e39ae7eb83f8f67543014e82e4fda7da4d33b6219d20bd4a6a57e1734a54ab",
+      "source_equal": true,
+      "bytes": 1273
+    },
+    {
+      "path": "docs/handoff/phase1/migration.json",
+      "sha256": "ab7d8d1069bd8376cbae31f3836e4cb40af5fad42b867b471e8a91791335824e",
+      "source_equal": true,
+      "bytes": 3117
+    },
+    {
+      "path": "docs/handoff/phase1/revisions/P1H-20261030-L004/ca529017a7434994a835b32e1da1770da49be25eeef6e540f9bb3a0454487615.json",
+      "sha256": "ca529017a7434994a835b32e1da1770da49be25eeef6e540f9bb3a0454487615",
+      "source_equal": true,
+      "bytes": 1214
+    },
+    {
+      "path": "docs/handoff/phase1/revisions/P1H-20261030-L007/4159132c7569586dbe97d9bb6145916665bc70492ffd32fbc37865269be2f601.json",
+      "sha256": "4159132c7569586dbe97d9bb6145916665bc70492ffd32fbc37865269be2f601",
+      "source_equal": true,
+      "bytes": 1356
+    },
+    {
+      "path": "docs/handoff/phase1/revisions/P1H-20261030-L010/25bbf082f307bbd5206d88f35de19c12b3145f1669464faba8c2c12fed4944d6.json",
+      "sha256": "25bbf082f307bbd5206d88f35de19c12b3145f1669464faba8c2c12fed4944d6",
+      "source_equal": true,
+      "bytes": 1839
+    },
+    {
+      "path": "docs/handoff/phase1/revisions/P1H-20261030-L013/5c291ba802441ca70aef9a69382a4a093b25b60faf62ba5af7e58a649c0a5b0d.json",
+      "sha256": "5c291ba802441ca70aef9a69382a4a093b25b60faf62ba5af7e58a649c0a5b0d",
+      "source_equal": true,
+      "bytes": 1558
+    },
+    {
+      "path": "docs/handoff/phase1/revisions/P1H-20261030-L016/a728e35d777fda725b93a8b6b72926f232313372372a35b10764149b03dad63a.json",
+      "sha256": "a728e35d777fda725b93a8b6b72926f232313372372a35b10764149b03dad63a",
+      "source_equal": true,
+      "bytes": 1784
+    },
+    {
+      "path": "docs/handoff/phase1/revisions/P1H-20261030-L019/31e39ae7eb83f8f67543014e82e4fda7da4d33b6219d20bd4a6a57e1734a54ab.json",
+      "sha256": "31e39ae7eb83f8f67543014e82e4fda7da4d33b6219d20bd4a6a57e1734a54ab",
+      "source_equal": true,
+      "bytes": 1273
+    },
+    {
+      "path": "docs/handoff/phase1/views/review-001.md",
+      "sha256": "7ffe1194f9e06927064d4adb17023ac76385591deecd6b96a0ca68ea880b014f",
+      "source_equal": true,
+      "bytes": 437
+    },
+    {
+      "path": "docs/handoff/procurement/.gitignore",
+      "sha256": "7f0da08d75d256b03a97396033a075bf384466704c8e801ad5d2afee1a0c8bf4",
+      "source_equal": true,
+      "bytes": 61
+    },
+    {
+      "path": "docs/handoff/procurement/archive/3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb.bin",
+      "sha256": "3c7208e55f80957d154a7026783c32f10bd7f7c0da5a8afb484520fef05040eb",
+      "source_equal": true,
+      "bytes": 7809
+    },
+    {
+      "path": "docs/handoff/procurement/archive/catalog-46fe3c16db43938313d2ace9083cab87db2ca20924ae771060b5dca0b77ade84.json",
+      "sha256": "46fe3c16db43938313d2ace9083cab87db2ca20924ae771060b5dca0b77ade84",
+      "source_equal": true,
+      "bytes": 13586
+    },
+    {
+      "path": "docs/handoff/procurement/archive/catalog-6b7e8e550381bdd151b9df7a5cc102de01f8fbc12e4edaa4cb0ad592ba4bd378.json",
+      "sha256": "6b7e8e550381bdd151b9df7a5cc102de01f8fbc12e4edaa4cb0ad592ba4bd378",
+      "source_equal": true,
+      "bytes": 13586
+    },
+    {
+      "path": "docs/handoff/procurement/catalog.json",
+      "sha256": "46fe3c16db43938313d2ace9083cab87db2ca20924ae771060b5dca0b77ade84",
+      "source_equal": true,
+      "bytes": 13586
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L014.json",
+      "sha256": "285301578cf80ad56bfaf30dbeaffe44378daf046a3ac5e8b2414901cfb95ae1",
+      "source_equal": true,
+      "bytes": 1130
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L018.json",
+      "sha256": "66a148c288d2302fa1d5908e66011fa004b133214707354397124484317bf7f8",
+      "source_equal": true,
+      "bytes": 1208
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L022.json",
+      "sha256": "683a35bf01f9350da9efbe5350f76cb08a93e36a2b25c2bd35adffbe8ea5e11c",
+      "source_equal": true,
+      "bytes": 1022
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L024.json",
+      "sha256": "56eb0825444d78f2c924bd3847af130bde8f87abaa5688e58f49a560b26b93b9",
+      "source_equal": true,
+      "bytes": 1281
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L026.json",
+      "sha256": "1b9a041925fc0f250e10d9d5f9e8f67575104bfe04ed0ddc4c31492f7fc739eb",
+      "source_equal": true,
+      "bytes": 1161
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L028.json",
+      "sha256": "364f281348ca802e8ecde1909d548ea1dd54012dd1791d2a916bf0ade32c67fd",
+      "source_equal": true,
+      "bytes": 1201
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L030.json",
+      "sha256": "a4cb73debecac273266c28cd3730fb760a1e1756bcb7bbcaacd3fab4b78d059f",
+      "source_equal": true,
+      "bytes": 1218
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L032.json",
+      "sha256": "719552952f6f28515cad5fa58306b147ebf6cfdbc038bf2b2475076401d27f8b",
+      "source_equal": true,
+      "bytes": 1464
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L034.json",
+      "sha256": "620a361ec710f9fe36f380e6753b406be3ffc972f9aeb0bd9ad473f133a8f27d",
+      "source_equal": true,
+      "bytes": 1296
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L036.json",
+      "sha256": "98834db10f1e654253a3447b97384ec8e8d5a8ad9f87738cfc3a9069742a737f",
+      "source_equal": true,
+      "bytes": 1421
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L040.json",
+      "sha256": "3c479b581371332716eab8258cb9b9e2bd593bdfab7cea489e2c0d6b58063a27",
+      "source_equal": true,
+      "bytes": 994
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L041.json",
+      "sha256": "d39f6b8d29e61825eac07b11d4f112dc5375d912e922a7a7c997b00491d6b95f",
+      "source_equal": true,
+      "bytes": 963
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L042.json",
+      "sha256": "6d2b4e83ea74077655d58e3fba43ab3f80610a0b7b7e530a76ac1c7184b0dffb",
+      "source_equal": true,
+      "bytes": 1076
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L043.json",
+      "sha256": "c9dae6a98e0abce1228ac32a8186777f08e12c55b6632ca22d85d619482ab297",
+      "source_equal": true,
+      "bytes": 1058
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L044.json",
+      "sha256": "7642700c478b8f8d8525b2c3605739b129c50d61024c46786851e8dc7bb70816",
+      "source_equal": true,
+      "bytes": 995
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L045.json",
+      "sha256": "06d854ab3fbcb89eff905f0faf724ed20968a7b4e6e90a8f528b9202d3d1c485",
+      "source_equal": true,
+      "bytes": 975
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L046.json",
+      "sha256": "87747c66e755a0d884f01abc76137177d4dc34303c8ce273a6dad9c5983eaed3",
+      "source_equal": true,
+      "bytes": 1183
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L047.json",
+      "sha256": "0867749d77b9f0f43cf82385d39417950aa78a1a7e67178da6de76c0bee48495",
+      "source_equal": true,
+      "bytes": 1061
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L048.json",
+      "sha256": "8e2614ab6ffad4190fc108fad520e90f663d3f3c682a0bd50a983435d3651dc9",
+      "source_equal": true,
+      "bytes": 916
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L052.json",
+      "sha256": "7e18cea68660556b61c33f4707c209f54d5c13106abf48235104ff851a675aaa",
+      "source_equal": true,
+      "bytes": 1303
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L056.json",
+      "sha256": "19d1017ae539545240a6d10f47683d3c344eac7a18619ee3ef633199993a2f0f",
+      "source_equal": true,
+      "bytes": 1406
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L058.json",
+      "sha256": "67879eadf4aec2f034422bb21f2b8c4ce35b61366f6758ca33311e01885fe760",
+      "source_equal": true,
+      "bytes": 1194
+    },
+    {
+      "path": "docs/handoff/procurement/items/PH-20261020-L060.json",
+      "sha256": "247d478c7c725e5463ff7132431bf06b9426de0588ad0c50f2d9217018472a23",
+      "source_equal": true,
+      "bytes": 1358
+    },
+    {
+      "path": "docs/handoff/procurement/migration.json",
+      "sha256": "ffe19151228b995e3966268083b38e631dcf43a3036ab32ce0567e179d436db8",
+      "source_equal": true,
+      "bytes": 9372
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L014/285301578cf80ad56bfaf30dbeaffe44378daf046a3ac5e8b2414901cfb95ae1.json",
+      "sha256": "285301578cf80ad56bfaf30dbeaffe44378daf046a3ac5e8b2414901cfb95ae1",
+      "source_equal": true,
+      "bytes": 1130
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L018/66a148c288d2302fa1d5908e66011fa004b133214707354397124484317bf7f8.json",
+      "sha256": "66a148c288d2302fa1d5908e66011fa004b133214707354397124484317bf7f8",
+      "source_equal": true,
+      "bytes": 1208
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L022/683a35bf01f9350da9efbe5350f76cb08a93e36a2b25c2bd35adffbe8ea5e11c.json",
+      "sha256": "683a35bf01f9350da9efbe5350f76cb08a93e36a2b25c2bd35adffbe8ea5e11c",
+      "source_equal": true,
+      "bytes": 1022
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L024/56eb0825444d78f2c924bd3847af130bde8f87abaa5688e58f49a560b26b93b9.json",
+      "sha256": "56eb0825444d78f2c924bd3847af130bde8f87abaa5688e58f49a560b26b93b9",
+      "source_equal": true,
+      "bytes": 1281
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L026/1b9a041925fc0f250e10d9d5f9e8f67575104bfe04ed0ddc4c31492f7fc739eb.json",
+      "sha256": "1b9a041925fc0f250e10d9d5f9e8f67575104bfe04ed0ddc4c31492f7fc739eb",
+      "source_equal": true,
+      "bytes": 1161
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L028/364f281348ca802e8ecde1909d548ea1dd54012dd1791d2a916bf0ade32c67fd.json",
+      "sha256": "364f281348ca802e8ecde1909d548ea1dd54012dd1791d2a916bf0ade32c67fd",
+      "source_equal": true,
+      "bytes": 1201
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L030/a4cb73debecac273266c28cd3730fb760a1e1756bcb7bbcaacd3fab4b78d059f.json",
+      "sha256": "a4cb73debecac273266c28cd3730fb760a1e1756bcb7bbcaacd3fab4b78d059f",
+      "source_equal": true,
+      "bytes": 1218
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L032/719552952f6f28515cad5fa58306b147ebf6cfdbc038bf2b2475076401d27f8b.json",
+      "sha256": "719552952f6f28515cad5fa58306b147ebf6cfdbc038bf2b2475076401d27f8b",
+      "source_equal": true,
+      "bytes": 1464
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L034/620a361ec710f9fe36f380e6753b406be3ffc972f9aeb0bd9ad473f133a8f27d.json",
+      "sha256": "620a361ec710f9fe36f380e6753b406be3ffc972f9aeb0bd9ad473f133a8f27d",
+      "source_equal": true,
+      "bytes": 1296
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L036/98834db10f1e654253a3447b97384ec8e8d5a8ad9f87738cfc3a9069742a737f.json",
+      "sha256": "98834db10f1e654253a3447b97384ec8e8d5a8ad9f87738cfc3a9069742a737f",
+      "source_equal": true,
+      "bytes": 1421
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L040/3c479b581371332716eab8258cb9b9e2bd593bdfab7cea489e2c0d6b58063a27.json",
+      "sha256": "3c479b581371332716eab8258cb9b9e2bd593bdfab7cea489e2c0d6b58063a27",
+      "source_equal": true,
+      "bytes": 994
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L041/d39f6b8d29e61825eac07b11d4f112dc5375d912e922a7a7c997b00491d6b95f.json",
+      "sha256": "d39f6b8d29e61825eac07b11d4f112dc5375d912e922a7a7c997b00491d6b95f",
+      "source_equal": true,
+      "bytes": 963
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L042/6d2b4e83ea74077655d58e3fba43ab3f80610a0b7b7e530a76ac1c7184b0dffb.json",
+      "sha256": "6d2b4e83ea74077655d58e3fba43ab3f80610a0b7b7e530a76ac1c7184b0dffb",
+      "source_equal": true,
+      "bytes": 1076
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L043/c9dae6a98e0abce1228ac32a8186777f08e12c55b6632ca22d85d619482ab297.json",
+      "sha256": "c9dae6a98e0abce1228ac32a8186777f08e12c55b6632ca22d85d619482ab297",
+      "source_equal": true,
+      "bytes": 1058
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L044/7642700c478b8f8d8525b2c3605739b129c50d61024c46786851e8dc7bb70816.json",
+      "sha256": "7642700c478b8f8d8525b2c3605739b129c50d61024c46786851e8dc7bb70816",
+      "source_equal": true,
+      "bytes": 995
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L045/06d854ab3fbcb89eff905f0faf724ed20968a7b4e6e90a8f528b9202d3d1c485.json",
+      "sha256": "06d854ab3fbcb89eff905f0faf724ed20968a7b4e6e90a8f528b9202d3d1c485",
+      "source_equal": true,
+      "bytes": 975
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L046/87747c66e755a0d884f01abc76137177d4dc34303c8ce273a6dad9c5983eaed3.json",
+      "sha256": "87747c66e755a0d884f01abc76137177d4dc34303c8ce273a6dad9c5983eaed3",
+      "source_equal": true,
+      "bytes": 1183
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L047/0867749d77b9f0f43cf82385d39417950aa78a1a7e67178da6de76c0bee48495.json",
+      "sha256": "0867749d77b9f0f43cf82385d39417950aa78a1a7e67178da6de76c0bee48495",
+      "source_equal": true,
+      "bytes": 1061
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L048/8e2614ab6ffad4190fc108fad520e90f663d3f3c682a0bd50a983435d3651dc9.json",
+      "sha256": "8e2614ab6ffad4190fc108fad520e90f663d3f3c682a0bd50a983435d3651dc9",
+      "source_equal": true,
+      "bytes": 916
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L052/7e18cea68660556b61c33f4707c209f54d5c13106abf48235104ff851a675aaa.json",
+      "sha256": "7e18cea68660556b61c33f4707c209f54d5c13106abf48235104ff851a675aaa",
+      "source_equal": true,
+      "bytes": 1303
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L056/19d1017ae539545240a6d10f47683d3c344eac7a18619ee3ef633199993a2f0f.json",
+      "sha256": "19d1017ae539545240a6d10f47683d3c344eac7a18619ee3ef633199993a2f0f",
+      "source_equal": true,
+      "bytes": 1406
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L058/67879eadf4aec2f034422bb21f2b8c4ce35b61366f6758ca33311e01885fe760.json",
+      "sha256": "67879eadf4aec2f034422bb21f2b8c4ce35b61366f6758ca33311e01885fe760",
+      "source_equal": true,
+      "bytes": 1194
+    },
+    {
+      "path": "docs/handoff/procurement/revisions/PH-20261020-L060/247d478c7c725e5463ff7132431bf06b9426de0588ad0c50f2d9217018472a23.json",
+      "sha256": "247d478c7c725e5463ff7132431bf06b9426de0588ad0c50f2d9217018472a23",
+      "source_equal": true,
+      "bytes": 1358
+    },
+    {
+      "path": "docs/handoff/procurement/views/review-001.md",
+      "sha256": "4e13b7debf29c113f04b060842f081ad4d7aacf3ad364136ab3ba7cc61251926",
+      "source_equal": true,
+      "bytes": 2222
+    },
+    {
+      "path": "docs/handoff/quality/.gitignore",
+      "sha256": "7f0da08d75d256b03a97396033a075bf384466704c8e801ad5d2afee1a0c8bf4",
+      "source_equal": true,
+      "bytes": 61
+    },
+    {
+      "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+      "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+      "source_equal": true,
+      "bytes": 20491
+    },
+    {
+      "path": "docs/handoff/quality/archive/catalog-5df752a1a18b8766ca9ffe3e6264c6ce9a74ce7d935affea16c5264a81b21ebe.json",
+      "sha256": "5df752a1a18b8766ca9ffe3e6264c6ce9a74ce7d935affea16c5264a81b21ebe",
+      "source_equal": true,
+      "bytes": 19559
+    },
+    {
+      "path": "docs/handoff/quality/catalog.json",
+      "sha256": "5df752a1a18b8766ca9ffe3e6264c6ce9a74ce7d935affea16c5264a81b21ebe",
+      "source_equal": true,
+      "bytes": 19559
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L003.json",
+      "sha256": "8fbfcfbae2d5096f8c360cb93869094ba975582f725968895b85dec9a2143ed4",
+      "source_equal": true,
+      "bytes": 1285
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L007.json",
+      "sha256": "70faa4a661c767c6f6ac9106dba5ebaa8b3bbfe07555830affb3d119a7058cfc",
+      "source_equal": true,
+      "bytes": 1325
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L009.json",
+      "sha256": "3175d4f02a5ae20505bf235115118249b0816030a840b7f0ef2da62b462dc883",
+      "source_equal": true,
+      "bytes": 1425
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L011.json",
+      "sha256": "efe3fa25674e3a0d795ac803a1e38db550853ca57c8a5407bce0f334192b6747",
+      "source_equal": true,
+      "bytes": 1458
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L015.json",
+      "sha256": "a13fe56b298916d3f77e36a2510466f58b17d29c4ecfae487d458a00af9fa1ed",
+      "source_equal": true,
+      "bytes": 1937
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L017.json",
+      "sha256": "1cc830d7f5298853b5829b9fc47b5581e01d31a3a78aeba25fcd6f60f2c302d8",
+      "source_equal": true,
+      "bytes": 1409
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L021.json",
+      "sha256": "2e869b15a44bb7008cd33ab8c0fb7de56706e84cf5f6b19005654415964d8ff9",
+      "source_equal": true,
+      "bytes": 1921
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L023.json",
+      "sha256": "afe849102c27bdf049d0a11ada6423c11a1eff02272602d82d864be2051eac91",
+      "source_equal": true,
+      "bytes": 1786
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L025.json",
+      "sha256": "6fb504cef17947e55a47b178ab9c50dfb5433206a78bfc1fe234945f19c397de",
+      "source_equal": true,
+      "bytes": 1227
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L027.json",
+      "sha256": "791d3d9d36f995888211fd4586249ae6d9f3b4e08439dbc49377333bb1e12d1e",
+      "source_equal": true,
+      "bytes": 1896
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L029.json",
+      "sha256": "847d7a69aaf4c25c239c467a86c1aa349071749eebb35d8fca5971b0ff86d8cd",
+      "source_equal": true,
+      "bytes": 2569
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L031.json",
+      "sha256": "107a18a7c20fa7a15745f182ddb0007cf80d55ae6dbb0025d36b7e6748207658",
+      "source_equal": true,
+      "bytes": 1378
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L033.json",
+      "sha256": "dda40b3cad8aaa9b08bdec446861b8823b04a446c2fb997307eee38f153dcfa8",
+      "source_equal": true,
+      "bytes": 1588
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L035.json",
+      "sha256": "ecad6dd3d921f5bc1a1a04ac5ce690dbc22e681eea747284908c408268314b96",
+      "source_equal": true,
+      "bytes": 1449
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L037.json",
+      "sha256": "0bbd632b42863ff3dca36f67a3387d8a552a5aadbb97bd99c18199ade175b2e9",
+      "source_equal": true,
+      "bytes": 1210
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L039.json",
+      "sha256": "ea18b8f3f5459b59ec56c06427c47be3c6308405924d2c2546163a5625e303e7",
+      "source_equal": true,
+      "bytes": 1265
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L043.json",
+      "sha256": "3339d56419d717ace9ea374f6a2a72ffd2d3392cb1748c5fb51f85476e727dce",
+      "source_equal": true,
+      "bytes": 1624
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L045.json",
+      "sha256": "3b59fe6c2187e856899aa822b650762ed9422716ada46ec3f80203e4e7f49150",
+      "source_equal": true,
+      "bytes": 1523
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L047.json",
+      "sha256": "b00b08e16f1740aeda759fe101f84d7b1b02cc8b47d024d4d638ca3d36747422",
+      "source_equal": true,
+      "bytes": 1282
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L049.json",
+      "sha256": "51117455695e70a23a17d2a8ac8145c6d4e0c2840c0c4c08ac6a49242cec4c89",
+      "source_equal": true,
+      "bytes": 1508
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L051.json",
+      "sha256": "e0400345edcf7106fcc20081b7c0383a0bf474317f9ec0102c1a9374c80b4a78",
+      "source_equal": true,
+      "bytes": 1241
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L053.json",
+      "sha256": "0fdb750162ace57d56adb981ef4eebb9f0a05a253cdd7870f27796759d17d35b",
+      "source_equal": true,
+      "bytes": 1394
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L055.json",
+      "sha256": "31e8d53359b4db20630de8d95ca5e6d6b28c26e93b5d60d6e8b614cd1d474909",
+      "source_equal": true,
+      "bytes": 1703
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L057.json",
+      "sha256": "45987504a5a87d20343006828dc2bd0beb4c4f86293befb7faf9846953ca34b2",
+      "source_equal": true,
+      "bytes": 1669
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L059.json",
+      "sha256": "cca9c0a1133ff9c48920e2ff9d309022806f334807a0746d02c1ce469df171b5",
+      "source_equal": true,
+      "bytes": 1517
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L061.json",
+      "sha256": "114b6bb4ab2f88ac9049e973ef37fedcf28325131519736665e61cfeee0c25f5",
+      "source_equal": true,
+      "bytes": 2144
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L063.json",
+      "sha256": "038ca2544e210de3183a952df07e002d805e8c0f677db131de37f6b29356fdb1",
+      "source_equal": true,
+      "bytes": 1907
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L065.json",
+      "sha256": "ab484ae556c1aac2521b8ff5c6465758ef8987d9ba72b1be198941c030a837f8",
+      "source_equal": true,
+      "bytes": 1359
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L067.json",
+      "sha256": "0435affbee4ca125bcd56a3288ccb3ffbfdcb8faa5367875b2dfa9b7618af221",
+      "source_equal": true,
+      "bytes": 1274
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L069.json",
+      "sha256": "b4613a0ef7da43823b5a2aed8af8768c0d374b06315b0ee9ceb284546d470102",
+      "source_equal": true,
+      "bytes": 1158
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L073.json",
+      "sha256": "d3d2206211129591f78e35e17f7b421163842f3a2c87039a126f064395921d97",
+      "source_equal": true,
+      "bytes": 1455
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L075.json",
+      "sha256": "2a8adb1721e45db38948c67be705757bb18e7e9de6ecbf54a86701e7fb70a506",
+      "source_equal": true,
+      "bytes": 1260
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L079.json",
+      "sha256": "76c79446ecdc9f2afa5c608382f001918683b9b8152cc01e8460a0c0f5637b05",
+      "source_equal": true,
+      "bytes": 1341
+    },
+    {
+      "path": "docs/handoff/quality/items/QH-20261020-L081.json",
+      "sha256": "2f9abe4abacc16daf0e83810e03b85eff2b671699d4873a11bc93992885bbbef",
+      "source_equal": true,
+      "bytes": 1296
+    },
+    {
+      "path": "docs/handoff/quality/migration.json",
+      "sha256": "97876563c328256f2261e93c1526e1df0f222b624c214eb19b241dee6e63cb2d",
+      "source_equal": true,
+      "bytes": 12611
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L003/8fbfcfbae2d5096f8c360cb93869094ba975582f725968895b85dec9a2143ed4.json",
+      "sha256": "8fbfcfbae2d5096f8c360cb93869094ba975582f725968895b85dec9a2143ed4",
+      "source_equal": true,
+      "bytes": 1285
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L007/70faa4a661c767c6f6ac9106dba5ebaa8b3bbfe07555830affb3d119a7058cfc.json",
+      "sha256": "70faa4a661c767c6f6ac9106dba5ebaa8b3bbfe07555830affb3d119a7058cfc",
+      "source_equal": true,
+      "bytes": 1325
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L009/3175d4f02a5ae20505bf235115118249b0816030a840b7f0ef2da62b462dc883.json",
+      "sha256": "3175d4f02a5ae20505bf235115118249b0816030a840b7f0ef2da62b462dc883",
+      "source_equal": true,
+      "bytes": 1425
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L011/efe3fa25674e3a0d795ac803a1e38db550853ca57c8a5407bce0f334192b6747.json",
+      "sha256": "efe3fa25674e3a0d795ac803a1e38db550853ca57c8a5407bce0f334192b6747",
+      "source_equal": true,
+      "bytes": 1458
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L015/a13fe56b298916d3f77e36a2510466f58b17d29c4ecfae487d458a00af9fa1ed.json",
+      "sha256": "a13fe56b298916d3f77e36a2510466f58b17d29c4ecfae487d458a00af9fa1ed",
+      "source_equal": true,
+      "bytes": 1937
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L017/1cc830d7f5298853b5829b9fc47b5581e01d31a3a78aeba25fcd6f60f2c302d8.json",
+      "sha256": "1cc830d7f5298853b5829b9fc47b5581e01d31a3a78aeba25fcd6f60f2c302d8",
+      "source_equal": true,
+      "bytes": 1409
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L021/2e869b15a44bb7008cd33ab8c0fb7de56706e84cf5f6b19005654415964d8ff9.json",
+      "sha256": "2e869b15a44bb7008cd33ab8c0fb7de56706e84cf5f6b19005654415964d8ff9",
+      "source_equal": true,
+      "bytes": 1921
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L023/afe849102c27bdf049d0a11ada6423c11a1eff02272602d82d864be2051eac91.json",
+      "sha256": "afe849102c27bdf049d0a11ada6423c11a1eff02272602d82d864be2051eac91",
+      "source_equal": true,
+      "bytes": 1786
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L025/6fb504cef17947e55a47b178ab9c50dfb5433206a78bfc1fe234945f19c397de.json",
+      "sha256": "6fb504cef17947e55a47b178ab9c50dfb5433206a78bfc1fe234945f19c397de",
+      "source_equal": true,
+      "bytes": 1227
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L027/791d3d9d36f995888211fd4586249ae6d9f3b4e08439dbc49377333bb1e12d1e.json",
+      "sha256": "791d3d9d36f995888211fd4586249ae6d9f3b4e08439dbc49377333bb1e12d1e",
+      "source_equal": true,
+      "bytes": 1896
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L029/847d7a69aaf4c25c239c467a86c1aa349071749eebb35d8fca5971b0ff86d8cd.json",
+      "sha256": "847d7a69aaf4c25c239c467a86c1aa349071749eebb35d8fca5971b0ff86d8cd",
+      "source_equal": true,
+      "bytes": 2569
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L031/107a18a7c20fa7a15745f182ddb0007cf80d55ae6dbb0025d36b7e6748207658.json",
+      "sha256": "107a18a7c20fa7a15745f182ddb0007cf80d55ae6dbb0025d36b7e6748207658",
+      "source_equal": true,
+      "bytes": 1378
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L033/dda40b3cad8aaa9b08bdec446861b8823b04a446c2fb997307eee38f153dcfa8.json",
+      "sha256": "dda40b3cad8aaa9b08bdec446861b8823b04a446c2fb997307eee38f153dcfa8",
+      "source_equal": true,
+      "bytes": 1588
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L035/ecad6dd3d921f5bc1a1a04ac5ce690dbc22e681eea747284908c408268314b96.json",
+      "sha256": "ecad6dd3d921f5bc1a1a04ac5ce690dbc22e681eea747284908c408268314b96",
+      "source_equal": true,
+      "bytes": 1449
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L037/0bbd632b42863ff3dca36f67a3387d8a552a5aadbb97bd99c18199ade175b2e9.json",
+      "sha256": "0bbd632b42863ff3dca36f67a3387d8a552a5aadbb97bd99c18199ade175b2e9",
+      "source_equal": true,
+      "bytes": 1210
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L039/ea18b8f3f5459b59ec56c06427c47be3c6308405924d2c2546163a5625e303e7.json",
+      "sha256": "ea18b8f3f5459b59ec56c06427c47be3c6308405924d2c2546163a5625e303e7",
+      "source_equal": true,
+      "bytes": 1265
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L043/3339d56419d717ace9ea374f6a2a72ffd2d3392cb1748c5fb51f85476e727dce.json",
+      "sha256": "3339d56419d717ace9ea374f6a2a72ffd2d3392cb1748c5fb51f85476e727dce",
+      "source_equal": true,
+      "bytes": 1624
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L045/3b59fe6c2187e856899aa822b650762ed9422716ada46ec3f80203e4e7f49150.json",
+      "sha256": "3b59fe6c2187e856899aa822b650762ed9422716ada46ec3f80203e4e7f49150",
+      "source_equal": true,
+      "bytes": 1523
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L047/b00b08e16f1740aeda759fe101f84d7b1b02cc8b47d024d4d638ca3d36747422.json",
+      "sha256": "b00b08e16f1740aeda759fe101f84d7b1b02cc8b47d024d4d638ca3d36747422",
+      "source_equal": true,
+      "bytes": 1282
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L049/51117455695e70a23a17d2a8ac8145c6d4e0c2840c0c4c08ac6a49242cec4c89.json",
+      "sha256": "51117455695e70a23a17d2a8ac8145c6d4e0c2840c0c4c08ac6a49242cec4c89",
+      "source_equal": true,
+      "bytes": 1508
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L051/e0400345edcf7106fcc20081b7c0383a0bf474317f9ec0102c1a9374c80b4a78.json",
+      "sha256": "e0400345edcf7106fcc20081b7c0383a0bf474317f9ec0102c1a9374c80b4a78",
+      "source_equal": true,
+      "bytes": 1241
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L053/0fdb750162ace57d56adb981ef4eebb9f0a05a253cdd7870f27796759d17d35b.json",
+      "sha256": "0fdb750162ace57d56adb981ef4eebb9f0a05a253cdd7870f27796759d17d35b",
+      "source_equal": true,
+      "bytes": 1394
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L055/31e8d53359b4db20630de8d95ca5e6d6b28c26e93b5d60d6e8b614cd1d474909.json",
+      "sha256": "31e8d53359b4db20630de8d95ca5e6d6b28c26e93b5d60d6e8b614cd1d474909",
+      "source_equal": true,
+      "bytes": 1703
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L057/45987504a5a87d20343006828dc2bd0beb4c4f86293befb7faf9846953ca34b2.json",
+      "sha256": "45987504a5a87d20343006828dc2bd0beb4c4f86293befb7faf9846953ca34b2",
+      "source_equal": true,
+      "bytes": 1669
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L059/cca9c0a1133ff9c48920e2ff9d309022806f334807a0746d02c1ce469df171b5.json",
+      "sha256": "cca9c0a1133ff9c48920e2ff9d309022806f334807a0746d02c1ce469df171b5",
+      "source_equal": true,
+      "bytes": 1517
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L061/114b6bb4ab2f88ac9049e973ef37fedcf28325131519736665e61cfeee0c25f5.json",
+      "sha256": "114b6bb4ab2f88ac9049e973ef37fedcf28325131519736665e61cfeee0c25f5",
+      "source_equal": true,
+      "bytes": 2144
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L063/038ca2544e210de3183a952df07e002d805e8c0f677db131de37f6b29356fdb1.json",
+      "sha256": "038ca2544e210de3183a952df07e002d805e8c0f677db131de37f6b29356fdb1",
+      "source_equal": true,
+      "bytes": 1907
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L065/ab484ae556c1aac2521b8ff5c6465758ef8987d9ba72b1be198941c030a837f8.json",
+      "sha256": "ab484ae556c1aac2521b8ff5c6465758ef8987d9ba72b1be198941c030a837f8",
+      "source_equal": true,
+      "bytes": 1359
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L067/0435affbee4ca125bcd56a3288ccb3ffbfdcb8faa5367875b2dfa9b7618af221.json",
+      "sha256": "0435affbee4ca125bcd56a3288ccb3ffbfdcb8faa5367875b2dfa9b7618af221",
+      "source_equal": true,
+      "bytes": 1274
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L069/b4613a0ef7da43823b5a2aed8af8768c0d374b06315b0ee9ceb284546d470102.json",
+      "sha256": "b4613a0ef7da43823b5a2aed8af8768c0d374b06315b0ee9ceb284546d470102",
+      "source_equal": true,
+      "bytes": 1158
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L073/d3d2206211129591f78e35e17f7b421163842f3a2c87039a126f064395921d97.json",
+      "sha256": "d3d2206211129591f78e35e17f7b421163842f3a2c87039a126f064395921d97",
+      "source_equal": true,
+      "bytes": 1455
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L075/2a8adb1721e45db38948c67be705757bb18e7e9de6ecbf54a86701e7fb70a506.json",
+      "sha256": "2a8adb1721e45db38948c67be705757bb18e7e9de6ecbf54a86701e7fb70a506",
+      "source_equal": true,
+      "bytes": 1260
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L079/76c79446ecdc9f2afa5c608382f001918683b9b8152cc01e8460a0c0f5637b05.json",
+      "sha256": "76c79446ecdc9f2afa5c608382f001918683b9b8152cc01e8460a0c0f5637b05",
+      "source_equal": true,
+      "bytes": 1341
+    },
+    {
+      "path": "docs/handoff/quality/revisions/QH-20261020-L081/2f9abe4abacc16daf0e83810e03b85eff2b671699d4873a11bc93992885bbbef.json",
+      "sha256": "2f9abe4abacc16daf0e83810e03b85eff2b671699d4873a11bc93992885bbbef",
+      "source_equal": true,
+      "bytes": 1296
+    },
+    {
+      "path": "docs/handoff/quality/views/review-001.md",
+      "sha256": "c75b75d45faccf0b93b66f1ce55abe48fb612f5970471636a4f6706e0abfe361",
+      "source_equal": true,
+      "bytes": 3282
+    },
+    {
+      "path": "docs/requirements/INDEX.md",
+      "sha256": "c7a1910b2fc72fefce2b7abe96719a17bfe3e3a6b12ba7a1a15fe1733657e7d6",
+      "source_equal": false,
+      "bytes": 62819
+    },
+    {
+      "path": "docs/requirements/反馈承接与原workflow使用.md",
+      "sha256": "8db32c2da4d2532d7fee150f0feef2f34624525e5ea860acc4760f7d0b26bac6",
+      "source_equal": true,
+      "bytes": 9858
+    },
+    {
+      "path": "docs/requirements/日常短入口与需求验收.md",
+      "sha256": "6f3b2cfea6851feb73d3d803b6a45403a9ff1dddd7eededaca15c2393491a4df",
+      "source_equal": true,
+      "bytes": 7003
+    },
+    {
+      "path": "docs/rules/操作细则.md",
+      "sha256": "528a392fe1f35fe4018f56c3a21fc03e24db172157c776f056b6af3b950e006a",
+      "source_equal": true,
+      "bytes": 5839
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-19-finance-approved-execution-record.md",
+      "sha256": "f352f3baa80c0f59b3728c187646bdd4fcb0104ca8d5b86ba8f905a1a72bd5f2",
+      "source_equal": true,
+      "bytes": 2096
+    },
+    {
+      "path": "docs/superpowers/plans/2026-11-14-feedback-workflow-interfaces.md",
+      "sha256": "4a15d554a0a8a05439983cbf948efa28f5ef98c05f547fe0cebf7d6ce4c18fe7",
+      "source_equal": true,
+      "bytes": 4022
+    },
+    {
+      "path": "docs/superpowers/plans/2026-11-14-queue-driven-daily-routine.md",
+      "sha256": "336bddc9fe7f729a330bd3a2dec0e747b82c59ff04351c8405e3c38615a142eb",
+      "source_equal": true,
+      "bytes": 3453
+    },
+    {
+      "path": "docs/superpowers/plans/2026-11-15-queue-prerequisites.md",
+      "sha256": "a281aaeeb67af7fdd556a5823acac162afaa46787d396849f6207f08edd6f0b0",
+      "source_equal": true,
+      "bytes": 1690
+    },
+    {
+      "path": "docs/superpowers/plans/2026-11-15-requirement-alert-alignment.md",
+      "sha256": "1cc3c31ba2caa084f4ff2c256f0c84bbe51e7e1550ba3083213cfe6160e4cc7c",
+      "source_equal": true,
+      "bytes": 1665
+    },
+    {
+      "path": "docs/superpowers/plans/2026-11-15-watch-write-before-build.md",
+      "sha256": "d0e7f01904fca9ebf85eb5ccf7e24830fd720765f9ab6768030feaf688d5cb87",
+      "source_equal": true,
+      "bytes": 3959
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-feedback-workflow-interfaces-1114/.openspec.yaml",
+      "sha256": "8adc132d892c0630aec6fd5ffceca60c799724ac6f747ebff6bc6ca2335c061f",
+      "source_equal": true,
+      "bytes": 57
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-feedback-workflow-interfaces-1114/design.md",
+      "sha256": "a7210b777a578424f721a9809852d6f588ee2135a4c5666553a97af6577c1b42",
+      "source_equal": true,
+      "bytes": 1908
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-feedback-workflow-interfaces-1114/proposal.md",
+      "sha256": "f8843c9899ed06d9535b2b44fc77ca787ee8b59faa0b72dae5bdb7c281afcba7",
+      "source_equal": true,
+      "bytes": 695
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-feedback-workflow-interfaces-1114/specs/serial-test-first-construction/spec.md",
+      "sha256": "12a82fd1fcb5dfea248c6ad9b2eba63dbbd6a30cf6f4edfe41e1743420bd2892",
+      "source_equal": true,
+      "bytes": 1874
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-feedback-workflow-interfaces-1114/tasks.md",
+      "sha256": "9f3aea205f741c3c692f5ab29f7b3181765d3cce6cf81bf613984efa9d875aeb",
+      "source_equal": true,
+      "bytes": 703
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-lane-watch-serial-test-first-1014/.openspec.yaml",
+      "sha256": "cd54fe01555559ffd5cf6f7f1d1b06209492e5ba9147cdc3800201c09e2291d0",
+      "source_equal": true,
+      "bytes": 40
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-lane-watch-serial-test-first-1014/design.md",
+      "sha256": "c728ccacfe76f57a678817b98949ca2747534091d85639224801789092d06a86",
+      "source_equal": true,
+      "bytes": 4803
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-lane-watch-serial-test-first-1014/proposal.md",
+      "sha256": "b615802b7408c1b8dfda4ab0c6d9599df8085894e7fd08478cb9aab6e7a1ba1c",
+      "source_equal": true,
+      "bytes": 3528
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-lane-watch-serial-test-first-1014/specs/serial-test-first-construction/spec.md",
+      "sha256": "55aa42182a692c94b77d27b14e63e8ad82fddba54c71ebda31d8d72b909b3d72",
+      "source_equal": true,
+      "bytes": 3302
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-lane-watch-serial-test-first-1014/tasks.md",
+      "sha256": "be9e9e7647dfde738732b5379ae5d4060dfac2150a1dd9737d88bd8b258f9c0f",
+      "source_equal": true,
+      "bytes": 4289
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-queue-driven-daily-routine-1114/.openspec.yaml",
+      "sha256": "8adc132d892c0630aec6fd5ffceca60c799724ac6f747ebff6bc6ca2335c061f",
+      "source_equal": true,
+      "bytes": 57
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-queue-driven-daily-routine-1114/acceptance-functional.json",
+      "sha256": "40c87d3bf7094e5cba4773670f08f1c49ec160b135e1ff80c183973767cc7683",
+      "source_equal": true,
+      "bytes": 561
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-queue-driven-daily-routine-1114/acceptance.json",
+      "sha256": "111c63828055a28dc45d641916849a9d9f57035d0c2ef5e0496a71c88f33c7be",
+      "source_equal": true,
+      "bytes": 4739
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-queue-driven-daily-routine-1114/design.md",
+      "sha256": "b55a7a517a6f2ebd8d11ce6b265e5fde8ddbd82af9d4ddb1c3bdd21ed37a0f3e",
+      "source_equal": true,
+      "bytes": 1383
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-queue-driven-daily-routine-1114/proposal.md",
+      "sha256": "12fcf5f5e77a537453f2f22d50b9b04f3c2f75f32446a92e631563f9de2f4eb2",
+      "source_equal": true,
+      "bytes": 752
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-queue-driven-daily-routine-1114/specs/serial-test-first-construction/spec.md",
+      "sha256": "51a02d0d37efce0816af4a1355e5ca3b427bf1682f47138e92e46ea95eae7876",
+      "source_equal": true,
+      "bytes": 1319
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-14-queue-driven-daily-routine-1114/tasks.md",
+      "sha256": "31890cd927f825c93d99a6dc27c511dfb96ec41b72af40317a0f666e630aec3f",
+      "source_equal": true,
+      "bytes": 536
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-queue-prerequisite-context-1115/.openspec.yaml",
+      "sha256": "e471028913e5982d6d06417ef3d5e283a5d11db95f2382133d489e18993f86cb",
+      "source_equal": true,
+      "bytes": 60
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-queue-prerequisite-context-1115/acceptance.json",
+      "sha256": "84096ff57b57b854bb4ca501c2f5d165e13ede23905c6462c2c19f774ce0ad24",
+      "source_equal": true,
+      "bytes": 5760
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-queue-prerequisite-context-1115/design.md",
+      "sha256": "bb04d91b12029e2fc4b84c996db3a335427e65e755d5d11e9fea0b80571d0c45",
+      "source_equal": true,
+      "bytes": 1370
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-queue-prerequisite-context-1115/proposal.md",
+      "sha256": "47575d198f6374688a9f3d54c70abb17f39e445a6ad4dd5e23c7f0a469d79a06",
+      "source_equal": true,
+      "bytes": 2085
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-queue-prerequisite-context-1115/specs/serial-test-first-construction/spec.md",
+      "sha256": "b13ea6c0cf3d8afbc064e3188ed703e80f359d7af0e4971aa3f31895965609bf",
+      "source_equal": true,
+      "bytes": 2060
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-queue-prerequisite-context-1115/tasks.md",
+      "sha256": "9f021f145e69492c29ac6eb6c9cfe7a095d693f8d73be7031d6c0018ef67a9ae",
+      "source_equal": true,
+      "bytes": 597
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-requirement-alert-alignment-1115/.openspec.yaml",
+      "sha256": "e471028913e5982d6d06417ef3d5e283a5d11db95f2382133d489e18993f86cb",
+      "source_equal": true,
+      "bytes": 60
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-requirement-alert-alignment-1115/design.md",
+      "sha256": "4adff65f9599890cb061a4e7f781bc70fb1999a63d72b2cf7fd0c8424f6e5c7d",
+      "source_equal": true,
+      "bytes": 1682
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-requirement-alert-alignment-1115/proposal.md",
+      "sha256": "1387404ad06f6ab336bea05d3fc706a4980129e998f9d3544839730c6583f81e",
+      "source_equal": true,
+      "bytes": 626
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-requirement-alert-alignment-1115/specs/sweep-alert-lifecycle-guard/spec.md",
+      "sha256": "b14aa3af1c8fea14a84bd634caa83cb0360009e2b5a9de95b86782435209b6fb",
+      "source_equal": true,
+      "bytes": 2064
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-requirement-alert-alignment-1115/tasks.md",
+      "sha256": "48d0342189ca8b07d7874b49c51ad7075fa76a49983eed1561d57f0c0d133178",
+      "source_equal": true,
+      "bytes": 757
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/.openspec.yaml",
+      "sha256": "e471028913e5982d6d06417ef3d5e283a5d11db95f2382133d489e18993f86cb",
+      "source_equal": true,
+      "bytes": 60
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/acceptance.json",
+      "sha256": "c62fe3230e75d4c5475034ea70858381c92f4d0a8aab687a29fc34c668b67553",
+      "source_equal": true,
+      "bytes": 8409
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/design.md",
+      "sha256": "fb96ec0b1b5b2b23e468f20856d873d0171bbcb5f18758d5f95c6fbe285c4f28",
+      "source_equal": true,
+      "bytes": 3444
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/proposal.md",
+      "sha256": "5ae5ccfaf671aabcb495520d36e85c8dce329a4dab5f075485bec2bfc90171c1",
+      "source_equal": true,
+      "bytes": 3102
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/specs/serial-test-first-construction/spec.md",
+      "sha256": "2f1f89f2813f966c203517810635b6c1b35935d6226cd6c7c7aeabc0949eb3da",
+      "source_equal": true,
+      "bytes": 2679
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-15-watch-write-before-build-1115/tasks.md",
+      "sha256": "caaa1c1813496a7675d10b3eece3cda9c7926f5fd9886ca074b680f998bc4133",
+      "source_equal": true,
+      "bytes": 684
+    },
+    {
+      "path": "openspec/changes/portal-q2-ui/proposal.md",
+      "sha256": "1912027ae43407a516e7075e47a59ed24bf1658c1743aae962b67f5fd4c9390d",
+      "source_equal": false,
+      "bytes": 4504
+    },
+    {
+      "path": "openspec/config.yaml",
+      "sha256": "db771c85328ce1bbd1b7b1864c20472d50039943bb5a39256896852d0f4180a2",
+      "source_equal": true,
+      "bytes": 5467
+    },
+    {
+      "path": "openspec/specs/editlock-credential-shape-guard/spec.md",
+      "sha256": "c4182503181fa7f9c45a47a7f34a2795fc45815954b3dc3531baf81c6e2019a8",
+      "source_equal": false,
+      "bytes": 8497
+    },
+    {
+      "path": "openspec/specs/q2-portal-display/spec.md",
+      "sha256": "6b61f9a1d432f2edc4e9254c5120461500acc13d15818ee77484140829cd6452",
+      "source_equal": true,
+      "bytes": 4910
+    },
+    {
+      "path": "openspec/specs/serial-test-first-construction/spec.md",
+      "sha256": "f1aaf2848fab49cb26a82cf2f457b735f83f175ef1dde8ab782a706b1bb3d0bd",
+      "source_equal": true,
+      "bytes": 11124
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/AGENTS.md",
+      "sha256": "8086d109625d684cc0f4a7799df838d23f248d2e409ae7c4d4628f176a7de0e1",
+      "source_equal": true,
+      "bytes": 525
+    },
+    {
+      "path": "4-数字员工/AGENTS.md",
+      "sha256": "ad4b222d2e0046e12132bf630f4aac4ff24067a48c90fee809459aaf9ca6a33f",
+      "source_equal": true,
+      "bytes": 489
+    },
+    {
+      "path": "4-数字员工/财务部/FI1-供应链仓库对账/AGENTS.md",
+      "sha256": "783fdb8223c463373e9a12ecf421272b41a3b81b5833e258b161dc3b8a801e39",
+      "source_equal": true,
+      "bytes": 561
+    },
+    {
+      "path": "4-数字员工/财务部/FI1-供应链仓库对账/CODEX-RULES.md",
+      "sha256": "e4d2eb1a083f80d79ee01d583fad7a74d50eab2968b2dd5ef781a46a1ff833a7",
+      "source_equal": true,
+      "bytes": 8948
+    },
+    {
+      "path": "4-数字员工/财务部/FI2-三单匹配自动对账/AGENTS.md",
+      "sha256": "7a452beba6e4f9c3861da652ae0fc43c9260b23e5fff2cac0e11cb461b067a5d",
+      "source_equal": true,
+      "bytes": 567
+    },
+    {
+      "path": "4-数字员工/财务部/FI2-三单匹配自动对账/CODEX-RULES.md",
+      "sha256": "06f380d3e46aadc9157e0f92831123e48744a43737a188ee418de11c2c538c78",
+      "source_equal": true,
+      "bytes": 44048
+    },
+    {
+      "path": "4-数字员工/财务部/FI3-付款申请自动校验/AGENTS.md",
+      "sha256": "5a0028e42205dcdba704db5ed283937ca11c0137ce46e4314c25f9d41b457b4e",
+      "source_equal": true,
+      "bytes": 567
+    },
+    {
+      "path": "4-数字员工/财务部/FI3-付款申请自动校验/CODEX-RULES.md",
+      "sha256": "e45859c47f5fe55c9a7b3ba49e1f749e7c408d22741677048f6bb7e24c107b33",
+      "source_equal": true,
+      "bytes": 10396
+    },
+    {
+      "path": "4-数字员工/质量部/Q2-8D报告AI判定/AGENTS.md",
+      "sha256": "2faed723b4df9fe0d1f2fb68f2c64c5cbb9234f3808698ff57f56e987520a0ba",
+      "source_equal": true,
+      "bytes": 549
+    },
+    {
+      "path": "4-数字员工/质量部/Q2-8D报告AI判定/CODEX-RULES.md",
+      "sha256": "97c47e3392714d2ae98acdddc513b77f8057ffa6d6231517a66cf871e964cc2c",
+      "source_equal": true,
+      "bytes": 10765
+    },
+    {
+      "path": "4-数字员工/质量部/QD-A-8D不良分析/AGENTS.md",
+      "sha256": "1a83a13642453815f600e2ca75322a189b58fee47bcfc1380b08a845623d1cc2",
+      "source_equal": true,
+      "bytes": 549
+    },
+    {
+      "path": "4-数字员工/质量部/QD-A-8D不良分析/CODEX-RULES.md",
+      "sha256": "e417cceed3a510c42c408ac51d8e9dc9ffd0ebfdaa0f0791d9f1949bcab9fc4a",
+      "source_equal": true,
+      "bytes": 7244
+    },
+    {
+      "path": "4-数字员工/质量部/QD-B-立项审核门禁/AGENTS.md",
+      "sha256": "72ed38069589fe8e5b1ccf67523bc7b399df07cc3ad614f388fe4a68632ba7df",
+      "source_equal": true,
+      "bytes": 557
+    },
+    {
+      "path": "4-数字员工/质量部/QD-B-立项审核门禁/CODEX-RULES.md",
+      "sha256": "b301299df6c439d5e3ddadd463b833f972e3f9f005ede29a10866c1a5bc5c98f",
+      "source_equal": true,
+      "bytes": 35750
+    },
+    {
+      "path": "4-数字员工/运营部/O1-生产排程智能优化/AGENTS.md",
+      "sha256": "30b7c915b238d7858d2890bb9655a108d81f0a980fa1abbd630f542fea26556f",
+      "source_equal": true,
+      "bytes": 565
+    },
+    {
+      "path": "4-数字员工/运营部/O1-生产排程智能优化/CODEX-RULES.md",
+      "sha256": "444a879e5995c62bfdab43e80970aa1c45ed690d35ec60a1cbc92616edb32b50",
+      "source_equal": true,
+      "bytes": 14183
+    },
+    {
+      "path": "4-数字员工/运营部/O2-物料齐套预警/AGENTS.md",
+      "sha256": "c1358a8a9b795797e99e34138da5f7a9c16a46da1bf3b5f3987e8c7e3f9cd9a3",
+      "source_equal": true,
+      "bytes": 553
+    },
+    {
+      "path": "4-数字员工/运营部/O2-物料齐套预警/CODEX-RULES.md",
+      "sha256": "6303badd5e9f6f5e976e626839418606e3b35c211770652a60b781368f2675a9",
+      "source_equal": true,
+      "bytes": 6230
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/AGENTS.md",
+      "sha256": "1dfd2a3fba135fb561d6a1e5883d82b4ccdba4e15dcfeabf98a678fab84d49ae",
+      "source_equal": true,
+      "bytes": 559
+    },
+    {
+      "path": "4-数字员工/运营部/O4-设备预测性维护/CODEX-RULES.md",
+      "sha256": "736d95b77308578cd71c46021c486ef9395dad2eb77528219bdce53ca078e059",
+      "source_equal": true,
+      "bytes": 1694
+    },
+    {
+      "path": "4-数字员工/采购部/SC1-供应商风险初筛/AGENTS.md",
+      "sha256": "427c5c3d9c0104f0fcf570be79c770eaf39e55f728d8fadfacd32950d90b6de8",
+      "source_equal": true,
+      "bytes": 561
+    },
+    {
+      "path": "4-数字员工/采购部/SC1-供应商风险初筛/CODEX-RULES.md",
+      "sha256": "e0897f516fa77f0a495d93d9b20ccf8ed3c51eccdde5b90cf45035070192edf0",
+      "source_equal": true,
+      "bytes": 4830
+    },
+    {
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/AGENTS.md",
+      "sha256": "34f432d13ea8dbbff237f0d33d7031c15ed89b25f0049e409b5df4ba30d5c253",
+      "source_equal": true,
+      "bytes": 575
+    },
+    {
+      "path": "4-数字员工/采购部/SC10-BOM评审与物料库管控/CODEX-RULES.md",
+      "sha256": "816fdd91dc86c04a588483818f4f6b995ba071f24db62f52fc0c42cdd3a54bf7",
+      "source_equal": true,
+      "bytes": 6377
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/AGENTS.md",
+      "sha256": "521d6d65114a612a56df06fb3655f97a01ffe6aa7c2e04748107ea14b4707247",
+      "source_equal": true,
+      "bytes": 557
+    },
+    {
+      "path": "4-数字员工/采购部/SC11-库存智能调拨/CODEX-RULES.md",
+      "sha256": "7deb24955399634ea46c6bbd9db02f2f1a882893c133488c0dc37abf680e0456",
+      "source_equal": true,
+      "bytes": 6674
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/AGENTS.md",
+      "sha256": "50eb96847670ec5b2669394c74a2bbf0b2a9182c1157ad8f37dc8c8a782627c0",
+      "source_equal": true,
+      "bytes": 567
+    },
+    {
+      "path": "4-数字员工/采购部/SC2-采购周报自动生成/CODEX-RULES.md",
+      "sha256": "3dc32e209cf811f8912143ce3c04f85727426f8820034233093ea5dc9a6199fb",
+      "source_equal": true,
+      "bytes": 26987
+    },
+    {
+      "path": "4-数字员工/采购部/SC3-供应商在途跟踪与绩效/AGENTS.md",
+      "sha256": "dcb1812a22e3dc357e2d07a1feed5298fe304247061ca6f9f671bc64205de026",
+      "source_equal": true,
+      "bytes": 579
+    },
+    {
+      "path": "4-数字员工/采购部/SC3-供应商在途跟踪与绩效/CODEX-RULES.md",
+      "sha256": "f4edb0fadac71f0758fcbf9bc2b71d1b8b4a220c0b98e8e87db48189dd679e2a",
+      "source_equal": true,
+      "bytes": 5777
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/AGENTS.md",
+      "sha256": "c5be2d88b58ec83b171b74bc2510304b0c2ef981a7a38f3de4b70cbc365879f0",
+      "source_equal": true,
+      "bytes": 585
+    },
+    {
+      "path": "4-数字员工/采购部/SC4-合同条款自动提取与审核/CODEX-RULES.md",
+      "sha256": "84a2b9b40e0da07d6141d18ff0f5ba111b87b277106d7b438bac8c931413ef26",
+      "source_equal": true,
+      "bytes": 6433
+    },
+    {
+      "path": "4-数字员工/采购部/SC5-采购建议与供应商遴选/AGENTS.md",
+      "sha256": "d133f581d989cf835b565a533c7aa6db6234ff14cbc5ea9c58c0b5a7e2e282b1",
+      "source_equal": true,
+      "bytes": 579
+    },
+    {
+      "path": "4-数字员工/采购部/SC5-采购建议与供应商遴选/CODEX-RULES.md",
+      "sha256": "5403c80de7d9fdcf1eebd21aac64c909b73c29cb71d5f460d7f45362f004b3eb",
+      "source_equal": true,
+      "bytes": 6399
+    },
+    {
+      "path": "4-数字员工/采购部/SC7-库存优化建议/AGENTS.md",
+      "sha256": "d9f91ecf9b31d237d5886e0fa18008e01d26b1e093ad9654a6941a7280435356",
+      "source_equal": true,
+      "bytes": 555
+    },
+    {
+      "path": "4-数字员工/采购部/SC7-库存优化建议/CODEX-RULES.md",
+      "sha256": "db0f0ab72c520b3564c281d3fbc75bf0aac2ee5f0f9e124b04573f23187546bc",
+      "source_equal": true,
+      "bytes": 13999
+    },
+    {
+      "path": "4-数字员工/采购部/SC8-客户订单交期智能承诺/AGENTS.md",
+      "sha256": "64765cbe3b2bb780d08c30fc65957a9cc9666ea5844ebdfb0bf60731b3546b71",
+      "source_equal": true,
+      "bytes": 579
+    },
+    {
+      "path": "4-数字员工/采购部/SC8-客户订单交期智能承诺/CODEX-RULES.md",
+      "sha256": "942a7c2e8ad4b0586652db481c149a1dc963bfa3202f4d11861d1397bb94049b",
+      "source_equal": true,
+      "bytes": 29514
+    },
+    {
+      "path": "5-平台底座/AGENTS.md",
+      "sha256": "9714299c5227852b0d43878ac63de0976b1b304e2c65c7f3ce94520357ba6ef6",
+      "source_equal": true,
+      "bytes": 489
+    },
+    {
+      "path": "5-平台底座/unified-portal-gateway/AGENTS.md",
+      "sha256": "f4d718f17fdcc6e95bc9f63a00dde29be001e0d143cac0d675f1564e1e31c341",
+      "source_equal": true,
+      "bytes": 535
+    },
+    {
+      "path": "5-平台底座/unified-portal-gateway/CODEX-RULES.md",
+      "sha256": "73884012ca6121d8e828d42b0593ec92ab2366556cc20c34bd44d0b4b44ea8fe",
+      "source_equal": true,
+      "bytes": 12441
+    },
+    {
+      "path": "6-人才与组织/AGENTS.md",
+      "sha256": "35a4e9f5941d6699a38b6deec95f0c0e48fe4189d3026d644986d482145cf07c",
+      "source_equal": true,
+      "bytes": 495
+    },
+    {
+      "path": "6-人才与组织/CODEX-RULES.md",
+      "sha256": "c45eb8536e4a212201f8c94dda451754c7692916ee5db88dc9055864f82c2726",
+      "source_equal": true,
+      "bytes": 8195
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-16-mechanism-publication-prerequisites-1116/.openspec.yaml",
+      "sha256": "803068e3fba55090a460da7bdb5918f5de255bbb3ce992dd90dcc84ddea9aae8",
+      "source_equal": false,
+      "bytes": 60
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-16-mechanism-publication-prerequisites-1116/design.md",
+      "sha256": "ce196d5334034c7e67fbef3d104a6540ac0762ccffd7363bd5c1a93e8b27a555",
+      "source_equal": false,
+      "bytes": 656
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-16-mechanism-publication-prerequisites-1116/proposal.md",
+      "sha256": "f14b297b73635f8737dac598ac2b6201edf3fd71d509dc808b05690adc524257",
+      "source_equal": false,
+      "bytes": 1836
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-16-mechanism-publication-prerequisites-1116/specs/editlock-credential-shape-guard/spec.md",
+      "sha256": "a5607011a296502caaad7e4cbb31310b10cb432ad65eaa1c00f892e99db3206b",
+      "source_equal": false,
+      "bytes": 1210
+    },
+    {
+      "path": "openspec/changes/archive/2026-11-16-mechanism-publication-prerequisites-1116/tasks.md",
+      "sha256": "771a35d39fe03e46c06c8a0fe044b6064b1b0f93157588bf27cceadb1a56b9e2",
+      "source_equal": false,
+      "bytes": 235
+    }
+  ],
+  "excluded": [
+    "1116KH changes/candidates",
+    "#563/#636 candidates",
+    "#670/SC7 business",
+    "other business implementation",
+    "live queue snapshots",
+    "runtime config/state/credentials",
+    "source branch extra commits",
+    "ignored R5 transaction runtime data; never forced into index"
+  ],
+  "archived_change": "2026-11-16-mechanism-publication-prerequisites-1116",
+  "business_implementation_files": 0,
+  "removed_paths": [
+    "openspec/changes/lane-watch-serial-test-first-1014/.openspec.yaml",
+    "openspec/changes/lane-watch-serial-test-first-1014/design.md",
+    "openspec/changes/lane-watch-serial-test-first-1014/proposal.md",
+    "openspec/changes/lane-watch-serial-test-first-1014/specs/serial-test-first-construction/spec.md",
+    "openspec/changes/lane-watch-serial-test-first-1014/tasks.md"
+  ]
+}

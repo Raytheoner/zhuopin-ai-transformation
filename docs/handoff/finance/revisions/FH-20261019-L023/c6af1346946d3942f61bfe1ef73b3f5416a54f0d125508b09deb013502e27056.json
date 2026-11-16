@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对应原任务现时证据与剩余判据后确认；不得仅凭历史标题关闭",
+  "id": "FH-20261019-L023",
+  "legacy_ids": [],
+  "notes": "本条为独立历史资料，不是新业务任务；完整原段、批准和专业边界均保留。",
+  "original_text": "财务33d1／FI14导航／182接线旧交付保留；已向1017UI交十候选短表与FI1–16全域矩阵：10合成技术片＋FI2/FI3旧入口，4项继续暂缓。UI已有现场回执只作引用，本线未访问服务器；入口可达不等于完整原PRD验收。\n",
+  "owner": "原财务任务Owner；现时执行归属依正式队列核验",
+  "risk": "遗失将丢失历史授权、未完条件或证据定位",
+  "sources": [
+    {
+      "end": 23,
+      "path": "docs/handoff/finance/archive/e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1.bin",
+      "sha256": "e009db7a7444ca0f6af315d5be1cb90a5c1c06d495a19d49050fb31fc94748f1",
+      "start": 23
+    }
+  ],
+  "status": "review",
+  "title": "FI1–16矩阵与原交付非完整专业验收",
+  "topic": "完成与停点"
+}

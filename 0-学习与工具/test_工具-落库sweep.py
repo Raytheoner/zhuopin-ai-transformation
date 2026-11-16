@@ -4225,7 +4225,8 @@ class ObservationWindowAnnounceUnitTests(unittest.TestCase):
             self._hit("observing-pkg", days_idle=5.0, window_days=30.0),
             self._hit("escalate-pkg", days_idle=40.0, window_days=30.0),
         ]
-        with mock.patch.object(sweep, "_load_webhook_url", return_value=None):
+        with mock.patch.object(sweep, "_load_webhook_url", return_value="https://example.invalid/mocked"), \
+                mock.patch.object(sweep, "_send_wecom_markdown", return_value=None):
             sweep._announce_stale_in_flight_changes(self.repo, hits, log)
         state = sweep._read_json_state(self.repo / sweep.STALE_CHANGE_STATE_REL)
         self.assertIn("escalate-pkg", state)
@@ -4251,6 +4252,13 @@ class StandingStateAlertLifecycleUnitTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self._tmp.name)
+        from unittest.mock import patch
+        self._webhook = patch.object(sweep, "_load_webhook_url", return_value="https://example.invalid/mocked")
+        self._sender = patch.object(sweep, "_send_wecom_markdown", return_value=None)
+        self._webhook.start()
+        self._sender.start()
+        self.addCleanup(self._webhook.stop)
+        self.addCleanup(self._sender.stop)
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -5135,8 +5143,9 @@ class _StandingStateRecorder:
         self.calls = []
 
     def __call__(self, repo_root, label, state_rel, current_keys,
-                 interval_hours, render_alert, render_resolved, log):
+                 interval_hours, render_alert, render_resolved, log, *, allow_resolve=True):
         self.calls.append({
+            "allow_resolve": allow_resolve,
             "label": label, "keys": set(current_keys),
             "alert_text": render_alert(sorted(current_keys)) if current_keys else "",
         })
@@ -8248,6 +8257,23 @@ class LocalOnlyCommitCliWiringTests(SweepTestBase):
     组存在的全部理由——建成而没接线，与没建成**外观完全相同**。
     """
 
+    def setUp(self):
+        super().setUp()
+        # 要验证“已发送→解除”，必须有真实本机ACK；缺通道不能记成功。
+        _CapturingWebhookHandler.received = []
+        self._server = HTTPServer(("127.0.0.1", 0), _CapturingWebhookHandler)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._server_thread.start()
+        (self.work / ".env").write_text(
+            f"{sweep.WECOM_WEBHOOK_ENV_KEY}=http://127.0.0.1:{self._server.server_port}/webhook\n", encoding="utf-8")
+
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        super().tearDown()
+
+
     def _log_text(self) -> str:
         return (self.work / sweep.LOG_REL).read_text(encoding="utf-8")
 
@@ -8976,6 +9002,7 @@ class StatusTriageResidentRoundTests(unittest.TestCase):
             "| 470 | 某行 | CC | 指针 | 产出 | "
             "[S:open][D:业] 上一条留步的 ⑤ 已由 Shao Peishen 当日答 G-6 = (a) 批准，"
             "五条定夺项全部依赖解除 | 触碰区 | 2026-09-03 |\n"))
+        self._write(sweep.STATUS_TRIAGE_STATE_REL, "{}")  # 既有空状态不得添入弱档键
         joined = "\n".join(self._run())
         self.assertIn("弱档 #470", joined)
         self.assertIn("降档因：依赖解除", joined)

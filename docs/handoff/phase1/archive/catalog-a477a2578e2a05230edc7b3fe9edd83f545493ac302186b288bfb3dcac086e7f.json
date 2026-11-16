@@ -1,0 +1,142 @@
+{
+  "domain": "phase1",
+  "entry": "1-转型规划/0-全景路线图/session接力-Phase1收口.md",
+  "generated": {
+    "1-转型规划/0-全景路线图/session接力-Phase1收口.md": "fb4a4885f00cffa2c336722d5ad42be2516cd1776b01e6a8b77c0f8604f2487e",
+    "docs/handoff/phase1/views/review-001.md": "7ffe1194f9e06927064d4adb17023ac76385591deecd6b96a0ca68ea880b014f"
+  },
+  "known": {
+    "P1H-20261030-L004": {
+      "legacy_ids": [],
+      "original_sha256": "9b8c73f8c2e4aafbad319dcde2e165ca85fc490db00a463fddab703ca76a2526",
+      "sources": [
+        {
+          "end": 4,
+          "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+          "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+          "start": 4
+        }
+      ]
+    },
+    "P1H-20261030-L007": {
+      "legacy_ids": [],
+      "original_sha256": "f61f23c5fbde295e0e3397efcc46fcf0e6bd12d73fffe7f761338d7d5d5902dc",
+      "sources": [
+        {
+          "end": 7,
+          "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+          "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+          "start": 7
+        }
+      ]
+    },
+    "P1H-20261030-L010": {
+      "legacy_ids": [
+        "#157",
+        "#197",
+        "#206",
+        "#218",
+        "#219",
+        "#258",
+        "#259",
+        "#288",
+        "#394",
+        "#96"
+      ],
+      "original_sha256": "ba45b629f5fe71a1c7a46246ef2f6a093e5e9f2766c375e4e361b0061afa0830",
+      "sources": [
+        {
+          "end": 10,
+          "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+          "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+          "start": 10
+        }
+      ]
+    },
+    "P1H-20261030-L013": {
+      "legacy_ids": [],
+      "original_sha256": "a5a316e45ea428615badc52db6c106db052b048dd44bc34992d448a28a6b2f04",
+      "sources": [
+        {
+          "end": 13,
+          "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+          "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+          "start": 13
+        }
+      ]
+    },
+    "P1H-20261030-L016": {
+      "legacy_ids": [
+        "#208",
+        "#213",
+        "#237",
+        "#257",
+        "#286",
+        "#287",
+        "#295",
+        "#387",
+        "#416",
+        "#439",
+        "#440",
+        "#455",
+        "#481",
+        "#503",
+        "#538",
+        "#561",
+        "#595",
+        "#629",
+        "#632",
+        "#634",
+        "#635",
+        "#636",
+        "#637",
+        "#638",
+        "#639",
+        "#652"
+      ],
+      "original_sha256": "455451b08add64c923626d361bfbb01ef4dc82a27e175869896872b8e5bd122b",
+      "sources": [
+        {
+          "end": 16,
+          "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+          "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+          "start": 16
+        }
+      ]
+    },
+    "P1H-20261030-L019": {
+      "legacy_ids": [],
+      "original_sha256": "f0fe6d29d3579e1064113824b64247d8afbb238cf7c031110c8aed919bf0f8bf",
+      "sources": [
+        {
+          "end": 19,
+          "path": "docs/handoff/phase1/archive/3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb.bin",
+          "sha256": "3a07a6cc6bd476b4f3643031bd8a302c8e14ee82db2ae4224bba035e46760aeb",
+          "start": 19
+        }
+      ]
+    }
+  },
+  "migration_sha256": "ab7d8d1069bd8376cbae31f3836e4cb40af5fad42b867b471e8a91791335824e",
+  "revisions": {
+    "P1H-20261030-L004": [
+      "ca529017a7434994a835b32e1da1770da49be25eeef6e540f9bb3a0454487615"
+    ],
+    "P1H-20261030-L007": [
+      "4159132c7569586dbe97d9bb6145916665bc70492ffd32fbc37865269be2f601"
+    ],
+    "P1H-20261030-L010": [
+      "25bbf082f307bbd5206d88f35de19c12b3145f1669464faba8c2c12fed4944d6"
+    ],
+    "P1H-20261030-L013": [
+      "5c291ba802441ca70aef9a69382a4a093b25b60faf62ba5af7e58a649c0a5b0d"
+    ],
+    "P1H-20261030-L016": [
+      "a728e35d777fda725b93a8b6b72926f232313372372a35b10764149b03dad63a"
+    ],
+    "P1H-20261030-L019": [
+      "31e39ae7eb83f8f67543014e82e4fda7da4d33b6219d20bd4a6a57e1734a54ab"
+    ]
+  },
+  "schema": 1
+}

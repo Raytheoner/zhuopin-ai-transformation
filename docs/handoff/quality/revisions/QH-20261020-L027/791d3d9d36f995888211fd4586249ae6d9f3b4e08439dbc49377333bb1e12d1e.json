@@ -1,0 +1,21 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对原文中对应事项的最新队列/候选/批准及验收证据；记录遗留或被后续覆盖的具体部分后人工确认，不按旧时间自动关闭",
+  "id": "QH-20261020-L027",
+  "legacy_ids": [],
+  "notes": "2026-10-30仅迁移资料；原文快照截至2026-10-21，状态全部review，未代业务判断。",
+  "original_text": "**当前状态（优先于下列历史记录）**：READ-RESUME本人1A已送达并实际执行，UI turn `01a15c49-5408-7943-9896-ecf10842d85d`。v2离线11 passed；四个require_escalated请求各一次、额度全部消费，8092/8090固定GET均200且SHA MATCH，原读取/503停点已越过。销售页出现4份重复标题/说明/提示区，整门户目测失败；手机完整检查、pageshow/focus未完成，Q-SOURCE最新差量未整合。仅清理run-home-v2和run-20261021-103349，分别10:37:57/10:37:56停止，两session退出0、临时标签关闭。QA实际查看销售截图、读小回执/原GET结果/两个stopped原件；53KB浏览器JSON整读及静态rg定位各被守卫拒绝，均未重试该目标，不从截图猜静态源位置。guard0922…22cb不变。下一项先在仓库内收口一份统一候选，完整范围/输入/SHA见§4；待本人批准，未实施、不恢复旧组合。CIM不再前置，原专业/生产待项不变。\n",
+  "owner": "原队列对应Owner；旧QA/UI执行状态待核",
+  "risk": "遗漏本条将丢失门户的授权边界、剩余条件或证据定位",
+  "sources": [
+    {
+      "end": 27,
+      "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+      "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+      "start": 27
+    }
+  ],
+  "status": "review",
+  "title": "READ-RESUME回读与销售重复展示历史",
+  "topic": "门户"
+}

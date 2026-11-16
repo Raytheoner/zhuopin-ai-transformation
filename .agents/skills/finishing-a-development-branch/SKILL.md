@@ -3,6 +3,13 @@ name: finishing-a-development-branch
 description: Use when implementation is complete, all tests pass, and you need to decide how to integrate the work
 ---
 
+## zhuopinAI Codex 强制覆盖与衔接规则
+
+- 标准 feature 链：`zhuopin-requirement-grill` 产出并确认 `intent.md` → `openspec-propose` 产出 proposal/design/specs/tasks → `openspec-apply-change` 按 `executing-plans` + `test-driven-development` 在本主会话串行执行 `tasks.md` 切片；每片先写/更新 pytest 再实现，最终在受影响子项目独立跑完整 pytest 与功能/audit 验收。refinement 可用轻量 proposal，但必须同步 delta spec 与对应 pytest。
+- `tasks.md` 全 `[x]` 且归档前置、观察窗口与外部签认均闭合时，当场走 `openspec-archive-change`；明示暂缓或冻结合同保留，不能仅凭 N/N 越闸。
+- 根 `AGENTS.md` 的本主会话串行是唯一默认。未经任务级明确授权，不启动 `subagent-driven-development` 的自动派生、并发泳道或独立模型审核；旧冻结合同和明确独审仍按原要求。
+- 上游 “Rulings, not stalls” 不授权越权自决。缺 design 审、L2、合规、外部口径，或缺 `git commit/push/ff` 的逐项授权时停在对应闸；已批同范围不重复索取。真实源、生产与外发也遵守根规则。
+
 # Finishing a Development Branch
 
 ## Overview
@@ -11,9 +18,13 @@ description: Use when implementation is complete, all tests pass, and you need t
 
 **Announce at start:** "I'm using the finishing-a-development-branch skill to complete this work."
 
+## Project Authorization Boundary
+
+Default to keeping the current candidate and evidence. Existing same-scope integration decisions are reused, not re-asked. Do not commit, switch a shared checkout, pull, merge, push, delete a branch or remove a worktree merely because implementation is finished. Each operation needs its existing specific authorization. Integration is ff-only after verifying the exact target is clean, unoccupied and an ancestor of the candidate; divergence stops the operation. Explicit independent/safety review and frozen contracts remain gates.
+
 ## Step 1: Verify Tests
 
-Run the project's full test suite (`npm test` / `cargo test` / `pytest` / `go test ./...`).
+Use the required affected-project verification bound to the actual candidate. Reuse valid evidence for an unchanged candidate/environment; changed code or invalidated evidence requires the corresponding checks. Do not run a mixed repository-root suite or repeat the same validation solely to finish a session.
 
 **If tests fail**, report the failures and stop — the menu comes after a green suite:
 
@@ -52,12 +63,12 @@ Confirm before merging: merging into the wrong base is expensive to undo.
 
 ## Step 4: Present Options
 
-**Normal repo and named-branch worktree — present exactly these 3 options:**
+**Only when a new integration decision is actually missing, offer the applicable choices below; keep-as-is is the default recommendation, not permission to integrate. A prior explicit same-scope keep/no-push instruction requires no new menu.**
 
 ```
 Implementation complete. What would you like to do?
 
-1. Merge back to <base-branch> locally
+1. Integrate into <base-branch> locally using separately authorized ff-only
 2. Push and create a Pull Request
 3. Keep the branch as-is (I'll handle it later)
 
@@ -83,17 +94,17 @@ is theirs.
 
 ## Step 5: Execute Choice
 
-### Option 1: Merge Locally
+### Option 1: Authorized FF-Only Integration
 
 ```bash
 # Get main repo root for CWD safety
 MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
 cd "$MAIN_ROOT"
 
-# Merge first — verify success before removing anything
+# Only after target ownership, cleanliness, fast-forward ancestry and specific authorization are verified.
+# Never switch an occupied business checkout; do not pull as a finishing default.
 git checkout <base-branch>
-git pull
-git merge <feature-branch>
+git merge --ff-only <feature-branch>
 
 # Verify tests on merged result
 <test command>
@@ -103,14 +114,11 @@ If tests fail on the merged result: stop, leave the worktree and branch in
 place, and investigate — nothing has been pushed, so the merge is local
 and recoverable.
 
-Once the merged result is green: clean up the worktree (Step 6), then
-delete the branch:
-
-```bash
-git branch -d <feature-branch>
-```
+A green integrated result is not authorization to delete a branch or worktree. Keep both unless cleanup is separately authorized and evidence is preserved (Step 6).
 
 ### Option 2: Push and Create PR
+
+Run only after explicit approval for this branch, remote and operation; ff authorization or session completion does not authorize push. Never stage/commit other sessions' files.
 
 ```bash
 git push -u origin <feature-branch>
@@ -158,53 +166,15 @@ git branch -D <feature-branch>
 
 ## Step 6: Cleanup Workspace
 
-**Runs for Option 1 and confirmed discards.** Options 2 and 3 always
-preserve the worktree. Both callers have already changed directory to the
-main repo root — worktree removal must run from outside the worktree —
-and use the `GIT_DIR`/`GIT_COMMON`/`WORKTREE_PATH` values captured in
-Step 2, from before that directory change.
+Keep the workspace by default, including after ff-only integration. A folder named `.worktrees/` or `worktrees/` does not prove ownership. Cleanup requires explicit authorization for the exact owned workspace, confirmation of no active business use or conflicting changes, and preserved ledgers/raw logs/untracked/ignored evidence with verified hashes. Commits alone are insufficient. Inspect and preserve before removing anything; never use `--force`, broad `prune`, `clean`, reset or full-repository stash to finish.
 
-**If `GIT_DIR == GIT_COMMON`:** Normal repo, no worktree to clean up. Done.
-
-**If `WORKTREE_PATH` is under `.worktrees/` or `worktrees/`:** Superpowers
-created this worktree — we own cleanup:
-
-```bash
-git worktree remove "$WORKTREE_PATH"
-git worktree prune  # Self-healing: clean up any stale registrations
-```
-
-**If removal is refused** (`contains modified or untracked files`): the
-worktree holds files that exist nowhere else — uncommitted plans, notes,
-or scratch work. Never `--force` on your own initiative. Show your human
-partner what is at stake and ask:
-
-```bash
-git -C "$WORKTREE_PATH" status --porcelain -uall
-```
-
-```
-Worktree removal refused — these files were never committed:
-
-<file list>
-
-1. Commit them to <branch> before cleanup
-2. Move them into <main repo root>
-3. Delete them (unrecoverable)
-
-Which?
-```
-
-Carry out the choice, then remove the worktree.
-
-**Otherwise:** The host environment owns this workspace — leave it in
-place. If your platform provides a workspace-exit tool, use it.
+Use the host's supported managed-worktree archive tool when applicable, preserving needed ignored files separately. A primary/shared/pinned/unknown workspace stays in place. If cleanup is refused or preservation is incomplete, retain the workspace and report the concrete reason. Do not offer a business checkout switch or deletion as a default workaround. An explicit discard still requires the exact scope/confirmation above and cannot delete other sessions' work.
 
 ## Quick Reference
 
 | Option | Merge | Push | Keep Worktree | Cleanup Branch |
 |--------|-------|------|---------------|----------------|
-| 1. Merge locally | yes | - | - | yes |
+| 1. Authorized ff-only | ff-only | - | yes by default | separately authorized |
 | 2. Create PR | - | yes | yes | - |
 | 3. Keep as-is | - | - | yes | - |
 | Discard (explicit request only) | - | - | - | yes (force) |
@@ -218,7 +188,7 @@ place. If your platform provides a workspace-exit tool, use it.
 | "They seem done with this feature — I'll offer to discard it" | The menu is complete as written. Discard happens only when your human partner asks for it in so many words. |
 | "'Yeah, get rid of it' counts as confirmation" | Only the typed word `discard` authorizes deletion. |
 | "The PR is up, so the worktree is clutter now" | PR feedback gets fixed in that worktree. It stays until the work lands. |
-| "This other worktree looks stale — I'll clean it too" | Clean up only worktrees under `.worktrees/` or `worktrees/`. Everything else belongs to the host. |
+| "This other worktree looks stale — I'll clean it too" | A directory name does not prove ownership or authorize cleanup. Leave other sessions' worktrees in place. |
 | "Removal refused — `--force` is just finishing the cleanup" | The refusal means files exist only in that worktree. `--force` destroys them permanently. Show your human partner and ask. |
 | "The merged-result failure is probably flaky" | A failing merged result stops everything. Branch and worktree stay put while you investigate. |
 | "The base branch is obviously main" | Confirm the fork point or ask. Merging into the wrong base is expensive to undo. |

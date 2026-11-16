@@ -1,0 +1,23 @@
+{
+  "completion_evidence": [],
+  "done_when": "核对原文中对应事项的最新队列/候选/批准及验收证据；记录遗留或被后续覆盖的具体部分后人工确认，不按旧时间自动关闭",
+  "id": "QH-20261020-L045",
+  "legacy_ids": [
+    "#612"
+  ],
+  "notes": "2026-10-30仅迁移资料；原文快照截至2026-10-21，状态全部review，未代业务判断。",
+  "original_text": "当前参数审阅：`reports/quality-source-time-qa-1020/unified-registration-reviewed-v2.json`，实际Get-FileHash SHA `fc1afe628825010e4f2004c84c899c781c8f9016b97c89dd50172a773d857783`；脚本`review_unified_registration_v2.py`及结果`unified-registration-preflight-v2.json`，仅只读参数校验。更新核收`QA-统一候选登记停点-1021.md`。原UI本次回执`reports/portal-mvp-unified-candidate-1021/registration-resume-stop.json`。#612第11批K2保留旧原文/反查PASS，日志md5 a2cc7e48；队列及批次终态已回补，当前无更新待补。\n",
+  "owner": "原队列对应Owner；旧QA/UI执行状态待核",
+  "risk": "遗漏本条将丢失登记证据的授权边界、剩余条件或证据定位",
+  "sources": [
+    {
+      "end": 45,
+      "path": "docs/handoff/quality/archive/4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09.bin",
+      "sha256": "4f9309fe1ab889a9c18ae4908a26586803b15567f06b4b6b94afd38f91526d09",
+      "start": 45
+    }
+  ],
+  "status": "review",
+  "title": "统一候选登记参数修订和已答记录",
+  "topic": "登记证据"
+}
