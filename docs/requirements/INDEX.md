@@ -298,7 +298,7 @@
 | `sc8-kit-date-rule1-start` | 采购 | refinement | active_mvp | 32/37 | 本轮有近期提交或既有未提交工作，保留在建位；未勾项仍须逐项完成；#401、#15、#344 |
 | `sc8-material-board-view` | 采购 | feature | blocked_external | 35/37 | 四态复核2026-11-15；#334/#561；包完整内容指纹见原triage报告，变化重报；姚祖怡串行闸及 SC2 判例包前置，跟进信不得擅发 |
 | `sc8-real-producer-portal-bridge` | 采购 | feature | active_mvp | 22/24 | 本轮有近期提交或既有未提交工作，保留在建位；未勾项仍须逐项完成；#349、#350、#27 |
-| `single-guarded-copy` | 机制/平台 | feature | frozen_by_prd | 1/33 | 近期有历史活动，但本轮未有核实的在建写方；按 WIP 容量暂缓；#503 |
+| `single-guarded-copy` | 机制/平台 | feature | active_mvp | 31/33 | #503：T1–T3隔离候选及完整验收完成；剩余commit/主仓整合与启用待独立授权；安装版及同族欠账保留 |
 | status-triage-resident-round | 机制/平台 | feature | frozen_by_prd | 34/36 | 近期有历史活动，但本轮未有核实的在建写方；按 WIP 容量暂缓；#454、#394、#326；本发布候选保留基线版本，不移植业务实施/结案，不改变原任务现态。 |
 | `sweep-manifest-scoped-stage` | 机制/平台 | feature | frozen_by_prd | 34/38 | 四态复核2026-11-15；#561；包完整内容指纹见原triage报告，变化重报；自 2026-09-15 起无该包提交或未提交改动，达到 60 天冻结线 |
 | `sweep-startup-nonblocking` | 机制/平台 | refinement | frozen_by_prd | 25/26 | 四态复核2026-11-15；#561；包完整内容指纹见原triage报告，变化重报；自 2026-09-15 起无该包提交或未提交改动，达到 60 天冻结线 |

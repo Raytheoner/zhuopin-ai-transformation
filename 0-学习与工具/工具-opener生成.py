@@ -110,6 +110,7 @@ Shao Peishen 2026-09-06 裁 **(c) 甲＋精简版乙**，两个洞分别用两�
         --branch demo-slug --worktree "☑（demo-wt，新 worktree，收工自删）" \\
         --workspace 无 --session 新开 --line 环境总线 \\
         --input-pointer "1-转型规划/0-全景路线图/示例派单件.md" --task-class A \\
+        --out "docs/opener-example.md" \\
         --do "第一步" --do "第二步" --dont "不做的事"
 
 任一必填字段缺失／不合骨架硬规则 ⇒ 抛错退出（退出码 1），不打印半成品。
@@ -125,6 +126,7 @@ import string
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -132,7 +134,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 #: 骨架正本（唯一可照抄物，2026-09-04 由模板库 §〇.00 拆出独立成件）。
 SKELETON_FILE = REPO_ROOT / "1-转型规划" / "0-全景路线图" / "opener骨架.md"
 #: `check_block` 判据实现的物理落点（复用，不第二次实现）。
-LINT_SCRIPT = REPO_ROOT / "0-学习与工具" / "工具-opener块lint.py"
+LINT_SCRIPT = Path(__file__).with_name('工具-opener块lint.py')
 
 #: 子任务例外句——那一行的一部分，不得删、不得简写（骨架「四处最常丢的结构」表）。
 SUBTASK_EXCEPTION = (
@@ -482,7 +484,7 @@ def _next_free_suffix(used: set[str]) -> str:
     raise OpenerGenError("当日编号后缀已耗尽（含双字母兜底），需人工介入")
 
 
-def _check_op_id_not_reused(spec: "OpenerSpec") -> set[str]:
+def _check_op_id_not_reused(spec: "OpenerSpec", *, output_path=None) -> set[str]:
     """已落档撞号即拒；返回当日已落档后缀集合（供 `_claim_op_id` 复用，不扫第二遍）。
 
     🔴 **自占放行判据（队列 §一 `#621`）**：命中的后缀若只来自本件自己的
@@ -492,6 +494,10 @@ def _check_op_id_not_reused(spec: "OpenerSpec") -> set[str]:
     mmdd, suffix = _mmdd_and_suffix(spec.op_id)
     suffix_upper = suffix.upper()
     sources = _scan_used_suffixes_with_sources(mmdd)
+    if output_path is not None:
+        # The public output planner has proved this is the unique target block.
+        own = Path(output_path).resolve().relative_to(REPO_ROOT.resolve())
+        sources = {s: paths-{own} for s,paths in sources.items() if paths-{own}}
     used = set(sources)
     if suffix_upper in used and not _is_self_occupancy(sources[suffix_upper], spec):
         # 下一个空号同时避开未过期的占位（只读，不上锁）——推荐一个已被别人声明的号等于
@@ -1011,7 +1017,7 @@ def _read_line(spec: OpenerSpec) -> str:
     )
 
 
-def generate_opener(**kwargs) -> str:
+def _compose_opener(**kwargs) -> str:
     """按十项必填字段拼出成品 opener 文本；缺字段或违反骨架硬规则 ⇒ 抛 `OpenerGenError`。"""
     if kwargs.get("env") == "Codex":
         native_model = kwargs.get("model", "gpt-6-luna")
@@ -1041,7 +1047,7 @@ def generate_opener(**kwargs) -> str:
                 "本机无常驻触发器时标 needs_manual_wake，不宣称后台自动继续。"
             )
         native_lines = []
-        for line in text.splitlines():
+        for line in text.split('\n'):
             if "mcp__ccd_session_mgmt__set_session_title" in line:
                 mmdd, suffix = _mmdd_and_suffix(kwargs["op_id"])
                 line = (f"会话标识：[Win]{mmdd}{suffix}-{kwargs['short_name']}；"
@@ -1051,7 +1057,7 @@ def generate_opener(**kwargs) -> str:
             native_lines.append(line.replace("【CC】", "【Codex】").replace("执行环境：CC", "执行环境：Codex"))
         text = "\n".join(native_lines)
         lint = _load_lint_module()
-        errors = lint.check_block(lint.iter_fenced_blocks(text)[0], is_subtask_lane=kwargs.get("variant")=="subtask_lane")
+        errors = lint._check_block_structure(lint.iter_fenced_blocks(text)[0], is_subtask_lane=kwargs.get("variant")=="subtask_lane")
         if errors:
             raise OpenerGenError(f"Codex 原生派单自检失败：{errors}")
         return text
@@ -1068,7 +1074,7 @@ def _generate_opener_core(*, claim_env=None, **kwargs):
     # 而「参数会被丢掉」是纯本地判断，没理由让调用方先等一次全树扫描才被告知。
     _reject_silently_dropped_body_params(kwargs, spec)
     _reject_explicit_model_for_cowork(kwargs, spec)
-    used = _check_op_id_not_reused(spec)  # P7①：当日已落档撞号即拒，见模块文档
+    used = _check_op_id_not_reused(spec, output_path=kwargs.get('_output_path'))
 
     do_block = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(spec.do_items))
     dont_block = "\n".join(f"- {item}" for item in spec.dont_items)
@@ -1189,10 +1195,13 @@ def _generate_opener_core(*, claim_env=None, **kwargs):
     blocks = lint.iter_fenced_blocks(opener_block)
     if not blocks:
         raise OpenerGenError("生成物未能被识别为围栏代码块（内部拼装错误）")
-    problems = lint.check_block(blocks[0], is_subtask_lane=(spec.variant == "subtask_lane"))
+    problems = lint._check_block_structure(blocks[0], is_subtask_lane=(spec.variant == "subtask_lane"))
     if problems:
         detail = "；".join(f"[{code}] {msg}" for code, msg in problems)
         raise OpenerGenError(f"生成物未通过 `工具-opener块lint.py::check_block` 自检：{detail}")
+    regions = _fenced_regions(opener_block,lint)
+    if len(regions) != 1 or regions[0][0] != 0 or regions[0][1] != len(opener_block):
+        raise OpenerGenError('出件拼装不是完整唯一围栏块；不得截断已提供正文')
 
     # 取号即声明（队列 §一 `#549` ⑶）：自检通过、确定要出件了才写占位——同一把锁内
     # 先核别人的占位再写自己的；撞上未落档的对方即在这里拒绝，出件＝占位已落。
@@ -1203,11 +1212,199 @@ def _generate_opener_core(*, claim_env=None, **kwargs):
     return opener_block
 
 
+def _output_path(out) -> Path:
+    if not out:
+        raise OpenerGenError('缺必填 --out；公共 API/CLI 只交付落盘回读内容')
+    candidate = Path(out)
+    if candidate.is_absolute() or candidate.drive or candidate.suffix.lower() != '.md':
+        raise OpenerGenError('--out 必须是批准工作树内的相对 .md 路径')
+    root = REPO_ROOT.resolve()
+    path = (root/candidate).resolve()
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        raise OpenerGenError('--out 逃出批准工作树') from None
+    if (any(part in ('.git','.agents','.codex','队列行日志','z-已执行归档') for part in rel.parts)
+            or '跨桌任务队列' in path.name):
+        raise OpenerGenError('--out 不得写队列真身/归档/行日志或受保护配置')
+    cursor = root
+    for part in candidate.parts:
+        cursor = cursor/part
+        if cursor.is_symlink() or (hasattr(cursor,'is_junction') and cursor.is_junction()):
+            raise OpenerGenError('--out 不得经链接或 junction 写入')
+    if path.exists() and (not path.is_file() or path.stat().st_nlink > 1):
+        raise OpenerGenError('--out 不是独立普通文件')
+    return path
+
+
+def _load_output_lock():
+    script = Path(__file__).with_name('工具-共享文档编辑锁.py')
+    spec = importlib.util.spec_from_file_location('_sgc_existing_editlock',script)
+    module = importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    return module
+
+
+def _check_shared_output(path: Path, kwargs) -> None:
+    rel = path.relative_to(REPO_ROOT.resolve()).as_posix()
+    if not (rel.startswith('1-转型规划/') or path.name.startswith(('派单件','session接力'))):
+        return
+    who = kwargs.get('who') or os.environ.get('ZHUOPIN_CODEX_WRITER')
+    batch = kwargs.get('registration_batch') or kwargs.get('batch')
+    if not who or not batch:
+        raise OpenerGenError('共享派单/接力输出须已有本人有效锁及精确§二预登记；请提供 --who/--registration-batch')
+    module = _load_output_lock()
+    target = rel if path.name.startswith('session接力') else module.QUEUE_LOCK_ANCHOR
+    lease = module._read_lock(module._lock_path(target))
+    if (not lease or lease.get('who') != who
+            or not 0 <= module._age_minutes(lease) < module.STALE_MINUTES):
+        raise OpenerGenError('共享输出缺本人有效编辑锁；不代 acquire、不接管他人锁')
+    query = Path(__file__).with_name('工具-队列查询.py')
+    check = subprocess.run([sys.executable,str(query),'--row',str(batch),'--section','二',
+        '--field','all','--file',str(module._target_path(module.QUEUE_MECHANISM_PATH_REL))],
+        capture_output=True,text=True,encoding='utf-8',timeout=30)
+    if check.returncode or '`'+rel+'`' not in check.stdout or who not in check.stdout:
+        raise OpenerGenError('共享输出未命中本人批次的精确§二预登记')
+
+
+def _fenced_regions(text, lint):
+    logical = text.splitlines(); raw = text.splitlines(keepends=True)
+    offsets = [0]
+    for line in raw:offsets.append(offsets[-1]+len(line))
+    regions = []; i = 0
+    while i < len(logical):
+        match = lint.FENCE_RE.match(logical[i])
+        if not match:i += 1;continue
+        fence = match.group('fence'); j = i+1
+        while j < len(logical):
+            close = lint.FENCE_RE.match(logical[j])
+            if close and close.group('fence')[0] == fence[0] and len(close.group('fence')) >= len(fence) and not close.group('info'):
+                break
+            j += 1
+        if j >= len(logical):
+            raise OpenerGenError('输出文档存在未闭合围栏；不猜替换范围')
+        end = offsets[j]+len(raw[j].rstrip('\r\n'))
+        block = lint.Block(i+2,logical[i+1:j],match.group('info'),''.join(raw[i+1:j]))
+        regions.append((offsets[i],end,block)); i = j+1
+    return regions
+
+
+def _plan_output(original, block_text, op_id, anchor, lint, *, _return_region=False):
+    bom = b'\xef\xbb\xbf' if original and original.startswith(b'\xef\xbb\xbf') else b''
+    text = (original or b'').decode('utf-8-sig')
+    regions = _fenced_regions(text,lint)
+    lower, upper = 0,len(text)
+    if anchor is not None:
+        if not isinstance(anchor,str) or not re.fullmatch(r'#{1,6}[ \t]+[^\r\n]+',anchor):
+            raise OpenerGenError('--anchor 须为围栏外的完整章节标题，如 ## Target')
+        headings = [];offset = 0
+        for line in text.splitlines(keepends=True):
+            plain = line.rstrip('\r\n')
+            match = re.match(r'^(#{1,6})[ \t]+.+',plain)
+            if match and not any(a <= offset < b for a,b,_ in regions):
+                headings.append((offset,offset+len(line),len(match[1]),plain))
+            offset += len(line)
+        matches = [h for h in headings if h[3] == anchor]
+        if len(matches) != 1:
+            raise OpenerGenError('--anchor 缺失或重名（围栏内伪标题不算）')
+        start, lower, level, _ = matches[0]
+        upper = next((h[0] for h in headings if h[0] > start and h[2] <= level),len(text))
+    selected = [(a,b,block) for a,b,block in regions if lower <= a and b <= upper
+                and re.match(r'^\['+re.escape(op_id)+r'\]',block.raw_text)]
+    if len(selected) > 1:
+        raise OpenerGenError('目标章节含多个同号块；拒绝歧义替换')
+    if anchor is None and original is not None:
+        if len(regions) != 1 or len(selected) != 1:
+            raise OpenerGenError('已有输出必须为同一编号单块；混合文档须指定 --anchor')
+        a,b,_ = regions[0]
+        if text[:a].strip() or text[b:].strip():
+            raise OpenerGenError('混合正文必须指定 --anchor，不整份覆盖')
+    if selected:
+        a,b,_ = selected[0]
+        output = text[:a]+block_text+text[b:]
+    else:
+        prefix = '' if not text[:upper] or text[:upper].endswith(('\n','\r')) else '\n'
+        suffix = '\n' if text[upper:] else ''
+        output = text[:upper]+prefix+block_text+suffix+text[upper:]
+    if _return_region:
+        return selected[0] if selected else None
+    return bom+output.encode('utf-8')
+
+
+def _write_payload(handle, data):
+    handle.write(data);handle.flush();os.fsync(handle.fileno())
+
+
+def _atomic_output(path, expected, data, kwargs):
+    path.parent.mkdir(parents=True,exist_ok=True)
+    temp = path.with_name(path.name+'.opener-'+uuid.uuid4().hex+'.swp')
+    created = False
+    try:
+        with temp.open('xb') as handle:
+            created = True
+            _write_payload(handle,data)
+        if _output_path(path.relative_to(REPO_ROOT.resolve())) != path:
+            raise OpenerGenError('写入前输出路径身份改变')
+        current = path.read_bytes() if path.exists() else None
+        if current != expected:
+            raise OpenerGenError('输出已被并发作者改写；保留其内容，拒绝覆盖')
+        _check_shared_output(path,kwargs)
+        os.replace(temp,path);created = False
+        actual = path.read_bytes()
+        if actual != data:
+            raise OpenerGenError('实际回读与拟写字节不符；不回滚并发作者')
+        return actual
+    finally:
+        if created:
+            temp.unlink()  # only the unique file successfully created by us
+
+
+def generate_opener(**kwargs) -> str:
+    """Public output contract: validate → persist → reread → validate → return."""
+    try:
+        path = _output_path(kwargs.get('out'))
+        _check_shared_output(path,kwargs)
+        original = path.read_bytes() if path.exists() else None
+        lint = _load_lint_module()
+        # Validate scope/anchors before composition can claim an OP number.
+        replacement = _plan_output(original,'',kwargs.get('op_id',''),kwargs.get('anchor'),lint,_return_region=True)
+        composed = _compose_opener(**dict(kwargs,_output_path=path if replacement is not None else None))
+        body = lint.iter_fenced_blocks(composed)[0].raw_text
+        if not body.endswith('\n'):
+            body += '\n'
+        footer = (f'〔出件指纹 {lint.block_fingerprint(body)} · 出件日期 '
+                  f'{datetime.now().date().isoformat()} · 由 工具-opener生成.py 出，勿手改〕')
+        block_text = '```\n'+body+footer+'\n```'
+        errors = lint.check_block(lint.iter_fenced_blocks(block_text)[0],
+                                  is_subtask_lane=kwargs.get('variant') == 'subtask_lane')
+        if errors:
+            raise OpenerGenError(f'最终原始正文自检失败：{errors}')
+        data = _plan_output(original,block_text,kwargs['op_id'],kwargs.get('anchor'),lint)
+        actual = _atomic_output(path,original,data,kwargs)
+        # Extract from the actual read, never return the in-memory composition.
+        text = actual.decode('utf-8-sig')
+        actual_region = _plan_output(actual,block_text,kwargs['op_id'],kwargs.get('anchor'),lint,_return_region=True)
+        if actual_region is None:
+            raise OpenerGenError('实际回读不能唯一定位章节内出件块')
+        a,b,block = actual_region
+        errors = lint.check_block(block,is_subtask_lane=kwargs.get('variant') == 'subtask_lane')
+        if errors or text[a:b].encode('utf-8') != block_text.encode('utf-8'):
+            raise OpenerGenError(f'落盘回读块校验失败：{errors}')
+        return text[a:b]
+    except OpenerGenError:
+        raise
+    except (OSError,UnicodeError,ValueError,TypeError,subprocess.SubprocessError) as exc:
+        raise OpenerGenError(f'出件落盘/回读失败：{exc}') from exc
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description="opener 生成器（队列 #461）：按 opener骨架.md 唯一格式来源拼出成品 opener。"
     )
     ap.add_argument("--op-id", required=True, help="全称编号，如 OP-0905-A")
+    ap.add_argument('--out',default=None,help='必填：批准工作树内相对 .md，成功后只交付落盘回读块')
+    ap.add_argument('--anchor',default=None,help='混合文档的围栏外唯一完整章节标题')
+    ap.add_argument('--who',default=None,help='共享派单/接力已有编辑锁的本人身份（须匹配预登记批次）')
+    ap.add_argument('--registration-batch',default=None,help='共享输出的既有§二批次；不改变子任务心跳 --batch 合同')
     ap.add_argument("--env", required=True, choices=VALID_ENVS, help="执行环境")
     ap.add_argument("--short-name", required=True, help="短名，≤12 字")
     ap.add_argument("--branch", required=True,
@@ -1291,6 +1488,7 @@ def main(argv: list[str] | None = None) -> int:
         "session": args.session, "line": args.line, "input_pointer": args.input_pointer,
         "task_class": args.task_class, "claude_section": args.claude_section,
         "variant": args.variant,
+        'out': args.out, 'anchor': args.anchor, 'who': args.who, 'registration_batch': args.registration_batch,
     }
     if args.model is not None:
         kwargs["model"] = args.model
@@ -1301,7 +1499,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.dont_items:
         kwargs["dont_items"] = args.dont_items
     try:
-        print(generate_opener(**kwargs))
+        text = generate_opener(**kwargs)
+        if hasattr(sys.stdout,'buffer'):
+            sys.stdout.buffer.write(text.encode('utf-8'));sys.stdout.buffer.flush()
+        else:
+            sys.stdout.write(text)  # in-process captured CLI tests; no added LF
     except OpenerGenError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 1

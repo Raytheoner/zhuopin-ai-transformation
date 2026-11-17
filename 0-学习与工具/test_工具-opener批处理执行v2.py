@@ -5,11 +5,19 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import uuid
 import pytest
 
 pytestmark=pytest.mark.skipif(os.name != "nt" or shutil.which("pwsh") is None, reason="需要 Windows + PowerShell；与旧套件平台条件一致")
 
 ROOT=Path(__file__).resolve().parents[1]
+
+def _persist_fixture(fixture, **kwargs):
+    kwargs['out']='fixture-output/'+uuid.uuid4().hex+'.md'
+    text=fixture.M.generate_opener(**kwargs)
+    assert (fixture.M.REPO_ROOT/kwargs['out']).read_bytes()==text.encode('utf-8')
+    return text
+
 
 class TestBatchCodex:
     def setup(self,tmp):
@@ -126,7 +134,7 @@ class TestCodexEntryCompatibility:
         monkeypatch.setattr(fixture.M,'REPO_ROOT',tmp_path)
         monkeypatch.setattr(fixture.M,'CLAIMS_FILE',tmp_path/'claims.jsonl')
         kwargs=dict(fixture.VALID_CC_KWARGS,model='inherit')
-        result=fixture.M.generate_opener(**kwargs)
+        result=_persist_fixture(fixture, **kwargs)
         assert '模型：inherit' in result
         assert 'codex/op0905a-demo-slug' in result
 
@@ -151,7 +159,7 @@ class TestNativeOpener:
 
     def test_native_standard_has_no_source_api(self,tmp_path,monkeypatch):
         f=self.fixture(tmp_path,monkeypatch)
-        text=f.M.generate_opener(**dict(f.VALID_CC_KWARGS,env='Codex'))
+        text=_persist_fixture(f, **dict(f.VALID_CC_KWARGS,env='Codex'))
         assert '【Codex】' in text and '执行环境：Codex' in text
         assert 'mcp__ccd_' not in text and 'set_session_title' not in text
         assert '会话标识：' in text and 'source_id' in text
@@ -166,7 +174,7 @@ class TestNativeOpener:
 
     def test_native_subtask_never_renames_parent(self,tmp_path,monkeypatch):
         f=self.fixture(tmp_path,monkeypatch)
-        text=f.M.generate_opener(**dict(f.VALID_CC_KWARGS,env='Codex',variant='subtask_lane'))
+        text=_persist_fixture(f, **dict(f.VALID_CC_KWARGS,env='Codex',variant='subtask_lane'))
         assert 'set_thread_title' not in text and '会话标识：' not in text
         lint=f.M._load_lint_module()
         assert lint.check_block(lint.iter_fenced_blocks(text)[0],is_subtask_lane=True)==[]
@@ -275,7 +283,7 @@ class TestNativeBatchIntegration:
         TestBatchCodex().setup(tmp_path)
         f=TestNativeOpener().fixture(tmp_path,monkeypatch)
         kwargs=dict(f.VALID_CC_KWARGS,env='Codex',branch='fixture',worktree='☑（fixture，新 worktree，收工自删）')
-        body=f.M.generate_opener(**kwargs)
+        body=_persist_fixture(f, **kwargs)
         (tmp_path/'plan.md').write_text('### A1 · 原生生成链\n▶ 粘贴端：Codex\n泳道：fixture\n'+body,encoding='utf-8')
         result=self.prepared(tmp_path)
         assert result.returncode==0,result.stdout+result.stderr
@@ -338,10 +346,19 @@ class TestNativeLintSpacing:
     @pytest.mark.parametrize('field',['执行环境: Codex','执行环境： Codex','执行环境 :\tCodex','执行环境：\nCodex'])
     def test_native_environment_spacing_does_not_recurse(self,tmp_path,monkeypatch,field):
         f=TestNativeOpener().fixture(tmp_path,monkeypatch)
-        text=f.M.generate_opener(**dict(f.VALID_CC_KWARGS,env='Codex'))
+        text=_persist_fixture(f, **dict(f.VALID_CC_KWARGS,env='Codex'))
         text=text.replace('执行环境：Codex',field)
         lint=f.M._load_lint_module()
         problems=lint.check_block(lint.iter_fenced_blocks(text)[0])
+        assert any(code=='F17' for code,_ in problems), '改字后沿用旧指纹必须拒绝'
+        # Controlled structural fixture: retain the independent raw-tamper
+        # assertion above, then issue a valid new fixture footer so this test
+        # still exercises the original native spacing predicate separately.
+        import re
+        unsigned=re.sub(r'(?m)^〔出件指纹[^\n]*(?:\n|$)','',text)
+        text=f._expected_signed_golden(unsigned)
+        problems=lint.check_block(lint.iter_fenced_blocks(text)[0])
+        assert not any(code=='F17' for code,_ in problems)
         assert bool(problems)==('\n' in field)
 
 

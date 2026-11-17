@@ -17,6 +17,12 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import contextlib
+import io
+import os
+import uuid
+from unittest.mock import patch
 import json
 import tempfile
 import unittest
@@ -34,6 +40,19 @@ def _load_module():
 
 
 M = _load_module()
+
+def _fixture_generate(**kwargs):
+    kwargs.setdefault('out', 'fixture-output/'+uuid.uuid4().hex+'.md')
+    return M.generate_opener(**kwargs)
+
+
+def _expected_signed_golden(text):
+    assert text.startswith('```\n') and text.endswith('\n```')
+    body=text[4:-3]
+    digest=hashlib.sha256(body.replace('\r\n','\n').encode('utf-8')).hexdigest()[:8]
+    issued=M.datetime.now().date().isoformat()
+    return text[:-3]+f'〔出件指纹 {digest} · 出件日期 {issued} · 由 工具-opener生成.py 出，勿手改〕\n```'
+
 
 #: P7① 撞号查重（`_check_op_id_not_reused`）扫的是 `M.REPO_ROOT / 1-转型规划`。
 #: 除 `UsedSuffixDedupTests` 外，本文件其余用例的关注点与撞号无关，不该受真实
@@ -90,22 +109,22 @@ class ModelFieldTests(unittest.TestCase):
     """队列 §一 `#581` ⑷：可选「模型」字段——不传即 inherit；显式传须为 inherit／design。"""
 
     def test_不传model_设置行落inherit(self):
-        out = M.generate_opener(**VALID_CC_KWARGS)
+        out = _fixture_generate(**VALID_CC_KWARGS)
         self.assertIn("｜ 模型：inherit", out)
 
     def test_显式design_设置行落design(self):
-        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0905-C", "model": "design"})
+        out = _fixture_generate(**{**VALID_CC_KWARGS, "op_id": "OP-0905-C", "model": "design"})
         self.assertIn("｜ 模型：design", out)
         self.assertNotIn("｜ 模型：inherit", out)
 
     def test_非法取值报错(self):
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0905-D",
+            _fixture_generate(**{**VALID_CC_KWARGS, "op_id": "OP-0905-D",
                                   "model": "claude-sonnet-5"})
 
     def test_不传model仍过lint零违规(self):
         """附加字段不得撞坏形态④（六字段顺序判据用子串 find，不要求行尾即止）。"""
-        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0905-E"})
+        out = _fixture_generate(**{**VALID_CC_KWARGS, "op_id": "OP-0905-E"})
         lint = M._load_lint_module()
         blocks = lint.iter_fenced_blocks(out)
         self.assertEqual(lint.check_block(blocks[0]), [])
@@ -120,19 +139,19 @@ class MissingFieldTests(unittest.TestCase):
                 kwargs = dict(VALID_CC_KWARGS)
                 del kwargs[field]
                 with self.assertRaises(M.OpenerGenError):
-                    M.generate_opener(**kwargs)
+                    _fixture_generate(**kwargs)
 
     def test_blank_field_treated_as_missing(self):
         """空字符串／纯空白同样判缺失（`_require_all_fields` 用 `.strip()` 判空）。"""
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["line"] = "   "
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
 
     def test_valid_kwargs_do_not_raise(self):
         """基线本身必须是干净的合法输入——否则上面两条反例测的不是"缺字段"这一件事。"""
-        M.generate_opener(**VALID_CC_KWARGS)
-        M.generate_opener(**VALID_COWORK_KWARGS)
+        _fixture_generate(**VALID_CC_KWARGS)
+        _fixture_generate(**VALID_COWORK_KWARGS)
 
 
 class WorktreeCheckboxTests(unittest.TestCase):
@@ -142,13 +161,13 @@ class WorktreeCheckboxTests(unittest.TestCase):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["worktree"] = "demo-wt"  # 裸名字，没有勾选符号
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
         self.assertIn("勾选符号", str(ctx.exception))
 
     def test_checkbox_prefixed_worktree_passes(self):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["worktree"] = "☑（另一个-wt，新 worktree，收工自删）"
-        M.generate_opener(**kwargs)  # 不应抛错
+        _fixture_generate(**kwargs)  # 不应抛错
 
     def test_checked_without_bracket_name_raises(self):
         """队列 §一 `#627` B 面：2026-09-20 一批七条泳道因 `worktree：☑ 建`（有符号、
@@ -157,14 +176,14 @@ class WorktreeCheckboxTests(unittest.TestCase):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["worktree"] = "☑ 建"  # 有勾选符号，但符号后无括号名
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
         self.assertIn("括号名", str(ctx.exception))
 
     def test_unchecked_without_bracket_name_still_passes(self):
         """☐ 维持原样不收紧——本条防止收紧误伤 ☐ 这一侧。"""
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["worktree"] = "☐ 不建"
-        M.generate_opener(**kwargs)  # 不应抛错
+        _fixture_generate(**kwargs)  # 不应抛错
 
 
 class TitleCallPseudocodeTests(unittest.TestCase):
@@ -174,7 +193,7 @@ class TitleCallPseudocodeTests(unittest.TestCase):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["title_call_override"] = "开工第一件事：调用改名工具，把标题设为示例任务。"
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
         # 断言拦下的正是复用的 check_block 形态①（不是本模块另起的第二套判据）
         self.assertIn("check_block", str(ctx.exception))
         self.assertIn("set_session_title", str(ctx.exception))
@@ -187,21 +206,21 @@ class TitleCallPseudocodeTests(unittest.TestCase):
             '（session_id 传字面量 "self"），标题：[Win]0905A-示例任务。'
         )
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
         self.assertIn("check_block", str(ctx.exception))
 
     def test_real_tool_call_with_exception_passes(self):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["title_call_override"] = M._title_call_line(
             kwargs["op_id"], kwargs["short_name"])
-        M.generate_opener(**kwargs)  # 不应抛错
+        _fixture_generate(**kwargs)  # 不应抛错
 
 
 class PositiveGenerationTests(unittest.TestCase):
     """正例 —— 完整参数生成 CC opener，逐字比对 `opener骨架.md` 骨架结构。"""
 
     def setUp(self):
-        self.out = M.generate_opener(**VALID_CC_KWARGS)
+        self.out = _fixture_generate(**VALID_CC_KWARGS)
 
     def test_wrapped_in_fence(self):
         self.assertTrue(self.out.startswith("```\n"))
@@ -239,7 +258,7 @@ class PositiveGenerationTests(unittest.TestCase):
         self.assertEqual(lint.check_block(blocks[0]), [])
 
     def test_cowork_output_also_passes_lint(self):
-        out = M.generate_opener(**VALID_COWORK_KWARGS)
+        out = _fixture_generate(**VALID_COWORK_KWARGS)
         lint = M._load_lint_module()
         blocks = lint.iter_fenced_blocks(out)
         self.assertEqual(lint.check_block(blocks[0]), [])
@@ -254,31 +273,31 @@ class ValidationEdgeCaseTests(unittest.TestCase):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["short_name"] = "一二三四五六七八九十一二三"  # 13 字
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
 
     def test_malformed_op_id_raises(self):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["op_id"] = "OP-905-A"  # 月日缺一位
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
 
     def test_session_value_other_than_xinkai_raises(self):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["session"] = "沿用当前"
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
 
     def test_cowork_branch_must_be_master(self):
         kwargs = dict(VALID_COWORK_KWARGS)
         kwargs["branch"] = "some-slug"
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
 
     def test_windows_absolute_path_input_pointer_raises(self):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["input_pointer"] = r"C:\Dev\zhuopin-ai\1-转型规划\0-全景路线图\示例派单件.md"
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
 
 
 class UsedSuffixDedupTests(unittest.TestCase):
@@ -310,7 +329,7 @@ class UsedSuffixDedupTests(unittest.TestCase):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["op_id"] = "OP-0905-A"
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
         self.assertIn("撞号", str(ctx.exception))
         self.assertIn("OP-0905-B", str(ctx.exception))  # A 已用，下一个空号是 B
 
@@ -318,7 +337,7 @@ class UsedSuffixDedupTests(unittest.TestCase):
         self._write("看护件.md", "已用编号 OP-0905-A 出现在正文里。")
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["op_id"] = "OP-0905-Z"  # Z 全天未用
-        M.generate_opener(**kwargs)  # 不应抛错
+        _fixture_generate(**kwargs)  # 不应抛错
 
     def test_short_form_session_title_also_counts_as_used(self):
         # 短形只认 `[Win]MMDDX-` 锚点（骨架「短形只用于 session 名」），全文没有
@@ -327,7 +346,7 @@ class UsedSuffixDedupTests(unittest.TestCase):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["op_id"] = "OP-0905-C"
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
         self.assertIn("撞号", str(ctx.exception))
 
     def test_bare_digits_without_win_anchor_do_not_count_as_short_form(self):
@@ -336,13 +355,13 @@ class UsedSuffixDedupTests(unittest.TestCase):
         self._write("看护件.md", "0905D 只是正文里的一个巧合数字串，不是 session 标题。")
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["op_id"] = "OP-0905-D"
-        M.generate_opener(**kwargs)  # 不应抛错
+        _fixture_generate(**kwargs)  # 不应抛错
 
     def test_different_date_same_suffix_does_not_collide(self):
         self._write("看护件.md", "OP-0904-A 是昨天的编号。")
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["op_id"] = "OP-0905-A"  # 今天的 A，昨天的 A 不冲突
-        M.generate_opener(**kwargs)  # 不应抛错
+        _fixture_generate(**kwargs)  # 不应抛错
 
     def test_next_free_suffix_skips_multiple_used_letters(self):
         used = {"A", "B", "C"}
@@ -379,7 +398,7 @@ class SelfOccupancyReleaseTests(unittest.TestCase):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["op_id"] = "OP-0920-A"
         kwargs["input_pointer"] = rel
-        M.generate_opener(**kwargs)  # 不应抛错——命中源只是自己的派单件
+        _fixture_generate(**kwargs)  # 不应抛错——命中源只是自己的派单件
 
     def test_hit_in_other_file_still_rejected_even_with_self_hit(self):
         # 自己的派单件命中之外，另一份不相干的件也命中同一个号——真撞号，
@@ -391,7 +410,7 @@ class SelfOccupancyReleaseTests(unittest.TestCase):
         kwargs["op_id"] = "OP-0920-A"
         kwargs["input_pointer"] = rel
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
         self.assertIn("撞号", str(ctx.exception))
 
 
@@ -403,7 +422,7 @@ class VariantSubtaskLaneTests(unittest.TestCase):
         kwargs = dict(VALID_CC_KWARGS)
         kwargs["variant"] = "subtask_lane"
         kwargs["op_id"] = "OP-0905-VS"  # 骨架首行/标题正则只认字母后缀，不能用 V1
-        self.out = M.generate_opener(**kwargs)
+        self.out = _fixture_generate(**kwargs)
 
     def test_no_session_title_line(self):
         self.assertNotIn("set_session_title", self.out)
@@ -435,7 +454,7 @@ class VariantSubtaskLaneTests(unittest.TestCase):
         kwargs = dict(VALID_COWORK_KWARGS)
         kwargs["variant"] = "subtask_lane"
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
 
 
 class VariantGuardianTests(unittest.TestCase):
@@ -450,10 +469,10 @@ class VariantGuardianTests(unittest.TestCase):
             workspace="无", session="新开", line="环境总线",
             input_pointer="1-转型规划/0-全景路线图/看护件-示例.md", task_class="A",
         )
-        self.out = M.generate_opener(**self.kwargs)
+        self.out = _fixture_generate(**self.kwargs)
 
     def test_codex_guardian_uses_native_foreground_entry(self):
-        out = M.generate_opener(**{**self.kwargs, "env": "Codex"})
+        out = _fixture_generate(**{**self.kwargs, "env": "Codex"})
         self.assertIn("【Codex】看护示例批", out)
         self.assertIn("invoke.ps1 -Mode Guardian start", out)
         self.assertIn("guardian_adapter", out)
@@ -481,7 +500,7 @@ class VariantGuardianTests(unittest.TestCase):
         kwargs = dict(self.kwargs)
         kwargs["short_name"] = "一二三四五六七八九十一"  # 11 字 + "看护" 2 字 = 13
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**kwargs)
+            _fixture_generate(**kwargs)
 
     def test_guardian_branch_not_forced_into_slug_template(self):
         # 分支字段须原样透传（固定字面量），不会被套上标准变体的
@@ -500,28 +519,28 @@ class CoworkDontItemsTests(unittest.TestCase):
     """
 
     def test_cowork_dont_items_出现在成品里(self):
-        out = M.generate_opener(**{**VALID_COWORK_KWARGS,
+        out = _fixture_generate(**{**VALID_COWORK_KWARGS,
                                    "dont_items": ["不动销售域", "不催任何专员"]})
         self.assertIn("不做什么：", out)
         self.assertIn("- 不动销售域", out)
         self.assertIn("- 不催任何专员", out)
 
     def test_cowork_不做什么段排在收工段之前(self):
-        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
+        out = _fixture_generate(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
         self.assertLess(out.index("不做什么："), out.index("收工：产出登记 §二"))
         self.assertLess(out.index("做什么："), out.index("不做什么："))
 
     def test_cowork_未传dont时仍出段占位_不违反形态七(self):
         """未传 `--dont` ⇒ `OpenerSpec` 默认 `["…"]`，段仍在（占位），
         故形态⑦（有做什么段必须配不做什么段）恒不命中。"""
-        out = M.generate_opener(**VALID_COWORK_KWARGS)
+        out = _fixture_generate(**VALID_COWORK_KWARGS)
         self.assertIn("不做什么：", out)
         lint = M._load_lint_module()
         blocks = lint.iter_fenced_blocks(out)
         self.assertEqual(lint.check_block(blocks[0]), [])
 
     def test_cowork_带dont的成品仍过lint零违规(self):
-        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
+        out = _fixture_generate(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
         lint = M._load_lint_module()
         blocks = lint.iter_fenced_blocks(out)
         self.assertEqual(lint.check_block(blocks[0]), [])
@@ -552,7 +571,7 @@ class SilentlyDroppedBodyParamTests(unittest.TestCase):
         for key, flag in (("do_items", "--do"), ("dont_items", "--dont")):
             with self.subTest(key=key):
                 with self.assertRaises(M.OpenerGenError) as cm:
-                    M.generate_opener(**{**self.GUARDIAN_KWARGS, key: ["随便一条"]})
+                    _fixture_generate(**{**self.GUARDIAN_KWARGS, key: ["随便一条"]})
                 msg = str(cm.exception)
                 self.assertIn(flag, msg)
                 # 只报错不给出路 ⇒ 调用方会把约束塞进另一个参数的尾巴，形态更糟。
@@ -561,27 +580,27 @@ class SilentlyDroppedBodyParamTests(unittest.TestCase):
     def test_guardian_不传两者_照常出件(self):
         """🔴 回归防线：守卫只认「显式传了内容」，`OpenerSpec` 的 `["…"]` 兜底
         不算传——否则每一次正常的看护者出件都会被自己的守卫拦死。"""
-        M.generate_opener(**self.GUARDIAN_KWARGS)
+        _fixture_generate(**self.GUARDIAN_KWARGS)
 
     def test_guardian_传空列表不算传(self):
-        M.generate_opener(**{**self.GUARDIAN_KWARGS, "dont_items": [], "do_items": []})
+        _fixture_generate(**{**self.GUARDIAN_KWARGS, "dont_items": [], "do_items": []})
 
     def test_cowork_传dont_不再被守卫拦(self):
         """🔴 与方案(甲) 的接缝：Cowork+dont 必须**正常出件**，且约束真的进成品。
         本条钉死「不要把乙对 --env Cowork 的拦截一并落地」这个交付约束。"""
-        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
+        out = _fixture_generate(**{**VALID_COWORK_KWARGS, "dont_items": ["不动销售域"]})
         self.assertIn("- 不动销售域", out)
         self.assertEqual(
             M.BODY_PARAM_SUPPORT[("Cowork", "standard")], {"do_items", "dont_items"})
 
     def test_cc_standard_两个都传_照常出件(self):
-        out = M.generate_opener(**{**VALID_CC_KWARGS,
+        out = _fixture_generate(**{**VALID_CC_KWARGS,
                                    "do_items": ["建造"], "dont_items": ["不动产线"]})
         self.assertIn("1. 建造", out)
         self.assertIn("- 不动产线", out)
 
     def test_cc_subtask_lane_两个都传_照常出件(self):
-        out = M.generate_opener(**{**VALID_CC_KWARGS, "variant": "subtask_lane",
+        out = _fixture_generate(**{**VALID_CC_KWARGS, "variant": "subtask_lane",
                                    "do_items": ["建造"], "dont_items": ["不动产线"]})
         self.assertIn("- 不动产线", out)
 
@@ -600,7 +619,7 @@ class SilentlyDroppedBodyParamTests(unittest.TestCase):
         ]
         err = _io.StringIO()
         with contextlib.redirect_stderr(err):
-            code = M.main(argv)
+            code = M.main([*argv, '--out', 'fixture-output/'+uuid.uuid4().hex+'.md'])
         self.assertEqual(code, 1)
         self.assertIn("--dont", err.getvalue())
 
@@ -611,7 +630,7 @@ class SilentlyDroppedBodyParamTests(unittest.TestCase):
         try:
             M.BODY_PARAM_SUPPORT.pop(("CC", "standard"))
             with self.assertRaises(M.OpenerGenError):
-                M.generate_opener(**{**VALID_CC_KWARGS, "do_items": ["建造"]})
+                _fixture_generate(**{**VALID_CC_KWARGS, "do_items": ["建造"]})
         finally:
             M.BODY_PARAM_SUPPORT.clear()
             M.BODY_PARAM_SUPPORT.update(saved)
@@ -662,10 +681,10 @@ class 引用版变体(unittest.TestCase):
     )
 
     def _gen(self, **over):
-        return M.generate_opener(**{**self.BASE, **over})
+        return _fixture_generate(**{**self.BASE, **over})
 
     def test_golden_CC四行(self):
-        self.assertEqual(self._gen(), self.GOLDEN_CC)
+        self.assertEqual(self._gen(), _expected_signed_golden(self.GOLDEN_CC))
 
     def test_golden_Cowork三行_无title调用(self):
         """🔴 Cowork 侧**不放** `set_session_title`：那个工具在 Cowork 桌根本不存在
@@ -673,7 +692,7 @@ class 引用版变体(unittest.TestCase):
         out = self._gen(op_id="OP-0908-Y", env="Cowork", short_name="引用版Cowork",
                         branch="master", worktree="☐（不建，只产改 `.md`）",
                         line="环境总线", task_class="B")
-        self.assertEqual(out, self.GOLDEN_COWORK)
+        self.assertEqual(out, _expected_signed_golden(self.GOLDEN_COWORK))
         self.assertNotIn("set_session_title", out)
 
     def test_引用版自身过lint(self):
@@ -692,7 +711,7 @@ class 引用版变体(unittest.TestCase):
         out = self._gen()
         self.assertNotIn("做什么：", out)
         self.assertNotIn("不做什么：", out)
-        self.assertEqual(len(out.strip().splitlines()), 6)   # 上下围栏 ＋ 四行
+        self.assertEqual(len(out.strip().splitlines()), 7)   # 上下围栏 ＋ 四行 ＋ 指纹元数据
 
     # ── fail-loud 四条（`_resolve_input_pointer`）────────────────
     def _cli(self, argv) -> tuple[int, str]:
@@ -700,7 +719,7 @@ class 引用版变体(unittest.TestCase):
         import io as _io
         err = _io.StringIO()
         with contextlib.redirect_stderr(err), contextlib.redirect_stdout(_io.StringIO()):
-            code = M.main(argv)
+            code = M.main([*argv, '--out', 'fixture-output/'+uuid.uuid4().hex+'.md'])
         return code, err.getvalue()
 
     _CLI_COMMON = [
@@ -762,7 +781,7 @@ class 子任务泳道占位段(unittest.TestCase):
               if k not in ("do_items", "dont_items")}
         kw.update({"variant": "subtask_lane", "op_id": "OP-1231-A"})
         kw.update(over)
-        return M.generate_opener(**kw)
+        return _fixture_generate(**kw)
 
     def test_未传do_dont时不出正文两段(self):
         out = self._gen()
@@ -776,8 +795,9 @@ class 子任务泳道占位段(unittest.TestCase):
         新增告警类沙箱夹具一条（队列 §一 `#627` B 面，2026-09-20 有意扩入）＋
         收工哨兵一条（队列 §一 `#550`，2026-09-10 有意扩入）。"""
         body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
-        self.assertEqual(len(body), 10, f"实为 {len(body)} 行：{body}")
-        self.assertEqual(body[-7:], [M.SUBTASK_PARALLEL_NOTE,
+        self.assertEqual(len(body), 11, f"三行+七条执行口径+一条元数据，实为 {len(body)} 行：{body}")
+        self.assertTrue(body[-1].startswith('〔出件指纹 '))
+        self.assertEqual(body[-8:-1], [M.SUBTASK_PARALLEL_NOTE,
                                      M.subtask_heartbeat_note("op1231a-demo-slug", "B-1231_示例批"),
                                      M.SUBTASK_NARROW_TEST_NOTE,
                                      M.SUBTASK_PUSH_NOTE, M.SUBTASK_EVIDENCE_NOTE,
@@ -807,7 +827,7 @@ class 子任务泳道占位段(unittest.TestCase):
         """收窄证明：本改动只动 subtask_lane 分支，standard 的占位段是明示设计。"""
         kw = {k: v for k, v in VALID_CC_KWARGS.items()
               if k not in ("do_items", "dont_items")}
-        out = M.generate_opener(**{**kw, "op_id": "OP-1231-B"})
+        out = _fixture_generate(**{**kw, "op_id": "OP-1231-B"})
         self.assertIn("做什么：", out)
         self.assertIn("1. …", out)
 
@@ -823,7 +843,7 @@ class 分支slug前缀重复(unittest.TestCase):
 
     @staticmethod
     def _gen(branch, op_id="OP-1231-C"):
-        return M.generate_opener(**{**VALID_CC_KWARGS, "op_id": op_id, "branch": branch})
+        return _fixture_generate(**{**VALID_CC_KWARGS, "op_id": op_id, "branch": branch})
 
     def test_含op短号的slug被拒(self):
         with self.assertRaises(M.OpenerGenError) as cm:
@@ -851,7 +871,7 @@ class 分支slug前缀重复(unittest.TestCase):
 
     def test_guardian变体不受约束(self):
         """guardian 的分支字段是骨架 §三bis 固定字面量，不是 slug。"""
-        M.generate_opener(**{
+        _fixture_generate(**{
             **VALID_CC_KWARGS, "op_id": "OP-1231-F", "variant": "guardian",
             "short_name": "示例批", "branch": "master（看护者本身不建分支，不改代码）",
             "worktree": "☐（看护者不建，各子泳道自建）",
@@ -886,10 +906,13 @@ class 骨架与生成器契约(unittest.TestCase):
         blocks = lint.iter_fenced_blocks(cls.section)
         assert len(blocks) == 1, f"该节应恰有 1 个围栏块，实为 {len(blocks)}"
         cls.canon_lines = [ln for ln in blocks[0].lines if ln.strip()]
+        cls.canon_metadata = cls.canon_lines.pop()
+        assert cls.canon_metadata.startswith('〔出件指纹 <由生成器计算，勿手填>')
+        assert '出件日期 <YYYY-MM-DD' in cls.canon_metadata
         kw = {k: v for k, v in VALID_CC_KWARGS.items()
               if k not in ("do_items", "dont_items")}
         kw.update({"variant": "subtask_lane", "op_id": "OP-1231-G"})
-        out = M.generate_opener(**kw)
+        out = _fixture_generate(**kw)
         cls.gen_lines = [ln for ln in out.splitlines()
                          if ln.strip() and not ln.startswith("```")]
 
@@ -899,7 +922,8 @@ class 骨架与生成器契约(unittest.TestCase):
         self.assertIn("做什么／不做什么／收工", self.section)
 
     def test_行数与正本一致(self):
-        self.assertEqual(len(self.gen_lines), len(self.canon_lines),
+        self.assertTrue(self.gen_lines[-1].startswith('〔出件指纹 '))
+        self.assertEqual(len(self.gen_lines), len(self.canon_lines)+1,
                          f"正本 {len(self.canon_lines)} 行 ／ 生成器 "
                          f"{len(self.gen_lines)} 行：\n正本={self.canon_lines}\n"
                          f"生成器={self.gen_lines}")
@@ -981,18 +1005,19 @@ class 收工哨兵强制注入(unittest.TestCase):
         kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
         kw.update({"variant": "subtask_lane", "op_id": "OP-1230-S"})
         kw.update(over)
-        return M.generate_opener(**kw)
+        return _fixture_generate(**kw)
 
     def test_子任务泳道成品含哨兵行且在末行(self):
         body = [ln for ln in self._gen().splitlines() if not ln.startswith("```")]
-        self.assertEqual(body[-1], M.SUBTASK_SENTINEL_NOTE)
-        self.assertIn("OPENER_DONE", body[-1])
-        self.assertIn("OPENER_PARTIAL", body[-1])
+        self.assertEqual(body[-2], M.SUBTASK_SENTINEL_NOTE)
+        self.assertIn("OPENER_DONE", body[-2])
+        self.assertIn("OPENER_PARTIAL", body[-2])
+        self.assertTrue(body[-1].startswith('〔出件指纹 '))
 
     def test_传了do_dont仍在最末(self):
         body = [ln for ln in self._gen(do_items=["建造"], dont_items=["不动产线"]).splitlines()
                 if not ln.startswith("```")]
-        self.assertEqual(body[-7:], [M.SUBTASK_PARALLEL_NOTE,
+        self.assertEqual(body[-8:-1], [M.SUBTASK_PARALLEL_NOTE,
                                      M.subtask_heartbeat_note("op1230s-demo-slug", "B-1231_示例批"),
                                      M.SUBTASK_NARROW_TEST_NOTE,
                                      M.SUBTASK_PUSH_NOTE, M.SUBTASK_EVIDENCE_NOTE,
@@ -1001,12 +1026,12 @@ class 收工哨兵强制注入(unittest.TestCase):
 
     def test_其它变体不注入(self):
         """收窄：标准／guardian／reference 都是人粘贴进交互会话的，不经批处理器，不加。"""
-        std = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-1230-T"})
+        std = _fixture_generate(**{**VALID_CC_KWARGS, "op_id": "OP-1230-T"})
         self.assertNotIn("OPENER_DONE", std)
         kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
         kw.update(op_id="OP-1230-U", variant="guardian", short_name="示例批",
                   branch="master（看护者本身不建分支，不改代码）")
-        guardian = M.generate_opener(**kw)
+        guardian = _fixture_generate(**kw)
         self.assertNotIn("OPENER_DONE", guardian)
 
     def test_变异检验_去掉哨兵行lint即转红(self):
@@ -1038,7 +1063,7 @@ class 心跳尾句强制注入(unittest.TestCase):
         kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
         kw.update({"variant": "subtask_lane", "op_id": "OP-1230-H"})
         kw.update(over)
-        return M.generate_opener(**kw)
+        return _fixture_generate(**kw)
 
     @staticmethod
     def _body(text: str) -> list[str]:
@@ -1066,7 +1091,8 @@ class 心跳尾句强制注入(unittest.TestCase):
         self.assertEqual(idx_push, idx_narrow + 1)
         self.assertEqual(idx_evidence, idx_push + 1)
         self.assertEqual(idx_alert_fixture, idx_evidence + 1)
-        self.assertEqual(body[-1], M.SUBTASK_SENTINEL_NOTE)
+        self.assertEqual(body[-2], M.SUBTASK_SENTINEL_NOTE)
+        self.assertTrue(body[-1].startswith('〔出件指纹 '))
 
     def test_泳道标识等于worktree名与分支名同源(self):
         """`--lane` 值 ＝ `op{mmdd}{x}-{slug}` ＝ 【设置】行分支名去掉 `claude/`——看护者只看
@@ -1123,16 +1149,16 @@ class 心跳尾句强制注入(unittest.TestCase):
         kw = dict(VALID_CC_KWARGS)
         kw.update({"op_id": "OP-1230-I", "batch": "B-1230_X"})
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**kw)
+            _fixture_generate(**kw)
 
     def test_其它变体不注入(self):
         """收窄：标准／guardian／reference 都是人粘贴进交互会话的，不经批处理器，不加。"""
-        std = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-1229-T"})
+        std = _fixture_generate(**{**VALID_CC_KWARGS, "op_id": "OP-1229-T"})
         self.assertNotIn("工具-泳道看护状态机.py heartbeat", std)
         kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
         kw.update(op_id="OP-1229-U", variant="guardian", short_name="示例批",
                   branch="master（看护者本身不建分支，不改代码）")
-        guardian = M.generate_opener(**kw)
+        guardian = _fixture_generate(**kw)
         self.assertNotIn("工具-泳道看护状态机.py heartbeat", guardian)
 
     def test_CLI_batch旗标可用(self):
@@ -1141,6 +1167,7 @@ class 心跳尾句强制注入(unittest.TestCase):
         out, err = _io.StringIO(), _io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = M.main([
+                '--out', 'fixture-output/'+uuid.uuid4().hex+'.md',
                 "--op-id", "OP-1230-J", "--env", "CC", "--short-name", "心跳示例",
                 "--branch", "hb-demo", "--worktree", "☑（hb，新 worktree，收工自删）",
                 "--workspace", "无", "--session", "新开", "--line", "环境总线 OP-1230-Z",
@@ -1202,7 +1229,7 @@ class 取号即声明(unittest.TestCase):
         return M._load_claims(M.CLAIMS_FILE)
 
     def test_出件即写占位(self):
-        M.generate_opener(**self._kw())
+        _fixture_generate(**self._kw())
         recs = self._claims()
         self.assertEqual(len(recs), 1)
         self.assertEqual(recs[0]["op_id"], "OP-1229-A")
@@ -1212,9 +1239,9 @@ class 取号即声明(unittest.TestCase):
     def test_并发取同号_第二份起草件撞红(self):
         """🔴 变异检验的靶子（队列 `#549` ⑷）：把 `_claim_op_id` 的调用注释掉，本用例必红——
         两份件都没落档、`_scan_used_suffixes` 两边都看不见，只有占位能拦。"""
-        M.generate_opener(**self._kw(short_name="甲线派单", line="业务总线"))
+        _fixture_generate(**self._kw(short_name="甲线派单", line="业务总线"))
         with self.assertRaises(M.OpenerGenError) as cm:
-            M.generate_opener(**self._kw(short_name="乙线派单", line="环境总线"))
+            _fixture_generate(**self._kw(short_name="乙线派单", line="环境总线"))
         msg = str(cm.exception)
         self.assertIn("起草中", msg)
         self.assertIn("甲线派单", msg)
@@ -1222,16 +1249,16 @@ class 取号即声明(unittest.TestCase):
 
     def test_同一草稿重生成不自撞(self):
         """短名相同＝同一份草稿改参数再跑一次，刷新占位而不是拦自己。"""
-        M.generate_opener(**self._kw(short_name="同一份件"))
-        M.generate_opener(**self._kw(short_name="同一份件", branch="another-slug"))
+        _fixture_generate(**self._kw(short_name="同一份件"))
+        _fixture_generate(**self._kw(short_name="同一份件", branch="another-slug"))
         recs = self._claims()
         self.assertEqual(len(recs), 1)
 
     def test_同线不同件同号仍撞(self):
         """🔴 刻意不看 `line`：同一条线在同一时段起两份不同的件却传同一个号，正是要拦的。"""
-        M.generate_opener(**self._kw(short_name="件一", line="业务总线"))
+        _fixture_generate(**self._kw(short_name="件一", line="业务总线"))
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**self._kw(short_name="件二", line="业务总线"))
+            _fixture_generate(**self._kw(short_name="件二", line="业务总线"))
 
     def test_过期占位不挡号且被清理(self):
         old = M._fmt_utc(M._utc_now() - timedelta(minutes=M.CLAIM_TTL_MINUTES + 1))
@@ -1239,7 +1266,7 @@ class 取号即声明(unittest.TestCase):
         M.CLAIMS_FILE.write_text(json.dumps({
             "op_id": "OP-1229-A", "mmdd": "1229", "suffix": "A", "short_name": "陈旧件",
             "line": "X", "claimed_at": old}) + "\n", encoding="utf-8")
-        M.generate_opener(**self._kw(short_name="新件"))
+        _fixture_generate(**self._kw(short_name="新件"))
         recs = self._claims()
         self.assertEqual([r["short_name"] for r in recs], ["新件"])
 
@@ -1251,28 +1278,28 @@ class 取号即声明(unittest.TestCase):
             "op_id": "OP-1229-A", "mmdd": "1229", "suffix": "A", "short_name": "在跑件",
             "line": "X", "claimed_at": fresh}) + "\n", encoding="utf-8")
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**self._kw(short_name="新件"))
+            _fixture_generate(**self._kw(short_name="新件"))
 
     def test_已落档的号_占位自动清理(self):
         """落了档就由 `_scan_used_suffixes` 接管；占位只覆盖取号→落档的真空。"""
-        M.generate_opener(**self._kw(short_name="要落档的件"))
+        _fixture_generate(**self._kw(short_name="要落档的件"))
         (self.root / "1-转型规划").mkdir()
         (self.root / "1-转型规划" / "派单件.md").write_text("[OP-1229-A]【CC】要落档的件", encoding="utf-8")
         # 任意一次当日取号都会顺手清理：取 B。
-        M.generate_opener(**self._kw(op_id="OP-1229-B", short_name="另一件"))
+        _fixture_generate(**self._kw(op_id="OP-1229-B", short_name="另一件"))
         recs = self._claims()
         self.assertEqual([r["op_id"] for r in recs], ["OP-1229-B"])
         # 已落档的 A 仍被拦（由落档扫描拦，不是由占位拦）。
         with self.assertRaises(M.OpenerGenError) as cm:
-            M.generate_opener(**self._kw(short_name="第三件"))
+            _fixture_generate(**self._kw(short_name="第三件"))
         self.assertIn("已被使用", str(cm.exception))
 
     def test_落档撞号时下一空号也避开占位(self):
-        M.generate_opener(**self._kw(op_id="OP-1229-B", short_name="占了B"))
+        _fixture_generate(**self._kw(op_id="OP-1229-B", short_name="占了B"))
         (self.root / "1-转型规划").mkdir()
         (self.root / "1-转型规划" / "x.md").write_text("OP-1229-A 已落档", encoding="utf-8")
         with self.assertRaises(M.OpenerGenError) as cm:
-            M.generate_opener(**self._kw(short_name="再取A"))
+            _fixture_generate(**self._kw(short_name="再取A"))
         self.assertIn("OP-1229-C", str(cm.exception))
 
     def test_台账写不了即不出件(self):
@@ -1280,18 +1307,18 @@ class 取号即声明(unittest.TestCase):
         blocker = self.root / "reports"
         blocker.write_text("我是文件不是目录", encoding="utf-8")   # 使 reports/ 无法成为目录
         with self.assertRaises(M.OpenerGenError) as cm:
-            M.generate_opener(**self._kw())
+            _fixture_generate(**self._kw())
         self.assertIn("fail-closed", str(cm.exception))
 
     def test_不同日期同后缀互不干扰(self):
-        M.generate_opener(**self._kw(op_id="OP-1228-A", short_name="昨天的A"))
-        M.generate_opener(**self._kw(op_id="OP-1229-A", short_name="今天的A"))
+        _fixture_generate(**self._kw(op_id="OP-1228-A", short_name="昨天的A"))
+        _fixture_generate(**self._kw(op_id="OP-1229-A", short_name="今天的A"))
         self.assertEqual(len(self._claims()), 2)
 
     def test_坏行不崩(self):
         M.CLAIMS_FILE.parent.mkdir(parents=True)
         M.CLAIMS_FILE.write_text("{not json\n\n", encoding="utf-8")
-        M.generate_opener(**self._kw())
+        _fixture_generate(**self._kw())
         self.assertEqual(len(self._claims()), 1)
 
     def test_台账落主工作区_跨worktree共享(self):
@@ -1314,14 +1341,14 @@ class LineSelfReferenceTests(unittest.TestCase):
 
     def test_line引用与op_id相同即拒绝(self):
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-1231-P",
+            _fixture_generate(**{**VALID_CC_KWARGS, "op_id": "OP-1231-P",
                                   "line": "环境总线 OP-1231-P（批 B-1231_示例批）"})
         msg = str(ctx.exception)
         self.assertIn("OP-1231-P", msg)
         self.assertIn("#620", msg)
 
     def test_line引用不同编号不受影响(self):
-        M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-1231-Q",
+        _fixture_generate(**{**VALID_CC_KWARGS, "op_id": "OP-1231-Q",
                               "line": "环境总线 OP-1231-R（批 B-1231_示例批）"})  # 不抛即通过
 
 
@@ -1331,7 +1358,7 @@ class CoworkModelRejectionTests(unittest.TestCase):
 
     def test_cowork显式传model即拒绝(self):
         with self.assertRaises(M.OpenerGenError) as ctx:
-            M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-T", "model": "design"})
+            _fixture_generate(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-T", "model": "design"})
         msg = str(ctx.exception)
         self.assertIn("--model", msg)
         self.assertIn("Cowork", msg)
@@ -1341,10 +1368,10 @@ class CoworkModelRejectionTests(unittest.TestCase):
         """🔴 判「传没传」只看 kwargs，不看值——传显式 `inherit`（即便与缺省值相同）也该拒绝，
         否则「传了但恰好等于默认值」会绕过本守卫。"""
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-U", "model": "inherit"})
+            _fixture_generate(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-U", "model": "inherit"})
 
     def test_cowork不传model仍正常出件(self):
-        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-V"})
+        out = _fixture_generate(**{**VALID_COWORK_KWARGS, "op_id": "OP-1231-V"})
         self.assertNotIn("模型", out)
 
     def test_cli层cowork传model_退出码1且写stderr(self):
@@ -1359,7 +1386,7 @@ class CoworkModelRejectionTests(unittest.TestCase):
         ]
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            code = M.main(argv)
+            code = M.main([*argv, '--out', 'fixture-output/'+uuid.uuid4().hex+'.md'])
         self.assertEqual(code, 1)
         self.assertIn("--model", err.getvalue())
 
@@ -1420,12 +1447,12 @@ class IgnoreBlindNoteTests(unittest.TestCase):
     """
 
     def test_标准CC变体含软提示(self):
-        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0906-ZA"})
+        out = _fixture_generate(**{**VALID_CC_KWARGS, "op_id": "OP-0906-ZA"})
         self.assertIn(M.IGNORE_BLIND_NOTE, out)
         self.assertIn("worktree 不可见，须回主仓复核", out)
 
     def test_cowork变体含软提示(self):
-        out = M.generate_opener(**{**VALID_COWORK_KWARGS, "op_id": "OP-0906-ZB"})
+        out = _fixture_generate(**{**VALID_COWORK_KWARGS, "op_id": "OP-0906-ZB"})
         self.assertIn(M.IGNORE_BLIND_NOTE, out)
 
     def test_子任务泳道变体本次不动_不含软提示(self):
@@ -1433,11 +1460,11 @@ class IgnoreBlindNoteTests(unittest.TestCase):
         `opener骨架.md` 与 `骨架与生成器契约` 测试类，本次不做，留作后续单独一批。"""
         kw = {k: v for k, v in VALID_CC_KWARGS.items() if k not in ("do_items", "dont_items")}
         kw.update({"variant": "subtask_lane", "op_id": "OP-0906-ZC"})
-        out = M.generate_opener(**kw)
+        out = _fixture_generate(**kw)
         self.assertNotIn(M.IGNORE_BLIND_NOTE, out)
 
     def test_标准CC产物过lint零违规(self):
-        out = M.generate_opener(**{**VALID_CC_KWARGS, "op_id": "OP-0906-ZD"})
+        out = _fixture_generate(**{**VALID_CC_KWARGS, "op_id": "OP-0906-ZD"})
         lint = M._load_lint_module()
         blocks = lint.iter_fenced_blocks(out)
         self.assertEqual(lint.check_block(blocks[0]), [])
@@ -1455,7 +1482,7 @@ class CodexLunaContractTests(unittest.TestCase):
                 kwargs.pop('do_items'); kwargs.pop('dont_items')
             for extra in ({}, {'model': 'gpt-6-luna'}):
                 with self.subTest(variant=variant, extra=extra):
-                    out = M.generate_opener(**{**kwargs, **extra})
+                    out = _fixture_generate(**{**kwargs, **extra})
                     self.assertIn('模型：gpt-6-luna', out)
                     lint = M._load_lint_module()
                     self.assertEqual(lint.check_block(lint.iter_fenced_blocks(out)[0], is_subtask_lane=variant == 'subtask_lane'), [])
@@ -1463,8 +1490,210 @@ class CodexLunaContractTests(unittest.TestCase):
     def test_native_rejects_aliases_and_other_models(self):
         for model in ('inherit', 'routine', 'design', 'sonnet', 'gpt-6-astra', ''):
             with self.subTest(model=model), self.assertRaises(M.OpenerGenError):
-                M.generate_opener(**dict(VALID_CC_KWARGS, env='Codex', model=model))
+                _fixture_generate(**dict(VALID_CC_KWARGS, env='Codex', model=model))
 
     def test_cc_rejects_native_model(self):
         with self.assertRaises(M.OpenerGenError):
-            M.generate_opener(**dict(VALID_CC_KWARGS, model="gpt-6-luna"))
+            _fixture_generate(**dict(VALID_CC_KWARGS, model="gpt-6-luna"))
+
+
+class SingleGuardedCopyOutputTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
+        self.patchroot=patch.object(M,'REPO_ROOT',self.root);self.patchroot.start()
+        self.patchclaims=patch.object(M,'CLAIMS_FILE',self.root/'claims.jsonl');self.patchclaims.start()
+
+    def tearDown(self):
+        self.patchclaims.stop();self.patchroot.stop();self.temp.cleanup()
+
+    def kwargs(self,**extra):
+        return dict(VALID_CC_KWARGS,env='Codex',op_id='OP-1117-A',**extra)
+
+    def gen(self,**extra):
+        return M.generate_opener(**self.kwargs(**extra))
+
+    def cli(self,**extra):
+        kw=self.kwargs(**extra);args=[]
+        for field in ('op_id','env','short_name','branch','worktree','workspace','session','line','input_pointer','task_class','out','anchor'):
+            if field in kw:args.extend(['--'+field.replace('_','-'),str(kw[field])])
+        out,err=io.StringIO(),io.StringIO()
+        with contextlib.redirect_stdout(out),contextlib.redirect_stderr(err):code=M.main(args)
+        return code,out.getvalue(),err.getvalue()
+
+    def test_missing_out_api_and_cli_fail_without_claim_or_stdout(self):
+        with self.assertRaisesRegex(M.OpenerGenError,'out'):self.gen()
+        code,text,err=self.cli();self.assertEqual(code,1);self.assertEqual(text,'');self.assertIn('out',err)
+        self.assertFalse(M.CLAIMS_FILE.exists())
+
+    def test_all_legal_environment_variants_persist_final_bytes(self):
+        counter=0
+        for env,variants in [('CC',('standard','reference','guardian','subtask_lane')),
+                             ('Cowork',('standard','reference')),
+                             ('Codex',('standard','reference','guardian','subtask_lane'))]:
+            for variant in variants:
+                with self.subTest(env=env,variant=variant):
+                    counter+=1;kw=dict(VALID_CC_KWARGS,env=env,op_id=f'OP-1117-{chr(65+counter)}',variant=variant,out=f'out/{counter}.md')
+                    if env=='Cowork':kw.update(branch='master',worktree='☐（不建）')
+                    if variant in ('reference','guardian'):kw.pop('do_items',None);kw.pop('dont_items',None)
+                    if variant=='guardian':kw.update(short_name='示例批',branch='master（看护者不建分支）')
+                    text=M.generate_opener(**kw)
+                    self.assertEqual((self.root/kw['out']).read_bytes(),text.encode('utf-8'))
+                    lint=M._load_lint_module();block=lint.iter_fenced_blocks(text)[0]
+                    self.assertEqual(lint.check_block(block,is_subtask_lane=variant=='subtask_lane'),[])
+                    self.assertTrue(block.lines[-1].startswith('〔出件指纹 '))
+                    if variant=='subtask_lane':self.assertEqual(block.lines[-2],M.SUBTASK_SENTINEL_NOTE)
+                    if env=='Codex':self.assertIn('执行环境：Codex',text);self.assertNotIn('set_session_title',text)
+
+    def test_cli_has_no_added_newline_and_equals_file(self):
+        code,text,err=self.cli(out='out/cli.md');self.assertEqual(code,0,err)
+        self.assertEqual((self.root/'out/cli.md').read_bytes(),text.encode('utf-8'))
+        self.assertTrue(text.endswith('```'));self.assertFalse(text.endswith('\n'))
+
+    def test_native_composition_preserves_unicode_separator_before_stamping(self):
+        first=self.gen(out='a.md',do_items=['alpha\u2028beta'])
+        second=self.gen(out='b.md',do_items=['alpha\nbeta'])
+        self.assertIn('alpha\u2028beta',first)
+        lint=M._load_lint_module()
+        self.assertNotEqual(lint.block_fingerprint(lint.iter_fenced_blocks(first)[0].raw_text),
+                            lint.block_fingerprint(lint.iter_fenced_blocks(second)[0].raw_text))
+
+    def test_rejects_escaping_non_md_queues_archives_and_row_logs(self):
+        paths=['../escape.md',str(self.root/'absolute.md'),'bad.txt',
+               '1-转型规划/0-全景路线图/跨桌任务队列-机制环境.md',
+               '1-转型规划/0-全景路线图/跨桌任务队列-归档-202608.md',
+               '1-转型规划/0-全景路线图/队列行日志/#503.md']
+        for out in paths:
+            with self.subTest(out=out),self.assertRaises(M.OpenerGenError):self.gen(out=out)
+        self.assertFalse(M.CLAIMS_FILE.exists())
+
+    def test_external_link_refused(self):
+        with tempfile.TemporaryDirectory() as other:
+            link=self.root/'external'
+            try:link.symlink_to(other,target_is_directory=True)
+            except OSError as exc:
+                # Windows directory junction works without symlink privilege.
+                import subprocess
+                result=subprocess.run(['cmd','/c','mklink','/J',str(link),other],capture_output=True)
+                self.assertEqual(result.returncode,0,f'symlink={exc}; junction stdout={result.stdout!r} stderr={result.stderr!r}; root={self.root}')
+            try:
+                with self.assertRaises(M.OpenerGenError):self.gen(out='external/out.md')
+                self.assertFalse((Path(other)/'out.md').exists())
+            finally:
+                if link.is_symlink():link.unlink()
+                else:os.rmdir(link)
+
+    def test_same_id_sole_block_replaced_and_other_id_refused(self):
+        first=self.gen(out='out.md');second=self.gen(out='out.md',do_items=['新内容'])
+        self.assertNotEqual(first,second);self.assertEqual((self.root/'out.md').read_bytes(),second.encode())
+        with self.assertRaises(M.OpenerGenError):M.generate_opener(**dict(self.kwargs(out='out.md'),op_id='OP-1117-B'))
+        self.assertEqual((self.root/'out.md').read_bytes(),second.encode())
+
+    def test_anchor_insertion_does_not_release_id_occupied_in_another_chapter(self):
+        seed=self.gen(out='seed.md')
+        rel='1-转型规划/mixed.md';path=self.root/rel;path.parent.mkdir()
+        before=('## Target\nintro\n## Other\n'+seed+'\n').encode('utf-8');path.write_bytes(before)
+        # A valid owned shared lease is an independent tested boundary; here
+        # exercise the real on-disk OP occupancy scan, not a mocked used-ID set.
+        with patch.object(M,'_check_shared_output',return_value=None):
+            with self.assertRaisesRegex(M.OpenerGenError,'撞号|已被使用'):
+                self.gen(out=rel,anchor='## Target')
+        self.assertEqual(path.read_bytes(),before)
+
+    def test_embedded_closing_fence_never_silently_drops_supplied_body(self):
+        with self.assertRaisesRegex(M.OpenerGenError,'围栏|完整|出件'):
+            self.gen(out='out.md',dont_items=['不动产线\n```\nTHIS_TEXT_MUST_NOT_BE_DROPPED'])
+        self.assertFalse((self.root/'out.md').exists())
+        self.assertFalse(M.CLAIMS_FILE.exists(),'拒绝不完整拼装应先于取号声明')
+
+    def test_anchor_insert_replace_preserves_bom_crlf_and_other_text(self):
+        original=b'\xef\xbb\xbf'+('# 前言\r\n keep \r\n## Target\r\nintro\r\n## Other\r\nother\r\n').encode()
+        path=self.root/'mixed.md';path.write_bytes(original)
+        with self.assertRaises(M.OpenerGenError):self.gen(out='mixed.md')
+        text=self.gen(out='mixed.md',anchor='## Target')
+        data=path.read_bytes();self.assertTrue(data.startswith(b'\xef\xbb\xbf#'))
+        self.assertIn(b' keep \r\n## Target\r\nintro\r\n',data)
+        self.assertTrue(data.endswith(b'## Other\r\nother\r\n'))
+        new=self.gen(out='mixed.md',anchor='## Target',do_items=['changed'])
+        self.assertEqual(path.read_bytes(),data.replace(text.encode(),new.encode()))
+
+    def test_missing_duplicate_fenced_heading_and_duplicate_id_are_refused(self):
+        samples=['## Other\nbody\n','## Target\na\n## Target\nb\n',
+                 '```\n## Target\n```\n']
+        path=self.root/'mixed.md'
+        for content in samples:
+            path.write_text(content,encoding='utf-8');before=path.read_bytes()
+            with self.assertRaises(M.OpenerGenError):self.gen(out='mixed.md',anchor='## Target')
+            self.assertEqual(path.read_bytes(),before)
+        text=self.gen(out='seed.md');content='## Target\n'+text+'\n'+text+'\n'
+        path.write_text(content,encoding='utf-8')
+        with self.assertRaises(M.OpenerGenError):self.gen(out='mixed.md',anchor='## Target')
+        self.assertEqual(path.read_text(encoding='utf-8'),content)
+
+    def test_replace_failure_keeps_original_and_cleans_only_own_temp(self):
+        unknown=self.root/'out.md.opener-unknown.swp';unknown.write_bytes(b'unknown')
+        original=self.gen(out='out.md')
+        with patch.object(M.os,'replace',side_effect=OSError('replace fixture')):
+            code,text,err=self.cli(out='out.md')
+        self.assertEqual(code,1);self.assertEqual(text,'');self.assertIn('replace fixture',err)
+        self.assertEqual((self.root/'out.md').read_bytes(),original.encode())
+        self.assertEqual(list(self.root.glob('*.swp')),[unknown])
+
+    def test_write_failure_and_claim_failure_never_emit_or_replace(self):
+        with patch.object(M,'_write_payload',side_effect=OSError('write fixture')):
+            code,text,err=self.cli(out='out.md')
+        self.assertEqual(code,1);self.assertEqual(text,'');self.assertFalse((self.root/'out.md').exists())
+        self.assertFalse(list(self.root.glob('*.swp')))
+        with patch.object(M,'_claim_op_id',side_effect=M.OpenerGenError('claim fixture')):
+            code,text,err=self.cli(out='out.md')
+        self.assertEqual(code,1);self.assertEqual(text,'');self.assertIn('claim fixture',err)
+        self.assertFalse((self.root/'out.md').exists())
+
+    def test_concurrent_change_and_changed_reread_do_not_rollback_other_writer(self):
+        target=self.root/'out.md';original=self.gen(out='out.md');real=M._write_payload
+        def change_before_replace(handle,data):
+            real(handle,data);target.write_bytes(b'concurrent writer')
+        with patch.object(M,'_write_payload',side_effect=change_before_replace):
+            code,text,err=self.cli(out='out.md')
+        self.assertEqual(code,1);self.assertEqual(text,'');self.assertEqual(target.read_bytes(),b'concurrent writer')
+        target.write_bytes(original.encode());replace=M.os.replace
+        def change_after_replace(source,dest):
+            replace(source,dest);Path(dest).write_bytes(b'later writer')
+        with patch.object(M.os,'replace',side_effect=change_after_replace):
+            code,text,err=self.cli(out='out.md')
+        self.assertEqual(code,1);self.assertEqual(text,'');self.assertEqual(target.read_bytes(),b'later writer')
+        self.assertFalse(list(self.root.glob('*.swp')))
+
+    def test_read_oserror_after_replace_has_empty_stdout_and_preserves_actual_file(self):
+        target=self.root/'out.md';original=self.gen(out='out.md');replaced=[False]
+        real_read=Path.read_bytes;real_replace=M.os.replace
+        def replace(source,dest):
+            real_replace(source,dest);replaced[0]=True
+        def read(path):
+            if replaced[0] and path.resolve()==target.resolve():raise OSError('reread fixture')
+            return real_read(path)
+        with patch.object(M.os,'replace',side_effect=replace),patch.object(Path,'read_bytes',read):
+            code,text,err=self.cli(out='out.md')
+        self.assertEqual(code,1);self.assertEqual(text,'');self.assertIn('reread fixture',err)
+        self.assertTrue(target.exists());self.assertFalse(list(self.root.glob('*.swp')))
+
+    def test_shared_output_requires_owned_live_lease_and_exact_preregistration(self):
+        module=M._load_output_lock()
+        module.REPO_ROOT=self.root;module._SHARED_QUEUE_ROOT=None
+        rel='1-转型规划/派单件-fixture.md';path=self.root/rel
+        queue=module._target_path(module.QUEUE_MECHANISM_PATH_REL);queue.parent.mkdir(parents=True)
+        prefix='## 二、待 commit 批次\n\n| 批次 | 文件清单 | 建议 message | 状态 |\n|---|---|---|---|\n'
+        queue.write_text(prefix+f'| B-fixture | `{rel}` | foreground Fixture | 在办（预登记） |\n',encoding='utf-8')
+        lease=module._lock_path(module.QUEUE_LOCK_ANCHOR)
+        from datetime import datetime,timezone
+        live={'who':'Fixture','held_since':datetime.now(timezone.utc).isoformat()}
+        with patch.object(M,'_load_output_lock',return_value=module):
+            for data in ({**live,'who':'Other'},{**live,'released':True},{**live,'held_since':'2020-01-01T00:00:00+00:00'}):
+                lease.write_text(json.dumps(data),encoding='utf-8')
+                with self.assertRaises(M.OpenerGenError):self.gen(out=rel,who='Fixture',registration_batch='B-fixture')
+            lease.write_text(json.dumps(live),encoding='utf-8')
+            with self.assertRaises(M.OpenerGenError):self.gen(out=rel,who='Fixture',registration_batch='B-other')
+            queue.write_text(prefix+f'| B-fixture | `{rel}.extra.md` | foreground Fixture | 在办（预登记） |\n',encoding='utf-8')
+            with self.assertRaises(M.OpenerGenError):self.gen(out=rel,who='Fixture',registration_batch='B-fixture')
+            queue.write_text(prefix+f'| B-fixture | `{rel}` | foreground Fixture | 在办（预登记） |\n',encoding='utf-8')
+            text=self.gen(out=rel,who='Fixture',registration_batch='B-fixture')
+            self.assertEqual(path.read_bytes(),text.encode('utf-8'))

@@ -6818,6 +6818,16 @@ def _load_opener_lint_fixtures():
 _OPENER_FIXTURES = _load_opener_lint_fixtures()
 
 
+def _signed_fixture_document(text):
+    # Structural fixtures retain every original instruction and receive valid
+    # independently computed metadata. F17 negatives never use this factory.
+    for block in reversed(_OPENER_FIXTURES.M.iter_fenced_blocks(text)):
+        if _OPENER_FIXTURES.M.settings_line(block) is not None and '〔出件指纹' not in block.raw_text:
+            text=text.replace(block.raw_text,_OPENER_FIXTURES._fingerprint_fixture(block.raw_text),1)
+    return text
+
+
+
 class ReleaseWaiverCliTests(unittest.TestCase):
     """`release --waiver` 的真 CLI ＋ 真 git 仓库端到端（队列 §一 #416 ⑶，
     Shao Peishen 2026-09-07 答决策 2＝(b)）。
@@ -7006,7 +7016,7 @@ class OpenerGuardReleaseTests(unittest.TestCase):
                      ["config", "user.name", "t"]):
             subprocess.run(["git", *args], cwd=self.root, check=True,
                            capture_output=True, text=True)
-        (self.root / "seed.txt").write_text("seed", encoding="utf-8")
+        (self.root / "seed.txt").write_text(_signed_fixture_document("seed"), encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
         subprocess.run(["git", "commit", "-qm", "seed"], cwd=self.root, check=True,
                        capture_output=True)
@@ -7017,7 +7027,7 @@ class OpenerGuardReleaseTests(unittest.TestCase):
     def _write_block(self, rel: str, *body_lines: str) -> None:
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("```\n" + "\n".join(body_lines) + "\n```\n", encoding="utf-8")
+        path.write_text(_signed_fixture_document("```\n" + "\n".join(body_lines) + "\n```\n"), encoding="utf-8")
 
     def _run(self, waivers=None):
         return self.m._opener_guard_violations(self.root, waivers or [])
@@ -7090,7 +7100,7 @@ class OpenerGuardReleaseTests(unittest.TestCase):
     def test_echo_prints_even_when_zero_opener_blocks(self):
         """连回显都没有时，无法区分「没问题」与「没跑」（队列 #284 第 18 次
         违反的教训）。"""
-        (self.root / "普通文档.md").write_text("没有 opener 块的普通内容。\n",
+        (self.root / "普通文档.md").write_text(_signed_fixture_document("没有 opener 块的普通内容。\n"),
                                               encoding="utf-8")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -7101,7 +7111,7 @@ class OpenerGuardReleaseTests(unittest.TestCase):
 
     def test_echo_wording_does_not_imply_full_coverage(self):
         """🔴 D2：回显措辞不得暗示全覆盖——本守卫只覆盖走了队列锁流程的 opener。"""
-        (self.root / "x.md").write_text("普通内容\n", encoding="utf-8")
+        (self.root / "x.md").write_text(_signed_fixture_document("普通内容\n"), encoding="utf-8")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self._run()
@@ -7109,7 +7119,7 @@ class OpenerGuardReleaseTests(unittest.TestCase):
 
     # ── 非 .md 脏文件不进扫描面 ────────────────────────────────
     def test_non_md_dirty_file_ignored(self):
-        (self.root / "脚本.py").write_text(self.SETTINGS_CC, encoding="utf-8")
+        (self.root / "脚本.py").write_text(_signed_fixture_document(self.SETTINGS_CC), encoding="utf-8")
         self.assertEqual(self._run(), [])
 
     # ── 形态⑥（队列 §一 #487，(甲)）：看护者 Task/Agent 派发的子任务泳道
@@ -7119,24 +7129,24 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         """`## 三bis` 之前的块（§三 泳道 opener）不放 title 是正确写法，
         不该被形态①误伤（同 lint 模块 `_is_subtask_lane_block` 判据）。"""
         path = self.root / "看护件-x.md"
-        path.write_text("\n".join([
+        path.write_text(_signed_fixture_document("\n".join([
             "### A1 · 示例泳道", "", "粘贴端：CC ｜ 泳道：示例泳道", "",
             "```", self.TITLE_LINE_CC, self.SETTINGS_CC, "做什么：建造到底。", self.HEARTBEAT_LINE, self.NARROW_LINE, self.EVIDENCE_LINE, self.ALERT_FIXTURE_LINE, self.SENTINEL_LINE, "```", "",
             "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
             "```", "[OP-0905-C]【CC】看护示例", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, "```",
-        ]), encoding="utf-8")
+        ])), encoding="utf-8")
         self.assertEqual(self._run(), [])
 
     def test_watcher_pattern_lane_with_title_rejects_f6(self):
         """同一结构，但 §三 泳道 opener 错误保留了 title ⇒ 应命中 F6，
         而不是被旧判据放行或误判成别的形态。"""
         path = self.root / "看护件-y.md"
-        path.write_text("\n".join([
+        path.write_text(_signed_fixture_document("\n".join([
             "### A1 · 示例泳道", "", "粘贴端：CC ｜ 泳道：示例泳道", "",
             "```", self.TITLE_LINE_CC, self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, self.HEARTBEAT_LINE, self.NARROW_LINE, self.EVIDENCE_LINE, self.ALERT_FIXTURE_LINE, self.SENTINEL_LINE, "```", "",
             "## 三bis、看护opener（单次粘贴，Task/Agent 工具起子任务）", "",
             "```", "[OP-0905-C]【CC】看护示例", self.SETTINGS_CC, self.TITLE_LINE_WITH_EXC, "```",
-        ]), encoding="utf-8")
+        ])), encoding="utf-8")
         violations = self._run()
         self.assertEqual(len(violations), 1)
         self.assertIn("F6", violations[0])
@@ -7176,10 +7186,10 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         lint = self.m._load_opener_lint_module()
         path.write_text(
-            "---\ntitle: \"夹具\"\nstatus: 生效\n"
+            _signed_fixture_document("---\ntitle: \"夹具\"\nstatus: 生效\n"
             f"{lint.CANON_ROLE_KEY}: {role}\n---\n\n"
             + "```\n" + "\n".join(body_lines) + "\n```\n\n"
-            + "```\n" + self.CANON_FILLER + "\n```\n",
+            + "```\n" + self.CANON_FILLER + "\n```\n"),
             encoding="utf-8")
 
     def test_format_canon_placeholders_do_not_block_release(self):
@@ -7230,14 +7240,14 @@ class OpenerGuardReleaseTests(unittest.TestCase):
         path = self.root / "派单件-冒充.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            "---\ntitle: \"冒充\"\nstatus: 生效\n"
+            _signed_fixture_document("---\ntitle: \"冒充\"\nstatus: 生效\n"
             f"{lint.CANON_ROLE_KEY}: {lint.CANON_ROLE_LIBRARY}\n---\n\n"
             + "```\n" + "\n".join([
                 "[OP-MMDD-X]【CC】某个活", self.SETTINGS_CC,
                 '开工第一件事：调 mcp__ccd_session_mgmt__set_session_title'
                 '（session_id 传字面量 "self"），标题：[Win]MMDDX-<短名>。'
                 "🔴 例外：你若是被 Task/Agent 起的子任务，跳过本行不要执行。",
-            ]) + "\n```\n",
+            ]) + "\n```\n"),
             encoding="utf-8")
         violations = self._run()
         self.assertEqual(len(violations), 1)
@@ -10062,3 +10072,50 @@ class CurrentDecisionSummaryTests(unittest.TestCase):
         candidates,drift=self.module._collect_triage_candidates(text)
         self.assertEqual(len(candidates),1)
         self.assertEqual(drift,[])
+
+
+class SingleGuardedCopyReleaseTests(unittest.TestCase):
+    setUp=OpenerGuardReleaseTests.setUp
+    tearDown=OpenerGuardReleaseTests.tearDown
+
+    def test_release_preserves_bare_cr_and_utf8_bom(self):
+        doc=_OPENER_FIXTURES._md(_OPENER_FIXTURES.TITLE_LINE_CC,_OPENER_FIXTURES.SETTINGS_CC,
+                                _OPENER_FIXTURES.TITLE_LINE_WITH_EXC,'bare\rkeep')
+        path=self.root/'out.md';path.write_bytes(('\ufeff'+doc).encode('utf-8'))
+        self.assertEqual(self.m._opener_guard_violations(self.root,[]),[])
+        path.write_bytes(('\ufeff'+doc.replace('bare\rkeep','bare\nkeep')).encode('utf-8'))
+        self.assertTrue(any('[F17]' in item for item in self.m._opener_guard_violations(self.root,[])))
+
+    def test_reviewed_unchanged_old_block_passes_but_changed_and_copied_block_fail(self):
+        import hashlib,os
+        root=self.root;rel='docs/old.md';path=root/rel;path.parent.mkdir()
+        body='\n'.join([_OPENER_FIXTURES.TITLE_LINE_CC,_OPENER_FIXTURES.SETTINGS_CC,
+                         _OPENER_FIXTURES.TITLE_LINE_WITH_EXC,'读输入文件。'])+'\n'
+        original='```\n'+body+'```\n';path.write_text(original,encoding='utf-8')
+        env=dict(os.environ,GIT_AUTHOR_DATE='2026-09-01T12:00:00+08:00',GIT_COMMITTER_DATE='2026-09-01T12:00:00+08:00')
+        for args in (['add',rel],['commit','-q','-m','old fixture']):
+            subprocess.run(['git',*args],cwd=root,env=env,check=True,capture_output=True)
+        head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
+        config=root/'0-学习与工具/opener指纹存量豁免.json';config.parent.mkdir()
+        config.write_text(json.dumps({'schema_version':1,'source_head':head,'effective_date':'2026-11-17','entries':[
+            {'path':rel,'block_id':'OP-0828-Y','body_sha256':hashlib.sha256(body.encode()).hexdigest(),
+             'date_evidence':{'kind':'git','commit':head,'committed_at':'2026-09-01T12:00:00+08:00','source_head':head}}]},ensure_ascii=False),encoding='utf-8')
+        path.write_text(original+'\ncontext outside block\n',encoding='utf-8')
+        self.assertEqual(self.m._opener_guard_violations(root,[]),[])
+        path.write_text(original.replace('读输入','改输入'),encoding='utf-8')
+        errors=self.m._opener_guard_violations(root,[])
+        self.assertTrue(any('[F17]' in error for error in errors),errors)
+        path.write_text(original+'\ncontext outside block\n',encoding='utf-8')
+        (root/'docs/copy.md').write_text(original,encoding='utf-8')
+        errors=self.m._opener_guard_violations(root,[])
+        self.assertTrue(any('docs/copy.md' in error and '[F17]' in error for error in errors),errors)
+
+    def test_release_checks_original_fingerprint_and_points_to_single_scope_contract(self):
+        doc=_OPENER_FIXTURES._md(_OPENER_FIXTURES.TITLE_LINE_CC,_OPENER_FIXTURES.SETTINGS_CC,
+                                _OPENER_FIXTURES.TITLE_LINE_WITH_EXC,'读输入文件。')
+        path=self.root/'out.md';path.write_text(doc,encoding='utf-8')
+        stream=io.StringIO()
+        with contextlib.redirect_stdout(stream):self.assertEqual(self.m._opener_guard_violations(self.root,[]),[])
+        self.assertIn('射程边界',stream.getvalue())
+        path.write_text(doc.replace('读输入','改输入'),encoding='utf-8')
+        self.assertTrue(any('[F17]' in item for item in self.m._opener_guard_violations(self.root,[])))

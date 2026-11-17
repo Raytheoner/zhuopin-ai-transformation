@@ -7,12 +7,11 @@ design 决策点 1/2/3 Shao Peishen 2026-09-12 签认 (a)；apply 泳道 OP-0912
   `status_field=="open"` 与 `done==True` **同时成立**：实现若改为读状态字段判归档行，`done` 变 False、本用例必红；
   假阳性防护（正文提及 `#368` 的行不算）；§四 同号不串；单文件多个 §一 表全扫；默认（不传新开关）输出逐字不变。
 - **`工具-opener派出前校验.ps1`**：标题抽行号（`§四 #N(x)` 剥除、多行号、无行号）；合取语义；fail-open（Python 起不来）；`-Force`。
-- **v1／v2 挂点**：SKIPPED 不起 claude、不进哨兵判定、不 break／不停泳道；整泳道跳空不 Start-Job；SKIPPED 进汇总与
+- **v1／v2 挂点**：SKIPPED 不起 provider、不进哨兵判定、不 break／不停泳道；整泳道跳空不 Start-Job；SKIPPED 进汇总与
   summary.txt／summary.json；退出码不受影响；`-DryRun` 显示跳过标记。
 
 夹具＝临时 git 仓库（`工具-队列查询.py` 按 `--git-common-dir` 解析仓库根，同 `DualFileQueryTests` 惯例），
-把 v1／v2／helper／查询工具四份脚本拷进 `<tmp>/0-学习与工具/`，队列真身与归档件按生产路径放；`claude` 用临时 PATH
-里的桩 `claude.cmd` 顶替（同 `test_工具-opener批处理执行v2.py`）。
+把 v1／v2／helper／查询工具四份脚本拷进 `<tmp>/0-学习与工具/`，队列真身与归档件按生产路径放；使用临时 Codex mock provider 和独立 runtime；不启动真实模型、未改现役启用配置。
 🔴 PowerShell 部分需要 Windows ＋ pwsh；没有即跳过那两组，Python 查询工具的用例不受影响。
 """
 from __future__ import annotations
@@ -88,8 +87,6 @@ ARCH_08_FIXTURE = (
     "### §四 需 Shao Peishen 的动作（已闭环）（1 行）\n\n" + HEADER_FOUR +
     "| 88 | §四 的 88，与 §一 无关；正文再提一次 #368 | Shao Peishen | 已闭环 |\n"
 )
-
-CLAUDE_STUB = "@echo off\r\necho STUB-ARGS: %*\r\necho OPENER_DONE\r\nexit /b 0\r\n"
 
 HAS_PWSH = shutil.which("pwsh") is not None and os.name == "nt"
 
@@ -346,171 +343,224 @@ class HelperTests(unittest.TestCase):
 # 三、v1／v2 挂点（临时仓库 ＋ 桩 claude）
 # ══════════════════════════════════════════════════════════════════════════
 
-V1_PLAN = "\n".join([
-    "# 本周计划（单测夹具）", "",
-    "### A1 ·【Cowork】已归档的活——队列 #368", "", "▶ 粘贴端：Cowork", "", "```", "opener A1 正文", "```", "",
-    "### A2 ·【CC】在办的活——队列 #200", "", "▶ 粘贴端：CC", "", "```", "opener A2 正文", "```", "",
-    "### A3 ·【CC】无行号的活——协议〇.8／§四 #44", "", "▶ 粘贴端：CC", "", "```", "opener A3 正文", "```", "",
-])
-V2_PLAN = "\n".join([
-    "# 波次计划（单测夹具）", "",
-    "### A1 ·【CC】已归档的活——队列 #368", "", "粘贴端：CC ｜ 泳道：lane-skip", "", "```", "opener A1 正文", "```", "",
-    "### A2 ·【CC】在办的活——队列 #200", "", "粘贴端：CC ｜ 泳道：lane-run", "", "```", "opener A2 正文", "```", "",
-    "### A3 ·【CC】live 已 done——队列 #395", "", "粘贴端：CC ｜ 泳道：lane-run", "", "```", "opener A3 正文", "```", "",
-    "### A4 ·【CC】无行号的活——协议〇.8／§四 #44", "", "粘贴端：CC ｜ 泳道：lane-run", "", "```", "opener A4 正文", "```", "",
-])
+def _native_plan(rows):
+    parts = ['# Codex batch fixture', '']
+    for ident, title, lane in rows:
+        parts.extend([f'### {ident} ·【Codex】{title}', '',
+                      f'▶ 粘贴端：Codex ｜ 泳道：{lane}', '', '```text',
+                      '【设置】执行环境：Codex ｜ 模型：gpt-6-luna ｜ '
+                      f'分支：master（从 master 起 `codex/fixture-{ident.lower()}`） ｜ '
+                      f'worktree：☑（fixture-{ident.lower()}，新 worktree，收工自删）',
+                      f'fixture {ident} only; output OPENER_DONE.', '```', ''])
+    return '\n'.join(parts)
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="需要 Windows ＋ PowerShell 7（pwsh）")
+V1_PLAN = _native_plan([('A1', '已归档的活——队列 #368', '默认'),
+                        ('A2', '在办的活——队列 #200', '默认'),
+                        ('A3', '无行号的活——协议〇.8／§四 #44', '默认')])
+V2_PLAN = _native_plan([('A1', '已归档的活——队列 #368', 'lane-skip'),
+                        ('A2', '在办的活——队列 #200', 'lane-run'),
+                        ('A3', 'live 已 done——队列 #395', 'lane-run'),
+                        ('A4', '无行号的活——协议〇.8／§四 #44', 'lane-run')])
+
+# Only this file, in an independent TemporaryDirectory, can run this provider.
+CODEX_PROVIDER_STUB = r"""import json,os,pathlib,sys,uuid
+args=sys.argv
+get=lambda key:args[args.index(key)+1]
+prompt=sys.stdin.read()
+e=pathlib.Path(get('--evidence'));e.mkdir(parents=True)
+tid=get('--thread') if '--thread' in args else str(uuid.uuid5(uuid.NAMESPACE_URL,get('--source-id')))
+(e/'session.json').write_text(json.dumps({'thread_id':tid}),encoding='utf-8')
+(e/'result.json').write_text(json.dumps({'thread_id':tid,'status':'output_needs_review','accepted':False}),encoding='utf-8')
+(e/'request.json').write_text(json.dumps({'args':args,'prompt':prompt}),encoding='utf-8')
+m=pathlib.Path(get('--meter-file'));m.parent.mkdir(parents=True,exist_ok=True)
+m.write_text(json.dumps({'lastContext':1000,'session_id':tid}),encoding='utf-8')
+mode=os.environ.get('OPENER_TEST_MODE','ok')
+if mode!='none': print('OPENER_DONE')
+if mode=='failure': sys.exit(3)
+"""
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason='需要 Windows ＋ PowerShell 7（pwsh）')
 class RunnerHookTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         _init_repo(self.root, copy_runners=True)
-        stub_dir = self.root / "stub"
-        stub_dir.mkdir()
-        (stub_dir / "claude.cmd").write_text(CLAUDE_STUB, encoding="utf-8")
+        config = self.root / '.codex'
+        config.mkdir()
+        runtime = config / 'runtime.local.json'
+        runtime.write_text(json.dumps({'python': sys.executable}), encoding='utf-8')
+        (config/'hooks.json').write_text('{"hooks":{}}', encoding='utf-8')
+        (config/'config.toml').write_text('', encoding='utf-8')
+        (self.root/'AGENTS.md').write_text('Only independent mechanism fixture.', encoding='utf-8')
+        (self.root/'.gitignore').write_text('reports/\nbatch-log/\n.claude/worktrees/\n.codex/runtime.local.json\n',encoding='utf-8')
+        provider = self.root / '0-学习与工具/codex-handoff/model_provider.py'
+        provider.parent.mkdir()
+        provider.write_text(CODEX_PROVIDER_STUB, encoding='utf-8')
+        # Runner creates further worktrees of this disposable repository. The
+        # mock must be part of its baseline; local runtime stays ignored.
+        for args in (['branch','-M','master'],['add','-A'],['commit','-q','-m','mock provider fixture']):
+            subprocess.run(['git',*args],cwd=self.root,check=True,capture_output=True)
         self.env = dict(os.environ)
-        self.env["PATH"] = str(stub_dir) + os.pathsep + self.env.get("PATH", "")
-        self.v1 = self.root / "0-学习与工具" / V1.name
-        self.v2 = self.root / "0-学习与工具" / V2.name
-        self.plan_v1 = self.root / "plan-v1.md"
-        self.plan_v1.write_text(V1_PLAN, encoding="utf-8")
-        self.plan_v2 = self.root / "plan-v2.md"
-        self.plan_v2.write_text(V2_PLAN, encoding="utf-8")
-        self.log_dir = self.root / "batch-log"
+        self.env['ZHUOPIN_CODEX_RUNTIME'] = str(runtime)
+        self.env['OPENER_TEST_MODE'] = 'ok'
+        self.v1 = self.root / '0-学习与工具' / V1.name
+        self.v2 = self.root / '0-学习与工具' / V2.name
+        self.plan_v1 = self.root / 'plan-v1.md'
+        self.plan_v1.write_text(V1_PLAN, encoding='utf-8')
+        self.plan_v2 = self.root / 'plan-v2.md'
+        self.plan_v2.write_text(V2_PLAN, encoding='utf-8')
+        self.log_dir = self.root / 'batch-log'
 
     def tearDown(self):
         self._tmp.cleanup()
 
-    def _run_file(self, script: Path, args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["pwsh", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script), *args],
-            cwd=self.root, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            env=self.env, timeout=timeout,
-        )
+    def _run_file(self, script, args, timeout=90, *, enabled=True):
+        opts = [*args, '-Model', 'gpt-6-luna']
+        if enabled and '-DryRun' not in args:
+            opts.append('-ConsumerEnabled')
+        return subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-File', str(script), *opts],
+                              cwd=self.root, capture_output=True, text=True, encoding='utf-8',
+                              errors='replace', env=self.env, timeout=timeout)
 
-    def _v1_log_dir(self) -> Path:
-        dirs = sorted((self.root / "reports" / "opener-batch").glob("*"))
+    def _v1_log_dir(self):
+        dirs = sorted((self.root / 'reports/opener-batch').glob('*'))
         self.assertEqual(len(dirs), 1, dirs)
         return dirs[0]
 
-    # ---- v1 ----
+    def _rows(self, logdir):
+        return {r['Id']: r for r in json.loads((logdir/'summary.json').read_text(encoding='utf-8-sig'))}
+
+    def test_default_pause_preserved_without_provider_call(self):
+        for script, plan in [(self.v1,self.plan_v1),(self.v2,self.plan_v2)]:
+            r=self._run_file(script,['-Plan',str(plan),'-Yes'],enabled=False)
+            self.assertEqual(r.returncode,4,r.stdout+r.stderr)
+            self.assertIn('consumer-paused',r.stdout)
+        self.assertFalse(list(self.root.rglob('request.json')))
+
     def test_v1_DryRun_显示跳过标记_不起session(self):
-        r = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-DryRun"])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertRegex(r.stdout, r"A1 \| Cowork \| ⏭ SKIPPED（#368 archived@跨桌任务队列-归档-202608\.md:\d+）")
-        self.assertIn("将按序执行 2 个 opener：A2(CC) → A3(CC)　｜ SKIPPED 1 个：A1", r.stdout)
-        self.assertFalse((self.root / "reports").exists())
+        r=self._run_file(self.v1,['-Plan',str(self.plan_v1),'-DryRun'])
+        self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+        self.assertRegex(r.stdout,r'⏭ SKIPPED A1 ｜ #368 archived@跨桌任务队列-归档-202608\.md:\d+')
+        self.assertIn('默认 ：A2→A3（泳道内串行）',r.stdout)
+        self.assertFalse((self.root/'reports').exists())
+        self.assertFalse(list(self.root.rglob('request.json')))
 
     def test_1_12_v1_跳过不起claude_不判NO_SENTINEL_不break_退出码0(self):
-        r = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-Yes"])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        log_dir = self._v1_log_dir()
-        self.assertFalse((log_dir / "A1.log").exists(), "被跳过的 A1 不得起 claude")
-        self.assertTrue((log_dir / "A2.log").exists())
-        self.assertTrue((log_dir / "A3.log").exists(), "A1 跳过后 A2/A3 须照常执行（不 break）")
-        # 收尾提示的静态文案本身含「NO-SENTINEL」四字，只断言汇总表里没有任何一行被判成它。
-        self.assertNotRegex(r.stdout, re.compile(r"^A\d+\s+\S+\s+NO-SENTINEL", re.MULTILINE))
-        self.assertNotIn("停下（fail-loud", r.stdout)
-        self.assertRegex(r.stdout, r"A1\s+Cowork\s+SKIPPED")
-        skipped = (log_dir / "skipped.txt").read_text(encoding="utf-8-sig")
-        self.assertIn("[skipped] A1 | #368 archived@跨桌任务队列-归档-202608.md", skipped)
+        r=self._run_file(self.v1,['-Plan',str(self.plan_v1),'-Yes'])
+        self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+        logs=self._v1_log_dir(); rows=self._rows(logs)
+        self.assertFalse((logs/'默认-A1.log').exists())
+        for ident in ('A2','A3'):
+            self.assertTrue((logs/f'默认-{ident}.log').exists())
+            self.assertEqual(rows[ident]['Status'],'OUTPUT-NEEDS-REVIEW')
+            self.assertFalse(rows[ident]['DeliveryAccepted'])
+        self.assertEqual(rows['A1']['Status'],'SKIPPED')
+        self.assertNotIn('NO-SENTINEL',(logs/'summary.txt').read_text(encoding='utf-8-sig'))
+        self.assertIn('[skipped] A1 | #368 archived@跨桌任务队列-归档-202608.md',
+                      (logs/'summary.txt').read_text(encoding='utf-8-sig'))
+        requests=list(logs.rglob('request.json'));self.assertEqual(len(requests),2)
+        for path in requests:
+            args=json.loads(path.read_text(encoding='utf-8'))['args']
+            self.assertEqual(args[args.index('--model')+1],'gpt-6-luna')
 
     def test_v1_Force_全部照派_日志留痕(self):
-        r = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-Yes", "-Force"])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue((self._v1_log_dir() / "A1.log").exists())
-        self.assertIn("[Force] 归档校验已被绕过", r.stdout)
+        r=self._run_file(self.v1,['-Plan',str(self.plan_v1),'-Yes','-Force'])
+        self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+        self.assertTrue((self._v1_log_dir()/'默认-A1.log').exists())
+        self.assertIn('[Force] 归档校验已被绕过',r.stdout)
+        self.assertEqual(len(list(self._v1_log_dir().rglob('request.json'))),3)
 
-    def test_4_5_v1_停下时续跑提示是整行可粘贴命令(self):
-        stub = self.root / "stub" / "claude.cmd"
-        stub.write_text("@echo off\r\necho 没有哨兵\r\nexit /b 0\r\n", encoding="utf-8")
-        r = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-Yes", "-FullAuto"])
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("NO-SENTINEL", r.stdout)
-        m = re.search(r"^\s*(powershell -ExecutionPolicy Bypass -Command \"& '.*?' -Plan '.*?' -Only A2,A3 -Yes -FullAuto\")\s*$",
-                      r.stdout, re.MULTILINE)
-        self.assertIsNotNone(m, "续跑提示须是整行 -Command 形态：\n" + r.stdout)
-        self.assertIn(self.v1.name, m.group(1))  # 临时目录会以 8.3 短名出现，只比对文件名
+    def test_4_5_v1_停下时原生续跑标识可核对(self):
+        self.env['OPENER_TEST_MODE']='none'
+        r=self._run_file(self.v1,['-Plan',str(self.plan_v1),'-Yes','-FullAuto'])
+        self.assertEqual(r.returncode,1,r.stdout+r.stderr)
+        self.assertIn('NO-SENTINEL',r.stdout)
+        self.assertIn('codex exec resume <Session>',r.stdout)
+        logs=self._v1_log_dir();rows=self._rows(logs)
+        self.assertEqual(rows['A2']['Status'],'NO-SENTINEL')
+        self.assertNotIn('A3',rows,'无哨兵时应停本泳道')
+        self.assertRegex(rows['A2']['Session'],r'^[0-9a-f-]{36}$')
+        self.assertIn('codex exec resume '+rows['A2']['Session'],
+                      (logs/'默认-A2.log').read_text(encoding='utf-8-sig'))
+        self.assertEqual(len(list(logs.rglob('request.json'))),2,'首轮与唯一补问均留证')
 
-    # ---- v2 ----
     def test_v2_DryRun_泳道清单只含实际将派出的成员(self):
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-DryRun", "-LogDir", str(self.log_dir)])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("⏭ SKIPPED 2 个", r.stdout)
-        self.assertIn("泳道 1 条", r.stdout)
-        self.assertIn("◆ lane-run ：A2→A4（泳道内串行）", r.stdout)
-        self.assertNotIn("◆ lane-skip", r.stdout)
-        self.assertEqual((self.log_dir / "exit.txt").read_text(encoding="utf-8").strip(), "0")
+        r=self._run_file(self.v2,['-Plan',str(self.plan_v2),'-DryRun','-LogDir',str(self.log_dir)])
+        self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+        self.assertIn('⏭ SKIPPED 2 个',r.stdout)
+        self.assertIn('泳道 1 条',r.stdout)
+        self.assertIn('◆ lane-run ：A2→A4（泳道内串行）',r.stdout)
+        self.assertNotIn('◆ lane-skip',r.stdout)
+        self.assertEqual((self.log_dir/'exit.txt').read_text().strip(),'0')
+        self.assertFalse(list(self.root.rglob('request.json')))
 
     def test_1_12_5_2_v2_整泳道跳空不StartJob_泳道内跳过不停泳道_SKIPPED进summary(self):
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertNotIn("泳道「lane-skip」启动", r.stdout, "整泳道跳空不得 Start-Job")
-        self.assertFalse((self.log_dir / "lane-skip-A1.log").exists())
-        self.assertTrue((self.log_dir / "lane-run-A2.log").exists())
-        self.assertFalse((self.log_dir / "lane-run-A3.log").exists(), "泳道内被跳过的 A3 不得起 claude")
-        self.assertTrue((self.log_dir / "lane-run-A4.log").exists(), "A3 跳过后 A4 须照常执行（不停泳道）")
-        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8")
-        self.assertIn("SKIPPED=2", summary)
-        self.assertRegex(summary, r"\[skipped\] A1 \| #368 archived@跨桌任务队列-归档-202608\.md:\d+")
-        self.assertRegex(summary, r"\[skipped\] A3 \| #395 live-done@跨桌任务队列-机制环境\.md:\d+")
-        self.assertIn("EXIT=0", summary)
-        self.assertNotIn("NO-SENTINEL", summary)
-        rows = json.loads((self.log_dir / "summary.json").read_text(encoding="utf-8"))
-        by = {row["Id"]: row for row in rows}
-        self.assertEqual(by["A1"]["Status"], "SKIPPED")
-        self.assertEqual(by["A3"]["Status"], "SKIPPED")
-        self.assertEqual(by["A2"]["Status"], "OK")
-        self.assertEqual(by["A4"]["Status"], "OK")
+        r=self._run_file(self.v2,['-Plan',str(self.plan_v2),'-Yes','-StaggerSec','0','-LogDir',str(self.log_dir)])
+        self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+        self.assertNotIn('泳道「lane-skip」启动',r.stdout)
+        for ident in ('A1','A3'):
+            self.assertFalse(list(self.log_dir.glob(f'*-{ident}.log')))
+        for ident in ('A2','A4'):
+            self.assertTrue((self.log_dir/f'lane-run-{ident}.log').exists())
+        summary=(self.log_dir/'summary.txt').read_text(encoding='utf-8-sig')
+        self.assertIn('SKIPPED=2',summary)
+        self.assertRegex(summary,r'\[skipped\] A1 \| #368 archived@跨桌任务队列-归档-202608\.md:\d+')
+        self.assertRegex(summary,r'\[skipped\] A3 \| #395 live-done@跨桌任务队列-机制环境\.md:\d+')
+        self.assertIn('EXIT=0',summary);self.assertNotIn('NO-SENTINEL',summary)
+        rows=self._rows(self.log_dir)
+        for ident in ('A1','A3'):self.assertEqual(rows[ident]['Status'],'SKIPPED')
+        for ident in ('A2','A4'):
+            self.assertEqual(rows[ident]['Status'],'OUTPUT-NEEDS-REVIEW')
+            self.assertFalse(rows[ident]['DeliveryAccepted'])
+        self.assertEqual(len(list(self.log_dir.rglob('request.json'))),2)
 
     def test_5_4_v2_退出码不受跳过影响_有FAIL仍为1(self):
-        (self.root / "stub" / "claude.cmd").write_text("@echo off\r\necho x\r\nexit /b 3\r\n", encoding="utf-8")
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)])
-        self.assertEqual(r.returncode, 1)
-        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8")
-        self.assertIn("SKIPPED=2", summary)
-        self.assertIn("FAIL(3)", summary)
+        self.env['OPENER_TEST_MODE']='failure'
+        r=self._run_file(self.v2,['-Plan',str(self.plan_v2),'-Yes','-StaggerSec','0','-LogDir',str(self.log_dir)])
+        self.assertEqual(r.returncode,1,r.stdout+r.stderr)
+        summary=(self.log_dir/'summary.txt').read_text(encoding='utf-8-sig')
+        self.assertIn('SKIPPED=2',summary);self.assertIn('FAIL(3)',summary)
+        self.assertFalse((self.log_dir/'lane-run-A4.log').exists())
 
     def test_v2_全部跳过_无泳道_退出码0_summary仍写(self):
-        only = ["-Only", "A1,A3"]
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir), *only])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("全部 opener 已 SKIPPED，无泳道可起", r.stdout)
-        self.assertNotIn("启动", r.stdout)
-        summary = (self.log_dir / "summary.txt").read_text(encoding="utf-8")
-        self.assertIn("SKIPPED=2", summary)
-        self.assertIn("EXIT=0", summary)
+        r=self._run_file(self.v2,['-Plan',str(self.plan_v2),'-Yes','-StaggerSec','0','-LogDir',str(self.log_dir),'-Only','A1,A3'])
+        self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+        self.assertIn('全部 opener 已 SKIPPED，无泳道可起',r.stdout)
+        self.assertNotIn('启动',r.stdout)
+        summary=(self.log_dir/'summary.txt').read_text(encoding='utf-8-sig')
+        self.assertIn('SKIPPED=2',summary);self.assertIn('EXIT=0',summary)
+        self.assertFalse(list(self.root.rglob('request.json')))
 
     def test_v2_Force_全部照派_Detach子进程也带Force(self):
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir), "-Force"])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue((self.log_dir / "lane-skip-A1.log").exists())
-        self.assertIn("[Force] 归档校验已被绕过", r.stdout)
-        src = self.v2.read_text(encoding="utf-8")
-        self.assertIn("if ($Force) { $childArgs += '-Force' }", src)
+        r=self._run_file(self.v2,['-Plan',str(self.plan_v2),'-Yes','-StaggerSec','0','-LogDir',str(self.log_dir),'-Force'])
+        self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+        self.assertTrue((self.log_dir/'lane-skip-A1.log').exists())
+        self.assertIn('[Force] 归档校验已被绕过',r.stdout)
+        self.assertEqual(len(list(self.log_dir.rglob('request.json'))),4)
+        self.assertIn("if ($Force) { $childArgs += '-Force' }",self.v2.read_text(encoding='utf-8-sig'))
 
     def test_3_4_helper缺失_v1_v2_均fail_open_全部照派(self):
-        (self.root / "0-学习与工具" / HELPER.name).unlink()
-        r1 = self._run_file(self.v1, ["-Plan", str(self.plan_v1), "-Yes"])
-        self.assertEqual(r1.returncode, 0, r1.stdout + r1.stderr)
-        self.assertIn("helper 不存在", r1.stdout)
-        self.assertTrue((self._v1_log_dir() / "A1.log").exists(), "helper 缺失时 A1 须照常派出")
-        r2 = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)])
-        self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
-        self.assertTrue((self.log_dir / "lane-skip-A1.log").exists())
-        self.assertIn("SKIPPED=0", (self.log_dir / "summary.txt").read_text(encoding="utf-8"))
+        (self.root/'0-学习与工具'/HELPER.name).unlink()
+        r1=self._run_file(self.v1,['-Plan',str(self.plan_v1),'-Yes'])
+        self.assertEqual(r1.returncode,0,r1.stdout+r1.stderr)
+        self.assertIn('helper 不存在',r1.stdout)
+        self.assertTrue((self._v1_log_dir()/'默认-A1.log').exists())
+        r2=self._run_file(self.v2,['-Plan',str(self.plan_v2),'-Yes','-StaggerSec','0','-LogDir',str(self.log_dir)])
+        self.assertEqual(r2.returncode,0,r2.stdout+r2.stderr)
+        self.assertTrue((self.log_dir/'lane-skip-A1.log').exists())
+        self.assertIn('SKIPPED=0',(self.log_dir/'summary.txt').read_text(encoding='utf-8-sig'))
 
     def test_变异守卫_抽掉v2挂点_已归档的A1会被照常派出(self):
-        """🔴 恒真检验：把 v2 的 Set-OpenerDispatchDecision 调用换成空操作，A1 须回到「照常派出」。"""
-        src = self.v2.read_text(encoding="utf-8")
-        needle = "    $openers = @(Set-OpenerDispatchDecision -Openers @($openers) -RepoRoot $RepoRoot -Force:$Force)"
-        self.assertIn(needle, src)
-        self.v2.write_text(src.replace(needle, "    $openers = @($openers | ForEach-Object { $_ | Add-Member -NotePropertyName Skip -NotePropertyValue $false -PassThru })"), encoding="utf-8")
-        r = self._run_file(self.v2, ["-Plan", str(self.plan_v2), "-Yes", "-StaggerSec", "0", "-LogDir", str(self.log_dir)])
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue((self.log_dir / "lane-skip-A1.log").exists(), "挂点抽掉后 A1 没被派出 ⇒ 正例是恒真的")
+        src=self.v2.read_text(encoding='utf-8-sig')
+        needle='    $openers = @(Set-OpenerDispatchDecision -Openers @($openers) -RepoRoot $RepoRoot -Force:$Force)'
+        self.assertIn(needle,src)
+        self.v2.write_text(src.replace(needle,'    $openers = @($openers | ForEach-Object { $_ | Add-Member -NotePropertyName Skip -NotePropertyValue $false -PassThru })'),encoding='utf-8-sig')
+        r=self._run_file(self.v2,['-Plan',str(self.plan_v2),'-Yes','-StaggerSec','0','-LogDir',str(self.log_dir)])
+        self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+        self.assertTrue((self.log_dir/'lane-skip-A1.log').exists())
+        self.assertEqual(len(list(self.log_dir.rglob('request.json'))),4,'抽掉挂点必须恢复派出，防恒真')
 
 
 if __name__ == "__main__":

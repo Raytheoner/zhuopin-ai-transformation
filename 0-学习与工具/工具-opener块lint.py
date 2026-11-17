@@ -1,4 +1,17 @@
-"""opener 代码块 lint —— 一次收十六个失效形态（队列 §一 `#284`／`#381`⑸ⓖ／`#487`／`#550`／`#565`／`#620`／`#616`／`#627`，OP-0828-Y／OP-0904-A／OP-0905-C／OP-0906-I／OP-0909-X／OP-0910-R／OP-0912-B／OP-0918-C／OP-0919-G／OP-0920-N）。
+"""opener 代码块 lint —— 十七个失效形态（含 #503，2026-11-17）。
+
+## 射程边界（唯一正本，#503）
+
+F1–F16/C0–C5 守格式；F17 在任何 Codex 结构适配前守原始正文、完整署期及
+经审存量的路径/块标识/完整 SHA/Git 日期绑定。它不判断指令事实正确、不证明
+密码学身份，也不能阻止有意改写后重算指纹。H1/H2 与有原文证据的既有 H3 保留；
+当前旧块只认经审配置，不能仅以旧文件日期或 MMDD 为新块/改字块豁免。
+
+全库扫描只看已跟踪 .md；--file 严格检查所给实际文件，不推断历史。release
+只检查本轮 acquire/release 流程的脏 .md，依既有归属规则决定谁碰谁修；未进入
+此流程的聊天、Task prompt、仓外已安装技能或现役消费者不在拦截面内。
+公共生成器先写实际落点、回读校验后才返回/输出；聊天只能逐字引用该结果。
+本地候选验收不代表源码已接纳、技能已安装或现役已启用。
 
 本脚本是**规则退休制**（根 `CLAUDE.md` §5）欠下的对价：`专线opener模板库.md` §〇
 补充三那条人守规则 **2026-08-27 一天被违反 17 次**，远超「人守违反 3 次即须机制化或
@@ -9,10 +22,11 @@
 就地解决且根治」）**：判据正本自此改为 `1-转型规划/0-全景路线图/opener骨架.md`（唯一可照抄骨架；
 2026-09-04 A2 由模板库 §〇.00 拆出独立成件，模板库 §〇 此后只留判据，§〇.00 仅存一句指针）。
 
-## 十六个形态（判据正本＝`1-转型规划/0-全景路线图/opener骨架.md`；判据说明＝`专线opener模板库.md` §〇.0／§〇.00）
+## 形态①–⑰（格式正本＝`1-转型规划/0-全景路线图/opener骨架.md`）
 
 | | 守什么 | 生效日 | 成因 |
 |---|---|---|---|
+| 形态⑰ | 原始正文指纹、唯一末行、完整 ISO 署期；无指纹当前旧块须经审存量绑定 | 2026-11-17 | #503 同次落盘回读，旧块不补盖证明 |
 | 形态① | **CC 侧** opener 块含 `【设置】` 而**无** `set_session_title` | 2026-08-26（补充一） | session 名丢编号，2026-08-27 一天欠 17 次 |
 | 形态② | 块内**有** `set_session_title` 而**无**子任务例外句 | 2026-08-28（补充三之三） | Task/Agent 子任务执行它时 `"self"` 解析到**父** session，把调度它的那条会话改名；**调用成功、无报错** |
 | 形态③ | **CC 侧**块有 `set_session_title` 调用，但标题值不匹配 `[Win]MMDDX-<短名>` | 2026-09-04（骨架件） | 标题格式三次改定才终稿（模板库 §〇.0），旧格式/漏填占位符不会报错 |
@@ -174,13 +188,15 @@ H1-H3 三层判据没有意义，全部命中一律按「当前」处理；② *
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import contextlib
 import importlib.util
 import io
 import re
 import subprocess
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 try:
@@ -191,6 +207,9 @@ except ImportError:  # 队列 #600：同目录助手缺席（临时复刻目录�
         return exit_code
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+MIGRATION_FILE = Path(__file__).with_name('opener指纹存量豁免.json')
+_MIGRATION_CACHE = {}
+_HISTORICAL_STATUS_PARSERS = {}
 
 #: `工具-文档台账生成.py::parse_frontmatter` 的惰性缓存（`_frontmatter_of` 用）。
 #: 🔴 缓存的是**解析器函数**、不是解析结果——每份件的 frontmatter 仍逐份现读。
@@ -228,6 +247,7 @@ RULE_EFFECTIVE_FORM14 = date(2026, 9, 20)
 RULE_EFFECTIVE_FORM15 = date(2026, 9, 20)
 #: 形态⑯ ＝ 队列 §一 `#627` B 面（`OP-0920-N`，2026-09-20：子任务泳道 opener 缺新增告警类沙箱夹具尾句）。
 RULE_EFFECTIVE_FORM16 = date(2026, 9, 20)
+RULE_EFFECTIVE_FORM17 = date(2026, 11, 17)
 #: 正本自检 C1/C2/C3/C5 ＝ 队列 §一 `#493`（2026-09-07，形态①②③⑤ 在格式正本内的换判据版）。
 RULE_EFFECTIVE_CANON = date(2026, 9, 7)
 #: 正本角色声明自检 C0 ＝ 队列 §一 `#489` ⑴（2026-09-08，路径名单改自声明式判据时的防外溢条）。
@@ -251,6 +271,7 @@ RULE_EFFECTIVE_BY_FORM = {
     "F14": RULE_EFFECTIVE_FORM14,
     "F15": RULE_EFFECTIVE_FORM15,
     "F16": RULE_EFFECTIVE_FORM16,
+    "F17": RULE_EFFECTIVE_FORM17,
     "C0": RULE_EFFECTIVE_CANON_CLAIM,
     "C1": RULE_EFFECTIVE_CANON,
     "C2": RULE_EFFECTIVE_CANON,
@@ -264,9 +285,8 @@ ARCHIVE_DIR_SEGMENT = "z-已执行归档"
 #: H2：判定为历史件的状态桶（`工具-文档台账生成.py::STATUS_ORDER` 后三枚举）。
 HISTORICAL_STATUS_BUCKETS = frozenset({"已执行归档", "已作废", "历史快照"})
 
-# 🔴 **没有豁免清单，这是刻意的**：扫描面只有 `.md`，而本脚本与其单测都是 `.py`
-# （两者文中都带两个形态的反例原文作夹具），天然不在扫描面内 —— 不需要靠豁免躲开。
-# 豁免一多门禁就名存实亡（`工具-引导样板lint.py` 已记过这一条），能不设就不设。
+# F1–F16 无路径豁免；F17 仅使用经审、原始正文及 Git 日期绑定的存量配置。
+# 不在运行时扩张配置，不给旧块补盖生成证明。
 
 FENCE_RE = re.compile(r"^(?P<indent> {0,3})(?P<fence>`{3,}|~{3,})\s*(?P<info>.*?)\s*$")
 SETTINGS_LINE_RE = re.compile(r"^\s*(?:>\s*)?\*{0,2}【设置】")
@@ -746,12 +766,14 @@ def _load_status_bucket():
 class Block:
     """一个围栏代码块：`start_line` 为块**首行正文**的 1-based 行号。"""
 
-    __slots__ = ("start_line", "lines", "info")
+    __slots__ = ("start_line", "lines", "info", "raw_text")
 
-    def __init__(self, start_line: int, lines: list[str], info: str) -> None:
+    def __init__(self, start_line: int, lines: list[str], info: str,
+                 raw_text: str | None = None) -> None:
         self.start_line = start_line
         self.lines = lines
         self.info = info
+        self.raw_text = '\n'.join(lines) if raw_text is None else raw_text
 
     @property
     def text(self) -> str:
@@ -761,6 +783,9 @@ class Block:
 def iter_fenced_blocks(text: str) -> list[Block]:
     """切出全部围栏代码块。闭合围栏须同字符、长度 ≥ 开启、且不带 info string。"""
     lines = text.splitlines()
+    raw_lines = text.splitlines(keepends=True)
+    if lines:
+        lines[0] = lines[0].removeprefix('\ufeff')  # file framing, not block body
     blocks: list[Block] = []
     i = 0
     while i < len(lines):
@@ -778,7 +803,8 @@ def iter_fenced_blocks(text: str) -> list[Block]:
                     and len(m2.group("fence")) >= width and not m2.group("info")):
                 break
             j += 1
-        blocks.append(Block(body_start + 1, lines[body_start:j], m.group("info")))
+        blocks.append(Block(body_start + 1, lines[body_start:j], m.group("info"),
+                            ''.join(raw_lines[body_start:j])))
         i = j + 1
     return blocks
 
@@ -809,7 +835,194 @@ def block_env(block: Block) -> str | None:
     return None
 
 
+_FOOTER_LINE = re.compile(r'(?m)^〔出件指纹[^\n]*(?:\n|\Z)')
+_FOOTER_FORMAT = re.compile(
+    r'〔出件指纹 ([0-9a-f]{8}) · 出件日期 (\d{4}-\d{2}-\d{2}) · '
+    r'由 工具-opener生成.py 出，勿手改〕\n?\Z')
+
+
+def block_fingerprint(block_text: str) -> str:
+    """唯一摘要算法：仅 CRLF→LF，排除指纹整行（包含其换行）。"""
+    raw = block_text.replace('\r\n', '\n')
+    return hashlib.sha256(_FOOTER_LINE.sub('', raw).encode('utf-8')).hexdigest()[:8]
+
+
+def _body_identity(raw: str) -> tuple[str, str]:
+    normalized = raw.replace('\r\n', '\n')
+    digest = hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+    match = re.match(r'^\[(OP-\d{4}-[A-Za-z0-9]+)\]', normalized)
+    return (match[1] if match else 'legacy-sha256:' + digest), digest
+
+
+def _migration_keys() -> frozenset:
+    """Validate the reviewed file against immutable Git objects, once per bytes.
+
+    The catalog and blobs are bulk reads; neither dates nor exempt entries are
+    inferred from an OP's MMDD, and this function never writes the registry.
+    """
+    content = MIGRATION_FILE.read_bytes()
+    if len(content) > 4_000_000:
+        raise ValueError('存量配置过大')
+    key = (str(REPO_ROOT.resolve()), hashlib.sha256(content).hexdigest())
+    if key in _MIGRATION_CACHE:
+        return _MIGRATION_CACHE[key]
+    data = json.loads(content)
+    if (not isinstance(data, dict) or set(data) != {'schema_version','source_head','effective_date','entries'}
+            or type(data['schema_version']) is not int or data['schema_version'] != 1
+            or data['effective_date'] != RULE_EFFECTIVE_FORM17.isoformat()
+            or not isinstance(data['source_head'], str)
+            or not re.fullmatch('[0-9a-f]{40}', data['source_head'])
+            or not isinstance(data['entries'], list)):
+        raise ValueError('存量配置 schema/source_head/effective_date 无效')
+    head = data['source_head']
+    entries = data['entries']
+    keys = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {'path','block_id','body_sha256','date_evidence'}:
+            raise ValueError('存量条目 schema 无效')
+        rel, ident, digest = entry['path'], entry['block_id'], entry['body_sha256']
+        if (not isinstance(rel, str) or not rel.endswith('.md') or '\\' in rel
+                or any(c in rel for c in '\n\r\t\x00:') or rel.startswith('/')
+                or any(x in ('','.','..') for x in rel.split('/'))
+                or not isinstance(digest, str) or not re.fullmatch('[0-9a-f]{64}', digest)
+                or not isinstance(ident, str)
+                or not re.fullmatch(r'OP-\d{4}-[A-Za-z0-9]+|legacy-sha256:[0-9a-f]{64}',ident)):
+            raise ValueError('存量路径/标识/完整 SHA 无效')
+        evidence = entry['date_evidence']
+        if (not isinstance(evidence, dict)
+                or set(evidence) != {'kind','commit','committed_at','source_head'}
+                or evidence['kind'] != 'git' or evidence['source_head'] != head
+                or not isinstance(evidence['commit'], str)
+                or not re.fullmatch('[0-9a-f]{40}', evidence['commit'])
+                or not isinstance(evidence['committed_at'], str)):
+            raise ValueError('存量日期证据 schema 无效')
+        issued = datetime.fromisoformat(evidence['committed_at'])
+        if issued.tzinfo is None or issued.date() >= RULE_EFFECTIVE_FORM17:
+            raise ValueError('存量日期无时区或不早于落地日')
+        item = (rel, ident, digest)
+        if item in keys:
+            raise ValueError('存量条目重复')
+        keys.add(item)
+    result = subprocess.run(
+        ['git','-c','core.quotepath=false','log','--no-renames','--format=%x00%H%x09%cI',
+         '--name-only',head,'--','*.md'],cwd=REPO_ROOT,capture_output=True,check=True,
+        encoding='utf-8',timeout=GIT_TIMEOUT_SECONDS)
+    catalog = {}; commit = stamp = None
+    for line in result.stdout.splitlines():
+        if line.startswith('\x00'):
+            commit, stamp = line[1:].split('\t',1)
+        elif line and commit:
+            catalog.setdefault(line,(commit,stamp))
+    for entry in entries:
+        evidence = entry['date_evidence']
+        if catalog.get(entry['path']) != (evidence['commit'],evidence['committed_at']):
+            raise ValueError('存量日期/提交与真实 Git 目录不符')
+    paths = sorted({entry['path'] for entry in entries})
+    objects = subprocess.run(['git','cat-file','--batch'],cwd=REPO_ROOT,
+        input=''.join(head+':'+rel+'\n' for rel in paths).encode('utf-8'),
+        capture_output=True,check=True,timeout=GIT_TIMEOUT_SECONDS).stdout
+    offset = 0; source_blocks = set()
+    for rel in paths:
+        end = objects.index(b'\n', offset)
+        header = objects[offset:end].split()
+        if len(header) != 3 or header[1] != b'blob':
+            raise ValueError('存量 Git blob 缺失')
+        size = int(header[2]); offset = end+1
+        original = objects[offset:offset+size].decode('utf-8'); offset += size+1
+        for block in iter_fenced_blocks(original):
+            source_blocks.add((rel,*_body_identity(block.raw_text)))
+    if not keys <= source_blocks:
+        raise ValueError('存量正文/标识与 source HEAD 原始 Git blob 不符')
+    frozen = frozenset(keys)
+    if len(_MIGRATION_CACHE) >= 8:
+        _MIGRATION_CACHE.clear()
+    _MIGRATION_CACHE[key] = frozen
+    return frozen
+
+
+def _historical_status_parsers():
+    # Reuse the authoritative implementation, not carrier results. Every
+    # carrier is still parsed afresh; changed/missing source invalidates reuse.
+    stat = _LEDGER_SCRIPT.stat()
+    key = (str(_LEDGER_SCRIPT.resolve()),stat.st_mtime_ns,stat.st_size)
+    if key not in _HISTORICAL_STATUS_PARSERS:
+        _HISTORICAL_STATUS_PARSERS.clear()
+        _HISTORICAL_STATUS_PARSERS[key] = _load_status_bucket()
+    return _HISTORICAL_STATUS_PARSERS[key]
+
+
+def _unchanged_historical_block(block: Block, path: Path, *, metadata_only=False) -> bool:
+    """Preserve existing H1–H3; H3 never blesses newly edited old carriers."""
+    rel = path.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
+    if ARCHIVE_DIR_SEGMENT in rel.split('/'):
+        return True
+    text = path.read_bytes().decode('utf-8')
+    bucket, frontmatter = _historical_status_parsers()
+    if bucket(frontmatter(text).get('status','')) in HISTORICAL_STATUS_BUCKETS:
+        return True
+    if metadata_only:
+        return False
+    # Existing carrier history, not the new F17 date (which would turn every
+    # current legacy carrier into an unreviewed exemption).
+    last = _last_commit_date(rel)
+    if last is None or last >= RULE_EFFECTIVE_FORM1:
+        return False
+    original = subprocess.run(['git','show','HEAD:'+rel],cwd=REPO_ROOT,
+        capture_output=True,check=True,timeout=GIT_TIMEOUT_SECONDS).stdout.decode('utf-8')
+    identity = _body_identity(block.raw_text)
+    return any(_body_identity(old.raw_text) == identity for old in iter_fenced_blocks(original))
+
+
+def _fingerprint_problem(block: Block, carrier_path=None, canon_role=None):
+    if settings_line(block) is None or canon_role in VALID_CANON_ROLES:
+        return None  # format examples are templates, never fake generated output
+    raw = block.raw_text.replace('\r\n','\n')
+    footers = list(_FOOTER_LINE.finditer(raw))
+    if not footers:
+        if '〔出件指纹' in raw:
+            return '指纹尾行格式错误'
+        if carrier_path is not None:
+            try:
+                path = Path(carrier_path)
+                if not path.is_absolute():
+                    path = REPO_ROOT/path
+                rel = path.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
+                if _unchanged_historical_block(block,path,metadata_only=True):
+                    return None
+                if (rel,*_body_identity(block.raw_text)) in _migration_keys():
+                    return None
+                if _unchanged_historical_block(block,path):
+                    return None
+            except (OSError,ValueError,KeyError,TypeError,UnicodeError,subprocess.SubprocessError) as exc:
+                return '缺指纹；存量证据不可核验：'+str(exc)
+        return '当前 opener 缺指纹；未命中经审的路径/标识/正文/日期绑定'
+    if len(footers) != 1 or footers[0].end() != len(raw):
+        return '指纹须唯一且为块内最后元数据行（后面不可有空白或指令）'
+    match = _FOOTER_FORMAT.fullmatch(footers[0].group())
+    if not match:
+        return '指纹尾行格式错误'
+    try:
+        issued = date.fromisoformat(match[2])
+        if issued < RULE_EFFECTIVE_FORM17:
+            raise ValueError('署期早于实际落地日')
+    except ValueError:
+        return '指纹完整 ISO 署期无效或早于实际落地日'
+    if match[1] != block_fingerprint(raw):
+        return '原始正文指纹不符（仅 CRLF→LF；请由生成器重出）'
+    return None
+
+
 def check_block(block: Block, *, is_subtask_lane: bool = False,
+                is_format_canon_file: bool = False, canon_role: str | None = None,
+                carrier_path=None) -> list[tuple[str, str]]:
+    """Validate final original text before structural Codex normalization."""
+    problem = _fingerprint_problem(block,carrier_path,canon_role)
+    problems = [('F17',problem)] if problem else []
+    return problems + _check_block_structure(block,is_subtask_lane=is_subtask_lane,
+        is_format_canon_file=is_format_canon_file,canon_role=canon_role)
+
+
+def _check_block_structure(block: Block, *, is_subtask_lane: bool = False,
                 is_format_canon_file: bool = False,
                 canon_role: str | None = None) -> list[tuple[str, str]]:
     """返回该块命中的 `(形态代码, 说明)` 列表。形态代码 ∈ {"F1".."F16", "C3", "C5"}。
@@ -845,7 +1058,7 @@ def check_block(block: Block, *, is_subtask_lane: bool = False,
             if line.startswith("会话标识："):
                 line = 'set_session_title ' + line + '；若是子任务则跳过本行。'
             lines.append(native_env.sub("执行环境：CC", line.replace("【Codex】", "【CC】")))
-        return problems + check_block(Block(block.start_line,lines,block.info),is_subtask_lane=is_subtask_lane,
+        return problems + _check_block_structure(Block(block.start_line,lines,block.info),is_subtask_lane=is_subtask_lane,
             is_format_canon_file=is_format_canon_file,canon_role=canon_role)
     problems: list[tuple[str, str]] = []
     is_opener = settings_line(block) is not None
@@ -1240,7 +1453,7 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
         if idx % 200 == 0:
             _progress(f"[opener-lint] …{idx}/{len(files)}，累计命中 {len(findings)} 处")
         try:
-            text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+            text = (REPO_ROOT / rel).read_bytes().decode('utf-8')
         except (OSError, UnicodeDecodeError):
             continue
         if "【设置】" not in text and "set_session_title" not in text:
@@ -1261,6 +1474,10 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
             if rel not in commit_cache:
                 commit_cache[rel] = _last_commit_date(rel)
             bucket, reason = classify_carrier(rel, status_raw, form, commit_cache[rel])
+            if form == 'F17' and bucket == 'historical':
+                # H1–H3 and bound old bodies were handled by the predicate.
+                # A new/changed block cannot inherit an old file's date.
+                bucket, reason = 'current', 'F17 新增/改字或迁移缺口；不能仅凭旧载体日期放行'
             findings.append(Finding(rel, line_no, form, detail, bucket, reason, env))
 
         # 队列 §一 `#489` ⑴：`C0` —— 角色声明本身立不立得住（防「加一行 frontmatter
@@ -1291,7 +1508,7 @@ def scan(files: list[str]) -> tuple[list[Finding], dict[str, int]]:
 
             is_subtask = _is_subtask_lane_block(block, watcher_line)
             for form, detail in check_block(block, is_subtask_lane=is_subtask,
-                                            canon_role=role):
+                                            canon_role=role, carrier_path=REPO_ROOT/rel):
                 _emit(block.start_line, form, detail, env)
     return findings, stats
 
@@ -1303,7 +1520,7 @@ def scan_single_file(path: Path) -> list[Finding]:
     没有意义——那三层问的是「规则生效后这份件有没有被人再动过」，对一份从未提交过
     的临时件天然无法回答，也不该回答（不是「历史记录」，谈不上「不追改」）。
     """
-    text = path.read_text(encoding="utf-8")
+    text = path.read_bytes().decode('utf-8')
     findings: list[Finding] = []
     watcher_line = _watcher_section_line(text)
     # 队列 §一 `#489` ⑴：与主扫描同一条声明式判据（`canon_role`），不按路径。
@@ -1332,6 +1549,7 @@ def scan_single_file(path: Path) -> list[Finding]:
 
 
 FORM_TITLE = {
+    'F17': '形态⑰ · 原始正文指纹/完整署期/经审存量绑定（规则生效日 2026-11-17）',
     "F1": "形态① · CC opener 块缺 set_session_title（规则生效日 2026-08-26）",
     "F2": "形态② · 有 set_session_title 缺子任务例外句（规则生效日 2026-08-28）",
     "F3": "形态③ · 标题值不匹配 [Win]MMDDX-<短名>（规则生效日 2026-09-04）",

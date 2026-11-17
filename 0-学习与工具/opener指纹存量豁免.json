@@ -1,0 +1,4660 @@
+{
+  "schema_version": 1,
+  "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328",
+  "effective_date": "2026-11-17",
+  "entries": [
+    {
+      "path": "0-学习与工具/codex-handoff/Opener-1010AI-AI赋能全景接力.md",
+      "block_id": "OP-1010-AI",
+      "body_sha256": "9880b9955e40f184a4ee417fb6485429e5e9530ef1bba2d46129a0758fc72b3d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "51d3ef6f85caf8cfde21b27b10cbf47106400096",
+        "committed_at": "2026-10-10T06:22:40+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/开场-SC2恢复接力-Astra6-2026-10-13.md",
+      "block_id": "OP-1013-V",
+      "body_sha256": "f45835557b9fbc1d292684c49f21547bdc6bb418792a8d692dd7587bc4066c46",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e1282d622bee30544eb81bdffe990eb31c6cc225",
+        "committed_at": "2026-10-13T19:19:28+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/开场prompt-AI赋能构建续场-2026-10-08.md",
+      "block_id": "OP-1008-AI",
+      "body_sha256": "2a53afe0c6e33e311f20f37a92c431b357bc4711ed64862a558e5525674fa227",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "352056e1c73490a6f9a1c24019a57dfa6230ce29",
+        "committed_at": "2026-10-08T08:41:26+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "0-学习与工具/codex-handoff/开场prompt-SC2交付接力-Codex-2026-10-12.md",
+      "block_id": "OP-1012-AI",
+      "body_sha256": "4dd52c72c538b3926fcfc026616ffbe270e6f312d8674db5d1851ef83ce7fd58",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "dcb970747397eb2ba350cc18a62a543dbb5bfff9",
+        "committed_at": "2026-10-12T09:20:27+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/LAN留步项捞出清单-2026-08-26.md",
+      "block_id": "OP-0826-V",
+      "body_sha256": "5ddc827026e2a8550af630c7750e3ed7f54e1cc9868ecfe3002438018993aca8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4769dfc86b42fe9304234f57ce9314472fa56159",
+        "committed_at": "2026-08-27T08:57:40+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/LAN留步项捞出清单-2026-08-26.md",
+      "block_id": "OP-0826-U",
+      "body_sha256": "c5a1faf41cd68a4e1762b21a5127dd04709647ea6200dac5496966fe66585168",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4769dfc86b42fe9304234f57ce9314472fa56159",
+        "committed_at": "2026-08-27T08:57:40+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-业务侧可开任务与全量并行秩序-2026-08-26.md",
+      "block_id": "OP-0826-K",
+      "body_sha256": "b3ddc8cb9958c122cc5ecb677780fc767e8cf5c28b54bbd6706d82ada108d119",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bfe100321be4304b1a5cb819d906201ed03d3985",
+        "committed_at": "2026-08-26T21:17:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-业务侧可开任务与全量并行秩序-2026-08-26.md",
+      "block_id": "OP-0826-L",
+      "body_sha256": "f956d5a870f9f286b3669138ff4e3c3d938638fab67bd662bc3fcab741c559cd",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bfe100321be4304b1a5cb819d906201ed03d3985",
+        "committed_at": "2026-08-26T21:17:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-业务侧可开任务与全量并行秩序-2026-08-26.md",
+      "block_id": "OP-0826-P",
+      "body_sha256": "d859b1f111d2c538355ad9416829a3ef8ec994cabf50b68af12a0a11b1dad9d6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bfe100321be4304b1a5cb819d906201ed03d3985",
+        "committed_at": "2026-08-26T21:17:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-业务侧可开任务与全量并行秩序-2026-08-26.md",
+      "block_id": "OP-0826-Q",
+      "body_sha256": "b77c98d07a45201eeb5ebaf168cb9883c26a48b659974de4628010cd48bfa966",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bfe100321be4304b1a5cb819d906201ed03d3985",
+        "committed_at": "2026-08-26T21:17:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-业务侧可开任务与全量并行秩序-2026-08-26.md",
+      "block_id": "OP-0826-R",
+      "body_sha256": "d04c31d3fa19d46d7af8da77162aefe397d6878c42c8e41e5e4bcf3a728e63c5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bfe100321be4304b1a5cb819d906201ed03d3985",
+        "committed_at": "2026-08-26T21:17:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-业务侧可开任务与全量并行秩序-2026-08-26.md",
+      "block_id": "OP-0826-S",
+      "body_sha256": "3a4a59f88df64240907d9f4afb588e41c9f183c2bc77eb333243439efe292f62",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bfe100321be4304b1a5cb819d906201ed03d3985",
+        "committed_at": "2026-08-26T21:17:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-业务侧可开任务与全量并行秩序-2026-08-26.md",
+      "block_id": "OP-0826-T",
+      "body_sha256": "4afeec2b98e58aca4047a5ae1e2fccd4e2f6e89ac6da18c13beb36084a06cde9",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bfe100321be4304b1a5cb819d906201ed03d3985",
+        "committed_at": "2026-08-26T21:17:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-迁移后机制审核批-2026-08-26.md",
+      "block_id": "OP-0826-D",
+      "body_sha256": "3bb318d1e542060d9f69907083887484dceddad25ff3a0207a5b758a4940ad1f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a57d7c2d3a8243cf5367b60cae3e51e233cba7ed",
+        "committed_at": "2026-08-26T21:17:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-迁移后机制审核批-2026-08-26.md",
+      "block_id": "OP-0826-E",
+      "body_sha256": "9c6e05b3e5c29c3fac6228121fa96cf10f31e2dd8b55a8666bf173e995fb6c73",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a57d7c2d3a8243cf5367b60cae3e51e233cba7ed",
+        "committed_at": "2026-08-26T21:17:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-迁移后机制审核批-2026-08-26.md",
+      "block_id": "OP-0826-F",
+      "body_sha256": "b1c5298bcbc97bb2abf2bf05038cb840f5238db4c84b4fb2d866cad528c3f0a8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a57d7c2d3a8243cf5367b60cae3e51e233cba7ed",
+        "committed_at": "2026-08-26T21:17:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-迁移后机制审核批-2026-08-26.md",
+      "block_id": "OP-0826-G",
+      "body_sha256": "4437bceb97d77af697c146c3ce06d32e51df7873f18d1b1cbae685d92d45872d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a57d7c2d3a8243cf5367b60cae3e51e233cba7ed",
+        "committed_at": "2026-08-26T21:17:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-迁移后机制审核批-2026-08-26.md",
+      "block_id": "OP-0826-H",
+      "body_sha256": "6724b3310e43b6d88154cea5f6bca3ce25344c50a5beb5df85cca25d80ad10ac",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a57d7c2d3a8243cf5367b60cae3e51e233cba7ed",
+        "committed_at": "2026-08-26T21:17:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/opener集-迁移后机制审核批-2026-08-26.md",
+      "block_id": "OP-0826-J",
+      "body_sha256": "f16e6d9da9bfc90918e70afd923201baf8ede751c1a9e6bd070a94dd86f6ae0f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a57d7c2d3a8243cf5367b60cae3e51e233cba7ed",
+        "committed_at": "2026-08-26T21:17:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:ac71ecb8a6e326b56e4984eb616dd53b812335d9da46e4e73e1c180d5b8448ac",
+      "body_sha256": "ac71ecb8a6e326b56e4984eb616dd53b812335d9da46e4e73e1c180d5b8448ac",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:2863192771dd9942844c9567aaee368f491d4dc52ba22ed68c41b1ff4dd232dd",
+      "body_sha256": "2863192771dd9942844c9567aaee368f491d4dc52ba22ed68c41b1ff4dd232dd",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:d037c67b4d1abb1bd9630f8546a50bc0a5a270b633a86200d7615b0ea665bede",
+      "body_sha256": "d037c67b4d1abb1bd9630f8546a50bc0a5a270b633a86200d7615b0ea665bede",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:83ba54a6fe867f0551c56dc5026f3d6473a7446c6f314f0aeb1b0af0423d108a",
+      "body_sha256": "83ba54a6fe867f0551c56dc5026f3d6473a7446c6f314f0aeb1b0af0423d108a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:4defa0392c0f5046c769130aed2745e79cae5cc3df1bb851ef98b79247ebc285",
+      "body_sha256": "4defa0392c0f5046c769130aed2745e79cae5cc3df1bb851ef98b79247ebc285",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:1f1806615f8ad7e1d7a20d8d145367a93e0b9bba240438f19ebde675a6f8c3a0",
+      "body_sha256": "1f1806615f8ad7e1d7a20d8d145367a93e0b9bba240438f19ebde675a6f8c3a0",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:45bdc5e7e0df85e4c2588fc99af8712e5563403427964c9dddda5f9775f8067d",
+      "body_sha256": "45bdc5e7e0df85e4c2588fc99af8712e5563403427964c9dddda5f9775f8067d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:0ed56f4cbcadd1361af300cbaaa5055f14f7c4f38bde0cdc83a5ca5cfc63fc0d",
+      "body_sha256": "0ed56f4cbcadd1361af300cbaaa5055f14f7c4f38bde0cdc83a5ca5cfc63fc0d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:b19e8a84100d1493aed4f339382e92a6fab4ce520b4cb67c438e3da88cd7746e",
+      "body_sha256": "b19e8a84100d1493aed4f339382e92a6fab4ce520b4cb67c438e3da88cd7746e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:4becd5403a6d7332b8723add164b7961458bcb19132cc4cab81f11a209bb4268",
+      "body_sha256": "4becd5403a6d7332b8723add164b7961458bcb19132cc4cab81f11a209bb4268",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:1cedd7e5821b3780e6f04bfb831fc776d4c46d5506160f47163d51aaa21d9cb0",
+      "body_sha256": "1cedd7e5821b3780e6f04bfb831fc776d4c46d5506160f47163d51aaa21d9cb0",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-08-26-泳道版.md",
+      "block_id": "legacy-sha256:9f421a2b73f4475580ed7d5efe1c7f750d1cb3600987f6d131673c96458bacba",
+      "body_sha256": "9f421a2b73f4475580ed7d5efe1c7f750d1cb3600987f6d131673c96458bacba",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "aa1f9a440ca35ac58c60460f561d87a701e54696",
+        "committed_at": "2026-08-26T22:15:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/建造波次-2026-09-10-545单泳道.md",
+      "block_id": "OP-0910-J",
+      "body_sha256": "d836eb625d004fa6fb4c8c38b6d80fdd77f4cb5a924cd2abd828455ad9c2f787",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ceb3424691dc35adf82b91ec004a3466f4244b95",
+        "committed_at": "2026-09-10T14:19:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【CC】哨兵建造与安装单-2026-08-29.md",
+      "block_id": "legacy-sha256:245c2678b4b844e3271e2973d1993e43fdcaf0b65d4934685994bc7faa135ae6",
+      "body_sha256": "245c2678b4b844e3271e2973d1993e43fdcaf0b65d4934685994bc7faa135ae6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "322282c8692bf06f18811062919c80db0bef3e79",
+        "committed_at": "2026-08-29T06:18:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【CC】构建环境P0探针与hooks提案-2026-08-28.md",
+      "block_id": "legacy-sha256:2e0c20a30abfd855ca54617a7eea423f9fd64231a910a2db95f69e84551caeed",
+      "body_sha256": "2e0c20a30abfd855ca54617a7eea423f9fd64231a910a2db95f69e84551caeed",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3b891bec4f97ce1cb031ce467ed99d567d140f3f",
+        "committed_at": "2026-08-28T23:37:45+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Codex】业务泳道看护接力-2026-10-02.md",
+      "block_id": "OP-1002-Z",
+      "body_sha256": "6132e087978e610f25017ce12903a1d3ae68d869e5fa1533ad34b4fdb382b888",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9dde72436a5d5636093373113c5233dad438e7b6",
+        "committed_at": "2026-10-02T17:19:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】CLAUDE瘦身与名录下沉-2026-08-28.md",
+      "block_id": "legacy-sha256:180455acb122a646d0daf3ce4fcc2ae9ea9825d044f1f8824aa0cbbcef72050a",
+      "body_sha256": "180455acb122a646d0daf3ce4fcc2ae9ea9825d044f1f8824aa0cbbcef72050a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3b891bec4f97ce1cb031ce467ed99d567d140f3f",
+        "committed_at": "2026-08-28T23:37:45+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】CLAUDE零基深瘦身-2026-08-29.md",
+      "block_id": "legacy-sha256:af05fc5aaebcbd122dab838d49da4941cc4d2730d11c61242b098189d3485ec2",
+      "body_sha256": "af05fc5aaebcbd122dab838d49da4941cc4d2730d11c61242b098189d3485ec2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "6119cc4b1b782b9207d3f7b1070455316801ff20",
+        "committed_at": "2026-08-29T09:18:37+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】FI10需求grill-首个样本-2026-09-06.md",
+      "block_id": "OP-0906-V",
+      "body_sha256": "4158408a055d5a87c56d8975288179cdcdc610165401cb27c6f48ae79257d3ca",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "5813ffaf8f400c6049282d7f6edcfccfa2204da9",
+        "committed_at": "2026-09-06T23:54:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】FI5需求grill-第四个样本-2026-09-09.md",
+      "block_id": "OP-0909-Y",
+      "body_sha256": "87d361d0118c98b862d6da063fe183d897b4823835780eb51958c0241e80021f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cd481a4e79864f7e19105bbf89bd4cad61a657ec",
+        "committed_at": "2026-09-09T22:18:06+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】FI6需求grill-第三个样本-2026-09-08.md",
+      "block_id": "OP-0908-B",
+      "body_sha256": "46493060d8d4451dfc849d36ba230d2f2ae2259d78c7000a59c9d0a55991b23c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e86ad54d5f4a4b9b9b1d2f822be2eefba93ec84",
+        "committed_at": "2026-09-08T18:18:45+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】FI8需求grill-第二个样本-2026-09-07.md",
+      "block_id": "OP-0907-M",
+      "body_sha256": "a29debba2fbf9aa663b1a0ee423bab758e82d1db87170afac20dc8594b975907",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "68563de1cb8a9e4a3bf60af38a19a28848f4e5a5",
+        "committed_at": "2026-09-07T10:56:08+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】业务总线接棒-2026-09-08.md",
+      "block_id": "OP-0908-A",
+      "body_sha256": "2fec4672598ecd013c0ba807b7fe746b8abf0e24786f64270b8ca10297875e2e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e86ad54d5f4a4b9b9b1d2f822be2eefba93ec84",
+        "committed_at": "2026-09-08T18:18:45+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】业务总线接棒-2026-09-09.md",
+      "block_id": "OP-0908-V",
+      "body_sha256": "ba68416ba46258514f1e879a4a0cd11f5c25311964431579535df9a07320a002",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "42d9aebb8591d46ec1f94957f9842ccc9031d7a6",
+        "committed_at": "2026-09-08T18:18:48+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】构建环境接力-2026-08-29晚.md",
+      "block_id": "legacy-sha256:b7b763fe99823043ad3e239e56d3d88d7a82db2afb97e3a03be4b480c57002c0",
+      "body_sha256": "b7b763fe99823043ad3e239e56d3d88d7a82db2afb97e3a03be4b480c57002c0",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a43404b33025082b7fd9c478ddbb3418fe983502",
+        "committed_at": "2026-08-30T19:29:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】深瘦身第二批rules化-2026-08-29.md",
+      "block_id": "legacy-sha256:b519e6110a77f45ca7502bf6338bf7b44384704b7e29f38c84d1521d94e4f34c",
+      "body_sha256": "b519e6110a77f45ca7502bf6338bf7b44384704b7e29f38c84d1521d94e4f34c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8cc4875e81f9f4491b72bb8c60d09ff07bf01e87",
+        "committed_at": "2026-08-29T10:18:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】环境总线-接力交接-2026-08-23.md",
+      "block_id": "legacy-sha256:e0b456db398dc87f36e87ef326efce06e368105c3c5c8c1361ca029f6fb6af0d",
+      "body_sha256": "e0b456db398dc87f36e87ef326efce06e368105c3c5c8c1361ca029f6fb6af0d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4a1fd49ccc9a80f3d4605b2849a103b05ce626f3",
+        "committed_at": "2026-08-28T18:18:00+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】环境总线接棒-2026-09-07.md",
+      "block_id": "OP-0907-AL",
+      "body_sha256": "b2bf9f33aa1dfada6ec2227ff864d032a1bbbbfd70f06e5e993fa7564750b6bc",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "68f0cc66b756879387199ad70fe96399a8ffeaba",
+        "committed_at": "2026-09-07T16:24:30+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】环境总线接棒-2026-09-10.md",
+      "block_id": "OP-0910-H",
+      "body_sha256": "5d301876da64dbad21657bdc7e0c604bd14e587bc24fe1a8bbf28c9dd0258994",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "eb091b64df828ac56951c1ec66500e6ca0746732",
+        "committed_at": "2026-09-10T10:18:10+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-【Cowork】财务部17-FI10计提底稿索取-2026-09-07.md",
+      "block_id": "OP-0907-L",
+      "body_sha256": "2432ea8863821102f9c937d3e491c5b7f1e1dde50f8e7d1f3ccf153d46b58133",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c3eb7e544909b443966f0713a2df17ab2f2089d4",
+        "committed_at": "2026-09-07T07:19:30+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/开场prompt-构建环境瘦身第二轮A2A3-环境总线交接-2026-09-04.md",
+      "block_id": "OP-0904-H",
+      "body_sha256": "b4d1b9648b15ce91f956877079da0104d80e00178e6e0748ce4ba3b383957dd4",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "41e5aae08f04e3c989f3322dde031be840370216",
+        "committed_at": "2026-09-04T21:19:13+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/本周计划-2026-08-31.md",
+      "block_id": "legacy-sha256:252223cb89fb78296483cd32f2b2e6fb1bd0b3c12524c91ce874f1e94d721711",
+      "body_sha256": "252223cb89fb78296483cd32f2b2e6fb1bd0b3c12524c91ce874f1e94d721711",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a452e49d273d8fb188377dcc2cdb3103eb05197b",
+        "committed_at": "2026-08-31T09:57:18+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/本周计划-2026-08-31.md",
+      "block_id": "legacy-sha256:2e2d611b79aee515436a25b6eeb20312579b847fecbf2eb6e3176adebe906bd2",
+      "body_sha256": "2e2d611b79aee515436a25b6eeb20312579b847fecbf2eb6e3176adebe906bd2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a452e49d273d8fb188377dcc2cdb3103eb05197b",
+        "committed_at": "2026-08-31T09:57:18+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/本周计划-2026-08-31.md",
+      "block_id": "legacy-sha256:a903c2381410ff3ed3877e65484d56ffbe05d1e6c92695f3e06c968e516f01bb",
+      "body_sha256": "a903c2381410ff3ed3877e65484d56ffbe05d1e6c92695f3e06c968e516f01bb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a452e49d273d8fb188377dcc2cdb3103eb05197b",
+        "committed_at": "2026-08-31T09:57:18+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/本周计划-2026-09-07.md",
+      "block_id": "OP-0907-P",
+      "body_sha256": "b704d66f858916d631cddda6187b88b8dea9a2870b64094844c4e2d57177ae91",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b49fa7b124ae986f002da9d23b06c6d85fae32db",
+        "committed_at": "2026-09-07T17:20:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/本周计划-2026-09-21.md",
+      "block_id": "OP-0921-B",
+      "body_sha256": "b9849ab44b65e24321e39c1305744bae71d2c9cefc9306bbe707cdd303078d9c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cf86d89c5a81f83ba024f95e975ca9c896af6815",
+        "committed_at": "2026-09-21T10:34:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/本周计划-2026-09-21.md",
+      "block_id": "OP-0921-C",
+      "body_sha256": "fc5674135a65ea782839d6ba97db7b6baeb7b193a9a5c60a89f7b1ec5e28d76b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cf86d89c5a81f83ba024f95e975ca9c896af6815",
+        "committed_at": "2026-09-21T10:34:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/本周计划-2026-09-21.md",
+      "block_id": "OP-0921-D",
+      "body_sha256": "9d4280a42a14aed027137864ed61f9b8558af559f970b6d7bedc39ab1f437c94",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cf86d89c5a81f83ba024f95e975ca9c896af6815",
+        "committed_at": "2026-09-21T10:34:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/本周计划-2026-09-21.md",
+      "block_id": "OP-0921-E",
+      "body_sha256": "39b2ca7b9a2daaecee5e14423659437fd998c60fe441dc71c3e3a021b4bdf197",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cf86d89c5a81f83ba024f95e975ca9c896af6815",
+        "committed_at": "2026-09-21T10:34:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/波次收口-2026-08-26泳道版-2026-08-27.md",
+      "block_id": "OP-0827-A",
+      "body_sha256": "470fa44400ee1e711b5b04e3de095b46b313f85b5c58a82ef95b510a1e94f9f7",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0b190bdca4b217cdf5c7f133c9fe0ca9bb87a565",
+        "committed_at": "2026-08-28T01:18:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/波次收口-2026-08-26泳道版-2026-08-27.md",
+      "block_id": "OP-0827-B",
+      "body_sha256": "7096274cec9aab975ccedf582e0e75f7a37cbf734c5638b2a28eca6b0f32f85d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0b190bdca4b217cdf5c7f133c9fe0ca9bb87a565",
+        "committed_at": "2026-08-28T01:18:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/波次收口-2026-08-26泳道版-2026-08-27.md",
+      "block_id": "OP-0827-C",
+      "body_sha256": "ff36a36e23d42e2205f253589cc82124f05aec1f9674928f7ed90c21d420bc4e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0b190bdca4b217cdf5c7f133c9fe0ca9bb87a565",
+        "committed_at": "2026-08-28T01:18:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/波次收口-2026-08-26泳道版-2026-08-27.md",
+      "block_id": "OP-0827-D",
+      "body_sha256": "4eb899c32de6a3cd4082a18743224c2165ff73b3afc2d044e150b598802ed06e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0b190bdca4b217cdf5c7f133c9fe0ca9bb87a565",
+        "committed_at": "2026-08-28T01:18:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/波次收口-2026-08-26泳道版-2026-08-27.md",
+      "block_id": "OP-0827-E",
+      "body_sha256": "07b6f817369bd49b13470e98807c22de6522cf9d0e465f80313b10c9c05c59f9",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0b190bdca4b217cdf5c7f133c9fe0ca9bb87a565",
+        "committed_at": "2026-08-28T01:18:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/波次收口-2026-08-26泳道版-2026-08-27.md",
+      "block_id": "OP-0827-F",
+      "body_sha256": "73790ae9b72ea8977bd809705874f3506f55bf84eb3e8a87b57ad384ac70460e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0b190bdca4b217cdf5c7f133c9fe0ca9bb87a565",
+        "committed_at": "2026-08-28T01:18:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/波次收口-2026-08-26泳道版-2026-08-27.md",
+      "block_id": "OP-0827-G",
+      "body_sha256": "7dc2049ce128ebca4ab4b9d4cb443ac6804f66e03f54427ff5071c10f23c030c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0b190bdca4b217cdf5c7f133c9fe0ca9bb87a565",
+        "committed_at": "2026-08-28T01:18:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/波次收口-2026-08-26泳道版-2026-08-27.md",
+      "block_id": "OP-0827-H",
+      "body_sha256": "83e49255ff06d5df3d9d7711de9655769eea6f139072011775c8b425b8364328",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0b190bdca4b217cdf5c7f133c9fe0ca9bb87a565",
+        "committed_at": "2026-08-28T01:18:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】358审前置P1P2只读取证-2026-09-08.md",
+      "block_id": "OP-0908-I",
+      "body_sha256": "2c65b7a3ce7d48329ee2a5600134094c1a1e3cdee262621b077b5d2b0bdc4ba6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d988a086e76499ae122970dd703a0d80e5474c7d",
+        "committed_at": "2026-09-08T12:18:49+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】443每周清扫与K2外置-2026-09-10.md",
+      "block_id": "OP-0910-P",
+      "body_sha256": "dea185f03f4772140a022470c92b59cd4419b4241622087a9ea929daaf19e7eb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "408cb0374c607d3374cb38679bc06408556b9b90",
+        "committed_at": "2026-09-10T18:19:17+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】482串行闸rebase与两笔ff-2026-09-08.md",
+      "block_id": "OP-0908-W",
+      "body_sha256": "5faef8a99edeed069c322c59c5f2ce9e3fb4e026f9786e903d1b9a1772aab2be",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "797b8ed9375a14254ea09bc2423c19b573bf41f6",
+        "committed_at": "2026-09-08T22:19:18+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】489-opener块lint两处同触碰修-2026-09-08.md",
+      "block_id": "OP-0908-L",
+      "body_sha256": "f60b993dcb0ce3b7224f3b84117bb2e7ae78691765e7c1583f576cb7bc143171",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "71730ade911026f5157857364ba57396c9dd8789",
+        "committed_at": "2026-09-09T00:17:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】489rebase与ff-2026-09-09.md",
+      "block_id": "OP-0909-G",
+      "body_sha256": "b6b4793ad7ec9b8fefd45b6a527031395c86a73ea8a2025ff1b525a34b318965",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "171f4b318a18cfc1c6df4036b5525617f29c47ba",
+        "committed_at": "2026-09-09T09:18:27+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】505-append-row高水位线apply-2026-09-08.md",
+      "block_id": "OP-0908-X",
+      "body_sha256": "e6a484c1d59c096aa1aa69ca257d17e06ae4519416e7ca3ad6bf68a805175e59",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "71730ade911026f5157857364ba57396c9dd8789",
+        "committed_at": "2026-09-09T00:17:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】505-append-row高水位线回写-2026-09-08.md",
+      "block_id": "OP-0908-K",
+      "body_sha256": "8938f66bdd0dec4b81da1f3af8b35b1c68fc9b4a3f5d348423d85625e94ed344",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "a874b00b4b43db9119414f6ee23b6828522bf67d",
+        "committed_at": "2026-09-08T21:18:05+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】506-SC2页面基准日冻结-2026-09-08.md",
+      "block_id": "OP-0908-U",
+      "body_sha256": "f3dd60510d65a8f154d8bc34cadbe628e89bfe13d7e4dcc2528765ce30872b69",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e86ad54d5f4a4b9b9b1d2f822be2eefba93ec84",
+        "committed_at": "2026-09-08T18:18:45+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】545-SDK下载超时透传-2026-09-10.md",
+      "block_id": "OP-0910-J",
+      "body_sha256": "d836eb625d004fa6fb4c8c38b6d80fdd77f4cb5a924cd2abd828455ad9c2f787",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0c258e0c90c7a906b8824eefb22e39f8f1d2b3d6",
+        "committed_at": "2026-09-10T11:19:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】549起棒基建与550哨兵-2026-09-10.md",
+      "block_id": "OP-0910-R",
+      "body_sha256": "cfedfd288795bc54e45b998522404620edcc3951ce0fb43d1c4c72e8e8abdd7f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e3c76ba11da44e2543be04cc16fd74e3a31b01d",
+        "committed_at": "2026-09-10T18:19:22+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】550哨兵强制-2026-09-10.md",
+      "block_id": "OP-0910-S",
+      "body_sha256": "11c88b4bcb2b26f2d1f692695646ef6cc43bd34c331b0720ea48d9e7bc857147",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "dd1def680f858c776227d587814dabab05be6cd4",
+        "committed_at": "2026-09-10T22:19:16+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】553-P4措辞与待合分支告警-2026-09-11.md",
+      "block_id": "OP-0911-G",
+      "body_sha256": "da629dab1221d8ba91764a794483c868789625b5cea5c9af328d93f1bced477b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3b17cc3dfae6536102cc55e3a9dcce786050ca0d",
+        "committed_at": "2026-09-11T16:18:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】FI2三单核对起点反转-propose与design-2026-08-21.md",
+      "block_id": "OP-0821-K",
+      "body_sha256": "ec7cf0411e29fb632fc43d4892870f18175e0b94b6f53dcd93f462fbb0fd2178",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "425b421db88050383d3d666482a479ceaf01e96b",
+        "committed_at": "2026-08-27T08:51:46+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】K2单段格拆分-2026-09-11.md",
+      "block_id": "OP-0911-F",
+      "body_sha256": "0e39ef4952b60ffdbbde523147cbfedef9a3af6113456e7d2938320daaf60a08",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "2f6bea3c13fe40843827d5ba333ac3de77729717",
+        "committed_at": "2026-09-11T12:18:17+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】M1-OneDrive迁出前准备-2026-08-26.md",
+      "block_id": "legacy-sha256:680dc7e65291d11d35da987e7c0cebdc25d8e505a66725c0aa98064bc1f4125f",
+      "body_sha256": "680dc7e65291d11d35da987e7c0cebdc25d8e505a66725c0aa98064bc1f4125f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "52dddec00a95cfc1edcec4e0fd2c392007c18de4",
+        "committed_at": "2026-08-26T09:22:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】R1口径点台账-apply前置-2026-09-04.md",
+      "block_id": "OP-0904-F",
+      "body_sha256": "55dfaa0b780c26b32184c46e0fec5f356a568805e5b58f9468bea56dc6b5af3c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9ba5ca637da7274d85592085ddccce13323fea78",
+        "committed_at": "2026-09-04T18:19:14+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】SC8保供看板param_version展示层修复-2026-09-01.md",
+      "block_id": "OP-0901-F",
+      "body_sha256": "c955d36b8686b30b89748d228ccec2548cb9559021a50680dd0e4ce7f625dea4",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c39f9879c61590569c7783cb1f8daf7b7536e92a",
+        "committed_at": "2026-09-01T14:22:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】opener守卫挂release咽喉-队列437-2026-08-30.md",
+      "block_id": "OP-0830-G",
+      "body_sha256": "a63652d9cb2134bd61bfa536d4df26dffcbace0657351ccbdca14c3c01919a0e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "92fa1f4cc512f46e4a14409c7ff4d749994ac0c4",
+        "committed_at": "2026-08-30T17:29:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】sweep自撞锁修复-2026-09-06.md",
+      "block_id": "OP-0906-AA",
+      "body_sha256": "fb26de3e3d86bbda7505495ea7c9d0474d1170e82f8e1e5e8c4127761b005dfe",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bf353c46ff1dc38dcc7403916243cecef7b1f025",
+        "committed_at": "2026-09-07T06:02:41+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】值周读取面瘦身与队列清扫-三条同源-2026-08-31.md",
+      "block_id": "OP-0831-C",
+      "body_sha256": "8cd43139cb8581176c8c0468e798e5e9f7119144b9223da19f2c90585807fa0b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "f5c03266c60275cba86c8ab65588a508f6185d92",
+        "committed_at": "2026-08-31T10:34:00+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】全局记忆巡检与root棘轮-队列435-2026-08-29.md",
+      "block_id": "OP-0830-C",
+      "body_sha256": "2739250e840c8d0c9f0fb1ed17e7aba2137b2f4ecaf8f2f443c94ef53478e8e1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1323862816be4df4173a05676b9deb90170c416a",
+        "committed_at": "2026-08-30T08:19:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】可Open池A字段与opener环境过滤-队列312-2026-08-30.md",
+      "block_id": "OP-0830-D",
+      "body_sha256": "b46b08cc61bff1013ba9402d8afc5b6ea2f05dd6e00f36019c60ebe548bbc3c6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8cec075dc161cf879089877b6b5cf4167813905c",
+        "committed_at": "2026-08-30T10:18:14+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】台账回件回写接线-2026-09-07.md",
+      "block_id": "OP-0907-AK",
+      "body_sha256": "d6a9119c1ca474da0a813f2066fb9e4596ffa328c06ac00da852f8ecb05ecec6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cf3b54ab101e29f07e13e98353492ff43e60028a",
+        "committed_at": "2026-09-07T16:24:24+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】执行体对齐-wecom-service-home落后174-队列438-2026-08-30.md",
+      "block_id": "OP-0830-F",
+      "body_sha256": "bea9efe1ace0eafffc59cbf599334e8900478138aef5bf0573f0a69fb0a68683",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "af97faf5b7b675fe49fa596470e5b8169e0dbb8f",
+        "committed_at": "2026-08-30T16:19:00+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】措施C-apply批1-告警模式-2026-09-11.md",
+      "block_id": "OP-0911-N",
+      "body_sha256": "ebd8a613680e0e264b0a433146f637139fd2d9a8871d108bb4f3ca7923d4cf8b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bee7316450b97764172df8d759c5c58fdb3d0e3d",
+        "committed_at": "2026-09-11T20:18:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】登记豁免时间维收窄与孤儿升格-2026-09-07.md",
+      "block_id": "OP-0907-AM",
+      "body_sha256": "6bab6545c44b3eb786ff34533a63ff63b3ce0527e2ddaf666d8abf585469353c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "26eada42720cb7b01a78b41d089bfc67d6d5264d",
+        "committed_at": "2026-09-07T17:21:31+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】跟进信状态单一可信源S2-S4-2026-08-21.md",
+      "block_id": "legacy-sha256:9ec5607040a2714ef9caf96493edeb7db495d89db40ccf30443e5519798a2b72",
+      "body_sha256": "9ec5607040a2714ef9caf96493edeb7db495d89db40ccf30443e5519798a2b72",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "425b421db88050383d3d666482a479ceaf01e96b",
+        "committed_at": "2026-08-27T08:51:46+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/派单件-【CC】队列写入根治与回件链路六缺陷-414与416-2026-08-26.md",
+      "block_id": "legacy-sha256:44229d4210442c856523d412cf171bbacb04c527b83450e243416b202707ae89",
+      "body_sha256": "44229d4210442c856523d412cf171bbacb04c527b83450e243416b202707ae89",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1e75a88829076afd28627e4ed28f891ca54498f8",
+        "committed_at": "2026-08-26T21:17:53+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-offLAN批.md",
+      "block_id": "legacy-sha256:4e95cef984d90fc44f40266e2bf3e3ecb44f122f4aca60c0f1c36a499960cba8",
+      "body_sha256": "4e95cef984d90fc44f40266e2bf3e3ecb44f122f4aca60c0f1c36a499960cba8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c5a6005afb022945c544bd4e79b075f2dde879ac",
+        "committed_at": "2026-08-28T21:18:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-offLAN批.md",
+      "block_id": "OP-0828-X",
+      "body_sha256": "dab8c99e7d8e8ab37364370d7ebda38cafaa72678e7b7834cc6efe0f45e2bc19",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c5a6005afb022945c544bd4e79b075f2dde879ac",
+        "committed_at": "2026-08-28T21:18:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-offLAN批.md",
+      "block_id": "OP-0828-Y",
+      "body_sha256": "7865dc4fd1de4a378790fbdfcee968f320c0f043646d8ae69d5907c99ee7a45e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c5a6005afb022945c544bd4e79b075f2dde879ac",
+        "committed_at": "2026-08-28T21:18:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-offLAN批.md",
+      "block_id": "OP-0828-Z",
+      "body_sha256": "96a2479a7f77d8dfa4bd552ddbb0d40b8e3f2959dca191129a0b6bdebbbf857f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c5a6005afb022945c544bd4e79b075f2dde879ac",
+        "committed_at": "2026-08-28T21:18:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-可开工批.md",
+      "block_id": "OP-0828-W",
+      "body_sha256": "061524de1065ebc7b96b7c302fa4319c26d5f1d55f0e77a59a469ade18df1a80",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "6a81996e977e42a4d56469133f106d4992e4e0e6",
+        "committed_at": "2026-08-28T08:54:05+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-可开工批.md",
+      "block_id": "OP-0828-I",
+      "body_sha256": "72aee2eadfc2c9d1564883720f1743b73b9b889cc985e75b64ace26553a9fd20",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "6a81996e977e42a4d56469133f106d4992e4e0e6",
+        "committed_at": "2026-08-28T08:54:05+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-可开工批.md",
+      "block_id": "OP-0828-M",
+      "body_sha256": "1991a75a3a6ce3c2b493e429676104fe4a0c43fcef43b8ebf1253a74f8cc8b21",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "6a81996e977e42a4d56469133f106d4992e4e0e6",
+        "committed_at": "2026-08-28T08:54:05+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-可开工批.md",
+      "block_id": "OP-0828-A",
+      "body_sha256": "676c8185f310315d37b98841234dd8d93d3b5d499285bbfc97ee9305e39de8ea",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "6a81996e977e42a4d56469133f106d4992e4e0e6",
+        "committed_at": "2026-08-28T08:54:05+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-可开工批.md",
+      "block_id": "OP-0828-B",
+      "body_sha256": "487efc8c2bdde891ddb069de2b4d7c15e489d09947b4fcb5cbeba58aa0715fc1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "6a81996e977e42a4d56469133f106d4992e4e0e6",
+        "committed_at": "2026-08-28T08:54:05+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-可开工批.md",
+      "block_id": "OP-0828-C",
+      "body_sha256": "73c584edb8d1966ea6b2bdd9eb4f9d5c01670dd5b93a258006774252a58daa2d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "6a81996e977e42a4d56469133f106d4992e4e0e6",
+        "committed_at": "2026-08-28T08:54:05+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-可开工批.md",
+      "block_id": "OP-0828-D",
+      "body_sha256": "322b16e39cc7b6647da934909ffe0e2d4817e84e8139285c2ad02dcfba132e28",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "6a81996e977e42a4d56469133f106d4992e4e0e6",
+        "committed_at": "2026-08-28T08:54:05+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-落地后批.md",
+      "block_id": "legacy-sha256:4271d44fae1fe891af4b21e2a9ccf7ba9eb96725ae3c57732ab79738a666d4f5",
+      "body_sha256": "4271d44fae1fe891af4b21e2a9ccf7ba9eb96725ae3c57732ab79738a666d4f5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1def702faea1834a81c6c2f1a4a284599833c186",
+        "committed_at": "2026-08-28T12:18:08+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-落地后批.md",
+      "block_id": "OP-0828-O",
+      "body_sha256": "ea7de221ebf70a32b67a5d98b314eadff58b2a502ff5c78d2fc3c7b4bdb62532",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1def702faea1834a81c6c2f1a4a284599833c186",
+        "committed_at": "2026-08-28T12:18:08+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-落地后批.md",
+      "block_id": "OP-0828-P",
+      "body_sha256": "d26e1c0dcce28307a92e52911752a3d847ac40f7dc163110a9e2620bedc8ecfc",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1def702faea1834a81c6c2f1a4a284599833c186",
+        "committed_at": "2026-08-28T12:18:08+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-落地后批.md",
+      "block_id": "OP-0828-Q",
+      "body_sha256": "fd9a518f27fab7c1cb7465ed9f2cbde3c149f43191ecd2cf250a90e2ee2d1f55",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1def702faea1834a81c6c2f1a4a284599833c186",
+        "committed_at": "2026-08-28T12:18:08+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-28-落地后批.md",
+      "block_id": "OP-0828-R",
+      "body_sha256": "88d5b27c2b243614a8584f9900e2f7e9939adccf7a4d81db92ac8d136ff1dcf2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1def702faea1834a81c6c2f1a4a284599833c186",
+        "committed_at": "2026-08-28T12:18:08+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-29-offLAN周末批.md",
+      "block_id": "legacy-sha256:d3ee1256b6c468272604db41881e1f5172b50b43539902ef07e70e3f25d366c3",
+      "body_sha256": "d3ee1256b6c468272604db41881e1f5172b50b43539902ef07e70e3f25d366c3",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cdc2268e88b5324f43735e720801c1fc5f8f9dd8",
+        "committed_at": "2026-08-29T12:18:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-29-offLAN周末批.md",
+      "block_id": "legacy-sha256:1c44e485e102885525bb8df88294a3e107c0c23e02d292d8e228814ef5e662ac",
+      "body_sha256": "1c44e485e102885525bb8df88294a3e107c0c23e02d292d8e228814ef5e662ac",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cdc2268e88b5324f43735e720801c1fc5f8f9dd8",
+        "committed_at": "2026-08-29T12:18:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-29-offLAN周末批.md",
+      "block_id": "legacy-sha256:b07bef41e13fe0e3ea668deb0c5d9a31261988315149bdbdc9f20a29343b9a20",
+      "body_sha256": "b07bef41e13fe0e3ea668deb0c5d9a31261988315149bdbdc9f20a29343b9a20",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cdc2268e88b5324f43735e720801c1fc5f8f9dd8",
+        "committed_at": "2026-08-29T12:18:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-29-offLAN周末批.md",
+      "block_id": "legacy-sha256:d6769f733c07315c7d5cac9f45bf9aa551da7f81d448a0d034ac2eef1f6dcd8a",
+      "body_sha256": "d6769f733c07315c7d5cac9f45bf9aa551da7f81d448a0d034ac2eef1f6dcd8a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cdc2268e88b5324f43735e720801c1fc5f8f9dd8",
+        "committed_at": "2026-08-29T12:18:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-29-offLAN周末批.md",
+      "block_id": "legacy-sha256:d093f8b7fc94a540ac1f89fcb79c104a3f2e242acf241823ace13799df2fb8ad",
+      "body_sha256": "d093f8b7fc94a540ac1f89fcb79c104a3f2e242acf241823ace13799df2fb8ad",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "cdc2268e88b5324f43735e720801c1fc5f8f9dd8",
+        "committed_at": "2026-08-29T12:18:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-29-offLAN批2灰度.md",
+      "block_id": "legacy-sha256:9ccc5049ecb19f3f848a20353a20764bab9f500a458054f775957dad0abfa504",
+      "body_sha256": "9ccc5049ecb19f3f848a20353a20764bab9f500a458054f775957dad0abfa504",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "77f43042809e26413a82cf4c5a8c46138432b35a",
+        "committed_at": "2026-08-29T16:18:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-29-offLAN批2灰度.md",
+      "block_id": "legacy-sha256:348fdf62318859ca7cd1a80b98701f0a979fc2c34475e710363f55831f65e19b",
+      "body_sha256": "348fdf62318859ca7cd1a80b98701f0a979fc2c34475e710363f55831f65e19b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "77f43042809e26413a82cf4c5a8c46138432b35a",
+        "committed_at": "2026-08-29T16:18:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-31-LAN收口首跑批.md",
+      "block_id": "OP-0831-L",
+      "body_sha256": "2aa80889afd7aac4ce1896181d0fbe449a9d7be206753bf387cefd179722e7e7",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "6a4b37f996cb8edaec53e103aa0eb3e11a300956",
+        "committed_at": "2026-08-31T15:57:31+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-31-offLAN批.md",
+      "block_id": "OP-0831-N",
+      "body_sha256": "25d4557b1c9f7d132ac11dfc0bd5f4bbcc771ade3b7186a4f5ccda78eb38ed6b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "2b45811cb9ef69f122f1207d987c3c4a899681a1",
+        "committed_at": "2026-08-31T18:29:52+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-31-offLAN批.md",
+      "block_id": "legacy-sha256:e63b679a0102839475c88bdc1c31a9f216fb30d3cc63e087fe2c996c51c94700",
+      "body_sha256": "e63b679a0102839475c88bdc1c31a9f216fb30d3cc63e087fe2c996c51c94700",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "2b45811cb9ef69f122f1207d987c3c4a899681a1",
+        "committed_at": "2026-08-31T18:29:52+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-08-31-offLAN批.md",
+      "block_id": "legacy-sha256:90bd80b203caa3b5036e6e9b1ff3c570a506d3ca7f68d9b77287c0301c704fd5",
+      "body_sha256": "90bd80b203caa3b5036e6e9b1ff3c570a506d3ca7f68d9b77287c0301c704fd5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "2b45811cb9ef69f122f1207d987c3c4a899681a1",
+        "committed_at": "2026-08-31T18:29:52+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-09-02-泳道看护首跑批.md",
+      "block_id": "OP-0902-A",
+      "body_sha256": "b4a99b298e99464a588e4b185e4108e99fa7704a8c467234efc10fa91b602a02",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "87ca5fe306287adc4a476a080244abb80fb5a0fb",
+        "committed_at": "2026-09-02T18:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-09-02-泳道看护首跑批.md",
+      "block_id": "OP-0902-A",
+      "body_sha256": "92f160aa4e5db49b6173856b6caacec582802ffbf0772a5209ec9247f047c822",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "87ca5fe306287adc4a476a080244abb80fb5a0fb",
+        "committed_at": "2026-09-02T18:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-09-02-泳道看护首跑批.md",
+      "block_id": "OP-0902-A",
+      "body_sha256": "ce126632c6677f4d52a69d16791804629864ef8a6673280a19eb6d944aed9b89",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "87ca5fe306287adc4a476a080244abb80fb5a0fb",
+        "committed_at": "2026-09-02T18:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-2026-09-02-泳道看护首跑批.md",
+      "block_id": "OP-0902-A",
+      "body_sha256": "705c4837a33f9c5dd4175e51ddfb88710287a4c9a38008f5424a29335eecc0da",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "87ca5fe306287adc4a476a080244abb80fb5a0fb",
+        "committed_at": "2026-09-02T18:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-LAN收口批B-0907_Q-首跑灰度两项-2026-09-07.md",
+      "block_id": "OP-0907-Q",
+      "body_sha256": "c36ff679f7a86ab44b968b906ee3e5a244733d14bd248da0c1213361d840a778",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "862f71c3bd4cde91ef5cd044a7b16999c13744ee",
+        "committed_at": "2026-09-08T09:17:48+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-LAN收口批B-0908_AL4-SC2冒烟一项-2026-09-08.md",
+      "block_id": "OP-0908-J",
+      "body_sha256": "07747c968ce0d0d7dabf057a44878504190691addc69ece864a400eee5f96e5e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e86ad54d5f4a4b9b9b1d2f822be2eefba93ec84",
+        "committed_at": "2026-09-08T18:18:45+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-LAN收口批B-0909_506部署与419取证-2026-09-09.md",
+      "block_id": "OP-0909-K",
+      "body_sha256": "a74e97dcfe828a5f6996dd22e77d0c80447386ec3f2fdac8aca09802bdcd4cde",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4f658d1dee83d8154badeb7a4e2079e9658929b1",
+        "committed_at": "2026-09-09T12:17:52+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-LAN收口批B-0918_FI3门户页上线-2026-09-18.md",
+      "block_id": "OP-0918-A",
+      "body_sha256": "583f683a7cbc81a1fa98da46bd861211619f4f375c2ce57f0b4ee31af08afcd7",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9f7331428000e75fe23bc4bbddce0a403c69d7c0",
+        "committed_at": "2026-09-18T08:15:37+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-LAN收口批B-0918_FI3门户页上线-2026-09-18.md",
+      "block_id": "OP-0918-B",
+      "body_sha256": "afdf3b21bd9b44dc447f977430ba0349bb861f93955cfeddebd1c7ce58bc41c8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9f7331428000e75fe23bc4bbddce0a403c69d7c0",
+        "committed_at": "2026-09-18T08:15:37+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-LAN收口批B-0919_Q2上线-2026-09-19.md",
+      "block_id": "OP-0919-O",
+      "body_sha256": "aaade91c4899eec1b42ce6f47837eb428772a65ea57024a32ded6be8f10984a2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4cabb260ef51c6cabb982d646d04e7dc46f959c4",
+        "committed_at": "2026-09-21T19:17:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】197门户网关合入-2026-09-12.md",
+      "block_id": "OP-0912-W",
+      "body_sha256": "0a97738deeb915e7e82e6653fb56db6548530680258ce60fb40e6a0a0f4a9978",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "51a0ebded6ace60f33ce16f091ca1b9bd93939fb",
+        "committed_at": "2026-09-12T21:25:14+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】581模型字段接线-2026-09-16.md",
+      "block_id": "OP-0916-D",
+      "body_sha256": "3c6df523e82fa8e342d7096e3f2113f8832ca4bb52eda74f07f00fcc75859eb4",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "7b4958f1b58e13e38fca62d0636241d649b0e09c",
+        "committed_at": "2026-09-16T10:39:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】584续三与585续-2026-09-16.md",
+      "block_id": "OP-0916-L",
+      "body_sha256": "e5a494874929f89a1c1d9566917be998d816fb3a5ca5149e10d5567041b31760",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c25adb811b00d489da4ffec4fd0f707eb6732cd8",
+        "committed_at": "2026-09-16T15:31:25+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】584续三与585续-2026-09-16.md",
+      "block_id": "OP-0916-M",
+      "body_sha256": "8e9fc33a0a3519a7d05fd6403fc403d41f9cf8bcaadd417ada79218a79d872f5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c25adb811b00d489da4ffec4fd0f707eb6732cd8",
+        "committed_at": "2026-09-16T15:31:25+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】584续二与585两泳道-2026-09-16.md",
+      "block_id": "OP-0916-J",
+      "body_sha256": "6f1fe1667364b7349a17c72b973f0895cd08fe4effca25126a2e6eb324f4dbe3",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "43f725599682a2bf7a76f277c0abefd6820f5052",
+        "committed_at": "2026-09-16T14:45:43+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】584续二与585两泳道-2026-09-16.md",
+      "block_id": "OP-0916-K",
+      "body_sha256": "9934f862c2017a78e1440b501a89b4fec8a38c864c8019917a44e8490b08af90",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "43f725599682a2bf7a76f277c0abefd6820f5052",
+        "committed_at": "2026-09-16T14:45:43+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】584续四与585续三-2026-09-16.md",
+      "block_id": "OP-0916-N",
+      "body_sha256": "c1c57dd31e5dea9766e7489e560f122602a7188ad4268d62f0cc3c69f6cabd2c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d03149dbe886633f2047c843013cf5b6e1648920",
+        "committed_at": "2026-09-16T16:05:09+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】584续四与585续三-2026-09-16.md",
+      "block_id": "OP-0916-O",
+      "body_sha256": "9f9e349955b4830048d4f28f2473e676b59cdfa7a1a2b839365b6f5883c968ca",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d03149dbe886633f2047c843013cf5b6e1648920",
+        "committed_at": "2026-09-16T16:05:09+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】584续棒-2026-09-16.md",
+      "block_id": "OP-0916-I",
+      "body_sha256": "c43df2b6bb64f0af4f7cf7d47fb3ce107d46869bfe41273cc70c5e3f9d68c177",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0a3a2e89334e5c9a788f30b57d0c71c58bb7a510",
+        "committed_at": "2026-09-16T14:08:59+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】595提醒单开连接-2026-09-16.md",
+      "block_id": "OP-0916-R",
+      "body_sha256": "33232d9f2b6eaf1718ec19c278a5c507eb68cb0616581bac56e7ecf7e70ac32f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "f1918a7422651ef7b0b254b2a5334cf27335016c",
+        "committed_at": "2026-09-16T20:19:24+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】600泳道隔离根治-2026-09-16.md",
+      "block_id": "OP-0916-Y",
+      "body_sha256": "4622ffd02a055f334499b1a7321d9cd81749e9bf2549952f9e69135b974284cf",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e8b51512bfb7ca9843fa954080173d0d14d700cd",
+        "committed_at": "2026-09-16T22:05:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】600泳道隔离根治续-2026-09-16.md",
+      "block_id": "OP-0916-Z",
+      "body_sha256": "7c977a4e6962c1956604afc6a484a08fa8a9adb83861a3e3ac6f49b6534c3570",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e8b51512bfb7ca9843fa954080173d0d14d700cd",
+        "committed_at": "2026-09-16T22:05:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】600泳道隔离根治续三-2026-09-16.md",
+      "block_id": "OP-0916-ZZ",
+      "body_sha256": "b45efd3192e893cfd2430b31587590496743b0891f02a2c21903a5d071adcf8d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b971ae6227c31d10dc65b45d6eb32e1b026b0eae",
+        "committed_at": "2026-09-16T22:15:37+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】600泳道隔离根治续四-2026-09-16.md",
+      "block_id": "OP-0916-ZY",
+      "body_sha256": "77bc1412cb59a6cca4ef54b6ae84f272bf3a1b22d981c184ce0f5e59a5ea5cb7",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ff549e8cd421cb9b1bbc5af5281a19993be9a491",
+        "committed_at": "2026-09-16T22:53:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】627根治两泳道-2026-09-20.md",
+      "block_id": "OP-0920-M",
+      "body_sha256": "956c9d64498fea6f968bf0366a2477686f3122c0c6ac0e9d10d9efbbd5be5891",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4e5e63423634e16c75476dc8f26aa67de86e381d",
+        "committed_at": "2026-09-20T19:42:50+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】627根治两泳道-2026-09-20.md",
+      "block_id": "OP-0920-N",
+      "body_sha256": "ac87283b440df591ffe6b508acb5f6b11653f8c4c9957bbc322f6728b916426a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4e5e63423634e16c75476dc8f26aa67de86e381d",
+        "committed_at": "2026-09-20T19:42:50+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】627根治两泳道-2026-09-20.md",
+      "block_id": "OP-0920-O",
+      "body_sha256": "0f1c1d24b5279c1a4d9a7919474668c42bcdebd1d8e5f419f9082dec57b1eaf5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4e5e63423634e16c75476dc8f26aa67de86e381d",
+        "committed_at": "2026-09-20T19:42:50+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】629缩编续完-2026-09-21.md",
+      "block_id": "OP-0921-F",
+      "body_sha256": "89c26140712eae84d8fd2e87977886ac43bf71133a153cd5ddd6719589cbdc19",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e9b16a55e998e1026ca0b2b0b6779fcdf4bdf14",
+        "committed_at": "2026-09-21T10:34:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】629缩编续完-2026-09-21.md",
+      "block_id": "OP-0921-G",
+      "body_sha256": "de093ecc8e8e5e79cbde596c9ad3b47b76832a5919581d4b422d23c753ab7ce3",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e9b16a55e998e1026ca0b2b0b6779fcdf4bdf14",
+        "committed_at": "2026-09-21T10:34:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】AB基线A面-2026-09-21.md",
+      "block_id": "OP-0921-K",
+      "body_sha256": "12430e8ed7acc40ad1c94649a4c4211da440484f7176877a9b8ce9ed42485ce0",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c89b2b394fa809a8d7b7949fdc3aa278206a2cf4",
+        "committed_at": "2026-09-21T19:17:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】AB基线A面-2026-09-21.md",
+      "block_id": "OP-0921-L",
+      "body_sha256": "a9f9592c77cc19e0e05a3a297088f8f66eed881413853f446c85f8c1356af0f5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c89b2b394fa809a8d7b7949fdc3aa278206a2cf4",
+        "committed_at": "2026-09-21T19:17:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】AB基线B面-2026-09-23.md",
+      "block_id": "OP-0923-A",
+      "body_sha256": "198b742bff592cc7db96b561b1afeac5d47e3b50bb122d481245fbf858e452be",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ab9aaeed4fc35806714ee98edab166ae9bd43075",
+        "committed_at": "2026-09-23T08:17:53+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】AB基线B面-2026-09-23.md",
+      "block_id": "OP-0923-B",
+      "body_sha256": "b649088546930ff52d84718b89861cb6526c9b88d1f65a5713188981d1e3fda1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ab9aaeed4fc35806714ee98edab166ae9bd43075",
+        "committed_at": "2026-09-23T08:17:53+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】AB对照B面重跑-2026-09-23.md",
+      "block_id": "OP-0923-C",
+      "body_sha256": "3f371269d0b66bf2ef8eb0c593ea171eb4b9c7b3510293b274d93553bb03939e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "75ecfd29378e32c419deae6320ff57265dec147c",
+        "committed_at": "2026-09-23T09:04:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】AB对照B面重跑-2026-09-23.md",
+      "block_id": "OP-0923-D",
+      "body_sha256": "9a461e2affb126380a7328879206d59012bc8a0570d22bbd0773ead6fe88f9ea",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "75ecfd29378e32c419deae6320ff57265dec147c",
+        "committed_at": "2026-09-23T09:04:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】AB有守样本2-2026-09-23.md",
+      "block_id": "OP-0923-E",
+      "body_sha256": "6fd73ec906e7b8a26fd58627855fbdacc4346fdfb6885cf2ff0a2b3ee0d0d5bb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "35a2b8a91e2d3725146bd93cc645ac7f1debd63f",
+        "committed_at": "2026-09-23T10:18:18+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】AB有守样本2-2026-09-23.md",
+      "block_id": "OP-0923-F",
+      "body_sha256": "12956e095002082d41cd62ffce341ebe1c4bddb548e98c192a0b599d7e57383d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "35a2b8a91e2d3725146bd93cc645ac7f1debd63f",
+        "committed_at": "2026-09-23T10:18:18+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】P3机制税与586断连-2026-09-16.md",
+      "block_id": "OP-0916-P",
+      "body_sha256": "05eef15873e18caecb1620f0fa289f5fbee0df26e20bfbb63afd2ad2d77d3e68",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "07d222177d0bd84da73f7ce495992059f3ae8b30",
+        "committed_at": "2026-09-16T19:19:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Q2建造续棒-2026-09-19.md",
+      "block_id": "OP-0919-B",
+      "body_sha256": "d8e50c5123cd4d9186f036a6ae59d17cf84b3570ede82b7a85388ecb1b52c40a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "630e244ce98cd2faa9647f320575a8af79ee4ad1",
+        "committed_at": "2026-09-19T08:56:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Q2建造续棒-2026-09-19.md",
+      "block_id": "OP-0919-C",
+      "body_sha256": "4e83df8578c9495cdaac45b2949fb63189feac55d164dc87994e95deb8e41609",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "630e244ce98cd2faa9647f320575a8af79ee4ad1",
+        "committed_at": "2026-09-19T08:56:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Q2建造续棒-2026-09-19.md",
+      "block_id": "OP-0919-E",
+      "body_sha256": "730957fa9853279f40353bbac523fd87cd8f8efb705d8e4bbd4463b39bca310e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "630e244ce98cd2faa9647f320575a8af79ee4ad1",
+        "committed_at": "2026-09-19T08:56:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token优化P0P1两泳道-2026-09-16.md",
+      "block_id": "OP-0916-A",
+      "body_sha256": "1a0c68db8ab2d5e49be0f07ef24d4049b1508f7f279110f898a0361f131b47a2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "f177fe15fda9d2e401c0d372f7c8ff650bc8e4a7",
+        "committed_at": "2026-09-16T09:00:16+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token优化P0P1两泳道-2026-09-16.md",
+      "block_id": "OP-0916-B",
+      "body_sha256": "5e9c96cb5f3b361e6ad87c41c6ee554264b8a23ff4e4c43c1b177b0cee77ae20",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "f177fe15fda9d2e401c0d372f7c8ff650bc8e4a7",
+        "committed_at": "2026-09-16T09:00:16+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token优化P2BP5两泳道-2026-09-16.md",
+      "block_id": "OP-0916-E",
+      "body_sha256": "2ae057f103bdcf8e11cad74963fae5e26503398712d698f5225c7f083477dd66",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bf443dd143f2435ce2036eafa39472b566be346c",
+        "committed_at": "2026-09-16T11:58:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token优化P2BP5两泳道-2026-09-16.md",
+      "block_id": "OP-0916-F",
+      "body_sha256": "f471b41d7a891c066417115ca16503e82eacea453457bfbe5f6cc28bf751abf3",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "bf443dd143f2435ce2036eafa39472b566be346c",
+        "committed_at": "2026-09-16T11:58:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token优化P5续与584两泳道-2026-09-16.md",
+      "block_id": "OP-0916-G",
+      "body_sha256": "a29e12143815a5acc3abee607e3d54540472004b1f1fae646cf6098165f5f99e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d4f24738ccada785c0ce51431ef30c6b49b4acc8",
+        "committed_at": "2026-09-16T13:28:08+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token优化P5续与584两泳道-2026-09-16.md",
+      "block_id": "OP-0916-H",
+      "body_sha256": "f73ab87d8fa37f1984be858a0b338e1880f9146bba68148158bbdcc5eeefabe6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d4f24738ccada785c0ce51431ef30c6b49b4acc8",
+        "committed_at": "2026-09-16T13:28:08+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token度量四修-2026-09-16.md",
+      "block_id": "OP-0916-C",
+      "body_sha256": "a4f13b3e5ca2e5529f42291625fca7459570db74113f74e10b210d4ca4ff8153",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "f868de82d01ac04fbc346c8dc3c6d24eec3c22d4",
+        "committed_at": "2026-09-16T09:41:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token收尾批-2026-09-16.md",
+      "block_id": "OP-0916-S",
+      "body_sha256": "c428b3f5d9808a04dcc003d0984a01959d950b6545d2b7b9600f19c0c7cfc6c8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e8b51512bfb7ca9843fa954080173d0d14d700cd",
+        "committed_at": "2026-09-16T22:05:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token收尾批-2026-09-16.md",
+      "block_id": "OP-0916-T",
+      "body_sha256": "fd73fddf79f7efdcd21f45aacc2e5c02dd5848a616e7b38badcd9a0af23005d0",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e8b51512bfb7ca9843fa954080173d0d14d700cd",
+        "committed_at": "2026-09-16T22:05:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token收尾批-2026-09-16.md",
+      "block_id": "OP-0916-U",
+      "body_sha256": "66649a9d6aefb0d1f2323849041115c4a142b4969f736034a531c6b9b2074cdf",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e8b51512bfb7ca9843fa954080173d0d14d700cd",
+        "committed_at": "2026-09-16T22:05:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token收尾批-2026-09-16.md",
+      "block_id": "OP-0916-V",
+      "body_sha256": "01fbfe5e36f21b77551efe572b68fd8698d43c245ae51ccdb55cd2ef0af33c92",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e8b51512bfb7ca9843fa954080173d0d14d700cd",
+        "committed_at": "2026-09-16T22:05:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token收尾批续-2026-09-16.md",
+      "block_id": "OP-0916-W",
+      "body_sha256": "715836caba5daa49fe7619d222aa92bd9a68b058098ad9905bb97c098bc3509e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e8b51512bfb7ca9843fa954080173d0d14d700cd",
+        "committed_at": "2026-09-16T22:05:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】Token收尾批续-2026-09-16.md",
+      "block_id": "OP-0916-X",
+      "body_sha256": "106c458d09e092dd649f60f855480cbec45708af3fc3bfd1fd4570516f7de825",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e8b51512bfb7ca9843fa954080173d0d14d700cd",
+        "committed_at": "2026-09-16T22:05:38+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】三包apply-2026-09-12.md",
+      "block_id": "OP-0912-Z",
+      "body_sha256": "e2c76097e6202d45bfbfaea2be6451427229a603188ea255be7f8398a3fe37ce",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4fb9eab0e313d0a23ed35da14eb5018f8fe018cd",
+        "committed_at": "2026-09-12T22:24:00+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】三包apply-2026-09-12.md",
+      "block_id": "OP-0912-AA",
+      "body_sha256": "c9a85f13309fb9b5a26a6e6bef67a184449c1cd999dcc4f8a9f8400b41dcc178",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4fb9eab0e313d0a23ed35da14eb5018f8fe018cd",
+        "committed_at": "2026-09-12T22:24:00+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】三包apply-2026-09-12.md",
+      "block_id": "OP-0912-AB",
+      "body_sha256": "9851d86cb52a64a5e42245c2998717604e29863f3c5e94b30cbcd4e0f7e63423",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4fb9eab0e313d0a23ed35da14eb5018f8fe018cd",
+        "committed_at": "2026-09-12T22:24:00+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】三包apply-2026-09-12.md",
+      "block_id": "OP-0912-AC",
+      "body_sha256": "2a80aee350bda7dbe8682bcf6c0cdae84c683e5776b2f081a7a7573888018933",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4fb9eab0e313d0a23ed35da14eb5018f8fe018cd",
+        "committed_at": "2026-09-12T22:24:00+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】业务三道-2026-09-23.md",
+      "block_id": "OP-0923-F",
+      "body_sha256": "220da650553027a3c90c06931d31c331edd77ef4db65bbb8eb0bcacd7b2f1918",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "892709c8c4c8f6b264e93e65163713f64c1e4a78",
+        "committed_at": "2026-09-23T09:19:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】业务三道-2026-09-23.md",
+      "block_id": "OP-0923-G",
+      "body_sha256": "f37c84e1ac8c96196d7944fc95b34f3424be151cbeb68033c6964eb24fd814d8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "892709c8c4c8f6b264e93e65163713f64c1e4a78",
+        "committed_at": "2026-09-23T09:19:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】业务三道-2026-09-23.md",
+      "block_id": "OP-0923-H",
+      "body_sha256": "d8808235158e498180e69c9fc6f7fb8cc5be60e361e9782e6cf883204a8bec6d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "892709c8c4c8f6b264e93e65163713f64c1e4a78",
+        "committed_at": "2026-09-23T09:19:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】业务三道-2026-09-23.md",
+      "block_id": "OP-0923-I",
+      "body_sha256": "934ba690cb11c547d5c0b718d802b630a3d41226592069ccc12d21841c7bd1dc",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "892709c8c4c8f6b264e93e65163713f64c1e4a78",
+        "committed_at": "2026-09-23T09:19:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】人守打通两泳道-2026-09-13.md",
+      "block_id": "OP-0913-F",
+      "body_sha256": "fe8f17e1efb126f2878ae7abc5f74d8cb24c7fbb03579558f93ba5f31841d2a1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "74c5c5af7d11fee85ea873aa60d7459336c36a58",
+        "committed_at": "2026-09-13T08:23:13+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】人守打通两泳道-2026-09-13.md",
+      "block_id": "OP-0913-G",
+      "body_sha256": "df344e8c0365f2b43130d16ba7a4e815ac8ba054b398cd4d09afb3f98611998d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "74c5c5af7d11fee85ea873aa60d7459336c36a58",
+        "committed_at": "2026-09-13T08:23:13+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】人守打通两泳道-2026-09-13.md",
+      "block_id": "OP-0913-H",
+      "body_sha256": "024bbce5c47d84df4272e36de3d38b237c08ccd9edd04dc214bb6fcff430575d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "74c5c5af7d11fee85ea873aa60d7459336c36a58",
+        "committed_at": "2026-09-13T08:23:13+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】合入登记自提交-2026-09-13.md",
+      "block_id": "OP-0913-O",
+      "body_sha256": "83538d9fa039b04f3f4f365bcd007f1b1f5b2360d457d40ed836938a316d7a94",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d901c78050c6e38118c2fe28a016e15bf2b5372c",
+        "committed_at": "2026-09-13T14:05:53+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】合入登记自提交-2026-09-13.md",
+      "block_id": "OP-0913-P",
+      "body_sha256": "46e00e57d6fe6366800cba5d12fb1ab2faac499d2a2c68c9e84b072773aabc0d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d901c78050c6e38118c2fe28a016e15bf2b5372c",
+        "committed_at": "2026-09-13T14:05:53+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】合入链路留痕-2026-09-13.md",
+      "block_id": "OP-0913-J",
+      "body_sha256": "560c704d39a8720b51d9555df205aa31d6c2c5013d4d10c137ece1193306c02f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "24089e6f9915ee6484e81a03ec7f06732ed20409",
+        "committed_at": "2026-09-13T09:44:31+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】合入链路留痕-2026-09-13.md",
+      "block_id": "OP-0913-K",
+      "body_sha256": "16748e05bc29c7a63728e495e4c344077754cb072573dd732b114bb4a0100049",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "24089e6f9915ee6484e81a03ec7f06732ed20409",
+        "committed_at": "2026-09-13T09:44:31+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】归属判法611-2026-09-19.md",
+      "block_id": "OP-0919-Q",
+      "body_sha256": "04f1e4379380f65064e4834ac314a3f4d4a46fa73b8fa76997e07b51959f89bc",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8a63ad2313d90faa2e3c28e1bf21030cb5727f8f",
+        "committed_at": "2026-09-20T09:16:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】必读件与分诊三泳道-2026-09-21.md",
+      "block_id": "OP-0921-B",
+      "body_sha256": "a7fc934289784ed0541348a082ec27c3bd81a8fae278160bd7fa4642005c528b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e9b16a55e998e1026ca0b2b0b6779fcdf4bdf14",
+        "committed_at": "2026-09-21T10:34:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】必读件与分诊三泳道-2026-09-21.md",
+      "block_id": "OP-0921-C",
+      "body_sha256": "a1da66976dd067e370b7b0865b80f89bcb4ca0f2ec954826ae340641f51dd243",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e9b16a55e998e1026ca0b2b0b6779fcdf4bdf14",
+        "committed_at": "2026-09-21T10:34:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】必读件与分诊三泳道-2026-09-21.md",
+      "block_id": "OP-0921-D",
+      "body_sha256": "15c40fdeb1629b3349522f1833db1882f692e9c64aa1e197b21cca84018eb782",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e9b16a55e998e1026ca0b2b0b6779fcdf4bdf14",
+        "committed_at": "2026-09-21T10:34:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】必读件与分诊三泳道-2026-09-21.md",
+      "block_id": "OP-0921-E",
+      "body_sha256": "30b8d639e309544aea0e2aa541a5ddfb7aced78db66b543fa7ac053f6a3ba876",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e9b16a55e998e1026ca0b2b0b6779fcdf4bdf14",
+        "committed_at": "2026-09-21T10:34:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】收口三泳道-2026-09-13.md",
+      "block_id": "OP-0913-A",
+      "body_sha256": "a6cf0f58bf566c3e5876e263180bb1cc2b75e5be3e960d02ca5e56745126f915",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ec8965c8ca70c757092e9720ecbb96ab9c094012",
+        "committed_at": "2026-09-13T03:36:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】收口三泳道-2026-09-13.md",
+      "block_id": "OP-0913-B",
+      "body_sha256": "5eb93aaef3cb4ec707610e285863ee028a47da82cb46cf85fd635b26bd224e1e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ec8965c8ca70c757092e9720ecbb96ab9c094012",
+        "committed_at": "2026-09-13T03:36:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】收口三泳道-2026-09-13.md",
+      "block_id": "OP-0913-C",
+      "body_sha256": "ac374f01b1fcea731e436784dcc8bc83f9e7c3774541ee84a8cb4e9797541341",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ec8965c8ca70c757092e9720ecbb96ab9c094012",
+        "committed_at": "2026-09-13T03:36:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】收口三泳道-2026-09-13.md",
+      "block_id": "OP-0913-D",
+      "body_sha256": "87571721482a060e81e519aed308d206bfc0d98891c080881c228017dc5ca177",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ec8965c8ca70c757092e9720ecbb96ab9c094012",
+        "committed_at": "2026-09-13T03:36:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】机制缩编批-2026-09-19.md",
+      "block_id": "OP-0919-F",
+      "body_sha256": "afe71d19f23fc55e53e75bcad50a531cd1680611ae1e86cf6520ed262b621c8e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "32bf57f6bcd141f87e1a127536e2273c94542c07",
+        "committed_at": "2026-09-19T08:56:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】机制缩编批-2026-09-19.md",
+      "block_id": "OP-0919-G",
+      "body_sha256": "ed661bcb597af08ad1f5e0eebe603cad9d535e138ed5ca0639a2b685f102ad24",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "32bf57f6bcd141f87e1a127536e2273c94542c07",
+        "committed_at": "2026-09-19T08:56:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】机制缩编批-2026-09-19.md",
+      "block_id": "OP-0919-H",
+      "body_sha256": "62733d3bf311092262d638b43fc5a668362a63b925ba0a3f60456362f80e0310",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "32bf57f6bcd141f87e1a127536e2273c94542c07",
+        "committed_at": "2026-09-19T08:56:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】机制缩编批-2026-09-19.md",
+      "block_id": "OP-0919-E",
+      "body_sha256": "96287a859e7a16291c8517ceead090318dbcf9b04c2048b43de04a9c319dab3b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "32bf57f6bcd141f87e1a127536e2273c94542c07",
+        "committed_at": "2026-09-19T08:56:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】止血批-2026-09-21.md",
+      "block_id": "OP-0921-H",
+      "body_sha256": "1cf238ec1b9048ef4cf1f652e7e9466b5f8a3c05769fe6ed9a5a287f877d9619",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4e7cd037e33247852a642e943ac58f2e2623bad6",
+        "committed_at": "2026-09-21T14:17:40+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】止血批-2026-09-21.md",
+      "block_id": "OP-0921-I",
+      "body_sha256": "d44b54e5579e9ea1892a96650c9aba9864613f4b34195ff1444cf64e1f99eabe",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4e7cd037e33247852a642e943ac58f2e2623bad6",
+        "committed_at": "2026-09-21T14:17:40+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】止血批-2026-09-21.md",
+      "block_id": "OP-0921-J",
+      "body_sha256": "5cceef0da8b000d9061e21ac4ffcda5bf645f66bb4dcb8e9e5c7b70edf961d24",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "4e7cd037e33247852a642e943ac58f2e2623bad6",
+        "committed_at": "2026-09-21T14:17:40+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】波1bis-Q2判定引擎与FI3门户页-2026-09-17.md",
+      "block_id": "OP-0917-Q",
+      "body_sha256": "71ff5349c3e4f2da041e25e3451f6c03a02be3631fe33805338b5f1f2927540b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "31f52490452cf36268ba7d19e032904107d270ed",
+        "committed_at": "2026-09-17T22:21:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】波1bis-Q2判定引擎与FI3门户页-2026-09-17.md",
+      "block_id": "OP-0917-R",
+      "body_sha256": "3ed16aae63596fd98bd1080903ab1c4b7b32712432e605c73a835368d0705539",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "31f52490452cf36268ba7d19e032904107d270ed",
+        "committed_at": "2026-09-17T22:21:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】波1bis-Q2判定引擎与FI3门户页-2026-09-17.md",
+      "block_id": "OP-0917-S",
+      "body_sha256": "45295ba488957875ec5da1ba54eebe2577379d711c77efaf8be0bea390406e8d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "31f52490452cf36268ba7d19e032904107d270ed",
+        "committed_at": "2026-09-17T22:21:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】波1建造-FI3新建与四包design收口-2026-09-17.md",
+      "block_id": "OP-0917-J",
+      "body_sha256": "1ab74bb94a1b4473565bf59c5d68c8f2dba011a7828accec8bd2f70f34259383",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "795f8962abf11273948d7eeab6f1a9c8dc69a9d6",
+        "committed_at": "2026-09-17T17:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】波1建造-FI3新建与四包design收口-2026-09-17.md",
+      "block_id": "OP-0917-K",
+      "body_sha256": "b11b2056f862fe64150045139ab66940d5991136f51bc32b8ed14b4fcd748f10",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "795f8962abf11273948d7eeab6f1a9c8dc69a9d6",
+        "committed_at": "2026-09-17T17:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】波1建造-FI3新建与四包design收口-2026-09-17.md",
+      "block_id": "OP-0917-L",
+      "body_sha256": "c7a21703604ef4bb12627ad69dd5267474e0fc01e3f25f9a8defd93012763b10",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "795f8962abf11273948d7eeab6f1a9c8dc69a9d6",
+        "committed_at": "2026-09-17T17:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】波1建造-FI3新建与四包design收口-2026-09-17.md",
+      "block_id": "OP-0917-M",
+      "body_sha256": "dc40526bb36c7157a988da09b0bebb02f51c7dcfe8f89a254af427bf4b6c3c04",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "795f8962abf11273948d7eeab6f1a9c8dc69a9d6",
+        "committed_at": "2026-09-17T17:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】波1建造-FI3新建与四包design收口-2026-09-17.md",
+      "block_id": "OP-0917-N",
+      "body_sha256": "ac2174543a4161140e49ed5fcaa1fc38dabc1eec8962a20ccd74da4d2fd7dea5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "795f8962abf11273948d7eeab6f1a9c8dc69a9d6",
+        "committed_at": "2026-09-17T17:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】波1建造-FI3新建与四包design收口-2026-09-17.md",
+      "block_id": "OP-0917-P",
+      "body_sha256": "3ba0ad28de0b08d7b92caffbab7e41585c4c3e96e8ecbc132e54e19571968323",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "795f8962abf11273948d7eeab6f1a9c8dc69a9d6",
+        "committed_at": "2026-09-17T17:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】环境侧七条-2026-09-20.md",
+      "block_id": "OP-0920-C",
+      "body_sha256": "1d301b7f60f87b75bdaa6f498360c9b2c0604e499f40ce7bc8831b292899aa69",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1be2c27a1931e33e1eab44944e462ab393f44ced",
+        "committed_at": "2026-09-20T12:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】环境侧七条-2026-09-20.md",
+      "block_id": "OP-0920-D",
+      "body_sha256": "a81aa5460c02f7fc5ed8af11ca6ddadae8bbc0bdcc8d908c6c179ccbd7076496",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1be2c27a1931e33e1eab44944e462ab393f44ced",
+        "committed_at": "2026-09-20T12:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】环境侧七条-2026-09-20.md",
+      "block_id": "OP-0920-E",
+      "body_sha256": "c0b3ef26bf651c7ca94faecbbf7720823621b41d06a2e2bbb79c40b695cecdf2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1be2c27a1931e33e1eab44944e462ab393f44ced",
+        "committed_at": "2026-09-20T12:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】环境侧七条-2026-09-20.md",
+      "block_id": "OP-0920-F",
+      "body_sha256": "53f292fc4fe459d3d8eef3f4c7d28dd49826a13a1e861d4c44e58bd9e4d12c28",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1be2c27a1931e33e1eab44944e462ab393f44ced",
+        "committed_at": "2026-09-20T12:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】环境侧七条-2026-09-20.md",
+      "block_id": "OP-0920-G",
+      "body_sha256": "536d3c3aa84a2d1b34109048e3e48fd61db9d389e64604656d843ed6abbde294",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1be2c27a1931e33e1eab44944e462ab393f44ced",
+        "committed_at": "2026-09-20T12:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】环境侧七条-2026-09-20.md",
+      "block_id": "OP-0920-H",
+      "body_sha256": "e22ac0b5f9d37ed7e7b4669c13311a068de9f657aeeaf7e1131d6d061f8ff1d3",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1be2c27a1931e33e1eab44944e462ab393f44ced",
+        "committed_at": "2026-09-20T12:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】环境侧七条-2026-09-20.md",
+      "block_id": "OP-0920-I",
+      "body_sha256": "2f949047b5a8440fdcd7d7b48ca1526aa851e9f51d43ed419e6f19d3c32eda42",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1be2c27a1931e33e1eab44944e462ab393f44ced",
+        "committed_at": "2026-09-20T12:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】环境侧七条-2026-09-20.md",
+      "block_id": "OP-0920-J",
+      "body_sha256": "14f75975506ade2d85ae17ba49bf1fb48a6532719c67cb8e9b6ab790b5192424",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1be2c27a1931e33e1eab44944e462ab393f44ced",
+        "committed_at": "2026-09-20T12:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】登记册落点与回归解闸-2026-09-13.md",
+      "block_id": "OP-0913-L",
+      "body_sha256": "90b60ce964f4cea3c95f2b7ddb162564dc36204d65c2434092337663105a4ee8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e204df264255039423301bf48eba36d53b4cadd0",
+        "committed_at": "2026-09-13T12:28:31+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】登记册落点与回归解闸-2026-09-13.md",
+      "block_id": "OP-0913-M",
+      "body_sha256": "c1c1e253589513345f15a92ff0e1c4015a8823e3465f05b9495b281907c5865a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e204df264255039423301bf48eba36d53b4cadd0",
+        "committed_at": "2026-09-13T12:28:31+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】登记册落点与回归解闸-2026-09-13.md",
+      "block_id": "OP-0913-N",
+      "body_sha256": "0b014e3a00bd96556fbe35249af0a7e1a31b81089294b4287f9bab55ec9b4fef",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e204df264255039423301bf48eba36d53b4cadd0",
+        "committed_at": "2026-09-13T12:28:31+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】第19类告警门控修复-2026-09-20.md",
+      "block_id": "OP-0920-K",
+      "body_sha256": "de62c2f469594687f2f025fcd00d4585ad9efe5727890ab3f75fb664d0950f5e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "2e1d88922da62f51140e0a9cb474ac5ebcf712a0",
+        "committed_at": "2026-09-20T13:17:57+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】第19类告警门控修复-2026-09-20.md",
+      "block_id": "OP-0920-L",
+      "body_sha256": "a1e1733a0142c4f648f1e43a0a56a61108856c949cb3822e6b95acee648e0a6c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "2e1d88922da62f51140e0a9cb474ac5ebcf712a0",
+        "committed_at": "2026-09-20T13:17:57+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】第三道闸白名单611-2026-09-19.md",
+      "block_id": "OP-0919-L",
+      "body_sha256": "164b354b709757c60412a372c9c6efe01388b87e5b8dc562589790c75809450c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "20034eb91adee6f868d3a96e24870a919e523651",
+        "committed_at": "2026-09-19T19:18:10+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】解冻三条推进-2026-09-19.md",
+      "block_id": "OP-0919-M",
+      "body_sha256": "98e8ffa0b13657c02470e2fc6f82e38c92bef786514a83a4e759c5048f4e16fb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b3c3ca5a14ecac5dcbcaeb175127617748190f3a",
+        "committed_at": "2026-09-19T20:18:03+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】解冻三条推进-2026-09-19.md",
+      "block_id": "OP-0919-N",
+      "body_sha256": "07fe6330937977bf040e1a05289ba6e85c27f4eaec2a4f3565f0fc21a6502b41",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b3c3ca5a14ecac5dcbcaeb175127617748190f3a",
+        "committed_at": "2026-09-19T20:18:03+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】解冻三条推进-2026-09-19.md",
+      "block_id": "OP-0919-P",
+      "body_sha256": "991229c9a365f46f3650c10fe3ff8b8eecec0ac81099a46192c12a86df915aee",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b3c3ca5a14ecac5dcbcaeb175127617748190f3a",
+        "committed_at": "2026-09-19T20:18:03+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】财务域定夺包生成-2026-09-17.md",
+      "block_id": "OP-0917-A",
+      "body_sha256": "b1798ed558beed473b9c53eaf24eb208e6aa02ee6f00de6a2a742cedd9784a2c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8f6855a04b7c62bc7d0a3e3e0f50d12e8c67e9e6",
+        "committed_at": "2026-09-19T16:15:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】财务域定夺包生成-2026-09-17.md",
+      "block_id": "OP-0917-B",
+      "body_sha256": "e875910295386e31b62ac5334bc613726b82fe574ed8395dcdcc24e411790f76",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8f6855a04b7c62bc7d0a3e3e0f50d12e8c67e9e6",
+        "committed_at": "2026-09-19T16:15:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】财务域定夺包生成-2026-09-17.md",
+      "block_id": "OP-0917-C",
+      "body_sha256": "68379fbba5e76071a1eb61cb9a5bff45b16adb857aa4f0d975d5c5803a6f5a0f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8f6855a04b7c62bc7d0a3e3e0f50d12e8c67e9e6",
+        "committed_at": "2026-09-19T16:15:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】财务域定夺包生成-2026-09-17.md",
+      "block_id": "OP-0917-D",
+      "body_sha256": "0c5a82e9bd75f250053bbf68738e79a592071d180c4b3444d246a2ea92f04848",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8f6855a04b7c62bc7d0a3e3e0f50d12e8c67e9e6",
+        "committed_at": "2026-09-19T16:15:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】财务域定夺包生成-2026-09-17.md",
+      "block_id": "OP-0917-F",
+      "body_sha256": "c29e477bd9a428d2a65b24b5d4a2cbf8bc6bd2d99be8bb9c5efcf5ee7eee6525",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8f6855a04b7c62bc7d0a3e3e0f50d12e8c67e9e6",
+        "committed_at": "2026-09-19T16:15:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】轮询守信号才唤模型-2026-09-13.md",
+      "block_id": "OP-0913-Q",
+      "body_sha256": "7af6b9758ec507178975a65b4528f095d75ff9c5182bf817bc6a336c67116a7e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "7a90ef5743e0df50250c24aa0b491a6cdc538110",
+        "committed_at": "2026-09-13T14:45:32+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】轮询守信号才唤模型-2026-09-13.md",
+      "block_id": "OP-0913-R",
+      "body_sha256": "56e95a43ffba39db400fe4c5c54ef22c400671e300b720a9a0fd18fe99cfd8a1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "7a90ef5743e0df50250c24aa0b491a6cdc538110",
+        "committed_at": "2026-09-13T14:45:32+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】轮询守实机三修-2026-09-13.md",
+      "block_id": "OP-0913-S",
+      "body_sha256": "9e7f3ff3958c557e7e1504b59e8f4b00881bbaf85e21714bc1fbe5ee72a7d860",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "14bbbb8b614cd765851e2d2d12a7f42abeaea677",
+        "committed_at": "2026-09-13T19:20:47+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-【CC】轮询守实机三修-2026-09-13.md",
+      "block_id": "OP-0913-T",
+      "body_sha256": "12c3d7d123a3606939479263633a43d9e38b941a48df5b4e835f781b3d6d98e8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "14bbbb8b614cd765851e2d2d12a7f42abeaea677",
+        "committed_at": "2026-09-13T19:20:47+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_46-2026-09-02.md",
+      "block_id": "OP-0902-A1",
+      "body_sha256": "412dcf8da12b7d2396424ca6004cd641f88722dce1d0dfc3da21214f03a5cedd",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b3d822dd4b2398720fef7115d9bbb387b8b3db98",
+        "committed_at": "2026-09-02T22:20:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_46-2026-09-02.md",
+      "block_id": "OP-0902-A2",
+      "body_sha256": "5f03cc9857223ea51e867814e0ffd304b2860c4d96d022491d4f0857f53a2a4c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b3d822dd4b2398720fef7115d9bbb387b8b3db98",
+        "committed_at": "2026-09-02T22:20:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_46-2026-09-02.md",
+      "block_id": "OP-0902-A3",
+      "body_sha256": "9810c2eadba6cc1ae90c05d32f56e2cc48d746fc362f5f6426eda772504fc39e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b3d822dd4b2398720fef7115d9bbb387b8b3db98",
+        "committed_at": "2026-09-02T22:20:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_46-2026-09-02.md",
+      "block_id": "OP-0902-A4",
+      "body_sha256": "30ff3292369a773fba8054eacbe69042aa7cab931aedd7500b02c32598e955bc",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b3d822dd4b2398720fef7115d9bbb387b8b3db98",
+        "committed_at": "2026-09-02T22:20:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_46-2026-09-02.md",
+      "block_id": "OP-0902-A5",
+      "body_sha256": "b9ca371a44900f220ab8efdd2c5dadd62408a8c05ee9983aeff79e7ffece55e3",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b3d822dd4b2398720fef7115d9bbb387b8b3db98",
+        "committed_at": "2026-09-02T22:20:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_46-2026-09-02.md",
+      "block_id": "OP-0902-A6",
+      "body_sha256": "b6e8a781e0ed5901dda97689daf9d50ce8078be0e1a49ce244668bf2889f938b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b3d822dd4b2398720fef7115d9bbb387b8b3db98",
+        "committed_at": "2026-09-02T22:20:54+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_60-2026-09-02.md",
+      "block_id": "OP-0902-B1",
+      "body_sha256": "3743940755377db4240c471355961f4467e771992650ea69d6ba84676c55d79e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "387b6cdfd420e190a80ed43d636e35a8967bc3bf",
+        "committed_at": "2026-09-03T00:15:51+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_60-2026-09-02.md",
+      "block_id": "OP-0902-B2",
+      "body_sha256": "9e56b19a211dea9b4b7a86b080167f1e3ff7ef4fda1a10bc0503e080a1c8c4ed",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "387b6cdfd420e190a80ed43d636e35a8967bc3bf",
+        "committed_at": "2026-09-03T00:15:51+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_60-2026-09-02.md",
+      "block_id": "OP-0902-B3",
+      "body_sha256": "d7b20c96a0dcca5138c1ff86445186da2a40ac2aa855b52e2216930040c0a54f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "387b6cdfd420e190a80ed43d636e35a8967bc3bf",
+        "committed_at": "2026-09-03T00:15:51+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_60-2026-09-02.md",
+      "block_id": "OP-0902-B4",
+      "body_sha256": "ca8102a8e1a7164cd3ded248e2cec4bbc355ed975859fe1d69f632912e8d7d74",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "387b6cdfd420e190a80ed43d636e35a8967bc3bf",
+        "committed_at": "2026-09-03T00:15:51+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0902_60-2026-09-02.md",
+      "block_id": "OP-0902-B5",
+      "body_sha256": "62e99373bb32083cb8f47d7f018798a2b8fb180d153ec99b8d4f592644f9b8d8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "387b6cdfd420e190a80ed43d636e35a8967bc3bf",
+        "committed_at": "2026-09-03T00:15:51+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_10-2026-09-03.md",
+      "block_id": "OP-0903-A1",
+      "body_sha256": "9189f129d097169136a0878e8d538b1458c760312fcbe67d5ff4295e1c01ec7b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d22d6a25254fe3d70fc3106b8e73e7d5e1d89f09",
+        "committed_at": "2026-09-03T08:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_10-2026-09-03.md",
+      "block_id": "OP-0903-A2",
+      "body_sha256": "1a4fa7c4676b39849d7d5e538995344c06d7fbc10a8a16c4fe210715a033ac46",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d22d6a25254fe3d70fc3106b8e73e7d5e1d89f09",
+        "committed_at": "2026-09-03T08:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_20-2026-09-03.md",
+      "block_id": "OP-0903-B1",
+      "body_sha256": "bf10ae690e09d2d20bacf3dcd14aef03c8b57c21803a4aa112b51e1001781afa",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b6c67b958255ba9d318bed638da14f58a6e1d7f2",
+        "committed_at": "2026-09-03T08:19:16+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_20-2026-09-03.md",
+      "block_id": "OP-0903-B2",
+      "body_sha256": "d54dba81288b9f2b445b09c8e88bf70450c1a85ddac4576f2324ca89264d9873",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b6c67b958255ba9d318bed638da14f58a6e1d7f2",
+        "committed_at": "2026-09-03T08:19:16+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_20-2026-09-03.md",
+      "block_id": "OP-0903-B3",
+      "body_sha256": "7a560fc4ca514b6a715308c58c3c9ecd7b3ec6e1af413f3bcf5b770364e63de1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b6c67b958255ba9d318bed638da14f58a6e1d7f2",
+        "committed_at": "2026-09-03T08:19:16+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_30-2026-09-03.md",
+      "block_id": "OP-0903-C1",
+      "body_sha256": "aa8ba120258b9d4642ae559c5aabe8b5edffd3fd373f9892c7004942f5bc0ec5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b7bccf7996fb29cb1f067aa77e59d2f0566669d8",
+        "committed_at": "2026-09-03T10:18:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_30-2026-09-03.md",
+      "block_id": "OP-0903-C2",
+      "body_sha256": "209a62a4e93e5a1429701e1cb329377352e126b89aeec8c527423521369a3275",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b7bccf7996fb29cb1f067aa77e59d2f0566669d8",
+        "committed_at": "2026-09-03T10:18:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_30-2026-09-03.md",
+      "block_id": "OP-0903-C3",
+      "body_sha256": "b02e3fda18324a3f064c8592d7b80ddd1b78dc6d8110f503b722b0e99e90de76",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b7bccf7996fb29cb1f067aa77e59d2f0566669d8",
+        "committed_at": "2026-09-03T10:18:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_30-2026-09-03.md",
+      "block_id": "OP-0903-C4",
+      "body_sha256": "9d606b86d655263d05e112d5a4571a7efa882bc7fb9c5a79064210812de9d6eb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b7bccf7996fb29cb1f067aa77e59d2f0566669d8",
+        "committed_at": "2026-09-03T10:18:56+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_50-2026-09-03.md",
+      "block_id": "OP-0903-D1",
+      "body_sha256": "b0abd3c1ebbd6c75db97fa5c19fe15e10dd57a3a0e48a9cffe08c44ba701526d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "afb09c6ed7afb3d5461947a2622dcbd2344f1266",
+        "committed_at": "2026-09-03T12:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_50-2026-09-03.md",
+      "block_id": "OP-0903-D2",
+      "body_sha256": "0bc56dbaa50f849e042b0146bf11f52c17c1a05f8b7803c2d5301bbcbf48f6f5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "afb09c6ed7afb3d5461947a2622dcbd2344f1266",
+        "committed_at": "2026-09-03T12:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_50-2026-09-03.md",
+      "block_id": "OP-0903-D3",
+      "body_sha256": "2432aea18fba2341f5bf0146ac8e321ab9ab8cc007c388def38cc57b74116dcd",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "afb09c6ed7afb3d5461947a2622dcbd2344f1266",
+        "committed_at": "2026-09-03T12:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_70-2026-09-03.md",
+      "block_id": "OP-0903-E1",
+      "body_sha256": "3d013a98f0c0466c90e03778e2c1bc66ca7042e3f8ef026d5264a3388e65c7d5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8ae457254b151546489cc30caea9f7440db36f52",
+        "committed_at": "2026-09-03T15:18:50+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0903_90-2026-09-03.md",
+      "block_id": "OP-0903-F1",
+      "body_sha256": "77c1357e9ac34670438b62cb5cb9210f661dca09643e03ac9d7e79587ef5f708",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "5ec3456c24e9b9bbffe1c48756a32c3373dc963c",
+        "committed_at": "2026-09-03T19:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0904_J-2026-09-04.md",
+      "block_id": "OP-0904-I",
+      "body_sha256": "1051907c2d48b4cf247b44891f9ac671638d2b2c58a300a7a33676679e51872e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "5f62f0e54aba939e99bdd836160791e87a86850a",
+        "committed_at": "2026-09-05T00:18:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0904_K-2026-09-04.md",
+      "block_id": "OP-0904-L",
+      "body_sha256": "66e47919b1da587055346675d369b515f83972d4b951eac77e83f98a46381df6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "64c3e334a0e4cae7bc04b6204785363a550567a0",
+        "committed_at": "2026-09-05T02:18:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0904_K-2026-09-04.md",
+      "block_id": "OP-0904-M",
+      "body_sha256": "4edcd16a54a1f1305c7f48e23fe88759f7671255d26e4640f133d8a94f55d6fe",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "64c3e334a0e4cae7bc04b6204785363a550567a0",
+        "committed_at": "2026-09-05T02:18:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0904_K-2026-09-04.md",
+      "block_id": "OP-0904-N",
+      "body_sha256": "761fa43aa202b478712e54ab51388b737d057cc572b9daa6887cd329d30ca89a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "64c3e334a0e4cae7bc04b6204785363a550567a0",
+        "committed_at": "2026-09-05T02:18:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0904_K-2026-09-04.md",
+      "block_id": "OP-0904-O",
+      "body_sha256": "40e8da28fb118c78d46b27e91b4a22ad2f279bbfa59dd80f837eec1404be2b34",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "64c3e334a0e4cae7bc04b6204785363a550567a0",
+        "committed_at": "2026-09-05T02:18:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_B-2026-09-05.md",
+      "block_id": "OP-0905-D",
+      "body_sha256": "83d0d0519d08c4bb41c00a0496a08fa5fc62503e14d5706f4fc77277f503c8a6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1465b0eedb4ff68e26c9a2e9281e475de0bdbd8f",
+        "committed_at": "2026-09-05T15:18:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_B-2026-09-05.md",
+      "block_id": "OP-0905-E",
+      "body_sha256": "a8d385b9bf6a5e51a2f09486697ceae22787246edccc54b9fc2615385c8e3a10",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1465b0eedb4ff68e26c9a2e9281e475de0bdbd8f",
+        "committed_at": "2026-09-05T15:18:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_B-2026-09-05.md",
+      "block_id": "OP-0905-F",
+      "body_sha256": "8564219bec05fb79dc02250c761d7e281968d1fead3f8055bda6153ac4e32ed6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1465b0eedb4ff68e26c9a2e9281e475de0bdbd8f",
+        "committed_at": "2026-09-05T15:18:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_B-2026-09-05.md",
+      "block_id": "OP-0905-G",
+      "body_sha256": "93f1eb43364c3c7af2338541343cc67e495d861d416309bdb109fce4f92517c5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1465b0eedb4ff68e26c9a2e9281e475de0bdbd8f",
+        "committed_at": "2026-09-05T15:18:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_B-2026-09-05.md",
+      "block_id": "OP-0905-H",
+      "body_sha256": "cb9576ff7046c7dcd3747bc182e3771824b82ec25225e8ec6f290149ad7e9e72",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1465b0eedb4ff68e26c9a2e9281e475de0bdbd8f",
+        "committed_at": "2026-09-05T15:18:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_B-2026-09-05.md",
+      "block_id": "OP-0905-I",
+      "body_sha256": "9e3cce0b99e17e2c36a75b7d757cf60716126d8b0d07ef4ef762839d9a605200",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1465b0eedb4ff68e26c9a2e9281e475de0bdbd8f",
+        "committed_at": "2026-09-05T15:18:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_B-2026-09-05.md",
+      "block_id": "OP-0905-J",
+      "body_sha256": "46c6d5d36f878ca0715f17f811cd09b6c7773643f6d1a5e09e68b91666539fac",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1465b0eedb4ff68e26c9a2e9281e475de0bdbd8f",
+        "committed_at": "2026-09-05T15:18:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_B-2026-09-05.md",
+      "block_id": "OP-0905-C",
+      "body_sha256": "36e470dc3925b3e5cade195f0dd4e10b842400a853366a455631fdd1e441d007",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1465b0eedb4ff68e26c9a2e9281e475de0bdbd8f",
+        "committed_at": "2026-09-05T15:18:55+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_C-2026-09-05.md",
+      "block_id": "OP-0905-L",
+      "body_sha256": "261bfa4216bd1f79a2010c7e9c3b51a696de323efe659c7ae3c51d7ad7e6a4e4",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e126b9f727e3cc7adc35cef65b731eb27d54e2c",
+        "committed_at": "2026-09-05T18:18:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_C-2026-09-05.md",
+      "block_id": "OP-0905-M",
+      "body_sha256": "990cc21224c4470234854f533ae72d86fd29050f4c77c5b69df6d171102cf1a0",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e126b9f727e3cc7adc35cef65b731eb27d54e2c",
+        "committed_at": "2026-09-05T18:18:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_C-2026-09-05.md",
+      "block_id": "OP-0905-N",
+      "body_sha256": "c856294f2abbe07ba6f08bd00761d2f309759c4ca84c731e3c1e24f33385adaf",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e126b9f727e3cc7adc35cef65b731eb27d54e2c",
+        "committed_at": "2026-09-05T18:18:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_C-2026-09-05.md",
+      "block_id": "OP-0905-O",
+      "body_sha256": "3ecc72295ee3575ade3af22db48249814b40a1b6430a85629ae83ffc4bb4126d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e126b9f727e3cc7adc35cef65b731eb27d54e2c",
+        "committed_at": "2026-09-05T18:18:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0905_C-2026-09-05.md",
+      "block_id": "OP-0905-K",
+      "body_sha256": "c3ee5db6e18fa38ed3629d8db8f8fb2d4b49b7401d60c0b22764ba95c66b997d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0e126b9f727e3cc7adc35cef65b731eb27d54e2c",
+        "committed_at": "2026-09-05T18:18:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_G-2026-09-06.md",
+      "block_id": "OP-0906-H",
+      "body_sha256": "220118caa775d8fc7bfc0ddddf3624ca2cd30c6d99e7d9b09c2af62496afc4e9",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "706a867168b335d561a75cca90cc28c675c64355",
+        "committed_at": "2026-09-06T15:18:58+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_G-2026-09-06.md",
+      "block_id": "OP-0906-I",
+      "body_sha256": "8c7ccec24d66f9001e9c648495a9423430b803944df562efe522e2af434a5e73",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "706a867168b335d561a75cca90cc28c675c64355",
+        "committed_at": "2026-09-06T15:18:58+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_G-2026-09-06.md",
+      "block_id": "OP-0906-J",
+      "body_sha256": "a7545d564f1f26a6dc0589c5435d6158d90f93566d2c72ba77dbcdbde796e435",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "706a867168b335d561a75cca90cc28c675c64355",
+        "committed_at": "2026-09-06T15:18:58+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_G-2026-09-06.md",
+      "block_id": "OP-0906-K",
+      "body_sha256": "112d41268ef51b9372ed8857f52898fdc1a81cd9cfda6d272c3ef87df84cb2e7",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "706a867168b335d561a75cca90cc28c675c64355",
+        "committed_at": "2026-09-06T15:18:58+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_G-2026-09-06.md",
+      "block_id": "OP-0906-L",
+      "body_sha256": "9cf2ff938c4f2c8f725518c04e2931ee7946aca3c58204d269e64590b2a43868",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "706a867168b335d561a75cca90cc28c675c64355",
+        "committed_at": "2026-09-06T15:18:58+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_G-2026-09-06.md",
+      "block_id": "OP-0906-G",
+      "body_sha256": "5ed5b4ebfbab1f1df4eb5931ce1957f55e05506e1b72d673baf93b391377fac0",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "706a867168b335d561a75cca90cc28c675c64355",
+        "committed_at": "2026-09-06T15:18:58+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_P-需求侧五泳道-2026-09-06.md",
+      "block_id": "OP-0906-Q",
+      "body_sha256": "d691bbc80b1f4c23364d28eac738ed3ebd921fcb55adac0ed04a744a3210ce83",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "414d38caa1d014468f852f1610477b76acae45b5",
+        "committed_at": "2026-09-06T23:54:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_P-需求侧五泳道-2026-09-06.md",
+      "block_id": "OP-0906-R",
+      "body_sha256": "e509c6c70ad3bf84e388e4c1a2dd3d2edef728b7f976edd92472b904066ae2bb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "414d38caa1d014468f852f1610477b76acae45b5",
+        "committed_at": "2026-09-06T23:54:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_P-需求侧五泳道-2026-09-06.md",
+      "block_id": "OP-0906-S",
+      "body_sha256": "8c39df6f6c0162da762f99c1c29121fe3403d0379a38ed1a980b58d6c036bb1d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "414d38caa1d014468f852f1610477b76acae45b5",
+        "committed_at": "2026-09-06T23:54:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_P-需求侧五泳道-2026-09-06.md",
+      "block_id": "OP-0906-T",
+      "body_sha256": "c9ba9705fbcc981b16694f29f3cf795ef8390349193dfef05d42df919336eccb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "414d38caa1d014468f852f1610477b76acae45b5",
+        "committed_at": "2026-09-06T23:54:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_P-需求侧五泳道-2026-09-06.md",
+      "block_id": "OP-0906-P",
+      "body_sha256": "9d426a5dbec00ad7a9d4c99f6364cc14a0408ee34a28278b679c9a7878478f93",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "414d38caa1d014468f852f1610477b76acae45b5",
+        "committed_at": "2026-09-06T23:54:15+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_X-需求侧续棒两泳道-2026-09-06.md",
+      "block_id": "OP-0906-Y",
+      "body_sha256": "d3c6862567a376be86e41b2db2e61a39a3cc53eae099d34768746f72c4f3e6e1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "5813ffaf8f400c6049282d7f6edcfccfa2204da9",
+        "committed_at": "2026-09-06T23:54:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_X-需求侧续棒两泳道-2026-09-06.md",
+      "block_id": "OP-0906-Z",
+      "body_sha256": "247d7e5b546f20c272e2a5aeba7377304a347bb53540a8530e0755bbfcb601f6",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "5813ffaf8f400c6049282d7f6edcfccfa2204da9",
+        "committed_at": "2026-09-06T23:54:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0906_X-需求侧续棒两泳道-2026-09-06.md",
+      "block_id": "OP-0906-X",
+      "body_sha256": "b00a4adbf6013453e1438d38383252ad448219e582dec4eb7041f7e8f1bf126c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "5813ffaf8f400c6049282d7f6edcfccfa2204da9",
+        "committed_at": "2026-09-06T23:54:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_E-2026-09-07.md",
+      "block_id": "OP-0907-F",
+      "body_sha256": "baf701e1bf697f5a1207735f229e01b25c99360e4e2418967bf83fd649b854fe",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b49fa7b124ae986f002da9d23b06c6d85fae32db",
+        "committed_at": "2026-09-07T17:20:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_E-2026-09-07.md",
+      "block_id": "OP-0907-G",
+      "body_sha256": "f19431e5f4962872758439d715bbe97f142673739b6708decad179f44416b1aa",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b49fa7b124ae986f002da9d23b06c6d85fae32db",
+        "committed_at": "2026-09-07T17:20:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_E-2026-09-07.md",
+      "block_id": "OP-0907-H",
+      "body_sha256": "dc686bca6449d50f78ffcb73bf4517301bf2b0d3dc63ab40e090c85de1593125",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b49fa7b124ae986f002da9d23b06c6d85fae32db",
+        "committed_at": "2026-09-07T17:20:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_E-2026-09-07.md",
+      "block_id": "OP-0907-I",
+      "body_sha256": "381b33a48b1421dfb77fdc7a8bbc13f410972416c6853a643283e1ba14a44ee8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b49fa7b124ae986f002da9d23b06c6d85fae32db",
+        "committed_at": "2026-09-07T17:20:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_E-2026-09-07.md",
+      "block_id": "OP-0907-J",
+      "body_sha256": "9a408cd8edaa2430abea7dbb4de4accc8bea47c28737f670e5a6a93ddd0a2698",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b49fa7b124ae986f002da9d23b06c6d85fae32db",
+        "committed_at": "2026-09-07T17:20:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_E-2026-09-07.md",
+      "block_id": "OP-0907-K",
+      "body_sha256": "49f03476fbfac0057605af4eb9f263ac9eaff68f128977b46d7a8df55b5086ff",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b49fa7b124ae986f002da9d23b06c6d85fae32db",
+        "committed_at": "2026-09-07T17:20:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_E-2026-09-07.md",
+      "block_id": "OP-0907-E",
+      "body_sha256": "24737e945e4092718ec42088dd710ddc128b2a3a7ddbadefc563a68b646bb105",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b49fa7b124ae986f002da9d23b06c6d85fae32db",
+        "committed_at": "2026-09-07T17:20:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_R-需求侧续推五泳道-2026-09-07.md",
+      "block_id": "OP-0907-S",
+      "body_sha256": "4fe9fc9f38d2a751de61db813401870fd79ad6292bb65fc33dce429987ea2394",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1cf8bf7a135467fff38493a9c9ed0af813fcd08e",
+        "committed_at": "2026-09-07T16:22:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_R-需求侧续推五泳道-2026-09-07.md",
+      "block_id": "OP-0907-T",
+      "body_sha256": "04950b34b1ecfadbc1508daa06154d312930305d0de0b5e4c0ee610fbd54a1ca",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1cf8bf7a135467fff38493a9c9ed0af813fcd08e",
+        "committed_at": "2026-09-07T16:22:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_R-需求侧续推五泳道-2026-09-07.md",
+      "block_id": "OP-0907-U",
+      "body_sha256": "288d33576315d10249c7d1f7a32ee852853a07100b9b5ed636cce09fa0ebe701",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1cf8bf7a135467fff38493a9c9ed0af813fcd08e",
+        "committed_at": "2026-09-07T16:22:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_R-需求侧续推五泳道-2026-09-07.md",
+      "block_id": "OP-0907-X",
+      "body_sha256": "8fab45bcd470b6963dd6c4397b1f25cd857ff25b19b809868e96db2616a314e5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1cf8bf7a135467fff38493a9c9ed0af813fcd08e",
+        "committed_at": "2026-09-07T16:22:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_R-需求侧续推五泳道-2026-09-07.md",
+      "block_id": "OP-0907-V",
+      "body_sha256": "4257566a23f11b722062aa4ef5ad0c9604cd4680a7d215cab13a8c744301da75",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1cf8bf7a135467fff38493a9c9ed0af813fcd08e",
+        "committed_at": "2026-09-07T16:22:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_R-需求侧续推五泳道-2026-09-07.md",
+      "block_id": "OP-0907-R",
+      "body_sha256": "f69ff21e760ab6071e268c73bf886e6b85408e9a258487a7f183a6576c277c6f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1cf8bf7a135467fff38493a9c9ed0af813fcd08e",
+        "committed_at": "2026-09-07T16:22:02+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-Z",
+      "body_sha256": "1704b06d8ba5d819e80ac4fc1c418b2497ddf2b72b1933a2e904a4318b301abe",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-AB",
+      "body_sha256": "1023f928600b05f09c2080331dd6ebf129ad6c3192c95cad8d63e008eadcac92",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-AC",
+      "body_sha256": "11990a32862a8023d72eb8a9407b659fa8d590439d53712e1c7d0c69711ab124",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-AD",
+      "body_sha256": "1e6087f9395ca60dba403993af51ccf00892be00f90eb9cc7185b1052efb96aa",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-AE",
+      "body_sha256": "8ec4a6db1b373e28f9eaeacf66aa2c36126cd3223a719a77728225751bfb54f3",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-AF",
+      "body_sha256": "06286469e84d85963d53deb9a669ae468717491da00ea631e68cd4c4e73e3a8f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-AG",
+      "body_sha256": "f4188378055fe9a247a929e83e9c8f2fb2d5c18fd0d4f16f3605c71092f41026",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-AH",
+      "body_sha256": "7bba59e435a371abc404ffc841ced0f4996b46eedaff6195443e14bc6499c240",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-AI",
+      "body_sha256": "0e14a206a90bde3b7fc22f3fd60c72f8d72b4548d62ca8da7eab3ea68dd917da",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-AJ",
+      "body_sha256": "9f2fe5b3ea7c66f4938298633301dc9ef08c099312ebaa64d30563daf234ed82",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0907_Y-合审后十泳道-2026-09-07.md",
+      "block_id": "OP-0907-Y",
+      "body_sha256": "ddfd7bacdfe8928644cc636edd35ab557a1ee13a112d0969192053104f8aeb04",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "3e8453f1500a42b1e0512ef8847ae39ac155612a",
+        "committed_at": "2026-09-07T16:23:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_B-五泳道-2026-09-08.md",
+      "block_id": "OP-0908-D",
+      "body_sha256": "e80be5ba9a19b57b9727c1ff94a0e0c3cfb6509f21786f01a8db53987108e306",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ca6985f6be920221050e8d8a300ec5d74b49402e",
+        "committed_at": "2026-09-08T12:18:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_B-五泳道-2026-09-08.md",
+      "block_id": "OP-0908-E",
+      "body_sha256": "8cf8e7a48c1419ef0c18bbc2b1ae72762a5a5859a7fb41d162a2fe4420ec3443",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ca6985f6be920221050e8d8a300ec5d74b49402e",
+        "committed_at": "2026-09-08T12:18:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_B-五泳道-2026-09-08.md",
+      "block_id": "OP-0908-F",
+      "body_sha256": "0535ff30ba57012ab90fa744446a99dffa9ae891fa0563561896ff877ebc7754",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ca6985f6be920221050e8d8a300ec5d74b49402e",
+        "committed_at": "2026-09-08T12:18:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_B-五泳道-2026-09-08.md",
+      "block_id": "OP-0908-G",
+      "body_sha256": "187f033d721b90f859ad4e4cb44d8637e2dd922bef65f4d401ac4467bf38f6f7",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ca6985f6be920221050e8d8a300ec5d74b49402e",
+        "committed_at": "2026-09-08T12:18:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_B-五泳道-2026-09-08.md",
+      "block_id": "OP-0908-H",
+      "body_sha256": "7ff167d381a7f49bbce2f18944b60bdd207ea66e3480741118b97ab2c463e596",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ca6985f6be920221050e8d8a300ec5d74b49402e",
+        "committed_at": "2026-09-08T12:18:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_B-五泳道-2026-09-08.md",
+      "block_id": "OP-0908-C",
+      "body_sha256": "d43c304f084e26e6a7a4855d2470640bbd3e7d0e2a5331c21726e39286f49cc2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ca6985f6be920221050e8d8a300ec5d74b49402e",
+        "committed_at": "2026-09-08T12:18:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_四泳道机制根治-2026-09-08.md",
+      "block_id": "OP-0908-N",
+      "body_sha256": "6ef18410901051dd8ef75c6d9a801545898df1de241024db4e1f2e98bf00dbfd",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "61717770608fd26908fc28306f9eeb37be49157b",
+        "committed_at": "2026-09-08T15:19:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_四泳道机制根治-2026-09-08.md",
+      "block_id": "OP-0908-O",
+      "body_sha256": "cb1e2aff67e9e92d4146382dd90ee1e185e05ab1c991e9a838ed37b924cde495",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "61717770608fd26908fc28306f9eeb37be49157b",
+        "committed_at": "2026-09-08T15:19:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_四泳道机制根治-2026-09-08.md",
+      "block_id": "OP-0908-P",
+      "body_sha256": "0914f0b79602974baaa4e68e74e850e6e11f124832d8ac30c4a2045201e57f4d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "61717770608fd26908fc28306f9eeb37be49157b",
+        "committed_at": "2026-09-08T15:19:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_四泳道机制根治-2026-09-08.md",
+      "block_id": "OP-0908-Q",
+      "body_sha256": "bd3a72caf37c94ca689c3321fff100701de3cb1bb38bae72639b502eda8224a4",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "61717770608fd26908fc28306f9eeb37be49157b",
+        "committed_at": "2026-09-08T15:19:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_四泳道机制根治-2026-09-08.md",
+      "block_id": "OP-0908-R",
+      "body_sha256": "7980c78c32e9f52cb9035ddd847e539e963d969060c398842f70e2c2c011621b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "61717770608fd26908fc28306f9eeb37be49157b",
+        "committed_at": "2026-09-08T15:19:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_四泳道机制根治-2026-09-08.md",
+      "block_id": "OP-0908-S",
+      "body_sha256": "3eccd9e422ddf86896a0682a3636034076f88cbbebbfaea722ff78f5306ca9d9",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "61717770608fd26908fc28306f9eeb37be49157b",
+        "committed_at": "2026-09-08T15:19:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0908_四泳道机制根治-2026-09-08.md",
+      "block_id": "OP-0908-T",
+      "body_sha256": "eca20d909053f878accad09295c2420fe4e5c93987d92386e08608c2fb14c29f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "61717770608fd26908fc28306f9eeb37be49157b",
+        "committed_at": "2026-09-08T15:19:19+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_462与504apply-2026-09-09.md",
+      "block_id": "OP-0909-L",
+      "body_sha256": "a62cd3de57a0a5cb9f00d67e0ab284733a39f772c7010cfb84abdbc46ea7007f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "33349c5df185332c006a2223e2ea29311d0932cf",
+        "committed_at": "2026-09-09T15:18:46+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_462与504apply-2026-09-09.md",
+      "block_id": "OP-0909-M",
+      "body_sha256": "adeebb3b150b065a72906b8cb76a43ed45b4a1033a44bcf52e8e7e7be6e72e71",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "33349c5df185332c006a2223e2ea29311d0932cf",
+        "committed_at": "2026-09-09T15:18:46+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_462与504apply-2026-09-09.md",
+      "block_id": "OP-0909-N",
+      "body_sha256": "15aedfb34601e52ceb6174345420eb7441049ad062d54c39b3ba8b1a09e030a8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "33349c5df185332c006a2223e2ea29311d0932cf",
+        "committed_at": "2026-09-09T15:18:46+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_三泳道夜批-2026-09-09.md",
+      "block_id": "OP-0909-AA",
+      "body_sha256": "d3c9607387ed00e5c52901c6c7e9462e3b24e5fa11854d584ac60b51856bfd06",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8e9747182e72925bffa8836eb3e4bd09a12c789c",
+        "committed_at": "2026-09-10T01:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_三泳道夜批-2026-09-09.md",
+      "block_id": "OP-0909-AB",
+      "body_sha256": "f448047ab811ff3a25933f5796efce3d6334c959ddb6c6fe8fe7f1cc6e07fa2d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8e9747182e72925bffa8836eb3e4bd09a12c789c",
+        "committed_at": "2026-09-10T01:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_三泳道夜批-2026-09-09.md",
+      "block_id": "OP-0909-AC",
+      "body_sha256": "61cd72531f728f281ee30fe78b0a2e9bda1760feb743d59ccf42a6f0f640e920",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8e9747182e72925bffa8836eb3e4bd09a12c789c",
+        "committed_at": "2026-09-10T01:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_三泳道夜批-2026-09-09.md",
+      "block_id": "OP-0909-Z",
+      "body_sha256": "91bed42c50fd6917717a5ac84989eee967b16fe892ae66b0cd386e0071d316eb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8e9747182e72925bffa8836eb3e4bd09a12c789c",
+        "committed_at": "2026-09-10T01:18:34+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_六泳道机制批-2026-09-09.md",
+      "block_id": "OP-0909-R",
+      "body_sha256": "06eceedce9ff2d419ebad52dc7c4736e6decc306dcb03382baecf7179243d8d5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "783799723baa72ca3f14835a302c6c2362ec4812",
+        "committed_at": "2026-09-09T21:00:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_六泳道机制批-2026-09-09.md",
+      "block_id": "OP-0909-S",
+      "body_sha256": "d65af9fceb3740ac56b049701c1be3123105c590a7c527097b1f415698c6dd47",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "783799723baa72ca3f14835a302c6c2362ec4812",
+        "committed_at": "2026-09-09T21:00:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_六泳道机制批-2026-09-09.md",
+      "block_id": "OP-0909-T",
+      "body_sha256": "bbf10ab3642323284af2a76ffe584b7b503b08af0067e9a3becbd89a69f0be9e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "783799723baa72ca3f14835a302c6c2362ec4812",
+        "committed_at": "2026-09-09T21:00:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_六泳道机制批-2026-09-09.md",
+      "block_id": "OP-0909-U",
+      "body_sha256": "34e5b318446fb1111d8d568b64ad804a4cb7fe36c5872d0abc4459499e9d14b5",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "783799723baa72ca3f14835a302c6c2362ec4812",
+        "committed_at": "2026-09-09T21:00:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_六泳道机制批-2026-09-09.md",
+      "block_id": "OP-0909-W",
+      "body_sha256": "9955ac855a9f241be816f5741abe7d36527a7ea174eaae7714ace2a5e6c4c5c0",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "783799723baa72ca3f14835a302c6c2362ec4812",
+        "committed_at": "2026-09-09T21:00:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_六泳道机制批-2026-09-09.md",
+      "block_id": "OP-0909-X",
+      "body_sha256": "1459ead664c3e0ccc25e481c7647a1c73376e8c26177cfa0bb73f099733bc237",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "783799723baa72ca3f14835a302c6c2362ec4812",
+        "committed_at": "2026-09-09T21:00:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0909_六泳道机制批-2026-09-09.md",
+      "block_id": "OP-0909-Q",
+      "body_sha256": "be054e143a6d8cafebc2c5b15c15136842ea53f73e694556edc17e291cd802a8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "783799723baa72ca3f14835a302c6c2362ec4812",
+        "committed_at": "2026-09-09T21:00:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_三泳道续排-2026-09-10.md",
+      "block_id": "OP-0910-L",
+      "body_sha256": "c276164075551b2dd5cd4817ee2d48a9892745b333df164ea5c33e396c61eec2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "408cb0374c607d3374cb38679bc06408556b9b90",
+        "committed_at": "2026-09-10T18:19:17+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_三泳道续排-2026-09-10.md",
+      "block_id": "OP-0910-M",
+      "body_sha256": "5d8c85e1f395b7ad9cb197a8e1c8d5138cdd533fd2b15aed75d26899465a1469",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "408cb0374c607d3374cb38679bc06408556b9b90",
+        "committed_at": "2026-09-10T18:19:17+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_三泳道续排-2026-09-10.md",
+      "block_id": "OP-0910-N",
+      "body_sha256": "18358e76966b1d7b04f5d238ca581cc1841497fcf062b5f73257952d3ce39b6d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "408cb0374c607d3374cb38679bc06408556b9b90",
+        "committed_at": "2026-09-10T18:19:17+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_三泳道续排-2026-09-10.md",
+      "block_id": "OP-0910-Q",
+      "body_sha256": "cde7725baff5de978c0be9712891f2c9a713f66e55a1cddd6e1fac174428935a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "408cb0374c607d3374cb38679bc06408556b9b90",
+        "committed_at": "2026-09-10T18:19:17+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_五泳道全启动-2026-09-10.md",
+      "block_id": "OP-0910-B",
+      "body_sha256": "4b159656f54bbccdda44e98380f3e0fa88d40ce0d863154a34b032b674c20c6f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9181de3cfc5e82634fcbbe5d23afa3416d4bb4e3",
+        "committed_at": "2026-09-10T11:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_五泳道全启动-2026-09-10.md",
+      "block_id": "OP-0910-C",
+      "body_sha256": "f83e81d875520adfba79aad8155c1dfab1bbd8a947437927ae22898a6154fbcc",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9181de3cfc5e82634fcbbe5d23afa3416d4bb4e3",
+        "committed_at": "2026-09-10T11:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_五泳道全启动-2026-09-10.md",
+      "block_id": "OP-0910-D",
+      "body_sha256": "d74d44f75a83f54ba4127708ab5c6ab2cd8f6704e94698366ad343e549925d1c",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9181de3cfc5e82634fcbbe5d23afa3416d4bb4e3",
+        "committed_at": "2026-09-10T11:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_五泳道全启动-2026-09-10.md",
+      "block_id": "OP-0910-E",
+      "body_sha256": "4ef0195f4c4abd9e2fded0562e2f11d38c0d2ece682576d97f32ebd7ac985323",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9181de3cfc5e82634fcbbe5d23afa3416d4bb4e3",
+        "committed_at": "2026-09-10T11:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_五泳道全启动-2026-09-10.md",
+      "block_id": "OP-0910-F",
+      "body_sha256": "d326e281271cf2938c956ca84631b0b08ea2b7bffecb72d962510a4aed5ac182",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9181de3cfc5e82634fcbbe5d23afa3416d4bb4e3",
+        "committed_at": "2026-09-10T11:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_五泳道全启动-2026-09-10.md",
+      "block_id": "OP-0910-G",
+      "body_sha256": "47cb2bed18226fade0c3b7be754e44d2388f7c5bd0275bbce3a1573a9921dd9b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9181de3cfc5e82634fcbbe5d23afa3416d4bb4e3",
+        "committed_at": "2026-09-10T11:19:12+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_夜批六泳道-2026-09-10.md",
+      "block_id": "OP-0910-T",
+      "body_sha256": "4584ab932a6b3af7d7fc96a62a371bb0004402548437a09934e69b1afc08eedd",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "da58ab227f3ae77b7786c1e8bdd88eb76778fd5c",
+        "committed_at": "2026-09-10T22:19:22+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_夜批六泳道-2026-09-10.md",
+      "block_id": "OP-0910-U",
+      "body_sha256": "73651e6db950da7dc0d360b6137c54c3d2dba29b6bafe227aa6a9ef5f594325e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "da58ab227f3ae77b7786c1e8bdd88eb76778fd5c",
+        "committed_at": "2026-09-10T22:19:22+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_夜批六泳道-2026-09-10.md",
+      "block_id": "OP-0910-V",
+      "body_sha256": "5353fd41c7bedac7e2476fdcf7fc03249c9babe20a5e6a8599271ac4d0a195b4",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "da58ab227f3ae77b7786c1e8bdd88eb76778fd5c",
+        "committed_at": "2026-09-10T22:19:22+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_夜批六泳道-2026-09-10.md",
+      "block_id": "OP-0910-W",
+      "body_sha256": "4667c3e3ab1f70ac846e4f2a05d62729499cb7a8006b01a999187851522de7e8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "da58ab227f3ae77b7786c1e8bdd88eb76778fd5c",
+        "committed_at": "2026-09-10T22:19:22+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_夜批六泳道-2026-09-10.md",
+      "block_id": "OP-0910-X",
+      "body_sha256": "f1151cc25f06181eda745411057f9d6bc5ba24eab20284a46fa0f865be8f6a0e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "da58ab227f3ae77b7786c1e8bdd88eb76778fd5c",
+        "committed_at": "2026-09-10T22:19:22+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_夜批六泳道-2026-09-10.md",
+      "block_id": "OP-0910-Y",
+      "body_sha256": "b67c77fc1719a50d92fda407f21970817a5f1ff307f20eb5c093c57cd4b21559",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "da58ab227f3ae77b7786c1e8bdd88eb76778fd5c",
+        "committed_at": "2026-09-10T22:19:22+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0910_夜批六泳道-2026-09-10.md",
+      "block_id": "OP-0910-Z",
+      "body_sha256": "545733fedeb27ccfca28d060f0c4171d299681ce605f12eab1dbae69a28ee76f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "da58ab227f3ae77b7786c1e8bdd88eb76778fd5c",
+        "committed_at": "2026-09-10T22:19:22+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0911_差集告警与超限清扫-2026-09-11.md",
+      "block_id": "OP-0911-A",
+      "body_sha256": "fdafa1574bc3e3931835bf2a8e99391b777837823ee1a765911de22e4356f3f2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d09b636f52289459e041927b0c64e1414acaf3e1",
+        "committed_at": "2026-09-11T07:17:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0911_差集告警与超限清扫-2026-09-11.md",
+      "block_id": "OP-0911-B",
+      "body_sha256": "6f614ea4c09d45da69c37c115733e98b482056ca5dea695d94b63a7ff3d3c23a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d09b636f52289459e041927b0c64e1414acaf3e1",
+        "committed_at": "2026-09-11T07:17:42+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0911_机制收口-2026-09-11.md",
+      "block_id": "OP-0911-Q",
+      "body_sha256": "51a6d7c23183e21e5c29bc6e767ebd33a360a5321ffa418f53519b4b7c53c2f8",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "09beab32486000225f8f5be2bdaa6bdb8f0c57ca",
+        "committed_at": "2026-09-11T22:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0911_机制收口-2026-09-11.md",
+      "block_id": "OP-0911-R",
+      "body_sha256": "3a05902cb83eaa202908f17c7a2552e2a178f86c7a880dc37d9364402a90c717",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "09beab32486000225f8f5be2bdaa6bdb8f0c57ca",
+        "committed_at": "2026-09-11T22:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0911_机制收口-2026-09-11.md",
+      "block_id": "OP-0911-S",
+      "body_sha256": "b5e854bba32dcc42fbeb03d42176649c6911ed70dd2c8f96c1cf5e5b57ae8220",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "09beab32486000225f8f5be2bdaa6bdb8f0c57ca",
+        "committed_at": "2026-09-11T22:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0911_机制收口-2026-09-11.md",
+      "block_id": "OP-0911-T",
+      "body_sha256": "17121be0e18a79b6882175ef11598443b88c4501162a648830c5842fcd396f7a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "09beab32486000225f8f5be2bdaa6bdb8f0c57ca",
+        "committed_at": "2026-09-11T22:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0911_机制收口-2026-09-11.md",
+      "block_id": "OP-0911-U",
+      "body_sha256": "8e390e754e1d10739d1a18063a151156f42bebef8a872a5e1b5db670374accb1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "09beab32486000225f8f5be2bdaa6bdb8f0c57ca",
+        "committed_at": "2026-09-11T22:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0911_机制收口-2026-09-11.md",
+      "block_id": "OP-0911-P",
+      "body_sha256": "a949d4750fd49f3a3e97483fb13c09fe2975c090fbcae1e8a54cdafcebaedb28",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "09beab32486000225f8f5be2bdaa6bdb8f0c57ca",
+        "committed_at": "2026-09-11T22:19:11+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_565移植-2026-09-12.md",
+      "block_id": "OP-0912-F",
+      "body_sha256": "7a2132bd23439fafb49b9d0e4e40bdff148019fa85100382f287ebc9eed56aa2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e2d2ea382900fe401338f7d64976733e58951167",
+        "committed_at": "2026-09-12T11:51:18+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_565移植-2026-09-12.md",
+      "block_id": "OP-0912-G",
+      "body_sha256": "f0d278db292d1ae5b01a6f8a028aaf75953706307fd143353ca4e23721e0e9f2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e2d2ea382900fe401338f7d64976733e58951167",
+        "committed_at": "2026-09-12T11:51:18+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_env-anchor-2026-09-12.md",
+      "block_id": "OP-0912-P",
+      "body_sha256": "985e9b2c2e66cd5c4b65eaf01468d3f9f61d1a33f30f9334e6e0bd1728e3a8df",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "f13826d8409811cff1cb7a455fb7fd004371ff9e",
+        "committed_at": "2026-09-12T19:37:46+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_env-anchor-2026-09-12.md",
+      "block_id": "OP-0912-Q",
+      "body_sha256": "2d01b1d4fd5693e598492297ef6304f3c2be27de90b7c18c89d2af9597d0d689",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "f13826d8409811cff1cb7a455fb7fd004371ff9e",
+        "committed_at": "2026-09-12T19:37:46+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_worktree收割-2026-09-12.md",
+      "block_id": "OP-0912-U",
+      "body_sha256": "01755af488a7cbb06ead8254f69786dab929049de52c305d21bfbc168b0eaf23",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "7685e69f5366090776e707e6fce079de43051139",
+        "committed_at": "2026-09-12T20:15:03+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_worktree收割-2026-09-12.md",
+      "block_id": "OP-0912-V",
+      "body_sha256": "9b6659b832905bed39d2e1834c4cfdda7cd991c0a827fa1a1334fedcd634767b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "7685e69f5366090776e707e6fce079de43051139",
+        "committed_at": "2026-09-12T20:15:03+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_夜批四泳道-2026-09-12.md",
+      "block_id": "OP-0912-H",
+      "body_sha256": "180bc1ffad7a91bb934a256423f3708cd018325b924fa97e7d607fcb2b8d7f3d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "18d9ad8eb4da6033330cf968944c7f40eba2e482",
+        "committed_at": "2026-09-12T17:46:25+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_夜批四泳道-2026-09-12.md",
+      "block_id": "OP-0912-I",
+      "body_sha256": "bacdede68fb874b0e96c64f0232ea49953c6f20a850f60fa5447c06cdf78f4c3",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "18d9ad8eb4da6033330cf968944c7f40eba2e482",
+        "committed_at": "2026-09-12T17:46:25+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_夜批四泳道-2026-09-12.md",
+      "block_id": "OP-0912-J",
+      "body_sha256": "61efa667628a39fa0fdb0cf86c1765be6bab1e95623761ac7c1b857abab9df9b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "18d9ad8eb4da6033330cf968944c7f40eba2e482",
+        "committed_at": "2026-09-12T17:46:25+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_夜批四泳道-2026-09-12.md",
+      "block_id": "OP-0912-K",
+      "body_sha256": "b9b6bff342b67091d9add2ea4bb7dc77187f94b70ceb12d2aba258587e8f38c9",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "18d9ad8eb4da6033330cf968944c7f40eba2e482",
+        "committed_at": "2026-09-12T17:46:25+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_夜批四泳道-2026-09-12.md",
+      "block_id": "OP-0912-L",
+      "body_sha256": "5c94be94357f20a444c8a00b854a0175ea586c159710a949c6f0adb6a1218eeb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "18d9ad8eb4da6033330cf968944c7f40eba2e482",
+        "committed_at": "2026-09-12T17:46:25+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_心跳与称谓-2026-09-12.md",
+      "block_id": "OP-0912-B",
+      "body_sha256": "86a35283009cd47bbd6a9e681249c2faf3d6c6b4d5bb28a5f31ae42eef8fbaeb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1fb4d3e59d264a5f30be60e2b9e24004a2f992b9",
+        "committed_at": "2026-09-12T09:16:29+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_心跳与称谓-2026-09-12.md",
+      "block_id": "OP-0912-C",
+      "body_sha256": "602b7fe479de5ef8009d3c688c1d07cf2397f1f9af04b0a26a2da650276c3fb7",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1fb4d3e59d264a5f30be60e2b9e24004a2f992b9",
+        "committed_at": "2026-09-12T09:16:29+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_心跳与称谓-2026-09-12.md",
+      "block_id": "OP-0912-D",
+      "body_sha256": "4fca20bcaff1505985e8e4c9e09588756de0c77f7ba993953b0fed23294ede95",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "1fb4d3e59d264a5f30be60e2b9e24004a2f992b9",
+        "committed_at": "2026-09-12T09:16:29+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_第二波两泳道-2026-09-12.md",
+      "block_id": "OP-0912-M",
+      "body_sha256": "fcf98a41e7db05d1f9f25d425a711ac59d0534364bf0a6a4f93bcd7534e5286b",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e39fbe93db181a56b1ff86ba47de906f48d1eca4",
+        "committed_at": "2026-09-12T18:15:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_第二波两泳道-2026-09-12.md",
+      "block_id": "OP-0912-N",
+      "body_sha256": "0de56d85ed80010955c5982e636aee75192283ecf01be44c3fcb75d33ff0e72d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e39fbe93db181a56b1ff86ba47de906f48d1eca4",
+        "committed_at": "2026-09-12T18:15:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_第二波两泳道-2026-09-12.md",
+      "block_id": "OP-0912-O",
+      "body_sha256": "a52308420b9549f681996b4db7b01015d8f02d4d887b98360a63c4a32fe8d304",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "e39fbe93db181a56b1ff86ba47de906f48d1eca4",
+        "committed_at": "2026-09-12T18:15:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_落库瘦身两泳道-2026-09-12.md",
+      "block_id": "OP-0912-R",
+      "body_sha256": "e8f2e77e1f1ef6aadfa2169719408f980140a228db1191a4016bf829850123b2",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "caebb290e641beab1d955f3c34a173748b1960ca",
+        "committed_at": "2026-09-12T19:50:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_落库瘦身两泳道-2026-09-12.md",
+      "block_id": "OP-0912-S",
+      "body_sha256": "3eebc52c18cd3bf1b95ec870cdf85d2b586de8be3f8ccf2f160e16dc89644702",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "caebb290e641beab1d955f3c34a173748b1960ca",
+        "committed_at": "2026-09-12T19:50:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护件-泳道看护批B-0912_落库瘦身两泳道-2026-09-12.md",
+      "block_id": "OP-0912-T",
+      "body_sha256": "18c96d689a9786b7edf4d0880df21f1203b1ccb37faeda48dd44d4b396a8d259",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "caebb290e641beab1d955f3c34a173748b1960ca",
+        "committed_at": "2026-09-12T19:50:33+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-0930_Codex业务闭环.md",
+      "block_id": "OP-0930-Z",
+      "body_sha256": "641c9fe4d537cc039b6618b9d14114e234d16935445b2255eca0a653d88eabcb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ee347e39b50d06df1abadf53dd0aa80a994df974",
+        "committed_at": "2026-09-30T13:31:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1003_QDA七步分段提案.md",
+      "block_id": "OP-1003-E",
+      "body_sha256": "55c27bd6a0057c7a253ae96dae296389a323366a135d6f43dc057f1f8c412175",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "7b996ef28c03cf8b0e587e6ae49b42f062421ccb",
+        "committed_at": "2026-10-03T15:19:47+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1003_R7方向信号提案.md",
+      "block_id": "OP-1003-F",
+      "body_sha256": "03b2d70a8e59cdd166882b8a984c45338db54975d435a5303f2d3c53ef64c882",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "7707245b1ea7ffcac7625111189bfed7a986b977",
+        "committed_at": "2026-10-03T17:19:31+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1004_入口参数设计.md",
+      "block_id": "OP-1004-G",
+      "body_sha256": "2fc49ba720feb803565b586a4298e690a6fd6e9a95a4508d2e3ec586a158e355",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "972886108d565250da65b7acc0d15c5f9e33f478",
+        "committed_at": "2026-10-05T00:18:07+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1004_漏销探测接线.md",
+      "block_id": "OP-1004-C",
+      "body_sha256": "c66587c7b1de667bcaf21c3133fc4d718600317ffe80b2bd6fb06d1ba4d1e664",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "8bc0e8de55a8635d9ee8c3f2899f30839bc2e3da",
+        "committed_at": "2026-10-05T00:17:48+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1004_物料窗口提示提案.md",
+      "block_id": "OP-1004-H",
+      "body_sha256": "4a9005a61f1ef1c9314cafbc11fc05a71a78103c65b115576e583be19a2fc868",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "807f2d98622627d4e80800693ec558963a1a144d",
+        "committed_at": "2026-10-05T00:18:18+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1005_入口恢复实施.md",
+      "block_id": "OP-1005-B",
+      "body_sha256": "e2bb185369cc234ba44dba35eb3842d96388be3754a647b7d200db0545fc3963",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "c37aa416c866512507167cbc343391979be2c673",
+        "committed_at": "2026-10-05T09:18:17+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1005_物料窗口修订提案.md",
+      "block_id": "OP-1005-A",
+      "body_sha256": "445390e2c82a192a87a79e27b4ceecd24a3c72807d638f8694cebeb6bf60e758",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "35da80311c28f7b0720e94dc752500667f01cd72",
+        "committed_at": "2026-10-05T07:17:52+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1009_队列机制方案准备.md",
+      "block_id": "OP-1009-A",
+      "body_sha256": "2ddb4a9fe5234272dfe47c97aa6b30fa8f0dd1ef33163a1253c27700eae1e4c1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ef9ad745a09fc04d955e3330afcee04216561130",
+        "committed_at": "2026-10-09T21:18:27+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1009_队列机制方案准备.md",
+      "block_id": "OP-1009-B",
+      "body_sha256": "86805e8db927d77d914a52db92ae809aa1e76cfc050b73a9774e03dc23d4e310",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ef9ad745a09fc04d955e3330afcee04216561130",
+        "committed_at": "2026-10-09T21:18:27+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1009_队列机制方案准备.md",
+      "block_id": "OP-1009-C",
+      "body_sha256": "e9b3a878fb52e5e0bd4be43269a10874508e8aeb69b7d4a9a9f92a044296ec36",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "ef9ad745a09fc04d955e3330afcee04216561130",
+        "committed_at": "2026-10-09T21:18:27+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v2PC首批提案.md",
+      "block_id": "OP-1012-U",
+      "body_sha256": "a10b9897dba8ab16d3df0c29566a995b9aab69ffe42c307de1835c22843ce47a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "db44903510f2eec83f081d7a22e5993b0edb03c4",
+        "committed_at": "2026-10-12T17:19:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v2PC首批提案.md",
+      "block_id": "OP-1012-V",
+      "body_sha256": "d4996550acd377541e42cd885edc8bc61cce7e9d1a2bbc2504bd3b6d0c0a692d",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "db44903510f2eec83f081d7a22e5993b0edb03c4",
+        "committed_at": "2026-10-12T17:19:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v2PC首批提案.md",
+      "block_id": "OP-1012-W",
+      "body_sha256": "dc6aaf82fdc274554ac88a55ec069eedc14cd075b203216a17c8012d4fe4a8eb",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "db44903510f2eec83f081d7a22e5993b0edb03c4",
+        "committed_at": "2026-10-12T17:19:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v2质量独立提案.md",
+      "block_id": "OP-1012-X",
+      "body_sha256": "15c41a28d475e0902ba80c6dd4ae5ce20c0900c79706a9bc389b1970f84e9b4f",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "db44903510f2eec83f081d7a22e5993b0edb03c4",
+        "committed_at": "2026-10-12T17:19:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v2质量独立提案.md",
+      "block_id": "OP-1012-Y",
+      "body_sha256": "1632ee0621c8a56e6746d0af4db2d8f5c202d790a11be367f884605f3a0dfd32",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "db44903510f2eec83f081d7a22e5993b0edb03c4",
+        "committed_at": "2026-10-12T17:19:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v2质量独立提案.md",
+      "block_id": "OP-1012-Z",
+      "body_sha256": "d4cb8acc328e61bd4e14ca0ee4aee9fa1da2becadb1ff8ecd3f67809875aa54e",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "db44903510f2eec83f081d7a22e5993b0edb03c4",
+        "committed_at": "2026-10-12T17:19:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v3PC双设计保全.md",
+      "block_id": "OP-1012-U",
+      "body_sha256": "c4641f575eab4f8fc5136d03c487024beaf4cb92df66f5af5a1a8336340fe734",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9a600e3b1fa80cf5ec07d317fbc1372ffedc7b98",
+        "committed_at": "2026-10-12T21:19:01+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v3PC双设计保全.md",
+      "block_id": "OP-1012-V",
+      "body_sha256": "dafc25552e35e2ad1f9e287d9d4b37b859510b0e20804322ae1446128a301f67",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9a600e3b1fa80cf5ec07d317fbc1372ffedc7b98",
+        "committed_at": "2026-10-12T21:19:01+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v3两项接纳恢复.md",
+      "block_id": "OP-1012-AA",
+      "body_sha256": "6249b6757480880a307d843d6b65d3c174740f5c72e37772f30a64b0b8828312",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "76a1293f7fd4ceb05fcf7dfdd6d7e6349b27e805",
+        "committed_at": "2026-10-12T21:19:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v3两项接纳恢复.md",
+      "block_id": "OP-1012-AB",
+      "body_sha256": "56bc5f79b0de9a613b6f47ac7b4afa7a6fcee7f32c7479f21fa7b5a36ad42c20",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "76a1293f7fd4ceb05fcf7dfdd6d7e6349b27e805",
+        "committed_at": "2026-10-12T21:19:21+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v3质量双设计保全.md",
+      "block_id": "OP-1012-X",
+      "body_sha256": "9c7b2af53783be34927c62361e046f847ac8a045edd77a9a924f9137172e7745",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9a600e3b1fa80cf5ec07d317fbc1372ffedc7b98",
+        "committed_at": "2026-10-12T21:19:01+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1012_v3质量双设计保全.md",
+      "block_id": "OP-1012-Y",
+      "body_sha256": "0dab9053b43c99af62d52231bc3fab724a8e8ea8fef66c8b1def9561b3fb9078",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "9a600e3b1fa80cf5ec07d317fbc1372ffedc7b98",
+        "committed_at": "2026-10-12T21:19:01+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1013_FI5来源绑定纠正.md",
+      "block_id": "OP-1013-X",
+      "body_sha256": "9785159f7eab5ad5e00c58b7ee9cf47483d5b7b629d4efedfcf8c25d8c237538",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "afa7189c55ad505e4f20831ffe837bba8bd4bd7a",
+        "committed_at": "2026-10-13T09:18:49+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1013_PC交付有限恢复.md",
+      "block_id": "OP-1013-Y",
+      "body_sha256": "6fdcc745ba1a1ab8165beaf04867838d2de20239456a8613e752db0c17f60472",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "b2c3fff2a426b4d1628cd66ba1fa4ddc6b01f520",
+        "committed_at": "2026-10-13T12:18:49+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1013_SC2来源绑定纠正.md",
+      "block_id": "OP-1013-W",
+      "body_sha256": "6cd09a60754fc15ba0f815863e91dfc4ec0dca3bffeb8b22439b6a1e492881a1",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "afa7189c55ad505e4f20831ffe837bba8bd4bd7a",
+        "committed_at": "2026-10-13T09:18:49+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/看护计划-B-1013_机制自举安全接续.md",
+      "block_id": "OP-1013-Z",
+      "body_sha256": "e2b70dd3cf52e82ce5ca7fddf06522a25f77d32b6dbb27d2ef73e5cce11d1efc",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "d3265a7a724fae348ac3272a02479dfe009f93dd",
+        "committed_at": "2026-10-13T14:19:41+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/0-全景路线图/进度编年-CHANGELOG.md",
+      "block_id": "legacy-sha256:ad172fb13fbb53c74a366a852d73df85cbf5c0a5d1615657641296e42bf769ed",
+      "body_sha256": "ad172fb13fbb53c74a366a852d73df85cbf5c0a5d1615657641296e42bf769ed",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "0b3e0ca37de3bb87dacab86f29c8cd9aa44094f9",
+        "committed_at": "2026-09-21T12:11:35+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    },
+    {
+      "path": "1-转型规划/开场prompt-业务推进-业务总线交接-2026-09-01.md",
+      "block_id": "legacy-sha256:311b06b406e69f350d0634141c1f23bd74b5647a8cf973cb2cfaf090f7175a4a",
+      "body_sha256": "311b06b406e69f350d0634141c1f23bd74b5647a8cf973cb2cfaf090f7175a4a",
+      "date_evidence": {
+        "kind": "git",
+        "commit": "00955d383025e430277270b06debedb6225343d8",
+        "committed_at": "2026-09-01T13:33:36+08:00",
+        "source_head": "09c122cbf747d005db8e38f9e31a5c9091f1c328"
+      }
+    }
+  ]
+}

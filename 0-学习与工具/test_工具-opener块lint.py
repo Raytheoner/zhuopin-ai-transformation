@@ -19,11 +19,16 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import json
+import os
+import subprocess
 import re
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().with_name("工具-opener块lint.py")
 
@@ -106,7 +111,12 @@ TITLE_LINE_COWORK = "[OP-0828-N]【Cowork】接力文件核对"
 
 
 def _md(*body_lines: str) -> str:
-    return "```\n" + "\n".join(body_lines) + "\n```\n"
+    # Structural fixtures satisfy the new output metadata contract. Dedicated
+    # F17 negatives below deliberately bypass this fixture factory.
+    body = '\n'.join(body_lines)+'\n'
+    digest = hashlib.sha256(body.encode('utf-8')).hexdigest()[:8]
+    footer = f'〔出件指纹 {digest} · 出件日期 2026-11-17 · 由 工具-opener生成.py 出，勿手改〕\n'
+    return '```\n'+body+footer+'```\n'
 
 
 def _only_block(md: str):
@@ -354,8 +364,8 @@ class 块识别的假阳性防线(unittest.TestCase):
         self.assertEqual(M.iter_fenced_blocks(md), [])
 
     def test_四反引号围栏内嵌三反引号(self):
-        md = ("````\n" + TITLE_LINE_CC + "\n" + SETTINGS_CC + "\n```\n内层\n```\n"
-              + TITLE_LINE_WITH_EXC + "\n````\n")
+        body = TITLE_LINE_CC + '\n' + SETTINGS_CC + '\n```\n内层\n```\n' + TITLE_LINE_WITH_EXC + '\n'
+        md = '````\n' + _fingerprint_fixture(body) + '````\n'
         blocks = M.iter_fenced_blocks(md)
         self.assertEqual(len(blocks), 1)
         self.assertEqual({f for f, _ in M.check_block(blocks[0])}, set())
@@ -1742,6 +1752,124 @@ class 形态十三_零命中断言缺检索位置或命令(unittest.TestCase):
     def test_生效日与明细分组均已登记(self):
         self.assertEqual(M.RULE_EFFECTIVE_BY_FORM["F13"], date(2026, 9, 19))
         self.assertIn("F13", M.FORM_TITLE)
+
+
+def _fingerprint_fixture(body, issued='2026-11-17'):
+    """Independent SHA oracle; fixtures never call the production stamper."""
+    digest=hashlib.sha256(body.replace('\r\n','\n').encode('utf-8')).hexdigest()[:8]
+    return body+f'〔出件指纹 {digest} · 出件日期 {issued} · 由 工具-opener生成.py 出，勿手改〕\n'
+
+
+class SingleGuardedCopyFingerprintTests(unittest.TestCase):
+    def body(self):
+        return '\n'.join([TITLE_LINE_CC,SETTINGS_CC,TITLE_LINE_WITH_EXC,'读输入文件。'])+'\n'
+
+    def block(self, raw):
+        return M.iter_fenced_blocks('```text\n'+raw+'```\n')[0]
+
+    def f17(self,raw,**kwargs):
+        return [detail for form,detail in M.check_block(self.block(raw),**kwargs) if form=='F17']
+
+    def test_single_algorithm_crlf_only(self):
+        body=' alpha \nβ\u2028γ\n\n'
+        expected=hashlib.sha256(body.encode('utf-8')).hexdigest()[:8]
+        self.assertEqual(M.block_fingerprint(body),expected)
+        self.assertEqual(M.block_fingerprint(body.replace('\n','\r\n')),expected)
+        self.assertNotEqual(M.block_fingerprint(body.replace('\u2028','\n')),expected)
+        self.assertEqual(M.block_fingerprint(_fingerprint_fixture(body)),expected)
+        self.assertNotEqual(M.block_fingerprint(body.rstrip()),expected)
+
+    def test_raw_parser_keeps_unicode_crlf_and_legacy_constructor(self):
+        raw=self.body().replace('\n','\r\n')+'\u2028 tail \r\n'
+        self.assertEqual(self.block(raw).raw_text,raw)
+        self.assertEqual(M.Block(3,['x','y'],'text').text,'x\ny')
+
+    def test_valid_and_cross_year_dates(self):
+        for issued in ('2026-11-17','2027-01-01'):
+            with self.subTest(issued=issued):
+                self.assertEqual(self.f17(_fingerprint_fixture(self.body(),issued)),[])
+
+    def test_unknown_canonical_role_is_not_a_public_fingerprint_bypass(self):
+        self.assertTrue(self.f17(self.body(),canon_role='invented-role'))
+
+    def test_missing_duplicate_nonlast_malformed_date_and_tamper(self):
+        good=_fingerprint_fixture(self.body())
+        bad=[self.body(),good+good.splitlines()[-1]+'\n',good+'extra\n',good+'\n',
+             good.replace('2026-11-17','2026-02-30'),good.replace('2026-11-17','2025-12-31'),
+             good.replace('出件指纹 ','出件指纹 INVALID'),good.replace('读输入','改输入')]
+        for raw in bad:
+            with self.subTest(raw=raw[-120:]):self.assertTrue(self.f17(raw))
+
+    def test_native_raw_is_checked_before_cc_normalization(self):
+        raw='\n'.join(['[OP-1117-A]【Codex】测试',
+             SETTINGS_CC.replace('执行环境：CC','执行环境：Codex')+' ｜ 模型：gpt-6-luna',
+             '会话标识：[Win]1117A-测试；source_id→thread_id 绑定','读输入文件。'])+'\n'
+        good=_fingerprint_fixture(raw)
+        self.assertFalse(self.f17(good))
+        self.assertTrue(self.f17(good.replace('source_id','source_idX')))
+        normalized=raw.replace('【Codex】','【CC】').replace('执行环境：Codex','执行环境：CC')
+        wrong=raw+_fingerprint_fixture(normalized).splitlines()[-1]+'\n'
+        self.assertTrue(self.f17(wrong))
+
+    def migration(self,root):
+        rel='docs/old.md';path=root/rel;path.parent.mkdir();path.write_text('```\n'+self.body()+'```\n',encoding='utf-8')
+        env=dict(os.environ,GIT_AUTHOR_DATE='2026-09-01T12:00:00+08:00',GIT_COMMITTER_DATE='2026-09-01T12:00:00+08:00')
+        for args in (['init','-q'],['add','.'],['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-q','-m','old fixture']):
+            subprocess.run(['git',*args],cwd=root,env=env,check=True,capture_output=True)
+        commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
+        data={'schema_version':1,'source_head':commit,'effective_date':'2026-11-17','entries':[
+            {'path':rel,'block_id':'OP-0828-Y','body_sha256':hashlib.sha256(self.body().encode()).hexdigest(),
+             'date_evidence':{'kind':'git','commit':commit,'committed_at':'2026-09-01T12:00:00+08:00','source_head':commit}}]}
+        config=root/'migration.json';config.write_text(json.dumps(data),encoding='utf-8')
+        return path,config,data
+
+    def test_reviewed_path_identity_body_and_git_date_are_all_bound(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path,config,data=self.migration(root)
+            with patch.object(M,'REPO_ROOT',root),patch.object(M,'MIGRATION_FILE',config):
+                before=config.read_bytes()
+                self.assertFalse(self.f17(self.body(),carrier_path=path))
+                copy=root/'docs/copy.md';copy.write_bytes(path.read_bytes())
+                self.assertTrue(self.f17(self.body(),carrier_path=copy))
+                changed=self.body().replace('读输入','改输入');path.write_text('```\n'+changed+'```\n',encoding='utf-8')
+                self.assertTrue(self.f17(changed,carrier_path=path))
+                self.assertEqual(config.read_bytes(),before,'runtime must never add exemptions')
+
+    def test_corrupt_missing_and_forged_provenance_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path,config,data=self.migration(root)
+            with patch.object(M,'REPO_ROOT',root),patch.object(M,'MIGRATION_FILE',config):
+                self.assertFalse(self.f17(self.body(),carrier_path=path))
+                cases=[]
+                for key,value in [('schema_version',2),('source_head','0'*40),('effective_date','2025-01-01')]:
+                    bad=json.loads(json.dumps(data));bad[key]=value;cases.append(bad)
+                for key,value in [('committed_at',None),('committed_at','2026-09-02T12:00:00+08:00'),('commit','0'*40)]:
+                    bad=json.loads(json.dumps(data));bad['entries'][0]['date_evidence'][key]=value;cases.append(bad)
+                for bad in cases:
+                    config.write_text(json.dumps(bad),encoding='utf-8')
+                    self.assertTrue(self.f17(self.body(),carrier_path=path))
+                config.write_text('{bad',encoding='utf-8')
+                self.assertTrue(self.f17(self.body(),carrier_path=path))
+                config.unlink();self.assertTrue(self.f17(self.body(),carrier_path=path))
+
+    def test_h1_preserved_but_unknown_history_never_becomes_exemption(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);archive=root/'z-已执行归档/old.md';archive.parent.mkdir()
+            archive.write_text('```\n'+self.body()+'```\n',encoding='utf-8')
+            current=root/'new.md';current.write_bytes(archive.read_bytes())
+            with patch.object(M,'REPO_ROOT',root),patch.object(M,'MIGRATION_FILE',root/'missing.json'):
+                self.assertFalse(self.f17(self.body(),carrier_path=archive))
+                self.assertTrue(self.f17(self.body(),carrier_path=current))
+
+    def test_file_bom_is_framing_and_bare_cr_is_not_normalized(self):
+        body=self.body()+'bare\rkeep\n';signed=_fingerprint_fixture(body)
+        doc='\ufeff```text\r\n'+signed+'```\r\n'
+        self.assertEqual(len(M.iter_fenced_blocks(doc)),1)
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'out.md';path.write_bytes(doc.encode('utf-8'))
+            self.assertFalse(any(f.form=='F17' for f in M.scan_single_file(path)))
+            path.write_bytes(doc.replace('bare\rkeep','bare\nkeep').encode('utf-8'))
+            self.assertTrue(any(f.form=='F17' for f in M.scan_single_file(path)))
 
 
 if __name__ == "__main__":

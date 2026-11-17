@@ -7118,6 +7118,9 @@ def _opener_guard_violations(
 
     md_paths = sorted(p for p in dirty_now if p.endswith(".md"))
     lint = _load_opener_lint_module()
+    # The carrier is the repository being released, not the loader's checkout.
+    lint.REPO_ROOT = repo_root.resolve()
+    lint.MIGRATION_FILE = repo_root / '0-学习与工具/opener指纹存量豁免.json'
 
     dirty_at_acquire = (lock_data or {}).get("dirty_at_acquire")
     fragments = _pending_batch_fragments(queue_texts or {})
@@ -7139,7 +7142,7 @@ def _opener_guard_violations(
     others: list[str] = []
     for rel in md_paths:
         try:
-            text = (repo_root / rel).read_text(encoding="utf-8")
+            text = (repo_root / rel).read_bytes().decode('utf-8')
         except (OSError, UnicodeDecodeError):
             continue
         blocks = lint.iter_fenced_blocks(text)
@@ -7178,15 +7181,15 @@ def _opener_guard_violations(
             env = lint.block_env(block) or "环境未标"
             is_subtask = lint._is_subtask_lane_block(block, watcher_line)
             for form, detail in lint.check_block(
-                    block, is_subtask_lane=is_subtask, canon_role=role):
+                    block, is_subtask_lane=is_subtask, canon_role=role,
+                    carrier_path=repo_root / rel):
                 sink.append(f"{rel}:{block.start_line}（{env}）[{form}] {detail}")
 
     # 队列 #284 第 18 次违反的教训：连回显都没有时，无法区分「没问题」与
     # 「没跑」——无论有无发现，本行都打印（design 实现细节）。
     print(f"ℹ opener 守卫：已校验本次触碰的 {len(md_paths)} 个 `.md`，"
           f"其中含 opener 块 {opener_block_count} 个"
-          "（只覆盖走了队列锁 acquire/release 流程的 opener，"
-          "非本流程直接粘出去的会话看不见，不代表全部覆盖）。")
+          "；射程边界见 工具-opener块lint.py 文件头唯一正本。")
 
     # 队列 #493：不归本次持锁者的命中一条不少地打印出来，但不拿它扣锁——
     # 🔴 **打印在 `waiver` 与 `not mine` 两条早退之前**，否则「本次没被拦」
